@@ -1,0 +1,11 @@
+/* 覆盖 dockview-theme-abyss 的几个尺寸/颜色变量,与启动页深色背景一致。 */
+.dockview-theme-abyss {
+  --dv-tabs-and-actions-container-height: 36px;
+  --dv-tab-divider-color: rgba(255, 255, 255, 0.06);
+  --dv-separator-border: rgba(255, 255, 255, 0.08);
+  --dv-paneview-active-outline-color: rgba(56, 189, 248, 0.35);
+}
+
+.dockview-theme-abyss .dv-tab {
+  padding: 0 12px;
+}

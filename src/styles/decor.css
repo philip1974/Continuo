@@ -1,0 +1,24 @@
+/* Spotlight 进场 keyframe(Aceternity 默认配置)。 */
+@keyframes spotlight {
+  0% {
+    opacity: 0;
+    transform: translate(-72%, -62%) scale(0.5);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, -40%) scale(1);
+  }
+}
+
+.animate-spotlight {
+  animation: spotlight 2s ease 0.4s 1 forwards;
+}
+
+/* prefers-reduced-motion: reduce 时直接到终态,不补间。 */
+@media (prefers-reduced-motion: reduce) {
+  .animate-spotlight {
+    animation: none;
+    opacity: 1;
+    transform: translate(-50%, -40%) scale(1);
+  }
+}
