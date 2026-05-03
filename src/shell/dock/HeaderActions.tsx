@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { IDockviewHeaderActionsProps } from 'dockview-react';
+import { popoutUrlFor } from '@/lib/popout-mode';
 import type { PanelKey } from './panels';
 
 const choices: { key: PanelKey; label: string }[] = [
@@ -12,8 +13,8 @@ const choices: { key: PanelKey; label: string }[] = [
 let panelCounter = 0;
 const nextPanelId = (key: PanelKey) => `${key}-${++panelCounter}`;
 
-export function AddPanelButton(props: IDockviewHeaderActionsProps) {
-  const { containerApi, group } = props;
+export function HeaderActions(props: IDockviewHeaderActionsProps) {
+  const { containerApi, group, activePanel } = props;
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -40,11 +41,38 @@ export function AddPanelButton(props: IDockviewHeaderActionsProps) {
     [containerApi, group],
   );
 
+  const popout = useCallback(() => {
+    if (!activePanel) return;
+    void containerApi.addPopoutGroup(activePanel, {
+      popoutUrl: popoutUrlFor(window.location.href),
+    });
+  }, [activePanel, containerApi]);
+
   return (
-    <div ref={ref} className="relative flex h-full items-center pr-1">
+    <div ref={ref} className="relative flex h-full items-center gap-1 pr-1">
+      <button
+        type="button"
+        aria-label="Pop out active panel"
+        title="弹出到独立窗口"
+        disabled={!activePanel}
+        onClick={popout}
+        className="flex h-6 w-6 items-center justify-center rounded text-neutral-400 transition hover:bg-white/10 hover:text-neutral-100 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
+      >
+        <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+          <path
+            d="M9 2h5v5M14 2L8 8M12 9v4a1 1 0 01-1 1H3a1 1 0 01-1-1V5a1 1 0 011-1h4"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            fill="none"
+          />
+        </svg>
+      </button>
       <button
         type="button"
         aria-label="New tab"
+        title="新建 tab"
         onClick={() => setOpen((v) => !v)}
         className="flex h-6 w-6 items-center justify-center rounded text-neutral-400 transition hover:bg-white/10 hover:text-neutral-100"
       >

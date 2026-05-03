@@ -2,10 +2,12 @@ import { useCallback, useEffect, useState } from 'react';
 import { MotionConfig } from 'motion/react';
 import { DockShell } from './dock/DockShell';
 import { Splash } from './decor/Splash';
+import { PopoutHost } from './PopoutHost';
+import { isPopoutWindow } from '@/lib/popout-mode';
 
 const SPLASH_MIN_MS = 600;
 
-export function App() {
+function MainApp() {
   const [layoutReady, setLayoutReady] = useState(false);
   const [splashElapsed, setSplashElapsed] = useState(false);
 
@@ -18,7 +20,7 @@ export function App() {
   const showSplash = !(layoutReady && splashElapsed);
 
   return (
-    <MotionConfig reducedMotion="user">
+    <>
       <div className="flex h-dvh w-dvw flex-col bg-[#020617] text-neutral-100">
         <header className="flex h-9 shrink-0 items-center justify-center border-b border-white/5 text-xs text-neutral-500 select-none [-webkit-app-region:drag]">
           LayoutMotion
@@ -28,6 +30,14 @@ export function App() {
         </main>
       </div>
       {showSplash && <Splash />}
+    </>
+  );
+}
+
+export function App() {
+  return (
+    <MotionConfig reducedMotion="user">
+      {isPopoutWindow() ? <PopoutHost /> : <MainApp />}
     </MotionConfig>
   );
 }
