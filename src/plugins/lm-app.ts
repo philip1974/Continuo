@@ -4,7 +4,10 @@
 // 后续(v2+)若加 events / fs / log 等,在此扩 LMApp 接口与实例。
 
 import { CommandRegistry } from './registries/CommandRegistry';
+import { EventBus } from './EventBus';
+import { InMemoryDataStore } from './PluginDataStore';
 import { PanelRegistry } from './registries/PanelRegistry';
+import { RibbonRegistry } from './registries/RibbonRegistry';
 import { StatusBarRegistry } from './registries/StatusBarRegistry';
 import type { LMApp } from './types';
 
@@ -15,4 +18,8 @@ export const lmApp: LMApp = {
   panels: new PanelRegistry(),
   commands: new CommandRegistry(),
   statusBar: new StatusBarRegistry(),
+  ribbon: new RibbonRegistry(),
+  events: new EventBus(),
+  // v2.3 默认 InMemoryDataStore;v3 接入 IPC 持久化
+  dataStore: new InMemoryDataStore(),
 };

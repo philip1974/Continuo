@@ -1,18 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { Plugin } from '../../plugins/Plugin';
-import { PanelRegistry } from '../../plugins/registries/PanelRegistry';
-import { CommandRegistry } from '../../plugins/registries/CommandRegistry';
-import { StatusBarRegistry } from '../../plugins/registries/StatusBarRegistry';
-import type { LMApp, PluginManifest } from '../../plugins/types';
+import { createTestApp } from '../../plugins/test-utils';
+import type { PluginManifest } from '../../plugins/types';
 
-function makeApp(): LMApp {
-  return {
-    version: '1.0.0',
-    panels: new PanelRegistry(),
-    commands: new CommandRegistry(),
-    statusBar: new StatusBarRegistry(),
-  };
-}
+const makeApp = () => createTestApp();
 
 const manifest: PluginManifest = {
   id: 'test.contrib',

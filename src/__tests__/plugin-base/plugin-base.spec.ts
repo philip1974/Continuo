@@ -1,18 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
 import { Plugin, type Disposable } from '../../plugins/Plugin';
-import { PanelRegistry } from '../../plugins/registries/PanelRegistry';
-import { CommandRegistry } from '../../plugins/registries/CommandRegistry';
-import { StatusBarRegistry } from '../../plugins/registries/StatusBarRegistry';
-import type { LMApp, PluginManifest } from '../../plugins/types';
+import { createTestApp } from '../../plugins/test-utils';
+import type { PluginManifest } from '../../plugins/types';
 
 // ── 测试夹具 ─────────────────────────────────────────────
 
-const fakeApp: LMApp = {
-  version: '0.0.0-test',
-  panels: new PanelRegistry(),
-  commands: new CommandRegistry(),
-  statusBar: new StatusBarRegistry(),
-};
+const fakeApp = createTestApp('0.0.0-test');
 
 const baseManifest: PluginManifest = {
   id: 'test.plugin',

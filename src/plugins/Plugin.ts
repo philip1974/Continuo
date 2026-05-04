@@ -8,6 +8,7 @@ import type { Disposable, LMApp, PluginManifest } from './types';
 import type { PanelSpec } from './registries/PanelRegistry';
 import type { CommandSpec } from './registries/CommandRegistry';
 import type { StatusBarItemSpec } from './registries/StatusBarRegistry';
+import type { RibbonActionSpec } from './registries/RibbonRegistry';
 
 export type { Disposable } from './types';
 
@@ -42,6 +43,35 @@ export abstract class Plugin {
 
   protected addStatusBarItem(spec: StatusBarItemSpec): Disposable {
     return this.register(this.app.statusBar.register(spec));
+  }
+
+  protected addRibbonAction(spec: RibbonActionSpec): Disposable {
+    return this.register(this.app.ribbon.register(spec));
+  }
+
+  protected registerEvent(spec: {
+    readonly name: string;
+    readonly fn: (payload: unknown) => void;
+  }): Disposable {
+    return this.register(this.app.events.on(spec.name, spec.fn));
+  }
+
+  /** 读取该插件持久化数据;不存在 / IO 失败返 null. */
+  protected async loadData<T = unknown>(): Promise<T | null> {
+    try {
+      return (await this.app.dataStore.read(this.manifest.id)) as T | null;
+    } catch (err) {
+      console.warn(
+        `[plugin:${this.manifest.id}] loadData failed`,
+        err,
+      );
+      return null;
+    }
+  }
+
+  /** 保存该插件数据;data 必须 JSON-serializable;抛错向上传. */
+  protected async saveData(data: unknown): Promise<void> {
+    await this.app.dataStore.write(this.manifest.id, data);
   }
 
   /**

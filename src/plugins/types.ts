@@ -38,4 +38,10 @@ export interface LMApp {
   readonly commands: import('./registries/CommandRegistry').CommandRegistry;
   /** StatusBar item 注册表. */
   readonly statusBar: import('./registries/StatusBarRegistry').StatusBarRegistry;
+  /** IconSidebar 活动栏图标贡献(v2.1). */
+  readonly ribbon: import('./registries/RibbonRegistry').RibbonRegistry;
+  /** LM 自定义事件总线(v2.2). */
+  readonly events: import('./EventBus').EventBus;
+  /** 插件本地 KV 存储(v2.3),writable so tests 可 monkey-patch. */
+  dataStore: import('./PluginDataStore').PluginDataStore;
 }

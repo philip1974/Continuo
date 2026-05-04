@@ -40,6 +40,10 @@
 
 - [`editor-store.spec.ts`](./editor-store/editor-store.spec.ts)
 
+## [event-bus(LM 自定义事件总线 + Plugin.registerEvent)](./event-bus/README.md)
+
+- [`event-bus.spec.ts`](./event-bus/event-bus.spec.ts)
+
 ## [explorer-dropzone (M-Explorer Step 5d)](./explorer-dropzone/README.md)
 
 - [`drop-handlers.spec.ts`](./explorer-dropzone/drop-handlers.spec.ts)
@@ -90,6 +94,10 @@
 - [`plugin-integration.spec.ts`](./plugin-contributions-core/plugin-integration.spec.ts)
 - [`registries.spec.ts`](./plugin-contributions-core/registries.spec.ts)
 
+## [plugin-data(loadData / saveData)](./plugin-data/README.md)
+
+- [`plugin-data.spec.ts`](./plugin-data/plugin-data.spec.ts)
+
 ## [plugin-loader(ESM 动态加载 + styles 注入)](./plugin-loader/README.md)
 
 - [`plugin-loader.spec.ts`](./plugin-loader/plugin-loader.spec.ts)
@@ -105,6 +113,10 @@
 ## [popout 契约 (M5)](./popout-contracts/README.md)
 
 - [`popout-mode.spec.ts`](./popout-contracts/popout-mode.spec.ts)
+
+## [ribbon-registry(IconSidebar 活动栏图标贡献)](./ribbon-registry/README.md)
+
+- [`ribbon-registry.spec.ts`](./ribbon-registry/ribbon-registry.spec.ts)
 
 ## [工程骨架就绪 (M1)](./scaffold/README.md)
 
