@@ -12,6 +12,7 @@ import {
 import { defaultIsTrustedFrame, safeHandle } from './safe-handle';
 import { registerFsIpc } from './ipc/fs.ipc';
 import { registerTerminalIpc } from './ipc/terminal.ipc';
+import { registerPluginsIpc } from './ipc/plugins.ipc';
 
 // layout:read 入参为空(renderer ipcRenderer.invoke 不传第二参 → undefined)
 const NoInput = z.undefined();
@@ -67,4 +68,7 @@ export function registerIpc() {
 
   // 终端 terminal.* 6 invoke + 4 push(Step T2)
   registerTerminalIpc();
+
+  // 插件系统 plugins.* 3 通道(M-Plugin v4.1)
+  registerPluginsIpc();
 }

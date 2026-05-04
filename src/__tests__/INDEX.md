@@ -127,6 +127,10 @@
 
 - [`plugin-permissions.spec.ts`](./plugin-permissions/plugin-permissions.spec.ts)
 
+## [plugins-service(主进程插件目录扫描)](./plugins-service/README.md)
+
+- [`plugins-service.spec.ts`](./plugins-service/plugins-service.spec.ts)
+
 ## [popout 契约 (M5)](./popout-contracts/README.md)
 
 - [`popout-mode.spec.ts`](./popout-contracts/popout-mode.spec.ts)

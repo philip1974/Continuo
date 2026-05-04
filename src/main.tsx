@@ -3,6 +3,12 @@ import { createRoot } from 'react-dom/client';
 import { App } from './shell/App';
 import { initExplorerPersistence } from './lib/persist/explorer-persist';
 import { bootCorePlugins } from './core-plugins';
+import { lmApp } from './plugins/lm-app';
+import { PluginManager } from './plugins/PluginManager';
+import { setUserPluginManager } from './plugins/lm-plugin-manager';
+import { createWindowApiHost } from './lib/plugins-host';
+import { InMemoryPermissionStore } from './plugins/permissions';
+import { usePermissionPromptStore } from './plugins/permissions/promptStore';
 import './styles/tailwind.css';
 
 const container = document.getElementById('root');
@@ -11,6 +17,20 @@ if (!container) throw new Error('#root not found');
 // M-Plugin v1.7:渲染前同步注册内置插件(editor / terminal / output),
 // 使 lmApp.panels 在 DockShell 首次 mount 时已含 3 个 panel 类型。
 bootCorePlugins();
+
+// M-Plugin v4.1:用户插件 PluginManager(从 userData/plugins/ 异步加载)。
+// permissionStore 暂用 InMemory(v4.2 接 IPC 持久化)。
+// promptFn 桥到 design Modal(用户首次启用插件时弹授权)。
+const userPluginManager = new PluginManager(lmApp, {
+  ...createWindowApiHost(),
+  permissionStore: new InMemoryPermissionStore(),
+  promptFn: (pid, perms) =>
+    usePermissionPromptStore.getState().request(pid, perms),
+});
+setUserPluginManager(userPluginManager);
+void userPluginManager.init().catch((err) => {
+  console.warn('[main] user plugin manager init failed', err);
+});
 
 // 资源管理器持久化(M-Explorer Step 3 + Step 4)。
 // fire-and-forget:hydrate 在毫秒级完成,store setState 触发 React 重渲染,

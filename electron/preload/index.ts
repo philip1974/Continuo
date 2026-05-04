@@ -3,6 +3,7 @@ import type { IpcResult } from '../shared/ipc-result';
 import type { FileEntry } from '../shared/fs-entry';
 import { FS_CHANNELS } from '../shared/fs-channels';
 import { TERMINAL_CHANNELS } from '../shared/terminal-channels';
+import { PLUGINS_CHANNELS, type IpcPluginDir } from '../shared/plugins-channels';
 
 // terminal create 入参的轻量类型(与 main 端 zod schema 对齐)
 interface TerminalCreateOptions {
@@ -132,6 +133,14 @@ const api = {
       ipcRenderer.on(TERMINAL_CHANNELS.OVERFLOW_RECOVERED, listener);
       return () => ipcRenderer.off(TERMINAL_CHANNELS.OVERFLOW_RECOVERED, listener);
     },
+  },
+  plugins: {
+    listDirs: (): Promise<IpcResult<readonly IpcPluginDir[]>> =>
+      ipcRenderer.invoke(PLUGINS_CHANNELS.LIST_DIRS),
+    readEnabled: (): Promise<IpcResult<readonly string[]>> =>
+      ipcRenderer.invoke(PLUGINS_CHANNELS.READ_ENABLED),
+    writeEnabled: (ids: readonly string[]): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(PLUGINS_CHANNELS.WRITE_ENABLED, { ids }),
   },
 } as const;
 
