@@ -29,31 +29,35 @@ export function FolderTree({ root }: { root: string }) {
       {...tree.getContainerProps()}
       className="h-full w-full overflow-auto bg-[#020617]"
     >
-      <div
-        style={{
-          height: virtualizer.getTotalSize(),
-          width: '100%',
-          position: 'relative',
-        }}
-      >
-        {virtualizer.getVirtualItems().map((vRow) => {
-          const item = items[vRow.index];
-          if (!item) return null;
-          return (
-            <FileRow
-              key={item.getId()}
-              item={item}
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                transform: `translateY(${vRow.start}px)`,
-              }}
-            />
-          );
-        })}
-      </div>
+      {items.length === 0 ? (
+        <div className="p-4 text-xs text-neutral-500">读取中…(空目录或权限问题)</div>
+      ) : (
+        <div
+          style={{
+            height: virtualizer.getTotalSize(),
+            width: '100%',
+            position: 'relative',
+          }}
+        >
+          {virtualizer.getVirtualItems().map((vRow) => {
+            const item = items[vRow.index];
+            if (!item) return null;
+            return (
+              <FileRow
+                key={item.getId()}
+                item={item}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  transform: `translateY(${vRow.start}px)`,
+                }}
+              />
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

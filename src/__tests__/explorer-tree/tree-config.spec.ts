@@ -44,6 +44,12 @@ describe('createTreeConfig · 顶层配置', () => {
     const cfg = createTreeConfig({ root: '/work', fs });
     expect(cfg.indent).toBe(16);
   });
+
+  it('initialState.expandedItems 包含 root(否则 getItems 返空)', () => {
+    const fs = makeFs(() => ok([]));
+    const cfg = createTreeConfig({ root: '/work', fs });
+    expect(cfg.initialState?.expandedItems).toContain('/work');
+  });
 });
 
 describe('createTreeConfig · getItem', () => {

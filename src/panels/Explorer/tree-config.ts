@@ -111,6 +111,12 @@ export function createTreeConfig(
     getItemName: (item) => item.getItemData().name,
     isItemFolder: (item) => item.getItemData().isDirectory,
     dataLoader: createDataLoader(deps),
+    // headless-tree 默认不渲染 root 自身,只渲染已展开节点的 children。
+    // root 必须显式 expand 才会触发 children 加载,否则 getItems() 返回 []。
+    // Step 5/6 接入 store.expandedPaths 后,这个初始值会被持久化版覆盖。
+    initialState: {
+      expandedItems: [deps.root],
+    },
     features: [
       asyncDataLoaderFeature,
       selectionFeature,
