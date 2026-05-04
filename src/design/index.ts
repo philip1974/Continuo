@@ -37,7 +37,12 @@ export {
   type SegmentedControlSize,
 } from './SegmentedControl';
 export { Card, type CardProps, type ChatCardTone } from './Card';
-export { Input, type InputProps, type InputVariant } from './Input';
+export {
+  Input,
+  type InputProps,
+  type InputVariant,
+  type InputSize,
+} from './Input';
 export { Modal, type ModalProps } from './Modal';
 export { ScrollArea, type ScrollAreaProps } from './ScrollArea';
 export { Separator, type SeparatorProps } from './Separator';

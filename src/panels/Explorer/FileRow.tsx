@@ -1,6 +1,7 @@
 import { Document, Folder } from '@react-symbols/icons';
 import type { ItemInstance } from '@headless-tree/core';
 import type { FileEntry } from '@/lib/fs/types';
+import { Input } from '@/design';
 import { ContextMenu, type ContextMenuActions } from './ContextMenu';
 import type { DropTargetEntry } from './drop-handlers';
 
@@ -101,14 +102,13 @@ export function FileRow({
         )}
       </span>
       {isRenaming ? (
-        <input
+        <Input
           {...item.getRenameInputProps()}
-          // 覆盖上游 ref(原本只是 r => r?.focus(),sync 调用会被 Radix Menu
-          // close 后的 focus restore 抢回去)→ 改用 requestAnimationFrame 延迟一帧
-          ref={(el) => {
+          size="xs"
+          ref={(el: HTMLInputElement | null) => {
             if (el) requestAnimationFrame(() => el.focus());
           }}
-          className="w-full rounded bg-hover px-1 py-0 text-xs text-fg outline-none ring-1 ring-accent"
+          className="w-full"
           spellCheck={false}
           autoComplete="off"
         />

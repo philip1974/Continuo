@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Document, Folder } from '@react-symbols/icons';
-import { IconButton } from '@/design';
+import { IconButton, Input } from '@/design';
 
 interface CreateInputProps {
   type: 'file' | 'dir';
@@ -68,13 +68,14 @@ export function CreateInput({
           <Document width={ICON_SIZE} height={ICON_SIZE} />
         )}
       </span>
-      <input
+      <Input
         ref={ref}
+        size="sm"
         type="text"
         value={value}
         onChange={(e) => setValue(e.target.value)}
         placeholder={type === 'dir' ? '新建文件夹名…' : '新建文件名…'}
-        className="flex-1 rounded bg-hover px-2 py-0.5 text-fg outline-none ring-1 ring-accent placeholder:text-fg-dim"
+        className="flex-1"
         spellCheck={false}
         autoComplete="off"
       />
