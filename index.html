@@ -7,7 +7,7 @@
     <!--
       CSP:
       - default-src 'self':其他未列资源全部走自身
-      - script-src 'self':禁内联脚本(防 XSS 主要面)
+      - script-src 'self' blob::插件 main.js 通过 Blob URL 动态 import(M-Plugin v4.1)
       - style-src 'self' 'unsafe-inline':Tailwind v4 / Motion 需要内联样式
       - img-src 'self' data::内嵌 SVG / 缩略图常用 data:
       - connect-src:仅自身 + dev 时的 Vite HMR(localhost ws/http);
@@ -19,7 +19,7 @@
     -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws://localhost:* wss://localhost:* http://localhost:*; object-src 'none'; base-uri 'self';"
+      content="default-src 'self'; script-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws://localhost:* wss://localhost:* http://localhost:*; object-src 'none'; base-uri 'self';"
     />
   </head>
   <body class="bg-[#020617] text-neutral-100">

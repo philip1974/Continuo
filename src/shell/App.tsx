@@ -10,6 +10,7 @@ import { StatusBar } from './StatusBar';
 import { TitleBar } from './TitleBar';
 import { CommandPalette } from '@/plugins/command-palette/CommandPalette';
 import { useCommandPaletteHotkey } from '@/plugins/command-palette/useCommandPaletteHotkey';
+import { useCommandHotkeys } from '@/plugins/command-palette/useCommandHotkeys';
 import { SettingsModal } from '@/plugins/settings/SettingsModal';
 import { PermissionPrompt } from '@/plugins/permissions/PermissionPrompt';
 import { lmApp } from '@/plugins/lm-app';
@@ -28,6 +29,8 @@ function MainApp() {
 
   // 全局 ⌘P / Ctrl+P 触发命令面板
   useCommandPaletteHotkey();
+  // 全局 commands 注册的 hotkey 监听 + 派发(M-Plugin v1.6 补漏)
+  useCommandHotkeys(lmApp.commands);
 
   const onLayoutReady = useCallback(() => setLayoutReady(true), []);
   const showSplash = !(layoutReady && splashElapsed);

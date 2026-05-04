@@ -10,6 +10,10 @@
 
 - [`compute.spec.ts`](./column-resize/compute.spec.ts)
 
+## [command-hotkeys(全局快捷键派发)](./command-hotkeys/README.md)
+
+- [`command-hotkeys.spec.ts`](./command-hotkeys/command-hotkeys.spec.ts)
+
 ## [command-palette(⌘P 浮层 / 模糊搜索 / 键盘导航)](./command-palette/README.md)
 
 - [`CommandPalette.spec.tsx`](./command-palette/CommandPalette.spec.tsx)

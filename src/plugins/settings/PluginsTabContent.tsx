@@ -150,25 +150,30 @@ export function PluginsTabContent() {
   );
 }
 
-function useUserPlugins(): readonly PluginListItem[] {
+function useUserPlugins(): {
+  plugins: readonly PluginListItem[];
+  refresh: () => void;
+} {
   const [snap, setSnap] = useState<readonly PluginListItem[]>(() => {
     const m = getUserPluginManager();
     return m ? m.listAll() : [];
   });
-  // 简单刷新机制:每次组件挂载读最新值。后续如需 reactive 可让 PluginManager
-  // 暴露 subscribe(目前 v4.1 enable/disable 触发后调 refresh 即可)。
   const refresh = () => {
     const m = getUserPluginManager();
     setSnap(m ? m.listAll() : []);
   };
   useEffect(() => {
+    // 挂载时刷一次(manager 可能在组件 mount 之后才 init 完)
     refresh();
+    // 1 秒轮询兜底,捕获 manager.init 异步完成的迟到入表
+    const t = setInterval(refresh, 1000);
+    return () => clearInterval(t);
   }, []);
-  return snap;
+  return { plugins: snap, refresh };
 }
 
 function UserPluginsSection() {
-  const plugins = useUserPlugins();
+  const { plugins, refresh } = useUserPlugins();
   const mgr = getUserPluginManager();
   const [gitUrl, setGitUrl] = useState('');
   const [installing, setInstalling] = useState(false);
@@ -260,8 +265,6 @@ function UserPluginsSection() {
                 )}
               </div>
               <div className="flex shrink-0 items-center gap-1">
-                {/* 重载按钮:active / disabled / failed 都可触发,
-                    用最新 mainText 重新激活(开发体验,M-Plugin v4.3) */}
                 <Button
                   variant="ghost"
                   size="sm"
@@ -271,6 +274,7 @@ function UserPluginsSection() {
                     } catch (err) {
                       console.warn(`[plugins-tab] reload ${p.id} failed`, err);
                     }
+                    refresh();
                   }}
                   title="重新加载该插件(拉取最新代码)"
                 >
@@ -281,7 +285,12 @@ function UserPluginsSection() {
                     variant="ghost"
                     size="sm"
                     onClick={async () => {
-                      await mgr?.disable(p.id);
+                      try {
+                        await mgr?.disable(p.id);
+                      } catch (err) {
+                        console.warn(`[plugins-tab] disable ${p.id} failed`, err);
+                      }
+                      refresh();
                     }}
                   >
                     禁用
@@ -291,7 +300,12 @@ function UserPluginsSection() {
                     variant="primary"
                     size="sm"
                     onClick={async () => {
-                      await mgr?.enable(p.id);
+                      try {
+                        await mgr?.enable(p.id);
+                      } catch (err) {
+                        console.warn(`[plugins-tab] enable ${p.id} failed`, err);
+                      }
+                      refresh();
                     }}
                   >
                     启用
