@@ -1,0 +1,26 @@
+# electron-builder 配置(M-Plugin v4.4 lm:// 协议注册需要打 .app)
+appId: com.layoutmotion.app
+productName: LayoutMotion
+directories:
+  output: dist-electron
+  buildResources: build
+files:
+  - out/**/*
+  - package.json
+extraMetadata:
+  main: out/main/index.js
+asar: true
+
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dir          # 仅产 .app,不打 dmg(测试足够)
+      arch: arm64
+  protocols:
+    - name: LayoutMotion Protocol
+      schemes:
+        - lm
+  # 跳过 codesign / notarize(本地测试)
+  identity: null
+
+# Linux / Windows 留空,以后用到再补
