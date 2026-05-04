@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { HTMLAttributes, PointerEvent } from 'react';
 import { motion } from 'motion/react';
 import type { DockviewPanelApi, IDockviewPanelHeaderProps } from 'dockview-react';
+import { IconButton } from '@/design';
 import {
   panelTitleLayoutId,
   tabIndicatorLayoutId,
@@ -99,12 +100,12 @@ export function SharedTab(props: IDockviewPanelHeaderProps & TabHtmlExtras) {
       ) : (
         <span className="select-none">{title}</span>
       )}
-      <button
-        type="button"
+      <IconButton
+        size="xs"
         aria-label={`Close ${title}`}
         onPointerDown={(e) => e.preventDefault()}
         onClick={onClose}
-        className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-neutral-500 opacity-0 transition hover:bg-white/10 hover:text-neutral-100 focus-visible:opacity-100 group-hover/tab:opacity-100"
+        className="opacity-0 focus-visible:opacity-100 group-hover/tab:opacity-100"
       >
         <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
           <path
@@ -114,7 +115,7 @@ export function SharedTab(props: IDockviewPanelHeaderProps & TabHtmlExtras) {
             strokeLinecap="round"
           />
         </svg>
-      </button>
+      </IconButton>
       {active && (
         <motion.span
           layoutId={tabIndicatorLayoutId(groupId)}

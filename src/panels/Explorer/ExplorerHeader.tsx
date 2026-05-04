@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useWorkspaceStore } from '@/stores/workspace.store';
+import { Button, IconButton } from '@/design';
 
 // FolderTree 顶部固定 Header:workspace 名 + 工具按钮(展开/折叠全部) + 切换/关闭。
 // VSCode 风:打开新文件夹会替换当前 root(不开新窗口);关闭回到 EmptyWorkspace。
@@ -17,9 +18,6 @@ function basename(p: string): string {
   const idx = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
   return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
 }
-
-const iconBtnCls =
-  'rounded px-1.5 py-0.5 text-neutral-400 transition hover:bg-neutral-800 hover:text-neutral-200 disabled:opacity-40';
 
 export function ExplorerHeader({
   root,
@@ -48,42 +46,42 @@ export function ExplorerHeader({
       >
         {basename(root)}
       </span>
-      <button
-        type="button"
+      <IconButton
+        size="xs"
         onClick={onExpandAll}
         disabled={!onExpandAll}
-        className={iconBtnCls}
         title="展开全部"
+        aria-label="展开全部"
       >
         ⊕
-      </button>
-      <button
-        type="button"
+      </IconButton>
+      <IconButton
+        size="xs"
         onClick={onCollapseAll}
         disabled={!onCollapseAll}
-        className={iconBtnCls}
         title="折叠全部"
+        aria-label="折叠全部"
       >
         ⊖
-      </button>
-      <span className="mx-1 h-3 w-px bg-neutral-800" aria-hidden="true" />
-      <button
-        type="button"
+      </IconButton>
+      <span className="mx-1 h-3 w-px bg-line" aria-hidden="true" />
+      <Button
+        variant="ghost"
+        size="sm"
         onClick={switchFolder}
         disabled={busy}
-        className={iconBtnCls}
         title="切换到其他文件夹"
       >
         切换
-      </button>
-      <button
-        type="button"
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
         onClick={() => setRoot(null)}
-        className={iconBtnCls}
         title="关闭当前文件夹"
       >
         关闭
-      </button>
+      </Button>
     </div>
   );
 }

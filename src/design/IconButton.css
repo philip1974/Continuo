@@ -1,0 +1,30 @@
+.wm-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background-color: transparent;
+  color: var(--md-on-surface-variant);
+  border-radius: 4px;
+  cursor: pointer;
+  outline: none;
+  flex-shrink: 0;
+  transition:
+    background-color var(--wm-duration-fast) var(--wm-ease-default),
+    color var(--wm-duration-fast) var(--wm-ease-default),
+    opacity var(--wm-duration-fast) var(--wm-ease-default);
+}
+
+.wm-icon-button[data-size="xs"] { width: 20px; height: 20px; font-size: 11px; line-height: 1; }
+.wm-icon-button[data-size="sm"] { width: 24px; height: 24px; font-size: 13px; line-height: 1; }
+.wm-icon-button[data-size="md"] { width: 32px; height: 32px; font-size: 15px; line-height: 1; }
+
+.wm-icon-button:hover:not(:disabled) {
+  background-color: var(--md-state-hover);
+  color: var(--md-on-surface);
+}
+
+.wm-icon-button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}

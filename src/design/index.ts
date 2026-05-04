@@ -10,6 +10,11 @@ export {
   type ButtonVariant,
   type ButtonSize,
 } from './Button';
+export {
+  IconButton,
+  type IconButtonProps,
+  type IconButtonSize,
+} from './IconButton';
 export { Card, type CardProps, type ChatCardTone } from './Card';
 export { Input, type InputProps, type InputVariant } from './Input';
 export { Modal, type ModalProps } from './Modal';

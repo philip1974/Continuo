@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Document, Folder } from '@react-symbols/icons';
+import { IconButton } from '@/design';
 
 interface CreateInputProps {
   type: 'file' | 'dir';
@@ -83,14 +84,9 @@ export function CreateInput({
       >
         在: {parentDir}
       </span>
-      <button
-        type="button"
-        onClick={onCancel}
-        className="rounded px-1 text-[10px] text-neutral-400 hover:text-neutral-200"
-        title="取消(Esc)"
-      >
+      <IconButton size="xs" onClick={onCancel} title="取消(Esc)" aria-label="取消">
         ✕
-      </button>
+      </IconButton>
     </div>
   );
 }

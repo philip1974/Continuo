@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { IDockviewHeaderActionsProps } from 'dockview-react';
 import { popoutUrlFor } from '@/lib/popout-mode';
+import { IconButton } from '@/design';
 import type { PanelKey } from './panels';
 
 const choices: { key: PanelKey; label: string }[] = [
@@ -50,13 +51,12 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
 
   return (
     <div ref={ref} className="relative flex h-full items-center gap-1 pr-1">
-      <button
-        type="button"
+      <IconButton
+        size="sm"
         aria-label="Pop out active panel"
         title="弹出到独立窗口"
         disabled={!activePanel}
         onClick={popout}
-        className="flex h-6 w-6 items-center justify-center rounded text-neutral-400 transition hover:bg-white/10 hover:text-neutral-100 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
       >
         <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
           <path
@@ -68,13 +68,12 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
             fill="none"
           />
         </svg>
-      </button>
-      <button
-        type="button"
+      </IconButton>
+      <IconButton
+        size="sm"
         aria-label="More actions"
         title="更多操作"
         onClick={() => setOpen((v) => !v)}
-        className="flex h-6 w-6 items-center justify-center rounded text-neutral-400 transition hover:bg-white/10 hover:text-neutral-100"
       >
         <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
           {/* horizontal ellipsis ⋯ */}
@@ -82,7 +81,7 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
           <circle cx="8" cy="8" r="1.1" fill="currentColor" />
           <circle cx="12.5" cy="8" r="1.1" fill="currentColor" />
         </svg>
-      </button>
+      </IconButton>
       {open && (
         <div className="absolute right-0 top-full z-50 mt-1 min-w-[140px] overflow-hidden rounded-md border border-white/10 bg-neutral-900 py-1 text-sm shadow-lg shadow-black/40">
           {choices.map((c) => (
