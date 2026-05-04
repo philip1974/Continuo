@@ -14,6 +14,10 @@
 
 - [`fs-adapter.spec.ts`](./fs-adapter/fs-adapter.spec.ts)
 
+## [fs-ipc-bridge (M-Explorer Step 2)](./fs-ipc-bridge/README.md)
+
+- [`fs-ipc-bridge.spec.ts`](./fs-ipc-bridge/fs-ipc-bridge.spec.ts)
+
 ## [IPC safeHandle 契约 (跨里程碑)](./ipc-safe-handle/README.md)
 
 - [`safe-handle.spec.ts`](./ipc-safe-handle/safe-handle.spec.ts)

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import { LayoutSchema, loadLayout, saveLayout } from './persistence';
 import { defaultIsTrustedFrame, safeHandle } from './safe-handle';
+import { registerFsIpc } from './ipc/fs.ipc';
 
 // layout:read 入参为空(renderer ipcRenderer.invoke 不传第二参 → undefined)
 const NoInput = z.undefined();
@@ -39,4 +40,7 @@ export function registerIpc() {
     },
     trusted,
   );
+
+  // 资源管理器 fs.* 9 通道(Step 2)
+  registerFsIpc();
 }
