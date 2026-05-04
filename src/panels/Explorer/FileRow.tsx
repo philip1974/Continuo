@@ -20,7 +20,8 @@ interface FileRowProps {
 }
 
 const ICON_SIZE = 16;
-const ROW_HEIGHT = 24;
+// 28px 比 24 更松,Lokus / VSCode 同档(他们用 32);保持紧凑同时呼吸感更好
+const ROW_HEIGHT = 28;
 const INDENT = 16;
 
 // 单行节点。renamingFeature 自动接管 input 的 Enter/Esc 键盘事件,
