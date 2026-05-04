@@ -45,7 +45,6 @@ export function FolderTree({ root }: { root: string }) {
       </div>
       <div
         ref={scrollRef}
-        {...tree.getContainerProps()}
         className="min-h-0 flex-1 overflow-auto bg-[#020617]"
       >
         {items.length === 0 ? (
@@ -53,7 +52,10 @@ export function FolderTree({ root }: { root: string }) {
             读取中或空目录(若一直这样,看顶部 err 信息或 DevTools)
           </div>
         ) : (
+          // getContainerProps 必须绑在"含 tree children"的 inner div(返回 ARIA + 焦点 handlers),
+          // 不绑在 scrollContainer 上,否则与 react-virtual 的尺寸测量互相干扰
           <div
+            {...tree.getContainerProps()}
             style={{
               height: virtualizer.getTotalSize(),
               width: '100%',
