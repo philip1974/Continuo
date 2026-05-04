@@ -4,6 +4,7 @@
 
 import {
   asyncDataLoaderFeature,
+  expandAllFeature,
   hotkeysCoreFeature,
   renamingFeature,
   selectionFeature,
@@ -127,6 +128,7 @@ export function createTreeConfig(
       selectionFeature,
       hotkeysCoreFeature,
       renamingFeature, // F2 / Enter / Esc 由它接管,自动 stop hotkeys 干扰
+      expandAllFeature, // tree.expandAll() / collapseAll() — UI-3 Header 按钮用
     ],
   };
 }

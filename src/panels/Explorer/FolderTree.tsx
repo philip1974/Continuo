@@ -8,6 +8,7 @@ import { ConfirmDialog } from './ConfirmDialog';
 import { ContextMenu, type ContextMenuActions } from './ContextMenu';
 import { CreateInput } from './CreateInput';
 import { DropOverlay } from './DropOverlay';
+import { ExplorerHeader } from './ExplorerHeader';
 import { createTreeConfig } from './tree-config';
 import { FILE_ROW_HEIGHT, FileRow } from './FileRow';
 import {
@@ -205,6 +206,14 @@ export function FolderTree({ root }: { root: string }) {
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
+      <ExplorerHeader
+        root={root}
+        onExpandAll={() => {
+          // 异步,大目录会触发大量 listDir;用户主动行为,不防抖
+          void tree.expandAll();
+        }}
+        onCollapseAll={() => tree.collapseAll()}
+      />
       {dragActive && <DropOverlay targetDir={dropTargetDir} />}
       {creating && (
         <CreateInput

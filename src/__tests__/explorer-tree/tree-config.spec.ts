@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   asyncDataLoaderFeature,
+  expandAllFeature,
   hotkeysCoreFeature,
   renamingFeature,
   selectionFeature,
@@ -32,13 +33,14 @@ describe('createTreeConfig · 顶层配置', () => {
     expect(cfg.rootItemId).toBe('/work');
   });
 
-  it('features 包含 asyncDataLoader / selection / hotkeysCore / renaming', () => {
+  it('features 包含 asyncDataLoader / selection / hotkeysCore / renaming / expandAll', () => {
     const fs = makeFs(() => ok([]));
     const cfg = createTreeConfig({ root: '/work', fs });
     expect(cfg.features).toContain(asyncDataLoaderFeature);
     expect(cfg.features).toContain(selectionFeature);
     expect(cfg.features).toContain(hotkeysCoreFeature);
     expect(cfg.features).toContain(renamingFeature);
+    expect(cfg.features).toContain(expandAllFeature);
   });
 
   it('onRename 透传到 config(headless-tree renamingFeature 触发)', () => {
