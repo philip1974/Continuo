@@ -65,6 +65,11 @@ export function FileRow({
       {isRenaming ? (
         <input
           {...item.getRenameInputProps()}
+          // 覆盖上游 ref(原本只是 r => r?.focus(),sync 调用会被 Radix Menu
+          // close 后的 focus restore 抢回去)→ 改用 requestAnimationFrame 延迟一帧
+          ref={(el) => {
+            if (el) requestAnimationFrame(() => el.focus());
+          }}
           className="w-full rounded bg-neutral-800 px-1 py-0 text-xs text-neutral-100 outline-none ring-1 ring-sky-500"
           spellCheck={false}
           autoComplete="off"

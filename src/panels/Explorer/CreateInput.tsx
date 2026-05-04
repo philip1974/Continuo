@@ -31,21 +31,14 @@ export function CreateInput({
   onCancelRef.current = onCancel;
 
   useEffect(() => {
-    // eslint-disable-next-line no-console
-    console.log('[CreateInput] effect runs, ref=', ref.current);
     const el = ref.current;
-    if (!el) {
-      // eslint-disable-next-line no-console
-      console.log('[CreateInput] effect: ref is null, abort');
-      return;
-    }
-    // eslint-disable-next-line no-console
-    console.log('[CreateInput] effect: registering listener on', el.tagName);
-    el.focus();
+    if (!el) return;
+
+    // 延迟到下一帧 focus,让 Radix ContextMenu 的 focus restore 先跑完,
+    // 否则我们 sync 调的 el.focus() 会被它 microtask 覆盖,active 又跑回 body。
+    const rafId = requestAnimationFrame(() => el.focus());
 
     const handler = (e: KeyboardEvent) => {
-      // eslint-disable-next-line no-console
-      console.log('[CreateInput] handler triggered:', e.key);
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
@@ -60,8 +53,7 @@ export function CreateInput({
     };
     el.addEventListener('keydown', handler, { capture: true });
     return () => {
-      // eslint-disable-next-line no-console
-      console.log('[CreateInput] cleanup: removing listener');
+      cancelAnimationFrame(rafId);
       el.removeEventListener('keydown', handler, { capture: true });
     };
   }, []);
