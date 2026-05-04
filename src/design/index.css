@@ -3,6 +3,10 @@
 @import './Badge.css';
 @import './Button.css';
 @import './IconButton.css';
+@import './NavRailButton.css';
+@import './MenuItem.css';
+@import './TabNav.css';
+@import './SegmentedControl.css';
 @import './Card.css';
 @import './Input.css';
 @import './Modal.css';

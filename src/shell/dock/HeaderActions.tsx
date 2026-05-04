@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { IDockviewHeaderActionsProps } from 'dockview-react';
 import { popoutUrlFor } from '@/lib/popout-mode';
-import { IconButton } from '@/design';
+import { IconButton, MenuItem } from '@/design';
 import type { PanelKey } from './panels';
 
 const choices: { key: PanelKey; label: string }[] = [
@@ -83,16 +83,14 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
         </svg>
       </IconButton>
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-1 min-w-[140px] overflow-hidden rounded-md border border-white/10 bg-neutral-900 py-1 text-sm shadow-lg shadow-black/40">
+        <div
+          role="menu"
+          className="absolute right-0 top-full z-50 mt-1 min-w-[140px] overflow-hidden rounded-md border border-line bg-panel py-1 shadow-lg shadow-black/40"
+        >
           {choices.map((c) => (
-            <button
-              key={c.key}
-              type="button"
-              onClick={() => addPanel(c.key, c.label)}
-              className="flex w-full items-center px-3 py-1.5 text-left text-neutral-200 hover:bg-white/5"
-            >
+            <MenuItem key={c.key} onClick={() => addPanel(c.key, c.label)}>
               {c.label}
-            </button>
+            </MenuItem>
           ))}
         </div>
       )}

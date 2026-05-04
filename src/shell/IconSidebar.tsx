@@ -4,6 +4,7 @@
 
 import { Folder } from '@react-symbols/icons';
 import { useLayoutUiStore } from '@/stores/layout-ui.store';
+import { NavRailButton } from '@/design';
 
 interface IconBarItemConfig {
   id: string;
@@ -47,29 +48,15 @@ export function IconSidebar() {
   return (
     <aside className="flex w-12 shrink-0 flex-col items-center gap-1 border-r border-line bg-panel py-2">
       {items.map((item) => (
-        <button
+        <NavRailButton
           key={item.id}
-          type="button"
-          onClick={item.onClick}
-          disabled={item.disabled}
           title={item.label}
-          aria-label={item.label}
-          className={[
-            'relative flex h-9 w-9 items-center justify-center rounded transition',
-            item.active
-              ? 'text-fg'
-              : 'text-fg-muted hover:bg-hover hover:text-fg',
-            'disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-fg-muted',
-          ].join(' ')}
+          active={item.active ?? false}
+          disabled={item.disabled ?? false}
+          onClick={item.onClick}
         >
-          {item.active && (
-            <span
-              className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-r bg-accent"
-              aria-hidden="true"
-            />
-          )}
           {item.node}
-        </button>
+        </NavRailButton>
       ))}
     </aside>
   );

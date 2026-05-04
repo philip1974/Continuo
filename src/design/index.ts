@@ -15,6 +15,27 @@ export {
   type IconButtonProps,
   type IconButtonSize,
 } from './IconButton';
+export {
+  NavRailButton,
+  type NavRailButtonProps,
+} from './NavRailButton';
+export {
+  MenuItem,
+  type MenuItemProps,
+  type MenuItemVariant,
+} from './MenuItem';
+export {
+  TabNav,
+  TabNavItem,
+  type TabNavProps,
+  type TabNavItemProps,
+} from './TabNav';
+export {
+  SegmentedControl,
+  type SegmentedControlProps,
+  type SegmentedControlOption,
+  type SegmentedControlSize,
+} from './SegmentedControl';
 export { Card, type CardProps, type ChatCardTone } from './Card';
 export { Input, type InputProps, type InputVariant } from './Input';
 export { Modal, type ModalProps } from './Modal';

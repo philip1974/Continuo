@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useWorkspaceStore } from '@/stores/workspace.store';
-import { Button } from '@/design';
+import { Button, MenuItem } from '@/design';
 
 // 未选 workspace 时占位:中央"打开文件夹"按钮(VSCode 风)。
 // 调 fs.selectDirectory(原生对话框)→ setRoot,store 一变 Explorer 容器自动切到 FolderTree。
@@ -29,20 +29,14 @@ export function EmptyWorkspace() {
         {busy ? '打开中…' : '打开文件夹'}
       </Button>
       {recentRoots.length > 0 && (
-        <div className="mt-4 w-full max-w-xs space-y-1 text-left">
-          <div className="text-[10px] uppercase tracking-wider text-neutral-500">
+        <div role="menu" className="mt-4 w-full max-w-xs text-left">
+          <div className="px-3 pb-1 text-[10px] uppercase tracking-wider text-fg-dim">
             最近打开
           </div>
           {recentRoots.map((p) => (
-            <button
-              key={p}
-              type="button"
-              onClick={() => setRoot(p)}
-              className="block w-full truncate rounded px-2 py-1 text-left text-xs text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
-              title={p}
-            >
+            <MenuItem key={p} onClick={() => setRoot(p)} title={p}>
               {p}
-            </button>
+            </MenuItem>
           ))}
         </div>
       )}
