@@ -5,6 +5,9 @@
 // 内部调用 this.register(d) 收集 Disposable,_deactivate 时反序清理。
 
 import type { Disposable, LMApp, PluginManifest } from './types';
+import type { PanelSpec } from './registries/PanelRegistry';
+import type { CommandSpec } from './registries/CommandRegistry';
+import type { StatusBarItemSpec } from './registries/StatusBarRegistry';
 
 export type { Disposable } from './types';
 
@@ -24,6 +27,22 @@ export abstract class Plugin {
 
   /** 可选:插件卸载钩子,父类已自动清理 disposables,此处放业务卸载逻辑。 */
   onunload?(): void | Promise<void>;
+
+  // ── 贡献点代理(M-Plugin v1.5)───────────────────────
+  // 全部内部调 app.<reg>.register(spec) 拿 Disposable,自动 this.register(d)。
+  // unload 时 LIFO 清理 → 该插件所有贡献从 registry 退出。
+
+  protected registerPanel(spec: PanelSpec): Disposable {
+    return this.register(this.app.panels.register(spec));
+  }
+
+  protected addCommand(spec: CommandSpec): Disposable {
+    return this.register(this.app.commands.register(spec));
+  }
+
+  protected addStatusBarItem(spec: StatusBarItemSpec): Disposable {
+    return this.register(this.app.statusBar.register(spec));
+  }
 
   /**
    * 收集需要在 unload 时清理的 disposable。

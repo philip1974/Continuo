@@ -26,10 +26,16 @@ export interface PluginManifest {
 }
 
 /**
- * 插件可访问的 LM 应用门面。M-Plugin v1 仅含 version,
- * 后续逐步加 stores / dock / events / fs / log。
+ * 插件可访问的 LM 应用门面。
+ * 后续按贡献点扩 stores / dock / events / fs / log。
  */
 export interface LMApp {
   /** LM 应用版本,用于插件 minLMVersion 兼容判断。 */
   readonly version: string;
+  /** Dockview panel 类型注册表. */
+  readonly panels: import('./registries/PanelRegistry').PanelRegistry;
+  /** 命令注册表(命令面板 / hotkey 路由). */
+  readonly commands: import('./registries/CommandRegistry').CommandRegistry;
+  /** StatusBar item 注册表. */
+  readonly statusBar: import('./registries/StatusBarRegistry').StatusBarRegistry;
 }

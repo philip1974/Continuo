@@ -74,6 +74,11 @@
 
 - [`plugin-base.spec.ts`](./plugin-base/plugin-base.spec.ts)
 
+## [plugin-contributions-core(3 个核心贡献点)](./plugin-contributions-core/README.md)
+
+- [`plugin-integration.spec.ts`](./plugin-contributions-core/plugin-integration.spec.ts)
+- [`registries.spec.ts`](./plugin-contributions-core/registries.spec.ts)
+
 ## [plugin-loader(ESM 动态加载 + styles 注入)](./plugin-loader/README.md)
 
 - [`plugin-loader.spec.ts`](./plugin-loader/plugin-loader.spec.ts)

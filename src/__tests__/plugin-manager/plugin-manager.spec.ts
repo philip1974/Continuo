@@ -6,9 +6,17 @@ import {
   type ManagerHost,
   type PluginDirInfo,
 } from '../../plugins/PluginManager';
+import { PanelRegistry } from '../../plugins/registries/PanelRegistry';
+import { CommandRegistry } from '../../plugins/registries/CommandRegistry';
+import { StatusBarRegistry } from '../../plugins/registries/StatusBarRegistry';
 import type { LMApp } from '../../plugins/types';
 
-const fakeApp: LMApp = { version: '1.0.0' };
+const fakeApp: LMApp = {
+  version: '1.0.0',
+  panels: new PanelRegistry(),
+  commands: new CommandRegistry(),
+  statusBar: new StatusBarRegistry(),
+};
 
 // ── 测试夹具:可控的 ManagerHost mock ──────────────────
 
