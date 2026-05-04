@@ -1,7 +1,14 @@
 import { app } from 'electron';
 import path from 'node:path';
 import { z } from 'zod';
-import { LayoutSchema, loadLayout, saveLayout } from './persistence';
+import {
+  ExplorerSchema,
+  LayoutSchema,
+  loadExplorer,
+  loadLayout,
+  saveExplorer,
+  saveLayout,
+} from './persistence';
 import { defaultIsTrustedFrame, safeHandle } from './safe-handle';
 import { registerFsIpc } from './ipc/fs.ipc';
 
@@ -14,7 +21,9 @@ const PopoutOpenInput = z
   .passthrough();
 
 export function registerIpc() {
-  const layoutFile = path.join(app.getPath('userData'), 'layout.json');
+  const userData = app.getPath('userData');
+  const layoutFile = path.join(userData, 'layout.json');
+  const explorerFile = path.join(userData, 'explorer.json');
   const trusted = defaultIsTrustedFrame;
 
   safeHandle('layout:read', NoInput, () => loadLayout(layoutFile), trusted);
@@ -25,6 +34,17 @@ export function registerIpc() {
     async (json) => {
       // saveLayout 内部还会 LayoutSchema.parse 一次,双重保险,可接受
       await saveLayout(layoutFile, json);
+    },
+    trusted,
+  );
+
+  // 资源管理器持久化(Step 3 / ADR-012)
+  safeHandle('explorer:read', NoInput, () => loadExplorer(explorerFile), trusted);
+  safeHandle(
+    'explorer:write',
+    ExplorerSchema,
+    async (json) => {
+      await saveExplorer(explorerFile, json);
     },
     trusted,
   );

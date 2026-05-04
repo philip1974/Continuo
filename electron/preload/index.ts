@@ -29,6 +29,13 @@ const api = {
       return () => ipcRenderer.off('popout:closed', listener);
     },
   },
+  explorer: {
+    // ExplorerPayload 形态由 src/lib/persist/explorer-persist 保证;preload 透传 unknown
+    read: (): Promise<IpcResult<unknown | null>> =>
+      ipcRenderer.invoke('explorer:read'),
+    write: (json: unknown): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke('explorer:write', json),
+  },
   fs: {
     listDir: (
       path: string,

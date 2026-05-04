@@ -10,6 +10,14 @@
 
 - [`license.spec.ts`](./decor-contracts/license.spec.ts)
 
+## [explorer-stores (M-Explorer Step 3)](./explorer-stores/README.md)
+
+- [`explorer.spec.ts`](./explorer-stores/explorer.spec.ts)
+- [`persistence-layer.spec.ts`](./explorer-stores/persistence-layer.spec.ts)
+- [`persistence-schema.spec.ts`](./explorer-stores/persistence-schema.spec.ts)
+- [`pinned.spec.ts`](./explorer-stores/pinned.spec.ts)
+- [`workspace.spec.ts`](./explorer-stores/workspace.spec.ts)
+
 ## [fs-adapter (M-Explorer Step 1)](./fs-adapter/README.md)
 
 - [`fs-adapter.spec.ts`](./fs-adapter/fs-adapter.spec.ts)
