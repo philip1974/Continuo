@@ -2,6 +2,7 @@
 // 替代原来的 Toolbar+TabBar 两行结构(避免文件名在 tab 与 toolbar 重复显示)。
 
 import { useEditorStore, type EditorMode, type EditorTab } from '@/stores/editor.store';
+import { Button } from '@/design';
 
 interface EditorHeaderProps {
   activeTab: EditorTab | null;
@@ -113,15 +114,15 @@ export function EditorHeader({
           </span>
         )}
 
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={onSave}
           disabled={!activeTab || !dirty}
-          className="rounded border border-neutral-700 px-2 py-0.5 text-neutral-300 transition hover:bg-neutral-800 hover:text-neutral-100 disabled:cursor-not-allowed disabled:opacity-40"
           title="保存(⌘S)"
         >
           保存
-        </button>
+        </Button>
       </div>
     </div>
   );

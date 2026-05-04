@@ -1,4 +1,5 @@
 import * as Dialog from '@radix-ui/react-dialog';
+import { Button } from '@/design';
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -39,26 +40,17 @@ export function ConfirmDialog({
             </div>
           </Dialog.Description>
           <div className="flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={onCancel}
-              className="rounded px-3 py-1.5 text-xs text-neutral-300 transition hover:bg-neutral-800"
-            >
+            <Button variant="ghost" size="sm" onClick={onCancel}>
               {cancelLabel}
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              variant={destructive ? 'danger' : 'primary'}
+              size="sm"
               onClick={onConfirm}
-              className={[
-                'rounded px-3 py-1.5 text-xs font-medium transition',
-                destructive
-                  ? 'bg-red-600 text-white hover:bg-red-500'
-                  : 'bg-sky-600 text-white hover:bg-sky-500',
-              ].join(' ')}
               autoFocus
             >
               {confirmLabel}
-            </button>
+            </Button>
           </div>
         </Dialog.Content>
       </Dialog.Portal>
