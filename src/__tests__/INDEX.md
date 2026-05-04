@@ -74,6 +74,18 @@
 
 - [`plugin-base.spec.ts`](./plugin-base/plugin-base.spec.ts)
 
+## [plugin-loader(ESM 动态加载 + styles 注入)](./plugin-loader/README.md)
+
+- [`plugin-loader.spec.ts`](./plugin-loader/plugin-loader.spec.ts)
+
+## [plugin-manager(插件目录扫描 + 启用禁用 + 生命周期编排)](./plugin-manager/README.md)
+
+- [`plugin-manager.spec.ts`](./plugin-manager/plugin-manager.spec.ts)
+
+## [plugin-manifest(manifest.json 解析与版本比对)](./plugin-manifest/README.md)
+
+- [`plugin-manifest.spec.ts`](./plugin-manifest/plugin-manifest.spec.ts)
+
 ## [popout 契约 (M5)](./popout-contracts/README.md)
 
 - [`popout-mode.spec.ts`](./popout-contracts/popout-mode.spec.ts)
