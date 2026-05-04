@@ -9,6 +9,7 @@ import type { PanelSpec } from './registries/PanelRegistry';
 import type { CommandSpec } from './registries/CommandRegistry';
 import type { StatusBarItemSpec } from './registries/StatusBarRegistry';
 import type { RibbonActionSpec } from './registries/RibbonRegistry';
+import type { SettingTabSpec } from './registries/SettingTabRegistry';
 
 export type { Disposable } from './types';
 
@@ -72,6 +73,10 @@ export abstract class Plugin {
   /** 保存该插件数据;data 必须 JSON-serializable;抛错向上传. */
   protected async saveData(data: unknown): Promise<void> {
     await this.app.dataStore.write(this.manifest.id, data);
+  }
+
+  protected addSettingTab(spec: SettingTabSpec): Disposable {
+    return this.register(this.app.settingTabs.register(spec));
   }
 
   /**

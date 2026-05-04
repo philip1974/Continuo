@@ -9,6 +9,7 @@ import { Folder } from '@react-symbols/icons';
 import { useLayoutUiStore } from '@/stores/layout-ui.store';
 import { NavRailButton } from '@/design';
 import { lmApp } from '@/plugins/lm-app';
+import { useSettingsStore } from '@/plugins/settings/store';
 import type { RibbonActionSpec } from '@/plugins/registries/RibbonRegistry';
 
 interface IconBarItemConfig {
@@ -56,10 +57,9 @@ export function IconSidebar() {
   const bottomItems: IconBarItemConfig[] = [
     {
       id: 'settings',
-      label: '设置(待实现)',
+      label: '设置',
       node: <span className="text-xl leading-none">⚙</span>,
-      onClick: () => {},
-      disabled: true,
+      onClick: () => useSettingsStore.getState().open(),
     },
   ];
 

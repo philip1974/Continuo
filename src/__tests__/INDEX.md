@@ -122,6 +122,14 @@
 
 - [`preload-api.spec.ts`](./scaffold/preload-api.spec.ts)
 
+## [setting-tab-registry(设置标签贡献)](./setting-tab-registry/README.md)
+
+- [`setting-tab-registry.spec.ts`](./setting-tab-registry/setting-tab-registry.spec.ts)
+
+## [settings-modal(设置弹窗 UI)](./settings-modal/README.md)
+
+- [`settings-modal.spec.tsx`](./settings-modal/settings-modal.spec.tsx)
+
 ## [terminal-ipc (M-Terminal Step T2)](./terminal-ipc/README.md)
 
 - [`terminal-ipc.spec.ts`](./terminal-ipc/terminal-ipc.spec.ts)

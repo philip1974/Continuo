@@ -44,4 +44,6 @@ export interface LMApp {
   readonly events: import('./EventBus').EventBus;
   /** 插件本地 KV 存储(v2.3),writable so tests 可 monkey-patch. */
   dataStore: import('./PluginDataStore').PluginDataStore;
+  /** 设置标签贡献(v2.4). */
+  readonly settingTabs: import('./registries/SettingTabRegistry').SettingTabRegistry;
 }

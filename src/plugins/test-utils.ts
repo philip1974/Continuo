@@ -6,6 +6,7 @@ import { EventBus } from './EventBus';
 import { InMemoryDataStore } from './PluginDataStore';
 import { PanelRegistry } from './registries/PanelRegistry';
 import { RibbonRegistry } from './registries/RibbonRegistry';
+import { SettingTabRegistry } from './registries/SettingTabRegistry';
 import { StatusBarRegistry } from './registries/StatusBarRegistry';
 import type { LMApp } from './types';
 
@@ -18,5 +19,6 @@ export function createTestApp(version = '1.0.0-test'): LMApp {
     ribbon: new RibbonRegistry(),
     events: new EventBus(),
     dataStore: new InMemoryDataStore(),
+    settingTabs: new SettingTabRegistry(),
   };
 }
