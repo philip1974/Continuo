@@ -71,18 +71,16 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
       </button>
       <button
         type="button"
-        aria-label="New tab"
-        title="新建 tab"
+        aria-label="More actions"
+        title="更多操作"
         onClick={() => setOpen((v) => !v)}
         className="flex h-6 w-6 items-center justify-center rounded text-neutral-400 transition hover:bg-white/10 hover:text-neutral-100"
       >
         <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-          <path
-            d="M8 3v10M3 8h10"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-          />
+          {/* horizontal ellipsis ⋯ */}
+          <circle cx="3.5" cy="8" r="1.1" fill="currentColor" />
+          <circle cx="8" cy="8" r="1.1" fill="currentColor" />
+          <circle cx="12.5" cy="8" r="1.1" fill="currentColor" />
         </svg>
       </button>
       {open && (
