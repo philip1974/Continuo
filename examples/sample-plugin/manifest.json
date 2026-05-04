@@ -1,0 +1,9 @@
+{
+  "id": "com.example.sample",
+  "name": "Sample Plugin",
+  "version": "0.1.0",
+  "main": "main.js",
+  "description": "演示 LM 插件 9 个贡献点 + loadData/saveData",
+  "author": "LayoutMotion",
+  "minLMVersion": "0.1.0"
+}

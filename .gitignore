@@ -8,4 +8,7 @@ dist
 .env
 .env.local
 *.tsbuildinfo
-examples/
+# examples/ 整体 ignored(大参考项目不入库),sample-plugin demo 例外。
+# 注意:git 不会进入完全 ignore 的目录,所以必须先 examples/* 再 !。
+examples/*
+!examples/sample-plugin/
