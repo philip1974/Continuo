@@ -10,6 +10,10 @@
 
 - [`license.spec.ts`](./decor-contracts/license.spec.ts)
 
+## [fs-adapter (M-Explorer Step 1)](./fs-adapter/README.md)
+
+- [`fs-adapter.spec.ts`](./fs-adapter/fs-adapter.spec.ts)
+
 ## [IPC safeHandle 契约 (跨里程碑)](./ipc-safe-handle/README.md)
 
 - [`safe-handle.spec.ts`](./ipc-safe-handle/safe-handle.spec.ts)
