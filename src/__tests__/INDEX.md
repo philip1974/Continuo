@@ -83,3 +83,7 @@
 ## [terminal-store (M-Terminal Step T3)](./terminal-store/README.md)
 
 - [`terminal-store.spec.ts`](./terminal-store/terminal-store.spec.ts)
+
+## [terminal-write (M-Terminal Step T4)](./terminal-write/README.md)
+
+- [`safe-write.spec.ts`](./terminal-write/safe-write.spec.ts)
