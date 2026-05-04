@@ -82,6 +82,43 @@ describe('ExplorerSchema', () => {
     ).toThrow();
   });
 
+  it('layoutUi 字段可选(向下兼容):缺失允许', () => {
+    const ok = ExplorerSchema.parse(validPayload);
+    expect(ok.layoutUi).toBeUndefined();
+  });
+
+  it('layoutUi 字段提供:接受合法值', () => {
+    const ok = ExplorerSchema.parse({
+      ...validPayload,
+      layoutUi: { sidebarOpen: false, sidebarWidth: 320 },
+    });
+    expect(ok.layoutUi).toEqual({ sidebarOpen: false, sidebarWidth: 320 });
+  });
+
+  it('layoutUi 拒绝 sidebarWidth 非正整数', () => {
+    expect(() =>
+      ExplorerSchema.parse({
+        ...validPayload,
+        layoutUi: { sidebarOpen: true, sidebarWidth: -1 },
+      }),
+    ).toThrow();
+    expect(() =>
+      ExplorerSchema.parse({
+        ...validPayload,
+        layoutUi: { sidebarOpen: true, sidebarWidth: 0 },
+      }),
+    ).toThrow();
+  });
+
+  it('layoutUi 拒绝未知字段(strict)', () => {
+    expect(() =>
+      ExplorerSchema.parse({
+        ...validPayload,
+        layoutUi: { sidebarOpen: true, sidebarWidth: 280, weird: 1 },
+      }),
+    ).toThrow();
+  });
+
   it('workspace.root 允许 null', () => {
     const ok = ExplorerSchema.parse({
       ...validPayload,

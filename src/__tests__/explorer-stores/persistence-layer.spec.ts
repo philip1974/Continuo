@@ -3,6 +3,10 @@ import { useWorkspaceStore } from '../../stores/workspace.store';
 import { useExplorerStore } from '../../stores/explorer.store';
 import { usePinnedStore } from '../../stores/pinned.store';
 import {
+  SIDEBAR_DEFAULT_WIDTH,
+  useLayoutUiStore,
+} from '../../stores/layout-ui.store';
+import {
   hydrateStores,
   initExplorerPersistence,
   snapshotFromStores,
@@ -21,6 +25,10 @@ const RESET = () => {
     search: '',
   });
   usePinnedStore.setState({ paths: [] });
+  useLayoutUiStore.setState({
+    sidebarOpen: true,
+    sidebarWidth: SIDEBAR_DEFAULT_WIDTH,
+  });
 };
 
 beforeEach(() => {
@@ -36,6 +44,7 @@ const fullSnapshot: ExplorerSnapshot = {
     sort: { by: 'mtime', reverse: true },
   },
   pinned: { paths: ['/work/star.md'] },
+  layoutUi: { sidebarOpen: false, sidebarWidth: 320 },
 };
 
 // ──────────────── snapshotFromStores ────────────────
@@ -101,6 +110,54 @@ describe('hydrateStores', () => {
     expect(s.selectedPaths.size).toBe(0);
     expect(s.lastAnchorPath).toBeNull();
     expect(s.search).toBe('');
+  });
+
+  it('hydrate 含 layoutUi → 写到 useLayoutUiStore', () => {
+    hydrateStores(fullSnapshot);
+    const ui = useLayoutUiStore.getState();
+    expect(ui.sidebarOpen).toBe(false);
+    expect(ui.sidebarWidth).toBe(320);
+  });
+
+  it('hydrate 不含 layoutUi(旧 explorer.json 向下兼容)→ 复位默认', () => {
+    // 先脏 store
+    useLayoutUiStore.setState({ sidebarOpen: false, sidebarWidth: 999 });
+    const snapWithoutUi: ExplorerSnapshot = {
+      version: 1,
+      workspace: { root: null, recentRoots: [] },
+      explorer: {
+        activePath: null,
+        expandedPaths: [],
+        sort: { by: 'name', reverse: false },
+      },
+      pinned: { paths: [] },
+    };
+    hydrateStores(snapWithoutUi);
+    const ui = useLayoutUiStore.getState();
+    expect(ui.sidebarOpen).toBe(true);
+    expect(ui.sidebarWidth).toBe(SIDEBAR_DEFAULT_WIDTH);
+  });
+
+  it('hydrate 时 sidebarWidth 越界 → clamp 到合法范围(防磁盘脏数据)', () => {
+    hydrateStores({
+      ...fullSnapshot,
+      layoutUi: { sidebarOpen: true, sidebarWidth: 9999 },
+    });
+    expect(useLayoutUiStore.getState().sidebarWidth).toBeLessThanOrEqual(500);
+
+    hydrateStores({
+      ...fullSnapshot,
+      layoutUi: { sidebarOpen: true, sidebarWidth: 1 },
+    });
+    expect(useLayoutUiStore.getState().sidebarWidth).toBeGreaterThanOrEqual(200);
+  });
+});
+
+describe('snapshotFromStores · layoutUi', () => {
+  it('包含 sidebarOpen 与 sidebarWidth(从 useLayoutUiStore 读)', () => {
+    useLayoutUiStore.setState({ sidebarOpen: false, sidebarWidth: 350 });
+    const snap = snapshotFromStores();
+    expect(snap.layoutUi).toEqual({ sidebarOpen: false, sidebarWidth: 350 });
   });
 });
 

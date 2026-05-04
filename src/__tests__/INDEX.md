@@ -6,6 +6,10 @@
 
 - [`contracts.spec.ts`](./animation-contracts/contracts.spec.ts)
 
+## [column-resize (Sidebar 拖拽改宽)](./column-resize/README.md)
+
+- [`compute.spec.ts`](./column-resize/compute.spec.ts)
+
 ## [装饰层契约 (M4)](./decor-contracts/README.md)
 
 - [`license.spec.ts`](./decor-contracts/license.spec.ts)

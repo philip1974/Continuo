@@ -62,6 +62,15 @@ export const ExplorerSchema = z
         paths: z.array(z.string()),
       })
       .strict(),
+    // sidebar 显隐 + 宽度;.optional() 向下兼容(旧 explorer.json 无此字段时
+    // hydrate 走 store 默认值)。
+    layoutUi: z
+      .object({
+        sidebarOpen: z.boolean(),
+        sidebarWidth: z.number().int().positive(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 

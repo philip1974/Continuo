@@ -12,9 +12,16 @@
 // snapshot/hydrate 负责 Set ↔ array 互转。
 
 import { useExplorerStore, type ExplorerSort } from '@/stores/explorer.store';
+import {
+  SIDEBAR_DEFAULT_WIDTH,
+  SIDEBAR_MAX_WIDTH,
+  SIDEBAR_MIN_WIDTH,
+  useLayoutUiStore,
+} from '@/stores/layout-ui.store';
 import { usePinnedStore } from '@/stores/pinned.store';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { debounce } from '@/lib/debounce';
+import { clampWidth } from '@/lib/use-column-resize';
 import type { IpcResult } from '../fs/types';
 
 const DEBOUNCE_MS = 300;
@@ -36,6 +43,11 @@ export interface ExplorerSnapshot {
   readonly pinned: {
     readonly paths: ReadonlyArray<string>;
   };
+  /** Optional 向下兼容旧 explorer.json. */
+  readonly layoutUi?: {
+    readonly sidebarOpen: boolean;
+    readonly sidebarWidth: number;
+  };
 }
 
 export interface ExplorerPersistApi {
@@ -51,6 +63,7 @@ export function snapshotFromStores(): ExplorerSnapshot {
   const w = useWorkspaceStore.getState();
   const e = useExplorerStore.getState();
   const p = usePinnedStore.getState();
+  const ui = useLayoutUiStore.getState();
   return {
     version: VERSION,
     workspace: {
@@ -64,6 +77,10 @@ export function snapshotFromStores(): ExplorerSnapshot {
     },
     pinned: {
       paths: [...p.paths],
+    },
+    layoutUi: {
+      sidebarOpen: ui.sidebarOpen,
+      sidebarWidth: ui.sidebarWidth,
     },
   };
 }
@@ -85,6 +102,24 @@ export function hydrateStores(snap: ExplorerSnapshot): void {
   usePinnedStore.setState({
     paths: [...snap.pinned.paths],
   });
+  // layoutUi 可选(向下兼容旧 explorer.json):缺失时保留 store 默认值。
+  // 宽度防御性 clamp(防磁盘脏数据导致 sidebar 撑爆 / 消失)
+  if (snap.layoutUi) {
+    useLayoutUiStore.setState({
+      sidebarOpen: snap.layoutUi.sidebarOpen,
+      sidebarWidth: clampWidth(
+        snap.layoutUi.sidebarWidth,
+        SIDEBAR_MIN_WIDTH,
+        SIDEBAR_MAX_WIDTH,
+      ),
+    });
+  } else {
+    // 显式复位到 default(防 hydrate 重复触发时残留)
+    useLayoutUiStore.setState({
+      sidebarOpen: true,
+      sidebarWidth: SIDEBAR_DEFAULT_WIDTH,
+    });
+  }
 }
 
 // 防御性 schema 校验(主进程已校验,这里给 init 流程兜底,失败就不 hydrate)
@@ -140,4 +175,5 @@ export async function initExplorerPersistence(
   useWorkspaceStore.subscribe(persist);
   useExplorerStore.subscribe(persist);
   usePinnedStore.subscribe(persist);
+  useLayoutUiStore.subscribe(persist);
 }
