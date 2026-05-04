@@ -1,0 +1,34 @@
+/* M-UI Step 5:CSS 变量主题体系(Tailwind v4 @theme).
+ *
+ * 当前只定义暗色 token(对应现有 neutral-* / #020617 调色板的语义化别名),
+ * 为后续亮色模式铺路。
+ *
+ * 命名约定:
+ *   --color-canvas      最深背景(App / Splash 全局底色)
+ *   --color-panel       面板背景(IconSidebar / Header)
+ *   --color-panel-soft  面板半色(hover bg / 浅一档)
+ *   --color-hover       hover 强调
+ *   --color-line        边框 / 分隔线
+ *   --color-fg          正文(neutral-100)
+ *   --color-fg-muted    二级文本(neutral-400)
+ *   --color-fg-dim      三级文本(neutral-500)
+ *   --color-accent      强调色(sky-500,选中/焦点)
+ *
+ * 用法(Tailwind v4 自动生成 bg-* / text-* / border-* utility):
+ *   <div className="bg-canvas text-fg border border-line">...
+ *
+ * 既有 neutral-* 硬编码 className 保留不动,渐进迁移。
+ * 亮色模式真做时,在 :root[data-theme="light"] 重写这 9 个 token 即可。
+ */
+
+@theme {
+  --color-canvas: #020617;
+  --color-panel: #0a0a0a;
+  --color-panel-soft: #171717;
+  --color-hover: #262626;
+  --color-line: #262626;
+  --color-fg: #f5f5f5;
+  --color-fg-muted: #a3a3a3;
+  --color-fg-dim: #737373;
+  --color-accent: #0ea5e9;
+}

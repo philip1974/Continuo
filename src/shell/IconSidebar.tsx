@@ -40,7 +40,7 @@ const items: IconBarItem[] = [
 
 export function IconSidebar() {
   return (
-    <aside className="flex w-12 shrink-0 flex-col items-center gap-1 border-r border-neutral-800 bg-neutral-950 py-2">
+    <aside className="flex w-12 shrink-0 flex-col items-center gap-1 border-r border-line bg-panel py-2">
       {items.map((item) => (
         <button
           key={item.id}
@@ -49,7 +49,7 @@ export function IconSidebar() {
           disabled={item.disabled}
           title={item.label}
           aria-label={item.label}
-          className="flex h-9 w-9 items-center justify-center rounded text-neutral-400 transition hover:bg-neutral-800 hover:text-neutral-100 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-neutral-400"
+          className="flex h-9 w-9 items-center justify-center rounded text-fg-muted transition hover:bg-hover hover:text-fg disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-fg-muted"
         >
           {item.node}
         </button>
