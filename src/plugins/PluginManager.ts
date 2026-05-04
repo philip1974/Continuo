@@ -41,8 +41,8 @@ type Status = 'enabled' | 'disabled' | 'failed';
 
 interface PluginEntry {
   readonly id: string;
-  readonly manifest: PluginManifest;
-  readonly dirInfo: PluginDirInfo;
+  manifest: PluginManifest;     // reload 时可重新解析
+  dirInfo: PluginDirInfo;       // reload 时刷新 moduleUrl / manifestText
   status: Status;
   instance?: Plugin;
   error?: string;
@@ -158,6 +158,63 @@ export class PluginManager {
       (x) => x !== id,
     );
     await this.host.writeEnabledIds(remaining);
+  }
+
+  /**
+   * 重新加载单个插件(M-Plugin v4.3,开发体验):
+   * 1. 从 host 重新拉 dir info(拿最新 mainText / manifestText)
+   * 2. 若已 active → _deactivate
+   * 3. 重解析 manifest + 替换 entry.dirInfo / manifest
+   * 4. 若原本 enabled → 重新 activateEntry
+   *
+   * 不存在的 id → 抛错;插件已从 plugins 目录移除 → 抛错。
+   * 不变更 enabled.json(reload 是"刷新已加载",非启用切换)。
+   */
+  async reload(id: string): Promise<void> {
+    const entry = this.entries.get(id);
+    if (!entry) throw new Error(`Plugin ${id} not found`);
+
+    const dirs = await this.host.listPluginDirs();
+    // 用 manifest.id 匹配(目录名可能跟 id 不一致;manifest.id 是真源)
+    const fresh = dirs.find((d) => {
+      try {
+        const m = JSON.parse(d.manifestText) as { id?: unknown };
+        return m.id === id;
+      } catch {
+        return false;
+      }
+    });
+    if (!fresh) {
+      throw new Error(`Plugin ${id} no longer exists in plugins dir`);
+    }
+
+    const wasEnabled = entry.status === 'enabled';
+    if (wasEnabled && entry.instance) {
+      try {
+        await entry.instance._deactivate();
+      } catch (err) {
+        console.warn(`[plugin-manager] reload ${id} _deactivate failed`, err);
+      }
+      entry.instance = undefined;
+      this.activationOrder = this.activationOrder.filter((x) => x !== id);
+    }
+
+    // 解析新 manifest(可能 version / permissions 等变了)
+    const parsed = parseManifest(fresh.manifestText);
+    if (!parsed.ok) {
+      entry.status = 'failed';
+      entry.error = `${parsed.code}: ${parsed.message}`;
+      return;
+    }
+
+    entry.manifest = parsed.data;
+    entry.dirInfo = fresh;
+    entry.status = wasEnabled ? 'enabled' : 'disabled';
+    entry.error = undefined;
+
+    if (wasEnabled) {
+      await this.activateEntry(entry);
+    }
   }
 
   /** 列出所有已发现插件状态. */

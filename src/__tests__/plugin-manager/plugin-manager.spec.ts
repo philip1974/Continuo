@@ -270,6 +270,108 @@ describe('shutdown', () => {
   });
 });
 
+// ── v4.3 reload ────────────────────────────────────────
+
+describe('reload(id)', () => {
+  it('启用中插件 reload → _deactivate + 重 activate(用最新 mainText)', async () => {
+    let mainText = 'old';
+    class TrackPlugin extends Plugin {
+      static loaded: string[] = [];
+      static unloaded: string[] = [];
+      onload() {
+        TrackPlugin.loaded.push(`${this.manifest.id}:${mainText}`);
+      }
+      onunload() {
+        TrackPlugin.unloaded.push(this.manifest.id);
+      }
+    }
+    TrackPlugin.loaded = [];
+    TrackPlugin.unloaded = [];
+
+    const state: MockHostState = {
+      dirs: [
+        {
+          id: 'r',
+          manifestText: manifestText('r'),
+          moduleUrl: 'mod://r',
+        },
+      ],
+      enabled: new Set(['r']),
+      modules: new Map([['mod://r', { default: TrackPlugin }]]),
+      enabledWritten: new Set(),
+    };
+    const mgr = new PluginManager(fakeApp, makeHost(state));
+    await mgr.init();
+    expect(TrackPlugin.loaded).toEqual(['r:old']);
+
+    // 模拟磁盘上的代码改了:更新 main text + 让 import 拿到新版本
+    mainText = 'new';
+    await mgr.reload('r');
+    expect(TrackPlugin.unloaded).toEqual(['r']);
+    expect(TrackPlugin.loaded).toEqual(['r:old', 'r:new']);
+  });
+
+  it('disabled 插件 reload → 仍 disabled,只换 dirInfo 不激活', async () => {
+    const state: MockHostState = {
+      dirs: [
+        { id: 'd', manifestText: manifestText('d'), moduleUrl: 'mod://d' },
+      ],
+      enabled: new Set(),
+      modules: new Map([['mod://d', { default: GoodPlugin }]]),
+      enabledWritten: new Set(),
+    };
+    const mgr = new PluginManager(fakeApp, makeHost(state));
+    await mgr.init();
+    expect(GoodPlugin.loaded).toEqual([]);
+    await mgr.reload('d');
+    expect(GoodPlugin.loaded).toEqual([]); // 仍未激活
+    expect(mgr.listAll().find((x) => x.id === 'd')?.status).toBe('disabled');
+  });
+
+  it('插件已从 plugins 目录移除 → 抛错', async () => {
+    const state: MockHostState = {
+      dirs: [
+        { id: 'g', manifestText: manifestText('g'), moduleUrl: 'mod://g' },
+      ],
+      enabled: new Set(['g']),
+      modules: new Map([['mod://g', { default: GoodPlugin }]]),
+      enabledWritten: new Set(),
+    };
+    const mgr = new PluginManager(fakeApp, makeHost(state));
+    await mgr.init();
+    state.dirs = []; // 模拟磁盘删了
+    await expect(mgr.reload('g')).rejects.toThrow(/no longer exists/i);
+  });
+
+  it('不存在的 id → 抛错', async () => {
+    const state: MockHostState = {
+      dirs: [],
+      enabled: new Set(),
+      modules: new Map(),
+      enabledWritten: new Set(),
+    };
+    const mgr = new PluginManager(fakeApp, makeHost(state));
+    await mgr.init();
+    await expect(mgr.reload('nope')).rejects.toThrow(/not found/i);
+  });
+
+  it('reload 不变更 enabled.json', async () => {
+    const state: MockHostState = {
+      dirs: [
+        { id: 'k', manifestText: manifestText('k'), moduleUrl: 'mod://k' },
+      ],
+      enabled: new Set(['k']),
+      modules: new Map([['mod://k', { default: GoodPlugin }]]),
+      enabledWritten: new Set(),
+    };
+    const mgr = new PluginManager(fakeApp, makeHost(state));
+    await mgr.init();
+    state.enabledWritten = new Set();
+    await mgr.reload('k');
+    expect(state.enabledWritten.size).toBe(0);
+  });
+});
+
 // ── v3.4 权限门 ────────────────────────────────────────
 
 describe('权限门 ensureAuthorized 集成', () => {

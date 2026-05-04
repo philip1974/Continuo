@@ -208,7 +208,23 @@ function UserPluginsSection() {
                   </div>
                 )}
               </div>
-              <div className="shrink-0">
+              <div className="flex shrink-0 items-center gap-1">
+                {/* 重载按钮:active / disabled / failed 都可触发,
+                    用最新 mainText 重新激活(开发体验,M-Plugin v4.3) */}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={async () => {
+                    try {
+                      await mgr?.reload(p.id);
+                    } catch (err) {
+                      console.warn(`[plugins-tab] reload ${p.id} failed`, err);
+                    }
+                  }}
+                  title="重新加载该插件(拉取最新代码)"
+                >
+                  重载
+                </Button>
                 {p.status === 'enabled' ? (
                   <Button
                     variant="ghost"
