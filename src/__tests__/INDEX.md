@@ -71,3 +71,11 @@
 ## [工程骨架就绪 (M1)](./scaffold/README.md)
 
 - [`preload-api.spec.ts`](./scaffold/preload-api.spec.ts)
+
+## [terminal-ipc (M-Terminal Step T2)](./terminal-ipc/README.md)
+
+- [`terminal-ipc.spec.ts`](./terminal-ipc/terminal-ipc.spec.ts)
+
+## [terminal-service (M-Terminal Step T1)](./terminal-service/README.md)
+
+- [`helpers.spec.ts`](./terminal-service/helpers.spec.ts)

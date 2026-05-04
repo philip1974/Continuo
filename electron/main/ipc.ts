@@ -11,6 +11,7 @@ import {
 } from './persistence';
 import { defaultIsTrustedFrame, safeHandle } from './safe-handle';
 import { registerFsIpc } from './ipc/fs.ipc';
+import { registerTerminalIpc } from './ipc/terminal.ipc';
 
 // layout:read 入参为空(renderer ipcRenderer.invoke 不传第二参 → undefined)
 const NoInput = z.undefined();
@@ -63,4 +64,7 @@ export function registerIpc() {
 
   // 资源管理器 fs.* 9 通道(Step 2)
   registerFsIpc();
+
+  // 终端 terminal.* 6 invoke + 4 push(Step T2)
+  registerTerminalIpc();
 }
