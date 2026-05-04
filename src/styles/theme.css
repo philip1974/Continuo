@@ -35,12 +35,12 @@
   --md-outline: #404040;
   --md-outline-variant: #262626;        /* line */
 
-  /* 主色:sky-500 */
-  --md-primary: #0ea5e9;                /* accent */
+  /* 主色:sky-600(比 sky-500 #0ea5e9 暗一档,降饱和、贴 IDE 蓝) */
+  --md-primary: #0284c7;                /* accent */
   --md-on-primary: #ffffff;
   --md-primary-container: #075985;
   --md-on-primary-container: #e0f2fe;
-  --md-focus-ring: #0ea5e9;
+  --md-focus-ring: #0284c7;
 }
 
 /* ── Tailwind v4 @theme:把 LM 9 个语义 token 映射到 MD3 ───── */

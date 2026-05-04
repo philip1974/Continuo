@@ -1,11 +1,13 @@
+/* LM-local 微调:border-radius 8→4,font-weight medium→normal,更贴 IDE 视觉。
+ * Nous 上游保持 8px(MD3 风),LM 在自己副本里收一档圆角与字重。 */
 .wm-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: var(--wm-space-2);
-  border-radius: 8px;
+  border-radius: 4px;
   font-family: var(--wm-font-sans);
-  font-weight: var(--wm-font-medium);
+  font-weight: var(--wm-font-normal);
   cursor: pointer;
   border: 1px solid transparent;
   outline: none;
