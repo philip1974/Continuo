@@ -112,9 +112,12 @@ export function FolderTree({ root }: { root: string }) {
   const { openFileByPath } = useEditorFile();
   const handleFileOpen = useCallback(
     async (path: string) => {
+      // eslint-disable-next-line no-console
+      console.log('[handleFileOpen] start', path);
       const r = await openFileByPath(path);
+      // eslint-disable-next-line no-console
+      console.log('[handleFileOpen] result', r);
       if (!r.ok) {
-        // FS_NOT_FOUND / FS_DENIED 等;不弹窗噪音,console 即可
         // eslint-disable-next-line no-console
         console.warn('[explorer] open file failed:', r.code, r.message);
       }
