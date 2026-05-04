@@ -18,6 +18,10 @@
 - [`pinned.spec.ts`](./explorer-stores/pinned.spec.ts)
 - [`workspace.spec.ts`](./explorer-stores/workspace.spec.ts)
 
+## [explorer-tree (M-Explorer Step 4)](./explorer-tree/README.md)
+
+- [`tree-config.spec.ts`](./explorer-tree/tree-config.spec.ts)
+
 ## [fs-adapter (M-Explorer Step 1)](./fs-adapter/README.md)
 
 - [`fs-adapter.spec.ts`](./fs-adapter/fs-adapter.spec.ts)
