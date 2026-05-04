@@ -14,6 +14,12 @@
 
 - [`license.spec.ts`](./decor-contracts/license.spec.ts)
 
+## [design-system](./design-system/README.md)
+
+- [`components.spec.tsx`](./design-system/components.spec.tsx)
+- [`theme-provider.spec.tsx`](./design-system/theme-provider.spec.tsx)
+- [`tokens.spec.ts`](./design-system/tokens.spec.ts)
+
 ## [editor-hooks (M-Editor Step E2)](./editor-hooks/README.md)
 
 - [`auto-save.spec.ts`](./editor-hooks/auto-save.spec.ts)
