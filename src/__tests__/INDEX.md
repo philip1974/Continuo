@@ -70,6 +70,10 @@
 
 - [`persistence.spec.ts`](./layout-persistence/persistence.spec.ts)
 
+## [plugin-base(插件基类与 Disposable 模型)](./plugin-base/README.md)
+
+- [`plugin-base.spec.ts`](./plugin-base/plugin-base.spec.ts)
+
 ## [popout 契约 (M5)](./popout-contracts/README.md)
 
 - [`popout-mode.spec.ts`](./popout-contracts/popout-mode.spec.ts)
