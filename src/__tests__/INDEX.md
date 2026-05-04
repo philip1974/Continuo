@@ -10,6 +10,13 @@
 
 - [`compute.spec.ts`](./column-resize/compute.spec.ts)
 
+## [command-palette(⌘P 浮层 / 模糊搜索 / 键盘导航)](./command-palette/README.md)
+
+- [`CommandPalette.spec.tsx`](./command-palette/CommandPalette.spec.tsx)
+- [`fuzzy.spec.ts`](./command-palette/fuzzy.spec.ts)
+- [`hotkey.spec.tsx`](./command-palette/hotkey.spec.tsx)
+- [`store.spec.ts`](./command-palette/store.spec.ts)
+
 ## [装饰层契约 (M4)](./decor-contracts/README.md)
 
 - [`license.spec.ts`](./decor-contracts/license.spec.ts)

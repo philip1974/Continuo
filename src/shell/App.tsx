@@ -8,6 +8,9 @@ import { IconSidebar } from './IconSidebar';
 import { PopoutHost } from './PopoutHost';
 import { StatusBar } from './StatusBar';
 import { TitleBar } from './TitleBar';
+import { CommandPalette } from '@/plugins/command-palette/CommandPalette';
+import { useCommandPaletteHotkey } from '@/plugins/command-palette/useCommandPaletteHotkey';
+import { lmApp } from '@/plugins/lm-app';
 import { isPopoutWindow } from '@/lib/popout-mode';
 
 const SPLASH_MIN_MS = 600;
@@ -20,6 +23,9 @@ function MainApp() {
     const t = setTimeout(() => setSplashElapsed(true), SPLASH_MIN_MS);
     return () => clearTimeout(t);
   }, []);
+
+  // 全局 ⌘P / Ctrl+P 触发命令面板
+  useCommandPaletteHotkey();
 
   const onLayoutReady = useCallback(() => setLayoutReady(true), []);
   const showSplash = !(layoutReady && splashElapsed);
@@ -37,6 +43,7 @@ function MainApp() {
         </main>
         <StatusBar />
       </div>
+      <CommandPalette commands={lmApp.commands} />
       {showSplash && <Splash />}
     </>
   );
