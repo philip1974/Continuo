@@ -10,6 +10,7 @@ import { panelComponents } from './panels';
 import { applyDefaultLayout } from './layout.default';
 import { HeaderActions } from './HeaderActions';
 import { EmptyState } from './EmptyState';
+import { wrapPanelClose } from './wrap-panel-close';
 import { SharedTab } from '@/shell/motion/SharedTab';
 import { useClosingStore } from '@/shell/motion/closing-store';
 import { debounce } from '@/lib/debounce';
@@ -55,6 +56,11 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       event.api.onDidRemovePanel((panel) => {
         useClosingStore.getState().unmark(panel.id);
       });
+
+      // 拦截所有 panel 的 api.close,统一走"标记 closing → 220ms 延迟 → 真 close"。
+      // 包括 group 整体关闭、第三方调用方等间接路径,只要走 api.close 都能拿到动画。
+      event.api.panels.forEach(wrapPanelClose);
+      event.api.onDidAddPanel(wrapPanelClose);
     },
     [onLayoutReady],
   );

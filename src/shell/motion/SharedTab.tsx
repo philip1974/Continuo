@@ -3,13 +3,11 @@ import type { HTMLAttributes, PointerEvent } from 'react';
 import { motion } from 'motion/react';
 import type { DockviewPanelApi, IDockviewPanelHeaderProps } from 'dockview-react';
 import {
-  EXIT_DURATION_MS,
   panelTitleLayoutId,
   tabIndicatorLayoutId,
   TAB_INDICATOR_SPRING,
   TAB_TITLE_SPRING,
 } from './tokens';
-import { useClosingStore } from './closing-store';
 
 function useIsActive(api: DockviewPanelApi): boolean {
   const [active, setActive] = useState(api.isActive);
@@ -42,28 +40,16 @@ export function SharedTab(props: IDockviewPanelHeaderProps & TabHtmlExtras) {
   const title = useTitle(api);
   const groupId = api.group.id;
   const isMiddleDown = useRef(false);
-  const markClosing = useClosingStore((s) => s.mark);
 
-  // 拦截 close:先标记 closing → PanelMount 走 EXIT 动画 → EXIT_DURATION_MS 后真 close。
-  // 重复触发幂等(store mark 自身去重)。
-  const requestClose = useCallback(() => {
-    markClosing(api.id);
-    setTimeout(() => {
-      try {
-        api.close();
-      } catch {
-        // panel 可能已被其他路径(group close 等)移除,忽略。
-      }
-    }, EXIT_DURATION_MS);
-  }, [api, markClosing]);
-
+  // close 路径的"标记 + 延迟"逻辑统一在 wrap-panel-close.ts 拦在 api.close 上,
+  // 这里直接调 api.close() 即可。
   const onClose = useCallback(
     (event: PointerEvent<HTMLButtonElement>) => {
       event.preventDefault();
       event.stopPropagation();
-      requestClose();
+      api.close();
     },
-    [requestClose],
+    [api],
   );
 
   const handlePointerDown = useCallback(
@@ -78,11 +64,11 @@ export function SharedTab(props: IDockviewPanelHeaderProps & TabHtmlExtras) {
     (event: PointerEvent<HTMLDivElement>) => {
       if (isMiddleDown.current && event.button === 1) {
         isMiddleDown.current = false;
-        requestClose();
+        api.close();
       }
       onPointerUp?.(event);
     },
-    [onPointerUp, requestClose],
+    [api, onPointerUp],
   );
 
   const handlePointerLeave = useCallback(
