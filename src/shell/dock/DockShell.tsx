@@ -12,7 +12,7 @@ import { HeaderActions } from './HeaderActions';
 import { EmptyState } from './EmptyState';
 import { wrapPanelClose } from './wrap-panel-close';
 import { SharedTab } from '@/shell/motion/SharedTab';
-import { useClosingStore } from '@/shell/motion/closing-store';
+import { useClosingStore } from '@/stores/closing.store';
 import { debounce } from '@/lib/debounce';
 import '@/styles/dockview.css';
 

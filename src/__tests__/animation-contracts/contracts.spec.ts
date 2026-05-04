@@ -10,7 +10,7 @@ import {
   TAB_INDICATOR_SPRING,
   TAB_TITLE_SPRING,
 } from '../../shell/motion/tokens';
-import { useClosingStore } from '../../shell/motion/closing-store';
+import { useClosingStore } from '../../stores/closing.store';
 
 describe('动画落点契约', () => {
   describe('落点 ① indicator layoutId', () => {

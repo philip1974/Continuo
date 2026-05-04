@@ -6,7 +6,7 @@ import {
   PANEL_MOUNT_INITIAL,
   PANEL_MOUNT_TRANSITION,
 } from './tokens';
-import { useClosingStore } from './closing-store';
+import { useClosingStore } from '@/stores/closing.store';
 
 // 进场:initial → animate(在 panels 注册处包一层即可触发)。
 // 退场:dockview 没有 onWillRemovePanel,无法直接挂 AnimatePresence。

@@ -1,5 +1,5 @@
 import type { IDockviewPanel } from 'dockview-react';
-import { useClosingStore } from '@/shell/motion/closing-store';
+import { useClosingStore } from '@/stores/closing.store';
 import { EXIT_DURATION_MS } from '@/shell/motion/tokens';
 
 const patched = new WeakSet<IDockviewPanel>();
