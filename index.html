@@ -12,11 +12,14 @@
       - img-src 'self' data::内嵌 SVG / 缩略图常用 data:
       - connect-src:仅自身 + dev 时的 Vite HMR(localhost ws/http);
         prod 下 file:// renderer 没有跨域请求需求,这条对 prod 无害但收紧
-      - frame-ancestors / object-src / base-uri:无副作用的 hardening
+      - object-src / base-uri:无副作用的 hardening
+      注:frame-ancestors 规范上只能通过 HTTP header 下达,
+      meta 标签里写会被浏览器忽略并报 warning,故此处不写。
+      Electron 主进程没有反向代理,要补可在 main 端用 onHeadersReceived 注入。
     -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws://localhost:* wss://localhost:* http://localhost:*; frame-ancestors 'none'; object-src 'none'; base-uri 'self';"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws://localhost:* wss://localhost:* http://localhost:*; object-src 'none'; base-uri 'self';"
     />
   </head>
   <body class="bg-[#020617] text-neutral-100">
