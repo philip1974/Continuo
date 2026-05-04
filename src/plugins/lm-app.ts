@@ -5,6 +5,8 @@
 
 import { CommandRegistry } from './registries/CommandRegistry';
 import { EventBus } from './EventBus';
+import { EditorActionRegistry } from './registries/EditorActionRegistry';
+import { ExplorerDecoratorRegistry } from './registries/ExplorerDecoratorRegistry';
 import { InMemoryDataStore } from './PluginDataStore';
 import { PanelRegistry } from './registries/PanelRegistry';
 import { RibbonRegistry } from './registries/RibbonRegistry';
@@ -24,4 +26,6 @@ export const lmApp: LMApp = {
   // v2.3 默认 InMemoryDataStore;v3 接入 IPC 持久化
   dataStore: new InMemoryDataStore(),
   settingTabs: new SettingTabRegistry(),
+  explorerDecorators: new ExplorerDecoratorRegistry(),
+  editorActions: new EditorActionRegistry(),
 };

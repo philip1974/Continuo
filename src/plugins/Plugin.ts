@@ -10,6 +10,8 @@ import type { CommandSpec } from './registries/CommandRegistry';
 import type { StatusBarItemSpec } from './registries/StatusBarRegistry';
 import type { RibbonActionSpec } from './registries/RibbonRegistry';
 import type { SettingTabSpec } from './registries/SettingTabRegistry';
+import type { DecoratorFn } from './registries/ExplorerDecoratorRegistry';
+import type { EditorActionSpec } from './registries/EditorActionRegistry';
 
 export type { Disposable } from './types';
 
@@ -77,6 +79,14 @@ export abstract class Plugin {
 
   protected addSettingTab(spec: SettingTabSpec): Disposable {
     return this.register(this.app.settingTabs.register(spec));
+  }
+
+  protected registerExplorerDecorator(fn: DecoratorFn): Disposable {
+    return this.register(this.app.explorerDecorators.register(fn));
+  }
+
+  protected registerEditorAction(spec: EditorActionSpec): Disposable {
+    return this.register(this.app.editorActions.register(spec));
   }
 
   /**

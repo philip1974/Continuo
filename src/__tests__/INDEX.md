@@ -31,6 +31,10 @@
 - [`theme-provider.spec.tsx`](./design-system/theme-provider.spec.tsx)
 - [`tokens.spec.ts`](./design-system/tokens.spec.ts)
 
+## [editor-action(EditorHeader 工具按钮贡献)](./editor-action/README.md)
+
+- [`editor-action.spec.ts`](./editor-action/editor-action.spec.ts)
+
 ## [editor-hooks (M-Editor Step E2)](./editor-hooks/README.md)
 
 - [`auto-save.spec.ts`](./editor-hooks/auto-save.spec.ts)
@@ -43,6 +47,10 @@
 ## [event-bus(LM 自定义事件总线 + Plugin.registerEvent)](./event-bus/README.md)
 
 - [`event-bus.spec.ts`](./event-bus/event-bus.spec.ts)
+
+## [explorer-decorator(文件树装饰贡献)](./explorer-decorator/README.md)
+
+- [`explorer-decorator.spec.ts`](./explorer-decorator/explorer-decorator.spec.ts)
 
 ## [explorer-dropzone (M-Explorer Step 5d)](./explorer-dropzone/README.md)
 
@@ -109,6 +117,10 @@
 ## [plugin-manifest(manifest.json 解析与版本比对)](./plugin-manifest/README.md)
 
 - [`plugin-manifest.spec.ts`](./plugin-manifest/plugin-manifest.spec.ts)
+
+## [plugin-permissions(声明式权限 + 授权门)](./plugin-permissions/README.md)
+
+- [`plugin-permissions.spec.ts`](./plugin-permissions/plugin-permissions.spec.ts)
 
 ## [popout 契约 (M5)](./popout-contracts/README.md)
 

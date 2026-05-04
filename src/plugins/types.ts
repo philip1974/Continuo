@@ -23,6 +23,8 @@ export interface PluginManifest {
   readonly minLMVersion?: string;
   /** 仅桌面 LM 可加载(暂留,LM 目前只有桌面). */
   readonly isDesktopOnly?: boolean;
+  /** 声明式权限请求(v3.3),首次启用提示用户授权. */
+  readonly permissions?: readonly import('./permissions').PermissionKey[];
 }
 
 /**
@@ -46,4 +48,8 @@ export interface LMApp {
   dataStore: import('./PluginDataStore').PluginDataStore;
   /** 设置标签贡献(v2.4). */
   readonly settingTabs: import('./registries/SettingTabRegistry').SettingTabRegistry;
+  /** Explorer 文件树装饰贡献(v3.1). */
+  readonly explorerDecorators: import('./registries/ExplorerDecoratorRegistry').ExplorerDecoratorRegistry;
+  /** EditorHeader 工具按钮贡献(v3.2). */
+  readonly editorActions: import('./registries/EditorActionRegistry').EditorActionRegistry;
 }

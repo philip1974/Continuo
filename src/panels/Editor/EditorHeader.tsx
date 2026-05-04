@@ -6,6 +6,7 @@
 //             不显 sky 下划线 tab 列表(避免与 Dockview 自身的 'Editor' tab 撞下划线)
 //   tabs≥2  → 完整 TabNav + 右侧控制条
 
+import { useEffect, useState } from 'react';
 import { useEditorStore, type EditorMode, type EditorTab } from '@/stores/editor.store';
 import {
   Button,
@@ -14,6 +15,11 @@ import {
   TabNav,
   TabNavItem,
 } from '@/design';
+import { lmApp } from '@/plugins/lm-app';
+import {
+  filterVisible,
+  type EditorActionSpec,
+} from '@/plugins/registries/EditorActionRegistry';
 
 interface EditorHeaderProps {
   activeTab: EditorTab | null;
@@ -35,6 +41,16 @@ function basename(p: string | null): string {
   return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
 }
 
+/** 订阅 editorActions registry,渲染时按 ctx 过滤. */
+function useEditorActions(): readonly EditorActionSpec[] {
+  const [snap, setSnap] = useState(() => lmApp.editorActions.getAll());
+  useEffect(
+    () => lmApp.editorActions.subscribe(() => setSnap(lmApp.editorActions.getAll())),
+    [],
+  );
+  return snap;
+}
+
 export function EditorHeader({
   activeTab,
   autoSaveEnabled,
@@ -51,6 +67,12 @@ export function EditorHeader({
 
   const dirty = activeTab?.dirty ?? false;
   const showTabList = tabs.length >= 2;
+  const allActions = useEditorActions();
+  const visibleActions = filterVisible(allActions, {
+    filePath: activeTab?.filePath ?? null,
+    dirty,
+    mode,
+  });
 
   return (
     <div className="flex h-9 shrink-0 items-stretch border-b border-line bg-canvas">
@@ -110,6 +132,31 @@ export function EditorHeader({
           >
             保存
           </Button>
+        )}
+
+        {/* 插件贡献的 editor action 按钮(已按 when 过滤). */}
+        {visibleActions.map((a) =>
+          a.icon ? (
+            <IconButton
+              key={a.id}
+              size="xs"
+              onClick={() => void a.fn()}
+              title={a.label}
+              aria-label={a.label}
+            >
+              {a.icon}
+            </IconButton>
+          ) : (
+            <Button
+              key={a.id}
+              variant="ghost"
+              size="sm"
+              onClick={() => void a.fn()}
+              title={a.label}
+            >
+              {a.label}
+            </Button>
+          ),
         )}
 
         {/* 单 tab 时,close × 移到右侧控制区(普通 tab 列表自带 close) */}

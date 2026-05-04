@@ -3,6 +3,7 @@
 // 决定跳过 / 提示。
 
 import { z } from 'zod';
+import { PERMISSION_KEYS, type PermissionKey } from './permissions';
 import type { PluginManifest } from './types';
 
 // ── Schema ─────────────────────────────────────────────
@@ -20,6 +21,13 @@ export const ManifestSchema = z.object({
   authorUrl: z.string().url().optional(),
   minLMVersion: z.string().regex(SEMVER_RE).optional(),
   isDesktopOnly: z.boolean().optional(),
+  permissions: z
+    .array(
+      z.enum(
+        PERMISSION_KEYS as unknown as [PermissionKey, ...PermissionKey[]],
+      ),
+    )
+    .optional(),
 });
 
 // ── 解析结果类型 ───────────────────────────────────────

@@ -1,7 +1,10 @@
+import { useEffect, useMemo, useState } from 'react';
 import { Document, Folder } from '@react-symbols/icons';
 import type { ItemInstance } from '@headless-tree/core';
 import type { FileEntry } from '@/lib/fs/types';
 import { Input } from '@/design';
+import { lmApp } from '@/plugins/lm-app';
+import { mergeDecorations } from '@/plugins/registries/ExplorerDecoratorRegistry';
 import { ContextMenu, type ContextMenuActions } from './ContextMenu';
 import type { DropTargetEntry } from './drop-handlers';
 
@@ -25,6 +28,20 @@ const ICON_SIZE = 16;
 const ROW_HEIGHT = 28;
 const INDENT = 16;
 
+/** 订阅插件装饰器 registry,变化时重渲染. */
+function useDecoration(path: string, isDirectory: boolean) {
+  const [snap, setSnap] = useState(() => lmApp.explorerDecorators.getAll());
+  // ExplorerDecoratorRegistry 没 subscribe;插件加载/卸载频率低,
+  // 这里改为每次组件挂载读最新值即可。如需 reactive,可后期加 subscribe。
+  useEffect(() => {
+    setSnap(lmApp.explorerDecorators.getAll());
+  }, []);
+  return useMemo(
+    () => mergeDecorations({ path, isDirectory }, snap),
+    [path, isDirectory, snap],
+  );
+}
+
 // 单行节点。renamingFeature 自动接管 input 的 Enter/Esc 键盘事件,
 // 我们只需在 isRenaming() 时把 name 区域换成 input 即可。
 export function FileRow({
@@ -45,6 +62,7 @@ export function FileRow({
   const isLoading = item.isLoading();
   const isRenaming = item.isRenaming();
   const level = item.getItemMeta().level;
+  const decoration = useDecoration(data.path, isDir);
 
   const row = (
     <div
@@ -80,7 +98,11 @@ export function FileRow({
             ? 'bg-hover text-fg'
             : 'text-fg-muted hover:bg-panel-soft',
       ].join(' ')}
-      title={data.path}
+      title={
+        decoration?.tooltip
+          ? `${data.path} · ${decoration.tooltip}`
+          : data.path
+      }
     >
       {/* 缩进指南线:每层 1px 灰竖线,辅助识别深层嵌套(VSCode 同款) */}
       {Array.from({ length: level }).map((_, i) => (
@@ -113,7 +135,22 @@ export function FileRow({
           autoComplete="off"
         />
       ) : (
-        <span className="truncate">{data.name}</span>
+        <span
+          className="truncate"
+          style={decoration?.textColor ? { color: decoration.textColor } : undefined}
+        >
+          {data.name}
+        </span>
+      )}
+      {/* 插件装饰 badge(右侧),loading 优先级更高,加载完才显 */}
+      {!isLoading && decoration?.badge && (
+        <span
+          className="ml-auto pr-2 text-[10px] tabular-nums"
+          style={decoration.badgeColor ? { color: decoration.badgeColor } : undefined}
+          aria-label={`badge ${decoration.badge}`}
+        >
+          {decoration.badge}
+        </span>
       )}
       {isLoading && (
         <span className="ml-auto pr-2 text-[10px] text-fg-dim">…</span>
