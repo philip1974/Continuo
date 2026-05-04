@@ -10,6 +10,11 @@
 
 - [`license.spec.ts`](./decor-contracts/license.spec.ts)
 
+## [editor-hooks (M-Editor Step E2)](./editor-hooks/README.md)
+
+- [`auto-save.spec.ts`](./editor-hooks/auto-save.spec.ts)
+- [`editor-file-actions.spec.ts`](./editor-hooks/editor-file-actions.spec.ts)
+
 ## [editor-store (M-Editor Step E1)](./editor-store/README.md)
 
 - [`editor-store.spec.ts`](./editor-store/editor-store.spec.ts)
