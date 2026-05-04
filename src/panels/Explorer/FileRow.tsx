@@ -80,6 +80,15 @@ export function FileRow({
       ].join(' ')}
       title={data.path}
     >
+      {/* 缩进指南线:每层 1px 灰竖线,辅助识别深层嵌套(VSCode 同款) */}
+      {Array.from({ length: level }).map((_, i) => (
+        <span
+          key={i}
+          aria-hidden="true"
+          className="pointer-events-none absolute top-0 bottom-0 w-px bg-neutral-800"
+          style={{ left: 4 + i * INDENT + 8 }}
+        />
+      ))}
       <span className="inline-flex w-3 shrink-0 items-center justify-center text-[10px] text-neutral-500">
         {isDir ? (isExpanded ? '▾' : '▸') : ''}
       </span>
