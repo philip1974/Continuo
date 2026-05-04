@@ -45,6 +45,9 @@ export function RenameInput({
           onCancel();
         }
         e.stopPropagation();
+        // 阻止原生事件冒泡到 headless-tree 容器(它用原生 addEventListener 监听 hotkeys,
+        // React 合成事件的 stopPropagation 拦不住,会被吃掉 Esc)
+        e.nativeEvent.stopPropagation();
       }}
       onClick={(e) => e.stopPropagation()}
       className="w-full rounded bg-neutral-800 px-1 py-0 text-xs text-neutral-100 outline-none ring-1 ring-sky-500"

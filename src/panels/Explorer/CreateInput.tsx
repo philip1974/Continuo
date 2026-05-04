@@ -51,6 +51,8 @@ export function CreateInput({
             onCancel();
           }
           e.stopPropagation();
+          // 阻止原生事件冒泡到 headless-tree 容器(同 RenameInput)
+          e.nativeEvent.stopPropagation();
         }}
         placeholder={type === 'dir' ? '新建文件夹名…' : '新建文件名…'}
         className="flex-1 rounded bg-neutral-800 px-2 py-0.5 text-neutral-100 outline-none ring-1 ring-sky-500 placeholder:text-neutral-500"
