@@ -1,6 +1,10 @@
 import { useState } from 'react';
 import { useWorkspaceStore } from '@/stores/workspace.store';
-import { Button, IconButton } from '@/design';
+import { IconButton } from '@/design';
+
+// 极紧凑文本工具按钮(header 内行高 28px,Button sm 太宽会挤掉 workspace 名)。
+const compactBtnCls =
+  'shrink-0 rounded px-1.5 py-0.5 text-fg-muted transition hover:bg-hover hover:text-fg disabled:opacity-40';
 
 // FolderTree 顶部固定 Header:workspace 名 + 工具按钮(展开/折叠全部) + 切换/关闭。
 // VSCode 风:打开新文件夹会替换当前 root(不开新窗口);关闭回到 EmptyWorkspace。
@@ -65,23 +69,23 @@ export function ExplorerHeader({
         ⊖
       </IconButton>
       <span className="mx-1 h-3 w-px bg-line" aria-hidden="true" />
-      <Button
-        variant="ghost"
-        size="sm"
+      <button
+        type="button"
         onClick={switchFolder}
         disabled={busy}
+        className={compactBtnCls}
         title="切换到其他文件夹"
       >
         切换
-      </Button>
-      <Button
-        variant="ghost"
-        size="sm"
+      </button>
+      <button
+        type="button"
         onClick={() => setRoot(null)}
+        className={compactBtnCls}
         title="关闭当前文件夹"
       >
         关闭
-      </Button>
+      </button>
     </div>
   );
 }
