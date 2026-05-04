@@ -10,6 +10,7 @@ import { panelComponents } from './panels';
 import { applyDefaultLayout } from './layout.default';
 import { HeaderActions } from './HeaderActions';
 import { EmptyState } from './EmptyState';
+import { setDockApi } from './dock-api-ref';
 import { wrapPanelClose } from './wrap-panel-close';
 import { SharedTab } from '@/shell/motion/SharedTab';
 import { useClosingStore } from '@/stores/closing.store';
@@ -26,6 +27,7 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
   const onReady = useCallback(
     async (event: DockviewReadyEvent) => {
       apiRef.current = event.api;
+      setDockApi(event.api); // 暴露给 IconSidebar 等 Dockview 之外的组件
       const readResult = await window.api.layout.read();
       const persisted = readResult.ok ? readResult.data : null;
       if (!readResult.ok) {
@@ -74,6 +76,9 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
   const restore = useCallback(() => {
     if (apiRef.current) applyDefaultLayout(apiRef.current);
   }, []);
+
+  // unmount 时 reset 单例,防 stale 引用
+  useEffect(() => () => setDockApi(null), []);
 
   // Editor 自动激活:Explorer 单击文件 → editor.store activeTabId 变 →
   // 自动 setActive 'editor' panel(VSCode 行为)。

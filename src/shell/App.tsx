@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { MotionConfig } from 'motion/react';
 import { DockShell } from './dock/DockShell';
 import { Splash } from './decor/Splash';
+import { IconSidebar } from './IconSidebar';
 import { PopoutHost } from './PopoutHost';
 import { isPopoutWindow } from '@/lib/popout-mode';
 
@@ -25,8 +26,11 @@ function MainApp() {
         <header className="flex h-9 shrink-0 items-center justify-center border-b border-white/5 text-xs text-neutral-500 select-none [-webkit-app-region:drag]">
           LayoutMotion
         </header>
-        <main className="min-h-0 flex-1">
-          <DockShell onLayoutReady={onLayoutReady} />
+        <main className="flex min-h-0 flex-1">
+          <IconSidebar />
+          <div className="min-w-0 flex-1">
+            <DockShell onLayoutReady={onLayoutReady} />
+          </div>
         </main>
       </div>
       {showSplash && <Splash />}
