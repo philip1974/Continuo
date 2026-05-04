@@ -10,6 +10,10 @@
 
 - [`license.spec.ts`](./decor-contracts/license.spec.ts)
 
+## [explorer-mutate (M-Explorer Step 5)](./explorer-mutate/README.md)
+
+- [`mutate-actions.spec.ts`](./explorer-mutate/mutate-actions.spec.ts)
+
 ## [explorer-stores (M-Explorer Step 3)](./explorer-stores/README.md)
 
 - [`explorer.spec.ts`](./explorer-stores/explorer.spec.ts)
