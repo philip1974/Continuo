@@ -131,9 +131,17 @@
 
 - [`plugins-service.spec.ts`](./plugins-service/plugins-service.spec.ts)
 
+## [plugins-watcher(mtime 自动 watch)](./plugins-watcher/README.md)
+
+- [`plugins-watcher.spec.ts`](./plugins-watcher/plugins-watcher.spec.ts)
+
 ## [popout 契约 (M5)](./popout-contracts/README.md)
 
 - [`popout-mode.spec.ts`](./popout-contracts/popout-mode.spec.ts)
+
+## [protocol-url(lm:// 路由)](./protocol-url/README.md)
+
+- [`protocol-url.spec.ts`](./protocol-url/protocol-url.spec.ts)
 
 ## [ribbon-registry(IconSidebar 活动栏图标贡献)](./ribbon-registry/README.md)
 

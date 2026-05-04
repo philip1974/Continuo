@@ -149,6 +149,24 @@ const api = {
       ipcRenderer.invoke(PLUGINS_CHANNELS.READ_PERMISSIONS),
     writePermissions: (data: IpcPermissionsMap): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(PLUGINS_CHANNELS.WRITE_PERMISSIONS, { data }),
+    /** v4.3.1 订阅 plugin 文件 mtime 变化,返 unsubscribe. */
+    onChanged: (cb: (id: string) => void): (() => void) => {
+      const listener = (_: unknown, payload: { id: string }) => cb(payload.id);
+      ipcRenderer.on(PLUGINS_CHANNELS.CHANGED, listener);
+      return () => ipcRenderer.off(PLUGINS_CHANNELS.CHANGED, listener);
+    },
+    /** v4.4 订阅 lm:// 外部唤起,返 unsubscribe. */
+    onProtocolUrl: (cb: (url: string) => void): (() => void) => {
+      const listener = (_: unknown, payload: { url: string }) => cb(payload.url);
+      ipcRenderer.on(PLUGINS_CHANNELS.PROTOCOL_URL, listener);
+      return () => ipcRenderer.off(PLUGINS_CHANNELS.PROTOCOL_URL, listener);
+    },
+    /** v4.5 从 git URL 安装插件,返回 manifest 元信息. */
+    installFromGit: (
+      url: string,
+    ): Promise<
+      IpcResult<{ id: string; name: string; version: string }>
+    > => ipcRenderer.invoke(PLUGINS_CHANNELS.INSTALL_FROM_GIT, { url }),
   },
 } as const;
 

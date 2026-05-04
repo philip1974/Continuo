@@ -142,3 +142,219 @@ export async function writePermissions(
   const file = path.join(baseDir, PERMISSIONS_FILE);
   await fs.writeFile(file, JSON.stringify(data, null, 2), 'utf-8');
 }
+
+// ── v4.5 git URL 安装 ──────────────────────────────────
+
+import { spawn } from 'node:child_process';
+import { mkdtemp, cp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+
+export interface InstallFromGitResult {
+  readonly id: string;
+  readonly name: string;
+  readonly version: string;
+}
+
+const GIT_URL_RE = /^(https?|git|ssh):\/\//i;
+
+/**
+ * 从 git URL clone 到临时目录,验 manifest.json,把整个目录复制到
+ * baseDir/<manifest.id>/。已存在 → 抛 EEXIST 让调用方提示用户。
+ */
+export async function installFromGit(
+  gitUrl: string,
+  baseDir: string,
+): Promise<InstallFromGitResult> {
+  if (!GIT_URL_RE.test(gitUrl)) {
+    throw Object.assign(new Error(`不支持的 git URL: ${gitUrl}`), {
+      code: 'BAD_URL',
+    });
+  }
+  const tmpRoot = await mkdtemp(path.join(tmpdir(), 'lm-plugin-install-'));
+  try {
+    const cloneDir = path.join(tmpRoot, 'clone');
+    await runGit(['clone', '--depth', '1', gitUrl, cloneDir]);
+
+    let manifest: { id?: string; name?: string; version?: string };
+    try {
+      const text = await fs.readFile(
+        path.join(cloneDir, 'manifest.json'),
+        'utf-8',
+      );
+      manifest = JSON.parse(text);
+    } catch {
+      throw Object.assign(
+        new Error('clone 目录缺 manifest.json 或解析失败'),
+        { code: 'BAD_MANIFEST' },
+      );
+    }
+    if (
+      typeof manifest.id !== 'string' ||
+      !/^[a-z0-9._-]+$/.test(manifest.id) ||
+      typeof manifest.name !== 'string' ||
+      typeof manifest.version !== 'string'
+    ) {
+      throw Object.assign(
+        new Error('manifest.json 缺必填 id/name/version 或 id 含非法字符'),
+        { code: 'BAD_MANIFEST' },
+      );
+    }
+
+    const mainName =
+      typeof (manifest as { main?: unknown }).main === 'string'
+        ? (manifest as { main: string }).main
+        : 'main.js';
+    try {
+      await fs.access(path.join(cloneDir, mainName));
+    } catch {
+      throw Object.assign(new Error(`main 入口不存在: ${mainName}`), {
+        code: 'BAD_MAIN',
+      });
+    }
+
+    const targetDir = path.join(baseDir, manifest.id);
+    let targetExists = false;
+    try {
+      await fs.access(targetDir);
+      targetExists = true;
+    } catch {
+      /* not exists, OK */
+    }
+    if (targetExists) {
+      throw Object.assign(
+        new Error(`插件 ${manifest.id} 已安装,卸载后再装`),
+        { code: 'EEXIST' },
+      );
+    }
+
+    await fs.mkdir(baseDir, { recursive: true });
+    await cp(cloneDir, targetDir, { recursive: true });
+
+    // 清掉 .git 节省空间
+    try {
+      await rm(path.join(targetDir, '.git'), {
+        recursive: true,
+        force: true,
+      });
+    } catch {
+      /* 不影响安装 */
+    }
+
+    return {
+      id: manifest.id,
+      name: manifest.name,
+      version: manifest.version,
+    };
+  } finally {
+    await rm(tmpRoot, { recursive: true, force: true });
+  }
+}
+
+function runGit(args: readonly string[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn('git', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stderr = '';
+    child.stderr.on('data', (d) => (stderr += String(d)));
+    child.on('error', (err) =>
+      reject(
+        Object.assign(new Error(`git spawn 失败: ${err.message}`), {
+          code: 'GIT_SPAWN_FAILED',
+        }),
+      ),
+    );
+    child.on('exit', (code) => {
+      if (code === 0) resolve();
+      else
+        reject(
+          Object.assign(
+            new Error(`git ${args[0]} exit ${code}: ${stderr.trim()}`),
+            { code: 'GIT_FAILED' },
+          ),
+        );
+    });
+  });
+}
+
+// ── v4.3.1 mtime watch ─────────────────────────────────
+
+export interface PluginsWatcher {
+  /** 单次扫描:mtime 变化触发 onChange,首次只填表不 fire. */
+  tick(): Promise<void>;
+  /** 启动周期 tick;返 dispose 停 timer. */
+  start(intervalMs?: number): { dispose(): void };
+}
+
+/**
+ * 跨平台 plugin 文件改动监听:不用 fs.watch(macOS 不支持 recursive 默认,
+ * Linux/Windows 行为不一致),改为 stat mtime 轮询。
+ * tick() exposed for unit test;生产 start(2000) 每 2 秒扫一次。
+ */
+export function createPluginsWatcher(
+  baseDir: string,
+  onChange: (id: string) => void,
+): PluginsWatcher {
+  const mtimes = new Map<string, number>();
+  let firstRun = true;
+  let cancelled = false;
+
+  const tick = async (): Promise<void> => {
+    if (cancelled) return;
+    let entries: string[];
+    try {
+      entries = await fs.readdir(baseDir);
+    } catch {
+      return;
+    }
+    for (const id of entries) {
+      if (id.startsWith('.') || id.startsWith('_')) continue;
+      const dir = path.join(baseDir, id);
+
+      let dirStat: import('node:fs').Stats;
+      try {
+        dirStat = await fs.stat(dir);
+      } catch {
+        continue;
+      }
+      if (!dirStat.isDirectory()) continue;
+
+      let mainName = 'main.js';
+      let pluginId = id;
+      try {
+        const text = await fs.readFile(path.join(dir, 'manifest.json'), 'utf-8');
+        const m = JSON.parse(text) as { main?: unknown; id?: unknown };
+        if (typeof m.main === 'string' && m.main.length > 0) mainName = m.main;
+        if (typeof m.id === 'string' && m.id.length > 0) pluginId = m.id;
+      } catch {
+        continue;
+      }
+
+      try {
+        const fileStat = await fs.stat(path.join(dir, mainName));
+        const mtime = fileStat.mtimeMs;
+        const prev = mtimes.get(pluginId);
+        if (!firstRun && prev !== undefined && prev !== mtime) {
+          onChange(pluginId);
+        }
+        mtimes.set(pluginId, mtime);
+      } catch {
+        continue;
+      }
+    }
+    firstRun = false;
+  };
+
+  return {
+    tick,
+    start: (intervalMs = 2000) => {
+      cancelled = false;
+      void tick();
+      const timer = setInterval(() => void tick(), intervalMs);
+      return {
+        dispose: () => {
+          cancelled = true;
+          clearInterval(timer);
+        },
+      };
+    },
+  };
+}

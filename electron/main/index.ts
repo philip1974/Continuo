@@ -3,6 +3,7 @@ import type { HandlerDetails, WindowOpenHandlerResponse } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { registerIpc } from './ipc';
+import { PLUGINS_CHANNELS } from '../shared/plugins-channels';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = !app.isPackaged;
@@ -95,9 +96,79 @@ app.on('browser-window-created', (_evt, win) => {
   });
 });
 
+// M-Plugin v4.4:lm:// 协议处理
+// macOS:open-url(用户点 lm://...);Windows / Linux:single-instance argv
+
+const PROTOCOL = 'lm';
+let pendingProtocolUrl: string | null = null;
+
+function dispatchProtocolUrl(url: string): void {
+  const wins = BrowserWindow.getAllWindows();
+  if (wins.length === 0) {
+    pendingProtocolUrl = url;
+    return;
+  }
+  for (const win of wins) {
+    if (!win.isDestroyed()) {
+      win.webContents.send(PLUGINS_CHANNELS.PROTOCOL_URL, { url });
+    }
+  }
+}
+
+if (process.defaultApp) {
+  if (process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [
+      path.resolve(process.argv[1]!),
+    ]);
+  }
+} else {
+  app.setAsDefaultProtocolClient(PROTOCOL);
+}
+
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+} else {
+  app.on('second-instance', (_e, argv) => {
+    const url = argv.find((a) => a.startsWith(`${PROTOCOL}://`));
+    if (url) dispatchProtocolUrl(url);
+    const wins = BrowserWindow.getAllWindows();
+    if (wins[0]) {
+      if (wins[0].isMinimized()) wins[0].restore();
+      wins[0].focus();
+    }
+  });
+}
+
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  dispatchProtocolUrl(url);
+});
+
 app.whenReady().then(() => {
   registerIpc();
-  createMainWindow();
+  const win = createMainWindow();
+
+  // 冷启 + open-url 顺序处理:可能在 mainwindow 未就绪前已收 url
+  if (pendingProtocolUrl) {
+    win.webContents.once('did-finish-load', () => {
+      if (pendingProtocolUrl) {
+        win.webContents.send(PLUGINS_CHANNELS.PROTOCOL_URL, {
+          url: pendingProtocolUrl,
+        });
+        pendingProtocolUrl = null;
+      }
+    });
+  }
+
+  if (!process.defaultApp) {
+    const url = process.argv.find((a) => a.startsWith(`${PROTOCOL}://`));
+    if (url) {
+      win.webContents.once('did-finish-load', () => {
+        win.webContents.send(PLUGINS_CHANNELS.PROTOCOL_URL, { url });
+      });
+    }
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow();

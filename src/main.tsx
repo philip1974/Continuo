@@ -32,6 +32,20 @@ void userPluginManager.init().catch((err) => {
   console.warn('[main] user plugin manager init failed', err);
 });
 
+// M-Plugin v4.3.1:主进程 mtime watch 推 changed → 自动 reload
+window.api.plugins.onChanged((id) => {
+  void userPluginManager.reload(id).catch((err) => {
+    console.warn(`[main] auto-reload ${id} failed`, err);
+  });
+});
+
+// M-Plugin v4.4:lm:// 外部唤起 → 路由到 commands.execute
+import('./plugins/protocol/handler').then(({ handleProtocolUrl }) => {
+  window.api.plugins.onProtocolUrl((url) => {
+    void handleProtocolUrl(url, lmApp);
+  });
+});
+
 // 资源管理器持久化(M-Explorer Step 3 + Step 4)。
 // fire-and-forget:hydrate 在毫秒级完成,store setState 触发 React 重渲染,
 // EmptyWorkspace 自动切到 FolderTree。无需 splash。

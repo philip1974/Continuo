@@ -2,7 +2,7 @@
 // 自检视图:贡献点统计 + 内置插件清单 + 用户插件占位(等 v4 IPC)。
 
 import { useEffect, useState } from 'react';
-import { Button } from '@/design';
+import { Button, Input } from '@/design';
 import { lmApp } from '../lm-app';
 import { getUserPluginManager } from '../lm-plugin-manager';
 import type { PluginListItem } from '../PluginManager';
@@ -170,12 +170,63 @@ function useUserPlugins(): readonly PluginListItem[] {
 function UserPluginsSection() {
   const plugins = useUserPlugins();
   const mgr = getUserPluginManager();
+  const [gitUrl, setGitUrl] = useState('');
+  const [installing, setInstalling] = useState(false);
+  const [installMsg, setInstallMsg] = useState<string | null>(null);
+
+  const onInstall = async () => {
+    if (!gitUrl.trim()) return;
+    setInstalling(true);
+    setInstallMsg(null);
+    try {
+      const r = await window.api.plugins.installFromGit(gitUrl.trim());
+      if (!r.ok) {
+        setInstallMsg(`✘ [${r.code}] ${r.message}`);
+      } else {
+        setInstallMsg(
+          `✔ 已安装 ${r.data.name} v${r.data.version} — 重启 LM 生效`,
+        );
+        setGitUrl('');
+      }
+    } catch (err) {
+      setInstallMsg(`✘ ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setInstalling(false);
+    }
+  };
 
   return (
     <section>
       <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-fg-dim">
         第三方插件
       </h3>
+      {/* git URL 安装(v4.5) */}
+      <div className="mb-3 rounded border border-line bg-panel-soft/40 px-3 py-2">
+        <div className="mb-1 text-[10px] uppercase tracking-wider text-fg-dim">
+          从 git URL 安装
+        </div>
+        <div className="flex items-center gap-2">
+          <Input
+            size="sm"
+            placeholder="https://github.com/user/plugin.git"
+            value={gitUrl}
+            onChange={(e) => setGitUrl(e.target.value)}
+            disabled={installing}
+            className="flex-1"
+          />
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={onInstall}
+            disabled={installing || !gitUrl.trim()}
+          >
+            {installing ? '安装中…' : '安装'}
+          </Button>
+        </div>
+        {installMsg && (
+          <div className="mt-1 text-[10px] text-fg-muted">{installMsg}</div>
+        )}
+      </div>
       {plugins.length === 0 ? (
         <div className="rounded border border-dashed border-line bg-panel-soft/40 px-3 py-6 text-center text-xs text-fg-dim">
           暂无。把插件目录放到 <code>userData/plugins/&lt;id&gt;/</code>(含

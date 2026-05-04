@@ -13,6 +13,12 @@ export const PLUGINS_CHANNELS = {
   READ_PERMISSIONS: 'plugins:read-permissions',
   /** 写 _permissions.json. */
   WRITE_PERMISSIONS: 'plugins:write-permissions',
+  /** main → renderer push:某 plugin main.js mtime 变化(v4.3.1). */
+  CHANGED: 'plugins:changed',
+  /** main → renderer push:外部 lm:// URL 唤起(v4.4). */
+  PROTOCOL_URL: 'plugins:protocol-url',
+  /** 从 git URL clone + 安装到 plugins 目录(v4.5). */
+  INSTALL_FROM_GIT: 'plugins:install-from-git',
 } as const;
 
 export type PluginsChannel = (typeof PLUGINS_CHANNELS)[keyof typeof PLUGINS_CHANNELS];
