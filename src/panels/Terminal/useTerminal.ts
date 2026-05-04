@@ -17,8 +17,15 @@ const TERM_OPTIONS = {
   fontSize: 13,
   lineHeight: 1.2,
   letterSpacing: 0.2,
+  // Powerline / Nerd 符号 fallback 链:
+  //   1. MesloLGS NF / JetBrainsMono Nerd Font Mono / Symbols Nerd Font Mono
+  //      — Nerd Fonts 现代版(用户装了哪种用哪种)
+  //   2. Meslo LG {L,M,S} for Powerline — 老 Powerline 项目,P10k/oh-my-zsh
+  //      用户常装,兜 powerline-extra-symbols
+  //   3. SF Mono / Menlo / Monaco — macOS 内置等宽,普通 ASCII
+  //   4. monospace 通用兜底
   fontFamily:
-    '"MesloLGS NF", "JetBrainsMono Nerd Font", "JetBrains Mono", "SFMono-Regular", Menlo, Monaco, Consolas, monospace',
+    '"MesloLGS NF", "JetBrainsMono Nerd Font Mono", "Symbols Nerd Font Mono", "Meslo LG M for Powerline", "Meslo LG L for Powerline", "Meslo LG S for Powerline", "SF Mono", Menlo, Monaco, Consolas, monospace',
   smoothScrollDuration: 0,
   fastScrollModifier: 'alt' as const,
   allowProposedApi: true,
