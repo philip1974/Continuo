@@ -8,7 +8,7 @@ import {
 import 'dockview-react/dist/styles/dockview.css';
 import { panelComponents } from './panels';
 import { applyDefaultLayout } from './layout.default';
-import { AddPanelButton } from './AddPanelButton';
+import { HeaderActions } from './HeaderActions';
 import { EmptyState } from './EmptyState';
 import { SharedTab } from '@/shell/motion/SharedTab';
 import { debounce } from '@/lib/debounce';
@@ -62,7 +62,7 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
         components={panelComponents}
         tabComponents={tabComponents}
         defaultTabComponent={SharedTab}
-        rightHeaderActionsComponent={AddPanelButton}
+        rightHeaderActionsComponent={HeaderActions}
         onReady={onReady}
         className="dockview-theme-abyss h-full w-full"
       />
