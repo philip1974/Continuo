@@ -40,6 +40,14 @@ export function EditorPanel() {
   const activeTab: EditorTab | null =
     tabs.find((t) => t.id === activeTabId) ?? null;
 
+  // eslint-disable-next-line no-console
+  console.log('[EditorPanel] render', {
+    tabsCount: tabs.length,
+    activeTabId,
+    activeTabFilePath: activeTab?.filePath,
+    mode,
+  });
+
   const { saveActive } = useEditorFile();
   const autoSaveEnabled = isAutoSaveEnabled(activeTab?.filePath ?? null);
 
