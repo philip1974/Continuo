@@ -87,3 +87,7 @@
 ## [terminal-write (M-Terminal Step T4)](./terminal-write/README.md)
 
 - [`safe-write.spec.ts`](./terminal-write/safe-write.spec.ts)
+
+## [text-stats(StatusBar 用统计)](./text-stats/README.md)
+
+- [`text-stats.spec.ts`](./text-stats/text-stats.spec.ts)

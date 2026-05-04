@@ -5,6 +5,7 @@ import { Splash } from './decor/Splash';
 import { ExplorerSidebar } from './ExplorerSidebar';
 import { IconSidebar } from './IconSidebar';
 import { PopoutHost } from './PopoutHost';
+import { StatusBar } from './StatusBar';
 import { isPopoutWindow } from '@/lib/popout-mode';
 
 const SPLASH_MIN_MS = 600;
@@ -34,6 +35,7 @@ function MainApp() {
             <DockShell onLayoutReady={onLayoutReady} />
           </div>
         </main>
+        <StatusBar />
       </div>
       {showSplash && <Splash />}
     </>
