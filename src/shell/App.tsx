@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { MotionConfig } from 'motion/react';
+import { ThemeProvider } from '@/theme';
 import { DockShell } from './dock/DockShell';
 import { Splash } from './decor/Splash';
 import { ExplorerSidebar } from './ExplorerSidebar';
@@ -44,8 +45,10 @@ function MainApp() {
 
 export function App() {
   return (
-    <MotionConfig reducedMotion="user">
-      {isPopoutWindow() ? <PopoutHost /> : <MainApp />}
-    </MotionConfig>
+    <ThemeProvider>
+      <MotionConfig reducedMotion="user">
+        {isPopoutWindow() ? <PopoutHost /> : <MainApp />}
+      </MotionConfig>
+    </ThemeProvider>
   );
 }

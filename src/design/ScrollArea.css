@@ -1,0 +1,12 @@
+.wm-scroll-area {
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.wm-scroll-area::-webkit-scrollbar { width: 6px; }
+.wm-scroll-area::-webkit-scrollbar-track { background: transparent; }
+.wm-scroll-area::-webkit-scrollbar-thumb {
+  background-color: var(--md-outline);
+  border-radius: var(--wm-radius-full);
+}

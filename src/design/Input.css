@@ -1,0 +1,28 @@
+.wm-input {
+  width: 100%;
+  padding: var(--wm-space-2) var(--wm-space-3);
+  border-radius: 8px;
+  border: 1px solid var(--md-outline-variant);
+  background-color: var(--md-surface-container-low);
+  color: var(--md-on-surface);
+  font-family: var(--wm-font-sans);
+  font-size: var(--wm-text-base);
+  outline: none;
+  transition:
+    border-color var(--wm-duration-fast) var(--wm-ease-default),
+    background-color var(--wm-duration-fast) var(--wm-ease-default);
+}
+
+.wm-input:focus {
+  border-color: var(--md-focus-ring);
+  background-color: var(--md-surface-container);
+}
+.wm-input::placeholder { color: var(--md-outline); }
+.wm-input:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.wm-input[data-variant="mono"] { font-family: var(--wm-font-mono); font-size: var(--wm-text-md); }
+.wm-input[data-variant="dark"] {
+  background-color: var(--wm-terminal-input-bg);
+  color: var(--wm-terminal-input-fg);
+  border-color: var(--wm-terminal-border);
+}

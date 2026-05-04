@@ -1,0 +1,12 @@
+/* Nous design 组件 CSS 集中入口(LM 本地副本)。
+ * 由 src/styles/tailwind.css 顶层导入,确保 utility 优先级靠前。 */
+@import './Badge.css';
+@import './Button.css';
+@import './Card.css';
+@import './Input.css';
+@import './Modal.css';
+@import './ScrollArea.css';
+@import './Separator.css';
+@import './Spinner.css';
+@import './Tabs.css';
+@import './Textarea.css';

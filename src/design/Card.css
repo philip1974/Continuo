@@ -1,0 +1,17 @@
+.wm-card {
+  padding: var(--wm-space-2_5) var(--wm-space-3);
+  border-radius: 16px;
+  border: 1px solid var(--md-outline-variant);
+  background-color: var(--md-surface-container-low);
+}
+
+.wm-card[data-tone="user"]         { background-color: var(--md-primary-container); border-color: var(--md-primary); }
+.wm-card[data-tone="assistant"]    { background-color: var(--md-surface-container-low); border-color: var(--md-outline-variant); }
+.wm-card[data-tone="tool"]         { background-color: var(--md-surface-container); border-color: var(--md-outline-variant); }
+.wm-card[data-tone="tool_running"] { background-color: var(--md-info-container); border-color: var(--md-info); }
+.wm-card[data-tone="tool_waiting"] { background-color: var(--md-warning-container); border-color: var(--md-warning); }
+.wm-card[data-tone="tool_error"]   { background-color: var(--md-error-container); border-color: var(--md-error); }
+.wm-card[data-tone="summary"]      { background-color: var(--md-success-container); border-color: var(--md-success); }
+.wm-card[data-tone="compact"]      { background-color: var(--md-tertiary-container); border-color: var(--md-tertiary); }
+.wm-card[data-tone="error"]        { background-color: var(--md-error-container); border-color: var(--md-error); }
+.wm-card[data-tone="system"]       { background-color: var(--md-surface-container-low); border-color: var(--md-outline-variant); }

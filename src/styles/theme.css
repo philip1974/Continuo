@@ -1,34 +1,57 @@
-/* M-UI Step 5:CSS 变量主题体系(Tailwind v4 @theme).
+/* M-DesignSystem Step 1:接入 Nous 共享设计系统(MD3 token 层)。
  *
- * 当前只定义暗色 token(对应现有 neutral-* / #020617 调色板的语义化别名),
- * 为后续亮色模式铺路。
+ * 结构:
+ *   1. 引入 nous-tokens.css(从 @nous/shell-ui 复制,含完整 47 个 --md-* + --wm-*
+ *      亮/暗双套,LM 暂不修改)。
+ *   2. 在 .dark 下覆盖 MD3 关键值,保留 LM 原有 slate + sky 视觉身份
+ *      (Nous 默认是暖灰 + lavender,LM 偏冷 slate + sky 蓝)。
+ *   3. @theme inline 把 LM 自有的 9 个 --color-* 私有 token 映射到 --md-*,
+ *      Tailwind v4 自动生成 bg-canvas / text-fg / border-line 等 utility,
+ *      LM 现有 className 零修改。
  *
- * 命名约定:
- *   --color-canvas      最深背景(App / Splash 全局底色)
- *   --color-panel       面板背景(IconSidebar / Header)
- *   --color-panel-soft  面板半色(hover bg / 浅一档)
- *   --color-hover       hover 强调
- *   --color-line        边框 / 分隔线
- *   --color-fg          正文(neutral-100)
- *   --color-fg-muted    二级文本(neutral-400)
- *   --color-fg-dim      三级文本(neutral-500)
- *   --color-accent      强调色(sky-500,选中/焦点)
- *
- * 用法(Tailwind v4 自动生成 bg-* / text-* / border-* utility):
- *   <div className="bg-canvas text-fg border border-line">...
- *
- * 既有 neutral-* 硬编码 className 保留不动,渐进迁移。
- * 亮色模式真做时,在 :root[data-theme="light"] 重写这 9 个 token 即可。
+ * LM 强制 dark 模式(index.html <html class="dark">),light 暂留 Nous 默认值
+ * 作为亮色切换的占位,后续若做亮色再细调。
  */
 
-@theme {
-  --color-canvas: #020617;
-  --color-panel: #0a0a0a;
-  --color-panel-soft: #171717;
-  --color-hover: #262626;
-  --color-line: #262626;
-  --color-fg: #f5f5f5;
-  --color-fg-muted: #a3a3a3;
-  --color-fg-dim: #737373;
-  --color-accent: #0ea5e9;
+@import './nous-tokens.css';
+
+/* ── LM 暗色身份覆盖 ───────────────────────────────────────── */
+.dark {
+  /* 表面层:slate 体系(更冷,更深) */
+  --md-surface: #020617;              /* canvas — 全局底色 */
+  --md-surface-dim: #020617;
+  --md-surface-bright: #0a0a0a;
+  --md-surface-container-lowest: #020617;
+  --md-surface-container-low: #171717;  /* panel-soft */
+  --md-surface-container: #0a0a0a;      /* panel */
+  --md-surface-container-high: #262626; /* hover */
+  --md-surface-container-highest: #2e2e2e;
+
+  /* 文本 */
+  --md-on-surface: #f5f5f5;             /* fg */
+  --md-on-surface-variant: #a3a3a3;     /* fg-muted */
+
+  /* 边框 */
+  --md-outline: #404040;
+  --md-outline-variant: #262626;        /* line */
+
+  /* 主色:sky-500 */
+  --md-primary: #0ea5e9;                /* accent */
+  --md-on-primary: #ffffff;
+  --md-primary-container: #075985;
+  --md-on-primary-container: #e0f2fe;
+  --md-focus-ring: #0ea5e9;
+}
+
+/* ── Tailwind v4 @theme:把 LM 9 个语义 token 映射到 MD3 ───── */
+@theme inline {
+  --color-canvas: var(--md-surface);
+  --color-panel: var(--md-surface-container);
+  --color-panel-soft: var(--md-surface-container-low);
+  --color-hover: var(--md-surface-container-high);
+  --color-line: var(--md-outline-variant);
+  --color-fg: var(--md-on-surface);
+  --color-fg-muted: var(--md-on-surface-variant);
+  --color-fg-dim: #737373;              /* MD3 无对应槽,保留静态值 */
+  --color-accent: var(--md-primary);
 }

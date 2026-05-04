@@ -1,0 +1,26 @@
+.wm-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: var(--md-scrim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: var(--wm-z-modal, 50);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.wm-modal-content {
+  background-color: var(--md-surface-container-high);
+  color: var(--md-on-surface);
+  border-radius: 14px;
+  padding: var(--wm-space-6, 1.25rem);
+  max-width: 480px;
+  width: 90%;
+  box-shadow: var(--wm-shadow-popover);
+  border: 1px solid var(--md-outline-variant);
+}
+
+.wm-modal-content:focus {
+  outline: none;
+}
