@@ -10,6 +10,10 @@
 
 - [`license.spec.ts`](./decor-contracts/license.spec.ts)
 
+## [IPC safeHandle 契约 (跨里程碑)](./ipc-safe-handle/README.md)
+
+- [`safe-handle.spec.ts`](./ipc-safe-handle/safe-handle.spec.ts)
+
 ## [layout 持久化 (M2)](./layout-persistence/README.md)
 
 - [`persistence.spec.ts`](./layout-persistence/persistence.spec.ts)

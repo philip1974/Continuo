@@ -23,7 +23,7 @@ function createMainWindow() {
     titleBarStyle: 'hiddenInset',
     backgroundColor: '#020617',
     webPreferences: {
-      preload: path.join(__dirname, '../preload/index.js'),
+      preload: path.join(__dirname, '../preload/index.cjs'),
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,
@@ -39,7 +39,7 @@ function createPopoutWindow(opts: { panelId: string; bounds?: Electron.Rectangle
     ...opts.bounds,
     backgroundColor: '#020617',
     webPreferences: {
-      preload: path.join(__dirname, '../preload/index.js'),
+      preload: path.join(__dirname, '../preload/index.cjs'),
       contextIsolation: true,
       sandbox: true,
     },
