@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useTree } from '@headless-tree/react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { ItemInstance, TreeInstance } from '@headless-tree/core';
@@ -23,6 +23,7 @@ import {
   type DropTargetEntry,
 } from './drop-handlers';
 import { useFsWatcher } from './hooks/useFsWatcher';
+import { useEditorFile } from '@/panels/Editor/useEditorFile';
 
 interface CreatingState {
   type: 'file' | 'dir';
@@ -106,6 +107,20 @@ export function FolderTree({ root }: { root: string }) {
 
   const treeApi = { invalidateChildrenIds: refreshParent };
   const mutateDeps = { fs: window.api.fs };
+
+  // Explorer ↔ Editor 联动(Step E5):单击文件 → openFileByPath
+  const { openFileByPath } = useEditorFile();
+  const handleFileOpen = useCallback(
+    async (path: string) => {
+      const r = await openFileByPath(path);
+      if (!r.ok) {
+        // FS_NOT_FOUND / FS_DENIED 等;不弹窗噪音,console 即可
+        // eslint-disable-next-line no-console
+        console.warn('[explorer] open file failed:', r.code, r.message);
+      }
+    },
+    [openFileByPath],
+  );
 
   const contextActions: ContextMenuActions = {
     onRename: (path) => tree.getItemInstance(path)?.startRenaming(),
@@ -244,6 +259,7 @@ export function FolderTree({ root }: { root: string }) {
                     isDropHover={
                       dragActive && hoverTarget?.path === item.getId()
                     }
+                    onFileOpen={handleFileOpen}
                   />
                 );
               })}

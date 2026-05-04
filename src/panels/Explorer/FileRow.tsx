@@ -15,6 +15,8 @@ interface FileRowProps {
   onHoverDropTarget?: (target: DropTargetEntry | null) => void;
   /** dnd:此行是当前 hover 落点时高亮. */
   isDropHover?: boolean;
+  /** 单击文件触发(目录的展开仍由 headless-tree mousedown 接管). */
+  onFileOpen?: (path: string) => void;
 }
 
 const ICON_SIZE = 16;
@@ -31,6 +33,7 @@ export function FileRow({
   contextActions,
   onHoverDropTarget,
   isDropHover = false,
+  onFileOpen,
 }: FileRowProps) {
   const data = item.getItemData();
   const isDir = item.isFolder();
@@ -44,6 +47,17 @@ export function FileRow({
   const row = (
     <div
       {...item.getProps()}
+      onClick={(e) => {
+        // 上游 selectionFeature 用 mousedown,onClick 不冲突
+        const upstream = (item.getProps() as { onClick?: (e: React.MouseEvent) => void })
+          .onClick;
+        upstream?.(e);
+        // 单击文件 → 通知 FolderTree 触发 Editor 打开;
+        // 单击目录由 headless-tree 默认行为处理(展开/折叠)
+        if (!isDir && !isRenaming) {
+          onFileOpen?.(data.path);
+        }
+      }}
       onDragEnter={(e) => {
         if (!e.dataTransfer.types.includes('Files')) return;
         // 文件夹 → 自身;文件 → 父目录(由 resolveDropTarget 算)
