@@ -1,8 +1,19 @@
 // 单行 Header:左 tab 列表 / 右 mode 切换 + 自动保存提示 + 保存按钮。
-// 替代原来的 Toolbar+TabBar 两行结构(避免文件名在 tab 与 toolbar 重复显示)。
+//
+// 双 tab 行抑制策略:
+//   tabs=0  → 整个 header 不渲染(EditorWelcome 接管)
+//   tabs=1  → 紧凑模式:[文件名 ●] [Edit/Source/Preview] [auto-save 提示] [保存] [×]
+//             不显 sky 下划线 tab 列表(避免与 Dockview 自身的 'Editor' tab 撞下划线)
+//   tabs≥2  → 完整 TabNav + 右侧控制条
 
 import { useEditorStore, type EditorMode, type EditorTab } from '@/stores/editor.store';
-import { Button, SegmentedControl, TabNav, TabNavItem } from '@/design';
+import {
+  Button,
+  IconButton,
+  SegmentedControl,
+  TabNav,
+  TabNavItem,
+} from '@/design';
 
 interface EditorHeaderProps {
   activeTab: EditorTab | null;
@@ -39,23 +50,42 @@ export function EditorHeader({
   if (tabs.length === 0) return null;
 
   const dirty = activeTab?.dirty ?? false;
+  const showTabList = tabs.length >= 2;
 
   return (
     <div className="flex h-9 shrink-0 items-stretch border-b border-line bg-canvas">
-      <TabNav className="min-w-0 flex-1 overflow-x-auto">
-        {tabs.map((tab) => (
-          <TabNavItem
-            key={tab.id}
-            active={tab.id === activeTabId}
-            dirty={tab.dirty}
-            title={tab.filePath ?? '未保存草稿'}
-            onSelect={() => switchTab(tab.id)}
-            onClose={() => onCloseRequest(tab)}
+      {showTabList ? (
+        <TabNav className="min-w-0 flex-1 overflow-x-auto">
+          {tabs.map((tab) => (
+            <TabNavItem
+              key={tab.id}
+              active={tab.id === activeTabId}
+              dirty={tab.dirty}
+              title={tab.filePath ?? '未保存草稿'}
+              onSelect={() => switchTab(tab.id)}
+              onClose={() => onCloseRequest(tab)}
+            >
+              {basename(tab.filePath)}
+            </TabNavItem>
+          ))}
+        </TabNav>
+      ) : (
+        // 单 tab 紧凑模式:文件名 + dirty,无 tab 下划线
+        <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-xs">
+          <span
+            className="truncate text-fg"
+            title={activeTab?.filePath ?? '未保存草稿'}
           >
-            {basename(tab.filePath)}
-          </TabNavItem>
-        ))}
-      </TabNav>
+            {basename(activeTab?.filePath ?? null)}
+          </span>
+          {dirty && (
+            <span
+              className="inline-block h-1 w-1 shrink-0 rounded-full bg-accent"
+              aria-label="未保存修改"
+            />
+          )}
+        </div>
+      )}
 
       <div className="flex shrink-0 items-center gap-2 border-l border-line px-3 text-xs">
         {autoSaveEnabled && (
@@ -85,6 +115,18 @@ export function EditorHeader({
         >
           保存
         </Button>
+
+        {/* 单 tab 时,close × 移到右侧控制区(普通 tab 列表自带 close) */}
+        {!showTabList && activeTab && (
+          <IconButton
+            size="xs"
+            onClick={() => onCloseRequest(activeTab)}
+            title="关闭文件"
+            aria-label="关闭文件"
+          >
+            ✕
+          </IconButton>
+        )}
       </div>
     </div>
   );
