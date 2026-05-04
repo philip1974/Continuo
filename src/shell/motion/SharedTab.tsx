@@ -2,7 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { HTMLAttributes, PointerEvent } from 'react';
 import { motion } from 'motion/react';
 import type { DockviewPanelApi, IDockviewPanelHeaderProps } from 'dockview-react';
-import { EXIT_DURATION_MS, tabIndicatorLayoutId, TAB_INDICATOR_SPRING } from './tokens';
+import {
+  EXIT_DURATION_MS,
+  panelTitleLayoutId,
+  tabIndicatorLayoutId,
+  TAB_INDICATOR_SPRING,
+  TAB_TITLE_SPRING,
+} from './tokens';
 import { useClosingStore } from './closing-store';
 
 function useIsActive(api: DockviewPanelApi): boolean {
@@ -94,7 +100,19 @@ export function SharedTab(props: IDockviewPanelHeaderProps & TabHtmlExtras) {
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerLeave}
     >
-      <span className="select-none">{title}</span>
+      {/* 落点 ③:active tab 标题挂 layoutId,跨 group 拖动后让标题"飞"过去。
+          只对 active 加,避免 inactive tab 的 portal 测量噪声(R2)。 */}
+      {active ? (
+        <motion.span
+          layoutId={panelTitleLayoutId(api.id)}
+          className="select-none"
+          transition={TAB_TITLE_SPRING}
+        >
+          {title}
+        </motion.span>
+      ) : (
+        <span className="select-none">{title}</span>
+      )}
       <button
         type="button"
         aria-label={`Close ${title}`}

@@ -22,3 +22,11 @@ export const TAB_INDICATOR_SPRING = {
   stiffness: 500,
   damping: 35,
 };
+
+// 落点 ③:active tab 标题跨 group 飞行的 spring。damping 略高,
+// 避免标题文字在长距离飞行后过冲过明显。
+export const TAB_TITLE_SPRING = {
+  type: 'spring' as const,
+  stiffness: 500,
+  damping: 38,
+};

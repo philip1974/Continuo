@@ -7,6 +7,8 @@ import {
   PANEL_MOUNT_ANIMATE,
   PANEL_MOUNT_EXIT,
   EXIT_DURATION_MS,
+  TAB_INDICATOR_SPRING,
+  TAB_TITLE_SPRING,
 } from '../../shell/motion/tokens';
 import { useClosingStore } from '../../shell/motion/closing-store';
 
@@ -43,6 +45,17 @@ describe('动画落点契约', () => {
 
     it('EXIT_DURATION_MS 与 transition.duration 对齐(秒 → 毫秒)', () => {
       expect(EXIT_DURATION_MS).toBe(220);
+    });
+  });
+
+  describe('落点 ③ 标题飞行', () => {
+    it('TAB_TITLE_SPRING 与 doc 03 一致', () => {
+      expect(TAB_TITLE_SPRING).toEqual({ type: 'spring', stiffness: 500, damping: 38 });
+    });
+
+    it('与 indicator spring 比 damping 更高(避免长距离飞行后过冲)', () => {
+      expect(TAB_TITLE_SPRING.damping).toBeGreaterThan(TAB_INDICATOR_SPRING.damping);
+      expect(TAB_TITLE_SPRING.stiffness).toBe(TAB_INDICATOR_SPRING.stiffness);
     });
   });
 
