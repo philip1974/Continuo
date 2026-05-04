@@ -5,7 +5,10 @@ import {
   PANEL_MOUNT_TRANSITION,
   PANEL_MOUNT_INITIAL,
   PANEL_MOUNT_ANIMATE,
+  PANEL_MOUNT_EXIT,
+  EXIT_DURATION_MS,
 } from '../../shell/motion/tokens';
+import { useClosingStore } from '../../shell/motion/closing-store';
 
 describe('动画落点契约', () => {
   describe('落点 ① indicator layoutId', () => {
@@ -32,6 +35,37 @@ describe('动画落点契约', () => {
 
     it('animate 回到自然态', () => {
       expect(PANEL_MOUNT_ANIMATE).toEqual({ opacity: 1, y: 0, scale: 1 });
+    });
+
+    it('exit 微上移 + 微缩放', () => {
+      expect(PANEL_MOUNT_EXIT).toEqual({ opacity: 0, y: -4, scale: 0.99 });
+    });
+
+    it('EXIT_DURATION_MS 与 transition.duration 对齐(秒 → 毫秒)', () => {
+      expect(EXIT_DURATION_MS).toBe(220);
+    });
+  });
+
+  describe('closing-store 行为', () => {
+    it('mark/unmark 幂等且互不影响', () => {
+      const s = useClosingStore.getState();
+      s.unmark('zz'); // 干净起点
+      s.mark('zz');
+      expect(useClosingStore.getState().ids.has('zz')).toBe(true);
+      s.mark('zz'); // 重复 mark 不抛
+      expect(useClosingStore.getState().ids.has('zz')).toBe(true);
+      s.unmark('zz');
+      expect(useClosingStore.getState().ids.has('zz')).toBe(false);
+      s.unmark('zz'); // 重复 unmark 不抛
+    });
+
+    it('mark 后返回的是新 Set 引用(供 React 订阅)', () => {
+      const before = useClosingStore.getState().ids;
+      useClosingStore.getState().mark('alpha');
+      const after = useClosingStore.getState().ids;
+      expect(after).not.toBe(before);
+      expect(after.has('alpha')).toBe(true);
+      useClosingStore.getState().unmark('alpha');
     });
   });
 });

@@ -11,6 +11,7 @@ import { applyDefaultLayout } from './layout.default';
 import { HeaderActions } from './HeaderActions';
 import { EmptyState } from './EmptyState';
 import { SharedTab } from '@/shell/motion/SharedTab';
+import { useClosingStore } from '@/shell/motion/closing-store';
 import { debounce } from '@/lib/debounce';
 import '@/styles/dockview.css';
 
@@ -47,6 +48,12 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       event.api.onDidLayoutChange(() => {
         persist();
         setEmpty(event.api.totalPanels === 0);
+      });
+
+      // 防 closing-store 残留:panel 真被 removed 后从 set 摘掉,
+      // 避免后续同 id panel 一上来就走 EXIT 动画。
+      event.api.onDidRemovePanel((panel) => {
+        useClosingStore.getState().unmark(panel.id);
       });
     },
     [onLayoutReady],

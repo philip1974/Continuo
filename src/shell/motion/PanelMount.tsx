@@ -2,18 +2,22 @@ import type { ReactNode } from 'react';
 import { motion } from 'motion/react';
 import {
   PANEL_MOUNT_ANIMATE,
+  PANEL_MOUNT_EXIT,
   PANEL_MOUNT_INITIAL,
   PANEL_MOUNT_TRANSITION,
 } from './tokens';
+import { useClosingStore } from './closing-store';
 
-// 进场动画包装。退场不在 v1 范围:
-// dockview 直接控制 panel body 的 unmount,AnimatePresence 在这一层
-// 拿不到 unmount 通知。需要的话 v2 再下沉到 dockview 生命周期。
-export function PanelMount({ children }: { children: ReactNode }) {
+// 进场:initial → animate(在 panels 注册处包一层即可触发)。
+// 退场:dockview 没有 onWillRemovePanel,无法直接挂 AnimatePresence。
+// 折中:SharedTab 的 close handler 先把 id 放进 closing-store + setTimeout,
+// 这一层订阅 store,isClosing 时 animate 到 EXIT,200ms 后 dockview 真 unmount。
+export function PanelMount({ panelId, children }: { panelId: string; children: ReactNode }) {
+  const isClosing = useClosingStore((s) => s.ids.has(panelId));
   return (
     <motion.div
       initial={PANEL_MOUNT_INITIAL}
-      animate={PANEL_MOUNT_ANIMATE}
+      animate={isClosing ? PANEL_MOUNT_EXIT : PANEL_MOUNT_ANIMATE}
       transition={PANEL_MOUNT_TRANSITION}
       className="h-full w-full"
     >
