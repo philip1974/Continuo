@@ -10,8 +10,7 @@ import { useCallback, useState } from 'react';
 import { useEditorStore } from '@/stores/editor.store';
 import { ConfirmDialog } from '@/panels/Explorer/ConfirmDialog';
 import { CodeEditor } from './CodeEditor';
-import { EditorTabBar } from './EditorTabBar';
-import { EditorToolbar } from './EditorToolbar';
+import { EditorHeader } from './EditorHeader';
 import { EditorWelcome } from './EditorWelcome';
 import { MilkdownEditor } from './MilkdownEditor';
 import { useAutoSave, isAutoSaveEnabled } from './useAutoSave';
@@ -116,12 +115,12 @@ export function EditorPanel() {
         }
       }}
     >
-      <EditorToolbar
+      <EditorHeader
         activeTab={activeTab}
-        onSave={handleSave}
         autoSaveEnabled={autoSaveEnabled}
+        onCloseRequest={onTabCloseRequest}
+        onSave={handleSave}
       />
-      <EditorTabBar onCloseRequest={onTabCloseRequest} />
       <div className="min-h-0 flex-1">{body}</div>
 
       <ConfirmDialog
