@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef } from 'react';
 import { useTree } from '@headless-tree/react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { FileEntry } from '@/lib/fs/types';
@@ -6,21 +6,10 @@ import { createTreeConfig } from './tree-config';
 import { FILE_ROW_HEIGHT, FileRow } from './FileRow';
 
 // useTree + react-virtual 渲染扁平的已展开节点列表。
-// dataLoader 调 window.api.fs.listDir;IPC 失败把错误展示在顶部 debug bar 帮排错。
+// dataLoader 调 window.api.fs.listDir,IPC 失败 → tree-config 默认 console.warn。
 export function FolderTree({ root }: { root: string }) {
-  const [lastError, setLastError] = useState<string | null>(null);
-
   const config = useMemo(
-    () =>
-      createTreeConfig({
-        root,
-        fs: window.api.fs,
-        onIpcWarn: (msg, code) => {
-          // eslint-disable-next-line no-console
-          console.warn('[explorer-tree]', code, msg);
-          setLastError(`[${code}] ${msg}`);
-        },
-      }),
+    () => createTreeConfig({ root, fs: window.api.fs }),
     [root],
   );
   const tree = useTree<FileEntry>(config);
@@ -36,13 +25,6 @@ export function FolderTree({ root }: { root: string }) {
 
   return (
     <div className="flex h-full w-full flex-col">
-      {/* Debug bar — Step 5/6 完成后移除 */}
-      <div className="shrink-0 border-b border-neutral-800 bg-neutral-950 px-2 py-1 text-[10px] text-neutral-500">
-        items={items.length} root=<span className="text-neutral-300">{root}</span>
-        {lastError && (
-          <span className="ml-2 text-red-400">err: {lastError}</span>
-        )}
-      </div>
       <div
         ref={scrollRef}
         className="min-h-0 flex-1 overflow-auto bg-[#020617]"
