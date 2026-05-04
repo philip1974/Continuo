@@ -77,8 +77,20 @@ export function TerminalPanel() {
           </div>
         ))}
         {sessions.length === 0 && (
-          <div className="flex h-full w-full items-center justify-center text-xs text-fg-dim">
-            正在启动终端…
+          <div className="flex h-full w-full flex-col items-center justify-center gap-3 text-sm text-fg-muted">
+            <div className="text-xs uppercase tracking-wider text-fg-dim">
+              无活跃终端
+            </div>
+            <button
+              type="button"
+              onClick={handleNew}
+              className="rounded border border-line bg-panel px-4 py-2 text-fg-muted transition hover:bg-hover hover:text-fg"
+            >
+              + 新建终端
+            </button>
+            <div className="text-[10px] text-fg-dim">
+              或点上方 Tab 栏右侧 +
+            </div>
           </div>
         )}
       </div>
