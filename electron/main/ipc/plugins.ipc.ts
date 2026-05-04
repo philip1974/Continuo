@@ -12,6 +12,7 @@ import {
   listPluginDirs,
   readEnabledIds,
   readPermissions,
+  uninstallPlugin,
   writeEnabledIds,
   writePermissions,
 } from '../services/plugins.service';
@@ -32,6 +33,9 @@ const WritePermissionsInput = z
   .strict();
 const InstallFromGitInput = z
   .object({ url: z.string().min(1) })
+  .strict();
+const UninstallInput = z
+  .object({ id: z.string().min(1) })
   .strict();
 
 export function registerPluginsIpc(): void {
@@ -93,6 +97,16 @@ export function registerPluginsIpc(): void {
     PLUGINS_CHANNELS.INSTALL_FROM_GIT,
     InstallFromGitInput,
     ({ url }) => installFromGit(url, pluginsDir),
+    trusted,
+  );
+
+  // v4.6 卸载
+  safeHandle(
+    PLUGINS_CHANNELS.UNINSTALL,
+    UninstallInput,
+    async ({ id }) => {
+      await uninstallPlugin(pluginsDir, id);
+    },
     trusted,
   );
 }

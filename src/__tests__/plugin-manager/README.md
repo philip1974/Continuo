@@ -36,6 +36,12 @@ I/O 全部抽象为接口注入(`ManagerHost`),便于 jsdom 单测。
 - `enable(id)`:若已 active 直接返回 ok;否则 load → new → activate,写入 enabled.json
 - `disable(id)`:若不 active 直接返回 ok;否则 `_deactivate` + 移除 enabled.json
 
+### uninstall 单插件(v4.6)
+
+- `uninstall(id)`:若 enabled 先 disable,再调 `host.removePluginDir(id)`(主进程 rm -rf + 清 _permissions),最后从 entries map 删
+- 不存在的 id → 抛 `not found`
+- host 未实现 `removePluginDir` → 抛 `NOT_SUPPORTED`(向后兼容,jsdom 测试无需 mock 文件系统)
+
 ### listAll
 
 - 返回 `[{ id, manifest, status: 'enabled' | 'disabled' | 'failed' }]`

@@ -33,6 +33,8 @@ export interface ManagerHost {
   permissionStore?: PermissionStore;
   /** v3.4 权限弹窗 PromptFn(可选,缺省 → 默认拒绝所有 pending). */
   promptFn?: PromptFn;
+  /** v4.6 卸载:rm -rf plugins/<id>/(可选,缺省 → uninstall 抛 NOT_SUPPORTED). */
+  removePluginDir?(id: string): Promise<void>;
 }
 
 // ── PluginEntry / Status ───────────────────────────────
@@ -215,6 +217,30 @@ export class PluginManager {
     if (wasEnabled) {
       await this.activateEntry(entry);
     }
+  }
+
+  /**
+   * 卸载插件(M-Plugin v4.6):
+   * 1. 若 enabled → disable LIFO _deactivate + 写 _enabled.json
+   * 2. host.removePluginDir(id) → 主进程 rm -rf plugins/<id>/ + 清 _permissions
+   * 3. 从 entries map 移除
+   *
+   * 不存在的 id → 抛错。host 未配 removePluginDir → 抛 NOT_SUPPORTED。
+   */
+  async uninstall(id: string): Promise<void> {
+    const entry = this.entries.get(id);
+    if (!entry) throw new Error(`Plugin ${id} not found`);
+    if (!this.host.removePluginDir) {
+      throw Object.assign(new Error(`host 未实现 removePluginDir`), {
+        code: 'NOT_SUPPORTED',
+      });
+    }
+
+    if (entry.status === 'enabled' && entry.instance) {
+      await this.disable(id);
+    }
+    await this.host.removePluginDir(id);
+    this.entries.delete(id);
   }
 
   /** 列出所有已发现插件状态. */

@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from 'react';
 import { Button, Input } from '@/design';
+import { ConfirmDialog } from '@/panels/Explorer/ConfirmDialog';
 import { lmApp } from '../lm-app';
 import { getUserPluginManager } from '../lm-plugin-manager';
 import type { PluginListItem } from '../PluginManager';
@@ -178,6 +179,29 @@ function UserPluginsSection() {
   const [gitUrl, setGitUrl] = useState('');
   const [installing, setInstalling] = useState(false);
   const [installMsg, setInstallMsg] = useState<string | null>(null);
+  const [pendingInstall, setPendingInstall] = useState<{
+    id: string;
+    name: string;
+    version: string;
+  } | null>(null);
+  const [uninstallTarget, setUninstallTarget] = useState<PluginListItem | null>(
+    null,
+  );
+
+  const onConfirmUninstall = async () => {
+    if (!uninstallTarget || !mgr) return;
+    const target = uninstallTarget;
+    setUninstallTarget(null);
+    try {
+      await mgr.uninstall(target.id);
+    } catch (err) {
+      console.warn(`[plugins-tab] uninstall ${target.id} failed`, err);
+      setInstallMsg(
+        `✘ 卸载失败:${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    refresh();
+  };
 
   const onInstall = async () => {
     if (!gitUrl.trim()) return;
@@ -189,8 +213,9 @@ function UserPluginsSection() {
         setInstallMsg(`✘ [${r.code}] ${r.message}`);
       } else {
         setInstallMsg(
-          `✔ 已安装 ${r.data.name} v${r.data.version} — 重启 LM 生效`,
+          `✔ 已安装 ${r.data.name} v${r.data.version} — 重启 LM 后插件加载`,
         );
+        setPendingInstall(r.data);
         setGitUrl('');
       }
     } catch (err) {
@@ -232,19 +257,38 @@ function UserPluginsSection() {
           <div className="mt-1 text-[10px] text-fg-muted">{installMsg}</div>
         )}
       </div>
-      {plugins.length === 0 ? (
+      {plugins.length === 0 && !pendingInstall ? (
         <div className="rounded border border-dashed border-line bg-panel-soft/40 px-3 py-6 text-center text-xs text-fg-dim">
-          暂无。把插件目录放到 <code>userData/plugins/&lt;id&gt;/</code>(含
-          manifest.json + main.js)即可加载。
+          暂无第三方插件。从上方"git URL 安装"添加。
         </div>
       ) : (
         <div className="rounded border border-line bg-panel-soft/40">
+          {pendingInstall && (
+            <div className="flex items-start gap-3 px-3 py-2 text-xs">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-baseline gap-2">
+                  <span className="font-medium text-fg">
+                    {pendingInstall.name}
+                  </span>
+                  <code className="text-[10px] text-fg-dim">
+                    {pendingInstall.id}
+                  </code>
+                  <span className="text-[10px] text-fg-dim">
+                    v{pendingInstall.version}
+                  </span>
+                </div>
+                <div className="mt-0.5 text-fg-dim">
+                  ⏳ 已安装,重启 LM 后出现在列表并可启用
+                </div>
+              </div>
+            </div>
+          )}
           {plugins.map((p, i) => (
             <div
               key={p.id}
               className={[
                 'flex items-start gap-3 px-3 py-2 text-xs',
-                i > 0 ? 'border-t border-line' : '',
+                i > 0 || pendingInstall ? 'border-t border-line' : '',
               ].join(' ')}
             >
               <div className="min-w-0 flex-1">
@@ -313,11 +357,35 @@ function UserPluginsSection() {
                 ) : (
                   <span className="text-[10px] text-red-400">FAILED</span>
                 )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setUninstallTarget(p)}
+                  title="卸载该插件(删除磁盘目录)"
+                >
+                  卸载
+                </Button>
               </div>
             </div>
           ))}
         </div>
       )}
+      <ConfirmDialog
+        open={uninstallTarget !== null}
+        title="卸载插件?"
+        description={
+          uninstallTarget ? (
+            <>
+              将永久删除 <code className="text-fg">{uninstallTarget.id}</code>{' '}
+              的安装目录及其所有数据。该操作不可撤销,需重新从 git URL 安装才能恢复。
+            </>
+          ) : null
+        }
+        confirmLabel="卸载"
+        destructive
+        onConfirm={onConfirmUninstall}
+        onCancel={() => setUninstallTarget(null)}
+      />
     </section>
   );
 }

@@ -43,5 +43,11 @@ export function createWindowApiHost(): ManagerHost {
       }
     },
     importModule: (url) => import(/* @vite-ignore */ url),
+    removePluginDir: async (id) => {
+      const r = await window.api.plugins.uninstall(id);
+      if (!r.ok) {
+        throw Object.assign(new Error(r.message), { code: r.code });
+      }
+    },
   };
 }

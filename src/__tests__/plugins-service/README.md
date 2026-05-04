@@ -31,3 +31,10 @@
 
 - baseDir 不存在 → 自动 mkdir -p 后写
 - 写 `_enabled.json` 内容 `JSON.stringify(ids, null, 2)`
+
+### uninstallPlugin(baseDir, id)(v4.6)
+
+- id 不匹配 `[a-z0-9._-]+` → 抛 `INVALID_ID`(防路径穿越)
+- 目录不存在 → 抛 `NOT_INSTALLED`
+- rm -rf `baseDir/<id>/`,失败 → 抛 `RM_FAILED`
+- 顺手从 `_enabled.json` 摘 id(若有),从 `_permissions.json` 删 key(若有)

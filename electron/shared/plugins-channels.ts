@@ -19,6 +19,8 @@ export const PLUGINS_CHANNELS = {
   PROTOCOL_URL: 'plugins:protocol-url',
   /** 从 git URL clone + 安装到 plugins 目录(v4.5). */
   INSTALL_FROM_GIT: 'plugins:install-from-git',
+  /** 卸载插件:rm -rf plugins/<id>/ + 清 _enabled / _permissions(v4.6). */
+  UNINSTALL: 'plugins:uninstall',
 } as const;
 
 export type PluginsChannel = (typeof PLUGINS_CHANNELS)[keyof typeof PLUGINS_CHANNELS];

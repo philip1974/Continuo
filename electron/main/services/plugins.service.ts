@@ -149,6 +149,60 @@ import { spawn } from 'node:child_process';
 import { mkdtemp, cp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 
+const PLUGIN_ID_RE = /^[a-z0-9._-]+$/;
+
+/**
+ * 卸载插件:rm -rf baseDir/<id>/,顺手清 _enabled.json 和 _permissions.json
+ * 中可能残留的 id。
+ *
+ * - id 不合法 → 抛 INVALID_ID
+ * - 目录不存在 → 抛 NOT_INSTALLED
+ * - rm 失败 → 抛 RM_FAILED
+ */
+export async function uninstallPlugin(
+  baseDir: string,
+  id: string,
+): Promise<void> {
+  if (!PLUGIN_ID_RE.test(id)) {
+    throw Object.assign(new Error(`非法 plugin id: ${id}`), {
+      code: 'INVALID_ID',
+    });
+  }
+  const targetDir = path.join(baseDir, id);
+  try {
+    await fs.access(targetDir);
+  } catch {
+    throw Object.assign(new Error(`插件未安装: ${id}`), {
+      code: 'NOT_INSTALLED',
+    });
+  }
+  try {
+    await rm(targetDir, { recursive: true, force: true });
+  } catch (err) {
+    throw Object.assign(
+      new Error(`删除失败: ${err instanceof Error ? err.message : String(err)}`),
+      { code: 'RM_FAILED' },
+    );
+  }
+
+  // 清 _enabled.json 中的 id(防止 reload 复活已删插件)
+  const enabled = await readEnabledIds(baseDir);
+  if (enabled.includes(id)) {
+    await writeEnabledIds(
+      baseDir,
+      enabled.filter((x) => x !== id),
+    );
+  }
+
+  // 清 _permissions.json 中的 id(避免重装继承旧授权)
+  const perms = await readPermissions(baseDir);
+  if (id in perms) {
+    const next = { ...perms };
+    delete (next as Record<string, unknown>)[id];
+    await writePermissions(baseDir, next);
+  }
+}
+
 export interface InstallFromGitResult {
   readonly id: string;
   readonly name: string;

@@ -18,6 +18,8 @@ interface MockHostState {
   enabled: Set<string>;
   modules: Map<string, unknown>;
   enabledWritten: Set<string>;
+  /** v4.6 卸载:记下被请求删的 id;调用方决定要不要从 dirs 同步删. */
+  removed?: string[];
 }
 
 function makeHost(state: MockHostState): ManagerHost {
@@ -32,6 +34,10 @@ function makeHost(state: MockHostState): ManagerHost {
       const mod = state.modules.get(url);
       if (!mod) throw new Error(`module ${url} not registered`);
       return mod;
+    },
+    removePluginDir: async (id) => {
+      (state.removed ??= []).push(id);
+      state.dirs = state.dirs.filter((d) => d.id !== id);
     },
   };
 }
@@ -369,6 +375,100 @@ describe('reload(id)', () => {
     state.enabledWritten = new Set();
     await mgr.reload('k');
     expect(state.enabledWritten.size).toBe(0);
+  });
+});
+
+// ── v4.6 uninstall ─────────────────────────────────────
+
+describe('uninstall(id)', () => {
+  it('启用中插件 uninstall → 先 _deactivate 再删目录,从 listAll 消失', async () => {
+    const state: MockHostState = {
+      dirs: [
+        { id: 'u', manifestText: manifestText('u'), moduleUrl: 'mod://u' },
+      ],
+      enabled: new Set(['u']),
+      modules: new Map([['mod://u', { default: GoodPlugin }]]),
+      enabledWritten: new Set(),
+    };
+    const mgr = new PluginManager(fakeApp, makeHost(state));
+    await mgr.init();
+    expect(GoodPlugin.loaded).toEqual(['u']);
+
+    await mgr.uninstall('u');
+
+    expect(GoodPlugin.unloaded).toEqual(['u']);
+    expect(state.removed).toEqual(['u']);
+    expect(mgr.listAll().find((x) => x.id === 'u')).toBeUndefined();
+    expect([...state.enabledWritten]).toEqual([]); // disable 已写空
+  });
+
+  it('disabled 插件 uninstall → 直接删,不调 _deactivate', async () => {
+    const state: MockHostState = {
+      dirs: [
+        { id: 'd', manifestText: manifestText('d'), moduleUrl: 'mod://d' },
+      ],
+      enabled: new Set(),
+      modules: new Map([['mod://d', { default: GoodPlugin }]]),
+      enabledWritten: new Set(),
+    };
+    const mgr = new PluginManager(fakeApp, makeHost(state));
+    await mgr.init();
+    await mgr.uninstall('d');
+    expect(GoodPlugin.unloaded).toEqual([]);
+    expect(state.removed).toEqual(['d']);
+    expect(mgr.listAll()).toEqual([]);
+  });
+
+  it('不存在的 id → 抛错,不调 removePluginDir', async () => {
+    const state: MockHostState = {
+      dirs: [],
+      enabled: new Set(),
+      modules: new Map(),
+      enabledWritten: new Set(),
+    };
+    const mgr = new PluginManager(fakeApp, makeHost(state));
+    await mgr.init();
+    await expect(mgr.uninstall('nope')).rejects.toThrow(/not found/i);
+    expect(state.removed).toBeUndefined();
+  });
+
+  it('host 未实现 removePluginDir → 抛 NOT_SUPPORTED', async () => {
+    const state: MockHostState = {
+      dirs: [
+        { id: 'x', manifestText: manifestText('x'), moduleUrl: 'mod://x' },
+      ],
+      enabled: new Set(),
+      modules: new Map([['mod://x', { default: GoodPlugin }]]),
+      enabledWritten: new Set(),
+    };
+    const baseHost = makeHost(state);
+    const host: ManagerHost = {
+      listPluginDirs: baseHost.listPluginDirs,
+      readEnabledIds: baseHost.readEnabledIds,
+      writeEnabledIds: baseHost.writeEnabledIds,
+      importModule: baseHost.importModule,
+      // intentionally omit removePluginDir
+    };
+    const mgr = new PluginManager(fakeApp, host);
+    await mgr.init();
+    await expect(mgr.uninstall('x')).rejects.toMatchObject({
+      code: 'NOT_SUPPORTED',
+    });
+  });
+
+  it('uninstall 后再 enable 同 id → 抛 not found(entries 已删)', async () => {
+    const state: MockHostState = {
+      dirs: [
+        { id: 'g', manifestText: manifestText('g'), moduleUrl: 'mod://g' },
+      ],
+      enabled: new Set(),
+      modules: new Map([['mod://g', { default: GoodPlugin }]]),
+      enabledWritten: new Set(),
+    };
+    const mgr = new PluginManager(fakeApp, makeHost(state));
+    await mgr.init();
+    await mgr.uninstall('g');
+    await expect(mgr.enable('g')).rejects.toThrow(/not found/i);
   });
 });
 

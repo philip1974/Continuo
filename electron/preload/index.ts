@@ -167,6 +167,9 @@ const api = {
     ): Promise<
       IpcResult<{ id: string; name: string; version: string }>
     > => ipcRenderer.invoke(PLUGINS_CHANNELS.INSTALL_FROM_GIT, { url }),
+    /** v4.6 卸载插件:rm -rf plugins/<id>/ + 清 _enabled / _permissions. */
+    uninstall: (id: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(PLUGINS_CHANNELS.UNINSTALL, { id }),
   },
 } as const;
 

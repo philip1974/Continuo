@@ -6,6 +6,7 @@ import {
   listPluginDirs,
   readEnabledIds,
   readPermissions,
+  uninstallPlugin,
   writeEnabledIds,
   writePermissions,
 } from '../../../electron/main/services/plugins.service';
@@ -182,5 +183,57 @@ describe('readPermissions / writePermissions', () => {
       'p.x': [{ permission: 'fs', granted: true, decidedAt: 1 }],
     });
     expect((await readPermissions(sub))['p.x']).toHaveLength(1);
+  });
+});
+
+// ── v4.6 卸载 ──────────────────────────────────────────
+
+describe('uninstallPlugin', () => {
+  it('id 含非法字符 → INVALID_ID,不动文件系统', async () => {
+    makeDir('com.foo', { id: 'com.foo', name: 'Foo', version: '0.1.0' });
+    await expect(uninstallPlugin(tmp, '../etc/passwd')).rejects.toMatchObject({
+      code: 'INVALID_ID',
+    });
+    // 既有目录没被影响
+    expect(await listPluginDirs(tmp)).toHaveLength(1);
+  });
+
+  it('插件目录不存在 → NOT_INSTALLED', async () => {
+    await expect(uninstallPlugin(tmp, 'com.notexist')).rejects.toMatchObject({
+      code: 'NOT_INSTALLED',
+    });
+  });
+
+  it('正常路径:删目录 + 从 _enabled.json 摘 id', async () => {
+    makeDir('com.foo', { id: 'com.foo', name: 'Foo', version: '0.1.0' });
+    makeDir('com.bar', { id: 'com.bar', name: 'Bar', version: '0.1.0' });
+    await writeEnabledIds(tmp, ['com.foo', 'com.bar']);
+
+    await uninstallPlugin(tmp, 'com.foo');
+
+    expect((await listPluginDirs(tmp)).map((x) => x.id)).toEqual(['com.bar']);
+    expect(await readEnabledIds(tmp)).toEqual(['com.bar']);
+  });
+
+  it('正常路径:从 _permissions.json 摘 id', async () => {
+    makeDir('com.foo', { id: 'com.foo', name: 'Foo', version: '0.1.0' });
+    await writePermissions(tmp, {
+      'com.foo': [{ permission: 'fs', granted: true, decidedAt: 1 }],
+      'com.bar': [{ permission: 'network', granted: true, decidedAt: 2 }],
+    });
+
+    await uninstallPlugin(tmp, 'com.foo');
+
+    const perms = await readPermissions(tmp);
+    expect(perms['com.foo']).toBeUndefined();
+    expect(perms['com.bar']).toHaveLength(1);
+  });
+
+  it('id 不在 _enabled / _permissions 中 → 不报错,只删目录', async () => {
+    makeDir('com.foo', { id: 'com.foo', name: 'Foo', version: '0.1.0' });
+    await writeEnabledIds(tmp, ['com.bar']); // foo 不在内
+    await uninstallPlugin(tmp, 'com.foo');
+    expect(await listPluginDirs(tmp)).toEqual([]);
+    expect(await readEnabledIds(tmp)).toEqual(['com.bar']);
   });
 });
