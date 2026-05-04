@@ -1,4 +1,5 @@
 // 48px 竖向 Activity Bar(VSCode 风),Dockview 之外、main 之内。
+// 顶部:Explorer / Search 等导航类。底部:Settings / Account 等元类。
 // Explorer 按钮 toggle 左侧 Explorer Sidebar 显隐(active 状态显示左侧 accent bar);
 // Search / Settings 占位待实现。
 
@@ -21,7 +22,7 @@ export function IconSidebar() {
   const sidebarOpen = useLayoutUiStore((s) => s.sidebarOpen);
   const toggleSidebar = useLayoutUiStore((s) => s.toggleSidebar);
 
-  const items: IconBarItemConfig[] = [
+  const topItems: IconBarItemConfig[] = [
     {
       id: 'explorer',
       label: sidebarOpen ? '隐藏 Explorer' : '显示 Explorer',
@@ -36,6 +37,9 @@ export function IconSidebar() {
       onClick: () => {},
       disabled: true,
     },
+  ];
+
+  const bottomItems: IconBarItemConfig[] = [
     {
       id: 'settings',
       label: '设置(待实现)',
@@ -45,19 +49,22 @@ export function IconSidebar() {
     },
   ];
 
+  const renderItem = (item: IconBarItemConfig) => (
+    <NavRailButton
+      key={item.id}
+      title={item.label}
+      active={item.active ?? false}
+      disabled={item.disabled ?? false}
+      onClick={item.onClick}
+    >
+      {item.node}
+    </NavRailButton>
+  );
+
   return (
-    <aside className="flex w-12 shrink-0 flex-col items-center gap-1 border-r border-line bg-panel py-2">
-      {items.map((item) => (
-        <NavRailButton
-          key={item.id}
-          title={item.label}
-          active={item.active ?? false}
-          disabled={item.disabled ?? false}
-          onClick={item.onClick}
-        >
-          {item.node}
-        </NavRailButton>
-      ))}
+    <aside className="flex w-12 shrink-0 flex-col items-center justify-between border-r border-line bg-panel py-2">
+      <div className="flex flex-col items-center gap-1">{topItems.map(renderItem)}</div>
+      <div className="flex flex-col items-center gap-1">{bottomItems.map(renderItem)}</div>
     </aside>
   );
 }

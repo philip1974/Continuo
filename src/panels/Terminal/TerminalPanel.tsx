@@ -74,7 +74,11 @@ export function TerminalPanel() {
 
   return (
     <div className="flex h-full w-full flex-col bg-canvas">
-      <TerminalTabs onNewSession={handleNew} onCloseSession={handleClose} />
+      <TerminalTabs
+        onNewSession={handleNew}
+        onCloseSession={handleClose}
+        showTabList={sessions.length > 1}
+      />
       <div className="relative min-h-0 flex-1">
         {sessions.map((sess) => (
           <div

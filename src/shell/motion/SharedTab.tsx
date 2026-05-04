@@ -119,7 +119,7 @@ export function SharedTab(props: IDockviewPanelHeaderProps & TabHtmlExtras) {
       {active && (
         <motion.span
           layoutId={tabIndicatorLayoutId(groupId)}
-          className="pointer-events-none absolute inset-x-0 bottom-0 h-[2px] bg-sky-400"
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-[2px] bg-accent"
           transition={TAB_INDICATOR_SPRING}
         />
       )}

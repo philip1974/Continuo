@@ -106,7 +106,7 @@ export function EditorPanel() {
 
   return (
     <div
-      className="flex h-full w-full flex-col bg-[#020617]"
+      className="flex h-full w-full flex-col bg-canvas"
       onKeyDown={(e) => {
         // Cmd/Ctrl+S 显式保存(Crepe 不会拦 ⌘S,所以可以放心)
         if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {

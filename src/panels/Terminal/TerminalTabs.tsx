@@ -4,33 +4,43 @@ import { IconButton, TabNav, TabNavItem } from '@/design';
 interface TerminalTabsProps {
   onNewSession: () => void;
   onCloseSession: (id: string) => void;
+  /** 单 session 时隐藏 tab 列表(由父决策),但 + 按钮总在. */
+  showTabList?: boolean;
 }
 
-export function TerminalTabs({ onNewSession, onCloseSession }: TerminalTabsProps) {
+export function TerminalTabs({
+  onNewSession,
+  onCloseSession,
+  showTabList = true,
+}: TerminalTabsProps) {
   const sessions = useTerminalStore((s) => s.sessions);
   const activeId = useTerminalStore((s) => s.activeId);
   const switchSession = useTerminalStore((s) => s.switchSession);
 
   return (
     <div className="flex h-7 shrink-0 items-stretch border-b border-line bg-panel">
-      <TabNav className="min-w-0 flex-1 overflow-x-auto">
-        {sessions.map((tab: TerminalSession) => {
-          const isExited = tab.exitCode !== null;
-          return (
-            <TabNavItem
-              key={tab.id}
-              active={tab.id === activeId}
-              muted={isExited}
-              title={isExited ? `${tab.title}(已退出 code=${tab.exitCode})` : tab.title}
-              onSelect={() => switchSession(tab.id)}
-              onClose={() => onCloseSession(tab.id)}
-            >
-              {tab.title}
-              {isExited && <span className="ml-1 text-fg-dim">(已退出)</span>}
-            </TabNavItem>
-          );
-        })}
-      </TabNav>
+      {showTabList ? (
+        <TabNav className="min-w-0 flex-1 overflow-x-auto">
+          {sessions.map((tab: TerminalSession) => {
+            const isExited = tab.exitCode !== null;
+            return (
+              <TabNavItem
+                key={tab.id}
+                active={tab.id === activeId}
+                muted={isExited}
+                title={isExited ? `${tab.title}(已退出 code=${tab.exitCode})` : tab.title}
+                onSelect={() => switchSession(tab.id)}
+                onClose={() => onCloseSession(tab.id)}
+              >
+                {tab.title}
+                {isExited && <span className="ml-1 text-fg-dim">(已退出)</span>}
+              </TabNavItem>
+            );
+          })}
+        </TabNav>
+      ) : (
+        <div className="min-w-0 flex-1" />
+      )}
       <IconButton
         size="sm"
         onClick={onNewSession}

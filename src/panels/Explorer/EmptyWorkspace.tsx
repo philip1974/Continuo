@@ -33,11 +33,21 @@ export function EmptyWorkspace() {
           <div className="px-3 pb-1 text-[10px] uppercase tracking-wider text-fg-dim">
             最近打开
           </div>
-          {recentRoots.map((p) => (
-            <MenuItem key={p} onClick={() => setRoot(p)} title={p}>
-              {p}
-            </MenuItem>
-          ))}
+          {recentRoots.map((p) => {
+            const m = p.match(/[^/\\]+$/);
+            const name = m ? m[0] : p;
+            const parent = m ? p.slice(0, p.length - m[0].length).replace(/[/\\]$/, '') : '';
+            return (
+              <MenuItem key={p} onClick={() => setRoot(p)} title={p}>
+                <span className="flex items-baseline gap-2 min-w-0">
+                  <span className="truncate font-medium">{name}</span>
+                  {parent && (
+                    <span className="truncate text-[10px] text-fg-dim">{parent}</span>
+                  )}
+                </span>
+              </MenuItem>
+            );
+          })}
         </div>
       )}
     </div>
