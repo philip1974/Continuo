@@ -30,6 +30,14 @@ export default defineConfig({
         '@': resolve(__dirname, 'src'),
       },
     },
+    // Milkdown/Crepe 内部 import Vue ESM bundler build,需 define 三个 flag
+    // 否则 console 报 "Feature flags ... not explicitly defined"。
+    // LM 不用 Vue,统一 false 让 tree-shake 干净。
+    define: {
+      __VUE_OPTIONS_API__: 'false',
+      __VUE_PROD_DEVTOOLS__: 'false',
+      __VUE_PROD_HYDRATION_MISMATCH_DETAILS__: 'false',
+    },
     build: {
       outDir: 'out/renderer',
       rollupOptions: { input: resolve(__dirname, 'index.html') },
