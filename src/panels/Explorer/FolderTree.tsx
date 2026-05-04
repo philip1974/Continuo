@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { useTree } from '@headless-tree/react';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import type { ItemInstance, TreeInstance } from '@headless-tree/core';
 import type { FileEntry } from '@/lib/fs/types';
 import { useExplorerStore } from '@/stores/explorer.store';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -20,21 +21,54 @@ interface CreatingState {
   parentDir: string;
 }
 
-export function FolderTree({ root }: { root: string }) {
-  const config = useMemo(
-    () => createTreeConfig({ root, fs: window.api.fs }),
-    [root],
-  );
-  const tree = useTree<FileEntry>(config);
-  const items = tree.getItems();
-  const selectedPaths = useExplorerStore((s) => s.selectedPaths);
+function dirname(p: string): string {
+  const trimmed = p.replace(/[\\/]+$/, '');
+  const idx = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
+  if (idx < 0) return '';
+  return trimmed.slice(0, idx) || '/';
+}
 
-  // ── 本地 UI 状态:rename / create / 删除确认 ────────────────────────
-  const [renamingPath, setRenamingPath] = useState<string | null>(null);
+export function FolderTree({ root }: { root: string }) {
+  // tree ref:onRename callback 在 useMemo 里引用,需要稳定 handle 拿到最新 tree
+  const treeRef = useRef<TreeInstance<FileEntry> | null>(null);
+  const selectedPaths = useExplorerStore((s) => s.selectedPaths);
   const [creating, setCreating] = useState<CreatingState | null>(null);
   const [deleteCandidate, setDeleteCandidate] = useState<string[] | null>(null);
 
-  // ── 虚拟滚动 ───────────────────────────────────────────────────────
+  const refreshParent = (parentPath: string) => {
+    try {
+      const parentItem = treeRef.current?.getItemInstance(parentPath);
+      parentItem?.invalidateChildrenIds();
+    } catch {
+      treeRef.current?.rebuildTree();
+    }
+  };
+
+  const config = useMemo(
+    () =>
+      createTreeConfig({
+        root,
+        fs: window.api.fs,
+        onRename: (item: ItemInstance<FileEntry>, newName: string) => {
+          // headless-tree onRename 是 sync 签名,我们 fire-and-forget 走 mutate-actions
+          void (async () => {
+            const r = await renameItem(
+              item.getId(),
+              newName,
+              { fs: window.api.fs },
+              { invalidateChildrenIds: refreshParent },
+            );
+            if (!r.ok) alert(`重命名失败:[${r.code}] ${r.message}`);
+          })();
+        },
+      }),
+    [root],
+  );
+  const tree = useTree<FileEntry>(config);
+  treeRef.current = tree;
+
+  const items = tree.getItems();
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
     count: items.length,
@@ -43,35 +77,14 @@ export function FolderTree({ root }: { root: string }) {
     overscan: 8,
   });
 
-  // ── mutate 调用桥(invalidate 用 tree 的 itemInstance 刷父) ────────
-  const refreshParent = (parentPath: string) => {
-    try {
-      const parentItem = tree.getItemInstance(parentPath);
-      parentItem?.invalidateChildrenIds();
-    } catch {
-      // parent 不在树里(比如祖父级),整树重建兜底
-      tree.rebuildTree();
-    }
-  };
   const treeApi = { invalidateChildrenIds: refreshParent };
   const mutateDeps = { fs: window.api.fs };
 
-  // ── ContextMenu 动作 ───────────────────────────────────────────────
   const contextActions: ContextMenuActions = {
-    onRename: (path) => setRenamingPath(path),
+    onRename: (path) => tree.getItemInstance(path)?.startRenaming(),
     onDelete: (paths) => setDeleteCandidate(paths),
     onNewFile: (parentDir) => setCreating({ type: 'file', parentDir }),
     onNewDir: (parentDir) => setCreating({ type: 'dir', parentDir }),
-  };
-
-  // ── 提交 / 取消 handlers ───────────────────────────────────────────
-  const submitRename = async (oldPath: string, newName: string) => {
-    setRenamingPath(null);
-    const r = await renameItem(oldPath, newName, mutateDeps, treeApi);
-    if (!r.ok) {
-      // MVP:alert 临时兜底,后续接 toast 库
-      alert(`重命名失败:[${r.code}] ${r.message}`);
-    }
   };
 
   const submitCreate = async (name: string) => {
@@ -80,9 +93,7 @@ export function FolderTree({ root }: { root: string }) {
     setCreating(null);
     const action = type === 'dir' ? createNewDir : createNewFile;
     const r = await action(parentDir, name, mutateDeps, treeApi);
-    if (!r.ok) {
-      alert(`新建失败:[${r.code}] ${r.message}`);
-    }
+    if (!r.ok) alert(`新建失败:[${r.code}] ${r.message}`);
   };
 
   const confirmDelete = async () => {
@@ -98,9 +109,6 @@ export function FolderTree({ root }: { root: string }) {
     }
   };
 
-  // ── 渲染 ───────────────────────────────────────────────────────────
-  const blankAreaActions = contextActions; // 空白区也走同一套(target 传 null)
-
   return (
     <div className="flex h-full w-full flex-col">
       {creating && (
@@ -115,7 +123,7 @@ export function FolderTree({ root }: { root: string }) {
         target={null}
         selectedPaths={selectedPaths}
         rootPath={root}
-        actions={blankAreaActions}
+        actions={contextActions}
       >
         <div
           ref={scrollRef}
@@ -151,9 +159,6 @@ export function FolderTree({ root }: { root: string }) {
                     selectedPaths={selectedPaths}
                     rootPath={root}
                     contextActions={contextActions}
-                    renamingPath={renamingPath}
-                    onRenameSubmit={submitRename}
-                    onRenameCancel={() => setRenamingPath(null)}
                   />
                 );
               })}

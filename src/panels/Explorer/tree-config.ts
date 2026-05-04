@@ -5,7 +5,9 @@
 import {
   asyncDataLoaderFeature,
   hotkeysCoreFeature,
+  renamingFeature,
   selectionFeature,
+  type ItemInstance,
   type TreeConfig,
 } from '@headless-tree/core';
 import type { FileEntry, IpcResult } from '@/lib/fs/types';
@@ -22,6 +24,8 @@ export interface CreateTreeConfigDeps {
   fs: FsForTree;
   /** spec 注入断言;默认 console.warn. */
   onIpcWarn?: (message: string, code: string) => void;
+  /** 用户在 inline rename input 按 Enter 时触发(headless-tree renamingFeature). */
+  onRename?: (item: ItemInstance<FileEntry>, newName: string) => void;
 }
 
 const INDENT = 16;
@@ -111,6 +115,7 @@ export function createTreeConfig(
     getItemName: (item) => item.getItemData().name,
     isItemFolder: (item) => item.getItemData().isDirectory,
     dataLoader: createDataLoader(deps),
+    onRename: deps.onRename,
     // headless-tree 默认不渲染 root 自身,只渲染已展开节点的 children。
     // root 必须显式 expand 才会触发 children 加载,否则 getItems() 返回 []。
     // Step 5/6 接入 store.expandedPaths 后,这个初始值会被持久化版覆盖。
@@ -121,6 +126,7 @@ export function createTreeConfig(
       asyncDataLoaderFeature,
       selectionFeature,
       hotkeysCoreFeature,
+      renamingFeature, // F2 / Enter / Esc 由它接管,自动 stop hotkeys 干扰
     ],
   };
 }

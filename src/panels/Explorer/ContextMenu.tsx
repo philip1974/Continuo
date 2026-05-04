@@ -66,7 +66,14 @@ export function ContextMenu({
     <Menu.Root>
       <Menu.Trigger asChild>{children}</Menu.Trigger>
       <Menu.Portal>
-        <Menu.Content className={contentCls} collisionPadding={8}>
+        <Menu.Content
+          className={contentCls}
+          collisionPadding={8}
+          // 关闭后不要把 focus 还给行 div(默认行为)。
+          // 否则 RenameInput / CreateInput 的 useEffect.focus 会被它抢回去,
+          // 导致 Esc 在错误元素上触发,被树容器 hotkeys 吃掉。
+          onCloseAutoFocus={(e) => e.preventDefault()}
+        >
           {(isFolder || isBlank) && (
             <>
               <Menu.Item

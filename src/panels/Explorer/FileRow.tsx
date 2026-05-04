@@ -2,7 +2,6 @@ import { Document, Folder } from '@react-symbols/icons';
 import type { ItemInstance } from '@headless-tree/core';
 import type { FileEntry } from '@/lib/fs/types';
 import { ContextMenu, type ContextMenuActions } from './ContextMenu';
-import { RenameInput } from './RenameInput';
 
 interface FileRowProps {
   item: ItemInstance<FileEntry>;
@@ -11,27 +10,20 @@ interface FileRowProps {
   selectedPaths: ReadonlySet<string>;
   rootPath: string;
   contextActions: ContextMenuActions;
-  /** 当前正在 rename 的 path;非 null 且 === item.path 则显示 RenameInput */
-  renamingPath: string | null;
-  onRenameSubmit: (path: string, newName: string) => void;
-  onRenameCancel: () => void;
 }
 
 const ICON_SIZE = 16;
 const ROW_HEIGHT = 24;
 const INDENT = 16;
 
-// 单行节点。缩进 = level * 16,左侧箭头(目录) + 类型图标 + 名称。
-// 右键菜单挂在整行;rename 模式下名称区替换成 RenameInput。
+// 单行节点。renamingFeature 自动接管 input 的 Enter/Esc 键盘事件,
+// 我们只需在 isRenaming() 时把 name 区域换成 input 即可。
 export function FileRow({
   item,
   style,
   selectedPaths,
   rootPath,
   contextActions,
-  renamingPath,
-  onRenameSubmit,
-  onRenameCancel,
 }: FileRowProps) {
   const data = item.getItemData();
   const isDir = item.isFolder();
@@ -39,7 +31,7 @@ export function FileRow({
   const isFocused = item.isFocused();
   const isExpanded = isDir && item.isExpanded();
   const isLoading = item.isLoading();
-  const isRenaming = renamingPath === data.path;
+  const isRenaming = item.isRenaming();
   const level = item.getItemMeta().level;
 
   const row = (
@@ -71,10 +63,11 @@ export function FileRow({
         )}
       </span>
       {isRenaming ? (
-        <RenameInput
-          initialName={data.name}
-          onSubmit={(newName) => onRenameSubmit(data.path, newName)}
-          onCancel={onRenameCancel}
+        <input
+          {...item.getRenameInputProps()}
+          className="w-full rounded bg-neutral-800 px-1 py-0 text-xs text-neutral-100 outline-none ring-1 ring-sky-500"
+          spellCheck={false}
+          autoComplete="off"
         />
       ) : (
         <span className="truncate">{data.name}</span>

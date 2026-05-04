@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   asyncDataLoaderFeature,
   hotkeysCoreFeature,
+  renamingFeature,
   selectionFeature,
 } from '@headless-tree/core';
 import { createDataLoader, createTreeConfig } from '../../panels/Explorer/tree-config';
@@ -31,12 +32,20 @@ describe('createTreeConfig · 顶层配置', () => {
     expect(cfg.rootItemId).toBe('/work');
   });
 
-  it('features 包含 asyncDataLoader / selection / hotkeysCore', () => {
+  it('features 包含 asyncDataLoader / selection / hotkeysCore / renaming', () => {
     const fs = makeFs(() => ok([]));
     const cfg = createTreeConfig({ root: '/work', fs });
     expect(cfg.features).toContain(asyncDataLoaderFeature);
     expect(cfg.features).toContain(selectionFeature);
     expect(cfg.features).toContain(hotkeysCoreFeature);
+    expect(cfg.features).toContain(renamingFeature);
+  });
+
+  it('onRename 透传到 config(headless-tree renamingFeature 触发)', () => {
+    const fs = makeFs(() => ok([]));
+    const onRename = () => {};
+    const cfg = createTreeConfig({ root: '/work', fs, onRename });
+    expect(cfg.onRename).toBe(onRename);
   });
 
   it('indent 为 16(VSCode 默认风格)', () => {
