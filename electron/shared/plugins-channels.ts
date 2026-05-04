@@ -9,6 +9,10 @@ export const PLUGINS_CHANNELS = {
   READ_ENABLED: 'plugins:read-enabled',
   /** 写 enabled.json. */
   WRITE_ENABLED: 'plugins:write-enabled',
+  /** 读 _permissions.json(v4.2). */
+  READ_PERMISSIONS: 'plugins:read-permissions',
+  /** 写 _permissions.json. */
+  WRITE_PERMISSIONS: 'plugins:write-permissions',
 } as const;
 
 export type PluginsChannel = (typeof PLUGINS_CHANNELS)[keyof typeof PLUGINS_CHANNELS];
@@ -24,3 +28,14 @@ export interface IpcPluginDir {
   /** styles.css 文本(可选). */
   readonly stylesText?: string;
 }
+
+/** v4.2 权限决策存储的磁盘格式. */
+export interface IpcPermissionDecision {
+  readonly permission: string;        // 'fs' | 'network' | 'shell' | 'clipboard'(运行时校验)
+  readonly granted: boolean;
+  readonly decidedAt: number;
+}
+
+export type IpcPermissionsMap = Readonly<
+  Record<string, readonly IpcPermissionDecision[]>
+>;

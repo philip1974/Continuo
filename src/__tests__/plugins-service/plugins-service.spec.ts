@@ -5,7 +5,9 @@ import { join } from 'node:path';
 import {
   listPluginDirs,
   readEnabledIds,
+  readPermissions,
   writeEnabledIds,
+  writePermissions,
 } from '../../../electron/main/services/plugins.service';
 
 let tmp: string;
@@ -127,5 +129,58 @@ describe('readEnabledIds / writeEnabledIds', () => {
     const sub = join(tmp, 'nested', 'plugins');
     await writeEnabledIds(sub, ['x']);
     expect(await readEnabledIds(sub)).toEqual(['x']);
+  });
+});
+
+// ── v4.2 权限决策持久化 ─────────────────────────────────
+
+describe('readPermissions / writePermissions', () => {
+  it('未写过 → {}', async () => {
+    expect(await readPermissions(tmp)).toEqual({});
+  });
+
+  it('write + read 往返(多 plugin 多 decision)', async () => {
+    await writePermissions(tmp, {
+      'p.a': [
+        { permission: 'fs', granted: true, decidedAt: 1000 },
+        { permission: 'network', granted: false, decidedAt: 1100 },
+      ],
+      'p.b': [{ permission: 'shell', granted: true, decidedAt: 2000 }],
+    });
+    const r = await readPermissions(tmp);
+    expect(r['p.a']).toHaveLength(2);
+    expect(r['p.b']).toHaveLength(1);
+    expect(r['p.a']![0]!.permission).toBe('fs');
+  });
+
+  it('JSON 损坏 → {}', async () => {
+    writeFileSync(join(tmp, '_permissions.json'), '{{{');
+    expect(await readPermissions(tmp)).toEqual({});
+  });
+
+  it('顶层非 object(数组)→ {}', async () => {
+    writeFileSync(join(tmp, '_permissions.json'), '[]');
+    expect(await readPermissions(tmp)).toEqual({});
+  });
+
+  it('value 含非 decision 形状的项 → 该 pluginId 跳过', async () => {
+    writeFileSync(
+      join(tmp, '_permissions.json'),
+      JSON.stringify({
+        good: [{ permission: 'fs', granted: true, decidedAt: 1 }],
+        bad: [{ permission: 'fs' /* missing granted */ }],
+      }),
+    );
+    const r = await readPermissions(tmp);
+    expect(r.good).toHaveLength(1);
+    expect(r.bad).toBeUndefined();
+  });
+
+  it('write 时自动 mkdir -p', async () => {
+    const sub = join(tmp, 'deep', 'plugins');
+    await writePermissions(sub, {
+      'p.x': [{ permission: 'fs', granted: true, decidedAt: 1 }],
+    });
+    expect((await readPermissions(sub))['p.x']).toHaveLength(1);
   });
 });

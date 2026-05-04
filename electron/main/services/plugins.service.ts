@@ -3,7 +3,11 @@
 
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import type { IpcPluginDir } from '../../shared/plugins-channels';
+import type {
+  IpcPermissionDecision,
+  IpcPermissionsMap,
+  IpcPluginDir,
+} from '../../shared/plugins-channels';
 
 /**
  * 扫描 baseDir/<id>/manifest.json 模式;返回所有合法目录的 manifestText +
@@ -94,4 +98,47 @@ export async function writeEnabledIds(
   const file = path.join(baseDir, ENABLED_FILE);
   // 简单写入(非原子);插件 enabled 列表小且变更频率低,不投资 atomic
   await fs.writeFile(file, JSON.stringify(ids, null, 2), 'utf-8');
+}
+
+// ── v4.2 权限决策持久化 ─────────────────────────────────
+
+const PERMISSIONS_FILE = '_permissions.json';
+
+function isDecision(x: unknown): x is IpcPermissionDecision {
+  if (!x || typeof x !== 'object') return false;
+  const o = x as Record<string, unknown>;
+  return (
+    typeof o.permission === 'string' &&
+    typeof o.granted === 'boolean' &&
+    typeof o.decidedAt === 'number'
+  );
+}
+
+export async function readPermissions(
+  baseDir: string,
+): Promise<IpcPermissionsMap> {
+  const file = path.join(baseDir, PERMISSIONS_FILE);
+  try {
+    const text = await fs.readFile(file, 'utf-8');
+    const json = JSON.parse(text) as unknown;
+    if (!json || typeof json !== 'object' || Array.isArray(json)) return {};
+    const out: Record<string, IpcPermissionDecision[]> = {};
+    for (const [pid, value] of Object.entries(json as Record<string, unknown>)) {
+      if (Array.isArray(value) && value.every(isDecision)) {
+        out[pid] = value;
+      }
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+export async function writePermissions(
+  baseDir: string,
+  data: IpcPermissionsMap,
+): Promise<void> {
+  await fs.mkdir(baseDir, { recursive: true });
+  const file = path.join(baseDir, PERMISSIONS_FILE);
+  await fs.writeFile(file, JSON.stringify(data, null, 2), 'utf-8');
 }

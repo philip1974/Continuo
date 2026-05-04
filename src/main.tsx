@@ -7,7 +7,7 @@ import { lmApp } from './plugins/lm-app';
 import { PluginManager } from './plugins/PluginManager';
 import { setUserPluginManager } from './plugins/lm-plugin-manager';
 import { createWindowApiHost } from './lib/plugins-host';
-import { InMemoryPermissionStore } from './plugins/permissions';
+import { IpcPermissionStore } from './plugins/permissions/IpcPermissionStore';
 import { usePermissionPromptStore } from './plugins/permissions/promptStore';
 import './styles/tailwind.css';
 
@@ -18,12 +18,12 @@ if (!container) throw new Error('#root not found');
 // 使 lmApp.panels 在 DockShell 首次 mount 时已含 3 个 panel 类型。
 bootCorePlugins();
 
-// M-Plugin v4.1:用户插件 PluginManager(从 userData/plugins/ 异步加载)。
-// permissionStore 暂用 InMemory(v4.2 接 IPC 持久化)。
+// M-Plugin v4.1+v4.2:用户插件 PluginManager + 权限决策持久化。
+// permissionStore 走 IPC 持久化到 userData/plugins/_permissions.json。
 // promptFn 桥到 design Modal(用户首次启用插件时弹授权)。
 const userPluginManager = new PluginManager(lmApp, {
   ...createWindowApiHost(),
-  permissionStore: new InMemoryPermissionStore(),
+  permissionStore: new IpcPermissionStore(),
   promptFn: (pid, perms) =>
     usePermissionPromptStore.getState().request(pid, perms),
 });

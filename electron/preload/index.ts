@@ -3,7 +3,11 @@ import type { IpcResult } from '../shared/ipc-result';
 import type { FileEntry } from '../shared/fs-entry';
 import { FS_CHANNELS } from '../shared/fs-channels';
 import { TERMINAL_CHANNELS } from '../shared/terminal-channels';
-import { PLUGINS_CHANNELS, type IpcPluginDir } from '../shared/plugins-channels';
+import {
+  PLUGINS_CHANNELS,
+  type IpcPermissionsMap,
+  type IpcPluginDir,
+} from '../shared/plugins-channels';
 
 // terminal create 入参的轻量类型(与 main 端 zod schema 对齐)
 interface TerminalCreateOptions {
@@ -141,6 +145,10 @@ const api = {
       ipcRenderer.invoke(PLUGINS_CHANNELS.READ_ENABLED),
     writeEnabled: (ids: readonly string[]): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(PLUGINS_CHANNELS.WRITE_ENABLED, { ids }),
+    readPermissions: (): Promise<IpcResult<IpcPermissionsMap>> =>
+      ipcRenderer.invoke(PLUGINS_CHANNELS.READ_PERMISSIONS),
+    writePermissions: (data: IpcPermissionsMap): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(PLUGINS_CHANNELS.WRITE_PERMISSIONS, { data }),
   },
 } as const;
 
