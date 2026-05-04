@@ -17,6 +17,6 @@
     "baseUrl": ".",
     "paths": { "@/*": ["src/*"] }
   },
-  "include": ["src", "index.html"],
+  "include": ["src", "index.html", "electron/shared", "electron/preload"],
   "exclude": ["src/__tests__"]
 }

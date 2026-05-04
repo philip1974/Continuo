@@ -25,7 +25,11 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
   const onReady = useCallback(
     async (event: DockviewReadyEvent) => {
       apiRef.current = event.api;
-      const persisted = await window.api.layout.read();
+      const readResult = await window.api.layout.read();
+      const persisted = readResult.ok ? readResult.data : null;
+      if (!readResult.ok) {
+        console.warn('[dock] layout:read failed', readResult.code, readResult.message);
+      }
 
       let restored = false;
       if (persisted && typeof persisted === 'object') {
@@ -40,10 +44,11 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       setEmpty(event.api.totalPanels === 0);
       onLayoutReady?.();
 
-      const persist = debounce(() => {
+      const persist = debounce(async () => {
         const snapshot = event.api.toJSON() as unknown;
         const payload = { version: 1 as const, ...(snapshot as object) };
-        void window.api.layout.write(payload);
+        const r = await window.api.layout.write(payload);
+        if (!r.ok) console.warn('[dock] layout:write failed', r.code, r.message);
       }, 300);
 
       event.api.onDidLayoutChange(() => {

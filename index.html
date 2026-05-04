@@ -4,9 +4,19 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>LayoutMotion</title>
+    <!--
+      CSP:
+      - default-src 'self':其他未列资源全部走自身
+      - script-src 'self':禁内联脚本(防 XSS 主要面)
+      - style-src 'self' 'unsafe-inline':Tailwind v4 / Motion 需要内联样式
+      - img-src 'self' data::内嵌 SVG / 缩略图常用 data:
+      - connect-src:仅自身 + dev 时的 Vite HMR(localhost ws/http);
+        prod 下 file:// renderer 没有跨域请求需求,这条对 prod 无害但收紧
+      - frame-ancestors / object-src / base-uri:无副作用的 hardening
+    -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws: wss:;"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws://localhost:* wss://localhost:* http://localhost:*; frame-ancestors 'none'; object-src 'none'; base-uri 'self';"
     />
   </head>
   <body class="bg-[#020617] text-neutral-100">
