@@ -1,0 +1,14 @@
+/* Bundle MesloLGS Nerd Font Mono(Apache 2.0,Nerd Fonts 项目)。
+ * 用于 Terminal panel 的 powerline / nerd 符号渲染,确保所有用户机器
+ * 无需手动装字体即可正常显示 P10k / oh-my-zsh prompt 符号。
+ *
+ * Vite 把 ?url 引用的二进制资产 hash + emit 到 out/renderer/assets/。
+ */
+
+@font-face {
+  font-family: 'MesloLGS NF';
+  src: url('../assets/fonts/MesloLGSNerdFontMono-Regular.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: block; /* block 比 swap 更适合 terminal,避免 fallback 闪烁 */
+}
