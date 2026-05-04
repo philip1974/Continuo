@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   DockviewReact,
   type DockviewApi,
   type DockviewReadyEvent,
+  type IDockviewPanelProps,
   type SerializedDockview,
 } from 'dockview-react';
 import 'dockview-react/dist/styles/dockview.css';
-import { panelComponents } from './panels';
+import { lmApp } from '@/plugins/lm-app';
+import { PanelMount } from '@/shell/motion/PanelMount';
 import { applyDefaultLayout } from './layout.default';
 import { HeaderActions } from './HeaderActions';
 import { EmptyState } from './EmptyState';
@@ -20,9 +22,32 @@ import '@/styles/dockview.css';
 
 const tabComponents = { default: SharedTab };
 
+/** 把 lmApp.panels 注册的 PanelSpec 桥接成 Dockview 的 components map.
+ *  每个 panel 自动包 PanelMount(进出场动画). */
+function usePanelComponents(): Record<string, React.FC<IDockviewPanelProps>> {
+  const [snapshot, setSnapshot] = useState(() => lmApp.panels.getAll());
+  useEffect(
+    () => lmApp.panels.subscribe(() => setSnapshot(lmApp.panels.getAll())),
+    [],
+  );
+  return useMemo(() => {
+    const map: Record<string, React.FC<IDockviewPanelProps>> = {};
+    for (const spec of snapshot) {
+      const Factory = spec.factory;
+      map[spec.type] = (p) => (
+        <PanelMount panelId={p.api.id}>
+          {Factory(p) as React.ReactNode}
+        </PanelMount>
+      );
+    }
+    return map;
+  }, [snapshot]);
+}
+
 export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
   const apiRef = useRef<DockviewApi | null>(null);
   const [empty, setEmpty] = useState(false);
+  const panelComponents = usePanelComponents();
 
   const onReady = useCallback(
     async (event: DockviewReadyEvent) => {

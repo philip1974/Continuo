@@ -1,0 +1,51 @@
+// Core plugins boot(M-Plugin v1.7)。
+// 同步实例化 + _activate,假设 core plugin onload 都是同步的(不 await IPC)。
+// 微任务后 _activate Promise 完成,但 register* 在 onload 内同步执行,
+// 所以同步 boot 后 lmApp.<reg>.getAll() 已包含贡献。
+
+import EditorPlugin from './EditorPlugin';
+import TerminalPlugin from './TerminalPlugin';
+import OutputPlugin from './OutputPlugin';
+import { lmApp } from '@/plugins/lm-app';
+import type { Plugin } from '@/plugins/Plugin';
+import type { PluginManifest } from '@/plugins/types';
+
+interface CoreEntry {
+  readonly Cls: new (app: typeof lmApp, m: PluginManifest) => Plugin;
+  readonly manifest: PluginManifest;
+}
+
+const CORES: readonly CoreEntry[] = [
+  {
+    Cls: EditorPlugin as never,
+    manifest: { id: 'core.editor', name: 'Editor', version: '1.0.0' },
+  },
+  {
+    Cls: TerminalPlugin as never,
+    manifest: { id: 'core.terminal', name: 'Terminal', version: '1.0.0' },
+  },
+  {
+    Cls: OutputPlugin as never,
+    manifest: { id: 'core.output', name: 'Output', version: '1.0.0' },
+  },
+];
+
+const instances: Plugin[] = [];
+
+/** 启动期同步注册全部内置插件(register* 在 onload 内同步执行). */
+export function bootCorePlugins(): void {
+  for (const { Cls, manifest } of CORES) {
+    const inst = new Cls(lmApp, manifest);
+    instances.push(inst);
+    // _activate 是 async 但 onload 是同步,fire and forget;register 已同步发生
+    void inst._activate();
+  }
+}
+
+/** 测试 / HMR 用:卸载全部内置插件. */
+export async function shutdownCorePlugins(): Promise<void> {
+  for (let i = instances.length - 1; i >= 0; i--) {
+    await instances[i]!._deactivate();
+  }
+  instances.length = 0;
+}

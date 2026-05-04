@@ -2,22 +2,22 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { IDockviewHeaderActionsProps } from 'dockview-react';
 import { popoutUrlFor } from '@/lib/popout-mode';
 import { IconButton, MenuItem } from '@/design';
-import type { PanelKey } from './panels';
-
-const choices: { key: PanelKey; label: string }[] = [
-  { key: 'editor', label: 'Editor' },
-  { key: 'terminal', label: 'Terminal' },
-  { key: 'output', label: 'Output' },
-  // Explorer 已固定为左侧 sidebar(IconSidebar 切显隐),不再加入 Dockview
-];
+import { lmApp } from '@/plugins/lm-app';
 
 let panelCounter = 0;
-const nextPanelId = (key: PanelKey) => `${key}-${++panelCounter}`;
+const nextPanelId = (key: string) => `${key}-${++panelCounter}`;
 
 export function HeaderActions(props: IDockviewHeaderActionsProps) {
   const { containerApi, group, activePanel } = props;
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  // 动态读取已注册 panel 类型(含内置 + 未来第三方插件)
+  const [panelChoices, setPanelChoices] = useState(() => lmApp.panels.getAll());
+  useEffect(
+    () =>
+      lmApp.panels.subscribe(() => setPanelChoices(lmApp.panels.getAll())),
+    [],
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -29,7 +29,7 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
   }, [open]);
 
   const addPanel = useCallback(
-    (key: PanelKey, label: string) => {
+    (key: string, label: string) => {
       const id = nextPanelId(key);
       containerApi.addPanel({
         id,
@@ -92,9 +92,9 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
           role="menu"
           className="absolute right-0 top-full z-50 mt-1 min-w-[140px] overflow-hidden rounded-md border border-line bg-panel py-1 shadow-lg shadow-black/40"
         >
-          {choices.map((c) => (
-            <MenuItem key={c.key} onClick={() => addPanel(c.key, c.label)}>
-              {c.label}
+          {panelChoices.map((c) => (
+            <MenuItem key={c.type} onClick={() => addPanel(c.type, c.title)}>
+              {c.title}
             </MenuItem>
           ))}
         </div>

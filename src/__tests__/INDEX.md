@@ -17,6 +17,10 @@
 - [`hotkey.spec.tsx`](./command-palette/hotkey.spec.tsx)
 - [`store.spec.ts`](./command-palette/store.spec.ts)
 
+## [core-plugins(内置插件:editor / terminal / output)](./core-plugins/README.md)
+
+- [`core-plugins.spec.ts`](./core-plugins/core-plugins.spec.ts)
+
 ## [装饰层契约 (M4)](./decor-contracts/README.md)
 
 - [`license.spec.ts`](./decor-contracts/license.spec.ts)
