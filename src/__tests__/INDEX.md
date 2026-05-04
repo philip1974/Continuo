@@ -79,3 +79,7 @@
 ## [terminal-service (M-Terminal Step T1)](./terminal-service/README.md)
 
 - [`helpers.spec.ts`](./terminal-service/helpers.spec.ts)
+
+## [terminal-store (M-Terminal Step T3)](./terminal-store/README.md)
+
+- [`terminal-store.spec.ts`](./terminal-store/terminal-store.spec.ts)

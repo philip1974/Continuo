@@ -2,6 +2,20 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { IpcResult } from '../shared/ipc-result';
 import type { FileEntry } from '../shared/fs-entry';
 import { FS_CHANNELS } from '../shared/fs-channels';
+import { TERMINAL_CHANNELS } from '../shared/terminal-channels';
+
+// terminal create 入参的轻量类型(与 main 端 zod schema 对齐)
+interface TerminalCreateOptions {
+  readonly shell?: string;
+  readonly args?: ReadonlyArray<string>;
+  readonly cwd?: string;
+  readonly env?: Readonly<Record<string, string>>;
+}
+
+interface TerminalExitPayload {
+  readonly exitCode: number | undefined;
+  readonly signal: number | undefined;
+}
 
 // 给 fs 入参用的轻量 ListDirOptions —— 与 main 端 zod schema 对齐字段
 interface PreloadListDirOptions {
@@ -70,6 +84,53 @@ const api = {
         cb(payload.path);
       ipcRenderer.on(FS_CHANNELS.DIR_CHANGED, listener);
       return () => ipcRenderer.off(FS_CHANNELS.DIR_CHANGED, listener);
+    },
+  },
+  terminal: {
+    create: (
+      options?: TerminalCreateOptions,
+    ): Promise<IpcResult<{ id: string }>> =>
+      ipcRenderer.invoke(TERMINAL_CHANNELS.CREATE, options ?? {}),
+    write: (id: string, data: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(TERMINAL_CHANNELS.WRITE, { id, data }),
+    resize: (
+      id: string,
+      cols: number,
+      rows: number,
+    ): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(TERMINAL_CHANNELS.RESIZE, { id, cols, rows }),
+    interrupt: (id: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(TERMINAL_CHANNELS.INTERRUPT, { id }),
+    kill: (id: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(TERMINAL_CHANNELS.KILL, { id }),
+    destroy: (id: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(TERMINAL_CHANNELS.DESTROY, { id }),
+    /** 订阅 stdout 字节流;返回 unsubscribe. */
+    onData: (cb: (id: string, data: string) => void): (() => void) => {
+      const listener = (_: unknown, id: string, data: string) => cb(id, data);
+      ipcRenderer.on(TERMINAL_CHANNELS.DATA, listener);
+      return () => ipcRenderer.off(TERMINAL_CHANNELS.DATA, listener);
+    },
+    onExit: (
+      cb: (id: string, payload: TerminalExitPayload) => void,
+    ): (() => void) => {
+      const listener = (
+        _: unknown,
+        id: string,
+        payload: TerminalExitPayload,
+      ) => cb(id, payload);
+      ipcRenderer.on(TERMINAL_CHANNELS.EXIT, listener);
+      return () => ipcRenderer.off(TERMINAL_CHANNELS.EXIT, listener);
+    },
+    onOverflow: (cb: (id: string) => void): (() => void) => {
+      const listener = (_: unknown, id: string) => cb(id);
+      ipcRenderer.on(TERMINAL_CHANNELS.OVERFLOW, listener);
+      return () => ipcRenderer.off(TERMINAL_CHANNELS.OVERFLOW, listener);
+    },
+    onOverflowRecovered: (cb: (id: string) => void): (() => void) => {
+      const listener = (_: unknown, id: string) => cb(id);
+      ipcRenderer.on(TERMINAL_CHANNELS.OVERFLOW_RECOVERED, listener);
+      return () => ipcRenderer.off(TERMINAL_CHANNELS.OVERFLOW_RECOVERED, listener);
     },
   },
 } as const;
