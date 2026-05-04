@@ -60,7 +60,7 @@ export function CreateInput({
   }, []);
 
   return (
-    <div className="flex shrink-0 items-center gap-2 border-b border-neutral-800 bg-neutral-900 px-2 py-1 text-xs">
+    <div className="flex shrink-0 items-center gap-2 border-b border-line bg-panel-soft px-2 py-1 text-xs">
       <span className="inline-flex shrink-0" aria-hidden="true">
         {type === 'dir' ? (
           <Folder width={ICON_SIZE} height={ICON_SIZE} />
@@ -74,12 +74,12 @@ export function CreateInput({
         value={value}
         onChange={(e) => setValue(e.target.value)}
         placeholder={type === 'dir' ? '新建文件夹名…' : '新建文件名…'}
-        className="flex-1 rounded bg-neutral-800 px-2 py-0.5 text-neutral-100 outline-none ring-1 ring-sky-500 placeholder:text-neutral-500"
+        className="flex-1 rounded bg-hover px-2 py-0.5 text-fg outline-none ring-1 ring-accent placeholder:text-fg-dim"
         spellCheck={false}
         autoComplete="off"
       />
       <span
-        className="max-w-[40%] truncate text-[10px] text-neutral-500"
+        className="max-w-[40%] truncate text-[10px] text-fg-dim"
         title={parentDir}
       >
         在: {parentDir}

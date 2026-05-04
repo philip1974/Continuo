@@ -21,8 +21,8 @@ export function EmptyWorkspace() {
   };
 
   return (
-    <div className="flex h-full w-full flex-col items-center justify-center gap-4 p-6 text-center text-sm text-neutral-400">
-      <div className="text-xs uppercase tracking-wider text-neutral-500">
+    <div className="flex h-full w-full flex-col items-center justify-center gap-4 p-6 text-center text-sm text-fg-muted">
+      <div className="text-xs uppercase tracking-wider text-fg-dim">
         未打开文件夹
       </div>
       <Button variant="primary" size="md" onClick={open} disabled={busy}>

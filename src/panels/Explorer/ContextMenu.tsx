@@ -20,12 +20,12 @@ interface ContextMenuProps {
 }
 
 const itemCls =
-  'flex items-center gap-2 rounded px-2 py-1 text-xs text-neutral-200 outline-none data-[highlighted]:bg-neutral-800 data-[disabled]:opacity-40';
+  'flex items-center gap-2 rounded px-2 py-1 text-xs text-fg outline-none data-[highlighted]:bg-hover data-[disabled]:opacity-40';
 
-const sepCls = 'my-1 h-px bg-neutral-800';
+const sepCls = 'my-1 h-px bg-line';
 
 const contentCls =
-  'min-w-[180px] rounded-md border border-neutral-800 bg-neutral-950 p-1 shadow-xl outline-none';
+  'min-w-[180px] rounded-md border border-line bg-panel p-1 shadow-xl outline-none';
 
 // 右键菜单包装。children 为接收右键的可见区域(行 / 空白容器)。
 // 菜单项由 target 类型(文件 / 文件夹 / null=空白)决定。
@@ -99,7 +99,7 @@ export function ContextMenu({
                 onSelect={() => actions.onRename(target!.path)}
               >
                 重命名
-                <span className="ml-auto text-[10px] text-neutral-500">F2</span>
+                <span className="ml-auto text-[10px] text-fg-dim">F2</span>
               </Menu.Item>
               <Menu.Separator className={sepCls} />
               <Menu.Item
@@ -108,7 +108,7 @@ export function ContextMenu({
               >
                 删除
                 {deleteTargets().length > 1 && (
-                  <span className="ml-auto text-[10px] text-neutral-500">
+                  <span className="ml-auto text-[10px] text-fg-dim">
                     {deleteTargets().length} 项
                   </span>
                 )}

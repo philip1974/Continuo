@@ -82,7 +82,7 @@ export function SharedTab(props: IDockviewPanelHeaderProps & TabHtmlExtras) {
 
   return (
     <div
-      className="group/tab relative flex h-full cursor-pointer items-center gap-2 pl-3 pr-2 text-sm text-neutral-300"
+      className="group/tab relative flex h-full cursor-pointer items-center gap-2 pl-3 pr-2 text-sm text-fg"
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerLeave}

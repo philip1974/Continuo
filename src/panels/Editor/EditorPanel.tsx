@@ -129,7 +129,7 @@ export function EditorPanel() {
         description={
           closeCandidate ? (
             <>
-              <code className="text-neutral-200">
+              <code className="text-fg">
                 {basename(closeCandidate.filePath)}
               </code>{' '}
               有未保存的修改。继续将永久丢失改动。

@@ -72,12 +72,12 @@ export function FileRow({
       className={[
         'flex items-center gap-1 text-xs select-none',
         'border-l-2',
-        isFocused ? 'border-sky-500' : 'border-transparent',
+        isFocused ? 'border-accent' : 'border-transparent',
         isDropHover
-          ? 'bg-sky-900/40 text-neutral-100'
+          ? 'bg-accent/20 text-fg'
           : isSelected
-            ? 'bg-neutral-800 text-neutral-100'
-            : 'text-neutral-400 hover:bg-neutral-900',
+            ? 'bg-hover text-fg'
+            : 'text-fg-muted hover:bg-panel-soft',
       ].join(' ')}
       title={data.path}
     >
@@ -86,11 +86,11 @@ export function FileRow({
         <span
           key={i}
           aria-hidden="true"
-          className="pointer-events-none absolute top-0 bottom-0 w-px bg-neutral-800"
+          className="pointer-events-none absolute top-0 bottom-0 w-px bg-line"
           style={{ left: 4 + i * INDENT + 8 }}
         />
       ))}
-      <span className="inline-flex w-3 shrink-0 items-center justify-center text-[10px] text-neutral-500">
+      <span className="inline-flex w-3 shrink-0 items-center justify-center text-[10px] text-fg-dim">
         {isDir ? (isExpanded ? '▾' : '▸') : ''}
       </span>
       <span className="inline-flex shrink-0 items-center" aria-hidden="true">
@@ -108,7 +108,7 @@ export function FileRow({
           ref={(el) => {
             if (el) requestAnimationFrame(() => el.focus());
           }}
-          className="w-full rounded bg-neutral-800 px-1 py-0 text-xs text-neutral-100 outline-none ring-1 ring-sky-500"
+          className="w-full rounded bg-hover px-1 py-0 text-xs text-fg outline-none ring-1 ring-accent"
           spellCheck={false}
           autoComplete="off"
         />
@@ -116,7 +116,7 @@ export function FileRow({
         <span className="truncate">{data.name}</span>
       )}
       {isLoading && (
-        <span className="ml-auto pr-2 text-[10px] text-neutral-600">…</span>
+        <span className="ml-auto pr-2 text-[10px] text-fg-dim">…</span>
       )}
     </div>
   );

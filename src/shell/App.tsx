@@ -25,8 +25,8 @@ function MainApp() {
 
   return (
     <>
-      <div className="flex h-dvh w-dvw flex-col bg-[#020617] text-neutral-100">
-        <header className="flex h-9 shrink-0 items-center justify-center border-b border-white/5 text-xs text-neutral-500 select-none [-webkit-app-region:drag]">
+      <div className="flex h-dvh w-dvw flex-col bg-canvas text-fg">
+        <header className="flex h-9 shrink-0 items-center justify-center border-b border-line text-xs text-fg-dim select-none [-webkit-app-region:drag]">
           LayoutMotion
         </header>
         <main className="flex min-h-0 flex-1">

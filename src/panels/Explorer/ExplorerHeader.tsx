@@ -39,9 +39,9 @@ export function ExplorerHeader({
   };
 
   return (
-    <div className="flex h-7 shrink-0 items-center gap-1 border-b border-neutral-800 bg-neutral-900/50 px-2 text-xs">
+    <div className="flex h-7 shrink-0 items-center gap-1 border-b border-line bg-panel-soft/50 px-2 text-xs">
       <span
-        className="min-w-0 flex-1 truncate font-medium uppercase tracking-wider text-neutral-300"
+        className="min-w-0 flex-1 truncate font-medium uppercase tracking-wider text-fg"
         title={root}
       >
         {basename(root)}

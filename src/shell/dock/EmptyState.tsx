@@ -20,7 +20,7 @@ export function EmptyState({ onRestore }: { onRestore: () => void }) {
     >
       {visible && <BackgroundBeams />}
       <div className="relative z-10 m-auto flex flex-col items-center gap-4">
-        <p className="text-neutral-400">所有面板都关掉了。</p>
+        <p className="text-fg-muted">所有面板都关掉了。</p>
         <Button variant="ghost" size="md" onClick={onRestore}>
           恢复默认布局
         </Button>

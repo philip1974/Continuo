@@ -231,10 +231,10 @@ export function FolderTree({ root }: { root: string }) {
       >
         <div
           ref={scrollRef}
-          className="min-h-0 flex-1 overflow-auto bg-[#020617]"
+          className="min-h-0 flex-1 overflow-auto bg-canvas"
         >
           {items.length === 0 ? (
-            <div className="p-4 text-xs text-neutral-500">
+            <div className="p-4 text-xs text-fg-dim">
               读取中或空目录
             </div>
           ) : (
@@ -282,7 +282,7 @@ export function FolderTree({ root }: { root: string }) {
         description={
           deleteCandidate && deleteCandidate.length === 1 ? (
             <>
-              将 <code className="text-neutral-200">{deleteCandidate[0]}</code> 移到系统回收站?
+              将 <code className="text-fg">{deleteCandidate[0]}</code> 移到系统回收站?
             </>
           ) : (
             <>将 {deleteCandidate?.length ?? 0} 项移到系统回收站?</>
