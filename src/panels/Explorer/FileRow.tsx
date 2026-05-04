@@ -48,8 +48,6 @@ export function FileRow({
     <div
       {...item.getProps()}
       onClick={(e) => {
-        // eslint-disable-next-line no-console
-        console.log('[FileRow.onClick]', { path: data.path, isDir, isRenaming });
         // 上游 selectionFeature 用 mousedown,onClick 不冲突
         const upstream = (item.getProps() as { onClick?: (e: React.MouseEvent) => void })
           .onClick;
@@ -57,8 +55,6 @@ export function FileRow({
         // 单击文件 → 通知 FolderTree 触发 Editor 打开;
         // 单击目录由 headless-tree 默认行为处理(展开/折叠)
         if (!isDir && !isRenaming) {
-          // eslint-disable-next-line no-console
-          console.log('[FileRow.onClick] → onFileOpen', data.path);
           onFileOpen?.(data.path);
         }
       }}

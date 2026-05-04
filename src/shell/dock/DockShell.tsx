@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   DockviewReact,
   type DockviewApi,
@@ -13,6 +13,7 @@ import { EmptyState } from './EmptyState';
 import { wrapPanelClose } from './wrap-panel-close';
 import { SharedTab } from '@/shell/motion/SharedTab';
 import { useClosingStore } from '@/stores/closing.store';
+import { useEditorStore } from '@/stores/editor.store';
 import { debounce } from '@/lib/debounce';
 import '@/styles/dockview.css';
 
@@ -73,6 +74,29 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
   const restore = useCallback(() => {
     if (apiRef.current) applyDefaultLayout(apiRef.current);
   }, []);
+
+  // Editor 自动激活:Explorer 单击文件 → editor.store activeTabId 变 →
+  // 自动 setActive 'editor' panel(VSCode 行为)。
+  // 若 panel 不存在(用户拖关了),自动 addPanel 重新加回到 explorer 右侧。
+  const editorActiveTabId = useEditorStore((s) => s.activeTabId);
+  useEffect(() => {
+    if (!editorActiveTabId) return;
+    const api = apiRef.current;
+    if (!api) return;
+    let editorPanel = api.getPanel('editor');
+    if (!editorPanel) {
+      const explorer = api.getPanel('explorer');
+      editorPanel = api.addPanel({
+        id: 'editor',
+        component: 'editor',
+        title: 'Editor',
+        position: explorer
+          ? { referencePanel: explorer.id, direction: 'right' }
+          : undefined,
+      });
+    }
+    editorPanel.api.setActive();
+  }, [editorActiveTabId]);
 
   return (
     <div className="relative h-full w-full">
