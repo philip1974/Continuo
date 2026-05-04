@@ -97,24 +97,29 @@ export function EditorHeader({
           />
         )}
 
-        {autoSaveEnabled && activeTab && (
-          <span
-            className="text-[10px] text-fg-dim"
-            title="Markdown 文件 2 秒防抖自动保存"
-          >
-            {dirty ? '保存中…' : '已自动保存'}
-          </span>
-        )}
-
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onSave}
-          disabled={!activeTab || !dirty}
-          title="保存(⌘S)"
-        >
-          保存
-        </Button>
+        {/* 互斥:自动保存模式只显状态;手动模式只显保存按钮.
+            原本两者并列,markdown 下保存按钮永远 disabled(dirty 立刻被
+            自动保存清掉),纯噪声. */}
+        {autoSaveEnabled
+          ? activeTab && (
+              <span
+                className="text-[10px] text-fg-dim"
+                title="Markdown 文件 2 秒防抖自动保存"
+              >
+                {dirty ? '保存中…' : '已自动保存'}
+              </span>
+            )
+          : (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onSave}
+                disabled={!activeTab || !dirty}
+                title="保存(⌘S)"
+              >
+                保存
+              </Button>
+            )}
 
         {/* 单 tab 时,close × 移到右侧控制区(普通 tab 列表自带 close) */}
         {!showTabList && activeTab && (
