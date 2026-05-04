@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { MotionConfig } from 'motion/react';
 import { DockShell } from './dock/DockShell';
 import { Splash } from './decor/Splash';
+import { ExplorerSidebar } from './ExplorerSidebar';
 import { IconSidebar } from './IconSidebar';
 import { PopoutHost } from './PopoutHost';
 import { isPopoutWindow } from '@/lib/popout-mode';
@@ -28,6 +29,7 @@ function MainApp() {
         </header>
         <main className="flex min-h-0 flex-1">
           <IconSidebar />
+          <ExplorerSidebar />
           <div className="min-w-0 flex-1">
             <DockShell onLayoutReady={onLayoutReady} />
           </div>

@@ -7,7 +7,7 @@ const choices: { key: PanelKey; label: string }[] = [
   { key: 'editor', label: 'Editor' },
   { key: 'terminal', label: 'Terminal' },
   { key: 'output', label: 'Output' },
-  { key: 'explorer', label: 'Explorer' },
+  // Explorer 已固定为左侧 sidebar(IconSidebar 切显隐),不再加入 Dockview
 ];
 
 let panelCounter = 0;

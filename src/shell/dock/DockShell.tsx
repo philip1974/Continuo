@@ -44,6 +44,18 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
         }
       }
       if (!restored) applyDefaultLayout(event.api);
+
+      // Explorer 已迁出 Dockview → 固定左 sidebar(VSCode 风)。
+      // 旧 layout.json 可能仍含 'explorer' panel(已无对应 component),清理掉。
+      const orphanExplorer = event.api.getPanel('explorer');
+      if (orphanExplorer) {
+        try {
+          orphanExplorer.api.close();
+        } catch {
+          /* ignore */
+        }
+      }
+
       setEmpty(event.api.totalPanels === 0);
       onLayoutReady?.();
 
@@ -82,7 +94,7 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
 
   // Editor 自动激活:Explorer 单击文件 → editor.store activeTabId 变 →
   // 自动 setActive 'editor' panel(VSCode 行为)。
-  // 若 panel 不存在(用户拖关了),自动 addPanel 重新加回到 explorer 右侧。
+  // 若 panel 不存在(用户拖关了),自动 addPanel 加回(无 reference 即默认主区)。
   const editorActiveTabId = useEditorStore((s) => s.activeTabId);
   useEffect(() => {
     if (!editorActiveTabId) return;
@@ -90,14 +102,10 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
     if (!api) return;
     let editorPanel = api.getPanel('editor');
     if (!editorPanel) {
-      const explorer = api.getPanel('explorer');
       editorPanel = api.addPanel({
         id: 'editor',
         component: 'editor',
         title: 'Editor',
-        position: explorer
-          ? { referencePanel: explorer.id, direction: 'right' }
-          : undefined,
       });
     }
     editorPanel.api.setActive();
