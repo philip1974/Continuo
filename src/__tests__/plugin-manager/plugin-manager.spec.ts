@@ -6,6 +6,7 @@ import {
   type ManagerHost,
   type PluginDirInfo,
 } from '../../plugins/PluginManager';
+import { InMemoryPermissionStore } from '../../plugins/permissions';
 import { createTestApp } from '../../plugins/test-utils';
 
 const fakeApp = createTestApp('1.0.0');
@@ -266,5 +267,101 @@ describe('shutdown', () => {
     await mgr.init();
     await mgr.shutdown();
     expect(GoodPlugin.unloaded).toEqual(['3', '2', '1']);
+  });
+});
+
+// ── v3.4 权限门 ────────────────────────────────────────
+
+describe('权限门 ensureAuthorized 集成', () => {
+  it('manifest 无 permissions → 不调 promptFn,直接激活', async () => {
+    const promptFn = vi.fn();
+    const state: MockHostState = {
+      dirs: [
+        { id: 'a', manifestText: manifestText('a'), moduleUrl: 'mod://a' },
+      ],
+      enabled: new Set(['a']),
+      modules: new Map([['mod://a', { default: GoodPlugin }]]),
+      enabledWritten: new Set(),
+    };
+    const host: ManagerHost = {
+      ...makeHost(state),
+      permissionStore: new InMemoryPermissionStore(),
+      promptFn,
+    };
+    const mgr = new PluginManager(fakeApp, host);
+    await mgr.init();
+    expect(GoodPlugin.loaded).toEqual(['a']);
+    expect(promptFn).not.toHaveBeenCalled();
+  });
+
+  it('manifest 含 permissions + 用户全授 → 激活', async () => {
+    const state: MockHostState = {
+      dirs: [
+        {
+          id: 'a',
+          manifestText: manifestText('a', { permissions: ['fs', 'network'] }),
+          moduleUrl: 'mod://a',
+        },
+      ],
+      enabled: new Set(['a']),
+      modules: new Map([['mod://a', { default: GoodPlugin }]]),
+      enabledWritten: new Set(),
+    };
+    const host: ManagerHost = {
+      ...makeHost(state),
+      permissionStore: new InMemoryPermissionStore(),
+      promptFn: async (_pid, perms) => [...perms],
+    };
+    const mgr = new PluginManager(fakeApp, host);
+    await mgr.init();
+    expect(GoodPlugin.loaded).toEqual(['a']);
+  });
+
+  it('manifest 含 permissions + 用户拒 → 标 failed,不激活', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const state: MockHostState = {
+      dirs: [
+        {
+          id: 'a',
+          manifestText: manifestText('a', { permissions: ['fs', 'shell'] }),
+          moduleUrl: 'mod://a',
+        },
+      ],
+      enabled: new Set(['a']),
+      modules: new Map([['mod://a', { default: GoodPlugin }]]),
+      enabledWritten: new Set(),
+    };
+    const host: ManagerHost = {
+      ...makeHost(state),
+      permissionStore: new InMemoryPermissionStore(),
+      promptFn: async () => [], // 全拒
+    };
+    const mgr = new PluginManager(fakeApp, host);
+    await mgr.init();
+    expect(GoodPlugin.loaded).toEqual([]);
+    const list = mgr.listAll();
+    const entry = list.find((x) => x.id === 'a');
+    expect(entry?.status).toBe('failed');
+    expect(entry?.error).toContain('PERMISSION_DENIED');
+    warn.mockRestore();
+  });
+
+  it('host 不配 permissionStore → 跳过权限门(向后兼容)', async () => {
+    const state: MockHostState = {
+      dirs: [
+        {
+          id: 'a',
+          manifestText: manifestText('a', { permissions: ['fs'] }),
+          moduleUrl: 'mod://a',
+        },
+      ],
+      enabled: new Set(['a']),
+      modules: new Map([['mod://a', { default: GoodPlugin }]]),
+      enabledWritten: new Set(),
+    };
+    const mgr = new PluginManager(fakeApp, makeHost(state));
+    await mgr.init();
+    // 没 permissionStore,直接激活,即便 manifest 声明了权限
+    expect(GoodPlugin.loaded).toEqual(['a']);
   });
 });

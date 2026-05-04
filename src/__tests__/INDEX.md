@@ -93,6 +93,11 @@
 
 - [`persistence.spec.ts`](./layout-persistence/persistence.spec.ts)
 
+## [permission-prompt(授权 UI store + Modal + Manager 集成)](./permission-prompt/README.md)
+
+- [`PermissionPrompt.spec.tsx`](./permission-prompt/PermissionPrompt.spec.tsx)
+- [`promptStore.spec.ts`](./permission-prompt/promptStore.spec.ts)
+
 ## [plugin-base(插件基类与 Disposable 模型)](./plugin-base/README.md)
 
 - [`plugin-base.spec.ts`](./plugin-base/plugin-base.spec.ts)

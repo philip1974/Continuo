@@ -11,6 +11,7 @@ import { TitleBar } from './TitleBar';
 import { CommandPalette } from '@/plugins/command-palette/CommandPalette';
 import { useCommandPaletteHotkey } from '@/plugins/command-palette/useCommandPaletteHotkey';
 import { SettingsModal } from '@/plugins/settings/SettingsModal';
+import { PermissionPrompt } from '@/plugins/permissions/PermissionPrompt';
 import { lmApp } from '@/plugins/lm-app';
 import { isPopoutWindow } from '@/lib/popout-mode';
 
@@ -46,6 +47,7 @@ function MainApp() {
       </div>
       <CommandPalette commands={lmApp.commands} />
       <SettingsModal settingTabs={lmApp.settingTabs} />
+      <PermissionPrompt />
       {showSplash && <Splash />}
     </>
   );

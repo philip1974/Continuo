@@ -4,6 +4,7 @@
 import { Plugin } from './Plugin';
 import { loadPluginModule } from './loader';
 import { isVersionCompatible, parseManifest } from './manifest';
+import { ensureAuthorized, type PermissionStore, type PromptFn } from './permissions';
 import type { LMApp, PluginManifest } from './types';
 
 // ── Host 注入接口 ──────────────────────────────────────
@@ -28,6 +29,10 @@ export interface ManagerHost {
   writeEnabledIds(ids: readonly string[]): void | Promise<void>;
   /** 动态 import,可注入 mock. */
   importModule(url: string): Promise<unknown>;
+  /** v3.4 权限存储(可选,缺省 → 不做权限门). */
+  permissionStore?: PermissionStore;
+  /** v3.4 权限弹窗 PromptFn(可选,缺省 → 默认拒绝所有 pending). */
+  promptFn?: PromptFn;
 }
 
 // ── PluginEntry / Status ───────────────────────────────
@@ -180,6 +185,31 @@ export class PluginManager {
       entry.status = 'failed';
       entry.error = `${loaded.code}: ${loaded.message}`;
       return;
+    }
+
+    // v3.4 权限门:manifest 声明了 permissions 且 host 配了 store + prompt
+    // 才阻塞;否则放行(向后兼容)
+    const requested = entry.manifest.permissions ?? [];
+    if (
+      requested.length > 0 &&
+      this.host.permissionStore &&
+      this.host.promptFn
+    ) {
+      const auth = await ensureAuthorized(
+        entry.id,
+        requested,
+        this.host.permissionStore,
+        this.host.promptFn,
+      );
+      if (!auth.ok) {
+        console.warn(
+          `[plugin-manager] ${entry.id} permission denied:`,
+          auth.deniedPerms,
+        );
+        entry.status = 'failed';
+        entry.error = `PERMISSION_DENIED: ${auth.deniedPerms.join(', ')}`;
+        return;
+      }
     }
 
     // PluginClass 是 abstract,但实际传进来的是子类构造函数
