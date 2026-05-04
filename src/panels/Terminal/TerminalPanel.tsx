@@ -3,11 +3,17 @@
 // 不销毁 xterm 实例,scrollback 与滚动位置保留)。
 // 首次 mount 自动 spawn 一个 session;PTY exit 事件标记 exitCode 但不自动关 tab。
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useTerminalStore } from '@/stores/terminal.store';
 import { TerminalTabs } from './TerminalTabs';
 import { TerminalView } from './TerminalView';
 import { useWorkspaceStore } from '@/stores/workspace.store';
+
+// 模块级单例标志(跨 React mount/unmount 持久;App 真重启 / Cmd+R reload renderer
+// 时 module 重新加载自动复位)。
+// 解决:React 19 StrictMode 双 mount + spawn 异步 → useEffect 跑 2 次都看到
+// sessions=[] → 双 spawn 出 2 个 terminal 的 bug。
+let __terminalAutoSpawned = false;
 
 export function TerminalPanel() {
   const sessions = useTerminalStore((s) => s.sessions);
@@ -51,17 +57,19 @@ export function TerminalPanel() {
     return unsub;
   }, [setExited]);
 
-  // 首次 mount 自动 spawn 一个 session(panel 一打开就有 terminal 可用)
-  const initRef = useRef(false);
+  // 首次 mount 自动 spawn 一个 session(panel 一打开就有 terminal 可用)。
+  // 用 module-level flag 防 StrictMode 双 mount 与异步 spawn 时序导致的双 spawn。
+  // App 真重启时 module 重新加载,flag 自动复位 → 重新 spawn 一个新 terminal。
   useEffect(() => {
-    if (initRef.current) return;
-    if (sessions.length > 0) {
-      initRef.current = true;
+    if (__terminalAutoSpawned) return;
+    if (useTerminalStore.getState().sessions.length > 0) {
+      __terminalAutoSpawned = true;
       return;
     }
-    initRef.current = true;
+    __terminalAutoSpawned = true;
     void handleNew();
-  }, [sessions.length, handleNew]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="flex h-full w-full flex-col bg-canvas">
