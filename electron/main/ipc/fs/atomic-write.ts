@@ -16,10 +16,12 @@ import { fsError, mapNodeErrnoCode } from './path-utils';
  *   - 步骤 4 之后失败(.backup 删失败等):忽略,数据已落盘
  *
  * 不做:父目录 mkdir(VSCode 行为:save 到不存在的目录就该报错)
+ *
+ * content 为 string → utf-8 写;为 Uint8Array → 二进制写(Step 5d Dropzone 路径)
  */
 export async function atomicWriteFile(
   filePath: string,
-  content: string,
+  content: string | Uint8Array,
 ): Promise<void> {
   const tmpPath = `${filePath}.tmp`;
   const backupPath = `${filePath}.backup`;
@@ -28,7 +30,11 @@ export async function atomicWriteFile(
   let fd;
   try {
     fd = await open(tmpPath, 'w');
-    await fd.writeFile(content, 'utf-8');
+    if (typeof content === 'string') {
+      await fd.writeFile(content, 'utf-8');
+    } else {
+      await fd.writeFile(content);
+    }
     await fd.sync();
   } catch (err) {
     await fd?.close().catch(() => {});

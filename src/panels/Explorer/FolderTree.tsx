@@ -7,6 +7,7 @@ import { useExplorerStore } from '@/stores/explorer.store';
 import { ConfirmDialog } from './ConfirmDialog';
 import { ContextMenu, type ContextMenuActions } from './ContextMenu';
 import { CreateInput } from './CreateInput';
+import { DropOverlay } from './DropOverlay';
 import { createTreeConfig } from './tree-config';
 import { FILE_ROW_HEIGHT, FileRow } from './FileRow';
 import {
@@ -15,6 +16,12 @@ import {
   removeItems,
   renameItem,
 } from './mutate-actions';
+import {
+  partitionDropItems,
+  performDrop,
+  resolveDropTarget,
+  type DropTargetEntry,
+} from './drop-handlers';
 import { useFsWatcher } from './hooks/useFsWatcher';
 
 interface CreatingState {
@@ -35,6 +42,11 @@ export function FolderTree({ root }: { root: string }) {
   const selectedPaths = useExplorerStore((s) => s.selectedPaths);
   const [creating, setCreating] = useState<CreatingState | null>(null);
   const [deleteCandidate, setDeleteCandidate] = useState<string[] | null>(null);
+  // dnd 状态:hoverTarget 由 FileRow onDragEnter 回报;dragDepth 用计数器
+  // 防止 child enter/leave 误清(每次 enter +1,leave -1,归零才真离开)
+  const [hoverTarget, setHoverTarget] = useState<DropTargetEntry | null>(null);
+  const dragDepthRef = useRef(0);
+  const [dragActive, setDragActive] = useState(false);
 
   const refreshParent = (parentPath: string) => {
     try {
@@ -111,6 +123,53 @@ export function FolderTree({ root }: { root: string }) {
     if (!r.ok) alert(`新建失败:[${r.code}] ${r.message}`);
   };
 
+  // ── Drop 上传(Step 5d) ───────────────────────────────────────
+  const dropTargetDir = resolveDropTarget(hoverTarget, root);
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes('Files')) return;
+    dragDepthRef.current += 1;
+    if (!dragActive) setDragActive(true);
+  };
+  const handleDragOver = (e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes('Files')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  };
+  const handleDragLeave = (e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes('Files')) return;
+    dragDepthRef.current -= 1;
+    if (dragDepthRef.current <= 0) {
+      dragDepthRef.current = 0;
+      setDragActive(false);
+      setHoverTarget(null);
+    }
+  };
+  const handleDrop = async (e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes('Files')) return;
+    e.preventDefault();
+    dragDepthRef.current = 0;
+    setDragActive(false);
+    const target = resolveDropTarget(hoverTarget, root);
+    setHoverTarget(null);
+    const { files, skippedDirs } = partitionDropItems(e.dataTransfer.items);
+    if (files.length === 0 && skippedDirs.length === 0) return;
+    const r = await performDrop(files, target, window.api.fs);
+    refreshParent(target);
+    // 仅在有问题时提示;成功 fs.watch 已自动刷新树
+    const msgs: string[] = [];
+    if (skippedDirs.length > 0) {
+      msgs.push(`跳过 ${skippedDirs.length} 个文件夹(暂不支持目录拖入)`);
+    }
+    if (!r.ok) {
+      msgs.push(
+        `失败 ${r.failed.length} 个:\n` +
+          r.failed.map((f) => `  ${f.name}: [${f.code}] ${f.message}`).join('\n'),
+      );
+    }
+    if (msgs.length > 0) alert(msgs.join('\n\n'));
+  };
+
   const confirmDelete = async () => {
     if (!deleteCandidate) return;
     const paths = deleteCandidate;
@@ -125,7 +184,14 @@ export function FolderTree({ root }: { root: string }) {
   };
 
   return (
-    <div className="flex h-full w-full flex-col">
+    <div
+      className="relative flex h-full w-full flex-col"
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {dragActive && <DropOverlay targetDir={dropTargetDir} />}
       {creating && (
         <CreateInput
           type={creating.type}
@@ -174,6 +240,10 @@ export function FolderTree({ root }: { root: string }) {
                     selectedPaths={selectedPaths}
                     rootPath={root}
                     contextActions={contextActions}
+                    onHoverDropTarget={setHoverTarget}
+                    isDropHover={
+                      dragActive && hoverTarget?.path === item.getId()
+                    }
                   />
                 );
               })}

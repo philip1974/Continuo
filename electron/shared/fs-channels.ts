@@ -5,6 +5,7 @@ export const FS_CHANNELS = {
   LIST_DIR: 'fs:list-dir',
   READ_FILE: 'fs:read-file',
   WRITE_FILE: 'fs:write-file',
+  WRITE_BINARY: 'fs:write-binary',
   RENAME: 'fs:rename',
   REMOVE: 'fs:remove',
   CREATE_FILE: 'fs:create-file',

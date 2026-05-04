@@ -187,6 +187,16 @@ describe('atomicWriteFile', () => {
     expect(existsSync(`${f}.tmp`)).toBe(false);
   });
 
+  it('Uint8Array 写入(Step 5d Dropzone 二进制路径)', async () => {
+    const f = path.join(dir, 'binary.dat');
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]); // PNG 头
+    await atomicWriteFile(f, bytes);
+    const back = await import('node:fs/promises').then((m) =>
+      m.readFile(f),
+    );
+    expect(Array.from(back)).toEqual(Array.from(bytes));
+  });
+
   it('空字符串可写', async () => {
     const f = path.join(dir, 'empty.txt');
     await atomicWriteFile(f, '');

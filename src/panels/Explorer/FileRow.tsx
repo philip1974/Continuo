@@ -2,6 +2,7 @@ import { Document, Folder } from '@react-symbols/icons';
 import type { ItemInstance } from '@headless-tree/core';
 import type { FileEntry } from '@/lib/fs/types';
 import { ContextMenu, type ContextMenuActions } from './ContextMenu';
+import type { DropTargetEntry } from './drop-handlers';
 
 interface FileRowProps {
   item: ItemInstance<FileEntry>;
@@ -10,6 +11,10 @@ interface FileRowProps {
   selectedPaths: ReadonlySet<string>;
   rootPath: string;
   contextActions: ContextMenuActions;
+  /** dnd:鼠标拖入此行时回报本 entry,供 FolderTree 计算落点. */
+  onHoverDropTarget?: (target: DropTargetEntry | null) => void;
+  /** dnd:此行是当前 hover 落点时高亮. */
+  isDropHover?: boolean;
 }
 
 const ICON_SIZE = 16;
@@ -24,6 +29,8 @@ export function FileRow({
   selectedPaths,
   rootPath,
   contextActions,
+  onHoverDropTarget,
+  isDropHover = false,
 }: FileRowProps) {
   const data = item.getItemData();
   const isDir = item.isFolder();
@@ -37,6 +44,11 @@ export function FileRow({
   const row = (
     <div
       {...item.getProps()}
+      onDragEnter={(e) => {
+        if (!e.dataTransfer.types.includes('Files')) return;
+        // 文件夹 → 自身;文件 → 父目录(由 resolveDropTarget 算)
+        onHoverDropTarget?.({ path: data.path, isDirectory: isDir });
+      }}
       style={{
         ...style,
         height: ROW_HEIGHT,
@@ -46,9 +58,11 @@ export function FileRow({
         'flex items-center gap-1 text-xs select-none',
         'border-l-2',
         isFocused ? 'border-sky-500' : 'border-transparent',
-        isSelected
-          ? 'bg-neutral-800 text-neutral-100'
-          : 'text-neutral-400 hover:bg-neutral-900',
+        isDropHover
+          ? 'bg-sky-900/40 text-neutral-100'
+          : isSelected
+            ? 'bg-neutral-800 text-neutral-100'
+            : 'text-neutral-400 hover:bg-neutral-900',
       ].join(' ')}
       title={data.path}
     >
