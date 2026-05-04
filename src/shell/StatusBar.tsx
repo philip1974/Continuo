@@ -2,14 +2,26 @@
 // 左:workspace 名 + sidebar 收起提示 + git 分支占位。
 // 右:active editor tab 文件名 + dirty + 行 / 词 / 字符 + 编码占位。
 
+import { useEffect, useState } from 'react';
 import { useEditorStore } from '@/stores/editor.store';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { useLayoutUiStore } from '@/stores/layout-ui.store';
 import { charCount, lineCount, wordCount } from '@/lib/text-stats';
+import { lmApp } from '@/plugins/lm-app';
+import type { StatusBarItemSpec } from '@/plugins/registries/StatusBarRegistry';
 
 function basename(p: string): string {
   const m = p.match(/[^/\\]+$/);
   return m ? m[0] : p;
+}
+
+function useStatusBarItems(side: 'left' | 'right'): readonly StatusBarItemSpec[] {
+  const [snap, setSnap] = useState(() => lmApp.statusBar.getBySide(side));
+  useEffect(
+    () => lmApp.statusBar.subscribe(() => setSnap(lmApp.statusBar.getBySide(side))),
+    [side],
+  );
+  return snap;
 }
 
 export function StatusBar() {
@@ -19,6 +31,8 @@ export function StatusBar() {
   const activeTabId = useEditorStore((s) => s.activeTabId);
 
   const active = tabs.find((t) => t.id === activeTabId) ?? null;
+  const leftItems = useStatusBarItems('left');
+  const rightItems = useStatusBarItems('right');
 
   return (
     <footer className="flex h-[22px] shrink-0 items-center justify-between border-t border-line bg-panel px-3 text-[10px] text-fg-dim select-none">
@@ -48,8 +62,16 @@ export function StatusBar() {
           <span className="text-fg-dim/60">无工作区</span>
         )}
         {!sidebarOpen && <span className="text-fg-dim/60">侧栏已隐藏</span>}
+        {/* 插件贡献的左侧 statusBar items */}
+        {leftItems.map((item) => (
+          <span key={item.id}>{item.render()}</span>
+        ))}
       </div>
       <div className="flex items-center gap-3">
+        {/* 插件贡献的右侧 statusBar items(在内置项左边) */}
+        {rightItems.map((item) => (
+          <span key={item.id}>{item.render()}</span>
+        ))}
         {active ? (
           <>
             <span className="truncate max-w-[280px]" title={active.filePath ?? '未命名'}>

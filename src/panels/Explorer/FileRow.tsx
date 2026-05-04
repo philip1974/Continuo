@@ -28,14 +28,16 @@ const ICON_SIZE = 16;
 const ROW_HEIGHT = 28;
 const INDENT = 16;
 
-/** 订阅插件装饰器 registry,变化时重渲染. */
+/** 订阅插件装饰器 registry,plugin enable/disable 时所有 FileRow 自动重渲. */
 function useDecoration(path: string, isDirectory: boolean) {
   const [snap, setSnap] = useState(() => lmApp.explorerDecorators.getAll());
-  // ExplorerDecoratorRegistry 没 subscribe;插件加载/卸载频率低,
-  // 这里改为每次组件挂载读最新值即可。如需 reactive,可后期加 subscribe。
-  useEffect(() => {
-    setSnap(lmApp.explorerDecorators.getAll());
-  }, []);
+  useEffect(
+    () =>
+      lmApp.explorerDecorators.subscribe(() =>
+        setSnap(lmApp.explorerDecorators.getAll()),
+      ),
+    [],
+  );
   return useMemo(
     () => mergeDecorations({ path, isDirectory }, snap),
     [path, isDirectory, snap],

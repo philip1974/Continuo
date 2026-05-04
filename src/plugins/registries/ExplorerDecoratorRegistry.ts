@@ -21,24 +21,40 @@ export interface Decoration {
 
 export type DecoratorFn = (entry: DecoratorEntry) => Decoration | null;
 
+type Listener = () => void;
+
 export class ExplorerDecoratorRegistry {
   private fns: DecoratorFn[] = [];
+  private listeners = new Set<Listener>();
 
   register(fn: DecoratorFn): Disposable {
     this.fns.push(fn);
+    this.notify();
     let disposed = false;
     return {
       dispose: () => {
         if (disposed) return;
         disposed = true;
         const i = this.fns.indexOf(fn);
-        if (i >= 0) this.fns.splice(i, 1);
+        if (i >= 0) {
+          this.fns.splice(i, 1);
+          this.notify();
+        }
       },
     };
   }
 
   getAll(): readonly DecoratorFn[] {
     return this.fns.slice();
+  }
+
+  subscribe(listener: Listener): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  private notify(): void {
+    for (const l of this.listeners) l();
   }
 }
 

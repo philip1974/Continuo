@@ -62,12 +62,13 @@ export function EditorHeader({
   const switchTab = useEditorStore((s) => s.switchTab);
   const mode = useEditorStore((s) => s.mode);
   const setMode = useEditorStore((s) => s.setMode);
+  // Hooks 必须无条件按相同顺序调用,所以 useEditorActions 放 early-return 之前
+  const allActions = useEditorActions();
 
   if (tabs.length === 0) return null;
 
   const dirty = activeTab?.dirty ?? false;
   const showTabList = tabs.length >= 2;
-  const allActions = useEditorActions();
   const visibleActions = filterVisible(allActions, {
     filePath: activeTab?.filePath ?? null,
     dirty,

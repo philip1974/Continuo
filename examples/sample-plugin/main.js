@@ -24,19 +24,32 @@ export default class SamplePlugin extends Plugin {
     });
 
     // ── 2. StatusBar 时钟 ─────────────────────────────
-    let now = new Date().toLocaleTimeString();
-    const updateClock = () => {
-      now = new Date().toLocaleTimeString();
-      this.app.events.emit('sample.tick', now);
+    // 每秒 dispose + re-register 触发 StatusBar 订阅 → 重渲。
+    // (StatusBar item.render 是闭包,改局部变量不会自动重渲;
+    //  re-register 让 registry.notify() 推送新订阅)
+    let clockDisposable = null;
+    const renderClock = () => {
+      clockDisposable?.dispose();
+      clockDisposable = this.addStatusBarItem({
+        id: 'sample.clock',
+        side: 'right',
+        priority: 50,
+        render: () =>
+          h(
+            'span',
+            { className: 'text-fg-dim' },
+            `🕐 ${new Date().toLocaleTimeString()}`,
+          ),
+      });
+      this.app.events.emit('sample.tick', Date.now());
     };
-    const interval = setInterval(updateClock, 1000);
-    this.register({ dispose: () => clearInterval(interval) });
-
-    this.addStatusBarItem({
-      id: 'sample.clock',
-      side: 'right',
-      priority: 50,
-      render: () => h('span', { className: 'text-fg-dim' }, `🕐 ${now}`),
+    renderClock();
+    const interval = setInterval(renderClock, 1000);
+    this.register({
+      dispose: () => {
+        clearInterval(interval);
+        clockDisposable?.dispose();
+      },
     });
 
     // ── 3. Ribbon 图标 ────────────────────────────────
