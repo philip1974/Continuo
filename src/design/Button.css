@@ -37,4 +37,15 @@
 .wm-button[data-variant="danger"] { background-color: var(--md-error-container); color: var(--md-on-error-container); border-color: var(--md-error); }
 .wm-button[data-variant="danger"]:hover:not(:disabled) { background-color: var(--md-error); color: var(--md-on-error); }
 
+/* LM-local 扩展:outlined — 透明 + accent 边/字,IDE empty state CTA 不抢镜. */
+.wm-button[data-variant="outlined"] {
+  background-color: transparent;
+  color: var(--md-primary);
+  border-color: var(--md-primary);
+}
+.wm-button[data-variant="outlined"]:hover:not(:disabled) {
+  background-color: var(--md-primary);
+  color: var(--md-on-primary);
+}
+
 .wm-button:disabled { opacity: 0.5; cursor: not-allowed; }

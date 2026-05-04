@@ -1,7 +1,13 @@
 import './Button.css';
 import type { ButtonHTMLAttributes } from 'react';
 
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
+// outlined 是 LM-local 扩展(IDE empty state CTA),Nous 上游暂无。
+export type ButtonVariant =
+  | 'primary'
+  | 'secondary'
+  | 'ghost'
+  | 'danger'
+  | 'outlined';
 export type ButtonSize = 'sm' | 'md' | 'lg';
 
 /**

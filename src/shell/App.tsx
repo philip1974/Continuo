@@ -7,6 +7,7 @@ import { ExplorerSidebar } from './ExplorerSidebar';
 import { IconSidebar } from './IconSidebar';
 import { PopoutHost } from './PopoutHost';
 import { StatusBar } from './StatusBar';
+import { TitleBar } from './TitleBar';
 import { isPopoutWindow } from '@/lib/popout-mode';
 
 const SPLASH_MIN_MS = 600;
@@ -26,9 +27,7 @@ function MainApp() {
   return (
     <>
       <div className="flex h-dvh w-dvw flex-col bg-canvas text-fg">
-        <header className="flex h-9 shrink-0 items-center justify-center border-b border-line text-xs text-fg-dim select-none [-webkit-app-region:drag]">
-          LayoutMotion
-        </header>
+        <TitleBar />
         <main className="flex min-h-0 flex-1">
           <IconSidebar />
           <ExplorerSidebar />

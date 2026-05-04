@@ -50,13 +50,17 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
   }, [activePanel, containerApi]);
 
   return (
-    <div ref={ref} className="relative flex h-full items-center gap-1 pr-1">
+    <div
+      ref={ref}
+      className="group/header relative flex h-full items-center gap-1 pr-1"
+    >
       <IconButton
         size="sm"
         aria-label="Pop out active panel"
         title="弹出到独立窗口"
         disabled={!activePanel}
         onClick={popout}
+        className="opacity-40 transition-opacity group-hover/header:opacity-100 focus-visible:opacity-100"
       >
         <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
           <path
@@ -74,6 +78,7 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
         aria-label="More actions"
         title="更多操作"
         onClick={() => setOpen((v) => !v)}
+        className="opacity-40 transition-opacity group-hover/header:opacity-100 focus-visible:opacity-100"
       >
         <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
           {/* horizontal ellipsis ⋯ */}

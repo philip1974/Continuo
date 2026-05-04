@@ -25,7 +25,7 @@ export function EmptyWorkspace() {
       <div className="text-xs uppercase tracking-wider text-fg-dim">
         未打开文件夹
       </div>
-      <Button variant="primary" size="md" onClick={open} disabled={busy}>
+      <Button variant="outlined" size="md" onClick={open} disabled={busy}>
         {busy ? '打开中…' : '打开文件夹'}
       </Button>
       {recentRoots.length > 0 && (
