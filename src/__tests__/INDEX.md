@@ -10,6 +10,10 @@
 
 - [`license.spec.ts`](./decor-contracts/license.spec.ts)
 
+## [editor-store (M-Editor Step E1)](./editor-store/README.md)
+
+- [`editor-store.spec.ts`](./editor-store/editor-store.spec.ts)
+
 ## [explorer-dropzone (M-Explorer Step 5d)](./explorer-dropzone/README.md)
 
 - [`drop-handlers.spec.ts`](./explorer-dropzone/drop-handlers.spec.ts)
