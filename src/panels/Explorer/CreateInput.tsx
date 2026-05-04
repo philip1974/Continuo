@@ -31,11 +31,21 @@ export function CreateInput({
   onCancelRef.current = onCancel;
 
   useEffect(() => {
+    // eslint-disable-next-line no-console
+    console.log('[CreateInput] effect runs, ref=', ref.current);
     const el = ref.current;
-    if (!el) return;
+    if (!el) {
+      // eslint-disable-next-line no-console
+      console.log('[CreateInput] effect: ref is null, abort');
+      return;
+    }
+    // eslint-disable-next-line no-console
+    console.log('[CreateInput] effect: registering listener on', el.tagName);
     el.focus();
 
     const handler = (e: KeyboardEvent) => {
+      // eslint-disable-next-line no-console
+      console.log('[CreateInput] handler triggered:', e.key);
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
@@ -49,8 +59,11 @@ export function CreateInput({
       }
     };
     el.addEventListener('keydown', handler, { capture: true });
-    return () =>
+    return () => {
+      // eslint-disable-next-line no-console
+      console.log('[CreateInput] cleanup: removing listener');
       el.removeEventListener('keydown', handler, { capture: true });
+    };
   }, []);
 
   return (
