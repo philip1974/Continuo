@@ -1,27 +1,13 @@
 import type { DockviewApi } from 'dockview-react';
 
 // Explorer 固定在左侧 sidebar(App.tsx 内的 ExplorerSidebar),不参与 Dockview。
-// 默认布局:editor 占主区,下方 terminal+output 同 group。
+// 默认布局极简(VSCode 风):只 Editor 占主区。
+// Terminal / Output 通过 HeaderActions 的 + 按钮按需打开,无需常驻底部。
 export function applyDefaultLayout(api: DockviewApi) {
   const editor = api.addPanel({
     id: 'editor',
     component: 'editor',
     title: 'Editor',
   });
-
-  const terminal = api.addPanel({
-    id: 'terminal',
-    component: 'terminal',
-    title: 'Terminal',
-    position: { referencePanel: editor.id, direction: 'below' },
-  });
-
-  api.addPanel({
-    id: 'output',
-    component: 'output',
-    title: 'Output',
-    position: { referenceGroup: terminal.group, direction: 'within' },
-  });
-
   editor.api.setActive();
 }
