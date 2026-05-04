@@ -15,6 +15,7 @@ import {
   removeItems,
   renameItem,
 } from './mutate-actions';
+import { useFsWatcher } from './hooks/useFsWatcher';
 
 interface CreatingState {
   type: 'file' | 'dir';
@@ -68,6 +69,20 @@ export function FolderTree({ root }: { root: string }) {
   treeRef.current = tree;
 
   const items = tree.getItems();
+
+  // ── fs.watch 增量更新(Step 6) ───────────────────────────────────
+  // 跟随 headless-tree 真实展开集合(我们的 store.expandedPaths 还没接,
+  // 用 tree.getState().expandedItems 即时读)。
+  const expandedPaths = useMemo(
+    () => new Set(tree.getState().expandedItems ?? []),
+    // tree.getState().expandedItems 是数组引用,变化时 useMemo 重算;
+    // 同时 items 引用也会随 expand 变,加进 deps 兜底
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [items, tree.getState().expandedItems],
+  );
+  useFsWatcher(expandedPaths, (changedPath) => {
+    refreshParent(changedPath);
+  });
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({

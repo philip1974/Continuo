@@ -11,6 +11,10 @@ export const FS_CHANNELS = {
   CREATE_DIR: 'fs:create-dir',
   TRASH: 'fs:trash',
   SELECT_DIRECTORY: 'fs:select-directory',
+  WATCH: 'fs:watch',
+  UNWATCH: 'fs:unwatch',
+  /** main → renderer event(非 invoke),webContents.send(path) 通知目录变更 */
+  DIR_CHANGED: 'fs:dir-changed',
 } as const;
 
 export type FsChannel = (typeof FS_CHANNELS)[keyof typeof FS_CHANNELS];

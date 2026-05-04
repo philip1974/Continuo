@@ -1,4 +1,5 @@
-import { dialog, shell } from 'electron';
+import { BrowserWindow, dialog, shell } from 'electron';
+import fs from 'node:fs';
 import { z } from 'zod';
 import { defaultIsTrustedFrame, safeHandle } from '../safe-handle';
 import { FS_CHANNELS } from '../../shared/fs-channels';
@@ -8,6 +9,7 @@ import { atomicWriteFile } from './fs/atomic-write';
 import { renameEntry } from './fs/rename';
 import { removeEntry } from './fs/remove';
 import { createDir, createFile } from './fs/create';
+import { createWatcherPool } from './fs/watch';
 
 // ────────────────────────────────────────────────────────────
 // schemas — 全部 .strict() 拒绝未知字段(防 IPC 注入)
@@ -53,6 +55,9 @@ export const trashInputSchema = z.object({ path: z.string().min(1) }).strict();
 // select-directory 显式严格:接受 undefined,拒绝 {} 与其它值
 export const selectDirectoryInputSchema = z.undefined();
 
+export const watchInputSchema = z.object({ path: z.string().min(1) }).strict();
+export const unwatchInputSchema = z.object({ path: z.string().min(1) }).strict();
+
 // 类型导出(给 preload / renderer 用)
 export type ListDirInput = z.infer<typeof listDirInputSchema>;
 export type ReadFileInput = z.infer<typeof readFileInputSchema>;
@@ -62,6 +67,8 @@ export type RemoveInput = z.infer<typeof removeInputSchema>;
 export type CreateFileInput = z.infer<typeof createFileInputSchema>;
 export type CreateDirInput = z.infer<typeof createDirInputSchema>;
 export type TrashInput = z.infer<typeof trashInputSchema>;
+export type WatchInput = z.infer<typeof watchInputSchema>;
+export type UnwatchInput = z.infer<typeof unwatchInputSchema>;
 
 // ────────────────────────────────────────────────────────────
 // handlers — 浅函数,把 schema parse 后的对象映射给 fs 函数
@@ -103,6 +110,22 @@ export const makeSelectDirectoryHandler =
 // registerFsIpc — 拼装 9 条通道,真接 Electron API
 // ────────────────────────────────────────────────────────────
 
+// Watcher pool 全局单例(进程级)。每个 path 一个 fs.watcher,onChange 广播给所有窗口。
+const watcherPool = createWatcherPool((path, onChange) => {
+  // non-recursive,只看直接子项变化(VSCode 风,Linux 也支持)
+  const watcher = fs.watch(path, { persistent: false, recursive: false }, () => {
+    onChange();
+  });
+  return { close: () => watcher.close() };
+});
+
+function broadcastDirChanged(path: string): void {
+  for (const w of BrowserWindow.getAllWindows()) {
+    if (w.webContents.isDestroyed()) continue;
+    w.webContents.send(FS_CHANNELS.DIR_CHANGED, { path });
+  }
+}
+
 export function registerFsIpc(): void {
   const trusted = defaultIsTrustedFrame;
 
@@ -135,6 +158,25 @@ export function registerFsIpc(): void {
           properties: opts.properties as Electron.OpenDialogOptions['properties'],
         }),
     }),
+    trusted,
+  );
+
+  // ── fs.watch 增量更新(Step 6) ──────────────────────────────
+  safeHandle(
+    FS_CHANNELS.WATCH,
+    watchInputSchema,
+    (input) => {
+      watcherPool.watch(input.path, () => broadcastDirChanged(input.path));
+    },
+    trusted,
+  );
+
+  safeHandle(
+    FS_CHANNELS.UNWATCH,
+    unwatchInputSchema,
+    (input) => {
+      watcherPool.unwatch(input.path);
+    },
     trusted,
   );
 }

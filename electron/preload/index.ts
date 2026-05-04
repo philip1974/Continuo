@@ -58,6 +58,17 @@ const api = {
       ipcRenderer.invoke(FS_CHANNELS.TRASH, { path }),
     selectDirectory: (): Promise<IpcResult<string | null>> =>
       ipcRenderer.invoke(FS_CHANNELS.SELECT_DIRECTORY),
+    watchDir: (path: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(FS_CHANNELS.WATCH, { path }),
+    unwatchDir: (path: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(FS_CHANNELS.UNWATCH, { path }),
+    /** 订阅目录变更 push 事件;返回 unsubscribe. */
+    onDirChanged: (cb: (path: string) => void): (() => void) => {
+      const listener = (_: unknown, payload: { path: string }) =>
+        cb(payload.path);
+      ipcRenderer.on(FS_CHANNELS.DIR_CHANGED, listener);
+      return () => ipcRenderer.off(FS_CHANNELS.DIR_CHANGED, listener);
+    },
   },
 } as const;
 

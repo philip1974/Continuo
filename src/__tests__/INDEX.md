@@ -26,6 +26,11 @@
 
 - [`tree-config.spec.ts`](./explorer-tree/tree-config.spec.ts)
 
+## [explorer-watch (M-Explorer Step 6)](./explorer-watch/README.md)
+
+- [`fs-watch-helpers.spec.ts`](./explorer-watch/fs-watch-helpers.spec.ts)
+- [`watch-pool.spec.ts`](./explorer-watch/watch-pool.spec.ts)
+
 ## [fs-adapter (M-Explorer Step 1)](./fs-adapter/README.md)
 
 - [`fs-adapter.spec.ts`](./fs-adapter/fs-adapter.spec.ts)
