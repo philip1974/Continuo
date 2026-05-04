@@ -6,6 +6,7 @@
 import EditorPlugin from './EditorPlugin';
 import TerminalPlugin from './TerminalPlugin';
 import OutputPlugin from './OutputPlugin';
+import PluginsTabPlugin from './PluginsTabPlugin';
 import { lmApp } from '@/plugins/lm-app';
 import type { Plugin } from '@/plugins/Plugin';
 import type { PluginManifest } from '@/plugins/types';
@@ -27,6 +28,10 @@ const CORES: readonly CoreEntry[] = [
   {
     Cls: OutputPlugin as never,
     manifest: { id: 'core.output', name: 'Output', version: '1.0.0' },
+  },
+  {
+    Cls: PluginsTabPlugin as never,
+    manifest: { id: 'core.plugins', name: 'PluginsTab', version: '1.0.0' },
   },
 ];
 

@@ -50,3 +50,18 @@ describe('shutdownCorePlugins', () => {
     await expect(shutdownCorePlugins()).resolves.toBeUndefined();
   });
 });
+
+describe('PluginsTabPlugin(v3.5)', () => {
+  it('boot 后注册 core.plugins 设置 tab', () => {
+    bootCorePlugins();
+    const tabs = lmApp.settingTabs.getAll().map((t) => t.id);
+    expect(tabs).toContain('core.plugins');
+  });
+
+  it('shutdown 后 tab 移除', async () => {
+    bootCorePlugins();
+    await shutdownCorePlugins();
+    const tabs = lmApp.settingTabs.getAll().map((t) => t.id);
+    expect(tabs).not.toContain('core.plugins');
+  });
+});
