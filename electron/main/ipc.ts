@@ -15,7 +15,10 @@ import { registerTerminalIpc } from './ipc/terminal.ipc';
 import { registerPluginsIpc } from './ipc/plugins.ipc';
 import { registerShellIpc } from './ipc/shell.ipc';
 import { AGENT_AUTH_CHANNELS } from '../shared/agent-auth-channels';
-import { resolveAgentAuthRequest } from './services/agent-auth.service';
+import {
+  resolveAgentAuthRequest,
+  revokeAndKillAgentSessions,
+} from './services/agent-auth.service';
 
 // layout:read 入参为空(renderer ipcRenderer.invoke 不传第二参 → undefined)
 const NoInput = z.undefined();
@@ -91,6 +94,16 @@ export function registerIpc() {
     ({ requestId, decision }) => {
       resolveAgentAuthRequest(requestId, decision);
     },
+    trusted,
+  );
+
+  // 撤销 session 授权 + 终止全部 agent terminal(状态栏按钮触发)。
+  // 入参空对象,返回 { killed, rotated } 给 renderer 显示 toast / 反馈。
+  const agentAuthRevokeSchema = z.object({}).strict();
+  safeHandle(
+    AGENT_AUTH_CHANNELS.REVOKE,
+    agentAuthRevokeSchema,
+    () => revokeAndKillAgentSessions(),
     trusted,
   );
 }

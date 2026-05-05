@@ -7,6 +7,8 @@ export const AGENT_AUTH_CHANNELS = {
   REQUEST: 'agent-auth:request',
   /** renderer → main invoke:用户决定. */
   RESPOND: 'agent-auth:respond',
+  /** renderer → main invoke:撤销 session 授权 + 终止全部 agent terminal. */
+  REVOKE: 'agent-auth:revoke',
 } as const;
 
 export type AgentAuthChannel =

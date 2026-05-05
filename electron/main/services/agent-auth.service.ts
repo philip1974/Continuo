@@ -12,6 +12,9 @@ import {
   type AgentAuthDecision,
   type AgentAuthRequestPayload,
 } from '../../shared/agent-auth-channels';
+import * as terminalSessions from './terminal-sessions.service';
+import * as termService from './terminal.service';
+import type { McpHost } from './mcp-host.service';
 
 // 5 分钟无应答 → 默认拒绝(防 renderer 卡死时 tool Promise 永远悬挂)
 const PROMPT_TIMEOUT_MS = 5 * 60 * 1000;
@@ -82,4 +85,48 @@ export function resolveAgentAuthRequest(
 export function _resetPendingForTest(): void {
   for (const [, r] of pending) r('denied');
   pending.clear();
+}
+
+// ── revoke(状态栏"终止全部 agent terminal"按钮触发)─────────────
+
+let mcpHostRef: McpHost | null = null;
+
+/** main/index.ts 启动 host 后调,把 host 引用注入,供 revoke 用. */
+export function setMcpHostRef(host: McpHost | null): void {
+  mcpHostRef = host;
+}
+
+export interface RevokeResult {
+  /** 被终止的 agent session 数(originHint='agent'). */
+  readonly killed: number;
+  /** 是否成功 rotate token(无 mcpHost 时 false). */
+  readonly rotated: boolean;
+}
+
+/**
+ * 撤销 session 授权:
+ *  1. rotate MCP token(已运行的 agent CLI 持的旧 token 立刻 401)
+ *  2. 终止所有 originHint='agent' 的 PTY + 删 metadata
+ *
+ * 不动 originHint='user' 的 session;不重启 mcp host。
+ * 调用方(renderer)还需要本地调 useAgentAuthStore.revoke() 把 sessionGranted=false,
+ * 这部分本服务不包(避免循环依赖)。
+ */
+export function revokeAndKillAgentSessions(): RevokeResult {
+  let rotated = false;
+  if (mcpHostRef) {
+    mcpHostRef.rotateToken();
+    rotated = true;
+  }
+  let killed = 0;
+  // 拍快照再遍历:terminalSessions.remove 会改 Map,getAll 返回的是新数组,
+  // 但保险起见显式拷贝。
+  const snapshot = Array.from(terminalSessions.getAll());
+  for (const s of snapshot) {
+    if (s.originHint !== 'agent') continue;
+    terminalSessions.remove(s.id);
+    if (termService.has(s.id)) termService.kill(s.id);
+    killed += 1;
+  }
+  return { killed, rotated };
 }

@@ -12,7 +12,10 @@ import {
 } from './services/mcp-tools-terminal';
 import * as terminalSessions from './services/terminal-sessions.service';
 import { makeCreateHandler, setMcpEnvProvider } from './ipc/terminal.ipc';
-import { requestAgentAuth } from './services/agent-auth.service';
+import {
+  requestAgentAuth,
+  setMcpHostRef,
+} from './services/agent-auth.service';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = !app.isPackaged;
@@ -194,6 +197,8 @@ async function startMcpHost(): Promise<void> {
       CONTINUO_MCP_TOKEN: mcpHost!.token,
       CONTINUO_HOST: 'desktop',
     }));
+    // 给 agent-auth service 注入 host 引用,撤销时 rotate token。
+    setMcpHostRef(mcpHost);
     // eslint-disable-next-line no-console
     console.log(`[mcp-host] listening on ${mcpHost.url}`);
   } catch (err) {

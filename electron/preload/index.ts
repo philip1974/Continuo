@@ -236,6 +236,9 @@ const api = {
       decision: AgentAuthDecision,
     ): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(AGENT_AUTH_CHANNELS.RESPOND, { requestId, decision }),
+    /** 撤销 session 授权 + 终止全部 agent terminal(状态栏按钮触发). */
+    revoke: (): Promise<IpcResult<{ killed: number; rotated: boolean }>> =>
+      ipcRenderer.invoke(AGENT_AUTH_CHANNELS.REVOKE, {}),
   },
 } as const;
 
