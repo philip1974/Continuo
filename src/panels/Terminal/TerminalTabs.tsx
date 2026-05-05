@@ -23,15 +23,28 @@ export function TerminalTabs({
         <TabNav className="min-w-0 flex-1 overflow-x-auto">
           {sessions.map((tab: TerminalSession) => {
             const isExited = tab.exitCode !== null;
+            const isAgent = tab.originHint === 'agent';
+            const baseTitle = isAgent
+              ? `${tab.title}${tab.agentLabel ? ` · ${tab.agentLabel}` : ''}(agent)`
+              : tab.title;
             return (
               <TabNavItem
                 key={tab.id}
                 active={tab.id === activeId}
                 muted={isExited}
-                title={isExited ? `${tab.title}(已退出 code=${tab.exitCode})` : tab.title}
+                title={
+                  isExited
+                    ? `${baseTitle}(已退出 code=${tab.exitCode})`
+                    : baseTitle
+                }
                 onSelect={() => setActive(tab.id)}
                 onClose={() => onCloseSession(tab.id)}
               >
+                {isAgent && (
+                  <span className="mr-1 text-accent" aria-hidden>
+                    ●
+                  </span>
+                )}
                 {tab.title}
                 {isExited && <span className="ml-1 text-fg-dim">(已退出)</span>}
               </TabNavItem>

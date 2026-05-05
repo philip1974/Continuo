@@ -5,9 +5,14 @@ import { fileURLToPath } from 'node:url';
 import { registerIpc } from './ipc';
 import { PLUGINS_CHANNELS } from '../shared/plugins-channels';
 import { createMcpHost, type McpHost } from './services/mcp-host.service';
-import { makeListSessionsTool } from './services/mcp-tools-terminal';
+import {
+  makeListSessionsTool,
+  makeCreateSessionTool,
+  type CreateSessionPtyInput,
+} from './services/mcp-tools-terminal';
 import * as terminalSessions from './services/terminal-sessions.service';
-import { setMcpEnvProvider } from './ipc/terminal.ipc';
+import { makeCreateHandler, setMcpEnvProvider } from './ipc/terminal.ipc';
+import { requestAgentAuth } from './services/agent-auth.service';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = !app.isPackaged;
@@ -153,12 +158,34 @@ app.on('open-url', (event, url) => {
 // 注入到所有 PTY → 用户在 terminal 跑 claude / codex 时反连本机 host。
 let mcpHost: McpHost | null = null;
 
+// MCP tool 共享的 PTY create 入口:复用 IPC 端的 makeCreateHandler 工厂,
+// 包一层 lazy mainWindow 查询(tool 调用时窗口必在,但 host 启动时还没创建)。
+const ptyCreateHandler = makeCreateHandler();
+
+async function createSessionForAgent(
+  input: CreateSessionPtyInput,
+): Promise<{ id: string }> {
+  const wins = BrowserWindow.getAllWindows();
+  const win = wins.find((w) => !w.isDestroyed()) ?? null;
+  if (!win) {
+    throw Object.assign(new Error('no main window for terminal create'), {
+      code: 'TERMINAL_NO_WINDOW',
+    });
+  }
+  return ptyCreateHandler(input, win);
+}
+
 async function startMcpHost(): Promise<void> {
   try {
     mcpHost = await createMcpHost({
       initialTools: [
         makeListSessionsTool({
           getSessions: () => terminalSessions.getAll(),
+        }),
+        makeCreateSessionTool({
+          ensureAuthorized: () =>
+            requestAgentAuth({ method: 'terminal.create_session' }),
+          createSession: createSessionForAgent,
         }),
       ],
     });

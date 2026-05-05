@@ -13,6 +13,11 @@ import {
   type IpcShellExecInput,
   type IpcShellExecResult,
 } from '../shared/shell-channels';
+import {
+  AGENT_AUTH_CHANNELS,
+  type AgentAuthRequestPayload,
+  type AgentAuthDecision,
+} from '../shared/agent-auth-channels';
 
 // terminal create 入参的轻量类型(与 main 端 zod schema 对齐)
 // export 是为了 ContinuoApi 跨 module 引用时 TS 能 name 这些类型
@@ -214,6 +219,23 @@ const api = {
     /** plugin app.shell.exec 后端:一次性 spawn + buffered + 超时. */
     exec: (input: IpcShellExecInput): Promise<IpcResult<IpcShellExecResult>> =>
       ipcRenderer.invoke(SHELL_CHANNELS.EXEC, input),
+  },
+  agentAuth: {
+    /** 订阅 main 推的授权请求(MCP tool 调时);返回 unsubscribe. */
+    onRequest: (
+      cb: (payload: AgentAuthRequestPayload) => void,
+    ): (() => void) => {
+      const listener = (_: unknown, payload: AgentAuthRequestPayload) =>
+        cb(payload);
+      ipcRenderer.on(AGENT_AUTH_CHANNELS.REQUEST, listener);
+      return () => ipcRenderer.off(AGENT_AUTH_CHANNELS.REQUEST, listener);
+    },
+    /** 用户决定后回应 main(对应 requestId). */
+    respond: (
+      requestId: string,
+      decision: AgentAuthDecision,
+    ): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(AGENT_AUTH_CHANNELS.RESPOND, { requestId, decision }),
   },
 } as const;
 

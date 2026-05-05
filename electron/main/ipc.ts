@@ -14,6 +14,8 @@ import { registerFsIpc } from './ipc/fs.ipc';
 import { registerTerminalIpc } from './ipc/terminal.ipc';
 import { registerPluginsIpc } from './ipc/plugins.ipc';
 import { registerShellIpc } from './ipc/shell.ipc';
+import { AGENT_AUTH_CHANNELS } from '../shared/agent-auth-channels';
+import { resolveAgentAuthRequest } from './services/agent-auth.service';
 
 // layout:read 入参为空(renderer ipcRenderer.invoke 不传第二参 → undefined)
 const NoInput = z.undefined();
@@ -75,4 +77,20 @@ export function registerIpc() {
 
   // plugin app.shell.exec 后端(v5 Phase 4+)
   registerShellIpc();
+
+  // Agent Terminal MCP — 授权应答通道(P2)
+  const agentAuthRespondSchema = z
+    .object({
+      requestId: z.string().min(1),
+      decision: z.enum(['once', 'session', 'denied']),
+    })
+    .strict();
+  safeHandle(
+    AGENT_AUTH_CHANNELS.RESPOND,
+    agentAuthRespondSchema,
+    ({ requestId, decision }) => {
+      resolveAgentAuthRequest(requestId, decision);
+    },
+    trusted,
+  );
 }
