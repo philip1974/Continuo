@@ -10,6 +10,7 @@ import {
   makeCreateSessionTool,
   makeSendInputTool,
   makeReadOutputTool,
+  makeKillTool,
   type CreateSessionPtyInput,
 } from './services/mcp-tools-terminal';
 import * as terminalSessions from './services/terminal-sessions.service';
@@ -214,6 +215,12 @@ async function startMcpHost(): Promise<void> {
         }),
         makeReadOutputTool({
           read: (id, opts) => terminalBuffer.read(id, opts),
+        }),
+        makeKillTool({
+          has: (id) => termService.has(id),
+          interrupt: (id) => termService.interrupt(id),
+          kill: (id) => termService.kill(id),
+          forceKill: (id) => termService.forceKill(id),
         }),
       ],
     });

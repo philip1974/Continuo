@@ -8,10 +8,12 @@ import {
   MCP_TOOL_CREATE_SESSION,
   MCP_TOOL_SEND_INPUT,
   MCP_TOOL_READ_OUTPUT,
+  MCP_TOOL_KILL,
   listSessionsInputSchema,
   createSessionInputSchema,
   sendInputInputSchema,
   readOutputInputSchema,
+  killInputSchema,
   type ListSessionsInput,
   type ListSessionsOutput,
   type ListSessionItem,
@@ -21,6 +23,8 @@ import {
   type SendInputOutput,
   type ReadOutputInput,
   type ReadOutputOutput,
+  type KillInput,
+  type KillOutput,
 } from '../../shared/mcp-terminal-schemas';
 import type { McpToolDef } from './mcp-host.service';
 
@@ -210,6 +214,37 @@ export function makeReadOutputTool(
         }
         throw err;
       }
+    },
+  };
+}
+
+// ── kill(P4)───────────────────────────────────────────────────
+
+export interface KillToolDeps {
+  readonly has: (sessionId: string) => boolean;
+  /** SIGINT:写 \x03 给 PTY,不退出. */
+  readonly interrupt: (sessionId: string) => void;
+  /** SIGTERM:SIGINT + 3s grace + force(termService.kill 现行行为). */
+  readonly kill: (sessionId: string) => void;
+  /** SIGKILL:直接 pty.kill('SIGKILL'). */
+  readonly forceKill: (sessionId: string) => void;
+}
+
+export function makeKillTool(
+  deps: KillToolDeps,
+): McpTool<KillInput, KillOutput> {
+  return {
+    name: MCP_TOOL_KILL,
+    inputSchema: killInputSchema,
+    run: async (input: KillInput) => {
+      if (!deps.has(input.session_id)) {
+        throw ERR_TERMINAL_SESSION_NOT_FOUND(input.session_id);
+      }
+      const sig = input.signal ?? 'SIGTERM';
+      if (sig === 'SIGINT') deps.interrupt(input.session_id);
+      else if (sig === 'SIGKILL') deps.forceKill(input.session_id);
+      else deps.kill(input.session_id); // SIGTERM
+      return {};
     },
   };
 }

@@ -13,6 +13,7 @@ export const MCP_TOOL_LIST_SESSIONS = 'terminal.list_sessions';
 export const MCP_TOOL_CREATE_SESSION = 'terminal.create_session';
 export const MCP_TOOL_SEND_INPUT = 'terminal.send_input';
 export const MCP_TOOL_READ_OUTPUT = 'terminal.read_output';
+export const MCP_TOOL_KILL = 'terminal.kill';
 
 // ── list_sessions ──────────────────────────────────────────────
 
@@ -106,3 +107,17 @@ export const readOutputOutputSchema = z
 
 export type ReadOutputInput = z.infer<typeof readOutputInputSchema>;
 export type ReadOutputOutput = z.infer<typeof readOutputOutputSchema>;
+
+// ── kill(P4)───────────────────────────────────────────────────
+
+export const killInputSchema = z
+  .object({
+    session_id: z.string().min(1),
+    signal: z.enum(['SIGINT', 'SIGTERM', 'SIGKILL']).optional(),
+  })
+  .strict();
+
+export const killOutputSchema = z.object({}).strict();
+
+export type KillInput = z.infer<typeof killInputSchema>;
+export type KillOutput = z.infer<typeof killOutputSchema>;

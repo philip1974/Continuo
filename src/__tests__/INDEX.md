@@ -18,6 +18,10 @@
 
 - [`host.spec.ts`](./agent-terminal-mcp-host/host.spec.ts)
 
+## [agent-terminal-mcp-kill (Agent Terminal MCP Phase 4)](./agent-terminal-mcp-kill/README.md)
+
+- [`kill.spec.ts`](./agent-terminal-mcp-kill/kill.spec.ts)
+
 ## [agent-terminal-mcp-list-sessions (Agent Terminal MCP Phase 1)](./agent-terminal-mcp-list-sessions/README.md)
 
 - [`list-sessions.spec.ts`](./agent-terminal-mcp-list-sessions/list-sessions.spec.ts)

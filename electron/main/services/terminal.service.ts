@@ -224,6 +224,25 @@ export function kill(id: string): void {
   }, KILL_GRACE_PERIOD_MS);
 }
 
+/**
+ * P4 — SIGKILL 强杀:跳过 grace period,直接 pty.kill('SIGKILL')。
+ * 撤销已设的 grace timer(若有),避免重复 kill。
+ * onExit 由 PTY 自然触发 → setExited + cleanup 走现有流程。
+ */
+export function forceKill(id: string): void {
+  const inst = instances.get(id);
+  if (!inst) return;
+  if (inst.killTimer) {
+    clearTimeout(inst.killTimer);
+    inst.killTimer = null;
+  }
+  try {
+    inst.pty.kill('SIGKILL');
+  } catch (err) {
+    console.warn('[terminal.service] pty SIGKILL failed', id, err);
+  }
+}
+
 function cleanup(id: string): void {
   const inst = instances.get(id);
   if (!inst) return;
