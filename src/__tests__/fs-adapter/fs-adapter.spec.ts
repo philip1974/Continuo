@@ -131,6 +131,18 @@ describe('listDir', () => {
       'FS_NOT_DIRECTORY',
     );
   });
+
+  it('root 是 symlink 指向目录 → 跟随,正常列内容(macOS /tmp 类场景)', async () => {
+    // dir/real-target/inner.txt + dir/link → real-target
+    const target = path.join(dir, 'real-target');
+    await mkdir(target);
+    await writeFile(path.join(target, 'inner.txt'), 'x');
+    const link = path.join(dir, 'link');
+    await symlink(target, link);
+
+    const items = await listDir(link);
+    expect(items.map((i) => i.name)).toEqual(['inner.txt']);
+  });
 });
 
 describe('readFile', () => {

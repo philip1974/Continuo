@@ -129,15 +129,15 @@ export default class SamplePlugin extends Plugin {
     });
 
     this.addCommand({
-      id: 'sample.fetch-time',
-      title: 'Sample: 拉 worldtimeapi(需 network)',
+      id: 'sample.fetch-zen',
+      title: 'Sample: 拉 GitHub Zen(需 network)',
       fn: async () => {
         try {
           const r = await this.app.network.fetch(
-            'https://worldtimeapi.org/api/timezone/Etc/UTC',
+            'https://api.github.com/zen',
           );
-          const data = await r.json();
-          alert(`UTC: ${data.datetime}`);
+          const text = await r.text();
+          alert(`GitHub Zen: ${text}`);
         } catch (err) {
           if (err instanceof PermissionError) {
             alert(`network 权限未授,请在 Settings → 插件 → [权限] 编辑后重试`);

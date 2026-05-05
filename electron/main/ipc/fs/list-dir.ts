@@ -1,4 +1,4 @@
-import { lstat, readdir } from 'node:fs/promises';
+import { lstat, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import type { FileEntry } from '../../../shared/fs-entry';
 import { fsError, mapNodeErrnoCode } from './path-utils';
@@ -37,12 +37,13 @@ export async function listDir(
   const exclude = opts.exclude ?? DEFAULT_EXCLUDE;
   const followSymlinks = opts.followSymlinks ?? false;
 
-  // 入口先检查路径形态;失败时映射 errno
+  // 入口用 stat 跟随 symlink — root 是用户显式要的路径,/tmp / /etc 这种
+  // macOS 系统 symlink 应被解析。子项用 lstat 才能区分 isSymlink:true。
   let rootStat;
   try {
-    rootStat = await lstat(dirPath);
+    rootStat = await stat(dirPath);
   } catch (err) {
-    throw fsError(mapNodeErrnoCode(err), `lstat failed: ${dirPath}`);
+    throw fsError(mapNodeErrnoCode(err), `stat failed: ${dirPath}`);
   }
   if (!rootStat.isDirectory()) {
     throw fsError('FS_NOT_DIRECTORY', `not a directory: ${dirPath}`);
