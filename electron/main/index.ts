@@ -27,6 +27,7 @@ import {
   requestAgentAuth,
   setMcpHostRef,
 } from './services/agent-auth.service';
+import { setStdioConfig } from './services/mcp-stdio-config.service';
 
 // autorun delay:Win shell prompt 慢,默认更长。
 const AUTORUN_DELAY_MS = process.platform === 'win32' ? 600 : 200;
@@ -292,14 +293,22 @@ async function startMcpStdioServer(): Promise<void> {
       serverInfo: mcpHost.serverInfo,
     });
     const cliPath = resolveStdioCliPath();
+    const claudeAddCommand = `claude mcp add --transport stdio continuo -- ${cliPath}`;
     // eslint-disable-next-line no-console
     console.log(`[mcp-stdio] listening on ${mcpStdio.socketPath}`);
     // 打印推荐的 claude mcp add 命令,用户复制即可一次配置永久使用
     // eslint-disable-next-line no-console
     console.log(
       '[mcp-stdio] one-shot config (Claude Code):\n' +
-        `  claude mcp add --transport stdio continuo -- ${cliPath}`,
+        `  ${claudeAddCommand}`,
     );
+    // 缓存配置给状态栏"复制 MCP 配置"按钮用
+    setStdioConfig({
+      available: true,
+      cliPath,
+      socketPath: mcpStdio.socketPath,
+      claudeAddCommand,
+    });
   } catch (err) {
     // eslint-disable-next-line no-console
     console.warn(

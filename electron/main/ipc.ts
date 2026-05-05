@@ -19,6 +19,8 @@ import {
   resolveAgentAuthRequest,
   revokeAndKillAgentSessions,
 } from './services/agent-auth.service';
+import { MCP_CHANNELS } from '../shared/mcp-channels';
+import { getStdioConfig } from './services/mcp-stdio-config.service';
 
 // layout:read 入参为空(renderer ipcRenderer.invoke 不传第二参 → undefined)
 const NoInput = z.undefined();
@@ -104,6 +106,15 @@ export function registerIpc() {
     AGENT_AUTH_CHANNELS.REVOKE,
     agentAuthRevokeSchema,
     () => revokeAndKillAgentSessions(),
+    trusted,
+  );
+
+  // 状态栏"复制 MCP 配置"按钮:返回当前 stdio config(命令字符串可直接 copy 跑)
+  const mcpGetConfigSchema = z.object({}).strict();
+  safeHandle(
+    MCP_CHANNELS.GET_STDIO_CONFIG,
+    mcpGetConfigSchema,
+    () => getStdioConfig(),
     trusted,
   );
 }

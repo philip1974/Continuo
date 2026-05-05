@@ -18,6 +18,10 @@ import {
   type AgentAuthRequestPayload,
   type AgentAuthDecision,
 } from '../shared/agent-auth-channels';
+import {
+  MCP_CHANNELS,
+  type StdioMcpConfig,
+} from '../shared/mcp-channels';
 
 // terminal create 入参的轻量类型(与 main 端 zod schema 对齐)
 // export 是为了 ContinuoApi 跨 module 引用时 TS 能 name 这些类型
@@ -239,6 +243,11 @@ const api = {
     /** 撤销 session 授权 + 终止全部 agent terminal(状态栏按钮触发). */
     revoke: (): Promise<IpcResult<{ killed: number; rotated: boolean }>> =>
       ipcRenderer.invoke(AGENT_AUTH_CHANNELS.REVOKE, {}),
+  },
+  mcp: {
+    /** 拿当前 stdio MCP 配置(状态栏"复制 MCP 配置"按钮用). */
+    getStdioConfig: (): Promise<IpcResult<StdioMcpConfig>> =>
+      ipcRenderer.invoke(MCP_CHANNELS.GET_STDIO_CONFIG, {}),
   },
 } as const;
 

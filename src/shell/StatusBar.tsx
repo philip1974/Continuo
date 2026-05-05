@@ -40,6 +40,18 @@ async function handleRevokeAgentTerminals(count: number): Promise<void> {
   void coApi.agentAuth.revoke();
 }
 
+async function handleCopyMcpConfig(): Promise<'ok' | 'unavailable' | 'fail'> {
+  const r = await coApi.mcp.getStdioConfig();
+  if (!r.ok) return 'fail';
+  if (!r.data.available || !r.data.claudeAddCommand) return 'unavailable';
+  try {
+    await navigator.clipboard.writeText(r.data.claudeAddCommand);
+    return 'ok';
+  } catch {
+    return 'fail';
+  }
+}
+
 export function StatusBar() {
   const root = useWorkspaceStore((s) => s.root);
   const sidebarOpen = useLayoutUiStore((s) => s.sidebarOpen);
@@ -55,6 +67,23 @@ export function StatusBar() {
     () => sessions.filter((s) => s.originHint === 'agent').length,
     [sessions],
   );
+
+  const [mcpCopyState, setMcpCopyState] = useState<
+    'idle' | 'ok' | 'unavailable' | 'fail'
+  >('idle');
+  const onCopyMcp = async () => {
+    const r = await handleCopyMcpConfig();
+    setMcpCopyState(r);
+    setTimeout(() => setMcpCopyState('idle'), 1500);
+  };
+  const mcpLabel =
+    mcpCopyState === 'ok'
+      ? '已复制'
+      : mcpCopyState === 'unavailable'
+        ? 'MCP 不可用'
+        : mcpCopyState === 'fail'
+          ? '复制失败'
+          : '复制 MCP 配置';
 
   return (
     <footer className="flex h-[22px] shrink-0 items-center justify-between border-t border-line bg-panel px-3 text-[10px] text-fg-dim select-none">
@@ -94,6 +123,14 @@ export function StatusBar() {
         {rightItems.map((item) => (
           <span key={item.id}>{item.render()}</span>
         ))}
+        <button
+          type="button"
+          onClick={() => void onCopyMcp()}
+          title="复制 'claude mcp add' 命令到剪贴板,可在任意 shell 跑配置 Claude Code(stdio transport,一次配置永久)"
+          className="text-fg-dim hover:text-fg transition-colors"
+        >
+          {mcpLabel}
+        </button>
         {agentSessionCount > 0 && (
           <button
             type="button"
