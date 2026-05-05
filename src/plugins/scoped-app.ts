@@ -75,9 +75,26 @@ function makeNetwork(
   };
 }
 
-function makeShell(_pluginId: string): PluginShellApi {
-  // Phase 4+ 实装(暴露 spawn / exec)
-  return {};
+function makeShell(
+  pluginId: string,
+  store: PermissionStore | null,
+): PluginShellApi {
+  return {
+    async exec(cmd, args, opts) {
+      await ensurePerm(pluginId, 'shell', store);
+      const r = await coApi.shell.exec({
+        cmd,
+        args: [...args],
+        cwd: opts?.cwd,
+        env: opts?.env,
+        timeoutMs: opts?.timeoutMs,
+        input: opts?.input,
+        maxOutputBytes: opts?.maxOutputBytes,
+      });
+      if (!r.ok) throw new Error(`[shell.exec] ${r.code}: ${r.message}`);
+      return r.data;
+    },
+  };
 }
 
 function makeClipboard(
@@ -132,7 +149,7 @@ export function createScopedApp(
     ...coApp,
     fs: makeFs(pluginId, store),
     network: makeNetwork(pluginId, store),
-    shell: makeShell(pluginId),
+    shell: makeShell(pluginId, store),
     clipboard: makeClipboard(pluginId, store),
     permission: makePermission(pluginId, store),
   };

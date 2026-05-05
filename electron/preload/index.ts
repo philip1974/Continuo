@@ -8,6 +8,11 @@ import {
   type IpcPermissionsMap,
   type IpcPluginDir,
 } from '../shared/plugins-channels';
+import {
+  SHELL_CHANNELS,
+  type IpcShellExecInput,
+  type IpcShellExecResult,
+} from '../shared/shell-channels';
 
 // terminal create 入参的轻量类型(与 main 端 zod schema 对齐)
 // export 是为了 ContinuoApi 跨 module 引用时 TS 能 name 这些类型
@@ -172,6 +177,11 @@ const api = {
     /** v4.6 卸载插件:rm -rf plugins/<id>/ + 清 _enabled / _permissions. */
     uninstall: (id: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(PLUGINS_CHANNELS.UNINSTALL, { id }),
+  },
+  shell: {
+    /** plugin app.shell.exec 后端:一次性 spawn + buffered + 超时. */
+    exec: (input: IpcShellExecInput): Promise<IpcResult<IpcShellExecResult>> =>
+      ipcRenderer.invoke(SHELL_CHANNELS.EXEC, input),
   },
 } as const;
 

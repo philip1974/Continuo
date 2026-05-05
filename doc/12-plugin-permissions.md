@@ -26,7 +26,7 @@ Continuo 插件如果要访问文件系统、网络、剪贴板或 shell,必须*
 | `fs` | 读写本地文件 | `this.app.fs.{readFile,writeFile,listDir}` |
 | `network` | 发起 HTTP 请求 | `this.app.network.fetch` |
 | `clipboard` | 读写系统剪贴板 | `this.app.clipboard.{readText,writeText}` |
-| `shell` | 执行 shell 命令(Phase 4+ 实装) | `this.app.shell.*`(占位) |
+| `shell` | 执行 shell 命令(一次性 spawn,buffered) | `this.app.shell.exec(cmd, args, opts?)` |
 
 不在此枚举内的值会被 manifest schema 拒绝(`SCHEMA_ERROR`)。
 未在 manifest 声明的权限,plugin runtime 调用对应 API 必抛
@@ -130,6 +130,40 @@ PROD 模式下 plugin 写 `globalThis.fetch(...)` 会得到 `TypeError: fetch
 is not a function`;`window.api.fs.*` 直接 `Cannot read properties of
 undefined`。plugin 作者一旦在 PROD 测试就会发现,改用 `this.app.network.fetch`
 / `this.app.fs.readFile` 等正路。
+
+## 6.5 shell.exec 用法
+
+```js
+const r = await this.app.shell.exec('git', ['log', '--oneline', '-5'], {
+  cwd: '/path/to/repo',
+  timeoutMs: 5000,
+});
+if (r.exitCode === 0) {
+  console.log(r.stdout);
+} else if (r.timedOut) {
+  alert('git 调用超时');
+} else {
+  alert(`git exit ${r.exitCode}: ${r.stderr}`);
+}
+```
+
+ExecResult 字段:
+- `stdout / stderr`:完整输出(等进程结束才拿到,**非流式**)
+- `exitCode`:进程退出码,被信号杀时为 null
+- `signal`:触发的信号名(`SIGTERM` / `SIGKILL` 等)
+- `timedOut`:超时触发了 SIGTERM
+- `truncated`:输出超 maxOutputBytes(默认 10MB)被截
+
+ExecOptions 字段:
+- `cwd`:工作目录,默认主进程 cwd
+- `env`:**合并** process.env(传入覆盖)
+- `timeoutMs`:默认 30s,超时 SIGTERM,500ms grace 后 SIGKILL
+- `input`:stdin 字符串
+- `maxOutputBytes`:stdout/stderr 各自上限
+
+不适合 shell.exec 的场景:
+- **交互式 shell**(REPL 等)— 用 Continuo 内建 Terminal 让用户跑
+- **流式输出**(实时 progress)— 当前是 buffered,等进程结束才返。后续若有需求加 onData callback
 
 ## 7. 完整示例
 

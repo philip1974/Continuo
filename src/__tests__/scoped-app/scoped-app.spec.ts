@@ -157,6 +157,18 @@ describe('Phase 3 runtime gating', () => {
     );
   });
 
+  it('未授 shell → exec 抛 PermissionError(不到 IPC)', async () => {
+    const store = new InMemoryPermissionStore();
+    const scoped = createScopedApp(makeLmApp(), 'p', store);
+    const err = await scoped.shell
+      .exec('echo', ['hi'])
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(PermissionError);
+    if (err instanceof PermissionError) {
+      expect(err.permission).toBe('shell');
+    }
+  });
+
   it('per-plugin 隔离:p.a 授了 fs,p.b 没授 → p.b 仍抛 PermissionError', async () => {
     const store = new InMemoryPermissionStore();
     await store.grant('p.a', ['fs']);

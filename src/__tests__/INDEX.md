@@ -178,6 +178,10 @@
 
 - [`settings-modal.spec.tsx`](./settings-modal/settings-modal.spec.tsx)
 
+## [shell-service(plugin app.shell.exec 后端)](./shell-service/README.md)
+
+- [`shell-service.spec.ts`](./shell-service/shell-service.spec.ts)
+
 ## [terminal-ipc (M-Terminal Step T2)](./terminal-ipc/README.md)
 
 - [`terminal-ipc.spec.ts`](./terminal-ipc/terminal-ipc.spec.ts)

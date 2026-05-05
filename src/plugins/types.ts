@@ -70,8 +70,38 @@ export interface PluginNetworkApi {
   fetch(url: string, init?: RequestInit): Promise<Response>;
 }
 
+export interface PluginShellExecOptions {
+  readonly cwd?: string;
+  readonly env?: Readonly<Record<string, string>>;
+  /** 默认 30000(30s),超时 SIGTERM. */
+  readonly timeoutMs?: number;
+  /** stdin 字符串. */
+  readonly input?: string;
+  /** stdout/stderr 各自上限,默认 10MB,超额停接 + 标 truncated. */
+  readonly maxOutputBytes?: number;
+}
+
+export interface PluginShellExecResult {
+  readonly stdout: string;
+  readonly stderr: string;
+  /** 进程退出码;被信号杀时为 null. */
+  readonly exitCode: number | null;
+  /** 触发的信号名(如 'SIGTERM'),非信号杀时 null. */
+  readonly signal: string | null;
+  readonly timedOut: boolean;
+  readonly truncated: boolean;
+}
+
 export interface PluginShellApi {
-  // Phase 3 实装(spawn / exec)。Phase 1 占位,保持接口稳定。
+  /**
+   * 检 'shell',未授抛 PermissionError。child_process.spawn 后端,
+   * buffered 输出,plugin 等 process exit 后才拿完整结果(非流式)。
+   */
+  exec(
+    cmd: string,
+    args: readonly string[],
+    opts?: PluginShellExecOptions,
+  ): Promise<PluginShellExecResult>;
 }
 
 export interface PluginClipboardApi {
