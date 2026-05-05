@@ -12,6 +12,8 @@ import { entryToGitUrl, type MarketplaceEntry } from './types';
 import { fetchMarketplaceIndex } from './fetcher';
 import { applyFilter, collectAllTags } from './filter';
 import { useUpdateStore } from './update-store';
+import { useReviewsStore } from './reviews-store';
+import type { PluginAggregateRating } from './reviews-types';
 
 type LoadState =
   | { kind: 'loading' }
@@ -57,6 +59,7 @@ export function MarketplaceTab() {
   const [selectedTags, setSelectedTags] = useState<ReadonlySet<string>>(
     new Set(),
   );
+  const reviewsByPid = useReviewsStore((s) => s.byPid);
 
   // entry.id → 可用更新版本(若有)
   const updateByPid = new Map(updates.map((u) => [u.id, u.to]));
@@ -251,6 +254,7 @@ export function MarketplaceTab() {
               installing={install.busy === entry.id}
               installDisabled={install.busy !== null && install.busy !== entry.id}
               message={install.msgs.get(entry.id) ?? null}
+              rating={reviewsByPid.get(entry.id) ?? null}
               onInstall={() => void onInstall(entry)}
               onUpdate={() => void onUpdate(entry)}
             />
@@ -271,8 +275,16 @@ interface CardProps {
   installing: boolean;
   installDisabled: boolean;
   message: string | null;
+  /** 评分聚合(reviews Phase 1),null 或 count=0 不显. */
+  rating: PluginAggregateRating | null;
   onInstall: () => void;
   onUpdate: () => void;
+}
+
+/** 把 0-5 平均分渲染成 5 个 ★/☆,半星向就近整数. */
+function renderStars(avg: number): string {
+  const full = Math.round(avg);
+  return '★'.repeat(Math.max(0, Math.min(5, full))) + '☆'.repeat(5 - Math.max(0, Math.min(5, full)));
 }
 
 function MarketplaceCard({
@@ -283,6 +295,7 @@ function MarketplaceCard({
   installing,
   installDisabled,
   message,
+  rating,
   onInstall,
   onUpdate,
 }: CardProps) {
@@ -344,6 +357,15 @@ function MarketplaceCard({
       </div>
       {message && (
         <div className="mt-1 text-[10px] text-fg-muted">{message}</div>
+      )}
+      {rating && rating.count > 0 && (
+        <div className="mt-1 flex items-center gap-1.5 text-[10px] text-fg-muted">
+          <span className="text-amber-400" aria-label={`${rating.avg.toFixed(1)} 星`}>
+            {renderStars(rating.avg)}
+          </span>
+          <span>{rating.avg.toFixed(1)}</span>
+          <span className="text-fg-dim">({rating.count} 评价)</span>
+        </div>
       )}
       <div className="mt-1.5 flex items-center justify-between gap-2 text-[10px] text-fg-dim">
         <div className="flex items-center gap-2">

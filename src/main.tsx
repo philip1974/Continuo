@@ -96,6 +96,12 @@ void import('./marketplace/update-store').then(({ useUpdateStore }) => {
   void useUpdateStore.getState().refresh();
 });
 
+// Reviews Phase 1:启动时静默拉一次评论(MarketplaceTab 卡片 ★ 用)。
+// 同样 fire-and-forget;NO_TOKEN 时静默退出(在 fetcher 抛错被 catch)。
+void import('./marketplace/reviews-store').then(({ useReviewsStore }) => {
+  void useReviewsStore.getState().refresh();
+});
+
 createRoot(container).render(
   <React.StrictMode>
     <App />

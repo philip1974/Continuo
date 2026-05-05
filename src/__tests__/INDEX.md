@@ -105,6 +105,7 @@
 
 - [`filter.spec.ts`](./marketplace/filter.spec.ts)
 - [`marketplace.spec.ts`](./marketplace/marketplace.spec.ts)
+- [`reviews-parser.spec.ts`](./marketplace/reviews-parser.spec.ts)
 - [`semver.spec.ts`](./marketplace/semver.spec.ts)
 
 ## [permission-prompt(授权 UI store + Modal + Manager 集成)](./permission-prompt/README.md)
