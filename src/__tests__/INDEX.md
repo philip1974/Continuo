@@ -6,7 +6,11 @@
 
 - [`auth-store.spec.ts`](./agent-terminal-mcp-auth/auth-store.spec.ts)
 
-## [agent-terminal-mcp-create-session (Agent Terminal MCP Phase 2)](./agent-terminal-mcp-create-session/README.md)
+## [agent-terminal-mcp-buffer (Agent Terminal MCP Phase 3)](./agent-terminal-mcp-buffer/README.md)
+
+- [`buffer.spec.ts`](./agent-terminal-mcp-buffer/buffer.spec.ts)
+
+## [agent-terminal-mcp-create-session (Agent Terminal MCP Phase 2 + P3 autorun)](./agent-terminal-mcp-create-session/README.md)
 
 - [`create-session.spec.ts`](./agent-terminal-mcp-create-session/create-session.spec.ts)
 
@@ -17,6 +21,14 @@
 ## [agent-terminal-mcp-list-sessions (Agent Terminal MCP Phase 1)](./agent-terminal-mcp-list-sessions/README.md)
 
 - [`list-sessions.spec.ts`](./agent-terminal-mcp-list-sessions/list-sessions.spec.ts)
+
+## [agent-terminal-mcp-read-output (Agent Terminal MCP Phase 3)](./agent-terminal-mcp-read-output/README.md)
+
+- [`read-output.spec.ts`](./agent-terminal-mcp-read-output/read-output.spec.ts)
+
+## [agent-terminal-mcp-send-input (Agent Terminal MCP Phase 3)](./agent-terminal-mcp-send-input/README.md)
+
+- [`send-input.spec.ts`](./agent-terminal-mcp-send-input/send-input.spec.ts)
 
 ## [动画落点契约 (M3)](./animation-contracts/README.md)
 

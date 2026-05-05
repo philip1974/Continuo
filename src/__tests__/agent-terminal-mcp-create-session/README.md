@@ -1,11 +1,12 @@
-# agent-terminal-mcp-create-session (Agent Terminal MCP Phase 2)
+# agent-terminal-mcp-create-session (Agent Terminal MCP Phase 2 + P3 autorun)
 
 行为契约:**`terminal.create_session` MCP tool 的契约层**。
 agent 通过此 tool 让 Continuo 创建一个新的可见 terminal tab + spawn 默认 shell,
 返回 session_id 给 agent 后续 send_input / read_output 用。
 
 > 配套:[doc/17-agent-terminal-mcp.md](../../../doc/17-agent-terminal-mcp.md) §5.1
-> P2 不实装 autorun(留 P3),也不接 IPC(本主题只测 tool 函数层)。
+> P3 加 autorun(spawn 后 delay 200ms 键入命令);delay 行为在 main wiring 侧测,
+> 本主题只测 tool 透传 autorun 给 createSession deps。
 
 ## 模块
 
@@ -30,12 +31,10 @@ input: {
   cwd?: string,
   name?: string,
   agentLabel?: string,
+  autorun?: string,           // P3:spawn 后 delay 200ms 键入此命令 + \n
 }
 output: { session_id: string }
 ```
-
-P2 范围**不**接受 `autorun` — schema strict,带 autorun 直接 fail。
-P3 实装 autorun 时再扩 schema。
 
 ## 关键行为
 
@@ -44,7 +43,7 @@ P3 实装 autorun 时再扩 schema。
 - `createSessionInputSchema`:
   - `{}` → ok(全 optional)
   - 全字段 → ok
-  - `{ autorun: 'codex' }` → fail(P2 strict)
+  - `{ autorun: 'codex' }` → ok(P3)
   - `{ extra: 1 }` → fail(strict)
 - `createSessionOutputSchema`:
   - `{ session_id: 'term-123' }` → ok
@@ -83,6 +82,8 @@ input → createSession 调用参数:
 | `name` 缺省 | 不传 |
 | `agentLabel` 给值 | `agentLabel` 透传 |
 | `agentLabel` 缺省 | `agentLabel: 'agent'` |
+| `autorun` 给值 | `autorun` 透传(P3) |
+| `autorun` 缺省 | 不传 |
 | 永远 | `originHint: 'agent'`(不允许 agent tool 创建 user 类型) |
 
 ## 不在本主题验证

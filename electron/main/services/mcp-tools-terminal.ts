@@ -6,13 +6,21 @@
 import {
   MCP_TOOL_LIST_SESSIONS,
   MCP_TOOL_CREATE_SESSION,
+  MCP_TOOL_SEND_INPUT,
+  MCP_TOOL_READ_OUTPUT,
   listSessionsInputSchema,
   createSessionInputSchema,
+  sendInputInputSchema,
+  readOutputInputSchema,
   type ListSessionsInput,
   type ListSessionsOutput,
   type ListSessionItem,
   type CreateSessionInput,
   type CreateSessionOutput,
+  type SendInputInput,
+  type SendInputOutput,
+  type ReadOutputInput,
+  type ReadOutputOutput,
 } from '../../shared/mcp-terminal-schemas';
 import type { McpToolDef } from './mcp-host.service';
 
@@ -82,6 +90,8 @@ export interface CreateSessionPtyInput {
   readonly name?: string;
   readonly originHint: 'agent';
   readonly agentLabel: string;
+  /** spawn 后 delay 200ms(Windows 600)键入此命令 + \n. */
+  readonly autorun?: string;
 }
 
 export interface CreateSessionToolDeps {
@@ -120,9 +130,86 @@ export function makeCreateSessionTool(
         agentLabel: input.agentLabel ?? 'agent',
         ...(input.cwd !== undefined ? { cwd: input.cwd } : {}),
         ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.autorun !== undefined ? { autorun: input.autorun } : {}),
       };
       const r = await deps.createSession(ptyInput);
       return { session_id: r.id };
+    },
+  };
+}
+
+// ── send_input(P3)─────────────────────────────────────────────
+
+export interface SendInputToolDeps {
+  readonly has: (sessionId: string) => boolean;
+  readonly write: (sessionId: string, data: string) => boolean;
+}
+
+const ERR_TERMINAL_SESSION_NOT_FOUND = (id: string) =>
+  Object.assign(new Error(`terminal session not found: ${id}`), {
+    code: 'TERMINAL_SESSION_NOT_FOUND',
+  });
+
+export function makeSendInputTool(
+  deps: SendInputToolDeps,
+): McpTool<SendInputInput, SendInputOutput> {
+  return {
+    name: MCP_TOOL_SEND_INPUT,
+    inputSchema: sendInputInputSchema,
+    run: async (input: SendInputInput) => {
+      if (!deps.has(input.session_id)) {
+        throw ERR_TERMINAL_SESSION_NOT_FOUND(input.session_id);
+      }
+      const ok = deps.write(input.session_id, input.data);
+      if (!ok) throw ERR_TERMINAL_SESSION_NOT_FOUND(input.session_id);
+      return {};
+    },
+  };
+}
+
+// ── read_output(P3)────────────────────────────────────────────
+
+export interface ReadOutputToolDeps {
+  readonly read: (
+    sessionId: string,
+    opts: {
+      sinceSeq?: number;
+      maxLines?: number;
+      stripAnsi?: boolean;
+    },
+  ) => { lines: string[]; nextSeq: number; truncated: boolean };
+}
+
+export function makeReadOutputTool(
+  deps: ReadOutputToolDeps,
+): McpTool<ReadOutputInput, ReadOutputOutput> {
+  return {
+    name: MCP_TOOL_READ_OUTPUT,
+    inputSchema: readOutputInputSchema,
+    run: async (input: ReadOutputInput) => {
+      try {
+        const opts: {
+          sinceSeq?: number;
+          maxLines?: number;
+          stripAnsi?: boolean;
+        } = {};
+        if (input.since_seq !== undefined) opts.sinceSeq = input.since_seq;
+        if (input.max_lines !== undefined) opts.maxLines = input.max_lines;
+        if (input.strip_ansi !== undefined) opts.stripAnsi = input.strip_ansi;
+        const r = deps.read(input.session_id, opts);
+        return {
+          lines: r.lines,
+          next_seq: r.nextSeq,
+          truncated: r.truncated,
+        };
+      } catch (err) {
+        // buffer service 抛 BUFFER_SESSION_NOT_FOUND → 转 TERMINAL_SESSION_NOT_FOUND
+        const e = err as { code?: unknown };
+        if (e.code === 'BUFFER_SESSION_NOT_FOUND') {
+          throw ERR_TERMINAL_SESSION_NOT_FOUND(input.session_id);
+        }
+        throw err;
+      }
     },
   };
 }

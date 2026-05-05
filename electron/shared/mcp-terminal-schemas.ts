@@ -11,6 +11,8 @@ import { z } from 'zod';
 
 export const MCP_TOOL_LIST_SESSIONS = 'terminal.list_sessions';
 export const MCP_TOOL_CREATE_SESSION = 'terminal.create_session';
+export const MCP_TOOL_SEND_INPUT = 'terminal.send_input';
+export const MCP_TOOL_READ_OUTPUT = 'terminal.read_output';
 
 // ── list_sessions ──────────────────────────────────────────────
 
@@ -51,6 +53,8 @@ export const createSessionInputSchema = z
     cwd: z.string().optional(),
     name: z.string().optional(),
     agentLabel: z.string().optional(),
+    /** spawn 后 delay 200ms(Windows 600)键入此命令 + \n. */
+    autorun: z.string().optional(),
   })
   .strict();
 
@@ -62,3 +66,43 @@ export const createSessionOutputSchema = z
 
 export type CreateSessionInput = z.infer<typeof createSessionInputSchema>;
 export type CreateSessionOutput = z.infer<typeof createSessionOutputSchema>;
+
+// ── send_input(P3)─────────────────────────────────────────────
+
+const SEND_INPUT_MAX_CHARS = 2_000_000;
+
+export const sendInputInputSchema = z
+  .object({
+    session_id: z.string().min(1),
+    data: z.string().max(SEND_INPUT_MAX_CHARS),
+  })
+  .strict();
+
+export const sendInputOutputSchema = z.object({}).strict();
+
+export type SendInputInput = z.infer<typeof sendInputInputSchema>;
+export type SendInputOutput = z.infer<typeof sendInputOutputSchema>;
+
+// ── read_output(P3)────────────────────────────────────────────
+
+const READ_OUTPUT_MAX_LINES = 2000;
+
+export const readOutputInputSchema = z
+  .object({
+    session_id: z.string().min(1),
+    since_seq: z.number().int().nonnegative().optional(),
+    max_lines: z.number().int().min(1).max(READ_OUTPUT_MAX_LINES).optional(),
+    strip_ansi: z.boolean().optional(),
+  })
+  .strict();
+
+export const readOutputOutputSchema = z
+  .object({
+    lines: z.array(z.string()),
+    next_seq: z.number().int().nonnegative(),
+    truncated: z.boolean(),
+  })
+  .strict();
+
+export type ReadOutputInput = z.infer<typeof readOutputInputSchema>;
+export type ReadOutputOutput = z.infer<typeof readOutputOutputSchema>;

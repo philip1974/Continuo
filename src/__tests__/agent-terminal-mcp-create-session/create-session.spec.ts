@@ -38,10 +38,10 @@ describe('createSessionInputSchema', () => {
     ).toBe(true);
   });
 
-  it('autorun 字段 → fail(P2 strict,留 P3)', () => {
+  it('autorun 字段(P3)→ ok', () => {
     expect(
       createSessionInputSchema.safeParse({ autorun: 'codex' }).success,
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it('未知字段 → fail', () => {
@@ -188,6 +188,22 @@ describe('makeCreateSessionTool · 字段透传', () => {
     expect(createSession.mock.calls[0]![0]).toMatchObject({
       originHint: 'agent',
     });
+  });
+
+  it('autorun 给值 → 透传(P3)', async () => {
+    const createSession = vi.fn<CreateSessionFn>(async () => ({ id: 'x' }));
+    const tool = makeCreateSessionTool(makeOkDeps({ createSession }));
+    await tool.run({ autorun: 'codex' });
+    expect(createSession.mock.calls[0]![0]).toMatchObject({
+      autorun: 'codex',
+    });
+  });
+
+  it('autorun 缺省 → 不传', async () => {
+    const createSession = vi.fn<CreateSessionFn>(async () => ({ id: 'x' }));
+    const tool = makeCreateSessionTool(makeOkDeps({ createSession }));
+    await tool.run({});
+    expect('autorun' in createSession.mock.calls[0]![0]).toBe(false);
   });
 });
 
