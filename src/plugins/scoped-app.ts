@@ -22,6 +22,7 @@ import {
   type PermissionKey,
   type PermissionStore,
 } from './permissions';
+import { getCachedClipboard, getCachedFetch } from './sandbox-sweep';
 
 /** 检查 plugin 是否拿到 perm 授权;未授抛 PermissionError. store=null 跳过检查. */
 async function ensurePerm(
@@ -93,7 +94,9 @@ function makeNetwork(
   return {
     async fetch(url, init) {
       await ensurePerm(pluginId, 'network', store);
-      return globalThis.fetch(url, init);
+      // 用 module 顶部 cached raw fetch,sandboxSweep 后 globalThis.fetch
+      // 已涂掉但本闭包仍能调
+      return getCachedFetch()(url, init);
     },
   };
 }
@@ -110,11 +113,11 @@ function makeClipboard(
   return {
     async readText() {
       await ensurePerm(pluginId, 'clipboard', store);
-      return navigator.clipboard.readText();
+      return getCachedClipboard().readText();
     },
     async writeText(text) {
       await ensurePerm(pluginId, 'clipboard', store);
-      return navigator.clipboard.writeText(text);
+      return getCachedClipboard().writeText(text);
     },
   };
 }

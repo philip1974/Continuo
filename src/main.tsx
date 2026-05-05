@@ -13,6 +13,7 @@ import { IpcPermissionStore } from './plugins/permissions/IpcPermissionStore';
 import { setUserPermissionStore } from './plugins/permissions/lm-permission-store';
 import { usePermissionPromptStore } from './plugins/permissions/promptStore';
 import { PermissionError } from './plugins/permissions';
+import { sandboxSweep } from './plugins/sandbox-sweep';
 import './styles/tailwind.css';
 
 // M-Plugin v4.1 SDK 暴露:user-installed plugin 通过 globalThis.lm 拿到
@@ -37,6 +38,14 @@ if (!container) throw new Error('#root not found');
 // M-Plugin v1.7:渲染前同步注册内置插件(editor / terminal / output),
 // 使 lmApp.panels 在 DockShell 首次 mount 时已含 3 个 panel 类型。
 bootCorePlugins();
+
+// M-Plugin v5 Phase 4:plugin import 之前清掉 globalThis.fetch +
+// navigator.clipboard,plugin 直接调 raw API 抛 TypeError。
+// scoped-app 走 cached refs 不受影响,LM UI 不直接用这些 API。
+// dev 模式保留(Vite HMR 可能依赖 raw fetch),PROD 才严格执行。
+if (import.meta.env.PROD) {
+  sandboxSweep();
+}
 
 // M-Plugin v4.1+v4.2:用户插件 PluginManager + 权限决策持久化。
 // permissionStore 走 IPC 持久化到 userData/plugins/_permissions.json。

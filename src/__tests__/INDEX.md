@@ -157,6 +157,7 @@
 
 ## [scoped-app(per-plugin LMApp 包装)](./scoped-app/README.md)
 
+- [`sandbox-sweep.spec.ts`](./scoped-app/sandbox-sweep.spec.ts)
 - [`scoped-app.spec.ts`](./scoped-app/scoped-app.spec.ts)
 
 ## [setting-tab-registry(设置标签贡献)](./setting-tab-registry/README.md)

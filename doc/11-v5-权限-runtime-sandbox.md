@@ -2,7 +2,7 @@
 
 > 关联 issue #14。从 v4.7 的 all-or-nothing 走向 partial-grant + runtime gating。
 >
-> **进度**:Phase 1 ✅ / Phase 2 ✅ / Phase 3 ✅ / Phase 4-5 ⏳
+> **进度**:Phase 1 ✅ / Phase 2 ✅ / Phase 3 ✅ / Phase 4 ✅(局部)/ Phase 5 ⏳
 
 ## 1. 目标 / 非目标
 
@@ -177,11 +177,24 @@ delete (globalThis as any).fetch;
 
 > 实现 commit:见 git log feat(plugin): v5 Phase 3。
 
-### Phase 4 — 入境清洗(选项 B 兜底)
+### Phase 4 — 入境清洗(选项 B 兜底)✅(局部)
 
-- main.tsx 在 import 第一个 plugin 之前清掉 `globalThis.fetch` / `navigator.clipboard` / `window.api.fs` / `window.api.terminal`(具体清单待定)
-- LM UI 自用的部分挪到 import 前,或缓存到 LM 内部 module
-- 验证:plugin 直接 `globalThis.fetch('https://...')` 应抛 ReferenceError
+- ✅ `src/plugins/sandbox-sweep.ts`:module 顶部缓存 raw `fetch` /
+  `navigator.clipboard` 引用(getCachedFetch / getCachedClipboard);
+  `sandboxSweep()` 用 Object.defineProperty 涂掉 globalThis 入口
+- ✅ scoped-app `network.fetch` / `clipboard.*` 改用 cached refs,
+  sweep 后仍能工作
+- ✅ main.tsx 在 PluginManager init 之前调 `sandboxSweep()`,但**只
+  在 PROD**(`import.meta.env.PROD` 守卫)— dev 保留以免破 Vite HMR
+- ✅ 测试:sandbox-sweep × 4(cached refs / sweep 删 globalThis.fetch /
+  cached 仍工作 / clipboard sweep)
+- ✅ 加 `src/vite-env.d.ts` 引入 vite/client 类型(import.meta.env)
+
+**Phase 4.B 后续**:`window.api` 全 LM UI 41 处直接用,refactor 推全部
+到内部 helper 工程量较大,本次未动。**已知限制**:plugin 仍可 `window.api.fs.*`
+绕过权限门;靠文档约束 + plugin marketplace review 兜底。
+
+> 实现 commit:见 git log feat(plugin): v5 Phase 4。
 
 ### Phase 5 — 验证 + 文档
 
