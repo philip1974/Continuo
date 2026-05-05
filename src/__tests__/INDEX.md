@@ -2,6 +2,14 @@
 
 > 由 `pnpm bdd:index` 自动生成,请勿手工编辑。
 
+## [agent-terminal-mcp-auth (Agent Terminal MCP Phase 2)](./agent-terminal-mcp-auth/README.md)
+
+- [`auth-store.spec.ts`](./agent-terminal-mcp-auth/auth-store.spec.ts)
+
+## [agent-terminal-mcp-create-session (Agent Terminal MCP Phase 2)](./agent-terminal-mcp-create-session/README.md)
+
+- [`create-session.spec.ts`](./agent-terminal-mcp-create-session/create-session.spec.ts)
+
 ## [agent-terminal-mcp-host (Agent Terminal MCP Phase 1)](./agent-terminal-mcp-host/README.md)
 
 - [`host.spec.ts`](./agent-terminal-mcp-host/host.spec.ts)

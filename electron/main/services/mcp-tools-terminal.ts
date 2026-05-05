@@ -5,10 +5,14 @@
 
 import {
   MCP_TOOL_LIST_SESSIONS,
+  MCP_TOOL_CREATE_SESSION,
   listSessionsInputSchema,
+  createSessionInputSchema,
   type ListSessionsInput,
   type ListSessionsOutput,
   type ListSessionItem,
+  type CreateSessionInput,
+  type CreateSessionOutput,
 } from '../../shared/mcp-terminal-schemas';
 import type { McpToolDef } from './mcp-host.service';
 
@@ -68,5 +72,57 @@ export function makeListSessionsTool(
     run: () => ({
       sessions: deps.getSessions().map(toItem),
     }),
+  };
+}
+
+// ── create_session(P2)─────────────────────────────────────────
+
+export interface CreateSessionPtyInput {
+  readonly cwd?: string;
+  readonly name?: string;
+  readonly originHint: 'agent';
+  readonly agentLabel: string;
+}
+
+export interface CreateSessionToolDeps {
+  /**
+   * 调 renderer 端 agent-auth.store.ensure();首次会弹窗。
+   * 返回值:
+   *  - 'once' / 'session' → 通过
+   *  - 'denied' → 拒绝
+   */
+  readonly ensureAuthorized: () => Promise<'once' | 'session' | 'denied'>;
+  /**
+   * 实际 spawn PTY + 入 sessions service。由 main 启动入口注入,把
+   * `electron/main/ipc/terminal.ipc.ts` 的 createHandler 包一层(以脱离 BrowserWindow 上下文)。
+   */
+  readonly createSession: (
+    input: CreateSessionPtyInput,
+  ) => Promise<{ id: string }>;
+}
+
+export function makeCreateSessionTool(
+  deps: CreateSessionToolDeps,
+): McpTool<CreateSessionInput, CreateSessionOutput> {
+  return {
+    name: MCP_TOOL_CREATE_SESSION,
+    inputSchema: createSessionInputSchema,
+    run: async (input: CreateSessionInput) => {
+      const decision = await deps.ensureAuthorized();
+      if (decision === 'denied') {
+        throw Object.assign(
+          new Error('agent terminal not authorized by user'),
+          { code: 'AGENT_NOT_AUTHORIZED' },
+        );
+      }
+      const ptyInput: CreateSessionPtyInput = {
+        originHint: 'agent',
+        agentLabel: input.agentLabel ?? 'agent',
+        ...(input.cwd !== undefined ? { cwd: input.cwd } : {}),
+        ...(input.name !== undefined ? { name: input.name } : {}),
+      };
+      const r = await deps.createSession(ptyInput);
+      return { session_id: r.id };
+    },
   };
 }

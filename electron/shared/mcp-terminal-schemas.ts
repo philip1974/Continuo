@@ -1,13 +1,16 @@
-// Agent Terminal MCP — tool schemas(Phase 1 仅 list_sessions)。
+// Agent Terminal MCP — tool schemas。
 // schemas 跨 main(校验输入)与 spec(契约断言)共享。
 //
-// BDD: src/__tests__/agent-terminal-mcp-list-sessions/
+// BDD:
+//   src/__tests__/agent-terminal-mcp-list-sessions/
+//   src/__tests__/agent-terminal-mcp-create-session/
 
 import { z } from 'zod';
 
 // ── tool 名常量 ────────────────────────────────────────────────
 
 export const MCP_TOOL_LIST_SESSIONS = 'terminal.list_sessions';
+export const MCP_TOOL_CREATE_SESSION = 'terminal.create_session';
 
 // ── list_sessions ──────────────────────────────────────────────
 
@@ -40,3 +43,22 @@ export const listSessionsOutputSchema = z
 export type ListSessionsInput = z.infer<typeof listSessionsInputSchema>;
 export type ListSessionsOutput = z.infer<typeof listSessionsOutputSchema>;
 export type ListSessionItem = z.infer<typeof sessionItemSchema>;
+
+// ── create_session(P2,不含 autorun)──────────────────────────
+
+export const createSessionInputSchema = z
+  .object({
+    cwd: z.string().optional(),
+    name: z.string().optional(),
+    agentLabel: z.string().optional(),
+  })
+  .strict();
+
+export const createSessionOutputSchema = z
+  .object({
+    session_id: z.string().min(1),
+  })
+  .strict();
+
+export type CreateSessionInput = z.infer<typeof createSessionInputSchema>;
+export type CreateSessionOutput = z.infer<typeof createSessionOutputSchema>;
