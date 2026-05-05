@@ -12,6 +12,8 @@ import { z } from 'zod';
 export const MCP_TOOL_LIST_SESSIONS = 'terminal.list_sessions';
 export const MCP_TOOL_CREATE_SESSION = 'terminal.create_session';
 export const MCP_TOOL_SEND_INPUT = 'terminal.send_input';
+export const MCP_TOOL_SEND_TEXT = 'terminal.send_text';
+export const MCP_TOOL_PRESS_KEY = 'terminal.press_key';
 export const MCP_TOOL_READ_OUTPUT = 'terminal.read_output';
 export const MCP_TOOL_KILL = 'terminal.kill';
 
@@ -83,6 +85,53 @@ export const sendInputOutputSchema = z.object({}).strict();
 
 export type SendInputInput = z.infer<typeof sendInputInputSchema>;
 export type SendInputOutput = z.infer<typeof sendInputOutputSchema>;
+
+// ── send_text(P4+,c 方案高层 API:纯文本,不附加按键)──────────
+
+export const sendTextInputSchema = z
+  .object({
+    session_id: z.string().min(1),
+    text: z.string().max(SEND_INPUT_MAX_CHARS),
+  })
+  .strict();
+
+export const sendTextOutputSchema = z.object({}).strict();
+
+export type SendTextInput = z.infer<typeof sendTextInputSchema>;
+export type SendTextOutput = z.infer<typeof sendTextOutputSchema>;
+
+// ── press_key(P4+,c 方案高层 API:按键 enum → 字节映射)────────
+
+/** 按键名 → PTY 字节序列。server 内部映射,LLM 只见 key 名. */
+export const KEY_BYTES = {
+  enter: '\r', // CR(0x0d),raw mode TUI 期望此字符
+  tab: '\t',
+  escape: '\x1b',
+  backspace: '\x7f', // DEL,大多 TUI(readline / fish)期望此;BS 0x08 仅老系统
+  ctrl_c: '\x03',
+  ctrl_d: '\x04',
+  ctrl_z: '\x1a',
+  up: '\x1b[A',
+  down: '\x1b[B',
+  right: '\x1b[C',
+  left: '\x1b[D',
+} as const;
+
+export type PressKeyName = keyof typeof KEY_BYTES;
+
+const PRESS_KEY_NAMES = Object.keys(KEY_BYTES) as [PressKeyName, ...PressKeyName[]];
+
+export const pressKeyInputSchema = z
+  .object({
+    session_id: z.string().min(1),
+    key: z.enum(PRESS_KEY_NAMES),
+  })
+  .strict();
+
+export const pressKeyOutputSchema = z.object({}).strict();
+
+export type PressKeyInput = z.infer<typeof pressKeyInputSchema>;
+export type PressKeyOutput = z.infer<typeof pressKeyOutputSchema>;
 
 // ── read_output(P3)────────────────────────────────────────────
 

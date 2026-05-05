@@ -60,6 +60,18 @@ describe('stripAnsi', () => {
     expect(stripAnsi('\x1b=hello\x1b>')).toBe('hello');
   });
 
+  it('剥 charset 选择(ESC ( B / ESC ) 0 等 G0/G1 选择)', () => {
+    expect(stripAnsi('\x1b(B' + 'hello')).toBe('hello');
+    expect(stripAnsi('\x1b)0' + 'world')).toBe('world');
+    expect(stripAnsi('\x1b(A\x1b)Bhello')).toBe('hello');
+  });
+
+  it('剥 DEC private mode(ESC[?25h 隐藏光标 / ESC[?1000h 鼠标等)', () => {
+    // CSI 已涵盖 ?  在字符类里、终结字母 h/l 在 [A-Za-z],无需额外 regex
+    expect(stripAnsi('\x1b[?25hhello\x1b[?25l')).toBe('hello');
+    expect(stripAnsi('\x1b[?1000h\x1b[?1006hxyz')).toBe('xyz');
+  });
+
   it('zsh prompt 实测组合:OSC + CSI + keypad 一起剥', () => {
     const raw =
       '\x1b]2;RiGang@MacBook-Pro:~\x07\x1b]1;~\x07\x1b]7;file:///Users/RiGang\x1b\\\rprompt $ \x1b=cmd\x1b>';

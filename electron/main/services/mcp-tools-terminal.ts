@@ -7,13 +7,18 @@ import {
   MCP_TOOL_LIST_SESSIONS,
   MCP_TOOL_CREATE_SESSION,
   MCP_TOOL_SEND_INPUT,
+  MCP_TOOL_SEND_TEXT,
+  MCP_TOOL_PRESS_KEY,
   MCP_TOOL_READ_OUTPUT,
   MCP_TOOL_KILL,
   listSessionsInputSchema,
   createSessionInputSchema,
   sendInputInputSchema,
+  sendTextInputSchema,
+  pressKeyInputSchema,
   readOutputInputSchema,
   killInputSchema,
+  KEY_BYTES,
   type ListSessionsInput,
   type ListSessionsOutput,
   type ListSessionItem,
@@ -21,6 +26,10 @@ import {
   type CreateSessionOutput,
   type SendInputInput,
   type SendInputOutput,
+  type SendTextInput,
+  type SendTextOutput,
+  type PressKeyInput,
+  type PressKeyOutput,
   type ReadOutputInput,
   type ReadOutputOutput,
   type KillInput,
@@ -80,6 +89,13 @@ export function makeListSessionsTool(
 ): McpTool<ListSessionsInput, ListSessionsOutput> {
   return {
     name: MCP_TOOL_LIST_SESSIONS,
+    description:
+      'List all current terminal sessions in Continuo (both user-opened and agent-created).',
+    jsonSchema: {
+      type: 'object',
+      properties: {},
+      additionalProperties: false,
+    },
     inputSchema: listSessionsInputSchema,
     run: () => ({
       sessions: deps.getSessions().map(toItem),
@@ -120,6 +136,30 @@ export function makeCreateSessionTool(
 ): McpTool<CreateSessionInput, CreateSessionOutput> {
   return {
     name: MCP_TOOL_CREATE_SESSION,
+    description:
+      "Create a new visible terminal tab in Continuo and spawn the user's default shell. Optionally autorun a command after spawn (200ms delay; 600ms on Windows). First call triggers a user authorization prompt.",
+    jsonSchema: {
+      type: 'object',
+      properties: {
+        cwd: {
+          type: 'string',
+          description: 'Working directory for the spawned shell (default: user home).',
+        },
+        name: {
+          type: 'string',
+          description: 'Tab title (default: "Terminal N").',
+        },
+        agentLabel: {
+          type: 'string',
+          description: 'Short label for the agent (e.g. "codex"). Shown on the tab.',
+        },
+        autorun: {
+          type: 'string',
+          description: 'Command auto-typed into the shell after spawn (with trailing newline).',
+        },
+      },
+      additionalProperties: false,
+    },
     inputSchema: createSessionInputSchema,
     run: async (input: CreateSessionInput) => {
       const decision = await deps.ensureAuthorized();
@@ -149,6 +189,25 @@ export interface SendInputToolDeps {
   readonly write: (sessionId: string, data: string) => boolean;
 }
 
+/**
+ * send_input 数据预处理(参考 MindAutonAgent3 preparePtyData):
+ *   1. unescape LLM 误传的字面 escape(双字符 "\\n" / "\\r" / "\\t" / "\\x03" 等)
+ *   2. PTY raw mode TUI 期望 \r 当 Enter,所以 \n → \r;
+ *      cooked mode 下 termios ICRNL 会把 \r 转回 \n 给应用,等价行为。
+ *
+ * send_text / press_key 内部不调此函数(它们语义保证 verbatim / 显式按键映射)。
+ */
+export function preparePtyData(raw: string): string {
+  const unescaped = raw
+    .replace(/\\n/g, '\n')
+    .replace(/\\r/g, '\r')
+    .replace(/\\t/g, '\t')
+    .replace(/\\x([0-9a-fA-F]{2})/g, (_, hex: string) =>
+      String.fromCharCode(parseInt(hex, 16)),
+    );
+  return unescaped.replace(/\n/g, '\r');
+}
+
 const ERR_TERMINAL_SESSION_NOT_FOUND = (id: string) =>
   Object.assign(new Error(`terminal session not found: ${id}`), {
     code: 'TERMINAL_SESSION_NOT_FOUND',
@@ -159,12 +218,125 @@ export function makeSendInputTool(
 ): McpTool<SendInputInput, SendInputOutput> {
   return {
     name: MCP_TOOL_SEND_INPUT,
+    description:
+      "[ADVANCED] Send raw input bytes to a terminal session's PTY stdin. " +
+      'PREFER send_text + press_key for normal input — they remove the LF/CR confusion in raw-mode TUIs. ' +
+      'Use send_input only for complex byte sequences (mouse events, custom escape codes, binary data). ' +
+      'Note: to submit input via this tool, append "\\r" (CR, 0x0d), NOT "\\n" (LF). ' +
+      'Raw-mode TUIs (codex, vim, claude, less, ssh) only treat "\\r" as Enter. ' +
+      'Returns immediately after writing; use read_output to observe results.',
+    jsonSchema: {
+      type: 'object',
+      properties: {
+        session_id: {
+          type: 'string',
+          minLength: 1,
+          description: 'Target terminal session id from create_session / list_sessions.',
+        },
+        data: {
+          type: 'string',
+          maxLength: 2_000_000,
+          description:
+            'Raw bytes to write. To press Enter use "\\r" (CR), not "\\n". Example: "ls -la\\r" runs the ls command. Example: "你好\\r" submits text in a TUI prompt.',
+        },
+      },
+      required: ['session_id', 'data'],
+      additionalProperties: false,
+    },
     inputSchema: sendInputInputSchema,
     run: async (input: SendInputInput) => {
       if (!deps.has(input.session_id)) {
         throw ERR_TERMINAL_SESSION_NOT_FOUND(input.session_id);
       }
-      const ok = deps.write(input.session_id, input.data);
+      // preparePtyData:LF→CR + 字面 escape unescape,容错 LLM 误传 \n
+      const ok = deps.write(input.session_id, preparePtyData(input.data));
+      if (!ok) throw ERR_TERMINAL_SESSION_NOT_FOUND(input.session_id);
+      return {};
+    },
+  };
+}
+
+// ── send_text(P4+,c 方案:写纯文本,不附加按键)─────────────────
+
+export type SendTextToolDeps = SendInputToolDeps;
+
+export function makeSendTextTool(
+  deps: SendTextToolDeps,
+): McpTool<SendTextInput, SendTextOutput> {
+  return {
+    name: MCP_TOOL_SEND_TEXT,
+    description:
+      'Write plain text to a terminal session. Does NOT append Enter or any control character — pair with press_key("enter") to submit. ' +
+      'Prefer this over send_input for normal text input; it removes the LF/CR confusion in raw-mode TUIs (codex, vim, claude).',
+    jsonSchema: {
+      type: 'object',
+      properties: {
+        session_id: {
+          type: 'string',
+          minLength: 1,
+          description: 'Target terminal session id.',
+        },
+        text: {
+          type: 'string',
+          maxLength: 2_000_000,
+          description:
+            'Plain text written verbatim to PTY stdin. To press Enter afterwards, call press_key with key="enter".',
+        },
+      },
+      required: ['session_id', 'text'],
+      additionalProperties: false,
+    },
+    inputSchema: sendTextInputSchema,
+    run: async (input: SendTextInput) => {
+      if (!deps.has(input.session_id)) {
+        throw ERR_TERMINAL_SESSION_NOT_FOUND(input.session_id);
+      }
+      const ok = deps.write(input.session_id, input.text);
+      if (!ok) throw ERR_TERMINAL_SESSION_NOT_FOUND(input.session_id);
+      return {};
+    },
+  };
+}
+
+// ── press_key(P4+,c 方案:按键 enum → 字节)─────────────────────
+
+export type PressKeyToolDeps = SendInputToolDeps;
+
+export function makePressKeyTool(
+  deps: PressKeyToolDeps,
+): McpTool<PressKeyInput, PressKeyOutput> {
+  return {
+    name: MCP_TOOL_PRESS_KEY,
+    description:
+      'Press a single special key in the terminal session. The server maps the key name to the correct PTY byte sequence ' +
+      '(enter=CR, tab, escape, backspace=DEL, ctrl_c, ctrl_d, ctrl_z, arrow keys). ' +
+      'Pair with send_text for typing followed by submit. Prefer this over send_input for special keys — it removes ' +
+      'guesswork about LF vs CR and TUI key encodings.',
+    jsonSchema: {
+      type: 'object',
+      properties: {
+        session_id: {
+          type: 'string',
+          minLength: 1,
+          description: 'Target terminal session id.',
+        },
+        key: {
+          type: 'string',
+          enum: Object.keys(KEY_BYTES),
+          description:
+            'Key to press. enter=submit (raw-mode TUIs); ctrl_c=interrupt; ctrl_d=EOF; arrows=cursor; backspace=DEL.',
+        },
+      },
+      required: ['session_id', 'key'],
+      additionalProperties: false,
+    },
+    inputSchema: pressKeyInputSchema,
+    run: async (input: PressKeyInput) => {
+      if (!deps.has(input.session_id)) {
+        throw ERR_TERMINAL_SESSION_NOT_FOUND(input.session_id);
+      }
+      const bytes = KEY_BYTES[input.key];
+      const ok = deps.write(input.session_id, bytes);
       if (!ok) throw ERR_TERMINAL_SESSION_NOT_FOUND(input.session_id);
       return {};
     },
@@ -189,6 +361,37 @@ export function makeReadOutputTool(
 ): McpTool<ReadOutputInput, ReadOutputOutput> {
   return {
     name: MCP_TOOL_READ_OUTPUT,
+    description:
+      'Read accumulated output from a terminal session as line-split text. Default: ANSI stripped, last 200 lines. Use since_seq cursor (returned as next_seq) for incremental reads.',
+    jsonSchema: {
+      type: 'object',
+      properties: {
+        session_id: {
+          type: 'string',
+          minLength: 1,
+          description: 'Target terminal session id.',
+        },
+        since_seq: {
+          type: 'integer',
+          minimum: 0,
+          description:
+            'Incremental cursor: pass the next_seq from a previous read. Default 0 (returns from earliest entry retained).',
+        },
+        max_lines: {
+          type: 'integer',
+          minimum: 1,
+          maximum: 2000,
+          description:
+            'Max lines returned. If exceeded, truncated=true and only last N lines returned. Default 200.',
+        },
+        strip_ansi: {
+          type: 'boolean',
+          description: 'Strip ANSI escape sequences (CSI/OSC/keypad). Default true.',
+        },
+      },
+      required: ['session_id'],
+      additionalProperties: false,
+    },
     inputSchema: readOutputInputSchema,
     run: async (input: ReadOutputInput) => {
       try {
@@ -235,6 +438,25 @@ export function makeKillTool(
 ): McpTool<KillInput, KillOutput> {
   return {
     name: MCP_TOOL_KILL,
+    description:
+      'Send a signal to a terminal session. SIGINT writes Ctrl+C without exiting; SIGTERM (default) sends SIGINT then force-kills after 3s grace; SIGKILL kills immediately. Tab metadata and output buffer are preserved (use list_sessions to see exit_code).',
+    jsonSchema: {
+      type: 'object',
+      properties: {
+        session_id: {
+          type: 'string',
+          minLength: 1,
+          description: 'Target terminal session id.',
+        },
+        signal: {
+          type: 'string',
+          enum: ['SIGINT', 'SIGTERM', 'SIGKILL'],
+          description: 'Signal to send. Default SIGTERM.',
+        },
+      },
+      required: ['session_id'],
+      additionalProperties: false,
+    },
     inputSchema: killInputSchema,
     run: async (input: KillInput) => {
       if (!deps.has(input.session_id)) {

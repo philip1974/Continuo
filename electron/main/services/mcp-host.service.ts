@@ -143,10 +143,141 @@ export function isLocalhostBindAddr(addr: string): boolean {
   return LOCALHOST_ADDRS.has(addr);
 }
 
+// ── MCP 标准协议 dispatcher ──────────────────────────────────────
+
+export interface ServerInfo {
+  readonly name: string;
+  readonly version: string;
+  readonly protocolVersion: string;
+}
+
+export type RpcResponseObj =
+  | { readonly result: unknown }
+  | {
+      readonly error: {
+        readonly code: number;
+        readonly message: string;
+        readonly data?: unknown;
+      };
+    };
+
+/**
+ * 路由 MCP 标准 method:initialize / tools/list / tools/call。
+ * 旧 P1 的"method 即 tool name"形态在标准 dispatcher 下走 default 拒,
+ * 客户端必须用 `tools/call` 包装。
+ *
+ * BDD: src/__tests__/agent-terminal-mcp-dispatcher/
+ */
+export async function dispatchRpc(
+  rpc: RpcRequest,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  tools: ReadonlyMap<string, McpToolDef<any, any>>,
+  serverInfo: ServerInfo,
+): Promise<RpcResponseObj> {
+  if (rpc.method === 'initialize') {
+    return {
+      result: {
+        protocolVersion: serverInfo.protocolVersion,
+        serverInfo: { name: serverInfo.name, version: serverInfo.version },
+        capabilities: { tools: {} },
+      },
+    };
+  }
+
+  if (rpc.method === 'tools/list') {
+    return {
+      result: {
+        tools: Array.from(tools.values()).map((t) => ({
+          name: t.name,
+          description: t.description,
+          inputSchema: t.jsonSchema,
+        })),
+      },
+    };
+  }
+
+  if (rpc.method === 'tools/call') {
+    const params = rpc.params;
+    const name = params['name'];
+    if (typeof name !== 'string' || name.length === 0) {
+      return {
+        error: {
+          code: RPC_ERROR_CODES.INVALID_PARAMS,
+          message: 'tools/call: params.name (string) required',
+        },
+      };
+    }
+    const tool = tools.get(name);
+    if (!tool) {
+      return {
+        error: {
+          code: RPC_ERROR_CODES.METHOD_NOT_FOUND,
+          message: `tool not found: ${name}`,
+        },
+      };
+    }
+    let args: unknown = params['arguments'];
+    if (args === undefined) args = {};
+    if (
+      args === null ||
+      typeof args !== 'object' ||
+      Array.isArray(args)
+    ) {
+      return {
+        error: {
+          code: RPC_ERROR_CODES.INVALID_PARAMS,
+          message: 'tools/call: arguments must be a plain object',
+        },
+      };
+    }
+    const parsed = tool.inputSchema.safeParse(args);
+    if (!parsed.success) {
+      return {
+        error: {
+          code: RPC_ERROR_CODES.INVALID_PARAMS,
+          message: parsed.error.issues.map((i) => i.message).join('; '),
+        },
+      };
+    }
+    try {
+      const result = await tool.run(parsed.data);
+      // MCP 协议:tool result 包成 content array(MCP client 期望此形态)
+      return {
+        result: {
+          content: [{ type: 'text', text: JSON.stringify(result) }],
+        },
+      };
+    } catch (err) {
+      const e = err as { code?: unknown; message?: unknown };
+      const message =
+        typeof e.message === 'string' ? e.message : 'internal error';
+      const errorObj: { code: number; message: string; data?: unknown } = {
+        code: -32603,
+        message,
+      };
+      if (typeof e.code === 'string') {
+        errorObj.data = { code: e.code };
+      }
+      return { error: errorObj };
+    }
+  }
+
+  return {
+    error: {
+      code: RPC_ERROR_CODES.METHOD_NOT_FOUND,
+      message: `method not found: ${rpc.method}`,
+    },
+  };
+}
+
 // ── createMcpHost(HTTP wiring,留 E2E)──────────────────────────
 
 export interface McpToolDef<I = unknown, O = unknown> {
   readonly name: string;
+  /** 给 LLM 看的工具说明(英文,Claude Code 等通用 MCP client 选用). */
+  readonly description: string;
+  /** 给 MCP client tools/list 看的 JSON Schema(非 zod). 工厂手填字面量. */
+  readonly jsonSchema: Record<string, unknown>;
   readonly inputSchema: z.ZodType<I>;
   readonly run: (input: I) => O | Promise<O>;
 }
@@ -160,6 +291,10 @@ export interface McpHost {
   readonly port: number;
   readonly url: string;
   readonly token: string;
+  /** 共享给 stdio transport 等其它入口复用. */
+  readonly tools: ReadonlyMap<string, AnyMcpTool>;
+  /** 共享给 stdio transport 等其它入口复用. */
+  readonly serverInfo: ServerInfo;
   registerTool(tool: AnyMcpTool): void;
   rotateToken(): string;
   close(): Promise<void>;
@@ -169,7 +304,15 @@ export interface McpHostOptions {
   bindAddr?: string;
   port?: number;
   initialTools?: ReadonlyArray<AnyMcpTool>;
+  /** 默认 {name:'continuo', version:'0.1.0', protocolVersion:'2024-11-05'}. */
+  serverInfo?: Partial<ServerInfo>;
 }
+
+const DEFAULT_SERVER_INFO: ServerInfo = {
+  name: 'continuo',
+  version: '0.1.0',
+  protocolVersion: '2024-11-05',
+};
 
 const MAX_BODY_BYTES = 1_000_000; // 1MB,防 body bomb
 const SSE_KEEPALIVE_MS = 25_000;   // SSE 心跳,防中间件 idle 断
@@ -211,6 +354,11 @@ export async function createMcpHost(
   const tools = new Map<string, AnyMcpTool>();
   for (const t of options.initialTools ?? []) tools.set(t.name, t);
 
+  const serverInfo: ServerInfo = {
+    ...DEFAULT_SERVER_INFO,
+    ...(options.serverInfo ?? {}),
+  };
+
   let token = generateToken();
   const sseClients = new Set<ServerResponse>();
 
@@ -240,6 +388,21 @@ export async function createMcpHost(
       return;
     }
 
+    // MCP notification:JSON-RPC 没 id,server 不响应(202 Accepted)。
+    // 例如 'notifications/initialized' 客户端 init 完后发的通知。
+    if (
+      raw !== null &&
+      typeof raw === 'object' &&
+      !Array.isArray(raw) &&
+      (raw as Record<string, unknown>)['jsonrpc'] === '2.0' &&
+      typeof (raw as Record<string, unknown>)['method'] === 'string' &&
+      !('id' in (raw as Record<string, unknown>))
+    ) {
+      res.statusCode = 202;
+      res.end();
+      return;
+    }
+
     const rpc = parseRpcMessage(raw);
     if (!rpc) {
       sendJson(
@@ -250,47 +413,19 @@ export async function createMcpHost(
       return;
     }
 
-    const tool = tools.get(rpc.method);
-    if (!tool) {
+    const response = await dispatchRpc(rpc, tools, serverInfo);
+    if ('result' in response) {
+      sendJson(res, 200, formatRpcResult(rpc.id, response.result));
+    } else {
       sendJson(
         res,
         200,
         formatRpcError(
           rpc.id,
-          RPC_ERROR_CODES.METHOD_NOT_FOUND,
-          `method not found: ${rpc.method}`,
+          response.error.code,
+          response.error.message,
+          response.error.data,
         ),
-      );
-      return;
-    }
-
-    const parsed = tool.inputSchema.safeParse(rpc.params);
-    if (!parsed.success) {
-      sendJson(
-        res,
-        200,
-        formatRpcError(
-          rpc.id,
-          RPC_ERROR_CODES.INVALID_PARAMS,
-          parsed.error.issues.map((i) => i.message).join('; '),
-        ),
-      );
-      return;
-    }
-
-    try {
-      const result = await tool.run(parsed.data);
-      sendJson(res, 200, formatRpcResult(rpc.id, result));
-    } catch (err) {
-      const e = err as { code?: unknown; message?: unknown };
-      const message =
-        typeof e.message === 'string' ? e.message : 'internal error';
-      sendJson(
-        res,
-        200,
-        formatRpcError(rpc.id, -32603, message, {
-          code: typeof e.code === 'string' ? e.code : undefined,
-        }),
       );
     }
   };
@@ -321,16 +456,17 @@ export async function createMcpHost(
   };
 
   const server: HttpServer = createHttpServer((req, res) => {
-    const url = req.url ?? '/';
-    if (req.method === 'POST' && url === '/message') {
+    // 简单路径解析(去 query)
+    const path = (req.url ?? '/').split('?')[0] ?? '/';
+    if (req.method === 'POST' && path === '/mcp') {
       void handleMessage(req, res).catch((err) => {
         // eslint-disable-next-line no-console
-        console.warn('[mcp-host] /message handler threw', err);
+        console.warn('[mcp-host] /mcp POST handler threw', err);
         if (!res.headersSent) sendJson(res, 500, '{"error":"internal"}');
       });
       return;
     }
-    if (req.method === 'GET' && url === '/sse') {
+    if (req.method === 'GET' && path === '/mcp') {
       handleSse(req, res);
       return;
     }
@@ -355,10 +491,12 @@ export async function createMcpHost(
 
   const host: McpHost = {
     port,
-    url: `http://${bindAddr}:${port}/sse`,
+    url: `http://${bindAddr}:${port}/mcp`,
     get token() {
       return token;
     },
+    tools,
+    serverInfo,
     registerTool(tool: AnyMcpTool): void {
       tools.set(tool.name, tool);
     },

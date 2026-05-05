@@ -7,14 +7,15 @@
 const DEFAULT_CAPACITY = 8000;
 const DEFAULT_MAX_LINES = 200;
 
-// 覆盖三类 ESC 序列(实测 zsh + Powerlevel10k 输出常见):
-//   CSI:  ESC [ 参数(数字 / ; / ?)... 终结字母
-//   OSC:  ESC ] 参数 ... ST(BEL = \x07 或 ESC \)— 用于设 window title / cwd
-//   单字: ESC = / ESC >(application keypad mode 切换)
-// 不覆盖:DCS / SOS / PM / APC(P3 实测罕见,等遇到再补)。
+// 覆盖四类 ESC 序列(参考 MindAutonAgent3 + 实测 zsh + Powerlevel10k):
+//   CSI:     ESC [ 参数(数字 / ; / ?)... 终结字母 — 含 DEC private mode \[?25h\[?25l 等
+//   OSC:     ESC ] 参数 ... ST(BEL = \x07 或 ESC \)— window title / cwd
+//   keypad:  ESC = / ESC >(application keypad mode 切换)
+//   charset: ESC ( B / ESC ) 0 等(G0/G1 字符集选择,部分 TUI 启动时发)
+// 不覆盖:DCS / SOS / PM / APC(罕见,等遇到再补)。
 // 普通 ASCII 控制(\r / \b / \t)保留,不在本函数职责内。
 // eslint-disable-next-line no-control-regex
-const ANSI_RE = /\x1b(?:\[[\d;?]*[A-Za-z]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[=>])/g;
+const ANSI_RE = /\x1b(?:\[[\d;?]*[A-Za-z]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[=>]|[()][AB012])/g;
 
 export function stripAnsi(s: string): string {
   return s.replace(ANSI_RE, '');

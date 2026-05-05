@@ -6,7 +6,10 @@ import {
   sendInputInputSchema,
   sendInputOutputSchema,
 } from '../../../electron/shared/mcp-terminal-schemas';
-import { makeSendInputTool } from '../../../electron/main/services/mcp-tools-terminal';
+import {
+  makeSendInputTool,
+  preparePtyData,
+} from '../../../electron/main/services/mcp-tools-terminal';
 
 // ────────────────────────────────────────────────────────────
 // 常量 + Schema
@@ -15,6 +18,56 @@ import { makeSendInputTool } from '../../../electron/main/services/mcp-tools-ter
 describe('MCP_TOOL_SEND_INPUT', () => {
   it('字符串契约', () => {
     expect(MCP_TOOL_SEND_INPUT).toBe('terminal.send_input');
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// preparePtyData(纯函数)
+// ────────────────────────────────────────────────────────────
+
+describe('preparePtyData', () => {
+  it('普通文本不变', () => {
+    expect(preparePtyData('hello')).toBe('hello');
+  });
+
+  it('真 \\n → \\r(raw mode TUI 期望 CR;cooked mode termios ICRNL 处理)', () => {
+    expect(preparePtyData('ls\n')).toBe('ls\r');
+  });
+
+  it('真 \\r 保留', () => {
+    expect(preparePtyData('ls\r')).toBe('ls\r');
+  });
+
+  it('字面 "\\\\n" 双字符 → 真 \\n → \\r', () => {
+    expect(preparePtyData('ls\\n')).toBe('ls\r');
+  });
+
+  it('字面 "\\\\r" 双字符 → 真 \\r', () => {
+    expect(preparePtyData('ls\\r')).toBe('ls\r');
+  });
+
+  it('字面 "\\\\t" 双字符 → 真 tab', () => {
+    expect(preparePtyData('a\\tb')).toBe('a\tb');
+  });
+
+  it('字面 "\\\\x03" 四字符 → 0x03 单字节(Ctrl+C)', () => {
+    expect(preparePtyData('\\x03')).toBe('\x03');
+  });
+
+  it('字面 "\\\\x1b" → 真 ESC', () => {
+    expect(preparePtyData('\\x1b')).toBe('\x1b');
+  });
+
+  it('真控制字符 \\x03 不变', () => {
+    expect(preparePtyData('\x03')).toBe('\x03');
+  });
+
+  it('多行 \\n 全转 \\r', () => {
+    expect(preparePtyData('a\nb\nc')).toBe('a\rb\rc');
+  });
+
+  it('混合:文字 + 字面 \\n + 真 \\n + Ctrl+C', () => {
+    expect(preparePtyData('hi\\n\nworld\\x03')).toBe('hi\r\rworld\x03');
   });
 });
 
@@ -109,13 +162,14 @@ describe('makeSendInputTool · run', () => {
     expect(write).not.toHaveBeenCalled();
   });
 
-  it('has=true + write 成功 → 返回 {}', async () => {
+  it('has=true + write 成功 → 返回 {}(经 preparePtyData 处理 \\n→\\r)', async () => {
     const has = vi.fn<HasFn>(() => true);
     const write = vi.fn<WriteFn>(() => true);
     const tool = makeSendInputTool({ has, write });
     const r = await tool.run({ session_id: 'term-1', data: 'ls\n' });
     expect(r).toEqual({});
-    expect(write).toHaveBeenCalledWith('term-1', 'ls\n');
+    // preparePtyData:\n → \r(为兼容 raw mode TUI Enter)
+    expect(write).toHaveBeenCalledWith('term-1', 'ls\r');
   });
 
   it('write 返回 false → 抛 TERMINAL_SESSION_NOT_FOUND', async () => {
@@ -127,11 +181,39 @@ describe('makeSendInputTool · run', () => {
     ).rejects.toMatchObject({ code: 'TERMINAL_SESSION_NOT_FOUND' });
   });
 
-  it('data 透传(含控制字符)', async () => {
+  it('Ctrl+C(\\x03) 透传(LF→CR 不影响,无字面 escape)', async () => {
     const write = vi.fn<WriteFn>(() => true);
     const tool = makeSendInputTool(makeDeps({ write }));
     await tool.run({ session_id: 't', data: '\x03' });
     expect(write).toHaveBeenCalledWith('t', '\x03');
+  });
+
+  it('原始 \\r 保留(已是 CR,不动)', async () => {
+    const write = vi.fn<WriteFn>(() => true);
+    const tool = makeSendInputTool(makeDeps({ write }));
+    await tool.run({ session_id: 't', data: 'ls\r' });
+    expect(write).toHaveBeenCalledWith('t', 'ls\r');
+  });
+
+  it('字面 "\\\\n" 双字符 → 真换行 → 转 \\r(LLM 容错)', async () => {
+    const write = vi.fn<WriteFn>(() => true);
+    const tool = makeSendInputTool(makeDeps({ write }));
+    await tool.run({ session_id: 't', data: 'ls\\n' });
+    expect(write).toHaveBeenCalledWith('t', 'ls\r');
+  });
+
+  it('字面 "\\\\x03" 四字符 → 0x03 单字节(LLM 容错)', async () => {
+    const write = vi.fn<WriteFn>(() => true);
+    const tool = makeSendInputTool(makeDeps({ write }));
+    await tool.run({ session_id: 't', data: '\\x03' });
+    expect(write).toHaveBeenCalledWith('t', '\x03');
+  });
+
+  it('多行 \\n → 多 \\r', async () => {
+    const write = vi.fn<WriteFn>(() => true);
+    const tool = makeSendInputTool(makeDeps({ write }));
+    await tool.run({ session_id: 't', data: 'a\nb\nc' });
+    expect(write).toHaveBeenCalledWith('t', 'a\rb\rc');
   });
 
   it('输出符合 sendInputOutputSchema', async () => {
