@@ -4,11 +4,18 @@
 //
 // 顺手注册全局命令 'settings.open'(⌘,),Mac 用户的肌肉记忆。
 
-import { createElement } from 'react';
+import { createElement, lazy } from 'react';
 import { Plugin } from '@/plugins/Plugin';
 import { PluginsTabContent } from '@/plugins/settings/PluginsTabContent';
 import { useSettingsStore } from '@/plugins/settings/store';
-import { MarketplaceTab } from '@/marketplace/MarketplaceTab';
+import { lazyPanel } from '@/lib/lazy-panel';
+
+// MarketplaceTab 拉 reviews 渲染、远端清单 UI 等;懒加载到独立 chunk。
+const MarketplaceTab = lazy(() =>
+  import('@/marketplace/MarketplaceTab').then((m) => ({
+    default: m.MarketplaceTab,
+  })),
+);
 
 export default class PluginsTabPlugin extends Plugin {
   onload(): void {
@@ -17,7 +24,7 @@ export default class PluginsTabPlugin extends Plugin {
       id: 'core.marketplace',
       title: '插件商店',
       priority: 40,
-      render: () => createElement(MarketplaceTab),
+      render: lazyPanel(MarketplaceTab),
     });
 
     this.addSettingTab({

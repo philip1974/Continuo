@@ -15,6 +15,8 @@ import { usePermissionPromptStore } from './plugins/permissions/promptStore';
 import { PermissionError } from './plugins/permissions';
 import { sandboxSweep } from './plugins/sandbox-sweep';
 import { captureLmApi, coApi } from './lib/co-api';
+import { useUpdateStore } from './marketplace/update-store';
+import { useReviewsStore } from './marketplace/reviews-store';
 import './styles/tailwind.css';
 
 // Phase 4.B:**最早**调,把 window.api 缓存到 module-local。
@@ -92,15 +94,11 @@ void initExplorerPersistence({
 
 // Marketplace Phase 3:启动时静默拉一次更新清单(IconSidebar 角标用)。
 // fire-and-forget,不阻塞 UI 渲染。失败 console.warn 不抛。
-void import('./marketplace/update-store').then(({ useUpdateStore }) => {
-  void useUpdateStore.getState().refresh();
-});
+void useUpdateStore.getState().refresh();
 
 // Reviews Phase 1:启动时静默拉一次评论(MarketplaceTab 卡片 ★ 用)。
 // 同样 fire-and-forget;NO_TOKEN 时静默退出(在 fetcher 抛错被 catch)。
-void import('./marketplace/reviews-store').then(({ useReviewsStore }) => {
-  void useReviewsStore.getState().refresh();
-});
+void useReviewsStore.getState().refresh();
 
 createRoot(container).render(
   <React.StrictMode>
