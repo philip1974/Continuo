@@ -91,14 +91,18 @@ export function TerminalPanel() {
       <TerminalTabs
         onNewSession={handleNew}
         onCloseSession={handleClose}
-        showTabList={sessions.length > 1}
+        showTabList
       />
       <div className="relative min-h-0 flex-1">
         {sessions.map((sess) => (
           <div
             key={sess.id}
             className="absolute inset-0 flex"
-            style={{ display: sess.id === activeId ? 'flex' : 'none' }}
+            // visibility 而非 display:none — display:none 让容器变 0×0,
+            // xterm fit() 算错列宽,切回 active 时 ResizeObserver / reflow
+            // 时序有 race,文字按超窄列宽渲染。visibility:hidden 保留完整 layout,
+            // fit 总能算对;hidden 元素不可见 + 不接收事件,UX 等价。
+            style={{ visibility: sess.id === activeId ? 'visible' : 'hidden' }}
           >
             <TerminalView termId={sess.id} />
           </div>
