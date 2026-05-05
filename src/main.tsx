@@ -90,6 +90,12 @@ void initExplorerPersistence({
   write: (snap) => coApi.explorer.write(snap),
 });
 
+// Marketplace Phase 3:启动时静默拉一次更新清单(IconSidebar 角标用)。
+// fire-and-forget,不阻塞 UI 渲染。失败 console.warn 不抛。
+void import('./marketplace/update-store').then(({ useUpdateStore }) => {
+  void useUpdateStore.getState().refresh();
+});
+
 createRoot(container).render(
   <React.StrictMode>
     <App />

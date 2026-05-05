@@ -10,6 +10,7 @@ import { coApi } from '@/lib/co-api';
 import { getUserPluginManager } from '@/plugins/co-plugin-manager';
 import { entryToGitUrl, type MarketplaceEntry } from './types';
 import { fetchMarketplaceIndex } from './fetcher';
+import { useUpdateStore } from './update-store';
 
 type LoadState =
   | { kind: 'loading' }
@@ -44,11 +45,16 @@ function readIds(): ReadonlySet<string> {
 export function MarketplaceTab() {
   const [state, setState] = useState<LoadState>({ kind: 'loading' });
   const installed = useInstalledIds();
+  const updates = useUpdateStore((s) => s.available);
+  const refreshUpdates = useUpdateStore((s) => s.refresh);
   const [install, setInstall] = useState<InstallState>({
     busy: null,
     msgs: new Map(),
     pending: new Set(),
   });
+
+  // entry.id → 可用更新版本(若有)
+  const updateByPid = new Map(updates.map((u) => [u.id, u.to]));
 
   useEffect(() => {
     let cancelled = false;
@@ -90,6 +96,40 @@ export function MarketplaceTab() {
       if (success) nextPending.add(entry.id);
       return { busy: null, msgs: nextMsgs, pending: nextPending };
     });
+  };
+
+  const onUpdate = async (entry: MarketplaceEntry) => {
+    // 更新 = 卸载 + 重装。卸载走 PluginManager 走 LIFO + 清 _enabled / _permissions;
+    // 装走 v4.5 installFromGit。两步任一失败 → toast 显错。
+    setInstall((prev) => ({ ...prev, busy: entry.id }));
+    let msg: string;
+    let success = false;
+    try {
+      const mgr = getUserPluginManager();
+      if (mgr) {
+        try {
+          await mgr.uninstall(entry.id);
+        } catch (err) {
+          console.warn(`[marketplace] uninstall ${entry.id} failed`, err);
+        }
+      }
+      const r = await coApi.plugins.installFromGit(entryToGitUrl(entry));
+      success = r.ok;
+      msg = r.ok
+        ? `✔ 更新到 ${r.data.name} v${r.data.version} — 重启 Continuo 后激活`
+        : `✘ 更新失败 [${r.code}] ${r.message}`;
+    } catch (err) {
+      msg = `✘ 更新失败:${err instanceof Error ? err.message : String(err)}`;
+    }
+    setInstall((prev) => {
+      const nextMsgs = new Map(prev.msgs);
+      nextMsgs.set(entry.id, msg);
+      const nextPending = new Set(prev.pending);
+      if (success) nextPending.add(entry.id);
+      return { busy: null, msgs: nextMsgs, pending: nextPending };
+    });
+    // 更新成功后刷新 update-store(从 available 摘掉这条)
+    if (success) void refreshUpdates();
   };
 
   if (state.kind === 'loading') {
@@ -142,10 +182,12 @@ export function MarketplaceTab() {
             pendingRestart={
               install.pending.has(entry.id) && !installed.has(entry.id)
             }
+            updateAvailable={updateByPid.get(entry.id) ?? null}
             installing={install.busy === entry.id}
             installDisabled={install.busy !== null && install.busy !== entry.id}
             message={install.msgs.get(entry.id) ?? null}
             onInstall={() => void onInstall(entry)}
+            onUpdate={() => void onUpdate(entry)}
           />
         ))}
       </div>
@@ -158,20 +200,25 @@ interface CardProps {
   installed: boolean;
   /** 已装但 PluginManager 还没扫到 → 提示需重启. */
   pendingRestart: boolean;
+  /** 远程有比本地新的版本号(Phase 3),null 表示没更新可用. */
+  updateAvailable: string | null;
   installing: boolean;
   installDisabled: boolean;
   message: string | null;
   onInstall: () => void;
+  onUpdate: () => void;
 }
 
 function MarketplaceCard({
   entry,
   installed,
   pendingRestart,
+  updateAvailable,
   installing,
   installDisabled,
   message,
   onInstall,
+  onUpdate,
 }: CardProps) {
   return (
     <div className="rounded border border-line bg-panel-soft/40 px-3 py-2">
@@ -194,7 +241,17 @@ function MarketplaceCard({
           )}
         </div>
         <div className="shrink-0">
-          {installed ? (
+          {installed && updateAvailable && !pendingRestart ? (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={onUpdate}
+              disabled={installing || installDisabled}
+              title={`远程版本 v${updateAvailable},点击更新`}
+            >
+              {installing ? '更新中…' : `更新到 v${updateAvailable}`}
+            </Button>
+          ) : installed ? (
             <Button
               variant="ghost"
               size="sm"

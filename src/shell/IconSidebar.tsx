@@ -10,6 +10,7 @@ import { useLayoutUiStore } from '@/stores/layout-ui.store';
 import { NavRailButton } from '@/design';
 import { coApp } from '@/plugins/co-app';
 import { useSettingsStore } from '@/plugins/settings/store';
+import { useUpdateStore } from '@/marketplace/update-store';
 import type { RibbonActionSpec } from '@/plugins/registries/RibbonRegistry';
 
 interface IconBarItemConfig {
@@ -36,6 +37,8 @@ export function IconSidebar() {
   const sidebarOpen = useLayoutUiStore((s) => s.sidebarOpen);
   const toggleSidebar = useLayoutUiStore((s) => s.toggleSidebar);
   const ribbonActions = useRibbonActions();
+  // Marketplace 更新数 → Settings 齿轮右上角红圈
+  const updateCount = useUpdateStore((s) => s.available.length);
 
   const topItems: IconBarItemConfig[] = [
     {
@@ -91,7 +94,24 @@ export function IconSidebar() {
           </NavRailButton>
         ))}
       </div>
-      <div className="flex flex-col items-center gap-1">{bottomItems.map(renderItem)}</div>
+      <div className="flex flex-col items-center gap-1">
+        {bottomItems.map((item) =>
+          item.id === 'settings' && updateCount > 0 ? (
+            <div key={item.id} className="relative">
+              {renderItem(item)}
+              <span
+                className="pointer-events-none absolute right-0.5 top-0.5 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-medium leading-none text-white"
+                title={`${updateCount} 个插件可更新`}
+                aria-label={`${updateCount} 个插件可更新`}
+              >
+                {updateCount > 9 ? '9+' : updateCount}
+              </span>
+            </div>
+          ) : (
+            renderItem(item)
+          ),
+        )}
+      </div>
     </aside>
   );
 }

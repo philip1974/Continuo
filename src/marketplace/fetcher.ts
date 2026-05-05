@@ -4,7 +4,7 @@
 // cache。GitHub raw 60/hr 不 auth,缓存 1h 单用户撞不墙。
 // fetch 抛错时 fallback 上次 cache(用户离线也能浏览历史)。
 
-import type { MarketplaceEntry } from './types';
+import { entryToManifestUrl, type MarketplaceEntry } from './types';
 
 const INDEX_URL =
   'https://raw.githubusercontent.com/philip1974/continuo-plugins/main/index.json';
@@ -88,4 +88,31 @@ export function _resetMarketplaceCacheForTest(): void {
   } catch {
     /* */
   }
+}
+
+/** 远程 plugin manifest 的最少字段,update check 用. */
+export interface RemoteManifestSnapshot {
+  readonly id: string;
+  readonly name: string;
+  readonly version: string;
+}
+
+/**
+ * 拉指定 entry 对应 plugin repo 的 manifest.json,只取 id/name/version。
+ * 不缓存(每次 update check 都拉新);失败抛 caller 决定怎么处理。
+ */
+export async function fetchPluginManifest(
+  entry: MarketplaceEntry,
+): Promise<RemoteManifestSnapshot> {
+  const r = await fetch(entryToManifestUrl(entry), { cache: 'no-cache' });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const json = (await r.json()) as Partial<RemoteManifestSnapshot>;
+  if (
+    typeof json.id !== 'string' ||
+    typeof json.name !== 'string' ||
+    typeof json.version !== 'string'
+  ) {
+    throw new Error('manifest 缺 id / name / version');
+  }
+  return { id: json.id, name: json.name, version: json.version };
 }
