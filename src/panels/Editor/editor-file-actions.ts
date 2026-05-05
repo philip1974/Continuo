@@ -3,7 +3,7 @@
 //
 // MVP 简化(详见 doc/09 § MVP 范围):
 //  - 只实现 openFileByPath / saveFile
-//  - 不做 Cmd+O / Cmd+N / 另存为(LayoutMotion fs IPC 暂无 open/saveDialog 通道)
+//  - 不做 Cmd+O / Cmd+N / 另存为(Continuo fs IPC 暂无 open/saveDialog 通道)
 //  - 新建/打开文件统一走 Explorer 右键菜单 + 单击
 
 import type { FsApi } from '@/lib/fs/api';

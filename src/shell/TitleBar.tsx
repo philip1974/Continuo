@@ -1,6 +1,6 @@
 // macOS 顶部窗口标题栏:动态显示 workspace 名 · active file 名,
 // 同时承担 -webkit-app-region:drag 让用户拖窗。
-// 无 workspace / 无文件 → 兜底"LayoutMotion"。
+// 无 workspace / 无文件 → 兜底"Continuo"。
 
 import { useEditorStore } from '@/stores/editor.store';
 import { useWorkspaceStore } from '@/stores/workspace.store';
@@ -21,9 +21,9 @@ export function TitleBar() {
     : null;
   const wsLabel = root ? basename(root) : null;
 
-  // 拼接:[file ●] · [workspace] || LayoutMotion
+  // 拼接:[file ●] · [workspace] || Continuo
   const parts = [fileLabel, wsLabel].filter(Boolean);
-  const text = parts.length > 0 ? parts.join('  ·  ') : 'LayoutMotion';
+  const text = parts.length > 0 ? parts.join('  ·  ') : 'Continuo';
 
   return (
     <header className="flex h-9 shrink-0 items-center justify-center border-b border-line bg-panel/40 text-xs text-fg-muted select-none [-webkit-app-region:drag]">

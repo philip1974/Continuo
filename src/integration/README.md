@@ -2,7 +2,7 @@
 
 本目录在 **Nous 联动里程碑启动前保持空**。
 
-LayoutMotion 当前定位是独立 Electron + React + motion 桌面壳;
+Continuo 当前定位是独立 Electron + React + motion 桌面壳;
 将来与 [Nous](https://github.com/) AI Agent 平台联动时,适配代码统一放这里,
 不污染 `panels/` / `shell/` / `stores/`。
 
@@ -18,11 +18,11 @@ LayoutMotion 当前定位是独立 Electron + React + motion 桌面壳;
 
 ## 设计原则
 
-- **联动方向**:LayoutMotion 是 Electron 宿主,Nous Agent 作为 panel 嵌入
+- **联动方向**:Continuo 是 Electron 宿主,Nous Agent 作为 panel 嵌入
   (Scenario A,详见对话档案与 doc/08 § Nous 联动预留)。
 - **底层零依赖**:本目录不允许 import `electron/`,只能间接通过
   `window.api` 与 `src/stores/`(VSCode 风:渲染层不直接走 Node)。
-- **Nous 联动可降级**:LayoutMotion 单独运行时本目录不被引用,
+- **Nous 联动可降级**:Continuo 单独运行时本目录不被引用,
   联动失败不影响壳本体可用性。
 
 ## 何时落地

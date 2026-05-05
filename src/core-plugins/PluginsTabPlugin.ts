@@ -8,9 +8,18 @@ import { createElement } from 'react';
 import { Plugin } from '@/plugins/Plugin';
 import { PluginsTabContent } from '@/plugins/settings/PluginsTabContent';
 import { useSettingsStore } from '@/plugins/settings/store';
+import { MarketplaceTab } from '@/marketplace/MarketplaceTab';
 
 export default class PluginsTabPlugin extends Plugin {
   onload(): void {
+    // 插件商店在前(priority 数字小排前;现有 Sample 是 80,Plugins 50)
+    this.addSettingTab({
+      id: 'core.marketplace',
+      title: '插件商店',
+      priority: 40,
+      render: () => createElement(MarketplaceTab),
+    });
+
     this.addSettingTab({
       id: 'core.plugins',
       title: '插件',

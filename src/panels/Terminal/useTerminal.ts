@@ -1,7 +1,7 @@
 // useTerminal hook(M-Terminal Step T4):xterm 实例 + 事件订阅 + resize observer。
 // 从 MindAutonAgent 移植,简化:
 //   - 删 loadTerminalConfig(我们没 config IPC,内联默认值)
-//   - 删 theme 切换订阅(LayoutMotion 暗色固定)
+//   - 删 theme 切换订阅(Continuo 暗色固定)
 //   - scrollback 改 20000(决策 #3:跑 Agent CLI 输出大)
 //   - electronAPI.terminal → coApi.terminal
 

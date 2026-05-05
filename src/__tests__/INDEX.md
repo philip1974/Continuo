@@ -101,6 +101,10 @@
 
 - [`persistence.spec.ts`](./layout-persistence/persistence.spec.ts)
 
+## [marketplace(插件商店浏览 Phase 1)](./marketplace/README.md)
+
+- [`marketplace.spec.ts`](./marketplace/marketplace.spec.ts)
+
 ## [permission-prompt(授权 UI store + Modal + Manager 集成)](./permission-prompt/README.md)
 
 - [`PermissionPrompt.spec.tsx`](./permission-prompt/PermissionPrompt.spec.tsx)

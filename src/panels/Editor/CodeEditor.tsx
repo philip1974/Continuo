@@ -6,7 +6,7 @@
 //   2. markdown 的 Source mode(决策 #4:用 CodeMirror markdown 模式,
 //      比 Mind 原版 textarea 强,有语法高亮 + 折叠)
 //
-// 主题:固定 oneDark(LayoutMotion 项目主题色)。无需 useTheme 切换。
+// 主题:固定 oneDark(Continuo 项目主题色)。无需 useTheme 切换。
 
 import { useEffect, useRef } from 'react';
 import { EditorView, basicSetup } from 'codemirror';

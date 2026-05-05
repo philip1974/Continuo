@@ -40,7 +40,7 @@ function windowOpenHandler({ url }: HandlerDetails): WindowOpenHandlerResponse {
         height: 600,
         backgroundColor: '#020617',
         // 子窗口用系统默认标题栏:
-        //   - 给用户一个明确的可拖区域(主窗口 hiddenInset 把 LayoutMotion 文字
+        //   - 给用户一个明确的可拖区域(主窗口 hiddenInset 把 Continuo 文字
         //     做成可拖,popout 子窗里没有这条,需要原生 titlebar)
         //   - 避免 dockview tab bar 撞 macOS 红绿灯按钮
         webPreferences: COMMON_WEB_PREFERENCES,
