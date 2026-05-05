@@ -103,6 +103,7 @@
 
 ## [marketplace(插件商店浏览 Phase 1)](./marketplace/README.md)
 
+- [`filter.spec.ts`](./marketplace/filter.spec.ts)
 - [`marketplace.spec.ts`](./marketplace/marketplace.spec.ts)
 - [`semver.spec.ts`](./marketplace/semver.spec.ts)
 

@@ -4,12 +4,13 @@
 // 已装的卡片显 "已安装" disabled;未装显 [安装] primary,点击调
 // installFromGit(走 v4.5 已有 IPC)。安装成功 toast 在卡片下方提示。
 
-import { useEffect, useState } from 'react';
-import { Button, Spinner } from '@/design';
+import { useEffect, useMemo, useState } from 'react';
+import { Button, Input, Spinner } from '@/design';
 import { coApi } from '@/lib/co-api';
 import { getUserPluginManager } from '@/plugins/co-plugin-manager';
 import { entryToGitUrl, type MarketplaceEntry } from './types';
 import { fetchMarketplaceIndex } from './fetcher';
+import { applyFilter, collectAllTags } from './filter';
 import { useUpdateStore } from './update-store';
 
 type LoadState =
@@ -52,6 +53,10 @@ export function MarketplaceTab() {
     msgs: new Map(),
     pending: new Set(),
   });
+  const [query, setQuery] = useState('');
+  const [selectedTags, setSelectedTags] = useState<ReadonlySet<string>>(
+    new Set(),
+  );
 
   // entry.id → 可用更新版本(若有)
   const updateByPid = new Map(updates.map((u) => [u.id, u.to]));
@@ -167,30 +172,89 @@ export function MarketplaceTab() {
     );
   }
 
+  const allTags = useMemo(() => collectAllTags(state.entries), [state.entries]);
+  const filtered = useMemo(
+    () => applyFilter(state.entries, { query, selectedTags }),
+    [state.entries, query, selectedTags],
+  );
+
+  const toggleTag = (tag: string) => {
+    setSelectedTags((prev) => {
+      const next = new Set(prev);
+      if (next.has(tag)) next.delete(tag);
+      else next.add(tag);
+      return next;
+    });
+  };
+
   return (
     <div className="space-y-3">
-      <p className="text-[10px] text-fg-dim">
-        共 {state.entries.length} 个插件 · 索引 1 小时缓存。
-        安装后需重启 Continuo 才会出现在"插件" tab。
-      </p>
       <div className="space-y-2">
-        {state.entries.map((entry) => (
-          <MarketplaceCard
-            key={entry.id}
-            entry={entry}
-            installed={installed.has(entry.id) || install.pending.has(entry.id)}
-            pendingRestart={
-              install.pending.has(entry.id) && !installed.has(entry.id)
-            }
-            updateAvailable={updateByPid.get(entry.id) ?? null}
-            installing={install.busy === entry.id}
-            installDisabled={install.busy !== null && install.busy !== entry.id}
-            message={install.msgs.get(entry.id) ?? null}
-            onInstall={() => void onInstall(entry)}
-            onUpdate={() => void onUpdate(entry)}
-          />
-        ))}
+        <Input
+          size="sm"
+          placeholder="搜索插件名 / 描述 / tag…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        {allTags.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {allTags.map((tag) => {
+              const active = selectedTags.has(tag);
+              return (
+                <button
+                  key={tag}
+                  type="button"
+                  onClick={() => toggleTag(tag)}
+                  className={[
+                    'rounded px-2 py-0.5 text-[10px] transition',
+                    active
+                      ? 'bg-accent text-canvas'
+                      : 'bg-panel text-fg-muted hover:bg-hover',
+                  ].join(' ')}
+                >
+                  {tag}
+                </button>
+              );
+            })}
+            {selectedTags.size > 0 && (
+              <button
+                type="button"
+                onClick={() => setSelectedTags(new Set())}
+                className="rounded px-2 py-0.5 text-[10px] text-fg-dim hover:text-fg"
+              >
+                清除筛选
+              </button>
+            )}
+          </div>
+        )}
       </div>
+      <p className="text-[10px] text-fg-dim">
+        显示 {filtered.length} / 共 {state.entries.length} 个插件 · 索引 1 小时缓存
+      </p>
+      {filtered.length === 0 ? (
+        <div className="rounded border border-dashed border-line bg-panel-soft/40 px-3 py-6 text-center text-xs text-fg-dim">
+          没有匹配的插件。换个搜索词或清除 tag 筛选。
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map((entry) => (
+            <MarketplaceCard
+              key={entry.id}
+              entry={entry}
+              installed={installed.has(entry.id) || install.pending.has(entry.id)}
+              pendingRestart={
+                install.pending.has(entry.id) && !installed.has(entry.id)
+              }
+              updateAvailable={updateByPid.get(entry.id) ?? null}
+              installing={install.busy === entry.id}
+              installDisabled={install.busy !== null && install.busy !== entry.id}
+              message={install.msgs.get(entry.id) ?? null}
+              onInstall={() => void onInstall(entry)}
+              onUpdate={() => void onUpdate(entry)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
