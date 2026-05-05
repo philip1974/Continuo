@@ -43,7 +43,9 @@ export function PermissionPrompt() {
         插件 <code className="text-fg">{pending.pluginId}</code> 请求以下权限:
       </p>
       <p className="mb-3 text-[10px] text-fg-dim">
-        未勾即拒;任一未授 → 插件不激活(部分授权暂不支持,见 #14)。
+        未勾视为拒绝。支持<span className="text-fg">部分授权</span>:
+        plugin 调未授 API 时会被拒(抛 PermissionError),整体仍能激活。
+        全部拒绝则 plugin 不激活。
       </p>
       <ul className="mb-4 space-y-1">
         {pending.perms.map((perm) => {

@@ -112,35 +112,57 @@ describe('InMemoryPermissionStore', () => {
   });
 });
 
-describe('ensureAuthorized', () => {
-  it('requested 空 → 直接 ok', async () => {
+describe('ensureAuthorized(v5 Phase 2 partial grant)', () => {
+  it('requested 空 → ok,granted/denied 都空', async () => {
     const s = new InMemoryPermissionStore();
     const prompt = vi.fn();
     const r = await ensureAuthorized('p', [], s, prompt);
     expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.granted).toEqual([]);
+      expect(r.denied).toEqual([]);
+    }
     expect(prompt).not.toHaveBeenCalled();
   });
 
-  it('全部已 grant → 直接 ok 不 prompt', async () => {
+  it('全部已 grant → ok,granted=requested,denied 空,不 prompt', async () => {
     const s = new InMemoryPermissionStore();
     await s.grant('p', ['fs', 'network']);
     const prompt = vi.fn();
     const r = await ensureAuthorized('p', ['fs', 'network'], s, prompt);
     expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.granted).toEqual(['fs', 'network']);
+      expect(r.denied).toEqual([]);
+    }
     expect(prompt).not.toHaveBeenCalled();
   });
 
-  it('任一已 deny → 直接 fail 不 prompt', async () => {
+  it('部分已 grant + 部分已 deny → ok partial(其中至少一项 granted)', async () => {
     const s = new InMemoryPermissionStore();
-    await s.deny('p', ['shell']);
+    await s.grant('p', ['fs']);
+    await s.deny('p', ['network']);
     const prompt = vi.fn();
-    const r = await ensureAuthorized('p', ['fs', 'shell'], s, prompt);
+    const r = await ensureAuthorized('p', ['fs', 'network'], s, prompt);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.granted).toEqual(['fs']);
+      expect(r.denied).toEqual(['network']);
+    }
+    expect(prompt).not.toHaveBeenCalled(); // 都已决,不再问
+  });
+
+  it('全部已 deny → ok=false(plugin 不激活)', async () => {
+    const s = new InMemoryPermissionStore();
+    await s.deny('p', ['fs', 'network']);
+    const prompt = vi.fn();
+    const r = await ensureAuthorized('p', ['fs', 'network'], s, prompt);
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.deniedPerms).toEqual(['shell']);
+    if (!r.ok) expect(r.deniedPerms).toEqual(['fs', 'network']);
     expect(prompt).not.toHaveBeenCalled();
   });
 
-  it('待决调 prompt,用户全授 → grant + ok', async () => {
+  it('待决调 prompt,用户全授 → ok,granted=requested', async () => {
     const s = new InMemoryPermissionStore();
     const prompt = vi.fn(async (
       _pid: string,
@@ -148,20 +170,26 @@ describe('ensureAuthorized', () => {
     ) => [...perms]);
     const r = await ensureAuthorized('p', ['fs', 'clipboard'], s, prompt);
     expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.granted).toEqual(['fs', 'clipboard']);
+      expect(r.denied).toEqual([]);
+    }
     expect(prompt).toHaveBeenCalledWith('p', ['fs', 'clipboard']);
-    const decisions = await s.get('p');
-    expect(decisions.every((d) => d.granted)).toBe(true);
   });
 
-  it('待决调 prompt,用户部分拒 → 拒的部分 deny + fail', async () => {
+  it('待决调 prompt,用户部分授 → ok partial,denied 列出未授项', async () => {
     const s = new InMemoryPermissionStore();
     const prompt = vi.fn(async (
       _pid: string,
       _perms: readonly PermissionKey[],
     ) => ['fs'] as PermissionKey[]); // 只授 fs,不授 network
     const r = await ensureAuthorized('p', ['fs', 'network'], s, prompt);
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.deniedPerms).toEqual(['network']);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.granted).toEqual(['fs']);
+      expect(r.denied).toEqual(['network']);
+    }
+    // store 仍记录两条决策
     const decisions = await s.get('p');
     const fs = decisions.find((d) => d.permission === 'fs');
     const net = decisions.find((d) => d.permission === 'network');
@@ -169,7 +197,15 @@ describe('ensureAuthorized', () => {
     expect(net?.granted).toBe(false);
   });
 
-  it('部分已 grant + 部分待决 → 只 prompt 待决', async () => {
+  it('待决调 prompt,用户全拒 → ok=false', async () => {
+    const s = new InMemoryPermissionStore();
+    const prompt = vi.fn(async () => [] as PermissionKey[]);
+    const r = await ensureAuthorized('p', ['fs', 'network'], s, prompt);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.deniedPerms).toEqual(['fs', 'network']);
+  });
+
+  it('部分已 grant + 部分待决 → 只 prompt 待决,合并结果', async () => {
     const s = new InMemoryPermissionStore();
     await s.grant('p', ['fs']);
     const prompt = vi.fn(async (
@@ -178,6 +214,23 @@ describe('ensureAuthorized', () => {
     ) => [...perms]);
     const r = await ensureAuthorized('p', ['fs', 'network'], s, prompt);
     expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.granted).toEqual(['fs', 'network']);
+      expect(r.denied).toEqual([]);
+    }
     expect(prompt).toHaveBeenCalledWith('p', ['network']);
+  });
+
+  it('已 deny 的项不被 prompt 复授(deny 是 sticky 的)', async () => {
+    const s = new InMemoryPermissionStore();
+    await s.deny('p', ['network']);
+    const prompt = vi.fn(async () => ['fs'] as PermissionKey[]);
+    const r = await ensureAuthorized('p', ['fs', 'network'], s, prompt);
+    expect(prompt).toHaveBeenCalledWith('p', ['fs']); // network 不在 pending
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.granted).toEqual(['fs']);
+      expect(r.denied).toEqual(['network']);
+    }
   });
 });

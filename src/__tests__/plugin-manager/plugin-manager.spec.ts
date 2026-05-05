@@ -519,7 +519,7 @@ describe('权限门 ensureAuthorized 集成', () => {
     expect(GoodPlugin.loaded).toEqual(['a']);
   });
 
-  it('manifest 含 permissions + 用户拒 → 标 failed,不激活', async () => {
+  it('manifest 含 permissions + 用户全拒 → 标 failed,不激活', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const state: MockHostState = {
       dirs: [
@@ -546,6 +546,72 @@ describe('权限门 ensureAuthorized 集成', () => {
     expect(entry?.status).toBe('failed');
     expect(entry?.error).toContain('PERMISSION_DENIED');
     warn.mockRestore();
+  });
+
+  it('v5 partial grant:用户授部分 → status=enabled + entry.warning,plugin 仍激活', async () => {
+    const state: MockHostState = {
+      dirs: [
+        {
+          id: 'a',
+          manifestText: manifestText('a', { permissions: ['fs', 'network'] }),
+          moduleUrl: 'mod://a',
+        },
+      ],
+      enabled: new Set(['a']),
+      modules: new Map([['mod://a', { default: GoodPlugin }]]),
+      enabledWritten: new Set(),
+    };
+    const host: ManagerHost = {
+      ...makeHost(state),
+      permissionStore: new InMemoryPermissionStore(),
+      promptFn: async () => ['fs'] as never, // 只授 fs
+    };
+    const mgr = new PluginManager(fakeApp, host);
+    await mgr.init();
+    expect(GoodPlugin.loaded).toEqual(['a']); // 仍激活
+    const item = mgr.listAll()[0]!;
+    expect(item.status).toBe('enabled');
+    expect(item.warning).toContain('部分授权');
+    expect(item.warning).toContain('fs');
+    expect(item.warning).toContain('network');
+    expect(item.error).toBeUndefined();
+  });
+
+  it('v5 partial grant 后用户改主意全授 → reload 时 warning 清空', async () => {
+    const state: MockHostState = {
+      dirs: [
+        {
+          id: 'a',
+          manifestText: manifestText('a', { permissions: ['fs', 'network'] }),
+          moduleUrl: 'mod://a',
+        },
+      ],
+      enabled: new Set(['a']),
+      modules: new Map([['mod://a', { default: GoodPlugin }]]),
+      enabledWritten: new Set(),
+    };
+    const store = new InMemoryPermissionStore();
+    let calls = 0;
+    const host: ManagerHost = {
+      ...makeHost(state),
+      permissionStore: store,
+      // 第一次只授 fs(partial),后续 store 已有完整决策不会再 prompt
+      promptFn: async () => {
+        calls += 1;
+        return calls === 1 ? (['fs'] as never) : ([] as never);
+      },
+    };
+    const mgr = new PluginManager(fakeApp, host);
+    await mgr.init();
+    expect(mgr.listAll()[0]?.warning).toContain('部分授权');
+
+    // 模拟用户在 PermissionEditorModal 改:授 network(已有 fs grant 不动,deny 翻 grant)
+    await store.grant('a', ['network']);
+
+    // reload 让权限重检
+    await mgr.reload('a');
+    expect(mgr.listAll()[0]?.warning).toBeUndefined();
+    expect(mgr.listAll()[0]?.status).toBe('enabled');
   });
 
   it('FAILED 重试 enable 成功 → entry.error 清空(不再渲染遗留红字)', async () => {

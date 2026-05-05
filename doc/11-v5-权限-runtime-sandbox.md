@@ -2,7 +2,7 @@
 
 > 关联 issue #14。从 v4.7 的 all-or-nothing 走向 partial-grant + runtime gating。
 >
-> **进度**:Phase 1 ✅ / Phase 2-5 ⏳
+> **进度**:Phase 1 ✅ / Phase 2 ✅ / Phase 3-5 ⏳
 
 ## 1. 目标 / 非目标
 
@@ -145,13 +145,20 @@ delete (globalThis as any).fetch;
 
 > 实现 commit:见 git log feat(plugin): v5 Phase 1。
 
-### Phase 2 — partial grant 语义改造
+### Phase 2 — partial grant 语义改造 ✅
 
-- `ensureAuthorized` 改:partial grant 不 fail,返 `{ ok:true, partial:true, granted: [...granted], denied: [...denied] }`
-- PluginManager 把 partial 状态记到 entry,新增 `entry.warning`
-- `PermissionPrompt` 文案改:"勾选项被授权,未勾视为拒绝;插件可在 runtime 优雅处理"
-- `PermissionEditorModal` 同样改文案 + 显示当前 partial 状态
-- UI:plugin 行加小黄字 `部分授权(fs)` badge
+- ✅ `ensureAuthorized` 返 `{ ok:true, granted, denied }`(partial 时 denied≠[]);
+  全拒走 `{ ok:false, deniedPerms }` 保持 v4.7 retry 路径
+- ✅ `PluginEntry / PluginListItem` 加 `warning?: string`;activateEntry
+  partial 时设 "部分授权:已授 X;未授 Y"
+- ✅ activateEntry 入口先清 error/warning,确保最终态干净
+- ✅ `PermissionPrompt` 文案:"未勾视为拒绝,支持部分授权(plugin 调未授
+  API 时被拒,整体仍能激活;全部拒绝则不激活)"
+- ✅ `PluginsTabContent` 行内显黄字 ⚠ warning(text-amber-400)
+- ✅ 测试:plugin-permissions partial × 4 新场景 + plugin-manager
+  partial activate × 1 + reload 清 warning × 1。共 643 测试全绿
+
+> 实现 commit:见 git log feat(plugin): v5 Phase 2。
 
 ### Phase 3 — runtime gating 启用
 

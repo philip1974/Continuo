@@ -83,11 +83,24 @@ export type PromptFn = (
 ) => Promise<readonly PermissionKey[]>;
 
 export type AuthorizeResult =
-  | { ok: true }
+  | {
+      ok: true;
+      /** requested 中实际被授权的子集. */
+      granted: readonly PermissionKey[];
+      /** requested 中被拒的子集(可能为空 = 全授). */
+      denied: readonly PermissionKey[];
+    }
   | { ok: false; deniedPerms: readonly PermissionKey[] };
 
 /**
- * 检查 / 拉起授权流程。已 deny 任一 → 直接 fail 不 prompt;待决调 prompt 收用户决策。
+ * 检查 / 拉起授权流程。
+ *
+ * v5 Phase 2 改造:**支持部分授权**。
+ * - 全部 requested 都被拒 → ok=false(plugin 不激活,与 v4.7 行为一致)
+ * - 只要至少一个 granted → ok=true,granted+denied 列表如实暴露
+ * - 调用方据 denied.length>0 决定是否设 entry.warning(部分授权 badge)
+ *
+ * 待决项(既不 granted 也不 denied)调 prompt 收用户决策;已 denied 不再复 prompt。
  */
 export async function ensureAuthorized(
   pluginId: string,
@@ -95,30 +108,41 @@ export async function ensureAuthorized(
   store: PermissionStore,
   prompt: PromptFn,
 ): Promise<AuthorizeResult> {
-  if (requested.length === 0) return { ok: true };
+  if (requested.length === 0) {
+    return { ok: true, granted: [], denied: [] };
+  }
 
   const decisions = await store.get(pluginId);
-  const granted = new Set(
+  const grantedSet = new Set(
     decisions.filter((d) => d.granted).map((d) => d.permission),
   );
-  const denied = new Set(
+  const deniedSet = new Set(
     decisions.filter((d) => !d.granted).map((d) => d.permission),
   );
 
-  // 已 deny 任一 → 立即 fail(不 prompt 复授)
-  const blocked = requested.filter((p) => denied.has(p));
-  if (blocked.length > 0) return { ok: false, deniedPerms: blocked };
+  // 待决:既不在 granted 也不在 denied(尚未决策的项)
+  const pending = requested.filter(
+    (p) => !grantedSet.has(p) && !deniedSet.has(p),
+  );
 
-  const pending = requested.filter((p) => !granted.has(p));
-  if (pending.length === 0) return { ok: true };
+  if (pending.length > 0) {
+    const userGranted = await prompt(pluginId, pending);
+    const userGrantedSet = new Set(userGranted);
+    const newDeny = pending.filter((p) => !userGrantedSet.has(p));
 
-  const userGranted = await prompt(pluginId, pending);
-  const userGrantedSet = new Set(userGranted);
-  const newDeny = pending.filter((p) => !userGrantedSet.has(p));
+    if (userGranted.length > 0) await store.grant(pluginId, userGranted);
+    if (newDeny.length > 0) await store.deny(pluginId, newDeny);
 
-  if (userGranted.length > 0) await store.grant(pluginId, userGranted);
-  if (newDeny.length > 0) await store.deny(pluginId, newDeny);
+    for (const p of userGranted) grantedSet.add(p);
+    for (const p of newDeny) deniedSet.add(p);
+  }
 
-  if (newDeny.length > 0) return { ok: false, deniedPerms: newDeny };
-  return { ok: true };
+  const granted = requested.filter((p) => grantedSet.has(p));
+  const denied = requested.filter((p) => deniedSet.has(p));
+
+  // 全拒(无任何 granted)→ status=failed,触发 v4.7 [启用] retry 路径
+  if (granted.length === 0) {
+    return { ok: false, deniedPerms: denied };
+  }
+  return { ok: true, granted, denied };
 }

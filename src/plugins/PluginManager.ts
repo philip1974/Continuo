@@ -49,6 +49,8 @@ interface PluginEntry {
   status: Status;
   instance?: Plugin;
   error?: string;
+  /** v5 Phase 2:partial grant 时记 "部分授权:已授 X;未授 Y". */
+  warning?: string;
 }
 
 export interface PluginListItem {
@@ -56,6 +58,8 @@ export interface PluginListItem {
   readonly manifest: PluginManifest;
   readonly status: Status;
   readonly error?: string;
+  /** v5 Phase 2:partial grant 标记(plugin 已激活但部分权限未授). */
+  readonly warning?: string;
 }
 
 // ── PluginManager ──────────────────────────────────────
@@ -257,12 +261,17 @@ export class PluginManager {
       manifest: e.manifest,
       status: e.status,
       error: e.error,
+      warning: e.warning,
     }));
   }
 
   // ── 内部 ────────────────────────────────────────────
 
   private async activateEntry(entry: PluginEntry): Promise<void> {
+    // 先清前次的 error / warning,确保最终状态干净反映本次激活
+    entry.error = undefined;
+    entry.warning = undefined;
+
     const loaded = await loadPluginModule({
       moduleUrl: entry.dirInfo.moduleUrl,
       manifest: entry.manifest,
@@ -300,6 +309,10 @@ export class PluginManager {
         entry.error = `PERMISSION_DENIED: ${auth.deniedPerms.join(', ')}`;
         return;
       }
+      // v5 Phase 2:partial grant → 设 warning,plugin 仍激活
+      if (auth.denied.length > 0) {
+        entry.warning = `部分授权:已授 ${auth.granted.join(', ')};未授 ${auth.denied.join(', ')}`;
+      }
     }
 
     // PluginClass 是 abstract,但实际传进来的是子类构造函数
@@ -328,7 +341,8 @@ export class PluginManager {
 
     entry.instance = instance;
     entry.status = 'enabled';
-    entry.error = undefined; // 清前次失败遗留(retry FAILED 后必要)
+    // entry.error / warning 已在方法开头清(成功路径不再重复 reset 错误,
+    // warning 若 partial grant 已在权限段设了)
     this.activationOrder.push(entry.id);
   }
 }

@@ -313,6 +313,11 @@ function UserPluginsSection() {
                     {p.error}
                   </div>
                 )}
+                {p.warning && (
+                  <div className="mt-1 text-[10px] text-amber-400">
+                    ⚠ {p.warning}
+                  </div>
+                )}
               </div>
               <div className="flex shrink-0 items-center gap-1">
                 <Button
