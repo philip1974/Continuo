@@ -2,7 +2,7 @@
 
 > 关联 issue #14。从 v4.7 的 all-or-nothing 走向 partial-grant + runtime gating。
 >
-> **进度**:Phase 1 ✅ / Phase 2 ✅ / Phase 3 ✅ / Phase 4 ✅(局部)/ Phase 5 ⏳
+> **进度**:Phase 1 ✅ / Phase 2 ✅ / Phase 3 ✅ / Phase 4 ✅(局部)/ Phase 5 ✅
 
 ## 1. 目标 / 非目标
 
@@ -196,11 +196,24 @@ delete (globalThis as any).fetch;
 
 > 实现 commit:见 git log feat(plugin): v5 Phase 4。
 
-### Phase 5 — 验证 + 文档
+### Phase 5 — 验证 + 文档 ✅
 
-- 写 plugin 作者文档:`doc/plugin-permissions.md`
-- 录端到端验证(对应原 #14 全部 8 个 checkbox)
-- 关 #14
+- ✅ Plugin 作者文档 [`doc/12-plugin-permissions.md`](./12-plugin-permissions.md):
+  声明 manifest / app.* 用法 / try/catch PermissionError 模式 /
+  partial grant / FAILED 重试 / 当前 sandbox 已知限制 / 完整示例
+- ✅ #14 8 个 checkbox 对应实现:
+  1. SDK runtime API ✓ (`app.permission.check / granted`)
+  2. lmApp API gating ✓ (`app.fs/network/clipboard` 都接 ensurePerm)
+  3. PermissionError class ✓ (globalThis.lm 暴露)
+  4. ensureAuthorized partial grant ✓ (Phase 2)
+  5. UI partial badge ✓ (黄字 ⚠ warning)
+  6. sample plugin demo ✓ (v0.2.0 sample.read-tmp / sample.fetch-time)
+  7. PermissionPrompt 文案 ✓
+  8. PermissionEditorModal partial 状态 ✓ (Phase 1 已显示已授项)
+- ✅ 测试规模:622 → 653(+31 测试,跨 Phase 1-4)
+- ⏳ 端到端 dev/prod 实测验证(用户驱动)+ 关 #14
+
+> 实现 commit:见 git log feat(plugin): v5 Phase 5。
 
 ## 7. 测试策略
 
