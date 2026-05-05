@@ -26,12 +26,12 @@ captureLmApi();
 // v5 Phase 3 增 PermissionError,plugin 可 instanceof 区分权限错误与其它。
 // 后续若改 Vite plugin 注入 'lm' 模块,本块可移除。
 (globalThis as unknown as {
-  lm: {
+  co: {
     Plugin: typeof Plugin;
     React: typeof ReactNS;
     PermissionError: typeof PermissionError;
   };
-}).lm = {
+}).co = {
   Plugin,
   React: ReactNS,
   PermissionError,

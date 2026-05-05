@@ -21,6 +21,8 @@ interface InstallState {
   busy: string | null;
   /** 安装结果消息(per entry). */
   msgs: ReadonlyMap<string, string>;
+  /** 刚装成功但 PluginManager 还没扫到的 id(下次 LM 启动才入表). */
+  pending: ReadonlySet<string>;
 }
 
 /** 1s 轮询当前已装 plugin id 集合(同 PluginsTabContent 模式). */
@@ -45,6 +47,7 @@ export function MarketplaceTab() {
   const [install, setInstall] = useState<InstallState>({
     busy: null,
     msgs: new Map(),
+    pending: new Set(),
   });
 
   useEffect(() => {
@@ -70,10 +73,12 @@ export function MarketplaceTab() {
   const onInstall = async (entry: MarketplaceEntry) => {
     setInstall((prev) => ({ ...prev, busy: entry.id }));
     let msg: string;
+    let success = false;
     try {
       const r = await coApi.plugins.installFromGit(entryToGitUrl(entry));
+      success = r.ok;
       msg = r.ok
-        ? `✔ 已安装 ${r.data.name} v${r.data.version} — 重启 Continuo 后插件加载`
+        ? `✔ 已安装 ${r.data.name} v${r.data.version} — 重启 Continuo 后激活`
         : `✘ [${r.code}] ${r.message}`;
     } catch (err) {
       msg = `✘ ${err instanceof Error ? err.message : String(err)}`;
@@ -81,7 +86,9 @@ export function MarketplaceTab() {
     setInstall((prev) => {
       const nextMsgs = new Map(prev.msgs);
       nextMsgs.set(entry.id, msg);
-      return { busy: null, msgs: nextMsgs };
+      const nextPending = new Set(prev.pending);
+      if (success) nextPending.add(entry.id);
+      return { busy: null, msgs: nextMsgs, pending: nextPending };
     });
   };
 
@@ -131,7 +138,10 @@ export function MarketplaceTab() {
           <MarketplaceCard
             key={entry.id}
             entry={entry}
-            installed={installed.has(entry.id)}
+            installed={installed.has(entry.id) || install.pending.has(entry.id)}
+            pendingRestart={
+              install.pending.has(entry.id) && !installed.has(entry.id)
+            }
             installing={install.busy === entry.id}
             installDisabled={install.busy !== null && install.busy !== entry.id}
             message={install.msgs.get(entry.id) ?? null}
@@ -146,6 +156,8 @@ export function MarketplaceTab() {
 interface CardProps {
   entry: MarketplaceEntry;
   installed: boolean;
+  /** 已装但 PluginManager 还没扫到 → 提示需重启. */
+  pendingRestart: boolean;
   installing: boolean;
   installDisabled: boolean;
   message: string | null;
@@ -155,6 +167,7 @@ interface CardProps {
 function MarketplaceCard({
   entry,
   installed,
+  pendingRestart,
   installing,
   installDisabled,
   message,
@@ -182,8 +195,17 @@ function MarketplaceCard({
         </div>
         <div className="shrink-0">
           {installed ? (
-            <Button variant="ghost" size="sm" disabled title="已在第三方插件列表">
-              已安装
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled
+              title={
+                pendingRestart
+                  ? '磁盘已就位,重启 Continuo 后才会进 plugin manager'
+                  : '已在第三方插件列表'
+              }
+            >
+              {pendingRestart ? '已安装(待重启)' : '已安装'}
             </Button>
           ) : (
             <Button
