@@ -258,6 +258,20 @@ async function startMcpHost(): Promise<void> {
   }
 }
 
+/**
+ * stdio CLI proxy 路径:
+ *  - packaged app:`<resourcesPath>/continuo-mcp-stdio.mjs`(electron-builder
+ *    extraResources 拷过去)
+ *  - dev:`scripts/continuo-mcp-stdio.mjs`(项目根)
+ */
+function resolveStdioCliPath(): string {
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, 'continuo-mcp-stdio.mjs');
+  }
+  // dev:从 main 的 __dirname(out/main/)往上找项目根
+  return path.resolve(__dirname, '..', '..', 'scripts', 'continuo-mcp-stdio.mjs');
+}
+
 async function startMcpStdioServer(): Promise<void> {
   if (!mcpHost) {
     // eslint-disable-next-line no-console
@@ -277,8 +291,15 @@ async function startMcpStdioServer(): Promise<void> {
       tools: mcpHost.tools,
       serverInfo: mcpHost.serverInfo,
     });
+    const cliPath = resolveStdioCliPath();
     // eslint-disable-next-line no-console
     console.log(`[mcp-stdio] listening on ${mcpStdio.socketPath}`);
+    // 打印推荐的 claude mcp add 命令,用户复制即可一次配置永久使用
+    // eslint-disable-next-line no-console
+    console.log(
+      '[mcp-stdio] one-shot config (Claude Code):\n' +
+        `  claude mcp add --transport stdio continuo -- ${cliPath}`,
+    );
   } catch (err) {
     // eslint-disable-next-line no-console
     console.warn(
