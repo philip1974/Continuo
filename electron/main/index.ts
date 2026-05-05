@@ -6,9 +6,15 @@ import { registerIpc } from './ipc';
 import { PLUGINS_CHANNELS } from '../shared/plugins-channels';
 import { createMcpHost, type McpHost } from './services/mcp-host.service';
 import {
+  createStdioSocketServer,
+  type StdioSocketServer,
+} from './services/mcp-stdio-server.service';
+import {
   makeListSessionsTool,
   makeCreateSessionTool,
   makeSendInputTool,
+  makeSendTextTool,
+  makePressKeyTool,
   makeReadOutputTool,
   makeKillTool,
   type CreateSessionPtyInput,
@@ -167,7 +173,9 @@ app.on('open-url', (event, url) => {
 
 // Agent Terminal MCP host(P1):启动 HTTP server,把 token / url 通过 env
 // 注入到所有 PTY → 用户在 terminal 跑 claude / codex 时反连本机 host。
+// P4+ C 方案:同时启 stdio server(unix socket),Claude Code 走 stdio 配置一次永久使用。
 let mcpHost: McpHost | null = null;
+let mcpStdio: StdioSocketServer | null = null;
 
 // MCP tool 共享的 PTY create 入口:复用 IPC 端的 makeCreateHandler 工厂,
 // 包一层 lazy mainWindow 查询(tool 调用时窗口必在,但 host 启动时还没创建)。
@@ -213,6 +221,14 @@ async function startMcpHost(): Promise<void> {
           has: (id) => termService.has(id),
           write: (id, data) => termService.write(id, data),
         }),
+        makeSendTextTool({
+          has: (id) => termService.has(id),
+          write: (id, data) => termService.write(id, data),
+        }),
+        makePressKeyTool({
+          has: (id) => termService.has(id),
+          write: (id, data) => termService.write(id, data),
+        }),
         makeReadOutputTool({
           read: (id, opts) => terminalBuffer.read(id, opts),
         }),
@@ -242,11 +258,42 @@ async function startMcpHost(): Promise<void> {
   }
 }
 
+async function startMcpStdioServer(): Promise<void> {
+  if (!mcpHost) {
+    // eslint-disable-next-line no-console
+    console.warn('[mcp-stdio] http host not started, skipping stdio');
+    return;
+  }
+  // 跨平台 socket 路径:macOS / Linux 走 userData/mcp.sock;Windows 暂不支持
+  if (process.platform === 'win32') {
+    // eslint-disable-next-line no-console
+    console.warn('[mcp-stdio] windows not supported yet');
+    return;
+  }
+  const socketPath = path.join(app.getPath('userData'), 'mcp.sock');
+  try {
+    mcpStdio = await createStdioSocketServer({
+      socketPath,
+      tools: mcpHost.tools,
+      serverInfo: mcpHost.serverInfo,
+    });
+    // eslint-disable-next-line no-console
+    console.log(`[mcp-stdio] listening on ${mcpStdio.socketPath}`);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      '[mcp-stdio] failed to start, stdio MCP transport unavailable',
+      err,
+    );
+  }
+}
+
 app.whenReady().then(async () => {
   registerIpc();
   // 在 createMainWindow 之前启 host,确保 renderer autoSpawn 的第一个 PTY
   // env 已含 MCP url / token。
   await startMcpHost();
+  await startMcpStdioServer();
   const win = createMainWindow();
 
   // 冷启 + open-url 顺序处理:可能在 mainwindow 未就绪前已收 url
@@ -280,6 +327,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
-  // best-effort 关 MCP host(SSE 客户端、socket 一并断)
+  // best-effort 关 MCP host + stdio socket(连接 / 文件一并清)
   void mcpHost?.close().catch(() => {});
+  void mcpStdio?.close().catch(() => {});
 });

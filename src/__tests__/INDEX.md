@@ -14,6 +14,10 @@
 
 - [`create-session.spec.ts`](./agent-terminal-mcp-create-session/create-session.spec.ts)
 
+## [agent-terminal-mcp-dispatcher (Agent Terminal MCP Phase 4+)](./agent-terminal-mcp-dispatcher/README.md)
+
+- [`dispatcher.spec.ts`](./agent-terminal-mcp-dispatcher/dispatcher.spec.ts)
+
 ## [agent-terminal-mcp-host (Agent Terminal MCP Phase 1)](./agent-terminal-mcp-host/README.md)
 
 - [`host.spec.ts`](./agent-terminal-mcp-host/host.spec.ts)
@@ -26,6 +30,10 @@
 
 - [`list-sessions.spec.ts`](./agent-terminal-mcp-list-sessions/list-sessions.spec.ts)
 
+## [agent-terminal-mcp-press-key (Agent Terminal MCP P4+)](./agent-terminal-mcp-press-key/README.md)
+
+- [`press-key.spec.ts`](./agent-terminal-mcp-press-key/press-key.spec.ts)
+
 ## [agent-terminal-mcp-read-output (Agent Terminal MCP Phase 3)](./agent-terminal-mcp-read-output/README.md)
 
 - [`read-output.spec.ts`](./agent-terminal-mcp-read-output/read-output.spec.ts)
@@ -33,6 +41,14 @@
 ## [agent-terminal-mcp-send-input (Agent Terminal MCP Phase 3)](./agent-terminal-mcp-send-input/README.md)
 
 - [`send-input.spec.ts`](./agent-terminal-mcp-send-input/send-input.spec.ts)
+
+## [agent-terminal-mcp-send-text (Agent Terminal MCP P4+)](./agent-terminal-mcp-send-text/README.md)
+
+- [`send-text.spec.ts`](./agent-terminal-mcp-send-text/send-text.spec.ts)
+
+## [agent-terminal-mcp-stdio-framing (Agent Terminal MCP Stdio Transport)](./agent-terminal-mcp-stdio-framing/README.md)
+
+- [`framing.spec.ts`](./agent-terminal-mcp-stdio-framing/framing.spec.ts)
 
 ## [动画落点契约 (M3)](./animation-contracts/README.md)
 
