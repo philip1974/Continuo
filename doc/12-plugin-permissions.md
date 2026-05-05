@@ -120,15 +120,16 @@ v5 Phase 4 的入境清洗只覆盖 `globalThis.fetch` + `navigator.clipboard`,
 
 **还能绕开的路**:
 
-- `window.api.fs.*` 直接调 — LM UI 自身大量用 `window.api.*`,refactor
-  到内部 helper 工程量大,本次未做。**不要写**这种代码,marketplace
-  review 会拒
+- `window.__lmApi.fs.*` 直接调 — preload 用 contextBridge 暴露的属性
+  是 non-configurable,真删不掉。LM UI 走自己 cache 不需要再访问该
+  名字,plugin 强行用就是显式破坏 sandbox 协议,marketplace review 拒
 - 把代码丢到 `<iframe>` / `Worker` / `eval` 里再调 — 同 realm 同享
   globals(本计划见 11.§3 选项 C 留给 v6+)
 
 PROD 模式下 plugin 写 `globalThis.fetch(...)` 会得到 `TypeError: fetch
-is not a function`,plugin 作者一旦在 PROD 测试就会发现并改用
-`this.app.network.fetch`。
+is not a function`;`window.api.fs.*` 直接 `Cannot read properties of
+undefined`。plugin 作者一旦在 PROD 测试就会发现,改用 `this.app.network.fetch`
+/ `this.app.fs.readFile` 等正路。
 
 ## 7. 完整示例
 

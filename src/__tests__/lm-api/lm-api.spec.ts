@@ -41,8 +41,9 @@ describe('lmApi Proxy fallback', () => {
 
   it('未 capture + window.api 没 → 访问抛错', () => {
     delete (window as { api?: unknown }).api;
+    delete (window as { __lmApi?: unknown }).__lmApi;
     expect(() => (lmApi as unknown as { fs: unknown }).fs).toThrow(
-      /window.api 未注入/,
+      /未注入/,
     );
   });
 });
@@ -67,14 +68,47 @@ describe('captureLmApi + lmApi 缓存', () => {
     expect((lmApi.fs as unknown as { mark: string }).mark).toBe('original');
   });
 
-  it('capture 时 window.api 缺 → 不抛,只 warn', () => {
+  it('capture 时 window.api/__lmApi 都缺 → 不抛,只 warn', () => {
     delete (window as { api?: unknown }).api;
+    delete (window as { __lmApi?: unknown }).__lmApi;
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     expect(() => captureLmApi()).not.toThrow();
     expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining('[lm-api] window.api 未注入'),
+      expect.stringContaining('[lm-api] window.__lmApi/api 未注入'),
     );
     warn.mockRestore();
+  });
+});
+
+describe('Phase 4.B refined:优先 __lmApi(PROD 名)', () => {
+  it('window.__lmApi 存在 → fallback 优先取它,不取 window.api', () => {
+    const lmApiObj = { fs: { tag: '__lmApi' } };
+    Object.defineProperty(window, '__lmApi', {
+      value: lmApiObj,
+      writable: true,
+      configurable: true,
+    });
+    Object.defineProperty(window, 'api', {
+      value: { fs: { tag: 'old-api' } },
+      writable: true,
+      configurable: true,
+    });
+
+    expect((lmApi.fs as unknown as { tag: string }).tag).toBe('__lmApi');
+
+    delete (window as { __lmApi?: unknown }).__lmApi;
+  });
+
+  it('captureLmApi 优先吃 __lmApi(PROD 路径)', () => {
+    Object.defineProperty(window, '__lmApi', {
+      value: { fs: { tag: 'prod' } },
+      writable: true,
+      configurable: true,
+    });
+    captureLmApi();
+    expect((lmApi.fs as unknown as { tag: string }).tag).toBe('prod');
+
+    delete (window as { __lmApi?: unknown }).__lmApi;
   });
 });
 

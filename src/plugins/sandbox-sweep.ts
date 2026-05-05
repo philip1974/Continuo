@@ -80,14 +80,14 @@ export function sandboxSweep(): void {
   } catch (err) {
     console.warn('[sandbox-sweep] clipboard sweep 失败', err);
   }
+  // window.api / globalThis.api:preload 改用 __lmApi 后正常 PROD 不存在,
+  // 这两条主要防御 dev/手挂 / 老 preload 残留场景。
   try {
     Object.defineProperty(globalThis, 'api', {
       value: undefined,
       writable: true,
       configurable: true,
     });
-    // window.api 也要(Electron renderer window 通常 === globalThis,
-    // 但为防 contextBridge 单独挂的情况,显式两边都涂)
     if (typeof window !== 'undefined' && (window as { api?: unknown }).api) {
       Object.defineProperty(window, 'api', {
         value: undefined,
@@ -97,5 +97,16 @@ export function sandboxSweep(): void {
     }
   } catch (err) {
     console.warn('[sandbox-sweep] window.api sweep 失败', err);
+  }
+  // window.__lmApi:contextBridge 设为 non-configurable,defineProperty 必失败。
+  // 仍 try 以防未来 Electron 改默认值;失败静默(已知限制)。
+  try {
+    Object.defineProperty(globalThis, '__lmApi', {
+      value: undefined,
+      writable: true,
+      configurable: true,
+    });
+  } catch {
+    /* 已知:contextBridge non-configurable,见 doc/11 Phase 4.B 残留 */
   }
 }

@@ -15,17 +15,28 @@
 
 import type { LayoutMotionApi } from '../../electron/preload';
 
+interface WindowWithApi {
+  api?: LayoutMotionApi;
+  __lmApi?: LayoutMotionApi;
+}
+
+function readLiveApi(): LayoutMotionApi | undefined {
+  const w = (globalThis as unknown as { window?: WindowWithApi }).window;
+  // PROD:preload 暴露 __lmApi。dev / 测试可能 mock window.api。
+  return w?.__lmApi ?? w?.api;
+}
+
 let _cached: LayoutMotionApi | null = null;
 
 /**
- * 把当前 window.api 缓存下来。**main.tsx 启动时必须调一次,sandboxSweep 之前**。
- * 缺 window.api(jsdom 测试常见)→ warn 不抛,后续 lmApi 调用才报。
+ * 把当前 window.__lmApi(PROD)或 window.api(测试 mock)缓存下来。
+ * **main.tsx 启动时必须调一次,sandboxSweep 之前**。
+ * 缺 → warn 不抛,后续 lmApi 调用才报。
  */
 export function captureLmApi(): void {
-  const api = (globalThis as unknown as { window?: { api?: LayoutMotionApi } })
-    .window?.api;
+  const api = readLiveApi();
   if (!api) {
-    console.warn('[lm-api] window.api 未注入,LM UI 后续调用会抛');
+    console.warn('[lm-api] window.__lmApi/api 未注入,LM UI 后续调用会抛');
     return;
   }
   _cached = api;
@@ -37,20 +48,18 @@ export function _resetLmApiForTest(): void {
 }
 
 /**
- * LM UI 唯一 IPC 入口。源文件用 `lmApi.fs.readFile(...)` 取代 `window.api.fs.readFile(...)`。
+ * LM UI 唯一 IPC 入口。源文件用 `lmApi.fs.readFile(...)`。
  *
- * Proxy 转发:已 capture 走缓存,否则 fallback 到 globalThis(测试可通过 mock window.api 注入)。
+ * Proxy 转发:已 capture 走缓存,否则 fallback 到 globalThis
+ * (测试可通过 mock window.api 或 window.__lmApi 注入)。
  */
 export const lmApi = new Proxy({} as LayoutMotionApi, {
   get(_target, prop) {
     if (_cached) return _cached[prop as keyof LayoutMotionApi];
-    // 未 capture:回看 globalThis(测试 mock 的窗口)
-    const live = (
-      globalThis as unknown as { window?: { api?: LayoutMotionApi } }
-    ).window?.api;
+    const live = readLiveApi();
     if (!live) {
       throw new Error(
-        `[lm-api] 访问 lmApi.${String(prop)} 时 window.api 未注入,且未 captureLmApi()`,
+        `[lm-api] 访问 lmApi.${String(prop)} 时 window.__lmApi/api 未注入,且未 captureLmApi()`,
       );
     }
     return live[prop as keyof LayoutMotionApi];

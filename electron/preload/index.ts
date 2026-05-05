@@ -177,4 +177,8 @@ const api = {
 
 export type LayoutMotionApi = typeof api;
 
-contextBridge.exposeInMainWorld('api', api);
+// v5 Phase 4.B (refined):暴露名字改 `__lmApi` 而非 `api`。
+// contextBridge 设置的属性 non-configurable 删不掉,但至少
+// `window.api` 不存在,plugin 写 `window.api.fs.*` 直接 TypeError。
+// 仍可通过 `window.__lmApi.*` 绕,见 doc/11 §Phase 4.B 残留说明。
+contextBridge.exposeInMainWorld('__lmApi', api);

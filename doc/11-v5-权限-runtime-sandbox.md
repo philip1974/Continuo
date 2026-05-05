@@ -195,6 +195,16 @@ delete (globalThis as any).fetch;
 也涂掉 `globalThis.api` + `window.api`。LM UI 走 lmApi(Proxy 转发缓存),
 plugin 直接 `window.api.fs.*` 抛 TypeError。详见 `src/__tests__/lm-api/`。
 
+**Phase 4.B refined**:preload 暴露名字从 `api` 改为 `__lmApi`,因
+`contextBridge.exposeInMainWorld` 设的属性 **non-configurable**,我们
+`Object.defineProperty(window, 'api', { value: undefined })` 在 catch 里
+失败被吃,sweep 实际没生效。改名后 `window.api` 根本不存在,plugin
+写 `window.api.fs.*` 直接 `Cannot read properties of undefined`。
+
+**已知残留**:`window.__lmApi` 仍是 contextBridge 暴露(non-configurable,
+真删不掉)。plugin 强行 `window.__lmApi.fs.*` 仍能绕。代码 review
+一眼能看出意图,marketplace 拒。彻底隔离需 v6+ Worker / iframe(选项 C)。
+
 > 实现 commit:见 git log feat(plugin): v5 Phase 4。
 
 ### Phase 5 — 验证 + 文档 ✅
