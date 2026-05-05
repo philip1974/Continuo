@@ -1,20 +1,51 @@
-// 插件商店 SettingTab(Phase 1:仅浏览,无安装)。
+// 插件商店 SettingTab(Phase 1+2:浏览 + 安装)。
 //
 // 启动时拉 index.json,卡片列表展示。verified 徽章、tags、作者链接外站。
-// Phase 2 接入 install,Phase 3 加更新检查 + 角标。
+// 已装的卡片显 "已安装" disabled;未装显 [安装] primary,点击调
+// installFromGit(走 v4.5 已有 IPC)。安装成功 toast 在卡片下方提示。
 
 import { useEffect, useState } from 'react';
-import { Spinner } from '@/design';
+import { Button, Spinner } from '@/design';
+import { coApi } from '@/lib/co-api';
+import { getUserPluginManager } from '@/plugins/co-plugin-manager';
+import { entryToGitUrl, type MarketplaceEntry } from './types';
 import { fetchMarketplaceIndex } from './fetcher';
-import type { MarketplaceEntry } from './types';
 
 type LoadState =
   | { kind: 'loading' }
   | { kind: 'ok'; entries: readonly MarketplaceEntry[] }
   | { kind: 'error'; message: string };
 
+interface InstallState {
+  /** 正在装的 entry id. */
+  busy: string | null;
+  /** 安装结果消息(per entry). */
+  msgs: ReadonlyMap<string, string>;
+}
+
+/** 1s 轮询当前已装 plugin id 集合(同 PluginsTabContent 模式). */
+function useInstalledIds(): ReadonlySet<string> {
+  const [snap, setSnap] = useState<ReadonlySet<string>>(() => readIds());
+  useEffect(() => {
+    const t = setInterval(() => setSnap(readIds()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  return snap;
+}
+
+function readIds(): ReadonlySet<string> {
+  const m = getUserPluginManager();
+  if (!m) return new Set();
+  return new Set(m.listAll().map((p) => p.id));
+}
+
 export function MarketplaceTab() {
   const [state, setState] = useState<LoadState>({ kind: 'loading' });
+  const installed = useInstalledIds();
+  const [install, setInstall] = useState<InstallState>({
+    busy: null,
+    msgs: new Map(),
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -35,6 +66,24 @@ export function MarketplaceTab() {
       cancelled = true;
     };
   }, []);
+
+  const onInstall = async (entry: MarketplaceEntry) => {
+    setInstall((prev) => ({ ...prev, busy: entry.id }));
+    let msg: string;
+    try {
+      const r = await coApi.plugins.installFromGit(entryToGitUrl(entry));
+      msg = r.ok
+        ? `✔ 已安装 ${r.data.name} v${r.data.version} — 重启 Continuo 后插件加载`
+        : `✘ [${r.code}] ${r.message}`;
+    } catch (err) {
+      msg = `✘ ${err instanceof Error ? err.message : String(err)}`;
+    }
+    setInstall((prev) => {
+      const nextMsgs = new Map(prev.msgs);
+      nextMsgs.set(entry.id, msg);
+      return { busy: null, msgs: nextMsgs };
+    });
+  };
 
   if (state.kind === 'loading') {
     return (
@@ -75,34 +124,81 @@ export function MarketplaceTab() {
     <div className="space-y-3">
       <p className="text-[10px] text-fg-dim">
         共 {state.entries.length} 个插件 · 索引 1 小时缓存。
-        Phase 2 起可直接安装,当前点 repo 链接外站手动 git URL 安装。
+        安装后需重启 Continuo 才会出现在"插件" tab。
       </p>
       <div className="space-y-2">
         {state.entries.map((entry) => (
-          <MarketplaceCard key={entry.id} entry={entry} />
+          <MarketplaceCard
+            key={entry.id}
+            entry={entry}
+            installed={installed.has(entry.id)}
+            installing={install.busy === entry.id}
+            installDisabled={install.busy !== null && install.busy !== entry.id}
+            message={install.msgs.get(entry.id) ?? null}
+            onInstall={() => void onInstall(entry)}
+          />
         ))}
       </div>
     </div>
   );
 }
 
-function MarketplaceCard({ entry }: { entry: MarketplaceEntry }) {
+interface CardProps {
+  entry: MarketplaceEntry;
+  installed: boolean;
+  installing: boolean;
+  installDisabled: boolean;
+  message: string | null;
+  onInstall: () => void;
+}
+
+function MarketplaceCard({
+  entry,
+  installed,
+  installing,
+  installDisabled,
+  message,
+  onInstall,
+}: CardProps) {
   return (
     <div className="rounded border border-line bg-panel-soft/40 px-3 py-2">
-      <div className="flex items-baseline gap-2">
-        <span className="font-medium text-fg">{entry.name}</span>
-        {entry.verified && (
-          <span
-            className="rounded bg-accent/20 px-1.5 py-0.5 text-[10px] text-accent"
-            title="官方 review 过"
-          >
-            ✓ verified
-          </span>
-        )}
-        <code className="text-[10px] text-fg-dim">{entry.id}</code>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline gap-2">
+            <span className="font-medium text-fg">{entry.name}</span>
+            {entry.verified && (
+              <span
+                className="rounded bg-accent/20 px-1.5 py-0.5 text-[10px] text-accent"
+                title="官方 review 过"
+              >
+                ✓ verified
+              </span>
+            )}
+            <code className="text-[10px] text-fg-dim">{entry.id}</code>
+          </div>
+          {entry.description && (
+            <p className="mt-0.5 text-xs text-fg-dim">{entry.description}</p>
+          )}
+        </div>
+        <div className="shrink-0">
+          {installed ? (
+            <Button variant="ghost" size="sm" disabled title="已在第三方插件列表">
+              已安装
+            </Button>
+          ) : (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={onInstall}
+              disabled={installing || installDisabled}
+            >
+              {installing ? '安装中…' : '安装'}
+            </Button>
+          )}
+        </div>
       </div>
-      {entry.description && (
-        <p className="mt-0.5 text-xs text-fg-dim">{entry.description}</p>
+      {message && (
+        <div className="mt-1 text-[10px] text-fg-muted">{message}</div>
       )}
       <div className="mt-1.5 flex items-center justify-between gap-2 text-[10px] text-fg-dim">
         <div className="flex items-center gap-2">
