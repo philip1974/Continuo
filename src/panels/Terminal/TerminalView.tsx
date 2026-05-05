@@ -13,7 +13,7 @@ export function TerminalView({ termId }: TerminalViewProps) {
   return (
     <div
       ref={containerRef}
-      className="h-full w-full bg-[#020617] p-1"
+      className="h-full w-full bg-canvas p-1"
       // 防 ResizeObserver 接收到 0×0 → fit 抛错
       style={{ minHeight: 0 }}
     />
