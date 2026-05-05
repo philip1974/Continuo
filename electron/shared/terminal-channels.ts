@@ -9,11 +9,15 @@ export const TERMINAL_CHANNELS = {
   INTERRUPT: 'terminal:interrupt',
   KILL: 'terminal:kill',
   DESTROY: 'terminal:destroy',
+  // P1 Agent Terminal MCP:session metadata 真相源在 main
+  LIST_SESSIONS: 'terminal:list_sessions',
+  REMOVE: 'terminal:remove',
   // event(main → renderer,webContents.send)
   DATA: 'terminal:data',
   EXIT: 'terminal:exit',
   OVERFLOW: 'terminal:overflow',
   OVERFLOW_RECOVERED: 'terminal:overflow-recovered',
+  SESSIONS_CHANGED: 'terminal:sessions_changed',
 } as const;
 
 export type TerminalChannel =

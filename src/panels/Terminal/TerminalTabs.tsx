@@ -15,7 +15,7 @@ export function TerminalTabs({
 }: TerminalTabsProps) {
   const sessions = useTerminalStore((s) => s.sessions);
   const activeId = useTerminalStore((s) => s.activeId);
-  const switchSession = useTerminalStore((s) => s.switchSession);
+  const setActive = useTerminalStore((s) => s.setActive);
 
   return (
     <div className="flex h-7 shrink-0 items-stretch border-b border-line bg-panel">
@@ -29,7 +29,7 @@ export function TerminalTabs({
                 active={tab.id === activeId}
                 muted={isExited}
                 title={isExited ? `${tab.title}(已退出 code=${tab.exitCode})` : tab.title}
-                onSelect={() => switchSession(tab.id)}
+                onSelect={() => setActive(tab.id)}
                 onClose={() => onCloseSession(tab.id)}
               >
                 {tab.title}

@@ -24,10 +24,13 @@ describe('TERMINAL_CHANNELS', () => {
     expect(TERMINAL_CHANNELS.INTERRUPT).toBe('terminal:interrupt');
     expect(TERMINAL_CHANNELS.KILL).toBe('terminal:kill');
     expect(TERMINAL_CHANNELS.DESTROY).toBe('terminal:destroy');
+    expect(TERMINAL_CHANNELS.LIST_SESSIONS).toBe('terminal:list_sessions');
+    expect(TERMINAL_CHANNELS.REMOVE).toBe('terminal:remove');
     expect(TERMINAL_CHANNELS.DATA).toBe('terminal:data');
     expect(TERMINAL_CHANNELS.EXIT).toBe('terminal:exit');
     expect(TERMINAL_CHANNELS.OVERFLOW).toBe('terminal:overflow');
     expect(TERMINAL_CHANNELS.OVERFLOW_RECOVERED).toBe('terminal:overflow-recovered');
+    expect(TERMINAL_CHANNELS.SESSIONS_CHANGED).toBe('terminal:sessions_changed');
   });
 
   it('全部前缀 terminal:', () => {
@@ -174,11 +177,23 @@ describe('makeCreateHandler', () => {
     safeTruncate: vi.fn(),
     isInPlaceUpdate: vi.fn(),
   });
+  const makeSessionStore = () => ({
+    add: vi.fn(),
+    get: vi.fn(),
+    getAll: vi.fn(() => []),
+    remove: vi.fn(),
+    setExited: vi.fn(),
+    nextDefaultTitle: vi.fn(() => 'Terminal 1'),
+    subscribe: vi.fn(() => () => {}),
+    _reset: vi.fn(),
+  });
 
   it('shell 缺失 → 用 getDefaultShell 结果', () => {
     const service = makeService();
+    const sessionStore = makeSessionStore();
     const handler = makeCreateHandler({
       service: service as never,
+      sessionStore: sessionStore as never,
       generateId: () => 'fixed-id',
       resolveCwd: () => '/work',
     });
@@ -193,20 +208,25 @@ describe('makeCreateHandler', () => {
 
   it('shell 不在白名单 → 抛 TERMINAL_FORBIDDEN_SHELL', () => {
     const service = makeService();
+    const sessionStore = makeSessionStore();
     const handler = makeCreateHandler({
       service: service as never,
+      sessionStore: sessionStore as never,
       generateId: () => 'x',
     });
     expect(() =>
       handler({ shell: '/tmp/evil-shell' }, fakeWin),
     ).toThrowError(/forbidden|allowlist/i);
     expect(service.createTerminal).not.toHaveBeenCalled();
+    expect(sessionStore.add).not.toHaveBeenCalled();
   });
 
   it('args / cwd / env 透传到 service', () => {
     const service = makeService();
+    const sessionStore = makeSessionStore();
     const handler = makeCreateHandler({
       service: service as never,
+      sessionStore: sessionStore as never,
       generateId: () => 'x',
       resolveCwd: (c) => c ?? '/default',
     });
@@ -218,5 +238,181 @@ describe('makeCreateHandler', () => {
     expect(call[3]).toEqual(['-l']);
     expect(call[4]).toBe('/proj');
     expect(call[5]).toEqual({ K: 'V' });
+  });
+
+  // ── P1 metadata 入 sessions service ────────────────────────
+
+  it('成功创建 → sessionStore.add 入 metadata', () => {
+    const service = makeService();
+    const sessionStore = makeSessionStore();
+    const handler = makeCreateHandler({
+      service: service as never,
+      sessionStore: sessionStore as never,
+      generateId: () => 'term-x',
+      resolveCwd: () => '/work',
+    });
+    handler({}, fakeWin);
+    expect(sessionStore.add).toHaveBeenCalledOnce();
+    expect(sessionStore.add.mock.calls[0]![0]).toMatchObject({
+      id: 'term-x',
+      title: 'Terminal 1',
+      cwd: '/work',
+      originHint: 'user',
+    });
+  });
+
+  it('input.name 缺省 → 调 nextDefaultTitle', () => {
+    const service = makeService();
+    const sessionStore = makeSessionStore();
+    const handler = makeCreateHandler({
+      service: service as never,
+      sessionStore: sessionStore as never,
+      generateId: () => 'x',
+    });
+    handler({}, fakeWin);
+    expect(sessionStore.nextDefaultTitle).toHaveBeenCalledOnce();
+  });
+
+  it('input.name 给值 → 直接用,不调 nextDefaultTitle', () => {
+    const service = makeService();
+    const sessionStore = makeSessionStore();
+    const handler = makeCreateHandler({
+      service: service as never,
+      sessionStore: sessionStore as never,
+      generateId: () => 'x',
+    });
+    handler({ name: 'My Terminal' }, fakeWin);
+    expect(sessionStore.nextDefaultTitle).not.toHaveBeenCalled();
+    expect(sessionStore.add.mock.calls[0]![0].title).toBe('My Terminal');
+  });
+
+  it('originHint / agentLabel 透传(P2 MCP create_session 用)', () => {
+    const service = makeService();
+    const sessionStore = makeSessionStore();
+    const handler = makeCreateHandler({
+      service: service as never,
+      sessionStore: sessionStore as never,
+      generateId: () => 'x',
+    });
+    handler(
+      { originHint: 'agent', agentLabel: 'codex', name: 'codex' },
+      fakeWin,
+    );
+    expect(sessionStore.add.mock.calls[0]![0]).toMatchObject({
+      originHint: 'agent',
+      agentLabel: 'codex',
+      title: 'codex',
+    });
+  });
+
+  it('originHint 缺省默认 user', () => {
+    const service = makeService();
+    const sessionStore = makeSessionStore();
+    const handler = makeCreateHandler({
+      service: service as never,
+      sessionStore: sessionStore as never,
+      generateId: () => 'x',
+    });
+    handler({}, fakeWin);
+    expect(sessionStore.add.mock.calls[0]![0].originHint).toBe('user');
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// makeListSessionsHandler / makeRemoveHandler(P1 新增)
+// ────────────────────────────────────────────────────────────
+
+describe('makeListSessionsHandler', () => {
+  it('调 sessionStore.getAll 返回 { sessions }', async () => {
+    const fakeSessions = [
+      { id: 'a', title: 'A', cwd: '/', originHint: 'user' as const, createdAt: 1, exitCode: null },
+    ];
+    const sessionStore = {
+      add: vi.fn(),
+      get: vi.fn(),
+      getAll: vi.fn(() => fakeSessions),
+      remove: vi.fn(),
+      setExited: vi.fn(),
+      nextDefaultTitle: vi.fn(),
+      subscribe: vi.fn(),
+      _reset: vi.fn(),
+    };
+    const { makeListSessionsHandler } = await import(
+      '../../../electron/main/ipc/terminal.ipc'
+    );
+    const handler = makeListSessionsHandler({ sessionStore: sessionStore as never });
+    const r = handler();
+    expect(r).toEqual({ sessions: fakeSessions });
+    expect(sessionStore.getAll).toHaveBeenCalledOnce();
+  });
+});
+
+describe('makeRemoveHandler', () => {
+  it('立即删 metadata + 异步 kill PTY(若存在)', async () => {
+    const service = {
+      createTerminal: vi.fn(),
+      has: vi.fn(() => true),
+      write: vi.fn(),
+      resize: vi.fn(),
+      interrupt: vi.fn(),
+      kill: vi.fn(),
+      cleanupAll: vi.fn(),
+      safeTruncate: vi.fn(),
+      isInPlaceUpdate: vi.fn(),
+    };
+    const sessionStore = {
+      add: vi.fn(),
+      get: vi.fn(),
+      getAll: vi.fn(() => []),
+      remove: vi.fn(),
+      setExited: vi.fn(),
+      nextDefaultTitle: vi.fn(),
+      subscribe: vi.fn(),
+      _reset: vi.fn(),
+    };
+    const { makeRemoveHandler } = await import(
+      '../../../electron/main/ipc/terminal.ipc'
+    );
+    const handler = makeRemoveHandler({
+      service: service as never,
+      sessionStore: sessionStore as never,
+    });
+    handler({ id: 'term-1' });
+    expect(sessionStore.remove).toHaveBeenCalledWith('term-1');
+    expect(service.kill).toHaveBeenCalledWith('term-1');
+  });
+
+  it('PTY 不存在(已 exit)→ 删 metadata 不再调 kill', async () => {
+    const service = {
+      createTerminal: vi.fn(),
+      has: vi.fn(() => false),
+      write: vi.fn(),
+      resize: vi.fn(),
+      interrupt: vi.fn(),
+      kill: vi.fn(),
+      cleanupAll: vi.fn(),
+      safeTruncate: vi.fn(),
+      isInPlaceUpdate: vi.fn(),
+    };
+    const sessionStore = {
+      add: vi.fn(),
+      get: vi.fn(),
+      getAll: vi.fn(() => []),
+      remove: vi.fn(),
+      setExited: vi.fn(),
+      nextDefaultTitle: vi.fn(),
+      subscribe: vi.fn(),
+      _reset: vi.fn(),
+    };
+    const { makeRemoveHandler } = await import(
+      '../../../electron/main/ipc/terminal.ipc'
+    );
+    const handler = makeRemoveHandler({
+      service: service as never,
+      sessionStore: sessionStore as never,
+    });
+    handler({ id: 'term-dead' });
+    expect(sessionStore.remove).toHaveBeenCalledWith('term-dead');
+    expect(service.kill).not.toHaveBeenCalled();
   });
 });

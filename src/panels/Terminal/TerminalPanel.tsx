@@ -1,10 +1,19 @@
-// Terminal 主容器(M-Terminal Step T5)。
+// Terminal 主容器(M-Terminal Step T5 + Agent Terminal MCP P1)。
 // 顶部 TerminalTabs(切换/新建/关闭)+ 主体多个 TerminalView(display:none/flex 切换,
 // 不销毁 xterm 实例,scrollback 与滚动位置保留)。
-// 首次 mount 自动 spawn 一个 session;PTY exit 事件标记 exitCode 但不自动关 tab。
+//
+// P1 改动:sessions 真相源搬到 main。本组件:
+//   1. mount 调 listSessions 拉初始 snapshot
+//   2. 订阅 onSessionsChanged 持续接收 snapshot → store.replaceSnapshot
+//   3. handleNew → coApi.terminal.create + setActive 新 id
+//   4. handleClose → coApi.terminal.remove(等价 kill + 删 metadata)
+//   5. snapshot 仍空时自动 spawn 一个(用 module-level flag 防 StrictMode 双 spawn)
 
 import { useCallback, useEffect } from 'react';
-import { useTerminalStore } from '@/stores/terminal.store';
+import {
+  useTerminalStore,
+  type TerminalSession,
+} from '@/stores/terminal.store';
 import { TerminalTabs } from './TerminalTabs';
 import { TerminalView } from './TerminalView';
 import { useWorkspaceStore } from '@/stores/workspace.store';
@@ -20,11 +29,9 @@ let __terminalAutoSpawned = false;
 export function TerminalPanel() {
   const sessions = useTerminalStore((s) => s.sessions);
   const activeId = useTerminalStore((s) => s.activeId);
-  const addSession = useTerminalStore((s) => s.addSession);
-  const removeSession = useTerminalStore((s) => s.removeSession);
-  const setExited = useTerminalStore((s) => s.setExited);
+  const replaceSnapshot = useTerminalStore((s) => s.replaceSnapshot);
+  const setActive = useTerminalStore((s) => s.setActive);
 
-  // 默认 cwd:workspace root,无则系统 home(IPC 缺省也会用 homedir)
   const workspaceRoot = useWorkspaceStore((s) => s.root);
 
   const handleNew = useCallback(async () => {
@@ -37,29 +44,35 @@ export function TerminalPanel() {
       alert(`新建终端失败:[${r.code}] ${r.message}`);
       return;
     }
-    const idx = useTerminalStore.getState().sessions.length + 1;
-    addSession({ id: r.data.id, title: `Terminal ${idx}` });
-  }, [addSession, workspaceRoot]);
+    // sessions snapshot 由 main 推送;这里只更新 active 切到新 session
+    setActive(r.data.id);
+  }, [setActive, workspaceRoot]);
 
-  const handleClose = useCallback(
-    (id: string) => {
-      // 主进程优雅 kill(3s grace period);renderer 立即从 store 移除
-      void coApi.terminal.kill(id);
-      removeSession(id);
-    },
-    [removeSession],
-  );
+  const handleClose = useCallback((id: string) => {
+    // remove = 立刻删 metadata + 异步 kill PTY(3s grace period)
+    void coApi.terminal.remove(id);
+  }, []);
 
-  // 订阅 PTY exit 事件 → 标记 exitCode(tab 显示"已退出";不自动关)
+  // 拉初始 snapshot + 订阅持续推送
   useEffect(() => {
-    const unsub = coApi.terminal.onExit((id, payload) => {
-      const code = payload.exitCode ?? -1;
-      setExited(id, code);
-    });
-    return unsub;
-  }, [setExited]);
+    let cancelled = false;
 
-  // 首次 mount 自动 spawn 一个 session(panel 一打开就有 terminal 可用)。
+    void coApi.terminal.listSessions().then((r) => {
+      if (cancelled || !r.ok) return;
+      replaceSnapshot(r.data.sessions as readonly TerminalSession[]);
+    });
+
+    const unsub = coApi.terminal.onSessionsChanged((snapshot) => {
+      replaceSnapshot(snapshot as readonly TerminalSession[]);
+    });
+
+    return () => {
+      cancelled = true;
+      unsub();
+    };
+  }, [replaceSnapshot]);
+
+  // 首次 mount 自动 spawn 一个 session(若 main 也没有)。
   // 用 module-level flag 防 StrictMode 双 mount 与异步 spawn 时序导致的双 spawn。
   // App 真重启时 module 重新加载,flag 自动复位 → 重新 spawn 一个新 terminal。
   useEffect(() => {

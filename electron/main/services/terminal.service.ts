@@ -4,6 +4,7 @@
 
 import * as pty from 'node-pty';
 import { BrowserWindow } from 'electron';
+import * as terminalSessions from './terminal-sessions.service';
 
 // ── 常量(节流参数,沿用 Mind 决策 #5)──────────────────────────
 const OVERFLOW_THRESHOLD_BYTES = 2 * 1024 * 1024; // 2 MB/s 触发 overflow
@@ -148,6 +149,9 @@ export function createTerminal(
 
   p.onExit(({ exitCode, signal }) => {
     flush();
+    // 标记 session metadata exitCode → 推 sessions_changed → renderer 显 closed。
+    // 若 metadata 已被 remove 删掉(用户主动关 X),setExited 内部 no-op。
+    terminalSessions.setExited(id, exitCode ?? -1);
     cleanup(id);
     if (!win.isDestroyed()) {
       win.webContents.send('terminal:exit', id, { exitCode, signal });

@@ -5,9 +5,13 @@ import {
   type TerminalSession,
 } from '../../stores/terminal.store';
 
-const makeSession = (overrides: Partial<TerminalSession> = {}): TerminalSession => ({
+const makeSession = (
+  overrides: Partial<TerminalSession> = {},
+): TerminalSession => ({
   id: '/t/1',
   title: 'Terminal 1',
+  cwd: '/work',
+  originHint: 'user',
   createdAt: 0,
   exitCode: null,
   ...overrides,
@@ -18,7 +22,7 @@ beforeEach(() => {
 });
 
 // ────────────────────────────────────────────────────────────
-// nextActiveAfterClose 纯函数
+// nextActiveAfterClose 纯函数(保留,被 replaceSnapshot 内部用)
 // ────────────────────────────────────────────────────────────
 
 describe('nextActiveAfterClose', () => {
@@ -70,98 +74,137 @@ describe('terminal.store · 初态', () => {
 });
 
 // ────────────────────────────────────────────────────────────
-// addSession
+// replaceSnapshot
 // ────────────────────────────────────────────────────────────
 
-describe('addSession', () => {
-  it('推入 + 自动切活跃', () => {
-    useTerminalStore.getState().addSession({ id: '/a', title: 'A' });
+describe('replaceSnapshot', () => {
+  const sess = (id: string, extra: Partial<TerminalSession> = {}) =>
+    makeSession({ id, ...extra });
+
+  it('空 → 非空:activeId 设为第一个', () => {
+    useTerminalStore.getState().replaceSnapshot([sess('/a'), sess('/b')]);
     const s = useTerminalStore.getState();
-    expect(s.sessions).toHaveLength(1);
-    expect(s.sessions[0]).toMatchObject({ id: '/a', title: 'A', exitCode: null });
+    expect(s.sessions.map((x) => x.id)).toEqual(['/a', '/b']);
     expect(s.activeId).toBe('/a');
   });
 
-  it('多次 add → 顺序追加,active 跟最后', () => {
-    const add = useTerminalStore.getState().addSession;
-    add({ id: '/a', title: 'A' });
-    add({ id: '/b', title: 'B' });
-    const s = useTerminalStore.getState();
-    expect(s.sessions.map((x) => x.id)).toEqual(['/a', '/b']);
-    expect(s.activeId).toBe('/b');
-  });
-
-  it('createdAt 自动赋值(单调递增)', () => {
-    useTerminalStore.getState().addSession({ id: '/a', title: 'A' });
-    useTerminalStore.getState().addSession({ id: '/b', title: 'B' });
-    const s = useTerminalStore.getState();
-    expect(s.sessions[0]!.createdAt).toBeLessThanOrEqual(s.sessions[1]!.createdAt);
-  });
-});
-
-// ────────────────────────────────────────────────────────────
-// removeSession / switchSession / setExited
-// ────────────────────────────────────────────────────────────
-
-describe('removeSession', () => {
-  it('委托 nextActiveAfterClose:关活跃中间 → 切下一个', () => {
+  it('旧 active 仍在新 snapshot → activeId 不变', () => {
     useTerminalStore.setState({
-      sessions: [makeSession({ id: '/a' }), makeSession({ id: '/b' }), makeSession({ id: '/c' })],
+      sessions: [sess('/a'), sess('/b'), sess('/c')],
       activeId: '/b',
     });
-    useTerminalStore.getState().removeSession('/b');
+    useTerminalStore.getState().replaceSnapshot([sess('/a'), sess('/b'), sess('/c')]);
+    expect(useTerminalStore.getState().activeId).toBe('/b');
+  });
+
+  it('旧 active mid 被移除 → 切下一个', () => {
+    useTerminalStore.setState({
+      sessions: [sess('/a'), sess('/b'), sess('/c')],
+      activeId: '/b',
+    });
+    useTerminalStore.getState().replaceSnapshot([sess('/a'), sess('/c')]);
     const s = useTerminalStore.getState();
     expect(s.sessions.map((x) => x.id)).toEqual(['/a', '/c']);
     expect(s.activeId).toBe('/c');
   });
 
-  it('关不存在 id → 不变', () => {
+  it('旧 active 是 tail 被移除 → 切前一个', () => {
     useTerminalStore.setState({
-      sessions: [makeSession({ id: '/a' })],
-      activeId: '/a',
+      sessions: [sess('/a'), sess('/b'), sess('/c')],
+      activeId: '/c',
     });
-    useTerminalStore.getState().removeSession('/zombie');
-    expect(useTerminalStore.getState().sessions).toHaveLength(1);
+    useTerminalStore.getState().replaceSnapshot([sess('/a'), sess('/b')]);
+    const s = useTerminalStore.getState();
+    expect(s.activeId).toBe('/b');
   });
-});
 
-describe('switchSession', () => {
-  it('只改 activeId', () => {
+  it('旧 active 是 head 被移除 → 切下一个', () => {
     useTerminalStore.setState({
-      sessions: [makeSession({ id: '/a' }), makeSession({ id: '/b' })],
+      sessions: [sess('/a'), sess('/b'), sess('/c')],
       activeId: '/a',
     });
-    useTerminalStore.getState().switchSession('/b');
+    useTerminalStore.getState().replaceSnapshot([sess('/b'), sess('/c')]);
     expect(useTerminalStore.getState().activeId).toBe('/b');
   });
-});
 
-describe('setExited', () => {
-  it('exitCode 写入对应 session', () => {
+  it('所有 sessions 被移除 → activeId null', () => {
     useTerminalStore.setState({
-      sessions: [makeSession({ id: '/a' })],
+      sessions: [sess('/a'), sess('/b')],
       activeId: '/a',
     });
-    useTerminalStore.getState().setExited('/a', 0);
-    expect(useTerminalStore.getState().sessions[0]?.exitCode).toBe(0);
-  });
-
-  it('id 不存在 → 不抛', () => {
-    expect(() =>
-      useTerminalStore.getState().setExited('/nope', 1),
-    ).not.toThrow();
-  });
-});
-
-describe('clearAll', () => {
-  it('全清', () => {
-    useTerminalStore.setState({
-      sessions: [makeSession({ id: '/a' }), makeSession({ id: '/b' })],
-      activeId: '/a',
-    });
-    useTerminalStore.getState().clearAll();
+    useTerminalStore.getState().replaceSnapshot([]);
     const s = useTerminalStore.getState();
     expect(s.sessions).toEqual([]);
     expect(s.activeId).toBeNull();
+  });
+
+  it('新增 session → activeId 不变', () => {
+    useTerminalStore.setState({
+      sessions: [sess('/a')],
+      activeId: '/a',
+    });
+    useTerminalStore.getState().replaceSnapshot([sess('/a'), sess('/b')]);
+    const s = useTerminalStore.getState();
+    expect(s.sessions.map((x) => x.id)).toEqual(['/a', '/b']);
+    expect(s.activeId).toBe('/a');
+  });
+
+  it('仅 exitCode 字段变化 → activeId 不变,session 对象更新', () => {
+    useTerminalStore.setState({
+      sessions: [sess('/a'), sess('/b')],
+      activeId: '/b',
+    });
+    useTerminalStore
+      .getState()
+      .replaceSnapshot([sess('/a'), sess('/b', { exitCode: 0 })]);
+    const s = useTerminalStore.getState();
+    expect(s.activeId).toBe('/b');
+    expect(s.sessions[1]!.exitCode).toBe(0);
+  });
+
+  it('多个 session 同时被移除 → 仍按 oldSessions 顺序找下一个', () => {
+    useTerminalStore.setState({
+      sessions: [sess('/a'), sess('/b'), sess('/c'), sess('/d')],
+      activeId: '/b',
+    });
+    // /b /c 同时移除 → 应切到 /d(b 被关后切 c,c 被关后切 d)
+    useTerminalStore.getState().replaceSnapshot([sess('/a'), sess('/d')]);
+    expect(useTerminalStore.getState().activeId).toBe('/d');
+  });
+
+  it('main 改变 sessions 顺序 → 用 main 给的顺序', () => {
+    useTerminalStore.setState({
+      sessions: [sess('/a'), sess('/b')],
+      activeId: '/a',
+    });
+    useTerminalStore.getState().replaceSnapshot([sess('/b'), sess('/a')]);
+    const s = useTerminalStore.getState();
+    expect(s.sessions.map((x) => x.id)).toEqual(['/b', '/a']);
+    // active 不变(仍存在)
+    expect(s.activeId).toBe('/a');
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// setActive
+// ────────────────────────────────────────────────────────────
+
+describe('setActive', () => {
+  it('改 activeId', () => {
+    useTerminalStore.setState({
+      sessions: [makeSession({ id: '/a' }), makeSession({ id: '/b' })],
+      activeId: '/a',
+    });
+    useTerminalStore.getState().setActive('/b');
+    expect(useTerminalStore.getState().activeId).toBe('/b');
+  });
+
+  it('id 不在 sessions 也接受(允许 race:create 后立即 setActive)', () => {
+    useTerminalStore.setState({
+      sessions: [makeSession({ id: '/a' })],
+      activeId: '/a',
+    });
+    useTerminalStore.getState().setActive('/pending');
+    expect(useTerminalStore.getState().activeId).toBe('/pending');
   });
 });

@@ -4,6 +4,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { registerIpc } from './ipc';
 import { PLUGINS_CHANNELS } from '../shared/plugins-channels';
+import { createMcpHost, type McpHost } from './services/mcp-host.service';
+import { makeListSessionsTool } from './services/mcp-tools-terminal';
+import * as terminalSessions from './services/terminal-sessions.service';
+import { setMcpEnvProvider } from './ipc/terminal.ipc';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = !app.isPackaged;
@@ -145,8 +149,40 @@ app.on('open-url', (event, url) => {
   dispatchProtocolUrl(url);
 });
 
-app.whenReady().then(() => {
+// Agent Terminal MCP host(P1):启动 HTTP server,把 token / url 通过 env
+// 注入到所有 PTY → 用户在 terminal 跑 claude / codex 时反连本机 host。
+let mcpHost: McpHost | null = null;
+
+async function startMcpHost(): Promise<void> {
+  try {
+    mcpHost = await createMcpHost({
+      initialTools: [
+        makeListSessionsTool({
+          getSessions: () => terminalSessions.getAll(),
+        }),
+      ],
+    });
+    setMcpEnvProvider(() => ({
+      CONTINUO_MCP_URL: mcpHost!.url,
+      CONTINUO_MCP_TOKEN: mcpHost!.token,
+      CONTINUO_HOST: 'desktop',
+    }));
+    // eslint-disable-next-line no-console
+    console.log(`[mcp-host] listening on ${mcpHost.url}`);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      '[mcp-host] failed to start, agent terminal MCP unavailable',
+      err,
+    );
+  }
+}
+
+app.whenReady().then(async () => {
   registerIpc();
+  // 在 createMainWindow 之前启 host,确保 renderer autoSpawn 的第一个 PTY
+  // env 已含 MCP url / token。
+  await startMcpHost();
   const win = createMainWindow();
 
   // 冷启 + open-url 顺序处理:可能在 mainwindow 未就绪前已收 url
@@ -177,4 +213,9 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('before-quit', () => {
+  // best-effort 关 MCP host(SSE 客户端、socket 一并断)
+  void mcpHost?.close().catch(() => {});
 });

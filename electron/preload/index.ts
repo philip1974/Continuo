@@ -22,11 +22,26 @@ export interface TerminalCreateOptions {
   readonly args?: ReadonlyArray<string>;
   readonly cwd?: string;
   readonly env?: Readonly<Record<string, string>>;
+  // P1 Agent Terminal MCP:metadata 字段
+  readonly name?: string;
+  readonly originHint?: 'user' | 'agent';
+  readonly agentLabel?: string;
 }
 
 export interface TerminalExitPayload {
   readonly exitCode: number | undefined;
   readonly signal: number | undefined;
+}
+
+/** main 推过来的 session 形态;renderer cast 为 TerminalSession. */
+export interface PreloadTerminalSession {
+  readonly id: string;
+  readonly title: string;
+  readonly cwd: string;
+  readonly originHint: 'user' | 'agent';
+  readonly agentLabel?: string;
+  readonly createdAt: number;
+  readonly exitCode: number | null;
 }
 
 // 给 fs 入参用的轻量 ListDirOptions —— 与 main 端 zod schema 对齐字段
@@ -117,6 +132,23 @@ const api = {
       ipcRenderer.invoke(TERMINAL_CHANNELS.KILL, { id }),
     destroy: (id: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(TERMINAL_CHANNELS.DESTROY, { id }),
+    // P1 Agent Terminal MCP:session metadata 真相源在 main
+    listSessions: (): Promise<
+      IpcResult<{ sessions: ReadonlyArray<PreloadTerminalSession> }>
+    > => ipcRenderer.invoke(TERMINAL_CHANNELS.LIST_SESSIONS, {}),
+    remove: (id: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(TERMINAL_CHANNELS.REMOVE, { id }),
+    /** 订阅 main 推的 snapshot;返回 unsubscribe. */
+    onSessionsChanged: (
+      cb: (sessions: ReadonlyArray<PreloadTerminalSession>) => void,
+    ): (() => void) => {
+      const listener = (
+        _: unknown,
+        sessions: ReadonlyArray<PreloadTerminalSession>,
+      ) => cb(sessions);
+      ipcRenderer.on(TERMINAL_CHANNELS.SESSIONS_CHANGED, listener);
+      return () => ipcRenderer.off(TERMINAL_CHANNELS.SESSIONS_CHANGED, listener);
+    },
     /** 订阅 stdout 字节流;返回 unsubscribe. */
     onData: (cb: (id: string, data: string) => void): (() => void) => {
       const listener = (_: unknown, id: string, data: string) => cb(id, data);

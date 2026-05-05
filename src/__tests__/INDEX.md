@@ -2,6 +2,14 @@
 
 > 由 `pnpm bdd:index` 自动生成,请勿手工编辑。
 
+## [agent-terminal-mcp-host (Agent Terminal MCP Phase 1)](./agent-terminal-mcp-host/README.md)
+
+- [`host.spec.ts`](./agent-terminal-mcp-host/host.spec.ts)
+
+## [agent-terminal-mcp-list-sessions (Agent Terminal MCP Phase 1)](./agent-terminal-mcp-list-sessions/README.md)
+
+- [`list-sessions.spec.ts`](./agent-terminal-mcp-list-sessions/list-sessions.spec.ts)
+
 ## [动画落点契约 (M3)](./animation-contracts/README.md)
 
 - [`contracts.spec.ts`](./animation-contracts/contracts.spec.ts)
@@ -191,7 +199,11 @@
 
 - [`helpers.spec.ts`](./terminal-service/helpers.spec.ts)
 
-## [terminal-store (M-Terminal Step T3)](./terminal-store/README.md)
+## [terminal-sessions-service (Agent Terminal MCP Phase 1)](./terminal-sessions-service/README.md)
+
+- [`terminal-sessions-service.spec.ts`](./terminal-sessions-service/terminal-sessions-service.spec.ts)
+
+## [terminal-store (M-Terminal Step T3 + Agent Terminal MCP P1)](./terminal-store/README.md)
 
 - [`terminal-store.spec.ts`](./terminal-store/terminal-store.spec.ts)
 
