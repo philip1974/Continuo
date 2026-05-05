@@ -9,10 +9,17 @@ export interface Review {
   readonly rating: 1 | 2 | 3 | 4 | 5;
   /** 评论正文(剥掉 schema 段头,只留 review section). */
   readonly body: string;
-  readonly author: { readonly handle: string; readonly avatarUrl: string };
+  readonly author: {
+    readonly handle: string;
+    readonly avatarUrl: string;
+    /** Phase 3:author GitHub 账号注册时间(ISO),"新账号"角标用. */
+    readonly createdAt: string;
+  };
   /** 永久链接,点 → 跳 GitHub. */
   readonly url: string;
   readonly createdAt: string; // ISO
+  /** Phase 3:THUMBS_UP reaction 总数,排序"最有用"用. */
+  readonly thumbsUp: number;
   /** 可选:Continuo / plugin 版本. */
   readonly continuoVersion?: string;
   readonly pluginVersion?: string;

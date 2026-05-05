@@ -26,7 +26,11 @@ query Reviews($owner: String!, $name: String!, $first: Int!, $after: String) {
     discussions(first: $first, after: $after, orderBy: {field: CREATED_AT, direction: DESC}) {
       nodes {
         title body url createdAt
-        author { login avatarUrl }
+        author {
+          login avatarUrl
+          ... on User { createdAt }
+        }
+        reactions(content: THUMBS_UP) { totalCount }
       }
       pageInfo { hasNextPage endCursor }
     }
@@ -38,7 +42,12 @@ interface GraphqlNode {
   readonly body: string;
   readonly url: string;
   readonly createdAt: string;
-  readonly author: { readonly login: string; readonly avatarUrl: string } | null;
+  readonly author: {
+    readonly login: string;
+    readonly avatarUrl: string;
+    readonly createdAt?: string;
+  } | null;
+  readonly reactions: { readonly totalCount: number };
 }
 
 interface GraphqlResp {
@@ -153,7 +162,14 @@ async function fetchAllPages(token: string): Promise<readonly Review[]> {
     const d = json.data?.repository?.discussions;
     if (!d) break;
     for (const node of d.nodes) {
-      const parsed = parseReview(node);
+      const parsed = parseReview({
+        title: node.title,
+        body: node.body,
+        url: node.url,
+        createdAt: node.createdAt,
+        author: node.author,
+        thumbsUp: node.reactions.totalCount,
+      });
       if (parsed) out.push(parsed);
     }
     if (!d.pageInfo.hasNextPage) break;

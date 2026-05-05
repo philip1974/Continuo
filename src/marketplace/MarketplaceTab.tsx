@@ -13,7 +13,14 @@ import { fetchMarketplaceIndex } from './fetcher';
 import { applyFilter, collectAllTags } from './filter';
 import { useUpdateStore } from './update-store';
 import { useReviewsStore } from './reviews-store';
-import type { PluginAggregateRating } from './reviews-types';
+import type { PluginAggregateRating, Review } from './reviews-types';
+
+/** 项目维护者(角标用),hard-coded. */
+const MAINTAINERS: ReadonlySet<string> = new Set(['philip1974']);
+const NEW_ACCOUNT_DAYS = 7;
+const NEW_ACCOUNT_MS = NEW_ACCOUNT_DAYS * 24 * 60 * 60 * 1000;
+
+type ReviewSort = 'newest' | 'helpful';
 
 type LoadState =
   | { kind: 'loading' }
@@ -60,6 +67,8 @@ export function MarketplaceTab() {
     new Set(),
   );
   const reviewsByPid = useReviewsStore((s) => s.byPid);
+  const reviewsLoading = useReviewsStore((s) => s.loading);
+  const refreshReviews = useReviewsStore((s) => s.refresh);
 
   // entry.id → 可用更新版本(若有)
   const updateByPid = new Map(updates.map((u) => [u.id, u.to]));
@@ -233,9 +242,21 @@ export function MarketplaceTab() {
           </div>
         )}
       </div>
-      <p className="text-[10px] text-fg-dim">
-        显示 {filtered.length} / 共 {state.entries.length} 个插件 · 索引 1 小时缓存
-      </p>
+      <div className="flex items-center justify-between gap-2 text-[10px] text-fg-dim">
+        <span>
+          显示 {filtered.length} / 共 {state.entries.length} 个插件 · 索引 1
+          小时缓存
+        </span>
+        <button
+          type="button"
+          onClick={() => void refreshReviews(true)}
+          disabled={reviewsLoading}
+          className="rounded px-2 py-0.5 text-fg-muted hover:bg-hover hover:text-fg disabled:opacity-50"
+          title="重新拉评分(跳缓存)"
+        >
+          {reviewsLoading ? '⟳ 刷新中…' : '⟳ 刷新评分'}
+        </button>
+      </div>
       {filtered.length === 0 ? (
         <div className="rounded border border-dashed border-line bg-panel-soft/40 px-3 py-6 text-center text-xs text-fg-dim">
           没有匹配的插件。换个搜索词或清除 tag 筛选。
@@ -403,7 +424,7 @@ function MarketplaceCard({
   );
 }
 
-/** 评分行 + 可展开的 reviews 列表 + "写评论" 链接(Phase 2). */
+/** 评分行 + 可展开的 reviews 列表 + "写评论" 链接(Phase 2/3). */
 function RatingRow({
   entry,
   rating,
@@ -412,11 +433,18 @@ function RatingRow({
   rating: PluginAggregateRating | null;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [sort, setSort] = useState<ReviewSort>('newest');
   const hasReviews = rating !== null && rating.count > 0;
   const newReviewUrl = buildNewReviewUrl(entry.id);
 
+  // hooks 必须无条件;hasReviews=false 时 sorted 用空数组,不影响
+  const sourceReviews = rating?.reviews ?? [];
+  const sorted = useMemo(
+    () => sortReviews(sourceReviews, sort).slice(0, 10),
+    [sourceReviews, sort],
+  );
+
   if (!hasReviews) {
-    // 0 评价 → 直接给个"评一下"小链接
     return (
       <div className="mt-1 text-[10px] text-fg-dim">
         暂无评价 ·{' '}
@@ -460,45 +488,28 @@ function RatingRow({
       </div>
       {expanded && (
         <div className="space-y-1.5 rounded border border-line bg-panel/50 p-2">
-          {rating.reviews.slice(0, 10).map((r) => (
-            <div
-              key={r.url}
-              className="flex gap-2 border-b border-line/50 pb-1.5 last:border-0 last:pb-0"
-            >
-              <img
-                src={r.author.avatarUrl}
-                alt=""
-                className="h-5 w-5 shrink-0 rounded-full"
-              />
-              <div className="min-w-0 flex-1 text-[10px]">
-                <div className="flex items-baseline gap-1.5 text-fg-muted">
-                  <a
-                    href={`https://github.com/${r.author.handle}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="font-medium text-fg hover:underline"
-                  >
-                    {r.author.handle}
-                  </a>
-                  <span className="text-amber-400">{renderStars(r.rating)}</span>
-                  <span className="text-fg-dim">{formatDate(r.createdAt)}</span>
-                  <a
-                    href={r.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="ml-auto text-accent hover:underline"
-                    title="在 GitHub 打开"
-                  >
-                    ↗
-                  </a>
-                </div>
-                <p className="mt-0.5 whitespace-pre-wrap text-fg">{r.body}</p>
-              </div>
-            </div>
+          <div className="flex items-center gap-1 pb-1 text-[10px] text-fg-dim">
+            <span>排序:</span>
+            {(['newest', 'helpful'] as const).map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => setSort(s)}
+                className={[
+                  'rounded px-1.5 py-0.5',
+                  sort === s ? 'bg-accent/20 text-accent' : 'hover:bg-hover',
+                ].join(' ')}
+              >
+                {s === 'newest' ? '最新' : '最有用'}
+              </button>
+            ))}
+          </div>
+          {sorted.map((r) => (
+            <ReviewItem key={r.url} review={r} />
           ))}
           {rating.reviews.length > 10 && (
             <div className="pt-1 text-[10px] text-fg-dim">
-              仅显最近 10 条;
+              仅显前 10 条;
               <a
                 href={`https://github.com/philip1974/continuo-plugins/discussions?discussions_q=%5B${entry.id}%5D`}
                 target="_blank"
@@ -513,6 +524,79 @@ function RatingRow({
       )}
     </div>
   );
+}
+
+function ReviewItem({ review: r }: { review: Review }) {
+  const isMaintainer = MAINTAINERS.has(r.author.handle);
+  const accountAge = Date.now() - new Date(r.author.createdAt).getTime();
+  const isNewAccount = accountAge < NEW_ACCOUNT_MS;
+
+  return (
+    <div className="flex gap-2 border-b border-line/50 pb-1.5 last:border-0 last:pb-0">
+      <img
+        src={r.author.avatarUrl}
+        alt=""
+        className="h-5 w-5 shrink-0 rounded-full"
+      />
+      <div className="min-w-0 flex-1 text-[10px]">
+        <div className="flex items-baseline gap-1.5 text-fg-muted">
+          <a
+            href={`https://github.com/${r.author.handle}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-fg hover:underline"
+          >
+            {r.author.handle}
+          </a>
+          {isMaintainer && (
+            <span
+              className="rounded bg-accent/20 px-1 py-0.5 text-[9px] text-accent"
+              title="项目维护者"
+            >
+              🛡 维护者
+            </span>
+          )}
+          {!isMaintainer && isNewAccount && (
+            <span
+              className="rounded bg-amber-500/20 px-1 py-0.5 text-[9px] text-amber-400"
+              title={`GitHub 账号注册不到 ${NEW_ACCOUNT_DAYS} 天,慎信`}
+            >
+              ⚠ 新账号
+            </span>
+          )}
+          <span className="text-amber-400">{renderStars(r.rating)}</span>
+          {r.thumbsUp > 0 && (
+            <span className="text-fg-dim" title={`${r.thumbsUp} 个点赞`}>
+              👍 {r.thumbsUp}
+            </span>
+          )}
+          <span className="text-fg-dim">{formatDate(r.createdAt)}</span>
+          <a
+            href={r.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="ml-auto text-accent hover:underline"
+            title="在 GitHub 打开"
+          >
+            ↗
+          </a>
+        </div>
+        <p className="mt-0.5 whitespace-pre-wrap text-fg">{r.body}</p>
+      </div>
+    </div>
+  );
+}
+
+function sortReviews(
+  reviews: readonly Review[],
+  sort: ReviewSort,
+): readonly Review[] {
+  if (sort === 'newest') return reviews; // fetcher 已 createdAt DESC
+  // helpful:thumbsUp DESC,平手按 createdAt DESC
+  return [...reviews].sort((a, b) => {
+    if (a.thumbsUp !== b.thumbsUp) return b.thumbsUp - a.thumbsUp;
+    return b.createdAt.localeCompare(a.createdAt);
+  });
 }
 
 /** 跳 GitHub 写新评论(预填 title 含 plugin id). */

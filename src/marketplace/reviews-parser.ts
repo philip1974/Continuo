@@ -19,7 +19,14 @@ interface RawDiscussion {
   readonly body: string;
   readonly url: string;
   readonly createdAt: string;
-  readonly author: { readonly login: string; readonly avatarUrl: string } | null;
+  readonly author: {
+    readonly login: string;
+    readonly avatarUrl: string;
+    /** Phase 3:GraphQL `User { createdAt }`. 缺时给 epoch 0(被标新账号). */
+    readonly createdAt?: string;
+  } | null;
+  /** Phase 3:THUMBS_UP reaction 总数,缺给 0. */
+  readonly thumbsUp?: number;
 }
 
 /** 失败返 null(skip 这条 review,不污染聚合). */
@@ -47,7 +54,12 @@ export function parseReview(raw: RawDiscussion): Review | null {
     pluginId,
     rating,
     body,
-    author: { handle: raw.author.login, avatarUrl: raw.author.avatarUrl },
+    author: {
+      handle: raw.author.login,
+      avatarUrl: raw.author.avatarUrl,
+      createdAt: raw.author.createdAt ?? '1970-01-01T00:00:00Z',
+    },
+    thumbsUp: raw.thumbsUp ?? 0,
     url: raw.url,
     createdAt: raw.createdAt,
     continuoVersion: sections.get('continuo 版本(可选)')?.trim() ?? undefined,
