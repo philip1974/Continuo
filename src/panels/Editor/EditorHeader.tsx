@@ -15,7 +15,7 @@ import {
   TabNav,
   TabNavItem,
 } from '@/design';
-import { lmApp } from '@/plugins/lm-app';
+import { coApp } from '@/plugins/co-app';
 import {
   filterVisible,
   type EditorActionSpec,
@@ -43,9 +43,9 @@ function basename(p: string | null): string {
 
 /** 订阅 editorActions registry,渲染时按 ctx 过滤. */
 function useEditorActions(): readonly EditorActionSpec[] {
-  const [snap, setSnap] = useState(() => lmApp.editorActions.getAll());
+  const [snap, setSnap] = useState(() => coApp.editorActions.getAll());
   useEffect(
-    () => lmApp.editorActions.subscribe(() => setSnap(lmApp.editorActions.getAll())),
+    () => coApp.editorActions.subscribe(() => setSnap(coApp.editorActions.getAll())),
     [],
   );
   return snap;

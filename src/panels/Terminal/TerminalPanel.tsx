@@ -9,7 +9,7 @@ import { TerminalTabs } from './TerminalTabs';
 import { TerminalView } from './TerminalView';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { Button } from '@/design';
-import { lmApi } from '@/lib/lm-api';
+import { coApi } from '@/lib/co-api';
 
 // 模块级单例标志(跨 React mount/unmount 持久;App 真重启 / Cmd+R reload renderer
 // 时 module 重新加载自动复位)。
@@ -28,7 +28,7 @@ export function TerminalPanel() {
   const workspaceRoot = useWorkspaceStore((s) => s.root);
 
   const handleNew = useCallback(async () => {
-    const r = await lmApi.terminal.create({
+    const r = await coApi.terminal.create({
       cwd: workspaceRoot ?? undefined,
     });
     if (!r.ok) {
@@ -44,7 +44,7 @@ export function TerminalPanel() {
   const handleClose = useCallback(
     (id: string) => {
       // 主进程优雅 kill(3s grace period);renderer 立即从 store 移除
-      void lmApi.terminal.kill(id);
+      void coApi.terminal.kill(id);
       removeSession(id);
     },
     [removeSession],
@@ -52,7 +52,7 @@ export function TerminalPanel() {
 
   // 订阅 PTY exit 事件 → 标记 exitCode(tab 显示"已退出";不自动关)
   useEffect(() => {
-    const unsub = lmApi.terminal.onExit((id, payload) => {
+    const unsub = coApi.terminal.onExit((id, payload) => {
       const code = payload.exitCode ?? -1;
       setExited(id, code);
     });

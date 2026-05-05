@@ -4,10 +4,10 @@
 import { useEffect, useState } from 'react';
 import { Button, Input } from '@/design';
 import { ConfirmDialog } from '@/panels/Explorer/ConfirmDialog';
-import { lmApi } from '@/lib/lm-api';
-import { lmApp } from '../lm-app';
-import { getUserPluginManager } from '../lm-plugin-manager';
-import { getUserPermissionStore } from '../permissions/lm-permission-store';
+import { coApi } from '@/lib/co-api';
+import { coApp } from '../co-app';
+import { getUserPluginManager } from '../co-plugin-manager';
+import { getUserPermissionStore } from '../permissions/co-permission-store';
 import { PermissionEditorModal } from '../permissions/PermissionEditorModal';
 import type { PluginListItem } from '../PluginManager';
 
@@ -21,44 +21,44 @@ function snapshot(): readonly ContributionRow[] {
   return [
     {
       label: 'Panel 类型',
-      count: lmApp.panels.getAll().length,
-      samples: lmApp.panels.getAll().map((p) => p.type),
+      count: coApp.panels.getAll().length,
+      samples: coApp.panels.getAll().map((p) => p.type),
     },
     {
       label: '命令',
-      count: lmApp.commands.getAll().length,
-      samples: lmApp.commands.getAll().map((c) => c.id),
+      count: coApp.commands.getAll().length,
+      samples: coApp.commands.getAll().map((c) => c.id),
     },
     {
       label: 'StatusBar 项',
       count: [
-        ...lmApp.statusBar.getBySide('left'),
-        ...lmApp.statusBar.getBySide('right'),
+        ...coApp.statusBar.getBySide('left'),
+        ...coApp.statusBar.getBySide('right'),
       ].length,
       samples: [
-        ...lmApp.statusBar.getBySide('left'),
-        ...lmApp.statusBar.getBySide('right'),
+        ...coApp.statusBar.getBySide('left'),
+        ...coApp.statusBar.getBySide('right'),
       ].map((x) => x.id),
     },
     {
       label: 'Ribbon 图标',
-      count: lmApp.ribbon.getAll().length,
-      samples: lmApp.ribbon.getAll().map((r) => r.id),
+      count: coApp.ribbon.getAll().length,
+      samples: coApp.ribbon.getAll().map((r) => r.id),
     },
     {
       label: '设置 Tab',
-      count: lmApp.settingTabs.getAll().length,
-      samples: lmApp.settingTabs.getAll().map((t) => t.id),
+      count: coApp.settingTabs.getAll().length,
+      samples: coApp.settingTabs.getAll().map((t) => t.id),
     },
     {
       label: 'Explorer 装饰器',
-      count: lmApp.explorerDecorators.getAll().length,
+      count: coApp.explorerDecorators.getAll().length,
       samples: [],
     },
     {
       label: 'Editor Action',
-      count: lmApp.editorActions.getAll().length,
-      samples: lmApp.editorActions.getAll().map((a) => a.id),
+      count: coApp.editorActions.getAll().length,
+      samples: coApp.editorActions.getAll().map((a) => a.id),
     },
   ];
 }
@@ -68,12 +68,12 @@ function useContributionSnapshot(): readonly ContributionRow[] {
   useEffect(() => {
     // 任一 registry 变 → 重新计算。subscribe 全部,挂接到一个 setSnap。
     const refresh = () => setSnap(snapshot());
-    const u1 = lmApp.panels.subscribe(refresh);
-    const u2 = lmApp.commands.subscribe(refresh);
-    const u3 = lmApp.statusBar.subscribe(refresh);
-    const u4 = lmApp.ribbon.subscribe(refresh);
-    const u5 = lmApp.settingTabs.subscribe(refresh);
-    const u6 = lmApp.editorActions.subscribe(refresh);
+    const u1 = coApp.panels.subscribe(refresh);
+    const u2 = coApp.commands.subscribe(refresh);
+    const u3 = coApp.statusBar.subscribe(refresh);
+    const u4 = coApp.ribbon.subscribe(refresh);
+    const u5 = coApp.settingTabs.subscribe(refresh);
+    const u6 = coApp.editorActions.subscribe(refresh);
     return () => {
       u1();
       u2();
@@ -215,7 +215,7 @@ function UserPluginsSection() {
     setInstalling(true);
     setInstallMsg(null);
     try {
-      const r = await lmApi.plugins.installFromGit(gitUrl.trim());
+      const r = await coApi.plugins.installFromGit(gitUrl.trim());
       if (!r.ok) {
         setInstallMsg(`✘ [${r.code}] ${r.message}`);
       } else {

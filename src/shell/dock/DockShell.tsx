@@ -7,7 +7,7 @@ import {
   type SerializedDockview,
 } from 'dockview-react';
 import 'dockview-react/dist/styles/dockview.css';
-import { lmApp } from '@/plugins/lm-app';
+import { coApp } from '@/plugins/co-app';
 import { PanelMount } from '@/shell/motion/PanelMount';
 import { applyDefaultLayout } from './layout.default';
 import { HeaderActions } from './HeaderActions';
@@ -18,17 +18,17 @@ import { SharedTab } from '@/shell/motion/SharedTab';
 import { useClosingStore } from '@/stores/closing.store';
 import { useEditorStore } from '@/stores/editor.store';
 import { debounce } from '@/lib/debounce';
-import { lmApi } from '@/lib/lm-api';
+import { coApi } from '@/lib/co-api';
 import '@/styles/dockview.css';
 
 const tabComponents = { default: SharedTab };
 
-/** 把 lmApp.panels 注册的 PanelSpec 桥接成 Dockview 的 components map.
+/** 把 coApp.panels 注册的 PanelSpec 桥接成 Dockview 的 components map.
  *  每个 panel 自动包 PanelMount(进出场动画). */
 function usePanelComponents(): Record<string, React.FC<IDockviewPanelProps>> {
-  const [snapshot, setSnapshot] = useState(() => lmApp.panels.getAll());
+  const [snapshot, setSnapshot] = useState(() => coApp.panels.getAll());
   useEffect(
-    () => lmApp.panels.subscribe(() => setSnapshot(lmApp.panels.getAll())),
+    () => coApp.panels.subscribe(() => setSnapshot(coApp.panels.getAll())),
     [],
   );
   return useMemo(() => {
@@ -54,7 +54,7 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
     async (event: DockviewReadyEvent) => {
       apiRef.current = event.api;
       setDockApi(event.api); // 暴露给 IconSidebar 等 Dockview 之外的组件
-      const readResult = await lmApi.layout.read();
+      const readResult = await coApi.layout.read();
       const persisted = readResult.ok ? readResult.data : null;
       if (!readResult.ok) {
         console.warn('[dock] layout:read failed', readResult.code, readResult.message);
@@ -88,7 +88,7 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       const persist = debounce(async () => {
         const snapshot = event.api.toJSON() as unknown;
         const payload = { version: 1 as const, ...(snapshot as object) };
-        const r = await lmApi.layout.write(payload);
+        const r = await coApi.layout.write(payload);
         if (!r.ok) console.warn('[dock] layout:write failed', r.code, r.message);
       }, 300);
 

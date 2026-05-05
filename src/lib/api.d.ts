@@ -1,8 +1,8 @@
-import type { LayoutMotionApi } from '../../electron/preload';
+import type { ContinuoApi } from '../../electron/preload';
 
 declare global {
   interface Window {
-    api: LayoutMotionApi;
+    api: ContinuoApi;
   }
 }
 

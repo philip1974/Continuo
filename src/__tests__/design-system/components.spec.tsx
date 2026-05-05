@@ -21,7 +21,7 @@ describe('Button data-attr 契约', () => {
     expect(btn.className).toContain('wm-button');
   });
 
-  it('variant=outlined(LM 扩展)正确写入 data-variant', () => {
+  it('variant=outlined(Continuo 扩展)正确写入 data-variant', () => {
     const { container } = render(<Button variant="outlined">Open</Button>);
     expect(container.querySelector('button')!.dataset.variant).toBe('outlined');
   });

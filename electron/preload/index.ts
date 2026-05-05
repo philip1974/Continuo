@@ -10,8 +10,8 @@ import {
 } from '../shared/plugins-channels';
 
 // terminal create 入参的轻量类型(与 main 端 zod schema 对齐)
-// export 是为了 LayoutMotionApi 跨 module 引用时 TS 能 name 这些类型
-// (lib/lm-api.ts 暴露 lmApi: LayoutMotionApi 时需要)
+// export 是为了 ContinuoApi 跨 module 引用时 TS 能 name 这些类型
+// (lib/lm-api.ts 暴露 coApi: ContinuoApi 时需要)
 export interface TerminalCreateOptions {
   readonly shell?: string;
   readonly args?: ReadonlyArray<string>;
@@ -157,7 +157,7 @@ const api = {
       ipcRenderer.on(PLUGINS_CHANNELS.CHANGED, listener);
       return () => ipcRenderer.off(PLUGINS_CHANNELS.CHANGED, listener);
     },
-    /** v4.4 订阅 lm:// 外部唤起,返 unsubscribe. */
+    /** v4.4 订阅 co:// 外部唤起,返 unsubscribe. */
     onProtocolUrl: (cb: (url: string) => void): (() => void) => {
       const listener = (_: unknown, payload: { url: string }) => cb(payload.url);
       ipcRenderer.on(PLUGINS_CHANNELS.PROTOCOL_URL, listener);
@@ -175,7 +175,7 @@ const api = {
   },
 } as const;
 
-export type LayoutMotionApi = typeof api;
+export type ContinuoApi = typeof api;
 
 // v5 Phase 4.B (refined):暴露名字改 `__lmApi` 而非 `api`。
 // contextBridge 设置的属性 non-configurable 删不掉,但至少

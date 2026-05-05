@@ -2,7 +2,7 @@
 
 行为契约:**每个插件有独立的 JSON 数据文件**(生产 `userData/plugins/<id>/data.json`),
 Plugin 父类通过 `loadData<T>()` / `saveData(o)` 异步读写。**存储后端注入**
-(LMApp.dataStore),测试用 in-memory mock,生产用 IPC。
+(CoApp.dataStore),测试用 in-memory mock,生产用 IPC。
 
 ## 模块
 
@@ -22,7 +22,7 @@ interface PluginDataStore {
 }
 ```
 
-LMApp 加 `dataStore: PluginDataStore` 字段。
+CoApp 加 `dataStore: PluginDataStore` 字段。
 
 ### loadData<T>()
 

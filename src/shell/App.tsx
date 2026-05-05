@@ -13,7 +13,7 @@ import { useCommandPaletteHotkey } from '@/plugins/command-palette/useCommandPal
 import { useCommandHotkeys } from '@/plugins/command-palette/useCommandHotkeys';
 import { SettingsModal } from '@/plugins/settings/SettingsModal';
 import { PermissionPrompt } from '@/plugins/permissions/PermissionPrompt';
-import { lmApp } from '@/plugins/lm-app';
+import { coApp } from '@/plugins/co-app';
 import { isPopoutWindow } from '@/lib/popout-mode';
 
 const SPLASH_MIN_MS = 600;
@@ -30,7 +30,7 @@ function MainApp() {
   // 全局 ⌘P / Ctrl+P 触发命令面板
   useCommandPaletteHotkey();
   // 全局 commands 注册的 hotkey 监听 + 派发(M-Plugin v1.6 补漏)
-  useCommandHotkeys(lmApp.commands);
+  useCommandHotkeys(coApp.commands);
 
   const onLayoutReady = useCallback(() => setLayoutReady(true), []);
   const showSplash = !(layoutReady && splashElapsed);
@@ -48,8 +48,8 @@ function MainApp() {
         </main>
         <StatusBar />
       </div>
-      <CommandPalette commands={lmApp.commands} />
-      <SettingsModal settingTabs={lmApp.settingTabs} />
+      <CommandPalette commands={coApp.commands} />
+      <SettingsModal settingTabs={coApp.settingTabs} />
       <PermissionPrompt />
       {showSplash && <Splash />}
     </>

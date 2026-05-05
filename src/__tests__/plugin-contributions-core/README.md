@@ -1,7 +1,7 @@
 # plugin-contributions-core(3 个核心贡献点)
 
 行为契约:**Plugin 父类挂三个代理方法 `registerPanel / addCommand / addStatusBarItem`**,
-分别走 `LMApp.panels / commands / statusBar` 三个 registry。每个 registry 是纯数据
+分别走 `CoApp.panels / commands / statusBar` 三个 registry。每个 registry 是纯数据
 + subscribable,UI(Dockview / StatusBar / CommandPalette)在外层订阅渲染。
 
 ## 模块

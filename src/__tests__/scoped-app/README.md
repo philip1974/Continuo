@@ -1,7 +1,7 @@
-# scoped-app(per-plugin LMApp 包装)
+# scoped-app(per-plugin CoApp 包装)
 
-行为契约:**`createScopedApp(lmApp, pluginId, store)` 返回每个 plugin 一份的
-`LMPluginApp`,贡献点 registry 透传 lmApp 引用,fs/network/clipboard/
+行为契约:**`createScopedApp(coApp, pluginId, store)` 返回每个 plugin 一份的
+`CoPluginApp`,贡献点 registry 透传 coApp 引用,fs/network/clipboard/
 permission 是持 pluginId 的闭包。permission.check / granted 真读 store。**
 
 > v5 Phase 1。fs/network/clipboard 当前直接转发 window.api / globalThis.fetch /
@@ -12,14 +12,14 @@ permission 是持 pluginId 的闭包。permission.check / granted 真读 store�
 | 文件 | 职责 |
 |---|---|
 | `src/plugins/scoped-app.ts` | createScopedApp + 5 个命名空间默认实现 |
-| `src/plugins/types.ts`(扩展) | LMPluginApp / PluginFsApi / PluginNetworkApi / PluginClipboardApi / PluginPermissionApi / PluginShellApi |
+| `src/plugins/types.ts`(扩展) | CoPluginApp / PluginFsApi / PluginNetworkApi / PluginClipboardApi / PluginPermissionApi / PluginShellApi |
 | `src/plugins/permissions.ts`(扩展) | PermissionError class |
 
 ## 关键行为
 
-### createScopedApp(lmApp, pluginId, store)
+### createScopedApp(coApp, pluginId, store)
 
-- 返回新对象,所有 lmApp 字段(panels/commands/...)用 spread 透传引用
+- 返回新对象,所有 coApp 字段(panels/commands/...)用 spread 透传引用
 - fs / network / clipboard / shell / permission 5 个新字段是新构造,持 pluginId
 - 不复制 registry,**两个 plugin 的 scopedApp.commands 是同一引用**
 

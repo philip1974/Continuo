@@ -4,7 +4,7 @@
 
 ## 启动 Spotlight
 
-- App 启动 → 立即看到 Spotlight + "LayoutMotion" 渐变标题盖在屏幕上(splash overlay)。
+- App 启动 → 立即看到 Spotlight + "Continuo" 渐变标题盖在屏幕上(splash overlay)。
 - DockShell 完成 layout 注入(`fromJSON` 或 `applyDefaultLayout`)→ splash **完全 unmount**(不是 `display: none`)。
 - 期间布局加载小于 200ms 时也至少给 spotlight 动画一个最短露脸时长,避免闪一下就消失。
 

@@ -1,19 +1,19 @@
 // Core plugins boot(M-Plugin v1.7)。
 // 同步实例化 + _activate,假设 core plugin onload 都是同步的(不 await IPC)。
 // 微任务后 _activate Promise 完成,但 register* 在 onload 内同步执行,
-// 所以同步 boot 后 lmApp.<reg>.getAll() 已包含贡献。
+// 所以同步 boot 后 coApp.<reg>.getAll() 已包含贡献。
 
 import EditorPlugin from './EditorPlugin';
 import TerminalPlugin from './TerminalPlugin';
 import OutputPlugin from './OutputPlugin';
 import PluginsTabPlugin from './PluginsTabPlugin';
-import { lmApp } from '@/plugins/lm-app';
+import { coApp } from '@/plugins/co-app';
 import { createScopedApp } from '@/plugins/scoped-app';
 import type { Plugin } from '@/plugins/Plugin';
-import type { LMPluginApp, PluginManifest } from '@/plugins/types';
+import type { CoPluginApp, PluginManifest } from '@/plugins/types';
 
 interface CoreEntry {
-  readonly Cls: new (app: LMPluginApp, m: PluginManifest) => Plugin;
+  readonly Cls: new (app: CoPluginApp, m: PluginManifest) => Plugin;
   readonly manifest: PluginManifest;
 }
 
@@ -42,7 +42,7 @@ const instances: Plugin[] = [];
 export function bootCorePlugins(): void {
   for (const { Cls, manifest } of CORES) {
     // v5 Phase 1:core plugin 也走 ScopedApp,store=null → permission.check 一律 true
-    const scopedApp = createScopedApp(lmApp, manifest.id, null);
+    const scopedApp = createScopedApp(coApp, manifest.id, null);
     const inst = new Cls(scopedApp, manifest);
     instances.push(inst);
     // _activate 是 async 但 onload 是同步,fire and forget;register 已同步发生

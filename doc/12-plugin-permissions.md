@@ -1,11 +1,11 @@
 # Plugin 作者文档:权限系统(v5)
 
-LM 插件如果要访问文件系统、网络、剪贴板或 shell,必须**先在 manifest
+Continuo 插件如果要访问文件系统、网络、剪贴板或 shell,必须**先在 manifest
 声明 + 用户授权 + runtime 访问 app.* 命名空间**。本文给 plugin 作者
 讲清楚怎么用、什么会被拦、怎么优雅降级。
 
 > 系统设计见 [11-v5-权限-runtime-sandbox.md](./11-v5-权限-runtime-sandbox.md)。
-> 端用户视角的权限 UX 见 LM Settings → 插件 tab。
+> 端用户视角的权限 UX 见 Continuo Settings → 插件 tab。
 
 ## 1. 声明权限(manifest.json)
 
@@ -30,11 +30,11 @@ LM 插件如果要访问文件系统、网络、剪贴板或 shell,必须**先�
 
 不在此枚举内的值会被 manifest schema 拒绝(`SCHEMA_ERROR`)。
 未在 manifest 声明的权限,plugin runtime 调用对应 API 必抛
-`PermissionError`,即使用户在 LM 内部 Modal 上看不见这一项。
+`PermissionError`,即使用户在 Continuo 内部 Modal 上看不见这一项。
 
 ## 2. 首次启用 → 用户决策
 
-用户在 Settings → 插件 → [启用] 你的插件时,LM 弹"权限请求"Modal
+用户在 Settings → 插件 → [启用] 你的插件时,Continuo 弹"权限请求"Modal
 列出 manifest.permissions 里的项,默认全勾。用户可以:
 
 - **[授权选中]**:勾选项 grant,未勾视为 deny
@@ -53,7 +53,7 @@ v5 Phase 2 起**支持部分授权**。例:
 **plugin 必须 try/catch `PermissionError`**,优雅降级。例:
 
 ```js
-const { Plugin, PermissionError } = globalThis.lm;
+const { Plugin, PermissionError } = globalThis.co;
 
 export default class Foo extends Plugin {
   async onload() {
@@ -103,14 +103,14 @@ if (await this.app.permission.check('network')) {
 - **plugin 自己监听并刷新**:自家命令的 fn 每次都用 `app.permission.check`
   即时判,自动反映最新决策
 
-LM 不强制选哪种,但**推荐 plugin 自己每次调 API 时 try/catch**,这样
+Continuo 不强制选哪种,但**推荐 plugin 自己每次调 API 时 try/catch**,这样
 即时反映最新 store 状态。
 
 ## 5. FAILED 状态 + 用户重试
 
 - 用户 [全部拒绝] → plugin 状态 FAILED + 红字 `PERMISSION_DENIED: ...`
 - Settings 行仍显 [启用] 按钮(v4.7),用户改主意点 [启用] →
-  LM 自动 `clearDenied(pluginId)` 清旧 deny → re-prompt → 用户重选
+  Continuo 自动 `clearDenied(pluginId)` 清旧 deny → re-prompt → 用户重选
 - 全部拒就还是 FAILED;授任一就 enabled(可能 partial)
 
 ## 6. 当前 sandbox 已知限制
@@ -121,7 +121,7 @@ v5 Phase 4 的入境清洗只覆盖 `globalThis.fetch` + `navigator.clipboard`,
 **还能绕开的路**:
 
 - `window.__lmApi.fs.*` 直接调 — preload 用 contextBridge 暴露的属性
-  是 non-configurable,真删不掉。LM UI 走自己 cache 不需要再访问该
+  是 non-configurable,真删不掉。Continuo UI 走自己 cache 不需要再访问该
   名字,plugin 强行用就是显式破坏 sandbox 协议,marketplace review 拒
 - 把代码丢到 `<iframe>` / `Worker` / `eval` 里再调 — 同 realm 同享
   globals(本计划见 11.§3 选项 C 留给 v6+)
@@ -146,7 +146,7 @@ dev 模式:plugin 调 raw API 不会被拦(为兼容 Vite HMR)。要验证
 
 1. **临时调 app.\* 强制走 gating**(推荐):写代码就用 `this.app.fs.*`,
    gating 永远生效
-2. **打 PROD .app 测**:`pnpm build:app` 后跑 `LayoutMotion.app`,
+2. **打 PROD .app 测**:`pnpm build:app` 后跑 `Continuo.app`,
    raw fetch 会被 sandbox sweep 删掉
 
 ## 9. 反馈 / 路线

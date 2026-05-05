@@ -8,7 +8,7 @@ import { useEffect, useState } from 'react';
 import { Folder } from '@react-symbols/icons';
 import { useLayoutUiStore } from '@/stores/layout-ui.store';
 import { NavRailButton } from '@/design';
-import { lmApp } from '@/plugins/lm-app';
+import { coApp } from '@/plugins/co-app';
 import { useSettingsStore } from '@/plugins/settings/store';
 import type { RibbonActionSpec } from '@/plugins/registries/RibbonRegistry';
 
@@ -24,9 +24,9 @@ interface IconBarItemConfig {
 const ICON_SIZE = 22;
 
 function useRibbonActions(): readonly RibbonActionSpec[] {
-  const [snapshot, setSnapshot] = useState(() => lmApp.ribbon.getAll());
+  const [snapshot, setSnapshot] = useState(() => coApp.ribbon.getAll());
   useEffect(
-    () => lmApp.ribbon.subscribe(() => setSnapshot(lmApp.ribbon.getAll())),
+    () => coApp.ribbon.subscribe(() => setSnapshot(coApp.ribbon.getAll())),
     [],
   );
   return snapshot;

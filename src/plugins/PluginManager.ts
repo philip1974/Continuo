@@ -6,7 +6,7 @@ import { loadPluginModule } from './loader';
 import { isVersionCompatible, parseManifest } from './manifest';
 import { ensureAuthorized, type PermissionStore, type PromptFn } from './permissions';
 import { createScopedApp } from './scoped-app';
-import type { LMApp, PluginManifest } from './types';
+import type { CoApp, PluginManifest } from './types';
 
 // ── Host 注入接口 ──────────────────────────────────────
 
@@ -70,7 +70,7 @@ export class PluginManager {
   private activationOrder: string[] = [];
 
   constructor(
-    private readonly app: LMApp,
+    private readonly app: CoApp,
     private readonly host: ManagerHost,
   ) {}
 

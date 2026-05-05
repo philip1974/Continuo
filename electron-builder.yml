@@ -1,6 +1,6 @@
-# electron-builder 配置(M-Plugin v4.4 lm:// 协议注册需要打 .app)
-appId: com.layoutmotion.app
-productName: LayoutMotion
+# electron-builder 配置(M-Plugin v4.4 co:// 协议注册需要打 .app)
+appId: com.continuo.app
+productName: Continuo
 directories:
   output: dist-electron
   buildResources: build
@@ -17,9 +17,9 @@ mac:
     - target: dir          # 仅产 .app,不打 dmg(测试足够)
       arch: arm64
   protocols:
-    - name: LayoutMotion Protocol
+    - name: Continuo Protocol
       schemes:
-        - lm
+        - co
   # 跳过 codesign / notarize(本地测试)
   identity: null
 

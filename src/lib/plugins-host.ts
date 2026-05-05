@@ -1,15 +1,15 @@
 // renderer 端 ManagerHost 实现(M-Plugin v4.1)。
-// 把 lmApi.plugins.* IPC 包成 PluginManager 期望的 ManagerHost 形态。
+// 把 coApi.plugins.* IPC 包成 PluginManager 期望的 ManagerHost 形态。
 //
 // main.js 文本 → Blob URL → dynamic import,绕过 file:// 跨进程加载限制。
 
 import type { ManagerHost } from '@/plugins/PluginManager';
-import { lmApi } from './lm-api';
+import { coApi } from './co-api';
 
 export function createWindowApiHost(): ManagerHost {
   return {
     listPluginDirs: async () => {
-      const r = await lmApi.plugins.listDirs();
+      const r = await coApi.plugins.listDirs();
       if (!r.ok) {
         console.warn('[plugins-host] listDirs failed', r.code, r.message);
         return [];
@@ -30,7 +30,7 @@ export function createWindowApiHost(): ManagerHost {
       });
     },
     readEnabledIds: async () => {
-      const r = await lmApi.plugins.readEnabled();
+      const r = await coApi.plugins.readEnabled();
       if (!r.ok) {
         console.warn('[plugins-host] readEnabled failed', r.code, r.message);
         return new Set<string>();
@@ -38,14 +38,14 @@ export function createWindowApiHost(): ManagerHost {
       return new Set(r.data);
     },
     writeEnabledIds: async (ids) => {
-      const r = await lmApi.plugins.writeEnabled(ids);
+      const r = await coApi.plugins.writeEnabled(ids);
       if (!r.ok) {
         console.warn('[plugins-host] writeEnabled failed', r.code, r.message);
       }
     },
     importModule: (url) => import(/* @vite-ignore */ url),
     removePluginDir: async (id) => {
-      const r = await lmApi.plugins.uninstall(id);
+      const r = await coApi.plugins.uninstall(id);
       if (!r.ok) {
         throw Object.assign(new Error(r.message), { code: r.code });
       }

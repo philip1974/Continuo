@@ -3,7 +3,13 @@ import type { HandlerDetails, WindowOpenHandlerResponse } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { registerIpc } from './ipc';
+import { migrateUserData } from './userdata-migration';
 import { PLUGINS_CHANNELS } from '../shared/plugins-channels';
+
+// v0.2 改名 LayoutMotion → Continuo:迁移旧 userData 路径(layout-motion /
+// LayoutMotion → continuo / Continuo)。要在 app.getPath('userData') 被任何
+// 模块用之前调,所以放最前面。
+migrateUserData(app.getPath('userData'));
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = !app.isPackaged;
@@ -96,10 +102,10 @@ app.on('browser-window-created', (_evt, win) => {
   });
 });
 
-// M-Plugin v4.4:lm:// 协议处理
-// macOS:open-url(用户点 lm://...);Windows / Linux:single-instance argv
+// M-Plugin v4.4:co:// 协议处理(原 co://,v0.2 改名 Continuo)
+// macOS:open-url(用户点 co://...);Windows / Linux:single-instance argv
 
-const PROTOCOL = 'lm';
+const PROTOCOL = 'co';
 let pendingProtocolUrl: string | null = null;
 
 function dispatchProtocolUrl(url: string): void {

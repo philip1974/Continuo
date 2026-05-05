@@ -1,14 +1,14 @@
-// lm:// 协议路由(M-Plugin v4.4)。
+// co:// 协议路由(M-Plugin v4.4)。
 //
 // 当前默认路由:
-//   lm://command/<commandId>?...  → app.commands.execute(commandId)
+//   co://command/<commandId>?...  → app.commands.execute(commandId)
 //
-// 未来可扩 lm://panel/<type>?file=... 等;留给 plugin 用 ProtocolRegistry
+// 未来可扩 co://panel/<type>?file=... 等;留给 plugin 用 ProtocolRegistry
 // 注册 path-based handler(本期未做,缺真实需求)。
 //
 // 解析失败 / commandId 不存在 → console.warn,不抛(避免外部 URL 把 LM 弄崩)。
 
-import type { LMApp } from '../types';
+import type { CoApp } from '../types';
 
 export interface ParsedProtocolUrl {
   readonly action: string;       // 'command' | 'panel' | ...
@@ -23,8 +23,8 @@ export function parseProtocolUrl(url: string): ParsedProtocolUrl | null {
   } catch {
     return null;
   }
-  if (parsed.protocol !== 'lm:') return null;
-  // lm://command/<id>:host='command',pathname='/<id>'
+  if (parsed.protocol !== 'co:') return null;
+  // co://command/<id>:host='command',pathname='/<id>'
   const action = parsed.host;
   const target = parsed.pathname.replace(/^\/+/, '');
   if (!action || !target) return null;
@@ -37,11 +37,11 @@ export function parseProtocolUrl(url: string): ParsedProtocolUrl | null {
 
 export async function handleProtocolUrl(
   url: string,
-  app: LMApp,
+  app: CoApp,
 ): Promise<void> {
   const parsed = parseProtocolUrl(url);
   if (!parsed) {
-    console.warn(`[protocol] invalid lm:// URL: ${url}`);
+    console.warn(`[protocol] invalid co:// URL: ${url}`);
     return;
   }
 

@@ -3,10 +3,10 @@
 // 安装:把整个目录拷到 ${userData}/plugins/com.example.sample/,
 // 重启 LM,Settings → 插件 → 启用 'Sample Plugin'。
 //
-// SDK 入口:LM 把 Plugin 基类 + React 暴露在 globalThis.lm 上(M-Plugin v4.1)。
+// SDK 入口:LM 把 Plugin 基类 + React 暴露在 globalThis.co 上(M-Plugin v4.1)。
 // 解构出来后写起来跟 ESM import 一样自然。
 
-const { Plugin, React, PermissionError } = globalThis.lm;
+const { Plugin, React, PermissionError } = globalThis.co;
 const h = React.createElement;
 
 export default class SamplePlugin extends Plugin {

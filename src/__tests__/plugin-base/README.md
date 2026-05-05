@@ -1,6 +1,6 @@
 # plugin-base(插件基类与 Disposable 模型)
 
-行为契约:**`Plugin` 抽象类 + `Disposable` LIFO 自动清理**,是 LM 插件系统的脊柱。
+行为契约:**`Plugin` 抽象类 + `Disposable` LIFO 自动清理**,是 Continuo 插件系统的脊柱。
 所有贡献点(`registerPanel` / `addCommand` / 等)返回 `Disposable`,由 Plugin 父类
 自动收集,`_deactivate()` 时 LIFO 清理。
 
@@ -9,14 +9,14 @@
 | 文件 | 职责 |
 |---|---|
 | `src/plugins/Plugin.ts` | `Plugin` 抽象类 + `Disposable` 接口 + 生命周期 |
-| `src/plugins/types.ts` | `PluginManifest` / `LMApp` 类型定义 |
+| `src/plugins/types.ts` | `PluginManifest` / `CoApp` 类型定义 |
 
 ## 关键行为
 
 ### Plugin 抽象 API
 
 - 子类必须实现 `onload()`,可选 `onunload()`
-- 构造接收 `(app: LMApp, manifest: PluginManifest)`,只读暴露
+- 构造接收 `(app: CoApp, manifest: PluginManifest)`,只读暴露
 - `register(d: Disposable)` 是 `protected`(子类内部调用),也返回 `d` 便于链式
 
 ### Disposable LIFO 清理

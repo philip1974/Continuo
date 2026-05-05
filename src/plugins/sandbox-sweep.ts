@@ -51,13 +51,13 @@ export function getCachedClipboard(): ClipboardOps {
 /**
  * 入境清洗:删 globalThis.fetch + navigator.clipboard + window.api,plugin
  * 直接调这些 API 会抛 TypeError。LM UI 自身通过 getCachedFetch/Clipboard /
- * lmApi 走缓存,不受影响。
+ * coApi 走缓存,不受影响。
  *
  * 调用时机:LM 内核 init 完成,user PluginManager init **之前**。
  * dev 模式不要调(Vite HMR 可能要 fetch);PROD 才调。
  *
  * Phase 4.B 加 window.api sweep:plugin 不能再走 window.api.fs.* 绕过
- * app.fs 的权限门。LM UI 走 lmApi(captureLmApi 已缓存)不受影响。
+ * app.fs 的权限门。LM UI 走 coApi(captureLmApi 已缓存)不受影响。
  */
 export function sandboxSweep(): void {
   // 用 defineProperty 覆盖 — 直接 delete 在 chromium 上是 no-op

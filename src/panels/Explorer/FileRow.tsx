@@ -3,7 +3,7 @@ import { Document, Folder } from '@react-symbols/icons';
 import type { ItemInstance } from '@headless-tree/core';
 import type { FileEntry } from '@/lib/fs/types';
 import { Input } from '@/design';
-import { lmApp } from '@/plugins/lm-app';
+import { coApp } from '@/plugins/co-app';
 import { mergeDecorations } from '@/plugins/registries/ExplorerDecoratorRegistry';
 import { ContextMenu, type ContextMenuActions } from './ContextMenu';
 import type { DropTargetEntry } from './drop-handlers';
@@ -30,11 +30,11 @@ const INDENT = 16;
 
 /** 订阅插件装饰器 registry,plugin enable/disable 时所有 FileRow 自动重渲. */
 function useDecoration(path: string, isDirectory: boolean) {
-  const [snap, setSnap] = useState(() => lmApp.explorerDecorators.getAll());
+  const [snap, setSnap] = useState(() => coApp.explorerDecorators.getAll());
   useEffect(
     () =>
-      lmApp.explorerDecorators.subscribe(() =>
-        setSnap(lmApp.explorerDecorators.getAll()),
+      coApp.explorerDecorators.subscribe(() =>
+        setSnap(coApp.explorerDecorators.getAll()),
       ),
     [],
   );

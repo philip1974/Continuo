@@ -4,7 +4,7 @@
 // 子类必须实现 onload();可选 onunload()。所有贡献点(后续模块)
 // 内部调用 this.register(d) 收集 Disposable,_deactivate 时反序清理。
 
-import type { Disposable, LMPluginApp, PluginManifest } from './types';
+import type { Disposable, CoPluginApp, PluginManifest } from './types';
 import type { PanelSpec } from './registries/PanelRegistry';
 import type { CommandSpec } from './registries/CommandRegistry';
 import type { StatusBarItemSpec } from './registries/StatusBarRegistry';
@@ -17,12 +17,12 @@ export type { Disposable } from './types';
 
 export abstract class Plugin {
   /** v5 Phase 1:per-plugin scoped app(含 fs/network/clipboard/permission). */
-  readonly app: LMPluginApp;
+  readonly app: CoPluginApp;
   readonly manifest: PluginManifest;
   private disposables: Disposable[] = [];
   private disposed = false;
 
-  constructor(app: LMPluginApp, manifest: PluginManifest) {
+  constructor(app: CoPluginApp, manifest: PluginManifest) {
     this.app = app;
     this.manifest = manifest;
   }

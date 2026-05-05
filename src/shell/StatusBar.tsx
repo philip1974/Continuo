@@ -7,7 +7,7 @@ import { useEditorStore } from '@/stores/editor.store';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { useLayoutUiStore } from '@/stores/layout-ui.store';
 import { charCount, lineCount, wordCount } from '@/lib/text-stats';
-import { lmApp } from '@/plugins/lm-app';
+import { coApp } from '@/plugins/co-app';
 import type { StatusBarItemSpec } from '@/plugins/registries/StatusBarRegistry';
 
 function basename(p: string): string {
@@ -16,9 +16,9 @@ function basename(p: string): string {
 }
 
 function useStatusBarItems(side: 'left' | 'right'): readonly StatusBarItemSpec[] {
-  const [snap, setSnap] = useState(() => lmApp.statusBar.getBySide(side));
+  const [snap, setSnap] = useState(() => coApp.statusBar.getBySide(side));
   useEffect(
-    () => lmApp.statusBar.subscribe(() => setSnap(lmApp.statusBar.getBySide(side))),
+    () => coApp.statusBar.subscribe(() => setSnap(coApp.statusBar.getBySide(side))),
     [side],
   );
   return snap;

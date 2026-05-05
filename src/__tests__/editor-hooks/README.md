@@ -11,7 +11,7 @@ React hook 是薄壳(Step E4 接入 EditorPanel),业务逻辑都在纯函数里,
 - `updateActiveContent(content, deps)` — 编辑器 onChange,只是包 store action 的语法糖
 - `makeAutoSaveScheduler(saveFile, delayMs)` — debounce 调度器
 
-**不做**:Cmd+O / Cmd+N / 另存为(需要 fs:open-dialog/save-dialog,LayoutMotion 暂无这两个 IPC,留下里程碑)。
+**不做**:Cmd+O / Cmd+N / 另存为(需要 fs:open-dialog/save-dialog,Continuo 暂无这两个 IPC,留下里程碑)。
 新建/打开文件统一走 Explorer 右键菜单 + 单击。
 
 ## 模块

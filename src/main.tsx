@@ -4,24 +4,24 @@ import { createRoot } from 'react-dom/client';
 import { App } from './shell/App';
 import { initExplorerPersistence } from './lib/persist/explorer-persist';
 import { bootCorePlugins } from './core-plugins';
-import { lmApp } from './plugins/lm-app';
+import { coApp } from './plugins/co-app';
 import { Plugin } from './plugins/Plugin';
 import { PluginManager } from './plugins/PluginManager';
-import { setUserPluginManager } from './plugins/lm-plugin-manager';
+import { setUserPluginManager } from './plugins/co-plugin-manager';
 import { createWindowApiHost } from './lib/plugins-host';
 import { IpcPermissionStore } from './plugins/permissions/IpcPermissionStore';
-import { setUserPermissionStore } from './plugins/permissions/lm-permission-store';
+import { setUserPermissionStore } from './plugins/permissions/co-permission-store';
 import { usePermissionPromptStore } from './plugins/permissions/promptStore';
 import { PermissionError } from './plugins/permissions';
 import { sandboxSweep } from './plugins/sandbox-sweep';
-import { captureLmApi, lmApi } from './lib/lm-api';
+import { captureLmApi, coApi } from './lib/co-api';
 import './styles/tailwind.css';
 
 // Phase 4.B:**最早**调,把 window.api 缓存到 module-local。
-// 之后 sandboxSweep 删掉 window.api 也不影响 LM UI(走 lmApi)。
+// 之后 sandboxSweep 删掉 window.api 也不影响 LM UI(走 coApi)。
 captureLmApi();
 
-// M-Plugin v4.1 SDK 暴露:user-installed plugin 通过 globalThis.lm 拿到
+// M-Plugin v4.1 SDK 暴露:user-installed plugin 通过 globalThis.co 拿到
 // Plugin 基类 + React(用 Blob URL import 时无法走 ESM bare import)。
 // v5 Phase 3 增 PermissionError,plugin 可 instanceof 区分权限错误与其它。
 // 后续若改 Vite plugin 注入 'lm' 模块,本块可移除。
@@ -41,7 +41,7 @@ const container = document.getElementById('root');
 if (!container) throw new Error('#root not found');
 
 // M-Plugin v1.7:渲染前同步注册内置插件(editor / terminal / output),
-// 使 lmApp.panels 在 DockShell 首次 mount 时已含 3 个 panel 类型。
+// 使 coApp.panels 在 DockShell 首次 mount 时已含 3 个 panel 类型。
 bootCorePlugins();
 
 // M-Plugin v5 Phase 4:plugin import 之前清掉 globalThis.fetch +
@@ -57,7 +57,7 @@ if (import.meta.env.PROD) {
 // promptFn 桥到 design Modal(用户首次启用插件时弹授权)。
 const userPermissionStore = new IpcPermissionStore();
 setUserPermissionStore(userPermissionStore);
-const userPluginManager = new PluginManager(lmApp, {
+const userPluginManager = new PluginManager(coApp, {
   ...createWindowApiHost(),
   permissionStore: userPermissionStore,
   promptFn: (pid, perms) =>
@@ -69,16 +69,16 @@ void userPluginManager.init().catch((err) => {
 });
 
 // M-Plugin v4.3.1:主进程 mtime watch 推 changed → 自动 reload
-lmApi.plugins.onChanged((id) => {
+coApi.plugins.onChanged((id) => {
   void userPluginManager.reload(id).catch((err) => {
     console.warn(`[main] auto-reload ${id} failed`, err);
   });
 });
 
-// M-Plugin v4.4:lm:// 外部唤起 → 路由到 commands.execute
+// M-Plugin v4.4:co:// 外部唤起 → 路由到 commands.execute
 import('./plugins/protocol/handler').then(({ handleProtocolUrl }) => {
-  lmApi.plugins.onProtocolUrl((url) => {
-    void handleProtocolUrl(url, lmApp);
+  coApi.plugins.onProtocolUrl((url) => {
+    void handleProtocolUrl(url, coApp);
   });
 });
 
@@ -86,8 +86,8 @@ import('./plugins/protocol/handler').then(({ handleProtocolUrl }) => {
 // fire-and-forget:hydrate 在毫秒级完成,store setState 触发 React 重渲染,
 // EmptyWorkspace 自动切到 FolderTree。无需 splash。
 void initExplorerPersistence({
-  read: () => lmApi.explorer.read(),
-  write: (snap) => lmApi.explorer.write(snap),
+  read: () => coApi.explorer.read(),
+  write: (snap) => coApi.explorer.write(snap),
 });
 
 createRoot(container).render(

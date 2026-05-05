@@ -54,12 +54,12 @@ describe('nous-tokens.css MD3 完整性', () => {
   });
 });
 
-describe('theme.css LM 暗色覆盖与 @theme inline 链路', () => {
+describe('theme.css Continuo 暗色覆盖与 @theme inline 链路', () => {
   it('引入 nous-tokens.css', () => {
     expect(LM_THEME).toMatch(/@import\s+['"]\.\/nous-tokens\.css['"]/);
   });
 
-  it('.dark 块覆盖核心 surface / primary 槽位(LM slate + sky 身份)', () => {
+  it('.dark 块覆盖核心 surface / primary 槽位(Continuo slate + sky 身份)', () => {
     const lmDark = getDarkBlock(LM_THEME);
     expect(lmDark).toMatch(/--md-surface\s*:/);
     expect(lmDark).toMatch(/--md-primary\s*:/);

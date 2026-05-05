@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { IDockviewHeaderActionsProps } from 'dockview-react';
 import { popoutUrlFor } from '@/lib/popout-mode';
 import { IconButton, MenuItem } from '@/design';
-import { lmApp } from '@/plugins/lm-app';
+import { coApp } from '@/plugins/co-app';
 
 let panelCounter = 0;
 const nextPanelId = (key: string) => `${key}-${++panelCounter}`;
@@ -12,10 +12,10 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   // 动态读取已注册 panel 类型(含内置 + 未来第三方插件)
-  const [panelChoices, setPanelChoices] = useState(() => lmApp.panels.getAll());
+  const [panelChoices, setPanelChoices] = useState(() => coApp.panels.getAll());
   useEffect(
     () =>
-      lmApp.panels.subscribe(() => setPanelChoices(lmApp.panels.getAll())),
+      coApp.panels.subscribe(() => setPanelChoices(coApp.panels.getAll())),
     [],
   );
 

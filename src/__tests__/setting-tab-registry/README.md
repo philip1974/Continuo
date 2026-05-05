@@ -2,7 +2,7 @@
 
 行为契约:**Plugin 通过 `this.addSettingTab({ id, title, render })` 注入设置弹窗
 左侧标签**;Settings UI(`SettingsModal`)订阅本 registry,左侧 Tabs 列表 + 右侧
-内容区。LM 自身的"通用设置"也是一个标签项,与插件平等。
+内容区。Continuo 自身的"通用设置"也是一个标签项,与插件平等。
 
 ## 模块
 

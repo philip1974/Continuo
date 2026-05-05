@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { IconButton, MenuItem } from '@/design';
-import { lmApi } from '@/lib/lm-api';
+import { coApi } from '@/lib/co-api';
 
 // FolderTree 顶部固定 Header:左侧 workspace 名 + 右侧 ⋯ 溢出菜单
 //(展开 / 折叠 / 切换 / 关闭)。
@@ -46,7 +46,7 @@ export function ExplorerHeader({
     setMenuOpen(false);
     setBusy(true);
     try {
-      const r = await lmApi.fs.selectDirectory();
+      const r = await coApi.fs.selectDirectory();
       if (r.ok && r.data) setRoot(r.data);
     } finally {
       setBusy(false);

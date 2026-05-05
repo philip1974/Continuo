@@ -14,9 +14,9 @@ import { PanelRegistry } from '../../plugins/registries/PanelRegistry';
 import { RibbonRegistry } from '../../plugins/registries/RibbonRegistry';
 import { SettingTabRegistry } from '../../plugins/registries/SettingTabRegistry';
 import { StatusBarRegistry } from '../../plugins/registries/StatusBarRegistry';
-import type { LMApp } from '../../plugins/types';
+import type { CoApp } from '../../plugins/types';
 
-function makeLmApp(): LMApp {
+function makeLmApp(): CoApp {
   return {
     version: '1.0.0',
     panels: new PanelRegistry(),
@@ -42,18 +42,18 @@ describe('createScopedApp 基础结构', () => {
   });
 
   it('贡献点 registry 透传引用(两个 plugin 看到同一个 commands)', () => {
-    const lmApp = makeLmApp();
-    const a = createScopedApp(lmApp, 'p.a', null);
-    const b = createScopedApp(lmApp, 'p.b', null);
-    expect(a.commands).toBe(lmApp.commands);
-    expect(b.commands).toBe(lmApp.commands);
+    const coApp = makeLmApp();
+    const a = createScopedApp(coApp, 'p.a', null);
+    const b = createScopedApp(coApp, 'p.b', null);
+    expect(a.commands).toBe(coApp.commands);
+    expect(b.commands).toBe(coApp.commands);
     expect(a.commands).toBe(b.commands);
   });
 
   it('fs / clipboard / permission 是 per-plugin 闭包(不同引用)', () => {
-    const lmApp = makeLmApp();
-    const a = createScopedApp(lmApp, 'p.a', null);
-    const b = createScopedApp(lmApp, 'p.b', null);
+    const coApp = makeLmApp();
+    const a = createScopedApp(coApp, 'p.a', null);
+    const b = createScopedApp(coApp, 'p.b', null);
     expect(a.fs).not.toBe(b.fs);
     expect(a.permission).not.toBe(b.permission);
   });
@@ -82,9 +82,9 @@ describe('permission.check / granted', () => {
   it('per-plugin 隔离:p.a 的授权不被 p.b 看到', async () => {
     const store = new InMemoryPermissionStore();
     await store.grant('p.a', ['fs']);
-    const lmApp = makeLmApp();
-    const a = createScopedApp(lmApp, 'p.a', store);
-    const b = createScopedApp(lmApp, 'p.b', store);
+    const coApp = makeLmApp();
+    const a = createScopedApp(coApp, 'p.a', store);
+    const b = createScopedApp(coApp, 'p.b', store);
     expect(await a.permission.check('fs')).toBe(true);
     expect(await b.permission.check('fs')).toBe(false);
   });
@@ -160,9 +160,9 @@ describe('Phase 3 runtime gating', () => {
   it('per-plugin 隔离:p.a 授了 fs,p.b 没授 → p.b 仍抛 PermissionError', async () => {
     const store = new InMemoryPermissionStore();
     await store.grant('p.a', ['fs']);
-    const lmApp = makeLmApp();
-    const a = createScopedApp(lmApp, 'p.a', store);
-    const b = createScopedApp(lmApp, 'p.b', store);
+    const coApp = makeLmApp();
+    const a = createScopedApp(coApp, 'p.a', store);
+    const b = createScopedApp(coApp, 'p.b', store);
     await expect(a.fs.readFile('/x')).rejects.toThrow(/未注入/); // 过 gating
     await expect(b.fs.readFile('/x')).rejects.toBeInstanceOf(PermissionError);
   });

@@ -31,7 +31,7 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 ## 设计系统约束
 
-> LM 与 Nous 共用 `@nous/shell-ui/design`（本地副本在 `src/design/`），下列规则保护这一共享层不退化。
+> Continuo 与 Nous 共用 `@nous/shell-ui/design`（本地副本在 `src/design/`），下列规则保护这一共享层不退化。
 
 ### 颜色
 
@@ -47,10 +47,10 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 ### 共享层修改
 
-- `src/design/` 是 Nous shell-ui 的 LM 副本。**默认不改**。如需 LM 微调（IDE 视觉收圆角、降字重等），在文件顶部加注释 `// LM-local 微调:...,Nous 上游保持 ...`，commit 信息也说明。
-- LM-local 扩展 variant（如 `Button outlined`、`IconButton`）允许,但要协调把通用部分推回 Nous（写任务卡 + 记录于 `doc/`）。
-- `src/styles/nous-tokens.css` 是 Nous 的纯复制,**绝不**修改 — LM 调色板覆盖写在 `theme.css` 的 `.dark` 块。
+- `src/design/` 是 Nous shell-ui 的 Continuo 副本。**默认不改**。如需 Continuo 微调（IDE 视觉收圆角、降字重等），在文件顶部加注释 `// Continuo-local 微调:...,Nous 上游保持 ...`，commit 信息也说明。
+- Continuo-local 扩展 variant（如 `Button outlined`、`IconButton`）允许,但要协调把通用部分推回 Nous（写任务卡 + 记录于 `doc/`）。
+- `src/styles/nous-tokens.css` 是 Nous 的纯复制,**绝不**修改 — Continuo 调色板覆盖写在 `theme.css` 的 `.dark` 块。
 
 ### 主题切换
 
-- 全应用通过 `<html class="dark">` + `ThemeProvider` 切换。代码不要假定永远是暗色 — 新色板必须在 `:root` (light) 与 `.dark` 都给值。LM 当前默认 dark,light 是占位。
+- 全应用通过 `<html class="dark">` + `ThemeProvider` 切换。代码不要假定永远是暗色 — 新色板必须在 `:root` (light) 与 `.dark` 都给值。Continuo 当前默认 dark,light 是占位。

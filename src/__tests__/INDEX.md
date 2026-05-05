@@ -6,6 +6,10 @@
 
 - [`contracts.spec.ts`](./animation-contracts/contracts.spec.ts)
 
+## [lm-api(Continuo UI 内部 IPC 入口)](./co-api/README.md)
+
+- [`co-api.spec.ts`](./co-api/co-api.spec.ts)
+
 ## [column-resize (Sidebar 拖拽改宽)](./column-resize/README.md)
 
 - [`compute.spec.ts`](./column-resize/compute.spec.ts)
@@ -48,7 +52,7 @@
 
 - [`editor-store.spec.ts`](./editor-store/editor-store.spec.ts)
 
-## [event-bus(LM 自定义事件总线 + Plugin.registerEvent)](./event-bus/README.md)
+## [event-bus(Continuo 自定义事件总线 + Plugin.registerEvent)](./event-bus/README.md)
 
 - [`event-bus.spec.ts`](./event-bus/event-bus.spec.ts)
 
@@ -97,10 +101,6 @@
 
 - [`persistence.spec.ts`](./layout-persistence/persistence.spec.ts)
 
-## [lm-api(LM UI 内部 IPC 入口)](./lm-api/README.md)
-
-- [`lm-api.spec.ts`](./lm-api/lm-api.spec.ts)
-
 ## [permission-prompt(授权 UI store + Modal + Manager 集成)](./permission-prompt/README.md)
 
 - [`PermissionPrompt.spec.tsx`](./permission-prompt/PermissionPrompt.spec.tsx)
@@ -147,7 +147,7 @@
 
 - [`popout-mode.spec.ts`](./popout-contracts/popout-mode.spec.ts)
 
-## [protocol-url(lm:// 路由)](./protocol-url/README.md)
+## [protocol-url(co:// 路由)](./protocol-url/README.md)
 
 - [`protocol-url.spec.ts`](./protocol-url/protocol-url.spec.ts)
 
@@ -159,7 +159,7 @@
 
 - [`preload-api.spec.ts`](./scaffold/preload-api.spec.ts)
 
-## [scoped-app(per-plugin LMApp 包装)](./scoped-app/README.md)
+## [scoped-app(per-plugin CoApp 包装)](./scoped-app/README.md)
 
 - [`sandbox-sweep.spec.ts`](./scoped-app/sandbox-sweep.spec.ts)
 - [`scoped-app.spec.ts`](./scoped-app/scoped-app.spec.ts)

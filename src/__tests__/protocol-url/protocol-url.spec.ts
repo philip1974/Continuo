@@ -6,8 +6,8 @@ import {
 import { createTestApp } from '../../plugins/test-utils';
 
 describe('parseProtocolUrl', () => {
-  it('lm://command/<id> 基本解析', () => {
-    const r = parseProtocolUrl('lm://command/sample.hello');
+  it('co://command/<id> 基本解析', () => {
+    const r = parseProtocolUrl('co://command/sample.hello');
     expect(r).toEqual({
       action: 'command',
       target: 'sample.hello',
@@ -16,7 +16,7 @@ describe('parseProtocolUrl', () => {
   });
 
   it('带 query → params', () => {
-    const r = parseProtocolUrl('lm://command/foo?a=1&b=hi');
+    const r = parseProtocolUrl('co://command/foo?a=1&b=hi');
     expect(r?.params).toEqual({ a: '1', b: 'hi' });
   });
 
@@ -30,16 +30,16 @@ describe('parseProtocolUrl', () => {
   });
 
   it('缺 host(action)→ null', () => {
-    expect(parseProtocolUrl('lm:///foo')).toBeNull();
+    expect(parseProtocolUrl('co:///foo')).toBeNull();
   });
 
   it('缺 pathname(target)→ null', () => {
-    expect(parseProtocolUrl('lm://command')).toBeNull();
-    expect(parseProtocolUrl('lm://command/')).toBeNull();
+    expect(parseProtocolUrl('co://command')).toBeNull();
+    expect(parseProtocolUrl('co://command/')).toBeNull();
   });
 
   it("action 'panel' 也能解析(handler 决定支持)", () => {
-    const r = parseProtocolUrl('lm://panel/editor?file=foo.md');
+    const r = parseProtocolUrl('co://panel/editor?file=foo.md');
     expect(r?.action).toBe('panel');
     expect(r?.target).toBe('editor');
   });
@@ -50,7 +50,7 @@ describe('handleProtocolUrl', () => {
     const app = createTestApp();
     const fn = vi.fn();
     app.commands.register({ id: 'sample.hi', title: 'Hi', fn });
-    await handleProtocolUrl('lm://command/sample.hi', app);
+    await handleProtocolUrl('co://command/sample.hi', app);
     expect(fn).toHaveBeenCalled();
   });
 
@@ -58,7 +58,7 @@ describe('handleProtocolUrl', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const app = createTestApp();
     await expect(
-      handleProtocolUrl('lm://command/nope', app),
+      handleProtocolUrl('co://command/nope', app),
     ).resolves.toBeUndefined();
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
@@ -74,7 +74,7 @@ describe('handleProtocolUrl', () => {
         throw new Error('explode');
       },
     });
-    await handleProtocolUrl('lm://command/boom', app);
+    await handleProtocolUrl('co://command/boom', app);
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
   });
@@ -82,7 +82,7 @@ describe('handleProtocolUrl', () => {
   it('不支持的 action → warn 不抛', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const app = createTestApp();
-    await handleProtocolUrl('lm://panel/editor', app);
+    await handleProtocolUrl('co://panel/editor', app);
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
   });

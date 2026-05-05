@@ -29,8 +29,8 @@
 
 - `main` 默认 `'main.js'`
 - `description / author / authorUrl(URL)` 自由文本
-- `minLMVersion`(SemVer,与 LM 版本比对)
-- `isDesktopOnly`(默认 undefined,LM 当前只有桌面,先不强制)
+- `minLMVersion`(SemVer,与 Continuo 版本比对)
+- `isDesktopOnly`(默认 undefined,Continuo 当前只有桌面,先不强制)
 
 ### isVersionCompatible(appVersion, pluginMin)
 

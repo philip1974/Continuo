@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { Button, MenuItem } from '@/design';
-import { lmApi } from '@/lib/lm-api';
+import { coApi } from '@/lib/co-api';
 
 // 未选 workspace 时占位:中央"打开文件夹"按钮(VSCode 风)。
 // 调 fs.selectDirectory(原生对话框)→ setRoot,store 一变 Explorer 容器自动切到 FolderTree。
@@ -14,7 +14,7 @@ export function EmptyWorkspace() {
     if (busy) return;
     setBusy(true);
     try {
-      const r = await lmApi.fs.selectDirectory();
+      const r = await coApi.fs.selectDirectory();
       if (r.ok && r.data) setRoot(r.data);
     } finally {
       setBusy(false);

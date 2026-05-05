@@ -1,6 +1,6 @@
-# event-bus(LM 自定义事件总线 + Plugin.registerEvent)
+# event-bus(Continuo 自定义事件总线 + Plugin.registerEvent)
 
-行为契约:**LM 内核 / 插件互相通信的命名事件总线**。Plugin 通过
+行为契约:**Continuo 内核 / 插件互相通信的命名事件总线**。Plugin 通过
 `this.registerEvent({ name, fn })` 订阅,自动 dispose。
 
 ## 模块

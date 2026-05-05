@@ -31,7 +31,7 @@ export interface PluginManifest {
  * 插件可访问的 LM 应用门面。
  * 后续按贡献点扩 stores / dock / events / fs / log。
  */
-export interface LMApp {
+export interface CoApp {
   /** LM 应用版本,用于插件 minLMVersion 兼容判断。 */
   readonly version: string;
   /** Dockview panel 类型注册表. */
@@ -88,10 +88,10 @@ export interface PluginPermissionApi {
 }
 
 /**
- * Plugin 拿到的 app:在 LMApp 基础上加 5 个 per-plugin 命名空间。
- * 由 createScopedApp(lmApp, pluginId, store) 在激活时构造。
+ * Plugin 拿到的 app:在 CoApp 基础上加 5 个 per-plugin 命名空间。
+ * 由 createScopedApp(coApp, pluginId, store) 在激活时构造。
  */
-export interface LMPluginApp extends LMApp {
+export interface CoPluginApp extends CoApp {
   readonly fs: PluginFsApi;
   readonly network: PluginNetworkApi;
   readonly shell: PluginShellApi;

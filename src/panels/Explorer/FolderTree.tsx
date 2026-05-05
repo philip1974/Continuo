@@ -25,7 +25,7 @@ import {
 } from './drop-handlers';
 import { useFsWatcher } from './hooks/useFsWatcher';
 import { useEditorFile } from '@/panels/Editor/useEditorFile';
-import { lmApi } from '@/lib/lm-api';
+import { coApi } from '@/lib/co-api';
 
 interface CreatingState {
   type: 'file' | 'dir';
@@ -64,14 +64,14 @@ export function FolderTree({ root }: { root: string }) {
     () =>
       createTreeConfig({
         root,
-        fs: lmApi.fs,
+        fs: coApi.fs,
         onRename: (item: ItemInstance<FileEntry>, newName: string) => {
           // headless-tree onRename 是 sync 签名,我们 fire-and-forget 走 mutate-actions
           void (async () => {
             const r = await renameItem(
               item.getId(),
               newName,
-              { fs: lmApi.fs },
+              { fs: coApi.fs },
               { invalidateChildrenIds: refreshParent },
             );
             if (!r.ok) alert(`重命名失败:[${r.code}] ${r.message}`);
@@ -108,7 +108,7 @@ export function FolderTree({ root }: { root: string }) {
   });
 
   const treeApi = { invalidateChildrenIds: refreshParent };
-  const mutateDeps = { fs: lmApi.fs };
+  const mutateDeps = { fs: coApi.fs };
 
   // Explorer ↔ Editor 联动(Step E5):单击文件 → openFileByPath
   const { openFileByPath } = useEditorFile();
@@ -170,7 +170,7 @@ export function FolderTree({ root }: { root: string }) {
     setHoverTarget(null);
     const { files, skippedDirs } = partitionDropItems(e.dataTransfer.items);
     if (files.length === 0 && skippedDirs.length === 0) return;
-    const r = await performDrop(files, target, lmApi.fs);
+    const r = await performDrop(files, target, coApi.fs);
     refreshParent(target);
     // 仅在有问题时提示;成功 fs.watch 已自动刷新树
     const msgs: string[] = [];

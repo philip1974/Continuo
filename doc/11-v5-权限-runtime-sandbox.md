@@ -22,17 +22,17 @@
 ## 2. 架构现状
 
 ```
-plugin main.js (Blob URL import → 与 LM renderer 同 realm)
+plugin main.js (Blob URL import → 与 Continuo renderer 同 realm)
    │
-   ├── globalThis.lm = { Plugin, React }              ← LM 控
-   ├── app: LMApp = { commands, statusBar, ... }      ← LM 控
+   ├── globalThis.co = { Plugin, React }              ← Continuo 控
+   ├── app: CoApp = { commands, statusBar, ... }      ← Continuo 控
    ├── window.api.fs.*                                ← preload 暴露,plugin 可直接用 ❌
    ├── globalThis.fetch                               ← 浏览器原生,plugin 可直接用 ❌
    ├── window.api.terminal.*                          ← preload 暴露 ❌
    └── navigator.clipboard.*                          ← 浏览器原生 ❌
 ```
 
-**根问题**:plugin 与 LM renderer **同 realm**,没法 hide `window.api` / `globalThis.fetch`。任何"sandbox"在同 realm 都是 advisory。
+**根问题**:plugin 与 Continuo renderer **同 realm**,没法 hide `window.api` / `globalThis.fetch`。任何"sandbox"在同 realm 都是 advisory。
 
 ## 3. Sandbox 等级三选
 
@@ -48,7 +48,7 @@ C 留给 v6+(若真要装 untrusted 插件)。
 
 ## 4. 新 SDK API 设计
 
-### 4.1 Plugin 侧(globalThis.lm 增 + app 增)
+### 4.1 Plugin 侧(globalThis.co 增 + app 增)
 
 ```ts
 // 新错误类
@@ -58,10 +58,10 @@ class PermissionError extends Error {
     super(msg ?? `权限 ${permission} 未授权`);
   }
 }
-globalThis.lm.PermissionError = PermissionError;
+globalThis.co.PermissionError = PermissionError;
 
 // app 侧加 4 个命名空间(每个调用前 store.get 检查)
-interface LMApp {
+interface CoApp {
   // 原有 ...
   fs: {
     readFile(path: string): Promise<string>;       // 检 'fs'
@@ -98,13 +98,13 @@ async readFile(path: string): Promise<string> {
 }
 ```
 
-`permission.check` 的实现需要知道当前 plugin id。**这是难点**:`app` 是单例(`lmApp`),plugin 拿到的是同一个引用,无法分辨调用方。
+`permission.check` 的实现需要知道当前 plugin id。**这是难点**:`app` 是单例(`coApp`),plugin 拿到的是同一个引用,无法分辨调用方。
 
-**方案**:plugin 拿到的 `app` 是**每个 plugin 一份的 proxy**(activateEntry 里 new),proxy 持有 pluginId,把 fs/network/shell/clipboard/permission 注入 pluginId-aware 实现;commands/statusBar 等贡献点 registry 直通 lmApp。
+**方案**:plugin 拿到的 `app` 是**每个 plugin 一份的 proxy**(activateEntry 里 new),proxy 持有 pluginId,把 fs/network/shell/clipboard/permission 注入 pluginId-aware 实现;commands/statusBar 等贡献点 registry 直通 coApp。
 
 ```ts
 // PluginManager.activateEntry 里
-const scopedApp = createScopedApp(lmApp, entry.id, this.host.permissionStore);
+const scopedApp = createScopedApp(coApp, entry.id, this.host.permissionStore);
 const instance = new Ctor(scopedApp, entry.manifest);
 ```
 
@@ -112,13 +112,13 @@ const instance = new Ctor(scopedApp, entry.manifest);
 
 ```ts
 // 在 plugin 加载前,把 fs/network/shell/clipboard 相关 API 从 globalThis 删掉
-// LM UI 自己已用过,缓存到 LM 内部;plugin 拿不到。
+// Continuo UI 自己已用过,缓存到 Continuo 内部;plugin 拿不到。
 const _fetch = globalThis.fetch;
 delete (globalThis as any).fetch;
 // ... 类似 navigator.clipboard, window.api(留 commands/popout/explorer 等非敏感的,删 fs/terminal)
 ```
 
-注:**LM UI 自身的 fs/terminal 调用必须在 import plugin 之前**完成,或者把 `window.api.fs` 留给 LM,只删 `window.api`(让 plugin 也拿不到)。需细化。
+注:**Continuo UI 自身的 fs/terminal 调用必须在 import plugin 之前**完成,或者把 `window.api.fs` 留给 Continuo,只删 `window.api`(让 plugin 也拿不到)。需细化。
 
 ## 5. 迁移影响(breaking changes)
 
@@ -128,17 +128,17 @@ delete (globalThis as any).fetch;
 | 现有 perm test plugin | 不受影响(同上) |
 | `examples/sample-plugin` git repo | 加一个 fs + network demo(可选,演示 PermissionError 路径) |
 | 第三方插件(还没有) | n/a — v5 出之前就是 sandbox 默认 |
-| LM UI 自身 | 入境清洗时机要小心,不能误删 LM 自用的 IPC |
+| Continuo UI 自身 | 入境清洗时机要小心,不能误删 Continuo 自用的 IPC |
 
 ## 6. 阶段拆分(每阶段一个可 review 的 PR)
 
 ### Phase 1 — SDK 基础 + 包装 API(不破)✅
 
 - ✅ `PermissionError` class(`src/plugins/permissions.ts`)— Phase 3 实际抛出
-- ✅ `LMPluginApp` 接口扩 `fs` / `network` / `shell` / `clipboard` / `permission` 5 命名空间
-- ✅ `createScopedApp(lmApp, pluginId, store)` 工厂(`src/plugins/scoped-app.ts`)
+- ✅ `CoPluginApp` 接口扩 `fs` / `network` / `shell` / `clipboard` / `permission` 5 命名空间
+- ✅ `createScopedApp(coApp, pluginId, store)` 工厂(`src/plugins/scoped-app.ts`)
 - ✅ `PluginManager.activateEntry` + `bootCorePlugins` 用 ScopedApp wrap
-- ✅ `Plugin.app` 类型从 LMApp → LMPluginApp(测试 createTestApp 同步包装)
+- ✅ `Plugin.app` 类型从 CoApp → CoPluginApp(测试 createTestApp 同步包装)
 - ✅ BDD topic `scoped-app`(9 测试):基础结构 + permission.check/granted + per-plugin 隔离 + PermissionError
 - 当前 fs/network/clipboard 仅转发,permission.check 真读 store
 - shell 占位空对象,Phase 3 实装
@@ -166,7 +166,7 @@ delete (globalThis as any).fetch;
   否则抛 `PermissionError`
 - ✅ `app.fs.readFile/writeFile/listDir`、`app.network.fetch`、
   `app.clipboard.readText/writeText` 全部接入 ensurePerm
-- ✅ `globalThis.lm.PermissionError` 暴露,plugin 可 instanceof 区分
+- ✅ `globalThis.co.PermissionError` 暴露,plugin 可 instanceof 区分
 - ✅ shell 仍占位(Phase 4+ 实装)
 - ✅ store=null(向后兼容/测试/core plugin)→ 跳过检查直接转发
 - ✅ examples/sample-plugin v0.2.0:manifest 加 `permissions: ['fs','network']`,
@@ -190,9 +190,9 @@ delete (globalThis as any).fetch;
   cached 仍工作 / clipboard sweep)
 - ✅ 加 `src/vite-env.d.ts` 引入 vite/client 类型(import.meta.env)
 
-**Phase 4.B ✅**:`window.api` 全 LM UI 41 处 refactor 到 `lmApi`(`src/lib/lm-api.ts`),
+**Phase 4.B ✅**:`window.api` 全 Continuo UI 41 处 refactor 到 `coApi`(`src/lib/lm-api.ts`),
 `captureLmApi()` 在 main.tsx 启动最早调缓存到 module-local,`sandboxSweep`
-也涂掉 `globalThis.api` + `window.api`。LM UI 走 lmApi(Proxy 转发缓存),
+也涂掉 `globalThis.api` + `window.api`。Continuo UI 走 coApi(Proxy 转发缓存),
 plugin 直接 `window.api.fs.*` 抛 TypeError。详见 `src/__tests__/lm-api/`。
 
 **Phase 4.B refined**:preload 暴露名字从 `api` 改为 `__lmApi`,因
@@ -214,8 +214,8 @@ plugin 直接 `window.api.fs.*` 抛 TypeError。详见 `src/__tests__/lm-api/`�
   partial grant / FAILED 重试 / 当前 sandbox 已知限制 / 完整示例
 - ✅ #14 8 个 checkbox 对应实现:
   1. SDK runtime API ✓ (`app.permission.check / granted`)
-  2. lmApp API gating ✓ (`app.fs/network/clipboard` 都接 ensurePerm)
-  3. PermissionError class ✓ (globalThis.lm 暴露)
+  2. coApp API gating ✓ (`app.fs/network/clipboard` 都接 ensurePerm)
+  3. PermissionError class ✓ (globalThis.co 暴露)
   4. ensureAuthorized partial grant ✓ (Phase 2)
   5. UI partial badge ✓ (黄字 ⚠ warning)
   6. sample plugin demo ✓ (v0.2.0 sample.read-tmp / sample.fetch-time)
@@ -235,14 +235,14 @@ plugin 直接 `window.api.fs.*` 抛 TypeError。详见 `src/__tests__/lm-api/`�
 | `app.fs/network/shell/clipboard` | 未授 → 抛 PermissionError;授 → 透传 |
 | `PluginManager` | partial activate 后 entry.warning 正确;FAILED 不再因部分 deny 触发 |
 | BDD 端到端 | 新主题 `plugin-permissions-runtime` 下覆盖整流程 |
-| 入境清洗 | `globalThis.fetch === undefined` after init;LM UI 自身 fetch 仍 work(因为缓存) |
+| 入境清洗 | `globalThis.fetch === undefined` after init;Continuo UI 自身 fetch 仍 work(因为缓存) |
 
 ## 8. 风险 / 待定
 
 | 风险 | 缓解 |
 |---|---|
 | ScopedApp proxy 性能(每个 plugin 一份) | 实测;plugin 数量 < 100,proxy 创建一次性,可接受 |
-| 入境清洗时机:LM UI 还在 init 阶段 fetch → 误删 | LM 内部把要用的 globals 缓存到 module-local,清洗后 LM 用缓存,plugin 拿不到 |
+| 入境清洗时机:Continuo UI 还在 init 阶段 fetch → 误删 | Continuo 内部把要用的 globals 缓存到 module-local,清洗后 Continuo 用缓存,plugin 拿不到 |
 | partial 状态在 Modal 上的 UX 复杂(单个 plugin 4 个权限,可能 partial 部分组合) | 第一版 Modal 只显"已授哪些",不再花哨 |
 | sample plugin 改造改坏 9 贡献点验证 | sample 现有命令保留,加新命令演示;不改老的 |
 | Plugin 作者忘 try/catch PermissionError → 整个 onload 崩 | 已有 onload 抛错隔离(B.10 验过),最坏后果 status=failed,可恢复 |
@@ -250,7 +250,7 @@ plugin 直接 `window.api.fs.*` 抛 TypeError。详见 `src/__tests__/lm-api/`�
 
 ## 9. 估时
 
-| Phase | 工作量(LM 单人) |
+| Phase | 工作量(Continuo 单人) |
 |---|---|
 | 1 SDK 基础 | 0.5 day |
 | 2 partial grant 语义 | 0.5 day |

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { lmApi } from '@/lib/lm-api';
+import { coApi } from '@/lib/co-api';
 import { diffSets, makeDebouncePerPath } from '../fs-watch-helpers';
 
 const DEBOUNCE_MS = 100;
@@ -27,8 +27,8 @@ export function useFsWatcher(
     const prev = prevPathsRef.current;
     const next = expandedPaths;
     const { added, removed } = diffSets(prev, next);
-    for (const p of added) void lmApi.fs.watchDir(p);
-    for (const p of removed) void lmApi.fs.unwatchDir(p);
+    for (const p of added) void coApi.fs.watchDir(p);
+    for (const p of removed) void coApi.fs.unwatchDir(p);
     prevPathsRef.current = new Set(next);
   }, [expandedPaths]);
 
@@ -38,7 +38,7 @@ export function useFsWatcher(
       (path) => onChangeRef.current(path),
       DEBOUNCE_MS,
     );
-    const unsub = lmApi.fs.onDirChanged((path) => debounced(path));
+    const unsub = coApi.fs.onDirChanged((path) => debounced(path));
     return () => {
       unsub();
       debounced.cancel();
@@ -49,7 +49,7 @@ export function useFsWatcher(
   useEffect(() => {
     return () => {
       for (const p of prevPathsRef.current) {
-        void lmApi.fs.unwatchDir(p);
+        void coApi.fs.unwatchDir(p);
       }
       prevPathsRef.current = new Set();
     };
