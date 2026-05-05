@@ -137,6 +137,14 @@ export function MarketplaceTab() {
     if (success) void refreshUpdates();
   };
 
+  // Hooks 必须无条件按相同顺序;loading / error 时 entries=[],计算 noop
+  const entries = state.kind === 'ok' ? state.entries : [];
+  const allTags = useMemo(() => collectAllTags(entries), [entries]);
+  const filtered = useMemo(
+    () => applyFilter(entries, { query, selectedTags }),
+    [entries, query, selectedTags],
+  );
+
   if (state.kind === 'loading') {
     return (
       <div className="flex h-32 items-center justify-center text-fg-dim">
@@ -171,12 +179,6 @@ export function MarketplaceTab() {
       </div>
     );
   }
-
-  const allTags = useMemo(() => collectAllTags(state.entries), [state.entries]);
-  const filtered = useMemo(
-    () => applyFilter(state.entries, { query, selectedTags }),
-    [state.entries, query, selectedTags],
-  );
 
   const toggleTag = (tag: string) => {
     setSelectedTags((prev) => {
