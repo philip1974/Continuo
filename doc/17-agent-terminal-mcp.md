@@ -362,3 +362,143 @@ token 注入子进程 env,任何在那个 PTY 里跑的程序都能读到 `proce
 - 决策 #4 (autorun):shell 启动后键入命令(方案 b),不直接 spawn 命令替换 shell。
 
 (决策来源:与用户的对话, 2026-05-05)
+
+---
+
+## 15. 实装收尾(2026-05-05)
+
+§1-§14 是初版规划。下面是**实际做完的范围**,以及与计划的偏差。
+
+### 15.1 完成度
+
+| 范围 | 状态 | commit |
+|---|---|---|
+| 计划书 | ✓ | `8c821c1` |
+| P1 — sessions 真相源搬 main + MCP host(HTTP) | ✓ | `e61c424` |
+| P2 模块层 — auth store + create_session tool | ✓ | `e49db4b` |
+| P2 接线 — 反向 IPC + 弹窗 + tool 注册 | ✓ | `6dc467f` |
+| P2 美化 — 状态栏 agent 计数 + 撤销 | ✓ | `9789bf6` |
+| P3 模块层 — buffer + send_input/read_output + autorun | ✓ | `2abc258` |
+| P3 接线 — PTY buffer hook + tool 注册 + autorun delay | ✓ | `1e7d143` |
+| P4 — kill tool(SIGINT/SIGTERM/SIGKILL) | ✓ | `654ea55` |
+| **超额 1**:MCP 标准协议适配(initialize/tools/list/tools/call) | ✓ | `35bf93f` |
+| **超额 2**:LF/CR 容错(send_text + press_key + preparePtyData) | ✓ | `35bf93f` |
+| **超额 3**:stdio transport(unix socket,一次配置永久) | ✓ | `c64aadb` |
+| UI 修复(列宽 / 单 tab / + 按钮位置) | ✓ | `28775ff` |
+
+最终统计:**1061 tests / 59 BDD topics / typecheck 干净**。
+
+### 15.2 工具集(实际 7 个,原计划 5 个)
+
+```
+terminal.list_sessions     P1 ✓
+terminal.create_session    P2 ✓ (P3 加 autorun 字段)
+terminal.send_input        P3 ✓ (超额加 preparePtyData 容错)
+terminal.send_text         超额 ★(c 方案:写文本不附加按键)
+terminal.press_key         超额 ★(c 方案:enter/tab/escape/backspace
+                                   /ctrl_c/ctrl_d/ctrl_z/arrows)
+terminal.read_output       P3 ✓
+terminal.kill              P4 ✓
+```
+
+新增 send_text + press_key 是因为实测 codex(raw mode TUI)不接 LF 当 Enter,
+原计划 send_input 单一接口让 LLM 容易写错。拆分后语义清晰,server 替 LLM 处理
+LF/CR / 按键字节映射。同时 send_input 内部加 `preparePtyData`(参考
+MindAutonAgent3 设计):`\n→\r` + 字面 escape unescape,即使 LLM 错传 `\\n` 也能
+正确触发 Enter(termios ICRNL 让 cooked mode 也兼容)。
+
+### 15.3 协议 / Transport(双套并存)
+
+原计划只 HTTP + Bearer + JSON-RPC,实际做了**两套并存**:
+
+| transport | 配置命令 | 适用场景 |
+|---|---|---|
+| **HTTP** `/mcp` | `claude mcp add --transport http continuo "$CONTINUO_MCP_URL" --header "Authorization: Bearer $CONTINUO_MCP_TOKEN"` | stub 调试 / 兼容历史 |
+| **stdio** unix socket | `claude mcp add --transport stdio continuo -- /path/to/scripts/continuo-mcp-stdio.mjs` | **推荐**;无 token,Continuo 重启不影响 |
+
+stdio 是因为 HTTP 每次 Continuo 重启 token rotate → Claude Code 配置失效 → 用户得
+重 add,体验差。stdio 走 unix socket(`userData/mcp.sock`,文件权限 0600),Claude
+Code spawn 一个 thin proxy CLI(`scripts/continuo-mcp-stdio.mjs`),CLI 透传
+stdin/stdout 字节到 socket。配置里只有 spawn 命令路径,无 token,**一次配置永久使用**。
+
+MCP 标准协议适配:`initialize` / `tools/list` / `tools/call` / `notifications/initialized`,
+让真 Claude Code(Inspector 等)能直接接入 — 旧 P1 的"method 即 tool name"形态已废弃,
+通过 dispatcher 统一路由(只有 `tools/call` 能调 tool)。HTTP 路径从 `/sse` + `/message`
+合并成单 `/mcp`(streamable HTTP transport)。
+
+### 15.4 与原计划的偏差(决策更新)
+
+- **决策 #2(权限,一次性)**:HTTP transport 仍然每次启动 rotate token(决策不变),
+  但 stdio transport **无 token**,客户端配置永久有效。撤销(revoke)只 kill agent
+  terminal + rotate HTTP token,不影响 stdio 客户端 — 这是有意的:撤销是终止当前
+  agent 会话,不是封禁未来连接。要彻底封禁 → 关 Continuo。
+
+- **决策 #4(autorun delay)**:实装与计划一致(Unix 200ms / Windows 600ms),
+  但 autorun 通过 setTimeout 在 main 进程里实现,不依赖 PTY shell prompt 检测。
+
+- **R6 (token 泄漏)更新**:P1 token 注入 PTY env 风险维持。stdio transport 加了一份
+  风险面:unix socket 文件 `userData/mcp.sock` 权限 0600,只 owner 可读写;同用户其他
+  进程仍可访问 — 与 PTY env 等级。**警告范围扩大**:不要让不信任的同用户进程访问
+  Continuo userData。
+
+### 15.5 BDD topics(原计划 5 个,实装 12 个)
+
+`src/__tests__/<topic>/`:
+
+| topic | 测什么 | tests |
+|---|---|---|
+| `agent-terminal-mcp-host` | token / Bearer / RPC 编解码 / bind 校验 | 48 |
+| `agent-terminal-mcp-list-sessions` | tool 输入输出 + 字段映射 | 18 |
+| `agent-terminal-mcp-auth` | auth store 状态机 / Promise 时序 | 17 |
+| `agent-terminal-mcp-create-session` | tool 行为 + autorun 透传 | 25 |
+| `agent-terminal-mcp-buffer` | 环形 buffer + ANSI strip(CSI/OSC/keypad/charset)| 35 |
+| `agent-terminal-mcp-send-input` | tool 行为 + preparePtyData 纯函数 | 32 |
+| `agent-terminal-mcp-read-output` | tool 字段映射 + 错误转换 | 20 |
+| `agent-terminal-mcp-kill` | signal 路由(SIGINT/SIGTERM/SIGKILL)| 22 |
+| `agent-terminal-mcp-dispatcher` | initialize/tools/list/tools/call 路由 | 17 |
+| `agent-terminal-mcp-send-text` | 写纯文本 verbatim | 18 |
+| `agent-terminal-mcp-press-key` | KEY_BYTES 映射 + 11 个键 | 31 |
+| `agent-terminal-mcp-stdio-framing` | NDJSON splitLines 纯函数 | 14 |
+
+外加 `terminal-sessions-service`(25)、扩展的 `terminal-store`(19)、`terminal-ipc`(32)
+等 main 端搬迁配套 BDD。socket server 真行为 / HTTP server 真行为留 E2E。
+
+### 15.6 端到端验证流程(stdio,推荐)
+
+```bash
+# 1. 启 Continuo
+pnpm dev
+
+# 2. 配置 Claude Code(任何 shell 里,一次永久)
+claude mcp add --transport stdio continuo -- /path/to/Continuo/scripts/continuo-mcp-stdio.mjs
+
+# 3. 启 Claude Code 任意 session
+claude
+> what tools do you have from continuo?
+# Claude Code 会列出 7 个 terminal.* tool
+
+# 4. 让 Claude 在内置 terminal 跑 codex 并交互:
+> open codex in continuo and ask it "你好"
+# Claude 应自主:
+#   1. terminal.create_session({autorun:'codex', name:'codex-test'})
+#   2. terminal.send_text({session_id:..., text:'你好'})
+#   3. terminal.press_key({session_id:..., key:'enter'})
+#   4. terminal.read_output({session_id:...}) — 看 codex 响应
+```
+
+stub 调试(同一套协议):
+```bash
+node scripts/agent-cli-stub.mjs                          # tools/list
+node scripts/agent-cli-stub.mjs terminal.list_sessions
+node scripts/agent-cli-stub.mjs terminal.create_session '{"autorun":"echo hi"}'
+```
+
+### 15.7 仍未做(留后续)
+
+| 项 | 优先级 | 备注 |
+|---|---|---|
+| Windows named pipe 支持 | 低 | stdio 当前 macOS/Linux only,Win 走 `\\.\pipe\continuo-mcp` |
+| CLI binary 打包到 app bundle | 中 | 当前 dev 用绝对路径,release 应放到 `app.asar.unpacked/scripts/` 提供稳定路径 |
+| HTTP token 持久化(方案 A)| 低 | 用户走 stdio 已解决体验,HTTP 保留作 stub 调试用 |
+| 状态栏"复制 mcp add 命令"按钮 | 低 | 偶尔重新配置时的 quality of life |
+| Inspector / Cursor 等其它 MCP client 联调 | 低 | 协议已标准化,理论上 work,需手验 |
