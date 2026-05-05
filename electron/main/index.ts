@@ -8,14 +8,21 @@ import { createMcpHost, type McpHost } from './services/mcp-host.service';
 import {
   makeListSessionsTool,
   makeCreateSessionTool,
+  makeSendInputTool,
+  makeReadOutputTool,
   type CreateSessionPtyInput,
 } from './services/mcp-tools-terminal';
 import * as terminalSessions from './services/terminal-sessions.service';
+import * as termService from './services/terminal.service';
+import * as terminalBuffer from './services/terminal-buffer.service';
 import { makeCreateHandler, setMcpEnvProvider } from './ipc/terminal.ipc';
 import {
   requestAgentAuth,
   setMcpHostRef,
 } from './services/agent-auth.service';
+
+// autorun delay:Win shell prompt 慢,默认更长。
+const AUTORUN_DELAY_MS = process.platform === 'win32' ? 600 : 200;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = !app.isPackaged;
@@ -175,7 +182,18 @@ async function createSessionForAgent(
       code: 'TERMINAL_NO_WINDOW',
     });
   }
-  return ptyCreateHandler(input, win);
+  const r = ptyCreateHandler(input, win);
+  // P3 autorun:spawn 后 delay 200ms(Win 600)等 shell prompt 出现,然后键入命令。
+  // 不严格保证 prompt 已就绪 — 平台差异大,简单 timer 是最务实的近似。
+  if (input.autorun) {
+    const cmd = input.autorun;
+    setTimeout(() => {
+      if (termService.has(r.id)) {
+        termService.write(r.id, `${cmd}\n`);
+      }
+    }, AUTORUN_DELAY_MS);
+  }
+  return r;
 }
 
 async function startMcpHost(): Promise<void> {
@@ -189,6 +207,13 @@ async function startMcpHost(): Promise<void> {
           ensureAuthorized: () =>
             requestAgentAuth({ method: 'terminal.create_session' }),
           createSession: createSessionForAgent,
+        }),
+        makeSendInputTool({
+          has: (id) => termService.has(id),
+          write: (id, data) => termService.write(id, data),
+        }),
+        makeReadOutputTool({
+          read: (id, opts) => terminalBuffer.read(id, opts),
         }),
       ],
     });

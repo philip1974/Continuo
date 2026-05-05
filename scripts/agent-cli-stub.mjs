@@ -4,8 +4,14 @@
 // 调 terminal.list_sessions tool,打印 JSON 响应。
 //
 // 用法:
-//   node scripts/agent-cli-stub.mjs              # list_sessions
-//   node scripts/agent-cli-stub.mjs <method>     # 任意 RPC method
+//   node scripts/agent-cli-stub.mjs                          # list_sessions
+//   node scripts/agent-cli-stub.mjs <method>                 # 任意 RPC,空 params
+//   node scripts/agent-cli-stub.mjs <method> '<json-params>'
+//
+// 例子(P3):
+//   node scripts/agent-cli-stub.mjs terminal.create_session '{"autorun":"echo hello","name":"test"}'
+//   node scripts/agent-cli-stub.mjs terminal.read_output    '{"session_id":"term-xxx","max_lines":50}'
+//   node scripts/agent-cli-stub.mjs terminal.send_input     '{"session_id":"term-xxx","data":"ls\n"}'
 //
 // 不依赖 npm package,只用 node 内置 fetch(node 18+)。
 
@@ -23,12 +29,26 @@ if (!url || !token) {
 // url 形如 http://127.0.0.1:<port>/sse;POST 走 /message
 const messageUrl = url.replace(/\/sse$/, '/message');
 const method = process.argv[2] ?? 'terminal.list_sessions';
+const paramsRaw = process.argv[3];
+
+let params = {};
+if (paramsRaw) {
+  try {
+    params = JSON.parse(paramsRaw);
+    if (params === null || typeof params !== 'object' || Array.isArray(params)) {
+      throw new Error('params must be a JSON object');
+    }
+  } catch (err) {
+    console.error('[stub] invalid params JSON:', err.message ?? err);
+    process.exit(1);
+  }
+}
 
 const body = {
   jsonrpc: '2.0',
   id: `stub-${Date.now()}`,
   method,
-  params: {},
+  params,
 };
 
 try {

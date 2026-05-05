@@ -5,6 +5,7 @@
 import * as pty from 'node-pty';
 import { BrowserWindow } from 'electron';
 import * as terminalSessions from './terminal-sessions.service';
+import * as terminalBuffer from './terminal-buffer.service';
 
 // ── 常量(节流参数,沿用 Mind 决策 #5)──────────────────────────
 const OVERFLOW_THRESHOLD_BYTES = 2 * 1024 * 1024; // 2 MB/s 触发 overflow
@@ -110,8 +111,14 @@ export function createTerminal(
     inst.flushTimer = null;
   };
 
+  // 创建 buffer(P3:agent read_output 用),onData 内写入完整 raw data,
+  // 渲染节流由下面 inst.pendingData 单独处理。
+  terminalBuffer.ensure(id);
+
   p.onData((data) => {
     inst.bytesPerSecond += data.length;
+    // 入 buffer:agent 看完整流(限于 buffer 容量),与 xterm 节流解耦
+    terminalBuffer.append(id, data);
 
     const isOverflow = inst.bytesPerSecond > OVERFLOW_THRESHOLD_BYTES;
     if (isOverflow) {

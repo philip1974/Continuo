@@ -11,6 +11,7 @@ import { TERMINAL_CHANNELS } from '../../shared/terminal-channels';
 import { getDefaultShell, isAllowedShell } from '../../shared/terminal-shells';
 import * as termService from '../services/terminal.service';
 import * as terminalSessions from '../services/terminal-sessions.service';
+import * as terminalBuffer from '../services/terminal-buffer.service';
 
 // ── 常量 ─────────────────────────────────────────────────────
 const MAX_WRITE_CHARS = 2_000_000; // ~2MB UTF-8 字符上限,与 Mind 1MB 字节同档
@@ -119,13 +120,17 @@ export function makeListSessionsHandler(deps?: {
 export function makeRemoveHandler(deps?: {
   service?: typeof termService;
   sessionStore?: typeof terminalSessions;
+  buffer?: typeof terminalBuffer;
 }) {
   const service = deps?.service ?? termService;
   const sessionStore = deps?.sessionStore ?? terminalSessions;
+  const buffer = deps?.buffer ?? terminalBuffer;
   return (input: IdOnlyInput): void => {
     // 立即删 metadata(用户点 X 立刻消失);PTY 在后台异步 SIGINT + 3s grace。
     sessionStore.remove(input.id);
     if (service.has(input.id)) service.kill(input.id);
+    // 用户主动关 → 释放 buffer(自然 exit 时不清,留给 agent read_output 看)
+    buffer.destroy(input.id);
   };
 }
 
