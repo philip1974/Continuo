@@ -358,15 +358,8 @@ function MarketplaceCard({
       {message && (
         <div className="mt-1 text-[10px] text-fg-muted">{message}</div>
       )}
-      {rating && rating.count > 0 && (
-        <div className="mt-1 flex items-center gap-1.5 text-[10px] text-fg-muted">
-          <span className="text-amber-400" aria-label={`${rating.avg.toFixed(1)} 星`}>
-            {renderStars(rating.avg)}
-          </span>
-          <span>{rating.avg.toFixed(1)}</span>
-          <span className="text-fg-dim">({rating.count} 评价)</span>
-        </div>
-      )}
+      <RatingRow entry={entry} rating={rating} />
+
       <div className="mt-1.5 flex items-center justify-between gap-2 text-[10px] text-fg-dim">
         <div className="flex items-center gap-2">
           <span>
@@ -408,4 +401,135 @@ function MarketplaceCard({
       </div>
     </div>
   );
+}
+
+/** 评分行 + 可展开的 reviews 列表 + "写评论" 链接(Phase 2). */
+function RatingRow({
+  entry,
+  rating,
+}: {
+  entry: MarketplaceEntry;
+  rating: PluginAggregateRating | null;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const hasReviews = rating !== null && rating.count > 0;
+  const newReviewUrl = buildNewReviewUrl(entry.id);
+
+  if (!hasReviews) {
+    // 0 评价 → 直接给个"评一下"小链接
+    return (
+      <div className="mt-1 text-[10px] text-fg-dim">
+        暂无评价 ·{' '}
+        <a
+          href={newReviewUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-accent hover:underline"
+        >
+          ✏️ 在 GitHub 写第一条 ↗
+        </a>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-1 space-y-2">
+      <div className="flex items-center gap-1.5 text-[10px] text-fg-muted">
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="flex items-center gap-1.5 hover:text-fg"
+          title={expanded ? '收起评价' : '展开评价'}
+        >
+          <span className="text-amber-400" aria-label={`${rating.avg.toFixed(1)} 星`}>
+            {renderStars(rating.avg)}
+          </span>
+          <span>{rating.avg.toFixed(1)}</span>
+          <span className="text-fg-dim">({rating.count} 评价)</span>
+          <span className="text-fg-dim">{expanded ? '▴' : '▾'}</span>
+        </button>
+        <span className="text-fg-dim">·</span>
+        <a
+          href={newReviewUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-accent hover:underline"
+        >
+          ✏️ 写评论 ↗
+        </a>
+      </div>
+      {expanded && (
+        <div className="space-y-1.5 rounded border border-line bg-panel/50 p-2">
+          {rating.reviews.slice(0, 10).map((r) => (
+            <div
+              key={r.url}
+              className="flex gap-2 border-b border-line/50 pb-1.5 last:border-0 last:pb-0"
+            >
+              <img
+                src={r.author.avatarUrl}
+                alt=""
+                className="h-5 w-5 shrink-0 rounded-full"
+              />
+              <div className="min-w-0 flex-1 text-[10px]">
+                <div className="flex items-baseline gap-1.5 text-fg-muted">
+                  <a
+                    href={`https://github.com/${r.author.handle}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-medium text-fg hover:underline"
+                  >
+                    {r.author.handle}
+                  </a>
+                  <span className="text-amber-400">{renderStars(r.rating)}</span>
+                  <span className="text-fg-dim">{formatDate(r.createdAt)}</span>
+                  <a
+                    href={r.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="ml-auto text-accent hover:underline"
+                    title="在 GitHub 打开"
+                  >
+                    ↗
+                  </a>
+                </div>
+                <p className="mt-0.5 whitespace-pre-wrap text-fg">{r.body}</p>
+              </div>
+            </div>
+          ))}
+          {rating.reviews.length > 10 && (
+            <div className="pt-1 text-[10px] text-fg-dim">
+              仅显最近 10 条;
+              <a
+                href={`https://github.com/philip1974/continuo-plugins/discussions?discussions_q=%5B${entry.id}%5D`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="ml-1 text-accent hover:underline"
+              >
+                在 GitHub 看全部 ↗
+              </a>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 跳 GitHub 写新评论(预填 title 含 plugin id). */
+function buildNewReviewUrl(pluginId: string): string {
+  const title = encodeURIComponent(`[${pluginId}] `);
+  return `https://github.com/philip1974/continuo-plugins/discussions/new?category=general&title=${title}`;
+}
+
+/** 简单 friendly 日期(< 1 day → 'Xh 前',否则 YYYY-MM-DD). */
+function formatDate(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  if (Number.isNaN(ms)) return iso;
+  const min = Math.floor(ms / 60_000);
+  if (min < 60) return min <= 0 ? '刚刚' : `${min}m 前`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h 前`;
+  const day = Math.floor(hr / 24);
+  if (day < 30) return `${day}d 前`;
+  return iso.slice(0, 10);
 }
