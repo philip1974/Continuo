@@ -53,3 +53,48 @@ export interface LMApp {
   /** EditorHeader 工具按钮贡献(v3.2). */
   readonly editorActions: import('./registries/EditorActionRegistry').EditorActionRegistry;
 }
+
+// ── v5 Phase 1:plugin 拿到的扩展 app(per-plugin scoped) ────────────
+
+export interface PluginFsApi {
+  /** 检 'fs',未授抛 PermissionError(Phase 3 启用). */
+  readFile(path: string): Promise<string>;
+  writeFile(path: string, content: string): Promise<void>;
+  listDir(
+    path: string,
+  ): Promise<readonly import('../../electron/shared/fs-entry').FileEntry[]>;
+}
+
+export interface PluginNetworkApi {
+  /** 检 'network',未授抛 PermissionError(Phase 3 启用). */
+  fetch(url: string, init?: RequestInit): Promise<Response>;
+}
+
+export interface PluginShellApi {
+  // Phase 3 实装(spawn / exec)。Phase 1 占位,保持接口稳定。
+}
+
+export interface PluginClipboardApi {
+  /** 检 'clipboard',未授抛 PermissionError(Phase 3 启用). */
+  readText(): Promise<string>;
+  writeText(text: string): Promise<void>;
+}
+
+export interface PluginPermissionApi {
+  /** 当前 plugin 是否已被授予该权限. */
+  check(perm: import('./permissions').PermissionKey): Promise<boolean>;
+  /** 当前 plugin 实际拿到的授权列表(decisions 中 granted=true 的). */
+  granted(): Promise<readonly import('./permissions').PermissionKey[]>;
+}
+
+/**
+ * Plugin 拿到的 app:在 LMApp 基础上加 5 个 per-plugin 命名空间。
+ * 由 createScopedApp(lmApp, pluginId, store) 在激活时构造。
+ */
+export interface LMPluginApp extends LMApp {
+  readonly fs: PluginFsApi;
+  readonly network: PluginNetworkApi;
+  readonly shell: PluginShellApi;
+  readonly clipboard: PluginClipboardApi;
+  readonly permission: PluginPermissionApi;
+}

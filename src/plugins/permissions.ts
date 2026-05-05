@@ -3,6 +3,21 @@
 
 export type PermissionKey = 'fs' | 'network' | 'shell' | 'clipboard';
 
+/**
+ * v5 Phase 1:plugin 调 fs/network/shell/clipboard 时若未授权,
+ * scoped-app 抛此错让 plugin 优雅 try/catch。runtime gating 启用见 Phase 3。
+ */
+export class PermissionError extends Error {
+  readonly code = 'PERMISSION_DENIED' as const;
+  constructor(
+    readonly permission: PermissionKey,
+    message?: string,
+  ) {
+    super(message ?? `权限 ${permission} 未授权`);
+    this.name = 'PermissionError';
+  }
+}
+
 export const PERMISSION_KEYS: readonly PermissionKey[] = [
   'fs',
   'network',

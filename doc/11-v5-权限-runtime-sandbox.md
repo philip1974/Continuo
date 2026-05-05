@@ -1,7 +1,8 @@
 # v5 权限 Runtime Sandbox 计划书
 
 > 关联 issue #14。从 v4.7 的 all-or-nothing 走向 partial-grant + runtime gating。
-> 状态:**计划阶段**,未实现。
+>
+> **进度**:Phase 1 ✅ / Phase 2-5 ⏳
 
 ## 1. 目标 / 非目标
 
@@ -131,13 +132,18 @@ delete (globalThis as any).fetch;
 
 ## 6. 阶段拆分(每阶段一个可 review 的 PR)
 
-### Phase 1 — SDK 基础 + 包装 API(不破)
+### Phase 1 — SDK 基础 + 包装 API(不破)✅
 
-- 新 `PermissionError` class 暴露到 `globalThis.lm`
-- 新 `app.fs` / `app.network` / `app.shell` / `app.clipboard` 4 个命名空间(初始未做权限检,直接转发到 window.api / globalThis.fetch)
-- 新 `app.permission.check / granted`
-- ScopedApp proxy 机制(per plugin 包一层,持 pluginId)
-- 配套 BDD/TDD,不影响现有 plugin 行为
+- ✅ `PermissionError` class(`src/plugins/permissions.ts`)— Phase 3 实际抛出
+- ✅ `LMPluginApp` 接口扩 `fs` / `network` / `shell` / `clipboard` / `permission` 5 命名空间
+- ✅ `createScopedApp(lmApp, pluginId, store)` 工厂(`src/plugins/scoped-app.ts`)
+- ✅ `PluginManager.activateEntry` + `bootCorePlugins` 用 ScopedApp wrap
+- ✅ `Plugin.app` 类型从 LMApp → LMPluginApp(测试 createTestApp 同步包装)
+- ✅ BDD topic `scoped-app`(9 测试):基础结构 + permission.check/granted + per-plugin 隔离 + PermissionError
+- 当前 fs/network/clipboard 仅转发,permission.check 真读 store
+- shell 占位空对象,Phase 3 实装
+
+> 实现 commit:见 git log feat(plugin): v5 Phase 1。
 
 ### Phase 2 — partial grant 语义改造
 

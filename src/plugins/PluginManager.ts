@@ -5,6 +5,7 @@ import { Plugin } from './Plugin';
 import { loadPluginModule } from './loader';
 import { isVersionCompatible, parseManifest } from './manifest';
 import { ensureAuthorized, type PermissionStore, type PromptFn } from './permissions';
+import { createScopedApp } from './scoped-app';
 import type { LMApp, PluginManifest } from './types';
 
 // ── Host 注入接口 ──────────────────────────────────────
@@ -304,7 +305,14 @@ export class PluginManager {
     // PluginClass 是 abstract,但实际传进来的是子类构造函数
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const Ctor = loaded.PluginClass as any;
-    const instance: Plugin = new Ctor(this.app, entry.manifest);
+    // v5 Phase 1:plugin 拿到的是 per-plugin scoped app(持 pluginId 给
+    // permission.check;fs/network 等命名空间预留 Phase 3 启用 gating)
+    const scopedApp = createScopedApp(
+      this.app,
+      entry.id,
+      this.host.permissionStore ?? null,
+    );
+    const instance: Plugin = new Ctor(scopedApp, entry.manifest);
 
     try {
       await instance._activate();

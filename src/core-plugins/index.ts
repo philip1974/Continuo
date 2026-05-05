@@ -8,11 +8,12 @@ import TerminalPlugin from './TerminalPlugin';
 import OutputPlugin from './OutputPlugin';
 import PluginsTabPlugin from './PluginsTabPlugin';
 import { lmApp } from '@/plugins/lm-app';
+import { createScopedApp } from '@/plugins/scoped-app';
 import type { Plugin } from '@/plugins/Plugin';
-import type { PluginManifest } from '@/plugins/types';
+import type { LMPluginApp, PluginManifest } from '@/plugins/types';
 
 interface CoreEntry {
-  readonly Cls: new (app: typeof lmApp, m: PluginManifest) => Plugin;
+  readonly Cls: new (app: LMPluginApp, m: PluginManifest) => Plugin;
   readonly manifest: PluginManifest;
 }
 
@@ -40,7 +41,9 @@ const instances: Plugin[] = [];
 /** 启动期同步注册全部内置插件(register* 在 onload 内同步执行). */
 export function bootCorePlugins(): void {
   for (const { Cls, manifest } of CORES) {
-    const inst = new Cls(lmApp, manifest);
+    // v5 Phase 1:core plugin 也走 ScopedApp,store=null → permission.check 一律 true
+    const scopedApp = createScopedApp(lmApp, manifest.id, null);
+    const inst = new Cls(scopedApp, manifest);
     instances.push(inst);
     // _activate 是 async 但 onload 是同步,fire and forget;register 已同步发生
     void inst._activate();

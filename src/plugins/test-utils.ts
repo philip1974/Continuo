@@ -1,5 +1,8 @@
 // 测试用 LMApp 工厂(M-Plugin v2.2,避免每加字段都改一堆 spec 夹具)。
 // 不在生产代码路径上,但放 src/plugins/ 便于测试 import。
+//
+// v5 Phase 1:返回 LMPluginApp(scoped to id='test',无 PermissionStore),
+// 让现有测试不用每个都 wrap createScopedApp。
 
 import { CommandRegistry } from './registries/CommandRegistry';
 import { EventBus } from './EventBus';
@@ -10,10 +13,14 @@ import { PanelRegistry } from './registries/PanelRegistry';
 import { RibbonRegistry } from './registries/RibbonRegistry';
 import { SettingTabRegistry } from './registries/SettingTabRegistry';
 import { StatusBarRegistry } from './registries/StatusBarRegistry';
-import type { LMApp } from './types';
+import { createScopedApp } from './scoped-app';
+import type { LMApp, LMPluginApp } from './types';
 
-export function createTestApp(version = '1.0.0-test'): LMApp {
-  return {
+export function createTestApp(
+  version = '1.0.0-test',
+  pluginId = 'test',
+): LMPluginApp {
+  const base: LMApp = {
     version,
     panels: new PanelRegistry(),
     commands: new CommandRegistry(),
@@ -25,4 +32,5 @@ export function createTestApp(version = '1.0.0-test'): LMApp {
     explorerDecorators: new ExplorerDecoratorRegistry(),
     editorActions: new EditorActionRegistry(),
   };
+  return createScopedApp(base, pluginId, null);
 }
