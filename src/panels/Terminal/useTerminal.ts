@@ -3,13 +3,14 @@
 //   - 删 loadTerminalConfig(我们没 config IPC,内联默认值)
 //   - 删 theme 切换订阅(LayoutMotion 暗色固定)
 //   - scrollback 改 20000(决策 #3:跑 Agent CLI 输出大)
-//   - electronAPI.terminal → window.api.terminal
+//   - electronAPI.terminal → lmApi.terminal
 
 import { useEffect, useRef } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
+import { lmApi } from '@/lib/lm-api';
 import { disposeQueue, safeWrite } from './safeWrite';
 
 const TERM_OPTIONS = {
@@ -79,27 +80,27 @@ export function useTerminal(termId: string) {
     requestAnimationFrame(() => {
       try {
         fitAddon.fit();
-        void window.api.terminal.resize(termId, term.cols, term.rows);
+        void lmApi.terminal.resize(termId, term.cols, term.rows);
       } catch {
         /* 容器还没尺寸,忽略 */
       }
     });
 
     // 主进程 stdout → safeWrite 队列
-    const unsubData = window.api.terminal.onData((id: string, data: string) => {
+    const unsubData = lmApi.terminal.onData((id: string, data: string) => {
       if (id === termId) safeWrite(term, data);
     });
 
     // 用户输入 → IPC write
     const onDataDisposable = term.onData((data: string) => {
-      void window.api.terminal.write(termId, data);
+      void lmApi.terminal.write(termId, data);
     });
 
     // 容器尺寸变化 → fit + resize
     const ro = new ResizeObserver(() => {
       try {
         fitAddon.fit();
-        void window.api.terminal.resize(termId, term.cols, term.rows);
+        void lmApi.terminal.resize(termId, term.cols, term.rows);
       } catch {
         /* ignore */
       }

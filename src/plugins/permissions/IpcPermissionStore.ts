@@ -4,6 +4,7 @@
 // 内部 in-memory cache,首次 get 触发 IPC read 拉取;每次 grant/deny 写整盘
 // (插件 / 权限 < 100 项,JSON 全写小成本可接受;不投资增量)。
 
+import { lmApi } from '@/lib/lm-api';
 import type {
   PermissionDecision,
   PermissionKey,
@@ -42,7 +43,7 @@ export class IpcPermissionStore implements PermissionStore {
     const kept = list.filter((d) => d.granted);
     if (kept.length === 0) delete cache[pluginId];
     else cache[pluginId] = kept;
-    const r = await window.api.plugins.writePermissions(cache);
+    const r = await lmApi.plugins.writePermissions(cache);
     if (!r.ok) {
       console.warn(
         '[IpcPermissionStore] clearDenied writePermissions failed',
@@ -58,7 +59,7 @@ export class IpcPermissionStore implements PermissionStore {
     if (this.cache) return this.cache;
     if (this.loadingPromise) return this.loadingPromise;
     this.loadingPromise = (async () => {
-      const r = await window.api.plugins.readPermissions();
+      const r = await lmApi.plugins.readPermissions();
       const data: Cache = r.ok
         ? (Object.fromEntries(
             Object.entries(r.data).map(([pid, list]) => [
@@ -94,7 +95,7 @@ export class IpcPermissionStore implements PermissionStore {
       ...perms.map((p) => ({ permission: p, granted, decidedAt: now })),
     ];
     cache[pluginId] = updated;
-    const r = await window.api.plugins.writePermissions(cache);
+    const r = await lmApi.plugins.writePermissions(cache);
     if (!r.ok) {
       console.warn(
         '[IpcPermissionStore] writePermissions failed',

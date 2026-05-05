@@ -97,6 +97,10 @@
 
 - [`persistence.spec.ts`](./layout-persistence/persistence.spec.ts)
 
+## [lm-api(LM UI 内部 IPC 入口)](./lm-api/README.md)
+
+- [`lm-api.spec.ts`](./lm-api/lm-api.spec.ts)
+
 ## [permission-prompt(授权 UI store + Modal + Manager 集成)](./permission-prompt/README.md)
 
 - [`PermissionPrompt.spec.tsx`](./permission-prompt/PermissionPrompt.spec.tsx)

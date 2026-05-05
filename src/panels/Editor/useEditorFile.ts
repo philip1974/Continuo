@@ -1,8 +1,9 @@
 // M-Editor Step E2:useEditorFile 薄壳 hook。
-// 把 editor-file-actions 纯函数包装,注入 deps(window.api.fs + 全局 store),
+// 把 editor-file-actions 纯函数包装,注入 deps(lmApi.fs + 全局 store),
 // 暴露给 EditorPanel / Toolbar。
 
 import { useMemo } from 'react';
+import { lmApi } from '@/lib/lm-api';
 import { useEditorStore } from '@/stores/editor.store';
 import {
   openFileByPath as openFileByPathImpl,
@@ -22,8 +23,8 @@ export function useEditorFile(): EditorFileApi {
   return useMemo<EditorFileApi>(() => {
     const deps: EditorFileDeps = {
       fs: {
-        readFile: (p) => window.api.fs.readFile(p),
-        writeFile: (p, c) => window.api.fs.writeFile(p, c),
+        readFile: (p) => lmApi.fs.readFile(p),
+        writeFile: (p, c) => lmApi.fs.writeFile(p, c),
       },
       store: useEditorStore,
     };

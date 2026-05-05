@@ -14,7 +14,12 @@ import { setUserPermissionStore } from './plugins/permissions/lm-permission-stor
 import { usePermissionPromptStore } from './plugins/permissions/promptStore';
 import { PermissionError } from './plugins/permissions';
 import { sandboxSweep } from './plugins/sandbox-sweep';
+import { captureLmApi, lmApi } from './lib/lm-api';
 import './styles/tailwind.css';
+
+// Phase 4.B:**最早**调,把 window.api 缓存到 module-local。
+// 之后 sandboxSweep 删掉 window.api 也不影响 LM UI(走 lmApi)。
+captureLmApi();
 
 // M-Plugin v4.1 SDK 暴露:user-installed plugin 通过 globalThis.lm 拿到
 // Plugin 基类 + React(用 Blob URL import 时无法走 ESM bare import)。
@@ -64,7 +69,7 @@ void userPluginManager.init().catch((err) => {
 });
 
 // M-Plugin v4.3.1:主进程 mtime watch 推 changed → 自动 reload
-window.api.plugins.onChanged((id) => {
+lmApi.plugins.onChanged((id) => {
   void userPluginManager.reload(id).catch((err) => {
     console.warn(`[main] auto-reload ${id} failed`, err);
   });
@@ -72,7 +77,7 @@ window.api.plugins.onChanged((id) => {
 
 // M-Plugin v4.4:lm:// 外部唤起 → 路由到 commands.execute
 import('./plugins/protocol/handler').then(({ handleProtocolUrl }) => {
-  window.api.plugins.onProtocolUrl((url) => {
+  lmApi.plugins.onProtocolUrl((url) => {
     void handleProtocolUrl(url, lmApp);
   });
 });
@@ -81,8 +86,8 @@ import('./plugins/protocol/handler').then(({ handleProtocolUrl }) => {
 // fire-and-forget:hydrate 在毫秒级完成,store setState 触发 React 重渲染,
 // EmptyWorkspace 自动切到 FolderTree。无需 splash。
 void initExplorerPersistence({
-  read: () => window.api.explorer.read(),
-  write: (snap) => window.api.explorer.write(snap),
+  read: () => lmApi.explorer.read(),
+  write: (snap) => lmApi.explorer.write(snap),
 });
 
 createRoot(container).render(

@@ -49,12 +49,15 @@ export function getCachedClipboard(): ClipboardOps {
 }
 
 /**
- * 入境清洗:删 globalThis.fetch + navigator.clipboard,plugin 直接调
- * 这些 API 会抛 TypeError。LM UI 自身已通过 getCachedFetch/Clipboard
- * 走缓存,不受影响。
+ * 入境清洗:删 globalThis.fetch + navigator.clipboard + window.api,plugin
+ * 直接调这些 API 会抛 TypeError。LM UI 自身通过 getCachedFetch/Clipboard /
+ * lmApi 走缓存,不受影响。
  *
  * 调用时机:LM 内核 init 完成,user PluginManager init **之前**。
  * dev 模式不要调(Vite HMR 可能要 fetch);PROD 才调。
+ *
+ * Phase 4.B 加 window.api sweep:plugin 不能再走 window.api.fs.* 绕过
+ * app.fs 的权限门。LM UI 走 lmApi(captureLmApi 已缓存)不受影响。
  */
 export function sandboxSweep(): void {
   // 用 defineProperty 覆盖 — 直接 delete 在 chromium 上是 no-op
@@ -76,5 +79,23 @@ export function sandboxSweep(): void {
     });
   } catch (err) {
     console.warn('[sandbox-sweep] clipboard sweep 失败', err);
+  }
+  try {
+    Object.defineProperty(globalThis, 'api', {
+      value: undefined,
+      writable: true,
+      configurable: true,
+    });
+    // window.api 也要(Electron renderer window 通常 === globalThis,
+    // 但为防 contextBridge 单独挂的情况,显式两边都涂)
+    if (typeof window !== 'undefined' && (window as { api?: unknown }).api) {
+      Object.defineProperty(window, 'api', {
+        value: undefined,
+        writable: true,
+        configurable: true,
+      });
+    }
+  } catch (err) {
+    console.warn('[sandbox-sweep] window.api sweep 失败', err);
   }
 }

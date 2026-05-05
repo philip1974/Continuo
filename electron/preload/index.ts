@@ -10,20 +10,22 @@ import {
 } from '../shared/plugins-channels';
 
 // terminal create 入参的轻量类型(与 main 端 zod schema 对齐)
-interface TerminalCreateOptions {
+// export 是为了 LayoutMotionApi 跨 module 引用时 TS 能 name 这些类型
+// (lib/lm-api.ts 暴露 lmApi: LayoutMotionApi 时需要)
+export interface TerminalCreateOptions {
   readonly shell?: string;
   readonly args?: ReadonlyArray<string>;
   readonly cwd?: string;
   readonly env?: Readonly<Record<string, string>>;
 }
 
-interface TerminalExitPayload {
+export interface TerminalExitPayload {
   readonly exitCode: number | undefined;
   readonly signal: number | undefined;
 }
 
 // 给 fs 入参用的轻量 ListDirOptions —— 与 main 端 zod schema 对齐字段
-interface PreloadListDirOptions {
+export interface PreloadListDirOptions {
   readonly maxDepth?: number;
   readonly exclude?: ReadonlyArray<string>;
   readonly followSymlinks?: boolean;

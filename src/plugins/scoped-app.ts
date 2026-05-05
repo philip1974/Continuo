@@ -23,6 +23,7 @@ import {
   type PermissionStore,
 } from './permissions';
 import { getCachedClipboard, getCachedFetch } from './sandbox-sweep';
+import { lmApi } from '@/lib/lm-api';
 
 /** 检查 plugin 是否拿到 perm 授权;未授抛 PermissionError. store=null 跳过检查. */
 async function ensurePerm(
@@ -38,49 +39,22 @@ async function ensurePerm(
   if (!granted) throw new PermissionError(perm);
 }
 
-interface WindowApiShape {
-  fs?: {
-    readFile(path: string): Promise<{ ok: true; data: string } | { ok: false; code: string; message: string }>;
-    writeFile(
-      path: string,
-      content: string,
-    ): Promise<{ ok: true; data: void } | { ok: false; code: string; message: string }>;
-    listDir(
-      path: string,
-    ): Promise<
-      | { ok: true; data: readonly import('../../electron/shared/fs-entry').FileEntry[] }
-      | { ok: false; code: string; message: string }
-    >;
-  };
-}
-
-function getApi(): WindowApiShape {
-  // 通过 globalThis 拿,jsdom 测试时 window.api 可能不存在 → 让方法抛
-  return (globalThis as unknown as { window?: { api?: WindowApiShape } }).window?.api ?? {};
-}
-
 function makeFs(pluginId: string, store: PermissionStore | null): PluginFsApi {
   return {
     async readFile(path) {
       await ensurePerm(pluginId, 'fs', store);
-      const fs = getApi().fs;
-      if (!fs) throw new Error('window.api.fs 未注入(jsdom?)');
-      const r = await fs.readFile(path);
+      const r = await lmApi.fs.readFile(path);
       if (!r.ok) throw new Error(`[fs.readFile] ${r.code}: ${r.message}`);
       return r.data;
     },
     async writeFile(path, content) {
       await ensurePerm(pluginId, 'fs', store);
-      const fs = getApi().fs;
-      if (!fs) throw new Error('window.api.fs 未注入(jsdom?)');
-      const r = await fs.writeFile(path, content);
+      const r = await lmApi.fs.writeFile(path, content);
       if (!r.ok) throw new Error(`[fs.writeFile] ${r.code}: ${r.message}`);
     },
     async listDir(path) {
       await ensurePerm(pluginId, 'fs', store);
-      const fs = getApi().fs;
-      if (!fs) throw new Error('window.api.fs 未注入(jsdom?)');
-      const r = await fs.listDir(path);
+      const r = await lmApi.fs.listDir(path);
       if (!r.ok) throw new Error(`[fs.listDir] ${r.code}: ${r.message}`);
       return r.data;
     },

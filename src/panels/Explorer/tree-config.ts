@@ -1,6 +1,6 @@
 // headless-tree 配置工厂(Step 4)。
 // 纯逻辑层,不依赖 React;UI 组件 import 后传给 useTree。
-// fs 通过 deps 注入便于单测,默认调 window.api.fs.
+// fs 通过 deps 注入便于单测,默认调 lmApi.fs(由调用方在 deps 注入).
 
 import {
   asyncDataLoaderFeature,

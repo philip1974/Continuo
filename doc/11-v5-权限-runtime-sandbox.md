@@ -190,9 +190,10 @@ delete (globalThis as any).fetch;
   cached 仍工作 / clipboard sweep)
 - ✅ 加 `src/vite-env.d.ts` 引入 vite/client 类型(import.meta.env)
 
-**Phase 4.B 后续**:`window.api` 全 LM UI 41 处直接用,refactor 推全部
-到内部 helper 工程量较大,本次未动。**已知限制**:plugin 仍可 `window.api.fs.*`
-绕过权限门;靠文档约束 + plugin marketplace review 兜底。
+**Phase 4.B ✅**:`window.api` 全 LM UI 41 处 refactor 到 `lmApi`(`src/lib/lm-api.ts`),
+`captureLmApi()` 在 main.tsx 启动最早调缓存到 module-local,`sandboxSweep`
+也涂掉 `globalThis.api` + `window.api`。LM UI 走 lmApi(Proxy 转发缓存),
+plugin 直接 `window.api.fs.*` 抛 TypeError。详见 `src/__tests__/lm-api/`。
 
 > 实现 commit:见 git log feat(plugin): v5 Phase 4。
 

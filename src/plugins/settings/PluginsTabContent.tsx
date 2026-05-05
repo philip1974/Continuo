@@ -4,6 +4,7 @@
 import { useEffect, useState } from 'react';
 import { Button, Input } from '@/design';
 import { ConfirmDialog } from '@/panels/Explorer/ConfirmDialog';
+import { lmApi } from '@/lib/lm-api';
 import { lmApp } from '../lm-app';
 import { getUserPluginManager } from '../lm-plugin-manager';
 import { getUserPermissionStore } from '../permissions/lm-permission-store';
@@ -214,7 +215,7 @@ function UserPluginsSection() {
     setInstalling(true);
     setInstallMsg(null);
     try {
-      const r = await window.api.plugins.installFromGit(gitUrl.trim());
+      const r = await lmApi.plugins.installFromGit(gitUrl.trim());
       if (!r.ok) {
         setInstallMsg(`✘ [${r.code}] ${r.message}`);
       } else {

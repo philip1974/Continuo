@@ -9,7 +9,8 @@ export type FsApi = LayoutMotionApi['fs'];
  * 在组件里这样用(等 Step 4 的 useTree dataLoader):
  *
  *   import type { FsApi } from '@/lib/fs/api';
- *   const fs: FsApi = window.api.fs;
+ *   import { lmApi } from '@/lib/lm-api';
+ *   const fs: FsApi = lmApi.fs;
  *   const r = await fs.listDir('/foo');
  *   if (r.ok) {
  *     for (const entry of r.data) console.log(entry.name);
