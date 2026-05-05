@@ -90,12 +90,81 @@ describe('permission.check / granted', () => {
   });
 });
 
-describe('fs / clipboard 默认实现(Phase 1 转发,无 gating)', () => {
-  it('window.api.fs 未注入(jsdom)→ 抛"未注入"', async () => {
+describe('fs / clipboard 默认实现(store=null 跳过 gating)', () => {
+  it('store=null + window.api.fs 未注入(jsdom)→ 抛"未注入"', async () => {
     const scoped = createScopedApp(makeLmApp(), 'p', null);
     await expect(scoped.fs.readFile('/x')).rejects.toThrow(/未注入/);
     await expect(scoped.fs.writeFile('/x', '')).rejects.toThrow(/未注入/);
     await expect(scoped.fs.listDir('/x')).rejects.toThrow(/未注入/);
+  });
+});
+
+describe('Phase 3 runtime gating', () => {
+  it('store 非 null 且未授 fs → fs.readFile 抛 PermissionError(不到达 window.api)', async () => {
+    const store = new InMemoryPermissionStore();
+    // 不 grant 任何
+    const scoped = createScopedApp(makeLmApp(), 'p', store);
+    await expect(scoped.fs.readFile('/x')).rejects.toBeInstanceOf(
+      PermissionError,
+    );
+    await expect(scoped.fs.writeFile('/x', '')).rejects.toBeInstanceOf(
+      PermissionError,
+    );
+    await expect(scoped.fs.listDir('/x')).rejects.toBeInstanceOf(
+      PermissionError,
+    );
+  });
+
+  it('已 deny fs → fs.* 抛 PermissionError', async () => {
+    const store = new InMemoryPermissionStore();
+    await store.deny('p', ['fs']);
+    const scoped = createScopedApp(makeLmApp(), 'p', store);
+    const err = await scoped.fs.readFile('/x').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(PermissionError);
+    if (err instanceof PermissionError) {
+      expect(err.permission).toBe('fs');
+      expect(err.code).toBe('PERMISSION_DENIED');
+    }
+  });
+
+  it('已 grant fs → fs.* 透传,window.api 未注入时抛"未注入"(过 gating)', async () => {
+    const store = new InMemoryPermissionStore();
+    await store.grant('p', ['fs']);
+    const scoped = createScopedApp(makeLmApp(), 'p', store);
+    await expect(scoped.fs.readFile('/x')).rejects.toThrow(/未注入/);
+  });
+
+  it('未授 network → fetch 抛 PermissionError(不调 globalThis.fetch)', async () => {
+    const store = new InMemoryPermissionStore();
+    const scoped = createScopedApp(makeLmApp(), 'p', store);
+    const err = await scoped.network
+      .fetch('https://example.com')
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(PermissionError);
+    if (err instanceof PermissionError) {
+      expect(err.permission).toBe('network');
+    }
+  });
+
+  it('未授 clipboard → readText/writeText 抛 PermissionError', async () => {
+    const store = new InMemoryPermissionStore();
+    const scoped = createScopedApp(makeLmApp(), 'p', store);
+    await expect(scoped.clipboard.readText()).rejects.toBeInstanceOf(
+      PermissionError,
+    );
+    await expect(scoped.clipboard.writeText('x')).rejects.toBeInstanceOf(
+      PermissionError,
+    );
+  });
+
+  it('per-plugin 隔离:p.a 授了 fs,p.b 没授 → p.b 仍抛 PermissionError', async () => {
+    const store = new InMemoryPermissionStore();
+    await store.grant('p.a', ['fs']);
+    const lmApp = makeLmApp();
+    const a = createScopedApp(lmApp, 'p.a', store);
+    const b = createScopedApp(lmApp, 'p.b', store);
+    await expect(a.fs.readFile('/x')).rejects.toThrow(/未注入/); // 过 gating
+    await expect(b.fs.readFile('/x')).rejects.toBeInstanceOf(PermissionError);
   });
 });
 

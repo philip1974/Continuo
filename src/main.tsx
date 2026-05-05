@@ -12,14 +12,23 @@ import { createWindowApiHost } from './lib/plugins-host';
 import { IpcPermissionStore } from './plugins/permissions/IpcPermissionStore';
 import { setUserPermissionStore } from './plugins/permissions/lm-permission-store';
 import { usePermissionPromptStore } from './plugins/permissions/promptStore';
+import { PermissionError } from './plugins/permissions';
 import './styles/tailwind.css';
 
 // M-Plugin v4.1 SDK 暴露:user-installed plugin 通过 globalThis.lm 拿到
 // Plugin 基类 + React(用 Blob URL import 时无法走 ESM bare import)。
+// v5 Phase 3 增 PermissionError,plugin 可 instanceof 区分权限错误与其它。
 // 后续若改 Vite plugin 注入 'lm' 模块,本块可移除。
-(globalThis as unknown as { lm: { Plugin: typeof Plugin; React: typeof ReactNS } }).lm = {
+(globalThis as unknown as {
+  lm: {
+    Plugin: typeof Plugin;
+    React: typeof ReactNS;
+    PermissionError: typeof PermissionError;
+  };
+}).lm = {
   Plugin,
   React: ReactNS,
+  PermissionError,
 };
 
 const container = document.getElementById('root');

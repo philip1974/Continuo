@@ -1,12 +1,12 @@
-// ScopedApp(M-Plugin v5 Phase 1):per-plugin 包装的 LMApp。
+// ScopedApp(M-Plugin v5 Phase 1-3):per-plugin 包装的 LMApp。
 //
 // 解决"app 是单例 plugin 无法分辨调用方"难题:每次 activateEntry 都
 // new 一个 ScopedApp,fs/network/clipboard/permission 知道自己服务哪个
-// pluginId,后续 Phase 3 加 runtime gating 时各方法可调
-// store.get(pluginId) 检查授权。
+// pluginId,各方法调 store.get(pluginId) 检查授权。
 //
-// Phase 1 fs/network/clipboard 直接转发到 window.api / globalThis.fetch,
-// 不做权限检;permission.check / granted 真读 store。
+// Phase 3:fs/network/clipboard 各方法接入 permission.check,未授抛
+// PermissionError,plugin 须 try/catch 优雅降级。
+// store=null(向后兼容/测试)时跳过检查直接转发,permission.check 一律 true。
 
 import type {
   LMApp,
@@ -17,7 +17,25 @@ import type {
   PluginPermissionApi,
   PluginShellApi,
 } from './types';
-import type { PermissionKey, PermissionStore } from './permissions';
+import {
+  PermissionError,
+  type PermissionKey,
+  type PermissionStore,
+} from './permissions';
+
+/** 检查 plugin 是否拿到 perm 授权;未授抛 PermissionError. store=null 跳过检查. */
+async function ensurePerm(
+  pluginId: string,
+  perm: PermissionKey,
+  store: PermissionStore | null,
+): Promise<void> {
+  if (!store) return;
+  const decisions = await store.get(pluginId);
+  const granted = decisions.some(
+    (d) => d.permission === perm && d.granted,
+  );
+  if (!granted) throw new PermissionError(perm);
+}
 
 interface WindowApiShape {
   fs?: {
@@ -40,9 +58,10 @@ function getApi(): WindowApiShape {
   return (globalThis as unknown as { window?: { api?: WindowApiShape } }).window?.api ?? {};
 }
 
-function makeFs(_pluginId: string): PluginFsApi {
+function makeFs(pluginId: string, store: PermissionStore | null): PluginFsApi {
   return {
     async readFile(path) {
+      await ensurePerm(pluginId, 'fs', store);
       const fs = getApi().fs;
       if (!fs) throw new Error('window.api.fs 未注入(jsdom?)');
       const r = await fs.readFile(path);
@@ -50,12 +69,14 @@ function makeFs(_pluginId: string): PluginFsApi {
       return r.data;
     },
     async writeFile(path, content) {
+      await ensurePerm(pluginId, 'fs', store);
       const fs = getApi().fs;
       if (!fs) throw new Error('window.api.fs 未注入(jsdom?)');
       const r = await fs.writeFile(path, content);
       if (!r.ok) throw new Error(`[fs.writeFile] ${r.code}: ${r.message}`);
     },
     async listDir(path) {
+      await ensurePerm(pluginId, 'fs', store);
       const fs = getApi().fs;
       if (!fs) throw new Error('window.api.fs 未注入(jsdom?)');
       const r = await fs.listDir(path);
@@ -65,26 +86,34 @@ function makeFs(_pluginId: string): PluginFsApi {
   };
 }
 
-function makeNetwork(_pluginId: string): PluginNetworkApi {
+function makeNetwork(
+  pluginId: string,
+  store: PermissionStore | null,
+): PluginNetworkApi {
   return {
-    fetch(url, init) {
-      // Phase 1:直接转发 globalThis.fetch
+    async fetch(url, init) {
+      await ensurePerm(pluginId, 'network', store);
       return globalThis.fetch(url, init);
     },
   };
 }
 
 function makeShell(_pluginId: string): PluginShellApi {
-  // Phase 3 实装
+  // Phase 4+ 实装(暴露 spawn / exec)
   return {};
 }
 
-function makeClipboard(_pluginId: string): PluginClipboardApi {
+function makeClipboard(
+  pluginId: string,
+  store: PermissionStore | null,
+): PluginClipboardApi {
   return {
     async readText() {
+      await ensurePerm(pluginId, 'clipboard', store);
       return navigator.clipboard.readText();
     },
     async writeText(text) {
+      await ensurePerm(pluginId, 'clipboard', store);
       return navigator.clipboard.writeText(text);
     },
   };
@@ -124,10 +153,10 @@ export function createScopedApp(
 ): LMPluginApp {
   return {
     ...lmApp,
-    fs: makeFs(pluginId),
-    network: makeNetwork(pluginId),
+    fs: makeFs(pluginId, store),
+    network: makeNetwork(pluginId, store),
     shell: makeShell(pluginId),
-    clipboard: makeClipboard(pluginId),
+    clipboard: makeClipboard(pluginId, store),
     permission: makePermission(pluginId, store),
   };
 }

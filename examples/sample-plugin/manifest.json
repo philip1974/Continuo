@@ -1,9 +1,10 @@
 {
   "id": "com.example.sample",
   "name": "Sample Plugin",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "main": "main.js",
-  "description": "演示 LM 插件 9 个贡献点 + loadData/saveData",
+  "description": "演示 LM 插件 9 贡献点 + loadData/saveData + v5 fs/network runtime gating",
   "author": "LayoutMotion",
-  "minLMVersion": "0.1.0"
+  "minLMVersion": "0.1.0",
+  "permissions": ["fs", "network"]
 }

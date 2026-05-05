@@ -2,7 +2,7 @@
 
 > 关联 issue #14。从 v4.7 的 all-or-nothing 走向 partial-grant + runtime gating。
 >
-> **进度**:Phase 1 ✅ / Phase 2 ✅ / Phase 3-5 ⏳
+> **进度**:Phase 1 ✅ / Phase 2 ✅ / Phase 3 ✅ / Phase 4-5 ⏳
 
 ## 1. 目标 / 非目标
 
@@ -160,11 +160,22 @@ delete (globalThis as any).fetch;
 
 > 实现 commit:见 git log feat(plugin): v5 Phase 2。
 
-### Phase 3 — runtime gating 启用
+### Phase 3 — runtime gating 启用 ✅
 
-- `app.fs/network/shell/clipboard` 各方法实际接入 `permission.check` → 抛 `PermissionError`
-- sample plugin 加两个 demo 命令:`sample.read-file`(走 fs)、`sample.fetch`(走 network),演示 try/catch PermissionError
-- 文档更新:plugin 作者必须 try/catch 或 check
+- ✅ `scoped-app.ensurePerm` helper:store.get(pluginId) 检 granted=true,
+  否则抛 `PermissionError`
+- ✅ `app.fs.readFile/writeFile/listDir`、`app.network.fetch`、
+  `app.clipboard.readText/writeText` 全部接入 ensurePerm
+- ✅ `globalThis.lm.PermissionError` 暴露,plugin 可 instanceof 区分
+- ✅ shell 仍占位(Phase 4+ 实装)
+- ✅ store=null(向后兼容/测试/core plugin)→ 跳过检查直接转发
+- ✅ examples/sample-plugin v0.2.0:manifest 加 `permissions: ['fs','network']`,
+  新增 `sample.read-tmp` / `sample.fetch-time` 两个 demo 命令演示
+  try/catch PermissionError 的标准模式
+- ✅ 测试:scoped-app 新加 6 个 gating 场景(未授抛 / 已 deny 抛 / 已 grant
+  透传 / network / clipboard / per-plugin 隔离),共 649 全绿
+
+> 实现 commit:见 git log feat(plugin): v5 Phase 3。
 
 ### Phase 4 — 入境清洗(选项 B 兜底)
 
