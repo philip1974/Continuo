@@ -20,6 +20,8 @@ export interface PermissionStore {
   get(pluginId: string): Promise<readonly PermissionDecision[]>;
   grant(pluginId: string, perms: readonly PermissionKey[]): Promise<void>;
   deny(pluginId: string, perms: readonly PermissionKey[]): Promise<void>;
+  /** 移除该插件所有 granted=false 的决策(允许用户改主意,重启 prompt). */
+  clearDenied(pluginId: string): Promise<void>;
 }
 
 export class InMemoryPermissionStore implements PermissionStore {
@@ -35,6 +37,14 @@ export class InMemoryPermissionStore implements PermissionStore {
 
   async deny(pluginId: string, perms: readonly PermissionKey[]): Promise<void> {
     this.upsert(pluginId, perms, false);
+  }
+
+  async clearDenied(pluginId: string): Promise<void> {
+    const list = this.map.get(pluginId);
+    if (!list) return;
+    const kept = list.filter((d) => d.granted);
+    if (kept.length === 0) this.map.delete(pluginId);
+    else this.map.set(pluginId, kept);
   }
 
   private upsert(

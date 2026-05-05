@@ -84,6 +84,32 @@ describe('InMemoryPermissionStore', () => {
     const d = await s.get('p');
     expect(d[0]!.granted).toBe(false);
   });
+
+  it('clearDenied 移除该插件 granted=false 的决策,保留 granted=true', async () => {
+    const s = new InMemoryPermissionStore();
+    await s.grant('p', ['fs']);
+    await s.deny('p', ['network', 'shell']);
+    await s.clearDenied('p');
+    const d = await s.get('p');
+    expect(d).toHaveLength(1);
+    expect(d[0]!.permission).toBe('fs');
+    expect(d[0]!.granted).toBe(true);
+  });
+
+  it('clearDenied 不影响其它 plugin', async () => {
+    const s = new InMemoryPermissionStore();
+    await s.deny('p1', ['fs']);
+    await s.deny('p2', ['network']);
+    await s.clearDenied('p1');
+    expect(await s.get('p1')).toEqual([]);
+    expect(await s.get('p2')).toHaveLength(1);
+  });
+
+  it('clearDenied 未存过的 pluginId → noop', async () => {
+    const s = new InMemoryPermissionStore();
+    await s.clearDenied('nope');
+    expect(await s.get('nope')).toEqual([]);
+  });
 });
 
 describe('ensureAuthorized', () => {

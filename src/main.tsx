@@ -10,6 +10,7 @@ import { PluginManager } from './plugins/PluginManager';
 import { setUserPluginManager } from './plugins/lm-plugin-manager';
 import { createWindowApiHost } from './lib/plugins-host';
 import { IpcPermissionStore } from './plugins/permissions/IpcPermissionStore';
+import { setUserPermissionStore } from './plugins/permissions/lm-permission-store';
 import { usePermissionPromptStore } from './plugins/permissions/promptStore';
 import './styles/tailwind.css';
 
@@ -31,9 +32,11 @@ bootCorePlugins();
 // M-Plugin v4.1+v4.2:用户插件 PluginManager + 权限决策持久化。
 // permissionStore 走 IPC 持久化到 userData/plugins/_permissions.json。
 // promptFn 桥到 design Modal(用户首次启用插件时弹授权)。
+const userPermissionStore = new IpcPermissionStore();
+setUserPermissionStore(userPermissionStore);
 const userPluginManager = new PluginManager(lmApp, {
   ...createWindowApiHost(),
-  permissionStore: new IpcPermissionStore(),
+  permissionStore: userPermissionStore,
   promptFn: (pid, perms) =>
     usePermissionPromptStore.getState().request(pid, perms),
 });

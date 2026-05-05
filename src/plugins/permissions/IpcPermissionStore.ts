@@ -35,6 +35,23 @@ export class IpcPermissionStore implements PermissionStore {
     await this.upsert(pluginId, perms, false);
   }
 
+  async clearDenied(pluginId: string): Promise<void> {
+    const cache = await this.ensureLoaded();
+    const list = cache[pluginId];
+    if (!list) return;
+    const kept = list.filter((d) => d.granted);
+    if (kept.length === 0) delete cache[pluginId];
+    else cache[pluginId] = kept;
+    const r = await window.api.plugins.writePermissions(cache);
+    if (!r.ok) {
+      console.warn(
+        '[IpcPermissionStore] clearDenied writePermissions failed',
+        r.code,
+        r.message,
+      );
+    }
+  }
+
   // ── 内部 ──────────────────────────────────────────
 
   private async ensureLoaded(): Promise<Cache> {

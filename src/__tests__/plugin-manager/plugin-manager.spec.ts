@@ -548,6 +548,76 @@ describe('权限门 ensureAuthorized 集成', () => {
     warn.mockRestore();
   });
 
+  it('FAILED 重试 enable 成功 → entry.error 清空(不再渲染遗留红字)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const state: MockHostState = {
+      dirs: [
+        {
+          id: 'a',
+          manifestText: manifestText('a', { permissions: ['fs'] }),
+          moduleUrl: 'mod://a',
+        },
+      ],
+      enabled: new Set(['a']),
+      modules: new Map([['mod://a', { default: GoodPlugin }]]),
+      enabledWritten: new Set(),
+    };
+    let promptCalls = 0;
+    const promptFn = vi.fn(async (_pid: string, perms: readonly string[]) => {
+      promptCalls += 1;
+      return promptCalls === 1 ? [] : [...perms];
+    });
+    const host: ManagerHost = {
+      ...makeHost(state),
+      permissionStore: new InMemoryPermissionStore(),
+      promptFn: promptFn as never,
+    };
+    const mgr = new PluginManager(fakeApp, host);
+    await mgr.init();
+    expect(mgr.listAll()[0]?.error).toContain('PERMISSION_DENIED');
+
+    await mgr.enable('a');
+    expect(mgr.listAll()[0]?.status).toBe('enabled');
+    expect(mgr.listAll()[0]?.error).toBeUndefined();
+    warn.mockRestore();
+  });
+
+  it('FAILED 重试 enable → 清掉旧 deny 重新 prompt(用户改主意)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const state: MockHostState = {
+      dirs: [
+        {
+          id: 'a',
+          manifestText: manifestText('a', { permissions: ['fs'] }),
+          moduleUrl: 'mod://a',
+        },
+      ],
+      enabled: new Set(['a']),
+      modules: new Map([['mod://a', { default: GoodPlugin }]]),
+      enabledWritten: new Set(),
+    };
+    let promptCalls = 0;
+    const promptFn = vi.fn(async (_pid: string, perms: readonly string[]) => {
+      promptCalls += 1;
+      // 第一次拒,第二次授
+      return promptCalls === 1 ? [] : [...perms];
+    });
+    const host: ManagerHost = {
+      ...makeHost(state),
+      permissionStore: new InMemoryPermissionStore(),
+      promptFn: promptFn as never,
+    };
+    const mgr = new PluginManager(fakeApp, host);
+    await mgr.init();
+    expect(mgr.listAll()[0]?.status).toBe('failed');
+
+    await mgr.enable('a');
+    expect(promptCalls).toBe(2); // 重试时再 prompt 一次
+    expect(GoodPlugin.loaded).toEqual(['a']);
+    expect(mgr.listAll()[0]?.status).toBe('enabled');
+    warn.mockRestore();
+  });
+
   it('host 不配 permissionStore → 跳过权限门(向后兼容)', async () => {
     const state: MockHostState = {
       dirs: [

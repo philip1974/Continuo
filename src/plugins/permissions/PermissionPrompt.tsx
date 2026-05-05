@@ -39,8 +39,11 @@ export function PermissionPrompt() {
   return (
     <Modal visible onClose={denyAll} className="!max-w-[480px]">
       <h2 className="mb-1 text-sm font-medium text-fg">权限请求</h2>
-      <p className="mb-3 text-xs text-fg-muted">
+      <p className="mb-2 text-xs text-fg-muted">
         插件 <code className="text-fg">{pending.pluginId}</code> 请求以下权限:
+      </p>
+      <p className="mb-3 text-[10px] text-fg-dim">
+        未勾即拒;任一未授 → 插件不激活(部分授权暂不支持,见 #14)。
       </p>
       <ul className="mb-4 space-y-1">
         {pending.perms.map((perm) => {

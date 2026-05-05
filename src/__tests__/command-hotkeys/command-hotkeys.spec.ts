@@ -68,4 +68,14 @@ describe('matchesHotkey', () => {
       false,
     );
   });
+
+  it('mod+, 匹配 metaKey + 逗号(打开 Settings 用)', () => {
+    expect(matchesHotkey('mod+,', ev({ key: ',', metaKey: true }))).toBe(true);
+  });
+
+  it('mod+, 不匹配带 shift(避免与 < 撞键)', () => {
+    expect(
+      matchesHotkey('mod+,', ev({ key: ',', metaKey: true, shiftKey: true })),
+    ).toBe(false);
+  });
 });

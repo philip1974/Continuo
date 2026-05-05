@@ -33,6 +33,7 @@ interface PermissionStore {
   get(pluginId: string): Promise<PermissionDecision[]>;       // 已记录的授权
   grant(pluginId: string, perms: PermissionKey[]): Promise<void>;
   deny(pluginId: string, perms: PermissionKey[]): Promise<void>;
+  clearDenied(pluginId: string): Promise<void>;               // 清掉 granted=false,允许重 prompt
 }
 
 interface PermissionDecision {
@@ -43,6 +44,13 @@ interface PermissionDecision {
 ```
 
 InMemoryPermissionStore 默认实现,Map<pluginId, decisions>。
+
+### clearDenied 重试机制(v4.7)
+
+`已 deny 任一 → 立即 fail` 这条决策让 ensureAuthorized 不会自动复弹 Modal。
+但用户可能改主意,UI 提供 [启用] 按钮时:`PluginManager.enable(failedId)` 会先调
+`store.clearDenied(id)` 清掉 granted=false 的决策(保留 granted=true),再走
+activate → ensureAuthorized,这时 deny 已清,会重新 prompt 用户。
 
 ### ensureAuthorized(pluginId, requested, store, prompt)
 

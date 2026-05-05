@@ -6,6 +6,8 @@ import { Button, Input } from '@/design';
 import { ConfirmDialog } from '@/panels/Explorer/ConfirmDialog';
 import { lmApp } from '../lm-app';
 import { getUserPluginManager } from '../lm-plugin-manager';
+import { getUserPermissionStore } from '../permissions/lm-permission-store';
+import { PermissionEditorModal } from '../permissions/PermissionEditorModal';
 import type { PluginListItem } from '../PluginManager';
 
 interface ContributionRow {
@@ -187,6 +189,10 @@ function UserPluginsSection() {
   const [uninstallTarget, setUninstallTarget] = useState<PluginListItem | null>(
     null,
   );
+  const [permEditTarget, setPermEditTarget] = useState<PluginListItem | null>(
+    null,
+  );
+  const permStore = getUserPermissionStore();
 
   const onConfirmUninstall = async () => {
     if (!uninstallTarget || !mgr) return;
@@ -355,7 +361,32 @@ function UserPluginsSection() {
                     启用
                   </Button>
                 ) : (
-                  <span className="text-[10px] text-red-400">FAILED</span>
+                  // FAILED:启用按钮仍可点(权限拒绝时会清 deny + 复弹 Modal)
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={async () => {
+                      try {
+                        await mgr?.enable(p.id);
+                      } catch (err) {
+                        console.warn(`[plugins-tab] retry ${p.id} failed`, err);
+                      }
+                      refresh();
+                    }}
+                    title="重试启用(权限拒绝时会重弹授权)"
+                  >
+                    启用
+                  </Button>
+                )}
+                {(p.manifest.permissions?.length ?? 0) > 0 && permStore && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setPermEditTarget(p)}
+                    title="编辑该插件的权限授权"
+                  >
+                    权限
+                  </Button>
                 )}
                 <Button
                   variant="ghost"
@@ -386,6 +417,15 @@ function UserPluginsSection() {
         onConfirm={onConfirmUninstall}
         onCancel={() => setUninstallTarget(null)}
       />
+      {permStore && (
+        <PermissionEditorModal
+          open={permEditTarget !== null}
+          pluginId={permEditTarget?.id ?? null}
+          declared={permEditTarget?.manifest.permissions ?? []}
+          store={permStore}
+          onClose={() => setPermEditTarget(null)}
+        />
+      )}
     </section>
   );
 }
