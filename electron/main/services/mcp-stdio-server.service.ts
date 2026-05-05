@@ -128,29 +128,28 @@ async function handleLine(
 }
 
 /**
- * 启动 unix socket server。Windows 走 named pipe(本期 TODO,直接 throw)。
+ * 启动 stdio MCP socket server。
  *
- * 调用者需保证 socketPath 父目录可写;本函数会:
- *   1. mkdir -p 父目录
- *   2. unlink 旧 socket 文件(若存在)
- *   3. listen → chmod 0600
+ * - macOS / Linux:Unix socket(`<userData>/mcp.sock`)— 文件系统 +
+ *   chmod 0600 = capability 鉴权。
+ * - Windows:named pipe(`\\.\pipe\continuo-mcp`)— 不在文件系统,
+ *   无 mkdir / unlink / chmod。Win NT pipe ACL 默认只本用户可访问。
+ *
+ * net 模块 API 跨平台一致,只在 fs 副作用上分支。
  */
 export async function createStdioSocketServer(
   opts: CreateStdioSocketOptions,
 ): Promise<StdioSocketServer> {
-  if (process.platform === 'win32') {
-    throw Object.assign(
-      new Error('stdio MCP transport on Windows not yet implemented'),
-      { code: 'STDIO_WIN32_TODO' },
-    );
-  }
+  const isWin = process.platform === 'win32';
 
-  await mkdir(path.dirname(opts.socketPath), { recursive: true });
-  if (existsSync(opts.socketPath)) {
-    try {
-      await unlink(opts.socketPath);
-    } catch {
-      /* ignore — listen 会再报错 */
+  if (!isWin) {
+    await mkdir(path.dirname(opts.socketPath), { recursive: true });
+    if (existsSync(opts.socketPath)) {
+      try {
+        await unlink(opts.socketPath);
+      } catch {
+        /* ignore — listen 会再报错 */
+      }
     }
   }
 
@@ -181,21 +180,25 @@ export async function createStdioSocketServer(
     });
   });
 
-  // 显式 chmod 0600(unix socket 默认 umask 通常 0666 太宽)
-  try {
-    await chmod(opts.socketPath, 0o600);
-  } catch {
-    /* macOS 上偶尔不需要,忽略 */
+  if (!isWin) {
+    // 显式 chmod 0600(unix socket 默认 umask 通常 0666 太宽)
+    try {
+      await chmod(opts.socketPath, 0o600);
+    } catch {
+      /* macOS 上偶尔不需要,忽略 */
+    }
   }
 
   return {
     socketPath: opts.socketPath,
     async close(): Promise<void> {
       await new Promise<void>((resolve) => server.close(() => resolve()));
-      try {
-        await unlink(opts.socketPath);
-      } catch {
-        /* ignore */
+      if (!isWin) {
+        try {
+          await unlink(opts.socketPath);
+        } catch {
+          /* ignore */
+        }
       }
     },
   };

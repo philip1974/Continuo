@@ -273,19 +273,28 @@ function resolveStdioCliPath(): string {
   return path.resolve(__dirname, '..', '..', 'scripts', 'continuo-mcp-stdio.mjs');
 }
 
+/**
+ * stdio socket / named pipe 路径(跨平台):
+ *  - macOS / Linux:`<userData>/mcp.sock`(unix socket,文件系统)
+ *  - Windows:`\\.\pipe\continuo-mcp`(named pipe,不在文件系统;
+ *    单实例 lock 已防双实例,无需 pid 后缀)
+ *
+ * CLI proxy(scripts/continuo-mcp-stdio.mjs)有同款默认值算法,两边对齐。
+ */
+function resolveStdioSocketPath(): string {
+  if (process.platform === 'win32') {
+    return '\\\\.\\pipe\\continuo-mcp';
+  }
+  return path.join(app.getPath('userData'), 'mcp.sock');
+}
+
 async function startMcpStdioServer(): Promise<void> {
   if (!mcpHost) {
     // eslint-disable-next-line no-console
     console.warn('[mcp-stdio] http host not started, skipping stdio');
     return;
   }
-  // 跨平台 socket 路径:macOS / Linux 走 userData/mcp.sock;Windows 暂不支持
-  if (process.platform === 'win32') {
-    // eslint-disable-next-line no-console
-    console.warn('[mcp-stdio] windows not supported yet');
-    return;
-  }
-  const socketPath = path.join(app.getPath('userData'), 'mcp.sock');
+  const socketPath = resolveStdioSocketPath();
   try {
     mcpStdio = await createStdioSocketServer({
       socketPath,

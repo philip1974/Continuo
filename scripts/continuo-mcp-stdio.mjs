@@ -8,10 +8,12 @@
 //
 // socket 路径优先级:
 //   1. CONTINUO_MCP_SOCKET 环境变量
-//   2. 默认:macOS = ~/Library/Application Support/Continuo/mcp.sock
-//            Linux = $XDG_DATA_HOME/.../mcp.sock 或 ~/.config/Continuo/mcp.sock
+//   2. 默认(与 main 的 resolveStdioSocketPath 对齐):
+//      macOS = ~/Library/Application Support/Continuo/mcp.sock
+//      Linux = $XDG_CONFIG_HOME/Continuo/mcp.sock 或 ~/.config/Continuo/mcp.sock
+//      Windows = \\.\pipe\continuo-mcp(named pipe,不在文件系统)
 //
-// Continuo 主进程必须在线;否则连 socket 失败,Claude Code 标 mcp server 不可用。
+// Continuo 主进程必须在线;否则连失败,Claude Code 标 mcp server 不可用。
 
 import { createConnection } from 'node:net';
 import { existsSync } from 'node:fs';
@@ -19,7 +21,6 @@ import path from 'node:path';
 import os from 'node:os';
 
 function defaultSocketPath() {
-  // 与 Electron 的 app.getPath('userData') 对齐(macOS / Linux 不一样)
   if (process.platform === 'darwin') {
     return path.join(
       os.homedir(),
@@ -29,6 +30,9 @@ function defaultSocketPath() {
       'mcp.sock',
     );
   }
+  if (process.platform === 'win32') {
+    return '\\\\.\\pipe\\continuo-mcp';
+  }
   // Linux:fallback ~/.config/Continuo
   const xdg = process.env.XDG_CONFIG_HOME ?? path.join(os.homedir(), '.config');
   return path.join(xdg, 'Continuo', 'mcp.sock');
@@ -36,7 +40,9 @@ function defaultSocketPath() {
 
 const socketPath = process.env.CONTINUO_MCP_SOCKET ?? defaultSocketPath();
 
-if (!existsSync(socketPath)) {
+// existsSync 在 Windows named pipe 上不工作(不在文件系统),跳过预检;
+// macOS/Linux 仍预检以给清晰错误,避免连接异常时报模糊网络错误。
+if (process.platform !== 'win32' && !existsSync(socketPath)) {
   process.stderr.write(
     `[continuo-mcp-stdio] socket not found: ${socketPath}\n` +
       '  Continuo app appears not to be running. Start Continuo first.\n',

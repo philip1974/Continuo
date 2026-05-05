@@ -495,10 +495,10 @@ node scripts/agent-cli-stub.mjs terminal.create_session '{"autorun":"echo hi"}'
 
 ### 15.7 仍未做(留后续)
 
-| 项 | 优先级 | 备注 |
+| 项 | 状态 | 备注 |
 |---|---|---|
-| Windows named pipe 支持 | 低 | stdio 当前 macOS/Linux only,Win 走 `\\.\pipe\continuo-mcp` |
-| CLI binary 打包到 app bundle | 中 | 当前 dev 用绝对路径,release 应放到 `app.asar.unpacked/scripts/` 提供稳定路径 |
-| HTTP token 持久化(方案 A)| 低 | 用户走 stdio 已解决体验,HTTP 保留作 stub 调试用 |
-| 状态栏"复制 mcp add 命令"按钮 | 低 | 偶尔重新配置时的 quality of life |
-| Inspector / Cursor 等其它 MCP client 联调 | 低 | 协议已标准化,理论上 work,需手验 |
+| Windows named pipe 支持 | ✓ done(`df602c8` 后续 commit)| `\\.\pipe\continuo-mcp`,net 模块 API 跨平台一致 |
+| CLI binary 打包到 app bundle | ✓ done(`ba1c535`)| extraResources 拷到 Resources/,packaged 用 process.resourcesPath |
+| 状态栏"复制 MCP 配置"按钮 | ✓ done(`df602c8`)| 点击复制 claude mcp add 命令到剪贴板 |
+| HTTP token 持久化(方案 A)| 不做 | stdio 已解决体验,HTTP 保留作 stub 调试 |
+| Inspector / Cursor 等其它 MCP client 联调 | 留后续 | 协议已标准化,理论上 work,需手验 |
