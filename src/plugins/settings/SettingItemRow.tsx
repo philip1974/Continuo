@@ -7,7 +7,7 @@
 //
 // 一行结构:title + description 在上,控件靠右。
 
-import { Input, SegmentedControl } from '@/design';
+import { IconButton, Input, SegmentedControl } from '@/design';
 import type { SettingItemSpec } from '../registries/SettingItemRegistry';
 import { useSettingsValuesStore } from './values-store';
 
@@ -21,10 +21,12 @@ const BOOLEAN_OPTIONS = [
 ] as const;
 
 export function SettingItemRow({ spec }: SettingItemRowProps) {
-  const value = useSettingsValuesStore(
-    (s) => s.values[spec.id] ?? spec.default,
-  );
+  const stored = useSettingsValuesStore((s) => s.values[spec.id]);
   const setValue = useSettingsValuesStore((s) => s.setValue);
+  const reset = useSettingsValuesStore((s) => s.reset);
+  const value = stored ?? spec.default;
+  // values 中存在 override → 显示 reset;undefined 表示走 default,无需 reset
+  const isOverridden = stored !== undefined;
 
   return (
     <div className="flex items-start justify-between gap-6 border-b border-line py-3 last:border-b-0">
@@ -39,7 +41,7 @@ export function SettingItemRow({ spec }: SettingItemRowProps) {
           {spec.id}
         </div>
       </div>
-      <div className="shrink-0">
+      <div className="flex shrink-0 items-center gap-2">
         {spec.type === 'boolean' && (
           <SegmentedControl
             size="sm"
@@ -83,6 +85,30 @@ export function SettingItemRow({ spec }: SettingItemRowProps) {
             className="w-48"
           />
         )}
+        {/* 常驻占位避免 reset 时 Input 等控件位置跳动;非 override 状态下
+         *  invisible + pointer-events-none 保留布局但不响应 */}
+        <IconButton
+          size="xs"
+          onClick={() => isOverridden && reset(spec.id)}
+          title={`恢复默认(${String(spec.default)})`}
+          aria-label="恢复默认"
+          className={isOverridden ? '' : 'pointer-events-none invisible'}
+        >
+          <svg
+            viewBox="0 0 16 16"
+            width="12"
+            height="12"
+            aria-hidden="true"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M3 8a5 5 0 0 1 8.5-3.5L13 6" />
+            <path d="M13 3v3h-3" />
+          </svg>
+        </IconButton>
       </div>
     </div>
   );

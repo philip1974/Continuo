@@ -9,9 +9,13 @@
 import { useEffect } from 'react';
 import { useTheme } from './useTheme';
 import type { ThemeMode } from './ThemeProvider';
-import { useSettingsValuesStore } from '@/plugins/settings/values-store';
+import {
+  useSettingValue,
+  useSettingsValuesStore,
+} from '@/plugins/settings/values-store';
 
 const THEME_SETTING_ID = 'general.theme';
+const THEME_DEFAULT: ThemeMode = 'dark';
 
 function isThemeMode(v: unknown): v is ThemeMode {
   return v === 'light' || v === 'dark' || v === 'system';
@@ -19,7 +23,13 @@ function isThemeMode(v: unknown): v is ThemeMode {
 
 export function useThemeBinding(): void {
   const { mode, setMode } = useTheme();
-  const themeValue = useSettingsValuesStore(
+  // 用 useSettingValue 拿带 fallback 的有效值:reset 后 store 删 key,
+  // 这里仍然返回 default,binding 看到值变(从 'light' → 'dark')触发 setMode
+  const themeValue = useSettingValue<ThemeMode>(
+    THEME_SETTING_ID,
+    THEME_DEFAULT,
+  );
+  const rawStored = useSettingsValuesStore(
     (s) => s.values[THEME_SETTING_ID],
   );
   const setValue = useSettingsValuesStore((s) => s.setValue);
@@ -31,9 +41,9 @@ export function useThemeBinding(): void {
     }
   }, [themeValue, mode, setMode]);
 
-  // 首次挂载:store 还没该 key,把当前 mode 推过去做迁移
+  // 首次挂载:store 还没该 key 且 ThemeProvider 已有非默认 mode → 迁移过去
   useEffect(() => {
-    if (themeValue === undefined) {
+    if (rawStored === undefined && mode !== THEME_DEFAULT) {
       setValue(THEME_SETTING_ID, mode);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
