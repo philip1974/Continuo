@@ -37,7 +37,7 @@ export function parseProtocolUrl(url: string): ParsedProtocolUrl | null {
 
 export async function handleProtocolUrl(
   url: string,
-  app: CoApp,
+  app: Pick<CoApp, 'commands'>,
 ): Promise<void> {
   const parsed = parseProtocolUrl(url);
   if (!parsed) {

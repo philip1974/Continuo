@@ -13,10 +13,12 @@ import type {
   CoPluginApp,
   PluginClipboardApi,
   PluginFsApi,
+  PluginMcpApi,
   PluginNetworkApi,
   PluginPermissionApi,
   PluginShellApi,
 } from './types';
+import type { PluginMcpToolSpec } from './registries/PluginMcpRegistry';
 import {
   PermissionError,
   type PermissionKey,
@@ -113,6 +115,19 @@ function makeClipboard(
   };
 }
 
+function makeMcp(
+  pluginId: string,
+  store: PermissionStore | null,
+  registry: CoApp['mcp'],
+): PluginMcpApi {
+  return {
+    async register<I, O>(spec: PluginMcpToolSpec<I, O>) {
+      await ensurePerm(pluginId, 'mcp-tools', store);
+      return registry.register(spec, pluginId);
+    },
+  };
+}
+
 function makePermission(
   pluginId: string,
   store: PermissionStore | null,
@@ -145,12 +160,16 @@ export function createScopedApp(
   pluginId: string,
   store: PermissionStore | null,
 ): CoPluginApp {
+  // Omit coApp.mcp(单例 registry)→ 替换为 per-plugin scope wrapper,
+  // 其它字段直通。
+  const { mcp: registry, ...rest } = coApp;
   return {
-    ...coApp,
+    ...rest,
     fs: makeFs(pluginId, store),
     network: makeNetwork(pluginId, store),
     shell: makeShell(pluginId, store),
     clipboard: makeClipboard(pluginId, store),
     permission: makePermission(pluginId, store),
+    mcp: makeMcp(pluginId, store, registry),
   };
 }

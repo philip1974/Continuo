@@ -1,7 +1,13 @@
 // 插件权限系统(M-Plugin v3.3)。
 // 声明式 manifest.permissions + 首次启用授权门 + 决策持久化。
 
-export type PermissionKey = 'fs' | 'network' | 'shell' | 'clipboard';
+export type PermissionKey =
+  | 'fs'
+  | 'network'
+  | 'shell'
+  | 'clipboard'
+  /** v5 Phase 4:plugin 注册 MCP tool 给 Agent 用. */
+  | 'mcp-tools';
 
 /**
  * v5 Phase 1:plugin 调 fs/network/shell/clipboard 时若未授权,
@@ -23,6 +29,7 @@ export const PERMISSION_KEYS: readonly PermissionKey[] = [
   'network',
   'shell',
   'clipboard',
+  'mcp-tools',
 ];
 
 export interface PermissionDecision {

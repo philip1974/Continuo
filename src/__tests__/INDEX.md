@@ -186,6 +186,34 @@
 
 - [`plugin-manifest.spec.ts`](./plugin-manifest/plugin-manifest.spec.ts)
 
+## [plugin-mcp-e2e (Plugin → MCP Bridge · 端到端集成)](./plugin-mcp-e2e/README.md)
+
+- [`e2e.spec.ts`](./plugin-mcp-e2e/e2e.spec.ts)
+
+## [plugin-mcp-ipc-bridge (Plugin → MCP Bridge · IPC 协议层)](./plugin-mcp-ipc-bridge/README.md)
+
+- [`ipc-protocol.spec.ts`](./plugin-mcp-ipc-bridge/ipc-protocol.spec.ts)
+
+## [plugin-mcp-lifecycle (Plugin → MCP Bridge · 生命周期)](./plugin-mcp-lifecycle/README.md)
+
+- [`lifecycle.spec.ts`](./plugin-mcp-lifecycle/lifecycle.spec.ts)
+
+## [plugin-mcp-multi-window (Plugin → MCP Bridge · 多窗口)](./plugin-mcp-multi-window/README.md)
+
+- [`multi-window.spec.ts`](./plugin-mcp-multi-window/multi-window.spec.ts)
+
+## [plugin-mcp-permission (Plugin → MCP Bridge · 权限门)](./plugin-mcp-permission/README.md)
+
+- [`permission.spec.ts`](./plugin-mcp-permission/permission.spec.ts)
+
+## [plugin-mcp-registry (Plugin → MCP Bridge · 模块层)](./plugin-mcp-registry/README.md)
+
+- [`registry.spec.ts`](./plugin-mcp-registry/registry.spec.ts)
+
+## [plugin-mcp-stub-tool (Plugin → MCP Bridge · main 侧 stub)](./plugin-mcp-stub-tool/README.md)
+
+- [`stub-tool.spec.ts`](./plugin-mcp-stub-tool/stub-tool.spec.ts)
+
 ## [plugin-permissions(声明式权限 + 授权门)](./plugin-permissions/README.md)
 
 - [`plugin-permissions.spec.ts`](./plugin-permissions/plugin-permissions.spec.ts)

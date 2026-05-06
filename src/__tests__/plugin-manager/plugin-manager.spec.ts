@@ -7,9 +7,9 @@ import {
   type PluginDirInfo,
 } from '../../plugins/PluginManager';
 import { InMemoryPermissionStore } from '../../plugins/permissions';
-import { createTestApp } from '../../plugins/test-utils';
+import { createTestCoApp } from '../../plugins/test-utils';
 
-const fakeApp = createTestApp('1.0.0');
+const fakeApp = createTestCoApp('1.0.0');
 
 // ── 测试夹具:可控的 ManagerHost mock ──────────────────
 

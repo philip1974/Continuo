@@ -12,6 +12,7 @@ import type { RibbonActionSpec } from './registries/RibbonRegistry';
 import type { SettingTabSpec } from './registries/SettingTabRegistry';
 import type { DecoratorFn } from './registries/ExplorerDecoratorRegistry';
 import type { EditorActionSpec } from './registries/EditorActionRegistry';
+import type { PluginMcpToolSpec } from './registries/PluginMcpRegistry';
 
 export type { Disposable } from './types';
 
@@ -88,6 +89,24 @@ export abstract class Plugin {
 
   protected registerEditorAction(spec: EditorActionSpec): Disposable {
     return this.register(this.app.editorActions.register(spec));
+  }
+
+  /**
+   * v5 Phase 4:注册 MCP tool 供 Agent 调用。
+   *
+   * 注意此 proxy 是 async(其他贡献点同步返回)— 因为权限检 + 上行 IPC 必须 await。
+   * 失败(权限 / 重名 / IPC 错)→ reject,plugin 自行 try/catch 决定降级。
+   * 成功的 Disposable 自动入 disposables,_deactivate 时 LIFO 反序 dispose →
+   * 触发 main 端 host 摘掉 stub。
+   *
+   * 边界:已 _deactivate 后再 await 此方法,upstream.register 仍会被调,但
+   * 返回的 Disposable 会被 this.register 立即 dispose(防泄漏)— 同其他贡献点契约。
+   */
+  protected async registerMcpTool<I, O>(
+    spec: PluginMcpToolSpec<I, O>,
+  ): Promise<Disposable> {
+    const d = await this.app.mcp.register(spec);
+    return this.register(d);
   }
 
   /**

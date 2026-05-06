@@ -6,5 +6,5 @@
   "description": "演示 LM 插件 9 贡献点 + loadData/saveData + v5 fs/network runtime gating",
   "author": "LayoutMotion",
   "minLMVersion": "0.1.0",
-  "permissions": ["fs", "network"]
+  "permissions": ["fs", "network", "mcp-tools"]
 }

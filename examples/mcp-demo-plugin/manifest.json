@@ -1,0 +1,10 @@
+{
+  "id": "com.continuo.mcp-demo",
+  "name": "MCP Demo",
+  "version": "0.1.0",
+  "main": "main.js",
+  "description": "演示 plugin 注册 MCP tool 给 Agent 调用(v5 Phase 4)",
+  "author": "Continuo",
+  "minLMVersion": "0.1.0",
+  "permissions": ["mcp-tools"]
+}

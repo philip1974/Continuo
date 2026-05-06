@@ -1,10 +1,12 @@
 import React from 'react';
 import * as ReactNS from 'react';
 import { createRoot } from 'react-dom/client';
+import { z as zodNS } from 'zod';
 import { App } from './shell/App';
 import { initExplorerPersistence } from './lib/persist/explorer-persist';
 import { bootCorePlugins } from './core-plugins';
-import { coApp } from './plugins/co-app';
+import { coApp, getPluginMcpRegistry } from './plugins/co-app';
+import { startPluginMcpInvokeBridge } from './plugins/plugin-mcp-invoke-bridge';
 import { Plugin } from './plugins/Plugin';
 import { PluginManager } from './plugins/PluginManager';
 import { setUserPluginManager } from './plugins/co-plugin-manager';
@@ -26,17 +28,20 @@ captureLmApi();
 // M-Plugin v4.1 SDK 暴露:user-installed plugin 通过 globalThis.co 拿到
 // Plugin 基类 + React(用 Blob URL import 时无法走 ESM bare import)。
 // v5 Phase 3 增 PermissionError,plugin 可 instanceof 区分权限错误与其它。
+// v5 Phase 4 增 z(zod),让 plugin 写 MCP tool 的 inputSchema 时不需 bare import.
 // 后续若改 Vite plugin 注入 'lm' 模块,本块可移除。
 (globalThis as unknown as {
   co: {
     Plugin: typeof Plugin;
     React: typeof ReactNS;
     PermissionError: typeof PermissionError;
+    z: typeof zodNS;
   };
 }).co = {
   Plugin,
   React: ReactNS,
   PermissionError,
+  z: zodNS,
 };
 
 const container = document.getElementById('root');
@@ -45,6 +50,12 @@ if (!container) throw new Error('#root not found');
 // M-Plugin v1.7:渲染前同步注册内置插件(editor / terminal / output),
 // 使 coApp.panels 在 DockShell 首次 mount 时已含 3 个 panel 类型。
 bootCorePlugins();
+
+// v5 Phase 4:Plugin → MCP bridge 反向调用路由。preload.pluginMcp.onInvoke
+// 收 main 推过来的 INVOKE → 调 registry.invokeLocal → preload.replyInvoke 答 main。
+// fire-and-forget,卸载在窗口关闭时由 GC 处理(订阅 unsub 会泄漏一个 listener,
+// 单 renderer 生命周期级,可接受)。
+startPluginMcpInvokeBridge(getPluginMcpRegistry());
 
 // M-Plugin v5 Phase 4:plugin import 之前清掉 globalThis.fetch +
 // navigator.clipboard,plugin 直接调 raw API 抛 TypeError。

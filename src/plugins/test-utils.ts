@@ -10,17 +10,28 @@ import { EditorActionRegistry } from './registries/EditorActionRegistry';
 import { ExplorerDecoratorRegistry } from './registries/ExplorerDecoratorRegistry';
 import { InMemoryDataStore } from './PluginDataStore';
 import { PanelRegistry } from './registries/PanelRegistry';
+import {
+  PluginMcpRegistry,
+  type PluginMcpUpstream,
+} from './registries/PluginMcpRegistry';
 import { RibbonRegistry } from './registries/RibbonRegistry';
 import { SettingTabRegistry } from './registries/SettingTabRegistry';
 import { StatusBarRegistry } from './registries/StatusBarRegistry';
 import { createScopedApp } from './scoped-app';
 import type { CoApp, CoPluginApp } from './types';
 
-export function createTestApp(
-  version = '1.0.0-test',
-  pluginId = 'test',
-): CoPluginApp {
-  const base: CoApp = {
+const noopMcpUpstream: PluginMcpUpstream = {
+  async register() {
+    /* noop */
+  },
+  async unregister() {
+    /* noop */
+  },
+};
+
+/** 测试 CoApp 工厂(给 PluginManager / handleProtocolUrl 等接 CoApp 的代码用). */
+export function createTestCoApp(version = '1.0.0-test'): CoApp {
+  return {
     version,
     panels: new PanelRegistry(),
     commands: new CommandRegistry(),
@@ -31,6 +42,14 @@ export function createTestApp(
     settingTabs: new SettingTabRegistry(),
     explorerDecorators: new ExplorerDecoratorRegistry(),
     editorActions: new EditorActionRegistry(),
+    mcp: new PluginMcpRegistry(noopMcpUpstream),
   };
-  return createScopedApp(base, pluginId, null);
+}
+
+/** 测试 CoPluginApp 工厂(给 Plugin constructor 等接 CoPluginApp 的代码用). */
+export function createTestApp(
+  version = '1.0.0-test',
+  pluginId = 'test',
+): CoPluginApp {
+  return createScopedApp(createTestCoApp(version), pluginId, null);
 }

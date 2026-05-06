@@ -15,6 +15,15 @@ import { RibbonRegistry } from '../../plugins/registries/RibbonRegistry';
 import { SettingTabRegistry } from '../../plugins/registries/SettingTabRegistry';
 import { StatusBarRegistry } from '../../plugins/registries/StatusBarRegistry';
 import type { CoApp } from '../../plugins/types';
+import {
+  PluginMcpRegistry,
+  type PluginMcpUpstream,
+} from '../../plugins/registries/PluginMcpRegistry';
+
+const noopMcpUpstream: PluginMcpUpstream = {
+  async register() {},
+  async unregister() {},
+};
 
 function makeLmApp(): CoApp {
   return {
@@ -28,6 +37,7 @@ function makeLmApp(): CoApp {
     settingTabs: new SettingTabRegistry(),
     explorerDecorators: new ExplorerDecoratorRegistry(),
     editorActions: new EditorActionRegistry(),
+    mcp: new PluginMcpRegistry(noopMcpUpstream),
   };
 }
 

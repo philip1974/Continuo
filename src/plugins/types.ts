@@ -52,6 +52,8 @@ export interface CoApp {
   readonly explorerDecorators: import('./registries/ExplorerDecoratorRegistry').ExplorerDecoratorRegistry;
   /** EditorHeader 工具按钮贡献(v3.2). */
   readonly editorActions: import('./registries/EditorActionRegistry').EditorActionRegistry;
+  /** Plugin → MCP tool 注册表(v5 Phase 4),renderer 内单例. */
+  readonly mcp: import('./registries/PluginMcpRegistry').PluginMcpRegistry;
 }
 
 // ── v5 Phase 1:plugin 拿到的扩展 app(per-plugin scoped) ────────────
@@ -117,14 +119,33 @@ export interface PluginPermissionApi {
   granted(): Promise<readonly import('./permissions').PermissionKey[]>;
 }
 
+/** v5 Phase 4:plugin 注册 MCP tool 的 per-plugin scoped wrapper. */
+export interface PluginMcpApi {
+  /**
+   * 注册 MCP tool。检 'mcp-tools' 权限,未授抛 PermissionError。
+   * 失败(权限 / 重名 / 上行 IPC 错)→ reject。成功 → resolve Disposable,
+   * dispose 时上行 unregister + 从 main host 摘掉 stub。
+   */
+  register<I, O>(
+    spec: import('./registries/PluginMcpRegistry').PluginMcpToolSpec<I, O>,
+  ): Promise<Disposable>;
+}
+
 /**
  * Plugin 拿到的 app:在 CoApp 基础上加 5 个 per-plugin 命名空间。
  * 由 createScopedApp(coApp, pluginId, store) 在激活时构造。
  */
-export interface CoPluginApp extends CoApp {
+/**
+ * Plugin 拿到的 app:在 CoApp 基础上加 per-plugin 命名空间。
+ *
+ * 注意 `mcp` 字段在 CoApp 是 PluginMcpRegistry(单例),CoPluginApp 是 PluginMcpApi
+ * (per-plugin scope wrapper)— 类型不同,因此 Omit 掉 CoApp.mcp 再重声明。
+ */
+export interface CoPluginApp extends Omit<CoApp, 'mcp'> {
   readonly fs: PluginFsApi;
   readonly network: PluginNetworkApi;
   readonly shell: PluginShellApi;
   readonly clipboard: PluginClipboardApi;
   readonly permission: PluginPermissionApi;
+  readonly mcp: PluginMcpApi;
 }

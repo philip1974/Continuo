@@ -22,6 +22,11 @@ import {
   MCP_CHANNELS,
   type StdioMcpConfig,
 } from '../shared/mcp-channels';
+import {
+  PLUGIN_MCP_CHANNELS,
+  type InvokePayload,
+  type InvokeReply,
+} from '../shared/plugin-mcp-channels';
 
 // terminal create 入参的轻量类型(与 main 端 zod schema 对齐)
 // export 是为了 ContinuoApi 跨 module 引用时 TS 能 name 这些类型
@@ -248,6 +253,30 @@ const api = {
     /** 拿当前 stdio MCP 配置(状态栏"复制 MCP 配置"按钮用). */
     getStdioConfig: (): Promise<IpcResult<StdioMcpConfig>> =>
       ipcRenderer.invoke(MCP_CHANNELS.GET_STDIO_CONFIG, {}),
+  },
+  pluginMcp: {
+    /** 上行注册 tool 元数据;失败返 IpcFail(含 TOOL_NAME_TAKEN 等 code). */
+    registerTool: (payload: {
+      pluginId: string;
+      name: string;
+      description: string;
+      jsonSchema: Record<string, unknown>;
+    }): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(PLUGIN_MCP_CHANNELS.REGISTER, payload),
+    /** 上行摘 tool;unknown name 静默 ok. */
+    unregisterTool: (name: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(PLUGIN_MCP_CHANNELS.UNREGISTER, { name }),
+    /** main 反向调 tool.run 时推过来的 invoke 请求(订阅;返 unsubscribe). */
+    onInvoke: (cb: (payload: InvokePayload) => void): (() => void) => {
+      const listener = (_: unknown, payload: InvokePayload) => cb(payload);
+      ipcRenderer.on(PLUGIN_MCP_CHANNELS.INVOKE, listener);
+      return () =>
+        ipcRenderer.off(PLUGIN_MCP_CHANNELS.INVOKE, listener);
+    },
+    /** renderer 答 main(单向 send,无 IpcResult). */
+    replyInvoke: (reply: InvokeReply): void => {
+      ipcRenderer.send(PLUGIN_MCP_CHANNELS.INVOKE_REPLY, reply);
+    },
   },
 } as const;
 

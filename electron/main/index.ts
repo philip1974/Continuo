@@ -28,6 +28,7 @@ import {
   setMcpHostRef,
 } from './services/agent-auth.service';
 import { setStdioConfig } from './services/mcp-stdio-config.service';
+import { startPluginMcpIpc } from './ipc/plugin-mcp.ipc';
 
 // autorun delay:Win shell prompt 慢,默认更长。
 const AUTORUN_DELAY_MS = process.platform === 'win32' ? 600 : 200;
@@ -333,6 +334,8 @@ app.whenReady().then(async () => {
   // env 已含 MCP url / token。
   await startMcpHost();
   await startMcpStdioServer();
+  // Plugin → MCP bridge 接线(host 已就绪,renderer 通过 IPC 注册的 tool 走它)
+  if (mcpHost) startPluginMcpIpc(mcpHost);
   const win = createMainWindow();
 
   // 冷启 + open-url 顺序处理:可能在 mainwindow 未就绪前已收 url

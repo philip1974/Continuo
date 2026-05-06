@@ -9,12 +9,21 @@ import { EditorActionRegistry } from './registries/EditorActionRegistry';
 import { ExplorerDecoratorRegistry } from './registries/ExplorerDecoratorRegistry';
 import { InMemoryDataStore } from './PluginDataStore';
 import { PanelRegistry } from './registries/PanelRegistry';
+import { PluginMcpRegistry } from './registries/PluginMcpRegistry';
 import { RibbonRegistry } from './registries/RibbonRegistry';
 import { SettingTabRegistry } from './registries/SettingTabRegistry';
 import { StatusBarRegistry } from './registries/StatusBarRegistry';
+import { createIpcPluginMcpUpstream } from './plugin-mcp-upstream';
 import type { CoApp } from './types';
 
 const APP_VERSION = '0.1.0';
+
+// v5 Phase 4:Plugin → MCP bridge — registry 持 IPC upstream,
+// dispose 时通过 preload.pluginMcp.unregisterTool 上行,renderer 启动时
+// 在 main.tsx 订阅 onInvoke 把反向调用路由到 registry.invokeLocal。
+const pluginMcpRegistry = new PluginMcpRegistry(
+  createIpcPluginMcpUpstream(),
+);
 
 export const coApp: CoApp = {
   version: APP_VERSION,
@@ -28,4 +37,10 @@ export const coApp: CoApp = {
   settingTabs: new SettingTabRegistry(),
   explorerDecorators: new ExplorerDecoratorRegistry(),
   editorActions: new EditorActionRegistry(),
+  mcp: pluginMcpRegistry,
 };
+
+/** 让 main.tsx 拿到 registry 引用,在启动时订阅 onInvoke 路由反向调用. */
+export function getPluginMcpRegistry(): PluginMcpRegistry {
+  return pluginMcpRegistry;
+}

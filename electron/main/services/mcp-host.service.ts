@@ -296,6 +296,8 @@ export interface McpHost {
   /** 共享给 stdio transport 等其它入口复用. */
   readonly serverInfo: ServerInfo;
   registerTool(tool: AnyMcpTool): void;
+  /** registerTool 反操作。unknown name 静默 noop. */
+  removeTool(name: string): void;
   rotateToken(): string;
   close(): Promise<void>;
 }
@@ -499,6 +501,9 @@ export async function createMcpHost(
     serverInfo,
     registerTool(tool: AnyMcpTool): void {
       tools.set(tool.name, tool);
+    },
+    removeTool(name: string): void {
+      tools.delete(name);
     },
     rotateToken(): string {
       token = generateToken();

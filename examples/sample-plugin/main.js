@@ -6,7 +6,7 @@
 // SDK 入口:LM 把 Plugin 基类 + React 暴露在 globalThis.co 上(M-Plugin v4.1)。
 // 解构出来后写起来跟 ESM import 一样自然。
 
-const { Plugin, React, PermissionError } = globalThis.co;
+const { Plugin, React, PermissionError, z } = globalThis.co;
 const h = React.createElement;
 
 export default class SamplePlugin extends Plugin {
@@ -147,6 +147,40 @@ export default class SamplePlugin extends Plugin {
         }
       },
     });
+
+    // ── 10. v5 Phase 4 demo:MCP tool(暴露给 Agent / Claude Code) ──
+    // 注册成功后,持 CONTINUO_MCP_TOKEN 的 MCP client 调
+    //   tools/list  → 返回 sample.echo
+    //   tools/call name=sample.echo arguments={text:"hi"}
+    // → 把 input 转回 renderer plugin run 闭包,返回 {echoed, from, ts}。
+    try {
+      await this.registerMcpTool({
+        name: 'sample.echo',
+        description: '回显 input.text 并附 plugin id,演示 plugin 注册 MCP tool',
+        jsonSchema: {
+          type: 'object',
+          properties: {
+            text: { type: 'string', description: '要回显的文本' },
+          },
+          required: ['text'],
+          additionalProperties: false,
+        },
+        inputSchema: z.object({ text: z.string() }).strict(),
+        run: ({ text }) => ({
+          echoed: text,
+          from: this.manifest.id,
+          ts: Date.now(),
+        }),
+      });
+    } catch (err) {
+      if (err instanceof PermissionError) {
+        console.warn(
+          '[sample-plugin] mcp-tools 权限未授,sample.echo 未注册',
+        );
+      } else {
+        console.warn('[sample-plugin] sample.echo 注册失败', err);
+      }
+    }
   }
 
   // 父类 _deactivate 自动 LIFO 清理 disposables;此处可选 onunload 加业务卸载

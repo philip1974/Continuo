@@ -11,6 +11,10 @@ const PERMISSION_LABELS: Record<PermissionKey, { title: string; desc: string }> 
   network: { title: '网络访问', desc: '发起 HTTP / WebSocket 等远程请求' },
   shell: { title: '执行 shell 命令', desc: '调用本机 shell / 子进程' },
   clipboard: { title: '剪贴板', desc: '读写系统剪贴板' },
+  'mcp-tools': {
+    title: '注册 MCP 工具',
+    desc: '把 plugin 自定义工具暴露给 Agent / Claude Code 等 MCP client 调用',
+  },
 };
 
 export function PermissionPrompt() {
