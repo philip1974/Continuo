@@ -18,8 +18,6 @@ const RESET = () => {
   useWorkspaceStore.setState({ root: null, recentRoots: [] });
   useExplorerStore.setState({
     activePath: null,
-    selectedPaths: new Set(),
-    lastAnchorPath: null,
     expandedPaths: new Set(),
     sort: { by: 'name', reverse: false },
     search: '',
@@ -70,15 +68,11 @@ describe('snapshotFromStores', () => {
     expect(snap.pinned).toEqual({ paths: ['/p'] });
   });
 
-  it('不持久化 selectedPaths / lastAnchorPath / search', () => {
+  it('不持久化 search 等瞬时字段', () => {
     useExplorerStore.setState({
-      selectedPaths: new Set(['/x', '/y']),
-      lastAnchorPath: '/x',
       search: 'foo',
     });
     const explorerJson = snapshotFromStores().explorer as unknown as Record<string, unknown>;
-    expect(explorerJson).not.toHaveProperty('selectedPaths');
-    expect(explorerJson).not.toHaveProperty('lastAnchorPath');
     expect(explorerJson).not.toHaveProperty('search');
   });
 });
@@ -98,18 +92,13 @@ describe('hydrateStores', () => {
     expect(usePinnedStore.getState().paths).toEqual(['/work/star.md']);
   });
 
-  it('hydrate 不恢复瞬时字段(selectedPaths / lastAnchor / search)', () => {
+  it('hydrate 显式复位 search 瞬时字段', () => {
     useExplorerStore.setState({
-      selectedPaths: new Set(['/keep-this']),
-      lastAnchorPath: '/keep',
       search: 'keep',
     });
     hydrateStores(fullSnapshot);
-    const s = useExplorerStore.getState();
-    // 重启后这些应被复位为初态(空),不带入磁盘数据(因为根本没存)
-    expect(s.selectedPaths.size).toBe(0);
-    expect(s.lastAnchorPath).toBeNull();
-    expect(s.search).toBe('');
+    // 重启后被复位为初态(空),不带入磁盘数据(因为根本没存)
+    expect(useExplorerStore.getState().search).toBe('');
   });
 
   it('hydrate 含 layoutUi → 写到 useLayoutUiStore', () => {

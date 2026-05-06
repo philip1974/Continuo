@@ -94,9 +94,7 @@ export function hydrateStores(snap: ExplorerSnapshot): void {
     activePath: snap.explorer.activePath,
     expandedPaths: new Set(snap.explorer.expandedPaths),
     sort: snap.explorer.sort,
-    // 瞬时态显式复位:防止 hydrate 后残留上一次会话的 select/search
-    selectedPaths: new Set(),
-    lastAnchorPath: null,
+    // 瞬时态显式复位:防止 hydrate 后残留上一次会话的 search
     search: '',
   });
   usePinnedStore.setState({
