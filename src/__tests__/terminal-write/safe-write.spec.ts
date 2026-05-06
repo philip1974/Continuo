@@ -49,17 +49,25 @@ describe('safeWrite', () => {
     disposeQueue(instance);
   });
 
-  it('单次 > 16KB → 多次 write,8ms 一片', async () => {
+  it('单次 ≤ 64KB(burst 范围内 ≤4 chunk)→ 全部同步立即写', () => {
     const { instance, writes } = makeFakeTerm();
-    const big = 'x'.repeat(16 * 1024 * 3 + 100); // 3 个完整 chunk + 100B
+    const big = 'x'.repeat(16 * 1024 * 3 + 100); // 4 chunks 总(3 完整 + 100B)
     safeWrite(instance, big);
-    expect(writes.length).toBe(1); // 第一片立即
+    // 前 BURST_CHUNKS(4)同步直写,无需 setTimeout
+    expect(writes.length).toBe(4);
+    expect(writes.join('')).toBe(big);
+    disposeQueue(instance);
+  });
+
+  it('单次 > 64KB(超 burst)→ 前 4 chunk 立即,第 5+ 走 8ms 节流', async () => {
+    const { instance, writes } = makeFakeTerm();
+    const big = 'x'.repeat(16 * 1024 * 5 + 100); // 6 chunks(5 完整 + 100B)
+    safeWrite(instance, big);
+    expect(writes.length).toBe(4); // 前 4 立即(burst)
     await vi.advanceTimersByTimeAsync(10);
-    expect(writes.length).toBe(2);
+    expect(writes.length).toBe(5);
     await vi.advanceTimersByTimeAsync(10);
-    expect(writes.length).toBe(3);
-    await vi.advanceTimersByTimeAsync(10);
-    expect(writes.length).toBe(4); // 4 个 chunk(16K * 3 + 100B)
+    expect(writes.length).toBe(6);
     expect(writes.join('')).toBe(big);
     disposeQueue(instance);
   });

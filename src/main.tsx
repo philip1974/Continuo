@@ -116,3 +116,17 @@ createRoot(container).render(
     <App />
   </React.StrictMode>,
 );
+
+// 启动后 idle 时预热 Terminal lazy chunk(xterm 6MB+addons),
+// 让用户首次开 terminal panel 不再等下载/解析。fire-and-forget,
+// 失败静默(用户还没用到时 vite chunk 偶发失败可重试)。
+const prefetchTerminal = () => {
+  void import('@/panels/Terminal').catch(() => {
+    /* 用户真触发时 React.lazy 会再试 */
+  });
+};
+if (typeof requestIdleCallback === 'function') {
+  requestIdleCallback(prefetchTerminal, { timeout: 3000 });
+} else {
+  setTimeout(prefetchTerminal, 1500);
+}

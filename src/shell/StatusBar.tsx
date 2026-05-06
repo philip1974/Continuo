@@ -1,4 +1,4 @@
-// 底部状态栏(VSCode 风,22px)。
+// 底部状态栏(VSCode 风,24px,参考 stitch_desktop_design_reviewer)。
 // 左:workspace 名 + sidebar 收起提示 + git 分支占位。
 // 右:active editor tab 文件名 + dirty + 行 / 词 / 字符 + 编码占位。
 
@@ -86,7 +86,7 @@ export function StatusBar() {
           : '复制 MCP 配置';
 
   return (
-    <footer className="flex h-[22px] shrink-0 items-center justify-between border-t border-line bg-panel px-3 text-[10px] text-fg-dim select-none">
+    <footer className="flex h-6 shrink-0 items-center justify-between border-t border-line bg-panel px-3 text-[10px] text-fg-dim select-none">
       <div className="flex items-center gap-3 min-w-0">
         {root ? (
           <>

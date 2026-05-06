@@ -15,6 +15,7 @@ export {
   type IconButtonProps,
   type IconButtonSize,
 } from './IconButton';
+export { KeyCap, type KeyCapProps } from './KeyCap';
 export {
   NavRailButton,
   type NavRailButtonProps,

@@ -20,6 +20,25 @@ export function EmptyState({ onRestore }: { onRestore: () => void }) {
     >
       {visible && <BackgroundBeams />}
       <div className="relative z-10 m-auto flex flex-col items-center gap-4">
+        {/* Icon 容器(参考 stitch_desktop_design_reviewer):圆形面板 + 边框,
+         *  让"无面板"状态自成一个视觉单元而非孤立文案。 */}
+        <div className="flex h-20 w-20 items-center justify-center rounded-full border border-line/50 bg-panel">
+          <svg
+            width="36"
+            height="36"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+            className="text-fg-dim"
+          >
+            <rect x="3" y="3" width="18" height="18" rx="2" strokeDasharray="3 3" />
+            <line x1="3" y1="10" x2="21" y2="10" strokeDasharray="2 2" />
+          </svg>
+        </div>
         <p className="text-fg-muted">所有面板都关掉了。</p>
         <Button variant="ghost" size="md" onClick={onRestore}>
           恢复默认布局

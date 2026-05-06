@@ -55,3 +55,34 @@
   --color-fg-dim: #737373;              /* MD3 无对应槽,保留静态值 */
   --color-accent: var(--md-primary);
 }
+
+/* ── 全局 scrollbar(参考 stitch_desktop_design_reviewer 原型)──────────
+ * 走 design token,主题切换自动跟。Firefox 用 scrollbar-* 属性,
+ * Webkit(Chrome/Edge/Electron)用 ::-webkit-scrollbar pseudo。
+ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--md-outline-variant) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--md-outline-variant);
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--md-outline);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}

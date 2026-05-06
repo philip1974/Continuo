@@ -24,6 +24,26 @@ interface IconBarItemConfig {
 
 const ICON_SIZE = 22;
 
+/** Lucide Settings 齿轮 SVG(stroke 风格,跟 Folder 等图标视觉一致). */
+function SettingsGearIcon({ size }: { size: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
 function useRibbonActions(): readonly RibbonActionSpec[] {
   const [snapshot, setSnapshot] = useState(() => coApp.ribbon.getAll());
   useEffect(
@@ -48,20 +68,13 @@ export function IconSidebar() {
       onClick: toggleSidebar,
       active: sidebarOpen,
     },
-    {
-      id: 'search',
-      label: '搜索(待实现)',
-      node: <span className="text-xl leading-none">⌕</span>,
-      onClick: () => {},
-      disabled: true,
-    },
   ];
 
   const bottomItems: IconBarItemConfig[] = [
     {
       id: 'settings',
       label: '设置',
-      node: <span className="text-xl leading-none">⚙</span>,
+      node: <SettingsGearIcon size={ICON_SIZE} />,
       onClick: () => openOrFocusPanel('settings', 'settings', 'Settings'),
     },
   ];
