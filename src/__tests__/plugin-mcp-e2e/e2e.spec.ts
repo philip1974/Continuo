@@ -39,14 +39,7 @@ async function setupHarness(opts: { invokeTimeoutMs?: number } = {}): Promise<In
   const fakeWcId = 11;
   const pluginId = 'demo.echo';
 
-  // host 必须扩 removeTool;若实装阶段直接在 host 加 method,本测试照样能用。
-  // 暂用反射:把 host.tools 内部 Map 拿出来 delete,作为内存桥的 removeTool 实装。
-  // 实装阶段可改为 host.removeTool(name)。
   const host = await createMcpHost({});
-
-  // 取出 tools Map 引用以便 removeTool;现 host.tools 是 ReadonlyMap 对外,
-  // 但底层是 Map(由 createMcpHost 内部代码),这里强转。
-  const toolsMap = host.tools as unknown as Map<string, import('../../../electron/main/services/mcp-host.service').AnyMcpTool>;
 
   // 双向闭包:invokeRemote 的 send 派发到 fake renderer
   // fake renderer 处理 INVOKE → 调 registry.invokeLocal → 通过 invokeRemote.handleReply 回送。
@@ -92,9 +85,7 @@ async function setupHarness(opts: { invokeTimeoutMs?: number } = {}): Promise<In
     host: {
       registerTool: (t) => host.registerTool(t),
       tools: host.tools,
-      removeTool: (name) => {
-        toolsMap.delete(name);
-      },
+      removeTool: (name) => host.removeTool(name),
     },
     invokeRemote,
   });

@@ -21,6 +21,9 @@ import { debounce } from '@/lib/debounce';
 import { coApi } from '@/lib/co-api';
 import '@/styles/dockview.css';
 
+// 外提到 module 顶层常量:DockviewReact 的 components/tabComponents 引用稳定
+// 才能避免 dockview 内部 effect 误判 props 变化。每次 render 新建对象会
+// 触发 dockview 重订阅 createComponent。同 panelComponents 对照(useMemo)。
 const tabComponents = { default: SharedTab };
 
 /** 把 coApp.panels 注册的 PanelSpec 桥接成 Dockview 的 components map.
