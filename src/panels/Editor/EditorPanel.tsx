@@ -15,6 +15,7 @@ import { EditorWelcome } from './EditorWelcome';
 import { MilkdownEditor } from './MilkdownEditor';
 import { useAutoSave, isAutoSaveEnabled } from './useAutoSave';
 import { useEditorFile } from './useEditorFile';
+import { useExternalFileSync } from './useExternalFileSync';
 import type { EditorTab } from '@/stores/editor.store';
 
 function isMarkdownPath(p: string | null): boolean {
@@ -44,6 +45,9 @@ export function EditorPanel() {
 
   // 自动保存:Markdown 启用,代码不启用(决策 #3)
   useAutoSave(saveActive, { enabled: autoSaveEnabled });
+
+  // 外部进程修改文件时,自动同步 non-dirty tab 的内容
+  useExternalFileSync();
 
   // 显式保存(Cmd+S 或 toolbar)
   const handleSave = useCallback(async () => {

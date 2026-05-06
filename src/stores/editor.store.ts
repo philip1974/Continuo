@@ -179,6 +179,8 @@ type EditorState = {
   removePath: (path: string) => void;
   /** 文件/目录被重命名 / 移动时调用:精确或前缀匹配的 tab 同步路径. */
   renamePath: (oldPath: string, newPath: string) => void;
+  /** 外部修改时调用:非 dirty tab 同步 content+originalContent;dirty 跳过. */
+  reloadFromDisk: (tabId: string, content: string) => void;
   switchTab: (id: string) => void;
   /** 编辑器 onChange 时调用;dirty 自动比对. */
   updateContent: (id: string, content: string) => void;
@@ -211,6 +213,26 @@ export const useEditorStore = create<EditorState>((set) => ({
     set((s) =>
       getStateAfterRenamingPath(s.tabs, s.activeTabId, oldPath, newPath),
     ),
+
+  reloadFromDisk: (tabId, content) =>
+    set((s) => {
+      const idx = s.tabs.findIndex((t) => t.id === tabId);
+      if (idx < 0) return s;
+      const cur = s.tabs[idx]!;
+      // dirty:保留用户改动,不覆盖
+      if (cur.dirty) return s;
+      // 内容没变(stat 触发但实际未改):无需重渲
+      if (cur.originalContent === content) return s;
+      const next: EditorTab = {
+        ...cur,
+        content,
+        originalContent: content,
+        dirty: false,
+      };
+      const tabs = s.tabs.slice();
+      tabs[idx] = next;
+      return { tabs };
+    }),
 
   switchTab: (id) => set(() => ({ activeTabId: id })),
 

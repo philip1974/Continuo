@@ -364,6 +364,54 @@ describe('renamePath(store method)', () => {
   });
 });
 
+// ────────────────────────────────────────────────────────────
+// reloadFromDisk
+// 外部修改文件时,非 dirty tab 同步;dirty 跳过避免覆盖用户编辑。
+// ────────────────────────────────────────────────────────────
+
+describe('reloadFromDisk', () => {
+  it('非 dirty tab → content + originalContent 同步,dirty 仍 false', () => {
+    useEditorStore.setState({
+      tabs: [makeTab({ id: '/x/a.md', content: 'old', originalContent: 'old', dirty: false })],
+      activeTabId: '/x/a.md',
+    });
+    useEditorStore.getState().reloadFromDisk('/x/a.md', 'new from disk');
+    const t = useEditorStore.getState().tabs[0]!;
+    expect(t.content).toBe('new from disk');
+    expect(t.originalContent).toBe('new from disk');
+    expect(t.dirty).toBe(false);
+  });
+
+  it('dirty tab → 不动(保护用户改动)', () => {
+    useEditorStore.setState({
+      tabs: [makeTab({ id: '/x/a.md', content: 'edited', originalContent: 'old', dirty: true })],
+      activeTabId: '/x/a.md',
+    });
+    useEditorStore.getState().reloadFromDisk('/x/a.md', 'new from disk');
+    const t = useEditorStore.getState().tabs[0]!;
+    expect(t.content).toBe('edited');
+    expect(t.originalContent).toBe('old');
+    expect(t.dirty).toBe(true);
+  });
+
+  it('磁盘内容与 originalContent 一致 → 不重渲(同引用)', () => {
+    const before = makeTab({ id: '/x/a.md', content: 'same', originalContent: 'same' });
+    useEditorStore.setState({ tabs: [before], activeTabId: '/x/a.md' });
+    useEditorStore.getState().reloadFromDisk('/x/a.md', 'same');
+    const t = useEditorStore.getState().tabs[0]!;
+    expect(t).toBe(before);
+  });
+
+  it('id 不存在 → 不变(防异步事件打到已关闭 tab)', () => {
+    useEditorStore.setState({
+      tabs: [makeTab({ id: '/x/a.md' })],
+      activeTabId: '/x/a.md',
+    });
+    expect(() => useEditorStore.getState().reloadFromDisk('/zombie', 'x')).not.toThrow();
+    expect(useEditorStore.getState().tabs[0]?.content).toBe('hello');
+  });
+});
+
 describe('removePath(store method)', () => {
   it('删除路径 → tabs 与 activeTabId 一并更新', () => {
     useEditorStore.setState({
