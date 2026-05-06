@@ -308,10 +308,10 @@ const TagButton = memo(function TagButton({
       type="button"
       onClick={() => onToggle(tag)}
       className={[
-        'rounded px-2 py-0.5 text-[10px] transition',
+        'rounded-full border px-3 py-1 text-[11px] transition',
         active
-          ? 'bg-accent text-canvas'
-          : 'bg-panel text-fg-muted hover:bg-hover',
+          ? 'border-accent bg-accent text-canvas'
+          : 'border-line bg-panel text-fg-muted hover:bg-hover hover:text-fg',
       ].join(' ')}
     >
       {tag}
@@ -359,8 +359,14 @@ const MarketplaceCard = memo(function MarketplaceCard({
   const handleInstall = () => void onInstall(entry);
   const handleUpdate = () => void onUpdate(entry);
   return (
-    <div className="rounded border border-line bg-panel-soft/40 px-3 py-2">
-      <div className="flex items-start justify-between gap-3">
+    <div className="rounded-md border border-line bg-panel-soft/40 p-4 transition-colors hover:bg-panel-soft/70">
+      <div className="flex items-start justify-between gap-4">
+        <div
+          aria-hidden="true"
+          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md border border-line bg-canvas text-base font-semibold uppercase text-fg-dim"
+        >
+          {entry.name.charAt(0)}
+        </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-2">
             <span className="font-medium text-fg">{entry.name}</span>
