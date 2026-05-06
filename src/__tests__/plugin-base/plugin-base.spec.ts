@@ -162,6 +162,56 @@ describe('异步 onload / onunload', () => {
     await expect(p._activate()).rejects.toThrow('init failure');
   });
 
+  it('onload 抛错前已 register 的 disposables 被 LIFO 清理(防泄漏)', async () => {
+    const log: string[] = [];
+    class P extends Plugin {
+      onload() {
+        this.register(makeDisposable('A', log));
+        this.register(makeDisposable('B', log));
+        throw new Error('init failure after partial register');
+      }
+    }
+    const p = new P(fakeApp, baseManifest);
+    await expect(p._activate()).rejects.toThrow('init failure');
+    // 已 register 的 A / B 必须被清理(LIFO),否则注册到 panel/command/mcp
+    // 等 registry 的贡献会泄漏到 app 单例里。
+    expect(log).toEqual(['B', 'A']);
+  });
+
+  it('onload 抛错时不调 onunload(plugin 没完成初始化,业务 unload 钩子无意义)', async () => {
+    let onunloadCalled = false;
+    class P extends Plugin {
+      onload() {
+        this.register(makeDisposable('A', []));
+        throw new Error('boom');
+      }
+      onunload() {
+        onunloadCalled = true;
+      }
+    }
+    const p = new P(fakeApp, baseManifest);
+    await expect(p._activate()).rejects.toThrow('boom');
+    expect(onunloadCalled).toBe(false);
+  });
+
+  it('_activate 失败后 disposed=true,再 _activate / _deactivate 不重复清理', async () => {
+    const log: string[] = [];
+    class P extends Plugin {
+      onload() {
+        this.register(makeDisposable('A', log));
+        throw new Error('boom');
+      }
+    }
+    const p = new P(fakeApp, baseManifest);
+    await expect(p._activate()).rejects.toThrow('boom');
+    expect(log).toEqual(['A']);
+    // 二次 _activate 抛"already deactivated"
+    await expect(p._activate()).rejects.toThrow(/already deactivated/i);
+    // _deactivate 幂等不重复清理
+    await p._deactivate();
+    expect(log).toEqual(['A']);
+  });
+
   it('onunload 在所有 dispose 后调用', async () => {
     const order: string[] = [];
     class P extends Plugin {

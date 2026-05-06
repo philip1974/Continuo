@@ -62,16 +62,11 @@ interface PluginMcpApi {
 ### onload 抛错 → 已注册的 stub 自动清理
 
 - 假设 onload 内 `await registerMcpTool('a')` 成功后 `await registerMcpTool('b')` 抛错
-- onload 抛错向上传给 _activate 的 try/catch(PluginManager 已实装 v1.4)
-- **本主题断:** plugin 的 disposables 在抛错前已收集 a,但 _activate 抛错路径下
-  PluginManager 不会调 _deactivate(因为 status='failed' 而非 'enabled')
-  - 因此 a 的 stub 会泄漏 — **属已知技术债,在本主题不修,但用 spec 钉住"现状",
-    并加注释指引未来 plugin-base 改为"_activate 失败也 _deactivate 反序清理"**
-  - 即:本主题断,registerMcpTool 成功后 plugin 的 disposables 长度 +1(behavior),
-    至于 _activate 失败时是否清理留 plugin-base 修复
-
-> 此条契约比较绕,实装阶段如果 plugin-base 同期改为"_activate 失败也清理",
-> 本主题需对应改 spec 反映新行为。当前 spec 反映 plugin-base v1.4 现状。
+- onload 抛错向上传给 _activate;**plugin-base 在 _activate 失败时自动 LIFO
+  dispose 已收集的 disposables(2026-05 修复,见 plugin-base topic)**
+- 因此 a 的 stub 在 _activate reject 之前已被 dispose,触发 upstream.unregister,
+  main 端 host 不留泄漏 stub
+- 不调 onunload(plugin 没完成初始化,业务卸载钩子无意义)
 
 ### 中途 deactivate(_activate 还在 await)
 

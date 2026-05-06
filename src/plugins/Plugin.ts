@@ -129,20 +129,39 @@ export abstract class Plugin {
     return d;
   }
 
-  /** 内部:LM 内核调用。已 deactivate 的 plugin 不可复用。 */
+  /**
+   * 内部:LM 内核调用。已 deactivate 的 plugin 不可复用。
+   *
+   * onload 抛错时(plugin 中途 register 了一些 d 后失败),已收的 disposables
+   * 被 LIFO 清理(防泄漏到 panel / command / mcp 等 registry),disposed
+   * 标 true,**不调 onunload**(plugin 没完成初始化,业务卸载钩子无意义,
+   * plugin 作者一般也不会写"半初始化态"的 onunload)。然后原错抛上去。
+   */
   async _activate(): Promise<void> {
     if (this.disposed) {
       throw new Error(
         `Plugin ${this.manifest.id} already deactivated, cannot reuse`,
       );
     }
-    await this.onload();
+    try {
+      await this.onload();
+    } catch (err) {
+      this.disposed = true;
+      this.disposeCollected();
+      throw err;
+    }
   }
 
   /** 内部:LM 内核调用。幂等;LIFO 反序 dispose;单 dispose 抛错不传染。 */
   async _deactivate(): Promise<void> {
     if (this.disposed) return;
     this.disposed = true;
+    this.disposeCollected();
+    if (this.onunload) await this.onunload();
+  }
+
+  /** LIFO 清掉已收集的 disposables;单个抛错不传染。_activate 失败 / _deactivate 复用. */
+  private disposeCollected(): void {
     for (let i = this.disposables.length - 1; i >= 0; i--) {
       const d = this.disposables[i];
       if (!d) continue;
@@ -156,6 +175,5 @@ export abstract class Plugin {
       }
     }
     this.disposables = [];
-    if (this.onunload) await this.onunload();
   }
 }

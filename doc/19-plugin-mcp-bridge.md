@@ -177,14 +177,11 @@ src/__tests__/
 
 ## 8. 已知技术债
 
-### 8.1 Plugin._activate 失败时 stub 泄漏
+### 8.1 ~~Plugin._activate 失败时 stub 泄漏~~ ✅ 已修(2026-05)
 
-如果 onload 内 `await registerMcpTool('a')` 成功后 `await registerMcpTool('b')`
-抛错,PluginManager 当前不会调 `_deactivate` 清理(因为 status='failed' 而非
-'enabled')。a 的 stub 会留在 main host 里直到 wc destroyed。
-
-优先级:低。`plugin-mcp-lifecycle` README 钉了现状,等 plugin-base 改"_activate
-失败也清理"时一并解决。
+修法:`Plugin._activate` 失败时自动 LIFO dispose 已收集的 disposables
+(不调 onunload,plugin 没完成初始化)。所有贡献点(panel/command/mcp tool/...)
+受益,不仅 mcp。`plugin-base` topic +4 case 钉住新契约。
 
 ### 8.2 e2e spec 用反射拿 host.tools Map
 
