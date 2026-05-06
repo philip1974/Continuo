@@ -31,6 +31,8 @@ export function ExplorerHeader({
   onNewDir,
 }: ExplorerHeaderProps) {
   const setRoot = useWorkspaceStore((s) => s.setRoot);
+  const recentRoots = useWorkspaceStore((s) => s.recentRoots);
+  const recentOthers = recentRoots.filter((p) => p !== root);
   const [busy, setBusy] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -131,6 +133,31 @@ export function ExplorerHeader({
             >
               展开全部
             </MenuItem>
+            {recentOthers.length > 0 && (
+              <>
+                <div className="my-1 h-px bg-line" />
+                <div className="px-2 pb-0.5 text-[10px] uppercase tracking-wider text-fg-dim">
+                  打开最近
+                </div>
+                {recentOthers.map((p) => {
+                  const m = p.match(/[^/\\]+$/);
+                  const name = m ? m[0] : p;
+                  return (
+                    <MenuItem
+                      key={p}
+                      title={p}
+                      onClick={() => {
+                        setMenuOpen(false);
+                        setRoot(p);
+                      }}
+                    >
+                      <span className="truncate">{name}</span>
+                    </MenuItem>
+                  );
+                })}
+                <div className="my-1 h-px bg-line" />
+              </>
+            )}
             <MenuItem disabled={busy} onClick={switchFolder}>
               切换文件夹…
             </MenuItem>
