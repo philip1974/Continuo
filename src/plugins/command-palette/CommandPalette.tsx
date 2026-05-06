@@ -1,6 +1,12 @@
-// 命令面板 UI(M-Plugin v1.6)。
+// 命令面板 UI(M-Plugin v1.6 + V2 增强 2026-05)。
 // 订阅 CommandRegistry → fuzzy 过滤 → design Modal 渲染列表。
 // ↑↓ 选中,Enter 执行,Esc / 点遮罩关闭(Modal 内置)。
+//
+// V2:
+// - CommandSpec 加 category 显示前缀(VSCode 同款 `Settings: Open`)
+// - fuzzy 同时匹配 category + title
+// - 空 query 时 recent(localStorage 持久化)5 条置顶,其余按 title 字母序
+// - execute 后 record 进 recent
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Input, Modal } from '@/design';
@@ -10,6 +16,30 @@ import type {
 } from '../registries/CommandRegistry';
 import { useCommandPaletteStore } from './store';
 import { fuzzyFilter } from './fuzzy';
+import { useRecentCommandsStore } from './recent';
+
+const RECENT_TOP_N = 5;
+
+function matchSource(cmd: CommandSpec): string {
+  return cmd.category ? `${cmd.category} ${cmd.title}` : cmd.title;
+}
+
+/** 空 query 时:recent 前 N 个置顶 + 其余按 title 字母序. */
+function sortByRecent(
+  items: readonly CommandSpec[],
+  recentIds: readonly string[],
+): CommandSpec[] {
+  const recentSet = new Set(recentIds.slice(0, RECENT_TOP_N));
+  const recent: CommandSpec[] = [];
+  const others: CommandSpec[] = [];
+  for (const c of items) {
+    if (recentSet.has(c.id)) recent.push(c);
+    else others.push(c);
+  }
+  recent.sort((a, b) => recentIds.indexOf(a.id) - recentIds.indexOf(b.id));
+  others.sort((a, b) => a.title.localeCompare(b.title));
+  return [...recent, ...others];
+}
 
 interface CommandPaletteProps {
   readonly commands: CommandRegistry;
@@ -34,21 +64,30 @@ export function CommandPalette({ commands }: CommandPaletteProps) {
   const moveSelection = useCommandPaletteStore((s) => s.moveSelection);
 
   const allCommands = useCommands(commands);
-  const filtered = useMemo(
-    () => fuzzyFilter(allCommands, query, (c) => c.title),
-    [allCommands, query],
-  );
+  const recentList = useRecentCommandsStore((s) => s.list);
+  const recordRecent = useRecentCommandsStore((s) => s.record);
+  const recentIds = useMemo(() => recentList.map((e) => e.id), [recentList]);
+
+  const filtered = useMemo(() => {
+    if (query) {
+      // 有 query → fuzzy 匹配 category + title
+      return fuzzyFilter(allCommands, query, matchSource);
+    }
+    // 空 query → recent 置顶 + 其余字母序
+    return sortByRecent(allCommands, recentIds);
+  }, [allCommands, query, recentIds]);
 
   const execute = useCallback(
     async (cmd: CommandSpec) => {
       close();
+      recordRecent(cmd.id);
       try {
         await cmd.fn();
       } catch (err) {
         console.warn(`[command-palette] ${cmd.id} threw`, err);
       }
     },
-    [close],
+    [close, recordRecent],
   );
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -88,7 +127,7 @@ export function CommandPalette({ commands }: CommandPaletteProps) {
               <li
                 key={cmd.id}
                 className={[
-                  'flex cursor-pointer items-center justify-between px-3 py-1.5 text-xs',
+                  'flex cursor-pointer items-center gap-2 px-3 py-1.5 text-xs',
                   // selectedIndex 跟键盘走;鼠标 hover 用独立的 hover:bg-hover/50
                   idx === selectedIndex
                     ? 'bg-hover text-fg'
@@ -96,9 +135,12 @@ export function CommandPalette({ commands }: CommandPaletteProps) {
                 ].join(' ')}
                 onClick={() => void execute(cmd)}
               >
+                {cmd.category && (
+                  <span className="shrink-0 text-fg-dim">{cmd.category}:</span>
+                )}
                 <span className="truncate">{cmd.title}</span>
                 {cmd.hotkey && (
-                  <span className="ml-3 shrink-0 text-[10px] text-fg-dim">
+                  <span className="ml-auto shrink-0 text-[10px] text-fg-dim">
                     {cmd.hotkey}
                   </span>
                 )}

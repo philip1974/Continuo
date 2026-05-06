@@ -8,6 +8,12 @@ export interface CommandSpec {
   readonly title: string;
   /** Accelerator string,如 'mod+s' / 'mod+shift+p',可选. */
   readonly hotkey?: string;
+  /**
+   * 分类前缀(如 'Settings' / 'Editor' / 'Git')。CommandPalette 显示
+   * `${category}: ${title}`,fuzzy 匹配同时覆盖 category + title。
+   * VSCode 同款。可选,向后兼容。
+   */
+  readonly category?: string;
   readonly fn: () => void | Promise<void>;
 }
 

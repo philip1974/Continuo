@@ -73,6 +73,10 @@
 - [`hotkey.spec.tsx`](./command-palette/hotkey.spec.tsx)
 - [`store.spec.ts`](./command-palette/store.spec.ts)
 
+## [command-palette-recent(命令面板最近执行)](./command-palette-recent/README.md)
+
+- [`recent.spec.ts`](./command-palette-recent/recent.spec.ts)
+
 ## [core-plugins(内置插件:editor / terminal / output)](./core-plugins/README.md)
 
 - [`core-plugins.spec.ts`](./core-plugins/core-plugins.spec.ts)

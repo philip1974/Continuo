@@ -27,6 +27,7 @@ export default class SettingsPanelPlugin extends Plugin {
     this.addCommand({
       id: 'settings.open',
       title: '打开 Settings',
+      category: 'Settings',
       hotkey: 'mod+,',
       fn: () => openOrFocusPanel('settings', 'settings', 'Settings'),
     });

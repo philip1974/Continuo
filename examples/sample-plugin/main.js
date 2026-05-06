@@ -14,7 +14,8 @@ export default class SamplePlugin extends Plugin {
     // ── 1. 命令 ────────────────────────────────────────
     this.addCommand({
       id: 'sample.hello',
-      title: 'Sample: Hello World',
+      title: 'Hello World',
+      category: 'Sample',
       hotkey: 'mod+shift+h',
       fn: () => {
         alert(
@@ -130,7 +131,8 @@ export default class SamplePlugin extends Plugin {
     // PermissionError,plugin 必须 try/catch 优雅降级。
     this.addCommand({
       id: 'sample.read-tmp',
-      title: 'Sample: 读 /tmp 目录(需 fs)',
+      title: '读 /tmp 目录(需 fs)',
+      category: 'Sample',
       fn: async () => {
         try {
           const entries = await this.app.fs.listDir('/tmp');
@@ -150,7 +152,8 @@ export default class SamplePlugin extends Plugin {
 
     this.addCommand({
       id: 'sample.fetch-zen',
-      title: 'Sample: 拉 GitHub Zen(需 network)',
+      title: '拉 GitHub Zen(需 network)',
+      category: 'Sample',
       fn: async () => {
         try {
           const r = await this.app.network.fetch(
