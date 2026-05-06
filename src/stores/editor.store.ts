@@ -72,6 +72,56 @@ export function getStateAfterClosingTab(
   };
 }
 
+/**
+ * 文件 / 目录被删除后的 tab 状态:
+ * - 精确匹配 filePath === removedPath
+ * - 或位于该目录下(`removedPath/` 或 `removedPath\\` 前缀)
+ * - untitled(filePath=null)tab 不受影响
+ * - 同前缀但非子(如 `/x/foo` 删 vs `/x/foobar.md`)不误关
+ * - active 被关 → 取原序后向第一个 remaining,否则前一个,否则 null
+ */
+export function getStateAfterRemovingPath(
+  tabs: EditorTab[],
+  activeTabId: string | null,
+  removedPath: string,
+): CloseTabResult {
+  const isMatch = (filePath: string | null): boolean => {
+    if (filePath === null) return false;
+    if (filePath === removedPath) return true;
+    return (
+      filePath.startsWith(removedPath + '/') ||
+      filePath.startsWith(removedPath + '\\')
+    );
+  };
+
+  const removingIds = new Set<string>();
+  for (const t of tabs) if (isMatch(t.filePath)) removingIds.add(t.id);
+  if (removingIds.size === 0) return { tabs, activeTabId };
+
+  const remaining = tabs.filter((t) => !removingIds.has(t.id));
+  if (remaining.length === 0) return { tabs: remaining, activeTabId: null };
+  if (activeTabId === null || !removingIds.has(activeTabId)) {
+    return { tabs: remaining, activeTabId };
+  }
+  const oldIdx = tabs.findIndex((t) => t.id === activeTabId);
+  let next: EditorTab | null = null;
+  for (let i = oldIdx + 1; i < tabs.length; i++) {
+    if (!removingIds.has(tabs[i]!.id)) {
+      next = tabs[i]!;
+      break;
+    }
+  }
+  if (!next) {
+    for (let i = oldIdx - 1; i >= 0; i--) {
+      if (!removingIds.has(tabs[i]!.id)) {
+        next = tabs[i]!;
+        break;
+      }
+    }
+  }
+  return { tabs: remaining, activeTabId: next?.id ?? null };
+}
+
 // ── Zustand store ────────────────────────────────────────────
 
 type EditorState = {
@@ -82,6 +132,8 @@ type EditorState = {
   /** 已存在则切换 active,新加则推入. */
   openTab: (tab: EditorTab) => void;
   closeTab: (id: string) => void;
+  /** 文件/目录被删除时调用:精确匹配或前缀匹配的 tab 统一关闭. */
+  removePath: (path: string) => void;
   switchTab: (id: string) => void;
   /** 编辑器 onChange 时调用;dirty 自动比对. */
   updateContent: (id: string, content: string) => void;
@@ -106,6 +158,9 @@ export const useEditorStore = create<EditorState>((set) => ({
 
   closeTab: (id) =>
     set((s) => getStateAfterClosingTab(s.tabs, s.activeTabId, id)),
+
+  removePath: (path) =>
+    set((s) => getStateAfterRemovingPath(s.tabs, s.activeTabId, path)),
 
   switchTab: (id) => set(() => ({ activeTabId: id })),
 

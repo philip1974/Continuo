@@ -115,6 +115,10 @@ const api = {
       ipcRenderer.invoke(FS_CHANNELS.TRASH, { path }),
     reveal: (path: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(FS_CHANNELS.REVEAL, { path }),
+    move: (src: string, dest: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(FS_CHANNELS.MOVE, { src, dest }),
+    copy: (src: string, dest: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(FS_CHANNELS.COPY, { src, dest }),
     selectDirectory: (): Promise<IpcResult<string | null>> =>
       ipcRenderer.invoke(FS_CHANNELS.SELECT_DIRECTORY),
     watchDir: (path: string): Promise<IpcResult<void>> =>

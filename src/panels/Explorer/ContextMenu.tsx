@@ -22,6 +22,12 @@ export interface ContextMenuActions {
   onOpenInTerminal: (dir: string) => void;
   /** 移到系统废纸篓(可恢复). 删除路径只此一项,VSCode 同款. */
   onTrash: (paths: string[]) => void;
+  /** 剪切到 in-app 剪贴板(粘贴时移动). */
+  onCut: (paths: string[]) => void;
+  /** 复制到 in-app 剪贴板(粘贴时复制). */
+  onCopy: (paths: string[]) => void;
+  /** 粘贴 in-app 剪贴板的内容到目标目录. */
+  onPaste: (destDir: string) => void;
 }
 
 interface ContextMenuProps {
@@ -32,6 +38,8 @@ interface ContextMenuProps {
   /** root path,空白右键创建文件 / 文件夹时作为父目录 */
   rootPath: string;
   actions: ContextMenuActions;
+  /** 当前剪贴板是否非空(决定"粘贴"项是否显示). */
+  hasClipboard: boolean;
   children: React.ReactNode;
 }
 
@@ -103,6 +111,7 @@ export function ContextMenu({
   selectedPaths,
   rootPath,
   actions,
+  hasClipboard,
   children,
 }: ContextMenuProps) {
   const isFile = target !== null && !target.isDirectory;
@@ -168,12 +177,35 @@ export function ContextMenu({
               >
                 新建文件夹
               </Menu.Item>
+              {hasClipboard && (
+                <Menu.Item
+                  className={itemCls}
+                  onSelect={() => actions.onPaste(createParent())}
+                >
+                  粘贴
+                </Menu.Item>
+              )}
               {!isBlank && <Menu.Separator className={sepCls} />}
             </>
           )}
 
           {!isBlank && (
             <>
+              {/* 剪切 / 复制(in-app 剪贴板) */}
+              <Menu.Item
+                className={itemCls}
+                onSelect={() => actions.onCut(deleteTargets())}
+              >
+                剪切
+              </Menu.Item>
+              <Menu.Item
+                className={itemCls}
+                onSelect={() => actions.onCopy(deleteTargets())}
+              >
+                复制
+              </Menu.Item>
+              <Menu.Separator className={sepCls} />
+
               <Menu.Item
                 className={itemCls}
                 onSelect={() => actions.onRename(target!.path)}
@@ -183,7 +215,7 @@ export function ContextMenu({
               </Menu.Item>
               <Menu.Separator className={sepCls} />
 
-              {/* 剪贴板段 */}
+              {/* 路径剪贴板段 */}
               <Menu.Item
                 className={itemCls}
                 onSelect={() => actions.onCopyPath(target!.path)}

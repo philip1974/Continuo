@@ -5,6 +5,7 @@ import { Input } from '@/design';
 import { coApp } from '@/plugins/co-app';
 import { mergeDecorations } from '@/plugins/registries/ExplorerDecoratorRegistry';
 import { ContextMenu, type ContextMenuActions } from './ContextMenu';
+import { useExplorerClipboardStore } from './clipboard-store';
 import type { DropTargetEntry } from './drop-handlers';
 import { FileIcon } from './file-icon';
 
@@ -65,6 +66,9 @@ export function FileRow({
   const isRenaming = item.isRenaming();
   const level = item.getItemMeta().level;
   const decoration = useDecoration(data.path, isDir);
+  const hasClipboard = useExplorerClipboardStore(
+    (s) => s.kind !== null && s.paths.length > 0,
+  );
 
   const row = (
     <div
@@ -166,6 +170,7 @@ export function FileRow({
       selectedPaths={selectedPaths}
       rootPath={rootPath}
       actions={contextActions}
+      hasClipboard={hasClipboard}
     >
       {row}
     </ContextMenu>

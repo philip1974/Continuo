@@ -23,7 +23,9 @@ import {
 } from './drop-handlers';
 import { useFsWatcher } from './hooks/useFsWatcher';
 import { useEditorFile } from '@/panels/Editor/useEditorFile';
+import { useEditorStore } from '@/stores/editor.store';
 import { coApi } from '@/lib/co-api';
+import { useExplorerClipboardStore } from './clipboard-store';
 
 interface CreatingState {
   type: 'file' | 'dir';
@@ -120,6 +122,10 @@ export function FolderTree({ root }: { root: string }) {
     [openFileByPath],
   );
 
+  const hasClipboard = useExplorerClipboardStore(
+    (s) => s.kind !== null && s.paths.length > 0,
+  );
+
   const stripRoot = (p: string): string => {
     const prefix = root.endsWith('/') ? root : `${root}/`;
     return p.startsWith(prefix) ? p.slice(prefix.length) : p;
@@ -169,10 +175,77 @@ export function FolderTree({ root }: { root: string }) {
             alert(`移到废纸篓失败:${p}\n[${r.code}] ${r.message}`);
             return;
           }
+          // 文件删除 → 关闭对应 editor tab(目录则关其下所有 tab)
+          useEditorStore.getState().removePath(p);
+        }
+      })();
+    },
+    onCut: (paths: string[]) => {
+      useExplorerClipboardStore.getState().set('cut', paths);
+    },
+    onCopy: (paths: string[]) => {
+      useExplorerClipboardStore.getState().set('copy', paths);
+    },
+    onPaste: (destDir: string) => {
+      void (async () => {
+        const { kind, paths } = useExplorerClipboardStore.getState();
+        if (!kind || paths.length === 0) return;
+        for (const src of paths) {
+          // 计算 dest:destDir + src basename;若已存在,自动加 ` copy` 后缀
+          const dest = await pickUniqueDest(destDir, basename(src));
+          const r =
+            kind === 'cut'
+              ? await coApi.fs.move(src, dest)
+              : await coApi.fs.copy(src, dest);
+          if (!r.ok) {
+            console.warn(`[explorer] paste(${kind}) failed`, src, r.code, r.message);
+            alert(`粘贴失败:${src}\n[${r.code}] ${r.message}`);
+            return;
+          }
+        }
+        // cut 用完即清(避免重复 move 同一文件);copy 保留(允许多次粘贴)
+        if (kind === 'cut') {
+          useExplorerClipboardStore.getState().clear();
+        }
+        // 触发树刷新:目标父目录 invalidate
+        treeApi.invalidateChildrenIds(destDir);
+        // cut 时源父目录也要刷新(文件不在源了)
+        if (kind === 'cut') {
+          const srcParents = new Set(paths.map((p) => dirname(p)));
+          for (const sp of srcParents) treeApi.invalidateChildrenIds(sp);
         }
       })();
     },
   };
+
+  function basename(p: string): string {
+    const idx = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'));
+    return idx >= 0 ? p.slice(idx + 1) : p;
+  }
+
+  // 在 destDir 下找一个不存在的路径名:basename / `${stem} copy${ext}` /
+  // `${stem} copy 2${ext}` / ... 上限 100 次。复用 main 端 resolveUniqueDest
+  // 同款逻辑(renderer 侧 listDir 探测,避免每次都打 IPC 多次)。
+  async function pickUniqueDest(destDir: string, name: string): Promise<string> {
+    const dot = name.lastIndexOf('.');
+    const stem = dot > 0 ? name.slice(0, dot) : name;
+    const ext = dot > 0 ? name.slice(dot) : '';
+    // 先列目录拿现有 basename 集合(IPC 一次,后续纯本地匹配)
+    const r = await coApi.fs.listDir(destDir);
+    const existing = new Set<string>();
+    if (r.ok) {
+      for (const e of r.data) existing.add(e.name);
+    }
+    for (let i = 0; i < 100; i++) {
+      const candidate =
+        i === 0 ? name : i === 1 ? `${stem} copy${ext}` : `${stem} copy ${i}${ext}`;
+      if (!existing.has(candidate)) {
+        return `${destDir}/${candidate}`;
+      }
+    }
+    // 极端情况兜底:加时间戳
+    return `${destDir}/${stem}-${Date.now()}${ext}`;
+  }
 
   const submitCreate = async (name: string) => {
     if (!creating) return;
@@ -260,6 +333,7 @@ export function FolderTree({ root }: { root: string }) {
         selectedPaths={selectedPaths}
         rootPath={root}
         actions={contextActions}
+        hasClipboard={hasClipboard}
       >
         <div
           ref={scrollRef}

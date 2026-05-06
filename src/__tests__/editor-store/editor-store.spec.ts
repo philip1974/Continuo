@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
   createTab,
   getStateAfterClosingTab,
+  getStateAfterRemovingPath,
   useEditorStore,
   type EditorTab,
 } from '../../stores/editor.store';
@@ -163,6 +164,104 @@ describe('closeTab', () => {
     const s = useEditorStore.getState();
     expect(s.tabs.map((t) => t.id)).toEqual(['/a']);
     expect(s.activeTabId).toBe('/a');
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// getStateAfterRemovingPath / removePath
+// 文件被删除(trash)时,Editor 中对应 tab 应自动关闭。
+// 删除文件夹 → 该文件夹下所有打开 tab 都关。
+// ────────────────────────────────────────────────────────────
+
+describe('getStateAfterRemovingPath', () => {
+  it('没有 tab 匹配 → 状态不变(同引用)', () => {
+    const tabs = [makeTab({ id: '/x/a.md' })];
+    const r = getStateAfterRemovingPath(tabs, '/x/a.md', '/y/none.md');
+    expect(r.tabs).toBe(tabs);
+    expect(r.activeTabId).toBe('/x/a.md');
+  });
+
+  it('删除单文件,精确匹配 → 关该 tab', () => {
+    const tabs = [
+      makeTab({ id: '/x/a.md' }),
+      makeTab({ id: '/x/b.md', filePath: '/x/b.md' }),
+    ];
+    const r = getStateAfterRemovingPath(tabs, '/x/a.md', '/x/a.md');
+    expect(r.tabs.map((t) => t.id)).toEqual(['/x/b.md']);
+    expect(r.activeTabId).toBe('/x/b.md');
+  });
+
+  it('删除文件夹 → 关其下所有 tab,不误伤同名前缀文件', () => {
+    const tabs = [
+      makeTab({ id: '/x/foo/a.md', filePath: '/x/foo/a.md' }),
+      makeTab({ id: '/x/foo/sub/b.md', filePath: '/x/foo/sub/b.md' }),
+      makeTab({ id: '/x/foobar.md', filePath: '/x/foobar.md' }), // 同前缀 ≠ 子
+      makeTab({ id: '/y/c.md', filePath: '/y/c.md' }),
+    ];
+    const r = getStateAfterRemovingPath(tabs, '/x/foo/a.md', '/x/foo');
+    expect(r.tabs.map((t) => t.id)).toEqual(['/x/foobar.md', '/y/c.md']);
+  });
+
+  it('active 被关,后面有未关 → 切到下一个', () => {
+    const tabs = [
+      makeTab({ id: '/a.md', filePath: '/a.md' }),
+      makeTab({ id: '/b.md', filePath: '/b.md' }),
+      makeTab({ id: '/c.md', filePath: '/c.md' }),
+    ];
+    const r = getStateAfterRemovingPath(tabs, '/b.md', '/b.md');
+    expect(r.activeTabId).toBe('/c.md');
+  });
+
+  it('active 是被关的尾部 → 切到前一个', () => {
+    const tabs = [
+      makeTab({ id: '/a.md', filePath: '/a.md' }),
+      makeTab({ id: '/b.md', filePath: '/b.md' }),
+    ];
+    const r = getStateAfterRemovingPath(tabs, '/b.md', '/b.md');
+    expect(r.activeTabId).toBe('/a.md');
+  });
+
+  it('删除目录覆盖所有 tab → activeTabId null', () => {
+    const tabs = [
+      makeTab({ id: '/x/a.md', filePath: '/x/a.md' }),
+      makeTab({ id: '/x/b.md', filePath: '/x/b.md' }),
+    ];
+    const r = getStateAfterRemovingPath(tabs, '/x/a.md', '/x');
+    expect(r.tabs).toEqual([]);
+    expect(r.activeTabId).toBeNull();
+  });
+
+  it('untitled tab(filePath=null)不受任何路径影响', () => {
+    const draft = createTab(null, 'd');
+    const tabs = [draft, makeTab({ id: '/x/a.md', filePath: '/x/a.md' })];
+    const r = getStateAfterRemovingPath(tabs, draft.id, '/x');
+    expect(r.tabs.map((t) => t.id)).toEqual([draft.id]);
+    expect(r.activeTabId).toBe(draft.id);
+  });
+
+  it('Windows 反斜杠路径:删除目录关其下子文件', () => {
+    const tabs = [
+      makeTab({ id: 'C:\\x\\a.md', filePath: 'C:\\x\\a.md' }),
+      makeTab({ id: 'C:\\y\\b.md', filePath: 'C:\\y\\b.md' }),
+    ];
+    const r = getStateAfterRemovingPath(tabs, 'C:\\x\\a.md', 'C:\\x');
+    expect(r.tabs.map((t) => t.id)).toEqual(['C:\\y\\b.md']);
+  });
+});
+
+describe('removePath(store method)', () => {
+  it('删除路径 → tabs 与 activeTabId 一并更新', () => {
+    useEditorStore.setState({
+      tabs: [
+        makeTab({ id: '/x/a.md', filePath: '/x/a.md' }),
+        makeTab({ id: '/x/b.md', filePath: '/x/b.md' }),
+      ],
+      activeTabId: '/x/a.md',
+    });
+    useEditorStore.getState().removePath('/x/a.md');
+    const s = useEditorStore.getState();
+    expect(s.tabs.map((t) => t.id)).toEqual(['/x/b.md']);
+    expect(s.activeTabId).toBe('/x/b.md');
   });
 });
 

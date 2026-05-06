@@ -9,6 +9,7 @@ import { atomicWriteFile } from './fs/atomic-write';
 import { renameEntry } from './fs/rename';
 import { removeEntry } from './fs/remove';
 import { createDir, createFile } from './fs/create';
+import { copyEntry, moveEntry } from './fs/move-copy';
 import { createWatcherPool } from './fs/watch';
 
 // ────────────────────────────────────────────────────────────
@@ -58,6 +59,14 @@ export const trashInputSchema = z.object({ path: z.string().min(1) }).strict();
 
 export const revealInputSchema = z.object({ path: z.string().min(1) }).strict();
 
+export const moveInputSchema = z
+  .object({ src: z.string().min(1), dest: z.string().min(1) })
+  .strict();
+
+export const copyInputSchema = z
+  .object({ src: z.string().min(1), dest: z.string().min(1) })
+  .strict();
+
 // select-directory 显式严格:接受 undefined,拒绝 {} 与其它值
 export const selectDirectoryInputSchema = z.undefined();
 
@@ -75,6 +84,8 @@ export type CreateFileInput = z.infer<typeof createFileInputSchema>;
 export type CreateDirInput = z.infer<typeof createDirInputSchema>;
 export type TrashInput = z.infer<typeof trashInputSchema>;
 export type RevealInput = z.infer<typeof revealInputSchema>;
+export type MoveInput = z.infer<typeof moveInputSchema>;
+export type CopyInput = z.infer<typeof copyInputSchema>;
 export type WatchInput = z.infer<typeof watchInputSchema>;
 export type UnwatchInput = z.infer<typeof unwatchInputSchema>;
 
@@ -90,6 +101,8 @@ export const renameHandler = (input: RenameInput) => renameEntry(input.path, inp
 export const removeHandler = (input: RemoveInput) => removeEntry(input.path);
 export const createFileHandler = (input: CreateFileInput) => createFile(input.dir, input.name);
 export const createDirHandler = (input: CreateDirInput) => createDir(input.parent, input.name);
+export const moveHandler = (input: MoveInput) => moveEntry(input.src, input.dest);
+export const copyHandler = (input: CopyInput) => copyEntry(input.src, input.dest);
 
 // trash / selectDirectory:工厂注入 deps,真 Electron API 留 E2E
 
@@ -176,6 +189,9 @@ export function registerFsIpc(): void {
     }),
     trusted,
   );
+
+  safeHandle(FS_CHANNELS.MOVE, moveInputSchema, moveHandler, trusted);
+  safeHandle(FS_CHANNELS.COPY, copyInputSchema, copyHandler, trusted);
 
   safeHandle(
     FS_CHANNELS.SELECT_DIRECTORY,

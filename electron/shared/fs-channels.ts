@@ -13,6 +13,10 @@ export const FS_CHANNELS = {
   TRASH: 'fs:trash',
   /** 在系统文件管理器(Finder/资源管理器)中显示并选中. */
   REVEAL: 'fs:reveal',
+  /** 移动(rename 跨目录;跨盘 fallback cp+rm). */
+  MOVE: 'fs:move',
+  /** 递归复制(fs.cp recursive). */
+  COPY: 'fs:copy',
   SELECT_DIRECTORY: 'fs:select-directory',
   WATCH: 'fs:watch',
   UNWATCH: 'fs:unwatch',
