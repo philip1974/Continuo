@@ -100,19 +100,20 @@ export function KeybindingsTabContent() {
   );
 
   return (
-    <div className="space-y-3">
-      <div className="space-y-1.5">
+    <div className="space-y-6">
+      <div className="space-y-2">
         <Input
           size="sm"
           placeholder="搜索命令名 / 分类 / 快捷键…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
-        <div className="text-[10px] text-fg-dim">
-          共 {totalWithHotkey} 个有快捷键的命令(无 hotkey 的命令请用
+        <div className="flex items-center gap-1.5 text-xs text-fg-muted">
+          <span>共 {totalWithHotkey} 个有快捷键的命令 · 无 hotkey 请用</span>
           <KeyCap>⌘</KeyCap>
           <KeyCap>⇧</KeyCap>
-          <KeyCap>P</KeyCap> 调命令面板搜索)
+          <KeyCap>P</KeyCap>
+          <span>命令面板搜索</span>
         </div>
       </div>
 
@@ -129,19 +130,19 @@ export function KeybindingsTabContent() {
       />
 
       {buckets.length === 0 ? (
-        <div className="rounded border border-dashed border-line bg-panel-soft/40 px-3 py-6 text-center text-xs text-fg-dim">
+        <div className="rounded-md border border-dashed border-line bg-panel-soft/40 px-4 py-8 text-center text-xs text-fg-dim">
           {totalWithHotkey === 0
             ? '暂无注册了快捷键的命令'
             : '无匹配命令'}
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-8">
           {buckets.map((bucket) => (
-            <section key={bucket.category} className="space-y-1">
-              <h3 className="text-[10px] font-medium uppercase tracking-wider text-fg-dim">
+            <section key={bucket.category}>
+              <h3 className="mb-3 border-b border-line pb-3 text-base font-medium text-fg">
                 {bucket.category}
               </h3>
-              <ul className="overflow-hidden rounded border border-line bg-panel-soft/40">
+              <ul className="overflow-hidden rounded-md border border-line bg-panel-soft/40">
                 {bucket.items.map((cmd, idx) => {
                   const effective = getEffectiveHotkey(cmd);
                   const isOverridden = cmd.id in overrides;
@@ -149,12 +150,12 @@ export function KeybindingsTabContent() {
                     <li
                       key={cmd.id}
                       className={[
-                        'flex items-center gap-3 px-3 py-1.5 text-xs',
-                        idx > 0 ? 'border-t border-line' : '',
+                        'flex items-center gap-3 px-4 py-3 text-xs',
+                        idx > 0 ? 'border-t border-line/50' : '',
                       ].join(' ')}
                     >
-                      <span className="truncate text-fg">{cmd.title}</span>
-                      <code className="ml-auto shrink-0 text-[10px] text-fg-dim">
+                      <span className="truncate text-sm text-fg">{cmd.title}</span>
+                      <code className="ml-auto shrink-0 rounded bg-panel-soft/70 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-fg-muted/70">
                         {cmd.id}
                       </code>
                       {effective ? (
