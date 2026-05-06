@@ -1,5 +1,18 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+
+// 让 marketplace fetcher 走 globalThis.fetch(测试 mock 的);生产 PROD
+// 模式 fetcher 才需要 getCachedFetch 拿 raw ref(防 sandboxSweep 涂掉
+// globalThis.fetch)。
+vi.mock('../../plugins/sandbox-sweep', () => ({
+  getCachedFetch: () => globalThis.fetch,
+  getCachedClipboard: () => ({
+    readText: () => Promise.resolve(''),
+    writeText: () => Promise.resolve(),
+  }),
+  sandboxSweep: () => {},
+}));
+
 import {
   _resetMarketplaceCacheForTest,
   fetchMarketplaceIndex,

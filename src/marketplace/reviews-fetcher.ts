@@ -5,6 +5,7 @@
 //
 // 缓存:1h sessionStorage 同 marketplace index 模式。
 
+import { getCachedFetch } from '../plugins/sandbox-sweep';
 import { parseReview } from './reviews-parser';
 import type { PluginAggregateRating, Review } from './reviews-types';
 
@@ -137,7 +138,7 @@ async function fetchAllPages(token: string): Promise<readonly Review[]> {
   let after: string | null = null;
   let safety = 0;
   while (safety++ < 50) {
-    const r = await fetch(GRAPHQL_URL, {
+    const r = await getCachedFetch()(GRAPHQL_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

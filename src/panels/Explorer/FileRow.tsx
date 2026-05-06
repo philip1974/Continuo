@@ -119,7 +119,11 @@ export function FileRow({
         {isDir ? (isExpanded ? '▾' : '▸') : ''}
       </span>
       <span className="inline-flex shrink-0 items-center" aria-hidden="true">
-        <FileIcon name={data.name} isDirectory={isDir} size={ICON_SIZE} />
+        {/* V2:plugin 通过 ExplorerDecoratorRegistry 贡献的 icon 替换默认.
+         *  decoration.icon 为 undefined 时 fallback 到 ext 映射的 FileIcon. */}
+        {decoration?.icon ?? (
+          <FileIcon name={data.name} isDirectory={isDir} size={ICON_SIZE} />
+        )}
       </span>
       {isRenaming ? (
         <Input

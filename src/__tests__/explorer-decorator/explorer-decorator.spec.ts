@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { createElement } from 'react';
 import {
   ExplorerDecoratorRegistry,
   mergeDecorations,
@@ -76,6 +77,49 @@ describe('mergeDecorations', () => {
       () => ({ badge: 'A' }),
     ]);
     expect(result?.badge).toBe('A');
+  });
+
+  // ── V2:icon 字段(plugin 贡献文件图标)──────────────────────────
+
+  it('icon:取首个非空(跟 badge 同款 first-wins)', () => {
+    const iconA = createElement('span', { 'data-id': 'A' });
+    const iconB = createElement('span', { 'data-id': 'B' });
+    const result = mergeDecorations(file, [
+      () => null,
+      () => ({ icon: iconA }),
+      () => ({ icon: iconB }),
+    ]);
+    expect(result?.icon).toBe(iconA);
+  });
+
+  it('单个非 null icon → 透传', () => {
+    const icon = createElement('span', { 'data-id': 'lock' });
+    expect(mergeDecorations(file, [() => ({ icon })])).toEqual({ icon });
+  });
+
+  it('icon + badge + textColor + tooltip 同时贡献 → 全部 merge', () => {
+    const icon = createElement('span', { 'data-id': 'X' });
+    const result = mergeDecorations(file, [
+      () => ({
+        icon,
+        badge: 'M',
+        textColor: 'red',
+        tooltip: 'modified',
+      }),
+    ]);
+    expect(result).toEqual({
+      icon,
+      badge: 'M',
+      badgeColor: undefined,
+      textColor: 'red',
+      tooltip: 'modified',
+    });
+  });
+
+  it('全 null + 仅 icon → result 非 null(icon 算"有装饰")', () => {
+    const icon = createElement('span', { 'data-id': 'I' });
+    const result = mergeDecorations(file, [() => null, () => ({ icon })]);
+    expect(result?.icon).toBe(icon);
   });
 });
 

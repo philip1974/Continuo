@@ -90,6 +90,26 @@ export default class SamplePlugin extends Plugin {
       return { badge: 'MD', badgeColor: 'var(--md-primary)' };
     });
 
+    // ── 6b. Explorer icon(V2 demo:.secret → 🔐 替换默认 icon) ─
+    // plugin 通过 Decoration.icon 贡献任意 ReactNode 替换 file-icon
+    // 默认按扩展名映射的图标。typical 用例:git modified 状态、加密标记、
+    // 第三方语言扩展自带 icon。
+    this.registerExplorerDecorator((entry) => {
+      if (entry.isDirectory) return null;
+      if (!entry.path.endsWith('.secret')) return null;
+      return {
+        icon: h(
+          'span',
+          {
+            style: { fontSize: 14, lineHeight: 1 },
+            'aria-hidden': 'true',
+          },
+          '🔐',
+        ),
+        tooltip: '加密文件(plugin 贡献 icon 演示)',
+      };
+    });
+
     // ── 7. Editor action(仅 markdown 显示) ─────────
     this.registerEditorAction({
       id: 'sample.uppercase',

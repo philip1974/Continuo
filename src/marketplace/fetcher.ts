@@ -3,7 +3,11 @@
 // 拉 raw.githubusercontent.com 上的 index.json,1h in-memory + sessionStorage
 // cache。GitHub raw 60/hr 不 auth,缓存 1h 单用户撞不墙。
 // fetch 抛错时 fallback 上次 cache(用户离线也能浏览历史)。
+//
+// 注意:用 getCachedFetch() 取 raw fetch ref(PROD sandboxSweep 把
+// globalThis.fetch 涂掉了防 plugin 绕权限,LM 自家代码必须走 cached ref)。
 
+import { getCachedFetch } from '../plugins/sandbox-sweep';
 import { entryToManifestUrl, type MarketplaceEntry } from './types';
 
 const INDEX_URL =
@@ -60,7 +64,7 @@ export async function fetchMarketplaceIndex(
   }
 
   try {
-    const r = await fetch(INDEX_URL, { cache: 'no-cache' });
+    const r = await getCachedFetch()(INDEX_URL, { cache: 'no-cache' });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const entries = (await r.json()) as readonly MarketplaceEntry[];
     if (!Array.isArray(entries)) throw new Error('index 非数组');
@@ -104,7 +108,9 @@ export interface RemoteManifestSnapshot {
 export async function fetchPluginManifest(
   entry: MarketplaceEntry,
 ): Promise<RemoteManifestSnapshot> {
-  const r = await fetch(entryToManifestUrl(entry), { cache: 'no-cache' });
+  const r = await getCachedFetch()(entryToManifestUrl(entry), {
+    cache: 'no-cache',
+  });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   const json = (await r.json()) as Partial<RemoteManifestSnapshot>;
   if (
