@@ -121,6 +121,9 @@ export function CodeEditor({
           },
           '.cm-content': { padding: '12px 0', fontSize: 'inherit' },
           '.cm-gutters': { border: 'none', fontSize: 'inherit' },
+          // editor.lineNumbers=false 时:.cm-editor 加 .cm-no-gutters,
+          // 整列 gutters(行号 + fold marker)隐藏。开关由 useEffect 同步到 dom.classList
+          '&.cm-no-gutters .cm-gutters': { display: 'none' },
         }),
       ],
     });
@@ -164,6 +167,14 @@ export function CodeEditor({
   // 外层 div 设 fontSize,内部 .cm-editor / .cm-content / .cm-gutters
   // 都 inherit。改 settings 字号 → React 重渲外层 → CodeMirror 立即跟新。
   const fontSize = useSettingValue<number>('editor.fontSize', 13);
+  const lineNumbers = useSettingValue<boolean>('editor.lineNumbers', true);
+
+  // editor.lineNumbers 变化 → 同步到 .cm-editor 的 className
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dom.classList.toggle('cm-no-gutters', !lineNumbers);
+  }, [lineNumbers]);
 
   return (
     <div

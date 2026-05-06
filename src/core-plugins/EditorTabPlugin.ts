@@ -30,13 +30,12 @@ export default class EditorTabPlugin extends Plugin {
       priority: 1,
     });
 
-    // 行号(预留:业务接入 CodeMirror lineNumbers 需 Compartment 改造,
-    // 待后续 commit;先注册 spec 让 UI 可调,但暂不联动业务)
+    // 行号(隐藏整列 gutters:行号 + fold marker)
     this.addSettingItem({
       id: 'editor.lineNumbers',
       category: 'editor',
       title: '显示行号',
-      description: 'CodeEditor 是否显示行号。⚠️ 暂未接入,改值不生效。',
+      description: 'CodeEditor 是否显示行号(同时控制代码折叠 marker)。',
       type: 'boolean',
       default: true,
       priority: 2,
