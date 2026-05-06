@@ -3,7 +3,6 @@ import { useTree } from '@headless-tree/react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { ItemInstance, TreeInstance } from '@headless-tree/core';
 import type { FileEntry } from '@/lib/fs/types';
-import { useExplorerStore } from '@/stores/explorer.store';
 import { ContextMenu, type ContextMenuActions } from './ContextMenu';
 import { CreateInput } from './CreateInput';
 import { DropOverlay } from './DropOverlay';
@@ -42,7 +41,6 @@ function dirname(p: string): string {
 export function FolderTree({ root }: { root: string }) {
   // tree ref:onRename callback 在 useMemo 里引用,需要稳定 handle 拿到最新 tree
   const treeRef = useRef<TreeInstance<FileEntry> | null>(null);
-  const selectedPaths = useExplorerStore((s) => s.selectedPaths);
   const [creating, setCreating] = useState<CreatingState | null>(null);
   // dnd 状态:hoverTarget 由 FileRow onDragEnter 回报;dragDepth 用计数器
   // 防止 child enter/leave 误清(每次 enter +1,leave -1,归零才真离开)
@@ -89,6 +87,17 @@ export function FolderTree({ root }: { root: string }) {
   treeRef.current = tree;
 
   const items = tree.getItems();
+
+  // 多选集合数据源 = headless-tree selectionFeature 真实状态。
+  // 不再读 explorer.store.selectedPaths(从未被同步,留 cleanup 单独提交)。
+  // 数组引用变 → Set 重建;Click/Cmd-Click/Shift-Click 由 selectionFeature 内部
+  // 维护,任何变化都会引起组件重渲,Set 自动跟新。
+  const selectedItemsArr = tree.getState().selectedItems ?? [];
+  const selectedPaths = useMemo<ReadonlySet<string>>(
+    () => new Set(selectedItemsArr),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [selectedItemsArr],
+  );
 
   // ── fs.watch 增量更新(Step 6) ───────────────────────────────────
   // 跟随 headless-tree 真实展开集合(我们的 store.expandedPaths 还没接,
@@ -141,13 +150,17 @@ export function FolderTree({ root }: { root: string }) {
     onRename: (path) => tree.getItemInstance(path)?.startRenaming(),
     onNewFile: (parentDir) => setCreating({ type: 'file', parentDir }),
     onNewDir: (parentDir) => setCreating({ type: 'dir', parentDir }),
-    onCopyPath: (path: string) => {
-      void navigator.clipboard.writeText(path).catch((err) => {
+    onCopyPath: (paths: string[]) => {
+      // 多选 → \n 拼接;空数组(防御性)→ 不动
+      if (paths.length === 0) return;
+      void navigator.clipboard.writeText(paths.join('\n')).catch((err) => {
         console.warn('[explorer] copy path failed', err);
       });
     },
-    onCopyRelativePath: (path: string) => {
-      void navigator.clipboard.writeText(stripRoot(path)).catch((err) => {
+    onCopyRelativePath: (paths: string[]) => {
+      if (paths.length === 0) return;
+      const rels = paths.map(stripRoot).join('\n');
+      void navigator.clipboard.writeText(rels).catch((err) => {
         console.warn('[explorer] copy relative path failed', err);
       });
     },

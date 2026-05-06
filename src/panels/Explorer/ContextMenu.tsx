@@ -12,10 +12,10 @@ export interface ContextMenuActions {
   onRename: (path: string) => void;
   onNewFile: (parentDir: string) => void;
   onNewDir: (parentDir: string) => void;
-  /** 复制绝对路径到剪贴板. */
-  onCopyPath: (path: string) => void;
-  /** 复制相对 rootPath 的路径到剪贴板. */
-  onCopyRelativePath: (path: string) => void;
+  /** 复制绝对路径到剪贴板. 多选时 \n 拼接. */
+  onCopyPath: (paths: string[]) => void;
+  /** 复制相对 rootPath 的路径到剪贴板. 多选时 \n 拼接. */
+  onCopyRelativePath: (paths: string[]) => void;
   /** 在系统文件管理器(Finder / 资源管理器)中显示. */
   onRevealInFinder: (path: string) => void;
   /** 新建终端,cwd 设为目录路径. */
@@ -215,18 +215,28 @@ export function ContextMenu({
               </Menu.Item>
               <Menu.Separator className={sepCls} />
 
-              {/* 路径剪贴板段 */}
+              {/* 路径剪贴板段:多选时复制全部(\n 拼接,VSCode 同款) */}
               <Menu.Item
                 className={itemCls}
-                onSelect={() => actions.onCopyPath(target!.path)}
+                onSelect={() => actions.onCopyPath(deleteTargets())}
               >
                 复制路径
+                {deleteTargets().length > 1 && (
+                  <span className="ml-auto text-[10px] text-fg-dim">
+                    {deleteTargets().length} 项
+                  </span>
+                )}
               </Menu.Item>
               <Menu.Item
                 className={itemCls}
-                onSelect={() => actions.onCopyRelativePath(target!.path)}
+                onSelect={() => actions.onCopyRelativePath(deleteTargets())}
               >
                 复制相对路径
+                {deleteTargets().length > 1 && (
+                  <span className="ml-auto text-[10px] text-fg-dim">
+                    {deleteTargets().length} 项
+                  </span>
+                )}
               </Menu.Item>
               <Menu.Separator className={sepCls} />
 

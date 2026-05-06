@@ -69,6 +69,10 @@ export function FileRow({
   const hasClipboard = useExplorerClipboardStore(
     (s) => s.kind !== null && s.paths.length > 0,
   );
+  // VSCode 同款:已剪切的项目灰显,提示「等待粘贴」;copy 不灰
+  const isCutMarked = useExplorerClipboardStore(
+    (s) => s.kind === 'cut' && s.paths.includes(data.path),
+  );
 
   const row = (
     <div
@@ -112,7 +116,10 @@ export function FileRow({
           : isSelected
             ? 'bg-hover text-fg'
             : 'text-fg-muted hover:bg-panel-soft',
-      ].join(' ')}
+        isCutMarked && 'opacity-50',
+      ]
+        .filter(Boolean)
+        .join(' ')}
       title={
         decoration?.tooltip
           ? `${data.path} · ${decoration.tooltip}`
