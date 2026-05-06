@@ -24,7 +24,7 @@ export function SettingItemRow({ spec }: SettingItemRowProps) {
   const isOverridden = stored !== undefined;
 
   return (
-    <div className="flex items-start justify-between gap-6 border-b border-line/50 py-4 last:border-b-0">
+    <div className="flex items-start justify-between gap-6 border-b border-line/50 py-5 last:border-b-0">
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
           <span className="text-sm text-fg">{spec.title}</span>

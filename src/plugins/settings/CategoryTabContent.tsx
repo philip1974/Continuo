@@ -67,10 +67,10 @@ export function CategoryTabContent({
       {buckets.map((bucket) => (
         <section
           key={bucket.group ?? '_default'}
-          className="mb-2 first:mt-0 [&:not(:first-child)]:mt-8"
+          className="first:mt-0 [&:not(:first-child)]:mt-10"
         >
           {bucket.group && (
-            <h3 className="mb-2 border-b border-line pb-2 text-base font-medium text-fg">
+            <h3 className="mb-3 border-b border-line pb-3 text-base font-medium text-fg">
               {bucket.group}
             </h3>
           )}

@@ -151,7 +151,7 @@ export function SettingsPanel({
             ))
           )}
         </nav>
-        <div className="min-w-0 flex-1 overflow-y-auto p-6 text-xs text-fg-muted">
+        <div className="min-w-0 flex-1 overflow-y-auto px-8 py-6 text-xs text-fg-muted">
           {inSearch ? (
             <div>
               <div className="mb-3 text-fg-dim">
@@ -162,9 +162,9 @@ export function SettingsPanel({
               {matchedBuckets.map((bucket) => (
                 <section
                   key={bucket.category}
-                  className="mb-2 first:mt-0 [&:not(:first-child)]:mt-8"
+                  className="first:mt-0 [&:not(:first-child)]:mt-10"
                 >
-                  <h3 className="mb-2 border-b border-line pb-2 text-base font-medium text-fg">
+                  <h3 className="mb-3 border-b border-line pb-3 text-base font-medium text-fg">
                     {bucket.label}
                   </h3>
                   {bucket.items.map((spec) => (
