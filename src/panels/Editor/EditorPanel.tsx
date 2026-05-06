@@ -16,6 +16,7 @@ import { MilkdownEditor } from './MilkdownEditor';
 import { useAutoSave, isAutoSaveEnabled } from './useAutoSave';
 import { useEditorFile } from './useEditorFile';
 import { useExternalFileSync } from './useExternalFileSync';
+import { useSettingValue } from '@/plugins/settings/values-store';
 import type { EditorTab } from '@/stores/editor.store';
 
 function isMarkdownPath(p: string | null): boolean {
@@ -41,10 +42,20 @@ export function EditorPanel() {
     tabs.find((t) => t.id === activeTabId) ?? null;
 
   const { saveActive } = useEditorFile();
-  const autoSaveEnabled = isAutoSaveEnabled(activeTab?.filePath ?? null);
+  // 自动保存(Markdown)开关 + 延迟 — 都受 SettingsPanel 控制
+  const mdAutoSaveEnabled = useSettingValue<boolean>(
+    'autoSave.markdown.enabled',
+    true,
+  );
+  const autoSaveDelayMs = useSettingValue<number>('autoSave.delayMs', 2000);
+  const autoSaveEnabled =
+    isAutoSaveEnabled(activeTab?.filePath ?? null) && mdAutoSaveEnabled;
 
   // 自动保存:Markdown 启用,代码不启用(决策 #3)
-  useAutoSave(saveActive, { enabled: autoSaveEnabled });
+  useAutoSave(saveActive, {
+    enabled: autoSaveEnabled,
+    delayMs: autoSaveDelayMs,
+  });
 
   // 外部进程修改文件时,自动同步 non-dirty tab 的内容
   useExternalFileSync();

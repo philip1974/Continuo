@@ -18,6 +18,7 @@ import { css } from '@codemirror/lang-css';
 import { html } from '@codemirror/lang-html';
 import { markdown } from '@codemirror/lang-markdown';
 import { oneDark } from '@codemirror/theme-one-dark';
+import { useSettingValue } from '@/plugins/settings/values-store';
 
 interface CodeEditorProps {
   value: string;
@@ -108,14 +109,18 @@ export function CodeEditor({
           suppressNextChange.current = false;
         }),
         EditorView.theme({
-          '&': { height: '100%', fontSize: '13px' },
+          // fontSize 走 inherit 从外层 div 继承,改 settings 字号无需重建 EditorView。
+          // CodeMirror theme 注入的 stylesheet 中 var() 不会响应外部容器 inline
+          // style 变化,所以这里用 inherit 而非 var()。
+          '&': { height: '100%', fontSize: 'inherit' },
           '.cm-scroller': {
             fontFamily:
               'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
             overflow: 'auto',
+            fontSize: 'inherit',
           },
-          '.cm-content': { padding: '12px 0' },
-          '.cm-gutters': { border: 'none' },
+          '.cm-content': { padding: '12px 0', fontSize: 'inherit' },
+          '.cm-gutters': { border: 'none', fontSize: 'inherit' },
         }),
       ],
     });
@@ -156,5 +161,15 @@ export function CodeEditor({
     });
   }, [fileName, forceLanguage]);
 
-  return <div ref={containerRef} className="h-full w-full" />;
+  // 外层 div 设 fontSize,内部 .cm-editor / .cm-content / .cm-gutters
+  // 都 inherit。改 settings 字号 → React 重渲外层 → CodeMirror 立即跟新。
+  const fontSize = useSettingValue<number>('editor.fontSize', 13);
+
+  return (
+    <div
+      ref={containerRef}
+      className="h-full w-full"
+      style={{ fontSize: `${fontSize}px` }}
+    />
+  );
 }

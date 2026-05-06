@@ -1,0 +1,31 @@
+/* M-Settings v6:让 Crepe(Milkdown)Markdown 编辑器跟随 Settings 的
+ * editor.fontSize。Crepe 的 reset.css 用 nested CSS 编译为
+ * `.milkdown .ProseMirror h1 { font-size: 42px; }` 等(特异性 0,0,2,3),
+ * 且 px 绝对值。这里用同等特异性 selector 改 em,通过 MilkdownEditor.tsx
+ * 在 Crepe css import 之后再 import,确保后赢。
+ */
+.milkdown .ProseMirror p {
+  font-size: 1em;
+}
+.milkdown .ProseMirror h1 {
+  font-size: 2.625em; /* 42 / 16 */
+}
+.milkdown .ProseMirror h2 {
+  font-size: 2.25em; /* 36 / 16 */
+}
+.milkdown .ProseMirror h3 {
+  font-size: 2em; /* 32 / 16 */
+}
+.milkdown .ProseMirror h4 {
+  font-size: 1.75em; /* 28 / 16 */
+}
+.milkdown .ProseMirror h5 {
+  font-size: 1.5em; /* 24 / 16 */
+}
+.milkdown .ProseMirror h6 {
+  font-size: 1.125em; /* 18 / 16 */
+}
+.milkdown .ProseMirror code,
+.milkdown .ProseMirror pre {
+  font-size: 0.875em; /* 14 / 16(crepe 用 87.5%) */
+}

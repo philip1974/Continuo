@@ -4,6 +4,7 @@
 // 所以同步 boot 后 coApp.<reg>.getAll() 已包含贡献。
 
 import EditorPlugin from './EditorPlugin';
+import EditorTabPlugin from './EditorTabPlugin';
 import GeneralTabPlugin from './GeneralTabPlugin';
 import TerminalPlugin from './TerminalPlugin';
 import OutputPlugin from './OutputPlugin';
@@ -52,6 +53,10 @@ const CORES: readonly CoreEntry[] = [
   {
     Cls: GeneralTabPlugin as never,
     manifest: { id: 'core.general', name: 'GeneralTab', version: '1.0.0' },
+  },
+  {
+    Cls: EditorTabPlugin as never,
+    manifest: { id: 'core.editor-tab', name: 'EditorTab', version: '1.0.0' },
   },
 ];
 

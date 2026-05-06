@@ -75,3 +75,13 @@ export function getSettingValue<T extends SettingItemValue>(
   const stored = useSettingsValuesStore.getState().values[spec.id];
   return (stored ?? spec.default) as T;
 }
+
+/** React hook:订阅某 setting id 的值,变化时组件重渲. fallback = 该 id 的 spec.default. */
+export function useSettingValue<T extends SettingItemValue>(
+  id: string,
+  fallback: T,
+): T {
+  return useSettingsValuesStore(
+    (s) => (s.values[id] ?? fallback) as T,
+  );
+}

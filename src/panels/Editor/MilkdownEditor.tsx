@@ -10,6 +10,9 @@ import { Crepe, CrepeFeature } from '@milkdown/crepe';
 import { Milkdown, MilkdownProvider, useEditor } from '@milkdown/react';
 import '@milkdown/crepe/theme/common/style.css';
 import '@milkdown/crepe/theme/frame-dark.css';
+// 必须在 Crepe theme 之后,才能 override 它的 px 字号(详见文件注释)
+import '@/styles/milkdown-font-override.css';
+import { useSettingValue } from '@/plugins/settings/values-store';
 
 interface MilkdownEditorProps {
   defaultValue: string;
@@ -65,9 +68,16 @@ function CrepeEditor({ defaultValue, readonly = false, onChange }: MilkdownEdito
 }
 
 export function MilkdownEditor(props: MilkdownEditorProps) {
+  // Crepe theme 内部很多元素是相对单位(em/rem),容器 font-size 变,
+  // ProseMirror 文本会跟着变。如果某些元素用 px 绝对值,可在
+  // src/styles/editor-font.css 里 override(后续若需扩展)
+  const fontSize = useSettingValue<number>('editor.fontSize', 13);
   return (
     <MilkdownProvider>
-      <div className="h-full w-full overflow-auto">
+      <div
+        className="h-full w-full overflow-auto"
+        style={{ fontSize: `${fontSize}px` }}
+      >
         <CrepeEditor {...props} />
       </div>
     </MilkdownProvider>
