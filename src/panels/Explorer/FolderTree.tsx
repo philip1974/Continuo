@@ -328,6 +328,23 @@ export function FolderTree({ root }: { root: string }) {
           void tree.expandAll();
         }}
         onCollapseAll={() => tree.collapseAll()}
+        onRefresh={() => {
+          // 刷新 = invalidate 当前所有展开目录,触发重新 listDir。
+          // 单点 invalidate(root)对 cache 中已 list 过的子目录无效,
+          // 所以遍历 expandedItems 全部 invalidate 一遍。
+          const expanded = tree.getState().expandedItems ?? [];
+          // root 也算「已展开」(根 children 已 list),始终 invalidate
+          for (const path of [root, ...expanded]) {
+            try {
+              const it = tree.getItemInstance(path);
+              void it?.invalidateChildrenIds();
+            } catch {
+              // 节点已不存在(外部进程删了),跳过
+            }
+          }
+        }}
+        onNewFile={() => setCreating({ type: 'file', parentDir: root })}
+        onNewDir={() => setCreating({ type: 'dir', parentDir: root })}
       />
       {dragActive && <DropOverlay targetDir={dropTargetDir} />}
       {creating && (
