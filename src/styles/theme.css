@@ -15,32 +15,41 @@
 
 @import './nous-tokens.css';
 
-/* ── LM 暗色身份覆盖 ───────────────────────────────────────── */
+/* ── Continuo 暗色身份(对齐 demo Industrial IDE Dark)──────── */
+/* 色板换装:从中性 slate + sky-600 → 蓝紫 surface + royal blue。
+ * 变化:
+ *   - surface 从纯黑 #020617 → 蓝紫调 #11131b(profession instrument 感)
+ *   - container 阶梯化(low/normal/high/highest)用 demo 推荐的 5 档
+ *   - on-surface #f5f5f5 → #e1e2ed(轻微降亮,长时间编辑减疲劳)
+ *   - outline 加深到 #434655(分隔更清晰)
+ *   - primary 从 sky-600 #0284c7 → royal blue #2563eb(更专业)
+ * 参考:demo/stitch_desktop_design_reviewer (2)/DESIGN.md
+ */
 .dark {
-  /* 表面层:slate 体系(更冷,更深) */
-  --md-surface: #020617;              /* canvas — 全局底色 */
-  --md-surface-dim: #020617;
-  --md-surface-bright: #0a0a0a;
-  --md-surface-container-lowest: #020617;
-  --md-surface-container-low: #171717;  /* panel-soft */
-  --md-surface-container: #0a0a0a;      /* panel */
-  --md-surface-container-high: #262626; /* hover */
-  --md-surface-container-highest: #2e2e2e;
+  /* 表面层(5 档 surface tiering,demo 同款) */
+  --md-surface: #11131b;                /* canvas — 全局底色 */
+  --md-surface-dim: #11131b;
+  --md-surface-bright: #373942;
+  --md-surface-container-lowest: #0c0e16;
+  --md-surface-container-low: #191b23;  /* panel-soft */
+  --md-surface-container: #1d1f27;      /* panel */
+  --md-surface-container-high: #282a32; /* hover */
+  --md-surface-container-highest: #32343d;
 
   /* 文本 */
-  --md-on-surface: #f5f5f5;             /* fg */
-  --md-on-surface-variant: #a3a3a3;     /* fg-muted */
+  --md-on-surface: #e1e2ed;             /* fg(柔和,适合长时间编辑) */
+  --md-on-surface-variant: #c3c6d7;     /* fg-muted(对比度提升) */
 
   /* 边框 */
-  --md-outline: #404040;
-  --md-outline-variant: #262626;        /* line */
+  --md-outline: #8d90a0;
+  --md-outline-variant: #434655;        /* line(更明显的分隔) */
 
-  /* 主色:sky-600(比 sky-500 #0ea5e9 暗一档,降饱和、贴 IDE 蓝) */
-  --md-primary: #0284c7;                /* accent */
+  /* 主色:royal blue #2563eb(demo primary-container)+ soft lavender accent */
+  --md-primary: #2563eb;                /* accent — Tailwind blue-600 */
   --md-on-primary: #ffffff;
-  --md-primary-container: #075985;
-  --md-on-primary-container: #e0f2fe;
-  --md-focus-ring: #0284c7;
+  --md-primary-container: #2563eb;
+  --md-on-primary-container: #eeefff;
+  --md-focus-ring: #2563eb;
 }
 
 /* ── Tailwind v4 @theme:把 LM 9 个语义 token 映射到 MD3 ───── */
@@ -52,7 +61,7 @@
   --color-line: var(--md-outline-variant);
   --color-fg: var(--md-on-surface);
   --color-fg-muted: var(--md-on-surface-variant);
-  --color-fg-dim: #737373;              /* MD3 无对应槽,保留静态值 */
+  --color-fg-dim: #6c6f7e;              /* MD3 无对应槽,与新色板配套 */
   --color-accent: var(--md-primary);
 }
 
