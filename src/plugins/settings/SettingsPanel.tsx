@@ -121,30 +121,41 @@ export function SettingsPanel({
       <div className="flex min-h-0 flex-1">
         <nav
           className={[
-            'w-[200px] shrink-0 overflow-y-auto border-r border-line bg-panel-soft py-2 text-xs transition-opacity',
+            'flex w-[220px] shrink-0 flex-col overflow-y-auto border-r border-line bg-panel-soft text-xs transition-opacity',
             inSearch ? 'pointer-events-none opacity-40' : 'opacity-100',
           ].join(' ')}
           aria-label="设置分类"
         >
-          {tabs.length === 0 ? (
-            <div className="px-3 py-4 text-fg-dim">暂无设置项</div>
-          ) : (
-            tabs.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => setActiveTabId(t.id)}
-                className={[
-                  'flex w-full items-center px-3 py-2 text-left transition',
-                  active?.id === t.id
-                    ? 'bg-hover text-fg'
-                    : 'text-fg-muted hover:bg-hover/50',
-                ].join(' ')}
-              >
-                {t.title}
-              </button>
-            ))
-          )}
+          {/* 品牌区(对齐 demo IDE Settings):工程名 + 版本号 */}
+          <div className="border-b border-line px-4 py-4">
+            <div className="text-xs font-semibold uppercase tracking-wider text-fg">
+              Continuo Settings
+            </div>
+            <div className="mt-0.5 text-[10px] text-fg-dim">
+              v{coApp.version}
+            </div>
+          </div>
+          <div className="py-2">
+            {tabs.length === 0 ? (
+              <div className="px-4 py-4 text-fg-dim">暂无设置项</div>
+            ) : (
+              tabs.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setActiveTabId(t.id)}
+                  className={[
+                    'flex w-full items-center border-l-2 px-4 py-2 text-left transition',
+                    active?.id === t.id
+                      ? 'border-accent bg-hover text-fg'
+                      : 'border-transparent text-fg-muted hover:bg-hover/50',
+                  ].join(' ')}
+                >
+                  {t.title}
+                </button>
+              ))
+            )}
+          </div>
         </nav>
         <div className="min-w-0 flex-1 overflow-y-auto p-6 text-xs text-fg-muted">
           {inSearch ? (
