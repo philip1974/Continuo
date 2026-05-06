@@ -5,6 +5,10 @@
 
 import { useEffect, useState } from 'react';
 import type { CommandRegistry, CommandSpec } from '../registries/CommandRegistry';
+import {
+  getEffectiveHotkey,
+  useKeybindingsStore,
+} from '../keybindings/keybindings-store';
 
 export function matchesHotkey(combo: string, e: KeyboardEvent): boolean {
   const parts = combo.toLowerCase().split('+').map((s) => s.trim());
@@ -31,12 +35,15 @@ export function useCommandHotkeys(commands: CommandRegistry): void {
     () => commands.subscribe(() => setSnap(commands.getAll())),
     [commands],
   );
+  // 用户改键时也要重排监听 — 订阅 keybindings overrides 让 effect 重跑
+  const overrides = useKeybindingsStore((s) => s.overrides);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       for (const cmd of snap) {
-        if (!cmd.hotkey) continue;
-        if (matchesHotkey(cmd.hotkey, e)) {
+        const effective = getEffectiveHotkey(cmd);
+        if (!effective) continue; // 无 hotkey 或显式 unbind
+        if (matchesHotkey(effective, e)) {
           e.preventDefault();
           e.stopPropagation();
           void cmd.fn();
@@ -46,5 +53,5 @@ export function useCommandHotkeys(commands: CommandRegistry): void {
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [snap]);
+  }, [snap, overrides]);
 }

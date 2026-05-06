@@ -3,7 +3,7 @@
 // KeyCap 渲染 hotkey,跟 CommandPalette 风格一致。
 
 import { useEffect, useMemo, useState } from 'react';
-import { Input, KeyCap } from '@/design';
+import { IconButton, Input, KeyCap } from '@/design';
 import { coApp } from '@/plugins/co-app';
 import type {
   CommandRegistry,
@@ -13,6 +13,11 @@ import {
   formatHotkeyParts,
   detectPlatform,
 } from '@/plugins/command-palette/format-hotkey';
+import {
+  getEffectiveHotkey,
+  useKeybindingsStore,
+} from '@/plugins/keybindings/keybindings-store';
+import { KeybindingCaptureModal } from '@/plugins/keybindings/KeybindingCaptureModal';
 
 const PLATFORM = detectPlatform();
 const DEFAULT_GROUP = '其他';
@@ -70,14 +75,24 @@ function matches(cmd: CommandSpec, q: string): boolean {
 export function KeybindingsTabContent() {
   const allCommands = useCommands(coApp.commands);
   const [query, setQuery] = useState('');
+  const [editing, setEditing] = useState<CommandSpec | null>(null);
+  // 订阅 overrides 让 effective hotkey 变化触发组件重渲(此处不直接用,
+  // 但 selector 订阅就能让 React 在 setHotkey/reset 后重新读 getEffectiveHotkey)
+  useKeybindingsStore((s) => s.overrides);
+  const setHotkey = useKeybindingsStore((s) => s.setHotkey);
+  const reset = useKeybindingsStore((s) => s.reset);
+  const overrides = useKeybindingsStore((s) => s.overrides);
 
   const buckets = useMemo(() => {
-    const withHotkey = allCommands.filter((c) => Boolean(c.hotkey));
+    // 列出所有有「有效 hotkey」或「显式 unbind 但有默认」的命令(允许用户回头改)
+    const visible = allCommands.filter(
+      (c) => c.hotkey || c.id in overrides,
+    );
     const filtered = query
-      ? withHotkey.filter((c) => matches(c, query))
-      : withHotkey;
+      ? visible.filter((c) => matches(c, query))
+      : visible;
     return groupByCategory(filtered);
-  }, [allCommands, query]);
+  }, [allCommands, query, overrides]);
 
   const totalWithHotkey = useMemo(
     () => allCommands.filter((c) => Boolean(c.hotkey)).length,
@@ -101,6 +116,16 @@ export function KeybindingsTabContent() {
         </div>
       </div>
 
+      <KeybindingCaptureModal
+        visible={editing !== null}
+        commandTitle={editing?.title ?? ''}
+        currentHotkey={editing ? getEffectiveHotkey(editing) : undefined}
+        defaultHotkey={editing?.hotkey}
+        onClose={() => setEditing(null)}
+        onSave={(combo) => editing && setHotkey(editing.id, combo)}
+        onResetToDefault={() => editing && reset(editing.id)}
+      />
+
       {buckets.length === 0 ? (
         <div className="rounded border border-dashed border-line bg-panel-soft/40 px-3 py-6 text-center text-xs text-fg-dim">
           {totalWithHotkey === 0
@@ -115,27 +140,59 @@ export function KeybindingsTabContent() {
                 {bucket.category}
               </h3>
               <ul className="overflow-hidden rounded border border-line bg-panel-soft/40">
-                {bucket.items.map((cmd, idx) => (
-                  <li
-                    key={cmd.id}
-                    className={[
-                      'flex items-center gap-3 px-3 py-1.5 text-xs',
-                      idx > 0 ? 'border-t border-line' : '',
-                    ].join(' ')}
-                  >
-                    <span className="truncate text-fg">{cmd.title}</span>
-                    <code className="ml-auto shrink-0 text-[10px] text-fg-dim">
-                      {cmd.id}
-                    </code>
-                    {cmd.hotkey && (
-                      <span className="flex shrink-0 items-center gap-0.5">
-                        {formatHotkeyParts(cmd.hotkey, PLATFORM).map((p, i) => (
-                          <KeyCap key={`${p}-${i}`}>{p}</KeyCap>
-                        ))}
-                      </span>
-                    )}
-                  </li>
-                ))}
+                {bucket.items.map((cmd, idx) => {
+                  const effective = getEffectiveHotkey(cmd);
+                  const isOverridden = cmd.id in overrides;
+                  return (
+                    <li
+                      key={cmd.id}
+                      className={[
+                        'flex items-center gap-3 px-3 py-1.5 text-xs',
+                        idx > 0 ? 'border-t border-line' : '',
+                      ].join(' ')}
+                    >
+                      <span className="truncate text-fg">{cmd.title}</span>
+                      <code className="ml-auto shrink-0 text-[10px] text-fg-dim">
+                        {cmd.id}
+                      </code>
+                      {effective ? (
+                        <span className="flex shrink-0 items-center gap-0.5">
+                          {formatHotkeyParts(effective, PLATFORM).map((p, i) => (
+                            <KeyCap key={`${p}-${i}`}>{p}</KeyCap>
+                          ))}
+                        </span>
+                      ) : (
+                        <span className="shrink-0 text-[10px] text-fg-dim">
+                          未绑定
+                        </span>
+                      )}
+                      <IconButton
+                        size="xs"
+                        title="编辑快捷键"
+                        aria-label="编辑快捷键"
+                        onClick={() => setEditing(cmd)}
+                      >
+                        <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.4">
+                          <path d="M11.5 1.5l3 3-9 9-3.5.5.5-3.5z" />
+                        </svg>
+                      </IconButton>
+                      <IconButton
+                        size="xs"
+                        title={`恢复默认(${cmd.hotkey ?? '未绑定'})`}
+                        aria-label="恢复默认"
+                        onClick={() => isOverridden && reset(cmd.id)}
+                        className={
+                          isOverridden ? '' : 'pointer-events-none invisible'
+                        }
+                      >
+                        <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M3 8a5 5 0 0 1 8.5-3.5L13 6" />
+                          <path d="M13 3v3h-3" />
+                        </svg>
+                      </IconButton>
+                    </li>
+                  );
+                })}
               </ul>
             </section>
           ))}
