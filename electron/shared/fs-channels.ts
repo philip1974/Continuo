@@ -11,6 +11,8 @@ export const FS_CHANNELS = {
   CREATE_FILE: 'fs:create-file',
   CREATE_DIR: 'fs:create-dir',
   TRASH: 'fs:trash',
+  /** 在系统文件管理器(Finder/资源管理器)中显示并选中. */
+  REVEAL: 'fs:reveal',
   SELECT_DIRECTORY: 'fs:select-directory',
   WATCH: 'fs:watch',
   UNWATCH: 'fs:unwatch',

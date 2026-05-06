@@ -25,6 +25,7 @@ const makeFs = (overrides: Partial<FsApi> = {}): FsApi => ({
   createFile: vi.fn(async (d, n) => ok(`${d}/${n}`)),
   createDir: vi.fn(async (d, n) => ok(`${d}/${n}`)),
   trash: vi.fn(async () => ok(undefined as void)),
+  reveal: vi.fn(async () => ok(undefined as void)),
   selectDirectory: vi.fn(async () => ok(null)),
   watchDir: vi.fn(async () => ok(undefined as void)),
   unwatchDir: vi.fn(async () => ok(undefined as void)),

@@ -113,6 +113,8 @@ const api = {
       ipcRenderer.invoke(FS_CHANNELS.CREATE_DIR, { parent, name }),
     trash: (path: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(FS_CHANNELS.TRASH, { path }),
+    reveal: (path: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(FS_CHANNELS.REVEAL, { path }),
     selectDirectory: (): Promise<IpcResult<string | null>> =>
       ipcRenderer.invoke(FS_CHANNELS.SELECT_DIRECTORY),
     watchDir: (path: string): Promise<IpcResult<void>> =>

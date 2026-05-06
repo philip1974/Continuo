@@ -4,7 +4,6 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import type { ItemInstance, TreeInstance } from '@headless-tree/core';
 import type { FileEntry } from '@/lib/fs/types';
 import { useExplorerStore } from '@/stores/explorer.store';
-import { ConfirmDialog } from './ConfirmDialog';
 import { ContextMenu, type ContextMenuActions } from './ContextMenu';
 import { CreateInput } from './CreateInput';
 import { DropOverlay } from './DropOverlay';
@@ -14,7 +13,6 @@ import { FILE_ROW_HEIGHT, FileRow } from './FileRow';
 import {
   createNewDir,
   createNewFile,
-  removeItems,
   renameItem,
 } from './mutate-actions';
 import {
@@ -44,7 +42,6 @@ export function FolderTree({ root }: { root: string }) {
   const treeRef = useRef<TreeInstance<FileEntry> | null>(null);
   const selectedPaths = useExplorerStore((s) => s.selectedPaths);
   const [creating, setCreating] = useState<CreatingState | null>(null);
-  const [deleteCandidate, setDeleteCandidate] = useState<string[] | null>(null);
   // dnd 状态:hoverTarget 由 FileRow onDragEnter 回报;dragDepth 用计数器
   // 防止 child enter/leave 误清(每次 enter +1,leave -1,归零才真离开)
   const [hoverTarget, setHoverTarget] = useState<DropTargetEntry | null>(null);
@@ -123,11 +120,58 @@ export function FolderTree({ root }: { root: string }) {
     [openFileByPath],
   );
 
+  const stripRoot = (p: string): string => {
+    const prefix = root.endsWith('/') ? root : `${root}/`;
+    return p.startsWith(prefix) ? p.slice(prefix.length) : p;
+  };
+
   const contextActions: ContextMenuActions = {
     onRename: (path) => tree.getItemInstance(path)?.startRenaming(),
-    onDelete: (paths) => setDeleteCandidate(paths),
     onNewFile: (parentDir) => setCreating({ type: 'file', parentDir }),
     onNewDir: (parentDir) => setCreating({ type: 'dir', parentDir }),
+    onCopyPath: (path: string) => {
+      void navigator.clipboard.writeText(path).catch((err) => {
+        console.warn('[explorer] copy path failed', err);
+      });
+    },
+    onCopyRelativePath: (path: string) => {
+      void navigator.clipboard.writeText(stripRoot(path)).catch((err) => {
+        console.warn('[explorer] copy relative path failed', err);
+      });
+    },
+    onRevealInFinder: (path: string) => {
+      void coApi.fs.reveal(path).then((r) => {
+        if (!r.ok) console.warn('[explorer] reveal failed', r.code, r.message);
+      });
+    },
+    onOpenInTerminal: (dir: string) => {
+      // 新建 terminal session,cwd 设到该目录;sessions_changed 推送会自动
+      // 触发 TerminalPanel 切到新 session(activeId 设)。打开 dockview
+      // terminal panel 让用户立即看到。
+      void (async () => {
+        const r = await coApi.terminal.create({ cwd: dir });
+        if (!r.ok) {
+          console.warn('[explorer] open in terminal failed', r.code, r.message);
+          alert(`新建终端失败:[${r.code}] ${r.message}`);
+          return;
+        }
+        // 动态 import dock-api-ref 防早期加载循环
+        const { openOrFocusPanel } = await import('@/shell/dock/dock-api-ref');
+        openOrFocusPanel('terminal', 'terminal', 'Terminal');
+      })();
+    },
+    onTrash: (paths: string[]) => {
+      void (async () => {
+        for (const p of paths) {
+          const r = await coApi.fs.trash(p);
+          if (!r.ok) {
+            console.warn('[explorer] trash failed', p, r.code, r.message);
+            alert(`移到废纸篓失败:${p}\n[${r.code}] ${r.message}`);
+            return;
+          }
+        }
+      })();
+    },
   };
 
   const submitCreate = async (name: string) => {
@@ -184,19 +228,6 @@ export function FolderTree({ root }: { root: string }) {
       );
     }
     if (msgs.length > 0) alert(msgs.join('\n\n'));
-  };
-
-  const confirmDelete = async () => {
-    if (!deleteCandidate) return;
-    const paths = deleteCandidate;
-    setDeleteCandidate(null);
-    const r = await removeItems(paths, { trash: true }, mutateDeps, treeApi);
-    if (!r.ok) {
-      alert(
-        `删除失败:\n` +
-          r.failures.map((f) => `  [${f.code}] ${f.path}: ${f.message}`).join('\n'),
-      );
-    }
   };
 
   return (
@@ -277,23 +308,6 @@ export function FolderTree({ root }: { root: string }) {
         </div>
       </ContextMenu>
 
-      <ConfirmDialog
-        open={deleteCandidate !== null}
-        title="确认删除"
-        description={
-          deleteCandidate && deleteCandidate.length === 1 ? (
-            <>
-              将 <code className="text-fg">{deleteCandidate[0]}</code> 移到系统回收站?
-            </>
-          ) : (
-            <>将 {deleteCandidate?.length ?? 0} 项移到系统回收站?</>
-          )
-        }
-        confirmLabel="移到回收站"
-        destructive
-        onConfirm={confirmDelete}
-        onCancel={() => setDeleteCandidate(null)}
-      />
     </div>
   );
 }

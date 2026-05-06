@@ -10,9 +10,18 @@ import {
 
 export interface ContextMenuActions {
   onRename: (path: string) => void;
-  onDelete: (paths: string[]) => void;
   onNewFile: (parentDir: string) => void;
   onNewDir: (parentDir: string) => void;
+  /** 复制绝对路径到剪贴板. */
+  onCopyPath: (path: string) => void;
+  /** 复制相对 rootPath 的路径到剪贴板. */
+  onCopyRelativePath: (path: string) => void;
+  /** 在系统文件管理器(Finder / 资源管理器)中显示. */
+  onRevealInFinder: (path: string) => void;
+  /** 新建终端,cwd 设为目录路径. */
+  onOpenInTerminal: (dir: string) => void;
+  /** 移到系统废纸篓(可恢复). 删除路径只此一项,VSCode 同款. */
+  onTrash: (paths: string[]) => void;
 }
 
 interface ContextMenuProps {
@@ -173,11 +182,45 @@ export function ContextMenu({
                 <span className="ml-auto text-[10px] text-fg-dim">F2</span>
               </Menu.Item>
               <Menu.Separator className={sepCls} />
+
+              {/* 剪贴板段 */}
               <Menu.Item
-                className={`${itemCls} text-red-300 data-[highlighted]:bg-red-950/40 data-[highlighted]:text-red-200`}
-                onSelect={() => actions.onDelete(deleteTargets())}
+                className={itemCls}
+                onSelect={() => actions.onCopyPath(target!.path)}
               >
-                删除
+                复制路径
+              </Menu.Item>
+              <Menu.Item
+                className={itemCls}
+                onSelect={() => actions.onCopyRelativePath(target!.path)}
+              >
+                复制相对路径
+              </Menu.Item>
+              <Menu.Separator className={sepCls} />
+
+              {/* 系统集成段 */}
+              <Menu.Item
+                className={itemCls}
+                onSelect={() => actions.onRevealInFinder(target!.path)}
+              >
+                在 Finder 中显示
+              </Menu.Item>
+              {isFolder && (
+                <Menu.Item
+                  className={itemCls}
+                  onSelect={() => actions.onOpenInTerminal(target!.path)}
+                >
+                  在集成终端中打开
+                </Menu.Item>
+              )}
+              <Menu.Separator className={sepCls} />
+
+              {/* 移到废纸篓(安全删除,可恢复) */}
+              <Menu.Item
+                className={itemCls}
+                onSelect={() => actions.onTrash(deleteTargets())}
+              >
+                移到废纸篓
                 {deleteTargets().length > 1 && (
                   <span className="ml-auto text-[10px] text-fg-dim">
                     {deleteTargets().length} 项
