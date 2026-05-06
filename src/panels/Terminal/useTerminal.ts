@@ -11,7 +11,10 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import { coApi } from '@/lib/co-api';
+import { useSettingValue } from '@/plugins/settings/values-store';
 import { disposeQueue, safeWrite } from './safeWrite';
+
+type CursorStyle = 'block' | 'underline' | 'bar';
 
 const TERM_OPTIONS = {
   scrollback: 20000, // 跑 Agent CLI 大输出留余量(决策 #3)
@@ -68,17 +71,33 @@ export function useTerminal(termId: string) {
   // 首次 PTY stdout 到达前 = 还在 spawn shell + 跑 .zshrc。让上层显示 loading
   // overlay,用户看到"启动中..."而非纯黑框,减弱"卡顿"感(尤其 .zshrc 重的用户)。
   const [isReady, setIsReady] = useState(false);
+  // settings(实时):字号 / 光标样式
+  const fontSize = useSettingValue<number>('terminal.fontSize', 13);
+  const cursorStyle = useSettingValue<CursorStyle>(
+    'terminal.cursorStyle',
+    'block',
+  );
+  // term + fit 跨 effect 共享(创建 effect 写 ref,settings effect 读 ref 改 options)
+  const termRef = useRef<Terminal | null>(null);
+  const fitRef = useRef<FitAddon | null>(null);
 
   useEffect(() => {
     setIsReady(false); // 切 session 时回 loading
     const container = containerRef.current;
     if (!container || !termId) return;
 
-    const term = new Terminal(TERM_OPTIONS);
+    const term = new Terminal({
+      ...TERM_OPTIONS,
+      // 用当前 settings 值开局,避免初始一帧的旧值闪烁
+      fontSize,
+      cursorStyle,
+    });
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
     term.loadAddon(new WebLinksAddon());
     term.open(container);
+    termRef.current = term;
+    fitRef.current = fitAddon;
 
     // 首屏 fit + 通知主进程初始尺寸。
     // 同步先试一次(useEffect 跑在 paint 后,容器一般已有尺寸,可省 1 帧);
@@ -131,8 +150,30 @@ export function useTerminal(termId: string) {
       ro.disconnect();
       disposeQueue(term);
       term.dispose();
+      termRef.current = null;
+      fitRef.current = null;
     };
+    // 创建只依赖 termId;fontSize/cursorStyle 走下面的 settings effect 动态改。
+    // 不放 deps 是有意的(否则改字号会重建 term 丢掉历史输出)。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [termId]);
+
+  // settings → 已有 term 实例同步(不重建),改完 fit + resize 让 PTY 跟上新行列数
+  useEffect(() => {
+    const term = termRef.current;
+    const fit = fitRef.current;
+    if (!term || !fit) return;
+    term.options.fontSize = fontSize;
+    term.options.cursorStyle = cursorStyle;
+    try {
+      fit.fit();
+      if (term.cols > 0 && term.rows > 0) {
+        void coApi.terminal.resize(termId, term.cols, term.rows);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [fontSize, cursorStyle, termId]);
 
   return { containerRef, isReady };
 }

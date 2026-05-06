@@ -7,6 +7,7 @@ import EditorPlugin from './EditorPlugin';
 import EditorTabPlugin from './EditorTabPlugin';
 import ExplorerTabPlugin from './ExplorerTabPlugin';
 import GeneralTabPlugin from './GeneralTabPlugin';
+import TerminalTabPlugin from './TerminalTabPlugin';
 import TerminalPlugin from './TerminalPlugin';
 import OutputPlugin from './OutputPlugin';
 import PluginsTabPlugin from './PluginsTabPlugin';
@@ -62,6 +63,10 @@ const CORES: readonly CoreEntry[] = [
   {
     Cls: ExplorerTabPlugin as never,
     manifest: { id: 'core.explorer-tab', name: 'ExplorerTab', version: '1.0.0' },
+  },
+  {
+    Cls: TerminalTabPlugin as never,
+    manifest: { id: 'core.terminal-tab', name: 'TerminalTab', version: '1.0.0' },
   },
 ];
 
