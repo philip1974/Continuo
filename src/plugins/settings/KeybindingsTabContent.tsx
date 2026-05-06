@@ -118,9 +118,11 @@ export function KeybindingsTabContent() {
 
       <KeybindingCaptureModal
         visible={editing !== null}
+        commandId={editing?.id ?? ''}
         commandTitle={editing?.title ?? ''}
         currentHotkey={editing ? getEffectiveHotkey(editing) : undefined}
         defaultHotkey={editing?.hotkey}
+        allCommands={allCommands}
         onClose={() => setEditing(null)}
         onSave={(combo) => editing && setHotkey(editing.id, combo)}
         onResetToDefault={() => editing && reset(editing.id)}

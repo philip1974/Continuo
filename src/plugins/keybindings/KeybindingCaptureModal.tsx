@@ -2,20 +2,25 @@
 // 监听全局 keydown,实时把组合呈现成 'mod+shift+x' 形式;Esc=取消,
 // Backspace=清空(用户可保存空 = unbind),其它键 = 当前组合。
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button, KeyCap, Modal } from '@/design';
 import {
   formatHotkeyParts,
   detectPlatform,
 } from '@/plugins/command-palette/format-hotkey';
+import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
+import { getEffectiveHotkey } from './keybindings-store';
 
 const PLATFORM = detectPlatform();
 
 interface KeybindingCaptureModalProps {
   readonly visible: boolean;
+  readonly commandId: string;
   readonly commandTitle: string;
   readonly currentHotkey: string | undefined;
   readonly defaultHotkey: string | undefined;
+  /** 全部命令快照,用于冲突检测. */
+  readonly allCommands: readonly CommandSpec[];
   /** 保存为新组合(空 = unbind);null 取消. */
   readonly onSave: (hotkey: string) => void;
   readonly onClose: () => void;
@@ -38,9 +43,11 @@ function eventToCombo(e: KeyboardEvent): string | null {
 
 export function KeybindingCaptureModal({
   visible,
+  commandId,
   commandTitle,
   currentHotkey,
   defaultHotkey,
+  allCommands,
   onSave,
   onClose,
   onResetToDefault,
@@ -84,6 +91,15 @@ export function KeybindingCaptureModal({
   const isUnbind = captured === '';
   const hasPending = captured !== null;
 
+  // 冲突检测:只在用户已捕获新组合(captured 非空)时检查;扫描其它命令的
+  // effective hotkey 与新组合相同的(VSCode 同款 — 允许保存,只显示警告)
+  const conflicts = useMemo(() => {
+    if (!captured) return []; // null 或 unbind 都不冲突
+    return allCommands.filter(
+      (c) => c.id !== commandId && getEffectiveHotkey(c) === captured,
+    );
+  }, [captured, allCommands, commandId]);
+
   return (
     <Modal
       visible={visible}
@@ -118,6 +134,23 @@ export function KeybindingCaptureModal({
           </>
         )}
       </div>
+
+      {conflicts.length > 0 && (
+        <div className="mt-2 rounded border border-amber-500/40 bg-amber-500/10 p-2 text-[11px] text-amber-300">
+          <div className="font-medium">⚠️ 此组合已绑定到其它命令</div>
+          <ul className="mt-1 list-inside list-disc space-y-0.5">
+            {conflicts.map((c) => (
+              <li key={c.id}>
+                {c.title}{' '}
+                <code className="text-[10px] text-amber-300/70">{c.id}</code>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-1 text-amber-300/80">
+            保存后两个命令都会响应,建议先在原命令上 unbind 再保存这里。
+          </div>
+        </div>
+      )}
 
       <div className="mt-4 flex items-center justify-end gap-2">
         <Button size="sm" variant="ghost" onClick={onClose}>
