@@ -6,7 +6,7 @@
 //             不显 sky 下划线 tab 列表(避免与 Dockview 自身的 'Editor' tab 撞下划线)
 //   tabs≥2  → 完整 TabNav + 右侧控制条
 
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { useEditorStore, type EditorMode, type EditorTab } from '@/stores/editor.store';
 import {
   Button,
@@ -51,6 +51,60 @@ function useEditorActions(): readonly EditorActionSpec[] {
   return snap;
 }
 
+/**
+ * 抽出 actions 段为 memo 子组件:plugin 启停 actions 变化时,只本子组件
+ * 重渲,父 EditorHeader 的 tabs 列表那段不动。
+ *
+ * memo 比较入参三个 primitive(filePath / dirty / mode)— 文件 / 脏态 /
+ * 模式没变 + 子组件内 useEditorActions 订阅的 snapshot 也没变 → 跳过 reconcile。
+ *
+ * (filterVisible 仍每次 props 或 actions 变化时跑;空数组也安然 memo。)
+ */
+interface EditorActionsAreaProps {
+  readonly filePath: string | null;
+  readonly dirty: boolean;
+  readonly mode: EditorMode;
+}
+
+const EditorActionsArea = memo(function EditorActionsArea({
+  filePath,
+  dirty,
+  mode,
+}: EditorActionsAreaProps) {
+  const allActions = useEditorActions();
+  const visibleActions = useMemo(
+    () => filterVisible(allActions, { filePath, dirty, mode }),
+    [allActions, filePath, dirty, mode],
+  );
+  return (
+    <>
+      {visibleActions.map((a) =>
+        a.icon ? (
+          <IconButton
+            key={a.id}
+            size="xs"
+            onClick={() => void a.fn()}
+            title={a.label}
+            aria-label={a.label}
+          >
+            {a.icon}
+          </IconButton>
+        ) : (
+          <Button
+            key={a.id}
+            variant="ghost"
+            size="sm"
+            onClick={() => void a.fn()}
+            title={a.label}
+          >
+            {a.label}
+          </Button>
+        ),
+      )}
+    </>
+  );
+});
+
 export function EditorHeader({
   activeTab,
   autoSaveEnabled,
@@ -62,18 +116,11 @@ export function EditorHeader({
   const switchTab = useEditorStore((s) => s.switchTab);
   const mode = useEditorStore((s) => s.mode);
   const setMode = useEditorStore((s) => s.setMode);
-  // Hooks 必须无条件按相同顺序调用,所以 useEditorActions 放 early-return 之前
-  const allActions = useEditorActions();
 
   if (tabs.length === 0) return null;
 
   const dirty = activeTab?.dirty ?? false;
   const showTabList = tabs.length >= 2;
-  const visibleActions = filterVisible(allActions, {
-    filePath: activeTab?.filePath ?? null,
-    dirty,
-    mode,
-  });
 
   return (
     <div className="flex h-9 shrink-0 items-stretch border-b border-line bg-canvas">
@@ -135,30 +182,12 @@ export function EditorHeader({
           </Button>
         )}
 
-        {/* 插件贡献的 editor action 按钮(已按 when 过滤). */}
-        {visibleActions.map((a) =>
-          a.icon ? (
-            <IconButton
-              key={a.id}
-              size="xs"
-              onClick={() => void a.fn()}
-              title={a.label}
-              aria-label={a.label}
-            >
-              {a.icon}
-            </IconButton>
-          ) : (
-            <Button
-              key={a.id}
-              variant="ghost"
-              size="sm"
-              onClick={() => void a.fn()}
-              title={a.label}
-            >
-              {a.label}
-            </Button>
-          ),
-        )}
+        {/* 插件贡献的 editor action(memo 子组件,plugin 启停时只本段重渲) */}
+        <EditorActionsArea
+          filePath={activeTab?.filePath ?? null}
+          dirty={dirty}
+          mode={mode}
+        />
 
         {/* 单 tab 时,close × 移到右侧控制区(普通 tab 列表自带 close) */}
         {!showTabList && activeTab && (
