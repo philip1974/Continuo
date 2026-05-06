@@ -22,10 +22,13 @@ function useItems(
   category: string,
 ): readonly SettingItemSpec[] {
   const [snap, setSnap] = useState(() => reg.getByCategory(category));
-  useEffect(
-    () => reg.subscribe(() => setSnap(reg.getByCategory(category))),
-    [reg, category],
-  );
+  // category 变化时同步更新 snap;否则 React 复用同类型组件实例,useState
+  // lazy init 不再跑(通用/编辑器/资源管理器/终端 都是 CategoryTabContent,
+  // 切换时若不在此 effect 内 setSnap,会显示前一 tab 的内容)。
+  useEffect(() => {
+    setSnap(reg.getByCategory(category));
+    return reg.subscribe(() => setSnap(reg.getByCategory(category)));
+  }, [reg, category]);
   return snap;
 }
 

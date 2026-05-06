@@ -4,6 +4,7 @@
 import { createElement } from 'react';
 import { Plugin } from '@/plugins/Plugin';
 import { CategoryTabContent } from '@/plugins/settings/CategoryTabContent';
+import { TerminalIcon } from '@/plugins/settings/tab-icons';
 
 export default class TerminalTabPlugin extends Plugin {
   onload(): void {
@@ -12,6 +13,7 @@ export default class TerminalTabPlugin extends Plugin {
       id: 'core.terminal',
       title: '终端',
       priority: 30,
+      icon: createElement(TerminalIcon),
       render: () =>
         createElement(CategoryTabContent, { category: 'terminal' }),
     });

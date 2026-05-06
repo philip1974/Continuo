@@ -5,6 +5,7 @@
 import { createElement, lazy } from 'react';
 import { Plugin } from '@/plugins/Plugin';
 import { lazyPanel } from '@/lib/lazy-panel';
+import { KeybindingsIcon } from '@/plugins/settings/tab-icons';
 
 const KeybindingsTabContent = lazy(() =>
   import('@/plugins/settings/KeybindingsTabContent').then((m) => ({
@@ -19,6 +20,7 @@ export default class KeybindingsTabPlugin extends Plugin {
       title: '快捷键',
       // 商店 40 / 插件 50,快捷键 60 排在它们后面
       priority: 60,
+      icon: createElement(KeybindingsIcon),
       render: () => createElement(lazyPanel(KeybindingsTabContent)),
     });
   }

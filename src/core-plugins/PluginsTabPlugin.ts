@@ -8,6 +8,7 @@ import { createElement, lazy } from 'react';
 import { Plugin } from '@/plugins/Plugin';
 import { PluginsTabContent } from '@/plugins/settings/PluginsTabContent';
 import { lazyPanel } from '@/lib/lazy-panel';
+import { MarketplaceIcon, PluginsIcon } from '@/plugins/settings/tab-icons';
 
 // MarketplaceTab 拉 reviews 渲染、远端清单 UI 等;懒加载到独立 chunk。
 const MarketplaceTab = lazy(() =>
@@ -23,6 +24,7 @@ export default class PluginsTabPlugin extends Plugin {
       id: 'core.marketplace',
       title: '插件商店',
       priority: 40,
+      icon: createElement(MarketplaceIcon),
       render: lazyPanel(MarketplaceTab),
     });
 
@@ -30,6 +32,7 @@ export default class PluginsTabPlugin extends Plugin {
       id: 'core.plugins',
       title: '插件',
       priority: 50,
+      icon: createElement(PluginsIcon),
       render: () => createElement(PluginsTabContent),
     });
 

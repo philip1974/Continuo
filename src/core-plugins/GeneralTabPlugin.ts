@@ -6,6 +6,7 @@
 import { createElement } from 'react';
 import { Plugin } from '@/plugins/Plugin';
 import { CategoryTabContent } from '@/plugins/settings/CategoryTabContent';
+import { GeneralIcon } from '@/plugins/settings/tab-icons';
 
 export default class GeneralTabPlugin extends Plugin {
   onload(): void {
@@ -14,6 +15,7 @@ export default class GeneralTabPlugin extends Plugin {
       id: 'core.general',
       title: '通用',
       priority: 1,
+      icon: createElement(GeneralIcon),
       render: () => createElement(CategoryTabContent, { category: 'general' }),
     });
 

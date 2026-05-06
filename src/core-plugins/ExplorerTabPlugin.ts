@@ -4,6 +4,7 @@
 import { createElement } from 'react';
 import { Plugin } from '@/plugins/Plugin';
 import { CategoryTabContent } from '@/plugins/settings/CategoryTabContent';
+import { ExplorerIcon } from '@/plugins/settings/tab-icons';
 
 export default class ExplorerTabPlugin extends Plugin {
   onload(): void {
@@ -12,6 +13,7 @@ export default class ExplorerTabPlugin extends Plugin {
       id: 'core.explorer',
       title: '资源管理器',
       priority: 20,
+      icon: createElement(ExplorerIcon),
       render: () =>
         createElement(CategoryTabContent, { category: 'explorer' }),
     });

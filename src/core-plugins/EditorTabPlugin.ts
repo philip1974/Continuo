@@ -5,6 +5,7 @@
 import { createElement } from 'react';
 import { Plugin } from '@/plugins/Plugin';
 import { CategoryTabContent } from '@/plugins/settings/CategoryTabContent';
+import { EditorIcon } from '@/plugins/settings/tab-icons';
 
 export default class EditorTabPlugin extends Plugin {
   onload(): void {
@@ -13,6 +14,7 @@ export default class EditorTabPlugin extends Plugin {
       id: 'core.editor',
       title: '编辑器',
       priority: 10,
+      icon: createElement(EditorIcon),
       render: () => createElement(CategoryTabContent, { category: 'editor' }),
     });
 
