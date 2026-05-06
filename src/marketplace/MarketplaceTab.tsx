@@ -4,7 +4,7 @@
 // 已装的卡片显 "已安装" disabled;未装显 [安装] primary,点击调
 // installFromGit(走 v4.5 已有 IPC)。安装成功 toast 在卡片下方提示。
 
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, Input, Spinner } from '@/design';
 import { coApi } from '@/lib/co-api';
 import { getUserPluginManager } from '@/plugins/co-plugin-manager';
@@ -70,8 +70,12 @@ export function MarketplaceTab() {
   const reviewsLoading = useReviewsStore((s) => s.loading);
   const refreshReviews = useReviewsStore((s) => s.refresh);
 
-  // entry.id → 可用更新版本(若有)
-  const updateByPid = new Map(updates.map((u) => [u.id, u.to]));
+  // entry.id → 可用更新版本(若有)。useMemo 让 memo 子组件能受益:
+  // updates 来自 zustand store,Array.prototype.map 否则每次 render 创新 Map ref.
+  const updateByPid = useMemo(
+    () => new Map(updates.map((u) => [u.id, u.to])),
+    [updates],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -93,7 +97,9 @@ export function MarketplaceTab() {
     };
   }, []);
 
-  const onInstall = async (entry: MarketplaceEntry) => {
+  // useCallback 稳定 handler ref,让 MarketplaceCard memo 不被 inline arrow 撑破。
+  // setInstall 函数式更新,不依赖外部 state → deps 仅 store action。
+  const onInstall = useCallback(async (entry: MarketplaceEntry) => {
     setInstall((prev) => ({ ...prev, busy: entry.id }));
     let msg: string;
     let success = false;
@@ -113,41 +119,44 @@ export function MarketplaceTab() {
       if (success) nextPending.add(entry.id);
       return { busy: null, msgs: nextMsgs, pending: nextPending };
     });
-  };
+  }, []);
 
-  const onUpdate = async (entry: MarketplaceEntry) => {
-    // 更新 = 卸载 + 重装。卸载走 PluginManager 走 LIFO + 清 _enabled / _permissions;
-    // 装走 v4.5 installFromGit。两步任一失败 → toast 显错。
-    setInstall((prev) => ({ ...prev, busy: entry.id }));
-    let msg: string;
-    let success = false;
-    try {
-      const mgr = getUserPluginManager();
-      if (mgr) {
-        try {
-          await mgr.uninstall(entry.id);
-        } catch (err) {
-          console.warn(`[marketplace] uninstall ${entry.id} failed`, err);
+  const onUpdate = useCallback(
+    async (entry: MarketplaceEntry) => {
+      // 更新 = 卸载 + 重装。卸载走 PluginManager 走 LIFO + 清 _enabled / _permissions;
+      // 装走 v4.5 installFromGit。两步任一失败 → toast 显错。
+      setInstall((prev) => ({ ...prev, busy: entry.id }));
+      let msg: string;
+      let success = false;
+      try {
+        const mgr = getUserPluginManager();
+        if (mgr) {
+          try {
+            await mgr.uninstall(entry.id);
+          } catch (err) {
+            console.warn(`[marketplace] uninstall ${entry.id} failed`, err);
+          }
         }
+        const r = await coApi.plugins.installFromGit(entryToGitUrl(entry));
+        success = r.ok;
+        msg = r.ok
+          ? `✔ 更新到 ${r.data.name} v${r.data.version} — 重启 Continuo 后激活`
+          : `✘ 更新失败 [${r.code}] ${r.message}`;
+      } catch (err) {
+        msg = `✘ 更新失败:${err instanceof Error ? err.message : String(err)}`;
       }
-      const r = await coApi.plugins.installFromGit(entryToGitUrl(entry));
-      success = r.ok;
-      msg = r.ok
-        ? `✔ 更新到 ${r.data.name} v${r.data.version} — 重启 Continuo 后激活`
-        : `✘ 更新失败 [${r.code}] ${r.message}`;
-    } catch (err) {
-      msg = `✘ 更新失败:${err instanceof Error ? err.message : String(err)}`;
-    }
-    setInstall((prev) => {
-      const nextMsgs = new Map(prev.msgs);
-      nextMsgs.set(entry.id, msg);
-      const nextPending = new Set(prev.pending);
-      if (success) nextPending.add(entry.id);
-      return { busy: null, msgs: nextMsgs, pending: nextPending };
-    });
-    // 更新成功后刷新 update-store(从 available 摘掉这条)
-    if (success) void refreshUpdates();
-  };
+      setInstall((prev) => {
+        const nextMsgs = new Map(prev.msgs);
+        nextMsgs.set(entry.id, msg);
+        const nextPending = new Set(prev.pending);
+        if (success) nextPending.add(entry.id);
+        return { busy: null, msgs: nextMsgs, pending: nextPending };
+      });
+      // 更新成功后刷新 update-store(从 available 摘掉这条)
+      if (success) void refreshUpdates();
+    },
+    [refreshUpdates],
+  );
 
   // Hooks 必须无条件按相同顺序;loading / error 时 entries=[],计算 noop
   const entries = state.kind === 'ok' ? state.entries : [];
@@ -192,14 +201,20 @@ export function MarketplaceTab() {
     );
   }
 
-  const toggleTag = (tag: string) => {
+  // useCallback 让 TagButton memo 不被 inline arrow 撑破。
+  // setSelectedTags 函数式更新,无外部依赖 → deps=[].
+  const toggleTag = useCallback((tag: string) => {
     setSelectedTags((prev) => {
       const next = new Set(prev);
       if (next.has(tag)) next.delete(tag);
       else next.add(tag);
       return next;
     });
-  };
+  }, []);
+
+  const clearTags = useCallback(() => {
+    setSelectedTags(new Set());
+  }, []);
 
   return (
     <div className="space-y-3">
@@ -212,28 +227,18 @@ export function MarketplaceTab() {
         />
         {allTags.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
-            {allTags.map((tag) => {
-              const active = selectedTags.has(tag);
-              return (
-                <button
-                  key={tag}
-                  type="button"
-                  onClick={() => toggleTag(tag)}
-                  className={[
-                    'rounded px-2 py-0.5 text-[10px] transition',
-                    active
-                      ? 'bg-accent text-canvas'
-                      : 'bg-panel text-fg-muted hover:bg-hover',
-                  ].join(' ')}
-                >
-                  {tag}
-                </button>
-              );
-            })}
+            {allTags.map((tag) => (
+              <TagButton
+                key={tag}
+                tag={tag}
+                active={selectedTags.has(tag)}
+                onToggle={toggleTag}
+              />
+            ))}
             {selectedTags.size > 0 && (
               <button
                 type="button"
-                onClick={() => setSelectedTags(new Set())}
+                onClick={clearTags}
                 className="rounded px-2 py-0.5 text-[10px] text-fg-dim hover:text-fg"
               >
                 清除筛选
@@ -276,8 +281,8 @@ export function MarketplaceTab() {
               installDisabled={install.busy !== null && install.busy !== entry.id}
               message={install.msgs.get(entry.id) ?? null}
               rating={reviewsByPid.get(entry.id) ?? null}
-              onInstall={() => void onInstall(entry)}
-              onUpdate={() => void onUpdate(entry)}
+              onInstall={onInstall}
+              onUpdate={onUpdate}
             />
           ))}
         </div>
@@ -285,6 +290,33 @@ export function MarketplaceTab() {
     </div>
   );
 }
+
+interface TagButtonProps {
+  tag: string;
+  active: boolean;
+  onToggle: (tag: string) => void;
+}
+
+const TagButton = memo(function TagButton({
+  tag,
+  active,
+  onToggle,
+}: TagButtonProps) {
+  return (
+    <button
+      type="button"
+      onClick={() => onToggle(tag)}
+      className={[
+        'rounded px-2 py-0.5 text-[10px] transition',
+        active
+          ? 'bg-accent text-canvas'
+          : 'bg-panel text-fg-muted hover:bg-hover',
+      ].join(' ')}
+    >
+      {tag}
+    </button>
+  );
+});
 
 interface CardProps {
   entry: MarketplaceEntry;
@@ -298,8 +330,9 @@ interface CardProps {
   message: string | null;
   /** 评分聚合(reviews Phase 1),null 或 count=0 不显. */
   rating: PluginAggregateRating | null;
-  onInstall: () => void;
-  onUpdate: () => void;
+  /** 父组件 useCallback 稳定;card 内 onClick 闭包 entry 给它. */
+  onInstall: (entry: MarketplaceEntry) => void | Promise<void>;
+  onUpdate: (entry: MarketplaceEntry) => void | Promise<void>;
 }
 
 /** 把 0-5 平均分渲染成 5 个 ★/☆,半星向就近整数. */
@@ -308,7 +341,7 @@ function renderStars(avg: number): string {
   return '★'.repeat(Math.max(0, Math.min(5, full))) + '☆'.repeat(5 - Math.max(0, Math.min(5, full)));
 }
 
-function MarketplaceCard({
+const MarketplaceCard = memo(function MarketplaceCard({
   entry,
   installed,
   pendingRestart,
@@ -320,6 +353,10 @@ function MarketplaceCard({
   onInstall,
   onUpdate,
 }: CardProps) {
+  // entry 引用在 filtered 数组中稳定,onInstall/onUpdate 已 useCallback;
+  // 内部按钮的 inline arrow 不影响外层 memo 拦截(Button 自己未 memo)。
+  const handleInstall = () => void onInstall(entry);
+  const handleUpdate = () => void onUpdate(entry);
   return (
     <div className="rounded border border-line bg-panel-soft/40 px-3 py-2">
       <div className="flex items-start justify-between gap-3">
@@ -345,7 +382,7 @@ function MarketplaceCard({
             <Button
               variant="primary"
               size="sm"
-              onClick={onUpdate}
+              onClick={handleUpdate}
               disabled={installing || installDisabled}
               title={`远程版本 v${updateAvailable},点击更新`}
             >
@@ -368,7 +405,7 @@ function MarketplaceCard({
             <Button
               variant="primary"
               size="sm"
-              onClick={onInstall}
+              onClick={handleInstall}
               disabled={installing || installDisabled}
             >
               {installing ? '安装中…' : '安装'}
@@ -422,7 +459,7 @@ function MarketplaceCard({
       </div>
     </div>
   );
-}
+});
 
 /** 评分行 + 可展开的 reviews 列表 + "写评论" 链接(Phase 2/3). */
 function RatingRow({
@@ -536,6 +573,8 @@ function ReviewItem({ review: r }: { review: Review }) {
       <img
         src={r.author.avatarUrl}
         alt=""
+        loading="lazy"
+        decoding="async"
         className="h-5 w-5 shrink-0 rounded-full"
       />
       <div className="min-w-0 flex-1 text-[10px]">

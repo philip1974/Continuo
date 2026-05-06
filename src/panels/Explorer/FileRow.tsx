@@ -89,6 +89,15 @@ export function FileRow({
         ...style,
         height: ROW_HEIGHT,
         paddingLeft: 4 + level * INDENT,
+        // 缩进指南线用 CSS gradient 一笔画 N 条,替代之前每行 N 个 absolute span:
+        // 起点 12px = padding(4) + i=0 + 8(中线) ; 周期 INDENT=16px ; 1px 线宽。
+        // background-size 限定为 level*INDENT,no-repeat 防止画到内容区。
+        ...(level > 0 && {
+          backgroundImage: `repeating-linear-gradient(to right, var(--color-line) 0 1px, transparent 1px ${INDENT}px)`,
+          backgroundPosition: '12px 0',
+          backgroundSize: `${level * INDENT}px 100%`,
+          backgroundRepeat: 'no-repeat',
+        }),
       }}
       className={[
         'flex items-center gap-1 text-xs select-none',
@@ -106,15 +115,6 @@ export function FileRow({
           : data.path
       }
     >
-      {/* 缩进指南线:每层 1px 灰竖线,辅助识别深层嵌套(VSCode 同款) */}
-      {Array.from({ length: level }).map((_, i) => (
-        <span
-          key={i}
-          aria-hidden="true"
-          className="pointer-events-none absolute top-0 bottom-0 w-px bg-line"
-          style={{ left: 4 + i * INDENT + 8 }}
-        />
-      ))}
       <span className="inline-flex w-3 shrink-0 items-center justify-center text-[10px] text-fg-dim">
         {isDir ? (isExpanded ? '▾' : '▸') : ''}
       </span>
