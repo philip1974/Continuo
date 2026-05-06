@@ -141,6 +141,10 @@
 
 - [`file-icon.spec.ts`](./file-icon/file-icon.spec.ts)
 
+## [format-hotkey(命令 hotkey 显示格式化)](./format-hotkey/README.md)
+
+- [`format-hotkey.spec.ts`](./format-hotkey/format-hotkey.spec.ts)
+
 ## [fs-adapter (M-Explorer Step 1)](./fs-adapter/README.md)
 
 - [`fs-adapter.spec.ts`](./fs-adapter/fs-adapter.spec.ts)

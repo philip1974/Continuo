@@ -17,6 +17,10 @@ import type {
 import { useCommandPaletteStore } from './store';
 import { fuzzyFilter } from './fuzzy';
 import { useRecentCommandsStore } from './recent';
+import { formatHotkey, detectPlatform } from './format-hotkey';
+
+// module 顶层一次,renderer 生命周期内不会切平台
+const PLATFORM = detectPlatform();
 
 const RECENT_TOP_N = 5;
 
@@ -141,7 +145,7 @@ export function CommandPalette({ commands }: CommandPaletteProps) {
                 <span className="truncate">{cmd.title}</span>
                 {cmd.hotkey && (
                   <span className="ml-auto shrink-0 text-[10px] text-fg-dim">
-                    {cmd.hotkey}
+                    {formatHotkey(cmd.hotkey, PLATFORM)}
                   </span>
                 )}
               </li>

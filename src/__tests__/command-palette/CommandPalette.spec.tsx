@@ -71,11 +71,12 @@ describe('CommandPalette UI', () => {
     expect(useCommandPaletteStore.getState().isOpen).toBe(false);
   });
 
-  it('显示 hotkey 后缀', () => {
+  it('显示 hotkey 后缀(formatHotkey 转后:jsdom navigator → other → "Ctrl+S")', () => {
     const reg = makeReg();
     render(<CommandPalette commands={reg} />);
     act(() => useCommandPaletteStore.getState().open());
     const firstLi = document.querySelector('.wm-modal-content li')!;
-    expect(firstLi.textContent).toContain('mod+s');
+    // jsdom navigator.platform 默认空,detectPlatform 返 'other'
+    expect(firstLi.textContent).toContain('Ctrl+S');
   });
 });
