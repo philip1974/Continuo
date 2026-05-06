@@ -20,12 +20,13 @@ export default class TerminalTabPlugin extends Plugin {
       id: 'terminal.fontSize',
       category: 'terminal',
       title: '字号',
-      description: 'xterm 字号,单位 px。变化时自动 fit 重排。',
+      description: 'xterm 字号。变化时自动 fit 重排。',
       type: 'number',
       default: 13,
       min: 10,
       max: 24,
       step: 1,
+      unit: 'px',
       priority: 1,
     });
 

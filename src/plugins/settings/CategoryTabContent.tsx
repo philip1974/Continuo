@@ -62,9 +62,12 @@ export function CategoryTabContent({
   return (
     <div className="flex flex-col">
       {buckets.map((bucket) => (
-        <section key={bucket.group ?? '_default'} className="mb-2">
+        <section
+          key={bucket.group ?? '_default'}
+          className="mb-2 first:mt-0 [&:not(:first-child)]:mt-8"
+        >
           {bucket.group && (
-            <h3 className="mb-1 mt-4 border-b border-line pb-1 text-[11px] font-medium uppercase tracking-wider text-fg first:mt-0">
+            <h3 className="mb-2 border-b border-line pb-2 text-base font-medium text-fg">
               {bucket.group}
             </h3>
           )}

@@ -34,6 +34,8 @@ export interface SettingItemSpec {
   readonly min?: number;
   readonly max?: number;
   readonly step?: number;
+  /** type='number' 时可选:右侧显示的单位 chip(如 'ms' / 'px'). */
+  readonly unit?: string;
   /** 同 category 内升序排序,默认 100. */
   readonly priority?: number;
 }

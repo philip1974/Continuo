@@ -155,8 +155,11 @@ export function SettingsPanel({
                   : `匹配 ${matched!.length} 项「${trimmed}」`}
               </div>
               {matchedBuckets.map((bucket) => (
-                <section key={bucket.category} className="mb-2">
-                  <h3 className="mb-1 mt-4 border-b border-line pb-1 text-[11px] font-medium uppercase tracking-wider text-fg first:mt-0">
+                <section
+                  key={bucket.category}
+                  className="mb-2 first:mt-0 [&:not(:first-child)]:mt-8"
+                >
+                  <h3 className="mb-2 border-b border-line pb-2 text-base font-medium text-fg">
                     {bucket.label}
                   </h3>
                   {bucket.items.map((spec) => (

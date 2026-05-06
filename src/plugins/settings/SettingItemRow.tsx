@@ -1,11 +1,11 @@
-// 单个设置项的通用渲染器(M-Settings v6)。
-// 根据 SettingItemSpec.type 自动选 UI:
-//   boolean → SegmentedControl(启用/禁用)
-//   select  → SegmentedControl(spec.enum)
-//   number  → Input type=number(min/max/step 透传)
-//   text    → Input type=text
-//
-// 一行结构:title + description 在上,控件靠右。
+// 单个设置项的通用渲染器(M-Settings v6 / UI polish)。
+// 视觉对齐 demo(Industrial IDE Dark):
+//   - title 后 inline id chip(浅底 uppercase),取代独占一行
+//   - boolean → toggle switch(滑块,占空间小)
+//   - select  → SegmentedControl(spec.enum)
+//   - number  → Input + 单位 chip(右侧)
+//   - text    → Input
+//   - reset   → 始终占位的 ↺,override 时可见
 
 import { IconButton, Input, SegmentedControl } from '@/design';
 import type { SettingItemSpec } from '../registries/SettingItemRegistry';
@@ -14,11 +14,6 @@ import { useSettingsValuesStore } from './values-store';
 interface SettingItemRowProps {
   readonly spec: SettingItemSpec;
 }
-
-const BOOLEAN_OPTIONS = [
-  { id: 'true', label: '启用' },
-  { id: 'false', label: '禁用' },
-] as const;
 
 export function SettingItemRow({ spec }: SettingItemRowProps) {
   const stored = useSettingsValuesStore((s) => s.values[spec.id]);
@@ -29,25 +24,24 @@ export function SettingItemRow({ spec }: SettingItemRowProps) {
   const isOverridden = stored !== undefined;
 
   return (
-    <div className="flex items-start justify-between gap-6 border-b border-line py-3 last:border-b-0">
+    <div className="flex items-start justify-between gap-6 border-b border-line py-4 last:border-b-0">
       <div className="min-w-0 flex-1">
-        <div className="text-fg">{spec.title}</div>
-        {spec.description && (
-          <div className="mt-0.5 text-[11px] text-fg-dim">
-            {spec.description}
-          </div>
-        )}
-        <div className="mt-0.5 text-[10px] uppercase tracking-wider text-fg-dim/60">
-          {spec.id}
+        <div className="flex items-baseline gap-2">
+          <span className="text-sm text-fg">{spec.title}</span>
+          {/* id chip:demo 同款浅底 uppercase 紧贴 title 显示,取代独占一行 */}
+          <code className="rounded bg-panel-soft px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-fg-dim">
+            {spec.id}
+          </code>
         </div>
+        {spec.description && (
+          <div className="mt-1 text-xs text-fg-muted">{spec.description}</div>
+        )}
       </div>
       <div className="flex shrink-0 items-center gap-2">
         {spec.type === 'boolean' && (
-          <SegmentedControl
-            size="sm"
-            options={BOOLEAN_OPTIONS}
-            value={String(Boolean(value)) as 'true' | 'false'}
-            onChange={(id) => setValue(spec.id, id === 'true')}
+          <ToggleSwitch
+            checked={Boolean(value)}
+            onChange={(v) => setValue(spec.id, v)}
           />
         )}
         {spec.type === 'select' && spec.enum && (
@@ -59,20 +53,27 @@ export function SettingItemRow({ spec }: SettingItemRowProps) {
           />
         )}
         {spec.type === 'number' && (
-          <Input
-            type="number"
-            size="sm"
-            value={String(value)}
-            min={spec.min}
-            max={spec.max}
-            step={spec.step}
-            onChange={(e) => {
-              const n = Number((e.target as HTMLInputElement).value);
-              if (!Number.isFinite(n)) return;
-              setValue(spec.id, n);
-            }}
-            className="w-24"
-          />
+          <div className="flex items-center gap-1">
+            <Input
+              type="number"
+              size="sm"
+              value={String(value)}
+              min={spec.min}
+              max={spec.max}
+              step={spec.step}
+              onChange={(e) => {
+                const n = Number((e.target as HTMLInputElement).value);
+                if (!Number.isFinite(n)) return;
+                setValue(spec.id, n);
+              }}
+              className="w-24 text-right"
+            />
+            {spec.unit && (
+              <span className="select-none rounded bg-panel-soft px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-fg-dim">
+                {spec.unit}
+              </span>
+            )}
+          </div>
         )}
         {spec.type === 'text' && (
           <Input
@@ -111,5 +112,39 @@ export function SettingItemRow({ spec }: SettingItemRowProps) {
         </IconButton>
       </div>
     </div>
+  );
+}
+
+// ── 内嵌业务级 toggle switch(design system 暂无,且仅在 Settings 用)──
+// 真要 native:design system 没有 Toggle 组件,SegmentedControl「启用/禁用」
+// 视觉太重占位多;这里写一个紧凑滑块沿用语义 token,不引入新 design 依赖。
+
+interface ToggleSwitchProps {
+  readonly checked: boolean;
+  readonly onChange: (next: boolean) => void;
+}
+
+function ToggleSwitch({ checked, onChange }: ToggleSwitchProps) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className={[
+        'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40',
+        checked ? 'bg-accent' : 'border border-line bg-panel-soft',
+      ].join(' ')}
+    >
+      <span
+        className={[
+          'absolute h-3.5 w-3.5 rounded-full transition-transform',
+          checked
+            ? 'translate-x-[18px] bg-fg'
+            : 'translate-x-1 bg-fg-muted',
+        ].join(' ')}
+      />
+    </button>
   );
 }

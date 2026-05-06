@@ -22,12 +22,13 @@ export default class EditorTabPlugin extends Plugin {
       category: 'editor',
       group: '外观',
       title: '字号',
-      description: 'CodeEditor(代码 / Source mode)的字号,单位 px。',
+      description: 'CodeEditor(代码 / Source mode)的字号。',
       type: 'number',
       default: 13,
       min: 10,
       max: 28,
       step: 1,
+      unit: 'px',
       priority: 1,
     });
     this.addSettingItem({
@@ -57,12 +58,13 @@ export default class EditorTabPlugin extends Plugin {
       category: 'editor',
       group: '自动保存',
       title: '自动保存延迟',
-      description: '停止输入多久后触发自动保存,单位毫秒。',
+      description: '停止输入多久后触发自动保存。',
       type: 'number',
       default: 2000,
       min: 500,
       max: 10000,
       step: 100,
+      unit: 'ms',
       priority: 11,
     });
   }

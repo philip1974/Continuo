@@ -30,12 +30,13 @@ export default class ExplorerTabPlugin extends Plugin {
       id: 'explorer.indentSize',
       category: 'explorer',
       title: '缩进宽度',
-      description: '文件树每级缩进的像素数(影响视觉层级)。',
+      description: '文件树每级缩进(影响视觉层级)。',
       type: 'number',
       default: 16,
       min: 8,
       max: 32,
       step: 2,
+      unit: 'px',
       priority: 2,
     });
   }
