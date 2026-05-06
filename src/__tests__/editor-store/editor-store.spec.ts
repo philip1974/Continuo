@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
   createTab,
   getStateAfterClosingTab,
+  getStateAfterClosingTabsOutsideRoot,
   getStateAfterRemovingPath,
   getStateAfterRenamingPath,
   useEditorStore,
@@ -361,6 +362,117 @@ describe('renamePath(store method)', () => {
     const s = useEditorStore.getState();
     expect(s.tabs.map((t) => t.id)).toEqual(['/y/a.md', '/y/sub/b.md']);
     expect(s.activeTabId).toBe('/y/sub/b.md');
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// getStateAfterClosingTabsOutsideRoot / closeTabsOutsideRoot
+// 切换工作区 root 时,旧 root 下的 file tab 应自动关闭;
+// untitled tab(filePath=null)始终保留。
+// ────────────────────────────────────────────────────────────
+
+describe('getStateAfterClosingTabsOutsideRoot', () => {
+  it('全部 tab 都在 root 下 → 状态不变(同引用)', () => {
+    const tabs = [
+      makeTab({ id: '/work/a.md', filePath: '/work/a.md' }),
+      makeTab({ id: '/work/sub/b.md', filePath: '/work/sub/b.md' }),
+    ];
+    const r = getStateAfterClosingTabsOutsideRoot(tabs, '/work/a.md', '/work');
+    expect(r.tabs).toBe(tabs);
+    expect(r.activeTabId).toBe('/work/a.md');
+  });
+
+  it('切换到不重叠 root → 全部 file tab 关闭,untitled 保留', () => {
+    const draft = createTab(null, 'd');
+    const tabs = [
+      makeTab({ id: '/old/a.md', filePath: '/old/a.md' }),
+      draft,
+      makeTab({ id: '/old/b.md', filePath: '/old/b.md' }),
+    ];
+    const r = getStateAfterClosingTabsOutsideRoot(tabs, '/old/a.md', '/new');
+    expect(r.tabs.map((t) => t.id)).toEqual([draft.id]);
+    expect(r.activeTabId).toBe(draft.id);
+  });
+
+  it('root=null(关闭文件夹)→ 关所有 file tab,只剩 untitled', () => {
+    const draft = createTab(null, 'd');
+    const tabs = [
+      makeTab({ id: '/old/a.md', filePath: '/old/a.md' }),
+      draft,
+    ];
+    const r = getStateAfterClosingTabsOutsideRoot(tabs, '/old/a.md', null);
+    expect(r.tabs.map((t) => t.id)).toEqual([draft.id]);
+    expect(r.activeTabId).toBe(draft.id);
+  });
+
+  it('root=null + 全是 file tab → 全关,activeTabId null', () => {
+    const tabs = [
+      makeTab({ id: '/old/a.md', filePath: '/old/a.md' }),
+      makeTab({ id: '/old/b.md', filePath: '/old/b.md' }),
+    ];
+    const r = getStateAfterClosingTabsOutsideRoot(tabs, '/old/a.md', null);
+    expect(r.tabs).toEqual([]);
+    expect(r.activeTabId).toBeNull();
+  });
+
+  it('切换到子目录 → 父目录文件关,子目录文件留', () => {
+    const tabs = [
+      makeTab({ id: '/work/top.md', filePath: '/work/top.md' }),
+      makeTab({ id: '/work/sub/a.md', filePath: '/work/sub/a.md' }),
+    ];
+    const r = getStateAfterClosingTabsOutsideRoot(
+      tabs,
+      '/work/top.md',
+      '/work/sub',
+    );
+    expect(r.tabs.map((t) => t.id)).toEqual(['/work/sub/a.md']);
+    expect(r.activeTabId).toBe('/work/sub/a.md');
+  });
+
+  it('同前缀但非子目录(/x/foo 切到 /x/foobar)→ /x/foo/* 全关', () => {
+    const tabs = [
+      makeTab({ id: '/x/foo/a.md', filePath: '/x/foo/a.md' }),
+      makeTab({ id: '/x/foobar/b.md', filePath: '/x/foobar/b.md' }),
+    ];
+    const r = getStateAfterClosingTabsOutsideRoot(
+      tabs,
+      '/x/foo/a.md',
+      '/x/foobar',
+    );
+    expect(r.tabs.map((t) => t.id)).toEqual(['/x/foobar/b.md']);
+  });
+
+  it('Windows 反斜杠路径:子目录判定生效', () => {
+    const tabs = [
+      makeTab({ id: 'C:\\old\\a.md', filePath: 'C:\\old\\a.md' }),
+      makeTab({ id: 'C:\\new\\b.md', filePath: 'C:\\new\\b.md' }),
+    ];
+    const r = getStateAfterClosingTabsOutsideRoot(
+      tabs,
+      'C:\\old\\a.md',
+      'C:\\new',
+    );
+    expect(r.tabs.map((t) => t.id)).toEqual(['C:\\new\\b.md']);
+  });
+});
+
+describe('closeTabsOutsideRoot(store method)', () => {
+  it('切换 root → outside file tab 关,untitled 留,active 切到剩余', () => {
+    const draft = createTab(null, 'd');
+    useEditorStore.setState({
+      tabs: [
+        makeTab({ id: '/old/a.md', filePath: '/old/a.md' }),
+        draft,
+        makeTab({ id: '/new/b.md', filePath: '/new/b.md' }),
+      ],
+      activeTabId: '/old/a.md',
+    });
+    useEditorStore.getState().closeTabsOutsideRoot('/new');
+    const s = useEditorStore.getState();
+    expect(s.tabs.map((t) => t.id)).toEqual([draft.id, '/new/b.md']);
+    // active 被关 → 取原序后向第一个 remaining(原 idx 顺序:draft 比
+    // /new/b.md 更靠前,所以是 draft;untitled 也算合法 active)
+    expect(s.activeTabId).toBe(draft.id);
   });
 });
 

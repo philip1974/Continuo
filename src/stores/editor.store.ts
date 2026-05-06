@@ -116,6 +116,55 @@ export function getStateAfterRenamingPath(
 }
 
 /**
+ * 工作区 root 切换后的 tab 状态:
+ * - untitled(filePath=null)tab 与 root 无关,始终保留
+ * - filePath 等于 root 或位于其下(`root/` 或 `root\\` 前缀)→ 保留
+ * - 其余(包括 root=null 时所有 file tab)→ 关闭
+ * - active tab 被关时 → 取剩余第一个(优先剩余中原序更靠后的相邻);全清则 null
+ */
+export function getStateAfterClosingTabsOutsideRoot(
+  tabs: EditorTab[],
+  activeTabId: string | null,
+  root: string | null,
+): CloseTabResult {
+  const isInside = (filePath: string | null): boolean => {
+    if (filePath === null) return true; // untitled 视为永远 inside
+    if (root === null) return false;
+    if (filePath === root) return true;
+    return (
+      filePath.startsWith(root + '/') || filePath.startsWith(root + '\\')
+    );
+  };
+
+  const remaining = tabs.filter((t) => isInside(t.filePath));
+  if (remaining.length === tabs.length) return { tabs, activeTabId };
+  if (remaining.length === 0) return { tabs: remaining, activeTabId: null };
+  if (activeTabId !== null && remaining.some((t) => t.id === activeTabId)) {
+    return { tabs: remaining, activeTabId };
+  }
+  // active 被关:取原序后向第一个 remaining,否则前向,否则首个
+  if (activeTabId !== null) {
+    const oldIdx = tabs.findIndex((t) => t.id === activeTabId);
+    if (oldIdx >= 0) {
+      const removingIds = new Set(
+        tabs.filter((t) => !isInside(t.filePath)).map((t) => t.id),
+      );
+      for (let i = oldIdx + 1; i < tabs.length; i++) {
+        if (!removingIds.has(tabs[i]!.id)) {
+          return { tabs: remaining, activeTabId: tabs[i]!.id };
+        }
+      }
+      for (let i = oldIdx - 1; i >= 0; i--) {
+        if (!removingIds.has(tabs[i]!.id)) {
+          return { tabs: remaining, activeTabId: tabs[i]!.id };
+        }
+      }
+    }
+  }
+  return { tabs: remaining, activeTabId: remaining[0]!.id };
+}
+
+/**
  * 文件 / 目录被删除后的 tab 状态:
  * - 精确匹配 filePath === removedPath
  * - 或位于该目录下(`removedPath/` 或 `removedPath\\` 前缀)
@@ -181,6 +230,8 @@ type EditorState = {
   renamePath: (oldPath: string, newPath: string) => void;
   /** 外部修改时调用:非 dirty tab 同步 content+originalContent;dirty 跳过. */
   reloadFromDisk: (tabId: string, content: string) => void;
+  /** 工作区切换时调用:关闭 root 外的 file tabs;untitled 始终保留. */
+  closeTabsOutsideRoot: (root: string | null) => void;
   switchTab: (id: string) => void;
   /** 编辑器 onChange 时调用;dirty 自动比对. */
   updateContent: (id: string, content: string) => void;
@@ -212,6 +263,11 @@ export const useEditorStore = create<EditorState>((set) => ({
   renamePath: (oldPath, newPath) =>
     set((s) =>
       getStateAfterRenamingPath(s.tabs, s.activeTabId, oldPath, newPath),
+    ),
+
+  closeTabsOutsideRoot: (root) =>
+    set((s) =>
+      getStateAfterClosingTabsOutsideRoot(s.tabs, s.activeTabId, root),
     ),
 
   reloadFromDisk: (tabId, content) =>
