@@ -4,10 +4,12 @@
 
 import {
   asyncDataLoaderFeature,
+  dragAndDropFeature,
   expandAllFeature,
   hotkeysCoreFeature,
   renamingFeature,
   selectionFeature,
+  type DragTarget,
   type ItemInstance,
   type TreeConfig,
 } from '@headless-tree/core';
@@ -27,6 +29,16 @@ export interface CreateTreeConfigDeps {
   onIpcWarn?: (message: string, code: string) => void;
   /** 用户在 inline rename input 按 Enter 时触发(headless-tree renamingFeature). */
   onRename?: (item: ItemInstance<FileEntry>, newName: string) => void;
+  /** 内部多选拖动 → drop 到目标(目录或文件→父目录). 业务侧执行 fs.move. */
+  onDropItems?: (
+    items: ItemInstance<FileEntry>[],
+    destDir: string,
+  ) => void;
+  /** 外部 OS 文件拖入 row 上 → drop 到目标(目录或文件→父目录). */
+  onDropForeign?: (
+    dataTransfer: DataTransfer,
+    destDir: string,
+  ) => void;
 }
 
 const INDENT = 16;
@@ -110,6 +122,12 @@ export function createDataLoader(deps: CreateTreeConfigDeps): FileTreeDataLoader
 export function createTreeConfig(
   deps: CreateTreeConfigDeps,
 ): TreeConfig<FileEntry> {
+  // drop 落点归一化:目录 → 自身;文件 → 父目录
+  const resolveDest = (target: DragTarget<FileEntry>): string => {
+    const item = target.item;
+    return item.isFolder() ? item.getId() : dirname(item.getId());
+  };
+
   return {
     rootItemId: deps.root,
     indent: INDENT,
@@ -123,12 +141,43 @@ export function createTreeConfig(
     initialState: {
       expandedItems: [deps.root],
     },
+    // 文件树 drop 语义:只允许 drop into folder(no reorder);
+    // 不能 drop 到自身或自身子树(loop);drop 到 file → 进父目录
+    canReorder: false,
+    canDrop: (items, target) => {
+      const destDir = resolveDest(target);
+      for (const it of items) {
+        const srcId = it.getId();
+        // drop 到自身
+        if (srcId === target.item.getId()) return false;
+        // 目录 drop 到自身子树:srcId 是 destDir 的祖先
+        if (
+          destDir === srcId ||
+          destDir.startsWith(srcId + '/') ||
+          destDir.startsWith(srcId + '\\')
+        ) {
+          return false;
+        }
+      }
+      return true;
+    },
+    onDrop: (items, target) => {
+      deps.onDropItems?.(items, resolveDest(target));
+    },
+    canDropForeignDragObject: (dataTransfer) =>
+      dataTransfer.types.includes('Files'),
+    canDragForeignDragObjectOver: (dataTransfer) =>
+      dataTransfer.types.includes('Files'),
+    onDropForeignDragObject: (dataTransfer, target) => {
+      deps.onDropForeign?.(dataTransfer, resolveDest(target));
+    },
     features: [
       asyncDataLoaderFeature,
       selectionFeature,
       hotkeysCoreFeature,
       renamingFeature, // F2 / Enter / Esc 由它接管,自动 stop hotkeys 干扰
       expandAllFeature, // tree.expandAll() / collapseAll() — UI-3 Header 按钮用
+      dragAndDropFeature, // 内部多选 move + 外部文件 drop on row
     ],
   };
 }

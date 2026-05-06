@@ -80,6 +80,49 @@ export function FolderTree({ root }: { root: string }) {
             useEditorStore.getState().renamePath(oldPath, r.newPath);
           })();
         },
+        // 内部多选拖动 → 批量 fs.move,语义同 cut→paste(但不经剪贴板)
+        onDropItems: (items, destDir) => {
+          void (async () => {
+            const srcs = items.map((it) => it.getId());
+            for (const src of srcs) {
+              // 拖到原父目录 → no-op(canDrop 已挡掉拖到自身,父同位置只跳)
+              if (dirname(src) === destDir) continue;
+              const dest = await pickUniqueDest(destDir, basename(src));
+              const r = await coApi.fs.move(src, dest);
+              if (!r.ok) {
+                console.warn('[explorer] drop move failed', src, r.code, r.message);
+                alert(`移动失败:${src}\n[${r.code}] ${r.message}`);
+                return;
+              }
+              useEditorStore.getState().renamePath(src, dest);
+            }
+            refreshParent(destDir);
+            const srcParents = new Set(srcs.map((s) => dirname(s)));
+            for (const sp of srcParents) {
+              if (sp !== destDir) refreshParent(sp);
+            }
+          })();
+        },
+        // 外部 OS 文件 drop 到具体 row → 走与容器 onDrop 同一套 performDrop
+        onDropForeign: (dataTransfer, destDir) => {
+          void (async () => {
+            const { files, skippedDirs } = partitionDropItems(dataTransfer.items);
+            if (files.length === 0 && skippedDirs.length === 0) return;
+            const r = await performDrop(files, destDir, coApi.fs);
+            refreshParent(destDir);
+            const msgs: string[] = [];
+            if (skippedDirs.length > 0) {
+              msgs.push(`跳过 ${skippedDirs.length} 个文件夹(暂不支持目录拖入)`);
+            }
+            if (!r.ok) {
+              msgs.push(
+                `失败 ${r.failed.length} 个:\n` +
+                  r.failed.map((f) => `  ${f.name}: [${f.code}] ${f.message}`).join('\n'),
+              );
+            }
+            if (msgs.length > 0) alert(msgs.join('\n\n'));
+          })();
+        },
       }),
     [root],
   );
