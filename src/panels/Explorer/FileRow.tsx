@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Document, Folder } from '@react-symbols/icons';
 import type { ItemInstance } from '@headless-tree/core';
 import type { FileEntry } from '@/lib/fs/types';
 import { Input } from '@/design';
@@ -7,6 +6,7 @@ import { coApp } from '@/plugins/co-app';
 import { mergeDecorations } from '@/plugins/registries/ExplorerDecoratorRegistry';
 import { ContextMenu, type ContextMenuActions } from './ContextMenu';
 import type { DropTargetEntry } from './drop-handlers';
+import { FileIcon } from './file-icon';
 
 interface FileRowProps {
   item: ItemInstance<FileEntry>;
@@ -119,11 +119,7 @@ export function FileRow({
         {isDir ? (isExpanded ? '▾' : '▸') : ''}
       </span>
       <span className="inline-flex shrink-0 items-center" aria-hidden="true">
-        {isDir ? (
-          <Folder width={ICON_SIZE} height={ICON_SIZE} />
-        ) : (
-          <Document width={ICON_SIZE} height={ICON_SIZE} />
-        )}
+        <FileIcon name={data.name} isDirectory={isDir} size={ICON_SIZE} />
       </span>
       {isRenaming ? (
         <Input

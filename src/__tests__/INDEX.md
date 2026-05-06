@@ -133,6 +133,10 @@
 - [`fs-watch-helpers.spec.ts`](./explorer-watch/fs-watch-helpers.spec.ts)
 - [`watch-pool.spec.ts`](./explorer-watch/watch-pool.spec.ts)
 
+## [file-icon(资源管理器文件图标化)](./file-icon/README.md)
+
+- [`file-icon.spec.ts`](./file-icon/file-icon.spec.ts)
+
 ## [fs-adapter (M-Explorer Step 1)](./fs-adapter/README.md)
 
 - [`fs-adapter.spec.ts`](./fs-adapter/fs-adapter.spec.ts)
