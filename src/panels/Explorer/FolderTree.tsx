@@ -24,6 +24,7 @@ import { useFsWatcher } from './hooks/useFsWatcher';
 import { useEditorFile } from '@/panels/Editor/useEditorFile';
 import { useEditorStore } from '@/stores/editor.store';
 import { coApi } from '@/lib/co-api';
+import { useSettingValue } from '@/plugins/settings/values-store';
 import { useExplorerClipboardStore } from './clipboard-store';
 
 interface CreatingState {
@@ -129,7 +130,19 @@ export function FolderTree({ root }: { root: string }) {
   const tree = useTree<FileEntry>(config);
   treeRef.current = tree;
 
-  const items = tree.getItems();
+  const allItems = tree.getItems();
+  // explorer.showHiddenFiles=false(默认)过滤 . 开头的 entries(.git / .env 等)
+  const showHidden = useSettingValue<boolean>(
+    'explorer.showHiddenFiles',
+    false,
+  );
+  const items = useMemo(
+    () =>
+      showHidden
+        ? allItems
+        : allItems.filter((it) => !it.getItemData().name.startsWith('.')),
+    [allItems, showHidden],
+  );
 
   // 多选集合数据源 = headless-tree selectionFeature 真实状态。
   // 不再读 explorer.store.selectedPaths(从未被同步,留 cleanup 单独提交)。

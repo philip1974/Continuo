@@ -4,6 +4,7 @@ import type { FileEntry } from '@/lib/fs/types';
 import { Input } from '@/design';
 import { coApp } from '@/plugins/co-app';
 import { mergeDecorations } from '@/plugins/registries/ExplorerDecoratorRegistry';
+import { useSettingValue } from '@/plugins/settings/values-store';
 import { ContextMenu, type ContextMenuActions } from './ContextMenu';
 import { useExplorerClipboardStore } from './clipboard-store';
 import type { DropTargetEntry } from './drop-handlers';
@@ -27,7 +28,7 @@ interface FileRowProps {
 const ICON_SIZE = 16;
 // 28px 比 24 更松,Lokus / VSCode 同档(他们用 32);保持紧凑同时呼吸感更好
 const ROW_HEIGHT = 28;
-const INDENT = 16;
+const DEFAULT_INDENT = 16;
 
 /** 订阅插件装饰器 registry,plugin enable/disable 时所有 FileRow 自动重渲. */
 function useDecoration(path: string, isDirectory: boolean) {
@@ -76,6 +77,7 @@ export function FileRow({
   // headless-tree 内部 drag 时,drop 目标行高亮(drag preview 可能遮挡视线,
   // 没有这个 hover 反馈用户看不清要 drop 到哪)。
   const isInternalDropOver = item.isDraggingOver();
+  const indent = useSettingValue<number>('explorer.indentSize', DEFAULT_INDENT);
 
   const row = (
     <div
@@ -99,14 +101,14 @@ export function FileRow({
       style={{
         ...style,
         height: ROW_HEIGHT,
-        paddingLeft: 4 + level * INDENT,
+        paddingLeft: 4 + level * indent,
         // 缩进指南线用 CSS gradient 一笔画 N 条,替代之前每行 N 个 absolute span:
-        // 起点 12px = padding(4) + i=0 + 8(中线) ; 周期 INDENT=16px ; 1px 线宽。
-        // background-size 限定为 level*INDENT,no-repeat 防止画到内容区。
+        // 起点 = padding(4) + indent/2 ; 周期 indent ; 1px 线宽。
+        // background-size 限定为 level*indent,no-repeat 防止画到内容区。
         ...(level > 0 && {
-          backgroundImage: `repeating-linear-gradient(to right, var(--color-line) 0 1px, transparent 1px ${INDENT}px)`,
-          backgroundPosition: '12px 0',
-          backgroundSize: `${level * INDENT}px 100%`,
+          backgroundImage: `repeating-linear-gradient(to right, var(--color-line) 0 1px, transparent 1px ${indent}px)`,
+          backgroundPosition: `${4 + indent / 2}px 0`,
+          backgroundSize: `${level * indent}px 100%`,
           backgroundRepeat: 'no-repeat',
         }),
       }}
