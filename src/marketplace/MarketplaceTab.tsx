@@ -158,6 +158,22 @@ export function MarketplaceTab() {
     [refreshUpdates],
   );
 
+  // useCallback 让 TagButton memo 不被 inline arrow 撑破。
+  // setSelectedTags 函数式更新,无外部依赖 → deps=[].
+  // 必须在 early return 前声明(hooks 顺序规则)。
+  const toggleTag = useCallback((tag: string) => {
+    setSelectedTags((prev) => {
+      const next = new Set(prev);
+      if (next.has(tag)) next.delete(tag);
+      else next.add(tag);
+      return next;
+    });
+  }, []);
+
+  const clearTags = useCallback(() => {
+    setSelectedTags(new Set());
+  }, []);
+
   // Hooks 必须无条件按相同顺序;loading / error 时 entries=[],计算 noop
   const entries = state.kind === 'ok' ? state.entries : [];
   const allTags = useMemo(() => collectAllTags(entries), [entries]);
@@ -200,21 +216,6 @@ export function MarketplaceTab() {
       </div>
     );
   }
-
-  // useCallback 让 TagButton memo 不被 inline arrow 撑破。
-  // setSelectedTags 函数式更新,无外部依赖 → deps=[].
-  const toggleTag = useCallback((tag: string) => {
-    setSelectedTags((prev) => {
-      const next = new Set(prev);
-      if (next.has(tag)) next.delete(tag);
-      else next.add(tag);
-      return next;
-    });
-  }, []);
-
-  const clearTags = useCallback(() => {
-    setSelectedTags(new Set());
-  }, []);
 
   return (
     <div className="space-y-3">

@@ -7,7 +7,6 @@
 import { createElement, lazy } from 'react';
 import { Plugin } from '@/plugins/Plugin';
 import { PluginsTabContent } from '@/plugins/settings/PluginsTabContent';
-import { useSettingsStore } from '@/plugins/settings/store';
 import { lazyPanel } from '@/lib/lazy-panel';
 
 // MarketplaceTab 拉 reviews 渲染、远端清单 UI 等;懒加载到独立 chunk。
@@ -34,11 +33,6 @@ export default class PluginsTabPlugin extends Plugin {
       render: () => createElement(PluginsTabContent),
     });
 
-    this.addCommand({
-      id: 'settings.open',
-      title: '打开 Settings',
-      hotkey: 'mod+,',
-      fn: () => useSettingsStore.getState().open(),
-    });
+    // settings.open 命令 + ⌘, hotkey 已搬到 SettingsPanelPlugin。
   }
 }

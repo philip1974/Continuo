@@ -21,3 +21,25 @@ export function focusPanel(panelId: string): void {
   const panel = api.getPanel(panelId);
   if (panel) panel.api.setActive();
 }
+
+/**
+ * 单例 panel 打开/聚焦(VSCode Settings 风格):
+ * - 已存在同 id panel → setActive,不重建
+ * - 不存在 → addPanel({ id, component, title })
+ *
+ * dock 未就绪 → 静默忽略(开机时序保护)。
+ */
+export function openOrFocusPanel(
+  id: string,
+  component: string,
+  title: string,
+): void {
+  const api = apiRef;
+  if (!api) return;
+  const existing = api.getPanel(id);
+  if (existing) {
+    existing.api.setActive();
+    return;
+  }
+  api.addPanel({ id, component, title });
+}

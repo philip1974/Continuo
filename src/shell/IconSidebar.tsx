@@ -9,7 +9,7 @@ import { Folder } from '@react-symbols/icons';
 import { useLayoutUiStore } from '@/stores/layout-ui.store';
 import { NavRailButton } from '@/design';
 import { coApp } from '@/plugins/co-app';
-import { useSettingsStore } from '@/plugins/settings/store';
+import { openOrFocusPanel } from '@/shell/dock/dock-api-ref';
 import { useUpdateStore } from '@/marketplace/update-store';
 import type { RibbonActionSpec } from '@/plugins/registries/RibbonRegistry';
 
@@ -62,7 +62,7 @@ export function IconSidebar() {
       id: 'settings',
       label: '设置',
       node: <span className="text-xl leading-none">⚙</span>,
-      onClick: () => useSettingsStore.getState().open(),
+      onClick: () => openOrFocusPanel('settings', 'settings', 'Settings'),
     },
   ];
 

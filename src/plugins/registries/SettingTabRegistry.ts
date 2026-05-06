@@ -1,5 +1,5 @@
 // 设置标签贡献(M-Plugin v2.4)。
-// SettingsModal 订阅本 registry 渲染左侧 tab 列表 + 右侧内容。
+// SettingsPanel(v5 Phase 5,VSCode 同款)订阅本 registry 渲染左侧 tab 列表 + 右侧内容。
 
 import type { ReactNode } from 'react';
 import type { Disposable } from '../types';

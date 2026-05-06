@@ -11,7 +11,6 @@ import { TitleBar } from './TitleBar';
 import { CommandPalette } from '@/plugins/command-palette/CommandPalette';
 import { useCommandPaletteHotkey } from '@/plugins/command-palette/useCommandPaletteHotkey';
 import { useCommandHotkeys } from '@/plugins/command-palette/useCommandHotkeys';
-import { SettingsModal } from '@/plugins/settings/SettingsModal';
 import { PermissionPrompt } from '@/plugins/permissions/PermissionPrompt';
 import { AgentAuthPrompt } from './AgentAuthPrompt';
 import { coApp } from '@/plugins/co-app';
@@ -50,7 +49,6 @@ function MainApp() {
         <StatusBar />
       </div>
       <CommandPalette commands={coApp.commands} />
-      <SettingsModal settingTabs={coApp.settingTabs} />
       <PermissionPrompt />
       <AgentAuthPrompt />
       {showSplash && <Splash />}

@@ -251,9 +251,9 @@
 
 - [`setting-tab-registry.spec.ts`](./setting-tab-registry/setting-tab-registry.spec.ts)
 
-## [settings-modal(设置弹窗 UI)](./settings-modal/README.md)
+## [settings-panel(设置 Panel · VSCode 同款)](./settings-panel/README.md)
 
-- [`settings-modal.spec.tsx`](./settings-modal/settings-modal.spec.tsx)
+- [`settings-panel.spec.tsx`](./settings-panel/settings-panel.spec.tsx)
 
 ## [shell-service(plugin app.shell.exec 后端)](./shell-service/README.md)
 

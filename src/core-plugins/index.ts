@@ -7,6 +7,7 @@ import EditorPlugin from './EditorPlugin';
 import TerminalPlugin from './TerminalPlugin';
 import OutputPlugin from './OutputPlugin';
 import PluginsTabPlugin from './PluginsTabPlugin';
+import SettingsPanelPlugin from './SettingsPanelPlugin';
 import { coApp } from '@/plugins/co-app';
 import { createScopedApp } from '@/plugins/scoped-app';
 import type { Plugin } from '@/plugins/Plugin';
@@ -33,6 +34,14 @@ const CORES: readonly CoreEntry[] = [
   {
     Cls: PluginsTabPlugin as never,
     manifest: { id: 'core.plugins', name: 'PluginsTab', version: '1.0.0' },
+  },
+  {
+    Cls: SettingsPanelPlugin as never,
+    manifest: {
+      id: 'core.settings-panel',
+      name: 'SettingsPanel',
+      version: '1.0.0',
+    },
   },
 ];
 
