@@ -91,6 +91,34 @@ export default class SamplePlugin extends Plugin {
       return { badge: 'MD', badgeColor: 'var(--md-primary)' };
     });
 
+    // ── 6c. Explorer 右键菜单(V1 demo:.md 文件加"复制相对路径") ─
+    // plugin 通过 registerExplorerContextMenuItem 给 Explorer 右键菜单
+    // 加项。group 决定排序(内置 'new'/'edit'/'plugin'/'danger' 之外的
+    // 自定义 group 紧跟 'plugin' 段后)。when 谓词决定显隐。
+    this.registerExplorerContextMenuItem({
+      id: 'sample.copy-path',
+      label: '复制相对路径',
+      group: 'plugin',
+      when: (ctx) =>
+        ctx.target !== null && ctx.target.path.endsWith('.md'),
+      fn: async (ctx) => {
+        if (!ctx.target) return;
+        const rel = ctx.target.path.startsWith(ctx.rootPath)
+          ? ctx.target.path.slice(ctx.rootPath.length).replace(/^\/+/, '')
+          : ctx.target.path;
+        try {
+          await this.app.clipboard.writeText(rel);
+          alert(`已复制相对路径: ${rel}`);
+        } catch (err) {
+          if (err instanceof PermissionError) {
+            alert('clipboard 权限未授,无法复制');
+          } else {
+            alert(`复制失败: ${err.message}`);
+          }
+        }
+      },
+    });
+
     // ── 6b. Explorer icon(V2 demo:.secret → 🔐 替换默认 icon) ─
     // plugin 通过 Decoration.icon 贡献任意 ReactNode 替换 file-icon
     // 默认按扩展名映射的图标。typical 用例:git modified 状态、加密标记、

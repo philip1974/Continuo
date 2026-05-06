@@ -24,6 +24,7 @@ import { RibbonRegistry } from '../../plugins/registries/RibbonRegistry';
 import { EventBus } from '../../plugins/EventBus';
 import { InMemoryDataStore } from '../../plugins/PluginDataStore';
 import { SettingTabRegistry } from '../../plugins/registries/SettingTabRegistry';
+import { ExplorerContextMenuRegistry } from '../../plugins/registries/ExplorerContextMenuRegistry';
 import { ExplorerDecoratorRegistry } from '../../plugins/registries/ExplorerDecoratorRegistry';
 import { EditorActionRegistry } from '../../plugins/registries/EditorActionRegistry';
 import {
@@ -58,6 +59,7 @@ function makeApp(registry?: PluginMcpRegistry): CoApp {
     settingTabs: new SettingTabRegistry(),
     explorerDecorators: new ExplorerDecoratorRegistry(),
     editorActions: new EditorActionRegistry(),
+    explorerContextMenu: new ExplorerContextMenuRegistry(),
     mcp: registry ?? new PluginMcpRegistry(makeFakeUpstream()),
   };
 }

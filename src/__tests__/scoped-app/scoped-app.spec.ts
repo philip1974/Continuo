@@ -8,6 +8,7 @@ import {
 import { CommandRegistry } from '../../plugins/registries/CommandRegistry';
 import { EventBus } from '../../plugins/EventBus';
 import { EditorActionRegistry } from '../../plugins/registries/EditorActionRegistry';
+import { ExplorerContextMenuRegistry } from '../../plugins/registries/ExplorerContextMenuRegistry';
 import { ExplorerDecoratorRegistry } from '../../plugins/registries/ExplorerDecoratorRegistry';
 import { InMemoryDataStore } from '../../plugins/PluginDataStore';
 import { PanelRegistry } from '../../plugins/registries/PanelRegistry';
@@ -37,6 +38,7 @@ function makeLmApp(): CoApp {
     settingTabs: new SettingTabRegistry(),
     explorerDecorators: new ExplorerDecoratorRegistry(),
     editorActions: new EditorActionRegistry(),
+    explorerContextMenu: new ExplorerContextMenuRegistry(),
     mcp: new PluginMcpRegistry(noopMcpUpstream),
   };
 }

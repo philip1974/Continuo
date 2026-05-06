@@ -52,6 +52,8 @@ export interface CoApp {
   readonly explorerDecorators: import('./registries/ExplorerDecoratorRegistry').ExplorerDecoratorRegistry;
   /** EditorHeader 工具按钮贡献(v3.2). */
   readonly editorActions: import('./registries/EditorActionRegistry').EditorActionRegistry;
+  /** Explorer 右键菜单贡献(V1,2026-05). */
+  readonly explorerContextMenu: import('./registries/ExplorerContextMenuRegistry').ExplorerContextMenuRegistry;
   /** Plugin → MCP tool 注册表(v5 Phase 4),renderer 内单例. */
   readonly mcp: import('./registries/PluginMcpRegistry').PluginMcpRegistry;
 }

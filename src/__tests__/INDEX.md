@@ -108,6 +108,10 @@
 
 - [`event-bus.spec.ts`](./event-bus/event-bus.spec.ts)
 
+## [explorer-context-menu(资源管理器右键菜单 plugin 贡献点 V1)](./explorer-context-menu/README.md)
+
+- [`explorer-context-menu.spec.ts`](./explorer-context-menu/explorer-context-menu.spec.ts)
+
 ## [explorer-decorator(文件树装饰贡献)](./explorer-decorator/README.md)
 
 - [`explorer-decorator.spec.ts`](./explorer-decorator/explorer-decorator.spec.ts)

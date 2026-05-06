@@ -7,6 +7,7 @@
 import { CommandRegistry } from './registries/CommandRegistry';
 import { EventBus } from './EventBus';
 import { EditorActionRegistry } from './registries/EditorActionRegistry';
+import { ExplorerContextMenuRegistry } from './registries/ExplorerContextMenuRegistry';
 import { ExplorerDecoratorRegistry } from './registries/ExplorerDecoratorRegistry';
 import { InMemoryDataStore } from './PluginDataStore';
 import { PanelRegistry } from './registries/PanelRegistry';
@@ -42,6 +43,7 @@ export function createTestCoApp(version = '1.0.0-test'): CoApp {
     settingTabs: new SettingTabRegistry(),
     explorerDecorators: new ExplorerDecoratorRegistry(),
     editorActions: new EditorActionRegistry(),
+    explorerContextMenu: new ExplorerContextMenuRegistry(),
     mcp: new PluginMcpRegistry(noopMcpUpstream),
   };
 }

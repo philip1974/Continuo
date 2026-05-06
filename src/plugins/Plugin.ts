@@ -12,6 +12,7 @@ import type { RibbonActionSpec } from './registries/RibbonRegistry';
 import type { SettingTabSpec } from './registries/SettingTabRegistry';
 import type { DecoratorFn } from './registries/ExplorerDecoratorRegistry';
 import type { EditorActionSpec } from './registries/EditorActionRegistry';
+import type { ExplorerContextMenuItemSpec } from './registries/ExplorerContextMenuRegistry';
 import type { PluginMcpToolSpec } from './registries/PluginMcpRegistry';
 
 export type { Disposable } from './types';
@@ -89,6 +90,13 @@ export abstract class Plugin {
 
   protected registerEditorAction(spec: EditorActionSpec): Disposable {
     return this.register(this.app.editorActions.register(spec));
+  }
+
+  /** Explorer 右键菜单贡献(V1,2026-05). 同步返 Disposable,_deactivate 自动清理. */
+  protected registerExplorerContextMenuItem(
+    spec: ExplorerContextMenuItemSpec,
+  ): Disposable {
+    return this.register(this.app.explorerContextMenu.register(spec));
   }
 
   /**
