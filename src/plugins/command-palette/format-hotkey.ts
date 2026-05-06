@@ -70,12 +70,26 @@ function formatPart(part: string, platform: Platform): string {
   return part.toUpperCase();
 }
 
-export function formatHotkey(raw: string, platform: Platform): string {
-  if (!raw) return '';
-  const parts = raw
+/**
+ * 拆 raw 为 platform-aware 的 parts 数组。给 KeyCap 渲染用(每个 part
+ * 一个 keycap)。例:`mod+shift+h` mac → ['⌘','⇧','H'];other →
+ * ['Ctrl','Shift','H']。
+ *
+ * 空字符串 / 全 + → 空数组(调用方判空)。
+ */
+export function formatHotkeyParts(
+  raw: string,
+  platform: Platform,
+): string[] {
+  if (!raw) return [];
+  return raw
     .split('+')
     .filter((p) => p.length > 0)
     .map((p) => formatPart(p, platform));
+}
+
+export function formatHotkey(raw: string, platform: Platform): string {
+  const parts = formatHotkeyParts(raw, platform);
   if (parts.length === 0) return '';
   // mac 紧贴拼接,other 用 + 分隔
   return platform === 'mac' ? parts.join('') : parts.join('+');

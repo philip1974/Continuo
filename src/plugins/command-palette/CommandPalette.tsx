@@ -9,7 +9,7 @@
 // - execute 后 record 进 recent
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Input, Modal } from '@/design';
+import { Input, KeyCap, Modal } from '@/design';
 import type {
   CommandRegistry,
   CommandSpec,
@@ -17,7 +17,7 @@ import type {
 import { useCommandPaletteStore } from './store';
 import { fuzzyFilter } from './fuzzy';
 import { useRecentCommandsStore } from './recent';
-import { formatHotkey, detectPlatform } from './format-hotkey';
+import { formatHotkeyParts, detectPlatform } from './format-hotkey';
 
 // module 顶层一次,renderer 生命周期内不会切平台
 const PLATFORM = detectPlatform();
@@ -144,8 +144,10 @@ export function CommandPalette({ commands }: CommandPaletteProps) {
                 )}
                 <span className="truncate">{cmd.title}</span>
                 {cmd.hotkey && (
-                  <span className="ml-auto shrink-0 text-[10px] text-fg-dim">
-                    {formatHotkey(cmd.hotkey, PLATFORM)}
+                  <span className="ml-auto flex shrink-0 items-center gap-0.5">
+                    {formatHotkeyParts(cmd.hotkey, PLATFORM).map((p, i) => (
+                      <KeyCap key={`${p}-${i}`}>{p}</KeyCap>
+                    ))}
                   </span>
                 )}
               </li>

@@ -71,12 +71,16 @@ describe('CommandPalette UI', () => {
     expect(useCommandPaletteStore.getState().isOpen).toBe(false);
   });
 
-  it('显示 hotkey 后缀(formatHotkey 转后:jsdom navigator → other → "Ctrl+S")', () => {
+  it('显示 hotkey 后缀(KeyCap 渲染:jsdom → other → 多个 kbd 拼成 "CtrlS")', () => {
     const reg = makeReg();
     render(<CommandPalette commands={reg} />);
     act(() => useCommandPaletteStore.getState().open());
     const firstLi = document.querySelector('.wm-modal-content li')!;
-    // jsdom navigator.platform 默认空,detectPlatform 返 'other'
-    expect(firstLi.textContent).toContain('Ctrl+S');
+    // jsdom navigator.platform 默认空,detectPlatform 返 'other';
+    // KeyCap 拆开 ['Ctrl', 'S'] 各自一个 kbd,textContent 串起来 = "CtrlS"
+    const kbds = firstLi.querySelectorAll('kbd.wm-keycap');
+    expect(kbds.length).toBe(2);
+    expect(kbds[0]?.textContent).toBe('Ctrl');
+    expect(kbds[1]?.textContent).toBe('S');
   });
 });

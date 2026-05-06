@@ -4,6 +4,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   formatHotkey,
+  formatHotkeyParts,
   detectPlatform,
 } from '../../plugins/command-palette/format-hotkey';
 
@@ -125,6 +126,34 @@ describe('formatHotkey · 边界', () => {
 // ────────────────────────────────────────────────────────────
 // detectPlatform
 // ────────────────────────────────────────────────────────────
+
+// ────────────────────────────────────────────────────────────
+// formatHotkeyParts(给 KeyCap 渲染用)
+// ────────────────────────────────────────────────────────────
+
+describe('formatHotkeyParts', () => {
+  it.each<[string, 'mac' | 'other', string[]]>([
+    ['mod+s', 'mac', ['⌘', 'S']],
+    ['mod+s', 'other', ['Ctrl', 'S']],
+    ['mod+shift+h', 'mac', ['⌘', '⇧', 'H']],
+    ['mod+shift+h', 'other', ['Ctrl', 'Shift', 'H']],
+    ['mod+,', 'mac', ['⌘', ',']],
+    ['mod+,', 'other', ['Ctrl', ',']],
+    ['escape', 'mac', ['⎋']],
+    ['escape', 'other', ['Esc']],
+    ['', 'mac', []],
+    ['', 'other', []],
+  ])('"%s" platform=%s → %j', (raw, platform, expected) => {
+    expect(formatHotkeyParts(raw, platform)).toEqual(expected);
+  });
+
+  it('formatHotkey 是 formatHotkeyParts 的字符串 join 版', () => {
+    const parts = formatHotkeyParts('mod+shift+h', 'mac');
+    expect(parts.join('')).toBe(formatHotkey('mod+shift+h', 'mac'));
+    const partsOther = formatHotkeyParts('mod+shift+h', 'other');
+    expect(partsOther.join('+')).toBe(formatHotkey('mod+shift+h', 'other'));
+  });
+});
 
 describe('detectPlatform', () => {
   it('返回 "mac" 或 "other"', () => {
