@@ -144,6 +144,9 @@ export function createTreeConfig(
     // 文件树 drop 语义:只允许 drop into folder(no reorder);
     // 不能 drop 到自身或自身子树(loop);drop 到 file → 进父目录
     canReorder: false,
+    // hover 折叠的文件夹达到此阈值时自动展开,方便拖到深层子目录
+    // (VSCode 同款)。headless-tree 默认 800ms,我们调到 500ms 更跟手。
+    openOnDropDelay: 500,
     canDrop: (items, target) => {
       const destDir = resolveDest(target);
       for (const it of items) {
@@ -159,6 +162,10 @@ export function createTreeConfig(
           return false;
         }
       }
+      // 注意:dirname(srcId) === destDir(拖到当前父目录 = no-op)在这里 *不* 拦,
+      // 否则 headless-tree 的 getDragTarget(canReorder=false)会因 canBecomeSibling=false
+      // 递归到 parent 把 target 解析回源的当前父目录,反而触发整体 silent fail。
+      // 实际处理时(onDropItems)再按 src parent === destDir skip 即可(VSCode 同款)。
       return true;
     },
     onDrop: (items, target) => {

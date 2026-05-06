@@ -73,6 +73,9 @@ export function FileRow({
   const isCutMarked = useExplorerClipboardStore(
     (s) => s.kind === 'cut' && s.paths.includes(data.path),
   );
+  // headless-tree 内部 drag 时,drop 目标行高亮(drag preview 可能遮挡视线,
+  // 没有这个 hover 反馈用户看不清要 drop 到哪)。
+  const isInternalDropOver = item.isDraggingOver();
 
   const row = (
     <div
@@ -111,8 +114,8 @@ export function FileRow({
         'flex items-center gap-1 text-xs select-none',
         'border-l-2',
         isFocused ? 'border-accent' : 'border-transparent',
-        isDropHover
-          ? 'bg-accent/20 text-fg'
+        isDropHover || isInternalDropOver
+          ? 'bg-accent/30 text-fg ring-1 ring-inset ring-accent/60'
           : isSelected
             ? 'bg-hover text-fg'
             : 'text-fg-muted hover:bg-panel-soft',

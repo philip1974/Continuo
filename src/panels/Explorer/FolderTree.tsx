@@ -331,9 +331,18 @@ export function FolderTree({ root }: { root: string }) {
     if (!dragActive) setDragActive(true);
   };
   const handleDragOver = (e: React.DragEvent) => {
-    if (!e.dataTransfer.types.includes('Files')) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'copy';
+    if (e.dataTransfer.types.includes('Files')) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+      return;
+    }
+    // 内部 drag drop 到空白(root level)— root row 不渲染,headless-tree
+    // 接不到,需要容器 div 自己 preventDefault 把空白也变成有效 drop target
+    const dnd = tree.getState().dnd;
+    if (dnd?.draggedItems && dnd.draggedItems.length > 0) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+    }
   };
   const handleDragLeave = (e: React.DragEvent) => {
     if (!e.dataTransfer.types.includes('Files')) return;
@@ -345,7 +354,34 @@ export function FolderTree({ root }: { root: string }) {
     }
   };
   const handleDrop = async (e: React.DragEvent) => {
-    if (!e.dataTransfer.types.includes('Files')) return;
+    // 内部 drag drop 到空白(root level)— headless-tree row onDrop 接不到 root row
+    if (!e.dataTransfer.types.includes('Files')) {
+      const dnd = tree.getState().dnd;
+      if (!dnd?.draggedItems || dnd.draggedItems.length === 0) return;
+      e.preventDefault();
+      const items = dnd.draggedItems.slice();
+      // 同步清掉 dnd 状态,避免后续 dragend 处理脏状态
+      const srcs = items.map((it) => it.getId());
+      // 已经在 root 下的不动(VSCode 同款)
+      const moveable = srcs.filter((s) => dirname(s) !== root);
+      if (moveable.length === 0) return;
+      for (const src of moveable) {
+        const dest = await pickUniqueDest(root, basename(src));
+        const r = await coApi.fs.move(src, dest);
+        if (!r.ok) {
+          console.warn('[explorer] root drop move failed', src, r.code, r.message);
+          alert(`移动失败:${src}\n[${r.code}] ${r.message}`);
+          return;
+        }
+        useEditorStore.getState().renamePath(src, dest);
+      }
+      refreshParent(root);
+      const srcParents = new Set(moveable.map((s) => dirname(s)));
+      for (const sp of srcParents) {
+        if (sp !== root) refreshParent(sp);
+      }
+      return;
+    }
     e.preventDefault();
     dragDepthRef.current = 0;
     setDragActive(false);
