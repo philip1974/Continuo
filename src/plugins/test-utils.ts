@@ -16,6 +16,7 @@ import {
   type PluginMcpUpstream,
 } from './registries/PluginMcpRegistry';
 import { RibbonRegistry } from './registries/RibbonRegistry';
+import { SettingItemRegistry } from './registries/SettingItemRegistry';
 import { SettingTabRegistry } from './registries/SettingTabRegistry';
 import { StatusBarRegistry } from './registries/StatusBarRegistry';
 import { createScopedApp } from './scoped-app';
@@ -41,6 +42,7 @@ export function createTestCoApp(version = '1.0.0-test'): CoApp {
     events: new EventBus(),
     dataStore: new InMemoryDataStore(),
     settingTabs: new SettingTabRegistry(),
+    settingItems: new SettingItemRegistry(),
     explorerDecorators: new ExplorerDecoratorRegistry(),
     editorActions: new EditorActionRegistry(),
     explorerContextMenu: new ExplorerContextMenuRegistry(),

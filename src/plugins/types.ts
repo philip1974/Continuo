@@ -48,6 +48,8 @@ export interface CoApp {
   dataStore: import('./PluginDataStore').PluginDataStore;
   /** 设置标签贡献(v2.4). */
   readonly settingTabs: import('./registries/SettingTabRegistry').SettingTabRegistry;
+  /** 单个设置项贡献(v6:plugin 注册一个 toggle/select 自动出现在对应 tab). */
+  readonly settingItems: import('./registries/SettingItemRegistry').SettingItemRegistry;
   /** Explorer 文件树装饰贡献(v3.1). */
   readonly explorerDecorators: import('./registries/ExplorerDecoratorRegistry').ExplorerDecoratorRegistry;
   /** EditorHeader 工具按钮贡献(v3.2). */

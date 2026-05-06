@@ -4,6 +4,7 @@
 // 所以同步 boot 后 coApp.<reg>.getAll() 已包含贡献。
 
 import EditorPlugin from './EditorPlugin';
+import GeneralTabPlugin from './GeneralTabPlugin';
 import TerminalPlugin from './TerminalPlugin';
 import OutputPlugin from './OutputPlugin';
 import PluginsTabPlugin from './PluginsTabPlugin';
@@ -47,6 +48,10 @@ const CORES: readonly CoreEntry[] = [
   {
     Cls: KeybindingsTabPlugin as never,
     manifest: { id: 'core.keybindings', name: 'KeybindingsTab', version: '1.0.0' },
+  },
+  {
+    Cls: GeneralTabPlugin as never,
+    manifest: { id: 'core.general', name: 'GeneralTab', version: '1.0.0' },
   },
 ];
 

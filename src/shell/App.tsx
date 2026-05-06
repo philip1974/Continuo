@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { MotionConfig } from 'motion/react';
 import { ThemeProvider } from '@/theme';
+import { useThemeBinding } from '@/theme/binding';
 import { DockShell } from './dock/DockShell';
 import { Splash } from './decor/Splash';
 import { ExplorerSidebar } from './ExplorerSidebar';
@@ -61,9 +62,16 @@ function MainApp() {
   );
 }
 
+// 必须在 ThemeProvider 内才能 useTheme;独立组件持有 useThemeBinding
+function ThemeBinder() {
+  useThemeBinding();
+  return null;
+}
+
 export function App() {
   return (
     <ThemeProvider>
+      <ThemeBinder />
       <MotionConfig reducedMotion="user">
         {isPopoutWindow() ? <PopoutHost /> : <MainApp />}
       </MotionConfig>

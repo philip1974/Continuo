@@ -9,6 +9,7 @@ import type { PanelSpec } from './registries/PanelRegistry';
 import type { CommandSpec } from './registries/CommandRegistry';
 import type { StatusBarItemSpec } from './registries/StatusBarRegistry';
 import type { RibbonActionSpec } from './registries/RibbonRegistry';
+import type { SettingItemSpec } from './registries/SettingItemRegistry';
 import type { SettingTabSpec } from './registries/SettingTabRegistry';
 import type { DecoratorFn } from './registries/ExplorerDecoratorRegistry';
 import type { EditorActionSpec } from './registries/EditorActionRegistry';
@@ -82,6 +83,11 @@ export abstract class Plugin {
 
   protected addSettingTab(spec: SettingTabSpec): Disposable {
     return this.register(this.app.settingTabs.register(spec));
+  }
+
+  /** 注册单个设置项(v6),Plugin 卸载时自动 dispose. */
+  protected addSettingItem(spec: SettingItemSpec): Disposable {
+    return this.register(this.app.settingItems.register(spec));
   }
 
   protected registerExplorerDecorator(fn: DecoratorFn): Disposable {

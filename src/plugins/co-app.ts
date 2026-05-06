@@ -12,6 +12,7 @@ import { InMemoryDataStore } from './PluginDataStore';
 import { PanelRegistry } from './registries/PanelRegistry';
 import { PluginMcpRegistry } from './registries/PluginMcpRegistry';
 import { RibbonRegistry } from './registries/RibbonRegistry';
+import { SettingItemRegistry } from './registries/SettingItemRegistry';
 import { SettingTabRegistry } from './registries/SettingTabRegistry';
 import { StatusBarRegistry } from './registries/StatusBarRegistry';
 import { createIpcPluginMcpUpstream } from './plugin-mcp-upstream';
@@ -36,6 +37,7 @@ export const coApp: CoApp = {
   // v2.3 默认 InMemoryDataStore;v3 接入 IPC 持久化
   dataStore: new InMemoryDataStore(),
   settingTabs: new SettingTabRegistry(),
+  settingItems: new SettingItemRegistry(),
   explorerDecorators: new ExplorerDecoratorRegistry(),
   editorActions: new EditorActionRegistry(),
   explorerContextMenu: new ExplorerContextMenuRegistry(),

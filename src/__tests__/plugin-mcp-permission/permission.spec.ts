@@ -23,6 +23,7 @@ import { StatusBarRegistry } from '../../plugins/registries/StatusBarRegistry';
 import { RibbonRegistry } from '../../plugins/registries/RibbonRegistry';
 import { EventBus } from '../../plugins/EventBus';
 import { InMemoryDataStore } from '../../plugins/PluginDataStore';
+import { SettingItemRegistry } from '../../plugins/registries/SettingItemRegistry';
 import { SettingTabRegistry } from '../../plugins/registries/SettingTabRegistry';
 import { ExplorerContextMenuRegistry } from '../../plugins/registries/ExplorerContextMenuRegistry';
 import { ExplorerDecoratorRegistry } from '../../plugins/registries/ExplorerDecoratorRegistry';
@@ -57,6 +58,7 @@ function makeApp(registry?: PluginMcpRegistry): CoApp {
     events: new EventBus(),
     dataStore: new InMemoryDataStore(),
     settingTabs: new SettingTabRegistry(),
+    settingItems: new SettingItemRegistry(),
     explorerDecorators: new ExplorerDecoratorRegistry(),
     editorActions: new EditorActionRegistry(),
     explorerContextMenu: new ExplorerContextMenuRegistry(),

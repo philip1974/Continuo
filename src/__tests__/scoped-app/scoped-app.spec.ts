@@ -13,6 +13,7 @@ import { ExplorerDecoratorRegistry } from '../../plugins/registries/ExplorerDeco
 import { InMemoryDataStore } from '../../plugins/PluginDataStore';
 import { PanelRegistry } from '../../plugins/registries/PanelRegistry';
 import { RibbonRegistry } from '../../plugins/registries/RibbonRegistry';
+import { SettingItemRegistry } from '../../plugins/registries/SettingItemRegistry';
 import { SettingTabRegistry } from '../../plugins/registries/SettingTabRegistry';
 import { StatusBarRegistry } from '../../plugins/registries/StatusBarRegistry';
 import type { CoApp } from '../../plugins/types';
@@ -36,6 +37,7 @@ function makeLmApp(): CoApp {
     events: new EventBus(),
     dataStore: new InMemoryDataStore(),
     settingTabs: new SettingTabRegistry(),
+    settingItems: new SettingItemRegistry(),
     explorerDecorators: new ExplorerDecoratorRegistry(),
     editorActions: new EditorActionRegistry(),
     explorerContextMenu: new ExplorerContextMenuRegistry(),
