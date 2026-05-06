@@ -19,18 +19,18 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('useCommandPaletteHotkey', () => {
-  it('Meta+P 打开 palette', () => {
+  it('Meta+Shift+P 打开 palette(让位 ⌘P 给 Quick Open)', () => {
     render(<Probe />);
     document.dispatchEvent(
-      new KeyboardEvent('keydown', { key: 'p', metaKey: true }),
+      new KeyboardEvent('keydown', { key: 'p', metaKey: true, shiftKey: true }),
     );
     expect(useCommandPaletteStore.getState().isOpen).toBe(true);
   });
 
-  it('Ctrl+P 同样打开(非 mac)', () => {
+  it('Ctrl+Shift+P 同样打开(非 mac)', () => {
     render(<Probe />);
     document.dispatchEvent(
-      new KeyboardEvent('keydown', { key: 'p', ctrlKey: true }),
+      new KeyboardEvent('keydown', { key: 'p', ctrlKey: true, shiftKey: true }),
     );
     expect(useCommandPaletteStore.getState().isOpen).toBe(true);
   });
@@ -38,6 +38,14 @@ describe('useCommandPaletteHotkey', () => {
   it('已 open 再按 → 关闭(toggle)', () => {
     render(<Probe />);
     useCommandPaletteStore.getState().open();
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'p', metaKey: true, shiftKey: true }),
+    );
+    expect(useCommandPaletteStore.getState().isOpen).toBe(false);
+  });
+
+  it('Meta+P 不带 shift → 不触发(留给 Quick Open)', () => {
+    render(<Probe />);
     document.dispatchEvent(
       new KeyboardEvent('keydown', { key: 'p', metaKey: true }),
     );
@@ -54,7 +62,7 @@ describe('useCommandPaletteHotkey', () => {
     const { unmount } = render(<Probe />);
     unmount();
     document.dispatchEvent(
-      new KeyboardEvent('keydown', { key: 'p', metaKey: true }),
+      new KeyboardEvent('keydown', { key: 'p', metaKey: true, shiftKey: true }),
     );
     expect(useCommandPaletteStore.getState().isOpen).toBe(false);
   });

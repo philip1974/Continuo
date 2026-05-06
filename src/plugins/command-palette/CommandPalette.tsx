@@ -89,12 +89,12 @@ export function CommandPalette({ commands }: CommandPaletteProps) {
                 key={cmd.id}
                 className={[
                   'flex cursor-pointer items-center justify-between px-3 py-1.5 text-xs',
+                  // selectedIndex 跟键盘走;鼠标 hover 用独立的 hover:bg-hover/50
                   idx === selectedIndex
                     ? 'bg-hover text-fg'
                     : 'text-fg-muted hover:bg-hover/50',
                 ].join(' ')}
                 onClick={() => void execute(cmd)}
-                onMouseEnter={() => moveSelection(idx - selectedIndex, filtered.length)}
               >
                 <span className="truncate">{cmd.title}</span>
                 {cmd.hotkey && (

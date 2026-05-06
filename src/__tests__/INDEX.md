@@ -238,6 +238,11 @@
 
 - [`protocol-url.spec.ts`](./protocol-url/protocol-url.spec.ts)
 
+## [quick-open(⌘P 文件模糊搜索)](./quick-open/README.md)
+
+- [`store.spec.ts`](./quick-open/store.spec.ts)
+- [`walk-files.spec.ts`](./quick-open/walk-files.spec.ts)
+
 ## [ribbon-registry(IconSidebar 活动栏图标贡献)](./ribbon-registry/README.md)
 
 - [`ribbon-registry.spec.ts`](./ribbon-registry/ribbon-registry.spec.ts)

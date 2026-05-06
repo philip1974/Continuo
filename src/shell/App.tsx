@@ -11,6 +11,8 @@ import { TitleBar } from './TitleBar';
 import { CommandPalette } from '@/plugins/command-palette/CommandPalette';
 import { useCommandPaletteHotkey } from '@/plugins/command-palette/useCommandPaletteHotkey';
 import { useCommandHotkeys } from '@/plugins/command-palette/useCommandHotkeys';
+import { QuickOpenModal } from '@/plugins/quick-open/QuickOpenModal';
+import { useQuickOpenHotkey } from '@/plugins/quick-open/useQuickOpenHotkey';
 import { PermissionPrompt } from '@/plugins/permissions/PermissionPrompt';
 import { AgentAuthPrompt } from './AgentAuthPrompt';
 import { coApp } from '@/plugins/co-app';
@@ -27,7 +29,9 @@ function MainApp() {
     return () => clearTimeout(t);
   }, []);
 
-  // 全局 ⌘P / Ctrl+P 触发命令面板
+  // 全局 ⌘P / Ctrl+P 触发 Quick Open(文件搜索,VSCode 同款)
+  useQuickOpenHotkey();
+  // 全局 ⌘⇧P / Ctrl+Shift+P 触发命令面板(让位给 Quick Open)
   useCommandPaletteHotkey();
   // 全局 commands 注册的 hotkey 监听 + 派发(M-Plugin v1.6 补漏)
   useCommandHotkeys(coApp.commands);
@@ -49,6 +53,7 @@ function MainApp() {
         <StatusBar />
       </div>
       <CommandPalette commands={coApp.commands} />
+      <QuickOpenModal />
       <PermissionPrompt />
       <AgentAuthPrompt />
       {showSplash && <Splash />}
