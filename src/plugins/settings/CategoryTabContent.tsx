@@ -1,7 +1,9 @@
 // 渲染某 category 下所有 SettingItemSpec 的列表(M-Settings v6)。
 // 通用:不同 category(general / editor / ...)只是 prop 不同,这一份组件复用。
+// 同 category 内可按 spec.group 分组,group 出现顺序由首项 priority 决定;
+// 无 group 的项归 default bucket(无 header,渲染在最前)。
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { coApp } from '@/plugins/co-app';
 import type {
   SettingItemRegistry,
@@ -27,18 +29,49 @@ function useItems(
   return snap;
 }
 
+interface Bucket {
+  /** undefined = default bucket(无 header). */
+  readonly group: string | undefined;
+  readonly items: readonly SettingItemSpec[];
+}
+
+/** 按 spec.group 分组,保留 priority 顺序. group 出现顺序由首项决定. */
+function groupItems(items: readonly SettingItemSpec[]): Bucket[] {
+  const map = new Map<string | undefined, SettingItemSpec[]>();
+  for (const spec of items) {
+    const key = spec.group;
+    let arr = map.get(key);
+    if (!arr) {
+      arr = [];
+      map.set(key, arr);
+    }
+    arr.push(spec);
+  }
+  return Array.from(map.entries()).map(([group, items]) => ({ group, items }));
+}
+
 export function CategoryTabContent({
   category,
   registry = coApp.settingItems,
 }: CategoryTabContentProps) {
   const items = useItems(registry, category);
+  const buckets = useMemo(() => groupItems(items), [items]);
   if (items.length === 0) {
     return <div className="text-fg-dim">本类暂无设置项</div>;
   }
   return (
     <div className="flex flex-col">
-      {items.map((spec) => (
-        <SettingItemRow key={spec.id} spec={spec} />
+      {buckets.map((bucket) => (
+        <section key={bucket.group ?? '_default'} className="mb-2">
+          {bucket.group && (
+            <h3 className="mb-1 mt-4 border-b border-line pb-1 text-[11px] font-medium uppercase tracking-wider text-fg first:mt-0">
+              {bucket.group}
+            </h3>
+          )}
+          {bucket.items.map((spec) => (
+            <SettingItemRow key={spec.id} spec={spec} />
+          ))}
+        </section>
       ))}
     </div>
   );

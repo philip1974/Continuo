@@ -16,10 +16,11 @@ export default class EditorTabPlugin extends Plugin {
       render: () => createElement(CategoryTabContent, { category: 'editor' }),
     });
 
-    // 字号(应用到 CodeEditor 的 CodeMirror 实例 — CSS variable 联动)
+    // ── 外观 ──
     this.addSettingItem({
       id: 'editor.fontSize',
       category: 'editor',
+      group: '外观',
       title: '字号',
       description: 'CodeEditor(代码 / Source mode)的字号,单位 px。',
       type: 'number',
@@ -29,11 +30,10 @@ export default class EditorTabPlugin extends Plugin {
       step: 1,
       priority: 1,
     });
-
-    // 行号(隐藏整列 gutters:行号 + fold marker)
     this.addSettingItem({
       id: 'editor.lineNumbers',
       category: 'editor',
+      group: '外观',
       title: '显示行号',
       description: 'CodeEditor 是否显示行号(同时控制代码折叠 marker)。',
       type: 'boolean',
@@ -41,21 +41,21 @@ export default class EditorTabPlugin extends Plugin {
       priority: 2,
     });
 
-    // 自动保存(Markdown)— EditorPanel 订阅
+    // ── 自动保存 ──
     this.addSettingItem({
       id: 'autoSave.markdown.enabled',
       category: 'editor',
+      group: '自动保存',
       title: '自动保存 Markdown',
       description: '关闭后 Markdown 也需 ⌘S 显式保存。代码文件不自动保存。',
       type: 'boolean',
       default: true,
       priority: 10,
     });
-
-    // 自动保存延迟(防抖窗口,ms)
     this.addSettingItem({
       id: 'autoSave.delayMs',
       category: 'editor',
+      group: '自动保存',
       title: '自动保存延迟',
       description: '停止输入多久后触发自动保存,单位毫秒。',
       type: 'number',

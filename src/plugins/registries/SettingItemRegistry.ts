@@ -21,6 +21,9 @@ export interface SettingItemSpec {
   readonly id: string;
   /** 归属 category(决定哪个 tab 渲染本项),如 'general' / 'editor'. */
   readonly category: string;
+  /** 同 category 内的子分组(可选). 同 group 的 items 一起渲染,
+   *  group header 显示在第一项之前. 缺失时归 default bucket(无 header). */
+  readonly group?: string;
   readonly title: string;
   readonly description?: string;
   readonly type: SettingItemType;
