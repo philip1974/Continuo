@@ -298,6 +298,12 @@ export interface McpHost {
   registerTool(tool: AnyMcpTool): void;
   /** registerTool 反操作。unknown name 静默 noop. */
   removeTool(name: string): void;
+  /**
+   * 推 JSON-RPC notification(无 id)给所有 SSE 客户端。
+   * 例:`broadcast('notifications/tools/list_changed')` 让 client 重拉 tools/list。
+   * 写入失败的 connection 自动从 sseClients 摘掉。
+   */
+  broadcast(method: string, params?: Record<string, unknown>): void;
   rotateToken(): string;
   close(): Promise<void>;
 }
@@ -504,6 +510,22 @@ export async function createMcpHost(
     },
     removeTool(name: string): void {
       tools.delete(name);
+    },
+    broadcast(method: string, params?: Record<string, unknown>): void {
+      // SSE event 格式:`data: <json>\n\n`(双 \n 表示 event 结束).
+      // notification 是 JSON-RPC 2.0 无 id 形态.
+      const payload: Record<string, unknown> = { jsonrpc: '2.0', method };
+      if (params !== undefined) payload.params = params;
+      const line = `data: ${JSON.stringify(payload)}\n\n`;
+      const dead: ServerResponse[] = [];
+      for (const c of sseClients) {
+        try {
+          c.write(line);
+        } catch {
+          dead.push(c);
+        }
+      }
+      for (const c of dead) sseClients.delete(c);
     },
     rotateToken(): string {
       token = generateToken();

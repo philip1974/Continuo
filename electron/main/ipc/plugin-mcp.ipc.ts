@@ -31,6 +31,10 @@ import {
   type PluginMcpToolOwner,
 } from '../services/plugin-mcp-bridge.service';
 import type { McpHost } from '../services/mcp-host.service';
+import type { StdioSocketServer } from '../services/mcp-stdio-server.service';
+
+/** MCP 标准 method:tool 集变更通知. */
+const TOOLS_LIST_CHANGED = 'notifications/tools/list_changed';
 
 // ── 内部状态(模块级单例) ────────────────────────────────────
 
@@ -50,8 +54,13 @@ export function _resetPluginMcpIpcForTests(): void {
  * - 注 ipcMain.handle PLUGIN_MCP_CHANNELS.REGISTER / UNREGISTER(invoke + IpcResult)
  * - 注 ipcMain.on PLUGIN_MCP_CHANNELS.INVOKE_REPLY(send + 无回应)
  * - send 用 webContents.fromId(wcId).send(...);wc destroyed → handleWebContentsGone
+ * - bridge tool 集变更 → 推 `notifications/tools/list_changed` 给所有 SSE
+ *   + stdio 客户端,Codex / Claude Code 收到后自动重拉 tools/list
  */
-export function startPluginMcpIpc(host: McpHost): {
+export function startPluginMcpIpc(
+  host: McpHost,
+  stdio?: StdioSocketServer,
+): {
   bridge: PluginMcpBridge;
   invokeRemote: InvokeRemoteCore;
 } {
@@ -79,6 +88,10 @@ export function startPluginMcpIpc(host: McpHost): {
       tools: host.tools,
     },
     invokeRemote: localInvoke,
+    notifyToolsChanged: () => {
+      host.broadcast(TOOLS_LIST_CHANGED);
+      stdio?.broadcast(TOOLS_LIST_CHANGED);
+    },
   });
 
   bridge = localBridge;

@@ -59,6 +59,11 @@ export function splitLines(state: FramingState, chunk: string): SplitResult {
 
 export interface StdioSocketServer {
   readonly socketPath: string;
+  /**
+   * 推 JSON-RPC notification(无 id)给所有 stdio 客户端.
+   * 写入失败的 socket 自动摘掉.
+   */
+  broadcast(method: string, params?: Record<string, unknown>): void;
   close(): Promise<void>;
 }
 
@@ -153,7 +158,10 @@ export async function createStdioSocketServer(
     }
   }
 
+  const clients = new Set<Socket>();
+
   const server: NetServer = createNetServer((sock) => {
+    clients.add(sock);
     let state: FramingState = { buf: '' };
     sock.on('data', (chunk: Buffer) => {
       const r = splitLines(state, chunk.toString('utf8'));
@@ -166,6 +174,9 @@ export async function createStdioSocketServer(
           console.warn('[mcp-stdio] handleLine threw', err);
         });
       }
+    });
+    sock.on('close', () => {
+      clients.delete(sock);
     });
     sock.on('error', () => {
       /* connection error,close 事件会清理 */
@@ -191,7 +202,22 @@ export async function createStdioSocketServer(
 
   return {
     socketPath: opts.socketPath,
+    broadcast(method: string, params?: Record<string, unknown>): void {
+      const payload: Record<string, unknown> = { jsonrpc: '2.0', method };
+      if (params !== undefined) payload.params = params;
+      const line = JSON.stringify(payload) + '\n';
+      const dead: Socket[] = [];
+      for (const c of clients) {
+        try {
+          c.write(line);
+        } catch {
+          dead.push(c);
+        }
+      }
+      for (const c of dead) clients.delete(c);
+    },
     async close(): Promise<void> {
+      clients.clear();
       await new Promise<void>((resolve) => server.close(() => resolve()));
       if (!isWin) {
         try {

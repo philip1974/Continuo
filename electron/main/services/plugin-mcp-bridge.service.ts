@@ -204,6 +204,12 @@ export interface PluginMcpBridgeHost {
 export interface CreatePluginMcpBridgeDeps {
   host: PluginMcpBridgeHost;
   invokeRemote: InvokeRemoteCore;
+  /**
+   * 可选:tool 集变更时调(register / unregister / wcGone 摘到 tool)。
+   * 调用方可在此触发 MCP `notifications/tools/list_changed` 推给所有
+   * MCP client(HTTP SSE / stdio sock)。失败 / unknown / 假冒 等不调。
+   */
+  notifyToolsChanged?: () => void;
 }
 
 interface BridgeEntry {
@@ -215,7 +221,7 @@ interface BridgeEntry {
 export function createPluginMcpBridge(
   deps: CreatePluginMcpBridgeDeps,
 ): PluginMcpBridge {
-  const { host, invokeRemote } = deps;
+  const { host, invokeRemote, notifyToolsChanged } = deps;
   const entries = new Map<string, BridgeEntry>();
 
   return {
@@ -245,6 +251,7 @@ export function createPluginMcpBridge(
         pluginId: payload.pluginId,
         wcId,
       });
+      notifyToolsChanged?.();
     },
 
     handleUnregister(wcId, name) {
@@ -253,15 +260,21 @@ export function createPluginMcpBridge(
       if (e.wcId !== wcId) return; // 非 owner wc → noop(防假冒)
       host.removeTool(name);
       entries.delete(name);
+      notifyToolsChanged?.();
     },
 
     handleWebContentsGone(wcId) {
+      let removed = 0;
       for (const [name, e] of entries) {
         if (e.wcId !== wcId) continue;
         host.removeTool(name);
         entries.delete(name);
+        removed++;
       }
       invokeRemote.abortByWebContents(wcId);
+      // 整批去重通知(N 个 tool 一次 notify,不是 N 次)。
+      // 没摘到 tool 不通知(可能 wc 从未 register 过)。
+      if (removed > 0) notifyToolsChanged?.();
     },
 
     listRegistered() {

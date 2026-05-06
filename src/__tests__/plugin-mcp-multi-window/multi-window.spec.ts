@@ -85,11 +85,26 @@ function makeBridge(): {
   bridge: PluginMcpBridge;
   host: FakeHost;
   invokeRemote: FakeInvokeRemote;
+  notifyCalls: number;
 } {
   const host = makeFakeHost();
   const invokeRemote = makeFakeInvokeRemote();
-  const bridge = createPluginMcpBridge({ host, invokeRemote });
-  return { bridge, host, invokeRemote };
+  const counter = { n: 0 };
+  const bridge = createPluginMcpBridge({
+    host,
+    invokeRemote,
+    notifyToolsChanged: () => {
+      counter.n++;
+    },
+  });
+  return {
+    bridge,
+    host,
+    invokeRemote,
+    get notifyCalls() {
+      return counter.n;
+    },
+  };
 }
 
 // ────────────────────────────────────────────────────────────
@@ -286,6 +301,75 @@ describe('路由正确性', () => {
     bridge.handleRegister(11, regPayload('a'));
     bridge.handleWebContentsGone(11);
     expect(host.tools.get('a')).toBeUndefined();
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// notifyToolsChanged — MCP `notifications/tools/list_changed` 钩子
+// ────────────────────────────────────────────────────────────
+
+describe('notifyToolsChanged · 钩子触发时机', () => {
+  it('handleRegister 成功 → 调一次', () => {
+    const h = makeBridge();
+    h.bridge.handleRegister(11, regPayload('a'));
+    expect(h.notifyCalls).toBe(1);
+  });
+
+  it('handleRegister 抛 TOOL_NAME_TAKEN → 不调(失败不通知)', () => {
+    const h = makeBridge();
+    h.bridge.handleRegister(11, regPayload('a'));
+    expect(h.notifyCalls).toBe(1);
+    try {
+      h.bridge.handleRegister(22, regPayload('a'));
+    } catch {
+      /* ignore */
+    }
+    expect(h.notifyCalls).toBe(1); // 仍是 1,失败不增
+  });
+
+  it('handleUnregister 命中 → 调一次', () => {
+    const h = makeBridge();
+    h.bridge.handleRegister(11, regPayload('a'));
+    h.bridge.handleUnregister(11, 'a');
+    expect(h.notifyCalls).toBe(2); // register 1 + unregister 1
+  });
+
+  it('handleUnregister unknown name → 不调(noop 不通知)', () => {
+    const h = makeBridge();
+    h.bridge.handleUnregister(11, 'ghost');
+    expect(h.notifyCalls).toBe(0);
+  });
+
+  it('handleUnregister 非 owner wc → 不调(假冒拒绝不通知)', () => {
+    const h = makeBridge();
+    h.bridge.handleRegister(11, regPayload('a'));
+    h.bridge.handleUnregister(22, 'a'); // 非 owner
+    expect(h.notifyCalls).toBe(1); // 仅 register 那次
+  });
+
+  it('handleWebContentsGone 摘掉 N 个 tool → 调一次(批量去重)', () => {
+    const h = makeBridge();
+    h.bridge.handleRegister(11, regPayload('a'));
+    h.bridge.handleRegister(11, regPayload('b'));
+    h.bridge.handleRegister(11, regPayload('c'));
+    expect(h.notifyCalls).toBe(3);
+    h.bridge.handleWebContentsGone(11);
+    expect(h.notifyCalls).toBe(4); // gone 整体一次,不是按 tool 计数
+  });
+
+  it('handleWebContentsGone 没摘到 tool → 不调', () => {
+    const h = makeBridge();
+    h.bridge.handleWebContentsGone(999); // 该 wc 没注册过
+    expect(h.notifyCalls).toBe(0);
+  });
+
+  it('notifyToolsChanged 未注入 → 不抛错(可选 deps)', () => {
+    const host = makeFakeHost();
+    const invokeRemote = makeFakeInvokeRemote();
+    const bridge = createPluginMcpBridge({ host, invokeRemote });
+    expect(() => bridge.handleRegister(11, regPayload('a'))).not.toThrow();
+    expect(() => bridge.handleUnregister(11, 'a')).not.toThrow();
+    expect(() => bridge.handleWebContentsGone(11)).not.toThrow();
   });
 });
 

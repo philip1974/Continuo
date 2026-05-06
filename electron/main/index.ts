@@ -334,8 +334,9 @@ app.whenReady().then(async () => {
   // env 已含 MCP url / token。
   await startMcpHost();
   await startMcpStdioServer();
-  // Plugin → MCP bridge 接线(host 已就绪,renderer 通过 IPC 注册的 tool 走它)
-  if (mcpHost) startPluginMcpIpc(mcpHost);
+  // Plugin → MCP bridge 接线(host 已就绪,renderer 通过 IPC 注册的 tool 走它)。
+  // tools/list_changed 通知同时推 HTTP SSE + stdio 客户端,Codex/Claude Code 收到自动重拉.
+  if (mcpHost) startPluginMcpIpc(mcpHost, mcpStdio ?? undefined);
   const win = createMainWindow();
 
   // 冷启 + open-url 顺序处理:可能在 mainwindow 未就绪前已收 url
