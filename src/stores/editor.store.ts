@@ -73,6 +73,49 @@ export function getStateAfterClosingTab(
 }
 
 /**
+ * 文件 / 目录被重命名 / 移动后的 tab 状态:
+ * - 精确匹配 filePath === oldPath → 改 id+filePath 为 newPath
+ * - 子文件(`oldPath/` 或 `oldPath\\` 前缀)→ 前缀 rewrite
+ * - untitled(filePath=null)tab 不受影响
+ * - dirty / content / originalContent 全部保留
+ * - activeTabId 跟随目标 tab id 改变
+ */
+export function getStateAfterRenamingPath(
+  tabs: EditorTab[],
+  activeTabId: string | null,
+  oldPath: string,
+  newPath: string,
+): CloseTabResult {
+  const rewrite = (filePath: string): string | null => {
+    if (filePath === oldPath) return newPath;
+    if (filePath.startsWith(oldPath + '/')) {
+      return newPath + filePath.slice(oldPath.length);
+    }
+    if (filePath.startsWith(oldPath + '\\')) {
+      return newPath + filePath.slice(oldPath.length);
+    }
+    return null;
+  };
+
+  let changed = false;
+  const newTabs = tabs.map((t) => {
+    if (t.filePath === null) return t;
+    const np = rewrite(t.filePath);
+    if (np === null) return t;
+    changed = true;
+    return { ...t, id: np, filePath: np };
+  });
+  if (!changed) return { tabs, activeTabId };
+
+  let nextActive = activeTabId;
+  if (activeTabId !== null) {
+    const idx = tabs.findIndex((t) => t.id === activeTabId);
+    if (idx >= 0) nextActive = newTabs[idx]!.id;
+  }
+  return { tabs: newTabs, activeTabId: nextActive };
+}
+
+/**
  * 文件 / 目录被删除后的 tab 状态:
  * - 精确匹配 filePath === removedPath
  * - 或位于该目录下(`removedPath/` 或 `removedPath\\` 前缀)
@@ -134,6 +177,8 @@ type EditorState = {
   closeTab: (id: string) => void;
   /** 文件/目录被删除时调用:精确匹配或前缀匹配的 tab 统一关闭. */
   removePath: (path: string) => void;
+  /** 文件/目录被重命名 / 移动时调用:精确或前缀匹配的 tab 同步路径. */
+  renamePath: (oldPath: string, newPath: string) => void;
   switchTab: (id: string) => void;
   /** 编辑器 onChange 时调用;dirty 自动比对. */
   updateContent: (id: string, content: string) => void;
@@ -161,6 +206,11 @@ export const useEditorStore = create<EditorState>((set) => ({
 
   removePath: (path) =>
     set((s) => getStateAfterRemovingPath(s.tabs, s.activeTabId, path)),
+
+  renamePath: (oldPath, newPath) =>
+    set((s) =>
+      getStateAfterRenamingPath(s.tabs, s.activeTabId, oldPath, newPath),
+    ),
 
   switchTab: (id) => set(() => ({ activeTabId: id })),
 

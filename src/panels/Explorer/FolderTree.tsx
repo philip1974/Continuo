@@ -67,13 +67,19 @@ export function FolderTree({ root }: { root: string }) {
         onRename: (item: ItemInstance<FileEntry>, newName: string) => {
           // headless-tree onRename 是 sync 签名,我们 fire-and-forget 走 mutate-actions
           void (async () => {
+            const oldPath = item.getId();
             const r = await renameItem(
-              item.getId(),
+              oldPath,
               newName,
               { fs: coApi.fs },
               { invalidateChildrenIds: refreshParent },
             );
-            if (!r.ok) alert(`重命名失败:[${r.code}] ${r.message}`);
+            if (!r.ok) {
+              alert(`重命名失败:[${r.code}] ${r.message}`);
+              return;
+            }
+            // 同步打开的 editor tab 路径(目录 rename 时其下所有 tab 也会前缀 rewrite)
+            useEditorStore.getState().renamePath(oldPath, r.newPath);
           })();
         },
       }),
@@ -201,6 +207,10 @@ export function FolderTree({ root }: { root: string }) {
             console.warn(`[explorer] paste(${kind}) failed`, src, r.code, r.message);
             alert(`粘贴失败:${src}\n[${r.code}] ${r.message}`);
             return;
+          }
+          // cut = move:同步 editor tab 路径(目录则前缀 rewrite 全部子 tab)
+          if (kind === 'cut') {
+            useEditorStore.getState().renamePath(src, dest);
           }
         }
         // cut 用完即清(避免重复 move 同一文件);copy 保留(允许多次粘贴)
