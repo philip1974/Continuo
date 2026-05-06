@@ -97,19 +97,19 @@ export function PluginsTabContent() {
   const contribs = useContributionSnapshot();
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* ── 贡献点统计 ──────────────────────────────── */}
       <section>
-        <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-fg-dim">
+        <h3 className="mb-3 border-b border-line pb-3 text-base font-medium text-fg">
           已注册贡献点
         </h3>
-        <div className="rounded border border-line bg-panel-soft/40">
+        <div className="rounded-md border border-line bg-panel-soft/40">
           {contribs.map((row, i) => (
             <div
               key={row.label}
               className={[
-                'flex items-start gap-3 px-3 py-2 text-xs',
-                i > 0 ? 'border-t border-line' : '',
+                'flex items-start gap-4 px-4 py-3 text-xs',
+                i > 0 ? 'border-t border-line/50' : '',
               ].join(' ')}
             >
               <div className="w-32 shrink-0 text-fg-muted">{row.label}</div>
@@ -126,23 +126,25 @@ export function PluginsTabContent() {
 
       {/* ── 内置插件清单 ─────────────────────────────── */}
       <section>
-        <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-fg-dim">
-          内置插件(随 LM 启动)
+        <h3 className="mb-3 border-b border-line pb-3 text-base font-medium text-fg">
+          内置插件
         </h3>
-        <div className="rounded border border-line bg-panel-soft/40">
+        <div className="rounded-md border border-line bg-panel-soft/40">
           {CORE_PLUGINS.map((p, i) => (
             <div
               key={p.id}
               className={[
-                'flex items-start gap-3 px-3 py-2 text-xs',
-                i > 0 ? 'border-t border-line' : '',
+                'flex items-start gap-4 px-4 py-3 text-xs',
+                i > 0 ? 'border-t border-line/50' : '',
               ].join(' ')}
             >
               <div className="min-w-0 flex-1">
-                <div className="font-medium text-fg">{p.name}</div>
-                <div className="mt-0.5 text-fg-dim">{p.desc}</div>
+                <div className="text-sm font-medium text-fg">{p.name}</div>
+                <div className="mt-1 text-fg-muted">{p.desc}</div>
               </div>
-              <code className="shrink-0 text-[10px] text-fg-dim">{p.id}</code>
+              <code className="shrink-0 rounded bg-panel-soft/70 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-fg-muted/70">
+                {p.id}
+              </code>
             </div>
           ))}
         </div>
@@ -234,15 +236,17 @@ function UserPluginsSection() {
 
   return (
     <section>
-      <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-fg-dim">
+      <h3 className="mb-3 border-b border-line pb-3 text-base font-medium text-fg">
         第三方插件
       </h3>
-      {/* git URL 安装(v4.5) */}
-      <div className="mb-3 rounded border border-line bg-panel-soft/40 px-3 py-2">
-        <div className="mb-1 text-[10px] uppercase tracking-wider text-fg-dim">
-          从 git URL 安装
+      {/* git URL 安装(对齐 demo (3) 的「从 GIT URL 安装」段:浅底 + 标题 +
+       *  输入框 + 按钮 + 警告 banner) */}
+      <div className="mb-4 rounded-md border border-line bg-panel-soft/40 p-4">
+        <div className="text-sm font-medium text-fg">从 Git URL 安装</div>
+        <div className="mt-1 text-xs text-fg-muted">
+          可以直接通过 Git 链接进行安装。注意第三方仓库可能存在安全风险,请保持信任源代码及其开发者。
         </div>
-        <div className="flex items-center gap-2">
+        <div className="mt-3 flex items-center gap-2">
           <Input
             size="sm"
             placeholder="https://github.com/user/plugin.git"
@@ -261,30 +265,30 @@ function UserPluginsSection() {
           </Button>
         </div>
         {installMsg && (
-          <div className="mt-1 text-[10px] text-fg-muted">{installMsg}</div>
+          <div className="mt-2 text-xs text-fg-muted">{installMsg}</div>
         )}
       </div>
       {plugins.length === 0 && !pendingInstall ? (
-        <div className="rounded border border-dashed border-line bg-panel-soft/40 px-3 py-6 text-center text-xs text-fg-dim">
+        <div className="rounded-md border border-dashed border-line bg-panel-soft/40 px-4 py-8 text-center text-xs text-fg-dim">
           暂无第三方插件。从上方"git URL 安装"添加。
         </div>
       ) : (
-        <div className="rounded border border-line bg-panel-soft/40">
+        <div className="rounded-md border border-line bg-panel-soft/40">
           {pendingInstall && (
-            <div className="flex items-start gap-3 px-3 py-2 text-xs">
+            <div className="flex items-start gap-4 px-4 py-3 text-xs">
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline gap-2">
-                  <span className="font-medium text-fg">
+                  <span className="text-sm font-medium text-fg">
                     {pendingInstall.name}
                   </span>
-                  <code className="text-[10px] text-fg-dim">
+                  <code className="rounded bg-panel-soft/70 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-fg-muted/70">
                     {pendingInstall.id}
                   </code>
                   <span className="text-[10px] text-fg-dim">
                     v{pendingInstall.version}
                   </span>
                 </div>
-                <div className="mt-0.5 text-fg-dim">
+                <div className="mt-1 text-fg-muted">
                   ⏳ 已安装,重启 LM 后出现在列表并可启用
                 </div>
               </div>
@@ -294,20 +298,22 @@ function UserPluginsSection() {
             <div
               key={p.id}
               className={[
-                'flex items-start gap-3 px-3 py-2 text-xs',
-                i > 0 || pendingInstall ? 'border-t border-line' : '',
+                'flex items-start gap-4 px-4 py-3 text-xs',
+                i > 0 || pendingInstall ? 'border-t border-line/50' : '',
               ].join(' ')}
             >
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline gap-2">
-                  <span className="font-medium text-fg">{p.manifest.name}</span>
-                  <code className="text-[10px] text-fg-dim">{p.id}</code>
+                  <span className="text-sm font-medium text-fg">{p.manifest.name}</span>
+                  <code className="rounded bg-panel-soft/70 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-fg-muted/70">
+                    {p.id}
+                  </code>
                   <span className="text-[10px] text-fg-dim">
                     v{p.manifest.version}
                   </span>
                 </div>
                 {p.manifest.description && (
-                  <div className="mt-0.5 text-fg-dim">{p.manifest.description}</div>
+                  <div className="mt-1 text-fg-muted">{p.manifest.description}</div>
                 )}
                 {p.error && (
                   <div className="mt-1 text-[10px] text-red-400">
