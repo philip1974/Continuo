@@ -49,6 +49,40 @@ function matchSearch(item: SettingItemSpec, q: string): boolean {
   return false;
 }
 
+// 内置 4 类的本地化 label;plugin 自定义 category fallback 显示 raw 字符串
+const CATEGORY_LABELS: Record<string, string> = {
+  general: '通用',
+  editor: '编辑器',
+  explorer: '资源管理器',
+  terminal: '终端',
+};
+
+interface SearchBucket {
+  readonly category: string;
+  readonly label: string;
+  readonly items: readonly SettingItemSpec[];
+}
+
+/** 把搜索结果按 category 分组,保留 first-seen 顺序(items 已按 priority 排过). */
+function groupSearchResults(
+  items: readonly SettingItemSpec[],
+): readonly SearchBucket[] {
+  const map = new Map<string, SettingItemSpec[]>();
+  for (const spec of items) {
+    let arr = map.get(spec.category);
+    if (!arr) {
+      arr = [];
+      map.set(spec.category, arr);
+    }
+    arr.push(spec);
+  }
+  return Array.from(map.entries()).map(([category, items]) => ({
+    category,
+    label: CATEGORY_LABELS[category] ?? category,
+    items,
+  }));
+}
+
 export function SettingsPanel({
   registry = coApp.settingTabs,
   itemRegistry = coApp.settingItems,
@@ -66,6 +100,10 @@ export function SettingsPanel({
     if (!trimmed) return null; // null = 不在搜索模式
     return allItems.filter((item) => matchSearch(item, trimmed));
   }, [trimmed, allItems]);
+  const matchedBuckets = useMemo(
+    () => (matched ? groupSearchResults(matched) : []),
+    [matched],
+  );
   const inSearch = matched !== null;
 
   return (
@@ -116,11 +154,16 @@ export function SettingsPanel({
                   ? `未找到匹配「${trimmed}」的设置项`
                   : `匹配 ${matched!.length} 项「${trimmed}」`}
               </div>
-              <div className="flex flex-col">
-                {matched!.map((spec) => (
-                  <SettingItemRow key={spec.id} spec={spec} />
-                ))}
-              </div>
+              {matchedBuckets.map((bucket) => (
+                <section key={bucket.category} className="mb-2">
+                  <h3 className="mb-1 mt-4 border-b border-line pb-1 text-[11px] font-medium uppercase tracking-wider text-fg first:mt-0">
+                    {bucket.label}
+                  </h3>
+                  {bucket.items.map((spec) => (
+                    <SettingItemRow key={spec.id} spec={spec} />
+                  ))}
+                </section>
+              ))}
             </div>
           ) : active ? (
             active.render()
