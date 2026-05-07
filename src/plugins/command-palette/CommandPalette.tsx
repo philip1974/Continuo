@@ -109,7 +109,7 @@ export function CommandPalette({ commands }: CommandPaletteProps) {
   };
 
   return (
-    <Modal visible={isOpen} onClose={close} className="!p-0 !rounded-md !max-w-[560px]">
+    <Modal visible={isOpen} onClose={close} size="md" className="!p-0 !rounded-md">
       <div className="flex flex-col">
         <div className="border-b border-line p-2">
           <Input

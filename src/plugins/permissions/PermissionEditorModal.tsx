@@ -79,7 +79,7 @@ export function PermissionEditorModal({
   };
 
   return (
-    <Modal visible={open} onClose={onClose} className="!max-w-[480px]">
+    <Modal visible={open} onClose={onClose}>
       <h2 className="mb-1 text-sm font-medium text-fg">编辑权限</h2>
       <p className="mb-3 text-xs text-fg-muted">
         插件 <code className="text-fg">{pluginId}</code>

@@ -32,7 +32,7 @@ export function AgentAuthPrompt() {
   if (!pending) return null;
 
   return (
-    <Modal visible onClose={deny} className="!max-w-[480px]">
+    <Modal visible onClose={deny}>
       <h2 className="mb-1 text-sm font-medium text-fg">
         Agent 请求控制内置终端
       </h2>

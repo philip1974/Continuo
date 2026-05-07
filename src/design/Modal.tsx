@@ -1,6 +1,8 @@
 import './Modal.css';
 import { useEffect, useRef, type HTMLAttributes, type ReactNode } from 'react';
 
+export type ModalSize = 'sm' | 'md' | 'lg';
+
 /**
  * Props for a focus-trapped modal surface.
  *
@@ -14,12 +16,22 @@ export interface ModalProps extends HTMLAttributes<HTMLDivElement> {
   readonly children: ReactNode;
   /** Called on overlay click or Escape. Optional. */
   readonly onClose?: () => void;
+  /** Width preset.`sm` (480px / 默认 / permission / auth) | `md` (560px / command palette) |
+   * `lg` (640px / quick open / file picker). 取代调用方 `!max-w-[Npx]` 的零散写法。 */
+  readonly size?: ModalSize;
 }
 
 const FOCUSABLE_SELECTOR =
   'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-export function Modal({ visible, children, className, onClose, ...rest }: ModalProps) {
+export function Modal({
+  visible,
+  children,
+  className,
+  onClose,
+  size = 'sm',
+  ...rest
+}: ModalProps) {
   const contentRef = useRef<HTMLDivElement>(null);
   const prevFocusRef = useRef<HTMLElement | null>(null);
 
@@ -91,6 +103,7 @@ export function Modal({ visible, children, className, onClose, ...rest }: ModalP
         {...rest}
         ref={contentRef}
         tabIndex={-1}
+        data-size={size}
         onClick={(e) => {
           e.stopPropagation();
         }}

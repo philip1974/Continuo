@@ -41,7 +41,7 @@ export function PermissionPrompt() {
   };
 
   return (
-    <Modal visible onClose={denyAll} className="!max-w-[480px]">
+    <Modal visible onClose={denyAll}>
       <h2 className="mb-1 text-sm font-medium text-fg">权限请求</h2>
       <p className="mb-2 text-xs text-fg-muted">
         插件 <code className="text-fg">{pending.pluginId}</code> 请求以下权限:

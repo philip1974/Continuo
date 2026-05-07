@@ -15,11 +15,18 @@
   color: var(--md-on-surface);
   border-radius: 14px;
   padding: var(--wm-space-6, 1.25rem);
-  max-width: 480px;
+  max-width: 480px; /* size="sm" 默认值 */
   width: 90%;
   box-shadow: var(--wm-shadow-popover);
   border: 1px solid var(--md-outline-variant);
 }
+
+/* size 阶梯:取代调用方写 !max-w-[Npx] 的零散用法。
+ * sm (默认 480) 多用于 permission / auth / 短表单;
+ * md (560) 用于 command palette 命令列表;
+ * lg (640) 用于 file picker 等需要长路径展示的场景。 */
+.wm-modal-content[data-size="md"] { max-width: 560px; }
+.wm-modal-content[data-size="lg"] { max-width: 640px; }
 
 .wm-modal-content:focus {
   outline: none;
