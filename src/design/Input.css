@@ -1,7 +1,7 @@
 .wm-input {
   width: 100%;
   padding: var(--wm-space-2) var(--wm-space-3);
-  border-radius: 8px;
+  border-radius: var(--wm-radius-lg);
   border: 1px solid var(--md-outline-variant);
   background-color: var(--md-surface-container-low);
   color: var(--md-on-surface);
@@ -27,5 +27,5 @@
   border-color: var(--wm-terminal-border);
 }
 
-.wm-input[data-size="xs"] { padding: 0 var(--wm-space-1_5); font-size: var(--wm-text-xs); border-radius: 3px; }
+.wm-input[data-size="xs"] { padding: 0 var(--wm-space-1_5); font-size: var(--wm-text-xs); border-radius: var(--wm-radius-sm); }
 .wm-input[data-size="sm"] { padding: var(--wm-space-0_5) var(--wm-space-2); font-size: var(--wm-text-sm); border-radius: 4px; }

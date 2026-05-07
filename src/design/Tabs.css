@@ -8,7 +8,7 @@
   display: block;
   width: 100%;
   border: 1px solid transparent;
-  border-radius: 16px;
+  border-radius: var(--wm-radius-xl);
   padding: var(--wm-space-2_5) var(--wm-space-3);
   text-align: left;
   cursor: pointer;

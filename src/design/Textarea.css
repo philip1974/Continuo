@@ -1,7 +1,7 @@
 .wm-textarea {
   width: 100%;
   padding: var(--wm-space-3);
-  border-radius: 8px;
+  border-radius: var(--wm-radius-lg);
   border: 1px solid var(--md-outline-variant);
   background-color: var(--md-surface-container-low);
   color: var(--md-on-surface);
@@ -33,6 +33,6 @@
   line-height: 1.7;
   background-color: var(--md-surface-container-lowest);
   border: 1px solid var(--md-outline-variant);
-  border-radius: 8px;
+  border-radius: var(--wm-radius-lg);
   resize: none;
 }

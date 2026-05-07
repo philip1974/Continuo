@@ -15,6 +15,18 @@
 
 @import './nous-tokens.css';
 
+/* ── Continuo radius scale(对齐 demo DESIGN.md / Tailwind v4 默认值)────
+ * sm=2 / md=6 / lg=8 / xl=12 完全匹配 Tailwind rounded-sm/md/lg/xl,提供
+ * CSS var 形式给 .css 文件用(那里不能写 Tailwind utility)。
+ * 4px (DEFAULT) 是最常见的小圆角,组件 CSS 直接写字面值不另起 token。
+ * radius 是结构属性,与 dark/light 模式无关,放 :root 而非 .dark。 */
+:root {
+  --wm-radius-sm: 2px;
+  --wm-radius-md: 6px;
+  --wm-radius-lg: 8px;
+  --wm-radius-xl: 12px;
+}
+
 /* ── Continuo 暗色身份(对齐 demo Industrial IDE Dark)──────── */
 /* 色板换装:从中性 slate + sky-600 → 蓝紫 surface + royal blue。
  * 变化:

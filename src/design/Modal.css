@@ -13,7 +13,7 @@
 .wm-modal-content {
   background-color: var(--md-surface-container-high);
   color: var(--md-on-surface);
-  border-radius: 14px;
+  border-radius: var(--wm-radius-xl);
   padding: var(--wm-space-6, 1.25rem);
   max-width: 480px; /* size="sm" 默认值 */
   width: 90%;

@@ -1,6 +1,6 @@
 .wm-card {
   padding: var(--wm-space-2_5) var(--wm-space-3);
-  border-radius: 16px;
+  border-radius: var(--wm-radius-xl);
   border: 1px solid var(--md-outline-variant);
   background-color: var(--md-surface-container-low);
 }
