@@ -25,6 +25,12 @@
   --wm-radius-md: 6px;
   --wm-radius-lg: 8px;
   --wm-radius-xl: 12px;
+
+  /* 动画时长 / 模糊 token(取代 Spinner / decor / Modal 等 CSS 文件里的裸数字) */
+  --wm-duration-spin: 600ms;          /* Spinner 转一圈 */
+  --wm-duration-spotlight: 2s;        /* Splash 装饰 spotlight 进场 */
+  --wm-delay-spotlight: 400ms;        /* spotlight 启动前等一拍 */
+  --wm-blur-sm: 4px;                  /* Modal 背板毛玻璃 */
 }
 
 /* ── Continuo 暗色身份(对齐 demo Industrial IDE Dark)──────── */

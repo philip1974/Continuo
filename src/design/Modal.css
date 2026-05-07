@@ -6,8 +6,8 @@
   align-items: center;
   justify-content: center;
   z-index: var(--wm-z-modal, 50);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(var(--wm-blur-sm));
+  -webkit-backdrop-filter: blur(var(--wm-blur-sm));
 }
 
 .wm-modal-content {
