@@ -124,7 +124,27 @@ export function IconSidebar() {
             renderItem(item)
           ),
         )}
+        <AccountChip />
       </div>
     </aside>
+  );
+}
+
+// 账户头像小卡(对齐 demo (3) 侧栏底部 profile chip)。
+// Continuo IconSidebar 只有 48px 宽,放不下完整的「头像 + 名称 + Plan」,
+// 退化为带 tooltip 的初字头像;后续接真实账户体系时再扩成弹层菜单。
+function AccountChip() {
+  return (
+    <button
+      type="button"
+      className="mt-1 inline-flex h-7 w-7 items-center justify-center rounded-full border border-line bg-canvas text-[10px] font-semibold tracking-wide text-fg-muted transition-colors hover:border-accent/60 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+      title="Continuo Dev · PRO Plan"
+      aria-label="账户:Continuo Dev,PRO Plan"
+      onClick={() => {
+        // TODO: 接入账户菜单(登录 / 切换 / 注销),目前仅占位
+      }}
+    >
+      CD
+    </button>
   );
 }
