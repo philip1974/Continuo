@@ -59,7 +59,7 @@
   --md-focus-ring: #2563eb;
 }
 
-/* ── Tailwind v4 @theme:把 LM 11 个语义 token 映射到 MD3 ───── */
+/* ── Tailwind v4 @theme:把 LM 14 个语义 token 映射到 MD3 ───── */
 @theme inline {
   --color-canvas: var(--md-surface);
   --color-panel: var(--md-surface-container);
@@ -75,6 +75,13 @@
   --color-accent: var(--md-primary);
   --color-accent-fill: var(--md-primary-container);
   --color-on-accent-fill: var(--md-on-primary-container);
+  /* 状态色:替代散在组件里的 text-red-* / text-amber-* / bg-red-500 等硬编码。
+   *   bg-error / text-error             → 错误徽章/文字(MD3 error tone 80,#ffb4ab)
+   *   text-on-error                     → 错误填充上的深字
+   *   bg-warning / text-warning / border-warning → 警告框/文字(MD3 warning,#efc15e) */
+  --color-error: var(--md-error);
+  --color-on-error: var(--md-on-error);
+  --color-warning: var(--md-warning);
 }
 
 /* ── 全局 scrollbar(参考 stitch_desktop_design_reviewer 原型)──────────
