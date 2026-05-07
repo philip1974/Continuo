@@ -116,7 +116,7 @@ export function PluginsTabContent() {
               <div className="w-8 shrink-0 text-right tabular-nums text-fg">
                 {row.count}
               </div>
-              <div className="min-w-0 flex-1 truncate font-mono text-[10px] text-fg-dim">
+              <div className="min-w-0 flex-1 truncate font-mono text-2xs text-fg-dim">
                 {row.samples.length > 0 ? row.samples.join(' · ') : '—'}
               </div>
             </div>
@@ -142,7 +142,7 @@ export function PluginsTabContent() {
                 <div className="text-sm font-medium text-fg">{p.name}</div>
                 <div className="mt-1 text-fg-muted">{p.desc}</div>
               </div>
-              <code className="shrink-0 rounded bg-panel-soft/70 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-fg-muted/70">
+              <code className="shrink-0 rounded bg-panel-soft/70 px-1.5 py-0.5 text-2xs uppercase tracking-wider text-fg-muted/70">
                 {p.id}
               </code>
             </div>
@@ -281,10 +281,10 @@ function UserPluginsSection() {
                   <span className="text-sm font-medium text-fg">
                     {pendingInstall.name}
                   </span>
-                  <code className="rounded bg-panel-soft/70 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-fg-muted/70">
+                  <code className="rounded bg-panel-soft/70 px-1.5 py-0.5 text-2xs uppercase tracking-wider text-fg-muted/70">
                     {pendingInstall.id}
                   </code>
-                  <span className="text-[10px] text-fg-dim">
+                  <span className="text-2xs text-fg-dim">
                     v{pendingInstall.version}
                   </span>
                 </div>
@@ -305,10 +305,10 @@ function UserPluginsSection() {
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline gap-2">
                   <span className="text-sm font-medium text-fg">{p.manifest.name}</span>
-                  <code className="rounded bg-panel-soft/70 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-fg-muted/70">
+                  <code className="rounded bg-panel-soft/70 px-1.5 py-0.5 text-2xs uppercase tracking-wider text-fg-muted/70">
                     {p.id}
                   </code>
-                  <span className="text-[10px] text-fg-dim">
+                  <span className="text-2xs text-fg-dim">
                     v{p.manifest.version}
                   </span>
                 </div>
@@ -316,12 +316,12 @@ function UserPluginsSection() {
                   <div className="mt-1 text-fg-muted">{p.manifest.description}</div>
                 )}
                 {p.error && (
-                  <div className="mt-1 text-[10px] text-error">
+                  <div className="mt-1 text-2xs text-error">
                     {p.error}
                   </div>
                 )}
                 {p.warning && (
-                  <div className="mt-1 text-[10px] text-warning">
+                  <div className="mt-1 text-2xs text-warning">
                     ⚠ {p.warning}
                   </div>
                 )}

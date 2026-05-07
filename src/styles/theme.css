@@ -82,6 +82,20 @@
   --color-error: var(--md-error);
   --color-on-error: var(--md-on-error);
   --color-warning: var(--md-warning);
+
+  /* 字号补漏:wm-text-2xs(10px)暴露成 Tailwind utility text-2xs,
+   * 消灭组件里散落的 ~44 处 text-[10px] arbitrary value。
+   * 其它 wm-text-* 暂不映射:Tailwind 默认 text-xs/sm/base/lg 已满足 73 处使用,
+   * 重映射风险大于收益。 */
+  --text-2xs: var(--wm-text-2xs);
+
+  /* z-index 分层 token:把散落数字赋予语义,新代码意图明显,旧 z-N 按需迁移。
+   * 已统计的层级(审计 round 2):
+   *   -z-10 backdrop,z-decor:1,z-sticky:10,z-overlay:30,z-modal:50 */
+  --z-decor: 1;
+  --z-sticky: 10;
+  --z-overlay: 30;
+  --z-modal: var(--wm-z-modal);
 }
 
 /* ── 全局 scrollbar(参考 stitch_desktop_design_reviewer 原型)──────────

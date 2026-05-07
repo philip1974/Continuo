@@ -228,7 +228,7 @@ export function MarketplaceTab() {
         />
         {allTags.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="mr-1 text-[10px] uppercase tracking-wider text-fg-dim">
+            <span className="mr-1 text-2xs uppercase tracking-wider text-fg-dim">
               热门标签
             </span>
             {allTags.map((tag) => (
@@ -243,7 +243,7 @@ export function MarketplaceTab() {
               <button
                 type="button"
                 onClick={clearTags}
-                className="rounded px-2 py-0.5 text-[10px] text-fg-dim hover:text-fg"
+                className="rounded px-2 py-0.5 text-2xs text-fg-dim hover:text-fg"
               >
                 清除筛选
               </button>
@@ -251,7 +251,7 @@ export function MarketplaceTab() {
           </div>
         )}
       </div>
-      <div className="flex items-center justify-between gap-2 text-[10px] text-fg-dim">
+      <div className="flex items-center justify-between gap-2 text-2xs text-fg-dim">
         <span>
           显示 {filtered.length} / 共 {state.entries.length} 个插件 · 索引 1
           小时缓存
@@ -446,13 +446,13 @@ const MarketplaceCard = memo(function MarketplaceCard({
             <span className="font-medium text-fg">{entry.name}</span>
             {entry.verified && (
               <span
-                className="rounded bg-accent/20 px-1.5 py-0.5 text-[10px] text-accent"
+                className="rounded bg-accent/20 px-1.5 py-0.5 text-2xs text-accent"
                 title="官方 review 过"
               >
                 ✓ verified
               </span>
             )}
-            <code className="text-[10px] text-fg-dim">{entry.id}</code>
+            <code className="text-2xs text-fg-dim">{entry.id}</code>
           </div>
           {entry.description && (
             <p className="mt-0.5 text-xs text-fg-dim">{entry.description}</p>
@@ -495,11 +495,11 @@ const MarketplaceCard = memo(function MarketplaceCard({
         </div>
       </div>
       {message && (
-        <div className="mt-1 text-[10px] text-fg-muted">{message}</div>
+        <div className="mt-1 text-2xs text-fg-muted">{message}</div>
       )}
       <RatingRow entry={entry} rating={rating} />
 
-      <div className="mt-1.5 flex items-center justify-between gap-2 text-[10px] text-fg-dim">
+      <div className="mt-1.5 flex items-center justify-between gap-2 text-2xs text-fg-dim">
         <div className="flex items-center gap-2">
           <span>
             by{' '}
@@ -564,7 +564,7 @@ function RatingRow({
 
   if (!hasReviews) {
     return (
-      <div className="mt-1 text-[10px] text-fg-dim">
+      <div className="mt-1 text-2xs text-fg-dim">
         暂无评价 ·{' '}
         <a
           href={newReviewUrl}
@@ -580,7 +580,7 @@ function RatingRow({
 
   return (
     <div className="mt-1 space-y-2">
-      <div className="flex items-center gap-1.5 text-[10px] text-fg-muted">
+      <div className="flex items-center gap-1.5 text-2xs text-fg-muted">
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
@@ -606,7 +606,7 @@ function RatingRow({
       </div>
       {expanded && (
         <div className="space-y-1.5 rounded border border-line bg-panel/50 p-2">
-          <div className="flex items-center gap-1 pb-1 text-[10px] text-fg-dim">
+          <div className="flex items-center gap-1 pb-1 text-2xs text-fg-dim">
             <span>排序:</span>
             {(['newest', 'helpful'] as const).map((s) => (
               <button
@@ -626,7 +626,7 @@ function RatingRow({
             <ReviewItem key={r.url} review={r} />
           ))}
           {rating.reviews.length > 10 && (
-            <div className="pt-1 text-[10px] text-fg-dim">
+            <div className="pt-1 text-2xs text-fg-dim">
               仅显前 10 条;
               <a
                 href={`https://github.com/philip1974/continuo-plugins/discussions?discussions_q=%5B${entry.id}%5D`}
@@ -658,7 +658,7 @@ function ReviewItem({ review: r }: { review: Review }) {
         decoding="async"
         className="h-5 w-5 shrink-0 rounded-full"
       />
-      <div className="min-w-0 flex-1 text-[10px]">
+      <div className="min-w-0 flex-1 text-2xs">
         <div className="flex items-baseline gap-1.5 text-fg-muted">
           <a
             href={`https://github.com/${r.author.handle}`}

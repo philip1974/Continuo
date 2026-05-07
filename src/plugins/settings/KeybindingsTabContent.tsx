@@ -155,7 +155,7 @@ export function KeybindingsTabContent() {
                       ].join(' ')}
                     >
                       <span className="truncate text-sm text-fg">{cmd.title}</span>
-                      <code className="ml-auto shrink-0 rounded bg-panel-soft/70 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-fg-muted/70">
+                      <code className="ml-auto shrink-0 rounded bg-panel-soft/70 px-1.5 py-0.5 text-2xs uppercase tracking-wider text-fg-muted/70">
                         {cmd.id}
                       </code>
                       {effective ? (
@@ -165,7 +165,7 @@ export function KeybindingsTabContent() {
                           ))}
                         </span>
                       ) : (
-                        <span className="shrink-0 text-[10px] text-fg-dim">
+                        <span className="shrink-0 text-2xs text-fg-dim">
                           未绑定
                         </span>
                       )}

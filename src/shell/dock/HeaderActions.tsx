@@ -90,7 +90,7 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
       {open && (
         <div
           role="menu"
-          className="absolute right-0 top-full z-50 mt-1 min-w-[140px] overflow-hidden rounded-md border border-line bg-panel py-1 shadow-lg shadow-black/40"
+          className="absolute right-0 top-full z-modal mt-1 min-w-[140px] overflow-hidden rounded-md border border-line bg-panel py-1 shadow-lg shadow-black/40"
         >
           {panelChoices.map((c) => (
             <MenuItem key={c.type} onClick={() => addPanel(c.type, c.title)}>

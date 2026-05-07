@@ -122,7 +122,7 @@ export function ExplorerHeader({
         {menuOpen && (
           <div
             role="menu"
-            className="absolute right-0 top-full z-50 mt-1 min-w-[140px] overflow-hidden rounded-md border border-line bg-panel py-1 shadow-lg shadow-black/40"
+            className="absolute right-0 top-full z-modal mt-1 min-w-[140px] overflow-hidden rounded-md border border-line bg-panel py-1 shadow-lg shadow-black/40"
           >
             <MenuItem
               disabled={!onExpandAll}
@@ -136,7 +136,7 @@ export function ExplorerHeader({
             {recentOthers.length > 0 && (
               <>
                 <div className="my-1 h-px bg-line" />
-                <div className="px-2 pb-0.5 text-[10px] uppercase tracking-wider text-fg-dim">
+                <div className="px-2 pb-0.5 text-2xs uppercase tracking-wider text-fg-dim">
                   打开最近
                 </div>
                 {recentOthers.map((p) => {

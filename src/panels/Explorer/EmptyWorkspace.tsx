@@ -31,7 +31,7 @@ export function EmptyWorkspace() {
       </Button>
       {recentRoots.length > 0 && (
         <div role="menu" className="mt-4 w-full max-w-xs text-left">
-          <div className="px-3 pb-1 text-[10px] uppercase tracking-wider text-fg-dim">
+          <div className="px-3 pb-1 text-2xs uppercase tracking-wider text-fg-dim">
             最近打开
           </div>
           {recentRoots.map((p) => {
@@ -43,7 +43,7 @@ export function EmptyWorkspace() {
                 <span className="flex items-baseline gap-2 min-w-0">
                   <span className="truncate font-medium">{name}</span>
                   {parent && (
-                    <span className="truncate text-[10px] text-fg-dim">{parent}</span>
+                    <span className="truncate text-2xs text-fg-dim">{parent}</span>
                   )}
                 </span>
               </MenuItem>

@@ -29,7 +29,7 @@ export function SettingItemRow({ spec }: SettingItemRowProps) {
         <div className="flex items-baseline gap-2">
           <span className="text-sm text-fg">{spec.title}</span>
           {/* id chip:demo 同款浅底 uppercase 紧贴 title 显示,取代独占一行 */}
-          <code className="rounded bg-panel-soft/70 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-fg-muted/70">
+          <code className="rounded bg-panel-soft/70 px-1.5 py-0.5 text-2xs uppercase tracking-wider text-fg-muted/70">
             {spec.id}
           </code>
         </div>
@@ -69,7 +69,7 @@ export function SettingItemRow({ spec }: SettingItemRowProps) {
               className="w-24 text-right"
             />
             {spec.unit && (
-              <span className="select-none rounded bg-panel-soft px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-fg-dim">
+              <span className="select-none rounded bg-panel-soft px-1.5 py-0.5 text-2xs uppercase tracking-wider text-fg-dim">
                 {spec.unit}
               </span>
             )}

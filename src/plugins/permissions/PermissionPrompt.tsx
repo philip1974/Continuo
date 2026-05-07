@@ -46,7 +46,7 @@ export function PermissionPrompt() {
       <p className="mb-2 text-xs text-fg-muted">
         插件 <code className="text-fg">{pending.pluginId}</code> 请求以下权限:
       </p>
-      <p className="mb-3 text-[10px] text-fg-dim">
+      <p className="mb-3 text-2xs text-fg-dim">
         未勾视为拒绝。支持<span className="text-fg">部分授权</span>:
         plugin 调未授 API 时会被拒(抛 PermissionError),整体仍能激活。
         全部拒绝则 plugin 不激活。

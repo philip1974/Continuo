@@ -137,7 +137,7 @@ function AccountChip() {
   return (
     <button
       type="button"
-      className="mt-1 inline-flex h-7 w-7 items-center justify-center rounded-full border border-line bg-canvas text-[10px] font-semibold tracking-wide text-fg-muted transition-colors hover:border-accent/60 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+      className="mt-1 inline-flex h-7 w-7 items-center justify-center rounded-full border border-line bg-canvas text-2xs font-semibold tracking-wide text-fg-muted transition-colors hover:border-accent/60 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
       title="Continuo Dev · PRO Plan"
       aria-label="账户:Continuo Dev,PRO Plan"
       onClick={() => {

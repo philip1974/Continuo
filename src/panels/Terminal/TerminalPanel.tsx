@@ -115,7 +115,7 @@ export function TerminalPanel() {
             <Button variant="ghost" size="md" onClick={handleNew}>
               + 新建终端
             </Button>
-            <div className="text-[10px] text-fg-dim">
+            <div className="text-2xs text-fg-dim">
               或点上方 Tab 栏右侧 +
             </div>
           </div>

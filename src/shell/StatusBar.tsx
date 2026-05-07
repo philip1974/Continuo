@@ -86,7 +86,7 @@ export function StatusBar() {
           : '复制 MCP 配置';
 
   return (
-    <footer className="flex h-6 shrink-0 items-center justify-between border-t border-line bg-panel px-3 text-[10px] text-fg-dim select-none">
+    <footer className="flex h-6 shrink-0 items-center justify-between border-t border-line bg-panel px-3 text-2xs text-fg-dim select-none">
       <div className="flex items-center gap-3 min-w-0">
         {root ? (
           <>

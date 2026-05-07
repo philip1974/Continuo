@@ -131,7 +131,7 @@ export function FileRow({
           : data.path
       }
     >
-      <span className="inline-flex w-3 shrink-0 items-center justify-center text-[10px] text-fg-dim">
+      <span className="inline-flex w-3 shrink-0 items-center justify-center text-2xs text-fg-dim">
         {isDir ? (isExpanded ? '▾' : '▸') : ''}
       </span>
       <span className="inline-flex shrink-0 items-center" aria-hidden="true">
@@ -163,7 +163,7 @@ export function FileRow({
       {/* 插件装饰 badge(右侧),loading 优先级更高,加载完才显 */}
       {!isLoading && decoration?.badge && (
         <span
-          className="ml-auto pr-2 text-[10px] tabular-nums"
+          className="ml-auto pr-2 text-2xs tabular-nums"
           style={decoration.badgeColor ? { color: decoration.badgeColor } : undefined}
           aria-label={`badge ${decoration.badge}`}
         >
@@ -171,7 +171,7 @@ export function FileRow({
         </span>
       )}
       {isLoading && (
-        <span className="ml-auto pr-2 text-[10px] text-fg-dim">…</span>
+        <span className="ml-auto pr-2 text-2xs text-fg-dim">…</span>
       )}
     </div>
   );

@@ -80,7 +80,7 @@ export function CreateInput({
         autoComplete="off"
       />
       <span
-        className="max-w-[40%] truncate text-[10px] text-fg-dim"
+        className="max-w-[40%] truncate text-2xs text-fg-dim"
         title={parentDir}
       >
         在: {parentDir}

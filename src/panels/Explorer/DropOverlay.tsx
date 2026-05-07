@@ -6,7 +6,7 @@ interface DropOverlayProps {
 // 拖拽时覆盖整面板的提示层。pointer-events-none 确保不挡住下层 dragover 事件。
 export function DropOverlay({ targetDir }: DropOverlayProps) {
   return (
-    <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center border-2 border-dashed border-accent bg-accent/15">
+    <div className="pointer-events-none absolute inset-0 z-overlay flex items-center justify-center border-2 border-dashed border-accent bg-accent/15">
       <div className="rounded bg-panel-soft/90 px-4 py-2 text-xs text-fg shadow-lg">
         放下以上传到 <code className="text-accent">{targetDir}</code>
       </div>

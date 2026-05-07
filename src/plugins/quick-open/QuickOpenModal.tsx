@@ -138,13 +138,13 @@ export function QuickOpenModal() {
                   onClick={() => void openFile(f)}
                 >
                   <span className="truncate font-medium">{f.name}</span>
-                  <span className="ml-auto truncate text-[10px] text-fg-dim">
+                  <span className="ml-auto truncate text-2xs text-fg-dim">
                     {f.relPath}
                   </span>
                 </li>
               ))}
               {results.length >= 5000 && filtered.length > 0 && (
-                <li className="px-3 py-1 text-center text-[10px] text-fg-dim">
+                <li className="px-3 py-1 text-center text-2xs text-fg-dim">
                   仅显示前 5000 个文件;输入更具体的查询缩小范围
                 </li>
               )}

@@ -125,7 +125,7 @@ export function KeybindingCaptureModal({
         )}
       </div>
 
-      <div className="mt-2 text-[10px] text-fg-dim">
+      <div className="mt-2 text-2xs text-fg-dim">
         按下新组合保存;<KeyCap>Backspace</KeyCap> 清空;
         <KeyCap>Esc</KeyCap> 取消
         {defaultHotkey && (
@@ -142,7 +142,7 @@ export function KeybindingCaptureModal({
             {conflicts.map((c) => (
               <li key={c.id}>
                 {c.title}{' '}
-                <code className="text-[10px] text-warning/70">{c.id}</code>
+                <code className="text-2xs text-warning/70">{c.id}</code>
               </li>
             ))}
           </ul>

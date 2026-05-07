@@ -211,7 +211,7 @@ export function ContextMenu({
                 onSelect={() => actions.onRename(target!.path)}
               >
                 重命名
-                <span className="ml-auto text-[10px] text-fg-dim">F2</span>
+                <span className="ml-auto text-2xs text-fg-dim">F2</span>
               </Menu.Item>
               <Menu.Separator className={sepCls} />
 
@@ -222,7 +222,7 @@ export function ContextMenu({
               >
                 复制路径
                 {deleteTargets().length > 1 && (
-                  <span className="ml-auto text-[10px] text-fg-dim">
+                  <span className="ml-auto text-2xs text-fg-dim">
                     {deleteTargets().length} 项
                   </span>
                 )}
@@ -233,7 +233,7 @@ export function ContextMenu({
               >
                 复制相对路径
                 {deleteTargets().length > 1 && (
-                  <span className="ml-auto text-[10px] text-fg-dim">
+                  <span className="ml-auto text-2xs text-fg-dim">
                     {deleteTargets().length} 项
                   </span>
                 )}
@@ -264,7 +264,7 @@ export function ContextMenu({
               >
                 移到废纸篓
                 {deleteTargets().length > 1 && (
-                  <span className="ml-auto text-[10px] text-fg-dim">
+                  <span className="ml-auto text-2xs text-fg-dim">
                     {deleteTargets().length} 项
                   </span>
                 )}

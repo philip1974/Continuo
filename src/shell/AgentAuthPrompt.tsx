@@ -45,7 +45,7 @@ export function AgentAuthPrompt() {
         ) : null}{' '}
         通过 MCP 请求{methodLabel(pending.method)}。
       </p>
-      <p className="mb-4 text-[10px] text-fg-dim">
+      <p className="mb-4 text-2xs text-fg-dim">
         授权后,持有 MCP token 的 agent 可以创建 / 关闭 / 写入 / 读取 terminal。
         token 仅本次启动有效,Continuo 退出即作废。
       </p>
