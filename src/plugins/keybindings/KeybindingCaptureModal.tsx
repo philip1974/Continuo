@@ -136,17 +136,17 @@ export function KeybindingCaptureModal({
       </div>
 
       {conflicts.length > 0 && (
-        <div className="mt-2 rounded border border-amber-500/40 bg-amber-500/10 p-2 text-[11px] text-amber-300">
+        <div className="mt-2 rounded border border-warning/40 bg-warning/10 p-2 text-[11px] text-warning">
           <div className="font-medium">⚠️ 此组合已绑定到其它命令</div>
           <ul className="mt-1 list-inside list-disc space-y-0.5">
             {conflicts.map((c) => (
               <li key={c.id}>
                 {c.title}{' '}
-                <code className="text-[10px] text-amber-300/70">{c.id}</code>
+                <code className="text-[10px] text-warning/70">{c.id}</code>
               </li>
             ))}
           </ul>
-          <div className="mt-1 text-amber-300/80">
+          <div className="mt-1 text-warning/80">
             保存后两个命令都会响应,建议先在原命令上 unbind 再保存这里。
           </div>
         </div>

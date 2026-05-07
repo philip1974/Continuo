@@ -316,12 +316,12 @@ function UserPluginsSection() {
                   <div className="mt-1 text-fg-muted">{p.manifest.description}</div>
                 )}
                 {p.error && (
-                  <div className="mt-1 text-[10px] text-red-400">
+                  <div className="mt-1 text-[10px] text-error">
                     {p.error}
                   </div>
                 )}
                 {p.warning && (
-                  <div className="mt-1 text-[10px] text-amber-400">
+                  <div className="mt-1 text-[10px] text-warning">
                     ⚠ {p.warning}
                   </div>
                 )}

@@ -192,7 +192,7 @@ export function MarketplaceTab() {
 
   if (state.kind === 'error') {
     return (
-      <div className="rounded border border-line bg-panel-soft/40 p-4 text-xs text-red-400">
+      <div className="rounded border border-line bg-panel-soft/40 p-4 text-xs text-error">
         ✘ 拉取索引失败:{state.message}
         <div className="mt-1 text-fg-dim">
           检查网络;若 GitHub 暂不可达,稍后再试。
@@ -407,7 +407,10 @@ interface CardProps {
   onUpdate: (entry: MarketplaceEntry) => void | Promise<void>;
 }
 
-/** 把 0-5 平均分渲染成 5 个 ★/☆,半星向就近整数. */
+/** 把 0-5 平均分渲染成 5 个 ★/☆,半星向就近整数.
+ *  调用点用 `text-amber-400` 着色 — 这是评分星级业内约定色,与 design token
+ *  warning(#efc15e) 语义不同(rating ≠ warning),故保留为 design system 合法例外,
+ *  不再扩 --color-rating 槽以免过度设计。 */
 function renderStars(avg: number): string {
   const full = Math.round(avg);
   return '★'.repeat(Math.max(0, Math.min(5, full))) + '☆'.repeat(5 - Math.max(0, Math.min(5, full)));
@@ -675,7 +678,7 @@ function ReviewItem({ review: r }: { review: Review }) {
           )}
           {!isMaintainer && isNewAccount && (
             <span
-              className="rounded bg-amber-500/20 px-1 py-0.5 text-[9px] text-amber-400"
+              className="rounded bg-warning/20 px-1 py-0.5 text-[9px] text-warning"
               title={`GitHub 账号注册不到 ${NEW_ACCOUNT_DAYS} 天,慎信`}
             >
               ⚠ 新账号

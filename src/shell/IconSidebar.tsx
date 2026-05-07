@@ -113,7 +113,7 @@ export function IconSidebar() {
             <div key={item.id} className="relative">
               {renderItem(item)}
               <span
-                className="pointer-events-none absolute right-0.5 top-0.5 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-medium leading-none text-white"
+                className="pointer-events-none absolute right-0.5 top-0.5 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-error px-1 text-[9px] font-medium leading-none text-on-error"
                 title={`${updateCount} 个插件可更新`}
                 aria-label={`${updateCount} 个插件可更新`}
               >
