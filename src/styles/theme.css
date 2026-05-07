@@ -44,15 +44,22 @@
   --md-outline: #8d90a0;
   --md-outline-variant: #434655;        /* line(更明显的分隔) */
 
-  /* 主色:royal blue #2563eb(demo primary-container)+ soft lavender accent */
-  --md-primary: #2563eb;                /* accent — Tailwind blue-600 */
-  --md-on-primary: #ffffff;
+  /* 主色:demo DESIGN.md 的 MD3 双槽 ──
+   *   --md-primary           = #b4c5ff(淡天蓝):text/border/alpha-blend 的 accent,
+   *                            在深色面板上对比度比 royal blue 高,长时间看更舒服
+   *   --md-on-primary        = #002a78(深海军蓝):light primary 上的可读文字
+   *   --md-primary-container = #2563eb(royal blue):filled button bg,需要更强视觉重量时用
+   *   --md-on-primary-container = #eeefff:royal blue 上的浅文字
+   * Button[variant=primary] 的 idle→hover 自然走 light blue → royal blue 的 MD3 tonal 过渡。
+   */
+  --md-primary: #b4c5ff;
+  --md-on-primary: #002a78;
   --md-primary-container: #2563eb;
   --md-on-primary-container: #eeefff;
   --md-focus-ring: #2563eb;
 }
 
-/* ── Tailwind v4 @theme:把 LM 9 个语义 token 映射到 MD3 ───── */
+/* ── Tailwind v4 @theme:把 LM 11 个语义 token 映射到 MD3 ───── */
 @theme inline {
   --color-canvas: var(--md-surface);
   --color-panel: var(--md-surface-container);
@@ -62,7 +69,12 @@
   --color-fg: var(--md-on-surface);
   --color-fg-muted: var(--md-on-surface-variant);
   --color-fg-dim: #6c6f7e;              /* MD3 无对应槽,与新色板配套 */
+  /* accent 双槽:
+   *   bg-accent / text-accent / border-accent → 淡天蓝(MD3 primary,适合 stroke / 文字 / alpha 混合)
+   *   bg-accent-fill / text-on-accent-fill   → royal blue(MD3 primary-container,filled 控件强视觉) */
   --color-accent: var(--md-primary);
+  --color-accent-fill: var(--md-primary-container);
+  --color-on-accent-fill: var(--md-on-primary-container);
 }
 
 /* ── 全局 scrollbar(参考 stitch_desktop_design_reviewer 原型)──────────

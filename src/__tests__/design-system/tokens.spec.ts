@@ -66,7 +66,7 @@ describe('theme.css Continuo 暗色覆盖与 @theme inline 链路', () => {
     expect(lmDark).toMatch(/--md-on-surface\s*:/);
   });
 
-  it('@theme inline 暴露 9 个 --color-* 语义 token,全部 var(--md-*) 解析', () => {
+  it('@theme inline 暴露 11 个 --color-* 语义 token,全部 var(--md-*) 解析', () => {
     const themeBlock = LM_THEME.match(/@theme\s+inline\s*\{([\s\S]*?)\n\}/);
     expect(themeBlock).not.toBeNull();
     const inner = themeBlock![1] ?? '';
@@ -80,6 +80,10 @@ describe('theme.css Continuo 暗色覆盖与 @theme inline 链路', () => {
       'fg-muted',
       'fg-dim',
       'accent',
+      // demo (3) 配色双槽:accent (淡蓝,stroke / 文字 / alpha) +
+      // accent-fill (royal blue,filled 控件强视觉) + on-accent-fill (filled 上的浅文字)
+      'accent-fill',
+      'on-accent-fill',
     ];
     for (const t of colorTokens) {
       expect(inner).toMatch(new RegExp(`--color-${t}\\s*:`));
