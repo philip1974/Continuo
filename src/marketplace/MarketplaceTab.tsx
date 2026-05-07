@@ -218,7 +218,7 @@ export function MarketplaceTab() {
   }
 
   return (
-    <div className="space-y-3">
+    <div className="flex flex-col gap-3">
       <div className="space-y-2">
         <Input
           size="sm"
@@ -227,7 +227,10 @@ export function MarketplaceTab() {
           onChange={(e) => setQuery(e.target.value)}
         />
         {allTags.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="mr-1 text-[10px] uppercase tracking-wider text-fg-dim">
+              热门标签
+            </span>
             {allTags.map((tag) => (
               <TagButton
                 key={tag}
@@ -288,7 +291,75 @@ export function MarketplaceTab() {
           ))}
         </div>
       )}
+      <GitUrlInstallSection />
     </div>
+  );
+}
+
+// 从 Git URL 安装段(对齐 demo (3) 扩展商店底部「从 GIT URL 安装」)。
+// 走 v4.5 已有的 installFromGit IPC,与 PluginsTabContent 共用同一接口;
+// 装好后插件磁盘已就位,需重启 Continuo 后 PluginManager 才扫到。
+function GitUrlInstallSection() {
+  const [url, setUrl] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const onInstall = async () => {
+    const u = url.trim();
+    if (!u) return;
+    setBusy(true);
+    setMsg(null);
+    try {
+      const r = await coApi.plugins.installFromGit(u);
+      if (!r.ok) {
+        setMsg(`✘ [${r.code}] ${r.message}`);
+      } else {
+        setMsg(
+          `✔ 已安装 ${r.data.name} v${r.data.version} — 重启 Continuo 后激活`,
+        );
+        setUrl('');
+      }
+    } catch (err) {
+      setMsg(`✘ ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="mt-6 border-t border-line/30 pt-6">
+      <h3 className="text-base font-medium text-fg">从 Git URL 安装</h3>
+      <p className="mt-1 text-xs text-fg-muted">
+        如果有自定义扩展的仓库地址,可以直接通过 Git 链接安装。
+      </p>
+      <div className="mt-3 flex items-center gap-2">
+        <Input
+          size="sm"
+          placeholder="https://github.com/user/extension-repo.git"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          disabled={busy}
+          className="flex-1"
+        />
+        <Button
+          variant="primary"
+          size="sm"
+          onClick={onInstall}
+          disabled={busy || !url.trim()}
+        >
+          {busy ? '安装中…' : '安装扩展'}
+        </Button>
+      </div>
+      {msg && <div className="mt-2 text-xs text-fg-muted">{msg}</div>}
+      <div className="mt-3 flex items-start gap-2 rounded-md border border-accent/20 bg-accent/5 p-3 text-xs text-fg-muted">
+        <span aria-hidden className="mt-0.5 leading-none text-accent">
+          ⓘ
+        </span>
+        <span>
+          注意:从第三方 Git 仓库安装扩展可能存在安全风险,请确保你信任源代码及其开发者。
+        </span>
+      </div>
+    </section>
   );
 }
 
