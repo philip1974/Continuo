@@ -1,11 +1,14 @@
 import { defineConfig } from 'vitest/config';
 import { resolve } from 'node:path';
 
+// 这是 base 配置,被 vitest.workspace.ts 各 project 继承(extends)。
+// 多 project 拆分见 vitest.workspace.ts。
 export default defineConfig({
   resolve: {
     alias: { '@': resolve(__dirname, 'src') },
   },
   test: {
+    // include / exclude 由 vitest.workspace.ts 各 project 定义,base 不再列。
     environment: 'node',
     environmentMatchGlobs: [
       // 默认 node;需要 DOM / localStorage 的 spec 单独走 jsdom
@@ -14,7 +17,6 @@ export default defineConfig({
       ['src/__tests__/keybindings-store/**', 'jsdom'],
     ],
     setupFiles: ['src/__tests__/design-system/setup.ts'],
-    include: ['src/**/*.{spec,test}.{ts,tsx}'],
     globals: false,
   },
 });

@@ -14,6 +14,8 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:unit": "vitest run --project unit",
+    "test:integration": "vitest run --project integration",
     "e2e": "playwright test",
     "e2e:headed": "playwright test --headed",
     "bdd:index": "node scripts/bdd-index.mjs",
