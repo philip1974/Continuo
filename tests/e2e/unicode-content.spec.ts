@@ -1,4 +1,4 @@
-// 含中文 / emoji / 多字节字符的 file → CM 正确显示.
+// 含中文 / emoji / 多字节字符的 file → CM 正确显示.  @edge
 import { _electron as electron, expect, test } from '@playwright/test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

@@ -1,4 +1,4 @@
-// BOM(﻿)开头的 file → 打开不崩.
+// BOM(﻿)开头的 file → 打开不崩.  @edge
 import { _electron as electron, expect, test } from '@playwright/test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

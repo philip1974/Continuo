@@ -1,4 +1,4 @@
-// workspace path 含空格 → 加载 + tree + Cmd+P 都正常.
+// workspace path 含空格 → 加载 + tree + Cmd+P 都正常.  @edge
 import { _electron as electron, expect, test } from '@playwright/test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

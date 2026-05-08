@@ -1,4 +1,4 @@
-// layout.json 损坏 → fromJSON 失败 → fallback 默认布局(Editor panel 出现).
+// layout.json 损坏 → fromJSON 失败 → fallback 默认布局(Editor panel 出现).  @edge
 import { _electron as electron, expect, test } from '@playwright/test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

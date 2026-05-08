@@ -1,4 +1,4 @@
-// explorer.json 损坏 / 不合 schema → 启动时 fallback 默认 store(EmptyWorkspace).
+// explorer.json 损坏 / 不合 schema → 启动时 fallback 默认 store(EmptyWorkspace).  @edge
 // 用户不丢信任,UI 仍可用.
 import { _electron as electron, expect, test } from '@playwright/test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';

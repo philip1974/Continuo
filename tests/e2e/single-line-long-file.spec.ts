@@ -1,4 +1,4 @@
-// 1000 字符无换行 → footer 「1 行」.
+// 1000 字符无换行 → footer 「1 行」.  @edge
 import { _electron as electron, expect, test } from '@playwright/test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

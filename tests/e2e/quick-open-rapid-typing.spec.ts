@@ -1,4 +1,4 @@
-// 快速 fill 不同 query → 列表稳定收敛于最后值.
+// 快速 fill 不同 query → 列表稳定收敛于最后值.  @edge
 import { test, expect } from './fixtures/with-workspace';
 
 test('Cmd+P fill a → fill ab → fill abc → 列表反映 abc', async ({ window }) => {

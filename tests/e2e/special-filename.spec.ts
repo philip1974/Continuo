@@ -1,4 +1,4 @@
-// 文件名含空格/中文 → tree 显示 + 单击打开 + header 显原名.
+// 文件名含空格/中文 → tree 显示 + 单击打开 + header 显原名.  @edge
 import { _electron as electron, expect, test } from '@playwright/test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

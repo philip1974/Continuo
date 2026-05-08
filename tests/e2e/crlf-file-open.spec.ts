@@ -1,4 +1,4 @@
-// 含 CRLF 行尾的 file 打开不崩 + footer 显行数.
+// 含 CRLF 行尾的 file 打开不崩 + footer 显行数.  @edge
 import { _electron as electron, expect, test } from '@playwright/test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

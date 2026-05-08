@@ -1,4 +1,4 @@
-// CM 连输多字符 → 全部记录(IME 安全 + 编辑事件正确路由).
+// CM 连输多字符 → 全部记录(IME 安全 + 编辑事件正确路由).  @edge
 import { test, expect } from './fixtures/with-workspace';
 
 test('快输 abcdef → CM 内容含 abcdef', async ({ window }) => {
