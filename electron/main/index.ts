@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell } from 'electron';
+import { app, BrowserWindow, Menu, shell } from 'electron';
 import type { HandlerDetails, WindowOpenHandlerResponse } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -329,6 +329,12 @@ async function startMcpStdioServer(): Promise<void> {
 }
 
 app.whenReady().then(async () => {
+  // E2E 跑 Playwright 时,Electron 默认菜单的 CmdOrCtrl+P 绑定 Print 会先吞
+  // ⌘P,导致 Quick Open 收不到 keydown。e2e 显式禁用菜单(只影响测试模式)。
+  if (process.env['CONTINUO_E2E'] === '1') {
+    Menu.setApplicationMenu(null);
+  }
+
   registerIpc();
   // 在 createMainWindow 之前启 host,确保 renderer autoSpawn 的第一个 PTY
   // env 已含 MCP url / token。

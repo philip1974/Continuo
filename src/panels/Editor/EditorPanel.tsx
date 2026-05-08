@@ -134,7 +134,6 @@ export function EditorPanel() {
         activeTab={activeTab}
         autoSaveEnabled={autoSaveEnabled}
         onCloseRequest={onTabCloseRequest}
-        onSave={handleSave}
       />
       <div className="min-h-0 flex-1">{body}</div>
 

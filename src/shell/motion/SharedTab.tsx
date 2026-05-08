@@ -117,9 +117,11 @@ export function SharedTab(props: IDockviewPanelHeaderProps & TabHtmlExtras) {
         </svg>
       </IconButton>
       {active && (
+        // 顶部 accent line(VSCode workbench tab 风格)。放底部会与下一行
+        // EditorHeader 的 TabNav active underline 视觉撞,形成"双下划线"。
         <motion.span
           layoutId={tabIndicatorLayoutId(groupId)}
-          className="pointer-events-none absolute inset-x-0 bottom-0 h-[2px] bg-accent"
+          className="pointer-events-none absolute inset-x-0 top-0 h-[2px] bg-accent"
           transition={TAB_INDICATOR_SPRING}
         />
       )}

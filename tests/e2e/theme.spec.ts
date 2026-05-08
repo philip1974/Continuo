@@ -1,0 +1,31 @@
+// Theme 切换:Settings → 通用 → general.theme select.
+// 从 dark 切到 light → html.dark 移除;切回 → 加上.
+import { test, expect } from './fixtures/electron-app';
+
+test('通用 → 主题切到 light → html.dark 移除', async ({ window }) => {
+  // 默认 dark:html 上有 .dark
+  await expect(window.locator('html')).toHaveClass(/dark/);
+
+  // 打开 Settings,留在「通用」tab(默认首项)
+  await window.locator('button[title="设置"]').click();
+  await expect(window.locator('nav[aria-label="设置分类"]')).toBeVisible({
+    timeout: 10_000,
+  });
+
+  // 找到 general.theme 行的 SegmentedControl,点 light option
+  // SettingItemRow render select 用 SegmentedControl,文本为 'Light' / 'Dark' / 'System'
+  const lightBtn = window
+    .locator('button, [role=tab]')
+    .filter({ hasText: /^Light$/i });
+  await expect(lightBtn.first()).toBeVisible();
+  await lightBtn.first().click();
+
+  await expect(window.locator('html')).not.toHaveClass(/dark/);
+
+  // 切回 Dark
+  const darkBtn = window
+    .locator('button, [role=tab]')
+    .filter({ hasText: /^Dark$/i });
+  await darkBtn.first().click();
+  await expect(window.locator('html')).toHaveClass(/dark/);
+});

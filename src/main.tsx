@@ -95,13 +95,18 @@ import('./plugins/protocol/handler').then(({ handleProtocolUrl }) => {
   });
 });
 
-// 资源管理器持久化(M-Explorer Step 3 + Step 4)。
+// 资源管理器持久化(M-Explorer Step 3 + Step 4)+ Editor session 恢复(Step E5)。
 // fire-and-forget:hydrate 在毫秒级完成,store setState 触发 React 重渲染,
 // EmptyWorkspace 自动切到 FolderTree。无需 splash。
-void initExplorerPersistence({
-  read: () => coApi.explorer.read(),
-  write: (snap) => coApi.explorer.write(snap),
-});
+// 注入 coApi.fs:启动时按 explorer.json 的 editor.openFilePaths 异步读
+// 文件内容,恢复上次会话的 editor tabs。BDD: editor-session-restore。
+void initExplorerPersistence(
+  {
+    read: () => coApi.explorer.read(),
+    write: (snap) => coApi.explorer.write(snap),
+  },
+  { fs: { readFile: (p) => coApi.fs.readFile(p) } },
+);
 
 // Marketplace Phase 3:启动时静默拉一次更新清单(IconSidebar 角标用)。
 // fire-and-forget,不阻塞 UI 渲染。失败 console.warn 不抛。
@@ -129,4 +134,73 @@ if (typeof requestIdleCallback === 'function') {
   requestIdleCallback(prefetchTerminal, { timeout: 3000 });
 } else {
   setTimeout(prefetchTerminal, 1500);
+}
+
+// E2E hook:Playwright 通过 page.evaluate 调 dock 操作 / store 重置。
+// 仅当 preload 探测到 `__continuoE2E` 标志时挂载;非测试环境完全无效.
+// preload 通过 process.env.CONTINUO_E2E 转发(主进程在 e2e 时设这个变量).
+declare const window: Window & {
+  __continuoE2E?: boolean;
+  __continuoTest?: {
+    openOrFocusPanel: (id: string, component: string, title: string) => void;
+    focusPanel: (id: string) => void;
+    setEditorContent: (tabId: string, content: string) => void;
+    getEditorActiveTabId: () => string | null;
+    setSettingValue: (id: string, value: string | number | boolean) => void;
+    getSettingValue: (id: string) => unknown;
+    /** 触发权限弹窗(plugin install 流程的核心交互). */
+    requestPermissions: (
+      pluginId: string,
+      perms: readonly string[],
+    ) => Promise<readonly string[]>;
+    /** 命令数量(用于 e2e 验证内置命令注册数). */
+    commandCount: () => number;
+    /** 注册命令(测试动态命令出现).返 dispose. */
+    registerCommand: (
+      id: string,
+      title: string,
+      hotkey?: string,
+    ) => () => void;
+    /** 改 keybindings override(测试 hotkey 显示更新). */
+    setHotkey: (commandId: string, hotkey: string) => void;
+  };
+};
+if (window.__continuoE2E === true) {
+  void Promise.all([
+    import('@/shell/dock/dock-api-ref'),
+    import('@/stores/editor.store'),
+    import('@/plugins/settings/values-store'),
+    import('@/plugins/permissions/promptStore'),
+    import('@/plugins/co-app'),
+    import('@/plugins/keybindings/keybindings-store'),
+  ]).then(([dock, editor, values, perm, app, kb]) => {
+    window.__continuoTest = {
+      openOrFocusPanel: dock.openOrFocusPanel,
+      focusPanel: dock.focusPanel,
+      setEditorContent: (tabId, content) =>
+        editor.useEditorStore.getState().updateContent(tabId, content),
+      getEditorActiveTabId: () =>
+        editor.useEditorStore.getState().activeTabId,
+      setSettingValue: (id, v) =>
+        values.useSettingsValuesStore.getState().setValue(id, v),
+      getSettingValue: (id) =>
+        values.useSettingsValuesStore.getState().values[id],
+      requestPermissions: (pluginId, perms) =>
+        perm.usePermissionPromptStore
+          .getState()
+          .request(pluginId, perms as never),
+      commandCount: () => app.coApp.commands.getAll().length,
+      registerCommand: (id, title, hotkey) => {
+        const d = app.coApp.commands.register({
+          id,
+          title,
+          ...(hotkey ? { hotkey } : {}),
+          fn: () => {},
+        });
+        return () => d.dispose();
+      },
+      setHotkey: (commandId, hotkey) =>
+        kb.useKeybindingsStore.getState().setHotkey(commandId, hotkey),
+    };
+  });
 }

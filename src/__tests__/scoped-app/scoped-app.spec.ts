@@ -1,5 +1,17 @@
 // @vitest-environment jsdom
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+
+function beforeEachClear(): void {
+  beforeEach(() => {
+    delete (window as { api?: unknown }).api;
+  });
+}
+function afterEachClear(): void {
+  afterEach(() => {
+    delete (window as { api?: unknown }).api;
+    vi.restoreAllMocks();
+  });
+}
 import { createScopedApp } from '../../plugins/scoped-app';
 import {
   InMemoryPermissionStore,
@@ -191,6 +203,131 @@ describe('Phase 3 runtime gating', () => {
     const b = createScopedApp(coApp, 'p.b', store);
     await expect(a.fs.readFile('/x')).rejects.toThrow(/未注入/); // 过 gating
     await expect(b.fs.readFile('/x')).rejects.toBeInstanceOf(PermissionError);
+  });
+});
+
+describe('授后转发 — fs / shell / clipboard / mcp / network 行为', () => {
+  function installFs(fs: Record<string, unknown>): void {
+    Object.defineProperty(window, 'api', {
+      value: { fs, shell: {} },
+      writable: true,
+      configurable: true,
+    });
+  }
+  function installFull(api: Record<string, unknown>): void {
+    Object.defineProperty(window, 'api', {
+      value: api,
+      writable: true,
+      configurable: true,
+    });
+  }
+
+  beforeEachClear();
+  afterEachClear();
+
+  it('fs.readFile ok=true → 返 data', async () => {
+    const store = new InMemoryPermissionStore();
+    await store.grant('p', ['fs']);
+    installFs({
+      readFile: () => ({ ok: true, data: 'hello' }),
+      writeFile: () => ({ ok: true, data: undefined }),
+      listDir: () => ({ ok: true, data: [] }),
+    });
+    const scoped = createScopedApp(makeLmApp(), 'p', store);
+    expect(await scoped.fs.readFile('/x')).toBe('hello');
+  });
+
+  it('fs.readFile ok=false → 抛带 code:message 文案', async () => {
+    const store = new InMemoryPermissionStore();
+    await store.grant('p', ['fs']);
+    installFs({
+      readFile: () => ({ ok: false, code: 'ENOENT', message: 'gone' }),
+      writeFile: () => ({ ok: false, code: 'EROFS', message: 'ro' }),
+      listDir: () => ({ ok: false, code: 'EACCES', message: 'denied' }),
+    });
+    const scoped = createScopedApp(makeLmApp(), 'p', store);
+    await expect(scoped.fs.readFile('/x')).rejects.toThrow(/ENOENT.*gone/);
+    await expect(scoped.fs.writeFile('/x', '')).rejects.toThrow(/EROFS.*ro/);
+    await expect(scoped.fs.listDir('/x')).rejects.toThrow(/EACCES.*denied/);
+  });
+
+  it('fs.writeFile/listDir ok=true 透传 data', async () => {
+    const store = new InMemoryPermissionStore();
+    await store.grant('p', ['fs']);
+    installFs({
+      writeFile: () => ({ ok: true, data: undefined }),
+      listDir: () => ({
+        ok: true,
+        data: [{ path: '/x/a', name: 'a', isDirectory: false }],
+      }),
+    });
+    const scoped = createScopedApp(makeLmApp(), 'p', store);
+    await scoped.fs.writeFile('/x', 'data');
+    const list = await scoped.fs.listDir('/x');
+    expect(list[0]?.name).toBe('a');
+  });
+
+  it('shell.exec 授后透传 + ok=true 返 data', async () => {
+    const store = new InMemoryPermissionStore();
+    await store.grant('p', ['shell']);
+    installFull({
+      shell: {
+        exec: () => ({
+          ok: true,
+          data: { stdout: 'hi', stderr: '', exitCode: 0 },
+        }),
+      },
+    });
+    const scoped = createScopedApp(makeLmApp(), 'p', store);
+    const r = await scoped.shell.exec('echo', ['hi']);
+    expect(r.stdout).toBe('hi');
+  });
+
+  it('shell.exec ok=false → 抛带 code:message', async () => {
+    const store = new InMemoryPermissionStore();
+    await store.grant('p', ['shell']);
+    installFull({
+      shell: {
+        exec: () => ({ ok: false, code: 'EBUSY', message: 'pty busy' }),
+      },
+    });
+    const scoped = createScopedApp(makeLmApp(), 'p', store);
+    await expect(scoped.shell.exec('echo', [])).rejects.toThrow(
+      /EBUSY.*pty busy/,
+    );
+  });
+
+  it('mcp.register 授后调 registry.register(spec, pluginId)', async () => {
+    const store = new InMemoryPermissionStore();
+    await store.grant('p', ['mcp-tools']);
+    const coApp = makeLmApp();
+    const regSpy = vi.spyOn(coApp.mcp, 'register');
+    const scoped = createScopedApp(coApp, 'p', store);
+    const spec = {
+      name: 'tool.x',
+      description: 'desc',
+      inputSchema: {} as never,
+      run: async () => ({}),
+    };
+    await scoped.mcp.register(spec as never);
+    expect(regSpy).toHaveBeenCalledWith(spec, 'p');
+  });
+
+  it('未授 mcp-tools → register 抛 PermissionError', async () => {
+    const store = new InMemoryPermissionStore();
+    const scoped = createScopedApp(makeLmApp(), 'p', store);
+    await expect(
+      scoped.mcp.register({ name: 'x', run: async () => ({}) } as never),
+    ).rejects.toBeInstanceOf(PermissionError);
+  });
+
+  it('permission.granted 列出已授项,deny 不计入', async () => {
+    const store = new InMemoryPermissionStore();
+    await store.grant('p', ['fs']);
+    await store.deny('p', ['network']);
+    const scoped = createScopedApp(makeLmApp(), 'p', store);
+    const granted = await scoped.permission.granted();
+    expect(granted).toEqual(['fs']);
   });
 });
 

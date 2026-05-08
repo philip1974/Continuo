@@ -17,7 +17,7 @@
 |---|---|
 | `src/plugins/settings/store.ts` | useSettingsStore — 仅 `activeTabId` + `setActiveTabId`(无 isOpen / open / close) |
 | `src/plugins/settings/SettingsPanel.tsx` | UI:左导航 + 右内容,h-full 占满 |
-| `src/core-plugins/SettingsPanelPlugin.ts` | 注册 `settings` panel type + 命令 `settings.open`(⌘,) |
+| `src/core-plugins/SettingsPanelPlugin.ts` | 注册 `settings` panel type + 命令 `settings.toggle`(⌘,);toggle 行为见 `settings-toggle` 主题 |
 | `src/shell/dock/dock-api-ref.ts` | `openOrFocusPanel(id, component, title)` helper |
 
 ## 关键行为
@@ -51,11 +51,11 @@ interface SettingsState {
 无 `isOpen` / `open` / `close`(panel 生命周期由 dockview 管)。
 原 `open(tabId?)` 调用方改为:`setActiveTabId(tabId)` + `openOrFocusPanel(...)`。
 
-### 命令 `settings.open`(⌘,)
+### 命令 `settings.toggle`(⌘,)
 
-- 由 SettingsPanelPlugin 注册
-- 行为:openOrFocusPanel('settings', 'settings', 'Settings')
-- 旧 PluginsTabPlugin 不再注册此命令
+- 由 SettingsPanelPlugin 注册,fn 走 `toggleSettingsPanel()` helper
+- toggle 语义 + sidebar 副作用 — 见 `settings-toggle` 主题
+- 旧命令 ID `settings.open` 已重命名为 `settings.toggle`(行为也变 toggle)
 
 ## 不在本主题验证
 

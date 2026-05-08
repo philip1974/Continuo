@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import {
   getCachedClipboard,
   getCachedFetch,
@@ -57,5 +57,83 @@ describe('sandboxSweep — 删 globalThis.fetch / navigator.clipboard', () => {
         configurable: true,
       });
     }
+  });
+
+  it('sweep 后 globalThis.api 是 undefined', () => {
+    Object.defineProperty(globalThis, 'api', {
+      value: { fs: {} },
+      writable: true,
+      configurable: true,
+    });
+    sandboxSweep();
+    expect(
+      (globalThis as Record<string, unknown>).api,
+    ).toBeUndefined();
+  });
+
+  it('window.api 存在 → sweep 后 undefined', () => {
+    Object.defineProperty(window, 'api', {
+      value: { fs: {} },
+      writable: true,
+      configurable: true,
+    });
+    sandboxSweep();
+    expect((window as { api?: unknown }).api).toBeUndefined();
+  });
+
+  it('window.api 不存在 → 不报错', () => {
+    delete (window as { api?: unknown }).api;
+    expect(() => sandboxSweep()).not.toThrow();
+  });
+});
+
+describe('sandboxSweep — defineProperty 抛错时降级到 console.warn', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('fetch defineProperty 抛 → console.warn,不冒泡', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const orig = Object.defineProperty;
+    const spy = vi.spyOn(Object, 'defineProperty').mockImplementation(
+      ((target: object, prop: PropertyKey, desc: PropertyDescriptor) => {
+        if (prop === 'fetch') {
+          throw new Error('readonly');
+        }
+        return orig.call(Object, target, prop, desc);
+      }) as never,
+    );
+    sandboxSweep();
+    spy.mockRestore();
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('fetch sweep 失败'),
+      expect.any(Error),
+    );
+  });
+
+  it('clipboard defineProperty 抛 → console.warn', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const orig = Object.defineProperty;
+    const spy = vi.spyOn(Object, 'defineProperty').mockImplementation(
+      ((target: object, prop: PropertyKey, desc: PropertyDescriptor) => {
+        if (target === navigator && prop === 'clipboard') {
+          throw new Error('readonly');
+        }
+        return orig.call(Object, target, prop, desc);
+      }) as never,
+    );
+    sandboxSweep();
+    spy.mockRestore();
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('clipboard sweep 失败'),
+      expect.any(Error),
+    );
+  });
+
+  it('__lmApi defineProperty 抛 → 静默(不 warn)', () => {
+    // __lmApi catch 是空块,我们只确保不抛
+    expect(() => sandboxSweep()).not.toThrow();
   });
 });

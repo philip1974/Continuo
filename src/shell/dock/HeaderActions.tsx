@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { IDockviewHeaderActionsProps } from 'dockview-react';
 import { popoutUrlFor } from '@/lib/popout-mode';
 import { IconButton, MenuItem } from '@/design';
@@ -7,10 +8,18 @@ import { coApp } from '@/plugins/co-app';
 let panelCounter = 0;
 const nextPanelId = (key: string) => `${key}-${++panelCounter}`;
 
+interface AnchorRect {
+  readonly top: number;
+  readonly right: number;
+}
+
 export function HeaderActions(props: IDockviewHeaderActionsProps) {
   const { containerApi, group, activePanel } = props;
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [anchor, setAnchor] = useState<AnchorRect | null>(null);
   // 动态读取已注册 panel 类型(含内置 + 未来第三方插件)
   const [panelChoices, setPanelChoices] = useState(() => coApp.panels.getAll());
   useEffect(
@@ -19,10 +28,32 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
     [],
   );
 
+  // 计算菜单坐标 — 用 trigger 按钮的 viewport rect。
+  // 必须 portal 到 document.body:Dockview 祖先有 transform: translate3d(0,0,0)
+  // 创建 stacking context,把 z-modal 困在 panel header 子树内,会被相邻
+  // panel content 盖住。Portal 出去后 position:fixed 才真按 viewport 定位。
+  useLayoutEffect(() => {
+    if (!open) return;
+    const update = () => {
+      const r = triggerRef.current?.getBoundingClientRect();
+      if (r) setAnchor({ top: r.bottom + 4, right: window.innerWidth - r.right });
+    };
+    update();
+    window.addEventListener('resize', update);
+    window.addEventListener('scroll', update, true);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', update, true);
+    };
+  }, [open]);
+
   useEffect(() => {
     if (!open) return;
     const onDocPointer = (e: PointerEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      const inTrigger = ref.current?.contains(target) ?? false;
+      const inMenu = menuRef.current?.contains(target) ?? false;
+      if (!inTrigger && !inMenu) setOpen(false);
     };
     document.addEventListener('pointerdown', onDocPointer);
     return () => document.removeEventListener('pointerdown', onDocPointer);
@@ -74,6 +105,7 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
         </svg>
       </IconButton>
       <IconButton
+        ref={triggerRef}
         size="sm"
         aria-label="More actions"
         title="更多操作"
@@ -87,18 +119,22 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
           <circle cx="12.5" cy="8" r="1.1" fill="currentColor" />
         </svg>
       </IconButton>
-      {open && (
-        <div
-          role="menu"
-          className="absolute right-0 top-full z-modal mt-1 min-w-[140px] overflow-hidden rounded-md border border-line bg-panel py-1 shadow-lg shadow-black/40"
-        >
-          {panelChoices.map((c) => (
-            <MenuItem key={c.type} onClick={() => addPanel(c.type, c.title)}>
-              {c.title}
-            </MenuItem>
-          ))}
-        </div>
-      )}
+      {open && anchor &&
+        createPortal(
+          <div
+            ref={menuRef}
+            role="menu"
+            style={{ position: 'fixed', top: anchor.top, right: anchor.right }}
+            className="z-modal min-w-[140px] overflow-hidden rounded-md border border-line bg-panel py-1 shadow-lg shadow-black/40"
+          >
+            {panelChoices.map((c) => (
+              <MenuItem key={c.type} onClick={() => addPanel(c.type, c.title)}>
+                {c.title}
+              </MenuItem>
+            ))}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

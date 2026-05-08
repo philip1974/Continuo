@@ -18,6 +18,10 @@ import { useCommandPaletteStore } from './store';
 import { fuzzyFilter } from './fuzzy';
 import { useRecentCommandsStore } from './recent';
 import { formatHotkeyParts, detectPlatform } from './format-hotkey';
+import {
+  getEffectiveHotkey,
+  useKeybindingsStore,
+} from '../keybindings/keybindings-store';
 
 // module 顶层一次,renderer 生命周期内不会切平台
 const PLATFORM = detectPlatform();
@@ -71,6 +75,9 @@ export function CommandPalette({ commands }: CommandPaletteProps) {
   const recentList = useRecentCommandsStore((s) => s.list);
   const recordRecent = useRecentCommandsStore((s) => s.record);
   const recentIds = useMemo(() => recentList.map((e) => e.id), [recentList]);
+  // 订阅 overrides:用户改 hotkey 时 CommandPalette 重渲,列表 KeyCap 同步.
+  // 不直接用 selector 的值,只为触发 re-render(getEffectiveHotkey 内部读 store).
+  useKeybindingsStore((s) => s.overrides);
 
   const filtered = useMemo(() => {
     if (query) {
@@ -143,13 +150,18 @@ export function CommandPalette({ commands }: CommandPaletteProps) {
                   <span className="shrink-0 text-fg-dim">{cmd.category}:</span>
                 )}
                 <span className="truncate">{cmd.title}</span>
-                {cmd.hotkey && (
-                  <span className="ml-auto flex shrink-0 items-center gap-0.5">
-                    {formatHotkeyParts(cmd.hotkey, PLATFORM).map((p, i) => (
-                      <KeyCap key={`${p}-${i}`}>{p}</KeyCap>
-                    ))}
-                  </span>
-                )}
+                {(() => {
+                  // 用 effective(含 user override)而非原 spec.hotkey,
+                  // 让用户改 hotkey 后命令面板列表立刻显示新组合.
+                  const effective = getEffectiveHotkey(cmd);
+                  return effective ? (
+                    <span className="ml-auto flex shrink-0 items-center gap-0.5">
+                      {formatHotkeyParts(effective, PLATFORM).map((p, i) => (
+                        <KeyCap key={`${p}-${i}`}>{p}</KeyCap>
+                      ))}
+                    </span>
+                  ) : null;
+                })()}
               </li>
             ))
           )}

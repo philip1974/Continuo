@@ -1,14 +1,16 @@
 // 内置 Settings Panel 插件(v5 Phase 5,VSCode 同款)。
 //
-// 注册 'settings' panel 类型 + 命令 'settings.open'(⌘,)。
-// 取代旧 SettingsModal — modal 已彻底删除。
+// 注册 'settings' panel 类型 + 命令 'settings.toggle'(⌘,)。命令是 toggle:
+// 不存在 → 打开 + 收起侧栏;已 active → 关闭;已存在但非 active → 聚焦。
 //
-// BDD: src/__tests__/settings-panel/
+// BDD:
+//   - settings-panel(panel UI)
+//   - settings-toggle(命令 + helper toggle 行为)
 
 import { lazy } from 'react';
 import { Plugin } from '@/plugins/Plugin';
 import { lazyPanel } from '@/lib/lazy-panel';
-import { openOrFocusPanel } from '@/shell/dock/dock-api-ref';
+import { toggleSettingsPanel } from '@/lib/toggle-settings-panel';
 
 const SettingsPanel = lazy(() =>
   import('@/plugins/settings/SettingsPanel').then((m) => ({
@@ -25,11 +27,11 @@ export default class SettingsPanelPlugin extends Plugin {
     });
 
     this.addCommand({
-      id: 'settings.open',
-      title: '打开 Settings',
+      id: 'settings.toggle',
+      title: '切换 Settings',
       category: 'Settings',
       hotkey: 'mod+,',
-      fn: () => openOrFocusPanel('settings', 'settings', 'Settings'),
+      fn: () => toggleSettingsPanel(),
     });
   }
 }

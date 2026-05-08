@@ -84,3 +84,102 @@ describe('CommandPalette UI', () => {
     expect(kbds[1]?.textContent).toBe('S');
   });
 });
+
+describe('CommandPalette · 键盘 + 空 query 排序', () => {
+  it('ArrowDown / ArrowUp → 移动 selectedIndex', () => {
+    const reg = makeReg();
+    render(<CommandPalette commands={reg} />);
+    act(() => useCommandPaletteStore.getState().open());
+    const input = document.querySelector(
+      '.wm-modal-content input',
+    ) as HTMLInputElement;
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    expect(useCommandPaletteStore.getState().selectedIndex).toBe(1);
+    fireEvent.keyDown(input, { key: 'ArrowUp' });
+    expect(useCommandPaletteStore.getState().selectedIndex).toBe(0);
+  });
+
+  it('Enter → 执行选中命令 + 关闭', async () => {
+    const reg = new CommandRegistry();
+    const fn = vi.fn();
+    reg.register({ id: 'do', title: 'Do', fn });
+    render(<CommandPalette commands={reg} />);
+    act(() => useCommandPaletteStore.getState().open());
+    const input = document.querySelector(
+      '.wm-modal-content input',
+    ) as HTMLInputElement;
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await Promise.resolve();
+    expect(fn).toHaveBeenCalled();
+    expect(useCommandPaletteStore.getState().isOpen).toBe(false);
+  });
+
+  it('完全没注册任何命令 → 「暂无可用命令」', () => {
+    const reg = new CommandRegistry();
+    render(<CommandPalette commands={reg} />);
+    act(() => useCommandPaletteStore.getState().open());
+    expect(
+      document.querySelector('.wm-modal-content')!.textContent,
+    ).toContain('暂无可用命令');
+  });
+
+  it('category 显示 "Category:" 前缀 + 同时被 fuzzy 匹配', () => {
+    const reg = new CommandRegistry();
+    reg.register({
+      id: 's.open',
+      title: 'Open',
+      category: 'Settings',
+      fn: vi.fn(),
+    });
+    render(<CommandPalette commands={reg} />);
+    act(() => useCommandPaletteStore.getState().open());
+    const li = document.querySelector('.wm-modal-content li')!;
+    expect(li.textContent).toContain('Settings');
+
+    // fuzzy 用 "settings" 也能命中
+    act(() =>
+      useCommandPaletteStore.getState().setQuery('settings'),
+    );
+    expect(document.querySelectorAll('.wm-modal-content li').length).toBe(1);
+  });
+
+  it('subscribe registry → 后注册的命令立即出现在列表', () => {
+    const reg = new CommandRegistry();
+    render(<CommandPalette commands={reg} />);
+    act(() => useCommandPaletteStore.getState().open());
+    expect(
+      document.querySelector('.wm-modal-content')!.textContent,
+    ).toContain('暂无可用命令');
+
+    act(() => {
+      reg.register({ id: 'late', title: 'Late', fn: vi.fn() });
+    });
+    expect(
+      document.querySelector('.wm-modal-content')!.textContent,
+    ).toContain('Late');
+  });
+
+  it('execute 命令抛错 → console.warn,UI 不抛', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const reg = new CommandRegistry();
+    reg.register({
+      id: 'bad',
+      title: 'Bad',
+      fn: () => {
+        throw new Error('boom');
+      },
+    });
+    render(<CommandPalette commands={reg} />);
+    act(() => useCommandPaletteStore.getState().open());
+    const li = document.querySelector('.wm-modal-content li')!;
+    fireEvent.click(li);
+    // 等 microtask
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('bad'),
+      expect.any(Error),
+    );
+    warn.mockRestore();
+  });
+});

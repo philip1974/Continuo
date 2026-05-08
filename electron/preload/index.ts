@@ -293,3 +293,10 @@ export type ContinuoApi = typeof api;
 // `window.api` 不存在,plugin 写 `window.api.fs.*` 直接 TypeError。
 // 仍可通过 `window.__lmApi.*` 绕,见 doc/11 §Phase 4.B 残留说明。
 contextBridge.exposeInMainWorld('__lmApi', api);
+
+// E2E 模式标志:main 进程检测 CONTINUO_E2E=1 时把这个常量设 true,
+// renderer main.tsx 看到 → 挂 testing helpers 到 window.__continuoTest.
+// 非 e2e 环境完全不存在,无副作用.
+if (process.env['CONTINUO_E2E'] === '1') {
+  contextBridge.exposeInMainWorld('__continuoE2E', true);
+}

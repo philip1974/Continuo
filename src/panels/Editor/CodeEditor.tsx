@@ -6,11 +6,12 @@
 //   2. markdown 的 Source mode(决策 #4:用 CodeMirror markdown 模式,
 //      比 Mind 原版 textarea 强,有语法高亮 + 折叠)
 //
-// 主题:固定 oneDark(Continuo 项目主题色)。无需 useTheme 切换。
+// 主题:dark 模式用 oneDark,light 模式用 basicSetup 自带浅色默认。
+// 通过 Compartment.reconfigure 热切,无需重建 EditorView。
 
 import { useEffect, useRef } from 'react';
 import { EditorView, basicSetup } from 'codemirror';
-import { Compartment, EditorState } from '@codemirror/state';
+import { Compartment, EditorState, type Extension } from '@codemirror/state';
 import type { ViewUpdate } from '@codemirror/view';
 import { javascript } from '@codemirror/lang-javascript';
 import { json } from '@codemirror/lang-json';
@@ -19,6 +20,7 @@ import { html } from '@codemirror/lang-html';
 import { markdown } from '@codemirror/lang-markdown';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { useSettingValue } from '@/plugins/settings/values-store';
+import { useTheme } from '@/theme';
 
 interface CodeEditorProps {
   value: string;
@@ -83,18 +85,21 @@ export function CodeEditor({
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
   const langCompartment = useRef(new Compartment());
+  const themeCompartment = useRef(new Compartment());
   const suppressNextChange = useRef(false);
+  const { resolved } = useTheme();
 
   // 创建 editor 一次,父用 key={tabId} 强制 remount 切 tab
   useEffect(() => {
     if (!containerRef.current) return;
     const lang = pickLanguage(fileName, forceLanguage);
+    const themeExt: Extension = resolved === 'dark' ? oneDark : [];
 
     const state = EditorState.create({
       doc: value,
       extensions: [
         basicSetup,
-        oneDark,
+        themeCompartment.current.of(themeExt),
         langCompartment.current.of(lang),
         EditorView.editable.of(!readonly),
         EditorState.readOnly.of(readonly),
@@ -163,6 +168,16 @@ export function CodeEditor({
       ),
     });
   }, [fileName, forceLanguage]);
+
+  // 主题切换 → 热替换 oneDark / 浅色默认,避免重建 editor
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    const themeExt: Extension = resolved === 'dark' ? oneDark : [];
+    view.dispatch({
+      effects: themeCompartment.current.reconfigure(themeExt),
+    });
+  }, [resolved]);
 
   // 外层 div 设 fontSize,内部 .cm-editor / .cm-content / .cm-gutters
   // 都 inherit。改 settings 字号 → React 重渲外层 → CodeMirror 立即跟新。

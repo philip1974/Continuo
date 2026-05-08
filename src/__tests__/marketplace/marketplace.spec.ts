@@ -16,6 +16,7 @@ vi.mock('../../plugins/sandbox-sweep', () => ({
 import {
   _resetMarketplaceCacheForTest,
   fetchMarketplaceIndex,
+  fetchPluginManifest,
 } from '../../marketplace/fetcher';
 import {
   entryToGitUrl,
@@ -141,5 +142,45 @@ describe('fetchMarketplaceIndex', () => {
     const r = await fetchMarketplaceIndex();
     expect(r).toHaveLength(1);
     expect(f).not.toHaveBeenCalled(); // sessionStorage 命中,没走网络
+  });
+});
+
+describe('fetchPluginManifest', () => {
+  beforeEach(() => {
+    _resetMarketplaceCacheForTest();
+    sessionStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('ok=true + 完整 manifest → 返 id/name/version', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({ id: 'a', name: 'A', version: '1.0.0', extra: 'ignored' }),
+        { status: 200 },
+      ),
+    );
+    const r = await fetchPluginManifest(SAMPLE_ENTRY);
+    expect(r).toEqual({ id: 'a', name: 'A', version: '1.0.0' });
+  });
+
+  it('HTTP 非 2xx → 抛 HTTP {status}', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('', { status: 404 }),
+    );
+    await expect(fetchPluginManifest(SAMPLE_ENTRY)).rejects.toThrow(
+      /HTTP 404/,
+    );
+  });
+
+  it('manifest 缺字段 → 抛「manifest 缺 id / name / version」', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ id: 'a', name: 'A' }), { status: 200 }),
+    );
+    await expect(fetchPluginManifest(SAMPLE_ENTRY)).rejects.toThrow(
+      /缺 id \/ name \/ version/,
+    );
   });
 });

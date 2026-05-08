@@ -9,7 +9,7 @@ import { Folder } from '@react-symbols/icons';
 import { useLayoutUiStore } from '@/stores/layout-ui.store';
 import { NavRailButton } from '@/design';
 import { coApp } from '@/plugins/co-app';
-import { openOrFocusPanel } from '@/shell/dock/dock-api-ref';
+import { toggleSettingsPanel } from '@/lib/toggle-settings-panel';
 import { useUpdateStore } from '@/marketplace/update-store';
 import type { RibbonActionSpec } from '@/plugins/registries/RibbonRegistry';
 
@@ -75,7 +75,7 @@ export function IconSidebar() {
       id: 'settings',
       label: '设置',
       node: <SettingsGearIcon size={ICON_SIZE} />,
-      onClick: () => openOrFocusPanel('settings', 'settings', 'Settings'),
+      onClick: () => toggleSettingsPanel(),
     },
   ];
 

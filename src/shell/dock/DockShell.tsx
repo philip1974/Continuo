@@ -50,12 +50,17 @@ function usePanelComponents(): Record<string, React.FC<IDockviewPanelProps>> {
 
 export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
   const apiRef = useRef<DockviewApi | null>(null);
+  // apiReady 是 state(不是 ref):驱动下面 editor 自动激活 useEffect 的依赖,
+  // 修复"hydrate 在 onReady 之前完成 → activeTabId 变化触发 effect 时
+  // apiRef.current 仍 null → 错过添加 panel"的时序竞态。
+  const [apiReady, setApiReady] = useState(false);
   const [empty, setEmpty] = useState(false);
   const panelComponents = usePanelComponents();
 
   const onReady = useCallback(
     async (event: DockviewReadyEvent) => {
       apiRef.current = event.api;
+      setApiReady(true);
       setDockApi(event.api); // 暴露给 IconSidebar 等 Dockview 之外的组件
       const readResult = await coApi.layout.read();
       const persisted = readResult.ok ? readResult.data : null;
@@ -121,12 +126,15 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
   // unmount 时 reset 单例,防 stale 引用
   useEffect(() => () => setDockApi(null), []);
 
-  // Editor 自动激活:Explorer 单击文件 → editor.store activeTabId 变 →
-  // 自动 setActive 'editor' panel(VSCode 行为)。
-  // 若 panel 不存在(用户拖关了),自动 addPanel 加回(无 reference 即默认主区)。
+  // Editor 自动激活:Explorer 单击文件 / hydrate 恢复 session → editor.store
+  // activeTabId 变 → 自动 setActive 'editor' panel(VSCode 行为)。
+  // 若 panel 不存在(用户拖关了 / 启动时 layout 没含),自动 addPanel 加回。
+  //
+  // deps 必含 apiReady:让 onReady 完成晚于 activeTabId hydrate 的场景也能补建。
   const editorActiveTabId = useEditorStore((s) => s.activeTabId);
   useEffect(() => {
     if (!editorActiveTabId) return;
+    if (!apiReady) return;
     const api = apiRef.current;
     if (!api) return;
     let editorPanel = api.getPanel('editor');
@@ -138,7 +146,7 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       });
     }
     editorPanel.api.setActive();
-  }, [editorActiveTabId]);
+  }, [editorActiveTabId, apiReady]);
 
   return (
     <div className="relative h-full w-full">

@@ -1,10 +1,12 @@
 // 内置「资源管理器」SettingTab + Explorer 类设置项(M-Settings v6)。
 // FolderTree / FileRow 通过 useSettingValue 订阅这些项实时生效。
+// 同时贡献 view 命令 explorer.toggleSidebar(⌘B,VSCode 同款)。
 
 import { createElement } from 'react';
 import { Plugin } from '@/plugins/Plugin';
 import { CategoryTabContent } from '@/plugins/settings/CategoryTabContent';
 import { ExplorerIcon } from '@/plugins/settings/tab-icons';
+import { useLayoutUiStore } from '@/stores/layout-ui.store';
 
 export default class ExplorerTabPlugin extends Plugin {
   onload(): void {
@@ -16,6 +18,14 @@ export default class ExplorerTabPlugin extends Plugin {
       icon: createElement(ExplorerIcon),
       render: () =>
         createElement(CategoryTabContent, { category: 'explorer' }),
+    });
+
+    this.addCommand({
+      id: 'explorer.toggleSidebar',
+      title: '切换 Explorer 侧栏',
+      category: 'Explorer',
+      hotkey: 'mod+b',
+      fn: () => useLayoutUiStore.getState().toggleSidebar(),
     });
 
     this.addSettingItem({

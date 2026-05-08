@@ -71,6 +71,15 @@ export const ExplorerSchema = z
       })
       .strict()
       .optional(),
+    // Editor session(M-Editor Step E5):打开过的文件路径 + active。
+    // 启动从磁盘读内容恢复 tab,dirty 改动不持久化。.optional() 向下兼容。
+    editor: z
+      .object({
+        openFilePaths: z.array(z.string()),
+        activePath: z.string().nullable(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 

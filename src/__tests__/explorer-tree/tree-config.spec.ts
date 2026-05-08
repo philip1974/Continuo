@@ -176,3 +176,111 @@ describe('createTreeConfig · getItemName / isItemFolder', () => {
     expect(cfg.isItemFolder!(makeItem(entry('/x/a')) as never)).toBe(false);
   });
 });
+
+describe('createTreeConfig · 拖拽语义', () => {
+  // mock ItemInstance 形态(只用 isFolder / getId / getItemData)
+  function mkItem(id: string, isFolder: boolean) {
+    return {
+      getId: () => id,
+      isFolder: () => isFolder,
+      getItemData: () => entry(id, isFolder),
+    } as unknown as never;
+  }
+
+  function mkTarget(id: string, isFolder: boolean) {
+    return {
+      item: mkItem(id, isFolder),
+      childIndex: null,
+      insertionIndex: null,
+      dragLineIndex: null,
+    } as never;
+  }
+
+  it('canDrop:drop 到自身 → false', () => {
+    const fs = makeFs(() => ok([]));
+    const cfg = createTreeConfig({ root: '/work', fs });
+    const a = mkItem('/work/a', true);
+    expect(cfg.canDrop!([a], mkTarget('/work/a', true))).toBe(false);
+  });
+
+  it('canDrop:目录 drop 到自身子树 → false', () => {
+    const fs = makeFs(() => ok([]));
+    const cfg = createTreeConfig({ root: '/work', fs });
+    const dir = mkItem('/work/dir', true);
+    // 目标是 dir 的子目录
+    expect(cfg.canDrop!([dir], mkTarget('/work/dir/sub', true))).toBe(false);
+  });
+
+  it('canDrop:文件 drop 到目录 → true', () => {
+    const fs = makeFs(() => ok([]));
+    const cfg = createTreeConfig({ root: '/work', fs });
+    const file = mkItem('/work/a.txt', false);
+    expect(cfg.canDrop!([file], mkTarget('/work/dir', true))).toBe(true);
+  });
+
+  it('canDrop:文件 drop 到另一文件(自动归一到父目录) → true 当父目录不同', () => {
+    const fs = makeFs(() => ok([]));
+    const cfg = createTreeConfig({ root: '/work', fs });
+    const file = mkItem('/work/src/a.txt', false);
+    // 拖到 /work/dest/b.txt → 父目录 /work/dest,不同 → true
+    expect(cfg.canDrop!([file], mkTarget('/work/dest/b.txt', false))).toBe(
+      true,
+    );
+  });
+
+  it('onDrop → 调 onDropItems(items, resolveDest)', () => {
+    const onDropItems = vi.fn();
+    const fs = makeFs(() => ok([]));
+    const cfg = createTreeConfig({ root: '/work', fs, onDropItems });
+    const file = mkItem('/work/a.txt', false);
+    cfg.onDrop!([file], mkTarget('/work/dir', true));
+    // dest = '/work/dir'(目标是目录,resolveDest 返目标自身)
+    expect(onDropItems).toHaveBeenCalledWith([file], '/work/dir');
+  });
+
+  it('onDrop → 拖到文件:dest 是父目录', () => {
+    const onDropItems = vi.fn();
+    const fs = makeFs(() => ok([]));
+    const cfg = createTreeConfig({ root: '/work', fs, onDropItems });
+    const src = mkItem('/work/a.txt', false);
+    cfg.onDrop!([src], mkTarget('/work/dest/b.txt', false));
+    expect(onDropItems).toHaveBeenCalledWith([src], '/work/dest');
+  });
+
+  it('canDropForeignDragObject / canDragForeignDragObjectOver:dataTransfer.types 含 Files → true', () => {
+    const fs = makeFs(() => ok([]));
+    const cfg = createTreeConfig({ root: '/x', fs });
+    expect(
+      cfg.canDropForeignDragObject!(
+        { types: ['Files', 'text/plain'] } as never,
+        mkTarget('/x', true),
+      ),
+    ).toBe(true);
+    expect(
+      cfg.canDragForeignDragObjectOver!(
+        { types: ['Files'] } as never,
+        mkTarget('/x', true),
+      ),
+    ).toBe(true);
+  });
+
+  it('canDropForeignDragObject:无 Files → false', () => {
+    const fs = makeFs(() => ok([]));
+    const cfg = createTreeConfig({ root: '/x', fs });
+    expect(
+      cfg.canDropForeignDragObject!(
+        { types: ['text/plain'] } as never,
+        mkTarget('/x', true),
+      ),
+    ).toBe(false);
+  });
+
+  it('onDropForeignDragObject → onDropForeign(dataTransfer, dest)', () => {
+    const onDropForeign = vi.fn();
+    const fs = makeFs(() => ok([]));
+    const cfg = createTreeConfig({ root: '/x', fs, onDropForeign });
+    const dataTransfer = { types: ['Files'] } as never;
+    cfg.onDropForeignDragObject!(dataTransfer, mkTarget('/x/sub', true));
+    expect(onDropForeign).toHaveBeenCalledWith(dataTransfer, '/x/sub');
+  });
+});

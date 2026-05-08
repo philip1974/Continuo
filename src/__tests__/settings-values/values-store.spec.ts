@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   useSettingsValuesStore,
   getSettingValue,
@@ -68,5 +68,41 @@ describe('settings values-store', () => {
     expect(globalThis.localStorage.getItem('continuo.settings.values')).toBe(
       '{}',
     );
+  });
+
+  it('writeStored 抛(quota)→ 静默,in-memory 仍写入', () => {
+    const original = globalThis.localStorage.setItem;
+    globalThis.localStorage.setItem = () => {
+      throw new Error('QuotaExceededError');
+    };
+    try {
+      expect(() =>
+        useSettingsValuesStore.getState().setValue('general.theme', 'light'),
+      ).not.toThrow();
+      expect(useSettingsValuesStore.getState().values['general.theme']).toBe(
+        'light',
+      );
+    } finally {
+      globalThis.localStorage.setItem = original;
+    }
+  });
+});
+
+describe('values-store · readStored 防御', () => {
+  it('JSON 损坏 → 空对象 hydrate', async () => {
+    globalThis.localStorage.setItem('continuo.settings.values', 'not-json');
+    vi.resetModules();
+    const mod = await import('../../plugins/settings/values-store');
+    expect(mod.useSettingsValuesStore.getState().values).toEqual({});
+  });
+
+  it('值是数组 → 空对象 hydrate', async () => {
+    globalThis.localStorage.setItem(
+      'continuo.settings.values',
+      JSON.stringify(['a', 'b']),
+    );
+    vi.resetModules();
+    const mod = await import('../../plugins/settings/values-store');
+    expect(mod.useSettingsValuesStore.getState().values).toEqual({});
   });
 });

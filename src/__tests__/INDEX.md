@@ -2,6 +2,10 @@
 
 > 由 `pnpm bdd:index` 自动生成,请勿手工编辑。
 
+## [AgentAuthPrompt(Agent MCP 授权弹窗)](./agent-auth-prompt/README.md)
+
+- [`agent-auth-prompt.spec.tsx`](./agent-auth-prompt/agent-auth-prompt.spec.tsx)
+
 ## [agent-terminal-mcp-auth (Agent Terminal MCP Phase 2)](./agent-terminal-mcp-auth/README.md)
 
 - [`auth-store.spec.ts`](./agent-terminal-mcp-auth/auth-store.spec.ts)
@@ -54,6 +58,10 @@
 
 - [`contracts.spec.ts`](./animation-contracts/contracts.spec.ts)
 
+## [CategoryTabContent(Settings 内通用 category 渲染器)](./category-tab-content/README.md)
+
+- [`category-tab-content.spec.tsx`](./category-tab-content/category-tab-content.spec.tsx)
+
 ## [lm-api(Continuo UI 内部 IPC 入口)](./co-api/README.md)
 
 - [`co-api.spec.ts`](./co-api/co-api.spec.ts)
@@ -77,13 +85,25 @@
 
 - [`recent.spec.ts`](./command-palette-recent/recent.spec.ts)
 
+## [ConfirmDialog(通用确认对话框)](./confirm-dialog/README.md)
+
+- [`confirm-dialog.spec.tsx`](./confirm-dialog/confirm-dialog.spec.tsx)
+
 ## [core-plugins(内置插件:editor / terminal / output)](./core-plugins/README.md)
 
 - [`core-plugins.spec.ts`](./core-plugins/core-plugins.spec.ts)
 
+## [CreateInput(Explorer 新建文件 / 文件夹 sticky bar)](./create-input/README.md)
+
+- [`create-input.spec.tsx`](./create-input/create-input.spec.tsx)
+
 ## [装饰层契约 (M4)](./decor-contracts/README.md)
 
 - [`license.spec.ts`](./decor-contracts/license.spec.ts)
+
+## [shell decor / Splash / PopoutHost 装饰组件](./decor-shell/README.md)
+
+- [`decor-shell.spec.tsx`](./decor-shell/decor-shell.spec.tsx)
 
 ## [design-system](./design-system/README.md)
 
@@ -91,18 +111,56 @@
 - [`theme-provider.spec.tsx`](./design-system/theme-provider.spec.tsx)
 - [`tokens.spec.ts`](./design-system/tokens.spec.ts)
 
+## [design Modal — focus trap / overlay / escape / tab cycle](./design-system-modal/README.md)
+
+- [`modal.spec.tsx`](./design-system-modal/modal.spec.tsx)
+
+## [design Tabs(垂直 tab 列表)](./design-system-tabs/README.md)
+
+- [`tabs.spec.tsx`](./design-system-tabs/tabs.spec.tsx)
+
+## [dock-api-ref(DockviewApi 单例 + focus/openOrFocus)](./dock-api-ref/README.md)
+
+- [`dock-api-ref.spec.ts`](./dock-api-ref/dock-api-ref.spec.ts)
+
 ## [editor-action(EditorHeader 工具按钮贡献)](./editor-action/README.md)
 
 - [`editor-action.spec.ts`](./editor-action/editor-action.spec.ts)
+
+## [EditorHeader(单行 Header,tabs + mode 切换)](./editor-header/README.md)
+
+- [`editor-header.spec.tsx`](./editor-header/editor-header.spec.tsx)
 
 ## [editor-hooks (M-Editor Step E2)](./editor-hooks/README.md)
 
 - [`auto-save.spec.ts`](./editor-hooks/auto-save.spec.ts)
 - [`editor-file-actions.spec.ts`](./editor-hooks/editor-file-actions.spec.ts)
 
+## [editor-hooks-react(useAutoSave / useEditorFile / useExternalFileSync)](./editor-hooks-react/README.md)
+
+- [`use-auto-save.spec.tsx`](./editor-hooks-react/use-auto-save.spec.tsx)
+- [`use-editor-file.spec.tsx`](./editor-hooks-react/use-editor-file.spec.tsx)
+- [`use-external-file-sync.spec.tsx`](./editor-hooks-react/use-external-file-sync.spec.tsx)
+
+## [editor-session-restore(Editor tab session 持久化与恢复)](./editor-session-restore/README.md)
+
+- [`editor-session-restore.spec.ts`](./editor-session-restore/editor-session-restore.spec.ts)
+
 ## [editor-store (M-Editor Step E1)](./editor-store/README.md)
 
 - [`editor-store.spec.ts`](./editor-store/editor-store.spec.ts)
+
+## [EditorWelcome(无 tab 占位)](./editor-welcome/README.md)
+
+- [`editor-welcome.spec.tsx`](./editor-welcome/editor-welcome.spec.tsx)
+
+## [EmptyState(dock 全空时占位)](./empty-state/README.md)
+
+- [`empty-state.spec.tsx`](./empty-state/empty-state.spec.tsx)
+
+## [EmptyWorkspace(未选 workspace 占位)](./empty-workspace/README.md)
+
+- [`empty-workspace.spec.tsx`](./empty-workspace/empty-workspace.spec.tsx)
 
 ## [event-bus(Continuo 自定义事件总线 + Plugin.registerEvent)](./event-bus/README.md)
 
@@ -120,9 +178,17 @@
 
 - [`drop-handlers.spec.ts`](./explorer-dropzone/drop-handlers.spec.ts)
 
+## [ExplorerHeader(FolderTree 顶部 Header)](./explorer-header/README.md)
+
+- [`explorer-header.spec.tsx`](./explorer-header/explorer-header.spec.tsx)
+
 ## [explorer-mutate (M-Explorer Step 5)](./explorer-mutate/README.md)
 
 - [`mutate-actions.spec.ts`](./explorer-mutate/mutate-actions.spec.ts)
+
+## [ExplorerSidebar(VSCode 风固定侧边栏)](./explorer-sidebar/README.md)
+
+- [`explorer-sidebar.spec.tsx`](./explorer-sidebar/explorer-sidebar.spec.tsx)
 
 ## [explorer-stores (M-Explorer Step 3)](./explorer-stores/README.md)
 
@@ -131,6 +197,10 @@
 - [`persistence-schema.spec.ts`](./explorer-stores/persistence-schema.spec.ts)
 - [`pinned.spec.ts`](./explorer-stores/pinned.spec.ts)
 - [`workspace.spec.ts`](./explorer-stores/workspace.spec.ts)
+
+## [explorer-toggle-sidebar(VSCode ⌘B 同款)](./explorer-toggle-sidebar/README.md)
+
+- [`explorer-toggle-sidebar.spec.ts`](./explorer-toggle-sidebar/explorer-toggle-sidebar.spec.ts)
 
 ## [explorer-tree (M-Explorer Step 4)](./explorer-tree/README.md)
 
@@ -157,9 +227,33 @@
 
 - [`fs-ipc-bridge.spec.ts`](./fs-ipc-bridge/fs-ipc-bridge.spec.ts)
 
+## [HeaderActions(Dockview group header 自定义按钮)](./header-actions/README.md)
+
+- [`header-actions.spec.tsx`](./header-actions/header-actions.spec.tsx)
+
+## [IconSidebar(48px 竖向 Activity Bar)](./icon-sidebar/README.md)
+
+- [`icon-sidebar.spec.tsx`](./icon-sidebar/icon-sidebar.spec.tsx)
+
+## [IpcPermissionStore(磁盘 backed 权限存储)](./ipc-permission-store/README.md)
+
+- [`ipc-permission-store.spec.ts`](./ipc-permission-store/ipc-permission-store.spec.ts)
+
 ## [IPC safeHandle 契约 (跨里程碑)](./ipc-safe-handle/README.md)
 
 - [`safe-handle.spec.ts`](./ipc-safe-handle/safe-handle.spec.ts)
+
+## [KeybindingCaptureModal(快捷键捕获 modal)](./keybinding-capture-modal/README.md)
+
+- [`keybinding-capture-modal.spec.tsx`](./keybinding-capture-modal/keybinding-capture-modal.spec.tsx)
+
+## [keybindings-store](./keybindings-store/README.md)
+
+- [`keybindings-store.spec.ts`](./keybindings-store/keybindings-store.spec.ts)
+
+## [KeybindingsTabContent(快捷键参考表 SettingTab)](./keybindings-tab-content/README.md)
+
+- [`keybindings-tab-content.spec.tsx`](./keybindings-tab-content/keybindings-tab-content.spec.tsx)
 
 ## [layout 持久化 (M2)](./layout-persistence/README.md)
 
@@ -171,6 +265,26 @@
 - [`marketplace.spec.ts`](./marketplace/marketplace.spec.ts)
 - [`reviews-parser.spec.ts`](./marketplace/reviews-parser.spec.ts)
 - [`semver.spec.ts`](./marketplace/semver.spec.ts)
+
+## [marketplace reviews-fetcher(评论拉取)](./marketplace-reviews-fetcher/README.md)
+
+- [`reviews-fetcher.spec.ts`](./marketplace-reviews-fetcher/reviews-fetcher.spec.ts)
+
+## [marketplace reviews-store](./marketplace-reviews-store/README.md)
+
+- [`reviews-store.spec.ts`](./marketplace-reviews-store/reviews-store.spec.ts)
+
+## [MarketplaceTab(插件商店 SettingTab)](./marketplace-tab/README.md)
+
+- [`marketplace-tab.spec.tsx`](./marketplace-tab/marketplace-tab.spec.tsx)
+
+## [marketplace update-store(Phase 3 — 更新检查)](./marketplace-update-store/README.md)
+
+- [`update-store.spec.ts`](./marketplace-update-store/update-store.spec.ts)
+
+## [PermissionEditorModal(M-Plugin v4.7 事后改主意)](./permission-editor-modal/README.md)
+
+- [`permission-editor-modal.spec.tsx`](./permission-editor-modal/permission-editor-modal.spec.tsx)
 
 ## [permission-prompt(授权 UI store + Modal + Manager 集成)](./permission-prompt/README.md)
 
@@ -206,6 +320,10 @@
 
 - [`e2e.spec.ts`](./plugin-mcp-e2e/e2e.spec.ts)
 
+## [plugin-mcp-invoke-bridge(反向调用路由)](./plugin-mcp-invoke-bridge/README.md)
+
+- [`invoke-bridge.spec.ts`](./plugin-mcp-invoke-bridge/invoke-bridge.spec.ts)
+
 ## [plugin-mcp-ipc-bridge (Plugin → MCP Bridge · IPC 协议层)](./plugin-mcp-ipc-bridge/README.md)
 
 - [`ipc-protocol.spec.ts`](./plugin-mcp-ipc-bridge/ipc-protocol.spec.ts)
@@ -230,13 +348,25 @@
 
 - [`stub-tool.spec.ts`](./plugin-mcp-stub-tool/stub-tool.spec.ts)
 
+## [plugin-mcp-upstream(PluginMcp 注册的 IPC 实装)](./plugin-mcp-upstream/README.md)
+
+- [`plugin-mcp-upstream.spec.ts`](./plugin-mcp-upstream/plugin-mcp-upstream.spec.ts)
+
 ## [plugin-permissions(声明式权限 + 授权门)](./plugin-permissions/README.md)
 
 - [`plugin-permissions.spec.ts`](./plugin-permissions/plugin-permissions.spec.ts)
 
+## [plugins-host(renderer 端 ManagerHost)](./plugins-host/README.md)
+
+- [`plugins-host.spec.ts`](./plugins-host/plugins-host.spec.ts)
+
 ## [plugins-service(主进程插件目录扫描)](./plugins-service/README.md)
 
 - [`plugins-service.spec.ts`](./plugins-service/plugins-service.spec.ts)
+
+## [PluginsTabContent(插件 SettingTab 主体)](./plugins-tab-content/README.md)
+
+- [`plugins-tab-content.spec.tsx`](./plugins-tab-content/plugins-tab-content.spec.tsx)
 
 ## [plugins-watcher(mtime 自动 watch)](./plugins-watcher/README.md)
 
@@ -255,6 +385,10 @@
 - [`store.spec.ts`](./quick-open/store.spec.ts)
 - [`walk-files.spec.ts`](./quick-open/walk-files.spec.ts)
 
+## [QuickOpenModal(VSCode ⌘P 文件搜索)](./quick-open-modal/README.md)
+
+- [`quick-open-modal.spec.tsx`](./quick-open-modal/quick-open-modal.spec.tsx)
+
 ## [ribbon-registry(IconSidebar 活动栏图标贡献)](./ribbon-registry/README.md)
 
 - [`ribbon-registry.spec.ts`](./ribbon-registry/ribbon-registry.spec.ts)
@@ -268,6 +402,14 @@
 - [`sandbox-sweep.spec.ts`](./scoped-app/sandbox-sweep.spec.ts)
 - [`scoped-app.spec.ts`](./scoped-app/scoped-app.spec.ts)
 
+## [setting-item-registry](./setting-item-registry/README.md)
+
+- [`setting-item-registry.spec.ts`](./setting-item-registry/setting-item-registry.spec.ts)
+
+## [SettingItemRow(单个设置项的通用渲染器)](./setting-item-row/README.md)
+
+- [`setting-item-row.spec.tsx`](./setting-item-row/setting-item-row.spec.tsx)
+
 ## [setting-tab-registry(设置标签贡献)](./setting-tab-registry/README.md)
 
 - [`setting-tab-registry.spec.ts`](./setting-tab-registry/setting-tab-registry.spec.ts)
@@ -276,13 +418,41 @@
 
 - [`settings-panel.spec.tsx`](./settings-panel/settings-panel.spec.tsx)
 
+## [settings-toggle(⌘, 切换 Settings panel,VSCode `Toggle` 风)](./settings-toggle/README.md)
+
+- [`settings-toggle.spec.ts`](./settings-toggle/settings-toggle.spec.ts)
+
+## [settings-values](./settings-values/README.md)
+
+- [`values-store.spec.ts`](./settings-values/values-store.spec.ts)
+
+## [SharedTab(Dockview tab header,带 motion shared layout)](./shared-tab/README.md)
+
+- [`shared-tab.spec.tsx`](./shared-tab/shared-tab.spec.tsx)
+
 ## [shell-service(plugin app.shell.exec 后端)](./shell-service/README.md)
 
 - [`shell-service.spec.ts`](./shell-service/shell-service.spec.ts)
 
+## [Spotlight(装饰用聚光灯 SVG)](./spotlight/README.md)
+
+- [`spotlight.spec.tsx`](./spotlight/spotlight.spec.tsx)
+
+## [StatusBar(底部 24px 状态栏)](./status-bar/README.md)
+
+- [`status-bar.spec.tsx`](./status-bar/status-bar.spec.tsx)
+
+## [tab-icons(SettingTab icon 工厂集合)](./tab-icons/README.md)
+
+- [`tab-icons.spec.tsx`](./tab-icons/tab-icons.spec.tsx)
+
 ## [terminal-ipc (M-Terminal Step T2)](./terminal-ipc/README.md)
 
 - [`terminal-ipc.spec.ts`](./terminal-ipc/terminal-ipc.spec.ts)
+
+## [TerminalPanel(Terminal 主容器)](./terminal-panel/README.md)
+
+- [`terminal-panel.spec.tsx`](./terminal-panel/terminal-panel.spec.tsx)
 
 ## [terminal-service (M-Terminal Step T1)](./terminal-service/README.md)
 
@@ -296,6 +466,14 @@
 
 - [`terminal-store.spec.ts`](./terminal-store/terminal-store.spec.ts)
 
+## [TerminalTabs(终端 tab 列表 + 「+」按钮)](./terminal-tabs/README.md)
+
+- [`terminal-tabs.spec.tsx`](./terminal-tabs/terminal-tabs.spec.tsx)
+
+## [TerminalView(单 terminal 容器)](./terminal-view/README.md)
+
+- [`terminal-view.spec.tsx`](./terminal-view/terminal-view.spec.tsx)
+
 ## [terminal-write (M-Terminal Step T4)](./terminal-write/README.md)
 
 - [`safe-write.spec.ts`](./terminal-write/safe-write.spec.ts)
@@ -303,3 +481,27 @@
 ## [text-stats(StatusBar 用统计)](./text-stats/README.md)
 
 - [`text-stats.spec.ts`](./text-stats/text-stats.spec.ts)
+
+## [theme-binding(SettingsValueStore ↔ ThemeProvider 桥)](./theme-binding/README.md)
+
+- [`theme-binding.spec.tsx`](./theme-binding/theme-binding.spec.tsx)
+
+## [TitleBar(macOS 顶栏:workspace + active file 文件名)](./title-bar/README.md)
+
+- [`title-bar.spec.tsx`](./title-bar/title-bar.spec.tsx)
+
+## [useColumnResize(侧栏拖拽 hook)](./use-column-resize/README.md)
+
+- [`use-column-resize.spec.tsx`](./use-column-resize/use-column-resize.spec.tsx)
+
+## [useCommandHotkeys(全局命令快捷键监听 hook)](./use-command-hotkeys/README.md)
+
+- [`use-command-hotkeys.spec.tsx`](./use-command-hotkeys/use-command-hotkeys.spec.tsx)
+
+## [useFsWatcher(Explorer 展开路径 ↔ fs.watch)](./use-fs-watcher/README.md)
+
+- [`use-fs-watcher.spec.tsx`](./use-fs-watcher/use-fs-watcher.spec.tsx)
+
+## [wrap-panel-close(dock 关闭动画拦截)](./wrap-panel-close/README.md)
+
+- [`wrap-panel-close.spec.ts`](./wrap-panel-close/wrap-panel-close.spec.ts)

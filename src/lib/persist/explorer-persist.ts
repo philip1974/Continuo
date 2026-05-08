@@ -6,11 +6,20 @@
 //   ✅ workspace.root / recentRoots
 //   ✅ explorer.activePath / expandedPaths / sort
 //   ✅ pinned.paths
+//   ✅ editor.openFilePaths / activePath(M-Editor Step E5,session 恢复)
 //   ❌ explorer.selectedPaths / lastAnchorPath / search(瞬时态)
+//   ❌ editor.content / dirty(MVP 不做 hot exit,启动从磁盘读最新)
 //
 // 数据形态:磁盘 JSON 全用 array,store 内部 expandedPaths 用 Set。
 // snapshot/hydrate 负责 Set ↔ array 互转。
+//
+// editor 字段是 async hydrate(需要 fs.readFile),通过 extras.fs 注入。
+// BDD: editor-session-restore。
 
+import {
+  createTab,
+  useEditorStore,
+} from '@/stores/editor.store';
 import { useExplorerStore, type ExplorerSort } from '@/stores/explorer.store';
 import {
   SIDEBAR_DEFAULT_WIDTH,
@@ -48,11 +57,25 @@ export interface ExplorerSnapshot {
     readonly sidebarOpen: boolean;
     readonly sidebarWidth: number;
   };
+  /** Optional. Editor session(M-Editor Step E5)— 只存路径,启动从磁盘读内容. */
+  readonly editor?: {
+    readonly openFilePaths: ReadonlyArray<string>;
+    readonly activePath: string | null;
+  };
 }
 
 export interface ExplorerPersistApi {
   read: () => Promise<IpcResult<unknown | null>>;
   write: (snap: ExplorerSnapshot) => Promise<IpcResult<void>>;
+}
+
+/** Editor session 异步 hydrate 所需的 fs 子集(只用 readFile). */
+export interface EditorSessionFsApi {
+  readFile: (path: string) => Promise<IpcResult<string>>;
+}
+
+export interface InitExplorerPersistenceExtras {
+  readonly fs?: EditorSessionFsApi;
 }
 
 // ──────────────────────────────────────────────
@@ -64,6 +87,13 @@ export function snapshotFromStores(): ExplorerSnapshot {
   const e = useExplorerStore.getState();
   const p = usePinnedStore.getState();
   const ui = useLayoutUiStore.getState();
+  const ed = useEditorStore.getState();
+  // 过滤掉 untitled tab(filePath=null)— 没有路径无法恢复
+  const openFilePaths = ed.tabs
+    .map((t) => t.filePath)
+    .filter((p): p is string => p !== null);
+  const activeTab = ed.tabs.find((t) => t.id === ed.activeTabId);
+  const activePath = activeTab?.filePath ?? null;
   return {
     version: VERSION,
     workspace: {
@@ -81,6 +111,10 @@ export function snapshotFromStores(): ExplorerSnapshot {
     layoutUi: {
       sidebarOpen: ui.sidebarOpen,
       sidebarWidth: ui.sidebarWidth,
+    },
+    editor: {
+      openFilePaths,
+      activePath,
     },
   };
 }
@@ -120,6 +154,31 @@ export function hydrateStores(snap: ExplorerSnapshot): void {
   }
 }
 
+/**
+ * Editor session 异步 hydrate:并发 readFile,只为 ok 结果 openTab,顺序保留。
+ * 不抛 — 单文件失败(被删 / 移动)静默跳过。
+ */
+export async function hydrateEditorTabs(
+  snap: ExplorerSnapshot,
+  fs: EditorSessionFsApi,
+): Promise<void> {
+  if (!snap.editor || snap.editor.openFilePaths.length === 0) return;
+  const paths = snap.editor.openFilePaths;
+  const results = await Promise.all(paths.map((p) => fs.readFile(p)));
+  const store = useEditorStore.getState();
+  for (let i = 0; i < paths.length; i++) {
+    const r = results[i];
+    if (!r || !r.ok) continue;
+    store.openTab(createTab(paths[i]!, r.data));
+  }
+  // 重读最新 store(openTab 改了状态)
+  const next = useEditorStore.getState();
+  const desired = snap.editor.activePath;
+  if (desired && next.tabs.some((t) => t.id === desired)) {
+    next.switchTab(desired);
+  }
+}
+
 // 防御性 schema 校验(主进程已校验,这里给 init 流程兜底,失败就不 hydrate)
 function isExplorerSnapshot(v: unknown): v is ExplorerSnapshot {
   if (!v || typeof v !== 'object') return false;
@@ -146,18 +205,31 @@ function isExplorerSnapshot(v: unknown): v is ExplorerSnapshot {
 
 export async function initExplorerPersistence(
   api: ExplorerPersistApi,
+  extras?: InitExplorerPersistenceExtras,
 ): Promise<void> {
-  // 1. read + hydrate(失败不 crash)
+  // 1. read + sync hydrate(失败不 crash)
+  let hydratedSnap: ExplorerSnapshot | null = null;
   try {
     const r = await api.read();
     if (r.ok && r.data && isExplorerSnapshot(r.data)) {
+      hydratedSnap = r.data;
       hydrateStores(r.data);
     }
   } catch (err) {
     console.warn('[explorer-persist] read failed', err);
   }
 
-  // 2. 订阅 + debounce 写
+  // 2. async hydrate editor tabs(在 attach subscribe 之前完成,
+  //    避免 hydrate 期间 openTab 触发 debounced write 回环)
+  if (hydratedSnap && extras?.fs) {
+    try {
+      await hydrateEditorTabs(hydratedSnap, extras.fs);
+    } catch (err) {
+      console.warn('[explorer-persist] hydrate editor failed', err);
+    }
+  }
+
+  // 3. 订阅 + debounce 写
   const persist = debounce(async () => {
     try {
       const snap = snapshotFromStores();
@@ -174,4 +246,5 @@ export async function initExplorerPersistence(
   useExplorerStore.subscribe(persist);
   usePinnedStore.subscribe(persist);
   useLayoutUiStore.subscribe(persist);
+  useEditorStore.subscribe(persist);
 }

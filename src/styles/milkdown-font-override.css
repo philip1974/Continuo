@@ -3,7 +3,31 @@
  * `.milkdown .ProseMirror h1 { font-size: 42px; }` 等(特异性 0,0,2,3),
  * 且 px 绝对值。这里用同等特异性 selector 改 em,通过 MilkdownEditor.tsx
  * 在 Crepe css import 之后再 import,确保后赢。
+ *
+ * 同时把 Crepe 的 --crepe-color-* 桥接到项目语义 token,使 markdown 编辑器
+ * 自动跟随 :root(light)与 .dark(dark)。MilkdownEditor 仍 import frame-dark
+ * (拿 font / shadow / 结构样式),颜色由本文件覆写。
  */
+.milkdown {
+  --crepe-color-background: var(--md-surface);
+  --crepe-color-on-background: var(--md-on-surface);
+  --crepe-color-surface: var(--md-surface-container);
+  --crepe-color-surface-low: var(--md-surface-container-low);
+  --crepe-color-on-surface: var(--md-on-surface);
+  --crepe-color-on-surface-variant: var(--md-on-surface-variant);
+  --crepe-color-outline: var(--md-outline);
+  --crepe-color-primary: var(--md-primary);
+  --crepe-color-secondary: var(--md-surface-container-high);
+  --crepe-color-on-secondary: var(--md-on-surface);
+  --crepe-color-inverse: var(--md-on-surface);
+  --crepe-color-on-inverse: var(--md-surface);
+  --crepe-color-inline-code: var(--md-error);
+  --crepe-color-error: var(--md-error);
+  --crepe-color-hover: var(--md-surface-container-high);
+  --crepe-color-selected: var(--md-surface-container-highest);
+  --crepe-color-inline-area: var(--md-surface-container-high);
+}
+
 .milkdown .ProseMirror p {
   font-size: 1em;
 }

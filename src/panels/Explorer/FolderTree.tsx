@@ -24,6 +24,7 @@ import { useFsWatcher } from './hooks/useFsWatcher';
 import { useEditorFile } from '@/panels/Editor/useEditorFile';
 import { useEditorStore } from '@/stores/editor.store';
 import { coApi } from '@/lib/co-api';
+import { getCachedClipboard } from '@/plugins/sandbox-sweep';
 import { useSettingValue } from '@/plugins/settings/values-store';
 import { useExplorerClipboardStore } from './clipboard-store';
 
@@ -207,18 +208,24 @@ export function FolderTree({ root }: { root: string }) {
     onNewFile: (parentDir) => setCreating({ type: 'file', parentDir }),
     onNewDir: (parentDir) => setCreating({ type: 'dir', parentDir }),
     onCopyPath: (paths: string[]) => {
-      // 多选 → \n 拼接;空数组(防御性)→ 不动
+      // 多选 → \n 拼接;空数组(防御性)→ 不动.
+      // 走 cached clipboard:PROD sandboxSweep 后 navigator.clipboard 已被涂掉,
+      // LM UI 自身必须用 module 顶部缓存的 raw ref 才能写系统剪贴板.
       if (paths.length === 0) return;
-      void navigator.clipboard.writeText(paths.join('\n')).catch((err) => {
-        console.warn('[explorer] copy path failed', err);
-      });
+      void getCachedClipboard()
+        .writeText(paths.join('\n'))
+        .catch((err) => {
+          console.warn('[explorer] copy path failed', err);
+        });
     },
     onCopyRelativePath: (paths: string[]) => {
       if (paths.length === 0) return;
       const rels = paths.map(stripRoot).join('\n');
-      void navigator.clipboard.writeText(rels).catch((err) => {
-        console.warn('[explorer] copy relative path failed', err);
-      });
+      void getCachedClipboard()
+        .writeText(rels)
+        .catch((err) => {
+          console.warn('[explorer] copy relative path failed', err);
+        });
     },
     onRevealInFinder: (path: string) => {
       void coApi.fs.reveal(path).then((r) => {

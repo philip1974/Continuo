@@ -77,3 +77,64 @@ describe('keybindings-store', () => {
     expect(getEffectiveHotkey(noHotkey)).toBe('mod+f');
   });
 });
+
+describe('keybindings-store · localStorage 错误兜底', () => {
+  beforeEach(() => {
+    globalThis.localStorage.clear();
+    useKeybindingsStore.setState({ overrides: {} });
+  });
+
+  it('writeStored 抛(quota)→ 静默,in-memory 仍写入', () => {
+    const original = globalThis.localStorage.setItem;
+    globalThis.localStorage.setItem = () => {
+      throw new Error('QuotaExceededError');
+    };
+    try {
+      expect(() =>
+        useKeybindingsStore.getState().setHotkey('a', 'mod+a'),
+      ).not.toThrow();
+      expect(useKeybindingsStore.getState().overrides.a).toBe('mod+a');
+    } finally {
+      globalThis.localStorage.setItem = original;
+    }
+  });
+});
+
+describe('keybindings-store · readStored 防御', () => {
+  it('JSON.parse 失败 / 非对象 → reload 时 module 自身的 readStored 容错(此处仅断言运行时 store 在乱数据下不抛)', async () => {
+    // 预埋损坏数据
+    globalThis.localStorage.setItem(
+      'continuo.keybindings.overrides',
+      'not-json-{{{',
+    );
+    // 通过动态 import 强制重读 module(vi.resetModules + 再 import)
+    const { vi } = await import('vitest');
+    vi.resetModules();
+    const mod = await import('../../plugins/keybindings/keybindings-store');
+    expect(mod.useKeybindingsStore.getState().overrides).toEqual({});
+  });
+
+  it('localStorage 中是数组 → fallback 空对象', async () => {
+    globalThis.localStorage.setItem(
+      'continuo.keybindings.overrides',
+      JSON.stringify(['not', 'an', 'object']),
+    );
+    const { vi } = await import('vitest');
+    vi.resetModules();
+    const mod = await import('../../plugins/keybindings/keybindings-store');
+    expect(mod.useKeybindingsStore.getState().overrides).toEqual({});
+  });
+
+  it('localStorage 有效对象 → hydrate 进 store', async () => {
+    globalThis.localStorage.setItem(
+      'continuo.keybindings.overrides',
+      JSON.stringify({ 'cmd.x': 'mod+x' }),
+    );
+    const { vi } = await import('vitest');
+    vi.resetModules();
+    const mod = await import('../../plugins/keybindings/keybindings-store');
+    expect(mod.useKeybindingsStore.getState().overrides).toEqual({
+      'cmd.x': 'mod+x',
+    });
+  });
+});

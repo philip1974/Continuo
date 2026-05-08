@@ -12,6 +12,8 @@ import { fireEvent, render, cleanup, act } from '@testing-library/react';
 import { SettingsPanel } from '../../plugins/settings/SettingsPanel';
 import { useSettingsStore } from '../../plugins/settings/store';
 import { SettingTabRegistry } from '../../plugins/registries/SettingTabRegistry';
+import { SettingItemRegistry } from '../../plugins/registries/SettingItemRegistry';
+import { useSettingsValuesStore } from '../../plugins/settings/values-store';
 
 beforeEach(() => {
   useSettingsStore.setState({ activeTabId: null });
@@ -110,6 +112,127 @@ describe('SettingsPanel · 动态 registry', () => {
 // ────────────────────────────────────────────────────────────
 // store API 形态(决策 #2:关 panel 不 reset)
 // ────────────────────────────────────────────────────────────
+
+// ────────────────────────────────────────────────────────────
+// 搜索模式
+// ────────────────────────────────────────────────────────────
+
+describe('SettingsPanel · 搜索模式', () => {
+  function makeItemReg(): SettingItemRegistry {
+    const r = new SettingItemRegistry();
+    r.register({
+      id: 'general.theme',
+      category: 'general',
+      title: '主题',
+      description: 'Light / Dark',
+      type: 'select',
+      default: 'dark',
+      enum: [
+        { value: 'dark', label: 'Dark' },
+        { value: 'light', label: 'Light' },
+      ],
+    });
+    r.register({
+      id: 'editor.fontSize',
+      category: 'editor',
+      title: '字号',
+      description: '编辑器字体大小',
+      type: 'number',
+      default: 14,
+    });
+    r.register({
+      id: 'plugins.foo.bar',
+      category: 'pluginland',
+      title: 'Plugin Bar',
+      type: 'boolean',
+      default: false,
+    });
+    return r;
+  }
+
+  beforeEach(() => {
+    useSettingsValuesStore.setState({ values: {} });
+  });
+
+  it('搜索框输入 → 左 nav 半透明 + 右侧渲染搜索结果', () => {
+    const { container } = render(
+      <SettingsPanel registry={makeReg()} itemRegistry={makeItemReg()} />,
+    );
+    const input = container.querySelector('input') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '主题' } });
+    expect(container.textContent).toMatch(/匹配\s*1\s*项/);
+    expect(container.querySelector('nav')!.className).toContain('opacity-40');
+  });
+
+  it('match 命中 title / description / id', () => {
+    const { container } = render(
+      <SettingsPanel registry={makeReg()} itemRegistry={makeItemReg()} />,
+    );
+    const input = container.querySelector('input') as HTMLInputElement;
+
+    fireEvent.change(input, { target: { value: '编辑器字体' } });
+    expect(container.textContent).toContain('字号');
+
+    fireEvent.change(input, { target: { value: 'plugins.foo' } });
+    expect(container.textContent).toContain('Plugin Bar');
+  });
+
+  it('无匹配 → 「未找到匹配」', () => {
+    const { container } = render(
+      <SettingsPanel registry={makeReg()} itemRegistry={makeItemReg()} />,
+    );
+    const input = container.querySelector('input') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'zzz_no_match' } });
+    expect(container.textContent).toContain('未找到匹配');
+  });
+
+  it('搜索结果按 category 分桶,内置 category 有中文 label,自定义 fallback raw', () => {
+    const { container } = render(
+      <SettingsPanel registry={makeReg()} itemRegistry={makeItemReg()} />,
+    );
+    const input = container.querySelector('input') as HTMLInputElement;
+    // 搜 全部 → general/editor/pluginland 三个 bucket
+    fireEvent.change(input, { target: { value: '' } });
+    // 空 query 应离开搜索模式
+    expect(container.textContent).not.toContain('匹配');
+
+    // 搜 a 命中所有(包含 description / title)
+    fireEvent.change(input, { target: { value: 'a' } });
+    const headers = Array.from(container.querySelectorAll('h3')).map(
+      (h) => h.textContent,
+    );
+    // pluginland 是自定义 category,fallback raw 显示
+    expect(headers).toContain('pluginland');
+    // 内置 category 应显示中文 label
+    if (container.textContent!.includes('字号')) {
+      expect(headers).toContain('编辑器');
+    }
+  });
+
+  it('清空搜索 → 回普通模式,左 nav 不再半透明', () => {
+    const { container } = render(
+      <SettingsPanel registry={makeReg()} itemRegistry={makeItemReg()} />,
+    );
+    const input = container.querySelector('input') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '主题' } });
+    expect(container.querySelector('nav')!.className).toContain('opacity-40');
+
+    fireEvent.change(input, { target: { value: '' } });
+    expect(container.querySelector('nav')!.className).not.toContain(
+      'opacity-40',
+    );
+  });
+
+  it('全空白 query 视为非搜索模式', () => {
+    const { container } = render(
+      <SettingsPanel registry={makeReg()} itemRegistry={makeItemReg()} />,
+    );
+    const input = container.querySelector('input') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '   ' } });
+    expect(container.textContent).not.toContain('匹配');
+    expect(container.textContent).not.toContain('未找到');
+  });
+});
 
 describe('useSettingsStore · API 形态', () => {
   it('只有 activeTabId / setActiveTabId,无 isOpen/open/close', () => {

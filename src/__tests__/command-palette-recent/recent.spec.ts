@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // BDD: command-palette-recent / store
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   useRecentCommandsStore,
   RECENT_STORAGE_KEY,
@@ -92,5 +92,70 @@ describe('useRecentCommandsStore · localStorage 持久化', () => {
     } finally {
       localStorage.setItem = original;
     }
+  });
+
+  it('clear 抛(localStorage 不可用)→ 静默,in-memory 仍清空', () => {
+    useRecentCommandsStore.getState().record('a');
+    const original = localStorage.removeItem;
+    localStorage.removeItem = () => {
+      throw new Error('failed');
+    };
+    try {
+      expect(() => useRecentCommandsStore.getState().clear()).not.toThrow();
+      expect(useRecentCommandsStore.getState().list).toEqual([]);
+    } finally {
+      localStorage.removeItem = original;
+    }
+  });
+});
+
+describe('useRecentCommandsStore · readFromStorage 防御', () => {
+  it('JSON 损坏 → 空数组', async () => {
+    localStorage.setItem(RECENT_STORAGE_KEY, 'not-json');
+    vi.resetModules();
+    const mod = await import('../../plugins/command-palette/recent');
+    expect(mod.useRecentCommandsStore.getState().list).toEqual([]);
+  });
+
+  it('值不是数组 → 空数组', async () => {
+    localStorage.setItem(
+      RECENT_STORAGE_KEY,
+      JSON.stringify({ not: 'array' }),
+    );
+    vi.resetModules();
+    const mod = await import('../../plugins/command-palette/recent');
+    expect(mod.useRecentCommandsStore.getState().list).toEqual([]);
+  });
+
+  it('数组中包含非法形态项 → 跳过,只保留合法项', async () => {
+    localStorage.setItem(
+      RECENT_STORAGE_KEY,
+      JSON.stringify([
+        { id: 'good', ts: 100 },
+        { id: 'no-ts' }, // 缺 ts
+        { ts: 999 }, // 缺 id
+        null,
+        'not an object',
+        { id: 'good2', ts: 200 },
+      ]),
+    );
+    vi.resetModules();
+    const mod = await import('../../plugins/command-palette/recent');
+    expect(mod.useRecentCommandsStore.getState().list).toEqual([
+      { id: 'good', ts: 100 },
+      { id: 'good2', ts: 200 },
+    ]);
+  });
+
+  it('合法数据 → hydrate', async () => {
+    localStorage.setItem(
+      RECENT_STORAGE_KEY,
+      JSON.stringify([{ id: 'cmd.x', ts: 1234 }]),
+    );
+    vi.resetModules();
+    const mod = await import('../../plugins/command-palette/recent');
+    expect(mod.useRecentCommandsStore.getState().list).toEqual([
+      { id: 'cmd.x', ts: 1234 },
+    ]);
   });
 });

@@ -1,9 +1,32 @@
-/* 覆盖 dockview-theme-abyss 的几个尺寸/颜色变量,与启动页深色背景一致。 */
+/* Dockview theme bridge:把 abyss 主题硬编码的 --dv-* 变量改接到项目语义 token,
+ * 使 tab 条 / 面板背景 / 分隔线随 :root(light)与 .dark 自动切换。
+ *
+ * 仅覆盖 background / 文字 / divider / 强调色,尺寸 token 保持原值。
+ */
 .dockview-theme-abyss {
   --dv-tabs-and-actions-container-height: 36px;
-  --dv-tab-divider-color: rgba(255, 255, 255, 0.06);
-  --dv-separator-border: rgba(255, 255, 255, 0.08);
-  --dv-paneview-active-outline-color: rgba(56, 189, 248, 0.35);
+
+  /* 面板 / tab 条背景 — 与 canvas 一致,无视觉割裂 */
+  --dv-group-view-background-color: var(--md-surface);
+  --dv-tabs-and-actions-container-background-color: var(--md-surface);
+
+  /* tab 背景:active = canvas(凸出),hidden = container-low(沉下去) */
+  --dv-activegroup-visiblepanel-tab-background-color: var(--md-surface);
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--md-surface-container-low);
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--md-surface);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--md-surface-container-low);
+
+  /* tab 文字 — 走 on-surface,SharedTab 自身用 text-fg 也兜得住 */
+  --dv-activegroup-visiblepanel-tab-color: var(--md-on-surface);
+  --dv-activegroup-hiddenpanel-tab-color: var(--md-on-surface-variant);
+  --dv-inactivegroup-visiblepanel-tab-color: var(--md-on-surface-variant);
+  --dv-inactivegroup-hiddenpanel-tab-color: var(--md-on-surface-variant);
+
+  /* 分隔线 / 焦点环 */
+  --dv-tab-divider-color: var(--md-outline-variant);
+  --dv-separator-border: var(--md-outline-variant);
+  --dv-paneview-header-border-color: var(--md-outline-variant);
+  --dv-paneview-active-outline-color: var(--md-primary);
 }
 
 .dockview-theme-abyss .dv-tab {
