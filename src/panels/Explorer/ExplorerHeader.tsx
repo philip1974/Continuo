@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { IconButton, MenuItem } from '@/design';
 import { coApi } from '@/lib/co-api';
@@ -6,6 +7,11 @@ import { coApi } from '@/lib/co-api';
 // FolderTree 顶部固定 Header:左侧 workspace 名 + 右侧 ⋯ 溢出菜单
 //(展开 / 折叠 / 切换 / 关闭)。
 // VSCode 风:打开新文件夹会替换当前 root;关闭回到 EmptyWorkspace。
+//
+// 菜单 portal 到 document.body + position:fixed 按 viewport 定位 — 与
+// shell/dock/HeaderActions 同款修复:Dockview 祖先有 transform:translate3d
+// 创建 stacking context,把 z-modal 困在 panel 子树内,菜单会被同 panel
+// 内的 file tree 内容(虚拟化 transform:translateY 也创建 SC)盖住。
 
 interface ExplorerHeaderProps {
   root: string;
@@ -35,15 +41,39 @@ export function ExplorerHeader({
   const recentOthers = recentRoots.filter((p) => p !== root);
   const [busy, setBusy] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const wrapRef = useRef<HTMLDivElement>(null);
+  const [anchor, setAnchor] = useState<{ top: number; right: number } | null>(
+    null,
+  );
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
-  // 点 wrap 外:关菜单
+  // 计算菜单坐标 — 用 trigger 按钮的 viewport rect。
+  // 监听 resize / scroll 重新算,避免侧边栏滚动 / 窗口缩放后菜单错位。
+  useLayoutEffect(() => {
+    if (!menuOpen) return;
+    const update = () => {
+      const r = triggerRef.current?.getBoundingClientRect();
+      if (r) {
+        setAnchor({ top: r.bottom + 4, right: window.innerWidth - r.right });
+      }
+    };
+    update();
+    window.addEventListener('resize', update);
+    window.addEventListener('scroll', update, true);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', update, true);
+    };
+  }, [menuOpen]);
+
+  // 点 trigger / menu 外:关菜单
   useEffect(() => {
     if (!menuOpen) return;
     const onDocPointer = (e: PointerEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
-        setMenuOpen(false);
-      }
+      const target = e.target as Node;
+      const inTrigger = triggerRef.current?.contains(target) ?? false;
+      const inMenu = menuRef.current?.contains(target) ?? false;
+      if (!inTrigger && !inMenu) setMenuOpen(false);
     };
     document.addEventListener('pointerdown', onDocPointer);
     return () => document.removeEventListener('pointerdown', onDocPointer);
@@ -106,23 +136,26 @@ export function ExplorerHeader({
           </IconButton>
         )}
       </div>
-      <div ref={wrapRef} className="relative">
-        <IconButton
-          size="xs"
-          onClick={() => setMenuOpen((v) => !v)}
-          title="更多操作"
-          aria-label="更多操作"
-        >
-          <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
-            <circle cx="3.5" cy="8" r="1.1" fill="currentColor" />
-            <circle cx="8" cy="8" r="1.1" fill="currentColor" />
-            <circle cx="12.5" cy="8" r="1.1" fill="currentColor" />
-          </svg>
-        </IconButton>
-        {menuOpen && (
+      <IconButton
+        ref={triggerRef}
+        size="xs"
+        onClick={() => setMenuOpen((v) => !v)}
+        title="更多操作"
+        aria-label="更多操作"
+      >
+        <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+          <circle cx="3.5" cy="8" r="1.1" fill="currentColor" />
+          <circle cx="8" cy="8" r="1.1" fill="currentColor" />
+          <circle cx="12.5" cy="8" r="1.1" fill="currentColor" />
+        </svg>
+      </IconButton>
+      {menuOpen && anchor &&
+        createPortal(
           <div
+            ref={menuRef}
             role="menu"
-            className="absolute right-0 top-full z-modal mt-1 min-w-[140px] overflow-hidden rounded-md border border-line bg-panel py-1 shadow-lg shadow-black/40"
+            style={{ position: 'fixed', top: anchor.top, right: anchor.right }}
+            className="z-modal min-w-[140px] overflow-hidden rounded-md border border-line bg-panel py-1 shadow-lg shadow-black/40"
           >
             <MenuItem
               disabled={!onExpandAll}
@@ -170,9 +203,9 @@ export function ExplorerHeader({
             >
               关闭文件夹
             </MenuItem>
-          </div>
+          </div>,
+          document.body,
         )}
-      </div>
     </div>
   );
 }

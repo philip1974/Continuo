@@ -100,7 +100,7 @@ describe('ExplorerHeader — ⋯ 菜单', () => {
   it('默认关闭', () => {
     installFs(vi.fn());
     const { container } = render(<ExplorerHeader root="/proj" />);
-    expect(container.querySelector('[role=menu]')).toBeNull();
+    expect(document.querySelector('[role=menu]')).toBeNull();
   });
 
   it('点 ⋯ → 打开;再点 → 关', () => {
@@ -110,9 +110,9 @@ describe('ExplorerHeader — ⋯ 菜单', () => {
       'button[aria-label=更多操作]',
     ) as HTMLButtonElement;
     fireEvent.click(moreBtn);
-    expect(container.querySelector('[role=menu]')).not.toBeNull();
+    expect(document.querySelector('[role=menu]')).not.toBeNull();
     fireEvent.click(moreBtn);
-    expect(container.querySelector('[role=menu]')).toBeNull();
+    expect(document.querySelector('[role=menu]')).toBeNull();
   });
 
   it('「展开全部」disabled=!onExpandAll', () => {
@@ -124,7 +124,7 @@ describe('ExplorerHeader — ⋯ 菜单', () => {
       ) as HTMLButtonElement,
     );
     let expandItem = Array.from(
-      container.querySelectorAll<HTMLButtonElement>('[role=menuitem]'),
+      document.querySelectorAll<HTMLButtonElement>('[role=menuitem]'),
     ).find((b) => b.textContent === '展开全部')!;
     expect(expandItem.disabled).toBe(true);
 
@@ -132,7 +132,7 @@ describe('ExplorerHeader — ⋯ 菜单', () => {
       <ExplorerHeader root="/proj" onExpandAll={vi.fn()} />,
     );
     expandItem = Array.from(
-      container.querySelectorAll<HTMLButtonElement>('[role=menuitem]'),
+      document.querySelectorAll<HTMLButtonElement>('[role=menuitem]'),
     ).find((b) => b.textContent === '展开全部')!;
     expect(expandItem.disabled).toBe(false);
   });
@@ -149,11 +149,11 @@ describe('ExplorerHeader — ⋯ 菜单', () => {
       ) as HTMLButtonElement,
     );
     const expandItem = Array.from(
-      container.querySelectorAll<HTMLButtonElement>('[role=menuitem]'),
+      document.querySelectorAll<HTMLButtonElement>('[role=menuitem]'),
     ).find((b) => b.textContent === '展开全部')!;
     fireEvent.click(expandItem);
     expect(onExpandAll).toHaveBeenCalledTimes(1);
-    expect(container.querySelector('[role=menu]')).toBeNull();
+    expect(document.querySelector('[role=menu]')).toBeNull();
   });
 
   it('点「关闭文件夹」 → setRoot(null) + 关菜单', () => {
@@ -165,7 +165,7 @@ describe('ExplorerHeader — ⋯ 菜单', () => {
       ) as HTMLButtonElement,
     );
     const closeItem = Array.from(
-      container.querySelectorAll<HTMLButtonElement>('[role=menuitem]'),
+      document.querySelectorAll<HTMLButtonElement>('[role=menuitem]'),
     ).find((b) => b.textContent === '关闭文件夹')!;
     fireEvent.click(closeItem);
     expect(useWorkspaceStore.getState().root).toBeNull();
@@ -183,7 +183,7 @@ describe('ExplorerHeader — ⋯ 菜单', () => {
       ) as HTMLButtonElement,
     );
     const switchItem = Array.from(
-      container.querySelectorAll<HTMLButtonElement>('[role=menuitem]'),
+      document.querySelectorAll<HTMLButtonElement>('[role=menuitem]'),
     ).find((b) => b.textContent === '切换文件夹…')!;
     fireEvent.click(switchItem);
     await waitFor(() => {
@@ -199,14 +199,14 @@ describe('ExplorerHeader — ⋯ 菜单', () => {
         'button[aria-label=更多操作]',
       ) as HTMLButtonElement,
     );
-    expect(container.querySelector('[role=menu]')).not.toBeNull();
+    expect(document.querySelector('[role=menu]')).not.toBeNull();
 
     act(() => {
       document.dispatchEvent(
         new PointerEvent('pointerdown', { bubbles: true }),
       );
     });
-    expect(container.querySelector('[role=menu]')).toBeNull();
+    expect(document.querySelector('[role=menu]')).toBeNull();
   });
 });
 
@@ -220,7 +220,7 @@ describe('ExplorerHeader — 最近打开列表', () => {
         'button[aria-label=更多操作]',
       ) as HTMLButtonElement,
     );
-    expect(container.querySelector('[role=menu]')!.textContent).not.toContain(
+    expect(document.querySelector('[role=menu]')!.textContent).not.toContain(
       '打开最近',
     );
   });
@@ -238,7 +238,7 @@ describe('ExplorerHeader — 最近打开列表', () => {
       ) as HTMLButtonElement,
     );
     const olderItem = Array.from(
-      container.querySelectorAll<HTMLButtonElement>('[role=menuitem]'),
+      document.querySelectorAll<HTMLButtonElement>('[role=menuitem]'),
     ).find((b) => b.textContent?.trim() === 'older')!;
     expect(olderItem).toBeDefined();
     fireEvent.click(olderItem);
