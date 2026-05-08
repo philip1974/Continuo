@@ -67,9 +67,11 @@ describe('execShell — 超时', () => {
 describe('execShell — 输出截断', () => {
   it('超 maxOutputBytes 标 truncated,但进程继续到结束', async () => {
     // 输出 200 个 a,maxOutputBytes=50 → truncate 到 50
+    // 注意:不能用 bash brace expansion `{1..200}`,Linux 的 /bin/sh = dash
+    // 不支持。用 $(seq 1 200) 走 POSIX,macOS / ubuntu 均可。
     const r = await execShell({
       cmd: 'sh',
-      args: ['-c', "printf 'a%.0s' {1..200}"],
+      args: ['-c', "printf 'a%.0s' $(seq 1 200)"],
       maxOutputBytes: 50,
     });
     expect(r.truncated).toBe(true);
