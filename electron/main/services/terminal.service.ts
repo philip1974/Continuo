@@ -83,6 +83,13 @@ export function createTerminal(
       ...process.env,
       TERM: 'xterm-256color',
       COLORTERM: 'truecolor',
+      // 显式声明终端身份,让用户 .zshrc / .bashrc 能区分 Continuo 与 iTerm。
+      // 不显式设的话以下变量会从启动 Continuo 的父进程继承(常见 iTerm),
+      // 用户的 if [[ TERM_PROGRAM == iTerm.app || LC_TERMINAL == iTerm2 ]]
+      // 会误判,加载 powerline 主题而 Continuo xterm.js 调色板对不上 → light
+      // 模式下 segment 黑底黑字。两个都得覆盖,||  任一命中就误判。
+      TERM_PROGRAM: 'Continuo',
+      LC_TERMINAL: 'Continuo',
       ...env,
     } as Record<string, string>,
   });

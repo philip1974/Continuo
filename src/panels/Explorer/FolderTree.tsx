@@ -26,6 +26,7 @@ import { useEditorStore } from '@/stores/editor.store';
 import { coApi } from '@/lib/co-api';
 import { getCachedClipboard } from '@/plugins/sandbox-sweep';
 import { useSettingValue } from '@/plugins/settings/values-store';
+import { useTheme } from '@/theme';
 import { useExplorerClipboardStore } from './clipboard-store';
 
 interface CreatingState {
@@ -43,6 +44,7 @@ function dirname(p: string): string {
 export function FolderTree({ root }: { root: string }) {
   // tree ref:onRename callback 在 useMemo 里引用,需要稳定 handle 拿到最新 tree
   const treeRef = useRef<TreeInstance<FileEntry> | null>(null);
+  const { resolved: theme } = useTheme();
   const [creating, setCreating] = useState<CreatingState | null>(null);
   // dnd 状态:hoverTarget 由 FileRow onDragEnter 回报;dragDepth 用计数器
   // 防止 child enter/leave 误清(每次 enter +1,leave -1,归零才真离开)
@@ -236,8 +238,13 @@ export function FolderTree({ root }: { root: string }) {
       // 新建 terminal session,cwd 设到该目录;sessions_changed 推送会自动
       // 触发 TerminalPanel 切到新 session(activeId 设)。打开 dockview
       // terminal panel 让用户立即看到。
+      // COLORFGBG 让 P10k 等 prompt 框架启动时检测到当前主题亮度
+      // —— 已在跑的 PTY 不会因主题切换而重渲。
       void (async () => {
-        const r = await coApi.terminal.create({ cwd: dir });
+        const r = await coApi.terminal.create({
+          cwd: dir,
+          env: { COLORFGBG: theme === 'dark' ? '15;0' : '0;15' },
+        });
         if (!r.ok) {
           console.warn('[explorer] open in terminal failed', r.code, r.message);
           alert(`新建终端失败:[${r.code}] ${r.message}`);

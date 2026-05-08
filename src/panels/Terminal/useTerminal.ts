@@ -1,20 +1,76 @@
 // useTerminal hook(M-Terminal Step T4):xterm 实例 + 事件订阅 + resize observer。
 // 从 MindAutonAgent 移植,简化:
 //   - 删 loadTerminalConfig(我们没 config IPC,内联默认值)
-//   - 删 theme 切换订阅(Continuo 暗色固定)
 //   - scrollback 改 20000(决策 #3:跑 Agent CLI 输出大)
 //   - electronAPI.terminal → coApi.terminal
+// theme:跟随 ThemeProvider 的 resolved(dark/light)— 与 CodeEditor 一致,
+//   切主题时不重建 term,只改 term.options.theme(避免丢历史输出)。
 
 import { useEffect, useRef, useState } from 'react';
-import { Terminal } from '@xterm/xterm';
+import { Terminal, type ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import { coApi } from '@/lib/co-api';
 import { useSettingValue } from '@/plugins/settings/values-store';
+import { useTheme } from '@/theme';
 import { disposeQueue, safeWrite } from './safeWrite';
 
 type CursorStyle = 'block' | 'underline' | 'bar';
+
+// GitHub Dark 调色板(原 Mind 暗色)
+const DARK_THEME: ITheme = {
+  background: '#020617',
+  foreground: '#e6edf3',
+  cursor: '#f8fafc',
+  selectionBackground: 'rgba(82, 139, 255, 0.32)',
+  black: '#20252b',
+  red: '#ff7b72',
+  green: '#3fb950',
+  yellow: '#d29922',
+  blue: '#58a6ff',
+  magenta: '#bc8cff',
+  cyan: '#39c5cf',
+  white: '#b1bac4',
+  brightBlack: '#6e7681',
+  brightRed: '#ffa198',
+  brightGreen: '#56d364',
+  brightYellow: '#e3b341',
+  brightBlue: '#79c0ff',
+  brightMagenta: '#d2a8ff',
+  brightCyan: '#56d4dd',
+  brightWhite: '#f0f6fc',
+};
+
+// Light 调色板 — 取色自 GitHub Primer link blue + Primer 语义色。
+// 关键约束:Powerline 主题(P10k 等)用 ANSI 颜色当 segment 背景,前景色不固定
+// (有的主题 fg=black,有的 fg=brightWhite)— 每个 ANSI 色当背景时,需要同时
+// 兼顾黑字和白字两种前景的可读性。所以 blue/red/green 等取"中等亮度"
+// (link 600 级别),而非 GitHub UI text 边框那种深色,也不是 dark 主题那种浅色。
+// white / brightWhite 走 *terminal 语义*(浅灰 + 纯白),不是 UI 文本语义 —
+// brightWhite 必须是真"白"才能在彩色背景上可读。
+const LIGHT_THEME: ITheme = {
+  background: '#ffffff',
+  foreground: '#1f2328',
+  cursor: '#0969da',
+  selectionBackground: 'rgba(82, 139, 255, 0.24)',
+  black: '#1f2328',
+  red: '#cf222e',
+  green: '#1a7f37',
+  yellow: '#9a6700',
+  blue: '#0969da',
+  magenta: '#8250df',
+  cyan: '#1b7c83',
+  white: '#bbbbbb',
+  brightBlack: '#57606a',
+  brightRed: '#a40e26',
+  brightGreen: '#116329',
+  brightYellow: '#633c01',
+  brightBlue: '#218bff',
+  brightMagenta: '#a371f7',
+  brightCyan: '#3192aa',
+  brightWhite: '#ffffff',
+};
 
 const TERM_OPTIONS = {
   scrollback: 20000, // 跑 Agent CLI 大输出留余量(决策 #3)
@@ -35,29 +91,6 @@ const TERM_OPTIONS = {
   allowProposedApi: true,
   cursorBlink: true,
   cursorStyle: 'block' as const,
-  // 沿用 Mind 暗色调,避免引入主题切换复杂度
-  theme: {
-    background: '#020617',
-    foreground: '#e6edf3',
-    cursor: '#f8fafc',
-    selectionBackground: 'rgba(82, 139, 255, 0.32)',
-    black: '#20252b',
-    red: '#ff7b72',
-    green: '#3fb950',
-    yellow: '#d29922',
-    blue: '#58a6ff',
-    magenta: '#bc8cff',
-    cyan: '#39c5cf',
-    white: '#b1bac4',
-    brightBlack: '#6e7681',
-    brightRed: '#ffa198',
-    brightGreen: '#56d364',
-    brightYellow: '#e3b341',
-    brightBlue: '#79c0ff',
-    brightMagenta: '#d2a8ff',
-    brightCyan: '#56d4dd',
-    brightWhite: '#f0f6fc',
-  },
 };
 
 /**
@@ -77,6 +110,7 @@ export function useTerminal(termId: string) {
     'terminal.cursorStyle',
     'block',
   );
+  const { resolved } = useTheme();
   // term + fit 跨 effect 共享(创建 effect 写 ref,settings effect 读 ref 改 options)
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -88,9 +122,10 @@ export function useTerminal(termId: string) {
 
     const term = new Terminal({
       ...TERM_OPTIONS,
-      // 用当前 settings 值开局,避免初始一帧的旧值闪烁
+      // 用当前 settings + 主题值开局,避免初始一帧的旧值闪烁
       fontSize,
       cursorStyle,
+      theme: resolved === 'dark' ? DARK_THEME : LIGHT_THEME,
     });
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
@@ -174,6 +209,13 @@ export function useTerminal(termId: string) {
       /* ignore */
     }
   }, [fontSize, cursorStyle, termId]);
+
+  // 主题切换 → 已有 term 实例同步 theme(不重建,保留历史输出)
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term) return;
+    term.options.theme = resolved === 'dark' ? DARK_THEME : LIGHT_THEME;
+  }, [resolved]);
 
   return { containerRef, isReady };
 }

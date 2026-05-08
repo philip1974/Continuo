@@ -163,7 +163,12 @@ describe('TerminalPanel — handleNew', () => {
       ) as HTMLButtonElement,
     );
     await waitFor(() => {
-      expect(terminal.create).toHaveBeenCalledWith({ cwd: '/proj' });
+      // env.COLORFGBG 由 useTheme().resolved 决定 — 测试环境(jsdom 无 dark
+      // class) ThemeProvider 默认 'dark',所以 COLORFGBG='15;0'。
+      expect(terminal.create).toHaveBeenCalledWith({
+        cwd: '/proj',
+        env: { COLORFGBG: '15;0' },
+      });
       expect(useTerminalStore.getState().activeId).toBe('t-new');
     });
   });

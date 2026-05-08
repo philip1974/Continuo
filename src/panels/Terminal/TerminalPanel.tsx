@@ -19,6 +19,15 @@ import { TerminalView } from './TerminalView';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { Button } from '@/design';
 import { coApi } from '@/lib/co-api';
+import { useTheme } from '@/theme';
+
+// 让 P10k / oh-my-zsh 等 prompt 框架在 zsh 启动时检测到正确的终端亮度,
+// 选 light/dark color set。X 标准 COLORFGBG = "<fg>;<bg>",bg ∈ {7,9..15}
+// 视为 light。已在跑的 PTY 不会因主题切换而重渲 — 用户切主题后要关掉
+// terminal 重开才能看到 prompt 配色跟着切。
+function themedTerminalEnv(resolved: 'light' | 'dark'): Record<string, string> {
+  return { COLORFGBG: resolved === 'dark' ? '15;0' : '0;15' };
+}
 
 // 模块级单例标志(跨 React mount/unmount 持久;App 真重启 / Cmd+R reload renderer
 // 时 module 重新加载自动复位)。
@@ -33,20 +42,22 @@ export function TerminalPanel() {
   const setActive = useTerminalStore((s) => s.setActive);
 
   const workspaceRoot = useWorkspaceStore((s) => s.root);
+  const { resolved } = useTheme();
 
   const handleNew = useCallback(async () => {
     const r = await coApi.terminal.create({
       cwd: workspaceRoot ?? undefined,
+      env: themedTerminalEnv(resolved),
     });
     if (!r.ok) {
-       
+
       console.warn('[terminal] create failed:', r.code, r.message);
       alert(`新建终端失败:[${r.code}] ${r.message}`);
       return;
     }
     // sessions snapshot 由 main 推送;这里只更新 active 切到新 session
     setActive(r.data.id);
-  }, [setActive, workspaceRoot]);
+  }, [setActive, workspaceRoot, resolved]);
 
   const handleClose = useCallback((id: string) => {
     // remove = 立刻删 metadata + 异步 kill PTY(3s grace period)
