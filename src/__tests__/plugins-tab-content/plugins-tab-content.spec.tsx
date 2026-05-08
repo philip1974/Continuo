@@ -355,7 +355,12 @@ describe('PluginsTabContent — Git URL 安装', () => {
         'https://github.com/me/plugin.git',
       );
     });
-    expect(container.textContent).toContain('已安装 Plugin X v1.0.0');
+    // installFromGit 是 mockResolvedValue,resolve 进 microtask + React 重渲染
+    // 还要再一个 tick;不能只等 mock 被调,得 waitFor 直到 UI 反映安装完成
+    // 文案。否则在 ubuntu runner 时序紧时会抢输 race(本地 mac 多数赢)。
+    await waitFor(() => {
+      expect(container.textContent).toContain('已安装 Plugin X v1.0.0');
+    });
     expect(container.textContent).toContain('p.x');
     // gitUrl 清空
     expect(input.value).toBe('');
