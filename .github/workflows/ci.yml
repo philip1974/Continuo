@@ -3,8 +3,9 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
-    tags: ['v*']
+    # Continuo 是 public repo,Actions minutes 免费;feature 分支 push 也跑 CI,
+    # 单人开发不开 PR 时仍能拿到信号。
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
