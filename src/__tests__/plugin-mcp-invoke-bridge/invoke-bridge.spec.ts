@@ -104,7 +104,7 @@ describe('startPluginMcpInvokeBridge', () => {
     (globalThis as Record<string, unknown>).__lmApi = { pluginMcp: api };
     const reg = fakeRegistry(async () => {
       // 抛非标准对象
-      // eslint-disable-next-line no-throw-literal
+       
       throw {};
     });
 

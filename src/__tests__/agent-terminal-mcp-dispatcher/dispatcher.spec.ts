@@ -247,7 +247,7 @@ describe('dispatchRpc · tools/call', () => {
       jsonSchema: { type: 'object', additionalProperties: false },
       inputSchema: z.object({}).strict(),
       run: () => {
-        // eslint-disable-next-line @typescript-eslint/only-throw-error
+         
         throw 'string thrown';
       },
     };

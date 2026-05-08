@@ -270,7 +270,7 @@ function UserPluginsSection() {
       </div>
       {plugins.length === 0 && !pendingInstall ? (
         <div className="rounded-md border border-dashed border-line bg-panel-soft/40 px-4 py-8 text-center text-xs text-fg-dim">
-          暂无第三方插件。从上方"git URL 安装"添加。
+          暂无第三方插件。从上方「git URL 安装」添加。
         </div>
       ) : (
         <div className="rounded-md border border-line bg-panel-soft/40">

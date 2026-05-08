@@ -1,10 +1,8 @@
 // 双击文件 → Editor 打开 tab + 内容显示.
-import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
 
 test('点击 README.md → Editor 打开 + StatusBar 显示行/词/字符', async ({
   window,
-  workspaceRoot,
 }) => {
   // 先确认 README.md 在 FolderTree 里渲染
   const readmeRow = window.locator('text=README.md').first();

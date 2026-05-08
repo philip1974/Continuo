@@ -39,7 +39,7 @@ export function TerminalPanel() {
       cwd: workspaceRoot ?? undefined,
     });
     if (!r.ok) {
-      // eslint-disable-next-line no-console
+       
       console.warn('[terminal] create failed:', r.code, r.message);
       alert(`新建终端失败:[${r.code}] ${r.message}`);
       return;

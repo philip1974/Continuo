@@ -71,7 +71,7 @@ describe('HeaderActions — popout', () => {
 describe('HeaderActions — 更多操作菜单', () => {
   it('默认 open=false → 不渲染 menu', () => {
     const props = makeProps();
-    const { container } = render(
+    render(
       <HeaderActions {...(props as unknown as Parameters<typeof HeaderActions>[0])} />,
     );
     expect(document.querySelector('[role=menu]')).toBeNull();

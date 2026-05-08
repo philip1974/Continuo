@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { fireEvent, render, cleanup, waitFor } from '@testing-library/react';
 import { PermissionEditorModal } from '../../plugins/permissions/PermissionEditorModal';
 import type {

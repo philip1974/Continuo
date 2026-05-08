@@ -249,10 +249,10 @@ async function startMcpHost(): Promise<void> {
     }));
     // 给 agent-auth service 注入 host 引用,撤销时 rotate token。
     setMcpHostRef(mcpHost);
-    // eslint-disable-next-line no-console
+     
     console.log(`[mcp-host] listening on ${mcpHost.url}`);
   } catch (err) {
-    // eslint-disable-next-line no-console
+     
     console.warn(
       '[mcp-host] failed to start, agent terminal MCP unavailable',
       err,
@@ -291,7 +291,7 @@ function resolveStdioSocketPath(): string {
 
 async function startMcpStdioServer(): Promise<void> {
   if (!mcpHost) {
-    // eslint-disable-next-line no-console
+     
     console.warn('[mcp-stdio] http host not started, skipping stdio');
     return;
   }
@@ -304,10 +304,10 @@ async function startMcpStdioServer(): Promise<void> {
     });
     const cliPath = resolveStdioCliPath();
     const claudeAddCommand = `claude mcp add --transport stdio continuo -- ${cliPath}`;
-    // eslint-disable-next-line no-console
+     
     console.log(`[mcp-stdio] listening on ${mcpStdio.socketPath}`);
     // 打印推荐的 claude mcp add 命令,用户复制即可一次配置永久使用
-    // eslint-disable-next-line no-console
+     
     console.log(
       '[mcp-stdio] one-shot config (Claude Code):\n' +
         `  ${claudeAddCommand}`,
@@ -320,7 +320,7 @@ async function startMcpStdioServer(): Promise<void> {
       claudeAddCommand,
     });
   } catch (err) {
-    // eslint-disable-next-line no-console
+     
     console.warn(
       '[mcp-stdio] failed to start, stdio MCP transport unavailable',
       err,

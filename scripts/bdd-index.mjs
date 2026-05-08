@@ -2,7 +2,7 @@
 // 扫描 src/__tests__/<topic>/ 下的 BDD 主题,生成 INDEX.md。
 // CLAUDE.md 约定:每个主题包含 README.md(行为描述) 与 *.spec.ts(可执行规范)。
 
-import { readdir, readFile, writeFile, stat } from 'node:fs/promises';
+import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

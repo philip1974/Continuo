@@ -9,6 +9,9 @@ dist-electron
 .env
 .env.local
 *.tsbuildinfo
+coverage
+test-results
+playwright-report
 # examples/ 整体 ignored(大参考项目不入库),demo plugin 例外。
 # 注意:git 不会进入完全 ignore 的目录,所以必须先 examples/* 再 !。
 examples/*

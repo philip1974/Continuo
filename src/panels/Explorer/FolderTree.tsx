@@ -152,7 +152,7 @@ export function FolderTree({ root }: { root: string }) {
   const selectedItemsArr = tree.getState().selectedItems ?? [];
   const selectedPaths = useMemo<ReadonlySet<string>>(
     () => new Set(selectedItemsArr),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
     [selectedItemsArr],
   );
 
@@ -187,7 +187,7 @@ export function FolderTree({ root }: { root: string }) {
     async (path: string) => {
       const r = await openFileByPath(path);
       if (!r.ok) {
-        // eslint-disable-next-line no-console
+         
         console.warn('[explorer] open file failed:', r.code, r.message);
       }
     },

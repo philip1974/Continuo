@@ -45,7 +45,7 @@ function notify(): void {
       fn(snap);
     } catch (err) {
       // subscriber 抛错不应破坏其它 subscriber 与本次 mutation 的可见性
-      // eslint-disable-next-line no-console
+       
       console.warn('[terminal-sessions] subscriber threw', err);
     }
   }

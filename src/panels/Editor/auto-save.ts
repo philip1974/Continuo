@@ -25,7 +25,7 @@ export function makeAutoSaveScheduler(
         Promise.resolve()
           .then(() => saveFile())
           .catch((err) => {
-            // eslint-disable-next-line no-console
+             
             console.warn('[auto-save] failed:', err);
           });
       }, delayMs);

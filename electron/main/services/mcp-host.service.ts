@@ -468,7 +468,7 @@ export async function createMcpHost(
     const path = (req.url ?? '/').split('?')[0] ?? '/';
     if (req.method === 'POST' && path === '/mcp') {
       void handleMessage(req, res).catch((err) => {
-        // eslint-disable-next-line no-console
+         
         console.warn('[mcp-host] /mcp POST handler threw', err);
         if (!res.headersSent) sendJson(res, 500, '{"error":"internal"}');
       });

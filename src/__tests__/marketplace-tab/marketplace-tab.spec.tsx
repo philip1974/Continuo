@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { fireEvent, render, cleanup, act, waitFor } from '@testing-library/react';
+import { fireEvent, render, cleanup, waitFor } from '@testing-library/react';
 
 vi.mock('../../marketplace/fetcher', () => ({
   fetchMarketplaceIndex: vi.fn(),

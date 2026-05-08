@@ -1,12 +1,6 @@
 // 预置 expandedPaths 含 src → 启动后 src 已展开 + 子文件 a.ts 自动可见.
 import { _electron as electron, expect, test } from '@playwright/test';
-import {
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-  mkdirSync,
-} from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

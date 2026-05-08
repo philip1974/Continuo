@@ -35,7 +35,7 @@ test('Plugin tab 显示的命令数 = testing hook commandCount()', async ({
   // 「命令」label 文案 + 同行的 .tabular-nums.w-8 含 count
   // 简化:在 main 内查找含 "命令" 的 row 后取数字
   const main = window.locator('main');
-  const cmdRow = main
+  const _cmdRow = main
     .locator('div')
     .filter({ has: main.locator('div.w-32', { hasText: '命令' }) });
   // cmdRow 数字 cell 是 .w-8.text-right.tabular-nums.text-fg

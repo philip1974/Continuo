@@ -69,7 +69,7 @@ export interface StdioSocketServer {
 
 export interface CreateStdioSocketOptions {
   socketPath: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   tools: ReadonlyMap<string, AnyMcpTool>;
   serverInfo: ServerInfo;
 }
@@ -77,7 +77,7 @@ export interface CreateStdioSocketOptions {
 async function handleLine(
   line: string,
   sock: Socket,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   tools: ReadonlyMap<string, AnyMcpTool>,
   serverInfo: ServerInfo,
 ): Promise<void> {
@@ -170,7 +170,7 @@ export async function createStdioSocketServer(
       // 简化:并行 fire-and-forget,客户端按 id 匹配响应。
       for (const line of r.lines) {
         void handleLine(line, sock, opts.tools, opts.serverInfo).catch((err) => {
-          // eslint-disable-next-line no-console
+           
           console.warn('[mcp-stdio] handleLine threw', err);
         });
       }

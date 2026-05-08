@@ -60,7 +60,7 @@ export async function moveEntry(
     await rm(srcPath, { recursive: true, force: true });
   } catch (err) {
     // cp 成功但 rm 失败:dest 已就位,src 残留 — 只 warn,不抛(避免数据丢失)
-    // eslint-disable-next-line no-console
+     
     console.warn('[fs:move] cross-device cp succeeded but rm failed', err);
   }
 }

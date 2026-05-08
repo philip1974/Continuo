@@ -50,10 +50,17 @@ const FILES = [
     reason: 'LM border-radius 4px (Nous 8px) + font-weight normal (Nous medium)',
   },
 
-  { src: 'design/Card.tsx', dest: 'design/Card.tsx', mode: 'sync' },
-  { src: 'design/Card.css', dest: 'design/Card.css', mode: 'sync' },
+  // Card.tsx Nous 上游加了 'plan' tone,LM 暂时未纳入;Card.css LM 已 token 化
+  // (radius var(--wm-radius-xl))。两边都有变化,标 fork 等手工 merge。
+  { src: 'design/Card.tsx', dest: 'design/Card.tsx', mode: 'fork', reason: 'Nous 加 plan tone vs LM token 化' },
+  { src: 'design/Card.css', dest: 'design/Card.css', mode: 'fork', reason: 'LM radius token 化 (var(--wm-radius-xl))' },
 
-  { src: 'design/IconButton.tsx', dest: 'design/IconButton.tsx', mode: 'sync' },
+  {
+    src: 'design/IconButton.tsx',
+    dest: 'design/IconButton.tsx',
+    mode: 'fork',
+    reason: 'LM 加 forwardRef (HeaderActions 弹层锚点 / focus 需要 ref)',
+  },
   { src: 'design/IconButton.css', dest: 'design/IconButton.css', mode: 'sync' },
 
   {
@@ -62,13 +69,15 @@ const FILES = [
     mode: 'fork',
     reason: 'LM 加 forwardRef (CreateInput / FileRow rename 需要 .focus())',
   },
-  { src: 'design/Input.css', dest: 'design/Input.css', mode: 'sync' },
+  { src: 'design/Input.css', dest: 'design/Input.css', mode: 'fork', reason: 'LM radius token 化 (var(--wm-radius-lg/sm))' },
 
   { src: 'design/MenuItem.tsx', dest: 'design/MenuItem.tsx', mode: 'sync' },
   { src: 'design/MenuItem.css', dest: 'design/MenuItem.css', mode: 'sync' },
 
-  { src: 'design/Modal.tsx', dest: 'design/Modal.tsx', mode: 'sync' },
-  { src: 'design/Modal.css', dest: 'design/Modal.css', mode: 'sync' },
+  // LM 在 commit 07e2dac 加了 size prop (sm/md/lg) 取代调用方的 !max-w-[Npx],
+  // 同时 Modal.css token 化 (radius/blur)。Nous 上游暂无对应 API。
+  { src: 'design/Modal.tsx', dest: 'design/Modal.tsx', mode: 'fork', reason: 'LM 加 size prop (sm/md/lg) 收编散乱 max-w' },
+  { src: 'design/Modal.css', dest: 'design/Modal.css', mode: 'fork', reason: 'LM radius/blur token 化 + size 阶梯 CSS' },
 
   {
     src: 'design/NavRailButton.tsx',
@@ -99,16 +108,19 @@ const FILES = [
   { src: 'design/Separator.css', dest: 'design/Separator.css', mode: 'sync' },
 
   { src: 'design/Spinner.tsx', dest: 'design/Spinner.tsx', mode: 'sync' },
-  { src: 'design/Spinner.css', dest: 'design/Spinner.css', mode: 'sync' },
+  { src: 'design/Spinner.css', dest: 'design/Spinner.css', mode: 'fork', reason: 'LM duration token 化 (var(--wm-duration-spin))' },
 
-  { src: 'design/TabNav.tsx', dest: 'design/TabNav.tsx', mode: 'sync' },
-  { src: 'design/TabNav.css', dest: 'design/TabNav.css', mode: 'sync' },
+  // LM TabNav.tsx 用 ✕ 字符 (U+2715) 替代 Nous 的 'x',与 EditorHeader 视觉对齐;
+  // LM TabNav.css active tab 用 primary-container 背景 + 顶部圆角 (类按钮形态),
+  // 而 Nous 上游保持纯下划线 indicator。
+  { src: 'design/TabNav.tsx', dest: 'design/TabNav.tsx', mode: 'fork', reason: 'LM close 字符 ✕ vs Nous x' },
+  { src: 'design/TabNav.css', dest: 'design/TabNav.css', mode: 'fork', reason: 'LM active tab 类按钮形态 vs Nous 纯下划线' },
 
   { src: 'design/Tabs.tsx', dest: 'design/Tabs.tsx', mode: 'sync' },
-  { src: 'design/Tabs.css', dest: 'design/Tabs.css', mode: 'sync' },
+  { src: 'design/Tabs.css', dest: 'design/Tabs.css', mode: 'fork', reason: 'LM radius token 化 (var(--wm-radius-xl))' },
 
   { src: 'design/Textarea.tsx', dest: 'design/Textarea.tsx', mode: 'sync' },
-  { src: 'design/Textarea.css', dest: 'design/Textarea.css', mode: 'sync' },
+  { src: 'design/Textarea.css', dest: 'design/Textarea.css', mode: 'fork', reason: 'LM radius token 化 (var(--wm-radius-lg))' },
 ];
 
 // ── 执行 ────────────────────────────────────────────────
@@ -192,6 +204,9 @@ if (drifted > 0) {
   console.log('  → 手工 merge:对比 Nous 与 LM,合并 upstream 变化,保留 LM 微调');
 }
 
-// 退出码:CHECK_ONLY 模式下任何变化都算 fail
-if (CHECK_ONLY && (synced > 0 || drifted > 0)) process.exit(1);
-if (drifted > 0) process.exit(1);
+// 退出码:
+// - CHECK_ONLY 下 sync 项漂移 → fail (上游真源未同步,要么 pnpm sync:design 拉过来,要么改 mode)
+// - CHECK_ONLY 下 fork 项漂移 → 不算 fail (LM 有意保留的分歧, reason 已声明)
+// - 写盘模式下 fork 项漂移 → fail (提醒手工 merge upstream 变化)
+if (CHECK_ONLY && synced > 0) process.exit(1);
+if (!CHECK_ONLY && drifted > 0) process.exit(1);

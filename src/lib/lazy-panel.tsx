@@ -12,5 +12,7 @@ export function lazyPanel(
   Lazy: ComponentType,
   fallback: ReactNode = null,
 ): () => ReactNode {
-  return () => createElement(Suspense, { fallback }, createElement(Lazy));
+  return function LazyPanel() {
+    return createElement(Suspense, { fallback }, createElement(Lazy));
+  };
 }

@@ -55,7 +55,7 @@ describe('useReviewsStore.refresh', () => {
   });
 
   it('非 Error 抛 → error=String(err)', async () => {
-    // eslint-disable-next-line prefer-promise-reject-errors
+     
     fetchMock.mockRejectedValue('weird-string');
     await useReviewsStore.getState().refresh();
     expect(useReviewsStore.getState().error).toBe('weird-string');
