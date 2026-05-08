@@ -1,0 +1,59 @@
+name: E2E
+
+# Electron + node-pty + Playwright 在 PR 上跑成本高、稳定性差。
+# 默认每天 nightly 跑一次,需要时也可手动触发。等 M5 拆出 smoke 分层后,
+# 再考虑把 smoke 子集挪到 PR 必要门禁。
+on:
+  schedule:
+    # UTC 18:00 = 北京时间 02:00,夜间跑
+    - cron: '0 18 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: Electron E2E
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Rebuild native modules for Electron
+        run: pnpm rebuild:native
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Build Electron app
+        run: pnpm build
+
+      - name: Run e2e
+        run: pnpm e2e
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14
