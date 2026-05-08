@@ -34,7 +34,6 @@ describe('EditorHeader — tab 数量', () => {
     const { container } = render(
       <EditorHeader
         activeTab={null}
-        autoSaveEnabled={false}
         onCloseRequest={vi.fn()}
       />,
     );
@@ -47,7 +46,6 @@ describe('EditorHeader — tab 数量', () => {
     const { container } = render(
       <EditorHeader
         activeTab={t}
-        autoSaveEnabled={false}
         onCloseRequest={vi.fn()}
       />,
     );
@@ -65,7 +63,6 @@ describe('EditorHeader — tab 数量', () => {
     const { container } = render(
       <EditorHeader
         activeTab={a}
-        autoSaveEnabled={false}
         onCloseRequest={vi.fn()}
       />,
     );
@@ -75,43 +72,44 @@ describe('EditorHeader — tab 数量', () => {
   });
 });
 
-describe('EditorHeader — 与 VSCode 对齐:无保存按钮', () => {
-  // 不论 autoSaveEnabled 真假、dirty 真假,都不显示文字「保存」按钮 — dirty
-  // 由文件名旁的 ● 指示,保存走 ⌘S(EditorPanel keydown 已挂)。
-  for (const autoSaveEnabled of [true, false] as const) {
-    for (const dirty of [true, false]) {
-      it(`autoSaveEnabled=${autoSaveEnabled} + dirty=${dirty} → 不显「保存」按钮`, () => {
-        const t = tab({ dirty });
-        useEditorStore.setState({ tabs: [t], activeTabId: t.id });
-        const { container } = render(
-          <EditorHeader
-            activeTab={t}
-            autoSaveEnabled={autoSaveEnabled}
-            onCloseRequest={vi.fn()}
-          />,
-        );
-        expect(
-          Array.from(
-            container.querySelectorAll<HTMLButtonElement>('button'),
-          ).some((b) => b.textContent === '保存'),
-        ).toBe(false);
-      });
-    }
+describe('EditorHeader — 与 VSCode 对齐:无保存按钮 + 不再持有 mode 切换', () => {
+  // dirty 真假都不显示文字「保存」按钮 — dirty 由文件名旁的 ● 指示,
+  // 保存走 ⌘S(EditorPanel keydown 已挂)。
+  for (const dirty of [true, false]) {
+    it(`dirty=${dirty} → 不显「保存」按钮`, () => {
+      const t = tab({ dirty });
+      useEditorStore.setState({ tabs: [t], activeTabId: t.id });
+      const { container } = render(
+        <EditorHeader
+          activeTab={t}
+          onCloseRequest={vi.fn()}
+        />,
+      );
+      expect(
+        Array.from(
+          container.querySelectorAll<HTMLButtonElement>('button'),
+        ).some((b) => b.textContent === '保存'),
+      ).toBe(false);
+    });
   }
 
-  it('autoSaveEnabled=true → 显示 mode SegmentedControl(Edit/Source/Preview)', () => {
+  // mode SegmentedControl(Edit/Source/Preview)已搬到 EditorPanel 中的
+  // EditorModeBar(tab 行下方独立一行) — EditorHeader 不再渲染它。
+  it('EditorHeader 内不再渲染 Edit/Source/Preview 切换', () => {
     const t = tab({ dirty: true });
     useEditorStore.setState({ tabs: [t], activeTabId: t.id });
     const { container } = render(
       <EditorHeader
         activeTab={t}
-        autoSaveEnabled={true}
         onCloseRequest={vi.fn()}
       />,
     );
-    expect(container.textContent).toContain('Edit');
-    expect(container.textContent).toContain('Source');
-    expect(container.textContent).toContain('Preview');
+    const labels = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button'),
+    ).map((b) => b.textContent);
+    expect(labels).not.toContain('Edit');
+    expect(labels).not.toContain('Source');
+    expect(labels).not.toContain('Preview');
   });
 });
 
@@ -151,7 +149,6 @@ describe('EditorHeader — 插件 editor action', () => {
     const { container, getByTestId } = render(
       <EditorHeader
         activeTab={t}
-        autoSaveEnabled={false}
         onCloseRequest={vi.fn()}
       />,
     );
@@ -175,7 +172,6 @@ describe('EditorHeader — 插件 editor action', () => {
     const { container } = render(
       <EditorHeader
         activeTab={t}
-        autoSaveEnabled={false}
         onCloseRequest={vi.fn()}
       />,
     );
@@ -199,7 +195,6 @@ describe('EditorHeader — 插件 editor action', () => {
     const { container } = render(
       <EditorHeader
         activeTab={t}
-        autoSaveEnabled={false}
         onCloseRequest={vi.fn()}
       />,
     );
@@ -212,7 +207,6 @@ describe('EditorHeader — 插件 editor action', () => {
     const { container } = render(
       <EditorHeader
         activeTab={t}
-        autoSaveEnabled={false}
         onCloseRequest={vi.fn()}
       />,
     );
@@ -235,7 +229,6 @@ describe('EditorHeader — basename 兜底', () => {
     const { container } = render(
       <EditorHeader
         activeTab={t}
-        autoSaveEnabled={false}
         onCloseRequest={vi.fn()}
       />,
     );

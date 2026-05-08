@@ -7,8 +7,9 @@
 //   activeTab 为 null → Welcome
 
 import { useCallback, useState } from 'react';
-import { useEditorStore } from '@/stores/editor.store';
+import { useEditorStore, type EditorMode } from '@/stores/editor.store';
 import { ConfirmDialog } from '@/panels/Explorer/ConfirmDialog';
+import { SegmentedControl } from '@/design';
 import { CodeEditor } from './CodeEditor';
 import { EditorHeader } from './EditorHeader';
 import { EditorWelcome } from './EditorWelcome';
@@ -18,6 +19,12 @@ import { useEditorFile } from './useEditorFile';
 import { useExternalFileSync } from './useExternalFileSync';
 import { useSettingValue } from '@/plugins/settings/values-store';
 import type { EditorTab } from '@/stores/editor.store';
+
+const MODE_OPTIONS: readonly { id: EditorMode; label: string }[] = [
+  { id: 'edit', label: 'Edit' },
+  { id: 'source', label: 'Source' },
+  { id: 'preview', label: 'Preview' },
+];
 
 function isMarkdownPath(p: string | null): boolean {
   if (!p) return true; // 未保存草稿默认按 markdown 处理
@@ -35,6 +42,7 @@ export function EditorPanel() {
   const tabs = useEditorStore((s) => s.tabs);
   const activeTabId = useEditorStore((s) => s.activeTabId);
   const mode = useEditorStore((s) => s.mode);
+  const setMode = useEditorStore((s) => s.setMode);
   const updateContent = useEditorStore((s) => s.updateContent);
   const closeTab = useEditorStore((s) => s.closeTab);
 
@@ -132,9 +140,23 @@ export function EditorPanel() {
     >
       <EditorHeader
         activeTab={activeTab}
-        autoSaveEnabled={autoSaveEnabled}
         onCloseRequest={onTabCloseRequest}
       />
+      {activeTab && isMarkdownPath(activeTab.filePath) && (
+        // markdown 模式切换:tab 行下方独立一行,居中。
+        // 不加 border — 与上方 tab 行 / 下方编辑器无缝衔接,只靠 SegmentedControl
+        // 自身的 surface-container-low 背景与 canvas 形成视觉区分。
+        // 显示条件 = markdown 文件(含未保存草稿) — 与 autoSave 解耦,
+        //   关掉自动保存不会让模式切换跟着消失。
+        <div className="flex h-9 shrink-0 items-center justify-center bg-canvas px-3">
+          <SegmentedControl
+            options={MODE_OPTIONS}
+            value={mode}
+            onChange={setMode}
+            size="sm"
+          />
+        </div>
+      )}
       <div className="min-h-0 flex-1">{body}</div>
 
       <ConfirmDialog

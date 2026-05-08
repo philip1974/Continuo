@@ -1,17 +1,18 @@
-// 单行 Header:左 tab 列表 / 右 mode 切换 + 插件 actions。
+// 单行 Header:左 tab 列表 / 右 插件 actions。
 //
 // 与 VSCode 对齐:
 //   - tabs=0  → 整个 header 不渲染(EditorWelcome 接管)
 //   - tabs≥1 → 统一 TabNav,单 tab 也按内容宽收紧(TabNavItem flex-shrink:0
 //              + max-width:220px),右侧 panel 留空,不再撑满整行。
 //   - 不显文字「保存」按钮 — dirty 由 TabNavItem 自带的 ● 指示,⌘S 保存。
+//   - markdown 模式切换(Edit/Source/Preview)已搬到 EditorPanel 中的 EditorModeBar
+//     —— tab 行下方独立一行,与编辑器同宽,视觉上更干净。
 
 import { memo, useEffect, useMemo, useState } from 'react';
 import { useEditorStore, type EditorMode, type EditorTab } from '@/stores/editor.store';
 import {
   Button,
   IconButton,
-  SegmentedControl,
   TabNav,
   TabNavItem,
 } from '@/design';
@@ -23,15 +24,8 @@ import {
 
 interface EditorHeaderProps {
   activeTab: EditorTab | null;
-  autoSaveEnabled: boolean;
   onCloseRequest: (tab: EditorTab) => void;
 }
-
-const MODE_OPTIONS: readonly { id: EditorMode; label: string }[] = [
-  { id: 'edit', label: 'Edit' },
-  { id: 'source', label: 'Source' },
-  { id: 'preview', label: 'Preview' },
-];
 
 function basename(p: string | null): string {
   if (!p) return '未命名';
@@ -106,14 +100,12 @@ const EditorActionsArea = memo(function EditorActionsArea({
 
 export function EditorHeader({
   activeTab,
-  autoSaveEnabled,
   onCloseRequest,
 }: EditorHeaderProps) {
   const tabs = useEditorStore((s) => s.tabs);
   const activeTabId = useEditorStore((s) => s.activeTabId);
   const switchTab = useEditorStore((s) => s.switchTab);
   const mode = useEditorStore((s) => s.mode);
-  const setMode = useEditorStore((s) => s.setMode);
 
   if (tabs.length === 0) return null;
 
@@ -136,19 +128,10 @@ export function EditorHeader({
         ))}
       </TabNav>
 
-      {/* empty:hidden — 当 !autoSaveEnabled 且无可见插件 action 时,本 div
-          的 children 全部 falsy/空 fragment,DOM 上是 :empty。隐藏避免空
-          边框 + padding 在 tab 右侧形成"奇怪小矩形"。 */}
+      {/* empty:hidden — 当无可见插件 action 时,本 div 的 children 全是 falsy
+          /空 fragment,DOM 上是 :empty。隐藏避免空边框 + padding 在 tab 右侧
+          形成"奇怪小矩形"。 */}
       <div className="flex shrink-0 items-center gap-2 border-l border-line px-3 text-xs empty:hidden">
-        {autoSaveEnabled && (
-          <SegmentedControl
-            options={MODE_OPTIONS}
-            value={mode}
-            onChange={setMode}
-            size="sm"
-          />
-        )}
-
         {/* 与 VSCode 对齐:不显「保存」按钮,dirty 走 TabNavItem 自带 ● + ⌘S */}
 
         {/* 插件贡献的 editor action(memo 子组件,plugin 启停时只本段重渲) */}
