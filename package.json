@@ -16,6 +16,7 @@
     "test:watch": "vitest",
     "test:unit": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
+    "test:contract": "vitest run --project contract",
     "e2e": "playwright test",
     "e2e:headed": "playwright test --headed",
     "bdd:index": "node scripts/bdd-index.mjs",

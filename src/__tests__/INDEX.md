@@ -50,11 +50,11 @@
 
 - [`send-text.spec.ts`](./agent-terminal-mcp-send-text/send-text.spec.ts)
 
-## [agent-terminal-mcp-stdio-framing (Agent Terminal MCP Stdio Transport)](./agent-terminal-mcp-stdio-framing/README.md)
+## [agent-terminal-mcp-stdio-framing (Agent Terminal MCP Stdio Transport)](./agent-terminal-mcp-stdio-framing/README.md) `[contract]`
 
 - [`framing.spec.ts`](./agent-terminal-mcp-stdio-framing/framing.spec.ts)
 
-## [动画落点契约 (M3)](./animation-contracts/README.md)
+## [动画落点契约 (M3)](./animation-contracts/README.md) `[contract]`
 
 - [`contracts.spec.ts`](./animation-contracts/contracts.spec.ts)
 
@@ -62,7 +62,7 @@
 
 - [`category-tab-content.spec.tsx`](./category-tab-content/category-tab-content.spec.tsx)
 
-## [lm-api(Continuo UI 内部 IPC 入口)](./co-api/README.md)
+## [lm-api(Continuo UI 内部 IPC 入口)](./co-api/README.md) `[contract]`
 
 - [`co-api.spec.ts`](./co-api/co-api.spec.ts)
 
@@ -97,7 +97,7 @@
 
 - [`create-input.spec.tsx`](./create-input/create-input.spec.tsx)
 
-## [装饰层契约 (M4)](./decor-contracts/README.md)
+## [装饰层契约 (M4)](./decor-contracts/README.md) `[contract]`
 
 - [`license.spec.ts`](./decor-contracts/license.spec.ts)
 
@@ -119,7 +119,7 @@
 
 - [`tabs.spec.tsx`](./design-system-tabs/tabs.spec.tsx)
 
-## [dock-api-ref(DockviewApi 单例 + focus/openOrFocus)](./dock-api-ref/README.md)
+## [dock-api-ref(DockviewApi 单例 + focus/openOrFocus)](./dock-api-ref/README.md) `[contract]`
 
 - [`dock-api-ref.spec.ts`](./dock-api-ref/dock-api-ref.spec.ts)
 
@@ -316,15 +316,15 @@
 
 - [`plugin-manifest.spec.ts`](./plugin-manifest/plugin-manifest.spec.ts)
 
-## [plugin-mcp-e2e (Plugin → MCP Bridge · 端到端集成)](./plugin-mcp-e2e/README.md)
+## [plugin-mcp-e2e (Plugin → MCP Bridge · 端到端集成)](./plugin-mcp-e2e/README.md) `[integration]`
 
 - [`e2e.spec.ts`](./plugin-mcp-e2e/e2e.spec.ts)
 
-## [plugin-mcp-invoke-bridge(反向调用路由)](./plugin-mcp-invoke-bridge/README.md)
+## [plugin-mcp-invoke-bridge(反向调用路由)](./plugin-mcp-invoke-bridge/README.md) `[contract]`
 
 - [`invoke-bridge.spec.ts`](./plugin-mcp-invoke-bridge/invoke-bridge.spec.ts)
 
-## [plugin-mcp-ipc-bridge (Plugin → MCP Bridge · IPC 协议层)](./plugin-mcp-ipc-bridge/README.md)
+## [plugin-mcp-ipc-bridge (Plugin → MCP Bridge · IPC 协议层)](./plugin-mcp-ipc-bridge/README.md) `[contract]`
 
 - [`ipc-protocol.spec.ts`](./plugin-mcp-ipc-bridge/ipc-protocol.spec.ts)
 
@@ -332,7 +332,7 @@
 
 - [`lifecycle.spec.ts`](./plugin-mcp-lifecycle/lifecycle.spec.ts)
 
-## [plugin-mcp-multi-window (Plugin → MCP Bridge · 多窗口)](./plugin-mcp-multi-window/README.md)
+## [plugin-mcp-multi-window (Plugin → MCP Bridge · 多窗口)](./plugin-mcp-multi-window/README.md) `[integration]`
 
 - [`multi-window.spec.ts`](./plugin-mcp-multi-window/multi-window.spec.ts)
 
@@ -372,7 +372,7 @@
 
 - [`plugins-watcher.spec.ts`](./plugins-watcher/plugins-watcher.spec.ts)
 
-## [popout 契约 (M5)](./popout-contracts/README.md)
+## [popout 契约 (M5)](./popout-contracts/README.md) `[contract]`
 
 - [`popout-mode.spec.ts`](./popout-contracts/popout-mode.spec.ts)
 
@@ -446,7 +446,7 @@
 
 - [`tab-icons.spec.tsx`](./tab-icons/tab-icons.spec.tsx)
 
-## [terminal-ipc (M-Terminal Step T2)](./terminal-ipc/README.md)
+## [terminal-ipc (M-Terminal Step T2)](./terminal-ipc/README.md) `[integration]`
 
 - [`terminal-ipc.spec.ts`](./terminal-ipc/terminal-ipc.spec.ts)
 
@@ -458,7 +458,7 @@
 
 - [`helpers.spec.ts`](./terminal-service/helpers.spec.ts)
 
-## [terminal-sessions-service (Agent Terminal MCP Phase 1)](./terminal-sessions-service/README.md)
+## [terminal-sessions-service (Agent Terminal MCP Phase 1)](./terminal-sessions-service/README.md) `[integration]`
 
 - [`terminal-sessions-service.spec.ts`](./terminal-sessions-service/terminal-sessions-service.spec.ts)
 
@@ -474,7 +474,7 @@
 
 - [`terminal-view.spec.tsx`](./terminal-view/terminal-view.spec.tsx)
 
-## [terminal-write (M-Terminal Step T4)](./terminal-write/README.md)
+## [terminal-write (M-Terminal Step T4)](./terminal-write/README.md) `[integration]`
 
 - [`safe-write.spec.ts`](./terminal-write/safe-write.spec.ts)
 

@@ -6,6 +6,15 @@ import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { CONTRACT_TOPICS, INTEGRATION_TOPICS } from './test-categories.mjs';
+
+const CONTRACT_SET = new Set(CONTRACT_TOPICS);
+const INTEGRATION_SET = new Set(INTEGRATION_TOPICS);
+function categoryOf(slug) {
+  if (CONTRACT_SET.has(slug)) return 'contract';
+  if (INTEGRATION_SET.has(slug)) return 'integration';
+  return null;
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -54,7 +63,9 @@ async function main() {
     lines.push('_暂无 BDD 主题。新增 `src/__tests__/<topic>/` 后重跑 `pnpm bdd:index`。_');
   } else {
     for (const t of topics) {
-      lines.push(`## [${t.title}](./${t.slug}/README.md)`);
+      const cat = categoryOf(t.slug);
+      const tag = cat ? ` \`[${cat}]\`` : '';
+      lines.push(`## [${t.title}](./${t.slug}/README.md)${tag}`);
       lines.push('');
       for (const spec of t.specs) {
         lines.push(`- [\`${spec}\`](./${t.slug}/${spec})`);
