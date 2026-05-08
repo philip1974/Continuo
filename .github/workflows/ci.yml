@@ -90,41 +90,7 @@ jobs:
       - name: Run integration tests
         run: pnpm test:integration
 
-  sync-design:
-    name: Sync-design check
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Continuo
-        uses: actions/checkout@v4
-        with:
-          path: continuo
-
-      # sync-design.mjs 把 Nous 当真源,默认在 sibling 路径 ../Nous 找;
-      # CI 上 checkout 一份到 workspace 下,再用 NOUS_REPO 指过去。
-      - name: Checkout Nous (design upstream)
-        uses: actions/checkout@v4
-        with:
-          repository: philip1974/Nous
-          path: nous
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-          run_install: false
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'pnpm'
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-        working-directory: continuo
-
-      - name: Check design drift
-        run: pnpm sync:design:check
-        working-directory: continuo
-        env:
-          NOUS_REPO: ${{ github.workspace }}/nous
+# sync-design check 不在 CI 跑:依赖跨仓 checkout philip1974/Nous(private),
+# 默认 GITHUB_TOKEN 没权限。设计层漂移由本地 `pnpm sync:design:check` 守护
+# (commit 前由开发者主动跑;freeze-design-system.md 也列入必跑命令)。
+# 未来若想纳入 CI,在 repo Secrets 加 NOUS_PAT,再恢复 sync-design job。
