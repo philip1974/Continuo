@@ -10,6 +10,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Terminal, type ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
+import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import { coApi } from '@/lib/co-api';
 import { useSettingValue } from '@/plugins/settings/values-store';
@@ -133,6 +134,22 @@ export function useTerminal(termId: string) {
     term.loadAddon(fitAddon);
     term.loadAddon(new WebLinksAddon());
     term.open(container);
+    // 启用 webgl renderer:dom renderer 用 letter-spacing 模拟 CJK 双宽度,
+    // 累加误差让 row content 实际渲染宽超过 row.style.width(= cols ×
+    // cellWidth),触发 row 自带的 overflow:hidden 裁 CJK 末尾几个字。
+    // webgl 用 GPU 按 cell grid 直接画字符,无 letter-spacing 路径,CJK
+    // 测量精确,不会越 row 边界。VSCode 终端默认 webgl,见 issue #15。
+    //
+    // GPU 不可用 / context lost 时静默回退 dom(终端能用,只是 CJK 边界
+    // 可能再现)。webgl context 在 main process 关 GPU 加速、用户开太多
+    // canvas 时偶发不可用,不能让 terminal 崩。
+    try {
+      const webgl = new WebglAddon();
+      webgl.onContextLoss(() => webgl.dispose());
+      term.loadAddon(webgl);
+    } catch (err) {
+      console.warn('[terminal] webgl renderer init 失败,回退 dom:', err);
+    }
     // Shift+Enter 等额外按键映射:由 mapTerminalKey 决定是否改写。返回非 null
     // 时直接写 PTY 并阻止 xterm 默认处理(避免 \r 与 \x1b\r 同时发);返回
     // null 时放行,xterm 走默认逻辑(普通 Enter 仍发 \r)。见 issue #18。
