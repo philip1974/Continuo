@@ -272,6 +272,35 @@ app.on('open-url', (event, url) => {
   dispatchProtocolUrl(url);
 });
 
+// ─────────────────────────────────────────────────────
+// macOS open-file:用户拖文件夹到 Dock 图标 / 用 "Open With Continuo"。
+// 拿到目录路径 → 在新窗口打开;文件路径暂忽略(后续 Phase 接 editor)。
+// 冷启时事件可能在 whenReady 之前触发,缓冲到 ready 后处理。
+// ─────────────────────────────────────────────────────
+const pendingOpenPaths: string[] = [];
+
+async function openPathInNewWindow(absPath: string): Promise<void> {
+  let isDir = false;
+  try {
+    isDir = nodeFs.statSync(absPath).isDirectory();
+  } catch {
+    /* 路径不存在 / 无权限 → 跳过 */
+  }
+  if (!isDir) return;
+  const explorerFile = path.join(app.getPath('userData'), 'explorer.json');
+  const windowSeq = await nextWindowSeqFromDisk(explorerFile);
+  createMainWindow({ windowSeq, workspace: absPath });
+}
+
+app.on('open-file', (event, filePath) => {
+  event.preventDefault();
+  if (!app.isReady()) {
+    pendingOpenPaths.push(filePath);
+    return;
+  }
+  void openPathInNewWindow(filePath);
+});
+
 // Agent Terminal MCP host(P1):启动 HTTP server,把 token / url 通过 env
 // 注入到所有 PTY → 用户在 terminal 跑 claude / codex 时反连本机 host。
 // P4+ C 方案:同时启 stdio server(unix socket),Claude Code 走 stdio 配置一次永久使用。
@@ -491,6 +520,14 @@ app.whenReady().then(async () => {
       console.warn('[window-restore] 启动恢复失败,只开主窗', err);
     }
   })();
+
+  // 冷启缓冲的 dock 拖入路径(open-file 在 whenReady 之前触发)→ 各自开新窗。
+  if (pendingOpenPaths.length > 0) {
+    const paths = pendingOpenPaths.splice(0);
+    void (async () => {
+      for (const p of paths) await openPathInNewWindow(p);
+    })();
+  }
 
   // 冷启 + open-url 顺序处理:可能在 mainwindow 未就绪前已收 url
   if (pendingProtocolUrl) {
