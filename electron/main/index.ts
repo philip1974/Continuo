@@ -1,11 +1,16 @@
-import { app, BrowserWindow, Menu, shell } from 'electron';
-import type { HandlerDetails, WindowOpenHandlerResponse } from 'electron';
+import { app, BrowserWindow, dialog, Menu, shell } from 'electron';
+import type {
+  HandlerDetails,
+  MenuItemConstructorOptions,
+  WindowOpenHandlerResponse,
+} from 'electron';
 import nodeFs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { registerIpc } from './ipc';
 import { loadExplorer } from './persistence';
 import { pickWindowsToRestore } from './services/window-restore.service';
+import { nextWindowSeqFromDisk } from './services/window.service';
 import { PLUGINS_CHANNELS } from '../shared/plugins-channels';
 import { createMcpHost, type McpHost } from './services/mcp-host.service';
 import {
@@ -129,6 +134,75 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
 app.on('web-contents-created', (_evt, contents) => {
   contents.setWindowOpenHandler(windowOpenHandler);
 });
+
+// ─────────────────────────────────────────────────────
+// Application menu(issue #23 衍生 UX:可见入口)
+// macOS 标准 template + File 项加 New Window / Open Folder in New Window…
+// 跨平台:Linux/Windows menu 同款 File 项。
+// ─────────────────────────────────────────────────────
+
+async function openFolderInNewWindow(): Promise<void> {
+  const r = await dialog.showOpenDialog({ properties: ['openDirectory'] });
+  if (r.canceled || r.filePaths.length === 0) return;
+  const folder = r.filePaths[0]!;
+  const explorerFile = path.join(app.getPath('userData'), 'explorer.json');
+  const windowSeq = await nextWindowSeqFromDisk(explorerFile);
+  createMainWindow({ windowSeq, workspace: folder });
+}
+
+async function newWindow(): Promise<void> {
+  const explorerFile = path.join(app.getPath('userData'), 'explorer.json');
+  const windowSeq = await nextWindowSeqFromDisk(explorerFile);
+  createMainWindow({ windowSeq });
+}
+
+function buildAppMenu(): Menu {
+  const isMac = process.platform === 'darwin';
+  const fileSubmenu: MenuItemConstructorOptions[] = [
+    {
+      label: 'New Window',
+      accelerator: 'CmdOrCtrl+Shift+N',
+      click: () => {
+        void newWindow();
+      },
+    },
+    {
+      label: 'Open Folder in New Window…',
+      click: () => {
+        void openFolderInNewWindow();
+      },
+    },
+    { type: 'separator' },
+    isMac ? { role: 'close' } : { role: 'quit' },
+  ];
+
+  const template: MenuItemConstructorOptions[] = [
+    ...(isMac
+      ? ([
+          {
+            label: app.name,
+            submenu: [
+              { role: 'about' },
+              { type: 'separator' },
+              { role: 'services' },
+              { type: 'separator' },
+              { role: 'hide' },
+              { role: 'hideOthers' },
+              { role: 'unhide' },
+              { type: 'separator' },
+              { role: 'quit' },
+            ],
+          },
+        ] satisfies MenuItemConstructorOptions[])
+      : []),
+    { label: 'File', submenu: fileSubmenu },
+    { role: 'editMenu' },
+    { role: 'viewMenu' },
+    { role: 'windowMenu' },
+  ];
+
+  return Menu.buildFromTemplate(template);
+}
 
 // popout 子窗口禁止刷新。
 // 原因:dockview 用 portal 把 panel 注到子窗 body,reload 清空 portal 目标
@@ -358,6 +432,27 @@ app.whenReady().then(async () => {
   // ⌘P,导致 Quick Open 收不到 keydown。e2e 显式禁用菜单(只影响测试模式)。
   if (process.env['CONTINUO_E2E'] === '1') {
     Menu.setApplicationMenu(null);
+  } else {
+    Menu.setApplicationMenu(buildAppMenu());
+    // macOS dock 右键菜单(快捷入口)— Linux/Windows 没 dock 跳过。
+    if (process.platform === 'darwin' && app.dock) {
+      app.dock.setMenu(
+        Menu.buildFromTemplate([
+          {
+            label: 'New Window',
+            click: () => {
+              void newWindow();
+            },
+          },
+          {
+            label: 'Open Folder in New Window…',
+            click: () => {
+              void openFolderInNewWindow();
+            },
+          },
+        ]),
+      );
+    }
   }
 
   registerIpc();

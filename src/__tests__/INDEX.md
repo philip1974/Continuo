@@ -514,6 +514,10 @@
 
 - [`use-fs-watcher.spec.tsx`](./use-fs-watcher/use-fs-watcher.spec.tsx)
 
+## [拖文件夹到窗口(`pickDroppedDirectory`)](./window-drop/README.md)
+
+- [`window-drop.spec.ts`](./window-drop/window-drop.spec.ts)
+
 ## [多窗口启动恢复(`pickWindowsToRestore`)](./window-restore/README.md)
 
 - [`window-restore.spec.ts`](./window-restore/window-restore.spec.ts)

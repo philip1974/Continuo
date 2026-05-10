@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { IpcResult } from '../shared/ipc-result';
 import type { FileEntry } from '../shared/fs-entry';
 import { FS_CHANNELS } from '../shared/fs-channels';
@@ -256,6 +256,12 @@ const api = {
       input: IpcWindowCreateInput,
     ): Promise<IpcResult<IpcWindowCreateResult>> =>
       ipcRenderer.invoke(WINDOW_CHANNELS.CREATE, input),
+    /**
+     * Electron 38+ File.path 已弃用,改 webUtils.getPathForFile(file)。
+     * renderer 拖文件 / 文件夹到窗口时,需要绝对路径才能调 fs / setRoot。
+     * 此 helper 在 preload realm 调 webUtils,sandbox renderer 拿不到原生对象。
+     */
+    getPathForFile: (file: File): string => webUtils.getPathForFile(file),
   },
   agentAuth: {
     /** 订阅 main 推的授权请求(MCP tool 调时);返回 unsubscribe. */

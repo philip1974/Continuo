@@ -17,7 +17,10 @@ import { useQuickOpenHotkey } from '@/plugins/quick-open/useQuickOpenHotkey';
 import { PermissionPrompt } from '@/plugins/permissions/PermissionPrompt';
 import { AgentAuthPrompt } from './AgentAuthPrompt';
 import { coApp } from '@/plugins/co-app';
+import { coApi } from '@/lib/co-api';
 import { isPopoutWindow } from '@/lib/popout-mode';
+import { pickDroppedDirectory } from '@/lib/window-drop';
+import { useWorkspaceStore } from '@/stores/workspace.store';
 
 const SPLASH_MIN_MS = 600;
 
@@ -36,6 +39,41 @@ function MainApp() {
   useCommandPaletteHotkey();
   // 全局 commands 注册的 hotkey 监听 + 派发(M-Plugin v1.6 补漏)
   useCommandHotkeys(coApp.commands);
+
+  // 拖文件夹到当前窗口 → 换 workspace(VSCode 同款,issue #23 衍生 UX)。
+  // 文件 drop 暂不处理 — 让 dockview 子区域(editor)自己处理(它有自己的逻辑)。
+  // dragover 必 preventDefault,否则浏览器拒绝触发 drop。
+  const setRoot = useWorkspaceStore((s) => s.setRoot);
+  useEffect(() => {
+    const onDragOver = (e: DragEvent) => {
+      // 只对 file drop 类型 prevent — 不影响 internal drag(dockview tab 拖动等)
+      if (e.dataTransfer?.types.includes('Files')) {
+        e.preventDefault();
+      }
+    };
+    const onDrop = (e: DragEvent) => {
+      if (!e.dataTransfer?.types.includes('Files')) return;
+      e.preventDefault();
+      const dt = e.dataTransfer;
+      void (async () => {
+        const path = await pickDroppedDirectory(
+          { files: Array.from(dt.files) },
+          (file) => coApi.window.getPathForFile(file),
+          async (p) => {
+            const r = await coApi.fs.listDir(p);
+            return r.ok;
+          },
+        );
+        if (path) setRoot(path);
+      })();
+    };
+    window.addEventListener('dragover', onDragOver);
+    window.addEventListener('drop', onDrop);
+    return () => {
+      window.removeEventListener('dragover', onDragOver);
+      window.removeEventListener('drop', onDrop);
+    };
+  }, [setRoot]);
 
   const onLayoutReady = useCallback(() => setLayoutReady(true), []);
   const showSplash = !(layoutReady && splashElapsed);

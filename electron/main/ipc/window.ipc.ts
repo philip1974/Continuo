@@ -14,32 +14,13 @@ import {
   type IpcWindowCreateResult,
 } from '../../shared/window-channels';
 import { createMainWindow } from '../index';
-import { loadExplorer } from '../persistence';
+import { nextWindowSeqFromDisk } from '../services/window.service';
 
 const CreateInput = z
   .object({
     workspace: z.string().min(1).max(2048).optional(),
   })
   .strict();
-
-/**
- * 从磁盘 explorer.json 算下一个 windowSeq:
- *   max(nextWindowSeq, max(windows[*].windowSeq)+1, 1)
- *
- * 1 是下限 — 主窗永远占 0,新窗最小从 1 起。
- *
- * 每次创建窗口前重读磁盘,因为多个 renderer 都可能写 explorer.json,main 端
- * 不维护 in-memory counter 避免与磁盘状态漂移。
- */
-async function nextWindowSeqFromDisk(file: string): Promise<number> {
-  const data = await loadExplorer(file);
-  if (!data) return 1;
-  const fromWindows = data.windows.reduce(
-    (m, w) => Math.max(m, w.windowSeq + 1),
-    1,
-  );
-  return Math.max(data.nextWindowSeq, fromWindows);
-}
 
 async function createWindowHandler(
   input: IpcWindowCreateInput,
