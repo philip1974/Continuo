@@ -1,8 +1,11 @@
 import { app, BrowserWindow, Menu, shell } from 'electron';
 import type { HandlerDetails, WindowOpenHandlerResponse } from 'electron';
+import nodeFs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { registerIpc } from './ipc';
+import { loadExplorer } from './persistence';
+import { pickWindowsToRestore } from './services/window-restore.service';
 import { PLUGINS_CHANNELS } from '../shared/plugins-channels';
 import { createMcpHost, type McpHost } from './services/mcp-host.service';
 import {
@@ -367,6 +370,32 @@ app.whenReady().then(async () => {
   if (mcpHost) startPluginMcpIpc(mcpHost, mcpStdio ?? undefined);
   // 主窗口固定 windowSeq=0:explorer.json windows[0] 是主窗段
   const win = createMainWindow({ windowSeq: 0 });
+
+  // Phase 2C(issue #23):上次会话的非主窗(windowSeq>0)逐个恢复 —
+  // 各自打开自己 workspace,renderer 按 windowSeq 自动 hydrate 对应段。
+  // workspace 路径已不存在 → 跳过(段在磁盘保留,等用户改 mount 再恢复)。
+  void (async () => {
+    try {
+      const explorerFile = path.join(app.getPath('userData'), 'explorer.json');
+      const data = await loadExplorer(explorerFile);
+      if (!data) return;
+      const isDir = (p: string): boolean => {
+        try {
+          return nodeFs.statSync(p).isDirectory();
+        } catch {
+          return false;
+        }
+      };
+      for (const entry of pickWindowsToRestore(data, isDir)) {
+        createMainWindow({
+          windowSeq: entry.windowSeq,
+          workspace: entry.workspace,
+        });
+      }
+    } catch (err) {
+      console.warn('[window-restore] 启动恢复失败,只开主窗', err);
+    }
+  })();
 
   // 冷启 + open-url 顺序处理:可能在 mainwindow 未就绪前已收 url
   if (pendingProtocolUrl) {

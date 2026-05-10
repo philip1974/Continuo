@@ -514,6 +514,10 @@
 
 - [`use-fs-watcher.spec.tsx`](./use-fs-watcher/use-fs-watcher.spec.tsx)
 
+## [多窗口启动恢复(`pickWindowsToRestore`)](./window-restore/README.md)
+
+- [`window-restore.spec.ts`](./window-restore/window-restore.spec.ts)
+
 ## [wrap-panel-close(dock 关闭动画拦截)](./wrap-panel-close/README.md)
 
 - [`wrap-panel-close.spec.ts`](./wrap-panel-close/wrap-panel-close.spec.ts)
