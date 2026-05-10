@@ -3,9 +3,11 @@
 // 上限 cap 避免 OOM。返回完整 ExecResult,plugin 等 process exit 后拿。
 
 import { spawn } from 'node:child_process';
+import { shell } from 'electron';
 import type {
   IpcShellExecInput,
   IpcShellExecResult,
+  IpcShellOpenExternalInput,
 } from '../../shared/shell-channels';
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -112,4 +114,21 @@ export function execShell(input: IpcShellExecInput): Promise<IpcShellExecResult>
       void killed; // 静态分析:killed 仅用于触发副作用,不读
     });
   });
+}
+
+// shell.openExternal 白名单 scheme:仅 http/https/mailto/file。其他 scheme
+// (如 javascript:、custom://)拒绝,防止恶意 markdown 通过 [text](javascript:...)
+// 在主机执行任意代码 / 触发 protocol handler。Electron 文档同款建议。
+const OPEN_EXTERNAL_SCHEME_WHITELIST = /^(https?|mailto|file):/i;
+
+export async function openExternalUrl(
+  input: IpcShellOpenExternalInput,
+): Promise<void> {
+  const url = input.url;
+  if (!OPEN_EXTERNAL_SCHEME_WHITELIST.test(url)) {
+    throw new Error(
+      `[shell.openExternal] scheme not allowed: ${url.slice(0, 32)}...`,
+    );
+  }
+  await shell.openExternal(url);
 }

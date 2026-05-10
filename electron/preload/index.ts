@@ -234,6 +234,12 @@ const api = {
     /** plugin app.shell.exec 后端:一次性 spawn + buffered + 超时. */
     exec: (input: IpcShellExecInput): Promise<IpcResult<IpcShellExecResult>> =>
       ipcRenderer.invoke(SHELL_CHANNELS.EXEC, input),
+    /**
+     * 用系统默认 app 打开 URL — markdown 链接点击走这条路(http/https/mailto/file)。
+     * main process 白名单 scheme,其他抛错。
+     */
+    openExternal: (url: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(SHELL_CHANNELS.OPEN_EXTERNAL, { url }),
   },
   agentAuth: {
     /** 订阅 main 推的授权请求(MCP tool 调时);返回 unsubscribe. */

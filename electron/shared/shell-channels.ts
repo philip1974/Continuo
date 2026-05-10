@@ -3,7 +3,13 @@
 
 export const SHELL_CHANNELS = {
   EXEC: 'shell:exec',
+  /** 用系统默认 app 打开 URL(http/https/mailto/file 之一,白名单 scheme). */
+  OPEN_EXTERNAL: 'shell:openExternal',
 } as const;
+
+export interface IpcShellOpenExternalInput {
+  readonly url: string;
+}
 
 export interface IpcShellExecInput {
   readonly cmd: string;

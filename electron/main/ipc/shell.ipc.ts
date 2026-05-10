@@ -1,9 +1,9 @@
-// Shell IPC 注册(plugin app.shell.exec 后端)。
+// Shell IPC 注册(plugin app.shell.exec 后端 + LM UI 跳转外链)。
 
 import { z } from 'zod';
 import { defaultIsTrustedFrame, safeHandle } from '../safe-handle';
 import { SHELL_CHANNELS } from '../../shared/shell-channels';
-import { execShell } from '../services/shell.service';
+import { execShell, openExternalUrl } from '../services/shell.service';
 
 const ExecInput = z
   .object({
@@ -17,6 +17,18 @@ const ExecInput = z
   })
   .strict();
 
+const OpenExternalInput = z
+  .object({
+    url: z.string().min(1).max(2048),
+  })
+  .strict();
+
 export function registerShellIpc(): void {
   safeHandle(SHELL_CHANNELS.EXEC, ExecInput, execShell, defaultIsTrustedFrame);
+  safeHandle(
+    SHELL_CHANNELS.OPEN_EXTERNAL,
+    OpenExternalInput,
+    openExternalUrl,
+    defaultIsTrustedFrame,
+  );
 }

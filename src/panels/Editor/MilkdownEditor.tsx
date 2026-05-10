@@ -18,6 +18,11 @@ interface MilkdownEditorProps {
   defaultValue: string;
   readonly?: boolean;
   onChange?: (markdown: string) => void;
+  /**
+   * Cmd/Ctrl+click on `<a>` 时触发,把 anchor 的 href 上抛给上层路由。
+   * 上层(EditorPanel)用 resolveLink 决定打开内部文件还是外链。见 issue #25。
+   */
+  onLinkClick?: (href: string) => void;
 }
 
 function CrepeEditor({ defaultValue, readonly = false, onChange }: MilkdownEditorProps) {
@@ -72,11 +77,32 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
   // ProseMirror 文本会跟着变。如果某些元素用 px 绝对值,可在
   // src/styles/editor-font.css 里 override(后续若需扩展)
   const fontSize = useSettingValue<number>('editor.fontSize', 13);
+
+  // ref 跟踪最新 onLinkClick:外层 click handler 不重建,内部读最新值。
+  const onLinkClickRef = useRef(props.onLinkClick);
+  onLinkClickRef.current = props.onLinkClick;
+
+  // Cmd/Ctrl+click on <a>:Crepe 渲染 markdown link 为真实 anchor,
+  // 我们冒泡到外层捕获。仅修饰键 click 拦截,普通 click 让 ProseMirror
+  // 走光标定位(IDE 通用约定:Cmd+click 跳转,普通 click 编辑)。见 issue #25。
+  const handleClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (!(e.metaKey || e.ctrlKey)) return;
+    const target = e.target as HTMLElement | null;
+    const a = target?.closest('a');
+    if (!a) return;
+    const href = a.getAttribute('href');
+    if (!href) return;
+    e.preventDefault();
+    e.stopPropagation();
+    onLinkClickRef.current?.(href);
+  }, []);
+
   return (
     <MilkdownProvider>
       <div
         className="h-full w-full overflow-auto"
         style={{ fontSize: `${fontSize}px` }}
+        onClick={handleClick}
       >
         <CrepeEditor {...props} />
       </div>

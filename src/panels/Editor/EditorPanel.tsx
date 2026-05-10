@@ -17,7 +17,9 @@ import { MilkdownEditor } from './MilkdownEditor';
 import { useAutoSave, isAutoSaveEnabled } from './useAutoSave';
 import { useEditorFile } from './useEditorFile';
 import { useExternalFileSync } from './useExternalFileSync';
+import { resolveLink } from './link-resolve';
 import { useSettingValue } from '@/plugins/settings/values-store';
+import { coApi } from '@/lib/co-api';
 import type { EditorTab } from '@/stores/editor.store';
 
 const MODE_OPTIONS: readonly { id: EditorMode; label: string }[] = [
@@ -49,7 +51,23 @@ export function EditorPanel() {
   const activeTab: EditorTab | null =
     tabs.find((t) => t.id === activeTabId) ?? null;
 
-  const { saveActive } = useEditorFile();
+  const { saveActive, openFileByPath } = useEditorFile();
+
+  // markdown link 点击路由(issue #25):Cmd/Ctrl+click on <a> → MilkdownEditor
+  // 上抛 href → 这里用 resolveLink 决定走 IDE 内打开还是系统外链。
+  // 相对路径以当前 activeTab.filePath 所在目录为基底。
+  const handleLinkClick = useCallback(
+    (href: string) => {
+      const target = resolveLink(href, activeTab?.filePath ?? null);
+      if (!target) return;
+      if (target.kind === 'file') {
+        void openFileByPath(target.absPath);
+      } else {
+        void coApi.shell.openExternal(target.url);
+      }
+    },
+    [activeTab?.filePath, openFileByPath],
+  );
   // 自动保存(Markdown)开关 + 延迟 — 都受 SettingsPanel 控制
   const mdAutoSaveEnabled = useSettingValue<boolean>(
     'autoSave.markdown.enabled',
@@ -113,6 +131,7 @@ export function EditorPanel() {
           defaultValue={activeTab.content}
           readonly={mode === 'preview'}
           onChange={(md) => updateContent(activeTab.id, md)}
+          onLinkClick={handleLinkClick}
         />
       );
     }

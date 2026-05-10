@@ -259,6 +259,10 @@
 
 - [`persistence.spec.ts`](./layout-persistence/persistence.spec.ts)
 
+## [Markdown 链接解析(`resolveLink`)](./markdown-link-resolve/README.md)
+
+- [`markdown-link-resolve.spec.ts`](./markdown-link-resolve/markdown-link-resolve.spec.ts)
+
 ## [marketplace(插件商店浏览 Phase 1)](./marketplace/README.md)
 
 - [`filter.spec.ts`](./marketplace/filter.spec.ts)
