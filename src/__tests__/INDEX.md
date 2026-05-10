@@ -450,6 +450,10 @@
 
 - [`terminal-ipc.spec.ts`](./terminal-ipc/terminal-ipc.spec.ts)
 
+## [Terminal 键位映射(`mapTerminalKey`)](./terminal-key-mapping/README.md)
+
+- [`terminal-key-mapping.spec.ts`](./terminal-key-mapping/terminal-key-mapping.spec.ts)
+
 ## [TerminalPanel(Terminal 主容器)](./terminal-panel/README.md)
 
 - [`terminal-panel.spec.tsx`](./terminal-panel/terminal-panel.spec.tsx)

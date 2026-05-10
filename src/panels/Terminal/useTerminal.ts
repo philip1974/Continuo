@@ -15,6 +15,7 @@ import { coApi } from '@/lib/co-api';
 import { useSettingValue } from '@/plugins/settings/values-store';
 import { useTheme } from '@/theme';
 import { disposeQueue, safeWrite } from './safeWrite';
+import { mapTerminalKey } from './key-mapping';
 
 type CursorStyle = 'block' | 'underline' | 'bar';
 
@@ -131,6 +132,17 @@ export function useTerminal(termId: string) {
     term.loadAddon(fitAddon);
     term.loadAddon(new WebLinksAddon());
     term.open(container);
+    // Shift+Enter 等额外按键映射:由 mapTerminalKey 决定是否改写。返回非 null
+    // 时直接写 PTY 并阻止 xterm 默认处理(避免 \r 与 \x1b\r 同时发);返回
+    // null 时放行,xterm 走默认逻辑(普通 Enter 仍发 \r)。见 issue #18。
+    term.attachCustomKeyEventHandler((event) => {
+      const data = mapTerminalKey(event);
+      if (data !== null) {
+        void coApi.terminal.write(termId, data);
+        return false;
+      }
+      return true;
+    });
     termRef.current = term;
     fitRef.current = fitAddon;
 
