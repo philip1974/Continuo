@@ -124,7 +124,10 @@ export function CodeEditor({
             overflow: 'auto',
             fontSize: 'inherit',
           },
-          '.cm-content': { padding: '12px 0', fontSize: 'inherit' },
+          // 横向 padding 16px:不让 markdown / 代码内容贴 editor 容器右边
+          // (尤其中文长段无空格 wrap 时贴边格外难读);左侧 gutter 之后加
+          // 16px 给视觉呼吸,无 gutter 时(lineNumbers=false)整体往内缩。
+          '.cm-content': { padding: '12px 16px', fontSize: 'inherit' },
           '.cm-gutters': { border: 'none', fontSize: 'inherit' },
           // editor.lineNumbers=false 时:.cm-editor 加 .cm-no-gutters,
           // 整列 gutters(行号 + fold marker)隐藏。开关由 useEffect 同步到 dom.classList
