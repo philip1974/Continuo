@@ -70,6 +70,18 @@ describe('TerminalView', () => {
     expect(host.className).not.toMatch(/\b(p|px|pl|pr)-\d/);
   });
 
+  // 回归 issue #15:resize 缩窄时 xterm 不重排带 ANSI 控制序列的旧行,
+  // .xterm-screen 仍按旧 cols × cellWidth 撑出 host → 视觉溢出。host 必须
+  // overflow-x-hidden 把溢出的旧 scrollback 裁掉(VSCode 同款策略)。
+  it('xterm 宿主 overflow-x-hidden — 防 resize 后旧行视觉溢出 (#15)', () => {
+    useTerminalMock.mockImplementation(makeRefImpl(false));
+    const { container } = render(<TerminalView termId="t1" />);
+    const host = container.querySelector(
+      '[data-testid="terminal-xterm-host"]',
+    ) as HTMLElement;
+    expect(host.className).toMatch(/\boverflow-x-hidden\b/);
+  });
+
   it('useTerminal 收到 termId 参数', () => {
     useTerminalMock.mockImplementation(makeRefImpl(true));
     render(<TerminalView termId="my-terminal" />);

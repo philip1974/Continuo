@@ -29,7 +29,12 @@ export function TerminalView({ termId }: TerminalViewProps) {
         <div
           ref={containerRef}
           data-testid="terminal-xterm-host"
-          className="h-full w-full"
+          // overflow-x-hidden:resize 时 xterm.Buffer.reflow 对带 ANSI 控制
+          // 序列的旧行(claude/codex 输出)**不重排**(xterm.js 设计限制),
+          // .xterm-screen width 按旧 cols × cellWidth 撑出 host 边界 → 视觉
+          // 溢出。VSCode 终端同款修法:容器裁掉溢出。新输出按新 cols 正常
+          // wrap,只有 scrollback 里的旧长行被裁(可接受妥协)。
+          className="h-full w-full overflow-x-hidden"
           // 防 flex 父在 panel 收起时把它挤到 0×0 → fit 抛 NaN
           style={{ minHeight: 0 }}
         />
