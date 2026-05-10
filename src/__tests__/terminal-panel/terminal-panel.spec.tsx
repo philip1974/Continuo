@@ -262,4 +262,15 @@ describe('TerminalPanel — 渲染', () => {
     expect(divs[0]!.style.visibility).toBe('hidden');
     expect(divs[1]!.style.visibility).toBe('visible');
   });
+
+  // 回归 issue #15:xterm cols 缩窄时 reflow 跳过带 ANSI 的旧行,
+  // .xterm-screen 仍按旧 cols × cellWidth 撑大,视觉溢出穿透 dockview /
+  // main / 一路跑出窗口边缘。host overflow-x-hidden 兜不住更外层的溢出,
+  // 必须在 TerminalPanel 顶层 overflow-hidden 把溢出截在 panel 边界内。
+  it('TerminalPanel 顶层 overflow-hidden — 防 xterm 内容穿出窗口 (#15)', () => {
+    installTerminal();
+    const { container } = render(<TerminalPanel />);
+    const root = container.firstElementChild as HTMLElement;
+    expect(root.className).toMatch(/\boverflow-hidden\b/);
+  });
 });

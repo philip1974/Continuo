@@ -98,7 +98,12 @@ export function TerminalPanel() {
   }, []);
 
   return (
-    <div className="flex h-full w-full flex-col bg-canvas">
+    // overflow-hidden:防 xterm.js 在 cols 缩小时 reflow 跳过带 ANSI 的旧行,
+    // 导致 .xterm-screen 按旧 cols × cellWidth 撑大,视觉溢出穿透 dockview /
+    // main / 一路跑出窗口边缘(详见 issue #15 反复修)。host 自带的
+    // overflow-x-hidden 兜不住,因为问题在更外层 — main 的 flex-1 容器没设
+    // overflow,子内容溢出可视区。在 TerminalPanel 顶层裁,意图清晰。
+    <div className="flex h-full w-full flex-col overflow-hidden bg-canvas">
       <TerminalTabs
         onNewSession={handleNew}
         onCloseSession={handleClose}
