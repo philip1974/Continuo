@@ -27,5 +27,18 @@ mac:
         - co
   # 跳过 codesign / notarize(本地测试)
   identity: null
+  # macOS dock 接受文件夹拖入(issue #23):必须在 Info.plist 声明 app
+  # 接受 'public.folder' UTI,否则 macOS 直接拒绝拖入,连 'open-file' 事件
+  # 都不触发。Viewer + Alternate rank:不抢默认打开 folder 的 Finder。
+  # Continuo 在 main 端 app.on('open-file') 中处理 folder → 新窗 workspace。
+  extendInfo:
+    CFBundleDocumentTypes:
+      - CFBundleTypeName: Folder
+        CFBundleTypeRole: Viewer
+        LSHandlerRank: Alternate
+        LSItemContentTypes:
+          - public.folder
+          - public.directory
+    NSAppleEventsUsageDescription: Continuo needs Apple Events to open folders.
 
 # Linux / Windows 留空,以后用到再补
