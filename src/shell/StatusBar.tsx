@@ -12,6 +12,7 @@ import { coApi } from '@/lib/co-api';
 import { charCount, lineCount, wordCount } from '@/lib/text-stats';
 import { coApp } from '@/plugins/co-app';
 import type { StatusBarItemSpec } from '@/plugins/registries/StatusBarRegistry';
+import { getCachedClipboard } from '@/plugins/sandbox-sweep';
 
 function basename(p: string): string {
   const m = p.match(/[^/\\]+$/);
@@ -45,7 +46,8 @@ async function handleCopyMcpConfig(): Promise<'ok' | 'unavailable' | 'fail'> {
   if (!r.ok) return 'fail';
   if (!r.data.available || !r.data.claudeAddCommand) return 'unavailable';
   try {
-    await navigator.clipboard.writeText(r.data.claudeAddCommand);
+    // PROD 下 sandboxSweep 已涂掉 navigator.clipboard,必须走 cached raw ref
+    await getCachedClipboard().writeText(r.data.claudeAddCommand);
     return 'ok';
   } catch {
     return 'fail';

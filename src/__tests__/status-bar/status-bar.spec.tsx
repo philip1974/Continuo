@@ -1,6 +1,22 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { fireEvent, render, cleanup, act, waitFor } from '@testing-library/react';
+
+// PROD 下 sandboxSweep 会涂掉 navigator.clipboard,LM UI 必须走 cached ref
+// (getCachedClipboard)。测试也走 mock 的 cached clipboard,而非 hack
+// navigator.clipboard 全局 — 这样 spec 才真锁住「PROD 仍能复制」。
+const { writeTextMock } = vi.hoisted(() => ({
+  writeTextMock: vi.fn<(text: string) => Promise<void>>(),
+}));
+vi.mock('../../plugins/sandbox-sweep', () => ({
+  getCachedFetch: () => globalThis.fetch,
+  getCachedClipboard: () => ({
+    readText: () => Promise.resolve(''),
+    writeText: writeTextMock,
+  }),
+  sandboxSweep: () => {},
+}));
+
 import {
   _resetLmApiForTest,
   captureLmApi,
@@ -38,6 +54,8 @@ beforeEach(() => {
   // 用类型断言覆盖 readonly,测试隔离需要(每 it 用全新 registry)
   (coApp as { statusBar: StatusBarRegistry }).statusBar =
     new StatusBarRegistry();
+  writeTextMock.mockReset();
+  writeTextMock.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -211,12 +229,6 @@ describe('StatusBar — 插件 statusBar items', () => {
 
 describe('StatusBar — MCP 复制', () => {
   it('ok=true + claudeAddCommand 有 + clipboard 写成功 → 文案变「已复制」', async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, 'clipboard', {
-      value: { writeText },
-      writable: true,
-      configurable: true,
-    });
     installApi({
       mcp: {
         getStdioConfig: vi.fn().mockResolvedValue({
@@ -233,7 +245,31 @@ describe('StatusBar — MCP 复制', () => {
     await waitFor(() => {
       expect(container.textContent).toContain('已复制');
     });
-    expect(writeText).toHaveBeenCalledWith('claude mcp add ...');
+    expect(writeTextMock).toHaveBeenCalledWith('claude mcp add ...');
+  });
+
+  // 回归 issue #16/#17:PROD 下 sandboxSweep 涂掉 navigator.clipboard 后,
+  // 旧代码直接调 navigator.clipboard.writeText 必抛 TypeError → UI 显
+  // 「复制失败」。修后走 getCachedClipboard,正常路径不抛;但 cached
+  // writeText 自身因系统拒绝抛错时,UI 仍要 fallback 到「复制失败」。
+  it('clipboard writeText 抛错 → 「复制失败」', async () => {
+    writeTextMock.mockRejectedValueOnce(new Error('denied'));
+    installApi({
+      mcp: {
+        getStdioConfig: vi.fn().mockResolvedValue({
+          ok: true,
+          data: { available: true, claudeAddCommand: 'claude mcp add ...' },
+        }),
+      },
+    });
+    const { container } = render(<StatusBar />);
+    const btn = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((b) => b.textContent === '复制 MCP 配置')!;
+    fireEvent.click(btn);
+    await waitFor(() => {
+      expect(container.textContent).toContain('复制失败');
+    });
   });
 
   it('available=false → 「MCP 不可用」', async () => {
