@@ -13,6 +13,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import { coApi } from '@/lib/co-api';
 import { useSettingValue } from '@/plugins/settings/values-store';
+import { useLayoutUiStore } from '@/stores/layout-ui.store';
 import { useTheme } from '@/theme';
 import { disposeQueue, safeWrite } from './safeWrite';
 import { mapTerminalKey } from './key-mapping';
@@ -228,6 +229,35 @@ export function useTerminal(termId: string) {
     if (!term) return;
     term.options.theme = resolved === 'dark' ? DARK_THEME : LIGHT_THEME;
   }, [resolved]);
+
+  // sidebar(显示 / 隐藏 / 拖宽)→ 强制重 fit。
+  //
+  // 见 issue #15 复现路径:启动时 sidebar 默认显示 → 初始 fit 算 cols=A;
+  // 用户隐藏 sidebar → terminal 变宽 → ResizeObserver 触发 fit → cols=B(更大);
+  // 用户再显示 sidebar → terminal 变窄 → 但 RO 在某些 React 重排时序下漏 fire,
+  // cols 仍是 B,xterm .xterm-screen width = B × cellWidth > 新的 host width →
+  // 文字向右溢出。
+  //
+  // 事件驱动 fit 兜底:订阅 layoutUi 的 sidebarOpen/Width,变化下一帧强制 fit。
+  // RAF 让 React 完成 layout 提交后再量;与 RO 重叠不会有副作用(fit 幂等)。
+  const sidebarOpen = useLayoutUiStore((s) => s.sidebarOpen);
+  const sidebarWidth = useLayoutUiStore((s) => s.sidebarWidth);
+  useEffect(() => {
+    const term = termRef.current;
+    const fit = fitRef.current;
+    if (!term || !fit) return;
+    const raf = requestAnimationFrame(() => {
+      try {
+        fit.fit();
+        if (term.cols > 0 && term.rows > 0) {
+          void coApi.terminal.resize(termId, term.cols, term.rows);
+        }
+      } catch {
+        /* ignore */
+      }
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [sidebarOpen, sidebarWidth, termId]);
 
   return { containerRef, isReady };
 }
