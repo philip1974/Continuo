@@ -144,11 +144,34 @@ export const makeSelectDirectoryHandler =
 // ────────────────────────────────────────────────────────────
 
 // Watcher pool 全局单例(进程级)。每个 path 一个 fs.watcher,onChange 广播给所有窗口。
-const watcherPool = createWatcherPool((path, onChange) => {
-  // non-recursive,只看直接子项变化(VSCode 风,Linux 也支持)
-  const watcher = fs.watch(path, { persistent: false, recursive: false }, () => {
-    onChange();
-  });
+//
+// recursive 行为(issue #20):
+//   - macOS / Win 走 native recursive(FSEvents / ReadDirectoryChangesW),
+//     Agent 在深层子目录创建文件也能触发(用户不必精确展开每一层)
+//   - Linux 不支持 fs.watch recursive,fallback non-recursive,行为同旧
+//   - callback 收到 filename 时拼出真实变更子目录,creator 上抛精确路径,
+//     上层 broadcast 给 renderer 后能 invalidate 实际变化的节点
+const RECURSIVE_SUPPORTED =
+  process.platform === 'darwin' || process.platform === 'win32';
+
+const watcherPool = createWatcherPool((rootPath, onChange) => {
+  const watcher = fs.watch(
+    rootPath,
+    { persistent: false, recursive: RECURSIVE_SUPPORTED },
+    (_eventType, filename) => {
+      if (!filename) {
+        // 罕见:某些 macOS 旧版 / 平台不传 filename,退回根目录广播
+        onChange(rootPath);
+        return;
+      }
+      const norm = String(filename).replace(/\\/g, '/');
+      const slashIdx = norm.lastIndexOf('/');
+      // filename 是相对 rootPath 的:'a.ts' → 根目录变;'sub/dir/a.ts' → sub/dir 变
+      const subdir = slashIdx >= 0 ? norm.slice(0, slashIdx) : '';
+      const changedPath = subdir ? `${rootPath}/${subdir}` : rootPath;
+      onChange(changedPath);
+    },
+  );
   return { close: () => watcher.close() };
 });
 
@@ -212,7 +235,11 @@ export function registerFsIpc(): void {
     FS_CHANNELS.WATCH,
     watchInputSchema,
     (input) => {
-      watcherPool.watch(input.path, () => broadcastDirChanged(input.path));
+      // 广播 creator 上抛的真实变更路径(可能 = input.path,也可能是其
+      // recursive 子目录,见 issue #20)。
+      watcherPool.watch(input.path, (changedPath) =>
+        broadcastDirChanged(changedPath),
+      );
     },
     trusted,
   );

@@ -13,13 +13,19 @@ export interface Watcher {
   close: () => void;
 }
 
+/**
+ * onChange(changedPath):creator 实际监听到变更时调用,传"真实变更的目录"。
+ * - non-recursive watcher:changedPath = watcher 根 path(变更必发生在该目录直接子)
+ * - recursive watcher(macOS/Win):changedPath = 根 path 拼上 callback 给的相对子路径
+ *   的目录部分,便于上层精确广播,renderer 才能 invalidate 正确节点(见 issue #20)
+ */
 export type WatcherCreator = (
   path: string,
-  onChange: () => void,
+  onChange: (changedPath: string) => void,
 ) => Watcher;
 
 export interface WatcherPool {
-  watch: (path: string, onChange: () => void) => void;
+  watch: (path: string, onChange: (changedPath: string) => void) => void;
   unwatch: (path: string) => void;
   has: (path: string) => boolean;
   size: () => number;

@@ -108,16 +108,34 @@ describe('createWatcherPool', () => {
   });
 
   it('creator 收到的 onChange 触发后,pool.watch 提供的 cb 被调', () => {
-    let triggerChange: () => void = () => {};
+    let triggerChange: (p: string) => void = () => {};
     const creator: WatcherCreator = vi.fn((_path, onChange) => {
       triggerChange = onChange;
       return { close: vi.fn() };
     });
     const pool = createWatcherPool(creator);
-    const cb = vi.fn();
+    const cb = vi.fn<(p: string) => void>();
     pool.watch('/a', cb);
-    triggerChange();
-    triggerChange();
+    triggerChange('/a');
+    triggerChange('/a/sub');
     expect(cb).toHaveBeenCalledTimes(2);
+    expect(cb).toHaveBeenNthCalledWith(1, '/a');
+    expect(cb).toHaveBeenNthCalledWith(2, '/a/sub');
+  });
+
+  // 回归 issue #20:recursive watcher 在子目录变更时,creator 把实际变更的
+  // 子目录路径上抛(而非 watcher 根),pool 透传给 cb,上层(fs.ipc)能广播
+  // 给 renderer 精确 invalidate 该子节点。
+  it('cb 收到的是 creator 上抛的 changedPath,可与 watch 根不同(#20)', () => {
+    let triggerChange: (p: string) => void = () => {};
+    const creator: WatcherCreator = vi.fn((_root, onChange) => {
+      triggerChange = onChange;
+      return { close: vi.fn() };
+    });
+    const pool = createWatcherPool(creator);
+    const cb = vi.fn<(p: string) => void>();
+    pool.watch('/workspace/src', cb);
+    triggerChange('/workspace/src/engine');
+    expect(cb).toHaveBeenCalledWith('/workspace/src/engine');
   });
 });
