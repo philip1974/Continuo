@@ -45,20 +45,29 @@ describe('TerminalView', () => {
     ).toBeNull();
   });
 
-  it('容器有 minHeight:0 inline style', () => {
+  it('xterm 宿主有 minHeight:0 inline style', () => {
     useTerminalMock.mockImplementation(makeRefImpl(false));
     const { container } = render(<TerminalView termId="t1" />);
-    const inner = container.querySelector('.bg-canvas') as HTMLElement;
-    expect(inner.style.minHeight).toBe('0px');
+    const host = container.querySelector(
+      '[data-testid="terminal-xterm-host"]',
+    ) as HTMLElement;
+    expect(host.style.minHeight).toBe('0px');
   });
 
-  // 回归 issue #15:p-1 (4px) 在宽屏下 fitAddon 字宽测量误差会让最右
-  // 字符贴 / 穿右边缘。横向 padding 至少 8px(px-2)给 fit 留缓冲。
-  it('容器横向 padding ≥ 8px(px-2) — 防文字右溢出 (#15)', () => {
+  // 回归 issue #15:横向 padding 必须在 xterm 宿主的**外层**而非宿主自身,
+  // 否则 fitAddon 读 .xterm.padding=0 + 整个 containerRef.width(border-box)
+  // → cols 算多 → 最右列绘到 .xterm 边界外被裁。
+  it('padding 在外 wrapper,xterm 宿主自身无 padding (#15)', () => {
     useTerminalMock.mockImplementation(makeRefImpl(false));
     const { container } = render(<TerminalView termId="t1" />);
-    const inner = container.querySelector('.bg-canvas') as HTMLElement;
-    expect(inner.className).toMatch(/\bpx-2\b/);
+    const wrapper = container.querySelector('.bg-canvas') as HTMLElement;
+    expect(wrapper.className).toMatch(/\bpx-2\b/);
+    const host = container.querySelector(
+      '[data-testid="terminal-xterm-host"]',
+    ) as HTMLElement;
+    // 宿主自身不能再带 px-* / p-* / pl-* / pr-* 任何横向 padding,
+    // 否则 fitAddon 仍会把 padding 区算进可用宽。
+    expect(host.className).not.toMatch(/\b(p|px|pl|pr)-\d/);
   });
 
   it('useTerminal 收到 termId 参数', () => {

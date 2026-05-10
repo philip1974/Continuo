@@ -16,14 +16,24 @@ export function TerminalView({ termId }: TerminalViewProps) {
   const { containerRef, isReady } = useTerminal(termId);
   return (
     <div className="relative h-full w-full">
-      <div
-        ref={containerRef}
-        // px-2 给 fitAddon 字宽测量误差留缓冲(防最右字符贴 / 穿右边缘,
-        // 见 issue #15);py-1 顶/底各 4px,保持原行密度
-        className="h-full w-full bg-canvas px-2 py-1"
-        // 防 ResizeObserver 接收到 0×0 → fit 抛错
-        style={{ minHeight: 0 }}
-      />
+      {/*
+        外 wrapper 持 padding,内 containerRef 无 padding。原因(issue #15
+        反复修):xterm fitAddon proposeDimensions() 读 padding 时读的是 xterm
+        自己创建的 .xterm 元素(总是 0 padding),而非 containerRef。Tailwind
+        box-sizing:border-box 下 getComputedStyle(containerRef).width 返回
+        含 padding 的全宽 → fitAddon 把 padding 区也算进可用宽 → cols 偏多 →
+        最右列绘到 .xterm 边界外被裁。把 padding 上提一层后,fitAddon 量
+        containerRef.width 即真实可绘制宽度。
+      */}
+      <div className="h-full w-full bg-canvas px-2 py-1">
+        <div
+          ref={containerRef}
+          data-testid="terminal-xterm-host"
+          className="h-full w-full"
+          // 防 flex 父在 panel 收起时把它挤到 0×0 → fit 抛 NaN
+          style={{ minHeight: 0 }}
+        />
+      </div>
       {!isReady && (
         <div
           // pointer-events-none 让 overlay 不挡住 xterm 焦点(用户立刻可输入,
