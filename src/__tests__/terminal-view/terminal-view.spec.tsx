@@ -52,6 +52,15 @@ describe('TerminalView', () => {
     expect(inner.style.minHeight).toBe('0px');
   });
 
+  // 回归 issue #15:p-1 (4px) 在宽屏下 fitAddon 字宽测量误差会让最右
+  // 字符贴 / 穿右边缘。横向 padding 至少 8px(px-2)给 fit 留缓冲。
+  it('容器横向 padding ≥ 8px(px-2) — 防文字右溢出 (#15)', () => {
+    useTerminalMock.mockImplementation(makeRefImpl(false));
+    const { container } = render(<TerminalView termId="t1" />);
+    const inner = container.querySelector('.bg-canvas') as HTMLElement;
+    expect(inner.className).toMatch(/\bpx-2\b/);
+  });
+
   it('useTerminal 收到 termId 参数', () => {
     useTerminalMock.mockImplementation(makeRefImpl(true));
     render(<TerminalView termId="my-terminal" />);

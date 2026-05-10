@@ -18,7 +18,9 @@ export function TerminalView({ termId }: TerminalViewProps) {
     <div className="relative h-full w-full">
       <div
         ref={containerRef}
-        className="h-full w-full bg-canvas p-1"
+        // px-2 给 fitAddon 字宽测量误差留缓冲(防最右字符贴 / 穿右边缘,
+        // 见 issue #15);py-1 顶/底各 4px,保持原行密度
+        className="h-full w-full bg-canvas px-2 py-1"
         // 防 ResizeObserver 接收到 0×0 → fit 抛错
         style={{ minHeight: 0 }}
       />
