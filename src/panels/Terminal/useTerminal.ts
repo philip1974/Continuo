@@ -46,12 +46,18 @@ const DARK_THEME: ITheme = {
 };
 
 // Light 调色板 — 取色自 GitHub Primer link blue + Primer 语义色。
-// 关键约束:Powerline 主题(P10k 等)用 ANSI 颜色当 segment 背景,前景色不固定
-// (有的主题 fg=black,有的 fg=brightWhite)— 每个 ANSI 色当背景时,需要同时
-// 兼顾黑字和白字两种前景的可读性。所以 blue/red/green 等取"中等亮度"
-// (link 600 级别),而非 GitHub UI text 边框那种深色,也不是 dark 主题那种浅色。
-// white / brightWhite 走 *terminal 语义*(浅灰 + 纯白),不是 UI 文本语义 —
-// brightWhite 必须是真"白"才能在彩色背景上可读。
+// blue/red/green 等取"中等亮度"(link 600 级别),Powerline 主题(P10k 等)
+// 用 ANSI 色当 segment 背景时也兼顾黑字 / 白字两种前景的可读性。
+//
+// white / brightWhite 的 trade-off(issue #24):
+//   旧设计 brightWhite='#ffffff' = background,白底白字**完全不可见**;
+//   white='#bbbbbb' 对比度仅 2.4:1 远低 WCAG AA(4.5)。Claude Code / Codex
+//   等 CLI 大量用 white/brightWhite 当 dim / 状态文本,在白底直接消失。
+//   修后(VSCode Light+ 同款):
+//     - white = #6e7681(Primer fg.muted,~4.6:1 达 AA)
+//     - brightWhite = #57606a(Primer fg.subtle,~5.7:1)
+//   代价:Powerline 在彩色背景 + brightWhite fg 时不再纯白(但仍可读)。
+//   普通文本可读性 > Powerline 极致 stark white。
 const LIGHT_THEME: ITheme = {
   background: '#ffffff',
   foreground: '#1f2328',
@@ -64,7 +70,7 @@ const LIGHT_THEME: ITheme = {
   blue: '#0969da',
   magenta: '#8250df',
   cyan: '#1b7c83',
-  white: '#bbbbbb',
+  white: '#6e7681',
   brightBlack: '#57606a',
   brightRed: '#a40e26',
   brightGreen: '#116329',
@@ -72,7 +78,7 @@ const LIGHT_THEME: ITheme = {
   brightBlue: '#218bff',
   brightMagenta: '#a371f7',
   brightCyan: '#3192aa',
-  brightWhite: '#ffffff',
+  brightWhite: '#57606a',
 };
 
 const TERM_OPTIONS = {
