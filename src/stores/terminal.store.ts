@@ -90,19 +90,60 @@ export function applySnapshot(
 type TerminalState = {
   sessions: readonly TerminalSession[];
   activeId: string | null;
+  /**
+   * UI 端 title override(issue #19)。Map<sessionId, customTitle>。
+   * 不破坏 main 真相源(TerminalSession.title 保持来自 main),只在显示层覆盖。
+   * 不持久化(沿用 Continuo 决策 #4 — sessions 重启全销毁,override 跟着无)。
+   * snapshot 移除某 id 时,这里也清理避免泄漏。
+   */
+  customTitles: ReadonlyMap<string, string>;
 
   /** 接收 main 推的 snapshot,保留 close 时的切换语义. */
   replaceSnapshot: (sessions: readonly TerminalSession[]) => void;
   /** UI 切换 active tab(不验证 id 是否存在,允许 create 后立即 setActive). */
   setActive: (id: string) => void;
+  /**
+   * UI 双击 tab 后改名。空字符串 / 仅空白 → 删除该 id 的 override
+   * (回退到 main 给的 title)。
+   */
+  renameSession: (id: string, title: string) => void;
 };
 
 export const useTerminalStore = create<TerminalState>((set) => ({
   sessions: [],
   activeId: null,
+  customTitles: new Map(),
 
   replaceSnapshot: (newSessions) =>
-    set((s) => applySnapshot(s.sessions, s.activeId, newSessions)),
+    set((s) => {
+      const applied = applySnapshot(s.sessions, s.activeId, newSessions);
+      // 清理 customTitles 中已不在新 snapshot 的 id
+      const newIds = new Set(newSessions.map((x) => x.id));
+      let titles = s.customTitles;
+      let changed = false;
+      for (const id of titles.keys()) {
+        if (!newIds.has(id)) {
+          if (!changed) {
+            titles = new Map(titles);
+            changed = true;
+          }
+          (titles as Map<string, string>).delete(id);
+        }
+      }
+      return { ...applied, customTitles: titles };
+    }),
 
   setActive: (id) => set(() => ({ activeId: id })),
+
+  renameSession: (id, title) =>
+    set((s) => {
+      const trimmed = title.trim();
+      const next = new Map(s.customTitles);
+      if (trimmed.length === 0) {
+        next.delete(id);
+      } else {
+        next.set(id, trimmed);
+      }
+      return { customTitles: next };
+    }),
 }));

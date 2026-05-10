@@ -18,7 +18,11 @@ const makeSession = (
 });
 
 beforeEach(() => {
-  useTerminalStore.setState({ sessions: [], activeId: null });
+  useTerminalStore.setState({
+    sessions: [],
+    activeId: null,
+    customTitles: new Map(),
+  });
 });
 
 // ────────────────────────────────────────────────────────────
@@ -206,5 +210,65 @@ describe('setActive', () => {
     });
     useTerminalStore.getState().setActive('/pending');
     expect(useTerminalStore.getState().activeId).toBe('/pending');
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// renameSession + customTitles(issue #19)
+//   用户可在 UI 双击 tab 改显示名,override 存在 store 不破坏 main 真相源。
+//   session 关闭(snapshot 移除该 id)后,override 自动清理避免泄漏。
+// ────────────────────────────────────────────────────────────
+
+describe('renameSession', () => {
+  it('初态 customTitles 空', () => {
+    expect(useTerminalStore.getState().customTitles.size).toBe(0);
+  });
+
+  it('renameSession(id, title) → customTitles.get(id) === title', () => {
+    useTerminalStore.setState({
+      sessions: [makeSession({ id: '/a' })],
+      activeId: '/a',
+      customTitles: new Map(),
+    });
+    useTerminalStore.getState().renameSession('/a', '调试 prompt');
+    expect(useTerminalStore.getState().customTitles.get('/a')).toBe(
+      '调试 prompt',
+    );
+  });
+
+  it('renameSession(id, "") → 删除该 id 的 override(回退默认 title)', () => {
+    useTerminalStore.setState({
+      sessions: [makeSession({ id: '/a' })],
+      activeId: '/a',
+      customTitles: new Map([['/a', 'X']]),
+    });
+    useTerminalStore.getState().renameSession('/a', '');
+    expect(useTerminalStore.getState().customTitles.has('/a')).toBe(false);
+  });
+
+  it('renameSession(id, "  ") → 视同空,删除', () => {
+    useTerminalStore.setState({
+      sessions: [makeSession({ id: '/a' })],
+      activeId: '/a',
+      customTitles: new Map([['/a', 'X']]),
+    });
+    useTerminalStore.getState().renameSession('/a', '   ');
+    expect(useTerminalStore.getState().customTitles.has('/a')).toBe(false);
+  });
+
+  it('replaceSnapshot 移除已不存在 id 的 customTitle(防泄漏)', () => {
+    useTerminalStore.setState({
+      sessions: [makeSession({ id: '/a' }), makeSession({ id: '/b' })],
+      activeId: '/a',
+      customTitles: new Map([
+        ['/a', 'A custom'],
+        ['/b', 'B custom'],
+      ]),
+    });
+    // /b 被关闭,新 snapshot 只剩 /a
+    useTerminalStore.getState().replaceSnapshot([makeSession({ id: '/a' })]);
+    const titles = useTerminalStore.getState().customTitles;
+    expect(titles.has('/a')).toBe(true);
+    expect(titles.has('/b')).toBe(false);
   });
 });

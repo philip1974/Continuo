@@ -145,4 +145,33 @@ describe('TabNav + TabNavItem', () => {
     expect(onClose).toHaveBeenCalled();
     expect(onSelect).not.toHaveBeenCalled();
   });
+
+  // 回归 issue #19:opt-in rename。双击 select 区触发 onRename,onSelect
+  // 仍触发(double-click = 两次 click,React 也会先发 click 再发 dblclick)。
+  it('双击 tab body 触发 onRename(opt-in)', () => {
+    const onRename = vi.fn();
+    const { container } = render(
+      <TabNav>
+        <TabNavItem onSelect={() => {}} onRename={onRename}>
+          term-1
+        </TabNavItem>
+      </TabNav>,
+    );
+    fireEvent.doubleClick(container.querySelector('.wm-tab-nav-item__select')!);
+    expect(onRename).toHaveBeenCalledTimes(1);
+  });
+
+  it('未传 onRename → 双击不抛、不影响 select 行为', () => {
+    const onSelect = vi.fn();
+    const { container } = render(
+      <TabNav>
+        <TabNavItem onSelect={onSelect}>file.md</TabNavItem>
+      </TabNav>,
+    );
+    expect(() =>
+      fireEvent.doubleClick(
+        container.querySelector('.wm-tab-nav-item__select')!,
+      ),
+    ).not.toThrow();
+  });
 });

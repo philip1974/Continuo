@@ -35,6 +35,12 @@ export interface TabNavItemProps {
   readonly onSelect: () => void;
   /** Called by the optional close affordance. Defaults to no close button. */
   readonly onClose?: () => void;
+  /**
+   * Called on double-click on the tab body. Opt-in rename affordance —
+   * callers compose their own inline-edit UI in `children` when active.
+   * No default; if omitted, double-click is treated as a regular click.
+   */
+  readonly onRename?: () => void;
   /** Tab label or composed tab content. No default. */
   readonly children: ReactNode;
 }
@@ -55,6 +61,7 @@ export function TabNavItem({
   title,
   onSelect,
   onClose,
+  onRename,
   children,
 }: TabNavItemProps) {
   const closeLabel = title != null && title.length > 0 ? `Close ${title}` : 'Close tab';
@@ -81,6 +88,7 @@ export function TabNavItem({
         aria-selected={active}
         disabled={disabled}
         onClick={onSelect}
+        onDoubleClick={onRename}
       >
         <span className="wm-tab-nav-item__label">{children}</span>
       </button>
