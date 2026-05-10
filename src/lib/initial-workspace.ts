@@ -5,6 +5,14 @@
 // 看不同 folder。无 query 时返 null,走原 explorer.json 持久化路径(主窗口默认)。
 
 const WORKSPACE_PARAM = 'workspace';
+const WINDOW_SEQ_PARAM = 'windowSeq';
+
+function paramsOf(search: string): URLSearchParams | null {
+  if (!search) return null;
+  const normalized = search.startsWith('?') ? search.slice(1) : search;
+  if (!normalized) return null;
+  return new URLSearchParams(normalized);
+}
 
 /**
  * 从 query string 解 ?workspace=<path>。
@@ -14,13 +22,28 @@ const WORKSPACE_PARAM = 'workspace';
  *  - 输入容错:可带或不带 `?` 前缀
  */
 export function parseInitialWorkspace(search: string): string | null {
-  if (!search) return null;
-  const normalized = search.startsWith('?') ? search.slice(1) : search;
-  if (!normalized) return null;
-  const params = new URLSearchParams(normalized);
+  const params = paramsOf(search);
+  if (!params) return null;
   const raw = params.get(WORKSPACE_PARAM);
   if (raw === null) return null;
   const trimmed = raw.trim();
   if (trimmed.length === 0) return null;
   return trimmed;
+}
+
+/**
+ * 从 query string 解 ?windowSeq=<N>。
+ *  - 缺失 / 非数字 / 负数 / 浮点 → 默认 0(主窗位)
+ *  - 防 renderer 注入坏值导致段索引乱
+ */
+export function parseInitialWindowSeq(search: string): number {
+  const params = paramsOf(search);
+  if (!params) return 0;
+  const raw = params.get(WINDOW_SEQ_PARAM);
+  if (raw === null) return 0;
+  // 严格整数:整数才接,小数 / 字母拒
+  if (!/^\d+$/.test(raw)) return 0;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 0) return 0;
+  return n;
 }

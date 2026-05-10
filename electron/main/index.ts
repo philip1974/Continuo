@@ -82,9 +82,14 @@ function windowOpenHandler({ url }: HandlerDetails): WindowOpenHandlerResponse {
 interface CreateMainWindowOpts {
   /** issue #23 Phase 1:新窗口直接打开此 workspace,通过 query string 注入. */
   readonly workspace?: string;
+  /**
+   * issue #23 Phase 2B:windowSeq 标识此窗口在 explorer.json windows[] 中的段。
+   * 主窗(冷启动时第一个)硬编码 0;新窗由 IPC handler 从磁盘 nextWindowSeq 算。
+   */
+  readonly windowSeq: number;
 }
 
-export function createMainWindow(opts: CreateMainWindowOpts = {}) {
+export function createMainWindow(opts: CreateMainWindowOpts) {
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -95,9 +100,12 @@ export function createMainWindow(opts: CreateMainWindowOpts = {}) {
 
   win.webContents.setWindowOpenHandler(windowOpenHandler);
 
-  // 多窗口:opts.workspace 走 query string,renderer parseInitialWorkspace 接收。
-  // dev (loadURL) 与 prod (loadFile) 都加 query;loadFile 第二参支持 query 字段。
-  const queryParts: Record<string, string> = {};
+  // 多窗口:opts.workspace + opts.windowSeq 走 query string,renderer
+  // parseInitialWorkspace / parseInitialWindowSeq 接收。dev loadURL 与 prod
+  // loadFile 都加 query;loadFile 第二参支持 query 字段。
+  const queryParts: Record<string, string> = {
+    windowSeq: String(opts.windowSeq),
+  };
   if (opts.workspace) queryParts['workspace'] = opts.workspace;
 
   if (isDev && process.env['ELECTRON_RENDERER_URL']) {
@@ -357,7 +365,8 @@ app.whenReady().then(async () => {
   // Plugin → MCP bridge 接线(host 已就绪,renderer 通过 IPC 注册的 tool 走它)。
   // tools/list_changed 通知同时推 HTTP SSE + stdio 客户端,Codex/Claude Code 收到自动重拉.
   if (mcpHost) startPluginMcpIpc(mcpHost, mcpStdio ?? undefined);
-  const win = createMainWindow();
+  // 主窗口固定 windowSeq=0:explorer.json windows[0] 是主窗段
+  const win = createMainWindow({ windowSeq: 0 });
 
   // 冷启 + open-url 顺序处理:可能在 mainwindow 未就绪前已收 url
   if (pendingProtocolUrl) {
@@ -381,7 +390,9 @@ app.whenReady().then(async () => {
   }
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createMainWindow({ windowSeq: 0 });
+    }
   });
 });
 

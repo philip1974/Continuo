@@ -4,7 +4,10 @@ import { createRoot } from 'react-dom/client';
 import { z as zodNS } from 'zod';
 import { App } from './shell/App';
 import { initExplorerPersistence } from './lib/persist/explorer-persist';
-import { parseInitialWorkspace } from './lib/initial-workspace';
+import {
+  parseInitialWindowSeq,
+  parseInitialWorkspace,
+} from './lib/initial-workspace';
 import { bootCorePlugins } from './core-plugins';
 import { coApp, getPluginMcpRegistry } from './plugins/co-app';
 import { startPluginMcpInvokeBridge } from './plugins/plugin-mcp-invoke-bridge';
@@ -102,13 +105,13 @@ import('./plugins/protocol/handler').then(({ handleProtocolUrl }) => {
 // 注入 coApi.fs:启动时按 explorer.json 的 editor.openFilePaths 异步读
 // 文件内容,恢复上次会话的 editor tabs。BDD: editor-session-restore。
 //
-// 多窗口 Phase 1:从 query string 读 ?workspace=,有则跳过 explorer.json
-// 的 workspace 持久化、UI 状态全用默认、不订阅 persist(避免新窗状态
-// 覆盖主窗持久化文件)。见 issue #23。
-const initialWorkspace =
-  typeof window !== 'undefined'
-    ? parseInitialWorkspace(window.location.search)
-    : null;
+// 多窗口 Phase 2B:从 query string 读 ?windowSeq=N(主窗 0,新窗自增)+
+// ?workspace=<path>。windowSeq 标识自己在 explorer.json windows[] 中的段,
+// 各窗 hydrate / persist 自己段不互相覆盖。query workspace 仅在自己段不存在
+// (全新窗口编号)时启动用。见 issue #23。
+const search = typeof window !== 'undefined' ? window.location.search : '';
+const initialWindowSeq = parseInitialWindowSeq(search);
+const initialWorkspace = parseInitialWorkspace(search);
 void initExplorerPersistence(
   {
     read: () => coApi.explorer.read(),
@@ -116,6 +119,7 @@ void initExplorerPersistence(
   },
   {
     fs: { readFile: (p) => coApi.fs.readFile(p) },
+    windowSeq: initialWindowSeq,
     ...(initialWorkspace !== null ? { initialWorkspace } : {}),
   },
 );

@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { parseInitialWorkspace } from '../../lib/initial-workspace';
+import {
+  parseInitialWorkspace,
+  parseInitialWindowSeq,
+} from '../../lib/initial-workspace';
 
 describe('parseInitialWorkspace', () => {
   it('?workspace=/abs/path → decoded 路径', () => {
@@ -40,5 +43,28 @@ describe('parseInitialWorkspace', () => {
 
   it('非 query 风格输入也容错(无 ? 前缀)', () => {
     expect(parseInitialWorkspace('workspace=/x')).toBe('/x');
+  });
+});
+
+describe('parseInitialWindowSeq', () => {
+  it('?windowSeq=N → 数字', () => {
+    expect(parseInitialWindowSeq('?windowSeq=3')).toBe(3);
+    expect(parseInitialWindowSeq('?windowSeq=0')).toBe(0);
+  });
+
+  it('无参数 → 默认 0(主窗)', () => {
+    expect(parseInitialWindowSeq('')).toBe(0);
+    expect(parseInitialWindowSeq('?other=1')).toBe(0);
+  });
+
+  it('非数字 / 负数 / 浮点 → 默认 0(防注入坏值)', () => {
+    expect(parseInitialWindowSeq('?windowSeq=abc')).toBe(0);
+    expect(parseInitialWindowSeq('?windowSeq=-1')).toBe(0);
+    expect(parseInitialWindowSeq('?windowSeq=3.14')).toBe(0);
+    expect(parseInitialWindowSeq('?windowSeq=')).toBe(0);
+  });
+
+  it('与 ?workspace 共存', () => {
+    expect(parseInitialWindowSeq('?workspace=/x&windowSeq=2')).toBe(2);
   });
 });
