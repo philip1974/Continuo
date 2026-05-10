@@ -67,7 +67,10 @@ function makeFs(
 describe('snapshotFromStores · editor 字段', () => {
   it('tabs=[] → openFilePaths=[],activePath=null', () => {
     const snap = snapshotFromStores();
-    expect(snap.editor).toEqual({ openFilePaths: [], activePath: null });
+    expect(snap.windows[0]!.editor).toEqual({
+      openFilePaths: [],
+      activePath: null,
+    });
   });
 
   it('多 file tab + active → 顺序保留 + activePath 指 active 的 filePath', () => {
@@ -80,8 +83,8 @@ describe('snapshotFromStores · editor 字段', () => {
       activeTabId: '/b.md',
     });
     const snap = snapshotFromStores();
-    expect(snap.editor!.openFilePaths).toEqual(['/a.md', '/b.md', '/c.md']);
-    expect(snap.editor!.activePath).toBe('/b.md');
+    expect(snap.windows[0]!.editor!.openFilePaths).toEqual(['/a.md', '/b.md', '/c.md']);
+    expect(snap.windows[0]!.editor!.activePath).toBe('/b.md');
   });
 
   it('含 untitled tab(filePath=null)→ 不进 openFilePaths', () => {
@@ -91,9 +94,9 @@ describe('snapshotFromStores · editor 字段', () => {
       activeTabId: untitled.id,
     });
     const snap = snapshotFromStores();
-    expect(snap.editor!.openFilePaths).toEqual(['/x.md', '/y.md']);
+    expect(snap.windows[0]!.editor!.openFilePaths).toEqual(['/x.md', '/y.md']);
     // active 是 untitled → activePath=null
-    expect(snap.editor!.activePath).toBeNull();
+    expect(snap.windows[0]!.editor!.activePath).toBeNull();
   });
 
   it('activeTabId=null → activePath=null', () => {
@@ -101,7 +104,7 @@ describe('snapshotFromStores · editor 字段', () => {
       tabs: [createTab('/a.md', 'a')],
       activeTabId: null,
     });
-    expect(snapshotFromStores().editor!.activePath).toBeNull();
+    expect(snapshotFromStores().windows[0]!.editor!.activePath).toBeNull();
   });
 });
 
@@ -110,34 +113,54 @@ describe('snapshotFromStores · editor 字段', () => {
 // ────────────────────────────────────────────────────────────
 
 describe('hydrateEditorTabs', () => {
+  // v2 形态主窗段 helper
   function snapWithEditor(
     openFilePaths: string[],
     activePath: string | null,
   ): ExplorerSnapshot {
     return {
-      version: 1,
-      workspace: { root: null, recentRoots: [] },
-      explorer: {
-        activePath: null,
-        expandedPaths: [],
-        sort: { by: 'name', reverse: false },
-      },
+      version: 2,
+      workspace: { recentRoots: [] },
       pinned: { paths: [] },
-      editor: { openFilePaths, activePath },
+      nextWindowSeq: 1,
+      windows: [
+        {
+          windowSeq: 0,
+          workspace: { root: null },
+          explorer: {
+            activePath: null,
+            expandedPaths: [],
+            sort: { by: 'name', reverse: false },
+          },
+          editor: { openFilePaths, activePath },
+        },
+      ],
     };
   }
 
-  it('snap.editor 缺失 → noop', async () => {
+  function snapWithoutEditor(): ExplorerSnapshot {
+    return {
+      version: 2,
+      workspace: { recentRoots: [] },
+      pinned: { paths: [] },
+      nextWindowSeq: 1,
+      windows: [
+        {
+          windowSeq: 0,
+          workspace: { root: null },
+          explorer: {
+            activePath: null,
+            expandedPaths: [],
+            sort: { by: 'name', reverse: false },
+          },
+        },
+      ],
+    };
+  }
+
+  it('snap windows[0] 无 editor → noop', async () => {
     const fs = makeFs({});
-    await hydrateEditorTabs(
-      {
-        version: 1,
-        workspace: { root: null, recentRoots: [] },
-        explorer: { activePath: null, expandedPaths: [], sort: { by: 'name', reverse: false } },
-        pinned: { paths: [] },
-      },
-      fs,
-    );
+    await hydrateEditorTabs(snapWithoutEditor(), fs);
     expect(useEditorStore.getState().tabs).toEqual([]);
     expect(fs.readFile).not.toHaveBeenCalled();
   });
@@ -202,14 +225,37 @@ describe('initExplorerPersistence + editor', () => {
     };
   }
 
-  it('extras.fs 提供 + snap 含 editor → hydrate editor tabs', async () => {
-    const snap: ExplorerSnapshot = {
-      version: 1,
-      workspace: { root: '/w', recentRoots: ['/w'] },
-      explorer: { activePath: null, expandedPaths: [], sort: { by: 'name', reverse: false } },
+  function snapV2(opts: {
+    workspaceRoot?: string | null;
+    recentRoots?: string[];
+    editor?: { openFilePaths: string[]; activePath: string | null };
+  }): ExplorerSnapshot {
+    return {
+      version: 2,
+      workspace: { recentRoots: opts.recentRoots ?? [] },
       pinned: { paths: [] },
-      editor: { openFilePaths: ['/w/a.md'], activePath: '/w/a.md' },
+      nextWindowSeq: 1,
+      windows: [
+        {
+          windowSeq: 0,
+          workspace: { root: opts.workspaceRoot ?? null },
+          explorer: {
+            activePath: null,
+            expandedPaths: [],
+            sort: { by: 'name', reverse: false },
+          },
+          ...(opts.editor ? { editor: opts.editor } : {}),
+        },
+      ],
     };
+  }
+
+  it('extras.fs 提供 + windows[0].editor 有 → hydrate editor tabs', async () => {
+    const snap = snapV2({
+      workspaceRoot: '/w',
+      recentRoots: ['/w'],
+      editor: { openFilePaths: ['/w/a.md'], activePath: '/w/a.md' },
+    });
     const fs = makeFs({ '/w/a.md': 'hello' });
     await initExplorerPersistence(makeApi(snap), { fs });
     expect(useEditorStore.getState().tabs.map((t) => t.filePath)).toEqual([
@@ -219,26 +265,19 @@ describe('initExplorerPersistence + editor', () => {
   });
 
   it('extras.fs 不提供 → editor 段被忽略,workspace 仍 hydrate', async () => {
-    const snap: ExplorerSnapshot = {
-      version: 1,
-      workspace: { root: '/w', recentRoots: ['/w'] },
-      explorer: { activePath: null, expandedPaths: [], sort: { by: 'name', reverse: false } },
-      pinned: { paths: [] },
+    const snap = snapV2({
+      workspaceRoot: '/w',
+      recentRoots: ['/w'],
       editor: { openFilePaths: ['/w/a.md'], activePath: '/w/a.md' },
-    };
+    });
     await initExplorerPersistence(makeApi(snap));
     expect(useWorkspaceStore.getState().root).toBe('/w');
     // editor 没 hydrate(没 fs 读不了)
     expect(useEditorStore.getState().tabs).toEqual([]);
   });
 
-  it('snap 不含 editor 字段(旧版 explorer.json)→ 不调 fs.readFile', async () => {
-    const snap: ExplorerSnapshot = {
-      version: 1,
-      workspace: { root: null, recentRoots: [] },
-      explorer: { activePath: null, expandedPaths: [], sort: { by: 'name', reverse: false } },
-      pinned: { paths: [] },
-    };
+  it('snap windows[0] 无 editor 字段 → 不调 fs.readFile', async () => {
+    const snap = snapV2({});
     const fs = makeFs({});
     await initExplorerPersistence(makeApi(snap), { fs });
     expect(fs.readFile).not.toHaveBeenCalled();

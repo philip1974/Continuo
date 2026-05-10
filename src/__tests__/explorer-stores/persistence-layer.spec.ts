@@ -34,21 +34,28 @@ beforeEach(() => {
 });
 
 const fullSnapshot: ExplorerSnapshot = {
-  version: 1,
-  workspace: { root: '/work', recentRoots: ['/work', '/old'] },
-  explorer: {
-    activePath: '/work/file.md',
-    expandedPaths: ['/work', '/work/sub'],
-    sort: { by: 'mtime', reverse: true },
-  },
+  version: 2,
+  workspace: { recentRoots: ['/work', '/old'] },
   pinned: { paths: ['/work/star.md'] },
-  layoutUi: { sidebarOpen: false, sidebarWidth: 320 },
+  nextWindowSeq: 1,
+  windows: [
+    {
+      windowSeq: 0,
+      workspace: { root: '/work' },
+      explorer: {
+        activePath: '/work/file.md',
+        expandedPaths: ['/work', '/work/sub'],
+        sort: { by: 'mtime', reverse: true },
+      },
+      layoutUi: { sidebarOpen: false, sidebarWidth: 320 },
+    },
+  ],
 };
 
 // ──────────────── snapshotFromStores ────────────────
 
 describe('snapshotFromStores', () => {
-  it('从三 store 拼出 ExplorerSnapshot,Set 转 array', () => {
+  it('从三 store 拼出 ExplorerSnapshot v2,Set 转 array', () => {
     useWorkspaceStore.setState({ root: '/work', recentRoots: ['/work'] });
     useExplorerStore.setState({
       activePath: '/work/file',
@@ -58,22 +65,30 @@ describe('snapshotFromStores', () => {
     usePinnedStore.setState({ paths: ['/p'] });
 
     const snap = snapshotFromStores();
-    expect(snap.version).toBe(1);
-    expect(snap.workspace).toEqual({ root: '/work', recentRoots: ['/work'] });
-    expect(snap.explorer.activePath).toBe('/work/file');
-    expect(new Set(snap.explorer.expandedPaths)).toEqual(
+    expect(snap.version).toBe(2);
+    expect(snap.workspace).toEqual({ recentRoots: ['/work'] });
+    expect(snap.pinned).toEqual({ paths: ['/p'] });
+    expect(snap.windows).toHaveLength(1);
+    const w0 = snap.windows[0]!;
+    expect(w0.windowSeq).toBe(0);
+    expect(w0.workspace).toEqual({ root: '/work' });
+    expect(w0.explorer.activePath).toBe('/work/file');
+    expect(new Set(w0.explorer.expandedPaths)).toEqual(
       new Set(['/work', '/work/sub']),
     );
-    expect(snap.explorer.sort).toEqual({ by: 'size', reverse: false });
-    expect(snap.pinned).toEqual({ paths: ['/p'] });
+    expect(w0.explorer.sort).toEqual({ by: 'size', reverse: false });
   });
 
   it('不持久化 search 等瞬时字段', () => {
     useExplorerStore.setState({
       search: 'foo',
     });
-    const explorerJson = snapshotFromStores().explorer as unknown as Record<string, unknown>;
-    expect(explorerJson).not.toHaveProperty('search');
+    const w0 = snapshotFromStores().windows[0]! as unknown as Record<
+      string,
+      unknown
+    >;
+    const ex = w0['explorer'] as Record<string, unknown>;
+    expect(ex).not.toHaveProperty('search');
   });
 });
 
@@ -108,18 +123,25 @@ describe('hydrateStores', () => {
     expect(ui.sidebarWidth).toBe(320);
   });
 
-  it('hydrate 不含 layoutUi(旧 explorer.json 向下兼容)→ 复位默认', () => {
+  it('hydrate 不含 layoutUi(windows[0] 缺 layoutUi)→ 复位默认', () => {
     // 先脏 store
     useLayoutUiStore.setState({ sidebarOpen: false, sidebarWidth: 999 });
     const snapWithoutUi: ExplorerSnapshot = {
-      version: 1,
-      workspace: { root: null, recentRoots: [] },
-      explorer: {
-        activePath: null,
-        expandedPaths: [],
-        sort: { by: 'name', reverse: false },
-      },
+      version: 2,
+      workspace: { recentRoots: [] },
       pinned: { paths: [] },
+      nextWindowSeq: 1,
+      windows: [
+        {
+          windowSeq: 0,
+          workspace: { root: null },
+          explorer: {
+            activePath: null,
+            expandedPaths: [],
+            sort: { by: 'name', reverse: false },
+          },
+        },
+      ],
     };
     hydrateStores(snapWithoutUi);
     const ui = useLayoutUiStore.getState();
@@ -128,25 +150,30 @@ describe('hydrateStores', () => {
   });
 
   it('hydrate 时 sidebarWidth 越界 → clamp 到合法范围(防磁盘脏数据)', () => {
-    hydrateStores({
+    const overrideUi = (sidebarWidth: number): ExplorerSnapshot => ({
       ...fullSnapshot,
-      layoutUi: { sidebarOpen: true, sidebarWidth: 9999 },
+      windows: [
+        {
+          ...fullSnapshot.windows[0]!,
+          layoutUi: { sidebarOpen: true, sidebarWidth },
+        },
+      ],
     });
+    hydrateStores(overrideUi(9999));
     expect(useLayoutUiStore.getState().sidebarWidth).toBeLessThanOrEqual(500);
-
-    hydrateStores({
-      ...fullSnapshot,
-      layoutUi: { sidebarOpen: true, sidebarWidth: 1 },
-    });
+    hydrateStores(overrideUi(1));
     expect(useLayoutUiStore.getState().sidebarWidth).toBeGreaterThanOrEqual(200);
   });
 });
 
 describe('snapshotFromStores · layoutUi', () => {
-  it('包含 sidebarOpen 与 sidebarWidth(从 useLayoutUiStore 读)', () => {
+  it('windows[0].layoutUi 来自 useLayoutUiStore 当前状态', () => {
     useLayoutUiStore.setState({ sidebarOpen: false, sidebarWidth: 350 });
     const snap = snapshotFromStores();
-    expect(snap.layoutUi).toEqual({ sidebarOpen: false, sidebarWidth: 350 });
+    expect(snap.windows[0]!.layoutUi).toEqual({
+      sidebarOpen: false,
+      sidebarWidth: 350,
+    });
   });
 });
 
@@ -206,11 +233,13 @@ describe('initExplorerPersistence', () => {
       await vi.advanceTimersByTimeAsync(400);
       expect(api.write).toHaveBeenCalledTimes(1);
 
-      // write 入参带最新状态
+      // write 入参带最新状态(主窗段)
       const call = (api.write as ReturnType<typeof vi.fn>).mock.calls[0];
       const written = call?.[0] as ExplorerSnapshot;
-      expect(written.workspace.root).toBe('/b');
-      expect(written.explorer.expandedPaths).toContain('/a');
+      expect(written.version).toBe(2);
+      const w0 = written.windows.find((w) => w.windowSeq === 0)!;
+      expect(w0.workspace.root).toBe('/b');
+      expect(w0.explorer.expandedPaths).toContain('/a');
     } finally {
       vi.useRealTimers();
     }
