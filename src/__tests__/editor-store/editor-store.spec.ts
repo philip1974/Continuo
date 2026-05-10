@@ -23,6 +23,7 @@ beforeEach(() => {
     tabs: [],
     activeTabId: null,
     mode: 'edit',
+    editorFocusPulse: 0,
   });
 });
 
@@ -107,6 +108,58 @@ describe('switchTab', () => {
     });
     useEditorStore.getState().switchTab('/b');
     expect(useEditorStore.getState().activeTabId).toBe('/b');
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// editorFocusPulse(issue #22)
+//   场景:文档已打开,用户切到 terminal 后又点资源管理器同一文档。
+//   activeTabId 不变 → DockShell 若只 deps activeTabId,useEffect 不会
+//   再次跑 setActive('editor') → terminal panel 仍盖住。修法:openTab/
+//   switchTab 每次都 +1 一个递增 token,DockShell deps 进去。
+// ────────────────────────────────────────────────────────────
+
+describe('editorFocusPulse', () => {
+  it('初态 = 0', () => {
+    expect(useEditorStore.getState().editorFocusPulse).toBe(0);
+  });
+
+  it('openTab 新 tab → pulse +1', () => {
+    const before = useEditorStore.getState().editorFocusPulse;
+    useEditorStore.getState().openTab(makeTab({ id: '/a' }));
+    expect(useEditorStore.getState().editorFocusPulse).toBe(before + 1);
+  });
+
+  it('openTab 已存在 id → activeTabId 不变也 pulse +1(#22)', () => {
+    useEditorStore.setState({
+      tabs: [makeTab({ id: '/a' })],
+      activeTabId: '/a',
+      editorFocusPulse: 5,
+    });
+    useEditorStore.getState().openTab(makeTab({ id: '/a' }));
+    expect(useEditorStore.getState().activeTabId).toBe('/a');
+    expect(useEditorStore.getState().editorFocusPulse).toBe(6);
+  });
+
+  it('switchTab 同 id → activeTabId 不变也 pulse +1(#22)', () => {
+    useEditorStore.setState({
+      tabs: [makeTab({ id: '/a' })],
+      activeTabId: '/a',
+      editorFocusPulse: 7,
+    });
+    useEditorStore.getState().switchTab('/a');
+    expect(useEditorStore.getState().activeTabId).toBe('/a');
+    expect(useEditorStore.getState().editorFocusPulse).toBe(8);
+  });
+
+  it('switchTab 异 id → pulse +1', () => {
+    useEditorStore.setState({
+      tabs: [makeTab({ id: '/a' }), makeTab({ id: '/b' })],
+      activeTabId: '/a',
+      editorFocusPulse: 3,
+    });
+    useEditorStore.getState().switchTab('/b');
+    expect(useEditorStore.getState().editorFocusPulse).toBe(4);
   });
 });
 

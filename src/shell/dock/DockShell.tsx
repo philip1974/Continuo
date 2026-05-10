@@ -131,7 +131,10 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
   // 若 panel 不存在(用户拖关了 / 启动时 layout 没含),自动 addPanel 加回。
   //
   // deps 必含 apiReady:让 onReady 完成晚于 activeTabId hydrate 的场景也能补建。
+  // deps 必含 editorFocusPulse:同 id 重新点击(activeTabId 不变)也要触发,
+  // 否则用户切到 terminal 后再点资源管理器同一文档,terminal 不会让位。见 #22。
   const editorActiveTabId = useEditorStore((s) => s.activeTabId);
+  const editorFocusPulse = useEditorStore((s) => s.editorFocusPulse);
   useEffect(() => {
     if (!editorActiveTabId) return;
     if (!apiReady) return;
@@ -146,7 +149,7 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       });
     }
     editorPanel.api.setActive();
-  }, [editorActiveTabId, apiReady]);
+  }, [editorActiveTabId, editorFocusPulse, apiReady]);
 
   return (
     <div className="relative h-full w-full">

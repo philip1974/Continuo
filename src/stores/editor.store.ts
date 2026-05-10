@@ -220,6 +220,13 @@ type EditorState = {
   tabs: EditorTab[];
   activeTabId: string | null;
   mode: EditorMode;
+  /**
+   * 递增 token:每次"请求 editor 在 dock 内激活"时 +1。即便 activeTabId 不变
+   * (如同一文件被资源管理器再次单击),pulse 也会变,DockShell useEffect 据此
+   * 重新调 setActive('editor'),保证从其它 panel(terminal 等)切回 editor。
+   * 见 issue #22。
+   */
+  editorFocusPulse: number;
 
   /** 已存在则切换 active,新加则推入. */
   openTab: (tab: EditorTab) => void;
@@ -246,12 +253,18 @@ export const useEditorStore = create<EditorState>((set) => ({
   tabs: [],
   activeTabId: null,
   mode: 'edit',
+  editorFocusPulse: 0,
 
   openTab: (tab) =>
     set((s) => {
+      const pulse = s.editorFocusPulse + 1;
       const exists = s.tabs.some((t) => t.id === tab.id);
-      if (exists) return { activeTabId: tab.id };
-      return { tabs: [...s.tabs, tab], activeTabId: tab.id };
+      if (exists) return { activeTabId: tab.id, editorFocusPulse: pulse };
+      return {
+        tabs: [...s.tabs, tab],
+        activeTabId: tab.id,
+        editorFocusPulse: pulse,
+      };
     }),
 
   closeTab: (id) =>
@@ -290,7 +303,11 @@ export const useEditorStore = create<EditorState>((set) => ({
       return { tabs };
     }),
 
-  switchTab: (id) => set(() => ({ activeTabId: id })),
+  switchTab: (id) =>
+    set((s) => ({
+      activeTabId: id,
+      editorFocusPulse: s.editorFocusPulse + 1,
+    })),
 
   updateContent: (id, content) =>
     set((s) => {
