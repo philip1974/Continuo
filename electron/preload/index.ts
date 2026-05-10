@@ -27,6 +27,11 @@ import {
   type InvokePayload,
   type InvokeReply,
 } from '../shared/plugin-mcp-channels';
+import {
+  WINDOW_CHANNELS,
+  type IpcWindowCreateInput,
+  type IpcWindowCreateResult,
+} from '../shared/window-channels';
 
 // terminal create 入参的轻量类型(与 main 端 zod schema 对齐)
 // export 是为了 ContinuoApi 跨 module 引用时 TS 能 name 这些类型
@@ -240,6 +245,17 @@ const api = {
      */
     openExternal: (url: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(SHELL_CHANNELS.OPEN_EXTERNAL, { url }),
+  },
+  window: {
+    /**
+     * 多窗口支持(issue #23 Phase 1):在已有 main process 内开新主窗口。
+     * 可选 workspace 绝对路径 — 新窗口启动时直接打开此目录(query string 注入)。
+     * 不传 workspace = 空白主窗,用户进 app 后可选 folder。
+     */
+    create: (
+      input: IpcWindowCreateInput,
+    ): Promise<IpcResult<IpcWindowCreateResult>> =>
+      ipcRenderer.invoke(WINDOW_CHANNELS.CREATE, input),
   },
   agentAuth: {
     /** 订阅 main 推的授权请求(MCP tool 调时);返回 unsubscribe. */

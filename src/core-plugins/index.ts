@@ -13,6 +13,7 @@ import OutputPlugin from './OutputPlugin';
 import PluginsTabPlugin from './PluginsTabPlugin';
 import SettingsPanelPlugin from './SettingsPanelPlugin';
 import KeybindingsTabPlugin from './KeybindingsTabPlugin';
+import WindowPlugin from './WindowPlugin';
 import { coApp } from '@/plugins/co-app';
 import { createScopedApp } from '@/plugins/scoped-app';
 import type { Plugin } from '@/plugins/Plugin';
@@ -67,6 +68,10 @@ const CORES: readonly CoreEntry[] = [
   {
     Cls: TerminalTabPlugin as never,
     manifest: { id: 'core.terminal-tab', name: 'TerminalTab', version: '1.0.0' },
+  },
+  {
+    Cls: WindowPlugin as never,
+    manifest: { id: 'core.window', name: 'Window', version: '1.0.0' },
   },
 ];
 

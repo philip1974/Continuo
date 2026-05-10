@@ -76,6 +76,16 @@ export interface EditorSessionFsApi {
 
 export interface InitExplorerPersistenceExtras {
   readonly fs?: EditorSessionFsApi;
+  /**
+   * 多窗口 Phase 1(issue #23):新主窗口启动时通过 query string 指定要打开
+   * 的 workspace。有值时:
+   *   - workspace.root 用此值,而非 explorer.json 的持久化值
+   *   - layoutUi / expandedPaths / editor 全部用默认(每窗口独立 UI 状态)
+   *   - workspace.recentRoots / pinned 仍读 explorer.json(全局共享)
+   *   - **不 subscribe persist** — Phase 1 临时妥协,避免新窗状态覆盖主窗
+   *     持久化文件。Phase 2 改 schema 按 windowId 拆段后,新窗也能持久化。
+   */
+  readonly initialWorkspace?: string;
 }
 
 // ──────────────────────────────────────────────
@@ -207,21 +217,31 @@ export async function initExplorerPersistence(
   api: ExplorerPersistApi,
   extras?: InitExplorerPersistenceExtras,
 ): Promise<void> {
+  const initialWorkspace = extras?.initialWorkspace;
+
   // 1. read + sync hydrate(失败不 crash)
   let hydratedSnap: ExplorerSnapshot | null = null;
   try {
     const r = await api.read();
     if (r.ok && r.data && isExplorerSnapshot(r.data)) {
       hydratedSnap = r.data;
-      hydrateStores(r.data);
+      if (initialWorkspace) {
+        // 新窗口:只用 explorer.json 的全局段(recentRoots / pinned),
+        // 其他用默认 + initialWorkspace。
+        hydrateStoresForNewWindow(r.data, initialWorkspace);
+      } else {
+        hydrateStores(r.data);
+      }
+    } else if (initialWorkspace) {
+      // 没有 explorer.json,但 query 给了 workspace → 从默认起步 + workspace
+      hydrateStoresForNewWindow(null, initialWorkspace);
     }
   } catch (err) {
     console.warn('[explorer-persist] read failed', err);
   }
 
-  // 2. async hydrate editor tabs(在 attach subscribe 之前完成,
-  //    避免 hydrate 期间 openTab 触发 debounced write 回环)
-  if (hydratedSnap && extras?.fs) {
+  // 2. async hydrate editor tabs(主窗口才 restore,新窗口空 editor 起步)
+  if (!initialWorkspace && hydratedSnap && extras?.fs) {
     try {
       await hydrateEditorTabs(hydratedSnap, extras.fs);
     } catch (err) {
@@ -229,7 +249,10 @@ export async function initExplorerPersistence(
     }
   }
 
-  // 3. 订阅 + debounce 写
+  // 3. 订阅 + debounce 写。新窗口不 subscribe(Phase 1 妥协,Phase 2 按
+  //    windowId 拆段后再开持久化)。
+  if (initialWorkspace) return;
+
   const persist = debounce(async () => {
     try {
       const snap = snapshotFromStores();
@@ -247,4 +270,32 @@ export async function initExplorerPersistence(
   usePinnedStore.subscribe(persist);
   useLayoutUiStore.subscribe(persist);
   useEditorStore.subscribe(persist);
+}
+
+/**
+ * 新窗口 hydrate(Phase 1):全局段(recentRoots / pinned)从 snap 拉,workspace
+ * 用 query 指定值,UI 状态(expandedPaths / layoutUi / editor)全用默认。
+ * snap 为 null 时(没有 explorer.json),所有字段用默认 + initialWorkspace。
+ */
+function hydrateStoresForNewWindow(
+  snap: ExplorerSnapshot | null,
+  initialWorkspace: string,
+): void {
+  useWorkspaceStore.setState({
+    root: initialWorkspace,
+    recentRoots: snap ? [...snap.workspace.recentRoots] : [],
+  });
+  useExplorerStore.setState({
+    activePath: null,
+    expandedPaths: new Set(),
+    sort: snap ? snap.explorer.sort : { by: 'name', reverse: false },
+    search: '',
+  });
+  usePinnedStore.setState({
+    paths: snap ? [...snap.pinned.paths] : [],
+  });
+  useLayoutUiStore.setState({
+    sidebarOpen: true,
+    sidebarWidth: SIDEBAR_DEFAULT_WIDTH,
+  });
 }

@@ -233,4 +233,54 @@ describe('initExplorerPersistence', () => {
       vi.useRealTimers();
     }
   });
+
+  // ──── 多窗口 Phase 1(issue #23):initialWorkspace ────
+  describe('initialWorkspace(新窗口启动路径)', () => {
+    it('initialWorkspace 给定 → workspace.root 用此值,不读 explorer.json 的 workspace.root', async () => {
+      const api = makeApi(async () => ({ ok: true, data: fullSnapshot }));
+      await initExplorerPersistence(api, { initialWorkspace: '/new/window/proj' });
+      expect(useWorkspaceStore.getState().root).toBe('/new/window/proj');
+    });
+
+    it('initialWorkspace + explorer.json 有 → recentRoots / pinned 仍读全局段', async () => {
+      const api = makeApi(async () => ({ ok: true, data: fullSnapshot }));
+      await initExplorerPersistence(api, { initialWorkspace: '/new/proj' });
+      expect(useWorkspaceStore.getState().recentRoots).toEqual(['/work', '/old']);
+      expect(usePinnedStore.getState().paths).toEqual(['/work/star.md']);
+    });
+
+    it('initialWorkspace → expandedPaths / activePath 用默认(每窗口独立 UI)', async () => {
+      const api = makeApi(async () => ({ ok: true, data: fullSnapshot }));
+      await initExplorerPersistence(api, { initialWorkspace: '/new/proj' });
+      expect(useExplorerStore.getState().expandedPaths.size).toBe(0);
+      expect(useExplorerStore.getState().activePath).toBeNull();
+    });
+
+    it('initialWorkspace → layoutUi 用默认(每窗口独立 sidebar 状态)', async () => {
+      const api = makeApi(async () => ({ ok: true, data: fullSnapshot }));
+      await initExplorerPersistence(api, { initialWorkspace: '/new/proj' });
+      expect(useLayoutUiStore.getState().sidebarOpen).toBe(true);
+      expect(useLayoutUiStore.getState().sidebarWidth).toBe(SIDEBAR_DEFAULT_WIDTH);
+    });
+
+    it('initialWorkspace → 不订阅 persist,store 变化不触发 write(避免覆盖主窗持久化)', async () => {
+      vi.useFakeTimers();
+      try {
+        const api = makeApi(async () => ({ ok: true, data: fullSnapshot }));
+        await initExplorerPersistence(api, { initialWorkspace: '/new/proj' });
+        useWorkspaceStore.getState().setRoot('/changed');
+        await vi.advanceTimersByTimeAsync(400);
+        expect(api.write).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('initialWorkspace + explorer.json 缺 → workspace.root 仍用 initialWorkspace,其他默认', async () => {
+      const api = makeApi(async () => ({ ok: true, data: null }));
+      await initExplorerPersistence(api, { initialWorkspace: '/fresh' });
+      expect(useWorkspaceStore.getState().root).toBe('/fresh');
+      expect(useWorkspaceStore.getState().recentRoots).toEqual([]);
+    });
+  });
 });

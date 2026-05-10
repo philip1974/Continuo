@@ -14,6 +14,7 @@ import { registerFsIpc } from './ipc/fs.ipc';
 import { registerTerminalIpc } from './ipc/terminal.ipc';
 import { registerPluginsIpc } from './ipc/plugins.ipc';
 import { registerShellIpc } from './ipc/shell.ipc';
+import { registerWindowIpc } from './ipc/window.ipc';
 import { AGENT_AUTH_CHANNELS } from '../shared/agent-auth-channels';
 import {
   resolveAgentAuthRequest,
@@ -82,6 +83,9 @@ export function registerIpc() {
 
   // plugin app.shell.exec 后端(v5 Phase 4+)
   registerShellIpc();
+
+  // 多窗口支持(issue #23 Phase 1):window.create
+  registerWindowIpc();
 
   // Agent Terminal MCP — 授权应答通道(P2)
   const agentAuthRespondSchema = z

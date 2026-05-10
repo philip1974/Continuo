@@ -235,6 +235,10 @@
 
 - [`icon-sidebar.spec.tsx`](./icon-sidebar/icon-sidebar.spec.tsx)
 
+## [initial-workspace 解析](./initial-workspace/README.md)
+
+- [`initial-workspace.spec.ts`](./initial-workspace/initial-workspace.spec.ts)
+
 ## [IpcPermissionStore(磁盘 backed 权限存储)](./ipc-permission-store/README.md)
 
 - [`ipc-permission-store.spec.ts`](./ipc-permission-store/ipc-permission-store.spec.ts)

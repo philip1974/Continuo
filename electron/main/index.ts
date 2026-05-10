@@ -79,7 +79,12 @@ function windowOpenHandler({ url }: HandlerDetails): WindowOpenHandlerResponse {
   return { action: 'deny' };
 }
 
-function createMainWindow() {
+interface CreateMainWindowOpts {
+  /** issue #23 Phase 1:新窗口直接打开此 workspace,通过 query string 注入. */
+  readonly workspace?: string;
+}
+
+export function createMainWindow(opts: CreateMainWindowOpts = {}) {
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -90,10 +95,19 @@ function createMainWindow() {
 
   win.webContents.setWindowOpenHandler(windowOpenHandler);
 
+  // 多窗口:opts.workspace 走 query string,renderer parseInitialWorkspace 接收。
+  // dev (loadURL) 与 prod (loadFile) 都加 query;loadFile 第二参支持 query 字段。
+  const queryParts: Record<string, string> = {};
+  if (opts.workspace) queryParts['workspace'] = opts.workspace;
+
   if (isDev && process.env['ELECTRON_RENDERER_URL']) {
-    win.loadURL(process.env['ELECTRON_RENDERER_URL']);
+    const url = new URL(process.env['ELECTRON_RENDERER_URL']);
+    for (const [k, v] of Object.entries(queryParts)) {
+      url.searchParams.set(k, v);
+    }
+    win.loadURL(url.toString());
   } else {
-    win.loadFile(RENDERER_FILE);
+    win.loadFile(RENDERER_FILE, { query: queryParts });
   }
 
   return win;
