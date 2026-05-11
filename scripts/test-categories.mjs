@@ -27,6 +27,7 @@ export const INTEGRATION_TOPICS = [
   'terminal-ipc',
   'terminal-write',
   'terminal-sessions-service',
+  'terminal-window-isolation',
 ];
 
 /** 把 topic slugs 数组转成 vitest include glob 数组。 */

@@ -121,7 +121,6 @@ describe('EditorHeader — 单 tab close', () => {
     const { container } = render(
       <EditorHeader
         activeTab={t}
-        autoSaveEnabled={false}
         onCloseRequest={onCloseRequest}
       />,
     );

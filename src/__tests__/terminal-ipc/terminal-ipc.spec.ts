@@ -165,7 +165,7 @@ describe('getDefaultShell', () => {
 // ────────────────────────────────────────────────────────────
 
 describe('makeCreateHandler', () => {
-  const fakeWin = {} as unknown as import('electron').BrowserWindow;
+  const fakeWin = { id: 11 } as unknown as import('electron').BrowserWindow;
   const makeService = () => ({
     createTerminal: vi.fn(),
     has: vi.fn(() => false),
@@ -316,6 +316,35 @@ describe('makeCreateHandler', () => {
     handler({}, fakeWin);
     expect(sessionStore.add.mock.calls[0]![0].originHint).toBe('user');
   });
+
+  // ── Issue #28 Phase 1:ownerWindowId 从 win 透传 ─────────────
+
+  it('sessionStore.add 入参附 ownerWindowId = win.id', () => {
+    const service = makeService();
+    const sessionStore = makeSessionStore();
+    const handler = makeCreateHandler({
+      service: service as never,
+      sessionStore: sessionStore as never,
+      generateId: () => 'x',
+    });
+    handler({}, fakeWin); // win.id === 11
+    expect(sessionStore.add.mock.calls[0]![0].ownerWindowId).toBe(11);
+  });
+
+  it('不同 win 调同 handler → 各自 owner 进 sessionStore.add', () => {
+    const service = makeService();
+    const sessionStore = makeSessionStore();
+    let seq = 0;
+    const handler = makeCreateHandler({
+      service: service as never,
+      sessionStore: sessionStore as never,
+      generateId: () => `id-${++seq}`,
+    });
+    handler({}, { id: 11 } as unknown as import('electron').BrowserWindow);
+    handler({}, { id: 22 } as unknown as import('electron').BrowserWindow);
+    expect(sessionStore.add.mock.calls[0]![0].ownerWindowId).toBe(11);
+    expect(sessionStore.add.mock.calls[1]![0].ownerWindowId).toBe(22);
+  });
 });
 
 // ────────────────────────────────────────────────────────────
@@ -323,15 +352,24 @@ describe('makeCreateHandler', () => {
 // ────────────────────────────────────────────────────────────
 
 describe('makeListSessionsHandler', () => {
-  it('调 sessionStore.getAll 返回 { sessions }', async () => {
+  it('按 ownerWindowId 调 sessionStore.getAll({ownerWindowId})', async () => {
     const fakeSessions = [
-      { id: 'a', title: 'A', cwd: '/', originHint: 'user' as const, createdAt: 1, exitCode: null },
+      {
+        id: 'a',
+        title: 'A',
+        cwd: '/',
+        originHint: 'user' as const,
+        createdAt: 1,
+        exitCode: null,
+        ownerWindowId: 11,
+      },
     ];
     const sessionStore = {
       add: vi.fn(),
       get: vi.fn(),
       getAll: vi.fn(() => fakeSessions),
       remove: vi.fn(),
+      removeByOwner: vi.fn(),
       setExited: vi.fn(),
       nextDefaultTitle: vi.fn(),
       subscribe: vi.fn(),
@@ -341,9 +379,9 @@ describe('makeListSessionsHandler', () => {
       '../../../electron/main/ipc/terminal.ipc'
     );
     const handler = makeListSessionsHandler({ sessionStore: sessionStore as never });
-    const r = handler();
+    const r = handler({ ownerWindowId: 11 });
     expect(r).toEqual({ sessions: fakeSessions });
-    expect(sessionStore.getAll).toHaveBeenCalledOnce();
+    expect(sessionStore.getAll).toHaveBeenCalledWith({ ownerWindowId: 11 });
   });
 });
 

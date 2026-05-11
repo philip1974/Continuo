@@ -12,6 +12,9 @@ export interface MainTerminalSession {
   readonly agentLabel?: string;
   readonly createdAt: number;
   readonly exitCode: number | null;
+  // Issue #28 Phase 1:owner BrowserWindow.id。renderer 不自报,
+  // 由 IPC create handler 从 event.sender 推断后传入。
+  readonly ownerWindowId: number;
 }
 
 export interface AddSessionInput {
@@ -20,6 +23,11 @@ export interface AddSessionInput {
   readonly cwd: string;
   readonly originHint: 'user' | 'agent';
   readonly agentLabel?: string;
+  readonly ownerWindowId: number;
+}
+
+export interface GetAllFilter {
+  readonly ownerWindowId: number;
 }
 
 export type SessionsSubscriber = (
@@ -68,6 +76,7 @@ export function add(input: AddSessionInput): void {
     ...(input.agentLabel !== undefined ? { agentLabel: input.agentLabel } : {}),
     createdAt: Date.now(),
     exitCode: null,
+    ownerWindowId: input.ownerWindowId,
   };
   sessions.set(input.id, session);
   notify();
@@ -77,14 +86,27 @@ export function get(id: string): MainTerminalSession | undefined {
   return sessions.get(id);
 }
 
-export function getAll(): readonly MainTerminalSession[] {
-  return snapshot();
+export function getAll(filter?: GetAllFilter): readonly MainTerminalSession[] {
+  const snap = snapshot();
+  if (!filter) return snap;
+  return snap.filter((s) => s.ownerWindowId === filter.ownerWindowId);
 }
 
 export function remove(id: string): void {
   if (!sessions.has(id)) return;
   sessions.delete(id);
   notify();
+}
+
+export function removeByOwner(ownerWindowId: number): readonly string[] {
+  const removed: string[] = [];
+  for (const [id, s] of sessions) {
+    if (s.ownerWindowId === ownerWindowId) removed.push(id);
+  }
+  if (removed.length === 0) return removed;
+  for (const id of removed) sessions.delete(id);
+  notify();
+  return removed;
 }
 
 export function setExited(id: string, exitCode: number): void {

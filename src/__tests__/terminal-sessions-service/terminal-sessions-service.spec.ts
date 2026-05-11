@@ -7,6 +7,7 @@ import {
   get,
   getAll,
   remove,
+  removeByOwner,
   setExited,
   nextDefaultTitle,
   subscribe,
@@ -23,6 +24,7 @@ const userInput = (id = 'term-1', overrides: Partial<MainTerminalSession> = {}) 
   title: 'Terminal 1',
   cwd: '/work',
   originHint: 'user' as const,
+  ownerWindowId: 11,
   ...overrides,
 });
 
@@ -32,6 +34,7 @@ const agentInput = (id = 'term-2') => ({
   cwd: '/work',
   originHint: 'agent' as const,
   agentLabel: 'codex',
+  ownerWindowId: 11,
 });
 
 // ────────────────────────────────────────────────────────────
@@ -39,7 +42,7 @@ const agentInput = (id = 'term-2') => ({
 // ────────────────────────────────────────────────────────────
 
 describe('add', () => {
-  it('入 Map + 自动填 createdAt / exitCode:null', () => {
+  it('入 Map + 自动填 createdAt / exitCode:null + ownerWindowId 透传', () => {
     const before = Date.now();
     add(userInput());
     const after = Date.now();
@@ -49,6 +52,7 @@ describe('add', () => {
     expect(s.title).toBe('Terminal 1');
     expect(s.cwd).toBe('/work');
     expect(s.originHint).toBe('user');
+    expect(s.ownerWindowId).toBe(11);
     expect(s.exitCode).toBeNull();
     expect(s.createdAt).toBeGreaterThanOrEqual(before);
     expect(s.createdAt).toBeLessThanOrEqual(after);
@@ -110,6 +114,54 @@ describe('getAll', () => {
     add(userInput('term-B'));
     add(userInput('term-C'));
     expect(getAll().map((s) => s.id)).toEqual(['term-A', 'term-B', 'term-C']);
+  });
+
+  it('filter { ownerWindowId } → 只返该 owner,保持 add 顺序', () => {
+    add(userInput('a', { ownerWindowId: 11 }));
+    add(userInput('b', { ownerWindowId: 22 }));
+    add(userInput('c', { ownerWindowId: 11 }));
+    add(userInput('d', { ownerWindowId: 22 }));
+    expect(getAll({ ownerWindowId: 11 }).map((s) => s.id)).toEqual(['a', 'c']);
+    expect(getAll({ ownerWindowId: 22 }).map((s) => s.id)).toEqual(['b', 'd']);
+  });
+
+  it('filter 无匹配 → []', () => {
+    add(userInput('a', { ownerWindowId: 11 }));
+    expect(getAll({ ownerWindowId: 99 })).toEqual([]);
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// removeByOwner (Issue #28 Phase 1)
+// ────────────────────────────────────────────────────────────
+
+describe('removeByOwner', () => {
+  it('摘所有匹配 owner 的 sessions,返回 id 列表', () => {
+    add(userInput('a', { ownerWindowId: 11 }));
+    add(userInput('b', { ownerWindowId: 22 }));
+    add(userInput('c', { ownerWindowId: 11 }));
+    const removed = removeByOwner(11);
+    expect([...removed].sort()).toEqual(['a', 'c']);
+    expect(getAll().map((s) => s.id)).toEqual(['b']);
+  });
+
+  it('无匹配 → 返回 [],不触发 subscribers', () => {
+    add(userInput('a', { ownerWindowId: 11 }));
+    const fn = vi.fn();
+    subscribe(fn);
+    expect(removeByOwner(99)).toEqual([]);
+    expect(fn).not.toHaveBeenCalled();
+  });
+
+  it('有匹配 → 触发 subscribers 一次,推剩余全量快照', () => {
+    add(userInput('a', { ownerWindowId: 11 }));
+    add(userInput('b', { ownerWindowId: 22 }));
+    const fn = vi.fn();
+    subscribe(fn);
+    removeByOwner(11);
+    expect(fn).toHaveBeenCalledTimes(1);
+    const snap = fn.mock.calls[0]![0] as readonly MainTerminalSession[];
+    expect(snap.map((s) => s.id)).toEqual(['b']);
   });
 });
 

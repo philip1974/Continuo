@@ -446,6 +446,10 @@
 
 - [`spotlight.spec.tsx`](./spotlight/spotlight.spec.tsx)
 
+## [startup-mode (Issue #30 修复)](./startup-mode/README.md)
+
+- [`startup-mode.spec.ts`](./startup-mode/startup-mode.spec.ts)
+
 ## [StatusBar(底部 24px 状态栏)](./status-bar/README.md)
 
 - [`status-bar.spec.tsx`](./status-bar/status-bar.spec.tsx)
@@ -485,6 +489,10 @@
 ## [TerminalView(单 terminal 容器)](./terminal-view/README.md)
 
 - [`terminal-view.spec.tsx`](./terminal-view/terminal-view.spec.tsx)
+
+## [terminal-window-isolation (Issue #28 Phase 1)](./terminal-window-isolation/README.md) `[integration]`
+
+- [`terminal-window-isolation.spec.ts`](./terminal-window-isolation/terminal-window-isolation.spec.ts)
 
 ## [terminal-write (M-Terminal Step T4)](./terminal-write/README.md) `[integration]`
 

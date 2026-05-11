@@ -37,9 +37,19 @@ handler 真行为(node-pty spawn / write / resize)需 PTY 运行时,留 E2E 验�
   - shell 不在白名单 → 抛 `TERMINAL_FORBIDDEN_SHELL`
   - cwd 缺失 → 用 homedir
   - 注入的 service.createTerminal 被调一次,id 由 generateId 决定
+  - **sessionStore.add 入参附 `ownerWindowId: win.id`**(Issue #28 Phase 1)
+- makeListSessionsHandler:
+  - 签名 `(input: { ownerWindowId: number })`,**不**接受 renderer 自报字段
+  - 调 `sessionStore.getAll({ ownerWindowId })` 过滤
+  - registerTerminalIpc 注册时走 `ipcMain.handle` 包装,从 `event.sender → BrowserWindow.id` 推断 ownerWindowId 后传入
+- makeWindowClosedCleanup(Issue #28 Phase 1):
+  - 工厂返回 `(ownerWindowId) => void`
+  - 调 `sessionStore.removeByOwner(ownerWindowId)` 摘 metadata
+  - 对返回的每个 id,若 `service.has(id)` 则 `service.kill(id)`
 
 ## 不在本主题验证
 
 - node-pty spawn 真行为(留 E2E)
 - 多 session 并发(留 T3 store + T5 集成)
 - writeHandler / resizeHandler 真调 service(信任注入,不深测)
+- 跨 window 隔离的端到端 invariant(在 `terminal-window-isolation` 主题)

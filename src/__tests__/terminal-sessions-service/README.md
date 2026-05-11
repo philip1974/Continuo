@@ -25,10 +25,12 @@ interface MainTerminalSession {
   readonly agentLabel?: string;
   readonly createdAt: number;       // ms epoch
   readonly exitCode: number | null; // null = 未退出;number = 已 exit
+  readonly ownerWindowId: number;   // Electron BrowserWindow.id(Issue #28 Phase 1)
 }
 ```
 
 全字段 readonly。`setExited` 等 mutation 走 immutable 替换(`{...old, exitCode}`)。
+`ownerWindowId` 由 IPC create handler 从 `event.sender` 推断后传入,renderer 不自报。
 
 ## 关键行为
 
@@ -36,23 +38,31 @@ interface MainTerminalSession {
 
 input 形态:
 ```ts
-{ id, title, cwd, originHint, agentLabel? }
+{ id, title, cwd, originHint, ownerWindowId, agentLabel? }
 ```
 service 自动填 `createdAt = Date.now()` 和 `exitCode: null`。
 
 - 重复 id 调 add → 抛 `TERMINAL_SESSION_DUPLICATE`(防 PTY-side bug)
 - 触发所有 subscribers,传完整快照
+- `ownerWindowId` 缺失 → 类型层拒绝(必填字段)
 
 ### `get(id)` → MainTerminalSession | undefined
 
 - 不存在 → undefined
 - 存在 → 引用相等的对象
 
-### `getAll()` → readonly MainTerminalSession[]
+### `getAll(filter?)` → readonly MainTerminalSession[]
 
-- 返回当前快照(数组),按 add 顺序
+- 无 filter → 当前所有 sessions,按 add 顺序
+- `filter = { ownerWindowId: N }` → 只返 `ownerWindowId === N` 的,**保持相对 add 顺序**
 - 调用方**不能**改返回值(类型 readonly)
 - 实现可以缓存或每次新建数组,本主题不强制
+
+### `removeByOwner(ownerWindowId)` → 摘所有 owner sessions
+
+- 返回被摘掉的 id 列表(`readonly string[]`),用于 IPC 层 kill 对应 PTY
+- 若无匹配 → 返回 `[]`,**不**触发 subscribers
+- 若有匹配 → 全部从 Map 摘除,触发 subscribers **一次**(传剩余全量快照)
 
 ### `remove(id)` → 删 + 推
 

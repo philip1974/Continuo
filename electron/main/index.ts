@@ -11,6 +11,7 @@ import { registerIpc } from './ipc';
 import { loadExplorer } from './persistence';
 import { pickWindowsToRestore } from './services/window-restore.service';
 import { nextWindowSeqFromDisk } from './services/window.service';
+import { pickStartupMode } from './services/startup-mode.service';
 import { PLUGINS_CHANNELS } from '../shared/plugins-channels';
 import { createMcpHost, type McpHost } from './services/mcp-host.service';
 import {
@@ -492,40 +493,49 @@ app.whenReady().then(async () => {
   // Plugin → MCP bridge 接线(host 已就绪,renderer 通过 IPC 注册的 tool 走它)。
   // tools/list_changed 通知同时推 HTTP SSE + stdio 客户端,Codex/Claude Code 收到自动重拉.
   if (mcpHost) startPluginMcpIpc(mcpHost, mcpStdio ?? undefined);
-  // 主窗口固定 windowSeq=0:explorer.json windows[0] 是主窗段
-  const win = createMainWindow({ windowSeq: 0 });
-
-  // Phase 2C(issue #23):上次会话的非主窗(windowSeq>0)逐个恢复 —
-  // 各自打开自己 workspace,renderer 按 windowSeq 自动 hydrate 对应段。
-  // workspace 路径已不存在 → 跳过(段在磁盘保留,等用户改 mount 再恢复)。
-  void (async () => {
+  // 冷启动开窗模式决策(issue #30):有 dock 缓冲目录 → dock 模式,
+  // 第一个目录作主窗 workspace,其余各开新窗,**不**恢复历史;
+  // 否则 → restore 模式,主窗用持久化 workspace,异步恢复历史 windows[]。
+  const explorerFile = path.join(app.getPath('userData'), 'explorer.json');
+  const isDir = (p: string): boolean => {
     try {
-      const explorerFile = path.join(app.getPath('userData'), 'explorer.json');
-      const data = await loadExplorer(explorerFile);
-      if (!data) return;
-      const isDir = (p: string): boolean => {
-        try {
-          return nodeFs.statSync(p).isDirectory();
-        } catch {
-          return false;
-        }
-      };
-      for (const entry of pickWindowsToRestore(data, isDir)) {
-        createMainWindow({
-          windowSeq: entry.windowSeq,
-          workspace: entry.workspace,
-        });
-      }
-    } catch (err) {
-      console.warn('[window-restore] 启动恢复失败,只开主窗', err);
+      return nodeFs.statSync(p).isDirectory();
+    } catch {
+      return false;
     }
-  })();
+  };
+  const startup = pickStartupMode(pendingOpenPaths.splice(0), isDir);
 
-  // 冷启缓冲的 dock 拖入路径(open-file 在 whenReady 之前触发)→ 各自开新窗。
-  if (pendingOpenPaths.length > 0) {
-    const paths = pendingOpenPaths.splice(0);
+  let win: BrowserWindow;
+  if (startup.mode === 'dock') {
+    // 第一个 dir 作主窗 workspace,覆盖持久化的 windows[0].workspace.root
+    win = createMainWindow({ windowSeq: 0, workspace: startup.dirs[0]! });
+    const extras = startup.dirs.slice(1);
+    if (extras.length > 0) {
+      void (async () => {
+        for (const dir of extras) {
+          const windowSeq = await nextWindowSeqFromDisk(explorerFile);
+          createMainWindow({ windowSeq, workspace: dir });
+        }
+      })();
+    }
+  } else {
+    // 正常启动:主窗 windowSeq=0(workspace 由 renderer 从 explorer.json 段恢复)
+    win = createMainWindow({ windowSeq: 0 });
+    // Phase 2C(issue #23):上次会话的非主窗(windowSeq>0)逐个恢复
     void (async () => {
-      for (const p of paths) await openPathInNewWindow(p);
+      try {
+        const data = await loadExplorer(explorerFile);
+        if (!data) return;
+        for (const entry of pickWindowsToRestore(data, isDir)) {
+          createMainWindow({
+            windowSeq: entry.windowSeq,
+            workspace: entry.workspace,
+          });
+        }
+      } catch (err) {
+        console.warn('[window-restore] 启动恢复失败,只开主窗', err);
+      }
     })();
   }
 

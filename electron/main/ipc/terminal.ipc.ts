@@ -2,7 +2,7 @@
 // 8 invoke 通道 + 5 push event 通道。schemas / handlers 单独 export 给 spec 测;
 // registerTerminalIpc() 真注册 + 订阅 sessions_changed 广播给所有 BrowserWindow。
 
-import { BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
+import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
 import * as crypto from 'node:crypto';
 import * as os from 'node:os';
 import { z } from 'zod';
@@ -102,6 +102,7 @@ export function makeCreateHandler(deps?: {
       title: input.name ?? sessionStore.nextDefaultTitle(),
       cwd,
       originHint: input.originHint ?? 'user',
+      ownerWindowId: win.id,
       ...(input.agentLabel !== undefined ? { agentLabel: input.agentLabel } : {}),
     });
     return { id };
@@ -112,9 +113,25 @@ export function makeListSessionsHandler(deps?: {
   sessionStore?: typeof terminalSessions;
 }) {
   const sessionStore = deps?.sessionStore ?? terminalSessions;
-  return (): { sessions: readonly terminalSessions.MainTerminalSession[] } => ({
-    sessions: sessionStore.getAll(),
+  return (input: { ownerWindowId: number }): {
+    sessions: readonly terminalSessions.MainTerminalSession[];
+  } => ({
+    sessions: sessionStore.getAll({ ownerWindowId: input.ownerWindowId }),
   });
+}
+
+export function makeWindowClosedCleanup(deps?: {
+  service?: typeof termService;
+  sessionStore?: typeof terminalSessions;
+}) {
+  const service = deps?.service ?? termService;
+  const sessionStore = deps?.sessionStore ?? terminalSessions;
+  return (ownerWindowId: number): void => {
+    const ids = sessionStore.removeByOwner(ownerWindowId);
+    for (const id of ids) {
+      if (service.has(id)) service.kill(id);
+    }
+  };
 }
 
 export function makeRemoveHandler(deps?: {
@@ -161,6 +178,7 @@ export function registerTerminalIpc(): void {
   const createHandler = makeCreateHandler();
   const listSessionsHandler = makeListSessionsHandler();
   const removeHandler = makeRemoveHandler();
+  const windowClosedCleanup = makeWindowClosedCleanup();
 
   // create 需要 win,单独走 processIpcCall 包 closure(其它走 safeHandle)
   ipcMain.handle(
@@ -183,21 +201,54 @@ export function registerTerminalIpc(): void {
       ),
   );
 
+  // list_sessions:Issue #28 Phase 1。从 sender 推断 ownerWindowId,renderer
+  // 不自报。同 create 走 processIpcCall 包 closure。
+  ipcMain.handle(
+    TERMINAL_CHANNELS.LIST_SESSIONS,
+    async (event: IpcMainInvokeEvent, raw: unknown) =>
+      processIpcCall(
+        noInputSchema,
+        async () => {
+          const win = BrowserWindow.fromWebContents(event.sender);
+          if (!win) {
+            throw Object.assign(new Error('no browser window'), {
+              code: 'TERMINAL_NO_WINDOW',
+            });
+          }
+          return listSessionsHandler({ ownerWindowId: win.id });
+        },
+        raw,
+        event.senderFrame,
+        trusted,
+      ),
+  );
+
   safeHandle(TERMINAL_CHANNELS.WRITE, writeInputSchema, writeHandler, trusted);
   safeHandle(TERMINAL_CHANNELS.RESIZE, resizeInputSchema, resizeHandler, trusted);
   safeHandle(TERMINAL_CHANNELS.INTERRUPT, idOnlyInputSchema, interruptHandler, trusted);
   safeHandle(TERMINAL_CHANNELS.KILL, idOnlyInputSchema, killHandler, trusted);
   safeHandle(TERMINAL_CHANNELS.DESTROY, idOnlyInputSchema, killHandler, trusted);
-  safeHandle(TERMINAL_CHANNELS.LIST_SESSIONS, noInputSchema, listSessionsHandler, trusted);
   safeHandle(TERMINAL_CHANNELS.REMOVE, idOnlyInputSchema, removeHandler, trusted);
 
-  // sessions_changed:任何 mutation 都把完整快照推给所有 BrowserWindow。
-  // P1 数量小(用户级 terminal),整快照便宜;P3 后视情况改为增量。
-  terminalSessions.subscribe((snapshot) => {
+  // sessions_changed:Issue #28 Phase 1。按 owner 路由,只把该 window 自己的
+  // sessions 推给该 window。其它 window 收到的快照仅含它们自己的 sessions。
+  terminalSessions.subscribe(() => {
     for (const w of BrowserWindow.getAllWindows()) {
-      if (!w.isDestroyed()) {
-        w.webContents.send(TERMINAL_CHANNELS.SESSIONS_CHANGED, snapshot);
-      }
+      if (w.isDestroyed()) continue;
+      const owned = terminalSessions.getAll({ ownerWindowId: w.id });
+      w.webContents.send(TERMINAL_CHANNELS.SESSIONS_CHANGED, owned);
     }
   });
+
+  // window 关闭:Issue #28 Phase 1。摘 metadata + kill 该 owner 的所有 PTY。
+  // 用 'browser-window-created' 监听新建窗口,再为每个窗口挂 'closed'。
+  // 这样主窗 / 新窗 / 测试动态创建的窗都覆盖。
+  // 现有已开窗也需要挂 — registerTerminalIpc 调用时遍历一次。
+  const attachClosed = (w: BrowserWindow): void => {
+    w.once('closed', () => {
+      windowClosedCleanup(w.id);
+    });
+  };
+  for (const w of BrowserWindow.getAllWindows()) attachClosed(w);
+  app.on('browser-window-created', (_event, w) => attachClosed(w));
 }
