@@ -1,5 +1,6 @@
 node_modules
 out
+out-pack
 dist
 dist-electron
 .DS_Store

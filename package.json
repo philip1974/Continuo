@@ -7,7 +7,8 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
-    "build:app": "electron-vite build && electron-builder --mac",
+    "build:app": "BUILD_TARGET=pack electron-vite build && electron-builder --mac",
+    "relaunch": "bash scripts/relaunch.sh",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.test.json && tsc --noEmit -p tsconfig.e2e.json",
     "lint": "eslint . --ext .ts,.tsx",

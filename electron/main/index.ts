@@ -47,6 +47,15 @@ const isDev = !app.isPackaged;
 const PRELOAD = path.join(__dirname, '../preload/index.cjs');
 const RENDERER_FILE = path.join(__dirname, '../renderer/index.html');
 
+// dev 与 packaged Continuo.app 必须用不同 userData,否则:
+// (a) requestSingleInstanceLock 互踩 → 后启动的 quit;
+// (b) <userData>/mcp.sock 会被后者 unlink,冲掉前者正在监听的 socket;
+// (c) explorer.json / LevelDB / Cookies 并发写报错。
+// 必须在 requestSingleInstanceLock 与任何 getPath('userData') 之前调用。
+if (isDev) {
+  app.setPath('userData', path.join(app.getPath('appData'), 'Continuo Dev'));
+}
+
 const COMMON_WEB_PREFERENCES = {
   preload: PRELOAD,
   contextIsolation: true,

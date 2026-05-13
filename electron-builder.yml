@@ -5,7 +5,7 @@ directories:
   output: dist-electron
   buildResources: build
 files:
-  - out/**/*
+  - out-pack/**/*
   - package.json
 # stdio MCP transport CLI proxy(被 Claude Code 等 spawn,需稳定路径)。
 # 放 extraResources 而非 asar:asar 内的 .mjs 不能被 fork/spawn。
@@ -13,7 +13,7 @@ extraResources:
   - from: scripts/continuo-mcp-stdio.mjs
     to: continuo-mcp-stdio.mjs
 extraMetadata:
-  main: out/main/index.js
+  main: out-pack/main/index.js
 asar: true
 
 mac:
