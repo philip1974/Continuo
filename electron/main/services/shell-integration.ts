@@ -1,12 +1,45 @@
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 export type SupportedShell = 'zsh' | 'bash' | 'fish' | null;
 
-const SERVICE_DIR = path.dirname(fileURLToPath(import.meta.url));
-const SNIPPETS_DIR = path.join(SERVICE_DIR, 'shell-integration-snippets');
+const ZSH_SNIPPET = String.raw`[ -f "$_CONTINUO_USER_ZDOTDIR/.zshrc" ] && source "$_CONTINUO_USER_ZDOTDIR/.zshrc"
+
+_continuo_osc7() {
+  printf '\e]7;file://%s%s\a' "${'${HOST:-}'}" "$PWD"
+}
+
+typeset -ag chpwd_functions
+chpwd_functions+=(_continuo_osc7)
+_continuo_osc7
+`;
+
+const BASH_SNIPPET = String.raw`[ -n "$_CONTINUO_USER_BASH_RC" ] && [ -f "$_CONTINUO_USER_BASH_RC" ] && source "$_CONTINUO_USER_BASH_RC"
+
+_continuo_osc7() {
+  printf '\e]7;file://%s%s\a' "${'${HOSTNAME:-}'}" "$PWD"
+}
+
+if [ -n "${'${PROMPT_COMMAND:-}'}" ]; then
+  PROMPT_COMMAND="_continuo_osc7; ${'${PROMPT_COMMAND}'}"
+else
+  PROMPT_COMMAND="_continuo_osc7"
+fi
+
+_continuo_osc7
+`;
+
+const FISH_SNIPPET = String.raw`if test -n "$_CONTINUO_USER_FISH_CONFIG"; and test -f "$_CONTINUO_USER_FISH_CONFIG"
+  source "$_CONTINUO_USER_FISH_CONFIG"
+end
+
+function _continuo_osc7 --on-variable PWD
+  printf '\e]7;file://%s%s\a' (hostname) "$PWD"
+end
+
+_continuo_osc7
+`;
 
 export function detectShell(shellPath?: string): SupportedShell {
   if (!shellPath) return null;
@@ -32,11 +65,7 @@ export async function prepareEnv(
   };
 
   if (shell === 'zsh') {
-    const snippet = await fs.readFile(
-      path.join(SNIPPETS_DIR, 'zsh.sh'),
-      'utf8',
-    );
-    await fs.writeFile(path.join(tmpDir, '.zshrc'), snippet, 'utf8');
+    await fs.writeFile(path.join(tmpDir, '.zshrc'), ZSH_SNIPPET, 'utf8');
     return {
       env: {
         ...baseEnv,
@@ -48,12 +77,8 @@ export async function prepareEnv(
   }
 
   if (shell === 'bash') {
-    const snippet = await fs.readFile(
-      path.join(SNIPPETS_DIR, 'bash.sh'),
-      'utf8',
-    );
     const rcfile = path.join(tmpDir, '.bashrc');
-    await fs.writeFile(rcfile, snippet, 'utf8');
+    await fs.writeFile(rcfile, BASH_SNIPPET, 'utf8');
     return {
       env: {
         ...baseEnv,
@@ -67,13 +92,9 @@ export async function prepareEnv(
     };
   }
 
-  const snippet = await fs.readFile(
-    path.join(SNIPPETS_DIR, 'fish.fish'),
-    'utf8',
-  );
   const confDir = path.join(tmpDir, 'fish', 'conf.d');
   await fs.mkdir(confDir, { recursive: true });
-  await fs.writeFile(path.join(confDir, '_continuo.fish'), snippet, 'utf8');
+  await fs.writeFile(path.join(confDir, '_continuo.fish'), FISH_SNIPPET, 'utf8');
   return {
     env: {
       ...baseEnv,
