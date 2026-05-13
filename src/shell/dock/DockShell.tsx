@@ -42,26 +42,45 @@ function getFlushBridge(): FlushBridge | undefined {
 
 export function sanitizePersistedDockLayout(json: unknown): unknown {
   if (!json || typeof json !== 'object') return json;
-  const j = json as {
-    panels?: Record<string, { contentComponent?: string; params?: unknown }>;
-  };
-  if (!j.panels || typeof j.panels !== 'object') return j;
-  for (const panelId of Object.keys(j.panels)) {
-    const panel = j.panels[panelId];
-    if (
-      panel?.contentComponent === 'terminal' &&
-      panel.params &&
-      typeof panel.params === 'object' &&
-      'sessionId' in panel.params
-    ) {
-      const { sessionId: _sessionId, ...rest } = panel.params as Record<
-        string,
-        unknown
-      >;
-      panel.params = rest;
-    }
+  stripVolatileTerminalSessionIds(json);
+  return json;
+}
+
+function stripVolatileTerminalSessionIds(value: unknown, key?: string): void {
+  if (!value || typeof value !== 'object') return;
+  if (Array.isArray(value)) {
+    value.forEach((item) => stripVolatileTerminalSessionIds(item));
+    return;
   }
-  return j;
+
+  const record = value as Record<string, unknown>;
+  const component = record.contentComponent ?? record.component;
+  const params = record.params;
+  const looksLikeTerminalPanel =
+    component === 'terminal' ||
+    (typeof key === 'string' && key.startsWith('terminal-'));
+  if (
+    looksLikeTerminalPanel &&
+    params &&
+    typeof params === 'object' &&
+    'sessionId' in params
+  ) {
+    const { sessionId: _sessionId, ...rest } = params as Record<
+      string,
+      unknown
+    >;
+    record.params = rest;
+  }
+
+  for (const [childKey, child] of Object.entries(record)) {
+    stripVolatileTerminalSessionIds(child, childKey);
+  }
+}
+
+function serializeDockLayoutForPersistence(api: DockviewApi): unknown {
+  const snapshot = sanitizePersistedDockLayout(api.toJSON() as unknown);
+  if (!snapshot || typeof snapshot !== 'object') return { version: 1 as const };
+  return { version: 1 as const, ...(snapshot as object) };
 }
 
 /** 把 coApp.panels 注册的 PanelSpec 桥接成 Dockview 的 components map.
@@ -134,8 +153,7 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       onLayoutReady?.();
 
       const persist = debounce(async () => {
-        const snapshot = event.api.toJSON() as unknown;
-        const payload = { version: 1 as const, ...(snapshot as object) };
+        const payload = serializeDockLayoutForPersistence(event.api);
         const r = await coApi.layout.write(payload);
         if (!r.ok) console.warn('[dock] layout:write failed', r.code, r.message);
       }, 300);
@@ -173,7 +191,7 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
     const bridge = getFlushBridge();
     const off = bridge?.layout?.onFlushRequest?.(async () => {
       try {
-        await coApi.layout.write(api.toJSON());
+        await coApi.layout.write(serializeDockLayoutForPersistence(api));
       } finally {
         const latest = getFlushBridge();
         latest?.layout?.sendFlushAck?.(latest.system?.windowId ?? 0);

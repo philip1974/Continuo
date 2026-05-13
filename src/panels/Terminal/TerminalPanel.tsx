@@ -56,6 +56,10 @@ export function TerminalPanel(
     let createdId: string | null = null;
 
     void (async () => {
+      console.debug('[terminal] hydrate scoped split', {
+        cwd: params.cwd,
+        title: params.title,
+      });
       const r = await coApi.terminal.create({
         cwd: params.cwd,
         title: params.title ?? 'Terminal',
