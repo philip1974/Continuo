@@ -62,6 +62,16 @@ const DARK_THEME: ITheme = {
 //     - brightWhite = #57606a(Primer fg.subtle,~5.7:1)
 //   代价:Powerline 在彩色背景 + brightWhite fg 时不再纯白(但仍可读)。
 //   普通文本可读性 > Powerline 极致 stark white。
+//
+// minimumContrastRatio (新增 2026-05-13, issue #24):
+//   仅靠调色板修不动 \e[2m dim cells(Claude Code 状态/进度/键盘提示行)、
+//   256-color grayscale 高段 250-255、truecolor 180+ 灰阶 — 这些都绕过 16-ANSI 槽。
+//   xterm `minimumContrastRatio` option 在 rendering 时自动拔 fg 到对比达标,
+//   是 VSCode terminal 同款策略。
+//   light = 7 (AAA), dark = 1 (dark 调色板已达 AA,不动)。
+//   **dim 单元 xterm 按 ratio/2 处理(红队 P0.1)**:light dim 实际保 ~3.5:1(AA Large),
+//   非 AA 但可读;commit body 显式声明此点,不谎称达 AA。
+//   构造时 + theme effect 同步 set,避免主题切换残留旧值。
 const LIGHT_THEME: ITheme = {
   background: '#ffffff',
   foreground: '#1f2328',
@@ -139,6 +149,8 @@ export function useTerminal(termId: string) {
       fontSize,
       cursorStyle,
       theme: resolved === 'dark' ? DARK_THEME : LIGHT_THEME,
+      // light 7 (AAA), dark 1 — 见 LIGHT_THEME 注释 (issue #24)
+      minimumContrastRatio: resolved === 'dark' ? 1 : 7,
     });
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
@@ -252,6 +264,8 @@ export function useTerminal(termId: string) {
     const term = termRef.current;
     if (!term) return;
     term.options.theme = resolved === 'dark' ? DARK_THEME : LIGHT_THEME;
+    // 同步 minimumContrastRatio,避免 dark→light 残留 1 / light→dark 拔亮 dim prompt
+    term.options.minimumContrastRatio = resolved === 'dark' ? 1 : 7;
   }, [resolved]);
 
   // sidebar(显示 / 隐藏 / 拖宽)→ 强制重 fit。
