@@ -16,16 +16,19 @@ import {
   type Server as NetServer,
   type Socket,
 } from 'node:net';
+import { BrowserWindow } from 'electron';
 import { mkdir, unlink, chmod } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import {
   RPC_ERROR_CODES,
+  NO_WINDOW_CTX_MESSAGE,
   parseRpcMessage,
   formatRpcResult,
   formatRpcError,
   dispatchRpc,
   type AnyMcpTool,
+  type McpCallCtx,
   type ServerInfo,
 } from './mcp-host.service';
 
@@ -56,6 +59,8 @@ export function splitLines(state: FramingState, chunk: string): SplitResult {
 }
 
 // ── socket server ──────────────────────────────────────────────
+
+const socketCtx: Map<Socket, number> = new Map();
 
 export interface StdioSocketServer {
   readonly socketPath: string;
@@ -93,6 +98,31 @@ async function handleLine(
     return;
   }
 
+  // Continuo private notification:proxy sends caller BrowserWindow context
+  // before normal MCP traffic. Must be consumed before generic notification
+  // discard below.
+  if (
+    raw !== null &&
+    typeof raw === 'object' &&
+    !Array.isArray(raw) &&
+    (raw as Record<string, unknown>)['jsonrpc'] === '2.0' &&
+    (raw as Record<string, unknown>)['method'] === '_continuo/hello' &&
+    !('id' in (raw as Record<string, unknown>))
+  ) {
+    const params = (raw as Record<string, unknown>)['params'];
+    const windowId =
+      params !== null &&
+      typeof params === 'object' &&
+      !Array.isArray(params)
+        ? (params as Record<string, unknown>)['windowId']
+        : undefined;
+    if (typeof windowId !== 'number' || !Number.isInteger(windowId)) return;
+    const win = BrowserWindow.fromId(windowId);
+    if (!win || win.isDestroyed()) return;
+    socketCtx.set(sock, windowId);
+    return;
+  }
+
   // notification(无 id)→ 不响应(202 等价语义,stdio 直接 silent)
   if (
     raw !== null &&
@@ -117,7 +147,10 @@ async function handleLine(
     return;
   }
 
-  const response = await dispatchRpc(rpc, tools, serverInfo);
+  const ownerWindowId = socketCtx.get(sock);
+  const ctx: McpCallCtx | null =
+    typeof ownerWindowId === 'number' ? { ownerWindowId } : null;
+  const response = await dispatchRpc(rpc, tools, serverInfo, ctx);
   if ('result' in response) {
     sock.write(formatRpcResult(rpc.id, response.result) + '\n');
   } else {
@@ -125,7 +158,9 @@ async function handleLine(
       formatRpcError(
         rpc.id,
         response.error.code,
-        response.error.message,
+        response.error.code === RPC_ERROR_CODES.NO_WINDOW_CTX
+          ? NO_WINDOW_CTX_MESSAGE
+          : response.error.message,
         response.error.data,
       ) + '\n',
     );
@@ -177,6 +212,7 @@ export async function createStdioSocketServer(
     });
     sock.on('close', () => {
       clients.delete(sock);
+      socketCtx.delete(sock);
     });
     sock.on('error', () => {
       /* connection error,close 事件会清理 */

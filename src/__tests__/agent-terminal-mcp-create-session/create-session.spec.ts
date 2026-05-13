@@ -79,8 +79,12 @@ describe('createSessionOutputSchema', () => {
 // makeCreateSessionTool — handler 行为
 // ────────────────────────────────────────────────────────────
 
-type CreateSessionFn = (input: CreateSessionPtyInput) => Promise<{ id: string }>;
+type CreateSessionFn = (
+  input: CreateSessionPtyInput,
+  ctx: { ownerWindowId: number },
+) => Promise<{ id: string }>;
 type EnsureAuthFn = () => Promise<'once' | 'session' | 'denied'>;
+const ctx = { ownerWindowId: 1 };
 
 const makeOkDeps = (overrides?: {
   ensureAuthorized?: EnsureAuthFn;
@@ -110,7 +114,7 @@ describe('makeCreateSessionTool · 授权', () => {
     const ensureAuthorized = vi.fn<EnsureAuthFn>(async () => 'denied');
     const createSession = vi.fn<CreateSessionFn>(async () => ({ id: 'never' }));
     const tool = makeCreateSessionTool({ ensureAuthorized, createSession });
-    await expect(tool.run({})).rejects.toMatchObject({
+    await expect(tool.run({}, ctx)).rejects.toMatchObject({
       code: 'AGENT_NOT_AUTHORIZED',
     });
     expect(createSession).not.toHaveBeenCalled();
@@ -120,7 +124,7 @@ describe('makeCreateSessionTool · 授权', () => {
     const ensureAuthorized = vi.fn<EnsureAuthFn>(async () => 'once');
     const createSession = vi.fn<CreateSessionFn>(async () => ({ id: 'term-once' }));
     const tool = makeCreateSessionTool({ ensureAuthorized, createSession });
-    const r = await tool.run({});
+    const r = await tool.run({}, ctx);
     expect(r).toEqual({ session_id: 'term-once' });
     expect(createSession).toHaveBeenCalledOnce();
   });
@@ -129,7 +133,7 @@ describe('makeCreateSessionTool · 授权', () => {
     const ensureAuthorized = vi.fn<EnsureAuthFn>(async () => 'session');
     const createSession = vi.fn<CreateSessionFn>(async () => ({ id: 'term-sess' }));
     const tool = makeCreateSessionTool({ ensureAuthorized, createSession });
-    const r = await tool.run({});
+    const r = await tool.run({}, ctx);
     expect(r).toEqual({ session_id: 'term-sess' });
   });
 });
@@ -138,35 +142,35 @@ describe('makeCreateSessionTool · 字段透传', () => {
   it('cwd 给值 → 透传', async () => {
     const createSession = vi.fn<CreateSessionFn>(async () => ({ id: 'x' }));
     const tool = makeCreateSessionTool(makeOkDeps({ createSession }));
-    await tool.run({ cwd: '/proj' });
+    await tool.run({ cwd: '/proj' }, ctx);
     expect(createSession.mock.calls[0]![0]).toMatchObject({ cwd: '/proj' });
   });
 
   it('cwd 缺省 → 不传', async () => {
     const createSession = vi.fn<CreateSessionFn>(async () => ({ id: 'x' }));
     const tool = makeCreateSessionTool(makeOkDeps({ createSession }));
-    await tool.run({});
+    await tool.run({}, ctx);
     expect('cwd' in createSession.mock.calls[0]![0]).toBe(false);
   });
 
   it('name 给值 → 透传', async () => {
     const createSession = vi.fn<CreateSessionFn>(async () => ({ id: 'x' }));
     const tool = makeCreateSessionTool(makeOkDeps({ createSession }));
-    await tool.run({ name: 'codex' });
+    await tool.run({ name: 'codex' }, ctx);
     expect(createSession.mock.calls[0]![0]).toMatchObject({ name: 'codex' });
   });
 
   it('name 缺省 → 不传', async () => {
     const createSession = vi.fn<CreateSessionFn>(async () => ({ id: 'x' }));
     const tool = makeCreateSessionTool(makeOkDeps({ createSession }));
-    await tool.run({});
+    await tool.run({}, ctx);
     expect('name' in createSession.mock.calls[0]![0]).toBe(false);
   });
 
   it('agentLabel 给值 → 透传', async () => {
     const createSession = vi.fn<CreateSessionFn>(async () => ({ id: 'x' }));
     const tool = makeCreateSessionTool(makeOkDeps({ createSession }));
-    await tool.run({ agentLabel: 'gemini' });
+    await tool.run({ agentLabel: 'gemini' }, ctx);
     expect(createSession.mock.calls[0]![0]).toMatchObject({
       agentLabel: 'gemini',
     });
@@ -175,7 +179,7 @@ describe('makeCreateSessionTool · 字段透传', () => {
   it("agentLabel 缺省 → 默认 'agent'", async () => {
     const createSession = vi.fn<CreateSessionFn>(async () => ({ id: 'x' }));
     const tool = makeCreateSessionTool(makeOkDeps({ createSession }));
-    await tool.run({});
+    await tool.run({}, ctx);
     expect(createSession.mock.calls[0]![0]).toMatchObject({
       agentLabel: 'agent',
     });
@@ -184,7 +188,7 @@ describe('makeCreateSessionTool · 字段透传', () => {
   it("永远 originHint='agent'", async () => {
     const createSession = vi.fn<CreateSessionFn>(async () => ({ id: 'x' }));
     const tool = makeCreateSessionTool(makeOkDeps({ createSession }));
-    await tool.run({});
+    await tool.run({}, ctx);
     expect(createSession.mock.calls[0]![0]).toMatchObject({
       originHint: 'agent',
     });
@@ -193,7 +197,7 @@ describe('makeCreateSessionTool · 字段透传', () => {
   it('autorun 给值 → 透传(P3)', async () => {
     const createSession = vi.fn<CreateSessionFn>(async () => ({ id: 'x' }));
     const tool = makeCreateSessionTool(makeOkDeps({ createSession }));
-    await tool.run({ autorun: 'codex' });
+    await tool.run({ autorun: 'codex' }, ctx);
     expect(createSession.mock.calls[0]![0]).toMatchObject({
       autorun: 'codex',
     });
@@ -202,7 +206,7 @@ describe('makeCreateSessionTool · 字段透传', () => {
   it('autorun 缺省 → 不传', async () => {
     const createSession = vi.fn<CreateSessionFn>(async () => ({ id: 'x' }));
     const tool = makeCreateSessionTool(makeOkDeps({ createSession }));
-    await tool.run({});
+    await tool.run({}, ctx);
     expect('autorun' in createSession.mock.calls[0]![0]).toBe(false);
   });
 });
@@ -215,7 +219,7 @@ describe('makeCreateSessionTool · 错误透传', () => {
       });
     });
     const tool = makeCreateSessionTool(makeOkDeps({ createSession }));
-    await expect(tool.run({})).rejects.toMatchObject({
+    await expect(tool.run({}, ctx)).rejects.toMatchObject({
       code: 'TERMINAL_FORBIDDEN_SHELL',
     });
   });
@@ -224,7 +228,7 @@ describe('makeCreateSessionTool · 错误透传', () => {
 describe('makeCreateSessionTool · 输出合规', () => {
   it('输出符合 createSessionOutputSchema', async () => {
     const tool = makeCreateSessionTool(makeOkDeps());
-    const out = await tool.run({});
+    const out = await tool.run({}, ctx);
     expect(createSessionOutputSchema.safeParse(out).success).toBe(true);
   });
 });

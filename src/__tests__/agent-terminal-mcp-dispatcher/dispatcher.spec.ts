@@ -15,6 +15,7 @@ const SERVER_INFO: ServerInfo = {
   version: '0.1.0',
   protocolVersion: '2024-11-05',
 };
+const CTX = { ownerWindowId: 1 };
 
 // ─── tool fixtures ─────────────────────────────────────────────
 
@@ -70,7 +71,7 @@ const req = (method: string, params: Record<string, unknown> = {}): RpcRequest =
 
 describe('dispatchRpc · initialize', () => {
   it('返回 protocolVersion / serverInfo / capabilities.tools', async () => {
-    const r = await dispatchRpc(req('initialize'), makeTools(echoTool), SERVER_INFO);
+    const r = await dispatchRpc(req('initialize'), makeTools(echoTool), SERVER_INFO, CTX);
     expect(r).toEqual({
       result: {
         protocolVersion: '2024-11-05',
@@ -88,6 +89,7 @@ describe('dispatchRpc · initialize', () => {
       }),
       makeTools(),
       SERVER_INFO,
+      CTX,
     );
     expect('result' in r).toBe(true);
   });
@@ -103,6 +105,7 @@ describe('dispatchRpc · tools/list', () => {
       req('tools/list'),
       makeTools(echoTool, failTool),
       SERVER_INFO,
+      CTX,
     );
     expect(r).toEqual({
       result: {
@@ -123,7 +126,7 @@ describe('dispatchRpc · tools/list', () => {
   });
 
   it('空 tools → tools 数组空', async () => {
-    const r = await dispatchRpc(req('tools/list'), makeTools(), SERVER_INFO);
+    const r = await dispatchRpc(req('tools/list'), makeTools(), SERVER_INFO, CTX);
     expect(r).toEqual({ result: { tools: [] } });
   });
 
@@ -132,6 +135,7 @@ describe('dispatchRpc · tools/list', () => {
       req('tools/list'),
       makeTools(noopTool, echoTool, failTool),
       SERVER_INFO,
+      CTX,
     );
     const names = ((r as { result: { tools: { name: string }[] } }).result.tools).map(
       (t) => t.name,
@@ -150,6 +154,7 @@ describe('dispatchRpc · tools/call', () => {
       req('tools/call', { name: 'echo', arguments: { text: 'hi' } }),
       makeTools(echoTool),
       SERVER_INFO,
+      CTX,
     );
     expect(r).toEqual({
       result: {
@@ -165,6 +170,7 @@ describe('dispatchRpc · tools/call', () => {
       req('tools/call', { name: 'noop' }),
       makeTools(noopTool),
       SERVER_INFO,
+      CTX,
     );
     expect((r as { result: unknown }).result).toEqual({
       content: [{ type: 'text', text: '{}' }],
@@ -176,6 +182,7 @@ describe('dispatchRpc · tools/call', () => {
       req('tools/call', { name: 123, arguments: {} }),
       makeTools(echoTool),
       SERVER_INFO,
+      CTX,
     );
     expect(r).toMatchObject({ error: { code: -32602 } });
   });
@@ -185,6 +192,7 @@ describe('dispatchRpc · tools/call', () => {
       req('tools/call', { arguments: {} }),
       makeTools(echoTool),
       SERVER_INFO,
+      CTX,
     );
     expect(r).toMatchObject({ error: { code: -32602 } });
   });
@@ -194,6 +202,7 @@ describe('dispatchRpc · tools/call', () => {
       req('tools/call', { name: 'no.such.tool', arguments: {} }),
       makeTools(echoTool),
       SERVER_INFO,
+      CTX,
     );
     expect(r).toMatchObject({
       error: {
@@ -208,6 +217,7 @@ describe('dispatchRpc · tools/call', () => {
       req('tools/call', { name: 'echo', arguments: [1, 2, 3] }),
       makeTools(echoTool),
       SERVER_INFO,
+      CTX,
     );
     expect(r).toMatchObject({ error: { code: -32602 } });
   });
@@ -217,6 +227,7 @@ describe('dispatchRpc · tools/call', () => {
       req('tools/call', { name: 'echo', arguments: {} }),
       makeTools(echoTool),
       SERVER_INFO,
+      CTX,
     );
     expect(r).toMatchObject({
       error: { code: -32602 },
@@ -230,6 +241,7 @@ describe('dispatchRpc · tools/call', () => {
       req('tools/call', { name: 'fail', arguments: {} }),
       makeTools(failTool),
       SERVER_INFO,
+      CTX,
     );
     expect(r).toMatchObject({
       error: {
@@ -255,6 +267,7 @@ describe('dispatchRpc · tools/call', () => {
       req('tools/call', { name: 'weird', arguments: {} }),
       makeTools(weirdTool),
       SERVER_INFO,
+      CTX,
     );
     expect(r).toMatchObject({ error: { code: -32603 } });
   });
@@ -271,6 +284,7 @@ describe('dispatchRpc · tools/call', () => {
       req('tools/call', { name: 'async', arguments: {} }),
       makeTools(asyncTool),
       SERVER_INFO,
+      CTX,
     );
     expect((r as { result: unknown }).result).toEqual({
       content: [{ type: 'text', text: '{"async":true}' }],
@@ -284,7 +298,7 @@ describe('dispatchRpc · tools/call', () => {
 
 describe('dispatchRpc · 未知 method', () => {
   it('"foo/bar" → METHOD_NOT_FOUND', async () => {
-    const r = await dispatchRpc(req('foo/bar'), makeTools(echoTool), SERVER_INFO);
+    const r = await dispatchRpc(req('foo/bar'), makeTools(echoTool), SERVER_INFO, CTX);
     expect(r).toMatchObject({
       error: { code: -32601, message: expect.stringMatching(/foo\/bar/) },
     });
@@ -296,6 +310,7 @@ describe('dispatchRpc · 未知 method', () => {
       req('terminal.list_sessions'),
       makeTools(echoTool),
       SERVER_INFO,
+      CTX,
     );
     expect(r).toMatchObject({ error: { code: -32601 } });
   });

@@ -6,6 +6,7 @@ import * as pty from 'node-pty';
 import { BrowserWindow } from 'electron';
 import * as terminalSessions from './terminal-sessions.service';
 import * as terminalBuffer from './terminal-buffer.service';
+import { mcpRevokers } from './mcp-host.service';
 
 // ── 常量(节流参数,沿用 Mind 决策 #5)──────────────────────────
 const OVERFLOW_THRESHOLD_BYTES = 2 * 1024 * 1024; // 2 MB/s 触发 overflow
@@ -24,6 +25,7 @@ interface Instance {
   bytesPerSecond: number;
   throttleInterval: NodeJS.Timeout | null;
   overflowNotified: boolean;
+  readonly mcpToken: string;
 }
 
 const instances = new Map<string, Instance>();
@@ -73,6 +75,7 @@ export function createTerminal(
   args: string[],
   cwd: string,
   env?: Record<string, string>,
+  meta?: { mcpToken?: string },
 ): void {
   const p = pty.spawn(shell, args, {
     name: 'xterm-256color',
@@ -102,6 +105,7 @@ export function createTerminal(
     bytesPerSecond: 0,
     throttleInterval: null,
     overflowNotified: false,
+    mcpToken: meta?.mcpToken ?? '',
   };
 
   const send = (data: string) => {
@@ -256,6 +260,7 @@ function cleanup(id: string): void {
   if (inst.throttleInterval) clearInterval(inst.throttleInterval);
   if (inst.flushTimer) clearTimeout(inst.flushTimer);
   if (inst.killTimer) clearTimeout(inst.killTimer);
+  if (inst.mcpToken) mcpRevokers().byToken(inst.mcpToken);
   instances.delete(id);
 }
 

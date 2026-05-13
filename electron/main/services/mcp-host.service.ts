@@ -28,13 +28,38 @@ export const RPC_ERROR_CODES = {
   INVALID_PARAMS: -32602,
   /** 自定义,落在 JSON-RPC 实现保留区(-32000 ~ -32099). */
   UNAUTHORIZED: -32001,
+  NO_WINDOW_CTX: -32002,
 } as const;
+
+export const NO_WINDOW_CTX_MESSAGE = 'missing window context';
 
 const LOCALHOST_ADDRS: ReadonlySet<string> = new Set([
   '127.0.0.1',
   '::1',
   'localhost',
 ]);
+
+export interface McpCallCtx {
+  readonly ownerWindowId: number;
+}
+
+export interface McpRevokers {
+  readonly byWindow: (windowId: number) => void;
+  readonly byToken: (token: string) => void;
+}
+
+let _mcpRevokers: McpRevokers = {
+  byWindow: () => {},
+  byToken: () => {},
+};
+
+export function setMcpRevokers(fns: McpRevokers): void {
+  _mcpRevokers = fns;
+}
+
+export function mcpRevokers(): McpRevokers {
+  return _mcpRevokers;
+}
 
 // ── token ───────────────────────────────────────────────────────
 
@@ -173,6 +198,7 @@ export async function dispatchRpc(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   tools: ReadonlyMap<string, McpToolDef<any, any>>,
   serverInfo: ServerInfo,
+  ctx: McpCallCtx | null,
 ): Promise<RpcResponseObj> {
   if (rpc.method === 'initialize') {
     return {
@@ -197,6 +223,14 @@ export async function dispatchRpc(
   }
 
   if (rpc.method === 'tools/call') {
+    if (ctx === null) {
+      return {
+        error: {
+          code: RPC_ERROR_CODES.NO_WINDOW_CTX,
+          message: NO_WINDOW_CTX_MESSAGE,
+        },
+      };
+    }
     const params = rpc.params;
     const name = params['name'];
     if (typeof name !== 'string' || name.length === 0) {
@@ -240,7 +274,7 @@ export async function dispatchRpc(
       };
     }
     try {
-      const result = await tool.run(parsed.data);
+      const result = await tool.run(parsed.data, ctx);
       // MCP 协议:tool result 包成 content array(MCP client 期望此形态)
       return {
         result: {
@@ -279,7 +313,7 @@ export interface McpToolDef<I = unknown, O = unknown> {
   /** 给 MCP client tools/list 看的 JSON Schema(非 zod). 工厂手填字面量. */
   readonly jsonSchema: Record<string, unknown>;
   readonly inputSchema: z.ZodType<I>;
-  readonly run: (input: I) => O | Promise<O>;
+  readonly run: (input: I, ctx: McpCallCtx) => O | Promise<O>;
 }
 
 // host 内部统一用 any generic — 它只 dispatch,不关心 tool 的具体 I/O 形态。
@@ -290,11 +324,15 @@ export type AnyMcpTool = McpToolDef<any, any>;
 export interface McpHost {
   readonly port: number;
   readonly url: string;
-  readonly token: string;
   /** 共享给 stdio transport 等其它入口复用. */
   readonly tools: ReadonlyMap<string, AnyMcpTool>;
   /** 共享给 stdio transport 等其它入口复用. */
   readonly serverInfo: ServerInfo;
+  issueWindowToken(windowId: number): string;
+  revokeToken(token: string): void;
+  revokeWindowTokens(windowId: number): void;
+  resolveWindowId(token: string): number | null;
+  verifyAndResolveCtx(authHeader: string | undefined): McpCallCtx | null;
   registerTool(tool: AnyMcpTool): void;
   /** registerTool 反操作。unknown name 静默 noop. */
   removeTool(name: string): void;
@@ -304,7 +342,7 @@ export interface McpHost {
    * 写入失败的 connection 自动从 sseClients 摘掉。
    */
   broadcast(method: string, params?: Record<string, unknown>): void;
-  rotateToken(): string;
+  rotateToken(): void;
   close(): Promise<void>;
 }
 
@@ -367,14 +405,15 @@ export async function createMcpHost(
     ...(options.serverInfo ?? {}),
   };
 
-  let token = generateToken();
+  const windowTokens: Map<string, number> = new Map();
   const sseClients = new Set<ServerResponse>();
 
   const handleMessage = async (
     req: IncomingMessage,
     res: ServerResponse,
   ): Promise<void> => {
-    if (!verifyBearer(req.headers['authorization'], token)) {
+    const ctx = host.verifyAndResolveCtx(req.headers['authorization']);
+    if (!ctx) {
       sendJson(
         res,
         401,
@@ -421,7 +460,7 @@ export async function createMcpHost(
       return;
     }
 
-    const response = await dispatchRpc(rpc, tools, serverInfo);
+    const response = await dispatchRpc(rpc, tools, serverInfo, ctx);
     if ('result' in response) {
       sendJson(res, 200, formatRpcResult(rpc.id, response.result));
     } else {
@@ -439,7 +478,7 @@ export async function createMcpHost(
   };
 
   const handleSse = (req: IncomingMessage, res: ServerResponse): void => {
-    if (!verifyBearer(req.headers['authorization'], token)) {
+    if (!host.verifyAndResolveCtx(req.headers['authorization'])) {
       res.statusCode = 401;
       res.end('unauthorized');
       return;
@@ -500,8 +539,31 @@ export async function createMcpHost(
   const host: McpHost = {
     port,
     url: `http://${bindAddr}:${port}/mcp`,
-    get token() {
-      return token;
+    issueWindowToken(windowId: number): string {
+      const tok = generateToken();
+      windowTokens.set(tok, windowId);
+      return tok;
+    },
+    revokeToken(token: string): void {
+      windowTokens.delete(token);
+    },
+    revokeWindowTokens(windowId: number): void {
+      for (const [tok, wid] of windowTokens) {
+        if (wid === windowId) windowTokens.delete(tok);
+      }
+    },
+    resolveWindowId(token: string): number | null {
+      return windowTokens.get(token) ?? null;
+    },
+    verifyAndResolveCtx(authHeader: string | undefined): McpCallCtx | null {
+      if (!authHeader) return null;
+      const m = /^bearer (.+)$/i.exec(authHeader);
+      if (!m) return null;
+      const token = m[1];
+      if (!token) return null;
+      const wid = windowTokens.get(token);
+      if (typeof wid !== 'number') return null;
+      return { ownerWindowId: wid };
     },
     tools,
     serverInfo,
@@ -527,8 +589,8 @@ export async function createMcpHost(
       }
       for (const c of dead) sseClients.delete(c);
     },
-    rotateToken(): string {
-      token = generateToken();
+    rotateToken(): void {
+      windowTokens.clear();
       // 踢断所有现有 SSE 连接(它们持的旧 token 已无效)
       for (const c of sseClients) {
         try {
@@ -538,7 +600,6 @@ export async function createMcpHost(
         }
       }
       sseClients.clear();
-      return token;
     },
     async close(): Promise<void> {
       for (const c of sseClients) {

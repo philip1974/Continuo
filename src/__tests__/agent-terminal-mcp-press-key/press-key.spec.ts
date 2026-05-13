@@ -115,10 +115,18 @@ describe('pressKeyOutputSchema', () => {
 
 type HasFn = (id: string) => boolean;
 type WriteFn = (id: string, data: string) => boolean;
+type GetSessionOwnerFn = (id: string) => number | null;
+const ctx = { ownerWindowId: 1 };
 
-const makeDeps = (overrides?: { has?: HasFn; write?: WriteFn }) => ({
+const makeDeps = (overrides?: {
+  has?: HasFn;
+  write?: WriteFn;
+  getSessionOwner?: GetSessionOwnerFn;
+}) => ({
   has: overrides?.has ?? vi.fn<HasFn>(() => true),
   write: overrides?.write ?? vi.fn<WriteFn>(() => true),
+  getSessionOwner:
+    overrides?.getSessionOwner ?? vi.fn<GetSessionOwnerFn>(() => 1),
 });
 
 describe('makePressKeyTool · 元数据', () => {
@@ -137,9 +145,9 @@ describe('makePressKeyTool · run', () => {
   it('has=false → 抛 TERMINAL_SESSION_NOT_FOUND', async () => {
     const has = vi.fn<HasFn>(() => false);
     const write = vi.fn<WriteFn>(() => true);
-    const tool = makePressKeyTool({ has, write });
+    const tool = makePressKeyTool(makeDeps({ has, write }));
     await expect(
-      tool.run({ session_id: 'nope', key: 'enter' }),
+      tool.run({ session_id: 'nope', key: 'enter' }, ctx),
     ).rejects.toMatchObject({ code: 'TERMINAL_SESSION_NOT_FOUND' });
     expect(write).not.toHaveBeenCalled();
   });
@@ -147,21 +155,21 @@ describe('makePressKeyTool · run', () => {
   it("key='enter' → write \\r", async () => {
     const write = vi.fn<WriteFn>(() => true);
     const tool = makePressKeyTool(makeDeps({ write }));
-    await tool.run({ session_id: 't', key: 'enter' });
+    await tool.run({ session_id: 't', key: 'enter' }, ctx);
     expect(write).toHaveBeenCalledWith('t', '\r');
   });
 
   it("key='ctrl_c' → write \\x03", async () => {
     const write = vi.fn<WriteFn>(() => true);
     const tool = makePressKeyTool(makeDeps({ write }));
-    await tool.run({ session_id: 't', key: 'ctrl_c' });
+    await tool.run({ session_id: 't', key: 'ctrl_c' }, ctx);
     expect(write).toHaveBeenCalledWith('t', '\x03');
   });
 
   it("key='up' → write \\x1b[A", async () => {
     const write = vi.fn<WriteFn>(() => true);
     const tool = makePressKeyTool(makeDeps({ write }));
-    await tool.run({ session_id: 't', key: 'up' });
+    await tool.run({ session_id: 't', key: 'up' }, ctx);
     expect(write).toHaveBeenCalledWith('t', '\x1b[A');
   });
 
@@ -172,7 +180,7 @@ describe('makePressKeyTool · run', () => {
       await tool.run({
         session_id: 't',
         key: key as keyof typeof KEY_BYTES,
-      });
+      }, ctx);
       expect(write).toHaveBeenCalledWith('t', bytes);
     }
   });
@@ -181,19 +189,19 @@ describe('makePressKeyTool · run', () => {
     const write = vi.fn<WriteFn>(() => false);
     const tool = makePressKeyTool(makeDeps({ write }));
     await expect(
-      tool.run({ session_id: 't', key: 'enter' }),
+      tool.run({ session_id: 't', key: 'enter' }, ctx),
     ).rejects.toMatchObject({ code: 'TERMINAL_SESSION_NOT_FOUND' });
   });
 
   it('成功 → 返回 {}', async () => {
     const tool = makePressKeyTool(makeDeps());
-    const r = await tool.run({ session_id: 't', key: 'enter' });
+    const r = await tool.run({ session_id: 't', key: 'enter' }, ctx);
     expect(r).toEqual({});
   });
 
   it('输出符合 pressKeyOutputSchema', async () => {
     const tool = makePressKeyTool(makeDeps());
-    const out = await tool.run({ session_id: 't', key: 'tab' });
+    const out = await tool.run({ session_id: 't', key: 'tab' }, ctx);
     expect(pressKeyOutputSchema.safeParse(out).success).toBe(true);
   });
 });

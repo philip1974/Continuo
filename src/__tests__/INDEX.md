@@ -522,6 +522,14 @@
 
 - [`use-fs-watcher.spec.tsx`](./use-fs-watcher/use-fs-watcher.spec.tsx)
 
+## [window-aware-agent-session](./window-aware-agent-session/README.md)
+
+- [`agent-create.spec.ts`](./window-aware-agent-session/agent-create.spec.ts)
+- [`cross-window-isolation.spec.ts`](./window-aware-agent-session/cross-window-isolation.spec.ts)
+- [`dispatch-rpc-ctx.spec.ts`](./window-aware-agent-session/dispatch-rpc-ctx.spec.ts)
+- [`host-handler-token-resolve.spec.ts`](./window-aware-agent-session/host-handler-token-resolve.spec.ts)
+- [`terminal-counter.spec.ts`](./window-aware-agent-session/terminal-counter.spec.ts)
+
 ## [拖文件夹到窗口(`pickDroppedDirectory`)](./window-drop/README.md)
 
 - [`window-drop.spec.ts`](./window-drop/window-drop.spec.ts)

@@ -112,11 +112,12 @@ async function rpc(
   params: Record<string, unknown> = {},
 ): Promise<{ result?: unknown; error?: { code: number; message: string; data?: unknown } }> {
   const id = `req-${++nextRpcId}`;
+  const token = host.issueWindowToken(1);
   const res = await fetch(host.url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${host.token}`,
+      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({ jsonrpc: '2.0', id, method, params }),
   });

@@ -73,10 +73,18 @@ describe('sendTextOutputSchema', () => {
 
 type HasFn = (id: string) => boolean;
 type WriteFn = (id: string, data: string) => boolean;
+type GetSessionOwnerFn = (id: string) => number | null;
+const ctx = { ownerWindowId: 1 };
 
-const makeDeps = (overrides?: { has?: HasFn; write?: WriteFn }) => ({
+const makeDeps = (overrides?: {
+  has?: HasFn;
+  write?: WriteFn;
+  getSessionOwner?: GetSessionOwnerFn;
+}) => ({
   has: overrides?.has ?? vi.fn<HasFn>(() => true),
   write: overrides?.write ?? vi.fn<WriteFn>(() => true),
+  getSessionOwner:
+    overrides?.getSessionOwner ?? vi.fn<GetSessionOwnerFn>(() => 1),
 });
 
 describe('makeSendTextTool · 元数据', () => {
@@ -95,9 +103,9 @@ describe('makeSendTextTool · run', () => {
   it('has=false → 抛 TERMINAL_SESSION_NOT_FOUND', async () => {
     const has = vi.fn<HasFn>(() => false);
     const write = vi.fn<WriteFn>(() => true);
-    const tool = makeSendTextTool({ has, write });
+    const tool = makeSendTextTool(makeDeps({ has, write }));
     await expect(
-      tool.run({ session_id: 'nope', text: 'x' }),
+      tool.run({ session_id: 'nope', text: 'x' }, ctx),
     ).rejects.toMatchObject({ code: 'TERMINAL_SESSION_NOT_FOUND' });
     expect(write).not.toHaveBeenCalled();
   });
@@ -105,7 +113,7 @@ describe('makeSendTextTool · run', () => {
   it('has=true + write 成功 → write 被调,text 逐字写入,返回 {}', async () => {
     const write = vi.fn<WriteFn>(() => true);
     const tool = makeSendTextTool(makeDeps({ write }));
-    const r = await tool.run({ session_id: 'term-1', text: '你好' });
+    const r = await tool.run({ session_id: 'term-1', text: '你好' }, ctx);
     expect(r).toEqual({});
     expect(write).toHaveBeenCalledWith('term-1', '你好');
   });
@@ -113,14 +121,14 @@ describe('makeSendTextTool · run', () => {
   it('text 不变换 — 含 \\n 也直接写入,不转 \\r', async () => {
     const write = vi.fn<WriteFn>(() => true);
     const tool = makeSendTextTool(makeDeps({ write }));
-    await tool.run({ session_id: 't', text: 'line1\nline2' });
+    await tool.run({ session_id: 't', text: 'line1\nline2' }, ctx);
     expect(write).toHaveBeenCalledWith('t', 'line1\nline2');
   });
 
   it('text 不追加 \\r — server 不替 LLM 决定按 Enter', async () => {
     const write = vi.fn<WriteFn>(() => true);
     const tool = makeSendTextTool(makeDeps({ write }));
-    await tool.run({ session_id: 't', text: 'hello' });
+    await tool.run({ session_id: 't', text: 'hello' }, ctx);
     expect(write).toHaveBeenCalledWith('t', 'hello');
     // 注意:不是 'hello\r' 也不是 'hello\n'
   });
@@ -129,21 +137,21 @@ describe('makeSendTextTool · run', () => {
     const write = vi.fn<WriteFn>(() => false);
     const tool = makeSendTextTool(makeDeps({ write }));
     await expect(
-      tool.run({ session_id: 'term-1', text: 'x' }),
+      tool.run({ session_id: 'term-1', text: 'x' }, ctx),
     ).rejects.toMatchObject({ code: 'TERMINAL_SESSION_NOT_FOUND' });
   });
 
   it('text 空字符串 → 仍调 write(空),返回 {}', async () => {
     const write = vi.fn<WriteFn>(() => true);
     const tool = makeSendTextTool(makeDeps({ write }));
-    const r = await tool.run({ session_id: 't', text: '' });
+    const r = await tool.run({ session_id: 't', text: '' }, ctx);
     expect(r).toEqual({});
     expect(write).toHaveBeenCalledWith('t', '');
   });
 
   it('输出符合 sendTextOutputSchema', async () => {
     const tool = makeSendTextTool(makeDeps());
-    const out = await tool.run({ session_id: 't', text: 'x' });
+    const out = await tool.run({ session_id: 't', text: 'x' }, ctx);
     expect(sendTextOutputSchema.safeParse(out).success).toBe(true);
   });
 });

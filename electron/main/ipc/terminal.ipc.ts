@@ -12,15 +12,26 @@ import { getDefaultShell, isAllowedShell } from '../../shared/terminal-shells';
 import * as termService from '../services/terminal.service';
 import * as terminalSessions from '../services/terminal-sessions.service';
 import * as terminalBuffer from '../services/terminal-buffer.service';
+import { mcpRevokers } from '../services/mcp-host.service';
 
 // ── 常量 ─────────────────────────────────────────────────────
 const MAX_WRITE_CHARS = 2_000_000; // ~2MB UTF-8 字符上限,与 Mind 1MB 字节同档
 
 // ── MCP env provider(由 main/index.ts 在 mcp host 启动后注入)──
 // 默认空 → 不注入 MCP 信息;启动 host 后调 setMcpEnvProvider 注册真函数。
-let mcpEnvProvider: () => Record<string, string> = () => ({});
+export interface McpEnvBundle {
+  readonly env: Record<string, string>;
+  readonly mcpToken: string;
+}
 
-export function setMcpEnvProvider(fn: () => Record<string, string>): void {
+let mcpEnvProvider: (windowId: number) => McpEnvBundle = () => ({
+  env: {},
+  mcpToken: '',
+});
+
+export function setMcpEnvProvider(
+  fn: (windowId: number) => McpEnvBundle,
+): void {
   mcpEnvProvider = fn;
 }
 
@@ -94,12 +105,16 @@ export function makeCreateHandler(deps?: {
     const cwd = resolveCwd(input.cwd);
     const id = generateId();
     // MCP env(token / url)注入到所有 PTY:用户在 terminal 跑 claude / codex 时
-    // 自动反连本机 MCP host。input.env 在后(让显式覆盖优先)。
-    const mergedEnv = { ...mcpEnvProvider(), ...(input.env ?? {}) };
-    service.createTerminal(id, win, shell, input.args ?? [], cwd, mergedEnv);
+    // 自动反连本机 MCP host。internalEnv 在后,防用户 env 覆盖内部 token。
+    const { env: internalEnv, mcpToken } = mcpEnvProvider(win.id);
+    const mergedEnv = { ...(input.env ?? {}), ...internalEnv };
+    // mcpToken 通过 meta 透传给 terminal.service.createTerminal, PTY exit cleanup 时 revoke
+    service.createTerminal(id, win, shell, input.args ?? [], cwd, mergedEnv, {
+      mcpToken,
+    });
     sessionStore.add({
       id,
-      title: input.name ?? sessionStore.nextDefaultTitle(),
+      title: input.name ?? sessionStore.nextDefaultTitle(win.id),
       cwd,
       originHint: input.originHint ?? 'user',
       ownerWindowId: win.id,
@@ -128,6 +143,7 @@ export function makeWindowClosedCleanup(deps?: {
   const sessionStore = deps?.sessionStore ?? terminalSessions;
   return (ownerWindowId: number): void => {
     const ids = sessionStore.removeByOwner(ownerWindowId);
+    mcpRevokers().byWindow(ownerWindowId);
     for (const id of ids) {
       if (service.has(id)) service.kill(id);
     }

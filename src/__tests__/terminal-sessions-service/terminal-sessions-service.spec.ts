@@ -242,32 +242,32 @@ describe('setExited', () => {
 
 describe('nextDefaultTitle', () => {
   it('单调递增,从 1 开始', () => {
-    expect(nextDefaultTitle()).toBe('Terminal 1');
-    expect(nextDefaultTitle()).toBe('Terminal 2');
-    expect(nextDefaultTitle()).toBe('Terminal 3');
+    expect(nextDefaultTitle(1)).toBe('Terminal 1');
+    expect(nextDefaultTitle(1)).toBe('Terminal 2');
+    expect(nextDefaultTitle(1)).toBe('Terminal 3');
   });
 
   it('remove 中间一个不重用编号(修复撞号 bug)', () => {
-    const t1 = nextDefaultTitle(); // 1
+    const t1 = nextDefaultTitle(1); // 1
     add({ ...userInput('a'), title: t1 });
-    const t2 = nextDefaultTitle(); // 2
+    const t2 = nextDefaultTitle(1); // 2
     add({ ...userInput('b'), title: t2 });
     remove('a');
-    const t3 = nextDefaultTitle(); // 3,不是 2
+    const t3 = nextDefaultTitle(1); // 3,不是 2
     expect(t3).toBe('Terminal 3');
   });
 
   it('本身不改 sessions Map', () => {
-    nextDefaultTitle();
-    nextDefaultTitle();
+    nextDefaultTitle(1);
+    nextDefaultTitle(1);
     expect(getAll()).toEqual([]);
   });
 
   it('_reset 后回到 1', () => {
-    nextDefaultTitle();
-    nextDefaultTitle();
+    nextDefaultTitle(1);
+    nextDefaultTitle(1);
     _reset();
-    expect(nextDefaultTitle()).toBe('Terminal 1');
+    expect(nextDefaultTitle(1)).toBe('Terminal 1');
   });
 });
 
@@ -332,10 +332,10 @@ describe('_reset', () => {
     const fn = vi.fn();
     subscribe(fn);
     add(userInput());
-    nextDefaultTitle();
+    nextDefaultTitle(1);
     _reset();
     expect(getAll()).toEqual([]);
-    expect(nextDefaultTitle()).toBe('Terminal 1');
+    expect(nextDefaultTitle(1)).toBe('Terminal 1');
     add(userInput('term-after'));
     // _reset 前的 fn 不应再被调
     expect(fn).toHaveBeenCalledTimes(1); // 只第一次 add 时

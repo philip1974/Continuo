@@ -69,17 +69,22 @@ describe('killOutputSchema', () => {
 
 type HasFn = (id: string) => boolean;
 type SignalFn = (id: string) => void;
+type GetSessionOwnerFn = (id: string) => number | null;
+const ctx = { ownerWindowId: 1 };
 
 const makeDeps = (overrides?: {
   has?: HasFn;
   interrupt?: SignalFn;
   kill?: SignalFn;
   forceKill?: SignalFn;
+  getSessionOwner?: GetSessionOwnerFn;
 }) => ({
   has: overrides?.has ?? vi.fn<HasFn>(() => true),
   interrupt: overrides?.interrupt ?? vi.fn<SignalFn>(() => {}),
   kill: overrides?.kill ?? vi.fn<SignalFn>(() => {}),
   forceKill: overrides?.forceKill ?? vi.fn<SignalFn>(() => {}),
+  getSessionOwner:
+    overrides?.getSessionOwner ?? vi.fn<GetSessionOwnerFn>(() => 1),
 });
 
 describe('makeKillTool · 元数据', () => {
@@ -100,9 +105,9 @@ describe('makeKillTool · run', () => {
     const interrupt = vi.fn<SignalFn>(() => {});
     const kill = vi.fn<SignalFn>(() => {});
     const forceKill = vi.fn<SignalFn>(() => {});
-    const tool = makeKillTool({ has, interrupt, kill, forceKill });
+    const tool = makeKillTool(makeDeps({ has, interrupt, kill, forceKill }));
     await expect(
-      tool.run({ session_id: 'nope' }),
+      tool.run({ session_id: 'nope' }, ctx),
     ).rejects.toMatchObject({ code: 'TERMINAL_SESSION_NOT_FOUND' });
     expect(interrupt).not.toHaveBeenCalled();
     expect(kill).not.toHaveBeenCalled();
@@ -112,7 +117,7 @@ describe('makeKillTool · run', () => {
   it('signal 缺省 → 调 kill(SIGTERM 行为)', async () => {
     const deps = makeDeps();
     const tool = makeKillTool(deps);
-    const r = await tool.run({ session_id: 'term-1' });
+    const r = await tool.run({ session_id: 'term-1' }, ctx);
     expect(r).toEqual({});
     expect(deps.kill).toHaveBeenCalledWith('term-1');
     expect(deps.interrupt).not.toHaveBeenCalled();
@@ -122,7 +127,7 @@ describe('makeKillTool · run', () => {
   it("signal='SIGTERM' → 调 kill", async () => {
     const deps = makeDeps();
     const tool = makeKillTool(deps);
-    await tool.run({ session_id: 'term-1', signal: 'SIGTERM' });
+    await tool.run({ session_id: 'term-1', signal: 'SIGTERM' }, ctx);
     expect(deps.kill).toHaveBeenCalledWith('term-1');
     expect(deps.interrupt).not.toHaveBeenCalled();
     expect(deps.forceKill).not.toHaveBeenCalled();
@@ -131,7 +136,7 @@ describe('makeKillTool · run', () => {
   it("signal='SIGINT' → 调 interrupt", async () => {
     const deps = makeDeps();
     const tool = makeKillTool(deps);
-    await tool.run({ session_id: 'term-1', signal: 'SIGINT' });
+    await tool.run({ session_id: 'term-1', signal: 'SIGINT' }, ctx);
     expect(deps.interrupt).toHaveBeenCalledWith('term-1');
     expect(deps.kill).not.toHaveBeenCalled();
     expect(deps.forceKill).not.toHaveBeenCalled();
@@ -140,7 +145,7 @@ describe('makeKillTool · run', () => {
   it("signal='SIGKILL' → 调 forceKill", async () => {
     const deps = makeDeps();
     const tool = makeKillTool(deps);
-    await tool.run({ session_id: 'term-1', signal: 'SIGKILL' });
+    await tool.run({ session_id: 'term-1', signal: 'SIGKILL' }, ctx);
     expect(deps.forceKill).toHaveBeenCalledWith('term-1');
     expect(deps.kill).not.toHaveBeenCalled();
     expect(deps.interrupt).not.toHaveBeenCalled();
@@ -148,7 +153,7 @@ describe('makeKillTool · run', () => {
 
   it('输出符合 killOutputSchema', async () => {
     const tool = makeKillTool(makeDeps());
-    const out = await tool.run({ session_id: 't' });
+    const out = await tool.run({ session_id: 't' }, ctx);
     expect(killOutputSchema.safeParse(out).success).toBe(true);
   });
 });

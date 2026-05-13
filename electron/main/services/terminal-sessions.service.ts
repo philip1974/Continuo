@@ -38,7 +38,7 @@ export type SessionsSubscriber = (
 
 const sessions = new Map<string, MainTerminalSession>();
 const subscribers = new Set<SessionsSubscriber>();
-let titleCounter = 0;
+const titleCounter: Map<number, number> = new Map();
 
 // ── helpers ────────────────────────────────────────────────────
 
@@ -120,9 +120,11 @@ export function setExited(id: string, exitCode: number): void {
  * 单调递增的默认标题。remove 中间 session 不重用编号 — 修复 renderer 旧
  * `sessions.length + 1` 实现的撞号 bug。
  */
-export function nextDefaultTitle(): string {
-  titleCounter += 1;
-  return `Terminal ${titleCounter}`;
+export function nextDefaultTitle(ownerWindowId: number): string {
+  const cur = titleCounter.get(ownerWindowId) ?? 0;
+  const next = cur + 1;
+  titleCounter.set(ownerWindowId, next);
+  return `Terminal ${next}`;
 }
 
 export function subscribe(fn: SessionsSubscriber): () => void {
@@ -136,5 +138,5 @@ export function subscribe(fn: SessionsSubscriber): () => void {
 export function _reset(): void {
   sessions.clear();
   subscribers.clear();
-  titleCounter = 0;
+  titleCounter.clear();
 }

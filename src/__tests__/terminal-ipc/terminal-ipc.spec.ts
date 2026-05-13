@@ -183,7 +183,7 @@ describe('makeCreateHandler', () => {
     getAll: vi.fn(() => []),
     remove: vi.fn(),
     setExited: vi.fn(),
-    nextDefaultTitle: vi.fn(() => 'Terminal 1'),
+    nextDefaultTitle: vi.fn((_windowId: number) => 'Terminal 1'),
     subscribe: vi.fn(() => () => {}),
     _reset: vi.fn(),
   });
@@ -371,7 +371,7 @@ describe('makeListSessionsHandler', () => {
       remove: vi.fn(),
       removeByOwner: vi.fn(),
       setExited: vi.fn(),
-      nextDefaultTitle: vi.fn(),
+      nextDefaultTitle: vi.fn((_windowId: number) => 'Terminal 1'),
       subscribe: vi.fn(),
       _reset: vi.fn(),
     };
@@ -404,7 +404,7 @@ describe('makeRemoveHandler', () => {
       getAll: vi.fn(() => []),
       remove: vi.fn(),
       setExited: vi.fn(),
-      nextDefaultTitle: vi.fn(),
+      nextDefaultTitle: vi.fn((_windowId: number) => 'Terminal 1'),
       subscribe: vi.fn(),
       _reset: vi.fn(),
     };
@@ -438,7 +438,7 @@ describe('makeRemoveHandler', () => {
       getAll: vi.fn(() => []),
       remove: vi.fn(),
       setExited: vi.fn(),
-      nextDefaultTitle: vi.fn(),
+      nextDefaultTitle: vi.fn((_windowId: number) => 'Terminal 1'),
       subscribe: vi.fn(),
       _reset: vi.fn(),
     };

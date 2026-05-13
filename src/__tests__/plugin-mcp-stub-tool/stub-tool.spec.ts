@@ -87,7 +87,7 @@ describe('createStubTool', () => {
   it('run(input) 调 invoke(owner, spec.name, input) 一次,原样转发', async () => {
     const invoke = vi.fn(async () => ({ ok: true }));
     const stub = createStubTool(echoSpec, owner1, invoke);
-    const r = await stub.run({ text: 'hi' });
+    const r = await stub.run({ text: 'hi' }, { ownerWindowId: 1 });
     expect(r).toEqual({ ok: true });
     expect(invoke).toHaveBeenCalledOnce();
     expect(invoke).toHaveBeenCalledWith(owner1, 'echo', { text: 'hi' });
@@ -100,7 +100,7 @@ describe('createStubTool', () => {
       });
     });
     const stub = createStubTool(echoSpec, owner1, invoke);
-    const err = await stub.run({}).catch((e: unknown) => e);
+    const err = await stub.run({}, { ownerWindowId: 1 }).catch((e: unknown) => e);
     expect((err as Error).message).toBe('timeout');
     expect((err as { code?: string }).code).toBe(
       PLUGIN_MCP_ERROR_CODES.INVOKE_TIMEOUT,

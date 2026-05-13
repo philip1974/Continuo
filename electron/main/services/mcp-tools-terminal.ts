@@ -35,7 +35,7 @@ import {
   type KillInput,
   type KillOutput,
 } from '../../shared/mcp-terminal-schemas';
-import type { McpToolDef } from './mcp-host.service';
+import type { McpCallCtx, McpToolDef } from './mcp-host.service';
 
 // ── 输入侧的 store 形态(handler 期望的字段) ────────────────────
 
@@ -54,7 +54,7 @@ export interface TerminalSessionLike {
 }
 
 export interface ListSessionsToolDeps {
-  readonly getSessions: () => readonly TerminalSessionLike[];
+  readonly getSessions: (ctx: McpCallCtx) => readonly TerminalSessionLike[];
 }
 
 /**
@@ -90,15 +90,16 @@ export function makeListSessionsTool(
   return {
     name: MCP_TOOL_LIST_SESSIONS,
     description:
-      'List all current terminal sessions in Continuo (both user-opened and agent-created).',
+      'List all current terminal sessions in Continuo (both user-opened and agent-created). ' +
+      'Session scope: current window only — sessions from other windows return TERMINAL_SESSION_NOT_FOUND.',
     jsonSchema: {
       type: 'object',
       properties: {},
       additionalProperties: false,
     },
     inputSchema: listSessionsInputSchema,
-    run: () => ({
-      sessions: deps.getSessions().map(toItem),
+    run: (_input: ListSessionsInput, ctx: McpCallCtx) => ({
+      sessions: deps.getSessions(ctx).map(toItem),
     }),
   };
 }
@@ -128,6 +129,7 @@ export interface CreateSessionToolDeps {
    */
   readonly createSession: (
     input: CreateSessionPtyInput,
+    ctx: McpCallCtx,
   ) => Promise<{ id: string }>;
 }
 
@@ -137,7 +139,8 @@ export function makeCreateSessionTool(
   return {
     name: MCP_TOOL_CREATE_SESSION,
     description:
-      "Create a new visible terminal tab in Continuo and spawn the user's default shell. Optionally autorun a command after spawn (200ms delay; 600ms on Windows). First call triggers a user authorization prompt.",
+      "Create a new visible terminal tab in Continuo and spawn the user's default shell. Optionally autorun a command after spawn (200ms delay; 600ms on Windows). First call triggers a user authorization prompt. " +
+      'Session scope: current window only — sessions from other windows return TERMINAL_SESSION_NOT_FOUND.',
     jsonSchema: {
       type: 'object',
       properties: {
@@ -161,7 +164,7 @@ export function makeCreateSessionTool(
       additionalProperties: false,
     },
     inputSchema: createSessionInputSchema,
-    run: async (input: CreateSessionInput) => {
+    run: async (input: CreateSessionInput, ctx: McpCallCtx) => {
       const decision = await deps.ensureAuthorized();
       if (decision === 'denied') {
         throw Object.assign(
@@ -176,7 +179,7 @@ export function makeCreateSessionTool(
         ...(input.name !== undefined ? { name: input.name } : {}),
         ...(input.autorun !== undefined ? { autorun: input.autorun } : {}),
       };
-      const r = await deps.createSession(ptyInput);
+      const r = await deps.createSession(ptyInput, ctx);
       return { session_id: r.id };
     },
   };
@@ -187,6 +190,7 @@ export function makeCreateSessionTool(
 export interface SendInputToolDeps {
   readonly has: (sessionId: string) => boolean;
   readonly write: (sessionId: string, data: string) => boolean;
+  readonly getSessionOwner: (sessionId: string) => number | null;
 }
 
 /**
@@ -213,6 +217,17 @@ const ERR_TERMINAL_SESSION_NOT_FOUND = (id: string) =>
     code: 'TERMINAL_SESSION_NOT_FOUND',
   });
 
+function assertSessionInCurrentWindow(
+  sessionId: string,
+  ownerWindowId: number,
+  getSessionOwner: (sessionId: string) => number | null,
+): void {
+  const owner = getSessionOwner(sessionId);
+  if (owner !== ownerWindowId) {
+    throw ERR_TERMINAL_SESSION_NOT_FOUND(sessionId);
+  }
+}
+
 export function makeSendInputTool(
   deps: SendInputToolDeps,
 ): McpTool<SendInputInput, SendInputOutput> {
@@ -224,7 +239,8 @@ export function makeSendInputTool(
       'Use send_input only for complex byte sequences (mouse events, custom escape codes, binary data). ' +
       'Note: to submit input via this tool, append "\\r" (CR, 0x0d), NOT "\\n" (LF). ' +
       'Raw-mode TUIs (codex, vim, claude, less, ssh) only treat "\\r" as Enter. ' +
-      'Returns immediately after writing; use read_output to observe results.',
+      'Returns immediately after writing; use read_output to observe results. ' +
+      'Session scope: current window only — sessions from other windows return TERMINAL_SESSION_NOT_FOUND.',
     jsonSchema: {
       type: 'object',
       properties: {
@@ -244,10 +260,15 @@ export function makeSendInputTool(
       additionalProperties: false,
     },
     inputSchema: sendInputInputSchema,
-    run: async (input: SendInputInput) => {
+    run: async (input: SendInputInput, ctx: McpCallCtx) => {
       if (!deps.has(input.session_id)) {
         throw ERR_TERMINAL_SESSION_NOT_FOUND(input.session_id);
       }
+      assertSessionInCurrentWindow(
+        input.session_id,
+        ctx.ownerWindowId,
+        deps.getSessionOwner,
+      );
       // preparePtyData:LF→CR + 字面 escape unescape,容错 LLM 误传 \n
       const ok = deps.write(input.session_id, preparePtyData(input.data));
       if (!ok) throw ERR_TERMINAL_SESSION_NOT_FOUND(input.session_id);
@@ -267,7 +288,8 @@ export function makeSendTextTool(
     name: MCP_TOOL_SEND_TEXT,
     description:
       'Write plain text to a terminal session. Does NOT append Enter or any control character — pair with press_key("enter") to submit. ' +
-      'Prefer this over send_input for normal text input; it removes the LF/CR confusion in raw-mode TUIs (codex, vim, claude).',
+      'Prefer this over send_input for normal text input; it removes the LF/CR confusion in raw-mode TUIs (codex, vim, claude). ' +
+      'Session scope: current window only — sessions from other windows return TERMINAL_SESSION_NOT_FOUND.',
     jsonSchema: {
       type: 'object',
       properties: {
@@ -287,10 +309,15 @@ export function makeSendTextTool(
       additionalProperties: false,
     },
     inputSchema: sendTextInputSchema,
-    run: async (input: SendTextInput) => {
+    run: async (input: SendTextInput, ctx: McpCallCtx) => {
       if (!deps.has(input.session_id)) {
         throw ERR_TERMINAL_SESSION_NOT_FOUND(input.session_id);
       }
+      assertSessionInCurrentWindow(
+        input.session_id,
+        ctx.ownerWindowId,
+        deps.getSessionOwner,
+      );
       const ok = deps.write(input.session_id, input.text);
       if (!ok) throw ERR_TERMINAL_SESSION_NOT_FOUND(input.session_id);
       return {};
@@ -311,7 +338,8 @@ export function makePressKeyTool(
       'Press a single special key in the terminal session. The server maps the key name to the correct PTY byte sequence ' +
       '(enter=CR, tab, escape, backspace=DEL, ctrl_c, ctrl_d, ctrl_z, arrow keys). ' +
       'Pair with send_text for typing followed by submit. Prefer this over send_input for special keys — it removes ' +
-      'guesswork about LF vs CR and TUI key encodings.',
+      'guesswork about LF vs CR and TUI key encodings. ' +
+      'Session scope: current window only — sessions from other windows return TERMINAL_SESSION_NOT_FOUND.',
     jsonSchema: {
       type: 'object',
       properties: {
@@ -331,10 +359,15 @@ export function makePressKeyTool(
       additionalProperties: false,
     },
     inputSchema: pressKeyInputSchema,
-    run: async (input: PressKeyInput) => {
+    run: async (input: PressKeyInput, ctx: McpCallCtx) => {
       if (!deps.has(input.session_id)) {
         throw ERR_TERMINAL_SESSION_NOT_FOUND(input.session_id);
       }
+      assertSessionInCurrentWindow(
+        input.session_id,
+        ctx.ownerWindowId,
+        deps.getSessionOwner,
+      );
       const bytes = KEY_BYTES[input.key];
       const ok = deps.write(input.session_id, bytes);
       if (!ok) throw ERR_TERMINAL_SESSION_NOT_FOUND(input.session_id);
@@ -354,6 +387,7 @@ export interface ReadOutputToolDeps {
       stripAnsi?: boolean;
     },
   ) => { lines: string[]; nextSeq: number; truncated: boolean };
+  readonly getSessionOwner: (sessionId: string) => number | null;
 }
 
 export function makeReadOutputTool(
@@ -362,7 +396,8 @@ export function makeReadOutputTool(
   return {
     name: MCP_TOOL_READ_OUTPUT,
     description:
-      'Read accumulated output from a terminal session as line-split text. Default: ANSI stripped, last 200 lines. Use since_seq cursor (returned as next_seq) for incremental reads.',
+      'Read accumulated output from a terminal session as line-split text. Default: ANSI stripped, last 200 lines. Use since_seq cursor (returned as next_seq) for incremental reads. ' +
+      'Session scope: current window only — sessions from other windows return TERMINAL_SESSION_NOT_FOUND.',
     jsonSchema: {
       type: 'object',
       properties: {
@@ -393,8 +428,13 @@ export function makeReadOutputTool(
       additionalProperties: false,
     },
     inputSchema: readOutputInputSchema,
-    run: async (input: ReadOutputInput) => {
+    run: async (input: ReadOutputInput, ctx: McpCallCtx) => {
       try {
+        assertSessionInCurrentWindow(
+          input.session_id,
+          ctx.ownerWindowId,
+          deps.getSessionOwner,
+        );
         const opts: {
           sinceSeq?: number;
           maxLines?: number;
@@ -431,6 +471,7 @@ export interface KillToolDeps {
   readonly kill: (sessionId: string) => void;
   /** SIGKILL:直接 pty.kill('SIGKILL'). */
   readonly forceKill: (sessionId: string) => void;
+  readonly getSessionOwner: (sessionId: string) => number | null;
 }
 
 export function makeKillTool(
@@ -439,7 +480,8 @@ export function makeKillTool(
   return {
     name: MCP_TOOL_KILL,
     description:
-      'Send a signal to a terminal session. SIGINT writes Ctrl+C without exiting; SIGTERM (default) sends SIGINT then force-kills after 3s grace; SIGKILL kills immediately. Tab metadata and output buffer are preserved (use list_sessions to see exit_code).',
+      'Send a signal to a terminal session. SIGINT writes Ctrl+C without exiting; SIGTERM (default) sends SIGINT then force-kills after 3s grace; SIGKILL kills immediately. Tab metadata and output buffer are preserved (use list_sessions to see exit_code). ' +
+      'Session scope: current window only — sessions from other windows return TERMINAL_SESSION_NOT_FOUND.',
     jsonSchema: {
       type: 'object',
       properties: {
@@ -458,10 +500,15 @@ export function makeKillTool(
       additionalProperties: false,
     },
     inputSchema: killInputSchema,
-    run: async (input: KillInput) => {
+    run: async (input: KillInput, ctx: McpCallCtx) => {
       if (!deps.has(input.session_id)) {
         throw ERR_TERMINAL_SESSION_NOT_FOUND(input.session_id);
       }
+      assertSessionInCurrentWindow(
+        input.session_id,
+        ctx.ownerWindowId,
+        deps.getSessionOwner,
+      );
       const sig = input.signal ?? 'SIGTERM';
       if (sig === 'SIGINT') deps.interrupt(input.session_id);
       else if (sig === 'SIGKILL') deps.forceKill(input.session_id);

@@ -288,8 +288,9 @@ describe('路由正确性', () => {
     bridge.handleRegister(22, regPayload('b', 'p.beta'));
     const stubA = host.tools.get('a')!;
     const stubB = host.tools.get('b')!;
-    await stubA.run({ x: 1 });
-    await stubB.run({ x: 2 });
+    const ctx = { ownerWindowId: 1 };
+    await stubA.run({ x: 1 }, ctx);
+    await stubB.run({ x: 2 }, ctx);
     expect(invokeRemote.invokeCalls).toEqual([
       { owner: { pluginId: 'p.alpha', wcId: 11 }, name: 'a', input: { x: 1 } },
       { owner: { pluginId: 'p.beta', wcId: 22 }, name: 'b', input: { x: 2 } },

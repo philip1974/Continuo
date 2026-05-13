@@ -39,6 +39,14 @@ function defaultSocketPath() {
 }
 
 const socketPath = process.env.CONTINUO_MCP_SOCKET ?? defaultSocketPath();
+const CONTINUO_WINDOW_ID = process.env.CONTINUO_WINDOW_ID;
+if (!CONTINUO_WINDOW_ID || !/^\d+$/.test(CONTINUO_WINDOW_ID)) {
+  process.stderr.write(
+    'continuo-mcp-stdio: missing or invalid CONTINUO_WINDOW_ID env (must be integer)\n',
+  );
+  process.exit(1);
+}
+const windowId = Number(CONTINUO_WINDOW_ID);
 
 // existsSync 在 Windows named pipe 上不工作(不在文件系统),跳过预检;
 // macOS/Linux 仍预检以给清晰错误,避免连接异常时报模糊网络错误。
@@ -51,7 +59,15 @@ if (process.platform !== 'win32' && !existsSync(socketPath)) {
 }
 
 const sock = createConnection(socketPath, () => {
-  // 连上后开始转发
+  const hello =
+    JSON.stringify({
+      jsonrpc: '2.0',
+      method: '_continuo/hello',
+      params: { windowId },
+    }) + '\n';
+  sock.write(hello);
+  // stdin → socket(byte 流透传,framing 由两端按 NDJSON 自管)
+  process.stdin.pipe(sock);
 });
 
 sock.on('error', (err) => {
@@ -66,8 +82,6 @@ sock.on('close', () => {
   process.exit(0);
 });
 
-// stdin → socket(byte 流透传,framing 由两端按 NDJSON 自管)
-process.stdin.pipe(sock);
 // socket → stdout(同)
 sock.pipe(process.stdout);
 

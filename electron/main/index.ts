@@ -13,7 +13,12 @@ import { pickWindowsToRestore } from './services/window-restore.service';
 import { nextWindowSeqFromDisk } from './services/window.service';
 import { pickStartupMode } from './services/startup-mode.service';
 import { PLUGINS_CHANNELS } from '../shared/plugins-channels';
-import { createMcpHost, type McpHost } from './services/mcp-host.service';
+import {
+  createMcpHost,
+  setMcpRevokers,
+  type McpCallCtx,
+  type McpHost,
+} from './services/mcp-host.service';
 import {
   createStdioSocketServer,
   type StdioSocketServer,
@@ -320,14 +325,16 @@ let mcpStdio: StdioSocketServer | null = null;
 // MCP tool 共享的 PTY create 入口:复用 IPC 端的 makeCreateHandler 工厂,
 // 包一层 lazy mainWindow 查询(tool 调用时窗口必在,但 host 启动时还没创建)。
 const ptyCreateHandler = makeCreateHandler();
+const getSessionOwner = (id: string): number | null =>
+  terminalSessions.get(id)?.ownerWindowId ?? null;
 
 async function createSessionForAgent(
   input: CreateSessionPtyInput,
+  ctx: McpCallCtx,
 ): Promise<{ id: string }> {
-  const wins = BrowserWindow.getAllWindows();
-  const win = wins.find((w) => !w.isDestroyed()) ?? null;
-  if (!win) {
-    throw Object.assign(new Error('no main window for terminal create'), {
+  const win = BrowserWindow.fromId(ctx.ownerWindowId);
+  if (!win || win.isDestroyed()) {
+    throw Object.assign(new Error('no window for terminal create'), {
       code: 'TERMINAL_NO_WINDOW',
     });
   }
@@ -360,33 +367,50 @@ async function startMcpHost(): Promise<void> {
         makeSendInputTool({
           has: (id) => termService.has(id),
           write: (id, data) => termService.write(id, data),
+          getSessionOwner,
         }),
         makeSendTextTool({
           has: (id) => termService.has(id),
           write: (id, data) => termService.write(id, data),
+          getSessionOwner,
         }),
         makePressKeyTool({
           has: (id) => termService.has(id),
           write: (id, data) => termService.write(id, data),
+          getSessionOwner,
         }),
         makeReadOutputTool({
           read: (id, opts) => terminalBuffer.read(id, opts),
+          getSessionOwner,
         }),
         makeKillTool({
           has: (id) => termService.has(id),
           interrupt: (id) => termService.interrupt(id),
           kill: (id) => termService.kill(id),
           forceKill: (id) => termService.forceKill(id),
+          getSessionOwner,
         }),
       ],
     });
-    setMcpEnvProvider(() => ({
-      CONTINUO_MCP_URL: mcpHost!.url,
-      CONTINUO_MCP_TOKEN: mcpHost!.token,
-      CONTINUO_HOST: 'desktop',
-    }));
+    setMcpEnvProvider((windowId: number) => {
+      if (!mcpHost) return { env: {} as Record<string, string>, mcpToken: '' };
+      const token = mcpHost.issueWindowToken(windowId);
+      return {
+        env: {
+          CONTINUO_MCP_URL: mcpHost.url,
+          CONTINUO_MCP_TOKEN: token,
+          CONTINUO_WINDOW_ID: String(windowId), // internal diagnostic env, exposed to user shell intentionally for debug
+          CONTINUO_HOST: 'desktop',
+        },
+        mcpToken: token,
+      };
+    });
     // 给 agent-auth service 注入 host 引用,撤销时 rotate token。
     setMcpHostRef(mcpHost);
+    setMcpRevokers({
+      byWindow: (windowId) => mcpHost!.revokeWindowTokens(windowId),
+      byToken: (token) => mcpHost!.revokeToken(token),
+    });
      
     console.log(`[mcp-host] listening on ${mcpHost.url}`);
   } catch (err) {

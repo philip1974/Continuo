@@ -163,6 +163,8 @@ const exitedSess: FakeSession = {
 };
 
 describe('makeListSessionsTool', () => {
+  const ctx = { ownerWindowId: 1 };
+
   it('name 与契约常量一致', () => {
     const tool = makeListSessionsTool({ getSessions: () => [] });
     expect(tool.name).toBe(MCP_TOOL_LIST_SESSIONS);
@@ -170,12 +172,12 @@ describe('makeListSessionsTool', () => {
 
   it('空 sessions → { sessions: [] }', () => {
     const tool = makeListSessionsTool({ getSessions: () => [] });
-    expect(tool.run({})).toEqual({ sessions: [] });
+    expect(tool.run({}, ctx)).toEqual({ sessions: [] });
   });
 
   it('user session 字段映射(camelCase → snake_case)', () => {
     const tool = makeListSessionsTool({ getSessions: () => [userSess] });
-    expect(tool.run({})).toEqual({
+    expect(tool.run({}, ctx)).toEqual({
       sessions: [
         {
           session_id: 'term-1',
@@ -191,7 +193,7 @@ describe('makeListSessionsTool', () => {
 
   it('agent session 带 agent_label', () => {
     const tool = makeListSessionsTool({ getSessions: () => [agentSess] });
-    const out = tool.run({}) as { sessions: Array<Record<string, unknown>> };
+    const out = tool.run({}, ctx) as { sessions: Array<Record<string, unknown>> };
     expect(out.sessions[0]).toMatchObject({
       session_id: 'term-2',
       origin: 'agent',
@@ -201,7 +203,7 @@ describe('makeListSessionsTool', () => {
 
   it('user session 不带 agent_label(字段不出现,不是 undefined)', () => {
     const tool = makeListSessionsTool({ getSessions: () => [userSess] });
-    const out = tool.run({}) as { sessions: Array<Record<string, unknown>> };
+    const out = tool.run({}, ctx) as { sessions: Array<Record<string, unknown>> };
     expect('agent_label' in out.sessions[0]!).toBe(false);
   });
 
@@ -209,7 +211,7 @@ describe('makeListSessionsTool', () => {
     const tool = makeListSessionsTool({
       getSessions: () => [userSess, exitedSess],
     });
-    const out = tool.run({}) as { sessions: Array<{ exit_code: number | null }> };
+    const out = tool.run({}, ctx) as { sessions: Array<{ exit_code: number | null }> };
     expect(out.sessions[0]!.exit_code).toBeNull();
     expect(out.sessions[1]!.exit_code).toBe(0);
   });
@@ -218,7 +220,7 @@ describe('makeListSessionsTool', () => {
     const tool = makeListSessionsTool({
       getSessions: () => [agentSess, userSess, exitedSess],
     });
-    const out = tool.run({}) as { sessions: Array<{ session_id: string }> };
+    const out = tool.run({}, ctx) as { sessions: Array<{ session_id: string }> };
     expect(out.sessions.map((s) => s.session_id)).toEqual([
       'term-2',
       'term-1',
@@ -229,8 +231,8 @@ describe('makeListSessionsTool', () => {
   it('每次 run 调 getSessions 一次(读取最新快照)', () => {
     const getSessions = vi.fn(() => [userSess]);
     const tool = makeListSessionsTool({ getSessions });
-    tool.run({});
-    tool.run({});
+    tool.run({}, ctx);
+    tool.run({}, ctx);
     expect(getSessions).toHaveBeenCalledTimes(2);
   });
 
@@ -238,7 +240,7 @@ describe('makeListSessionsTool', () => {
     const tool = makeListSessionsTool({
       getSessions: () => [userSess, agentSess, exitedSess],
     });
-    const out = tool.run({});
+    const out = tool.run({}, ctx);
     expect(listSessionsOutputSchema.safeParse(out).success).toBe(true);
   });
 });

@@ -114,6 +114,8 @@ type ReadFn = (
   id: string,
   opts: { sinceSeq?: number; maxLines?: number; stripAnsi?: boolean },
 ) => { lines: string[]; nextSeq: number; truncated: boolean };
+const ctx = { ownerWindowId: 1 };
+const getSessionOwner = vi.fn(() => 1);
 
 const makeOkRead = (
   result: { lines: string[]; nextSeq: number; truncated: boolean } = {
@@ -125,12 +127,12 @@ const makeOkRead = (
 
 describe('makeReadOutputTool · 元数据', () => {
   it('name 与契约常量一致', () => {
-    const tool = makeReadOutputTool({ read: makeOkRead() });
+    const tool = makeReadOutputTool({ read: makeOkRead(), getSessionOwner });
     expect(tool.name).toBe(MCP_TOOL_READ_OUTPUT);
   });
 
   it('inputSchema 是 readOutputInputSchema', () => {
-    const tool = makeReadOutputTool({ read: makeOkRead() });
+    const tool = makeReadOutputTool({ read: makeOkRead(), getSessionOwner });
     expect(tool.inputSchema).toBe(readOutputInputSchema);
   });
 });
@@ -138,13 +140,13 @@ describe('makeReadOutputTool · 元数据', () => {
 describe('makeReadOutputTool · run', () => {
   it('字段映射:snake_case → camelCase 给 deps', async () => {
     const read = makeOkRead();
-    const tool = makeReadOutputTool({ read });
+    const tool = makeReadOutputTool({ read, getSessionOwner });
     await tool.run({
       session_id: 'term-1',
       since_seq: 5,
       max_lines: 100,
       strip_ansi: false,
-    });
+    }, ctx);
     expect(read).toHaveBeenCalledWith('term-1', {
       sinceSeq: 5,
       maxLines: 100,
@@ -154,8 +156,8 @@ describe('makeReadOutputTool · run', () => {
 
   it('字段映射:nextSeq → next_seq 输出', async () => {
     const read = makeOkRead({ lines: ['a'], nextSeq: 7, truncated: true });
-    const tool = makeReadOutputTool({ read });
-    const r = await tool.run({ session_id: 't' });
+    const tool = makeReadOutputTool({ read, getSessionOwner });
+    const r = await tool.run({ session_id: 't' }, ctx);
     expect(r).toEqual({
       lines: ['a'],
       next_seq: 7,
@@ -165,15 +167,15 @@ describe('makeReadOutputTool · run', () => {
 
   it('缺省 since_seq / max_lines / strip_ansi → opts 不传(让 buffer 用自己默认)', async () => {
     const read = makeOkRead();
-    const tool = makeReadOutputTool({ read });
-    await tool.run({ session_id: 't' });
+    const tool = makeReadOutputTool({ read, getSessionOwner });
+    await tool.run({ session_id: 't' }, ctx);
     expect(read).toHaveBeenCalledWith('t', {});
   });
 
   it('部分给值 → 仅给的字段透传', async () => {
     const read = makeOkRead();
-    const tool = makeReadOutputTool({ read });
-    await tool.run({ session_id: 't', max_lines: 50 });
+    const tool = makeReadOutputTool({ read, getSessionOwner });
+    await tool.run({ session_id: 't', max_lines: 50 }, ctx);
     expect(read).toHaveBeenCalledWith('t', { maxLines: 50 });
   });
 
@@ -183,8 +185,8 @@ describe('makeReadOutputTool · run', () => {
         code: 'BUFFER_SESSION_NOT_FOUND',
       });
     });
-    const tool = makeReadOutputTool({ read });
-    await expect(tool.run({ session_id: 't' })).rejects.toMatchObject({
+    const tool = makeReadOutputTool({ read, getSessionOwner });
+    await expect(tool.run({ session_id: 't' }, ctx)).rejects.toMatchObject({
       code: 'TERMINAL_SESSION_NOT_FOUND',
     });
   });
@@ -193,16 +195,16 @@ describe('makeReadOutputTool · run', () => {
     const read = vi.fn<ReadFn>(() => {
       throw Object.assign(new Error('boom'), { code: 'INTERNAL' });
     });
-    const tool = makeReadOutputTool({ read });
-    await expect(tool.run({ session_id: 't' })).rejects.toMatchObject({
+    const tool = makeReadOutputTool({ read, getSessionOwner });
+    await expect(tool.run({ session_id: 't' }, ctx)).rejects.toMatchObject({
       code: 'INTERNAL',
     });
   });
 
   it('输出符合 readOutputOutputSchema', async () => {
     const read = makeOkRead({ lines: ['x', 'y'], nextSeq: 2, truncated: false });
-    const tool = makeReadOutputTool({ read });
-    const out = await tool.run({ session_id: 't' });
+    const tool = makeReadOutputTool({ read, getSessionOwner });
+    const out = await tool.run({ session_id: 't' }, ctx);
     expect(readOutputOutputSchema.safeParse(out).success).toBe(true);
   });
 });
