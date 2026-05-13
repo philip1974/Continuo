@@ -17,7 +17,11 @@ import { useSettingValue } from '@/plugins/settings/values-store';
 import { useLayoutUiStore } from '@/stores/layout-ui.store';
 import { useTheme } from '@/theme';
 import { disposeQueue, safeWrite } from './safeWrite';
-import { mapTerminalKey } from './key-mapping';
+import {
+  applyMappedKeyOnKeydown,
+  consumeMappedKeyOnData,
+  createMappedKeyState,
+} from './key-mapping';
 
 type CursorStyle = 'block' | 'underline' | 'bar';
 
@@ -156,15 +160,11 @@ export function useTerminal(termId: string) {
     } catch (err) {
       console.warn('[terminal] webgl renderer init 失败,回退 dom:', err);
     }
-    // Shift+Enter 等额外按键映射:由 mapTerminalKey 决定是否改写。返回非 null
-    // 时直接写 PTY 并阻止 xterm 默认处理(避免 \r 与 \x1b\r 同时发);返回
-    // null 时放行,xterm 走默认逻辑(普通 Enter 仍发 \r)。见 issue #18。
+    const __mappedKeyState__ = createMappedKeyState();
+    // Shift+Enter 等额外按键映射:keydown 只暂存映射结果,onData 转发器再把
+    // xterm 默认发出的 \r 替换为映射字节,避免 \x1b\r\r 双写。见 issue #18。
     term.attachCustomKeyEventHandler((event) => {
-      const data = mapTerminalKey(event);
-      if (data !== null) {
-        void coApi.terminal.write(termId, data);
-        return false;
-      }
+      applyMappedKeyOnKeydown(__mappedKeyState__, event);
       return true;
     });
     termRef.current = term;
@@ -201,7 +201,8 @@ export function useTerminal(termId: string) {
 
     // 用户输入 → IPC write
     const onDataDisposable = term.onData((data: string) => {
-      void coApi.terminal.write(termId, data);
+      const outgoing = consumeMappedKeyOnData(__mappedKeyState__, data);
+      void coApi.terminal.write(termId, outgoing);
     });
 
     // 容器尺寸变化 → fit + resize

@@ -25,3 +25,4 @@
 ### 其余按键
 
 - 普通 Enter、单独 Shift、其他键全部返回 `null`,交回 xterm 默认处理(`\r` 等)。
+集成 spec 断言 handler → PTY 字节映射;Claude/Codex 实际换行行为以 dev + popout + packaged 手测为准。
