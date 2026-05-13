@@ -458,6 +458,31 @@
 
 - [`tab-icons.spec.tsx`](./tab-icons/tab-icons.spec.tsx)
 
+## [Tab Split Panes](./tab-split-panes/README.md)
+
+- [`close-all-panels-empty.spec.ts`](./tab-split-panes/close-all-panels-empty.spec.ts)
+- [`close-last-panel-collapses.spec.ts`](./tab-split-panes/close-last-panel-collapses.spec.ts)
+- [`cwd-inherit.spec.ts`](./tab-split-panes/cwd-inherit.spec.ts)
+- [`flush-on-before-quit-per-window.spec.ts`](./tab-split-panes/flush-on-before-quit-per-window.spec.ts)
+- [`hotkey-no-conflict.spec.ts`](./tab-split-panes/hotkey-no-conflict.spec.ts)
+- [`layout-migration-strip-volatile-sessionid.spec.ts`](./tab-split-panes/layout-migration-strip-volatile-sessionid.spec.ts)
+- [`nested-split.spec.ts`](./tab-split-panes/nested-split.spec.ts)
+- [`osc-cwd-tracking.spec.ts`](./tab-split-panes/osc-cwd-tracking.spec.ts)
+- [`osc7-host-validation.spec.ts`](./tab-split-panes/osc7-host-validation.spec.ts)
+- [`osc7-tmux-passthrough.spec.ts`](./tab-split-panes/osc7-tmux-passthrough.spec.ts)
+- [`panel-close-via-wrap-close.spec.ts`](./tab-split-panes/panel-close-via-wrap-close.spec.ts)
+- [`persistence.spec.ts`](./tab-split-panes/persistence.spec.ts)
+- [`popout-disabled.spec.ts`](./tab-split-panes/popout-disabled.spec.ts)
+- [`props-pass-through.spec.ts`](./tab-split-panes/props-pass-through.spec.ts)
+- [`scoped-hydrate-cancelled-cleanup.spec.ts`](./tab-split-panes/scoped-hydrate-cancelled-cleanup.spec.ts)
+- [`scoped-hydrate.spec.ts`](./tab-split-panes/scoped-hydrate.spec.ts)
+- [`scoped-session-hidden-from-legacy.spec.ts`](./tab-split-panes/scoped-session-hidden-from-legacy.spec.ts)
+- [`scoped-session-render.spec.ts`](./tab-split-panes/scoped-session-render.spec.ts)
+- [`shell-integration-snippet-selection.spec.ts`](./tab-split-panes/shell-integration-snippet-selection.spec.ts)
+- [`split-down.spec.ts`](./tab-split-panes/split-down.spec.ts)
+- [`split-right.spec.ts`](./tab-split-panes/split-right.spec.ts)
+- [`terminal-create-scoped-schema.spec.ts`](./tab-split-panes/terminal-create-scoped-schema.spec.ts)
+
 ## [terminal-ipc (M-Terminal Step T2)](./terminal-ipc/README.md) `[integration]`
 
 - [`terminal-ipc.spec.ts`](./terminal-ipc/terminal-ipc.spec.ts)

@@ -9,6 +9,7 @@ import ExplorerTabPlugin from './ExplorerTabPlugin';
 import GeneralTabPlugin from './GeneralTabPlugin';
 import TerminalTabPlugin from './TerminalTabPlugin';
 import TerminalPlugin from './TerminalPlugin';
+import TerminalPanelPlugin from './TerminalPanelPlugin';
 import OutputPlugin from './OutputPlugin';
 import PluginsTabPlugin from './PluginsTabPlugin';
 import SettingsPanelPlugin from './SettingsPanelPlugin';
@@ -32,6 +33,14 @@ const CORES: readonly CoreEntry[] = [
   {
     Cls: TerminalPlugin as never,
     manifest: { id: 'core.terminal', name: 'Terminal', version: '1.0.0' },
+  },
+  {
+    Cls: TerminalPanelPlugin as never,
+    manifest: {
+      id: 'core.terminal-panel',
+      name: 'TerminalPanel',
+      version: '1.0.0',
+    },
   },
   {
     Cls: OutputPlugin as never,

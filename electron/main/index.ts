@@ -1,10 +1,12 @@
-import { app, BrowserWindow, dialog, Menu, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
 import type {
   HandlerDetails,
+  IpcMainEvent,
   MenuItemConstructorOptions,
   WindowOpenHandlerResponse,
 } from 'electron';
 import nodeFs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { registerIpc } from './ipc';
@@ -67,6 +69,17 @@ const COMMON_WEB_PREFERENCES = {
   sandbox: true,
   nodeIntegration: false,
 } as const;
+
+let flushDone = false;
+
+ipcMain.on('window:id', (event: IpcMainEvent) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  event.returnValue = win?.id ?? 0;
+});
+
+ipcMain.on('system:hostname', (event: IpcMainEvent) => {
+  event.returnValue = os.hostname();
+});
 
 // dockview popout 走 window.open(url),url 默认是当前 renderer URL。
 // 同源 → allow + 注入我们的 preload + 安全 webPreferences。
@@ -338,7 +351,7 @@ async function createSessionForAgent(
       code: 'TERMINAL_NO_WINDOW',
     });
   }
-  const r = ptyCreateHandler(input, win);
+  const r = await ptyCreateHandler(input, win);
   // P3 autorun:spawn 后 delay 200ms(Win 600)等 shell prompt 出现,然后键入命令。
   // 不严格保证 prompt 已就绪 — 平台差异大,简单 timer 是最务实的近似。
   if (input.autorun) {
@@ -604,8 +617,33 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-app.on('before-quit', () => {
-  // best-effort 关 MCP host + stdio socket(连接 / 文件一并清)
+app.on('before-quit', async (event) => {
+  if (flushDone) return;
+  event.preventDefault();
+  flushDone = true;
+  const wins = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed());
+  const ackPending = new Set(wins.map((w) => w.id));
+  await Promise.race([
+    new Promise<void>((resolve) => {
+      if (ackPending.size === 0) {
+        resolve();
+        return;
+      }
+      const onAck = (_event: IpcMainEvent, winId: number) => {
+        ackPending.delete(winId);
+        if (ackPending.size === 0) {
+          ipcMain.off('layout:flush-ack', onAck);
+          resolve();
+        }
+      };
+      ipcMain.on('layout:flush-ack', onAck);
+      for (const w of wins) {
+        w.webContents.send('layout:flush-request');
+      }
+    }),
+    new Promise<void>((resolve) => setTimeout(resolve, 1500)),
+  ]);
   void mcpHost?.close().catch(() => {});
   void mcpStdio?.close().catch(() => {});
+  app.quit();
 });

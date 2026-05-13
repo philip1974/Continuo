@@ -8,11 +8,18 @@ import {
   type ReactNode,
 } from 'react';
 
-export function lazyPanel(
-  Lazy: ComponentType,
+export function lazyPanel<P = unknown>(
+  Lazy: ComponentType<P>,
   fallback: ReactNode = null,
-): () => ReactNode {
-  return function LazyPanel() {
-    return createElement(Suspense, { fallback }, createElement(Lazy));
+): (props?: unknown) => ReactNode {
+  return function LazyPanel(props?: unknown) {
+    return createElement(
+      Suspense,
+      { fallback },
+      createElement(
+        Lazy as ComponentType<Record<string, never>>,
+        (props ?? {}) as Record<string, never>,
+      ),
+    );
   };
 }

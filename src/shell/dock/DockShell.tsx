@@ -26,6 +26,44 @@ import '@/styles/dockview.css';
 // 触发 dockview 重订阅 createComponent。同 panelComponents 对照(useMemo)。
 const tabComponents = { default: SharedTab };
 
+interface FlushBridge {
+  readonly layout?: {
+    readonly onFlushRequest?: (cb: () => Promise<void>) => () => void;
+    readonly sendFlushAck?: (windowId: number) => void;
+  };
+  readonly system?: {
+    readonly windowId?: number;
+  };
+}
+
+function getFlushBridge(): FlushBridge | undefined {
+  return (window as Window & { electron?: FlushBridge }).electron;
+}
+
+export function sanitizePersistedDockLayout(json: unknown): unknown {
+  if (!json || typeof json !== 'object') return json;
+  const j = json as {
+    panels?: Record<string, { contentComponent?: string; params?: unknown }>;
+  };
+  if (!j.panels || typeof j.panels !== 'object') return j;
+  for (const panelId of Object.keys(j.panels)) {
+    const panel = j.panels[panelId];
+    if (
+      panel?.contentComponent === 'terminal' &&
+      panel.params &&
+      typeof panel.params === 'object' &&
+      'sessionId' in panel.params
+    ) {
+      const { sessionId: _sessionId, ...rest } = panel.params as Record<
+        string,
+        unknown
+      >;
+      panel.params = rest;
+    }
+  }
+  return j;
+}
+
 /** 把 coApp.panels 注册的 PanelSpec 桥接成 Dockview 的 components map.
  *  每个 panel 自动包 PanelMount(进出场动画). */
 function usePanelComponents(): Record<string, React.FC<IDockviewPanelProps>> {
@@ -71,7 +109,9 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       let restored = false;
       if (persisted && typeof persisted === 'object') {
         try {
-          event.api.fromJSON(persisted as SerializedDockview);
+          event.api.fromJSON(
+            sanitizePersistedDockLayout(persisted) as SerializedDockview,
+          );
           restored = true;
         } catch (err) {
           console.warn('[dock] fromJSON 失败,落回默认布局', err);
@@ -125,6 +165,24 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
 
   // unmount 时 reset 单例,防 stale 引用
   useEffect(() => () => setDockApi(null), []);
+
+  useEffect(() => {
+    if (!apiReady) return;
+    const api = apiRef.current;
+    if (!api) return;
+    const bridge = getFlushBridge();
+    const off = bridge?.layout?.onFlushRequest?.(async () => {
+      try {
+        await coApi.layout.write(api.toJSON());
+      } finally {
+        const latest = getFlushBridge();
+        latest?.layout?.sendFlushAck?.(latest.system?.windowId ?? 0);
+      }
+    });
+    return () => {
+      off?.();
+    };
+  }, [apiReady]);
 
   // Editor 自动激活:Explorer 单击文件 / hydrate 恢复 session → editor.store
   // activeTabId 变 → 自动 setActive 'editor' panel(VSCode 行为)。

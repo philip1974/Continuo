@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { IDockviewHeaderActionsProps } from 'dockview-react';
-import { popoutUrlFor } from '@/lib/popout-mode';
+import { isPopoutWindow, popoutUrlFor } from '@/lib/popout-mode';
+import { splitTerminal } from '@/lib/split-terminal';
 import { IconButton, MenuItem } from '@/design';
 import { coApp } from '@/plugins/co-app';
 
@@ -79,31 +80,94 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
       popoutUrl: popoutUrlFor(window.location.href),
     });
   }, [activePanel, containerApi]);
+  const splitRight = useCallback(() => {
+    void splitTerminal('right');
+  }, []);
+  const splitDown = useCallback(() => {
+    void splitTerminal('below');
+  }, []);
+  const isPopout = isPopoutWindow();
 
   return (
     <div
       ref={ref}
       className="group/header relative flex h-full items-center gap-1 pr-1"
     >
-      <IconButton
-        size="sm"
-        aria-label="Pop out active panel"
-        title="弹出到独立窗口"
-        disabled={!activePanel}
-        onClick={popout}
-        className="opacity-40 transition-opacity group-hover/header:opacity-100 focus-visible:opacity-100"
-      >
-        <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
-          <path
-            d="M9 2h5v5M14 2L8 8M12 9v4a1 1 0 01-1 1H3a1 1 0 01-1-1V5a1 1 0 011-1h4"
-            stroke="currentColor"
-            strokeWidth="1.4"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            fill="none"
-          />
-        </svg>
-      </IconButton>
+      {!isPopout && (
+        <>
+          <IconButton
+            size="sm"
+            aria-label="Split terminal right"
+            title="向右拆分终端"
+            onClick={splitRight}
+            className="opacity-40 transition-opacity group-hover/header:opacity-100 focus-visible:opacity-100"
+          >
+            <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+              <rect
+                x="2.5"
+                y="3"
+                width="11"
+                height="10"
+                rx="1"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.2"
+              />
+              <path
+                d="M8 3v10"
+                stroke="currentColor"
+                strokeWidth="1.2"
+                strokeLinecap="round"
+              />
+            </svg>
+          </IconButton>
+          <IconButton
+            size="sm"
+            aria-label="Split terminal down"
+            title="向下拆分终端"
+            onClick={splitDown}
+            className="opacity-40 transition-opacity group-hover/header:opacity-100 focus-visible:opacity-100"
+          >
+            <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+              <rect
+                x="2.5"
+                y="3"
+                width="11"
+                height="10"
+                rx="1"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.2"
+              />
+              <path
+                d="M2.5 8h11"
+                stroke="currentColor"
+                strokeWidth="1.2"
+                strokeLinecap="round"
+              />
+            </svg>
+          </IconButton>
+          <IconButton
+            size="sm"
+            aria-label="Pop out active panel"
+            title="弹出到独立窗口"
+            disabled={!activePanel}
+            onClick={popout}
+            className="opacity-40 transition-opacity group-hover/header:opacity-100 focus-visible:opacity-100"
+          >
+            <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+              <path
+                d="M9 2h5v5M14 2L8 8M12 9v4a1 1 0 01-1 1H3a1 1 0 01-1-1V5a1 1 0 011-1h4"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                fill="none"
+              />
+            </svg>
+          </IconButton>
+        </>
+      )}
       <IconButton
         ref={triggerRef}
         size="sm"

@@ -1,8 +1,19 @@
 import type { IDockviewPanel } from 'dockview-react';
 import { useClosingStore } from '@/stores/closing.store';
 import { EXIT_DURATION_MS } from '@/shell/motion/tokens';
+import { coApi } from '@/lib/co-api';
 
 const patched = new WeakSet<IDockviewPanel>();
+
+function getScopedTerminalSessionId(panel: IDockviewPanel): string | null {
+  if (!panel.api.id.startsWith('terminal-')) return null;
+  const params = panel.params ?? panel.api.getParameters();
+  if (!params || typeof params !== 'object') return null;
+  const sessionId = (params as { sessionId?: unknown }).sessionId;
+  return typeof sessionId === 'string' && sessionId.length > 0
+    ? sessionId
+    : null;
+}
 
 // 给每个 panel 的 api.close 包一层:先把 id 放进 closing-store(让 PanelMount
 // 走 EXIT 动画),EXIT_DURATION_MS 后再真正调 close。统一拦在 api 层而不是
@@ -22,6 +33,10 @@ export function wrapPanelClose(panel: IDockviewPanel): void {
       const store = useClosingStore.getState();
       if (store.ids.has(id)) return;
       store.mark(id);
+      const scopedSessionId = getScopedTerminalSessionId(panel);
+      if (scopedSessionId) {
+        void coApi.terminal.remove(scopedSessionId);
+      }
       setTimeout(() => {
         try {
           original();

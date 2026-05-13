@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTerminalStore, type TerminalSession } from '@/stores/terminal.store';
 import { IconButton, TabNav, TabNavItem } from '@/design';
 
@@ -14,7 +14,11 @@ export function TerminalTabs({
   onCloseSession,
   showTabList = true,
 }: TerminalTabsProps) {
-  const sessions = useTerminalStore((s) => s.sessions);
+  const allSessions = useTerminalStore((s) => s.sessions);
+  const sessions = useMemo(
+    () => allSessions.filter((session) => !session.scoped),
+    [allSessions],
+  );
   const activeId = useTerminalStore((s) => s.activeId);
   const setActive = useTerminalStore((s) => s.setActive);
   const customTitles = useTerminalStore((s) => s.customTitles);

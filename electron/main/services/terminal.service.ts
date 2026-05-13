@@ -7,6 +7,7 @@ import { BrowserWindow } from 'electron';
 import * as terminalSessions from './terminal-sessions.service';
 import * as terminalBuffer from './terminal-buffer.service';
 import { mcpRevokers } from './mcp-host.service';
+import { prepareEnv } from './shell-integration';
 
 // ── 常量(节流参数,沿用 Mind 决策 #5)──────────────────────────
 const OVERFLOW_THRESHOLD_BYTES = 2 * 1024 * 1024; // 2 MB/s 触发 overflow
@@ -26,6 +27,7 @@ interface Instance {
   throttleInterval: NodeJS.Timeout | null;
   overflowNotified: boolean;
   readonly mcpToken: string;
+  readonly shellCleanup: () => Promise<void>;
 }
 
 const instances = new Map<string, Instance>();
@@ -68,7 +70,7 @@ export function isInPlaceUpdate(data: string): boolean {
 
 // ── PTY 生命周期 ──────────────────────────────────────────────
 
-export function createTerminal(
+export async function createTerminal(
   id: string,
   win: BrowserWindow,
   shell: string,
@@ -76,25 +78,30 @@ export function createTerminal(
   cwd: string,
   env?: Record<string, string>,
   meta?: { mcpToken?: string },
-): void {
+): Promise<void> {
+  const baseEnv = {
+    ...process.env,
+    TERM: 'xterm-256color',
+    COLORTERM: 'truecolor',
+    // 显式声明终端身份,让用户 .zshrc / .bashrc 能区分 Continuo 与 iTerm。
+    // 不显式设的话以下变量会从启动 Continuo 的父进程继承(常见 iTerm),
+    // 用户的 if [[ TERM_PROGRAM == iTerm.app || LC_TERMINAL == iTerm2 ]]
+    // 会误判,加载 powerline 主题而 Continuo xterm.js 调色板对不上 → light
+    // 模式下 segment 黑底黑字。两个都得覆盖,||  任一命中就误判。
+    TERM_PROGRAM: 'Continuo',
+    LC_TERMINAL: 'Continuo',
+    ...env,
+  };
+  const { env: shellEnv, cleanup: shellCleanup } = await prepareEnv(
+    shell,
+    baseEnv,
+  );
   const p = pty.spawn(shell, args, {
     name: 'xterm-256color',
     cols: 120,
     rows: 40,
     cwd,
-    env: {
-      ...process.env,
-      TERM: 'xterm-256color',
-      COLORTERM: 'truecolor',
-      // 显式声明终端身份,让用户 .zshrc / .bashrc 能区分 Continuo 与 iTerm。
-      // 不显式设的话以下变量会从启动 Continuo 的父进程继承(常见 iTerm),
-      // 用户的 if [[ TERM_PROGRAM == iTerm.app || LC_TERMINAL == iTerm2 ]]
-      // 会误判,加载 powerline 主题而 Continuo xterm.js 调色板对不上 → light
-      // 模式下 segment 黑底黑字。两个都得覆盖,||  任一命中就误判。
-      TERM_PROGRAM: 'Continuo',
-      LC_TERMINAL: 'Continuo',
-      ...env,
-    } as Record<string, string>,
+    env: shellEnv as Record<string, string>,
   });
 
   const inst: Instance = {
@@ -106,6 +113,7 @@ export function createTerminal(
     throttleInterval: null,
     overflowNotified: false,
     mcpToken: meta?.mcpToken ?? '',
+    shellCleanup,
   };
 
   const send = (data: string) => {
@@ -261,6 +269,9 @@ function cleanup(id: string): void {
   if (inst.flushTimer) clearTimeout(inst.flushTimer);
   if (inst.killTimer) clearTimeout(inst.killTimer);
   if (inst.mcpToken) mcpRevokers().byToken(inst.mcpToken);
+  void inst.shellCleanup().catch((err) => {
+    console.warn('[terminal.service] shell integration cleanup failed', id, err);
+  });
   instances.delete(id);
 }
 

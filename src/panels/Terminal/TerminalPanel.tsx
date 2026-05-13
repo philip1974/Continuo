@@ -10,6 +10,7 @@
 //   5. snapshot 仍空时自动 spawn 一个(用 module-level flag 防 StrictMode 双 spawn)
 
 import { useCallback, useEffect } from 'react';
+import type { IDockviewPanelProps } from 'dockview-react';
 import {
   useTerminalStore,
   type TerminalSession,
@@ -20,6 +21,13 @@ import { useWorkspaceStore } from '@/stores/workspace.store';
 import { Button } from '@/design';
 import { coApi } from '@/lib/co-api';
 import { useTheme } from '@/theme';
+
+export type TerminalPanelParams = {
+  sessionId?: string;
+  cwd?: string;
+  title?: string;
+  role?: string;
+};
 
 // 让 P10k / oh-my-zsh 等 prompt 框架在 zsh 启动时检测到正确的终端亮度,
 // 选 light/dark color set。X 标准 COLORFGBG = "<fg>;<bg>",bg ∈ {7,9..15}
@@ -35,7 +43,58 @@ function themedTerminalEnv(resolved: 'light' | 'dark'): Record<string, string> {
 // sessions=[] → 双 spawn 出 2 个 terminal 的 bug。
 let __terminalAutoSpawned = false;
 
-export function TerminalPanel() {
+export function TerminalPanel(
+  props?: IDockviewPanelProps<TerminalPanelParams>,
+) {
+  const params = props?.params;
+  const scopedSessionId = params?.sessionId;
+  const api = props?.api;
+
+  useEffect(() => {
+    if (!params || params.sessionId || !params.cwd) return;
+    let cancelled = false;
+    let createdId: string | null = null;
+
+    void (async () => {
+      const r = await coApi.terminal.create({
+        cwd: params.cwd,
+        title: params.title ?? 'Terminal',
+        scoped: true,
+      });
+      if (!r.ok || !r.data?.id) return;
+      createdId = r.data.id;
+      if (cancelled) {
+        void coApi.terminal.remove(createdId);
+        return;
+      }
+      api?.updateParameters({ sessionId: createdId });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [params?.cwd, params?.title, api]);
+
+  if (scopedSessionId) {
+    return (
+      <div className="terminal-panel scoped flex h-full w-full overflow-hidden bg-canvas">
+        <TerminalView termId={scopedSessionId} />
+      </div>
+    );
+  }
+
+  if (params?.cwd && !scopedSessionId) {
+    return (
+      <div className="terminal-panel hydrating flex h-full w-full items-center justify-center bg-canvas text-sm text-fg-muted">
+        启动中...
+      </div>
+    );
+  }
+
+  return <LegacyTerminalPanel />;
+}
+
+function LegacyTerminalPanel() {
   const sessions = useTerminalStore((s) => s.sessions);
   const activeId = useTerminalStore((s) => s.activeId);
   const replaceSnapshot = useTerminalStore((s) => s.replaceSnapshot);

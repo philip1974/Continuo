@@ -10,6 +10,7 @@ export interface MainTerminalSession {
   readonly cwd: string;
   readonly originHint: 'user' | 'agent';
   readonly agentLabel?: string;
+  readonly scoped?: boolean;
   readonly createdAt: number;
   readonly exitCode: number | null;
   // Issue #28 Phase 1:owner BrowserWindow.id。renderer 不自报,
@@ -23,6 +24,7 @@ export interface AddSessionInput {
   readonly cwd: string;
   readonly originHint: 'user' | 'agent';
   readonly agentLabel?: string;
+  readonly scoped?: boolean;
   readonly ownerWindowId: number;
 }
 
@@ -74,6 +76,7 @@ export function add(input: AddSessionInput): void {
     cwd: input.cwd,
     originHint: input.originHint,
     ...(input.agentLabel !== undefined ? { agentLabel: input.agentLabel } : {}),
+    ...(input.scoped !== undefined ? { scoped: input.scoped } : {}),
     createdAt: Date.now(),
     exitCode: null,
     ownerWindowId: input.ownerWindowId,
@@ -95,6 +98,13 @@ export function getAll(filter?: GetAllFilter): readonly MainTerminalSession[] {
 export function remove(id: string): void {
   if (!sessions.has(id)) return;
   sessions.delete(id);
+  notify();
+}
+
+export function updateCwd(id: string, cwd: string): void {
+  const cur = sessions.get(id);
+  if (!cur || cur.cwd === cwd) return;
+  sessions.set(id, { ...cur, cwd });
   notify();
 }
 

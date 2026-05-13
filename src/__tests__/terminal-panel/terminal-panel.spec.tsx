@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { fireEvent, render, cleanup, act, waitFor } from '@testing-library/react';
+import type { ComponentType } from 'react';
 
 vi.mock('../../panels/Terminal/useTerminal', () => ({
   useTerminal: () => ({
@@ -19,6 +20,10 @@ import {
   type TerminalSession,
 } from '../../stores/terminal.store';
 import { useWorkspaceStore } from '../../stores/workspace.store';
+
+const LegacyTerminalPanel = TerminalPanel as unknown as ComponentType<
+  Record<string, never>
+>;
 
 interface FakeTerminal {
   create: ReturnType<typeof vi.fn>;
@@ -92,7 +97,7 @@ describe('TerminalPanel — 初始化', () => {
       sessions: [s({ id: 't1' })],
       activeId: 't1',
     });
-    render(<TerminalPanel />);
+    render(<LegacyTerminalPanel />);
     await waitFor(() => {
       expect(terminal.listSessions).toHaveBeenCalled();
       expect(terminal.onSessionsChanged).toHaveBeenCalled();
@@ -110,7 +115,7 @@ describe('TerminalPanel — 初始化', () => {
       sessions: [s({ id: 'old' })],
       activeId: 'old',
     });
-    render(<TerminalPanel />);
+    render(<LegacyTerminalPanel />);
     await waitFor(() => {
       const ids = useTerminalStore.getState().sessions.map((x) => x.id);
       expect(ids).toContain('pre1');
@@ -124,7 +129,7 @@ describe('TerminalPanel — 初始化', () => {
       sessions: [s({ id: 'old' })],
       activeId: 'old',
     });
-    render(<TerminalPanel />);
+    render(<LegacyTerminalPanel />);
     await waitFor(() => {
       // ensure subscribe ran
     });
@@ -141,7 +146,7 @@ describe('TerminalPanel — 初始化', () => {
       sessions: [s({ id: 't1' })],
       activeId: 't1',
     });
-    const { unmount } = render(<TerminalPanel />);
+    const { unmount } = render(<LegacyTerminalPanel />);
     await waitFor(() => {});
     unmount();
     expect(unsub).toHaveBeenCalledTimes(1);
@@ -156,7 +161,7 @@ describe('TerminalPanel — handleNew', () => {
       activeId: 't1',
     });
     useWorkspaceStore.setState({ root: '/proj', recentRoots: [] });
-    const { container } = render(<TerminalPanel />);
+    const { container } = render(<LegacyTerminalPanel />);
     fireEvent.click(
       container.querySelector(
         'button[aria-label="新建终端"]',
@@ -191,7 +196,7 @@ describe('TerminalPanel — handleNew', () => {
       sessions: [s({ id: 'keep' })],
       activeId: 'keep',
     });
-    const { container } = render(<TerminalPanel />);
+    const { container } = render(<LegacyTerminalPanel />);
     fireEvent.click(
       container.querySelector(
         'button[aria-label="新建终端"]',
@@ -214,7 +219,7 @@ describe('TerminalPanel — handleClose', () => {
       sessions: [s({ id: 't1' }), s({ id: 't2' })],
       activeId: 't1',
     });
-    const { container } = render(<TerminalPanel />);
+    const { container } = render(<LegacyTerminalPanel />);
     // TerminalTabs 关闭按钮:常见命名是 'close-tab' / aria-label,我们点 t2
     // 任意 close 按钮触发即可
     const tabCloseBtns = container.querySelectorAll<HTMLButtonElement>(
@@ -236,7 +241,7 @@ describe('TerminalPanel — 空态', () => {
     });
     // 由于自动 spawn flag 是 module-level,可能已经在前面测试中被设过。
     // 我们关注的是渲染态:sessions=[] 时 UI 显示空态文案,这与 spawn 无关。
-    const { container } = render(<TerminalPanel />);
+    const { container } = render(<LegacyTerminalPanel />);
     expect(container.textContent).toContain('无活跃终端');
     expect(
       Array.from(container.querySelectorAll<HTMLButtonElement>('button')).some(
@@ -253,7 +258,7 @@ describe('TerminalPanel — 渲染', () => {
       sessions: [s({ id: 't1' }), s({ id: 't2' })],
       activeId: 't2',
     });
-    const { container } = render(<TerminalPanel />);
+    const { container } = render(<LegacyTerminalPanel />);
     const divs = container.querySelectorAll(
       'div.absolute',
     ) as NodeListOf<HTMLDivElement>;
@@ -269,7 +274,7 @@ describe('TerminalPanel — 渲染', () => {
   // 必须在 TerminalPanel 顶层 overflow-hidden 把溢出截在 panel 边界内。
   it('TerminalPanel 顶层 overflow-hidden — 防 xterm 内容穿出窗口 (#15)', () => {
     installTerminal();
-    const { container } = render(<TerminalPanel />);
+    const { container } = render(<LegacyTerminalPanel />);
     const root = container.firstElementChild as HTMLElement;
     expect(root.className).toMatch(/\boverflow-hidden\b/);
   });

@@ -182,6 +182,21 @@ export function useTerminal(termId: string) {
     termRef.current = term;
     fitRef.current = fitAddon;
 
+    const osc7Disposable = term.parser.registerOscHandler(7, (data) => {
+      try {
+        const m = /^file:\/\/([^/]*)(\/.*)?$/.exec(data);
+        if (!m) return true;
+        const [, host, encPath] = m;
+        if (host && host !== 'localhost') return true;
+        if (!encPath) return true;
+        const cwd = decodeURI(encPath);
+        void coApi.terminal.updateCwd(termId, cwd);
+      } catch {
+        // malformed OSC 7 payloads must not break terminal output handling.
+      }
+      return true;
+    });
+
     // 首屏 fit + 通知主进程初始尺寸。
     // 同步先试一次(useEffect 跑在 paint 后,容器一般已有尺寸,可省 1 帧);
     // cols/rows 拿到 0 说明容器还没 layout 完,fallback 到 RAF 下一帧重试。
@@ -231,6 +246,7 @@ export function useTerminal(termId: string) {
     return () => {
       unsubData();
       onDataDisposable.dispose();
+      osc7Disposable.dispose();
       ro.disconnect();
       disposeQueue(term);
       term.dispose();

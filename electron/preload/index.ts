@@ -43,8 +43,10 @@ export interface TerminalCreateOptions {
   readonly env?: Readonly<Record<string, string>>;
   // P1 Agent Terminal MCP:metadata 字段
   readonly name?: string;
+  readonly title?: string;
   readonly originHint?: 'user' | 'agent';
   readonly agentLabel?: string;
+  readonly scoped?: boolean;
 }
 
 export interface TerminalExitPayload {
@@ -59,6 +61,7 @@ export interface PreloadTerminalSession {
   readonly cwd: string;
   readonly originHint: 'user' | 'agent';
   readonly agentLabel?: string;
+  readonly scoped?: boolean;
   readonly createdAt: number;
   readonly exitCode: number | null;
 }
@@ -79,6 +82,22 @@ const api = {
       ipcRenderer.invoke('layout:read'),
     write: (json: unknown): Promise<IpcResult<void>> =>
       ipcRenderer.invoke('layout:write', json),
+    onFlushRequest: (
+      cb: () => void | Promise<void>,
+    ): (() => void) => {
+      const listener = () => {
+        void cb();
+      };
+      ipcRenderer.on('layout:flush-request', listener);
+      return () => ipcRenderer.off('layout:flush-request', listener);
+    },
+    sendFlushAck: (windowId: number): void => {
+      ipcRenderer.send('layout:flush-ack', windowId);
+    },
+  },
+  system: {
+    windowId: ipcRenderer.sendSync('window:id') as number,
+    hostname: (): string => ipcRenderer.sendSync('system:hostname') as string,
   },
   popout: {
     open: (panelId: string): Promise<IpcResult<unknown>> =>
@@ -163,6 +182,8 @@ const api = {
     > => ipcRenderer.invoke(TERMINAL_CHANNELS.LIST_SESSIONS, {}),
     remove: (id: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(TERMINAL_CHANNELS.REMOVE, { id }),
+    updateCwd: (id: string, cwd: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke('session:update-cwd', id, cwd),
     /** 订阅 main 推的 snapshot;返回 unsubscribe. */
     onSessionsChanged: (
       cb: (sessions: ReadonlyArray<PreloadTerminalSession>) => void,

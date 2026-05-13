@@ -188,7 +188,7 @@ describe('makeCreateHandler', () => {
     _reset: vi.fn(),
   });
 
-  it('shell 缺失 → 用 getDefaultShell 结果', () => {
+  it('shell 缺失 → 用 getDefaultShell 结果', async () => {
     const service = makeService();
     const sessionStore = makeSessionStore();
     const handler = makeCreateHandler({
@@ -197,7 +197,7 @@ describe('makeCreateHandler', () => {
       generateId: () => 'fixed-id',
       resolveCwd: () => '/work',
     });
-    const r = handler({}, fakeWin);
+    const r = await handler({}, fakeWin);
     expect(r).toEqual({ id: 'fixed-id' });
     expect(service.createTerminal).toHaveBeenCalledOnce();
     const call = service.createTerminal.mock.calls[0]!;
@@ -206,7 +206,7 @@ describe('makeCreateHandler', () => {
     expect(call[4]).toBe('/work'); // cwd
   });
 
-  it('shell 不在白名单 → 抛 TERMINAL_FORBIDDEN_SHELL', () => {
+  it('shell 不在白名单 → 抛 TERMINAL_FORBIDDEN_SHELL', async () => {
     const service = makeService();
     const sessionStore = makeSessionStore();
     const handler = makeCreateHandler({
@@ -214,14 +214,14 @@ describe('makeCreateHandler', () => {
       sessionStore: sessionStore as never,
       generateId: () => 'x',
     });
-    expect(() =>
+    await expect(
       handler({ shell: '/tmp/evil-shell' }, fakeWin),
-    ).toThrowError(/forbidden|allowlist/i);
+    ).rejects.toThrowError(/forbidden|allowlist/i);
     expect(service.createTerminal).not.toHaveBeenCalled();
     expect(sessionStore.add).not.toHaveBeenCalled();
   });
 
-  it('args / cwd / env 透传到 service', () => {
+  it('args / cwd / env 透传到 service', async () => {
     const service = makeService();
     const sessionStore = makeSessionStore();
     const handler = makeCreateHandler({
@@ -230,7 +230,7 @@ describe('makeCreateHandler', () => {
       generateId: () => 'x',
       resolveCwd: (c) => c ?? '/default',
     });
-    handler(
+    await handler(
       { shell: '/bin/zsh', args: ['-l'], cwd: '/proj', env: { K: 'V' } },
       fakeWin,
     );
@@ -242,7 +242,7 @@ describe('makeCreateHandler', () => {
 
   // ── P1 metadata 入 sessions service ────────────────────────
 
-  it('成功创建 → sessionStore.add 入 metadata', () => {
+  it('成功创建 → sessionStore.add 入 metadata', async () => {
     const service = makeService();
     const sessionStore = makeSessionStore();
     const handler = makeCreateHandler({
@@ -251,7 +251,7 @@ describe('makeCreateHandler', () => {
       generateId: () => 'term-x',
       resolveCwd: () => '/work',
     });
-    handler({}, fakeWin);
+    await handler({}, fakeWin);
     expect(sessionStore.add).toHaveBeenCalledOnce();
     expect(sessionStore.add.mock.calls[0]![0]).toMatchObject({
       id: 'term-x',
@@ -261,7 +261,7 @@ describe('makeCreateHandler', () => {
     });
   });
 
-  it('input.name 缺省 → 调 nextDefaultTitle', () => {
+  it('input.name 缺省 → 调 nextDefaultTitle', async () => {
     const service = makeService();
     const sessionStore = makeSessionStore();
     const handler = makeCreateHandler({
@@ -269,11 +269,11 @@ describe('makeCreateHandler', () => {
       sessionStore: sessionStore as never,
       generateId: () => 'x',
     });
-    handler({}, fakeWin);
+    await handler({}, fakeWin);
     expect(sessionStore.nextDefaultTitle).toHaveBeenCalledOnce();
   });
 
-  it('input.name 给值 → 直接用,不调 nextDefaultTitle', () => {
+  it('input.name 给值 → 直接用,不调 nextDefaultTitle', async () => {
     const service = makeService();
     const sessionStore = makeSessionStore();
     const handler = makeCreateHandler({
@@ -281,12 +281,12 @@ describe('makeCreateHandler', () => {
       sessionStore: sessionStore as never,
       generateId: () => 'x',
     });
-    handler({ name: 'My Terminal' }, fakeWin);
+    await handler({ name: 'My Terminal' }, fakeWin);
     expect(sessionStore.nextDefaultTitle).not.toHaveBeenCalled();
     expect(sessionStore.add.mock.calls[0]![0].title).toBe('My Terminal');
   });
 
-  it('originHint / agentLabel 透传(P2 MCP create_session 用)', () => {
+  it('originHint / agentLabel 透传(P2 MCP create_session 用)', async () => {
     const service = makeService();
     const sessionStore = makeSessionStore();
     const handler = makeCreateHandler({
@@ -294,7 +294,7 @@ describe('makeCreateHandler', () => {
       sessionStore: sessionStore as never,
       generateId: () => 'x',
     });
-    handler(
+    await handler(
       { originHint: 'agent', agentLabel: 'codex', name: 'codex' },
       fakeWin,
     );
@@ -305,7 +305,7 @@ describe('makeCreateHandler', () => {
     });
   });
 
-  it('originHint 缺省默认 user', () => {
+  it('originHint 缺省默认 user', async () => {
     const service = makeService();
     const sessionStore = makeSessionStore();
     const handler = makeCreateHandler({
@@ -313,13 +313,13 @@ describe('makeCreateHandler', () => {
       sessionStore: sessionStore as never,
       generateId: () => 'x',
     });
-    handler({}, fakeWin);
+    await handler({}, fakeWin);
     expect(sessionStore.add.mock.calls[0]![0].originHint).toBe('user');
   });
 
   // ── Issue #28 Phase 1:ownerWindowId 从 win 透传 ─────────────
 
-  it('sessionStore.add 入参附 ownerWindowId = win.id', () => {
+  it('sessionStore.add 入参附 ownerWindowId = win.id', async () => {
     const service = makeService();
     const sessionStore = makeSessionStore();
     const handler = makeCreateHandler({
@@ -327,11 +327,11 @@ describe('makeCreateHandler', () => {
       sessionStore: sessionStore as never,
       generateId: () => 'x',
     });
-    handler({}, fakeWin); // win.id === 11
+    await handler({}, fakeWin); // win.id === 11
     expect(sessionStore.add.mock.calls[0]![0].ownerWindowId).toBe(11);
   });
 
-  it('不同 win 调同 handler → 各自 owner 进 sessionStore.add', () => {
+  it('不同 win 调同 handler → 各自 owner 进 sessionStore.add', async () => {
     const service = makeService();
     const sessionStore = makeSessionStore();
     let seq = 0;
@@ -340,8 +340,8 @@ describe('makeCreateHandler', () => {
       sessionStore: sessionStore as never,
       generateId: () => `id-${++seq}`,
     });
-    handler({}, { id: 11 } as unknown as import('electron').BrowserWindow);
-    handler({}, { id: 22 } as unknown as import('electron').BrowserWindow);
+    await handler({}, { id: 11 } as unknown as import('electron').BrowserWindow);
+    await handler({}, { id: 22 } as unknown as import('electron').BrowserWindow);
     expect(sessionStore.add.mock.calls[0]![0].ownerWindowId).toBe(11);
     expect(sessionStore.add.mock.calls[1]![0].ownerWindowId).toBe(22);
   });

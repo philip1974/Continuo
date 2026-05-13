@@ -16,6 +16,7 @@ import { mcpRevokers } from '../services/mcp-host.service';
 
 // ── 常量 ─────────────────────────────────────────────────────
 const MAX_WRITE_CHARS = 2_000_000; // ~2MB UTF-8 字符上限,与 Mind 1MB 字节同档
+const UPDATE_CWD_CHANNEL = 'session:update-cwd';
 
 // ── MCP env provider(由 main/index.ts 在 mcp host 启动后注入)──
 // 默认空 → 不注入 MCP 信息;启动 host 后调 setMcpEnvProvider 注册真函数。
@@ -46,8 +47,10 @@ export const createInputSchema = z
     // P1 metadata 真相源在 main:这些字段创建时入 sessions service。
     // P1 调用方暂只传 user 类型(MCP create_session 的 agent 类型留 P2)。
     name: z.string().optional(),
+    title: z.string().optional(),
     originHint: z.enum(['user', 'agent']).optional(),
     agentLabel: z.string().optional(),
+    scoped: z.boolean().optional(),
   })
   .strict();
 
@@ -66,6 +69,13 @@ export const resizeInputSchema = z
   })
   .strict();
 
+export const updateCwdInputSchema = z
+  .object({
+    id: z.string().min(1),
+    cwd: z.string().min(1),
+  })
+  .strict();
+
 export const idOnlyInputSchema = z
   .object({ id: z.string().min(1) })
   .strict();
@@ -75,6 +85,7 @@ export const noInputSchema = z.object({}).strict();
 export type CreateInput = z.infer<typeof createInputSchema>;
 export type WriteInput = z.infer<typeof writeInputSchema>;
 export type ResizeInput = z.infer<typeof resizeInputSchema>;
+export type UpdateCwdInput = z.infer<typeof updateCwdInputSchema>;
 export type IdOnlyInput = z.infer<typeof idOnlyInputSchema>;
 
 // ── handlers ─────────────────────────────────────────────────
@@ -95,7 +106,10 @@ export function makeCreateHandler(deps?: {
   const generateId = deps?.generateId ?? (() => `term-${crypto.randomUUID()}`);
   const resolveCwd = deps?.resolveCwd ?? ((c) => c ?? os.homedir());
 
-  return (input: CreateInput, win: BrowserWindow): { id: string } => {
+  return async (
+    input: CreateInput,
+    win: BrowserWindow,
+  ): Promise<{ id: string }> => {
     const shell = input.shell ?? getDefaultShell();
     if (!isAllowedShell(shell)) {
       throw Object.assign(new Error(`shell not in allowlist: ${shell}`), {
@@ -109,16 +123,17 @@ export function makeCreateHandler(deps?: {
     const { env: internalEnv, mcpToken } = mcpEnvProvider(win.id);
     const mergedEnv = { ...(input.env ?? {}), ...internalEnv };
     // mcpToken 通过 meta 透传给 terminal.service.createTerminal, PTY exit cleanup 时 revoke
-    service.createTerminal(id, win, shell, input.args ?? [], cwd, mergedEnv, {
+    await service.createTerminal(id, win, shell, input.args ?? [], cwd, mergedEnv, {
       mcpToken,
     });
     sessionStore.add({
       id,
-      title: input.name ?? sessionStore.nextDefaultTitle(win.id),
+      title: input.title ?? input.name ?? sessionStore.nextDefaultTitle(win.id),
       cwd,
       originHint: input.originHint ?? 'user',
       ownerWindowId: win.id,
       ...(input.agentLabel !== undefined ? { agentLabel: input.agentLabel } : {}),
+      ...(input.scoped !== undefined ? { scoped: input.scoped } : {}),
     });
     return { id };
   };
@@ -167,6 +182,19 @@ export function makeRemoveHandler(deps?: {
   };
 }
 
+export function makeUpdateCwdHandler(deps?: {
+  sessionStore?: typeof terminalSessions;
+}) {
+  const sessionStore = deps?.sessionStore ?? terminalSessions;
+  return (input: UpdateCwdInput, win: BrowserWindow): void => {
+    const session = sessionStore.get(input.id);
+    if (!session || session.ownerWindowId !== win.id) {
+      throw ERR_NOT_FOUND(input.id);
+    }
+    sessionStore.updateCwd(input.id, input.cwd);
+  };
+}
+
 export const writeHandler = (input: WriteInput): void => {
   if (!termService.has(input.id)) throw ERR_NOT_FOUND(input.id);
   termService.write(input.id, input.data);
@@ -194,6 +222,7 @@ export function registerTerminalIpc(): void {
   const createHandler = makeCreateHandler();
   const listSessionsHandler = makeListSessionsHandler();
   const removeHandler = makeRemoveHandler();
+  const updateCwdHandler = makeUpdateCwdHandler();
   const windowClosedCleanup = makeWindowClosedCleanup();
 
   // create 需要 win,单独走 processIpcCall 包 closure(其它走 safeHandle)
@@ -245,6 +274,32 @@ export function registerTerminalIpc(): void {
   safeHandle(TERMINAL_CHANNELS.KILL, idOnlyInputSchema, killHandler, trusted);
   safeHandle(TERMINAL_CHANNELS.DESTROY, idOnlyInputSchema, killHandler, trusted);
   safeHandle(TERMINAL_CHANNELS.REMOVE, idOnlyInputSchema, removeHandler, trusted);
+
+  ipcMain.handle(
+    UPDATE_CWD_CHANNEL,
+    async (
+      event: IpcMainInvokeEvent,
+      rawOrId: unknown,
+      rawCwd?: unknown,
+    ) =>
+      processIpcCall(
+        updateCwdInputSchema,
+        async (input) => {
+          const win = BrowserWindow.fromWebContents(event.sender);
+          if (!win) {
+            throw Object.assign(new Error('no browser window'), {
+              code: 'TERMINAL_NO_WINDOW',
+            });
+          }
+          updateCwdHandler(input, win);
+        },
+        typeof rawOrId === 'string'
+          ? { id: rawOrId, cwd: rawCwd }
+          : rawOrId,
+        event.senderFrame,
+        trusted,
+      ),
+  );
 
   // sessions_changed:Issue #28 Phase 1。按 owner 路由,只把该 window 自己的
   // sessions 推给该 window。其它 window 收到的快照仅含它们自己的 sessions。
