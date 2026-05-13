@@ -39,14 +39,14 @@ function defaultSocketPath() {
 }
 
 const socketPath = process.env.CONTINUO_MCP_SOCKET ?? defaultSocketPath();
+// CONTINUO_WINDOW_ID 由 Continuo PTY env provider 注入(per-window 隔离);若
+// 缺失说明 proxy 是外部 spawn(eg. Claude Code `claude mcp add` 配置),不属于
+// 任何 Continuo window 上下文 — 不发 hello,server 端会 fallback 到默认主窗。
 const CONTINUO_WINDOW_ID = process.env.CONTINUO_WINDOW_ID;
-if (!CONTINUO_WINDOW_ID || !/^\d+$/.test(CONTINUO_WINDOW_ID)) {
-  process.stderr.write(
-    'continuo-mcp-stdio: missing or invalid CONTINUO_WINDOW_ID env (must be integer)\n',
-  );
-  process.exit(1);
-}
-const windowId = Number(CONTINUO_WINDOW_ID);
+const windowId =
+  CONTINUO_WINDOW_ID && /^\d+$/.test(CONTINUO_WINDOW_ID)
+    ? Number(CONTINUO_WINDOW_ID)
+    : null;
 
 // existsSync 在 Windows named pipe 上不工作(不在文件系统),跳过预检;
 // macOS/Linux 仍预检以给清晰错误,避免连接异常时报模糊网络错误。
@@ -59,13 +59,19 @@ if (process.platform !== 'win32' && !existsSync(socketPath)) {
 }
 
 const sock = createConnection(socketPath, () => {
-  const hello =
-    JSON.stringify({
-      jsonrpc: '2.0',
-      method: '_continuo/hello',
-      params: { windowId },
-    }) + '\n';
-  sock.write(hello);
+  if (windowId !== null) {
+    // 有 windowId env → 发 hello 绑定 per-window ctx(Continuo 内部 PTY 路径)
+    const hello =
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: '_continuo/hello',
+        params: { windowId },
+      }) + '\n';
+    sock.write(hello);
+  }
+  // 无 windowId → 跳过 hello;server 端 tools/call 会 fallback 到默认主窗
+  // (外部 MCP client 如 Claude Code 的 stdio 配置走此路径)
+
   // stdin → socket(byte 流透传,framing 由两端按 NDJSON 自管)
   process.stdin.pipe(sock);
 });

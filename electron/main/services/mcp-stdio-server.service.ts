@@ -148,8 +148,26 @@ async function handleLine(
   }
 
   const ownerWindowId = socketCtx.get(sock);
-  const ctx: McpCallCtx | null =
+  let ctx: McpCallCtx | null =
     typeof ownerWindowId === 'number' ? { ownerWindowId } : null;
+  // Fallback:外部 MCP client(eg. Claude Code stdio 配置)spawn 的 proxy
+  // 无 CONTINUO_WINDOW_ID env,不发 hello,socketCtx 空 → fallback 到第一个
+  // 非 popout 主窗。mirror agent-auth.pickMainWindow 策略。tools/list 无需 ctx
+  // (dispatchRpc 自行短路),只有 tools/call 路径需要。
+  if (ctx === null) {
+    const wins = BrowserWindow.getAllWindows();
+    let fallback: BrowserWindow | null = null;
+    for (const w of wins) {
+      if (w.isDestroyed()) continue;
+      const url = w.webContents.getURL();
+      if (!url.includes('popout=1')) {
+        fallback = w;
+        break;
+      }
+    }
+    if (!fallback) fallback = wins.find((w) => !w.isDestroyed()) ?? null;
+    if (fallback) ctx = { ownerWindowId: fallback.id };
+  }
   const response = await dispatchRpc(rpc, tools, serverInfo, ctx);
   if ('result' in response) {
     sock.write(formatRpcResult(rpc.id, response.result) + '\n');
