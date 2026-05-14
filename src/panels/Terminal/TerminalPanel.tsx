@@ -24,6 +24,7 @@ import { useTheme } from '@/theme';
 import {
   createPaneController,
   registerPaneController,
+  getPaneController,
   type PaneController,
 } from './PaneControllerRegistry';
 import {
@@ -46,6 +47,7 @@ import { getDockApi } from '@/shell/dock/dock-api-ref';
 import {
   TAB_DRAG_MIME,
   encodeTabDragPayload,
+  decodeTabDragPayload,
   type TabDragPayload,
 } from '@/lib/tab-drag-payload';
 
@@ -204,6 +206,93 @@ function InternalTerminalPanel({
     }, 200);
     return () => window.clearTimeout(timer);
   }, [props.api, state]);
+
+  // topic-05: document-level capture listener 兜底拦截内部 drop。
+  // 原因:dockview group container 在 capture phase 注册 dragover/drop listener
+  // (dnd/dnd.js 用 useCapture=true);React bubble phase listener 理论上应该 work
+  // 但实际场景下 dockview 可能在某些路径吞事件导致 React onDrop 不触发。
+  // document-level capture 优先于 dockview group 的 capture(document 是 outermost),
+  // 我们在此处直接处理 + stopImmediatePropagation 阻 dockview / React 重复处理。
+  useEffect(() => {
+    if (!state.hydrated) return;
+    const onDocDragover = (e: DragEvent) => {
+      if (!e.dataTransfer) return;
+      if (!Array.from(e.dataTransfer.types).includes(TAB_DRAG_MIME)) return;
+      // 命中本 panel 的 pane 区?
+      const elem = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+      if (!elem) return;
+      const paneTreeEl = elem.closest(`[data-terminal-tab-id]`) as HTMLElement | null;
+      if (!paneTreeEl) return;
+      // 确认是本 panel 的 pane 区(同 panelId 的 controller 注册)
+      const tabIdOnEl = paneTreeEl.dataset.terminalTabId;
+      const ownerTab = stateRef.current.tabs.find((t) => t.id === tabIdOnEl);
+      if (!ownerTab) return;
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+    };
+    const onDocDrop = (e: DragEvent) => {
+      if (!e.dataTransfer) return;
+      if (!Array.from(e.dataTransfer.types).includes(TAB_DRAG_MIME)) return;
+      const elem = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+      if (!elem) return;
+      const paneTreeEl = elem.closest(`[data-terminal-tab-id]`) as HTMLElement | null;
+      if (!paneTreeEl) return;
+      const tabIdOnEl = paneTreeEl.dataset.terminalTabId;
+      if (!tabIdOnEl) return;
+      const ownerTab = stateRef.current.tabs.find((t) => t.id === tabIdOnEl);
+      if (!ownerTab) return;
+      // 只在 active tab 的 pane 区处理(non-active 不处理)
+      if (stateRef.current.activeTabId !== tabIdOnEl) return;
+      const payload = decodeTabDragPayload(e.dataTransfer);
+      if (!payload) return;
+      console.debug('[tab-drag] DOC_CAPTURE_DROP payload=', payload, 'targetTabId=', tabIdOnEl);
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      const wId = coApi.system.windowId;
+      if (payload.windowId !== wId) return;
+      // 防自捅自(整个 panel 拖给自己同 tab)
+      if (payload.sourcePanelId === panelId && payload.sourceTabId === tabIdOnEl) return;
+      // hit-test leaf
+      const leafEl = elem.closest('[data-pane-leaf-id]') as HTMLElement | null;
+      if (!leafEl) {
+        console.debug('[tab-drag] DOC_CAPTURE_DROP hit-test fail (no leaf)');
+        return;
+      }
+      const leafId = leafEl.dataset.paneLeafId;
+      if (!leafId) return;
+      const rect = leafEl.getBoundingClientRect();
+      const dx = Math.abs((e.clientX - rect.left) / rect.width - 0.5);
+      const dy = Math.abs((e.clientY - rect.top) / rect.height - 0.5);
+      const dir = dx > dy ? 'horizontal' : 'vertical';
+      const sourceCtrl = getPaneController(wId, payload.sourcePanelId);
+      if (!sourceCtrl) return;
+      const detached = sourceCtrl.detachTab(payload.sourceTabId, { forMove: true });
+      if (!detached.detached) {
+        console.debug('[tab-drag] DOC_CAPTURE_DROP detach rejected', detached.reason);
+        return;
+      }
+      requestAnimationFrame(() => {
+        console.debug('[tab-drag] DOC_CAPTURE_DROP attach targetLeaf=', leafId, 'dir=', dir);
+        dispatch({
+          type: 'PANE_ACTION',
+          tabId: tabIdOnEl,
+          action: {
+            type: 'ATTACH_LEAF_FROM_DETACHED',
+            targetLeafId: leafId,
+            dir: dir as 'horizontal' | 'vertical',
+            leaf: detached.leafSnapshot,
+          },
+        });
+        sourceCtrl.closeIfStillEmpty();
+      });
+    };
+    document.addEventListener('dragover', onDocDragover, true);
+    document.addEventListener('drop', onDocDrop, true);
+    return () => {
+      document.removeEventListener('dragover', onDocDragover, true);
+      document.removeEventListener('drop', onDocDrop, true);
+    };
+  }, [state.hydrated, panelId, dispatch, stateRef]);
 
   // topic-05: 订阅 main 推的 sessions snapshot。对每个 origin=agent 的 session,
   // 若 attachTarget 命中本 panel 且 ptyId 未在 state.tabs,则 attach 成新 tab。

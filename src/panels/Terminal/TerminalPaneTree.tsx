@@ -62,11 +62,16 @@ export function TerminalPaneTree({
     if (Array.from(e.dataTransfer.types).includes(TAB_DRAG_MIME)) {
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
+      // 暴露给 devtools console 检查;不刷屏 — 只 active tab 看到
     }
   };
   const onDrop = (e: DragEvent<HTMLDivElement>) => {
+    console.debug('[tab-drag] PANE_DROP fired tabId=', tabId, 'types=', Array.from(e.dataTransfer.types));
     const payload = decodeTabDragPayload(e.dataTransfer);
-    if (!payload) return;
+    if (!payload) {
+      console.debug('[tab-drag] PANE_DROP decode failed payload=null');
+      return;
+    }
     e.preventDefault();
     e.stopPropagation();
     const windowId = coApi.system.windowId;
