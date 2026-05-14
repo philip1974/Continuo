@@ -3,26 +3,38 @@ import { useTerminalStore, type TerminalSession } from '@/stores/terminal.store'
 import { IconButton, TabNav, TabNavItem } from '@/design';
 
 interface TerminalTabsProps {
-  onNewSession: () => void;
-  onCloseSession: (id: string) => void;
+  tabs?: ReadonlyArray<{ id: string; title: string }>;
+  activeId?: string | null;
+  onSelect?: (id: string) => void;
+  onNew?: () => void;
+  onClose?: (id: string) => void;
+  onNewSession?: () => void;
+  onCloseSession?: (id: string) => void;
   /** 单 session 时隐藏 tab 列表(由父决策),但 + 按钮总在. */
   showTabList?: boolean;
 }
 
 export function TerminalTabs({
+  tabs,
+  activeId: controlledActiveId,
+  onSelect,
+  onNew,
+  onClose,
   onNewSession,
   onCloseSession,
   showTabList = true,
 }: TerminalTabsProps) {
   const allSessions = useTerminalStore((s) => s.sessions);
-  const sessions = useMemo(
+  const legacySessions = useMemo(
     () => allSessions.filter((session) => !session.scoped),
     [allSessions],
   );
-  const activeId = useTerminalStore((s) => s.activeId);
+  const legacyActiveId = useTerminalStore((s) => s.activeId);
   const setActive = useTerminalStore((s) => s.setActive);
   const customTitles = useTerminalStore((s) => s.customTitles);
   const renameSession = useTerminalStore((s) => s.renameSession);
+  const controlled = tabs !== undefined;
+  const activeId = controlled ? controlledActiveId ?? null : legacyActiveId;
 
   // 双击 tab 进入重命名(issue #19):同时只有一个 tab 处于编辑态。
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -36,12 +48,12 @@ export function TerminalTabs({
     [],
   );
   const commitRename = useCallback(() => {
-    if (renamingId !== null) {
+    if (!controlled && renamingId !== null) {
       renameSession(renamingId, draft);
     }
     setRenamingId(null);
     setDraft('');
-  }, [renamingId, draft, renameSession]);
+  }, [controlled, renamingId, draft, renameSession]);
   const cancelRename = useCallback(() => {
     setRenamingId(null);
     setDraft('');
@@ -53,12 +65,15 @@ export function TerminalTabs({
       <div className="flex min-w-0 items-stretch overflow-x-auto">
         {showTabList && (
           <TabNav>
-            {sessions.map((tab: TerminalSession) => {
-              const isExited = tab.exitCode !== null;
-              const isAgent = tab.originHint === 'agent';
-              const displayTitle = customTitles.get(tab.id) ?? tab.title;
+            {(controlled ? tabs : legacySessions).map((tab) => {
+              const legacyTab = tab as TerminalSession;
+              const isExited = !controlled && legacyTab.exitCode !== null;
+              const isAgent = !controlled && legacyTab.originHint === 'agent';
+              const displayTitle = controlled
+                ? tab.title
+                : customTitles.get(tab.id) ?? tab.title;
               const baseTitle = isAgent
-                ? `${displayTitle}${tab.agentLabel ? ` · ${tab.agentLabel}` : ''}(agent)`
+                ? `${displayTitle}${legacyTab.agentLabel ? ` · ${legacyTab.agentLabel}` : ''}(agent)`
                 : displayTitle;
               const isRenaming = renamingId === tab.id;
               return (
@@ -68,15 +83,20 @@ export function TerminalTabs({
                   muted={isExited}
                   title={
                     isExited
-                      ? `${baseTitle}(已退出 code=${tab.exitCode})`
+                      ? `${baseTitle}(已退出 code=${legacyTab.exitCode})`
                       : baseTitle
                   }
                   onSelect={() => {
                     if (isRenaming) return;
-                    setActive(tab.id);
+                    if (controlled) onSelect?.(tab.id);
+                    else setActive(tab.id);
                   }}
-                  onClose={() => onCloseSession(tab.id)}
-                  onRename={() => startRename(tab.id, displayTitle)}
+                  onClose={() =>
+                    controlled ? onClose?.(tab.id) : onCloseSession?.(tab.id)
+                  }
+                  onRename={
+                    controlled ? undefined : () => startRename(tab.id, displayTitle)
+                  }
                 >
                   {isAgent && !isRenaming && (
                     <span className="mr-1 text-accent" aria-hidden>
@@ -119,7 +139,7 @@ export function TerminalTabs({
         )}
         <IconButton
           size="sm"
-          onClick={onNewSession}
+          onClick={() => (controlled ? onNew?.() : onNewSession?.())}
           title="新建终端"
           aria-label="新建终端"
           className="border-l border-line rounded-none shrink-0"

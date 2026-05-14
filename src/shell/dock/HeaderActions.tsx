@@ -5,6 +5,11 @@ import { isPopoutWindow, popoutUrlFor } from '@/lib/popout-mode';
 import { splitTerminal } from '@/lib/split-terminal';
 import { IconButton, MenuItem } from '@/design';
 import { coApp } from '@/plugins/co-app';
+import {
+  getPaneController,
+  subscribePaneControllers,
+} from '@/panels/Terminal/PaneControllerRegistry';
+import { coApi } from '@/lib/co-api';
 
 let panelCounter = 0;
 const nextPanelId = (key: string) => `${key}-${++panelCounter}`;
@@ -21,11 +26,16 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [anchor, setAnchor] = useState<AnchorRect | null>(null);
+  const [, setControllerVersion] = useState(0);
   // 动态读取已注册 panel 类型(含内置 + 未来第三方插件)
   const [panelChoices, setPanelChoices] = useState(() => coApp.panels.getAll());
   useEffect(
     () =>
       coApp.panels.subscribe(() => setPanelChoices(coApp.panels.getAll())),
+    [],
+  );
+  useEffect(
+    () => subscribePaneControllers(() => setControllerVersion((n) => n + 1)),
     [],
   );
 
@@ -81,12 +91,17 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
     });
   }, [activePanel, containerApi]);
   const splitRight = useCallback(() => {
-    void splitTerminal('right');
+    void splitTerminal('horizontal');
   }, []);
   const splitDown = useCallback(() => {
-    void splitTerminal('below');
+    void splitTerminal('vertical');
   }, []);
   const isPopout = isPopoutWindow();
+  const activePanelId = activePanel?.api?.id;
+  const canSplitTerminal =
+    !isPopout &&
+    !!activePanelId &&
+    !!getPaneController(coApi.system.windowId, activePanelId);
 
   return (
     <div
@@ -95,58 +110,62 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
     >
       {!isPopout && (
         <>
-          <IconButton
-            size="sm"
-            aria-label="Split terminal right"
-            title="向右拆分终端"
-            onClick={splitRight}
-            className="opacity-40 transition-opacity group-hover/header:opacity-100 focus-visible:opacity-100"
-          >
-            <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-              <rect
-                x="2.5"
-                y="3"
-                width="11"
-                height="10"
-                rx="1"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.2"
-              />
-              <path
-                d="M8 3v10"
-                stroke="currentColor"
-                strokeWidth="1.2"
-                strokeLinecap="round"
-              />
-            </svg>
-          </IconButton>
-          <IconButton
-            size="sm"
-            aria-label="Split terminal down"
-            title="向下拆分终端"
-            onClick={splitDown}
-            className="opacity-40 transition-opacity group-hover/header:opacity-100 focus-visible:opacity-100"
-          >
-            <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-              <rect
-                x="2.5"
-                y="3"
-                width="11"
-                height="10"
-                rx="1"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.2"
-              />
-              <path
-                d="M2.5 8h11"
-                stroke="currentColor"
-                strokeWidth="1.2"
-                strokeLinecap="round"
-              />
-            </svg>
-          </IconButton>
+          {canSplitTerminal && (
+            <>
+              <IconButton
+                size="sm"
+                aria-label="Split terminal right"
+                title="向右拆分终端"
+                onClick={splitRight}
+                className="opacity-40 transition-opacity group-hover/header:opacity-100 focus-visible:opacity-100"
+              >
+                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                  <rect
+                    x="2.5"
+                    y="3"
+                    width="11"
+                    height="10"
+                    rx="1"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.2"
+                  />
+                  <path
+                    d="M8 3v10"
+                    stroke="currentColor"
+                    strokeWidth="1.2"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </IconButton>
+              <IconButton
+                size="sm"
+                aria-label="Split terminal down"
+                title="向下拆分终端"
+                onClick={splitDown}
+                className="opacity-40 transition-opacity group-hover/header:opacity-100 focus-visible:opacity-100"
+              >
+                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                  <rect
+                    x="2.5"
+                    y="3"
+                    width="11"
+                    height="10"
+                    rx="1"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.2"
+                  />
+                  <path
+                    d="M2.5 8h11"
+                    stroke="currentColor"
+                    strokeWidth="1.2"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </IconButton>
+            </>
+          )}
           <IconButton
             size="sm"
             aria-label="Pop out active panel"

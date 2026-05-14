@@ -9,7 +9,7 @@
 //   4. handleClose → coApi.terminal.remove(等价 kill + 删 metadata)
 //   5. snapshot 仍空时自动 spawn 一个(用 module-level flag 防 StrictMode 双 spawn)
 
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import type { IDockviewPanelProps } from 'dockview-react';
 import {
   useTerminalStore,
@@ -21,12 +21,29 @@ import { useWorkspaceStore } from '@/stores/workspace.store';
 import { Button } from '@/design';
 import { coApi } from '@/lib/co-api';
 import { useTheme } from '@/theme';
+import {
+  createPaneController,
+  registerPaneController,
+  type PaneController,
+} from './PaneControllerRegistry';
+import {
+  defaultPersistedState,
+  panelReducer,
+  serializeTabsStateForPersistence,
+  type PanelEffect,
+  type PanelState,
+  type PersistedPanelState,
+} from './panelReducer';
+import { createSpawnQueue, removePtyOnce, type SpawnQueue } from './spawnLeaf';
+import { useDispatchWithEffects } from './useDispatchWithEffects';
+import { TerminalPaneTree } from './TerminalPaneTree';
 
 export type TerminalPanelParams = {
   sessionId?: string;
   cwd?: string;
   title?: string;
   role?: string;
+  tabsState?: unknown;
 };
 
 // 让 P10k / oh-my-zsh 等 prompt 框架在 zsh 启动时检测到正确的终端亮度,
@@ -46,52 +63,185 @@ let __terminalAutoSpawned = false;
 export function TerminalPanel(
   props?: IDockviewPanelProps<TerminalPanelParams>,
 ) {
-  const params = props?.params;
-  const scopedSessionId = params?.sessionId;
-  const api = props?.api;
+  if (!props?.api) return <LegacyTerminalPanel />;
+  if (props.params?.sessionId) return <ScopedTerminalPanel termId={props.params.sessionId} />;
+  return <InternalTerminalPanel props={props} />;
+}
+
+function ScopedTerminalPanel({ termId }: { termId: string }) {
+  return (
+    <div className="terminal-panel scoped flex h-full w-full overflow-hidden bg-canvas">
+      <TerminalView termId={termId} />
+    </div>
+  );
+}
+
+function InternalTerminalPanel({
+  props,
+}: {
+  props: IDockviewPanelProps<TerminalPanelParams>;
+}) {
+  const initial = useMemo<PanelState>(
+    () => ({ tabs: [], activeTabId: null, hydrated: false }),
+    [],
+  );
+  const { state, stateRef, dispatch, effectQueueRef, effectTrigger } =
+    useDispatchWithEffects(panelReducer, initial);
+  const removedPtyIds = useRef(new Set<string>()).current;
+  const spawnQueue = useMemo(
+    () => createSpawnQueue(dispatch, removedPtyIds),
+    [dispatch, removedPtyIds],
+  );
+  const workspaceRoot = useWorkspaceStore((s) => s.root);
+  const panelId = props.api.id;
+  const windowId = coApi.system.windowId;
+  const controllerRef = useRef<PaneController | null>(null);
+  if (!controllerRef.current) {
+    controllerRef.current = createPaneController({
+      panelId,
+      windowId,
+      dispatch,
+      stateRef,
+      removedPtyIds,
+    });
+  }
+  const controller = controllerRef.current;
+
+  useEffect(
+    () => registerPaneController(controller.windowId, controller.panelId, controller),
+    [controller],
+  );
+
+  const hydratedRef = useRef(false);
+  useEffect(() => {
+    if (hydratedRef.current) return;
+    hydratedRef.current = true;
+    const persisted =
+      readPersistedPanelState(props.params?.tabsState) ??
+      defaultPersistedState(props.params?.cwd ?? workspaceRoot ?? undefined);
+    dispatch({ type: 'HYDRATE', persisted });
+  }, [dispatch, props.params?.cwd, props.params?.tabsState, workspaceRoot]);
 
   useEffect(() => {
-    if (!params || params.sessionId || !params.cwd) return;
-    let cancelled = false;
-    let createdId: string | null = null;
+    if (effectQueueRef.current.length > 0) {
+      console.debug('[pane-split] hydrate-effect-flush', effectQueueRef.current.length);
+    }
+    while (effectQueueRef.current.length > 0) {
+      const effect = effectQueueRef.current.shift();
+      if (effect) handlePanelEffect(effect, spawnQueue, removedPtyIds, props.api);
+    }
+  }, [effectTrigger, effectQueueRef, props.api, removedPtyIds, spawnQueue]);
 
-    void (async () => {
-      const r = await coApi.terminal.create({
-        cwd: params.cwd,
-        title: params.title ?? 'Terminal',
-        scoped: true,
+  useEffect(() => {
+    if (!state.hydrated) return;
+    const timer = window.setTimeout(() => {
+      props.api.updateParameters({
+        tabsState: serializeTabsStateForPersistence(state),
       });
-      if (!r.ok || !r.data?.id) return;
-      createdId = r.data.id;
-      if (cancelled) {
-        void coApi.terminal.remove(createdId);
-        return;
-      }
-      api?.updateParameters({ sessionId: createdId });
-    })();
+    }, 200);
+    return () => window.clearTimeout(timer);
+  }, [props.api, state]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [params?.cwd, params?.title, api]);
+  useEffect(
+    () => () => {
+      spawnQueue.cancelAll();
+    },
+    [spawnQueue],
+  );
 
-  if (scopedSessionId) {
-    return (
-      <div className="terminal-panel scoped flex h-full w-full overflow-hidden bg-canvas">
-        <TerminalView termId={scopedSessionId} />
-      </div>
-    );
-  }
-
-  if (params?.cwd && !scopedSessionId) {
+  if (!state.hydrated) {
     return (
       <div className="terminal-panel hydrating flex h-full w-full items-center justify-center bg-canvas text-sm text-fg-muted">
-        启动中...
+        加载布局...
       </div>
     );
   }
 
-  return <LegacyTerminalPanel />;
+  return (
+    <div className="terminal-panel flex h-full w-full flex-col overflow-hidden bg-canvas">
+      <TerminalTabs
+        tabs={state.tabs.map((tab) => ({ id: tab.id, title: tab.title }))}
+        activeId={state.activeTabId}
+        onSelect={(tabId) => dispatch({ type: 'SELECT_TAB', tabId })}
+        onNew={() => {
+          const tabId = newId('tab');
+          const leafId = newId('leaf');
+          dispatch({
+            type: 'ADD_TAB',
+            tabId,
+            primaryLeafId: leafId,
+            title: 'Terminal',
+            cwd: workspaceRoot ?? undefined,
+          });
+        }}
+        onClose={(tabId) => dispatch({ type: 'CLOSE_TAB', tabId })}
+      />
+      <div className="relative min-h-0 flex-1">
+        {state.tabs.map((tab) => (
+          <TerminalPaneTree
+            key={tab.id}
+            panelId={controller.panelId}
+            tabId={tab.id}
+            tree={tab.paneTree}
+            activeLeafId={tab.activeLeafId}
+            visible={tab.id === state.activeTabId}
+            dispatch={dispatch}
+          />
+        ))}
+        {state.tabs.length === 0 && (
+          <div className="flex h-full w-full items-center justify-center text-sm text-fg-muted">
+            无活跃终端
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function handlePanelEffect(
+  effect: PanelEffect,
+  queue: SpawnQueue,
+  removedPtyIds: Set<string>,
+  panelApi: IDockviewPanelProps<TerminalPanelParams>['api'],
+): void {
+  switch (effect.type) {
+    case 'ENQUEUE_SPAWN':
+      queue.enqueue({
+        tabId: effect.tabId,
+        leafId: effect.leafId,
+        cwd: effect.cwd,
+        scoped: effect.scoped,
+        reason: effect.reason,
+        cancelled: { current: false },
+      });
+      break;
+    case 'LEAF_CLOSED':
+      queue.cancelLeaf(effect.tabId, effect.leafId);
+      removePtyOnce(effect.ptyId, removedPtyIds, coApi.terminal.remove, 'leaf-close');
+      break;
+    case 'TAB_CLOSED_AUTO':
+      queue.cancelTab(effect.tabId);
+      effect.ptyIds.forEach((id) =>
+        removePtyOnce(id, removedPtyIds, coApi.terminal.remove, 'tab-close'),
+      );
+      break;
+    case 'PANEL_EMPTY':
+      queue.cancelAll();
+      panelApi.close();
+      break;
+  }
+}
+
+function readPersistedPanelState(value: unknown): PersistedPanelState | null {
+  if (!value || typeof value !== 'object') return null;
+  const candidate = value as PersistedPanelState;
+  if (!Array.isArray(candidate.tabs)) return null;
+  return candidate;
+}
+
+function newId(prefix: string): string {
+  const random = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
+  return `${prefix}-${random}`;
 }
 
 function LegacyTerminalPanel() {

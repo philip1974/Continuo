@@ -22,8 +22,15 @@ import {
   consumeMappedKeyOnData,
   createMappedKeyState,
 } from './key-mapping';
+import { getPaneController, type PaneController } from './PaneControllerRegistry';
 
 type CursorStyle = 'block' | 'underline' | 'bar';
+
+export interface PaneKeyOptions {
+  panelId: string;
+  tabId: string;
+  leafId: string;
+}
 
 // GitHub Dark 调色板(原 Mind 暗色)
 const DARK_THEME: ITheme = {
@@ -122,8 +129,10 @@ const TERM_OPTIONS = {
  *
  * 注意:返回的 ref 必须由调用方放在容器 div 上;termId 变化会重建实例。
  */
-export function useTerminal(termId: string) {
+export function useTerminal(termId: string, opts?: PaneKeyOptions) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const paneKeyOptionsRef = useRef<PaneKeyOptions | undefined>(opts);
+  paneKeyOptionsRef.current = opts;
   // 首次 PTY stdout 到达前 = 还在 spawn shell + 跑 .zshrc。让上层显示 loading
   // overlay,用户看到"启动中..."而非纯黑框,减弱"卡顿"感(尤其 .zshrc 重的用户)。
   const [isReady, setIsReady] = useState(false);
@@ -177,6 +186,13 @@ export function useTerminal(termId: string) {
     // xterm 默认发出的 \r 替换为映射字节,避免 \x1b\r\r 双写。见 issue #18。
     term.attachCustomKeyEventHandler((event) => {
       applyMappedKeyOnKeydown(__mappedKeyState__, event);
+      const paneOpts = paneKeyOptionsRef.current;
+      if (paneOpts) {
+        const ctrl = getPaneController(coApi.system.windowId, paneOpts.panelId);
+        if (ctrl && handlePaneSplitKeyDown(event, paneOpts, ctrl) === false) {
+          return false;
+        }
+      }
       return true;
     });
     termRef.current = term;
@@ -314,4 +330,37 @@ export function useTerminal(termId: string) {
   }, [sidebarOpen, sidebarWidth, termId]);
 
   return { containerRef, isReady };
+}
+
+export function handlePaneSplitKeyDown(
+  event: KeyboardEvent,
+  opts: PaneKeyOptions,
+  controller: Pick<PaneController, 'dispatch' | 'split' | 'focusPrev' | 'focusNext'>,
+): boolean {
+  if (event.type !== 'keydown' || !event.metaKey) return true;
+
+  const focusOwningLeaf = () => {
+    controller.dispatch({
+      type: 'PANE_ACTION',
+      tabId: opts.tabId,
+      action: { type: 'FOCUS_LEAF', leafId: opts.leafId },
+    });
+  };
+
+  if (event.key === '\\' || event.code === 'Backslash') {
+    focusOwningLeaf();
+    controller.split(event.shiftKey ? 'vertical' : 'horizontal');
+    event.preventDefault();
+    return false;
+  }
+
+  if (event.key === '[' || event.key === ']') {
+    focusOwningLeaf();
+    if (event.key === '[') controller.focusPrev();
+    else controller.focusNext();
+    event.preventDefault();
+    return false;
+  }
+
+  return true;
 }

@@ -4,6 +4,7 @@
 
 import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
 import * as crypto from 'node:crypto';
+import * as fs from 'node:fs';
 import * as os from 'node:os';
 import { z } from 'zod';
 import { defaultIsTrustedFrame, processIpcCall, safeHandle } from '../safe-handle';
@@ -104,12 +105,12 @@ export function makeCreateHandler(deps?: {
   const service = deps?.service ?? termService;
   const sessionStore = deps?.sessionStore ?? terminalSessions;
   const generateId = deps?.generateId ?? (() => `term-${crypto.randomUUID()}`);
-  const resolveCwd = deps?.resolveCwd ?? ((c) => c ?? os.homedir());
+  const resolveCwd = deps?.resolveCwd ?? resolveTerminalCwd;
 
   return async (
     input: CreateInput,
     win: BrowserWindow,
-  ): Promise<{ id: string }> => {
+  ): Promise<{ id: string; cwd?: string; title?: string }> => {
     const shell = input.shell ?? getDefaultShell();
     if (!isAllowedShell(shell)) {
       throw Object.assign(new Error(`shell not in allowlist: ${shell}`), {
@@ -126,17 +127,31 @@ export function makeCreateHandler(deps?: {
     await service.createTerminal(id, win, shell, input.args ?? [], cwd, mergedEnv, {
       mcpToken,
     });
+    const title = input.title ?? input.name ?? sessionStore.nextDefaultTitle(win.id);
     sessionStore.add({
       id,
-      title: input.title ?? input.name ?? sessionStore.nextDefaultTitle(win.id),
+      title,
       cwd,
       originHint: input.originHint ?? 'user',
       ownerWindowId: win.id,
       ...(input.agentLabel !== undefined ? { agentLabel: input.agentLabel } : {}),
       ...(input.scoped !== undefined ? { scoped: input.scoped } : {}),
     });
-    return { id };
+    return input.scoped ? { id, cwd, title } : { id };
   };
+}
+
+export function resolveTerminalCwd(cwdHint?: string): string {
+  if (cwdHint) {
+    try {
+      if (fs.existsSync(cwdHint) && fs.statSync(cwdHint).isDirectory()) {
+        return cwdHint;
+      }
+    } catch {
+      // Fall through to a known-good shell cwd.
+    }
+  }
+  return os.homedir();
 }
 
 export function makeListSessionsHandler(deps?: {

@@ -2,6 +2,7 @@ import type { IDockviewPanel } from 'dockview-react';
 import { useClosingStore } from '@/stores/closing.store';
 import { EXIT_DURATION_MS } from '@/shell/motion/tokens';
 import { coApi } from '@/lib/co-api';
+import { getPaneController } from '@/panels/Terminal/PaneControllerRegistry';
 
 const patched = new WeakSet<IDockviewPanel>();
 
@@ -33,10 +34,7 @@ export function wrapPanelClose(panel: IDockviewPanel): void {
       const store = useClosingStore.getState();
       if (store.ids.has(id)) return;
       store.mark(id);
-      const scopedSessionId = getScopedTerminalSessionId(panel);
-      if (scopedSessionId) {
-        void coApi.terminal.remove(scopedSessionId);
-      }
+      removeTerminalPtysForPanel(panel);
       setTimeout(() => {
         try {
           original();
@@ -48,4 +46,24 @@ export function wrapPanelClose(panel: IDockviewPanel): void {
     writable: true,
     configurable: true,
   });
+}
+
+function removeTerminalPtysForPanel(panel: IDockviewPanel): void {
+  if (!panel.api.id.startsWith('terminal-')) return;
+  const scopedSessionId = getScopedTerminalSessionId(panel);
+  const controller = getPaneController(coApi.system.windowId, panel.api.id);
+  const ids = controller?.getCurrentPtyIds() ?? (scopedSessionId ? [scopedSessionId] : []);
+  const uniqueIds = Array.from(new Set(ids));
+  void Promise.allSettled(uniqueIds.map((id) => coApi.terminal.remove(id))).then(
+    (results) => {
+      results.forEach((result, index) => {
+        const ptyId = uniqueIds[index];
+        if (result.status === 'rejected') {
+          console.warn('[pane-split] panel-close remove rejected', ptyId, result.reason);
+        } else if (!result.value.ok) {
+          console.warn('[pane-split] panel-close remove ok=false', ptyId, result.value);
+        }
+      });
+    },
+  );
 }

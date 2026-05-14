@@ -51,17 +51,31 @@ export function sanitizePersistedDockLayout(json: unknown): unknown {
     if (
       panel?.contentComponent === 'terminal' &&
       panel.params &&
-      typeof panel.params === 'object' &&
-      'sessionId' in panel.params
+      typeof panel.params === 'object'
     ) {
-      const { sessionId: _sessionId, ...rest } = panel.params as Record<
-        string,
-        unknown
-      >;
-      panel.params = rest;
+      panel.params = sanitizeTerminalPanelParams(
+        panel.params as Record<string, unknown>,
+      );
     }
   }
   return j;
+}
+
+function sanitizeTerminalPanelParams(
+  params: Record<string, unknown>,
+): Record<string, unknown> {
+  const { sessionId: _sessionId, ...rest } = params;
+  const tabsState = rest.tabsState;
+  if (
+    tabsState !== undefined &&
+    (!tabsState ||
+      typeof tabsState !== 'object' ||
+      !Array.isArray((tabsState as { tabs?: unknown }).tabs))
+  ) {
+    const { tabsState: _tabsState, ...withoutBadTabsState } = rest;
+    return withoutBadTabsState;
+  }
+  return rest;
 }
 
 /** 把 coApp.panels 注册的 PanelSpec 桥接成 Dockview 的 components map.
