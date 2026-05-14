@@ -236,36 +236,67 @@ function InternalTerminalPanel({
       e.stopImmediatePropagation();
       const wId = coApi.system.windowId;
       if (payload.windowId !== wId) return;
-      // 防自捅自(整个 panel 拖给自己同 tab)
-      if (payload.sourcePanelId === panelId && payload.sourceTabId === tabIdOnEl) return;
-      // hit-test leaf
+      // hit-test leaf(user 落点对应的 leaf,用作 direction 参考)
       const leafEl = elem.closest('[data-pane-leaf-id]') as HTMLElement | null;
       if (!leafEl) {
         console.debug('[tab-drag] DOC_CAPTURE_DROP hit-test fail (no leaf)');
         return;
       }
-      const leafId = leafEl.dataset.paneLeafId;
-      if (!leafId) return;
+      const hitLeafId = leafEl.dataset.paneLeafId;
+      if (!hitLeafId) return;
       const rect = leafEl.getBoundingClientRect();
       const dx = Math.abs((e.clientX - rect.left) / rect.width - 0.5);
       const dy = Math.abs((e.clientY - rect.top) / rect.height - 0.5);
-      const dir = dx > dy ? 'horizontal' : 'vertical';
+      const dir: 'horizontal' | 'vertical' = dx > dy ? 'horizontal' : 'vertical';
       const sourceCtrl = getPaneController(wId, payload.sourcePanelId);
       if (!sourceCtrl) return;
+      // 关键:用户拖 active tab 自身到自己 pane 区是常见 case(active tab 显示
+      // 在 pane 区,拖它时落点必然在自己 pane)。期待语义:detach source,attach
+      // 到"剩余 active tab"的 leaf,达成两 tab 合并成一个 panel 内的 BSP split。
+      const isSelfDrag =
+        payload.sourcePanelId === panelId && payload.sourceTabId === tabIdOnEl;
       const detached = sourceCtrl.detachTab(payload.sourceTabId, { forMove: true });
       if (!detached.detached) {
         console.debug('[tab-drag] DOC_CAPTURE_DROP detach rejected', detached.reason);
         return;
       }
       requestAnimationFrame(() => {
-        console.debug('[tab-drag] DOC_CAPTURE_DROP attach targetLeaf=', leafId, 'dir=', dir);
+        // detach 后 activeTabId 已自动 fallback 到剩余 tab(reducer 干的)。
+        // self-drag:用 fallback target tab 的 activeLeafId 作 target;非 self-drag:
+        // 用 user hit 的 leafId(仍在 target tab 内)
+        let targetTabId: string;
+        let targetLeafId: string;
+        if (isSelfDrag) {
+          const fallback = stateRef.current.activeTabId;
+          if (!fallback) {
+            console.debug('[tab-drag] DOC_CAPTURE_DROP no fallback tab after self-drag detach → external promote needed');
+            return;
+          }
+          targetTabId = fallback;
+          const fallbackTab = stateRef.current.tabs.find((t) => t.id === fallback);
+          targetLeafId = fallbackTab?.activeLeafId ?? fallbackTab?.primaryLeafId ?? hitLeafId;
+        } else {
+          targetTabId = tabIdOnEl;
+          targetLeafId = hitLeafId;
+        }
+        console.debug(
+          '[tab-drag] DOC_CAPTURE_DROP attach',
+          'targetTab=',
+          targetTabId,
+          'targetLeaf=',
+          targetLeafId,
+          'dir=',
+          dir,
+          'selfDrag=',
+          isSelfDrag,
+        );
         dispatch({
           type: 'PANE_ACTION',
-          tabId: tabIdOnEl,
+          tabId: targetTabId,
           action: {
             type: 'ATTACH_LEAF_FROM_DETACHED',
-            targetLeafId: leafId,
-            dir: dir as 'horizontal' | 'vertical',
+            targetLeafId,
+            dir,
             leaf: detached.leafSnapshot,
           },
         });
