@@ -1,25 +1,20 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { DockviewApi } from 'dockview-react';
+import type { TerminalSession } from '../../stores/terminal.store';
 import {
   handleTerminalPanelRemoved,
   markPanelCloseSuppressed,
   reconcileTerminalPanels,
 } from '@/shell/dock/DockReconciler';
 
-type Session = {
-  id: string;
-  title: string;
-  cwd: string;
-  originHint: 'user' | 'agent';
-  createdAt: number;
-};
-
-function session(id: string, over: Partial<Session> = {}): Session {
+function session(id: string, over: Partial<TerminalSession> = {}): TerminalSession {
   return {
     id,
     title: `Terminal ${id}`,
     cwd: '/repo',
     originHint: 'user',
     createdAt: 1,
+    exitCode: null,
     ...over,
   };
 }
@@ -46,8 +41,12 @@ function makeApi(existing: Record<string, ReturnType<typeof makePanel>> = {}) {
       return panel;
     }),
     getPanel: vi.fn((id: string) => panels[id]),
-    panels,
+    panels: Object.values(panels),
   };
+}
+
+function asRemoveApi(api: ReturnType<typeof makeApi>): Pick<DockviewApi, 'getPanel'> {
+  return api as unknown as Pick<DockviewApi, 'getPanel'>;
 }
 
 describe('terminal panel reconciler core contract', () => {
@@ -55,8 +54,14 @@ describe('terminal panel reconciler core contract', () => {
     const api = makeApi();
     const next = [session('s1')];
 
-    reconcileTerminalPanels(api, { previousSessions: [], nextSessions: next });
-    reconcileTerminalPanels(api, { previousSessions: next, nextSessions: next });
+    reconcileTerminalPanels(api as unknown as DockviewApi, {
+      previousSessions: [],
+      nextSessions: next,
+    });
+    reconcileTerminalPanels(api as unknown as DockviewApi, {
+      previousSessions: next,
+      nextSessions: next,
+    });
 
     expect(api.addPanel).toHaveBeenCalledTimes(1);
     expect(api.addPanel).toHaveBeenCalledWith(
@@ -72,7 +77,7 @@ describe('terminal panel reconciler core contract', () => {
     const panel = makePanel('terminal-s1');
     const api = makeApi({ 'terminal-s1': panel });
 
-    reconcileTerminalPanels(api, {
+    reconcileTerminalPanels(api as unknown as DockviewApi, {
       previousSessions: [session('s1'), session('missing')],
       nextSessions: [],
     });
@@ -87,13 +92,13 @@ describe('terminal panel reconciler core contract', () => {
     const api = makeApi({ 'terminal-s1': panel });
     const removeSession = vi.fn();
 
-    reconcileTerminalPanels(api, {
+    reconcileTerminalPanels(api as unknown as DockviewApi, {
       previousSessions: [session('s1')],
       nextSessions: [],
     });
     await handleTerminalPanelRemoved({
       panel,
-      api,
+      api: asRemoveApi(api),
       removeSession,
     });
 
@@ -107,7 +112,7 @@ describe('terminal panel reconciler core contract', () => {
 
     await handleTerminalPanelRemoved({
       panel,
-      api,
+      api: asRemoveApi(api),
       removeSession,
     });
 
@@ -121,7 +126,7 @@ describe('terminal panel reconciler core contract', () => {
 
     await handleTerminalPanelRemoved({
       panel,
-      api,
+      api: asRemoveApi(api),
       removeSession,
     });
 
@@ -134,7 +139,7 @@ describe('terminal panel reconciler core contract', () => {
     const api = makeApi();
     const removeSession = vi.fn();
 
-    return handleTerminalPanelRemoved({ panel, api, removeSession }).then(() => {
+    return handleTerminalPanelRemoved({ panel, api: asRemoveApi(api), removeSession }).then(() => {
       expect(removeSession).not.toHaveBeenCalled();
     });
   });
