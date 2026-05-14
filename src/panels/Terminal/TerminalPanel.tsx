@@ -52,42 +52,28 @@ import {
 } from '@/lib/tab-drag-payload';
 
 /**
- * topic-05: agent session attach 命中判断。
- * - active(默认): 优先 — dock active panel === 本 panelId;
- *   fallback — active panel 不是 terminal 时,**任一 internal terminal panel
- *   都抢着 attach**,duplicate ptyId 兜底拒(ATTACH_EXISTING_PTY_AS_TAB 内置 dedupe)。
- *   这避免了 "agent 创建时 Editor 是 active panel → 没人 match" 导致 tab 不出现。
- * - panel: 显式 panelId 匹配
- * - window: windowId 匹配(同窗口任一 internal terminal panel 都可接)
+ * topic-05: agent session attach 命中判断 — V1 极宽松版。
  *
- * 多 panel race 由 reducer duplicate 兜底:第一个 hydrate 完成的 InternalTerminalPanel
- * 抢到,其他 panel 收到 snapshot 时 ptyId 已在 state.tabs 内 → 自动跳过(checked
- * by `controller.getCurrentPtyIds().includes(s.id)` in the caller before tryAttachExisting)。
+ * 任何 internal terminal panel 都抢着 attach,duplicate ptyId 由 reducer
+ * 兜底拒(ATTACH_EXISTING_PTY_AS_TAB 内部 dedupe;ScopedTerminalPanel 没订阅
+ * 这条 callback,所以不会抢)。
+ *
+ * 单 panel 场景:这个 panel 总是 match → 直接 attach。
+ * 多 panel 场景:第一个 hydrate 完的 panel 抢到;其他 panel 收 snapshot 时
+ * ptyId 已在 state.tabs → caller `controller.getCurrentPtyIds().includes(s.id)`
+ * 防御 → 跳过。
+ *
+ * V2 可加 panel id / window id / 'active' 路由(plan-v2 已 declared 类型),
+ * 但 V1 不依赖精确路由 — agent 主要在意 "session 能被 user 看到",which panel
+ * 不是关键(用户能切 tab)。
  */
 function attachTargetMatchesPanel(
-  attachTarget: { kind: string; panelId?: string; windowId?: number } | undefined,
-  panelId: string,
-  windowId: number,
-  dockApi: { activeGroup?: { activePanel?: { id?: string; api?: { component?: string } } } } | null,
+  _attachTarget: { kind: string; panelId?: string; windowId?: number } | undefined,
+  _panelId: string,
+  _windowId: number,
+  _dockApi: { activeGroup?: { activePanel?: { id?: string; api?: { component?: string } } } } | null,
 ): boolean {
-  if (!attachTarget || attachTarget.kind === 'active') {
-    const activePanel = dockApi?.activeGroup?.activePanel;
-    const activePanelId = activePanel?.id;
-    const activeComponent = activePanel?.api?.component;
-    // 优先:active panel 是 terminal 且 ID 匹配
-    if (activeComponent === 'terminal' && activePanelId === panelId) return true;
-    // Fallback:active panel 不是 terminal → 任一 internal terminal panel 都接
-    // (duplicate 由 reducer 兜底拒)
-    if (activeComponent !== 'terminal') return true;
-    return false;
-  }
-  if (attachTarget.kind === 'panel') {
-    return attachTarget.panelId === panelId;
-  }
-  if (attachTarget.kind === 'window') {
-    return attachTarget.windowId === windowId;
-  }
-  return false;
+  return true;
 }
 
 export type TerminalPanelParams = {
@@ -299,15 +285,28 @@ function InternalTerminalPanel({
   // 失败(超限 / duplicate / not-hydrated)→ attachRejected 反向通知 main cleanup。
   useEffect(() => {
     if (!state.hydrated) return;
+    console.debug('[tab-drag] subscribe onSessionsChanged panelId=', controller.panelId);
     const unsub = coApi.terminal.onSessionsChanged((sessions) => {
       const dockApi = getDockApi();
+      console.debug(
+        '[tab-drag] onSessionsChanged snapshot panelId=',
+        controller.panelId,
+        'count=',
+        sessions.length,
+        'agentCount=',
+        sessions.filter((s) => s.originHint === 'agent').length,
+      );
       for (const s of sessions) {
         if (s.originHint !== 'agent') continue;
         // 已 attach 过的 ptyId 跳过
         const alreadyAttached = controller.getCurrentPtyIds().includes(s.id);
-        if (alreadyAttached) continue;
-        // attachTarget 命中判断
+        if (alreadyAttached) {
+          console.debug('[tab-drag] agent session already attached, skip', s.id);
+          continue;
+        }
+        // attachTarget 命中判断 — V1 总 return true
         if (!attachTargetMatchesPanel(s.attachTarget, controller.panelId, controller.windowId, dockApi)) {
+          console.debug('[tab-drag] attachTarget no-match panelId=', controller.panelId, 'target=', s.attachTarget);
           continue;
         }
         const result = controller.tryAttachExisting({
