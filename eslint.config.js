@@ -9,9 +9,10 @@ export default tseslint.config(
   {
     // examples/ 是第三方参考项目快照(lokus / headless-tree / file-tree-alternative
     // / mcp-demo-plugin / sample-plugin),不属于 Continuo 自己的代码,不参与 lint。
-    // dist-electron / out / coverage / test-results 是构建/测试产物。
+    // dist-electron / out / out-pack / coverage / test-results 是构建/测试产物。
     ignores: [
       'out',
+      'out-pack',
       'dist',
       'dist-electron',
       'node_modules',
