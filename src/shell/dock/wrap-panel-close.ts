@@ -3,6 +3,7 @@ import { useClosingStore } from '@/stores/closing.store';
 import { EXIT_DURATION_MS } from '@/shell/motion/tokens';
 import { coApi } from '@/lib/co-api';
 import { getPaneController } from '@/panels/Terminal/PaneControllerRegistry';
+import { cancelPanelSpawns } from '@/panels/Terminal/spawnLeaf';
 
 const patched = new WeakSet<IDockviewPanel>();
 
@@ -50,6 +51,8 @@ export function wrapPanelClose(panel: IDockviewPanel): void {
 
 function removeTerminalPtysForPanel(panel: IDockviewPanel): void {
   if (!panel.api.id.startsWith('terminal-')) return;
+  // 真 close:取消该 panel 还在 in-flight 的 spawn,防 PTY 孤儿
+  cancelPanelSpawns(panel.api.id);
   const scopedSessionId = getScopedTerminalSessionId(panel);
   const controller = getPaneController(coApi.system.windowId, panel.api.id);
   const ids = controller?.getCurrentPtyIds() ?? (scopedSessionId ? [scopedSessionId] : []);

@@ -34,7 +34,12 @@ import {
   type PanelState,
   type PersistedPanelState,
 } from './panelReducer';
-import { createSpawnQueue, removePtyOnce, type SpawnQueue } from './spawnLeaf';
+import {
+  createSpawnQueue,
+  removePtyOnce,
+  setPanelDispatch,
+  type SpawnQueue,
+} from './spawnLeaf';
 import { useDispatchWithEffects } from './useDispatchWithEffects';
 import { TerminalPaneTree } from './TerminalPaneTree';
 
@@ -88,12 +93,14 @@ function InternalTerminalPanel({
   const { state, stateRef, dispatch, effectQueueRef, effectTrigger } =
     useDispatchWithEffects(panelReducer, initial);
   const removedPtyIds = useRef(new Set<string>()).current;
+  const panelId = props.api.id;
+  // spawnQueue 现用 module-level pending + dispatch lookup (见 spawnLeaf.ts 注释)
+  // — StrictMode 双 mount 时去重 + 派到 current dispatch,不被 cleanup 误 cancel
   const spawnQueue = useMemo(
-    () => createSpawnQueue(dispatch, removedPtyIds),
-    [dispatch, removedPtyIds],
+    () => createSpawnQueue(dispatch, removedPtyIds, panelId),
+    [dispatch, removedPtyIds, panelId],
   );
   const workspaceRoot = useWorkspaceStore((s) => s.root);
-  const panelId = props.api.id;
   const windowId = coApi.system.windowId;
   const controllerRef = useRef<PaneController | null>(null);
   if (!controllerRef.current) {
@@ -111,6 +118,13 @@ function InternalTerminalPanel({
     () => registerPaneController(controller.windowId, controller.panelId, controller),
     [controller],
   );
+
+  // 同步 current dispatch 到 module-level map (spawn 完成时 lookup 派 SET_PTY_ID)。
+  // 不 cleanup — 让 StrictMode 双 mount 第 2 个覆盖第 1 个,真 close 走
+  // wrap-panel-close → cancelPanelSpawns(panelId) 清理。
+  useEffect(() => {
+    setPanelDispatch(panelId, dispatch);
+  }, [panelId, dispatch]);
 
   const hydratedRef = useRef(false);
   useEffect(() => {
@@ -142,12 +156,9 @@ function InternalTerminalPanel({
     return () => window.clearTimeout(timer);
   }, [props.api, state]);
 
-  useEffect(
-    () => () => {
-      spawnQueue.cancelAll();
-    },
-    [spawnQueue],
-  );
+  // 注:不在 useEffect cleanup 调 spawnQueue.cancelAll() — React 19 StrictMode
+  // dev mode mount→unmount→remount 会误 cancel 第一次 mount 的 in-flight spawn。
+  // 真 close 由 wrap-panel-close 触发 cancelPanelSpawns(panelId)。
 
   if (!state.hydrated) {
     return (

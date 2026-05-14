@@ -1,11 +1,15 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { captureLmApi, _resetLmApiForTest } from '../../lib/co-api';
-import { createSpawnQueue } from '../../panels/Terminal/spawnLeaf';
+import {
+  createSpawnQueue,
+  _resetModuleSpawnStateForTest,
+} from '../../panels/Terminal/spawnLeaf';
 
 describe('terminal pane internal split - leaf level cancellation token', () => {
   beforeEach(() => {
     _resetLmApiForTest();
+    _resetModuleSpawnStateForTest();
   });
 
   it('cancels only the requested leaf spawn and removes the late PTY once', async () => {
@@ -33,7 +37,7 @@ describe('terminal pane internal split - leaf level cancellation token', () => {
     captureLmApi();
     const removed = new Set<string>();
     const dispatch = vi.fn();
-    const queue = createSpawnQueue(dispatch, removed);
+    const queue = createSpawnQueue(dispatch, removed, 'panel-test');
 
     queue.enqueue({
       tabId: 'tab-1',
@@ -77,7 +81,7 @@ describe('terminal pane internal split - leaf level cancellation token', () => {
       },
     });
     captureLmApi();
-    const queue = createSpawnQueue(vi.fn(), new Set());
+    const queue = createSpawnQueue(vi.fn(), new Set(), 'panel-test');
     queue.enqueue({
       tabId: 'tab-1',
       leafId: 'leaf-a',

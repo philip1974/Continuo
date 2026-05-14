@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { captureLmApi, _resetLmApiForTest } from '../../lib/co-api';
 import {
   createSpawnQueue,
+  _resetModuleSpawnStateForTest,
   type SpawnRequest,
 } from '../../panels/Terminal/spawnLeaf';
 
@@ -20,6 +21,7 @@ function request(over: Partial<SpawnRequest> = {}): SpawnRequest {
 describe('terminal pane internal split - spawn queue with reason and dedup', () => {
   beforeEach(() => {
     _resetLmApiForTest();
+    _resetModuleSpawnStateForTest();
   });
 
   it('deduplicates pending requests by tabId and leafId', async () => {
@@ -36,7 +38,7 @@ describe('terminal pane internal split - spawn queue with reason and dedup', () 
     });
     captureLmApi();
     const dispatch = vi.fn();
-    const queue = createSpawnQueue(dispatch, new Set());
+    const queue = createSpawnQueue(dispatch, new Set(), 'panel-test');
 
     queue.enqueue(request({ reason: 'hydrate' }));
     queue.enqueue(request({ reason: 'split' }));
@@ -60,7 +62,7 @@ describe('terminal pane internal split - spawn queue with reason and dedup', () 
     });
     captureLmApi();
 
-    const queue = createSpawnQueue(vi.fn(), new Set());
+    const queue = createSpawnQueue(vi.fn(), new Set(), 'panel-test');
     queue.enqueue(request({ leafId: 'leaf-1', reason: 'hydrate' }));
     queue.enqueue(request({ leafId: 'leaf-2', reason: 'split' }));
 
@@ -84,7 +86,7 @@ describe('terminal pane internal split - spawn queue with reason and dedup', () 
     });
     captureLmApi();
     const dispatch = vi.fn();
-    createSpawnQueue(dispatch, new Set()).enqueue(request({ reason: 'retry' }));
+    createSpawnQueue(dispatch, new Set(), 'panel-test').enqueue(request({ reason: 'retry' }));
 
     await Promise.resolve();
     await Promise.resolve();
