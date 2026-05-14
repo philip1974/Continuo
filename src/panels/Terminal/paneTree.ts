@@ -52,6 +52,13 @@ export type PaneTreeAction =
       newLeafId: string;
       newCwd?: string;
     }
+  | {
+      type: 'ATTACH_LEAF_FROM_DETACHED';
+      targetLeafId: string;
+      dir: SplitDirection;
+      ratio?: number;
+      leaf: LeafNode;
+    }
   | { type: 'SET_PTY_ID'; leafId: string; ptyId: string; cwd?: string }
   | { type: 'SET_PTY_FAIL'; leafId: string }
   | { type: 'CLOSE_LEAF_BEGIN'; leafId: string }
@@ -164,6 +171,28 @@ export function paneTreeReducer(
               },
             ]
           : [],
+      };
+    }
+    case 'ATTACH_LEAF_FROM_DETACHED': {
+      let didAttach = false;
+      const tree = mapTree(state.tree, (leaf) => {
+        if (leaf.id !== action.targetLeafId) return leaf;
+        didAttach = true;
+        const current: LeafNode = { ...leaf, closing: false };
+        const incoming: LeafNode = { ...action.leaf, closing: false };
+        return {
+          kind: 'split',
+          id: `split-${leaf.id}-${incoming.id}`,
+          dir: action.dir,
+          ratio: normalizeRatio(action.ratio ?? 50),
+          a: current,
+          b: incoming,
+        };
+      });
+      return {
+        tree,
+        activeLeafId: didAttach ? action.leaf.id : state.activeLeafId,
+        effects: [],
       };
     }
     case 'SET_PTY_ID':

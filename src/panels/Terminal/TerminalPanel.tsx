@@ -42,6 +42,41 @@ import {
 } from './spawnLeaf';
 import { useDispatchWithEffects } from './useDispatchWithEffects';
 import { TerminalPaneTree } from './TerminalPaneTree';
+import { getDockApi } from '@/shell/dock/dock-api-ref';
+import {
+  TAB_DRAG_MIME,
+  encodeTabDragPayload,
+  type TabDragPayload,
+} from '@/lib/tab-drag-payload';
+
+/**
+ * topic-05: agent session attach 命中判断。
+ * - active(默认): dock active panel id === 本 panelId
+ * - panel: 显式 panelId 匹配
+ * - window: windowId 匹配(同窗口任一 internal terminal panel 都可接,简化版本)
+ *
+ * 注:本 helper 用宽松匹配 — window 路径不细分 first visible vs other internal panel,
+ * 避免每个 panel 都接同一 session 的风险靠 ATTACH_EXISTING_PTY_AS_TAB reducer 的
+ * duplicate ptyId 兜底拒绝。
+ */
+function attachTargetMatchesPanel(
+  attachTarget: { kind: string; panelId?: string; windowId?: number } | undefined,
+  panelId: string,
+  windowId: number,
+  dockApi: { activeGroup?: { activePanel?: { id?: string } } } | null,
+): boolean {
+  if (!attachTarget || attachTarget.kind === 'active') {
+    const activePanelId = dockApi?.activeGroup?.activePanel?.id;
+    return activePanelId === panelId;
+  }
+  if (attachTarget.kind === 'panel') {
+    return attachTarget.panelId === panelId;
+  }
+  if (attachTarget.kind === 'window') {
+    return attachTarget.windowId === windowId;
+  }
+  return false;
+}
 
 export type TerminalPanelParams = {
   sessionId?: string;
@@ -90,7 +125,7 @@ function InternalTerminalPanel({
     () => ({ tabs: [], activeTabId: null, hydrated: false }),
     [],
   );
-  const { state, stateRef, dispatch, effectQueueRef, effectTrigger } =
+  const { state, stateRef, dispatch, dispatchAndCollect, effectQueueRef, effectTrigger } =
     useDispatchWithEffects(panelReducer, initial);
   const removedPtyIds = useRef(new Set<string>()).current;
   const panelId = props.api.id;
@@ -102,14 +137,18 @@ function InternalTerminalPanel({
   );
   const workspaceRoot = useWorkspaceStore((s) => s.root);
   const windowId = coApi.system.windowId;
+  const panelApiRef = useRef(props.api);
+  panelApiRef.current = props.api;
   const controllerRef = useRef<PaneController | null>(null);
   if (!controllerRef.current) {
     controllerRef.current = createPaneController({
       panelId,
       windowId,
       dispatch,
+      dispatchAndCollect,
       stateRef,
       removedPtyIds,
+      closePanel: () => panelApiRef.current.close(),
     });
   }
   const controller = controllerRef.current;
@@ -156,6 +195,54 @@ function InternalTerminalPanel({
     return () => window.clearTimeout(timer);
   }, [props.api, state]);
 
+  // topic-05: 订阅 main 推的 sessions snapshot。对每个 origin=agent 的 session,
+  // 若 attachTarget 命中本 panel 且 ptyId 未在 state.tabs,则 attach 成新 tab。
+  // 失败(超限 / duplicate / not-hydrated)→ attachRejected 反向通知 main cleanup。
+  useEffect(() => {
+    if (!state.hydrated) return;
+    const unsub = coApi.terminal.onSessionsChanged((sessions) => {
+      const dockApi = getDockApi();
+      for (const s of sessions) {
+        if (s.originHint !== 'agent') continue;
+        // 已 attach 过的 ptyId 跳过
+        const alreadyAttached = controller.getCurrentPtyIds().includes(s.id);
+        if (alreadyAttached) continue;
+        // attachTarget 命中判断
+        if (!attachTargetMatchesPanel(s.attachTarget, controller.panelId, controller.windowId, dockApi)) {
+          continue;
+        }
+        const result = controller.tryAttachExisting({
+          ptyId: s.id,
+          title: s.title,
+          ...(s.cwd !== undefined ? { cwd: s.cwd } : {}),
+          originHint: s.originHint,
+          ...(s.agentLabel !== undefined ? { agentLabel: s.agentLabel } : {}),
+        });
+        if (!result.attached) {
+          console.warn(
+            '[tab-drag] ATTACH_REJECTED panelId=',
+            controller.panelId,
+            'sessionId=',
+            s.id,
+            'reason=',
+            result.reason,
+          );
+          void coApi.terminal.attachRejected(s.id, result.reason);
+        } else {
+          console.debug(
+            '[tab-drag] ATTACH_AGENT panelId=',
+            controller.panelId,
+            'sessionId=',
+            s.id,
+            'tabId=',
+            result.tabId,
+          );
+        }
+      }
+    });
+    return unsub;
+  }, [controller, state.hydrated]);
+
   // 注:不在 useEffect cleanup 调 spawnQueue.cancelAll() — React 19 StrictMode
   // dev mode mount→unmount→remount 会误 cancel 第一次 mount 的 in-flight spawn。
   // 真 close 由 wrap-panel-close 触发 cancelPanelSpawns(panelId)。
@@ -171,7 +258,12 @@ function InternalTerminalPanel({
   return (
     <div className="terminal-panel flex h-full w-full flex-col overflow-hidden bg-canvas">
       <TerminalTabs
-        tabs={state.tabs.map((tab) => ({ id: tab.id, title: tab.title }))}
+        tabs={state.tabs.map((tab) => ({
+          id: tab.id,
+          title: tab.title,
+          paneKind: tab.paneTree.kind,
+          ...(tab.originHint !== undefined ? { originHint: tab.originHint } : {}),
+        }))}
         activeId={state.activeTabId}
         onSelect={(tabId) => dispatch({ type: 'SELECT_TAB', tabId })}
         onNew={() => {
@@ -186,6 +278,39 @@ function InternalTerminalPanel({
           });
         }}
         onClose={(tabId) => dispatch({ type: 'CLOSE_TAB', tabId })}
+        onTabDragStart={(tabId, event) => {
+          // topic-05: dragstart 处理
+          const tab = stateRef.current.tabs.find((t) => t.id === tabId);
+          if (!tab) {
+            event.preventDefault();
+            return;
+          }
+          // 只允许拖单 leaf tab(P1-6)
+          if (tab.paneTree.kind !== 'leaf') {
+            console.debug('[tab-drag] DRAG_START_REJECTED reason=split-tab tab=', tabId);
+            event.preventDefault();
+            return;
+          }
+          const leaf = tab.paneTree;
+          if (!leaf.ptyId) {
+            console.debug('[tab-drag] DRAG_START_REJECTED reason=no-pty tab=', tabId);
+            event.preventDefault();
+            return;
+          }
+          const payload: TabDragPayload = {
+            version: 1,
+            windowId,
+            sourcePanelId: controller.panelId,
+            sourceTabId: tabId,
+            sourceLeafId: leaf.id,
+            ptyId: leaf.ptyId,
+            sessionId: leaf.ptyId,
+            title: tab.title,
+          };
+          event.dataTransfer.setData(TAB_DRAG_MIME, encodeTabDragPayload(payload));
+          event.dataTransfer.effectAllowed = 'move';
+          console.debug('[tab-drag] DRAG_START tab=', tabId, 'kind=leaf sessionId=', leaf.ptyId);
+        }}
       />
       <div className="relative min-h-0 flex-1">
         {state.tabs.map((tab) => (
@@ -239,6 +364,17 @@ function handlePanelEffect(
     case 'PANEL_EMPTY':
       queue.cancelAll();
       panelApi.close();
+      break;
+    case 'PANEL_EMPTY_DEFERRED':
+      // topic-05: detach for move 抑制 auto-close。caller 调
+      // controller.closeIfStillEmpty() 显式回收。
+      queue.cancelAll();
+      break;
+    case 'TAB_DETACHED':
+    case 'TAB_DETACH_REJECTED':
+    case 'TAB_ATTACH_REJECTED':
+      // topic-05: 这些 effect 通过 dispatchAndCollect 同步消费,不进 queue;
+      // 若进了 queue 这里 no-op。
       break;
   }
 }

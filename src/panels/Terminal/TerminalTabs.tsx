@@ -1,15 +1,26 @@
 import { useCallback, useMemo, useState } from 'react';
+import type { DragEvent } from 'react';
 import { useTerminalStore, type TerminalSession } from '@/stores/terminal.store';
 import { IconButton, TabNav, TabNavItem } from '@/design';
 
 interface TerminalTabsProps {
-  tabs?: ReadonlyArray<{ id: string; title: string }>;
+  tabs?: ReadonlyArray<{
+    id: string;
+    title: string;
+    /** topic-05: 单 leaf 的 tab 才允许拖走;split tab 在 dragstart 阶段拒. */
+    paneKind?: 'leaf' | 'split';
+    /** topic-05: tab origin 标记(agent 视觉/BDD 用). */
+    originHint?: 'user' | 'agent';
+  }>;
   activeId?: string | null;
   onSelect?: (id: string) => void;
   onNew?: () => void;
   onClose?: (id: string) => void;
   onNewSession?: () => void;
   onCloseSession?: (id: string) => void;
+  /** topic-05: 拖拽开始;父决定 setData 与 preventDefault(split tab). */
+  onTabDragStart?: (tabId: string, event: DragEvent<HTMLDivElement>) => void;
+  onTabDragEnd?: (tabId: string, event: DragEvent<HTMLDivElement>) => void;
   /** 单 session 时隐藏 tab 列表(由父决策),但 + 按钮总在. */
   showTabList?: boolean;
 }
@@ -22,6 +33,8 @@ export function TerminalTabs({
   onClose,
   onNewSession,
   onCloseSession,
+  onTabDragStart,
+  onTabDragEnd,
   showTabList = true,
 }: TerminalTabsProps) {
   const allSessions = useTerminalStore((s) => s.sessions);
@@ -76,6 +89,20 @@ export function TerminalTabs({
                 ? `${displayTitle}${legacyTab.agentLabel ? ` · ${legacyTab.agentLabel}` : ''}(agent)`
                 : displayTitle;
               const isRenaming = renamingId === tab.id;
+              // topic-05: controlled 路径(InternalTerminalPanel)允许拖拽;
+              // legacy 路径不开启(免影响老 LegacyTerminalPanel)。
+              const controlledTab = controlled
+                ? (tab as { id: string; title: string; paneKind?: 'leaf' | 'split'; originHint?: 'user' | 'agent' })
+                : undefined;
+              const dragDataAttrs: Record<string, string> = controlled
+                ? {
+                    'data-tab-id': tab.id,
+                    'data-pane-tree-kind': controlledTab?.paneKind ?? 'leaf',
+                    ...(controlledTab?.originHint !== undefined
+                      ? { 'data-tab-origin': controlledTab.originHint }
+                      : {}),
+                  }
+                : {};
               return (
                 <TabNavItem
                   key={tab.id}
@@ -97,6 +124,16 @@ export function TerminalTabs({
                   onRename={
                     controlled ? undefined : () => startRename(tab.id, displayTitle)
                   }
+                  draggable={controlled && !isRenaming}
+                  onDragStart={
+                    controlled
+                      ? (e) => onTabDragStart?.(tab.id, e)
+                      : undefined
+                  }
+                  onDragEnd={
+                    controlled ? (e) => onTabDragEnd?.(tab.id, e) : undefined
+                  }
+                  dataAttrs={controlled ? dragDataAttrs : undefined}
                 >
                   {isAgent && !isRenaming && (
                     <span className="mr-1 text-accent" aria-hidden>

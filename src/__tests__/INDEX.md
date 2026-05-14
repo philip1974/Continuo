@@ -491,6 +491,20 @@
 
 - [`terminal-key-mapping.spec.ts`](./terminal-key-mapping/terminal-key-mapping.spec.ts)
 
+## [Terminal Pane Internal Split](./terminal-pane-internal-split/README.md)
+
+- [`controller-identity-stable-via-ref.spec.ts`](./terminal-pane-internal-split/controller-identity-stable-via-ref.spec.ts)
+- [`cwd-fallback-in-ipc-resolve.spec.ts`](./terminal-pane-internal-split/cwd-fallback-in-ipc-resolve.spec.ts)
+- [`effect-three-levels-tab-vs-panel.spec.ts`](./terminal-pane-internal-split/effect-three-levels-tab-vs-panel.spec.ts)
+- [`hydrate-then-spawn-order.spec.ts`](./terminal-pane-internal-split/hydrate-then-spawn-order.spec.ts)
+- [`leaf-level-cancellation-token.spec.ts`](./terminal-pane-internal-split/leaf-level-cancellation-token.spec.ts)
+- [`pane-tree-reducer.spec.ts`](./terminal-pane-internal-split/pane-tree-reducer.spec.ts)
+- [`panel-reducer.spec.ts`](./terminal-pane-internal-split/panel-reducer.spec.ts)
+- [`reducer-pure-with-effects.spec.ts`](./terminal-pane-internal-split/reducer-pure-with-effects.spec.ts)
+- [`remove-pty-dedup-set.spec.ts`](./terminal-pane-internal-split/remove-pty-dedup-set.spec.ts)
+- [`spawn-queue-with-reason-dedup.spec.ts`](./terminal-pane-internal-split/spawn-queue-with-reason-dedup.spec.ts)
+- [`xterm-keyhandler-closure-controller.spec.ts`](./terminal-pane-internal-split/xterm-keyhandler-closure-controller.spec.ts)
+
 ## [TerminalPanel(Terminal 主容器)](./terminal-panel/README.md)
 
 - [`terminal-panel.spec.tsx`](./terminal-panel/terminal-panel.spec.tsx)
@@ -506,6 +520,23 @@
 ## [terminal-store (M-Terminal Step T3 + Agent Terminal MCP P1)](./terminal-store/README.md)
 
 - [`terminal-store.spec.ts`](./terminal-store/terminal-store.spec.ts)
+
+## [Terminal Tab Drag Split](./terminal-tab-drag-split/README.md)
+
+- [`agent-attach.spec.ts`](./terminal-tab-drag-split/agent-attach.spec.ts)
+- [`agent-control-link-stable.spec.ts`](./terminal-tab-drag-split/agent-control-link-stable.spec.ts)
+- [`attach-rejected-reverse-notify.spec.ts`](./terminal-tab-drag-split/attach-rejected-reverse-notify.spec.ts)
+- [`detach-suppresses-panel-empty-for-move.spec.ts`](./terminal-tab-drag-split/detach-suppresses-panel-empty-for-move.spec.ts)
+- [`dispatch-and-collect-sync-effects.spec.ts`](./terminal-tab-drag-split/dispatch-and-collect-sync-effects.spec.ts)
+- [`drop-attach-as-leaf.spec.ts`](./terminal-tab-drag-split/drop-attach-as-leaf.spec.ts)
+- [`drop-hit-test-fallback.spec.ts`](./terminal-tab-drag-split/drop-hit-test-fallback.spec.ts)
+- [`drop-promote-to-scoped.spec.ts`](./terminal-tab-drag-split/drop-promote-to-scoped.spec.ts)
+- [`popout-rejects-cross-window.spec.ts`](./terminal-tab-drag-split/popout-rejects-cross-window.spec.ts)
+- [`preflight-rejects-over-limit.spec.ts`](./terminal-tab-drag-split/preflight-rejects-over-limit.spec.ts)
+- [`pty-not-restarted.spec.ts`](./terminal-tab-drag-split/pty-not-restarted.spec.ts)
+- [`split-tab-dragstart-rejected.spec.ts`](./terminal-tab-drag-split/split-tab-dragstart-rejected.spec.ts)
+- [`tab-limit.spec.ts`](./terminal-tab-drag-split/tab-limit.spec.ts)
+- [`useterminal-no-double-mount.spec.ts`](./terminal-tab-drag-split/useterminal-no-double-mount.spec.ts)
 
 ## [TerminalTabs(终端 tab 列表 + 「+」按钮)](./terminal-tabs/README.md)
 

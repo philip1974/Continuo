@@ -4,6 +4,12 @@
 //
 // BDD: src/__tests__/terminal-sessions-service/
 
+/** topic-05: agent 在 MCP create_session 时指定 attach 目标。 */
+export type AttachTarget =
+  | { kind: 'active' }
+  | { kind: 'panel'; panelId: string }
+  | { kind: 'window'; windowId: number };
+
 export interface MainTerminalSession {
   readonly id: string;
   readonly title: string;
@@ -16,6 +22,8 @@ export interface MainTerminalSession {
   // Issue #28 Phase 1:owner BrowserWindow.id。renderer 不自报,
   // 由 IPC create handler 从 event.sender 推断后传入。
   readonly ownerWindowId: number;
+  /** topic-05: agent attach hint;renderer 用此决定 attach 落到哪个 panel。 */
+  readonly attachTarget?: AttachTarget;
 }
 
 export interface AddSessionInput {
@@ -26,6 +34,7 @@ export interface AddSessionInput {
   readonly agentLabel?: string;
   readonly scoped?: boolean;
   readonly ownerWindowId: number;
+  readonly attachTarget?: AttachTarget;
 }
 
 export interface GetAllFilter {
@@ -80,6 +89,7 @@ export function add(input: AddSessionInput): void {
     createdAt: Date.now(),
     exitCode: null,
     ownerWindowId: input.ownerWindowId,
+    ...(input.attachTarget !== undefined ? { attachTarget: input.attachTarget } : {}),
   };
   sessions.set(input.id, session);
   notify();

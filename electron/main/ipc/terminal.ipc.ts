@@ -52,6 +52,14 @@ export const createInputSchema = z
     originHint: z.enum(['user', 'agent']).optional(),
     agentLabel: z.string().optional(),
     scoped: z.boolean().optional(),
+    // topic-05: 透传到 sessionsService,让 renderer 端 InternalTerminalPanel 决定 attach
+    attachTarget: z
+      .discriminatedUnion('kind', [
+        z.object({ kind: z.literal('active') }).strict(),
+        z.object({ kind: z.literal('panel'), panelId: z.string().min(1) }).strict(),
+        z.object({ kind: z.literal('window'), windowId: z.number().int() }).strict(),
+      ])
+      .optional(),
   })
   .strict();
 
@@ -83,11 +91,20 @@ export const idOnlyInputSchema = z
 
 export const noInputSchema = z.object({}).strict();
 
+// topic-05: renderer attachRejected 反向通知 schema
+export const attachRejectedInputSchema = z
+  .object({
+    sessionId: z.string().min(1),
+    reason: z.enum(['limit', 'duplicate', 'not-hydrated', 'no-target']),
+  })
+  .strict();
+
 export type CreateInput = z.infer<typeof createInputSchema>;
 export type WriteInput = z.infer<typeof writeInputSchema>;
 export type ResizeInput = z.infer<typeof resizeInputSchema>;
 export type UpdateCwdInput = z.infer<typeof updateCwdInputSchema>;
 export type IdOnlyInput = z.infer<typeof idOnlyInputSchema>;
+export type AttachRejectedInput = z.infer<typeof attachRejectedInputSchema>;
 
 // ── handlers ─────────────────────────────────────────────────
 
@@ -136,6 +153,7 @@ export function makeCreateHandler(deps?: {
       ownerWindowId: win.id,
       ...(input.agentLabel !== undefined ? { agentLabel: input.agentLabel } : {}),
       ...(input.scoped !== undefined ? { scoped: input.scoped } : {}),
+      ...(input.attachTarget !== undefined ? { attachTarget: input.attachTarget } : {}),
     });
     return input.scoped ? { id, cwd, title } : { id };
   };
@@ -230,6 +248,30 @@ export const killHandler = (input: IdOnlyInput): void => {
   termService.kill(input.id);
 };
 
+// topic-05: renderer 反向通知 main 该 agent session attach 失败;main 端
+// remove session metadata + kill PTY。
+// V1 简化:不做 main 端 preflight reservation,失败时 cleanup。
+export function makeAttachRejectedHandler(deps?: {
+  service?: typeof termService;
+  sessionStore?: typeof terminalSessions;
+  buffer?: typeof terminalBuffer;
+}) {
+  const service = deps?.service ?? termService;
+  const sessionStore = deps?.sessionStore ?? terminalSessions;
+  const buffer = deps?.buffer ?? terminalBuffer;
+  return (input: AttachRejectedInput): void => {
+    console.warn(
+      '[terminal-ipc] attach-rejected:',
+      input.sessionId,
+      'reason=',
+      input.reason,
+    );
+    sessionStore.remove(input.sessionId);
+    if (service.has(input.sessionId)) service.kill(input.sessionId);
+    buffer.destroy(input.sessionId);
+  };
+}
+
 // ── 注册 ─────────────────────────────────────────────────────
 
 export function registerTerminalIpc(): void {
@@ -289,6 +331,12 @@ export function registerTerminalIpc(): void {
   safeHandle(TERMINAL_CHANNELS.KILL, idOnlyInputSchema, killHandler, trusted);
   safeHandle(TERMINAL_CHANNELS.DESTROY, idOnlyInputSchema, killHandler, trusted);
   safeHandle(TERMINAL_CHANNELS.REMOVE, idOnlyInputSchema, removeHandler, trusted);
+  safeHandle(
+    TERMINAL_CHANNELS.ATTACH_REJECTED,
+    attachRejectedInputSchema,
+    makeAttachRejectedHandler(),
+    trusted,
+  );
 
   ipcMain.handle(
     UPDATE_CWD_CHANNEL,

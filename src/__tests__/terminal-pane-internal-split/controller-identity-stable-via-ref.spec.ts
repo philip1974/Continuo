@@ -28,8 +28,10 @@ describe('terminal pane internal split - controller identity stable via ref', ()
       panelId: 'panel-1',
       windowId: 7,
       dispatch,
+      dispatchAndCollect: vi.fn().mockReturnValue([]),
       stateRef,
       removedPtyIds: new Set(),
+      closePanel: vi.fn(),
     });
     const unregister = registerPaneController(7, 'panel-1', controller);
     const first = controller;
@@ -62,7 +64,9 @@ describe('terminal pane internal split - controller identity stable via ref', ()
       panelId: 'panel-1',
       windowId: 7,
       dispatch: vi.fn(),
+      dispatchAndCollect: vi.fn().mockReturnValue([]),
       removedPtyIds,
+      closePanel: vi.fn(),
       stateRef: {
         current: {
           hydrated: true,

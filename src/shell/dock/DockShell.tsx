@@ -19,12 +19,86 @@ import { useClosingStore } from '@/stores/closing.store';
 import { useEditorStore } from '@/stores/editor.store';
 import { debounce } from '@/lib/debounce';
 import { coApi } from '@/lib/co-api';
+import { TAB_DRAG_MIME, decodeTabDragPayload, type TabDragPayload } from '@/lib/tab-drag-payload';
+import { isPopoutWindow } from '@/lib/popout-mode';
+import { getPaneController } from '@/panels/Terminal/PaneControllerRegistry';
 import '@/styles/dockview.css';
 
 // 外提到 module 顶层常量:DockviewReact 的 components/tabComponents 引用稳定
 // 才能避免 dockview 内部 effect 误判 props 变化。每次 render 新建对象会
 // 触发 dockview 重订阅 createComponent。同 panelComponents 对照(useMemo)。
 const tabComponents = { default: SharedTab };
+
+// topic-05: dockview Position('top'/'bottom'/'left'/'right'/'center') → addPanel
+// position.direction('above'/'below'/'left'/'right'/'within')。
+// center 不映射(我们的 drop 不应落 center — 那意味着合并 tab 到现有 group,
+// 等价 V1 不支持的反向 promote;简化为 right)。
+function positionToAddDirection(
+  position: 'top' | 'bottom' | 'left' | 'right' | 'center',
+): 'above' | 'below' | 'left' | 'right' | 'within' {
+  switch (position) {
+    case 'top':
+      return 'above';
+    case 'bottom':
+      return 'below';
+    case 'left':
+      return 'left';
+    case 'right':
+      return 'right';
+    case 'center':
+      return 'within';
+  }
+}
+
+async function handleExternalTabDrop(
+  payload: TabDragPayload,
+  position: 'top' | 'bottom' | 'left' | 'right' | 'center',
+  group: unknown,
+  api: DockviewApi,
+): Promise<void> {
+  const currentWindowId = coApi.system.windowId;
+  const controller = getPaneController(currentWindowId, payload.sourcePanelId);
+  if (!controller) {
+    console.warn('[tab-drag] DROP_EXTERNAL no source controller for panel=', payload.sourcePanelId);
+    return;
+  }
+  const result = controller.detachTab(payload.sourceTabId, { forMove: true });
+  if (!result.detached) {
+    console.warn('[tab-drag] DROP_EXTERNAL detach rejected reason=', result.reason);
+    return;
+  }
+  // 让 React 先 commit 完 unmount 原 TerminalLeaf,避免双 useTerminal mount 双订阅 PTY。
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  const direction = positionToAddDirection(position);
+  console.debug('[tab-drag] DROP_EXTERNAL position=', position, 'direction=', direction, 'sessionId=', payload.sessionId);
+  try {
+    api.addPanel({
+      id: `terminal-${payload.sessionId}`,
+      component: 'terminal',
+      title: payload.title,
+      ...(direction !== 'within'
+        ? {
+            position: {
+              referenceGroup: group as never,
+              direction,
+            },
+          }
+        : {}),
+      params: {
+        sessionId: payload.sessionId,
+        cwd: result.leafSnapshot.cwd ?? undefined,
+        title: payload.title,
+        role: 'promoted',
+      },
+    });
+  } catch (err) {
+    console.error('[tab-drag] DROP_EXTERNAL addPanel failed', err);
+    // V1: addPanel 失败时不回滚 detach(已经从 reducer 移除);agent 看到 NOT_FOUND 自查
+    return;
+  }
+  // 原 panel 空了就主动关
+  controller.closeIfStillEmpty();
+}
 
 interface FlushBridge {
   readonly layout?: {
@@ -169,6 +243,28 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       // 包括 group 整体关闭、第三方调用方等间接路径,只要走 api.close 都能拿到动画。
       event.api.panels.forEach(wrapPanelClose);
       event.api.onDidAddPanel(wrapPanelClose);
+
+      // topic-05: 外部 tab 拖入 dockview 区时显示 overlay + 处理 drop。
+      // onUnhandledDragOverEvent 在 dataTransfer 不是 dockview 自己 PanelTransfer 时
+      // 触发(我们的 MIME = application/x-continuo-terminal-tab),accept() 让 dockview
+      // 走完整 drop overlay 流程。
+      event.api.onUnhandledDragOverEvent((evt) => {
+        const types = evt.nativeEvent.dataTransfer?.types ?? [];
+        if (Array.from(types).includes(TAB_DRAG_MIME)) {
+          evt.accept();
+        }
+      });
+      event.api.onDidDrop((evt) => {
+        if (isPopoutWindow()) return;
+        const payload = decodeTabDragPayload(evt.nativeEvent.dataTransfer);
+        if (!payload) return;
+        const currentWindowId = coApi.system.windowId;
+        if (payload.windowId !== currentWindowId) {
+          console.debug('[tab-drag] CROSS_WINDOW_REJECTED payload.windowId=', payload.windowId);
+          return;
+        }
+        void handleExternalTabDrop(payload, evt.position, evt.group, event.api);
+      });
     },
     [onLayoutReady],
   );

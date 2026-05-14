@@ -64,6 +64,11 @@ export interface PreloadTerminalSession {
   readonly scoped?: boolean;
   readonly createdAt: number;
   readonly exitCode: number | null;
+  /** topic-05: agent attach hint;renderer 端 InternalTerminalPanel 据此判断接管。 */
+  readonly attachTarget?:
+    | { readonly kind: 'active' }
+    | { readonly kind: 'panel'; readonly panelId: string }
+    | { readonly kind: 'window'; readonly windowId: number };
 }
 
 // 给 fs 入参用的轻量 ListDirOptions —— 与 main 端 zod schema 对齐字段
@@ -182,6 +187,12 @@ const api = {
     > => ipcRenderer.invoke(TERMINAL_CHANNELS.LIST_SESSIONS, {}),
     remove: (id: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(TERMINAL_CHANNELS.REMOVE, { id }),
+    // topic-05: renderer 端 tryAttachExisting 失败时反向通知 main 清理 session。
+    attachRejected: (
+      sessionId: string,
+      reason: 'limit' | 'duplicate' | 'not-hydrated' | 'no-target',
+    ): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(TERMINAL_CHANNELS.ATTACH_REJECTED, { sessionId, reason }),
     updateCwd: (id: string, cwd: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke('session:update-cwd', id, cwd),
     /** 订阅 main 推的 snapshot;返回 unsubscribe. */

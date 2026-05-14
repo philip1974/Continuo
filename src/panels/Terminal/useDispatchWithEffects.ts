@@ -26,10 +26,24 @@ export function useDispatchWithEffects<S, A, E>(
     };
   }
 
+  // dispatchAndCollect: 同步跑 reducer + 同步返回 effects（不进 effectQueueRef）。
+  // 让 caller(如 PaneController.detachTab)拿到本次 action 的 effects 后直接消费,
+  // 不依赖 React effect flush 的异步时序。state 仍然同步更新(setState + stateRef)。
+  const dispatchAndCollectRef = useRef<(action: A) => E[]>(null as unknown as (action: A) => E[]);
+  if (dispatchAndCollectRef.current === null) {
+    dispatchAndCollectRef.current = (action: A) => {
+      const result = reducer(stateRef.current, action);
+      stateRef.current = result.state;
+      setState(result.state);
+      return result.effects;
+    };
+  }
+
   return {
     state,
     stateRef,
     dispatch: dispatchRef.current,
+    dispatchAndCollect: dispatchAndCollectRef.current,
     effectQueueRef,
     effectTrigger,
   };

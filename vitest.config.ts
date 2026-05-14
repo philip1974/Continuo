@@ -15,6 +15,8 @@ export default defineConfig({
       ['src/__tests__/design-system/**', 'jsdom'],
       ['src/__tests__/settings-values/**', 'jsdom'],
       ['src/__tests__/keybindings-store/**', 'jsdom'],
+      // topic-05: DataTransfer / document / requestAnimationFrame / React testing
+      ['src/__tests__/terminal-tab-drag-split/**', 'jsdom'],
     ],
     setupFiles: ['src/__tests__/design-system/setup.ts'],
     globals: false,

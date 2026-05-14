@@ -51,6 +51,22 @@ export type ListSessionItem = z.infer<typeof sessionItemSchema>;
 
 // ── create_session(P2,不含 autorun)──────────────────────────
 
+/**
+ * topic-05 加可选 target hint:agent 指定新 session attach 到哪个 InternalTerminalPanel。
+ * kind='active'(默认)— main 通过 IPC query renderer 当前 active terminal panel。
+ * kind='panel' — 显式指定 panelId。
+ * kind='window' — 指定 windowId,落到该窗口 first visible terminal panel。
+ *
+ * 现有调用方不传 target 时,行为等价于 { kind: 'active' }(向后兼容)。
+ */
+export const attachTargetSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('active') }).strict(),
+  z.object({ kind: z.literal('panel'), panelId: z.string().min(1) }).strict(),
+  z.object({ kind: z.literal('window'), windowId: z.number().int() }).strict(),
+]);
+
+export type AttachTarget = z.infer<typeof attachTargetSchema>;
+
 export const createSessionInputSchema = z
   .object({
     cwd: z.string().optional(),
@@ -58,6 +74,8 @@ export const createSessionInputSchema = z
     agentLabel: z.string().optional(),
     /** spawn 后 delay 200ms(Windows 600)键入此命令 + \n. */
     autorun: z.string().optional(),
+    /** topic-05: optional attach hint. */
+    target: attachTargetSchema.optional(),
   })
   .strict();
 

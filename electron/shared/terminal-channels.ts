@@ -12,6 +12,9 @@ export const TERMINAL_CHANNELS = {
   // P1 Agent Terminal MCP:session metadata 真相源在 main
   LIST_SESSIONS: 'terminal:list_sessions',
   REMOVE: 'terminal:remove',
+  // topic-05: renderer 通知 main attach 拒绝;main 端 remove session。
+  // V1 反向 cleanup(不做 main 端 preflight reserveAttachSlot — 工程范围内简化)。
+  ATTACH_REJECTED: 'terminal:attach_rejected',
   // event(main → renderer,webContents.send)
   DATA: 'terminal:data',
   EXIT: 'terminal:exit',
