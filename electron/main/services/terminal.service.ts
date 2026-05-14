@@ -96,7 +96,11 @@ export async function createTerminal(
     shell,
     baseEnv,
   );
-  const p = pty.spawn(shell, args, {
+  // 强制 login + interactive shell:对齐 iTerm 默认行为 (`exec -l zsh`)。
+  // 没 -l/-i 时 zsh 偶发不启 ZLE → zsh-autosuggestions 等 widget plugin 失效。
+  // 用户传 args 优先,只在用户没传时加默认 flag。
+  const finalArgs = args.length === 0 ? ['-l', '-i'] : args;
+  const p = pty.spawn(shell, finalArgs, {
     name: 'xterm-256color',
     cols: 120,
     rows: 40,
