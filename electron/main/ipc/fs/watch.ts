@@ -4,7 +4,7 @@
 // 设计:
 // - 只 watch 已展开的目录(VSCode 风,大 monorepo 不爆 watcher)
 // - MAX_WATCHERS=64 上限,LRU 踢最早(借鉴 Mind 风,防资源泄漏)
-// - 同 path 重复 watch 幂等(creator 只调一次)
+// - 同 path 重复 watch 共享 watcher,按引用计数释放(creator 只调一次)
 // - cb 是 renderer 端注入的"通知函数",pool 内部不知道 IPC
 
 export const MAX_WATCHERS = 64;
@@ -33,31 +33,37 @@ export interface WatcherPool {
 }
 
 export function createWatcherPool(creator: WatcherCreator): WatcherPool {
-  const watchers = new Map<string, Watcher>();
+  const watchers = new Map<string, { watcher: Watcher; refCount: number }>();
   const order: string[] = []; // LRU,head 是最早
 
   return {
     watch(path, onChange) {
-      if (watchers.has(path)) return; // 幂等
+      const entry = watchers.get(path);
+      if (entry) {
+        entry.refCount += 1;
+        return;
+      }
 
       // 满了 → LRU 踢
       if (watchers.size >= MAX_WATCHERS) {
         const oldest = order.shift();
         if (oldest !== undefined) {
-          watchers.get(oldest)?.close();
+          watchers.get(oldest)?.watcher.close();
           watchers.delete(oldest);
         }
       }
 
       const w = creator(path, onChange);
-      watchers.set(path, w);
+      watchers.set(path, { watcher: w, refCount: 1 });
       order.push(path);
     },
 
     unwatch(path) {
-      const w = watchers.get(path);
-      if (!w) return;
-      w.close();
+      const entry = watchers.get(path);
+      if (!entry) return;
+      entry.refCount -= 1;
+      if (entry.refCount > 0) return;
+      entry.watcher.close();
       watchers.delete(path);
       const idx = order.indexOf(path);
       if (idx >= 0) order.splice(idx, 1);
@@ -72,7 +78,7 @@ export function createWatcherPool(creator: WatcherCreator): WatcherPool {
     },
 
     closeAll() {
-      for (const w of watchers.values()) w.close();
+      for (const entry of watchers.values()) entry.watcher.close();
       watchers.clear();
       order.length = 0;
     },

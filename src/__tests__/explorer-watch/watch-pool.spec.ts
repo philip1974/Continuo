@@ -24,13 +24,30 @@ describe('createWatcherPool', () => {
     expect(creator).toHaveBeenCalledWith('/a', expect.any(Function));
   });
 
-  it('重复 watch 同 path 幂等(creator 不再调)', () => {
+  it('重复 watch 同 path 共享 watcher(creator 不再调)', () => {
     const creator = makeCreator();
     const pool = createWatcherPool(creator);
     pool.watch('/a', vi.fn());
     pool.watch('/a', vi.fn());
     pool.watch('/a', vi.fn());
     expect(creator).toHaveBeenCalledTimes(1);
+  });
+
+  it('重复 watch 同 path 需要对应次数 unwatch 才 close', () => {
+    const close = vi.fn();
+    const creator: WatcherCreator = vi.fn(() => ({ close }));
+    const pool = createWatcherPool(creator);
+
+    pool.watch('/a', vi.fn());
+    pool.watch('/a', vi.fn());
+
+    pool.unwatch('/a');
+    expect(pool.has('/a')).toBe(true);
+    expect(close).not.toHaveBeenCalled();
+
+    pool.unwatch('/a');
+    expect(pool.has('/a')).toBe(false);
+    expect(close).toHaveBeenCalledTimes(1);
   });
 
   it('has(path) 反映状态', () => {

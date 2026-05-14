@@ -10,7 +10,7 @@ Explorer 自动反映,不需手动刷新。
 │ watcherPool(MAX 64,LRU)                          │
 │   start(path):fs.watch(path, non-recursive)        │
 │     → onChange → webContents.send(fs:dir-changed)  │
-│   stop(path):watcher.close()                       │
+│   stop(path):最后一个引用释放时 watcher.close()    │
 │ fs:watch / fs:unwatch IPC handlers(走 safeHandle)  │
 └─ preload ──────────────────────────────────────────┘
 │ window.api.fs.watchDir / unwatchDir                │
@@ -46,7 +46,7 @@ Explorer 自动反映,不需手动刷新。
 
 ### `watch-pool.spec.ts`(主进程纯函数)
 - watch(path) 调 creator 一次
-- 重复 watch 同 path 幂等(creator 不再调)
+- 重复 watch 同 path 共享 watcher(creator 不再调),按引用次数 unwatch
 - unwatch(path) 调 watcher.close
 - has(path) 反映状态
 - size() 计数正确
