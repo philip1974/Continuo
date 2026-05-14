@@ -248,11 +248,17 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       // onUnhandledDragOverEvent 在 dataTransfer 不是 dockview 自己 PanelTransfer 时
       // 触发(我们的 MIME = application/x-continuo-terminal-tab),accept() 让 dockview
       // 走完整 drop overlay 流程。
+      //
+      // 关键:只在 target === 'edge' 时 accept,让 panel 内部(content / center / tab)
+      // 的 drag 事件 bubble 到内部 TerminalPaneTree.onDragOver/onDrop 触发 BSP
+      // attach。否则 dockview 会接管整个 panel 当 drop target,内部 handler 收不到事件。
       event.api.onUnhandledDragOverEvent((evt) => {
         const types = evt.nativeEvent.dataTransfer?.types ?? [];
-        if (Array.from(types).includes(TAB_DRAG_MIME)) {
+        if (!Array.from(types).includes(TAB_DRAG_MIME)) return;
+        if (evt.target === 'edge') {
           evt.accept();
         }
+        // target ∈ {tab, header_space, content} → 不 accept,事件 bubble 给内部
       });
       event.api.onDidDrop((evt) => {
         if (isPopoutWindow()) return;
