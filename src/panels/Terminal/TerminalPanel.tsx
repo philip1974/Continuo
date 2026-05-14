@@ -255,15 +255,42 @@ function InternalTerminalPanel({
       // 到"剩余 active tab"的 leaf,达成两 tab 合并成一个 panel 内的 BSP split。
       const isSelfDrag =
         payload.sourcePanelId === panelId && payload.sourceTabId === tabIdOnEl;
+      console.debug(
+        '[tab-drag] DOC_CAPTURE_DROP pre-detach',
+        'closure panelId=',
+        panelId,
+        'sourcePanelId=',
+        payload.sourcePanelId,
+        'isSelfDrag=',
+        isSelfDrag,
+        'stateRef.tabs=',
+        stateRef.current.tabs.map((t) => t.id),
+        'stateRef.activeTabId=',
+        stateRef.current.activeTabId,
+      );
       const detached = sourceCtrl.detachTab(payload.sourceTabId, { forMove: true });
       if (!detached.detached) {
         console.debug('[tab-drag] DOC_CAPTURE_DROP detach rejected', detached.reason);
         return;
       }
+      console.debug(
+        '[tab-drag] DOC_CAPTURE_DROP post-detach (sync)',
+        'stateRef.tabs=',
+        stateRef.current.tabs.map((t) => t.id),
+        'stateRef.activeTabId=',
+        stateRef.current.activeTabId,
+      );
       requestAnimationFrame(() => {
         // detach 后 activeTabId 已自动 fallback 到剩余 tab(reducer 干的)。
         // self-drag:用 fallback target tab 的 activeLeafId 作 target;非 self-drag:
         // 用 user hit 的 leafId(仍在 target tab 内)
+        console.debug(
+          '[tab-drag] DOC_CAPTURE_DROP rAF tick',
+          'stateRef.tabs=',
+          stateRef.current.tabs.map((t) => t.id),
+          'stateRef.activeTabId=',
+          stateRef.current.activeTabId,
+        );
         let targetTabId: string;
         let targetLeafId: string;
         if (isSelfDrag) {
