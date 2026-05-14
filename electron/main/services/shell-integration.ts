@@ -4,18 +4,20 @@ import * as path from 'node:path';
 
 export type SupportedShell = 'zsh' | 'bash' | 'fish' | null;
 
-const ZSH_SNIPPET = String.raw`# 显式启 ZLE — node-pty spawn 下 zsh 偶发 ZLE 默认未 on,导致
-# zsh-autosuggestions / syntax-highlighting 等基于 widget 的 plugin
-# 因 bindkey/zle 绑定失败而 silent 无效。必须在 source 用户 .zshrc 前置位。
-setopt zle
+const ZSH_SNIPPET = String.raw`# ZDOTDIR hijack 注入 OSC 7,但保留 hijack 状态会让 user .zshrc 内 oh-my-zsh
+# / starship / zsh-autosuggestions 等 plugin 初始化时检测到 "异常 ZDOTDIR"
+# (== /tmp/continuo-shell-...) 而 silent 失败。实测 sub-shell env -u ZDOTDIR
+# zsh -i 后 autosuggestions 灰色提示工作,带 hijack 的 ZDOTDIR 就不工作。
+#
+# 修复:把 ZDOTDIR 还原回 $HOME(zsh 原生默认),让 user .zshrc 在跟 iTerm
+# 完全一样的环境跑。复现 zsh 原生 login 启动流程(.zprofile → .zshrc),
+# 然后追加 OSC 7 hook。
+if [[ -n "$_CONTINUO_USER_ZDOTDIR" ]]; then
+  export ZDOTDIR="$_CONTINUO_USER_ZDOTDIR"
+fi
 
-# 我们把 ZDOTDIR 改到 tmpDir 注入 OSC 7 hook,但这会让 zsh 跳过用户的
-# $HOME/.zprofile($ZDOTDIR/.zprofile 在 tmpDir 为空)。.zprofile 通常配
-# PATH / brew shellenv / nvm init 等,缺它会导致用户 .zshrc 里 starship/
-# zsh-autosuggestions 等 plugin 链式坏掉(brew 装的二进制找不到)。手动
-# source 用户的 .zprofile + .zshrc 复现 zsh 正常加载顺序。
-[ -f "$_CONTINUO_USER_ZDOTDIR/.zprofile" ] && source "$_CONTINUO_USER_ZDOTDIR/.zprofile"
-[ -f "$_CONTINUO_USER_ZDOTDIR/.zshrc" ] && source "$_CONTINUO_USER_ZDOTDIR/.zshrc"
+[ -f "$ZDOTDIR/.zprofile" ] && source "$ZDOTDIR/.zprofile"
+[ -f "$ZDOTDIR/.zshrc" ] && source "$ZDOTDIR/.zshrc"
 
 _continuo_osc7() {
   printf '\e]7;file://%s%s\a' "${'${HOST:-}'}" "$PWD"
