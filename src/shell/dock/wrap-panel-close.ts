@@ -2,10 +2,20 @@ import type { IDockviewPanel } from 'dockview-react';
 import { useClosingStore } from '@/stores/closing.store';
 import { EXIT_DURATION_MS } from '@/shell/motion/tokens';
 import { coApi } from '@/lib/co-api';
-import { getPaneController } from '@/panels/Terminal/PaneControllerRegistry';
 import { cancelPanelSpawns } from '@/panels/Terminal/spawnLeaf';
 
 const patched = new WeakSet<IDockviewPanel>();
+const suppressedPanelCloses = new Set<string>();
+
+export function markPanelCloseSuppressed(panelId: string): void {
+  suppressedPanelCloses.add(panelId);
+}
+
+export function consumePanelCloseSuppressed(panelId: string): boolean {
+  const suppressed = suppressedPanelCloses.has(panelId);
+  suppressedPanelCloses.delete(panelId);
+  return suppressed;
+}
 
 function getScopedTerminalSessionId(panel: IDockviewPanel): string | null {
   if (!panel.api.id.startsWith('terminal-')) return null;
@@ -54,8 +64,7 @@ function removeTerminalPtysForPanel(panel: IDockviewPanel): void {
   // 真 close:取消该 panel 还在 in-flight 的 spawn,防 PTY 孤儿
   cancelPanelSpawns(panel.api.id);
   const scopedSessionId = getScopedTerminalSessionId(panel);
-  const controller = getPaneController(coApi.system.windowId, panel.api.id);
-  const ids = controller?.getCurrentPtyIds() ?? (scopedSessionId ? [scopedSessionId] : []);
+  const ids = scopedSessionId ? [scopedSessionId] : [];
   const uniqueIds = Array.from(new Set(ids));
   void Promise.allSettled(uniqueIds.map((id) => coApi.terminal.remove(id))).then(
     (results) => {

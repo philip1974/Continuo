@@ -1,6 +1,18 @@
 import { coApi } from '@/lib/co-api';
-import type { PanelAction } from './panelReducer';
-import type { SpawnReason } from './paneTree';
+
+type SpawnReason = 'hydrate' | 'split' | 'addTab' | 'retry';
+type SpawnLeafDispatchAction = {
+  type: 'PANE_ACTION';
+  tabId: string;
+  action:
+    | { type: 'SET_PTY_FAIL'; leafId: string }
+    | {
+        type: 'SET_PTY_ID';
+        leafId: string;
+        ptyId: string;
+        cwd?: string | undefined;
+      };
+};
 
 export interface SpawnRequest {
   tabId: string;
@@ -22,7 +34,7 @@ export interface SpawnQueue {
   pendingKeys: () => string[];
 }
 
-export type PanelDispatch = (action: PanelAction) => void;
+export type PanelDispatch = (action: SpawnLeafDispatchAction) => void;
 export type RemoveTerminal = (id: string) => Promise<{ ok: boolean }>;
 
 // ── 模块级状态 (跨 React StrictMode 双 mount 持久) ───────────────────────

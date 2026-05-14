@@ -6,7 +6,7 @@
 // theme:跟随 ThemeProvider 的 resolved(dark/light)— 与 CodeEditor 一致,
 //   切主题时不重建 term,只改 term.options.theme(避免丢历史输出)。
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Terminal, type ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
@@ -22,14 +22,25 @@ import {
   consumeMappedKeyOnData,
   createMappedKeyState,
 } from './key-mapping';
-import { getPaneController, type PaneController } from './PaneControllerRegistry';
 
 type CursorStyle = 'block' | 'underline' | 'bar';
+type SplitDirection = 'horizontal' | 'vertical';
 
 export interface PaneKeyOptions {
   panelId: string;
   tabId: string;
   leafId: string;
+}
+
+interface PaneSplitKeyController {
+  dispatch: (action: {
+    type: 'PANE_ACTION';
+    tabId: string;
+    action: { type: 'FOCUS_LEAF'; leafId: string };
+  }) => void;
+  split: (direction: SplitDirection) => void;
+  focusPrev: () => void;
+  focusNext: () => void;
 }
 
 // GitHub Dark 调色板(原 Mind 暗色)
@@ -129,10 +140,8 @@ const TERM_OPTIONS = {
  *
  * 注意:返回的 ref 必须由调用方放在容器 div 上;termId 变化会重建实例。
  */
-export function useTerminal(termId: string, opts?: PaneKeyOptions) {
+export function useTerminal(termId: string, _opts?: PaneKeyOptions) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const paneKeyOptionsRef = useRef<PaneKeyOptions | undefined>(opts);
-  paneKeyOptionsRef.current = opts;
   // 首次 PTY stdout 到达前 = 还在 spawn shell + 跑 .zshrc。让上层显示 loading
   // overlay,用户看到"启动中..."而非纯黑框,减弱"卡顿"感(尤其 .zshrc 重的用户)。
   const [isReady, setIsReady] = useState(false);
@@ -186,13 +195,6 @@ export function useTerminal(termId: string, opts?: PaneKeyOptions) {
     // xterm 默认发出的 \r 替换为映射字节,避免 \x1b\r\r 双写。见 issue #18。
     term.attachCustomKeyEventHandler((event) => {
       applyMappedKeyOnKeydown(__mappedKeyState__, event);
-      const paneOpts = paneKeyOptionsRef.current;
-      if (paneOpts) {
-        const ctrl = getPaneController(coApi.system.windowId, paneOpts.panelId);
-        if (ctrl && handlePaneSplitKeyDown(event, paneOpts, ctrl) === false) {
-          return false;
-        }
-      }
       return true;
     });
     termRef.current = term;
@@ -329,13 +331,21 @@ export function useTerminal(termId: string, opts?: PaneKeyOptions) {
     return () => cancelAnimationFrame(raf);
   }, [sidebarOpen, sidebarWidth, termId]);
 
-  return { containerRef, isReady };
+  const fit = useCallback(() => {
+    try {
+      fitRef.current?.fit();
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  return { containerRef, isReady, fit };
 }
 
 export function handlePaneSplitKeyDown(
   event: KeyboardEvent,
   opts: PaneKeyOptions,
-  controller: Pick<PaneController, 'dispatch' | 'split' | 'focusPrev' | 'focusNext'>,
+  controller: PaneSplitKeyController,
 ): boolean {
   if (event.type !== 'keydown' || !event.metaKey) return true;
 
