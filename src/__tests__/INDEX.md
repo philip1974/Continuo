@@ -474,10 +474,6 @@
 
 - [`terminal-key-mapping.spec.ts`](./terminal-key-mapping/terminal-key-mapping.spec.ts)
 
-## [TerminalPanel(Terminal 主容器)](./terminal-panel/README.md)
-
-- [`terminal-panel.spec.tsx`](./terminal-panel/terminal-panel.spec.tsx)
-
 ## [terminal-panel-as-dockview-panel](./terminal-panel-as-dockview-panel/README.md)
 
 - [`core-contract.spec.ts`](./terminal-panel-as-dockview-panel/core-contract.spec.ts)
