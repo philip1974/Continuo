@@ -178,6 +178,10 @@
 
 - [`drop-handlers.spec.ts`](./explorer-dropzone/drop-handlers.spec.ts)
 
+## [explorer-expanded-state](./explorer-expanded-state/README.md)
+
+- [`folder-tree-expanded-state.spec.tsx`](./explorer-expanded-state/folder-tree-expanded-state.spec.tsx)
+
 ## [ExplorerHeader(FolderTree 顶部 Header)](./explorer-header/README.md)
 
 - [`explorer-header.spec.tsx`](./explorer-header/explorer-header.spec.tsx)

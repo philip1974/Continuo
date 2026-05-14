@@ -17,6 +17,7 @@ type ExplorerState = {
   search: string;
 
   toggleExpand: (path: string) => void;
+  setExpandedPaths: (paths: Iterable<string>) => void;
   setSort: (sort: ExplorerSort) => void;
   setSearch: (s: string) => void;
 };
@@ -34,6 +35,9 @@ export const useExplorerStore = create<ExplorerState>((set) => ({
       else next.add(path);
       return { expandedPaths: next };
     }),
+
+  setExpandedPaths: (paths) =>
+    set(() => ({ expandedPaths: new Set(paths) })),
 
   setSort: (sort) => set(() => ({ sort })),
   setSearch: (search) => set(() => ({ search })),

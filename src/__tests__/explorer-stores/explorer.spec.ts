@@ -49,6 +49,19 @@ describe('explorer.store · toggleExpand', () => {
   });
 });
 
+describe('explorer.store · setExpandedPaths', () => {
+  it('整体替换 expandedPaths,并返回新 Set 引用', () => {
+    useExplorerStore.getState().toggleExpand('/old');
+    const before = useExplorerStore.getState().expandedPaths;
+
+    useExplorerStore.getState().setExpandedPaths(['/work', '/work/src']);
+
+    const after = useExplorerStore.getState().expandedPaths;
+    expect(after).toEqual(new Set(['/work', '/work/src']));
+    expect(after).not.toBe(before);
+  });
+});
+
 describe('explorer.store · setSort / setSearch', () => {
   it('setSort 替换 sort', () => {
     useExplorerStore.getState().setSort({ by: 'mtime', reverse: true });

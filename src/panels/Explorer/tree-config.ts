@@ -11,6 +11,7 @@ import {
   selectionFeature,
   type DragTarget,
   type ItemInstance,
+  type SetStateFn,
   type TreeConfig,
 } from '@headless-tree/core';
 import type { FileEntry, IpcResult } from '@/lib/fs/types';
@@ -39,6 +40,9 @@ export interface CreateTreeConfigDeps {
     dataTransfer: DataTransfer,
     destDir: string,
   ) => void;
+  /** 受控展开状态:接 store.expandedPaths 时由 FolderTree 注入。 */
+  expandedItems?: string[];
+  setExpandedItems?: SetStateFn<string[]>;
 }
 
 const INDENT = 16;
@@ -137,10 +141,15 @@ export function createTreeConfig(
     onRename: deps.onRename,
     // headless-tree 默认不渲染 root 自身,只渲染已展开节点的 children。
     // root 必须显式 expand 才会触发 children 加载,否则 getItems() 返回 []。
-    // Step 5/6 接入 store.expandedPaths 后,这个初始值会被持久化版覆盖。
     initialState: {
       expandedItems: [deps.root],
     },
+    ...(deps.expandedItems
+      ? {
+          state: { expandedItems: deps.expandedItems },
+          setExpandedItems: deps.setExpandedItems,
+        }
+      : {}),
     // 文件树 drop 语义:只允许 drop into folder(no reorder);
     // 不能 drop 到自身或自身子树(loop);drop 到 file → 进父目录
     canReorder: false,

@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useTree } from '@headless-tree/react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import type { ItemInstance, TreeInstance } from '@headless-tree/core';
+import type { ItemInstance, SetStateFn, TreeInstance } from '@headless-tree/core';
 import type { FileEntry } from '@/lib/fs/types';
 import { ContextMenu, type ContextMenuActions } from './ContextMenu';
 import { CreateInput } from './CreateInput';
@@ -23,6 +23,7 @@ import {
 import { useFsWatcher } from './hooks/useFsWatcher';
 import { useEditorFile } from '@/panels/Editor/useEditorFile';
 import { useEditorStore } from '@/stores/editor.store';
+import { useExplorerStore } from '@/stores/explorer.store';
 import { coApi } from '@/lib/co-api';
 import { getCachedClipboard } from '@/plugins/sandbox-sweep';
 import { useSettingValue } from '@/plugins/settings/values-store';
@@ -41,6 +42,16 @@ function dirname(p: string): string {
   return trimmed.slice(0, idx) || '/';
 }
 
+function isWithinRoot(path: string, root: string): boolean {
+  const normalizedRoot = root.replace(/[\\/]+$/, '') || root;
+  if (normalizedRoot === '/') return path.startsWith('/');
+  return (
+    path === normalizedRoot ||
+    path.startsWith(`${normalizedRoot}/`) ||
+    path.startsWith(`${normalizedRoot}\\`)
+  );
+}
+
 export function FolderTree({ root }: { root: string }) {
   // tree ref:onRename callback 在 useMemo 里引用,需要稳定 handle 拿到最新 tree
   const treeRef = useRef<TreeInstance<FileEntry> | null>(null);
@@ -51,6 +62,23 @@ export function FolderTree({ root }: { root: string }) {
   const [hoverTarget, setHoverTarget] = useState<DropTargetEntry | null>(null);
   const dragDepthRef = useRef(0);
   const [dragActive, setDragActive] = useState(false);
+  const persistedExpandedPaths = useExplorerStore((s) => s.expandedPaths);
+  const setPersistedExpandedPaths = useExplorerStore((s) => s.setExpandedPaths);
+  const expandedItems = useMemo(() => {
+    const next = new Set<string>([root]);
+    for (const path of persistedExpandedPaths) {
+      if (isWithinRoot(path, root)) next.add(path);
+    }
+    return [...next];
+  }, [persistedExpandedPaths, root]);
+  const setExpandedItems = useCallback<SetStateFn<string[]>>(
+    (updater) => {
+      const current = [...useExplorerStore.getState().expandedPaths];
+      const next = typeof updater === 'function' ? updater(current) : updater;
+      setPersistedExpandedPaths(next);
+    },
+    [setPersistedExpandedPaths],
+  );
 
   const refreshParent = (parentPath: string) => {
     try {
@@ -127,8 +155,10 @@ export function FolderTree({ root }: { root: string }) {
             if (msgs.length > 0) alert(msgs.join('\n\n'));
           })();
         },
+        expandedItems,
+        setExpandedItems,
       }),
-    [root],
+    [expandedItems, root, setExpandedItems],
   );
   const tree = useTree<FileEntry>(config);
   treeRef.current = tree;
@@ -159,15 +189,8 @@ export function FolderTree({ root }: { root: string }) {
   );
 
   // ── fs.watch 增量更新(Step 6) ───────────────────────────────────
-  // 跟随 headless-tree 真实展开集合(我们的 store.expandedPaths 还没接,
-  // 用 tree.getState().expandedItems 即时读)。
-  const expandedPaths = useMemo(
-    () => new Set(tree.getState().expandedItems ?? []),
-    // tree.getState().expandedItems 是数组引用,变化时 useMemo 重算;
-    // 同时 items 引用也会随 expand 变,加进 deps 兜底
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [items, tree.getState().expandedItems],
-  );
+  // 跟随 headless-tree 受控展开集合,同步到 main 进程 watcher。
+  const expandedPaths = useMemo(() => new Set(expandedItems), [expandedItems]);
   useFsWatcher(expandedPaths, (changedPath) => {
     refreshParent(changedPath);
   });
