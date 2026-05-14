@@ -4,7 +4,12 @@ import * as path from 'node:path';
 
 export type SupportedShell = 'zsh' | 'bash' | 'fish' | null;
 
-const ZSH_SNIPPET = String.raw`# 我们把 ZDOTDIR 改到 tmpDir 注入 OSC 7 hook,但这会让 zsh 跳过用户的
+const ZSH_SNIPPET = String.raw`# 显式启 ZLE — node-pty spawn 下 zsh 偶发 ZLE 默认未 on,导致
+# zsh-autosuggestions / syntax-highlighting 等基于 widget 的 plugin
+# 因 bindkey/zle 绑定失败而 silent 无效。必须在 source 用户 .zshrc 前置位。
+setopt zle
+
+# 我们把 ZDOTDIR 改到 tmpDir 注入 OSC 7 hook,但这会让 zsh 跳过用户的
 # $HOME/.zprofile($ZDOTDIR/.zprofile 在 tmpDir 为空)。.zprofile 通常配
 # PATH / brew shellenv / nvm init 等,缺它会导致用户 .zshrc 里 starship/
 # zsh-autosuggestions 等 plugin 链式坏掉(brew 装的二进制找不到)。手动
