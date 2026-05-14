@@ -386,6 +386,8 @@ describe('makeListSessionsHandler', () => {
 });
 
 describe('makeRemoveHandler', () => {
+  const fakeWin = { id: 11 } as unknown as import('electron').BrowserWindow;
+
   it('立即删 metadata + 异步 kill PTY(若存在)', async () => {
     const service = {
       createTerminal: vi.fn(),
@@ -400,7 +402,7 @@ describe('makeRemoveHandler', () => {
     };
     const sessionStore = {
       add: vi.fn(),
-      get: vi.fn(),
+      get: vi.fn(() => ({ id: 'term-1', ownerWindowId: 11 })),
       getAll: vi.fn(() => []),
       remove: vi.fn(),
       setExited: vi.fn(),
@@ -414,8 +416,9 @@ describe('makeRemoveHandler', () => {
     const handler = makeRemoveHandler({
       service: service as never,
       sessionStore: sessionStore as never,
+      buffer: { destroy: vi.fn() } as never,
     });
-    handler({ id: 'term-1' });
+    handler({ id: 'term-1' }, fakeWin);
     expect(sessionStore.remove).toHaveBeenCalledWith('term-1');
     expect(service.kill).toHaveBeenCalledWith('term-1');
   });
@@ -434,7 +437,7 @@ describe('makeRemoveHandler', () => {
     };
     const sessionStore = {
       add: vi.fn(),
-      get: vi.fn(),
+      get: vi.fn(() => ({ id: 'term-dead', ownerWindowId: 11 })),
       getAll: vi.fn(() => []),
       remove: vi.fn(),
       setExited: vi.fn(),
@@ -448,9 +451,50 @@ describe('makeRemoveHandler', () => {
     const handler = makeRemoveHandler({
       service: service as never,
       sessionStore: sessionStore as never,
+      buffer: { destroy: vi.fn() } as never,
     });
-    handler({ id: 'term-dead' });
+    handler({ id: 'term-dead' }, fakeWin);
     expect(sessionStore.remove).toHaveBeenCalledWith('term-dead');
+    expect(service.kill).not.toHaveBeenCalled();
+  });
+
+  it('非 owner window remove → 抛 TERMINAL_NOT_FOUND 且不删 metadata', async () => {
+    const service = {
+      createTerminal: vi.fn(),
+      has: vi.fn(() => true),
+      write: vi.fn(),
+      resize: vi.fn(),
+      interrupt: vi.fn(),
+      kill: vi.fn(),
+      cleanupAll: vi.fn(),
+      safeTruncate: vi.fn(),
+      isInPlaceUpdate: vi.fn(),
+    };
+    const sessionStore = {
+      add: vi.fn(),
+      get: vi.fn(() => ({ id: 'term-1', ownerWindowId: 11 })),
+      getAll: vi.fn(() => []),
+      remove: vi.fn(),
+      setExited: vi.fn(),
+      nextDefaultTitle: vi.fn((_windowId: number) => 'Terminal 1'),
+      subscribe: vi.fn(),
+      _reset: vi.fn(),
+    };
+    const { makeRemoveHandler } = await import(
+      '../../../electron/main/ipc/terminal.ipc'
+    );
+    const handler = makeRemoveHandler({
+      service: service as never,
+      sessionStore: sessionStore as never,
+      buffer: { destroy: vi.fn() } as never,
+    });
+    expect(() =>
+      handler(
+        { id: 'term-1' },
+        { id: 22 } as unknown as import('electron').BrowserWindow,
+      ),
+    ).toThrow(/terminal not found/);
+    expect(sessionStore.remove).not.toHaveBeenCalled();
     expect(service.kill).not.toHaveBeenCalled();
   });
 });

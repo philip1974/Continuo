@@ -46,10 +46,13 @@ handler 真行为(node-pty spawn / write / resize)需 PTY 运行时,留 E2E 验�
   - 工厂返回 `(ownerWindowId) => void`
   - 调 `sessionStore.removeByOwner(ownerWindowId)` 摘 metadata
   - 对返回的每个 id,若 `service.has(id)` 则 `service.kill(id)`
+- terminal 控制类 handler:
+  - `write/resize/interrupt/kill/destroy/remove/attachRejected` 都必须由 sender window 推断 owner
+  - 非 owner 操作现有 session 时抛 `TERMINAL_NOT_FOUND`,不写 PTY、不删 metadata
 
 ## 不在本主题验证
 
 - node-pty spawn 真行为(留 E2E)
 - 多 session 并发(留 T3 store + T5 集成)
-- writeHandler / resizeHandler 真调 service(信任注入,不深测)
+- writeHandler / resizeHandler 真调 service 的 PTY 细节(只测 owner 入口和调用形状)
 - 跨 window 隔离的端到端 invariant(在 `terminal-window-isolation` 主题)

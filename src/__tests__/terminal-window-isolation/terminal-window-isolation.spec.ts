@@ -20,9 +20,15 @@ import {
   subscribe,
 } from '../../../electron/main/services/terminal-sessions.service';
 import {
+  makeAttachRejectedHandler,
   makeCreateHandler,
+  makeInterruptHandler,
+  makeKillHandler,
   makeListSessionsHandler,
+  makeRemoveHandler,
+  makeResizeHandler,
   makeWindowClosedCleanup,
+  makeWriteHandler,
 } from '../../../electron/main/ipc/terminal.ipc';
 import type { BrowserWindow } from 'electron';
 
@@ -60,6 +66,15 @@ function makeService() {
     cleanupAll: vi.fn(),
     safeTruncate: vi.fn(),
     isInPlaceUpdate: vi.fn(),
+  };
+}
+
+function makeBuffer() {
+  return {
+    append: vi.fn(),
+    getSince: vi.fn(),
+    clear: vi.fn(),
+    destroy: vi.fn(),
   };
 }
 
@@ -237,6 +252,97 @@ describe('makeWindowClosedCleanup', () => {
     cleanup(11);
     expect(service.killed).toEqual([]);
     expect(getAll()).toEqual([]); // metadata 仍被摘
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// owner scoped terminal controls
+// ────────────────────────────────────────────────────────────
+
+describe('terminal 控制 IPC 按 owner 校验', () => {
+  it('非 owner window 不能 write/resize/interrupt/kill ownerA 的 session', async () => {
+    const service = makeService();
+    const create = makeCreate(service, () => 'term-a');
+    await create({}, fakeWin(11));
+
+    const write = makeWriteHandler({ service: service as never });
+    const resize = makeResizeHandler({ service: service as never });
+    const interrupt = makeInterruptHandler({ service: service as never });
+    const kill = makeKillHandler({ service: service as never });
+
+    expect(() => write({ id: 'term-a', data: 'x' }, fakeWin(22))).toThrow(
+      /terminal not found/,
+    );
+    expect(() =>
+      resize({ id: 'term-a', cols: 80, rows: 24 }, fakeWin(22)),
+    ).toThrow(/terminal not found/);
+    expect(() => interrupt({ id: 'term-a' }, fakeWin(22))).toThrow(
+      /terminal not found/,
+    );
+    expect(() => kill({ id: 'term-a' }, fakeWin(22))).toThrow(
+      /terminal not found/,
+    );
+
+    expect(service.write).not.toHaveBeenCalled();
+    expect(service.resize).not.toHaveBeenCalled();
+    expect(service.interrupt).not.toHaveBeenCalled();
+    expect(service.kill).not.toHaveBeenCalled();
+    expect(getAll().map((s) => s.id)).toEqual(['term-a']);
+  });
+
+  it('owner window 可以 write/resize/interrupt/kill 自己的 session', async () => {
+    const service = makeService();
+    const create = makeCreate(service, () => 'term-a');
+    await create({}, fakeWin(11));
+
+    makeWriteHandler({ service: service as never })(
+      { id: 'term-a', data: 'x' },
+      fakeWin(11),
+    );
+    makeResizeHandler({ service: service as never })(
+      { id: 'term-a', cols: 80, rows: 24 },
+      fakeWin(11),
+    );
+    makeInterruptHandler({ service: service as never })(
+      { id: 'term-a' },
+      fakeWin(11),
+    );
+    makeKillHandler({ service: service as never })({ id: 'term-a' }, fakeWin(11));
+
+    expect(service.write).toHaveBeenCalledWith('term-a', 'x');
+    expect(service.resize).toHaveBeenCalledWith('term-a', 80, 24);
+    expect(service.interrupt).toHaveBeenCalledWith('term-a');
+    expect(service.kill).toHaveBeenCalledWith('term-a');
+  });
+
+  it('非 owner window 不能 remove 或 attachRejected ownerA 的 session', async () => {
+    const service = makeService();
+    const buffer = makeBuffer();
+    const create = makeCreate(service, () => 'term-a');
+    await create({}, fakeWin(11));
+
+    const remove = makeRemoveHandler({
+      service: service as never,
+      buffer: buffer as never,
+    });
+    const attachRejected = makeAttachRejectedHandler({
+      service: service as never,
+      buffer: buffer as never,
+    });
+
+    expect(() => remove({ id: 'term-a' }, fakeWin(22))).toThrow(
+      /terminal not found/,
+    );
+    expect(() =>
+      attachRejected(
+        { sessionId: 'term-a', reason: 'duplicate' },
+        fakeWin(22),
+      ),
+    ).toThrow(/terminal not found/);
+
+    expect(service.kill).not.toHaveBeenCalled();
+    expect(buffer.destroy).not.toHaveBeenCalled();
+    expect(getAll().map((s) => s.id)).toEqual(['term-a']);
   });
 });
 

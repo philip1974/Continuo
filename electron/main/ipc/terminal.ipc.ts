@@ -7,7 +7,7 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import { z } from 'zod';
-import { defaultIsTrustedFrame, processIpcCall, safeHandle } from '../safe-handle';
+import { defaultIsTrustedFrame, processIpcCall } from '../safe-handle';
 import { TERMINAL_CHANNELS } from '../../shared/terminal-channels';
 import { getDefaultShell, isAllowedShell } from '../../shared/terminal-shells';
 import * as termService from '../services/terminal.service';
@@ -113,6 +113,27 @@ const ERR_NOT_FOUND = (id: string) =>
     code: 'TERMINAL_NOT_FOUND',
   });
 
+function senderWindowOrThrow(event: IpcMainInvokeEvent): BrowserWindow {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win) {
+    throw Object.assign(new Error('no browser window'), {
+      code: 'TERMINAL_NO_WINDOW',
+    });
+  }
+  return win;
+}
+
+function assertOwnedSession(
+  sessionStore: Pick<typeof terminalSessions, 'get'>,
+  id: string,
+  win: BrowserWindow,
+): void {
+  const session = sessionStore.get(id);
+  if (!session || session.ownerWindowId !== win.id) {
+    throw ERR_NOT_FOUND(id);
+  }
+}
+
 export function makeCreateHandler(deps?: {
   service?: typeof termService;
   sessionStore?: typeof terminalSessions;
@@ -206,7 +227,8 @@ export function makeRemoveHandler(deps?: {
   const service = deps?.service ?? termService;
   const sessionStore = deps?.sessionStore ?? terminalSessions;
   const buffer = deps?.buffer ?? terminalBuffer;
-  return (input: IdOnlyInput): void => {
+  return (input: IdOnlyInput, win: BrowserWindow): void => {
+    assertOwnedSession(sessionStore, input.id, win);
     // 立即删 metadata(用户点 X 立刻消失);PTY 在后台异步 SIGINT + 3s grace。
     sessionStore.remove(input.id);
     if (service.has(input.id)) service.kill(input.id);
@@ -228,25 +250,57 @@ export function makeUpdateCwdHandler(deps?: {
   };
 }
 
-export const writeHandler = (input: WriteInput): void => {
-  if (!termService.has(input.id)) throw ERR_NOT_FOUND(input.id);
-  termService.write(input.id, input.data);
-};
+export function makeWriteHandler(deps?: {
+  service?: typeof termService;
+  sessionStore?: typeof terminalSessions;
+}) {
+  const service = deps?.service ?? termService;
+  const sessionStore = deps?.sessionStore ?? terminalSessions;
+  return (input: WriteInput, win: BrowserWindow): void => {
+    assertOwnedSession(sessionStore, input.id, win);
+    if (!service.has(input.id)) throw ERR_NOT_FOUND(input.id);
+    service.write(input.id, input.data);
+  };
+}
 
-export const resizeHandler = (input: ResizeInput): void => {
-  if (!termService.has(input.id)) throw ERR_NOT_FOUND(input.id);
-  termService.resize(input.id, input.cols, input.rows);
-};
+export function makeResizeHandler(deps?: {
+  service?: typeof termService;
+  sessionStore?: typeof terminalSessions;
+}) {
+  const service = deps?.service ?? termService;
+  const sessionStore = deps?.sessionStore ?? terminalSessions;
+  return (input: ResizeInput, win: BrowserWindow): void => {
+    assertOwnedSession(sessionStore, input.id, win);
+    if (!service.has(input.id)) throw ERR_NOT_FOUND(input.id);
+    service.resize(input.id, input.cols, input.rows);
+  };
+}
 
-export const interruptHandler = (input: IdOnlyInput): void => {
-  if (!termService.has(input.id)) throw ERR_NOT_FOUND(input.id);
-  termService.interrupt(input.id);
-};
+export function makeInterruptHandler(deps?: {
+  service?: typeof termService;
+  sessionStore?: typeof terminalSessions;
+}) {
+  const service = deps?.service ?? termService;
+  const sessionStore = deps?.sessionStore ?? terminalSessions;
+  return (input: IdOnlyInput, win: BrowserWindow): void => {
+    assertOwnedSession(sessionStore, input.id, win);
+    if (!service.has(input.id)) throw ERR_NOT_FOUND(input.id);
+    service.interrupt(input.id);
+  };
+}
 
-export const killHandler = (input: IdOnlyInput): void => {
-  if (!termService.has(input.id)) throw ERR_NOT_FOUND(input.id);
-  termService.kill(input.id);
-};
+export function makeKillHandler(deps?: {
+  service?: typeof termService;
+  sessionStore?: typeof terminalSessions;
+}) {
+  const service = deps?.service ?? termService;
+  const sessionStore = deps?.sessionStore ?? terminalSessions;
+  return (input: IdOnlyInput, win: BrowserWindow): void => {
+    assertOwnedSession(sessionStore, input.id, win);
+    if (!service.has(input.id)) throw ERR_NOT_FOUND(input.id);
+    service.kill(input.id);
+  };
+}
 
 // topic-05: renderer 反向通知 main 该 agent session attach 失败;main 端
 // remove session metadata + kill PTY。
@@ -259,7 +313,8 @@ export function makeAttachRejectedHandler(deps?: {
   const service = deps?.service ?? termService;
   const sessionStore = deps?.sessionStore ?? terminalSessions;
   const buffer = deps?.buffer ?? terminalBuffer;
-  return (input: AttachRejectedInput): void => {
+  return (input: AttachRejectedInput, win: BrowserWindow): void => {
+    assertOwnedSession(sessionStore, input.sessionId, win);
     console.warn(
       '[terminal-ipc] attach-rejected:',
       input.sessionId,
@@ -278,23 +333,39 @@ export function registerTerminalIpc(): void {
   const trusted = defaultIsTrustedFrame;
   const createHandler = makeCreateHandler();
   const listSessionsHandler = makeListSessionsHandler();
+  const writeHandler = makeWriteHandler();
+  const resizeHandler = makeResizeHandler();
+  const interruptHandler = makeInterruptHandler();
+  const killHandler = makeKillHandler();
   const removeHandler = makeRemoveHandler();
+  const attachRejectedHandler = makeAttachRejectedHandler();
   const updateCwdHandler = makeUpdateCwdHandler();
   const windowClosedCleanup = makeWindowClosedCleanup();
 
-  // create 需要 win,单独走 processIpcCall 包 closure(其它走 safeHandle)
+  const ownerScopedHandle = <I>(
+    channel: string,
+    schema: z.ZodType<I>,
+    handler: (input: I, win: BrowserWindow) => void,
+  ): void => {
+    ipcMain.handle(channel, async (event: IpcMainInvokeEvent, raw: unknown) =>
+      processIpcCall(
+        schema,
+        async (input) => handler(input, senderWindowOrThrow(event)),
+        raw,
+        event.senderFrame,
+        trusted,
+      ),
+    );
+  };
+
+  // create 需要 win,单独走 processIpcCall 包 closure。
   ipcMain.handle(
     TERMINAL_CHANNELS.CREATE,
     async (event: IpcMainInvokeEvent, raw: unknown) =>
       processIpcCall(
         createInputSchema,
         async (input) => {
-          const win = BrowserWindow.fromWebContents(event.sender);
-          if (!win) {
-            throw Object.assign(new Error('no browser window'), {
-              code: 'TERMINAL_NO_WINDOW',
-            });
-          }
+          const win = senderWindowOrThrow(event);
           return createHandler(input, win);
         },
         raw,
@@ -311,12 +382,7 @@ export function registerTerminalIpc(): void {
       processIpcCall(
         noInputSchema,
         async () => {
-          const win = BrowserWindow.fromWebContents(event.sender);
-          if (!win) {
-            throw Object.assign(new Error('no browser window'), {
-              code: 'TERMINAL_NO_WINDOW',
-            });
-          }
+          const win = senderWindowOrThrow(event);
           return listSessionsHandler({ ownerWindowId: win.id });
         },
         raw,
@@ -325,17 +391,16 @@ export function registerTerminalIpc(): void {
       ),
   );
 
-  safeHandle(TERMINAL_CHANNELS.WRITE, writeInputSchema, writeHandler, trusted);
-  safeHandle(TERMINAL_CHANNELS.RESIZE, resizeInputSchema, resizeHandler, trusted);
-  safeHandle(TERMINAL_CHANNELS.INTERRUPT, idOnlyInputSchema, interruptHandler, trusted);
-  safeHandle(TERMINAL_CHANNELS.KILL, idOnlyInputSchema, killHandler, trusted);
-  safeHandle(TERMINAL_CHANNELS.DESTROY, idOnlyInputSchema, killHandler, trusted);
-  safeHandle(TERMINAL_CHANNELS.REMOVE, idOnlyInputSchema, removeHandler, trusted);
-  safeHandle(
+  ownerScopedHandle(TERMINAL_CHANNELS.WRITE, writeInputSchema, writeHandler);
+  ownerScopedHandle(TERMINAL_CHANNELS.RESIZE, resizeInputSchema, resizeHandler);
+  ownerScopedHandle(TERMINAL_CHANNELS.INTERRUPT, idOnlyInputSchema, interruptHandler);
+  ownerScopedHandle(TERMINAL_CHANNELS.KILL, idOnlyInputSchema, killHandler);
+  ownerScopedHandle(TERMINAL_CHANNELS.DESTROY, idOnlyInputSchema, killHandler);
+  ownerScopedHandle(TERMINAL_CHANNELS.REMOVE, idOnlyInputSchema, removeHandler);
+  ownerScopedHandle(
     TERMINAL_CHANNELS.ATTACH_REJECTED,
     attachRejectedInputSchema,
-    makeAttachRejectedHandler(),
-    trusted,
+    attachRejectedHandler,
   );
 
   ipcMain.handle(
@@ -348,13 +413,7 @@ export function registerTerminalIpc(): void {
       processIpcCall(
         updateCwdInputSchema,
         async (input) => {
-          const win = BrowserWindow.fromWebContents(event.sender);
-          if (!win) {
-            throw Object.assign(new Error('no browser window'), {
-              code: 'TERMINAL_NO_WINDOW',
-            });
-          }
-          updateCwdHandler(input, win);
+          updateCwdHandler(input, senderWindowOrThrow(event));
         },
         typeof rawOrId === 'string'
           ? { id: rawOrId, cwd: rawCwd }
