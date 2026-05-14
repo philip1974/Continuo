@@ -18,3 +18,5 @@ playwright-report
 examples/*
 !examples/sample-plugin/
 !examples/mcp-demo-plugin/
+# Dev-loop / il-loop 状态;议题 B.1 默认不入 git
+.claude/

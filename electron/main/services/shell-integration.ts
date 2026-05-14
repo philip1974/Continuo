@@ -4,7 +4,13 @@ import * as path from 'node:path';
 
 export type SupportedShell = 'zsh' | 'bash' | 'fish' | null;
 
-const ZSH_SNIPPET = String.raw`[ -f "$_CONTINUO_USER_ZDOTDIR/.zshrc" ] && source "$_CONTINUO_USER_ZDOTDIR/.zshrc"
+const ZSH_SNIPPET = String.raw`# 我们把 ZDOTDIR 改到 tmpDir 注入 OSC 7 hook,但这会让 zsh 跳过用户的
+# $HOME/.zprofile($ZDOTDIR/.zprofile 在 tmpDir 为空)。.zprofile 通常配
+# PATH / brew shellenv / nvm init 等,缺它会导致用户 .zshrc 里 starship/
+# zsh-autosuggestions 等 plugin 链式坏掉(brew 装的二进制找不到)。手动
+# source 用户的 .zprofile + .zshrc 复现 zsh 正常加载顺序。
+[ -f "$_CONTINUO_USER_ZDOTDIR/.zprofile" ] && source "$_CONTINUO_USER_ZDOTDIR/.zprofile"
+[ -f "$_CONTINUO_USER_ZDOTDIR/.zshrc" ] && source "$_CONTINUO_USER_ZDOTDIR/.zshrc"
 
 _continuo_osc7() {
   printf '\e]7;file://%s%s\a' "${'${HOST:-}'}" "$PWD"
@@ -15,7 +21,11 @@ chpwd_functions+=(_continuo_osc7)
 _continuo_osc7
 `;
 
-const BASH_SNIPPET = String.raw`[ -n "$_CONTINUO_USER_BASH_RC" ] && [ -f "$_CONTINUO_USER_BASH_RC" ] && source "$_CONTINUO_USER_BASH_RC"
+const BASH_SNIPPET = String.raw`# 同 zsh 注释:non-login bash 默认只读 .bashrc,但用户的 PATH / brew 通常配
+# 在 .bash_profile / .profile;补 source 它们以避免 plugin 链式坏。
+[ -n "$_CONTINUO_USER_HOME" ] && [ -f "$_CONTINUO_USER_HOME/.bash_profile" ] && source "$_CONTINUO_USER_HOME/.bash_profile"
+[ -n "$_CONTINUO_USER_HOME" ] && [ -f "$_CONTINUO_USER_HOME/.profile" ] && source "$_CONTINUO_USER_HOME/.profile"
+[ -n "$_CONTINUO_USER_BASH_RC" ] && [ -f "$_CONTINUO_USER_BASH_RC" ] && source "$_CONTINUO_USER_BASH_RC"
 
 _continuo_osc7() {
   printf '\e]7;file://%s%s\a' "${'${HOSTNAME:-}'}" "$PWD"
@@ -84,6 +94,7 @@ export async function prepareEnv(
         ...baseEnv,
         BASH_ENV: rcfile,
         ENV: rcfile,
+        _CONTINUO_USER_HOME: baseEnv.HOME ?? '',
         _CONTINUO_USER_BASH_RC: baseEnv.HOME
           ? path.join(baseEnv.HOME, '.bashrc')
           : '',
