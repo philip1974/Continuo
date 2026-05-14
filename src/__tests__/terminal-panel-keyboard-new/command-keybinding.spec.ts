@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
-import TerminalPanelPlugin from '@/core-plugins/TerminalPanelPlugin';
+import TerminalPlugin from '@/core-plugins/TerminalPlugin';
 
 const mocks = vi.hoisted(() => ({
   createTerminal: vi.fn().mockResolvedValue({ ok: true, data: { id: 'term-new' } }),
@@ -18,6 +18,9 @@ vi.mock('@/lib/co-api', () => ({
 function collectTerminalCommands(): CommandSpec[] {
   const commands: CommandSpec[] = [];
   const app = {
+    panels: {
+      register: vi.fn(() => ({ dispose: vi.fn() })),
+    },
     commands: {
       register: vi.fn((spec: CommandSpec) => {
         commands.push(spec);
@@ -25,9 +28,9 @@ function collectTerminalCommands(): CommandSpec[] {
       }),
     },
   };
-  const plugin = new TerminalPanelPlugin(app as never, {
-    id: 'core.terminal-panel',
-    name: 'TerminalPanel',
+  const plugin = new TerminalPlugin(app as never, {
+    id: 'core.terminal',
+    name: 'Terminal',
     version: '1.0.0',
   });
   plugin.onload();
