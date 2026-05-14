@@ -9,6 +9,30 @@ import type {
   IpcPluginDir,
 } from '../../shared/plugins-channels';
 
+function isAbsolutePathLike(value: string): boolean {
+  return (
+    path.isAbsolute(value) ||
+    /^[a-zA-Z]:[\\/]/.test(value) ||
+    value.startsWith('\\\\') ||
+    value.startsWith('//')
+  );
+}
+
+export function resolvePluginMainPath(
+  pluginDir: string,
+  mainName: string,
+): string | null {
+  if (!mainName || mainName.includes('\0')) return null;
+  if (isAbsolutePathLike(mainName)) return null;
+  if (mainName.split(/[\\/]+/).includes('..')) return null;
+
+  const root = path.resolve(pluginDir);
+  const resolved = path.resolve(root, mainName);
+  const rel = path.relative(root, resolved);
+  if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) return null;
+  return resolved;
+}
+
 /**
  * 扫描 baseDir/<id>/manifest.json 模式;返回所有合法目录的 manifestText +
  * mainText(默认 main.js 或 manifest.main 指向)+ 可选 stylesText。
@@ -55,8 +79,10 @@ export async function listPluginDirs(baseDir: string): Promise<IpcPluginDir[]> {
     }
 
     let mainText: string;
+    const mainPath = resolvePluginMainPath(dir, mainName);
+    if (!mainPath) continue;
     try {
-      mainText = await fs.readFile(path.join(dir, mainName), 'utf-8');
+      mainText = await fs.readFile(mainPath, 'utf-8');
     } catch {
       // 主入口缺失 → 跳过整个 plugin
       continue;
@@ -258,8 +284,14 @@ export async function installFromGit(
       typeof (manifest as { main?: unknown }).main === 'string'
         ? (manifest as { main: string }).main
         : 'main.js';
+    const mainPath = resolvePluginMainPath(cloneDir, mainName);
+    if (!mainPath) {
+      throw Object.assign(new Error(`main 入口非法: ${mainName}`), {
+        code: 'BAD_MAIN',
+      });
+    }
     try {
-      await fs.access(path.join(cloneDir, mainName));
+      await fs.access(mainPath);
     } catch {
       throw Object.assign(new Error(`main 入口不存在: ${mainName}`), {
         code: 'BAD_MAIN',
@@ -383,7 +415,9 @@ export function createPluginsWatcher(
       }
 
       try {
-        const fileStat = await fs.stat(path.join(dir, mainName));
+        const mainPath = resolvePluginMainPath(dir, mainName);
+        if (!mainPath) continue;
+        const fileStat = await fs.stat(mainPath);
         const mtime = fileStat.mtimeMs;
         const prev = mtimes.get(pluginId);
         if (!firstRun && prev !== undefined && prev !== mtime) {

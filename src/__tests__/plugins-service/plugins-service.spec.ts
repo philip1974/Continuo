@@ -6,6 +6,7 @@ import {
   listPluginDirs,
   readEnabledIds,
   readPermissions,
+  resolvePluginMainPath,
   uninstallPlugin,
   writeEnabledIds,
   writePermissions,
@@ -89,6 +90,68 @@ describe('listPluginDirs', () => {
     writeFileSync(join(dir, 'index.js'), 'CUSTOM');
     const r = await listPluginDirs(tmp);
     expect(r[0]!.mainText).toBe('CUSTOM');
+  });
+
+  it('manifest.main 允许插件目录内的子目录入口', async () => {
+    const dir = join(tmp, 'nested-main');
+    mkdirSync(join(dir, 'dist'), { recursive: true });
+    writeFileSync(
+      join(dir, 'manifest.json'),
+      JSON.stringify({
+        id: 'nested-main',
+        name: 'X',
+        version: '0.1.0',
+        main: 'dist/index.js',
+      }),
+    );
+    writeFileSync(join(dir, 'dist', 'index.js'), 'NESTED');
+
+    const r = await listPluginDirs(tmp);
+    expect(r[0]!.mainText).toBe('NESTED');
+  });
+
+  it('manifest.main 含 .. 时跳过插件,不读取目录外文件', async () => {
+    const dir = join(tmp, 'escape');
+    mkdirSync(dir);
+    writeFileSync(
+      join(dir, 'manifest.json'),
+      JSON.stringify({
+        id: 'escape',
+        name: 'X',
+        version: '0.1.0',
+        main: '../outside.js',
+      }),
+    );
+    writeFileSync(join(tmp, 'outside.js'), 'OUTSIDE');
+
+    expect(await listPluginDirs(tmp)).toEqual([]);
+  });
+
+  it('manifest.main 是绝对路径时跳过插件', async () => {
+    const dir = join(tmp, 'absolute');
+    mkdirSync(dir);
+    writeFileSync(
+      join(dir, 'manifest.json'),
+      JSON.stringify({
+        id: 'absolute',
+        name: 'X',
+        version: '0.1.0',
+        main: join(tmp, 'outside.js'),
+      }),
+    );
+    writeFileSync(join(tmp, 'outside.js'), 'OUTSIDE');
+
+    expect(await listPluginDirs(tmp)).toEqual([]);
+  });
+
+  it('resolvePluginMainPath 只返回插件目录内路径', () => {
+    const dir = join(tmp, 'safe');
+    expect(resolvePluginMainPath(dir, 'dist/index.js')).toBe(
+      join(dir, 'dist', 'index.js'),
+    );
+    expect(resolvePluginMainPath(dir, '../outside.js')).toBeNull();
+    expect(resolvePluginMainPath(dir, '/tmp/outside.js')).toBeNull();
+    expect(resolvePluginMainPath(dir, String.raw`C:\tmp\outside.js`)).toBeNull();
   });
 
   it('忽略 . / _ 开头的目录', async () => {
