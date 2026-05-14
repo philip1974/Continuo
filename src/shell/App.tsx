@@ -3,6 +3,7 @@ import { MotionConfig } from 'motion/react';
 import { ThemeProvider } from '@/theme';
 import { useThemeBinding } from '@/theme/binding';
 import { DockShell } from './dock/DockShell';
+import { TerminalSessionsSync } from './dock/TerminalSessionsSync';
 import { Splash } from './decor/Splash';
 import { ExplorerSidebar } from './ExplorerSidebar';
 import { IconSidebar } from './IconSidebar';
@@ -80,6 +81,7 @@ function MainApp() {
 
   return (
     <>
+      <TerminalSessionsSync />
       <div className="flex h-dvh w-dvw flex-col bg-canvas text-fg">
         <TitleBar />
         <main className="flex min-h-0 flex-1">

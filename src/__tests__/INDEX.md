@@ -537,6 +537,10 @@
 
 - [`terminal-sessions-service.spec.ts`](./terminal-sessions-service/terminal-sessions-service.spec.ts)
 
+## [terminal-sessions-sync](./terminal-sessions-sync/README.md)
+
+- [`sync.spec.ts`](./terminal-sessions-sync/sync.spec.ts)
+
 ## [terminal-store (M-Terminal Step T3 + Agent Terminal MCP P1)](./terminal-store/README.md)
 
 - [`terminal-store.spec.ts`](./terminal-store/terminal-store.spec.ts)
