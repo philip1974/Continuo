@@ -8,6 +8,7 @@ const noDirs = (_p: string) => false;
 function snap(
   windows: ExplorerPayload['windows'],
   nextWindowSeq = windows.length,
+  restoreAllWindowsOnLaunch = true,  // opt-in 改默认后:测试用 true 保留原行为断言
 ): ExplorerPayload {
   return {
     version: 2,
@@ -15,6 +16,7 @@ function snap(
     pinned: { paths: [] },
     nextWindowSeq,
     windows,
+    restoreAllWindowsOnLaunch,
   };
 }
 
@@ -93,6 +95,31 @@ describe('pickWindowsToRestore', () => {
 
   it('windows=[] → 空(冷启首次没任何段)', () => {
     const data = snap([]);
+    expect(pickWindowsToRestore(data, allDirs)).toEqual([]);
+  });
+
+  it('restoreAllWindowsOnLaunch undefined (默认) → 空(只开主窗,opt-in 改默认)', () => {
+    const data = snap(
+      [
+        win({ windowSeq: 0, workspace: { root: '/p0' } }),
+        win({ windowSeq: 1, workspace: { root: '/p1' } }),
+      ],
+      2,
+      undefined as unknown as boolean,
+    );
+    delete (data as { restoreAllWindowsOnLaunch?: boolean }).restoreAllWindowsOnLaunch;
+    expect(pickWindowsToRestore(data, allDirs)).toEqual([]);
+  });
+
+  it('restoreAllWindowsOnLaunch=false → 空(显式 opt-out)', () => {
+    const data = snap(
+      [
+        win({ windowSeq: 0, workspace: { root: '/p0' } }),
+        win({ windowSeq: 1, workspace: { root: '/p1' } }),
+      ],
+      2,
+      false,
+    );
     expect(pickWindowsToRestore(data, allDirs)).toEqual([]);
   });
 });

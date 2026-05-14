@@ -127,6 +127,13 @@ export const ExplorerSchema = z
     nextWindowSeq: z.number().int().nonnegative(),
     /** 每窗口持久化段。windowSeq 跨重启稳定,关闭窗口段先保留(LRU 由调用方控制). */
     windows: z.array(WindowEntrySchema),
+    /**
+     * 启动时是否自动恢复非主窗 (windowSeq > 0)。
+     * 默认 false — 跟 VSCode 默认 "只开主窗" 一致,避免持久化多 workspace
+     * 用户每次启动看到一堆窗口弹出的惊吓。
+     * 显式设 true 才走 #29 multi-window session-restore 行为。
+     */
+    restoreAllWindowsOnLaunch: z.boolean().optional(),
   })
   .strict();
 
