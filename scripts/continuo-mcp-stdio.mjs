@@ -53,10 +53,12 @@ function resolveSocketPath() {
 }
 
 const socketPath = resolveSocketPath();
-// CONTINUO_WINDOW_ID 由 Continuo PTY env provider 注入(per-window 隔离);若
-// 缺失说明 proxy 是外部 spawn(eg. Claude Code `claude mcp add` 配置),不属于
-// 任何 Continuo window 上下文 — 不发 hello,server 端会 fallback 到默认主窗。
+// CONTINUO_WINDOW_ID / CONTINUO_MCP_TOKEN 由 Continuo PTY env provider 注入
+// (per-window 隔离);若缺失说明 proxy 是外部 spawn(eg. Claude Code
+// `claude mcp add` 配置),不属于任何 Continuo window 上下文 — 不发 hello,
+// server 端会 fallback 到默认主窗。
 const CONTINUO_WINDOW_ID = process.env.CONTINUO_WINDOW_ID;
+const CONTINUO_MCP_TOKEN = process.env.CONTINUO_MCP_TOKEN;
 const windowId =
   CONTINUO_WINDOW_ID && /^\d+$/.test(CONTINUO_WINDOW_ID)
     ? Number(CONTINUO_WINDOW_ID)
@@ -77,17 +79,17 @@ if (process.platform !== 'win32' && !existsSync(socketPath)) {
 }
 
 const sock = createConnection(socketPath, () => {
-  if (windowId !== null) {
-    // 有 windowId env → 发 hello 绑定 per-window ctx(Continuo 内部 PTY 路径)
+  if (windowId !== null && CONTINUO_MCP_TOKEN) {
+    // 有 windowId + token env → 发 hello 绑定 per-window ctx(Continuo 内部 PTY 路径)
     const hello =
       JSON.stringify({
         jsonrpc: '2.0',
         method: '_continuo/hello',
-        params: { windowId },
+        params: { windowId, token: CONTINUO_MCP_TOKEN },
       }) + '\n';
     sock.write(hello);
   }
-  // 无 windowId → 跳过 hello;server 端 tools/call 会 fallback 到默认主窗
+  // 无 windowId/token → 跳过 hello;server 端 tools/call 会 fallback 到默认主窗
   // (外部 MCP client 如 Claude Code 的 stdio 配置走此路径)
 
   // stdin → socket(byte 流透传,framing 由两端按 NDJSON 自管)

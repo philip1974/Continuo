@@ -58,6 +58,27 @@ export function splitLines(state: FramingState, chunk: string): SplitResult {
   return { state: { buf: tail }, lines: parts };
 }
 
+export interface ResolveStdioHelloDeps {
+  resolveWindowId: (token: string) => number | null;
+  windowExists: (windowId: number) => boolean;
+}
+
+export function resolveStdioHelloWindowId(
+  params: unknown,
+  deps: ResolveStdioHelloDeps,
+): number | null {
+  if (params === null || typeof params !== 'object' || Array.isArray(params)) {
+    return null;
+  }
+  const windowId = (params as Record<string, unknown>)['windowId'];
+  const token = (params as Record<string, unknown>)['token'];
+  if (typeof windowId !== 'number' || !Number.isInteger(windowId)) return null;
+  if (typeof token !== 'string' || token.length === 0) return null;
+  if (deps.resolveWindowId(token) !== windowId) return null;
+  if (!deps.windowExists(windowId)) return null;
+  return windowId;
+}
+
 // ── socket server ──────────────────────────────────────────────
 
 const socketCtx: Map<Socket, number> = new Map();
@@ -77,6 +98,7 @@ export interface CreateStdioSocketOptions {
    
   tools: ReadonlyMap<string, AnyMcpTool>;
   serverInfo: ServerInfo;
+  resolveWindowId: (token: string) => number | null;
 }
 
 async function handleLine(
@@ -85,6 +107,7 @@ async function handleLine(
    
   tools: ReadonlyMap<string, AnyMcpTool>,
   serverInfo: ServerInfo,
+  resolveWindowId: (token: string) => number | null,
 ): Promise<void> {
   if (!line.trim()) return;
 
@@ -109,16 +132,17 @@ async function handleLine(
     (raw as Record<string, unknown>)['method'] === '_continuo/hello' &&
     !('id' in (raw as Record<string, unknown>))
   ) {
-    const params = (raw as Record<string, unknown>)['params'];
-    const windowId =
-      params !== null &&
-      typeof params === 'object' &&
-      !Array.isArray(params)
-        ? (params as Record<string, unknown>)['windowId']
-        : undefined;
-    if (typeof windowId !== 'number' || !Number.isInteger(windowId)) return;
-    const win = BrowserWindow.fromId(windowId);
-    if (!win || win.isDestroyed()) return;
+    const windowId = resolveStdioHelloWindowId(
+      (raw as Record<string, unknown>)['params'],
+      {
+        resolveWindowId,
+        windowExists: (id) => {
+          const win = BrowserWindow.fromId(id);
+          return !!win && !win.isDestroyed();
+        },
+      },
+    );
+    if (windowId === null) return;
     socketCtx.set(sock, windowId);
     return;
   }
@@ -222,8 +246,13 @@ export async function createStdioSocketServer(
       // 异步串行处理(每行 dispatch 可能 await tool.run)。
       // 简化:并行 fire-and-forget,客户端按 id 匹配响应。
       for (const line of r.lines) {
-        void handleLine(line, sock, opts.tools, opts.serverInfo).catch((err) => {
-           
+        void handleLine(
+          line,
+          sock,
+          opts.tools,
+          opts.serverInfo,
+          opts.resolveWindowId,
+        ).catch((err) => {
           console.warn('[mcp-stdio] handleLine threw', err);
         });
       }

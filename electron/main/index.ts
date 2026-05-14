@@ -476,6 +476,7 @@ async function startMcpStdioServer(): Promise<void> {
       socketPath,
       tools: mcpHost.tools,
       serverInfo: mcpHost.serverInfo,
+      resolveWindowId: (token) => mcpHost!.resolveWindowId(token),
     });
     const cliPath = resolveStdioCliPath();
     const claudeAddCommand = `claude mcp add --transport stdio continuo -- ${cliPath}`;
