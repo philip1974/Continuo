@@ -152,4 +152,110 @@ describe('panelReducer', () => {
       ],
     });
   });
+
+  // ── folder isolation:workspaceRoot 字段在 reducer 各路径上的传递 ──
+
+  it('ADD_TAB 带 workspaceRoot → tab 与 ENQUEUE_SPAWN 都带 workspaceRoot', () => {
+    const result = panelReducer(
+      { tabs: [], activeTabId: null, hydrated: true },
+      {
+        type: 'ADD_TAB',
+        tabId: 'tab-w',
+        primaryLeafId: 'leaf-w',
+        title: 'W',
+        cwd: '/proj-a',
+        workspaceRoot: '/proj-a',
+      },
+    );
+    expect(result.state.tabs[0]!.workspaceRoot).toBe('/proj-a');
+    const enqueue = result.effects.find((e) => e.type === 'ENQUEUE_SPAWN');
+    expect(enqueue && enqueue.type === 'ENQUEUE_SPAWN' && enqueue.workspaceRoot).toBe(
+      '/proj-a',
+    );
+  });
+
+  it('ADD_TAB 不传 workspaceRoot → tab/effect 都不带该字段(全局)', () => {
+    const result = panelReducer(
+      { tabs: [], activeTabId: null, hydrated: true },
+      {
+        type: 'ADD_TAB',
+        tabId: 'tab-g',
+        primaryLeafId: 'leaf-g',
+        title: 'G',
+        cwd: '/g',
+      },
+    );
+    expect('workspaceRoot' in result.state.tabs[0]!).toBe(false);
+    const enqueue = result.effects.find((e) => e.type === 'ENQUEUE_SPAWN');
+    expect(enqueue && enqueue.type === 'ENQUEUE_SPAWN' && 'workspaceRoot' in enqueue).toBe(
+      false,
+    );
+  });
+
+  it('HYDRATE 持久化 tab 带 workspaceRoot → hydrate 出的 tab + ENQUEUE_SPAWN 都带', () => {
+    const result = panelReducer(
+      { tabs: [], activeTabId: null, hydrated: false },
+      {
+        type: 'HYDRATE',
+        persisted: {
+          activeTabId: 'tab-h',
+          tabs: [
+            {
+              id: 'tab-h',
+              title: 'H',
+              primaryLeafId: 'leaf-h',
+              paneTreeVersion: 1,
+              paneTree: { kind: 'leaf', id: 'leaf-h', cwd: '/proj-b' },
+              workspaceRoot: '/proj-b',
+            },
+          ],
+        },
+      },
+    );
+    expect(result.state.tabs[0]!.workspaceRoot).toBe('/proj-b');
+    const enqueue = result.effects[0];
+    expect(enqueue?.type).toBe('ENQUEUE_SPAWN');
+    expect(enqueue && enqueue.type === 'ENQUEUE_SPAWN' && enqueue.workspaceRoot).toBe(
+      '/proj-b',
+    );
+  });
+
+  it('serializeTabsStateForPersistence 圆 trip workspaceRoot', () => {
+    const state: PanelState = {
+      hydrated: true,
+      activeTabId: 'tab-1',
+      tabs: [
+        {
+          id: 'tab-1',
+          title: 'X',
+          primaryLeafId: 'leaf-1',
+          activeLeafId: 'leaf-1',
+          paneTreeVersion: 1,
+          paneTree: { kind: 'leaf', id: 'leaf-1', cwd: '/x', ptyId: 'pty-1' },
+          workspaceRoot: '/x',
+        },
+      ],
+    };
+    const ser = serializeTabsStateForPersistence(state);
+    expect(ser.tabs[0]!.workspaceRoot).toBe('/x');
+  });
+
+  it('PANE_ACTION SPLIT 继承 tab.workspaceRoot 到新 leaf 的 ENQUEUE_SPAWN', () => {
+    const base = twoTabState();
+    base.tabs[0] = { ...base.tabs[0]!, workspaceRoot: '/proj-a' };
+    const result = panelReducer(base, {
+      type: 'PANE_ACTION',
+      tabId: 'tab-1',
+      action: {
+        type: 'SPLIT',
+        leafId: 'leaf-a',
+        dir: 'vertical',
+        newLeafId: 'leaf-new',
+      },
+    });
+    const enqueue = result.effects.find((e) => e.type === 'ENQUEUE_SPAWN');
+    expect(enqueue && enqueue.type === 'ENQUEUE_SPAWN' && enqueue.workspaceRoot).toBe(
+      '/proj-a',
+    );
+  });
 });

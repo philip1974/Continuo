@@ -27,6 +27,8 @@ export interface PersistedTab {
   paneTree: PaneNodePersisted;
   primaryLeafId: string;
   paneTreeVersion: 1;
+  /** 持久化 tab 所属 workspace.root,用于跨 workspace 切换时过滤显示。 */
+  workspaceRoot?: string;
 }
 
 export interface PersistedPanelState {
@@ -44,6 +46,12 @@ export interface TabState {
   /** topic-05: agent attach 自报来源 */
   originHint?: 'user' | 'agent';
   agentLabel?: string;
+  /**
+   * 创建/attach 时所在 workspace.root;undefined = 全局(所有 workspace 都渲染)。
+   * Render 侧用 `t.workspaceRoot === current || t.workspaceRoot === undefined`
+   * 过滤当前可见 tabs;hidden tabs 仍在 state 里保活,切回 workspace 即恢复。
+   */
+  workspaceRoot?: string;
 }
 
 export interface PanelState {
@@ -76,6 +84,7 @@ export type PanelEffect =
       cwd?: string;
       scoped: boolean;
       reason: SpawnReason;
+      workspaceRoot?: string;
     };
 
 // 每 panel 内嵌 tab 上限,超出时 ATTACH_EXISTING_PTY_AS_TAB 在 reducer 端拒。
@@ -90,6 +99,7 @@ export type PanelAction =
       primaryLeafId: string;
       title: string;
       cwd?: string;
+      workspaceRoot?: string;
     }
   | {
       type: 'ATTACH_EXISTING_PTY_AS_TAB';
@@ -100,6 +110,7 @@ export type PanelAction =
       cwd?: string;
       originHint?: 'user' | 'agent';
       agentLabel?: string;
+      workspaceRoot?: string;
     }
   | { type: 'DETACH_TAB'; tabId: string; forMove?: boolean }
   | { type: 'CLOSE_TAB'; tabId: string }
@@ -131,6 +142,7 @@ export function panelReducer(
           cwd: leaf.cwd,
           scoped: true,
           reason: 'hydrate',
+          ...(tab.workspaceRoot !== undefined ? { workspaceRoot: tab.workspaceRoot } : {}),
         })),
       );
       return {
@@ -176,6 +188,7 @@ export function panelReducer(
         paneTreeVersion: 1,
         ...(action.originHint !== undefined ? { originHint: action.originHint } : {}),
         ...(action.agentLabel !== undefined ? { agentLabel: action.agentLabel } : {}),
+        ...(action.workspaceRoot !== undefined ? { workspaceRoot: action.workspaceRoot } : {}),
       };
       return {
         state: {
@@ -239,6 +252,7 @@ export function panelReducer(
         activeLeafId: action.primaryLeafId,
         primaryLeafId: action.primaryLeafId,
         paneTreeVersion: 1,
+        ...(action.workspaceRoot !== undefined ? { workspaceRoot: action.workspaceRoot } : {}),
       };
       return {
         state: {
@@ -254,6 +268,7 @@ export function panelReducer(
             cwd: action.cwd,
             scoped: true,
             reason: 'addTab',
+            ...(action.workspaceRoot !== undefined ? { workspaceRoot: action.workspaceRoot } : {}),
           },
         ],
       };
@@ -289,7 +304,7 @@ export function panelReducer(
         { tree: tab.paneTree, activeLeafId: tab.activeLeafId },
         action.action,
       );
-      const effects = upgradePaneEffects(action.tabId, result.effects);
+      const effects = upgradePaneEffects(action.tabId, result.effects, tab.workspaceRoot);
       if (!result.tree) {
         const ptyIds = collectPtyIdsFromPane(tab.paneTree);
         const tabs = state.tabs.filter((t) => t.id !== tab.id);
@@ -334,6 +349,7 @@ export function serializeTabsStateForPersistence(
     paneTree: serializePaneNode(tab.paneTree),
     primaryLeafId: tab.primaryLeafId,
     paneTreeVersion: 1,
+    ...(tab.workspaceRoot !== undefined ? { workspaceRoot: tab.workspaceRoot } : {}),
   }));
   return { tabs, activeTabId: state.activeTabId ?? tabs[0]?.id ?? '' };
 }
@@ -376,18 +392,25 @@ function hydrateTab(tab: PersistedTab): TabState {
       collectLeaves(paneTree)[0]?.id,
     primaryLeafId: tab.primaryLeafId,
     paneTreeVersion: 1,
+    ...(tab.workspaceRoot !== undefined ? { workspaceRoot: tab.workspaceRoot } : {}),
   };
 }
 
 function upgradePaneEffects(
   tabId: string,
   effects: import('./paneTree').PaneTreeEffect[],
+  workspaceRoot?: string,
 ): PanelEffect[] {
   return effects.map((effect) => {
     if (effect.type === 'LEAF_CLOSED') {
       console.debug('[pane-split] LEAF_CLOSED', tabId, effect.leafId, effect.ptyId);
       return { ...effect, tabId };
     }
-    return { ...effect, tabId };
+    // SPLIT 出的新 leaf 也属于 tab 的 workspace,透传给 main session metadata。
+    return {
+      ...effect,
+      tabId,
+      ...(workspaceRoot !== undefined ? { workspaceRoot } : {}),
+    };
   });
 }

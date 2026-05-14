@@ -267,6 +267,9 @@ export function FolderTree({ root }: { root: string }) {
         const r = await coApi.terminal.create({
           cwd: dir,
           env: { COLORFGBG: theme === 'dark' ? '15;0' : '0;15' },
+          // 归属当前 workspace(虽然 cwd 是子目录),便于跨 workspace 切换时
+          // 该 terminal 跟随显示/隐藏。
+          workspaceRoot: root,
         });
         if (!r.ok) {
           console.warn('[explorer] open in terminal failed', r.code, r.message);

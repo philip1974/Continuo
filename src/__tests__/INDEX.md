@@ -554,6 +554,11 @@
 
 - [`terminal-window-isolation.spec.ts`](./terminal-window-isolation/terminal-window-isolation.spec.ts)
 
+## [terminal-workspace-isolation](./terminal-workspace-isolation/README.md)
+
+- [`render-filter.spec.ts`](./terminal-workspace-isolation/render-filter.spec.ts)
+- [`workspaceRoot-roundtrip.spec.ts`](./terminal-workspace-isolation/workspaceRoot-roundtrip.spec.ts)
+
 ## [terminal-write (M-Terminal Step T4)](./terminal-write/README.md) `[integration]`
 
 - [`safe-write.spec.ts`](./terminal-write/safe-write.spec.ts)

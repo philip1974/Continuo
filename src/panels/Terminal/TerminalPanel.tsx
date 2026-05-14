@@ -134,6 +134,7 @@ function InternalTerminalPanel({
     [dispatch, removedPtyIds, panelId],
   );
   const workspaceRoot = useWorkspaceStore((s) => s.root);
+  const workspaceHydrated = useWorkspaceStore((s) => s.hydrated);
   const windowId = coApi.system.windowId;
   const panelApiRef = useRef(props.api);
   panelApiRef.current = props.api;
@@ -166,12 +167,25 @@ function InternalTerminalPanel({
   const hydratedRef = useRef(false);
   useEffect(() => {
     if (hydratedRef.current) return;
+    // 关键:workspace 持久化未读完前不能 hydrate — workspaceRoot=null race
+    // 会让默认 leaf 的 cwd 落 undefined → 主进程 resolveTerminalCwd 兜底
+    // 到 homedir,新 terminal 默认 ~ 而非 workspace 根目录。
+    if (!workspaceHydrated) return;
     hydratedRef.current = true;
-    const persisted =
+    const cwdFallback = props.params?.cwd ?? workspaceRoot ?? undefined;
+    const persisted = normalizePersistedCwd(
       readPersistedPanelState(props.params?.tabsState) ??
-      defaultPersistedState(props.params?.cwd ?? workspaceRoot ?? undefined);
+        defaultPersistedState(cwdFallback),
+      cwdFallback,
+    );
     dispatch({ type: 'HYDRATE', persisted });
-  }, [dispatch, props.params?.cwd, props.params?.tabsState, workspaceRoot]);
+  }, [
+    dispatch,
+    props.params?.cwd,
+    props.params?.tabsState,
+    workspaceRoot,
+    workspaceHydrated,
+  ]);
 
   useEffect(() => {
     if (effectQueueRef.current.length > 0) {
@@ -328,6 +342,7 @@ function InternalTerminalPanel({
         originHint: 'user' | 'agent';
         agentLabel?: string;
         attachTarget?: { kind: string; panelId?: string; windowId?: number };
+        workspaceRoot?: string;
       }>,
     ) => {
       const dockApi = getDockApi();
@@ -346,6 +361,7 @@ function InternalTerminalPanel({
           ...(s.cwd !== undefined ? { cwd: s.cwd } : {}),
           originHint: s.originHint,
           ...(s.agentLabel !== undefined ? { agentLabel: s.agentLabel } : {}),
+          ...(s.workspaceRoot !== undefined ? { workspaceRoot: s.workspaceRoot } : {}),
         });
         if (!result.attached) {
           console.warn(
@@ -391,16 +407,24 @@ function InternalTerminalPanel({
     );
   }
 
+  // 按当前 workspaceRoot 过滤可见 tab — 见 filterTabsByWorkspace 注释。
+  const { visibleTabs, effectiveActiveId } = filterTabsByWorkspace(
+    state.tabs,
+    state.activeTabId,
+    workspaceRoot ?? undefined,
+  );
+  const visibleIds = new Set(visibleTabs.map((t) => t.id));
+
   return (
     <div className="terminal-panel flex h-full w-full flex-col overflow-hidden bg-canvas">
       <TerminalTabs
-        tabs={state.tabs.map((tab) => ({
+        tabs={visibleTabs.map((tab) => ({
           id: tab.id,
           title: tab.title,
           paneKind: tab.paneTree.kind,
           ...(tab.originHint !== undefined ? { originHint: tab.originHint } : {}),
         }))}
-        activeId={state.activeTabId}
+        activeId={effectiveActiveId}
         onSelect={(tabId) => dispatch({ type: 'SELECT_TAB', tabId })}
         onNew={() => {
           const tabId = newId('tab');
@@ -411,6 +435,7 @@ function InternalTerminalPanel({
             primaryLeafId: leafId,
             title: 'Terminal',
             cwd: workspaceRoot ?? undefined,
+            ...(workspaceRoot !== null ? { workspaceRoot } : {}),
           });
         }}
         onClose={(tabId) => dispatch({ type: 'CLOSE_TAB', tabId })}
@@ -449,18 +474,23 @@ function InternalTerminalPanel({
         }}
       />
       <div className="relative min-h-0 flex-1">
-        {state.tabs.map((tab) => (
-          <TerminalPaneTree
-            key={tab.id}
-            panelId={controller.panelId}
-            tabId={tab.id}
-            tree={tab.paneTree}
-            activeLeafId={tab.activeLeafId}
-            visible={tab.id === state.activeTabId}
-            dispatch={dispatch}
-          />
-        ))}
-        {state.tabs.length === 0 && (
+        {state.tabs.map((tab) => {
+          const visibleHere = visibleIds.has(tab.id);
+          return (
+            <TerminalPaneTree
+              key={tab.id}
+              panelId={controller.panelId}
+              tabId={tab.id}
+              tree={tab.paneTree}
+              activeLeafId={tab.activeLeafId}
+              // 跨 workspace 切换时,旧 tab 整体不可见;active 也要换成当前
+              // workspace 的 fallback,不能让 hidden tab 抢焦点。
+              visible={visibleHere && tab.id === effectiveActiveId}
+              dispatch={dispatch}
+            />
+          );
+        })}
+        {visibleTabs.length === 0 && (
           <div className="flex h-full w-full items-center justify-center text-sm text-fg-muted">
             无活跃终端
           </div>
@@ -485,6 +515,7 @@ function handlePanelEffect(
         scoped: effect.scoped,
         reason: effect.reason,
         cancelled: { current: false },
+        ...(effect.workspaceRoot !== undefined ? { workspaceRoot: effect.workspaceRoot } : {}),
       });
       break;
     case 'LEAF_CLOSED':
@@ -522,6 +553,53 @@ function readPersistedPanelState(value: unknown): PersistedPanelState | null {
   return candidate;
 }
 
+/**
+ * 按当前 workspace 过滤可见 tab。tab 上的 workspaceRoot 与 current 相等(同
+ * workspace)或 undefined(全局,如 agent 创建,工作区切换时也始终可见)的留下;
+ * 别的 workspace 的 tab 仍留在 state.tabs 里保活(切回来即恢复),但当前不渲染。
+ *
+ * activeTabId 落在被隐藏的 tab 上时回退到第一个 visible tab 作 effective active。
+ */
+export function filterTabsByWorkspace<
+  T extends { id: string; workspaceRoot?: string },
+>(
+  tabs: readonly T[],
+  activeTabId: string | null,
+  currentWorkspaceRoot: string | undefined,
+): { visibleTabs: T[]; effectiveActiveId: string | null } {
+  const visibleTabs = tabs.filter(
+    (t) => t.workspaceRoot === undefined || t.workspaceRoot === currentWorkspaceRoot,
+  );
+  const visibleIds = new Set(visibleTabs.map((t) => t.id));
+  const effectiveActiveId =
+    activeTabId !== null && visibleIds.has(activeTabId)
+      ? activeTabId
+      : visibleTabs[0]?.id ?? null;
+  return { visibleTabs, effectiveActiveId };
+}
+
+/**
+ * 老 tabsState 里残留 cwd=undefined 的 leaf 会让 spawn 落 ~(主进程 fallback);
+ * hydrate 时把这些位置补成当前 workspace。fallback=undefined(workspace 未选)
+ * 也尊重,留给主进程 homedir 兜底。
+ */
+function normalizePersistedCwd(
+  persisted: PersistedPanelState,
+  fallback: string | undefined,
+): PersistedPanelState {
+  if (!fallback) return persisted;
+  const fixPane = (node: import('./paneTree').PaneNodePersisted): import('./paneTree').PaneNodePersisted => {
+    if (node.kind === 'leaf') {
+      return node.cwd ? node : { ...node, cwd: fallback };
+    }
+    return { ...node, a: fixPane(node.a), b: fixPane(node.b) };
+  };
+  return {
+    ...persisted,
+    tabs: persisted.tabs.map((tab) => ({ ...tab, paneTree: fixPane(tab.paneTree) })),
+  };
+}
+
 function newId(prefix: string): string {
   const random = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
   return `${prefix}-${random}`;
@@ -540,6 +618,7 @@ function LegacyTerminalPanel() {
     const r = await coApi.terminal.create({
       cwd: workspaceRoot ?? undefined,
       env: themedTerminalEnv(resolved),
+      ...(workspaceRoot !== null ? { workspaceRoot } : {}),
     });
     if (!r.ok) {
 

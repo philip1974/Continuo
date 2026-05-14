@@ -2,6 +2,7 @@ import type { Direction } from 'dockview-react';
 import { isPopoutWindow } from '@/lib/popout-mode';
 import { getDockApi } from '@/shell/dock/dock-api-ref';
 import { useTerminalStore } from '@/stores/terminal.store';
+import { useWorkspaceStore } from '@/stores/workspace.store';
 import { coApi } from '@/lib/co-api';
 import { getPaneController } from '@/panels/Terminal/PaneControllerRegistry';
 import type { SplitDirection } from '@/panels/Terminal/paneTree';
@@ -29,7 +30,12 @@ export async function splitTerminal(direction: Direction | SplitDirection): Prom
         .getState()
         .sessions.find((s) => s.id === activeSessionId)?.cwd
     : undefined;
-  const r = await coApi.terminal.create({ cwd, scoped: true });
+  const workspaceRoot = useWorkspaceStore.getState().root ?? undefined;
+  const r = await coApi.terminal.create({
+    cwd,
+    scoped: true,
+    ...(workspaceRoot !== undefined ? { workspaceRoot } : {}),
+  });
   if (!r.ok || !r.data?.id) return;
   const data = r.data as { id: string; title?: string };
   api.addPanel({

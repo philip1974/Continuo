@@ -24,6 +24,8 @@ export interface TerminalSession {
   readonly createdAt: number;
   /** null = PTY 仍在运行;number = 已 exit. */
   readonly exitCode: number | null;
+  /** 创建时所在 workspace.root;undefined = 全局(所有 workspace 都可见)。 */
+  readonly workspaceRoot?: string;
 }
 
 export interface CloseResult {

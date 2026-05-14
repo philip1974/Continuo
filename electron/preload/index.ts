@@ -47,6 +47,11 @@ export interface TerminalCreateOptions {
   readonly originHint?: 'user' | 'agent';
   readonly agentLabel?: string;
   readonly scoped?: boolean;
+  /**
+   * 创建时 renderer 当前 workspace.root;用于跨 workspace 切换时的可见性过滤。
+   * undefined = 全局会话(所有 workspace 都可见)。
+   */
+  readonly workspaceRoot?: string;
 }
 
 export interface TerminalExitPayload {
@@ -69,6 +74,8 @@ export interface PreloadTerminalSession {
     | { readonly kind: 'active' }
     | { readonly kind: 'panel'; readonly panelId: string }
     | { readonly kind: 'window'; readonly windowId: number };
+  /** 创建时所在 workspace 根目录;undefined = 全局会话(所有 workspace 都可见)。 */
+  readonly workspaceRoot?: string;
 }
 
 // 给 fs 入参用的轻量 ListDirOptions —— 与 main 端 zod schema 对齐字段

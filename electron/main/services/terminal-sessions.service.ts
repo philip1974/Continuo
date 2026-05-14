@@ -24,6 +24,13 @@ export interface MainTerminalSession {
   readonly ownerWindowId: number;
   /** topic-05: agent attach hint;renderer 用此决定 attach 落到哪个 panel。 */
   readonly attachTarget?: AttachTarget;
+  /**
+   * 创建时所在 workspace 的根目录绝对路径。undefined = 未选 workspace 或
+   * agent 创建(全局)。renderer 端按当前 workspaceRoot 过滤可见 sessions:
+   *   visible = (workspaceRoot === current) || workspaceRoot === undefined
+   * 主进程只存,不做过滤 — 渲染层决定 UI 可见性。
+   */
+  readonly workspaceRoot?: string;
 }
 
 export interface AddSessionInput {
@@ -35,6 +42,7 @@ export interface AddSessionInput {
   readonly scoped?: boolean;
   readonly ownerWindowId: number;
   readonly attachTarget?: AttachTarget;
+  readonly workspaceRoot?: string;
 }
 
 export interface GetAllFilter {
@@ -90,6 +98,7 @@ export function add(input: AddSessionInput): void {
     exitCode: null,
     ownerWindowId: input.ownerWindowId,
     ...(input.attachTarget !== undefined ? { attachTarget: input.attachTarget } : {}),
+    ...(input.workspaceRoot !== undefined ? { workspaceRoot: input.workspaceRoot } : {}),
   };
   sessions.set(input.id, session);
   notify();

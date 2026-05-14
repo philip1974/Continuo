@@ -170,9 +170,12 @@ describe('TerminalPanel — handleNew', () => {
     await waitFor(() => {
       // env.COLORFGBG 由 useTheme().resolved 决定 — 测试环境(jsdom 无 dark
       // class) ThemeProvider 默认 'dark',所以 COLORFGBG='15;0'。
+      // workspaceRoot 字段(Issue #folder-isolation):session 跨 workspace 切换
+      // 时按这个 tag 过滤可见性,所以 create 时要带上当前 root。
       expect(terminal.create).toHaveBeenCalledWith({
         cwd: '/proj',
         env: { COLORFGBG: '15;0' },
+        workspaceRoot: '/proj',
       });
       expect(useTerminalStore.getState().activeId).toBe('t-new');
     });

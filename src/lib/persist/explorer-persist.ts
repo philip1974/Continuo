@@ -308,6 +308,11 @@ export async function initExplorerPersistence(
     }
   }
 
+  // 同步 workspace 已 hydrate 标志 — TerminalPanel 等消费方需要这个信号才
+  // 敢拿 workspaceRoot 决策新 PTY cwd,否则 race 到 root=null → 落 ~。
+  // 不论 read 是否成功(包含没有 explorer.json 的首次启动)都置 true。
+  useWorkspaceStore.getState().markHydrated();
+
   // 3. 订阅 + debounce 写。所有窗口都订阅,各写各段(prevSnap 合并保留其它段)。
   let lastSnap: ExplorerSnapshot | null = hydratedSnap;
   const persist = debounce(async () => {

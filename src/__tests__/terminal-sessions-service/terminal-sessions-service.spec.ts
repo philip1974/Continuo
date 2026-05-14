@@ -71,6 +71,18 @@ describe('add', () => {
     expect(s.agentLabel).toBeUndefined();
   });
 
+  it('workspaceRoot 透传(folder isolation:renderer 据此过滤跨 workspace 可见性)', () => {
+    add(userInput('term-w', { workspaceRoot: '/Users/me/proj-a' }));
+    const s = get('term-w')!;
+    expect(s.workspaceRoot).toBe('/Users/me/proj-a');
+  });
+
+  it('未传 workspaceRoot → 字段不存在(全局会话,所有 workspace 都可见)', () => {
+    add(userInput());
+    const s = get('term-1')!;
+    expect('workspaceRoot' in s).toBe(false);
+  });
+
   it('重复 id → 抛 TERMINAL_SESSION_DUPLICATE', () => {
     add(userInput('term-1'));
     expect(() => add(userInput('term-1'))).toThrowError(/duplicate/i);

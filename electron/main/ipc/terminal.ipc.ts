@@ -60,6 +60,12 @@ export const createInputSchema = z
         z.object({ kind: z.literal('window'), windowId: z.number().int() }).strict(),
       ])
       .optional(),
+    /**
+     * 创建时 renderer 当前 workspace.root,用于 sessions 跨 workspace 切换时
+     * 的过滤(renderer 侧逻辑)。未传 = 全局会话(agent 多走这条),所有
+     * workspace 都可见。
+     */
+    workspaceRoot: z.string().optional(),
   })
   .strict();
 
@@ -175,6 +181,7 @@ export function makeCreateHandler(deps?: {
       ...(input.agentLabel !== undefined ? { agentLabel: input.agentLabel } : {}),
       ...(input.scoped !== undefined ? { scoped: input.scoped } : {}),
       ...(input.attachTarget !== undefined ? { attachTarget: input.attachTarget } : {}),
+      ...(input.workspaceRoot !== undefined ? { workspaceRoot: input.workspaceRoot } : {}),
     });
     return input.scoped ? { id, cwd, title } : { id };
   };

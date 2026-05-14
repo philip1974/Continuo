@@ -66,6 +66,11 @@ describe('createInputSchema', () => {
   it('未知字段 → fail(strict)', () => {
     expect(createInputSchema.safeParse({ weird: 1 }).success).toBe(false);
   });
+  it('workspaceRoot 接受 string(folder isolation tag)', () => {
+    expect(
+      createInputSchema.safeParse({ workspaceRoot: '/Users/me/proj' }).success,
+    ).toBe(true);
+  });
 });
 
 describe('writeInputSchema', () => {
@@ -259,6 +264,36 @@ describe('makeCreateHandler', () => {
       cwd: '/work',
       originHint: 'user',
     });
+  });
+
+  it('input.workspaceRoot → sessionStore.add 透传(folder isolation)', async () => {
+    const service = makeService();
+    const sessionStore = makeSessionStore();
+    const handler = makeCreateHandler({
+      service: service as never,
+      sessionStore: sessionStore as never,
+      generateId: () => 'term-w',
+      resolveCwd: () => '/work',
+    });
+    await handler({ workspaceRoot: '/Users/me/proj-a' }, fakeWin);
+    expect(sessionStore.add.mock.calls[0]![0]).toMatchObject({
+      id: 'term-w',
+      workspaceRoot: '/Users/me/proj-a',
+    });
+  });
+
+  it('未传 workspaceRoot → sessionStore.add 不带该字段(全局会话)', async () => {
+    const service = makeService();
+    const sessionStore = makeSessionStore();
+    const handler = makeCreateHandler({
+      service: service as never,
+      sessionStore: sessionStore as never,
+      generateId: () => 'term-g',
+      resolveCwd: () => '/work',
+    });
+    await handler({}, fakeWin);
+    const added = sessionStore.add.mock.calls[0]![0];
+    expect('workspaceRoot' in added).toBe(false);
   });
 
   it('input.name 缺省 → 调 nextDefaultTitle', async () => {

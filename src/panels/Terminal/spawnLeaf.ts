@@ -10,6 +10,8 @@ export interface SpawnRequest {
   title?: string;
   reason: SpawnReason;
   cancelled: { current: boolean };
+  /** 当前 workspace.root,透传给 main 端 sessions metadata 用于跨 workspace 过滤。 */
+  workspaceRoot?: string;
 }
 
 export interface SpawnQueue {
@@ -131,6 +133,7 @@ export function createSpawnQueue(
       cwd: req.cwd,
       scoped: req.scoped,
       title: req.title,
+      ...(req.workspaceRoot !== undefined ? { workspaceRoot: req.workspaceRoot } : {}),
     })) as Awaited<ReturnType<typeof coApi.terminal.create>> & {
       data?: { id: string; cwd?: string };
     };

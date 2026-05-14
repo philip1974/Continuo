@@ -22,6 +22,8 @@ export interface AttachExistingPtyInput {
   cwd?: string;
   originHint?: 'user' | 'agent';
   agentLabel?: string;
+  /** session 自带的 workspace tag(undefined = 全局,所有 workspace 可见)。 */
+  workspaceRoot?: string;
 }
 
 export interface PaneController {
@@ -137,6 +139,9 @@ export function createPaneController({
         ...(input.cwd !== undefined ? { cwd: input.cwd } : {}),
         ...(input.originHint !== undefined ? { originHint: input.originHint } : {}),
         ...(input.agentLabel !== undefined ? { agentLabel: input.agentLabel } : {}),
+        ...(input.workspaceRoot !== undefined
+          ? { workspaceRoot: input.workspaceRoot }
+          : {}),
       });
       const rejected = effects.find((e) => e.type === 'TAB_ATTACH_REJECTED');
       if (rejected && rejected.type === 'TAB_ATTACH_REJECTED') {
