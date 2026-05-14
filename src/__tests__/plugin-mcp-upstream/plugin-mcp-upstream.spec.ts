@@ -1,7 +1,10 @@
+// @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import {
+  _resetLmApiForTest,
+  captureLmApi,
+} from '../../lib/co-api';
 import { createIpcPluginMcpUpstream } from '../../plugins/plugin-mcp-upstream';
-
-const ORIGINAL = (globalThis as Record<string, unknown>).__lmApi;
 
 interface FakeApi {
   registerTool: ReturnType<typeof vi.fn>;
@@ -9,15 +12,24 @@ interface FakeApi {
 }
 
 function installApi(api: FakeApi): void {
-  (globalThis as Record<string, unknown>).__lmApi = { pluginMcp: api };
+  Object.defineProperty(window, 'api', {
+    value: { pluginMcp: api },
+    writable: true,
+    configurable: true,
+  });
+  captureLmApi();
 }
 
 beforeEach(() => {
-  delete (globalThis as Record<string, unknown>).__lmApi;
+  _resetLmApiForTest();
+  delete (window as { api?: unknown }).api;
+  delete (window as { __lmApi?: unknown }).__lmApi;
 });
 
 afterEach(() => {
-  (globalThis as Record<string, unknown>).__lmApi = ORIGINAL;
+  _resetLmApiForTest();
+  delete (window as { api?: unknown }).api;
+  delete (window as { __lmApi?: unknown }).__lmApi;
   vi.restoreAllMocks();
 });
 

@@ -348,11 +348,18 @@ const api = {
 
 export type ContinuoApi = typeof api;
 
-// v5 Phase 4.B (refined):暴露名字改 `__lmApi` 而非 `api`。
-// contextBridge 设置的属性 non-configurable 删不掉,但至少
-// `window.api` 不存在,plugin 写 `window.api.fs.*` 直接 TypeError。
-// 仍可通过 `window.__lmApi.*` 绕,见 doc/11 §Phase 4.B 残留说明。
-contextBridge.exposeInMainWorld('__lmApi', api);
+let rendererApiClaimed = false;
+
+// v5 Phase 4.C:不要把全量 IPC bridge 挂在 plugin 同 realm 的全局对象上。
+// renderer main.tsx 启动最早调用 captureLmApi() 领取一次完整 api 并缓存到
+// module-local;用户插件加载发生在之后,再次 claim 只能得到 null。
+contextBridge.exposeInMainWorld('__lmApi', {
+  claimRendererApi: (): ContinuoApi | null => {
+    if (rendererApiClaimed) return null;
+    rendererApiClaimed = true;
+    return api;
+  },
+});
 
 // E2E 模式标志:main 进程检测 CONTINUO_E2E=1 时把这个常量设 true,
 // renderer main.tsx 看到 → 挂 testing helpers 到 window.__continuoTest.

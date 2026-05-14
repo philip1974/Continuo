@@ -8,20 +8,22 @@ import type {
   InvokePayload,
   InvokeReply,
 } from '../../electron/shared/plugin-mcp-channels';
+import { coApi } from '@/lib/co-api';
 
 interface PluginMcpPreloadApi {
   onInvoke(cb: (payload: InvokePayload) => void): () => void;
   replyInvoke(reply: InvokeReply): void;
 }
 
-interface WindowWithLmApi {
-  __lmApi?: { pluginMcp?: PluginMcpPreloadApi };
-}
-
 export function startPluginMcpInvokeBridge(
   registry: PluginMcpRegistry,
 ): () => void {
-  const api = (globalThis as unknown as WindowWithLmApi).__lmApi?.pluginMcp;
+  let api: PluginMcpPreloadApi | undefined;
+  try {
+    api = coApi.pluginMcp;
+  } catch {
+    api = undefined;
+  }
   if (!api) {
     // 测试 / 未注入 preload 环境 → noop unsub
     return () => {};

@@ -1,12 +1,13 @@
 // LM UI 内部 IPC 入口(M-Plugin v5 Phase 4.B)。
 //
 // 取代散落在源文件里的 `window.api.X.Y(...)` 直接访问。captureLmApi() 在
-// main.tsx 早期调用一次,把 preload 注入的 window.api 缓存到 module-local;
-// sandbox-sweep 之后 plugin 拿不到 window.api,但 LM UI 通过 coApi 仍能访问。
+// main.tsx 早期调用一次,从 preload 注入的 __lmApi.claimRendererApi()
+// 一次性领取完整 API 并缓存到 module-local;之后 plugin 再 claim 得到 null,
+// 只能使用 constructor 注入的 scoped app。
 //
 // `coApi` 用 Proxy 转发:
 //   - 已 capture → 走缓存
-//   - 未 capture → fallback 到 globalThis.window.api(测试 / jsdom 场景)
+//   - 未 capture → fallback 到 bootstrap / window.api(测试 / jsdom 场景)
 //   - 都没有 → 抛错
 //
 // 设计权衡:Proxy 每次访问要走 trap,但 IPC 本身就是异步开销大头,Proxy
@@ -17,19 +18,39 @@ import type { ContinuoApi } from '../../electron/preload';
 
 interface WindowWithApi {
   api?: ContinuoApi;
-  __lmApi?: ContinuoApi;
+  __lmApi?: ContinuoApi | LmApiBootstrap;
 }
 
-function readLiveApi(): ContinuoApi | undefined {
-  const w = (globalThis as unknown as { window?: WindowWithApi }).window;
-  // PROD:preload 暴露 __lmApi。dev / 测试可能 mock window.api。
-  return w?.__lmApi ?? w?.api;
+interface LmApiBootstrap {
+  claimRendererApi(): ContinuoApi | null;
 }
 
 let _cached: ContinuoApi | null = null;
 
+function isLmApiBootstrap(value: unknown): value is LmApiBootstrap {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    typeof (value as { claimRendererApi?: unknown }).claimRendererApi ===
+      'function'
+  );
+}
+
+function readLiveApi(): ContinuoApi | undefined {
+  const w = (globalThis as unknown as { window?: WindowWithApi }).window;
+  const lmApi = w?.__lmApi;
+  if (isLmApiBootstrap(lmApi)) {
+    const claimed = lmApi.claimRendererApi();
+    if (claimed) _cached = claimed;
+    return claimed ?? undefined;
+  }
+  // 测试 / 旧 dev mock 可能直接挂完整 API。
+  return lmApi ?? w?.api;
+}
+
 /**
- * 把当前 window.__lmApi(PROD)或 window.api(测试 mock)缓存下来。
+ * 从 window.__lmApi.claimRendererApi(PROD)一次性领取并缓存完整 API。
+ * 测试 / 旧 dev mock 仍可用 window.__lmApi 或 window.api 的完整 API 形态。
  * **main.tsx 启动时必须调一次,sandboxSweep 之前**。
  * 缺 → warn 不抛,后续 coApi 调用才报。
  */
@@ -51,7 +72,7 @@ export function _resetLmApiForTest(): void {
  * LM UI 唯一 IPC 入口。源文件用 `coApi.fs.readFile(...)`。
  *
  * Proxy 转发:已 capture 走缓存,否则 fallback 到 globalThis
- * (测试可通过 mock window.api 或 window.__lmApi 注入)。
+ * (测试可通过 mock window.api、旧完整 window.__lmApi 或 bootstrap 注入)。
  */
 export const coApi = new Proxy({} as ContinuoApi, {
   get(_target, prop) {

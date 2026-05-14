@@ -10,8 +10,8 @@
 // 应**只在 PROD** 调用(import.meta.env.PROD 守卫)。dev 保留 raw 让
 // plugin 作者验证 try/catch 模式即可,prod 严格执行。
 //
-// window.api 不在本次 sweep 范围(LM UI 41 处直接用,refactor 过大);
-// 见 doc/11 Phase 4.B 后续路线。
+// window.__lmApi 不在 sweep 范围:preload 只暴露一次性 bootstrap
+// claimRendererApi(),完整 IPC API 已由 LM UI 在启动早期领取并缓存到 coApi。
 
 const RAW_FETCH: typeof fetch =
   typeof globalThis.fetch === 'function'
@@ -98,8 +98,9 @@ export function sandboxSweep(): void {
   } catch (err) {
     console.warn('[sandbox-sweep] window.api sweep 失败', err);
   }
-  // window.__lmApi:contextBridge 设为 non-configurable,defineProperty 必失败。
-  // 仍 try 以防未来 Electron 改默认值;失败静默(已知限制)。
+  // window.__lmApi:contextBridge 设为 non-configurable,defineProperty 多半失败。
+  // 现在它只含一次性 bootstrap,不再是完整 IPC bridge;仍 try 以防未来
+  // Electron 改默认值,失败静默。
   try {
     Object.defineProperty(globalThis, '__lmApi', {
       value: undefined,

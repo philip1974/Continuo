@@ -1,4 +1,9 @@
+// @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import {
+  _resetLmApiForTest,
+  captureLmApi,
+} from '../../lib/co-api';
 import { startPluginMcpInvokeBridge } from '../../plugins/plugin-mcp-invoke-bridge';
 import type {
   InvokePayload,
@@ -42,15 +47,17 @@ function fakeRegistry(impl: (name: string, input: unknown) => Promise<unknown>) 
   } as unknown as Parameters<typeof startPluginMcpInvokeBridge>[0];
 }
 
-const ORIGINAL = (globalThis as Record<string, unknown>).__lmApi;
-
 describe('startPluginMcpInvokeBridge', () => {
   beforeEach(() => {
-    delete (globalThis as Record<string, unknown>).__lmApi;
+    _resetLmApiForTest();
+    delete (window as { api?: unknown }).api;
+    delete (window as { __lmApi?: unknown }).__lmApi;
   });
 
   afterEach(() => {
-    (globalThis as Record<string, unknown>).__lmApi = ORIGINAL;
+    _resetLmApiForTest();
+    delete (window as { api?: unknown }).api;
+    delete (window as { __lmApi?: unknown }).__lmApi;
   });
 
   it('无 __lmApi.pluginMcp → 返 noop unsub', () => {
@@ -62,7 +69,12 @@ describe('startPluginMcpInvokeBridge', () => {
 
   it('正路径:成功 → replyInvoke ok:true + result', async () => {
     const api = makeApi();
-    (globalThis as Record<string, unknown>).__lmApi = { pluginMcp: api };
+    Object.defineProperty(window, 'api', {
+      value: { pluginMcp: api },
+      writable: true,
+      configurable: true,
+    });
+    captureLmApi();
     const reg = fakeRegistry(async (name, input) => ({ name, input }));
 
     startPluginMcpInvokeBridge(reg);
@@ -80,7 +92,12 @@ describe('startPluginMcpInvokeBridge', () => {
 
   it('Error 含 code 字串 → 透传 code 与 message', async () => {
     const api = makeApi();
-    (globalThis as Record<string, unknown>).__lmApi = { pluginMcp: api };
+    Object.defineProperty(window, 'api', {
+      value: { pluginMcp: api },
+      writable: true,
+      configurable: true,
+    });
+    captureLmApi();
     const reg = fakeRegistry(async () => {
       throw Object.assign(new Error('schema mismatch'), { code: 'BAD_INPUT' });
     });
@@ -101,7 +118,12 @@ describe('startPluginMcpInvokeBridge', () => {
 
   it('错误对象无 code/message → fallback UNKNOWN / unknown error', async () => {
     const api = makeApi();
-    (globalThis as Record<string, unknown>).__lmApi = { pluginMcp: api };
+    Object.defineProperty(window, 'api', {
+      value: { pluginMcp: api },
+      writable: true,
+      configurable: true,
+    });
+    captureLmApi();
     const reg = fakeRegistry(async () => {
       // 抛非标准对象
        
@@ -124,7 +146,12 @@ describe('startPluginMcpInvokeBridge', () => {
 
   it('返回的 unsub 调用 → 解订阅', () => {
     const api = makeApi();
-    (globalThis as Record<string, unknown>).__lmApi = { pluginMcp: api };
+    Object.defineProperty(window, 'api', {
+      value: { pluginMcp: api },
+      writable: true,
+      configurable: true,
+    });
+    captureLmApi();
     const reg = fakeRegistry(async () => null);
 
     const unsub = startPluginMcpInvokeBridge(reg);

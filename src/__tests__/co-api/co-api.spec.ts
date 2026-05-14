@@ -81,10 +81,13 @@ describe('captureLmApi + coApi 缓存', () => {
 });
 
 describe('Phase 4.B refined:优先 __lmApi(PROD 名)', () => {
-  it('window.__lmApi 存在 → fallback 优先取它,不取 window.api', () => {
+  it('window.__lmApi claimRendererApi 存在 → fallback 优先领取它,不取 window.api', () => {
     const lmApiObj = { fs: { tag: '__lmApi' } };
+    const bridge = {
+      claimRendererApi: vi.fn(() => lmApiObj),
+    };
     Object.defineProperty(window, '__lmApi', {
-      value: lmApiObj,
+      value: bridge,
       writable: true,
       configurable: true,
     });
@@ -95,18 +98,50 @@ describe('Phase 4.B refined:优先 __lmApi(PROD 名)', () => {
     });
 
     expect((coApi.fs as unknown as { tag: string }).tag).toBe('__lmApi');
+    expect(bridge.claimRendererApi).toHaveBeenCalledOnce();
 
     delete (window as { __lmApi?: unknown }).__lmApi;
   });
 
-  it('captureLmApi 优先吃 __lmApi(PROD 路径)', () => {
+  it('captureLmApi 优先领取 __lmApi claimRendererApi(PROD 路径)', () => {
+    const bridge = {
+      claimRendererApi: vi.fn(() => ({ fs: { tag: 'prod' } })),
+    };
     Object.defineProperty(window, '__lmApi', {
-      value: { fs: { tag: 'prod' } },
+      value: bridge,
       writable: true,
       configurable: true,
     });
     captureLmApi();
     expect((coApi.fs as unknown as { tag: string }).tag).toBe('prod');
+    expect(bridge.claimRendererApi).toHaveBeenCalledOnce();
+
+    delete (window as { __lmApi?: unknown }).__lmApi;
+  });
+
+  it('claimRendererApi 一次性领取后,插件阶段再次 claim 得不到 API', () => {
+    const api = { fs: { tag: 'claimed' } };
+    let claimed = false;
+    const bridge = {
+      claimRendererApi: vi.fn(() => {
+        if (claimed) return null;
+        claimed = true;
+        return api;
+      }),
+    };
+    Object.defineProperty(window, '__lmApi', {
+      value: bridge,
+      writable: true,
+      configurable: true,
+    });
+
+    captureLmApi();
+
+    expect((coApi.fs as unknown as { tag: string }).tag).toBe('claimed');
+    expect(bridge.claimRendererApi()).toBeNull();
+    expect(
+      ((window as { __lmApi?: unknown }).__lmApi as { fs?: unknown }).fs,
+    ).toBeUndefined();
 
     delete (window as { __lmApi?: unknown }).__lmApi;
   });

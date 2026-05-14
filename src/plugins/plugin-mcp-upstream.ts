@@ -10,6 +10,7 @@ import type {
   PluginMcpUpstream,
   PluginMcpUpstreamRegisterPayload,
 } from './registries/PluginMcpRegistry';
+import { coApi } from '@/lib/co-api';
 
 interface PluginMcpPreloadApi {
   registerTool(
@@ -20,14 +21,18 @@ interface PluginMcpPreloadApi {
   ): Promise<{ ok: true; data: void } | { ok: false; code: string; message: string }>;
 }
 
-interface WindowWithLmApi {
-  __lmApi?: { pluginMcp?: PluginMcpPreloadApi };
+function getPluginMcpApi(): PluginMcpPreloadApi | undefined {
+  try {
+    return coApi.pluginMcp;
+  } catch {
+    return undefined;
+  }
 }
 
 export function createIpcPluginMcpUpstream(): PluginMcpUpstream {
   return {
     async register(payload) {
-      const api = (globalThis as unknown as WindowWithLmApi).__lmApi?.pluginMcp;
+      const api = getPluginMcpApi();
       if (!api) {
         throw Object.assign(new Error('plugin mcp preload API not available'), {
           code: 'PRELOAD_NOT_READY',
@@ -39,7 +44,7 @@ export function createIpcPluginMcpUpstream(): PluginMcpUpstream {
       }
     },
     async unregister(name) {
-      const api = (globalThis as unknown as WindowWithLmApi).__lmApi?.pluginMcp;
+      const api = getPluginMcpApi();
       if (!api) return; // 关闭中或未就绪,静默
       const r = await api.unregisterTool(name);
       if (!r.ok) {
