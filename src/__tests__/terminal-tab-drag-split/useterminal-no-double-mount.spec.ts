@@ -15,7 +15,7 @@ import { describe, expect, it } from 'vitest';
 
 describe('terminal-tab-drag-split: useTerminal no double mount via rAF', () => {
   it('requestAnimationFrame schedules callback asynchronously', async () => {
-    let order: string[] = [];
+    const order: string[] = [];
     order.push('sync-1');
     const p = new Promise<void>((resolve) => {
       requestAnimationFrame(() => {
