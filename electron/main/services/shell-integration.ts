@@ -4,30 +4,6 @@ import * as path from 'node:path';
 
 export type SupportedShell = 'zsh' | 'bash' | 'fish' | null;
 
-const ZSH_SNIPPET = String.raw`# ZDOTDIR hijack 注入 OSC 7,但保留 hijack 状态会让 user .zshrc 内 oh-my-zsh
-# / starship / zsh-autosuggestions 等 plugin 初始化时检测到 "异常 ZDOTDIR"
-# (== /tmp/continuo-shell-...) 而 silent 失败。实测 sub-shell env -u ZDOTDIR
-# zsh -i 后 autosuggestions 灰色提示工作,带 hijack 的 ZDOTDIR 就不工作。
-#
-# 修复:把 ZDOTDIR 还原回 $HOME(zsh 原生默认),让 user .zshrc 在跟 iTerm
-# 完全一样的环境跑。复现 zsh 原生 login 启动流程(.zprofile → .zshrc),
-# 然后追加 OSC 7 hook。
-if [[ -n "$_CONTINUO_USER_ZDOTDIR" ]]; then
-  export ZDOTDIR="$_CONTINUO_USER_ZDOTDIR"
-fi
-
-[ -f "$ZDOTDIR/.zprofile" ] && source "$ZDOTDIR/.zprofile"
-[ -f "$ZDOTDIR/.zshrc" ] && source "$ZDOTDIR/.zshrc"
-
-_continuo_osc7() {
-  printf '\e]7;file://%s%s\a' "${'${HOST:-}'}" "$PWD"
-}
-
-typeset -ag chpwd_functions
-chpwd_functions+=(_continuo_osc7)
-_continuo_osc7
-`;
-
 const BASH_SNIPPET = String.raw`# 同 zsh 注释:non-login bash 默认只读 .bashrc,但用户的 PATH / brew 通常配
 # 在 .bash_profile / .profile;补 source 它们以避免 plugin 链式坏。
 [ -n "$_CONTINUO_USER_HOME" ] && [ -f "$_CONTINUO_USER_HOME/.bash_profile" ] && source "$_CONTINUO_USER_HOME/.bash_profile"
