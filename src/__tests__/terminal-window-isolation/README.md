@@ -46,6 +46,12 @@
   对每个 window 单独 push `sessionStore.getAll({ ownerWindowId: win.id })`。
 - 一个 window 自己创建/删除 session → 只该 window 收到非空 snapshot(其它 window 收
   自己原有 snapshot,不变化也不必收;但本 spec 不强制"完全不推空" — 实装可选)。
+- **agent session 与 user session 同等严格 per-owner**:不开"agent 广播到所有 window"
+  后门。一旦 `ownerWindowId` 字段被设置成 X(无论 fallback / hello / 显式),后续
+  list / broadcast 都按 X 工作 — `originHint` 不影响可见域。
+  > 历史:topic-05 `86c1799` 曾给 agent session 开宽口径 broadcast(`originHint==='agent' ||
+  > ownerWindowId===w.id`)绕过 fallback 选错窗的问题,导致 sessions 跨 window 漏出且与
+  > `listSessions` 语义错配。已回退;正确做法是修 fallback / hello 路由,不是放宽广播。
 
 ### 关闭:摘 metadata + kill PTY
 

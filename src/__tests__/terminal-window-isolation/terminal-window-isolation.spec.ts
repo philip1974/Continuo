@@ -79,22 +79,22 @@ function makeCreate(service: ReturnType<typeof makeService>, idSeq: () => string
 // ────────────────────────────────────────────────────────────
 
 describe('create 写入 sender owner', () => {
-  it('windowA(id=11)创建 → session.ownerWindowId === 11', () => {
+  it('windowA(id=11)创建 → session.ownerWindowId === 11', async () => {
     const service = makeService();
     const create = makeCreate(service, () => 'term-a');
-    create({}, fakeWin(11));
+    await create({}, fakeWin(11));
     const all = getAll();
     expect(all).toHaveLength(1);
     expect(all[0]!.ownerWindowId).toBe(11);
   });
 
-  it('两个 window 分别创建 → 各自 owner 正确', () => {
+  it('两个 window 分别创建 → 各自 owner 正确', async () => {
     const service = makeService();
     let seq = 0;
     const create = makeCreate(service, () => `term-${++seq}`);
-    create({}, fakeWin(11));
-    create({}, fakeWin(22));
-    create({}, fakeWin(11));
+    await create({}, fakeWin(11));
+    await create({}, fakeWin(22));
+    await create({}, fakeWin(11));
     const byOwner = new Map<number, number>();
     for (const s of getAll()) {
       byOwner.set(s.ownerWindowId, (byOwner.get(s.ownerWindowId) ?? 0) + 1);
@@ -109,15 +109,15 @@ describe('create 写入 sender owner', () => {
 // ────────────────────────────────────────────────────────────
 
 describe('list_sessions 按 owner 过滤', () => {
-  it('windowB 创建后,windowA list 看不到 windowB 的 session', () => {
+  it('windowB 创建后,windowA list 看不到 windowB 的 session', async () => {
     const service = makeService();
     let seq = 0;
     const create = makeCreate(service, () => `term-${++seq}`);
     const list = makeListSessionsHandler();
 
-    create({}, fakeWin(11)); // A 的
-    create({}, fakeWin(22)); // B 的
-    create({}, fakeWin(22)); // B 的
+    await create({}, fakeWin(11)); // A 的
+    await create({}, fakeWin(22)); // B 的
+    await create({}, fakeWin(22)); // B 的
 
     const aList = list({ ownerWindowId: 11 });
     const bList = list({ ownerWindowId: 22 });
@@ -128,12 +128,41 @@ describe('list_sessions 按 owner 过滤', () => {
     for (const s of bList.sessions) expect(s.ownerWindowId).toBe(22);
   });
 
-  it('无 session 的 window list → 空数组', () => {
+  it('无 session 的 window list → 空数组', async () => {
     const service = makeService();
     const create = makeCreate(service, () => 'only-one');
     const list = makeListSessionsHandler();
-    create({}, fakeWin(11));
+    await create({}, fakeWin(11));
     expect(list({ ownerWindowId: 99 }).sessions).toEqual([]);
+  });
+
+  // agent session 与 user session 同等严格 per-owner — 不开"agent 广播全 window"
+  // 后门(曾在 topic-05 86c1799 引入,因为它让 listSessions/broadcast 语义错配
+  // 且让 sessions 跨 window 漏出。坚持 ownerWindowId 是唯一可见域)。
+  it('agent session 仍按 owner 严格过滤(无 originHint loophole)', () => {
+    add({
+      id: 'agent-a',
+      title: 'A',
+      cwd: '/',
+      originHint: 'agent',
+      ownerWindowId: 11,
+    });
+    add({
+      id: 'user-b',
+      title: 'B',
+      cwd: '/',
+      originHint: 'user',
+      ownerWindowId: 22,
+    });
+    const list = makeListSessionsHandler();
+    expect(list({ ownerWindowId: 11 }).sessions.map((s) => s.id)).toEqual([
+      'agent-a',
+    ]);
+    expect(list({ ownerWindowId: 22 }).sessions.map((s) => s.id)).toEqual([
+      'user-b',
+    ]);
+    // windowC 没创建过任何 session → 既看不到自己的(没有),也看不到 agent 的
+    expect(list({ ownerWindowId: 33 }).sessions).toEqual([]);
   });
 });
 
@@ -178,13 +207,13 @@ describe('removeByOwner', () => {
 // ────────────────────────────────────────────────────────────
 
 describe('makeWindowClosedCleanup', () => {
-  it('摘所有 owner sessions 并 kill 对应 PTY', () => {
+  it('摘所有 owner sessions 并 kill 对应 PTY', async () => {
     const service = makeService();
     let seq = 0;
     const create = makeCreate(service, () => `term-${++seq}`);
-    create({}, fakeWin(11)); // term-1
-    create({}, fakeWin(22)); // term-2
-    create({}, fakeWin(11)); // term-3
+    await create({}, fakeWin(11)); // term-1
+    await create({}, fakeWin(22)); // term-2
+    await create({}, fakeWin(11)); // term-3
 
     const cleanup = makeWindowClosedCleanup({ service: service as never });
     cleanup(11);
@@ -216,16 +245,16 @@ describe('makeWindowClosedCleanup', () => {
 // ────────────────────────────────────────────────────────────
 
 describe('集成场景:两个 window 并发 + 关闭清理', () => {
-  it('两 window 并发创建 + 一个关闭 → 另一个不受影响', () => {
+  it('两 window 并发创建 + 一个关闭 → 另一个不受影响', async () => {
     const service = makeService();
     let seq = 0;
     const create = makeCreate(service, () => `term-${++seq}`);
     const list = makeListSessionsHandler();
     const cleanup = makeWindowClosedCleanup({ service: service as never });
 
-    create({}, fakeWin(11)); // A:term-1
-    create({}, fakeWin(22)); // B:term-2
-    create({}, fakeWin(22)); // B:term-3
+    await create({}, fakeWin(11)); // A:term-1
+    await create({}, fakeWin(22)); // B:term-2
+    await create({}, fakeWin(22)); // B:term-3
 
     expect(list({ ownerWindowId: 11 }).sessions.map((s) => s.id)).toEqual(['term-1']);
     expect(list({ ownerWindowId: 22 }).sessions.map((s) => s.id)).toEqual([

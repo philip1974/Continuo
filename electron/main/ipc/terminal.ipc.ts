@@ -364,27 +364,18 @@ export function registerTerminalIpc(): void {
       ),
   );
 
-  // sessions_changed:Issue #28 Phase 1 — 按 owner 路由 user session,
-  // 但 topic-05:agent session 不强制 owner 匹配,broadcast 到所有 window。
-  //
-  // 原因:MCP stdio 路径(claude code 等外部 client)给 createSession 的
-  // ctx.ownerWindowId 是 fallback 选的"第一个非 popout window",可能不等于
-  // 用户当前可见 renderer 的 windowId(如果 stdio fallback 选错或多 window
-  // 顺序问题)。导致 agent session 落到 hidden window 名下,用户可见 window
-  // 永远收不到这个 session 的 snapshot,新 tab 不出现。
-  //
-  // 修复:agent session 走宽口径 broadcast,所有 visible InternalTerminalPanel
-  // 都收到 → 第一个 hydrate 完的 panel 抢 attach,duplicate ptyId 由
-  // reducer ATTACH_EXISTING_PTY_AS_TAB 兜底拒。user session 保留 per-owner
-  // 严格隔离(Issue #28 invariant 不变)。
+  // sessions_changed:严格 per-owner 路由 — 不论 user / agent,可见域只由
+  // ownerWindowId 决定,与 listSessionsHandler 一致。
+  // (topic-05 86c1799 曾给 agent session 开宽口径"广播到所有 window"以绕过
+  // fallback 选错窗的问题,已回退 — 那是把 fallback bug 转嫁成 sessions 跨
+  // window 漏出。正确路径:让 ctx.ownerWindowId 拿对窗,而非放宽广播。)
   terminalSessions.subscribe(() => {
     for (const w of BrowserWindow.getAllWindows()) {
       if (w.isDestroyed()) continue;
-      const all = terminalSessions.getAll();
-      const visible = all.filter(
-        (s) => s.originHint === 'agent' || s.ownerWindowId === w.id,
+      w.webContents.send(
+        TERMINAL_CHANNELS.SESSIONS_CHANGED,
+        terminalSessions.getAll({ ownerWindowId: w.id }),
       );
-      w.webContents.send(TERMINAL_CHANNELS.SESSIONS_CHANGED, visible);
     }
   });
 
