@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 
 export function useDispatchWithEffects<S, A, E>(
   reducer: (state: S, action: A) => { state: S; effects: E[] },
@@ -8,9 +8,14 @@ export function useDispatchWithEffects<S, A, E>(
   const stateRef = useRef(state);
   const effectQueueRef = useRef<E[]>([]);
   const [effectTrigger, setEffectTrigger] = useState(0);
-
-  const dispatch = useCallback(
-    (action: A) => {
+  // dispatch 用 ref 持稳定 identity:React 19 StrictMode 在 dev mount → unmount → remount
+  // 时,useCallback 返回新 fn → 触发依赖它的 useMemo(spawnQueue)cleanup,把已派出的
+  // spawn 标 cancelled,但 remount 后 effect runner 因 effectTrigger 不变不会再 enqueue,
+  // 导致 ptyId 永远填不回来。改 ref 后 dispatch identity 跨 mount 稳定,spawnQueue 不
+  // 被 re-create,cleanup 也只在真 unmount 时跑。
+  const dispatchRef = useRef<(action: A) => void>(null as unknown as (action: A) => void);
+  if (dispatchRef.current === null) {
+    dispatchRef.current = (action: A) => {
       const result = reducer(stateRef.current, action);
       stateRef.current = result.state;
       setState(result.state);
@@ -18,9 +23,14 @@ export function useDispatchWithEffects<S, A, E>(
         effectQueueRef.current.push(...result.effects);
         setEffectTrigger((n) => n + 1);
       }
-    },
-    [reducer],
-  );
+    };
+  }
 
-  return { state, stateRef, dispatch, effectQueueRef, effectTrigger };
+  return {
+    state,
+    stateRef,
+    dispatch: dispatchRef.current,
+    effectQueueRef,
+    effectTrigger,
+  };
 }
