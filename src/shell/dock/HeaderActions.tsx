@@ -86,17 +86,7 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
   const splitDown = useCallback(() => {
     void splitTerminal('below');
   }, []);
-  const [isPopout, setIsPopout] = useState(() => isPopoutWindow());
-  useEffect(() => {
-    const syncPopoutState = () => setIsPopout(isPopoutWindow());
-    syncPopoutState();
-    window.addEventListener('popstate', syncPopoutState);
-    window.addEventListener('hashchange', syncPopoutState);
-    return () => {
-      window.removeEventListener('popstate', syncPopoutState);
-      window.removeEventListener('hashchange', syncPopoutState);
-    };
-  }, []);
+  const isPopout = isPopoutWindow();
 
   return (
     <div
