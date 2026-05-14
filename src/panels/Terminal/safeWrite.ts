@@ -25,6 +25,8 @@ export function chunkifyData(data: string, chunkSize: number): string[] {
 interface WriteQueue {
   queue: string[];
   writing: boolean;
+  timer: ReturnType<typeof setTimeout> | null;
+  disposed: boolean;
 }
 
 const queues = new WeakMap<Terminal, WriteQueue>();
@@ -32,7 +34,7 @@ const queues = new WeakMap<Terminal, WriteQueue>();
 function getQueue(term: Terminal): WriteQueue {
   let q = queues.get(term);
   if (!q) {
-    q = { queue: [], writing: false };
+    q = { queue: [], writing: false, timer: null, disposed: false };
     queues.set(term, q);
   }
   return q;
@@ -40,6 +42,7 @@ function getQueue(term: Terminal): WriteQueue {
 
 export function safeWrite(term: Terminal, data: string): void {
   const q = getQueue(term);
+  if (q.disposed) return;
   for (const chunk of chunkifyData(data, CHUNK_SIZE)) {
     q.queue.push(chunk);
   }
@@ -52,6 +55,12 @@ function drainQueue(term: Terminal, q: WriteQueue): void {
   let written = 0;
 
   const next = (): void => {
+    q.timer = null;
+    if (q.disposed) {
+      q.queue = [];
+      q.writing = false;
+      return;
+    }
     const chunk = q.queue.shift();
     if (!chunk) {
       q.writing = false;
@@ -63,12 +72,22 @@ function drainQueue(term: Terminal, q: WriteQueue): void {
     if (written < BURST_CHUNKS) {
       next();
     } else {
-      setTimeout(next, WRITE_INTERVAL_MS);
+      q.timer = setTimeout(next, WRITE_INTERVAL_MS);
     }
   };
   next();
 }
 
 export function disposeQueue(term: Terminal): void {
+  const q = queues.get(term);
+  if (q) {
+    q.disposed = true;
+    q.queue = [];
+    q.writing = false;
+    if (q.timer) {
+      clearTimeout(q.timer);
+      q.timer = null;
+    }
+  }
   queues.delete(term);
 }

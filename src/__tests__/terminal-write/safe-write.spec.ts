@@ -91,4 +91,17 @@ describe('safeWrite', () => {
     safeWrite(instance, 'second');
     expect(writes).toEqual(['first', 'second']);
   });
+
+  it('disposeQueue 会取消节流中的旧 timer,不再写已释放 term', async () => {
+    const { instance, writes } = makeFakeTerm();
+    const big = 'x'.repeat(16 * 1024 * 5 + 100); // 6 chunks
+
+    safeWrite(instance, big);
+    expect(writes.length).toBe(4);
+
+    disposeQueue(instance);
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(writes.length).toBe(4);
+  });
 });
