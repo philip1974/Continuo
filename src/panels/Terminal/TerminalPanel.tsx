@@ -314,9 +314,22 @@ function InternalTerminalPanel({
   // topic-05: 订阅 main 推的 sessions snapshot。对每个 origin=agent 的 session,
   // 若 attachTarget 命中本 panel 且 ptyId 未在 state.tabs,则 attach 成新 tab。
   // 失败(超限 / duplicate / not-hydrated)→ attachRejected 反向通知 main cleanup。
+  //
+  // topic-06 regression fix:mount 时除了订阅 push,**还要主动拉一次**
+  // listSessions(),catch up listener 挂载之前已存在的 agent session
+  // (onSessionsChanged 是 push-only,不会重放 current state)。
   useEffect(() => {
     if (!state.hydrated) return;
-    const unsub = coApi.terminal.onSessionsChanged((sessions) => {
+    const processSnapshot = (
+      sessions: ReadonlyArray<{
+        id: string;
+        title: string;
+        cwd: string;
+        originHint: 'user' | 'agent';
+        agentLabel?: string;
+        attachTarget?: { kind: string; panelId?: string; windowId?: number };
+      }>,
+    ) => {
       const dockApi = getDockApi();
       for (const s of sessions) {
         if (s.originHint !== 'agent') continue;
@@ -355,7 +368,14 @@ function InternalTerminalPanel({
           );
         }
       }
+    };
+    // topic-06 fix:initial catch-up — 拉一次当前 sessions snapshot 处理已存在的
+    // agent session(防 listener 挂载晚于 session 创建时漏掉)
+    void coApi.terminal.listSessions().then((r) => {
+      if (r.ok) processSnapshot(r.data.sessions);
     });
+    // 后续增量 push
+    const unsub = coApi.terminal.onSessionsChanged(processSnapshot);
     return unsub;
   }, [controller, state.hydrated]);
 
