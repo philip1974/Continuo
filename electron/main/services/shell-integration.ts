@@ -76,22 +76,23 @@ export async function prepareEnv(
   const shell = detectShell(shellPath);
   if (!shell) return { env: baseEnv, cleanup: noopCleanup };
 
+  // ⚠ zsh:不 hijack ZDOTDIR。实测 hijack 会让 oh-my-zsh / starship /
+  // zsh-autosuggestions / syntax-highlighting 等 plugin 初始化时 silent 失败
+  // (它们检测 ZDOTDIR == /tmp/... 当 "abnormal env" 跳过自身 hook 注册)。
+  // sub-shell `env -u ZDOTDIR zsh -i` plugin 全工作可证。
+  //
+  // 代价:跨进程 OSC 7 自动 cwd 跟踪暂停 (panel 内 split 时新 leaf 不再继承
+  // `cd /tmp` 后的 cwd,只继承 panel 启动 cwd)。topic 03 plan-v4 P0-1 cwd
+  // inherit 走的是 trackedCwd via OSC 7 — 这条 path 也 disabled。但用户体感
+  // 上 autosuggestions / 主题 / plugin 工作的优先级远高于自动 cwd 继承,
+  // user 可手动 cd。后续 topic 可换 main-side `lsof -p <pty.pid> -d cwd`
+  // 取真实 cwd 替代 OSC 7 注入,不需要 ZDOTDIR hijack。
+  if (shell === 'zsh') return { env: baseEnv, cleanup: noopCleanup };
+
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'continuo-shell-'));
   const cleanup = async (): Promise<void> => {
     await fs.rm(tmpDir, { recursive: true, force: true });
   };
-
-  if (shell === 'zsh') {
-    await fs.writeFile(path.join(tmpDir, '.zshrc'), ZSH_SNIPPET, 'utf8');
-    return {
-      env: {
-        ...baseEnv,
-        ZDOTDIR: tmpDir,
-        _CONTINUO_USER_ZDOTDIR: baseEnv.ZDOTDIR ?? baseEnv.HOME ?? '',
-      },
-      cleanup,
-    };
-  }
 
   if (shell === 'bash') {
     const rcfile = path.join(tmpDir, '.bashrc');

@@ -24,7 +24,9 @@ describe('tab split panes - shell integration snippet selection', () => {
     const fish = await service.prepareEnv?.('/usr/local/bin/fish', { SHELL: '/usr/local/bin/fish' });
     const unknown = await service.prepareEnv?.('/opt/bin/nu', { SHELL: '/opt/bin/nu' });
 
-    expect(zsh?.env).toEqual(expect.objectContaining({ SHELL: '/bin/zsh', ZDOTDIR: expect.any(String) }));
+    // zsh path 现在 noop (不 hijack ZDOTDIR — 让 oh-my-zsh/plugin 在原生
+    // 环境跑;OSC 7 自动跟踪 disabled 直到换 main-side cwd 探测方案):
+    expect(zsh?.env).toEqual({ SHELL: '/bin/zsh' });
     expect(bash?.env).toEqual(expect.objectContaining({ SHELL: '/bin/bash', BASH_ENV: expect.any(String) }));
     expect(fish?.env).toEqual(expect.objectContaining({ SHELL: '/usr/local/bin/fish', XDG_CONFIG_HOME: expect.any(String) }));
     expect(unknown?.env).toEqual({ SHELL: '/opt/bin/nu' });
