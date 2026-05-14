@@ -255,42 +255,15 @@ function InternalTerminalPanel({
       // 到"剩余 active tab"的 leaf,达成两 tab 合并成一个 panel 内的 BSP split。
       const isSelfDrag =
         payload.sourcePanelId === panelId && payload.sourceTabId === tabIdOnEl;
-      console.debug(
-        '[tab-drag] DOC_CAPTURE_DROP pre-detach',
-        'closure panelId=',
-        panelId,
-        'sourcePanelId=',
-        payload.sourcePanelId,
-        'isSelfDrag=',
-        isSelfDrag,
-        'stateRef.tabs=',
-        stateRef.current.tabs.map((t) => t.id),
-        'stateRef.activeTabId=',
-        stateRef.current.activeTabId,
-      );
       const detached = sourceCtrl.detachTab(payload.sourceTabId, { forMove: true });
       if (!detached.detached) {
         console.debug('[tab-drag] DOC_CAPTURE_DROP detach rejected', detached.reason);
         return;
       }
-      console.debug(
-        '[tab-drag] DOC_CAPTURE_DROP post-detach (sync)',
-        'stateRef.tabs=',
-        stateRef.current.tabs.map((t) => t.id),
-        'stateRef.activeTabId=',
-        stateRef.current.activeTabId,
-      );
       requestAnimationFrame(() => {
         // detach 后 activeTabId 已自动 fallback 到剩余 tab(reducer 干的)。
         // self-drag:用 fallback target tab 的 activeLeafId 作 target;非 self-drag:
         // 用 user hit 的 leafId(仍在 target tab 内)
-        console.debug(
-          '[tab-drag] DOC_CAPTURE_DROP rAF tick',
-          'stateRef.tabs=',
-          stateRef.current.tabs.map((t) => t.id),
-          'stateRef.activeTabId=',
-          stateRef.current.activeTabId,
-        );
         let targetTabId: string;
         let targetLeafId: string;
         if (isSelfDrag) {
@@ -343,28 +316,15 @@ function InternalTerminalPanel({
   // 失败(超限 / duplicate / not-hydrated)→ attachRejected 反向通知 main cleanup。
   useEffect(() => {
     if (!state.hydrated) return;
-    console.debug('[tab-drag] subscribe onSessionsChanged panelId=', controller.panelId);
     const unsub = coApi.terminal.onSessionsChanged((sessions) => {
       const dockApi = getDockApi();
-      console.debug(
-        '[tab-drag] onSessionsChanged snapshot panelId=',
-        controller.panelId,
-        'count=',
-        sessions.length,
-        'agentCount=',
-        sessions.filter((s) => s.originHint === 'agent').length,
-      );
       for (const s of sessions) {
         if (s.originHint !== 'agent') continue;
         // 已 attach 过的 ptyId 跳过
         const alreadyAttached = controller.getCurrentPtyIds().includes(s.id);
-        if (alreadyAttached) {
-          console.debug('[tab-drag] agent session already attached, skip', s.id);
-          continue;
-        }
+        if (alreadyAttached) continue;
         // attachTarget 命中判断 — V1 总 return true
         if (!attachTargetMatchesPanel(s.attachTarget, controller.panelId, controller.windowId, dockApi)) {
-          console.debug('[tab-drag] attachTarget no-match panelId=', controller.panelId, 'target=', s.attachTarget);
           continue;
         }
         const result = controller.tryAttachExisting({
