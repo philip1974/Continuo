@@ -350,7 +350,12 @@ export function handlePaneSplitKeyDown(
   if (event.key === '\\' || event.code === 'Backslash') {
     focusOwningLeaf();
     controller.split(event.shiftKey ? 'vertical' : 'horizontal');
+    // attachCustomKeyEventHandler return false 只阻 xterm 自己消费;
+    // KeyboardEvent 仍冒泡到 document,useCommandHotkeys 会二次触发 splitTerminal。
+    // stopImmediatePropagation 阻断 document listener,防双 split。
     event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
     return false;
   }
 
@@ -359,6 +364,8 @@ export function handlePaneSplitKeyDown(
     if (event.key === '[') controller.focusPrev();
     else controller.focusNext();
     event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
     return false;
   }
 

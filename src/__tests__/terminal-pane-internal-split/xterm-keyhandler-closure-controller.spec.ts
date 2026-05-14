@@ -15,6 +15,8 @@ describe('terminal pane internal split - xterm keyhandler closure controller', (
       shiftKey: false,
       key: '\\',
       preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+      stopImmediatePropagation: vi.fn(),
     } as unknown as KeyboardEvent;
 
     const handled = handlePaneSplitKeyDown(event, opts, {
@@ -47,6 +49,8 @@ describe('terminal pane internal split - xterm keyhandler closure controller', (
           shiftKey: true,
           key: '\\',
           preventDefault: vi.fn(),
+          stopPropagation: vi.fn(),
+          stopImmediatePropagation: vi.fn(),
         } as unknown as KeyboardEvent,
         opts,
         { dispatch, split, focusPrev: vi.fn(), focusNext },
@@ -61,6 +65,8 @@ describe('terminal pane internal split - xterm keyhandler closure controller', (
           metaKey: true,
           key: ']',
           preventDefault: vi.fn(),
+          stopPropagation: vi.fn(),
+          stopImmediatePropagation: vi.fn(),
         } as unknown as KeyboardEvent,
         opts,
         { dispatch, split, focusPrev: vi.fn(), focusNext },
