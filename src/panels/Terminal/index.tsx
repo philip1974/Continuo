@@ -1,3 +1,3 @@
-// Terminal panel 入口。re-export Terminal(panels.tsx 已 import { Terminal });
-// 实际渲染由 TerminalPanel 编排多 tab + xterm 实例。
-export { TerminalPanel as Terminal } from './TerminalPanel';
+// Terminal panel 入口。新 dockview panel 使用单 session 视图。
+export { TerminalPanelView as Terminal, TerminalPanelView } from './TerminalPanelView';
+export { TerminalPanel, filterTabsByWorkspace } from './TerminalPanel';

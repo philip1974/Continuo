@@ -1,21 +1,19 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { DockviewApi } from 'dockview-react';
 import { reconcileTerminalPanels } from '@/shell/dock/DockReconciler';
+import type { TerminalSession } from '@/stores/terminal.store';
 
-type Session = {
-  id: string;
-  title: string;
-  cwd: string;
-  originHint: 'user' | 'agent';
-  createdAt: number;
-};
-
-function session(id: string, over: Partial<Session> = {}): Session {
+function session(
+  id: string,
+  over: Partial<TerminalSession> = {},
+): TerminalSession {
   return {
     id,
     title: id,
     cwd: '/repo',
     originHint: 'user',
     createdAt: 1,
+    exitCode: null,
     ...over,
   };
 }
@@ -51,7 +49,7 @@ describe('agent create as new dockview panel', () => {
     const api = makeApi();
     api.panels['terminal-old'] = makePanel('terminal-old');
 
-    reconcileTerminalPanels(api, {
+    reconcileTerminalPanels(api as unknown as DockviewApi, {
       previousSessions: [session('old', { createdAt: 1 })],
       nextSessions: [
         session('old', { createdAt: 1 }),
@@ -79,7 +77,7 @@ describe('agent create as new dockview panel', () => {
     const api = makeApi();
     const pendingFocusSessionIdRef = { current: 'user-1' };
 
-    reconcileTerminalPanels(api, {
+    reconcileTerminalPanels(api as unknown as DockviewApi, {
       previousSessions: [],
       nextSessions: [session('user-1', { originHint: 'user' })],
       pendingFocusSessionIdRef,
@@ -92,7 +90,7 @@ describe('agent create as new dockview panel', () => {
   it('batch add: 首次 hydrate 按 createdAt 升序逐个 add;首个默认位置,后续 reference 前一个', () => {
     const api = makeApi();
 
-    reconcileTerminalPanels(api, {
+    reconcileTerminalPanels(api as unknown as DockviewApi, {
       previousSessions: [],
       nextSessions: [
         session('third', { createdAt: 30 }),

@@ -466,31 +466,6 @@
 
 - [`tab-icons.spec.tsx`](./tab-icons/tab-icons.spec.tsx)
 
-## [Tab Split Panes](./tab-split-panes/README.md)
-
-- [`close-all-panels-empty.spec.ts`](./tab-split-panes/close-all-panels-empty.spec.ts)
-- [`close-last-panel-collapses.spec.ts`](./tab-split-panes/close-last-panel-collapses.spec.ts)
-- [`cwd-inherit.spec.ts`](./tab-split-panes/cwd-inherit.spec.ts)
-- [`flush-on-before-quit-per-window.spec.ts`](./tab-split-panes/flush-on-before-quit-per-window.spec.ts)
-- [`hotkey-no-conflict.spec.ts`](./tab-split-panes/hotkey-no-conflict.spec.ts)
-- [`layout-migration-strip-volatile-sessionid.spec.ts`](./tab-split-panes/layout-migration-strip-volatile-sessionid.spec.ts)
-- [`nested-split.spec.ts`](./tab-split-panes/nested-split.spec.ts)
-- [`osc-cwd-tracking.spec.ts`](./tab-split-panes/osc-cwd-tracking.spec.ts)
-- [`osc7-host-validation.spec.ts`](./tab-split-panes/osc7-host-validation.spec.ts)
-- [`osc7-tmux-passthrough.spec.ts`](./tab-split-panes/osc7-tmux-passthrough.spec.ts)
-- [`panel-close-via-wrap-close.spec.ts`](./tab-split-panes/panel-close-via-wrap-close.spec.ts)
-- [`persistence.spec.ts`](./tab-split-panes/persistence.spec.ts)
-- [`popout-disabled.spec.ts`](./tab-split-panes/popout-disabled.spec.ts)
-- [`props-pass-through.spec.ts`](./tab-split-panes/props-pass-through.spec.ts)
-- [`scoped-hydrate-cancelled-cleanup.spec.ts`](./tab-split-panes/scoped-hydrate-cancelled-cleanup.spec.ts)
-- [`scoped-hydrate.spec.ts`](./tab-split-panes/scoped-hydrate.spec.ts)
-- [`scoped-session-hidden-from-legacy.spec.ts`](./tab-split-panes/scoped-session-hidden-from-legacy.spec.ts)
-- [`scoped-session-render.spec.ts`](./tab-split-panes/scoped-session-render.spec.ts)
-- [`shell-integration-snippet-selection.spec.ts`](./tab-split-panes/shell-integration-snippet-selection.spec.ts)
-- [`split-down.spec.ts`](./tab-split-panes/split-down.spec.ts)
-- [`split-right.spec.ts`](./tab-split-panes/split-right.spec.ts)
-- [`terminal-create-scoped-schema.spec.ts`](./tab-split-panes/terminal-create-scoped-schema.spec.ts)
-
 ## [terminal-ipc (M-Terminal Step T2)](./terminal-ipc/README.md) `[integration]`
 
 - [`terminal-ipc.spec.ts`](./terminal-ipc/terminal-ipc.spec.ts)
@@ -498,20 +473,6 @@
 ## [Terminal 键位映射(`mapTerminalKey`)](./terminal-key-mapping/README.md)
 
 - [`terminal-key-mapping.spec.ts`](./terminal-key-mapping/terminal-key-mapping.spec.ts)
-
-## [Terminal Pane Internal Split](./terminal-pane-internal-split/README.md)
-
-- [`controller-identity-stable-via-ref.spec.ts`](./terminal-pane-internal-split/controller-identity-stable-via-ref.spec.ts)
-- [`cwd-fallback-in-ipc-resolve.spec.ts`](./terminal-pane-internal-split/cwd-fallback-in-ipc-resolve.spec.ts)
-- [`effect-three-levels-tab-vs-panel.spec.ts`](./terminal-pane-internal-split/effect-three-levels-tab-vs-panel.spec.ts)
-- [`hydrate-then-spawn-order.spec.ts`](./terminal-pane-internal-split/hydrate-then-spawn-order.spec.ts)
-- [`leaf-level-cancellation-token.spec.ts`](./terminal-pane-internal-split/leaf-level-cancellation-token.spec.ts)
-- [`pane-tree-reducer.spec.ts`](./terminal-pane-internal-split/pane-tree-reducer.spec.ts)
-- [`panel-reducer.spec.ts`](./terminal-pane-internal-split/panel-reducer.spec.ts)
-- [`reducer-pure-with-effects.spec.ts`](./terminal-pane-internal-split/reducer-pure-with-effects.spec.ts)
-- [`remove-pty-dedup-set.spec.ts`](./terminal-pane-internal-split/remove-pty-dedup-set.spec.ts)
-- [`spawn-queue-with-reason-dedup.spec.ts`](./terminal-pane-internal-split/spawn-queue-with-reason-dedup.spec.ts)
-- [`xterm-keyhandler-closure-controller.spec.ts`](./terminal-pane-internal-split/xterm-keyhandler-closure-controller.spec.ts)
 
 ## [TerminalPanel(Terminal 主容器)](./terminal-panel/README.md)
 
@@ -544,27 +505,6 @@
 ## [terminal-store (M-Terminal Step T3 + Agent Terminal MCP P1)](./terminal-store/README.md)
 
 - [`terminal-store.spec.ts`](./terminal-store/terminal-store.spec.ts)
-
-## [Terminal Tab Drag Split](./terminal-tab-drag-split/README.md)
-
-- [`agent-attach.spec.ts`](./terminal-tab-drag-split/agent-attach.spec.ts)
-- [`agent-control-link-stable.spec.ts`](./terminal-tab-drag-split/agent-control-link-stable.spec.ts)
-- [`attach-rejected-reverse-notify.spec.ts`](./terminal-tab-drag-split/attach-rejected-reverse-notify.spec.ts)
-- [`detach-suppresses-panel-empty-for-move.spec.ts`](./terminal-tab-drag-split/detach-suppresses-panel-empty-for-move.spec.ts)
-- [`dispatch-and-collect-sync-effects.spec.ts`](./terminal-tab-drag-split/dispatch-and-collect-sync-effects.spec.ts)
-- [`drop-attach-as-leaf.spec.ts`](./terminal-tab-drag-split/drop-attach-as-leaf.spec.ts)
-- [`drop-hit-test-fallback.spec.ts`](./terminal-tab-drag-split/drop-hit-test-fallback.spec.ts)
-- [`drop-promote-to-scoped.spec.ts`](./terminal-tab-drag-split/drop-promote-to-scoped.spec.ts)
-- [`popout-rejects-cross-window.spec.ts`](./terminal-tab-drag-split/popout-rejects-cross-window.spec.ts)
-- [`preflight-rejects-over-limit.spec.ts`](./terminal-tab-drag-split/preflight-rejects-over-limit.spec.ts)
-- [`pty-not-restarted.spec.ts`](./terminal-tab-drag-split/pty-not-restarted.spec.ts)
-- [`split-tab-dragstart-rejected.spec.ts`](./terminal-tab-drag-split/split-tab-dragstart-rejected.spec.ts)
-- [`tab-limit.spec.ts`](./terminal-tab-drag-split/tab-limit.spec.ts)
-- [`useterminal-no-double-mount.spec.ts`](./terminal-tab-drag-split/useterminal-no-double-mount.spec.ts)
-
-## [TerminalTabs(终端 tab 列表 + 「+」按钮)](./terminal-tabs/README.md)
-
-- [`terminal-tabs.spec.tsx`](./terminal-tabs/terminal-tabs.spec.tsx)
 
 ## [TerminalView(单 terminal 容器)](./terminal-view/README.md)
 
