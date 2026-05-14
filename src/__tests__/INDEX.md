@@ -6,6 +6,10 @@
 
 - [`agent-auth-prompt.spec.tsx`](./agent-auth-prompt/agent-auth-prompt.spec.tsx)
 
+## [agent-create-as-new-panel](./agent-create-as-new-panel/README.md)
+
+- [`addpanel-position.spec.ts`](./agent-create-as-new-panel/addpanel-position.spec.ts)
+
 ## [agent-terminal-mcp-auth (Agent Terminal MCP Phase 2)](./agent-terminal-mcp-auth/README.md)
 
 - [`auth-store.spec.ts`](./agent-terminal-mcp-auth/auth-store.spec.ts)
@@ -512,6 +516,18 @@
 ## [TerminalPanel(Terminal 主容器)](./terminal-panel/README.md)
 
 - [`terminal-panel.spec.tsx`](./terminal-panel/terminal-panel.spec.tsx)
+
+## [terminal-panel-as-dockview-panel](./terminal-panel-as-dockview-panel/README.md)
+
+- [`core-contract.spec.ts`](./terminal-panel-as-dockview-panel/core-contract.spec.ts)
+
+## [terminal-panel-empty-dock](./terminal-panel-empty-dock/README.md)
+
+- [`empty-state.spec.ts`](./terminal-panel-empty-dock/empty-state.spec.ts)
+
+## [terminal-panel-keyboard-new](./terminal-panel-keyboard-new/README.md)
+
+- [`command-keybinding.spec.ts`](./terminal-panel-keyboard-new/command-keybinding.spec.ts)
 
 ## [terminal-service (M-Terminal Step T1)](./terminal-service/README.md)
 
