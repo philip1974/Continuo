@@ -4,6 +4,8 @@ import type { IDockviewHeaderActionsProps } from 'dockview-react';
 import { isPopoutWindow, popoutUrlFor } from '@/lib/popout-mode';
 import { IconButton, MenuItem } from '@/design';
 import { coApp } from '@/plugins/co-app';
+import { coApi } from '@/lib/co-api';
+import { useWorkspaceStore } from '@/stores/workspace.store';
 
 let panelCounter = 0;
 const nextPanelId = (key: string) => `${key}-${++panelCounter}`;
@@ -60,7 +62,24 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
   }, [open]);
 
   const addPanel = useCallback(
-    (key: string, label: string) => {
+    async (key: string, label: string) => {
+      if (key === 'terminal') {
+        // terminal panel session-bound:不走 containerApi.addPanel,
+        // 通过 coApi.terminal.create → SessionsSync → DockReconciler addPanel(含 sessionId)。
+        const workspaceRoot = useWorkspaceStore.getState().root ?? undefined;
+        const r = await coApi.terminal.create({
+          ...(workspaceRoot !== undefined
+            ? { cwd: workspaceRoot, workspaceRoot }
+            : {}),
+          originHint: 'user',
+        });
+        if (r.ok && r.data?.id) {
+          const { setPendingFocus } = await import('@/shell/dock/DockReconciler');
+          setPendingFocus(r.data.id);
+        }
+        setOpen(false);
+        return;
+      }
       const id = nextPanelId(key);
       containerApi.addPanel({
         id,
