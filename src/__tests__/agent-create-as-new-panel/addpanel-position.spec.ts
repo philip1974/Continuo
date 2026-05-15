@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { DockviewApi } from 'dockview-react';
-import { reconcileTerminalPanels } from '@/shell/dock/DockReconciler';
+import {
+  reconcileTerminalPanels,
+  setPendingFocus,
+} from '@/shell/dock/DockReconciler';
 import type { TerminalSession } from '@/stores/terminal.store';
 
 function session(
@@ -81,18 +84,16 @@ describe('agent create as new dockview panel', () => {
     expect(api.panels['terminal-old']?.api.setActive).toHaveBeenCalledTimes(1);
   });
 
-  it('user path: pendingFocusSessionIdRef 命中 → addPanel 后 setActive,并清空 pendingFocus', () => {
+  it('user path: setPendingFocus 命中 → addPanel 后 setActive,并清空 pendingFocus', () => {
     const api = makeApi();
-    const pendingFocusSessionIdRef = { current: 'user-1' };
+    setPendingFocus('user-1');
 
     reconcileTerminalPanels(api as unknown as DockviewApi, {
       previousSessions: [],
       nextSessions: [session('user-1', { originHint: 'user' })],
-      pendingFocusSessionIdRef,
     });
 
     expect(api.panels['terminal-user-1']?.api.setActive).toHaveBeenCalledTimes(1);
-    expect(pendingFocusSessionIdRef.current).toBeNull();
   });
 
   it('batch add: 首次 hydrate 按 createdAt 升序逐个 add;首个默认位置,后续 reference 前一个', () => {

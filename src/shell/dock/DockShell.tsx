@@ -14,7 +14,8 @@ import { HeaderActions } from './HeaderActions';
 import { EmptyState } from './EmptyState';
 import { setDockApi } from './dock-api-ref';
 import { useDockReconciler } from './DockReconciler';
-import { consumePanelCloseSuppressed, wrapPanelClose } from './wrap-panel-close';
+import { wrapPanelClose } from './wrap-panel-close';
+import { handleTerminalPanelRemoved } from './DockReconciler';
 import { SharedTab } from '@/shell/motion/SharedTab';
 import { useClosingStore } from '@/stores/closing.store';
 import { useEditorStore } from '@/stores/editor.store';
@@ -148,14 +149,14 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
 
       // 防 closing-store 残留:panel 真被 removed 后从 set 摘掉,
       // 避免后续同 id panel 一上来就走 EXIT 动画。
+      // terminal panel:同时走 handleTerminalPanelRemoved 反向通知 main
+      // remove session(suppress flag + move-vs-real-close 区分由 helper 管)。
       event.api.onDidRemovePanel((panel) => {
         useClosingStore.getState().unmark(panel.id);
-        queueMicrotask(() => {
-          if (event.api.getPanel(panel.id)) return;
-          if (consumePanelCloseSuppressed(panel.id)) return;
-          const sid = (panel.params as { sessionId?: string } | undefined)
-            ?.sessionId;
-          if (sid) void coApi.terminal.remove(sid);
+        void handleTerminalPanelRemoved({
+          panel,
+          api: event.api,
+          removeSession: (sid) => coApi.terminal.remove(sid).then(() => undefined),
         });
       });
 

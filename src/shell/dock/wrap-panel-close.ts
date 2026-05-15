@@ -3,6 +3,7 @@ import { useClosingStore } from '@/stores/closing.store';
 import { EXIT_DURATION_MS } from '@/shell/motion/tokens';
 import { coApi } from '@/lib/co-api';
 import { cancelPanelSpawns } from '@/panels/Terminal/spawnLeaf';
+import { isTerminalPanelId, sessionIdFromPanel } from './terminal-panel-id';
 
 const patched = new WeakSet<IDockviewPanel>();
 const suppressedPanelCloses = new Set<string>();
@@ -15,16 +16,6 @@ export function consumePanelCloseSuppressed(panelId: string): boolean {
   const suppressed = suppressedPanelCloses.has(panelId);
   suppressedPanelCloses.delete(panelId);
   return suppressed;
-}
-
-function getScopedTerminalSessionId(panel: IDockviewPanel): string | null {
-  if (!panel.api.id.startsWith('terminal-')) return null;
-  const params = panel.params ?? panel.api.getParameters();
-  if (!params || typeof params !== 'object') return null;
-  const sessionId = (params as { sessionId?: unknown }).sessionId;
-  return typeof sessionId === 'string' && sessionId.length > 0
-    ? sessionId
-    : null;
 }
 
 // 给每个 panel 的 api.close 包一层:先把 id 放进 closing-store(让 PanelMount
@@ -60,22 +51,16 @@ export function wrapPanelClose(panel: IDockviewPanel): void {
 }
 
 function removeTerminalPtysForPanel(panel: IDockviewPanel): void {
-  if (!panel.api.id.startsWith('terminal-')) return;
+  if (!isTerminalPanelId(panel.api.id)) return;
   // 真 close:取消该 panel 还在 in-flight 的 spawn,防 PTY 孤儿
   cancelPanelSpawns(panel.api.id);
-  const scopedSessionId = getScopedTerminalSessionId(panel);
-  const ids = scopedSessionId ? [scopedSessionId] : [];
-  const uniqueIds = Array.from(new Set(ids));
-  void Promise.allSettled(uniqueIds.map((id) => coApi.terminal.remove(id))).then(
-    (results) => {
-      results.forEach((result, index) => {
-        const ptyId = uniqueIds[index];
-        if (result.status === 'rejected') {
-          console.warn('[pane-split] panel-close remove rejected', ptyId, result.reason);
-        } else if (!result.value.ok) {
-          console.warn('[pane-split] panel-close remove ok=false', ptyId, result.value);
-        }
-      });
-    },
-  );
+  const sessionId = sessionIdFromPanel(panel);
+  if (!sessionId) return;
+  void coApi.terminal.remove(sessionId).then((r) => {
+    if (!r.ok) {
+      console.warn('[terminal-panel] remove ok=false', sessionId, r);
+    }
+  }, (err) => {
+    console.warn('[terminal-panel] remove rejected', sessionId, err);
+  });
 }

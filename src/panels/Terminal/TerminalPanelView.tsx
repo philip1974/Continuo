@@ -78,7 +78,7 @@ function TerminalPanelContent({
   api: IDockviewPanelProps<TerminalPanelViewParams>['api'];
   sessionId: string;
 }) {
-  const { containerRef, isReady, fit } = useTerminal(sessionId, undefined);
+  const { containerRef, isReady, fit } = useTerminal(sessionId);
 
   useEffect(() => {
     // agent 创建的 panel 走 inactive: true(P1-1 不抢 focus),

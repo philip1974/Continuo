@@ -24,24 +24,6 @@ import {
 } from './key-mapping';
 
 type CursorStyle = 'block' | 'underline' | 'bar';
-type SplitDirection = 'horizontal' | 'vertical';
-
-export interface PaneKeyOptions {
-  panelId: string;
-  tabId: string;
-  leafId: string;
-}
-
-interface PaneSplitKeyController {
-  dispatch: (action: {
-    type: 'PANE_ACTION';
-    tabId: string;
-    action: { type: 'FOCUS_LEAF'; leafId: string };
-  }) => void;
-  split: (direction: SplitDirection) => void;
-  focusPrev: () => void;
-  focusNext: () => void;
-}
 
 // GitHub Dark 调色板(原 Mind 暗色)
 const DARK_THEME: ITheme = {
@@ -113,6 +95,23 @@ const LIGHT_THEME: ITheme = {
   brightWhite: '#57606a',
 };
 
+function fitAndResize(
+  term: Terminal,
+  fitAddon: FitAddon,
+  termId: string,
+): boolean {
+  try {
+    fitAddon.fit();
+    if (term.cols > 0 && term.rows > 0) {
+      void coApi.terminal.resize(termId, term.cols, term.rows);
+      return true;
+    }
+  } catch {
+    /* ignore */
+  }
+  return false;
+}
+
 const TERM_OPTIONS = {
   scrollback: 20000, // 跑 Agent CLI 大输出留余量(决策 #3)
   fontSize: 13,
@@ -140,7 +139,7 @@ const TERM_OPTIONS = {
  *
  * 注意:返回的 ref 必须由调用方放在容器 div 上;termId 变化会重建实例。
  */
-export function useTerminal(termId: string, _opts?: PaneKeyOptions) {
+export function useTerminal(termId: string) {
   const containerRef = useRef<HTMLDivElement>(null);
   // 首次 PTY stdout 到达前 = 还在 spawn shell + 跑 .zshrc。让上层显示 loading
   // overlay,用户看到"启动中..."而非纯黑框,减弱"卡顿"感(尤其 .zshrc 重的用户)。
@@ -232,18 +231,7 @@ export function useTerminal(termId: string, _opts?: PaneKeyOptions) {
     // 首屏 fit + 通知主进程初始尺寸。
     // 同步先试一次(useEffect 跑在 paint 后,容器一般已有尺寸,可省 1 帧);
     // cols/rows 拿到 0 说明容器还没 layout 完,fallback 到 RAF 下一帧重试。
-    const doFit = (): boolean => {
-      try {
-        fitAddon.fit();
-        if (term.cols > 0 && term.rows > 0) {
-          void coApi.terminal.resize(termId, term.cols, term.rows);
-          return true;
-        }
-      } catch {
-        /* ignore */
-      }
-      return false;
-    };
+    const doFit = () => fitAndResize(term, fitAddon, termId);
     if (!doFit()) requestAnimationFrame(doFit);
 
     // 主进程 stdout → safeWrite 队列。第一次收到本 termId 的 data 就标 ready,
@@ -279,12 +267,7 @@ export function useTerminal(termId: string, _opts?: PaneKeyOptions) {
 
     // 容器尺寸变化 → fit + resize
     const ro = new ResizeObserver(() => {
-      try {
-        fitAddon.fit();
-        void coApi.terminal.resize(termId, term.cols, term.rows);
-      } catch {
-        /* ignore */
-      }
+      fitAndResize(term, fitAddon, termId);
     });
     ro.observe(container);
 
@@ -331,14 +314,7 @@ export function useTerminal(termId: string, _opts?: PaneKeyOptions) {
     if (!term || !fit) return;
     term.options.fontSize = fontSize;
     term.options.cursorStyle = cursorStyle;
-    try {
-      fit.fit();
-      if (term.cols > 0 && term.rows > 0) {
-        void coApi.terminal.resize(termId, term.cols, term.rows);
-      }
-    } catch {
-      /* ignore */
-    }
+    fitAndResize(term, fit, termId);
   }, [fontSize, cursorStyle, termId]);
 
   // 主题切换 → 已有 term 实例同步 theme(不重建,保留历史输出)
@@ -366,16 +342,7 @@ export function useTerminal(termId: string, _opts?: PaneKeyOptions) {
     const term = termRef.current;
     const fit = fitRef.current;
     if (!term || !fit) return;
-    const raf = requestAnimationFrame(() => {
-      try {
-        fit.fit();
-        if (term.cols > 0 && term.rows > 0) {
-          void coApi.terminal.resize(termId, term.cols, term.rows);
-        }
-      } catch {
-        /* ignore */
-      }
-    });
+    const raf = requestAnimationFrame(() => fitAndResize(term, fit, termId));
     return () => cancelAnimationFrame(raf);
   }, [sidebarOpen, sidebarWidth, termId]);
 
@@ -383,57 +350,8 @@ export function useTerminal(termId: string, _opts?: PaneKeyOptions) {
     const term = termRef.current;
     const fitAddon = fitRef.current;
     if (!term || !fitAddon) return;
-    try {
-      fitAddon.fit();
-      if (term.cols > 0 && term.rows > 0) {
-        // 通知 main 端 PTY 新尺寸(覆盖 inactive 创建 / display:none 切显示
-        // 等场景:初始 fit 时容器 0×0,内部 doFit 失败,这里补一次 resize)。
-        void coApi.terminal.resize(termId, term.cols, term.rows);
-      }
-    } catch {
-      /* ignore */
-    }
+    fitAndResize(term, fitAddon, termId);
   }, [termId]);
 
   return { containerRef, isReady, fit };
-}
-
-export function handlePaneSplitKeyDown(
-  event: KeyboardEvent,
-  opts: PaneKeyOptions,
-  controller: PaneSplitKeyController,
-): boolean {
-  if (event.type !== 'keydown' || !event.metaKey) return true;
-
-  const focusOwningLeaf = () => {
-    controller.dispatch({
-      type: 'PANE_ACTION',
-      tabId: opts.tabId,
-      action: { type: 'FOCUS_LEAF', leafId: opts.leafId },
-    });
-  };
-
-  if (event.key === '\\' || event.code === 'Backslash') {
-    focusOwningLeaf();
-    controller.split(event.shiftKey ? 'vertical' : 'horizontal');
-    // attachCustomKeyEventHandler return false 只阻 xterm 自己消费;
-    // KeyboardEvent 仍冒泡到 document,useCommandHotkeys 会二次触发 splitTerminal。
-    // stopImmediatePropagation 阻断 document listener,防双 split。
-    event.preventDefault();
-    event.stopPropagation();
-    event.stopImmediatePropagation();
-    return false;
-  }
-
-  if (event.key === '[' || event.key === ']') {
-    focusOwningLeaf();
-    if (event.key === '[') controller.focusPrev();
-    else controller.focusNext();
-    event.preventDefault();
-    event.stopPropagation();
-    event.stopImmediatePropagation();
-    return false;
-  }
-
-  return true;
 }

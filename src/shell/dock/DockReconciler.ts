@@ -6,6 +6,7 @@ import {
   consumePanelCloseSuppressed,
   markPanelCloseSuppressed,
 } from './wrap-panel-close';
+import { panelIdFor, sessionIdFromPanel } from './terminal-panel-id';
 
 export { markPanelCloseSuppressed };
 
@@ -13,19 +14,32 @@ export interface ReconcileInput {
   previousSessions: readonly TerminalSession[];
   nextSessions: readonly TerminalSession[];
   customTitles?: ReadonlyMap<string, string>;
-  pendingFocusSessionIdRef?: { current: string | null };
 }
 
-interface TerminalPanelParams {
-  sessionId?: string;
-  originHint?: 'user' | 'agent';
-  cwd?: string;
-}
-
+// pendingFocus 由 user 路径(Cmd+T / + 按钮)在 coApi.terminal.create resolve 后
+// 设置;reconciler 见到对应 session 加入 store 即 setActive 一次。5s 超时自清
+// 防 create 失败 / 久未触发的残留污染下个不相关的 session。
 let pendingFocusSessionId: string | null = null;
+let pendingFocusTimer: ReturnType<typeof setTimeout> | null = null;
+const PENDING_FOCUS_TTL_MS = 5000;
 
 export function setPendingFocus(sessionId: string): void {
   pendingFocusSessionId = sessionId;
+  if (pendingFocusTimer) clearTimeout(pendingFocusTimer);
+  pendingFocusTimer = setTimeout(() => {
+    pendingFocusSessionId = null;
+    pendingFocusTimer = null;
+  }, PENDING_FOCUS_TTL_MS);
+}
+
+function consumePendingFocus(sessionId: string): boolean {
+  if (pendingFocusSessionId !== sessionId) return false;
+  pendingFocusSessionId = null;
+  if (pendingFocusTimer) {
+    clearTimeout(pendingFocusTimer);
+    pendingFocusTimer = null;
+  }
+  return true;
 }
 
 export function reconcileTerminalPanels(
@@ -37,7 +51,6 @@ export function reconcileTerminalPanels(
 
   const added = input.nextSessions
     .filter((s) => !prevById.has(s.id))
-    .slice()
     .sort((a, b) => a.createdAt - b.createdAt);
 
   let lastRefId = findLastTerminalPanelId(api);
@@ -51,11 +64,10 @@ export function reconcileTerminalPanels(
     const position = lastRefId
       ? { referencePanel: lastRefId, direction: 'right' as const }
       : undefined;
-    const shouldFocus = consumePendingFocus(session.id, input.pendingFocusSessionIdRef);
-    // 不能用 dockview addPanel 的 `inactive: true` —— 它把新 group 容器置于
-    // 一种 xterm 渲染不可见的状态(实测:dataLength>0 进 xterm 但屏幕全黑,
-    // 用户必须点击 panel 才显示)。改用"先 addPanel(默认 active) → 立即
-    // setActive 回原 panel"实现 agent 不抢 focus 的等价 UX。
+    const shouldFocus = consumePendingFocus(session.id);
+    // dockview addPanel 的 `inactive: true` 让新 group 容器在 xterm 渲染
+    // 不可见的状态(数据进 xterm 内部但屏幕全黑)。改用"默认 active 加 →
+    // 立即 setActive 回原 panel"实现 agent 不抢 focus 的等价 UX。
     const previousActivePanelId = !shouldFocus
       ? api.activePanel?.api.id ?? null
       : null;
@@ -75,7 +87,6 @@ export function reconcileTerminalPanels(
     if (shouldFocus) {
       api.getPanel(panelId)?.api.setActive();
     } else if (previousActivePanelId && previousActivePanelId !== panelId) {
-      // agent 路径:恢复原 active panel,避免新 terminal 抢走 claude code 焦点。
       api.getPanel(previousActivePanelId)?.api.setActive();
     }
   }
@@ -106,7 +117,6 @@ export function useDockReconciler(api: DockviewApi | null): void {
 
   useEffect(() => {
     if (!api) return;
-
     const initial = useTerminalStore.getState();
     reconcileTerminalPanels(api, {
       previousSessions: previousSessionsRef.current,
@@ -117,37 +127,30 @@ export function useDockReconciler(api: DockviewApi | null): void {
   }, [api]);
 
   useEffect(() => {
-    let previous = {
-      sessions: useTerminalStore.getState().sessions,
-      customTitles: useTerminalStore.getState().customTitles,
-    };
-    previousSessionsRef.current = previous.sessions;
-
     return useTerminalStore.subscribe((state) => {
-      if (
-        state.sessions === previous.sessions &&
-        state.customTitles === previous.customTitles
-      ) {
-        return;
-      }
+      const prev = previousSessionsRef.current;
+      const prevTitles = previousCustomTitlesRef.current;
+      if (state.sessions === prev && state.customTitles === prevTitles) return;
 
       const dockApi = currentApiRef.current;
       if (dockApi) {
         reconcileTerminalPanels(dockApi, {
-          previousSessions: previous.sessions,
+          previousSessions: prev,
           nextSessions: state.sessions,
           customTitles: state.customTitles,
         });
       }
-
-      previous = {
-        sessions: state.sessions,
-        customTitles: state.customTitles,
-      };
       previousSessionsRef.current = state.sessions;
+      previousCustomTitlesRef.current = state.customTitles;
     });
+    // 仅 mount 一次订阅,deps 内部用 ref 读最新值。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 }
+
+const previousCustomTitlesRef: { current: ReadonlyMap<string, string> } = {
+  current: new Map(),
+};
 
 export interface HandleTerminalPanelRemovedInput {
   panel: Pick<IDockviewPanel, 'params'> & {
@@ -173,31 +176,17 @@ export async function handleTerminalPanelRemoved({
   await removeSession(sessionId);
 }
 
-function panelIdFor(sessionId: string): string {
-  return `terminal-${sessionId}`;
-}
-
 function findLastTerminalPanelId(api: DockviewApi): string | null {
+  // 真实 dockview 给 IDockviewPanel[];test 用 Record<id, panel> mock,做兼容。
   const panels = Array.isArray(api.panels)
     ? api.panels
     : Object.values(api.panels as unknown as Record<string, IDockviewPanel>);
-
   for (let i = panels.length - 1; i >= 0; i--) {
     const panel = panels[i];
     if (!panel) continue;
     if (sessionIdFromPanel(panel)) return panel.api.id;
   }
   return null;
-}
-
-function sessionIdFromPanel(
-  panel: Pick<IDockviewPanel, 'params'> & { api: Pick<IDockviewPanel['api'], 'id'> },
-): string | null {
-  const params = panel.params as TerminalPanelParams | undefined;
-  if (params?.sessionId) return params.sessionId;
-  return panel.api.id.startsWith('terminal-')
-    ? panel.api.id.slice('terminal-'.length)
-    : null;
 }
 
 function deriveTitle(
@@ -209,19 +198,4 @@ function deriveTitle(
     session.title ??
     `Terminal ${session.id.slice(0, 6)}`;
   return session.originHint === 'agent' ? `${base} (agent)` : base;
-}
-
-function consumePendingFocus(
-  sessionId: string,
-  ref?: { current: string | null },
-): boolean {
-  if (ref?.current === sessionId) {
-    ref.current = null;
-    return true;
-  }
-  if (pendingFocusSessionId === sessionId) {
-    pendingFocusSessionId = null;
-    return true;
-  }
-  return false;
 }
