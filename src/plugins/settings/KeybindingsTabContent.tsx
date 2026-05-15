@@ -160,8 +160,8 @@ export function KeybindingsTabContent() {
                       </code>
                       {effective ? (
                         <span className="flex shrink-0 items-center gap-0.5">
-                          {formatHotkeyParts(effective, PLATFORM).map((p, i) => (
-                            <KeyCap key={`${p}-${i}`}>{p}</KeyCap>
+                          {formatHotkeyParts(effective, PLATFORM).map((p) => (
+                            <KeyCap key={p}>{p}</KeyCap>
                           ))}
                         </span>
                       ) : (
