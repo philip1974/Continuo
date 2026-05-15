@@ -41,6 +41,13 @@ function MainApp() {
   // 全局 commands 注册的 hotkey 监听 + 派发(M-Plugin v1.6 补漏)
   useCommandHotkeys(coApp.commands);
 
+  // workspace.root 变化 → 通知 main 维护 windowId→root 映射,供 MCP agent
+  // terminal_create_session 路径 cwd 回退使用。
+  const workspaceRoot = useWorkspaceStore((s) => s.root);
+  useEffect(() => {
+    void coApi.window.notifyRoot(workspaceRoot ?? null);
+  }, [workspaceRoot]);
+
   // 拖文件夹到当前窗口 → 换 workspace(VSCode 同款,issue #23 衍生 UX)。
   // 文件 drop 暂不处理 — 让 dockview 子区域(editor)自己处理(它有自己的逻辑)。
   // dragover 必 preventDefault,否则浏览器拒绝触发 drop。

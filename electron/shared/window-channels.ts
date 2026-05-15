@@ -4,6 +4,11 @@
 
 export const WINDOW_CHANNELS = {
   CREATE: 'window:create',
+  /**
+   * renderer 在 workspace.root 变化时调 → main 维护 windowId→root 映射,
+   * 供 MCP agent terminal_create_session 的默认 cwd 解析使用。
+   */
+  NOTIFY_ROOT: 'window:notify-root',
 } as const;
 
 export interface IpcWindowCreateInput {

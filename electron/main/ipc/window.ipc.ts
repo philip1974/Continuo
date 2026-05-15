@@ -6,7 +6,7 @@
 import { z } from 'zod';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { app } from 'electron';
+import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { defaultIsTrustedFrame, safeHandle } from '../safe-handle';
 import {
   WINDOW_CHANNELS,
@@ -15,6 +15,10 @@ import {
 } from '../../shared/window-channels';
 import { createMainWindow } from '../index';
 import { nextWindowSeqFromDisk } from '../services/window.service';
+import {
+  clearWindow as clearWindowRoot,
+  setWorkspaceRoot,
+} from '../services/window-workspace-roots.service';
 
 const CreateInput = z
   .object({
@@ -60,6 +64,12 @@ async function createWindowHandler(
   return { windowId: win.id };
 }
 
+const NotifyRootInput = z
+  .object({
+    root: z.string().nullable(),
+  })
+  .strict();
+
 export function registerWindowIpc(): void {
   safeHandle(
     WINDOW_CHANNELS.CREATE,
@@ -67,4 +77,22 @@ export function registerWindowIpc(): void {
     createWindowHandler,
     defaultIsTrustedFrame,
   );
+  // workspace.root 变化时 renderer 推送 → main 维护 map,供 MCP agent terminal
+  // 路径 cwd 回退使用。不安全场景(root 非绝对路径等)由 renderer 侧决定,main
+  // 只接收 + 存储。
+  ipcMain.handle(
+    WINDOW_CHANNELS.NOTIFY_ROOT,
+    (event: IpcMainInvokeEvent, raw: unknown) => {
+      const parsed = NotifyRootInput.safeParse(raw);
+      if (!parsed.success) return { ok: false as const, code: 'BAD_INPUT' };
+      const win = BrowserWindow.fromWebContents(event.sender);
+      if (!win) return { ok: false as const, code: 'NO_WINDOW' };
+      setWorkspaceRoot(win.id, parsed.data.root);
+      return { ok: true as const };
+    },
+  );
+  // 窗口关闭清 map(防泄漏)。
+  app.on('browser-window-created', (_event, win) => {
+    win.on('closed', () => clearWindowRoot(win.id));
+  });
 }

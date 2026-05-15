@@ -296,6 +296,12 @@ const api = {
     ): Promise<IpcResult<IpcWindowCreateResult>> =>
       ipcRenderer.invoke(WINDOW_CHANNELS.CREATE, input),
     /**
+     * renderer 在 workspace.root 变化时通知 main,维护 windowId→root 映射。
+     * 供 MCP agent terminal_create_session 路径 cwd 默认解析使用。
+     */
+    notifyRoot: (root: string | null): Promise<{ ok: boolean; code?: string }> =>
+      ipcRenderer.invoke(WINDOW_CHANNELS.NOTIFY_ROOT, { root }),
+    /**
      * Electron 38+ File.path 已弃用,改 webUtils.getPathForFile(file)。
      * renderer 拖文件 / 文件夹到窗口时,需要绝对路径才能调 fs / setRoot。
      * 此 helper 在 preload realm 调 webUtils,sandbox renderer 拿不到原生对象。

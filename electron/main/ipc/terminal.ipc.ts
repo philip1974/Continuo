@@ -14,6 +14,7 @@ import * as termService from '../services/terminal.service';
 import * as terminalSessions from '../services/terminal-sessions.service';
 import * as terminalBuffer from '../services/terminal-buffer.service';
 import { mcpRevokers } from '../services/mcp-host.service';
+import { getWorkspaceRoot as getWindowWorkspaceRoot } from '../services/window-workspace-roots.service';
 
 // ── 常量 ─────────────────────────────────────────────────────
 const MAX_WRITE_CHARS = 2_000_000; // ~2MB UTF-8 字符上限,与 Mind 1MB 字节同档
@@ -161,7 +162,16 @@ export function makeCreateHandler(deps?: {
         code: 'TERMINAL_FORBIDDEN_SHELL',
       });
     }
-    const cwd = resolveCwd(input.cwd);
+    // cwd 解析优先级:
+    //   1. 显式入参 input.cwd(user 路径 Cmd+T / + 按钮已传 workspaceRoot)
+    //   2. 入参 workspaceRoot(renderer 显式提示)
+    //   3. main 端 windowId → workspaceRoot 映射(MCP agent 路径 renderer 无法
+    //      显式传 cwd 时的回退;source-of-truth 是 renderer workspace.store 通过
+    //      window:notify-root IPC 推送)
+    //   4. resolveCwd 兜底到 homedir
+    const cwdHint =
+      input.cwd ?? input.workspaceRoot ?? getWindowWorkspaceRoot(win.id) ?? undefined;
+    const cwd = resolveCwd(cwdHint);
     const id = generateId();
     // MCP env(token / url)注入到所有 PTY:用户在 terminal 跑 claude / codex 时
     // 自动反连本机 MCP host。internalEnv 在后,防用户 env 覆盖内部 token。
