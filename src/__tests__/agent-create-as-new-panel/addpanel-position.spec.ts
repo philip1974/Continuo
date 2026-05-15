@@ -32,22 +32,26 @@ function makePanel(id: string) {
 
 function makeApi() {
   const panels: Record<string, ReturnType<typeof makePanel>> = {};
-  return {
+  const api = {
     activePanel: undefined as ReturnType<typeof makePanel> | undefined,
     getPanel: vi.fn((id: string) => panels[id]),
     addPanel: vi.fn((opts: { id: string }) => {
       const panel = makePanel(opts.id);
       panels[opts.id] = panel;
+      // dockview 默认行为:新 addPanel 后 panel 变 active。
+      api.activePanel = panel;
       return panel;
     }),
     panels,
   };
+  return api;
 }
 
 describe('agent create as new dockview panel', () => {
-  it("agent session → addPanel direction='right',不 setActive", () => {
+  it("agent session → addPanel direction='right',new panel 不 setActive,原 active panel focus 被恢复", () => {
     const api = makeApi();
     api.panels['terminal-old'] = makePanel('terminal-old');
+    api.activePanel = api.panels['terminal-old']; // 原 active panel
 
     reconcileTerminalPanels(api as unknown as DockviewApi, {
       previousSessions: [session('old', { createdAt: 1 })],
@@ -67,10 +71,14 @@ describe('agent create as new dockview panel', () => {
           referencePanel: 'terminal-old',
           direction: 'right',
         },
-        inactive: true,
       }),
     );
+    // 不能传 inactive: true(dockview inactive 让 xterm 渲染不可见)
+    expect(api.addPanel.mock.calls[0]![0]).not.toHaveProperty('inactive');
+    // agent 新 panel 自身不显式 setActive
     expect(api.panels['terminal-agent-1']?.api.setActive).not.toHaveBeenCalled();
+    // 原 active panel(terminal-old)被显式 setActive 回去,实现"agent 不抢 focus"
+    expect(api.panels['terminal-old']?.api.setActive).toHaveBeenCalledTimes(1);
   });
 
   it('user path: pendingFocusSessionIdRef 命中 → addPanel 后 setActive,并清空 pendingFocus', () => {

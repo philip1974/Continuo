@@ -161,9 +161,10 @@ export function useTerminal(termId: string, _opts?: PaneKeyOptions) {
     const container = containerRef.current;
     if (!container || !termId) return;
 
-    // topic-07: dockview inactive panel 容器初始尺寸 0×0,xterm 必须等容器
-    // 有真实尺寸再 open,否则 cols/rows 内部值锁死为 0、PTY 输出灌入也看不见。
-    // 容器已有尺寸 → 直接 init;0×0 → ResizeObserver 等首次有尺寸再 init。
+    // topic-07: dockview 新 group 容器初始可能尺寸 0×0(layout 完成前 mount),
+    // xterm 必须等容器有真实尺寸再 open,否则 cols/rows 锁死为 0 → PTY 输出
+    // 灌入也看不见。容器已有尺寸 → 直接 init;0×0 → ResizeObserver 等首次有
+    // 尺寸再 init。
     let cleanupTerm: (() => void) | null = null;
     let waitRo: ResizeObserver | null = null;
 
@@ -262,12 +263,7 @@ export function useTerminal(termId: string, _opts?: PaneKeyOptions) {
     // 先 subscribe 后 replay,中间窗口期的 chunk 走 onData 路径(虽然可能与
     // history 末尾重叠几个字符,但 xterm 容忍重复 ANSI/字符;比丢失初始 prompt 好)。
     void coApi.terminal.readHistory(termId).then((r) => {
-      if (!r.ok) {
-        console.debug('[terminal-panel] readHistory failed', { termId, code: r.code });
-        return;
-      }
-      console.debug('[terminal-panel] readHistory result', { termId, dataLength: r.data.data.length, truncated: r.data.truncated });
-      if (!r.data.data) return;
+      if (!r.ok || !r.data.data) return;
       if (firstData) {
         firstData = false;
         setIsReady(true);
@@ -299,6 +295,12 @@ export function useTerminal(termId: string, _opts?: PaneKeyOptions) {
         ro.disconnect();
         disposeQueue(term);
         term.dispose();
+        // xterm.dispose() 不移除 DOM children。StrictMode 双 mount 场景下
+        // 第一个 xterm 的残留 DOM 仍在 container,第二个 xterm.open 后会被
+        // 覆盖 → 屏幕全黑。手动清空 container。
+        while (container.firstChild) {
+          container.removeChild(container.firstChild);
+        }
         termRef.current = null;
         fitRef.current = null;
       };

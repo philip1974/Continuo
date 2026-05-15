@@ -52,6 +52,13 @@ export function reconcileTerminalPanels(
       ? { referencePanel: lastRefId, direction: 'right' as const }
       : undefined;
     const shouldFocus = consumePendingFocus(session.id, input.pendingFocusSessionIdRef);
+    // 不能用 dockview addPanel 的 `inactive: true` —— 它把新 group 容器置于
+    // 一种 xterm 渲染不可见的状态(实测:dataLength>0 进 xterm 但屏幕全黑,
+    // 用户必须点击 panel 才显示)。改用"先 addPanel(默认 active) → 立即
+    // setActive 回原 panel"实现 agent 不抢 focus 的等价 UX。
+    const previousActivePanelId = !shouldFocus
+      ? api.activePanel?.api.id ?? null
+      : null;
     api.addPanel({
       id: panelId,
       component: 'terminal',
@@ -62,12 +69,14 @@ export function reconcileTerminalPanels(
         cwd: session.cwd,
       },
       ...(position ? { position } : {}),
-      ...(session.originHint === 'agent' && !shouldFocus ? { inactive: true } : {}),
     });
     lastRefId = panelId;
 
     if (shouldFocus) {
       api.getPanel(panelId)?.api.setActive();
+    } else if (previousActivePanelId && previousActivePanelId !== panelId) {
+      // agent 路径:恢复原 active panel,避免新 terminal 抢走 claude code 焦点。
+      api.getPanel(previousActivePanelId)?.api.setActive();
     }
   }
 
