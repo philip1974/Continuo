@@ -38,16 +38,8 @@ import {
   createStdioSocketServer,
   type StdioSocketServer,
 } from './services/mcp-stdio-server.service';
-import {
-  makeListSessionsTool,
-  makeCreateSessionTool,
-  makeSendInputTool,
-  makeSendTextTool,
-  makePressKeyTool,
-  makeReadOutputTool,
-  makeKillTool,
-  type CreateSessionPtyInput,
-} from './services/mcp-tools-terminal';
+import { makeTerminalMcpTools } from './services/mcp-terminal-host';
+import type { CreateSessionPtyInput } from './services/mcp-tools-terminal';
 import * as terminalSessions from './services/terminal-sessions.service';
 import * as termService from './services/terminal.service';
 import * as terminalBuffer from './services/terminal-buffer.service';
@@ -447,42 +439,15 @@ async function createSessionForAgent(
 async function startMcpHost(): Promise<void> {
   try {
     mcpHost = await createMcpHost({
-      initialTools: [
-        makeListSessionsTool({
-          getSessions: () => terminalSessions.getAll(),
-        }),
-        makeCreateSessionTool({
-          ensureAuthorized: () =>
-            requestAgentAuth({ method: 'terminal.create_session' }),
-          createSession: createSessionForAgent,
-        }),
-        makeSendInputTool({
-          has: (id) => termService.has(id),
-          write: (id, data) => termService.write(id, data),
-          getSessionOwner,
-        }),
-        makeSendTextTool({
-          has: (id) => termService.has(id),
-          write: (id, data) => termService.write(id, data),
-          getSessionOwner,
-        }),
-        makePressKeyTool({
-          has: (id) => termService.has(id),
-          write: (id, data) => termService.write(id, data),
-          getSessionOwner,
-        }),
-        makeReadOutputTool({
-          read: (id, opts) => terminalBuffer.read(id, opts),
-          getSessionOwner,
-        }),
-        makeKillTool({
-          has: (id) => termService.has(id),
-          interrupt: (id) => termService.interrupt(id),
-          kill: (id) => termService.kill(id),
-          forceKill: (id) => termService.forceKill(id),
-          getSessionOwner,
-        }),
-      ],
+      initialTools: makeTerminalMcpTools({
+        sessionStore: terminalSessions,
+        buffer: terminalBuffer,
+        service: termService,
+        getSessionOwner,
+        ensureAuthorized: () =>
+          requestAgentAuth({ method: 'terminal.create_session' }),
+        createSession: createSessionForAgent,
+      }),
     });
     setMcpEnvProvider((windowId: number) => {
       if (!mcpHost) return { env: {} as Record<string, string>, mcpToken: '' };

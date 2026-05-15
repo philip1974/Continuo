@@ -488,6 +488,7 @@
 
 ## [terminal-ipc (M-Terminal Step T2)](./terminal-ipc/README.md) `[integration]`
 
+- [`read-history-ownership.spec.ts`](./terminal-ipc/read-history-ownership.spec.ts)
 - [`terminal-ipc.spec.ts`](./terminal-ipc/terminal-ipc.spec.ts)
 
 ## [Terminal 键位映射(`mapTerminalKey`)](./terminal-key-mapping/README.md)
@@ -563,12 +564,13 @@
 
 - [`use-fs-watcher.spec.tsx`](./use-fs-watcher/use-fs-watcher.spec.tsx)
 
-## [window-aware-agent-session](./window-aware-agent-session/README.md)
+## [window-aware-agent-session](./window-aware-agent-session/README.md) `[integration]`
 
 - [`agent-create.spec.ts`](./window-aware-agent-session/agent-create.spec.ts)
 - [`cross-window-isolation.spec.ts`](./window-aware-agent-session/cross-window-isolation.spec.ts)
 - [`dispatch-rpc-ctx.spec.ts`](./window-aware-agent-session/dispatch-rpc-ctx.spec.ts)
 - [`host-handler-token-resolve.spec.ts`](./window-aware-agent-session/host-handler-token-resolve.spec.ts)
+- [`mcp-tools-host-factory.spec.ts`](./window-aware-agent-session/mcp-tools-host-factory.spec.ts)
 - [`terminal-counter.spec.ts`](./window-aware-agent-session/terminal-counter.spec.ts)
 
 ## [拖文件夹到窗口(`pickDroppedDirectory`)](./window-drop/README.md)

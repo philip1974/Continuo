@@ -362,12 +362,12 @@ export function registerTerminalIpc(): void {
   const ownerScopedHandle = <I>(
     channel: string,
     schema: z.ZodType<I>,
-    handler: (input: I, win: BrowserWindow) => void,
+    handler: (input: I, win: BrowserWindow) => unknown | Promise<unknown>,
   ): void => {
     ipcMain.handle(channel, async (event: IpcMainInvokeEvent, raw: unknown) =>
       processIpcCall(
         schema,
-        async (input) => handler(input, senderWindowOrThrow(event)),
+        async (input) => await handler(input, senderWindowOrThrow(event)),
         raw,
         event.senderFrame,
         trusted,
@@ -417,7 +417,10 @@ export function registerTerminalIpc(): void {
   ownerScopedHandle(
     TERMINAL_CHANNELS.READ_HISTORY,
     idOnlyInputSchema,
-    (input: { id: string }) => terminalBuffer.readRaw(input.id),
+    (input, win) => {
+      assertOwnedSession(terminalSessions, input.id, win);
+      return terminalBuffer.readRaw(input.id);
+    },
   );
   ownerScopedHandle(
     TERMINAL_CHANNELS.ATTACH_REJECTED,

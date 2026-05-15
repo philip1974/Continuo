@@ -28,6 +28,7 @@ export const INTEGRATION_TOPICS = [
   'terminal-write',
   'terminal-sessions-service',
   'terminal-window-isolation',
+  'window-aware-agent-session',
 ];
 
 /** 把 topic slugs 数组转成 vitest include glob 数组。 */

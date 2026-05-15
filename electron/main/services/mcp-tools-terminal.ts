@@ -91,7 +91,8 @@ export function makeListSessionsTool(
     name: MCP_TOOL_LIST_SESSIONS,
     description:
       'List all current terminal sessions in Continuo (both user-opened and agent-created). ' +
-      'Session scope: current window only — sessions from other windows return TERMINAL_SESSION_NOT_FOUND.',
+      'Session scope: current window only — sessions in other windows are hidden (filtered out, not enumerable). ' +
+      'Per-session tools (read_output / write / kill / send_input / send_text / press_key) return TERMINAL_SESSION_NOT_FOUND when an id from another window is used.',
     jsonSchema: {
       type: 'object',
       properties: {},
