@@ -161,7 +161,20 @@ export function useTerminal(termId: string, _opts?: PaneKeyOptions) {
     const container = containerRef.current;
     if (!container || !termId) return;
 
-    const term = new Terminal({
+    // topic-07: dockview inactive panel 容器初始尺寸 0×0,xterm 必须等容器
+    // 有真实尺寸再 open,否则 cols/rows 内部值锁死为 0、PTY 输出灌入也看不见。
+    // 容器已有尺寸 → 直接 init;0×0 → ResizeObserver 等首次有尺寸再 init。
+    let cleanupTerm: (() => void) | null = null;
+    let waitRo: ResizeObserver | null = null;
+
+    const initXterm = () => {
+      if (cleanupTerm) return; // 已初始化
+      if (container.clientWidth === 0 || container.clientHeight === 0) return;
+      cleanupTerm = doInitXterm();
+    };
+
+    const doInitXterm = (): (() => void) => {
+      const term = new Terminal({
       ...TERM_OPTIONS,
       // 用当前 settings + 主题值开局,避免初始一帧的旧值闪烁
       fontSize,
@@ -249,7 +262,12 @@ export function useTerminal(termId: string, _opts?: PaneKeyOptions) {
     // 先 subscribe 后 replay,中间窗口期的 chunk 走 onData 路径(虽然可能与
     // history 末尾重叠几个字符,但 xterm 容忍重复 ANSI/字符;比丢失初始 prompt 好)。
     void coApi.terminal.readHistory(termId).then((r) => {
-      if (!r.ok || !r.data?.data) return;
+      if (!r.ok) {
+        console.debug('[terminal-panel] readHistory failed', { termId, code: r.code });
+        return;
+      }
+      console.debug('[terminal-panel] readHistory result', { termId, dataLength: r.data.data.length, truncated: r.data.truncated });
+      if (!r.data.data) return;
       if (firstData) {
         firstData = false;
         setIsReady(true);
@@ -274,15 +292,30 @@ export function useTerminal(termId: string, _opts?: PaneKeyOptions) {
     });
     ro.observe(container);
 
+      return () => {
+        unsubData();
+        onDataDisposable.dispose();
+        osc7Disposable.dispose();
+        ro.disconnect();
+        disposeQueue(term);
+        term.dispose();
+        termRef.current = null;
+        fitRef.current = null;
+      };
+    }; // end doInitXterm
+
+    // 尝试立即 init;容器 0×0(inactive panel)则用 ResizeObserver 等首次
+    // 有尺寸再 init。
+    if (container.clientWidth > 0 && container.clientHeight > 0) {
+      initXterm();
+    } else {
+      waitRo = new ResizeObserver(() => initXterm());
+      waitRo.observe(container);
+    }
+
     return () => {
-      unsubData();
-      onDataDisposable.dispose();
-      osc7Disposable.dispose();
-      ro.disconnect();
-      disposeQueue(term);
-      term.dispose();
-      termRef.current = null;
-      fitRef.current = null;
+      waitRo?.disconnect();
+      cleanupTerm?.();
     };
     // 创建只依赖 termId;fontSize/cursorStyle 走下面的 settings effect 动态改。
     // 不放 deps 是有意的(否则改字号会重建 term 丢掉历史输出)。
