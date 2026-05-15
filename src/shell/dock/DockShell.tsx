@@ -30,7 +30,9 @@ const tabComponents = { default: SharedTab };
 
 interface FlushBridge {
   readonly layout?: {
-    readonly onFlushRequest?: (cb: () => Promise<void>) => () => void;
+    readonly onFlushRequest?: (
+      cb: (payload?: { windowId: number }) => Promise<void>,
+    ) => () => void;
     readonly sendFlushAck?: (windowId: number) => void;
   };
   readonly system?: {
@@ -180,13 +182,21 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
     const api = apiRef.current;
     if (!api) return;
     const bridge = getFlushBridge();
-    const off = bridge?.layout?.onFlushRequest?.(async () => {
+    const off = bridge?.layout?.onFlushRequest?.(async (payload) => {
       try {
-        await coApi.layout.write(api.toJSON());
-      } finally {
-        const latest = getFlushBridge();
-        latest?.layout?.sendFlushAck?.(latest.system?.windowId ?? 0);
+        const snapshot = api.toJSON() as unknown;
+        const r = await coApi.layout.write({
+          version: 1 as const,
+          ...(snapshot as object),
+        });
+        if (!r.ok) console.warn('[dockview] flush save failed', r.code, r.message);
+      } catch (err) {
+        console.warn('[dockview] flush save failed', err);
       }
+      const latest = getFlushBridge();
+      latest?.layout?.sendFlushAck?.(
+        payload?.windowId ?? latest.system?.windowId ?? 0,
+      );
     });
     return () => {
       off?.();

@@ -10,10 +10,23 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { registerIpc } from './ipc';
-import { loadExplorer } from './persistence';
+import {
+  allocateWindowSeq,
+  defaultExplorerV3,
+  ensureWindowEntry,
+  loadExplorer,
+  migrateExplorerFileToV3,
+  pruneLRUClosed,
+} from './persistence';
 import { pickWindowsToRestore } from './services/window-restore.service';
-import { nextWindowSeqFromDisk } from './services/window.service';
 import { pickStartupMode } from './services/startup-mode.service';
+import {
+  clearWindow,
+  getActiveSeqs,
+  setWindowSeq,
+} from './services/window-seq.service';
+import { withExplorerFileMutex } from './lib/file-mutex';
+import { atomicWriteJson } from './lib/atomic-write';
 import { PLUGINS_CHANNELS } from '../shared/plugins-channels';
 import {
   createMcpHost,
@@ -45,6 +58,7 @@ import {
 } from './services/agent-auth.service';
 import { setStdioConfig } from './services/mcp-stdio-config.service';
 import { startPluginMcpIpc } from './ipc/plugin-mcp.ipc';
+import { defaultIsTrustedFrame } from './safe-handle';
 
 // autorun delay:Win shell prompt 慢,默认更长。
 const AUTORUN_DELAY_MS = process.platform === 'win32' ? 600 : 200;
@@ -70,7 +84,9 @@ const COMMON_WEB_PREFERENCES = {
   nodeIntegration: false,
 } as const;
 
-let flushDone = false;
+const LRU_MAX_CLOSED = Infinity;
+const pendingFlushAcks = new Map<number, () => void>();
+const flushedOnQuit = new Set<number>();
 
 ipcMain.on('window:id', (event: IpcMainEvent) => {
   const win = BrowserWindow.fromWebContents(event.sender);
@@ -80,6 +96,53 @@ ipcMain.on('window:id', (event: IpcMainEvent) => {
 ipcMain.on('system:hostname', (event: IpcMainEvent) => {
   event.returnValue = os.hostname();
 });
+
+ipcMain.on('layout:flush-ack', (event: IpcMainEvent, windowId: unknown) => {
+  if (!defaultIsTrustedFrame(event.senderFrame)) return;
+  if (typeof windowId !== 'number') return;
+  const senderWin = BrowserWindow.fromWebContents(event.sender);
+  if (!senderWin || senderWin.id !== windowId) return;
+  const cb = pendingFlushAcks.get(windowId);
+  if (cb) cb();
+});
+
+function requestWindowFlush(win: BrowserWindow): Promise<void> {
+  return new Promise((resolve) => {
+    let doneCalled = false;
+    let timer: NodeJS.Timeout | null = null;
+    const done = () => {
+      if (doneCalled) return;
+      doneCalled = true;
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      pendingFlushAcks.delete(win.id);
+      resolve();
+    };
+    pendingFlushAcks.set(win.id, done);
+    timer = setTimeout(done, 1000);
+    try {
+      win.webContents.send('layout:flush-request', { windowId: win.id });
+    } catch {
+      done();
+    }
+  });
+}
+
+function wireWindowCloseFlush(win: BrowserWindow): void {
+  let flushed = flushedOnQuit.has(win.id);
+  win.on('close', (event) => {
+    if (flushed) return;
+    event.preventDefault();
+    void (async () => {
+      await requestWindowFlush(win);
+      flushed = true;
+      flushedOnQuit.add(win.id);
+      win.close();
+    })();
+  });
+}
 
 // dockview popout 走 window.open(url),url 默认是当前 renderer URL。
 // 同源 → allow + 注入我们的 preload + 安全 webPreferences。
@@ -134,13 +197,29 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
     webPreferences: COMMON_WEB_PREFERENCES,
   });
 
+  const seq = opts.windowSeq;
+  setWindowSeq(win.id, seq);
+  wireWindowCloseFlush(win);
+
+  win.on('closed', () => {
+    clearWindow(win.id);
+    const explorerFile = path.join(app.getPath('userData'), 'explorer.json');
+    void withExplorerFileMutex(async () => {
+      const payload = (await loadExplorer(explorerFile)) ?? defaultExplorerV3();
+      const entry = ensureWindowEntry(payload, seq);
+      entry.lastClosedAt = Date.now();
+      pruneLRUClosed(payload, LRU_MAX_CLOSED, getActiveSeqs());
+      await atomicWriteJson(explorerFile, payload);
+    });
+  });
+
   win.webContents.setWindowOpenHandler(windowOpenHandler);
 
   // 多窗口:opts.workspace + opts.windowSeq 走 query string,renderer
   // parseInitialWorkspace / parseInitialWindowSeq 接收。dev loadURL 与 prod
   // loadFile 都加 query;loadFile 第二参支持 query 字段。
   const queryParts: Record<string, string> = {
-    windowSeq: String(opts.windowSeq),
+    windowSeq: String(seq),
   };
   if (opts.workspace) queryParts['workspace'] = opts.workspace;
 
@@ -174,13 +253,13 @@ async function openFolderInNewWindow(): Promise<void> {
   if (r.canceled || r.filePaths.length === 0) return;
   const folder = r.filePaths[0]!;
   const explorerFile = path.join(app.getPath('userData'), 'explorer.json');
-  const windowSeq = await nextWindowSeqFromDisk(explorerFile);
+  const windowSeq = await allocateWindowSeq(explorerFile);
   createMainWindow({ windowSeq, workspace: folder });
 }
 
 async function newWindow(): Promise<void> {
   const explorerFile = path.join(app.getPath('userData'), 'explorer.json');
-  const windowSeq = await nextWindowSeqFromDisk(explorerFile);
+  const windowSeq = await allocateWindowSeq(explorerFile);
   createMainWindow({ windowSeq });
 }
 
@@ -316,7 +395,7 @@ async function openPathInNewWindow(absPath: string): Promise<void> {
   }
   if (!isDir) return;
   const explorerFile = path.join(app.getPath('userData'), 'explorer.json');
-  const windowSeq = await nextWindowSeqFromDisk(explorerFile);
+  const windowSeq = await allocateWindowSeq(explorerFile);
   createMainWindow({ windowSeq, workspace: absPath });
 }
 
@@ -505,6 +584,11 @@ async function startMcpStdioServer(): Promise<void> {
 }
 
 app.whenReady().then(async () => {
+  const userData = app.getPath('userData');
+  const explorerFile = path.join(userData, 'explorer.json');
+  const legacyLayoutFile = path.join(userData, 'layout.json');
+  await migrateExplorerFileToV3(explorerFile, legacyLayoutFile);
+
   // E2E 跑 Playwright 时,Electron 默认菜单的 CmdOrCtrl+P 绑定 Print 会先吞
   // ⌘P,导致 Quick Open 收不到 keydown。e2e 显式禁用菜单(只影响测试模式)。
   if (process.env['CONTINUO_E2E'] === '1') {
@@ -543,7 +627,6 @@ app.whenReady().then(async () => {
   // 冷启动开窗模式决策(issue #30):有 dock 缓冲目录 → dock 模式,
   // 第一个目录作主窗 workspace,其余各开新窗,**不**恢复历史;
   // 否则 → restore 模式,主窗用持久化 workspace,异步恢复历史 windows[]。
-  const explorerFile = path.join(app.getPath('userData'), 'explorer.json');
   const isDir = (p: string): boolean => {
     try {
       return nodeFs.statSync(p).isDirectory();
@@ -561,7 +644,7 @@ app.whenReady().then(async () => {
     if (extras.length > 0) {
       void (async () => {
         for (const dir of extras) {
-          const windowSeq = await nextWindowSeqFromDisk(explorerFile);
+          const windowSeq = await allocateWindowSeq(explorerFile);
           createMainWindow({ windowSeq, workspace: dir });
         }
       })();
@@ -619,31 +702,20 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', async (event) => {
-  if (flushDone) return;
-  event.preventDefault();
-  flushDone = true;
   const wins = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed());
-  const ackPending = new Set(wins.map((w) => w.id));
-  await Promise.race([
-    new Promise<void>((resolve) => {
-      if (ackPending.size === 0) {
-        resolve();
-        return;
-      }
-      const onAck = (_event: IpcMainEvent, winId: number) => {
-        ackPending.delete(winId);
-        if (ackPending.size === 0) {
-          ipcMain.off('layout:flush-ack', onAck);
-          resolve();
-        }
-      };
-      ipcMain.on('layout:flush-ack', onAck);
-      for (const w of wins) {
-        w.webContents.send('layout:flush-request');
-      }
+  if (wins.every((w) => flushedOnQuit.has(w.id))) {
+    void mcpHost?.close().catch(() => {});
+    void mcpStdio?.close().catch(() => {});
+    return;
+  }
+  event.preventDefault();
+  await Promise.all(
+    wins.map(async (w) => {
+      if (flushedOnQuit.has(w.id)) return;
+      await requestWindowFlush(w);
+      flushedOnQuit.add(w.id);
     }),
-    new Promise<void>((resolve) => setTimeout(resolve, 1500)),
-  ]);
+  );
   void mcpHost?.close().catch(() => {});
   void mcpStdio?.close().catch(() => {});
   app.quit();
