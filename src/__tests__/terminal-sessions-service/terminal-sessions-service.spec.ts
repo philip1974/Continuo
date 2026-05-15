@@ -2,6 +2,7 @@
 // main 端 session metadata 真相源。每个 test 用 _reset 隔离。
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import * as terminalSessions from '../../../electron/main/services/terminal-sessions.service';
 import {
   add,
   get,
@@ -9,6 +10,7 @@ import {
   remove,
   removeByOwner,
   setExited,
+  updateCwd,
   nextDefaultTitle,
   subscribe,
   _reset,
@@ -245,6 +247,47 @@ describe('setExited', () => {
     setExited('term-1', 0);
     setExited('term-1', 0);
     expect(fn).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// INV-2 ownerWindowId immutability
+// ────────────────────────────────────────────────────────────
+
+describe('INV-2 ownerWindowId immutability', () => {
+  it('add() 入参 ownerWindowId 非 finite/integer/非负 → throw', () => {
+    for (const ownerWindowId of [NaN, Infinity, -1, 1.5, '11', undefined]) {
+      expect(() =>
+        add({
+          ...userInput(`bad-${String(ownerWindowId)}`),
+          ownerWindowId,
+        } as never),
+      ).toThrowError(/invalid ownerWindowId/);
+    }
+  });
+
+  it('updateCwd(id, newCwd) 后 ownerWindowId 不变', () => {
+    add(userInput('term-cwd', { ownerWindowId: 22 }));
+    updateCwd('term-cwd', '/next');
+    expect(get('term-cwd')).toMatchObject({
+      cwd: '/next',
+      ownerWindowId: 22,
+    });
+  });
+
+  it('setExited(id, exitCode) 后 ownerWindowId 不变', () => {
+    add(userInput('term-exit', { ownerWindowId: 33 }));
+    setExited('term-exit', 0);
+    expect(get('term-exit')).toMatchObject({
+      exitCode: 0,
+      ownerWindowId: 33,
+    });
+  });
+
+  it('service module export 中没有 updateOwner / setOwner / transferOwnership 类 API', () => {
+    for (const name of Object.keys(terminalSessions)) {
+      expect(name).not.toMatch(/updateOwner|setOwner|transferOwnership/i);
+    }
   });
 });
 

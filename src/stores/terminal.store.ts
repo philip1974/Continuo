@@ -30,6 +30,50 @@ export interface TerminalSession {
   readonly workspaceRoot?: string;
 }
 
+export interface FilterDropOpts {
+  onDrop?: (
+    sessionId: string | undefined,
+    reason: 'not-object' | 'missing-owner' | 'wrong-owner' | 'shape-invalid',
+  ) => void;
+}
+
+export function filterByOwnerWindow(
+  sessions: readonly unknown[],
+  currentWindowId: number,
+  opts: FilterDropOpts = {},
+): readonly TerminalSession[] {
+  const result: TerminalSession[] = [];
+  for (const s of sessions) {
+    if (!s || typeof s !== 'object') {
+      opts.onDrop?.(undefined, 'not-object');
+      continue;
+    }
+    const obj = s as Record<string, unknown>;
+    const sessionId = typeof obj.id === 'string' ? obj.id : undefined;
+    if (typeof obj.ownerWindowId !== 'number') {
+      opts.onDrop?.(sessionId, 'missing-owner');
+      continue;
+    }
+    if (obj.ownerWindowId !== currentWindowId) {
+      opts.onDrop?.(sessionId, 'wrong-owner');
+      continue;
+    }
+    if (
+      typeof obj.id !== 'string' ||
+      typeof obj.createdAt !== 'number' ||
+      typeof obj.cwd !== 'string' ||
+      typeof obj.title !== 'string' ||
+      (obj.originHint !== 'user' && obj.originHint !== 'agent') ||
+      (obj.exitCode !== null && typeof obj.exitCode !== 'number')
+    ) {
+      opts.onDrop?.(sessionId, 'shape-invalid');
+      continue;
+    }
+    result.push(obj as unknown as TerminalSession);
+  }
+  return result;
+}
+
 export interface CloseResult {
   sessions: readonly TerminalSession[];
   activeId: string | null;

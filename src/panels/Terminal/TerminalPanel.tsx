@@ -2,7 +2,11 @@ import { useCallback, useEffect } from 'react';
 import type { IDockviewPanelProps } from 'dockview-react';
 import { Button, IconButton } from '@/design';
 import { coApi } from '@/lib/co-api';
-import { useTerminalStore } from '@/stores/terminal.store';
+import {
+  filterByOwnerWindow,
+  useTerminalStore,
+  type FilterDropOpts,
+} from '@/stores/terminal.store';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { useTheme } from '@/theme';
 import { TerminalPanelView, type TerminalPanelViewParams } from './TerminalPanelView';
@@ -13,6 +17,24 @@ export type TerminalPanelParams = {
   cwd?: string;
   title?: string;
   originHint?: 'user' | 'agent';
+};
+
+const legacyWarnedDropKeys = new Set<string>();
+let legacyWarnedNonFiniteOnce = false;
+
+export function _resetLegacyTerminalDropWarningsForTest(): void {
+  legacyWarnedDropKeys.clear();
+  legacyWarnedNonFiniteOnce = false;
+}
+
+const warnLegacyOnDrop: NonNullable<FilterDropOpts['onDrop']> = (
+  sessionId,
+  reason,
+) => {
+  const key = `${sessionId ?? '<unknown>'}|${reason}`;
+  if (legacyWarnedDropKeys.has(key)) return;
+  legacyWarnedDropKeys.add(key);
+  console.warn(`[terminal-store] dropping legacy session: ${reason}`, sessionId);
 };
 
 function themedTerminalEnv(resolved: 'light' | 'dark'): Record<string, string> {
@@ -45,14 +67,32 @@ function LegacyTerminalPanel() {
   const { resolved } = useTheme();
 
   useEffect(() => {
+    const winId = coApi.system.windowId;
+    if (!Number.isFinite(winId)) {
+      if (!legacyWarnedNonFiniteOnce) {
+        legacyWarnedNonFiniteOnce = true;
+        console.warn(
+          '[terminal-store] coApi.system.windowId is not finite, skipping legacy ingress filter',
+          winId,
+        );
+      }
+      return;
+    }
+
     let cancelled = false;
     void coApi.terminal.listSessions().then((r) => {
       if (!cancelled && r.ok && Array.isArray(r.data?.sessions)) {
-        replaceSnapshot(r.data.sessions);
+        replaceSnapshot(
+          filterByOwnerWindow(r.data.sessions, winId, {
+            onDrop: warnLegacyOnDrop,
+          }),
+        );
       }
     });
     const unsub = coApi.terminal.onSessionsChanged((snapshot) => {
-      replaceSnapshot(snapshot);
+      replaceSnapshot(
+        filterByOwnerWindow(snapshot, winId, { onDrop: warnLegacyOnDrop }),
+      );
     });
     return () => {
       cancelled = true;

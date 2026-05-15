@@ -1,27 +1,144 @@
 // @vitest-environment jsdom
-import { describe, expect as vitestExpect, it } from 'vitest';
+import React from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, render, waitFor } from '@testing-library/react';
+import { TerminalSessionsSync } from '../../shell/dock/TerminalSessionsSync';
+import { TerminalPanel } from '../../panels/Terminal/TerminalPanel';
+import {
+  useTerminalStore,
+  type TerminalSession,
+} from '../../stores/terminal.store';
 
-const expect = vitestExpect as typeof vitestExpect & {
-  fail: (message?: string) => never;
-};
-expect.fail ??= (message = 'expect.fail'): never => {
-  throw new Error(message);
-};
+const LegacyTerminalPanel = TerminalPanel as React.ComponentType;
+let warnSpy: ReturnType<typeof vi.spyOn>;
+
+const mocks = vi.hoisted(() => {
+  let onChanged: ((sessions: unknown[]) => void) | null = null;
+  const unsubscribe = vi.fn();
+  return {
+    windowId: 1 as number | undefined,
+    listSessions: vi.fn(),
+    onSessionsChanged: vi.fn((cb: (sessions: unknown[]) => void) => {
+      onChanged = cb;
+      return unsubscribe;
+    }),
+    emitSessionsChanged: (sessions: unknown[]) => onChanged?.(sessions),
+    unsubscribe,
+    create: vi.fn(),
+    remove: vi.fn(),
+  };
+});
+
+vi.mock('@/lib/co-api', () => ({
+  coApi: {
+    system: {
+      get windowId() {
+        return mocks.windowId;
+      },
+    },
+    terminal: {
+      listSessions: mocks.listSessions,
+      onSessionsChanged: mocks.onSessionsChanged,
+      create: mocks.create,
+      remove: mocks.remove,
+    },
+  },
+}));
+
+vi.mock('../../panels/Terminal/useTerminal', () => ({
+  useTerminal: () => ({ containerRef: { current: null }, isReady: true }),
+}));
+
+vi.mock('../../panels/Terminal/TerminalView', () => ({
+  TerminalView: ({ termId }: { termId: string }) =>
+    React.createElement('div', { 'data-testid': `terminal-view-${termId}` }),
+}));
+
+function session(id: string, ownerWindowId: number): TerminalSession {
+  return {
+    id,
+    title: id,
+    cwd: '/repo',
+    originHint: 'user',
+    createdAt: 1,
+    exitCode: null,
+    ownerWindowId,
+  };
+}
+
+beforeEach(async () => {
+  warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  mocks.windowId = 1;
+  mocks.listSessions.mockReset();
+  mocks.listSessions.mockResolvedValue({ ok: true, data: { sessions: [] } });
+  mocks.onSessionsChanged.mockClear();
+  mocks.unsubscribe.mockReset();
+  useTerminalStore.setState({
+    sessions: [],
+    activeId: null,
+    customTitles: new Map(),
+  });
+  const sync = await import('../../shell/dock/TerminalSessionsSync');
+  sync._resetTerminalDropWarningsForTest();
+  const legacy = await import('../../panels/Terminal/TerminalPanel');
+  legacy._resetLegacyTerminalDropWarningsForTest();
+});
+
+afterEach(() => {
+  warnSpy.mockRestore();
+  cleanup();
+});
 
 describe('dock-reconciler-windowid-filter: renderer ingress filter', () => {
-  it('T11 TerminalSessionsSync listSessions 响应 -> useTerminalStore.replaceSnapshot 收到 filtered', () => {
-    expect.fail('green by Op3');
+  it('T11 TerminalSessionsSync listSessions 响应 -> useTerminalStore.replaceSnapshot 收到 filtered', async () => {
+    mocks.listSessions.mockResolvedValue({
+      ok: true,
+      data: { sessions: [session('A', 1), session('B', 2)] },
+    });
+    render(React.createElement(TerminalSessionsSync));
+    await waitFor(() => {
+      expect(useTerminalStore.getState().sessions.map((s) => s.id)).toEqual([
+        'A',
+      ]);
+    });
   });
 
-  it('T12 TerminalSessionsSync onSessionsChanged 多次 -> 持续 filtered', () => {
-    expect.fail('green by Op3');
+  it('T12 TerminalSessionsSync onSessionsChanged 多次 -> 持续 filtered', async () => {
+    render(React.createElement(TerminalSessionsSync));
+    await waitFor(() => {
+      expect(mocks.onSessionsChanged).toHaveBeenCalledTimes(1);
+    });
+    mocks.emitSessionsChanged([session('A', 1), session('B', 2)]);
+    expect(useTerminalStore.getState().sessions.map((s) => s.id)).toEqual([
+      'A',
+    ]);
+    mocks.emitSessionsChanged([session('C', 2), session('D', 1)]);
+    expect(useTerminalStore.getState().sessions.map((s) => s.id)).toEqual([
+      'D',
+    ]);
   });
 
-  it('T13 LegacyTerminalPanel listSessions(render <TerminalPanel /> 无 props.api 触发 legacy 分支) -> store 收 filtered', () => {
-    expect.fail('green by Op3');
+  it('T13 LegacyTerminalPanel listSessions(render <TerminalPanel /> 无 props.api 触发 legacy 分支) -> store 收 filtered', async () => {
+    mocks.listSessions.mockResolvedValue({
+      ok: true,
+      data: { sessions: [session('A', 1), session('B', 2)] },
+    });
+    render(React.createElement(LegacyTerminalPanel));
+    await waitFor(() => {
+      expect(useTerminalStore.getState().sessions.map((s) => s.id)).toEqual([
+        'A',
+      ]);
+    });
   });
 
-  it('T14 LegacyTerminalPanel onSessionsChanged -> store 收 filtered', () => {
-    expect.fail('green by Op3');
+  it('T14 LegacyTerminalPanel onSessionsChanged -> store 收 filtered', async () => {
+    render(React.createElement(LegacyTerminalPanel));
+    await waitFor(() => {
+      expect(mocks.onSessionsChanged).toHaveBeenCalledTimes(1);
+    });
+    mocks.emitSessionsChanged([session('A', 2), session('B', 1)]);
+    expect(useTerminalStore.getState().sessions.map((s) => s.id)).toEqual([
+      'B',
+    ]);
   });
 });
