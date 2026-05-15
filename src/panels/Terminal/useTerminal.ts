@@ -244,6 +244,19 @@ export function useTerminal(termId: string, _opts?: PaneKeyOptions) {
       safeWrite(term, data);
     });
 
+    // topic-07: dockview lazy-mount inactive panel 会错过 PTY spawn 后的初始
+    // 输出(shell prompt 等),从 main buffer 把已有 raw chunks replay 进 xterm。
+    // 先 subscribe 后 replay,中间窗口期的 chunk 走 onData 路径(虽然可能与
+    // history 末尾重叠几个字符,但 xterm 容忍重复 ANSI/字符;比丢失初始 prompt 好)。
+    void coApi.terminal.readHistory(termId).then((r) => {
+      if (!r.ok || !r.data?.data) return;
+      if (firstData) {
+        firstData = false;
+        setIsReady(true);
+      }
+      safeWrite(term, r.data.data);
+    });
+
     // 用户输入 → IPC write
     const onDataDisposable = term.onData((data: string) => {
       const outgoing = consumeMappedKeyOnData(__mappedKeyState__, data);

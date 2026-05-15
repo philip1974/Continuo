@@ -69,6 +69,21 @@ export function append(id: string, data: string): void {
   }
 }
 
+/**
+ * Replay 用:整段 raw 数据(保留 ANSI / 不切行)给 renderer xterm 灌入。
+ * topic-07:dockview lazy-mount 错过初始 PTY 输出时,客户端 mount 后调此接口。
+ * 不存在 buffer → 返回空(不抛),允许 mount-before-spawn 的安全 race。
+ */
+export function readRaw(id: string): { data: string; truncated: boolean } {
+  const buf = buffers.get(id);
+  if (!buf) return { data: '', truncated: false };
+  return {
+    data: buf.entries.map((e) => e.data).join(''),
+    // 环形 buffer 已 shift 过任何 entry 即视为 truncated(无法精确判定首 seq)
+    truncated: buf.nextSeq > buf.entries.length,
+  };
+}
+
 export function read(id: string, opts?: ReadOptions): ReadResult {
   const buf = buffers.get(id);
   if (!buf) throw ERR_NOT_FOUND(id);

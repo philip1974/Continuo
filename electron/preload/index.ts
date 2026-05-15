@@ -202,6 +202,15 @@ const api = {
       ipcRenderer.invoke(TERMINAL_CHANNELS.ATTACH_REJECTED, { sessionId, reason }),
     updateCwd: (id: string, cwd: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke('session:update-cwd', id, cwd),
+    /**
+     * 读 main 端 buffer 的全部历史 raw chunks(保留 ANSI)。
+     * topic-07:dockview lazy-mount inactive panel 错过初始 PTY 输出,
+     * renderer mount 时调此 + 灌给 xterm 补齐。
+     */
+    readHistory: (
+      id: string,
+    ): Promise<IpcResult<{ data: string; truncated: boolean }>> =>
+      ipcRenderer.invoke(TERMINAL_CHANNELS.READ_HISTORY, { id }),
     /** 订阅 main 推的 snapshot;返回 unsubscribe. */
     onSessionsChanged: (
       cb: (sessions: ReadonlyArray<PreloadTerminalSession>) => void,

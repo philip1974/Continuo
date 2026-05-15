@@ -415,6 +415,11 @@ export function registerTerminalIpc(): void {
   ownerScopedHandle(TERMINAL_CHANNELS.DESTROY, idOnlyInputSchema, killHandler);
   ownerScopedHandle(TERMINAL_CHANNELS.REMOVE, idOnlyInputSchema, removeHandler);
   ownerScopedHandle(
+    TERMINAL_CHANNELS.READ_HISTORY,
+    idOnlyInputSchema,
+    (input: { id: string }) => terminalBuffer.readRaw(input.id),
+  );
+  ownerScopedHandle(
     TERMINAL_CHANNELS.ATTACH_REJECTED,
     attachRejectedInputSchema,
     attachRejectedHandler,
