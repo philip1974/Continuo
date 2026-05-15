@@ -81,14 +81,27 @@ function TerminalPanelContent({
   const { containerRef, isReady, fit } = useTerminal(sessionId, undefined);
 
   useEffect(() => {
+    // agent 创建的 panel 走 inactive: true(P1-1 不抢 focus),
+    // dockview 此时容器可能 0×0 或隐藏 → useTerminal 内的初次 fit 拿不到尺寸
+    // → 用户点击切到 active 前 xterm 一直是空。
+    // 显隐切换(onDidVisibilityChange)与初次 raf 都重 fit 一次,确保容器
+    // 有真实尺寸时刷一遍 cols/rows + 通知 main resize。
+    const tryFit = () => fit();
+    const raf = requestAnimationFrame(tryFit);
+
     const activeDisposable = api.onDidActiveChange((event) => {
-      if (event.isActive) fit();
+      if (event.isActive) tryFit();
     });
-    const dimensionsDisposable = api.onDidDimensionsChange(() => fit());
+    const dimensionsDisposable = api.onDidDimensionsChange(tryFit);
+    const visibilityDisposable = api.onDidVisibilityChange((event) => {
+      if (event.isVisible) tryFit();
+    });
 
     return () => {
+      cancelAnimationFrame(raf);
       activeDisposable.dispose();
       dimensionsDisposable.dispose();
+      visibilityDisposable.dispose();
     };
   }, [api, fit]);
 
