@@ -85,3 +85,50 @@ export function defaultIsTrustedFrame(frame: FrameLike): boolean {
     return false;
   }
 }
+
+/** ctx-aware handler:接受 IpcMainInvokeEvent 第二参,用于 sender 反查等场景. */
+export type SafeHandlerWithCtx<I, O> = (
+  input: I,
+  ctx: { event: IpcMainInvokeEvent },
+) => Promise<O> | O;
+
+/**
+ * 纯函数版 ctx-aware IPC:同 processIpcCall 行为,handler 多收一个 { event } 参数。
+ * 业务错误一律走 throw with .code,catch 块统一形成 {ok:false, code, message}。
+ */
+export async function processIpcCallWithCtx<I, O>(
+  schema: z.ZodType<I>,
+  handler: SafeHandlerWithCtx<I, O>,
+  rawInput: unknown,
+  event: IpcMainInvokeEvent,
+  isTrustedFrame: IsTrustedFrame,
+): Promise<IpcResult<O>> {
+  if (!isTrustedFrame(event.senderFrame)) {
+    return { ok: false, code: IPC_ERR.DENIED, message: 'sender frame is not trusted' };
+  }
+  const parsed = schema.safeParse(rawInput);
+  if (!parsed.success) {
+    return { ok: false, code: IPC_ERR.BAD_INPUT, message: parsed.error.issues.map((i) => i.message).join('; ') };
+  }
+  try {
+    const data = await handler(parsed.data, { event });
+    return { ok: true, data };
+  } catch (err) {
+    const e = err as { code?: unknown; message?: unknown };
+    const code = typeof e.code === 'string' ? e.code : IPC_ERR.HANDLER_ERROR;
+    const message = typeof e.message === 'string' ? e.message : String(err);
+    return { ok: false, code, message };
+  }
+}
+
+/** ipcMain.handle 包装的 ctx-aware 版本. */
+export function safeHandleWithCtx<I, O>(
+  channel: string,
+  schema: z.ZodType<I>,
+  handler: SafeHandlerWithCtx<I, O>,
+  isTrustedFrame: IsTrustedFrame,
+): void {
+  ipcMain.handle(channel, async (event: IpcMainInvokeEvent, raw: unknown) => {
+    return processIpcCallWithCtx(schema, handler, raw, event, isTrustedFrame);
+  });
+}
