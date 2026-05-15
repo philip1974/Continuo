@@ -4,30 +4,13 @@ import { atomicWriteJson } from './lib/atomic-write';
 import { withExplorerFileMutex } from './lib/file-mutex';
 
 // ─────────────────────────────────────────────────────
-// layout.json (DockviewReact 序列化输出)
+// DockviewReact 序列化输出。
 // 顶层 version 锁死为 1,未来破坏性变更走 migration。passthrough 保留 dockview 自带字段。
 // ─────────────────────────────────────────────────────
 
 export const LayoutSchema = z
   .object({ version: z.literal(1).optional() })
   .passthrough();
-
-export type LayoutPayload = z.infer<typeof LayoutSchema>;
-
-export async function loadLayout(filePath: string): Promise<LayoutPayload | null> {
-  try {
-    const raw = await fs.readFile(filePath, 'utf-8');
-    return LayoutSchema.parse(JSON.parse(raw));
-  } catch {
-    return null;
-  }
-}
-
-export async function saveLayout(filePath: string, json: unknown): Promise<boolean> {
-  const safe = LayoutSchema.parse(json);
-  await fs.writeFile(filePath, JSON.stringify(safe, null, 2));
-  return true;
-}
 
 // ─────────────────────────────────────────────────────
 // explorer.json (资源管理器持久化:workspace/explorer/pinned)
@@ -91,7 +74,7 @@ const ExplorerV1Schema = z
 
 export type ExplorerV1Payload = z.infer<typeof ExplorerV1Schema>;
 
-// ── v2(current)— 多窗口拆段 ──────────────────────────────
+// ── v2(legacy compat)— 多窗口拆段 ────────────────────────
 const WindowEntrySchema = z
   .object({
     windowSeq: z.number().int().nonnegative(),
@@ -112,6 +95,7 @@ const WindowEntrySchema = z
   })
   .strict();
 
+/** @deprecated v2 compatibility schema. New callers should use ExplorerSchemaV3 / ExplorerWritableSnapshotSchema. */
 export const ExplorerSchema = z
   .object({
     version: z.literal(2),
