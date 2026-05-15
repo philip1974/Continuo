@@ -15,6 +15,17 @@ export function TerminalPanelView(
   props: IDockviewPanelProps<TerminalPanelViewParams>,
 ) {
   const { sessionId } = props.params;
+  // stale persisted layout (旧 BSP 模型 / sanitizer 漏过) 可能 restore 出
+  // params.sessionId 缺失的 terminal panel,直接 auto-close 而非 crash。
+  useEffect(() => {
+    if (!sessionId) {
+      console.warn(
+        '[terminal-panel] panel mounted without sessionId; auto-closing',
+        props.api.id,
+      );
+      props.api.close();
+    }
+  }, [sessionId, props.api]);
   const session = useTerminalStore((s) =>
     s.sessions.find((x) => x.id === sessionId),
   );
@@ -24,7 +35,7 @@ export function TerminalPanelView(
       customTitle ??
       session?.title ??
       props.params.title ??
-      `Terminal ${sessionId.slice(0, 6)}`;
+      `Terminal ${(sessionId ?? '').slice(0, 6) || '?'}`;
     const originHint = session?.originHint ?? props.params.originHint;
     return originHint === 'agent' ? `${base} (agent)` : base;
   }, [
@@ -42,6 +53,13 @@ export function TerminalPanelView(
     }
   }, [derivedTitle, props.api]);
 
+  if (!sessionId) {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-canvas text-xs text-fg-dim">
+        terminal panel without sessionId (auto-closing)
+      </div>
+    );
+  }
   if (!session) {
     return (
       <div className="flex h-full w-full items-center justify-center bg-canvas text-xs text-fg-dim">
