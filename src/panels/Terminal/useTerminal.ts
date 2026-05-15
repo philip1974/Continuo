@@ -332,12 +332,20 @@ export function useTerminal(termId: string, _opts?: PaneKeyOptions) {
   }, [sidebarOpen, sidebarWidth, termId]);
 
   const fit = useCallback(() => {
+    const term = termRef.current;
+    const fitAddon = fitRef.current;
+    if (!term || !fitAddon) return;
     try {
-      fitRef.current?.fit();
+      fitAddon.fit();
+      if (term.cols > 0 && term.rows > 0) {
+        // 通知 main 端 PTY 新尺寸(覆盖 inactive 创建 / display:none 切显示
+        // 等场景:初始 fit 时容器 0×0,内部 doFit 失败,这里补一次 resize)。
+        void coApi.terminal.resize(termId, term.cols, term.rows);
+      }
     } catch {
       /* ignore */
     }
-  }, []);
+  }, [termId]);
 
   return { containerRef, isReady, fit };
 }
