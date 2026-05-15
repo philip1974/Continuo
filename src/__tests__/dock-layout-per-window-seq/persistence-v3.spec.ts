@@ -1,21 +1,280 @@
-import { describe, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import fs from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+
+import {
+  defaultExplorerV3,
+  ensureWindowEntry,
+  ExplorerSchemaV3,
+  ExplorerWritableSnapshotSchema,
+  loadExplorer,
+  MAIN_OWNED_WINDOW_FIELDS,
+  mergeWritableIntoFull,
+  migrateV1ToV2,
+  migrateV2ToV3,
+  pruneLRUClosed,
+  saveExplorer,
+  type ExplorerPayload,
+  type ExplorerPayloadV3,
+  type ExplorerV1Payload,
+  type ExplorerWritablePayload,
+} from '../../../electron/main/persistence';
+
+let dir: string;
+let file: string;
+
+beforeEach(async () => {
+  dir = await fs.mkdtemp(path.join(tmpdir(), 'continuo-explorer-v3-'));
+  file = path.join(dir, 'explorer.json');
+});
+
+afterEach(async () => {
+  await fs.rm(dir, { recursive: true, force: true });
+});
+
+const sort = { by: 'name' as const, reverse: false };
+
+const v2Payload: ExplorerPayload = {
+  version: 2,
+  workspace: { recentRoots: ['/work', '/old'] },
+  pinned: { paths: ['/work/pinned.md'] },
+  nextWindowSeq: 2,
+  windows: [
+    {
+      windowSeq: 0,
+      workspace: { root: '/work' },
+      explorer: {
+        activePath: '/work/file.md',
+        expandedPaths: ['/work'],
+        sort,
+      },
+      layoutUi: { sidebarOpen: false, sidebarWidth: 320 },
+      editor: { openFilePaths: ['/work/file.md'], activePath: '/work/file.md' },
+    },
+    {
+      windowSeq: 1,
+      workspace: { root: '/other' },
+      explorer: { activePath: null, expandedPaths: [], sort },
+    },
+  ],
+  restoreAllWindowsOnLaunch: true,
+};
+
+const v1Payload: ExplorerV1Payload = {
+  version: 1,
+  workspace: { root: '/legacy', recentRoots: ['/legacy'] },
+  explorer: {
+    activePath: '/legacy/a.md',
+    expandedPaths: ['/legacy'],
+    sort,
+  },
+  pinned: { paths: ['/legacy/pinned.md'] },
+  layoutUi: { sidebarOpen: true, sidebarWidth: 280 },
+};
+
+const writablePayload = (
+  windows: ExplorerWritablePayload['windows'],
+): ExplorerWritablePayload => ({
+  version: 3,
+  workspace: { recentRoots: ['/new'] },
+  pinned: { paths: ['/new/pinned.md'] },
+  nextWindowSeq: 4,
+  windows,
+});
 
 describe('explorer.json v3 persistence schema and merge semantics', () => {
-  it.todo('T1: v3 schema stores per-window entries keyed by windowSeq');
-  it.todo('T2: legacy explorer roots migrate into the current window entry');
-  it.todo('T3: legacy layout payload migrates into the v3 layout section');
-  it.todo('T4: v3 migration is idempotent');
-  it.todo('T5: corrupt optional layout data falls back without losing explorer roots');
-  it.todo('T6: unknown fields survive read/write roundtrips');
-  it.todo('T7: LRU metadata is bounded and deterministic');
-  it.todo('T11: migration covers empty, v2-only, layout-only, and mixed explorer files');
-  it.todo('T15: ensureWindowEntry creates missing entries without replacing existing data');
-  it.todo('T22: writable merge rejects stale or foreign windowSeq writes');
-  it.todo('T23: renderer writes preserve main-owned fields');
-  it.todo('T24: writable merge preserves unknown future fields');
-  it.todo('T26: mergeWritableIntoFull updates only the current-window writable segment');
+  it('T1: v3 schema accepts optional layout and lastClosedAt on window entries', () => {
+    const payload = defaultExplorerV3();
+    payload.windows[0] = {
+      ...payload.windows[0]!,
+      layout: { version: 1, grid: { root: 'dock' } },
+      lastClosedAt: 123,
+    };
 
-  it('T1-T7/T11/T15/T22-T24/T26: roundtrips v3 data without cross-window leakage', () => {
-    throw new Error('not implemented (BDD red)');
+    const parsed = ExplorerSchemaV3.parse(payload);
+
+    expect(parsed.version).toBe(3);
+    expect(parsed.windows[0]!.layout).toEqual({
+      version: 1,
+      grid: { root: 'dock' },
+    });
+    expect(parsed.windows[0]!.lastClosedAt).toBe(123);
   });
+
+  it('T2: migrateV2ToV3 preserves v2 fields and leaves main-owned fields unset', () => {
+    const migrated = migrateV2ToV3(v2Payload);
+
+    expect(migrated).toMatchObject({
+      version: 3,
+      workspace: v2Payload.workspace,
+      pinned: v2Payload.pinned,
+      nextWindowSeq: v2Payload.nextWindowSeq,
+      restoreAllWindowsOnLaunch: true,
+    });
+    expect(migrated.windows).toHaveLength(2);
+    expect(migrated.windows[0]!.workspace.root).toBe('/work');
+    expect(migrated.windows[0]!.layoutUi).toEqual(v2Payload.windows[0]!.layoutUi);
+    expect(migrated.windows[0]!.editor).toEqual(v2Payload.windows[0]!.editor);
+    expect(migrated.windows[0]!.layout).toBeUndefined();
+    expect(migrated.windows[0]!.lastClosedAt).toBeUndefined();
+  });
+
+  it('T3: v1 payload migrates to v3 through the v2 migration path', () => {
+    const migrated = migrateV2ToV3(migrateV1ToV2(v1Payload));
+
+    expect(migrated.version).toBe(3);
+    expect(migrated.workspace.recentRoots).toEqual(['/legacy']);
+    expect(migrated.pinned.paths).toEqual(['/legacy/pinned.md']);
+    expect(migrated.nextWindowSeq).toBe(1);
+    expect(migrated.windows[0]).toMatchObject({
+      windowSeq: 0,
+      workspace: { root: '/legacy' },
+      explorer: v1Payload.explorer,
+      layoutUi: v1Payload.layoutUi,
+    });
+  });
+
+  it('T4: loadExplorer accepts v3 first, migrates v2 and v1, and returns null for unknown schema', async () => {
+    const v3Payload = migrateV2ToV3(v2Payload);
+    await fs.writeFile(file, JSON.stringify(v3Payload));
+    expect(await loadExplorer(file)).toEqual(v3Payload);
+
+    await fs.writeFile(file, JSON.stringify(v2Payload));
+    expect(await loadExplorer(file)).toEqual(migrateV2ToV3(v2Payload));
+
+    await fs.writeFile(file, JSON.stringify(v1Payload));
+    expect(await loadExplorer(file)).toEqual(migrateV2ToV3(migrateV1ToV2(v1Payload)));
+
+    await fs.writeFile(file, JSON.stringify({ version: 99, garbage: true }));
+    expect(await loadExplorer(file)).toBeNull();
+  });
+
+  it('T5: saveExplorer writes validated v3 JSON', async () => {
+    const payload = migrateV2ToV3(v2Payload);
+
+    await saveExplorer(file, payload);
+
+    const raw = JSON.parse(await fs.readFile(file, 'utf-8')) as ExplorerPayloadV3;
+    expect(raw.version).toBe(3);
+    expect(raw).toEqual(payload);
+  });
+
+  it('T6: pruneLRUClosed removes the oldest closed windows by lastClosedAt', () => {
+    const payload = defaultExplorerV3();
+    payload.windows = [
+      { ...payload.windows[0]!, lastClosedAt: 500 },
+      {
+        windowSeq: 1,
+        workspace: { root: '/one' },
+        explorer: { activePath: null, expandedPaths: [], sort },
+        lastClosedAt: 100,
+      },
+      {
+        windowSeq: 2,
+        workspace: { root: '/two' },
+        explorer: { activePath: null, expandedPaths: [], sort },
+        lastClosedAt: 300,
+      },
+      {
+        windowSeq: 3,
+        workspace: { root: '/three' },
+        explorer: { activePath: null, expandedPaths: [], sort },
+        lastClosedAt: 200,
+      },
+    ];
+
+    pruneLRUClosed(payload, 2, new Set());
+
+    expect(payload.windows.map((w) => w.windowSeq).sort()).toEqual([0, 2]);
+  });
+
+  it('T7: pruneLRUClosed never removes active window sequences', () => {
+    const payload = defaultExplorerV3();
+    payload.windows = [
+      { ...payload.windows[0]!, lastClosedAt: 1 },
+      {
+        windowSeq: 1,
+        workspace: { root: '/active-old' },
+        explorer: { activePath: null, expandedPaths: [], sort },
+        lastClosedAt: 2,
+      },
+      {
+        windowSeq: 2,
+        workspace: { root: '/closed-new' },
+        explorer: { activePath: null, expandedPaths: [], sort },
+        lastClosedAt: 3,
+      },
+    ];
+
+    pruneLRUClosed(payload, 1, new Set([1]));
+
+    expect(payload.windows.map((w) => w.windowSeq).sort()).toEqual([1]);
+    pruneLRUClosed(payload, Infinity, new Set());
+    expect(payload.windows.map((w) => w.windowSeq)).toEqual([1]);
+  });
+
+  it.todo('T15: terminal panel sanitizer remains active in verify mode');
+
+  it('T22: writable snapshot schema rejects renderer attempts to write layout', () => {
+    const writable = writablePayload([
+      {
+        windowSeq: 0,
+        workspace: { root: '/work' },
+        explorer: { activePath: null, expandedPaths: [], sort },
+        layout: { version: 1 },
+      } as unknown as ExplorerWritablePayload['windows'][number],
+    ]);
+
+    expect(() => ExplorerWritableSnapshotSchema.parse(writable)).toThrow();
+  });
+
+  it('T23: mergeWritableIntoFull preserves main-owned window fields', () => {
+    const current = defaultExplorerV3();
+    current.windows[0] = {
+      ...current.windows[0]!,
+      layout: { version: 1, from: 'main' },
+      lastClosedAt: 456,
+    };
+    const writable = writablePayload([
+      {
+        windowSeq: 0,
+        workspace: { root: '/renderer' },
+        explorer: { activePath: '/renderer/a.md', expandedPaths: ['/renderer'], sort },
+      },
+    ]);
+
+    const merged = mergeWritableIntoFull(current, writable);
+
+    expect(MAIN_OWNED_WINDOW_FIELDS).toEqual(['layout', 'lastClosedAt']);
+    expect(merged.windows[0]).toMatchObject({
+      windowSeq: 0,
+      workspace: { root: '/renderer' },
+      layout: { version: 1, from: 'main' },
+      lastClosedAt: 456,
+    });
+  });
+
+  it('T24: ensureWindowEntry creates a minimal valid entry without replacing existing data', () => {
+    const payload = defaultExplorerV3();
+    payload.windows[0] = {
+      ...payload.windows[0]!,
+      workspace: { root: '/existing' },
+      layout: { version: 1, keep: true },
+    };
+
+    const existing = ensureWindowEntry(payload, 0);
+    const created = ensureWindowEntry(payload, 9);
+
+    expect(existing.workspace.root).toBe('/existing');
+    expect(existing.layout).toEqual({ version: 1, keep: true });
+    expect(created).toEqual({
+      windowSeq: 9,
+      workspace: { root: null },
+      explorer: { activePath: null, expandedPaths: [], sort },
+    });
+    expect(ExplorerSchemaV3.parse(payload).windows).toHaveLength(2);
+  });
+
+  it.todo('T28: allocateWindowSeq concurrency is covered by window-seq-allocate');
 });

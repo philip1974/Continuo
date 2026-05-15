@@ -1,12 +1,15 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
   ExplorerSchema,
+  ExplorerSchemaV3,
   loadExplorer,
   migrateV1ToV2,
+  migrateV2ToV3,
   saveExplorer,
+  type ExplorerPayloadV3,
   type ExplorerV1Payload,
 } from '../../../electron/main/persistence';
 
@@ -57,10 +60,12 @@ const v1ValidPayload: ExplorerV1Payload = {
 };
 
 describe('ExplorerSchema v2', () => {
-  it('完整 v2 对象 round-trip', async () => {
+  it('完整 v2 对象 saveExplorer 后以 v3 读回', async () => {
     await saveExplorer(file, v2ValidPayload);
     const back = await loadExplorer(file);
-    expect(back).toEqual(v2ValidPayload);
+    expect(back).toEqual(migrateV2ToV3(v2ValidPayload));
+    const raw = JSON.parse(await readFile(file, 'utf-8')) as ExplorerPayloadV3;
+    expect(raw.version).toBe(3);
   });
 
   it('缺失文件 → null(首次启动语义)', async () => {
@@ -166,10 +171,30 @@ describe('ExplorerSchema v2', () => {
     expect(ok.windows[1]!.windowSeq).toBe(1);
   });
 
-  it('saveExplorer 拒绝非 v2 schema 对象', async () => {
+  it('saveExplorer 拒绝非 v2/v3 schema 对象', async () => {
     await expect(saveExplorer(file, 'oops' as unknown)).rejects.toThrow();
     // v1 payload 直接 save 拒绝(必须先 migrateV1ToV2)
     await expect(saveExplorer(file, v1ValidPayload as unknown)).rejects.toThrow();
+  });
+});
+
+describe('ExplorerSchemaV3', () => {
+  it('v3 full schema 接受 main-owned layout / lastClosedAt 字段', () => {
+    const v3 = migrateV2ToV3(v2ValidPayload);
+    v3.windows[0] = {
+      ...v3.windows[0]!,
+      layout: { version: 1, dock: { panels: [] } },
+      lastClosedAt: 123,
+    };
+
+    const parsed = ExplorerSchemaV3.parse(v3);
+
+    expect(parsed.version).toBe(3);
+    expect(parsed.windows[0]!.layout).toEqual({
+      version: 1,
+      dock: { panels: [] },
+    });
+    expect(parsed.windows[0]!.lastClosedAt).toBe(123);
   });
 });
 
@@ -211,18 +236,18 @@ describe('migrateV1ToV2', () => {
     expect(v2.windows[0]!.workspace.root).toBeNull();
   });
 
-  it('loadExplorer 读到磁盘 v1 文件 → 自动迁移返 v2 形态', async () => {
+  it('loadExplorer 读到磁盘 v1 文件 → 自动迁移返 v3 形态', async () => {
     await writeFile(file, JSON.stringify(v1ValidPayload));
     const loaded = await loadExplorer(file);
-    expect(loaded?.version).toBe(2);
+    expect(loaded?.version).toBe(3);
     expect(loaded?.windows[0]?.workspace.root).toBe('/Users/me/work');
     expect(loaded?.workspace.recentRoots).toEqual(['/Users/me/work', '/Users/me/old']);
   });
 
-  it('loadExplorer 读到磁盘 v2 文件 → 直接返 v2', async () => {
+  it('loadExplorer 读到磁盘 v2 文件 → 迁移返 v3', async () => {
     await writeFile(file, JSON.stringify(v2ValidPayload));
     const loaded = await loadExplorer(file);
-    expect(loaded).toEqual(v2ValidPayload);
+    expect(loaded).toEqual(migrateV2ToV3(v2ValidPayload));
   });
 
   it('loadExplorer 未知 version(既非 v1 也非 v2) → null', async () => {

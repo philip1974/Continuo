@@ -1,9 +1,84 @@
-import { describe, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
+
+import {
+  defaultExplorerV3,
+  mergeWritableIntoFull,
+  type ExplorerWritablePayload,
+} from '../../../electron/main/persistence';
+
+const sort = { by: 'name' as const, reverse: false };
+
+const writablePayload: ExplorerWritablePayload = {
+  version: 3,
+  workspace: { recentRoots: ['/global'] },
+  pinned: { paths: ['/global/pinned.md'] },
+  nextWindowSeq: 3,
+  windows: [
+    {
+      windowSeq: 1,
+      workspace: { root: '/renderer-one' },
+      explorer: {
+        activePath: '/renderer-one/a.md',
+        expandedPaths: ['/renderer-one'],
+        sort,
+      },
+    },
+    {
+      windowSeq: 2,
+      workspace: { root: '/renderer-two' },
+      explorer: { activePath: null, expandedPaths: [], sort },
+    },
+  ],
+};
 
 describe('mergeWritableIntoFull current-window-only preservation', () => {
-  it.todo('T26: mergeWritableIntoFull updates writable fields for the current window only');
+  it('T26: mergeWritableIntoFull updates writable fields for matching windows only', () => {
+    const current = defaultExplorerV3();
+    current.windows = [
+      {
+        windowSeq: 0,
+        workspace: { root: '/current-only' },
+        explorer: {
+          activePath: '/current-only/a.md',
+          expandedPaths: ['/current-only'],
+          sort,
+        },
+        layout: { version: 1, keep: 'current-only' },
+        lastClosedAt: 10,
+      },
+      {
+        windowSeq: 1,
+        workspace: { root: '/old-one' },
+        explorer: {
+          activePath: '/old-one/a.md',
+          expandedPaths: ['/old-one'],
+          sort,
+        },
+        layout: { version: 1, keep: 'main-owned' },
+        lastClosedAt: 20,
+      },
+    ];
 
-  it('T26: preserves non-current windows and all main-owned current-window fields', () => {
-    throw new Error('not implemented (BDD red)');
+    const merged = mergeWritableIntoFull(current, writablePayload);
+
+    expect(merged.workspace).toEqual(writablePayload.workspace);
+    expect(merged.pinned).toEqual(writablePayload.pinned);
+    expect(merged.nextWindowSeq).toBe(3);
+    expect(merged.windows).toHaveLength(3);
+    expect(merged.windows.find((w) => w.windowSeq === 0)).toEqual(current.windows[0]);
+    expect(merged.windows.find((w) => w.windowSeq === 1)).toMatchObject({
+      windowSeq: 1,
+      workspace: { root: '/renderer-one' },
+      explorer: {
+        activePath: '/renderer-one/a.md',
+        expandedPaths: ['/renderer-one'],
+        sort,
+      },
+      layout: { version: 1, keep: 'main-owned' },
+      lastClosedAt: 20,
+    });
+    expect(merged.windows.find((w) => w.windowSeq === 2)).toEqual(
+      writablePayload.windows[1],
+    );
   });
 });

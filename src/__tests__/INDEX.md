@@ -280,10 +280,6 @@
 
 - [`keybindings-tab-content.spec.tsx`](./keybindings-tab-content/keybindings-tab-content.spec.tsx)
 
-## [layout 持久化 (M2)](./layout-persistence/README.md)
-
-- [`persistence.spec.ts`](./layout-persistence/persistence.spec.ts)
-
 ## [Markdown 链接解析(`resolveLink`)](./markdown-link-resolve/README.md)
 
 - [`markdown-link-resolve.spec.ts`](./markdown-link-resolve/markdown-link-resolve.spec.ts)

@@ -34,16 +34,16 @@ import { clampWidth } from '@/lib/use-column-resize';
 import type { IpcResult } from '../fs/types';
 
 const DEBOUNCE_MS = 300;
-const VERSION = 2 as const;
+const VERSION = 3 as const;
 const PRIMARY_WINDOW_SEQ = 0; // 主窗位的 windowSeq;Phase 2B 引入多窗后改成动态值
 
 const ALLOWED_SORT_BY = new Set(['name', 'mtime', 'ctime', 'size']);
 
 /**
- * v2 schema(issue #23 Phase 2):全局共享段(workspace.recentRoots / pinned)
+ * v3 schema(topic-08):全局共享段(workspace.recentRoots / pinned)
  * 移到顶层,workspace.root / explorer / layoutUi / editor 拆到 windows[] 按
- * windowSeq 索引。Phase 2A 主窗仍只读写 windows[0],对外语义无变化;Phase 2B
- * 引入动态 windowSeq 后,每窗口只读写自己段,实现多窗持久化。
+ * windowSeq 索引。renderer 只读写 writable subset;layout / lastClosedAt 是
+ * main-owned 字段,hydrate 可容忍但 snapshotFromStores 不写。
  */
 export interface ExplorerWindowEntry {
   readonly windowSeq: number;
@@ -61,14 +61,17 @@ export interface ExplorerWindowEntry {
     readonly openFilePaths: ReadonlyArray<string>;
     readonly activePath: string | null;
   };
+  readonly layout?: unknown;
+  readonly lastClosedAt?: number | null;
 }
 
 export interface ExplorerSnapshot {
-  readonly version: 2;
+  readonly version: 2 | 3;
   readonly workspace: { readonly recentRoots: ReadonlyArray<string> };
   readonly pinned: { readonly paths: ReadonlyArray<string> };
   readonly nextWindowSeq: number;
   readonly windows: ReadonlyArray<ExplorerWindowEntry>;
+  readonly restoreAllWindowsOnLaunch?: boolean;
 }
 
 export interface ExplorerPersistApi {
@@ -239,7 +242,7 @@ export async function hydrateEditorTabs(
 function isExplorerSnapshot(v: unknown): v is ExplorerSnapshot {
   if (!v || typeof v !== 'object') return false;
   const o = v as Record<string, unknown>;
-  if (o['version'] !== 2) return false;
+  if (o['version'] !== 2 && o['version'] !== 3) return false;
   if (!o['workspace'] || !o['pinned'] || !Array.isArray(o['windows'])) return false;
   if (typeof o['nextWindowSeq'] !== 'number') return false;
   const ws = o['workspace'] as Record<string, unknown>;
