@@ -127,6 +127,19 @@
 
 - [`dock-api-ref.spec.ts`](./dock-api-ref/dock-api-ref.spec.ts)
 
+## [dock-layout-per-window-seq](./dock-layout-per-window-seq/README.md)
+
+- [`atomic-write.spec.ts`](./dock-layout-per-window-seq/atomic-write.spec.ts)
+- [`close-flush.spec.ts`](./dock-layout-per-window-seq/close-flush.spec.ts)
+- [`file-mutex.spec.ts`](./dock-layout-per-window-seq/file-mutex.spec.ts)
+- [`layout-ipc.spec.ts`](./dock-layout-per-window-seq/layout-ipc.spec.ts)
+- [`merge-preserve-current-only.spec.ts`](./dock-layout-per-window-seq/merge-preserve-current-only.spec.ts)
+- [`migrate-edge-paths.spec.ts`](./dock-layout-per-window-seq/migrate-edge-paths.spec.ts)
+- [`persistence-v3.spec.ts`](./dock-layout-per-window-seq/persistence-v3.spec.ts)
+- [`safe-handle-ctx.spec.ts`](./dock-layout-per-window-seq/safe-handle-ctx.spec.ts)
+- [`window-seq-allocate.spec.ts`](./dock-layout-per-window-seq/window-seq-allocate.spec.ts)
+- [`window-seq-service.spec.ts`](./dock-layout-per-window-seq/window-seq-service.spec.ts)
+
 ## [editor-action(EditorHeader 工具按钮贡献)](./editor-action/README.md)
 
 - [`editor-action.spec.ts`](./editor-action/editor-action.spec.ts)
