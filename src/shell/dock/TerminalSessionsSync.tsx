@@ -24,18 +24,8 @@ const warnOnDrop: NonNullable<FilterDropOpts['onDrop']> = (
   console.warn(`[terminal-store] dropping session: ${reason}`, sessionId);
 };
 
-function readWindowIdForIngress(): number | undefined {
-  const api = coApi as typeof coApi & {
-    system?: { readonly windowId?: number };
-  };
-  if (!('system' in api)) {
-    return 1;
-  }
-  return api.system?.windowId;
-}
-
 export function TerminalSessionsSync(): null {
-  const winId = useMemo(() => readWindowIdForIngress(), []);
+  const winId = useMemo(() => coApi.system.windowId, []);
 
   useEffect(() => {
     if (typeof winId !== 'number' || !Number.isFinite(winId)) {

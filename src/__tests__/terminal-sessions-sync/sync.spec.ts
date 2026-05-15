@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => {
 
 vi.mock('@/lib/co-api', () => ({
   coApi: {
+    system: { windowId: 1 },
     terminal: {
       listSessions: mocks.listSessions,
       onSessionsChanged: mocks.onSessionsChanged,

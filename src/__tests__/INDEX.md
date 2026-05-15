@@ -146,6 +146,7 @@
 - [`ingress-filter.spec.ts`](./dock-reconciler-windowid-filter/ingress-filter.spec.ts)
 - [`non-finite-windowid.spec.ts`](./dock-reconciler-windowid-filter/non-finite-windowid.spec.ts)
 - [`ownership-immutability.spec.ts`](./dock-reconciler-windowid-filter/ownership-immutability.spec.ts)
+- [`proxy-coapi-regression.spec.ts`](./dock-reconciler-windowid-filter/proxy-coapi-regression.spec.ts)
 - [`runtime-guard.spec.ts`](./dock-reconciler-windowid-filter/runtime-guard.spec.ts)
 - [`single-window-noop.spec.ts`](./dock-reconciler-windowid-filter/single-window-noop.spec.ts)
 - [`warn-rate-limit.spec.ts`](./dock-reconciler-windowid-filter/warn-rate-limit.spec.ts)
