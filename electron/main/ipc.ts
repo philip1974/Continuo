@@ -1,15 +1,18 @@
-import { app } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import path from 'node:path';
 import { z } from 'zod';
 import {
-  ExplorerSchema,
+  ExplorerWritableSnapshotSchema,
   LayoutSchema,
+  defaultExplorerV3,
+  ensureWindowEntry,
   loadExplorer,
-  loadLayout,
-  saveExplorer,
-  saveLayout,
+  mergeWritableIntoFull,
 } from './persistence';
-import { defaultIsTrustedFrame, safeHandle } from './safe-handle';
+import { defaultIsTrustedFrame, safeHandle, safeHandleWithCtx } from './safe-handle';
+import { atomicWriteJson } from './lib/atomic-write';
+import { withExplorerFileMutex } from './lib/file-mutex';
+import { getWindowSeq } from './services/window-seq.service';
 import { registerFsIpc } from './ipc/fs.ipc';
 import { registerTerminalIpc } from './ipc/terminal.ipc';
 import { registerPluginsIpc } from './ipc/plugins.ipc';
@@ -33,18 +36,51 @@ const PopoutOpenInput = z
 
 export function registerIpc() {
   const userData = app.getPath('userData');
-  const layoutFile = path.join(userData, 'layout.json');
   const explorerFile = path.join(userData, 'explorer.json');
   const trusted = defaultIsTrustedFrame;
 
-  safeHandle('layout:read', NoInput, () => loadLayout(layoutFile), trusted);
+  safeHandleWithCtx(
+    'layout:read',
+    NoInput,
+    async (_input, { event }) => {
+      const win = BrowserWindow.fromWebContents(event.sender);
+      if (!win) {
+        throw Object.assign(new Error('no window'), { code: 'NO_WINDOW' });
+      }
+      const seq = getWindowSeq(win.id);
+      if (seq == null) {
+        throw Object.assign(new Error('no window seq'), {
+          code: 'NO_WINDOW_SEQ',
+        });
+      }
+      const payload = await loadExplorer(explorerFile);
+      const entry = payload?.windows.find((w) => w.windowSeq === seq);
+      return entry?.layout ?? null;
+    },
+    trusted,
+  );
 
-  safeHandle(
+  safeHandleWithCtx(
     'layout:write',
     LayoutSchema,
-    async (json) => {
-      // saveLayout 内部还会 LayoutSchema.parse 一次,双重保险,可接受
-      await saveLayout(layoutFile, json);
+    async (json, { event }) => {
+      const win = BrowserWindow.fromWebContents(event.sender);
+      if (!win) {
+        throw Object.assign(new Error('no window'), { code: 'NO_WINDOW' });
+      }
+      const seq = getWindowSeq(win.id);
+      if (seq == null) {
+        throw Object.assign(new Error('no window seq'), {
+          code: 'NO_WINDOW_SEQ',
+        });
+      }
+
+      await withExplorerFileMutex(async () => {
+        const payload = (await loadExplorer(explorerFile)) ?? defaultExplorerV3();
+        const entry = ensureWindowEntry(payload, seq);
+        entry.layout = LayoutSchema.parse(json);
+        await atomicWriteJson(explorerFile, payload);
+      });
     },
     trusted,
   );
@@ -53,9 +89,13 @@ export function registerIpc() {
   safeHandle('explorer:read', NoInput, () => loadExplorer(explorerFile), trusted);
   safeHandle(
     'explorer:write',
-    ExplorerSchema,
-    async (json) => {
-      await saveExplorer(explorerFile, json);
+    ExplorerWritableSnapshotSchema,
+    async (writable) => {
+      await withExplorerFileMutex(async () => {
+        const current = await loadExplorer(explorerFile);
+        const merged = mergeWritableIntoFull(current, writable);
+        await atomicWriteJson(explorerFile, merged);
+      });
     },
     trusted,
   );
