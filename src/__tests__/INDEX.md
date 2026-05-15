@@ -140,6 +140,16 @@
 - [`window-seq-allocate.spec.ts`](./dock-layout-per-window-seq/window-seq-allocate.spec.ts)
 - [`window-seq-service.spec.ts`](./dock-layout-per-window-seq/window-seq-service.spec.ts)
 
+## [dock-reconciler-windowid-filter](./dock-reconciler-windowid-filter/README.md)
+
+- [`filter-pure-fn.spec.ts`](./dock-reconciler-windowid-filter/filter-pure-fn.spec.ts)
+- [`ingress-filter.spec.ts`](./dock-reconciler-windowid-filter/ingress-filter.spec.ts)
+- [`non-finite-windowid.spec.ts`](./dock-reconciler-windowid-filter/non-finite-windowid.spec.ts)
+- [`ownership-immutability.spec.ts`](./dock-reconciler-windowid-filter/ownership-immutability.spec.ts)
+- [`runtime-guard.spec.ts`](./dock-reconciler-windowid-filter/runtime-guard.spec.ts)
+- [`single-window-noop.spec.ts`](./dock-reconciler-windowid-filter/single-window-noop.spec.ts)
+- [`warn-rate-limit.spec.ts`](./dock-reconciler-windowid-filter/warn-rate-limit.spec.ts)
+
 ## [editor-action(EditorHeader 工具按钮贡献)](./editor-action/README.md)
 
 - [`editor-action.spec.ts`](./editor-action/editor-action.spec.ts)

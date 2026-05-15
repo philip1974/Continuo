@@ -24,10 +24,17 @@ interface TerminalSession {
   readonly agentLabel?: string;            // P1 新增,agent 类型才有
   readonly createdAt: number;
   readonly exitCode: number | null;
+  readonly ownerWindowId: number;          // BrowserWindow.id,main 推入
 }
 ```
 
 形态与 main 端 `MainTerminalSession` 完全同构(直接拷贝快照)。
+`ownerWindowId` 是 renderer 镜像字段,用于窗口隔离的防御式过滤;renderer 不生成、不修正、
+不回写该字段。
+
+INV-2:`ownerWindowId` 创建后不可变。main service 主题锁定 add/getAll/removeByOwner 的 owner
+语义;renderer store 主题只保证 snapshot 被原样镜像,后续 `dock-reconciler-windowid-filter`
+主题在 ingress 处过滤异常 owner 或非法 shape。
 
 ## 关键行为
 
