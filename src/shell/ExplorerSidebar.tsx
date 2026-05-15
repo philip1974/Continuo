@@ -33,6 +33,9 @@ export function ExplorerSidebar() {
       <Explorer />
       {/* 拖拽条:右边 4px 透明带,hover 显示 sky 高光. */}
       <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="拖拽改变宽度"
         onMouseDown={startResize}
         title="拖拽改变宽度"
         className="absolute top-0 right-0 z-10 h-full w-1 cursor-col-resize bg-transparent transition-colors hover:bg-accent/40"

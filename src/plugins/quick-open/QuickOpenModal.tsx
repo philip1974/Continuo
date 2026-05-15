@@ -124,10 +124,12 @@ export function QuickOpenModal() {
               {results.length === 0 ? '工作区无文件' : '无匹配文件'}
             </div>
           ) : (
-            <ul>
+            <ul role="listbox" aria-label="文件搜索结果">
               {filtered.map((f, idx) => (
                 <li
                   key={f.absPath}
+                  role="option"
+                  aria-selected={idx === selectedIndex}
                   className={[
                     'flex cursor-pointer items-center gap-2 px-3 py-1.5 text-xs',
                     // 键盘 selectedIndex 走 active bg(深色),独立于鼠标 hover

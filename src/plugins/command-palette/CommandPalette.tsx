@@ -128,7 +128,7 @@ export function CommandPalette({ commands }: CommandPaletteProps) {
             onKeyDown={onKeyDown}
           />
         </div>
-        <ul className="max-h-[360px] overflow-y-auto py-1">
+        <ul role="listbox" aria-label="命令列表" className="max-h-[360px] overflow-y-auto py-1">
           {filtered.length === 0 ? (
             <li className="px-3 py-4 text-center text-xs text-fg-dim">
               {allCommands.length === 0 ? '暂无可用命令' : '无匹配命令'}
@@ -137,6 +137,8 @@ export function CommandPalette({ commands }: CommandPaletteProps) {
             filtered.map((cmd, idx) => (
               <li
                 key={cmd.id}
+                role="option"
+                aria-selected={idx === selectedIndex}
                 className={[
                   'flex cursor-pointer items-center gap-2 px-3 py-1.5 text-xs',
                   // selectedIndex 跟键盘走;鼠标 hover 用独立的 hover:bg-hover/50
@@ -156,8 +158,8 @@ export function CommandPalette({ commands }: CommandPaletteProps) {
                   const effective = getEffectiveHotkey(cmd);
                   return effective ? (
                     <span className="ml-auto flex shrink-0 items-center gap-0.5">
-                      {formatHotkeyParts(effective, PLATFORM).map((p, i) => (
-                        <KeyCap key={`${p}-${i}`}>{p}</KeyCap>
+                      {formatHotkeyParts(effective, PLATFORM).map((p) => (
+                        <KeyCap key={p}>{p}</KeyCap>
                       ))}
                     </span>
                   ) : null;

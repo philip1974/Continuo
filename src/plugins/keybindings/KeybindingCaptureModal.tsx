@@ -116,8 +116,8 @@ export function KeybindingCaptureModal({
           <span className="text-xs text-fg-dim">未绑定(unbound)</span>
         ) : display ? (
           <span className="flex items-center gap-1">
-            {formatHotkeyParts(display, PLATFORM).map((p, i) => (
-              <KeyCap key={`${p}-${i}`}>{p}</KeyCap>
+            {formatHotkeyParts(display, PLATFORM).map((p) => (
+              <KeyCap key={p}>{p}</KeyCap>
             ))}
           </span>
         ) : (
