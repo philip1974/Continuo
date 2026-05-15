@@ -285,7 +285,9 @@ describe('window close layout flush', () => {
     vi.useFakeTimers();
     const win = createMockMainWindow(5);
     const other = createMockMainWindow(6);
-    const handler = electronMock.ipcHandlers.get('layout:flush-ack')?.[0]!;
+    const handlers = electronMock.ipcHandlers.get('layout:flush-ack');
+    if (!handlers?.[0]) throw new Error('layout:flush-ack handler missing');
+    const handler = handlers[0];
 
     win.close();
     handler(
@@ -307,7 +309,9 @@ describe('window close layout flush', () => {
   it('T14e: untrusted frame ack is ignored', async () => {
     vi.useFakeTimers();
     const win = createMockMainWindow(5);
-    const handler = electronMock.ipcHandlers.get('layout:flush-ack')?.[0]!;
+    const handlers = electronMock.ipcHandlers.get('layout:flush-ack');
+    if (!handlers?.[0]) throw new Error('layout:flush-ack handler missing');
+    const handler = handlers[0];
 
     win.close();
     handler(
