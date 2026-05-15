@@ -14,7 +14,7 @@ import {
   type IpcWindowCreateResult,
 } from '../../shared/window-channels';
 import { createMainWindow } from '../index';
-import { nextWindowSeqFromDisk } from '../services/window.service';
+import { allocateWindowSeq } from '../persistence';
 import {
   clearWindow as clearWindowRoot,
   setWorkspaceRoot,
@@ -56,7 +56,7 @@ async function createWindowHandler(
   }
 
   const explorerFile = path.join(app.getPath('userData'), 'explorer.json');
-  const newWindowSeq = await nextWindowSeqFromDisk(explorerFile);
+  const newWindowSeq = await allocateWindowSeq(explorerFile);
   const win = createMainWindow({
     windowSeq: newWindowSeq,
     ...(input.workspace !== undefined ? { workspace: input.workspace } : {}),
