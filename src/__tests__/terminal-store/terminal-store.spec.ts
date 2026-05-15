@@ -15,6 +15,7 @@ const makeSession = (
   createdAt: 0,
   exitCode: null,
   ...overrides,
+  ownerWindowId: 1,
 });
 
 beforeEach(() => {

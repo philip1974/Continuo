@@ -39,6 +39,7 @@ function session(id: string, over: Partial<TerminalSession> = {}): TerminalSessi
     createdAt: 1,
     exitCode: null,
     ...over,
+    ownerWindowId: 1,
   };
 }
 

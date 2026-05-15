@@ -49,6 +49,17 @@ export interface GetAllFilter {
   readonly ownerWindowId: number;
 }
 
+export function assertOwnerWindowId(value: unknown): asserts value is number {
+  if (
+    typeof value !== 'number' ||
+    !Number.isFinite(value) ||
+    !Number.isInteger(value) ||
+    value < 0
+  ) {
+    throw new Error(`[terminal-sessions] invalid ownerWindowId: ${String(value)}`);
+  }
+}
+
 export type SessionsSubscriber = (
   snapshot: readonly MainTerminalSession[],
 ) => void;
@@ -81,6 +92,7 @@ function notify(): void {
 // ── public API ─────────────────────────────────────────────────
 
 export function add(input: AddSessionInput): void {
+  assertOwnerWindowId(input.ownerWindowId);
   if (sessions.has(input.id)) {
     throw Object.assign(
       new Error(`terminal session duplicate: ${input.id}`),

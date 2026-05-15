@@ -18,6 +18,7 @@ function session(
     createdAt: 1,
     exitCode: null,
     ...over,
+    ownerWindowId: 1,
   };
 }
 

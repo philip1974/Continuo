@@ -69,6 +69,7 @@ export interface PreloadTerminalSession {
   readonly scoped?: boolean;
   readonly createdAt: number;
   readonly exitCode: number | null;
+  readonly ownerWindowId: number;
   /** topic-05: agent attach hint;renderer 端 InternalTerminalPanel 据此判断接管。 */
   readonly attachTarget?:
     | { readonly kind: 'active' }
