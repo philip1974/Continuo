@@ -577,6 +577,10 @@
 
 - [`window-drop.spec.ts`](./window-drop/window-drop.spec.ts)
 
+## [window-ipc-create](./window-ipc-create/README.md)
+
+- [`window-create-handler.spec.ts`](./window-ipc-create/window-create-handler.spec.ts)
+
 ## [多窗口启动恢复(`pickWindowsToRestore`)](./window-restore/README.md)
 
 - [`window-restore.spec.ts`](./window-restore/window-restore.spec.ts)
