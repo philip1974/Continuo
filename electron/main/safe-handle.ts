@@ -48,6 +48,9 @@ export async function processIpcCall<I, O>(
     const code = typeof e.code === 'string' ? e.code : IPC_ERR.HANDLER_ERROR;
     const message =
       typeof e.message === 'string' ? e.message : String(err);
+    if (code === IPC_ERR.HANDLER_ERROR) {
+      console.error('[ipc] unhandled error in handler:', err);
+    }
     return { ok: false, code, message };
   }
 }
@@ -117,6 +120,9 @@ export async function processIpcCallWithCtx<I, O>(
     const e = err as { code?: unknown; message?: unknown };
     const code = typeof e.code === 'string' ? e.code : IPC_ERR.HANDLER_ERROR;
     const message = typeof e.message === 'string' ? e.message : String(err);
+    if (code === IPC_ERR.HANDLER_ERROR) {
+      console.error('[ipc] unhandled error in handler:', err);
+    }
     return { ok: false, code, message };
   }
 }

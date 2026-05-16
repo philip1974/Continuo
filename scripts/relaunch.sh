@@ -4,6 +4,14 @@
 # explorer.json 正常落盘。pgrep 轮询确认进程真退出,避免 builder 撞 EBUSY。
 set -euo pipefail
 
+# 锁到 .nvmrc 的 Node 版本(24),避免从默认 Node 20 shell 跑出 ABI 错配的
+# native build。electron-rebuild + node-pty prebuild 都依赖系统 Node 版本。
+if [ -s "${NVM_DIR:-$HOME/.nvm}/nvm.sh" ]; then
+  # shellcheck disable=SC1091
+  . "${NVM_DIR:-$HOME/.nvm}/nvm.sh"
+  nvm use --silent
+fi
+
 APP_NAME="Continuo"
 APP_PATH="dist-electron/mac-arm64/${APP_NAME}.app"
 
