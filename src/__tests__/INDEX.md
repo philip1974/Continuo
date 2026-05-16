@@ -6,6 +6,10 @@
 
 - [`agent-auth-prompt.spec.tsx`](./agent-auth-prompt/agent-auth-prompt.spec.tsx)
 
+## [agent-auth-service](./agent-auth-service/README.md)
+
+- [`agent-auth-service.spec.ts`](./agent-auth-service/agent-auth-service.spec.ts)
+
 ## [agent-create-as-new-panel](./agent-create-as-new-panel/README.md)
 
 - [`addpanel-position.spec.ts`](./agent-create-as-new-panel/addpanel-position.spec.ts)
