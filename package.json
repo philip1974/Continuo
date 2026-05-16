@@ -13,11 +13,11 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.test.json && tsc --noEmit -p tsconfig.e2e.json",
     "lint": "eslint . --ext .ts,.tsx",
     "format": "prettier --write .",
-    "test": "NODE_OPTIONS=--no-experimental-webstorage vitest run",
-    "test:watch": "NODE_OPTIONS=--no-experimental-webstorage vitest",
-    "test:unit": "NODE_OPTIONS=--no-experimental-webstorage vitest run --project unit",
-    "test:integration": "NODE_OPTIONS=--no-experimental-webstorage vitest run --project integration",
-    "test:contract": "NODE_OPTIONS=--no-experimental-webstorage vitest run --project contract",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:unit": "vitest run --project unit",
+    "test:integration": "vitest run --project integration",
+    "test:contract": "vitest run --project contract",
     "e2e": "playwright test",
     "e2e:headed": "playwright test --headed",
     "test:smoke": "playwright test tests/e2e/smoke.spec.ts",
@@ -89,6 +89,15 @@
     "vitest": "^2.1.8"
   },
   "engines": {
-    "node": ">=20"
+    "node": "^24"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron",
+      "electron-builder",
+      "electron-winstaller",
+      "esbuild",
+      "node-pty"
+    ]
   }
 }

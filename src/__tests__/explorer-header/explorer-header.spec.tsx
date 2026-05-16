@@ -99,7 +99,7 @@ describe('ExplorerHeader — Hover 工具条', () => {
 describe('ExplorerHeader — ⋯ 菜单', () => {
   it('默认关闭', () => {
     installFs(vi.fn());
-    const { container } = render(<ExplorerHeader root="/proj" />);
+    render(<ExplorerHeader root="/proj" />);
     expect(document.querySelector('[role=menu]')).toBeNull();
   });
 
