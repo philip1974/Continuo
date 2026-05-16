@@ -12,6 +12,17 @@ import {
   writeInputSchema,
 } from '../../../electron/main/ipc/terminal.ipc';
 
+// Op4 (topic-12): 用于 cwd 不是断言重点的 makeCreateHandler 用例.
+// 显式 cwd 断言用例 (验 createTerminal 被调时的 cwd 参数 / 验 session.cwd) 不要用此 helper.
+function makeHandlerWithDefaultCwd(
+  extraDeps: Parameters<typeof makeCreateHandler>[0] = {},
+) {
+  return makeCreateHandler({
+    ...extraDeps,
+    resolveCwd: extraDeps.resolveCwd ?? (() => '/tmp'),
+  });
+}
+
 // ────────────────────────────────────────────────────────────
 // TERMINAL_CHANNELS
 // ────────────────────────────────────────────────────────────
@@ -214,7 +225,7 @@ describe('makeCreateHandler', () => {
   it('shell 不在白名单 → 抛 TERMINAL_FORBIDDEN_SHELL', async () => {
     const service = makeService();
     const sessionStore = makeSessionStore();
-    const handler = makeCreateHandler({
+    const handler = makeHandlerWithDefaultCwd({
       service: service as never,
       sessionStore: sessionStore as never,
       generateId: () => 'x',
@@ -299,7 +310,7 @@ describe('makeCreateHandler', () => {
   it('input.name 缺省 → 调 nextDefaultTitle', async () => {
     const service = makeService();
     const sessionStore = makeSessionStore();
-    const handler = makeCreateHandler({
+    const handler = makeHandlerWithDefaultCwd({
       service: service as never,
       sessionStore: sessionStore as never,
       generateId: () => 'x',
@@ -311,7 +322,7 @@ describe('makeCreateHandler', () => {
   it('input.name 给值 → 直接用,不调 nextDefaultTitle', async () => {
     const service = makeService();
     const sessionStore = makeSessionStore();
-    const handler = makeCreateHandler({
+    const handler = makeHandlerWithDefaultCwd({
       service: service as never,
       sessionStore: sessionStore as never,
       generateId: () => 'x',
@@ -324,7 +335,7 @@ describe('makeCreateHandler', () => {
   it('originHint / agentLabel 透传(P2 MCP create_session 用)', async () => {
     const service = makeService();
     const sessionStore = makeSessionStore();
-    const handler = makeCreateHandler({
+    const handler = makeHandlerWithDefaultCwd({
       service: service as never,
       sessionStore: sessionStore as never,
       generateId: () => 'x',
@@ -343,7 +354,7 @@ describe('makeCreateHandler', () => {
   it('originHint 缺省默认 user', async () => {
     const service = makeService();
     const sessionStore = makeSessionStore();
-    const handler = makeCreateHandler({
+    const handler = makeHandlerWithDefaultCwd({
       service: service as never,
       sessionStore: sessionStore as never,
       generateId: () => 'x',
@@ -357,7 +368,7 @@ describe('makeCreateHandler', () => {
   it('sessionStore.add 入参附 ownerWindowId = win.id', async () => {
     const service = makeService();
     const sessionStore = makeSessionStore();
-    const handler = makeCreateHandler({
+    const handler = makeHandlerWithDefaultCwd({
       service: service as never,
       sessionStore: sessionStore as never,
       generateId: () => 'x',
@@ -370,7 +381,7 @@ describe('makeCreateHandler', () => {
     const service = makeService();
     const sessionStore = makeSessionStore();
     let seq = 0;
-    const handler = makeCreateHandler({
+    const handler = makeHandlerWithDefaultCwd({
       service: service as never,
       sessionStore: sessionStore as never,
       generateId: () => `id-${++seq}`,

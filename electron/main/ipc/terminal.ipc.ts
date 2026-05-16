@@ -5,7 +5,6 @@
 import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import { z } from 'zod';
 import { defaultIsTrustedFrame, processIpcCall } from '../safe-handle';
 import { TERMINAL_CHANNELS } from '../../shared/terminal-channels';
@@ -44,7 +43,7 @@ export const createInputSchema = z
   .object({
     shell: z.string().optional(),
     args: z.array(z.string()).optional(),
-    cwd: z.string().optional(),
+    cwd: z.string().min(1).optional(),
     env: z.record(z.string(), z.string()).optional(),
     // P1 metadata 真相源在 main:这些字段创建时入 sessions service。
     // P1 调用方暂只传 user 类型(MCP create_session 的 agent 类型留 P2)。
@@ -66,7 +65,7 @@ export const createInputSchema = z
      * 的过滤(renderer 侧逻辑)。未传 = 全局会话(agent 多走这条),所有
      * workspace 都可见。
      */
-    workspaceRoot: z.string().optional(),
+    workspaceRoot: z.string().min(1).optional(),
   })
   .strict();
 
@@ -168,7 +167,6 @@ export function makeCreateHandler(deps?: {
     //   3. main 端 windowId → workspaceRoot 映射(MCP agent 路径 renderer 无法
     //      显式传 cwd 时的回退;source-of-truth 是 renderer workspace.store 通过
     //      window:notify-root IPC 推送)
-    //   4. resolveCwd 兜底到 homedir
     const cwdHint =
       input.cwd ?? input.workspaceRoot ?? getWindowWorkspaceRoot(win.id) ?? undefined;
     const cwd = resolveCwd(cwdHint);
@@ -198,16 +196,21 @@ export function makeCreateHandler(deps?: {
 }
 
 export function resolveTerminalCwd(cwdHint?: string): string {
-  if (cwdHint) {
-    try {
-      if (fs.existsSync(cwdHint) && fs.statSync(cwdHint).isDirectory()) {
-        return cwdHint;
-      }
-    } catch {
-      // Fall through to a known-good shell cwd.
-    }
+  if (!cwdHint) {
+    throw Object.assign(new Error('terminal cwd unresolved (no hint)'), {
+      code: 'TERMINAL_CWD_UNRESOLVED',
+    });
   }
-  return os.homedir();
+  try {
+    if (fs.existsSync(cwdHint) && fs.statSync(cwdHint).isDirectory()) {
+      return cwdHint;
+    }
+  } catch {
+    // fall through to throw below
+  }
+  throw Object.assign(new Error(`terminal cwd invalid: ${cwdHint}`), {
+    code: 'TERMINAL_CWD_UNRESOLVED',
+  });
 }
 
 export function makeListSessionsHandler(deps?: {

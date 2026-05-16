@@ -20,6 +20,10 @@ import {
   setWorkspaceRoot,
 } from '../services/window-workspace-roots.service';
 
+function summarizePath(p: string): string {
+  return p.length > 60 ? p.slice(0, 50) + '...' : p;
+}
+
 const CreateInput = z
   .object({
     workspace: z.string().min(1).max(2048).optional(),
@@ -78,16 +82,46 @@ export function registerWindowIpc(): void {
     defaultIsTrustedFrame,
   );
   // workspace.root 变化时 renderer 推送 → main 维护 map,供 MCP agent terminal
-  // 路径 cwd 回退使用。不安全场景(root 非绝对路径等)由 renderer 侧决定,main
-  // 只接收 + 存储。
+  // 路径 cwd 回退使用。main 端做 absolute + 非空校验; renderer 不可信.
+  // 这是输入卫生 (input sanitation), 不是安全边界 — main 只存 cwd hint。
   ipcMain.handle(
     WINDOW_CHANNELS.NOTIFY_ROOT,
     (event: IpcMainInvokeEvent, raw: unknown) => {
-      const parsed = NotifyRootInput.safeParse(raw);
-      if (!parsed.success) return { ok: false as const, code: 'BAD_INPUT' };
       const win = BrowserWindow.fromWebContents(event.sender);
-      if (!win) return { ok: false as const, code: 'NO_WINDOW' };
-      setWorkspaceRoot(win.id, parsed.data.root);
+      const parsed = NotifyRootInput.safeParse(raw);
+      if (!parsed.success) {
+        console.warn(
+          '[window-ipc] notifyRoot BAD_INPUT win=%s',
+          win?.id,
+          parsed.error.issues,
+        );
+        return {
+          ok: false as const,
+          code: 'BAD_INPUT' as const,
+          message: 'invalid input shape',
+        };
+      }
+      const root = parsed.data.root;
+      if (root !== null && (root === '' || !path.isAbsolute(root))) {
+        console.warn(
+          '[window-ipc] notifyRoot BAD_ROOT win=%s root=%s',
+          win?.id,
+          summarizePath(root),
+        );
+        return {
+          ok: false as const,
+          code: 'BAD_ROOT' as const,
+          message: 'root must be absolute non-empty path',
+        };
+      }
+      if (!win) {
+        return {
+          ok: false as const,
+          code: 'NO_WINDOW' as const,
+          message: 'no browser window',
+        };
+      }
+      setWorkspaceRoot(win.id, root);
       return { ok: true as const };
     },
   );

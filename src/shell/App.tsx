@@ -45,7 +45,11 @@ function MainApp() {
   // terminal_create_session 路径 cwd 回退使用。
   const workspaceRoot = useWorkspaceStore((s) => s.root);
   useEffect(() => {
-    void coApi.window.notifyRoot(workspaceRoot ?? null);
+    coApi.window.notifyRoot(workspaceRoot ?? null).then((res) => {
+      if (!res.ok) {
+        console.warn('[App] notifyRoot rejected', res.code, workspaceRoot);
+      }
+    });
   }, [workspaceRoot]);
 
   // 拖文件夹到当前窗口 → 换 workspace(VSCode 同款,issue #23 衍生 UX)。

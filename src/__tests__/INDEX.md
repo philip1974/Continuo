@@ -581,6 +581,14 @@
 
 - [`window-restore.spec.ts`](./window-restore/window-restore.spec.ts)
 
+## [window-workspace-roots-map](./window-workspace-roots-map/README.md)
+
+- [`cwd-fallback-error.spec.ts`](./window-workspace-roots-map/cwd-fallback-error.spec.ts)
+- [`notify-root-validation.spec.ts`](./window-workspace-roots-map/notify-root-validation.spec.ts)
+- [`renderer-fail-feedback.spec.ts`](./window-workspace-roots-map/renderer-fail-feedback.spec.ts)
+- [`service.spec.ts`](./window-workspace-roots-map/service.spec.ts)
+- [`workspace-store-empty-string.spec.ts`](./window-workspace-roots-map/workspace-store-empty-string.spec.ts)
+
 ## [wrap-panel-close(dock 关闭动画拦截)](./wrap-panel-close/README.md)
 
 - [`wrap-panel-close.spec.ts`](./wrap-panel-close/wrap-panel-close.spec.ts)

@@ -73,10 +73,18 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
             : {}),
           originHint: 'user',
         });
-        if (r.ok && r.data?.id) {
-          const { setPendingFocus } = await import('@/shell/dock/DockReconciler');
-          setPendingFocus(r.data.id);
+        if (!r.ok) {
+          const msg =
+            r.code === 'TERMINAL_CWD_UNRESOLVED'
+              ? '无法新建终端: 请先打开 workspace'
+              : `无法新建终端: ${r.code ?? '未知错误'}`;
+          alert(msg);
+          setOpen(false);
+          return;
         }
+        if (!r.data?.id) return;
+        const { setPendingFocus } = await import('@/shell/dock/DockReconciler');
+        setPendingFocus(r.data.id);
         setOpen(false);
         return;
       }

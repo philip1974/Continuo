@@ -35,7 +35,15 @@ export default class TerminalPlugin extends Plugin {
           originHint: 'user',
           ...(workspaceRoot !== undefined ? { workspaceRoot } : {}),
         });
-        if (!r.ok || !r.data?.id) return;
+        if (!r.ok) {
+          const msg =
+            r.code === 'TERMINAL_CWD_UNRESOLVED'
+              ? '无法新建终端: 请先打开 workspace'
+              : `无法新建终端: ${r.code ?? '未知错误'}`;
+          alert(msg);
+          return;
+        }
+        if (!r.data?.id) return;
         const { setPendingFocus } = await import('@/shell/dock/DockReconciler');
         setPendingFocus(r.data.id);
       },

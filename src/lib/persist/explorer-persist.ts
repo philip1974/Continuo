@@ -28,7 +28,10 @@ import {
   useLayoutUiStore,
 } from '@/stores/layout-ui.store';
 import { usePinnedStore } from '@/stores/pinned.store';
-import { useWorkspaceStore } from '@/stores/workspace.store';
+import {
+  normalizeWorkspaceRoot,
+  useWorkspaceStore,
+} from '@/stores/workspace.store';
 import { debounce } from '@/lib/debounce';
 import { clampWidth } from '@/lib/use-column-resize';
 import type { IpcResult } from '../fs/types';
@@ -105,7 +108,7 @@ export interface InitExplorerPersistenceExtras {
 // ──────────────────────────────────────────────
 
 /**
- * 取 snap 中归属 windowSeq 的段;无则返 null(主窗的 hydrate 兜底用)。
+ * 取 snap 中归属 windowSeq 的段;无则返 null(主窗 hydrate 用 null 起步)。
  * Phase 2A 主窗永远用 PRIMARY_WINDOW_SEQ,Phase 2B 改成动态值。
  */
 function findWindowEntry(
@@ -131,10 +134,14 @@ export function snapshotFromStores(
     .filter((p): p is string => p !== null);
   const activeTab = ed.tabs.find((t) => t.id === ed.activeTabId);
   const activePath = activeTab?.filePath ?? null;
+  const root = normalizeWorkspaceRoot(w.root);
+  const recentRoots = w.recentRoots
+    .map(normalizeWorkspaceRoot)
+    .filter((p): p is string => p !== null);
 
   const myEntry: ExplorerWindowEntry = {
     windowSeq,
-    workspace: { root: w.root },
+    workspace: { root },
     explorer: {
       activePath: e.activePath,
       expandedPaths: [...e.expandedPaths],
@@ -154,7 +161,7 @@ export function snapshotFromStores(
 
   return {
     version: VERSION,
-    workspace: { recentRoots: [...w.recentRoots] },
+    workspace: { recentRoots },
     pinned: { paths: [...p.paths] },
     nextWindowSeq,
     windows: [...otherWindows, myEntry],
@@ -168,8 +175,10 @@ export function hydrateStores(
   const entry = findWindowEntry(snap, windowSeq);
   // 全局共享段
   useWorkspaceStore.setState({
-    root: entry?.workspace.root ?? null,
-    recentRoots: [...snap.workspace.recentRoots],
+    root: normalizeWorkspaceRoot(entry?.workspace.root ?? null),
+    recentRoots: snap.workspace.recentRoots
+      .map(normalizeWorkspaceRoot)
+      .filter((p): p is string => p !== null),
   });
   usePinnedStore.setState({
     paths: [...snap.pinned.paths],
@@ -288,14 +297,14 @@ export async function initExplorerPersistence(
       if (myEntry) {
         // 自己段已存在(重启恢复)→ 按段恢复;query workspace 忽略
         hydrateStores(r.data, windowSeq);
-      } else if (initialWorkspace) {
+      } else if (initialWorkspace !== undefined) {
         // 新窗 + query workspace → 默认 UI + workspace.root = query
         hydrateStoresForNewWindow(r.data, initialWorkspace);
       } else {
         // 新窗(本来不该走到 — main.tsx 不会缺 windowSeq + 缺 query)→ 默认
         hydrateStores(r.data, windowSeq);
       }
-    } else if (initialWorkspace) {
+    } else if (initialWorkspace !== undefined) {
       hydrateStoresForNewWindow(null, initialWorkspace);
     }
   } catch (err) {
@@ -312,7 +321,8 @@ export async function initExplorerPersistence(
   }
 
   // 同步 workspace 已 hydrate 标志 — TerminalPanel 等消费方需要这个信号才
-  // 敢拿 workspaceRoot 决策新 PTY cwd,否则 race 到 root=null → 落 ~。
+  // 敢拿 workspaceRoot 决策新 PTY cwd,否则 race 到 root=null → terminal.create 报错
+  // (TERMINAL_CWD_UNRESOLVED)。
   // 不论 read 是否成功(包含没有 explorer.json 的首次启动)都置 true。
   useWorkspaceStore.getState().markHydrated();
 
@@ -349,8 +359,12 @@ function hydrateStoresForNewWindow(
   initialWorkspace: string,
 ): void {
   useWorkspaceStore.setState({
-    root: initialWorkspace,
-    recentRoots: snap ? [...snap.workspace.recentRoots] : [],
+    root: normalizeWorkspaceRoot(initialWorkspace),
+    recentRoots: snap
+      ? snap.workspace.recentRoots
+          .map(normalizeWorkspaceRoot)
+          .filter((p): p is string => p !== null)
+      : [],
   });
   // 主窗段的 sort 拿来当默认(同项目两窗口偏好排序应一致),无则 by:name
   const primary = snap ? findWindowEntry(snap, PRIMARY_WINDOW_SEQ) : null;
