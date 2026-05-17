@@ -24,6 +24,7 @@ import { captureLmApi, coApi } from './lib/co-api';
 import { useUpdateStore } from './marketplace/update-store';
 import { useReviewsStore } from './marketplace/reviews-store';
 import { breadcrumb, probeCssLoaded } from './lib/diagnostics/breadcrumb';
+import { startRafHeartbeat } from './lib/diagnostics/raf-heartbeat';
 import './styles/tailwind.css';
 
 // Phase 4.B:**最早**调,把 window.api 缓存到 module-local。
@@ -144,6 +145,9 @@ breadcrumb({
   search,
   cssLoaded: probeCssLoaded(),
 });
+
+// issue #34:运行时绘制层心跳。rAF 缺漏 = paint pipeline 挂 → 直接二分根因层。
+startRafHeartbeat();
 
 createRoot(container).render(
   <React.StrictMode>

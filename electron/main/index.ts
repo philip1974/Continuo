@@ -62,6 +62,16 @@ const isDev = !app.isPackaged;
 const PRELOAD = path.join(__dirname, '../preload/index.cjs');
 const RENDERER_FILE = path.join(__dirname, '../renderer/index.html');
 
+// issue #34 实验开关:env CONTINUO_DISABLE_HW=1 切软件渲染,对照验证 GPU 合成层假设。
+// 必须在 app.ready 之前调,故置于顶层模块初始化路径。
+if (process.env.CONTINUO_DISABLE_HW === '1') {
+  app.disableHardwareAcceleration();
+  // 写不到 breadcrumb(app 未 ready),用 stderr。
+  console.warn(
+    '[issue#34] CONTINUO_DISABLE_HW=1 — hardware acceleration disabled',
+  );
+}
+
 // dev 与 packaged Continuo.app 必须用不同 userData,否则:
 // (a) requestSingleInstanceLock 互踩 → 后启动的 quit;
 // (b) <userData>/mcp.sock 会被后者 unlink,冲掉前者正在监听的 socket;
@@ -76,6 +86,11 @@ const COMMON_WEB_PREFERENCES = {
   contextIsolation: true,
   sandbox: true,
   nodeIntegration: false,
+  // issue #34:Chromium 在 macOS 上偶发把窗口误判为"不可见",触发 backgroundThrottling
+  // 暂停 rAF 与 paint 后永久不退出 → 屏幕静止但 main heartbeat 正常。Continuo 是 IDE 类
+  // 应用,窗口永远应保持 paint,关掉节流。决定性证据来自 B2 探针:
+  // main heartbeat 30s 间隔完美,rAF 在 5min 后 fire 间隔从 30s 暴涨到 75s 后完全停。
+  backgroundThrottling: false,
 } as const;
 
 const LRU_MAX_CLOSED = Infinity;
@@ -253,6 +268,15 @@ app.on('web-contents-created', (_evt, contents) => {
       url,
       isPopout: url.includes('popout=1'),
     });
+  });
+
+  // issue #34:renderer 主线程长时间不响应 → Chromium 触发 'unresponsive'。
+  // 与 render_frame_heartbeat 配对:rAF 停但 unresponsive 不触发 = OS 侧丢 frame。
+  contents.on('unresponsive', () => {
+    breadcrumb({ event: 'renderer_unresponsive', windowId: contents.id });
+  });
+  contents.on('responsive', () => {
+    breadcrumb({ event: 'renderer_responsive', windowId: contents.id });
   });
 });
 
