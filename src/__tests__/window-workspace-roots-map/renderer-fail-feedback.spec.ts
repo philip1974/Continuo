@@ -16,6 +16,12 @@ const mocks = vi.hoisted(() => ({
       factory: vi.fn(),
     },
   ],
+  notify: {
+    error: vi.fn(),
+    warn: vi.fn(),
+    info: vi.fn(),
+    success: vi.fn(),
+  },
 }));
 
 vi.mock('@/lib/co-api', () => ({
@@ -25,6 +31,18 @@ vi.mock('@/lib/co-api', () => ({
       create: mocks.createTerminal,
     },
   },
+}));
+
+vi.mock('@/notifications/notify', () => ({
+  notify: Object.assign(
+    (...args: unknown[]) => mocks.notify.error(...args),
+    {
+      error: mocks.notify.error,
+      warn: mocks.notify.warn,
+      info: mocks.notify.info,
+      success: mocks.notify.success,
+    },
+  ),
 }));
 
 vi.mock('@/stores/workspace.store', () => ({
@@ -130,6 +148,10 @@ afterEach(() => {
   mocks.createTerminal.mockReset();
   mocks.getWorkspaceState.mockReset();
   mocks.getWorkspaceState.mockReturnValue({ root: null });
+  mocks.notify.error.mockReset();
+  mocks.notify.warn.mockReset();
+  mocks.notify.info.mockReset();
+  mocks.notify.success.mockReset();
 });
 
 describe('window-workspace-roots-map: renderer terminal create failure feedback', () => {
@@ -138,12 +160,11 @@ describe('window-workspace-roots-map: renderer terminal create failure feedback'
       ok: false,
       code: 'TERMINAL_CWD_UNRESOLVED',
     });
-    const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
 
     await terminalCommand().fn();
 
-    expect(alert).toHaveBeenCalledOnce();
-    expect(alert.mock.calls[0]?.[0]).toContain('请先打开 workspace');
+    expect(mocks.notify.error).toHaveBeenCalledOnce();
+    expect(mocks.notify.error.mock.calls[0]?.[0]).toContain('请先打开 workspace');
   });
 
   it('T20: TerminalPlugin Cmd+T shows generic terminal create error code', async () => {
@@ -151,11 +172,13 @@ describe('window-workspace-roots-map: renderer terminal create failure feedback'
       ok: false,
       code: 'OTHER_ERROR',
     });
-    const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
 
     await terminalCommand().fn();
 
-    expect(alert).toHaveBeenCalledWith('无法新建终端: OTHER_ERROR');
+    expect(mocks.notify.error).toHaveBeenCalledWith(
+      '无法新建终端: OTHER_ERROR',
+      expect.objectContaining({ code: 'OTHER_ERROR' }),
+    );
   });
 
   it('T21: HeaderActions terminal menu shows workspace guidance for unresolved cwd', async () => {
@@ -163,7 +186,6 @@ describe('window-workspace-roots-map: renderer terminal create failure feedback'
       ok: false,
       code: 'TERMINAL_CWD_UNRESOLVED',
     });
-    const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
     const { getByRole } = renderHeaderActions();
 
     fireEvent.click(getByRole('button', { name: 'More actions' }));
@@ -173,8 +195,8 @@ describe('window-workspace-roots-map: renderer terminal create failure feedback'
     fireEvent.click(terminalItem);
 
     await waitFor(() => {
-      expect(alert).toHaveBeenCalledOnce();
+      expect(mocks.notify.error).toHaveBeenCalledOnce();
     });
-    expect(alert.mock.calls[0]?.[0]).toContain('请先打开 workspace');
+    expect(mocks.notify.error.mock.calls[0]?.[0]).toContain('请先打开 workspace');
   });
 });
