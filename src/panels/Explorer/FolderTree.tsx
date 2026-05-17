@@ -25,6 +25,7 @@ import { useEditorFile } from '@/panels/Editor/useEditorFile';
 import { useEditorStore } from '@/stores/editor.store';
 import { useExplorerStore } from '@/stores/explorer.store';
 import { coApi } from '@/lib/co-api';
+import { notify } from '@/notifications/notify';
 import { getCachedClipboard } from '@/plugins/sandbox-sweep';
 import { useSettingValue } from '@/plugins/settings/values-store';
 import { useTheme } from '@/theme';
@@ -105,7 +106,7 @@ export function FolderTree({ root }: { root: string }) {
               { invalidateChildrenIds: refreshParent },
             );
             if (!r.ok) {
-              alert(`重命名失败:[${r.code}] ${r.message}`);
+              notify.error(r.message, { code: r.code });
               return;
             }
             // 同步打开的 editor tab 路径(目录 rename 时其下所有 tab 也会前缀 rewrite)
@@ -123,7 +124,10 @@ export function FolderTree({ root }: { root: string }) {
               const r = await coApi.fs.move(src, dest);
               if (!r.ok) {
                 console.warn('[explorer] drop move failed', src, r.code, r.message);
-                alert(`移动失败:${src}\n[${r.code}] ${r.message}`);
+                notify.error(`移动失败: ${src}: ${r.message}`, {
+                  code: r.code,
+                  mirror: false,
+                });
                 return;
               }
               useEditorStore.getState().renamePath(src, dest);
@@ -152,7 +156,7 @@ export function FolderTree({ root }: { root: string }) {
                   r.failed.map((f) => `  ${f.name}: [${f.code}] ${f.message}`).join('\n'),
               );
             }
-            if (msgs.length > 0) alert(msgs.join('\n\n'));
+            msgs.forEach((m) => notify.error(m));
           })();
         },
         expandedItems,
@@ -273,7 +277,7 @@ export function FolderTree({ root }: { root: string }) {
         });
         if (!r.ok) {
           console.warn('[explorer] open in terminal failed', r.code, r.message);
-          alert(`新建终端失败:[${r.code}] ${r.message}`);
+          notify.error(r.message, { code: r.code, mirror: false });
           return;
         }
         // 动态 import dock-api-ref 防早期加载循环
@@ -287,7 +291,10 @@ export function FolderTree({ root }: { root: string }) {
           const r = await coApi.fs.trash(p);
           if (!r.ok) {
             console.warn('[explorer] trash failed', p, r.code, r.message);
-            alert(`移到废纸篓失败:${p}\n[${r.code}] ${r.message}`);
+            notify.error(`移到废纸篓失败: ${p}: ${r.message}`, {
+              code: r.code,
+              mirror: false,
+            });
             return;
           }
           // 文件删除 → 关闭对应 editor tab(目录则关其下所有 tab)
@@ -314,7 +321,10 @@ export function FolderTree({ root }: { root: string }) {
               : await coApi.fs.copy(src, dest);
           if (!r.ok) {
             console.warn(`[explorer] paste(${kind}) failed`, src, r.code, r.message);
-            alert(`粘贴失败:${src}\n[${r.code}] ${r.message}`);
+            notify.error(`粘贴失败: ${src}: ${r.message}`, {
+              code: r.code,
+              mirror: false,
+            });
             return;
           }
           // cut = move:同步 editor tab 路径(目录则前缀 rewrite 全部子 tab)
@@ -372,7 +382,7 @@ export function FolderTree({ root }: { root: string }) {
     setCreating(null);
     const action = type === 'dir' ? createNewDir : createNewFile;
     const r = await action(parentDir, name, mutateDeps, treeApi);
-    if (!r.ok) alert(`新建失败:[${r.code}] ${r.message}`);
+    if (!r.ok) notify.error(r.message, { code: r.code });
   };
 
   // ── Drop 上传(Step 5d) ───────────────────────────────────────
@@ -423,7 +433,10 @@ export function FolderTree({ root }: { root: string }) {
         const r = await coApi.fs.move(src, dest);
         if (!r.ok) {
           console.warn('[explorer] root drop move failed', src, r.code, r.message);
-          alert(`移动失败:${src}\n[${r.code}] ${r.message}`);
+          notify.error(`移动失败: ${src}: ${r.message}`, {
+            code: r.code,
+            mirror: false,
+          });
           return;
         }
         useEditorStore.getState().renamePath(src, dest);
@@ -455,7 +468,7 @@ export function FolderTree({ root }: { root: string }) {
           r.failed.map((f) => `  ${f.name}: [${f.code}] ${f.message}`).join('\n'),
       );
     }
-    if (msgs.length > 0) alert(msgs.join('\n\n'));
+    msgs.forEach((m) => notify.error(m));
   };
 
   return (

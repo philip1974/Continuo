@@ -2,6 +2,7 @@ import { useCallback, useEffect } from 'react';
 import type { IDockviewPanelProps } from 'dockview-react';
 import { Button, IconButton } from '@/design';
 import { coApi } from '@/lib/co-api';
+import { notify } from '@/notifications/notify';
 import {
   filterByOwnerWindow,
   useTerminalStore,
@@ -109,7 +110,7 @@ function LegacyTerminalPanel() {
     });
     if (!r.ok) {
       console.warn('[terminal] create failed:', r.code, r.message);
-      alert(`新建终端失败:[${r.code}] ${r.message}`);
+      notify.error(r.message, { code: r.code, mirror: false });
       return;
     }
     setActive(r.data.id);

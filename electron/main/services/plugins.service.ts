@@ -8,6 +8,7 @@ import type {
   IpcPermissionsMap,
   IpcPluginDir,
 } from '../../shared/plugins-channels';
+import { ERROR_CODES } from '../../shared/error-codes';
 
 function isAbsolutePathLike(value: string): boolean {
   return (
@@ -191,7 +192,7 @@ export async function uninstallPlugin(
 ): Promise<void> {
   if (!PLUGIN_ID_RE.test(id)) {
     throw Object.assign(new Error(`非法 plugin id: ${id}`), {
-      code: 'INVALID_ID',
+      code: ERROR_CODES.INVALID_ID,
     });
   }
   const targetDir = path.join(baseDir, id);
@@ -199,7 +200,7 @@ export async function uninstallPlugin(
     await fs.access(targetDir);
   } catch {
     throw Object.assign(new Error(`插件未安装: ${id}`), {
-      code: 'NOT_INSTALLED',
+      code: ERROR_CODES.NOT_INSTALLED,
     });
   }
   try {
@@ -207,7 +208,7 @@ export async function uninstallPlugin(
   } catch (err) {
     throw Object.assign(
       new Error(`删除失败: ${err instanceof Error ? err.message : String(err)}`),
-      { code: 'RM_FAILED' },
+      { code: ERROR_CODES.RM_FAILED },
     );
   }
 
@@ -247,7 +248,7 @@ export async function installFromGit(
 ): Promise<InstallFromGitResult> {
   if (!GIT_URL_RE.test(gitUrl)) {
     throw Object.assign(new Error(`不支持的 git URL: ${gitUrl}`), {
-      code: 'BAD_URL',
+      code: ERROR_CODES.BAD_URL,
     });
   }
   const tmpRoot = await mkdtemp(path.join(tmpdir(), 'lm-plugin-install-'));
@@ -265,7 +266,7 @@ export async function installFromGit(
     } catch {
       throw Object.assign(
         new Error('clone 目录缺 manifest.json 或解析失败'),
-        { code: 'BAD_MANIFEST' },
+        { code: ERROR_CODES.BAD_MANIFEST },
       );
     }
     if (
@@ -276,7 +277,7 @@ export async function installFromGit(
     ) {
       throw Object.assign(
         new Error('manifest.json 缺必填 id/name/version 或 id 含非法字符'),
-        { code: 'BAD_MANIFEST' },
+        { code: ERROR_CODES.BAD_MANIFEST },
       );
     }
 
@@ -287,14 +288,14 @@ export async function installFromGit(
     const mainPath = resolvePluginMainPath(cloneDir, mainName);
     if (!mainPath) {
       throw Object.assign(new Error(`main 入口非法: ${mainName}`), {
-        code: 'BAD_MAIN',
+        code: ERROR_CODES.BAD_MAIN,
       });
     }
     try {
       await fs.access(mainPath);
     } catch {
       throw Object.assign(new Error(`main 入口不存在: ${mainName}`), {
-        code: 'BAD_MAIN',
+        code: ERROR_CODES.BAD_MAIN,
       });
     }
 
@@ -309,7 +310,7 @@ export async function installFromGit(
     if (targetExists) {
       throw Object.assign(
         new Error(`插件 ${manifest.id} 已安装,卸载后再装`),
-        { code: 'EEXIST' },
+        { code: ERROR_CODES.EEXIST },
       );
     }
 
@@ -344,7 +345,7 @@ function runGit(args: readonly string[]): Promise<void> {
     child.on('error', (err) =>
       reject(
         Object.assign(new Error(`git spawn 失败: ${err.message}`), {
-          code: 'GIT_SPAWN_FAILED',
+          code: ERROR_CODES.GIT_SPAWN_FAILED,
         }),
       ),
     );
@@ -354,7 +355,7 @@ function runGit(args: readonly string[]): Promise<void> {
         reject(
           Object.assign(
             new Error(`git ${args[0]} exit ${code}: ${stderr.trim()}`),
-            { code: 'GIT_FAILED' },
+            { code: ERROR_CODES.GIT_FAILED },
           ),
         );
     });

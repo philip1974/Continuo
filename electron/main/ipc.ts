@@ -19,6 +19,7 @@ import { registerPluginsIpc } from './ipc/plugins.ipc';
 import { registerShellIpc } from './ipc/shell.ipc';
 import { registerWindowIpc } from './ipc/window.ipc';
 import { AGENT_AUTH_CHANNELS } from '../shared/agent-auth-channels';
+import { ERROR_CODES } from '../shared/error-codes';
 import {
   resolveAgentAuthRequest,
   revokeAndKillAgentSessions,
@@ -45,12 +46,12 @@ export function registerIpc() {
     async (_input, { event }) => {
       const win = BrowserWindow.fromWebContents(event.sender);
       if (!win) {
-        throw Object.assign(new Error('no window'), { code: 'NO_WINDOW' });
+        throw Object.assign(new Error('no window'), { code: ERROR_CODES.NO_WINDOW });
       }
       const seq = getWindowSeq(win.id);
       if (seq == null) {
         throw Object.assign(new Error('no window seq'), {
-          code: 'NO_WINDOW_SEQ',
+          code: ERROR_CODES.NO_WINDOW_SEQ,
         });
       }
       const payload = await loadExplorer(explorerFile);
@@ -66,12 +67,12 @@ export function registerIpc() {
     async (json, { event }) => {
       const win = BrowserWindow.fromWebContents(event.sender);
       if (!win) {
-        throw Object.assign(new Error('no window'), { code: 'NO_WINDOW' });
+        throw Object.assign(new Error('no window'), { code: ERROR_CODES.NO_WINDOW });
       }
       const seq = getWindowSeq(win.id);
       if (seq == null) {
         throw Object.assign(new Error('no window seq'), {
-          code: 'NO_WINDOW_SEQ',
+          code: ERROR_CODES.NO_WINDOW_SEQ,
         });
       }
 
@@ -106,7 +107,7 @@ export function registerIpc() {
     PopoutOpenInput,
     () => {
       throw Object.assign(new Error('popout:open not implemented yet (M5)'), {
-        code: 'POPOUT_NOT_IMPLEMENTED',
+        code: ERROR_CODES.POPOUT_NOT_IMPLEMENTED,
       });
     },
     trusted,

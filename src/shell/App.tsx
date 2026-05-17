@@ -22,6 +22,9 @@ import { coApi } from '@/lib/co-api';
 import { isPopoutWindow } from '@/lib/popout-mode';
 import { pickDroppedDirectory } from '@/lib/window-drop';
 import { useWorkspaceStore } from '@/stores/workspace.store';
+import { NotificationsProvider } from '@/notifications/NotificationsProvider';
+import { NotifyIpcBridge } from '@/notifications/NotifyIpcBridge';
+import { ToastViewport } from '@/notifications/ToastViewport';
 
 const SPLASH_MIN_MS = 600;
 
@@ -123,9 +126,13 @@ export function App() {
   return (
     <ThemeProvider>
       <ThemeBinder />
-      <MotionConfig reducedMotion="user">
-        {isPopoutWindow() ? <PopoutHost /> : <MainApp />}
-      </MotionConfig>
+      <NotificationsProvider>
+        <NotifyIpcBridge />
+        <ToastViewport />
+        <MotionConfig reducedMotion="user">
+          {isPopoutWindow() ? <PopoutHost /> : <MainApp />}
+        </MotionConfig>
+      </NotificationsProvider>
     </ThemeProvider>
   );
 }

@@ -5,7 +5,9 @@ import { isPopoutWindow, popoutUrlFor } from '@/lib/popout-mode';
 import { IconButton, MenuItem } from '@/design';
 import { coApp } from '@/plugins/co-app';
 import { coApi } from '@/lib/co-api';
+import { notify } from '@/notifications/notify';
 import { useWorkspaceStore } from '@/stores/workspace.store';
+import { ERROR_CODES } from '../../../electron/shared/error-codes';
 
 let panelCounter = 0;
 const nextPanelId = (key: string) => `${key}-${++panelCounter}`;
@@ -75,10 +77,10 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
         });
         if (!r.ok) {
           const msg =
-            r.code === 'TERMINAL_CWD_UNRESOLVED'
+            r.code === ERROR_CODES.TERMINAL_CWD_UNRESOLVED
               ? '无法新建终端: 请先打开 workspace'
               : `无法新建终端: ${r.code ?? '未知错误'}`;
-          alert(msg);
+          notify.error(msg, { code: r.code });
           setOpen(false);
           return;
         }

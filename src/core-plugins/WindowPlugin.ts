@@ -3,6 +3,7 @@
 
 import { Plugin } from '@/plugins/Plugin';
 import { coApi } from '@/lib/co-api';
+import { notify } from '@/notifications/notify';
 
 export default class WindowPlugin extends Plugin {
   onload(): void {
@@ -16,7 +17,7 @@ export default class WindowPlugin extends Plugin {
         const r = await coApi.window.create({});
         if (!r.ok) {
           console.warn('[window.new] create failed', r.code, r.message);
-          alert(`新建窗口失败:[${r.code}] ${r.message}`);
+          notify.error(r.message, { code: r.code, mirror: false });
         }
       },
     });
@@ -40,7 +41,7 @@ export default class WindowPlugin extends Plugin {
             cr.code,
             cr.message,
           );
-          alert(`新建窗口失败:[${cr.code}] ${cr.message}`);
+          notify.error(cr.message, { code: cr.code });
         }
       },
     });

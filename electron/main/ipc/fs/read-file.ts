@@ -1,4 +1,5 @@
 import { lstat, readFile as fspReadFile } from 'node:fs/promises';
+import { ERROR_CODES } from '../../../shared/error-codes';
 import { fsError, mapNodeErrnoCode } from './path-utils';
 
 export async function readFile(filePath: string): Promise<string> {
@@ -9,7 +10,7 @@ export async function readFile(filePath: string): Promise<string> {
     throw fsError(mapNodeErrnoCode(err), `lstat failed: ${filePath}`);
   }
   if (st.isDirectory()) {
-    throw fsError('FS_NOT_FILE', `not a file: ${filePath}`);
+    throw fsError(ERROR_CODES.FS_NOT_FILE, `not a file: ${filePath}`);
   }
   try {
     return await fspReadFile(filePath, 'utf-8');

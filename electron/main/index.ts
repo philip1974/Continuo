@@ -28,6 +28,7 @@ import {
 import { withExplorerFileMutex } from './lib/file-mutex';
 import { atomicWriteJson } from './lib/atomic-write';
 import { PLUGINS_CHANNELS } from '../shared/plugins-channels';
+import { ERROR_CODES } from '../shared/error-codes';
 import {
   createMcpHost,
   setMcpRevokers,
@@ -419,7 +420,7 @@ async function createSessionForAgent(
   const win = BrowserWindow.fromId(ctx.ownerWindowId);
   if (!win || win.isDestroyed()) {
     throw Object.assign(new Error('no window for terminal create'), {
-      code: 'TERMINAL_NO_WINDOW',
+      code: ERROR_CODES.TERMINAL_NO_WINDOW,
     });
   }
   const r = await ptyCreateHandler(input, win);

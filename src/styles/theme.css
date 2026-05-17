@@ -100,6 +100,8 @@
   --color-error: var(--md-error);
   --color-on-error: var(--md-on-error);
   --color-warning: var(--md-warning);
+  --color-success: var(--md-success);
+  --color-info: var(--md-info);
 
   /* 字号补漏:wm-text-2xs(10px)暴露成 Tailwind utility text-2xs,
    * 消灭组件里散落的 ~44 处 text-[10px] arbitrary value。

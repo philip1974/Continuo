@@ -1,6 +1,7 @@
 import { lstat, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import type { FileEntry } from '../../../shared/fs-entry';
+import { ERROR_CODES } from '../../../shared/error-codes';
 import { fsError, mapNodeErrnoCode } from './path-utils';
 
 const MAX_DEPTH_HARD_LIMIT = 10;
@@ -46,7 +47,7 @@ export async function listDir(
     throw fsError(mapNodeErrnoCode(err), `stat failed: ${dirPath}`);
   }
   if (!rootStat.isDirectory()) {
-    throw fsError('FS_NOT_DIRECTORY', `not a directory: ${dirPath}`);
+    throw fsError(ERROR_CODES.FS_NOT_DIRECTORY, `not a directory: ${dirPath}`);
   }
 
   return walk(dirPath, 1, maxDepth, exclude, followSymlinks);

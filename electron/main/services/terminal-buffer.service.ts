@@ -4,6 +4,8 @@
 //
 // BDD: src/__tests__/agent-terminal-mcp-buffer/
 
+import { ERROR_CODES } from '../../shared/error-codes';
+
 const DEFAULT_CAPACITY = 8000;
 const DEFAULT_MAX_LINES = 200;
 
@@ -48,7 +50,7 @@ export interface ReadResult {
 
 const ERR_NOT_FOUND = (id: string) =>
   Object.assign(new Error(`buffer session not found: ${id}`), {
-    code: 'BUFFER_SESSION_NOT_FOUND',
+    code: ERROR_CODES.BUFFER_SESSION_NOT_FOUND,
   });
 
 export function ensure(id: string, capacity: number = DEFAULT_CAPACITY): void {

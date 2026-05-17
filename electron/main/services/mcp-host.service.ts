@@ -18,6 +18,7 @@ import {
   type Server as HttpServer,
 } from 'node:http';
 import type { z } from 'zod';
+import { ERROR_CODES } from '../../shared/error-codes';
 
 // ── 常量 ────────────────────────────────────────────────────────
 
@@ -370,7 +371,7 @@ async function readBody(req: IncomingMessage): Promise<string> {
     req.on('data', (chunk: Buffer) => {
       total += chunk.length;
       if (total > MAX_BODY_BYTES) {
-        reject(Object.assign(new Error('body too large'), { code: 'PAYLOAD_TOO_LARGE' }));
+        reject(Object.assign(new Error('body too large'), { code: ERROR_CODES.PAYLOAD_TOO_LARGE }));
         req.destroy();
         return;
       }
@@ -393,7 +394,7 @@ export async function createMcpHost(
   const bindAddr = options.bindAddr ?? '127.0.0.1';
   if (!isLocalhostBindAddr(bindAddr)) {
     throw Object.assign(new Error(`MCP host bind forbidden: ${bindAddr}`), {
-      code: 'MCP_HOST_BIND_FORBIDDEN',
+      code: ERROR_CODES.MCP_HOST_BIND_FORBIDDEN,
     });
   }
 

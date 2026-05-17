@@ -35,6 +35,7 @@ import {
   type KillInput,
   type KillOutput,
 } from '../../shared/mcp-terminal-schemas';
+import { ERROR_CODES } from '../../shared/error-codes';
 import type { McpCallCtx, McpToolDef } from './mcp-host.service';
 
 // ── 输入侧的 store 形态(handler 期望的字段) ────────────────────
@@ -175,7 +176,7 @@ export function makeCreateSessionTool(
       if (decision === 'denied') {
         throw Object.assign(
           new Error('agent terminal not authorized by user'),
-          { code: 'AGENT_NOT_AUTHORIZED' },
+          { code: ERROR_CODES.AGENT_NOT_AUTHORIZED },
         );
       }
       const ptyInput: CreateSessionPtyInput = {
@@ -222,7 +223,7 @@ export function preparePtyData(raw: string): string {
 
 const ERR_TERMINAL_SESSION_NOT_FOUND = (id: string) =>
   Object.assign(new Error(`terminal session not found: ${id}`), {
-    code: 'TERMINAL_SESSION_NOT_FOUND',
+    code: ERROR_CODES.TERMINAL_SESSION_NOT_FOUND,
   });
 
 function assertSessionInCurrentWindow(

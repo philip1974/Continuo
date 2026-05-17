@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { defaultIsTrustedFrame, processIpcCall } from '../safe-handle';
 import { TERMINAL_CHANNELS } from '../../shared/terminal-channels';
 import { getDefaultShell, isAllowedShell } from '../../shared/terminal-shells';
+import { ERROR_CODES } from '../../shared/error-codes';
 import * as termService from '../services/terminal.service';
 import * as terminalSessions from '../services/terminal-sessions.service';
 import * as terminalBuffer from '../services/terminal-buffer.service';
@@ -116,14 +117,14 @@ export type AttachRejectedInput = z.infer<typeof attachRejectedInputSchema>;
 
 const ERR_NOT_FOUND = (id: string) =>
   Object.assign(new Error(`terminal not found: ${id}`), {
-    code: 'TERMINAL_NOT_FOUND',
+    code: ERROR_CODES.TERMINAL_NOT_FOUND,
   });
 
 function senderWindowOrThrow(event: IpcMainInvokeEvent): BrowserWindow {
   const win = BrowserWindow.fromWebContents(event.sender);
   if (!win) {
     throw Object.assign(new Error('no browser window'), {
-      code: 'TERMINAL_NO_WINDOW',
+      code: ERROR_CODES.TERMINAL_NO_WINDOW,
     });
   }
   return win;
@@ -158,7 +159,7 @@ export function makeCreateHandler(deps?: {
     const shell = input.shell ?? getDefaultShell();
     if (!isAllowedShell(shell)) {
       throw Object.assign(new Error(`shell not in allowlist: ${shell}`), {
-        code: 'TERMINAL_FORBIDDEN_SHELL',
+        code: ERROR_CODES.TERMINAL_FORBIDDEN_SHELL,
       });
     }
     // cwd 解析优先级:
@@ -198,7 +199,7 @@ export function makeCreateHandler(deps?: {
 export function resolveTerminalCwd(cwdHint?: string): string {
   if (!cwdHint) {
     throw Object.assign(new Error('terminal cwd unresolved (no hint)'), {
-      code: 'TERMINAL_CWD_UNRESOLVED',
+      code: ERROR_CODES.TERMINAL_CWD_UNRESOLVED,
     });
   }
   try {
@@ -209,7 +210,7 @@ export function resolveTerminalCwd(cwdHint?: string): string {
     // fall through to throw below
   }
   throw Object.assign(new Error(`terminal cwd invalid: ${cwdHint}`), {
-    code: 'TERMINAL_CWD_UNRESOLVED',
+    code: ERROR_CODES.TERMINAL_CWD_UNRESOLVED,
   });
 }
 

@@ -32,6 +32,8 @@ import {
   type IpcWindowCreateInput,
   type IpcWindowCreateResult,
 } from '../shared/window-channels';
+import { NOTIFY_CHANNELS } from '../shared/notify-channels';
+import type { NotifyPushPayload } from '../shared/notify-channels';
 
 // terminal create 入参的轻量类型(与 main 端 zod schema 对齐)
 // export 是为了 ContinuoApi 跨 module 引用时 TS 能 name 这些类型
@@ -345,6 +347,18 @@ const api = {
     /** 撤销 session 授权 + 终止全部 agent terminal(状态栏按钮触发). */
     revoke: (): Promise<IpcResult<{ killed: number; rotated: boolean }>> =>
       ipcRenderer.invoke(AGENT_AUTH_CHANNELS.REVOKE, {}),
+  },
+  notify: {
+    /**
+     * 订阅主进程 push 通知;返回 unsubscribe 函数。
+     * 调用方:NotifyIpcBridge(src/notifications/NotifyIpcBridge.tsx,Op11 创建)。
+     */
+    onPush(listener: (payload: NotifyPushPayload) => void): () => void {
+      const wrapped = (_evt: unknown, payload: NotifyPushPayload) =>
+        listener(payload);
+      ipcRenderer.on(NOTIFY_CHANNELS.PUSH, wrapped);
+      return () => ipcRenderer.removeListener(NOTIFY_CHANNELS.PUSH, wrapped);
+    },
   },
   mcp: {
     /** 拿当前 stdio MCP 配置(状态栏"复制 MCP 配置"按钮用). */

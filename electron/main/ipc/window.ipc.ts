@@ -13,6 +13,7 @@ import {
   type IpcWindowCreateInput,
   type IpcWindowCreateResult,
 } from '../../shared/window-channels';
+import { ERROR_CODES } from '../../shared/error-codes';
 import { createMainWindow } from '../index';
 import { allocateWindowSeq } from '../persistence';
 import {
@@ -39,7 +40,7 @@ async function createWindowHandler(
     if (!path.isAbsolute(input.workspace)) {
       throw Object.assign(
         new Error(`workspace must be absolute path: ${input.workspace}`),
-        { code: 'WORKSPACE_NOT_ABSOLUTE' },
+        { code: ERROR_CODES.WORKSPACE_NOT_ABSOLUTE },
       );
     }
     let stat;
@@ -48,13 +49,13 @@ async function createWindowHandler(
     } catch {
       throw Object.assign(
         new Error(`workspace not found: ${input.workspace}`),
-        { code: 'WORKSPACE_NOT_FOUND' },
+        { code: ERROR_CODES.WORKSPACE_NOT_FOUND },
       );
     }
     if (!stat.isDirectory()) {
       throw Object.assign(
         new Error(`workspace not a directory: ${input.workspace}`),
-        { code: 'WORKSPACE_NOT_DIRECTORY' },
+        { code: ERROR_CODES.WORKSPACE_NOT_DIRECTORY },
       );
     }
   }
@@ -97,7 +98,7 @@ export function registerWindowIpc(): void {
         );
         return {
           ok: false as const,
-          code: 'BAD_INPUT' as const,
+          code: ERROR_CODES.BAD_INPUT,
           message: 'invalid input shape',
         };
       }
@@ -110,14 +111,14 @@ export function registerWindowIpc(): void {
         );
         return {
           ok: false as const,
-          code: 'BAD_ROOT' as const,
+          code: ERROR_CODES.BAD_ROOT,
           message: 'root must be absolute non-empty path',
         };
       }
       if (!win) {
         return {
           ok: false as const,
-          code: 'NO_WINDOW' as const,
+          code: ERROR_CODES.NO_WINDOW,
           message: 'no browser window',
         };
       }

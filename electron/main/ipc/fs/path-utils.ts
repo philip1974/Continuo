@@ -1,4 +1,6 @@
 import path from 'node:path';
+import { ERROR_CODES } from '../../../shared/error-codes';
+import type { FsErrorCode } from '../../../shared/error-codes';
 
 /**
  * 路径规范化:相对 → 绝对,解析 ../ 防遍历。
@@ -16,22 +18,22 @@ export function fsError(code: string, message: string): Error & { code: string }
 }
 
 /** 把 node fs 抛的 errno code 映射到我们的业务 code。 */
-export function mapNodeErrnoCode(err: unknown): string {
+export function mapNodeErrnoCode(err: unknown): FsErrorCode {
   const e = err as { code?: string };
   switch (e.code) {
     case 'ENOENT':
-      return 'FS_NOT_FOUND';
+      return ERROR_CODES.FS_NOT_FOUND;
     case 'ENOTDIR':
-      return 'FS_NOT_DIRECTORY';
+      return ERROR_CODES.FS_NOT_DIRECTORY;
     case 'EISDIR':
-      return 'FS_NOT_FILE';
+      return ERROR_CODES.FS_NOT_FILE;
     case 'EEXIST':
-      return 'FS_EEXIST';
+      return ERROR_CODES.FS_EEXIST;
     case 'EACCES':
     case 'EPERM':
-      return 'FS_DENIED';
+      return ERROR_CODES.FS_DENIED;
     default:
-      return 'FS_IO';
+      return ERROR_CODES.FS_IO;
   }
 }
 
@@ -41,9 +43,9 @@ export function mapNodeErrnoCode(err: unknown): string {
  */
 export function assertValidBasename(name: string): void {
   if (!name || name === '.' || name === '..') {
-    throw fsError('FS_BAD_NAME', `invalid name: "${name}"`);
+    throw fsError(ERROR_CODES.FS_BAD_NAME, `invalid name: "${name}"`);
   }
   if (name.includes('/') || name.includes('\\')) {
-    throw fsError('FS_BAD_NAME', `name must not contain path separator: "${name}"`);
+    throw fsError(ERROR_CODES.FS_BAD_NAME, `name must not contain path separator: "${name}"`);
   }
 }

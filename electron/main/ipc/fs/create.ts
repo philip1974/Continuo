@@ -1,5 +1,6 @@
 import { mkdir, stat } from 'node:fs/promises';
 import path from 'node:path';
+import { ERROR_CODES } from '../../../shared/error-codes';
 import { atomicWriteFile } from './atomic-write';
 import { assertValidBasename, fsError, mapNodeErrnoCode } from './path-utils';
 
@@ -16,10 +17,10 @@ export async function createFile(
 
   try {
     await stat(newPath);
-    throw fsError('FS_EEXIST', `already exists: ${newPath}`);
+    throw fsError(ERROR_CODES.FS_EEXIST, `already exists: ${newPath}`);
   } catch (err) {
     const code = (err as { code?: string }).code;
-    if (code === 'FS_EEXIST') throw err;
+    if (code === ERROR_CODES.FS_EEXIST) throw err;
     if (code !== 'ENOENT') {
       throw fsError(mapNodeErrnoCode(err), `stat failed: ${newPath}`);
     }
@@ -45,7 +46,7 @@ export async function createDir(
   } catch (err) {
     const code = (err as { code?: string }).code;
     if (code === 'EEXIST') {
-      throw fsError('FS_EEXIST', `already exists: ${newPath}`);
+      throw fsError(ERROR_CODES.FS_EEXIST, `already exists: ${newPath}`);
     }
     throw fsError(mapNodeErrnoCode(err), `mkdir failed: ${newPath}`);
   }

@@ -20,6 +20,7 @@ import { useExternalFileSync } from './useExternalFileSync';
 import { resolveLink } from './link-resolve';
 import { useSettingValue } from '@/plugins/settings/values-store';
 import { coApi } from '@/lib/co-api';
+import { notify } from '@/notifications/notify';
 import type { EditorTab } from '@/stores/editor.store';
 
 const MODE_OPTIONS: readonly { id: EditorMode; label: string }[] = [
@@ -91,7 +92,7 @@ export function EditorPanel() {
     const r = await saveActive();
     if (!r.ok) {
       // UNSAVED_DRAFT / TAB_NOT_FOUND / FS_* 都到这里
-      alert(`保存失败:[${r.code}] ${r.message}`);
+      notify.error(r.message, { code: r.code });
     }
   }, [saveActive]);
 

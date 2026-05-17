@@ -8,6 +8,7 @@
 
 import { cp, lstat, rename, rm } from 'node:fs/promises';
 import path from 'node:path';
+import { ERROR_CODES } from '../../../shared/error-codes';
 import { fsError, mapNodeErrnoCode } from './path-utils';
 
 /**
@@ -37,7 +38,7 @@ export async function moveEntry(
     // 不存在(ENOENT),按预期
   }
   if (destExists) {
-    throw fsError('FS_EEXIST', `destination already exists: ${destPath}`);
+    throw fsError(ERROR_CODES.FS_EEXIST, `destination already exists: ${destPath}`);
   }
 
   try {
@@ -117,5 +118,5 @@ export async function resolveUniqueDest(
       return candidate;
     }
   }
-  throw fsError('FS_IO', `cannot find unique dest under ${parentDir} (100 tries)`);
+  throw fsError(ERROR_CODES.FS_IO, `cannot find unique dest under ${parentDir} (100 tries)`);
 }

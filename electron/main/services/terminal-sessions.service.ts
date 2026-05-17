@@ -4,6 +4,8 @@
 //
 // BDD: src/__tests__/terminal-sessions-service/
 
+import { ERROR_CODES } from '../../shared/error-codes';
+
 /** topic-05: agent 在 MCP create_session 时指定 attach 目标。 */
 export type AttachTarget =
   | { kind: 'active' }
@@ -96,7 +98,7 @@ export function add(input: AddSessionInput): void {
   if (sessions.has(input.id)) {
     throw Object.assign(
       new Error(`terminal session duplicate: ${input.id}`),
-      { code: 'TERMINAL_SESSION_DUPLICATE' },
+      { code: ERROR_CODES.TERMINAL_SESSION_DUPLICATE },
     );
   }
   const session: MainTerminalSession = {
