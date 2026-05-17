@@ -28,6 +28,7 @@ import { NotifyIpcBridge } from '@/notifications/NotifyIpcBridge';
 import { ToastViewport } from '@/notifications/ToastViewport';
 import { breadcrumb, probeCssLoaded } from '@/lib/diagnostics/breadcrumb';
 import { SplashWatchdog } from './decor/SplashWatchdog';
+import { LanguageFromSettings } from '@/plugins/settings/LanguageFromSettings';
 
 const SPLASH_MIN_MS = 600;
 
@@ -154,6 +155,7 @@ export function App() {
   return (
     <ThemeProvider>
       <ThemeBinder />
+      <LanguageFromSettings />
       <NotificationsProvider>
         <NotifyIpcBridge />
         <ToastViewport />

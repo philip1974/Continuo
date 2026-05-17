@@ -15,7 +15,10 @@
     "noEmit": true,
     "composite": false,
     "baseUrl": ".",
-    "paths": { "@/*": ["src/*"] }
+    "paths": {
+      "@/*": ["src/*"],
+      "@shared/*": ["electron/shared/*"]
+    }
   },
   "include": ["src/__tests__", "electron", "src"]
 }

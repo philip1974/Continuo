@@ -13,6 +13,7 @@
 import { useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { coApi } from '@/lib/co-api';
+import { translate as i18nTranslate } from '@/i18n';
 import { notify } from './notify';
 import type { NotifyPushPayload } from '../../electron/shared/notify-channels';
 
@@ -24,7 +25,26 @@ export function NotifyIpcBridge(): ReactNode {
       if (payload.windowId !== undefined && payload.windowId !== myWindowId) {
         return;
       }
-      notify(payload.message, payload.level, {
+
+      // topic 16 Op12 catalog ingress 决策树（议题 P1-3）：
+      //   1. 有 code → 查 errors.<CODE> catalog（{params} 插值）
+      //   2. 否则 → 直接用 message
+      //   3. 都没有 → warn + drop
+      let text: string | null = null;
+      if (payload.code) {
+        const key = `errors.${payload.code}`;
+        const translated = i18nTranslate(key, payload.params);
+        // catalog miss 会回退 key 本身;此时继续走 payload.message fallback。
+        if (translated !== key) text = translated;
+      }
+      if (!text && payload.message) text = payload.message;
+      if (!text) {
+        // eslint-disable-next-line no-console
+        console.warn('[notify-bridge] empty payload, dropped', payload);
+        return;
+      }
+
+      notify(text, payload.level, {
         code: payload.code,
         mirror: false, // main 端 pushNotification helper 已 console 兜底
       });

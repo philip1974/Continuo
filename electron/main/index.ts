@@ -10,6 +10,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { registerIpc } from './ipc';
+import { loadSettings } from './services/settings.service';
+import { getMainT, type MainT } from './i18n';
+import { setMenuRebuilder } from './ipc/i18n.ipc';
 import {
   allocateWindowSeq,
   defaultExplorerV3,
@@ -313,18 +316,18 @@ async function newWindow(): Promise<void> {
   createMainWindow({ windowSeq });
 }
 
-function buildAppMenu(): Menu {
+function buildAppMenu(t: MainT): Menu {
   const isMac = process.platform === 'darwin';
   const fileSubmenu: MenuItemConstructorOptions[] = [
     {
-      label: 'New Window',
+      label: t('menu.file.new_window'),
       accelerator: 'CmdOrCtrl+Shift+N',
       click: () => {
         void newWindow();
       },
     },
     {
-      label: 'Open Folder in New Window…',
+      label: t('menu.file.open_folder_in_new_window'),
       click: () => {
         void openFolderInNewWindow();
       },
@@ -352,13 +355,19 @@ function buildAppMenu(): Menu {
           },
         ] satisfies MenuItemConstructorOptions[])
       : []),
-    { label: 'File', submenu: fileSubmenu },
+    { label: t('menu.file.label'), submenu: fileSubmenu },
     { role: 'editMenu' },
     { role: 'viewMenu' },
     { role: 'windowMenu' },
   ];
 
   return Menu.buildFromTemplate(template);
+}
+
+/** 由 i18n.ipc setMenuRebuilder 注册；setLocale 后被调，整体重建 application menu。 */
+export function rebuildAppMenu(): void {
+  if (process.env['CONTINUO_E2E'] === '1') return;
+  Menu.setApplicationMenu(buildAppMenu(getMainT()));
 }
 
 // popout 子窗口禁止刷新。
@@ -615,6 +624,9 @@ app.whenReady().then(async () => {
   const legacyLayoutFile = path.join(userData, 'layout.json');
   await migrateExplorerFileToV3(explorerFile, legacyLayoutFile);
 
+  // topic 16 i18n: 必须先 hydrate settings.json，buildAppMenu 才能拿到正确 locale 的 label
+  await loadSettings();
+
   // issue #33:启动一条 breadcrumb + 30s 心跳。心跳缺漏 = main 进程被阻塞,
   // 配合"两窗同时黑"现场可精确定位"是否 main loop hang"。
   breadcrumb({
@@ -633,19 +645,20 @@ app.whenReady().then(async () => {
   if (process.env['CONTINUO_E2E'] === '1') {
     Menu.setApplicationMenu(null);
   } else {
-    Menu.setApplicationMenu(buildAppMenu());
+    Menu.setApplicationMenu(buildAppMenu(getMainT()));
     // macOS dock 右键菜单(快捷入口)— Linux/Windows 没 dock 跳过。
     if (process.platform === 'darwin' && app.dock) {
+      const t = getMainT();
       app.dock.setMenu(
         Menu.buildFromTemplate([
           {
-            label: 'New Window',
+            label: t('menu.file.new_window'),
             click: () => {
               void newWindow();
             },
           },
           {
-            label: 'Open Folder in New Window…',
+            label: t('menu.file.open_folder_in_new_window'),
             click: () => {
               void openFolderInNewWindow();
             },
@@ -656,6 +669,8 @@ app.whenReady().then(async () => {
   }
 
   registerIpc();
+  // topic 16: 把 rebuildAppMenu 注入 i18n.ipc，setLocale 时菜单整体重建
+  setMenuRebuilder(rebuildAppMenu);
   // 在 createMainWindow 之前启 host,确保 renderer autoSpawn 的第一个 PTY
   // env 已含 MCP url / token。
   await startMcpHost();

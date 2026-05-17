@@ -12,6 +12,7 @@ export type SettingItemType = 'boolean' | 'select' | 'number' | 'text';
 export interface SettingItemEnumOption {
   readonly value: string;
   readonly label: string;
+  readonly labelKey?: string;
 }
 
 export type SettingItemValue = string | number | boolean;
@@ -25,7 +26,9 @@ export interface SettingItemSpec {
    *  group header 显示在第一项之前. 缺失时归 default bucket(无 header). */
   readonly group?: string;
   readonly title: string;
+  readonly titleKey?: string;
   readonly description?: string;
+  readonly descriptionKey?: string;
   readonly type: SettingItemType;
   readonly default: SettingItemValue;
   /** type='select' 时必填. */

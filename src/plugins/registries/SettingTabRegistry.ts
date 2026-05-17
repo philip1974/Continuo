@@ -7,6 +7,7 @@ import type { Disposable } from '../types';
 export interface SettingTabSpec {
   readonly id: string;
   readonly title: string;
+  readonly titleKey?: string;
   readonly render: () => ReactNode;
   /** 左侧 nav 项前显示的图标(可选). 推荐 16px size 的 SVG ReactNode. */
   readonly icon?: ReactNode;

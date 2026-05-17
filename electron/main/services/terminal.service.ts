@@ -8,6 +8,8 @@ import * as terminalSessions from './terminal-sessions.service';
 import * as terminalBuffer from './terminal-buffer.service';
 import { mcpRevokers } from './mcp-host.service';
 import { prepareEnv } from './shell-integration';
+import { getCurrentLocale } from './settings.service';
+import { withPtyLangEnv } from './pty-lang';
 
 // ── 常量(节流参数,沿用 Mind 决策 #5)──────────────────────────
 const OVERFLOW_THRESHOLD_BYTES = 2 * 1024 * 1024; // 2 MB/s 触发 overflow
@@ -92,9 +94,13 @@ export async function createTerminal(
     LC_TERMINAL: 'Continuo',
     ...env,
   };
+  const baseEnvWithLang = withPtyLangEnv(
+    baseEnv as Record<string, string | undefined>,
+    getCurrentLocale(),
+  );
   const { env: shellEnv, cleanup: shellCleanup } = await prepareEnv(
     shell,
-    baseEnv,
+    baseEnvWithLang,
   );
   // 强制 login + interactive shell:对齐 iTerm 默认行为 (`exec -l zsh`)。
   // 没 -l/-i 时 zsh 偶发不启 ZLE → zsh-autosuggestions 等 widget plugin 失效。

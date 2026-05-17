@@ -32,6 +32,7 @@ export default defineConfig({
     resolve: {
       alias: {
         '@': resolve(__dirname, 'src'),
+        '@shared': resolve(__dirname, 'electron/shared'),
       },
     },
     // Milkdown/Crepe 内部 import Vue ESM bundler build,需 define 三个 flag

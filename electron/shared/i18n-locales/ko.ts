@@ -1,0 +1,71 @@
+import type { TranslationKey } from './en';
+
+export const ko: Record<TranslationKey, string> = {
+  // common
+  'common.cancel': '취소',
+  'common.save': '저장',
+  'common.delete': '삭제',
+  'common.ok': '확인',
+  'common.close': '닫기',
+  'common.loading': '로딩 중…',
+  'common.retry': '재시도',
+  'common.select': '선택',
+  'common.enable': '사용',
+  'common.disable': '사용 안 함',
+
+  // menu.file
+  'menu.file.label': '파일',
+  'menu.file.new_window': '새 창',
+  'menu.file.open_folder_in_new_window': '새 창에서 폴더 열기…',
+  'menu.file.close': '닫기',
+
+  // settings.general
+  'settings.general.tab_title': '일반',
+  'settings.general.title': '일반',
+  'settings.general.theme.title': '테마',
+  'settings.general.theme.description': 'Continuo의 시각 테마를 선택합니다. system은 OS를 따릅니다.',
+  'settings.general.theme.light': '라이트',
+  'settings.general.theme.dark': '다크',
+  'settings.general.theme.system': '시스템',
+  'settings.general.language.title': '언어',
+  'settings.general.language.description': 'Continuo의 UI 언어를 선택합니다. 즉시 적용됩니다.',
+  'settings.experimental.onlyEn': '실험적',
+
+  // errors.MAIN_*
+  'errors.AGENT_NOT_AUTHORIZED': '에이전트가 승인되지 않았습니다',
+  'errors.BAD_INPUT': '잘못된 입력',
+  'errors.BAD_MAIN': '잘못된 플러그인 main 파일',
+  'errors.BAD_MANIFEST': '잘못된 플러그인 매니페스트',
+  'errors.BAD_ROOT': '잘못된 작업 공간 루트',
+  'errors.BAD_URL': '잘못된 URL',
+  'errors.BUFFER_SESSION_NOT_FOUND': '버퍼 세션을 찾을 수 없습니다',
+  'errors.EEXIST': '파일이 이미 있습니다',
+  'errors.GIT_FAILED': 'Git 명령 실패',
+  'errors.GIT_SPAWN_FAILED': 'git 시작 실패',
+  'errors.INVALID_ID': '잘못된 ID',
+  'errors.MCP_HOST_BIND_FORBIDDEN': 'MCP 호스트 바인딩 거부',
+  'errors.NO_WINDOW': '창을 찾을 수 없습니다',
+  'errors.NO_WINDOW_SEQ': '창 시퀀스를 찾을 수 없습니다',
+  'errors.NOT_INSTALLED': '설치되지 않음',
+  'errors.PAYLOAD_TOO_LARGE': '페이로드가 너무 큽니다',
+  'errors.POPOUT_NOT_IMPLEMENTED': '팝아웃이 구현되지 않았습니다',
+  'errors.RM_FAILED': '삭제 실패',
+  'errors.TERMINAL_CWD_UNRESOLVED': '터미널 cwd를 확인할 수 없습니다',
+  'errors.TERMINAL_FORBIDDEN_SHELL': '허용되지 않은 셸',
+  'errors.TERMINAL_NO_WINDOW': '터미널: 창을 찾을 수 없습니다',
+  'errors.TERMINAL_NOT_FOUND': '터미널을 찾을 수 없습니다',
+  'errors.TERMINAL_SESSION_DUPLICATE': '터미널 세션 중복',
+  'errors.TERMINAL_SESSION_NOT_FOUND': '터미널 세션을 찾을 수 없습니다',
+  'errors.WORKSPACE_NOT_ABSOLUTE': '작업 공간은 절대 경로여야 합니다: {path}',
+  'errors.WORKSPACE_NOT_DIRECTORY': '작업 공간이 디렉터리가 아닙니다: {workspace}',
+  'errors.WORKSPACE_NOT_FOUND': '작업 공간을 찾을 수 없습니다: {workspace}',
+
+  // errors.FS_*
+  'errors.FS_BAD_NAME': '잘못된 파일 이름',
+  'errors.FS_DENIED': '액세스 거부',
+  'errors.FS_EEXIST': '이미 있습니다',
+  'errors.FS_IO': '파일 I/O 오류',
+  'errors.FS_NOT_DIRECTORY': '디렉터리가 아닙니다',
+  'errors.FS_NOT_FILE': '파일이 아닙니다',
+  'errors.FS_NOT_FOUND': '파일을 찾을 수 없습니다: {path}',
+};

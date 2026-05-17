@@ -19,6 +19,7 @@ import { registerTerminalIpc } from './ipc/terminal.ipc';
 import { registerPluginsIpc } from './ipc/plugins.ipc';
 import { registerShellIpc } from './ipc/shell.ipc';
 import { registerWindowIpc } from './ipc/window.ipc';
+import { registerI18nIpc } from './ipc/i18n.ipc';
 import { registerDiagnosticsIpc } from './ipc/diagnostics.ipc';
 import { AGENT_AUTH_CHANNELS } from '../shared/agent-auth-channels';
 import { ERROR_CODES } from '../shared/error-codes';
@@ -180,4 +181,6 @@ export function registerIpc() {
     () => getStdioConfig(),
     trusted,
   );
+
+  registerI18nIpc(trusted);
 }

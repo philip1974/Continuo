@@ -267,6 +267,20 @@
 
 - [`header-actions.spec.tsx`](./header-actions/header-actions.spec.tsx)
 
+## [topic 16 i18n en zh ko](./i18n-en-zh-ko/README.md)
+
+- [`bootstrap-locale-sync.spec.ts`](./i18n-en-zh-ko/bootstrap-locale-sync.spec.ts)
+- [`design-layer-no-keys.spec.ts`](./i18n-en-zh-ko/design-layer-no-keys.spec.ts)
+- [`error-codes-message-catalog.spec.ts`](./i18n-en-zh-ko/error-codes-message-catalog.spec.ts)
+- [`locale-concurrent.spec.ts`](./i18n-en-zh-ko/locale-concurrent.spec.ts)
+- [`locale-store.spec.ts`](./i18n-en-zh-ko/locale-store.spec.ts)
+- [`main-menu-rebuild.spec.ts`](./i18n-en-zh-ko/main-menu-rebuild.spec.ts)
+- [`popout-locale-broadcast.spec.ts`](./i18n-en-zh-ko/popout-locale-broadcast.spec.ts)
+- [`pty-lang-env.spec.ts`](./i18n-en-zh-ko/pty-lang-env.spec.ts)
+- [`setting-locale-fields.spec.ts`](./i18n-en-zh-ko/setting-locale-fields.spec.ts)
+- [`settings-service.spec.ts`](./i18n-en-zh-ko/settings-service.spec.ts)
+- [`t-fallback.spec.ts`](./i18n-en-zh-ko/t-fallback.spec.ts)
+
 ## [IconSidebar(48px 竖向 Activity Bar)](./icon-sidebar/README.md)
 
 - [`icon-sidebar.spec.tsx`](./icon-sidebar/icon-sidebar.spec.tsx)

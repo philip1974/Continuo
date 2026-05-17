@@ -14,6 +14,7 @@ export default class GeneralTabPlugin extends Plugin {
     this.addSettingTab({
       id: 'core.general',
       title: '通用',
+      titleKey: 'settings.general.tab_title',
       priority: 1,
       icon: createElement(GeneralIcon),
       render: () => createElement(CategoryTabContent, { category: 'general' }),
@@ -25,13 +26,15 @@ export default class GeneralTabPlugin extends Plugin {
       id: 'general.theme',
       category: 'general',
       title: '主题',
+      titleKey: 'settings.general.theme.title',
       description: '选择 Continuo 的视觉主题。system 跟随操作系统。',
+      descriptionKey: 'settings.general.theme.description',
       type: 'select',
       default: 'dark',
       enum: [
-        { value: 'light', label: 'Light' },
-        { value: 'dark', label: 'Dark' },
-        { value: 'system', label: 'System' },
+        { value: 'light', label: 'Light', labelKey: 'settings.general.theme.light' },
+        { value: 'dark', label: 'Dark', labelKey: 'settings.general.theme.dark' },
+        { value: 'system', label: 'System', labelKey: 'settings.general.theme.system' },
       ],
       priority: 1,
     });

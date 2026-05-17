@@ -33,6 +33,12 @@ import {
   type IpcWindowCreateResult,
 } from '../shared/window-channels';
 import { NOTIFY_CHANNELS } from '../shared/notify-channels';
+import {
+  I18N_CHANNELS,
+  type I18nSetLocaleResult,
+  type I18nChangedPayload,
+} from '../shared/i18n-channels';
+import type { Locale } from '../shared/i18n-types';
 import type { NotifyPushPayload } from '../shared/notify-channels';
 import {
   DIAGNOSTICS_CHANNELS,
@@ -377,6 +383,23 @@ const api = {
         listener(payload);
       ipcRenderer.on(NOTIFY_CHANNELS.PUSH, wrapped);
       return () => ipcRenderer.removeListener(NOTIFY_CHANNELS.PUSH, wrapped);
+    },
+  },
+  i18n: {
+    /** 同步初值用 — main settings.service 已 hydrate 后返当前 locale。 */
+    getLocale(): Promise<IpcResult<Locale>> {
+      return ipcRenderer.invoke(I18N_CHANNELS.GET_LOCALE);
+    },
+    /** 设置新 locale；main 持久化 + 广播 i18n:changed；返回 { ok, locale, gen }。 */
+    setLocale(locale: Locale): Promise<IpcResult<I18nSetLocaleResult>> {
+      return ipcRenderer.invoke(I18N_CHANNELS.SET_LOCALE, locale);
+    },
+    /** 订阅 main 广播；返 unsubscribe。renderer 用 gen 排序去过期。 */
+    onChange(listener: (payload: I18nChangedPayload) => void): () => void {
+      const wrapped = (_evt: unknown, payload: I18nChangedPayload) =>
+        listener(payload);
+      ipcRenderer.on(I18N_CHANNELS.CHANGED, wrapped);
+      return () => ipcRenderer.removeListener(I18N_CHANNELS.CHANGED, wrapped);
     },
   },
   mcp: {

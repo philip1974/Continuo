@@ -5,7 +5,10 @@ import { resolve } from 'node:path';
 // 多 project 拆分见 vitest.workspace.ts。
 export default defineConfig({
   resolve: {
-    alias: { '@': resolve(__dirname, 'src') },
+    alias: {
+      '@': resolve(__dirname, 'src'),
+      '@shared': resolve(__dirname, 'electron/shared'),
+    },
   },
   test: {
     // include / exclude 由 vitest.workspace.ts 各 project 定义,base 不再列。

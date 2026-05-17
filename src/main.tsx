@@ -25,6 +25,11 @@ import { useUpdateStore } from './marketplace/update-store';
 import { useReviewsStore } from './marketplace/reviews-store';
 import { breadcrumb, probeCssLoaded } from './lib/diagnostics/breadcrumb';
 import { startRafHeartbeat } from './lib/diagnostics/raf-heartbeat';
+import { setLocale as setI18nModuleLocale } from '@/i18n';
+import {
+  subscribeToI18nBroadcast,
+  useSettingsStore,
+} from '@/stores/settings.store';
 import './styles/tailwind.css';
 
 // Phase 4.B:**最早**调,把 window.api 缓存到 module-local。
@@ -52,6 +57,51 @@ captureLmApi();
 
 const container = document.getElementById('root');
 if (!container) throw new Error('#root not found');
+
+// E2E hook:Playwright 通过 page.evaluate 调 dock 操作 / store 重置。
+// 仅当 preload 探测到 `__continuoE2E` 标志时挂载;非测试环境完全无效.
+// preload 通过 process.env.CONTINUO_E2E 转发(主进程在 e2e 时设这个变量).
+declare const window: Window & {
+  __continuoE2E?: boolean;
+  __continuoTest?: {
+    openOrFocusPanel: (id: string, component: string, title: string) => void;
+    focusPanel: (id: string) => void;
+    setEditorContent: (tabId: string, content: string) => void;
+    getEditorActiveTabId: () => string | null;
+    setSettingValue: (id: string, value: string | number | boolean) => void;
+    getSettingValue: (id: string) => unknown;
+    /** 触发权限弹窗(plugin install 流程的核心交互). */
+    requestPermissions: (
+      pluginId: string,
+      perms: readonly string[],
+    ) => Promise<readonly string[]>;
+    /** 命令数量(用于 e2e 验证内置命令注册数). */
+    commandCount: () => number;
+    /** 注册命令(测试动态命令出现).返 dispose. */
+    registerCommand: (
+      id: string,
+      title: string,
+      hotkey?: string,
+    ) => () => void;
+    /** 改 keybindings override(测试 hotkey 显示更新). */
+    setHotkey: (commandId: string, hotkey: string) => void;
+  };
+};
+
+// topic 16: 把后续 boot 流程包 async IIFE，等 locale 真值后再 bootCorePlugins/createRoot
+void (async () => {
+  try {
+    const initial = await coApi.i18n.getLocale();
+    if (initial.ok) {
+      const initialLocale = initial.data;
+      useSettingsStore.setState({ locale: initialLocale, currentGen: 0 });
+      setI18nModuleLocale(initialLocale);
+    }
+  } catch (err) {
+    console.warn('[i18n] bootstrap getLocale failed', err);
+  }
+
+  subscribeToI18nBroadcast();
 
 // M-Plugin v1.7:渲染前同步注册内置插件(editor / terminal / output),
 // 使 coApp.panels 在 DockShell 首次 mount 时已含 3 个 panel 类型。
@@ -169,35 +219,6 @@ if (typeof requestIdleCallback === 'function') {
   setTimeout(prefetchTerminal, 1500);
 }
 
-// E2E hook:Playwright 通过 page.evaluate 调 dock 操作 / store 重置。
-// 仅当 preload 探测到 `__continuoE2E` 标志时挂载;非测试环境完全无效.
-// preload 通过 process.env.CONTINUO_E2E 转发(主进程在 e2e 时设这个变量).
-declare const window: Window & {
-  __continuoE2E?: boolean;
-  __continuoTest?: {
-    openOrFocusPanel: (id: string, component: string, title: string) => void;
-    focusPanel: (id: string) => void;
-    setEditorContent: (tabId: string, content: string) => void;
-    getEditorActiveTabId: () => string | null;
-    setSettingValue: (id: string, value: string | number | boolean) => void;
-    getSettingValue: (id: string) => unknown;
-    /** 触发权限弹窗(plugin install 流程的核心交互). */
-    requestPermissions: (
-      pluginId: string,
-      perms: readonly string[],
-    ) => Promise<readonly string[]>;
-    /** 命令数量(用于 e2e 验证内置命令注册数). */
-    commandCount: () => number;
-    /** 注册命令(测试动态命令出现).返 dispose. */
-    registerCommand: (
-      id: string,
-      title: string,
-      hotkey?: string,
-    ) => () => void;
-    /** 改 keybindings override(测试 hotkey 显示更新). */
-    setHotkey: (commandId: string, hotkey: string) => void;
-  };
-};
 if (window.__continuoE2E === true) {
   void Promise.all([
     import('@/shell/dock/dock-api-ref'),
@@ -237,3 +258,4 @@ if (window.__continuoE2E === true) {
     };
   });
 }
+})();

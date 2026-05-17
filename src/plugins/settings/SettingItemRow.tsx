@@ -8,6 +8,7 @@
 //   - reset   → 始终占位的 ↺,override 时可见
 
 import { IconButton, Input, SegmentedControl } from '@/design';
+import { useT } from '@/i18n';
 import type { SettingItemSpec } from '../registries/SettingItemRegistry';
 import { useSettingsValuesStore } from './values-store';
 
@@ -16,6 +17,11 @@ interface SettingItemRowProps {
 }
 
 export function SettingItemRow({ spec }: SettingItemRowProps) {
+  const t = useT();
+  const title = spec.titleKey ? t(spec.titleKey) : spec.title;
+  const description = spec.descriptionKey
+    ? t(spec.descriptionKey)
+    : spec.description;
   const stored = useSettingsValuesStore((s) => s.values[spec.id]);
   const setValue = useSettingsValuesStore((s) => s.setValue);
   const reset = useSettingsValuesStore((s) => s.reset);
@@ -27,14 +33,14 @@ export function SettingItemRow({ spec }: SettingItemRowProps) {
     <div className="flex items-start justify-between gap-6 border-b border-line/50 py-5 last:border-b-0">
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
-          <span className="text-sm text-fg">{spec.title}</span>
+          <span className="text-sm text-fg">{title}</span>
           {/* id chip:demo 同款浅底 uppercase 紧贴 title 显示,取代独占一行 */}
           <code className="rounded bg-panel-soft/70 px-1.5 py-0.5 text-2xs uppercase tracking-wider text-fg-muted/70">
             {spec.id}
           </code>
         </div>
-        {spec.description && (
-          <div className="mt-1 text-xs text-fg-muted">{spec.description}</div>
+        {description && (
+          <div className="mt-1 text-xs text-fg-muted">{description}</div>
         )}
       </div>
       <div className="flex shrink-0 items-center gap-2">
@@ -47,7 +53,10 @@ export function SettingItemRow({ spec }: SettingItemRowProps) {
         {spec.type === 'select' && spec.enum && (
           <SegmentedControl
             size="sm"
-            options={spec.enum.map((o) => ({ id: o.value, label: o.label }))}
+            options={spec.enum.map((o) => ({
+              id: o.value,
+              label: o.labelKey ? t(o.labelKey) : o.label,
+            }))}
             value={String(value)}
             onChange={(id) => setValue(spec.id, id)}
           />

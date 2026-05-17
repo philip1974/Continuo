@@ -7,6 +7,7 @@ import EditorPlugin from './EditorPlugin';
 import EditorTabPlugin from './EditorTabPlugin';
 import ExplorerTabPlugin from './ExplorerTabPlugin';
 import GeneralTabPlugin from './GeneralTabPlugin';
+import LanguageSettingPlugin from './LanguageSettingPlugin';
 import TerminalTabPlugin from './TerminalTabPlugin';
 import TerminalPlugin from './TerminalPlugin';
 import OutputPlugin from './OutputPlugin';
@@ -56,6 +57,10 @@ const CORES: readonly CoreEntry[] = [
   {
     Cls: GeneralTabPlugin as never,
     manifest: { id: 'core.general', name: 'GeneralTab', version: '1.0.0' },
+  },
+  {
+    Cls: LanguageSettingPlugin as never,
+    manifest: { id: 'core.language-setting', name: 'LanguageSetting', version: '1.0.0' },
   },
   {
     Cls: EditorTabPlugin as never,

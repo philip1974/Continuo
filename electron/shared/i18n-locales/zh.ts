@@ -1,0 +1,71 @@
+import type { TranslationKey } from './en';
+
+export const zh: Record<TranslationKey, string> = {
+  // common
+  'common.cancel': '取消',
+  'common.save': '保存',
+  'common.delete': '删除',
+  'common.ok': '确定',
+  'common.close': '关闭',
+  'common.loading': '加载中…',
+  'common.retry': '重试',
+  'common.select': '选择',
+  'common.enable': '启用',
+  'common.disable': '禁用',
+
+  // menu.file
+  'menu.file.label': '文件',
+  'menu.file.new_window': '新建窗口',
+  'menu.file.open_folder_in_new_window': '在新窗口中打开文件夹…',
+  'menu.file.close': '关闭',
+
+  // settings.general
+  'settings.general.tab_title': '通用',
+  'settings.general.title': '通用',
+  'settings.general.theme.title': '主题',
+  'settings.general.theme.description': '选择 Continuo 的视觉主题。system 跟随操作系统。',
+  'settings.general.theme.light': '亮色',
+  'settings.general.theme.dark': '暗色',
+  'settings.general.theme.system': '跟随系统',
+  'settings.general.language.title': '语言',
+  'settings.general.language.description': '选择 Continuo 的界面语言。立即生效。',
+  'settings.experimental.onlyEn': '实验性',
+
+  // errors.MAIN_*
+  'errors.AGENT_NOT_AUTHORIZED': 'Agent 未授权',
+  'errors.BAD_INPUT': '输入无效',
+  'errors.BAD_MAIN': '插件主文件错误',
+  'errors.BAD_MANIFEST': '插件清单错误',
+  'errors.BAD_ROOT': '工作区根目录错误',
+  'errors.BAD_URL': 'URL 无效',
+  'errors.BUFFER_SESSION_NOT_FOUND': 'Buffer 会话不存在',
+  'errors.EEXIST': '文件已存在',
+  'errors.GIT_FAILED': 'Git 命令失败',
+  'errors.GIT_SPAWN_FAILED': '无法启动 git',
+  'errors.INVALID_ID': 'ID 无效',
+  'errors.MCP_HOST_BIND_FORBIDDEN': 'MCP 主机绑定被拒',
+  'errors.NO_WINDOW': '找不到窗口',
+  'errors.NO_WINDOW_SEQ': '找不到窗口序号',
+  'errors.NOT_INSTALLED': '未安装',
+  'errors.PAYLOAD_TOO_LARGE': '负载过大',
+  'errors.POPOUT_NOT_IMPLEMENTED': 'Popout 未实现',
+  'errors.RM_FAILED': '删除失败',
+  'errors.TERMINAL_CWD_UNRESOLVED': '终端 cwd 无法解析',
+  'errors.TERMINAL_FORBIDDEN_SHELL': '禁用的 shell',
+  'errors.TERMINAL_NO_WINDOW': '终端：找不到窗口',
+  'errors.TERMINAL_NOT_FOUND': '找不到终端',
+  'errors.TERMINAL_SESSION_DUPLICATE': '终端会话重复',
+  'errors.TERMINAL_SESSION_NOT_FOUND': '终端会话不存在',
+  'errors.WORKSPACE_NOT_ABSOLUTE': '工作区路径必须是绝对路径：{path}',
+  'errors.WORKSPACE_NOT_DIRECTORY': '工作区不是一个目录：{workspace}',
+  'errors.WORKSPACE_NOT_FOUND': '找不到工作区：{workspace}',
+
+  // errors.FS_*
+  'errors.FS_BAD_NAME': '文件名不合法',
+  'errors.FS_DENIED': '拒绝访问',
+  'errors.FS_EEXIST': '已存在',
+  'errors.FS_IO': '文件 I/O 错误',
+  'errors.FS_NOT_DIRECTORY': '不是目录',
+  'errors.FS_NOT_FILE': '不是文件',
+  'errors.FS_NOT_FOUND': '找不到文件：{path}',
+};
