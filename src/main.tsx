@@ -23,6 +23,7 @@ import { sandboxSweep } from './plugins/sandbox-sweep';
 import { captureLmApi, coApi } from './lib/co-api';
 import { useUpdateStore } from './marketplace/update-store';
 import { useReviewsStore } from './marketplace/reviews-store';
+import { breadcrumb, probeCssLoaded } from './lib/diagnostics/breadcrumb';
 import './styles/tailwind.css';
 
 // Phase 4.B:**最早**调,把 window.api 缓存到 module-local。
@@ -131,6 +132,18 @@ void useUpdateStore.getState().refresh();
 // Reviews Phase 1:启动时静默拉一次评论(MarketplaceTab 卡片 ★ 用)。
 // 同样 fire-and-forget;NO_TOKEN 时静默退出(在 fetcher 抛错被 catch)。
 void useReviewsStore.getState().refresh();
+
+// issue #33:渲染前埋点 — 黑屏 / 卡 splash 时,日志能告诉我们 coApi 是否就绪、
+// 是 reload 还是冷启动、CSS 是否真的解析了。
+breadcrumb({
+  event: 'renderer_pre_render',
+  hasCoApi: typeof (globalThis as { window?: { __lmApi?: unknown } }).window
+    ?.__lmApi !== 'undefined',
+  initialWindowSeq,
+  initialWorkspace,
+  search,
+  cssLoaded: probeCssLoaded(),
+});
 
 createRoot(container).render(
   <React.StrictMode>

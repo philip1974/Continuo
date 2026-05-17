@@ -21,6 +21,7 @@ import { useClosingStore } from '@/stores/closing.store';
 import { useEditorStore } from '@/stores/editor.store';
 import { debounce } from '@/lib/debounce';
 import { coApi } from '@/lib/co-api';
+import { breadcrumb } from '@/lib/diagnostics/breadcrumb';
 import '@/styles/dockview.css';
 
 // 外提到 module 顶层常量:DockviewReact 的 components/tabComponents 引用稳定
@@ -135,6 +136,15 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       }
 
       setEmpty(event.api.totalPanels === 0);
+      // issue #33:DockShell onReady 完成 = layoutReady 即将翻 true。
+      // 把 layout.read 是 ok 还是失败、totalPanels 一起落,排查"卡 splash"诊断用。
+      breadcrumb({
+        event: 'dock_ready',
+        layoutReadOk: readResult.ok,
+        ...(readResult.ok ? {} : { layoutReadCode: readResult.code }),
+        restored,
+        totalPanels: event.api.totalPanels,
+      });
       onLayoutReady?.();
 
       const persist = debounce(async () => {
