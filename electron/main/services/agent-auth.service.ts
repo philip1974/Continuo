@@ -36,6 +36,7 @@ function pickMainWindow(): BrowserWindow | null {
 export interface AgentAuthInfo {
   readonly method: string;
   readonly agentLabel?: string;
+  readonly ownerWindowId?: number;
 }
 
 /**
@@ -45,7 +46,16 @@ export interface AgentAuthInfo {
 export async function requestAgentAuth(
   info: AgentAuthInfo,
 ): Promise<AgentAuthDecision> {
-  const win = pickMainWindow();
+  const targetWin =
+    info.ownerWindowId !== undefined
+      ? BrowserWindow.fromId(info.ownerWindowId)
+      : null;
+  const win =
+    targetWin &&
+    !targetWin.isDestroyed() &&
+    !targetWin.webContents.getURL().includes('popout=1')
+      ? targetWin
+      : pickMainWindow();
   if (!win) return 'denied';
   const requestId = `req-${crypto.randomUUID()}`;
   return new Promise<AgentAuthDecision>((resolve) => {

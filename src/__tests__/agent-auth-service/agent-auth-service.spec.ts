@@ -54,6 +54,9 @@ const terminalBufferMock = vi.hoisted(() => ({
 vi.mock('electron', () => ({
   BrowserWindow: {
     getAllWindows: vi.fn(() => electronMock.windows),
+    fromId: vi.fn(
+      (id: number) => electronMock.windows.find((w) => w.id === id) ?? null,
+    ),
   },
 }));
 
@@ -241,6 +244,70 @@ describe('agent-auth-service: requestAgentAuth', () => {
 
     expect(destroyed.webContents.send).not.toHaveBeenCalled();
     expect(normal.webContents.send).toHaveBeenCalledTimes(1);
+    await expect(pending).resolves.toBe('session');
+  });
+
+  it('T-routing-1: ownerWindowId routes to an alive non-popout window', async () => {
+    const fallback = makeWin(1);
+    const owner = makeWin(9);
+    electronMock.windows = [fallback, owner];
+
+    const pending = requestAgentAuth({
+      method: 'terminal.create_session',
+      ownerWindowId: 9,
+    });
+    const payload = firstAuthPayload(owner);
+    resolveAgentAuthRequest(payload.requestId, 'session');
+
+    expect(owner.webContents.send).toHaveBeenCalledTimes(1);
+    expect(fallback.webContents.send).not.toHaveBeenCalled();
+    await expect(pending).resolves.toBe('session');
+  });
+
+  it('T-routing-2: missing or destroyed ownerWindowId falls back to pickMainWindow', async () => {
+    const fallbackForMissing = makeWin(1);
+    electronMock.windows = [fallbackForMissing];
+
+    const missingPending = requestAgentAuth({
+      method: 'terminal.create_session',
+      ownerWindowId: 99,
+    });
+    const missingPayload = firstAuthPayload(fallbackForMissing);
+    resolveAgentAuthRequest(missingPayload.requestId, 'once');
+
+    expect(fallbackForMissing.webContents.send).toHaveBeenCalledTimes(1);
+    await expect(missingPending).resolves.toBe('once');
+
+    const destroyedOwner = makeWin(9, { destroyed: true });
+    const fallbackForDestroyed = makeWin(2);
+    electronMock.windows = [destroyedOwner, fallbackForDestroyed];
+
+    const destroyedPending = requestAgentAuth({
+      method: 'terminal.create_session',
+      ownerWindowId: 9,
+    });
+    const destroyedPayload = firstAuthPayload(fallbackForDestroyed);
+    resolveAgentAuthRequest(destroyedPayload.requestId, 'session');
+
+    expect(destroyedOwner.webContents.send).not.toHaveBeenCalled();
+    expect(fallbackForDestroyed.webContents.send).toHaveBeenCalledTimes(1);
+    await expect(destroyedPending).resolves.toBe('session');
+  });
+
+  it("T-routing-3: popout ownerWindowId falls back to pickMainWindow", async () => {
+    const popoutOwner = makeWin(9, { popout: true });
+    const fallback = makeWin(1);
+    electronMock.windows = [popoutOwner, fallback];
+
+    const pending = requestAgentAuth({
+      method: 'terminal.create_session',
+      ownerWindowId: 9,
+    });
+    const payload = firstAuthPayload(fallback);
+    resolveAgentAuthRequest(payload.requestId, 'session');
+
+    expect(popoutOwner.webContents.send).not.toHaveBeenCalled();
+    expect(fallback.webContents.send).toHaveBeenCalledTimes(1);
     await expect(pending).resolves.toBe('session');
   });
 });

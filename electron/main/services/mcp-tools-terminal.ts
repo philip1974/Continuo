@@ -129,7 +129,9 @@ export interface CreateSessionToolDeps {
    *  - 'once' / 'session' → 通过
    *  - 'denied' → 拒绝
    */
-  readonly ensureAuthorized: () => Promise<'once' | 'session' | 'denied'>;
+  readonly ensureAuthorized: (
+    ownerWindowId: number,
+  ) => Promise<'once' | 'session' | 'denied'>;
   /**
    * 实际 spawn PTY + 入 sessions service。由 main 启动入口注入,把
    * `electron/main/ipc/terminal.ipc.ts` 的 createHandler 包一层(以脱离 BrowserWindow 上下文)。
@@ -172,7 +174,7 @@ export function makeCreateSessionTool(
     },
     inputSchema: createSessionInputSchema,
     run: async (input: CreateSessionInput, ctx: McpCallCtx) => {
-      const decision = await deps.ensureAuthorized();
+      const decision = await deps.ensureAuthorized(ctx.ownerWindowId);
       if (decision === 'denied') {
         throw Object.assign(
           new Error('agent terminal not authorized by user'),

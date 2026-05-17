@@ -445,8 +445,11 @@ async function startMcpHost(): Promise<void> {
         buffer: terminalBuffer,
         service: termService,
         getSessionOwner,
-        ensureAuthorized: () =>
-          requestAgentAuth({ method: 'terminal.create_session' }),
+        ensureAuthorized: (ownerWindowId?: number) =>
+          requestAgentAuth({
+            method: 'terminal.create_session',
+            ...(ownerWindowId !== undefined ? { ownerWindowId } : {}),
+          }),
         createSession: createSessionForAgent,
       }),
     });
