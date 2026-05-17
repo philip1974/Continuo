@@ -1,73 +1,105 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { I18N_CHANNELS } from '../../../electron/shared/i18n-channels';
+import type { Locale } from '../../../electron/shared/i18n-types';
 
-type Locale = 'en' | 'zh' | 'ko';
-type MenuModule = {
-  readonly setCurrentLocale: (locale: Locale) => void | Promise<void>;
-  readonly buildAppMenu: () => unknown;
+type SafeHandler<I, O> = (input: I) => O | Promise<O>;
+type SafeHandleCall = {
+  readonly channel: string;
+  readonly handler: SafeHandler<unknown, unknown>;
 };
-
 type PopoutWindow = {
-  readonly webContents: { readonly getURL: () => string };
+  readonly webContents: {
+    readonly getURL: () => string;
+    readonly send: (channel: string, payload: unknown) => void;
+  };
   readonly setMenu: (menu: unknown) => void;
+  readonly isDestroyed: () => boolean;
 };
 
-const electronMock = vi.hoisted(() => ({
-  Menu: {
-    setApplicationMenu: vi.fn<(menu: unknown) => void>(),
-    buildFromTemplate: vi.fn<(template: unknown) => unknown>((template) => ({
-      template,
-    })),
-  },
+const mocks = vi.hoisted(() => ({
+  safeHandleCalls: [] as SafeHandleCall[],
+  safeHandle: vi.fn(
+    (
+      channel: string,
+      _schema: unknown,
+      handler: SafeHandler<unknown, unknown>,
+      _trusted: unknown,
+    ) => {
+      mocks.safeHandleCalls.push({ channel, handler });
+    },
+  ),
+  setCurrentLocale: vi.fn<(locale: Locale) => Promise<number> | number>(() => 1),
+  getSetLocaleGen: vi.fn<() => number>(() => 1),
+  getCurrentLocale: vi.fn<() => Locale>(() => 'en'),
   BrowserWindow: {
     getAllWindows: vi.fn<() => PopoutWindow[]>(() => []),
   },
 }));
 
-vi.mock('electron', () => electronMock);
+vi.mock('../../../electron/main/safe-handle', () => ({
+  safeHandle: mocks.safeHandle,
+}));
 
-async function importPending<T>(moduleId: string): Promise<T> {
-  return (await import(moduleId)) as T;
+vi.mock('../../../electron/main/services/settings.service', () => ({
+  getCurrentLocale: mocks.getCurrentLocale,
+  setCurrentLocale: mocks.setCurrentLocale,
+  getSetLocaleGen: mocks.getSetLocaleGen,
+}));
+
+vi.mock('electron', () => ({
+  BrowserWindow: mocks.BrowserWindow,
+}));
+
+function setLocaleHandler(): SafeHandler<Locale, unknown> {
+  const call = mocks.safeHandleCalls.find(
+    (item) => item.channel === I18N_CHANNELS.SET_LOCALE,
+  );
+  if (!call) throw new Error('missing SET_LOCALE safeHandle registration');
+  return call.handler as SafeHandler<Locale, unknown>;
 }
 
 afterEach(() => {
+  mocks.safeHandleCalls.length = 0;
   vi.clearAllMocks();
 });
 
 describe('main menu rebuild on setLocale', () => {
-  it('setCurrentLocale("zh") 后调用 Menu.setApplicationMenu 一次', async () => {
-    const { setCurrentLocale } = await importPending<MenuModule>(
-      '../../../electron/main/i18n-main',
+  it('registerI18nIpc 注册 GET/SET handler，SET_LOCALE 成功后调用 menu rebuilder', async () => {
+    const { registerI18nIpc, setMenuRebuilder } = await import(
+      '../../../electron/main/ipc/i18n.ipc'
     );
+    const rebuild = vi.fn();
 
-    await setCurrentLocale('zh');
+    registerI18nIpc(() => true);
+    setMenuRebuilder(rebuild);
+    await setLocaleHandler()('zh');
 
-    expect(electronMock.Menu.setApplicationMenu).toHaveBeenCalledTimes(1);
+    expect(mocks.safeHandle).toHaveBeenCalledTimes(2);
+    expect(mocks.safeHandleCalls.map((call) => call.channel)).toEqual([
+      I18N_CHANNELS.GET_LOCALE,
+      I18N_CHANNELS.SET_LOCALE,
+    ]);
+    expect(mocks.setCurrentLocale).toHaveBeenCalledWith('zh');
+    expect(rebuild).toHaveBeenCalledTimes(1);
   });
 
-  it('重建 template 使用 getMainT() 当前值（File label = "文件"）', async () => {
-    const menu = await importPending<MenuModule>(
-      '../../../electron/main/i18n-main',
-    );
-
-    await menu.setCurrentLocale('zh');
-    menu.buildAppMenu();
-
-    expect(electronMock.Menu.buildFromTemplate).toHaveBeenCalledWith(
-      expect.arrayContaining([expect.objectContaining({ label: '文件' })]),
-    );
-  });
-
-  it('application menu rebuild 不 touch popout 窗（popout 仍是 setMenu(null)）', async () => {
+  it('SET_LOCALE 重建 application menu 不 touch popout window.setMenu(null)', async () => {
     const popout: PopoutWindow = {
-      webContents: { getURL: () => 'file:///renderer/index.html?popout=1' },
+      webContents: {
+        getURL: () => 'file:///renderer/index.html?popout=1',
+        send: vi.fn(),
+      },
       setMenu: vi.fn(),
+      isDestroyed: () => false,
     };
-    electronMock.BrowserWindow.getAllWindows.mockReturnValue([popout]);
-    const { setCurrentLocale } = await importPending<MenuModule>(
-      '../../../electron/main/i18n-main',
+    mocks.BrowserWindow.getAllWindows.mockReturnValue([popout]);
+    const { registerI18nIpc, setMenuRebuilder } = await import(
+      '../../../electron/main/ipc/i18n.ipc'
     );
 
-    await setCurrentLocale('ko');
+    registerI18nIpc(() => true);
+    setMenuRebuilder(vi.fn());
+    await setLocaleHandler()('ko');
 
     expect(popout.setMenu).not.toHaveBeenCalled();
   });

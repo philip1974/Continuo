@@ -1,69 +1,73 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 type Locale = 'en' | 'zh' | 'ko';
-type LocaleChange = { readonly locale: Locale; readonly gen: number };
-type LocaleChangeHandler = (change: LocaleChange) => void;
-type SettingsState = {
-  readonly locale: Locale;
-  readonly currentGen: number;
-  readonly setLocale: (locale: Locale) => Promise<void>;
-  readonly applyLocaleBroadcast: (change: LocaleChange) => void;
-};
+type IpcOk<T> = { readonly ok: true; readonly data: T };
+type SetLocaleData = { readonly ok: true; readonly locale: Locale; readonly gen: number };
+type Deferred<T> = { readonly promise: Promise<T>; readonly resolve: (v: T) => void };
+
 type SettingsStoreModule = {
   readonly useSettingsStore: {
-    readonly getState: () => SettingsState;
-    readonly setState: (patch: Partial<SettingsState>) => void;
+    readonly getState: () => {
+      readonly locale: Locale;
+      readonly currentGen: number;
+      readonly setLocale: (locale: Locale) => Promise<void>;
+    };
   };
+  readonly _resetSettingsStoreForTest: () => void;
 };
+
+function makeDeferred<T>(): Deferred<T> {
+  let resolve!: (v: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
 
 const mockCoApi = vi.hoisted(() => ({
   i18n: {
-    setLocale: vi.fn<(locale: Locale) => Promise<void>>(),
-    onChange: vi.fn<(cb: LocaleChangeHandler) => () => void>(),
+    setLocale: vi.fn<(locale: Locale) => Promise<IpcOk<SetLocaleData>>>(),
+    onChange: vi.fn(() => () => undefined),
+    getLocale: vi.fn(),
   },
 }));
 
-vi.mock('@/lib/co-api', () => ({ coApi: mockCoApi }));
+vi.mock('@/lib/co-api', () => ({
+  coApi: {
+    i18n: mockCoApi.i18n,
+    system: { windowId: 1 },
+  },
+}));
 
-async function importPending<T>(moduleId: string): Promise<T> {
-  return (await import(moduleId)) as T;
+async function importStore(): Promise<SettingsStoreModule> {
+  return import('@/stores/settings.store') as Promise<SettingsStoreModule>;
 }
 
-afterEach(() => {
+afterEach(async () => {
+  const store = await importStore();
+  store._resetSettingsStoreForTest();
   vi.clearAllMocks();
 });
 
 describe('setLocale in-flight token serialization — P1-1', () => {
-  it('快速连续两次 setLocale("zh") 与 setLocale("ko")，老 gen broadcast 被丢弃', async () => {
-    const { useSettingsStore } = await importPending<SettingsStoreModule>(
-      '@/stores/settings.store',
-    );
-    mockCoApi.i18n.setLocale.mockResolvedValue(undefined);
+  it('两次连发，老 gen 返回到达时被丢弃', async () => {
+    const { useSettingsStore } = await importStore();
+    const d1 = makeDeferred<IpcOk<SetLocaleData>>();
+    const d2 = makeDeferred<IpcOk<SetLocaleData>>();
+    mockCoApi.i18n.setLocale.mockImplementationOnce(() => d1.promise);
+    mockCoApi.i18n.setLocale.mockImplementationOnce(() => d2.promise);
 
-    const first = useSettingsStore.getState().setLocale('zh');
-    const second = useSettingsStore.getState().setLocale('ko');
-    await Promise.all([first, second]);
-    useSettingsStore
-      .getState()
-      .applyLocaleBroadcast({ locale: 'zh', gen: 1 });
-    useSettingsStore
-      .getState()
-      .applyLocaleBroadcast({ locale: 'ko', gen: 2 });
+    const p1 = useSettingsStore.getState().setLocale('zh');
+    const p2 = useSettingsStore.getState().setLocale('ko');
 
+    d2.resolve({ ok: true, data: { ok: true, locale: 'ko', gen: 2 } });
+    await p2;
     expect(useSettingsStore.getState().locale).toBe('ko');
     expect(useSettingsStore.getState().currentGen).toBe(2);
-  });
 
-  it('最终 store state 与最后一次 setLocale 一致', async () => {
-    const { useSettingsStore } = await importPending<SettingsStoreModule>(
-      '@/stores/settings.store',
-    );
-    mockCoApi.i18n.setLocale.mockImplementation(async () => undefined);
-
-    await useSettingsStore.getState().setLocale('zh');
-    await useSettingsStore.getState().setLocale('ko');
-
+    d1.resolve({ ok: true, data: { ok: true, locale: 'zh', gen: 1 } });
+    await p1;
     expect(useSettingsStore.getState().locale).toBe('ko');
-    expect(mockCoApi.i18n.setLocale).toHaveBeenLastCalledWith('ko');
+    expect(useSettingsStore.getState().currentGen).toBe(2);
   });
 });

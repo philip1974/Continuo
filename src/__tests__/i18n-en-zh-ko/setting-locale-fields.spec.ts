@@ -18,19 +18,21 @@ type I18nSettingItemSpec = Omit<SettingItemSpec, 'enum'> & {
 };
 
 let currentLocale: Locale = 'zh';
-const mockT = vi.fn((key: string) => {
-  const zh: Record<string, string> = {
-    'settings.general.theme.title': '主题',
-    'settings.general.theme.description': '应用整体配色',
-  };
-  const ko: Record<string, string> = {
-    'settings.general.theme.title': '테마',
-    'settings.general.theme.description': '앱 색상',
-  };
-  return currentLocale === 'ko' ? (ko[key] ?? key) : (zh[key] ?? key);
-});
+const mockT = vi.hoisted(() =>
+  vi.fn((key: string) => {
+    const zh: Record<string, string> = {
+      'settings.general.theme.title': '主题',
+      'settings.general.theme.description': '应用整体配色',
+    };
+    const ko: Record<string, string> = {
+      'settings.general.theme.title': '테마',
+      'settings.general.theme.description': '앱 색상',
+    };
+    return currentLocale === 'ko' ? (ko[key] ?? key) : (zh[key] ?? key);
+  }),
+);
 
-vi.mock('@/i18n/react', () => ({
+vi.mock('@/i18n', () => ({
   useT: () => mockT,
 }));
 

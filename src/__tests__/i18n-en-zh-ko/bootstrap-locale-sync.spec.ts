@@ -1,80 +1,175 @@
-import { describe, expect, it, vi } from 'vitest';
+// @vitest-environment jsdom
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { getLocale } from '@/i18n';
+import { useSettingsStore } from '@/stores/settings.store';
 
-type Locale = 'en' | 'zh' | 'ko';
-type BootstrapApi = {
-  readonly coApi: {
-    readonly i18n: {
-      readonly getLocale: () => Promise<Locale>;
-    };
+const mocks = vi.hoisted(() => {
+  const rootRender = vi.fn();
+  return {
+    rootRender,
+    createRoot: vi.fn(() => ({ render: rootRender })),
+    bootCorePlugins: vi.fn(),
+    startPluginMcpInvokeBridge: vi.fn(),
+    coApp: {
+      commands: { register: vi.fn(() => ({ dispose: vi.fn() })) },
+    },
+    getPluginMcpRegistry: vi.fn(() => ({})),
+    setUserPluginManager: vi.fn(),
+    setUserPermissionStore: vi.fn(),
+    createWindowApiHost: vi.fn(() => ({})),
+    permissionRequest: vi.fn(),
+    sandboxSweep: vi.fn(),
+    captureLmApi: vi.fn(),
+    i18nGetLocale: vi.fn<() => Promise<{ ok: true; data: 'zh' }>>(),
+    i18nOnChange: vi.fn(() => () => undefined),
+    pluginsOnChanged: vi.fn(),
+    pluginsOnProtocolUrl: vi.fn(),
+    explorerRead: vi.fn(),
+    explorerWrite: vi.fn(),
+    fsReadFile: vi.fn(),
+    initExplorerPersistence: vi.fn(),
+    updateRefresh: vi.fn(),
+    reviewsRefresh: vi.fn(),
+    breadcrumb: vi.fn(),
+    probeCssLoaded: vi.fn(() => true),
+    startRafHeartbeat: vi.fn(),
   };
-  readonly settingsStore: {
-    readonly setLocaleFromMain: (locale: Locale) => void;
-    readonly getState: () => { readonly locale: Locale };
-  };
-  readonly bootCorePlugins: () => void;
-};
+});
 
-type BootstrapModule = {
-  readonly bootstrapRenderer: (api: BootstrapApi) => Promise<void>;
-};
+vi.mock('react-dom/client', () => ({
+  createRoot: mocks.createRoot,
+}));
 
-async function importPending<T>(moduleId: string): Promise<T> {
-  return (await import(moduleId)) as T;
-}
+vi.mock('@/shell/App', () => ({
+  App: () => null,
+}));
+
+vi.mock('@/lib/persist/explorer-persist', () => ({
+  initExplorerPersistence: mocks.initExplorerPersistence,
+}));
+
+vi.mock('@/core-plugins', () => ({
+  bootCorePlugins: mocks.bootCorePlugins,
+}));
+
+vi.mock('@/plugins/co-app', () => ({
+  coApp: mocks.coApp,
+  getPluginMcpRegistry: mocks.getPluginMcpRegistry,
+}));
+
+vi.mock('@/plugins/plugin-mcp-invoke-bridge', () => ({
+  startPluginMcpInvokeBridge: mocks.startPluginMcpInvokeBridge,
+}));
+
+vi.mock('@/plugins/Plugin', () => ({
+  Plugin: class Plugin {},
+}));
+
+vi.mock('@/plugins/PluginManager', () => ({
+  PluginManager: class PluginManager {
+    init = vi.fn(async () => undefined);
+    reload = vi.fn(async () => undefined);
+  },
+}));
+
+vi.mock('@/plugins/co-plugin-manager', () => ({
+  setUserPluginManager: mocks.setUserPluginManager,
+}));
+
+vi.mock('@/lib/plugins-host', () => ({
+  createWindowApiHost: mocks.createWindowApiHost,
+}));
+
+vi.mock('@/plugins/permissions/IpcPermissionStore', () => ({
+  IpcPermissionStore: class IpcPermissionStore {},
+}));
+
+vi.mock('@/plugins/permissions/co-permission-store', () => ({
+  setUserPermissionStore: mocks.setUserPermissionStore,
+}));
+
+vi.mock('@/plugins/permissions/promptStore', () => ({
+  usePermissionPromptStore: {
+    getState: () => ({ request: mocks.permissionRequest }),
+  },
+}));
+
+vi.mock('@/plugins/permissions', () => ({
+  PermissionError: class PermissionError extends Error {},
+}));
+
+vi.mock('@/plugins/sandbox-sweep', () => ({
+  sandboxSweep: mocks.sandboxSweep,
+}));
+
+vi.mock('@/lib/co-api', () => ({
+  captureLmApi: mocks.captureLmApi,
+  coApi: {
+    i18n: {
+      getLocale: mocks.i18nGetLocale,
+      onChange: mocks.i18nOnChange,
+    },
+    plugins: {
+      onChanged: mocks.pluginsOnChanged,
+      onProtocolUrl: mocks.pluginsOnProtocolUrl,
+    },
+    explorer: {
+      read: mocks.explorerRead,
+      write: mocks.explorerWrite,
+    },
+    fs: {
+      readFile: mocks.fsReadFile,
+    },
+  },
+}));
+
+vi.mock('@/plugins/protocol/handler', () => ({
+  handleProtocolUrl: vi.fn(),
+}));
+
+vi.mock('@/marketplace/update-store', () => ({
+  useUpdateStore: {
+    getState: () => ({ refresh: mocks.updateRefresh }),
+  },
+}));
+
+vi.mock('@/marketplace/reviews-store', () => ({
+  useReviewsStore: {
+    getState: () => ({ refresh: mocks.reviewsRefresh }),
+  },
+}));
+
+vi.mock('@/lib/diagnostics/breadcrumb', () => ({
+  breadcrumb: mocks.breadcrumb,
+  probeCssLoaded: mocks.probeCssLoaded,
+}));
+
+vi.mock('@/lib/diagnostics/raf-heartbeat', () => ({
+  startRafHeartbeat: mocks.startRafHeartbeat,
+}));
+
+beforeEach(() => {
+  document.body.innerHTML = '<div id="root"></div>';
+  useSettingsStore.setState({ locale: 'en', currentGen: 0 });
+  mocks.i18nGetLocale.mockResolvedValue({ ok: true, data: 'zh' });
+  vi.clearAllMocks();
+});
 
 describe('renderer bootstrap locale sync — P0-2', () => {
-  it('await coApi.i18n.getLocale() 完成后 useSettingsStore.locale === main 真值', async () => {
-    let locale: Locale = 'en';
-    const api: BootstrapApi = {
-      coApi: {
-        i18n: {
-          getLocale: vi.fn<() => Promise<Locale>>(async () => 'zh'),
-        },
-      },
-      settingsStore: {
-        setLocaleFromMain: (next) => {
-          locale = next;
-        },
-        getState: () => ({ locale }),
-      },
-      bootCorePlugins: vi.fn(),
-    };
-    const { bootstrapRenderer } = await importPending<BootstrapModule>(
-      '@/bootstrap/renderer',
+  it('main.tsx async IIFE 完成后 locale 同步到 settings.store 与 translate 模块', async () => {
+    await import('@/main');
+
+    await vi.waitFor(() => {
+      expect(mocks.bootCorePlugins).toHaveBeenCalledTimes(1);
+    });
+
+    expect(mocks.captureLmApi).toHaveBeenCalledTimes(1);
+    expect(mocks.i18nGetLocale).toHaveBeenCalledTimes(1);
+    expect(useSettingsStore.getState().locale).toBe('zh');
+    expect(getLocale()).toBe('zh');
+    expect(mocks.createRoot).toHaveBeenCalledWith(
+      document.getElementById('root'),
     );
-
-    await bootstrapRenderer(api);
-
-    expect(api.settingsStore.getState().locale).toBe('zh');
-  });
-
-  it('await locale 在 bootCorePlugins 之前调（顺序断言）', async () => {
-    const order: string[] = [];
-    const api: BootstrapApi = {
-      coApi: {
-        i18n: {
-          getLocale: vi.fn<() => Promise<Locale>>(async () => {
-            order.push('getLocale');
-            return 'zh';
-          }),
-        },
-      },
-      settingsStore: {
-        setLocaleFromMain: (locale) => {
-          order.push(`set:${locale}`);
-        },
-        getState: () => ({ locale: 'zh' }),
-      },
-      bootCorePlugins: vi.fn(() => {
-        order.push('bootCorePlugins');
-      }),
-    };
-    const { bootstrapRenderer } = await importPending<BootstrapModule>(
-      '@/bootstrap/renderer',
-    );
-
-    await bootstrapRenderer(api);
-
-    expect(order).toEqual(['getLocale', 'set:zh', 'bootCorePlugins']);
+    expect(mocks.rootRender).toHaveBeenCalledTimes(1);
   });
 });

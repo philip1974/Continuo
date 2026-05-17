@@ -3,79 +3,107 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 type Locale = 'en' | 'zh' | 'ko';
 type LocaleChange = { readonly locale: Locale; readonly gen: number };
 type LocaleChangeHandler = (change: LocaleChange) => void;
-
-type SettingsState = {
-  readonly locale: Locale;
-  readonly currentGen: number;
-  readonly setLocale: (locale: Locale) => Promise<void>;
-  readonly bindI18n?: () => () => void;
-  readonly applyLocaleBroadcast?: (change: LocaleChange) => void;
-};
+type IpcOk<T> = { readonly ok: true; readonly data: T };
+type IpcFail = { readonly ok: false; readonly code: string; readonly message: string };
+type SetLocaleData = { readonly ok: true; readonly locale: Locale; readonly gen: number };
 
 type SettingsStoreModule = {
   readonly useSettingsStore: {
-    getState: () => SettingsState;
-    setState: (patch: Partial<SettingsState>) => void;
+    readonly getState: () => {
+      readonly locale: Locale;
+      readonly currentGen: number;
+      readonly setLocale: (locale: Locale) => Promise<void>;
+    };
+    readonly setState: (patch: { locale: Locale; currentGen: number }) => void;
   };
+  readonly subscribeToI18nBroadcast: () => void;
+  readonly _resetSettingsStoreForTest: () => void;
 };
 
-const mockCoApi = vi.hoisted(() => ({
-  i18n: {
-    setLocale: vi.fn<(locale: Locale) => Promise<void>>(),
-    onChange: vi.fn<(cb: LocaleChangeHandler) => () => void>(),
+const mockCoApi = vi.hoisted(() => {
+  const api = {
+    capturedOnChange: undefined as LocaleChangeHandler | undefined,
+    unsubscribe: vi.fn(),
+    i18n: {
+      setLocale:
+        vi.fn<(locale: Locale) => Promise<IpcOk<SetLocaleData> | IpcFail>>(),
+      onChange: vi.fn<(cb: LocaleChangeHandler) => () => void>(),
+      getLocale: vi.fn(),
+    },
+  };
+  api.i18n.onChange.mockImplementation((cb) => {
+    api.capturedOnChange = cb;
+    return api.unsubscribe;
+  });
+  return api;
+});
+
+vi.mock('@/lib/co-api', () => ({
+  coApi: {
+    i18n: mockCoApi.i18n,
   },
 }));
 
-vi.mock('@/lib/co-api', () => ({ coApi: mockCoApi }));
-
-async function importPending<T>(moduleId: string): Promise<T> {
-  return (await import(moduleId)) as T;
+async function importStore(): Promise<SettingsStoreModule> {
+  return import('@/stores/settings.store') as Promise<SettingsStoreModule>;
 }
 
-afterEach(() => {
+afterEach(async () => {
+  const store = await importStore();
+  store._resetSettingsStoreForTest();
+  mockCoApi.capturedOnChange = undefined;
   vi.clearAllMocks();
 });
 
 describe('settings.store + coApi.i18n roundtrip', () => {
   it('setLocale("zh") 调 coApi.i18n.setLocale("zh") 并更新 store', async () => {
-    mockCoApi.i18n.setLocale.mockResolvedValue(undefined);
-    const { useSettingsStore } = await importPending<SettingsStoreModule>(
-      '@/stores/settings.store',
-    );
+    mockCoApi.i18n.setLocale.mockResolvedValue({
+      ok: true,
+      data: { ok: true, locale: 'zh', gen: 1 },
+    });
+    const { useSettingsStore } = await importStore();
 
     await useSettingsStore.getState().setLocale('zh');
 
     expect(mockCoApi.i18n.setLocale).toHaveBeenCalledWith('zh');
     expect(useSettingsStore.getState().locale).toBe('zh');
+    expect(useSettingsStore.getState().currentGen).toBe(1);
   });
 
-  it('订阅 coApi.i18n.onChange 后 state 同步', async () => {
-    let onChange: LocaleChangeHandler | undefined;
-    mockCoApi.i18n.onChange.mockImplementation((cb) => {
-      onChange = cb;
-      return () => undefined;
-    });
-    const { useSettingsStore } = await importPending<SettingsStoreModule>(
-      '@/stores/settings.store',
-    );
+  it('subscribeToI18nBroadcast() 挂载后 onChange broadcast 同步 state', async () => {
+    const { subscribeToI18nBroadcast, useSettingsStore } = await importStore();
 
-    useSettingsStore.getState().bindI18n?.();
-    onChange?.({ locale: 'ko', gen: 1 });
+    subscribeToI18nBroadcast();
+    mockCoApi.capturedOnChange?.({ locale: 'ko', gen: 1 });
 
+    expect(mockCoApi.i18n.onChange).toHaveBeenCalledTimes(1);
     expect(useSettingsStore.getState().locale).toBe('ko');
+    expect(useSettingsStore.getState().currentGen).toBe(1);
   });
 
   it('currentGen 字段拒绝过期 broadcast', async () => {
-    const { useSettingsStore } = await importPending<SettingsStoreModule>(
-      '@/stores/settings.store',
-    );
+    const { subscribeToI18nBroadcast, useSettingsStore } = await importStore();
 
     useSettingsStore.setState({ locale: 'ko', currentGen: 2 });
-    useSettingsStore
-      .getState()
-      .applyLocaleBroadcast?.({ locale: 'zh', gen: 1 });
+    subscribeToI18nBroadcast();
+    mockCoApi.capturedOnChange?.({ locale: 'zh', gen: 1 });
 
     expect(useSettingsStore.getState().locale).toBe('ko');
     expect(useSettingsStore.getState().currentGen).toBe(2);
+  });
+
+  it('setLocale 失败时 throw 且保留原 state', async () => {
+    mockCoApi.i18n.setLocale.mockResolvedValue({
+      ok: false,
+      code: 'I18N_SET_FAILED',
+      message: 'write failed',
+    });
+    const { useSettingsStore } = await importStore();
+
+    await expect(useSettingsStore.getState().setLocale('zh')).rejects.toThrow(
+      'setLocale failed: code=I18N_SET_FAILED message=write failed',
+    );
+    expect(useSettingsStore.getState().locale).toBe('en');
+    expect(useSettingsStore.getState().currentGen).toBe(0);
   });
 });

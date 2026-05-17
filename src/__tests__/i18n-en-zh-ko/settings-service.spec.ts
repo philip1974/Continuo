@@ -1,4 +1,7 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 
 type Locale = 'en' | 'zh' | 'ko';
 type SettingsData = { readonly version: 1; readonly locale: Locale };
@@ -6,12 +9,15 @@ type SettingsServiceModule = {
   readonly mapSystemLocale: (locale: string) => Locale;
   readonly loadSettings: () => Promise<SettingsData>;
   readonly saveSettings: (settings: SettingsData) => Promise<void>;
+  readonly _resetSettingsForTest: () => void;
 };
+
+let currentTmpDir = '';
 
 const electronMock = vi.hoisted(() => ({
   app: {
     getLocale: vi.fn<() => string>(() => 'zh-CN'),
-    getPath: vi.fn<(name: string) => string>(() => '/tmp/continuo-settings-bdd'),
+    getPath: vi.fn<(name: string) => string>(),
   },
 }));
 
@@ -21,7 +27,21 @@ async function importPending<T>(moduleId: string): Promise<T> {
   return (await import(moduleId)) as T;
 }
 
-afterEach(() => {
+beforeEach(async () => {
+  currentTmpDir = path.join(
+    os.tmpdir(),
+    `continuo-settings-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  );
+  await fs.mkdir(currentTmpDir, { recursive: true });
+  electronMock.app.getPath.mockReturnValue(currentTmpDir);
+  const service = await importPending<SettingsServiceModule>(
+    '../../../electron/main/services/settings.service',
+  );
+  service._resetSettingsForTest();
+});
+
+afterEach(async () => {
+  await fs.rm(currentTmpDir, { recursive: true, force: true });
   vi.clearAllMocks();
 });
 
@@ -41,12 +61,16 @@ describe('settings.service (settings.json) — P2-1 表驱动', () => {
     const service = await importPending<SettingsServiceModule>(
       '../../../electron/main/services/settings.service',
     );
+    await fs.writeFile(path.join(currentTmpDir, 'settings.json'), '{bad json', 'utf-8');
 
     await expect(service.loadSettings()).resolves.toEqual({
       version: 1,
       locale: 'zh',
     });
-    await expect(service.loadSettings()).resolves.not.toThrow();
+    const files = await fs.readdir(currentTmpDir);
+    expect(files.some((file) => file.startsWith('settings.json.corrupt.'))).toBe(
+      true,
+    );
   });
 
   it('load → save → load 圆环一致', async () => {

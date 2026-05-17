@@ -1,13 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { I18N_CHANNELS } from '../../../electron/shared/i18n-channels';
+import type { Locale } from '../../../electron/shared/i18n-types';
 
-type Locale = 'en' | 'zh' | 'ko';
-type LocaleModule = {
-  readonly setCurrentLocale: (
-    locale: Locale,
-    sourceWindowId?: number,
-  ) => void | Promise<void>;
+type SafeHandler<I, O> = (input: I) => O | Promise<O>;
+type SafeHandleCall = {
+  readonly channel: string;
+  readonly handler: SafeHandler<unknown, unknown>;
 };
-
 type MockWindow = {
   readonly id: number;
   readonly webContents: {
@@ -17,17 +16,39 @@ type MockWindow = {
   readonly isDestroyed: () => boolean;
 };
 
-const electronMock = vi.hoisted(() => ({
+const mocks = vi.hoisted(() => ({
+  safeHandleCalls: [] as SafeHandleCall[],
+  safeHandle: vi.fn(
+    (
+      channel: string,
+      _schema: unknown,
+      handler: SafeHandler<unknown, unknown>,
+      _trusted: unknown,
+    ) => {
+      mocks.safeHandleCalls.push({ channel, handler });
+    },
+  ),
+  setCurrentLocale: vi.fn<(locale: Locale) => Promise<number> | number>(() => 2),
+  getSetLocaleGen: vi.fn<() => number>(() => 2),
+  getCurrentLocale: vi.fn<() => Locale>(() => 'en'),
   BrowserWindow: {
     getAllWindows: vi.fn<() => MockWindow[]>(() => []),
   },
 }));
 
-vi.mock('electron', () => electronMock);
+vi.mock('../../../electron/main/safe-handle', () => ({
+  safeHandle: mocks.safeHandle,
+}));
 
-async function importPending<T>(moduleId: string): Promise<T> {
-  return (await import(moduleId)) as T;
-}
+vi.mock('../../../electron/main/services/settings.service', () => ({
+  getCurrentLocale: mocks.getCurrentLocale,
+  setCurrentLocale: mocks.setCurrentLocale,
+  getSetLocaleGen: mocks.getSetLocaleGen,
+}));
+
+vi.mock('electron', () => ({
+  BrowserWindow: mocks.BrowserWindow,
+}));
 
 function makeWindow(id: number): MockWindow {
   return {
@@ -40,31 +61,40 @@ function makeWindow(id: number): MockWindow {
   };
 }
 
+function setLocaleHandler(): SafeHandler<Locale, unknown> {
+  const call = mocks.safeHandleCalls.find(
+    (item) => item.channel === I18N_CHANNELS.SET_LOCALE,
+  );
+  if (!call) throw new Error('missing SET_LOCALE safeHandle registration');
+  return call.handler as SafeHandler<Locale, unknown>;
+}
+
 afterEach(() => {
+  mocks.safeHandleCalls.length = 0;
   vi.clearAllMocks();
 });
 
 describe('popout locale broadcast', () => {
-  it('mock 2 个 BrowserWindow，A 调 setLocale → B onChange callback 1s 内触发', async () => {
-    vi.useFakeTimers();
-    const a = makeWindow(1);
-    const b = makeWindow(2);
-    electronMock.BrowserWindow.getAllWindows.mockReturnValue([a, b]);
-    const { setCurrentLocale } = await importPending<LocaleModule>(
-      '../../../electron/main/i18n-main',
+  it('SET_LOCALE broadcast 到所有未销毁 BrowserWindow', async () => {
+    const win1 = makeWindow(1);
+    const win2 = makeWindow(2);
+    mocks.BrowserWindow.getAllWindows.mockReturnValue([win1, win2]);
+    const { registerI18nIpc, setMenuRebuilder } = await import(
+      '../../../electron/main/ipc/i18n.ipc'
     );
 
-    await setCurrentLocale('zh', a.id);
-    await vi.advanceTimersByTimeAsync(1000);
+    registerI18nIpc(() => true);
+    setMenuRebuilder(vi.fn());
+    await setLocaleHandler()('ko');
 
-    expect(b.webContents.send).toHaveBeenCalledWith(
-      'i18n:changed',
-      expect.objectContaining({ locale: 'zh' }),
+    const payload = { locale: 'ko', gen: 2 };
+    expect(win1.webContents.send).toHaveBeenCalledWith(
+      I18N_CHANNELS.CHANGED,
+      payload,
     );
-    expect(a.webContents.send).not.toHaveBeenCalledWith(
-      'i18n:changed',
-      expect.anything(),
+    expect(win2.webContents.send).toHaveBeenCalledWith(
+      I18N_CHANNELS.CHANGED,
+      payload,
     );
-    vi.useRealTimers();
   });
 });
