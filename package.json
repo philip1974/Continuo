@@ -1,6 +1,26 @@
 {
   "name": "continuo",
   "version": "0.1.0",
+  "description": "Open-source GUI substrate for terminal-native agents (Claude Code, Codex CLI, Aider, etc.)",
+  "keywords": [
+    "agent",
+    "mcp",
+    "terminal",
+    "electron",
+    "plugin",
+    "claude-code",
+    "codex"
+  ],
+  "homepage": "https://github.com/philip1974/Continuo",
+  "bugs": {
+    "url": "https://github.com/philip1974/Continuo/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/philip1974/Continuo.git"
+  },
+  "license": "MIT",
+  "author": "philip1974",
   "private": true,
   "type": "module",
   "main": "out/main/index.js",

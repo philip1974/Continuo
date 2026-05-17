@@ -18,5 +18,9 @@ playwright-report
 examples/*
 !examples/sample-plugin/
 !examples/mcp-demo-plugin/
+!examples/claude-code-adapter-minimal/
+!examples/codex-cli-adapter-minimal/
 # Dev-loop / il-loop 状态;议题 B.1 默认不入 git
 .claude/
+# Plan 02 临时执行报告;commit 前 user 可删
+EXECUTION_CONTEXT.md
