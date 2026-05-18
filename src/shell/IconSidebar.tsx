@@ -12,6 +12,7 @@ import { coApp } from '@/plugins/co-app';
 import { toggleSettingsPanel } from '@/lib/toggle-settings-panel';
 import { useUpdateStore } from '@/marketplace/update-store';
 import type { RibbonActionSpec } from '@/plugins/registries/RibbonRegistry';
+import { useT } from '@/i18n';
 
 interface IconBarItemConfig {
   id: string;
@@ -54,6 +55,7 @@ function useRibbonActions(): readonly RibbonActionSpec[] {
 }
 
 export function IconSidebar() {
+  const t = useT();
   const sidebarOpen = useLayoutUiStore((s) => s.sidebarOpen);
   const toggleSidebar = useLayoutUiStore((s) => s.toggleSidebar);
   const ribbonActions = useRibbonActions();
@@ -63,7 +65,9 @@ export function IconSidebar() {
   const topItems: IconBarItemConfig[] = [
     {
       id: 'explorer',
-      label: sidebarOpen ? '隐藏 Explorer' : '显示 Explorer',
+      label: sidebarOpen
+        ? t('shell.iconbar.hide_explorer')
+        : t('shell.iconbar.show_explorer'),
       node: <Folder width={ICON_SIZE} height={ICON_SIZE} />,
       onClick: toggleSidebar,
       active: sidebarOpen,
@@ -73,7 +77,7 @@ export function IconSidebar() {
   const bottomItems: IconBarItemConfig[] = [
     {
       id: 'settings',
-      label: '设置',
+      label: t('shell.iconbar.settings'),
       node: <SettingsGearIcon size={ICON_SIZE} />,
       onClick: () => toggleSettingsPanel(),
     },
@@ -114,8 +118,8 @@ export function IconSidebar() {
               {renderItem(item)}
               <span
                 className="pointer-events-none absolute right-0.5 top-0.5 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-error px-1 text-[9px] font-medium leading-none text-on-error"
-                title={`${updateCount} 个插件可更新`}
-                aria-label={`${updateCount} 个插件可更新`}
+                title={t('shell.iconbar.updates_tooltip', { count: updateCount })}
+                aria-label={t('shell.iconbar.updates_tooltip', { count: updateCount })}
               >
                 {updateCount > 9 ? '9+' : updateCount}
               </span>
@@ -134,12 +138,13 @@ export function IconSidebar() {
 // Continuo IconSidebar 只有 48px 宽,放不下完整的「头像 + 名称 + Plan」,
 // 退化为带 tooltip 的初字头像;后续接真实账户体系时再扩成弹层菜单。
 function AccountChip() {
+  const t = useT();
   return (
     <button
       type="button"
       className="mt-1 inline-flex h-7 w-7 items-center justify-center rounded-full border border-line bg-canvas text-2xs font-semibold tracking-wide text-fg-muted transition-colors hover:border-accent/60 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
-      title="Continuo Dev · PRO Plan"
-      aria-label="账户:Continuo Dev,PRO Plan"
+      title={t('shell.iconbar.account_title')}
+      aria-label={t('shell.iconbar.account_aria')}
       onClick={() => {
         // TODO: 接入账户菜单(登录 / 切换 / 注销),目前仅占位
       }}

@@ -169,8 +169,9 @@ describe('IconSidebar — updateCount 角标', () => {
 describe('IconSidebar — AccountChip', () => {
   it('渲染 CD + tooltip', () => {
     const { container } = render(<IconSidebar />);
+    // topic-21: aria-label 走 i18n，default locale=zh → '账户：Continuo Dev，PRO Plan'（全角符号）
     const chip = container.querySelector(
-      'button[aria-label="账户:Continuo Dev,PRO Plan"]',
+      'button[aria-label="账户：Continuo Dev，PRO Plan"]',
     ) as HTMLButtonElement;
     expect(chip).not.toBeNull();
     expect(chip.textContent).toBe('CD');

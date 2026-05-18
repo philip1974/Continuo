@@ -8,17 +8,8 @@
 import { useEffect, useState } from 'react';
 import { Button, Modal } from '@/design';
 import type { PermissionKey, PermissionStore } from '../permissions';
-
-const PERMISSION_LABELS: Record<PermissionKey, { title: string; desc: string }> = {
-  fs: { title: '文件系统', desc: '读写本地文件夹与文件' },
-  network: { title: '网络访问', desc: '发起 HTTP / WebSocket 等远程请求' },
-  shell: { title: '执行 shell 命令', desc: '调用本机 shell / 子进程' },
-  clipboard: { title: '剪贴板', desc: '读写系统剪贴板' },
-  'mcp-tools': {
-    title: '注册 MCP 工具',
-    desc: '把 plugin 自定义工具暴露给 Agent / Claude Code 等 MCP client 调用',
-  },
-};
+import { useT } from '@/i18n';
+import { PERM_LABEL_KEYS } from './perm-labels';
 
 interface PermissionEditorModalProps {
   open: boolean;
@@ -35,6 +26,7 @@ export function PermissionEditorModal({
   store,
   onClose,
 }: PermissionEditorModalProps) {
+  const t = useT();
   // null = 未决, true = granted, false = denied
   const [decisions, setDecisions] = useState<Map<PermissionKey, boolean | null>>(
     new Map(),
@@ -80,13 +72,16 @@ export function PermissionEditorModal({
 
   return (
     <Modal visible={open} onClose={onClose}>
-      <h2 className="mb-1 text-sm font-medium text-fg">编辑权限</h2>
+      <h2 className="mb-1 text-sm font-medium text-fg">
+        {t('permissions.editor.title')}
+      </h2>
       <p className="mb-3 text-xs text-fg-muted">
-        插件 <code className="text-fg">{pluginId}</code>
+        {t('permissions.editor.plugin_id_label')}{' '}
+        <code className="text-fg">{pluginId}</code>
       </p>
       <ul className="mb-3 space-y-1">
         {declared.map((perm) => {
-          const meta = PERMISSION_LABELS[perm];
+          const meta = PERM_LABEL_KEYS[perm];
           const state = decisions.get(perm);
           const checked = state === true;
           return (
@@ -99,8 +94,8 @@ export function PermissionEditorModal({
                   className="mt-0.5 accent-accent"
                 />
                 <div className="flex-1 text-xs">
-                  <div className="font-medium text-fg">{meta.title}</div>
-                  <div className="text-fg-dim">{meta.desc}</div>
+                  <div className="font-medium text-fg">{t(meta.titleKey)}</div>
+                  <div className="text-fg-dim">{t(meta.descKey)}</div>
                 </div>
               </label>
             </li>
@@ -108,15 +103,16 @@ export function PermissionEditorModal({
         })}
       </ul>
       <div className="mb-4 rounded border border-line bg-panel-soft/40 px-3 py-2 text-xs text-fg-muted">
-        ⓘ 改动在<span className="text-fg">下次启用</span>
-        时生效;当前 enabled 的插件实例不会自动重启,需手动 [禁用] → [启用]。
+        {t('permissions.editor.next_enable_note_prefix')}
+        <span className="text-fg">{t('permissions.editor.next_enable_emphasis')}</span>
+        {t('permissions.editor.next_enable_note_suffix')}
       </div>
       <div className="flex justify-end gap-2">
         <Button variant="ghost" size="sm" onClick={onClose}>
-          取消
+          {t('permissions.editor.cancel')}
         </Button>
         <Button variant="primary" size="sm" onClick={save}>
-          保存
+          {t('permissions.editor.save')}
         </Button>
       </div>
     </Modal>

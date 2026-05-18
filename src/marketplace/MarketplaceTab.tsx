@@ -14,6 +14,7 @@ import { applyFilter, collectAllTags } from './filter';
 import { useUpdateStore } from './update-store';
 import { useReviewsStore } from './reviews-store';
 import type { PluginAggregateRating, Review } from './reviews-types';
+import { useT, t as translate } from '@/i18n';
 
 /** 项目维护者(角标用),hard-coded. */
 const MAINTAINERS: ReadonlySet<string> = new Set(['philip1974']);
@@ -53,6 +54,7 @@ function readIds(): ReadonlySet<string> {
 }
 
 export function MarketplaceTab() {
+  const t = useT();
   const [state, setState] = useState<LoadState>({ kind: 'loading' });
   const installed = useInstalledIds();
   const updates = useUpdateStore((s) => s.available);
@@ -107,7 +109,7 @@ export function MarketplaceTab() {
       const r = await coApi.plugins.installFromGit(entryToGitUrl(entry));
       success = r.ok;
       msg = r.ok
-        ? `✔ 已安装 ${r.data.name} v${r.data.version} — 重启 Continuo 后激活`
+        ? translate('marketplace.install_success', { name: r.data.name, version: r.data.version })
         : `✘ [${r.code}] ${r.message}`;
     } catch (err) {
       msg = `✘ ${err instanceof Error ? err.message : String(err)}`;
@@ -140,10 +142,12 @@ export function MarketplaceTab() {
         const r = await coApi.plugins.installFromGit(entryToGitUrl(entry));
         success = r.ok;
         msg = r.ok
-          ? `✔ 更新到 ${r.data.name} v${r.data.version} — 重启 Continuo 后激活`
-          : `✘ 更新失败 [${r.code}] ${r.message}`;
+          ? translate('marketplace.update_success', { name: r.data.name, version: r.data.version })
+          : translate('marketplace.update_failed_code', { code: r.code, message: r.message });
       } catch (err) {
-        msg = `✘ 更新失败:${err instanceof Error ? err.message : String(err)}`;
+        msg = translate('marketplace.update_failed_msg', {
+          message: err instanceof Error ? err.message : String(err),
+        });
       }
       setInstall((prev) => {
         const nextMsgs = new Map(prev.msgs);
@@ -193,9 +197,9 @@ export function MarketplaceTab() {
   if (state.kind === 'error') {
     return (
       <div className="rounded border border-line bg-panel-soft/40 p-4 text-xs text-error">
-        ✘ 拉取索引失败:{state.message}
+        {t('marketplace.index_fetch_failed', { message: state.message })}
         <div className="mt-1 text-fg-dim">
-          检查网络;若 GitHub 暂不可达,稍后再试。
+          {t('marketplace.index_fetch_hint')}
         </div>
       </div>
     );
@@ -204,7 +208,7 @@ export function MarketplaceTab() {
   if (state.entries.length === 0) {
     return (
       <div className="rounded border border-dashed border-line bg-panel-soft/40 px-3 py-6 text-center text-xs text-fg-dim">
-        暂无插件。索引仓库:
+        {t('marketplace.empty_index_prefix')}
         <a
           href="https://github.com/philip1974/continuo-plugins"
           target="_blank"
@@ -222,14 +226,14 @@ export function MarketplaceTab() {
       <div className="space-y-2">
         <Input
           size="sm"
-          placeholder="搜索插件名 / 描述 / tag…"
+          placeholder={t('marketplace.search_placeholder')}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
         {allTags.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="mr-1 text-2xs uppercase tracking-wider text-fg-dim">
-              热门标签
+              {t('marketplace.popular_tags')}
             </span>
             {allTags.map((tag) => (
               <TagButton
@@ -245,7 +249,7 @@ export function MarketplaceTab() {
                 onClick={clearTags}
                 className="rounded px-2 py-0.5 text-2xs text-fg-dim hover:text-fg"
               >
-                清除筛选
+                {t('marketplace.clear_filter')}
               </button>
             )}
           </div>
@@ -253,22 +257,26 @@ export function MarketplaceTab() {
       </div>
       <div className="flex items-center justify-between gap-2 text-2xs text-fg-dim">
         <span>
-          显示 {filtered.length} / 共 {state.entries.length} 个插件 · 索引 1
-          小时缓存
+          {t('marketplace.count_summary', {
+            shown: filtered.length,
+            total: state.entries.length,
+          })}
         </span>
         <button
           type="button"
           onClick={() => void refreshReviews(true)}
           disabled={reviewsLoading}
           className="rounded px-2 py-0.5 text-fg-muted hover:bg-hover hover:text-fg disabled:opacity-50"
-          title="重新拉评分(跳缓存)"
+          title={t('marketplace.reviews.refresh_title')}
         >
-          {reviewsLoading ? '⟳ 刷新中…' : '⟳ 刷新评分'}
+          {reviewsLoading
+            ? t('marketplace.reviews.refreshing')
+            : t('marketplace.reviews.refresh')}
         </button>
       </div>
       {filtered.length === 0 ? (
         <div className="rounded border border-dashed border-line bg-panel-soft/40 px-3 py-6 text-center text-xs text-fg-dim">
-          没有匹配的插件。换个搜索词或清除 tag 筛选。
+          {t('marketplace.no_match')}
         </div>
       ) : (
         <div className="space-y-2">
@@ -300,6 +308,7 @@ export function MarketplaceTab() {
 // 走 v4.5 已有的 installFromGit IPC,与 PluginsTabContent 共用同一接口;
 // 装好后插件磁盘已就位,需重启 Continuo 后 PluginManager 才扫到。
 function GitUrlInstallSection() {
+  const t = useT();
   const [url, setUrl] = useState('');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -315,7 +324,10 @@ function GitUrlInstallSection() {
         setMsg(`✘ [${r.code}] ${r.message}`);
       } else {
         setMsg(
-          `✔ 已安装 ${r.data.name} v${r.data.version} — 重启 Continuo 后激活`,
+          translate('marketplace.install_success', {
+            name: r.data.name,
+            version: r.data.version,
+          }),
         );
         setUrl('');
       }
@@ -328,9 +340,11 @@ function GitUrlInstallSection() {
 
   return (
     <section className="mt-6 border-t border-line/30 pt-6">
-      <h3 className="text-base font-medium text-fg">从 Git URL 安装</h3>
+      <h3 className="text-base font-medium text-fg">
+        {t('marketplace.git_url_section_title')}
+      </h3>
       <p className="mt-1 text-xs text-fg-muted">
-        如果有自定义扩展的仓库地址,可以直接通过 Git 链接安装。
+        {t('marketplace.git_url_section_hint')}
       </p>
       <div className="mt-3 flex items-center gap-2">
         <Input
@@ -347,7 +361,9 @@ function GitUrlInstallSection() {
           onClick={onInstall}
           disabled={busy || !url.trim()}
         >
-          {busy ? '安装中…' : '安装扩展'}
+          {busy
+            ? t('marketplace.installing')
+            : t('marketplace.install_extension')}
         </Button>
       </div>
       {msg && <div className="mt-2 text-xs text-fg-muted">{msg}</div>}
@@ -355,9 +371,7 @@ function GitUrlInstallSection() {
         <span aria-hidden className="mt-0.5 leading-none text-accent">
           ⓘ
         </span>
-        <span>
-          注意:从第三方 Git 仓库安装扩展可能存在安全风险,请确保你信任源代码及其开发者。
-        </span>
+        <span>{t('marketplace.git_url_warning')}</span>
       </div>
     </section>
   );
@@ -428,6 +442,7 @@ const MarketplaceCard = memo(function MarketplaceCard({
   onInstall,
   onUpdate,
 }: CardProps) {
+  const t = useT();
   // entry 引用在 filtered 数组中稳定,onInstall/onUpdate 已 useCallback;
   // 内部按钮的 inline arrow 不影响外层 memo 拦截(Button 自己未 memo)。
   const handleInstall = () => void onInstall(entry);
@@ -447,7 +462,7 @@ const MarketplaceCard = memo(function MarketplaceCard({
             {entry.verified && (
               <span
                 className="rounded bg-accent/20 px-1.5 py-0.5 text-2xs text-accent"
-                title="官方 review 过"
+                title={t('marketplace.reviews.official_review')}
               >
                 ✓ verified
               </span>
@@ -465,9 +480,11 @@ const MarketplaceCard = memo(function MarketplaceCard({
               size="sm"
               onClick={handleUpdate}
               disabled={installing || installDisabled}
-              title={`远程版本 v${updateAvailable},点击更新`}
+              title={t('marketplace.update_tooltip', { version: updateAvailable })}
             >
-              {installing ? '更新中…' : `更新到 v${updateAvailable}`}
+              {installing
+                ? t('marketplace.updating')
+                : t('marketplace.update_to', { version: updateAvailable })}
             </Button>
           ) : installed ? (
             <Button
@@ -476,11 +493,13 @@ const MarketplaceCard = memo(function MarketplaceCard({
               disabled
               title={
                 pendingRestart
-                  ? '磁盘已就位,重启 Continuo 后才会进 plugin manager'
-                  : '已在第三方插件列表'
+                  ? t('marketplace.install.disk_ready_hint')
+                  : t('marketplace.install.in_user_list')
               }
             >
-              {pendingRestart ? '已安装(待重启)' : '已安装'}
+              {pendingRestart
+                ? t('marketplace.installed_pending_restart')
+                : t('marketplace.installed')}
             </Button>
           ) : (
             <Button
@@ -489,7 +508,9 @@ const MarketplaceCard = memo(function MarketplaceCard({
               onClick={handleInstall}
               disabled={installing || installDisabled}
             >
-              {installing ? '安装中…' : '安装'}
+              {installing
+                ? t('marketplace.installing')
+                : t('marketplace.install')}
             </Button>
           )}
         </div>
@@ -550,6 +571,7 @@ function RatingRow({
   entry: MarketplaceEntry;
   rating: PluginAggregateRating | null;
 }) {
+  const t = useT();
   const [expanded, setExpanded] = useState(false);
   const [sort, setSort] = useState<ReviewSort>('newest');
   const hasReviews = rating !== null && rating.count > 0;
@@ -565,14 +587,14 @@ function RatingRow({
   if (!hasReviews) {
     return (
       <div className="mt-1 text-2xs text-fg-dim">
-        暂无评价 ·{' '}
+        {t('marketplace.reviews.empty')} ·{' '}
         <a
           href={newReviewUrl}
           target="_blank"
           rel="noopener noreferrer"
           className="text-accent hover:underline"
         >
-          ✏️ 在 GitHub 写第一条 ↗
+          {t('marketplace.reviews.write_first')}
         </a>
       </div>
     );
@@ -585,13 +607,22 @@ function RatingRow({
           type="button"
           onClick={() => setExpanded((v) => !v)}
           className="flex items-center gap-1.5 hover:text-fg"
-          title={expanded ? '收起评价' : '展开评价'}
+          title={
+            expanded
+              ? t('marketplace.reviews.collapse')
+              : t('marketplace.reviews.expand')
+          }
         >
-          <span className="text-amber-400" aria-label={`${rating.avg.toFixed(1)} 星`}>
+          <span
+            className="text-amber-400"
+            aria-label={t('marketplace.reviews.stars_aria', { avg: rating.avg.toFixed(1) })}
+          >
             {renderStars(rating.avg)}
           </span>
           <span>{rating.avg.toFixed(1)}</span>
-          <span className="text-fg-dim">({rating.count} 评价)</span>
+          <span className="text-fg-dim">
+            {t('marketplace.reviews.count', { count: rating.count })}
+          </span>
           <span className="text-fg-dim">{expanded ? '▴' : '▾'}</span>
         </button>
         <span className="text-fg-dim">·</span>
@@ -601,13 +632,13 @@ function RatingRow({
           rel="noopener noreferrer"
           className="text-accent hover:underline"
         >
-          ✏️ 写评论 ↗
+          {t('marketplace.reviews.write_review')}
         </a>
       </div>
       {expanded && (
         <div className="space-y-1.5 rounded border border-line bg-panel/50 p-2">
           <div className="flex items-center gap-1 pb-1 text-2xs text-fg-dim">
-            <span>排序:</span>
+            <span>{t('marketplace.reviews.sort_label')}</span>
             {(['newest', 'helpful'] as const).map((s) => (
               <button
                 key={s}
@@ -618,7 +649,9 @@ function RatingRow({
                   sort === s ? 'bg-accent/20 text-accent' : 'hover:bg-hover',
                 ].join(' ')}
               >
-                {s === 'newest' ? '最新' : '最有用'}
+                {s === 'newest'
+                  ? t('marketplace.reviews.sort_newest')
+                  : t('marketplace.reviews.sort_helpful')}
               </button>
             ))}
           </div>
@@ -627,14 +660,14 @@ function RatingRow({
           ))}
           {rating.reviews.length > 10 && (
             <div className="pt-1 text-2xs text-fg-dim">
-              仅显前 10 条;
+              {t('marketplace.reviews.show_first_10')}
               <a
                 href={`https://github.com/philip1974/continuo-plugins/discussions?discussions_q=%5B${entry.id}%5D`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="ml-1 text-accent hover:underline"
               >
-                在 GitHub 看全部 ↗
+                {t('marketplace.reviews.see_all_in_github')}
               </a>
             </div>
           )}
@@ -645,6 +678,7 @@ function RatingRow({
 }
 
 function ReviewItem({ review: r }: { review: Review }) {
+  const t = useT();
   const isMaintainer = MAINTAINERS.has(r.author.handle);
   const accountAge = Date.now() - new Date(r.author.createdAt).getTime();
   const isNewAccount = accountAge < NEW_ACCOUNT_MS;
@@ -671,22 +705,25 @@ function ReviewItem({ review: r }: { review: Review }) {
           {isMaintainer && (
             <span
               className="rounded bg-accent/20 px-1 py-0.5 text-[9px] text-accent"
-              title="项目维护者"
+              title={t('marketplace.reviews.maintainer')}
             >
-              🛡 维护者
+              {t('marketplace.reviews.maintainer_badge')}
             </span>
           )}
           {!isMaintainer && isNewAccount && (
             <span
               className="rounded bg-warning/20 px-1 py-0.5 text-[9px] text-warning"
-              title={`GitHub 账号注册不到 ${NEW_ACCOUNT_DAYS} 天,慎信`}
+              title={t('marketplace.reviews.new_account_warn', { days: NEW_ACCOUNT_DAYS })}
             >
-              ⚠ 新账号
+              {t('marketplace.reviews.new_account_badge')}
             </span>
           )}
           <span className="text-amber-400">{renderStars(r.rating)}</span>
           {r.thumbsUp > 0 && (
-            <span className="text-fg-dim" title={`${r.thumbsUp} 个点赞`}>
+            <span
+              className="text-fg-dim"
+              title={t('marketplace.reviews.thumbs_up', { count: r.thumbsUp })}
+            >
               👍 {r.thumbsUp}
             </span>
           )}
@@ -696,7 +733,7 @@ function ReviewItem({ review: r }: { review: Review }) {
             target="_blank"
             rel="noopener noreferrer"
             className="ml-auto text-accent hover:underline"
-            title="在 GitHub 打开"
+            title={t('marketplace.reviews.open_in_github')}
           >
             ↗
           </a>
@@ -725,15 +762,16 @@ function buildNewReviewUrl(pluginId: string): string {
   return `https://github.com/philip1974/continuo-plugins/discussions/new?category=general&title=${title}`;
 }
 
-/** 简单 friendly 日期(< 1 day → 'Xh 前',否则 YYYY-MM-DD). */
+/** 简单 friendly 日期。formatDate 是 module helper,不在 React tree,
+ *  调 translate() 直读 module-level locale state (topic-19 pattern). */
 function formatDate(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();
   if (Number.isNaN(ms)) return iso;
   const min = Math.floor(ms / 60_000);
-  if (min < 60) return min <= 0 ? '刚刚' : `${min}m 前`;
+  if (min < 60) return min <= 0 ? translate('marketplace.time.now') : translate('marketplace.time.minutes_ago', { n: min });
   const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h 前`;
+  if (hr < 24) return translate('marketplace.time.hours_ago', { n: hr });
   const day = Math.floor(hr / 24);
-  if (day < 30) return `${day}d 前`;
+  if (day < 30) return translate('marketplace.time.days_ago', { n: day });
   return iso.slice(0, 10);
 }

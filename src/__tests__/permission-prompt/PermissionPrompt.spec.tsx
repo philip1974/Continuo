@@ -37,8 +37,9 @@ describe('PermissionPrompt UI', () => {
     );
     fireEvent.click(checkboxes[0]!); // 取消 fs
     expect(checkboxes[0]!.checked).toBe(false);
+    // topic-21: i18n 文案 '授权选中（1）'（全角括号）
     expect(document.querySelector('.wm-modal-content')?.textContent).toContain(
-      '授权选中(1)',
+      '授权选中（1）',
     );
   });
 

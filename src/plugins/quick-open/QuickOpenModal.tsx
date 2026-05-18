@@ -13,10 +13,12 @@ import { walkWorkspaceFiles } from './walk-files';
 import { fuzzyFilter } from '../command-palette/fuzzy';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { coApi } from '@/lib/co-api';
+import { useT } from '@/i18n';
 import { openFileByPath } from '@/panels/Editor/editor-file-actions';
 import { useEditorStore } from '@/stores/editor.store';
 
 export function QuickOpenModal() {
+  const t = useT();
   const isOpen = useQuickOpenStore((s) => s.isOpen);
   const query = useQuickOpenStore((s) => s.query);
   const selectedIndex = useQuickOpenStore((s) => s.selectedIndex);
@@ -103,7 +105,7 @@ export function QuickOpenModal() {
           <Input
             size="sm"
             autoFocus
-            placeholder="搜索文件名 / 路径片段(⌘⇧P 切到命令面板)…"
+            placeholder={t('quick_open.placeholder')}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onKeyDown}
@@ -112,19 +114,21 @@ export function QuickOpenModal() {
         <div className="max-h-[420px] overflow-y-auto py-1">
           {!root ? (
             <div className="px-3 py-4 text-center text-xs text-fg-dim">
-              请先在 Explorer 打开工作区
+              {t('quick_open.no_workspace')}
             </div>
           ) : loading && results.length === 0 ? (
             <div className="flex items-center justify-center gap-2 px-3 py-6 text-xs text-fg-dim">
               <Spinner size="sm" />
-              <span>扫描中…</span>
+              <span>{t('quick_open.scanning')}</span>
             </div>
           ) : filtered.length === 0 ? (
             <div className="px-3 py-4 text-center text-xs text-fg-dim">
-              {results.length === 0 ? '工作区无文件' : '无匹配文件'}
+              {results.length === 0
+                ? t('quick_open.empty')
+                : t('quick_open.no_match')}
             </div>
           ) : (
-            <ul role="listbox" aria-label="文件搜索结果">
+            <ul role="listbox" aria-label={t('quick_open.list_aria')}>
               {filtered.map((f, idx) => (
                 <li
                   key={f.absPath}

@@ -18,10 +18,14 @@ const SCOPE_DIRS = [
   'src/panels/Terminal',
   'src/plugins/command-palette',
   'src/plugins/settings',
+  'src/plugins/permissions',
+  'src/plugins/quick-open',
   'src/plugins/registries',
   'src/shell/dock',
   'src/shell/AgentAuthPrompt.tsx',
   'src/shell/StatusBar.tsx',
+  'src/shell/IconSidebar.tsx',
+  'src/marketplace/MarketplaceTab.tsx',
 ];
 
 const CJK = /[一-鿿㐀-䶿]/;
