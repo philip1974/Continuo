@@ -55,12 +55,7 @@ const FILE_ALLOWLIST: ReadonlyArray<string> = [
   'src/plugins/registries/SettingItemRegistry.ts',
   'src/plugins/registries/SettingTabRegistry.ts',
   'src/plugins/registries/StatusBarRegistry.ts',
-  // PluginsTabContent / SettingsPanel / SettingItemRow 是 user-visible 但 topic-19
-  // 范围聚焦 4 surface（core-plugins/panels/commands/permissions），settings UI 整体
-  // 是独立 follow-up topic 范围
-  'src/plugins/settings/PluginsTabContent.tsx',
-  'src/plugins/settings/SettingsPanel.tsx',
-  'src/plugins/settings/SettingItemRow.tsx',
+  // topic-20 已迁完 PluginsTabContent / SettingsPanel / SettingItemRow，allowlist 移除
 ];
 
 /** 单字面量豁免：某文件特定子串允许保留（动态 fallback 等）。 */

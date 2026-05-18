@@ -100,8 +100,8 @@ export function SettingItemRow({ spec }: SettingItemRowProps) {
         <IconButton
           size="xs"
           onClick={() => isOverridden && reset(spec.id)}
-          title={`恢复默认(${String(spec.default)})`}
-          aria-label="恢复默认"
+          title={t('settings.item.reset_default', { default: String(spec.default) })}
+          aria-label={t('settings.item.reset_default_aria')}
           className={isOverridden ? '' : 'pointer-events-none invisible'}
         >
           <svg

@@ -139,7 +139,8 @@ describe('PluginsTabContent — 第三方插件:空态', () => {
   it('mgr=null → 「暂无第三方插件」', () => {
     installPluginsApi(vi.fn());
     const { container } = render(<PluginsTabContent />);
-    expect(container.textContent).toContain('暂无第三方插件');
+    // topic-20: 文案改 '暂无用户插件'
+    expect(container.textContent).toContain('暂无用户插件');
   });
 
   it('mgr.listAll()=[] → 「暂无第三方插件」', () => {
@@ -147,7 +148,8 @@ describe('PluginsTabContent — 第三方插件:空态', () => {
     const fakeMgr: FakeManager = { listAll: () => [] };
     getMgr.mockReturnValue(fakeMgr);
     const { container } = render(<PluginsTabContent />);
-    expect(container.textContent).toContain('暂无第三方插件');
+    // topic-20: 文案改 '暂无用户插件'
+    expect(container.textContent).toContain('暂无用户插件');
   });
 });
 

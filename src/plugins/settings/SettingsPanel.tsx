@@ -19,6 +19,7 @@ import type {
 } from '../registries/SettingTabRegistry';
 import { SettingItemRow } from './SettingItemRow';
 import { useSettingsStore } from './store';
+import { useT, tWithFallback } from '@/i18n';
 
 interface SettingsPanelProps {
   /** 默认用全局 coApp.settingTabs;测试可注入隔离 registry. */
@@ -49,12 +50,12 @@ function matchSearch(item: SettingItemSpec, q: string): boolean {
   return false;
 }
 
-// 内置 4 类的本地化 label;plugin 自定义 category fallback 显示 raw 字符串
-const CATEGORY_LABELS: Record<string, string> = {
-  general: '通用',
-  editor: '编辑器',
-  explorer: '资源管理器',
-  terminal: '终端',
+// 内置 4 类 category → catalog tab_title key 映射；plugin 自定义 category fallback raw 字符串
+const CATEGORY_TITLE_KEYS: Record<string, string> = {
+  general: 'settings.general.tab_title',
+  editor: 'settings.editor.tab_title',
+  explorer: 'settings.explorer.tab_title',
+  terminal: 'settings.terminal.tab_title',
 };
 
 interface SearchBucket {
@@ -63,7 +64,7 @@ interface SearchBucket {
   readonly items: readonly SettingItemSpec[];
 }
 
-/** 把搜索结果按 category 分组,保留 first-seen 顺序(items 已按 priority 排过). */
+/** 把搜索结果按 category 分组，label 走 i18n catalog（topic-20）。 */
 function groupSearchResults(
   items: readonly SettingItemSpec[],
 ): readonly SearchBucket[] {
@@ -78,7 +79,7 @@ function groupSearchResults(
   }
   return Array.from(map.entries()).map(([category, items]) => ({
     category,
-    label: CATEGORY_LABELS[category] ?? category,
+    label: tWithFallback(CATEGORY_TITLE_KEYS[category], category),
     items,
   }));
 }
@@ -87,6 +88,7 @@ export function SettingsPanel({
   registry = coApp.settingTabs,
   itemRegistry = coApp.settingItems,
 }: SettingsPanelProps = {}) {
+  const t = useT();
   const activeTabId = useSettingsStore((s) => s.activeTabId);
   const setActiveTabId = useSettingsStore((s) => s.setActiveTabId);
   const tabs = useTabs(registry);
@@ -111,7 +113,7 @@ export function SettingsPanel({
       <div className="border-b border-line bg-panel-soft/50 p-3">
         <Input
           size="sm"
-          placeholder="搜索设置(标题 / 描述 / id)…"
+          placeholder={t('settings.panel.search_placeholder')}
           value={query}
           onChange={(e) => setQuery((e.target as HTMLInputElement).value)}
           // 改 search 时回到搜索结果区,避免左侧 nav 视觉错位
@@ -124,29 +126,31 @@ export function SettingsPanel({
             'flex w-[180px] shrink-0 flex-col overflow-y-auto border-r border-line bg-panel-soft py-2 text-xs transition-opacity',
             inSearch ? 'pointer-events-none opacity-40' : 'opacity-100',
           ].join(' ')}
-          aria-label="设置分类"
+          aria-label={t('settings.panel.nav_aria')}
         >
           {tabs.length === 0 ? (
-            <div className="px-4 py-4 text-fg-dim">暂无设置项</div>
+            <div className="px-4 py-4 text-fg-dim">{t('settings.panel.no_items')}</div>
           ) : (
-            tabs.map((t) => (
+            tabs.map((tab) => (
               <button
-                key={t.id}
+                key={tab.id}
                 type="button"
-                onClick={() => setActiveTabId(t.id)}
+                onClick={() => setActiveTabId(tab.id)}
                 className={[
                   'flex w-full items-center gap-2 border-l-2 px-4 py-2 text-left transition',
-                  active?.id === t.id
+                  active?.id === tab.id
                     ? 'border-accent bg-hover text-fg'
                     : 'border-transparent text-fg-muted hover:bg-hover/50',
                 ].join(' ')}
               >
-                {t.icon && (
+                {tab.icon && (
                   <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center">
-                    {t.icon}
+                    {tab.icon}
                   </span>
                 )}
-                <span className="truncate">{t.title}</span>
+                <span className="truncate">
+                  {tWithFallback(tab.titleKey, tab.title)}
+                </span>
               </button>
             ))
           )}
@@ -156,8 +160,8 @@ export function SettingsPanel({
             <div>
               <div className="mb-3 text-fg-dim">
                 {matched!.length === 0
-                  ? `未找到匹配「${trimmed}」的设置项`
-                  : `匹配 ${matched!.length} 项「${trimmed}」`}
+                  ? t('settings.panel.no_match', { q: trimmed })
+                  : t('settings.panel.matched', { count: matched!.length, q: trimmed })}
               </div>
               {matchedBuckets.map((bucket) => (
                 <section

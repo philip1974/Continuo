@@ -10,9 +10,10 @@ import { getUserPluginManager } from '../co-plugin-manager';
 import { getUserPermissionStore } from '../permissions/co-permission-store';
 import { PermissionEditorModal } from '../permissions/PermissionEditorModal';
 import type { PluginListItem } from '../PluginManager';
+import { useT } from '@/i18n';
 
 interface ContributionRow {
-  readonly label: string;
+  readonly labelKey: string;
   readonly count: number;
   readonly samples: readonly string[];
 }
@@ -20,17 +21,17 @@ interface ContributionRow {
 function snapshot(): readonly ContributionRow[] {
   return [
     {
-      label: 'Panel 类型',
+      labelKey: 'plugins_tab.label.panels',
       count: coApp.panels.getAll().length,
       samples: coApp.panels.getAll().map((p) => p.type),
     },
     {
-      label: '命令',
+      labelKey: 'plugins_tab.label.commands',
       count: coApp.commands.getAll().length,
       samples: coApp.commands.getAll().map((c) => c.id),
     },
     {
-      label: 'StatusBar 项',
+      labelKey: 'plugins_tab.label.statusbar',
       count: [
         ...coApp.statusBar.getBySide('left'),
         ...coApp.statusBar.getBySide('right'),
@@ -41,22 +42,22 @@ function snapshot(): readonly ContributionRow[] {
       ].map((x) => x.id),
     },
     {
-      label: 'Ribbon 图标',
+      labelKey: 'plugins_tab.label.ribbon',
       count: coApp.ribbon.getAll().length,
       samples: coApp.ribbon.getAll().map((r) => r.id),
     },
     {
-      label: '设置 Tab',
+      labelKey: 'plugins_tab.label.setting_tabs',
       count: coApp.settingTabs.getAll().length,
       samples: coApp.settingTabs.getAll().map((t) => t.id),
     },
     {
-      label: 'Explorer 装饰器',
+      labelKey: 'plugins_tab.label.explorer_decorators',
       count: coApp.explorerDecorators.getAll().length,
       samples: [],
     },
     {
-      label: 'Editor Action',
+      labelKey: 'plugins_tab.label.editor_actions',
       count: coApp.editorActions.getAll().length,
       samples: coApp.editorActions.getAll().map((a) => a.id),
     },
@@ -86,33 +87,39 @@ function useContributionSnapshot(): readonly ContributionRow[] {
   return snap;
 }
 
-const CORE_PLUGINS = [
-  { id: 'core.editor', name: 'Editor', desc: '内置编辑器面板(markdown / 代码)' },
-  { id: 'core.terminal', name: 'Terminal', desc: '内置终端面板(node-pty)' },
-  { id: 'core.output', name: 'Output', desc: '内置输出日志面板' },
-  { id: 'core.plugins', name: '插件管理', desc: '本 Tab 自身,显示插件系统自检视图' },
+const CORE_PLUGINS: ReadonlyArray<{
+  readonly id: string;
+  readonly nameKey?: string;
+  readonly name: string;
+  readonly descKey: string;
+}> = [
+  { id: 'core.editor', name: 'Editor', descKey: 'plugins_tab.core.editor_desc' },
+  { id: 'core.terminal', name: 'Terminal', descKey: 'plugins_tab.core.terminal_desc' },
+  { id: 'core.output', name: 'Output', descKey: 'plugins_tab.core.output_desc' },
+  { id: 'core.plugins', name: 'Plugin management', nameKey: 'plugins_tab.core.plugins_name', descKey: 'plugins_tab.core.plugins_desc' },
 ];
 
 export function PluginsTabContent() {
   const contribs = useContributionSnapshot();
+  const t = useT();
 
   return (
     <div className="space-y-8">
       {/* ── 贡献点统计 ──────────────────────────────── */}
       <section>
         <h3 className="mb-3 border-b border-line pb-3 text-base font-medium text-fg">
-          已注册贡献点
+          {t('plugins_tab.section.contributions')}
         </h3>
         <div className="rounded-md border border-line bg-panel-soft/40">
           {contribs.map((row, i) => (
             <div
-              key={row.label}
+              key={row.labelKey}
               className={[
                 'flex items-start gap-4 px-4 py-3 text-xs',
                 i > 0 ? 'border-t border-line/50' : '',
               ].join(' ')}
             >
-              <div className="w-32 shrink-0 text-fg-muted">{row.label}</div>
+              <div className="w-32 shrink-0 text-fg-muted">{t(row.labelKey)}</div>
               <div className="w-8 shrink-0 text-right tabular-nums text-fg">
                 {row.count}
               </div>
@@ -127,7 +134,7 @@ export function PluginsTabContent() {
       {/* ── 内置插件清单 ─────────────────────────────── */}
       <section>
         <h3 className="mb-3 border-b border-line pb-3 text-base font-medium text-fg">
-          内置插件
+          {t('plugins_tab.section.builtin')}
         </h3>
         <div className="rounded-md border border-line bg-panel-soft/40">
           {CORE_PLUGINS.map((p, i) => (
@@ -139,8 +146,10 @@ export function PluginsTabContent() {
               ].join(' ')}
             >
               <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium text-fg">{p.name}</div>
-                <div className="mt-1 text-fg-muted">{p.desc}</div>
+                <div className="text-sm font-medium text-fg">
+                  {p.nameKey ? t(p.nameKey) : p.name}
+                </div>
+                <div className="mt-1 text-fg-muted">{t(p.descKey)}</div>
               </div>
               <code className="shrink-0 rounded bg-panel-soft/70 px-1.5 py-0.5 text-2xs uppercase tracking-wider text-fg-muted/70">
                 {p.id}
@@ -179,6 +188,7 @@ function useUserPlugins(): {
 }
 
 function UserPluginsSection() {
+  const t = useT();
   const { plugins, refresh } = useUserPlugins();
   const mgr = getUserPluginManager();
   const [gitUrl, setGitUrl] = useState('');
@@ -206,7 +216,9 @@ function UserPluginsSection() {
     } catch (err) {
       console.warn(`[plugins-tab] uninstall ${target.id} failed`, err);
       setInstallMsg(
-        `✘ 卸载失败:${err instanceof Error ? err.message : String(err)}`,
+        t('plugins_tab.install.uninstall_fail', {
+          message: err instanceof Error ? err.message : String(err),
+        }),
       );
     }
     refresh();
@@ -219,16 +231,23 @@ function UserPluginsSection() {
     try {
       const r = await coApi.plugins.installFromGit(gitUrl.trim());
       if (!r.ok) {
-        setInstallMsg(`✘ [${r.code}] ${r.message}`);
+        setInstallMsg(t('plugins_tab.error.generic', { message: `[${r.code}] ${r.message}` }));
       } else {
         setInstallMsg(
-          `✔ 已安装 ${r.data.name} v${r.data.version} — 重启 LM 后插件加载`,
+          t('plugins_tab.install.success', {
+            name: r.data.name,
+            version: r.data.version,
+          }),
         );
         setPendingInstall(r.data);
         setGitUrl('');
       }
     } catch (err) {
-      setInstallMsg(`✘ ${err instanceof Error ? err.message : String(err)}`);
+      setInstallMsg(
+        t('plugins_tab.error.generic', {
+          message: err instanceof Error ? err.message : String(err),
+        }),
+      );
     } finally {
       setInstalling(false);
     }
@@ -237,14 +256,16 @@ function UserPluginsSection() {
   return (
     <section>
       <h3 className="mb-3 border-b border-line pb-3 text-base font-medium text-fg">
-        第三方插件
+        {t('plugins_tab.section.user')}
       </h3>
       {/* git URL 安装(对齐 demo (3) 的「从 GIT URL 安装」段:浅底 + 标题 +
        *  输入框 + 按钮 + 警告 banner) */}
       <div className="mb-4 rounded-md border border-line bg-panel-soft/40 p-4">
-        <div className="text-sm font-medium text-fg">从 Git URL 安装</div>
+        <div className="text-sm font-medium text-fg">
+          {t('plugins_tab.section.install_from_git')}
+        </div>
         <div className="mt-1 text-xs text-fg-muted">
-          可以直接通过 Git 链接进行安装。注意第三方仓库可能存在安全风险,请保持信任源代码及其开发者。
+          {t('plugins_tab.section.install_warning')}
         </div>
         <div className="mt-3 flex items-center gap-2">
           <Input
@@ -261,7 +282,9 @@ function UserPluginsSection() {
             onClick={onInstall}
             disabled={installing || !gitUrl.trim()}
           >
-            {installing ? '安装中…' : '安装'}
+            {installing
+              ? t('plugins_tab.install.installing')
+              : t('plugins_tab.install.install')}
           </Button>
         </div>
         {installMsg && (
@@ -270,7 +293,7 @@ function UserPluginsSection() {
       </div>
       {plugins.length === 0 && !pendingInstall ? (
         <div className="rounded-md border border-dashed border-line bg-panel-soft/40 px-4 py-8 text-center text-xs text-fg-dim">
-          暂无第三方插件。从上方「git URL 安装」添加。
+          {t('plugins_tab.user.no_plugins')}
         </div>
       ) : (
         <div className="rounded-md border border-line bg-panel-soft/40">
@@ -289,7 +312,7 @@ function UserPluginsSection() {
                   </span>
                 </div>
                 <div className="mt-1 text-fg-muted">
-                  ⏳ 已安装,重启 LM 后出现在列表并可启用
+                  {t('plugins_tab.user.pending_hint')}
                 </div>
               </div>
             </div>
@@ -338,9 +361,9 @@ function UserPluginsSection() {
                     }
                     refresh();
                   }}
-                  title="重新加载该插件(拉取最新代码)"
+                  title={t('plugins_tab.action.reload_tooltip')}
                 >
-                  重载
+                  {t('plugins_tab.btn.reload')}
                 </Button>
                 {p.status === 'enabled' ? (
                   <Button
@@ -355,7 +378,7 @@ function UserPluginsSection() {
                       refresh();
                     }}
                   >
-                    禁用
+                    {t('plugins_tab.btn.disable')}
                   </Button>
                 ) : p.status === 'disabled' ? (
                   <Button
@@ -370,7 +393,7 @@ function UserPluginsSection() {
                       refresh();
                     }}
                   >
-                    启用
+                    {t('plugins_tab.btn.enable')}
                   </Button>
                 ) : (
                   // FAILED:启用按钮仍可点(权限拒绝时会清 deny + 复弹 Modal)
@@ -385,9 +408,9 @@ function UserPluginsSection() {
                       }
                       refresh();
                     }}
-                    title="重试启用(权限拒绝时会重弹授权)"
+                    title={t('plugins_tab.action.retry_enable_tooltip')}
                   >
-                    启用
+                    {t('plugins_tab.btn.enable')}
                   </Button>
                 )}
                 {(p.manifest.permissions?.length ?? 0) > 0 && permStore && (
@@ -395,18 +418,18 @@ function UserPluginsSection() {
                     variant="ghost"
                     size="sm"
                     onClick={() => setPermEditTarget(p)}
-                    title="编辑该插件的权限授权"
+                    title={t('plugins_tab.action.edit_permissions_tooltip')}
                   >
-                    权限
+                    {t('plugins_tab.btn.permissions')}
                   </Button>
                 )}
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() => setUninstallTarget(p)}
-                  title="卸载该插件(删除磁盘目录)"
+                  title={t('plugins_tab.action.uninstall_tooltip')}
                 >
-                  卸载
+                  {t('plugins_tab.btn.uninstall')}
                 </Button>
               </div>
             </div>
@@ -415,16 +438,13 @@ function UserPluginsSection() {
       )}
       <ConfirmDialog
         open={uninstallTarget !== null}
-        title="卸载插件?"
+        title={t('plugins_tab.uninstall.title')}
         description={
           uninstallTarget ? (
-            <>
-              将永久删除 <code className="text-fg">{uninstallTarget.id}</code>{' '}
-              的安装目录及其所有数据。该操作不可撤销,需重新从 git URL 安装才能恢复。
-            </>
+            <>{t('plugins_tab.uninstall.body', { id: uninstallTarget.id })}</>
           ) : null
         }
-        confirmLabel="卸载"
+        confirmLabel={t('plugins_tab.uninstall.confirm')}
         destructive
         onConfirm={onConfirmUninstall}
         onCancel={() => setUninstallTarget(null)}
