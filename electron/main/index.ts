@@ -55,7 +55,6 @@ import {
 import { setStdioConfig } from './services/mcp-stdio-config.service';
 import { startPluginMcpIpc } from './ipc/plugin-mcp.ipc';
 import { defaultIsTrustedFrame } from './safe-handle';
-import { breadcrumb } from './lib/reload-breadcrumb';
 
 // autorun delay:Win shell prompt 慢,默认更长。
 const AUTORUN_DELAY_MS = process.platform === 'win32' ? 600 : 200;
@@ -64,16 +63,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = !app.isPackaged;
 const PRELOAD = path.join(__dirname, '../preload/index.cjs');
 const RENDERER_FILE = path.join(__dirname, '../renderer/index.html');
-
-// issue #34 实验开关:env CONTINUO_DISABLE_HW=1 切软件渲染,对照验证 GPU 合成层假设。
-// 必须在 app.ready 之前调,故置于顶层模块初始化路径。
-if (process.env.CONTINUO_DISABLE_HW === '1') {
-  app.disableHardwareAcceleration();
-  // 写不到 breadcrumb(app 未 ready),用 stderr。
-  console.warn(
-    '[issue#34] CONTINUO_DISABLE_HW=1 — hardware acceleration disabled',
-  );
-}
 
 // dev 与 packaged Continuo.app 必须用不同 userData,否则:
 // (a) requestSingleInstanceLock 互踩 → 后启动的 quit;
@@ -89,10 +78,9 @@ const COMMON_WEB_PREFERENCES = {
   contextIsolation: true,
   sandbox: true,
   nodeIntegration: false,
-  // issue #34:Chromium 在 macOS 上偶发把窗口误判为"不可见",触发 backgroundThrottling
-  // 暂停 rAF 与 paint 后永久不退出 → 屏幕静止但 main heartbeat 正常。Continuo 是 IDE 类
-  // 应用,窗口永远应保持 paint,关掉节流。决定性证据来自 B2 探针:
-  // main heartbeat 30s 间隔完美,rAF 在 5min 后 fire 间隔从 30s 暴涨到 75s 后完全停。
+  // issue #34:Chromium 在 macOS 上偶发误判窗口"不可见"触发 backgroundThrottling,
+  // 暂停 paint 后永久不退出 → 进程健康但屏幕静止。Continuo 是 IDE 类应用,
+  // 窗口永远应保持 paint;关掉节流。
   backgroundThrottling: false,
 } as const;
 
@@ -252,47 +240,6 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
 // 这样从 popout 再 popout 也走我们的同一套安全策略。
 app.on('web-contents-created', (_evt, contents) => {
   contents.setWindowOpenHandler(windowOpenHandler);
-
-  // issue #33:renderer 崩 + 每次 did-finish-load(包括 reload)各落一条 breadcrumb。
-  // 关键诊断"两窗同时黑屏"是否由 GPU/renderer 崩引起。
-  contents.on('render-process-gone', (_e, details) => {
-    breadcrumb({
-      event: 'render_process_gone',
-      windowId: contents.id,
-      reason: details.reason,
-      exitCode: details.exitCode,
-    });
-  });
-  contents.on('did-finish-load', () => {
-    const url = contents.getURL();
-    breadcrumb({
-      event: 'did_finish_load',
-      windowId: contents.id,
-      url,
-      isPopout: url.includes('popout=1'),
-    });
-  });
-
-  // issue #34:renderer 主线程长时间不响应 → Chromium 触发 'unresponsive'。
-  // 与 render_frame_heartbeat 配对:rAF 停但 unresponsive 不触发 = OS 侧丢 frame。
-  contents.on('unresponsive', () => {
-    breadcrumb({ event: 'renderer_unresponsive', windowId: contents.id });
-  });
-  contents.on('responsive', () => {
-    breadcrumb({ event: 'renderer_responsive', windowId: contents.id });
-  });
-});
-
-// issue #33:GPU 等子进程崩 → 所有窗口共享 GPU,这条命中很可能是"两窗同时黑"根因。
-app.on('child-process-gone', (_e, details) => {
-  breadcrumb({
-    event: 'child_process_gone',
-    type: details.type,
-    reason: details.reason,
-    exitCode: details.exitCode,
-    serviceName: details.serviceName,
-    name: details.name,
-  });
 });
 
 // ─────────────────────────────────────────────────────
@@ -626,19 +573,6 @@ app.whenReady().then(async () => {
 
   // topic 16 i18n: 必须先 hydrate settings.json，buildAppMenu 才能拿到正确 locale 的 label
   await loadSettings();
-
-  // issue #33:启动一条 breadcrumb + 30s 心跳。心跳缺漏 = main 进程被阻塞,
-  // 配合"两窗同时黑"现场可精确定位"是否 main loop hang"。
-  breadcrumb({
-    event: 'app_ready',
-    electron: process.versions.electron,
-    node: process.versions.node,
-    platform: process.platform,
-    arch: process.arch,
-  });
-  setInterval(() => {
-    breadcrumb({ event: 'heartbeat', uptimeSec: Math.floor(process.uptime()) });
-  }, 30_000).unref();
 
   // E2E 跑 Playwright 时,Electron 默认菜单的 CmdOrCtrl+P 绑定 Print 会先吞
   // ⌘P,导致 Quick Open 收不到 keydown。e2e 显式禁用菜单(只影响测试模式)。

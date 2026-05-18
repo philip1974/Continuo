@@ -40,10 +40,6 @@ import {
 } from '../shared/i18n-channels';
 import type { Locale } from '../shared/i18n-types';
 import type { NotifyPushPayload } from '../shared/notify-channels';
-import {
-  DIAGNOSTICS_CHANNELS,
-  type IpcDiagnosticsBreadcrumbInput,
-} from '../shared/diagnostics-channels';
 
 // terminal create 入参的轻量类型(与 main 端 zod schema 对齐)
 // export 是为了 ContinuoApi 跨 module 引用时 TS 能 name 这些类型
@@ -306,21 +302,6 @@ const api = {
      */
     openExternal: (url: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(SHELL_CHANNELS.OPEN_EXTERNAL, { url }),
-    /** 启动/刷新黑屏看门狗(issue #33)按钮:用系统文件管理器打开 userData/logs. */
-    openLogsDir: (): Promise<IpcResult<void>> =>
-      ipcRenderer.invoke(DIAGNOSTICS_CHANNELS.OPEN_LOGS_DIR, {}),
-  },
-  app: {
-    /** 启动/刷新黑屏看门狗(issue #33)按钮:app.relaunch + app.exit. */
-    relaunch: (): Promise<IpcResult<void>> =>
-      ipcRenderer.invoke(DIAGNOSTICS_CHANNELS.RELAUNCH, {}),
-  },
-  diagnostics: {
-    /** renderer 写一条 breadcrumb(issue #33). 失败 ok=false 但不抛. */
-    breadcrumb: (
-      entry: IpcDiagnosticsBreadcrumbInput,
-    ): Promise<IpcResult<void>> =>
-      ipcRenderer.invoke(DIAGNOSTICS_CHANNELS.BREADCRUMB, entry),
   },
   window: {
     /**

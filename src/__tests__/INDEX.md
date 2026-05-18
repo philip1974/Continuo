@@ -488,10 +488,6 @@
 
 - [`shell-service.spec.ts`](./shell-service/shell-service.spec.ts)
 
-## [SplashWatchdog(启动卡屏看门狗)](./splash-watchdog/README.md)
-
-- [`splash-watchdog.spec.tsx`](./splash-watchdog/splash-watchdog.spec.tsx)
-
 ## [Spotlight(装饰用聚光灯 SVG)](./spotlight/README.md)
 
 - [`spotlight.spec.tsx`](./spotlight/spotlight.spec.tsx)

@@ -26,8 +26,6 @@ import { useLayoutUiStore } from '@/stores/layout-ui.store';
 import { NotificationsProvider } from '@/notifications/NotificationsProvider';
 import { NotifyIpcBridge } from '@/notifications/NotifyIpcBridge';
 import { ToastViewport } from '@/notifications/ToastViewport';
-import { breadcrumb, probeCssLoaded } from '@/lib/diagnostics/breadcrumb';
-import { SplashWatchdog } from './decor/SplashWatchdog';
 import { LanguageFromSettings } from '@/plugins/settings/LanguageFromSettings';
 
 const SPLASH_MIN_MS = 600;
@@ -35,18 +33,6 @@ const SPLASH_MIN_MS = 600;
 function MainApp() {
   const [layoutReady, setLayoutReady] = useState(false);
   const [splashElapsed, setSplashElapsed] = useState(false);
-
-  // issue #33:App mount + layoutReady 翻 true 各落一条 breadcrumb。
-  useEffect(() => {
-    breadcrumb({
-      event: 'app_mounted',
-      workspaceRoot: useWorkspaceStore.getState().root,
-      sidebarOpen: useLayoutUiStore.getState().sidebarOpen,
-    });
-  }, []);
-  useEffect(() => {
-    if (layoutReady) breadcrumb({ event: 'layout_ready' });
-  }, [layoutReady]);
 
   useEffect(() => {
     const t = setTimeout(() => setSplashElapsed(true), SPLASH_MIN_MS);
@@ -128,19 +114,6 @@ function MainApp() {
       <PermissionPrompt />
       <AgentAuthPrompt />
       {showSplash && <Splash />}
-      <SplashWatchdog
-        layoutReady={layoutReady}
-        forceEnter={() => setLayoutReady(true)}
-        snapshot={() => ({
-          layoutReady,
-          workspaceRoot: useWorkspaceStore.getState().root,
-          sidebarOpen: useLayoutUiStore.getState().sidebarOpen,
-          hasCoApi:
-            typeof (globalThis as { window?: { __lmApi?: unknown } }).window
-              ?.__lmApi !== 'undefined',
-          cssLoaded: probeCssLoaded(),
-        })}
-      />
     </>
   );
 }

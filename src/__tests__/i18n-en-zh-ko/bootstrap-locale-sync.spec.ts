@@ -30,9 +30,6 @@ const mocks = vi.hoisted(() => {
     initExplorerPersistence: vi.fn(),
     updateRefresh: vi.fn(),
     reviewsRefresh: vi.fn(),
-    breadcrumb: vi.fn(),
-    probeCssLoaded: vi.fn(() => true),
-    startRafHeartbeat: vi.fn(),
   };
 });
 
@@ -137,15 +134,6 @@ vi.mock('@/marketplace/reviews-store', () => ({
   useReviewsStore: {
     getState: () => ({ refresh: mocks.reviewsRefresh }),
   },
-}));
-
-vi.mock('@/lib/diagnostics/breadcrumb', () => ({
-  breadcrumb: mocks.breadcrumb,
-  probeCssLoaded: mocks.probeCssLoaded,
-}));
-
-vi.mock('@/lib/diagnostics/raf-heartbeat', () => ({
-  startRafHeartbeat: mocks.startRafHeartbeat,
 }));
 
 beforeEach(() => {
