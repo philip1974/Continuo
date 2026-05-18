@@ -30,6 +30,7 @@ import { getCachedClipboard } from '@/plugins/sandbox-sweep';
 import { useSettingValue } from '@/plugins/settings/values-store';
 import { useTheme } from '@/theme';
 import { useExplorerClipboardStore } from './clipboard-store';
+import { t } from '@/i18n';
 
 interface CreatingState {
   type: 'file' | 'dir';
@@ -124,10 +125,10 @@ export function FolderTree({ root }: { root: string }) {
               const r = await coApi.fs.move(src, dest);
               if (!r.ok) {
                 console.warn('[explorer] drop move failed', src, r.code, r.message);
-                notify.error(`移动失败: ${src}: ${r.message}`, {
-                  code: r.code,
-                  mirror: false,
-                });
+                notify.error(
+                  t('errors.folder.move_failed', { src, message: r.message }),
+                  { code: r.code, mirror: false },
+                );
                 return;
               }
               useEditorStore.getState().renamePath(src, dest);
@@ -148,11 +149,14 @@ export function FolderTree({ root }: { root: string }) {
             refreshParent(destDir);
             const msgs: string[] = [];
             if (skippedDirs.length > 0) {
-              msgs.push(`跳过 ${skippedDirs.length} 个文件夹(暂不支持目录拖入)`);
+              msgs.push(
+                t('errors.folder.skipped_dirs', { count: skippedDirs.length }),
+              );
             }
             if (!r.ok) {
               msgs.push(
-                `失败 ${r.failed.length} 个:\n` +
+                t('errors.folder.batch_failed', { count: r.failed.length }) +
+                  '\n' +
                   r.failed.map((f) => `  ${f.name}: [${f.code}] ${f.message}`).join('\n'),
               );
             }
@@ -282,7 +286,12 @@ export function FolderTree({ root }: { root: string }) {
         }
         // 动态 import dock-api-ref 防早期加载循环
         const { openOrFocusPanel } = await import('@/shell/dock/dock-api-ref');
-        openOrFocusPanel('terminal', 'terminal', 'Terminal');
+        openOrFocusPanel(
+          'terminal',
+          'terminal',
+          'Terminal',
+          'panels.terminal.title',
+        );
       })();
     },
     onTrash: (paths: string[]) => {
@@ -291,10 +300,10 @@ export function FolderTree({ root }: { root: string }) {
           const r = await coApi.fs.trash(p);
           if (!r.ok) {
             console.warn('[explorer] trash failed', p, r.code, r.message);
-            notify.error(`移到废纸篓失败: ${p}: ${r.message}`, {
-              code: r.code,
-              mirror: false,
-            });
+            notify.error(
+              t('errors.folder.trash_failed', { path: p, message: r.message }),
+              { code: r.code, mirror: false },
+            );
             return;
           }
           // 文件删除 → 关闭对应 editor tab(目录则关其下所有 tab)
@@ -321,10 +330,10 @@ export function FolderTree({ root }: { root: string }) {
               : await coApi.fs.copy(src, dest);
           if (!r.ok) {
             console.warn(`[explorer] paste(${kind}) failed`, src, r.code, r.message);
-            notify.error(`粘贴失败: ${src}: ${r.message}`, {
-              code: r.code,
-              mirror: false,
-            });
+            notify.error(
+              t('errors.folder.paste_failed', { src, message: r.message }),
+              { code: r.code, mirror: false },
+            );
             return;
           }
           // cut = move:同步 editor tab 路径(目录则前缀 rewrite 全部子 tab)
@@ -433,10 +442,10 @@ export function FolderTree({ root }: { root: string }) {
         const r = await coApi.fs.move(src, dest);
         if (!r.ok) {
           console.warn('[explorer] root drop move failed', src, r.code, r.message);
-          notify.error(`移动失败: ${src}: ${r.message}`, {
-            code: r.code,
-            mirror: false,
-          });
+          notify.error(
+            t('errors.folder.move_failed', { src, message: r.message }),
+            { code: r.code, mirror: false },
+          );
           return;
         }
         useEditorStore.getState().renamePath(src, dest);
@@ -460,11 +469,12 @@ export function FolderTree({ root }: { root: string }) {
     // 仅在有问题时提示;成功 fs.watch 已自动刷新树
     const msgs: string[] = [];
     if (skippedDirs.length > 0) {
-      msgs.push(`跳过 ${skippedDirs.length} 个文件夹(暂不支持目录拖入)`);
+      msgs.push(t('errors.folder.skipped_dirs', { count: skippedDirs.length }));
     }
     if (!r.ok) {
       msgs.push(
-        `失败 ${r.failed.length} 个:\n` +
+        t('errors.folder.batch_failed', { count: r.failed.length }) +
+          '\n' +
           r.failed.map((f) => `  ${f.name}: [${f.code}] ${f.message}`).join('\n'),
       );
     }

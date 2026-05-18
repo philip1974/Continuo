@@ -13,6 +13,7 @@ import '@milkdown/crepe/theme/frame-dark.css';
 // 必须在 Crepe theme 之后,才能 override 它的 px 字号(详见文件注释)
 import '@/styles/milkdown-font-override.css';
 import { useSettingValue } from '@/plugins/settings/values-store';
+import { t } from '@/i18n';
 
 interface MilkdownEditorProps {
   defaultValue: string;
@@ -50,7 +51,7 @@ function CrepeEditor({ defaultValue, readonly = false, onChange }: MilkdownEdito
       },
       featureConfigs: {
         [CrepeFeature.Placeholder]: {
-          text: '开始书写…',
+          text: t('panels.editor.placeholder.start_writing'),
         },
       },
     });

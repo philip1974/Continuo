@@ -7,6 +7,7 @@
 
 import { Spinner } from '@/design';
 import { useTerminal } from './useTerminal';
+import { useT } from '@/i18n';
 
 interface TerminalViewProps {
   termId: string;
@@ -14,6 +15,7 @@ interface TerminalViewProps {
 
 export function TerminalView({ termId }: TerminalViewProps) {
   const { containerRef, isReady } = useTerminal(termId);
+  const t = useT();
   return (
     <div className="relative h-full w-full">
       {/*
@@ -44,11 +46,11 @@ export function TerminalView({ termId }: TerminalViewProps) {
           // pointer-events-none 让 overlay 不挡住 xterm 焦点(用户立刻可输入,
           // 即使 prompt 还没出来,字符会缓冲到 PTY)
           className="pointer-events-none absolute inset-0 flex items-center justify-center bg-canvas/70 backdrop-blur-[2px]"
-          aria-label="启动 shell"
+          aria-label={t('panels.terminal.aria.start_shell')}
         >
           <div className="flex items-center gap-2 text-xs text-fg-dim">
             <Spinner size="sm" />
-            <span>启动 shell…</span>
+            <span>{t('panels.terminal.aria.start_shell')}…</span>
           </div>
         </div>
       )}

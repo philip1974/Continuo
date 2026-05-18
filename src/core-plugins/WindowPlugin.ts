@@ -11,7 +11,9 @@ export default class WindowPlugin extends Plugin {
     this.addCommand({
       id: 'window.new',
       title: 'New Window',
+      titleKey: 'commands.window.new.title',
       category: 'Window',
+      categoryKey: 'commands.window.category',
       hotkey: 'mod+shift+n',
       fn: async () => {
         const r = await coApi.window.create({});
@@ -26,7 +28,9 @@ export default class WindowPlugin extends Plugin {
     this.addCommand({
       id: 'window.openFolderInNew',
       title: 'Open Folder in New Window…',
+      titleKey: 'commands.window.open_folder.title',
       category: 'Window',
+      categoryKey: 'commands.window.category',
       fn: async () => {
         const dr = await coApi.fs.selectDirectory();
         if (!dr.ok) {

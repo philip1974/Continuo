@@ -17,7 +17,8 @@ export default class KeybindingsTabPlugin extends Plugin {
   onload(): void {
     this.addSettingTab({
       id: 'core.keybindings',
-      title: '快捷键',
+      title: 'Keybindings',
+      titleKey: 'settings.keybindings.tab_title',
       // 商店 40 / 插件 50,快捷键 60 排在它们后面
       priority: 60,
       icon: createElement(KeybindingsIcon),

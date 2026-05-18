@@ -10,6 +10,7 @@
 
 import { memo, useEffect, useMemo, useState } from 'react';
 import { useEditorStore, type EditorMode, type EditorTab } from '@/stores/editor.store';
+import { useT, t as translate } from '@/i18n';
 import {
   Button,
   IconButton,
@@ -28,7 +29,7 @@ interface EditorHeaderProps {
 }
 
 function basename(p: string | null): string {
-  if (!p) return '未命名';
+  if (!p) return translate('panels.editor.untitled');
   const trimmed = p.replace(/[\\/]+$/, '');
   const idx = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
   return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
@@ -102,6 +103,7 @@ export function EditorHeader({
   activeTab,
   onCloseRequest,
 }: EditorHeaderProps) {
+  const t = useT(); // 订阅 locale 让 basename 改语言时 re-render
   const tabs = useEditorStore((s) => s.tabs);
   const activeTabId = useEditorStore((s) => s.activeTabId);
   const switchTab = useEditorStore((s) => s.switchTab);
@@ -119,7 +121,7 @@ export function EditorHeader({
             key={tab.id}
             active={tab.id === activeTabId}
             dirty={tab.dirty}
-            title={tab.filePath ?? '未保存草稿'}
+            title={tab.filePath ?? t('panels.editor.unsaved_draft')}
             onSelect={() => switchTab(tab.id)}
             onClose={() => onCloseRequest(tab)}
           >

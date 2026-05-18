@@ -3,6 +3,7 @@ import type { IDockviewPanelProps } from 'dockview-react';
 import { Button, IconButton } from '@/design';
 import { coApi } from '@/lib/co-api';
 import { notify } from '@/notifications/notify';
+import { useT } from '@/i18n';
 import {
   filterByOwnerWindow,
   useTerminalStore,
@@ -66,6 +67,7 @@ function LegacyTerminalPanel() {
   const setActive = useTerminalStore((s) => s.setActive);
   const workspaceRoot = useWorkspaceStore((s) => s.root);
   const { resolved } = useTheme();
+  const t = useT();
 
   useEffect(() => {
     const winId = coApi.system.windowId;
@@ -128,10 +130,10 @@ function LegacyTerminalPanel() {
         <Button
           size="sm"
           variant="secondary"
-          aria-label="新建终端"
+          aria-label={t('panels.terminal.aria.new_terminal')}
           onClick={handleNew}
         >
-          + 新建终端
+          + {t('panels.terminal.aria.new_terminal')}
         </Button>
         {sessions.map((session) => (
           <div
@@ -147,7 +149,7 @@ function LegacyTerminalPanel() {
             </Button>
             <IconButton
               size="xs"
-              aria-label={`关闭终端 ${session.title}`}
+              aria-label={t('panels.terminal.aria.close_terminal', { name: session.title })}
               onClick={() => handleClose(session.id)}
             >
               ×
@@ -158,14 +160,14 @@ function LegacyTerminalPanel() {
       <div className="relative min-h-0 flex-1 overflow-hidden">
         {sessions.length === 0 ? (
           <div className="flex h-full w-full flex-col items-center justify-center gap-3 text-sm text-fg-muted">
-            <div>无活跃终端</div>
+            <div>{t('panels.terminal.no_active')}</div>
             <Button
               size="sm"
               variant="secondary"
-              aria-label="新建终端"
+              aria-label={t('panels.terminal.aria.new_terminal')}
               onClick={handleNew}
             >
-              + 新建终端
+              + {t('panels.terminal.aria.new_terminal')}
             </Button>
           </div>
         ) : (

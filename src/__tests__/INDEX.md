@@ -281,6 +281,14 @@
 - [`settings-service.spec.ts`](./i18n-en-zh-ko/settings-service.spec.ts)
 - [`t-fallback.spec.ts`](./i18n-en-zh-ko/t-fallback.spec.ts)
 
+## [i18n-strings-r2 — i18n 字符串迁移第二批 BDD](./i18n-strings-r2/README.md)
+
+- [`core-plugins-titlekey.spec.ts`](./i18n-strings-r2/core-plugins-titlekey.spec.ts)
+- [`dock-locale-sync.spec.tsx`](./i18n-strings-r2/dock-locale-sync.spec.tsx)
+- [`hardcode-regression.spec.ts`](./i18n-strings-r2/hardcode-regression.spec.ts)
+- [`registry-titlekey.spec.ts`](./i18n-strings-r2/registry-titlekey.spec.ts)
+- [`t-with-fallback.spec.ts`](./i18n-strings-r2/t-with-fallback.spec.ts)
+
 ## [IconSidebar(48px 竖向 Activity Bar)](./icon-sidebar/README.md)
 
 - [`icon-sidebar.spec.tsx`](./icon-sidebar/icon-sidebar.spec.tsx)

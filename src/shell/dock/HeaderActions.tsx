@@ -8,6 +8,7 @@ import { coApi } from '@/lib/co-api';
 import { notify } from '@/notifications/notify';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { ERROR_CODES } from '../../../electron/shared/error-codes';
+import { useTWithFallback, t } from '@/i18n';
 
 let panelCounter = 0;
 const nextPanelId = (key: string) => `${key}-${++panelCounter}`;
@@ -24,6 +25,7 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [anchor, setAnchor] = useState<AnchorRect | null>(null);
+  const tk = useTWithFallback();
   // 动态读取已注册 panel 类型(含内置 + 未来第三方插件)
   const [panelChoices, setPanelChoices] = useState(() => coApp.panels.getAll());
   useEffect(
@@ -64,7 +66,11 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
   }, [open]);
 
   const addPanel = useCallback(
-    async (key: string, label: string) => {
+    async (
+      key: string,
+      label: string,
+      titleKey: string | undefined,
+    ) => {
       if (key === 'terminal') {
         // terminal panel session-bound:不走 containerApi.addPanel,
         // 通过 coApi.terminal.create → SessionsSync → DockReconciler addPanel(含 sessionId)。
@@ -78,8 +84,8 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
         if (!r.ok) {
           const msg =
             r.code === ERROR_CODES.TERMINAL_CWD_UNRESOLVED
-              ? '无法新建终端: 请先打开 workspace'
-              : `无法新建终端: ${r.code ?? '未知错误'}`;
+              ? t('errors.terminal.cwd_unresolved')
+              : t('errors.terminal.create_failed', { code: r.code ?? '?' });
           notify.error(msg, { code: r.code });
           setOpen(false);
           return;
@@ -96,6 +102,7 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
         component: key,
         title: label,
         position: { referenceGroup: group },
+        ...(titleKey ? { params: { titleKey } } : {}),
       });
       setOpen(false);
     },
@@ -119,8 +126,9 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
         <>
           <IconButton
             size="sm"
+            // aria-label 保留 ASCII（screen reader hint，sibling spec 用此查 button）
             aria-label="Pop out active panel"
-            title="弹出到独立窗口"
+            title={t('shell.dock.popout_title')}
             disabled={!activePanel}
             onClick={popout}
             className="opacity-40 transition-opacity group-hover/header:opacity-100 focus-visible:opacity-100"
@@ -141,8 +149,9 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
       <IconButton
         ref={triggerRef}
         size="sm"
+        // aria-label 保留 ASCII（sibling spec 用此查 button）；title 走 t() 给 hover 提示
         aria-label="More actions"
-        title="更多操作"
+        title={t('panels.explorer.btn.more_actions')}
         onClick={() => setOpen((v) => !v)}
         className="opacity-40 transition-opacity group-hover/header:opacity-100 focus-visible:opacity-100"
       >
@@ -161,11 +170,17 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
             style={{ position: 'fixed', top: anchor.top, right: anchor.right }}
             className="z-modal min-w-[140px] overflow-hidden rounded-md border border-line bg-panel py-1 shadow-lg shadow-black/40"
           >
-            {panelChoices.map((c) => (
-              <MenuItem key={c.type} onClick={() => addPanel(c.type, c.title)}>
-                {c.title}
-              </MenuItem>
-            ))}
+            {panelChoices.map((c) => {
+              const label = tk(c.titleKey, c.title);
+              return (
+                <MenuItem
+                  key={c.type}
+                  onClick={() => addPanel(c.type, label, c.titleKey)}
+                >
+                  {label}
+                </MenuItem>
+              );
+            })}
           </div>,
           document.body,
         )}

@@ -22,30 +22,38 @@ import {
   getEffectiveHotkey,
   useKeybindingsStore,
 } from '../keybindings/keybindings-store';
+import { useTWithFallback, useT } from '@/i18n';
 
 // module 顶层一次,renderer 生命周期内不会切平台
 const PLATFORM = detectPlatform();
 
 const RECENT_TOP_N = 5;
 
-function matchSource(cmd: CommandSpec): string {
-  return cmd.category ? `${cmd.category} ${cmd.title}` : cmd.title;
+/** 渲染中间体:已 localize 的 title/category（topic-19 P1-2）。 */
+interface DisplayCommand {
+  readonly cmd: CommandSpec;
+  readonly displayTitle: string;
+  readonly displayCategory: string;
 }
 
-/** 空 query 时:recent 前 N 个置顶 + 其余按 title 字母序. */
+function matchSource(d: DisplayCommand): string {
+  return d.displayCategory ? `${d.displayCategory} ${d.displayTitle}` : d.displayTitle;
+}
+
+/** 空 query 时:recent 前 N 个置顶 + 其余按 displayTitle 字母序. */
 function sortByRecent(
-  items: readonly CommandSpec[],
+  items: readonly DisplayCommand[],
   recentIds: readonly string[],
-): CommandSpec[] {
+): DisplayCommand[] {
   const recentSet = new Set(recentIds.slice(0, RECENT_TOP_N));
-  const recent: CommandSpec[] = [];
-  const others: CommandSpec[] = [];
-  for (const c of items) {
-    if (recentSet.has(c.id)) recent.push(c);
-    else others.push(c);
+  const recent: DisplayCommand[] = [];
+  const others: DisplayCommand[] = [];
+  for (const d of items) {
+    if (recentSet.has(d.cmd.id)) recent.push(d);
+    else others.push(d);
   }
-  recent.sort((a, b) => recentIds.indexOf(a.id) - recentIds.indexOf(b.id));
-  others.sort((a, b) => a.title.localeCompare(b.title));
+  recent.sort((a, b) => recentIds.indexOf(a.cmd.id) - recentIds.indexOf(b.cmd.id));
+  others.sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));
   return [...recent, ...others];
 }
 
@@ -78,15 +86,28 @@ export function CommandPalette({ commands }: CommandPaletteProps) {
   // 订阅 overrides:用户改 hotkey 时 CommandPalette 重渲,列表 KeyCap 同步.
   // 不直接用 selector 的值,只为触发 re-render(getEffectiveHotkey 内部读 store).
   useKeybindingsStore((s) => s.overrides);
+  const tk = useTWithFallback();
+  const t = useT();
+
+  // 先 localize 成 DisplayCommand,再 filter/sort(P1-2: 按显示文本搜索/排序)
+  const displayCommands = useMemo<readonly DisplayCommand[]>(
+    () =>
+      allCommands.map((cmd) => ({
+        cmd,
+        displayTitle: tk(cmd.titleKey, cmd.title),
+        displayCategory: tk(cmd.categoryKey, cmd.category ?? ''),
+      })),
+    [allCommands, tk],
+  );
 
   const filtered = useMemo(() => {
     if (query) {
-      // 有 query → fuzzy 匹配 category + title
-      return fuzzyFilter(allCommands, query, matchSource);
+      // 有 query → fuzzy 匹配 displayCategory + displayTitle
+      return fuzzyFilter(displayCommands, query, matchSource);
     }
-    // 空 query → recent 置顶 + 其余字母序
-    return sortByRecent(allCommands, recentIds);
-  }, [allCommands, query, recentIds]);
+    // 空 query → recent 置顶 + 其余按 displayTitle 字母序
+    return sortByRecent(displayCommands, recentIds);
+  }, [displayCommands, query, recentIds]);
 
   const execute = useCallback(
     async (cmd: CommandSpec) => {
@@ -110,8 +131,8 @@ export function CommandPalette({ commands }: CommandPaletteProps) {
       moveSelection(-1, filtered.length);
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      const cmd = filtered[selectedIndex];
-      if (cmd) void execute(cmd);
+      const d = filtered[selectedIndex];
+      if (d) void execute(d.cmd);
     }
   };
 
@@ -122,21 +143,27 @@ export function CommandPalette({ commands }: CommandPaletteProps) {
           <Input
             size="sm"
             autoFocus
-            placeholder="输入命令名…"
+            placeholder={t('command_palette.placeholder')}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onKeyDown}
           />
         </div>
-        <ul role="listbox" aria-label="命令列表" className="max-h-[360px] overflow-y-auto py-1">
+        <ul
+          role="listbox"
+          aria-label={t('command_palette.list_aria')}
+          className="max-h-[360px] overflow-y-auto py-1"
+        >
           {filtered.length === 0 ? (
             <li className="px-3 py-4 text-center text-xs text-fg-dim">
-              {allCommands.length === 0 ? '暂无可用命令' : '无匹配命令'}
+              {allCommands.length === 0
+                ? t('command_palette.empty')
+                : t('command_palette.no_match')}
             </li>
           ) : (
-            filtered.map((cmd, idx) => (
+            filtered.map((d, idx) => (
               <li
-                key={cmd.id}
+                key={d.cmd.id}
                 role="option"
                 aria-selected={idx === selectedIndex}
                 className={[
@@ -146,16 +173,16 @@ export function CommandPalette({ commands }: CommandPaletteProps) {
                     ? 'bg-hover text-fg'
                     : 'text-fg-muted hover:bg-hover/50',
                 ].join(' ')}
-                onClick={() => void execute(cmd)}
+                onClick={() => void execute(d.cmd)}
               >
-                {cmd.category && (
-                  <span className="shrink-0 text-fg-dim">{cmd.category}:</span>
+                {d.displayCategory && (
+                  <span className="shrink-0 text-fg-dim">{d.displayCategory}:</span>
                 )}
-                <span className="truncate">{cmd.title}</span>
+                <span className="truncate">{d.displayTitle}</span>
                 {(() => {
                   // 用 effective(含 user override)而非原 spec.hotkey,
                   // 让用户改 hotkey 后命令面板列表立刻显示新组合.
-                  const effective = getEffectiveHotkey(cmd);
+                  const effective = getEffectiveHotkey(d.cmd);
                   return effective ? (
                     <span className="ml-auto flex shrink-0 items-center gap-0.5">
                       {formatHotkeyParts(effective, PLATFORM).map((p) => (

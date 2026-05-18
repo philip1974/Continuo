@@ -18,9 +18,9 @@ import {
   useKeybindingsStore,
 } from '@/plugins/keybindings/keybindings-store';
 import { KeybindingCaptureModal } from '@/plugins/keybindings/KeybindingCaptureModal';
+import { useT, useTWithFallback } from '@/i18n';
 
 const PLATFORM = detectPlatform();
-const DEFAULT_GROUP = '其他';
 
 function useCommands(registry: CommandRegistry): readonly CommandSpec[] {
   const [snapshot, setSnapshot] = useState<readonly CommandSpec[]>(() =>
@@ -33,39 +33,50 @@ function useCommands(registry: CommandRegistry): readonly CommandSpec[] {
   return snapshot;
 }
 
-interface Bucket {
-  readonly category: string;
-  readonly items: readonly CommandSpec[];
+interface DisplayCommand {
+  readonly cmd: CommandSpec;
+  readonly displayTitle: string;
+  readonly displayCategory: string;
 }
 
-/** 把命令按 category 分组,每组按 title 字母序;空 category 归 DEFAULT_GROUP. */
-function groupByCategory(commands: readonly CommandSpec[]): Bucket[] {
-  const map = new Map<string, CommandSpec[]>();
-  for (const cmd of commands) {
-    const key = cmd.category ?? DEFAULT_GROUP;
+interface Bucket {
+  readonly category: string;
+  readonly items: readonly DisplayCommand[];
+}
+
+/** 按 displayCategory 分组,每组按 displayTitle 字母序;空 category 归 defaultGroup. */
+function groupByCategory(
+  commands: readonly DisplayCommand[],
+  defaultGroup: string,
+): Bucket[] {
+  const map = new Map<string, DisplayCommand[]>();
+  for (const d of commands) {
+    const key = d.displayCategory || defaultGroup;
     let arr = map.get(key);
     if (!arr) {
       arr = [];
       map.set(key, arr);
     }
-    arr.push(cmd);
+    arr.push(d);
   }
   return Array.from(map.entries())
     .map(([category, items]) => ({
       category,
-      items: [...items].sort((a, b) => a.title.localeCompare(b.title)),
+      items: [...items].sort((a, b) =>
+        a.displayTitle.localeCompare(b.displayTitle),
+      ),
     }))
     .sort((a, b) => a.category.localeCompare(b.category));
 }
 
-function matches(cmd: CommandSpec, q: string): boolean {
+function matches(d: DisplayCommand, q: string): boolean {
   if (!q) return true;
   const lower = q.toLowerCase();
   const haystack = [
-    cmd.title,
-    cmd.category ?? '',
-    cmd.id,
-    cmd.hotkey ?? '',
+    d.displayTitle,
+    d.displayCategory,
+    d.cmd.id,
+    d.cmd.hotkey ?? '',
   ]
     .join(' ')
     .toLowerCase();
@@ -82,17 +93,29 @@ export function KeybindingsTabContent() {
   const setHotkey = useKeybindingsStore((s) => s.setHotkey);
   const reset = useKeybindingsStore((s) => s.reset);
   const overrides = useKeybindingsStore((s) => s.overrides);
+  const t = useT();
+  const tk = useTWithFallback();
+
+  const displayCommands = useMemo<readonly DisplayCommand[]>(
+    () =>
+      allCommands.map((cmd) => ({
+        cmd,
+        displayTitle: tk(cmd.titleKey, cmd.title),
+        displayCategory: tk(cmd.categoryKey, cmd.category ?? ''),
+      })),
+    [allCommands, tk],
+  );
 
   const buckets = useMemo(() => {
     // 列出所有有「有效 hotkey」或「显式 unbind 但有默认」的命令(允许用户回头改)
-    const visible = allCommands.filter(
-      (c) => c.hotkey || c.id in overrides,
+    const visible = displayCommands.filter(
+      (d) => d.cmd.hotkey || d.cmd.id in overrides,
     );
     const filtered = query
-      ? visible.filter((c) => matches(c, query))
+      ? visible.filter((d) => matches(d, query))
       : visible;
-    return groupByCategory(filtered);
-  }, [allCommands, query, overrides]);
+    return groupByCategory(filtered, t('keybindings.default_group'));
+  }, [displayCommands, query, overrides, t]);
 
   const totalWithHotkey = useMemo(
     () => allCommands.filter((c) => Boolean(c.hotkey)).length,
@@ -104,23 +127,23 @@ export function KeybindingsTabContent() {
       <div className="space-y-2">
         <Input
           size="sm"
-          placeholder="搜索命令名 / 分类 / 快捷键…"
+          placeholder={t('keybindings.search_placeholder')}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
         <div className="flex items-center gap-1.5 text-xs text-fg-muted">
-          <span>共 {totalWithHotkey} 个有快捷键的命令 · 无 hotkey 请用</span>
+          <span>{t('keybindings.total_summary_prefix', { count: totalWithHotkey })}</span>
           <KeyCap>⌘</KeyCap>
           <KeyCap>⇧</KeyCap>
           <KeyCap>P</KeyCap>
-          <span>命令面板搜索</span>
+          <span>{t('keybindings.total_summary_suffix')}</span>
         </div>
       </div>
 
       <KeybindingCaptureModal
         visible={editing !== null}
         commandId={editing?.id ?? ''}
-        commandTitle={editing?.title ?? ''}
+        commandTitle={editing ? tk(editing.titleKey, editing.title) : ''}
         currentHotkey={editing ? getEffectiveHotkey(editing) : undefined}
         defaultHotkey={editing?.hotkey}
         allCommands={allCommands}
@@ -132,8 +155,8 @@ export function KeybindingsTabContent() {
       {buckets.length === 0 ? (
         <div className="rounded-md border border-dashed border-line bg-panel-soft/40 px-4 py-8 text-center text-xs text-fg-dim">
           {totalWithHotkey === 0
-            ? '暂无注册了快捷键的命令'
-            : '无匹配命令'}
+            ? t('keybindings.empty')
+            : t('keybindings.no_match')}
         </div>
       ) : (
         <div className="space-y-8">
@@ -143,7 +166,8 @@ export function KeybindingsTabContent() {
                 {bucket.category}
               </h3>
               <ul className="overflow-hidden rounded-md border border-line bg-panel-soft/40">
-                {bucket.items.map((cmd, idx) => {
+                {bucket.items.map((d, idx) => {
+                  const cmd = d.cmd;
                   const effective = getEffectiveHotkey(cmd);
                   const isOverridden = cmd.id in overrides;
                   return (
@@ -154,7 +178,7 @@ export function KeybindingsTabContent() {
                         idx > 0 ? 'border-t border-line/50' : '',
                       ].join(' ')}
                     >
-                      <span className="truncate text-sm text-fg">{cmd.title}</span>
+                      <span className="truncate text-sm text-fg">{d.displayTitle}</span>
                       <code className="ml-auto shrink-0 rounded bg-panel-soft/70 px-1.5 py-0.5 text-2xs uppercase tracking-wider text-fg-muted/70">
                         {cmd.id}
                       </code>
@@ -166,13 +190,13 @@ export function KeybindingsTabContent() {
                         </span>
                       ) : (
                         <span className="shrink-0 text-2xs text-fg-dim">
-                          未绑定
+                          {t('keybindings.unbound')}
                         </span>
                       )}
                       <IconButton
                         size="xs"
-                        title="编辑快捷键"
-                        aria-label="编辑快捷键"
+                        title={t('keybindings.edit_hotkey')}
+                        aria-label={t('keybindings.edit_hotkey')}
                         onClick={() => setEditing(cmd)}
                       >
                         <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.4">
@@ -181,8 +205,8 @@ export function KeybindingsTabContent() {
                       </IconButton>
                       <IconButton
                         size="xs"
-                        title={`恢复默认(${cmd.hotkey ?? '未绑定'})`}
-                        aria-label="恢复默认"
+                        title={t('keybindings.reset_default', { hotkey: cmd.hotkey ?? t('keybindings.unbound') })}
+                        aria-label={t('keybindings.reset_default_aria')}
                         onClick={() => isOverridden && reset(cmd.id)}
                         className={
                           isOverridden ? '' : 'pointer-events-none invisible'

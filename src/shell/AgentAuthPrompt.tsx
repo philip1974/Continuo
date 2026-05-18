@@ -6,16 +6,24 @@ import { useEffect } from 'react';
 import { Button, Modal } from '@/design';
 import { coApi } from '@/lib/co-api';
 import { useAgentAuthStore } from '@/stores/agent-auth.store';
+import { useT, type TranslationKey } from '@/i18n';
 
-function methodLabel(method: string): string {
-  if (method === 'terminal.create_session') return '新建一个 terminal';
-  return `调用 ${method}`;
-}
+// method → i18n key 表（P2-1）；未知 method 走 generic('{method}') fallback
+const METHOD_LABEL_KEYS: Record<string, TranslationKey> = {
+  'terminal.create_session': 'permissions.agent.terminal_create_session',
+};
 
 export function AgentAuthPrompt() {
   const pending = useAgentAuthStore((s) => s.pending);
   const grant = useAgentAuthStore((s) => s.grant);
   const deny = useAgentAuthStore((s) => s.deny);
+  const t = useT();
+
+  function methodLabel(method: string): string {
+    const k = METHOD_LABEL_KEYS[method];
+    if (k) return t(k);
+    return t('permissions.agent.generic', { method });
+  }
 
   // 订阅 main 推的请求 — sessionGranted 时 ensure 自动短路返回 'session',
   // Modal 不渲染;否则 ensure 设 pending,UI 弹出。
@@ -34,30 +42,31 @@ export function AgentAuthPrompt() {
   return (
     <Modal visible onClose={deny}>
       <h2 className="mb-1 text-sm font-medium text-fg">
-        Agent 请求控制内置终端
+        {t('permissions.agent.title')}
       </h2>
       <p className="mb-3 text-xs text-fg-muted">
-        外部 agent
+        {t('permissions.agent.body_prefix')}
         {pending.agentLabel ? (
           <>
-            (<code className="text-fg">{pending.agentLabel}</code>)
+            {' '}(<code className="text-fg">{pending.agentLabel}</code>)
           </>
         ) : null}{' '}
-        通过 MCP 请求{methodLabel(pending.method)}。
+        {t('permissions.agent.body_via_mcp')}
+        {methodLabel(pending.method)}
+        {t('permissions.agent.body_suffix')}
       </p>
       <p className="mb-4 text-2xs text-fg-dim">
-        授权后,持有 MCP token 的 agent 可以创建 / 关闭 / 写入 / 读取 terminal。
-        token 仅本次启动有效,Continuo 退出即作废。
+        {t('permissions.agent.hint')}
       </p>
       <div className="flex justify-end gap-2">
         <Button variant="ghost" size="sm" onClick={deny}>
-          拒绝
+          {t('permissions.agent.deny')}
         </Button>
         <Button variant="ghost" size="sm" onClick={() => grant('once')}>
-          仅本次
+          {t('permissions.agent.grant_once')}
         </Button>
         <Button variant="primary" size="sm" onClick={() => grant('session')}>
-          本次启动期间允许
+          {t('permissions.agent.grant_session')}
         </Button>
       </div>
     </Modal>

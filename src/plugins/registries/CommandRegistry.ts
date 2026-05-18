@@ -6,6 +6,12 @@ import type { Disposable } from '../types';
 export interface CommandSpec {
   readonly id: string;
   readonly title: string;
+  /**
+   * i18n key（topic-19）。类型 string 不绑死 keyof typeof en（开放第三方 plugin）；
+   * 核心 plugin 可写 `'commands.terminal.new.title' satisfies TranslationKey` 编译验。
+   * 渲染层 `tWithFallback(titleKey, title)` 兜底，缺 key 不退化为 key 字面量。
+   */
+  readonly titleKey?: string;
   /** Accelerator string,如 'mod+s' / 'mod+shift+p',可选. */
   readonly hotkey?: string;
   /**
@@ -14,6 +20,8 @@ export interface CommandSpec {
    * VSCode 同款。可选,向后兼容。
    */
   readonly category?: string;
+  /** i18n key for category（topic-19）。同 titleKey。 */
+  readonly categoryKey?: string;
   readonly fn: () => void | Promise<void>;
 }
 

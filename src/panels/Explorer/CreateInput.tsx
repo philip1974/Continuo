@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Document, Folder } from '@react-symbols/icons';
 import { IconButton, Input } from '@/design';
+import { useT } from '@/i18n';
 
 interface CreateInputProps {
   type: 'file' | 'dir';
@@ -25,6 +26,7 @@ export function CreateInput({
 }: CreateInputProps) {
   const ref = useRef<HTMLInputElement>(null);
   const [value, setValue] = useState('');
+  const tx = useT();
 
   const onSubmitRef = useRef(onSubmit);
   const onCancelRef = useRef(onCancel);
@@ -74,7 +76,11 @@ export function CreateInput({
         type="text"
         value={value}
         onChange={(e) => setValue(e.target.value)}
-        placeholder={type === 'dir' ? '新建文件夹名…' : '新建文件名…'}
+        placeholder={
+          type === 'dir'
+            ? tx('panels.explorer.placeholder.new_folder')
+            : tx('panels.explorer.placeholder.new_file')
+        }
         className="flex-1"
         spellCheck={false}
         autoComplete="off"
@@ -83,9 +89,14 @@ export function CreateInput({
         className="max-w-[40%] truncate text-2xs text-fg-dim"
         title={parentDir}
       >
-        在: {parentDir}
+        {tx('panels.explorer.create.in_label', { dir: parentDir })}
       </span>
-      <IconButton size="xs" onClick={onCancel} title="取消(Esc)" aria-label="取消">
+      <IconButton
+        size="xs"
+        onClick={onCancel}
+        title={tx('panels.explorer.confirm.cancel_esc')}
+        aria-label={tx('panels.explorer.confirm.cancel')}
+      >
         ✕
       </IconButton>
     </div>

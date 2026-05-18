@@ -71,3 +71,17 @@ export function resetMissingKeyWarningsForTest(): void {
 
 /** 非 React 处调用（设置项、main throw 站点的 catalog lookup 等） — 等价 translate 别名。 */
 export const t = translate;
+
+/**
+ * key 存在则返回翻译；缺 key（或 key 为 undefined）返回 fallback。
+ * 解决 useT()(spec.titleKey ?? spec.title) 在缺 key 时显示 key 字面量的问题（topic-19 P0-1）。
+ */
+export function tWithFallback(
+  key: string | undefined,
+  fallback: string,
+  params?: TranslateParams,
+): string {
+  if (key === undefined || key === '') return fallback;
+  const r = translate(key, params);
+  return r === key ? fallback : r;
+}

@@ -15,6 +15,7 @@ export default class EditorPlugin extends Plugin {
     this.registerPanel({
       type: 'editor',
       title: 'Editor',
+      titleKey: 'panels.editor.title',
       factory: lazyPanel(Editor),
     });
   }

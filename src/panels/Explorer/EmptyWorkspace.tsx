@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { Button, MenuItem } from '@/design';
 import { coApi } from '@/lib/co-api';
+import { useT } from '@/i18n';
 
 // 未选 workspace 时占位:中央"打开文件夹"按钮(VSCode 风)。
 // 调 fs.selectDirectory(原生对话框)→ setRoot,store 一变 Explorer 容器自动切到 FolderTree。
@@ -9,6 +10,7 @@ export function EmptyWorkspace() {
   const setRoot = useWorkspaceStore((s) => s.setRoot);
   const recentRoots = useWorkspaceStore((s) => s.recentRoots);
   const [busy, setBusy] = useState(false);
+  const t = useT();
 
   const open = async () => {
     if (busy) return;
@@ -24,15 +26,17 @@ export function EmptyWorkspace() {
   return (
     <div className="flex h-full w-full flex-col items-center justify-center gap-4 p-6 text-center text-sm text-fg-muted">
       <div className="text-xs uppercase tracking-wider text-fg-dim">
-        未打开文件夹
+        {t('panels.explorer.empty.no_folder')}
       </div>
       <Button variant="outlined" size="md" onClick={open} disabled={busy}>
-        {busy ? '打开中…' : '打开文件夹'}
+        {busy
+          ? t('panels.explorer.empty.opening')
+          : t('panels.explorer.empty.open_folder')}
       </Button>
       {recentRoots.length > 0 && (
         <div role="menu" className="mt-4 w-full max-w-xs text-left">
           <div className="px-3 pb-1 text-2xs uppercase tracking-wider text-fg-dim">
-            最近打开
+            {t('panels.explorer.empty.recent')}
           </div>
           {recentRoots.map((p) => {
             const m = p.match(/[^/\\]+$/);

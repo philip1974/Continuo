@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { getLocale, translate, type TranslateParams } from './translate';
+import { getLocale, translate, tWithFallback, type TranslateParams } from './translate';
 import type { Locale } from '@shared/i18n-types';
 
 /**
@@ -41,4 +41,17 @@ export function useT(): (key: string, params?: TranslateParams) => string {
 export function useLocale(): Locale {
   useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   return getLocale();
+}
+
+/**
+ * React hook — 返回订阅 locale 的 tWithFallback。
+ * 用于 spec.titleKey ?? spec.title 显示 pattern（topic-19 P0-1）。
+ */
+export function useTWithFallback(): (
+  key: string | undefined,
+  fallback: string,
+  params?: TranslateParams,
+) => string {
+  useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  return tWithFallback;
 }

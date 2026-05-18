@@ -35,14 +35,15 @@ describe('explorer.toggleSidebar · 命令注册', () => {
     expect(cmd.hotkey).toBe('mod+b');
   });
 
-  it('category 为 Explorer + title 含「Explorer」「侧栏」', () => {
+  it('category 为 Explorer + title 含「Explorer」+ titleKey 指向 i18n', () => {
     bootCorePlugins();
     const cmd = coApp.commands
       .getAll()
       .find((c) => c.id === 'explorer.toggleSidebar')!;
     expect(cmd.category).toBe('Explorer');
+    // topic-19: title 是 ASCII fallback；titleKey 指 i18n catalog 命中 zh = '切换 Explorer 侧栏'
     expect(cmd.title).toContain('Explorer');
-    expect(cmd.title).toContain('侧栏');
+    expect(cmd.titleKey).toBe('settings.explorer.toggle_sidebar');
   });
 
   it('shutdown 后命令移除', async () => {

@@ -13,6 +13,7 @@ import { charCount, lineCount, wordCount } from '@/lib/text-stats';
 import { coApp } from '@/plugins/co-app';
 import type { StatusBarItemSpec } from '@/plugins/registries/StatusBarRegistry';
 import { getCachedClipboard } from '@/plugins/sandbox-sweep';
+import { useT, t as translate } from '@/i18n';
 
 function basename(p: string): string {
   const m = p.match(/[^/\\]+$/);
@@ -31,9 +32,7 @@ function useStatusBarItems(side: 'left' | 'right'): readonly StatusBarItemSpec[]
 async function handleRevokeAgentTerminals(count: number): Promise<void> {
   if (count <= 0) return;
   const confirmed = window.confirm(
-    `将终止 ${count} 个 agent terminal 并撤销本次启动期间的授权。\n\n` +
-      `已运行的 agent CLI 持有的 token 将立刻 401;新开 terminal 仍可重新授权。\n\n` +
-      `确定继续?`,
+    translate('permissions.revoke_all.confirm', { count }),
   );
   if (!confirmed) return;
   // 本地先撤,UI 即时反馈;main 推 sessions_changed 后 sessions 也清空
@@ -55,13 +54,14 @@ async function handleCopyMcpConfig(): Promise<'ok' | 'unavailable' | 'fail'> {
 }
 
 export function StatusBar() {
+  const t = useT();
   const root = useWorkspaceStore((s) => s.root);
   const sidebarOpen = useLayoutUiStore((s) => s.sidebarOpen);
   const tabs = useEditorStore((s) => s.tabs);
   const activeTabId = useEditorStore((s) => s.activeTabId);
   const sessions = useTerminalStore((s) => s.sessions);
 
-  const active = tabs.find((t) => t.id === activeTabId) ?? null;
+  const active = tabs.find((tb) => tb.id === activeTabId) ?? null;
   const leftItems = useStatusBarItems('left');
   const rightItems = useStatusBarItems('right');
 
@@ -80,12 +80,12 @@ export function StatusBar() {
   };
   const mcpLabel =
     mcpCopyState === 'ok'
-      ? '已复制'
+      ? t('statusbar.mcp.copied')
       : mcpCopyState === 'unavailable'
-        ? 'MCP 不可用'
+        ? t('statusbar.mcp.unavailable')
         : mcpCopyState === 'fail'
-          ? '复制失败'
-          : '复制 MCP 配置';
+          ? t('statusbar.mcp.copy_failed')
+          : t('statusbar.mcp.copy');
 
   return (
     <footer className="flex h-6 shrink-0 items-center justify-between border-t border-line bg-panel px-3 text-2xs text-fg-dim select-none">
@@ -95,7 +95,10 @@ export function StatusBar() {
             <span className="truncate" title={root}>
               {basename(root)}
             </span>
-            <span className="flex items-center gap-1" title="git 分支(占位)">
+            <span
+              className="flex items-center gap-1"
+              title={t('statusbar.git_branch_placeholder')}
+            >
               <svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true">
                 <path
                   d="M5 3v10M11 3v3a2 2 0 01-2 2H5"
@@ -112,9 +115,11 @@ export function StatusBar() {
             </span>
           </>
         ) : (
-          <span className="text-fg-dim/60">无工作区</span>
+          <span className="text-fg-dim/60">{t('statusbar.no_workspace')}</span>
         )}
-        {!sidebarOpen && <span className="text-fg-dim/60">侧栏已隐藏</span>}
+        {!sidebarOpen && (
+          <span className="text-fg-dim/60">{t('statusbar.sidebar_hidden')}</span>
+        )}
         {/* 插件贡献的左侧 statusBar items */}
         {leftItems.map((item) => (
           <span key={item.id}>{item.render()}</span>
@@ -128,7 +133,7 @@ export function StatusBar() {
         <button
           type="button"
           onClick={() => void onCopyMcp()}
-          title="复制 'claude mcp add' 命令到剪贴板,可在任意 shell 跑配置 Claude Code(stdio transport,一次配置永久)"
+          title={t('statusbar.mcp.tooltip')}
           className="text-fg-dim hover:text-fg transition-colors"
         >
           {mcpLabel}
@@ -137,7 +142,7 @@ export function StatusBar() {
           <button
             type="button"
             onClick={() => void handleRevokeAgentTerminals(agentSessionCount)}
-            title={`终止全部 ${agentSessionCount} 个 agent terminal 并撤销授权`}
+            title={t('statusbar.mcp.revoke_tooltip', { count: agentSessionCount })}
             className="flex items-center gap-1 text-accent hover:text-fg transition-colors"
           >
             <span aria-hidden>●</span>
@@ -146,13 +151,21 @@ export function StatusBar() {
         )}
         {active ? (
           <>
-            <span className="truncate max-w-[280px]" title={active.filePath ?? '未命名'}>
-              {active.filePath ? basename(active.filePath) : '未命名'}
+            <span
+              className="truncate max-w-[280px]"
+              title={active.filePath ?? t('statusbar.untitled_file')}
+            >
+              {active.filePath
+                ? basename(active.filePath)
+                : t('statusbar.untitled_file')}
               {active.dirty && <span className="ml-1 text-fg-muted">●</span>}
             </span>
             <span>
-              {lineCount(active.content)} 行 · {wordCount(active.content)} 词 ·{' '}
-              {charCount(active.content)} 字符
+              {t('statusbar.editor_stats', {
+                lines: lineCount(active.content),
+                words: wordCount(active.content),
+                chars: charCount(active.content),
+              })}
             </span>
             <span>UTF-8</span>
             <span>LF</span>

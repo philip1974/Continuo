@@ -23,13 +23,16 @@ export default class SettingsPanelPlugin extends Plugin {
     this.registerPanel({
       type: 'settings',
       title: 'Settings',
+      titleKey: 'panels.settings.title',
       factory: lazyPanel(SettingsPanel),
     });
 
     this.addCommand({
       id: 'settings.toggle',
-      title: '切换 Settings',
+      title: 'Toggle Settings',
+      titleKey: 'commands.settings.toggle.title',
       category: 'Settings',
+      categoryKey: 'commands.settings.category',
       hotkey: 'mod+,',
       fn: () => toggleSettingsPanel(),
     });

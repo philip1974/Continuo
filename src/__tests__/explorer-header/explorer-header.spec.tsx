@@ -83,7 +83,7 @@ describe('ExplorerHeader — Hover 工具条', () => {
       ) as HTMLButtonElement,
     );
     fireEvent.click(
-      container.querySelector('button[aria-label=刷新]') as HTMLButtonElement,
+      container.querySelector('button[aria-label=刷新资源管理器]') as HTMLButtonElement,
     );
     fireEvent.click(
       container.querySelector(

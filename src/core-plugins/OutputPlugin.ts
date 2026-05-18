@@ -7,6 +7,7 @@ export default class OutputPlugin extends Plugin {
     this.registerPanel({
       type: 'output',
       title: 'Output',
+      titleKey: 'panels.output.title',
       factory: () => createElement(Output),
     });
   }

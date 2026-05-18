@@ -25,7 +25,7 @@ export function focusPanel(panelId: string): void {
 /**
  * 单例 panel 打开/聚焦(VSCode Settings 风格):
  * - 已存在同 id panel → setActive,不重建
- * - 不存在 → addPanel({ id, component, title })
+ * - 不存在 → addPanel({ id, component, title, params: { titleKey } })
  *
  * dock 未就绪 → 静默忽略(开机时序保护)。
  */
@@ -33,6 +33,7 @@ export function openOrFocusPanel(
   id: string,
   component: string,
   title: string,
+  titleKey?: string,
 ): void {
   const api = apiRef;
   if (!api) return;
@@ -41,5 +42,10 @@ export function openOrFocusPanel(
     existing.api.setActive();
     return;
   }
-  api.addPanel({ id, component, title });
+  api.addPanel({
+    id,
+    component,
+    title,
+    ...(titleKey ? { params: { titleKey } } : {}),
+  });
 }

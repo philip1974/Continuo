@@ -1,4 +1,5 @@
 import { Button, Modal } from '@/design';
+import { useT } from '@/i18n';
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -17,12 +18,15 @@ export function ConfirmDialog({
   open,
   title,
   description,
-  confirmLabel = '确认',
-  cancelLabel = '取消',
+  confirmLabel,
+  cancelLabel,
   destructive = false,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
+  const t = useT();
+  const confirmText = confirmLabel ?? t('panels.explorer.confirm.confirm');
+  const cancelText = cancelLabel ?? t('panels.explorer.confirm.cancel');
   return (
     <Modal visible={open} onClose={onCancel} aria-labelledby="confirm-dialog-title">
       <h2
@@ -36,7 +40,7 @@ export function ConfirmDialog({
       </div>
       <div className="flex justify-end gap-2">
         <Button variant="ghost" size="sm" onClick={onCancel}>
-          {cancelLabel}
+          {cancelText}
         </Button>
         <Button
           variant={destructive ? 'danger' : 'primary'}
@@ -44,7 +48,7 @@ export function ConfirmDialog({
           onClick={onConfirm}
           autoFocus
         >
-          {confirmLabel}
+          {confirmText}
         </Button>
       </div>
     </Modal>

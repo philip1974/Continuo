@@ -13,7 +13,8 @@ export default class ExplorerTabPlugin extends Plugin {
     // priority 20:排在通用(1)/ 编辑器(10)之后,插件商店(40)之前
     this.addSettingTab({
       id: 'core.explorer',
-      title: '资源管理器',
+      title: 'Explorer',
+      titleKey: 'settings.explorer.tab_title',
       priority: 20,
       icon: createElement(ExplorerIcon),
       render: () =>
@@ -22,7 +23,8 @@ export default class ExplorerTabPlugin extends Plugin {
 
     this.addCommand({
       id: 'explorer.toggleSidebar',
-      title: '切换 Explorer 侧栏',
+      title: 'Toggle Explorer sidebar',
+      titleKey: 'settings.explorer.toggle_sidebar',
       category: 'Explorer',
       hotkey: 'mod+b',
       fn: () => useLayoutUiStore.getState().toggleSidebar(),
@@ -31,7 +33,8 @@ export default class ExplorerTabPlugin extends Plugin {
     this.addSettingItem({
       id: 'explorer.showHiddenFiles',
       category: 'explorer',
-      title: '显示隐藏文件',
+      title: 'Show hidden files',
+      titleKey: 'settings.explorer.show_hidden_files',
       description: '是否显示以 . 开头的文件(如 .git / .env)。',
       type: 'boolean',
       default: false,
@@ -41,7 +44,8 @@ export default class ExplorerTabPlugin extends Plugin {
     this.addSettingItem({
       id: 'explorer.indentSize',
       category: 'explorer',
-      title: '缩进宽度',
+      title: 'Indent width',
+      titleKey: 'settings.explorer.indent_width',
       description: '文件树每级缩进(影响视觉层级)。',
       type: 'number',
       default: 16,

@@ -14,6 +14,7 @@ import { HeaderActions } from './HeaderActions';
 import { EmptyState } from './EmptyState';
 import { setDockApi } from './dock-api-ref';
 import { useDockReconciler } from './DockReconciler';
+import { useDockLocaleSync } from './useDockLocaleSync';
 import { wrapPanelClose } from './wrap-panel-close';
 import { handleTerminalPanelRemoved } from './DockReconciler';
 import { SharedTab } from '@/shell/motion/SharedTab';
@@ -83,6 +84,7 @@ function usePanelComponents(): Record<string, React.FC<IDockviewPanelProps>> {
 
 function DockReconcilerMount({ api }: { api: DockviewApi }): null {
   useDockReconciler(api);
+  useDockLocaleSync(api);
   return null;
 }
 
@@ -223,6 +225,7 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
         id: 'editor',
         component: 'editor',
         title: 'Editor',
+        params: { titleKey: 'panels.editor.title' },
       });
     }
     editorPanel.api.setActive();

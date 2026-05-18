@@ -8,6 +8,7 @@
 
 import { useCallback, useState } from 'react';
 import { useEditorStore, type EditorMode } from '@/stores/editor.store';
+import { t as translate } from '@/i18n';
 import { ConfirmDialog } from '@/panels/Explorer/ConfirmDialog';
 import { SegmentedControl } from '@/design';
 import { CodeEditor } from './CodeEditor';
@@ -35,7 +36,7 @@ function isMarkdownPath(p: string | null): boolean {
 }
 
 function basename(p: string | null): string {
-  if (!p) return '草稿';
+  if (!p) return translate('panels.editor.draft');
   const trimmed = p.replace(/[\\/]+$/, '');
   const idx = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
   return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
@@ -181,18 +182,18 @@ export function EditorPanel() {
 
       <ConfirmDialog
         open={closeCandidate !== null}
-        title="放弃未保存的修改?"
+        title={translate('panels.editor.discard_title')}
         description={
           closeCandidate ? (
             <>
               <code className="text-fg">
                 {basename(closeCandidate.filePath)}
               </code>{' '}
-              有未保存的修改。继续将永久丢失改动。
+              {translate('panels.editor.discard_body')}
             </>
           ) : null
         }
-        confirmLabel="不保存关闭"
+        confirmLabel={translate('panels.editor.discard_confirm')}
         destructive
         onConfirm={confirmDiscard}
         onCancel={() => setCloseCandidate(null)}

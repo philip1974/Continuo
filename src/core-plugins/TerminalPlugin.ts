@@ -9,6 +9,7 @@ import { notify } from '@/notifications/notify';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import type { TerminalPanelViewParams } from '@/panels/Terminal/TerminalPanelView';
 import { ERROR_CODES } from '../../electron/shared/error-codes';
+import { t } from '@/i18n';
 
 const TerminalPanelView = lazy(() =>
   import('@/panels/Terminal/TerminalPanelView').then((m) => ({
@@ -21,14 +22,17 @@ export default class TerminalPlugin extends Plugin {
     this.registerPanel({
       type: 'terminal',
       title: 'Terminal',
+      titleKey: 'panels.terminal.title',
       factory: lazyPanel<IDockviewPanelProps<TerminalPanelViewParams>>(
         TerminalPanelView,
       ),
     });
     this.addCommand({
       id: 'terminal.new',
-      title: '新建终端',
+      title: 'New Terminal',
+      titleKey: 'commands.terminal.new.title',
       category: 'Terminal',
+      categoryKey: 'commands.terminal.category',
       hotkey: 'mod+t',
       fn: async () => {
         const workspaceRoot = useWorkspaceStore.getState().root ?? undefined;
@@ -40,8 +44,8 @@ export default class TerminalPlugin extends Plugin {
         if (!r.ok) {
           const msg =
             r.code === ERROR_CODES.TERMINAL_CWD_UNRESOLVED
-              ? '无法新建终端: 请先打开 workspace'
-              : `无法新建终端: ${r.code ?? '未知错误'}`;
+              ? t('errors.terminal.cwd_unresolved')
+              : t('errors.terminal.create_failed', { code: r.code ?? '?' });
           notify.error(msg, { code: r.code });
           return;
         }

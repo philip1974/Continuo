@@ -75,6 +75,141 @@ export const en = {
   'errors.FS_NOT_DIRECTORY': 'Not a directory',
   'errors.FS_NOT_FILE': 'Not a file',
   'errors.FS_NOT_FOUND': 'File not found: {path}',
+
+  // ── topic-19 i18n-strings-r2 ──────────────────────────────────────
+
+  // commands.* (7)
+  'commands.terminal.new.title': 'New Terminal',
+  'commands.terminal.category': 'Terminal',
+  'commands.window.new.title': 'New Window',
+  'commands.window.open_folder.title': 'Open Folder in New Window…',
+  'commands.window.category': 'Window',
+  'commands.settings.toggle.title': 'Toggle Settings',
+  'commands.settings.category': 'Settings',
+
+  // panels.* (5)
+  'panels.terminal.title': 'Terminal',
+  'panels.editor.title': 'Editor',
+  'panels.output.title': 'Output',
+  'panels.settings.title': 'Settings',
+  'panels.language.title': 'Language',
+
+  // settings tabs / items (15)
+  'settings.terminal.tab_title': 'Terminal',
+  'settings.terminal.font_size': 'Font size',
+  'settings.terminal.cursor_style': 'Cursor style',
+  'settings.keybindings.tab_title': 'Keybindings',
+  'settings.editor.tab_title': 'Editor',
+  'settings.editor.font_size': 'Font size',
+  'settings.editor.show_line_numbers': 'Show line numbers',
+  'settings.editor.auto_save_markdown': 'Auto-save Markdown',
+  'settings.editor.auto_save_delay': 'Auto-save delay',
+  'settings.plugins.tab_title': 'Plugins',
+  'settings.plugins.market_title': 'Plugin Market',
+  'settings.explorer.tab_title': 'Explorer',
+  'settings.explorer.toggle_sidebar': 'Toggle Explorer sidebar',
+  'settings.explorer.show_hidden_files': 'Show hidden files',
+  'settings.explorer.indent_width': 'Indent width',
+
+  // panels.explorer.* (11)
+  'panels.explorer.btn.new_file': 'New file',
+  'panels.explorer.btn.new_folder': 'New folder',
+  'panels.explorer.btn.refresh': 'Refresh',
+  'panels.explorer.btn.collapse_all': 'Collapse all',
+  'panels.explorer.btn.more_actions': 'More actions',
+  'panels.explorer.placeholder.new_folder': 'New folder name…',
+  'panels.explorer.placeholder.new_file': 'New file name…',
+  'panels.explorer.confirm.confirm': 'Confirm',
+  'panels.explorer.confirm.cancel': 'Cancel',
+  'panels.explorer.confirm.cancel_esc': 'Cancel (Esc)',
+  'panels.explorer.empty.open_folder': 'Open Folder',
+  'panels.explorer.empty.opening': 'Opening…',
+  'panels.explorer.empty.no_folder': 'No folder open',
+  'panels.explorer.empty.recent': 'Recent',
+  'panels.explorer.drop.upload_to': 'Drop to upload to {target}',
+  'panels.explorer.menu.expand_all': 'Expand all',
+  'panels.explorer.menu.open_recent': 'Open recent',
+  'panels.explorer.menu.switch_folder': 'Switch folder…',
+  'panels.explorer.menu.close_folder': 'Close folder',
+  'panels.explorer.create.in_label': 'in: {dir}',
+
+  // panels.terminal.* aria + dynamic (4)
+  'panels.terminal.aria.start_shell': 'Starting shell',
+  'panels.terminal.aria.new_terminal': 'New terminal',
+  'panels.terminal.aria.close_terminal': 'Close terminal {name}',
+  'panels.terminal.no_active': 'No active terminal',
+
+  // panels.editor.* (4)
+  'panels.editor.untitled': 'Untitled',
+  'panels.editor.draft': 'Draft',
+  'panels.editor.unsaved_draft': 'Unsaved draft',
+  'panels.editor.placeholder.start_writing': 'Start writing…',
+  'panels.editor.discard_title': 'Discard unsaved changes?',
+  'panels.editor.discard_body': 'has unsaved changes. Continuing will permanently discard them.',
+  'panels.editor.discard_confirm': 'Close without saving',
+
+  // permissions.* (3)
+  'permissions.agent.terminal_create_session': 'open a new terminal',
+  'permissions.agent.generic': 'call {method}',
+  'permissions.agent.title': 'Agent requests built-in terminal access',
+  'permissions.agent.body_prefix': 'External agent',
+  'permissions.agent.body_via_mcp': 'requests via MCP to',
+  'permissions.agent.body_suffix': '.',
+  'permissions.agent.hint': 'Once granted, agents holding the MCP token can create / close / write / read terminals. The token is valid only for this launch and is invalidated when Continuo exits.',
+  'permissions.agent.deny': 'Deny',
+  'permissions.agent.grant_once': 'Just this time',
+  'permissions.agent.grant_session': 'Allow this launch',
+  'permissions.revoke_all.confirm':
+    'Will terminate {count} agent terminal(s) and revoke authorization granted during this launch.\n\nRunning agent CLIs holding tokens will 401 immediately; new terminals can re-authorize.\n\nContinue?',
+
+  // statusbar.* (8)
+  'statusbar.mcp.copy': 'Copy MCP config',
+  'statusbar.mcp.copied': 'Copied',
+  'statusbar.mcp.copy_failed': 'Copy failed',
+  'statusbar.mcp.unavailable': 'MCP unavailable',
+  'statusbar.mcp.tooltip':
+    "Copy 'claude mcp add' command to clipboard. Run it in any shell to configure Claude Code (stdio transport, one-time setup).",
+  'statusbar.mcp.revoke_tooltip': 'Terminate all {count} agent terminal(s) and revoke authorization',
+  'statusbar.no_workspace': 'No workspace',
+  'statusbar.sidebar_hidden': 'Sidebar hidden',
+  'statusbar.untitled_file': 'Untitled',
+  'statusbar.git_branch_placeholder': 'git branch (placeholder)',
+  'statusbar.editor_stats': '{lines} lines · {words} words · {chars} chars',
+
+  // errors.* topic-19 (4)
+  'errors.terminal.cwd_unresolved': 'Please open a workspace first',
+  'errors.terminal.create_failed': 'Failed to create terminal: {code}',
+  'errors.folder.move_failed': 'Move failed: {src}: {message}',
+  'errors.folder.paste_failed': 'Paste failed: {src}: {message}',
+  'errors.folder.trash_failed': 'Move to trash failed: {path}: {message}',
+  'errors.folder.skipped_dirs': 'Skipped {count} folder(s) (directories not supported)',
+  'errors.folder.batch_failed': '{count} failed:',
+
+  // command_palette.* (4)
+  'command_palette.placeholder': 'Type a command…',
+  'command_palette.list_aria': 'Command list',
+  'command_palette.empty': 'No commands available',
+  'command_palette.no_match': 'No matching command',
+
+  // keybindings.* tab content (10)
+  'keybindings.default_group': 'Other',
+  'keybindings.search_placeholder': 'Search commands / categories / hotkeys…',
+  'keybindings.total_summary_prefix': '{count} commands with hotkey · for unbound use',
+  'keybindings.total_summary_suffix': 'command palette to search',
+  'keybindings.empty': 'No commands have hotkeys',
+  'keybindings.no_match': 'No matching command',
+  'keybindings.unbound': 'Unbound',
+  'keybindings.edit_hotkey': 'Edit hotkey',
+  'keybindings.reset_default': 'Reset to default ({hotkey})',
+  'keybindings.reset_default_aria': 'Reset to default',
+
+  // shell aria/labels (6)
+  'shell.aria.drag_resize': 'Drag to resize',
+  'shell.iconbar.hide_explorer': 'Hide Explorer',
+  'shell.iconbar.show_explorer': 'Show Explorer',
+  'shell.iconbar.settings': 'Settings',
+  'shell.dock.popout_aria': 'Pop out active panel',
+  'shell.dock.popout_title': 'Pop out to standalone window',
 } as const;
 
 export type TranslationKey = keyof typeof en;

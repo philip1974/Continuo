@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { IconButton, MenuItem } from '@/design';
 import { coApi } from '@/lib/co-api';
+import { useT } from '@/i18n';
 
 // FolderTree 顶部固定 Header:左侧 workspace 名 + 右侧 ⋯ 溢出菜单
 //(展开 / 折叠 / 切换 / 关闭)。
@@ -46,6 +47,7 @@ export function ExplorerHeader({
   );
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const t = useT();
 
   // 计算菜单坐标 — 用 trigger 按钮的 viewport rect。
   // 监听 resize / scroll 重新算,避免侧边栏滚动 / 窗口缩放后菜单错位。
@@ -103,7 +105,12 @@ export function ExplorerHeader({
        *  噪音。⋯ 溢出菜单常驻,放低频项(展开全部 / 切换 / 关闭)。 */}
       <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
         {onNewFile && (
-          <IconButton size="xs" onClick={onNewFile} title="新建文件" aria-label="新建文件">
+          <IconButton
+            size="xs"
+            onClick={onNewFile}
+            title={t('panels.explorer.btn.new_file')}
+            aria-label={t('panels.explorer.btn.new_file')}
+          >
             <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.4">
               <path d="M9 1.5H3.5A1.5 1.5 0 0 0 2 3v10a1.5 1.5 0 0 0 1.5 1.5h9A1.5 1.5 0 0 0 14 13V6.5L9 1.5Z" />
               <path d="M9 1.5V6h5" />
@@ -111,14 +118,24 @@ export function ExplorerHeader({
           </IconButton>
         )}
         {onNewDir && (
-          <IconButton size="xs" onClick={onNewDir} title="新建文件夹" aria-label="新建文件夹">
+          <IconButton
+            size="xs"
+            onClick={onNewDir}
+            title={t('panels.explorer.btn.new_folder')}
+            aria-label={t('panels.explorer.btn.new_folder')}
+          >
             <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.4">
               <path d="M1.5 4A1.5 1.5 0 0 1 3 2.5h3l1.5 1.5h5.5A1.5 1.5 0 0 1 14.5 5.5v6.5A1.5 1.5 0 0 1 13 13.5H3a1.5 1.5 0 0 1-1.5-1.5V4Z" />
             </svg>
           </IconButton>
         )}
         {onRefresh && (
-          <IconButton size="xs" onClick={onRefresh} title="刷新资源管理器" aria-label="刷新">
+          <IconButton
+            size="xs"
+            onClick={onRefresh}
+            title={t('panels.explorer.btn.refresh')}
+            aria-label={t('panels.explorer.btn.refresh')}
+          >
             <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
               <path d="M3 8a5 5 0 0 1 8.5-3.5L13 6" />
               <path d="M13 3v3h-3" />
@@ -128,7 +145,12 @@ export function ExplorerHeader({
           </IconButton>
         )}
         {onCollapseAll && (
-          <IconButton size="xs" onClick={onCollapseAll} title="折叠全部" aria-label="折叠全部">
+          <IconButton
+            size="xs"
+            onClick={onCollapseAll}
+            title={t('panels.explorer.btn.collapse_all')}
+            aria-label={t('panels.explorer.btn.collapse_all')}
+          >
             <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.4">
               <path d="M3 4h10M3 8h6M3 12h3" />
               <path d="M11 7l2 2-2 2" strokeLinecap="round" strokeLinejoin="round" />
@@ -140,8 +162,8 @@ export function ExplorerHeader({
         ref={triggerRef}
         size="xs"
         onClick={() => setMenuOpen((v) => !v)}
-        title="更多操作"
-        aria-label="更多操作"
+        title={t('panels.explorer.btn.more_actions')}
+        aria-label={t('panels.explorer.btn.more_actions')}
       >
         <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
           <circle cx="3.5" cy="8" r="1.1" fill="currentColor" />
@@ -164,13 +186,13 @@ export function ExplorerHeader({
                 onExpandAll?.();
               }}
             >
-              展开全部
+              {t('panels.explorer.menu.expand_all')}
             </MenuItem>
             {recentOthers.length > 0 && (
               <>
                 <div className="my-1 h-px bg-line" />
                 <div className="px-2 pb-0.5 text-2xs uppercase tracking-wider text-fg-dim">
-                  打开最近
+                  {t('panels.explorer.menu.open_recent')}
                 </div>
                 {recentOthers.map((p) => {
                   const m = p.match(/[^/\\]+$/);
@@ -192,7 +214,7 @@ export function ExplorerHeader({
               </>
             )}
             <MenuItem disabled={busy} onClick={switchFolder}>
-              切换文件夹…
+              {t('panels.explorer.menu.switch_folder')}
             </MenuItem>
             <MenuItem
               variant="danger"
@@ -201,7 +223,7 @@ export function ExplorerHeader({
                 setRoot(null);
               }}
             >
-              关闭文件夹
+              {t('panels.explorer.menu.close_folder')}
             </MenuItem>
           </div>,
           document.body,

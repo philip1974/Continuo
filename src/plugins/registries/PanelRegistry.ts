@@ -11,6 +11,11 @@ export interface PanelSpec {
   readonly factory: (props: unknown) => ReactNode;
   /** 用户可见标题(默认 tab title). */
   readonly title: string;
+  /**
+   * i18n key（topic-19）。Dockview addPanel 时塞进 panel.params，
+   * useDockLocaleSync 在 locale 变化时遍历 panels 调 panel.api.setTitle(tWithFallback(titleKey, title))。
+   */
+  readonly titleKey?: string;
 }
 
 type Listener = () => void;

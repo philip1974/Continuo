@@ -11,7 +11,8 @@ export default class TerminalTabPlugin extends Plugin {
     // priority 30:排在通用 / 编辑器 / 资源管理器之后,插件商店之前
     this.addSettingTab({
       id: 'core.terminal',
-      title: '终端',
+      title: 'Terminal',
+      titleKey: 'settings.terminal.tab_title',
       priority: 30,
       icon: createElement(TerminalIcon),
       render: () =>
@@ -21,7 +22,8 @@ export default class TerminalTabPlugin extends Plugin {
     this.addSettingItem({
       id: 'terminal.fontSize',
       category: 'terminal',
-      title: '字号',
+      title: 'Font size',
+      titleKey: 'settings.terminal.font_size',
       description: 'xterm 字号。变化时自动 fit 重排。',
       type: 'number',
       default: 13,
@@ -35,7 +37,8 @@ export default class TerminalTabPlugin extends Plugin {
     this.addSettingItem({
       id: 'terminal.cursorStyle',
       category: 'terminal',
-      title: '光标样式',
+      title: 'Cursor style',
+      titleKey: 'settings.terminal.cursor_style',
       type: 'select',
       default: 'block',
       enum: [

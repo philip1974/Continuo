@@ -68,4 +68,139 @@ export const ko: Record<TranslationKey, string> = {
   'errors.FS_NOT_DIRECTORY': '디렉터리가 아닙니다',
   'errors.FS_NOT_FILE': '파일이 아닙니다',
   'errors.FS_NOT_FOUND': '파일을 찾을 수 없습니다: {path}',
+
+  // ── topic-19 i18n-strings-r2 ──────────────────────────────────────
+
+  // commands.*
+  'commands.terminal.new.title': '새 터미널',
+  'commands.terminal.category': '터미널',
+  'commands.window.new.title': '새 창',
+  'commands.window.open_folder.title': '새 창에서 폴더 열기…',
+  'commands.window.category': '창',
+  'commands.settings.toggle.title': '설정 토글',
+  'commands.settings.category': '설정',
+
+  // panels.*
+  'panels.terminal.title': '터미널',
+  'panels.editor.title': '편집기',
+  'panels.output.title': '출력',
+  'panels.settings.title': '설정',
+  'panels.language.title': '언어',
+
+  // settings tabs / items
+  'settings.terminal.tab_title': '터미널',
+  'settings.terminal.font_size': '글꼴 크기',
+  'settings.terminal.cursor_style': '커서 스타일',
+  'settings.keybindings.tab_title': '단축키',
+  'settings.editor.tab_title': '편집기',
+  'settings.editor.font_size': '글꼴 크기',
+  'settings.editor.show_line_numbers': '줄 번호 표시',
+  'settings.editor.auto_save_markdown': 'Markdown 자동 저장',
+  'settings.editor.auto_save_delay': '자동 저장 지연',
+  'settings.plugins.tab_title': '플러그인',
+  'settings.plugins.market_title': '플러그인 마켓',
+  'settings.explorer.tab_title': '탐색기',
+  'settings.explorer.toggle_sidebar': '탐색기 사이드바 토글',
+  'settings.explorer.show_hidden_files': '숨김 파일 표시',
+  'settings.explorer.indent_width': '들여쓰기 너비',
+
+  // panels.explorer.*
+  'panels.explorer.btn.new_file': '새 파일',
+  'panels.explorer.btn.new_folder': '새 폴더',
+  'panels.explorer.btn.refresh': '탐색기 새로 고침',
+  'panels.explorer.btn.collapse_all': '모두 접기',
+  'panels.explorer.btn.more_actions': '추가 작업',
+  'panels.explorer.placeholder.new_folder': '새 폴더 이름…',
+  'panels.explorer.placeholder.new_file': '새 파일 이름…',
+  'panels.explorer.confirm.confirm': '확인',
+  'panels.explorer.confirm.cancel': '취소',
+  'panels.explorer.confirm.cancel_esc': '취소 (Esc)',
+  'panels.explorer.empty.open_folder': '폴더 열기',
+  'panels.explorer.empty.opening': '여는 중…',
+  'panels.explorer.empty.no_folder': '열린 폴더 없음',
+  'panels.explorer.empty.recent': '최근 열기',
+  'panels.explorer.drop.upload_to': '여기에 드롭하여 {target}에 업로드',
+  'panels.explorer.menu.expand_all': '모두 펼치기',
+  'panels.explorer.menu.open_recent': '최근 항목 열기',
+  'panels.explorer.menu.switch_folder': '폴더 전환…',
+  'panels.explorer.menu.close_folder': '폴더 닫기',
+  'panels.explorer.create.in_label': '경로: {dir}',
+
+  // panels.terminal.*
+  'panels.terminal.aria.start_shell': '셸 시작 중',
+  'panels.terminal.aria.new_terminal': '새 터미널',
+  'panels.terminal.aria.close_terminal': '터미널 {name} 닫기',
+  'panels.terminal.no_active': '활성 터미널 없음',
+
+  // panels.editor.*
+  'panels.editor.untitled': '제목 없음',
+  'panels.editor.draft': '초안',
+  'panels.editor.unsaved_draft': '저장되지 않은 초안',
+  'panels.editor.placeholder.start_writing': '작성을 시작하세요…',
+  'panels.editor.discard_title': '저장되지 않은 변경 사항을 버리시겠습니까?',
+  'panels.editor.discard_body': '에 저장되지 않은 변경 사항이 있습니다. 계속하면 영구적으로 손실됩니다.',
+  'panels.editor.discard_confirm': '저장하지 않고 닫기',
+
+  // permissions.*
+  'permissions.agent.terminal_create_session': '새 터미널 열기',
+  'permissions.agent.generic': '{method} 호출',
+  'permissions.agent.title': '에이전트가 내장 터미널 제어를 요청합니다',
+  'permissions.agent.body_prefix': '외부 에이전트',
+  'permissions.agent.body_via_mcp': 'MCP를 통해 다음을 요청합니다:',
+  'permissions.agent.body_suffix': '.',
+  'permissions.agent.hint': '권한을 부여하면 MCP 토큰을 가진 에이전트가 터미널을 생성 / 종료 / 쓰기 / 읽기 할 수 있습니다. 토큰은 이번 실행 동안만 유효하며 Continuo 종료 시 무효화됩니다.',
+  'permissions.agent.deny': '거부',
+  'permissions.agent.grant_once': '이번만 허용',
+  'permissions.agent.grant_session': '이번 실행 동안 허용',
+  'permissions.revoke_all.confirm':
+    '{count}개의 에이전트 터미널을 종료하고 이번 실행 중 부여된 인증을 취소합니다.\n\n실행 중인 에이전트 CLI의 토큰은 즉시 401이 되며, 새 터미널은 다시 인증할 수 있습니다.\n\n계속하시겠습니까?',
+
+  // statusbar.*
+  'statusbar.mcp.copy': 'MCP 설정 복사',
+  'statusbar.mcp.copied': '복사됨',
+  'statusbar.mcp.copy_failed': '복사 실패',
+  'statusbar.mcp.unavailable': 'MCP 사용 불가',
+  'statusbar.mcp.tooltip':
+    "'claude mcp add' 명령을 클립보드에 복사합니다. 모든 셸에서 실행하여 Claude Code를 설정할 수 있습니다 (stdio transport, 한 번 설정).",
+  'statusbar.mcp.revoke_tooltip': '전체 {count}개의 에이전트 터미널을 종료하고 인증을 취소합니다',
+  'statusbar.no_workspace': '작업 공간 없음',
+  'statusbar.sidebar_hidden': '사이드바 숨김',
+  'statusbar.untitled_file': '제목 없음',
+  'statusbar.git_branch_placeholder': 'git 브랜치 (placeholder)',
+  'statusbar.editor_stats': '{lines}줄 · {words}단어 · {chars}자',
+
+  // errors.* topic-19
+  'errors.terminal.cwd_unresolved': '먼저 워크스페이스를 여세요',
+  'errors.terminal.create_failed': '터미널 생성 실패: {code}',
+  'errors.folder.move_failed': '이동 실패: {src}: {message}',
+  'errors.folder.paste_failed': '붙여넣기 실패: {src}: {message}',
+  'errors.folder.trash_failed': '휴지통으로 이동 실패: {path}: {message}',
+  'errors.folder.skipped_dirs': '{count}개의 폴더를 건너뛰었습니다 (디렉터리 드롭은 아직 지원되지 않음)',
+  'errors.folder.batch_failed': '{count}개 실패:',
+
+  // command_palette.*
+  'command_palette.placeholder': '명령어 입력…',
+  'command_palette.list_aria': '명령어 목록',
+  'command_palette.empty': '사용 가능한 명령어 없음',
+  'command_palette.no_match': '일치하는 명령어 없음',
+
+  // keybindings.*
+  'keybindings.default_group': '기타',
+  'keybindings.search_placeholder': '명령어 / 카테고리 / 단축키 검색…',
+  'keybindings.total_summary_prefix': '단축키가 있는 명령어 {count}개 · 없으면',
+  'keybindings.total_summary_suffix': '명령어 팔레트에서 검색',
+  'keybindings.empty': '단축키가 등록된 명령어가 없습니다',
+  'keybindings.no_match': '일치하는 명령어 없음',
+  'keybindings.unbound': '바인딩 없음',
+  'keybindings.edit_hotkey': '단축키 편집',
+  'keybindings.reset_default': '기본값으로 초기화 ({hotkey})',
+  'keybindings.reset_default_aria': '기본값으로 초기화',
+
+  // shell aria/labels
+  'shell.aria.drag_resize': '드래그하여 너비 조절',
+  'shell.iconbar.hide_explorer': 'Explorer 숨기기',
+  'shell.iconbar.show_explorer': 'Explorer 표시',
+  'shell.iconbar.settings': '설정',
+  'shell.dock.popout_aria': '활성 패널 팝아웃',
+  'shell.dock.popout_title': '독립 창으로 팝아웃',
 };

@@ -175,8 +175,9 @@ describe('window-workspace-roots-map: renderer terminal create failure feedback'
 
     await terminalCommand().fn();
 
+    // topic-19: setup 默认 locale=zh → t('errors.terminal.create_failed', {code}) = '无法新建终端：{code}'
     expect(mocks.notify.error).toHaveBeenCalledWith(
-      '无法新建终端: OTHER_ERROR',
+      expect.stringContaining('OTHER_ERROR'),
       expect.objectContaining({ code: 'OTHER_ERROR' }),
     );
   });

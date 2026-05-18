@@ -22,7 +22,8 @@ export default class PluginsTabPlugin extends Plugin {
     // 插件商店在前(priority 数字小排前;现有 Sample 是 80,Plugins 50)
     this.addSettingTab({
       id: 'core.marketplace',
-      title: '插件商店',
+      title: 'Plugin Market',
+      titleKey: 'settings.plugins.market_title',
       priority: 40,
       icon: createElement(MarketplaceIcon),
       render: lazyPanel(MarketplaceTab),
@@ -30,7 +31,8 @@ export default class PluginsTabPlugin extends Plugin {
 
     this.addSettingTab({
       id: 'core.plugins',
-      title: '插件',
+      title: 'Plugins',
+      titleKey: 'settings.plugins.tab_title',
       priority: 50,
       icon: createElement(PluginsIcon),
       render: () => createElement(PluginsTabContent),
