@@ -20,6 +20,8 @@ export default defineConfig({
       ['src/__tests__/keybindings-store/**', 'jsdom'],
       // topic-05: DataTransfer / document / requestAnimationFrame / React testing
       ['src/__tests__/terminal-tab-drag-split/**', 'jsdom'],
+      // topic-22: KeyboardEvent / DockShell sanitize import path
+      ['src/__tests__/22-pane-zoom-toggle/**', 'jsdom'],
     ],
     setupFiles: ['src/__tests__/design-system/setup.ts'],
     globals: false,

@@ -2,6 +2,12 @@
 
 > 由 `pnpm bdd:index` 自动生成,请勿手工编辑。
 
+## [22-pane-zoom-toggle](./22-pane-zoom-toggle/README.md)
+
+- [`focus-registry.spec.ts`](./22-pane-zoom-toggle/focus-registry.spec.ts)
+- [`xterm-key-passthrough.spec.ts`](./22-pane-zoom-toggle/xterm-key-passthrough.spec.ts)
+- [`zoom-toggle.spec.ts`](./22-pane-zoom-toggle/zoom-toggle.spec.ts)
+
 ## [AgentAuthPrompt(Agent MCP 授权弹窗)](./agent-auth-prompt/README.md)
 
 - [`agent-auth-prompt.spec.tsx`](./agent-auth-prompt/agent-auth-prompt.spec.tsx)

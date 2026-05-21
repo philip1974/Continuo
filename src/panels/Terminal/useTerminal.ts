@@ -21,6 +21,7 @@ import {
   applyMappedKeyOnKeydown,
   consumeMappedKeyOnData,
   createMappedKeyState,
+  shouldSkipXtermKey,
 } from './key-mapping';
 
 type CursorStyle = 'block' | 'underline' | 'bar';
@@ -211,6 +212,9 @@ export function useTerminal(termId: string) {
     // Shift+Enter 等额外按键映射:keydown 只暂存映射结果,onData 转发器再把
     // xterm 默认发出的 \r 替换为映射字节,避免 \x1b\r\r 双写。见 issue #18。
     term.attachCustomKeyEventHandler((event) => {
+      // topic-22: Shift+(Cmd|Ctrl)+Enter 让 xterm 不发 \r,document keydown
+      // 派发 terminal.zoom.toggle 命令。pending 不污染(命中即 return false 跳过)。
+      if (shouldSkipXtermKey(event)) return false;
       applyMappedKeyOnKeydown(__mappedKeyState__, event);
       return true;
     });
@@ -357,5 +361,11 @@ export function useTerminal(termId: string) {
     fitAndResize(term, fitAddon, termId);
   }, [termId]);
 
-  return { containerRef, isReady, fit };
+  // topic-22: stale-safe focus,unmount 后 termRef.current 已被 dispose 路径置 null
+  // (line 291 cleanup),callback 自然 no-op,焦点不会落到已 dispose 的实例。
+  const focus = useCallback(() => {
+    termRef.current?.focus();
+  }, []);
+
+  return { containerRef, isReady, fit, focus };
 }

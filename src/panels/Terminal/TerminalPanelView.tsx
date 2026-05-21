@@ -3,6 +3,7 @@ import type { IDockviewPanelProps } from 'dockview-react';
 import { Spinner } from '@/design';
 import { useTerminalStore } from '@/stores/terminal.store';
 import { useTerminal } from './useTerminal';
+import { registerTerminalFocus } from './terminal-focus-registry';
 
 export interface TerminalPanelViewParams {
   sessionId: string;
@@ -78,7 +79,14 @@ function TerminalPanelContent({
   api: IDockviewPanelProps<TerminalPanelViewParams>['api'];
   sessionId: string;
 }) {
-  const { containerRef, isReady, fit } = useTerminal(sessionId);
+  const { containerRef, isReady, fit, focus } = useTerminal(sessionId);
+
+  // topic-22: register focus callback so DockShell can pull focus back to
+  // xterm after onDidMaximizedGroupChange (exit-maximize doesn't re-fire
+  // onDidActiveChange when the same panel was already active).
+  useEffect(() => {
+    return registerTerminalFocus(api.id, focus);
+  }, [api.id, focus]);
 
   useEffect(() => {
     // agent 创建的 panel 走 inactive: true(P1-1 不抢 focus),
@@ -90,7 +98,12 @@ function TerminalPanelContent({
     const raf = requestAnimationFrame(tryFit);
 
     const activeDisposable = api.onDidActiveChange((event) => {
-      if (event.isActive) tryFit();
+      // topic-22: active 时同时 focus + fit。focus 是 stale-safe
+      // (termRef.current?.focus()),unmount 后自动 no-op。
+      if (event.isActive) {
+        tryFit();
+        focus();
+      }
     });
     const dimensionsDisposable = api.onDidDimensionsChange(tryFit);
     const visibilityDisposable = api.onDidVisibilityChange((event) => {
@@ -103,7 +116,7 @@ function TerminalPanelContent({
       dimensionsDisposable.dispose();
       visibilityDisposable.dispose();
     };
-  }, [api, fit]);
+  }, [api, fit, focus]);
 
   return (
     <div className="relative h-full w-full bg-canvas">

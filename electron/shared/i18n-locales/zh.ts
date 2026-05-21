@@ -73,6 +73,7 @@ export const zh: Record<TranslationKey, string> = {
 
   // commands.*
   'commands.terminal.new.title': '新建终端',
+  'commands.terminal.zoom.title': '切换终端缩放',
   'commands.terminal.category': '终端',
   'commands.window.new.title': '新建窗口',
   'commands.window.open_folder.title': '在新窗口中打开文件夹…',

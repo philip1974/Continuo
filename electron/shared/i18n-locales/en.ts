@@ -80,6 +80,7 @@ export const en = {
 
   // commands.* (7)
   'commands.terminal.new.title': 'New Terminal',
+  'commands.terminal.zoom.title': 'Toggle Terminal Zoom',
   'commands.terminal.category': 'Terminal',
   'commands.window.new.title': 'New Window',
   'commands.window.open_folder.title': 'Open Folder in New Window…',

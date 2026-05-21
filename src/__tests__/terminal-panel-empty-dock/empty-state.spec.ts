@@ -17,6 +17,7 @@ vi.mock('dockview-react', () => ({
       onDidLayoutChange: vi.fn(),
       onDidRemovePanel: vi.fn(),
       onDidAddPanel: vi.fn(),
+      onDidMaximizedGroupChange: vi.fn(), // topic-22
       panels: [],
     };
     React.useEffect(() => {

@@ -10,6 +10,22 @@
 // 见 issue #18。
 
 /**
+ * 命中 Shift+(Cmd|Ctrl)+Enter 时返回 true,告诉 customKeyEventHandler 跳过 xterm
+ * 默认处理(return false),让 document keydown 派发到 useCommandHotkeys 命令系统。
+ *
+ * 不读 isTrusted,纯函数形态便于 jsdom 测试。topic-22 zoom toggle 用。
+ */
+export function shouldSkipXtermKey(event: KeyboardEvent): boolean {
+  if (event.type !== 'keydown') return false;
+  if (event.isComposing) return false;
+  if (event.key !== 'Enter') return false;
+  if (!event.shiftKey) return false;
+  if (event.altKey) return false;
+  if (!event.metaKey && !event.ctrlKey) return false;
+  return true;
+}
+
+/**
  * 把 xterm 收到的 KeyboardEvent 映射成要写到 PTY 的字节序列。
  * 返回 null 时调用方应让 xterm 走默认处理。
  */

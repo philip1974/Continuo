@@ -10,6 +10,8 @@ import { useWorkspaceStore } from '@/stores/workspace.store';
 import type { TerminalPanelViewParams } from '@/panels/Terminal/TerminalPanelView';
 import { ERROR_CODES } from '../../electron/shared/error-codes';
 import { t } from '@/i18n';
+import { getDockApi } from '@/shell/dock/dock-api-ref';
+import { toggleActiveTerminalZoom } from '@/shell/dock/terminal-panel-zoom';
 
 const TerminalPanelView = lazy(() =>
   import('@/panels/Terminal/TerminalPanelView').then((m) => ({
@@ -26,6 +28,19 @@ export default class TerminalPlugin extends Plugin {
       factory: lazyPanel<IDockviewPanelProps<TerminalPanelViewParams>>(
         TerminalPanelView,
       ),
+    });
+    this.addCommand({
+      id: 'terminal.zoom.toggle',
+      title: 'Toggle Terminal Zoom',
+      titleKey: 'commands.terminal.zoom.title',
+      category: 'Terminal',
+      categoryKey: 'commands.terminal.category',
+      hotkey: 'shift+mod+enter',
+      fn: () => {
+        const api = getDockApi();
+        if (!api) return;
+        toggleActiveTerminalZoom(api);
+      },
     });
     this.addCommand({
       id: 'terminal.new',

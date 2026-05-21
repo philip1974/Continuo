@@ -13,6 +13,7 @@ import { applyDefaultLayout } from './layout.default';
 import { HeaderActions } from './HeaderActions';
 import { EmptyState } from './EmptyState';
 import { setDockApi } from './dock-api-ref';
+import { focusTerminalPanel } from '@/panels/Terminal/terminal-focus-registry';
 import { useDockReconciler } from './DockReconciler';
 import { useDockLocaleSync } from './useDockLocaleSync';
 import { wrapPanelClose } from './wrap-panel-close';
@@ -168,6 +169,18 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       // 包括 group 整体关闭、第三方调用方等间接路径,只要走 api.close 都能拿到动画。
       event.api.panels.forEach(wrapPanelClose);
       event.api.onDidAddPanel(wrapPanelClose);
+
+      // topic-22: exit-maximize 后把 focus 拉回 xterm。
+      // setActive() 不会触发 onDidActiveChange(panel 在 exit 前已是 active),
+      // 所以必须显式调 focusTerminalPanel。用 event.group.activePanel
+      // (codex red-team v1 P1-3) 不重读全局 activePanel,避免 exit 期间被改写。
+      event.api.onDidMaximizedGroupChange((evt) => {
+        if (evt.isMaximized) return;
+        const panel = evt.group.activePanel;
+        if (!panel) return;
+        if (panel.view.contentComponent !== 'terminal') return;
+        focusTerminalPanel(panel.id);
+      });
     },
     [onLayoutReady],
   );
