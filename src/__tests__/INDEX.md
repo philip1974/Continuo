@@ -549,6 +549,10 @@
 
 - [`terminal-store.spec.ts`](./terminal-store/terminal-store.spec.ts)
 
+## [terminal-url-click](./terminal-url-click/README.md)
+
+- [`terminal-url-click.spec.ts`](./terminal-url-click/terminal-url-click.spec.ts)
+
 ## [TerminalView(单 terminal 容器)](./terminal-view/README.md)
 
 - [`terminal-view.spec.tsx`](./terminal-view/terminal-view.spec.tsx)

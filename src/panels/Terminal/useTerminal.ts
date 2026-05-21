@@ -185,7 +185,11 @@ export function useTerminal(termId: string) {
     });
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
-    term.loadAddon(new WebLinksAddon());
+    term.loadAddon(
+      new WebLinksAddon((_event, url) => {
+        void coApi.shell.openExternal(url);
+      }),
+    );
     term.open(container);
     // 启用 webgl renderer:dom renderer 用 letter-spacing 模拟 CJK 双宽度,
     // 累加误差让 row content 实际渲染宽超过 row.style.width(= cols ×
