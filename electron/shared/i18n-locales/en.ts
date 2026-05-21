@@ -264,6 +264,7 @@ export const en = {
   'shell.iconbar.settings': 'Settings',
   'shell.dock.popout_aria': 'Pop out active panel',
   'shell.dock.popout_title': 'Pop out to standalone window',
+  'shell.tab.exit_zoom': 'Exit zoom',
   'shell.iconbar.updates_tooltip': '{count} plugin(s) updatable',
   'shell.iconbar.account_aria': 'Account: Continuo Dev, PRO Plan',
   'shell.iconbar.account_title': 'Continuo Dev · PRO Plan',

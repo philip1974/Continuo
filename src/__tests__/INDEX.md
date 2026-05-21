@@ -5,6 +5,7 @@
 ## [22-pane-zoom-toggle](./22-pane-zoom-toggle/README.md)
 
 - [`focus-registry.spec.ts`](./22-pane-zoom-toggle/focus-registry.spec.ts)
+- [`tab-maximize-indicator.spec.tsx`](./22-pane-zoom-toggle/tab-maximize-indicator.spec.tsx)
 - [`xterm-key-passthrough.spec.ts`](./22-pane-zoom-toggle/xterm-key-passthrough.spec.ts)
 - [`zoom-toggle.spec.ts`](./22-pane-zoom-toggle/zoom-toggle.spec.ts)
 

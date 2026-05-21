@@ -7,7 +7,7 @@ interface FakeApi {
   id: string;
   title: string;
   isActive: boolean;
-  group: { id: string };
+  group: { id: string; api: { isMaximized: () => boolean } };
   close: ReturnType<typeof vi.fn>;
   onDidActiveChange: (cb: (e: { isActive: boolean }) => void) => {
     dispose: () => void;
@@ -26,7 +26,8 @@ function makeApi(over: Partial<FakeApi> = {}): FakeApi {
     id: 'p1',
     title: 'Tab Title',
     isActive: false,
-    group: { id: 'g1' },
+    // topic-22: SharedTab now reads api.group.api.isMaximized() initially
+    group: { id: 'g1', api: { isMaximized: () => false } },
     close: vi.fn(),
     onDidActiveChange: (cb) => {
       activeCb = cb;
@@ -53,9 +54,13 @@ function renderTab(
   } = {},
 ) {
   // SharedTab 类型签名要求 IDockviewPanelHeaderProps,这里用 unknown 桥
+  // topic-22: containerApi 现在被订阅 onDidMaximizedGroupChange,需 mock
   const props = {
     api,
-    containerApi: {} as never,
+    containerApi: {
+      onDidMaximizedGroupChange: () => ({ dispose: vi.fn() }),
+      exitMaximizedGroup: vi.fn(),
+    } as never,
     params: {},
     onPointerDown: extra.onPointerDown,
     onPointerUp: extra.onPointerUp,

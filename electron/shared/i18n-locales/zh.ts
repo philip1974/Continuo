@@ -257,6 +257,7 @@ export const zh: Record<TranslationKey, string> = {
   'shell.iconbar.settings': '设置',
   'shell.dock.popout_aria': '弹出当前面板',
   'shell.dock.popout_title': '弹出到独立窗口',
+  'shell.tab.exit_zoom': '退出缩放',
   'shell.iconbar.updates_tooltip': '{count} 个插件可更新',
   'shell.iconbar.account_aria': '账户：Continuo Dev，PRO Plan',
   'shell.iconbar.account_title': 'Continuo Dev · PRO Plan',

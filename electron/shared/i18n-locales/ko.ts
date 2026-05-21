@@ -257,6 +257,7 @@ export const ko: Record<TranslationKey, string> = {
   'shell.iconbar.settings': '설정',
   'shell.dock.popout_aria': '활성 패널 팝아웃',
   'shell.dock.popout_title': '독립 창으로 팝아웃',
+  'shell.tab.exit_zoom': '확대 종료',
   'shell.iconbar.updates_tooltip': '업데이트 가능한 플러그인 {count}개',
   'shell.iconbar.account_aria': '계정: Continuo Dev, PRO Plan',
   'shell.iconbar.account_title': 'Continuo Dev · PRO Plan',
