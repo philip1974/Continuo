@@ -25,10 +25,6 @@
 
 - [`auth-store.spec.ts`](./agent-terminal-mcp-auth/auth-store.spec.ts)
 
-## [agent-terminal-mcp-buffer (Agent Terminal MCP Phase 3)](./agent-terminal-mcp-buffer/README.md)
-
-- [`buffer.spec.ts`](./agent-terminal-mcp-buffer/buffer.spec.ts)
-
 ## [agent-terminal-mcp-create-session (Agent Terminal MCP Phase 2 + P3 autorun)](./agent-terminal-mcp-create-session/README.md)
 
 - [`create-session.spec.ts`](./agent-terminal-mcp-create-session/create-session.spec.ts)
@@ -357,6 +353,14 @@
 - [`force-kill-cleanup.spec.ts`](./migration-step1-pty-handover/force-kill-cleanup.spec.ts)
 - [`multi-window-routing.spec.ts`](./migration-step1-pty-handover/multi-window-routing.spec.ts)
 - [`window-close-cleanup.spec.ts`](./migration-step1-pty-handover/window-close-cleanup.spec.ts)
+
+## [migration-step2-buffer-merge (Step 2 of 7-step terminal migration)](./migration-step2-buffer-merge/README.md)
+
+- [`ansi-strip-regression.spec.ts`](./migration-step2-buffer-merge/ansi-strip-regression.spec.ts)
+- [`buffer-lifecycle.spec.ts`](./migration-step2-buffer-merge/buffer-lifecycle.spec.ts)
+- [`exited-session-replay.spec.ts`](./migration-step2-buffer-merge/exited-session-replay.spec.ts)
+- [`no-dangling-import.spec.ts`](./migration-step2-buffer-merge/no-dangling-import.spec.ts)
+- [`replay-completeness.spec.ts`](./migration-step2-buffer-merge/replay-completeness.spec.ts)
 
 ## [PermissionEditorModal(M-Plugin v4.7 事后改主意)](./permission-editor-modal/README.md)
 

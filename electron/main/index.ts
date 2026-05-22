@@ -46,7 +46,6 @@ import { makeTerminalMcpTools } from './services/mcp-terminal-host';
 import type { CreateSessionPtyInput } from './services/mcp-tools-terminal';
 import * as terminalSessions from './services/terminal-sessions.service';
 import * as termService from './services/terminal.service';
-import * as terminalBuffer from './services/terminal-buffer.service';
 import { makeCreateHandler, setMcpEnvProvider } from './ipc/terminal.ipc';
 import {
   requestAgentAuth,
@@ -455,7 +454,6 @@ async function startMcpHost(): Promise<void> {
     mcpHost = await createMcpHost({
       initialTools: makeTerminalMcpTools({
         sessionStore: terminalSessions,
-        buffer: terminalBuffer,
         service: termService,
         getSessionOwner,
         ensureAuthorized: (ownerWindowId?: number) =>

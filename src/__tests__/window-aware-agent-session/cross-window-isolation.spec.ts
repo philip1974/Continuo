@@ -27,15 +27,13 @@ function makeFakeStore() {
 function makeTools(store: ReturnType<typeof makeFakeStore>) {
   return makeTerminalMcpTools({
     sessionStore: store as never,
-    buffer: {
-      read: vi.fn(() => ({ lines: [], nextSeq: 0, truncated: false })),
-    } as never,
     service: {
       has: vi.fn(() => true),
       write: vi.fn(),
       interrupt: vi.fn(),
       kill: vi.fn(),
       forceKill: vi.fn(),
+      readOutput: vi.fn(async () => ({ lines: [], nextSeq: 0, truncated: false })),
     } as never,
     getSessionOwner: (id: string) => store.sessions.get(id)?.ownerWindowId ?? null,
     ensureAuthorized: vi.fn(async () => 'once' as const),

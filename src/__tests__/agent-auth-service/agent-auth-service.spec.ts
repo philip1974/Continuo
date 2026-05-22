@@ -47,10 +47,6 @@ const terminalServiceMock = vi.hoisted(() => ({
   kill: vi.fn(),
 }));
 
-const terminalBufferMock = vi.hoisted(() => ({
-  destroy: vi.fn(),
-}));
-
 vi.mock('electron', () => ({
   BrowserWindow: {
     getAllWindows: vi.fn(() => electronMock.windows),
@@ -68,10 +64,6 @@ vi.mock('../../../electron/main/services/terminal-sessions.service', () => ({
 vi.mock('../../../electron/main/services/terminal.service', () => ({
   has: terminalServiceMock.has,
   kill: terminalServiceMock.kill,
-}));
-
-vi.mock('../../../electron/main/services/terminal-buffer.service', () => ({
-  destroy: terminalBufferMock.destroy,
 }));
 
 function makeSession(
@@ -400,9 +392,6 @@ describe('agent-auth-service: revokeAndKillAgentSessions', () => {
     expect(terminalServiceMock.kill).toHaveBeenCalledWith('a');
     expect(terminalServiceMock.kill).toHaveBeenCalledWith('c');
     expect(terminalServiceMock.kill).not.toHaveBeenCalledWith('b');
-    expect(terminalBufferMock.destroy).toHaveBeenCalledWith('a');
-    expect(terminalBufferMock.destroy).toHaveBeenCalledWith('c');
-    expect(terminalBufferMock.destroy).not.toHaveBeenCalledWith('b');
     expect(terminalSessionsMock.remove).toHaveBeenCalledWith('a');
     expect(terminalSessionsMock.remove).toHaveBeenCalledWith('c');
     expect(terminalSessionsMock.remove).not.toHaveBeenCalledWith('b');
@@ -435,10 +424,9 @@ describe('agent-auth-service: revokeAndKillAgentSessions', () => {
     expect(result).toEqual({ killed: 1, rotated: false });
     expect(terminalSessionsMock.remove).toHaveBeenCalledWith('a');
     expect(terminalServiceMock.kill).toHaveBeenCalledWith('a');
-    expect(terminalBufferMock.destroy).toHaveBeenCalledWith('a');
   });
 
-  it('T13b: has=false skips PTY kill but still removes metadata and buffer', () => {
+  it('T13b: has=false skips PTY kill but still removes metadata', () => {
     const rotateToken = vi.fn();
     setMcpHostRef(makeMcpHost({ rotateToken }));
     terminalServiceMock.has.mockReturnValue(false);
@@ -450,6 +438,5 @@ describe('agent-auth-service: revokeAndKillAgentSessions', () => {
     expect(rotateToken).toHaveBeenCalledTimes(1);
     expect(terminalSessionsMock.remove).toHaveBeenCalledWith('a');
     expect(terminalServiceMock.kill).not.toHaveBeenCalled();
-    expect(terminalBufferMock.destroy).toHaveBeenCalledWith('a');
   });
 });

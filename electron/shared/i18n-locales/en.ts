@@ -45,7 +45,6 @@ export const en = {
   'errors.BAD_MANIFEST': 'Bad plugin manifest',
   'errors.BAD_ROOT': 'Bad workspace root',
   'errors.BAD_URL': 'Bad URL',
-  'errors.BUFFER_SESSION_NOT_FOUND': 'Buffer session not found',
   'errors.EEXIST': 'File already exists',
   'errors.GIT_FAILED': 'Git command failed',
   'errors.GIT_SPAWN_FAILED': 'Failed to start git',

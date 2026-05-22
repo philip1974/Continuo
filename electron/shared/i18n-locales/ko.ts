@@ -38,7 +38,6 @@ export const ko: Record<TranslationKey, string> = {
   'errors.BAD_MANIFEST': '잘못된 플러그인 매니페스트',
   'errors.BAD_ROOT': '잘못된 작업 공간 루트',
   'errors.BAD_URL': '잘못된 URL',
-  'errors.BUFFER_SESSION_NOT_FOUND': '버퍼 세션을 찾을 수 없습니다',
   'errors.EEXIST': '파일이 이미 있습니다',
   'errors.GIT_FAILED': 'Git 명령 실패',
   'errors.GIT_SPAWN_FAILED': 'git 시작 실패',

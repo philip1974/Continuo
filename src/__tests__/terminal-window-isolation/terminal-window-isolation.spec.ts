@@ -69,15 +69,6 @@ function makeService() {
   };
 }
 
-function makeBuffer() {
-  return {
-    append: vi.fn(),
-    getSince: vi.fn(),
-    clear: vi.fn(),
-    destroy: vi.fn(),
-  };
-}
-
 // 用真 terminalSessions service(BDD 集成层断言)。
 // 用 fake termService 避免真 spawn pty。
 
@@ -317,17 +308,14 @@ describe('terminal 控制 IPC 按 owner 校验', () => {
 
   it('非 owner window 不能 remove 或 attachRejected ownerA 的 session', async () => {
     const service = makeService();
-    const buffer = makeBuffer();
     const create = makeCreate(service, () => 'term-a');
     await create({}, fakeWin(11));
 
     const remove = makeRemoveHandler({
       service: service as never,
-      buffer: buffer as never,
     });
     const attachRejected = makeAttachRejectedHandler({
       service: service as never,
-      buffer: buffer as never,
     });
 
     expect(() => remove({ id: 'term-a' }, fakeWin(22))).toThrow(
@@ -341,7 +329,6 @@ describe('terminal 控制 IPC 按 owner 校验', () => {
     ).toThrow(/terminal not found/);
 
     expect(service.kill).not.toHaveBeenCalled();
-    expect(buffer.destroy).not.toHaveBeenCalled();
     expect(getAll().map((s) => s.id)).toEqual(['term-a']);
   });
 });

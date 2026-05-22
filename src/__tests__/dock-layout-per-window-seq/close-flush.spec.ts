@@ -165,9 +165,7 @@ vi.mock('../../../electron/main/services/terminal.service', () => ({
   interrupt: vi.fn(),
   kill: vi.fn(),
   forceKill: vi.fn(),
-}));
-vi.mock('../../../electron/main/services/terminal-buffer.service', () => ({
-  read: vi.fn(),
+  readOutput: vi.fn(),
 }));
 vi.mock('../../../electron/main/ipc/terminal.ipc', () => ({
   makeCreateHandler: vi.fn(() => vi.fn()),

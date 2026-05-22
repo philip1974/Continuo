@@ -397,7 +397,7 @@ export interface ReadOutputToolDeps {
       maxLines?: number;
       stripAnsi?: boolean;
     },
-  ) => { lines: string[]; nextSeq: number; truncated: boolean };
+  ) => Promise<{ lines: string[]; nextSeq: number; truncated: boolean }>;
   readonly getSessionOwner: (sessionId: string) => number | null;
 }
 
@@ -454,18 +454,13 @@ export function makeReadOutputTool(
         if (input.since_seq !== undefined) opts.sinceSeq = input.since_seq;
         if (input.max_lines !== undefined) opts.maxLines = input.max_lines;
         if (input.strip_ansi !== undefined) opts.stripAnsi = input.strip_ansi;
-        const r = deps.read(input.session_id, opts);
+        const r = await deps.read(input.session_id, opts);
         return {
           lines: r.lines,
           next_seq: r.nextSeq,
           truncated: r.truncated,
         };
       } catch (err) {
-        // buffer service 抛 BUFFER_SESSION_NOT_FOUND → 转 TERMINAL_SESSION_NOT_FOUND
-        const e = err as { code?: unknown };
-        if (e.code === 'BUFFER_SESSION_NOT_FOUND') {
-          throw ERR_TERMINAL_SESSION_NOT_FOUND(input.session_id);
-        }
         throw err;
       }
     },

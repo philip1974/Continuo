@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BrowserWindow } from 'electron';
 
+const killedIds = vi.hoisted(() => new Set<string>());
 const sessionManagerMock = vi.hoisted(() => ({
   options: undefined as
     | {
@@ -11,8 +12,18 @@ const sessionManagerMock = vi.hoisted(() => ({
   create: vi.fn(),
   sendInput: vi.fn(),
   resize: vi.fn(),
-  kill: vi.fn(),
-  getBufferSnapshot: vi.fn(),
+  kill: vi.fn(async (input: { session_id: string }) => {
+    killedIds.add(input.session_id);
+    return {};
+  }),
+  getBufferSnapshot: vi.fn((id: string) => {
+    if (killedIds.has(id)) {
+      const err = new Error('Session not found') as Error & { code: string };
+      err.code = 'SESSION_NOT_FOUND';
+      throw err;
+    }
+    return { data: `live:${id}`, nextSeq: 1, truncated: false };
+  }),
   readOutput: vi.fn(),
 }));
 
@@ -27,14 +38,7 @@ const shellMock = vi.hoisted(() => ({
 vi.mock('@continuo-terminal/server-node', () => ({
   SessionManager: vi.fn().mockImplementation((options) => {
     sessionManagerMock.options = options;
-    return {
-      create: sessionManagerMock.create,
-      sendInput: sessionManagerMock.sendInput,
-      resize: sessionManagerMock.resize,
-      kill: sessionManagerMock.kill,
-      getBufferSnapshot: sessionManagerMock.getBufferSnapshot,
-      readOutput: sessionManagerMock.readOutput,
-    };
+    return sessionManagerMock;
   }),
 }));
 
@@ -50,8 +54,9 @@ vi.mock('../../../electron/main/services/pty-lang', () => ({
   withPtyLangEnv: vi.fn((env) => env),
 }));
 
-import * as terminalService from '../../../electron/main/services/terminal.service';
+import * as service from '../../../electron/main/services/terminal.service';
 import * as terminalSessions from '../../../electron/main/services/terminal-sessions.service';
+import { makeWindowClosedCleanup } from '../../../electron/main/ipc/terminal.ipc';
 import { setMcpRevokers } from '../../../electron/main/services/mcp-host.service';
 
 function makeWindow(id: number, destroyed = false): BrowserWindow {
@@ -66,27 +71,32 @@ function makeWindow(id: number, destroyed = false): BrowserWindow {
   } as unknown as BrowserWindow;
 }
 
-describe('migration step1 PTY handover · forceKill cleanup', () => {
+function addSession(id: string, ownerWindowId: number): void {
+  terminalSessions.add({
+    id,
+    title: id,
+    cwd: '/tmp',
+    originHint: 'user',
+    ownerWindowId,
+  });
+}
+
+describe('migration step2 buffer merge · buffer lifecycle', () => {
   const byToken = vi.fn();
   const byWindow = vi.fn();
 
   beforeEach(() => {
     vi.useFakeTimers();
-    terminalService.__resetForTest();
+    service.__resetForTest();
     terminalSessions._reset();
     setMcpRevokers({ byToken, byWindow });
-    byToken.mockReset();
-    byWindow.mockReset();
+    killedIds.clear();
     sessionManagerMock.options = undefined;
     sessionManagerMock.create.mockReset().mockResolvedValue({ session_id: 'created' });
     sessionManagerMock.sendInput.mockReset().mockResolvedValue({});
     sessionManagerMock.resize.mockReset().mockResolvedValue(undefined);
-    sessionManagerMock.kill.mockReset().mockResolvedValue({});
-    sessionManagerMock.getBufferSnapshot.mockReset().mockReturnValue({
-      data: '',
-      nextSeq: 1,
-      truncated: false,
-    });
+    sessionManagerMock.kill.mockClear();
+    sessionManagerMock.getBufferSnapshot.mockClear();
     sessionManagerMock.readOutput.mockReset().mockResolvedValue({
       lines: [],
       next_seq: 1,
@@ -94,6 +104,8 @@ describe('migration step1 PTY handover · forceKill cleanup', () => {
     });
     shellMock.cleanup.mockReset().mockResolvedValue(undefined);
     shellMock.prepareEnv.mockClear();
+    byToken.mockReset();
+    byWindow.mockReset();
   });
 
   afterEach(() => {
@@ -101,38 +113,41 @@ describe('migration step1 PTY handover · forceKill cleanup', () => {
     vi.useRealTimers();
   });
 
-  it('cleans local state synchronously before SessionManager onExit can fire', async () => {
-    const win = makeWindow(7);
-    await terminalService.createTerminal('k', win, '/bin/zsh', [], '/tmp', undefined, {
-      mcpToken: 'token-k',
-    });
-    terminalSessions.add({
-      id: 'k',
-      title: 'Terminal',
-      cwd: '/tmp',
-      originHint: 'user',
-      ownerWindowId: 7,
+  it('T4 forceKill releases replay buffer through SessionManager removal', async () => {
+    const win = makeWindow(1);
+    await service.createTerminal('live-kill', win, '/bin/zsh', [], '/tmp');
+    addSession('live-kill', 1);
+
+    expect(service.getBufferSnapshot('live-kill')).toEqual({
+      data: 'live:live-kill',
+      truncated: false,
     });
 
-    const setExitedSpy = vi.spyOn(terminalSessions, 'setExited');
+    service.forceKill('live-kill');
 
-    terminalService.forceKill('k');
-
-    expect(setExitedSpy).toHaveBeenCalledWith('k', -1);
-    expect(win.webContents.send).toHaveBeenCalledWith('terminal:exit', 'k', {
-      exitCode: -1,
-      signal: undefined,
+    expect(service.getBufferSnapshot('live-kill')).toEqual({
+      data: '',
+      truncated: false,
     });
-    expect(byToken).toHaveBeenCalledWith('token-k');
-    expect(terminalService.has('k')).toBe(false);
-    expect(sessionManagerMock.kill).toHaveBeenCalledWith({
-      session_id: 'k',
-      signal: 'SIGKILL',
+  });
+
+  it('T5 window close graceful path releases buffers after grace timer', async () => {
+    const win = makeWindow(2, true);
+    await service.createTerminal('window-kill', win, '/bin/zsh', [], '/tmp');
+    addSession('window-kill', 2);
+
+    makeWindowClosedCleanup()(2);
+    expect(sessionManagerMock.sendInput).toHaveBeenCalledWith({
+      session_id: 'window-kill',
+      data: '\x03',
     });
 
-    expect(() => {
-      sessionManagerMock.options?.onExit?.('k', { exitCode: 137, signal: 9 });
-    }).not.toThrow();
-    expect(win.webContents.send).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(3_000);
+
+    expect(service.getBufferSnapshot('window-kill')).toEqual({
+      data: '',
+      truncated: false,
+    });
+    expect(win.webContents.send).not.toHaveBeenCalled();
   });
 });

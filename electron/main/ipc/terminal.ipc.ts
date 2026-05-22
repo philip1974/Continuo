@@ -12,7 +12,6 @@ import { getDefaultShell, isAllowedShell } from '../../shared/terminal-shells';
 import { ERROR_CODES } from '../../shared/error-codes';
 import * as termService from '../services/terminal.service';
 import * as terminalSessions from '../services/terminal-sessions.service';
-import * as terminalBuffer from '../services/terminal-buffer.service';
 import { mcpRevokers } from '../services/mcp-host.service';
 import { getWorkspaceRoot as getWindowWorkspaceRoot } from '../services/window-workspace-roots.service';
 
@@ -243,18 +242,14 @@ export function makeWindowClosedCleanup(deps?: {
 export function makeRemoveHandler(deps?: {
   service?: typeof termService;
   sessionStore?: typeof terminalSessions;
-  buffer?: typeof terminalBuffer;
 }) {
   const service = deps?.service ?? termService;
   const sessionStore = deps?.sessionStore ?? terminalSessions;
-  const buffer = deps?.buffer ?? terminalBuffer;
   return (input: IdOnlyInput, win: BrowserWindow): void => {
     assertOwnedSession(sessionStore, input.id, win);
     // 立即删 metadata(用户点 X 立刻消失);PTY 在后台异步 SIGINT + 3s grace。
     sessionStore.remove(input.id);
     if (service.has(input.id)) service.kill(input.id);
-    // 用户主动关 → 释放 buffer(自然 exit 时不清,留给 agent read_output 看)
-    buffer.destroy(input.id);
   };
 }
 
@@ -329,11 +324,9 @@ export function makeKillHandler(deps?: {
 export function makeAttachRejectedHandler(deps?: {
   service?: typeof termService;
   sessionStore?: typeof terminalSessions;
-  buffer?: typeof terminalBuffer;
 }) {
   const service = deps?.service ?? termService;
   const sessionStore = deps?.sessionStore ?? terminalSessions;
-  const buffer = deps?.buffer ?? terminalBuffer;
   return (input: AttachRejectedInput, win: BrowserWindow): void => {
     assertOwnedSession(sessionStore, input.sessionId, win);
     console.warn(
@@ -344,7 +337,6 @@ export function makeAttachRejectedHandler(deps?: {
     );
     sessionStore.remove(input.sessionId);
     if (service.has(input.sessionId)) service.kill(input.sessionId);
-    buffer.destroy(input.sessionId);
   };
 }
 
@@ -423,7 +415,7 @@ export function registerTerminalIpc(): void {
     idOnlyInputSchema,
     (input, win) => {
       assertOwnedSession(terminalSessions, input.id, win);
-      return terminalBuffer.readRaw(input.id);
+      return termService.getBufferSnapshot(input.id);
     },
   );
   ownerScopedHandle(

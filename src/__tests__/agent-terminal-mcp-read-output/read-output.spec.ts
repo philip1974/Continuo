@@ -113,7 +113,7 @@ describe('readOutputOutputSchema', () => {
 type ReadFn = (
   id: string,
   opts: { sinceSeq?: number; maxLines?: number; stripAnsi?: boolean },
-) => { lines: string[]; nextSeq: number; truncated: boolean };
+) => Promise<{ lines: string[]; nextSeq: number; truncated: boolean }>;
 const ctx = { ownerWindowId: 1 };
 const getSessionOwner = vi.fn(() => 1);
 
@@ -123,7 +123,7 @@ const makeOkRead = (
     nextSeq: 0,
     truncated: false,
   },
-) => vi.fn<ReadFn>(() => result);
+) => vi.fn<ReadFn>(async () => result);
 
 describe('makeReadOutputTool · 元数据', () => {
   it('name 与契约常量一致', () => {
@@ -165,7 +165,7 @@ describe('makeReadOutputTool · run', () => {
     });
   });
 
-  it('缺省 since_seq / max_lines / strip_ansi → opts 不传(让 buffer 用自己默认)', async () => {
+  it('缺省 since_seq / max_lines / strip_ansi → opts 不传(让 service wrapper 用自己默认)', async () => {
     const read = makeOkRead();
     const tool = makeReadOutputTool({ read, getSessionOwner });
     await tool.run({ session_id: 't' }, ctx);
@@ -179,10 +179,10 @@ describe('makeReadOutputTool · run', () => {
     expect(read).toHaveBeenCalledWith('t', { maxLines: 50 });
   });
 
-  it('read 抛 BUFFER_SESSION_NOT_FOUND → 转 TERMINAL_SESSION_NOT_FOUND', async () => {
-    const read = vi.fn<ReadFn>(() => {
+  it('read 抛 TERMINAL_SESSION_NOT_FOUND → 透传', async () => {
+    const read = vi.fn<ReadFn>(async () => {
       throw Object.assign(new Error('not found'), {
-        code: 'BUFFER_SESSION_NOT_FOUND',
+        code: 'TERMINAL_SESSION_NOT_FOUND',
       });
     });
     const tool = makeReadOutputTool({ read, getSessionOwner });
@@ -192,7 +192,7 @@ describe('makeReadOutputTool · run', () => {
   });
 
   it('read 抛其它错 → 透传', async () => {
-    const read = vi.fn<ReadFn>(() => {
+    const read = vi.fn<ReadFn>(async () => {
       throw Object.assign(new Error('boom'), { code: 'INTERNAL' });
     });
     const tool = makeReadOutputTool({ read, getSessionOwner });

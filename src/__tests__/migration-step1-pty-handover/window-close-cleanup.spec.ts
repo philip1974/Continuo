@@ -12,6 +12,8 @@ const sessionManagerMock = vi.hoisted(() => ({
   sendInput: vi.fn(),
   resize: vi.fn(),
   kill: vi.fn(),
+  getBufferSnapshot: vi.fn(),
+  readOutput: vi.fn(),
 }));
 
 const shellMock = vi.hoisted(() => ({
@@ -30,6 +32,8 @@ vi.mock('@continuo-terminal/server-node', () => ({
       sendInput: sessionManagerMock.sendInput,
       resize: sessionManagerMock.resize,
       kill: sessionManagerMock.kill,
+      getBufferSnapshot: sessionManagerMock.getBufferSnapshot,
+      readOutput: sessionManagerMock.readOutput,
     };
   }),
 }));
@@ -47,7 +51,6 @@ vi.mock('../../../electron/main/services/pty-lang', () => ({
 }));
 
 import * as terminalService from '../../../electron/main/services/terminal.service';
-import * as terminalBuffer from '../../../electron/main/services/terminal-buffer.service';
 import * as terminalSessions from '../../../electron/main/services/terminal-sessions.service';
 import { makeWindowClosedCleanup } from '../../../electron/main/ipc/terminal.ipc';
 import { setMcpRevokers } from '../../../electron/main/services/mcp-host.service';
@@ -81,7 +84,6 @@ describe('migration step1 PTY handover · window close cleanup', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     terminalService.__resetForTest();
-    terminalBuffer._resetForTest();
     terminalSessions._reset();
     setMcpRevokers({ byToken, byWindow });
     byToken.mockReset();
@@ -91,6 +93,16 @@ describe('migration step1 PTY handover · window close cleanup', () => {
     sessionManagerMock.sendInput.mockReset().mockResolvedValue({});
     sessionManagerMock.resize.mockReset().mockResolvedValue(undefined);
     sessionManagerMock.kill.mockReset().mockResolvedValue({});
+    sessionManagerMock.getBufferSnapshot.mockReset().mockReturnValue({
+      data: '',
+      nextSeq: 1,
+      truncated: false,
+    });
+    sessionManagerMock.readOutput.mockReset().mockResolvedValue({
+      lines: [],
+      next_seq: 1,
+      truncated: false,
+    });
     shellMock.cleanup.mockReset().mockResolvedValue(undefined);
     shellMock.prepareEnv.mockClear();
   });

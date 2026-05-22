@@ -52,15 +52,13 @@ function seedStore(store: ReturnType<typeof makeFakeStore>) {
 function makeDeps(store: ReturnType<typeof makeFakeStore>) {
   return {
     sessionStore: store as never,
-    buffer: {
-      read: vi.fn(() => ({ lines: ['ok'], nextSeq: 1, truncated: false })),
-    } as never,
     service: {
       has: vi.fn(() => true),
       write: vi.fn(),
       interrupt: vi.fn(),
       kill: vi.fn(),
       forceKill: vi.fn(),
+      readOutput: vi.fn(async () => ({ lines: ['ok'], nextSeq: 1, truncated: false })),
     } as never,
     getSessionOwner: (id: string) => store.sessions.get(id)?.ownerWindowId ?? null,
     ensureAuthorized: vi.fn(async () => 'once' as const),

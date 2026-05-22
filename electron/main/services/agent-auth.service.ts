@@ -14,7 +14,6 @@ import {
 } from '../../shared/agent-auth-channels';
 import * as terminalSessions from './terminal-sessions.service';
 import * as termService from './terminal.service';
-import * as terminalBuffer from './terminal-buffer.service';
 import type { McpHost } from './mcp-host.service';
 
 // 5 分钟无应答 → 默认拒绝(防 renderer 卡死时 tool Promise 永远悬挂)
@@ -137,7 +136,6 @@ export function revokeAndKillAgentSessions(): RevokeResult {
     if (s.originHint !== 'agent') continue;
     terminalSessions.remove(s.id);
     if (termService.has(s.id)) termService.kill(s.id);
-    terminalBuffer.destroy(s.id);
     killed += 1;
   }
   return { killed, rotated };

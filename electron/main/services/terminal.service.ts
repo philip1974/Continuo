@@ -6,7 +6,6 @@ import { BrowserWindow } from 'electron';
 import type { WebContents } from 'electron';
 import { SessionManager } from '@continuo-terminal/server-node';
 import * as terminalSessions from './terminal-sessions.service';
-import * as terminalBuffer from './terminal-buffer.service';
 import { mcpRevokers } from './mcp-host.service';
 import { prepareEnv } from './shell-integration';
 import { getCurrentLocale } from './settings.service';
@@ -34,8 +33,6 @@ function handleChunk(id: string, chunk: string): void {
   };
 
   inst.bytesPerSecond += chunk.length;
-  // 入 buffer:agent 看完整流(限于 buffer 容量),与 xterm 节流解耦
-  terminalBuffer.append(id, chunk);
 
   const isOverflow = inst.bytesPerSecond > OVERFLOW_THRESHOLD_BYTES;
   if (isOverflow) {
@@ -118,6 +115,56 @@ export function __resetForTest(): void {
   }
   sessionManager = null;
   sessionTargets.clear();
+}
+
+/**
+ * Pull-based raw byte snapshot for IPC renderer attach (terminal:read_history).
+ * Maps server-node SESSION_NOT_FOUND → empty (NEED-INFO-1=b decision: baseline
+ * readRaw behavior on missing buffer was {data:'', truncated:false}).
+ * truncated=true → prefix '\x1b[0m' to reset any retained CSI/OSC tail (P1-1).
+ */
+export function getBufferSnapshot(id: string): { data: string; truncated: boolean } {
+  const sm = getSessionManager();
+  try {
+    const snapshot = sm.getBufferSnapshot(id);
+    const data = snapshot.truncated ? '\x1b[0m' + snapshot.data : snapshot.data;
+    return { data, truncated: snapshot.truncated };
+  } catch (err) {
+    const e = err as Error & { code?: string };
+    if (e?.code === 'SESSION_NOT_FOUND') {
+      return { data: '', truncated: false };
+    }
+    throw err;
+  }
+}
+
+/**
+ * Async line-based read for MCP terminal.read_output tool.
+ * Returns camelCase {lines, nextSeq, truncated} (library convention; deps expect this).
+ * SESSION_NOT_FOUND → rethrow with code='TERMINAL_SESSION_NOT_FOUND' preserving cause.
+ */
+export async function readOutput(
+  id: string,
+  opts: { sinceSeq?: number; maxLines?: number; stripAnsi?: boolean },
+): Promise<{ lines: string[]; nextSeq: number; truncated: boolean }> {
+  const sm = getSessionManager();
+  try {
+    const r = await sm.readOutput({
+      session_id: id,
+      since_seq: opts.sinceSeq,
+      max_lines: opts.maxLines,
+      strip_ansi: opts.stripAnsi,
+    });
+    return { lines: r.lines, nextSeq: r.next_seq, truncated: r.truncated };
+  } catch (err) {
+    const e = err as Error & { code?: string };
+    if (e?.code === 'SESSION_NOT_FOUND') {
+      const wrapped = new Error(e.message, { cause: e }) as Error & { code: string };
+      wrapped.code = 'TERMINAL_SESSION_NOT_FOUND';
+      throw wrapped;
+    }
+    throw err;
+  }
 }
 
 // warnOnce — keyed by `${channel}:${msgKey}` to avoid swallowing cross-session errors (P2-2)
@@ -290,7 +337,6 @@ export async function createTerminal(
   // PHASE 1: register all Continuo-side state BEFORE PTY spawn.
   instances.set(id, inst);
   setTarget(id, win.webContents);
-  terminalBuffer.ensure(id);
   inst.throttleInterval = setInterval(() => {
     inst.bytesPerSecond = 0;
   }, THROTTLE_RESET_INTERVAL_MS);
@@ -311,7 +357,6 @@ export async function createTerminal(
     // PHASE 3: rollback all PHASE 1 state on sm.create failure.
     instances.delete(id);
     sessionTargets.delete(id);
-    terminalBuffer.destroy(id);
     if (inst.throttleInterval) {
       clearInterval(inst.throttleInterval);
       inst.throttleInterval = null;

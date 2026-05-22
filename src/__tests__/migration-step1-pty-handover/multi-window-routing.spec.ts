@@ -12,6 +12,8 @@ const sessionManagerMock = vi.hoisted(() => ({
   sendInput: vi.fn(),
   resize: vi.fn(),
   kill: vi.fn(),
+  getBufferSnapshot: vi.fn(),
+  readOutput: vi.fn(),
 }));
 
 const shellMock = vi.hoisted(() => ({
@@ -30,6 +32,8 @@ vi.mock('@continuo-terminal/server-node', () => ({
       sendInput: sessionManagerMock.sendInput,
       resize: sessionManagerMock.resize,
       kill: sessionManagerMock.kill,
+      getBufferSnapshot: sessionManagerMock.getBufferSnapshot,
+      readOutput: sessionManagerMock.readOutput,
     };
   }),
 }));
@@ -47,7 +51,6 @@ vi.mock('../../../electron/main/services/pty-lang', () => ({
 }));
 
 import * as terminalService from '../../../electron/main/services/terminal.service';
-import * as terminalBuffer from '../../../electron/main/services/terminal-buffer.service';
 import * as terminalSessions from '../../../electron/main/services/terminal-sessions.service';
 
 function makeWindow(id: number, destroyed = false): BrowserWindow {
@@ -66,13 +69,22 @@ describe('migration step1 PTY handover · multi-window routing', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     terminalService.__resetForTest();
-    terminalBuffer._resetForTest();
     terminalSessions._reset();
     sessionManagerMock.options = undefined;
     sessionManagerMock.create.mockReset().mockResolvedValue({ session_id: 'created' });
     sessionManagerMock.sendInput.mockReset().mockResolvedValue({});
     sessionManagerMock.resize.mockReset().mockResolvedValue(undefined);
     sessionManagerMock.kill.mockReset().mockResolvedValue({});
+    sessionManagerMock.getBufferSnapshot.mockReset().mockReturnValue({
+      data: '',
+      nextSeq: 1,
+      truncated: false,
+    });
+    sessionManagerMock.readOutput.mockReset().mockResolvedValue({
+      lines: [],
+      next_seq: 1,
+      truncated: false,
+    });
     shellMock.cleanup.mockReset().mockResolvedValue(undefined);
     shellMock.prepareEnv.mockClear();
   });

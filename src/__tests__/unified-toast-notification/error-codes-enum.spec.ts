@@ -19,7 +19,6 @@ const MAIN_TARGETS = [
   'electron/main/services/plugins.service.ts',
   'electron/main/services/mcp-host.service.ts',
   'electron/main/services/mcp-tools-terminal.ts',
-  'electron/main/services/terminal-buffer.service.ts',
   'electron/main/services/terminal-sessions.service.ts',
 ] as const;
 
@@ -43,11 +42,11 @@ function read(rel: string): string {
 }
 
 describe('unified-toast-notification: ERROR_CODES enum', () => {
-  it('T9 exposes exactly 34 unique business error code keys', () => {
+  it('T9 exposes exactly 33 unique business error code keys', () => {
     expect(Object.keys(ERROR_CODES).sort()).toEqual(
       Array.from(new Set(Object.keys(ERROR_CODES))).sort(),
     );
-    expect(Object.keys(ERROR_CODES)).toHaveLength(34);
+    expect(Object.keys(ERROR_CODES)).toHaveLength(33);
     expect(ERROR_CODES.TERMINAL_CWD_UNRESOLVED).toBe(
       'TERMINAL_CWD_UNRESOLVED',
     );

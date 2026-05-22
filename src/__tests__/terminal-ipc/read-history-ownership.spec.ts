@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TERMINAL_CHANNELS } from '../../../electron/shared/terminal-channels';
 import { registerTerminalIpc } from '../../../electron/main/ipc/terminal.ipc';
 import * as terminalSessions from '../../../electron/main/services/terminal-sessions.service';
-import * as terminalBuffer from '../../../electron/main/services/terminal-buffer.service';
+import * as termService from '../../../electron/main/services/terminal.service';
 
 type IpcHandler = (event: unknown, raw: unknown) => Promise<unknown>;
 
@@ -72,9 +72,9 @@ async function invokeReadHistory(id: string) {
 
 describe('terminal:read_history ownership', () => {
   beforeEach(() => {
+    vi.restoreAllMocks();
     electronMock.reset();
     terminalSessions._reset();
-    terminalBuffer._resetForTest();
 
     const winA = makeWin(10);
     const winB = makeWin(20);
@@ -95,8 +95,10 @@ describe('terminal:read_history ownership', () => {
       originHint: 'user',
       ownerWindowId: 20,
     });
-    terminalBuffer.append('A-id', 'A raw');
-    terminalBuffer.append('B-id', 'B raw');
+    vi.spyOn(termService, 'getBufferSnapshot').mockImplementation((id) => ({
+      data: id === 'A-id' ? 'A raw' : 'B raw',
+      truncated: false,
+    }));
 
     registerTerminalIpc();
   });

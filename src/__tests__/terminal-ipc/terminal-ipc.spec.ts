@@ -462,7 +462,6 @@ describe('makeRemoveHandler', () => {
     const handler = makeRemoveHandler({
       service: service as never,
       sessionStore: sessionStore as never,
-      buffer: { destroy: vi.fn() } as never,
     });
     handler({ id: 'term-1' }, fakeWin);
     expect(sessionStore.remove).toHaveBeenCalledWith('term-1');
@@ -497,7 +496,6 @@ describe('makeRemoveHandler', () => {
     const handler = makeRemoveHandler({
       service: service as never,
       sessionStore: sessionStore as never,
-      buffer: { destroy: vi.fn() } as never,
     });
     handler({ id: 'term-dead' }, fakeWin);
     expect(sessionStore.remove).toHaveBeenCalledWith('term-dead');
@@ -532,7 +530,6 @@ describe('makeRemoveHandler', () => {
     const handler = makeRemoveHandler({
       service: service as never,
       sessionStore: sessionStore as never,
-      buffer: { destroy: vi.fn() } as never,
     });
     expect(() =>
       handler(

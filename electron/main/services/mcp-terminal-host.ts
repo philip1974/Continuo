@@ -1,6 +1,5 @@
 import type { AnyMcpTool, McpCallCtx } from './mcp-host.service';
 import type * as terminalSessions from './terminal-sessions.service';
-import type * as terminalBuffer from './terminal-buffer.service';
 import type * as termService from './terminal.service';
 import {
   makeCreateSessionTool,
@@ -15,10 +14,9 @@ import {
 
 export interface MakeTerminalMcpToolsDeps {
   readonly sessionStore: Pick<typeof terminalSessions, 'get' | 'getAll'>;
-  readonly buffer: Pick<typeof terminalBuffer, 'read'>;
   readonly service: Pick<
     typeof termService,
-    'has' | 'write' | 'interrupt' | 'kill' | 'forceKill'
+    'has' | 'write' | 'interrupt' | 'kill' | 'forceKill' | 'readOutput'
   >;
   readonly getSessionOwner: (id: string) => number | null;
   readonly ensureAuthorized: () => Promise<'once' | 'session' | 'denied'>;
@@ -56,7 +54,7 @@ export function makeTerminalMcpTools(
       getSessionOwner: deps.getSessionOwner,
     }),
     makeReadOutputTool({
-      read: deps.buffer.read,
+      read: deps.service.readOutput,
       getSessionOwner: deps.getSessionOwner,
     }),
     makeKillTool({

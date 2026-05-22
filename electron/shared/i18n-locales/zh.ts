@@ -38,7 +38,6 @@ export const zh: Record<TranslationKey, string> = {
   'errors.BAD_MANIFEST': '插件清单错误',
   'errors.BAD_ROOT': '工作区根目录错误',
   'errors.BAD_URL': 'URL 无效',
-  'errors.BUFFER_SESSION_NOT_FOUND': 'Buffer 会话不存在',
   'errors.EEXIST': '文件已存在',
   'errors.GIT_FAILED': 'Git 命令失败',
   'errors.GIT_SPAWN_FAILED': '无法启动 git',
