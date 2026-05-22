@@ -9,14 +9,14 @@ const OUT_ROOT = process.env.BUILD_TARGET === 'pack' ? 'out-pack' : 'out';
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin({ exclude: ['@continuo-terminal/protocol'] })],
+    plugins: [externalizeDepsPlugin({ exclude: ['@continuo-terminal/protocol', '@continuo-terminal/server-node'] })],
     build: {
       outDir: `${OUT_ROOT}/main`,
       rollupOptions: { input: resolve(__dirname, 'electron/main/index.ts') },
     },
   },
   preload: {
-    plugins: [externalizeDepsPlugin({ exclude: ['@continuo-terminal/protocol'] })],
+    plugins: [externalizeDepsPlugin({ exclude: ['@continuo-terminal/protocol', '@continuo-terminal/server-node'] })],
     build: {
       outDir: `${OUT_ROOT}/preload`,
       rollupOptions: {
