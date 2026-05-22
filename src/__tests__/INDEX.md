@@ -351,6 +351,13 @@
 
 - [`update-store.spec.ts`](./marketplace-update-store/update-store.spec.ts)
 
+## [migration-step1-pty-handover](./migration-step1-pty-handover/README.md)
+
+- [`create-failure-rollback.spec.ts`](./migration-step1-pty-handover/create-failure-rollback.spec.ts)
+- [`force-kill-cleanup.spec.ts`](./migration-step1-pty-handover/force-kill-cleanup.spec.ts)
+- [`multi-window-routing.spec.ts`](./migration-step1-pty-handover/multi-window-routing.spec.ts)
+- [`window-close-cleanup.spec.ts`](./migration-step1-pty-handover/window-close-cleanup.spec.ts)
+
 ## [PermissionEditorModal(M-Plugin v4.7 事后改主意)](./permission-editor-modal/README.md)
 
 - [`permission-editor-modal.spec.tsx`](./permission-editor-modal/permission-editor-modal.spec.tsx)

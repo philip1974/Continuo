@@ -1,9 +1,10 @@
 // PTY service(M-Terminal Step T1,从 MindAutonAgent 移植)。
-// node-pty 实例 map<id, Instance>;输出节流 / 截断 / overflow 通知;
+// SessionManager session map<id, Instance>;输出节流 / 截断 / overflow 通知;
 // kill grace period 3s 优雅终止。
 
-import * as pty from 'node-pty';
 import { BrowserWindow } from 'electron';
+import type { WebContents } from 'electron';
+import { SessionManager } from '@continuo-terminal/server-node';
 import * as terminalSessions from './terminal-sessions.service';
 import * as terminalBuffer from './terminal-buffer.service';
 import { mcpRevokers } from './mcp-host.service';
@@ -20,8 +21,173 @@ const FLUSH_DELAY_DEFAULT_MS = 32;
 const THROTTLE_RESET_INTERVAL_MS = 1_000;
 const KILL_GRACE_PERIOD_MS = 3_000;
 
+function handleChunk(id: string, chunk: string): void {
+  const inst = instances.get(id);
+  if (!inst) return;
+
+  const flush = () => {
+    if (inst.pendingData) {
+      safeSend(id, 'terminal:data', id, inst.pendingData);
+      inst.pendingData = '';
+    }
+    inst.flushTimer = null;
+  };
+
+  inst.bytesPerSecond += chunk.length;
+  // 入 buffer:agent 看完整流(限于 buffer 容量),与 xterm 节流解耦
+  terminalBuffer.append(id, chunk);
+
+  const isOverflow = inst.bytesPerSecond > OVERFLOW_THRESHOLD_BYTES;
+  if (isOverflow) {
+    inst.pendingData = safeTruncate(
+      inst.pendingData + chunk,
+      TRUNCATE_MAX_BYTES,
+    );
+    if (!inst.overflowNotified) {
+      inst.overflowNotified = true;
+      safeSend(id, 'terminal:overflow', id);
+    }
+    if (!inst.flushTimer) {
+      inst.flushTimer = setTimeout(flush, FLUSH_DELAY_OVERFLOW_MS);
+    }
+    return;
+  }
+
+  if (inst.overflowNotified) {
+    inst.overflowNotified = false;
+    safeSend(id, 'terminal:overflow-recovered', id);
+  }
+  inst.pendingData += chunk;
+
+  if (!inst.flushTimer) {
+    const delay = isInPlaceUpdate(chunk)
+      ? FLUSH_DELAY_INPLACE_MS
+      : FLUSH_DELAY_DEFAULT_MS;
+    inst.flushTimer = setTimeout(flush, delay);
+  }
+}
+
+function handleExit(id: string, info: { exitCode: number; signal?: number }): void {
+  // SessionManager constructor onExit callback fires when PTY naturally exits.
+  // forceKill/killTimer-grace/cleanupAllForWindow paths sync-call cleanupSessionLocal
+  // BEFORE sm.kill (which disposes this listener), so this handler is the idempotent
+  // fallback for natural exits.
+  // Note: signal is currently dropped at the IPC boundary (baseline 'terminal:exit'
+  // payload uses { exitCode, signal }, our cleanupSessionLocal also uses
+  // { exitCode, signal: undefined }) — Op4/Op12 review may wire signal through if
+  // baseline preserves it; for now cleanupSessionLocal preserves baseline shape.
+  cleanupSessionLocal(id, info.exitCode);
+}
+
+// SessionManager singleton (lazy init)
+let sessionManager: SessionManager | null = null;
+
+function getSessionManager(): SessionManager {
+  if (sessionManager) return sessionManager;
+  sessionManager = new SessionManager({
+    onData: handleChunk,
+    onExit: handleExit,
+    maxBytes: 64 * 1024,
+  });
+  return sessionManager;
+}
+
+// Per-session WebContents routing (P0-2 fix from red-team-v3)
+const sessionTargets = new Map<string, WebContents>();
+
+function setTarget(id: string, target: WebContents): void {
+  sessionTargets.set(id, target);
+}
+
+function getTarget(id: string): WebContents | undefined {
+  return sessionTargets.get(id);
+}
+
+// Variadic safeSend — baseline IPC contract preserved (P0-1 fix)
+function safeSend(id: string, channel: string, ...args: unknown[]): void {
+  const target = sessionTargets.get(id);
+  if (!target || target.isDestroyed()) return;
+  target.send(channel, ...args);
+}
+
+// Test-only reset (P1-5 fix from red-team-v3)
+export function __resetForTest(): void {
+  if (sessionManager) {
+    // 简单 reset:清掉 maps;不调 cleanupSessionLocal (会在 Op2b 后改成能 catch)
+    instances.clear();
+  }
+  sessionManager = null;
+  sessionTargets.clear();
+}
+
+// warnOnce — keyed by `${channel}:${msgKey}` to avoid swallowing cross-session errors (P2-2)
+const _warnedKeys = new Set<string>();
+function warnOnce(key: string, msg: string): void {
+  if (_warnedKeys.has(key)) return;
+  _warnedKeys.add(key);
+  console.warn(`[terminal.service] ${msg}`);
+}
+
+// cleanupSessionLocal — idempotent local cleanup for Continuo-side state.
+// Called sync BEFORE sm.kill (force/grace/window-close paths) because sm.kill
+// disposes SessionManager onExit listener immediately (P0-1 fix from red-team-v3).
+// Also called by SessionManager onExit handler for natural PTY exit (idempotent
+// fallback — second call returns early since instances.has(id) === false).
+function cleanupSessionLocal(id: string, exitCode: number): void {
+  const instance = instances.get(id);
+  if (!instance) return; // idempotent — already cleaned
+
+  // 1. Mark exited in metadata
+  try {
+    terminalSessions.setExited(id, exitCode);
+  } catch (err) {
+    warnOnce(`setExited:${id}`, `terminalSessions.setExited threw for ${id}: ${(err as Error).message}`);
+  }
+
+  // 2. Push terminal:exit (only if target still alive — variadic baseline payload)
+  // Baseline shape: webContents.send('terminal:exit', id, { exitCode, signal })
+  safeSend(id, 'terminal:exit', id, { exitCode, signal: undefined });
+
+  // 3. Clear all timers (Adjustment A: throttleInterval was setInterval per Op0 baseline)
+  if (instance.killTimer) {
+    clearTimeout(instance.killTimer);
+    instance.killTimer = null;
+  }
+  if (instance.flushTimer) {
+    clearTimeout(instance.flushTimer);
+    instance.flushTimer = null;
+  }
+  if (instance.throttleInterval) {
+    clearInterval(instance.throttleInterval);
+    instance.throttleInterval = null;
+  }
+
+  // 4. Continuo-specific cleanup (shellCleanup is async — P1-1 fix)
+  try {
+    const cleanupResult = instance.shellCleanup?.();
+    if (cleanupResult && typeof (cleanupResult as Promise<unknown>).catch === 'function') {
+      void (cleanupResult as Promise<unknown>).catch((err) =>
+        warnOnce(`shellCleanup:${id}`, `shellCleanup rejected for ${id}: ${(err as Error).message}`),
+      );
+    }
+  } catch (err) {
+    warnOnce(`shellCleanup-sync:${id}`, `shellCleanup threw sync for ${id}: ${(err as Error).message}`);
+  }
+
+  if (instance.mcpToken) {
+    try {
+      mcpRevokers().byToken(instance.mcpToken);
+    } catch (err) {
+      warnOnce(`mcpRevoke:${id}`, `mcpToken revoke threw for ${id}: ${(err as Error).message}`);
+    }
+  }
+
+  // 5. Remove from all maps (finally-style — even if above threw)
+  instances.delete(id);
+  sessionTargets.delete(id);
+}
+
 interface Instance {
-  pty: pty.IPty;
   pendingData: string;
   flushTimer: NodeJS.Timeout | null;
   killTimer: NodeJS.Timeout | null;
@@ -81,6 +247,10 @@ export async function createTerminal(
   env?: Record<string, string>,
   meta?: { mcpToken?: string },
 ): Promise<void> {
+  if (instances.has(id)) {
+    throw new Error(`Terminal id "${id}" already exists`);
+  }
+
   const baseEnv = {
     ...process.env,
     TERM: 'xterm-256color',
@@ -106,16 +276,7 @@ export async function createTerminal(
   // 没 -l/-i 时 zsh 偶发不启 ZLE → zsh-autosuggestions 等 widget plugin 失效。
   // 用户传 args 优先,只在用户没传时加默认 flag。
   const finalArgs = args.length === 0 ? ['-l', '-i'] : args;
-  const p = pty.spawn(shell, finalArgs, {
-    name: 'xterm-256color',
-    cols: 120,
-    rows: 40,
-    cwd,
-    env: shellEnv as Record<string, string>,
-  });
-
   const inst: Instance = {
-    pty: p,
     pendingData: '',
     flushTimer: null,
     killTimer: null,
@@ -126,78 +287,51 @@ export async function createTerminal(
     shellCleanup,
   };
 
-  const send = (data: string) => {
-    if (!win.isDestroyed()) {
-      win.webContents.send('terminal:data', id, data);
-    }
-  };
-
-  const flush = () => {
-    if (inst.pendingData) {
-      send(inst.pendingData);
-      inst.pendingData = '';
-    }
-    inst.flushTimer = null;
-  };
-
-  // 创建 buffer(P3:agent read_output 用),onData 内写入完整 raw data,
-  // 渲染节流由下面 inst.pendingData 单独处理。
-  terminalBuffer.ensure(id);
-
-  p.onData((data) => {
-    inst.bytesPerSecond += data.length;
-    // 入 buffer:agent 看完整流(限于 buffer 容量),与 xterm 节流解耦
-    terminalBuffer.append(id, data);
-
-    const isOverflow = inst.bytesPerSecond > OVERFLOW_THRESHOLD_BYTES;
-    if (isOverflow) {
-      inst.pendingData = safeTruncate(
-        inst.pendingData + data,
-        TRUNCATE_MAX_BYTES,
-      );
-      if (!inst.overflowNotified) {
-        inst.overflowNotified = true;
-        if (!win.isDestroyed()) {
-          win.webContents.send('terminal:overflow', id);
-        }
-      }
-      if (!inst.flushTimer) {
-        inst.flushTimer = setTimeout(flush, FLUSH_DELAY_OVERFLOW_MS);
-      }
-      return;
-    }
-
-    if (inst.overflowNotified) {
-      inst.overflowNotified = false;
-      if (!win.isDestroyed()) {
-        win.webContents.send('terminal:overflow-recovered', id);
-      }
-    }
-    inst.pendingData += data;
-
-    if (!inst.flushTimer) {
-      const delay = isInPlaceUpdate(data)
-        ? FLUSH_DELAY_INPLACE_MS
-        : FLUSH_DELAY_DEFAULT_MS;
-      inst.flushTimer = setTimeout(flush, delay);
-    }
-  });
-
-  p.onExit(({ exitCode, signal }) => {
-    flush();
-    // 标记 session metadata exitCode → 推 sessions_changed → renderer 显 closed。
-    // 若 metadata 已被 remove 删掉(用户主动关 X),setExited 内部 no-op。
-    terminalSessions.setExited(id, exitCode ?? -1);
-    cleanup(id);
-    if (!win.isDestroyed()) {
-      win.webContents.send('terminal:exit', id, { exitCode, signal });
-    }
-  });
-
+  // PHASE 1: register all Continuo-side state BEFORE PTY spawn.
   instances.set(id, inst);
+  setTarget(id, win.webContents);
+  terminalBuffer.ensure(id);
   inst.throttleInterval = setInterval(() => {
     inst.bytesPerSecond = 0;
   }, THROTTLE_RESET_INTERVAL_MS);
+
+  try {
+    // PHASE 2: spawn PTY via SessionManager.
+    await getSessionManager().create({
+      session_id: id,
+      shell,
+      args: finalArgs,
+      env: shellEnv as Record<string, string>,
+      cwd,
+      cols: 120,
+      rows: 40,
+      name: shell,
+    });
+  } catch (err) {
+    // PHASE 3: rollback all PHASE 1 state on sm.create failure.
+    instances.delete(id);
+    sessionTargets.delete(id);
+    terminalBuffer.destroy(id);
+    if (inst.throttleInterval) {
+      clearInterval(inst.throttleInterval);
+      inst.throttleInterval = null;
+    }
+    if (inst.mcpToken) {
+      try {
+        mcpRevokers().byToken(inst.mcpToken);
+      } catch {
+        // ignore rollback cleanup errors
+      }
+    }
+    try {
+      void inst.shellCleanup().catch(() => {
+        // ignore rollback cleanup errors
+      });
+    } catch {
+      // ignore rollback cleanup errors
+    }
+    throw err;
+  }
 }
 
 export function has(id: string): boolean {
@@ -207,29 +341,27 @@ export function has(id: string): boolean {
 export function write(id: string, data: string): boolean {
   const inst = instances.get(id);
   if (!inst) return false;
-  try {
-    inst.pty.write(data);
-    return true;
-  } catch (err) {
-    console.warn('[terminal.service] pty write failed', id, err);
-    return false;
-  }
+  void getSessionManager()
+    .sendInput({ session_id: id, data })
+    .catch((err) => warnOnce(`sendInput:${id}`, `sendInput failed for ${id}: ${(err as Error).message}`));
+  return true;
 }
 
 export function resize(id: string, cols: number, rows: number): boolean {
   const inst = instances.get(id);
   if (!inst) return false;
-  try {
-    inst.pty.resize(cols, rows);
-    return true;
-  } catch (err) {
-    console.warn('[terminal.service] pty resize failed', id, err);
-    return false;
-  }
+  void getSessionManager()
+    .resize({ session_id: id, cols, rows })
+    .catch((err) => warnOnce(`resize:${id}`, `resize failed for ${id}: ${(err as Error).message}`));
+  return true;
 }
 
 export function interrupt(id: string): void {
-  instances.get(id)?.pty.write('\x03');
+  const inst = instances.get(id);
+  if (!inst) return;
+  void getSessionManager()
+    .sendInput({ session_id: id, data: '\x03' })
+    .catch((err) => warnOnce(`interrupt:${id}`, `interrupt failed for ${id}: ${(err as Error).message}`));
 }
 
 /**
@@ -240,16 +372,19 @@ export function kill(id: string): void {
   const inst = instances.get(id);
   if (!inst) return;
   if (inst.killTimer) return;
-  inst.pty.write('\x03');
+
+  // Step 1: send Ctrl+C immediately (replaces baseline pty.write('\x03')).
+  void getSessionManager()
+    .sendInput({ session_id: id, data: '\x03' })
+    .catch((err) => warnOnce(`kill-ctrlc:${id}`, `kill Ctrl+C failed for ${id}: ${(err as Error).message}`));
+
+  // Step 2: 3s grace, then SYNC cleanup + sm.kill (P0-1 fix from red-team-v3).
   inst.killTimer = setTimeout(() => {
     inst.killTimer = null;
-    if (!instances.has(id)) return;
-    try {
-      inst.pty.kill();
-    } catch (err) {
-      console.warn('[terminal.service] pty kill failed', id, err);
-    }
-    cleanup(id);
+    cleanupSessionLocal(id, -1);
+    void getSessionManager()
+      .kill({ session_id: id, signal: 'SIGKILL' })
+      .catch((err) => warnOnce(`kill-sigkill:${id}`, `sm.kill SIGKILL failed for ${id}: ${(err as Error).message}`));
   }, KILL_GRACE_PERIOD_MS);
 }
 
@@ -265,24 +400,12 @@ export function forceKill(id: string): void {
     clearTimeout(inst.killTimer);
     inst.killTimer = null;
   }
-  try {
-    inst.pty.kill('SIGKILL');
-  } catch (err) {
-    console.warn('[terminal.service] pty SIGKILL failed', id, err);
-  }
-}
-
-function cleanup(id: string): void {
-  const inst = instances.get(id);
-  if (!inst) return;
-  if (inst.throttleInterval) clearInterval(inst.throttleInterval);
-  if (inst.flushTimer) clearTimeout(inst.flushTimer);
-  if (inst.killTimer) clearTimeout(inst.killTimer);
-  if (inst.mcpToken) mcpRevokers().byToken(inst.mcpToken);
-  void inst.shellCleanup().catch((err) => {
-    console.warn('[terminal.service] shell integration cleanup failed', id, err);
-  });
-  instances.delete(id);
+  // SYNC cleanup BEFORE sm.kill (P0-1 fix).
+  // exitCode -1 is deliberate: force-killed PTYs don't deliver a natural exit code.
+  cleanupSessionLocal(id, -1);
+  void getSessionManager()
+    .kill({ session_id: id, signal: 'SIGKILL' })
+    .catch((err) => warnOnce(`forceKill:${id}`, `forceKill failed for ${id}: ${(err as Error).message}`));
 }
 
 /** 主进程退出前调,kill 所有 PTY 防 zombie. */
