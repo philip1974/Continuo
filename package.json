@@ -57,6 +57,7 @@
     "@codemirror/state": "^6.6.0",
     "@codemirror/theme-one-dark": "^6.1.3",
     "@codemirror/view": "^6.41.1",
+    "@continuo-terminal/host": "file:../ContinuoTerminal/packages/host",
     "@continuo-terminal/protocol": "file:../ContinuoTerminal/packages/protocol",
     "@continuo-terminal/server-node": "file:../ContinuoTerminal/packages/server-node",
     "@headless-tree/core": "^1.6.3",

@@ -35,6 +35,9 @@ importers:
       '@codemirror/view':
         specifier: ^6.41.1
         version: 6.41.1
+      '@continuo-terminal/host':
+        specifier: file:../ContinuoTerminal/packages/host
+        version: file:../ContinuoTerminal/packages/host(zod@3.25.76)
       '@continuo-terminal/protocol':
         specifier: file:../ContinuoTerminal/packages/protocol
         version: file:../ContinuoTerminal/packages/protocol
@@ -406,6 +409,10 @@ packages:
 
   '@codemirror/view@6.41.1':
     resolution: {integrity: sha512-ToDnWKbBnke+ZLrP6vgTTDScGi5H37YYuZGniQaBzxMVdtCxMrslsmtnOvbPZk4RX9bvkQqnWR/WS/35tJA0qg==}
+
+  '@continuo-terminal/host@file:../ContinuoTerminal/packages/host':
+    resolution: {directory: ../ContinuoTerminal/packages/host, type: directory}
+    engines: {node: '>=24'}
 
   '@continuo-terminal/protocol@file:../ContinuoTerminal/packages/protocol':
     resolution: {directory: ../ContinuoTerminal/packages/protocol, type: directory}
@@ -4995,6 +5002,15 @@ snapshots:
       crelt: 1.0.6
       style-mod: 4.1.3
       w3c-keyname: 2.2.8
+
+  '@continuo-terminal/host@file:../ContinuoTerminal/packages/host(zod@3.25.76)':
+    dependencies:
+      '@continuo-terminal/server-node': file:../ContinuoTerminal/packages/server-node
+      '@modelcontextprotocol/sdk': 1.29.0(zod@3.25.76)
+    transitivePeerDependencies:
+      - '@cfworker/json-schema'
+      - supports-color
+      - zod
 
   '@continuo-terminal/protocol@file:../ContinuoTerminal/packages/protocol':
     dependencies:

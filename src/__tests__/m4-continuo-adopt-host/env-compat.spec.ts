@@ -5,6 +5,7 @@ import {
   subjectForWindow,
   toLegacyContinuoEnv,
 } from '../../../electron/main/services/continuo-terminal-host-adapter';
+import type { AgentEnv } from '@continuo-terminal/host';
 
 describe('M4 Continuo host adapter', () => {
   it('maps a window id to a generic subject', () => {
@@ -52,8 +53,7 @@ describe('M4 Continuo host adapter', () => {
     });
   });
 
-  it('preserves AgentEnv shape compatibility (inline mirror of @continuo-terminal/host)', () => {
-    type AgentEnv = Record<string, string>;
+  it('resolves the @continuo-terminal/host AgentEnv type boundary', () => {
     const env: AgentEnv = {
       MCP_URL: 'http://127.0.0.1:4321/mcp',
       MCP_TOKEN: 'token-boundary',

@@ -1,12 +1,4 @@
-/**
- * Inline mirror of @continuo-terminal/host AgentEnv shape.
- * M4 downscope (per OP5-FAIL recovery):Continuo cannot physically depend on
- * @continuo-terminal/host via pnpm file:due to workspace:* internal deps
- * (cross-workspace resolution). The adapter pattern + generic-terms boundary
- * still applies; future M4b can re-attempt physical dep when
- * @continuo-terminal/host publishes or resolves the dep model.
- */
-type AgentEnv = Record<string, string>;
+import type { AgentEnv } from '@continuo-terminal/host';
 
 export interface ContinuoMcpEnvInput {
   readonly windowId: number;
