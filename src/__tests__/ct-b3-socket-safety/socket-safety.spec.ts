@@ -26,6 +26,7 @@ import {
 } from '../../../electron/main/services/mcp-stdio-server.service';
 import {
   _resetForTest,
+  buildClaudeAddCommand,
   getStdioConfig,
   setStdioConfig,
 } from '../../../electron/main/services/mcp-stdio-config.service';
@@ -186,18 +187,45 @@ describe('CT-B3 stdio socket safety', { timeout: 30_000 }, () => {
     expect(resolveWindowId).toHaveBeenCalledWith('tok-42');
   });
 
-  it('preserves getStdioConfig claude add command shape', () => {
+  it('buildClaudeAddCommand byte-exact format (CT-B3 UX invariant, source-side)', () => {
+    // Byte-exact pin on the SOURCE-side helper that builds the "复制 MCP 配置"
+    // content. Format must remain identical across CT-B3 (and future) commits
+    // so users do NOT need to re-configure Claude Code MCP after Continuo
+    // upgrades. Replaces manual UX verify (dev build → StatusBar 按钮 → paste
+    // clipboard → diff) per ADR 0006 CT-B3 plan-v2 P1-1 byte-compat requirement.
+    expect(buildClaudeAddCommand('/p')).toBe(
+      'claude mcp add --transport stdio continuo -- /p',
+    );
+    expect(buildClaudeAddCommand('/Applications/Continuo.app/Contents/Resources/continuo-mcp-stdio.mjs')).toBe(
+      'claude mcp add --transport stdio continuo -- /Applications/Continuo.app/Contents/Resources/continuo-mcp-stdio.mjs',
+    );
+  });
+
+  it('preserves getStdioConfig claude add command byte-exact format (round-trip)', () => {
+    // Byte-exact verify of the round-trip: setStdioConfig → getStdioConfig
+    // returns identical bytes. Combined with buildClaudeAddCommand test above,
+    // this pins both source construction AND consumer-visible content.
     const cliPath = '/Applications/Continuo.app/Contents/Resources/continuo-mcp-stdio.mjs';
+    const expectedCommand = `claude mcp add --transport stdio continuo -- ${cliPath}`;
+    const socketPath = '/Users/example/Library/Application Support/Continuo/mcp.sock';
+
     setStdioConfig({
       available: true,
       cliPath,
-      socketPath: '/Users/example/Library/Application Support/Continuo/mcp.sock',
-      claudeAddCommand: `claude mcp add --transport stdio continuo -- ${cliPath}`,
+      socketPath,
+      claudeAddCommand: expectedCommand,
     });
 
     const config = getStdioConfig();
 
-    expect(config.claudeAddCommand).toMatch(/^claude mcp add --transport stdio continuo -- /);
-    expect(config.claudeAddCommand).toContain(cliPath);
+    // Byte-exact assertions (no whitespace / flag / quote drift allowed)
+    expect(config.available).toBe(true);
+    expect(config.cliPath).toBe(cliPath);
+    expect(config.socketPath).toBe(socketPath);
+    expect(config.claudeAddCommand).toBe(expectedCommand);
+    // Format anchored explicitly so future regressions are caught
+    expect(config.claudeAddCommand).toBe(
+      'claude mcp add --transport stdio continuo -- /Applications/Continuo.app/Contents/Resources/continuo-mcp-stdio.mjs',
+    );
   });
 });

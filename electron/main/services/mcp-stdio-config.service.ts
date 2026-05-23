@@ -20,3 +20,18 @@ export function getStdioConfig(): StdioMcpConfig {
 export function _resetForTest(): void {
   cached = { available: false };
 }
+
+/**
+ * 构造 "复制 MCP 配置" 按钮内容(Claude Code 一次配置永久使用)。
+ *
+ * Format is part of Continuo's UX contract — users paste this verbatim into
+ * Claude Code config and expect it to keep working across Continuo upgrades。
+ * **MUST NOT change** without explicit user communication (UX-breaking)。
+ *
+ * Pure function in this file(not inlined in index.ts)so a byte-exact unit
+ * test can pin the format without booting Electron。Replaces manual UX verify
+ * (dev build → StatusBar 按钮 → clipboard diff)per ADR 0006 CT-B3 P1-1。
+ */
+export function buildClaudeAddCommand(cliPath: string): string {
+  return `claude mcp add --transport stdio continuo -- ${cliPath}`;
+}

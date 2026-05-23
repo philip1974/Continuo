@@ -52,7 +52,7 @@ import {
   setMcpHostRef,
 } from './services/agent-auth.service';
 import { createContinuoMcpEnv } from './services/continuo-terminal-host-adapter';
-import { setStdioConfig } from './services/mcp-stdio-config.service';
+import { buildClaudeAddCommand, setStdioConfig } from './services/mcp-stdio-config.service';
 import { startPluginMcpIpc } from './ipc/plugin-mcp.ipc';
 import { defaultIsTrustedFrame } from './safe-handle';
 
@@ -534,7 +534,7 @@ async function startMcpStdioServer(): Promise<void> {
       resolveWindowId: (token) => mcpHost!.resolveWindowId(token),
     });
     const cliPath = resolveStdioCliPath();
-    const claudeAddCommand = `claude mcp add --transport stdio continuo -- ${cliPath}`;
+    const claudeAddCommand = buildClaudeAddCommand(cliPath);
      
     console.log(`[mcp-stdio] listening on ${mcpStdio.socketPath}`);
     // 打印推荐的 claude mcp add 命令,用户复制即可一次配置永久使用
