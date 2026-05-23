@@ -73,18 +73,34 @@ export function applyMappedKeyOnKeydown(
 }
 
 /**
- * 在 term.onData 转发器中调用。若 state.pending 非空,用 pending 替换 data
- * 并清 pending;否则原样返回。这是 H1 双写的核心修法:Shift+Enter 时 xterm
- * 自己发 \r 到 onData,此函数把它替换为 \x1b\r,所以 PTY 只看到一份 \x1b\r。
+ * 在 term.onData 转发器中调用。若 state.pending 非空 AND data 是 Shift+Enter
+ * 对应的 '\r',用 pending 替换并清 pending;否则原样返回。
+ *
+ * 关键 invariant(issue #36 F1 paste-stuck 修法):**任何 onData 都清 pending**,
+ * 即使 data 不是 '\r' — 防 stale pending 在 Shift+Enter keydown 之后 / 配对
+ * onData 之前的窗口期内 hijack 别的 input(eg paste)。pending 是 single-shot
+ * single-data-shape contract(只对配对 '\r' 有效);任何其他 onData(paste / 字符 /
+ * special sequence)都表示 pending 已 stale,清除是正确语义。
+ *
+ * Bug 复现路径(issue #36):
+ *   1. Shift+Enter keydown → applyMappedKeyOnKeydown sets pending='\x1b\r'
+ *   2. 某 reason onData('\r') 没及时 fire(focus / xterm 内部 race / paste preempt)
+ *   3. User paste long text → onData('\x1b[200~text\x1b[201~')
+ *   4. **旧逻辑**:pending 非空 → hijack 整段 paste data,替换为 '\x1b\r' →
+ *      bracketed paste end sequence 丢失 → zsh 卡在 paste 状态,panel 全死
+ *   5. **新逻辑**:data 不是 '\r' → pending 清除 + paste data 透传 → zsh 正常 receive
  */
 export function consumeMappedKeyOnData(
   state: MappedKeyState,
   data: string,
 ): string {
-  if (state.pending !== null) {
-    const result = state.pending;
-    state.pending = null;
-    return result;
+  const pending = state.pending;
+  // ALWAYS clear pending — single-shot contract, any subsequent onData
+  // (paired '\r' or stale-window arrival) consumes the slot.
+  state.pending = null;
+  if (pending !== null && data === '\r') {
+    // Shift+Enter mapped path:xterm 发 '\r' to onData;替换为 ESC+CR(\x1b\r)
+    return pending;
   }
   return data;
 }

@@ -127,4 +127,33 @@ describe('xterm 集成层 — handler→PTY 字节映射(#18,字节级保证 ≠
 
     expect(writes).toEqual(['\x1b\r', 'a']);
   });
+
+  it('issue #36 F1 paste-stuck:stale pending 不 hijack 非 \\r 的 paste data', () => {
+    // 复现 bug:Shift+Enter keydown 设 pending,但配对 onData('\r')延迟或没 fire
+    // (focus 切换 / xterm race);此时 user 触发 paste 会让 stale pending 错误
+    // 替换 paste data → bracketed paste end sequence 丢失 → zsh 卡死。
+    const state = createMappedKeyState();
+
+    // 1. Shift+Enter keydown 入口 — pending 设到 '\x1b\r'
+    applyMappedKeyOnKeydown(state, ev({ key: 'Enter', shiftKey: true }));
+    expect(state.pending).toBe('\x1b\r');
+
+    // 2. 配对 onData('\r') 没 fire(stale 窗口)。Paste arrives:
+    const pasteSeq = '\x1b[200~echo done && exit 0\x1b[201~';
+    const outgoing = consumeMappedKeyOnData(state, pasteSeq);
+
+    // 关键 assertion:paste data 原样透传,pending 清除
+    expect(outgoing).toBe(pasteSeq);
+    expect(state.pending).toBeNull();
+  });
+
+  it('issue #36 F1:多字符 onData(eg paste,arrow key sequence)清 stale pending', () => {
+    const state = createMappedKeyState();
+    applyMappedKeyOnKeydown(state, ev({ key: 'Enter', shiftKey: true }));
+
+    // 多字符 sequence(eg arrow key \x1b[A)— pending 应清除 + 数据透传
+    const arrowKey = '\x1b[A';
+    expect(consumeMappedKeyOnData(state, arrowKey)).toBe(arrowKey);
+    expect(state.pending).toBeNull();
+  });
 });
