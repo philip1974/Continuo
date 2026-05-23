@@ -2,11 +2,19 @@
 // NDJSON 行切分纯函数。
 
 import { describe, it, expect } from 'vitest';
+import { splitLines as splitNdjsonLines } from '@continuo-terminal/server-node';
 import {
   resolveStdioHelloWindowId,
-  splitLines,
-  type FramingState,
 } from '../../../electron/main/services/mcp-stdio-server.service';
+
+interface FramingState {
+  readonly buf: string;
+}
+
+function splitLines(state: FramingState, chunk: string) {
+  const r = splitNdjsonLines(state.buf, chunk);
+  return { state: { buf: r.buffer }, lines: r.lines };
+}
 
 const empty: FramingState = { buf: '' };
 
@@ -81,10 +89,13 @@ describe('splitLines · 空行 / 边界', () => {
     expect(r.lines).toEqual(['', 'hello']);
   });
 
-  it('CRLF — \\r 当普通字符保留(NDJSON 要求 LF)', () => {
+  it('CRLF — SDK stdio framing strips trailing \\r', () => {
     const r = splitLines(empty, 'a\r\nb\r\n');
-    // \r 留在 line 末尾,NDJSON parser 应容忍(JSON.parse 接受额外 whitespace)
-    expect(r.lines).toEqual(['a\r', 'b\r']);
+    // CT-B3: CRLF stripped per SDK serializeMessage/deserializeMessage parity.
+    // JSON-RPC stdio framing tolerates CRLF; payload itself never contains CR.
+    // Pre-CT-B3 CR-retention was an accidental legacy detail (not a feature) —
+    // SDK behavior is the intended semantics.
+    expect(r.lines).toEqual(['a', 'b']);
   });
 
   it('chunk 仅一个 \\n → 一个空 line', () => {

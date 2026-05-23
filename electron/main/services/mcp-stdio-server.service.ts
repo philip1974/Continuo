@@ -17,9 +17,12 @@ import {
   type Socket,
 } from 'node:net';
 import { BrowserWindow } from 'electron';
-import { mkdir, unlink, chmod } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { mkdir, unlink, chmod, lstat, stat } from 'node:fs/promises';
 import path from 'node:path';
+import {
+  splitLines as splitNdjsonLines,
+  type SplitLinesResult as NdjsonSplitResult,
+} from '@continuo-terminal/server-node';
 import {
   RPC_ERROR_CODES,
   NO_WINDOW_CTX_MESSAGE,
@@ -34,29 +37,7 @@ import {
 
 // ── NDJSON framing(纯函数,BDD 测试)─────────────────────────────
 
-export interface FramingState {
-  readonly buf: string;
-}
-
-export interface SplitResult {
-  readonly state: FramingState;
-  readonly lines: readonly string[];
-}
-
-/**
- * 累积 chunk + 按 \n 切行。残行(无 \n 终止)保留在新 state.buf 给下次。
- * 不 mutate 入参 state(返回新对象)。
- */
-export function splitLines(state: FramingState, chunk: string): SplitResult {
-  const combined = state.buf + chunk;
-  if (combined.length === 0) {
-    return { state: { buf: '' }, lines: [] };
-  }
-  const parts = combined.split('\n');
-  // split 后最后一段是残行(没遇到 \n 的尾巴);若 combined 末尾是 \n,最后一段是 ''
-  const tail = parts.pop() ?? '';
-  return { state: { buf: tail }, lines: parts };
-}
+export type { NdjsonSplitResult };
 
 export interface ResolveStdioHelloDeps {
   resolveWindowId: (token: string) => number | null;
@@ -99,6 +80,52 @@ export interface CreateStdioSocketOptions {
   tools: ReadonlyMap<string, AnyMcpTool>;
   serverInfo: ServerInfo;
   resolveWindowId: (token: string) => number | null;
+}
+
+function modeOct(mode: number): string {
+  return `0${(mode & 0o777).toString(8)}`;
+}
+
+export async function setupSocketDir(socketPath: string): Promise<void> {
+  const parentDir = path.dirname(socketPath);
+  await mkdir(parentDir, { recursive: true, mode: 0o700 });
+
+  let parentStat = await stat(parentDir);
+  if ((parentStat.mode & 0o077) !== 0) {
+    const previous = modeOct(parentStat.mode);
+    await chmod(parentDir, 0o700);
+    parentStat = await stat(parentDir);
+    console.warn(
+      `[mcp-stdio] tightened socket parent directory mode ${previous} -> 0700: ${parentDir}`,
+    );
+    if ((parentStat.mode & 0o077) !== 0) {
+      throw new Error(
+        `mcp stdio socket parent remains group/world accessible after chmod: ${parentDir} (${modeOct(parentStat.mode)})`,
+      );
+    }
+  }
+
+  try {
+    const existing = await lstat(socketPath);
+    if (existing.isSymbolicLink()) {
+      throw new Error(`mcp stdio socket path is a symlink; remove it manually: ${socketPath}`);
+    }
+    if (existing.isSocket()) {
+      await unlink(socketPath);
+      return;
+    }
+    if (existing.isFile() && existing.size === 0) {
+      await unlink(socketPath);
+      console.warn(`[mcp-stdio] removed zero-size stale socket placeholder: ${socketPath}`);
+      return;
+    }
+    throw new Error(
+      `mcp stdio socket path exists and is not a stale socket. Remove it manually: ${socketPath}`,
+    );
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return;
+    throw err;
+  }
 }
 
 async function handleLine(
@@ -225,24 +252,17 @@ export async function createStdioSocketServer(
   const isWin = process.platform === 'win32';
 
   if (!isWin) {
-    await mkdir(path.dirname(opts.socketPath), { recursive: true });
-    if (existsSync(opts.socketPath)) {
-      try {
-        await unlink(opts.socketPath);
-      } catch {
-        /* ignore — listen 会再报错 */
-      }
-    }
+    await setupSocketDir(opts.socketPath);
   }
 
   const clients = new Set<Socket>();
 
   const server: NetServer = createNetServer((sock) => {
     clients.add(sock);
-    let state: FramingState = { buf: '' };
+    let buf = '';
     sock.on('data', (chunk: Buffer) => {
-      const r = splitLines(state, chunk.toString('utf8'));
-      state = r.state;
+      const r = splitNdjsonLines(buf, chunk);
+      buf = r.buffer;
       // 异步串行处理(每行 dispatch 可能 await tool.run)。
       // 简化:并行 fire-and-forget,客户端按 id 匹配响应。
       for (const line of r.lines) {
