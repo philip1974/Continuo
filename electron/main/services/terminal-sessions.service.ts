@@ -2,6 +2,29 @@
 // PTY 进程仍由 terminal.service.ts 持;本 service 持 metadata + emitter,
 // 通过 IPC sessions_changed 推送给 renderer。
 //
+// ── Lifecycle state machine (ADR 0003 C2 promote from red-team-v1 P1-2) ─────
+//
+// 每个 session 经历三态:
+//
+//   live  ──setExited(id, exitCode)──▶  exited-retained  ──remove(id) /───▶  removed
+//                                                          removeByOwner /
+//                                                          (window close)
+//
+// - live:exitCode === null;PTY 仍在运行;handleExit 未触发
+// - exited-retained:exitCode !== null;PTY 已终止 (SessionManager.removeSession 已 dispose),
+//   但 Continuo overlay entry 仍在 Map (用于 UI 显示 "(exited code N)" badge);user 可
+//   通过 right-click close 触发 remove
+// - removed:entry 已 sessions.delete;subscribers 收到 snapshot 不再含该 id
+//
+// 触发方:
+// - setExited:由 SessionManagerOptions.onExit callback (Step 0.6 commit 96275e4) →
+//   handleExit → cleanupSessionLocal → setExited;exitCode 来自 PTY exit 真实值
+// - remove:IPC TERMINAL_REMOVE handler (user 主动关 panel) / agent-auth cleanup
+// - removeByOwner:BrowserWindow 'closed' 事件 → cleanupAllForWindow → removeByOwner;
+//   exited-retained 与 live 都被 cascade 删除
+//
+// 该状态机隐式实现自 Step 1 (commit dffc5e0),本 JSDoc 显式 promote 自 ADR 0003。
+//
 // BDD: src/__tests__/terminal-sessions-service/
 
 import { ERROR_CODES } from '../../shared/error-codes';
