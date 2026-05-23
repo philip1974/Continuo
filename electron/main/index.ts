@@ -51,6 +51,7 @@ import {
   requestAgentAuth,
   setMcpHostRef,
 } from './services/agent-auth.service';
+import { createContinuoMcpEnv } from './services/continuo-terminal-host-adapter';
 import { setStdioConfig } from './services/mcp-stdio-config.service';
 import { startPluginMcpIpc } from './ipc/plugin-mcp.ipc';
 import { defaultIsTrustedFrame } from './safe-handle';
@@ -466,16 +467,11 @@ async function startMcpHost(): Promise<void> {
     });
     setMcpEnvProvider((windowId: number) => {
       if (!mcpHost) return { env: {} as Record<string, string>, mcpToken: '' };
-      const token = mcpHost.issueWindowToken(windowId);
-      return {
-        env: {
-          CONTINUO_MCP_URL: mcpHost.url,
-          CONTINUO_MCP_TOKEN: token,
-          CONTINUO_WINDOW_ID: String(windowId), // internal diagnostic env, exposed to user shell intentionally for debug
-          CONTINUO_HOST: 'desktop',
-        },
-        mcpToken: token,
-      };
+      return createContinuoMcpEnv({
+        windowId,
+        url: mcpHost.url,
+        issueToken: (id) => mcpHost!.issueWindowToken(id),
+      });
     });
     // 给 agent-auth service 注入 host 引用,撤销时 rotate token。
     setMcpHostRef(mcpHost);

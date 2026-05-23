@@ -320,6 +320,10 @@
 
 - [`keybindings-tab-content.spec.tsx`](./keybindings-tab-content/keybindings-tab-content.spec.tsx)
 
+## [M4 Continuo adopt host](./m4-continuo-adopt-host/README.md)
+
+- [`env-compat.spec.ts`](./m4-continuo-adopt-host/env-compat.spec.ts)
+
 ## [Markdown 链接解析(`resolveLink`)](./markdown-link-resolve/README.md)
 
 - [`markdown-link-resolve.spec.ts`](./markdown-link-resolve/markdown-link-resolve.spec.ts)
