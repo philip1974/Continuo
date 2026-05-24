@@ -3,23 +3,12 @@ import {
   filterByOwnerWindow,
   type TerminalSession,
 } from '../../stores/terminal.store';
-
-function session(id: string): TerminalSession {
-  return {
-    id,
-    title: id,
-    cwd: '/repo',
-    originHint: 'user',
-    createdAt: 1,
-    exitCode: null,
-    ownerWindowId: 1,
-  };
-}
+import { makeSession } from './fixtures';
 
 describe('dock-reconciler-windowid-filter: single-window noop', () => {
   it('T19 全 ownerWindowId === currentWindowId -> filterByOwnerWindow(s, w) 深 equal s(identity 等价)', () => {
-    const a = session('A');
-    const b = session('B');
+    const a = makeSession('A');
+    const b = makeSession('B');
     const sessions = [a, b] as const;
     const filtered = filterByOwnerWindow(sessions, 1);
     expect(filtered).toEqual(sessions);

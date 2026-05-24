@@ -5,22 +5,7 @@ import {
   setPendingFocus,
 } from '@/shell/dock/DockReconciler';
 import type { TerminalSession } from '@/stores/terminal.store';
-
-function session(
-  id: string,
-  over: Partial<TerminalSession> = {},
-): TerminalSession {
-  return {
-    id,
-    title: id,
-    cwd: '/repo',
-    originHint: 'user',
-    createdAt: 1,
-    exitCode: null,
-    ...over,
-    ownerWindowId: 1,
-  };
-}
+import { makeSession } from '../dock-reconciler-windowid-filter/fixtures';
 
 function makePanel(id: string) {
   return {
@@ -58,10 +43,10 @@ describe('agent create as new dockview panel', () => {
     api.activePanel = api.panels['terminal-old']; // 原 active panel
 
     reconcileTerminalPanels(api as unknown as DockviewApi, {
-      previousSessions: [session('old', { createdAt: 1 })],
+      previousSessions: [makeSession('old', { createdAt: 1 })],
       nextSessions: [
-        session('old', { createdAt: 1 }),
-        session('agent-1', {
+        makeSession('old', { createdAt: 1 }),
+        makeSession('agent-1', {
           originHint: 'agent',
           createdAt: 2,
         }),
@@ -91,7 +76,7 @@ describe('agent create as new dockview panel', () => {
 
     reconcileTerminalPanels(api as unknown as DockviewApi, {
       previousSessions: [],
-      nextSessions: [session('user-1', { originHint: 'user' })],
+      nextSessions: [makeSession('user-1', { originHint: 'user' })],
     });
 
     expect(api.panels['terminal-user-1']?.api.setActive).toHaveBeenCalledTimes(1);
@@ -105,10 +90,10 @@ describe('agent create as new dockview panel', () => {
     // user 路径:terminal.create RPC 返回前 sessions-changed IPC 先到 →
     // reconciler 跑时 pendingFocus 还没 set。此时仍应让新 user session 抢 focus。
     reconcileTerminalPanels(api as unknown as DockviewApi, {
-      previousSessions: [session('old', { createdAt: 1 })],
+      previousSessions: [makeSession('old', { createdAt: 1 })],
       nextSessions: [
-        session('old', { createdAt: 1 }),
-        session('user-2', { originHint: 'user', createdAt: 2 }),
+        makeSession('old', { createdAt: 1 }),
+        makeSession('user-2', { originHint: 'user', createdAt: 2 }),
       ],
     });
 
@@ -125,7 +110,7 @@ describe('agent create as new dockview panel', () => {
     // 不跨 app restart 持久化,startup listSessions 永远返空数组)。
     reconcileTerminalPanels(api as unknown as DockviewApi, {
       previousSessions: [],
-      nextSessions: [session('user-1', { originHint: 'user' })],
+      nextSessions: [makeSession('user-1', { originHint: 'user' })],
     });
 
     expect(api.panels['terminal-user-1']?.api.setActive).toHaveBeenCalledTimes(1);
@@ -137,9 +122,9 @@ describe('agent create as new dockview panel', () => {
     reconcileTerminalPanels(api as unknown as DockviewApi, {
       previousSessions: [],
       nextSessions: [
-        session('third', { createdAt: 30 }),
-        session('first', { createdAt: 10 }),
-        session('second', { createdAt: 20 }),
+        makeSession('third', { createdAt: 30 }),
+        makeSession('first', { createdAt: 10 }),
+        makeSession('second', { createdAt: 20 }),
       ],
     });
 

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BrowserWindow } from 'electron';
+import { makeWindow } from '../migration-step1-pty-handover/fixtures';
 
 const killedIds = vi.hoisted(() => new Set<string>());
 const sessionManagerMock = vi.hoisted(() => ({
@@ -59,17 +60,6 @@ import * as terminalSessions from '../../../electron/main/services/terminal-sess
 import { makeWindowClosedCleanup } from '../../../electron/main/ipc/terminal.ipc';
 import { setMcpRevokers } from '../../../electron/main/services/mcp-host.service';
 
-function makeWindow(id: number, destroyed = false): BrowserWindow {
-  const webContents = {
-    send: vi.fn(),
-    isDestroyed: vi.fn(() => destroyed),
-  };
-  return {
-    id,
-    isDestroyed: vi.fn(() => destroyed),
-    webContents,
-  } as unknown as BrowserWindow;
-}
 
 function addSession(id: string, ownerWindowId: number): void {
   terminalSessions.add({

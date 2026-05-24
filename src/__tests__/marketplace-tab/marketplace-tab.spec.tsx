@@ -11,7 +11,7 @@ vi.mock('../../marketplace/fetcher', () => ({
   }),
 }));
 
-vi.mock('../../plugins/co-plugin-manager', () => ({
+vi.mock('../../plugins/PluginManager', () => ({
   getUserPluginManager: vi.fn(),
   setUserPluginManager: vi.fn(),
 }));
@@ -22,7 +22,7 @@ import {
 } from '../../lib/co-api';
 import { MarketplaceTab } from '../../marketplace/MarketplaceTab';
 import { fetchMarketplaceIndex } from '../../marketplace/fetcher';
-import { getUserPluginManager } from '../../plugins/co-plugin-manager';
+import { getUserPluginManager } from '../../plugins/PluginManager';
 import { useUpdateStore } from '../../marketplace/update-store';
 import { useReviewsStore } from '../../marketplace/reviews-store';
 import type { MarketplaceEntry } from '../../marketplace/types';

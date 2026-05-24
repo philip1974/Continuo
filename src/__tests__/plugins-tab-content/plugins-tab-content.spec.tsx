@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { fireEvent, render, cleanup, act, waitFor } from '@testing-library/react';
 
-vi.mock('../../plugins/co-plugin-manager', () => ({
+vi.mock('../../plugins/PluginManager', () => ({
   getUserPluginManager: vi.fn(),
   setUserPluginManager: vi.fn(),
 }));
@@ -25,7 +25,7 @@ import { RibbonRegistry } from '../../plugins/registries/RibbonRegistry';
 import { SettingTabRegistry } from '../../plugins/registries/SettingTabRegistry';
 import { EditorActionRegistry } from '../../plugins/registries/EditorActionRegistry';
 import { ExplorerDecoratorRegistry } from '../../plugins/registries/ExplorerDecoratorRegistry';
-import { getUserPluginManager } from '../../plugins/co-plugin-manager';
+import { getUserPluginManager } from '../../plugins/PluginManager';
 import { getUserPermissionStore } from '../../plugins/permissions/co-permission-store';
 import type { PluginListItem } from '../../plugins/PluginManager';
 

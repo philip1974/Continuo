@@ -7,6 +7,7 @@ import {
   useTerminalStore,
   type TerminalSession,
 } from '../../stores/terminal.store';
+import { makeSession } from './fixtures';
 
 let warnSpy: ReturnType<typeof vi.spyOn>;
 
@@ -52,18 +53,6 @@ vi.mock('../../panels/Terminal/TerminalView', () => ({
     React.createElement('div', { 'data-testid': `terminal-view-${termId}` }),
 }));
 
-function session(id: string, ownerWindowId: number): TerminalSession {
-  return {
-    id,
-    title: id,
-    cwd: '/repo',
-    originHint: 'user',
-    createdAt: 1,
-    exitCode: null,
-    ownerWindowId,
-  };
-}
-
 beforeEach(async () => {
   warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
   mocks.windowId = 1;
@@ -89,7 +78,7 @@ describe('dock-reconciler-windowid-filter: renderer ingress filter', () => {
   it('T11 TerminalSessionsSync listSessions 响应 -> useTerminalStore.replaceSnapshot 收到 filtered', async () => {
     mocks.listSessions.mockResolvedValue({
       ok: true,
-      data: { sessions: [session('A', 1), session('B', 2)] },
+      data: { sessions: [makeSession('A'), makeSession('B', { ownerWindowId: 2 })] },
     });
     render(React.createElement(TerminalSessionsSync));
     await waitFor(() => {
@@ -104,11 +93,11 @@ describe('dock-reconciler-windowid-filter: renderer ingress filter', () => {
     await waitFor(() => {
       expect(mocks.onSessionsChanged).toHaveBeenCalledTimes(1);
     });
-    mocks.emitSessionsChanged([session('A', 1), session('B', 2)]);
+    mocks.emitSessionsChanged([makeSession('A'), makeSession('B', { ownerWindowId: 2 })]);
     expect(useTerminalStore.getState().sessions.map((s) => s.id)).toEqual([
       'A',
     ]);
-    mocks.emitSessionsChanged([session('C', 2), session('D', 1)]);
+    mocks.emitSessionsChanged([makeSession('C', { ownerWindowId: 2 }), makeSession('D')]);
     expect(useTerminalStore.getState().sessions.map((s) => s.id)).toEqual([
       'D',
     ]);

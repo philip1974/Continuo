@@ -21,6 +21,7 @@ import {
   useTerminalStore,
   type TerminalSession,
 } from '../../stores/terminal.store';
+import { makeSession } from './fixtures';
 
 const mocks = vi.hoisted(() => {
   let onChanged: ((sessions: unknown[]) => void) | null = null;
@@ -56,18 +57,6 @@ vi.mock('@/lib/co-api', () => {
   return { coApi };
 });
 
-function session(id: string, ownerWindowId: number): TerminalSession {
-  return {
-    id,
-    title: id,
-    cwd: '/repo',
-    originHint: 'user',
-    createdAt: 1,
-    exitCode: null,
-    ownerWindowId,
-  };
-}
-
 beforeEach(() => {
   _resetTerminalDropWarningsForTest();
   mocks.windowId = 2;
@@ -87,7 +76,7 @@ afterEach(() => {
 
 describe('dock-reconciler-windowid-filter: PROD Proxy coApi regression', () => {
   it("REGRESSION coApi 是 ES Proxy(target=`{}` 无 has trap)时 SessionsSync 读到真实 winId=2(不回退 fallback 1)", async () => {
-    const win2 = session('term-w2', 2);
+    const win2 = makeSession('term-w2', { ownerWindowId: 2 });
     mocks.listSessions.mockResolvedValueOnce({
       ok: true,
       data: { sessions: [win2] },
@@ -100,8 +89,8 @@ describe('dock-reconciler-windowid-filter: PROD Proxy coApi regression', () => {
   });
 
   it('REGRESSION Proxy coApi - ownerWindowId=1 的 session 被正确 drop(winId=2)+ warn `wrong-owner`', async () => {
-    const win1 = session('term-w1', 1);
-    const win2 = session('term-w2', 2);
+    const win1 = makeSession('term-w1');
+    const win2 = makeSession('term-w2', { ownerWindowId: 2 });
     mocks.listSessions.mockResolvedValueOnce({
       ok: true,
       data: { sessions: [win1, win2] },

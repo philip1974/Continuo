@@ -8,7 +8,7 @@
 // burst 没问题;真大了再分批。
 
 import { create } from 'zustand';
-import { getUserPluginManager } from '@/plugins/co-plugin-manager';
+import { getUserPluginManager } from '@/plugins/PluginManager';
 import { fetchMarketplaceIndex, fetchPluginManifest } from './fetcher';
 import { isNewerVersion } from './semver';
 import type { MarketplaceEntry } from './types';

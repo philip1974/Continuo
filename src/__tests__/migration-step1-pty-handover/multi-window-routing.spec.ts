@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BrowserWindow } from 'electron';
+import { makeWindow } from './fixtures';
 
 const sessionManagerMock = vi.hoisted(() => ({
   options: undefined as
@@ -53,17 +54,6 @@ vi.mock('../../../electron/main/services/pty-lang', () => ({
 import * as terminalService from '../../../electron/main/services/terminal.service';
 import * as terminalSessions from '../../../electron/main/services/terminal-sessions.service';
 
-function makeWindow(id: number, destroyed = false): BrowserWindow {
-  const webContents = {
-    send: vi.fn(),
-    isDestroyed: vi.fn(() => destroyed),
-  };
-  return {
-    id,
-    isDestroyed: vi.fn(() => destroyed),
-    webContents,
-  } as unknown as BrowserWindow;
-}
 
 describe('migration step1 PTY handover · multi-window routing', () => {
   beforeEach(() => {

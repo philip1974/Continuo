@@ -7,6 +7,7 @@ import {
   _resetTerminalDropWarningsForTest,
 } from '../../shell/dock/TerminalSessionsSync';
 import { useTerminalStore, type TerminalSession } from '../../stores/terminal.store';
+import { makeSession } from './fixtures';
 
 const mocks = vi.hoisted(() => {
   let onChanged: ((sessions: unknown[]) => void) | null = null;
@@ -31,18 +32,6 @@ vi.mock('@/lib/co-api', () => ({
   },
 }));
 
-function session(id: string, ownerWindowId: number): TerminalSession {
-  return {
-    id,
-    title: id,
-    cwd: '/repo',
-    originHint: 'user',
-    createdAt: 1,
-    exitCode: null,
-    ownerWindowId,
-  };
-}
-
 beforeEach(() => {
   _resetTerminalDropWarningsForTest();
   mocks.listSessions.mockReset();
@@ -66,9 +55,9 @@ describe('dock-reconciler-windowid-filter: warn rate limit', () => {
     await waitFor(() => {
       expect(mocks.onSessionsChanged).toHaveBeenCalledTimes(1);
     });
-    mocks.emitSessionsChanged([session('B', 2)]);
-    mocks.emitSessionsChanged([session('B', 2)]);
-    mocks.emitSessionsChanged([session('B', 2)]);
+    mocks.emitSessionsChanged([makeSession('B', { ownerWindowId: 2 })]);
+    mocks.emitSessionsChanged([makeSession('B', { ownerWindowId: 2 })]);
+    mocks.emitSessionsChanged([makeSession('B', { ownerWindowId: 2 })]);
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn.mock.calls[0]?.[0]).toContain('wrong-owner');
     expect(warn.mock.calls[0]?.[1]).toBe('B');

@@ -67,9 +67,6 @@ vi.mock('@/plugins/PluginManager', () => ({
     init = vi.fn(async () => undefined);
     reload = vi.fn(async () => undefined);
   },
-}));
-
-vi.mock('@/plugins/co-plugin-manager', () => ({
   setUserPluginManager: mocks.setUserPluginManager,
 }));
 

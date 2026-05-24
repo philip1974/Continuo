@@ -10,7 +10,7 @@
 | 文件 | 职责 |
 |---|---|
 | `src/plugins/settings/PluginsTabContent.tsx` | UI |
-| `src/plugins/co-plugin-manager.ts` | getUserPluginManager getter |
+| `src/plugins/PluginManager.ts` | getUserPluginManager / setUserPluginManager singleton getters |
 | `src/plugins/permissions/co-permission-store.ts` | getUserPermissionStore getter |
 | `src/plugins/registries/*` | 6 类 registry(贡献点统计) |
 

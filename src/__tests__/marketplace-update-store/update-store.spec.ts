@@ -7,7 +7,7 @@ vi.mock('../../marketplace/fetcher', () => ({
   fetchPluginManifest: vi.fn(),
 }));
 
-vi.mock('../../plugins/co-plugin-manager', () => ({
+vi.mock('../../plugins/PluginManager', () => ({
   getUserPluginManager: vi.fn(),
 }));
 
@@ -16,7 +16,7 @@ import {
   fetchMarketplaceIndex,
   fetchPluginManifest,
 } from '../../marketplace/fetcher';
-import { getUserPluginManager } from '../../plugins/co-plugin-manager';
+import { getUserPluginManager } from '../../plugins/PluginManager';
 
 const fetchIndex = fetchMarketplaceIndex as unknown as ReturnType<typeof vi.fn>;
 const fetchManifest = fetchPluginManifest as unknown as ReturnType<
