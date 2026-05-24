@@ -2,8 +2,6 @@ import { z } from 'zod';
 
 export type Locale = 'en' | 'zh' | 'ko';
 
-export const LOCALES: ReadonlyArray<Locale> = ['en', 'zh', 'ko'] as const;
-
 export const LANG_MAP: Record<Locale, string> = {
   en: 'en_US.UTF-8',
   zh: 'zh_CN.UTF-8',

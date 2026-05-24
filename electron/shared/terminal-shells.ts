@@ -2,7 +2,6 @@
 // 严格白名单防止任意可执行被作为 shell 注入。
 
 import path from 'node:path';
-import os from 'node:os';
 
 const SHELL_NAMES = [
   'zsh',
@@ -47,6 +46,3 @@ export function getDefaultShell(): string {
   if (envShell && isAllowedShell(envShell)) return envShell;
   return '/bin/zsh';
 }
-
-/** 测试用:导出常量便于断言. */
-export const _internals = { SHELL_NAMES, UNIX_PREFIXES, defaultHomedir: os.homedir };

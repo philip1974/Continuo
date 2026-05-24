@@ -3,13 +3,11 @@ import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, waitFor } from '@testing-library/react';
 import { TerminalSessionsSync } from '../../shell/dock/TerminalSessionsSync';
-import { TerminalPanel } from '../../panels/Terminal/TerminalPanel';
 import {
   useTerminalStore,
   type TerminalSession,
 } from '../../stores/terminal.store';
 
-const LegacyTerminalPanel = TerminalPanel as React.ComponentType;
 let warnSpy: ReturnType<typeof vi.spyOn>;
 
 const mocks = vi.hoisted(() => {
@@ -80,8 +78,6 @@ beforeEach(async () => {
   });
   const sync = await import('../../shell/dock/TerminalSessionsSync');
   sync._resetTerminalDropWarningsForTest();
-  const legacy = await import('../../panels/Terminal/TerminalPanel');
-  legacy._resetLegacyTerminalDropWarningsForTest();
 });
 
 afterEach(() => {
@@ -118,27 +114,6 @@ describe('dock-reconciler-windowid-filter: renderer ingress filter', () => {
     ]);
   });
 
-  it('T13 LegacyTerminalPanel listSessions(render <TerminalPanel /> 无 props.api 触发 legacy 分支) -> store 收 filtered', async () => {
-    mocks.listSessions.mockResolvedValue({
-      ok: true,
-      data: { sessions: [session('A', 1), session('B', 2)] },
-    });
-    render(React.createElement(LegacyTerminalPanel));
-    await waitFor(() => {
-      expect(useTerminalStore.getState().sessions.map((s) => s.id)).toEqual([
-        'A',
-      ]);
-    });
-  });
-
-  it('T14 LegacyTerminalPanel onSessionsChanged -> store 收 filtered', async () => {
-    render(React.createElement(LegacyTerminalPanel));
-    await waitFor(() => {
-      expect(mocks.onSessionsChanged).toHaveBeenCalledTimes(1);
-    });
-    mocks.emitSessionsChanged([session('A', 2), session('B', 1)]);
-    expect(useTerminalStore.getState().sessions.map((s) => s.id)).toEqual([
-      'B',
-    ]);
-  });
+  // T13/T14 删除:LegacyTerminalPanel 已从代码库移除(commit 后续)。
+  // T11/T12 在 TerminalSessionsSync 层已覆盖同一 ingress filter invariant。
 });
