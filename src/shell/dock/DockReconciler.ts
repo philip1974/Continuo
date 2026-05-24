@@ -64,7 +64,16 @@ export function reconcileTerminalPanels(
     const position = lastRefId
       ? { referencePanel: lastRefId, direction: 'right' as const }
       : undefined;
-    const shouldFocus = consumePendingFocus(session.id);
+    // user 路径走 coApi.terminal.create → main 同时 RPC reply + IPC push
+    // sessions-changed。renderer 的 IPC handler 可能比 RPC await resolve 先跑,
+    // 此时 user 路径的 setPendingFocus 还没执行 → pendingFocus 命不中。
+    // 用 originHint === 'user' 做时序无关兜底:user 主动创建的 session 总是
+    // 应该 focus(对照 agent 创建的不抢 focus)。terminal session 不跨 app
+    // restart 持久化(main 端 SessionManager 是 lazy singleton),startup
+    // listSessions 永远返回 [],所以 prev=[]+next=[1 user session] 一定是
+    // user first create 而非 hydrate,无需额外区分。
+    const shouldFocus =
+      consumePendingFocus(session.id) || session.originHint === 'user';
     // dockview addPanel 的 `inactive: true` 让新 group 容器在 xterm 渲染
     // 不可见的状态(数据进 xterm 内部但屏幕全黑)。改用"默认 active 加 →
     // 立即 setActive 回原 panel"实现 agent 不抢 focus 的等价 UX。
