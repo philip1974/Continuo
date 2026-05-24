@@ -7,7 +7,8 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, Input, Spinner } from '@/design';
 import { coApi } from '@/lib/co-api';
-import { getUserPluginManager } from '@/plugins/co-plugin-manager';
+import { errorMessage } from '../../electron/shared/error-message';
+import { getUserPluginManager } from '@/plugins/PluginManager';
 import { entryToGitUrl, type MarketplaceEntry } from './types';
 import { fetchMarketplaceIndex } from './fetcher';
 import { applyFilter, collectAllTags } from './filter';
@@ -89,7 +90,7 @@ export function MarketplaceTab() {
         if (!cancelled) {
           setState({
             kind: 'error',
-            message: err instanceof Error ? err.message : String(err),
+            message: errorMessage(err),
           });
         }
       }
@@ -112,7 +113,7 @@ export function MarketplaceTab() {
         ? translate('marketplace.install_success', { name: r.data.name, version: r.data.version })
         : `✘ [${r.code}] ${r.message}`;
     } catch (err) {
-      msg = `✘ ${err instanceof Error ? err.message : String(err)}`;
+      msg = `✘ ${errorMessage(err)}`;
     }
     setInstall((prev) => {
       const nextMsgs = new Map(prev.msgs);
@@ -146,7 +147,7 @@ export function MarketplaceTab() {
           : translate('marketplace.update_failed_code', { code: r.code, message: r.message });
       } catch (err) {
         msg = translate('marketplace.update_failed_msg', {
-          message: err instanceof Error ? err.message : String(err),
+          message: errorMessage(err),
         });
       }
       setInstall((prev) => {
@@ -332,7 +333,7 @@ function GitUrlInstallSection() {
         setUrl('');
       }
     } catch (err) {
-      setMsg(`✘ ${err instanceof Error ? err.message : String(err)}`);
+      setMsg(`✘ ${errorMessage(err)}`);
     } finally {
       setBusy(false);
     }

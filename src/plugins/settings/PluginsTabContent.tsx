@@ -7,11 +7,12 @@ import { ConfirmDialog } from '@/panels/Explorer/ConfirmDialog';
 import { coApi } from '@/lib/co-api';
 import { coApp } from '../co-app';
 import { useMultiRegistry } from '../registries/useRegistry';
-import { getUserPluginManager } from '../co-plugin-manager';
+import { getUserPluginManager } from '../PluginManager';
 import { getUserPermissionStore } from '../permissions/co-permission-store';
 import { PermissionEditorModal } from '../permissions/PermissionEditorModal';
 import type { PluginListItem } from '../PluginManager';
 import { useT } from '@/i18n';
+import { errorMessage } from '../../../electron/shared/error-message';
 
 interface ContributionRow {
   readonly labelKey: string;
@@ -209,7 +210,7 @@ function UserPluginsSection() {
       console.warn(`[plugins-tab] uninstall ${target.id} failed`, err);
       setInstallMsg(
         t('plugins_tab.install.uninstall_fail', {
-          message: err instanceof Error ? err.message : String(err),
+          message: errorMessage(err),
         }),
       );
     }
@@ -237,7 +238,7 @@ function UserPluginsSection() {
     } catch (err) {
       setInstallMsg(
         t('plugins_tab.error.generic', {
-          message: err instanceof Error ? err.message : String(err),
+          message: errorMessage(err),
         }),
       );
     } finally {

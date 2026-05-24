@@ -5,6 +5,7 @@
 // UI 层(FolderTree)只负责 dnd 事件接入与 hover 高亮,业务全在这里。
 
 import type { IpcResult } from '@/lib/fs/types';
+import { errorMessage } from '../../../electron/shared/error-message';
 
 export interface DropTargetEntry {
   path: string;
@@ -98,7 +99,7 @@ export async function performDrop(
       failed.push({
         name: file.name,
         code: 'READ_ERROR',
-        message: err instanceof Error ? err.message : String(err),
+        message: errorMessage(err),
       });
       continue;
     }

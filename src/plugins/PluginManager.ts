@@ -7,6 +7,7 @@ import { isVersionCompatible, parseManifest } from './manifest';
 import { ensureAuthorized, type PermissionStore, type PromptFn } from './permissions';
 import { createScopedApp } from './scoped-app';
 import type { CoApp, PluginManifest } from './types';
+import { errorMessage } from '../../electron/shared/error-message';
 
 // ── Host 注入接口 ──────────────────────────────────────
 
@@ -335,7 +336,7 @@ export class PluginManager {
         err,
       );
       entry.status = 'failed';
-      entry.error = err instanceof Error ? err.message : String(err);
+      entry.error = errorMessage(err);
       return;
     }
 
@@ -345,4 +346,18 @@ export class PluginManager {
     // warning 若 partial grant 已在权限段设了)
     this.activationOrder.push(entry.id);
   }
+}
+
+// ── user PluginManager singleton ──────────────────────────────────
+// main.tsx 在 bootCorePlugins 后实例化并 init();其它地方通过 getter 访问
+// 当前快照(用于 Plugins SettingTab 等 UI)。
+
+let _userManager: PluginManager | null = null;
+
+export function setUserPluginManager(m: PluginManager): void {
+  _userManager = m;
+}
+
+export function getUserPluginManager(): PluginManager | null {
+  return _userManager;
 }

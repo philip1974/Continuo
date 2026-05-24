@@ -4,6 +4,7 @@
 
 import { spawn } from 'node:child_process';
 import { shell } from 'electron';
+import { errorMessage } from '../../shared/error-message';
 import type {
   IpcShellExecInput,
   IpcShellExecResult,
@@ -34,7 +35,7 @@ export function execShell(input: IpcShellExecInput): Promise<IpcShellExecResult>
       // spawn 同步抛(cmd 不可执行等)
       resolve({
         stdout: '',
-        stderr: `spawn failed: ${err instanceof Error ? err.message : String(err)}`,
+        stderr: `spawn failed: ${errorMessage(err)}`,
         exitCode: null,
         signal: null,
         timedOut: false,

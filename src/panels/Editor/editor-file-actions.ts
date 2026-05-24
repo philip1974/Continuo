@@ -8,6 +8,7 @@
 
 import type { FsApi } from '@/lib/fs/api';
 import type { IpcResult } from '@/lib/fs/types';
+import { errorMessage } from '../../../electron/shared/error-message';
 import { createTab, useEditorStore } from '@/stores/editor.store';
 
 export interface EditorFileDeps {
@@ -21,7 +22,7 @@ export type FileOpResult = IpcResult<void>;
 const exception = (err: unknown): FileOpResult => ({
   ok: false,
   code: 'EXCEPTION',
-  message: err instanceof Error ? err.message : String(err),
+  message: errorMessage(err),
 });
 
 /**

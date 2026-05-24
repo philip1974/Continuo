@@ -9,6 +9,7 @@ import type {
   IpcPluginDir,
 } from '../../shared/plugins-channels';
 import { ERROR_CODES } from '../../shared/error-codes';
+import { errorMessage } from '../../shared/error-message';
 
 function isAbsolutePathLike(value: string): boolean {
   return (
@@ -207,7 +208,7 @@ export async function uninstallPlugin(
     await rm(targetDir, { recursive: true, force: true });
   } catch (err) {
     throw Object.assign(
-      new Error(`删除失败: ${err instanceof Error ? err.message : String(err)}`),
+      new Error(`删除失败: ${errorMessage(err)}`),
       { code: ERROR_CODES.RM_FAILED },
     );
   }

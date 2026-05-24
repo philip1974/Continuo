@@ -3,6 +3,7 @@
 
 import { Plugin } from './Plugin';
 import type { Disposable, PluginManifest } from './types';
+import { errorMessage } from '../../electron/shared/error-message';
 
 // ── styles 注入 ────────────────────────────────────────
 
@@ -67,7 +68,7 @@ export async function loadPluginModule(
     return {
       ok: false,
       code: 'IMPORT_FAILED',
-      message: err instanceof Error ? err.message : String(err),
+      message: errorMessage(err),
     };
   }
 

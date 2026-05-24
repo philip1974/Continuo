@@ -3,6 +3,7 @@
 import { create } from 'zustand';
 import { fetchAllReviews } from './reviews-fetcher';
 import type { PluginAggregateRating } from './reviews-types';
+import { errorMessage } from '../../electron/shared/error-message';
 
 interface ReviewsState {
   readonly byPid: ReadonlyMap<string, PluginAggregateRating>;
@@ -25,7 +26,7 @@ export const useReviewsStore = create<ReviewsState>((set) => ({
     } catch (err) {
       set({
         loading: false,
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMessage(err),
       });
     }
   },

@@ -5,6 +5,7 @@
 import { z } from 'zod';
 import { PERMISSION_KEYS, type PermissionKey } from './permissions';
 import type { PluginManifest } from './types';
+import { errorMessage } from '../../electron/shared/error-message';
 
 // ── Schema ─────────────────────────────────────────────
 
@@ -48,7 +49,7 @@ export function parseManifest(jsonText: string): ManifestParseResult {
     return {
       ok: false,
       code: 'INVALID_JSON',
-      message: err instanceof Error ? err.message : String(err),
+      message: errorMessage(err),
     };
   }
   const parsed = ManifestSchema.safeParse(raw);
