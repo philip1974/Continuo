@@ -13,7 +13,7 @@ export default class GeneralTabPlugin extends Plugin {
     // priority 1:第一个 tab(快捷键 priority 100,插件 50,商店 40)
     this.addSettingTab({
       id: 'core.general',
-      title: '通用',
+      title: 'General',
       titleKey: 'settings.general.tab_title',
       priority: 1,
       icon: createElement(GeneralIcon),
@@ -25,9 +25,8 @@ export default class GeneralTabPlugin extends Plugin {
     this.addSettingItem({
       id: 'general.theme',
       category: 'general',
-      title: '主题',
+      title: 'Theme',
       titleKey: 'settings.general.theme.title',
-      description: '选择 Continuo 的视觉主题。system 跟随操作系统。',
       descriptionKey: 'settings.general.theme.description',
       type: 'select',
       default: 'dark',

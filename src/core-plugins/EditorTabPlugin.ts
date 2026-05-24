@@ -19,14 +19,15 @@ export default class EditorTabPlugin extends Plugin {
       render: () => createElement(CategoryTabContent, { category: 'editor' }),
     });
 
-    // ── 外观 ──
+    // ── Appearance ──
     this.addSettingItem({
       id: 'editor.fontSize',
       category: 'editor',
-      group: '外观',
+      group: 'appearance',
+      groupKey: 'settings.group.appearance',
       title: 'Font size',
       titleKey: 'settings.editor.font_size',
-      description: 'CodeEditor(代码 / Source mode)的字号。',
+      descriptionKey: 'settings.editor.font_size.desc',
       type: 'number',
       default: 13,
       min: 10,
@@ -38,23 +39,25 @@ export default class EditorTabPlugin extends Plugin {
     this.addSettingItem({
       id: 'editor.lineNumbers',
       category: 'editor',
-      group: '外观',
+      group: 'appearance',
+      groupKey: 'settings.group.appearance',
       title: 'Show line numbers',
       titleKey: 'settings.editor.show_line_numbers',
-      description: 'CodeEditor 是否显示行号(同时控制代码折叠 marker)。',
+      descriptionKey: 'settings.editor.show_line_numbers.desc',
       type: 'boolean',
       default: true,
       priority: 2,
     });
 
-    // ── 自动保存 ──
+    // ── Auto-save ──
     this.addSettingItem({
       id: 'autoSave.markdown.enabled',
       category: 'editor',
-      group: '自动保存',
+      group: 'autosave',
+      groupKey: 'settings.group.autosave',
       title: 'Auto-save Markdown',
       titleKey: 'settings.editor.auto_save_markdown',
-      description: '关闭后 Markdown 也需 ⌘S 显式保存。代码文件不自动保存。',
+      descriptionKey: 'settings.editor.auto_save_markdown.desc',
       type: 'boolean',
       default: true,
       priority: 10,
@@ -62,10 +65,11 @@ export default class EditorTabPlugin extends Plugin {
     this.addSettingItem({
       id: 'autoSave.delayMs',
       category: 'editor',
-      group: '自动保存',
+      group: 'autosave',
+      groupKey: 'settings.group.autosave',
       title: 'Auto-save delay',
       titleKey: 'settings.editor.auto_save_delay',
-      description: '停止输入多久后触发自动保存。',
+      descriptionKey: 'settings.editor.auto_save_delay.desc',
       type: 'number',
       default: 2000,
       min: 500,

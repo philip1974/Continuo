@@ -104,6 +104,58 @@ export const ko: Record<TranslationKey, string> = {
   'settings.explorer.show_hidden_files': '숨김 파일 표시',
   'settings.explorer.indent_width': '들여쓰기 너비',
 
+  // settings groups / descriptions / enum option labels (post-topic-21)
+  'settings.category.empty': '이 카테고리에 설정이 없습니다',
+  'settings.group.appearance': '모양',
+  'settings.group.autosave': '자동 저장',
+  'settings.editor.font_size.desc': '코드 에디터(소스 모드)의 글꼴 크기.',
+  'settings.editor.show_line_numbers.desc': '코드 에디터에서 줄 번호 표시 여부(접기 마커도 같이 제어).',
+  'settings.editor.auto_save_markdown.desc': '꺼두면 Markdown도 ⌘S로만 저장됩니다. 코드 파일은 자동 저장되지 않습니다.',
+  'settings.editor.auto_save_delay.desc': '입력 멈춤 후 자동 저장이 발동되기까지의 지연.',
+  'settings.terminal.font_size.desc': 'xterm 글꼴 크기. 변경 시 자동으로 fit 재배치.',
+  'settings.terminal.cursor_style.block': '블록',
+  'settings.terminal.cursor_style.underline': '밑줄',
+  'settings.terminal.cursor_style.bar': '바',
+  'settings.explorer.show_hidden_files.desc': '.git / .env 같이 .으로 시작하는 파일 표시.',
+  'settings.explorer.indent_width.desc': '파일 트리 단계별 들여쓰기(시각적 깊이에 영향).',
+
+  // editor welcome / empty states (post-topic-21 round 2)
+  'editor.welcome.title': '열린 파일 없음',
+  'editor.welcome.hint_prefix': '탐색기에서 파일을 클릭하여 열기 ·',
+  'editor.welcome.save': '저장',
+  'dock.empty.message': '모든 패널이 닫혀 있습니다.',
+  'dock.empty.restore': '기본 레이아웃 복원',
+  'panels.explorer.loading_or_empty': '로딩 중이거나 빈 폴더',
+  'panels.terminal.starting_shell': '셸 시작 중…',
+  'quick_open.limit_hint': '처음 5000개 파일만 표시; 더 구체적인 쿼리로 좁히세요',
+
+  // explorer context menu (14)
+  'panels.explorer.ctx.new_file': '새 파일',
+  'panels.explorer.ctx.new_folder': '새 폴더',
+  'panels.explorer.ctx.paste': '붙여넣기',
+  'panels.explorer.ctx.cut': '잘라내기',
+  'panels.explorer.ctx.copy': '복사',
+  'panels.explorer.ctx.rename': '이름 바꾸기',
+  'panels.explorer.ctx.copy_path': '경로 복사',
+  'panels.explorer.ctx.copy_relative_path': '상대 경로 복사',
+  'panels.explorer.ctx.reveal_in_finder': 'Finder에서 보기',
+  'panels.explorer.ctx.open_in_terminal': '통합 터미널에서 열기',
+  'panels.explorer.ctx.trash': '휴지통으로 이동',
+  'panels.explorer.ctx.items_count': '{count}개 항목',
+
+  // keybinding capture modal (13)
+  'keybindings.modal.title': '단축키 설정',
+  'keybindings.modal.command_label': '명령:',
+  'keybindings.modal.unbound': '바인딩 없음',
+  'keybindings.modal.press_combo': '새 조합을 누르세요…',
+  'keybindings.modal.hint_press_save': '새 조합을 누르면 저장;',
+  'keybindings.modal.hint_clear': '지우기;',
+  'keybindings.modal.hint_cancel': '취소',
+  'keybindings.modal.hint_default': ';기본 {hotkey}',
+  'keybindings.modal.conflict_title': '⚠️ 이 조합은 다른 명령에 이미 바인딩되어 있습니다',
+  'keybindings.modal.conflict_advice': '저장 후 두 명령이 모두 반응합니다. 배타가 필요하면 먼저 원래 명령의 바인딩을 해제하세요.',
+  'keybindings.modal.reset_default': '기본값으로 재설정',
+
   // panels.explorer.*
   'panels.explorer.btn.new_file': '새 파일',
   'panels.explorer.btn.new_folder': '새 폴더',

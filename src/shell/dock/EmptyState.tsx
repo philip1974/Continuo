@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { BackgroundBeams } from '@/shell/decor/BackgroundBeams';
 import { Button } from '@/design';
+import { useT } from '@/i18n';
 
 export function EmptyState({ onRestore }: { onRestore: () => void }) {
+  const t = useT();
   // visibilityState === 'hidden' 时不挂载 SVG,节电(R3 缓解)。
   const [visible, setVisible] = useState(
     () => typeof document === 'undefined' || document.visibilityState !== 'hidden',
@@ -39,9 +41,9 @@ export function EmptyState({ onRestore }: { onRestore: () => void }) {
             <line x1="3" y1="10" x2="21" y2="10" strokeDasharray="2 2" />
           </svg>
         </div>
-        <p className="text-fg-muted">所有面板都关掉了。</p>
+        <p className="text-fg-muted">{t('dock.empty.message')}</p>
         <Button variant="ghost" size="md" onClick={onRestore}>
-          恢复默认布局
+          {t('dock.empty.restore')}
         </Button>
       </div>
     </div>

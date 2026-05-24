@@ -24,7 +24,7 @@ export default class TerminalTabPlugin extends Plugin {
       category: 'terminal',
       title: 'Font size',
       titleKey: 'settings.terminal.font_size',
-      description: 'xterm 字号。变化时自动 fit 重排。',
+      descriptionKey: 'settings.terminal.font_size.desc',
       type: 'number',
       default: 13,
       min: 10,
@@ -42,9 +42,9 @@ export default class TerminalTabPlugin extends Plugin {
       type: 'select',
       default: 'block',
       enum: [
-        { value: 'block', label: '块' },
-        { value: 'underline', label: '下划线' },
-        { value: 'bar', label: '竖线' },
+        { value: 'block', label: 'Block', labelKey: 'settings.terminal.cursor_style.block' },
+        { value: 'underline', label: 'Underline', labelKey: 'settings.terminal.cursor_style.underline' },
+        { value: 'bar', label: 'Bar', labelKey: 'settings.terminal.cursor_style.bar' },
       ],
       priority: 2,
     });

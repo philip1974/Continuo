@@ -2,8 +2,10 @@
 // 对齐 demo(industrial dark):大圆形 document icon + 标题 + KeyCap 副提示。
 
 import { KeyCap } from '@/design';
+import { useT } from '@/i18n';
 
 export function EditorWelcome() {
+  const t = useT();
   return (
     <div className="flex h-full w-full flex-col items-center justify-center gap-4 p-6 text-center">
       <div
@@ -27,12 +29,12 @@ export function EditorWelcome() {
           <path d="M9 17h6" />
         </svg>
       </div>
-      <div className="text-base font-medium text-fg">未打开文件</div>
+      <div className="text-base font-medium text-fg">{t('editor.welcome.title')}</div>
       <div className="flex items-center gap-1.5 text-xs text-fg-muted">
-        <span>在 Explorer 单击文件打开 ·</span>
+        <span>{t('editor.welcome.hint_prefix')}</span>
         <KeyCap>⌘</KeyCap>
         <KeyCap>S</KeyCap>
-        <span>保存</span>
+        <span>{t('editor.welcome.save')}</span>
       </div>
     </div>
   );

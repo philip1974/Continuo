@@ -17,6 +17,7 @@ const SCOPE_DIRS = [
   'src/panels/Explorer',
   'src/panels/Terminal',
   'src/plugins/command-palette',
+  'src/plugins/keybindings',
   'src/plugins/settings',
   'src/plugins/permissions',
   'src/plugins/quick-open',
@@ -25,6 +26,8 @@ const SCOPE_DIRS = [
   'src/shell/AgentAuthPrompt.tsx',
   'src/shell/StatusBar.tsx',
   'src/shell/IconSidebar.tsx',
+  'src/shell/ExplorerSidebar.tsx',
+  'src/shell/TitleBar.tsx',
   'src/marketplace/MarketplaceTab.tsx',
 ];
 
@@ -34,18 +37,11 @@ const CJK = /[一-鿿㐀-䶿]/;
 const FILE_ALLOWLIST: ReadonlyArray<string> = [
   // useTerminal.ts 大量中文注释；console.warn 是 dev signal
   'src/panels/Terminal/useTerminal.ts',
-  // helper 模块（drop-handlers / tree-config / file-icon / clipboard-store / ContextMenu / mutate-actions 等）
+  // helper 模块（drop-handlers / tree-config / file-icon / clipboard-store / mutate-actions 等）
   'src/panels/Explorer/tree-config.ts',
   'src/panels/Explorer/file-icon.tsx',
   'src/panels/Explorer/drop-handlers.ts',
   'src/panels/Explorer/clipboard-store.ts',
-  'src/panels/Explorer/ContextMenu.tsx',
-  // SettingItem 内的 enum option label（块/下划线/竖线 等），topic-19 暂不迁
-  'src/core-plugins/TerminalTabPlugin.ts',
-  // SettingItem 内的 group/description 字段，topic-19 暂不迁
-  'src/core-plugins/EditorTabPlugin.ts',
-  'src/core-plugins/ExplorerTabPlugin.ts',
-  'src/core-plugins/GeneralTabPlugin.ts',
   // LanguageSettingPlugin 的 enum option '中文'/'한국어' 是语言自称写法不翻译
   'src/core-plugins/LanguageSettingPlugin.ts',
   // editor-file-actions.ts: throw new Error 是 dev signal，用户经 notify.error 看到的是不同消息
@@ -114,6 +110,13 @@ function scanFile(absPath: string, rel: string): Violation[] {
     ) {
       const text = node.text;
       if (CJK.test(text) && !isSubstringAllowed(rel, text)) {
+        const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+        violations.push({ file: rel, line: line + 1, text });
+      }
+    } else if (ts.isJsxText(node)) {
+      // JSX 文本节点 — 即标签之间的字面文本（不在花括号里也不是 attr）。
+      const text = node.text.trim();
+      if (text && CJK.test(text) && !isSubstringAllowed(rel, text)) {
         const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
         violations.push({ file: rel, line: line + 1, text });
       }

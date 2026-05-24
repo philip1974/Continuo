@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import * as Menu from '@radix-ui/react-context-menu';
 import type { FileEntry } from '@/lib/fs/types';
 import { coApp } from '@/plugins/co-app';
+import { useT } from '@/i18n';
 import {
   filterVisible,
   type ExplorerContextMenuItemSpec,
@@ -114,6 +115,7 @@ export function ContextMenu({
   hasClipboard,
   children,
 }: ContextMenuProps) {
+  const t = useT();
   const isFile = target !== null && !target.isDirectory;
   const isFolder = target !== null && target.isDirectory;
   const isBlank = target === null;
@@ -169,20 +171,20 @@ export function ContextMenu({
                 className={itemCls}
                 onSelect={() => actions.onNewFile(createParent())}
               >
-                新建文件
+                {t('panels.explorer.ctx.new_file')}
               </Menu.Item>
               <Menu.Item
                 className={itemCls}
                 onSelect={() => actions.onNewDir(createParent())}
               >
-                新建文件夹
+                {t('panels.explorer.ctx.new_folder')}
               </Menu.Item>
               {hasClipboard && (
                 <Menu.Item
                   className={itemCls}
                   onSelect={() => actions.onPaste(createParent())}
                 >
-                  粘贴
+                  {t('panels.explorer.ctx.paste')}
                 </Menu.Item>
               )}
               {!isBlank && <Menu.Separator className={sepCls} />}
@@ -196,13 +198,13 @@ export function ContextMenu({
                 className={itemCls}
                 onSelect={() => actions.onCut(deleteTargets())}
               >
-                剪切
+                {t('panels.explorer.ctx.cut')}
               </Menu.Item>
               <Menu.Item
                 className={itemCls}
                 onSelect={() => actions.onCopy(deleteTargets())}
               >
-                复制
+                {t('panels.explorer.ctx.copy')}
               </Menu.Item>
               <Menu.Separator className={sepCls} />
 
@@ -210,7 +212,7 @@ export function ContextMenu({
                 className={itemCls}
                 onSelect={() => actions.onRename(target!.path)}
               >
-                重命名
+                {t('panels.explorer.ctx.rename')}
                 <span className="ml-auto text-2xs text-fg-dim">F2</span>
               </Menu.Item>
               <Menu.Separator className={sepCls} />
@@ -220,10 +222,10 @@ export function ContextMenu({
                 className={itemCls}
                 onSelect={() => actions.onCopyPath(deleteTargets())}
               >
-                复制路径
+                {t('panels.explorer.ctx.copy_path')}
                 {deleteTargets().length > 1 && (
                   <span className="ml-auto text-2xs text-fg-dim">
-                    {deleteTargets().length} 项
+                    {t('panels.explorer.ctx.items_count', { count: deleteTargets().length })}
                   </span>
                 )}
               </Menu.Item>
@@ -231,10 +233,10 @@ export function ContextMenu({
                 className={itemCls}
                 onSelect={() => actions.onCopyRelativePath(deleteTargets())}
               >
-                复制相对路径
+                {t('panels.explorer.ctx.copy_relative_path')}
                 {deleteTargets().length > 1 && (
                   <span className="ml-auto text-2xs text-fg-dim">
-                    {deleteTargets().length} 项
+                    {t('panels.explorer.ctx.items_count', { count: deleteTargets().length })}
                   </span>
                 )}
               </Menu.Item>
@@ -245,14 +247,14 @@ export function ContextMenu({
                 className={itemCls}
                 onSelect={() => actions.onRevealInFinder(target!.path)}
               >
-                在 Finder 中显示
+                {t('panels.explorer.ctx.reveal_in_finder')}
               </Menu.Item>
               {isFolder && (
                 <Menu.Item
                   className={itemCls}
                   onSelect={() => actions.onOpenInTerminal(target!.path)}
                 >
-                  在集成终端中打开
+                  {t('panels.explorer.ctx.open_in_terminal')}
                 </Menu.Item>
               )}
               <Menu.Separator className={sepCls} />
@@ -262,10 +264,10 @@ export function ContextMenu({
                 className={itemCls}
                 onSelect={() => actions.onTrash(deleteTargets())}
               >
-                移到废纸篓
+                {t('panels.explorer.ctx.trash')}
                 {deleteTargets().length > 1 && (
                   <span className="ml-auto text-2xs text-fg-dim">
-                    {deleteTargets().length} 项
+                    {t('panels.explorer.ctx.items_count', { count: deleteTargets().length })}
                   </span>
                 )}
               </Menu.Item>

@@ -5,6 +5,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { coApp } from '@/plugins/co-app';
+import { useT } from '@/i18n';
 import type {
   SettingItemRegistry,
   SettingItemSpec,
@@ -33,34 +34,41 @@ function useItems(
 }
 
 interface Bucket {
-  /** undefined = default bucket(无 header). */
+  /** undefined = default bucket(无 header).group 是身份 key,不直接展示. */
   readonly group: string | undefined;
+  /** i18n key,渲染 header 时 t(groupKey) 优先于 group 字面量. */
+  readonly groupKey: string | undefined;
   readonly items: readonly SettingItemSpec[];
 }
 
 /** 按 spec.group 分组,保留 priority 顺序. group 出现顺序由首项决定. */
 function groupItems(items: readonly SettingItemSpec[]): Bucket[] {
-  const map = new Map<string | undefined, SettingItemSpec[]>();
+  const map = new Map<string | undefined, { groupKey: string | undefined; items: SettingItemSpec[] }>();
   for (const spec of items) {
     const key = spec.group;
-    let arr = map.get(key);
-    if (!arr) {
-      arr = [];
-      map.set(key, arr);
+    let entry = map.get(key);
+    if (!entry) {
+      entry = { groupKey: spec.groupKey, items: [] };
+      map.set(key, entry);
     }
-    arr.push(spec);
+    entry.items.push(spec);
   }
-  return Array.from(map.entries()).map(([group, items]) => ({ group, items }));
+  return Array.from(map.entries()).map(([group, entry]) => ({
+    group,
+    groupKey: entry.groupKey,
+    items: entry.items,
+  }));
 }
 
 export function CategoryTabContent({
   category,
   registry = coApp.settingItems,
 }: CategoryTabContentProps) {
+  const t = useT();
   const items = useItems(registry, category);
   const buckets = useMemo(() => groupItems(items), [items]);
   if (items.length === 0) {
-    return <div className="text-fg-dim">本类暂无设置项</div>;
+    return <div className="text-fg-dim">{t('settings.category.empty')}</div>;
   }
   return (
     <div className="flex flex-col">
@@ -71,7 +79,7 @@ export function CategoryTabContent({
         >
           {bucket.group && (
             <h3 className="mb-3 border-b border-line pb-3 text-base font-medium text-fg">
-              {bucket.group}
+              {bucket.groupKey ? t(bucket.groupKey) : bucket.group}
             </h3>
           )}
           {bucket.items.map((spec) => (

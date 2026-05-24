@@ -151,7 +151,7 @@ export function QuickOpenModal() {
               ))}
               {results.length >= 5000 && filtered.length > 0 && (
                 <li className="px-3 py-1 text-center text-2xs text-fg-dim">
-                  仅显示前 5000 个文件;输入更具体的查询缩小范围
+                  {t('quick_open.limit_hint')}
                 </li>
               )}
             </ul>

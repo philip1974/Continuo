@@ -9,6 +9,7 @@ import {
   detectPlatform,
 } from '@/plugins/command-palette/format-hotkey';
 import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
+import { useT } from '@/i18n';
 import { getEffectiveHotkey } from './keybindings-store';
 
 const PLATFORM = detectPlatform();
@@ -52,6 +53,7 @@ export function KeybindingCaptureModal({
   onClose,
   onResetToDefault,
 }: KeybindingCaptureModalProps) {
+  const t = useT();
   // null = 还没捕获到完整组合(显示 currentHotkey 占位)
   // ''  = 显式 unbind(用户按了 Backspace)
   // string non-empty = 新组合
@@ -106,14 +108,14 @@ export function KeybindingCaptureModal({
       onClose={onClose}
       className="w-[420px] p-5"
     >
-      <h2 className="text-sm font-medium text-fg">设置快捷键</h2>
+      <h2 className="text-sm font-medium text-fg">{t('keybindings.modal.title')}</h2>
       <div className="mt-1 text-xs text-fg-muted">
-        命令:<span className="text-fg">{commandTitle}</span>
+        {t('keybindings.modal.command_label')}<span className="text-fg">{commandTitle}</span>
       </div>
 
       <div className="mt-4 flex min-h-[60px] items-center justify-center rounded border border-line bg-panel-soft/50 p-4">
         {isUnbind ? (
-          <span className="text-xs text-fg-dim">未绑定(unbound)</span>
+          <span className="text-xs text-fg-dim">{t('keybindings.modal.unbound')}</span>
         ) : display ? (
           <span className="flex items-center gap-1">
             {formatHotkeyParts(display, PLATFORM).map((p) => (
@@ -121,23 +123,21 @@ export function KeybindingCaptureModal({
             ))}
           </span>
         ) : (
-          <span className="text-xs text-fg-dim">按下新组合…</span>
+          <span className="text-xs text-fg-dim">{t('keybindings.modal.press_combo')}</span>
         )}
       </div>
 
       <div className="mt-2 text-2xs text-fg-dim">
-        按下新组合保存;<KeyCap>Backspace</KeyCap> 清空;
-        <KeyCap>Esc</KeyCap> 取消
+        {t('keybindings.modal.hint_press_save')}<KeyCap>Backspace</KeyCap> {t('keybindings.modal.hint_clear')}
+        <KeyCap>Esc</KeyCap> {t('keybindings.modal.hint_cancel')}
         {defaultHotkey && (
-          <>
-            ;默认 {formatHotkeyParts(defaultHotkey, PLATFORM).join(' ')}
-          </>
+          <>{t('keybindings.modal.hint_default', { hotkey: formatHotkeyParts(defaultHotkey, PLATFORM).join(' ') })}</>
         )}
       </div>
 
       {conflicts.length > 0 && (
         <div className="mt-2 rounded border border-warning/40 bg-warning/10 p-2 text-[11px] text-warning">
-          <div className="font-medium">⚠️ 此组合已绑定到其它命令</div>
+          <div className="font-medium">{t('keybindings.modal.conflict_title')}</div>
           <ul className="mt-1 list-inside list-disc space-y-0.5">
             {conflicts.map((c) => (
               <li key={c.id}>
@@ -147,14 +147,14 @@ export function KeybindingCaptureModal({
             ))}
           </ul>
           <div className="mt-1 text-warning/80">
-            保存后两个命令都会响应,建议先在原命令上 unbind 再保存这里。
+            {t('keybindings.modal.conflict_advice')}
           </div>
         </div>
       )}
 
       <div className="mt-4 flex items-center justify-end gap-2">
         <Button size="sm" variant="ghost" onClick={onClose}>
-          取消
+          {t('common.cancel')}
         </Button>
         <Button
           size="sm"
@@ -165,7 +165,7 @@ export function KeybindingCaptureModal({
             onClose();
           }}
         >
-          重置默认
+          {t('keybindings.modal.reset_default')}
         </Button>
         <Button
           size="sm"
@@ -177,7 +177,7 @@ export function KeybindingCaptureModal({
             onClose();
           }}
         >
-          保存
+          {t('common.save')}
         </Button>
       </div>
     </Modal>

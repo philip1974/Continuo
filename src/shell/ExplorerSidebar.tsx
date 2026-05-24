@@ -9,8 +9,10 @@ import {
   useLayoutUiStore,
 } from '@/stores/layout-ui.store';
 import { useColumnResize } from '@/lib/use-column-resize';
+import { useT } from '@/i18n';
 
 export function ExplorerSidebar() {
+  const t = useT();
   const open = useLayoutUiStore((s) => s.sidebarOpen);
   const width = useLayoutUiStore((s) => s.sidebarWidth);
   const setWidth = useLayoutUiStore((s) => s.setSidebarWidth);
@@ -35,9 +37,9 @@ export function ExplorerSidebar() {
       <div
         role="separator"
         aria-orientation="vertical"
-        aria-label="拖拽改变宽度"
+        aria-label={t('shell.aria.drag_resize')}
         onMouseDown={startResize}
-        title="拖拽改变宽度"
+        title={t('shell.aria.drag_resize')}
         className="absolute top-0 right-0 z-10 h-full w-1 cursor-col-resize bg-transparent transition-colors hover:bg-accent/40"
       />
     </aside>

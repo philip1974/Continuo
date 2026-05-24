@@ -4,6 +4,7 @@ import { Spinner } from '@/design';
 import { useTerminalStore } from '@/stores/terminal.store';
 import { useTerminal } from './useTerminal';
 import { registerTerminalFocus } from './terminal-focus-registry';
+import { useT } from '@/i18n';
 
 export interface TerminalPanelViewParams {
   sessionId: string;
@@ -79,6 +80,7 @@ function TerminalPanelContent({
   api: IDockviewPanelProps<TerminalPanelViewParams>['api'];
   sessionId: string;
 }) {
+  const t = useT();
   const { containerRef, isReady, fit, focus } = useTerminal(sessionId);
 
   // topic-22: register focus callback so DockShell can pull focus back to
@@ -131,11 +133,11 @@ function TerminalPanelContent({
       {!isReady && (
         <div
           className="pointer-events-none absolute inset-0 flex items-center justify-center bg-canvas/70 backdrop-blur-[2px]"
-          aria-label="Terminal shell starting"
+          aria-label={t('panels.terminal.aria.start_shell')}
         >
           <div className="flex items-center gap-2 text-xs text-fg-dim">
             <Spinner size="sm" />
-            <span>启动 shell...</span>
+            <span>{t('panels.terminal.starting_shell')}</span>
           </div>
         </div>
       )}

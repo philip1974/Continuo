@@ -23,8 +23,12 @@ export interface SettingItemSpec {
   /** 归属 category(决定哪个 tab 渲染本项),如 'general' / 'editor'. */
   readonly category: string;
   /** 同 category 内的子分组(可选). 同 group 的 items 一起渲染,
-   *  group header 显示在第一项之前. 缺失时归 default bucket(无 header). */
+   *  group header 显示在第一项之前. 缺失时归 default bucket(无 header).
+   *  group 是分组的 *身份* key — 不展示给用户;UI label 走 groupKey → t(...)，
+   *  缺失时回退到 group 字面量. */
   readonly group?: string;
+  /** group header 的 i18n key,渲染时 t(groupKey) 优先于 group 字面量. */
+  readonly groupKey?: string;
   readonly title: string;
   readonly titleKey?: string;
   readonly description?: string;

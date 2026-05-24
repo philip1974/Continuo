@@ -111,6 +111,58 @@ export const en = {
   'settings.explorer.show_hidden_files': 'Show hidden files',
   'settings.explorer.indent_width': 'Indent width',
 
+  // settings groups / descriptions / enum option labels (post-topic-21)
+  'settings.category.empty': 'No settings in this category',
+  'settings.group.appearance': 'Appearance',
+  'settings.group.autosave': 'Auto-save',
+  'settings.editor.font_size.desc': 'Font size for the code editor (Source mode).',
+  'settings.editor.show_line_numbers.desc': 'Whether the code editor shows line numbers (also controls fold markers).',
+  'settings.editor.auto_save_markdown.desc': 'When off, Markdown also requires ⌘S to save. Code files never auto-save.',
+  'settings.editor.auto_save_delay.desc': 'How long after the last keystroke auto-save fires.',
+  'settings.terminal.font_size.desc': 'xterm font size. Refits on change.',
+  'settings.terminal.cursor_style.block': 'Block',
+  'settings.terminal.cursor_style.underline': 'Underline',
+  'settings.terminal.cursor_style.bar': 'Bar',
+  'settings.explorer.show_hidden_files.desc': 'Show dotfiles such as .git / .env.',
+  'settings.explorer.indent_width.desc': 'Per-level indentation of the file tree (visual depth).',
+
+  // editor welcome / empty states (post-topic-21 round 2)
+  'editor.welcome.title': 'No file open',
+  'editor.welcome.hint_prefix': 'Click a file in Explorer ·',
+  'editor.welcome.save': 'Save',
+  'dock.empty.message': 'All panels are closed.',
+  'dock.empty.restore': 'Restore default layout',
+  'panels.explorer.loading_or_empty': 'Loading or empty folder',
+  'panels.terminal.starting_shell': 'Starting shell…',
+  'quick_open.limit_hint': 'Showing first 5000 files; refine your query',
+
+  // explorer context menu (14)
+  'panels.explorer.ctx.new_file': 'New File',
+  'panels.explorer.ctx.new_folder': 'New Folder',
+  'panels.explorer.ctx.paste': 'Paste',
+  'panels.explorer.ctx.cut': 'Cut',
+  'panels.explorer.ctx.copy': 'Copy',
+  'panels.explorer.ctx.rename': 'Rename',
+  'panels.explorer.ctx.copy_path': 'Copy Path',
+  'panels.explorer.ctx.copy_relative_path': 'Copy Relative Path',
+  'panels.explorer.ctx.reveal_in_finder': 'Reveal in Finder',
+  'panels.explorer.ctx.open_in_terminal': 'Open in Integrated Terminal',
+  'panels.explorer.ctx.trash': 'Move to Trash',
+  'panels.explorer.ctx.items_count': '{count} items',
+
+  // keybinding capture modal (13)
+  'keybindings.modal.title': 'Set hotkey',
+  'keybindings.modal.command_label': 'Command:',
+  'keybindings.modal.unbound': 'Unbound',
+  'keybindings.modal.press_combo': 'Press a new combination…',
+  'keybindings.modal.hint_press_save': 'Press a new combination to save;',
+  'keybindings.modal.hint_clear': 'to clear;',
+  'keybindings.modal.hint_cancel': 'to cancel',
+  'keybindings.modal.hint_default': ';default {hotkey}',
+  'keybindings.modal.conflict_title': '⚠️ This combination is already bound to other commands',
+  'keybindings.modal.conflict_advice': 'Both commands will respond after saving — unbind the original first if you want exclusivity.',
+  'keybindings.modal.reset_default': 'Reset to default',
+
   // panels.explorer.* (11)
   'panels.explorer.btn.new_file': 'New file',
   'panels.explorer.btn.new_folder': 'New folder',

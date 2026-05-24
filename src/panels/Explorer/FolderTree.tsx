@@ -30,7 +30,7 @@ import { getCachedClipboard } from '@/plugins/sandbox-sweep';
 import { useSettingValue } from '@/plugins/settings/values-store';
 import { useTheme } from '@/theme';
 import { useExplorerClipboardStore } from './clipboard-store';
-import { t } from '@/i18n';
+import { t, useT } from '@/i18n';
 
 interface CreatingState {
   type: 'file' | 'dir';
@@ -55,6 +55,7 @@ function isWithinRoot(path: string, root: string): boolean {
 }
 
 export function FolderTree({ root }: { root: string }) {
+  const tt = useT();
   // tree ref:onRename callback 在 useMemo 里引用,需要稳定 handle 拿到最新 tree
   const treeRef = useRef<TreeInstance<FileEntry> | null>(null);
   const { resolved: theme } = useTheme();
@@ -536,7 +537,7 @@ export function FolderTree({ root }: { root: string }) {
         >
           {items.length === 0 ? (
             <div className="p-4 text-xs text-fg-dim">
-              读取中或空目录
+              {tt('panels.explorer.loading_or_empty')}
             </div>
           ) : (
             <div

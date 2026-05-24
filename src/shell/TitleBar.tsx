@@ -4,6 +4,7 @@
 
 import { useEditorStore } from '@/stores/editor.store';
 import { useWorkspaceStore } from '@/stores/workspace.store';
+import { useT } from '@/i18n';
 
 function basename(p: string): string {
   const m = p.match(/[^/\\]+$/);
@@ -11,13 +12,14 @@ function basename(p: string): string {
 }
 
 export function TitleBar() {
+  const t = useT();
   const root = useWorkspaceStore((s) => s.root);
   const tabs = useEditorStore((s) => s.tabs);
   const activeTabId = useEditorStore((s) => s.activeTabId);
-  const active = tabs.find((t) => t.id === activeTabId) ?? null;
+  const active = tabs.find((tab) => tab.id === activeTabId) ?? null;
 
   const fileLabel = active
-    ? `${basename(active.filePath ?? '未命名')}${active.dirty ? ' ●' : ''}`
+    ? `${basename(active.filePath ?? t('panels.editor.untitled'))}${active.dirty ? ' ●' : ''}`
     : null;
   const wsLabel = root ? basename(root) : null;
 

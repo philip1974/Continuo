@@ -104,6 +104,58 @@ export const zh: Record<TranslationKey, string> = {
   'settings.explorer.show_hidden_files': '显示隐藏文件',
   'settings.explorer.indent_width': '缩进宽度',
 
+  // settings groups / descriptions / enum option labels (post-topic-21)
+  'settings.category.empty': '本类暂无设置项',
+  'settings.group.appearance': '外观',
+  'settings.group.autosave': '自动保存',
+  'settings.editor.font_size.desc': 'CodeEditor(代码 / Source mode)的字号。',
+  'settings.editor.show_line_numbers.desc': 'CodeEditor 是否显示行号(同时控制代码折叠 marker)。',
+  'settings.editor.auto_save_markdown.desc': '关闭后 Markdown 也需 ⌘S 显式保存。代码文件不自动保存。',
+  'settings.editor.auto_save_delay.desc': '停止输入多久后触发自动保存。',
+  'settings.terminal.font_size.desc': 'xterm 字号。变化时自动 fit 重排。',
+  'settings.terminal.cursor_style.block': '块',
+  'settings.terminal.cursor_style.underline': '下划线',
+  'settings.terminal.cursor_style.bar': '竖线',
+  'settings.explorer.show_hidden_files.desc': '是否显示以 . 开头的文件(如 .git / .env)。',
+  'settings.explorer.indent_width.desc': '文件树每级缩进(影响视觉层级)。',
+
+  // editor welcome / empty states (post-topic-21 round 2)
+  'editor.welcome.title': '未打开文件',
+  'editor.welcome.hint_prefix': '在 Explorer 单击文件打开 ·',
+  'editor.welcome.save': '保存',
+  'dock.empty.message': '所有面板都关掉了。',
+  'dock.empty.restore': '恢复默认布局',
+  'panels.explorer.loading_or_empty': '读取中或空目录',
+  'panels.terminal.starting_shell': '启动 shell…',
+  'quick_open.limit_hint': '仅显示前 5000 个文件;输入更具体的查询缩小范围',
+
+  // explorer context menu (14)
+  'panels.explorer.ctx.new_file': '新建文件',
+  'panels.explorer.ctx.new_folder': '新建文件夹',
+  'panels.explorer.ctx.paste': '粘贴',
+  'panels.explorer.ctx.cut': '剪切',
+  'panels.explorer.ctx.copy': '复制',
+  'panels.explorer.ctx.rename': '重命名',
+  'panels.explorer.ctx.copy_path': '复制路径',
+  'panels.explorer.ctx.copy_relative_path': '复制相对路径',
+  'panels.explorer.ctx.reveal_in_finder': '在 Finder 中显示',
+  'panels.explorer.ctx.open_in_terminal': '在集成终端中打开',
+  'panels.explorer.ctx.trash': '移到废纸篓',
+  'panels.explorer.ctx.items_count': '{count} 项',
+
+  // keybinding capture modal (13)
+  'keybindings.modal.title': '设置快捷键',
+  'keybindings.modal.command_label': '命令:',
+  'keybindings.modal.unbound': '未绑定',
+  'keybindings.modal.press_combo': '按下新组合…',
+  'keybindings.modal.hint_press_save': '按下新组合保存;',
+  'keybindings.modal.hint_clear': '清空;',
+  'keybindings.modal.hint_cancel': '取消',
+  'keybindings.modal.hint_default': ';默认 {hotkey}',
+  'keybindings.modal.conflict_title': '⚠️ 此组合已绑定到其它命令',
+  'keybindings.modal.conflict_advice': '保存后两个命令都会响应,建议先在原命令上 unbind 再保存这里。',
+  'keybindings.modal.reset_default': '重置默认',
+
   // panels.explorer.*
   'panels.explorer.btn.new_file': '新建文件',
   'panels.explorer.btn.new_folder': '新建文件夹',
