@@ -33,6 +33,7 @@ import {
   useWorkspaceStore,
 } from '@/stores/workspace.store';
 import { debounce } from '@/lib/debounce';
+import { subscribeAll } from '@/plugins/registries/useRegistry';
 import { clampWidth } from '@/lib/use-column-resize';
 import type { IpcResult } from '../fs/types';
 
@@ -342,11 +343,16 @@ export async function initExplorerPersistence(
     }
   }, DEBOUNCE_MS);
 
-  useWorkspaceStore.subscribe(persist);
-  useExplorerStore.subscribe(persist);
-  usePinnedStore.subscribe(persist);
-  useLayoutUiStore.subscribe(persist);
-  useEditorStore.subscribe(persist);
+  subscribeAll(
+    [
+      useWorkspaceStore,
+      useExplorerStore,
+      usePinnedStore,
+      useLayoutUiStore,
+      useEditorStore,
+    ],
+    persist,
+  );
 }
 
 /**

@@ -6,6 +6,7 @@ import { Button, Input } from '@/design';
 import { ConfirmDialog } from '@/panels/Explorer/ConfirmDialog';
 import { coApi } from '@/lib/co-api';
 import { coApp } from '../co-app';
+import { useMultiRegistry } from '../registries/useRegistry';
 import { getUserPluginManager } from '../co-plugin-manager';
 import { getUserPermissionStore } from '../permissions/co-permission-store';
 import { PermissionEditorModal } from '../permissions/PermissionEditorModal';
@@ -65,26 +66,17 @@ function snapshot(): readonly ContributionRow[] {
 }
 
 function useContributionSnapshot(): readonly ContributionRow[] {
-  const [snap, setSnap] = useState(() => snapshot());
-  useEffect(() => {
-    // 任一 registry 变 → 重新计算。subscribe 全部,挂接到一个 setSnap。
-    const refresh = () => setSnap(snapshot());
-    const u1 = coApp.panels.subscribe(refresh);
-    const u2 = coApp.commands.subscribe(refresh);
-    const u3 = coApp.statusBar.subscribe(refresh);
-    const u4 = coApp.ribbon.subscribe(refresh);
-    const u5 = coApp.settingTabs.subscribe(refresh);
-    const u6 = coApp.editorActions.subscribe(refresh);
-    return () => {
-      u1();
-      u2();
-      u3();
-      u4();
-      u5();
-      u6();
-    };
-  }, []);
-  return snap;
+  return useMultiRegistry(
+    [
+      coApp.panels,
+      coApp.commands,
+      coApp.statusBar,
+      coApp.ribbon,
+      coApp.settingTabs,
+      coApp.editorActions,
+    ],
+    snapshot,
+  );
 }
 
 const CORE_PLUGINS: ReadonlyArray<{
