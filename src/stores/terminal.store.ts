@@ -6,6 +6,7 @@
 // BDD: src/__tests__/terminal-store/
 
 import { create } from 'zustand';
+import type { OriginHint } from '../../electron/shared/origin-hint';
 
 export interface TerminalSession {
   /** 后端 PTY id (term-${uuid}). */
@@ -15,7 +16,7 @@ export interface TerminalSession {
   /** PTY spawn 时的 cwd. */
   readonly cwd: string;
   /** session 来源:用户手开 / agent 通过 MCP 创建. */
-  readonly originHint: 'user' | 'agent';
+  readonly originHint: OriginHint;
   /** agent 类型才填,如 'codex' / 'gemini'. */
   readonly agentLabel?: string;
   /** Scoped split-pane sessions are hidden from the legacy terminal tabs. */
@@ -89,7 +90,7 @@ export function nextActiveAfterClose(
   sessions: readonly TerminalSession[],
   activeId: string | null,
   closingId: string,
-): CloseResult {
+): { sessions: readonly TerminalSession[]; activeId: string | null } {
   const idx = sessions.findIndex((s) => s.id === closingId);
   if (idx === -1) {
     return { sessions, activeId };

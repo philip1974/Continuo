@@ -84,9 +84,8 @@ describe('CommandRegistry', () => {
     r.register({ id: 'a', title: 'A', hotkey: 'mod+s', fn: () => {} });
     r.register({ id: 'b', title: 'B', hotkey: 'mod+s', fn: () => {} });
     expect(warn).toHaveBeenCalled();
-    // 两个 command 都还在(只是 hotkey 冲突),只是 hotkey 解析时认 b
+    // 两个 command 都还在(只是 hotkey 冲突,getAll 不去重)
     expect(r.getAll()).toHaveLength(2);
-    expect(r.getByHotkey('mod+s')?.id).toBe('b');
     warn.mockRestore();
   });
 });

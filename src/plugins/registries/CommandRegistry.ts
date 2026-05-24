@@ -62,15 +62,6 @@ export class CommandRegistry {
     return Array.from(this.items.values());
   }
 
-  /** 按 hotkey 查命令(后注册者优先,因为 Map.values 保留插入序). */
-  getByHotkey(hotkey: string): CommandSpec | undefined {
-    let found: CommandSpec | undefined;
-    for (const c of this.items.values()) {
-      if (c.hotkey === hotkey) found = c;
-    }
-    return found;
-  }
-
   async execute(id: string): Promise<void> {
     const cmd = this.items.get(id);
     if (!cmd) throw new Error(`Command ${id} not found`);
