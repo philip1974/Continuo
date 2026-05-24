@@ -2,14 +2,13 @@ import { BrowserWindow } from 'electron';
 import { z } from 'zod';
 import { safeHandle, type IsTrustedFrame } from '../safe-handle';
 import { I18N_CHANNELS, type I18nSetLocaleResult, type I18nChangedPayload } from '../../shared/i18n-channels';
-import type { Locale } from '../../shared/i18n-types';
+import { LocaleSchema, type Locale } from '../../shared/i18n-types';
 import {
   getCurrentLocale,
   setCurrentLocale,
   getSetLocaleGen,
 } from '../services/settings.service';
 
-const LocaleSchema = z.enum(['en', 'zh', 'ko']) as z.ZodType<Locale>;
 const NoInput = z.undefined();
 
 // Op9 注册的菜单重建 hook；Op9 之前为 null（IPC 仍能跑，只是不重建菜单）

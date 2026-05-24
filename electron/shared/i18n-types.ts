@@ -1,6 +1,11 @@
 import { z } from 'zod';
 
-export type Locale = 'en' | 'zh' | 'ko';
+/** 支持的 locale 字面值,zod schema 与 type 都派生自此. */
+export const LOCALES = ['en', 'zh', 'ko'] as const;
+export type Locale = (typeof LOCALES)[number];
+
+/** 单源 zod schema,main IPC + SettingsSchema 都复用. */
+export const LocaleSchema = z.enum(LOCALES);
 
 export const LANG_MAP: Record<Locale, string> = {
   en: 'en_US.UTF-8',
@@ -27,7 +32,7 @@ export function mapSystemLocale(sysTag: string | undefined | null): Locale {
 export const SettingsSchema = z
   .object({
     version: z.literal(1),
-    locale: z.enum(['en', 'zh', 'ko']),
+    locale: LocaleSchema,
   })
   .strict();
 

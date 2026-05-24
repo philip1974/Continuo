@@ -36,6 +36,7 @@ import {
   type KillOutput,
 } from '../../shared/mcp-terminal-schemas';
 import { ERROR_CODES } from '../../shared/error-codes';
+import type { OriginHint } from '../../shared/origin-hint';
 import type { McpCallCtx, McpToolDef } from './mcp-host.service';
 
 // ── 输入侧的 store 形态(handler 期望的字段) ────────────────────
@@ -48,7 +49,7 @@ export interface TerminalSessionLike {
   readonly id: string;
   readonly title: string;
   readonly cwd: string;
-  readonly originHint: 'user' | 'agent';
+  readonly originHint: OriginHint;
   readonly agentLabel?: string;
   readonly createdAt: number;
   readonly exitCode: number | null;

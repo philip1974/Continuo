@@ -28,18 +28,16 @@
 // BDD: src/__tests__/terminal-sessions-service/
 
 import { ERROR_CODES } from '../../shared/error-codes';
+import type { OriginHint } from '../../shared/origin-hint';
+import type { AttachTarget } from '../../shared/terminal-attach';
 
-/** topic-05: agent 在 MCP create_session 时指定 attach 目标。 */
-export type AttachTarget =
-  | { kind: 'active' }
-  | { kind: 'panel'; panelId: string }
-  | { kind: 'window'; windowId: number };
+export type { AttachTarget } from '../../shared/terminal-attach';
 
 export interface MainTerminalSession {
   readonly id: string;
   readonly title: string;
   readonly cwd: string;
-  readonly originHint: 'user' | 'agent';
+  readonly originHint: OriginHint;
   readonly agentLabel?: string;
   readonly scoped?: boolean;
   readonly createdAt: number;
@@ -62,7 +60,7 @@ export interface AddSessionInput {
   readonly id: string;
   readonly title: string;
   readonly cwd: string;
-  readonly originHint: 'user' | 'agent';
+  readonly originHint: OriginHint;
   readonly agentLabel?: string;
   readonly scoped?: boolean;
   readonly ownerWindowId: number;

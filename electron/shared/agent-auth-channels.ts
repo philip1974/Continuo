@@ -20,4 +20,5 @@ export interface AgentAuthRequestPayload {
   readonly agentLabel?: string;
 }
 
-export type AgentAuthDecision = 'once' | 'session' | 'denied';
+export const AGENT_AUTH_DECISIONS = ['once', 'session', 'denied'] as const;
+export type AgentAuthDecision = (typeof AGENT_AUTH_DECISIONS)[number];

@@ -3,6 +3,7 @@ import type { IpcResult } from '../shared/ipc-result';
 import type { FileEntry } from '../shared/fs-entry';
 import { FS_CHANNELS } from '../shared/fs-channels';
 import { TERMINAL_CHANNELS } from '../shared/terminal-channels';
+import type { OriginHint } from '../shared/origin-hint';
 import {
   PLUGINS_CHANNELS,
   type IpcPermissionsMap,
@@ -52,7 +53,7 @@ export interface TerminalCreateOptions {
   // P1 Agent Terminal MCP:metadata 字段
   readonly name?: string;
   readonly title?: string;
-  readonly originHint?: 'user' | 'agent';
+  readonly originHint?: OriginHint;
   readonly agentLabel?: string;
   readonly scoped?: boolean;
   /**
@@ -72,7 +73,7 @@ export interface PreloadTerminalSession {
   readonly id: string;
   readonly title: string;
   readonly cwd: string;
-  readonly originHint: 'user' | 'agent';
+  readonly originHint: OriginHint;
   readonly agentLabel?: string;
   readonly scoped?: boolean;
   readonly createdAt: number;

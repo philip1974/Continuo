@@ -10,6 +10,8 @@ import { defaultIsTrustedFrame, processIpcCall } from '../safe-handle';
 import { TERMINAL_CHANNELS } from '../../shared/terminal-channels';
 import { getDefaultShell, isAllowedShell } from '../../shared/terminal-shells';
 import { ERROR_CODES } from '../../shared/error-codes';
+import { ORIGIN_HINTS } from '../../shared/origin-hint';
+import { AttachTargetSchema } from '../../shared/terminal-attach';
 import * as termService from '../services/terminal.service';
 import * as terminalSessions from '../services/terminal-sessions.service';
 import { mcpRevokers } from '../services/mcp-host.service';
@@ -49,17 +51,11 @@ export const createInputSchema = z
     // P1 调用方暂只传 user 类型(MCP create_session 的 agent 类型留 P2)。
     name: z.string().optional(),
     title: z.string().optional(),
-    originHint: z.enum(['user', 'agent']).optional(),
+    originHint: z.enum(ORIGIN_HINTS).optional(),
     agentLabel: z.string().optional(),
     scoped: z.boolean().optional(),
-    // topic-05: 透传到 sessionsService,让 renderer 端 InternalTerminalPanel 决定 attach
-    attachTarget: z
-      .discriminatedUnion('kind', [
-        z.object({ kind: z.literal('active') }).strict(),
-        z.object({ kind: z.literal('panel'), panelId: z.string().min(1) }).strict(),
-        z.object({ kind: z.literal('window'), windowId: z.number().int() }).strict(),
-      ])
-      .optional(),
+    // topic-05: 透传到 sessionsService,让 renderer 端决定 attach
+    attachTarget: AttachTargetSchema.optional(),
     /**
      * 创建时 renderer 当前 workspace.root,用于 sessions 跨 workspace 切换时
      * 的过滤(renderer 侧逻辑)。未传 = 全局会话(agent 多走这条),所有

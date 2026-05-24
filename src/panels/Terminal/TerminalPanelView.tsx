@@ -5,12 +5,13 @@ import { useTerminalStore } from '@/stores/terminal.store';
 import { useTerminal } from './useTerminal';
 import { registerTerminalFocus } from './terminal-focus-registry';
 import { useT } from '@/i18n';
+import type { OriginHint } from '../../../electron/shared/origin-hint';
 
 export interface TerminalPanelViewParams {
   sessionId: string;
   cwd?: string;
   title?: string;
-  originHint?: 'user' | 'agent';
+  originHint?: OriginHint;
 }
 
 export function TerminalPanelView(

@@ -19,7 +19,7 @@ import { registerPluginsIpc } from './ipc/plugins.ipc';
 import { registerShellIpc } from './ipc/shell.ipc';
 import { registerWindowIpc } from './ipc/window.ipc';
 import { registerI18nIpc } from './ipc/i18n.ipc';
-import { AGENT_AUTH_CHANNELS } from '../shared/agent-auth-channels';
+import { AGENT_AUTH_CHANNELS, AGENT_AUTH_DECISIONS } from '../shared/agent-auth-channels';
 import { ERROR_CODES } from '../shared/error-codes';
 import {
   resolveAgentAuthRequest,
@@ -143,7 +143,7 @@ export function registerIpc() {
   const agentAuthRespondSchema = z
     .object({
       requestId: z.string().min(1),
-      decision: z.enum(['once', 'session', 'denied']),
+      decision: z.enum(AGENT_AUTH_DECISIONS),
     })
     .strict();
   safeHandle(
