@@ -22,5 +22,6 @@
 
 ## 可机检的契约
 
-- `useReducedMotion()` hook 在 `(prefers-reduced-motion: reduce)` 下返回 `true`(jsdom 模拟 mq)。
 - LICENSE-3RD-PARTY.md 存在且包含 Aceternity 引用。
+- reduced-motion 由 motion 库的 `<MotionConfig reducedMotion="user">` 直接消费系统 mq,
+  本项目无独立 hook(useReducedMotion 已删除,因 motion 内置已覆盖)。

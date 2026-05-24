@@ -18,7 +18,6 @@ main 端已经按 `BrowserWindow.id` 做 list/broadcast 过滤;renderer 端仍�
 |---|---|
 | `src/stores/terminal.store.ts` | `filterByOwnerWindow` 纯函数:过滤、shape guard、drop reason、无 console 副作用 |
 | `src/shell/dock/TerminalSessionsSync.tsx` | `listSessions` 与 `onSessionsChanged` ingress 调 filter 后再 `replaceSnapshot` |
-| `src/panels/Terminal/TerminalPanel.tsx` | LegacyTerminalPanel ingress 调 filter 后再写 store |
 
 ## popout 推论
 
@@ -42,8 +41,8 @@ popout 内 `TerminalPanelView` 读的是主窗 store。因此**主窗 ingress fi
 | T10 | `filter-pure-fn.spec.ts` | 纯函数不直接 `console.warn` |
 | T11 | `ingress-filter.spec.ts` | `TerminalSessionsSync.listSessions` 响应写入 filtered snapshot |
 | T12 | `ingress-filter.spec.ts` | `TerminalSessionsSync.onSessionsChanged` 多次推送持续 filtered |
-| T13 | `ingress-filter.spec.ts` | `LegacyTerminalPanel.listSessions` legacy 分支写入 filtered snapshot |
-| T14 | `ingress-filter.spec.ts` | `LegacyTerminalPanel.onSessionsChanged` legacy 分支持续 filtered |
+| ~~T13~~ | — | 已撤:LegacyTerminalPanel 已删,SessionsSync 全权代理 ingress(T11/T12 已覆盖) |
+| ~~T14~~ | — | 已撤:同上 |
 | T15 | `ownership-immutability.spec.ts` | owner-switch 异常:prev `[A:o1]`,next `[A:o2]` filtered 后视为 removed |
 | T16 | `runtime-guard.spec.ts` | null payload 不抛并 drop `not-object` |
 | T17 | `runtime-guard.spec.ts` | number/string payload 不抛并 drop `not-object` |

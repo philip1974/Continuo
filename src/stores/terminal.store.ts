@@ -74,11 +74,6 @@ export function filterByOwnerWindow(
   return result;
 }
 
-export interface CloseResult {
-  sessions: readonly TerminalSession[];
-  activeId: string | null;
-}
-
 /**
  * 关闭 session 后的新状态(纯函数,可单测):
  * - 关不存在的 id → 状态不变(返回原 sessions 引用)
