@@ -8,6 +8,7 @@ import {
 } from 'dockview-react';
 import 'dockview-react/dist/styles/dockview.css';
 import { coApp } from '@/plugins/co-app';
+import { useRegistry } from '@/plugins/registries/useRegistry';
 import { PanelMount } from '@/shell/motion/PanelMount';
 import { applyDefaultLayout } from './layout.default';
 import { HeaderActions } from './HeaderActions';
@@ -64,11 +65,7 @@ export function sanitizePersistedDockLayout(json: unknown): unknown {
 /** 把 coApp.panels 注册的 PanelSpec 桥接成 Dockview 的 components map.
  *  每个 panel 自动包 PanelMount(进出场动画). */
 function usePanelComponents(): Record<string, React.FC<IDockviewPanelProps>> {
-  const [snapshot, setSnapshot] = useState(() => coApp.panels.getAll());
-  useEffect(
-    () => coApp.panels.subscribe(() => setSnapshot(coApp.panels.getAll())),
-    [],
-  );
+  const snapshot = useRegistry(coApp.panels);
   return useMemo(() => {
     const map: Record<string, React.FC<IDockviewPanelProps>> = {};
     for (const spec of snapshot) {

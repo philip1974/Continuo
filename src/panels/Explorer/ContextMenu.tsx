@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react';
 import * as Menu from '@radix-ui/react-context-menu';
 import type { FileEntry } from '@/lib/fs/types';
 import { coApp } from '@/plugins/co-app';
@@ -8,6 +7,7 @@ import {
   type ExplorerContextMenuItemSpec,
   type ExplorerContextMenuItemContext,
 } from '@/plugins/registries/ExplorerContextMenuRegistry';
+import { useRegistry } from '@/plugins/registries/useRegistry';
 
 export interface ContextMenuActions {
   onRename: (path: string) => void;
@@ -93,15 +93,7 @@ function groupPluginItems(
 
 /** 订阅 explorerContextMenu registry,plugin 注册/dispose 自动重渲. */
 function useExplorerContextMenuItems(): readonly ExplorerContextMenuItemSpec[] {
-  const [snap, setSnap] = useState(() => coApp.explorerContextMenu.getAll());
-  useEffect(
-    () =>
-      coApp.explorerContextMenu.subscribe(() =>
-        setSnap(coApp.explorerContextMenu.getAll()),
-      ),
-    [],
-  );
-  return snap;
+  return useRegistry(coApp.explorerContextMenu);
 }
 
 // 右键菜单包装。children 为接收右键的可见区域(行 / 空白容器)。

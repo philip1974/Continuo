@@ -3,6 +3,7 @@
 // 右:active editor tab 文件名 + dirty + 行 / 词 / 字符 + 编码占位。
 
 import { useEffect, useMemo, useState } from 'react';
+import { useRegistry } from '@/plugins/registries/useRegistry';
 import { useEditorStore } from '@/stores/editor.store';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { useLayoutUiStore } from '@/stores/layout-ui.store';
@@ -21,12 +22,7 @@ function basename(p: string): string {
 }
 
 function useStatusBarItems(side: 'left' | 'right'): readonly StatusBarItemSpec[] {
-  const [snap, setSnap] = useState(() => coApp.statusBar.getBySide(side));
-  useEffect(
-    () => coApp.statusBar.subscribe(() => setSnap(coApp.statusBar.getBySide(side))),
-    [side],
-  );
-  return snap;
+  return useRegistry(coApp.statusBar, () => coApp.statusBar.getBySide(side), [side]);
 }
 
 async function handleRevokeAgentTerminals(count: number): Promise<void> {

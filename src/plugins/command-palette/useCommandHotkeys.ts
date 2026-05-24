@@ -3,8 +3,9 @@
 // 'mod' 跨平台:macOS 走 metaKey,其它走 ctrlKey。
 // 单 hotkey 字符串 'mod+shift+h' = mod 键 + shift + 'h'。
 
-import { useEffect, useState } from 'react';
-import type { CommandRegistry, CommandSpec } from '../registries/CommandRegistry';
+import { useEffect } from 'react';
+import { useRegistry } from '../registries/useRegistry';
+import type { CommandRegistry } from '../registries/CommandRegistry';
 import {
   getEffectiveHotkey,
   useKeybindingsStore,
@@ -28,13 +29,7 @@ export function matchesHotkey(combo: string, e: KeyboardEvent): boolean {
 }
 
 export function useCommandHotkeys(commands: CommandRegistry): void {
-  const [snap, setSnap] = useState<readonly CommandSpec[]>(() =>
-    commands.getAll(),
-  );
-  useEffect(
-    () => commands.subscribe(() => setSnap(commands.getAll())),
-    [commands],
-  );
+  const snap = useRegistry(commands);
   // 用户改键时也要重排监听 — 订阅 keybindings overrides 让 effect 重跑
   const overrides = useKeybindingsStore((s) => s.overrides);
 

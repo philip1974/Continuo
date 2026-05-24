@@ -10,6 +10,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Input, KeyCap, Modal } from '@/design';
+import { useRegistry } from '../registries/useRegistry';
 import type {
   CommandRegistry,
   CommandSpec,
@@ -62,13 +63,7 @@ interface CommandPaletteProps {
 }
 
 function useCommands(registry: CommandRegistry): readonly CommandSpec[] {
-  const [snapshot, setSnapshot] = useState<readonly CommandSpec[]>(() =>
-    registry.getAll(),
-  );
-  useEffect(() => {
-    return registry.subscribe(() => setSnapshot(registry.getAll()));
-  }, [registry]);
-  return snapshot;
+  return useRegistry(registry);
 }
 
 export function CommandPalette({ commands }: CommandPaletteProps) {

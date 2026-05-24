@@ -5,6 +5,7 @@
 // Search / Settings 占位待实现。
 
 import { useEffect, useState } from 'react';
+import { useRegistry } from '@/plugins/registries/useRegistry';
 import { Folder } from '@react-symbols/icons';
 import { useLayoutUiStore } from '@/stores/layout-ui.store';
 import { NavRailButton } from '@/design';
@@ -46,12 +47,7 @@ function SettingsGearIcon({ size }: { size: number }) {
 }
 
 function useRibbonActions(): readonly RibbonActionSpec[] {
-  const [snapshot, setSnapshot] = useState(() => coApp.ribbon.getAll());
-  useEffect(
-    () => coApp.ribbon.subscribe(() => setSnapshot(coApp.ribbon.getAll())),
-    [],
-  );
-  return snapshot;
+  return useRegistry(coApp.ribbon);
 }
 
 export function IconSidebar() {

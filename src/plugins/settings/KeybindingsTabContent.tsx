@@ -2,9 +2,10 @@
 // 订阅 commands registry,只列有 hotkey 的命令,按 category 分组。
 // KeyCap 渲染 hotkey,跟 CommandPalette 风格一致。
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { IconButton, Input, KeyCap } from '@/design';
 import { coApp } from '@/plugins/co-app';
+import { useRegistry } from '../registries/useRegistry';
 import type {
   CommandRegistry,
   CommandSpec,
@@ -23,14 +24,7 @@ import { useT, useTWithFallback } from '@/i18n';
 const PLATFORM = detectPlatform();
 
 function useCommands(registry: CommandRegistry): readonly CommandSpec[] {
-  const [snapshot, setSnapshot] = useState<readonly CommandSpec[]>(() =>
-    registry.getAll(),
-  );
-  useEffect(
-    () => registry.subscribe(() => setSnapshot(registry.getAll())),
-    [registry],
-  );
-  return snapshot;
+  return useRegistry(registry);
 }
 
 interface DisplayCommand {

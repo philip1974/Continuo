@@ -18,6 +18,7 @@ import {
   TabNavItem,
 } from '@/design';
 import { coApp } from '@/plugins/co-app';
+import { useRegistry } from '@/plugins/registries/useRegistry';
 import {
   filterVisible,
   type EditorActionSpec,
@@ -37,12 +38,7 @@ function basename(p: string | null): string {
 
 /** 订阅 editorActions registry,渲染时按 ctx 过滤. */
 function useEditorActions(): readonly EditorActionSpec[] {
-  const [snap, setSnap] = useState(() => coApp.editorActions.getAll());
-  useEffect(
-    () => coApp.editorActions.subscribe(() => setSnap(coApp.editorActions.getAll())),
-    [],
-  );
-  return snap;
+  return useRegistry(coApp.editorActions);
 }
 
 /**

@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import type { ItemInstance } from '@headless-tree/core';
 import type { FileEntry } from '@/lib/fs/types';
 import { Input } from '@/design';
 import { coApp } from '@/plugins/co-app';
 import { mergeDecorations } from '@/plugins/registries/ExplorerDecoratorRegistry';
+import { useRegistry } from '@/plugins/registries/useRegistry';
 import { useSettingValue } from '@/plugins/settings/values-store';
 import { ContextMenu, type ContextMenuActions } from './ContextMenu';
 import { useExplorerClipboardStore } from './clipboard-store';
@@ -32,14 +33,7 @@ const DEFAULT_INDENT = 16;
 
 /** 订阅插件装饰器 registry,plugin enable/disable 时所有 FileRow 自动重渲. */
 function useDecoration(path: string, isDirectory: boolean) {
-  const [snap, setSnap] = useState(() => coApp.explorerDecorators.getAll());
-  useEffect(
-    () =>
-      coApp.explorerDecorators.subscribe(() =>
-        setSnap(coApp.explorerDecorators.getAll()),
-      ),
-    [],
-  );
+  const snap = useRegistry(coApp.explorerDecorators);
   return useMemo(
     () => mergeDecorations({ path, isDirectory }, snap),
     [path, isDirectory, snap],

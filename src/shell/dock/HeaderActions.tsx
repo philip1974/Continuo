@@ -4,6 +4,7 @@ import type { IDockviewHeaderActionsProps } from 'dockview-react';
 import { isPopoutWindow, popoutUrlFor } from '@/lib/popout-mode';
 import { IconButton, MenuItem } from '@/design';
 import { coApp } from '@/plugins/co-app';
+import { useRegistry } from '@/plugins/registries/useRegistry';
 import { coApi } from '@/lib/co-api';
 import { notify } from '@/notifications/notify';
 import { useWorkspaceStore } from '@/stores/workspace.store';
@@ -27,12 +28,7 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
   const [anchor, setAnchor] = useState<AnchorRect | null>(null);
   const tk = useTWithFallback();
   // 动态读取已注册 panel 类型(含内置 + 未来第三方插件)
-  const [panelChoices, setPanelChoices] = useState(() => coApp.panels.getAll());
-  useEffect(
-    () =>
-      coApp.panels.subscribe(() => setPanelChoices(coApp.panels.getAll())),
-    [],
-  );
+  const panelChoices = useRegistry(coApp.panels);
 
   // 计算菜单坐标 — 用 trigger 按钮的 viewport rect。
   // 必须 portal 到 document.body:Dockview 祖先有 transform: translate3d(0,0,0)

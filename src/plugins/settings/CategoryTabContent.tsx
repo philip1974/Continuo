@@ -3,9 +3,10 @@
 // 同 category 内可按 spec.group 分组,group 出现顺序由首项 priority 决定;
 // 无 group 的项归 default bucket(无 header,渲染在最前)。
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { coApp } from '@/plugins/co-app';
 import { useT } from '@/i18n';
+import { useRegistry } from '../registries/useRegistry';
 import type {
   SettingItemRegistry,
   SettingItemSpec,
@@ -22,15 +23,8 @@ function useItems(
   reg: SettingItemRegistry,
   category: string,
 ): readonly SettingItemSpec[] {
-  const [snap, setSnap] = useState(() => reg.getByCategory(category));
-  // category 变化时同步更新 snap;否则 React 复用同类型组件实例,useState
-  // lazy init 不再跑(通用/编辑器/资源管理器/终端 都是 CategoryTabContent,
-  // 切换时若不在此 effect 内 setSnap,会显示前一 tab 的内容)。
-  useEffect(() => {
-    setSnap(reg.getByCategory(category));
-    return reg.subscribe(() => setSnap(reg.getByCategory(category)));
-  }, [reg, category]);
-  return snap;
+  // category 进 deps:切换 tab 复用同 component 时 selector 闭包要重新跑
+  return useRegistry(reg, () => reg.getByCategory(category), [category]);
 }
 
 interface Bucket {

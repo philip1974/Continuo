@@ -6,9 +6,10 @@
 //
 // BDD: src/__tests__/settings-panel/
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Input } from '@/design';
 import { coApp } from '@/plugins/co-app';
+import { useRegistry } from '../registries/useRegistry';
 import type {
   SettingItemRegistry,
   SettingItemSpec,
@@ -29,15 +30,11 @@ interface SettingsPanelProps {
 }
 
 function useTabs(reg: SettingTabRegistry): readonly SettingTabSpec[] {
-  const [snapshot, setSnapshot] = useState(() => reg.getAll());
-  useEffect(() => reg.subscribe(() => setSnapshot(reg.getAll())), [reg]);
-  return snapshot;
+  return useRegistry(reg);
 }
 
 function useItems(reg: SettingItemRegistry): readonly SettingItemSpec[] {
-  const [snapshot, setSnapshot] = useState(() => reg.getAll());
-  useEffect(() => reg.subscribe(() => setSnapshot(reg.getAll())), [reg]);
-  return snapshot;
+  return useRegistry(reg);
 }
 
 function matchSearch(item: SettingItemSpec, q: string): boolean {
