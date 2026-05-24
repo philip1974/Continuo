@@ -34,19 +34,7 @@ export type PluginMcpErrorCode =
   (typeof PLUGIN_MCP_ERROR_CODES)[keyof typeof PLUGIN_MCP_ERROR_CODES];
 
 // ── 纯类型(对应 plugin-mcp-schemas.ts 的 z.infer 形态)──────────
-// 手写而非 z.infer 导出,以避免 preload 触达 zod。两侧需保持同步,
-// schemas.ts 顶部注释提醒"改 schema 同步本文件类型"。
-
-export interface RegisterPayload {
-  readonly pluginId: string;
-  readonly name: string;
-  readonly description: string;
-  readonly jsonSchema: Record<string, unknown>;
-}
-
-export interface UnregisterPayload {
-  readonly name: string;
-}
+// 手写而非 z.infer 导出,以避免 preload 触达 zod。
 
 export interface InvokePayload {
   readonly requestId: string;

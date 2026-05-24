@@ -65,11 +65,6 @@ function moduleKey(panelId: string, tabId: string, leafId: string): string {
   return `${panelId}:${tabId}:${leafId}`;
 }
 
-/** 注册或刷新某 panel 的 current dispatch — TerminalPanel mount 时调,不 cleanup. */
-export function setPanelDispatch(panelId: string, dispatch: PanelDispatch): void {
-  moduleDispatches.set(panelId, dispatch);
-}
-
 /** 取消某 panel 的全部 pending spawn — 真 close 时调 (wrap-panel-close). */
 export function cancelPanelSpawns(panelId: string): void {
   const prefix = `${panelId}:`;
@@ -82,12 +77,6 @@ export function cancelPanelSpawns(panelId: string): void {
   moduleDispatches.delete(panelId);
 }
 
-/** 测试用 — 重置模块状态. */
-export function _resetModuleSpawnStateForTest(): void {
-  modulePending.clear();
-  moduleDispatches.clear();
-}
-
 // ── createSpawnQueue ─────────────────────────────────────────────────
 
 export function createSpawnQueue(
@@ -95,8 +84,7 @@ export function createSpawnQueue(
   removedPtyIds: Set<string>,
   panelId: string,
 ): SpawnQueue {
-  // 同步 dispatch 到 module map (TerminalPanel useEffect 也会显式调,但这里
-  // 兜底 — 防 createSpawnQueue 被构造而 useEffect 还没跑的窗口)。
+  // module-level dispatch map:cancelPanelSpawns 用同 key 清 pending。
   moduleDispatches.set(panelId, dispatch);
 
   const queue: SpawnQueue = {
@@ -208,21 +196,3 @@ export function createSpawnQueue(
   return queue;
 }
 
-export function removePtyOnce(
-  id: string,
-  removedPtyIds: Set<string>,
-  remove: RemoveTerminal,
-  label: string,
-): void {
-  if (removedPtyIds.has(id)) return;
-  removedPtyIds.add(id);
-  remove(id)
-    .then((result) => {
-      if (!result.ok) {
-        console.warn(`[pane-split] ${label} remove ok=false`, id, result);
-      }
-    })
-    .catch((err: unknown) => {
-      console.warn(`[pane-split] ${label} remove rejected`, id, err);
-    });
-}

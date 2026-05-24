@@ -21,8 +21,3 @@ export interface AgentAuthRequestPayload {
 }
 
 export type AgentAuthDecision = 'once' | 'session' | 'denied';
-
-export interface AgentAuthRespondInput {
-  readonly requestId: string;
-  readonly decision: AgentAuthDecision;
-}

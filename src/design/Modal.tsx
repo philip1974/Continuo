@@ -1,7 +1,7 @@
 import './Modal.css';
 import { useEffect, useRef, type HTMLAttributes, type ReactNode } from 'react';
 
-export type ModalSize = 'sm' | 'md' | 'lg';
+type ModalSize = 'sm' | 'md' | 'lg';
 
 /**
  * Props for a focus-trapped modal surface.

@@ -11,24 +11,15 @@ export const en = {
   // common (10)
   'common.cancel': 'Cancel',
   'common.save': 'Save',
-  'common.delete': 'Delete',
   'common.ok': 'OK',
-  'common.close': 'Close',
-  'common.loading': 'Loading…',
-  'common.retry': 'Retry',
-  'common.select': 'Select',
-  'common.enable': 'Enable',
-  'common.disable': 'Disable',
 
   // menu.file (4)
   'menu.file.label': 'File',
   'menu.file.new_window': 'New Window',
   'menu.file.open_folder_in_new_window': 'Open Folder in New Window…',
-  'menu.file.close': 'Close',
 
   // settings.general (10)
   'settings.general.tab_title': 'General',
-  'settings.general.title': 'General',
   'settings.general.theme.title': 'Theme',
   'settings.general.theme.description': "Choose Continuo's visual theme. system follows the OS.",
   'settings.general.theme.light': 'Light',
@@ -36,7 +27,6 @@ export const en = {
   'settings.general.theme.system': 'System',
   'settings.general.language.title': 'Language',
   'settings.general.language.description': "Choose Continuo's UI language. Changes take effect immediately.",
-  'settings.experimental.onlyEn': 'Experimental',
 
   // errors.MAIN_* (27)
   'errors.AGENT_NOT_AUTHORIZED': 'Agent not authorized',
@@ -92,7 +82,6 @@ export const en = {
   'panels.editor.title': 'Editor',
   'panels.output.title': 'Output',
   'panels.settings.title': 'Settings',
-  'panels.language.title': 'Language',
 
   // settings tabs / items (15)
   'settings.terminal.tab_title': 'Terminal',
@@ -187,9 +176,6 @@ export const en = {
 
   // panels.terminal.* aria + dynamic (4)
   'panels.terminal.aria.start_shell': 'Starting shell',
-  'panels.terminal.aria.new_terminal': 'New terminal',
-  'panels.terminal.aria.close_terminal': 'Close terminal {name}',
-  'panels.terminal.no_active': 'No active terminal',
 
   // panels.editor.* (4)
   'panels.editor.untitled': 'Untitled',
@@ -259,13 +245,7 @@ export const en = {
   'plugins_tab.section.user': 'User plugins',
   'plugins_tab.section.install_from_git': 'Install from Git URL',
   'plugins_tab.section.install_warning': 'You can install directly via a Git URL. Note that third-party repositories may have security risks; only trust the source code and its author.',
-  'plugins_tab.install.placeholder': 'Git URL (HTTPS or SSH)',
-  'plugins_tab.install.pending': 'Pending plugin: {name} v{version} — reload LM to activate',
   'plugins_tab.user.no_plugins': 'No user plugins installed',
-  'plugins_tab.user.status_active': 'active',
-  'plugins_tab.user.status_disabled': 'disabled',
-  'plugins_tab.user.status_failed': 'failed',
-  'plugins_tab.user.status_unknown': 'unknown',
   'plugins_tab.error.generic': '✘ {message}',
   'plugins_tab.user.pending_hint': '⏳ Installed, reload LM to see it in the list and enable',
   'plugins_tab.btn.reload': 'Reload',
@@ -313,7 +293,6 @@ export const en = {
   'shell.iconbar.hide_explorer': 'Hide Explorer',
   'shell.iconbar.show_explorer': 'Show Explorer',
   'shell.iconbar.settings': 'Settings',
-  'shell.dock.popout_aria': 'Pop out active panel',
   'shell.dock.popout_title': 'Pop out to standalone window',
   'shell.tab.exit_zoom': 'Exit zoom',
   'shell.iconbar.updates_tooltip': '{count} plugin(s) updatable',

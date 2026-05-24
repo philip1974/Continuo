@@ -4,24 +4,15 @@ export const ko: Record<TranslationKey, string> = {
   // common
   'common.cancel': '취소',
   'common.save': '저장',
-  'common.delete': '삭제',
   'common.ok': '확인',
-  'common.close': '닫기',
-  'common.loading': '로딩 중…',
-  'common.retry': '재시도',
-  'common.select': '선택',
-  'common.enable': '사용',
-  'common.disable': '사용 안 함',
 
   // menu.file
   'menu.file.label': '파일',
   'menu.file.new_window': '새 창',
   'menu.file.open_folder_in_new_window': '새 창에서 폴더 열기…',
-  'menu.file.close': '닫기',
 
   // settings.general
   'settings.general.tab_title': '일반',
-  'settings.general.title': '일반',
   'settings.general.theme.title': '테마',
   'settings.general.theme.description': 'Continuo의 시각 테마를 선택합니다. system은 OS를 따릅니다.',
   'settings.general.theme.light': '라이트',
@@ -29,7 +20,6 @@ export const ko: Record<TranslationKey, string> = {
   'settings.general.theme.system': '시스템',
   'settings.general.language.title': '언어',
   'settings.general.language.description': 'Continuo의 UI 언어를 선택합니다. 즉시 적용됩니다.',
-  'settings.experimental.onlyEn': '실험적',
 
   // errors.MAIN_*
   'errors.AGENT_NOT_AUTHORIZED': '에이전트가 승인되지 않았습니다',
@@ -85,7 +75,6 @@ export const ko: Record<TranslationKey, string> = {
   'panels.editor.title': '편집기',
   'panels.output.title': '출력',
   'panels.settings.title': '설정',
-  'panels.language.title': '언어',
 
   // settings tabs / items
   'settings.terminal.tab_title': '터미널',
@@ -180,9 +169,6 @@ export const ko: Record<TranslationKey, string> = {
 
   // panels.terminal.*
   'panels.terminal.aria.start_shell': '셸 시작 중',
-  'panels.terminal.aria.new_terminal': '새 터미널',
-  'panels.terminal.aria.close_terminal': '터미널 {name} 닫기',
-  'panels.terminal.no_active': '활성 터미널 없음',
 
   // panels.editor.*
   'panels.editor.untitled': '제목 없음',
@@ -252,13 +238,7 @@ export const ko: Record<TranslationKey, string> = {
   'plugins_tab.section.user': '사용자 플러그인',
   'plugins_tab.section.install_from_git': 'Git URL에서 설치',
   'plugins_tab.section.install_warning': 'Git 링크로 직접 설치할 수 있습니다. 제3자 저장소는 보안 위험이 있을 수 있으니 신뢰할 수 있는 소스 코드와 작성자만 사용하세요.',
-  'plugins_tab.install.placeholder': 'Git URL (HTTPS 또는 SSH)',
-  'plugins_tab.install.pending': '대기 중인 플러그인: {name} v{version} — LM 재시작 시 활성화',
   'plugins_tab.user.no_plugins': '설치된 사용자 플러그인이 없습니다',
-  'plugins_tab.user.status_active': '활성',
-  'plugins_tab.user.status_disabled': '비활성',
-  'plugins_tab.user.status_failed': '실패',
-  'plugins_tab.user.status_unknown': '알 수 없음',
   'plugins_tab.error.generic': '✘ {message}',
   'plugins_tab.user.pending_hint': '⏳ 설치 완료, LM 재시작 시 목록에 표시되고 활성화 가능',
   'plugins_tab.btn.reload': '다시 로드',
@@ -306,7 +286,6 @@ export const ko: Record<TranslationKey, string> = {
   'shell.iconbar.hide_explorer': 'Explorer 숨기기',
   'shell.iconbar.show_explorer': 'Explorer 표시',
   'shell.iconbar.settings': '설정',
-  'shell.dock.popout_aria': '활성 패널 팝아웃',
   'shell.dock.popout_title': '독립 창으로 팝아웃',
   'shell.tab.exit_zoom': '확대 종료',
   'shell.iconbar.updates_tooltip': '업데이트 가능한 플러그인 {count}개',

@@ -41,12 +41,6 @@ const TOOLS_LIST_CHANGED = 'notifications/tools/list_changed';
 let bridge: PluginMcpBridge | null = null;
 let invokeRemote: InvokeRemoteCore | null = null;
 
-/** 测试用:重置内部状态. 生产 startPluginMcpIpc 只调一次,不重置. */
-export function _resetPluginMcpIpcForTests(): void {
-  bridge = null;
-  invokeRemote = null;
-}
-
 /**
  * 启动 plugin → MCP bridge IPC 接线。
  * 在 startMcpHost 之后调,host 已就绪。

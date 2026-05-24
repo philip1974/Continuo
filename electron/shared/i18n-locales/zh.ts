@@ -4,24 +4,15 @@ export const zh: Record<TranslationKey, string> = {
   // common
   'common.cancel': '取消',
   'common.save': '保存',
-  'common.delete': '删除',
   'common.ok': '确定',
-  'common.close': '关闭',
-  'common.loading': '加载中…',
-  'common.retry': '重试',
-  'common.select': '选择',
-  'common.enable': '启用',
-  'common.disable': '禁用',
 
   // menu.file
   'menu.file.label': '文件',
   'menu.file.new_window': '新建窗口',
   'menu.file.open_folder_in_new_window': '在新窗口中打开文件夹…',
-  'menu.file.close': '关闭',
 
   // settings.general
   'settings.general.tab_title': '通用',
-  'settings.general.title': '通用',
   'settings.general.theme.title': '主题',
   'settings.general.theme.description': '选择 Continuo 的视觉主题。system 跟随操作系统。',
   'settings.general.theme.light': '亮色',
@@ -29,7 +20,6 @@ export const zh: Record<TranslationKey, string> = {
   'settings.general.theme.system': '跟随系统',
   'settings.general.language.title': '语言',
   'settings.general.language.description': '选择 Continuo 的界面语言。立即生效。',
-  'settings.experimental.onlyEn': '实验性',
 
   // errors.MAIN_*
   'errors.AGENT_NOT_AUTHORIZED': 'Agent 未授权',
@@ -85,7 +75,6 @@ export const zh: Record<TranslationKey, string> = {
   'panels.editor.title': '编辑器',
   'panels.output.title': '输出',
   'panels.settings.title': '设置',
-  'panels.language.title': '语言',
 
   // settings tabs / items
   'settings.terminal.tab_title': '终端',
@@ -180,9 +169,6 @@ export const zh: Record<TranslationKey, string> = {
 
   // panels.terminal.*
   'panels.terminal.aria.start_shell': '启动 shell',
-  'panels.terminal.aria.new_terminal': '新建终端',
-  'panels.terminal.aria.close_terminal': '关闭终端 {name}',
-  'panels.terminal.no_active': '无活跃终端',
 
   // panels.editor.*
   'panels.editor.untitled': '未命名',
@@ -252,13 +238,7 @@ export const zh: Record<TranslationKey, string> = {
   'plugins_tab.section.user': '用户插件',
   'plugins_tab.section.install_from_git': '从 Git URL 安装',
   'plugins_tab.section.install_warning': '可以直接通过 Git 链接进行安装。注意第三方仓库可能存在安全风险，请保持信任源代码及其开发者。',
-  'plugins_tab.install.placeholder': 'Git URL（HTTPS 或 SSH）',
-  'plugins_tab.install.pending': '待激活插件：{name} v{version} — 重启 LM 后生效',
   'plugins_tab.user.no_plugins': '暂无用户插件',
-  'plugins_tab.user.status_active': '活跃',
-  'plugins_tab.user.status_disabled': '已禁用',
-  'plugins_tab.user.status_failed': '失败',
-  'plugins_tab.user.status_unknown': '未知',
   'plugins_tab.error.generic': '✘ {message}',
   'plugins_tab.user.pending_hint': '⏳ 已安装，重启 LM 后出现在列表并可启用',
   'plugins_tab.btn.reload': '重载',
@@ -306,7 +286,6 @@ export const zh: Record<TranslationKey, string> = {
   'shell.iconbar.hide_explorer': '隐藏 Explorer',
   'shell.iconbar.show_explorer': '显示 Explorer',
   'shell.iconbar.settings': '设置',
-  'shell.dock.popout_aria': '弹出当前面板',
   'shell.dock.popout_title': '弹出到独立窗口',
   'shell.tab.exit_zoom': '退出缩放',
   'shell.iconbar.updates_tooltip': '{count} 个插件可更新',
