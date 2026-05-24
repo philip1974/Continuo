@@ -78,8 +78,4 @@ describe('window-aware cross-window terminal isolation (high-level AC)', () => {
 
     expect(out.sessions.map((s) => s.session_id)).toEqual(['A-id']);
   });
-
-  it.todo(
-    'AC2 - read_history IPC throws TERMINAL_NOT_FOUND for cross-window session id (covered by read-history-ownership.spec.ts)',
-  );
 });

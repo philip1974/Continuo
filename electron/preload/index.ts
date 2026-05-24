@@ -119,7 +119,6 @@ const api = {
   },
   system: {
     windowId: ipcRenderer.sendSync('window:id') as number,
-    hostname: (): string => ipcRenderer.sendSync('system:hostname') as string,
   },
   popout: {
     open: (panelId: string): Promise<IpcResult<unknown>> =>

@@ -214,8 +214,6 @@ describe('explorer.json v3 persistence schema and merge semantics', () => {
     expect(payload.windows.map((w) => w.windowSeq)).toEqual([1]);
   });
 
-  it.todo('T15: terminal panel sanitizer remains active in verify mode');
-
   it('T22: writable snapshot schema rejects renderer attempts to write layout', () => {
     const writable = writablePayload([
       {
@@ -275,6 +273,4 @@ describe('explorer.json v3 persistence schema and merge semantics', () => {
     });
     expect(ExplorerSchemaV3.parse(payload).windows).toHaveLength(2);
   });
-
-  it.todo('T28: allocateWindowSeq concurrency is covered by window-seq-allocate');
 });

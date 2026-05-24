@@ -6,7 +6,6 @@ import type {
   WindowOpenHandlerResponse,
 } from 'electron';
 import nodeFs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { registerIpc } from './ipc';
@@ -91,10 +90,6 @@ const flushedOnQuit = new Set<number>();
 ipcMain.on('window:id', (event: IpcMainEvent) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   event.returnValue = win?.id ?? 0;
-});
-
-ipcMain.on('system:hostname', (event: IpcMainEvent) => {
-  event.returnValue = os.hostname();
 });
 
 ipcMain.on('layout:flush-ack', (event: IpcMainEvent, windowId: unknown) => {
