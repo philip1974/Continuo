@@ -9,14 +9,26 @@ const OUT_ROOT = process.env.BUILD_TARGET === 'pack' ? 'out-pack' : 'out';
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin({ exclude: ['@continuo-terminal/protocol', '@continuo-terminal/server-node'] })],
+    plugins: [
+      externalizeDepsPlugin({
+        exclude: ['@continuo-terminal/protocol', '@continuo-terminal/server-node'],
+        // node-pty 是 devDep,默认会被 Rollup 打进 bundle。但它含 .node 原生二进制 +
+        // 动态 require("./prebuilds/...") — 必须留给 Electron runtime 解析。
+        include: ['node-pty'],
+      }),
+    ],
     build: {
       outDir: `${OUT_ROOT}/main`,
       rollupOptions: { input: resolve(__dirname, 'electron/main/index.ts') },
     },
   },
   preload: {
-    plugins: [externalizeDepsPlugin({ exclude: ['@continuo-terminal/protocol', '@continuo-terminal/server-node'] })],
+    plugins: [
+      externalizeDepsPlugin({
+        exclude: ['@continuo-terminal/protocol', '@continuo-terminal/server-node'],
+        include: ['node-pty'],
+      }),
+    ],
     build: {
       outDir: `${OUT_ROOT}/preload`,
       rollupOptions: {
