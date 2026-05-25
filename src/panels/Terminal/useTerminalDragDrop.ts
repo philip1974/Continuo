@@ -1,4 +1,5 @@
 import { useEffect, useRef, type RefObject } from 'react';
+import type { DockviewGroupPanelApi } from 'dockview-react';
 import { coApi } from '@/lib/co-api';
 import {
   joinWithTrailingSpace,
@@ -11,6 +12,7 @@ import { getShellFamily } from '@/stores/terminal.store';
 export interface UseTerminalDragDropInput {
   readonly sessionId: string;
   readonly focus: () => void;
+  readonly api: Pick<DockviewGroupPanelApi, 'onDidLocationChange'>;
 }
 
 function hasFiles(dataTransfer: DataTransfer | null): dataTransfer is DataTransfer {
@@ -35,6 +37,7 @@ function pointInRect(
 export function useTerminalDragDrop({
   sessionId,
   focus,
+  api,
 }: UseTerminalDragDropInput): {
   ref: RefObject<HTMLDivElement>;
 } {
@@ -42,8 +45,10 @@ export function useTerminalDragDrop({
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (ref.current === null) return;
-    const ownerDoc = ref.current.ownerDocument || document;
+    let boundDoc: Document | null = null;
+    let disposed = false;
+    let lastLocationType = 'grid';
+    const listenerOptions = { capture: true } as const;
 
     const isTerminalFileDrag = (e: DragEvent): e is DragEvent & {
       dataTransfer: DataTransfer;
@@ -125,15 +130,46 @@ export function useTerminalDragDrop({
       })();
     };
 
-    ownerDoc.addEventListener('dragenter', onDragEnter, true);
-    ownerDoc.addEventListener('dragover', onDragOver, true);
-    ownerDoc.addEventListener('drop', onDrop, true);
-    return () => {
-      ownerDoc.removeEventListener('dragenter', onDragEnter, true);
-      ownerDoc.removeEventListener('dragover', onDragOver, true);
-      ownerDoc.removeEventListener('drop', onDrop, true);
+    const unbind = (doc: Document) => {
+      doc.removeEventListener('dragenter', onDragEnter, listenerOptions);
+      doc.removeEventListener('dragover', onDragOver, listenerOptions);
+      doc.removeEventListener('drop', onDrop, listenerOptions);
+      if (boundDoc === doc) {
+        boundDoc = null;
+      }
     };
-  }, [focus, sessionId, t]);
+
+    const bind = () => {
+      if (disposed || ref.current === null) return;
+      const doc = ref.current.ownerDocument || document;
+      if (doc === boundDoc) return;
+      if (boundDoc !== null) unbind(boundDoc);
+      doc.addEventListener('dragenter', onDragEnter, listenerOptions);
+      doc.addEventListener('dragover', onDragOver, listenerOptions);
+      doc.addEventListener('drop', onDrop, listenerOptions);
+      boundDoc = doc;
+      if (import.meta.env.DEV) {
+        console.debug('[terminal-drag-drop] rebind', {
+          sessionId,
+          locationType: lastLocationType,
+          ownerDocUrl: doc.URL,
+        });
+      }
+    };
+
+    bind();
+    const sub = api.onDidLocationChange((event) => {
+      lastLocationType = event.location.type;
+      queueMicrotask(bind);
+    });
+
+    return () => {
+      disposed = true;
+      sub.dispose();
+      if (boundDoc !== null) unbind(boundDoc);
+      boundDoc = null;
+    };
+  }, [api, focus, sessionId, t]);
 
   return { ref: ref as RefObject<HTMLDivElement> };
 }

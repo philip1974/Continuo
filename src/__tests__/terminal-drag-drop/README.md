@@ -36,5 +36,9 @@ Internal TDD:
 - [ ] Drag a path with space in name -> single-quoted on POSIX
 - [ ] devtools console shows `[terminal-drag-drop] capture drop` (DEV only)
 - [ ] dockview tab-drag still works (drag terminal tab between groups)
-- [ ] Popout window: open terminal in dockview popout BrowserWindow -> drag a file -> path inserted correctly
+- [ ] Terminal popout drop: open terminal in dockview popout BrowserWindow -> drag a file -> path inserted correctly
 - [ ] Off-terminal directory drop: drag a directory onto explorer sidebar / status bar -> workspace switches (App.tsx path still works)
+
+## Multi-document discipline
+
+Terminal drag/drop listeners are bound to the terminal wrapper's current `ownerDocument`, not always the main window `document`. When dockview moves a group into or out of a popout BrowserWindow, `panel.api.onDidLocationChange` is the transition signal and the hook must re-read `ref.current.ownerDocument` after the move settles. Rebinds must be idempotent, must unbind the previous document, and must tolerate `ref.current` becoming null before a queued rebind runs. Future document-level terminal drag/drop changes should preserve this pattern so main-window, popout, and popout-to-grid round trips do not leak listeners across documents.

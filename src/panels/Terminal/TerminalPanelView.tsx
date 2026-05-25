@@ -84,7 +84,7 @@ function TerminalPanelContent({
 }) {
   const t = useT();
   const { containerRef, isReady, fit, focus } = useTerminal(sessionId);
-  const { ref: dropZoneRef } = useTerminalDragDrop({ sessionId, focus });
+  const { ref: dropZoneRef } = useTerminalDragDrop({ sessionId, focus, api });
 
   // topic-22: register focus callback so DockShell can pull focus back to
   // xterm after onDidMaximizedGroupChange (exit-maximize doesn't re-fire

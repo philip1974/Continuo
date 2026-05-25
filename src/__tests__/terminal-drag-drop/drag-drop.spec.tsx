@@ -1,5 +1,10 @@
 // @vitest-environment jsdom
 import { act, cleanup, render } from '@testing-library/react';
+import { useLayoutEffect, useMemo } from 'react';
+import type {
+  DockviewGroupPanelApi,
+  DockviewGroupPanelFloatingChangeEvent,
+} from 'dockview-react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NotificationsProvider, useNotify } from '@/notifications/NotificationsProvider';
 import { useTerminalStore, type TerminalSession } from '@/stores/terminal.store';
@@ -31,6 +36,44 @@ type TestDataTransfer = DataTransfer & {
   types: readonly string[];
   dropEffect: string;
 };
+
+type LocationChangeEvent = DockviewGroupPanelFloatingChangeEvent;
+
+type LocationChangeListener = (event: LocationChangeEvent) => void;
+type MutableDropRef = { current: HTMLDivElement | null };
+type MockLocationApi = Pick<DockviewGroupPanelApi, 'onDidLocationChange'>;
+
+function createLocationApi(): {
+  readonly api: MockLocationApi;
+  readonly disposeFns: readonly ReturnType<typeof vi.fn>[];
+  readonly fire: (event: LocationChangeEvent) => void;
+} {
+  const listeners = new Set<LocationChangeListener>();
+  const disposeFns: ReturnType<typeof vi.fn>[] = [];
+  const api = {
+    onDidLocationChange: vi.fn((listener: LocationChangeListener) => {
+      listeners.add(listener);
+      const dispose = vi.fn(() => {
+        listeners.delete(listener);
+      });
+      disposeFns.push(dispose);
+      return { dispose };
+    }),
+  };
+  return {
+    api: api as unknown as MockLocationApi,
+    disposeFns,
+    fire: (event: LocationChangeEvent) => {
+      for (const listener of Array.from(listeners)) {
+        listener(event);
+      }
+    },
+  };
+}
+
+function popoutLocationEvent(): LocationChangeEvent {
+  return { location: { type: 'popout', getWindow: () => window } };
+}
 
 const DEFAULT_RECT = {
   left: 10,
@@ -74,11 +117,28 @@ function Probe() {
 function Host({
   sessionId = 'term-1',
   focus = vi.fn(),
+  api,
+  ownerDocument,
+  onHookRef,
 }: {
   sessionId?: string;
   focus?: () => void;
+  api?: MockLocationApi;
+  ownerDocument?: () => Document;
+  onHookRef?: (ref: MutableDropRef) => void;
 }) {
-  const { ref } = useTerminalDragDrop({ sessionId, focus });
+  const defaultApi = useMemo(() => createLocationApi().api, []);
+  const { ref } = useTerminalDragDrop({ sessionId, focus, api: api ?? defaultApi });
+  useLayoutEffect(() => {
+    const dropZone = ref.current;
+    if (dropZone && ownerDocument) {
+      Object.defineProperty(dropZone, 'ownerDocument', {
+        configurable: true,
+        get: ownerDocument,
+      });
+    }
+    onHookRef?.(ref as MutableDropRef);
+  }, [onHookRef, ownerDocument, ref]);
   return (
     <div
       ref={ref}
@@ -169,8 +229,15 @@ async function settleDrop(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+async function flushMicrotasks(): Promise<void> {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
 async function drop(
-  target: Element,
+  target: EventTarget,
   files: readonly File[],
   paths: readonly string[],
   point = { clientX: 50, clientY: 60 },
@@ -215,6 +282,11 @@ afterEach(() => {
 function renderHost(
   focus = vi.fn(),
   sessionId = 'term-1',
+  options: {
+    readonly api?: MockLocationApi;
+    readonly ownerDocument?: () => Document;
+    readonly onHookRef?: (ref: MutableDropRef) => void;
+  } = {},
 ): {
   readonly dropZone: HTMLElement;
   readonly focus: () => void;
@@ -222,7 +294,13 @@ function renderHost(
   const view = render(
     <NotificationsProvider>
       <Probe />
-      <Host focus={focus} sessionId={sessionId} />
+      <Host
+        focus={focus}
+        sessionId={sessionId}
+        api={options.api}
+        ownerDocument={options.ownerDocument}
+        onHookRef={options.onHookRef}
+      />
     </NotificationsProvider>,
   );
   const dropZone = view.container.querySelector(
@@ -402,5 +480,110 @@ describe('terminal-drag-drop BDD', () => {
       drop(document.body, [f], ['/Users/me/after-unmount.txt']),
     ).resolves.toBeDefined();
     expect(mocks.write).not.toHaveBeenCalled();
+  });
+
+  it('S12 location-change rebinds to new ownerDocument', async () => {
+    const location = createLocationApi();
+    const docA = document.implementation.createHTMLDocument('A');
+    const docB = document.implementation.createHTMLDocument('B');
+    let ownerDoc = docA;
+    const { dropZone } = renderHost(undefined, 'term-1', {
+      api: location.api,
+      ownerDocument: () => ownerDoc,
+    });
+    stubRect(dropZone);
+
+    location.fire(popoutLocationEvent());
+    ownerDoc = docB;
+    await flushMicrotasks();
+
+    const f = file('popout.txt');
+    await drop(docB, [f], ['/Users/me/popout.txt']);
+    expect(mocks.write).toHaveBeenCalledWith('term-1', '/Users/me/popout.txt ');
+
+    mocks.write.mockClear();
+    await drop(docA, [f], ['/Users/me/main.txt']);
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+
+  it('S13 popout → grid round-trip cleans up', async () => {
+    const location = createLocationApi();
+    const docA = document.implementation.createHTMLDocument('A');
+    const docB = document.implementation.createHTMLDocument('B');
+    let ownerDoc = docA;
+    const { dropZone } = renderHost(undefined, 'term-1', {
+      api: location.api,
+      ownerDocument: () => ownerDoc,
+    });
+    stubRect(dropZone);
+
+    location.fire(popoutLocationEvent());
+    ownerDoc = docB;
+    await flushMicrotasks();
+    location.fire({ location: { type: 'grid' } });
+    ownerDoc = docA;
+    await flushMicrotasks();
+
+    const f = file('roundtrip.txt');
+    await drop(docB, [f], ['/Users/me/from-popout.txt']);
+    expect(mocks.write).not.toHaveBeenCalled();
+
+    await drop(docA, [f], ['/Users/me/from-grid.txt']);
+    expect(mocks.write).toHaveBeenCalledWith('term-1', '/Users/me/from-grid.txt ');
+  });
+
+  it('S14 panel unmount disposes subscription', () => {
+    const location = createLocationApi();
+    const view = render(
+      <NotificationsProvider>
+        <Probe />
+        <Host api={location.api} />
+      </NotificationsProvider>,
+    );
+
+    view.unmount();
+
+    expect(location.disposeFns[0]).toHaveBeenCalledTimes(1);
+  });
+
+  it('S15 microtask race: ref.current goes null between event and microtask', async () => {
+    const location = createLocationApi();
+    const docA = document.implementation.createHTMLDocument('A');
+    const docB = document.implementation.createHTMLDocument('B');
+    let ownerDoc = docA;
+    const hookRef: { value: MutableDropRef | null } = { value: null };
+    const addB = vi.spyOn(docB, 'addEventListener');
+    const { dropZone } = renderHost(undefined, 'term-1', {
+      api: location.api,
+      ownerDocument: () => ownerDoc,
+      onHookRef: (ref) => {
+        hookRef.value = ref;
+      },
+    });
+    stubRect(dropZone);
+
+    location.fire(popoutLocationEvent());
+    ownerDoc = docB;
+    if (hookRef.value) hookRef.value.current = null;
+
+    await expect(flushMicrotasks()).resolves.toBeUndefined();
+    expect(addB).not.toHaveBeenCalled();
+  });
+
+  it('S16 idempotent rebind on same ownerDocument', async () => {
+    const location = createLocationApi();
+    const docA = document.implementation.createHTMLDocument('A');
+    const addA = vi.spyOn(docA, 'addEventListener');
+    const { dropZone } = renderHost(undefined, 'term-1', {
+      api: location.api,
+      ownerDocument: () => docA,
+    });
+    stubRect(dropZone);
+
+    location.fire(popoutLocationEvent());
+    location.fire(popoutLocationEvent());
+    await flushMicrotasks();
+
+    expect(addA).toHaveBeenCalledTimes(3);
   });
 });
