@@ -4,10 +4,12 @@
 
 import { BrowserWindow } from 'electron';
 import type { WebContents } from 'electron';
-import { SessionManager } from '@continuo-terminal/server-node';
+import {
+  prepareShellIntegrationEnv,
+  SessionManager,
+} from '@continuo-terminal/server-node';
 import * as terminalSessions from './terminal-sessions.service';
 import { mcpRevokers } from './mcp-host.service';
-import { prepareEnv } from './shell-integration';
 import { getCurrentLocale } from './settings.service';
 import { withPtyLangEnv } from './pty-lang';
 
@@ -315,7 +317,7 @@ export async function createTerminal(
     baseEnv as Record<string, string | undefined>,
     getCurrentLocale(),
   );
-  const { env: shellEnv, cleanup: shellCleanup } = await prepareEnv(
+  const { env: shellEnv, cleanup: shellCleanup } = await prepareShellIntegrationEnv(
     shell,
     baseEnvWithLang,
   );

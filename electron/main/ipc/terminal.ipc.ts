@@ -8,7 +8,7 @@ import * as fs from 'node:fs';
 import { z } from 'zod';
 import { defaultIsTrustedFrame, processIpcCall } from '../safe-handle';
 import { TERMINAL_CHANNELS } from '../../shared/terminal-channels';
-import { getDefaultShell, isAllowedShell } from '../../shared/terminal-shells';
+import { getDefaultShell, isAllowedShell } from '@continuo-terminal/server-node';
 import { ERROR_CODES } from '../../shared/error-codes';
 import { ORIGIN_HINTS } from '../../shared/origin-hint';
 import { AttachTargetSchema } from '../../shared/terminal-attach';

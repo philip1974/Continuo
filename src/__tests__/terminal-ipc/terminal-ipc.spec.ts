@@ -3,7 +3,7 @@ import { TERMINAL_CHANNELS } from '../../../electron/shared/terminal-channels';
 import {
   getDefaultShell,
   isAllowedShell,
-} from '../../../electron/shared/terminal-shells';
+} from '@continuo-terminal/server-node';
 import {
   createInputSchema,
   idOnlyInputSchema,
@@ -129,50 +129,6 @@ describe('idOnlyInputSchema', () => {
   });
   it('未知字段 → fail', () => {
     expect(idOnlyInputSchema.safeParse({ id: 'x', y: 1 }).success).toBe(false);
-  });
-});
-
-// ────────────────────────────────────────────────────────────
-// shell 白名单
-// ────────────────────────────────────────────────────────────
-
-describe('isAllowedShell', () => {
-  // 跳过 win32 专属断言(本机非 Windows 跑测时会拒绝 win 路径)
-  const skipUnix = process.platform === 'win32';
-
-  if (!skipUnix) {
-    it('/bin/zsh / bash / sh / fish 通过', () => {
-      expect(isAllowedShell('/bin/zsh')).toBe(true);
-      expect(isAllowedShell('/bin/bash')).toBe(true);
-      expect(isAllowedShell('/bin/sh')).toBe(true);
-      expect(isAllowedShell('/bin/fish')).toBe(true);
-    });
-
-    it('/opt/homebrew/bin/fish 通过', () => {
-      expect(isAllowedShell('/opt/homebrew/bin/fish')).toBe(true);
-    });
-
-    it('/usr/local/bin/zsh 通过', () => {
-      expect(isAllowedShell('/usr/local/bin/zsh')).toBe(true);
-    });
-
-    it('任意路径 + zsh 不在白名单(防注入)', () => {
-      expect(isAllowedShell('/tmp/zsh')).toBe(false);
-      expect(isAllowedShell('/home/user/evil/zsh')).toBe(false);
-    });
-
-    it('白名单内但名字非 shell → fail', () => {
-      expect(isAllowedShell('/bin/ls')).toBe(false);
-      expect(isAllowedShell('/usr/bin/python')).toBe(false);
-    });
-  }
-});
-
-describe('getDefaultShell', () => {
-  // 不能真改 process.env.SHELL,只能断言返回值是合法 shell
-  it('返回值在白名单内', () => {
-    const s = getDefaultShell();
-    expect(isAllowedShell(s)).toBe(true);
   });
 });
 

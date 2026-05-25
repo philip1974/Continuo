@@ -1,0 +1,1 @@
+本主题验证 Continuo 侧 terminal shell-env host-helper API 已从 ContinuoTerminal 的 `@continuo-terminal/server-node` 导入,并能在 Continuo terminal 链路中使用。Byte-identical snippet 测试已委托给 ContinuoTerminal 包级 TDD,本 BDD 只覆盖外部行为契约。

@@ -30,21 +30,21 @@ const sessionManagerMock = vi.hoisted(() => ({
 
 const shellMock = vi.hoisted(() => ({
   cleanup: vi.fn(async () => {}),
-  prepareEnv: vi.fn(async (_shell: string, env: Record<string, string | undefined>) => ({
+  prepareShellIntegrationEnv: vi.fn(async (_shell: string, env: Record<string, string | undefined>) => ({
     env,
     cleanup: shellMock.cleanup,
   })),
 }));
 
-vi.mock('@continuo-terminal/server-node', () => ({
+vi.mock('@continuo-terminal/server-node', async () => ({
+  ...(await vi.importActual<typeof import('@continuo-terminal/server-node')>(
+    '@continuo-terminal/server-node',
+  )),
   SessionManager: vi.fn().mockImplementation((options) => {
     sessionManagerMock.options = options;
     return sessionManagerMock;
   }),
-}));
-
-vi.mock('../../../electron/main/services/shell-integration', () => ({
-  prepareEnv: shellMock.prepareEnv,
+  prepareShellIntegrationEnv: shellMock.prepareShellIntegrationEnv,
 }));
 
 vi.mock('../../../electron/main/services/settings.service', () => ({
@@ -93,7 +93,7 @@ describe('migration step2 buffer merge · buffer lifecycle', () => {
       truncated: false,
     });
     shellMock.cleanup.mockReset().mockResolvedValue(undefined);
-    shellMock.prepareEnv.mockClear();
+    shellMock.prepareShellIntegrationEnv.mockClear();
     byToken.mockReset();
     byWindow.mockReset();
   });

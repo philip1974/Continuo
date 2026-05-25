@@ -355,6 +355,10 @@
 
 - [`update-store.spec.ts`](./marketplace-update-store/update-store.spec.ts)
 
+## [migration-shell-env](./migration-shell-env/README.md)
+
+- [`host-helper-import.spec.ts`](./migration-shell-env/host-helper-import.spec.ts)
+
 ## [migration-step1-pty-handover](./migration-step1-pty-handover/README.md)
 
 - [`create-failure-rollback.spec.ts`](./migration-step1-pty-handover/create-failure-rollback.spec.ts)
@@ -563,6 +567,12 @@
 ## [terminal-panel-keyboard-new](./terminal-panel-keyboard-new/README.md)
 
 - [`command-keybinding.spec.ts`](./terminal-panel-keyboard-new/command-keybinding.spec.ts)
+
+## [terminal-search](./terminal-search/README.md)
+
+- [`keymap.spec.ts`](./terminal-search/keymap.spec.ts)
+- [`search-bar.spec.tsx`](./terminal-search/search-bar.spec.tsx)
+- [`state-machine.spec.ts`](./terminal-search/state-machine.spec.ts)
 
 ## [terminal-service (M-Terminal Step T1)](./terminal-service/README.md)
 

@@ -68,6 +68,7 @@ describe('readOutputOutputSchema', () => {
     expect(
       readOutputOutputSchema.safeParse({
         lines: ['a', 'b'],
+        data: '',
         next_seq: 3,
         truncated: false,
       }).success,
