@@ -108,6 +108,10 @@
 
 - [`create-input.spec.tsx`](./create-input/create-input.spec.tsx)
 
+## [ct-b3-socket-safety](./ct-b3-socket-safety/README.md)
+
+- [`socket-safety.spec.ts`](./ct-b3-socket-safety/socket-safety.spec.ts)
+
 ## [装饰层契约 (M4)](./decor-contracts/README.md) `[contract]`
 
 - [`license.spec.ts`](./decor-contracts/license.spec.ts)
@@ -534,6 +538,11 @@
 
 - [`tab-icons.spec.tsx`](./tab-icons/tab-icons.spec.tsx)
 
+## [terminal-drag-drop](./terminal-drag-drop/README.md)
+
+- [`drag-drop.spec.tsx`](./terminal-drag-drop/drag-drop.spec.tsx)
+- [`shell-quote.spec.ts`](./terminal-drag-drop/shell-quote.spec.ts)
+
 ## [terminal-ipc (M-Terminal Step T2)](./terminal-ipc/README.md) `[integration]`
 
 - [`read-history-ownership.spec.ts`](./terminal-ipc/read-history-ownership.spec.ts)
@@ -585,7 +594,6 @@
 
 ## [terminal-workspace-isolation](./terminal-workspace-isolation/README.md)
 
-- [`render-filter.spec.ts`](./terminal-workspace-isolation/render-filter.spec.ts)
 - [`workspaceRoot-roundtrip.spec.ts`](./terminal-workspace-isolation/workspaceRoot-roundtrip.spec.ts)
 
 ## [terminal-write (M-Terminal Step T4)](./terminal-write/README.md) `[integration]`
@@ -629,12 +637,8 @@
 
 ## [window-aware-agent-session](./window-aware-agent-session/README.md) `[integration]`
 
-- [`agent-create.spec.ts`](./window-aware-agent-session/agent-create.spec.ts)
 - [`cross-window-isolation.spec.ts`](./window-aware-agent-session/cross-window-isolation.spec.ts)
-- [`dispatch-rpc-ctx.spec.ts`](./window-aware-agent-session/dispatch-rpc-ctx.spec.ts)
-- [`host-handler-token-resolve.spec.ts`](./window-aware-agent-session/host-handler-token-resolve.spec.ts)
 - [`mcp-tools-host-factory.spec.ts`](./window-aware-agent-session/mcp-tools-host-factory.spec.ts)
-- [`terminal-counter.spec.ts`](./window-aware-agent-session/terminal-counter.spec.ts)
 
 ## [拖文件夹到窗口(`pickDroppedDirectory`)](./window-drop/README.md)
 

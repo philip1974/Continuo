@@ -140,13 +140,13 @@ export function getBufferSnapshot(id: string): { data: string; truncated: boolea
 
 /**
  * Async line-based read for MCP terminal.read_output tool.
- * Returns camelCase {lines, nextSeq, truncated} (library convention; deps expect this).
+ * Returns camelCase {data, lines, nextSeq, truncated} (library convention; deps expect this).
  * SESSION_NOT_FOUND → rethrow with code='TERMINAL_SESSION_NOT_FOUND' preserving cause.
  */
 export async function readOutput(
   id: string,
   opts: { sinceSeq?: number; maxLines?: number; stripAnsi?: boolean },
-): Promise<{ lines: string[]; nextSeq: number; truncated: boolean }> {
+): Promise<{ data: string; lines: string[]; nextSeq: number; truncated: boolean }> {
   const sm = getSessionManager();
   try {
     const r = await sm.readOutput({
@@ -155,7 +155,7 @@ export async function readOutput(
       max_lines: opts.maxLines,
       strip_ansi: opts.stripAnsi,
     });
-    return { lines: r.lines, nextSeq: r.next_seq, truncated: r.truncated };
+    return { data: r.data, lines: r.lines, nextSeq: r.next_seq, truncated: r.truncated };
   } catch (err) {
     const e = err as Error & { code?: string };
     if (e?.code === 'SESSION_NOT_FOUND') {

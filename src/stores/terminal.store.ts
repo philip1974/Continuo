@@ -6,6 +6,7 @@
 // BDD: src/__tests__/terminal-store/
 
 import { create } from 'zustand';
+import type { ShellFamily } from '@/lib/shell-quote';
 import type { OriginHint } from '../../electron/shared/origin-hint';
 
 export interface TerminalSession {
@@ -73,6 +74,20 @@ export function filterByOwnerWindow(
     result.push(obj as unknown as TerminalSession);
   }
   return result;
+}
+
+export function getShellFamily(sessionId: string): ShellFamily {
+  const session = useTerminalStore
+    .getState()
+    .sessions.find((s) => s.id === sessionId);
+  const shellFamily = (session as (TerminalSession & { shellFamily?: ShellFamily }) | undefined)
+    ?.shellFamily;
+  if (shellFamily) return shellFamily;
+
+  console.warn(
+    `[terminal-drag-drop] shellFamily missing for ${sessionId}; falling back to platform default`,
+  );
+  return process.platform === 'win32' ? 'powershell' : 'posix';
 }
 
 /**

@@ -116,6 +116,12 @@ export const ko: Record<TranslationKey, string> = {
   'dock.empty.restore': '기본 레이아웃 복원',
   'panels.explorer.loading_or_empty': '로딩 중이거나 빈 폴더',
   'panels.terminal.starting_shell': '셸 시작 중…',
+  'panels.terminal.drag_drop.no_os_path':
+    '드롭한 항목에 OS 경로가 없습니다(웹 드래그). 아무것도 삽입하지 않았습니다.',
+  'panels.terminal.drag_drop.partial_skip':
+    '{count}개 항목을 건너뛰었습니다(제어 문자 또는 현재 셸에서 표현 불가).',
+  'panels.terminal.drag_drop.write_failed':
+    '경로를 삽입하지 못했습니다. 터미널 세션이 닫혔을 수 있습니다.',
   'quick_open.limit_hint': '처음 5000개 파일만 표시; 더 구체적인 쿼리로 좁히세요',
 
   // explorer context menu (14)

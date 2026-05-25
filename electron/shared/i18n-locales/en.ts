@@ -123,6 +123,12 @@ export const en = {
   'dock.empty.restore': 'Restore default layout',
   'panels.explorer.loading_or_empty': 'Loading or empty folder',
   'panels.terminal.starting_shell': 'Starting shell…',
+  'panels.terminal.drag_drop.no_os_path':
+    'Dropped items have no OS path (web drag) — nothing inserted.',
+  'panels.terminal.drag_drop.partial_skip':
+    '{count} item(s) skipped (control chars or unrepresentable in shell).',
+  'panels.terminal.drag_drop.write_failed':
+    'Failed to insert path — terminal session may have closed.',
   'quick_open.limit_hint': 'Showing first 5000 files; refine your query',
 
   // explorer context menu (14)

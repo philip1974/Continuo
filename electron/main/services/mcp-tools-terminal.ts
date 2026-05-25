@@ -398,7 +398,7 @@ export interface ReadOutputToolDeps {
       maxLines?: number;
       stripAnsi?: boolean;
     },
-  ) => Promise<{ lines: string[]; nextSeq: number; truncated: boolean }>;
+  ) => Promise<{ data: string; lines: string[]; nextSeq: number; truncated: boolean }>;
   readonly getSessionOwner: (sessionId: string) => number | null;
 }
 
@@ -457,6 +457,7 @@ export function makeReadOutputTool(
         if (input.strip_ansi !== undefined) opts.stripAnsi = input.strip_ansi;
         const r = await deps.read(input.session_id, opts);
         return {
+          data: r.data,
           lines: r.lines,
           next_seq: r.nextSeq,
           truncated: r.truncated,

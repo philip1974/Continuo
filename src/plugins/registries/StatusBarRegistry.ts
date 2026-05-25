@@ -46,6 +46,12 @@ export class StatusBarRegistry {
       .sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
   }
 
+  getAll(): readonly StatusBarItemSpec[] {
+    return Array.from(this.items.values()).sort(
+      (a, b) => (a.priority ?? 100) - (b.priority ?? 100),
+    );
+  }
+
   subscribe(listener: Listener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);

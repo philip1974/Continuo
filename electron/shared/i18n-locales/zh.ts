@@ -116,6 +116,12 @@ export const zh: Record<TranslationKey, string> = {
   'dock.empty.restore': '恢复默认布局',
   'panels.explorer.loading_or_empty': '读取中或空目录',
   'panels.terminal.starting_shell': '启动 shell…',
+  'panels.terminal.drag_drop.no_os_path':
+    '拖入项目没有系统路径（网页拖拽），未插入任何内容。',
+  'panels.terminal.drag_drop.partial_skip':
+    '已跳过 {count} 项（含控制字符或当前 shell 无法表示）。',
+  'panels.terminal.drag_drop.write_failed':
+    '无法插入路径，终端会话可能已经关闭。',
   'quick_open.limit_hint': '仅显示前 5000 个文件;输入更具体的查询缩小范围',
 
   // explorer context menu (14)

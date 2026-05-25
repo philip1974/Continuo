@@ -3,6 +3,7 @@ import type { IDockviewPanelProps } from 'dockview-react';
 import { Spinner } from '@/design';
 import { useTerminalStore } from '@/stores/terminal.store';
 import { useTerminal } from './useTerminal';
+import { useTerminalDragDrop } from './useTerminalDragDrop';
 import { registerTerminalFocus } from './terminal-focus-registry';
 import { useT } from '@/i18n';
 import type { OriginHint } from '../../../electron/shared/origin-hint';
@@ -83,6 +84,7 @@ function TerminalPanelContent({
 }) {
   const t = useT();
   const { containerRef, isReady, fit, focus } = useTerminal(sessionId);
+  const dragDrop = useTerminalDragDrop({ sessionId, focus });
 
   // topic-22: register focus callback so DockShell can pull focus back to
   // xterm after onDidMaximizedGroupChange (exit-maximize doesn't re-fire
@@ -122,7 +124,7 @@ function TerminalPanelContent({
   }, [api, fit, focus]);
 
   return (
-    <div className="relative h-full w-full bg-canvas">
+    <div className="relative h-full w-full bg-canvas" {...dragDrop}>
       <div className="h-full w-full bg-canvas px-2 py-1">
         <div
           ref={containerRef}

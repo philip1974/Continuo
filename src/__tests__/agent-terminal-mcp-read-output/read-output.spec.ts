@@ -113,12 +113,13 @@ describe('readOutputOutputSchema', () => {
 type ReadFn = (
   id: string,
   opts: { sinceSeq?: number; maxLines?: number; stripAnsi?: boolean },
-) => Promise<{ lines: string[]; nextSeq: number; truncated: boolean }>;
+) => Promise<{ data: string; lines: string[]; nextSeq: number; truncated: boolean }>;
 const ctx = { ownerWindowId: 1 };
 const getSessionOwner = vi.fn(() => 1);
 
 const makeOkRead = (
-  result: { lines: string[]; nextSeq: number; truncated: boolean } = {
+  result: { data: string; lines: string[]; nextSeq: number; truncated: boolean } = {
+    data: '',
     lines: [],
     nextSeq: 0,
     truncated: false,
@@ -155,10 +156,11 @@ describe('makeReadOutputTool · run', () => {
   });
 
   it('字段映射:nextSeq → next_seq 输出', async () => {
-    const read = makeOkRead({ lines: ['a'], nextSeq: 7, truncated: true });
+    const read = makeOkRead({ data: '', lines: ['a'], nextSeq: 7, truncated: true });
     const tool = makeReadOutputTool({ read, getSessionOwner });
     const r = await tool.run({ session_id: 't' }, ctx);
     expect(r).toEqual({
+      data: '',
       lines: ['a'],
       next_seq: 7,
       truncated: true,
@@ -202,7 +204,7 @@ describe('makeReadOutputTool · run', () => {
   });
 
   it('输出符合 readOutputOutputSchema', async () => {
-    const read = makeOkRead({ lines: ['x', 'y'], nextSeq: 2, truncated: false });
+    const read = makeOkRead({ data: '', lines: ['x', 'y'], nextSeq: 2, truncated: false });
     const tool = makeReadOutputTool({ read, getSessionOwner });
     const out = await tool.run({ session_id: 't' }, ctx);
     expect(readOutputOutputSchema.safeParse(out).success).toBe(true);
