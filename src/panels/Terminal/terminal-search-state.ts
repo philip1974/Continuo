@@ -1,4 +1,5 @@
 import type { ISearchOptions } from '@xterm/addon-search';
+import { TERMINAL_PANEL_TYPE } from './constants';
 
 export interface TerminalSearchOptions {
   readonly regex: boolean;
@@ -149,6 +150,6 @@ export function getActiveTerminalPanelId(api: {
   readonly activePanel?: ActivePanelLike | null;
 }): string | null {
   const active = api.activePanel;
-  if (!active || active.view.contentComponent !== 'terminal') return null;
+  if (!active || active.view.contentComponent !== TERMINAL_PANEL_TYPE) return null;
   return active.id;
 }

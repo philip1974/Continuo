@@ -13,6 +13,7 @@ import { t } from '@/i18n';
 import { getDockApi } from '@/shell/dock/dock-api-ref';
 import { toggleActiveTerminalZoom } from '@/shell/dock/terminal-panel-zoom';
 import { openTerminalSearch } from '@/panels/Terminal/terminal-search-registry';
+import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
 
 const TerminalPanelView = lazy(() =>
   import('@/panels/Terminal/TerminalPanelView').then((m) => ({
@@ -23,7 +24,7 @@ const TerminalPanelView = lazy(() =>
 export default class TerminalPlugin extends Plugin {
   onload(): void {
     this.registerPanel({
-      type: 'terminal',
+      type: TERMINAL_PANEL_TYPE,
       title: 'Terminal',
       titleKey: 'panels.terminal.title',
       factory: lazyPanel<IDockviewPanelProps<TerminalPanelViewParams>>(
@@ -52,7 +53,7 @@ export default class TerminalPlugin extends Plugin {
       fn: () => {
         const api = getDockApi();
         const active = api?.activePanel;
-        if (!active || active.view.contentComponent !== 'terminal') return;
+        if (!active || active.view.contentComponent !== TERMINAL_PANEL_TYPE) return;
         openTerminalSearch(active.id);
       },
     });

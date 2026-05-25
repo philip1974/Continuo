@@ -15,6 +15,7 @@ import { HeaderActions } from './HeaderActions';
 import { EmptyState } from './EmptyState';
 import { setDockApi } from './dock-api-ref';
 import { focusTerminalPanel } from '@/panels/Terminal/terminal-focus-registry';
+import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
 import { useDockReconciler } from './DockReconciler';
 import { useDockLocaleSync } from './useDockLocaleSync';
 import { wrapPanelClose } from './wrap-panel-close';
@@ -55,7 +56,7 @@ export function sanitizePersistedDockLayout(json: unknown): unknown {
   if (!j.panels || typeof j.panels !== 'object') return j;
   for (const panelId of Object.keys(j.panels)) {
     const panel = j.panels[panelId];
-    if (panel?.contentComponent === 'terminal') {
+    if (panel?.contentComponent === TERMINAL_PANEL_TYPE) {
       return null;
     }
   }
@@ -175,7 +176,7 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
         if (evt.isMaximized) return;
         const panel = evt.group.activePanel;
         if (!panel) return;
-        if (panel.view.contentComponent !== 'terminal') return;
+        if (panel.view.contentComponent !== TERMINAL_PANEL_TYPE) return;
         focusTerminalPanel(panel.id);
       });
     },

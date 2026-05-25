@@ -9,11 +9,12 @@
 // DockviewGroupLocation(red-team v2 P1-3)。
 
 import type { DockviewApi } from 'dockview-react';
+import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
 
 export function toggleActiveTerminalZoom(api: DockviewApi): void {
   const p = api.activePanel;
   if (!p) return;
-  if (p.view.contentComponent !== 'terminal') return;
+  if (p.view.contentComponent !== TERMINAL_PANEL_TYPE) return;
   if (p.api.location.type !== 'grid') return;
   if (api.hasMaximizedGroup()) {
     api.exitMaximizedGroup();

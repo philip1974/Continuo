@@ -111,11 +111,18 @@
 
   /* z-index 分层 token:把散落数字赋予语义,新代码意图明显,旧 z-N 按需迁移。
    * 已统计的层级(审计 round 2):
-   *   -z-10 backdrop,z-decor:1,z-sticky:10,z-overlay:30,z-modal:50 */
+   *   -z-10 backdrop,z-decor:1,z-sticky:10,z-overlay:30,z-modal:50,
+   *   z-terminal-overlay:9999(issue #38 R2d,见 topic-26 memory L3) */
   --z-decor: 1;
   --z-sticky: 10;
   --z-overlay: 30;
   --z-modal: var(--wm-z-modal);
+  /* xterm-host 内的浮层(SearchBar / 未来 menu / hover popup)必须用此
+   * token,因为 z-modal(50)会被 dockview panel stacking context 困住,
+   * 而 xterm 内部 canvas(xterm-link-layer 等)在同 context hit-test 上去。
+   * 9999 +(配合 isolation:isolate)强建独立 stacking context,凌驾任何
+   * xterm 层。issue #38 R2d 实测推导;改前请读 topic-26 memory L3。 */
+  --z-terminal-overlay: 9999;
 }
 
 /* ── 全局 scrollbar(参考 stitch_desktop_design_reviewer 原型)──────────

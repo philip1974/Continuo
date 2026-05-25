@@ -6,7 +6,7 @@
 // theme:跟随 ThemeProvider 的 resolved(dark/light)— 与 CodeEditor 一致,
 //   切主题时不重建 term,只改 term.options.theme(避免丢历史输出)。
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Terminal, type ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
@@ -26,12 +26,13 @@ import {
 } from './key-mapping';
 import { isSearchHotkey } from './terminal-search-keymap';
 import {
-  DEFAULT_TERMINAL_SEARCH_OPTIONS,
+  applyTerminalSearchEffect,
   INITIAL_TERMINAL_SEARCH_STATE,
   terminalSearchReducer,
-  toSearchAddonOptions,
+  type TerminalSearchAction,
   type TerminalSearchOptions,
   type TerminalSearchResult,
+  type TerminalSearchState,
 } from './terminal-search-state';
 
 type CursorStyle = 'block' | 'underline' | 'bar';
@@ -181,11 +182,19 @@ export function useTerminal(termId: string) {
   const fitRef = useRef<FitAddon | null>(null);
   const searchAddonRef = useRef<SearchAddon | null>(null);
   const mountedRef = useRef(false);
-  const searchTermRef = useRef('');
-  const searchOptionsRef = useRef(DEFAULT_TERMINAL_SEARCH_OPTIONS);
   const [searchState, setSearchState] = useState(
     INITIAL_TERMINAL_SEARCH_STATE,
   );
+  // issue #42 #1: single mirror ref of searchState replaces previous
+  // separate searchTermRef / searchOptionsRef. dispatchSearchAction reads
+  // pre-reduce state here, and the effect below syncs after every state
+  // update — eliminates the two-source-of-truth smell from code review.
+  const searchStateRef = useRef<TerminalSearchState>(
+    INITIAL_TERMINAL_SEARCH_STATE,
+  );
+  useEffect(() => {
+    searchStateRef.current = searchState;
+  }, [searchState]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -428,79 +437,84 @@ export function useTerminal(termId: string) {
     termRef.current?.focus();
   }, []);
 
-  const openSearch = useCallback(() => {
-    setSearchState((state) => terminalSearchReducer(state, { type: 'open' }));
+  // issue #42 #1: single dispatch routes through applyTerminalSearchEffect
+  // (previously the production path had inline side-effect logic in each
+  // callback; the helper was only exercised by state-machine.spec.ts,
+  // leaving the real path uncovered). All 7 search callbacks now share this
+  // one chokepoint; behavior is identical, state machine + side effects
+  // now share a single tested implementation.
+  const dispatchSearchAction = useCallback((action: TerminalSearchAction) => {
+    applyTerminalSearchEffect(
+      searchAddonRef.current,
+      searchStateRef.current,
+      action,
+    );
+    setSearchState((prev) => terminalSearchReducer(prev, action));
   }, []);
+
+  const openSearch = useCallback(() => {
+    dispatchSearchAction({ type: 'open' });
+  }, [dispatchSearchAction]);
 
   const closeSearch = useCallback(() => {
-    searchAddonRef.current?.clearDecorations();
-    searchTermRef.current = '';
-    searchOptionsRef.current = DEFAULT_TERMINAL_SEARCH_OPTIONS;
-    setSearchState((state) => terminalSearchReducer(state, { type: 'close' }));
+    dispatchSearchAction({ type: 'close' });
     focus();
-  }, [focus]);
+  }, [dispatchSearchAction, focus]);
 
   const nextSearch = useCallback(() => {
-    const term = searchTermRef.current;
-    if (!term) return;
-    searchAddonRef.current?.findNext(
-      term,
-      toSearchAddonOptions(searchOptionsRef.current),
-    );
-  }, []);
+    dispatchSearchAction({ type: 'next' });
+  }, [dispatchSearchAction]);
 
   const previousSearch = useCallback(() => {
-    const term = searchTermRef.current;
-    if (!term) return;
-    searchAddonRef.current?.findPrevious(
-      term,
-      toSearchAddonOptions(searchOptionsRef.current),
-    );
-  }, []);
+    dispatchSearchAction({ type: 'prev' });
+  }, [dispatchSearchAction]);
 
-  const setSearchTerm = useCallback((term: string) => {
-    searchTermRef.current = term;
-    setSearchState((state) =>
-      terminalSearchReducer(state, { type: 'setTerm', term }),
-    );
-    if (term) {
-      searchAddonRef.current?.findNext(
-        term,
-        toSearchAddonOptions(searchOptionsRef.current),
-      );
-    } else {
-      searchAddonRef.current?.clearDecorations();
-    }
-  }, []);
+  const setSearchTerm = useCallback(
+    (term: string) => {
+      dispatchSearchAction({ type: 'setTerm', term });
+    },
+    [dispatchSearchAction],
+  );
 
-  const setSearchOptions = useCallback((options: TerminalSearchOptions) => {
-    searchOptionsRef.current = options;
-    setSearchState((state) =>
-      terminalSearchReducer(state, { type: 'setOptions', options }),
-    );
-    const term = searchTermRef.current;
-    if (term) {
-      searchAddonRef.current?.findNext(term, toSearchAddonOptions(options));
-    }
-  }, []);
+  const setSearchOptions = useCallback(
+    (options: TerminalSearchOptions) => {
+      dispatchSearchAction({ type: 'setOptions', options });
+    },
+    [dispatchSearchAction],
+  );
 
   const clearActiveSearchDecoration = useCallback(() => {
-    searchAddonRef.current?.clearActiveDecoration();
-  }, []);
+    dispatchSearchAction({ type: 'clearActiveDecoration' });
+  }, [dispatchSearchAction]);
 
-  const searchApi: SearchApi = {
-    isOpen: searchState.isOpen,
-    term: searchState.term,
-    options: searchState.options,
-    result: searchState.result,
-    open: openSearch,
-    close: closeSearch,
-    next: nextSearch,
-    prev: previousSearch,
-    setTerm: setSearchTerm,
-    setOptions: setSearchOptions,
-    clearActiveDecoration: clearActiveSearchDecoration,
-  };
+  // issue #42 #2: memoize searchApi 防止 TerminalSearchBar 在 useTerminal 每
+  // 次 re-render 时拿到新引用 / 不必要 re-render。所有 callbacks 已是 stable
+  // (useCallback 空 deps),只在 searchState 改时重新打包。
+  const searchApi: SearchApi = useMemo(
+    () => ({
+      isOpen: searchState.isOpen,
+      term: searchState.term,
+      options: searchState.options,
+      result: searchState.result,
+      open: openSearch,
+      close: closeSearch,
+      next: nextSearch,
+      prev: previousSearch,
+      setTerm: setSearchTerm,
+      setOptions: setSearchOptions,
+      clearActiveDecoration: clearActiveSearchDecoration,
+    }),
+    [
+      searchState,
+      openSearch,
+      closeSearch,
+      nextSearch,
+      previousSearch,
+      setSearchTerm,
+      setSearchOptions,
+      clearActiveSearchDecoration,
+    ],
+  );
 
   return { containerRef, isReady, fit, focus, searchApi };
 }
