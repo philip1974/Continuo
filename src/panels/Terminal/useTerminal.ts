@@ -256,16 +256,30 @@ export function useTerminal(termId: string) {
     term.loadAddon(searchAddon);
     searchAddonRef.current = searchAddon;
     const searchResultsDisposable = searchAddon.onDidChangeResults((event) => {
-      // issue #42 v2 (codex round-2 C.1): early-return saves a React
-      // setState + reducer call after unmount; the reducer's `mounted`
-      // guard would also no-op, but skipping the call entirely is
-      // clearer + cheaper.
+      // issue #42 v2 (codex round-2 C.1): early-return after unmount.
       if (!mountedRef.current) return;
+      const result = {
+        index: event.resultIndex,
+        count: event.resultCount,
+      };
+      // issue #42 v3 (user-reported "matches highlighted but count shows
+      // no match"): SearchAddon fires onDidChangeResults SYNCHRONOUSLY
+      // inside findNext, which is called by applyTerminalSearchEffect
+      // INSIDE dispatchSearchAction. If we only updated React state here,
+      // dispatchSearchAction's subsequent `setSearchState(next)` plain-
+      // value call would overwrite the result with stale {-1, 0}. By
+      // also synchronously mutating searchStateRef here, dispatch's
+      // post-effect re-read picks up the fresh result and folds it into
+      // `next`.
+      searchStateRef.current = {
+        ...searchStateRef.current,
+        result,
+      };
       setSearchState((state) =>
         terminalSearchReducer(state, {
           type: 'results',
           mounted: true,
-          result: { index: event.resultIndex, count: event.resultCount },
+          result,
         }),
       );
     });
@@ -449,15 +463,20 @@ export function useTerminal(termId: string) {
   // now share a single tested implementation.
   const dispatchSearchAction = useCallback((action: TerminalSearchAction) => {
     // issue #42 round-3 (D.4/E.2): React state updater MUST be pure.
-    // Previously we mutated searchStateRef inside the updater fn — Strict
-    // Mode invokes updater twice (idempotent in our case but still impure),
-    // and concurrent rendering may run/discard updaters speculatively.
     // Compute synchronously: read ref → apply side effect → assign ref →
-    // enqueue plain state value (no updater). Same-tick chained dispatches
-    // read the just-assigned ref.
+    // enqueue plain state value.
+    //
+    // issue #42 v3 (user-reported): SearchAddon's onDidChangeResults
+    // fires SYNCHRONOUSLY inside findNext (called by
+    // applyTerminalSearchEffect). The handler updates searchStateRef.
+    // RE-READ ref after the side effect so `next` folds the fresh
+    // result count into the reducer output; otherwise our plain-value
+    // setSearchState(next) would overwrite the result handler's update
+    // with stale {-1, 0} (matches highlight but counter shows 0).
     const prev = searchStateRef.current;
     applyTerminalSearchEffect(searchAddonRef.current, prev, action);
-    const next = terminalSearchReducer(prev, action);
+    const afterEffect = searchStateRef.current;
+    const next = terminalSearchReducer(afterEffect, action);
     searchStateRef.current = next;
     setSearchState(next);
   }, []);

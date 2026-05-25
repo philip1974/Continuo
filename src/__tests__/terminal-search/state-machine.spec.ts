@@ -148,4 +148,41 @@ describe('terminal search state machine', () => {
     ).toBeNull();
     expect(getActiveTerminalPanelId({ activePanel: null })).toBeNull();
   });
+
+  it('S11 dispatcher folds synchronously-updated state from side effect', () => {
+    // Regression test for the v3 user-reported bug: SearchAddon fires
+    // onDidChangeResults SYNCHRONOUSLY inside findNext, which is called
+    // by applyTerminalSearchEffect inside dispatchSearchAction. If the
+    // dispatcher reads state once BEFORE the side effect and then sets
+    // state without re-reading, the synchronously-updated result is
+    // overwritten. The dispatcher MUST re-read ref after applyEffect.
+    //
+    // This test simulates dispatchSearchAction's pattern with a mock
+    // addon that mutates ref synchronously inside findNext.
+    let stateRef: typeof INITIAL_TERMINAL_SEARCH_STATE =
+      INITIAL_TERMINAL_SEARCH_STATE;
+    const syncResultsAddon: SearchAddonLike = {
+      findNext: vi.fn(() => {
+        // simulate SearchAddon's synchronous onDidChangeResults firing
+        // inside findNext, which updates the ref
+        stateRef = { ...stateRef, result: { index: 0, count: 19 } };
+        return true;
+      }),
+      findPrevious: vi.fn(() => true),
+      clearDecorations: vi.fn(),
+      clearActiveDecoration: vi.fn(),
+    };
+
+    // simulate dispatchSearchAction { type: 'setTerm', term: 'con' }
+    const action = { type: 'setTerm' as const, term: 'con' };
+    const prev = stateRef;
+    applyTerminalSearchEffect(syncResultsAddon, prev, action);
+    // CRITICAL: re-read ref after side effect (the fix). Without this,
+    // `next.result` would be the stale {-1, 0} from `prev`.
+    const afterEffect = stateRef;
+    const next = terminalSearchReducer(afterEffect, action);
+
+    expect(next.term).toBe('con');
+    expect(next.result).toEqual({ index: 0, count: 19 });
+  });
 });
