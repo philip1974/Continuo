@@ -17,7 +17,7 @@ import { coApi } from '@/lib/co-api';
 import { useSettingValue } from '@/plugins/settings/values-store';
 import { useLayoutUiStore } from '@/stores/layout-ui.store';
 import { useTheme } from '@/theme';
-import { disposeQueue, safeWrite } from './safeWrite';
+import { disposeQueue, safeWrite } from '@continuo-terminal/react-terminal';
 import {
   applyMappedKeyOnKeydown,
   consumeMappedKeyOnData,

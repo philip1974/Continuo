@@ -8,7 +8,7 @@ xterm.js 一次性写超大 buffer 会阻塞 UI 渲染;safeWrite 切 16KB chunks
 
 | 文件 | 职责 |
 |---|---|
-| `src/panels/Terminal/safeWrite.ts` | chunkifyData(纯)+ safeWrite + disposeQueue(state) |
+| `@continuo-terminal/react-terminal` (safeWrite) | chunkifyData(纯)+ safeWrite + disposeQueue(state)(已上游化到共享包) |
 
 ## 关键行为
 

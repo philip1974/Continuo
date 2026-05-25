@@ -3,7 +3,7 @@ import {
   chunkifyData,
   disposeQueue,
   safeWrite,
-} from '../../panels/Terminal/safeWrite';
+} from '@continuo-terminal/react-terminal';
 
 // 假 Terminal:只提供 write 方法用于断言
 const makeFakeTerm = () => {
