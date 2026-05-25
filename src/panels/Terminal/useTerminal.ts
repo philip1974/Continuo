@@ -187,14 +187,13 @@ export function useTerminal(termId: string) {
   );
   // issue #42 #1: single mirror ref of searchState replaces previous
   // separate searchTermRef / searchOptionsRef. dispatchSearchAction reads
-  // pre-reduce state here, and the effect below syncs after every state
-  // update — eliminates the two-source-of-truth smell from code review.
+  // pre-reduce state here. issue #42 v2 (codex round-2 A.1/B.1):
+  // sync ref INSIDE the setSearchState updater rather than via
+  // useEffect — eliminates same-tick stale-ref window when two
+  // dispatches fire before React commits.
   const searchStateRef = useRef<TerminalSearchState>(
     INITIAL_TERMINAL_SEARCH_STATE,
   );
-  useEffect(() => {
-    searchStateRef.current = searchState;
-  }, [searchState]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -257,10 +256,15 @@ export function useTerminal(termId: string) {
     term.loadAddon(searchAddon);
     searchAddonRef.current = searchAddon;
     const searchResultsDisposable = searchAddon.onDidChangeResults((event) => {
+      // issue #42 v2 (codex round-2 C.1): early-return saves a React
+      // setState + reducer call after unmount; the reducer's `mounted`
+      // guard would also no-op, but skipping the call entirely is
+      // clearer + cheaper.
+      if (!mountedRef.current) return;
       setSearchState((state) =>
         terminalSearchReducer(state, {
           type: 'results',
-          mounted: mountedRef.current,
+          mounted: true,
           result: { index: event.resultIndex, count: event.resultCount },
         }),
       );
@@ -449,7 +453,12 @@ export function useTerminal(termId: string) {
       searchStateRef.current,
       action,
     );
-    setSearchState((prev) => terminalSearchReducer(prev, action));
+    setSearchState((prev) => {
+      const next = terminalSearchReducer(prev, action);
+      // Sync ref synchronously so a same-tick dispatch reads fresh state.
+      searchStateRef.current = next;
+      return next;
+    });
   }, []);
 
   const openSearch = useCallback(() => {

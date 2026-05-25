@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import type { DockviewApi, IDockviewPanel } from 'dockview-react';
 import type { TerminalSession } from '@/stores/terminal.store';
 import { useTerminalStore } from '@/stores/terminal.store';
+import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
 import {
   consumePanelCloseSuppressed,
   markPanelCloseSuppressed,
@@ -82,7 +83,7 @@ export function reconcileTerminalPanels(
       : null;
     api.addPanel({
       id: panelId,
-      component: 'terminal',
+      component: TERMINAL_PANEL_TYPE,
       title: deriveTitle(session, input.customTitles),
       params: {
         sessionId: session.id,
