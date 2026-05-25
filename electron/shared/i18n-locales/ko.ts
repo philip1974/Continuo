@@ -175,6 +175,16 @@ export const ko: Record<TranslationKey, string> = {
 
   // panels.terminal.*
   'panels.terminal.aria.start_shell': '셸 시작 중',
+  'panels.terminal.search.title': '터미널에서 찾기',
+  'panels.terminal.search.placeholder': '찾기',
+  'panels.terminal.search.match_count': '{n} / {total}',
+  'panels.terminal.search.no_match': '일치 없음',
+  'panels.terminal.search.regex': '정규식 사용',
+  'panels.terminal.search.case_sensitive': '대소문자 구분',
+  'panels.terminal.search.whole_word': '단어 단위로 일치',
+  'panels.terminal.search.previous': '이전 일치',
+  'panels.terminal.search.next': '다음 일치',
+  'panels.terminal.search.close': '검색 닫기',
 
   // panels.editor.*
   'panels.editor.untitled': '제목 없음',

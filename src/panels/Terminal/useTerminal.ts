@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Terminal, type ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { SearchAddon } from '@xterm/addon-search';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
@@ -23,8 +24,31 @@ import {
   createMappedKeyState,
   shouldSkipXtermKey,
 } from './key-mapping';
+import { isSearchHotkey } from './terminal-search-keymap';
+import {
+  DEFAULT_TERMINAL_SEARCH_OPTIONS,
+  INITIAL_TERMINAL_SEARCH_STATE,
+  terminalSearchReducer,
+  toSearchAddonOptions,
+  type TerminalSearchOptions,
+  type TerminalSearchResult,
+} from './terminal-search-state';
 
 type CursorStyle = 'block' | 'underline' | 'bar';
+
+export interface SearchApi {
+  readonly isOpen: boolean;
+  readonly term: string;
+  readonly options: TerminalSearchOptions;
+  readonly result: TerminalSearchResult;
+  readonly open: () => void;
+  readonly close: () => void;
+  readonly next: () => void;
+  readonly prev: () => void;
+  readonly setTerm: (term: string) => void;
+  readonly setOptions: (options: TerminalSearchOptions) => void;
+  readonly clearActiveDecoration: () => void;
+}
 
 // GitHub Dark 调色板(原 Mind 暗色)
 const DARK_THEME: ITheme = {
@@ -155,11 +179,23 @@ export function useTerminal(termId: string) {
   // term + fit 跨 effect 共享(创建 effect 写 ref,settings effect 读 ref 改 options)
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  const searchAddonRef = useRef<SearchAddon | null>(null);
+  const mountedRef = useRef(false);
+  const searchTermRef = useRef('');
+  const searchOptionsRef = useRef(DEFAULT_TERMINAL_SEARCH_OPTIONS);
+  const [searchState, setSearchState] = useState(
+    INITIAL_TERMINAL_SEARCH_STATE,
+  );
 
   useEffect(() => {
+    mountedRef.current = true;
     setIsReady(false); // 切 session 时回 loading
     const container = containerRef.current;
-    if (!container || !termId) return;
+    if (!container || !termId) {
+      return () => {
+        mountedRef.current = false;
+      };
+    }
 
     // topic-07: dockview 新 group 容器初始可能尺寸 0×0(layout 完成前 mount),
     // xterm 必须等容器有真实尺寸再 open,否则 cols/rows 锁死为 0 → PTY 输出
@@ -208,10 +244,32 @@ export function useTerminal(termId: string) {
     } catch (err) {
       console.warn('[terminal] webgl renderer init 失败,回退 dom:', err);
     }
+    const searchAddon = new SearchAddon();
+    term.loadAddon(searchAddon);
+    searchAddonRef.current = searchAddon;
+    const searchResultsDisposable = searchAddon.onDidChangeResults((event) => {
+      setSearchState((state) =>
+        terminalSearchReducer(state, {
+          type: 'results',
+          mounted: mountedRef.current,
+          result: { index: event.resultIndex, count: event.resultCount },
+        }),
+      );
+    });
     const __mappedKeyState__ = createMappedKeyState();
     // Shift+Enter 等额外按键映射:keydown 只暂存映射结果,onData 转发器再把
     // xterm 默认发出的 \r 替换为映射字节,避免 \x1b\r\r 双写。见 issue #18。
     term.attachCustomKeyEventHandler((event) => {
+      if (event.type === 'keydown' && isSearchHotkey(event)) {
+        queueMicrotask(() => {
+          if (mountedRef.current) {
+            setSearchState((state) =>
+              terminalSearchReducer(state, { type: 'open' }),
+            );
+          }
+        });
+        return false;
+      }
       // topic-22: Shift+(Cmd|Ctrl)+Enter 让 xterm 不发 \r,document keydown
       // 派发 terminal.zoom.toggle 命令。pending 不污染(命中即 return false 跳过)。
       if (shouldSkipXtermKey(event)) return false;
@@ -283,6 +341,7 @@ export function useTerminal(termId: string) {
         unsubData();
         onDataDisposable.dispose();
         osc7Disposable.dispose();
+        searchResultsDisposable.dispose();
         ro.disconnect();
         disposeQueue(term);
         term.dispose();
@@ -294,6 +353,7 @@ export function useTerminal(termId: string) {
         }
         termRef.current = null;
         fitRef.current = null;
+        searchAddonRef.current = null;
       };
     }; // end doInitXterm
 
@@ -307,6 +367,7 @@ export function useTerminal(termId: string) {
     }
 
     return () => {
+      mountedRef.current = false;
       waitRo?.disconnect();
       cleanupTerm?.();
     };
@@ -367,5 +428,79 @@ export function useTerminal(termId: string) {
     termRef.current?.focus();
   }, []);
 
-  return { containerRef, isReady, fit, focus };
+  const openSearch = useCallback(() => {
+    setSearchState((state) => terminalSearchReducer(state, { type: 'open' }));
+  }, []);
+
+  const closeSearch = useCallback(() => {
+    searchAddonRef.current?.clearDecorations();
+    searchTermRef.current = '';
+    searchOptionsRef.current = DEFAULT_TERMINAL_SEARCH_OPTIONS;
+    setSearchState((state) => terminalSearchReducer(state, { type: 'close' }));
+    focus();
+  }, [focus]);
+
+  const nextSearch = useCallback(() => {
+    const term = searchTermRef.current;
+    if (!term) return;
+    searchAddonRef.current?.findNext(
+      term,
+      toSearchAddonOptions(searchOptionsRef.current),
+    );
+  }, []);
+
+  const previousSearch = useCallback(() => {
+    const term = searchTermRef.current;
+    if (!term) return;
+    searchAddonRef.current?.findPrevious(
+      term,
+      toSearchAddonOptions(searchOptionsRef.current),
+    );
+  }, []);
+
+  const setSearchTerm = useCallback((term: string) => {
+    searchTermRef.current = term;
+    setSearchState((state) =>
+      terminalSearchReducer(state, { type: 'setTerm', term }),
+    );
+    if (term) {
+      searchAddonRef.current?.findNext(
+        term,
+        toSearchAddonOptions(searchOptionsRef.current),
+      );
+    } else {
+      searchAddonRef.current?.clearDecorations();
+    }
+  }, []);
+
+  const setSearchOptions = useCallback((options: TerminalSearchOptions) => {
+    searchOptionsRef.current = options;
+    setSearchState((state) =>
+      terminalSearchReducer(state, { type: 'setOptions', options }),
+    );
+    const term = searchTermRef.current;
+    if (term) {
+      searchAddonRef.current?.findNext(term, toSearchAddonOptions(options));
+    }
+  }, []);
+
+  const clearActiveSearchDecoration = useCallback(() => {
+    searchAddonRef.current?.clearActiveDecoration();
+  }, []);
+
+  const searchApi: SearchApi = {
+    isOpen: searchState.isOpen,
+    term: searchState.term,
+    options: searchState.options,
+    result: searchState.result,
+    open: openSearch,
+    close: closeSearch,
+    next: nextSearch,
+    prev: previousSearch,
+    setTerm: setSearchTerm,
+    setOptions: setSearchOptions,
+    clearActiveDecoration: clearActiveSearchDecoration,
+  };
+
+  return { containerRef, isReady, fit, focus, searchApi };
 }

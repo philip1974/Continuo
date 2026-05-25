@@ -12,6 +12,7 @@ import { ERROR_CODES } from '../../electron/shared/error-codes';
 import { t } from '@/i18n';
 import { getDockApi } from '@/shell/dock/dock-api-ref';
 import { toggleActiveTerminalZoom } from '@/shell/dock/terminal-panel-zoom';
+import { openTerminalSearch } from '@/panels/Terminal/terminal-search-registry';
 
 const TerminalPanelView = lazy(() =>
   import('@/panels/Terminal/TerminalPanelView').then((m) => ({
@@ -40,6 +41,19 @@ export default class TerminalPlugin extends Plugin {
         const api = getDockApi();
         if (!api) return;
         toggleActiveTerminalZoom(api);
+      },
+    });
+    this.addCommand({
+      id: 'terminal.search.toggle',
+      title: 'Find in Terminal',
+      category: 'Terminal',
+      categoryKey: 'commands.terminal.category',
+      hotkey: 'mod+f',
+      fn: () => {
+        const api = getDockApi();
+        const active = api?.activePanel;
+        if (!active || active.view.contentComponent !== 'terminal') return;
+        openTerminalSearch(active.id);
       },
     });
     this.addCommand({

@@ -1,10 +1,12 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import type { IDockviewPanelProps } from 'dockview-react';
 import { Spinner } from '@/design';
 import { useTerminalStore } from '@/stores/terminal.store';
 import { useTerminal } from './useTerminal';
 import { useTerminalDragDrop } from './useTerminalDragDrop';
 import { registerTerminalFocus } from './terminal-focus-registry';
+import { registerTerminalSearch } from './terminal-search-registry';
+import { TerminalSearchBar } from './TerminalSearchBar';
 import { useT } from '@/i18n';
 import type { OriginHint } from '../../../electron/shared/origin-hint';
 
@@ -83,7 +85,8 @@ function TerminalPanelContent({
   sessionId: string;
 }) {
   const t = useT();
-  const { containerRef, isReady, fit, focus } = useTerminal(sessionId);
+  const { containerRef, isReady, fit, focus, searchApi } =
+    useTerminal(sessionId);
   const { ref: dropZoneRef } = useTerminalDragDrop({ sessionId, focus, api });
 
   // topic-22: register focus callback so DockShell can pull focus back to
@@ -92,6 +95,17 @@ function TerminalPanelContent({
   useEffect(() => {
     return registerTerminalFocus(api.id, focus);
   }, [api.id, focus]);
+
+  useEffect(() => {
+    const disposable = registerTerminalSearch(api.id, searchApi.open);
+    return () => disposable.dispose();
+  }, [api.id, searchApi.open]);
+
+  // issue #38 R2: ref-capture latest searchApi.isOpen so the
+  // onDidActiveChange handler reads fresh value without re-creating
+  // dockview disposables on every search open/close.
+  const searchOpenRef = useRef(searchApi.isOpen);
+  searchOpenRef.current = searchApi.isOpen;
 
   useEffect(() => {
     // agent 创建的 panel 走 inactive: true(P1-1 不抢 focus),
@@ -105,9 +119,12 @@ function TerminalPanelContent({
     const activeDisposable = api.onDidActiveChange((event) => {
       // topic-22: active 时同时 focus + fit。focus 是 stale-safe
       // (termRef.current?.focus()),unmount 后自动 no-op。
+      // issue #38 R2: SearchBar 打开时不抢焦点回 xterm,否则用户点 input 输
+      // 入框时,dockview 把 panel 再次标记 active,我们这里 focus() 强行把
+      // xterm textarea 拉成 activeElement,Input 拿不到焦点。
       if (event.isActive) {
         tryFit();
-        focus();
+        if (!searchOpenRef.current) focus();
       }
     });
     const dimensionsDisposable = api.onDidDimensionsChange(tryFit);
@@ -137,6 +154,9 @@ function TerminalPanelContent({
           style={{ minHeight: 0 }}
         />
       </div>
+      {searchApi.isOpen && (
+        <TerminalSearchBar searchApi={searchApi} onClose={searchApi.close} />
+      )}
       {!isReady && (
         <div
           className="pointer-events-none absolute inset-0 flex items-center justify-center bg-canvas/70 backdrop-blur-[2px]"

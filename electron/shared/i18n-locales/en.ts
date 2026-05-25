@@ -182,6 +182,16 @@ export const en = {
 
   // panels.terminal.* aria + dynamic (4)
   'panels.terminal.aria.start_shell': 'Starting shell',
+  'panels.terminal.search.title': 'Find in terminal',
+  'panels.terminal.search.placeholder': 'Find',
+  'panels.terminal.search.match_count': '{n} / {total}',
+  'panels.terminal.search.no_match': 'No match',
+  'panels.terminal.search.regex': 'Use regular expression',
+  'panels.terminal.search.case_sensitive': 'Match case',
+  'panels.terminal.search.whole_word': 'Match whole word',
+  'panels.terminal.search.previous': 'Previous match',
+  'panels.terminal.search.next': 'Next match',
+  'panels.terminal.search.close': 'Close search',
 
   // panels.editor.* (4)
   'panels.editor.untitled': 'Untitled',

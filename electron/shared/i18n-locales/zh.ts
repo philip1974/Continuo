@@ -175,6 +175,16 @@ export const zh: Record<TranslationKey, string> = {
 
   // panels.terminal.*
   'panels.terminal.aria.start_shell': '启动 shell',
+  'panels.terminal.search.title': '终端内搜索',
+  'panels.terminal.search.placeholder': '搜索',
+  'panels.terminal.search.match_count': '{n} / {total}',
+  'panels.terminal.search.no_match': '无匹配',
+  'panels.terminal.search.regex': '使用正则表达式',
+  'panels.terminal.search.case_sensitive': '区分大小写',
+  'panels.terminal.search.whole_word': '全词匹配',
+  'panels.terminal.search.previous': '上一个匹配',
+  'panels.terminal.search.next': '下一个匹配',
+  'panels.terminal.search.close': '关闭搜索',
 
   // panels.editor.*
   'panels.editor.untitled': '未命名',
