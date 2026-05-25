@@ -1,10 +1,7 @@
 import { useEffect, useRef, type RefObject } from 'react';
 import type { DockviewGroupPanelApi } from 'dockview-react';
 import { coApi } from '@/lib/co-api';
-import {
-  joinWithTrailingSpace,
-  quotePaths,
-} from '@/lib/shell-quote';
+import { joinWithTrailingSpace, quotePaths } from '@continuo-terminal/shell-quote';
 import { useT } from '@/i18n';
 import { notify } from '@/notifications/notify';
 import { getShellFamily } from '@/stores/terminal.store';

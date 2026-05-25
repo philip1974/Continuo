@@ -10,7 +10,7 @@ External BDD:
 
 Internal TDD:
 
-- `shell-quote.spec.ts` covers the pure quoting and control-character rejection rules used by the drop behavior.
+- `@continuo-terminal/shell-quote (shell-quote)` covers the pure quoting and control-character rejection rules used by the drop behavior.
 
 ## Scenarios
 

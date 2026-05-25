@@ -47,6 +47,9 @@ importers:
       '@continuo-terminal/server-node':
         specifier: file:../ContinuoTerminal/packages/server-node
         version: file:../ContinuoTerminal/packages/server-node
+      '@continuo-terminal/shell-quote':
+        specifier: file:../ContinuoTerminal/packages/shell-quote
+        version: file:../ContinuoTerminal/packages/shell-quote
       '@headless-tree/core':
         specifier: ^1.6.3
         version: 1.6.3
@@ -415,6 +418,9 @@ packages:
     resolution: {directory: ../ContinuoTerminal/packages/server-node, type: directory}
     engines: {node: '>=24'}
     hasBin: true
+
+  '@continuo-terminal/shell-quote@file:../ContinuoTerminal/packages/shell-quote':
+    resolution: {directory: ../ContinuoTerminal/packages/shell-quote, type: directory}
 
   '@csstools/color-helpers@6.0.2':
     resolution: {integrity: sha512-LMGQLS9EuADloEFkcTBR3BwV/CGHV7zyDxVRtVDTwdI2Ca4it0CCVTT9wCkxSgokjE5Ho41hEPgb8OEUwoXr6Q==}
@@ -4909,6 +4915,8 @@ snapshots:
     transitivePeerDependencies:
       - '@cfworker/json-schema'
       - supports-color
+
+  '@continuo-terminal/shell-quote@file:../ContinuoTerminal/packages/shell-quote': {}
 
   '@csstools/color-helpers@6.0.2': {}
 

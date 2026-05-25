@@ -6,7 +6,7 @@
 // BDD: src/__tests__/terminal-store/
 
 import { create } from 'zustand';
-import type { ShellFamily } from '@/lib/shell-quote';
+import type { ShellFamily } from '@continuo-terminal/shell-quote';
 import type { OriginHint } from '../../electron/shared/origin-hint';
 
 export interface TerminalSession {

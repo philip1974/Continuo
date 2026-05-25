@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  joinWithTrailingSpace,
-  quoteForShell,
-  quotePaths,
-} from '@/lib/shell-quote';
+import { joinWithTrailingSpace, quoteForShell, quotePaths } from '@continuo-terminal/shell-quote';
 
 describe('terminal-drag-drop shell quote TDD', () => {
   it('POSIX leaves bare-safe paths unchanged and adds trailing space at join time', () => {
