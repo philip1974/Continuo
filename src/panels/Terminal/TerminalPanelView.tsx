@@ -84,7 +84,7 @@ function TerminalPanelContent({
 }) {
   const t = useT();
   const { containerRef, isReady, fit, focus } = useTerminal(sessionId);
-  const dragDrop = useTerminalDragDrop({ sessionId, focus });
+  const { ref: dropZoneRef } = useTerminalDragDrop({ sessionId, focus });
 
   // topic-22: register focus callback so DockShell can pull focus back to
   // xterm after onDidMaximizedGroupChange (exit-maximize doesn't re-fire
@@ -124,7 +124,11 @@ function TerminalPanelContent({
   }, [api, fit, focus]);
 
   return (
-    <div className="relative h-full w-full bg-canvas" {...dragDrop}>
+    <div
+      ref={dropZoneRef}
+      data-terminal-drop-zone={sessionId}
+      className="relative h-full w-full bg-canvas"
+    >
       <div className="h-full w-full bg-canvas px-2 py-1">
         <div
           ref={containerRef}

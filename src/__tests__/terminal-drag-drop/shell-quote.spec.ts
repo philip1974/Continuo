@@ -61,6 +61,20 @@ describe('terminal-drag-drop shell quote TDD', () => {
     }
   });
 
+  it('rejects DEL as a control character', () => {
+    expect(quoteForShell('/path/with\x7f.txt', 'posix')).toEqual({
+      ok: false,
+      reason: 'control_char',
+    });
+  });
+
+  it('cmd rejects delayed-expansion bang paths as unrepresentable', () => {
+    expect(quoteForShell('C:\\path!file', 'cmd')).toEqual({
+      ok: false,
+      reason: 'cmd_unrepresentable',
+    });
+  });
+
   it('quotePaths keeps quoted paths and reports skipped paths', () => {
     const r = quotePaths(['/tmp/a.txt', '/tmp/evil\nrm'], 'posix');
 

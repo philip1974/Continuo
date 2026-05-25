@@ -6,7 +6,7 @@ export type QuoteResult =
 
 const POSIX_BARE_SAFE = /^[A-Za-z0-9_\-./@%+=:,]+$/;
 // eslint-disable-next-line no-control-regex
-const CONTROL_CHAR = /[\x00-\x1f]/;
+const CONTROL_CHAR = /[\x00-\x1f\x7f]/;
 
 function quotePosix(path: string): string {
   if (POSIX_BARE_SAFE.test(path)) return path;
@@ -18,7 +18,9 @@ function quotePowerShell(path: string): string {
 }
 
 function quoteCmd(path: string): QuoteResult {
-  if (path.includes('"') || path.includes('%')) {
+  // `!` is unsafe when cmd delayed expansion is enabled; skip instead of
+  // emitting a path whose meaning can change before execution.
+  if (path.includes('"') || path.includes('%') || path.includes('!')) {
     return { ok: false, reason: 'cmd_unrepresentable' };
   }
   return { ok: true, quoted: `"${path}"` };

@@ -27,3 +27,14 @@ Internal TDD:
 
 - The terminal drop handlers should use `{ capture: true }` or an equivalent capture-phase upgrade if a future xterm.js version adds its own internal drop handler that swallows events before the panel wrapper sees them.
 - `shellFamily` on `TerminalSession` is a known stub unless main-side shell-family population is wired. The renderer fallback is platform-based: Win32 uses PowerShell, other platforms use POSIX.
+
+## Manual smoke test checklist
+
+- [ ] Drag a file from Finder onto active terminal pane -> quoted path in PTY + trailing space + cursor stays in terminal
+- [ ] Drag a directory onto terminal pane -> directory path inserted, NOT workspace switch
+- [ ] Drag 2 files -> both paths space-joined + trailing space
+- [ ] Drag a path with space in name -> single-quoted on POSIX
+- [ ] devtools console shows `[terminal-drag-drop] capture drop` (DEV only)
+- [ ] dockview tab-drag still works (drag terminal tab between groups)
+- [ ] Popout window: open terminal in dockview popout BrowserWindow -> drag a file -> path inserted correctly
+- [ ] Off-terminal directory drop: drag a directory onto explorer sidebar / status bar -> workspace switches (App.tsx path still works)

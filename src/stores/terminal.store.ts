@@ -87,7 +87,14 @@ export function getShellFamily(sessionId: string): ShellFamily {
   console.warn(
     `[terminal-drag-drop] shellFamily missing for ${sessionId}; falling back to platform default`,
   );
-  return process.platform === 'win32' ? 'powershell' : 'posix';
+  // renderer-safe: `process` is Node-only and undefined in Electron renderer;
+  // navigator.platform is filled by Electron + browser convention (mirrors
+  // format-hotkey.ts pattern). issue #40 R2 hot-fix.
+  const platform =
+    typeof navigator !== 'undefined' && typeof navigator.platform === 'string'
+      ? navigator.platform
+      : '';
+  return platform.startsWith('Win') ? 'powershell' : 'posix';
 }
 
 /**

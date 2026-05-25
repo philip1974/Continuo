@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useEffect, useRef, type RefObject } from 'react';
 import { coApi } from '@/lib/co-api';
 import {
   joinWithTrailingSpace,
@@ -13,31 +13,75 @@ export interface UseTerminalDragDropInput {
   readonly focus: () => void;
 }
 
-function hasFiles(dataTransfer: DataTransfer): boolean {
-  return dataTransfer.types.includes('Files');
+function hasFiles(dataTransfer: DataTransfer | null): dataTransfer is DataTransfer {
+  return dataTransfer !== null && Array.from(dataTransfer.types).includes('Files');
+}
+
+function pointInRect(
+  x: number,
+  y: number,
+  rect: DOMRect | DOMRectReadOnly,
+): boolean {
+  return (
+    rect.width > 0 &&
+    rect.height > 0 &&
+    x >= rect.left &&
+    x < rect.right &&
+    y >= rect.top &&
+    y < rect.bottom
+  );
 }
 
 export function useTerminalDragDrop({
   sessionId,
   focus,
 }: UseTerminalDragDropInput): {
-  onDragOver: React.DragEventHandler<HTMLDivElement>;
-  onDrop: React.DragEventHandler<HTMLDivElement>;
+  ref: RefObject<HTMLDivElement>;
 } {
   const t = useT();
+  const ref = useRef<HTMLDivElement>(null);
 
-  const onDragOver = useCallback<React.DragEventHandler<HTMLDivElement>>((e) => {
-    if (!hasFiles(e.dataTransfer)) return;
-    e.preventDefault();
-    e.stopPropagation();
-    e.dataTransfer.dropEffect = 'copy';
-  }, []);
+  useEffect(() => {
+    if (ref.current === null) return;
+    const ownerDoc = ref.current.ownerDocument || document;
 
-  const onDrop = useCallback<React.DragEventHandler<HTMLDivElement>>(
-    (e) => {
+    const isTerminalFileDrag = (e: DragEvent): e is DragEvent & {
+      dataTransfer: DataTransfer;
+    } => {
+      if (!hasFiles(e.dataTransfer)) return false;
+      const dropZone = ref.current;
+      if (dropZone === null) return false;
+      return pointInRect(e.clientX, e.clientY, dropZone.getBoundingClientRect());
+    };
+
+    const onDragEnter = (e: DragEvent) => {
+      if (!isTerminalFileDrag(e)) return;
       e.preventDefault();
-      e.stopPropagation();
-      const files = Array.from(e.dataTransfer.files);
+      e.stopImmediatePropagation();
+      e.dataTransfer.dropEffect = 'copy';
+    };
+
+    const onDragOver = (e: DragEvent) => {
+      if (!isTerminalFileDrag(e)) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      e.dataTransfer.dropEffect = 'copy';
+    };
+
+    const onDrop = (e: DragEvent) => {
+      if (!isTerminalFileDrag(e)) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      const dataTransfer = e.dataTransfer;
+      const files = Array.from(dataTransfer.files);
+
+      if (import.meta.env.DEV) {
+        console.debug('[terminal-drag-drop] capture drop', {
+          sessionId,
+          files: files.length,
+          types: Array.from(dataTransfer.types),
+        });
+      }
 
       void (async () => {
         const paths: string[] = [];
@@ -79,9 +123,17 @@ export function useTerminalDragDrop({
           );
         }
       })();
-    },
-    [focus, sessionId, t],
-  );
+    };
 
-  return { onDragOver, onDrop };
+    ownerDoc.addEventListener('dragenter', onDragEnter, true);
+    ownerDoc.addEventListener('dragover', onDragOver, true);
+    ownerDoc.addEventListener('drop', onDrop, true);
+    return () => {
+      ownerDoc.removeEventListener('dragenter', onDragEnter, true);
+      ownerDoc.removeEventListener('dragover', onDragOver, true);
+      ownerDoc.removeEventListener('drop', onDrop, true);
+    };
+  }, [focus, sessionId, t]);
+
+  return { ref: ref as RefObject<HTMLDivElement> };
 }
