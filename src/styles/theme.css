@@ -126,10 +126,28 @@
 }
 
 /* Tailwind v4 不自动从 `--z-*` token 生成 utility class(v4 的 z-index
- * namespace 是 `--z-index-*`,不是 `--z-*`)。已有的 `z-modal/z-overlay/z-decor`
- * className 其实没生成 — 历史遗留,但因为 stacking 默认顺序意外凑合工作。
- * 这里显式用 `@utility` 给 `z-terminal-overlay` 生成真正的 CSS rule,
- * 防止 className 静默无效(codex review round 2 A.3 戳穿 — issue #42 follow-up)。 */
+ * namespace 是 `--z-index-*`,不是 `--z-*`)。显式用 `@utility` 给每个 z-token
+ * 生成对应 utility CSS rule,否则 className="z-modal"/"z-overlay" 等会静默
+ * 无效。codex review round 2 A.3 + round 3 E.1 戳穿。
+ *
+ * 历史遗留:Splash.tsx / HeaderActions.tsx / ExplorerHeader.tsx 之前用
+ * `z-modal` className 工作只是凑巧——这些位置 DOM order 靠后(splash) 或
+ * `position: fixed`(dropdown menu)+ 兄弟无显式 z-index,默认就在上层。
+ * 现在 `@utility` 让 className 真正匹配 token 数值,语义和视觉对齐。
+ * z-decor / z-sticky / z-overlay 当前 0 className 使用,但生成 utility
+ * 是未雨绸缪——未来谁加 z-sticky className 不会再踩坑。 */
+@utility z-decor {
+  z-index: var(--z-decor);
+}
+@utility z-sticky {
+  z-index: var(--z-sticky);
+}
+@utility z-overlay {
+  z-index: var(--z-overlay);
+}
+@utility z-modal {
+  z-index: var(--z-modal);
+}
 @utility z-terminal-overlay {
   z-index: var(--z-terminal-overlay);
 }
