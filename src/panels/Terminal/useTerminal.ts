@@ -448,17 +448,18 @@ export function useTerminal(termId: string) {
   // one chokepoint; behavior is identical, state machine + side effects
   // now share a single tested implementation.
   const dispatchSearchAction = useCallback((action: TerminalSearchAction) => {
-    applyTerminalSearchEffect(
-      searchAddonRef.current,
-      searchStateRef.current,
-      action,
-    );
-    setSearchState((prev) => {
-      const next = terminalSearchReducer(prev, action);
-      // Sync ref synchronously so a same-tick dispatch reads fresh state.
-      searchStateRef.current = next;
-      return next;
-    });
+    // issue #42 round-3 (D.4/E.2): React state updater MUST be pure.
+    // Previously we mutated searchStateRef inside the updater fn — Strict
+    // Mode invokes updater twice (idempotent in our case but still impure),
+    // and concurrent rendering may run/discard updaters speculatively.
+    // Compute synchronously: read ref → apply side effect → assign ref →
+    // enqueue plain state value (no updater). Same-tick chained dispatches
+    // read the just-assigned ref.
+    const prev = searchStateRef.current;
+    applyTerminalSearchEffect(searchAddonRef.current, prev, action);
+    const next = terminalSearchReducer(prev, action);
+    searchStateRef.current = next;
+    setSearchState(next);
   }, []);
 
   const openSearch = useCallback(() => {

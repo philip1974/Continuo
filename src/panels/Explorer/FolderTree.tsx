@@ -3,6 +3,7 @@ import { useTree } from '@headless-tree/react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { ItemInstance, SetStateFn, TreeInstance } from '@headless-tree/core';
 import type { FileEntry } from '@/lib/fs/types';
+import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
 import { ContextMenu, type ContextMenuActions } from './ContextMenu';
 import { CreateInput } from './CreateInput';
 import { DropOverlay } from './DropOverlay';
@@ -288,8 +289,8 @@ export function FolderTree({ root }: { root: string }) {
         // 动态 import dock-api-ref 防早期加载循环
         const { openOrFocusPanel } = await import('@/shell/dock/dock-api-ref');
         openOrFocusPanel(
-          'terminal',
-          'terminal',
+          TERMINAL_PANEL_TYPE,
+          TERMINAL_PANEL_TYPE,
           'Terminal',
           'panels.terminal.title',
         );

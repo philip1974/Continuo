@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import type { IDockviewHeaderActionsProps } from 'dockview-react';
 import { isPopoutWindow, popoutUrlFor } from '@/lib/popout-mode';
 import { IconButton, MenuItem } from '@/design';
+import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
 import { coApp } from '@/plugins/co-app';
 import { useRegistry } from '@/plugins/registries/useRegistry';
 import { coApi } from '@/lib/co-api';
@@ -67,7 +68,7 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
       label: string,
       titleKey: string | undefined,
     ) => {
-      if (key === 'terminal') {
+      if (key === TERMINAL_PANEL_TYPE) {
         // terminal panel session-bound:不走 containerApi.addPanel,
         // 通过 coApi.terminal.create → SessionsSync → DockReconciler addPanel(含 sessionId)。
         const workspaceRoot = useWorkspaceStore.getState().root ?? undefined;
