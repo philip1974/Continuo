@@ -5,7 +5,7 @@ import {
   consumeMappedKeyOnData,
   createMappedKeyState,
   mapTerminalKey,
-} from '../../panels/Terminal/key-mapping';
+} from '@continuo-terminal/react-terminal';
 
 interface KeyOpts {
   key: string;

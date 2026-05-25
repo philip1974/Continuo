@@ -23,7 +23,7 @@ import {
   consumeMappedKeyOnData,
   createMappedKeyState,
   shouldSkipXtermKey,
-} from './key-mapping';
+} from '@continuo-terminal/react-terminal';
 import { isSearchHotkey } from './terminal-search-keymap';
 import {
   applyTerminalSearchEffect,

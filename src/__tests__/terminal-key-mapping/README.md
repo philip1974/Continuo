@@ -7,7 +7,7 @@
 
 | 文件 | 职责 |
 |---|---|
-| `src/panels/Terminal/key-mapping.ts` | 纯函数 `mapTerminalKey(event)` |
+| `@continuo-terminal/react-terminal` (key-mapping) | 纯函数 `mapTerminalKey(event)`(已上游化到共享包) |
 | `src/panels/Terminal/useTerminal.ts` | xterm `attachCustomKeyEventHandler` 调用方 |
 
 ## 关键行为

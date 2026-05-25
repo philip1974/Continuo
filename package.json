@@ -59,6 +59,7 @@
     "@codemirror/view": "^6.41.1",
     "@continuo-terminal/host": "file:../ContinuoTerminal/packages/host",
     "@continuo-terminal/protocol": "file:../ContinuoTerminal/packages/protocol",
+    "@continuo-terminal/react-terminal": "file:../ContinuoTerminal/packages/react-terminal",
     "@continuo-terminal/server-node": "file:../ContinuoTerminal/packages/server-node",
     "@headless-tree/core": "^1.6.3",
     "@headless-tree/react": "^1.6.3",

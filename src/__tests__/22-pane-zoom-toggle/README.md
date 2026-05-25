@@ -10,7 +10,7 @@ group 区**。再次触发或切 tab 时复原。PTY / scrollback / 各类 id �
 
 | 文件 | 职责 |
 |---|---|
-| `src/panels/Terminal/key-mapping.ts` | `shouldSkipXtermKey(event)` 命中 Shift+(Cmd\|Ctrl)+Enter → customKeyEventHandler `return false` 跳过 xterm 默认 |
+| `@continuo-terminal/react-terminal` (key-mapping) | `shouldSkipXtermKey(event)` 命中 Shift+(Cmd\|Ctrl)+Enter → customKeyEventHandler `return false` 跳过 xterm 默认(已上游化到共享包) |
 | `src/shell/dock/terminal-panel-zoom.ts` | `toggleActiveTerminalZoom(api)` guard-first(terminal+grid),只对主 grid terminal 起作用;floating/popout/edge no-op |
 | `src/panels/Terminal/terminal-focus-registry.ts` | per-panel focus callback 注册表,exit-maximize 后 DockShell 显式 focus 回 xterm |
 | `src/core-plugins/TerminalPlugin.ts` | 注册 command `terminal.zoom.toggle`(hotkey `shift+mod+enter`) + null api guard |

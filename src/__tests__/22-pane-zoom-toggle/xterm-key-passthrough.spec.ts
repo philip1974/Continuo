@@ -6,7 +6,7 @@
 // document keydown bubble 到 useCommandHotkeys 派发 terminal.zoom.toggle。
 
 import { describe, it, expect } from 'vitest';
-import { shouldSkipXtermKey } from '@/panels/Terminal/key-mapping';
+import { shouldSkipXtermKey } from '@continuo-terminal/react-terminal';
 
 function makeKey(init: Partial<KeyboardEventInit> & { type?: string; isComposing?: boolean }) {
   const type = init.type ?? 'keydown';

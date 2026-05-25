@@ -41,6 +41,9 @@ importers:
       '@continuo-terminal/protocol':
         specifier: file:../ContinuoTerminal/packages/protocol
         version: file:../ContinuoTerminal/packages/protocol
+      '@continuo-terminal/react-terminal':
+        specifier: file:../ContinuoTerminal/packages/react-terminal
+        version: file:../ContinuoTerminal/packages/react-terminal(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
       '@continuo-terminal/server-node':
         specifier: file:../ContinuoTerminal/packages/server-node
         version: file:../ContinuoTerminal/packages/server-node
@@ -400,6 +403,13 @@ packages:
 
   '@continuo-terminal/protocol@file:../ContinuoTerminal/packages/protocol':
     resolution: {directory: ../ContinuoTerminal/packages/protocol, type: directory}
+
+  '@continuo-terminal/react-terminal@file:../ContinuoTerminal/packages/react-terminal':
+    resolution: {directory: ../ContinuoTerminal/packages/react-terminal, type: directory}
+    engines: {node: '>=24'}
+    peerDependencies:
+      react: ^19.0.0
+      react-dom: ^19.0.0
 
   '@continuo-terminal/server-node@file:../ContinuoTerminal/packages/server-node':
     resolution: {directory: ../ContinuoTerminal/packages/server-node, type: directory}
@@ -4879,6 +4889,14 @@ snapshots:
   '@continuo-terminal/protocol@file:../ContinuoTerminal/packages/protocol':
     dependencies:
       zod: 3.25.76
+
+  '@continuo-terminal/react-terminal@file:../ContinuoTerminal/packages/react-terminal(react-dom@19.2.5(react@19.2.5))(react@19.2.5)':
+    dependencies:
+      '@continuo-terminal/protocol': file:../ContinuoTerminal/packages/protocol
+      '@xterm/addon-fit': 0.11.0
+      '@xterm/xterm': 6.0.0
+      react: 19.2.5
+      react-dom: 19.2.5(react@19.2.5)
 
   '@continuo-terminal/server-node@file:../ContinuoTerminal/packages/server-node':
     dependencies:
