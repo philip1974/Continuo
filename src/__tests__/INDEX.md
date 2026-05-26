@@ -556,6 +556,11 @@
 
 - [`terminal-key-mapping.spec.ts`](./terminal-key-mapping/terminal-key-mapping.spec.ts)
 
+## [terminal-osc7 - OSC 7 cwd parser migration to @continuo-terminal/react-terminal](./terminal-osc7/README.md)
+
+- [`byte-identical.spec.ts`](./terminal-osc7/byte-identical.spec.ts)
+- [`use-terminal-wiring.spec.ts`](./terminal-osc7/use-terminal-wiring.spec.ts)
+
 ## [terminal-panel-as-dockview-panel](./terminal-panel-as-dockview-panel/README.md)
 
 - [`core-contract.spec.ts`](./terminal-panel-as-dockview-panel/core-contract.spec.ts)
