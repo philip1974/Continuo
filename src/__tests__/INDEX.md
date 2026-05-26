@@ -570,6 +570,7 @@
 
 ## [terminal-search](./terminal-search/README.md)
 
+- [`byte-identical.spec.ts`](./terminal-search/byte-identical.spec.ts)
 - [`keymap.spec.ts`](./terminal-search/keymap.spec.ts)
 - [`search-bar.spec.tsx`](./terminal-search/search-bar.spec.tsx)
 - [`state-machine.spec.ts`](./terminal-search/state-machine.spec.ts)

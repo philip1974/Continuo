@@ -7,21 +7,24 @@
 //
 // stale 安全:callback 内部用 termRef.current?.focus() optional chain
 // (useTerminal 在 unmount 时已 termRef.current = null)。
+//
+// topic 25: 改用 `@continuo-terminal/react-terminal` 的 createCallbackRegistry
+// factory（Symbol token stale-safe disposer）；module-scope 实例化保留进程级
+// single command bus 行为；API 签名不变（DockShell + TerminalPanelView 不需改）。
 
-const focusFns = new Map<string, () => void>();
+import { createCallbackRegistry } from '@continuo-terminal/react-terminal';
+
+const focusRegistry = createCallbackRegistry<() => void>();
 
 export function registerTerminalFocus(
   panelId: string,
   fn: () => void,
 ): () => void {
-  focusFns.set(panelId, fn);
-  return () => {
-    focusFns.delete(panelId);
-  };
+  return focusRegistry.register(panelId, fn);
 }
 
 export function focusTerminalPanel(panelId: string): boolean {
-  const fn = focusFns.get(panelId);
+  const fn = focusRegistry.get(panelId);
   if (!fn) return false;
   fn();
   return true;
@@ -29,5 +32,5 @@ export function focusTerminalPanel(panelId: string): boolean {
 
 // 测试用 — 重置全表(单测之间避免污染)。生产代码不导出此符号。
 export function __resetTerminalFocusRegistryForTest(): void {
-  focusFns.clear();
+  focusRegistry.clear();
 }

@@ -1,62 +1,40 @@
+// Continuo-local thin wrapper for @continuo-terminal/react-terminal search-state.
+// Re-exports package types/reducer/effect with explicit named exports (not `export *`)
+// to avoid leaking the package's 4-arg applyTerminalSearchEffect into Continuo call sites.
+// host-specific bindings (DECORATIONS palette, dockview activePanel resolver) stay here.
+//
+// Migrated per dev-loop topic 25.
+
+// Type re-exports
+export type {
+  TerminalSearchOptions,
+  TerminalSearchResult,
+  TerminalSearchState,
+  TerminalSearchAction,
+  SearchAddonLike,
+} from '@continuo-terminal/react-terminal';
+
+// Value re-exports
+export {
+  terminalSearchReducer,
+  INITIAL_TERMINAL_SEARCH_STATE,
+  DEFAULT_TERMINAL_SEARCH_OPTIONS,
+} from '@continuo-terminal/react-terminal';
+
+import {
+  applyTerminalSearchEffect as packageApply,
+  toSearchAddonOptions as packageToOpts,
+  type TerminalSearchOptions,
+  type SearchAddonLike,
+  type TerminalSearchAction,
+  type TerminalSearchState,
+} from '@continuo-terminal/react-terminal';
 import type { ISearchOptions } from '@xterm/addon-search';
 import { TERMINAL_PANEL_TYPE } from './constants';
 
-export interface TerminalSearchOptions {
-  readonly regex: boolean;
-  readonly caseSensitive: boolean;
-  readonly wholeWord: boolean;
-}
-
-export interface TerminalSearchResult {
-  readonly index: number;
-  readonly count: number;
-}
-
-export interface TerminalSearchState {
-  readonly isOpen: boolean;
-  readonly term: string;
-  readonly options: TerminalSearchOptions;
-  readonly result: TerminalSearchResult;
-}
-
-export interface SearchAddonLike {
-  findNext(term: string, searchOptions?: ISearchOptions): boolean;
-  findPrevious(term: string, searchOptions?: ISearchOptions): boolean;
-  clearDecorations(): void;
-  clearActiveDecoration(): void;
-}
-
-export type TerminalSearchAction =
-  | { readonly type: 'open' }
-  | { readonly type: 'close' }
-  | { readonly type: 'next' }
-  | { readonly type: 'prev' }
-  | { readonly type: 'setTerm'; readonly term: string }
-  | { readonly type: 'setOptions'; readonly options: TerminalSearchOptions }
-  | {
-      readonly type: 'results';
-      readonly mounted: boolean;
-      readonly result: TerminalSearchResult;
-    }
-  | { readonly type: 'clearActiveDecoration' };
-
-export const DEFAULT_TERMINAL_SEARCH_OPTIONS: TerminalSearchOptions = {
-  regex: false,
-  caseSensitive: false,
-  wholeWord: false,
-};
-
-export const INITIAL_TERMINAL_SEARCH_STATE: TerminalSearchState = {
-  isOpen: false,
-  term: '',
-  options: DEFAULT_TERMINAL_SEARCH_OPTIONS,
-  result: { index: -1, count: 0 },
-};
-
+// legacy literal hex — 后续 token 化 follow-up topic（plan-v4 P1-3 决议留 wrapper 不进 constants.ts）
 // Resolved from Continuo theme tokens: accent-fill #2563eb, accent #b4c5ff.
-export const TERMINAL_SEARCH_DECORATIONS: NonNullable<
-  ISearchOptions['decorations']
-> = {
+export const TERMINAL_SEARCH_DECORATIONS: NonNullable<ISearchOptions['decorations']> = {
   matchBackground: '#2563eb',
   matchBorder: '#b4c5ff',
   matchOverviewRuler: '#b4c5ff',
@@ -65,82 +43,23 @@ export const TERMINAL_SEARCH_DECORATIONS: NonNullable<
   activeMatchColorOverviewRuler: '#ffffff',
 };
 
-export function toSearchAddonOptions(
-  options: TerminalSearchOptions,
-): ISearchOptions {
-  return {
-    decorations: TERMINAL_SEARCH_DECORATIONS,
-    regex: options.regex,
-    caseSensitive: options.caseSensitive,
-    wholeWord: options.wholeWord,
-  };
+// satisfies ISearchOptions 锁 return type；若 satisfies typecheck 红
+// → 修包侧 SearchDecorations/TerminalSearchAddonOptions 字段名/可选性匹配 ISearchOptions
+// 禁用 `as ISearchOptions` 兜底（plan-v4 P1-3 决议）
+export function toSearchAddonOptions(options: TerminalSearchOptions): ISearchOptions {
+  return packageToOpts(options, TERMINAL_SEARCH_DECORATIONS) satisfies ISearchOptions;
 }
 
-export function terminalSearchReducer(
-  state: TerminalSearchState,
-  action: TerminalSearchAction,
-): TerminalSearchState {
-  switch (action.type) {
-    case 'open':
-      return { ...state, isOpen: true };
-    case 'close':
-      return INITIAL_TERMINAL_SEARCH_STATE;
-    case 'setTerm':
-      return {
-        ...state,
-        term: action.term,
-        result:
-          action.term.length === 0
-            ? INITIAL_TERMINAL_SEARCH_STATE.result
-            : state.result,
-      };
-    case 'setOptions':
-      return { ...state, options: action.options };
-    case 'results':
-      if (!action.mounted) return state;
-      return { ...state, result: action.result };
-    case 'next':
-    case 'prev':
-    case 'clearActiveDecoration':
-      return state;
-  }
-}
-
+// 本地 3 参 API，内部注入 DECORATIONS；与包同名 4 参版本通过 `as packageApply` 别名隔离
 export function applyTerminalSearchEffect(
   addon: SearchAddonLike | null,
   state: TerminalSearchState,
   action: TerminalSearchAction,
 ): void {
-  if (!addon) return;
-  if (action.type === 'close') {
-    addon.clearDecorations();
-    return;
-  }
-  if (action.type === 'clearActiveDecoration') {
-    addon.clearActiveDecoration();
-    return;
-  }
-  if (action.type === 'setTerm') {
-    if (action.term.length === 0) {
-      addon.clearDecorations();
-      return;
-    }
-    addon.findNext(action.term, toSearchAddonOptions(state.options));
-    return;
-  }
-  if (action.type === 'setOptions' && state.term.length > 0) {
-    addon.findNext(state.term, toSearchAddonOptions(action.options));
-    return;
-  }
-  if (action.type === 'next' && state.term.length > 0) {
-    addon.findNext(state.term, toSearchAddonOptions(state.options));
-    return;
-  }
-  if (action.type === 'prev' && state.term.length > 0) {
-    addon.findPrevious(state.term, toSearchAddonOptions(state.options));
-  }
+  packageApply(addon, state, action, TERMINAL_SEARCH_DECORATIONS);
 }
 
+// dockview-specific active-panel resolver 留本地
 export interface ActivePanelLike {
   readonly id: string;
   readonly view: { readonly contentComponent?: string };
