@@ -1,9 +1,77 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
+const coApiMocks = vi.hoisted(() => {
+  const stat = {
+    size: 0,
+    mtimeMs: 0,
+    isFile: true,
+    isDirectory: false,
+    isSymlink: false,
+  };
+  return {
+    shellExec: vi.fn(),
+    pluginFsRaw: {
+      _registerPlugin: vi.fn().mockResolvedValue({
+        token: 'test-token',
+        generation: 1,
+      }),
+      _unregisterPlugin: vi.fn().mockResolvedValue(undefined),
+      readFile: vi.fn().mockResolvedValue('mock content'),
+      writeFile: vi.fn().mockResolvedValue(undefined),
+      listDir: vi.fn().mockResolvedValue([]),
+      stat: vi.fn().mockResolvedValue(stat),
+      lstat: vi.fn().mockResolvedValue(stat),
+      realpath: vi.fn(async (p: string) => p),
+      mkdir: vi.fn().mockResolvedValue(undefined),
+      rename: vi.fn().mockResolvedValue(undefined),
+      rm: vi.fn().mockResolvedValue(undefined),
+      cp: vi.fn().mockResolvedValue(undefined),
+      readGitBlob: vi.fn().mockResolvedValue(new Uint8Array()),
+      atomicReplaceWithinScope: vi.fn().mockResolvedValue(undefined),
+      requestScope: vi.fn().mockResolvedValue('grant'),
+      _scopeDecision: vi.fn().mockResolvedValue(undefined),
+      onScopeRequest: vi.fn(() => () => {}),
+      onScopeUpdated: vi.fn(() => () => {}),
+    },
+    pluginShellStreamRaw: {
+      execStream: vi.fn(() => ({
+        chunks: {
+          async *[Symbol.asyncIterator]() {},
+        },
+        done: Promise.resolve({ exitCode: 0, signal: null }),
+      })),
+    },
+  };
+});
+
+vi.mock('@/lib/co-api', () => ({
+  coApi: {
+    shell: {
+      exec: coApiMocks.shellExec,
+    },
+    pluginFsRaw: coApiMocks.pluginFsRaw,
+    pluginShellStreamRaw: coApiMocks.pluginShellStreamRaw,
+  },
+}));
+
 function beforeEachClear(): void {
   beforeEach(() => {
     delete (window as { api?: unknown }).api;
+    vi.clearAllMocks();
+    coApiMocks.pluginFsRaw._registerPlugin.mockResolvedValue({
+      token: 'test-token',
+      generation: 1,
+    });
+    coApiMocks.pluginFsRaw._unregisterPlugin.mockResolvedValue(undefined);
+    coApiMocks.pluginFsRaw.readFile.mockResolvedValue('mock content');
+    coApiMocks.pluginFsRaw.writeFile.mockResolvedValue(undefined);
+    coApiMocks.pluginFsRaw.listDir.mockResolvedValue([]);
+    coApiMocks.pluginFsRaw.requestScope.mockResolvedValue('grant');
+    coApiMocks.shellExec.mockResolvedValue({
+      ok: true,
+      data: { stdout: 'hi', stderr: '', exitCode: 0 },
+    });
   });
 }
 function afterEachClear(): void {
@@ -117,11 +185,13 @@ describe('permission.check / granted', () => {
 });
 
 describe('fs / clipboard 默认实现(store=null 跳过 gating)', () => {
-  it('store=null + window.api.fs 未注入(jsdom)→ 抛"未注入"', async () => {
+  it('store=null + 未绑定 plugin-fs token → 抛 no token bound', async () => {
     const scoped = createScopedApp(makeLmApp(), 'p', null);
-    await expect(scoped.fs.readFile('/x')).rejects.toThrow(/未注入/);
-    await expect(scoped.fs.writeFile('/x', '')).rejects.toThrow(/未注入/);
-    await expect(scoped.fs.listDir('/x')).rejects.toThrow(/未注入/);
+    await expect(scoped.fs.readFile('/x')).rejects.toThrow(/no token bound/);
+    await expect(scoped.fs.writeFile('/x', '')).rejects.toThrow(
+      /no token bound/,
+    );
+    await expect(scoped.fs.listDir('/x')).rejects.toThrow(/no token bound/);
   });
 });
 
@@ -153,11 +223,11 @@ describe('Phase 3 runtime gating', () => {
     }
   });
 
-  it('已 grant fs → fs.* 透传,window.api 未注入时抛"未注入"(过 gating)', async () => {
+  it('已 grant fs 但未绑定 token → 抛 no token bound(过 gating)', async () => {
     const store = new InMemoryPermissionStore();
     await store.grant('p', ['fs']);
     const scoped = createScopedApp(makeLmApp(), 'p', store);
-    await expect(scoped.fs.readFile('/x')).rejects.toThrow(/未注入/);
+    await expect(scoped.fs.readFile('/x')).rejects.toThrow(/no token bound/);
   });
 
   it('未授 network → fetch 抛 PermissionError(不调 globalThis.fetch)', async () => {
@@ -201,82 +271,72 @@ describe('Phase 3 runtime gating', () => {
     const coApp = makeLmApp();
     const a = createScopedApp(coApp, 'p.a', store);
     const b = createScopedApp(coApp, 'p.b', store);
-    await expect(a.fs.readFile('/x')).rejects.toThrow(/未注入/); // 过 gating
+    await expect(a.fs.readFile('/x')).rejects.toThrow(/no token bound/); // 过 gating
     await expect(b.fs.readFile('/x')).rejects.toBeInstanceOf(PermissionError);
   });
 });
 
 describe('授后转发 — fs / shell / clipboard / mcp / network 行为', () => {
-  function installFs(fs: Record<string, unknown>): void {
-    Object.defineProperty(window, 'api', {
-      value: { fs, shell: {} },
-      writable: true,
-      configurable: true,
-    });
-  }
-  function installFull(api: Record<string, unknown>): void {
-    Object.defineProperty(window, 'api', {
-      value: api,
-      writable: true,
-      configurable: true,
-    });
-  }
-
   beforeEachClear();
   afterEachClear();
 
-  it('fs.readFile ok=true → 返 data', async () => {
+  it('fs.readFile → 返 pluginFsRaw 结果', async () => {
     const store = new InMemoryPermissionStore();
     await store.grant('p', ['fs']);
-    installFs({
-      readFile: () => ({ ok: true, data: 'hello' }),
-      writeFile: () => ({ ok: true, data: undefined }),
-      listDir: () => ({ ok: true, data: [] }),
-    });
-    const scoped = createScopedApp(makeLmApp(), 'p', store);
+    coApiMocks.pluginFsRaw.readFile.mockResolvedValueOnce('hello');
+    const scoped = createScopedApp(makeLmApp(), 'p', store, 'test-token');
     expect(await scoped.fs.readFile('/x')).toBe('hello');
+    expect(coApiMocks.pluginFsRaw.readFile).toHaveBeenCalledWith(
+      'test-token',
+      '/x',
+    );
   });
 
-  it('fs.readFile ok=false → 抛带 code:message 文案', async () => {
+  it('fs.readFile/writeFile/listDir reject → 透传 raw API error', async () => {
     const store = new InMemoryPermissionStore();
     await store.grant('p', ['fs']);
-    installFs({
-      readFile: () => ({ ok: false, code: 'ENOENT', message: 'gone' }),
-      writeFile: () => ({ ok: false, code: 'EROFS', message: 'ro' }),
-      listDir: () => ({ ok: false, code: 'EACCES', message: 'denied' }),
-    });
-    const scoped = createScopedApp(makeLmApp(), 'p', store);
-    await expect(scoped.fs.readFile('/x')).rejects.toThrow(/ENOENT.*gone/);
+    coApiMocks.pluginFsRaw.readFile.mockRejectedValueOnce(
+      new Error('ScopeError: denied'),
+    );
+    coApiMocks.pluginFsRaw.writeFile.mockRejectedValueOnce(new Error('EROFS: ro'));
+    coApiMocks.pluginFsRaw.listDir.mockRejectedValueOnce(
+      new Error('EACCES: denied'),
+    );
+    const scoped = createScopedApp(makeLmApp(), 'p', store, 'test-token');
+    await expect(scoped.fs.readFile('/x')).rejects.toThrow(
+      /ScopeError.*denied/,
+    );
     await expect(scoped.fs.writeFile('/x', '')).rejects.toThrow(/EROFS.*ro/);
     await expect(scoped.fs.listDir('/x')).rejects.toThrow(/EACCES.*denied/);
   });
 
-  it('fs.writeFile/listDir ok=true 透传 data', async () => {
+  it('fs.writeFile/listDir 透传 pluginFsRaw', async () => {
     const store = new InMemoryPermissionStore();
     await store.grant('p', ['fs']);
-    installFs({
-      writeFile: () => ({ ok: true, data: undefined }),
-      listDir: () => ({
-        ok: true,
-        data: [{ path: '/x/a', name: 'a', isDirectory: false }],
-      }),
-    });
-    const scoped = createScopedApp(makeLmApp(), 'p', store);
+    coApiMocks.pluginFsRaw.listDir.mockResolvedValueOnce([
+      { name: 'a', isFile: true, isDirectory: false, isSymlink: false },
+    ]);
+    const scoped = createScopedApp(makeLmApp(), 'p', store, 'test-token');
     await scoped.fs.writeFile('/x', 'data');
     const list = await scoped.fs.listDir('/x');
     expect(list[0]?.name).toBe('a');
+    expect(coApiMocks.pluginFsRaw.writeFile).toHaveBeenCalledWith(
+      'test-token',
+      '/x',
+      'data',
+    );
+    expect(coApiMocks.pluginFsRaw.listDir).toHaveBeenCalledWith(
+      'test-token',
+      '/x',
+    );
   });
 
   it('shell.exec 授后透传 + ok=true 返 data', async () => {
     const store = new InMemoryPermissionStore();
     await store.grant('p', ['shell']);
-    installFull({
-      shell: {
-        exec: () => ({
-          ok: true,
-          data: { stdout: 'hi', stderr: '', exitCode: 0 },
-        }),
-      },
+    coApiMocks.shellExec.mockResolvedValueOnce({
+      ok: true,
+      data: { stdout: 'hi', stderr: '', exitCode: 0 },
     });
     const scoped = createScopedApp(makeLmApp(), 'p', store);
     const r = await scoped.shell.exec('echo', ['hi']);
@@ -286,10 +346,10 @@ describe('授后转发 — fs / shell / clipboard / mcp / network 行为', () =>
   it('shell.exec ok=false → 抛带 code:message', async () => {
     const store = new InMemoryPermissionStore();
     await store.grant('p', ['shell']);
-    installFull({
-      shell: {
-        exec: () => ({ ok: false, code: 'EBUSY', message: 'pty busy' }),
-      },
+    coApiMocks.shellExec.mockResolvedValueOnce({
+      ok: false,
+      code: 'EBUSY',
+      message: 'pty busy',
     });
     const scoped = createScopedApp(makeLmApp(), 'p', store);
     await expect(scoped.shell.exec('echo', [])).rejects.toThrow(

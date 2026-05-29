@@ -1,0 +1,26 @@
+# ADR 018: Path-Scoped Permission for Plugin fs
+
+- **Status**: Accepted
+- **Date**: 2026-05-29
+- **Context**:
+  - Plan 04 §3.6 受信函数集 (safeRemoveSkill / safeCopyTreeFromBlobs / safeAtomicRename / treeHashFromGit / assertInsideSkillsRoot) 需要 path-scope 来确保 plugin 只能动 ~/.claude/skills/ 子目录
+  - 现有 permission keys (fs / network / shell / clipboard / mcp-tools) 是粗粒度——fs 是 yes/no，没法限到子目录
+- **Decision**：在 runtime API 层加 path-scope，**manifest schema 不动**：
+  - plugin 调 `await this.app.fs.requestScope([{ path, mode }])` 在 call site 申请
+  - 用户在 PromptStore 弹窗审批；grant 后 paths 进 plugin 的 pathScopes
+  - 后续 fs primitives 在 main 端 PathScopeRegistry.check(token, senderId, opType, target, mode) 比对 canonical 路径在 scopes 内
+  - fs perm key 仍是**总开关**（plugin manifest 未声明 → throws）；path-scope 是 fs 子粒度
+- **Three mechanism details (v3 加进来)**:
+  - **Capability token identity**: PluginManager 创建 plugin 时调 `coApi.pluginFsRaw._registerPlugin(pluginId)` 拿 token；token 作为 `createScopedApp(.., token)` 第 4 arg 注入；scoped-app 内 fs wrapper 闭包绑定。**plugin 看不到 token**（在 frozen wrapper closure 里）。
+  - **Per-op path resolve**: read/lstat 用 `fs.realpath(target)`；write/mkdir/rename-dst 用 `fs.realpath(dirname(target))` + 18-item leaf validation（POSIX 6 + Windows 12）。canonical path 与 plugin scopes 比对。
+  - **Request correlator**: `requestScope` 用 requestId (UUID) + TTL 300s + one-shot consume；并发请求各自挂在 requestId 上不串。
+- **(b)-branch host topology note**: discovery 报告 (DISCOVERY.md §A0.7) 确认 plugin host = (b) 共享 webContents + 全局 JS realm + per-plugin scoped API object。**token 不可见性保障** = `sandboxSweep` + frozen wrapper + closure isolation —— 这是 **review-time invariant**（与 Plan 04 §3.6 trust gates 同性质），**不是 runtime sandbox 保证**。
+- **何时不用 token 模型**：未来如果 host 升级到 per-plugin BrowserWindow / SES sandbox / @endo/lockdown，可以用 preload-bootstrap 注入 token（v4 spec 原始路径），freeze-wrapper 闭包就成为冗余。届时改 Op2bis-Op11.5 reframe，但 Op3-Op8 main IPC handler 接口（token 作 first arg）保持兼容。
+- **Consequences**:
+  - 正：plugin 作者只需 call site 加 requestScope；无 manifest 改动；UX 与现有 perm 模型一致
+  - 负：(b) topology 下 token 不可见性是 review-time（不是 runtime）；要靠 CI hardcode-scan + code review 保证 plugin 拿不到 token
+  - 中性：path-scope 撤销 v0.1 = 撤销整个 fs 权限；细粒度撤销留 v0.2
+- **Related**:
+  - DISCOVERY.md §A0.7（host topology 报告）
+  - ContinuoWiki dev-loop topic 01 plan-v4 §Approach (b)-branch addendum
+  - Plan 04 v4 §3.6（受信函数集）

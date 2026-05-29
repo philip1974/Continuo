@@ -1,5 +1,50 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+
+const coApiMocks = vi.hoisted(() => ({
+  pluginFsRaw: {
+    _registerPlugin: vi.fn().mockResolvedValue({
+      token: 'test-token',
+      generation: 1,
+    }),
+    _unregisterPlugin: vi.fn().mockResolvedValue(undefined),
+    readFile: vi.fn().mockResolvedValue('mock content'),
+    writeFile: vi.fn().mockResolvedValue(undefined),
+    listDir: vi.fn().mockResolvedValue([]),
+    stat: vi.fn().mockResolvedValue({
+      size: 0,
+      mtimeMs: 0,
+      isFile: true,
+      isDirectory: false,
+      isSymlink: false,
+    }),
+    lstat: vi.fn().mockResolvedValue({
+      size: 0,
+      mtimeMs: 0,
+      isFile: true,
+      isDirectory: false,
+      isSymlink: false,
+    }),
+    realpath: vi.fn(async (p: string) => p),
+    mkdir: vi.fn().mockResolvedValue(undefined),
+    rename: vi.fn().mockResolvedValue(undefined),
+    rm: vi.fn().mockResolvedValue(undefined),
+    cp: vi.fn().mockResolvedValue(undefined),
+    readGitBlob: vi.fn().mockResolvedValue(new Uint8Array()),
+    atomicReplaceWithinScope: vi.fn().mockResolvedValue(undefined),
+    requestScope: vi.fn().mockResolvedValue('grant'),
+    _scopeDecision: vi.fn().mockResolvedValue(undefined),
+    onScopeRequest: vi.fn(() => () => {}),
+    onScopeUpdated: vi.fn(() => () => {}),
+  },
+}));
+
+vi.mock('@/lib/co-api', () => ({
+  coApi: {
+    pluginFsRaw: coApiMocks.pluginFsRaw,
+  },
+}));
+
 import { Plugin } from '../../plugins/Plugin';
 import {
   PluginManager,
@@ -77,6 +122,12 @@ beforeEach(() => {
   GoodPlugin.instances = [];
   GoodPlugin.loaded = [];
   GoodPlugin.unloaded = [];
+  vi.clearAllMocks();
+  coApiMocks.pluginFsRaw._registerPlugin.mockResolvedValue({
+    token: 'test-token',
+    generation: 1,
+  });
+  coApiMocks.pluginFsRaw._unregisterPlugin.mockResolvedValue(undefined);
 });
 
 // ── init:扫描 + 激活 ──────────────────────────────────

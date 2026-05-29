@@ -9,6 +9,119 @@
 const { Plugin, React, PermissionError, z } = globalThis.co;
 const h = React.createElement;
 
+function formatDemoError(err) {
+  const message = err?.message ?? String(err);
+  const name =
+    err?.name && err.name !== 'Error'
+      ? err.name
+      : message.includes('ScopeError')
+        ? 'ScopeError'
+        : 'Error';
+  return `${name}: ${message}`;
+}
+
+function SampleV03Settings({ plugin }) {
+  const [output, setOutput] = React.useState('Ready.');
+  const append = (line) => setOutput((prev) => `${prev}\n${line}`);
+  const reset = (line) => setOutput(line);
+
+  const buttonClass =
+    'rounded border border-border bg-surface px-2 py-1 text-xs hover:bg-surface-hover';
+
+  // v0.3 SDK demo: path-scope + streaming exec + persistent data store
+  const runScopedFsDemo = async () => {
+    try {
+      reset('Requesting rw scope for /tmp...');
+      const decision = await plugin.app.fs.requestScope([
+        { path: '/tmp', mode: 'rw' },
+      ]);
+      if (decision !== 'grant') {
+        append('scope denied');
+        return;
+      }
+      await plugin.app.fs.writeFile(
+        '/tmp/sample-plugin-demo.txt',
+        'hello from v0.3',
+      );
+      const text = await plugin.app.fs.readFile('/tmp/sample-plugin-demo.txt');
+      append(`read back: ${text}`);
+    } catch (err) {
+      reset(formatDemoError(err));
+    }
+  };
+
+  const runFsWithoutRequestScope = async () => {
+    try {
+      reset('Reading /tmp/x without requestScope...');
+      const text = await plugin.app.fs.readFile('/tmp/x');
+      append(`unexpected success: ${text}`);
+    } catch (err) {
+      reset(formatDemoError(err));
+    }
+  };
+
+  const runStreamingExecDemo = async () => {
+    try {
+      reset('Streaming exec output:');
+      const script = [
+        '(async()=>{',
+        'for(let i=0;i<5;i++){',
+        "process.stdout.write('chunk'+i+'\\n');",
+        'await new Promise(r=>setTimeout(r,500));',
+        '}',
+        '})().catch(e=>{console.error(e);process.exit(1);})',
+      ].join('');
+      const { chunks, done } = await plugin.app.shell.execStream('node', [
+        '-e',
+        script,
+      ]);
+      for await (const item of chunks) {
+        const text = new TextDecoder().decode(item.chunk);
+        append(`${item.stream}: ${text.trimEnd()}`);
+      }
+      const result = await done;
+      append(`[exited ${result.exitCode ?? result.signal}]`);
+    } catch (err) {
+      reset(formatDemoError(err));
+    }
+  };
+
+  const persistCounter = async () => {
+    try {
+      const data = (await plugin.loadData()) ?? {};
+      const counter = Number(data.counter ?? 0) + 1;
+      await plugin.saveData({ ...data, counter, lastCounterAt: Date.now() });
+      reset(`persistent counter: ${counter}`);
+    } catch (err) {
+      reset(formatDemoError(err));
+    }
+  };
+
+  return h(
+    'div',
+    { className: 'space-y-2 text-xs' },
+    h('p', null, `${plugin.manifest.name} v${plugin.manifest.version}`),
+    h('p', { className: 'text-fg-dim' }, plugin.manifest.description),
+    h('p', { className: 'text-fg-dim' }, '快捷键:⌘⇧H 触发 hello'),
+    h(
+      'div',
+      { className: 'flex flex-wrap gap-2 pt-2' },
+      h('button', { className: buttonClass, onClick: runScopedFsDemo }, 'Run scoped fs demo'),
+      h('button', { className: buttonClass, onClick: runFsWithoutRequestScope }, 'Run fs without requestScope'),
+      h('button', { className: buttonClass, onClick: runStreamingExecDemo }, 'Run streaming exec demo'),
+      h('button', { className: buttonClass, onClick: persistCounter }, 'Persist counter'),
+    ),
+    h(
+      'pre',
+      {
+        className:
+          'max-h-48 overflow-auto whitespace-pre-wrap rounded border border-border bg-surface-muted p-2 text-xs',
+      },
+      output,
+    ),
+  );
+}
+
 export default class SamplePlugin extends Plugin {
   async onload() {
     // ── 1. 命令 ────────────────────────────────────────
@@ -74,14 +187,7 @@ export default class SamplePlugin extends Plugin {
       id: 'sample',
       title: 'Sample',
       priority: 80,
-      render: () =>
-        h(
-          'div',
-          { className: 'space-y-2 text-xs' },
-          h('p', null, `${this.manifest.name} v${this.manifest.version}`),
-          h('p', { className: 'text-fg-dim' }, this.manifest.description),
-          h('p', { className: 'text-fg-dim' }, '快捷键:⌘⇧H 触发 hello'),
-        ),
+      render: () => h(SampleV03Settings, { plugin: this }),
     });
 
     // ── 6. Explorer 装饰(给 .md 文件加 'MD' badge) ──

@@ -32,4 +32,11 @@ export default defineWorkspace([
       include: CONTRACT_INCLUDE,
     },
   },
+  {
+    extends: './vitest.config.ts',
+    test: {
+      name: 'electron',
+      include: ['electron/**/*.{spec,test}.{ts,tsx}'],
+    },
+  },
 ]);

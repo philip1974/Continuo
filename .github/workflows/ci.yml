@@ -64,9 +64,13 @@ jobs:
         run: pnpm typecheck
 
   test:
-    name: Test (vitest)
-    runs-on: ubuntu-latest
+    name: Test (vitest, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
 
@@ -93,6 +97,28 @@ jobs:
 
       - name: Run integration tests
         run: pnpm test:integration
+
+  perf-bench:
+    name: Plugin DataStore perf bench
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - run: corepack enable
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Run T5 perf bench
+        env:
+          RUN_PERF: '1'
+        # bench 文件在 electron/main/__tests__/，但 workspace electron 项目只 match *.{test,spec}.ts
+        # 用 vitest --include 强制 include bench file
+        run: pnpm exec vitest run --include "electron/main/__tests__/**/*.bench.ts" --reporter=verbose
 
 # sync-design check 不在 CI 跑:依赖跨仓 checkout philip1974/Nous(private),
 # 默认 GITHUB_TOKEN 没权限。设计层漂移由本地 `pnpm sync:design:check` 守护

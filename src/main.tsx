@@ -17,6 +17,7 @@ import { createWindowApiHost } from './lib/plugins-host';
 import { IpcPermissionStore } from './plugins/permissions/IpcPermissionStore';
 import { setUserPermissionStore } from './plugins/permissions/co-permission-store';
 import { usePermissionPromptStore } from './plugins/permissions/promptStore';
+import { startPluginFsScopeRequestBridge } from './plugins/permissions/usePluginFsScopeRequests';
 import { PermissionError } from './plugins/permissions';
 import { sandboxSweep } from './plugins/sandbox-sweep';
 import { captureLmApi, coApi } from './lib/co-api';
@@ -109,6 +110,7 @@ bootCorePlugins();
 // fire-and-forget,卸载在窗口关闭时由 GC 处理(订阅 unsub 会泄漏一个 listener,
 // 单 renderer 生命周期级,可接受)。
 startPluginMcpInvokeBridge(getPluginMcpRegistry());
+startPluginFsScopeRequestBridge();
 
 // M-Plugin v5 Phase 4:plugin import 之前清掉 globalThis.fetch +
 // navigator.clipboard,plugin 直接调 raw API 抛 TypeError。

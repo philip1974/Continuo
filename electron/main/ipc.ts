@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, ipcMain } from 'electron';
 import path from 'node:path';
 import { z } from 'zod';
 import {
@@ -19,6 +19,12 @@ import { registerPluginsIpc } from './ipc/plugins.ipc';
 import { registerShellIpc } from './ipc/shell.ipc';
 import { registerWindowIpc } from './ipc/window.ipc';
 import { registerI18nIpc } from './ipc/i18n.ipc';
+import {
+  registerPluginFsIpc,
+  type PluginFsIpcHandles,
+} from './ipc/plugin-fs.ipc';
+import { registerPluginDataIpc } from './ipc/plugin-data.ipc';
+import { registerPluginShellStreamIpc } from './ipc/plugin-shell-stream.ipc';
 import { AGENT_AUTH_CHANNELS, AGENT_AUTH_DECISIONS } from '../shared/agent-auth-channels';
 import { ERROR_CODES } from '../shared/error-codes';
 import {
@@ -36,7 +42,7 @@ const PopoutOpenInput = z
   .object({ panelId: z.string().min(1) })
   .passthrough();
 
-export function registerIpc() {
+export function registerIpc(): { pluginFsHandles: PluginFsIpcHandles } {
   const userData = app.getPath('userData');
   const explorerFile = path.join(userData, 'explorer.json');
   const trusted = defaultIsTrustedFrame;
@@ -136,6 +142,15 @@ export function registerIpc() {
   // plugin app.shell.exec 后端(v5 Phase 4+)
   registerShellIpc();
 
+  // plugin app.fs path-scoped backend(topic 01)
+  const pluginFsHandles = registerPluginFsIpc({ ipcMain });
+
+  // plugin app.dataStore IPC-backed persistence(topic 01)
+  registerPluginDataIpc({ ipcMain });
+
+  // plugin app.shell.execStream backend(topic 01)
+  registerPluginShellStreamIpc({ ipcMain });
+
   // 多窗口支持(issue #23 Phase 1):window.create
   registerWindowIpc();
 
@@ -175,4 +190,6 @@ export function registerIpc() {
   );
 
   registerI18nIpc(trusted);
+
+  return { pluginFsHandles };
 }

@@ -44,7 +44,12 @@ export interface CoApp {
   readonly ribbon: import('./registries/RibbonRegistry').RibbonRegistry;
   /** LM 自定义事件总线(v2.2). */
   readonly events: import('./EventBus').EventBus;
-  /** 插件本地 KV 存储(v2.3),writable so tests 可 monkey-patch. */
+  /**
+   * 插件本地 KV 存储(v2.3),writable so tests 可 monkey-patch.
+   *
+   * v0.3 起切 IPC-backed `userData/plugins/<id>/data.json`;plugin-facing API
+   * 不变,重启后数据保留(v0.2 起)。
+   */
   dataStore: import('./PluginDataStore').PluginDataStore;
   /** 设置标签贡献(v2.4). */
   readonly settingTabs: import('./registries/SettingTabRegistry').SettingTabRegistry;
@@ -62,13 +67,117 @@ export interface CoApp {
 
 // ── v5 Phase 1:plugin 拿到的扩展 app(per-plugin scoped) ────────────
 
+export interface PathScope {
+  /** Absolute path. `~` allowed (expanded host-side). Glob not supported v0.1. */
+  path: string;
+  /** 'r' = read only, 'rw' = read + write + mkdir + rename + rm. */
+  mode: 'r' | 'rw';
+}
+
+export class ScopeError extends Error {
+  readonly code: 'SCOPE_ERROR' = 'SCOPE_ERROR';
+  readonly cause?: unknown;
+
+  constructor(
+    message: string,
+    public readonly details?: { target?: string; reason?: string },
+    options?: { cause?: unknown },
+  ) {
+    super(message);
+    this.name = 'ScopeError';
+    this.cause = options?.cause;
+  }
+}
+
+export class PluginIdentityError extends Error {
+  readonly code: 'PLUGIN_IDENTITY_ERROR' = 'PLUGIN_IDENTITY_ERROR';
+  readonly cause?: unknown;
+
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message);
+    this.name = 'PluginIdentityError';
+    this.cause = options?.cause;
+  }
+}
+
+export class ScopeRequestTimeoutError extends Error {
+  readonly code: 'SCOPE_REQUEST_TIMEOUT' = 'SCOPE_REQUEST_TIMEOUT';
+  readonly cause?: unknown;
+
+  constructor(
+    message: string,
+    public readonly requestId: string,
+    options?: { cause?: unknown },
+  ) {
+    super(message);
+    this.name = 'ScopeRequestTimeoutError';
+    this.cause = options?.cause;
+  }
+}
+
 export interface PluginFsApi {
   /** 检 'fs',未授抛 PermissionError(Phase 3 启用). */
+  requestScope(scopes: PathScope[]): Promise<'grant' | 'deny'>;
   readFile(path: string): Promise<string>;
   writeFile(path: string, content: string): Promise<void>;
   listDir(
     path: string,
   ): Promise<readonly import('../../electron/shared/fs-entry').FileEntry[]>;
+  stat(path: string): Promise<{
+    size: number;
+    mtimeMs: number;
+    isFile: boolean;
+    isDirectory: boolean;
+    isSymlink: boolean;
+  }>;
+  lstat(path: string): Promise<{
+    size: number;
+    mtimeMs: number;
+    isFile: boolean;
+    isDirectory: boolean;
+    isSymlink: boolean;
+  }>;
+  realpath(path: string): Promise<string>;
+  mkdir(path: string, opts?: { recursive?: boolean }): Promise<void>;
+  /** same-parent enforced host-side. */
+  rename(src: string, dst: string): Promise<void>;
+  rm(path: string, opts?: { recursive?: boolean; force?: boolean }): Promise<void>;
+  cp(src: string, dst: string, opts?: { recursive?: boolean }): Promise<void>;
+  readGitBlob(repoDir: string, sha: string): Promise<Uint8Array>;
+  /**
+   * PRECHECK
+   *
+   * - `staging` and `final` must both resolve inside granted `rw` scopes.
+   * - `staging` must exist.
+   * - `final` parent directory must exist.
+   * - `staging` and `final` must have the same parent directory.
+   * - If `final` exists and `opts.overwrite !== true`, reject before mutating.
+   *
+   * final 不存在
+   *
+   * - Rename `staging` to `final`.
+   * - On success, `staging` no longer exists and `final` contains the staged data.
+   * - On failure, reject with no best-effort cleanup beyond filesystem atomicity.
+   *
+   * final 存在
+   *
+   * - Only allowed when `opts.overwrite === true`.
+   * - Replace `final` with `staging` using host-side atomic replace semantics.
+   * - On success, `staging` no longer exists and `final` contains the staged data.
+   * - On failure, reject with no best-effort cleanup beyond filesystem atomicity.
+   *
+   * EXIT CONDITIONS
+   *
+   * - Success: `final` exists with staged contents; `staging` does not exist.
+   * - Failure before mutation: `staging` and `final` are unchanged.
+   * - Failure during filesystem replace: caller must re-stat both paths; host does
+   *   not promise rollback.
+   */
+  atomicReplaceWithinScope(
+    staging: string,
+    final: string,
+    opts?: { overwrite?: boolean },
+  ): Promise<void>;
 }
 
 export interface PluginNetworkApi {
@@ -108,6 +217,24 @@ export interface PluginShellApi {
     args: readonly string[],
     opts?: PluginShellExecOptions,
   ): Promise<PluginShellExecResult>;
+  /**
+   * execStream shape: two-field object.
+   *
+   * Reason: this is easier to implement and type-check than a single value that
+   * must be both AsyncIterable and Promise-like, while preserving explicit
+   * streaming chunks plus final process completion.
+   */
+  execStream(
+    cmd: string,
+    args: string[],
+    opts?: { timeoutMs?: number; cwd?: string },
+  ): {
+    chunks: AsyncIterable<{
+      stream: 'stdout' | 'stderr';
+      chunk: Uint8Array;
+    }>;
+    done: Promise<{ exitCode: number; signal: NodeJS.Signals | null }>;
+  };
 }
 
 export interface PluginClipboardApi {

@@ -41,6 +41,9 @@ import {
 } from '../shared/i18n-channels';
 import type { Locale } from '../shared/i18n-types';
 import type { NotifyPushPayload } from '../shared/notify-channels';
+import { pluginDataRaw } from './plugin-data.preload';
+import { pluginFsRaw } from './plugin-fs.preload';
+import { pluginShellStreamRaw } from './plugin-shell-stream.preload';
 
 // terminal create 入参的轻量类型(与 main 端 zod schema 对齐)
 // export 是为了 ContinuoApi 跨 module 引用时 TS 能 name 这些类型
@@ -412,6 +415,9 @@ const api = {
       ipcRenderer.send(PLUGIN_MCP_CHANNELS.INVOKE_REPLY, reply);
     },
   },
+  pluginDataRaw,
+  pluginFsRaw,
+  pluginShellStreamRaw,
 } as const;
 
 export type ContinuoApi = typeof api;

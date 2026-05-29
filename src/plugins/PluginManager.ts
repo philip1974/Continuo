@@ -8,6 +8,7 @@ import { ensureAuthorized, type PermissionStore, type PromptFn } from './permiss
 import { createScopedApp } from './scoped-app';
 import type { CoApp, PluginManifest } from './types';
 import { errorMessage } from '../../electron/shared/error-message';
+import { coApi } from '@/lib/co-api';
 
 // ── Host 注入接口 ──────────────────────────────────────
 
@@ -49,6 +50,7 @@ interface PluginEntry {
   dirInfo: PluginDirInfo;       // reload 时刷新 moduleUrl / manifestText
   status: Status;
   instance?: Plugin;
+  pluginFsToken?: string;
   error?: string;
   /** v5 Phase 2:partial grant 时记 "部分授权:已授 X;未授 Y". */
   warning?: string;
@@ -121,11 +123,7 @@ export class PluginManager {
       const id = this.activationOrder[i]!;
       const entry = this.entries.get(id);
       if (entry?.instance) {
-        try {
-          await entry.instance._deactivate();
-        } catch (err) {
-          console.warn(`[plugin-manager] shutdown ${id} failed`, err);
-        }
+        await this.deactivateEntry(entry, `shutdown ${id}`);
       }
     }
     this.activationOrder = [];
@@ -159,12 +157,7 @@ export class PluginManager {
     if (!entry) throw new Error(`Plugin ${id} not found`);
     if (entry.status !== 'enabled' || !entry.instance) return;
 
-    try {
-      await entry.instance._deactivate();
-    } catch (err) {
-      console.warn(`[plugin-manager] disable ${id} failed`, err);
-    }
-    entry.instance = undefined;
+    await this.deactivateEntry(entry, `disable ${id}`);
     entry.status = 'disabled';
     this.activationOrder = this.activationOrder.filter((x) => x !== id);
 
@@ -204,12 +197,7 @@ export class PluginManager {
 
     const wasEnabled = entry.status === 'enabled';
     if (wasEnabled && entry.instance) {
-      try {
-        await entry.instance._deactivate();
-      } catch (err) {
-        console.warn(`[plugin-manager] reload ${id} _deactivate failed`, err);
-      }
-      entry.instance = undefined;
+      await this.deactivateEntry(entry, `reload ${id}`);
       this.activationOrder = this.activationOrder.filter((x) => x !== id);
     }
 
@@ -321,10 +309,14 @@ export class PluginManager {
     const Ctor = loaded.PluginClass as any;
     // v5 Phase 1:plugin 拿到的是 per-plugin scoped app(持 pluginId 给
     // permission.check;fs/network 等命名空间预留 Phase 3 启用 gating)
+    const { token: pluginFsToken } =
+      await coApi.pluginFsRaw._registerPlugin(entry.id);
+    entry.pluginFsToken = pluginFsToken;
     const scopedApp = createScopedApp(
       this.app,
       entry.id,
       this.host.permissionStore ?? null,
+      pluginFsToken,
     );
     const instance: Plugin = new Ctor(scopedApp, entry.manifest);
 
@@ -337,6 +329,7 @@ export class PluginManager {
       );
       entry.status = 'failed';
       entry.error = errorMessage(err);
+      await this.revokePluginFsToken(entry);
       return;
     }
 
@@ -345,6 +338,27 @@ export class PluginManager {
     // entry.error / warning 已在方法开头清(成功路径不再重复 reset 错误,
     // warning 若 partial grant 已在权限段设了)
     this.activationOrder.push(entry.id);
+  }
+
+  private async deactivateEntry(
+    entry: PluginEntry,
+    label: string,
+  ): Promise<void> {
+    try {
+      await entry.instance?._deactivate();
+    } catch (err) {
+      console.warn(`[plugin-manager] ${label} failed`, err);
+    } finally {
+      entry.instance = undefined;
+      await this.revokePluginFsToken(entry);
+    }
+  }
+
+  private async revokePluginFsToken(entry: PluginEntry): Promise<void> {
+    if (!entry.pluginFsToken) return;
+    const token = entry.pluginFsToken;
+    entry.pluginFsToken = undefined;
+    await coApi.pluginFsRaw._unregisterPlugin(token);
   }
 }
 

@@ -8,7 +8,7 @@ import { EventBus } from './EventBus';
 import { EditorActionRegistry } from './registries/EditorActionRegistry';
 import { ExplorerContextMenuRegistry } from './registries/ExplorerContextMenuRegistry';
 import { ExplorerDecoratorRegistry } from './registries/ExplorerDecoratorRegistry';
-import { InMemoryDataStore } from './PluginDataStore';
+import { IpcPluginDataStore } from './PluginDataStore';
 import { PanelRegistry } from './registries/PanelRegistry';
 import { PluginMcpRegistry } from './registries/PluginMcpRegistry';
 import { RibbonRegistry } from './registries/RibbonRegistry';
@@ -34,8 +34,8 @@ export const coApp: CoApp = {
   statusBar: new StatusBarRegistry(),
   ribbon: new RibbonRegistry(),
   events: new EventBus(),
-  // v2.3 默认 InMemoryDataStore;v3 接入 IPC 持久化
-  dataStore: new InMemoryDataStore(),
+  // Lazy IPC-backed; first plugin data read triggers load from userData.
+  dataStore: new IpcPluginDataStore(),
   settingTabs: new SettingTabRegistry(),
   settingItems: new SettingItemRegistry(),
   explorerDecorators: new ExplorerDecoratorRegistry(),

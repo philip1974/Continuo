@@ -41,24 +41,92 @@ async function ensurePerm(
   if (!granted) throw new PermissionError(perm);
 }
 
-function makeFs(pluginId: string, store: PermissionStore | null): PluginFsApi {
+function missingPluginFsToken(): never {
+  throw new Error('[plugin-fs] no token bound');
+}
+
+function makeFs(
+  pluginId: string,
+  store: PermissionStore | null,
+  token?: string,
+): PluginFsApi {
   return {
-    async readFile(path) {
+    requestScope: async (scopes) => {
       await ensurePerm(pluginId, 'fs', store);
-      const r = await coApi.fs.readFile(path);
-      if (!r.ok) throw new Error(`[fs.readFile] ${r.code}: ${r.message}`);
-      return r.data;
+      return coApi.pluginFsRaw.requestScope(
+        token ?? missingPluginFsToken(),
+        scopes,
+      );
     },
-    async writeFile(path, content) {
+    readFile: async (path) => {
       await ensurePerm(pluginId, 'fs', store);
-      const r = await coApi.fs.writeFile(path, content);
-      if (!r.ok) throw new Error(`[fs.writeFile] ${r.code}: ${r.message}`);
+      return coApi.pluginFsRaw.readFile(token ?? missingPluginFsToken(), path);
     },
-    async listDir(path) {
+    writeFile: async (path, content) => {
       await ensurePerm(pluginId, 'fs', store);
-      const r = await coApi.fs.listDir(path);
-      if (!r.ok) throw new Error(`[fs.listDir] ${r.code}: ${r.message}`);
-      return r.data;
+      return coApi.pluginFsRaw.writeFile(
+        token ?? missingPluginFsToken(),
+        path,
+        content,
+      );
+    },
+    listDir: async (path) => {
+      await ensurePerm(pluginId, 'fs', store);
+      return coApi.pluginFsRaw.listDir(token ?? missingPluginFsToken(), path);
+    },
+    stat: async (path) => {
+      await ensurePerm(pluginId, 'fs', store);
+      return coApi.pluginFsRaw.stat(token ?? missingPluginFsToken(), path);
+    },
+    lstat: async (path) => {
+      await ensurePerm(pluginId, 'fs', store);
+      return coApi.pluginFsRaw.lstat(token ?? missingPluginFsToken(), path);
+    },
+    realpath: async (path) => {
+      await ensurePerm(pluginId, 'fs', store);
+      return coApi.pluginFsRaw.realpath(token ?? missingPluginFsToken(), path);
+    },
+    mkdir: async (path, opts) => {
+      await ensurePerm(pluginId, 'fs', store);
+      return coApi.pluginFsRaw.mkdir(
+        token ?? missingPluginFsToken(),
+        path,
+        opts,
+      );
+    },
+    rename: async (src, dst) => {
+      await ensurePerm(pluginId, 'fs', store);
+      return coApi.pluginFsRaw.rename(token ?? missingPluginFsToken(), src, dst);
+    },
+    rm: async (path, opts) => {
+      await ensurePerm(pluginId, 'fs', store);
+      return coApi.pluginFsRaw.rm(token ?? missingPluginFsToken(), path, opts);
+    },
+    cp: async (src, dst, opts) => {
+      await ensurePerm(pluginId, 'fs', store);
+      return coApi.pluginFsRaw.cp(
+        token ?? missingPluginFsToken(),
+        src,
+        dst,
+        opts,
+      );
+    },
+    readGitBlob: async (repoDir, sha) => {
+      await ensurePerm(pluginId, 'fs', store);
+      return coApi.pluginFsRaw.readGitBlob(
+        token ?? missingPluginFsToken(),
+        repoDir,
+        sha,
+      );
+    },
+    atomicReplaceWithinScope: async (staging, final, opts) => {
+      await ensurePerm(pluginId, 'fs', store);
+      return coApi.pluginFsRaw.atomicReplaceWithinScope(
+        token ?? missingPluginFsToken(),
+        staging,
+        final,
+        opts,
+      );
     },
   };
 }
@@ -95,6 +163,42 @@ function makeShell(
       });
       if (!r.ok) throw new Error(`[shell.exec] ${r.code}: ${r.message}`);
       return r.data;
+    },
+    execStream(cmd, args, opts) {
+      let raw:
+        | ReturnType<typeof coApi.pluginShellStreamRaw.execStream>
+        | null = null;
+      let startPromise:
+        | Promise<ReturnType<typeof coApi.pluginShellStreamRaw.execStream>>
+        | null = null;
+      const start = async () => {
+        if (raw) return raw;
+        if (!startPromise) {
+          startPromise = (async () => {
+            await ensurePerm(pluginId, 'shell', store);
+            raw = coApi.pluginShellStreamRaw.execStream(cmd, args, opts);
+            return raw;
+          })();
+        }
+        return startPromise;
+      };
+      return {
+        chunks: {
+          [Symbol.asyncIterator]() {
+            let iterator:
+              | AsyncIterator<{ stream: 'stdout' | 'stderr'; chunk: Uint8Array }>
+              | null = null;
+            return {
+              async next() {
+                const stream = await start();
+                iterator ??= stream.chunks[Symbol.asyncIterator]();
+                return iterator.next();
+              },
+            };
+          },
+        },
+        done: start().then((stream) => stream.done),
+      };
     },
   };
 }
@@ -159,13 +263,14 @@ export function createScopedApp(
   coApp: CoApp,
   pluginId: string,
   store: PermissionStore | null,
+  token?: string,
 ): CoPluginApp {
   // Omit coApp.mcp(单例 registry)→ 替换为 per-plugin scope wrapper,
   // 其它字段直通。
   const { mcp: registry, ...rest } = coApp;
   return {
     ...rest,
-    fs: makeFs(pluginId, store),
+    fs: makeFs(pluginId, store, token),
     network: makeNetwork(pluginId, store),
     shell: makeShell(pluginId, store),
     clipboard: makeClipboard(pluginId, store),
