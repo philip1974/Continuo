@@ -1,4 +1,6 @@
-import { randomUUID } from 'node:crypto';
+// Preload runs in Electron sandbox — `node:*` builtins are unavailable.
+// Use Web Crypto's globalThis.crypto.randomUUID() instead (always present in
+// modern Electron renderer/preload).
 import { ipcRenderer, type IpcRendererEvent } from 'electron';
 import { PLUGIN_SHELL_STREAM_CHANNELS } from '../shared/plugin-shell-stream-channels';
 
@@ -24,7 +26,7 @@ export interface PluginShellStreamRaw {
 
 export const pluginShellStreamRaw: PluginShellStreamRaw = {
   execStream(cmd, args, opts) {
-    const streamId = randomUUID();
+    const streamId = globalThis.crypto.randomUUID();
     const chunkQueue: { stream: 'stdout' | 'stderr'; chunk: Uint8Array }[] = [];
     let chunkResolver:
       | ((
