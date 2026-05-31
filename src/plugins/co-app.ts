@@ -17,13 +17,26 @@ import { SettingTabRegistry } from './registries/SettingTabRegistry';
 import { StatusBarRegistry } from './registries/StatusBarRegistry';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { createIpcPluginMcpUpstream } from './plugin-mcp-upstream';
-import type { CoApp, CoWorkspaceApi } from './types';
+import { coApi } from '@/lib/co-api';
+import { openFileByPath } from '@/panels/Editor/editor-file-actions';
+import {
+  isAbsolutePath,
+  isMarkdownPath,
+} from '@/panels/Editor/editor-path-utils';
+import { scrollToLine } from '@/panels/Editor/scrollToLine';
+import { useEditorStore } from '@/stores/editor.store';
+import { errorMessage } from '../../electron/shared/error-message';
+import type {
+  CoApp,
+  CoEditorApi,
+  CoWorkspaceApi,
+  EditorOpenFailureCode,
+} from './types';
 
-// Keep in sync with package.json "version" field. Bumped to 0.2.2 (2026-05-31)
-// for the workspace.getRoot() SDK addition (Plan 05 extension #3 — lets
-// plugins resolve the current workspace root for project-scope file ops
-// without manual config). Plugins declaring minLMVersion >= 0.2.2 need this.
-const APP_VERSION = '0.2.2';
+// Keep in sync with package.json "version" field. Bumped to 0.2.3 (2026-05-31)
+// for the editor.openFile() SDK addition. Plugins declaring minLMVersion
+// >= 0.2.3 need this.
+const APP_VERSION = '0.2.3';
 
 // Workspace API — minimal v0.1 surface exposing the current renderer
 // window's workspace root (null when no folder open). Plugins use this for
@@ -42,6 +55,79 @@ const pluginMcpRegistry = new PluginMcpRegistry(
   createIpcPluginMcpUpstream(),
 );
 
+function mapFsCodeToEditorCode(code: string): EditorOpenFailureCode {
+  switch (code) {
+    case 'FS_NOT_FOUND':
+    case 'FS_NOT_FILE':
+    case 'FS_DENIED':
+    case 'FS_IO':
+    case 'EXCEPTION':
+      return code;
+    default:
+      return 'EXCEPTION';
+  }
+}
+
+const editor: CoEditorApi = {
+  async openFile(path, opts) {
+    if (!isAbsolutePath(path)) {
+      return {
+        ok: false,
+        code: 'INVALID_PATH',
+        message: 'path must be absolute',
+      };
+    }
+
+    let openResult;
+    try {
+      openResult = await openFileByPath(path, {
+        fs: coApi.fs,
+        store: useEditorStore,
+      });
+    } catch (err) {
+      return {
+        ok: false,
+        code: 'EXCEPTION',
+        message: errorMessage(err),
+      };
+    }
+
+    if (!openResult.ok) {
+      return {
+        ok: false,
+        code: mapFsCodeToEditorCode(openResult.code),
+        message: openResult.message,
+      };
+    }
+
+    if (opts?.line === undefined) {
+      return { ok: true, lineApplied: false, reason: 'no-line-arg' };
+    }
+
+    const state = useEditorStore.getState();
+    const activeTab = state.tabs.find((t) => t.id === path);
+    const inMilkdown = isMarkdownPath(path) && state.mode !== 'source';
+    if (activeTab && inMilkdown) {
+      return { ok: true, lineApplied: false, reason: 'milkdown-engine' };
+    }
+
+    const view = await useEditorStore.getState().waitForViewRef(path, 500);
+    if (!view) {
+      return { ok: true, lineApplied: false, reason: 'tab-not-mounted' };
+    }
+
+    const outcome = scrollToLine(view, opts.line);
+    if (outcome === 'out-of-range') {
+      return {
+        ok: true,
+        lineApplied: false,
+        reason: 'line-out-of-range',
+      };
+    }
+    return { ok: true, lineApplied: true };
+  },
+};
+
 export const coApp: CoApp = {
   version: APP_VERSION,
   panels: new PanelRegistry(),
@@ -58,6 +144,7 @@ export const coApp: CoApp = {
   explorerContextMenu: new ExplorerContextMenuRegistry(),
   mcp: pluginMcpRegistry,
   workspace,
+  editor,
 };
 
 /** 让 main.tsx 拿到 registry 引用,在启动时订阅 onInvoke 路由反向调用. */

@@ -20,9 +20,11 @@ import { html } from '@codemirror/lang-html';
 import { markdown } from '@codemirror/lang-markdown';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { useSettingValue } from '@/plugins/settings/values-store';
+import { useEditorStore } from '@/stores/editor.store';
 import { useTheme } from '@/theme';
 
 interface CodeEditorProps {
+  tabId: string;
   value: string;
   onChange?: (value: string) => void;
   readonly?: boolean;
@@ -74,6 +76,7 @@ function pickLanguage(fileName: string, forceLanguage?: CodeEditorProps['forceLa
 }
 
 export function CodeEditor({
+  tabId,
   value,
   onChange,
   readonly = false,
@@ -141,8 +144,10 @@ export function CodeEditor({
       parent: containerRef.current,
     });
     viewRef.current = view;
+    useEditorStore.getState().registerView(tabId, view);
 
     return () => {
+      useEditorStore.getState().unregisterView(tabId, view);
       view.destroy();
       viewRef.current = null;
     };

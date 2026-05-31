@@ -47,6 +47,16 @@ export function createTestCoApp(version = '1.0.0-test'): CoApp {
     editorActions: new EditorActionRegistry(),
     explorerContextMenu: new ExplorerContextMenuRegistry(),
     mcp: new PluginMcpRegistry(noopMcpUpstream),
+    workspace: {
+      async getRoot() {
+        return null;
+      },
+    },
+    editor: {
+      async openFile() {
+        return { ok: true, lineApplied: false, reason: 'no-line-arg' };
+      },
+    },
   };
 }
 

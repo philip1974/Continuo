@@ -5,6 +5,7 @@
 // session 恢复留下里程碑)。
 
 import { create } from 'zustand';
+import type { EditorView } from '@codemirror/view';
 
 // ── 类型 ─────────────────────────────────────────────────────
 
@@ -227,6 +228,8 @@ type EditorState = {
    * 见 issue #22。
    */
   editorFocusPulse: number;
+  /** runtime only, not persisted - CodeMirror EditorView refs per tab */
+  viewRefs: Map<string, EditorView>;
 
   /** 已存在则切换 active,新加则推入. */
   openTab: (tab: EditorTab) => void;
@@ -247,13 +250,20 @@ type EditorState = {
   /** 另存为后:把 tab 的 filePath 与 id 同步改为 newPath. */
   setFilePath: (id: string, newPath: string) => void;
   setMode: (mode: EditorMode) => void;
+  registerView: (tabId: string, view: EditorView) => void;
+  unregisterView: (tabId: string, expectedView: EditorView) => void;
+  waitForViewRef: (
+    tabId: string,
+    timeoutMs?: number,
+  ) => Promise<EditorView | null>;
 };
 
-export const useEditorStore = create<EditorState>((set) => ({
+export const useEditorStore = create<EditorState>((set, get, api) => ({
   tabs: [],
   activeTabId: null,
   mode: 'edit',
   editorFocusPulse: 0,
+  viewRefs: new Map(),
 
   openTab: (tab) =>
     set((s) => {
@@ -354,4 +364,48 @@ export const useEditorStore = create<EditorState>((set) => ({
     }),
 
   setMode: (mode) => set(() => ({ mode })),
+
+  registerView: (tabId, view) =>
+    set((s) => {
+      const viewRefs = new Map(s.viewRefs);
+      viewRefs.set(tabId, view);
+      return { viewRefs };
+    }),
+
+  unregisterView: (tabId, expectedView) =>
+    set((s) => {
+      if (s.viewRefs.get(tabId) !== expectedView) return s;
+      const viewRefs = new Map(s.viewRefs);
+      viewRefs.delete(tabId);
+      return { viewRefs };
+    }),
+
+  waitForViewRef: (tabId, timeoutMs = 500) => {
+    const existing = get().viewRefs.get(tabId);
+    if (existing) return Promise.resolve(existing);
+
+    return new Promise((resolve) => {
+      let settled = false;
+      let unsubscribe: (() => void) | null = null;
+      let timeout: ReturnType<typeof setTimeout>;
+      const finish = (view: EditorView | null) => {
+        if (settled) return;
+        settled = true;
+        if (unsubscribe) unsubscribe();
+        clearTimeout(timeout);
+        resolve(view);
+      };
+      timeout = setTimeout(() => {
+        finish(get().viewRefs.get(tabId) ?? null);
+      }, timeoutMs);
+
+      unsubscribe = api.subscribe((state) => {
+        const view = state.viewRefs.get(tabId);
+        if (view) finish(view);
+      });
+
+      const finalView = get().viewRefs.get(tabId);
+      if (finalView) finish(finalView);
+    });
+  },
 }));

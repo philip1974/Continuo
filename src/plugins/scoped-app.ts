@@ -10,6 +10,7 @@
 
 import type {
   CoApp,
+  CoEditorApi,
   CoPluginApp,
   PluginClipboardApi,
   PluginFsApi,
@@ -72,7 +73,17 @@ function makeFs(
     },
     listDir: async (path) => {
       await ensurePerm(pluginId, 'fs', store);
-      return coApi.pluginFsRaw.listDir(token ?? missingPluginFsToken(), path);
+      const entries = await coApi.pluginFsRaw.listDir(
+        token ?? missingPluginFsToken(),
+        path,
+      );
+      const parent = path.replace(/[\\/]+$/, '');
+      return entries.map((entry) => ({
+        path: `${parent}/${entry.name}`,
+        name: entry.name,
+        isDirectory: entry.isDirectory,
+        isSymlink: entry.isSymlink,
+      }));
     },
     stat: async (path) => {
       await ensurePerm(pluginId, 'fs', store);
@@ -201,7 +212,12 @@ function makeShell(
             };
           },
         },
-        done: start().then((stream) => stream.done),
+        done: start()
+          .then((stream) => stream.done)
+          .then((result) => ({
+            exitCode: result.exitCode ?? -1,
+            signal: result.signal,
+          })),
       };
     },
   };
@@ -232,6 +248,51 @@ function makeMcp(
     async register<I, O>(spec: PluginMcpToolSpec<I, O>) {
       await ensurePerm(pluginId, 'mcp-tools', store);
       return registry.register(spec, pluginId);
+    },
+  };
+}
+
+function makeEditor(
+  pluginId: string,
+  store: PermissionStore | null,
+  rawEditor: CoEditorApi,
+  token?: string,
+): CoEditorApi {
+  return {
+    async openFile(path, opts) {
+      try {
+        await ensurePerm(pluginId, 'fs', store);
+      } catch (err) {
+        if (err instanceof PermissionError) {
+          return {
+            ok: false,
+            code: 'PERMISSION_DENIED',
+            message: `plugin ${pluginId} lacks 'fs' permission`,
+          };
+        }
+        throw err;
+      }
+
+      if (store) {
+        const raw = coApi.pluginFsRaw as typeof coApi.pluginFsRaw & {
+          checkPath?: (token: string, path: string) => Promise<boolean>;
+        };
+        if (typeof raw.checkPath === 'function') {
+          const scopeOk = await raw.checkPath(
+            token ?? missingPluginFsToken(),
+            path,
+          );
+          if (!scopeOk) {
+            return {
+              ok: false,
+              code: 'PERMISSION_DENIED',
+              message: `path '${path}' out of granted scope`,
+            };
+          }
+        }
+      }
+
+      return rawEditor.openFile(path, opts);
     },
   };
 }
@@ -269,11 +330,12 @@ export function createScopedApp(
   store: PermissionStore | null,
   token?: string,
 ): CoPluginApp {
-  // Omit coApp.mcp(单例 registry)→ 替换为 per-plugin scope wrapper,
+  // Omit coApp.mcp/editor raw singletons → 替换为 per-plugin scope wrappers,
   // 其它字段直通。
-  const { mcp: registry, ...rest } = coApp;
+  const { mcp: registry, editor, ...rest } = coApp;
   return {
     ...rest,
+    editor: makeEditor(pluginId, store, editor, token),
     fs: makeFs(pluginId, store, token),
     network: makeNetwork(pluginId, store),
     shell: makeShell(pluginId, store),

@@ -1,6 +1,10 @@
 import { describe, expectTypeOf, it } from 'vitest';
 import type {
+  CoApp,
+  CoEditorApi,
   CoWorkspaceApi,
+  EditorOpenOptions,
+  EditorOpenResult,
   PluginFsApi,
   PluginShellApi,
 } from '../../../plugins/types';
@@ -76,5 +80,17 @@ describe('sdk-contract shape: plugin-facing TypeScript surface', () => {
     expectTypeOf<CoWorkspaceApi['getRoot']>().returns.resolves.toEqualTypeOf<
       string | null
     >();
+  });
+
+  it('T6 pins CoEditorApi.openFile signature', () => {
+    expectTypeOf<CoApp>()
+      .toHaveProperty('editor')
+      .toMatchTypeOf<CoEditorApi>();
+    expectTypeOf<CoEditorApi['openFile']>().parameters.toEqualTypeOf<
+      [path: string, opts?: EditorOpenOptions]
+    >();
+    expectTypeOf<
+      CoEditorApi['openFile']
+    >().returns.resolves.toEqualTypeOf<EditorOpenResult>();
   });
 });

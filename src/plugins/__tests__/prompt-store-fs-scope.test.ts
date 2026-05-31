@@ -86,19 +86,18 @@ describe('permission prompt store fs-scope flow', () => {
   });
 
   it('bridge sends scopeDecision without mixing concurrent requests', async () => {
-    let handler:
-      | ((payload: {
-          requestId: string;
-          pluginId: string;
-          scopes: readonly { path: string; mode: 'r' | 'rw' }[];
-        }) => void)
-      | null = null;
+    type ScopeRequestHandler = (payload: {
+      requestId: string;
+      pluginId: string;
+      scopes: readonly { path: string; mode: 'r' | 'rw' }[];
+    }) => void;
+    let handler: ScopeRequestHandler | null = null;
     const decisions: { requestId: string; decision: 'grant' | 'deny' }[] = [];
     Object.defineProperty(window, '__lmApi', {
       configurable: true,
       value: {
         pluginFsRaw: {
-          onScopeRequest: vi.fn((cb: NonNullable<typeof handler>) => {
+          onScopeRequest: vi.fn((cb: ScopeRequestHandler) => {
             handler = cb;
             return () => {
               handler = null;
@@ -115,13 +114,16 @@ describe('permission prompt store fs-scope flow', () => {
     });
 
     const unsubscribe = startPluginFsScopeRequestBridge();
-    if (!handler) throw new Error('scope request handler was not registered');
-    handler({
+    if (!handler) {
+      throw new Error('scope request handler was not registered');
+    }
+    const registeredHandler = handler as ScopeRequestHandler;
+    registeredHandler({
       requestId: 'r1',
       pluginId: 'com.test',
       scopes: [{ path: '/tmp/a', mode: 'r' }],
     });
-    handler({
+    registeredHandler({
       requestId: 'r2',
       pluginId: 'com.test',
       scopes: [{ path: '/tmp/b', mode: 'rw' }],

@@ -26,6 +26,7 @@ const coApiMocks = vi.hoisted(() => {
       readGitBlob: vi.fn().mockResolvedValue(new Uint8Array()),
       atomicReplaceWithinScope: vi.fn().mockResolvedValue(undefined),
       userHome: vi.fn().mockResolvedValue('/home/test'),
+      checkPath: vi.fn().mockResolvedValue(true),
     },
     pluginShellStreamRaw: {
       execStream: vi.fn(() => ({
@@ -64,6 +65,9 @@ function makeCoApp(): CoApp {
     },
     workspace: {
       getRoot: vi.fn(),
+    },
+    editor: {
+      openFile: vi.fn(async () => ({ ok: true, lineApplied: true })),
     },
     commands: {},
     panels: {},
@@ -179,5 +183,31 @@ describe('sdk-contract shape: ScopedApp permission and token contract', () => {
     await expect(scoped.clipboard.readText()).rejects.toBeInstanceOf(
       PermissionError,
     );
+  });
+
+  it('T3.h gates editor.openFile via fs permission and forwards after grant', async () => {
+    const store = new InMemoryPermissionStore();
+    const app = makeCoApp();
+    const denied = createScopedApp(app, 'plugin.a', store, 'token-a');
+
+    await expect(denied.editor.openFile('/tmp/a.txt')).resolves.toEqual({
+      ok: false,
+      code: 'PERMISSION_DENIED',
+      message: "plugin plugin.a lacks 'fs' permission",
+    });
+    expect(app.editor.openFile).not.toHaveBeenCalled();
+
+    await store.grant('plugin.a', ['fs']);
+    const granted = createScopedApp(app, 'plugin.a', store, 'token-a');
+    await expect(
+      granted.editor.openFile('/tmp/a.txt', { line: 2 }),
+    ).resolves.toEqual({ ok: true, lineApplied: true });
+    expect(coApiMocks.pluginFsRaw.checkPath).toHaveBeenCalledWith(
+      'token-a',
+      '/tmp/a.txt',
+    );
+    expect(app.editor.openFile).toHaveBeenCalledWith('/tmp/a.txt', {
+      line: 2,
+    });
   });
 });

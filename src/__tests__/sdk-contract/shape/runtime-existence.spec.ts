@@ -38,4 +38,8 @@ describe('sdk-contract shape: runtime SDK object existence', () => {
     expect(typeof scoped.network.fetch).toBe('function');
     expect(typeof scoped.clipboard.readText).toBe('function');
   });
+
+  it('T2.g exposes app.editor.openFile method', () => {
+    expect(typeof coApp.editor?.openFile).toBe('function');
+  });
 });

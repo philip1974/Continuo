@@ -494,6 +494,19 @@
 - [`sandbox-sweep.spec.ts`](./scoped-app/sandbox-sweep.spec.ts)
 - [`scoped-app.spec.ts`](./scoped-app/scoped-app.spec.ts)
 
+## [SDK Editor Namespace](./sdk-editor-namespace/README.md)
+
+- [`editor-path-utils.spec.ts`](./sdk-editor-namespace/editor-path-utils.spec.ts)
+- [`openFile-boundary.spec.ts`](./sdk-editor-namespace/openFile-boundary.spec.ts)
+- [`openFile-failure-taxonomy.spec.ts`](./sdk-editor-namespace/openFile-failure-taxonomy.spec.ts)
+- [`openFile-happy.spec.ts`](./sdk-editor-namespace/openFile-happy.spec.ts)
+- [`openFile-line.spec.ts`](./sdk-editor-namespace/openFile-line.spec.ts)
+- [`openFile-milkdown.spec.ts`](./sdk-editor-namespace/openFile-milkdown.spec.ts)
+- [`openFile-scoped-permission.spec.ts`](./sdk-editor-namespace/openFile-scoped-permission.spec.ts)
+- [`openFile-tab-not-mounted.spec.ts`](./sdk-editor-namespace/openFile-tab-not-mounted.spec.ts)
+- [`scrollToLine.spec.ts`](./sdk-editor-namespace/scrollToLine.spec.ts)
+- [`viewRefs-store.spec.ts`](./sdk-editor-namespace/viewRefs-store.spec.ts)
+
 ## [setting-item-registry](./setting-item-registry/README.md)
 
 - [`setting-item-registry.spec.ts`](./setting-item-registry/setting-item-registry.spec.ts)

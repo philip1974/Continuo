@@ -120,6 +120,7 @@ export function EditorPanel() {
       body = (
         <CodeEditor
           key={`${activeTab.id}-src`}
+          tabId={activeTab.id}
           value={activeTab.content}
           fileName={activeTab.filePath ?? ''}
           forceLanguage="markdown"
@@ -141,6 +142,7 @@ export function EditorPanel() {
     body = (
       <CodeEditor
         key={activeTab.id}
+        tabId={activeTab.id}
         value={activeTab.content}
         fileName={activeTab.filePath ?? ''}
         onChange={(v) => updateContent(activeTab.id, v)}

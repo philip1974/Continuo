@@ -66,6 +66,8 @@ export interface CoApp {
   /** Workspace state(v0.2.2):current window 的 workspace.root,plugins
    * 用于 project-scope features(skills/terminal/decorator default cwd). */
   readonly workspace: CoWorkspaceApi;
+  /** Editor control API(v0.2.3):open files and optionally jump to a line. */
+  readonly editor: CoEditorApi;
 }
 
 /** Read-only workspace state for plugins. Per-renderer-window (each Continuo
@@ -73,6 +75,44 @@ export interface CoApp {
 export interface CoWorkspaceApi {
   /** Current window's workspace root path, null if no folder open. */
   getRoot(): Promise<string | null>;
+}
+
+export interface EditorOpenOptions {
+  readonly line?: number;
+}
+
+export type EditorOpenSuccessReason =
+  | 'no-line-arg'
+  | 'milkdown-engine'
+  | 'line-out-of-range'
+  | 'tab-not-mounted';
+
+export type EditorOpenFailureCode =
+  | 'INVALID_PATH'
+  | 'PERMISSION_DENIED'
+  | 'FS_NOT_FOUND'
+  | 'FS_NOT_FILE'
+  | 'FS_DENIED'
+  | 'FS_IO'
+  | 'EXCEPTION';
+
+export type EditorOpenResult =
+  | {
+      readonly ok: true;
+      readonly lineApplied: boolean;
+      readonly reason?: EditorOpenSuccessReason;
+    }
+  | {
+      readonly ok: false;
+      readonly code: EditorOpenFailureCode;
+      readonly message: string;
+    };
+
+export interface CoEditorApi {
+  openFile(
+    path: string,
+    opts?: EditorOpenOptions,
+  ): Promise<EditorOpenResult>;
 }
 
 // ── v5 Phase 1:plugin 拿到的扩展 app(per-plugin scoped) ────────────
