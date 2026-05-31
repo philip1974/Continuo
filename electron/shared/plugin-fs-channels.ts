@@ -16,6 +16,7 @@ export const PLUGIN_FS_CHANNELS = {
   CP: 'plugin-fs:cp',
   READ_GIT_BLOB: 'plugin-fs:read-git-blob',
   ATOMIC_REPLACE: 'plugin-fs:atomic-replace',
+  USER_HOME: 'plugin-fs:user-home',
   REQUEST_SCOPE: 'plugin-fs:request-scope',
   SCOPE_DECISION: 'plugin-fs:scope-decision',
   /** main -> renderer event (sent via webContents.send) */

@@ -13,6 +13,9 @@ export function PermissionPrompt() {
   const pending = usePermissionPromptStore((s) => s.pending);
   const grant = usePermissionPromptStore((s) => s.grant);
   const denyAll = usePermissionPromptStore((s) => s.denyAll);
+  const currentFsScope = usePermissionPromptStore((s) => s.currentFsScope);
+  const grantFsScope = usePermissionPromptStore((s) => s.grantFsScope);
+  const denyFsScope = usePermissionPromptStore((s) => s.denyFsScope);
 
   // 每次 pending 变化时重置勾选(默认全选)
   const [selected, setSelected] = useState<Set<PermissionKey>>(new Set());
@@ -20,6 +23,52 @@ export function PermissionPrompt() {
     if (pending) setSelected(new Set(pending.perms));
     else setSelected(new Set());
   }, [pending]);
+
+  // Manifest perm prompt has priority; otherwise show fs scope prompt.
+  if (!pending && currentFsScope) {
+    return (
+      <Modal visible onClose={() => denyFsScope(currentFsScope.requestId)}>
+        <h2 className="mb-1 text-sm font-medium text-fg">
+          Filesystem access request
+        </h2>
+        <p className="mb-3 text-xs text-fg-muted">
+          Plugin <code className="text-fg">{currentFsScope.pluginId}</code> requests
+          access to the following path(s):
+        </p>
+        <ul className="mb-4 space-y-1 text-xs">
+          {currentFsScope.scopes.map((s, i) => (
+            <li
+              key={`${s.path}:${i}`}
+              className="rounded border border-line bg-panel-soft p-2"
+            >
+              <div className="font-mono text-fg">
+                {(s as { displayPath?: string }).displayPath ?? s.path}
+              </div>
+              <div className="text-fg-dim">
+                mode: {s.mode === 'rw' ? 'read + write' : 'read only'}
+              </div>
+            </li>
+          ))}
+        </ul>
+        <div className="flex justify-end gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => denyFsScope(currentFsScope.requestId)}
+          >
+            Deny
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => grantFsScope(currentFsScope.requestId)}
+          >
+            Grant
+          </Button>
+        </div>
+      </Modal>
+    );
+  }
 
   if (!pending) return null;
 

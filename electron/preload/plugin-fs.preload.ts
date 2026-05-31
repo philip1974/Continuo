@@ -53,6 +53,7 @@ export interface PluginFsRaw {
     final: string,
     opts?: { overwrite?: boolean },
   ): Promise<void>;
+  userHome(token: string): Promise<string>;
 
   requestScope(
     token: string,
@@ -112,6 +113,8 @@ export const pluginFsRaw: PluginFsRaw = {
       final,
       opts,
     ),
+  userHome: (token) =>
+    ipcRenderer.invoke(PLUGIN_FS_CHANNELS.USER_HOME, token),
 
   requestScope: (token, scopes) =>
     ipcRenderer.invoke(PLUGIN_FS_CHANNELS.REQUEST_SCOPE, token, scopes),

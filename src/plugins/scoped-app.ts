@@ -128,6 +128,10 @@ function makeFs(
         opts,
       );
     },
+    userHome: async () => {
+      // No fs permission required - only returns home path string (not fs access).
+      return coApi.pluginFsRaw.userHome(token ?? missingPluginFsToken());
+    },
   };
 }
 

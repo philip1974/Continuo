@@ -1,7 +1,8 @@
 import { spawn } from 'node:child_process';
 import { promises as fs, type Dirent } from 'node:fs';
 import { dirname, join, sep } from 'node:path';
-import type { IpcMain, WebContents } from 'electron';
+import { app, type IpcMain, type WebContents } from 'electron';
+import { PLUGIN_FS_CHANNELS } from '../../shared/plugin-fs-channels';
 import { IdentityRegistry } from './identity-registry.service';
 import { PathScopeRegistry } from './path-scope-registry.service';
 import { ScopeRequestCorrelator } from './scope-request-correlator';
@@ -311,6 +312,11 @@ export function registerPluginFsHandlers(
       await atomicReplacePaths(rStaging.fullPath, rFinal.fullPath, final, opts);
     },
   );
+
+  ipcMain.handle(PLUGIN_FS_CHANNELS.USER_HOME, async (event, token: string) => {
+    identityRegistry.resolve(token, event.sender.id);
+    return app.getPath('home');
+  });
 
   ipcMain.handle(
     'plugin-fs:request-scope',

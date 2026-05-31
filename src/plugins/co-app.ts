@@ -18,11 +18,11 @@ import { StatusBarRegistry } from './registries/StatusBarRegistry';
 import { createIpcPluginMcpUpstream } from './plugin-mcp-upstream';
 import type { CoApp } from './types';
 
-// Keep in sync with package.json "version" field. Bumped to 0.2.0 (2026-05-29)
+// Keep in sync with package.json "version" field. Bumped to 0.2.1 (2026-05-30)
 // to reflect the path-scope + persistent DataStore + streaming exec SDK
 // extensions landed in commit 9153692. Plugins declaring minLMVersion >= 0.2.0
 // (e.g. sample-plugin v0.3) need this to install successfully.
-const APP_VERSION = '0.2.0';
+const APP_VERSION = '0.2.1';
 
 // v5 Phase 4:Plugin → MCP bridge — registry 持 IPC upstream,
 // dispose 时通过 preload.pluginMcp.unregisterTool 上行,renderer 启动时

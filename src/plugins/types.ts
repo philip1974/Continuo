@@ -116,6 +116,8 @@ export class ScopeRequestTimeoutError extends Error {
 }
 
 export interface PluginFsApi {
+  /** Returns home path string only; does not grant fs access. */
+  userHome(): Promise<string>;
   /** 检 'fs',未授抛 PermissionError(Phase 3 启用). */
   requestScope(scopes: PathScope[]): Promise<'grant' | 'deny'>;
   readFile(path: string): Promise<string>;
