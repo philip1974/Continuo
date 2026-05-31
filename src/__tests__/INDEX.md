@@ -494,6 +494,11 @@
 - [`sandbox-sweep.spec.ts`](./scoped-app/sandbox-sweep.spec.ts)
 - [`scoped-app.spec.ts`](./scoped-app/scoped-app.spec.ts)
 
+## [SDK dock namespace](./sdk-dock-namespace/README.md)
+
+- [`dock-openpanel-raw.spec.ts`](./sdk-dock-namespace/dock-openpanel-raw.spec.ts)
+- [`dock-scoped-wrapper.spec.ts`](./sdk-dock-namespace/dock-scoped-wrapper.spec.ts)
+
 ## [SDK Editor Namespace](./sdk-editor-namespace/README.md)
 
 - [`editor-path-utils.spec.ts`](./sdk-editor-namespace/editor-path-utils.spec.ts)
@@ -506,6 +511,11 @@
 - [`openFile-tab-not-mounted.spec.ts`](./sdk-editor-namespace/openFile-tab-not-mounted.spec.ts)
 - [`scrollToLine.spec.ts`](./sdk-editor-namespace/scrollToLine.spec.ts)
 - [`viewRefs-store.spec.ts`](./sdk-editor-namespace/viewRefs-store.spec.ts)
+
+## [SDK notifications namespace](./sdk-notifications-namespace/README.md)
+
+- [`notifications-scoped-wrapper.spec.ts`](./sdk-notifications-namespace/notifications-scoped-wrapper.spec.ts)
+- [`notifications-show-raw.spec.ts`](./sdk-notifications-namespace/notifications-show-raw.spec.ts)
 
 ## [setting-item-registry](./setting-item-registry/README.md)
 

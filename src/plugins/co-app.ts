@@ -26,17 +26,22 @@ import {
 import { scrollToLine } from '@/panels/Editor/scrollToLine';
 import { useEditorStore } from '@/stores/editor.store';
 import { errorMessage } from '../../electron/shared/error-message';
+import { openOrFocusPanel } from '@/shell/dock/dock-api-ref';
+import { notify } from '@/notifications/notify';
+import { isNotificationLevel } from '@/notifications/types';
 import type {
   CoApp,
+  CoDockApi,
   CoEditorApi,
+  CoNotificationsApi,
   CoWorkspaceApi,
   EditorOpenFailureCode,
 } from './types';
 
-// Keep in sync with package.json "version" field. Bumped to 0.2.3 (2026-05-31)
-// for the editor.openFile() SDK addition. Plugins declaring minLMVersion
-// >= 0.2.3 need this.
-const APP_VERSION = '0.2.3';
+// Keep in sync with package.json "version" field. Bumped to 0.2.4 (2026-05-31)
+// for the dock.openPanel() and notifications.show() SDK additions. Plugins
+// declaring minLMVersion >= 0.2.4 need this.
+const APP_VERSION = '0.2.4';
 
 // Workspace API — minimal v0.1 surface exposing the current renderer
 // window's workspace root (null when no folder open). Plugins use this for
@@ -128,6 +133,25 @@ const editor: CoEditorApi = {
   },
 };
 
+const dock: CoDockApi = {
+  openPanel(panelId) {
+    const spec = coApp.panels.list().find((panel) => panel.type === panelId);
+    if (!spec) return;
+    openOrFocusPanel(spec.type, spec.type, spec.title, spec.titleKey);
+  },
+};
+
+const notifications: CoNotificationsApi = {
+  show({ kind, message, code }) {
+    const level = isNotificationLevel(kind) ? kind : 'info';
+    notify(
+      message,
+      level,
+      code === undefined ? undefined : { code },
+    );
+  },
+};
+
 export const coApp: CoApp = {
   version: APP_VERSION,
   panels: new PanelRegistry(),
@@ -145,6 +169,8 @@ export const coApp: CoApp = {
   mcp: pluginMcpRegistry,
   workspace,
   editor,
+  dock,
+  notifications,
 };
 
 /** 让 main.tsx 拿到 registry 引用,在启动时订阅 onInvoke 路由反向调用. */

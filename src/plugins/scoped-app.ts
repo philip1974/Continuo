@@ -10,7 +10,9 @@
 
 import type {
   CoApp,
+  CoDockApi,
   CoEditorApi,
+  CoNotificationsApi,
   CoPluginApp,
   PluginClipboardApi,
   PluginFsApi,
@@ -297,6 +299,24 @@ function makeEditor(
   };
 }
 
+function makeDock(rawDock: CoDockApi): CoDockApi {
+  return {
+    openPanel(panelId) {
+      rawDock.openPanel(panelId);
+    },
+  };
+}
+
+function makeNotifications(
+  rawNotifications: CoNotificationsApi,
+): CoNotificationsApi {
+  return {
+    show(opts) {
+      rawNotifications.show(opts);
+    },
+  };
+}
+
 function makePermission(
   pluginId: string,
   store: PermissionStore | null,
@@ -332,10 +352,12 @@ export function createScopedApp(
 ): CoPluginApp {
   // Omit coApp.mcp/editor raw singletons → 替换为 per-plugin scope wrappers,
   // 其它字段直通。
-  const { mcp: registry, editor, ...rest } = coApp;
+  const { mcp: registry, editor, dock, notifications, ...rest } = coApp;
   return {
     ...rest,
     editor: makeEditor(pluginId, store, editor, token),
+    dock: makeDock(dock),
+    notifications: makeNotifications(notifications),
     fs: makeFs(pluginId, store, token),
     network: makeNetwork(pluginId, store),
     shell: makeShell(pluginId, store),

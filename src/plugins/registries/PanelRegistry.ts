@@ -51,6 +51,10 @@ export class PanelRegistry {
     return Array.from(this.items.values());
   }
 
+  list(): readonly PanelSpec[] {
+    return this.getAll();
+  }
+
   subscribe(listener: Listener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);

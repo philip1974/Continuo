@@ -42,4 +42,22 @@ describe('sdk-contract shape: runtime SDK object existence', () => {
   it('T2.g exposes app.editor.openFile method', () => {
     expect(typeof coApp.editor?.openFile).toBe('function');
   });
+
+  it('T_E1 exposes app.dock.openPanel on coApp', () => {
+    expect(typeof coApp.dock?.openPanel).toBe('function');
+  });
+
+  it('T_E2 exposes app.notifications.show on coApp', () => {
+    expect(typeof coApp.notifications?.show).toBe('function');
+  });
+
+  it('T_E3 exposes scoped app.dock.openPanel to plugins', () => {
+    const scoped = createScopedApp(coApp, 'sdk-contract.runtime', null, 'token');
+    expect(typeof scoped.dock?.openPanel).toBe('function');
+  });
+
+  it('T_E4 exposes scoped app.notifications.show to plugins', () => {
+    const scoped = createScopedApp(coApp, 'sdk-contract.runtime', null, 'token');
+    expect(typeof scoped.notifications?.show).toBe('function');
+  });
 });

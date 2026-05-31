@@ -1,6 +1,8 @@
 // LM 插件系统核心类型(M-Plugin v1)。
 // 详见 doc/10-插件系统方案.md。
 
+import type { NotificationLevel } from '../notifications/types';
+
 /** 任意"可清理"资源的最小契约。 */
 export interface Disposable {
   dispose(): void;
@@ -68,6 +70,10 @@ export interface CoApp {
   readonly workspace: CoWorkspaceApi;
   /** Editor control API(v0.2.3):open files and optionally jump to a line. */
   readonly editor: CoEditorApi;
+  /** Dock control API(v0.2.4):open or focus singleton plugin panels. */
+  readonly dock: CoDockApi;
+  /** Toast notification API(v0.2.4):show user-visible notifications. */
+  readonly notifications: CoNotificationsApi;
 }
 
 /** Read-only workspace state for plugins. Per-renderer-window (each Continuo
@@ -115,6 +121,28 @@ export interface CoEditorApi {
   ): Promise<EditorOpenResult>;
 }
 
+export interface CoDockApi {
+  /**
+   * Open or focus a plugin panel by id.
+   *
+   * v1 singleton convention: panelId === PanelSpec.type === component === id.
+   * Unknown panel ids and not-yet-ready Dockview state are silent no-ops.
+   */
+  openPanel(panelId: string): void;
+}
+
+export type NotificationKind = NotificationLevel;
+
+export interface CoNotificationsShowOpts {
+  readonly kind: NotificationKind;
+  readonly message: string;
+  readonly code?: string;
+}
+
+export interface CoNotificationsApi {
+  show(opts: CoNotificationsShowOpts): void;
+}
+
 // ── v5 Phase 1:plugin 拿到的扩展 app(per-plugin scoped) ────────────
 
 export interface PathScope {
@@ -125,7 +153,7 @@ export interface PathScope {
 }
 
 export class ScopeError extends Error {
-  readonly code: 'SCOPE_ERROR' = 'SCOPE_ERROR';
+  readonly code = 'SCOPE_ERROR' as const;
   readonly cause?: unknown;
 
   constructor(
@@ -140,7 +168,7 @@ export class ScopeError extends Error {
 }
 
 export class PluginIdentityError extends Error {
-  readonly code: 'PLUGIN_IDENTITY_ERROR' = 'PLUGIN_IDENTITY_ERROR';
+  readonly code = 'PLUGIN_IDENTITY_ERROR' as const;
   readonly cause?: unknown;
 
   constructor(message: string, options?: { cause?: unknown }) {
@@ -151,7 +179,7 @@ export class PluginIdentityError extends Error {
 }
 
 export class ScopeRequestTimeoutError extends Error {
-  readonly code: 'SCOPE_REQUEST_TIMEOUT' = 'SCOPE_REQUEST_TIMEOUT';
+  readonly code = 'SCOPE_REQUEST_TIMEOUT' as const;
   readonly cause?: unknown;
 
   constructor(

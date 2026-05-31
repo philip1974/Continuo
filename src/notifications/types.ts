@@ -9,6 +9,15 @@ import type { NotifyLevel } from '../../electron/shared/notify-channels';
 
 export type NotificationLevel = NotifyLevel;
 
+const NOTIFICATION_LEVELS = ['info', 'warning', 'error', 'success'] as const;
+
+export function isNotificationLevel(x: unknown): x is NotificationLevel {
+  return (
+    typeof x === 'string' &&
+    (NOTIFICATION_LEVELS as readonly string[]).includes(x)
+  );
+}
+
 export interface Notification {
   readonly id: string;
   readonly level: NotificationLevel;

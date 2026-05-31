@@ -1,7 +1,7 @@
 [
   {
     "path": "src/plugins/types.ts",
-    "line": 288,
+    "line": 316,
     "pattern": "NodeJS\\.",
     "reason": "Type-only public API currently exposes NodeJS.Signals; tracked as follow-up SDK web-compat debt."
   },
@@ -49,7 +49,7 @@
   },
   {
     "path": "src/plugins/scoped-app.ts",
-    "line": 156,
+    "line": 158,
     "pattern": "global(?:This)?\\.",
     "reason": "Comment explains scoped network uses cached raw fetch after sandbox sweep."
   },

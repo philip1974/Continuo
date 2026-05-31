@@ -1,7 +1,10 @@
 import { describe, expectTypeOf, it } from 'vitest';
 import type {
   CoApp,
+  CoDockApi,
   CoEditorApi,
+  CoNotificationsApi,
+  CoNotificationsShowOpts,
   CoWorkspaceApi,
   EditorOpenOptions,
   EditorOpenResult,
@@ -92,5 +95,23 @@ describe('sdk-contract shape: plugin-facing TypeScript surface', () => {
     expectTypeOf<
       CoEditorApi['openFile']
     >().returns.resolves.toEqualTypeOf<EditorOpenResult>();
+  });
+
+  it('T_TC1 pins CoDockApi.openPanel signature', () => {
+    expectTypeOf<CoApp>().toHaveProperty('dock').toMatchTypeOf<CoDockApi>();
+    expectTypeOf<CoDockApi['openPanel']>().parameters.toEqualTypeOf<
+      [panelId: string]
+    >();
+    expectTypeOf<CoDockApi['openPanel']>().returns.toEqualTypeOf<void>();
+  });
+
+  it('T_TC2 pins CoNotificationsApi.show signature', () => {
+    expectTypeOf<CoApp>()
+      .toHaveProperty('notifications')
+      .toMatchTypeOf<CoNotificationsApi>();
+    expectTypeOf<CoNotificationsApi['show']>().parameters.toEqualTypeOf<
+      [opts: CoNotificationsShowOpts]
+    >();
+    expectTypeOf<CoNotificationsApi['show']>().returns.toEqualTypeOf<void>();
   });
 });
