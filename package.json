@@ -34,6 +34,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.test.json && tsc --noEmit -p tsconfig.e2e.json",
     "lint": "eslint . --ext .ts,.tsx",
     "format": "prettier --write .",
+    "pretest": "node scripts/check-no-skip.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:unit": "vitest run --project unit",

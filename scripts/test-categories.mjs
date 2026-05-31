@@ -18,6 +18,7 @@ export const CONTRACT_TOPICS = [
   'agent-terminal-mcp-stdio-framing',
   'plugin-mcp-invoke-bridge',
   'plugin-mcp-ipc-bridge',
+  'sdk-contract',
 ];
 
 /** @type {string[]} BDD topic slugs。 */
