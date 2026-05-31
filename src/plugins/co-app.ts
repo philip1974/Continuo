@@ -15,14 +15,25 @@ import { RibbonRegistry } from './registries/RibbonRegistry';
 import { SettingItemRegistry } from './registries/SettingItemRegistry';
 import { SettingTabRegistry } from './registries/SettingTabRegistry';
 import { StatusBarRegistry } from './registries/StatusBarRegistry';
+import { useWorkspaceStore } from '@/stores/workspace.store';
 import { createIpcPluginMcpUpstream } from './plugin-mcp-upstream';
-import type { CoApp } from './types';
+import type { CoApp, CoWorkspaceApi } from './types';
 
-// Keep in sync with package.json "version" field. Bumped to 0.2.1 (2026-05-30)
-// to reflect the path-scope + persistent DataStore + streaming exec SDK
-// extensions landed in commit 9153692. Plugins declaring minLMVersion >= 0.2.0
-// (e.g. sample-plugin v0.3) need this to install successfully.
-const APP_VERSION = '0.2.1';
+// Keep in sync with package.json "version" field. Bumped to 0.2.2 (2026-05-31)
+// for the workspace.getRoot() SDK addition (Plan 05 extension #3 — lets
+// plugins resolve the current workspace root for project-scope file ops
+// without manual config). Plugins declaring minLMVersion >= 0.2.2 need this.
+const APP_VERSION = '0.2.2';
+
+// Workspace API — minimal v0.1 surface exposing the current renderer
+// window's workspace root (null when no folder open). Plugins use this for
+// project-scope features (e.g. resolving project skills root, project
+// terminal cwd). Per-window because each Continuo window has its own root.
+const workspace: CoWorkspaceApi = {
+  async getRoot() {
+    return useWorkspaceStore.getState().root;
+  },
+};
 
 // v5 Phase 4:Plugin → MCP bridge — registry 持 IPC upstream,
 // dispose 时通过 preload.pluginMcp.unregisterTool 上行,renderer 启动时
@@ -46,6 +57,7 @@ export const coApp: CoApp = {
   editorActions: new EditorActionRegistry(),
   explorerContextMenu: new ExplorerContextMenuRegistry(),
   mcp: pluginMcpRegistry,
+  workspace,
 };
 
 /** 让 main.tsx 拿到 registry 引用,在启动时订阅 onInvoke 路由反向调用. */

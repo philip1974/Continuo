@@ -63,6 +63,16 @@ export interface CoApp {
   readonly explorerContextMenu: import('./registries/ExplorerContextMenuRegistry').ExplorerContextMenuRegistry;
   /** Plugin → MCP tool 注册表(v5 Phase 4),renderer 内单例. */
   readonly mcp: import('./registries/PluginMcpRegistry').PluginMcpRegistry;
+  /** Workspace state(v0.2.2):current window 的 workspace.root,plugins
+   * 用于 project-scope features(skills/terminal/decorator default cwd). */
+  readonly workspace: CoWorkspaceApi;
+}
+
+/** Read-only workspace state for plugins. Per-renderer-window (each Continuo
+ * window has its own root). Returns null when no folder is open. */
+export interface CoWorkspaceApi {
+  /** Current window's workspace root path, null if no folder open. */
+  getRoot(): Promise<string | null>;
 }
 
 // ── v5 Phase 1:plugin 拿到的扩展 app(per-plugin scoped) ────────────
