@@ -7,7 +7,11 @@
 //   activeTab 为 null → Welcome
 
 import { useCallback, useState } from 'react';
-import { useEditorStore, type EditorMode } from '@/stores/editor.store';
+import {
+  getEffectiveMode,
+  useEditorStore,
+  type EditorMode,
+} from '@/stores/editor.store';
 import { t as translate } from '@/i18n';
 import { ConfirmDialog } from '@/panels/Explorer/ConfirmDialog';
 import { SegmentedControl } from '@/design';
@@ -19,6 +23,7 @@ import { useAutoSave, isAutoSaveEnabled } from './useAutoSave';
 import { useEditorFile } from './useEditorFile';
 import { useExternalFileSync } from './useExternalFileSync';
 import { resolveLink } from './link-resolve';
+import { isMilkdownUnsafe } from './milkdown-roundtrip-safety';
 import { useSettingValue } from '@/plugins/settings/values-store';
 import { coApi } from '@/lib/co-api';
 import { notify } from '@/notifications/notify';
@@ -52,6 +57,11 @@ export function EditorPanel() {
 
   const activeTab: EditorTab | null =
     tabs.find((t) => t.id === activeTabId) ?? null;
+  const effective = getEffectiveMode(activeTab);
+  const activeIsMarkdown = activeTab ? isMarkdownPath(activeTab.filePath) : false;
+  const unsafeMarkdown =
+    activeIsMarkdown && activeTab !== null && isMilkdownUnsafe(activeTab.content);
+  const forcedSource = unsafeMarkdown && effective !== mode;
 
   const { saveActive, openFileByPath } = useEditorFile();
 
@@ -111,12 +121,29 @@ export function EditorPanel() {
     setCloseCandidate(null);
   }, [closeCandidate, closeTab]);
 
+  // Unsafe markdown cannot be opened in Milkdown without an explicit warning.
+  const [unsafeEditConfirmOpen, setUnsafeEditConfirmOpen] = useState(false);
+  const requestModeChange = useCallback(
+    (next: EditorMode) => {
+      if (next === 'edit' && unsafeMarkdown) {
+        setUnsafeEditConfirmOpen(true);
+        return;
+      }
+      setMode(next);
+    },
+    [setMode, unsafeMarkdown],
+  );
+  const confirmUnsafeEdit = useCallback(() => {
+    setMode('edit');
+    setUnsafeEditConfirmOpen(false);
+  }, [setMode]);
+
   // 判定主体渲染(根据 activeTab 类型 + mode)
   let body: React.ReactNode;
   if (!activeTab) {
     body = <EditorWelcome />;
   } else if (isMarkdownPath(activeTab.filePath)) {
-    if (mode === 'source') {
+    if (effective === 'source') {
       body = (
         <CodeEditor
           key={`${activeTab.id}-src`}
@@ -130,9 +157,9 @@ export function EditorPanel() {
     } else {
       body = (
         <MilkdownEditor
-          key={`${activeTab.id}-${mode}`}
+          key={`${activeTab.id}-${effective}`}
           defaultValue={activeTab.content}
-          readonly={mode === 'preview'}
+          readonly={effective === 'preview'}
           onChange={(md) => updateContent(activeTab.id, md)}
           onLinkClick={handleLinkClick}
         />
@@ -174,10 +201,15 @@ export function EditorPanel() {
         <div className="flex h-9 shrink-0 items-center justify-center bg-canvas px-3">
           <SegmentedControl
             options={MODE_OPTIONS}
-            value={mode}
-            onChange={setMode}
+            value={effective}
+            onChange={requestModeChange}
             size="sm"
           />
+        </div>
+      )}
+      {forcedSource && (
+        <div className="bg-panel-soft px-4 py-2 text-xs text-fg-muted">
+          {translate('panels.editor.milkdownUnsafe.banner')}
         </div>
       )}
       <div className="min-h-0 flex-1">{body}</div>
@@ -199,6 +231,14 @@ export function EditorPanel() {
         destructive
         onConfirm={confirmDiscard}
         onCancel={() => setCloseCandidate(null)}
+      />
+      <ConfirmDialog
+        open={unsafeEditConfirmOpen}
+        title={translate('panels.editor.milkdownUnsafe.modalTitle')}
+        description={translate('panels.editor.milkdownUnsafe.modalBody')}
+        confirmLabel={translate('panels.editor.milkdownUnsafe.switchAnyway')}
+        onConfirm={confirmUnsafeEdit}
+        onCancel={() => setUnsafeEditConfirmOpen(false)}
       />
     </div>
   );

@@ -29,6 +29,7 @@ interface MilkdownEditorProps {
 function CrepeEditor({ defaultValue, readonly = false, onChange }: MilkdownEditorProps) {
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+  const firstEmitRef = useRef(true);
 
   // 注:useEditor 的 callback 在 mount 时执行,defaultValue 只在挂载时生效。
   // 切 tab 时通过 EditorPanel 上的 key={activeTabId} 强制 remount,
@@ -60,6 +61,11 @@ function CrepeEditor({ defaultValue, readonly = false, onChange }: MilkdownEdito
 
     crepe.on((listener) => {
       listener.markdownUpdated((_ctx, markdown) => {
+        if (firstEmitRef.current) {
+          firstEmitRef.current = false;
+          return;
+        }
+        if (readonly) return;
         onChangeRef.current?.(markdown);
       });
     });

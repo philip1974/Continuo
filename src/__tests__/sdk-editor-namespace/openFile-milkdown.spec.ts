@@ -3,6 +3,7 @@ import { coApp } from '@/plugins/co-app';
 import { openFileByPath } from '@/panels/Editor/editor-file-actions';
 import { scrollToLine } from '@/panels/Editor/scrollToLine';
 import { useEditorStore } from '@/stores/editor.store';
+import type { EditorView } from '@codemirror/view';
 
 vi.mock('@/panels/Editor/editor-file-actions', () => ({
   openFileByPath: vi.fn(),
@@ -18,7 +19,7 @@ vi.mock('@/lib/co-api', () => ({
 
 const mockedOpenFileByPath = vi.mocked(openFileByPath);
 const mockedScrollToLine = vi.mocked(scrollToLine);
-const view = { id: 'view' };
+const view = { id: 'view' } as unknown as EditorView;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -26,14 +27,14 @@ beforeEach(() => {
   mockedScrollToLine.mockReturnValue('applied');
 });
 
-function setMarkdownState(mode: 'edit' | 'source') {
+function setMarkdownState(mode: 'edit' | 'source', content = '# title') {
   useEditorStore.setState({
     tabs: [
       {
         id: '/work/readme.md',
         filePath: '/work/readme.md',
-        content: '# title',
-        originalContent: '# title',
+        content,
+        originalContent: content,
         dirty: false,
       },
     ],
@@ -69,5 +70,17 @@ describe('app.editor.openFile markdown degradation', () => {
     expect(mockedScrollToLine).toHaveBeenCalledWith(view, 3);
     expect(result).toEqual({ ok: true, lineApplied: true });
   });
-});
 
+  it('T3 treats unsafe markdown edit mode as CodeMirror', async () => {
+    setMarkdownState('edit', '---\nid: demo\n---\n# title\n');
+
+    const result = await coApp.editor.openFile('/work/readme.md', { line: 10 });
+
+    expect(useEditorStore.getState().waitForViewRef).toHaveBeenCalledWith(
+      '/work/readme.md',
+      500,
+    );
+    expect(mockedScrollToLine).toHaveBeenCalledWith(view, 10);
+    expect(result).toEqual({ ok: true, lineApplied: true });
+  });
+});

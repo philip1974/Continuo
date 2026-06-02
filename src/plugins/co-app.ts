@@ -24,7 +24,7 @@ import {
   isMarkdownPath,
 } from '@/panels/Editor/editor-path-utils';
 import { scrollToLine } from '@/panels/Editor/scrollToLine';
-import { useEditorStore } from '@/stores/editor.store';
+import { getEffectiveMode, useEditorStore } from '@/stores/editor.store';
 import { errorMessage } from '../../electron/shared/error-message';
 import { openOrFocusPanel } from '@/shell/dock/dock-api-ref';
 import { notify } from '@/notifications/notify';
@@ -111,7 +111,8 @@ const editor: CoEditorApi = {
 
     const state = useEditorStore.getState();
     const activeTab = state.tabs.find((t) => t.id === path);
-    const inMilkdown = isMarkdownPath(path) && state.mode !== 'source';
+    const inMilkdown =
+      isMarkdownPath(path) && getEffectiveMode(activeTab ?? null) !== 'source';
     if (activeTab && inMilkdown) {
       return { ok: true, lineApplied: false, reason: 'milkdown-engine' };
     }

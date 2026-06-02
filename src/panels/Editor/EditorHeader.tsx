@@ -8,8 +8,13 @@
 //   - markdown 模式切换(Edit/Source/Preview)已搬到 EditorPanel 中的 EditorModeBar
 //     —— tab 行下方独立一行,与编辑器同宽,视觉上更干净。
 
-import { memo, useEffect, useMemo, useState } from 'react';
-import { useEditorStore, type EditorMode, type EditorTab } from '@/stores/editor.store';
+import { memo, useMemo } from 'react';
+import {
+  getEffectiveMode,
+  useEditorStore,
+  type EditorMode,
+  type EditorTab,
+} from '@/stores/editor.store';
 import { useT, t as translate } from '@/i18n';
 import {
   Button,
@@ -103,11 +108,11 @@ export function EditorHeader({
   const tabs = useEditorStore((s) => s.tabs);
   const activeTabId = useEditorStore((s) => s.activeTabId);
   const switchTab = useEditorStore((s) => s.switchTab);
-  const mode = useEditorStore((s) => s.mode);
 
   if (tabs.length === 0) return null;
 
   const dirty = activeTab?.dirty ?? false;
+  const effectiveMode = getEffectiveMode(activeTab);
 
   return (
     <div className="flex h-9 shrink-0 items-stretch bg-canvas">
@@ -136,7 +141,7 @@ export function EditorHeader({
         <EditorActionsArea
           filePath={activeTab?.filePath ?? null}
           dirty={dirty}
-          mode={mode}
+          mode={effectiveMode}
         />
       </div>
     </div>

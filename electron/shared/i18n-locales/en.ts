@@ -106,7 +106,7 @@ export const en = {
   'settings.group.autosave': 'Auto-save',
   'settings.editor.font_size.desc': 'Font size for the code editor (Source mode).',
   'settings.editor.show_line_numbers.desc': 'Whether the code editor shows line numbers (also controls fold markers).',
-  'settings.editor.auto_save_markdown.desc': 'When off, Markdown also requires ⌘S to save. Code files never auto-save.',
+  'settings.editor.auto_save_markdown.desc': 'Markdown auto-saves after edits in Edit mode. Source mode writes your input as-is without Milkdown serialization.',
   'settings.editor.auto_save_delay.desc': 'How long after the last keystroke auto-save fires.',
   'settings.terminal.font_size.desc': 'xterm font size. Refits on change.',
   'settings.terminal.cursor_style.block': 'Block',
@@ -193,7 +193,7 @@ export const en = {
   'panels.terminal.search.next': 'Next match',
   'panels.terminal.search.close': 'Close search',
 
-  // panels.editor.* (4)
+  // panels.editor.*
   'panels.editor.untitled': 'Untitled',
   'panels.editor.draft': 'Draft',
   'panels.editor.unsaved_draft': 'Unsaved draft',
@@ -201,6 +201,10 @@ export const en = {
   'panels.editor.discard_title': 'Discard unsaved changes?',
   'panels.editor.discard_body': 'has unsaved changes. Continuing will permanently discard them.',
   'panels.editor.discard_confirm': 'Close without saving',
+  'panels.editor.milkdownUnsafe.banner': 'Opened in Source mode to preserve frontmatter and wiki-links.',
+  'panels.editor.milkdownUnsafe.modalTitle': 'Open unsafe Markdown in Edit mode?',
+  'panels.editor.milkdownUnsafe.modalBody': 'This file contains frontmatter or wiki-links that Milkdown may rewrite. Source mode preserves the file byte-for-byte.',
+  'panels.editor.milkdownUnsafe.switchAnyway': 'Switch anyway',
 
   // permissions.* (3)
   'permissions.agent.terminal_create_session': 'open a new terminal',

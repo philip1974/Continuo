@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
   createTab,
+  getEffectiveMode,
   getStateAfterClosingTab,
   getStateAfterClosingTabsOutsideRoot,
   getStateAfterRemovingPath,
@@ -22,7 +23,7 @@ beforeEach(() => {
   useEditorStore.setState({
     tabs: [],
     activeTabId: null,
-    mode: 'edit',
+    mode: 'source',
     editorFocusPulse: 0,
   });
 });
@@ -61,11 +62,34 @@ describe('createTab', () => {
 // ────────────────────────────────────────────────────────────
 
 describe('editor.store · 初态', () => {
-  it('tabs 空,activeTabId null,mode edit', () => {
+  it('tabs 空,activeTabId null,mode source', () => {
     const s = useEditorStore.getState();
     expect(s.tabs).toEqual([]);
     expect(s.activeTabId).toBeNull();
-    expect(s.mode).toBe('edit');
+    expect(s.mode).toBe('source');
+  });
+
+  it('getEffectiveMode unsafe markdown 强制 source,safe content 返回 state.mode', () => {
+    useEditorStore.setState({ mode: 'edit' });
+    const unsafe = '---\nid: demo\n---\n# Demo\n';
+    const safe = '# Demo\nplain prose\n';
+
+    expect(
+      getEffectiveMode(
+        makeTab({
+          content: unsafe,
+          originalContent: unsafe,
+        }),
+      ),
+    ).toBe('source');
+    expect(
+      getEffectiveMode(
+        makeTab({
+          content: safe,
+          originalContent: safe,
+        }),
+      ),
+    ).toBe('edit');
   });
 });
 

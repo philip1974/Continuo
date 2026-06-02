@@ -99,7 +99,7 @@ export const zh: Record<TranslationKey, string> = {
   'settings.group.autosave': '自动保存',
   'settings.editor.font_size.desc': 'CodeEditor(代码 / Source mode)的字号。',
   'settings.editor.show_line_numbers.desc': 'CodeEditor 是否显示行号(同时控制代码折叠 marker)。',
-  'settings.editor.auto_save_markdown.desc': '关闭后 Markdown 也需 ⌘S 显式保存。代码文件不自动保存。',
+  'settings.editor.auto_save_markdown.desc': 'Markdown 在 Edit 模式编辑后自动保存。Source 模式按用户输入原样写入,不经过 Milkdown 序列化。',
   'settings.editor.auto_save_delay.desc': '停止输入多久后触发自动保存。',
   'settings.terminal.font_size.desc': 'xterm 字号。变化时自动 fit 重排。',
   'settings.terminal.cursor_style.block': '块',
@@ -194,6 +194,10 @@ export const zh: Record<TranslationKey, string> = {
   'panels.editor.discard_title': '放弃未保存的修改?',
   'panels.editor.discard_body': '有未保存的修改。继续将永久丢失改动。',
   'panels.editor.discard_confirm': '不保存关闭',
+  'panels.editor.milkdownUnsafe.banner': '已用 Source 模式打开,以保留 frontmatter 和 wiki-link。',
+  'panels.editor.milkdownUnsafe.modalTitle': '用 Edit 模式打开不安全 Markdown?',
+  'panels.editor.milkdownUnsafe.modalBody': '此文件包含 Milkdown 可能改写的 frontmatter 或 wiki-link。Source 模式会按字节保留文件内容。',
+  'panels.editor.milkdownUnsafe.switchAnyway': '仍然切换',
 
   // permissions.*
   'permissions.agent.terminal_create_session': '新建一个 terminal',

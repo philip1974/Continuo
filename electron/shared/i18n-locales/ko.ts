@@ -99,7 +99,7 @@ export const ko: Record<TranslationKey, string> = {
   'settings.group.autosave': '자동 저장',
   'settings.editor.font_size.desc': '코드 에디터(소스 모드)의 글꼴 크기.',
   'settings.editor.show_line_numbers.desc': '코드 에디터에서 줄 번호 표시 여부(접기 마커도 같이 제어).',
-  'settings.editor.auto_save_markdown.desc': '꺼두면 Markdown도 ⌘S로만 저장됩니다. 코드 파일은 자동 저장되지 않습니다.',
+  'settings.editor.auto_save_markdown.desc': 'Edit 모드에서 Markdown을 편집하면 자동 저장됩니다. Source 모드는 입력한 내용을 그대로 쓰며 Milkdown 직렬화를 거치지 않습니다.',
   'settings.editor.auto_save_delay.desc': '입력 멈춤 후 자동 저장이 발동되기까지의 지연.',
   'settings.terminal.font_size.desc': 'xterm 글꼴 크기. 변경 시 자동으로 fit 재배치.',
   'settings.terminal.cursor_style.block': '블록',
@@ -194,6 +194,10 @@ export const ko: Record<TranslationKey, string> = {
   'panels.editor.discard_title': '저장되지 않은 변경 사항을 버리시겠습니까?',
   'panels.editor.discard_body': '에 저장되지 않은 변경 사항이 있습니다. 계속하면 영구적으로 손실됩니다.',
   'panels.editor.discard_confirm': '저장하지 않고 닫기',
+  'panels.editor.milkdownUnsafe.banner': 'frontmatter와 wiki-link를 보존하기 위해 Source 모드로 열었습니다.',
+  'panels.editor.milkdownUnsafe.modalTitle': '안전하지 않은 Markdown을 Edit 모드로 여시겠습니까?',
+  'panels.editor.milkdownUnsafe.modalBody': '이 파일에는 Milkdown이 다시 쓸 수 있는 frontmatter 또는 wiki-link가 있습니다. Source 모드는 파일 내용을 바이트 단위로 보존합니다.',
+  'panels.editor.milkdownUnsafe.switchAnyway': '그래도 전환',
 
   // permissions.*
   'permissions.agent.terminal_create_session': '새 터미널 열기',

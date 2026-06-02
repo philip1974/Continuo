@@ -57,6 +57,7 @@ export default class EditorTabPlugin extends Plugin {
       groupKey: 'settings.group.autosave',
       title: 'Auto-save Markdown',
       titleKey: 'settings.editor.auto_save_markdown',
+      // Copy must explain that Source writes raw input, while Edit uses Milkdown.
       descriptionKey: 'settings.editor.auto_save_markdown.desc',
       type: 'boolean',
       default: true,

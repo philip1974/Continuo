@@ -6,6 +6,7 @@
 
 import { create } from 'zustand';
 import type { EditorView } from '@codemirror/view';
+import { isMilkdownUnsafe } from '@/panels/Editor/milkdown-roundtrip-safety';
 
 // ── 类型 ─────────────────────────────────────────────────────
 
@@ -261,7 +262,7 @@ type EditorState = {
 export const useEditorStore = create<EditorState>((set, get, api) => ({
   tabs: [],
   activeTabId: null,
-  mode: 'edit',
+  mode: 'source',
   editorFocusPulse: 0,
   viewRefs: new Map(),
 
@@ -387,7 +388,6 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
     return new Promise((resolve) => {
       let settled = false;
       let unsubscribe: (() => void) | null = null;
-      let timeout: ReturnType<typeof setTimeout>;
       const finish = (view: EditorView | null) => {
         if (settled) return;
         settled = true;
@@ -395,7 +395,7 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
         clearTimeout(timeout);
         resolve(view);
       };
-      timeout = setTimeout(() => {
+      const timeout = setTimeout(() => {
         finish(get().viewRefs.get(tabId) ?? null);
       }, timeoutMs);
 
@@ -409,3 +409,16 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
     });
   },
 }));
+
+function isMarkdownFilePath(filePath: string | null): boolean {
+  if (!filePath) return false;
+  return /\.(md|markdown)$/i.test(filePath);
+}
+
+export function getEffectiveMode(tab: EditorTab | null): EditorMode {
+  const requestedMode = useEditorStore.getState().mode;
+  if (tab && isMarkdownFilePath(tab.filePath) && isMilkdownUnsafe(tab.content)) {
+    return 'source';
+  }
+  return requestedMode;
+}

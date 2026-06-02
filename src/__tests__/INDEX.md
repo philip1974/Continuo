@@ -181,6 +181,12 @@
 - [`use-editor-file.spec.tsx`](./editor-hooks-react/use-editor-file.spec.tsx)
 - [`use-external-file-sync.spec.tsx`](./editor-hooks-react/use-external-file-sync.spec.tsx)
 
+## [editor-milkdown-roundtrip-safety](./editor-milkdown-roundtrip-safety/README.md)
+
+- [`editor-panel-unsafe.spec.tsx`](./editor-milkdown-roundtrip-safety/editor-panel-unsafe.spec.tsx)
+- [`milkdown-preview.spec.tsx`](./editor-milkdown-roundtrip-safety/milkdown-preview.spec.tsx)
+- [`milkdown-roundtrip-safety.spec.ts`](./editor-milkdown-roundtrip-safety/milkdown-roundtrip-safety.spec.ts)
+
 ## [editor-session-restore(Editor tab session 持久化与恢复)](./editor-session-restore/README.md)
 
 - [`editor-session-restore.spec.ts`](./editor-session-restore/editor-session-restore.spec.ts)
