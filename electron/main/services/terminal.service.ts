@@ -2,8 +2,9 @@
 // SessionManager session map<id, Instance>;输出节流 / 截断 / overflow 通知;
 // kill grace period 3s 优雅终止。
 
-import { BrowserWindow } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import type { WebContents } from 'electron';
+import path from 'node:path';
 import {
   prepareShellIntegrationEnv,
   SessionManager,
@@ -321,6 +322,11 @@ export async function createTerminal(
     shell,
     baseEnvWithLang,
   );
+  const hookEventsDir = path.join(app.getPath('userData'), 'hook-events');
+  const envWithHookEvents = {
+    ...shellEnv,
+    CONTINUO_HOOK_EVENTS_DIR: hookEventsDir,
+  };
   // 强制 login + interactive shell:对齐 iTerm 默认行为 (`exec -l zsh`)。
   // 没 -l/-i 时 zsh 偶发不启 ZLE → zsh-autosuggestions 等 widget plugin 失效。
   // 用户传 args 优先,只在用户没传时加默认 flag。
@@ -349,7 +355,7 @@ export async function createTerminal(
       session_id: id,
       shell,
       args: finalArgs,
-      env: shellEnv as Record<string, string>,
+      env: envWithHookEvents as Record<string, string>,
       cwd,
       cols: 120,
       rows: 40,

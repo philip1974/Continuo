@@ -23,6 +23,8 @@ export const ko: Record<TranslationKey, string> = {
 
   // errors.MAIN_*
   'errors.AGENT_NOT_AUTHORIZED': '에이전트가 승인되지 않았습니다',
+  'errors.AWAIT_STOP_HOOK_ALREADY_PENDING':
+    '이 세션에는 이미 대기 중인 await_stop_hook 요청이 있습니다.',
   'errors.BAD_INPUT': '잘못된 입력',
   'errors.BAD_MAIN': '잘못된 플러그인 main 파일',
   'errors.BAD_MANIFEST': '잘못된 플러그인 매니페스트',

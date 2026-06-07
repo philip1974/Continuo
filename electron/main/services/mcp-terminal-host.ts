@@ -24,6 +24,10 @@ export interface MakeTerminalMcpToolsDeps {
     input: CreateSessionPtyInput,
     ctx: McpCallCtx,
   ) => Promise<{ id: string }>;
+  readonly installStopHook?: (
+    cwd: string | undefined,
+    agentLabel: string,
+  ) => Promise<{ installed: boolean; reason?: string }>;
 }
 
 export function makeTerminalMcpTools(
@@ -37,6 +41,7 @@ export function makeTerminalMcpTools(
     makeCreateSessionTool({
       ensureAuthorized: deps.ensureAuthorized,
       createSession: deps.createSession,
+      installStopHook: deps.installStopHook,
     }),
     makeSendInputTool({
       has: deps.service.has,

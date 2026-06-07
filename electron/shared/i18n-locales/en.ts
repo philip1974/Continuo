@@ -30,6 +30,8 @@ export const en = {
 
   // errors.MAIN_* (27)
   'errors.AGENT_NOT_AUTHORIZED': 'Agent not authorized',
+  'errors.AWAIT_STOP_HOOK_ALREADY_PENDING':
+    'Another await_stop_hook is already pending for this session.',
   'errors.BAD_INPUT': 'Bad input',
   'errors.BAD_MAIN': 'Bad plugin main file',
   'errors.BAD_MANIFEST': 'Bad plugin manifest',

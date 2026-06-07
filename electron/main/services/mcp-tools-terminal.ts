@@ -141,6 +141,10 @@ export interface CreateSessionToolDeps {
     input: CreateSessionPtyInput,
     ctx: McpCallCtx,
   ) => Promise<{ id: string }>;
+  readonly installStopHook?: (
+    cwd: string | undefined,
+    agentLabel: string,
+  ) => Promise<{ installed: boolean; reason?: string }>;
 }
 
 export function makeCreateSessionTool(
@@ -170,6 +174,16 @@ export function makeCreateSessionTool(
           type: 'string',
           description: 'Command auto-typed into the shell after spawn (with trailing newline).',
         },
+        install_stop_hook: {
+          type: 'boolean',
+          description:
+            'When true, install Continuo-managed Stop hook into the CLI settings before spawning. Returns stop_hook_installed in output.',
+        },
+        include_raw: {
+          type: 'boolean',
+          description:
+            'When true, include the full raw Stop hook payload in await_stop_hook output.',
+        },
       },
       additionalProperties: false,
     },
@@ -182,6 +196,17 @@ export function makeCreateSessionTool(
           { code: ERROR_CODES.AGENT_NOT_AUTHORIZED },
         );
       }
+      let stopHookInstalled: { installed: boolean } | undefined;
+      if (input.install_stop_hook === true && deps.installStopHook) {
+        try {
+          stopHookInstalled = await deps.installStopHook(
+            input.cwd,
+            input.agentLabel ?? 'agent',
+          );
+        } catch {
+          stopHookInstalled = { installed: false };
+        }
+      }
       const ptyInput: CreateSessionPtyInput = {
         originHint: 'agent',
         agentLabel: input.agentLabel ?? 'agent',
@@ -192,7 +217,12 @@ export function makeCreateSessionTool(
         attachTarget: input.target ?? { kind: 'active' },
       };
       const r = await deps.createSession(ptyInput, ctx);
-      return { session_id: r.id };
+      return {
+        session_id: r.id,
+        ...(input.install_stop_hook === true
+          ? { stop_hook_installed: stopHookInstalled?.installed ?? false }
+          : {}),
+      };
     },
   };
 }

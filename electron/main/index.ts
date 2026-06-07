@@ -53,6 +53,12 @@ import {
 } from './services/agent-auth.service';
 import { createContinuoMcpEnv } from './services/continuo-terminal-host-adapter';
 import { buildClaudeAddCommand, setStdioConfig } from './services/mcp-stdio-config.service';
+import {
+  createAwaitStopHookTool,
+  createHookFileBroker,
+  inferRunner,
+  installStopHookForSession,
+} from './services/mcp-tools-hook-bridge';
 import { startPluginMcpIpc } from './ipc/plugin-mcp.ipc';
 import { defaultIsTrustedFrame } from './safe-handle';
 
@@ -478,9 +484,30 @@ async function createSessionForAgent(
 }
 
 async function startMcpHost(): Promise<void> {
+  let brokerStarted = false;
+  const hookEventsDir = path.join(app.getPath('userData'), 'hook-events');
+  const broker = createHookFileBroker(hookEventsDir);
   try {
-    mcpHost = await createMcpHost({
-      initialTools: makeTerminalMcpTools({
+    await nodeFs.promises.mkdir(hookEventsDir, { recursive: true });
+    try {
+      await broker.start();
+      brokerStarted = true;
+    } catch (err) {
+      console.warn(
+        '[hook-bridge] broker.start failed, await_stop_hook will be unavailable:',
+        err,
+      );
+    }
+    const installStopHook = async (
+      cwd: string | undefined,
+      agentLabel: string,
+    ) => {
+      const resolvedCwd = cwd ?? '';
+      const runner = inferRunner({ id: '', cwd: resolvedCwd, agentLabel });
+      return installStopHookForSession(resolvedCwd, runner, hookEventsDir);
+    };
+    const initialTools = [
+      ...makeTerminalMcpTools({
         sessionStore: terminalSessions,
         service: termService,
         getSessionOwner,
@@ -490,7 +517,25 @@ async function startMcpHost(): Promise<void> {
             ...(ownerWindowId !== undefined ? { ownerWindowId } : {}),
           }),
         createSession: createSessionForAgent,
+        installStopHook,
       }),
+    ];
+    if (brokerStarted) {
+      initialTools.push(
+        createAwaitStopHookTool({
+          broker,
+          getSessionMeta: (sessionId, ctx) => {
+            const session = terminalSessions.get(sessionId);
+            if (!session || session.ownerWindowId !== ctx.ownerWindowId) {
+              return null;
+            }
+            return session;
+          },
+        }),
+      );
+    }
+    mcpHost = await createMcpHost({
+      initialTools,
     });
     setMcpEnvProvider((windowId: number) => {
       if (!mcpHost) return { env: {} as Record<string, string>, mcpToken: '' };
@@ -506,10 +551,25 @@ async function startMcpHost(): Promise<void> {
       byWindow: (windowId) => mcpHost!.revokeWindowTokens(windowId),
       byToken: (token) => mcpHost!.revokeToken(token),
     });
-     
+    app.once('before-quit', async () => {
+      if (!brokerStarted) return;
+      try {
+        await broker.stop();
+      } catch {
+        // ignore shutdown races
+      }
+    });
+	 
     console.log(`[mcp-host] listening on ${mcpHost.url}`);
   } catch (err) {
-     
+    if (brokerStarted) {
+      try {
+        await broker.stop();
+      } catch {
+        // ignore cleanup races
+      }
+    }
+	 
     console.warn(
       '[mcp-host] failed to start, agent terminal MCP unavailable',
       err,

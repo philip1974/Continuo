@@ -25,6 +25,10 @@
 
 - [`auth-store.spec.ts`](./agent-terminal-mcp-auth/auth-store.spec.ts)
 
+## [agent-terminal-mcp-await-stop-hook](./agent-terminal-mcp-await-stop-hook/README.md)
+
+- [`await-stop-hook.spec.ts`](./agent-terminal-mcp-await-stop-hook/await-stop-hook.spec.ts)
+
 ## [agent-terminal-mcp-create-session (Agent Terminal MCP Phase 2 + P3 autorun)](./agent-terminal-mcp-create-session/README.md)
 
 - [`create-session.spec.ts`](./agent-terminal-mcp-create-session/create-session.spec.ts)
@@ -36,6 +40,10 @@
 ## [agent-terminal-mcp-host (Agent Terminal MCP Phase 1)](./agent-terminal-mcp-host/README.md)
 
 - [`host.spec.ts`](./agent-terminal-mcp-host/host.spec.ts)
+
+## [agent-terminal-mcp-install-stop-hook](./agent-terminal-mcp-install-stop-hook/README.md)
+
+- [`install-stop-hook.spec.ts`](./agent-terminal-mcp-install-stop-hook/install-stop-hook.spec.ts)
 
 ## [agent-terminal-mcp-kill (Agent Terminal MCP Phase 4)](./agent-terminal-mcp-kill/README.md)
 

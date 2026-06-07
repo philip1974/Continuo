@@ -47,6 +47,13 @@ vi.mock('@continuo-terminal/server-node', async () => ({
   prepareShellIntegrationEnv: shellMock.prepareShellIntegrationEnv,
 }));
 
+vi.mock('electron', () => ({
+  app: {
+    getPath: vi.fn((key: string) => `/tmp/test-${key}`),
+  },
+  BrowserWindow: {},
+}));
+
 vi.mock('../../../electron/main/services/settings.service', () => ({
   getCurrentLocale: vi.fn(() => 'en'),
 }));

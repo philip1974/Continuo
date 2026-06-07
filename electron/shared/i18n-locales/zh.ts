@@ -23,6 +23,8 @@ export const zh: Record<TranslationKey, string> = {
 
   // errors.MAIN_*
   'errors.AGENT_NOT_AUTHORIZED': 'Agent 未授权',
+  'errors.AWAIT_STOP_HOOK_ALREADY_PENDING':
+    '该会话已有待处理的 await_stop_hook 请求。',
   'errors.BAD_INPUT': '输入无效',
   'errors.BAD_MAIN': '插件主文件错误',
   'errors.BAD_MANIFEST': '插件清单错误',
