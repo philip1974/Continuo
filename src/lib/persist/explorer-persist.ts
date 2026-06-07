@@ -96,12 +96,18 @@ export interface InitExplorerPersistenceExtras {
    */
   readonly windowSeq?: number;
   /**
-   * 新主窗口启动时通过 query string 指定的 workspace。仅当 windowSeq 段在
-   * explorer.json 中**不存在**(全新的窗口编号)时生效:workspace.root 用此值,
-   * UI 状态(expandedPaths / layoutUi / editor)全用默认。
-   * 段已存在(同 windowSeq 重启恢复)→ 优先按段恢复,query 值忽略。
+   * 新主窗口启动时通过 query string 指定的 workspace。Issue #45:
+   * `fresh: true` ⇒ 始终覆盖该段;`fresh: false / undefined` ⇒ 仅当段缺失
+   * / snap 读失败时作 fallback,有段则忽略 query。
    */
   readonly initialWorkspace?: string;
+  /**
+   * Issue #45:`true` ⇒ 该窗口是 dock 模式 / CLI argv / 用户显式新开窗口,
+   * `windows[<seq>]` 段的旧 workspace.root + UI + editor 全部丢弃,以
+   * `initialWorkspace` 作 root。`false` / 未设 ⇒ 走 myEntry 恢复路径;
+   * 仅当段缺失或 snap 读失败时,`initialWorkspace` 才作 fallback。
+   */
+  readonly fresh?: boolean;
 }
 
 // ──────────────────────────────────────────────
@@ -287,6 +293,7 @@ export async function initExplorerPersistence(
 ): Promise<void> {
   const windowSeq = extras?.windowSeq ?? PRIMARY_WINDOW_SEQ;
   const initialWorkspace = extras?.initialWorkspace;
+  const fresh = extras?.fresh === true;
 
   // 1. read + sync hydrate(失败不 crash)
   let hydratedSnap: ExplorerSnapshot | null = null;
@@ -295,11 +302,14 @@ export async function initExplorerPersistence(
     if (r.ok && r.data && isExplorerSnapshot(r.data)) {
       hydratedSnap = r.data;
       const myEntry = findWindowEntry(r.data, windowSeq);
-      if (myEntry) {
-        // 自己段已存在(重启恢复)→ 按段恢复;query workspace 忽略
+      if (fresh && initialWorkspace !== undefined) {
+        // Issue #45:dock 模式 / CLI argv / 用户拖文件夹打开新窗口 ⇒ 强制覆盖该段
+        hydrateStoresForNewWindow(r.data, initialWorkspace);
+      } else if (myEntry) {
+        // 重启恢复(restore-loop / 老窗段已存在)⇒ 按段恢复(含 workspace.root、UI、editor)
         hydrateStores(r.data, windowSeq);
       } else if (initialWorkspace !== undefined) {
-        // 新窗 + query workspace → 默认 UI + workspace.root = query
+        // 段缺失但 query 有 workspace(首次启动 / corrupted snap)⇒ 用 query 作 root
         hydrateStoresForNewWindow(r.data, initialWorkspace);
       } else {
         // 新窗(本来不该走到 — main.tsx 不会缺 windowSeq + 缺 query)→ 默认
@@ -312,8 +322,8 @@ export async function initExplorerPersistence(
     console.warn('[explorer-persist] read failed', err);
   }
 
-  // 2. async hydrate editor tabs(只在自己段存在时 restore)
-  if (hydratedSnap && extras?.fs && findWindowEntry(hydratedSnap, windowSeq)) {
+  // 2. async hydrate editor tabs(只在自己段存在且非 fresh 时 restore)
+  if (!fresh && hydratedSnap && extras?.fs && findWindowEntry(hydratedSnap, windowSeq)) {
     try {
       await hydrateEditorTabs(hydratedSnap, extras.fs, windowSeq);
     } catch (err) {

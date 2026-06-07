@@ -6,6 +6,7 @@
 
 const WORKSPACE_PARAM = 'workspace';
 const WINDOW_SEQ_PARAM = 'windowSeq';
+const FRESH_PARAM = 'fresh';
 
 function paramsOf(search: string): URLSearchParams | null {
   if (!search) return null;
@@ -46,4 +47,17 @@ export function parseInitialWindowSeq(search: string): number {
   const n = Number(raw);
   if (!Number.isInteger(n) || n < 0) return 0;
   return n;
+}
+
+/**
+ * Issue #45:从 query string 解 ?fresh=1。
+ *  - 只有显式 `fresh=1` 时返 true;其它(缺失 / `0` / `''` / `true`)一律 false。
+ *  - main 仅在 dock 模式 / CLI argv / "open folder in new window" 等用户显式新开窗口
+ *    场景设此 flag;restore-loop 不设,确保 explorer.json 段是唯一恢复源(并保留
+ *    workspace query 作 corrupted-snap 的 fallback)。
+ */
+export function parseInitialFresh(search: string): boolean {
+  const params = paramsOf(search);
+  if (!params) return false;
+  return params.get(FRESH_PARAM) === '1';
 }

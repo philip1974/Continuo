@@ -22,6 +22,7 @@ import {
 } from './persistence';
 import { pickWindowsToRestore } from './services/window-restore.service';
 import { pickStartupMode } from './services/startup-mode.service';
+import { pickArgvFolders } from './services/cli-args.service';
 import {
   clearWindow,
   getActiveSeqs,
@@ -181,6 +182,17 @@ interface CreateMainWindowOpts {
    * 主窗(冷启动时第一个)硬编码 0;新窗由 IPC handler 从磁盘 nextWindowSeq 算。
    */
   readonly windowSeq: number;
+  /**
+   * Issue #45:`true` ⇒ this window opens the user-supplied workspace fresh
+   * (dock open-file, CLI argv, open-folder-in-new-window IPC). Renderer
+   * discards persisted per-window UI / editor for this windowSeq and uses
+   * `opts.workspace` as the root. `false` / omitted ⇒ restore from
+   * explorer.json segment (workspace query, if any, is fallback only).
+   * Forgetting to set this for a true "open new folder" callsite means
+   * the user gets the old workspace restored instead — verify against the
+   * BDD scenarios at src/__tests__/cold-start-drag-folder/.
+   */
+  readonly fresh?: boolean;
 }
 
 export function createMainWindow(opts: CreateMainWindowOpts) {
@@ -217,6 +229,7 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
     windowSeq: String(seq),
   };
   if (opts.workspace) queryParts['workspace'] = opts.workspace;
+  if (opts.fresh) queryParts['fresh'] = '1';
 
   if (isDev && process.env['ELECTRON_RENDERER_URL']) {
     const url = new URL(process.env['ELECTRON_RENDERER_URL']);
@@ -249,7 +262,7 @@ async function openFolderInNewWindow(): Promise<void> {
   const folder = r.filePaths[0]!;
   const explorerFile = path.join(app.getPath('userData'), 'explorer.json');
   const windowSeq = await allocateWindowSeq(explorerFile);
-  createMainWindow({ windowSeq, workspace: folder });
+  createMainWindow({ windowSeq, workspace: folder, fresh: true });
 }
 
 async function newWindow(): Promise<void> {
@@ -386,6 +399,25 @@ app.on('open-url', (event, url) => {
 // 冷启时事件可能在 whenReady 之前触发,缓冲到 ready 后处理。
 // ─────────────────────────────────────────────────────
 const pendingOpenPaths: string[] = [];
+// Issue #45:CLI / dock 拖入(Windows/Linux 走 argv) 路径与 macOS open-file 共用同一
+// 缓冲池;skipFirstArg 在 dev (electron .) 跳掉 argv[1] 的 cwd,skipAll 在 E2E 模式
+// 完全禁用,避免 Playwright launcher 的 argv 误触发 dock mode。
+pendingOpenPaths.push(
+  ...pickArgvFolders(
+    process.argv,
+    (p) => {
+      try {
+        return nodeFs.statSync(p).isDirectory();
+      } catch {
+        return false;
+      }
+    },
+    {
+      skipFirstArg: !!process.defaultApp,
+      skipAll: process.env['CONTINUO_E2E'] === '1',
+    },
+  ),
+);
 
 async function openPathInNewWindow(absPath: string): Promise<void> {
   let isDir = false;
@@ -397,7 +429,7 @@ async function openPathInNewWindow(absPath: string): Promise<void> {
   if (!isDir) return;
   const explorerFile = path.join(app.getPath('userData'), 'explorer.json');
   const windowSeq = await allocateWindowSeq(explorerFile);
-  createMainWindow({ windowSeq, workspace: absPath });
+  createMainWindow({ windowSeq, workspace: absPath, fresh: true });
 }
 
 app.on('open-file', (event, filePath) => {
@@ -616,13 +648,17 @@ app.whenReady().then(async () => {
   let win: BrowserWindow;
   if (startup.mode === 'dock') {
     // 第一个 dir 作主窗 workspace,覆盖持久化的 windows[0].workspace.root
-    win = createMainWindow({ windowSeq: 0, workspace: startup.dirs[0]! });
+    win = createMainWindow({
+      windowSeq: 0,
+      workspace: startup.dirs[0]!,
+      fresh: true,
+    });
     const extras = startup.dirs.slice(1);
     if (extras.length > 0) {
       void (async () => {
         for (const dir of extras) {
           const windowSeq = await allocateWindowSeq(explorerFile);
-          createMainWindow({ windowSeq, workspace: dir });
+          createMainWindow({ windowSeq, workspace: dir, fresh: true });
         }
       })();
     }

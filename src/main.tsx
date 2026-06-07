@@ -5,6 +5,7 @@ import { z as zodNS } from 'zod';
 import { App } from './shell/App';
 import { initExplorerPersistence } from './lib/persist/explorer-persist';
 import {
+  parseInitialFresh,
   parseInitialWindowSeq,
   parseInitialWorkspace,
 } from './lib/initial-workspace';
@@ -163,6 +164,7 @@ import('./plugins/protocol/handler').then(({ handleProtocolUrl }) => {
 const search = typeof window !== 'undefined' ? window.location.search : '';
 const initialWindowSeq = parseInitialWindowSeq(search);
 const initialWorkspace = parseInitialWorkspace(search);
+const initialFresh = parseInitialFresh(search);
 void initExplorerPersistence(
   {
     read: () => coApi.explorer.read(),
@@ -172,6 +174,7 @@ void initExplorerPersistence(
     fs: { readFile: (p) => coApi.fs.readFile(p) },
     windowSeq: initialWindowSeq,
     ...(initialWorkspace !== null ? { initialWorkspace } : {}),
+    ...(initialFresh ? { fresh: true } : {}),
   },
 );
 

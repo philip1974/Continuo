@@ -73,9 +73,17 @@
 
 - [`category-tab-content.spec.tsx`](./category-tab-content/category-tab-content.spec.tsx)
 
+## [cli-args-folder (Issue #45)](./cli-args-folder/README.md)
+
+- [`cli-args-folder.spec.ts`](./cli-args-folder/cli-args-folder.spec.ts)
+
 ## [lm-api(Continuo UI 内部 IPC 入口)](./co-api/README.md) `[contract]`
 
 - [`co-api.spec.ts`](./co-api/co-api.spec.ts)
+
+## [cold-start-drag-folder (Issue #45)](./cold-start-drag-folder/README.md)
+
+- [`cold-start-drag-folder.spec.ts`](./cold-start-drag-folder/cold-start-drag-folder.spec.ts)
 
 ## [column-resize (Sidebar 拖拽改宽)](./column-resize/README.md)
 

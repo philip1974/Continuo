@@ -64,7 +64,9 @@ async function createWindowHandler(
   const newWindowSeq = await allocateWindowSeq(explorerFile);
   const win = createMainWindow({
     windowSeq: newWindowSeq,
-    ...(input.workspace !== undefined ? { workspace: input.workspace } : {}),
+    ...(input.workspace !== undefined
+      ? { workspace: input.workspace, fresh: true }
+      : {}),
   });
   return { windowId: win.id };
 }
