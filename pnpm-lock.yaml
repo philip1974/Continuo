@@ -1825,6 +1825,9 @@ packages:
   '@xterm/addon-search@0.16.0':
     resolution: {integrity: sha512-9OeuBFu0/uZJPu+9AHKY6g/w0Czyb/Ut0A5t79I4ULoU4IfU5BEpPFVGQxP4zTTMdfZEYkVIRYbHBX1xWwjeSA==}
 
+  '@xterm/addon-unicode11@0.9.0':
+    resolution: {integrity: sha512-FxDnYcyuXhNl+XSqGZL/t0U9eiNb/q3EWT5rYkQT/zuig8Gz/VagnQANKHdDWFM2lTMk9ly0EFQxxxtZUoRetw==}
+
   '@xterm/addon-web-links@0.12.0':
     resolution: {integrity: sha512-4Smom3RPyVp7ZMYOYDoC/9eGJJJqYhnPLGGqJ6wOBfB8VxPViJNSKdgRYb8NpaM6YSelEKbA2SStD7lGyqaobw==}
 
@@ -4912,6 +4915,8 @@ snapshots:
     dependencies:
       '@continuo-terminal/protocol': file:../ContinuoTerminal/packages/protocol
       '@xterm/addon-fit': 0.11.0
+      '@xterm/addon-unicode11': 0.9.0
+      '@xterm/addon-webgl': 0.19.0
       '@xterm/xterm': 6.0.0
       react: 19.2.5
       react-dom: 19.2.5(react@19.2.5)
@@ -6461,6 +6466,8 @@ snapshots:
   '@xterm/addon-fit@0.11.0': {}
 
   '@xterm/addon-search@0.16.0': {}
+
+  '@xterm/addon-unicode11@0.9.0': {}
 
   '@xterm/addon-web-links@0.12.0': {}
 
