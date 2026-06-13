@@ -17,7 +17,12 @@ import { coApi } from '@/lib/co-api';
 import { useSettingValue } from '@/plugins/settings/values-store';
 import { useLayoutUiStore } from '@/stores/layout-ui.store';
 import { useTheme } from '@/theme';
-import { disposeQueue, registerOsc7Cwd, safeWrite } from '@continuo-terminal/react-terminal';
+import {
+  disposeQueue,
+  installAtlasGuards,
+  registerOsc7Cwd,
+  safeWrite,
+} from '@continuo-terminal/react-terminal';
 import {
   applyMappedKeyOnKeydown,
   consumeMappedKeyOnData,
@@ -252,6 +257,12 @@ export function useTerminal(termId: string) {
     } catch (err) {
       console.warn('[terminal] webgl renderer init 失败,回退 dom:', err);
     }
+    // GPU atlas 在 bg→fg / DPR 变化 / 软 context loss 时 glyph 索引错乱
+    // (每个 cell 渲染成 atlas 里别的字符 = 全屏乱码),只能靠 resize 副作用
+    // 重 build atlas 修。installAtlasGuards 在三个 wake-up 事件上主动调
+    // clearTextureAtlas,DOM renderer 时 no-op。helper 在 react-terminal
+    // 包,Terminal.tsx 与本文件共用同一份实现,避免 mirror drift。
+    const atlasGuards = installAtlasGuards(term);
     const searchAddon = new SearchAddon();
     term.loadAddon(searchAddon);
     searchAddonRef.current = searchAddon;
@@ -360,6 +371,7 @@ export function useTerminal(termId: string) {
         osc7Disposable.dispose();
         searchResultsDisposable.dispose();
         ro.disconnect();
+        atlasGuards.dispose();
         disposeQueue(term);
         term.dispose();
         // xterm.dispose() 不移除 DOM children。StrictMode 双 mount 场景下
