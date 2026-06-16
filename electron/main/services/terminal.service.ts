@@ -461,10 +461,30 @@ export function forceKill(id: string): void {
     .catch((err) => warnOnce(`forceKill:${id}`, `forceKill failed for ${id}: ${(err as Error).message}`));
 }
 
-/** 主进程退出前调,kill 所有 PTY 防 zombie. */
-export function cleanupAll(): void {
+/**
+ * 主进程退出前调,force-kill 所有 PTY 防 zombie(尤其 agent 跑的长任务子进程)。
+ * 必须用 forceKill(立即 SIGKILL)而非 kill():后者把 SIGKILL 放进 3s grace timer,
+ * 进程退出时 timer 永不 fire → 只发了 Ctrl+C 杀不掉忽略 SIGINT 的进程(审计 P1)。
+ * 返回 await 所有 SIGKILL 完成的 promise,供 before-quit 在 app.quit() 前等待。
+ */
+export async function cleanupAll(): Promise<void> {
   const ids = Array.from(instances.keys());
-  for (const id of ids) {
-    kill(id);
-  }
+  if (ids.length === 0) return; // 没开过终端就别 lazy-init SessionManager
+  const sm = getSessionManager();
+  await Promise.all(
+    ids.map(async (id) => {
+      const inst = instances.get(id);
+      if (inst?.killTimer) {
+        clearTimeout(inst.killTimer);
+        inst.killTimer = null;
+      }
+      // 同步本地拆除(timers / listeners / mcp token revoke),exitCode -1。
+      cleanupSessionLocal(id, -1);
+      try {
+        await sm.kill({ session_id: id, signal: 'SIGKILL' });
+      } catch {
+        // 进程正在退出,忽略 kill race。
+      }
+    }),
+  );
 }

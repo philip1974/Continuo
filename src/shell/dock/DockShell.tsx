@@ -24,6 +24,7 @@ import { SharedTab } from '@/shell/motion/SharedTab';
 import { useClosingStore } from '@/stores/closing.store';
 import { useEditorStore } from '@/stores/editor.store';
 import { debounce } from '@/lib/debounce';
+import { flushExplorerPersistence } from '@/lib/persist/explorer-persist';
 import { coApi } from '@/lib/co-api';
 import '@/styles/dockview.css';
 
@@ -205,6 +206,14 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
         if (!r.ok) console.warn('[dockview] flush save failed', r.code, r.message);
       } catch (err) {
         console.warn('[dockview] flush save failed', err);
+      }
+      // 除 dockview layout 外,explorer/editor 段(workspace 切换、打开的 tab、
+      // 树展开)走的是独立的 300ms debounce 链,关窗前必须一并同步落盘,
+      // 否则 ack 返回但这些改动随未触发的 timer 丢失。见审计 #4。
+      try {
+        await flushExplorerPersistence();
+      } catch (err) {
+        console.warn('[dockview] explorer flush failed', err);
       }
       const latest = getFlushBridge();
       latest?.layout?.sendFlushAck?.(

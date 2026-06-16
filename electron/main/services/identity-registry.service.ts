@@ -60,6 +60,22 @@ export class IdentityRegistry {
     return { pluginId: entry.pluginId, generation: entry.generation };
   }
 
+  /**
+   * Main-internal lookup by token WITHOUT senderId check. Only for cleanup
+   * paths (e.g. revoking path-scopes on unregister), never for op authorization.
+   */
+  lookup(token: string): { pluginId: string; generation: number } | undefined {
+    const entry = this.entries.get(token);
+    return entry
+      ? { pluginId: entry.pluginId, generation: entry.generation }
+      : undefined;
+  }
+
+  /** Latest generation registered for a pluginId (0 if never). */
+  currentGeneration(pluginId: string): number {
+    return this.generations.get(pluginId) ?? 0;
+  }
+
   /** PluginManager calls on plugin destroy / HMR reload. Token enters drain state; 5s later GC removes it. */
   revoke(token: string): void {
     const entry = this.entries.get(token);

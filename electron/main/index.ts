@@ -789,6 +789,9 @@ app.on('before-quit', async (event) => {
       flushedOnQuit.add(w.id);
     }),
   );
+  // force-kill 所有 PTY,防 agent 长任务子进程被孤儿化/zombie。在 app.quit() 前
+  // await:window 'closed' 清理走 3s grace timer,进程退出时不触发 SIGKILL(审计 P1)。
+  await termService.cleanupAll().catch(() => {});
   void mcpHost?.close().catch(() => {});
   void mcpStdio?.close().catch(() => {});
   app.quit();

@@ -287,6 +287,19 @@ function isExplorerSnapshot(v: unknown): v is ExplorerSnapshot {
 // initExplorerPersistence
 // ──────────────────────────────────────────────
 
+// 当前窗口的"立即落盘"句柄(绕过 debounce),由 initExplorerPersistence 注册。
+// 每个 renderer 是独立 JS context,各窗只持有/flush 自己的段。
+let activeFlush: (() => Promise<void>) | null = null;
+
+/**
+ * 立即把 explorer / editor 段落盘,绕过 300ms debounce。供关窗 / 退出的
+ * flush-request 调用 —— 否则关窗前 debounce 窗口内的 workspace 切换、tab
+ * 打开/关闭、树展开会随未触发的 timer 一起丢失。未初始化时 no-op。
+ */
+export async function flushExplorerPersistence(): Promise<void> {
+  await activeFlush?.();
+}
+
 export async function initExplorerPersistence(
   api: ExplorerPersistApi,
   extras?: InitExplorerPersistenceExtras,
@@ -339,7 +352,7 @@ export async function initExplorerPersistence(
 
   // 3. 订阅 + debounce 写。所有窗口都订阅,各写各段(prevSnap 合并保留其它段)。
   let lastSnap: ExplorerSnapshot | null = hydratedSnap;
-  const persist = debounce(async () => {
+  const writeNow = async (): Promise<void> => {
     try {
       const snap = snapshotFromStores(lastSnap ?? undefined, windowSeq);
       const w = await api.write(snap);
@@ -351,7 +364,12 @@ export async function initExplorerPersistence(
     } catch (err) {
       console.warn('[explorer-persist] write threw', err);
     }
+  };
+  const persist = debounce(() => {
+    void writeNow();
   }, DEBOUNCE_MS);
+  // 注册立即落盘句柄,供 flushExplorerPersistence()(关窗 / 退出)调用。
+  activeFlush = writeNow;
 
   subscribeAll(
     [

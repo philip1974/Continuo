@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { promises as fs, type Dirent } from 'node:fs';
-import { dirname, join, sep } from 'node:path';
+import { dirname, join } from 'node:path';
 import { app, type IpcMain, type WebContents } from 'electron';
 import { PLUGIN_FS_CHANNELS } from '../../shared/plugin-fs-channels';
 import { IdentityRegistry } from './identity-registry.service';
@@ -58,7 +58,20 @@ export function registerPluginFsHandlers(
   );
 
   ipcMain.handle('plugin-fs:_unregister-plugin', async (_event, token: string) => {
+    // 撤 path-scope 必须在 revoke 之前 lookup(revoke 进 drain 但 lookup 仍能查到;
+    // 这里先取 pluginId/generation 再撤,语义更清晰)。与 identity token 撤销对称:
+    // 否则插件卸载/禁用后授予的 scope 永久驻留,同 id 重装直接继承(审计 #2)。
+    const info = identityRegistry.lookup(token);
     identityRegistry.revoke(token);
+    // generation 守卫:仅当没有更新实例已注册(generation 仍是最新)时才撤,
+    // 避免 HMR reload 先 register 新实例后再 unregister 旧 token 时,
+    // 误删新实例已 grant 的 scope。
+    if (
+      info &&
+      identityRegistry.currentGeneration(info.pluginId) === info.generation
+    ) {
+      pathScopeRegistry.revokeAll(info.pluginId);
+    }
   });
 
   ipcMain.handle(
@@ -274,6 +287,22 @@ export function registerPluginFsHandlers(
         });
         child.on('error', reject);
       });
+    },
+  );
+
+  // 只读 scope 探测:返回 boolean 而非抛错,供 editor.openFile 等"先校验再走
+  // 受信通道"的场景用。ScopeError → false(路径不在已授 scope);identity 错误
+  // (未知 token / 跨窗)仍 rethrow,保持 fail-loud。
+  ipcMain.handle(
+    PLUGIN_FS_CHANNELS.CHECK_PATH,
+    async (event, token: string, target: string): Promise<boolean> => {
+      try {
+        await pathScopeRegistry.check(token, event.sender.id, 'read', target, 'r');
+        return true;
+      } catch (err) {
+        if (err instanceof ScopeError) return false;
+        throw err;
+      }
     },
   );
 

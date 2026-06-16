@@ -4,9 +4,13 @@ import { registerPluginShellStreamHandlers } from '../services/plugin-shell-stre
 
 type Handler = (event: { sender: MockWebContents }, ...args: unknown[]) => Promise<void>;
 
+let nextWcId = 1;
+
 class MockWebContents {
+  readonly id = nextWcId++;
   readonly sent: { channel: string; payload: unknown }[] = [];
   destroyed = false;
+  private destroyHandlers: (() => void)[] = [];
 
   isDestroyed(): boolean {
     return this.destroyed;
@@ -14,6 +18,17 @@ class MockWebContents {
 
   send(channel: string, payload: unknown): void {
     this.sent.push({ channel, payload });
+  }
+
+  once(event: string, handler: () => void): void {
+    if (event === 'destroyed') this.destroyHandlers.push(handler);
+  }
+
+  /** Test helper: simulate the webContents being destroyed (window close). */
+  emitDestroyed(): void {
+    this.destroyed = true;
+    const handlers = this.destroyHandlers.splice(0);
+    for (const h of handlers) h();
   }
 }
 
@@ -168,5 +183,27 @@ describe('plugin-shell-stream.service', () => {
         'process.exit(0)',
       ]),
     ).rejects.toThrow('streamId already active');
+  });
+
+  it('T3.f kills stream child + clears active when webContents destroyed', async () => {
+    const { ipc, sender } = makeHarness();
+    const id = 'destroy-leak';
+
+    await ipc.invoke(sender, PLUGIN_SHELL_STREAM_CHANNELS.START, id, process.execPath, [
+      '-e',
+      'setInterval(() => {}, 1000)',
+    ]);
+
+    // 模拟窗口关闭 → webContents 'destroyed' → killStreamsForSender 杀子进程 + 清 active。
+    sender.emitDestroyed();
+
+    // active 已清:同 id 重新 START 不再抛 "already active"(否则说明销毁没清理 → 泄漏)。
+    childrenToAbort.push({ ipc, sender, id });
+    await expect(
+      ipc.invoke(sender, PLUGIN_SHELL_STREAM_CHANNELS.START, id, process.execPath, [
+        '-e',
+        'process.exit(0)',
+      ]),
+    ).resolves.toBeUndefined();
   });
 });

@@ -15,6 +15,7 @@ export const PLUGIN_FS_CHANNELS = {
   RM: 'plugin-fs:rm',
   CP: 'plugin-fs:cp',
   READ_GIT_BLOB: 'plugin-fs:read-git-blob',
+  CHECK_PATH: 'plugin-fs:check-path',
   ATOMIC_REPLACE: 'plugin-fs:atomic-replace',
   USER_HOME: 'plugin-fs:user-home',
   REQUEST_SCOPE: 'plugin-fs:request-scope',

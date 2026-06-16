@@ -276,21 +276,19 @@ function makeEditor(
       }
 
       if (store) {
-        const raw = coApi.pluginFsRaw as typeof coApi.pluginFsRaw & {
-          checkPath?: (token: string, path: string) => Promise<boolean>;
-        };
-        if (typeof raw.checkPath === 'function') {
-          const scopeOk = await raw.checkPath(
-            token ?? missingPluginFsToken(),
-            path,
-          );
-          if (!scopeOk) {
-            return {
-              ok: false,
-              code: 'PERMISSION_DENIED',
-              message: `path '${path}' out of granted scope`,
-            };
-          }
+        // path-scope 校验:openFile 走宿主受信 fs 通道,必须先确认目标在已授
+        // scope 内,否则有 'fs' 权限的插件可借此越权打开任意文件。checkPath
+        // 现为 PluginFsRaw 必备方法(main 端 plugin-fs:check-path 实装)。
+        const scopeOk = await coApi.pluginFsRaw.checkPath(
+          token ?? missingPluginFsToken(),
+          path,
+        );
+        if (!scopeOk) {
+          return {
+            ok: false,
+            code: 'PERMISSION_DENIED',
+            message: `path '${path}' out of granted scope`,
+          };
         }
       }
 

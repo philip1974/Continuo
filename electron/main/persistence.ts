@@ -315,8 +315,18 @@ export function mergeWritableIntoFull(
     merged.push(w as WindowEntryV3);
   }
 
+  // nextWindowSeq 是 main 独占的单调计数器(allocateWindowSeq 在 file-mutex 内
+  // 自增)。renderer 的 writable 携带的是 hydrate 时读到的旧值,直接 ...writable
+  // 会把 main 已递增的计数回退,导致后续新窗复用 seq → 两窗共享同一段互相覆盖。
+  // 取 max 防回退:磁盘当前值与 renderer 值谁大用谁。
+  const nextWindowSeq = Math.max(
+    current?.nextWindowSeq ?? 0,
+    writable.nextWindowSeq ?? 0,
+  );
+
   return {
     ...writable,
+    nextWindowSeq,
     windows: merged,
   };
 }

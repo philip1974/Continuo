@@ -8,10 +8,39 @@ const MAX_TIMEOUT_MS = 30 * 60_000;
 interface ActiveStream {
   child: ChildProcessWithoutNullStreams;
   timeoutTimer: NodeJS.Timeout | null;
+  senderId: number;
 }
 
 export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
   const active = new Map<string, ActiveStream>();
+  // 已挂 'destroyed' 钩子的 sender,避免同一 webContents 多次 START 累积监听器。
+  const hookedSenders = new Set<number>();
+
+  // 窗口/插件 webContents 销毁时,杀掉它名下所有未结束的 stream 子进程,
+  // 否则插件不调 ABORT 直接 unload / 关窗会泄漏子进程直到 timeout(审计 P1)。
+  const killStreamsForSender = (senderId: number): void => {
+    for (const [streamId, handle] of active) {
+      if (handle.senderId !== senderId) continue;
+      if (handle.timeoutTimer) clearTimeout(handle.timeoutTimer);
+      active.delete(streamId);
+      const child = handle.child;
+      try {
+        child.kill('SIGTERM');
+      } catch {
+        // ignore
+      }
+      const killTimer = setTimeout(() => {
+        try {
+          child.kill('SIGKILL');
+        } catch {
+          // ignore
+        }
+      }, 1000);
+      const maybeUnref = killTimer as { unref?: () => void };
+      if (typeof maybeUnref.unref === 'function') maybeUnref.unref();
+    }
+    hookedSenders.delete(senderId);
+  };
 
   ipcMain.handle(
     PLUGIN_SHELL_STREAM_CHANNELS.START,
@@ -35,6 +64,11 @@ export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
         stdio: ['ignore', 'pipe', 'pipe'],
       });
       const senderWc = event.sender;
+      const senderId = senderWc.id;
+      if (typeof senderWc.once === 'function' && !hookedSenders.has(senderId)) {
+        hookedSenders.add(senderId);
+        senderWc.once('destroyed', () => killStreamsForSender(senderId));
+      }
       let settled = false;
 
       const send = (
@@ -92,7 +126,7 @@ export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
       }, timeoutMs);
       const maybeUnref = timeoutTimer as { unref?: () => void };
       if (typeof maybeUnref.unref === 'function') maybeUnref.unref();
-      active.set(streamId, { child, timeoutTimer });
+      active.set(streamId, { child, timeoutTimer, senderId });
     },
   );
 

@@ -181,7 +181,12 @@ export function createHookFileBroker(
   let cleanupTimer: NodeJS.Timeout | null = null;
   let started = false;
   let stopped = false;
-  const processed = new Set<string>();
+  // fileName → 处理时刻(ms)。用 Map 而非 Set 以便在 cleanupStale 里按年龄淘汰,
+  // 否则长开 app + 频繁 stop-hook(文件名带 ns 时间戳永远唯一)会单调膨胀(审计 P1)。
+  const processed = new Map<string, number>();
+  // 正在 ingest 中的文件名(读+解析期间)。防同一文件的并发 watch 事件重复 ingest;
+  // 与 processed 分离,使读/解析失败的文件不被永久标记,允许写入完成后重试。
+  const inFlight = new Set<string>();
   const buffered: BufferedEntry[] = [];
   const pendingByKey = new Map<string, PendingWaiter>();
 
@@ -197,67 +202,76 @@ export function createHookFileBroker(
   }
 
   async function ingestFile(fileName: string): Promise<void> {
-    if (stopped || processed.has(fileName)) return;
+    if (stopped || processed.has(fileName) || inFlight.has(fileName)) return;
 
     const runner = inferRunnerFromFilename(fileName);
     if (runner === null) return;
 
-    const filePath = path.join(hookEventsDir, fileName);
-    let fileStat: Awaited<ReturnType<typeof stat>>;
+    inFlight.add(fileName);
     try {
-      fileStat = await stat(filePath);
-    } catch {
-      return;
-    }
+      const filePath = path.join(hookEventsDir, fileName);
+      let fileStat: Awaited<ReturnType<typeof stat>>;
+      try {
+        fileStat = await stat(filePath);
+      } catch {
+        return; // 文件消失/不可读 → 不标 processed,允许后续 watch 事件重试
+      }
 
-    if (Date.now() - fileStat.mtimeMs > maxAgeMs) {
-      processed.add(fileName);
-      void unlink(filePath).catch(() => {});
-      return;
-    }
-
-    processed.add(fileName);
-
-    let jsonText: string;
-    try {
-      jsonText = await readFile(filePath, 'utf8');
-    } catch {
-      return;
-    }
-
-    const payload = parseStopPayload(runner, fileName, jsonText);
-    if (payload === null) {
-      void unlink(filePath).catch(() => {});
-      return;
-    }
-
-    const entry: BufferedEntry = {
-      fileName,
-      payload,
-      windowId: parseFilenameForWindowId(fileName),
-      ingestedAt: Date.now(),
-    };
-
-    for (const [key, pending] of pendingByKey) {
-      if (matchesFilter(entry, pending.filter)) {
-        pendingByKey.delete(key);
-        if (pending.timer !== null) clearTimeout(pending.timer);
+      if (Date.now() - fileStat.mtimeMs > maxAgeMs) {
+        processed.set(fileName, Date.now());
         void unlink(filePath).catch(() => {});
-        pending.resolve(entry);
         return;
       }
-    }
 
-    buffered.push(entry);
-    if (buffered.length > maxEntries) {
-      const dropped = buffered.shift();
-      if (dropped !== undefined) {
-        void unlink(path.join(hookEventsDir, dropped.fileName)).catch(() => {});
+      let jsonText: string;
+      try {
+        jsonText = await readFile(filePath, 'utf8');
+      } catch {
+        return; // 读失败(可能写入未完成)→ 不标 processed/不 unlink,等下次事件重试
       }
+
+      const payload = parseStopPayload(runner, fileName, jsonText);
+      if (payload === null) {
+        // 解析失败:文件可能正被 `cat >` 写入未完成。绝不 unlink(否则真实事件
+        // 在内容到达前被删 → 永久丢失),也不标 processed,等写完后的 watch 事件
+        // 重试。彻底损坏(写完仍无法解析)的残留由 cleanupStale 的目录清扫按
+        // maxAge 兜底删除(审计 P1)。
+        return;
+      }
+
+      // 解析成功才标 processed,防同名文件被重复 ingest。
+      processed.set(fileName, Date.now());
+
+      const entry: BufferedEntry = {
+        fileName,
+        payload,
+        windowId: parseFilenameForWindowId(fileName),
+        ingestedAt: Date.now(),
+      };
+
+      for (const [key, pending] of pendingByKey) {
+        if (matchesFilter(entry, pending.filter)) {
+          pendingByKey.delete(key);
+          if (pending.timer !== null) clearTimeout(pending.timer);
+          void unlink(filePath).catch(() => {});
+          pending.resolve(entry);
+          return;
+        }
+      }
+
+      buffered.push(entry);
+      if (buffered.length > maxEntries) {
+        const dropped = buffered.shift();
+        if (dropped !== undefined) {
+          void unlink(path.join(hookEventsDir, dropped.fileName)).catch(() => {});
+        }
+      }
+    } finally {
+      inFlight.delete(fileName);
     }
   }
 
-  function cleanupStale(): void {
+  async function cleanupStale(): Promise<void> {
     const now = Date.now();
     for (let i = buffered.length - 1; i >= 0; i -= 1) {
       const entry = buffered[i];
@@ -267,6 +281,36 @@ export function createHookFileBroker(
           void unlink(path.join(hookEventsDir, stale.fileName)).catch(() => {});
         }
       }
+    }
+    // 淘汰 processed 去重记录:留 2x maxAgeMs 余量,确保对应文件早已被 unlink
+    // (文件名唯一,不会再触发 watch 重新 ingest)。防 Set 无界增长。
+    const processedTtl = maxAgeMs * 2;
+    for (const [fileName, addedAt] of processed) {
+      if (now - addedAt > processedTtl) processed.delete(fileName);
+    }
+    // 目录清扫:删除超过 maxAgeMs 的孤儿文件 —— 即解析失败后被保留(等重试)但
+    // 始终无法解析的残留、或无 session_id 的完整但不可用文件。buffered/inFlight
+    // 中的文件跳过(前者等消费、后者正处理)。这是"不在解析失败时立即 unlink"的
+    // 兜底,避免长会话里此类文件累积。
+    try {
+      const names = await readdir(hookEventsDir);
+      for (const name of names) {
+        if (inferRunnerFromFilename(name) === null) continue;
+        if (inFlight.has(name)) continue;
+        if (buffered.some((e) => e.fileName === name)) continue;
+        const p = path.join(hookEventsDir, name);
+        try {
+          const s = await stat(p);
+          if (now - s.mtimeMs > maxAgeMs) {
+            await unlink(p).catch(() => {});
+            processed.delete(name);
+          }
+        } catch {
+          // ignore per-file races
+        }
+      }
+    } catch {
+      // ignore directory read races
     }
   }
 
@@ -296,7 +340,7 @@ export function createHookFileBroker(
         },
       );
       watcher.on('error', () => {});
-      cleanupTimer = setInterval(cleanupStale, cleanupIntervalMs);
+      cleanupTimer = setInterval(() => void cleanupStale(), cleanupIntervalMs);
     },
     awaitNext(filter) {
       return new Promise((resolve, reject) => {

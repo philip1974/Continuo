@@ -340,4 +340,23 @@ describe('terminal.await_stop_hook', () => {
 
     await expect(Promise.all([cc, codex])).resolves.toHaveLength(2);
   });
+
+  it('preserves a fresh unparseable hook file (possible incomplete write) instead of deleting it', async () => {
+    const doneDir = await makeDoneDir();
+    // 模拟 `cat >` 写入尚未完成:文件已创建但内容是截断的非法 JSON。
+    const partial = join(doneDir, 'cc_4_partial_stop.jsonl');
+    await writeFile(partial, '{ "session_id": "claude', 'utf8');
+
+    const broker = createHookFileBroker(doneDir, {
+      maxEntries: DONE_BUFFER_CAP,
+      maxAgeMs: DONE_ENTRY_MAX_AGE_MS,
+      cleanupIntervalMs: 60_000,
+    });
+    await broker.start(); // start 的 readdir 会 ingest 这个文件
+    brokers.push(broker);
+
+    // 解析失败的新文件必须被保留(等内容写完后由后续 watch 事件重试),
+    // 不能在内容到达前被删除 → 否则真实 stop 事件永久丢失(审计 P1)。
+    await expect(readFile(partial, 'utf8')).resolves.toBe('{ "session_id": "claude');
+  });
 });

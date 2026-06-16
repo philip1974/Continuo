@@ -47,6 +47,8 @@ export interface PluginFsRaw {
     opts?: { recursive?: boolean },
   ): Promise<void>;
   readGitBlob(token: string, repoDir: string, sha: string): Promise<Uint8Array>;
+  /** True if `path` resolves within a granted read scope; false otherwise. */
+  checkPath(token: string, path: string): Promise<boolean>;
   atomicReplaceWithinScope(
     token: string,
     staging: string,
@@ -105,6 +107,8 @@ export const pluginFsRaw: PluginFsRaw = {
     ipcRenderer.invoke(PLUGIN_FS_CHANNELS.CP, token, src, dst, opts),
   readGitBlob: (token, repoDir, sha) =>
     ipcRenderer.invoke(PLUGIN_FS_CHANNELS.READ_GIT_BLOB, token, repoDir, sha),
+  checkPath: (token, path) =>
+    ipcRenderer.invoke(PLUGIN_FS_CHANNELS.CHECK_PATH, token, path),
   atomicReplaceWithinScope: (token, staging, final, opts) =>
     ipcRenderer.invoke(
       PLUGIN_FS_CHANNELS.ATOMIC_REPLACE,
