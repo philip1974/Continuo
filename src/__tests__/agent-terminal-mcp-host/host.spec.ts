@@ -12,6 +12,7 @@ import {
   formatRpcResult,
   formatRpcError,
   isLocalhostBindAddr,
+  isLoopbackHostHeader,
 } from '../../../electron/main/services/mcp-host.service';
 
 // ────────────────────────────────────────────────────────────
@@ -219,5 +220,33 @@ describe('isLocalhostBindAddr', () => {
     '',
   ])('非白名单 — %s → false', (addr) => {
     expect(isLocalhostBindAddr(addr)).toBe(false);
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// isLoopbackHostHeader (DNS rebinding 防护 — 审计 V6)
+// ────────────────────────────────────────────────────────────
+
+describe('isLoopbackHostHeader', () => {
+  it.each(['127.0.0.1:8080', 'localhost:8080', '[::1]:8080', 'LOCALHOST:8080'])(
+    '回环 Host + 正确端口 → true (%s)',
+    (h) => {
+      expect(isLoopbackHostHeader(h, 8080)).toBe(true);
+    },
+  );
+
+  it.each([
+    'evil.com:8080', // DNS rebinding:攻击者域名
+    '127.0.0.1:9999', // 端口不符
+    '192.168.1.5:8080',
+    '127.0.0.1', // 缺端口
+    undefined,
+    '',
+  ])('非回环 / 端口不符 / 缺失 → false (%s)', (h) => {
+    expect(isLoopbackHostHeader(h as string | undefined, 8080)).toBe(false);
+  });
+
+  it('port<=0 一律 false', () => {
+    expect(isLoopbackHostHeader('127.0.0.1:0', 0)).toBe(false);
   });
 });

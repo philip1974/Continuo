@@ -13,15 +13,35 @@ export interface PluginDataStoreDeps {
   userDataPath: string;
 }
 
+// plugin id 必须是单段安全标识符 —— 与 plugins.service / loader 的 id 正则一致。
+// 拒绝路径分隔符 / .. / 空,防 dataFile() 的 join 越出 plugins 目录(路径穿越:
+// save('../../foo',...) 可在 userData 外任意写/删/读文件)。
+const PLUGIN_ID_RE = /^[a-z0-9._-]+$/;
+
+function assertPluginId(pluginId: unknown): asserts pluginId is string {
+  if (
+    typeof pluginId !== 'string' ||
+    pluginId.length === 0 ||
+    pluginId === '.' ||
+    pluginId === '..' ||
+    !PLUGIN_ID_RE.test(pluginId)
+  ) {
+    throw new Error(`invalid plugin id: ${String(pluginId)}`);
+  }
+}
+
 export function registerPluginDataStoreHandlers(
   ipcMain: IpcMain,
   deps: PluginDataStoreDeps,
 ): void {
   const baseDir = join(deps.userDataPath, 'plugins');
-  const dataFile = (pluginId: string): string =>
-    join(baseDir, pluginId, 'data.json');
+  const dataFile = (pluginId: string): string => {
+    assertPluginId(pluginId);
+    return join(baseDir, pluginId, 'data.json');
+  };
 
   async function ensureDir(pluginId: string): Promise<string> {
+    assertPluginId(pluginId);
     const dir = join(baseDir, pluginId);
     await fs.mkdir(dir, { recursive: true });
     return dir;

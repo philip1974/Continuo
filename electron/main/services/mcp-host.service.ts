@@ -169,6 +169,23 @@ export function isLocalhostBindAddr(addr: string): boolean {
   return LOCALHOST_ADDRS.has(addr);
 }
 
+/**
+ * Host header 必须是本机回环地址 + 当前端口。用于挫败 DNS rebinding
+ * (rebinding 后浏览器发来的 Host 是攻击者域名,与回环地址不符)。
+ */
+export function isLoopbackHostHeader(
+  hostHeader: string | undefined,
+  port: number,
+): boolean {
+  if (typeof hostHeader !== 'string' || port <= 0) return false;
+  const h = hostHeader.toLowerCase();
+  return (
+    h === `127.0.0.1:${port}` ||
+    h === `localhost:${port}` ||
+    h === `[::1]:${port}`
+  );
+}
+
 // ── MCP 标准协议 dispatcher ──────────────────────────────────────
 
 export interface ServerInfo {
@@ -504,6 +521,22 @@ export async function createMcpHost(
   };
 
   const server: HttpServer = createHttpServer((req, res) => {
+    // DNS rebinding / 跨源防护(纵深防御,token 仍是主防线 —— 审计 V6):
+    // 本地 agent CLI 直连 127.0.0.1/localhost 且不带 Origin;浏览器发起的请求
+    // (含 DNS rebinding:把攻击者域名解析到 127.0.0.1)一定带 Origin,且 Host
+    // 为攻击者域名。拒带 Origin 的请求 + 校验 Host 必须是本机回环地址,即可挫败
+    // 所有浏览器/rebinding 发起的访问。
+    const addr0 = server.address();
+    const boundPort =
+      addr0 && typeof addr0 !== 'string' ? addr0.port : 0;
+    if (
+      req.headers.origin !== undefined ||
+      !isLoopbackHostHeader(req.headers.host, boundPort)
+    ) {
+      res.statusCode = 403;
+      res.end();
+      return;
+    }
     // 简单路径解析(去 query)
     const path = (req.url ?? '/').split('?')[0] ?? '/';
     if (req.method === 'POST' && path === '/mcp') {

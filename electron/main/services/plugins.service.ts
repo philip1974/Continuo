@@ -237,7 +237,9 @@ export interface InstallFromGitResult {
   readonly version: string;
 }
 
-const GIT_URL_RE = /^(https?|git|ssh):\/\//i;
+// 仅允许 https(去掉 git://明文无认证、ssh://可被指向内网做 SSRF/探测)。
+const GIT_URL_RE = /^https:\/\//i;
+const GIT_CLONE_TIMEOUT_MS = 60_000;
 
 /**
  * 从 git URL clone 到临时目录,验 manifest.json,把整个目录复制到
@@ -340,23 +342,66 @@ export async function installFromGit(
 
 function runGit(args: readonly string[]): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn('git', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn('git', args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      // 禁交互式凭据:防指向需认证的私有 repo 时 git 弹凭据提示永久挂起,
+      // 也不读系统/全局凭据助手。GIT_CONFIG_NOSYSTEM 隔离系统级 git 配置。
+      env: {
+        ...process.env,
+        GIT_TERMINAL_PROMPT: '0',
+        GIT_ASKPASS: '',
+        GIT_CONFIG_NOSYSTEM: '1',
+      },
+    });
     let stderr = '';
+    let settled = false;
+    const finish = (fn: () => void): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fn();
+    };
+    // timeout:防慢速/挂起的远端无限占用(DoS)。SIGTERM → 1s 后 SIGKILL。
+    const timer = setTimeout(() => {
+      try {
+        child.kill('SIGTERM');
+      } catch {
+        /* ignore */
+      }
+      setTimeout(() => {
+        try {
+          child.kill('SIGKILL');
+        } catch {
+          /* ignore */
+        }
+      }, 1000);
+      finish(() =>
+        reject(
+          Object.assign(new Error(`git ${args[0]} 超时`), {
+            code: ERROR_CODES.GIT_FAILED,
+          }),
+        ),
+      );
+    }, GIT_CLONE_TIMEOUT_MS);
     child.stderr.on('data', (d) => (stderr += String(d)));
     child.on('error', (err) =>
-      reject(
-        Object.assign(new Error(`git spawn 失败: ${err.message}`), {
-          code: ERROR_CODES.GIT_SPAWN_FAILED,
-        }),
+      finish(() =>
+        reject(
+          Object.assign(new Error(`git spawn 失败: ${err.message}`), {
+            code: ERROR_CODES.GIT_SPAWN_FAILED,
+          }),
+        ),
       ),
     );
     child.on('exit', (code) => {
-      if (code === 0) resolve();
+      if (code === 0) finish(resolve);
       else
-        reject(
-          Object.assign(
-            new Error(`git ${args[0]} exit ${code}: ${stderr.trim()}`),
-            { code: ERROR_CODES.GIT_FAILED },
+        finish(() =>
+          reject(
+            Object.assign(
+              new Error(`git ${args[0]} exit ${code}: ${stderr.trim()}`),
+              { code: ERROR_CODES.GIT_FAILED },
+            ),
           ),
         );
     });

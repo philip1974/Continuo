@@ -22,7 +22,7 @@ class FakeIpcMain {
   }
 }
 
-let roots: string[] = [];
+const roots: string[] = [];
 
 async function makeHarness(): Promise<{
   root: string;
@@ -94,5 +94,33 @@ describe('plugin-data-store.service', () => {
     await ipc.invoke('plugin-data:save', 'p.parent', { created: true });
 
     expect(existsSync(file)).toBe(true);
+  });
+
+  it('T2.f rejects path-traversal pluginId on load/save/clear (审计 V1)', async () => {
+    const { root, ipc } = await makeHarness();
+    const evil = '../../escaped';
+
+    await expect(ipc.invoke('plugin-data:load', evil)).rejects.toThrow(
+      /invalid plugin id/,
+    );
+    await expect(
+      ipc.invoke('plugin-data:save', evil, { pwn: true }),
+    ).rejects.toThrow(/invalid plugin id/);
+    await expect(ipc.invoke('plugin-data:clear', evil)).rejects.toThrow(
+      /invalid plugin id/,
+    );
+
+    // 确认没有在 plugins 目录外写出任何文件
+    expect(existsSync(join(root, 'escaped'))).toBe(false);
+    expect(existsSync(join(root, 'escaped.json'))).toBe(false);
+  });
+
+  it('T2.g rejects separators / dot segments / empty / uppercase pluginId', async () => {
+    const { ipc } = await makeHarness();
+    for (const bad of ['a/b', 'a\\b', '.', '..', '', 'UPPER']) {
+      await expect(ipc.invoke('plugin-data:load', bad)).rejects.toThrow(
+        /invalid plugin id/,
+      );
+    }
   });
 });

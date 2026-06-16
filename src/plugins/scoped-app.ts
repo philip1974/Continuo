@@ -22,6 +22,7 @@ import type {
   PluginShellApi,
 } from './types';
 import type { PluginMcpToolSpec } from './registries/PluginMcpRegistry';
+import type { PluginDataStore } from './PluginDataStore';
 import {
   PermissionError,
   type PermissionKey,
@@ -297,6 +298,22 @@ function makeEditor(
   };
 }
 
+/**
+ * per-plugin dataStore:强制用绑定的 pluginId,忽略调用方传入的 id。
+ * 防 `app.dataStore.read('别的插件id')` 跨插件读/写他人持久化数据。
+ * 注:realm 内恶意代码仍可绕到 coApi.pluginDataRaw 直调,但 main 端已校验
+ * pluginId 防路径穿越;此层关闭正常 app.* API 的跨插件访问(纵深防御)。
+ */
+function makeDataStore(
+  pluginId: string,
+  raw: PluginDataStore,
+): PluginDataStore {
+  return {
+    read: () => raw.read(pluginId),
+    write: (_id, data) => raw.write(pluginId, data),
+  };
+}
+
 function makeDock(rawDock: CoDockApi): CoDockApi {
   return {
     openPanel(panelId) {
@@ -350,9 +367,11 @@ export function createScopedApp(
 ): CoPluginApp {
   // Omit coApp.mcp/editor raw singletons → 替换为 per-plugin scope wrappers,
   // 其它字段直通。
-  const { mcp: registry, editor, dock, notifications, ...rest } = coApp;
+  const { mcp: registry, editor, dock, notifications, dataStore, ...rest } =
+    coApp;
   return {
     ...rest,
+    dataStore: makeDataStore(pluginId, dataStore),
     editor: makeEditor(pluginId, store, editor, token),
     dock: makeDock(dock),
     notifications: makeNotifications(notifications),

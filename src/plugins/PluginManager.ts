@@ -261,22 +261,12 @@ export class PluginManager {
     entry.error = undefined;
     entry.warning = undefined;
 
-    const loaded = await loadPluginModule({
-      moduleUrl: entry.dirInfo.moduleUrl,
-      manifest: entry.manifest,
-      importer: (url) => this.host.importModule(url),
-    });
-    if (!loaded.ok) {
-      console.warn(
-        `[plugin-manager] load ${entry.id} failed: ${loaded.code} ${loaded.message}`,
-      );
-      entry.status = 'failed';
-      entry.error = `${loaded.code}: ${loaded.message}`;
-      return;
-    }
-
     // v3.4 权限门:manifest 声明了 permissions 且 host 配了 store + prompt
-    // 才阻塞;否则放行(向后兼容)
+    // 才阻塞;否则放行(向后兼容)。
+    // 安全:权限门必须在 loadPluginModule(import())之前 —— 插件 bundle 顶层
+    // 代码在 import() 时即执行,若放到 load 之后,用户点"拒绝"时恶意顶层代码
+    // 已运行过一次(可读 DOM / 调未 gate 的 IPC / 外带数据)。manifest 在扫描期
+    // 已读到,权限判定无需先加载模块。
     const requested = entry.manifest.permissions ?? [];
     if (
       requested.length > 0 &&
@@ -302,6 +292,20 @@ export class PluginManager {
       if (auth.denied.length > 0) {
         entry.warning = `部分授权:已授 ${auth.granted.join(', ')};未授 ${auth.denied.join(', ')}`;
       }
+    }
+
+    const loaded = await loadPluginModule({
+      moduleUrl: entry.dirInfo.moduleUrl,
+      manifest: entry.manifest,
+      importer: (url) => this.host.importModule(url),
+    });
+    if (!loaded.ok) {
+      console.warn(
+        `[plugin-manager] load ${entry.id} failed: ${loaded.code} ${loaded.message}`,
+      );
+      entry.status = 'failed';
+      entry.error = `${loaded.code}: ${loaded.message}`;
+      return;
     }
 
     // PluginClass 是 abstract,但实际传进来的是子类构造函数
