@@ -17,6 +17,10 @@
 - [`thin-entry.spec.ts`](./45-plugin-isolation-spike/thin-entry.spec.ts)
 - [`worker-probe.spec.ts`](./45-plugin-isolation-spike/worker-probe.spec.ts)
 
+## [47 · dockview StrictMode idempotent applyDefaultLayout](./47-dockview-strictmode-idempotent/README.md)
+
+- [`layout-default-idempotent.spec.ts`](./47-dockview-strictmode-idempotent/layout-default-idempotent.spec.ts)
+
 ## [AgentAuthPrompt(Agent MCP 授权弹窗)](./agent-auth-prompt/README.md)
 
 - [`agent-auth-prompt.spec.tsx`](./agent-auth-prompt/agent-auth-prompt.spec.tsx)
