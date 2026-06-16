@@ -61,6 +61,7 @@ import {
 } from './services/mcp-tools-hook-bridge';
 import { startPluginMcpIpc } from './ipc/plugin-mcp.ipc';
 import { defaultIsTrustedFrame } from './safe-handle';
+import { buildRendererQuery, stripSpikeQuery, spikeAllowed, installSpikeGate } from './spike-gate';
 
 // autorun delay:Win shell prompt 慢,默认更长。
 const AUTORUN_DELAY_MS = process.platform === 'win32' ? 600 : 200;
@@ -231,11 +232,26 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
   // 多窗口:opts.workspace + opts.windowSeq 走 query string,renderer
   // parseInitialWorkspace / parseInitialWindowSeq 接收。dev loadURL 与 prod
   // loadFile 都加 query;loadFile 第二参支持 query 字段。
-  const queryParts: Record<string, string> = {
+  // [topic 45 spike gate 二道防线]: buildRendererQuery 收集所有 query input;
+  // stripSpikeQuery 在 spikeAllowed 拒绝时剥离 spike key (future-proof, P1.3)。
+  const baseQuery = buildRendererQuery({
     windowSeq: String(seq),
-  };
-  if (opts.workspace) queryParts['workspace'] = opts.workspace;
-  if (opts.fresh) queryParts['fresh'] = '1';
+    workspace: opts.workspace,
+    fresh: opts.fresh,
+    // opts.spike 当前 callsite 未注入,但 buildRendererQuery 支持 forward;
+    // future-proof, 防 packaged spike key 直接绕过第一道 will-navigate gate
+  });
+
+  const targetUrl =
+    isDev && process.env['ELECTRON_RENDERER_URL']
+      ? process.env['ELECTRON_RENDERER_URL']
+      : `file://${RENDERER_FILE}`;
+  const gateResult = spikeAllowed({
+    url: targetUrl,
+    argv: process.argv,
+    packaged: app.isPackaged,
+  });
+  const queryParts = stripSpikeQuery(baseQuery, gateResult.allowed);
 
   if (isDev && process.env['ELECTRON_RENDERER_URL']) {
     const url = new URL(process.env['ELECTRON_RENDERER_URL']);
@@ -254,6 +270,7 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
 // 这样从 popout 再 popout 也走我们的同一套安全策略。
 app.on('web-contents-created', (_evt, contents) => {
   contents.setWindowOpenHandler(windowOpenHandler);
+  installSpikeGate(contents, app.isPackaged); // [topic 45 spike gate 第一道] will-navigate + will-frame-navigate
 });
 
 // ─────────────────────────────────────────────────────

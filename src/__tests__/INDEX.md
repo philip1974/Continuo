@@ -9,6 +9,14 @@
 - [`xterm-key-passthrough.spec.ts`](./22-pane-zoom-toggle/xterm-key-passthrough.spec.ts)
 - [`zoom-toggle.spec.ts`](./22-pane-zoom-toggle/zoom-toggle.spec.ts)
 
+## [Topic 45 - Plugin True Isolation Phase0 Spike](./45-plugin-isolation-spike/README.md)
+
+- [`iframe-probe.spec.ts`](./45-plugin-isolation-spike/iframe-probe.spec.ts)
+- [`sab-probe.spec.ts`](./45-plugin-isolation-spike/sab-probe.spec.ts)
+- [`spike-gate.spec.ts`](./45-plugin-isolation-spike/spike-gate.spec.ts)
+- [`thin-entry.spec.ts`](./45-plugin-isolation-spike/thin-entry.spec.ts)
+- [`worker-probe.spec.ts`](./45-plugin-isolation-spike/worker-probe.spec.ts)
+
 ## [AgentAuthPrompt(Agent MCP 授权弹窗)](./agent-auth-prompt/README.md)
 
 - [`agent-auth-prompt.spec.tsx`](./agent-auth-prompt/agent-auth-prompt.spec.tsx)
