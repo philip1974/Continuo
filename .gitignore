@@ -22,5 +22,8 @@ examples/*
 !examples/codex-cli-adapter-minimal/
 # Dev-loop / il-loop 状态;议题 B.1 默认不入 git
 .claude/
+# Codex CLI 本地 cache + config (可能含 user/api secrets);永远不入 git
+# (topic 46 v4-E commit-pathspec 守护即时 commit, .gitignore 永久保护)
+.codex/
 # Plan 02 临时执行报告;commit 前 user 可删
 EXECUTION_CONTEXT.md
