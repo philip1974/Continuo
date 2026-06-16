@@ -3,12 +3,6 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-type IframeProbeState =
-  | 'blob-loaded-ok'
-  | 'frame-blob-blocked'
-  | 'iframe-throw'
-  | 'csp-blocks-inline';
-
 type IframeProbeResult = { main: IframeVerdict; inline?: IframeVerdict };
 
 type IframeVerdict =
@@ -175,7 +169,8 @@ function stubIframePostMessage(): void {
 }
 
 function stubAppendForBlobAndInlineSuccess(): void {
-  vi.spyOn(document.body, 'append').mockImplementation((node: Node) => {
+  vi.spyOn(document.body, 'append').mockImplementation((...nodes: (string | Node)[]) => {
+    const node = nodes[0] as Node;
     const iframe = node as HTMLIFrameElement;
     queueMicrotask(() => {
       if (iframe.srcdoc) {
@@ -188,7 +183,8 @@ function stubAppendForBlobAndInlineSuccess(): void {
 }
 
 function stubAppendForBlobOnly(): void {
-  vi.spyOn(document.body, 'append').mockImplementation((node: Node) => {
+  vi.spyOn(document.body, 'append').mockImplementation((...nodes: (string | Node)[]) => {
+    const node = nodes[0] as Node;
     const iframe = node as HTMLIFrameElement;
     if (!iframe.srcdoc) {
       queueMicrotask(() => iframe.dispatchEvent(new Event('load')));

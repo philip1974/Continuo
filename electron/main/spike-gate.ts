@@ -1,5 +1,3 @@
-import type { Event } from 'electron';
-
 export type SpikeReason = 'dev' | 'env-opt-in' | 'packaged-blocked' | 'env-missing';
 
 export interface SpikeAllowedInput {
@@ -81,13 +79,23 @@ export function guardOpen(
   return { action: 'allow' };
 }
 
+interface NavEvent {
+  preventDefault(): void;
+  readonly url: string;
+}
+
+interface SpikeGateContents {
+  on(
+    event: 'will-navigate' | 'will-frame-navigate',
+    listener: (event: NavEvent) => void,
+  ): void;
+}
+
 export function installSpikeGate(
-  contents: { on: (event: string, handler: (event: Event, url: string) => void) => void },
+  contents: SpikeGateContents,
   packaged: boolean,
 ): () => void {
-  const handler = (event: Event, url: string) => {
-    guardNav(event, url, packaged);
-  };
+  const handler = (event: NavEvent) => guardNav(event, event.url, packaged);
 
   contents.on('will-navigate', handler);
   contents.on('will-frame-navigate', handler);
@@ -96,4 +104,3 @@ export function installSpikeGate(
     // Electron WebContents listener cleanup is wired by the owning lifecycle.
   };
 }
-

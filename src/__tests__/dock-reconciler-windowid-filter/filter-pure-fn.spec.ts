@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   filterByOwnerWindow,
   type FilterDropOpts,
-  type TerminalSession,
 } from '../../stores/terminal.store';
 import { makeSession } from './fixtures';
 

@@ -47,7 +47,7 @@ export function translate(
   if (template === undefined) {
     if (import.meta.env?.DEV && !missingWarned.has(key)) {
       missingWarned.add(key);
-      // eslint-disable-next-line no-console
+       
       console.warn('[i18n] missing key:', key);
     }
     return key;

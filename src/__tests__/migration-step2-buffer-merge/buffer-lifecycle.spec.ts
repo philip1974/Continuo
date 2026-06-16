@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { BrowserWindow } from 'electron';
 import { makeWindow } from '../migration-step1-pty-handover/fixtures';
 
 const killedIds = vi.hoisted(() => new Set<string>());

@@ -19,7 +19,6 @@ import {
 } from '../../shell/dock/TerminalSessionsSync';
 import {
   useTerminalStore,
-  type TerminalSession,
 } from '../../stores/terminal.store';
 import { makeSession } from './fixtures';
 

@@ -8,21 +8,24 @@ import { reconcileTerminalPanels } from '@/shell/dock/DockReconciler';
 
 vi.mock('dockview-react', () => ({
   DockviewReact: ({ onReady }: { onReady: (event: { api: unknown }) => void }) => {
-    const api = {
-      totalPanels: 0,
-      fromJSON: vi.fn(),
-      toJSON: vi.fn(() => ({ panels: {} })),
-      getPanel: vi.fn(() => null),
-      addPanel: vi.fn(),
-      onDidLayoutChange: vi.fn(),
-      onDidRemovePanel: vi.fn(),
-      onDidAddPanel: vi.fn(),
-      onDidMaximizedGroupChange: vi.fn(), // topic-22
-      panels: [],
-    };
+    const api = React.useMemo(
+      () => ({
+        totalPanels: 0,
+        fromJSON: vi.fn(),
+        toJSON: vi.fn(() => ({ panels: {} })),
+        getPanel: vi.fn(() => null),
+        addPanel: vi.fn(),
+        onDidLayoutChange: vi.fn(),
+        onDidRemovePanel: vi.fn(),
+        onDidAddPanel: vi.fn(),
+        onDidMaximizedGroupChange: vi.fn(), // topic-22
+        panels: [],
+      }),
+      [],
+    );
     React.useEffect(() => {
       onReady({ api });
-    }, []);
+    }, [api, onReady]);
     return React.createElement('div', { 'data-testid': 'dockview' });
   },
 }));

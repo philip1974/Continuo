@@ -9,23 +9,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import { z } from 'zod';
 import { Plugin, type Disposable } from '../../plugins/Plugin';
-import type {
-  CoApp,
-  CoPluginApp,
-  PluginManifest,
-} from '../../plugins/types';
+import type { CoPluginApp, PluginManifest } from '../../plugins/types';
+import { createTestApp } from '../../plugins/test-utils';
 import type { PluginMcpToolSpec } from '../../plugins/registries/PluginMcpRegistry';
-import { PanelRegistry } from '../../plugins/registries/PanelRegistry';
-import { CommandRegistry } from '../../plugins/registries/CommandRegistry';
-import { StatusBarRegistry } from '../../plugins/registries/StatusBarRegistry';
-import { RibbonRegistry } from '../../plugins/registries/RibbonRegistry';
-import { EventBus } from '../../plugins/EventBus';
-import { InMemoryDataStore } from '../../plugins/PluginDataStore';
-import { SettingItemRegistry } from '../../plugins/registries/SettingItemRegistry';
-import { SettingTabRegistry } from '../../plugins/registries/SettingTabRegistry';
-import { ExplorerContextMenuRegistry } from '../../plugins/registries/ExplorerContextMenuRegistry';
-import { ExplorerDecoratorRegistry } from '../../plugins/registries/ExplorerDecoratorRegistry';
-import { EditorActionRegistry } from '../../plugins/registries/EditorActionRegistry';
 
 // ─── fake mcp api(实装边界:CoPluginApp.mcp.register)──────────
 
@@ -58,31 +44,8 @@ function makeFakeMcpApi(opts: {
 function makeAppWithMcp(mcp: FakeMcpApi): CoPluginApp {
   // 直接构 CoPluginApp(本 topic 不验 CoApp.mcp 单例 → CoPluginApp.mcp 闭包的转换;
   // mcp 强转成 CoPluginApp['mcp'] = PluginMcpApi 形态,因 fake.register 签名匹配)。
-  const baseRest: Omit<CoApp, 'mcp'> = {
-    version: '1.0.0-test',
-    panels: new PanelRegistry(),
-    commands: new CommandRegistry(),
-    statusBar: new StatusBarRegistry(),
-    ribbon: new RibbonRegistry(),
-    events: new EventBus(),
-    dataStore: new InMemoryDataStore(),
-    settingTabs: new SettingTabRegistry(),
-    settingItems: new SettingItemRegistry(),
-    explorerDecorators: new ExplorerDecoratorRegistry(),
-    editorActions: new EditorActionRegistry(),
-    explorerContextMenu: new ExplorerContextMenuRegistry(),
-  };
   return {
-    ...baseRest,
-    fs: {
-      readFile: async () => '',
-      writeFile: async () => {},
-      listDir: async () => [],
-    },
-    network: { fetch: async () => new Response() },
-    shell: { exec: async () => ({ stdout: '', stderr: '', exitCode: 0, signal: null, timedOut: false, truncated: false }) },
-    clipboard: { readText: async () => '', writeText: async () => {} },
-    permission: { check: async () => true, granted: async () => [] },
+    ...createTestApp('1.0.0-test'),
     mcp: mcp as unknown as CoPluginApp['mcp'],
   };
 }

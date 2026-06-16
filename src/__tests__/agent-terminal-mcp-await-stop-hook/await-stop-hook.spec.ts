@@ -106,7 +106,8 @@ async function makeDriver(doneDir: string, sessions: readonly FakeSession[]) {
 
   return {
     tool,
-    awaitStopHook: (input: AwaitStopHookInput) => tool.run(input, ctx),
+    awaitStopHook: (input: AwaitStopHookInput) =>
+      tool.run(awaitStopHookInputSchema.parse(input), ctx),
     getSession: (id: string) => byId.get(id),
   };
 }

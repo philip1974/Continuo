@@ -39,7 +39,7 @@ export function NotifyIpcBridge(): ReactNode {
       }
       if (!text && payload.message) text = payload.message;
       if (!text) {
-        // eslint-disable-next-line no-console
+         
         console.warn('[notify-bridge] empty payload, dropped', payload);
         return;
       }

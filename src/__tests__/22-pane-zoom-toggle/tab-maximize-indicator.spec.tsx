@@ -13,6 +13,7 @@
 /** @vitest-environment jsdom */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
+import type { DockviewApi, DockviewPanelApi } from 'dockview-react';
 import { SharedTab } from '@/shell/motion/SharedTab';
 import { en } from '../../../electron/shared/i18n-locales/en';
 
@@ -32,19 +33,27 @@ function makeEmitter<T>() {
 }
 
 interface TestEnv {
-  groupRef: { id: string };
-  panelApi: any;
-  containerApi: any;
-  maxChangeEmitter: ReturnType<typeof makeEmitter<{ group: { id: string }; isMaximized: boolean }>>;
+  groupRef: DockviewPanelApi['group'];
+  panelApi: DockviewPanelApi;
+  containerApi: DockviewApi;
+  maxChangeEmitter: ReturnType<
+    typeof makeEmitter<{
+      group: DockviewPanelApi['group'];
+      isMaximized: boolean;
+    }>
+  >;
   exitMaxSpy: ReturnType<typeof vi.fn>;
 }
 
 function buildEnv(initialMaxed = false): TestEnv {
-  const groupRef = { id: 'g1' };
+  const groupRef = {
+    id: 'g1',
+    api: { isMaximized: () => initialMaxed },
+  } as unknown as DockviewPanelApi['group'];
   const activeEmitter = makeEmitter<{ isActive: boolean }>();
   const titleEmitter = makeEmitter<{ title: string | undefined }>();
   const maxChangeEmitter = makeEmitter<{
-    group: { id: string };
+    group: DockviewPanelApi['group'];
     isMaximized: boolean;
   }>();
   const exitMaxSpy = vi.fn();
@@ -52,32 +61,27 @@ function buildEnv(initialMaxed = false): TestEnv {
     id: 'panel-1',
     isActive: true,
     title: 'Terminal 1',
-    group: {
-      id: groupRef.id,
-      api: { isMaximized: () => initialMaxed },
-      // identity-equal check 在 onDidMaximizedGroupChange handler 里用 ===
-    },
+    // identity-equal check 在 onDidMaximizedGroupChange handler 里用 ===
+    group: groupRef,
     onDidActiveChange: (cb: (e: { isActive: boolean }) => void) =>
       activeEmitter.on(cb),
     onDidTitleChange: (cb: (e: { title: string | undefined }) => void) =>
       titleEmitter.on(cb),
     close: vi.fn(),
-  };
+  } as unknown as DockviewPanelApi;
   const containerApi = {
-    onDidMaximizedGroupChange: (cb: (e: { group: { id: string }; isMaximized: boolean }) => void) =>
+    onDidMaximizedGroupChange: (cb: (e: { group: DockviewPanelApi['group']; isMaximized: boolean }) => void) =>
       maxChangeEmitter.on(cb),
     exitMaximizedGroup: exitMaxSpy,
-  };
+  } as unknown as DockviewApi;
   return { groupRef, panelApi, containerApi, maxChangeEmitter, exitMaxSpy };
 }
 
 function renderTab(env: TestEnv) {
   return render(
     <SharedTab
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      api={env.panelApi as any}
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      containerApi={env.containerApi as any}
+      api={env.panelApi}
+      containerApi={env.containerApi}
       tabLocation="header"
       params={{}}
     />,
@@ -123,7 +127,7 @@ describe('SharedTab maximize indicator', () => {
     renderTab(env);
     act(() => {
       env.maxChangeEmitter.fire({
-        group: { id: 'other-group' },
+        group: { id: 'other-group' } as unknown as DockviewPanelApi['group'],
         isMaximized: true,
       });
     });

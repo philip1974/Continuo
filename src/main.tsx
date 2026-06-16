@@ -11,3 +11,4 @@ if (isSpike) {
   void import('./main-app').then((m) => m.init());
 }
 
+export {};

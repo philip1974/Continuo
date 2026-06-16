@@ -180,7 +180,8 @@ export function MarketplaceTab() {
   }, []);
 
   // Hooks 必须无条件按相同顺序;loading / error 时 entries=[],计算 noop
-  const entries = state.kind === 'ok' ? state.entries : [];
+  const stateEntries = state.kind === 'ok' ? state.entries : undefined;
+  const entries = useMemo(() => stateEntries ?? [], [stateEntries]);
   const allTags = useMemo(() => collectAllTags(entries), [entries]);
   const filtered = useMemo(
     () => applyFilter(entries, { query, selectedTags }),
@@ -579,7 +580,8 @@ function RatingRow({
   const newReviewUrl = buildNewReviewUrl(entry.id);
 
   // hooks 必须无条件;hasReviews=false 时 sorted 用空数组,不影响
-  const sourceReviews = rating?.reviews ?? [];
+  const ratingReviews = rating?.reviews;
+  const sourceReviews = useMemo(() => ratingReviews ?? [], [ratingReviews]);
   const sorted = useMemo(
     () => sortReviews(sourceReviews, sort).slice(0, 10),
     [sourceReviews, sort],

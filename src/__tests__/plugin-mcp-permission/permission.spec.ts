@@ -17,23 +17,13 @@ import {
   type PermissionKey,
 } from '../../plugins/permissions';
 import { parseManifest } from '../../plugins/manifest';
-import { PanelRegistry } from '../../plugins/registries/PanelRegistry';
-import { CommandRegistry } from '../../plugins/registries/CommandRegistry';
-import { StatusBarRegistry } from '../../plugins/registries/StatusBarRegistry';
-import { RibbonRegistry } from '../../plugins/registries/RibbonRegistry';
-import { EventBus } from '../../plugins/EventBus';
-import { InMemoryDataStore } from '../../plugins/PluginDataStore';
-import { SettingItemRegistry } from '../../plugins/registries/SettingItemRegistry';
-import { SettingTabRegistry } from '../../plugins/registries/SettingTabRegistry';
-import { ExplorerContextMenuRegistry } from '../../plugins/registries/ExplorerContextMenuRegistry';
-import { ExplorerDecoratorRegistry } from '../../plugins/registries/ExplorerDecoratorRegistry';
-import { EditorActionRegistry } from '../../plugins/registries/EditorActionRegistry';
 import {
   PluginMcpRegistry,
   type PluginMcpToolSpec,
   type PluginMcpUpstream,
 } from '../../plugins/registries/PluginMcpRegistry';
 import type { CoApp } from '../../plugins/types';
+import { createTestCoApp } from '../../plugins/test-utils';
 
 // ─── helpers ─────────────────────────────────────────────────
 
@@ -50,18 +40,7 @@ function makeFakeUpstream(): PluginMcpUpstream {
 
 function makeApp(registry?: PluginMcpRegistry): CoApp {
   return {
-    version: '1.0.0-test',
-    panels: new PanelRegistry(),
-    commands: new CommandRegistry(),
-    statusBar: new StatusBarRegistry(),
-    ribbon: new RibbonRegistry(),
-    events: new EventBus(),
-    dataStore: new InMemoryDataStore(),
-    settingTabs: new SettingTabRegistry(),
-    settingItems: new SettingItemRegistry(),
-    explorerDecorators: new ExplorerDecoratorRegistry(),
-    editorActions: new EditorActionRegistry(),
-    explorerContextMenu: new ExplorerContextMenuRegistry(),
+    ...createTestCoApp('1.0.0-test'),
     mcp: registry ?? new PluginMcpRegistry(makeFakeUpstream()),
   };
 }

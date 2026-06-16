@@ -154,7 +154,7 @@ export function useDockReconciler(api: DockviewApi | null): void {
       previousCustomTitlesRef.current = state.customTitles;
     });
     // 仅 mount 一次订阅,deps 内部用 ref 读最新值。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 }
 

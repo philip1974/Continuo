@@ -37,7 +37,7 @@ beforeEach(() => {
     activeTabId: '/work/a.ts',
     mode: 'edit',
     waitForViewRef: vi.fn(async () => view),
-  } as Partial<ReturnType<typeof useEditorStore.getState>>);
+  } as unknown as Partial<ReturnType<typeof useEditorStore.getState>>);
 });
 
 describe('app.editor.openFile line jump', () => {
@@ -63,4 +63,3 @@ describe('app.editor.openFile line jump', () => {
     });
   });
 });
-

@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   filterByOwnerWindow,
   nextActiveAfterClose,
-  type TerminalSession,
 } from '../../stores/terminal.store';
 import { makeSession } from './fixtures';
 

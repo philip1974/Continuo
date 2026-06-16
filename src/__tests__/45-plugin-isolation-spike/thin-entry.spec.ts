@@ -123,8 +123,8 @@ function isAllowedTopLevelStatement(statement: ts.Statement): boolean {
     return (
       expression.kind === ts.SyntaxKind.ImportKeyword &&
       statement.expression.arguments.length === 1 &&
-      ts.isStringLiteral(statement.expression.arguments[0]) &&
-      statement.expression.arguments[0].text.endsWith('.css')
+      ts.isStringLiteral(statement.expression.arguments[0]!) &&
+      statement.expression.arguments[0]!.text.endsWith('.css')
     );
   }
 

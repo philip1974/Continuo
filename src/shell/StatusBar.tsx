@@ -2,7 +2,7 @@
 // 左:workspace 名 + sidebar 收起提示 + git 分支占位。
 // 右:active editor tab 文件名 + dirty + 行 / 词 / 字符 + 编码占位。
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useRegistry } from '@/plugins/registries/useRegistry';
 import { useEditorStore } from '@/stores/editor.store';
 import { useWorkspaceStore } from '@/stores/workspace.store';

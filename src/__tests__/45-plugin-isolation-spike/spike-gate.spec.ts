@@ -6,6 +6,7 @@ type SpikeAllowedReason = 'dev' | 'env-opt-in' | 'packaged-blocked' | 'env-missi
 type SpikeAllowedResult = { allowed: boolean; reason: SpikeAllowedReason };
 type RendererQuery = Record<string, string>;
 type NavigationEvent = { preventDefault: () => void };
+type SpikeNavigationEvent = { preventDefault(): void; readonly url: string };
 type WindowOpenDetails = { url: string };
 type WindowOpenResult = { action: 'allow' | 'deny' };
 
@@ -18,7 +19,12 @@ type SpikeGateModule = {
   ): RendererQuery;
   spikeAllowed(options: { url: string; argv: string[]; packaged: boolean }): SpikeAllowedResult;
   installSpikeGate(
-    contents: { on: (event: string, handler: (event: NavigationEvent, url: string) => void) => void },
+    contents: {
+      on(
+        event: 'will-navigate' | 'will-frame-navigate',
+        listener: (event: SpikeNavigationEvent) => void,
+      ): void;
+    },
     packaged: boolean,
   ): () => void;
 };

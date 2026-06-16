@@ -85,22 +85,12 @@ import {
   InMemoryPermissionStore,
   PermissionError,
 } from '../../plugins/permissions';
-import { CommandRegistry } from '../../plugins/registries/CommandRegistry';
-import { EventBus } from '../../plugins/EventBus';
-import { EditorActionRegistry } from '../../plugins/registries/EditorActionRegistry';
-import { ExplorerContextMenuRegistry } from '../../plugins/registries/ExplorerContextMenuRegistry';
-import { ExplorerDecoratorRegistry } from '../../plugins/registries/ExplorerDecoratorRegistry';
-import { InMemoryDataStore } from '../../plugins/PluginDataStore';
-import { PanelRegistry } from '../../plugins/registries/PanelRegistry';
-import { RibbonRegistry } from '../../plugins/registries/RibbonRegistry';
-import { SettingItemRegistry } from '../../plugins/registries/SettingItemRegistry';
-import { SettingTabRegistry } from '../../plugins/registries/SettingTabRegistry';
-import { StatusBarRegistry } from '../../plugins/registries/StatusBarRegistry';
 import type { CoApp } from '../../plugins/types';
 import {
   PluginMcpRegistry,
   type PluginMcpUpstream,
 } from '../../plugins/registries/PluginMcpRegistry';
+import { createTestCoApp } from '../../plugins/test-utils';
 
 const noopMcpUpstream: PluginMcpUpstream = {
   async register() {},
@@ -109,18 +99,7 @@ const noopMcpUpstream: PluginMcpUpstream = {
 
 function makeLmApp(): CoApp {
   return {
-    version: '1.0.0',
-    panels: new PanelRegistry(),
-    commands: new CommandRegistry(),
-    statusBar: new StatusBarRegistry(),
-    ribbon: new RibbonRegistry(),
-    events: new EventBus(),
-    dataStore: new InMemoryDataStore(),
-    settingTabs: new SettingTabRegistry(),
-    settingItems: new SettingItemRegistry(),
-    explorerDecorators: new ExplorerDecoratorRegistry(),
-    editorActions: new EditorActionRegistry(),
-    explorerContextMenu: new ExplorerContextMenuRegistry(),
+    ...createTestCoApp('1.0.0'),
     mcp: new PluginMcpRegistry(noopMcpUpstream),
   };
 }

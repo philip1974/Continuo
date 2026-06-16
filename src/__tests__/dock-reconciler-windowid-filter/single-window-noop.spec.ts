@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  filterByOwnerWindow,
-  type TerminalSession,
-} from '../../stores/terminal.store';
+import { filterByOwnerWindow } from '../../stores/terminal.store';
 import { makeSession } from './fixtures';
 
 describe('dock-reconciler-windowid-filter: single-window noop', () => {

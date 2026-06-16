@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { BrowserWindow } from 'electron';
 import { makeWindow } from './fixtures';
 
 const sessionManagerMock = vi.hoisted(() => ({

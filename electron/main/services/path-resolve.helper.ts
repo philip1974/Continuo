@@ -14,9 +14,16 @@ export interface ResolveWriteResult {
 
 const MAX_PATH_POSIX = 4096;
 const MAX_PATH_WIN = 260;
-const CONTROL_CHARS = /[\x00-\x1f]/;
 const WIN_RESERVED = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\..*)?$/i;
 const NTFS_83_ALIAS = /~[0-9]/;
+
+function hasControlChar(s: string): boolean {
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c >= 0 && c <= 0x1f) return true;
+  }
+  return false;
+}
 
 function expandHome(p: string): string {
   if (!p.startsWith('~')) return p;
@@ -55,7 +62,7 @@ function validateLeaf(leaf: string, fullTarget: string): void {
   }
   if (leaf.includes('~')) reject('leaf contains ~');
   if (leaf.includes('..')) reject('leaf contains ..');
-  if (CONTROL_CHARS.test(leaf)) reject('leaf contains control char');
+  if (hasControlChar(leaf)) reject('leaf contains control char');
   if (leaf.length > MAX_PATH_WIN) {
     reject('leaf exceeds 260 chars (Windows MAX_PATH)');
   }

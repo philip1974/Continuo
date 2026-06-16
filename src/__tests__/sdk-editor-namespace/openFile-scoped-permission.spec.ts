@@ -33,8 +33,10 @@ function makeCoApp(): CoApp {
     mcp: {} as CoApp['mcp'],
     workspace: {} as CoApp['workspace'],
     editor: {
-      openFile: vi.fn(async () => ({ ok: true, lineApplied: false })),
+      openFile: vi.fn(async () => ({ ok: true as const, lineApplied: false })),
     },
+    dock: {} as CoApp['dock'],
+    notifications: {} as CoApp['notifications'],
   };
 }
 

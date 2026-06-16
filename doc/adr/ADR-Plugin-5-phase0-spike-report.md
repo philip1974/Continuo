@@ -1,6 +1,6 @@
 # ADR-Plugin-5 Phase 0 Spike Report
 
-- **Status**: Proposed (verdict TBD — awaiting manual real_test in /dl-verify)
+- **Status**: Proposed — Phase 0 verdict collected (2026-06-16, topic 46); Phase 1 RPC broker + Worker logic host authorized to start; iframe UI host (Phase 2) blocked on CSP follow-up
 - **Date**: 2026-06-16
 - **Topic**: `.claude/dev-loop/45-plugin-true-isolation-phase0-spike/`
 - **Source CSP** (from `index.html:23`):
@@ -15,11 +15,11 @@
 
 | Track | isPackaged | protocol | CSP | Worker | iframe | SAB |
 |---|---:|---|---|---|---|---|
-| **dev** (pnpm dev) | false | http: | CSP-A | TBD-verify | TBD-verify | TBD-verify |
-| **preview** (pnpm build && pnpm preview) | false | file: | CSP-A | TBD-verify | TBD-verify | TBD-verify |
-| **packaged-app** (pnpm build:app + open .app) ⚠ HARD GATE | true | file: | CSP-A | TBD-verify | TBD-verify | TBD-verify |
+| **dev** (pnpm dev) | false | http: | CSP-A | ✅ ok 2.04ms | frame-blob-blocked (expected) | sab-construct-fail (SAB undefined) |
+| **preview** (pnpm build && pnpm preview) | false | file: | CSP-A | ✅ ok 1.34ms | frame-blob-blocked (expected) | sab-construct-fail (SAB undefined) |
+| **packaged-app** (pnpm build:app + open .app) ⚠ HARD GATE | true | file: | CSP-A | ✅ ok 0.96ms | frame-blob-blocked (expected) | sab-construct-fail (SAB undefined) |
 
-`crossOriginIsolated` 实测 (期 false 三轨——`COMMON_WEB_PREFERENCES` 无 COOP/COEP): **TBD-verify**
+`crossOriginIsolated` 实测 (期 false 三轨——`COMMON_WEB_PREFERENCES` 无 COOP/COEP): **false (三轨实测一致；印证无 COOP/COEP)**
 
 **iframe verdict 枚举说明**：`blob-loaded-ok` / `frame-blob-blocked` / `iframe-throw` / `csp-blocks-inline`（独立侧记）。`frame-blob-blocked` 是 Phase 0 「**否+证据**」合法记录态（用户决议接受，对应 plan-v4 NEED-INFO-1）。
 
@@ -27,12 +27,12 @@
 
 - `frame-src`: **absent** → iframe blob fallback 到 `default-src 'self'`，blob: 被拦
 - `worker-src`: **absent** → worker blob fallback 到 `child-src` 再 `default-src`，但 `script-src 'self' blob:` 优先适用 worker (script context)，预期可创建
-- `crossOriginIsolated`: **TBD-verify**（COOP/COEP 未设；SAB 大概率 false）
+- `crossOriginIsolated`: **false (三轨)**（COOP/COEP 未设；SAB 大概率 false）
 - Phase 1 启动前需 follow-up topic 评估 `frame-src blob:` / `worker-src blob:` / COOP=`same-origin` + COEP=`require-corp`；**本 Phase 0 不改 CSP**。
 
 ## 4. Decision
 
-- **Recommendation**: TBD-verify
+- **Recommendation**: **(a) 启 Phase 1 RPC broker + Worker logic host** — Worker probe 在三轨 (dev/preview/packaged) 实测 PASS 0.96-2.04ms，证明 blob worker 在当前 packaged CSP 下可行；Phase 1 worker host 不需 frame-src/COOP-COEP 改造。iframe UI (Phase 2) + SAB 同步桥（如需）由后续 CSP follow-up topic 处理
   - 若 Worker (a) PASS + iframe (b) frame-blob-blocked (预期否+证据) + SAB (c) blocked → 推荐 **Phase 1 启动前 CSP follow-up topic**（frame-src + COOP/COEP）
   - 若 (a) 也 FAIL（worker 在 packaged CSP 下被拦）→ 推荐 **暂缓 Phase 1**，回退强化 option B + marketplace review
   - 若三轨结果不一致（dev/preview/packaged drift）→ 升 user 仲裁

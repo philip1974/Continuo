@@ -191,10 +191,9 @@ export function FolderTree({ root }: { root: string }) {
   // 不再读 explorer.store.selectedPaths(从未被同步,留 cleanup 单独提交)。
   // 数组引用变 → Set 重建;Click/Cmd-Click/Shift-Click 由 selectionFeature 内部
   // 维护,任何变化都会引起组件重渲,Set 自动跟新。
-  const selectedItemsArr = tree.getState().selectedItems ?? [];
+  const selectedItemsArr = tree.getState().selectedItems;
   const selectedPaths = useMemo<ReadonlySet<string>>(
-    () => new Set(selectedItemsArr),
-     
+    () => new Set(selectedItemsArr ?? []),
     [selectedItemsArr],
   );
 
