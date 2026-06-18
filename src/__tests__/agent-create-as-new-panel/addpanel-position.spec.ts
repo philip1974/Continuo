@@ -4,7 +4,6 @@ import {
   reconcileTerminalPanels,
   setPendingFocus,
 } from '@/shell/dock/DockReconciler';
-import type { TerminalSession } from '@/stores/terminal.store';
 import { makeSession } from '../dock-reconciler-windowid-filter/fixtures';
 
 function makePanel(id: string) {

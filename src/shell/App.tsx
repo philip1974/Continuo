@@ -22,7 +22,6 @@ import { coApi } from '@/lib/co-api';
 import { isPopoutWindow } from '@/lib/popout-mode';
 import { pickDroppedDirectory } from '@/lib/window-drop';
 import { useWorkspaceStore } from '@/stores/workspace.store';
-import { useLayoutUiStore } from '@/stores/layout-ui.store';
 import { NotificationsProvider } from '@/notifications/NotificationsProvider';
 import { NotifyIpcBridge } from '@/notifications/NotifyIpcBridge';
 import { ToastViewport } from '@/notifications/ToastViewport';

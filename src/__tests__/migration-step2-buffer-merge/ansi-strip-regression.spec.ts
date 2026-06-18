@@ -45,6 +45,7 @@ describe('migration step2 buffer merge · ansi strip regression', () => {
     const out = await sm.readOutput({ session_id: id, strip_ansi: true });
 
     expect(out.lines).toEqual(['red']);
+    // eslint-disable-next-line no-control-regex -- regression asserts ESC was stripped.
     expect(out.lines.join('\n')).not.toMatch(/\x1b\[/);
   });
 
@@ -54,6 +55,7 @@ describe('migration step2 buffer merge · ansi strip regression', () => {
     const out = await sm.readOutput({ session_id: id, strip_ansi: true });
 
     expect(out.lines).toEqual(['prompt']);
+    // eslint-disable-next-line no-control-regex -- regression asserts ESC was stripped.
     expect(out.lines.join('\n')).not.toMatch(/\x1b\]/);
   });
 

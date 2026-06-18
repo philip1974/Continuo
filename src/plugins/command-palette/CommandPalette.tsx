@@ -8,7 +8,7 @@
 // - 空 query 时 recent(localStorage 持久化)5 条置顶,其余按 title 字母序
 // - execute 后 record 进 recent
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import { Input, KeyCap, Modal } from '@/design';
 import { useRegistry } from '../registries/useRegistry';
 import type {

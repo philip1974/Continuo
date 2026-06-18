@@ -1,9 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { TERMINAL_CHANNELS } from '../../../electron/shared/terminal-channels';
-import {
-  getDefaultShell,
-  isAllowedShell,
-} from '@continuo-terminal/server-node';
+import { getDefaultShell } from '@continuo-terminal/server-node';
 import {
   createInputSchema,
   idOnlyInputSchema,

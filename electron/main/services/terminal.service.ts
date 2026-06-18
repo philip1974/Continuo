@@ -99,10 +99,6 @@ function setTarget(id: string, target: WebContents): void {
   sessionTargets.set(id, target);
 }
 
-function getTarget(id: string): WebContents | undefined {
-  return sessionTargets.get(id);
-}
-
 // Variadic safeSend — baseline IPC contract preserved (P0-1 fix)
 function safeSend(id: string, channel: string, ...args: unknown[]): void {
   const target = sessionTargets.get(id);

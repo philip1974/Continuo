@@ -25,6 +25,14 @@
     "electron.vite.config.ts",
     "vite.config.ts",
     "vitest.config.ts",
-    "scripts"
-  ]
+    "scripts",
+    "src/lib/co-api.ts",
+    "src/notifications/types.ts",
+    "src/plugins/EventBus.ts",
+    "src/plugins/PluginDataStore.ts",
+    "src/plugins/permissions.ts",
+    "src/plugins/registries/*.ts",
+    "src/plugins/types.ts"
+  ],
+  "exclude": ["src/__tests__"]
 }
