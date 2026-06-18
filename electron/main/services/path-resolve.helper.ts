@@ -14,6 +14,7 @@ export interface ResolveWriteResult {
 
 const MAX_PATH_POSIX = 4096;
 const MAX_PATH_WIN = 260;
+// eslint-disable-next-line no-control-regex -- filesystem paths must reject NUL/C0 controls.
 const CONTROL_CHARS = /[\x00-\x1f]/;
 const WIN_RESERVED = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\..*)?$/i;
 const NTFS_83_ALIAS = /~[0-9]/;

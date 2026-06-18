@@ -3,10 +3,7 @@ import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, waitFor } from '@testing-library/react';
 import { TerminalSessionsSync } from '../../shell/dock/TerminalSessionsSync';
-import {
-  useTerminalStore,
-  type TerminalSession,
-} from '../../stores/terminal.store';
+import { useTerminalStore } from '../../stores/terminal.store';
 import { makeSession } from './fixtures';
 
 let warnSpy: ReturnType<typeof vi.spyOn>;

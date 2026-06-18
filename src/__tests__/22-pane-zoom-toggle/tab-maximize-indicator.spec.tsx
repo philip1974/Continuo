@@ -16,6 +16,8 @@ import { render, screen, fireEvent, cleanup, act } from '@testing-library/react'
 import { SharedTab } from '@/shell/motion/SharedTab';
 import { en } from '../../../electron/shared/i18n-locales/en';
 
+type SharedTabProps = Parameters<typeof SharedTab>[0];
+
 // Minimal fake disposable
 const makeDisposable = () => ({ dispose: vi.fn() });
 
@@ -33,8 +35,8 @@ function makeEmitter<T>() {
 
 interface TestEnv {
   groupRef: { id: string };
-  panelApi: any;
-  containerApi: any;
+  panelApi: SharedTabProps['api'];
+  containerApi: SharedTabProps['containerApi'];
   maxChangeEmitter: ReturnType<typeof makeEmitter<{ group: { id: string }; isMaximized: boolean }>>;
   exitMaxSpy: ReturnType<typeof vi.fn>;
 }
@@ -62,22 +64,20 @@ function buildEnv(initialMaxed = false): TestEnv {
     onDidTitleChange: (cb: (e: { title: string | undefined }) => void) =>
       titleEmitter.on(cb),
     close: vi.fn(),
-  };
+  } as unknown as SharedTabProps['api'];
   const containerApi = {
     onDidMaximizedGroupChange: (cb: (e: { group: { id: string }; isMaximized: boolean }) => void) =>
       maxChangeEmitter.on(cb),
     exitMaximizedGroup: exitMaxSpy,
-  };
+  } as unknown as SharedTabProps['containerApi'];
   return { groupRef, panelApi, containerApi, maxChangeEmitter, exitMaxSpy };
 }
 
 function renderTab(env: TestEnv) {
   return render(
     <SharedTab
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      api={env.panelApi as any}
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      containerApi={env.containerApi as any}
+      api={env.panelApi}
+      containerApi={env.containerApi}
       tabLocation="header"
       params={{}}
     />,

@@ -471,30 +471,26 @@ export function makeReadOutputTool(
     },
     inputSchema: readOutputInputSchema,
     run: async (input: ReadOutputInput, ctx: McpCallCtx) => {
-      try {
-        assertSessionInCurrentWindow(
-          input.session_id,
-          ctx.ownerWindowId,
-          deps.getSessionOwner,
-        );
-        const opts: {
-          sinceSeq?: number;
-          maxLines?: number;
-          stripAnsi?: boolean;
-        } = {};
-        if (input.since_seq !== undefined) opts.sinceSeq = input.since_seq;
-        if (input.max_lines !== undefined) opts.maxLines = input.max_lines;
-        if (input.strip_ansi !== undefined) opts.stripAnsi = input.strip_ansi;
-        const r = await deps.read(input.session_id, opts);
-        return {
-          data: r.data,
-          lines: r.lines,
-          next_seq: r.nextSeq,
-          truncated: r.truncated,
-        };
-      } catch (err) {
-        throw err;
-      }
+      assertSessionInCurrentWindow(
+        input.session_id,
+        ctx.ownerWindowId,
+        deps.getSessionOwner,
+      );
+      const opts: {
+        sinceSeq?: number;
+        maxLines?: number;
+        stripAnsi?: boolean;
+      } = {};
+      if (input.since_seq !== undefined) opts.sinceSeq = input.since_seq;
+      if (input.max_lines !== undefined) opts.maxLines = input.max_lines;
+      if (input.strip_ansi !== undefined) opts.stripAnsi = input.strip_ansi;
+      const r = await deps.read(input.session_id, opts);
+      return {
+        data: r.data,
+        lines: r.lines,
+        next_seq: r.nextSeq,
+        truncated: r.truncated,
+      };
     },
   };
 }

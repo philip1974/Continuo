@@ -4,7 +4,6 @@
 // Explorer 按钮 toggle 左侧 Explorer Sidebar 显隐(active 状态显示左侧 accent bar);
 // Search / Settings 占位待实现。
 
-import { useEffect, useState } from 'react';
 import { useRegistry } from '@/plugins/registries/useRegistry';
 import { Folder } from '@react-symbols/icons';
 import { useLayoutUiStore } from '@/stores/layout-ui.store';
