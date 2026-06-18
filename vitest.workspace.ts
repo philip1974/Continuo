@@ -83,7 +83,7 @@ export default defineWorkspace([
     extends: './vitest.config.ts',
     test: {
       name: 'electron',
-      include: ['electron/**/*.{spec,test}.{ts,tsx}'],
+      include: ['electron/**/*.{spec,test}.{ts,tsx}', 'electron/**/*.bench.ts'],
     },
   },
 ]);

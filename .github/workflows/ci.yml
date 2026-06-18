@@ -151,9 +151,7 @@ jobs:
       - name: Run T5 perf bench
         env:
           RUN_PERF: '1'
-        # bench 文件在 electron/main/__tests__/，但 workspace electron 项目只 match *.{test,spec}.ts
-        # 用 vitest --include 强制 include bench file
-        run: pnpm exec vitest run --include "electron/main/__tests__/**/*.bench.ts" --reporter=verbose
+        run: pnpm exec vitest run --project electron electron/main/__tests__/plugin-data-store.perf.bench.ts --reporter=verbose
 
 # sync-design check 不在 CI 跑:依赖跨仓 checkout philip1974/Nous(private),
 # 默认 GITHUB_TOKEN 没权限。设计层漂移由本地 `pnpm sync:design:check` 守护
