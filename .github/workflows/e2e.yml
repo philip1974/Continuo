@@ -1,12 +1,9 @@
 name: E2E
 
 # Electron + node-pty + Playwright 在 PR 上跑成本高、稳定性差。
-# 默认每天 nightly 跑一次,需要时也可手动触发。等 M5 拆出 smoke 分层后,
-# 再考虑把 smoke 子集挪到 PR 必要门禁。
+# 仅手动触发(workflow_dispatch)。原每日 nightly schedule 已移除
+# (长期失败、噪声大)。等 M5 拆出 smoke 分层后,再考虑把 smoke 子集挪到 PR 必要门禁。
 on:
-  schedule:
-    # UTC 18:00 = 北京时间 02:00,夜间跑
-    - cron: '0 18 * * *'
   workflow_dispatch:
 
 concurrency:
@@ -20,6 +17,10 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+
+      # 见 ci.yml 同款步骤:把 ContinuoTerminal clone 到 workspace 同级路径,供 pnpm workspace 解析。
+      - name: Checkout ContinuoTerminal (workspace sibling)
+        run: git clone --depth 1 https://github.com/philip1974/ContinuoTerminal.git "${{ github.workspace }}/../ContinuoTerminal"
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
