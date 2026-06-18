@@ -135,11 +135,16 @@ jobs:
       - name: Checkout ContinuoTerminal (workspace sibling)
         run: git clone --depth 1 https://github.com/philip1974/ContinuoTerminal.git "${{ github.workspace }}/../ContinuoTerminal"
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
+
       - uses: actions/setup-node@v4
         with:
-          node-version: '24'
-
-      - run: corepack enable
+          node-version-file: .nvmrc
+          cache: 'pnpm'
 
       - run: pnpm install --frozen-lockfile
 
