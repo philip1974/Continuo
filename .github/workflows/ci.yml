@@ -111,10 +111,10 @@ jobs:
         run: pnpm rebuild:native
 
       - name: Run unit tests
-        # TODO: re-enable these 9 electron-main-dependent unit specs in CI after
-        # Electron binary installation is fixed for Actions. They still run in
-        # local `pnpm test:unit`; Electron coverage also remains in e2e.
-        run: pnpm exec vitest run --project unit --exclude "src/__tests__/dock-layout-per-window-seq/safe-handle-ctx.spec.ts" --exclude "src/__tests__/fs-ipc-bridge/fs-ipc-bridge.spec.ts" --exclude "src/__tests__/ipc-safe-handle/safe-handle.spec.ts" --exclude "src/__tests__/migration-step2-buffer-merge/exited-session-replay.spec.ts" --exclude "src/__tests__/migration-step2-buffer-merge/replay-completeness.spec.ts" --exclude "src/__tests__/shell-service/shell-service.spec.ts" --exclude "src/__tests__/terminal-service/helpers.spec.ts" --exclude "src/__tests__/terminal-workspace-isolation/workspaceRoot-roundtrip.spec.ts" --exclude "src/__tests__/window-workspace-roots-map/cwd-fallback-error.spec.ts"
+        # TODO: re-enable electron-main-dependent Vitest specs in CI after
+        # Electron binary installation is fixed for Actions. They still run
+        # locally; Electron coverage also remains in e2e.
+        run: pnpm test:unit
 
       - name: Run contract tests
         run: pnpm test:contract
