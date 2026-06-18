@@ -107,15 +107,16 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Ensure Electron binary
-        run: |
-          pnpm rebuild electron
-          node node_modules/electron/install.js
-
       # vitest 里有用到 electron 的单测,需要 electron 原生二进制就位(否则报
       # "Electron failed to install correctly")。与 e2e.yml 同款重建步骤。
       - name: Rebuild native modules for Electron
         run: pnpm rebuild:native
+
+      - name: Ensure Electron binary
+        run: |
+          pnpm rebuild electron
+          node node_modules/electron/install.js
+          node -e 'const fs = require("node:fs"); const electron = require("electron"); console.log(electron); if (!fs.existsSync(electron)) throw new Error("missing Electron binary: " + electron)'
 
       - name: Run unit tests
         run: pnpm test:unit
