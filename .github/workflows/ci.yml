@@ -107,6 +107,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # vitest 里有用到 electron 的单测,需要 electron 原生二进制就位(否则报
+      # "Electron failed to install correctly")。与 e2e.yml 同款重建步骤。
+      - name: Rebuild native modules for Electron
+        run: pnpm rebuild:native
+
       - name: Run unit tests
         run: pnpm test:unit
 
