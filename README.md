@@ -1,9 +1,26 @@
 # Continuo — open-source GUI substrate for terminal-native agents
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Latest release](https://img.shields.io/github/v/release/philip1974/Continuo)](https://github.com/philip1974/Continuo/releases/latest)
 [![GitHub stars](https://img.shields.io/github/stars/philip1974/Continuo?style=social)](https://github.com/philip1974/Continuo)
 
-Run Claude Code, Codex CLI, Aider, or your own agent inside a dockable multi-terminal GUI. Each agent operates with explicit per-plugin permission boundaries. Bring your own agent.
+Run Claude Code, Codex CLI, Aider, or your own agent inside a dockable multi-terminal GUI. Each agent operates with explicit per-plugin permission boundaries. **Bring your own agent.**
+
+## Demo
+
+Real Claude Code driving Codex through Continuo's MCP — Claude Code opens a *second* terminal panel itself, hands Codex a task, and reads back the result, all in one window:
+
+![Continuo demo — Claude Code and Codex collaborating in one window](docs/assets/demo.gif)
+
+▶️ [Watch with audio / full quality](https://github.com/philip1974/Continuo/releases/download/v0.2.4-early/continuo-demo.mp4)
+
+## Download
+
+**macOS (Apple Silicon)** — early-access, **unsigned** build:
+
+➡️ **[Download the latest release](https://github.com/philip1974/Continuo/releases/latest)** — grab `Continuo-<version>-arm64.dmg`
+
+> Unsigned build: after mounting the `.dmg`, **right-click the app → Open → Open** to get past Gatekeeper. Code signing / notarization comes in a later release. Windows / Linux builds are on the way. Prefer to build from source? See **Quick start** below.
 
 ## What it's NOT
 
@@ -11,10 +28,6 @@ Run Claude Code, Codex CLI, Aider, or your own agent inside a dockable multi-ter
 - ❌ Not a Cursor / VSCode competitor
 - ❌ Not cloud-hosted; no sync service
 - ❌ Not bundled with one agent's brand
-
-## Demo
-
-<!-- demo video link here after Plan 01 Phase 0 -->
 
 ## Quick start
 
