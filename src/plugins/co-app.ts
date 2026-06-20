@@ -38,10 +38,10 @@ import type {
   EditorOpenFailureCode,
 } from './types';
 
-// Keep in sync with package.json "version" field. Bumped to 0.2.4 (2026-05-31)
-// for the dock.openPanel() and notifications.show() SDK additions. Plugins
+// Keep in sync with package.json "version" field. Bumped to 0.2.5 (2026-06-20)
+// for the topic-49 打磨 polish release (~110 P1/P2 fixes). Plugins
 // declaring minLMVersion >= 0.2.4 need this.
-const APP_VERSION = '0.2.4';
+const APP_VERSION = '0.2.5';
 
 // Workspace API — minimal v0.1 surface exposing the current renderer
 // window's workspace root (null when no folder open). Plugins use this for

@@ -20,7 +20,11 @@ mac:
   icon: build/icon.icns
   category: public.app-category.developer-tools
   target:
-    - target: dir          # 仅产 .app,不打 dmg(测试足够)
+    # 发布产物:dmg(分发) + zip(fallback),arm64。
+    # 产物名 = Continuo-${version}-arm64.dmg / Continuo-${version}-arm64-mac.zip。
+    - target: dmg
+      arch: arm64
+    - target: zip
       arch: arm64
   protocols:
     - name: Continuo Protocol
