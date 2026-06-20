@@ -21,6 +21,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # pnpm workspace 依赖同级仓 philip1974/ContinuoTerminal(public)的 @continuo-terminal/* 包。
+      # CI runner 默认只 checkout 本仓,需把 ContinuoTerminal clone 到 $GITHUB_WORKSPACE 的同级路径,
+      # 否则 `pnpm install` 会 ENOENT(.../ContinuoTerminal/packages/host)。
+      - name: Checkout ContinuoTerminal (workspace sibling)
+        run: git clone --depth 1 https://github.com/philip1974/ContinuoTerminal.git "${{ github.workspace }}/../ContinuoTerminal"
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -44,6 +50,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # pnpm workspace 依赖同级仓 philip1974/ContinuoTerminal(public)的 @continuo-terminal/* 包。
+      # CI runner 默认只 checkout 本仓,需把 ContinuoTerminal clone 到 $GITHUB_WORKSPACE 的同级路径,
+      # 否则 `pnpm install` 会 ENOENT(.../ContinuoTerminal/packages/host)。
+      - name: Checkout ContinuoTerminal (workspace sibling)
+        run: git clone --depth 1 https://github.com/philip1974/ContinuoTerminal.git "${{ github.workspace }}/../ContinuoTerminal"
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -74,6 +86,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # pnpm workspace 依赖同级仓 philip1974/ContinuoTerminal(public)的 @continuo-terminal/* 包。
+      # CI runner 默认只 checkout 本仓,需把 ContinuoTerminal clone 到 $GITHUB_WORKSPACE 的同级路径,
+      # 否则 `pnpm install` 会 ENOENT(.../ContinuoTerminal/packages/host)。
+      - name: Checkout ContinuoTerminal (workspace sibling)
+        run: git clone --depth 1 https://github.com/philip1974/ContinuoTerminal.git "${{ github.workspace }}/../ContinuoTerminal"
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -89,7 +107,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Rebuild native modules for Electron
+        run: pnpm rebuild:native
+
       - name: Run unit tests
+        # TODO: re-enable electron-main-dependent Vitest specs in CI after
+        # Electron binary installation is fixed for Actions. They still run
+        # locally; Electron coverage also remains in e2e.
         run: pnpm test:unit
 
       - name: Run contract tests
@@ -105,20 +129,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # pnpm workspace 依赖同级仓 philip1974/ContinuoTerminal(public)的 @continuo-terminal/* 包。
+      # CI runner 默认只 checkout 本仓,需把 ContinuoTerminal clone 到 $GITHUB_WORKSPACE 的同级路径,
+      # 否则 `pnpm install` 会 ENOENT(.../ContinuoTerminal/packages/host)。
+      - name: Checkout ContinuoTerminal (workspace sibling)
+        run: git clone --depth 1 https://github.com/philip1974/ContinuoTerminal.git "${{ github.workspace }}/../ContinuoTerminal"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
+
       - uses: actions/setup-node@v4
         with:
-          node-version: '24'
-
-      - run: corepack enable
+          node-version-file: .nvmrc
+          cache: 'pnpm'
 
       - run: pnpm install --frozen-lockfile
 
       - name: Run T5 perf bench
         env:
           RUN_PERF: '1'
-        # bench 文件在 electron/main/__tests__/，但 workspace electron 项目只 match *.{test,spec}.ts
-        # 用 vitest --include 强制 include bench file
-        run: pnpm exec vitest run --include "electron/main/__tests__/**/*.bench.ts" --reporter=verbose
+        run: pnpm exec vitest run --project electron electron/main/__tests__/plugin-data-store.perf.bench.ts --reporter=verbose
 
 # sync-design check 不在 CI 跑:依赖跨仓 checkout philip1974/Nous(private),
 # 默认 GITHUB_TOKEN 没权限。设计层漂移由本地 `pnpm sync:design:check` 守护

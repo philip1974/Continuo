@@ -45,7 +45,8 @@ describe('migration step2 buffer merge · ansi strip regression', () => {
     const out = await sm.readOutput({ session_id: id, strip_ansi: true });
 
     expect(out.lines).toEqual(['red']);
-    expect(out.lines.join('\n')).not.toContain('\x1b[');
+    // eslint-disable-next-line no-control-regex -- regression asserts ESC was stripped.
+    expect(out.lines.join('\n')).not.toMatch(/\x1b\[/);
   });
 
   it('strips OSC sequences', async () => {
@@ -54,7 +55,8 @@ describe('migration step2 buffer merge · ansi strip regression', () => {
     const out = await sm.readOutput({ session_id: id, strip_ansi: true });
 
     expect(out.lines).toEqual(['prompt']);
-    expect(out.lines.join('\n')).not.toContain('\x1b]');
+    // eslint-disable-next-line no-control-regex -- regression asserts ESC was stripped.
+    expect(out.lines.join('\n')).not.toMatch(/\x1b\]/);
   });
 
   it('strips multiple nested CSI sequences', async () => {

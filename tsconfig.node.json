@@ -26,21 +26,13 @@
     "vite.config.ts",
     "vitest.config.ts",
     "scripts",
-    "src/plugins/types.ts",
+    "src/lib/co-api.ts",
+    "src/notifications/types.ts",
     "src/plugins/EventBus.ts",
     "src/plugins/PluginDataStore.ts",
     "src/plugins/permissions.ts",
-    "src/plugins/registries/CommandRegistry.ts",
-    "src/plugins/registries/EditorActionRegistry.ts",
-    "src/plugins/registries/ExplorerContextMenuRegistry.ts",
-    "src/plugins/registries/ExplorerDecoratorRegistry.ts",
-    "src/plugins/registries/PanelRegistry.ts",
-    "src/plugins/registries/PluginMcpRegistry.ts",
-    "src/plugins/registries/RibbonRegistry.ts",
-    "src/plugins/registries/SettingItemRegistry.ts",
-    "src/plugins/registries/SettingTabRegistry.ts",
-    "src/plugins/registries/StatusBarRegistry.ts",
-    "src/notifications/types.ts",
-    "src/lib/co-api.ts"
-  ]
+    "src/plugins/registries/*.ts",
+    "src/plugins/types.ts"
+  ],
+  "exclude": ["src/__tests__"]
 }

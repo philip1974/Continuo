@@ -17,9 +17,7 @@ import {
   TerminalSessionsSync,
   _resetTerminalDropWarningsForTest,
 } from '../../shell/dock/TerminalSessionsSync';
-import {
-  useTerminalStore,
-} from '../../stores/terminal.store';
+import { useTerminalStore } from '../../stores/terminal.store';
 import { makeSession } from './fixtures';
 
 const mocks = vi.hoisted(() => {
