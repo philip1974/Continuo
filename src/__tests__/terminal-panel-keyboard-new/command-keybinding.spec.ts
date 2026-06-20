@@ -1,6 +1,12 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
 import TerminalPlugin from '@/core-plugins/TerminalPlugin';
+import { useWorkspaceStore } from '@/stores/workspace.store';
+
+beforeEach(() => {
+  // terminal.new 现在会 await waitForWorkspaceHydrated()(R10);测试里置 hydrated 防挂死。
+  useWorkspaceStore.setState({ hydrated: true });
+});
 
 const mocks = vi.hoisted(() => ({
   createTerminal: vi.fn().mockResolvedValue({ ok: true, data: { id: 'term-new' } }),

@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { fireEvent, render, cleanup, act } from '@testing-library/react';
+
+const notifyError = vi.fn();
+vi.mock('../../notifications/notify', () => ({
+  notify: { error: (...a: unknown[]) => notifyError(...a) },
+}));
+
 import { CommandPalette } from '../../plugins/command-palette/CommandPalette';
 import { useCommandPaletteStore } from '../../plugins/command-palette/store';
 import { CommandRegistry } from '../../plugins/registries/CommandRegistry';
@@ -159,8 +165,10 @@ describe('CommandPalette · 键盘 + 空 query 排序', () => {
     ).toContain('Late');
   });
 
-  it('execute 命令抛错 → console.warn,UI 不抛', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  // 第二十一轮 P1-AX:命令抛错不再静默 console.warn,而是经 notify.error 弹给用户
+  // (面板已关,旧实现下用户看不到任何失败反馈)。
+  it('execute 命令抛错 → notify.error(含 title),UI 不抛', async () => {
+    notifyError.mockReset();
     const reg = new CommandRegistry();
     reg.register({
       id: 'bad',
@@ -176,10 +184,8 @@ describe('CommandPalette · 键盘 + 空 query 排序', () => {
     // 等 microtask
     await Promise.resolve();
     await Promise.resolve();
-    expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining('bad'),
-      expect.any(Error),
-    );
-    warn.mockRestore();
+    expect(notifyError).toHaveBeenCalled();
+    expect(String(notifyError.mock.calls[0]?.[0])).toContain('Bad');
+    expect(String(notifyError.mock.calls[0]?.[0])).toContain('boom');
   });
 });

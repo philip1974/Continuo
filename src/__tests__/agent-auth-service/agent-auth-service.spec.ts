@@ -45,6 +45,7 @@ const terminalSessionsMock = vi.hoisted(() => ({
 const terminalServiceMock = vi.hoisted(() => ({
   has: vi.fn(),
   kill: vi.fn(),
+  forceKill: vi.fn(),
 }));
 
 vi.mock('electron', () => ({
@@ -64,6 +65,7 @@ vi.mock('../../../electron/main/services/terminal-sessions.service', () => ({
 vi.mock('../../../electron/main/services/terminal.service', () => ({
   has: terminalServiceMock.has,
   kill: terminalServiceMock.kill,
+  forceKill: terminalServiceMock.forceKill,
 }));
 
 function makeSession(
@@ -375,7 +377,8 @@ describe('agent-auth-service: pending lifecycle', () => {
 });
 
 describe('agent-auth-service: revokeAndKillAgentSessions', () => {
-  it('T11: rotates token and kills only agent sessions', () => {
+  it('T11: rotates token and force-kills only agent sessions', () => {
+    // 撤销是安全动作:用 forceKill(立即 SIGKILL)而非 kill(3s grace)。
     const rotateToken = vi.fn();
     setMcpHostRef(makeMcpHost({ rotateToken }));
     terminalServiceMock.has.mockReturnValue(true);
@@ -389,9 +392,11 @@ describe('agent-auth-service: revokeAndKillAgentSessions', () => {
 
     expect(result).toEqual({ killed: 2, rotated: true });
     expect(rotateToken).toHaveBeenCalledTimes(1);
-    expect(terminalServiceMock.kill).toHaveBeenCalledWith('a');
-    expect(terminalServiceMock.kill).toHaveBeenCalledWith('c');
-    expect(terminalServiceMock.kill).not.toHaveBeenCalledWith('b');
+    expect(terminalServiceMock.forceKill).toHaveBeenCalledWith('a');
+    expect(terminalServiceMock.forceKill).toHaveBeenCalledWith('c');
+    expect(terminalServiceMock.forceKill).not.toHaveBeenCalledWith('b');
+    // 不走软杀 kill(),避免撤销后子进程还有 3s grace 继续运行
+    expect(terminalServiceMock.kill).not.toHaveBeenCalled();
     expect(terminalSessionsMock.remove).toHaveBeenCalledWith('a');
     expect(terminalSessionsMock.remove).toHaveBeenCalledWith('c');
     expect(terminalSessionsMock.remove).not.toHaveBeenCalledWith('b');
@@ -409,8 +414,8 @@ describe('agent-auth-service: revokeAndKillAgentSessions', () => {
     expect(result).toEqual({ killed: 2, rotated: false });
     expect(terminalSessionsMock.remove).toHaveBeenCalledWith('a');
     expect(terminalSessionsMock.remove).toHaveBeenCalledWith('b');
-    expect(terminalServiceMock.kill).toHaveBeenCalledWith('a');
-    expect(terminalServiceMock.kill).toHaveBeenCalledWith('b');
+    expect(terminalServiceMock.forceKill).toHaveBeenCalledWith('a');
+    expect(terminalServiceMock.forceKill).toHaveBeenCalledWith('b');
     expect(sessionStore.list).toEqual([]);
   });
 
@@ -423,7 +428,7 @@ describe('agent-auth-service: revokeAndKillAgentSessions', () => {
 
     expect(result).toEqual({ killed: 1, rotated: false });
     expect(terminalSessionsMock.remove).toHaveBeenCalledWith('a');
-    expect(terminalServiceMock.kill).toHaveBeenCalledWith('a');
+    expect(terminalServiceMock.forceKill).toHaveBeenCalledWith('a');
   });
 
   it('T13b: has=false skips PTY kill but still removes metadata', () => {
@@ -437,6 +442,6 @@ describe('agent-auth-service: revokeAndKillAgentSessions', () => {
     expect(result).toEqual({ killed: 1, rotated: true });
     expect(rotateToken).toHaveBeenCalledTimes(1);
     expect(terminalSessionsMock.remove).toHaveBeenCalledWith('a');
-    expect(terminalServiceMock.kill).not.toHaveBeenCalled();
+    expect(terminalServiceMock.forceKill).not.toHaveBeenCalled();
   });
 });

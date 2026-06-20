@@ -10,6 +10,7 @@ import { useLayoutUiStore } from '@/stores/layout-ui.store';
 import { useTerminalStore } from '@/stores/terminal.store';
 import { useAgentAuthStore } from '@/stores/agent-auth.store';
 import { coApi } from '@/lib/co-api';
+import { notify } from '@/notifications/notify';
 import { charCount, lineCount, wordCount } from '@/lib/text-stats';
 import { coApp } from '@/plugins/co-app';
 import type { StatusBarItemSpec } from '@/plugins/registries/StatusBarRegistry';
@@ -31,9 +32,23 @@ async function handleRevokeAgentTerminals(count: number): Promise<void> {
     translate('permissions.revoke_all.confirm', { count }),
   );
   if (!confirmed) return;
-  // 本地先撤,UI 即时反馈;main 推 sessions_changed 后 sessions 也清空
+  // 本地先撤,UI 即时反馈;main 推 sessions_changed 后 sessions 也清空。
+  const wasGranted = useAgentAuthStore.getState().sessionGranted;
   useAgentAuthStore.getState().revoke();
-  void coApi.agentAuth.revoke();
+  // 闭环:revoke IPC(kill PTY + rotate token)可能失败(revokeAndKillAgentSessions 抛错 →
+  // safeHandle 返 ok:false / IPC reject)。旧实现 `void` 完全忽略结果 → 失败被静默伪成功:
+  // UI 显示已撤销但 main 的 agent PTY/token 仍存活,是安全相关谎报(用户以为已断开实际没有)。
+  // 该 IPC 本就设计返回 {killed,rotated} 供 renderer 反馈。失败 → 回滚本地授权态 + 弹错误,
+  // 让用户知道并重试。(codex 复审 loop R18)
+  try {
+    const r = await coApi.agentAuth.revoke();
+    if (!r.ok) throw new Error(r.code ?? 'revoke failed');
+  } catch (err) {
+    if (wasGranted) useAgentAuthStore.setState({ sessionGranted: true });
+    notify.error(translate('permissions.revoke_all.failed'), {
+      code: (err as { code?: string })?.code,
+    });
+  }
 }
 
 async function handleCopyMcpConfig(): Promise<'ok' | 'unavailable' | 'fail'> {

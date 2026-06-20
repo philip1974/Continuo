@@ -10,6 +10,7 @@ import { useMultiRegistry } from '../registries/useRegistry';
 import { getUserPluginManager } from '../PluginManager';
 import { getUserPermissionStore } from '../permissions/co-permission-store';
 import { PermissionEditorModal } from '../permissions/PermissionEditorModal';
+import { useUpdateStore } from '@/marketplace/update-store';
 import type { PluginListItem } from '../PluginManager';
 import { useT } from '@/i18n';
 import { errorMessage } from '../../../electron/shared/error-message';
@@ -206,6 +207,13 @@ function UserPluginsSection() {
     setUninstallTarget(null);
     try {
       await mgr.uninstall(target.id);
+      // 卸载成功:把该 id 从 update-store.available 摘除。否则若该插件此前有可用更新,
+      // IconSidebar 设置角标(=available.length)会持续把这个已不存在的插件计入「待更新」
+      // 数,整个 session 不收敛 —— update-store 只在启动与 marketplace 更新成功对账时
+      // refresh,不订阅插件列表变化,卸载本身不会重算 available。与 MarketplaceTab.onUpdate
+      // 成功后的乐观 dismiss 对称(同「派生标记离开状态须清」族)。dismiss 对不在 available
+      // 的 id 是 no-op,安全。
+      useUpdateStore.getState().dismiss(target.id);
     } catch (err) {
       console.warn(`[plugins-tab] uninstall ${target.id} failed`, err);
       setInstallMsg(

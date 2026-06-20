@@ -145,3 +145,40 @@ export async function resolveForWrite(
 }
 
 export const resolveForRenameDst = resolveForWrite;
+
+function stripTrailingSep(p: string): string {
+  let end = p.length;
+  while (end > 1 && (p[end - 1] === '/' || p[end - 1] === '\\')) end--;
+  return p.slice(0, end);
+}
+
+/**
+ * 把「授予的 scope 目录路径」归一化到与 PathScopeRegistry.check 的 probe **同一空间**。
+ * check 对 fs 操作的 target 走 expandHome + realpath(见 resolveForRead/Write),probe 因此
+ * 是去符号链接的绝对 canonical 路径;而 grant 此前裸存原始 `s.path`。两者不在同一空间 →
+ *   - `~/proj`(types.ts 文档承诺 host-side 展开)永不匹配 → 该 scope 静默死掉;
+ *   - macOS `/tmp/x`(/tmp 是 /private/tmp 的符号链接)等含符号链接组件的路径同样失配。
+ * 二者都是 fail-closed(误拒非越权),但破坏了文档契约。这里对 scope 做同款 expandHome +
+ * realpath,使授予侧与校验侧对称。
+ *
+ * 去尾分隔符,让 `s.path + sep` 前缀匹配成立(`/ws/dir/` → `/ws/dir`)。scope 目录尚不存在
+ * (ENOENT 等)时回退到 home 展开后的路径(至少把 `~` 展开并记录;真去该目录下操作时其自身
+ * realpath 仍会失败,语义不变)。
+ */
+export async function canonicalizeScopePath(rawPath: string): Promise<string> {
+  let expanded: string;
+  try {
+    expanded = expandHome(rawPath);
+  } catch {
+    // expandHome 对 `~user` 形式 / 无 $HOME 会抛 ScopeError。退化为原始路径(死 scope:
+    // 不匹配 canonical probe,但与改动前「裸存」行为一致),**不能**让单条畸形 scope
+    // 抛出去 —— 调用方 request-scope handler 用 Promise.all 批量归一化,抛出会毒死整批
+    // (含同请求里的合法 scope)并把 'grant' 决议变成 IPC 异常。
+    return stripTrailingSep(rawPath);
+  }
+  try {
+    return stripTrailingSep(await fs.realpath(expanded));
+  } catch {
+    return stripTrailingSep(expanded);
+  }
+}

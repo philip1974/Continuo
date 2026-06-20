@@ -7,6 +7,7 @@ import { Button, KeyCap, Modal } from '@/design';
 import {
   formatHotkeyParts,
   detectPlatform,
+  type Platform,
 } from '@/plugins/command-palette/format-hotkey';
 import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
 import { useT } from '@/i18n';
@@ -28,14 +29,27 @@ interface KeybindingCaptureModalProps {
   readonly onResetToDefault: () => void;
 }
 
-/** 把 keyboard event 编成 'mod+shift+x' 形式. 单独修饰键 → null(等用户继续按). */
-function eventToCombo(e: KeyboardEvent): string | null {
+/** 把 keyboard event 编成 'mod+shift+x' 形式. 单独修饰键 → null(等用户继续按).
+ *  平台感知,与 matchesHotkey(R15)对称:mac 上 metaKey=主修饰键存 'mod'、ctrlKey 存 'ctrl';
+ *  非 mac 上 ctrlKey=主修饰键存 'mod'、metaKey 存 'cmd'。否则塌缩成 'mod' 会让 mac 用户按
+ *  Ctrl+K 存成 mod+k,而 R15 后 mod+k 只匹配 Cmd+K → 用户刚按的 Ctrl 绑定失效、冲突检测也
+ *  拿错组合比对。(codex 复审 loop R16,R15 捕获侧兄弟) */
+export function eventToCombo(
+  e: KeyboardEvent,
+  platform: Platform = PLATFORM,
+): string | null {
   const key = e.key;
   if (key === 'Meta' || key === 'Control' || key === 'Shift' || key === 'Alt') {
     return null;
   }
   const parts: string[] = [];
-  if (e.metaKey || e.ctrlKey) parts.push('mod');
+  if (platform === 'mac') {
+    if (e.metaKey) parts.push('mod');
+    if (e.ctrlKey) parts.push('ctrl');
+  } else {
+    if (e.ctrlKey) parts.push('mod');
+    if (e.metaKey) parts.push('cmd');
+  }
   if (e.shiftKey) parts.push('shift');
   if (e.altKey) parts.push('alt');
   parts.push(key.toLowerCase());

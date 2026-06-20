@@ -49,6 +49,21 @@ describe('execShell — 正常路径', () => {
     });
     expect(r.stdout).toBe('piped\n');
   });
+
+  it('子进程不读 stdin(EPIPE)→ 不崩溃,正常 resolve(topic49 第八轮 P1-V)', async () => {
+    // 'true' 立即退出、不读 stdin。向已关闭的管道写 input → stdin 流发 EPIPE。
+    // 旧实现没挂 stdin 'error' 监听 → uncaughtException 崩溃整个 main 进程。
+    // 加大 input 增大写入未完成前管道已关闭的概率,稳定复现 EPIPE 竞态。
+    const big = 'x'.repeat(1024 * 256);
+    const r = await execShell({
+      cmd: 'sh',
+      args: ['-c', 'exit 0'], // 不读 stdin,立即退出
+      input: big,
+    });
+    // 关键:Promise 正常 resolve(没崩溃),exit code 透传
+    expect(r.exitCode).toBe(0);
+    expect(r.timedOut).toBe(false);
+  }, 5000);
 });
 
 describe('execShell — 超时', () => {

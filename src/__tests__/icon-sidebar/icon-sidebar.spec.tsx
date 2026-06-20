@@ -114,6 +114,29 @@ describe('IconSidebar — Ribbon', () => {
     expect(fn).toHaveBeenCalledTimes(1);
   });
 
+  // 第十四轮 P2-AO:ribbon 异步 onClick reject → 弹 error toast,不静默吞 + 不 unhandledrejection
+  it('ribbon 异步 onClick reject → notify.error 给反馈', async () => {
+    const notify = await import('../../notifications/notify');
+    const errSpy = vi.spyOn(notify.notify, 'error').mockImplementation(() => {});
+    coApp.ribbon.register({
+      id: 'plugin.boom',
+      title: 'Boom',
+      icon: <span>B</span>,
+      onClick: () => Promise.reject(new Error('plugin failed')),
+    });
+    const { container } = render(<IconSidebar />);
+    const btn = container.querySelector(
+      'button[title="Boom"]',
+    ) as HTMLButtonElement;
+    await act(async () => {
+      fireEvent.click(btn);
+      await Promise.resolve();
+    });
+    expect(errSpy).toHaveBeenCalledTimes(1);
+    expect(errSpy.mock.calls[0]![0]).toContain('plugin failed');
+    errSpy.mockRestore();
+  });
+
   it('subscribe → 后注册立即出现', () => {
     const { container } = render(<IconSidebar />);
     expect(container.querySelector('button[title="late"]')).toBeNull();
@@ -167,15 +190,15 @@ describe('IconSidebar — updateCount 角标', () => {
 });
 
 describe('IconSidebar — AccountChip', () => {
-  it('渲染 CD + tooltip', () => {
+  it('渲染 CD + tooltip(topic 49: 非交互 chip,非 button)', () => {
     const { container } = render(<IconSidebar />);
-    // topic-21: aria-label 走 i18n，default locale=zh → '账户：Continuo Dev，PRO Plan'（全角符号）
+    // topic 49 P2-D: 账户菜单未实现前不再用 <button>(避免谎报可点);
+    // 退化为带 title tooltip 的非交互 chip。title 走 i18n,三语相同。
     const chip = container.querySelector(
-      'button[aria-label="账户：Continuo Dev，PRO Plan"]',
-    ) as HTMLButtonElement;
+      '[title="Continuo Dev · PRO Plan"]',
+    ) as HTMLElement;
     expect(chip).not.toBeNull();
+    expect(chip.tagName).not.toBe('BUTTON');
     expect(chip.textContent).toBe('CD');
-    // 点击不抛
-    expect(() => fireEvent.click(chip)).not.toThrow();
   });
 });

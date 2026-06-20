@@ -8,6 +8,8 @@ export interface StubWebContents {
 
 export interface StubIpcEvent {
   sender: StubWebContents;
+  /** 默认 trusted(file://);frame-trust 门控的 handler(如 plugin-shell-stream)需要它。 */
+  senderFrame?: { url: string };
 }
 
 export type StubIpcHandler = (
@@ -50,7 +52,11 @@ export class StubIpcMain {
 }
 
 export function makeFakeEvent(
-  opts: { id?: number; isDestroyed?: () => boolean } = {},
+  opts: {
+    id?: number;
+    isDestroyed?: () => boolean;
+    senderFrame?: { url: string } | null;
+  } = {},
 ): StubIpcEvent {
   return {
     sender: {
@@ -58,6 +64,11 @@ export function makeFakeEvent(
       send: vi.fn(),
       isDestroyed: opts.isDestroyed ?? (() => false),
     },
+    // 默认 trusted top frame(file:// → defaultIsTrustedFrame 为 true);传 null 显式模拟不可信。
+    senderFrame:
+      opts.senderFrame === null
+        ? undefined
+        : (opts.senderFrame ?? { url: 'file:///app/index.html' }),
   };
 }
 

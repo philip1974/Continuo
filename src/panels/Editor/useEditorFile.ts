@@ -17,6 +17,8 @@ export interface EditorFileApi {
   openFileByPath: (path: string) => Promise<FileOpResult>;
   /** Cmd+S 触发. activeTab 没有 path → 返 UNSAVED_DRAFT. */
   saveActive: () => Promise<FileOpResult>;
+  /** 按 tabId 保存(自动保存用,不依赖当前 active tab). */
+  saveTab: (tabId: string) => Promise<FileOpResult>;
 }
 
 export function useEditorFile(): EditorFileApi {
@@ -37,6 +39,7 @@ export function useEditorFile(): EditorFileApi {
         }
         return saveFileImpl(id, deps);
       },
+      saveTab: (tabId) => saveFileImpl(tabId, deps),
     };
   }, []);
 }

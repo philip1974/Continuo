@@ -95,6 +95,33 @@ describe('useUpdateStore.refresh', () => {
     expect(s.remoteVersions.get('b')).toBe('0.1.0');
   });
 
+  it('并发 refresh:慢的旧 refresh 后 resolve 不覆盖新 refresh 结果(topic49 第八轮 P2-X)', async () => {
+    // refresh1(慢)会算出 a 有更新到 0.2.0;refresh2(快)算出 a 无更新。
+    // refresh2 先完成写入 available=[];随后 refresh1 才 resolve —— gen 已过期,
+    // 不应把 [a@0.2.0] 覆盖回去。
+    let resolveSlowIndex!: (v: MarketplaceEntry[]) => void;
+    const slowIndex = new Promise<MarketplaceEntry[]>((res) => {
+      resolveSlowIndex = res;
+    });
+    fetchIndex.mockReturnValueOnce(slowIndex); // refresh1:慢
+    fetchIndex.mockResolvedValueOnce([entry('a')]); // refresh2:快
+    // fetchManifest 调用顺序:refresh2 先(快 index),refresh1 后(慢 index resolve 后)
+    fetchManifest
+      .mockResolvedValueOnce(manifest('a', '0.1.0')) // refresh2 → remote=local → 无更新
+      .mockResolvedValueOnce(manifest('a', '0.2.0')); // refresh1 → remote>local → 有更新
+    getMgr.mockReturnValue(fakeMgr([{ id: 'a', version: '0.1.0' }]));
+
+    const p1 = useUpdateStore.getState().refresh(); // 慢,挂起
+    const p2 = useUpdateStore.getState().refresh(); // 快,先完成
+    await p2;
+    expect(useUpdateStore.getState().available).toHaveLength(0); // refresh2:无更新
+
+    resolveSlowIndex([entry('a')]); // 现在放行慢的 refresh1
+    await p1;
+    // 关键:过期的 refresh1 即使算出 [a@0.2.0] 也被 gen 守卫丢弃,不覆盖最新结果
+    expect(useUpdateStore.getState().available).toHaveLength(0);
+  });
+
   it('某 manifest 失败 → 跳过它,其它正常处理', async () => {
     fetchIndex.mockResolvedValue([entry('a'), entry('b')]);
     fetchManifest.mockImplementation(async (e: MarketplaceEntry) => {

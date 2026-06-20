@@ -71,11 +71,34 @@ export class PluginManager {
   private entries = new Map<string, PluginEntry>();
   /** 已激活顺序(用于 shutdown LIFO). */
   private activationOrder: string[] = [];
+  /**
+   * Per-id 生命周期串行锁。enable/disable/reload/uninstall 含多个 await 让权点
+   * (权限 prompt / _registerPlugin / _activate / IPC),且 reload 由 mtime watcher
+   * 每 2s fire-and-forget 触发 + 用户手动操作 → 同 id 并发交错会:旧 activateEntry
+   * resume 后用旧 token 覆盖 entry.pluginFsToken,泄漏新 token(永不 _unregisterPlugin)
+   * + 留下双激活的僵尸实例 + 重复贡献 panel/command/MCP tool。复用 plugins.service
+   * 的 withInstallLock 同款 Promise 链锁串行化同 id 生命周期操作。
+   */
+  private readonly lifecycleLocks = new Map<string, Promise<unknown>>();
 
   constructor(
     private readonly app: CoApp,
     private readonly host: ManagerHost,
   ) {}
+
+  /** 同 id 生命周期操作串行化(见 lifecycleLocks 注释). */
+  private withLifecycleLock<T>(id: string, fn: () => Promise<T>): Promise<T> {
+    const prev = this.lifecycleLocks.get(id) ?? Promise.resolve();
+    const run = prev.then(fn, fn);
+    this.lifecycleLocks.set(
+      id,
+      run.then(
+        () => {},
+        () => {},
+      ),
+    );
+    return run;
+  }
 
   /** 扫描全部目录 + 解析 manifest + 激活 enabled. */
   async init(): Promise<void> {
@@ -112,7 +135,11 @@ export class PluginManager {
       this.entries.set(manifest.id, entry);
 
       if (entry.status === 'enabled') {
-        await this.activateEntry(entry);
+        // init 的激活也必须走生命周期锁:activateEntry 在 ensureAuthorized 处 await
+        // 用户权限弹窗(可挂数秒),而 main-app 紧接 init 就接线 mtime watcher 的
+        // onChanged→reload(走锁)。若 init 不上锁,弹窗挂起期间被改动文件触发的
+        // reload 会拿到空锁并发执行 → 与 reload/enable 同源的 token 泄漏/双激活。
+        await this.withLifecycleLock(entry.id, () => this.activateEntry(entry));
       }
     }
   }
@@ -129,8 +156,12 @@ export class PluginManager {
     this.activationOrder = [];
   }
 
-  /** 启用单个插件(若已 active 幂等). */
+  /** 启用单个插件(若已 active 幂等). per-id 串行. */
   async enable(id: string): Promise<void> {
+    return this.withLifecycleLock(id, () => this.enableLocked(id));
+  }
+
+  private async enableLocked(id: string): Promise<void> {
     const entry = this.entries.get(id);
     if (!entry) throw new Error(`Plugin ${id} not found`);
     if (entry.status === 'enabled') return; // 幂等
@@ -151,14 +182,24 @@ export class PluginManager {
     }
   }
 
-  /** 禁用单个插件(若已 disabled 幂等). */
+  /** 禁用单个插件(若已 disabled 幂等). per-id 串行. */
   async disable(id: string): Promise<void> {
+    return this.withLifecycleLock(id, () => this.disableLocked(id));
+  }
+
+  private async disableLocked(id: string): Promise<void> {
     const entry = this.entries.get(id);
     if (!entry) throw new Error(`Plugin ${id} not found`);
     if (entry.status !== 'enabled' || !entry.instance) return;
 
     await this.deactivateEntry(entry, `disable ${id}`);
     entry.status = 'disabled';
+    // partial-grant warning(及 error)只对 enabled+active 插件有意义。disable 后
+    // 必须清,否则 PluginsTab 行无条件渲染 p.warning(无 status 门控)→ 已禁用的
+    // 插件仍挂着「⚠ 部分授权」陈旧标记。deactivateEntry 不碰这两字段,activateEntry
+    // 只在重新激活时清(311)→ 离开 active 的转换此前漏清(对称性缺口)。
+    entry.error = undefined;
+    entry.warning = undefined;
     this.activationOrder = this.activationOrder.filter((x) => x !== id);
 
     const remaining = [...(await this.host.readEnabledIds())].filter(
@@ -176,8 +217,14 @@ export class PluginManager {
    *
    * 不存在的 id → 抛错;插件已从 plugins 目录移除 → 抛错。
    * 不变更 enabled.json(reload 是"刷新已加载",非启用切换)。
+   *
+   * per-id 串行:auto-reload watcher 每 2s fire-and-forget + 用户操作易并发同 id。
    */
   async reload(id: string): Promise<void> {
+    return this.withLifecycleLock(id, () => this.reloadLocked(id));
+  }
+
+  private async reloadLocked(id: string): Promise<void> {
     const entry = this.entries.get(id);
     if (!entry) throw new Error(`Plugin ${id} not found`);
 
@@ -206,6 +253,7 @@ export class PluginManager {
     if (!parsed.ok) {
       entry.status = 'failed';
       entry.error = `${parsed.code}: ${parsed.message}`;
+      entry.warning = undefined; // 失败转换清陈旧 partial-grant warning(否则 failed 行同显 error+旧 warning)
       return;
     }
 
@@ -213,6 +261,9 @@ export class PluginManager {
     entry.dirInfo = fresh;
     entry.status = wasEnabled ? 'enabled' : 'disabled';
     entry.error = undefined;
+    // reload→disabled 不会走 activateEntry(只 wasEnabled 才走),warning 须在此清;
+    // reload→enabled 会走 activateEntry(311 清 + 342 按本次授权重设),此处清亦无害。
+    entry.warning = undefined;
 
     if (wasEnabled) {
       await this.activateEntry(entry);
@@ -226,8 +277,15 @@ export class PluginManager {
    * 3. 从 entries map 移除
    *
    * 不存在的 id → 抛错。host 未配 removePluginDir → 抛 NOT_SUPPORTED。
+   *
+   * per-id 串行:整段(含内部 disable)在同一把锁内,内部走 disableLocked
+   * 避免对同 id 重入锁自死锁。
    */
   async uninstall(id: string): Promise<void> {
+    return this.withLifecycleLock(id, () => this.uninstallLocked(id));
+  }
+
+  private async uninstallLocked(id: string): Promise<void> {
     const entry = this.entries.get(id);
     if (!entry) throw new Error(`Plugin ${id} not found`);
     if (!this.host.removePluginDir) {
@@ -237,7 +295,8 @@ export class PluginManager {
     }
 
     if (entry.status === 'enabled' && entry.instance) {
-      await this.disable(id);
+      // 注意:走 disableLocked(非 public disable),否则在已持有的同 id 锁上重入死锁
+      await this.disableLocked(id);
     }
     await this.host.removePluginDir(id);
     this.entries.delete(id);
@@ -322,9 +381,15 @@ export class PluginManager {
       this.host.permissionStore ?? null,
       pluginFsToken,
     );
-    const instance: Plugin = new Ctor(scopedApp, entry.manifest);
-
+    // 构造器必须和 _activate 同在 try/catch 内:token 已在上面注册并设 active,
+    // 若 `new Ctor()` 同步抛错(插件构造函数 throw)而它在 try 之外,就会跳出
+    // activateEntry 既不撤 token 也不标 failed → entry 停在 status='enabled' 但
+    // instance=undefined 的半激活态。后续 disableLocked 的 `!entry.instance` 守卫
+    // 又会早退、不走 deactivateEntry → 泄漏的 plugin-fs capability token 永不回收
+    // (codex 复审 loop R1)。
+    let instance: Plugin;
     try {
+      instance = new Ctor(scopedApp, entry.manifest);
       await instance._activate();
     } catch (err) {
       console.warn(

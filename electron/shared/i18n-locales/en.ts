@@ -121,6 +121,7 @@ export const en = {
   'editor.welcome.title': 'No file open',
   'editor.welcome.hint_prefix': 'Click a file in Explorer ·',
   'editor.welcome.save': 'Save',
+  'editor.autosave_failed': 'Auto-save failed',
   'dock.empty.message': 'All panels are closed.',
   'dock.empty.restore': 'Restore default layout',
   'panels.explorer.loading_or_empty': 'Loading or empty folder',
@@ -221,6 +222,8 @@ export const en = {
   'permissions.agent.grant_session': 'Allow this launch',
   'permissions.revoke_all.confirm':
     'Will terminate {count} agent terminal(s) and revoke authorization granted during this launch.\n\nRunning agent CLIs holding tokens will 401 immediately; new terminals can re-authorize.\n\nContinue?',
+  'permissions.revoke_all.failed':
+    'Revoke failed — agent terminals may still be running. Please retry.',
 
   // statusbar.* (8)
   'statusbar.mcp.copy': 'Copy MCP config',
@@ -318,7 +321,6 @@ export const en = {
   'shell.dock.popout_title': 'Pop out to standalone window',
   'shell.tab.exit_zoom': 'Exit zoom',
   'shell.iconbar.updates_tooltip': '{count} plugin(s) updatable',
-  'shell.iconbar.account_aria': 'Account: Continuo Dev, PRO Plan',
   'shell.iconbar.account_title': 'Continuo Dev · PRO Plan',
 
   // marketplace.* (topic-21)
@@ -338,6 +340,7 @@ export const en = {
   'marketplace.reviews.refresh_title': 'Refresh reviews (skip cache)',
   'marketplace.reviews.refresh': '⟳ Refresh reviews',
   'marketplace.reviews.refreshing': '⟳ Refreshing…',
+  'marketplace.reviews.refresh_failed': 'Failed to refresh reviews: {message}',
   'marketplace.reviews.official_review': 'Officially reviewed',
   'marketplace.reviews.expand': 'Expand reviews',
   'marketplace.reviews.collapse': 'Collapse reviews',
@@ -412,6 +415,9 @@ export const en = {
   'quick_open.empty': 'No files in workspace',
   'quick_open.no_match': 'No matching files',
   'quick_open.list_aria': 'File search results',
+  'quick_open.scan_failed': 'Failed to scan workspace files',
+  'quick_open.retry': 'Retry',
+  'quick_open.open_failed': 'Failed to open',
 } as const;
 
 export type TranslationKey = keyof typeof en;

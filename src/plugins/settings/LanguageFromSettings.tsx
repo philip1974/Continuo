@@ -26,12 +26,17 @@ export function LanguageFromSettings(): ReactNode {
   const storeLocale = useSettingsStore((s) => s.locale);
   const setStoreLocale = useSettingsStore((s) => s.setLocale);
 
-  // values 变化 → call main settings store setLocale（持久化进 settings.json + 广播）
+  // values 变化 → call main settings store setLocale（持久化进 settings.json + 广播）。
+  // 必须 gate 到「确实有显式 stored value」(rawStored !== undefined):value 在 localStorage
+  // 缺失时是 fallback 'en',第一个 effect 无法区分「真存的 en」与「缺省 fallback」。启动时
+  // main locale 已是持久化的 zh/ko 而 values 还没该 key → 不 gate 会先把 fallback 'en' 回写
+  // main(setLocale 持久化 settings.json + 广播),静默把非默认主语言重置为 en。缺失值只允许
+  // 下面的 main → values seed。(codex 复审 loop R14)
   useEffect(() => {
-    if (isLocale(value) && value !== storeLocale) {
+    if (rawStored !== undefined && isLocale(value) && value !== storeLocale) {
       void setStoreLocale(value);
     }
-  }, [value, storeLocale, setStoreLocale]);
+  }, [rawStored, value, storeLocale, setStoreLocale]);
 
   // 首次挂载：store locale 已是 main 真值（bootstrap inject），但 values 还没该 key →
   // 把 store.locale 写回 values（让 SegmentedControl 显示正确选中态）

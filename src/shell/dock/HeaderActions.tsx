@@ -8,7 +8,10 @@ import { coApp } from '@/plugins/co-app';
 import { useRegistry } from '@/plugins/registries/useRegistry';
 import { coApi } from '@/lib/co-api';
 import { notify } from '@/notifications/notify';
-import { useWorkspaceStore } from '@/stores/workspace.store';
+import {
+  useWorkspaceStore,
+  waitForWorkspaceHydrated,
+} from '@/stores/workspace.store';
 import { ERROR_CODES } from '../../../electron/shared/error-codes';
 import { useTWithFallback, t } from '@/i18n';
 
@@ -71,6 +74,9 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
       if (key === TERMINAL_PANEL_TYPE) {
         // terminal panel session-bound:不走 containerApi.addPanel,
         // 通过 coApi.terminal.create → SessionsSync → DockReconciler addPanel(含 sessionId)。
+        // 冷启动竞态:等 hydrate 完成再读 root,否则 root=null → TERMINAL_CWD_UNRESOLVED
+        // 首次新建失败(同 TerminalPlugin.terminal.new,codex 复审 loop R10)。
+        await waitForWorkspaceHydrated();
         const workspaceRoot = useWorkspaceStore.getState().root ?? undefined;
         const r = await coApi.terminal.create({
           ...(workspaceRoot !== undefined

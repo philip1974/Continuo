@@ -13,6 +13,8 @@ import { entryToGitUrl, type MarketplaceEntry } from './types';
 import { fetchMarketplaceIndex } from './fetcher';
 import { applyFilter, collectAllTags } from './filter';
 import { useUpdateStore } from './update-store';
+import { reconcileAfterUpdate } from './reconcile-after-update';
+import { pruneLandedPending } from './prune-landed-pending';
 import { useReviewsStore } from './reviews-store';
 import type { PluginAggregateRating, Review } from './reviews-types';
 import { useT, t as translate } from '@/i18n';
@@ -60,6 +62,7 @@ export function MarketplaceTab() {
   const installed = useInstalledIds();
   const updates = useUpdateStore((s) => s.available);
   const refreshUpdates = useUpdateStore((s) => s.refresh);
+  const dismissUpdate = useUpdateStore((s) => s.dismiss);
   const [install, setInstall] = useState<InstallState>({
     busy: null,
     msgs: new Map(),
@@ -71,6 +74,7 @@ export function MarketplaceTab() {
   );
   const reviewsByPid = useReviewsStore((s) => s.byPid);
   const reviewsLoading = useReviewsStore((s) => s.loading);
+  const reviewsError = useReviewsStore((s) => s.error);
   const refreshReviews = useReviewsStore((s) => s.refresh);
 
   // entry.id → 可用更新版本(若有)。useMemo 让 memo 子组件能受益:
@@ -79,6 +83,15 @@ export function MarketplaceTab() {
     () => new Map(updates.map((u) => [u.id, u.to])),
     [updates],
   );
+
+  // install.pending 落地(出现在 installed 真实磁盘集)后摘除:防内存泄漏 + 防卸载后
+  // 卡片残留「已安装/待重启」幻影。见 prune-landed-pending。无变化时返同引用不 re-render。
+  useEffect(() => {
+    setInstall((prev) => {
+      const pruned = pruneLandedPending(prev.pending, installed);
+      return pruned === prev.pending ? prev : { ...prev, pending: pruned };
+    });
+  }, [installed]);
 
   useEffect(() => {
     let cancelled = false;
@@ -126,21 +139,15 @@ export function MarketplaceTab() {
 
   const onUpdate = useCallback(
     async (entry: MarketplaceEntry) => {
-      // 更新 = 卸载 + 重装。卸载走 PluginManager 走 LIFO + 清 _enabled / _permissions;
-      // 装走 v4.5 installFromGit。两步任一失败 → toast 显错。
+      // 更新 = 原子覆盖安装(overwrite=true)。不再「先卸载后重装」:旧实现一旦
+      // 卸载成功但重装失败(网络/clone 错),插件就从磁盘消失且无回滚(审计 #2)。
+      // installFromGit overwrite 在 main 端做 staging+rename swap,失败保留旧版本;
+      // 且保留 _enabled / _permissions,更新后无需重新授权(语义更贴近"更新")。
       setInstall((prev) => ({ ...prev, busy: entry.id }));
       let msg: string;
       let success = false;
       try {
-        const mgr = getUserPluginManager();
-        if (mgr) {
-          try {
-            await mgr.uninstall(entry.id);
-          } catch (err) {
-            console.warn(`[marketplace] uninstall ${entry.id} failed`, err);
-          }
-        }
-        const r = await coApi.plugins.installFromGit(entryToGitUrl(entry));
+        const r = await coApi.plugins.installFromGit(entryToGitUrl(entry), true);
         success = r.ok;
         msg = r.ok
           ? translate('marketplace.update_success', { name: r.data.name, version: r.data.version })
@@ -157,10 +164,30 @@ export function MarketplaceTab() {
         if (success) nextPending.add(entry.id);
         return { busy: null, msgs: nextMsgs, pending: nextPending };
       });
-      // 更新成功后刷新 update-store(从 available 摘掉这条)
-      if (success) void refreshUpdates();
+      // 更新成功后:先乐观从 available 摘掉这条让更新按钮即时收起(否则到异步
+      // refresh 完成前用户可重复点击触发对已是最新版的二次 overwrite 安装),
+      // 再异步刷新 update-store 与磁盘对账。
+      if (success) {
+        dismissUpdate(entry.id);
+        // installFromGit 已原子覆盖磁盘,但 renderer 内存里的 PluginManager 版本要等
+        // 2s mtime watcher reload 才更新。这里主动 reload 让本地版本即时推进 —— 否则
+        // 紧随的 refreshUpdates 读到陈旧旧版本 → 误判仍可更新 → 把刚 dismiss 的条目
+        // 又加回 available(更新按钮/角标复活并滞留到下次手动刷新)。reload 走 per-id
+        // 生命周期锁,与 watcher 并发安全。见第二十二轮 P2-BB。
+        // P2-BD:reload 失败时**不能**再 refresh(内存仍旧版会复活已 dismiss 的条目),
+        // 由 reconcileAfterUpdate 做 reload→refresh 的成功门控。
+        const mgr = getUserPluginManager();
+        if (mgr) {
+          void reconcileAfterUpdate({
+            reload: () => mgr.reload(entry.id),
+            refresh: () => void refreshUpdates(),
+          });
+        } else {
+          void refreshUpdates();
+        }
+      }
     },
-    [refreshUpdates],
+    [refreshUpdates, dismissUpdate],
   );
 
   // useCallback 让 TagButton memo 不被 inline arrow 撑破。
@@ -276,6 +303,13 @@ export function MarketplaceTab() {
             : t('marketplace.reviews.refresh')}
         </button>
       </div>
+      {reviewsError && !reviewsLoading && (
+        // 刷新评论失败必须给反馈,否则按钮恢复原样 + 评论区无变化 → 用户无法区分
+        // "刷新成功但无新评论" vs "刷新失败"。见第二十二轮 P2-BC。
+        <div className="text-2xs text-error">
+          {t('marketplace.reviews.refresh_failed', { message: reviewsError })}
+        </div>
+      )}
       {filtered.length === 0 ? (
         <div className="rounded border border-dashed border-line bg-panel-soft/40 px-3 py-6 text-center text-xs text-fg-dim">
           {t('marketplace.no_match')}

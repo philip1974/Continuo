@@ -124,11 +124,23 @@ export function startPluginMcpIpc(
       ),
   );
 
-  // INVOKE_REPLY:renderer 答 invoke,无需返回 → 用 ipcMain.on(send 配对)
-  ipcMain.on(PLUGIN_MCP_CHANNELS.INVOKE_REPLY, (_event, raw: unknown) => {
+  // INVOKE_REPLY:renderer 答 invoke,无需返回 → 用 ipcMain.on(send 配对)。
+  // 与同模块 REGISTER/UNREGISTER 对齐:校验 senderFrame 可信,拒绝不受信 frame
+  // (被注入的子 frame / 未来 iframe 插件隔离)伪造 reply 提前 resolve 挂起的 invoke。
+  ipcMain.on(PLUGIN_MCP_CHANNELS.INVOKE_REPLY, (event, raw: unknown) => {
+    if (!defaultIsTrustedFrame(event.senderFrame)) return;
     const parsed = InvokeReplySchema.safeParse(raw);
-    if (!parsed.success) return; // 静默丢弃畸形 payload
-    localInvoke.handleReply(parsed.data);
+    if (parsed.success) {
+      localInvoke.handleReply(parsed.data);
+      return;
+    }
+    // schema 失败的畸形 reply 仍交给 handleReply(它对 raw 全防御):带 string requestId 但 ok
+    // 畸形(缺失/非布尔)的 reply 会被立即 reject INVALID_REPLY,而非静默丢弃让对应 pending
+    // invoke 干等满 30s timeout(外部 agent tools/call 看起来卡死)。完全无 requestId 的垃圾
+    // payload 由 handleReply 内部静默丢弃(requestId 非 string → return)。第七 session 硬化了
+    // handleReply 的 INVALID_REPLY 立即-reject,但生产入口的 schema-gate 之前把它挡在门外
+    // 不可达(helper 正确但生产入口绕过 helper)。(codex 复审 loop R20-confirm)
+    localInvoke.handleReply(raw);
   });
 
   return { bridge: localBridge, invokeRemote: localInvoke };
@@ -144,5 +156,17 @@ function attachWcDestroyHookOnce(wc: WebContents): void {
   const wcId = wc.id;
   wc.once('destroyed', () => {
     bridge?.handleWebContentsGone(wcId);
+  });
+  // 审计 #4:renderer reload(Ctrl+R / HMR full reload / webContents.reload())
+  // 时 webContents 不销毁、wcId 不变,但 renderer 侧 registry 被清空重建。
+  // 必须在新文档加载前(did-start-navigation 早于脚本执行)摘掉 main 端残留
+  // stub,否则 Agent 仍能在 tools/list 看到旧 tool(调用 reject NO_SUCH_TOOL,
+  // 重注册同名 throw TOOL_NAME_TAKEN)。同 wc 持久监听,覆盖反复 reload;
+  // 仅 main frame 的真实(非同文档)导航才清,避免 hash / pushState 误清。
+  // 清空后 renderer 在新文档里会重新 register,handleWebContentsGone 幂等安全。
+  wc.on('did-start-navigation', (details) => {
+    if (details.isMainFrame && !details.isSameDocument) {
+      bridge?.handleWebContentsGone(wcId);
+    }
   });
 }

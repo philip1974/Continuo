@@ -76,6 +76,22 @@ export function filterByOwnerWindow(
   return result;
 }
 
+/**
+ * 按当前 workspace 过滤可见 session。契约见 terminal-sessions.service.ts:52 + workspaceRoot
+ * 字段注释:`visible = workspaceRoot === undefined(全局) || workspaceRoot === currentRoot`。
+ * 同窗口切换 workspace 后,旧项目的 terminal(workspaceRoot=旧根)应从视图隐藏(PTY 不杀,
+ * main 仍保留;切回旧根能重现);全局 session(agent 创建,workspaceRoot=undefined)始终可见。
+ * currentRoot 为 null(未选 workspace)时只剩全局 session。(codex 复审 loop R12)
+ */
+export function filterByWorkspaceRoot(
+  sessions: readonly TerminalSession[],
+  currentRoot: string | null,
+): readonly TerminalSession[] {
+  return sessions.filter(
+    (s) => s.workspaceRoot === undefined || s.workspaceRoot === currentRoot,
+  );
+}
+
 export function getShellFamily(sessionId: string): ShellFamily {
   const session = useTerminalStore
     .getState()

@@ -28,6 +28,9 @@ export const PLUGIN_MCP_ERROR_CODES = {
   INVOKE_TIMEOUT: 'INVOKE_TIMEOUT',
   PLUGIN_GONE: 'PLUGIN_GONE',
   PERMISSION_DENIED: 'PERMISSION_DENIED',
+  // 插件 host 回的 reply 畸形(ok 既非 true 也非 false):若不显式 reject,
+  // 因 handleReply 已先 cancel timer + 删 pending,该 invoke 会永久挂起。
+  INVALID_REPLY: 'INVALID_REPLY',
 } as const;
 
 export type PluginMcpErrorCode =

@@ -30,6 +30,8 @@ import {
 } from './services/window-seq.service';
 import { withExplorerFileMutex } from './lib/file-mutex';
 import { atomicWriteJson } from './lib/atomic-write';
+import { makeWindowResourceCleanup } from './window-resource-cleanup';
+import { makeQuitCleanupGuard } from './quit-cleanup-guard';
 import { PLUGINS_CHANNELS } from '../shared/plugins-channels';
 import { ERROR_CODES } from '../shared/error-codes';
 import {
@@ -46,8 +48,9 @@ import { makeTerminalMcpTools } from './services/mcp-terminal-host';
 import type { CreateSessionPtyInput } from './services/mcp-tools-terminal';
 import * as terminalSessions from './services/terminal-sessions.service';
 import * as termService from './services/terminal.service';
-import { makeCreateHandler, setMcpEnvProvider } from './ipc/terminal.ipc';
+import { makeCreateHandler, setMcpEnvProvider, setStopHookCanceller } from './ipc/terminal.ipc';
 import {
+  cancelAgentAuthByWindow,
   requestAgentAuth,
   setMcpHostRef,
 } from './services/agent-auth.service';
@@ -62,6 +65,20 @@ import {
 import { startPluginMcpIpc } from './ipc/plugin-mcp.ipc';
 import { defaultIsTrustedFrame } from './safe-handle';
 import { buildRendererQuery, stripSpikeQuery, spikeAllowed, installSpikeGate } from './spike-gate';
+import { buildCommonWebPreferences } from './continuo-meta-args';
+import { isPopoutUrl } from './popout-url';
+import { releaseFsWatchersForWindow } from './ipc/fs.ipc';
+import { isAllowedExternalUrl } from './services/shell.service';
+import { cancelScopeRequestsForWebContents } from './ipc/plugin-fs.ipc';
+
+// 窗口级资源清理器(scope 授权 / fs watcher / agent 授权)。挂在覆盖全窗口的
+// browser-window-created(见下),主窗与 dockview popout 子窗一视同仁 —— popout 不走
+// createMainWindow,旧实现把三项清理只挂在 createMainWindow 漏了 popout 兄弟入口。
+const releaseWindowResources = makeWindowResourceCleanup({
+  cancelScopeRequests: cancelScopeRequestsForWebContents,
+  releaseFsWatchers: releaseFsWatchersForWindow,
+  cancelAgentAuth: cancelAgentAuthByWindow,
+});
 
 // autorun delay:Win shell prompt 慢,默认更长。
 const AUTORUN_DELAY_MS = process.platform === 'win32' ? 600 : 200;
@@ -80,22 +97,26 @@ if (isDev) {
   app.setPath('userData', path.join(app.getPath('appData'), 'Continuo Dev'));
 }
 
-const COMMON_WEB_PREFERENCES = {
-  preload: PRELOAD,
-  contextIsolation: true,
-  sandbox: true,
-  nodeIntegration: false,
-  // issue #34:Chromium 在 macOS 上偶发误判窗口"不可见"触发 backgroundThrottling,
-  // 暂停 paint 后永久不退出 → 进程健康但屏幕静止。Continuo 是 IDE 类应用,
-  // 窗口永远应保持 paint;关掉节流。
-  backgroundThrottling: false,
-} as const;
-
 const LRU_MAX_CLOSED = Infinity;
 const pendingFlushAcks = new Map<number, () => void>();
 const flushedOnQuit = new Set<number>();
+// 退出清理(flush + PTY 强杀)只跑一次。原实现用 `wins.every(flushedOnQuit)` 兼当
+// 守卫,但关掉最后一个窗口触发的 window-all-closed→quit 路径里 wins 已空,
+// `[].every()` 恒 true → 提前 return 跳过 cleanupAll(),Linux/Windows 上长任务 PTY
+// 孤儿化(window 'closed' 清理走 3s grace timer,进程退出不触发 SIGKILL)。改用独立
+// 守卫:无论哪条 quit 路径,cleanupAll() 都在 app.quit() 前 await 一次。见第十三轮 P1-AI。
+// 守卫区分 started/finished:清理在途时用户再次 quit 必须继续拦截,不能放行绕过 cleanupAll
+// (codex 复审 F1,见 quit-cleanup-guard.ts)。
+const quitGuard = makeQuitCleanupGuard();
 
 ipcMain.on('window:id', (event: IpcMainEvent) => {
+  // 与 layout:flush-ack / plugin-mcp INVOKE_REPLY 对齐:不受信 frame
+  // (被注入的子 frame)拿不到窗口 id。合法 renderer 与 popout 子窗都走
+  // file:// / 同源 dev URL → 受信。
+  if (!defaultIsTrustedFrame(event.senderFrame)) {
+    event.returnValue = 0;
+    return;
+  }
   const win = BrowserWindow.fromWebContents(event.sender);
   event.returnValue = win?.id ?? 0;
 });
@@ -136,7 +157,11 @@ function requestWindowFlush(win: BrowserWindow): Promise<void> {
 function wireWindowCloseFlush(win: BrowserWindow): void {
   let flushed = flushedOnQuit.has(win.id);
   win.on('close', (event) => {
-    if (flushed) return;
+    // flushedOnQuit 也要查:`before-quit` 路径可能已经 flush 过本窗并写入
+    // flushedOnQuit,但本闭包的局部 `flushed` 不会被它更新 —— 只看局部量会让
+    // app.quit() 触发 close 时对同一窗口重复 flush(多一次 IPC 往返 + preventDefault
+    // 二次阻塞退出)。
+    if (flushed || flushedOnQuit.has(win.id)) return;
     event.preventDefault();
     void (async () => {
       await requestWindowFlush(win);
@@ -173,11 +198,20 @@ function windowOpenHandler({ url }: HandlerDetails): WindowOpenHandlerResponse {
         //   - 给用户一个明确的可拖区域(主窗口 hiddenInset 把 Continuo 文字
         //     做成可拖,popout 子窗里没有这条,需要原生 titlebar)
         //   - 避免 dockview tab bar 撞 macOS 红绿灯按钮
-        webPreferences: COMMON_WEB_PREFERENCES,
+        webPreferences: buildCommonWebPreferences({
+          preload: PRELOAD,
+          isPackaged: app.isPackaged,
+        }),
       },
     };
   }
-  shell.openExternal(url);
+  // deny 分支会把任意 URL 交给系统打开 —— `target="_blank"` 锚点点击都走这里
+  // (含 marketplace 不受信的 authorUrl / 评论 url)。必须复用 shell.service 的
+  // scheme 白名单,否则 `smb://`、自定义协议等非 http(s) URL 会绕过白名单经 OS
+  // 协议处理器打开,成为投放面。非白名单 scheme 直接静默 deny。
+  if (isAllowedExternalUrl(url)) {
+    shell.openExternal(url);
+  }
   return { action: 'deny' };
 }
 
@@ -208,7 +242,10 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
     height: 800,
     titleBarStyle: 'hiddenInset',
     backgroundColor: '#020617',
-    webPreferences: COMMON_WEB_PREFERENCES,
+    webPreferences: buildCommonWebPreferences({
+      preload: PRELOAD,
+      isPackaged: app.isPackaged,
+    }),
   });
 
   const seq = opts.windowSeq;
@@ -217,6 +254,9 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
 
   win.on('closed', () => {
     clearWindow(win.id);
+    // 窗口级资源清理(scope / fs watcher / agent 授权)已移到覆盖全窗口的
+    // browser-window-created → releaseWindowResources,主窗与 popout 统一处理。
+    // 此处只保留主窗专属的 explorer.json 段落持久化(popout 无 windowSeq 段)。
     const explorerFile = path.join(app.getPath('userData'), 'explorer.json');
     void withExplorerFileMutex(async () => {
       const payload = (await loadExplorer(explorerFile)) ?? defaultExplorerV3();
@@ -342,10 +382,34 @@ function buildAppMenu(t: MainT): Menu {
   return Menu.buildFromTemplate(template);
 }
 
-/** 由 i18n.ipc setMenuRebuilder 注册；setLocale 后被调，整体重建 application menu。 */
+/** macOS dock 右键菜单(locale 依赖)。启动 + setLocale 后都要(重)建,否则切语言
+ * 后 dock 菜单标签永久停留旧语言。Linux/Windows 无 dock 跳过。 */
+function setDockMenu(): void {
+  if (process.platform !== 'darwin' || !app.dock) return;
+  const t = getMainT();
+  app.dock.setMenu(
+    Menu.buildFromTemplate([
+      {
+        label: t('menu.file.new_window'),
+        click: () => {
+          void newWindow();
+        },
+      },
+      {
+        label: t('menu.file.open_folder_in_new_window'),
+        click: () => {
+          void openFolderInNewWindow();
+        },
+      },
+    ]),
+  );
+}
+
+/** 由 i18n.ipc setMenuRebuilder 注册；setLocale 后被调，整体重建 application menu + dock menu。 */
 export function rebuildAppMenu(): void {
   if (process.env['CONTINUO_E2E'] === '1') return;
   Menu.setApplicationMenu(buildAppMenu(getMainT()));
+  setDockMenu();
 }
 
 // popout 子窗口禁止刷新。
@@ -354,8 +418,15 @@ export function rebuildAppMenu(): void {
 // did-start-navigation 是 "did" 事件不能 preventDefault,改成在键盘事件层吞掉
 // Cmd+R / Ctrl+R / F5,并去掉 popout 的菜单(避免菜单里的 Reload)。
 app.on('browser-window-created', (_evt, win) => {
+  // 窗口级资源清理:主窗 / 新窗 / dockview popout 子窗一视同仁(popout 不走
+  // createMainWindow,镜像 terminal.ipc 的 windowClosedCleanup 覆盖全窗口挂法)。
+  // webContents id ≠ BrowserWindow id 且 'closed' 后 webContents 已销毁不可读 →
+  // 在创建期(此刻 webContents 存活)先捕获 wcId。
+  const wcId = win.webContents.id;
+  win.once('closed', () => releaseWindowResources(win.id, wcId));
+
   win.webContents.once('did-finish-load', () => {
-    if (!win.webContents.getURL().includes('popout=1')) return;
+    if (!isPopoutUrl(win.webContents.getURL())) return;
     win.setMenu(null);
     win.webContents.on('before-input-event', (event, input) => {
       if (input.type !== 'keyDown') return;
@@ -509,6 +580,14 @@ async function startMcpHost(): Promise<void> {
     try {
       await broker.start();
       brokerStarted = true;
+      // 窗口关闭时取消该窗口仍在 block 的 await_stop_hook 等待者(审计 #3)。
+      setStopHookCanceller((windowId) => {
+        try {
+          broker.cancelByWindow(windowId);
+        } catch {
+          // ignore — 关闭路径尽力而为
+        }
+      });
     } catch (err) {
       console.warn(
         '[hook-bridge] broker.start failed, await_stop_hook will be unavailable:',
@@ -678,26 +757,8 @@ app.whenReady().then(async () => {
     Menu.setApplicationMenu(null);
   } else {
     Menu.setApplicationMenu(buildAppMenu(getMainT()));
-    // macOS dock 右键菜单(快捷入口)— Linux/Windows 没 dock 跳过。
-    if (process.platform === 'darwin' && app.dock) {
-      const t = getMainT();
-      app.dock.setMenu(
-        Menu.buildFromTemplate([
-          {
-            label: t('menu.file.new_window'),
-            click: () => {
-              void newWindow();
-            },
-          },
-          {
-            label: t('menu.file.open_folder_in_new_window'),
-            click: () => {
-              void openFolderInNewWindow();
-            },
-          },
-        ]),
-      );
-    }
+    // macOS dock 右键菜单(快捷入口)。抽成 setDockMenu 复用,locale 切换时一并重建。
+    setDockMenu();
   }
 
   registerIpc();
@@ -792,13 +853,17 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', async (event) => {
-  const wins = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed());
-  if (wins.every((w) => flushedOnQuit.has(w.id))) {
-    void mcpHost?.close().catch(() => {});
-    void mcpStdio?.close().catch(() => {});
+  const action = quitGuard.onBeforeQuit();
+  // 清理已完成 → 内部 app.quit() 的重入,放行退出。
+  if (action === 'allow') return;
+  // 清理在途、用户/外部再次 quit → 继续拦截,等在途 cleanupAll 跑完由内部 quit 放行。
+  if (action === 'block') {
+    event.preventDefault();
     return;
   }
+  // action === 'run':首次 quit,跑清理。
   event.preventDefault();
+  const wins = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed());
   await Promise.all(
     wins.map(async (w) => {
       if (flushedOnQuit.has(w.id)) return;
@@ -806,10 +871,12 @@ app.on('before-quit', async (event) => {
       flushedOnQuit.add(w.id);
     }),
   );
-  // force-kill 所有 PTY,防 agent 长任务子进程被孤儿化/zombie。在 app.quit() 前
-  // await:window 'closed' 清理走 3s grace timer,进程退出时不触发 SIGKILL(审计 P1)。
+  // force-kill 所有 PTY,防 agent 长任务子进程被孤儿化/zombie。无论是否有窗口要 flush
+  // 都必须跑(关最后一个窗口触发的 quit 路径 wins 已空,旧 every() 守卫会跳过它)。
+  // 在 app.quit() 前 await:window 'closed' 清理走 3s grace timer,进程退出不触发 SIGKILL。
   await termService.cleanupAll().catch(() => {});
   void mcpHost?.close().catch(() => {});
   void mcpStdio?.close().catch(() => {});
+  quitGuard.markFinished();
   app.quit();
 });

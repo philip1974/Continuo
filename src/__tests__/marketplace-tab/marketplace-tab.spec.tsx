@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { fireEvent, render, cleanup, waitFor } from '@testing-library/react';
+import { fireEvent, render, cleanup, waitFor, act } from '@testing-library/react';
 
 vi.mock('../../marketplace/fetcher', () => ({
   fetchMarketplaceIndex: vi.fn(),
@@ -21,13 +21,14 @@ import {
   captureLmApi,
 } from '../../lib/co-api';
 import { MarketplaceTab } from '../../marketplace/MarketplaceTab';
-import { fetchMarketplaceIndex } from '../../marketplace/fetcher';
+import { fetchMarketplaceIndex, fetchPluginManifest } from '../../marketplace/fetcher';
 import { getUserPluginManager } from '../../plugins/PluginManager';
 import { useUpdateStore } from '../../marketplace/update-store';
 import { useReviewsStore } from '../../marketplace/reviews-store';
 import type { MarketplaceEntry } from '../../marketplace/types';
 
 const fetchIndexMock = fetchMarketplaceIndex as unknown as ReturnType<typeof vi.fn>;
+const fetchManifestMock = fetchPluginManifest as unknown as ReturnType<typeof vi.fn>;
 const getMgr = getUserPluginManager as unknown as ReturnType<typeof vi.fn>;
 
 function entry(over: Partial<MarketplaceEntry> & { id: string }): MarketplaceEntry {
@@ -56,6 +57,9 @@ function installApi(installFromGit: ReturnType<typeof vi.fn>): void {
 beforeEach(() => {
   _resetLmApiForTest();
   fetchIndexMock.mockReset();
+  // 还原全局默认:远程 manifest 版本 0.0.0(各 test 默认不触发"有更新")
+  fetchManifestMock.mockReset();
+  fetchManifestMock.mockResolvedValue({ id: '_', name: '_', version: '0.0.0' });
   getMgr.mockReset();
   useUpdateStore.setState({
     available: [],
@@ -250,7 +254,9 @@ describe('MarketplaceTab — 安装按钮', () => {
 });
 
 describe('MarketplaceTab — 更新按钮', () => {
-  it('updateStore 中有 entry → 显「更新」按钮 → uninstall + installFromGit', async () => {
+  // 审计 #2: 更新改为原子覆盖安装(overwrite=true),不再先卸载 —— 卸载成功但
+  // 重装失败会丢插件。这里断言点更新不调 uninstall,且 installFromGit 带 overwrite。
+  it('updateStore 中有 entry → 显「更新」按钮 → 原子覆盖安装(不卸载)', async () => {
     const installFromGit = vi.fn().mockResolvedValue({
       ok: true,
       data: { id: 'a', name: 'A', version: '2.0.0' },
@@ -263,6 +269,7 @@ describe('MarketplaceTab — 更新按钮', () => {
         { id: 'a', manifest: { id: 'a', name: 'A', version: '1.0.0' } },
       ],
       uninstall,
+      reload: vi.fn().mockResolvedValue(undefined),
     });
     useUpdateStore.setState({
       available: [
@@ -286,11 +293,90 @@ describe('MarketplaceTab — 更新按钮', () => {
     expect(updateBtn).toBeDefined();
     fireEvent.click(updateBtn!);
     await waitFor(() => {
-      expect(uninstall).toHaveBeenCalledWith('a');
-      expect(installFromGit).toHaveBeenCalled();
+      expect(installFromGit).toHaveBeenCalledWith(expect.any(String), true);
     });
+    // 关键:更新路径不再卸载,避免重装失败丢插件
+    expect(uninstall).not.toHaveBeenCalled();
     await waitFor(() => {
       expect(container.textContent).toContain('更新到 A v2.0.0');
+    });
+  });
+
+  // 第二十二轮 P2-BB:更新成功后先 reload 本地 PluginManager 版本再 refresh,否则
+  // refreshUpdates 读到陈旧旧版本 → 把刚 dismiss 的更新条目又加回 available(复活)。
+  it('更新成功 → reload 推进本地版本后 refresh 不复活更新条目', async () => {
+    const installFromGit = vi.fn().mockResolvedValue({
+      ok: true,
+      data: { id: 'a', name: 'A', version: '2.0.0' },
+    });
+    installApi(installFromGit);
+    fetchIndexMock.mockResolvedValue([entry({ id: 'a', name: 'A' })]);
+    // 远程 manifest = 2.0.0(refreshUpdates 比较用)
+    fetchManifestMock.mockResolvedValue({ id: 'a', name: 'A', version: '2.0.0' });
+    // 本地初始 1.0.0;reload 模拟磁盘已是 2.0.0 → 内存版本推进
+    let localVer = '1.0.0';
+    const reload = vi.fn().mockImplementation(async () => {
+      localVer = '2.0.0';
+    });
+    getMgr.mockReturnValue({
+      listAll: () => [
+        { id: 'a', manifest: { id: 'a', name: 'A', version: localVer } },
+      ],
+      reload,
+    });
+    useUpdateStore.setState({
+      available: [
+        {
+          id: 'a',
+          name: 'A',
+          from: '1.0.0',
+          to: '2.0.0',
+          entry: entry({ id: 'a', name: 'A' }),
+        },
+      ],
+    });
+
+    const { container } = render(<MarketplaceTab />);
+    await waitFor(() => {
+      expect(container.textContent).toContain('A');
+    });
+    fireEvent.click(
+      Array.from(
+        container.querySelectorAll<HTMLButtonElement>('button'),
+      ).find((b) => b.textContent?.includes('更新'))!,
+    );
+    await waitFor(() => {
+      expect(reload).toHaveBeenCalledWith('a');
+    });
+    // refresh 后:本地已 2.0.0 == 远程 2.0.0,非 newer → 不复活
+    await waitFor(() => {
+      expect(
+        useUpdateStore.getState().available.some((u) => u.id === 'a'),
+      ).toBe(false);
+    });
+  });
+});
+
+describe('MarketplaceTab — 评论刷新失败反馈', () => {
+  // 第二十二轮 P2-BC:刷新评论失败必须给反馈,否则按钮恢复原样 + 评论区无变化 →
+  // 用户无法区分"刷新成功无新评论" vs "刷新失败"。旧实现订阅了 loading 却没读 error。
+  it('reviews-store.error 非空 → 渲染错误反馈', async () => {
+    installApi(vi.fn());
+    fetchIndexMock.mockResolvedValue([entry({ id: 'a', name: 'A' })]);
+    getMgr.mockReturnValue({ listAll: () => [] });
+    const { container } = render(<MarketplaceTab />);
+    await waitFor(() => {
+      expect(container.textContent).toContain('A');
+    });
+    act(() => {
+      useReviewsStore.setState({
+        loading: false,
+        error: 'NO_TOKEN: missing token',
+      });
+    });
+    await waitFor(() => {
+      expect(container.textContent).toContain('刷新评分失败');
+      expect(container.textContent).toContain('NO_TOKEN');
     });
   });
 });

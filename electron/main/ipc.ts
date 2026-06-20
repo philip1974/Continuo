@@ -105,13 +105,35 @@ export function registerIpc(): { pluginFsHandles: PluginFsIpcHandles } {
     () => loadExplorer(explorerFile),
     trusted,
   );
-  safeHandle(
+  safeHandleWithCtx(
     'explorer:write',
     ExplorerWritableSnapshotSchema,
-    async (writable) => {
+    async (writable, { event }) => {
+      // 持久化边界收口:一个窗口只能写自己 windowSeq 的段(同 layout:read/write 早用
+      // 的 ctx + getWindowSeq 模式,explorer:write 之前漏了)。renderer 的
+      // snapshotFromStores 正常只发自己段,但若陈旧闭包/回归路径夹带别窗 entry,
+      // mergeWritableIntoFull 会把别窗段一并写回 → 单窗陈旧写覆盖别窗 root/tabs/
+      // 展开态(R7 曾是真 bug)。按 sender 的真实 seq 过滤 foreign 段,丢弃非自己的窗口
+      // entry,既保留自己段的写入又杜绝跨窗 clobber。(codex 复审 loop R11)
+      const win = BrowserWindow.fromWebContents(event.sender);
+      if (!win) {
+        throw Object.assign(new Error('no window'), {
+          code: ERROR_CODES.NO_WINDOW,
+        });
+      }
+      const seq = getWindowSeq(win.id);
+      if (seq == null) {
+        throw Object.assign(new Error('no window seq'), {
+          code: ERROR_CODES.NO_WINDOW_SEQ,
+        });
+      }
+      const ownOnly = {
+        ...writable,
+        windows: writable.windows.filter((w) => w.windowSeq === seq),
+      };
       await withExplorerFileMutex(async () => {
         const current = await loadExplorer(explorerFile);
-        const merged = mergeWritableIntoFull(current, writable);
+        const merged = mergeWritableIntoFull(current, ownOnly);
         await atomicWriteJson(explorerFile, merged);
       });
     },

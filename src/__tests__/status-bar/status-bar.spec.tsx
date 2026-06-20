@@ -29,6 +29,7 @@ import { useTerminalStore } from '../../stores/terminal.store';
 import { _resetAgentAuthForTest, useAgentAuthStore } from '../../stores/agent-auth.store';
 import { coApp } from '../../plugins/co-app';
 import { StatusBarRegistry } from '../../plugins/registries/StatusBarRegistry';
+import { notify } from '../../notifications/notify';
 
 interface FakeApi {
   mcp?: { getStdioConfig: ReturnType<typeof vi.fn> };
@@ -377,5 +378,62 @@ describe('StatusBar — agent 撤销', () => {
     expect(revoke).not.toHaveBeenCalled();
     expect(useAgentAuthStore.getState().sessionGranted).toBe(true);
     confirmSpy.mockRestore();
+  });
+
+  // codex 复审 loop R18:revoke IPC 失败不得静默伪成功(否则 UI 显示已撤销但 main 的 agent
+  // PTY/token 仍存活 = 安全相关谎报)。失败 → 回滚本地授权态 + notify.error。
+  it('R18: revoke IPC 返 ok:false → 回滚 sessionGranted=true + notify.error', async () => {
+    const errSpy = vi.spyOn(notify, 'error').mockImplementation(() => {});
+    const revoke = vi.fn().mockResolvedValue({ ok: false, code: 'KILL_FAILED' });
+    installApi({ agentAuth: { revoke } });
+    useTerminalStore.setState({
+      sessions: [
+        { id: 't1', title: 'a', cwd: '/', originHint: 'agent', createdAt: 0, exitCode: null, ownerWindowId: 1 },
+      ],
+      activeId: 't1',
+    });
+    useAgentAuthStore.setState({ pending: null, sessionGranted: true });
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    const { container } = render(<StatusBar />);
+    const btn = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((b) => /\d+\s*agent/.test(b.textContent ?? ''))!;
+    fireEvent.click(btn);
+
+    await waitFor(() => {
+      expect(errSpy).toHaveBeenCalled();
+    });
+    // 关键:撤销实际没成功 → 本地授权态回滚为 true,不谎报已撤销
+    expect(useAgentAuthStore.getState().sessionGranted).toBe(true);
+    confirmSpy.mockRestore();
+    errSpy.mockRestore();
+  });
+
+  it('R18: revoke IPC reject → 同样回滚 + notify.error', async () => {
+    const errSpy = vi.spyOn(notify, 'error').mockImplementation(() => {});
+    const revoke = vi.fn().mockRejectedValue(new Error('ipc down'));
+    installApi({ agentAuth: { revoke } });
+    useTerminalStore.setState({
+      sessions: [
+        { id: 't1', title: 'a', cwd: '/', originHint: 'agent', createdAt: 0, exitCode: null, ownerWindowId: 1 },
+      ],
+      activeId: 't1',
+    });
+    useAgentAuthStore.setState({ pending: null, sessionGranted: true });
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    const { container } = render(<StatusBar />);
+    const btn = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((b) => /\d+\s*agent/.test(b.textContent ?? ''))!;
+    fireEvent.click(btn);
+
+    await waitFor(() => {
+      expect(errSpy).toHaveBeenCalled();
+    });
+    expect(useAgentAuthStore.getState().sessionGranted).toBe(true);
+    confirmSpy.mockRestore();
+    errSpy.mockRestore();
   });
 });

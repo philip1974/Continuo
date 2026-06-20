@@ -114,6 +114,7 @@ export const zh: Record<TranslationKey, string> = {
   'editor.welcome.title': '未打开文件',
   'editor.welcome.hint_prefix': '在 Explorer 单击文件打开 ·',
   'editor.welcome.save': '保存',
+  'editor.autosave_failed': '自动保存失败',
   'dock.empty.message': '所有面板都关掉了。',
   'dock.empty.restore': '恢复默认布局',
   'panels.explorer.loading_or_empty': '读取中或空目录',
@@ -214,6 +215,8 @@ export const zh: Record<TranslationKey, string> = {
   'permissions.agent.grant_session': '本次启动期间允许',
   'permissions.revoke_all.confirm':
     '将终止 {count} 个 agent terminal 并撤销本次启动期间的授权。\n\n已运行的 agent CLI 持有的 token 将立刻 401；新开 terminal 仍可重新授权。\n\n确定继续？',
+  'permissions.revoke_all.failed':
+    '撤销失败 —— agent terminal 可能仍在运行,请重试。',
 
   // statusbar.*
   'statusbar.mcp.copy': '复制 MCP 配置',
@@ -311,7 +314,6 @@ export const zh: Record<TranslationKey, string> = {
   'shell.dock.popout_title': '弹出到独立窗口',
   'shell.tab.exit_zoom': '退出缩放',
   'shell.iconbar.updates_tooltip': '{count} 个插件可更新',
-  'shell.iconbar.account_aria': '账户：Continuo Dev，PRO Plan',
   'shell.iconbar.account_title': 'Continuo Dev · PRO Plan',
 
   // marketplace.*
@@ -331,6 +333,7 @@ export const zh: Record<TranslationKey, string> = {
   'marketplace.reviews.refresh_title': '重新拉评分（跳缓存）',
   'marketplace.reviews.refresh': '⟳ 刷新评分',
   'marketplace.reviews.refreshing': '⟳ 刷新中…',
+  'marketplace.reviews.refresh_failed': '刷新评分失败:{message}',
   'marketplace.reviews.official_review': '官方 review 过',
   'marketplace.reviews.expand': '展开评价',
   'marketplace.reviews.collapse': '收起评价',
@@ -405,4 +408,7 @@ export const zh: Record<TranslationKey, string> = {
   'quick_open.empty': '工作区无文件',
   'quick_open.no_match': '无匹配文件',
   'quick_open.list_aria': '文件搜索结果',
+  'quick_open.scan_failed': '扫描工作区文件失败',
+  'quick_open.retry': '重试',
+  'quick_open.open_failed': '打开失败',
 };

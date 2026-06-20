@@ -154,15 +154,25 @@ export function CodeEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 外部 value 变化(rare:同 tab 内程序化改 content)→ 同步到 editor
+  // 外部 value 变化(rare:外部进程改盘后 reloadFromDisk,或程序化改 content)→ 同步到
+  // editor。正常打字走 `cur === value` early-return,不进这里。
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
     const cur = view.state.doc.toString();
     if (cur === value) return;
     suppressNextChange.current = true;
+    // 保留光标/选区:全文替换不带 selection 时 CodeMirror 会把光标甩到文档边界,用户
+    // 正在文件中部阅读/定位时被外部修改打断会跳回顶部。把旧 selection clamp 到新长度后
+    // 一并 dispatch;scrollIntoView 默认 false,不主动拽动滚动。见第十五轮 P2-AQ。
+    const oldSel = view.state.selection.main;
+    const newLen = value.length;
     view.dispatch({
       changes: { from: 0, to: view.state.doc.length, insert: value },
+      selection: {
+        anchor: Math.min(oldSel.anchor, newLen),
+        head: Math.min(oldSel.head, newLen),
+      },
     });
   }, [value]);
 

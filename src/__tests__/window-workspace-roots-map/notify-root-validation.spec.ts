@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { WINDOW_CHANNELS } from '../../../electron/shared/window-channels';
+import { IPC_ERR } from '../../../electron/shared/ipc-result';
 import { registerWindowIpc } from '../../../electron/main/ipc/window.ipc';
 import {
   _reset,
@@ -73,15 +74,21 @@ vi.mock('../../../electron/main/services/window-workspace-roots.service', () => 
 
 const sender = {};
 const fakeWindow = { id: 42 };
+// 默认 trusted frame(file:// → defaultIsTrustedFrame 返回 true),让校验类用例正常走到
+// 业务逻辑;codex-loop R7 给 NOTIFY_ROOT 加了 trusted-frame 门(见下方 R7 用例)。
+const TRUSTED_FRAME = { url: 'file:///app/index.html' };
 
-function eventFor(senderObject: object = sender): { sender: object } {
-  return { sender: senderObject };
+function eventFor(
+  senderObject: object = sender,
+  senderFrame: unknown = TRUSTED_FRAME,
+): { sender: object; senderFrame: unknown } {
+  return { sender: senderObject, senderFrame };
 }
 
-function notify(raw: unknown): unknown {
+function notify(raw: unknown, senderFrame: unknown = TRUSTED_FRAME): unknown {
   const handler = electronMock.handlers.get(WINDOW_CHANNELS.NOTIFY_ROOT);
   if (!handler) throw new Error('missing notifyRoot handler');
-  return handler(eventFor(), raw);
+  return handler(eventFor(sender, senderFrame), raw);
 }
 
 function browserWindowCreatedListener(): Listener {
@@ -184,6 +191,31 @@ describe('window-workspace-roots-map: NotifyRoot validation', () => {
 
     expect(result).toEqual({ ok: true });
     expect(setWorkspaceRoot).toHaveBeenCalledWith(42, null);
+  });
+
+  // codex 复审 loop R7:不可信 frame 不得改写窗口 cwd 回退映射(否则 MCP/terminal agent
+  // 未显式传 cwd 时会 fallback 到被污染目录,读写/安装/git 落错 workspace)。同文件 CREATE
+  // 及 terminal/layout/plugin-mcp IPC 都校验 senderFrame,本 handler 原先漏了 → 补齐。
+  it('R7: untrusted senderFrame → DENIED 且不写入 workspaceRoot', () => {
+    const before = getWorkspaceRoot(42);
+    const result = notify({ root: '/abs-evil' }, { url: 'https://evil.example/' });
+
+    expect(result).toMatchObject({ ok: false, code: IPC_ERR.DENIED });
+    expect(setWorkspaceRoot).not.toHaveBeenCalled();
+    expect(getWorkspaceRoot(42)).toBe(before);
+  });
+
+  it('R7b: 缺失 senderFrame(null / 无 url)同样 DENIED,fail-closed', () => {
+    expect(notify({ root: '/abs' }, null)).toMatchObject({
+      ok: false,
+      code: IPC_ERR.DENIED,
+    });
+    // frame 对象存在但无 url 也判不可信
+    expect(notify({ root: '/abs' }, {})).toMatchObject({
+      ok: false,
+      code: IPC_ERR.DENIED,
+    });
+    expect(setWorkspaceRoot).not.toHaveBeenCalled();
   });
 
   it("T16: browser window 'closed' clears the window root", () => {

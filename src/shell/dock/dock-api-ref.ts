@@ -4,6 +4,7 @@
 // 用法:focusPanel('explorer') 切到对应 panel(若不存在不报错)。
 
 import type { DockviewApi } from 'dockview-react';
+import { cancelPendingPanelClose } from './wrap-panel-close';
 
 let apiRef: DockviewApi | null = null;
 
@@ -19,7 +20,13 @@ export function focusPanel(panelId: string): void {
   const api = apiRef;
   if (!api) return;
   const panel = api.getPanel(panelId);
-  if (panel) panel.api.setActive();
+  if (panel) {
+    // 面板可能正处于关闭 EXIT 动画窗口内(刚关随即又聚焦)。撤销排定的真 close,
+    // 否则刚激活的面板会在 EXIT_DURATION_MS 后随排定 close 一起消失。镜像
+    // DockShell editor 激活路径;该守卫此前只在 DockShell 一处,漏了 dock-api-ref。
+    cancelPendingPanelClose(panelId);
+    panel.api.setActive();
+  }
 }
 
 /**
@@ -39,6 +46,9 @@ export function openOrFocusPanel(
   if (!api) return;
   const existing = api.getPanel(id);
   if (existing) {
+    // 同上:撤销排定中的真 close,否则刚聚焦的单例面板(Settings 等)会在
+    // EXIT_DURATION_MS 后凭空消失。镜像 DockShell editor 路径与 focusPanel。
+    cancelPendingPanelClose(id);
     existing.api.setActive();
     return;
   }

@@ -12,7 +12,7 @@ function Probe({
   enabled,
   delayMs,
 }: {
-  saveFile: () => Promise<unknown>;
+  saveFile: (tabId: string) => Promise<unknown>;
   enabled: boolean;
   delayMs?: number;
 }) {
@@ -145,7 +145,39 @@ describe('useAutoSave', () => {
     expect(saveFile).toHaveBeenCalledTimes(1);
   });
 
-  it('卸载时 cancel pending schedule', async () => {
+  it('运行中关掉 autosave(enabled→false)→ 取消已排队的保存', async () => {
+    // topic49 第十一轮:flush 改造后补回"禁用 autosave 取消 pending"契约。
+    const saveFile = vi.fn(async () => true);
+    useEditorStore.setState({
+      tabs: [
+        {
+          id: '/a.md',
+          filePath: '/a.md',
+          content: 'new',
+          originalContent: 'old',
+          dirty: true,
+        },
+      ],
+      activeTabId: '/a.md',
+    });
+    const { rerender } = render(
+      <Probe saveFile={saveFile} enabled={true} delayMs={200} />,
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50); // 防抖窗口内,未触发
+    });
+    // 用户关掉 markdown autosave 设置
+    rerender(<Probe saveFile={saveFile} enabled={false} delayMs={200} />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    // 已排队的保存被取消,不写盘
+    expect(saveFile).not.toHaveBeenCalled();
+  });
+
+  it('卸载时 flush pending schedule(落盘,不丢编辑)', async () => {
+    // 行为变更(topic 49 第七轮):旧实现卸载 cancel → 防抖窗口内的编辑丢失。
+    // 现在卸载 flush → pending 的保存立即执行,且按捕获的 tabId 保存。
     const saveFile = vi.fn(async () => true);
     useEditorStore.setState({
       tabs: [
@@ -164,12 +196,14 @@ describe('useAutoSave', () => {
       <Probe saveFile={saveFile} enabled={true} delayMs={200} />,
     );
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(50);
-    });
-    unmount();
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(500);
+      await vi.advanceTimersByTimeAsync(50); // 仍在防抖窗口内(<200)
     });
     expect(saveFile).not.toHaveBeenCalled();
+    await act(async () => {
+      unmount();
+    });
+    // 卸载即 flush → 立即保存,且保存的是捕获的 tabId
+    expect(saveFile).toHaveBeenCalledTimes(1);
+    expect(saveFile).toHaveBeenCalledWith('/a.md');
   });
 });

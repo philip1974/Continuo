@@ -55,6 +55,7 @@ beforeEach(() => {
     selectedIndex: 0,
     results: [],
     loading: false,
+    scanFailed: false,
   });
   useWorkspaceStore.setState({ root: null, recentRoots: [] });
   useEditorStore.setState({ tabs: [], activeTabId: null });

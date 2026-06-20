@@ -63,7 +63,7 @@ export function EditorPanel() {
     activeIsMarkdown && activeTab !== null && isMilkdownUnsafe(activeTab.content);
   const forcedSource = unsafeMarkdown && effective !== mode;
 
-  const { saveActive, openFileByPath } = useEditorFile();
+  const { saveActive, saveTab, openFileByPath } = useEditorFile();
 
   // markdown link 点击路由(issue #25):Cmd/Ctrl+click on <a> → MilkdownEditor
   // 上抛 href → 这里用 resolveLink 决定走 IDE 内打开还是系统外链。
@@ -89,8 +89,9 @@ export function EditorPanel() {
   const autoSaveEnabled =
     isAutoSaveEnabled(activeTab?.filePath ?? null) && mdAutoSaveEnabled;
 
-  // 自动保存:Markdown 启用,代码不启用(决策 #3)
-  useAutoSave(saveActive, {
+  // 自动保存:Markdown 启用,代码不启用(决策 #3)。按 tabId 保存,切走/卸载时
+  // flush pending,避免连续输入后立即切 tab 丢失整段编辑。
+  useAutoSave(saveTab, {
     enabled: autoSaveEnabled,
     delayMs: autoSaveDelayMs,
   });
@@ -157,7 +158,10 @@ export function EditorPanel() {
     } else {
       body = (
         <MilkdownEditor
-          key={`${activeTab.id}-${effective}`}
+          // reloadEpoch 并入 key:外部进程改文件 → reloadFromDisk 递增 epoch →
+          // Milkdown remount 拿新内容,避免基于陈旧内容编辑后保存覆盖外部改动。
+          // 用户输入/保存不动 epoch,故不会每次按键 remount。
+          key={`${activeTab.id}-${effective}-${activeTab.reloadEpoch ?? 0}`}
           defaultValue={activeTab.content}
           readonly={effective === 'preview'}
           onChange={(md) => updateContent(activeTab.id, md)}

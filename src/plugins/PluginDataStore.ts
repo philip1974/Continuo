@@ -40,21 +40,32 @@ export class IpcPluginDataStore implements PluginDataStore {
 
   async write(pluginId: string, data: unknown): Promise<void> {
     JSON.stringify(data);
+    // 先落盘成功才认为已持久化:若 IPC save reject(磁盘满 / userData 只读 /
+    // IPC 关闭中),不能把新值留在缓存 + 标 loaded —— 否则后续 read() 命中
+    // loaded 分支返回这个从未落盘的值,让插件误以为保存成功(实则重启后丢失),
+    // 即便插件 catch 了本次异常也无法在重试时察觉真实状态。失败时缓存保持旧值 /
+    // 未加载态,read() 反映真实磁盘态。
+    await coApi.pluginDataRaw.save(pluginId, { value: data });
     this.cache.set(pluginId, data);
     this.loaded.add(pluginId);
-    await coApi.pluginDataRaw.save(pluginId, { value: data });
   }
 
   private async load(pluginId: string): Promise<unknown | null> {
     const existing = this.loading.get(pluginId);
     if (existing) return existing;
     const promise = (async () => {
-      const data = await coApi.pluginDataRaw.load(pluginId);
-      const hasValue = Object.prototype.hasOwnProperty.call(data, 'value');
-      if (hasValue) this.cache.set(pluginId, data['value']);
-      this.loaded.add(pluginId);
-      this.loading.delete(pluginId);
-      return hasValue ? (data['value'] ?? null) : null;
+      try {
+        const data = await coApi.pluginDataRaw.load(pluginId);
+        const hasValue = Object.prototype.hasOwnProperty.call(data, 'value');
+        if (hasValue) this.cache.set(pluginId, data['value']);
+        this.loaded.add(pluginId);
+        return hasValue ? (data['value'] ?? null) : null;
+      } finally {
+        // reject 路径也必须清 loading:否则 rejected promise 永久留在 map 里,
+        // 该 id 后续 read() 命中 `existing` 返回同一个已 reject 的 promise →
+        // 瞬时 IPC 错误(主进程尚未就绪 / 临时失败)后永远无法重试,直到整页刷新。
+        this.loading.delete(pluginId);
+      }
     })();
     this.loading.set(pluginId, promise);
     return promise;

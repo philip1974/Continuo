@@ -32,7 +32,17 @@ interface UpdateState {
   readonly lastCheckedAt: number | null;
 
   refresh(): Promise<void>;
+  /**
+   * 乐观地把某 id 从 available 摘掉(更新刚成功时)。否则更新按钮要等异步
+   * refresh 完成才收起,期间用户可重复点击触发对已是最新版的二次 overwrite 安装。
+   */
+  dismiss(id: string): void;
 }
+
+// 单调代际:并发 refresh 时,慢的网络请求可能在快的之后才 resolve。捕获本次
+// 代际,只有仍是最新代际时才落库,避免过期结果覆盖更新的结果(mirror settings.store
+// 的 gen 乱序防护)。
+let refreshGen = 0;
 
 export const useUpdateStore = create<UpdateState>((set) => ({
   remoteVersions: new Map(),
@@ -40,7 +50,14 @@ export const useUpdateStore = create<UpdateState>((set) => ({
   checking: false,
   lastCheckedAt: null,
 
+  dismiss: (id) =>
+    set((s) => {
+      if (!s.available.some((u) => u.id === id)) return s;
+      return { available: s.available.filter((u) => u.id !== id) };
+    }),
+
   refresh: async () => {
+    const myGen = ++refreshGen;
     set({ checking: true });
     try {
       const entries = await fetchMarketplaceIndex();
@@ -78,6 +95,8 @@ export const useUpdateStore = create<UpdateState>((set) => ({
         });
       }
 
+      // 更晚的 refresh 已开始 → 丢弃本次过期结果(由最新代际负责落库 + 清 checking)
+      if (myGen !== refreshGen) return;
       set({
         remoteVersions,
         available,
@@ -86,6 +105,7 @@ export const useUpdateStore = create<UpdateState>((set) => ({
       });
     } catch (err) {
       console.warn('[update-store] refresh failed', err);
+      if (myGen !== refreshGen) return;
       set({ checking: false });
     }
   },

@@ -6,8 +6,9 @@
 //   query 变 → fuzzyFilter(results) → 渲染列表
 //   Enter → openFileByPath(absPath) + close()
 
-import { useCallback, useEffect, useMemo } from 'react';
-import { Input, Modal, Spinner } from '@/design';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Button, Input, Modal, Spinner } from '@/design';
+import { notify } from '@/notifications/notify';
 import { useQuickOpenStore, type QuickOpenFile } from './store';
 import { walkWorkspaceFiles } from './walk-files';
 import { fuzzyFilter } from '../command-palette/fuzzy';
@@ -29,8 +30,12 @@ export function QuickOpenModal() {
   const moveSelection = useQuickOpenStore((s) => s.moveSelection);
   const setResults = useQuickOpenStore((s) => s.setResults);
   const setLoading = useQuickOpenStore((s) => s.setLoading);
+  const scanFailed = useQuickOpenStore((s) => s.scanFailed);
+  const setScanFailed = useQuickOpenStore((s) => s.setScanFailed);
 
   const root = useWorkspaceStore((s) => s.root);
+  // 重试令牌:walk 失败后用户点"重试"递增 → 重跑 effect。
+  const [reloadToken, setReloadToken] = useState(0);
 
   // 打开 modal 时(或 root 变化)异步 walk 文件。已有 results 不阻塞 UI,
   // 后台刷新 → setResults。
@@ -38,6 +43,7 @@ export function QuickOpenModal() {
     if (!isOpen || !root) return;
     let cancelled = false;
     setLoading(true);
+    setScanFailed(false);
     void walkWorkspaceFiles({
       rootPath: root,
       listDir: (p, opts) => coApi.fs.listDir(p, opts),
@@ -47,9 +53,18 @@ export function QuickOpenModal() {
         if (r.ok) {
           setResults(r.data);
         } else {
+          // walk 失败:置 scanFailed 标志,UI 显式区分"扫描失败 + 重试"与"空 workspace",
+          // 不再让失败静默伪装成空列表把用户引向死胡同。见第二十一轮 P1-AY。
           console.warn('[quick-open] walk failed', r.code, r.message);
           setResults([]);
+          setScanFailed(true);
         }
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.warn('[quick-open] walk threw', err);
+        setResults([]);
+        setScanFailed(true);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -57,7 +72,7 @@ export function QuickOpenModal() {
     return () => {
       cancelled = true;
     };
-  }, [isOpen, root, setResults, setLoading]);
+  }, [isOpen, root, reloadToken, setResults, setLoading, setScanFailed]);
 
   // fuzzy 用 relPath 做匹配源(让用户能输 'src/foo' 这种路径片段);
   // 命名优先级保留在 fuzzyScore 词边界加分里(/ 算 boundary)。
@@ -75,13 +90,17 @@ export function QuickOpenModal() {
           store: useEditorStore,
         });
         if (!r.ok) {
-          console.warn(`[quick-open] open ${file.absPath} failed:`, r.code, r.message);
+          // 打开失败弹 error toast(modal 已关,旧实现只 console.warn → 用户点了没反应)。
+          // 见第二十一轮 P1-AX。
+          notify.error(`${t('quick_open.open_failed')} ${file.name}: ${r.message ?? r.code}`);
         }
       } catch (err) {
-        console.warn('[quick-open] openFileByPath threw', err);
+        notify.error(
+          `${t('quick_open.open_failed')} ${file.name}: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     },
-    [close],
+    [close, t],
   );
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -120,6 +139,18 @@ export function QuickOpenModal() {
             <div className="flex items-center justify-center gap-2 px-3 py-6 text-xs text-fg-dim">
               <Spinner size="sm" />
               <span>{t('quick_open.scanning')}</span>
+            </div>
+          ) : scanFailed && results.length === 0 ? (
+            // 扫描失败:与"空 workspace"区分 + 给重试入口,不让失败静默伪装成空。
+            <div className="flex flex-col items-center gap-2 px-3 py-6 text-center text-xs text-fg-dim">
+              <span>{t('quick_open.scan_failed')}</span>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setReloadToken((n) => n + 1)}
+              >
+                {t('quick_open.retry')}
+              </Button>
             </div>
           ) : filtered.length === 0 ? (
             <div className="px-3 py-4 text-center text-xs text-fg-dim">

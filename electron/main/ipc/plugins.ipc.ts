@@ -32,7 +32,7 @@ const WritePermissionsInput = z
   .object({ data: z.record(z.string(), z.array(DecisionSchema)) })
   .strict();
 const InstallFromGitInput = z
-  .object({ url: z.string().min(1) })
+  .object({ url: z.string().min(1), overwrite: z.boolean().optional() })
   .strict();
 const UninstallInput = z
   .object({ id: z.string().min(1) })
@@ -96,7 +96,7 @@ export function registerPluginsIpc(): void {
   safeHandle(
     PLUGINS_CHANNELS.INSTALL_FROM_GIT,
     InstallFromGitInput,
-    ({ url }) => installFromGit(url, pluginsDir),
+    ({ url, overwrite }) => installFromGit(url, pluginsDir, { overwrite }),
     trusted,
   );
 

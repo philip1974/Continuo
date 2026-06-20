@@ -72,6 +72,7 @@ export interface CreateInvokeRemoteDeps {
 
 interface PendingEntry {
   readonly owner: PluginMcpToolOwner;
+  readonly name: string;
   readonly resolve: (v: unknown) => void;
   readonly reject: (e: unknown) => void;
   readonly timer: { cancel(): void };
@@ -81,6 +82,8 @@ export interface InvokeRemoteCore {
   invoke: InvokeRemoteFn;
   handleReply(reply: unknown): void;
   abortByWebContents(wcId: number): void;
+  /** 某 tool 被其 owner wc unregister 时,abort 该 (wcId,name) 的所有在途 invoke. */
+  abortByTool(wcId: number, name: string): void;
   pendingCount(): number;
 }
 
@@ -120,7 +123,7 @@ export function createInvokeRemote(
           ),
         );
       }, timeoutMs);
-      pending.set(requestId, { owner, resolve, reject, timer });
+      pending.set(requestId, { owner, name, resolve, reject, timer });
       send(owner, PLUGIN_MCP_CHANNELS.INVOKE, { requestId, name, input });
     });
 
@@ -149,7 +152,16 @@ export function createInvokeRemote(
       const message =
         typeof r['message'] === 'string' ? r['message'] : 'unknown error';
       entry.reject(Object.assign(new Error(message), { code }));
+      return;
     }
+    // 畸形 reply:ok 既非 true 也非 false(缺失/null/字符串/数字)。此时上面已
+    // cancel timer + 删 pending,若直接 return 则该 invoke 永久挂起(连 timeout
+    // 兜底都被 cancel 了)。必须显式 reject,否则 agent 的 tools/call 永不返回。
+    entry.reject(
+      Object.assign(new Error('malformed plugin mcp reply (missing ok)'), {
+        code: PLUGIN_MCP_ERROR_CODES.INVALID_REPLY,
+      }),
+    );
   };
 
   const abortByWebContents = (wcId: number): void => {
@@ -166,10 +178,24 @@ export function createInvokeRemote(
     }
   };
 
+  const abortByTool = (wcId: number, name: string): void => {
+    for (const [requestId, entry] of pending) {
+      if (entry.owner.wcId !== wcId || entry.name !== name) continue;
+      pending.delete(requestId);
+      entry.timer.cancel();
+      entry.reject(
+        Object.assign(new Error(`plugin mcp tool "${name}" unregistered`), {
+          code: PLUGIN_MCP_ERROR_CODES.TOOL_DISPOSED,
+        }),
+      );
+    }
+  };
+
   return {
     invoke,
     handleReply,
     abortByWebContents,
+    abortByTool,
     pendingCount: () => pending.size,
   };
 }
@@ -260,6 +286,10 @@ export function createPluginMcpBridge(
       if (e.wcId !== wcId) return; // 非 owner wc → noop(防假冒)
       host.removeTool(name);
       entries.delete(name);
+      // 该 tool 还在途的 invoke 必须立即 abort —— 否则 renderer 端 stub 已没,
+      // reply 永不回来,agent 侧 tools/call 要干等满 30s timeout 才自愈。与
+      // handleWebContentsGone 的 abortByWebContents 对称(那条整 wc 销毁也 abort)。
+      invokeRemote.abortByTool(wcId, name);
       notifyToolsChanged?.();
     },
 

@@ -49,6 +49,8 @@ vi.mock('@/stores/workspace.store', () => ({
   useWorkspaceStore: Object.assign(vi.fn(), {
     getState: mocks.getWorkspaceState,
   }),
+  // R10:terminal.new/HeaderActions 现在 await 这个;mock 成立即 resolve(测试模拟已 hydrate)。
+  waitForWorkspaceHydrated: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock('@/shell/dock/DockReconciler', () => ({

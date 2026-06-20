@@ -23,6 +23,10 @@ const DISMISS_MS: Record<NotificationLevel, number> = {
   error: 15000,
 };
 const DEDUPE_WINDOW_MS = 1000;
+// 审计 P2-C:底层数组硬上限。error 级不参与 dedupe 且存活 15s,15s 内的 error
+// 突发(批量安装失败 / 循环 IPC 报错)会在 state 里无界堆积。显示层只 slice 可见区,
+// 不限制底层数组本身,故在 push 时按上限丢最旧(并清其 timer)。
+export const MAX_NOTIFICATIONS = 50;
 
 export interface NotifyOpts {
   readonly code?: string;
@@ -147,7 +151,22 @@ export function NotificationsProvider({
 
       const id = `notif-${String(++counterRef.current)}`;
       const n: Notification = { id, level, message, code, createdAt: now };
-      setNotificationList((prev) => [...prev, n]);
+      setNotificationList((prev) => {
+        const next = [...prev, n];
+        if (next.length <= MAX_NOTIFICATIONS) return next;
+        // 丢最旧的若干条,并清掉它们的 auto-dismiss timer,防 timer 泄漏。
+        const dropCount = next.length - MAX_NOTIFICATIONS;
+        for (let i = 0; i < dropCount; i++) {
+          const dropped = next[i];
+          if (dropped === undefined) continue;
+          const t = timersRef.current.get(dropped.id);
+          if (t !== undefined) {
+            clearTimeout(t);
+            timersRef.current.delete(dropped.id);
+          }
+        }
+        return next.slice(dropCount);
+      });
       scheduleDismiss(id, level);
     },
     [scheduleDismiss, setNotificationList],

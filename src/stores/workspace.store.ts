@@ -56,3 +56,26 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
     });
   },
 }));
+
+/**
+ * 等待持久化层完成初次 hydrate(幂等:已 hydrated 立即 resolve)。
+ * 消费方在读 `root` 决定行为前**必须** await 这个 —— 否则冷启动 race(initExplorerPersistence
+ * 还没读完 explorer.json)会读到初始 `root=null`(见上方 `hydrated` 注释 + stores/README)。
+ * markHydrated 在 init 成功/失败/无文件都会调,故此 Promise 总会 settle,不会挂死。
+ */
+export function waitForWorkspaceHydrated(): Promise<void> {
+  if (useWorkspaceStore.getState().hydrated) return Promise.resolve();
+  return new Promise((resolve) => {
+    const unsub = useWorkspaceStore.subscribe((s) => {
+      if (s.hydrated) {
+        unsub();
+        resolve();
+      }
+    });
+    // 订阅后再查一次,弥合 getState 与 subscribe 之间的瞬时翻转(否则可能丢 markHydrated 事件)。
+    if (useWorkspaceStore.getState().hydrated) {
+      unsub();
+      resolve();
+    }
+  });
+}

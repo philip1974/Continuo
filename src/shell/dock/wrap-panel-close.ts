@@ -7,6 +7,25 @@ import { isTerminalPanelId, sessionIdFromPanel } from './terminal-panel-id';
 
 const patched = new WeakSet<IDockviewPanel>();
 const suppressedPanelCloses = new Set<string>();
+// 每个 panel id 排定中的「真 close」timer。供 cancelPendingPanelClose 在面板于
+// EXIT 动画窗口(EXIT_DURATION_MS)内被重新激活时撤销,防止刚复活的面板又被关。
+const pendingCloseTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+/**
+ * 撤销某 panel 排定中的延迟 close 并清掉它的 closing 标记。用于「关了又马上点开」
+ * 的复活路径:wrapPanelClose 把真 close 延后 EXIT_DURATION_MS,这段时间里 panel
+ * 仍存在;若此时 DockShell editor 激活 effect 命中它并 setActive,必须取消那个已
+ * 排定的真 close,否则面板(及刚打开的文件)会在动画结束时凭空消失。
+ * 非 pending 时调用是无害 no-op(幂等)。
+ */
+export function cancelPendingPanelClose(panelId: string): void {
+  const timer = pendingCloseTimers.get(panelId);
+  if (timer !== undefined) {
+    clearTimeout(timer);
+    pendingCloseTimers.delete(panelId);
+  }
+  useClosingStore.getState().unmark(panelId);
+}
 
 export function markPanelCloseSuppressed(panelId: string): void {
   suppressedPanelCloses.add(panelId);
@@ -37,13 +56,15 @@ export function wrapPanelClose(panel: IDockviewPanel): void {
       if (store.ids.has(id)) return;
       store.mark(id);
       removeTerminalPtysForPanel(panel);
-      setTimeout(() => {
+      const timer = setTimeout(() => {
+        pendingCloseTimers.delete(id);
         try {
           original();
         } catch {
           // panel 已被其他路径(group teardown 等)移除,忽略。
         }
       }, EXIT_DURATION_MS);
+      pendingCloseTimers.set(id, timer);
     },
     writable: true,
     configurable: true,

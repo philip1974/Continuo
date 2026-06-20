@@ -68,6 +68,23 @@ export const useSettingsValuesStore = create<SettingsValueState>((set) => ({
   },
 }));
 
+// 跨窗口同步:localStorage 在同源多窗口共享,但 zustand 内存快照只在本窗启动时
+// 读一次、之后不随别窗的写而更新。多窗口下窗口 A 改设置 → 写 localStorage + 经
+// settings 广播更新 useSettingsStore,但窗口 B 的 values-store 内存仍是旧值 →
+// LanguageFromSettings 的 values→store 协调 effect 会拿 B 的陈旧 value 把刚广播来的
+// locale 又改回去(跨窗 locale 互斗)。监听 storage 事件(只在别的 document 改了
+// localStorage 时 fire),同一 key 就重读,让所有窗口的 values 收敛一致(设置语义上
+// 都是 app 级全局,跨窗一致也更符合预期)。
+if (
+  typeof window !== 'undefined' &&
+  typeof window.addEventListener === 'function'
+) {
+  window.addEventListener('storage', (e: StorageEvent) => {
+    if (e.key !== STORAGE_KEY) return;
+    useSettingsValuesStore.setState({ values: readStored() });
+  });
+}
+
 /** 取某 spec 当前值(override ?? default). 非 React 上下文用. */
 export function getSettingValue<T extends SettingItemValue>(
   spec: SettingItemSpec,

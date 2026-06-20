@@ -21,12 +21,15 @@ interface QuickOpenState {
   selectedIndex: number;
   results: readonly QuickOpenFile[];
   loading: boolean;
+  /** walk 失败标志 —— 与"workspace 真为空"区分,避免静默失败伪装成空列表。 */
+  scanFailed: boolean;
   open: () => void;
   close: () => void;
   setQuery: (q: string) => void;
   moveSelection: (delta: number, max: number) => void;
   setResults: (files: readonly QuickOpenFile[]) => void;
   setLoading: (b: boolean) => void;
+  setScanFailed: (b: boolean) => void;
 }
 
 export const useQuickOpenStore = create<QuickOpenState>((set) => ({
@@ -35,6 +38,7 @@ export const useQuickOpenStore = create<QuickOpenState>((set) => ({
   selectedIndex: 0,
   results: [],
   loading: false,
+  scanFailed: false,
 
   open: () => set({ isOpen: true, query: '', selectedIndex: 0 }),
   // 不清 results / query — 用户秒级再开还能看到上次的列表。
@@ -49,4 +53,5 @@ export const useQuickOpenStore = create<QuickOpenState>((set) => ({
     }),
   setResults: (files) => set({ results: files }),
   setLoading: (b) => set({ loading: b }),
+  setScanFailed: (b) => set({ scanFailed: b }),
 }));

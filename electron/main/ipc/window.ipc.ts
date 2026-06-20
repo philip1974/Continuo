@@ -14,6 +14,7 @@ import {
   type IpcWindowCreateResult,
 } from '../../shared/window-channels';
 import { ERROR_CODES } from '../../shared/error-codes';
+import { IPC_ERR } from '../../shared/ipc-result';
 import { createMainWindow } from '../index';
 import { allocateWindowSeq } from '../persistence';
 import {
@@ -85,11 +86,22 @@ export function registerWindowIpc(): void {
     defaultIsTrustedFrame,
   );
   // workspace.root 变化时 renderer 推送 → main 维护 map,供 MCP agent terminal
-  // 路径 cwd 回退使用。main 端做 absolute + 非空校验; renderer 不可信.
-  // 这是输入卫生 (input sanitation), 不是安全边界 — main 只存 cwd hint。
+  // 路径 cwd 回退使用。main 端做 absolute + 非空校验 + trusted-frame 校验。
+  // 这个 cwd hint 会成为 MCP/terminal create 未显式传 cwd 时 agent session 的回退
+  // 工作目录,被污染会让 agent 的读写/安装/git 落到错误目录。同文件 CREATE 及
+  // terminal/layout/plugin-mcp IPC 都校验 senderFrame,本 handler 漏了 → 补上,与
+  // 兄弟入口一致(ADR-Plugin-5 引入隔离 iframe 后不可信子 frame 才可达,提前纵深防御)。
+  // (codex 复审 loop R7;frame-trust 守卫漏一兄弟 handler 族,同 P2-AD)
   ipcMain.handle(
     WINDOW_CHANNELS.NOTIFY_ROOT,
     (event: IpcMainInvokeEvent, raw: unknown) => {
+      if (!defaultIsTrustedFrame(event.senderFrame)) {
+        return {
+          ok: false as const,
+          code: IPC_ERR.DENIED,
+          message: 'sender frame is not trusted',
+        };
+      }
       const win = BrowserWindow.fromWebContents(event.sender);
       const parsed = NotifyRootInput.safeParse(raw);
       if (!parsed.success) {

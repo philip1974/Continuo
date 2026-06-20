@@ -78,14 +78,17 @@ export async function saveFile(
     };
   }
 
+  // 快照本次写盘的内容。markSaved 用它判定写盘 await 期间是否发生并发编辑:
+  // 若 store 里 content 已领先此快照,保留 dirty 不被静默清掉。
+  const savedContent = tab.content;
   let r;
   try {
-    r = await fs.writeFile(tab.filePath, tab.content);
+    r = await fs.writeFile(tab.filePath, savedContent);
   } catch (err) {
     return exception(err);
   }
   if (!r.ok) return r;
 
-  store.getState().markSaved(tabId);
+  store.getState().markSaved(tabId, savedContent);
   return { ok: true, data: undefined };
 }

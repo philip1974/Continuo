@@ -24,6 +24,7 @@ import {
   useKeybindingsStore,
 } from '../keybindings/keybindings-store';
 import { useTWithFallback, useT } from '@/i18n';
+import { runContributedAction } from '@/lib/run-contributed-action';
 
 // module 顶层一次,renderer 生命周期内不会切平台
 const PLATFORM = detectPlatform();
@@ -105,14 +106,12 @@ export function CommandPalette({ commands }: CommandPaletteProps) {
   }, [displayCommands, query, recentIds]);
 
   const execute = useCallback(
-    async (cmd: CommandSpec) => {
+    (d: DisplayCommand) => {
       close();
-      recordRecent(cmd.id);
-      try {
-        await cmd.fn();
-      } catch (err) {
-        console.warn(`[command-palette] ${cmd.id} threw`, err);
-      }
+      recordRecent(d.cmd.id);
+      // 命令抛错经 runContributedAction 弹 error toast(显示 localize 后的 title),
+      // 不再只 console.warn —— 面板已关,旧实现下用户看不到任何失败反馈。见第二十一轮 P1-AX。
+      runContributedAction(d.displayTitle, () => d.cmd.fn());
     },
     [close, recordRecent],
   );
@@ -127,7 +126,7 @@ export function CommandPalette({ commands }: CommandPaletteProps) {
     } else if (e.key === 'Enter') {
       e.preventDefault();
       const d = filtered[selectedIndex];
-      if (d) void execute(d.cmd);
+      if (d) execute(d);
     }
   };
 
@@ -168,7 +167,7 @@ export function CommandPalette({ commands }: CommandPaletteProps) {
                     ? 'bg-hover text-fg'
                     : 'text-fg-muted hover:bg-hover/50',
                 ].join(' ')}
-                onClick={() => void execute(d.cmd)}
+                onClick={() => execute(d)}
               >
                 {d.displayCategory && (
                   <span className="shrink-0 text-fg-dim">{d.displayCategory}:</span>

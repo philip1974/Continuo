@@ -8,6 +8,7 @@ import {
   type ExplorerContextMenuItemContext,
 } from '@/plugins/registries/ExplorerContextMenuRegistry';
 import { useRegistry } from '@/plugins/registries/useRegistry';
+import { runContributedAction } from '@/lib/run-contributed-action';
 
 export interface ContextMenuActions {
   onRename: (path: string) => void;
@@ -277,14 +278,11 @@ export function ContextMenu({
                 <Menu.Item
                   key={item.id}
                   className={itemCls}
-                  onSelect={() => {
-                    void Promise.resolve(item.fn(pluginCtx)).catch((err) => {
-                      console.warn(
-                        `[explorer-context-menu] item "${item.id}" fn threw`,
-                        err,
-                      );
-                    });
-                  }}
+                  // 插件右键项抛错经 runContributedAction 弹 error toast,不再只
+                  // console.warn(菜单已关,用户看不到失败)。见第二十一轮 P1-AX。
+                  onSelect={() =>
+                    runContributedAction(item.label, () => item.fn(pluginCtx))
+                  }
                 >
                   {item.icon && (
                     <span className="inline-flex shrink-0">{item.icon}</span>

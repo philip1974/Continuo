@@ -36,6 +36,18 @@ export function resolvePluginMainPath(
 }
 
 /**
+ * 插件 id 安全性:仅允许小写字母数字与 `. _ -`,且**不得**为 `.` 或 `..`。
+ * 旧正则 `^[a-z0-9._-]+$` 允许纯点段,`id='..'` 会让 `path.join(baseDir, id)` 解析到
+ * baseDir 的父目录;overwrite 安装(marketplace「更新」)随即 rename 覆盖父目录 →
+ * 路径穿越(审计 P1)。与 fs `renameEntry` 拒 `.`/`..` 同款防御。
+ */
+export function isSafePluginId(id: string): boolean {
+  if (!/^[a-z0-9._-]+$/.test(id)) return false;
+  if (id === '.' || id === '..') return false;
+  return true;
+}
+
+/**
  * 扫描 baseDir/<id>/manifest.json 模式;返回所有合法目录的 manifestText +
  * mainText(默认 main.js 或 manifest.main 指向)+ 可选 stylesText。
  *
@@ -176,8 +188,22 @@ export async function writePermissions(
 import { spawn } from 'node:child_process';
 import { mkdtemp, cp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { randomUUID } from 'node:crypto';
 
-const PLUGIN_ID_RE = /^[a-z0-9._-]+$/;
+// 同 id 并发安装串行化:防两个安装同时 swap 进 baseDir/<id> 互相踩(审计 #5)。
+const installLocks = new Map<string, Promise<unknown>>();
+function withInstallLock<T>(id: string, fn: () => Promise<T>): Promise<T> {
+  const prev = installLocks.get(id) ?? Promise.resolve();
+  const run = prev.then(fn, fn);
+  installLocks.set(
+    id,
+    run.then(
+      () => {},
+      () => {},
+    ),
+  );
+  return run;
+}
 
 /**
  * 卸载插件:rm -rf baseDir/<id>/,顺手清 _enabled.json 和 _permissions.json
@@ -191,7 +217,11 @@ export async function uninstallPlugin(
   baseDir: string,
   id: string,
 ): Promise<void> {
-  if (!PLUGIN_ID_RE.test(id)) {
+  // 必须用 isSafePluginId(显式拒纯点段 `.`/`..`),不能用裸正则 `^[a-z0-9._-]+$`:
+  // 后者放行 `..` → path.join(baseDir,'..') 解析到 baseDir 父目录 → rm -rf 父目录
+  // (recursive+force)= 灾难性数据丢失/路径穿越。install 侧(manifest.id)已用 isSafePluginId,
+  // uninstall 此前漏改(helper 未传播到兄弟入口)。
+  if (!isSafePluginId(id)) {
     throw Object.assign(new Error(`非法 plugin id: ${id}`), {
       code: ERROR_CODES.INVALID_ID,
     });
@@ -248,6 +278,7 @@ const GIT_CLONE_TIMEOUT_MS = 60_000;
 export async function installFromGit(
   gitUrl: string,
   baseDir: string,
+  opts: { overwrite?: boolean } = {},
 ): Promise<InstallFromGitResult> {
   if (!GIT_URL_RE.test(gitUrl)) {
     throw Object.assign(new Error(`不支持的 git URL: ${gitUrl}`), {
@@ -274,7 +305,7 @@ export async function installFromGit(
     }
     if (
       typeof manifest.id !== 'string' ||
-      !/^[a-z0-9._-]+$/.test(manifest.id) ||
+      !isSafePluginId(manifest.id) ||
       typeof manifest.name !== 'string' ||
       typeof manifest.version !== 'string'
     ) {
@@ -302,39 +333,63 @@ export async function installFromGit(
       });
     }
 
-    const targetDir = path.join(baseDir, manifest.id);
-    let targetExists = false;
-    try {
-      await fs.access(targetDir);
-      targetExists = true;
-    } catch {
-      /* not exists, OK */
-    }
-    if (targetExists) {
-      throw Object.assign(
-        new Error(`插件 ${manifest.id} 已安装,卸载后再装`),
-        { code: ERROR_CODES.EEXIST },
-      );
-    }
-
+    // 验证已通过 → 收窄成 string 常量,带进下面的闭包(let manifest 的窄化跨闭包会丢)。
+    const pluginId = manifest.id;
+    const pluginName = manifest.name;
+    const pluginVersion = manifest.version;
+    const targetDir = path.join(baseDir, pluginId);
     await fs.mkdir(baseDir, { recursive: true });
-    await cp(cloneDir, targetDir, { recursive: true });
 
-    // 清掉 .git 节省空间
+    // 清掉 .git 节省空间(在 staging 之前于 tmp clone 内删)。
     try {
-      await rm(path.join(targetDir, '.git'), {
-        recursive: true,
-        force: true,
-      });
+      await rm(path.join(cloneDir, '.git'), { recursive: true, force: true });
     } catch {
       /* 不影响安装 */
     }
 
-    return {
-      id: manifest.id,
-      name: manifest.name,
-      version: manifest.version,
-    };
+    // 同 id 串行 + 原子 swap(审计 #5 / #2):先 cp 到 baseDir 内的 staging(同盘
+    // 才能 rename 原子落位),再 rename 就位。overwrite 时把旧目录先挪到 backup,
+    // 任一步失败都回滚 —— 杜绝"cp 中途失败留半个目录 → 永久 EEXIST"与并发互踩,
+    // 也让插件「更新」无需先卸载(失败时旧版本原样保留,不会丢插件)。
+    // 必须 await:否则外层 try 的 finally 会在 swap 的 cp 之前先 rm 掉 tmpRoot/clone。
+    return await withInstallLock(pluginId, async () => {
+      let targetExists = false;
+      try {
+        await fs.access(targetDir);
+        targetExists = true;
+      } catch {
+        /* not exists, OK */
+      }
+      if (targetExists && opts.overwrite !== true) {
+        throw Object.assign(new Error(`插件 ${pluginId} 已安装,卸载后再装`), {
+          code: ERROR_CODES.EEXIST,
+        });
+      }
+
+      const suffix = randomUUID();
+      const staging = path.join(baseDir, `.${pluginId}.installing-${suffix}`);
+      const backup = targetExists
+        ? path.join(baseDir, `.${pluginId}.old-${suffix}`)
+        : null;
+
+      await rm(staging, { recursive: true, force: true }).catch(() => {});
+      await cp(cloneDir, staging, { recursive: true });
+
+      try {
+        if (backup) await fs.rename(targetDir, backup);
+        await fs.rename(staging, targetDir);
+      } catch (err) {
+        // 回滚:清 staging;若已挪走旧目录则还原。
+        await rm(staging, { recursive: true, force: true }).catch(() => {});
+        if (backup) await fs.rename(backup, targetDir).catch(() => {});
+        throw err;
+      }
+      if (backup) {
+        await rm(backup, { recursive: true, force: true }).catch(() => {});
+      }
+
+      return { id: pluginId, name: pluginName, version: pluginVersion };
+    });
   } finally {
     await rm(tmpRoot, { recursive: true, force: true });
   }
@@ -368,13 +423,18 @@ function runGit(args: readonly string[]): Promise<void> {
       } catch {
         /* ignore */
       }
-      setTimeout(() => {
+      // SIGKILL 升级 grace timer 必须 unref:否则 git 超时后这个内层 timer 会把
+      // event loop 多撑 1s,关窗/退出时延迟退出。与 plugin-shell-stream/shell.service
+      // 的 grace timer 同款(此前漏 unref)。
+      const killGraceTimer = setTimeout(() => {
         try {
           child.kill('SIGKILL');
         } catch {
           /* ignore */
         }
       }, 1000);
+      const maybeUnrefKill = killGraceTimer as { unref?: () => void };
+      if (typeof maybeUnrefKill.unref === 'function') maybeUnrefKill.unref();
       finish(() =>
         reject(
           Object.assign(new Error(`git ${args[0]} 超时`), {

@@ -324,18 +324,53 @@ export function mergeWritableIntoFull(
     writable.nextWindowSeq ?? 0,
   );
 
+  // restoreAllWindowsOnLaunch 是 main 读取的顶层启动偏好(window-restore.service
+  // 读它决定是否恢复所有窗口)。renderer 的 snapshotFromStores 从不携带它,因此裸
+  // `...writable` 会在每次窗口 workspace 切换/tab 开关/树展开触发的 explorer:write
+  // 时把它从盘上抹掉(同 nextWindowSeq 一样属 main-owned,renderer 不该覆盖)。
+  // 取盘上 current 值优先、writable 兜底地显式保留。
+  const restoreAllWindowsOnLaunch =
+    current?.restoreAllWindowsOnLaunch ?? writable.restoreAllWindowsOnLaunch;
+
   return {
     ...writable,
     nextWindowSeq,
     windows: merged,
+    ...(restoreAllWindowsOnLaunch !== undefined
+      ? { restoreAllWindowsOnLaunch }
+      : {}),
   };
+}
+
+/**
+ * 文件存在但无法解析为任何已知 schema 时,把损坏内容保留成一次性 sidecar
+ * `${filePath}.corrupt`。否则运行期写路径(`(await loadExplorer()) ?? defaultExplorerV3()`)
+ * 会在下一次窗口关闭/布局写时把整个 explorer.json 静默覆盖成默认值 —— recentRoots /
+ * pinned / 所有 window 段全部丢失且不可恢复。用 `flag:'wx'` 只保第一次损坏快照,
+ * 不覆盖更早的备份,也不在每次损坏读时重复写。best-effort,失败不影响主流程。
+ */
+async function preserveCorruptExplorer(
+  filePath: string,
+  raw: string,
+): Promise<void> {
+  try {
+    await fs.writeFile(`${filePath}.corrupt`, raw, { flag: 'wx' });
+  } catch {
+    // 备份已存在(EEXIST)或写失败 → best-effort,忽略
+  }
 }
 
 export async function loadExplorer(
   filePath: string,
 ): Promise<ExplorerPayloadV3 | null> {
+  let raw: string;
   try {
-    const raw = await fs.readFile(filePath, 'utf-8');
+    raw = await fs.readFile(filePath, 'utf-8');
+  } catch {
+    // 文件不存在 / 不可读 → 首次启动语义,用默认值,不需保留
+    return null;
+  }
+  try {
     const parsed = JSON.parse(raw);
     const v3 = ExplorerSchemaV3.safeParse(parsed);
     if (v3.success) return v3.data;
@@ -343,10 +378,12 @@ export async function loadExplorer(
     if (v2.success) return migrateV2ToV3(v2.data);
     const v1 = ExplorerV1Schema.safeParse(parsed);
     if (v1.success) return migrateV2ToV3(migrateV1ToV2(v1.data));
-    return null;
   } catch {
-    return null;
+    // JSON.parse 抛错 → 落到下面的损坏保留
   }
+  // 文件存在但既非合法 JSON 也不匹配任何已知 schema:保留快照后返回 null
+  await preserveCorruptExplorer(filePath, raw);
+  return null;
 }
 
 export async function saveExplorer(

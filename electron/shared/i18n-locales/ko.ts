@@ -114,6 +114,7 @@ export const ko: Record<TranslationKey, string> = {
   'editor.welcome.title': '열린 파일 없음',
   'editor.welcome.hint_prefix': '탐색기에서 파일을 클릭하여 열기 ·',
   'editor.welcome.save': '저장',
+  'editor.autosave_failed': '자동 저장 실패',
   'dock.empty.message': '모든 패널이 닫혀 있습니다.',
   'dock.empty.restore': '기본 레이아웃 복원',
   'panels.explorer.loading_or_empty': '로딩 중이거나 빈 폴더',
@@ -214,6 +215,8 @@ export const ko: Record<TranslationKey, string> = {
   'permissions.agent.grant_session': '이번 실행 동안 허용',
   'permissions.revoke_all.confirm':
     '{count}개의 에이전트 터미널을 종료하고 이번 실행 중 부여된 인증을 취소합니다.\n\n실행 중인 에이전트 CLI의 토큰은 즉시 401이 되며, 새 터미널은 다시 인증할 수 있습니다.\n\n계속하시겠습니까?',
+  'permissions.revoke_all.failed':
+    '취소 실패 — 에이전트 터미널이 아직 실행 중일 수 있습니다. 다시 시도해 주세요.',
 
   // statusbar.*
   'statusbar.mcp.copy': 'MCP 설정 복사',
@@ -311,7 +314,6 @@ export const ko: Record<TranslationKey, string> = {
   'shell.dock.popout_title': '독립 창으로 팝아웃',
   'shell.tab.exit_zoom': '확대 종료',
   'shell.iconbar.updates_tooltip': '업데이트 가능한 플러그인 {count}개',
-  'shell.iconbar.account_aria': '계정: Continuo Dev, PRO Plan',
   'shell.iconbar.account_title': 'Continuo Dev · PRO Plan',
 
   // marketplace.*
@@ -331,6 +333,7 @@ export const ko: Record<TranslationKey, string> = {
   'marketplace.reviews.refresh_title': '리뷰 다시 가져오기 (캐시 건너뜀)',
   'marketplace.reviews.refresh': '⟳ 리뷰 새로 고침',
   'marketplace.reviews.refreshing': '⟳ 새로 고침 중…',
+  'marketplace.reviews.refresh_failed': '리뷰 새로 고침 실패: {message}',
   'marketplace.reviews.official_review': '공식 검토됨',
   'marketplace.reviews.expand': '리뷰 펼치기',
   'marketplace.reviews.collapse': '리뷰 접기',
@@ -405,4 +408,7 @@ export const ko: Record<TranslationKey, string> = {
   'quick_open.empty': '워크스페이스에 파일이 없습니다',
   'quick_open.no_match': '일치하는 파일 없음',
   'quick_open.list_aria': '파일 검색 결과',
+  'quick_open.scan_failed': '워크스페이스 파일 스캔 실패',
+  'quick_open.retry': '다시 시도',
+  'quick_open.open_failed': '열기 실패',
 };

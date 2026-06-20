@@ -293,6 +293,8 @@ describe('window-scoped layout IPC', () => {
   });
 
   it('T16: explorer:write preserves main-owned layout and lastClosedAt fields', async () => {
+    // R11:explorer:write 现按 sender 真实 seq 过滤;sender 101 的窗口段 = seq 0。
+    setWindowSeq(101, 0);
     const current = defaultExplorerV3();
     current.windows = [
       {
@@ -338,6 +340,55 @@ describe('window-scoped layout IPC', () => {
       layout: { version: 1, panel: 'B' },
       lastClosedAt: 222,
     });
+  });
+
+  // codex 复审 loop R11:单窗陈旧/回归快照夹带别窗 entry 时,main 必须按 sender 真实 seq
+  // 过滤,不能覆盖别窗持久化段(否则跨窗 workspace/tab/展开态被一个窗口的陈旧写回滚)。
+  it('R11: explorer:write 丢弃非 sender windowSeq 的 foreign 段,不覆盖别窗', async () => {
+    setWindowSeq(101, 1); // sender A 的真实窗口段 = seq 1
+    const current = defaultExplorerV3();
+    current.windows = [
+      {
+        windowSeq: 1,
+        workspace: { root: '/old-a' },
+        explorer: { activePath: null, expandedPaths: [], sort },
+        layout: { version: 1, panel: 'A' },
+      },
+      {
+        windowSeq: 2,
+        workspace: { root: '/keep-b' },
+        explorer: { activePath: null, expandedPaths: [], sort },
+        layout: { version: 1, panel: 'B' },
+      },
+    ];
+    await writeExplorer(current);
+
+    // sender A(seq=1)的陈旧 payload 夹带了别窗 B(seq=2)的旧 entry,企图回滚 B 的 root。
+    const result = await invokeIpc('explorer:write', {
+      version: 3,
+      workspace: { recentRoots: [] },
+      pinned: { paths: [] },
+      nextWindowSeq: 3,
+      windows: [
+        {
+          windowSeq: 1,
+          workspace: { root: '/new-a' },
+          explorer: { activePath: null, expandedPaths: [], sort },
+        },
+        {
+          windowSeq: 2,
+          workspace: { root: '/EVIL-rollback-b' },
+          explorer: { activePath: null, expandedPaths: [], sort },
+        },
+      ],
+    });
+    const saved = await loadExplorer(explorerFile);
+
+    expect(result).toEqual({ ok: true, data: undefined });
+    // 自己段(seq 1)写入生效
+    expect(saved?.windows.find((w) => w.windowSeq === 1)?.workspace.root).toBe('/new-a');
+    // 别窗段(seq 2)保持磁盘原值,foreign 段被丢弃,未被回滚
+    expect(saved?.windows.find((w) => w.windowSeq === 2)?.workspace.root).toBe('/keep-b');
   });
 
   it('T25: layout:write on cold start creates explorer.json and current window entry', async () => {

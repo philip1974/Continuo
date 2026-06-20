@@ -44,6 +44,7 @@ import type { NotifyPushPayload } from '../shared/notify-channels';
 import { pluginDataRaw } from './plugin-data.preload';
 import { pluginFsRaw } from './plugin-fs.preload';
 import { pluginShellStreamRaw } from './plugin-shell-stream.preload';
+import { parseContinuoPackagedFromArgv } from './continuo-meta-parse';
 
 // terminal create 入参的轻量类型(与 main 端 zod schema 对齐)
 // export 是为了 ContinuoApi 跨 module 引用时 TS 能 name 这些类型
@@ -285,12 +286,17 @@ const api = {
       ipcRenderer.on(PLUGINS_CHANNELS.PROTOCOL_URL, listener);
       return () => ipcRenderer.off(PLUGINS_CHANNELS.PROTOCOL_URL, listener);
     },
-    /** v4.5 从 git URL 安装插件,返回 manifest 元信息. */
+    /**
+     * v4.5 从 git URL 安装插件,返回 manifest 元信息.
+     * overwrite=true:原子覆盖已装版本(用于「更新」,无需先卸载,失败保留旧版本)。
+     */
     installFromGit: (
       url: string,
+      overwrite?: boolean,
     ): Promise<
       IpcResult<{ id: string; name: string; version: string }>
-    > => ipcRenderer.invoke(PLUGINS_CHANNELS.INSTALL_FROM_GIT, { url }),
+    > =>
+      ipcRenderer.invoke(PLUGINS_CHANNELS.INSTALL_FROM_GIT, { url, overwrite }),
     /** v4.6 卸载插件:rm -rf plugins/<id>/ + 清 _enabled / _permissions. */
     uninstall: (id: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(PLUGINS_CHANNELS.UNINSTALL, { id }),
@@ -441,3 +447,13 @@ contextBridge.exposeInMainWorld('__lmApi', {
 if (process.env['CONTINUO_E2E'] === '1') {
   contextBridge.exposeInMainWorld('__continuoE2E', true);
 }
+
+// topic 48: main injects `--continuo-packaged=<bool>` via
+// webPreferences.additionalArguments so renderer-side spike probes can read
+// packaged state synchronously without changing their existing access path.
+contextBridge.exposeInMainWorld(
+  '__continuoMeta',
+  Object.freeze({
+    appIsPackaged: parseContinuoPackagedFromArgv(process.argv),
+  } as Readonly<{ appIsPackaged: boolean | null }>),
+);

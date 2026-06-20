@@ -49,6 +49,27 @@ describe('makeAutoSaveScheduler', () => {
     expect(saveFile).toHaveBeenCalledTimes(1);
   });
 
+  it('flush 立即执行 pending 的 saveFile(不等 delay)', async () => {
+    const saveFile = vi.fn(async () => true);
+    const s = makeAutoSaveScheduler(saveFile, 1000);
+    s.schedule();
+    expect(saveFile).not.toHaveBeenCalled();
+    s.flush();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(saveFile).toHaveBeenCalledTimes(1);
+    // flush 后 timer 已清,delay 到了也不再触发第二次
+    await vi.advanceTimersByTimeAsync(1100);
+    expect(saveFile).toHaveBeenCalledTimes(1);
+  });
+
+  it('flush 无 pending 时 no-op(不产生多余写)', async () => {
+    const saveFile = vi.fn(async () => true);
+    const s = makeAutoSaveScheduler(saveFile, 100);
+    s.flush(); // 从未 schedule
+    await vi.advanceTimersByTimeAsync(200);
+    expect(saveFile).not.toHaveBeenCalled();
+  });
+
   it('saveFile 抛错时被吞掉(不污染未来 schedule)', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {

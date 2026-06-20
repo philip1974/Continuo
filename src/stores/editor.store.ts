@@ -23,6 +23,13 @@ export interface EditorTab {
   readonly originalContent: string;
   /** = content !== originalContent. */
   readonly dirty: boolean;
+  /**
+   * 外部重载计数:仅 reloadFromDisk(外部进程改文件后同步)递增。用户输入 / 保存
+   * **不**动它。Milkdown 视图 defaultValue 只在 mount 时读、靠 key remount 刷新,
+   * 把本计数并入 key 才能在外部修改时 remount 拿到新内容(否则编辑会覆盖外部改动)。
+   * optional:不破坏既有 tab 字面构造,缺省按 0。
+   */
+  readonly reloadEpoch?: number;
 }
 
 // ── 纯函数 helpers(便于单测) ────────────────────────────────
@@ -120,8 +127,10 @@ export function getStateAfterRenamingPath(
 /**
  * 工作区 root 切换后的 tab 状态:
  * - untitled(filePath=null)tab 与 root 无关,始终保留
+ * - **dirty(未保存编辑)tab 始终保留** —— 切 root 不得静默丢弃用户改动(审计):
+ *   旧实现只按 filePath 位置判定,root 外的脏真实文件 tab 被直接关闭、编辑丢失
  * - filePath 等于 root 或位于其下(`root/` 或 `root\\` 前缀)→ 保留
- * - 其余(包括 root=null 时所有 file tab)→ 关闭
+ * - 其余(包括 root=null 时所有 clean file tab)→ 关闭
  * - active tab 被关时 → 取剩余第一个(优先剩余中原序更靠后的相邻);全清则 null
  */
 export function getStateAfterClosingTabsOutsideRoot(
@@ -129,16 +138,18 @@ export function getStateAfterClosingTabsOutsideRoot(
   activeTabId: string | null,
   root: string | null,
 ): CloseTabResult {
-  const isInside = (filePath: string | null): boolean => {
-    if (filePath === null) return true; // untitled 视为永远 inside
+  const keep = (tab: EditorTab): boolean => {
+    if (tab.filePath === null) return true; // untitled 永远保留
+    if (tab.dirty) return true; // 未保存编辑 → 保留,切 root 不静默丢数据
     if (root === null) return false;
-    if (filePath === root) return true;
+    if (tab.filePath === root) return true;
     return (
-      filePath.startsWith(root + '/') || filePath.startsWith(root + '\\')
+      tab.filePath.startsWith(root + '/') ||
+      tab.filePath.startsWith(root + '\\')
     );
   };
 
-  const remaining = tabs.filter((t) => isInside(t.filePath));
+  const remaining = tabs.filter(keep);
   if (remaining.length === tabs.length) return { tabs, activeTabId };
   if (remaining.length === 0) return { tabs: remaining, activeTabId: null };
   if (activeTabId !== null && remaining.some((t) => t.id === activeTabId)) {
@@ -149,7 +160,7 @@ export function getStateAfterClosingTabsOutsideRoot(
     const oldIdx = tabs.findIndex((t) => t.id === activeTabId);
     if (oldIdx >= 0) {
       const removingIds = new Set(
-        tabs.filter((t) => !isInside(t.filePath)).map((t) => t.id),
+        tabs.filter((t) => !keep(t)).map((t) => t.id),
       );
       for (let i = oldIdx + 1; i < tabs.length; i++) {
         if (!removingIds.has(tabs[i]!.id)) {
@@ -246,8 +257,15 @@ type EditorState = {
   switchTab: (id: string) => void;
   /** 编辑器 onChange 时调用;dirty 自动比对. */
   updateContent: (id: string, content: string) => void;
-  /** 保存成功后调用:originalContent ← content,dirty=false. */
-  markSaved: (id: string) => void;
+  /**
+   * 保存成功后调用。`savedContent` 是实际写盘的内容快照:
+   *   - 期间无并发编辑(cur.content === savedContent)→ originalContent ← savedContent,
+   *     dirty=false(正常路径)。
+   *   - 写盘 await 期间用户继续键入(cur.content !== savedContent)→ originalContent
+   *     推进到 savedContent 但**保留 dirty=true**,使这段增量不被静默吞掉、后续
+   *     autosave 会再写。省略 savedContent 时退化为旧语义(originalContent ← content)。
+   */
+  markSaved: (id: string, savedContent?: string) => void;
   /** 另存为后:把 tab 的 filePath 与 id 同步改为 newPath. */
   setFilePath: (id: string, newPath: string) => void;
   setMode: (mode: EditorMode) => void;
@@ -308,6 +326,8 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
         content,
         originalContent: content,
         dirty: false,
+        // 外部内容已变 → 递增 epoch,让 Milkdown 视图按 key remount 拿新内容
+        reloadEpoch: (cur.reloadEpoch ?? 0) + 1,
       };
       const tabs = s.tabs.slice();
       tabs[idx] = next;
@@ -335,15 +355,19 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
       return { tabs };
     }),
 
-  markSaved: (id) =>
+  markSaved: (id, savedContent) =>
     set((s) => {
       const idx = s.tabs.findIndex((t) => t.id === id);
       if (idx < 0) return s;
       const cur = s.tabs[idx]!;
+      // 已写盘内容 = savedContent(省略则退化为当前内容)。dirty 反映"当前内容是否
+      // 仍与磁盘一致":写盘 await 期间并发键入会让 cur.content 领先 savedContent,
+      // 此时必须保留 dirty,否则那段增量既没落盘又不再触发 autosave → 静默丢失。
+      const onDisk = savedContent ?? cur.content;
       const next: EditorTab = {
         ...cur,
-        originalContent: cur.content,
-        dirty: false,
+        originalContent: onDisk,
+        dirty: cur.content !== onDisk,
       };
       const tabs = s.tabs.slice();
       tabs[idx] = next;

@@ -17,9 +17,9 @@ import {
   readdir,
   stat,
   unlink,
-  writeFile,
 } from 'node:fs/promises';
 import * as path from 'node:path';
+import { atomicWriteFile } from '../ipc/fs/atomic-write';
 
 import {
   awaitStopHookInputSchema,
@@ -160,6 +160,12 @@ function parseFilenameForWindowId(fileName: string): number | null {
 export interface HookFileBroker {
   start(): Promise<void>;
   awaitNext(filter: AwaitFilter): Promise<AwaitNextResult>;
+  /**
+   * 提前结束某窗口的所有 pending await_stop_hook 等待者(窗口关闭时调用)。
+   * 否则它们会一直挂到 timeout_sec(最长 600s)才靠自身 timer 自愈(审计 #3)。
+   * 返回被取消的等待者数量(便于测试断言)。
+   */
+  cancelByWindow(windowId: number): number;
   stop(): Promise<void>;
   readonly hookEventsDir: string;
 }
@@ -192,9 +198,14 @@ export function createHookFileBroker(
 
   function matchesFilter(entry: BufferedEntry, filter: AwaitFilter): boolean {
     if (entry.payload.runner !== filter.runner) return false;
-    if (entry.windowId !== null && entry.windowId !== filter.windowId) {
-      return false;
-    }
+    // windowId 严格相等(fail-closed)。entry.windowId===null = 来源窗口未知:写文件时
+    // CONTINUO_WINDOW_ID 未注入,典型是非 Continuo 托管的外部 claude/codex 在装了
+    // managed Stop hook 的同一项目里跑。旧实现 null 当通配,会让这种外部 Stop 事件
+    // (同 runner+cwd)串到某 Continuo 窗口的 await_stop_hook 等待者,泄漏他方
+    // session_id/transcript_path/last_assistant_message。filter.windowId 类型恒为具体数,
+    // 故 null entry 一律不匹配。windowId 正是文件名里做窗口隔离的字段,不该被 null 旁路。
+    // 见第十三轮 P2-AK。
+    if (entry.windowId !== filter.windowId) return false;
     if (entry.payload.cwd !== null && entry.payload.cwd !== filter.cwd) {
       return false;
     }
@@ -387,6 +398,19 @@ export function createHookFileBroker(
         pendingByKey.set(key, pending);
       });
     },
+    cancelByWindow(windowId) {
+      let cancelled = 0;
+      for (const [key, pending] of pendingByKey) {
+        if (pending.filter.windowId !== windowId) continue;
+        pendingByKey.delete(key);
+        if (pending.timer !== null) clearTimeout(pending.timer);
+        pending.reject(
+          new Error('await_stop_hook cancelled: owner window closed'),
+        );
+        cancelled += 1;
+      }
+      return cancelled;
+    },
     async stop() {
       stopped = true;
       started = false;
@@ -498,7 +522,10 @@ async function mergeClaudeCodeSettings(
     hooks: [{ type: 'command', command, _continuo_managed: true }],
   });
   const next = { ...existing, hooks: { ...hooks, Stop: stopArr } };
-  await writeFile(settingsPath, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
+  // crash-safe 原子写:裸 writeFile 先 truncate 用户真实配置,写入中途崩溃/磁盘满会把
+  // .claude/settings.local.json 留成空/半截(.continuo-bak 备份需手工恢复)。与 R4
+  // plugin-fs writeFile / plugin-data 的原子写策略对齐。(codex 复审 loop R6)
+  await atomicWriteFile(settingsPath, `${JSON.stringify(next, null, 2)}\n`);
   return { installed: true };
 }
 
@@ -546,7 +573,8 @@ async function mergeCodexConfig(
     '[[hooks.Stop.hooks]]\n' +
     'type = "command"\n' +
     `command = ${JSON.stringify(command)}\n`;
-  await writeFile(configPath, text + block, 'utf8');
+  // crash-safe 原子写(同 R6 理由:.codex/config.toml 不得被截断)
+  await atomicWriteFile(configPath, text + block);
   return { installed: true };
 }
 
@@ -567,7 +595,8 @@ async function replaceManagedCodexStopHook(
     return { installed: false, reason: 'unrecognized-existing-stop-hook' };
   }
   await copyFile(configPath, `${configPath}.continuo-bak.${Date.now()}`);
-  await writeFile(configPath, next, 'utf8');
+  // crash-safe 原子写(同 R6 理由)
+  await atomicWriteFile(configPath, next);
   return { installed: true };
 }
 

@@ -158,9 +158,12 @@ export function snapshotFromStores(
     editor: { openFilePaths, activePath },
   };
 
-  // 合并到 prevSnap 的其它窗段,自己段覆盖
-  const otherWindows =
-    prevSnap?.windows.filter((x) => x.windowSeq !== windowSeq) ?? [];
+  // 只写自己这一段。**不**把 prevSnap 里其它窗口的段一并写回 —— prevSnap
+  // (=lastSnap)是本窗启动时读盘的快照、之后从不刷新,携带的其它窗口段是陈旧的。
+  // main 的 explorer:write handler 在 file-mutex 内每次重读磁盘 current,
+  // mergeWritableIntoFull 对 writable 没有的 windowSeq 保留磁盘上的最新段
+  // (else merged.push(cur))。若这里携带陈旧 otherWindows,反而会把别的窗口
+  // 已写盘的最新 root/tabs/expanded 回退成本窗启动时的旧值(跨窗状态丢失)。
   const nextWindowSeq = Math.max(
     prevSnap?.nextWindowSeq ?? windowSeq + 1,
     windowSeq + 1,
@@ -171,7 +174,7 @@ export function snapshotFromStores(
     workspace: { recentRoots },
     pinned: { paths: [...p.paths] },
     nextWindowSeq,
-    windows: [...otherWindows, myEntry],
+    windows: [myEntry],
   };
 }
 
@@ -238,8 +241,15 @@ export async function hydrateEditorTabs(
 ): Promise<void> {
   const entry = findWindowEntry(snap, windowSeq);
   if (!entry?.editor || entry.editor.openFilePaths.length === 0) return;
+  // 本轮 restore 期望的 workspace root(= hydrateStores 刚据此 snapshot 段设的 root)。
+  // readFile 是异步的,期间用户可能切到别的 workspace(setRoot 会关掉 root 外 tab,但此刻
+  // 旧 tab 还没 restore 出来)。若读完后当前 root 已不是期望 root,把旧项目 tab 插进新
+  // workspace 是陈旧状态(还会写出 root=新 / openFilePaths=旧 的混合持久化)→ 整轮丢弃。
+  // (codex 复审 loop R13;与 R10 终端 hydrate 竞态同类的迟到-restore-vs-切换 race。)
+  const expectedRoot = normalizeWorkspaceRoot(entry.workspace.root);
   const paths = entry.editor.openFilePaths;
   const results = await Promise.all(paths.map((p) => fs.readFile(p)));
+  if (useWorkspaceStore.getState().root !== expectedRoot) return;
   const store = useEditorStore.getState();
   for (let i = 0; i < paths.length; i++) {
     const r = results[i];

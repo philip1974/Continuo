@@ -224,6 +224,11 @@ export function useTerminal(termId: string) {
     };
 
     const doInitXterm = (): (() => void) => {
+      // init 作用域的 teardown 标志:cleanup 时置位。用它(而非 mountedRef)守卫
+      // 异步 readHistory 回调 —— mountedRef 在 StrictMode 双 mount 时会被第二次
+      // mount 重置回 true,导致第一次 mount 的迟到 readHistory 误判仍挂载、写进
+      // 已 dispose 的 term。见第十六轮 P1-AR。
+      let teardownDone = false;
       const term = new Terminal({
       ...TERM_OPTIONS,
       // 用当前 settings + 主题值开局,避免初始一帧的旧值闪烁
@@ -340,11 +345,26 @@ export function useTerminal(termId: string) {
       safeWrite(term, data);
     });
 
+    // PTY 退出 → 清 loading overlay。否则若 shell 在产出任何字节之前就退出(自定义
+    // shell 立即失败 / 零输出即 exit),firstData 恒真、isReady 恒假 →「Starting
+    // shell…」spinner 永久悬浮在已死终端上。isReady 状态机此前只有 onData /
+    // readHistory 两条 set-true 入口,漏了 exit 这条终态(典型「标记建了未覆盖所有
+    // 终态」)。退出后终端缓冲(含任何错误输出)已可见,移掉 overlay 才能让用户看到。
+    const unsubExit = coApi.terminal.onExit((id: string) => {
+      if (id !== termId || teardownDone) return;
+      firstData = false;
+      setIsReady(true);
+    });
+
     // topic-07: dockview lazy-mount inactive panel 会错过 PTY spawn 后的初始
     // 输出(shell prompt 等),从 main buffer 把已有 raw chunks replay 进 xterm。
     // 先 subscribe 后 replay,中间窗口期的 chunk 走 onData 路径(虽然可能与
     // history 末尾重叠几个字符,但 xterm 容忍重复 ANSI/字符;比丢失初始 prompt 好)。
     void coApi.terminal.readHistory(termId).then((r) => {
+      // panel 已卸载 / term 已 dispose → 不写已死 xterm。disposeQueue 删了 WeakMap
+      // 条目,迟到的 safeWrite 会新建一个 disposed:false 的队列绕过其 disposed 守卫,
+      // 直接 term.write() 到已拆除的 core(报 "Object has been disposed")。见 P1-AR。
+      if (teardownDone) return;
       if (!r.ok || !r.data.data) return;
       if (firstData) {
         firstData = false;
@@ -366,7 +386,9 @@ export function useTerminal(termId: string) {
     ro.observe(container);
 
       return () => {
+        teardownDone = true;
         unsubData();
+        unsubExit();
         onDataDisposable.dispose();
         osc7Disposable.dispose();
         searchResultsDisposable.dispose();

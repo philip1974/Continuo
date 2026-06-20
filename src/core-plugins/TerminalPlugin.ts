@@ -6,7 +6,10 @@ import { Plugin } from '@/plugins/Plugin';
 import { lazyPanel } from '@/lib/lazy-panel';
 import { coApi } from '@/lib/co-api';
 import { notify } from '@/notifications/notify';
-import { useWorkspaceStore } from '@/stores/workspace.store';
+import {
+  useWorkspaceStore,
+  waitForWorkspaceHydrated,
+} from '@/stores/workspace.store';
 import type { TerminalPanelViewParams } from '@/panels/Terminal/TerminalPanelView';
 import { ERROR_CODES } from '../../electron/shared/error-codes';
 import { t } from '@/i18n';
@@ -65,6 +68,10 @@ export default class TerminalPlugin extends Plugin {
       categoryKey: 'commands.terminal.category',
       hotkey: 'mod+t',
       fn: async () => {
+        // 冷启动竞态:hydrate 未完成时 root 仍是初始 null → terminal.create 不带 cwd →
+        // main 抛 TERMINAL_CWD_UNRESOLVED,首次新建失败且不重试。先等 hydrate 完成再读 root
+        // (workspace.store 的 hydrated 契约 + stores/README 明确要求消费方等待)。(codex 复审 loop R10)
+        await waitForWorkspaceHydrated();
         const workspaceRoot = useWorkspaceStore.getState().root ?? undefined;
         const r = await coApi.terminal.create({
           cwd: workspaceRoot,

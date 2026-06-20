@@ -174,6 +174,7 @@ vi.mock('../../../electron/main/ipc/terminal.ipc', () => ({
 vi.mock('../../../electron/main/services/agent-auth.service', () => ({
   requestAgentAuth: vi.fn(),
   setMcpHostRef: vi.fn(),
+  cancelAgentAuthByWindow: vi.fn(),
 }));
 vi.mock('../../../electron/main/services/mcp-stdio-config.service', () => ({
   setStdioConfig: vi.fn(),

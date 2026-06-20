@@ -13,6 +13,7 @@ import { FILE_ROW_HEIGHT, FileRow } from './FileRow';
 import {
   createNewDir,
   createNewFile,
+  removeItems,
   renameItem,
 } from './mutate-actions';
 import {
@@ -77,11 +78,18 @@ export function FolderTree({ root }: { root: string }) {
   }, [persistedExpandedPaths, root]);
   const setExpandedItems = useCallback<SetStateFn<string[]>>(
     (updater) => {
-      const current = [...useExplorerStore.getState().expandedPaths];
-      const next = typeof updater === 'function' ? updater(current) : updater;
-      setPersistedExpandedPaths(next);
+      // expandedPaths 是跨 root 共享的单一 Set;headless-tree 只看到 isWithinRoot
+      // 过滤后的 in-root 子集,回写也只给 in-root 路径。直接整体替换会丢掉其它 root
+      // 的展开状态(切 root 后第一次折叠/展开即触发)。保留 out-of-root 段,只更新
+      // in-root 段;函数 updater 也喂 in-root 子集(与 headless-tree 视图一致)。见 P2-AF。
+      const all = [...useExplorerStore.getState().expandedPaths];
+      const inRootCurrent = all.filter((p) => isWithinRoot(p, root));
+      const outOfRoot = all.filter((p) => !isWithinRoot(p, root));
+      const next =
+        typeof updater === 'function' ? updater(inRootCurrent) : updater;
+      setPersistedExpandedPaths([...outOfRoot, ...next]);
     },
-    [setPersistedExpandedPaths],
+    [setPersistedExpandedPaths, root],
   );
 
   const refreshParent = (parentPath: string) => {
@@ -114,31 +122,49 @@ export function FolderTree({ root }: { root: string }) {
             }
             // 同步打开的 editor tab 路径(目录 rename 时其下所有 tab 也会前缀 rewrite)
             useEditorStore.getState().renamePath(oldPath, r.newPath);
+            // 改名后旧路径已不存在 → 剪除剪贴板里引用旧路径的 cut/copy 项。
+            useExplorerClipboardStore.getState().prune([oldPath]);
           })();
         },
         // 内部多选拖动 → 批量 fs.move,语义同 cut→paste(但不经剪贴板)
         onDropItems: (items, destDir) => {
           void (async () => {
             const srcs = items.map((it) => it.getId());
-            for (const src of srcs) {
-              // 拖到原父目录 → no-op(canDrop 已挡掉拖到自身,父同位置只跳)
-              if (dirname(src) === destDir) continue;
-              const dest = await pickUniqueDest(destDir, basename(src));
-              const r = await coApi.fs.move(src, dest);
-              if (!r.ok) {
-                console.warn('[explorer] drop move failed', src, r.code, r.message);
-                notify.error(
-                  t('errors.folder.move_failed', { src, message: r.message }),
-                  { code: r.code, mirror: false },
-                );
-                return;
+            // 记录已成功移动项涉及的源父目录。即使中途某项失败提前中止,也要在
+            // finally 里刷新这些目录 + destDir,否则已移动文件会在树上凭空消失
+            // (源目录没刷=还显示,目标目录没刷=不显示),而其 editor tab 路径已改 →
+            // 树/tab/磁盘三者不一致。对齐 mutate-actions.removeItems 的部分成功刷新。
+            const touchedSrcParents = new Set<string>();
+            const movedSrcs: string[] = [];
+            let movedAny = false;
+            try {
+              for (const src of srcs) {
+                // 拖到原父目录 → no-op(canDrop 已挡掉拖到自身,父同位置只跳)
+                if (dirname(src) === destDir) continue;
+                const dest = await pickUniqueDest(destDir, basename(src));
+                const r = await coApi.fs.move(src, dest);
+                if (!r.ok) {
+                  console.warn('[explorer] drop move failed', src, r.code, r.message);
+                  notify.error(
+                    t('errors.folder.move_failed', { src, message: r.message }),
+                    { code: r.code, mirror: false },
+                  );
+                  return;
+                }
+                useEditorStore.getState().renamePath(src, dest);
+                touchedSrcParents.add(dirname(src));
+                movedSrcs.push(src);
+                movedAny = true;
               }
-              useEditorStore.getState().renamePath(src, dest);
-            }
-            refreshParent(destDir);
-            const srcParents = new Set(srcs.map((s) => dirname(s)));
-            for (const sp of srcParents) {
-              if (sp !== destDir) refreshParent(sp);
+            } finally {
+              if (movedAny) {
+                refreshParent(destDir);
+                for (const sp of touchedSrcParents) {
+                  if (sp !== destDir) refreshParent(sp);
+                }
+                // 移走的源旧路径已不存在 → 剪除剪贴板里引用它的 cut/copy 项。
+                useExplorerClipboardStore.getState().prune(movedSrcs);
+              }
             }
           })();
         },
@@ -221,8 +247,14 @@ export function FolderTree({ root }: { root: string }) {
     async (path: string) => {
       const r = await openFileByPath(path);
       if (!r.ok) {
-         
+        // 点击文件是 Explorer 的主操作,打开失败(外部删除/权限/损坏)必须给反馈,
+        // 不再静默 —— 否则用户"点了没反应"。trash/paste/move 已有 notify,补齐 open。
+        // 见第二十一轮 P1-AX。
         console.warn('[explorer] open file failed:', r.code, r.message);
+        notify.error(
+          `${t('quick_open.open_failed')} ${basename(path)}: ${r.message ?? r.code}`,
+          { code: r.code, mirror: false },
+        );
       }
     },
     [openFileByPath],
@@ -297,18 +329,33 @@ export function FolderTree({ root }: { root: string }) {
     },
     onTrash: (paths: string[]) => {
       void (async () => {
+        // 走规范的 mutate-actions.removeItems(遍历全部项、收集所有失败、刷新所有
+        // 成功项父目录),而非内联首失早退 —— 旧实现一旦某项 trash 失败就 return,
+        // 静默跳过其余选中项(多选删除时后续项既不删也不报错)。removeItems 是
+        // 纯 fs+tree helper(已测,且本为唯一生产 trash 路径却从未被调用),editor
+        // tab 关闭(removePath)仍由本处对成功项补做。见第七 session R6 完整性批判。
+        const result = await removeItems(paths, { trash: true }, mutateDeps, treeApi);
+        const failed = new Set(result.ok ? [] : result.failures.map((f) => f.path));
+        const removed: string[] = [];
         for (const p of paths) {
-          const r = await coApi.fs.trash(p);
-          if (!r.ok) {
-            console.warn('[explorer] trash failed', p, r.code, r.message);
-            notify.error(
-              t('errors.folder.trash_failed', { path: p, message: r.message }),
-              { code: r.code, mirror: false },
-            );
-            return;
+          // 文件删除 → 关闭对应 editor tab(目录则关其下所有 tab)。仅对成功项。
+          if (!failed.has(p)) {
+            useEditorStore.getState().removePath(p);
+            removed.push(p);
           }
-          // 文件删除 → 关闭对应 editor tab(目录则关其下所有 tab)
-          useEditorStore.getState().removePath(p);
+        }
+        // 删除的源若在剪贴板里(cut/copy 后又删),剪除避免幻影 cut 灰显 + 失效 Paste。
+        if (removed.length > 0) {
+          useExplorerClipboardStore.getState().prune(removed);
+        }
+        if (!result.ok) {
+          for (const f of result.failures) {
+            console.warn('[explorer] trash failed', f.path, f.code, f.message);
+            notify.error(
+              t('errors.folder.trash_failed', { path: f.path, message: f.message }),
+              { code: f.code, mirror: false },
+            );
+          }
         }
       })();
     },
@@ -322,36 +369,53 @@ export function FolderTree({ root }: { root: string }) {
       void (async () => {
         const { kind, paths } = useExplorerClipboardStore.getState();
         if (!kind || paths.length === 0) return;
-        for (const src of paths) {
-          // 计算 dest:destDir + src basename;若已存在,自动加 ` copy` 后缀
-          const dest = await pickUniqueDest(destDir, basename(src));
-          const r =
-            kind === 'cut'
-              ? await coApi.fs.move(src, dest)
-              : await coApi.fs.copy(src, dest);
-          if (!r.ok) {
-            console.warn(`[explorer] paste(${kind}) failed`, src, r.code, r.message);
-            notify.error(
-              t('errors.folder.paste_failed', { src, message: r.message }),
-              { code: r.code, mirror: false },
-            );
-            return;
+        // 记录已成功 cut 移动项的源父目录 + 是否有成功项。即使中途失败提前中止,
+        // 也要在 finally 刷新已成功项涉及的目录,否则已移动/复制文件在树上不显示
+        // 而 editor tab 路径已改 → 三者不一致(同 onDropItems 的修复)。
+        const touchedSrcParents = new Set<string>();
+        const movedSrcs: string[] = [];
+        let okAny = false;
+        try {
+          for (const src of paths) {
+            // 计算 dest:destDir + src basename;若已存在,自动加 ` copy` 后缀
+            const dest = await pickUniqueDest(destDir, basename(src));
+            const r =
+              kind === 'cut'
+                ? await coApi.fs.move(src, dest)
+                : await coApi.fs.copy(src, dest);
+            if (!r.ok) {
+              console.warn(`[explorer] paste(${kind}) failed`, src, r.code, r.message);
+              notify.error(
+                t('errors.folder.paste_failed', { src, message: r.message }),
+                { code: r.code, mirror: false },
+              );
+              return;
+            }
+            // cut = move:同步 editor tab 路径(目录则前缀 rewrite 全部子 tab)
+            if (kind === 'cut') {
+              useEditorStore.getState().renamePath(src, dest);
+              touchedSrcParents.add(dirname(src));
+              movedSrcs.push(src);
+            }
+            okAny = true;
           }
-          // cut = move:同步 editor tab 路径(目录则前缀 rewrite 全部子 tab)
-          if (kind === 'cut') {
-            useEditorStore.getState().renamePath(src, dest);
+        } finally {
+          // cut 是 move:已成功移走的源旧路径已失效,从剪贴板剪除。全成功 → 剪空(等价
+          // 原 clear());**部分成功 → 只剪走已移走的,保留未移项供重试**。此前只在 allOk
+          // 时 clear,部分成功把已移走的幻影源留在剪贴板(灰显 + 失效 Paste)——与兄弟
+          // onDropItems/root-drop 的 finally prune(movedSrcs) 不对等(第八 session R7 完整性
+          // 批判揪出的同族遗漏入口)。copy 不动源,不剪。
+          if (kind === 'cut' && movedSrcs.length > 0) {
+            useExplorerClipboardStore.getState().prune(movedSrcs);
           }
-        }
-        // cut 用完即清(避免重复 move 同一文件);copy 保留(允许多次粘贴)
-        if (kind === 'cut') {
-          useExplorerClipboardStore.getState().clear();
-        }
-        // 触发树刷新:目标父目录 invalidate
-        treeApi.invalidateChildrenIds(destDir);
-        // cut 时源父目录也要刷新(文件不在源了)
-        if (kind === 'cut') {
-          const srcParents = new Set(paths.map((p) => dirname(p)));
-          for (const sp of srcParents) treeApi.invalidateChildrenIds(sp);
+          if (okAny) {
+            // 触发树刷新:目标父目录 invalidate
+            treeApi.invalidateChildrenIds(destDir);
+            // cut 时已成功移动项的源父目录也要刷新(文件不在源了)
+            if (kind === 'cut') {
+              for (const sp of touchedSrcParents) treeApi.invalidateChildrenIds(sp);
+            }
+          }
         }
       })();
     },
@@ -438,23 +502,40 @@ export function FolderTree({ root }: { root: string }) {
       // 已经在 root 下的不动(VSCode 同款)
       const moveable = srcs.filter((s) => dirname(s) !== root);
       if (moveable.length === 0) return;
-      for (const src of moveable) {
-        const dest = await pickUniqueDest(root, basename(src));
-        const r = await coApi.fs.move(src, dest);
-        if (!r.ok) {
-          console.warn('[explorer] root drop move failed', src, r.code, r.message);
-          notify.error(
-            t('errors.folder.move_failed', { src, message: r.message }),
-            { code: r.code, mirror: false },
-          );
-          return;
+      // 与 onDropItems/onPaste 同款部分成功刷新(README P2-BB):中途某项失败提前
+      // 中止时,已成功移动项也要在 finally 刷新源父目录 + root,否则已移走的文件在
+      // 树上凭空消失(源没刷=还显示,root 没刷=不显示)而其 editor tab 路径已改 →
+      // 树/tab/磁盘三者不一致。此前 P2-BB 只修了 onDropItems/onPaste 两个兄弟调用点,
+      // 漏了这个 root-drop 分支(「修复未传播到平行调用点」)。
+      const touchedSrcParents = new Set<string>();
+      const movedSrcs: string[] = [];
+      let movedAny = false;
+      try {
+        for (const src of moveable) {
+          const dest = await pickUniqueDest(root, basename(src));
+          const r = await coApi.fs.move(src, dest);
+          if (!r.ok) {
+            console.warn('[explorer] root drop move failed', src, r.code, r.message);
+            notify.error(
+              t('errors.folder.move_failed', { src, message: r.message }),
+              { code: r.code, mirror: false },
+            );
+            return;
+          }
+          useEditorStore.getState().renamePath(src, dest);
+          touchedSrcParents.add(dirname(src));
+          movedSrcs.push(src);
+          movedAny = true;
         }
-        useEditorStore.getState().renamePath(src, dest);
-      }
-      refreshParent(root);
-      const srcParents = new Set(moveable.map((s) => dirname(s)));
-      for (const sp of srcParents) {
-        if (sp !== root) refreshParent(sp);
+      } finally {
+        if (movedAny) {
+          refreshParent(root);
+          for (const sp of touchedSrcParents) {
+            if (sp !== root) refreshParent(sp);
+          }
+          // 移走的源旧路径已不存在 → 剪除剪贴板里引用它的 cut/copy 项。
+          useExplorerClipboardStore.getState().prune(movedSrcs);
+        }
       }
       return;
     }

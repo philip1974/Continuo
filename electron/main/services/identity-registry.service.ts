@@ -76,6 +76,16 @@ export class IdentityRegistry {
     return this.generations.get(pluginId) ?? 0;
   }
 
+  /**
+   * True only if the token exists AND is still active (not draining/GC'd).
+   * Used to gate late-landing side effects (e.g. a scope grant whose prompt was
+   * open while the plugin got unregistered) — `lookup`/`resolve` still answer
+   * during the 5s drain window, so they can't tell "revoked-mid-prompt" apart.
+   */
+  isActive(token: string): boolean {
+    return this.entries.get(token)?.state === 'active';
+  }
+
   /** PluginManager calls on plugin destroy / HMR reload. Token enters drain state; 5s later GC removes it. */
   revoke(token: string): void {
     const entry = this.entries.get(token);

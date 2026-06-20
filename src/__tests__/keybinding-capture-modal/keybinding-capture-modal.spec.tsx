@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+// R16:eventToCombo 现在平台感知。本 spec 在 jsdom(detectPlatform()='other')下,'mod' 主修饰键
+// = Ctrl,故 combo 捕获用 ctrlKey 事件 → 编成 'mod+...'(与生产 mac 上 Cmd→'mod' 对称)。
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { fireEvent, render, cleanup, act } from '@testing-library/react';
 import { KeybindingCaptureModal } from '../../plugins/keybindings/KeybindingCaptureModal';
@@ -76,7 +78,7 @@ describe('KeybindingCaptureModal — 显示态', () => {
   it('captured 非空 → KeyCap 切片渲染新组合', () => {
     const props = defaultProps();
     render(<KeybindingCaptureModal {...props} />);
-    dispatchKey({ key: 'x', metaKey: true });
+    dispatchKey({ key: 'x', ctrlKey: true });
     // KeyCap 内部有 mod 标识(⌘ on mac, Ctrl on others);至少 'X' 字符在
     const modal = document.querySelector('.wm-modal-content')!;
     expect(modal.textContent).toMatch(/X/i);
@@ -89,7 +91,7 @@ describe('KeybindingCaptureModal — 按键', () => {
     const props = defaultProps({ onSave });
     render(<KeybindingCaptureModal {...props} />);
 
-    dispatchKey({ key: 'Meta', metaKey: true });
+    dispatchKey({ key: 'Meta', ctrlKey: true });
     dispatchKey({ key: 'Shift', shiftKey: true });
     expect(getButtons()['保存']!.disabled).toBe(true);
   });
@@ -116,7 +118,7 @@ describe('KeybindingCaptureModal — 保存 / 重置', () => {
     const onClose = vi.fn();
     const props = defaultProps({ onSave, onClose });
     render(<KeybindingCaptureModal {...props} />);
-    dispatchKey({ key: 'k', metaKey: true });
+    dispatchKey({ key: 'k', ctrlKey: true });
 
     fireEvent.click(getButtons()['保存']!);
     expect(onSave).toHaveBeenCalledWith('mod+k');
@@ -161,7 +163,7 @@ describe('KeybindingCaptureModal — 冲突检测', () => {
     ];
     const props = defaultProps({ allCommands: all });
     render(<KeybindingCaptureModal {...props} />);
-    dispatchKey({ key: 'x', metaKey: true });
+    dispatchKey({ key: 'x', ctrlKey: true });
     expect(document.querySelector('.wm-modal-content')!.textContent).toContain(
       '此组合已绑定到其它命令',
     );
@@ -183,7 +185,7 @@ describe('KeybindingCaptureModal — visible 切换 → captured 复位', () => 
   it('false → true 时新一轮捕获从 null 开始', () => {
     const props = defaultProps({ visible: true });
     const { rerender } = render(<KeybindingCaptureModal {...props} />);
-    dispatchKey({ key: 'k', metaKey: true });
+    dispatchKey({ key: 'k', ctrlKey: true });
     rerender(<KeybindingCaptureModal {...props} visible={false} />);
     rerender(<KeybindingCaptureModal {...props} visible={true} />);
 

@@ -2,7 +2,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { PLUGIN_SHELL_STREAM_CHANNELS } from '../../shared/plugin-shell-stream-channels';
 import { registerPluginShellStreamHandlers } from '../services/plugin-shell-stream.service';
 
-type Handler = (event: { sender: MockWebContents }, ...args: unknown[]) => Promise<void>;
+type Handler = (
+  event: { sender: MockWebContents; senderFrame?: { url: string } },
+  ...args: unknown[]
+) => Promise<void>;
 
 let nextWcId = 1;
 
@@ -42,7 +45,11 @@ class FakeIpcMain {
   invoke(sender: MockWebContents, channel: string, ...args: unknown[]): Promise<void> {
     const handler = this.handlers.get(channel);
     if (!handler) throw new Error(`missing handler ${channel}`);
-    return handler({ sender }, ...args);
+    // trusted top frame(file://):START/ABORT 现在门控 defaultIsTrustedFrame(R8)。
+    return handler(
+      { sender, senderFrame: { url: 'file:///app/index.html' } },
+      ...args,
+    );
   }
 }
 

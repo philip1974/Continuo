@@ -12,6 +12,7 @@ import { coApp } from '@/plugins/co-app';
 import { toggleSettingsPanel } from '@/lib/toggle-settings-panel';
 import { useUpdateStore } from '@/marketplace/update-store';
 import type { RibbonActionSpec } from '@/plugins/registries/RibbonRegistry';
+import { runContributedAction } from '@/lib/run-contributed-action';
 import { useT } from '@/i18n';
 
 interface IconBarItemConfig {
@@ -101,7 +102,14 @@ export function IconSidebar() {
           />
         )}
         {ribbonActions.map((r) => (
-          <NavRailButton key={r.id} title={r.title} onClick={() => void r.onClick()}>
+          <NavRailButton
+            key={r.id}
+            title={r.title}
+            // ribbon onClick 可返回 Promise(契约允许);插件抛错(同步 throw 或 async
+            // reject)经 runContributedAction 弹 error toast,不再静默吞。见第十四轮
+            // P2-AO + 第二十一轮 P1-AX(统一到共享 helper)。
+            onClick={() => runContributedAction(r.title, r.onClick)}
+          >
             {r.icon}
           </NavRailButton>
         ))}
@@ -132,19 +140,18 @@ export function IconSidebar() {
 // 账户头像小卡(对齐 demo (3) 侧栏底部 profile chip)。
 // Continuo IconSidebar 只有 48px 宽,放不下完整的「头像 + 名称 + Plan」,
 // 退化为带 tooltip 的初字头像;后续接真实账户体系时再扩成弹层菜单。
+//
+// 审计 P2-D:账户菜单尚未实现前,这里**不能**用 <button>。带 hover/focus-ring 的
+// 可交互外观 + button 角色会向屏幕阅读器谎报这是个功能按钮,点击却空操作。
+// 退化成非交互的展示性 chip(div + title tooltip);接入真实账户体系时再恢复 button。
 function AccountChip() {
   const t = useT();
   return (
-    <button
-      type="button"
-      className="mt-1 inline-flex h-7 w-7 items-center justify-center rounded-full border border-line bg-canvas text-2xs font-semibold tracking-wide text-fg-muted transition-colors hover:border-accent/60 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+    <div
+      className="mt-1 inline-flex h-7 w-7 select-none items-center justify-center rounded-full border border-line bg-canvas text-2xs font-semibold tracking-wide text-fg-muted"
       title={t('shell.iconbar.account_title')}
-      aria-label={t('shell.iconbar.account_aria')}
-      onClick={() => {
-        // TODO: 接入账户菜单(登录 / 切换 / 注销),目前仅占位
-      }}
     >
       CD
-    </button>
+    </div>
   );
 }

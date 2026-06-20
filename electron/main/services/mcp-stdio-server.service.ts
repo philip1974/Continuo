@@ -19,6 +19,7 @@ import {
 import { BrowserWindow } from 'electron';
 import { mkdir, unlink, chmod, lstat, stat } from 'node:fs/promises';
 import path from 'node:path';
+import { isPopoutUrl } from '../popout-url';
 import {
   splitLines as splitNdjsonLines,
   type SplitLinesResult as NdjsonSplitResult,
@@ -58,6 +59,27 @@ export function resolveStdioHelloWindowId(
   if (deps.resolveWindowId(token) !== windowId) return null;
   if (!deps.windowExists(windowId)) return null;
   return windowId;
+}
+
+export interface ResolveStdioCallCtxDeps {
+  /** 绑定窗口是否存活(BrowserWindow.fromId(id) 非 null 且未 destroyed)。 */
+  isWindowAlive: (windowId: number) => boolean;
+}
+
+/**
+ * 解析 tools/call 的 owner 窗口:仅当绑定窗口仍存活才返回它;未绑定(undefined)
+ * 或绑定窗口已关闭一律返回 null,交给调用方 fallback 到当前活窗。
+ *
+ * 必须在每次 dispatch 时校验存活 —— socketCtx 在 hello 时一次性绑定、窗口关闭
+ * 清理不会移除它,陈旧绑定若直接使用会让该 proxy 连接对所有工具永久损坏。
+ */
+export function resolveStdioCallOwnerWindow(
+  ownerWindowId: number | undefined,
+  deps: ResolveStdioCallCtxDeps,
+): number | null {
+  if (typeof ownerWindowId !== 'number') return null;
+  if (!deps.isWindowAlive(ownerWindowId)) return null;
+  return ownerWindowId;
 }
 
 // ── socket server ──────────────────────────────────────────────
@@ -198,9 +220,19 @@ async function handleLine(
     return;
   }
 
-  const ownerWindowId = socketCtx.get(sock);
+  // 绑定的窗口可能已关闭:窗口关闭清理(revokeWindowTokens/cancelByWindow)不触碰
+  // socketCtx,而 socket 仍连着(proxy 进程没退)。若直接用已死的 windowId,所有
+  // tools/call 会撞 TERMINAL_NO_WINDOW/SESSION_NOT_FOUND,该 proxy 连接对所有工具
+  // 永久损坏(即使别的窗口活着)。resolveStdioCallOwnerWindow 校验绑定窗口存活,
+  // 死则返回 null → 走下面的 fallback 到当前活窗。
+  const liveOwner = resolveStdioCallOwnerWindow(socketCtx.get(sock), {
+    isWindowAlive: (id) => {
+      const w = BrowserWindow.fromId(id);
+      return w !== null && !w.isDestroyed();
+    },
+  });
   let ctx: McpCallCtx | null =
-    typeof ownerWindowId === 'number' ? { ownerWindowId } : null;
+    liveOwner !== null ? { ownerWindowId: liveOwner } : null;
   // Fallback:外部 MCP client(eg. Claude Code stdio 配置)spawn 的 proxy
   // 无 CONTINUO_WINDOW_ID env,不发 hello,socketCtx 空 → fallback 到第一个
   // 非 popout 主窗。mirror agent-auth.pickMainWindow 策略。tools/list 无需 ctx
@@ -210,8 +242,7 @@ async function handleLine(
     let fallback: BrowserWindow | null = null;
     for (const w of wins) {
       if (w.isDestroyed()) continue;
-      const url = w.webContents.getURL();
-      if (!url.includes('popout=1')) {
+      if (!isPopoutUrl(w.webContents.getURL())) {
         fallback = w;
         break;
       }
@@ -320,6 +351,17 @@ export async function createStdioSocketServer(
       for (const c of dead) clients.delete(c);
     },
     async close(): Promise<void> {
+      // 必须先 destroy 现存连接:server.close() 的回调要等所有现存连接关闭才触发,
+      // 只 clients.clear() 不 destroy → 有活动客户端时回调永不 fire,close() promise
+      // 永久挂起,socket 文件也来不及 unlink 残留(审计 P2)。
+      for (const sock of clients) {
+        try {
+          sock.destroy();
+        } catch {
+          /* 已断开 → 忽略 */
+        }
+        socketCtx.delete(sock);
+      }
       clients.clear();
       await new Promise<void>((resolve) => server.close(() => resolve()));
       if (!isWin) {

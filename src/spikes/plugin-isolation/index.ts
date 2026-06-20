@@ -6,7 +6,10 @@ import { runWorkerProbe } from './worker-probe';
 declare global {
   interface Window {
     __continuoSpikeResult?: SpikeResult;
-    __continuoMeta?: { appIsPackaged?: boolean };
+    // appIsPackaged 三态:true/false=已知,null=参数缺失/畸形(unknown)。
+    // 必须含 null —— preload(electron/preload/index.ts)暴露的就是 boolean|null,
+    // README v2-C 把 unknown≠false 作为核心契约,消费方不得把 null 坍缩成 false。
+    __continuoMeta?: { appIsPackaged?: boolean | null };
   }
 }
 

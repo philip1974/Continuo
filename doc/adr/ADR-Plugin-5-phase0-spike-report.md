@@ -1,6 +1,7 @@
 # ADR-Plugin-5 Phase 0 Spike Report
 
 - **Status**: Proposed — Phase 0 verdict collected (2026-06-16, topic 46); Phase 1 RPC broker + Worker logic host authorized to start; iframe UI host (Phase 2) blocked on CSP follow-up
+- topic 48 (2026-06-17): isPackaged 升级 user-attested → main-injected via webPreferences.additionalArguments; 缺 arg 返 null 保旧语义
 - **Date**: 2026-06-16
 - **Topic**: `.claude/dev-loop/45-plugin-true-isolation-phase0-spike/`
 - **Source CSP** (from `index.html:23`):
@@ -15,9 +16,9 @@
 
 | Track | isPackaged | protocol | CSP | Worker | iframe | SAB |
 |---|---:|---|---|---|---|---|
-| **dev** (pnpm dev) | false | http: | CSP-A | ✅ ok 2.04ms | frame-blob-blocked (expected) | sab-construct-fail (SAB undefined) |
-| **preview** (pnpm build && pnpm preview) | false | file: | CSP-A | ✅ ok 1.34ms | frame-blob-blocked (expected) | sab-construct-fail (SAB undefined) |
-| **packaged-app** (pnpm build:app + open .app) ⚠ HARD GATE | true | file: | CSP-A | ✅ ok 0.96ms | frame-blob-blocked (expected) | sab-construct-fail (SAB undefined) |
+| **dev** (pnpm dev) | pending Op7 verify | http: | CSP-A | ✅ ok 2.04ms | frame-blob-blocked (expected) | sab-construct-fail (SAB undefined) |
+| **preview** (pnpm build && pnpm preview) | pending Op7 verify | file: | CSP-A | ✅ ok 1.34ms | frame-blob-blocked (expected) | sab-construct-fail (SAB undefined) |
+| **packaged-app** (pnpm build:app + open .app) ⚠ HARD GATE | pending Op7 verify | file: | CSP-A | ✅ ok 0.96ms | frame-blob-blocked (expected) | sab-construct-fail (SAB undefined) |
 
 `crossOriginIsolated` 实测 (期 false 三轨——`COMMON_WEB_PREFERENCES` 无 COOP/COEP): **false (三轨实测一致；印证无 COOP/COEP)**
 

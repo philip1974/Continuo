@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+// R15:matchesHotkey 现在平台感知。本 hook 测试用默认 detectPlatform()(jsdom 环境 = 'other'),
+// 该平台下 'mod' = ctrlKey,故用 ctrlKey 事件触发 mod+* 命令(验证 hook 接线,非平台细节)。
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { renderHook, act, cleanup } from '@testing-library/react';
 import { useCommandHotkeys } from '../../plugins/command-palette/useCommandHotkeys';
@@ -47,7 +49,7 @@ describe('useCommandHotkeys — 命中', () => {
     reg.register({ id: 'a', title: 'A', hotkey: 'mod+s', fn });
     renderHook(() => useCommandHotkeys(reg));
 
-    const { event, preventDefault } = keyEvent({ key: 's', metaKey: true });
+    const { event, preventDefault } = keyEvent({ key: 's', ctrlKey: true });
     document.dispatchEvent(event);
     expect(fn).toHaveBeenCalledTimes(1);
     expect(preventDefault).toHaveBeenCalled();
@@ -74,7 +76,7 @@ describe('useCommandHotkeys — 命中', () => {
     renderHook(() => useCommandHotkeys(reg));
 
     document.dispatchEvent(
-      keyEvent({ key: 's', metaKey: true }).event,
+      keyEvent({ key: 's', ctrlKey: true }).event,
     );
     // getAll 用插入序,第一条赢
     expect(f1).toHaveBeenCalledTimes(1);
@@ -94,12 +96,12 @@ describe('useCommandHotkeys — overrides', () => {
     });
 
     // 老 hotkey 不再响应
-    document.dispatchEvent(keyEvent({ key: 's', metaKey: true }).event);
+    document.dispatchEvent(keyEvent({ key: 's', ctrlKey: true }).event);
     expect(fn).not.toHaveBeenCalled();
 
     // 新的响应
     document.dispatchEvent(
-      keyEvent({ key: 'x', metaKey: true, shiftKey: true }).event,
+      keyEvent({ key: 'x', ctrlKey: true, shiftKey: true }).event,
     );
     expect(fn).toHaveBeenCalledTimes(1);
   });
@@ -114,7 +116,7 @@ describe('useCommandHotkeys — overrides', () => {
       useKeybindingsStore.getState().setHotkey('a', '');
     });
 
-    document.dispatchEvent(keyEvent({ key: 's', metaKey: true }).event);
+    document.dispatchEvent(keyEvent({ key: 's', ctrlKey: true }).event);
     expect(fn).not.toHaveBeenCalled();
   });
 });
@@ -129,7 +131,7 @@ describe('useCommandHotkeys — registry 变化', () => {
       reg.register({ id: 'a', title: 'A', hotkey: 'mod+k', fn });
     });
 
-    document.dispatchEvent(keyEvent({ key: 'k', metaKey: true }).event);
+    document.dispatchEvent(keyEvent({ key: 'k', ctrlKey: true }).event);
     expect(fn).toHaveBeenCalledTimes(1);
   });
 
@@ -140,7 +142,7 @@ describe('useCommandHotkeys — registry 变化', () => {
     renderHook(() => useCommandHotkeys(reg));
 
     act(() => d.dispose());
-    document.dispatchEvent(keyEvent({ key: 'k', metaKey: true }).event);
+    document.dispatchEvent(keyEvent({ key: 'k', ctrlKey: true }).event);
     expect(fn).not.toHaveBeenCalled();
   });
 });
@@ -153,7 +155,7 @@ describe('useCommandHotkeys — 卸载', () => {
     const { unmount } = renderHook(() => useCommandHotkeys(reg));
     unmount();
 
-    document.dispatchEvent(keyEvent({ key: 's', metaKey: true }).event);
+    document.dispatchEvent(keyEvent({ key: 's', ctrlKey: true }).event);
     expect(fn).not.toHaveBeenCalled();
   });
 });

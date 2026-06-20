@@ -1,6 +1,17 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
-import { matchesHotkey } from '../../plugins/command-palette/useCommandHotkeys';
+import { matchesHotkey as matchesHotkeyRaw } from '../../plugins/command-palette/useCommandHotkeys';
+import type { Platform } from '../../plugins/command-palette/format-hotkey';
+
+// R15:matchesHotkey 现在平台感知。这些用例多用 metaKey 测 mod = mac 行为,默认传 'mac';
+// 「其它平台 mod=ctrl」的用例显式传 'other'。
+function matchesHotkey(
+  combo: string,
+  e: KeyboardEvent,
+  platform: Platform = 'mac',
+): boolean {
+  return matchesHotkeyRaw(combo, e, platform);
+}
 
 function ev(opts: {
   key: string;
@@ -27,7 +38,7 @@ describe('matchesHotkey', () => {
 
   it('mod 匹配 ctrlKey(其它平台)', () => {
     expect(
-      matchesHotkey('mod+s', ev({ key: 's', ctrlKey: true })),
+      matchesHotkey('mod+s', ev({ key: 's', ctrlKey: true }), 'other'),
     ).toBe(true);
   });
 

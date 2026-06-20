@@ -10,7 +10,10 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { sweepStaleTrashInDir } from '../services/plugin-fs.service';
+import {
+  sweepStaleTrashInDir,
+  trashPathFor,
+} from '../services/plugin-fs.service';
 
 const tempRoots: string[] = [];
 
@@ -73,5 +76,25 @@ describe('sweepStaleTrashInDir', () => {
     await expect(
       sweepStaleTrashInDir('/definitely/nope/plugin-trash-dir'),
     ).resolves.toEqual({ swept: 0, failed: 0 });
+  });
+
+  // 回归:旧实现 trash 名是 `${finalPath}.trash-...`(后缀),不以 TRASH_PREFIX
+  // 开头,sweep 永远漏掉真实产物。用真实 producer(trashPathFor)的名字断言 sweep
+  // 能命中 —— 旧测试只用字面量 `.trash-old` 掩盖了这个 bug。
+  it('T20bis.e sweeps a leaked trash produced by trashPathFor', async () => {
+    const root = makeTempDir();
+    const finalPath = join(root, 'data-store.json');
+    const trash = trashPathFor(finalPath, '1700000000000-ab12');
+    // 不变量 1:basename 必须以 .trash- 开头,sweep 才能匹配
+    expect(trash.startsWith(join(root, '.trash-'))).toBe(true);
+    writeFileSync(trash, 'leaked');
+    const past = Date.now() / 1000 - 25 * 60 * 60;
+    utimesSync(trash, past, past);
+
+    await expect(sweepStaleTrashInDir(root)).resolves.toEqual({
+      swept: 1,
+      failed: 0,
+    });
+    expect(existsSync(trash)).toBe(false);
   });
 });

@@ -24,6 +24,13 @@ export interface ModalProps extends HTMLAttributes<HTMLDivElement> {
 const FOCUSABLE_SELECTOR =
   'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
+// Continuo-local 微调:多 Modal 叠加时,键盘(Esc/Tab)只由最顶层(最后打开)的 Modal 处理。
+// Nous 上游每个 Modal 都在 document 挂独立 keydown 监听、叠加时单次 Esc 连带触发所有打开
+// Modal 的 onClose —— 在 Continuo 里 CommandPalette 开着时 agent 推来的 AgentAuthPrompt
+// (onClose=deny)/ PermissionPrompt(onClose=denyAll)会被这次 Esc 静默拒绝(安全决策被误触)。
+// 此 top-most 栈是通用增强,应推回 Nous(任务卡记 doc/)。见第十八轮 P1-AU。
+const modalKeyStack: symbol[] = [];
+
 export function Modal({
   visible,
   children,
@@ -34,11 +41,16 @@ export function Modal({
 }: ModalProps) {
   const contentRef = useRef<HTMLDivElement>(null);
   const prevFocusRef = useRef<HTMLElement | null>(null);
+  const keyIdRef = useRef<symbol | null>(null);
+  if (keyIdRef.current == null) keyIdRef.current = Symbol('modal');
 
   useEffect(() => {
     if (!visible) return undefined;
 
     prevFocusRef.current = (globalThis.document.activeElement as HTMLElement | null) ?? null;
+
+    const keyId = keyIdRef.current!;
+    modalKeyStack.push(keyId);
 
     const raf = requestAnimationFrame(() => {
       const root = contentRef.current;
@@ -50,6 +62,8 @@ export function Modal({
     });
 
     const handleKey = (e: globalThis.KeyboardEvent) => {
+      // 只有栈顶(最后打开)的 Modal 处理键盘,叠加时背后的 Modal 不被连带 Esc 关闭。
+      if (modalKeyStack[modalKeyStack.length - 1] !== keyId) return;
       if (e.key === 'Escape' && onClose != null) {
         e.preventDefault();
         onClose();
@@ -84,6 +98,8 @@ export function Modal({
     return () => {
       cancelAnimationFrame(raf);
       globalThis.document.removeEventListener('keydown', handleKey);
+      const idx = modalKeyStack.lastIndexOf(keyId);
+      if (idx >= 0) modalKeyStack.splice(idx, 1);
       const prev = prevFocusRef.current;
       if (prev != null && typeof prev.focus === 'function') {
         prev.focus();

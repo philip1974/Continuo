@@ -340,7 +340,10 @@ describe('initExplorerPersistence', () => {
       expect(useLayoutUiStore.getState().sidebarWidth).toBe(SIDEBAR_DEFAULT_WIDTH);
     });
 
-    it('新窗 → 订阅 persist,write 时合并自己段(windowSeq=1)保留主窗段', async () => {
+    it('新窗 → 订阅 persist,write 只写自己段(windowSeq=1),不携带主窗段', async () => {
+      // 行为变更(topic 49 第七轮 P1-U):renderer 只写自己这一段,**不**携带
+      // 启动时读到的其它窗口段(会是陈旧的)。保留其它窗口最新段由 main 的
+      // explorer:write merge 在 file-mutex 内重读磁盘完成,不再靠 renderer 携带。
       vi.useFakeTimers();
       try {
         const api = makeApi(async () => ({ ok: true, data: fullSnapshot }));
@@ -352,9 +355,9 @@ describe('initExplorerPersistence', () => {
         await vi.advanceTimersByTimeAsync(400);
         expect(api.write).toHaveBeenCalledTimes(1);
         const written = (api.write as ReturnType<typeof vi.fn>).mock.calls[0]![0] as ExplorerSnapshot;
-        // 主窗段保留
-        const w0 = written.windows.find((w) => w.windowSeq === 0)!;
-        expect(w0.workspace.root).toBe('/work');
+        // 只写自己段:不含主窗 seq 0 的陈旧段(避免回退别窗最新状态)
+        expect(written.windows).toHaveLength(1);
+        expect(written.windows.find((w) => w.windowSeq === 0)).toBeUndefined();
         // 自己段写入新值
         const w1 = written.windows.find((w) => w.windowSeq === 1)!;
         expect(w1.workspace.root).toBe('/new/proj');

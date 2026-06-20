@@ -15,19 +15,24 @@ import {
 import * as terminalSessions from './terminal-sessions.service';
 import * as termService from './terminal.service';
 import type { McpHost } from './mcp-host.service';
+import { isPopoutUrl } from '../popout-url';
 
 // 5 分钟无应答 → 默认拒绝(防 renderer 卡死时 tool Promise 永远悬挂)
 const PROMPT_TIMEOUT_MS = 5 * 60 * 1000;
 
-const pending = new Map<string, (decision: AgentAuthDecision) => void>();
+interface PendingAuth {
+  /** 弹窗目标窗口 id(target 或 pickMainWindow 兜底)。窗口关闭即按它结算。 */
+  readonly windowId: number;
+  readonly settle: (decision: AgentAuthDecision) => void;
+}
+const pending = new Map<string, PendingAuth>();
 
 function pickMainWindow(): BrowserWindow | null {
   const wins = BrowserWindow.getAllWindows();
   // 优先非 popout 主窗(popout 子窗不挂 AgentAuthPrompt UI)
   for (const w of wins) {
     if (w.isDestroyed()) continue;
-    const url = w.webContents.getURL();
-    if (!url.includes('popout=1')) return w;
+    if (!isPopoutUrl(w.webContents.getURL())) return w;
   }
   return wins.find((w) => !w.isDestroyed()) ?? null;
 }
@@ -52,7 +57,7 @@ export async function requestAgentAuth(
   const win =
     targetWin &&
     !targetWin.isDestroyed() &&
-    !targetWin.webContents.getURL().includes('popout=1')
+    !isPopoutUrl(targetWin.webContents.getURL())
       ? targetWin
       : pickMainWindow();
   if (!win) return 'denied';
@@ -64,9 +69,12 @@ export async function requestAgentAuth(
         resolve('denied');
       }
     }, PROMPT_TIMEOUT_MS);
-    pending.set(requestId, (decision) => {
-      clearTimeout(timer);
-      resolve(decision);
+    pending.set(requestId, {
+      windowId: win.id,
+      settle: (decision) => {
+        clearTimeout(timer);
+        resolve(decision);
+      },
     });
     const payload: AgentAuthRequestPayload = {
       requestId,
@@ -88,12 +96,30 @@ export function resolveAgentAuthRequest(
   const r = pending.get(requestId);
   if (!r) return;
   pending.delete(requestId);
-  r(decision);
+  r.settle(decision);
+}
+
+/**
+ * 目标窗口关闭/销毁 → 把发往它的所有 pending 授权请求立即结算为 denied。
+ * 否则发起的**外部 agent CLI 进程**(仍存活)要干等满 PROMPT_TIMEOUT_MS(5min)才收到
+ * 默认拒绝,表现为 agent 假死。这与 request-scope「等待者是已死请求方自己」不同 ——
+ * 这里等待者是活的外部进程。镜像 stop-hook broker.cancelByWindow(审计 #3)。返回取消数。
+ * 见第十七轮 P2-AT。
+ */
+export function cancelAgentAuthByWindow(windowId: number): number {
+  let count = 0;
+  for (const [requestId, entry] of [...pending]) {
+    if (entry.windowId !== windowId) continue;
+    pending.delete(requestId);
+    entry.settle('denied');
+    count += 1;
+  }
+  return count;
 }
 
 /** 测试用:清空所有 pending(test 隔离). */
 export function _resetPendingForTest(): void {
-  for (const [, r] of pending) r('denied');
+  for (const [, r] of pending) r.settle('denied');
   pending.clear();
 }
 
@@ -135,7 +161,11 @@ export function revokeAndKillAgentSessions(): RevokeResult {
   for (const s of snapshot) {
     if (s.originHint !== 'agent') continue;
     terminalSessions.remove(s.id);
-    if (termService.has(s.id)) termService.kill(s.id);
+    // 用户**显式撤销** agent 授权是安全动作:用 forceKill(立即 SIGKILL)而非
+    // kill()(先 Ctrl+C、3s grace 后才 SIGKILL)。否则吞 SIGINT / 正在跑破坏性
+    // 命令的 agent 子进程在撤销后还能继续运行最长 3s。token 已 rotate 挡住新
+    // MCP 调用,但已在跑的本地子进程不受 token 影响,必须立即强杀。
+    if (termService.has(s.id)) termService.forceKill(s.id);
     killed += 1;
   }
   return { killed, rotated };

@@ -20,6 +20,12 @@ function dirname(p: string): string {
 
 export function useExternalFileSync(): void {
   useEffect(() => {
+    // 同一 path 在短时间内多次变更会广播多个 dir-changed → 对该 path 发起
+    // 多个并发、未防抖、未序列化的 readFile。这些 Promise 可能乱序 resolve:
+    // 较早发起、读到旧内容的回调若后 resolve,会用陈旧内容覆盖较新内容调
+    // reloadFromDisk(editor 显示回退到旧版本)。每 path 维护单调 seq,只让最新
+    // 一轮读的结果落地(latest-wins),丢弃过期回调。
+    const seqByPath = new Map<string, number>();
     const unsub = coApi.fs.onDirChanged((changedDir) => {
       const tabs = useEditorStore.getState().tabs;
       for (const tab of tabs) {
@@ -28,7 +34,10 @@ export function useExternalFileSync(): void {
         if (dirname(tab.filePath) !== changedDir) continue;
         const path = tab.filePath;
         const tabId = tab.id;
+        const mySeq = (seqByPath.get(path) ?? 0) + 1;
+        seqByPath.set(path, mySeq);
         void coApi.fs.readFile(path).then((r) => {
+          if (mySeq !== seqByPath.get(path)) return; // 已有更新一轮读发起,丢弃过期结果
           if (!r.ok) return; // 文件被删或暂时不可读,跳过
           useEditorStore.getState().reloadFromDisk(tabId, r.data);
         });

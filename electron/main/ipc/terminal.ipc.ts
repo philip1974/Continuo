@@ -39,6 +39,16 @@ export function setMcpEnvProvider(
   mcpEnvProvider = fn;
 }
 
+// stop-hook 等待者取消器(由 main/index.ts 在 broker 启动后注入)。默认 no-op,
+// 这样 broker 未启动 / 未 wire 时窗口关闭清理仍正常工作(审计 #3)。
+let stopHookCanceller: (windowId: number) => void = () => {};
+
+export function setStopHookCanceller(
+  fn: (windowId: number) => void,
+): void {
+  stopHookCanceller = fn;
+}
+
 // ── schemas(.strict() 拒未知字段) ────────────────────────────
 
 export const createInputSchema = z
@@ -171,11 +181,13 @@ export function makeCreateHandler(deps?: {
     // 自动反连本机 MCP host。internalEnv 在后,防用户 env 覆盖内部 token。
     const { env: internalEnv, mcpToken } = mcpEnvProvider(win.id);
     const mergedEnv = { ...(input.env ?? {}), ...internalEnv };
-    // mcpToken 通过 meta 透传给 terminal.service.createTerminal, PTY exit cleanup 时 revoke
-    await service.createTerminal(id, win, shell, input.args ?? [], cwd, mergedEnv, {
-      mcpToken,
-    });
     const title = input.title ?? input.name ?? sessionStore.nextDefaultTitle(win.id);
+    // 先登记 session metadata(reservation),再 spawn PTY。PTY 可能在 createTerminal 的
+    // await 期间就极速退出(如 `sh -c 'exit 0'` / 启动即失败的 shell),其 onExit →
+    // cleanupSessionLocal → setExited(id) 需要 metadata 已存在;否则 setExited 因 id 不在
+    // sessions map 而 no-op,exit 终态被丢 → 随后注册的 session 永远停在 exitCode:null 的
+    // 假 live 态(stale panel「活着但已死」,write/resize 走 not-found)。先 add 让 setExited
+    // 总能命中;create 失败回滚 remove(id)。(codex 复审 loop R19)
     sessionStore.add({
       id,
       title,
@@ -187,6 +199,15 @@ export function makeCreateHandler(deps?: {
       ...(input.attachTarget !== undefined ? { attachTarget: input.attachTarget } : {}),
       ...(input.workspaceRoot !== undefined ? { workspaceRoot: input.workspaceRoot } : {}),
     });
+    // mcpToken 通过 meta 透传给 terminal.service.createTerminal, PTY exit cleanup 时 revoke
+    try {
+      await service.createTerminal(id, win, shell, input.args ?? [], cwd, mergedEnv, {
+        mcpToken,
+      });
+    } catch (err) {
+      sessionStore.remove(id);
+      throw err;
+    }
     return input.scoped ? { id, cwd, title } : { id };
   };
 }
@@ -223,12 +244,18 @@ export function makeListSessionsHandler(deps?: {
 export function makeWindowClosedCleanup(deps?: {
   service?: typeof termService;
   sessionStore?: typeof terminalSessions;
+  cancelStopHookWaiters?: (windowId: number) => void;
 }) {
   const service = deps?.service ?? termService;
   const sessionStore = deps?.sessionStore ?? terminalSessions;
+  // 默认走模块级注入的 canceller(late-bind,容忍 broker 在窗口创建后才 wire)。
+  const cancelStopHookWaiters =
+    deps?.cancelStopHookWaiters ?? ((wid: number) => stopHookCanceller(wid));
   return (ownerWindowId: number): void => {
     const ids = sessionStore.removeByOwner(ownerWindowId);
     mcpRevokers().byWindow(ownerWindowId);
+    // 提前结束该窗口仍在 block 的 await_stop_hook,避免挂到 timeout 才自愈(审计 #3)。
+    cancelStopHookWaiters(ownerWindowId);
     for (const id of ids) {
       if (service.has(id)) service.kill(id);
     }

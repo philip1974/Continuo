@@ -163,6 +163,11 @@ export function updateCwd(id: string, cwd: string): void {
 }
 
 export function removeByOwner(ownerWindowId: number): readonly string[] {
+  // 窗口关闭:它的 default-title 计数器永不再用(BrowserWindow.id 单调不复用),
+  // 一并清掉。否则 titleCounter 随窗口开关单调泄漏(removeByOwner 旧实现只清
+  // sessions)。在 early-return 之前清,覆盖「窗口建过终端但已逐个 remove」的情况。
+  // 见第十六轮 P2-AS。
+  titleCounter.delete(ownerWindowId);
   const removed: string[] = [];
   for (const [id, s] of sessions) {
     if (s.ownerWindowId === ownerWindowId) removed.push(id);

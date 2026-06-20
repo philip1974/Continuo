@@ -183,12 +183,13 @@ describe('KeybindingsTabContent — 编辑 Modal', () => {
     fireEvent.click(editBtn);
     expect(document.querySelector('.wm-modal-content')).not.toBeNull();
 
-    // 模拟用户按下新组合
+    // 模拟用户按下新组合。R16:eventToCombo 平台感知,jsdom(detectPlatform()='other')下
+    // 'mod' 主修饰键 = Ctrl,故用 ctrlKey → 编成 'mod+k'。
     act(() => {
       document.dispatchEvent(
         new KeyboardEvent('keydown', {
           key: 'k',
-          metaKey: true,
+          ctrlKey: true,
           bubbles: true,
           cancelable: true,
         }),

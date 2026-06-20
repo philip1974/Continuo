@@ -1,7 +1,11 @@
 import { BrowserWindow, dialog, shell } from 'electron';
 import fs from 'node:fs';
 import { z } from 'zod';
-import { defaultIsTrustedFrame, safeHandle } from '../safe-handle';
+import {
+  defaultIsTrustedFrame,
+  safeHandle,
+  safeHandleWithCtx,
+} from '../safe-handle';
 import { FS_CHANNELS } from '../../shared/fs-channels';
 import { listDir } from './fs/list-dir';
 import { readFile } from './fs/read-file';
@@ -231,25 +235,36 @@ export function registerFsIpc(): void {
   );
 
   // ── fs.watch 增量更新(Step 6) ──────────────────────────────
-  safeHandle(
+  // ctx-aware:记录发起 watch 的窗口 id,供窗口硬关闭时 releaseFsWatchersForWindow
+  // 批量释放(React unmount cleanup 在硬关窗/崩溃时不保证执行,审计 P2)。
+  safeHandleWithCtx(
     FS_CHANNELS.WATCH,
     watchInputSchema,
-    (input) => {
+    (input, { event }) => {
+      const ownerId = BrowserWindow.fromWebContents(event.sender)?.id;
       // 广播 creator 上抛的真实变更路径(可能 = input.path,也可能是其
       // recursive 子目录,见 issue #20)。
-      watcherPool.watch(input.path, (changedPath) =>
-        broadcastDirChanged(changedPath),
+      watcherPool.watch(
+        input.path,
+        (changedPath) => broadcastDirChanged(changedPath),
+        ownerId,
       );
     },
     trusted,
   );
 
-  safeHandle(
+  safeHandleWithCtx(
     FS_CHANNELS.UNWATCH,
     unwatchInputSchema,
-    (input) => {
-      watcherPool.unwatch(input.path);
+    (input, { event }) => {
+      const ownerId = BrowserWindow.fromWebContents(event.sender)?.id;
+      watcherPool.unwatch(input.path, ownerId);
     },
     trusted,
   );
+}
+
+/** 窗口关闭时释放该窗口持有的全部 fs watcher 引用(审计 P2 资源泄漏)。 */
+export function releaseFsWatchersForWindow(windowId: number): void {
+  watcherPool.unwatchByOwner(windowId);
 }

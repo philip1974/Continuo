@@ -50,14 +50,17 @@ function makeFakeHost(): FakeHost {
 interface FakeInvokeRemote extends InvokeRemoteCore {
   readonly invokeCalls: { owner: { pluginId: string; wcId: number }; name: string; input: unknown }[];
   readonly abortCalls: number[];
+  readonly abortToolCalls: { wcId: number; name: string }[];
 }
 
 function makeFakeInvokeRemote(): FakeInvokeRemote {
   const invokeCalls: FakeInvokeRemote['invokeCalls'] = [];
   const abortCalls: number[] = [];
+  const abortToolCalls: FakeInvokeRemote['abortToolCalls'] = [];
   return {
     invokeCalls,
     abortCalls,
+    abortToolCalls,
     async invoke(owner, name, input) {
       invokeCalls.push({ owner, name, input });
       return { fromOwner: owner.wcId };
@@ -65,6 +68,9 @@ function makeFakeInvokeRemote(): FakeInvokeRemote {
     handleReply: () => {},
     abortByWebContents(wcId) {
       abortCalls.push(wcId);
+    },
+    abortByTool(wcId, name) {
+      abortToolCalls.push({ wcId, name });
     },
     pendingCount: () => 0,
   };
@@ -196,6 +202,23 @@ describe('handleUnregister', () => {
     expect(host.removeCalls).toEqual(['echo']);
     expect(host.tools.has('echo')).toBe(false);
     expect(bridge.listRegistered()).toEqual([]);
+  });
+
+  it('owner wc 调 unregister → abort 该 (wcId,name) 在途 invoke(topic49 6thS)', () => {
+    const { bridge, invokeRemote } = makeBridge();
+    bridge.handleRegister(11, regPayload('echo'));
+    bridge.handleUnregister(11, 'echo');
+    // 与 handleWebContentsGone 的 abortByWebContents 对称:摘 tool 后 abort 在途 invoke,
+    // 否则 agent 侧 tools/call 要干等满 30s timeout。
+    expect(invokeRemote.abortToolCalls).toEqual([{ wcId: 11, name: 'echo' }]);
+  });
+
+  it('非 owner / unknown unregister → 不 abort(不误伤)', () => {
+    const { bridge, invokeRemote } = makeBridge();
+    bridge.handleRegister(11, regPayload('echo'));
+    bridge.handleUnregister(22, 'echo'); // 假冒
+    bridge.handleUnregister(11, 'ghost'); // 不存在
+    expect(invokeRemote.abortToolCalls).toEqual([]);
   });
 
   it('unknown name → 静默 noop,不抛', () => {

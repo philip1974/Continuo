@@ -90,6 +90,27 @@ export class ScopeRequestCorrelator {
     this.pending.delete(requestId);
   }
 
+  /**
+   * Reject + drop every pending request originated by a given webContents.
+   * Call when the owning window is closed/crashed: the awaiting renderer died
+   * with it, so the host-side `await promise` would otherwise hang in the
+   * `pending` Map until the 5min TTL sweep. Mirrors `cancelAgentAuthByWindow`
+   * (agent-auth) / `broker.cancelByWindow` (hook-bridge) — the parallel
+   * "window closed but waiter still pending" cleanup channels. Returns count.
+   */
+  cancelBySender(webContentsId: number): number {
+    let n = 0;
+    for (const [requestId, entry] of this.pending) {
+      if (entry.resolved) continue;
+      if (entry.webContentsId !== webContentsId) continue;
+      entry.resolved = true;
+      entry.reject(new ScopeRequestTimeoutError('window closed', requestId));
+      this.pending.delete(requestId);
+      n++;
+    }
+    return n;
+  }
+
   /** Renderer keepalive - prompt visible. Resets expiresAt to now + PING_REFRESH_MS. */
   ping(requestId: string, fromWebContentsId: number): void {
     const entry = this.pending.get(requestId);

@@ -190,6 +190,16 @@ function cleanupSessionLocal(id: string, exitCode: number): void {
     warnOnce(`setExited:${id}`, `terminalSessions.setExited threw for ${id}: ${(err as Error).message}`);
   }
 
+  // 1b. Flush any buffered output BEFORE the exit event. cleanupSessionLocal
+  // clears flushTimer below (step 3) without firing it, so the last chunk still
+  // sitting in the throttle window (often the command's final result / exit
+  // banner) would otherwise be silently dropped. Emit it first so the renderer
+  // sees data → exit in order. (审计 #1)
+  if (instance.pendingData) {
+    safeSend(id, 'terminal:data', id, instance.pendingData);
+    instance.pendingData = '';
+  }
+
   // 2. Push terminal:exit (only if target still alive — variadic baseline payload)
   // Baseline shape: webContents.send('terminal:exit', id, { exitCode, signal })
   safeSend(id, 'terminal:exit', id, { exitCode, signal: undefined });
@@ -314,10 +324,29 @@ export async function createTerminal(
     baseEnv as Record<string, string | undefined>,
     getCurrentLocale(),
   );
-  const { env: shellEnv, cleanup: shellCleanup } = await prepareShellIntegrationEnv(
-    shell,
-    baseEnvWithLang,
-  );
+  let shellEnv: Awaited<ReturnType<typeof prepareShellIntegrationEnv>>['env'];
+  let shellCleanup: Awaited<
+    ReturnType<typeof prepareShellIntegrationEnv>
+  >['cleanup'];
+  try {
+    ({ env: shellEnv, cleanup: shellCleanup } = await prepareShellIntegrationEnv(
+      shell,
+      baseEnvWithLang,
+    ));
+  } catch (err) {
+    // prepareShellIntegrationEnv 在 PHASE 1 try 之外,失败(写 shell integration 脚本时
+    // 磁盘满 / 权限 / ENOENT)会绕过下面的 sm.create rollback。此刻 mcpToken 已在 ipc 层
+    // 签发(注入 windowTokens),但尚未分配其它资源 → 撤销它防孤儿 token 泄漏 + map 增长。
+    // 见第十九轮 P2-AW。
+    if (meta?.mcpToken) {
+      try {
+        mcpRevokers().byToken(meta.mcpToken);
+      } catch {
+        // ignore rollback cleanup errors
+      }
+    }
+    throw err;
+  }
   const hookEventsDir = path.join(app.getPath('userData'), 'hook-events');
   const envWithHookEvents = {
     ...shellEnv,
@@ -342,6 +371,13 @@ export async function createTerminal(
   instances.set(id, inst);
   setTarget(id, win.webContents);
   inst.throttleInterval = setInterval(() => {
+    // overflow 后若流恰好静默(不再有 chunk),handleChunk 的 recover 分支没机会跑
+    // → renderer 永久卡在 overflow 指示。这里在速率回落到阈值内时补发 recovered。
+    // (handleChunk 收到低于阈值的 chunk 时已会清 overflowNotified,故无重复发送。)
+    if (inst.overflowNotified && inst.bytesPerSecond <= OVERFLOW_THRESHOLD_BYTES) {
+      inst.overflowNotified = false;
+      safeSend(id, 'terminal:overflow-recovered', id);
+    }
     inst.bytesPerSecond = 0;
   }, THROTTLE_RESET_INTERVAL_MS);
 

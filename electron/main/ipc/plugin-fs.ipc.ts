@@ -22,12 +22,25 @@ export interface PluginFsIpcHandles {
  * Register plugin-fs IPC handlers. Returns the underlying registries so callers
  * can issue grant/revoke and listen to scope events in later wiring ops.
  */
+// 模块级引用,供窗口硬关闭时 cancelScopeRequestsForWebContents 结算该窗发起的
+// pending scope 授权请求(镜像 fs.ipc 的 releaseFsWatchersForWindow)。
+let activeCorrelator: ScopeRequestCorrelator | null = null;
+
+/**
+ * 窗口关闭时,把该窗 webContents 发起的全部 pending scope 授权请求立即结算掉,
+ * 否则 host 侧 `await promise` 要干等满 5min TTL 才被 sweep。返回结算条数。
+ */
+export function cancelScopeRequestsForWebContents(webContentsId: number): number {
+  return activeCorrelator?.cancelBySender(webContentsId) ?? 0;
+}
+
 export function registerPluginFsIpc({
   ipcMain,
 }: RegisterPluginFsIpcArgs): PluginFsIpcHandles {
   const identityRegistry = new IdentityRegistry();
   const pathScopeRegistry = new PathScopeRegistry(identityRegistry);
   const correlator = new ScopeRequestCorrelator();
+  activeCorrelator = correlator;
 
   registerPluginFsHandlers(ipcMain, {
     identityRegistry,

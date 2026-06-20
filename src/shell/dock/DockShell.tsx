@@ -18,13 +18,14 @@ import { focusTerminalPanel } from '@/panels/Terminal/terminal-focus-registry';
 import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
 import { useDockReconciler } from './DockReconciler';
 import { useDockLocaleSync } from './useDockLocaleSync';
-import { wrapPanelClose } from './wrap-panel-close';
+import { wrapPanelClose, cancelPendingPanelClose } from './wrap-panel-close';
 import { handleTerminalPanelRemoved } from './DockReconciler';
 import { SharedTab } from '@/shell/motion/SharedTab';
 import { useClosingStore } from '@/stores/closing.store';
 import { useEditorStore } from '@/stores/editor.store';
 import { debounce } from '@/lib/debounce';
 import { flushExplorerPersistence } from '@/lib/persist/explorer-persist';
+import { flushPendingAutoSave } from '@/panels/Editor/autosave-flush-registry';
 import { coApi } from '@/lib/co-api';
 import '@/styles/dockview.css';
 
@@ -215,6 +216,15 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       } catch (err) {
         console.warn('[dockview] explorer flush failed', err);
       }
+      // pending 的 markdown autosave 内容卡在 useAutoSave 的 2s 防抖 timer 里,
+      // 只在 React unmount cleanup 才 flush,而 win.close() 销毁 renderer 时
+      // React cleanup 不保证执行 → 编辑 md 后 2s 内关窗会丢最后一段。关窗前
+      // 在 ack 之前同步落盘(P1-AE)。
+      try {
+        await flushPendingAutoSave();
+      } catch (err) {
+        console.warn('[dockview] autosave flush failed', err);
+      }
       const latest = getFlushBridge();
       latest?.layout?.sendFlushAck?.(
         payload?.windowId ?? latest.system?.windowId ?? 0,
@@ -247,6 +257,11 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
         title: 'Editor',
         params: { titleKey: 'panels.editor.title' },
       });
+    } else {
+      // panel 仍存在但可能正处于关闭 EXIT 动画窗口内(用户刚关 editor 面板随即
+      // 又点开文件)。撤销它排定中的真 close + 清 closing 标记,否则刚激活的
+      // 面板会在 EXIT_DURATION_MS 后随排定的 close 一起消失(刚打开的文件没了)。
+      cancelPendingPanelClose('editor');
     }
     editorPanel.api.setActive();
   }, [editorActiveTabId, editorFocusPulse, apiReady]);

@@ -16,6 +16,7 @@ import {
   type EditorTab,
 } from '@/stores/editor.store';
 import { useT, t as translate } from '@/i18n';
+import { runContributedAction } from '@/lib/run-contributed-action';
 import {
   Button,
   IconButton,
@@ -78,7 +79,9 @@ const EditorActionsArea = memo(function EditorActionsArea({
           <IconButton
             key={a.id}
             size="xs"
-            onClick={() => void a.fn()}
+            // 插件贡献的编辑器 action,抛错经 runContributedAction 弹 error toast,不再
+            // 静默吞(旧 `void a.fn()` 连 console 都没有)。见第二十一轮 P1-AX。
+            onClick={() => runContributedAction(a.label, a.fn)}
             title={a.label}
             aria-label={a.label}
           >
@@ -89,7 +92,7 @@ const EditorActionsArea = memo(function EditorActionsArea({
             key={a.id}
             variant="ghost"
             size="sm"
-            onClick={() => void a.fn()}
+            onClick={() => runContributedAction(a.label, a.fn)}
             title={a.label}
           >
             {a.label}

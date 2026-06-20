@@ -200,6 +200,18 @@ function makeShell(
         }
         return startPromise;
       };
+      const done = start()
+        .then((stream) => stream.done)
+        .then((result) => ({
+          exitCode: result.exitCode ?? -1,
+          signal: result.signal,
+        }));
+      // done 是急切求值:start() 的 ensurePerm 在缺 shell 权限时立即 reject。若插件
+      // 只迭代 chunks(合法用法,chunks 路径会把同一错误抛给 for-await)而从不引用 done,
+      // 这个 reject 无人处理 → renderer unhandledrejection 噪声。挂一个 no-op handler 把
+      // done 标记为「已处理」(不改变返回给插件的 done:真实 await done 仍能看到 reject)。
+      // 见第十四轮 P2-AN。
+      done.catch(() => {});
       return {
         chunks: {
           [Symbol.asyncIterator]() {
@@ -212,15 +224,17 @@ function makeShell(
                 iterator ??= stream.chunks[Symbol.asyncIterator]();
                 return iterator.next();
               },
+              // 提前 break → 委托内层 iterator.return() 触发 ABORT,否则子进程挂到 timeout
+              // (P2-AM)。start() 未 resolve(权限弹窗中)则尚未 spawn,iterator 为 null 无需
+              // abort;已 resolve 才有内层 iterator 可关。
+              async return() {
+                await iterator?.return?.();
+                return { value: undefined as never, done: true };
+              },
             };
           },
         },
-        done: start()
-          .then((stream) => stream.done)
-          .then((result) => ({
-            exitCode: result.exitCode ?? -1,
-            signal: result.signal,
-          })),
+        done,
       };
     },
   };

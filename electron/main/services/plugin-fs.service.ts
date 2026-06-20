@@ -1,12 +1,14 @@
 import { spawn } from 'node:child_process';
 import { promises as fs, type Dirent } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { app, type IpcMain, type WebContents } from 'electron';
 import { PLUGIN_FS_CHANNELS } from '../../shared/plugin-fs-channels';
 import { IdentityRegistry } from './identity-registry.service';
 import { PathScopeRegistry } from './path-scope-registry.service';
 import { ScopeRequestCorrelator } from './scope-request-correlator';
 import { ScopeError, type PathScope } from '../../../src/plugins/types';
+import { canonicalizeScopePath } from './path-resolve.helper';
+import { atomicWriteFile } from '../ipc/fs/atomic-write';
 
 export interface PluginFsDeps {
   identityRegistry: IdentityRegistry;
@@ -18,6 +20,80 @@ export interface PluginFsDeps {
 
 const TRASH_TTL_MS = 24 * 60 * 60 * 1000;
 const TRASH_PREFIX = '.trash-';
+
+// 审计 P2-B:git cat-file 子进程的超时与输出上限。旧实现无 timeout、stdout 无界,
+// 超大 blob 或 git 卡死(如 cwd 在网络挂载)会让 Promise 永不 resolve + 内存持续增长。
+const GIT_BLOB_TIMEOUT_MS = 30_000;
+const GIT_BLOB_MAX_BYTES = 64 * 1024 * 1024; // 64 MB 上限,够大但防 OOM
+
+/**
+ * 读取单个 git blob(`git cat-file blob <sha>`),带超时与字节上限。
+ * 超时 / 超限 / spawn 错误 → SIGKILL 子进程并 reject。可注入 opts 供测试用小值。
+ */
+export function readGitBlob(
+  cwd: string,
+  sha: string,
+  opts?: { timeoutMs?: number; maxBytes?: number },
+): Promise<Uint8Array> {
+  const timeoutMs = opts?.timeoutMs ?? GIT_BLOB_TIMEOUT_MS;
+  const maxBytes = opts?.maxBytes ?? GIT_BLOB_MAX_BYTES;
+  return new Promise<Uint8Array>((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let total = 0;
+    let done = false;
+    const child = spawn('git', ['cat-file', 'blob', sha], { cwd });
+    let stderr = '';
+    const fail = (err: Error): void => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      try {
+        child.kill('SIGKILL');
+      } catch {
+        // ignore
+      }
+      reject(err);
+    };
+    const timer = setTimeout(
+      () =>
+        fail(
+          new ScopeError(`git cat-file timed out after ${timeoutMs}ms`, {
+            target: sha,
+          }),
+        ),
+      timeoutMs,
+    );
+    child.stdout.on('data', (chunk: Buffer) => {
+      if (done) return;
+      total += chunk.length;
+      if (total > maxBytes) {
+        fail(
+          new ScopeError(`git blob exceeds ${maxBytes} bytes`, { target: sha }),
+        );
+        return;
+      }
+      chunks.push(chunk);
+    });
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+    child.on('close', (code) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      if (code === 0) {
+        resolve(new Uint8Array(Buffer.concat(chunks)));
+        return;
+      }
+      reject(
+        new ScopeError(`git cat-file failed (exit ${code}): ${stderr}`, {
+          target: sha,
+        }),
+      );
+    });
+    child.on('error', (err) => fail(err));
+  });
+}
 
 interface StatPayload {
   size: number;
@@ -99,7 +175,12 @@ export function registerPluginFsHandlers(
         'rw',
       );
       if (!('fullPath' in r)) throw new ScopeError('write resolution failed');
-      await fs.writeFile(r.fullPath, content, 'utf-8');
+      // crash-safe 原子写:裸 fs.writeFile 默认以 'w' 打开先 truncate,写入中途
+      // ENOSPC/崩溃/掉电/进程被杀会把用户文件留成空/半截且无法回滚。复用 Explorer
+      // fs:write-file 同款 atomicWriteFile(写同目录 tmp + fsync + rename 原子替换 +
+      // per-path 串行),与主仓既有 crash-safe 写入语义(Explorer/autosave/plugin-data
+      // atomicWriteJson)对齐。(codex 复审 loop R4:plugin-fs 平行入口漏了原子写保护)
+      await atomicWriteFile(r.fullPath, content);
     },
   );
 
@@ -198,6 +279,36 @@ export function registerPluginFsHandlers(
       if (dirname(srcPath) !== rDst.parentCanonical) {
         throw new ScopeError('rename: same-parent enforced', { target: dst });
       }
+      // 拒绝静默覆盖已存在目标:POSIX rename(2) 原子覆盖既有文件 → 不防御则插件在
+      // 授权目录内把 a 改成已存在 b 的名字会永久丢失 b 的内容。镜像 Explorer
+      // renameEntry(electron/main/ipc/fs/rename.ts)早有的 inode 比较守卫 —— 仅当目标
+      // 存在且与源不是同一 inode 时拒,大小写改名到自身(同 inode)放行。显式覆盖走
+      // atomicReplaceWithinScope({overwrite:true}),普通 rename 保持非覆盖语义。
+      // (codex 复审 loop R2:plugin-fs 平行入口漏了 Explorer 的 FS_EEXIST 守卫)
+      let dstStat: Awaited<ReturnType<typeof fs.lstat>> | null = null;
+      try {
+        dstStat = await fs.lstat(rDst.fullPath);
+      } catch {
+        dstStat = null; // ENOENT:目标不存在,正常改名
+      }
+      if (dstStat) {
+        let srcStat: Awaited<ReturnType<typeof fs.lstat>> | null = null;
+        try {
+          srcStat = await fs.lstat(srcPath);
+        } catch {
+          srcStat = null;
+        }
+        const sameEntry =
+          srcStat != null &&
+          dstStat.ino === srcStat.ino &&
+          dstStat.dev === srcStat.dev;
+        if (!sameEntry) {
+          throw new ScopeError('rename: destination already exists', {
+            target: dst,
+            reason: 'EEXIST',
+          });
+        }
+      }
       await fs.rename(srcPath, rDst.fullPath);
     },
   );
@@ -248,6 +359,22 @@ export function registerPluginFsHandlers(
         'rw',
       );
       if (!('fullPath' in rDst)) throw new ScopeError('copy resolution failed');
+      // 拒绝静默覆盖已存在目标:Node fs.cp 默认 force:true,目标存在即覆盖 → 插件普通
+      // copy 会丢用户已有文件。与 R2 的 rename 守卫对称(普通 cp 保持非覆盖语义,显式
+      // 覆盖走 atomicReplaceWithinScope({overwrite:true}))。(codex 复审 loop R3:cp 是
+      // R2 rename 的兄弟方法,同族「防御未传播到平行入口」)
+      let cpDstStat: Awaited<ReturnType<typeof fs.lstat>> | null = null;
+      try {
+        cpDstStat = await fs.lstat(rDst.fullPath);
+      } catch {
+        cpDstStat = null; // ENOENT:目标不存在,正常复制
+      }
+      if (cpDstStat) {
+        throw new ScopeError('copy: destination already exists', {
+          target: dst,
+          reason: 'EEXIST',
+        });
+      }
       await fs.cp(canonicalPath(rSrc), rDst.fullPath, {
         recursive: opts?.recursive ?? false,
       });
@@ -264,29 +391,7 @@ export function registerPluginFsHandlers(
         repoDir,
         'r',
       );
-      return new Promise<Uint8Array>((resolve, reject) => {
-        const chunks: Buffer[] = [];
-        const child = spawn('git', ['cat-file', 'blob', sha], {
-          cwd: canonicalPath(r),
-        });
-        child.stdout.on('data', (chunk: Buffer) => chunks.push(chunk));
-        let stderr = '';
-        child.stderr.on('data', (chunk: Buffer) => {
-          stderr += chunk.toString();
-        });
-        child.on('close', (code) => {
-          if (code === 0) {
-            resolve(new Uint8Array(Buffer.concat(chunks)));
-            return;
-          }
-          reject(
-            new ScopeError(`git cat-file failed (exit ${code}): ${stderr}`, {
-              target: sha,
-            }),
-          );
-        });
-        child.on('error', reject);
-      });
+      return readGitBlob(canonicalPath(r), sha);
     },
   );
 
@@ -362,7 +467,22 @@ export function registerPluginFsHandlers(
         scopes,
       });
       const decision = await promise;
-      if (decision === 'grant') pathScopeRegistry.grant(pluginId, scopes);
+      // 弹窗挂起期间插件可能被卸载/禁用(_unregister-plugin → revoke token,token
+      // 进 5s drain;lookup/resolve 仍能查到所以无法区分)。落地 grant 前重校验 token
+      // 仍 active,否则会复活已撤销插件的 path-scope,同 id 重装直接继承(绕过
+      // _unregister-plugin 的 revokeAll 守卫,审计 #2 同源)。见第十三轮 P2-AJ。
+      if (decision === 'grant' && identityRegistry.isActive(token)) {
+        // 归一化 scope 路径到与 check 的 probe 同一空间(expandHome + realpath)。否则
+        // `~/...`(文档承诺 host-side 展开)或含符号链接组件的根(如 macOS `/tmp`→
+        // `/private/tmp`)授予后永不匹配 → 该 scope 静默死掉,插件所有 fs 操作误拒。
+        const canonicalScopes: PathScope[] = await Promise.all(
+          scopes.map(async (s) => ({
+            path: await canonicalizeScopePath(s.path),
+            mode: s.mode,
+          })),
+        );
+        pathScopeRegistry.grant(pluginId, canonicalScopes);
+      }
       return decision;
     },
   );
@@ -379,6 +499,21 @@ export function registerPluginFsHandlers(
   );
 
   void sweepStaleTrashAtStartup(pathScopeRegistry);
+}
+
+/**
+ * 构造可被 sweepStaleTrashInDir 回收的 trash 兄弟路径。三条不变量:
+ *   1. basename 以 TRASH_PREFIX 开头 —— sweep 按前缀匹配,旧实现用
+ *      `${finalPath}.trash-...`(后缀形式 `foo.json.trash-...`)永远匹配不上,
+ *      rename 回滚失败时泄漏的 trash 永久驻留(审计 49 follow-up)。
+ *   2. 与 finalPath 同父目录 —— 原子 rename 要求同设备。
+ *   3. 保留原 basename 便于排障。
+ */
+export function trashPathFor(finalPath: string, unique: string): string {
+  return join(
+    dirname(finalPath),
+    `${TRASH_PREFIX}${basename(finalPath)}-${unique}`,
+  );
 }
 
 async function atomicReplacePaths(
@@ -413,9 +548,8 @@ async function atomicReplacePaths(
     });
   }
 
-  const trashPath = `${finalPath}.trash-${Date.now()}-${Math.random()
-    .toString(36)
-    .slice(2, 6)}`;
+  const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const trashPath = trashPathFor(finalPath, unique);
   let renamed = false;
   for (let i = 0; i < 3 && !renamed; i++) {
     try {

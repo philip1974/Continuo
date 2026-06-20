@@ -368,6 +368,78 @@ describe('reload(id)', () => {
     expect(TrackPlugin.loaded).toEqual(['r:old', 'r:new']);
   });
 
+  it('并发 reload 同 id → 串行,不泄漏 fs token、不留僵尸实例(topic49 第九轮 P1-Y)', async () => {
+    // 根因:enable/disable/reload 无 per-id 锁。reload 由 mtime watcher 每 2s
+    // fire-and-forget + 用户操作易并发同 id。旧实现两次 reload 交错时,先发的
+    // activateEntry resume 后用旧 token 覆盖 entry.pluginFsToken → 新 token 永不
+    // _unregisterPlugin(泄漏)+ 留双激活僵尸实例。加 withLifecycleLock 串行化后,
+    // register/unregister 与 onload/onunload 必须配平(只余最后一个活实例)。
+    const state: MockHostState = {
+      dirs: [{ id: 'c', manifestText: manifestText('c'), moduleUrl: 'mod://c' }],
+      enabled: new Set(['c']),
+      modules: new Map([['mod://c', { default: GoodPlugin }]]),
+      enabledWritten: new Set(),
+    };
+    const mgr = new PluginManager(fakeApp, makeHost(state));
+    await mgr.init();
+    expect(GoodPlugin.loaded).toEqual(['c']); // init 激活一次
+
+    // 同时打两发 reload(模拟 watcher + 用户操作并发命中同 id)
+    await Promise.all([mgr.reload('c'), mgr.reload('c')]);
+
+    const regs = coApiMocks.pluginFsRaw._registerPlugin.mock.calls.length;
+    const unregs = coApiMocks.pluginFsRaw._unregisterPlugin.mock.calls.length;
+    // 恰好一个活实例:每次 (de)activate 配平,无 token 泄漏
+    expect(regs - unregs).toBe(1);
+    // 实例配平:无僵尸(每个 onload 都有对应 onunload,除最后一个活实例)
+    expect(GoodPlugin.loaded.length - GoodPlugin.unloaded.length).toBe(1);
+    // 最终仍 enabled 且只剩一个活实例
+    expect(mgr.listAll().find((x) => x.id === 'c')?.status).toBe('enabled');
+  });
+
+  it('init 激活挂起期间并发 reload 同 id → 串行不泄漏 token(第十一轮:init 也走锁)', async () => {
+    // 根因:init() 的激活循环旧实现直接调 activateEntry **不走** withLifecycleLock,
+    // 而 activateEntry 在 ensureAuthorized/importModule 处 await(权限弹窗可挂数秒)。
+    // main-app 紧接 void init() 就接线 mtime watcher 的 onChanged→reload(走锁)。
+    // 激活挂起期间被改动文件触发的 reload 拿到空锁并发执行 → 与 reload P1-Y 同源的
+    // token 泄漏/双激活。把 init 的 activateEntry 也包进锁后,两者串行、配平。
+    let releaseImport!: () => void;
+    const gate = new Promise<void>((res) => {
+      releaseImport = res;
+    });
+    let firstImport = true;
+    const state: MockHostState = {
+      dirs: [{ id: 'c', manifestText: manifestText('c'), moduleUrl: 'mod://c' }],
+      enabled: new Set(['c']),
+      modules: new Map([['mod://c', { default: GoodPlugin }]]),
+      enabledWritten: new Set(),
+    };
+    const host = makeHost(state);
+    const baseImport = host.importModule;
+    host.importModule = async (url: string) => {
+      if (firstImport) {
+        firstImport = false;
+        await gate; // 暂停 init 的 activateEntry,模拟权限弹窗挂起
+      }
+      return baseImport(url);
+    };
+    const mgr = new PluginManager(fakeApp, host);
+
+    const initP = mgr.init();
+    // 等 init 进入 activateEntry 的 importModule await(firstImport 翻 false)
+    await vi.waitFor(() => expect(firstImport).toBe(false));
+    // 此刻 init 激活挂起 → mtime watcher 触发同 id reload
+    const reloadP = mgr.reload('c');
+    releaseImport();
+    await Promise.all([initP, reloadP]);
+
+    const regs = coApiMocks.pluginFsRaw._registerPlugin.mock.calls.length;
+    const unregs = coApiMocks.pluginFsRaw._unregisterPlugin.mock.calls.length;
+    expect(regs - unregs).toBe(1); // 无 token 泄漏
+    expect(GoodPlugin.loaded.length - GoodPlugin.unloaded.length).toBe(1); // 无僵尸
+    expect(mgr.listAll().find((x) => x.id === 'c')?.status).toBe('enabled');
+  });
+
   it('disabled 插件 reload → 仍 disabled,只换 dirInfo 不激活', async () => {
     const state: MockHostState = {
       dirs: [

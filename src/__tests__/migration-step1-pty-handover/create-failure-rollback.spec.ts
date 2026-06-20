@@ -119,4 +119,25 @@ describe('migration step1 PTY handover · create failure rollback', () => {
     vi.advanceTimersByTime(32);
     expect(win.webContents.send).not.toHaveBeenCalled();
   });
+
+  // topic 49 第十九轮 P2-AW:prepareShellIntegrationEnv 在 PHASE 1 try 之外失败时,
+  // 已签发的 mcpToken 也要撤销(否则孤儿 token 留在 windowTokens 泄漏)。
+  it('revokes mcpToken when prepareShellIntegrationEnv rejects (pre-PHASE1 failure)', async () => {
+    const win = makeWindow(9);
+    shellMock.prepareShellIntegrationEnv.mockRejectedValueOnce(
+      new Error('ENOSPC writing shell integration'),
+    );
+
+    await expect(
+      terminalService.createTerminal('prep-fail', win, '/bin/zsh', [], '/tmp', undefined, {
+        mcpToken: 'token-prep',
+      }),
+    ).rejects.toThrow('ENOSPC');
+
+    // token 被撤销,且没有残留 instance(PHASE 1 从未执行到)
+    expect(byToken).toHaveBeenCalledWith('token-prep');
+    expect(terminalService.has('prep-fail')).toBe(false);
+    // sm.create 从未被调用(失败发生在它之前)
+    expect(sessionManagerMock.create).not.toHaveBeenCalled();
+  });
 });

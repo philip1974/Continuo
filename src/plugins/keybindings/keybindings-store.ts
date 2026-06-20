@@ -70,6 +70,22 @@ export const useKeybindingsStore = create<KeybindingsState>((set) => ({
   },
 }));
 
+// 跨窗口同步:overrides 用 localStorage 持久化,但 zustand 内存快照只在本窗启动时
+// 读一次。多窗口下窗口 A 改/解绑快捷键 → 写 localStorage,但窗口 B 的内存仍是旧值 →
+// B 的 useCommandHotkeys 仍按旧绑定派发键盘(或对已解绑的键仍触发),且设置 tab /
+// CommandPalette 显示陈旧 hotkey,直到 B 重载才收敛。监听 storage 事件(仅别 document
+// 改 localStorage 时 fire),同 key 重读让各窗 overrides 收敛一致(快捷键语义上 app 级
+// 全局)。镜像 settings values-store 的同款修复(第二十二轮 P2-BA)。
+if (
+  typeof window !== 'undefined' &&
+  typeof window.addEventListener === 'function'
+) {
+  window.addEventListener('storage', (e: StorageEvent) => {
+    if (e.key !== STORAGE_KEY) return;
+    useKeybindingsStore.setState({ overrides: readStored() });
+  });
+}
+
 /** 取某 command 当前生效的 hotkey(override ?? spec.hotkey),空字符串视为 unbound. */
 export function getEffectiveHotkey(spec: CommandSpec): string | undefined {
   const override = useKeybindingsStore.getState().overrides[spec.id];
