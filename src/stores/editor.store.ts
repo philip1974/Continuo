@@ -257,11 +257,13 @@ type EditorState = {
    */
   editorFocusPulse: number;
   /**
-   * 性能 P12:tab chrome(每个 tab 的 id/filePath/dirty 投影 + 增删/改名)的版本号。
-   * 仅在 chrome 真变化时递增(open/close/rename/setFilePath/markSaved-dirty 变化 /
-   * updateContent **dirty 翻转**时)。EditorHeader 订阅本 number(O(1) 比较)替代每按键
-   * `tabs.map(...)+JSON.stringify`(O(tab 数) 分配+序列化)。content 变但 dirty 不变时
-   * 不递增 → header selector 命中、O(1) 跳过。runtime only,不持久化。
+   * 性能 P12/P14:EditorHeader / TitleBar 派生状态的版本号 —— 覆盖每个 tab 的
+   * id/filePath/dirty(chrome 条)+ **milkdownUnsafe**(影响 action 区 effectiveMode)
+   * + 增删/改名。仅在这些真变化时递增(open/close/rename/setFilePath / markSaved-dirty /
+   * updateContent·reloadFromDisk 的 **dirty 或 milkdownUnsafe 翻转**)。EditorHeader
+   * (chrome + activeAction)与 TitleBar 订阅本 number(O(1) 比较)替代每按键
+   * `tabs.find/map + JSON.stringify`(O(tab 数) 分配+序列化)。content 变但这些都不变时
+   * 不递增 → 三处 selector 均命中、O(1) 跳过。runtime only,不持久化。
    */
   chromeVersion: number;
   /** runtime only, not persisted - CodeMirror EditorView refs per tab */
@@ -384,7 +386,11 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
       };
       const tabs = s.tabs.slice();
       tabs[idx] = next;
-      return { tabs };
+      // perf P14:外部 reload 改 content,chrome(id/filePath/dirty)不变,但若 milkdownUnsafe
+      // 翻转则 effectiveMode 变 → bump 让 EditorHeader action 区更新;否则不 bump。
+      return !!next.milkdownUnsafe !== !!cur.milkdownUnsafe
+        ? { tabs, chromeVersion: s.chromeVersion + 1 }
+        : { tabs };
     }),
 
   switchTab: (id) =>
@@ -406,9 +412,11 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
       };
       const tabs = s.tabs.slice();
       tabs[idx] = next;
-      // perf P12:仅 dirty 翻转才动 chrome;持续在已脏 tab 输入(dirty 恒 true)不 bump
-      // → EditorHeader chrome selector O(1) 跳过,不再每按键 map+JSON.stringify 全 tabs。
-      return next.dirty !== cur.dirty
+      // perf P12/P14:dirty 翻转 或 milkdownUnsafe 翻转(影响 EditorHeader action 区的
+      // effectiveMode)才 bump;持续在已脏 tab 输入(dirty 恒 true、unsafe 不变)不 bump
+      // → header chrome + action selector 均 O(1) 跳过。`!!` 归一化避免 undefined→false 误判。
+      return next.dirty !== cur.dirty ||
+        !!next.milkdownUnsafe !== !!cur.milkdownUnsafe
         ? { tabs, chromeVersion: s.chromeVersion + 1 }
         : { tabs };
     }),

@@ -45,12 +45,10 @@ describe('打磨 R23 — EditorHeader 窄订阅', () => {
     const base = onRender.mock.calls.length;
     expect(base).toBeGreaterThan(0);
 
+    // 真实 keystroke:已脏 tab 持续输入(dirty 恒 true、非 markdown unsafe)→ chromeVersion
+    // 不 bump → EditorHeader chrome + action selector 均 O(1) 跳过,不重渲。
     act(() => {
-      useEditorStore.setState((s) => ({
-        tabs: s.tabs.map((tb) =>
-          tb.id === '/a.md' ? { ...tb, content: 'hello more text' } : tb,
-        ),
-      }));
+      useEditorStore.getState().updateContent('/a.md', 'hello more text');
     });
 
     expect(onRender.mock.calls.length).toBe(base); // 无新 commit
@@ -66,12 +64,10 @@ describe('打磨 R23 — EditorHeader 窄订阅', () => {
     );
     const base = onRender.mock.calls.length;
 
+    // 真实 keystroke 使 tab 变脏(clean→dirty 翻转 → bump chromeVersion → 重渲)。
+    // perf P12/P14 后 header 订阅 chromeVersion 而非 tabs 内容,须走 action 而非 raw setState。
     act(() => {
-      useEditorStore.setState((s) => ({
-        tabs: s.tabs.map((tb) =>
-          tb.id === '/a.md' ? { ...tb, dirty: true } : tb,
-        ),
-      }));
+      useEditorStore.getState().updateContent('/a.md', 'hello edited');
     });
 
     expect(onRender.mock.calls.length).toBeGreaterThan(base);

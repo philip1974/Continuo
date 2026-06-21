@@ -865,6 +865,28 @@ describe('perf P12 — chromeVersion bump 契约', () => {
     expect(ver()).toBe(2);
   });
 
+  it('perf P14 · milkdownUnsafe 翻转(即便 dirty 不变)→ bump(供 action 区 effectiveMode)', () => {
+    useEditorStore.setState({
+      tabs: [
+        makeTab({
+          id: '/a.md',
+          content: 'plain',
+          originalContent: 'orig', // 已脏(content≠orig)
+          dirty: true,
+          milkdownUnsafe: false,
+        }),
+      ],
+      activeTabId: '/a.md',
+      chromeVersion: 0,
+    });
+    // 输入含 wiki-link → milkdownUnsafe false→true,dirty 恒 true → 仍 bump
+    useEditorStore.getState().updateContent('/a.md', 'see [[Note]]');
+    expect(ver()).toBe(1);
+    // 再输入仍 unsafe(true→true)、dirty 恒 true → 不 bump
+    useEditorStore.getState().updateContent('/a.md', 'see [[Note]] more');
+    expect(ver()).toBe(1);
+  });
+
   it('markSaved 改 dirty → bump;reloadFromDisk / switchTab → 不 bump', () => {
     useEditorStore.setState({
       tabs: [makeTab({ id: '/a.md', content: 'edited', originalContent: 'orig', dirty: true })],

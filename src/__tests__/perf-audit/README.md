@@ -109,3 +109,13 @@
 **修复**:复用 P12 的 `chromeVersion`——TitleBar 改订阅 `activeTabId` + `chromeVersion`(均 O(1) number 比较),`useMemo([activeTabId, chromeVersion])` 仅在 active 切换或 chrome 真变化时从 getState() 读 active tab 的 [exists, filePath, dirty]。逐字节等价(同一派生),常规输入 O(N)+分配 → O(1) 比较。
 
 **契约不变量**(`titlebar-narrow-subscription.spec.tsx`:content-only(已脏 tab updateContent)不重渲 / clean→dirty 翻转重渲 + 标题加 ●,均经真实 action;active basename + workspace 名显示)。
+
+## P14 — EditorHeader activeActionSig 复用 chromeVersion(扩展含 milkdownUnsafe)
+
+**位置**:`src/panels/Editor/EditorHeader.tsx` `activeActionSig` selector + `editor.store.ts`。
+
+**问题**:P12/P13 清掉了 chrome 条与 TitleBar,但 EditorHeader 右侧 action 区仍每按键 `s.tabs.find(...) + JSON.stringify([filePath, dirty, getEffectiveMode(found)])`(O(tab 数) find + 小分配/序列化)。getEffectiveMode 经 P4/P5 已 O(1),但 find + 序列化照跑。
+
+**修复**:复用并扩展 `chromeVersion` —— activeActionSig 的 effectiveMode 还依赖 active tab 的 `milkdownUnsafe`(可不翻 dirty 而翻转,如输入 `[[`)+ store.mode,故让 chromeVersion 也在 **milkdownUnsafe 翻转** 时 bump(updateContent / reloadFromDisk,`!!` 归一化避免 undefined→false 误判)。EditorHeader 改订阅 `activeTabId` + `chromeVersion` + `mode`(均 O(1)),`useMemo` 仅这三者变时从 getState() 读 active tab 派生 [filePath, dirty, effectiveMode]。逐字节等价,常规输入 O(N)+序列化 → O(1)。
+
+**契约不变量**(`editor-store.spec.ts` perf P14:已脏 tab 输入 `[[` 使 milkdownUnsafe false→true(dirty 恒 true)仍 bump、再输入仍 unsafe 不 bump;neutralize:去 updateContent 的 milkdownUnsafe bump → FAIL;`editor-header-narrow-subscription.spec.tsx` 改用真实 action 验 content-only 不重渲 / dirty 翻转重渲)。

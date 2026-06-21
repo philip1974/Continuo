@@ -133,26 +133,25 @@ export function EditorHeader({ onCloseRequest }: EditorHeaderProps) {
   );
   const activeTabId = useEditorStore((s) => s.activeTabId);
   const switchTab = useEditorStore((s) => s.switchTab);
-  // active tab 的派生 primitive,供右侧 action 区(打磨 R23 + 合并优化 R45)。
-  // R23 用 3 个 selector 各 find;R45 合并为单次 find 构造 JSON 签名串,签名只放
-  // **计算后的 effectiveMode**(不放 content)→ 正文变而 mode 不变时签名不变 → 不
-  // 重渲,保持 R23 契约;每次 editor 更新从 3 次扫描降为 1 次。
-  const activeActionSig = useEditorStore((s) => {
-    const found = s.tabs.find((tb) => tb.id === s.activeTabId) ?? null;
-    return JSON.stringify([
-      found?.filePath ?? null,
-      found?.dirty ?? false,
-      getEffectiveMode(found),
-    ]);
-  });
+  // active tab 的派生 primitive,供右侧 action 区(打磨 R23/R45 + 性能 P14)。旧实现每次
+  // store 更新都 `tabs.find(...) + JSON.stringify([filePath, dirty, effectiveMode])`
+  // (O(tab 数) find + 小分配/序列化)。现复用 chromeVersion(P12 已扩展为也在
+  // milkdownUnsafe 翻转时 bump)+ mode:订阅 activeTabId + chromeVersion + mode(均 O(1)),
+  // 仅 active 切换 / chrome 真变化 / mode 变化时从 getState() 读 active tab 派生
+  // [filePath, dirty, effectiveMode]。持续输入已脏 tab → 三者不变 → O(1) 跳过。
+  const requestedMode = useEditorStore((s) => s.mode);
   const { activeFilePath, dirty, effectiveMode } = useMemo(() => {
-    const [filePath, d, mode] = JSON.parse(activeActionSig) as [
-      string | null,
-      boolean,
-      EditorMode,
-    ];
-    return { activeFilePath: filePath, dirty: d, effectiveMode: mode };
-  }, [activeActionSig]);
+    const found =
+      useEditorStore.getState().tabs.find((tb) => tb.id === activeTabId) ?? null;
+    return {
+      activeFilePath: found?.filePath ?? null,
+      dirty: found?.dirty ?? false,
+      effectiveMode: getEffectiveMode(found),
+    };
+    // chromeVersion/requestedMode/activeTabId 作失效键:覆盖 filePath/dirty/milkdownUnsafe
+    // (经 chromeVersion)+ mode + active 切换。eslint 看不到 body 引用故误判 unnecessary。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTabId, chromeVersion, requestedMode]);
 
   if (tabsChrome.length === 0) return null;
 
