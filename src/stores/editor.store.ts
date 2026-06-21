@@ -256,6 +256,14 @@ type EditorState = {
    * 见 issue #22。
    */
   editorFocusPulse: number;
+  /**
+   * 性能 P12:tab chrome(每个 tab 的 id/filePath/dirty 投影 + 增删/改名)的版本号。
+   * 仅在 chrome 真变化时递增(open/close/rename/setFilePath/markSaved-dirty 变化 /
+   * updateContent **dirty 翻转**时)。EditorHeader 订阅本 number(O(1) 比较)替代每按键
+   * `tabs.map(...)+JSON.stringify`(O(tab 数) 分配+序列化)。content 变但 dirty 不变时
+   * 不递增 → header selector 命中、O(1) 跳过。runtime only,不持久化。
+   */
+  chromeVersion: number;
   /** runtime only, not persisted - CodeMirror EditorView refs per tab */
   viewRefs: Map<string, EditorView>;
 
@@ -293,11 +301,23 @@ type EditorState = {
   ) => Promise<EditorView | null>;
 };
 
+// perf P12:getStateAfter* 返回的新状态——tabs 引用变化(增删/改名)即 chrome 变,
+// bump chromeVersion;无变化(返回原 tabs 引用)则原样返回,不触发 header 重算。
+function bumpChromeIfTabsChanged(
+  prev: { tabs: EditorTab[]; chromeVersion: number },
+  next: CloseTabResult,
+): CloseTabResult & { chromeVersion?: number } {
+  return next.tabs !== prev.tabs
+    ? { ...next, chromeVersion: prev.chromeVersion + 1 }
+    : next;
+}
+
 export const useEditorStore = create<EditorState>((set, get, api) => ({
   tabs: [],
   activeTabId: null,
   mode: 'source',
   editorFocusPulse: 0,
+  chromeVersion: 0,
   viewRefs: new Map(),
 
   openTab: (tab) =>
@@ -309,23 +329,39 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
         tabs: [...s.tabs, tab],
         activeTabId: tab.id,
         editorFocusPulse: pulse,
+        chromeVersion: s.chromeVersion + 1, // perf P12:新增 tab → chrome 变
       };
     }),
 
+  // perf P12:getStateAfter* 在无变化时返回原 tabs 引用,变化时返回新数组;据此
+  // 决定是否 bump chromeVersion(增删/改名都改 chrome)。
   closeTab: (id) =>
-    set((s) => getStateAfterClosingTab(s.tabs, s.activeTabId, id)),
+    set((s) =>
+      bumpChromeIfTabsChanged(s, getStateAfterClosingTab(s.tabs, s.activeTabId, id)),
+    ),
 
   removePath: (path) =>
-    set((s) => getStateAfterRemovingPath(s.tabs, s.activeTabId, path)),
+    set((s) =>
+      bumpChromeIfTabsChanged(
+        s,
+        getStateAfterRemovingPath(s.tabs, s.activeTabId, path),
+      ),
+    ),
 
   renamePath: (oldPath, newPath) =>
     set((s) =>
-      getStateAfterRenamingPath(s.tabs, s.activeTabId, oldPath, newPath),
+      bumpChromeIfTabsChanged(
+        s,
+        getStateAfterRenamingPath(s.tabs, s.activeTabId, oldPath, newPath),
+      ),
     ),
 
   closeTabsOutsideRoot: (root) =>
     set((s) =>
-      getStateAfterClosingTabsOutsideRoot(s.tabs, s.activeTabId, root),
+      bumpChromeIfTabsChanged(
+        s,
+        getStateAfterClosingTabsOutsideRoot(s.tabs, s.activeTabId, root),
+      ),
     ),
 
   reloadFromDisk: (tabId, content) =>
@@ -370,7 +406,11 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
       };
       const tabs = s.tabs.slice();
       tabs[idx] = next;
-      return { tabs };
+      // perf P12:仅 dirty 翻转才动 chrome;持续在已脏 tab 输入(dirty 恒 true)不 bump
+      // → EditorHeader chrome selector O(1) 跳过,不再每按键 map+JSON.stringify 全 tabs。
+      return next.dirty !== cur.dirty
+        ? { tabs, chromeVersion: s.chromeVersion + 1 }
+        : { tabs };
     }),
 
   markSaved: (id, savedContent) =>
@@ -389,7 +429,10 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
       };
       const tabs = s.tabs.slice();
       tabs[idx] = next;
-      return { tabs };
+      // perf P12:markSaved 改 dirty(脏标→已存)即 chrome 变;dirty 未变则不 bump。
+      return next.dirty !== cur.dirty
+        ? { tabs, chromeVersion: s.chromeVersion + 1 }
+        : { tabs };
     }),
 
   setFilePath: (id, newPath) =>
@@ -409,6 +452,7 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
       return {
         tabs,
         activeTabId: s.activeTabId === id ? newPath : s.activeTabId,
+        chromeVersion: s.chromeVersion + 1, // perf P12:filePath 变 → chrome 变
       };
     }),
 

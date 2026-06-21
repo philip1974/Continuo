@@ -81,19 +81,16 @@ describe('打磨 R23 — EditorHeader 窄订阅', () => {
     seedTabs('x', false);
     const { container } = render(<EditorHeader onCloseRequest={vi.fn()} />);
     expect(container.textContent).not.toContain('b.md');
+    // 经真实 openTab action 新增(生产唯一路径)→ bump chromeVersion → header 重渲。
+    // perf P12 后 header 订阅 chromeVersion 而非 tabs 内容,故须走 action 而非 raw setState。
     act(() => {
-      useEditorStore.setState((s) => ({
-        tabs: [
-          ...s.tabs,
-          {
-            id: '/b.md',
-            filePath: '/b.md',
-            content: '',
-            originalContent: '',
-            dirty: false,
-          },
-        ],
-      }));
+      useEditorStore.getState().openTab({
+        id: '/b.md',
+        filePath: '/b.md',
+        content: '',
+        originalContent: '',
+        dirty: false,
+      });
     });
     expect(container.textContent).toContain('b.md');
   });

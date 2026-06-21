@@ -89,3 +89,13 @@
 **修复**:per-terminal `lastSentSizeRef` 缓存上次发往 PTY 的网格(= PTY 当前尺寸),fit 后仅当 cols/rows 真变化才发 IPC。`fit()` 仍每次跑(xterm DOM 布局),返回值语义不变(网格是否有效,供 RAF 重试)。侧栏拖拽/窗口 resize 的无效 IPC 降到接近实际网格变化次数。
 
 **契约不变量**(`perf-audit/terminal-resize-gating.spec.ts`:首发→同网格不再发→网格变化才再发→无效网格 cols/rows=0 返 false 供重试;neutralize:去门控 → 测试 FAIL)。
+
+## P12 — EditorHeader chrome selector 由 O(N) 序列化降为 O(1) 版本号
+
+**位置**:`src/panels/Editor/EditorHeader.tsx` `chromeSig` selector + `src/stores/editor.store.ts`。
+
+**问题**:`updateContent` 每按键替换 `tabs` 数组 → Zustand 重跑所有订阅 selector。EditorHeader 旧 selector 每次 `s.tabs.map(...id/filePath/dirty...) + JSON.stringify(...)`(O(tab 数) 数组分配 + 序列化)。虽阻止 React 重渲,但每按键的 O(N) 计算照跑;打开几十个 tab + 持续输入时把 header chrome 签名计算拉进编辑热路径。
+
+**修复**:store 维护 `chromeVersion: number`,仅在 chrome 真变化时递增——openTab/setFilePath 必 bump,closeTab/removePath/renamePath/closeTabsOutsideRoot 经 `bumpChromeIfTabsChanged`(tabs 引用变才 bump),updateContent / markSaved 仅 **dirty 翻转** 才 bump;reloadFromDisk / switchTab 不 bump。EditorHeader 改订阅 `chromeVersion`(O(1) number 比较),useMemo 仅 version 变才从 getState() 重建 chrome 数组。持续在已脏 tab 输入(dirty 恒 true)→ 不 bump → selector O(1) 跳过。生产中 tab 仅经 action 增删(无 raw setState),故 version 不会 stale。
+
+**契约不变量**(`editor-store.spec.ts` perf P12:已脏输入不 bump / dirty 翻转 bump / openTab 新增 bump·已存在不 bump / setFilePath·真删 bump·no-op 不 bump / markSaved-dirty bump·reloadFromDisk·switchTab 不 bump;neutralize:updateContent 总是 bump → 测试 FAIL;`editor-header-narrow-subscription.spec.tsx` content-only 不重渲 / 经 openTab 新增重渲)。

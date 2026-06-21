@@ -113,14 +113,12 @@ const EditorActionsArea = memo(function EditorActionsArea({
 
 export function EditorHeader({ onCloseRequest }: EditorHeaderProps) {
   const t = useT(); // 订阅 locale 让 basename 改语言时 re-render
-  // 只订阅派生的 tab chrome(打磨 R23):订阅一个 JSON 签名串(id/filePath/dirty),
-  // 用户编辑正文时 tabs[].content 变但签名不变 → selector 返同一字符串 → React 跳过
-  // 重渲;再用 useMemo 仅在签名变化时从 getState() 重建 chrome 对象数组。
-  // (不用 useShallow:它逐元素 Object.is,每次 map 出的新对象永不相等 → 无限循环;
-  // 不用 zustand/traditional 的 equalityFn:它需要未装的 use-sync-external-store。)
-  const chromeSig = useEditorStore((s) =>
-    JSON.stringify(s.tabs.map((tb) => [tb.id, tb.filePath, tb.dirty])),
-  );
+  // 只订阅派生的 tab chrome(打磨 R23 + 性能 P12)。旧实现每次 store 更新都在 selector 里
+  // `tabs.map(...)+JSON.stringify`(O(tab 数) 分配+序列化),虽阻止重渲但不阻止每按键计算。
+  // 现订阅 store 维护的 chromeVersion(number):仅 chrome 真变化(增删/改名/dirty 翻转)
+  // 才递增,用户编辑正文(dirty 不变)时不变 → selector 返同一 number → O(1) 跳过;再用
+  // useMemo 仅在 version 变化时从 getState() 重建 chrome 对象数组。
+  const chromeVersion = useEditorStore((s) => s.chromeVersion);
   const tabsChrome = useMemo<readonly TabChrome[]>(
     () =>
       useEditorStore.getState().tabs.map((tb) => ({
@@ -128,10 +126,10 @@ export function EditorHeader({ onCloseRequest }: EditorHeaderProps) {
         filePath: tb.filePath,
         dirty: tb.dirty,
       })),
-    // chromeSig 故意作"失效键":body 用 getState() 读最新 tabs,签名变(chrome 真
-    // 变)才重建对象数组。lint 看不到 body 引用 chromeSig 故误判 unnecessary。
+    // chromeVersion 作"失效键":body 用 getState() 读最新 tabs,version 变(chrome 真
+    // 变)才重建对象数组。lint 看不到 body 引用 chromeVersion 故误判 unnecessary。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [chromeSig],
+    [chromeVersion],
   );
   const activeTabId = useEditorStore((s) => s.activeTabId);
   const switchTab = useEditorStore((s) => s.switchTab);

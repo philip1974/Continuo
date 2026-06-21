@@ -26,6 +26,7 @@ beforeEach(() => {
     activeTabId: null,
     mode: 'source',
     editorFocusPulse: 0,
+    chromeVersion: 0,
   });
 });
 
@@ -808,5 +809,74 @@ describe('getStateAfterClosingTab', () => {
     const r = getStateAfterClosingTab(tabs, '/a', '/missing');
     expect(r.tabs).toBe(tabs);
     expect(r.activeTabId).toBe('/a');
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// perf P12 — chromeVersion 仅在 chrome 真变化时递增
+// ────────────────────────────────────────────────────────────
+
+describe('perf P12 — chromeVersion bump 契约', () => {
+  const ver = () => useEditorStore.getState().chromeVersion;
+
+  it('updateContent 在已脏 tab 持续输入(dirty 恒 true)→ 不 bump', () => {
+    useEditorStore.setState({
+      tabs: [makeTab({ id: '/a.md', content: 'x', originalContent: 'orig', dirty: true })],
+      activeTabId: '/a.md',
+      chromeVersion: 5,
+    });
+    useEditorStore.getState().updateContent('/a.md', 'xy');
+    useEditorStore.getState().updateContent('/a.md', 'xyz');
+    expect(ver()).toBe(5); // dirty 恒 true → chrome 不变
+  });
+
+  it('updateContent 翻转 dirty(clean→dirty / dirty→clean)→ bump', () => {
+    useEditorStore.setState({
+      tabs: [makeTab({ id: '/a.md', content: 'orig', originalContent: 'orig', dirty: false })],
+      activeTabId: '/a.md',
+      chromeVersion: 0,
+    });
+    useEditorStore.getState().updateContent('/a.md', 'edited'); // clean→dirty
+    expect(ver()).toBe(1);
+    useEditorStore.getState().updateContent('/a.md', 'orig'); // dirty→clean
+    expect(ver()).toBe(2);
+  });
+
+  it('openTab 新增 → bump;openTab 已存在(仅切 active)→ 不 bump', () => {
+    useEditorStore.setState({ tabs: [], activeTabId: null, chromeVersion: 0 });
+    const tab = makeTab({ id: '/a.md' });
+    useEditorStore.getState().openTab(tab);
+    expect(ver()).toBe(1);
+    useEditorStore.getState().openTab(tab); // 已存在
+    expect(ver()).toBe(1);
+  });
+
+  it('setFilePath → bump;closeTab(真删)→ bump;关不存在 → 不 bump', () => {
+    useEditorStore.setState({
+      tabs: [makeTab({ id: '/a.md' }), makeTab({ id: '/b.md' })],
+      activeTabId: '/a.md',
+      chromeVersion: 0,
+    });
+    useEditorStore.getState().setFilePath('/a.md', '/a2.md');
+    expect(ver()).toBe(1);
+    useEditorStore.getState().closeTab('/missing'); // no-op
+    expect(ver()).toBe(1);
+    useEditorStore.getState().closeTab('/b.md'); // 真删
+    expect(ver()).toBe(2);
+  });
+
+  it('markSaved 改 dirty → bump;reloadFromDisk / switchTab → 不 bump', () => {
+    useEditorStore.setState({
+      tabs: [makeTab({ id: '/a.md', content: 'edited', originalContent: 'orig', dirty: true })],
+      activeTabId: '/a.md',
+      chromeVersion: 0,
+    });
+    useEditorStore.getState().markSaved('/a.md', 'edited'); // dirty true→false
+    expect(ver()).toBe(1);
+    // reloadFromDisk(非脏 tab,只换 content)→ chrome 不变
+    useEditorStore.getState().reloadFromDisk('/a.md', 'external');
+    expect(ver()).toBe(1);
+    useEditorStore.getState().switchTab('/a.md');
+    expect(ver()).toBe(1);
   });
 });
