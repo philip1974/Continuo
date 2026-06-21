@@ -474,11 +474,15 @@ export function computeMilkdownUnsafe(
   return isMarkdownFilePath(filePath) && isMilkdownUnsafe(content);
 }
 
+// 性能 P4/P5:tab 是否 milkdown-unsafe 的**单一读取口径**。优先读派生缓存,缺省
+// (旧构造 / 未迁移路径)回退现场计算 —— 与历史逐字节等价。getEffectiveMode 与
+// EditorPanel 都经此读,避免任一处直接对 content 重跑未锚定 wiki-link 正则。
+export function isTabMilkdownUnsafe(tab: EditorTab | null): boolean {
+  if (!tab) return false;
+  return tab.milkdownUnsafe ?? computeMilkdownUnsafe(tab.filePath, tab.content);
+}
+
 export function getEffectiveMode(tab: EditorTab | null): EditorMode {
   const requestedMode = useEditorStore.getState().mode;
-  if (!tab) return requestedMode;
-  // 读派生缓存;缺省(旧构造 / 未迁移路径)回退现场计算 —— 与历史逐字节等价。
-  const unsafe =
-    tab.milkdownUnsafe ?? computeMilkdownUnsafe(tab.filePath, tab.content);
-  return unsafe ? 'source' : requestedMode;
+  return isTabMilkdownUnsafe(tab) ? 'source' : requestedMode;
 }

@@ -43,3 +43,13 @@
 **修复**:`milkdownUnsafe` 作为 tab 派生字段(`isMarkdownFilePath(filePath) && isMilkdownUnsafe(content)`),在 **content/filePath 任一变更**的 5 个入口算一次:createTab / updateContent / reloadFromDisk / setFilePath / getStateAfterRenamingPath(markSaved 不改 content 用 `...cur` 保留)。`getEffectiveMode` 改读缓存字段,**缺省回退现场计算**(行为逐字节等价,不破坏旧构造)。非 markdown 文件短路为 false 不扫描(保持原 0 扫描)。每按键全文扫描 3 → 1(updateContent 内一次)。
 
 **契约不变量**(`editor-store.spec.ts`:createTab 派生值正确 / updateContent 重算不 stale;neutralize:去 updateContent 重算 → freshness 测试 FAIL)。
+
+## P5 — EditorPanel 复用 milkdownUnsafe 缓存(去 P4 残留重扫)
+
+**位置**:`src/panels/Editor/EditorPanel.tsx` `unsafeMarkdown`;新 accessor `editor.store.ts` `isTabMilkdownUnsafe()`。
+
+**问题**:P4 缓存了 `EditorTab.milkdownUnsafe` 且 `getEffectiveMode` 读缓存,但 `EditorPanel` 仍直接 `isMilkdownUnsafe(activeTab.content)` 算 `unsafeMarkdown` → Markdown 每按键仍 = updateContent 1 次 + render 1 次 = **2 次** O(file) 扫描,而非预期 1 次。
+
+**修复**:抽统一读取口径 `isTabMilkdownUnsafe(tab)`(cache-or-compute,getEffectiveMode 与 EditorPanel 共用单一来源);`unsafeMarkdown = isTabMilkdownUnsafe(activeTab)`(与旧 `activeIsMarkdown && isMilkdownUnsafe(content)` 逐字节等价,因 computeMilkdownUnsafe 同公式)。删 EditorPanel 内 `activeIsMarkdown` + `isMilkdownUnsafe` import。每按键扫描 2 → 1。
+
+**契约不变量**(`editor-store.spec.ts`:isTabMilkdownUnsafe 优先读缓存 / 缺省回退现场计算 / null→false)。

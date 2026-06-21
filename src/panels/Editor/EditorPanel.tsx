@@ -9,6 +9,7 @@
 import { useCallback, useState } from 'react';
 import {
   getEffectiveMode,
+  isTabMilkdownUnsafe,
   useEditorStore,
   type EditorMode,
 } from '@/stores/editor.store';
@@ -27,7 +28,6 @@ import { useAutoSave, isAutoSaveEnabled } from './useAutoSave';
 import { useEditorFile } from './useEditorFile';
 import { useExternalFileSync } from './useExternalFileSync';
 import { resolveLink } from './link-resolve';
-import { isMilkdownUnsafe } from './milkdown-roundtrip-safety';
 import { useSettingValue } from '@/plugins/settings/values-store';
 import { coApi } from '@/lib/co-api';
 import { notify } from '@/notifications/notify';
@@ -67,9 +67,9 @@ export function EditorPanel() {
   const updateContent = useEditorStore((s) => s.updateContent);
   const closeTab = useEditorStore((s) => s.closeTab);
   const effective = getEffectiveMode(activeTab);
-  const activeIsMarkdown = activeTab ? isMarkdownPath(activeTab.filePath) : false;
-  const unsafeMarkdown =
-    activeIsMarkdown && activeTab !== null && isMilkdownUnsafe(activeTab.content);
+  // perf P5:复用派生缓存(isTabMilkdownUnsafe 内部 cache-or-compute),不再在 render
+  // 里对全文重跑 isMilkdownUnsafe —— 否则每按键 = updateContent 1 次 + 此处 1 次。
+  const unsafeMarkdown = isTabMilkdownUnsafe(activeTab);
   const forcedSource = unsafeMarkdown && effective !== mode;
 
   const { saveActive, saveTab, openFileByPath } = useEditorFile();

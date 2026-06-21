@@ -6,6 +6,7 @@ import {
   getStateAfterClosingTabsOutsideRoot,
   getStateAfterRemovingPath,
   getStateAfterRenamingPath,
+  isTabMilkdownUnsafe,
   useEditorStore,
   type EditorTab,
 } from '../../stores/editor.store';
@@ -54,6 +55,24 @@ describe('createTab', () => {
     expect(createTab('/x/a.md', 'plain text').milkdownUnsafe).toBe(false);
     // 非 markdown(即便含 wiki 样式)→ false(短路不扫描)
     expect(createTab('/x/a.ts', 'arr[[0]]').milkdownUnsafe).toBe(false);
+  });
+
+  it('perf P5 · isTabMilkdownUnsafe 优先读缓存,缺省回退现场计算', () => {
+    expect(isTabMilkdownUnsafe(null)).toBe(false);
+    // 缓存存在 → 直接读(即便与 content 不一致也信缓存,证明走的是缓存路径)
+    const cached = makeTab({
+      filePath: '/x/a.md',
+      content: 'see [[Note]]', // 实际 unsafe
+      milkdownUnsafe: false, // 但缓存说 false
+    });
+    expect(isTabMilkdownUnsafe(cached)).toBe(false);
+    // 缓存缺省(undefined)→ 回退现场算 content
+    const uncached = makeTab({
+      filePath: '/x/a.md',
+      content: 'see [[Note]]',
+      milkdownUnsafe: undefined,
+    });
+    expect(isTabMilkdownUnsafe(uncached)).toBe(true);
   });
 
   it('无 filePath → id 以 untitled- 开头', () => {
