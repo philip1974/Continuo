@@ -42,6 +42,12 @@ const LOCALHOST_ADDRS: ReadonlySet<string> = new Set([
 
 export interface McpCallCtx {
   readonly ownerWindowId: number;
+  /**
+   * 安全 S3:MCP 调用方身份(HTTP=bearer token,stdio=每连接 subject)。读/写/杀类
+   * 工具据此校验目标会话是否由本调用方创建(session.controllerToken === callerSubject)。
+   * undefined/null(内部/单测直接构造 ctx)→ 不持任何 capability,被 capability 校验拒绝。
+   */
+  readonly callerSubject?: string | null;
 }
 
 export interface McpRevokers {
@@ -597,7 +603,8 @@ export async function createMcpHost(
       if (!token) return null;
       const wid = windowTokens.get(token);
       if (typeof wid !== 'number') return null;
-      return { ownerWindowId: wid };
+      // 安全 S3:bearer token 即调用方身份(callerSubject),供 capability 校验用。
+      return { ownerWindowId: wid, callerSubject: token };
     },
     tools,
     serverInfo,

@@ -35,6 +35,10 @@ import {
 } from '../shared/window-channels';
 import { NOTIFY_CHANNELS } from '../shared/notify-channels';
 import {
+  MARKETPLACE_CHANNELS,
+  type FetchReviewsResult,
+} from '../shared/marketplace-channels';
+import {
   I18N_CHANNELS,
   type I18nSetLocaleResult,
   type I18nChangedPayload,
@@ -311,6 +315,15 @@ const api = {
      */
     openExternal: (url: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(SHELL_CHANNELS.OPEN_EXTERNAL, { url }),
+  },
+  marketplace: {
+    /**
+     * 安全 S4:拉 marketplace reviews。token + GitHub fetch 在 main(运行时
+     * GITHUB_TOKEN,绝不内联进 renderer);main 跑固定查询,返回聚合前 nodes。
+     * 无 token → { available:false, nodes:[] },renderer 降级 cache。
+     */
+    fetchReviews: (): Promise<IpcResult<FetchReviewsResult>> =>
+      ipcRenderer.invoke(MARKETPLACE_CHANNELS.FETCH_REVIEWS, {}),
   },
   window: {
     /**

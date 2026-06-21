@@ -160,6 +160,10 @@ export function makeCreateHandler(deps?: {
   return async (
     input: CreateInput,
     win: BrowserWindow,
+    // 安全 S3:仅 MCP create_session 路径传 controllerToken(=调用方 ctx.callerSubject),
+    // 把会话归属到该调用方;IPC 路径(renderer Cmd+T)不传 → user 终端不盖 controllerToken,
+    // 任何 MCP 调用方都无权读控。renderer 不能经 createInputSchema 伪造此字段。
+    opts?: { controllerToken?: string },
   ): Promise<{ id: string; cwd?: string; title?: string }> => {
     const shell = input.shell ?? getDefaultShell();
     if (!isAllowedShell(shell)) {
@@ -198,6 +202,9 @@ export function makeCreateHandler(deps?: {
       ...(input.scoped !== undefined ? { scoped: input.scoped } : {}),
       ...(input.attachTarget !== undefined ? { attachTarget: input.attachTarget } : {}),
       ...(input.workspaceRoot !== undefined ? { workspaceRoot: input.workspaceRoot } : {}),
+      ...(opts?.controllerToken !== undefined
+        ? { controllerToken: opts.controllerToken }
+        : {}),
     });
     // mcpToken 通过 meta 透传给 terminal.service.createTerminal, PTY exit cleanup 时 revoke
     try {

@@ -1,19 +1,22 @@
 // @vitest-environment jsdom
+// 安全 S4:token + GitHub fetch 已移到 main(IPC)。renderer 只 mock
+// coApi.marketplace.fetchReviews(返 IpcResult<FetchReviewsResult>),验证 parse/aggregate
+// /cache/降级逻辑。renderer 再无 VITE_GITHUB_TOKEN / 直连 fetch。
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
-vi.mock('../../plugins/sandbox-sweep', () => ({
-  getCachedFetch: () => globalThis.fetch,
-  getCachedClipboard: () => ({
-    readText: () => Promise.resolve(''),
-    writeText: () => Promise.resolve(),
-  }),
-  sandboxSweep: () => {},
+const fetchReviewsMock = vi.hoisted(() => vi.fn());
+vi.mock('../../lib/co-api', () => ({
+  coApi: { marketplace: { fetchReviews: fetchReviewsMock } },
 }));
 
 import {
   _resetReviewsCacheForTest,
   fetchAllReviews,
 } from '../../marketplace/reviews-fetcher';
+import type {
+  FetchReviewsResult,
+  MarketplaceReviewNode,
+} from '../../../electron/shared/marketplace-channels';
 
 const AUTHOR = {
   login: 'alice',
@@ -33,79 +36,45 @@ ${'★'.repeat(rating)} ${rating}
 
 very nice plugin`;
 
-interface PageNode {
-  title: string;
-  body: string;
-  url: string;
-  createdAt: string;
-  author: typeof AUTHOR | null;
-  reactions: { totalCount: number };
-}
-
-function graphqlPage(
-  nodes: PageNode[],
-  hasNextPage: boolean,
-  endCursor: string | null,
-) {
-  return {
-    data: {
-      repository: {
-        discussions: {
-          nodes,
-          pageInfo: { hasNextPage, endCursor },
-        },
-      },
-    },
-  };
-}
-
-function makeNode(pid: string, rating: number, createdAt: string): PageNode {
+function makeNode(
+  pid: string,
+  rating: number,
+  createdAt: string,
+): MarketplaceReviewNode {
   return {
     title: `[${pid}] ok`,
     body: TEMPLATE_BODY(pid, rating),
     url: `https://gh/${pid}`,
     createdAt,
     author: AUTHOR,
-    reactions: { totalCount: 0 },
+    thumbsUp: 0,
   };
 }
 
-const STUB_TOKEN = 'ghp_test';
+/** mock IPC 成功返回 nodes(available:true). */
+function okNodes(nodes: MarketplaceReviewNode[]) {
+  const data: FetchReviewsResult = { available: true, nodes };
+  fetchReviewsMock.mockResolvedValue({ ok: true, data });
+}
 
 beforeEach(() => {
   _resetReviewsCacheForTest();
   sessionStorage.clear();
-  vi.stubEnv('VITE_GITHUB_TOKEN', STUB_TOKEN);
+  fetchReviewsMock.mockReset();
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
-  vi.unstubAllEnvs();
   _resetReviewsCacheForTest();
 });
 
-function mockJson(payload: unknown, status = 200) {
-  return vi.spyOn(globalThis, 'fetch').mockImplementation(
-    async () =>
-      new Response(JSON.stringify(payload), {
-        status,
-      }),
-  );
-}
-
 describe('fetchAllReviews — 正路径', () => {
-  it('单页 → 按 pluginId 聚合,avg 算术平均', async () => {
-    mockJson(
-      graphqlPage(
-        [
-          makeNode('com.foo', 5, '2026-05-05T00:00:00Z'),
-          makeNode('com.foo', 3, '2026-05-04T00:00:00Z'),
-          makeNode('com.bar', 4, '2026-05-03T00:00:00Z'),
-        ],
-        false,
-        null,
-      ),
-    );
+  it('多 node → 按 pluginId 聚合,avg 算术平均', async () => {
+    okNodes([
+      makeNode('com.foo', 5, '2026-05-05T00:00:00Z'),
+      makeNode('com.foo', 3, '2026-05-04T00:00:00Z'),
+      makeNode('com.bar', 4, '2026-05-03T00:00:00Z'),
+    ]);
 
     const map = await fetchAllReviews();
     expect(map.get('com.foo')?.count).toBe(2);
@@ -114,98 +83,69 @@ describe('fetchAllReviews — 正路径', () => {
     expect(map.get('com.bar')?.avg).toBe(4);
   });
 
-  it('翻页:hasNextPage=true → 用 endCursor 继续', async () => {
-    const fetchSpy = vi
-      .spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify(
-            graphqlPage(
-              [makeNode('com.a', 5, '2026-05-05T00:00:00Z')],
-              true,
-              'cursor-1',
-            ),
-          ),
-          { status: 200 },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify(
-            graphqlPage(
-              [makeNode('com.a', 4, '2026-05-04T00:00:00Z')],
-              false,
-              null,
-            ),
-          ),
-          { status: 200 },
-        ),
-      );
-
+  it('main 返回的 nodes 已是全量(分页是 main 职责)→ renderer 一次聚合', async () => {
+    okNodes([
+      makeNode('com.a', 5, '2026-05-05T00:00:00Z'),
+      makeNode('com.a', 4, '2026-05-04T00:00:00Z'),
+    ]);
     const map = await fetchAllReviews();
     expect(map.get('com.a')?.count).toBe(2);
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
-
-    const secondCallBody = JSON.parse(
-      String(fetchSpy.mock.calls[1]![1]!.body),
-    );
-    expect(secondCallBody.variables.after).toBe('cursor-1');
+    expect(fetchReviewsMock).toHaveBeenCalledTimes(1);
   });
 
-  it('1h 内重复调 → 命中 memory cache,不再 fetch', async () => {
-    const f = mockJson(graphqlPage([makeNode('a', 5, 'now')], false, null));
+  it('1h 内重复调 → 命中 memory cache,不再 IPC', async () => {
+    okNodes([makeNode('a', 5, 'now')]);
     await fetchAllReviews();
     await fetchAllReviews();
-    expect(f).toHaveBeenCalledTimes(1);
+    expect(fetchReviewsMock).toHaveBeenCalledTimes(1);
   });
 
-  it('forceRefresh=true → 跳 cache 重 fetch', async () => {
-    const f = mockJson(graphqlPage([makeNode('a', 5, 'now')], false, null));
+  it('forceRefresh=true → 跳 cache 重 IPC', async () => {
+    okNodes([makeNode('a', 5, 'now')]);
     await fetchAllReviews();
     await fetchAllReviews(true);
-    expect(f).toHaveBeenCalledTimes(2);
+    expect(fetchReviewsMock).toHaveBeenCalledTimes(2);
   });
 });
 
-describe('fetchAllReviews — token 缺失', () => {
-  it('无 token + 无 cache → 抛 NO_TOKEN', async () => {
-    vi.stubEnv('VITE_GITHUB_TOKEN', '');
+describe('fetchAllReviews — 无 token(main available:false)', () => {
+  it('available:false + 无 cache → 抛 NO_TOKEN', async () => {
+    fetchReviewsMock.mockResolvedValue({
+      ok: true,
+      data: { available: false, nodes: [] } satisfies FetchReviewsResult,
+    });
     await expect(fetchAllReviews()).rejects.toThrow(/NO_TOKEN/);
   });
 
-  it('无 token + 有 cache → 返 cache 不抛', async () => {
-    // 先有 token 填一次 cache
-    mockJson(graphqlPage([makeNode('a', 5, 'now')], false, null));
+  it('available:false + 有 cache → 返 cache 不抛', async () => {
+    okNodes([makeNode('a', 5, 'now')]);
     await fetchAllReviews();
 
-    // 切断 token + cache 仍在
-    vi.stubEnv('VITE_GITHUB_TOKEN', '');
-    const map = await fetchAllReviews();
+    fetchReviewsMock.mockResolvedValue({
+      ok: true,
+      data: { available: false, nodes: [] } satisfies FetchReviewsResult,
+    });
+    const map = await fetchAllReviews(true);
     expect(map.get('a')?.count).toBe(1);
   });
 });
 
 describe('fetchAllReviews — 错误处理', () => {
-  it('GraphQL errors 非空 → 抛', async () => {
-    mockJson({
-      errors: [{ message: 'rate limited' }, { message: 'auth' }],
+  it('IPC ok:false + 无 cache → 抛 message', async () => {
+    fetchReviewsMock.mockResolvedValue({
+      ok: false,
+      code: 'IPC_HANDLER_ERROR',
+      message: 'HTTP 503',
     });
-    await expect(fetchAllReviews()).rejects.toThrow(
-      /GraphQL: rate limited; auth/,
-    );
-  });
-
-  it('HTTP 非 2xx → 抛', async () => {
-    mockJson({}, 503);
     await expect(fetchAllReviews()).rejects.toThrow(/HTTP 503/);
   });
 
-  it('网络失败 + 有 cache → console.warn + 返 cache', async () => {
-    mockJson(graphqlPage([makeNode('a', 5, 'now')], false, null));
+  it('IPC reject + 有 cache → console.warn + 返 cache', async () => {
+    okNodes([makeNode('a', 5, 'now')]);
     await fetchAllReviews();
 
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'));
+    fetchReviewsMock.mockRejectedValue(new Error('offline'));
     const map = await fetchAllReviews(true);
 
     expect(map.get('a')?.count).toBe(1);
@@ -215,32 +155,26 @@ describe('fetchAllReviews — 错误处理', () => {
     );
   });
 
-  it('网络失败 + 无 cache → 透传抛', async () => {
-    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'));
+  it('IPC reject + 无 cache → 透传抛', async () => {
+    fetchReviewsMock.mockRejectedValue(new Error('offline'));
     await expect(fetchAllReviews()).rejects.toThrow(/offline/);
   });
 });
 
 describe('fetchAllReviews — sessionStorage hydrate', () => {
-  it('memory 空但 sessionStorage 新鲜 → 直接命中,不 fetch', async () => {
+  it('memory 空但 sessionStorage 新鲜 → 直接命中,不 IPC', async () => {
     sessionStorage.setItem(
       'continuo:marketplace:reviews',
       JSON.stringify({
         fetchedAt: Date.now(),
         byPid: {
-          'a': {
-            pluginId: 'a',
-            count: 1,
-            avg: 4,
-            reviews: [],
-          },
+          a: { pluginId: 'a', count: 1, avg: 4, reviews: [] },
         },
       }),
     );
 
-    const f = mockJson({});
     const map = await fetchAllReviews();
     expect(map.get('a')?.avg).toBe(4);
-    expect(f).not.toHaveBeenCalled();
+    expect(fetchReviewsMock).not.toHaveBeenCalled();
   });
 });

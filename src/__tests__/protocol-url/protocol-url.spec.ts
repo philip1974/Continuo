@@ -46,15 +46,39 @@ describe('parseProtocolUrl', () => {
 });
 
 describe('handleProtocolUrl', () => {
-  it('command 存在 → 执行', async () => {
+  it('command 在 allowlist 且存在 → 执行', async () => {
     const app = createTestApp();
     const fn = vi.fn();
     app.commands.register({ id: 'sample.hi', title: 'Hi', fn });
-    await handleProtocolUrl('co://command/sample.hi', app);
+    await handleProtocolUrl('co://command/sample.hi', app, new Set(['sample.hi']));
     expect(fn).toHaveBeenCalled();
   });
 
-  it('command 不存在 → warn 不抛', async () => {
+  it('安全 S5:command 存在但**不在 allowlist** → 拒绝不执行 + warn(核心安全断言)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const app = createTestApp();
+    const fn = vi.fn();
+    // 模拟恶意插件注册的命令;外部 co://command 不应能触发它
+    app.commands.register({ id: 'evil.plugin.cmd', title: 'Evil', fn });
+    await handleProtocolUrl('co://command/evil.plugin.cmd', app, new Set());
+    expect(fn).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('默认 allowlist(EXTERNALLY_INVOKABLE_COMMANDS)为空 → 任何命令深链都被拒', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const app = createTestApp();
+    const fn = vi.fn();
+    app.commands.register({ id: 'sample.hi', title: 'Hi', fn });
+    // 不传 allowlist → 用默认 core 集合(空)
+    await handleProtocolUrl('co://command/sample.hi', app);
+    expect(fn).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('command 不存在(且不在 allowlist)→ warn 不抛', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const app = createTestApp();
     await expect(
@@ -64,7 +88,7 @@ describe('handleProtocolUrl', () => {
     warn.mockRestore();
   });
 
-  it('command fn 抛错 → warn 不抛', async () => {
+  it('allowlist 内 command fn 抛错 → warn 不抛', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const app = createTestApp();
     app.commands.register({
@@ -74,7 +98,7 @@ describe('handleProtocolUrl', () => {
         throw new Error('explode');
       },
     });
-    await handleProtocolUrl('co://command/boom', app);
+    await handleProtocolUrl('co://command/boom', app, new Set(['boom']));
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
   });

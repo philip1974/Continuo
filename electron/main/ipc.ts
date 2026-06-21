@@ -19,6 +19,7 @@ import { registerPluginsIpc } from './ipc/plugins.ipc';
 import { registerShellIpc } from './ipc/shell.ipc';
 import { registerWindowIpc } from './ipc/window.ipc';
 import { registerI18nIpc } from './ipc/i18n.ipc';
+import { registerMarketplaceIpc } from './ipc/marketplace.ipc';
 import {
   registerPluginFsIpc,
   type PluginFsIpcHandles,
@@ -163,6 +164,9 @@ export function registerIpc(): { pluginFsHandles: PluginFsIpcHandles } {
 
   // plugin app.shell.exec 后端(v5 Phase 4+)
   registerShellIpc();
+
+  // 安全 S4:marketplace reviews 拉取(token 在 main,不内联进 renderer)
+  registerMarketplaceIpc();
 
   // plugin app.fs path-scoped backend(topic 01)
   const pluginFsHandles = registerPluginFsIpc({ ipcMain });

@@ -206,6 +206,12 @@ export const zh: Record<TranslationKey, string> = {
 
   // permissions.*
   'permissions.agent.terminal_create_session': '新建一个 terminal',
+  'permissions.agent.terminal_list_sessions': '列出你的终端会话',
+  'permissions.agent.terminal_read_output': '读取某个终端的输出',
+  'permissions.agent.terminal_send_input': '向某个终端发送输入',
+  'permissions.agent.terminal_send_text': '向某个终端输入文本',
+  'permissions.agent.terminal_press_key': '在某个终端按键',
+  'permissions.agent.terminal_kill': '终止某个终端',
   'permissions.agent.generic': '调用 {method}',
   'permissions.agent.title': 'Agent 请求控制内置终端',
   'permissions.agent.body_prefix': '外部 agent',

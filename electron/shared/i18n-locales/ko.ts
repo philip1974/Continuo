@@ -206,6 +206,12 @@ export const ko: Record<TranslationKey, string> = {
 
   // permissions.*
   'permissions.agent.terminal_create_session': '새 터미널 열기',
+  'permissions.agent.terminal_list_sessions': '터미널 세션 목록 보기',
+  'permissions.agent.terminal_read_output': '터미널 출력 읽기',
+  'permissions.agent.terminal_send_input': '터미널에 입력 보내기',
+  'permissions.agent.terminal_send_text': '터미널에 텍스트 입력',
+  'permissions.agent.terminal_press_key': '터미널에서 키 누르기',
+  'permissions.agent.terminal_kill': '터미널 종료',
   'permissions.agent.generic': '{method} 호출',
   'permissions.agent.title': '에이전트가 내장 터미널 제어를 요청합니다',
   'permissions.agent.body_prefix': '외부 에이전트',

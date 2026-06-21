@@ -20,15 +20,13 @@ describe('resolveLink — external scheme', () => {
       url: 'mailto:foo@bar.com',
     });
   });
-  it('file:// → external', () => {
-    expect(resolveLink('file:///etc/hosts', null)).toEqual({
-      kind: 'external',
-      url: 'file:///etc/hosts',
-    });
-  });
 });
 
 describe('resolveLink — 不安全 / 未知 scheme → null', () => {
+  it('安全 S6:file: scheme → null(不再当 external,避免经 OS openExternal 打开本地文件/UNC)', () => {
+    expect(resolveLink('file:///etc/hosts', null)).toBeNull();
+    expect(resolveLink('file://attacker/share', null)).toBeNull();
+  });
   it('javascript: → null', () => {
     expect(resolveLink('javascript:alert(1)', '/x.md')).toBeNull();
   });

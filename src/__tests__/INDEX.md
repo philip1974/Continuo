@@ -110,6 +110,10 @@
 - [`scope-correlator-cancel-by-sender.spec.ts`](./49-polish-bugfixes/scope-correlator-cancel-by-sender.spec.ts)
 - [`scope-grant-canonicalizes-path.spec.ts`](./49-polish-bugfixes/scope-grant-canonicalizes-path.spec.ts)
 - [`scoped-app-shell-stream-early-break.spec.ts`](./49-polish-bugfixes/scoped-app-shell-stream-early-break.spec.ts)
+- [`security-file-url-trust.spec.ts`](./49-polish-bugfixes/security-file-url-trust.spec.ts)
+- [`security-marketplace-token-main.spec.ts`](./49-polish-bugfixes/security-marketplace-token-main.spec.ts)
+- [`security-terminal-mcp-auth-gate.spec.ts`](./49-polish-bugfixes/security-terminal-mcp-auth-gate.spec.ts)
+- [`security-terminal-mcp-capability.spec.ts`](./49-polish-bugfixes/security-terminal-mcp-capability.spec.ts)
 - [`semver-prerelease-precedence.spec.ts`](./49-polish-bugfixes/semver-prerelease-precedence.spec.ts)
 - [`settings-cross-window-sync.spec.ts`](./49-polish-bugfixes/settings-cross-window-sync.spec.ts)
 - [`settings-search-lazy-subscribe.spec.tsx`](./49-polish-bugfixes/settings-search-lazy-subscribe.spec.tsx)
@@ -726,6 +730,10 @@
 ## [tab-icons(SettingTab icon 工厂集合)](./tab-icons/README.md)
 
 - [`tab-icons.spec.tsx`](./tab-icons/tab-icons.spec.tsx)
+
+## [terminal-buffer-capacity · 终端输出缓冲区容量](./terminal-buffer-capacity/README.md)
+
+- [`buffer-capacity.spec.ts`](./terminal-buffer-capacity/buffer-capacity.spec.ts)
 
 ## [terminal-drag-drop](./terminal-drag-drop/README.md)
 

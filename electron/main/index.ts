@@ -63,7 +63,11 @@ import {
   installStopHookForSession,
 } from './services/mcp-tools-hook-bridge';
 import { startPluginMcpIpc } from './ipc/plugin-mcp.ipc';
-import { defaultIsTrustedFrame } from './safe-handle';
+import {
+  defaultIsTrustedFrame,
+  isTrustedRendererFileUrl,
+  setTrustedRendererFile,
+} from './safe-handle';
 import { buildRendererQuery, stripSpikeQuery, spikeAllowed, installSpikeGate } from './spike-gate';
 import { buildCommonWebPreferences } from './continuo-meta-args';
 import { isPopoutUrl } from './popout-url';
@@ -179,10 +183,17 @@ function windowOpenHandler({ url }: HandlerDetails): WindowOpenHandlerResponse {
   let allow = false;
   try {
     const target = new URL(url);
-    const rendererOrigin = isDev
-      ? new URL(process.env['ELECTRON_RENDERER_URL'] ?? '').origin
-      : 'file://';
-    allow = target.origin === rendererOrigin || target.protocol === 'file:';
+    // 安全 S1:dev 走 renderer origin;prod 只允许指向真实 renderer 入口 index.html
+    // 的 file URL(精确 pathname),不再放行任意 file://(否则恶意 file:// 弹窗会被注入
+    // 全量 preload → 越权 IPC)。
+    if (isDev) {
+      const rendererOrigin = new URL(
+        process.env['ELECTRON_RENDERER_URL'] ?? '',
+      ).origin;
+      allow = target.origin === rendererOrigin;
+    } else {
+      allow = isTrustedRendererFileUrl(url);
+    }
   } catch {
     /* malformed URL → fall through to deny */
   }
@@ -557,7 +568,15 @@ async function createSessionForAgent(
       code: ERROR_CODES.TERMINAL_NO_WINDOW,
     });
   }
-  const r = await ptyCreateHandler(input, win);
+  // 安全 S3:把新会话归属到发起 create 的 MCP 调用方(ctx.callerSubject)。后续
+  // read/send/kill 仅该调用方(同一 token / 同一 stdio 连接)可操作该会话。
+  const r = await ptyCreateHandler(
+    input,
+    win,
+    typeof ctx.callerSubject === 'string'
+      ? { controllerToken: ctx.callerSubject }
+      : undefined,
+  );
   // P3 autorun:spawn 后 delay 200ms(Win 600)等 shell prompt 出现,然后键入命令。
   // 不严格保证 prompt 已就绪 — 平台差异大,简单 timer 是最务实的近似。
   if (input.autorun) {
@@ -607,9 +626,10 @@ async function startMcpHost(): Promise<void> {
         sessionStore: terminalSessions,
         service: termService,
         getSessionOwner,
-        ensureAuthorized: (ownerWindowId?: number) =>
+        getSessionController: (id) => terminalSessions.getController(id),
+        ensureAuthorized: (ownerWindowId?: number, method?: string) =>
           requestAgentAuth({
-            method: 'terminal.create_session',
+            method: method ?? 'terminal.create_session',
             ...(ownerWindowId !== undefined ? { ownerWindowId } : {}),
           }),
         createSession: createSessionForAgent,
@@ -743,6 +763,11 @@ async function startMcpStdioServer(): Promise<void> {
 }
 
 app.whenReady().then(async () => {
+  // 安全 S1:在建任何窗口 / IPC 之前注册真实 renderer 入口,让 defaultIsTrustedFrame
+  // 与 windowOpenHandler 只信这个 file URL,拒绝任意 file:// 弹窗/frame 受信。放在
+  // whenReady(而非模块顶层)以免被仅 import index 的单测污染全局注册态。
+  setTrustedRendererFile(RENDERER_FILE);
+
   const userData = app.getPath('userData');
   const explorerFile = path.join(userData, 'explorer.json');
   const legacyLayoutFile = path.join(userData, 'layout.json');

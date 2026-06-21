@@ -16,11 +16,17 @@ import { isAllowedExternalUrl } from '../../../electron/main/services/shell.serv
 const ROOT = join(__dirname, '..', '..', '..');
 
 describe('topic49 6thS · external URL scheme whitelist', () => {
-  it('放行 http/https/mailto/file', () => {
+  it('放行 http/https/mailto', () => {
     expect(isAllowedExternalUrl('https://github.com/x/y')).toBe(true);
     expect(isAllowedExternalUrl('http://example.com')).toBe(true);
     expect(isAllowedExternalUrl('mailto:a@b.com')).toBe(true);
-    expect(isAllowedExternalUrl('file:///etc/hosts')).toBe(true);
+  });
+
+  it('安全 S6:拒绝 file:(含 UNC)—— 远程不受信数据(marketplace authorUrl 等)不得经 OS 打开本地文件', () => {
+    expect(isAllowedExternalUrl('file:///etc/hosts')).toBe(false);
+    expect(isAllowedExternalUrl('file:///Applications/Calculator.app')).toBe(false);
+    expect(isAllowedExternalUrl('file://attacker/share')).toBe(false); // Windows UNC 外连
+    expect(isAllowedExternalUrl('FILE:///etc/passwd')).toBe(false); // 大小写
   });
 
   it('拒绝非 http(s) 协议(投放面)', () => {

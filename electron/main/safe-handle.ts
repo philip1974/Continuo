@@ -1,8 +1,50 @@
 import { ipcMain } from 'electron';
 import type { IpcMainInvokeEvent, WebFrameMain } from 'electron';
+import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
 import type { IpcResult } from '../shared/ipc-result';
 import { IPC_ERR } from '../shared/ipc-result';
+
+// ── 安全 S1:受信 renderer 入口 file URL 收紧 ──────────────────────────
+// 旧实现把**任意** file:// frame/弹窗当作受信并注入 preload。攻击:renderer 内代码
+// (如恶意插件)写一个 evil.html 到磁盘再 window.open('file:///.../evil.html'),新窗
+// 拿到全量 Continuo preload + 被 defaultIsTrustedFrame 信任 → 越权 fs/shell IPC,绕过
+// 插件权限模型。改为只信**真实 renderer 入口 index.html** 的 file URL(精确 pathname
+// 比对,忽略 query/hash)。index.ts 启动时 setTrustedRendererFile(RENDERER_FILE) 注册。
+let trustedRendererPathname: string | null = null;
+
+/** index.ts 启动时注入真实 renderer 入口绝对路径(prod). */
+export function setTrustedRendererFile(absPath: string): void {
+  try {
+    trustedRendererPathname = decodeURIComponent(
+      pathToFileURL(absPath).pathname,
+    );
+  } catch {
+    trustedRendererPathname = null;
+  }
+}
+
+/** 单测重置,避免跨用例串注册态. */
+export function _resetTrustedRendererFileForTest(): void {
+  trustedRendererPathname = null;
+}
+
+/**
+ * file:// URL 是否指向受信 renderer 入口。**未注册**(单测 / 极早期)退回宽松(任意
+ * file://);**已注册**(prod,index.ts 启动即注册)严格:pathname 必须精确等于入口
+ * index.html 的 pathname。攻击者写的 `file:///tmp/evil.html` / 插件目录下任意 html
+ * 都不匹配 → 拒。
+ */
+export function isTrustedRendererFileUrl(url: string): boolean {
+  if (trustedRendererPathname === null) return url.startsWith('file://');
+  try {
+    const u = new URL(url);
+    if (u.protocol !== 'file:') return false;
+    return decodeURIComponent(u.pathname) === trustedRendererPathname;
+  } catch {
+    return false;
+  }
+}
 
 // 测试与生产共享的 frame 形状。生产环境是 Electron WebFrameMain,
 // 单测里只 mock { url } 即可,不引 electron 类型负担。
@@ -77,7 +119,8 @@ export function safeHandle<I, O>(
  */
 export function defaultIsTrustedFrame(frame: FrameLike): boolean {
   if (!frame || !frame.url) return false;
-  if (frame.url.startsWith('file://')) return true;
+  // 安全 S1:只信真实 renderer 入口 file URL(prod 注册后严格),不再信任意 file://。
+  if (isTrustedRendererFileUrl(frame.url)) return true;
 
   const expected = process.env['ELECTRON_RENDERER_URL'];
   if (!expected) return false;

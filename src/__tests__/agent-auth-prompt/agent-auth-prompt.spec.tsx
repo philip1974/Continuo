@@ -74,10 +74,11 @@ describe('AgentAuthPrompt — 渲染条件', () => {
     installApi({ onRequest: vi.fn(() => () => {}), respond: vi.fn() });
     render(<AgentAuthPrompt />);
     act(() => {
-      void useAgentAuthStore.getState().ensure({ method: 'terminal.kill' });
+      // 安全 S2 后 terminal.* 全部有专属标签;用插件自定义 method 测 generic fallback。
+      void useAgentAuthStore.getState().ensure({ method: 'plugin.custom_tool' });
     });
     const modal = document.querySelector('.wm-modal-content')!;
-    expect(modal.textContent).toContain('调用 terminal.kill');
+    expect(modal.textContent).toContain('调用 plugin.custom_tool');
   });
 });
 

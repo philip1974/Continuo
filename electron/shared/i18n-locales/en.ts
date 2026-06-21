@@ -213,6 +213,12 @@ export const en = {
 
   // permissions.* (3)
   'permissions.agent.terminal_create_session': 'open a new terminal',
+  'permissions.agent.terminal_list_sessions': 'list your terminal sessions',
+  'permissions.agent.terminal_read_output': "read a terminal's output",
+  'permissions.agent.terminal_send_input': 'send input to a terminal',
+  'permissions.agent.terminal_send_text': 'type text into a terminal',
+  'permissions.agent.terminal_press_key': 'press a key in a terminal',
+  'permissions.agent.terminal_kill': 'terminate a terminal',
   'permissions.agent.generic': 'call {method}',
   'permissions.agent.title': 'Agent requests built-in terminal access',
   'permissions.agent.body_prefix': 'External agent',

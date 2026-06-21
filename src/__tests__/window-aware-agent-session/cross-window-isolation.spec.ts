@@ -36,6 +36,8 @@ function makeTools(store: ReturnType<typeof makeFakeStore>) {
       readOutput: vi.fn(async () => ({ lines: [], nextSeq: 0, truncated: false })),
     } as never,
     getSessionOwner: (id: string) => store.sessions.get(id)?.ownerWindowId ?? null,
+    // 安全 S3:capability dep。本用例只测 list(无 capability)→ null。
+    getSessionController: () => null,
     ensureAuthorized: vi.fn(async () => 'once' as const),
     createSession: vi.fn(async () => ({ id: 'never' })),
   });
@@ -66,13 +68,14 @@ describe('window-aware cross-window terminal isolation (high-level AC)', () => {
     });
   });
 
-  it('AC1 - list_sessions returns only caller window sessions', () => {
+  it('AC1 - list_sessions returns only caller window sessions', async () => {
     const tools = makeTools(store);
     const listTool = tools.find((t) => t.name === 'terminal.list_sessions');
     expect(listTool).toBeDefined();
 
     const ctx: McpCallCtx = { ownerWindowId: 10 };
-    const out = listTool!.run({} as never, ctx) as {
+    // 安全 S2:list 经 makeTerminalMcpTools 受授权门控包装,run 为 async。
+    const out = (await listTool!.run({} as never, ctx)) as {
       sessions: Array<{ session_id: string }>;
     };
 

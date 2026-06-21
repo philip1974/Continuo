@@ -9,6 +9,9 @@ dist-electron
 .cache
 .env
 .env.local
+# codex 协作 scratch(安全审计指令/反馈工作文件,非产物)
+.codex-security-task.md
+.codex-security-feedback.md
 *.tsbuildinfo
 coverage
 test-results

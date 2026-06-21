@@ -1,18 +1,21 @@
 // 评论拉取(doc/15 Phase 1)。
 //
-// GitHub GraphQL API 必须 auth(unauth 返 403)。VITE_GITHUB_TOKEN 环境变量
-// 注入只读 public_repo PAT;缺则 fetcher 不发请求,store 直接返空。
+// 安全 S4(codex 安全审计):token + GitHub GraphQL fetch 已移到 **main 进程**
+// (electron/main/services/marketplace-reviews.service.ts),token 走运行时 GITHUB_TOKEN
+// env,绝不内联进 renderer 产物。本文件(renderer)只经 IPC 拿聚合前的 discussion
+// nodes,做 parse/aggregate + sessionStorage 缓存,**接触不到 token**。
+//
+// 旧实现用 Vite 的 VITE_(GITHUB_TOKEN) 注入直连 GitHub —— Vite 会把 VITE_* 前缀变量
+// 内联进产物,任何 renderer 内插件 / 拿到打包应用的人都能提取该 token(已修)。
 //
 // 缓存:1h sessionStorage 同 marketplace index 模式。
 
-import { getCachedFetch } from '../plugins/sandbox-sweep';
+import { coApi } from '../lib/co-api';
 import { parseReview } from './reviews-parser';
 import type { PluginAggregateRating, Review } from './reviews-types';
 
-const GRAPHQL_URL = 'https://api.github.com/graphql';
 const CACHE_TTL_MS = 60 * 60 * 1000;
 const CACHE_KEY = 'continuo:marketplace:reviews';
-const PAGE_SIZE = 100;
 
 interface CachedReviews {
   readonly fetchedAt: number;
@@ -20,48 +23,6 @@ interface CachedReviews {
 }
 
 let memoryCache: CachedReviews | null = null;
-
-const QUERY = `
-query Reviews($owner: String!, $name: String!, $first: Int!, $after: String) {
-  repository(owner: $owner, name: $name) {
-    discussions(first: $first, after: $after, orderBy: {field: CREATED_AT, direction: DESC}) {
-      nodes {
-        title body url createdAt
-        author {
-          login avatarUrl
-          ... on User { createdAt }
-        }
-        reactions(content: THUMBS_UP) { totalCount }
-      }
-      pageInfo { hasNextPage endCursor }
-    }
-  }
-}`.trim();
-
-interface GraphqlNode {
-  readonly title: string;
-  readonly body: string;
-  readonly url: string;
-  readonly createdAt: string;
-  readonly author: {
-    readonly login: string;
-    readonly avatarUrl: string;
-    readonly createdAt?: string;
-  } | null;
-  readonly reactions: { readonly totalCount: number };
-}
-
-interface GraphqlResp {
-  readonly data?: {
-    readonly repository?: {
-      readonly discussions?: {
-        readonly nodes: readonly GraphqlNode[];
-        readonly pageInfo: { readonly hasNextPage: boolean; readonly endCursor: string | null };
-      };
-    };
-  };
-  readonly errors?: readonly { readonly message: string }[];
-}
 
 function readSessionCache(): CachedReviews | null {
   try {
@@ -83,18 +44,13 @@ function writeSessionCache(cache: CachedReviews): void {
   }
 }
 
-function getToken(): string | null {
-  // Vite renderer 暴露的 env;dev 走 .env.local,prod 走打包时注入
-  const t = (import.meta.env.VITE_GITHUB_TOKEN as string | undefined) ?? '';
-  return t.length > 0 ? t : null;
-}
-
 /**
- * 拉所有 reviews,按 plugin id 聚合。
+ * 拉所有 reviews,按 plugin id 聚合。token + 网络在 main(IPC)。
  *
- * - 无 token / cache 新鲜 → 走 cache(无 token 也至少返之前缓存的)
- * - 网络失败 → 退守 cache;无 cache 抛
- * - forceRefresh → 跳 cache 强拉(token 必须有,否则抛 NO_TOKEN)
+ * - cache 新鲜 且非 force → 走 cache
+ * - main 无 GITHUB_TOKEN(available:false)→ 有 cache 返 cache,否则抛 NO_TOKEN
+ * - 网络/IPC 失败 → 退守 cache;无 cache 抛
+ * - forceRefresh → 跳 cache 强拉
  */
 export async function fetchAllReviews(
   forceRefresh = false,
@@ -108,75 +64,43 @@ export async function fetchAllReviews(
     return new Map(Object.entries(memoryCache.byPid));
   }
 
-  const token = getToken();
-  if (!token) {
-    if (memoryCache) return new Map(Object.entries(memoryCache.byPid));
-    throw new Error('NO_TOKEN: VITE_GITHUB_TOKEN 未配置');
-  }
-
+  let res: Awaited<ReturnType<typeof coApi.marketplace.fetchReviews>>;
   try {
-    const reviews = await fetchAllPages(token);
-    const byPid = aggregate(reviews);
-    const next: CachedReviews = {
-      fetchedAt: Date.now(),
-      byPid: Object.fromEntries(byPid),
-    };
-    memoryCache = next;
-    writeSessionCache(next);
-    return byPid;
+    res = await coApi.marketplace.fetchReviews();
   } catch (err) {
     if (memoryCache) {
-      console.warn('[reviews] fetch failed, falling back to cache', err);
+      console.warn('[reviews] IPC failed, falling back to cache', err);
       return new Map(Object.entries(memoryCache.byPid));
     }
     throw err;
   }
-}
 
-async function fetchAllPages(token: string): Promise<readonly Review[]> {
-  const out: Review[] = [];
-  let after: string | null = null;
-  let safety = 0;
-  while (safety++ < 50) {
-    const r = await getCachedFetch()(GRAPHQL_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-        'Accept': 'application/vnd.github+json',
-      },
-      body: JSON.stringify({
-        query: QUERY,
-        variables: {
-          owner: 'philip1974',
-          name: 'continuo-plugins',
-          first: PAGE_SIZE,
-          after,
-        },
-      }),
-    });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    const json = (await r.json()) as GraphqlResp;
-    if (json.errors && json.errors.length > 0) {
-      throw new Error(`GraphQL: ${json.errors.map((e) => e.message).join('; ')}`);
+  if (!res.ok) {
+    if (memoryCache) {
+      console.warn('[reviews] fetch failed, falling back to cache', res.message);
+      return new Map(Object.entries(memoryCache.byPid));
     }
-    const d = json.data?.repository?.discussions;
-    if (!d) break;
-    for (const node of d.nodes) {
-      const parsed = parseReview({
-        title: node.title,
-        body: node.body,
-        url: node.url,
-        createdAt: node.createdAt,
-        author: node.author,
-        thumbsUp: node.reactions.totalCount,
-      });
-      if (parsed) out.push(parsed);
-    }
-    if (!d.pageInfo.hasNextPage) break;
-    after = d.pageInfo.endCursor;
+    throw new Error(res.message);
   }
-  return out;
+
+  if (!res.data.available) {
+    if (memoryCache) return new Map(Object.entries(memoryCache.byPid));
+    throw new Error('NO_TOKEN: GITHUB_TOKEN 未在 main 配置');
+  }
+
+  const reviews: Review[] = [];
+  for (const node of res.data.nodes) {
+    const parsed = parseReview(node);
+    if (parsed) reviews.push(parsed);
+  }
+  const byPid = aggregate(reviews);
+  const next: CachedReviews = {
+    fetchedAt: Date.now(),
+    byPid: Object.fromEntries(byPid),
+  };
+  memoryCache = next;
+  writeSessionCache(next);
+  return byPid;
 }
 
 function aggregate(

@@ -54,6 +54,13 @@ export interface MainTerminalSession {
    * 主进程只存,不做过滤 — 渲染层决定 UI 可见性。
    */
   readonly workspaceRoot?: string;
+  /**
+   * 安全 S3(codex 安全审计):创建该会话的 MCP 调用方身份(HTTP=bearer token,
+   * stdio=每连接 subject)。读/写/杀类 MCP 工具只允许「在本窗口且该会话由调用方
+   * 创建」(controllerToken === ctx.callerSubject)。user 终端(Cmd+T,IPC 创建)
+   * 无 controllerToken → 任何 MCP 调用方都无权读控。随会话生命周期自动清理。
+   */
+  readonly controllerToken?: string;
 }
 
 export interface AddSessionInput {
@@ -66,6 +73,8 @@ export interface AddSessionInput {
   readonly ownerWindowId: number;
   readonly attachTarget?: AttachTarget;
   readonly workspaceRoot?: string;
+  /** 安全 S3:创建该会话的 MCP 调用方身份(见 MainTerminalSession.controllerToken). */
+  readonly controllerToken?: string;
 }
 
 export interface GetAllFilter {
@@ -134,6 +143,9 @@ export function add(input: AddSessionInput): void {
     ownerWindowId: input.ownerWindowId,
     ...(input.attachTarget !== undefined ? { attachTarget: input.attachTarget } : {}),
     ...(input.workspaceRoot !== undefined ? { workspaceRoot: input.workspaceRoot } : {}),
+    ...(input.controllerToken !== undefined
+      ? { controllerToken: input.controllerToken }
+      : {}),
   };
   sessions.set(input.id, session);
   notify();
@@ -141,6 +153,11 @@ export function add(input: AddSessionInput): void {
 
 export function get(id: string): MainTerminalSession | undefined {
   return sessions.get(id);
+}
+
+/** 安全 S3:会话的创建方 MCP 身份(controllerToken),不存在/未由 MCP 创建 → null. */
+export function getController(id: string): string | null {
+  return sessions.get(id)?.controllerToken ?? null;
 }
 
 export function getAll(filter?: GetAllFilter): readonly MainTerminalSession[] {

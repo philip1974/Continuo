@@ -61,6 +61,8 @@ function makeDeps(store: ReturnType<typeof makeFakeStore>) {
       readOutput: vi.fn(async () => ({ lines: ['ok'], nextSeq: 1, truncated: false })),
     } as never,
     getSessionOwner: (id: string) => store.sessions.get(id)?.ownerWindowId ?? null,
+    // 安全 S3:capability 校验 dep。这些用例无 MCP 创建的会话 → null。
+    getSessionController: () => null,
     ensureAuthorized: vi.fn(async () => 'once' as const),
     createSession: vi.fn(async () => ({ id: 'created' })),
   };
@@ -83,7 +85,9 @@ export function buildFactoryWithBrokenGetSessions(
 }
 
 describe('makeTerminalMcpTools ownership wiring', () => {
-  it('T1 - list_sessions ctx=10 returns only owner window sessions', () => {
+  // 安全 S2:list_sessions 经 makeTerminalMcpTools 后受 ensureAuthorized 门控
+  // 包装,run 变 async(deps.ensureAuthorized mock 返回 'once' → 放行)。
+  it('T1 - list_sessions ctx=10 returns only owner window sessions', async () => {
     const store = makeFakeStore();
     seedStore(store);
     const listTool = findTool(
@@ -91,14 +95,14 @@ describe('makeTerminalMcpTools ownership wiring', () => {
       'terminal.list_sessions',
     );
 
-    const out = listTool.run({} as never, { ownerWindowId: 10 }) as {
+    const out = (await listTool.run({} as never, { ownerWindowId: 10 })) as {
       sessions: Array<{ session_id: string }>;
     };
 
     expect(out.sessions.map((s) => s.session_id)).toEqual(['A-id']);
   });
 
-  it('T2 - list_sessions ctx=99 returns empty sessions', () => {
+  it('T2 - list_sessions ctx=99 returns empty sessions', async () => {
     const store = makeFakeStore();
     seedStore(store);
     const listTool = findTool(
@@ -106,7 +110,7 @@ describe('makeTerminalMcpTools ownership wiring', () => {
       'terminal.list_sessions',
     );
 
-    const out = listTool.run({} as never, { ownerWindowId: 99 }) as {
+    const out = (await listTool.run({} as never, { ownerWindowId: 99 })) as {
       sessions: Array<{ session_id: string }>;
     };
 

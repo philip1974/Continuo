@@ -11,6 +11,13 @@ import { useT, type TranslationKey } from '@/i18n';
 // method → i18n key 表（P2-1）；未知 method 走 generic('{method}') fallback
 const METHOD_LABEL_KEYS: Record<string, TranslationKey> = {
   'terminal.create_session': 'permissions.agent.terminal_create_session',
+  // 安全 S2:读/写/杀类工具也走授权门控,各自给清晰标签,帮用户识别异常访问。
+  'terminal.list_sessions': 'permissions.agent.terminal_list_sessions',
+  'terminal.read_output': 'permissions.agent.terminal_read_output',
+  'terminal.send_input': 'permissions.agent.terminal_send_input',
+  'terminal.send_text': 'permissions.agent.terminal_send_text',
+  'terminal.press_key': 'permissions.agent.terminal_press_key',
+  'terminal.kill': 'permissions.agent.terminal_kill',
 };
 
 export function AgentAuthPrompt() {

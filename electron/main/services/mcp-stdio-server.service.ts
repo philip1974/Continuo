@@ -17,6 +17,7 @@ import {
   type Socket,
 } from 'node:net';
 import { BrowserWindow } from 'electron';
+import * as crypto from 'node:crypto';
 import { mkdir, unlink, chmod, lstat, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { isPopoutUrl } from '../popout-url';
@@ -85,6 +86,20 @@ export function resolveStdioCallOwnerWindow(
 // ── socket server ──────────────────────────────────────────────
 
 const socketCtx: Map<Socket, number> = new Map();
+
+// 安全 S3:每个 stdio 连接一个稳定 subject(callerSubject)。Claude Code 的 proxy
+// 一次 spawn 长连接复用 → 同一连接的 create_session 与 read/send 共享 subject;
+// 不同连接(含恶意进程直连 mcp.sock,unix socket 0600 仅本用户但 postinstall 也是本
+// 用户)subject 不同 → 无法读控别连接创建的会话。HTTP 侧 subject=bearer token。
+const socketSubject: Map<Socket, string> = new Map();
+function subjectForSocket(sock: Socket): string {
+  let s = socketSubject.get(sock);
+  if (s === undefined) {
+    s = `stdio:${crypto.randomUUID()}`;
+    socketSubject.set(sock, s);
+  }
+  return s;
+}
 
 export interface StdioSocketServer {
   readonly socketPath: string;
@@ -231,8 +246,10 @@ async function handleLine(
       return w !== null && !w.isDestroyed();
     },
   });
+  // 安全 S3:无论绑定窗口还是 fallback,都带本连接的 callerSubject,供 capability 校验。
+  const callerSubject = subjectForSocket(sock);
   let ctx: McpCallCtx | null =
-    liveOwner !== null ? { ownerWindowId: liveOwner } : null;
+    liveOwner !== null ? { ownerWindowId: liveOwner, callerSubject } : null;
   // Fallback:外部 MCP client(eg. Claude Code stdio 配置)spawn 的 proxy
   // 无 CONTINUO_WINDOW_ID env,不发 hello,socketCtx 空 → fallback 到第一个
   // 非 popout 主窗。mirror agent-auth.pickMainWindow 策略。tools/list 无需 ctx
@@ -248,7 +265,7 @@ async function handleLine(
       }
     }
     if (!fallback) fallback = wins.find((w) => !w.isDestroyed()) ?? null;
-    if (fallback) ctx = { ownerWindowId: fallback.id };
+    if (fallback) ctx = { ownerWindowId: fallback.id, callerSubject };
   }
   const response = await dispatchRpc(rpc, tools, serverInfo, ctx);
   if ('result' in response) {
@@ -311,6 +328,7 @@ export async function createStdioSocketServer(
     sock.on('close', () => {
       clients.delete(sock);
       socketCtx.delete(sock);
+      socketSubject.delete(sock);
     });
     sock.on('error', () => {
       /* connection error,close 事件会清理 */
@@ -361,6 +379,7 @@ export async function createStdioSocketServer(
           /* 已断开 → 忽略 */
         }
         socketCtx.delete(sock);
+        socketSubject.delete(sock);
       }
       clients.clear();
       await new Promise<void>((resolve) => server.close(() => resolve()));
