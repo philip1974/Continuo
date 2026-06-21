@@ -6,7 +6,11 @@ import { PLUGIN_FS_CHANNELS } from '../../shared/plugin-fs-channels';
 import { IdentityRegistry } from './identity-registry.service';
 import { PathScopeRegistry } from './path-scope-registry.service';
 import { ScopeRequestCorrelator } from './scope-request-correlator';
-import { ScopeError, type PathScope } from '../../../src/plugins/types';
+import {
+  ScopeError,
+  ScopeRequestTimeoutError,
+  type PathScope,
+} from '../../../src/plugins/types';
 import { canonicalizeScopePath } from './path-resolve.helper';
 import { atomicWriteFile } from '../ipc/fs/atomic-write';
 
@@ -466,7 +470,21 @@ export function registerPluginFsHandlers(
         pluginId,
         scopes,
       });
-      const decision = await promise;
+      let decision: 'grant' | 'deny';
+      try {
+        decision = await promise;
+      } catch (err) {
+        // 窗口硬关闭会经 cancelScopeRequestsForWebContents → correlator.cancelBySender
+        // reject 该 pending(ScopeRequestTimeoutError 'window closed')。此时等待的
+        // renderer 已随窗口销毁,reply 无处可送;若任由 reject 冒泡,Electron 会记成
+        // "Error occurred in handler for 'plugin-fs:request-scope'" 噪声。sender 已销毁
+        // → 视为终态 deny 静默收口(不 grant)。renderer 仍存活的 TTL 超时仍按原契约
+        // reject,让 renderer 的 requestScope() 抛出。
+        if (err instanceof ScopeRequestTimeoutError && event.sender.isDestroyed()) {
+          return 'deny';
+        }
+        throw err;
+      }
       // 弹窗挂起期间插件可能被卸载/禁用(_unregister-plugin → revoke token,token
       // 进 5s drain;lookup/resolve 仍能查到所以无法区分)。落地 grant 前重校验 token
       // 仍 active,否则会复活已撤销插件的 path-scope,同 id 重装直接继承(绕过

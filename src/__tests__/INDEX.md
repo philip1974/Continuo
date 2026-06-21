@@ -105,6 +105,7 @@
 - [`quit-cleanup-guard-reentry.spec.ts`](./49-polish-bugfixes/quit-cleanup-guard-reentry.spec.ts)
 - [`read-git-blob-bounds.spec.ts`](./49-polish-bugfixes/read-git-blob-bounds.spec.ts)
 - [`rename-no-silent-overwrite.spec.ts`](./49-polish-bugfixes/rename-no-silent-overwrite.spec.ts)
+- [`request-scope-swallows-window-closed.spec.ts`](./49-polish-bugfixes/request-scope-swallows-window-closed.spec.ts)
 - [`root-drop-partial-refresh.spec.ts`](./49-polish-bugfixes/root-drop-partial-refresh.spec.ts)
 - [`save-race-dirty-preserve.spec.ts`](./49-polish-bugfixes/save-race-dirty-preserve.spec.ts)
 - [`scope-correlator-cancel-by-sender.spec.ts`](./49-polish-bugfixes/scope-correlator-cancel-by-sender.spec.ts)
