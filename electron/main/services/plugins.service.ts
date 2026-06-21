@@ -48,6 +48,19 @@ export function isSafePluginId(id: string): boolean {
 }
 
 /**
+ * 可维护性 M20:从(已 JSON.parse 的)manifest 取入口名 —— 非空 string 则用,否则默认
+ * main.js。扫描(listPluginDirs)/ 安装(installFromGit)/ watch(createPluginsWatcher)
+ * 三处共用,避免入口选择规则漂移。解析失败的策略由各调用方自留(fallback / 跳过 / 抛)。
+ */
+function getPluginMainName(manifest: unknown): string {
+  if (manifest && typeof manifest === 'object') {
+    const main = (manifest as Record<string, unknown>).main;
+    if (typeof main === 'string' && main.length > 0) return main;
+  }
+  return 'main.js';
+}
+
+/**
  * 扫描 baseDir/<id>/manifest.json 模式;返回所有合法目录的 manifestText +
  * mainText(默认 main.js 或 manifest.main 指向)+ 可选 stylesText。
  *
@@ -83,11 +96,10 @@ export async function listPluginDirs(baseDir: string): Promise<IpcPluginDir[]> {
       continue;
     }
 
-    // 解析 manifest.main(若失败用默认 main.js)
+    // 解析 manifest.main(若失败用默认 main.js,M20:共用 getPluginMainName)
     let mainName = 'main.js';
     try {
-      const m = JSON.parse(manifestText) as { main?: unknown };
-      if (typeof m.main === 'string' && m.main.length > 0) mainName = m.main;
+      mainName = getPluginMainName(JSON.parse(manifestText));
     } catch {
       // manifest 解析失败由 renderer 端 parseManifest 报错,我们继续给 mainText 尝试默认
     }
@@ -315,10 +327,7 @@ export async function installFromGit(
       );
     }
 
-    const mainName =
-      typeof (manifest as { main?: unknown }).main === 'string'
-        ? (manifest as { main: string }).main
-        : 'main.js';
+    const mainName = getPluginMainName(manifest); // M20:共用 getPluginMainName
     const mainPath = resolvePluginMainPath(cloneDir, mainName);
     if (!mainPath) {
       throw Object.assign(new Error(`main 入口非法: ${mainName}`), {
@@ -515,7 +524,7 @@ export function createPluginsWatcher(
       try {
         const text = await fs.readFile(path.join(dir, 'manifest.json'), 'utf-8');
         const m = JSON.parse(text) as { main?: unknown; id?: unknown };
-        if (typeof m.main === 'string' && m.main.length > 0) mainName = m.main;
+        mainName = getPluginMainName(m); // M20:共用 getPluginMainName
         if (typeof m.id === 'string' && m.id.length > 0) pluginId = m.id;
       } catch {
         continue;
