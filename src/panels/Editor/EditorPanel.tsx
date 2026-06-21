@@ -16,7 +16,7 @@ import { t as translate } from '@/i18n';
 import { ConfirmDialog } from '@/panels/Explorer/ConfirmDialog';
 import { SegmentedControl } from '@/design';
 import { CodeEditor } from './CodeEditor';
-import { EditorHeader } from './EditorHeader';
+import { EditorHeader, type TabChrome } from './EditorHeader';
 import { EditorWelcome } from './EditorWelcome';
 import { MilkdownEditor } from './MilkdownEditor';
 import { useAutoSave, isAutoSaveEnabled } from './useAutoSave';
@@ -48,15 +48,19 @@ function basename(p: string | null): string {
 }
 
 export function EditorPanel() {
-  const tabs = useEditorStore((s) => s.tabs);
-  const activeTabId = useEditorStore((s) => s.activeTabId);
+  // 只订阅 active tab 对象(打磨 R27,延续 R22-R24 正文热路径收敛)。editor store
+  // 的 updateContent/reloadFromDisk/markSaved 只替换被改的 tab 对象 → 非 active tab
+  // 变化时 active tab 引用不变 → selector 返同一对象 → EditorPanel 主体不重渲;
+  // active tab 变化(含切换/正文编辑)→ 新对象 → 正常重渲。tab 栏 chrome 由
+  // EditorHeader 自己窄订阅,不依赖这里。
+  const activeTab = useEditorStore(
+    (s): EditorTab | null =>
+      s.tabs.find((t) => t.id === s.activeTabId) ?? null,
+  );
   const mode = useEditorStore((s) => s.mode);
   const setMode = useEditorStore((s) => s.setMode);
   const updateContent = useEditorStore((s) => s.updateContent);
   const closeTab = useEditorStore((s) => s.closeTab);
-
-  const activeTab: EditorTab | null =
-    tabs.find((t) => t.id === activeTabId) ?? null;
   const effective = getEffectiveMode(activeTab);
   const activeIsMarkdown = activeTab ? isMarkdownPath(activeTab.filePath) : false;
   const unsafeMarkdown =
@@ -108,10 +112,11 @@ export function EditorPanel() {
     }
   }, [saveActive]);
 
-  // 关闭脏 tab 二次确认
-  const [closeCandidate, setCloseCandidate] = useState<EditorTab | null>(null);
+  // 关闭脏 tab 二次确认。closeCandidate 用轻量 TabChrome(打磨 R23:不持完整
+  // EditorTab/content,确认框只需 filePath,关闭只需 id)。
+  const [closeCandidate, setCloseCandidate] = useState<TabChrome | null>(null);
   const onTabCloseRequest = useCallback(
-    (tab: EditorTab) => {
+    (tab: TabChrome) => {
       if (tab.dirty) setCloseCandidate(tab);
       else closeTab(tab.id);
     },
@@ -192,10 +197,7 @@ export function EditorPanel() {
         }
       }}
     >
-      <EditorHeader
-        activeTab={activeTab}
-        onCloseRequest={onTabCloseRequest}
-      />
+      <EditorHeader onCloseRequest={onTabCloseRequest} />
       {activeTab && isMarkdownPath(activeTab.filePath) && (
         // markdown 模式切换:tab 行下方独立一行,居中。
         // 不加 border — 与上方 tab 行 / 下方编辑器无缝衔接,只靠 SegmentedControl

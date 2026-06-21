@@ -13,7 +13,6 @@ import {
   getEffectiveMode,
   useEditorStore,
   type EditorMode,
-  type EditorTab,
 } from '@/stores/editor.store';
 import { useT, t as translate } from '@/i18n';
 import { runContributedAction } from '@/lib/run-contributed-action';
@@ -30,9 +29,18 @@ import {
   type EditorActionSpec,
 } from '@/plugins/registries/EditorActionRegistry';
 
+/**
+ * Tab 栏渲染所需的"chrome"子集(打磨 R23):只含标题/脏态相关字段,**不含
+ * content** —— 让 EditorHeader 脱离编辑正文热路径。关闭确认也只需这三个字段。
+ */
+export interface TabChrome {
+  readonly id: string;
+  readonly filePath: string | null;
+  readonly dirty: boolean;
+}
+
 interface EditorHeaderProps {
-  activeTab: EditorTab | null;
-  onCloseRequest: (tab: EditorTab) => void;
+  onCloseRequest: (tab: TabChrome) => void;
 }
 
 function basename(p: string | null): string {
@@ -103,24 +111,57 @@ const EditorActionsArea = memo(function EditorActionsArea({
   );
 });
 
-export function EditorHeader({
-  activeTab,
-  onCloseRequest,
-}: EditorHeaderProps) {
+export function EditorHeader({ onCloseRequest }: EditorHeaderProps) {
   const t = useT(); // 订阅 locale 让 basename 改语言时 re-render
-  const tabs = useEditorStore((s) => s.tabs);
+  // 只订阅派生的 tab chrome(打磨 R23):订阅一个 JSON 签名串(id/filePath/dirty),
+  // 用户编辑正文时 tabs[].content 变但签名不变 → selector 返同一字符串 → React 跳过
+  // 重渲;再用 useMemo 仅在签名变化时从 getState() 重建 chrome 对象数组。
+  // (不用 useShallow:它逐元素 Object.is,每次 map 出的新对象永不相等 → 无限循环;
+  // 不用 zustand/traditional 的 equalityFn:它需要未装的 use-sync-external-store。)
+  const chromeSig = useEditorStore((s) =>
+    JSON.stringify(s.tabs.map((tb) => [tb.id, tb.filePath, tb.dirty])),
+  );
+  const tabsChrome = useMemo<readonly TabChrome[]>(
+    () =>
+      useEditorStore.getState().tabs.map((tb) => ({
+        id: tb.id,
+        filePath: tb.filePath,
+        dirty: tb.dirty,
+      })),
+    // chromeSig 故意作"失效键":body 用 getState() 读最新 tabs,签名变(chrome 真
+    // 变)才重建对象数组。lint 看不到 body 引用 chromeSig 故误判 unnecessary。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [chromeSig],
+  );
   const activeTabId = useEditorStore((s) => s.activeTabId);
   const switchTab = useEditorStore((s) => s.switchTab);
+  // active tab 的派生 primitive,供右侧 action 区(打磨 R23 + 合并优化 R45)。
+  // R23 用 3 个 selector 各 find;R45 合并为单次 find 构造 JSON 签名串,签名只放
+  // **计算后的 effectiveMode**(不放 content)→ 正文变而 mode 不变时签名不变 → 不
+  // 重渲,保持 R23 契约;每次 editor 更新从 3 次扫描降为 1 次。
+  const activeActionSig = useEditorStore((s) => {
+    const found = s.tabs.find((tb) => tb.id === s.activeTabId) ?? null;
+    return JSON.stringify([
+      found?.filePath ?? null,
+      found?.dirty ?? false,
+      getEffectiveMode(found),
+    ]);
+  });
+  const { activeFilePath, dirty, effectiveMode } = useMemo(() => {
+    const [filePath, d, mode] = JSON.parse(activeActionSig) as [
+      string | null,
+      boolean,
+      EditorMode,
+    ];
+    return { activeFilePath: filePath, dirty: d, effectiveMode: mode };
+  }, [activeActionSig]);
 
-  if (tabs.length === 0) return null;
-
-  const dirty = activeTab?.dirty ?? false;
-  const effectiveMode = getEffectiveMode(activeTab);
+  if (tabsChrome.length === 0) return null;
 
   return (
     <div className="flex h-9 shrink-0 items-stretch bg-canvas">
       <TabNav className="min-w-0 flex-1 overflow-x-auto">
-        {tabs.map((tab) => (
+        {tabsChrome.map((tab) => (
           <TabNavItem
             key={tab.id}
             active={tab.id === activeTabId}
@@ -142,7 +183,7 @@ export function EditorHeader({
 
         {/* 插件贡献的 editor action(memo 子组件,plugin 启停时只本段重渲) */}
         <EditorActionsArea
-          filePath={activeTab?.filePath ?? null}
+          filePath={activeFilePath}
           dirty={dirty}
           mode={effectiveMode}
         />

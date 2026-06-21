@@ -4,16 +4,18 @@ import React from 'react';
 import type { ReactNode } from 'react';
 import { useNotify } from './NotificationsProvider';
 import { Toast } from './Toast';
+import { useT } from '@/i18n';
 import './ToastViewport.css';
 
 const VISIBLE_LIMIT = 5;
 
 export function ToastViewport(): ReactNode {
+  const t = useT();
   const { notifications, dismiss } = useNotify();
   if (notifications.length === 0) return null;
   const visible = notifications.slice(-VISIBLE_LIMIT);
   return (
-    <div className="toast-viewport" aria-label="notifications">
+    <div className="toast-viewport" aria-label={t('notifications.viewport_label')}>
       {visible.map((n) => (
         <Toast key={n.id} notification={n} onDismiss={dismiss} />
       ))}

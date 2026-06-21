@@ -5,6 +5,7 @@
 // enabled 由 EditorPanel 根据当前 tab 文件类型决定(.md/.markdown → true)。
 
 import { useEffect, useMemo } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useEditorStore } from '@/stores/editor.store';
 import { makeAutoSaveScheduler } from './auto-save';
 import {
@@ -27,11 +28,23 @@ export function useAutoSave(
   opts: UseAutoSaveOptions,
 ): void {
   const { enabled, delayMs = DEFAULT_DELAY_MS } = opts;
-  // 订阅活跃 tab 的关键字段,变化即重排 schedule
-  const activeTab = useEditorStore((s) =>
-    s.tabs.find((t) => t.id === s.activeTabId) ?? null,
+  // 只订阅活跃 tab 的调度相关字段(打磨 R47):id/filePath/dirty/content 变化才重排
+  // schedule。用 useShallow 返回扁平 primitive 对象,逐字段 Object.is 比较 ——
+  // markSaved 推进 originalContent、reloadFromDisk 改 reloadEpoch 等不在此集合的字段
+  // 变化不再触发 hook 重渲/effect 重跑。content 只作 string ref(不用 JSON 签名,
+  // 避免序列化大文档正文)。
+  const active = useEditorStore(
+    useShallow((s) => {
+      const found = s.tabs.find((t) => t.id === s.activeTabId);
+      return {
+        id: found?.id ?? null,
+        filePath: found?.filePath ?? null,
+        dirty: found?.dirty ?? false,
+        content: found?.content,
+      };
+    }),
   );
-  const tabId = activeTab?.id ?? null;
+  const tabId = active.id;
 
   // 每个 tab 一个 scheduler(身份含 tabId)。保存绑定到调度时捕获的 tabId,
   // 而非"当前 active tab" —— 切走后 active 已变,绑定 active 会保存错的 tab。
@@ -65,9 +78,9 @@ export function useAutoSave(
       scheduler.cancel();
       return;
     }
-    if (!activeTab || !activeTab.filePath || !activeTab.dirty) return;
+    if (active.id === null || !active.filePath || !active.dirty) return;
     scheduler.schedule();
-  }, [enabled, activeTab, scheduler]);
+  }, [enabled, active, scheduler]);
 
   // 切走该 tab(scheduler 身份随 tabId 变)或组件卸载 → flush pending,
   // 把还卡在防抖窗口里的编辑落盘,避免连续输入后立即切 tab 丢失整段内容。

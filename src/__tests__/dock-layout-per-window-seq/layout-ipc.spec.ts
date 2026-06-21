@@ -104,10 +104,8 @@ async function writeExplorer(payload: ExplorerPayloadV3): Promise<void> {
 beforeEach(() => {
   useWorkspaceStore.setState({ root: null, recentRoots: [] });
   useExplorerStore.setState({
-    activePath: null,
     expandedPaths: new Set(),
     sort: { by: 'name', reverse: false },
-    search: '',
   });
   usePinnedStore.setState({ paths: [] });
   useLayoutUiStore.setState({
@@ -158,11 +156,10 @@ describe('window-scoped layout IPC', () => {
   it('T12: renderer writes v3 writable snapshot without main-owned fields and hydrates full v3', () => {
     expect(() => hydrateStores(fullSnapshotWithMainOwned)).not.toThrow();
     expect(useWorkspaceStore.getState().root).toBe('/work');
-    expect(useExplorerStore.getState().activePath).toBe('/work/a.md');
+    expect(useExplorerStore.getState().expandedPaths).toEqual(new Set(['/work']));
 
     useWorkspaceStore.setState({ root: '/renderer', recentRoots: ['/renderer'] });
     useExplorerStore.setState({
-      activePath: '/renderer/b.md',
       expandedPaths: new Set(['/renderer']),
       sort: { by: 'mtime', reverse: true },
     });
@@ -173,7 +170,8 @@ describe('window-scoped layout IPC', () => {
     expect(w0).not.toHaveProperty('layout');
     expect(w0).not.toHaveProperty('lastClosedAt');
     expect(writable.windows[0]!.workspace.root).toBe('/renderer');
-    expect(writable.windows[0]!.explorer.activePath).toBe('/renderer/b.md');
+    // 打磨 R18:explorer.activePath 已不在 store,snapshot 写保留位 null。
+    expect(writable.windows[0]!.explorer.activePath).toBeNull();
   });
 
   it('T9: layout:read resolves sender windowSeq and returns that window layout', async () => {

@@ -216,6 +216,28 @@ describe('StatusBar — 插件 statusBar items', () => {
     expect(container.textContent).toContain('PLUGIN_RIGHT');
   });
 
+  // 打磨 R6:StatusBar 改为一次订阅取全量(全局 priority 排序)再 filter 分侧。
+  // 同侧多项必须仍按 priority 升序渲染(守护 getAll().filter 保序 ≡ getBySide)。
+  it('同侧多 item → 按 priority 升序渲染', () => {
+    installApi({});
+    coApp.statusBar.register({
+      id: 'plugin.l.hi',
+      side: 'left',
+      priority: 200,
+      render: () => 'L_HI',
+    });
+    coApp.statusBar.register({
+      id: 'plugin.l.lo',
+      side: 'left',
+      priority: 1,
+      render: () => 'L_LO',
+    });
+    const { container } = render(<StatusBar />);
+    const txt = container.textContent ?? '';
+    expect(txt.indexOf('L_LO')).toBeGreaterThanOrEqual(0);
+    expect(txt.indexOf('L_LO')).toBeLessThan(txt.indexOf('L_HI'));
+  });
+
   it('subscribe 后注册新 item → 立即出现', () => {
     installApi({});
     const { container } = render(<StatusBar />);

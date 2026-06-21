@@ -73,10 +73,8 @@ function fakeTree(config: TreeConfig<FileEntry>) {
 
 beforeEach(() => {
   useExplorerStore.setState({
-    activePath: null,
     expandedPaths: new Set(),
     sort: { by: 'name', reverse: false },
-    search: '',
   });
   useTreeMock.mockImplementation(fakeTree);
 });

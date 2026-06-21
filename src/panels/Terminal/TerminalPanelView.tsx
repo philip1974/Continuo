@@ -20,6 +20,7 @@ export interface TerminalPanelViewParams {
 export function TerminalPanelView(
   props: IDockviewPanelProps<TerminalPanelViewParams>,
 ) {
+  const t = useT();
   const { sessionId } = props.params;
   // stale persisted layout (旧 BSP 模型 / sanitizer 漏过) 可能 restore 出
   // params.sessionId 缺失的 terminal panel,直接 auto-close 而非 crash。
@@ -32,24 +33,45 @@ export function TerminalPanelView(
       props.api.close();
     }
   }, [sessionId, props.api]);
-  const session = useTerminalStore((s) =>
-    s.sessions.find((x) => x.id === sessionId),
-  );
+  // 只订阅派生 primitive(打磨 R40 + R43):dock title 只需 title / originHint /
+  // 是否存在。R40 拆成 3 个 selector 各 find/some 一遍;R43 合并为单次 find 构造
+  // JSON 签名串(primitive,字段不变 → 引用稳定 → 不因无关字段/别的 session 重渲),
+  // 再用 useMemo 解析出三值。多终端时每次 snapshot 从「面板数×3 次扫描」降为×1。
+  const sessionSig = useTerminalStore((s) => {
+    const found = s.sessions.find((x) => x.id === sessionId);
+    return JSON.stringify([
+      found !== undefined,
+      found?.title ?? null,
+      found?.originHint ?? null,
+    ]);
+  });
+  const { sessionExists, sessionTitle, sessionOriginHint } = useMemo(() => {
+    const [exists, title, originHint] = JSON.parse(sessionSig) as [
+      boolean,
+      string | null,
+      OriginHint | null,
+    ];
+    return {
+      sessionExists: exists,
+      sessionTitle: title ?? undefined,
+      sessionOriginHint: originHint ?? undefined,
+    };
+  }, [sessionSig]);
   const customTitle = useTerminalStore((s) => s.customTitles.get(sessionId));
   const derivedTitle = useMemo(() => {
     const base =
       customTitle ??
-      session?.title ??
+      sessionTitle ??
       props.params.title ??
       `Terminal ${(sessionId ?? '').slice(0, 6) || '?'}`;
-    const originHint = session?.originHint ?? props.params.originHint;
+    const originHint = sessionOriginHint ?? props.params.originHint;
     return originHint === 'agent' ? `${base} (agent)` : base;
   }, [
     customTitle,
     props.params.originHint,
     props.params.title,
-    session?.originHint,
-    session?.title,
+    sessionOriginHint,
+    sessionTitle,
     sessionId,
   ]);
 
@@ -62,14 +84,14 @@ export function TerminalPanelView(
   if (!sessionId) {
     return (
       <div className="flex h-full w-full items-center justify-center bg-canvas text-xs text-fg-dim">
-        terminal panel without sessionId (auto-closing)
+        {t('panels.terminal.missing_session_id')}
       </div>
     );
   }
-  if (!session) {
+  if (!sessionExists) {
     return (
       <div className="flex h-full w-full items-center justify-center bg-canvas text-xs text-fg-dim">
-        session not available
+        {t('panels.terminal.session_not_available')}
       </div>
     );
   }

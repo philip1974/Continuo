@@ -164,6 +164,8 @@ describe('useUpdateStore.refresh', () => {
   it('index fetch 失败 → console.warn + checking 清零,不抛', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     fetchIndex.mockRejectedValue(new Error('offline'));
+    // R54:需有已安装插件才会走网络路径(否则空 installed 直接跳过 index fetch)
+    getMgr.mockReturnValue(fakeMgr([{ id: 'a', version: '0.1.0' }]));
 
     await useUpdateStore.getState().refresh();
     const s = useUpdateStore.getState();
@@ -176,6 +178,31 @@ describe('useUpdateStore.refresh', () => {
     );
   });
 
+  it('R54:无已安装插件 → 跳过 index + manifest 网络请求', async () => {
+    fetchIndex.mockResolvedValue([entry('a')]);
+    fetchManifest.mockResolvedValue(manifest('a', '9.9.9'));
+    getMgr.mockReturnValue(fakeMgr([])); // 没装任何插件
+
+    await useUpdateStore.getState().refresh();
+    expect(fetchIndex).not.toHaveBeenCalled();
+    expect(fetchManifest).not.toHaveBeenCalled();
+    expect(useUpdateStore.getState().available).toEqual([]);
+    expect(useUpdateStore.getState().lastCheckedAt).not.toBeNull();
+  });
+
+  it('R54:只拉已安装插件命中的 entries 的 manifest(M≤N)', async () => {
+    fetchIndex.mockResolvedValue([entry('a'), entry('b'), entry('c')]);
+    fetchManifest.mockImplementation(async (e: MarketplaceEntry) =>
+      manifest(e.id, '0.1.0'),
+    );
+    getMgr.mockReturnValue(fakeMgr([{ id: 'b', version: '0.1.0' }])); // 只装了 b
+
+    await useUpdateStore.getState().refresh();
+    // 只为已安装的 b 拉 manifest,不拉 a/c
+    expect(fetchManifest).toHaveBeenCalledTimes(1);
+    expect((fetchManifest.mock.calls[0]![0] as MarketplaceEntry).id).toBe('b');
+  });
+
   it('refresh 期间 checking=true', async () => {
     let release: () => void = () => {};
     fetchIndex.mockReturnValue(
@@ -183,7 +210,8 @@ describe('useUpdateStore.refresh', () => {
         release = () => resolve([]);
       }),
     );
-    getMgr.mockReturnValue(fakeMgr([]));
+    // R54:有已安装插件才走网络路径(index fetch 被 held → checking 维持 true)
+    getMgr.mockReturnValue(fakeMgr([{ id: 'a', version: '0.1.0' }]));
 
     const p = useUpdateStore.getState().refresh();
     expect(useUpdateStore.getState().checking).toBe(true);

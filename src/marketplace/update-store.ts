@@ -60,16 +60,33 @@ export const useUpdateStore = create<UpdateState>((set) => ({
     const myGen = ++refreshGen;
     set({ checking: true });
     try {
+      // 先读本地已安装(打磨 R54):只有已安装插件可能"有更新",故按已安装规模裁剪
+      // 网络。没装任何 marketplace 插件 → 直接落空,跳过 index + 全部 manifest 请求。
+      const mgr = getUserPluginManager();
+      const installed = mgr ? mgr.listAll() : [];
+      if (installed.length === 0) {
+        if (myGen !== refreshGen) return;
+        set({
+          remoteVersions: new Map(),
+          available: [],
+          checking: false,
+          lastCheckedAt: Date.now(),
+        });
+        return;
+      }
+      const installedIds = new Set(installed.map((i) => i.id));
+
       const entries = await fetchMarketplaceIndex();
       const remoteVersions = new Map<string, string>();
       const entriesById = new Map<string, MarketplaceEntry>();
       for (const e of entries) entriesById.set(e.id, e);
 
-      // 并发拉所有 manifest;单个失败不影响其它
+      // 只拉「已安装插件命中的 entries」的 manifest(M ≤ N);单个失败不影响其它。
+      const relevant = entries.filter((e) => installedIds.has(e.id));
       const results = await Promise.allSettled(
-        entries.map((e) => fetchPluginManifest(e)),
+        relevant.map((e) => fetchPluginManifest(e)),
       );
-      for (let i = 0; i < entries.length; i++) {
+      for (let i = 0; i < relevant.length; i++) {
         const r = results[i];
         if (r && r.status === 'fulfilled') {
           remoteVersions.set(r.value.id, r.value.version);
@@ -77,8 +94,6 @@ export const useUpdateStore = create<UpdateState>((set) => ({
       }
 
       // 跟本地 PluginManager 比较
-      const mgr = getUserPluginManager();
-      const installed = mgr ? mgr.listAll() : [];
       const available: AvailableUpdate[] = [];
       for (const item of installed) {
         const remoteV = remoteVersions.get(item.id);

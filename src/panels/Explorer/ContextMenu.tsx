@@ -1,13 +1,12 @@
 import * as Menu from '@radix-ui/react-context-menu';
+import { useState } from 'react';
 import type { FileEntry } from '@/lib/fs/types';
-import { coApp } from '@/plugins/co-app';
 import { useT } from '@/i18n';
 import {
   filterVisible,
   type ExplorerContextMenuItemSpec,
   type ExplorerContextMenuItemContext,
 } from '@/plugins/registries/ExplorerContextMenuRegistry';
-import { useRegistry } from '@/plugins/registries/useRegistry';
 import { runContributedAction } from '@/lib/run-contributed-action';
 
 export interface ContextMenuActions {
@@ -42,6 +41,11 @@ interface ContextMenuProps {
   actions: ContextMenuActions;
   /** 当前剪贴板是否非空(决定"粘贴"项是否显示). */
   hasClipboard: boolean;
+  /**
+   * 插件贡献的右键菜单项全量快照(打磨 R10:由 FolderTree 一次订阅后下传)。
+   * 可见性仍由各菜单按自己的 target/selectedPaths/rootPath 计算,语义不变。
+   */
+  pluginItems: readonly ExplorerContextMenuItemSpec[];
   children: React.ReactNode;
 }
 
@@ -92,11 +96,6 @@ function groupPluginItems(
     .map(([group, items]) => ({ group, items }));
 }
 
-/** 订阅 explorerContextMenu registry,plugin 注册/dispose 自动重渲. */
-function useExplorerContextMenuItems(): readonly ExplorerContextMenuItemSpec[] {
-  return useRegistry(coApp.explorerContextMenu);
-}
-
 // 右键菜单包装。children 为接收右键的可见区域(行 / 空白容器)。
 // 菜单项由 target 类型(文件 / 文件夹 / null=空白)决定。
 // V1(2026-05):内置 4 项之后追加 plugin 贡献项,按 group 分组 + 分隔。
@@ -106,6 +105,7 @@ export function ContextMenu({
   rootPath,
   actions,
   hasClipboard,
+  pluginItems,
   children,
 }: ContextMenuProps) {
   const t = useT();
@@ -113,22 +113,30 @@ export function ContextMenu({
   const isFolder = target !== null && target.isDirectory;
   const isBlank = target === null;
 
-  const allPluginItems = useExplorerContextMenuItems();
+  // 插件 when 过滤延迟到菜单真正打开时执行(打磨 R13):groupPluginItems →
+  // filterVisible 会逐个跑第三方同步 when() 谓词;虚拟列表里每个可见 FileRow 都
+  // 挂一个菜单,常规滚动/hover/剪贴板变化触发的行重渲染本不需要这些计算。用
+  // onOpenChange 维护 open,未打开时 pluginGroups 直接为空,弹出时才按当前上下文算。
+  const [open, setOpen] = useState(false);
   const pluginCtx: ExplorerContextMenuItemContext = {
     target,
     selectedPaths,
     rootPath,
   };
-  const pluginGroups = groupPluginItems(allPluginItems, pluginCtx);
+  const pluginGroups = open ? groupPluginItems(pluginItems, pluginCtx) : [];
 
-  // 删除目标:若 target 在多选集中,批量删 selectedPaths;否则只删 target
-  const deleteTargets = (): string[] => {
+  // 本次菜单操作目标:若 target 在多选集中,批量作用于 selectedPaths;否则只
+  // target 自身。每次渲染算一次(打磨 R12):cut/copy/path/trash 等 6+ 处都复用,
+  // 原先各调一次 deleteTargets() → 多选时重复 Array.from(selectedPaths)。
+  const computeActionTargets = (): string[] => {
     if (target === null) return [];
     if (selectedPaths.has(target.path) && selectedPaths.size > 1) {
       return Array.from(selectedPaths);
     }
     return [target.path];
   };
+  const actionTargets = computeActionTargets();
+  const actionTargetCount = actionTargets.length;
 
   // 创建上下文目录:文件夹 right-click → 它本身;文件 → 它的父;空白 → root
   const createParent = (): string => {
@@ -143,11 +151,8 @@ export function ContextMenu({
     return rootPath;
   };
 
-  // 内置 4 项是否会显:决定 plugin 段是否需要前置分隔符
-  const builtinHasItems = isFolder || isBlank || !isBlank;
-
   return (
-    <Menu.Root>
+    <Menu.Root onOpenChange={setOpen}>
       <Menu.Trigger asChild>{children}</Menu.Trigger>
       <Menu.Portal>
         <Menu.Content
@@ -189,13 +194,13 @@ export function ContextMenu({
               {/* 剪切 / 复制(in-app 剪贴板) */}
               <Menu.Item
                 className={itemCls}
-                onSelect={() => actions.onCut(deleteTargets())}
+                onSelect={() => actions.onCut(actionTargets)}
               >
                 {t('panels.explorer.ctx.cut')}
               </Menu.Item>
               <Menu.Item
                 className={itemCls}
-                onSelect={() => actions.onCopy(deleteTargets())}
+                onSelect={() => actions.onCopy(actionTargets)}
               >
                 {t('panels.explorer.ctx.copy')}
               </Menu.Item>
@@ -213,23 +218,23 @@ export function ContextMenu({
               {/* 路径剪贴板段:多选时复制全部(\n 拼接,VSCode 同款) */}
               <Menu.Item
                 className={itemCls}
-                onSelect={() => actions.onCopyPath(deleteTargets())}
+                onSelect={() => actions.onCopyPath(actionTargets)}
               >
                 {t('panels.explorer.ctx.copy_path')}
-                {deleteTargets().length > 1 && (
+                {actionTargetCount > 1 && (
                   <span className="ml-auto text-2xs text-fg-dim">
-                    {t('panels.explorer.ctx.items_count', { count: deleteTargets().length })}
+                    {t('panels.explorer.ctx.items_count', { count: actionTargetCount })}
                   </span>
                 )}
               </Menu.Item>
               <Menu.Item
                 className={itemCls}
-                onSelect={() => actions.onCopyRelativePath(deleteTargets())}
+                onSelect={() => actions.onCopyRelativePath(actionTargets)}
               >
                 {t('panels.explorer.ctx.copy_relative_path')}
-                {deleteTargets().length > 1 && (
+                {actionTargetCount > 1 && (
                   <span className="ml-auto text-2xs text-fg-dim">
-                    {t('panels.explorer.ctx.items_count', { count: deleteTargets().length })}
+                    {t('panels.explorer.ctx.items_count', { count: actionTargetCount })}
                   </span>
                 )}
               </Menu.Item>
@@ -255,20 +260,22 @@ export function ContextMenu({
               {/* 移到废纸篓(安全删除,可恢复) */}
               <Menu.Item
                 className={itemCls}
-                onSelect={() => actions.onTrash(deleteTargets())}
+                onSelect={() => actions.onTrash(actionTargets)}
               >
                 {t('panels.explorer.ctx.trash')}
-                {deleteTargets().length > 1 && (
+                {actionTargetCount > 1 && (
                   <span className="ml-auto text-2xs text-fg-dim">
-                    {t('panels.explorer.ctx.items_count', { count: deleteTargets().length })}
+                    {t('panels.explorer.ctx.items_count', { count: actionTargetCount })}
                   </span>
                 )}
               </Menu.Item>
             </>
           )}
 
-          {/* Plugin 贡献项,按 group 分组,group 间分隔线 */}
-          {pluginGroups.length > 0 && builtinHasItems && (
+          {/* Plugin 贡献项,按 group 分组,group 间分隔线。三种菜单状态(文件 /
+              文件夹 / 空白)都必有内置项,故有 plugin 段时总要前置分隔符(打磨 R11:
+              删除恒真的 builtinHasItems 伪条件)。 */}
+          {pluginGroups.length > 0 && (
             <Menu.Separator className={sepCls} />
           )}
           {pluginGroups.map((bucket, gi) => (

@@ -9,7 +9,7 @@
 | 文件 | 内容 |
 |---|---|
 | `src/stores/workspace.store.ts` | `root` / `recentRoots`(LRU 5) |
-| `src/stores/explorer.store.ts` | `activePath` / `selectedPaths` / `lastAnchorPath` / `expandedPaths` / `sort` / `search` + 多选 4 actions |
+| `src/stores/explorer.store.ts` | `expandedPaths` / `sort` + `toggleExpand` / `setExpandedPaths` / `setSort`(多选由 headless-tree selection state 驱动;`activePath`/`search` 是死字段已删,见下) |
 | `src/stores/pinned.store.ts` | `paths` 顺序保留 + `toggle` |
 | `electron/main/persistence.ts` | 复用,追加 `ExplorerSchema` / `loadExplorer` / `saveExplorer` |
 | `electron/main/ipc.ts` | 追加 `explorer:read` / `explorer:write` 通道(走 safeHandle) |
@@ -22,12 +22,19 @@
 |---|---|---|
 | `workspace.root` / `recentRoots` | ✅ | 重启恢复 |
 | `explorer.expandedPaths` | ✅ | 树展开状态 |
-| `explorer.activePath` | ✅ | 焦点位置(VSCode 行为) |
 | `explorer.sort` | ✅ | 用户偏好 |
 | `pinned.paths` | ✅ | Pin 列表 |
-| `explorer.selectedPaths` | ❌ | 多选只在当前会话有意义 |
-| `explorer.lastAnchorPath` | ❌ | 仅 Shift+click 范围选用 |
-| `explorer.search` | ❌ | 重启清空 |
+
+> 多选状态(selectedPaths / anchor)现由 headless-tree 的 selection state 持有,
+> 不在本 store,也不持久化(只在当前会话有意义)。
+>
+> `explorer.activePath`(打磨 R18):曾是焦点字段,但从无生产 setter/reader(恒
+> null)。已从 runtime store 移除;磁盘 schema 维持兼容(snapshot 写保留位
+> null,hydrate 忽略旧值),故仍出现在 ExplorerSchema 与持久化 round-trip 测试里。
+>
+> `explorer.search`(打磨 R19):曾是搜索串字段(从不持久化),但生产 Explorer UI
+> 从无读写。已从 runtime store 与 hydrate 复位路径整体移除;等真正实现 Explorer
+> 搜索 UI 时再按实际交互重新引入。
 
 数据形态:磁盘 JSON 全用 array,store 内部用 Set;`hydrate` / `snapshot` 负责互转。
 
@@ -36,7 +43,7 @@
 | 文件 | 主题 |
 |---|---|
 | `workspace.spec.ts` | LRU、setRoot 三态 |
-| `explorer.spec.ts` | toggleExpand / 多选 4 actions / setSort / setSearch |
+| `explorer.spec.ts` | toggleExpand / setExpandedPaths / setSort |
 | `pinned.spec.ts` | toggle / 顺序保留 |
 | `persistence-schema.spec.ts` | ExplorerSchema strict + version 锁 + loadExplorer/saveExplorer round-trip |
 | `persistence-layer.spec.ts` | snapshot ↔ hydrate Set/array 转换、不持久化字段闭包、init flow(mock api) |

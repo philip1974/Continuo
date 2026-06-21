@@ -23,7 +23,8 @@ import { PermissionError } from './plugins/permissions';
 import { sandboxSweep } from './plugins/sandbox-sweep';
 import { captureLmApi, coApi } from './lib/co-api';
 import { useUpdateStore } from './marketplace/update-store';
-import { useReviewsStore } from './marketplace/reviews-store';
+import { useTerminalStore } from './stores/terminal.store';
+import { watchTerminalIntent } from './lib/terminal-chunk-warmup';
 import { setLocale as setI18nModuleLocale } from '@/i18n';
 import {
   subscribeToI18nBroadcast,
@@ -182,27 +183,23 @@ export async function init(): Promise<void> {
   // fire-and-forget,不阻塞 UI 渲染。失败 console.warn 不抛。
   void useUpdateStore.getState().refresh();
 
-  // Reviews Phase 1:启动时静默拉一次评论(MarketplaceTab 卡片 ★ 用)。
-  // 同样 fire-and-forget;NO_TOKEN 时静默退出(在 fetcher 抛错被 catch)。
-  void useReviewsStore.getState().refresh();
+  // 注:reviews(卡片 ★)不再启动预拉(打磨 R53)。该数据只在 MarketplaceTab 可见
+  // 时用,不像 update 清单驱动 IconSidebar 角标。改为 MarketplaceTab 首次挂载时拉,
+  // 把隐藏功能的 GitHub API/网络/解析从冷启动路径移走。
 
   createRoot(container).render(
     React.createElement(React.StrictMode, null, React.createElement(App)),
   );
 
-  // 启动后 idle 时预热 Terminal lazy chunk(xterm 6MB+addons),
-  // 让用户首次开 terminal panel 不再等下载/解析。fire-and-forget,
-  // 失败静默(用户还没用到时 vite chunk 偶发失败可重试)。
-  const prefetchTerminal = () => {
+  // 按意图预热 Terminal lazy chunk(xterm 6MB+addons)(打磨 R55:恢复 lazy boundary)。
+  // 原先无条件 idle prefetch 会让从不开终端的 session 也下载/解析这个大 chunk。改为只在
+  // 出现终端会话(上次 session 恢复的终端,或用户新建)时 warm 一次 —— 与 React.lazy 的
+  // 首开加载经模块缓存去重。普通无终端 session 不再触碰大 chunk 的网络/解析/内存。
+  watchTerminalIntent(useTerminalStore, () => {
     void import('@/panels/Terminal').catch(() => {
       /* 用户真触发时 React.lazy 会再试 */
     });
-  };
-  if (typeof requestIdleCallback === 'function') {
-    requestIdleCallback(prefetchTerminal, { timeout: 3000 });
-  } else {
-    setTimeout(prefetchTerminal, 1500);
-  }
+  });
 
   if (window.__continuoE2E === true) {
     void Promise.all([

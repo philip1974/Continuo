@@ -7,7 +7,7 @@ import { create } from 'zustand';
 import type { PermissionKey } from '../permissions';
 import type { PathScope } from '../types';
 
-interface Pending {
+export interface Pending {
   readonly pluginId: string;
   readonly perms: readonly PermissionKey[];
 }

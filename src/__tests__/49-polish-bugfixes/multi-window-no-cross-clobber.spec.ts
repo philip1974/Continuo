@@ -29,10 +29,8 @@ import { useEditorStore } from '../../stores/editor.store';
 beforeEach(() => {
   useWorkspaceStore.setState({ root: null, recentRoots: [] });
   useExplorerStore.setState({
-    activePath: null,
     expandedPaths: new Set(),
     sort: { by: 'name', reverse: false },
-    search: '',
   });
   usePinnedStore.setState({ paths: [] });
   useLayoutUiStore.setState({ sidebarOpen: true, sidebarWidth: 280 });
@@ -141,7 +139,10 @@ describe('topic49 P1-U · 多窗口段不互相覆盖', () => {
     hydrateStores(full, 0);
     const snap = snapshotFromStores(full, 0);
     expect(snap.windows[0]!.workspace.root).toBe('/work');
-    expect(snap.windows[0]!.explorer.activePath).toBe('/work/a.md');
+    // 打磨 R18:explorer.activePath 已不在 store,本窗 snapshot 写保留位 null
+    // (磁盘里旧值 hydrate 时被忽略)。expandedPaths/sort/pinned 仍正常往返。
+    expect(snap.windows[0]!.explorer.activePath).toBeNull();
+    expect(snap.windows[0]!.explorer.expandedPaths).toEqual(['/work']);
     expect(snap.pinned.paths).toEqual(['/p.md']);
     expect(snap.workspace.recentRoots).toEqual(['/r']);
   });

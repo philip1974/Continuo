@@ -20,7 +20,7 @@ import type {
 } from '../registries/SettingTabRegistry';
 import { SettingItemRow } from './SettingItemRow';
 import { useSettingsStore } from './store';
-import { useT, tWithFallback } from '@/i18n';
+import { useT, useLocale, tWithFallback } from '@/i18n';
 
 interface SettingsPanelProps {
   /** 默认用全局 coApp.settingTabs;测试可注入隔离 registry. */
@@ -37,14 +37,10 @@ function useItems(reg: SettingItemRegistry): readonly SettingItemSpec[] {
   return useRegistry(reg);
 }
 
-function matchSearch(item: SettingItemSpec, q: string): boolean {
-  const ql = q.toLowerCase();
-  if (item.title.toLowerCase().includes(ql)) return true;
-  if (item.id.toLowerCase().includes(ql)) return true;
-  if (item.description && item.description.toLowerCase().includes(ql)) {
-    return true;
-  }
-  return false;
+/** 一条设置项的搜索源:本地化标题/描述 + id + raw fallback,全 lowercase. */
+interface SearchableItem {
+  readonly item: SettingItemSpec;
+  readonly haystack: string;
 }
 
 // 内置 4 类 category → catalog tab_title key 映射；plugin 自定义 category fallback raw 字符串
@@ -89,21 +85,14 @@ export function SettingsPanel({
   const activeTabId = useSettingsStore((s) => s.activeTabId);
   const setActiveTabId = useSettingsStore((s) => s.setActiveTabId);
   const tabs = useTabs(registry);
-  const allItems = useItems(itemRegistry);
   // active 兜底:未选 / id 已被 dispose → 取首项
   const active = tabs.find((t) => t.id === activeTabId) ?? tabs[0] ?? null;
 
   const [query, setQuery] = useState('');
   const trimmed = query.trim();
-  const matched = useMemo(() => {
-    if (!trimmed) return null; // null = 不在搜索模式
-    return allItems.filter((item) => matchSearch(item, trimmed));
-  }, [trimmed, allItems]);
-  const matchedBuckets = useMemo(
-    () => (matched ? groupSearchResults(matched) : []),
-    [matched],
-  );
-  const inSearch = matched !== null;
+  // 搜索模式仅由 query 判定(打磨 R49):普通浏览设置 tab 时不订阅 itemRegistry、
+  // 不构建搜索 haystack —— 这些都搬进仅搜索模式才挂载的 SettingsSearchResults。
+  const inSearch = trimmed.length > 0;
 
   return (
     <div className="flex h-full flex-col bg-canvas">
@@ -154,31 +143,80 @@ export function SettingsPanel({
         </nav>
         <div className="min-w-0 flex-1 overflow-y-auto px-8 py-6 text-xs text-fg-muted">
           {inSearch ? (
-            <div>
-              <div className="mb-3 text-fg-dim">
-                {matched!.length === 0
-                  ? t('settings.panel.no_match', { q: trimmed })
-                  : t('settings.panel.matched', { count: matched!.length, q: trimmed })}
-              </div>
-              {matchedBuckets.map((bucket) => (
-                <section
-                  key={bucket.category}
-                  className="first:mt-0 [&:not(:first-child)]:mt-10"
-                >
-                  <h3 className="mb-3 border-b border-line pb-3 text-base font-medium text-fg">
-                    {bucket.label}
-                  </h3>
-                  {bucket.items.map((spec) => (
-                    <SettingItemRow key={spec.id} spec={spec} />
-                  ))}
-                </section>
-              ))}
-            </div>
+            <SettingsSearchResults itemRegistry={itemRegistry} trimmed={trimmed} />
           ) : active ? (
             active.render()
           ) : null}
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * 搜索结果区(打磨 R49):仅在搜索模式(query 非空)时挂载。订阅 itemRegistry +
+ * 构建本地化 haystack + 过滤分组都在这里 —— 普通浏览设置 tab 时父组件不挂载本
+ * 组件,故不订阅 itemRegistry、不跑这些派生(插件注册 item / 切语言时不触发)。
+ */
+function SettingsSearchResults({
+  itemRegistry,
+  trimmed,
+}: {
+  readonly itemRegistry: SettingItemRegistry;
+  readonly trimmed: string;
+}) {
+  const t = useT();
+  // locale 值随语言切换变化(useTWithFallback 返回的函数 identity 稳定,不能当
+  // memo deps),驱动本地化 haystack 切语言重算(打磨 R30)。
+  const locale = useLocale();
+  const allItems = useItems(itemRegistry);
+  // 预计算本地化 haystack:搜索源用 titleKey/descriptionKey 翻译后的可见文案
+  // (SettingItemRow 实际显示的),否则中文/韩文下按屏幕文字搜不到。保留 id + raw
+  // title/description 作补充。deps 含 locale 切语言重算。
+  const searchable = useMemo<readonly SearchableItem[]>(
+    () =>
+      allItems.map((item) => ({
+        item,
+        haystack: [
+          tWithFallback(item.titleKey, item.title),
+          tWithFallback(item.descriptionKey, item.description ?? ''),
+          item.id,
+          item.title,
+          item.description ?? '',
+        ]
+          .join(' ')
+          .toLowerCase(),
+      })),
+    // locale 作失效键:tWithFallback 内部按当前 locale 翻译,lint 看不到该依赖。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allItems, locale],
+  );
+  const matched = useMemo(() => {
+    const ql = trimmed.toLowerCase();
+    return searchable.filter((s) => s.haystack.includes(ql)).map((s) => s.item);
+  }, [trimmed, searchable]);
+  const matchedBuckets = useMemo(() => groupSearchResults(matched), [matched]);
+
+  return (
+    <div>
+      <div className="mb-3 text-fg-dim">
+        {matched.length === 0
+          ? t('settings.panel.no_match', { q: trimmed })
+          : t('settings.panel.matched', { count: matched.length, q: trimmed })}
+      </div>
+      {matchedBuckets.map((bucket) => (
+        <section
+          key={bucket.category}
+          className="first:mt-0 [&:not(:first-child)]:mt-10"
+        >
+          <h3 className="mb-3 border-b border-line pb-3 text-base font-medium text-fg">
+            {bucket.label}
+          </h3>
+          {bucket.items.map((spec) => (
+            <SettingItemRow key={spec.id} spec={spec} />
+          ))}
+        </section>
+      ))}
     </div>
   );
 }

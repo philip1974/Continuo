@@ -11,9 +11,19 @@ import {
 import { useColumnResize } from '@/lib/use-column-resize';
 import { useT } from '@/i18n';
 
+/**
+ * 轻量 shell(打磨 R50,仿 R32/R33/R49):外层只订阅 sidebarOpen,关闭直接返回 null。
+ * 仅打开时挂载 ExplorerSidebarBody —— 关闭状态下不订阅 sidebarWidth、不创建 resize
+ * handler、不跑 useT。宽度持久化恢复 / 切语言 / 其他 layout 更新不碰不可见 sidebar。
+ */
 export function ExplorerSidebar() {
-  const t = useT();
   const open = useLayoutUiStore((s) => s.sidebarOpen);
+  if (!open) return null;
+  return <ExplorerSidebarBody />;
+}
+
+function ExplorerSidebarBody() {
+  const t = useT();
   const width = useLayoutUiStore((s) => s.sidebarWidth);
   const setWidth = useLayoutUiStore((s) => s.setSidebarWidth);
 
@@ -24,8 +34,6 @@ export function ExplorerSidebar() {
     max: SIDEBAR_MAX_WIDTH,
     direction: 'left-to-right',
   });
-
-  if (!open) return null;
 
   return (
     <aside

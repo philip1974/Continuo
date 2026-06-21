@@ -43,10 +43,8 @@ function resetStores(): void {
     hydrated: false,
   });
   useExplorerStore.setState({
-    activePath: null,
     expandedPaths: new Set(),
     sort: { by: 'name', reverse: false },
-    search: '',
   });
   usePinnedStore.setState({ paths: [] });
   useLayoutUiStore.setState({

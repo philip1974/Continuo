@@ -1,0 +1,42 @@
+// 打磨 R21(codex 性能 + 顺带修正确性):批量 paste/drop 到同一 destDir 时,
+// 唯一名解析复用一次 listDir 快照(makeUniqueDestPicker),内部 makeNamePicker
+// 每次 pick 把选中名加进 existing 集合 —— 不只省 N-1 次同目录 IPC,还防同批次
+// 内多个同名项各自只见磁盘旧态、都选到同一个 ` copy` 名 → 第二个 move 覆盖第一
+// 个(批量重名碰撞 = 潜在数据丢失)。
+import { describe, it, expect } from 'vitest';
+import { makeNamePicker } from '../../panels/Explorer/FolderTree';
+
+describe('打磨 R21 — makeNamePicker 唯一名解析', () => {
+  it('目标不存在 → 用原 basename', () => {
+    const pick = makeNamePicker('/d', new Set());
+    expect(pick('a.md')).toBe('/d/a.md');
+  });
+
+  it('已存在 → 加 " copy" 后缀(保留扩展名)', () => {
+    const pick = makeNamePicker('/d', new Set(['a.md']));
+    expect(pick('a.md')).toBe('/d/a copy.md');
+  });
+
+  it('已存在 basename + copy → " copy 2"', () => {
+    const pick = makeNamePicker('/d', new Set(['a.md', 'a copy.md']));
+    expect(pick('a.md')).toBe('/d/a copy 2.md');
+  });
+
+  it('安全红线:同批次两个同名项 → 第二个自动 copy(防覆盖)', () => {
+    const pick = makeNamePicker('/d', new Set());
+    expect(pick('a.md')).toBe('/d/a.md'); // 第一个占用原名
+    expect(pick('a.md')).toBe('/d/a copy.md'); // 第二个被预留集合挡开
+    expect(pick('a.md')).toBe('/d/a copy 2.md'); // 第三个再退一位
+  });
+
+  it('无扩展名文件 → " copy" 加在末尾', () => {
+    const pick = makeNamePicker('/d', new Set(['README']));
+    expect(pick('README')).toBe('/d/README copy');
+  });
+
+  it('点开头隐藏文件(.env)→ 不当成扩展名', () => {
+    const pick = makeNamePicker('/d', new Set(['.env']));
+    // lastIndexOf('.')===0 → dot>0 为 false → 整体当 stem
+    expect(pick('.env')).toBe('/d/.env copy');
+  });
+});

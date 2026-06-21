@@ -119,6 +119,8 @@ export const zh: Record<TranslationKey, string> = {
   'dock.empty.restore': '恢复默认布局',
   'panels.explorer.loading_or_empty': '读取中或空目录',
   'panels.terminal.starting_shell': '启动 shell…',
+  'panels.terminal.missing_session_id': '终端面板缺少 sessionId(自动关闭)',
+  'panels.terminal.session_not_available': '会话不可用',
   'panels.terminal.drag_drop.no_os_path':
     '拖入项目没有系统路径（网页拖拽），未插入任何内容。',
   'panels.terminal.drag_drop.partial_skip':
@@ -219,6 +221,10 @@ export const zh: Record<TranslationKey, string> = {
     '撤销失败 —— agent terminal 可能仍在运行,请重试。',
 
   // statusbar.*
+  // notifications (toast)
+  'notifications.dismiss': '关闭',
+  'notifications.viewport_label': '通知',
+
   'statusbar.mcp.copy': '复制 MCP 配置',
   'statusbar.mcp.copied': '已复制',
   'statusbar.mcp.copy_failed': '复制失败',
@@ -335,6 +341,8 @@ export const zh: Record<TranslationKey, string> = {
   'marketplace.reviews.refreshing': '⟳ 刷新中…',
   'marketplace.reviews.refresh_failed': '刷新评分失败:{message}',
   'marketplace.reviews.official_review': '官方 review 过',
+  'marketplace.verified': '已验证',
+  'marketplace.author_by': '作者',
   'marketplace.reviews.expand': '展开评价',
   'marketplace.reviews.collapse': '收起评价',
   'marketplace.reviews.stars_aria': '{avg} 星',
@@ -391,6 +399,15 @@ export const zh: Record<TranslationKey, string> = {
   'permissions.prompt.select_all': '全选',
   'permissions.prompt.deny_all': '全部拒绝',
   'permissions.prompt.grant_selected': '授权选中（{count}）',
+
+  // fs-scope (path) access prompt
+  'permissions.fs_scope.title': '文件系统访问请求',
+  'permissions.fs_scope.body': '插件 {pluginId} 请求访问以下路径：',
+  'permissions.fs_scope.mode_label': '模式',
+  'permissions.fs_scope.mode_rw': '读 + 写',
+  'permissions.fs_scope.mode_ro': '只读',
+  'permissions.fs_scope.deny': '拒绝',
+  'permissions.fs_scope.grant': '授权',
 
   // permissions editor UI
   'permissions.editor.title': '编辑权限',

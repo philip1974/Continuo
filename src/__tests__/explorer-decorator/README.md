@@ -7,9 +7,10 @@ FileRow 渲染时遍历所有装饰器,合并 badge / textColor / tooltip 应用
 
 | 文件 | 职责 |
 |---|---|
-| `src/plugins/registries/ExplorerDecoratorRegistry.ts` | 装饰函数列表 + 合并算法 |
+| `src/plugins/registries/ExplorerDecoratorRegistry.ts` | 装饰函数列表 + 合并算法 + subscribe |
 | `src/plugins/Plugin.ts`(扩展) | `registerExplorerDecorator` 代理 |
-| `src/panels/Explorer/FileRow.tsx`(扩展) | 调 mergeDecorations 渲染 |
+| `src/panels/Explorer/FolderTree.tsx`(扩展) | 一次 `useRegistry(explorerDecorators)`,把 decorators 快照下传给每个 FileRow |
+| `src/panels/Explorer/FileRow.tsx`(扩展) | 用下传的 decorators 快照调 mergeDecorations 渲染 |
 
 ## 关键行为
 
@@ -32,7 +33,10 @@ interface Decoration {
 
 - `register(fn)` → Disposable;dispose 移除该函数
 - `getAll()` 返回当前所有函数(顺序为注册顺序)
-- 无 subscribe(FileRow 每次 render 调 getAll;数量小,频率低)
+- `subscribe(listener)`:plugin 注册/dispose 时通知。**FolderTree 订阅一次**
+  并把 `getAll()` 快照作为 prop 下传给每个 FileRow(打磨 R7:避免虚拟列表里
+  每个可见行各自订阅 — N 行 N 份订阅 + 插件启停时每行各取一次快照)。
+  FileRow 自身不再订阅 registry,只用下传的快照 `mergeDecorations`。
 
 ### mergeDecorations(entry, fns)
 

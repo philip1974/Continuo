@@ -17,10 +17,8 @@ import {
 const RESET = () => {
   useWorkspaceStore.setState({ root: null, recentRoots: [] });
   useExplorerStore.setState({
-    activePath: null,
     expandedPaths: new Set(),
     sort: { by: 'name', reverse: false },
-    search: '',
   });
   usePinnedStore.setState({ paths: [] });
   useLayoutUiStore.setState({
@@ -58,7 +56,6 @@ describe('snapshotFromStores', () => {
   it('从三 store 拼出 ExplorerSnapshot v3 writable subset,Set 转 array', () => {
     useWorkspaceStore.setState({ root: '/work', recentRoots: ['/work'] });
     useExplorerStore.setState({
-      activePath: '/work/file',
       expandedPaths: new Set(['/work', '/work/sub']),
       sort: { by: 'size', reverse: false },
     });
@@ -72,17 +69,15 @@ describe('snapshotFromStores', () => {
     const w0 = snap.windows[0]!;
     expect(w0.windowSeq).toBe(0);
     expect(w0.workspace).toEqual({ root: '/work' });
-    expect(w0.explorer.activePath).toBe('/work/file');
+    // 打磨 R18:activePath 已不在 runtime store,snapshot 写保留位 null。
+    expect(w0.explorer.activePath).toBeNull();
     expect(new Set(w0.explorer.expandedPaths)).toEqual(
       new Set(['/work', '/work/sub']),
     );
     expect(w0.explorer.sort).toEqual({ by: 'size', reverse: false });
   });
 
-  it('不持久化 search 等瞬时字段', () => {
-    useExplorerStore.setState({
-      search: 'foo',
-    });
+  it('snapshot 不含 search 字段(打磨 R19:search 已从 store 移除)', () => {
     const w0 = snapshotFromStores().windows[0]! as unknown as Record<
       string,
       unknown
@@ -115,7 +110,8 @@ describe('hydrateStores', () => {
     hydrateStores(fullSnapshot);
     expect(useWorkspaceStore.getState().root).toBe('/work');
     expect(useWorkspaceStore.getState().recentRoots).toEqual(['/work', '/old']);
-    expect(useExplorerStore.getState().activePath).toBe('/work/file.md');
+    // 打磨 R18:explorer.activePath 已从 store 移除,hydrate 不再回写它(磁盘
+    // 里的旧值被忽略);expandedPaths / sort 仍正常恢复。
     expect(useExplorerStore.getState().expandedPaths).toEqual(
       new Set(['/work', '/work/sub']),
     );
@@ -123,14 +119,6 @@ describe('hydrateStores', () => {
     expect(usePinnedStore.getState().paths).toEqual(['/work/star.md']);
   });
 
-  it('hydrate 显式复位 search 瞬时字段', () => {
-    useExplorerStore.setState({
-      search: 'keep',
-    });
-    hydrateStores(fullSnapshot);
-    // 重启后被复位为初态(空),不带入磁盘数据(因为根本没存)
-    expect(useExplorerStore.getState().search).toBe('');
-  });
 
   it('hydrate 含 layoutUi → 写到 useLayoutUiStore', () => {
     hydrateStores(fullSnapshot);
@@ -195,7 +183,9 @@ describe('hydrateStores', () => {
 
     expect(() => hydrateStores(snap)).not.toThrow();
     expect(useWorkspaceStore.getState().root).toBe('/work');
-    expect(useExplorerStore.getState().activePath).toBe('/work/file.md');
+    expect(useExplorerStore.getState().expandedPaths).toEqual(
+      new Set(['/work', '/work/sub']),
+    );
   });
 });
 
@@ -320,14 +310,13 @@ describe('initExplorerPersistence', () => {
       expect(usePinnedStore.getState().paths).toEqual(['/work/star.md']);
     });
 
-    it('新窗 → expandedPaths / activePath 用默认(每窗口独立 UI)', async () => {
+    it('新窗 → expandedPaths 用默认(每窗口独立 UI)', async () => {
       const api = makeApi(async () => ({ ok: true, data: fullSnapshot }));
       await initExplorerPersistence(api, {
         windowSeq: NEW_SEQ,
         initialWorkspace: '/new/proj',
       });
       expect(useExplorerStore.getState().expandedPaths.size).toBe(0);
-      expect(useExplorerStore.getState().activePath).toBeNull();
     });
 
     it('新窗 → layoutUi 用默认(每窗口独立 sidebar 状态)', async () => {

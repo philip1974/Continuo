@@ -4,10 +4,13 @@
 //
 // 持久化字段范围(VSCode 风):
 //   ✅ workspace.root / recentRoots
-//   ✅ explorer.activePath / expandedPaths / sort
+//   ✅ explorer.expandedPaths / sort
 //   ✅ pinned.paths
 //   ✅ editor.openFilePaths / activePath(M-Editor Step E5,session 恢复)
-//   ❌ explorer.selectedPaths / lastAnchorPath / search(瞬时态)
+//   ⚠ explorer.activePath:磁盘 schema 保留位(恒 null),runtime store 已无此
+//     字段(打磨 R18);snapshot 写 null、hydrate 忽略,仅为兼容旧数据不丢档。
+//   ❌ explorer.selectedPaths / lastAnchorPath(多选已由 headless-tree 持有)
+//   ❌ explorer.search:已从 runtime store 移除(打磨 R19,无生产 UI 接入)
 //   ❌ editor.content / dirty(MVP 不做 hot exit,启动从磁盘读最新)
 //
 // 数据形态:磁盘 JSON 全用 array,store 内部 expandedPaths 用 Set。
@@ -150,7 +153,9 @@ export function snapshotFromStores(
     windowSeq,
     workspace: { root },
     explorer: {
-      activePath: e.activePath,
+      // activePath 已不在 runtime store(打磨 R18:无生产 setter/reader)。磁盘
+      // schema 维持兼容,继续写保留位 null;旧数据里的值在 hydrate 时被忽略。
+      activePath: null,
       expandedPaths: [...e.expandedPaths],
       sort: { ...e.sort },
     },
@@ -195,11 +200,10 @@ export function hydrateStores(
   });
   // 窗口段(无 entry 时复位默认)
   if (entry) {
+    // entry.explorer.activePath 故意不再回写 store(打磨 R18:store 已无该字段)。
     useExplorerStore.setState({
-      activePath: entry.explorer.activePath,
       expandedPaths: new Set(entry.explorer.expandedPaths),
       sort: entry.explorer.sort,
-      search: '',
     });
     if (entry.layoutUi) {
       useLayoutUiStore.setState({
@@ -218,10 +222,8 @@ export function hydrateStores(
     }
   } else {
     useExplorerStore.setState({
-      activePath: null,
       expandedPaths: new Set(),
       sort: { by: 'name', reverse: false },
-      search: '',
     });
     useLayoutUiStore.setState({
       sidebarOpen: true,
@@ -413,10 +415,8 @@ function hydrateStoresForNewWindow(
   // 主窗段的 sort 拿来当默认(同项目两窗口偏好排序应一致),无则 by:name
   const primary = snap ? findWindowEntry(snap, PRIMARY_WINDOW_SEQ) : null;
   useExplorerStore.setState({
-    activePath: null,
     expandedPaths: new Set(),
     sort: primary ? primary.explorer.sort : { by: 'name', reverse: false },
-    search: '',
   });
   usePinnedStore.setState({
     paths: snap ? [...snap.pinned.paths] : [],

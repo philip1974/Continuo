@@ -2,10 +2,11 @@ import { useMemo } from 'react';
 import type { ItemInstance } from '@headless-tree/core';
 import type { FileEntry } from '@/lib/fs/types';
 import { Input } from '@/design';
-import { coApp } from '@/plugins/co-app';
-import { mergeDecorations } from '@/plugins/registries/ExplorerDecoratorRegistry';
-import { useRegistry } from '@/plugins/registries/useRegistry';
-import { useSettingValue } from '@/plugins/settings/values-store';
+import {
+  mergeDecorations,
+  type DecoratorFn,
+} from '@/plugins/registries/ExplorerDecoratorRegistry';
+import type { ExplorerContextMenuItemSpec } from '@/plugins/registries/ExplorerContextMenuRegistry';
 import { ContextMenu, type ContextMenuActions } from './ContextMenu';
 import { useExplorerClipboardStore } from './clipboard-store';
 import type { DropTargetEntry } from './drop-handlers';
@@ -24,19 +25,34 @@ interface FileRowProps {
   isDropHover?: boolean;
   /** 单击文件触发(目录的展开仍由 headless-tree mousedown 接管). */
   onFileOpen?: (path: string) => void;
+  /** 插件装饰器快照(FolderTree 一次订阅后下传,避免每行各自订阅). */
+  decorators: readonly DecoratorFn[];
+  /** 剪贴板是否非空(FolderTree 已订阅,下传避免每行各自订阅同一布尔值). */
+  hasClipboard: boolean;
+  /** 插件右键菜单项全量快照(FolderTree 一次订阅后下传,透传给本行 ContextMenu). */
+  pluginMenuItems: readonly ExplorerContextMenuItemSpec[];
+  /** 缩进宽度(explorer.indentSize 全树一致,FolderTree 一次订阅后下传). */
+  indent: number;
 }
 
 const ICON_SIZE = 16;
 // 28px 比 24 更松,Lokus / VSCode 同档(他们用 32);保持紧凑同时呼吸感更好
 const ROW_HEIGHT = 28;
-const DEFAULT_INDENT = 16;
+export const DEFAULT_INDENT = 16;
 
-/** 订阅插件装饰器 registry,plugin enable/disable 时所有 FileRow 自动重渲. */
-function useDecoration(path: string, isDirectory: boolean) {
-  const snap = useRegistry(coApp.explorerDecorators);
+/**
+ * 由 FolderTree 一次订阅的装饰器快照(打磨 R7)合成本行装饰。原先每个可见
+ * FileRow 各自 useRegistry(explorerDecorators) → 虚拟列表 N 行 = N 份订阅 +
+ * 插件启停时每行各取一次 getAll();现在订阅上提到 FolderTree,本行只 memo 合成。
+ */
+function useDecoration(
+  path: string,
+  isDirectory: boolean,
+  decorators: readonly DecoratorFn[],
+) {
   return useMemo(
-    () => mergeDecorations({ path, isDirectory }, snap),
-    [path, isDirectory, snap],
+    () => mergeDecorations({ path, isDirectory }, decorators),
+    [path, isDirectory, decorators],
   );
 }
 
@@ -51,6 +67,10 @@ export function FileRow({
   onHoverDropTarget,
   isDropHover = false,
   onFileOpen,
+  decorators,
+  hasClipboard,
+  pluginMenuItems,
+  indent,
 }: FileRowProps) {
   const data = item.getItemData();
   const isDir = item.isFolder();
@@ -60,10 +80,7 @@ export function FileRow({
   const isLoading = item.isLoading();
   const isRenaming = item.isRenaming();
   const level = item.getItemMeta().level;
-  const decoration = useDecoration(data.path, isDir);
-  const hasClipboard = useExplorerClipboardStore(
-    (s) => s.kind !== null && s.paths.length > 0,
-  );
+  const decoration = useDecoration(data.path, isDir, decorators);
   // VSCode 同款:已剪切的项目灰显,提示「等待粘贴」;copy 不灰
   const isCutMarked = useExplorerClipboardStore(
     (s) => s.kind === 'cut' && s.paths.includes(data.path),
@@ -71,7 +88,6 @@ export function FileRow({
   // headless-tree 内部 drag 时,drop 目标行高亮(drag preview 可能遮挡视线,
   // 没有这个 hover 反馈用户看不清要 drop 到哪)。
   const isInternalDropOver = item.isDraggingOver();
-  const indent = useSettingValue<number>('explorer.indentSize', DEFAULT_INDENT);
 
   const row = (
     <div
@@ -177,6 +193,7 @@ export function FileRow({
       rootPath={rootPath}
       actions={contextActions}
       hasClipboard={hasClipboard}
+      pluginItems={pluginMenuItems}
     >
       {row}
     </ContextMenu>

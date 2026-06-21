@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
+import { t } from '../../i18n';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
@@ -191,7 +192,7 @@ describe('window-workspace-roots-map: renderer terminal create failure feedback'
     });
     const { getByRole } = renderHeaderActions();
 
-    fireEvent.click(getByRole('button', { name: 'More actions' }));
+    fireEvent.click(getByRole('button', { name: t('panels.explorer.btn.more_actions') }));
     const terminalItem = await waitFor(() =>
       getByRole('menuitem', { name: 'Terminal' }),
     );

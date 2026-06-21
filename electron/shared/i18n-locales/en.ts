@@ -126,6 +126,8 @@ export const en = {
   'dock.empty.restore': 'Restore default layout',
   'panels.explorer.loading_or_empty': 'Loading or empty folder',
   'panels.terminal.starting_shell': 'Starting shell…',
+  'panels.terminal.missing_session_id': 'Terminal panel without sessionId (auto-closing)',
+  'panels.terminal.session_not_available': 'Session not available',
   'panels.terminal.drag_drop.no_os_path':
     'Dropped items have no OS path (web drag) — nothing inserted.',
   'panels.terminal.drag_drop.partial_skip':
@@ -226,6 +228,10 @@ export const en = {
     'Revoke failed — agent terminals may still be running. Please retry.',
 
   // statusbar.* (8)
+  // notifications (toast)
+  'notifications.dismiss': 'Dismiss',
+  'notifications.viewport_label': 'Notifications',
+
   'statusbar.mcp.copy': 'Copy MCP config',
   'statusbar.mcp.copied': 'Copied',
   'statusbar.mcp.copy_failed': 'Copy failed',
@@ -342,6 +348,8 @@ export const en = {
   'marketplace.reviews.refreshing': '⟳ Refreshing…',
   'marketplace.reviews.refresh_failed': 'Failed to refresh reviews: {message}',
   'marketplace.reviews.official_review': 'Officially reviewed',
+  'marketplace.verified': 'verified',
+  'marketplace.author_by': 'by',
   'marketplace.reviews.expand': 'Expand reviews',
   'marketplace.reviews.collapse': 'Collapse reviews',
   'marketplace.reviews.stars_aria': '{avg} stars',
@@ -398,6 +406,16 @@ export const en = {
   'permissions.prompt.select_all': 'Select all',
   'permissions.prompt.deny_all': 'Deny all',
   'permissions.prompt.grant_selected': 'Grant selected ({count})',
+
+  // fs-scope (path) access prompt
+  'permissions.fs_scope.title': 'Filesystem access request',
+  'permissions.fs_scope.body':
+    'Plugin {pluginId} requests access to the following path(s):',
+  'permissions.fs_scope.mode_label': 'mode',
+  'permissions.fs_scope.mode_rw': 'read + write',
+  'permissions.fs_scope.mode_ro': 'read only',
+  'permissions.fs_scope.deny': 'Deny',
+  'permissions.fs_scope.grant': 'Grant',
 
   // permissions editor UI
   'permissions.editor.title': 'Edit permissions',

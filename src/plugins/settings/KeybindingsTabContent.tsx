@@ -19,7 +19,7 @@ import {
   useKeybindingsStore,
 } from '@/plugins/keybindings/keybindings-store';
 import { KeybindingCaptureModal } from '@/plugins/keybindings/KeybindingCaptureModal';
-import { useT, useTWithFallback } from '@/i18n';
+import { useT, useTWithFallback, useLocale } from '@/i18n';
 
 const PLATFORM = detectPlatform();
 
@@ -31,6 +31,12 @@ interface DisplayCommand {
   readonly cmd: CommandSpec;
   readonly displayTitle: string;
   readonly displayCategory: string;
+  /** 预计算的 effective hotkey(含 user override;无则 undefined)(打磨 R29). */
+  readonly effectiveHotkey: string | undefined;
+  /** 预计算的 hotkey 段(无则空数组). */
+  readonly hotkeyParts: readonly string[];
+  /** 该命令是否被用户 override(决定 reset 按钮可见). */
+  readonly isOverridden: boolean;
 }
 
 interface Bucket {
@@ -66,11 +72,13 @@ function groupByCategory(
 function matches(d: DisplayCommand, q: string): boolean {
   if (!q) return true;
   const lower = q.toLowerCase();
+  // haystack 用 effective hotkey(含 override)而非原 cmd.hotkey(打磨 R29):
+  // 否则 override 后搜索仍只能命中默认组合,与列表显示的 effective 不一致。
   const haystack = [
     d.displayTitle,
     d.displayCategory,
     d.cmd.id,
-    d.cmd.hotkey ?? '',
+    d.effectiveHotkey ?? '',
   ]
     .join(' ')
     .toLowerCase();
@@ -81,24 +89,33 @@ export function KeybindingsTabContent() {
   const allCommands = useCommands(coApp.commands);
   const [query, setQuery] = useState('');
   const [editing, setEditing] = useState<CommandSpec | null>(null);
-  // 订阅 overrides 让 effective hotkey 变化触发组件重渲(此处不直接用,
-  // 但 selector 订阅就能让 React 在 setHotkey/reset 后重新读 getEffectiveHotkey)
-  useKeybindingsStore((s) => s.overrides);
   const setHotkey = useKeybindingsStore((s) => s.setHotkey);
   const reset = useKeybindingsStore((s) => s.reset);
+  // 订阅 overrides:下方过滤/列表直接读它,且这一个 selector 订阅就能让
+  // setHotkey/reset 后 effective hotkey 变化触发组件重渲(打磨 R3:删除原先
+  // 多余的第二个裸订阅,单订阅已足够)。
   const overrides = useKeybindingsStore((s) => s.overrides);
   const t = useT();
   const tk = useTWithFallback();
+  // locale 失效键(打磨 R31):tk identity 稳定,切语言不会让下面 memo 重算 →
+  // displayTitle/displayCategory 会停留旧语言。用 locale 值驱动重算。
+  const locale = useLocale();
 
-  const displayCommands = useMemo<readonly DisplayCommand[]>(
-    () =>
-      allCommands.map((cmd) => ({
+  const displayCommands = useMemo<readonly DisplayCommand[]>(() => {
+    void overrides; // deps:getEffectiveHotkey/isOverridden 依赖 overrides
+    void locale; // deps:tk 内部按 locale 翻译
+    return allCommands.map((cmd) => {
+      const effective = getEffectiveHotkey(cmd);
+      return {
         cmd,
         displayTitle: tk(cmd.titleKey, cmd.title),
         displayCategory: tk(cmd.categoryKey, cmd.category ?? ''),
-      })),
-    [allCommands, tk],
-  );
+        effectiveHotkey: effective ?? undefined,
+        hotkeyParts: effective ? formatHotkeyParts(effective, PLATFORM) : [],
+        isOverridden: cmd.id in overrides,
+      };
+    });
+  }, [allCommands, tk, overrides, locale]);
 
   const buckets = useMemo(() => {
     // 列出所有有「有效 hotkey」或「显式 unbind 但有默认」的命令(允许用户回头改)
@@ -162,8 +179,7 @@ export function KeybindingsTabContent() {
               <ul className="overflow-hidden rounded-md border border-line bg-panel-soft/40">
                 {bucket.items.map((d, idx) => {
                   const cmd = d.cmd;
-                  const effective = getEffectiveHotkey(cmd);
-                  const isOverridden = cmd.id in overrides;
+                  const { hotkeyParts, isOverridden } = d; // 预计算(打磨 R29)
                   return (
                     <li
                       key={cmd.id}
@@ -176,9 +192,9 @@ export function KeybindingsTabContent() {
                       <code className="ml-auto shrink-0 rounded bg-panel-soft/70 px-1.5 py-0.5 text-2xs uppercase tracking-wider text-fg-muted/70">
                         {cmd.id}
                       </code>
-                      {effective ? (
+                      {hotkeyParts.length > 0 ? (
                         <span className="flex shrink-0 items-center gap-0.5">
-                          {formatHotkeyParts(effective, PLATFORM).map((p) => (
+                          {hotkeyParts.map((p) => (
                             <KeyCap key={p}>{p}</KeyCap>
                           ))}
                         </span>

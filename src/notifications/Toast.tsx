@@ -6,6 +6,7 @@
 import React from 'react';
 import type { ReactNode } from 'react';
 import type { Notification } from './types';
+import { useT } from '@/i18n';
 import './Toast.css';
 
 export interface ToastProps {
@@ -14,6 +15,7 @@ export interface ToastProps {
 }
 
 export function Toast({ notification, onDismiss }: ToastProps): ReactNode {
+  const t = useT();
   const { id, level, message, code } = notification;
   return (
     <div
@@ -30,7 +32,7 @@ export function Toast({ notification, onDismiss }: ToastProps): ReactNode {
       <button
         type="button"
         className="toast__dismiss"
-        aria-label="dismiss"
+        aria-label={t('notifications.dismiss')}
         onClick={() => onDismiss(id)}
       >
         ×

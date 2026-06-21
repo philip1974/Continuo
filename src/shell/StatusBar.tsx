@@ -3,6 +3,7 @@
 // 右:active editor tab 文件名 + dirty + 行 / 词 / 字符 + 编码占位。
 
 import { useMemo, useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useRegistry } from '@/plugins/registries/useRegistry';
 import { useEditorStore } from '@/stores/editor.store';
 import { useWorkspaceStore } from '@/stores/workspace.store';
@@ -22,8 +23,11 @@ function basename(p: string): string {
   return m ? m[0] : p;
 }
 
-function useStatusBarItems(side: 'left' | 'right'): readonly StatusBarItemSpec[] {
-  return useRegistry(coApp.statusBar, () => coApp.statusBar.getBySide(side), [side]);
+// 一次订阅取全量(已按 priority 排序),再分侧(打磨 R6)。原先 left/right 各
+// useRegistry 一次 = 两个订阅回调 + 两次 getBySide(Array.from+filter+sort)。
+// getAll() 全局按 priority 排序,filter 保序 → 与 getBySide(side) 输出等价。
+function splitBySide(items: readonly StatusBarItemSpec[], side: 'left' | 'right') {
+  return items.filter((it) => it.side === side);
 }
 
 async function handleRevokeAgentTerminals(count: number): Promise<void> {
@@ -68,17 +72,53 @@ export function StatusBar() {
   const t = useT();
   const root = useWorkspaceStore((s) => s.root);
   const sidebarOpen = useLayoutUiStore((s) => s.sidebarOpen);
-  const tabs = useEditorStore((s) => s.tabs);
-  const activeTabId = useEditorStore((s) => s.activeTabId);
-  const sessions = useTerminalStore((s) => s.sessions);
+  // 只订阅派生的 agent 计数(打磨 R39,延续 R22/R24):终端标题/退出状态/普通
+  // 用户终端变化不影响 agent 数 → number 不变 → StatusBar 不重渲。
+  const agentSessionCount = useTerminalStore(
+    (s) => s.sessions.filter((x) => x.originHint === 'agent').length,
+  );
 
-  const active = tabs.find((tb) => tb.id === activeTabId) ?? null;
-  const leftItems = useStatusBarItems('left');
-  const rightItems = useStatusBarItems('right');
+  // 只订阅 active tab 的派生 primitive(打磨 R24 + 合并优化 R46)。非 active tab 的
+  // content / originalContent / reloadEpoch 变化不触发状态栏重渲;active 内容变化
+  // 仍更新统计(配合 R1 的统计 memo)。R24 用 4 个 selector 各 some/find;R46 合并为
+  // 单次 find 返回**扁平 primitive 对象**,useShallow 逐字段 Object.is 比较——content
+  // 只是 string ref(不像 EditorHeader 用 JSON 签名,这里避免序列化大文档正文)。
+  const { hasActiveTab, activeFilePath, activeDirty, activeContent } =
+    useEditorStore(
+      useShallow((s) => {
+        const found = s.tabs.find((tb) => tb.id === s.activeTabId);
+        return {
+          hasActiveTab: found !== undefined,
+          activeFilePath: found?.filePath ?? null,
+          activeDirty: found?.dirty ?? false,
+          activeContent: found?.content,
+        };
+      }),
+    );
+  const statusItems = useRegistry(coApp.statusBar);
+  const leftItems = useMemo(
+    () => splitBySide(statusItems, 'left'),
+    [statusItems],
+  );
+  const rightItems = useMemo(
+    () => splitBySide(statusItems, 'right'),
+    [statusItems],
+  );
 
-  const agentSessionCount = useMemo(
-    () => sessions.filter((s) => s.originHint === 'agent').length,
-    [sessions],
+  // 行/词/字符统计按 active 内容 memo 化(codex 打磨 R1)。lineCount/wordCount
+  // 会全文扫描并分配中间数组;StatusBar 因 sessions / MCP 复制态 / 插件 status
+  // item 等无关变化频繁重渲染,无 memo 时每次都重扫整篇。dep 只用 activeContent
+  // 字符串值:内容编辑 → 变 → 重算;无关重渲染 → 不变 → 命中缓存。
+  const stats = useMemo(
+    () =>
+      activeContent === undefined
+        ? null
+        : {
+            lines: lineCount(activeContent),
+            words: wordCount(activeContent),
+            chars: charCount(activeContent),
+          },
+    [activeContent],
   );
 
   const [mcpCopyState, setMcpCopyState] = useState<
@@ -160,22 +200,22 @@ export function StatusBar() {
             {agentSessionCount} agent
           </button>
         )}
-        {active ? (
+        {hasActiveTab ? (
           <>
             <span
               className="truncate max-w-[280px]"
-              title={active.filePath ?? t('statusbar.untitled_file')}
+              title={activeFilePath ?? t('statusbar.untitled_file')}
             >
-              {active.filePath
-                ? basename(active.filePath)
+              {activeFilePath
+                ? basename(activeFilePath)
                 : t('statusbar.untitled_file')}
-              {active.dirty && <span className="ml-1 text-fg-muted">●</span>}
+              {activeDirty && <span className="ml-1 text-fg-muted">●</span>}
             </span>
             <span>
               {t('statusbar.editor_stats', {
-                lines: lineCount(active.content),
-                words: wordCount(active.content),
-                chars: charCount(active.content),
+                lines: stats?.lines ?? 0,
+                words: stats?.words ?? 0,
+                chars: stats?.chars ?? 0,
               })}
             </span>
             <span>UTF-8</span>

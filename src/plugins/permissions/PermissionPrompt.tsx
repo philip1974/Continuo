@@ -4,73 +4,38 @@
 import { useEffect, useState } from 'react';
 import { Button, Modal } from '@/design';
 import { usePermissionPromptStore } from './promptStore';
+import type { FsScopePrompt, Pending } from './promptStore';
 import type { PermissionKey } from '../permissions';
 import { useT } from '@/i18n';
 import { PERM_LABEL_KEYS } from './perm-labels';
 
+/**
+ * 轻量 shell(打磨 R52,仿 R32/R50):权限弹窗绝大多数时间为空闲态。外层只订阅
+ * pending / currentFsScope 两个队列字段,都空时直接返回 null。manifest 弹窗与
+ * fs-scope 弹窗各自拆成 body 子组件,仅在对应请求存在时挂载 —— 空闲态不再 useT、
+ * 不订阅 grant/deny actions、不初始化 selected state/effect。manifest 优先。
+ */
 export function PermissionPrompt() {
-  const t = useT();
   const pending = usePermissionPromptStore((s) => s.pending);
+  const currentFsScope = usePermissionPromptStore((s) => s.currentFsScope);
+  if (pending) return <ManifestPromptBody pending={pending} />;
+  if (currentFsScope) return <FsScopePromptBody scope={currentFsScope} />;
+  return null;
+}
+
+function ManifestPromptBody({ pending }: { pending: Pending }) {
+  const t = useT();
   const grant = usePermissionPromptStore((s) => s.grant);
   const denyAll = usePermissionPromptStore((s) => s.denyAll);
-  const currentFsScope = usePermissionPromptStore((s) => s.currentFsScope);
-  const grantFsScope = usePermissionPromptStore((s) => s.grantFsScope);
-  const denyFsScope = usePermissionPromptStore((s) => s.denyFsScope);
-
-  // 每次 pending 变化时重置勾选(默认全选)
-  const [selected, setSelected] = useState<Set<PermissionKey>>(new Set());
+  // body 仅在某次 pending 存在时挂载;同一身份的请求保持勾选,默认全选。
+  // 用 pending.pluginId+perms 作 key 在 shell 端 remount 即可重置,这里直接初值全选。
+  const [selected, setSelected] = useState<Set<PermissionKey>>(
+    () => new Set(pending.perms),
+  );
+  // pending 直接 A→B 覆盖(不经 null,body 不 remount)时也重置勾选为新请求的默认全选。
   useEffect(() => {
-    if (pending) setSelected(new Set(pending.perms));
-    else setSelected(new Set());
+    setSelected(new Set(pending.perms));
   }, [pending]);
-
-  // Manifest perm prompt has priority; otherwise show fs scope prompt.
-  if (!pending && currentFsScope) {
-    return (
-      <Modal visible onClose={() => denyFsScope(currentFsScope.requestId)}>
-        <h2 className="mb-1 text-sm font-medium text-fg">
-          Filesystem access request
-        </h2>
-        <p className="mb-3 text-xs text-fg-muted">
-          Plugin <code className="text-fg">{currentFsScope.pluginId}</code> requests
-          access to the following path(s):
-        </p>
-        <ul className="mb-4 space-y-1 text-xs">
-          {currentFsScope.scopes.map((s, i) => (
-            <li
-              key={`${s.path}:${i}`}
-              className="rounded border border-line bg-panel-soft p-2"
-            >
-              <div className="font-mono text-fg">
-                {(s as { displayPath?: string }).displayPath ?? s.path}
-              </div>
-              <div className="text-fg-dim">
-                mode: {s.mode === 'rw' ? 'read + write' : 'read only'}
-              </div>
-            </li>
-          ))}
-        </ul>
-        <div className="flex justify-end gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => denyFsScope(currentFsScope.requestId)}
-          >
-            Deny
-          </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => grantFsScope(currentFsScope.requestId)}
-          >
-            Grant
-          </Button>
-        </div>
-      </Modal>
-    );
-  }
-
-  if (!pending) return null;
 
   const toggle = (perm: PermissionKey) => {
     setSelected((s) => {
@@ -147,6 +112,67 @@ export function PermissionPrompt() {
             {t('permissions.prompt.grant_selected', { count: selected.size })}
           </Button>
         </div>
+      </div>
+    </Modal>
+  );
+}
+
+function FsScopePromptBody({ scope }: { scope: FsScopePrompt }) {
+  const t = useT();
+  const grantFsScope = usePermissionPromptStore((s) => s.grantFsScope);
+  const denyFsScope = usePermissionPromptStore((s) => s.denyFsScope);
+  return (
+    <Modal visible onClose={() => denyFsScope(scope.requestId)}>
+      <h2 className="mb-1 text-sm font-medium text-fg">
+        {t('permissions.fs_scope.title')}
+      </h2>
+      <p className="mb-3 text-xs text-fg-muted">
+        {/* tpl 含 {pluginId};inline <code> 渲染 — 拆 prefix/suffix(同 manifest 分支) */}
+        {(() => {
+          const tpl = t('permissions.fs_scope.body', { pluginId: ' __PID__ ' });
+          const parts = tpl.split(' __PID__ ');
+          return (
+            <>
+              {parts[0]}
+              <code className="text-fg">{scope.pluginId}</code>
+              {parts[1] ?? ''}
+            </>
+          );
+        })()}
+      </p>
+      <ul className="mb-4 space-y-1 text-xs">
+        {scope.scopes.map((s, i) => (
+          <li
+            key={`${s.path}:${i}`}
+            className="rounded border border-line bg-panel-soft p-2"
+          >
+            <div className="font-mono text-fg">
+              {(s as { displayPath?: string }).displayPath ?? s.path}
+            </div>
+            <div className="text-fg-dim">
+              {t('permissions.fs_scope.mode_label')}:{' '}
+              {s.mode === 'rw'
+                ? t('permissions.fs_scope.mode_rw')
+                : t('permissions.fs_scope.mode_ro')}
+            </div>
+          </li>
+        ))}
+      </ul>
+      <div className="flex justify-end gap-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => denyFsScope(scope.requestId)}
+        >
+          {t('permissions.fs_scope.deny')}
+        </Button>
+        <Button
+          variant="primary"
+          size="sm"
+          onClick={() => grantFsScope(scope.requestId)}
+        >
+          {t('permissions.fs_scope.grant')}
+        </Button>
       </div>
     </Modal>
   );

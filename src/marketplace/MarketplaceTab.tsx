@@ -40,11 +40,28 @@ interface InstallState {
   pending: ReadonlySet<string>;
 }
 
+/** 两个 id 集合成员完全相同(打磨 R2:轮询无变化时保持引用稳定). */
+export function sameIdSet(
+  a: ReadonlySet<string>,
+  b: ReadonlySet<string>,
+): boolean {
+  if (a === b) return true;
+  if (a.size !== b.size) return false;
+  for (const id of a) if (!b.has(id)) return false;
+  return true;
+}
+
 /** 1s 轮询当前已装 plugin id 集合(同 PluginsTabContent 模式). */
-function useInstalledIds(): ReadonlySet<string> {
+export function useInstalledIds(): ReadonlySet<string> {
   const [snap, setSnap] = useState<ReadonlySet<string>>(() => readIds());
   useEffect(() => {
-    const t = setInterval(() => setSnap(readIds()), 1000);
+    // readIds() 每次都返回新 Set,直接 setSnap 会让 MarketplaceTab 每秒整页
+    // re-render(筛选区 + 卡片列表),即使已装集合没变。函数式更新只在集合实际
+    // 变化时换引用,无变化保持同引用 → React 跳过 re-render。(codex 打磨 R2)
+    const t = setInterval(() => {
+      const next = readIds();
+      setSnap((prev) => (sameIdSet(prev, next) ? prev : next));
+    }, 1000);
     return () => clearInterval(t);
   }, []);
   return snap;
@@ -92,6 +109,15 @@ export function MarketplaceTab() {
       return pruned === prev.pending ? prev : { ...prev, pending: pruned };
     });
   }, [installed]);
+
+  // 首次挂载时拉 reviews(打磨 R53:从启动预拉移到这里)。store 持 lastFetchedAt,
+  // 已拉过 / 正在拉则跳过,避免重复打 GitHub API;刷新按钮仍走 refreshReviews(true)。
+  useEffect(() => {
+    const rs = useReviewsStore.getState();
+    if (rs.lastFetchedAt === null && !rs.loading) {
+      void refreshReviews();
+    }
+  }, [refreshReviews]);
 
   useEffect(() => {
     let cancelled = false;
@@ -500,7 +526,7 @@ const MarketplaceCard = memo(function MarketplaceCard({
                 className="rounded bg-accent/20 px-1.5 py-0.5 text-2xs text-accent"
                 title={t('marketplace.reviews.official_review')}
               >
-                ✓ verified
+                ✓ {t('marketplace.verified')}
               </span>
             )}
             <code className="text-2xs text-fg-dim">{entry.id}</code>
@@ -559,7 +585,7 @@ const MarketplaceCard = memo(function MarketplaceCard({
       <div className="mt-1.5 flex items-center justify-between gap-2 text-2xs text-fg-dim">
         <div className="flex items-center gap-2">
           <span>
-            by{' '}
+            {t('marketplace.author_by')}{' '}
             {entry.authorUrl ? (
               <a
                 href={entry.authorUrl}
@@ -616,9 +642,14 @@ function RatingRow({
   // hooks 必须无条件;hasReviews=false 时 sorted 用空数组,不影响
   const ratingReviews = rating?.reviews;
   const sourceReviews = useMemo(() => ratingReviews ?? [], [ratingReviews]);
+  // 仅在卡片展开时才排序/截断(打磨 R41):sorted 只在 expanded 分支渲染,Marketplace
+  // 列表大多数卡片默认折叠,无须为不可见 review 排序 + 复制数组。
   const sorted = useMemo(
-    () => sortReviews(sourceReviews, sort).slice(0, 10),
-    [sourceReviews, sort],
+    () =>
+      expanded && hasReviews
+        ? sortReviews(sourceReviews, sort).slice(0, 10)
+        : [],
+    [expanded, hasReviews, sourceReviews, sort],
   );
 
   if (!hasReviews) {

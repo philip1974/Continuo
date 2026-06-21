@@ -56,6 +56,29 @@ describe('SettingItemRegistry', () => {
     expect(r.getByCategory('nope')).toEqual([]);
   });
 
+  // 打磨 R5:getByCategory 改为先 filter 再 sort。等优先级时必须保持注册顺序
+  // (稳定排序),且只受本 category 项影响 — 锁住「filter 在前」的等价性。
+  it('同 category 等优先级 → 保持注册顺序(稳定排序)', () => {
+    const r = new SettingItemRegistry();
+    const mk = (id: string, category: string) => ({
+      id,
+      category,
+      title: id,
+      type: 'boolean' as const,
+      default: true,
+      priority: 50,
+    });
+    r.register(mk('editor.a', 'editor'));
+    r.register(mk('general.x', 'general')); // 交错的无关 category 项
+    r.register(mk('editor.b', 'editor'));
+    r.register(mk('editor.c', 'editor'));
+    expect(r.getByCategory('editor').map((s) => s.id)).toEqual([
+      'editor.a',
+      'editor.b',
+      'editor.c',
+    ]);
+  });
+
   it('priority 升序;缺失默认 100', () => {
     const r = new SettingItemRegistry();
     r.register({

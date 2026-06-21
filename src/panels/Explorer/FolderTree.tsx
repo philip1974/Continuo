@@ -9,7 +9,7 @@ import { CreateInput } from './CreateInput';
 import { DropOverlay } from './DropOverlay';
 import { ExplorerHeader } from './ExplorerHeader';
 import { createTreeConfig } from './tree-config';
-import { FILE_ROW_HEIGHT, FileRow } from './FileRow';
+import { DEFAULT_INDENT, FILE_ROW_HEIGHT, FileRow } from './FileRow';
 import {
   createNewDir,
   createNewFile,
@@ -30,6 +30,8 @@ import { coApi } from '@/lib/co-api';
 import { notify } from '@/notifications/notify';
 import { getCachedClipboard } from '@/plugins/sandbox-sweep';
 import { useSettingValue } from '@/plugins/settings/values-store';
+import { coApp } from '@/plugins/co-app';
+import { useRegistry } from '@/plugins/registries/useRegistry';
 import { useTheme } from '@/theme';
 import { useExplorerClipboardStore } from './clipboard-store';
 import { t, useT } from '@/i18n';
@@ -54,6 +56,39 @@ function isWithinRoot(path: string, root: string): boolean {
     path.startsWith(`${normalizedRoot}/`) ||
     path.startsWith(`${normalizedRoot}\\`)
   );
+}
+
+/**
+ * 纯唯一名 picker:给定 destDir 与已存在 basename 集合,返回一个 pick(name) 函数。
+ * 候选序:basename / `${stem} copy${ext}` / `${stem} copy 2${ext}` / ...(上限 100,
+ * 兜底加时间戳)。**每次 pick 把选中的候选名加进 existing**,故同一批次内多个同名项
+ * 不会都选到同一个 ` copy` 名(批量重名碰撞 → 第二个 move 覆盖第一个的潜在数据丢失)。
+ * 抽成模块级纯函数以便单测;makeUniqueDestPicker 先 listDir 一次再委托它。
+ */
+export function makeNamePicker(
+  destDir: string,
+  existing: Set<string>,
+): (name: string) => string {
+  return (name: string): string => {
+    const dot = name.lastIndexOf('.');
+    const stem = dot > 0 ? name.slice(0, dot) : name;
+    const ext = dot > 0 ? name.slice(dot) : '';
+    for (let i = 0; i < 100; i++) {
+      const candidate =
+        i === 0
+          ? name
+          : i === 1
+            ? `${stem} copy${ext}`
+            : `${stem} copy ${i}${ext}`;
+      if (!existing.has(candidate)) {
+        existing.add(candidate); // 预留,防同批后续项再撞同名
+        return `${destDir}/${candidate}`;
+      }
+    }
+    const fallback = `${stem}-${Date.now()}${ext}`;
+    existing.add(fallback);
+    return `${destDir}/${fallback}`;
+  };
 }
 
 export function FolderTree({ root }: { root: string }) {
@@ -82,9 +117,14 @@ export function FolderTree({ root }: { root: string }) {
       // 过滤后的 in-root 子集,回写也只给 in-root 路径。直接整体替换会丢掉其它 root
       // 的展开状态(切 root 后第一次折叠/展开即触发)。保留 out-of-root 段,只更新
       // in-root 段;函数 updater 也喂 in-root 子集(与 headless-tree 视图一致)。见 P2-AF。
-      const all = [...useExplorerStore.getState().expandedPaths];
-      const inRootCurrent = all.filter((p) => isWithinRoot(p, root));
-      const outOfRoot = all.filter((p) => !isWithinRoot(p, root));
+      // 单次分区(打磨 R8):原先 filter 两遍各跑一次 isWithinRoot,跨 root 累积
+      // 集合越大重复扫描越明显。一次 for...of 分出 in/out-of-root,各分区内部
+      // 顺序与原 filter 一致 → 行为等价(见 P2-AF 契约测试)。
+      const inRootCurrent: string[] = [];
+      const outOfRoot: string[] = [];
+      for (const p of useExplorerStore.getState().expandedPaths) {
+        (isWithinRoot(p, root) ? inRootCurrent : outOfRoot).push(p);
+      }
       const next =
         typeof updater === 'function' ? updater(inRootCurrent) : updater;
       setPersistedExpandedPaths([...outOfRoot, ...next]);
@@ -137,11 +177,12 @@ export function FolderTree({ root }: { root: string }) {
             const touchedSrcParents = new Set<string>();
             const movedSrcs: string[] = [];
             let movedAny = false;
+            const pickDest = await makeUniqueDestPicker(destDir);
             try {
               for (const src of srcs) {
                 // 拖到原父目录 → no-op(canDrop 已挡掉拖到自身,父同位置只跳)
                 if (dirname(src) === destDir) continue;
-                const dest = await pickUniqueDest(destDir, basename(src));
+                const dest = pickDest(basename(src));
                 const r = await coApi.fs.move(src, dest);
                 if (!r.ok) {
                   console.warn('[explorer] drop move failed', src, r.code, r.message);
@@ -222,6 +263,16 @@ export function FolderTree({ root }: { root: string }) {
     () => new Set(selectedItemsArr ?? []),
     [selectedItemsArr],
   );
+
+  // 插件装饰器 registry 一次订阅(打磨 R7):下传给每个 FileRow,避免虚拟列表
+  // N 行各自 useRegistry(N 份订阅 + 插件启停时每行各取一次快照)。
+  const decorators = useRegistry(coApp.explorerDecorators);
+  // 插件右键菜单项 registry 一次订阅(打磨 R10):下传给根 ContextMenu 与每个
+  // FileRow 的 ContextMenu,避免 N+1 份同质订阅。可见性仍由各菜单按上下文计算。
+  const pluginMenuItems = useRegistry(coApp.explorerContextMenu);
+  // explorer.indentSize 对整棵树一致,一次订阅后下传(打磨 R14),避免每个可见
+  // FileRow 各订阅一份同值 setting。
+  const indent = useSettingValue<number>('explorer.indentSize', DEFAULT_INDENT);
 
   // ── fs.watch 增量更新(Step 6) ───────────────────────────────────
   // 跟随 headless-tree 受控展开集合,同步到 main 进程 watcher。
@@ -375,10 +426,11 @@ export function FolderTree({ root }: { root: string }) {
         const touchedSrcParents = new Set<string>();
         const movedSrcs: string[] = [];
         let okAny = false;
+        const pickDest = await makeUniqueDestPicker(destDir);
         try {
           for (const src of paths) {
             // 计算 dest:destDir + src basename;若已存在,自动加 ` copy` 后缀
-            const dest = await pickUniqueDest(destDir, basename(src));
+            const dest = pickDest(basename(src));
             const r =
               kind === 'cut'
                 ? await coApi.fs.move(src, dest)
@@ -426,28 +478,21 @@ export function FolderTree({ root }: { root: string }) {
     return idx >= 0 ? p.slice(idx + 1) : p;
   }
 
-  // 在 destDir 下找一个不存在的路径名:basename / `${stem} copy${ext}` /
-  // `${stem} copy 2${ext}` / ... 上限 100 次。复用 main 端 resolveUniqueDest
-  // 同款逻辑(renderer 侧 listDir 探测,避免每次都打 IPC 多次)。
-  async function pickUniqueDest(destDir: string, name: string): Promise<string> {
-    const dot = name.lastIndexOf('.');
-    const stem = dot > 0 ? name.slice(0, dot) : name;
-    const ext = dot > 0 ? name.slice(dot) : '';
-    // 先列目录拿现有 basename 集合(IPC 一次,后续纯本地匹配)
+  // 为「单批移动/复制到同一 destDir」建一个唯一名 picker:listDir 一次拿现有
+  // basename 集合,之后每次 pick 纯本地匹配(打磨 R20→R21:批量循环原先逐项
+  // listDir → N 次同目录 IPC,现降为 1 次)。pick 还把已分配的候选名加进集合,
+  // 防同一批次内两个同名项各自只看到磁盘旧态、都选到同一个 ` copy` 名 → 第二个
+  // move 覆盖第一个(批量重名碰撞,潜在数据丢失)。候选序:basename /
+  // `${stem} copy${ext}` / `${stem} copy 2${ext}` / ... 上限 100 次,兜底加时间戳。
+  async function makeUniqueDestPicker(
+    destDir: string,
+  ): Promise<(name: string) => string> {
     const r = await coApi.fs.listDir(destDir);
     const existing = new Set<string>();
     if (r.ok) {
       for (const e of r.data) existing.add(e.name);
     }
-    for (let i = 0; i < 100; i++) {
-      const candidate =
-        i === 0 ? name : i === 1 ? `${stem} copy${ext}` : `${stem} copy ${i}${ext}`;
-      if (!existing.has(candidate)) {
-        return `${destDir}/${candidate}`;
-      }
-    }
-    // 极端情况兜底:加时间戳
-    return `${destDir}/${stem}-${Date.now()}${ext}`;
+    return makeNamePicker(destDir, existing);
   }
 
   const submitCreate = async (name: string) => {
@@ -510,9 +555,10 @@ export function FolderTree({ root }: { root: string }) {
       const touchedSrcParents = new Set<string>();
       const movedSrcs: string[] = [];
       let movedAny = false;
+      const pickDest = await makeUniqueDestPicker(root);
       try {
         for (const src of moveable) {
-          const dest = await pickUniqueDest(root, basename(src));
+          const dest = pickDest(basename(src));
           const r = await coApi.fs.move(src, dest);
           if (!r.ok) {
             console.warn('[explorer] root drop move failed', src, r.code, r.message);
@@ -611,6 +657,7 @@ export function FolderTree({ root }: { root: string }) {
         rootPath={root}
         actions={contextActions}
         hasClipboard={hasClipboard}
+        pluginItems={pluginMenuItems}
       >
         <div
           ref={scrollRef}
@@ -651,6 +698,10 @@ export function FolderTree({ root }: { root: string }) {
                       dragActive && hoverTarget?.path === item.getId()
                     }
                     onFileOpen={handleFileOpen}
+                    decorators={decorators}
+                    hasClipboard={hasClipboard}
+                    pluginMenuItems={pluginMenuItems}
+                    indent={indent}
                   />
                 );
               })}

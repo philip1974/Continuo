@@ -10,6 +10,21 @@ vi.mock('../../plugins/quick-open/walk-files', () => ({
   walkWorkspaceFiles: vi.fn(),
 }));
 
+// 虚拟化(打磨 R25):jsdom 无布局,mock 成渲染全部 index 让列表断言有效。
+vi.mock('@tanstack/react-virtual', () => ({
+  useVirtualizer: ({ count }: { count: number }) => ({
+    getTotalSize: () => count * 28,
+    getVirtualItems: () =>
+      Array.from({ length: count }, (_, i) => ({
+        index: i,
+        start: i * 28,
+        size: 28,
+        key: i,
+      })),
+    scrollToIndex: vi.fn(),
+  }),
+}));
+
 const notifyError = vi.fn();
 vi.mock('../../notifications/notify', () => ({
   notify: { error: (...a: unknown[]) => notifyError(...a) },

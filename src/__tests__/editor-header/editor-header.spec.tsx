@@ -33,7 +33,6 @@ describe('EditorHeader — tab 数量', () => {
   it('tabs=0 → 不渲染', () => {
     const { container } = render(
       <EditorHeader
-        activeTab={null}
         onCloseRequest={vi.fn()}
       />,
     );
@@ -45,7 +44,6 @@ describe('EditorHeader — tab 数量', () => {
     useEditorStore.setState({ tabs: [t], activeTabId: t.id });
     const { container } = render(
       <EditorHeader
-        activeTab={t}
         onCloseRequest={vi.fn()}
       />,
     );
@@ -62,7 +60,6 @@ describe('EditorHeader — tab 数量', () => {
     useEditorStore.setState({ tabs: [a, b], activeTabId: a.id });
     const { container } = render(
       <EditorHeader
-        activeTab={a}
         onCloseRequest={vi.fn()}
       />,
     );
@@ -81,7 +78,6 @@ describe('EditorHeader — 与 VSCode 对齐:无保存按钮 + 不再持有 mode
       useEditorStore.setState({ tabs: [t], activeTabId: t.id });
       const { container } = render(
         <EditorHeader
-          activeTab={t}
           onCloseRequest={vi.fn()}
         />,
       );
@@ -100,7 +96,6 @@ describe('EditorHeader — 与 VSCode 对齐:无保存按钮 + 不再持有 mode
     useEditorStore.setState({ tabs: [t], activeTabId: t.id });
     const { container } = render(
       <EditorHeader
-        activeTab={t}
         onCloseRequest={vi.fn()}
       />,
     );
@@ -120,7 +115,6 @@ describe('EditorHeader — 单 tab close', () => {
     const onCloseRequest = vi.fn();
     const { container } = render(
       <EditorHeader
-        activeTab={t}
         onCloseRequest={onCloseRequest}
       />,
     );
@@ -130,7 +124,11 @@ describe('EditorHeader — 单 tab close', () => {
     ) as HTMLButtonElement;
     expect(closeBtn).not.toBeNull();
     fireEvent.click(closeBtn);
-    expect(onCloseRequest).toHaveBeenCalledWith(t);
+    expect(onCloseRequest).toHaveBeenCalledWith({
+      id: '/x.md',
+      filePath: '/x.md',
+      dirty: false,
+    });
   });
 });
 
@@ -147,7 +145,6 @@ describe('EditorHeader — 插件 editor action', () => {
     });
     const { container, getByTestId } = render(
       <EditorHeader
-        activeTab={t}
         onCloseRequest={vi.fn()}
       />,
     );
@@ -170,7 +167,6 @@ describe('EditorHeader — 插件 editor action', () => {
     });
     const { container } = render(
       <EditorHeader
-        activeTab={t}
         onCloseRequest={vi.fn()}
       />,
     );
@@ -193,7 +189,6 @@ describe('EditorHeader — 插件 editor action', () => {
     });
     const { container } = render(
       <EditorHeader
-        activeTab={t}
         onCloseRequest={vi.fn()}
       />,
     );
@@ -205,7 +200,6 @@ describe('EditorHeader — 插件 editor action', () => {
     useEditorStore.setState({ tabs: [t], activeTabId: t.id });
     const { container } = render(
       <EditorHeader
-        activeTab={t}
         onCloseRequest={vi.fn()}
       />,
     );
@@ -227,7 +221,6 @@ describe('EditorHeader — basename 兜底', () => {
     useEditorStore.setState({ tabs: [t], activeTabId: t.id });
     const { container } = render(
       <EditorHeader
-        activeTab={t}
         onCloseRequest={vi.fn()}
       />,
     );

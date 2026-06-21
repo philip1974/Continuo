@@ -129,8 +129,8 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
         <>
           <IconButton
             size="sm"
-            // aria-label 保留 ASCII（screen reader hint，sibling spec 用此查 button）
-            aria-label="Pop out active panel"
+            // aria-label 走 i18n(打磨 R38),复用 popout title 键,与 hover title 一致
+            aria-label={t('shell.dock.popout_title')}
             title={t('shell.dock.popout_title')}
             disabled={!activePanel}
             onClick={popout}
@@ -152,8 +152,8 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
       <IconButton
         ref={triggerRef}
         size="sm"
-        // aria-label 保留 ASCII（sibling spec 用此查 button）；title 走 t() 给 hover 提示
-        aria-label="More actions"
+        // aria-label 走 i18n(打磨 R38),复用 more_actions 键,与 hover title 一致
+        aria-label={t('panels.explorer.btn.more_actions')}
         title={t('panels.explorer.btn.more_actions')}
         onClick={() => setOpen((v) => !v)}
         className="opacity-40 transition-opacity group-hover/header:opacity-100 focus-visible:opacity-100"

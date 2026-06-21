@@ -22,47 +22,54 @@ interface ContributionRow {
 }
 
 function snapshot(): readonly ContributionRow[] {
+  // 每个 registry 只取一次快照(打磨 R4):getAll()/getBySide() 都 Array.from
+  // (+sort),原先 count 与 samples 各调一遍、statusBar 左右各取两遍 → 重复
+  // 分配/排序。局部快照后 count=.length、samples=.map,行为完全等价。
+  const panels = coApp.panels.getAll();
+  const commands = coApp.commands.getAll();
+  const statusItems = [
+    ...coApp.statusBar.getBySide('left'),
+    ...coApp.statusBar.getBySide('right'),
+  ];
+  const ribbon = coApp.ribbon.getAll();
+  const settingTabs = coApp.settingTabs.getAll();
+  const explorerDecorators = coApp.explorerDecorators.getAll();
+  const editorActions = coApp.editorActions.getAll();
   return [
     {
       labelKey: 'plugins_tab.label.panels',
-      count: coApp.panels.getAll().length,
-      samples: coApp.panels.getAll().map((p) => p.type),
+      count: panels.length,
+      samples: panels.map((p) => p.type),
     },
     {
       labelKey: 'plugins_tab.label.commands',
-      count: coApp.commands.getAll().length,
-      samples: coApp.commands.getAll().map((c) => c.id),
+      count: commands.length,
+      samples: commands.map((c) => c.id),
     },
     {
       labelKey: 'plugins_tab.label.statusbar',
-      count: [
-        ...coApp.statusBar.getBySide('left'),
-        ...coApp.statusBar.getBySide('right'),
-      ].length,
-      samples: [
-        ...coApp.statusBar.getBySide('left'),
-        ...coApp.statusBar.getBySide('right'),
-      ].map((x) => x.id),
+      count: statusItems.length,
+      samples: statusItems.map((x) => x.id),
     },
     {
       labelKey: 'plugins_tab.label.ribbon',
-      count: coApp.ribbon.getAll().length,
-      samples: coApp.ribbon.getAll().map((r) => r.id),
+      count: ribbon.length,
+      samples: ribbon.map((r) => r.id),
     },
     {
       labelKey: 'plugins_tab.label.setting_tabs',
-      count: coApp.settingTabs.getAll().length,
-      samples: coApp.settingTabs.getAll().map((t) => t.id),
+      count: settingTabs.length,
+      samples: settingTabs.map((t) => t.id),
     },
     {
       labelKey: 'plugins_tab.label.explorer_decorators',
-      count: coApp.explorerDecorators.getAll().length,
+      count: explorerDecorators.length,
       samples: [],
     },
     {
       labelKey: 'plugins_tab.label.editor_actions',
-      count: coApp.editorActions.getAll().length,
-      samples: coApp.editorActions.getAll().map((a) => a.id),
+      count: editorActions.length,
+      samples: editorActions.map((a) => a.id),
     },
   ];
 }
@@ -159,6 +166,35 @@ export function PluginsTabContent() {
   );
 }
 
+/**
+ * 两个插件列表渲染等价(打磨 R2:轮询无变化时保持引用稳定)。逐项比较所有被
+ * UI 渲染的可变字段(id/status/error/warning) + manifest 引用(reload 会换新
+ * manifest ref)。任一 status/warning 变化即判不等 → 换引用 re-render,不会掩盖
+ * 「loading→active→failed」「partial-grant ⚠」等真实状态更新(正是打磨在防的
+ * UI 陈旧态)。
+ */
+export function samePluginList(
+  a: readonly PluginListItem[],
+  b: readonly PluginListItem[],
+): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i]!; // i < a.length 且 a.length===b.length,两侧索引必有值
+    const y = b[i]!;
+    if (
+      x.id !== y.id ||
+      x.status !== y.status ||
+      x.error !== y.error ||
+      x.warning !== y.warning ||
+      x.manifest !== y.manifest
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function useUserPlugins(): {
   plugins: readonly PluginListItem[];
   refresh: () => void;
@@ -169,7 +205,10 @@ function useUserPlugins(): {
   });
   const refresh = () => {
     const m = getUserPluginManager();
-    setSnap(m ? m.listAll() : []);
+    // listAll() 每次返回新数组;1s 轮询直接 setSnap 会让整个插件列表每秒
+    // re-render。函数式更新只在列表渲染态实际变化时换引用。(codex 打磨 R2)
+    const next = m ? m.listAll() : [];
+    setSnap((prev) => (samePluginList(prev, next) ? prev : next));
   };
   useEffect(() => {
     // 挂载时刷一次(manager 可能在组件 mount 之后才 init 完)

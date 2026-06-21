@@ -166,6 +166,31 @@ describe('KeybindingsTabContent — override', () => {
     const { container } = render(<KeybindingsTabContent />);
     expect(container.textContent).toContain('未绑定');
   });
+
+  // 打磨 R3:删除组件内多余的第二个 overrides 裸订阅后,保留的单订阅必须仍能在
+  // 挂载后 live setHotkey/reset 时触发重渲(reset 按钮可见性)。
+  it('挂载后 live override(setHotkey)→ 组件重渲,reset 按钮变可见', () => {
+    coApp.commands.register({
+      id: 'a',
+      title: 'A',
+      hotkey: 'mod+a',
+      fn: vi.fn(),
+    });
+    const { container } = render(<KeybindingsTabContent />);
+    const resetBtn0 = container.querySelector(
+      'button[aria-label=恢复默认]',
+    ) as HTMLButtonElement;
+    expect(resetBtn0.className).toContain('invisible');
+
+    act(() => {
+      useKeybindingsStore.getState().setHotkey('a', 'mod+x');
+    });
+
+    const resetBtn1 = container.querySelector(
+      'button[aria-label=恢复默认]',
+    ) as HTMLButtonElement;
+    expect(resetBtn1.className).not.toContain('invisible');
+  });
 });
 
 describe('KeybindingsTabContent — 编辑 Modal', () => {

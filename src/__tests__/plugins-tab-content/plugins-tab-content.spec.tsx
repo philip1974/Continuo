@@ -111,6 +111,24 @@ describe('PluginsTabContent — 贡献点统计', () => {
     expect(container.textContent).toContain('plugin.cmd.alpha');
   });
 
+  // 打磨 R4:snapshot() 把 statusBar 左右两侧合并为一次局部快照统计。两侧各注册
+  // 一项,samples 必须同时含左右 id(守护「合并 getBySide 不丢侧」)。
+  it('statusBar 左右各注册 → samples 含两侧', () => {
+    coApp.statusBar.register({
+      id: 'sb.left.one',
+      side: 'left',
+      render: () => null,
+    });
+    coApp.statusBar.register({
+      id: 'sb.right.one',
+      side: 'right',
+      render: () => null,
+    });
+    const { container } = render(<PluginsTabContent />);
+    expect(container.textContent).toContain('sb.left.one');
+    expect(container.textContent).toContain('sb.right.one');
+  });
+
   it('动态注册 → useEffect subscribe 更新', () => {
     const { container } = render(<PluginsTabContent />);
     expect(container.textContent).not.toContain('plugin.late');

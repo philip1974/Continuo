@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { fireEvent, render, cleanup, act } from '@testing-library/react';
+import { t } from '../../i18n';
 import { HeaderActions } from '../../shell/dock/HeaderActions';
 import { coApp } from '../../plugins/co-app';
 import { PanelRegistry } from '../../plugins/registries/PanelRegistry';
@@ -46,7 +47,7 @@ describe('HeaderActions — popout', () => {
       <HeaderActions {...(props as unknown as Parameters<typeof HeaderActions>[0])} />,
     );
     const popoutBtn = container.querySelector(
-      'button[aria-label="Pop out active panel"]',
+      `button[aria-label="${t('shell.dock.popout_title')}"]`,
     ) as HTMLButtonElement;
     expect(popoutBtn.disabled).toBe(true);
   });
@@ -57,7 +58,7 @@ describe('HeaderActions — popout', () => {
       <HeaderActions {...(props as unknown as Parameters<typeof HeaderActions>[0])} />,
     );
     const popoutBtn = container.querySelector(
-      'button[aria-label="Pop out active panel"]',
+      `button[aria-label="${t('shell.dock.popout_title')}"]`,
     ) as HTMLButtonElement;
     fireEvent.click(popoutBtn);
     expect(props.containerApi.addPopoutGroup).toHaveBeenCalledTimes(1);
@@ -94,7 +95,7 @@ describe('HeaderActions — 更多操作菜单', () => {
     );
     fireEvent.click(
       container.querySelector(
-        'button[aria-label="More actions"]',
+        `button[aria-label="${t('panels.explorer.btn.more_actions')}"]`,
       ) as HTMLButtonElement,
     );
     const menu = document.querySelector('[role=menu]');
@@ -115,7 +116,7 @@ describe('HeaderActions — 更多操作菜单', () => {
     );
     fireEvent.click(
       container.querySelector(
-        'button[aria-label="More actions"]',
+        `button[aria-label="${t('panels.explorer.btn.more_actions')}"]`,
       ) as HTMLButtonElement,
     );
     const item = document.querySelector('[role=menuitem]') as HTMLElement;
@@ -147,7 +148,7 @@ describe('HeaderActions — 更多操作菜单', () => {
     );
     fireEvent.click(
       container.querySelector(
-        'button[aria-label="More actions"]',
+        `button[aria-label="${t('panels.explorer.btn.more_actions')}"]`,
       ) as HTMLButtonElement,
     );
     expect(document.querySelector('[role=menu]')).not.toBeNull();
@@ -167,7 +168,7 @@ describe('HeaderActions — 更多操作菜单', () => {
     );
     fireEvent.click(
       container.querySelector(
-        'button[aria-label="More actions"]',
+        `button[aria-label="${t('panels.explorer.btn.more_actions')}"]`,
       ) as HTMLButtonElement,
     );
     expect(document.querySelector('[role=menu]')!.textContent).not.toContain(

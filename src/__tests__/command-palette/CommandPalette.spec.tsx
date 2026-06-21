@@ -1,5 +1,14 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+
+vi.mock('@tanstack/react-virtual', () => ({
+  useVirtualizer: ({ count }: { count: number }) => ({
+    getTotalSize: () => count * 30,
+    getVirtualItems: () =>
+      Array.from({ length: count }, (_, i) => ({ index: i, start: i * 30, size: 30, key: i })),
+    scrollToIndex: vi.fn(),
+  }),
+}));
 import { fireEvent, render, cleanup, act } from '@testing-library/react';
 
 const notifyError = vi.fn();

@@ -20,10 +20,8 @@ import {
 function resetAll(): void {
   useWorkspaceStore.setState({ root: null, recentRoots: [] });
   useExplorerStore.setState({
-    activePath: null,
     expandedPaths: new Set(),
     sort: { by: 'name', reverse: false },
-    search: '',
   });
   usePinnedStore.setState({ paths: [] });
   useLayoutUiStore.setState({
@@ -112,7 +110,6 @@ describe('cold-start drag folder', () => {
 
     expect(useWorkspaceStore.getState().root).toBe('/dragged');
     expect(useWorkspaceStore.getState().recentRoots).toEqual(['/old']);
-    expect(useExplorerStore.getState().activePath).toBeNull();
     expect(useExplorerStore.getState().expandedPaths.size).toBe(0);
     expect(useEditorStore.getState().tabs).toHaveLength(0);
     expect(fs.readFile).not.toHaveBeenCalled();

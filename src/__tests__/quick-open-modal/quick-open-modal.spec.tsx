@@ -6,6 +6,23 @@ vi.mock('../../plugins/quick-open/walk-files', () => ({
   walkWorkspaceFiles: vi.fn(),
 }));
 
+// 虚拟化(打磨 R25):jsdom 无布局 → 真 virtualizer 量到 0 高 → 渲染 0 行。
+// mock 成"渲染全部 index",让既有断言(列表项渲染 / 键盘选择)继续有效;
+// 生产用真 @tanstack/react-virtual 只渲染可视行。同 FolderTree 测试策略。
+vi.mock('@tanstack/react-virtual', () => ({
+  useVirtualizer: ({ count }: { count: number }) => ({
+    getTotalSize: () => count * 28,
+    getVirtualItems: () =>
+      Array.from({ length: count }, (_, i) => ({
+        index: i,
+        start: i * 28,
+        size: 28,
+        key: i,
+      })),
+    scrollToIndex: vi.fn(),
+  }),
+}));
+
 import {
   _resetLmApiForTest,
   captureLmApi,

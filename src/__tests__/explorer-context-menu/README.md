@@ -22,7 +22,8 @@
 | `src/plugins/types.ts` | CoApp / CoPluginApp 加 `explorerContextMenu` 字段(透传,无 scoped 闭包) |
 | `src/plugins/scoped-app.ts` | 透传(无权限层) |
 | `src/plugins/Plugin.ts` | `protected registerExplorerContextMenuItem(spec): Disposable` proxy |
-| `src/panels/Explorer/ContextMenu.tsx` | 订阅 registry → filterVisible(ctx) → 按 group 排序渲染 |
+| `src/panels/Explorer/FolderTree.tsx` | 一次 `useRegistry(explorerContextMenu)`,把全量快照作 `pluginItems` 下传给根菜单与每个 FileRow(打磨 R10:避免 N+1 份订阅) |
+| `src/panels/Explorer/ContextMenu.tsx` | 接收 `pluginItems` prop,**仅菜单打开时**按当前 ctx 做 `filterVisible` + 按 group 排序渲染(打磨 R13:未打开不评估 when) |
 
 需 export 的形态:
 
@@ -72,6 +73,9 @@ export function filterVisible(
 - 无 `when` → 始终可见
 - `when(ctx)` 返 false → 隐藏
 - `when(ctx)` 抛错 → 视为 false + console.warn(不让 plugin 异常拖崩 UI)
+- **调用时机**(打磨 R13):`ContextMenu` 只在菜单 `open` 后才跑 `filterVisible`/
+  `groupPluginItems`。虚拟列表里每个可见 FileRow 都挂一个菜单,常规滚动/hover/
+  剪贴板变化触发的行重渲染不会评估 `when`,只有真正弹出时才按当前 ctx 计算。
 
 ### group 排序约定(渲染层)
 

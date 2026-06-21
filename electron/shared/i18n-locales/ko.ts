@@ -119,6 +119,8 @@ export const ko: Record<TranslationKey, string> = {
   'dock.empty.restore': '기본 레이아웃 복원',
   'panels.explorer.loading_or_empty': '로딩 중이거나 빈 폴더',
   'panels.terminal.starting_shell': '셸 시작 중…',
+  'panels.terminal.missing_session_id': 'sessionId 없는 터미널 패널(자동 닫힘)',
+  'panels.terminal.session_not_available': '세션을 사용할 수 없습니다',
   'panels.terminal.drag_drop.no_os_path':
     '드롭한 항목에 OS 경로가 없습니다(웹 드래그). 아무것도 삽입하지 않았습니다.',
   'panels.terminal.drag_drop.partial_skip':
@@ -219,6 +221,10 @@ export const ko: Record<TranslationKey, string> = {
     '취소 실패 — 에이전트 터미널이 아직 실행 중일 수 있습니다. 다시 시도해 주세요.',
 
   // statusbar.*
+  // notifications (toast)
+  'notifications.dismiss': '닫기',
+  'notifications.viewport_label': '알림',
+
   'statusbar.mcp.copy': 'MCP 설정 복사',
   'statusbar.mcp.copied': '복사됨',
   'statusbar.mcp.copy_failed': '복사 실패',
@@ -335,6 +341,8 @@ export const ko: Record<TranslationKey, string> = {
   'marketplace.reviews.refreshing': '⟳ 새로 고침 중…',
   'marketplace.reviews.refresh_failed': '리뷰 새로 고침 실패: {message}',
   'marketplace.reviews.official_review': '공식 검토됨',
+  'marketplace.verified': '검증됨',
+  'marketplace.author_by': '작성자',
   'marketplace.reviews.expand': '리뷰 펼치기',
   'marketplace.reviews.collapse': '리뷰 접기',
   'marketplace.reviews.stars_aria': '별 {avg}개',
@@ -391,6 +399,15 @@ export const ko: Record<TranslationKey, string> = {
   'permissions.prompt.select_all': '모두 선택',
   'permissions.prompt.deny_all': '모두 거부',
   'permissions.prompt.grant_selected': '선택 허용 ({count})',
+
+  // fs-scope (path) access prompt
+  'permissions.fs_scope.title': '파일 시스템 접근 요청',
+  'permissions.fs_scope.body': '플러그인 {pluginId}이(가) 다음 경로에 대한 접근을 요청합니다:',
+  'permissions.fs_scope.mode_label': '모드',
+  'permissions.fs_scope.mode_rw': '읽기 + 쓰기',
+  'permissions.fs_scope.mode_ro': '읽기 전용',
+  'permissions.fs_scope.deny': '거부',
+  'permissions.fs_scope.grant': '허용',
 
   // permissions editor UI
   'permissions.editor.title': '권한 편집',
