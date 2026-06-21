@@ -97,6 +97,23 @@ describe('listDir', () => {
     expect(sub!.path).toBe(path.join(dir, 'sub'));
   });
 
+  it('perf P3 · 并发分块 lstat:宽目录(>1 块)不乱序、不漏项', async () => {
+    // 建 70 个文件(>2×LSTAT_CHUNK=32),覆盖块边界。名字零填充保证字母序确定。
+    const wide = path.join(dir, 'wide');
+    await mkdir(wide);
+    const n = 70;
+    for (let i = 0; i < n; i++) {
+      await writeFile(path.join(wide, `f${String(i).padStart(3, '0')}.txt`), '');
+    }
+    const items = await listDir(wide, { maxDepth: 1 });
+    const names = items.map((i) => i.name);
+    // 全部 70 个都在,且与同步排序结果一致(并发不破坏最终顺序)
+    expect(names.length).toBe(n);
+    expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b)));
+    // 无重复 / 无丢失
+    expect(new Set(names).size).toBe(n);
+  });
+
   it('perf P2 · maxFiles 早停:收集够 N 个文件即停,目录不计入', async () => {
     // beforeEach 已建:sub/(dir) + a.txt + b.txt + sub/inner.txt(深度内共 3 文件)。
     // 再多铺几个文件确保超过上限。

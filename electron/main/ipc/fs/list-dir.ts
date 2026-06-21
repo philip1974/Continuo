@@ -65,6 +65,47 @@ export async function listDir(
   return walk(dirPath, 1, maxDepth, exclude, followSymlinks, maxFiles, state);
 }
 
+// perf P3:同一层目录的 lstat 并发度。旧实现 for 循环逐项 `await lstat` 串行,
+// 1000 文件目录 ≈ 1000 次 stat 延迟累加(网络盘/外接盘更糟)。改为按块并发
+// lstat。块大小同时是 maxFiles 早停的 over-scan 上界:cap 命中的那一块最多多
+// lstat (CHUNK-1) 项,远小于「整层一次性并发」会劣化 P2 的代价。
+const LSTAT_CHUNK = 32;
+
+interface ResolvedEntry {
+  readonly d: { name: string };
+  readonly full: string;
+  readonly st: import('node:fs').Stats;
+  readonly isSymlink: boolean;
+  readonly isDirectory: boolean;
+}
+
+// 解析单个 dirent 的 stat。lstat 失败(边读边删竞态)→ null(跳过)。
+async function resolveEntry(
+  dir: string,
+  d: { name: string },
+  followSymlinks: boolean,
+): Promise<ResolvedEntry | null> {
+  const full = path.join(dir, d.name);
+  let st;
+  try {
+    st = await lstat(full);
+  } catch {
+    return null; // 边读边删的竞态:跳过
+  }
+  const isSymlink = st.isSymbolicLink();
+  let isDirectory = st.isDirectory();
+  // followSymlinks=true 时按目标判 isDirectory(但仍记 isSymlink:true 以便 UI 区分)
+  if (isSymlink && followSymlinks) {
+    try {
+      const targetSt = await lstat(full); // 简化:不递归 link 目标(保持历史行为)
+      isDirectory = targetSt.isDirectory();
+    } catch {
+      /* link 失效,按原 lstat 处理 */
+    }
+  }
+  return { d, full, st, isSymlink, isDirectory };
+}
+
 async function walk(
   dir: string,
   depth: number,
@@ -74,60 +115,50 @@ async function walk(
   maxFiles: number,
   state: { fileCount: number },
 ): Promise<FileEntry[]> {
+  if (state.fileCount >= maxFiles) return []; // cap 后进入的子树:不 readdir/lstat
   const dirents = await readdir(dir, { withFileTypes: true });
+  const candidates = dirents.filter((d) => !exclude.includes(d.name));
   const out: FileEntry[] = [];
 
-  for (const d of dirents) {
-    if (state.fileCount >= maxFiles) break; // 文件数已达上限 → 停止
-    if (exclude.includes(d.name)) continue;
-    const full = path.join(dir, d.name);
+  // 按块并发 lstat(Promise.all 保留块内顺序),块间检查 cap。组装、计数、递归
+  // 仍按 candidates 顺序逐项进行 —— 输出与历史串行版逐字节一致;递归保持串行,
+  // 避免共享 state.fileCount 的并发竞态(maxFiles 语义确定)。
+  for (let i = 0; i < candidates.length; i += LSTAT_CHUNK) {
+    if (state.fileCount >= maxFiles) break;
+    const chunk = candidates.slice(i, i + LSTAT_CHUNK);
+    const resolved = await Promise.all(
+      chunk.map((d) => resolveEntry(dir, d, followSymlinks)),
+    );
+    for (const item of resolved) {
+      if (state.fileCount >= maxFiles) break; // 文件数已达上限 → 停止
+      if (!item) continue;
+      const { full, st, isSymlink, isDirectory } = item;
+      out.push({
+        path: full,
+        name: item.d.name,
+        isDirectory,
+        ...(isSymlink && { isSymlink: true }),
+        ...(st.isFile() && { size: st.size }),
+        mtime: st.mtimeMs,
+        ctime: st.ctimeMs,
+      });
+      if (st.isFile()) state.fileCount++; // 只文件计入 maxFiles(目录不计)
 
-    // 用 lstat 判 symlink(readdir 的 dirent 在某些 fs 上 isSymbolicLink 不可靠)
-    let st;
-    try {
-      st = await lstat(full);
-    } catch {
-      continue; // 边读边删的竞态:跳过
-    }
-
-    const isSymlink = st.isSymbolicLink();
-    let isDirectory = st.isDirectory();
-
-    // followSymlinks=true 时按目标判 isDirectory(但仍记 isSymlink:true 以便 UI 区分)
-    if (isSymlink && followSymlinks) {
-      try {
-        const targetSt = await lstat(full); // 简化:不递归 link 目标
-        isDirectory = targetSt.isDirectory();
-      } catch {
-        /* link 失效,按原 lstat 处理 */
+      // 递归:目录、未达深度、且不是 symlink(除非 followSymlinks)
+      const shouldRecurse =
+        isDirectory && depth < maxDepth && (followSymlinks || !isSymlink);
+      if (shouldRecurse) {
+        const children = await walk(
+          full,
+          depth + 1,
+          maxDepth,
+          exclude,
+          followSymlinks,
+          maxFiles,
+          state,
+        );
+        out.push(...children);
       }
-    }
-
-    out.push({
-      path: full,
-      name: d.name,
-      isDirectory,
-      ...(isSymlink && { isSymlink: true }),
-      ...(st.isFile() && { size: st.size }),
-      mtime: st.mtimeMs,
-      ctime: st.ctimeMs,
-    });
-    if (st.isFile()) state.fileCount++; // 只文件计入 maxFiles(目录不计)
-
-    // 递归:目录、未达深度、且不是 symlink(除非 followSymlinks)
-    const shouldRecurse =
-      isDirectory && depth < maxDepth && (followSymlinks || !isSymlink);
-    if (shouldRecurse) {
-      const children = await walk(
-        full,
-        depth + 1,
-        maxDepth,
-        exclude,
-        followSymlinks,
-        maxFiles,
-        state,
-      );
-      out.push(...children);
     }
   }
 

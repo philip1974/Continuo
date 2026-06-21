@@ -23,3 +23,13 @@
 **修复**:给 `listDir` 加可选 `maxFiles`(默认无限,只有 QuickOpen 传;Explorer/App 用浅层 listDir 不受影响),walker 收集够 `maxFiles` 个**文件**即停止遍历/递归(目录不计入)。walk-files 把 maxFiles 下推。**行为保持**:`maxFiles=Infinity`(默认)时守卫永不触发,输出与历史逐字节一致;仅文件数真超 5000 的大仓库改变候选集成员(5000 本是启发式上限,且 fuzzy 搜索对非空 query 重排,空 query 顺序变为 top-down 遍历序,方向更优)。
 
 **契约不变量**(`fs-adapter.spec.ts` maxFiles 早停 + 未达上限逐字节一致;`quick-open/walk-files.spec.ts` maxFiles 下推透传)。
+
+## P3 — listDir 同层 lstat 分块并发(去串行 IO)
+
+**位置**:`electron/main/ipc/fs/list-dir.ts` `walk()`。
+
+**问题**:walk 在 `for` 循环里逐项 `await lstat(full)` 串行,1000 文件目录 ≈ 1000 次 stat 延迟累加。listDir 是 Explorer 展开 + Quick Open 扫描共同热路径;P2 把 QuickOpen 限到 5000 后,这里仍可能 5000 次串行 IO。网络盘/外接盘延迟更放大。
+
+**修复**:同一层 dirent **按块并发** lstat(`LSTAT_CHUNK=32`,`Promise.all` 保留块内顺序),块间检查 maxFiles cap。组装/计数/递归仍按 candidates 顺序逐项进行 —— **输出与历史串行版逐字节一致**(30+ 现有 listDir 测试全过即证);**递归保持串行**避免共享 `state.fileCount` 的并发竞态(maxFiles 语义确定)。块大小同时是 maxFiles over-scan 上界(cap 命中的块最多多 lstat 31 项),避免「整层一次性并发」反而劣化 P2。等待从 O(N 连续 round-trip) 降到 O(N/32 批)。
+
+**契约不变量**(`fs-adapter.spec.ts` P3 跨块:70 文件 >2 块不乱序/不漏项/不重复 + 所有既有 listDir 输出测试不变)。
