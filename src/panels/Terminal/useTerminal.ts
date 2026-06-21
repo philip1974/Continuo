@@ -126,15 +126,23 @@ const LIGHT_THEME: ITheme = {
   brightWhite: '#57606a',
 };
 
-function fitAndResize(
+export function fitAndResize(
   term: Terminal,
   fitAddon: FitAddon,
   termId: string,
+  lastSize: { current: { cols: number; rows: number } | null },
 ): boolean {
   try {
     fitAddon.fit();
     if (term.cols > 0 && term.rows > 0) {
-      void coApi.terminal.resize(termId, term.cols, term.rows);
+      // 性能 P9:仅当网格(cols/rows)真变化才发 resize IPC。lastSize 即上次发往 PTY
+      // 的尺寸 = PTY 当前尺寸,故相等时 PTY resize 是 no-op(还会触发多余 SIGWINCH)。
+      // fit() 仍每次跑(调 xterm DOM 布局);返回值语义不变 = 网格是否有效(供 RAF 重试)。
+      const prev = lastSize.current;
+      if (!prev || prev.cols !== term.cols || prev.rows !== term.rows) {
+        lastSize.current = { cols: term.cols, rows: term.rows };
+        void coApi.terminal.resize(termId, term.cols, term.rows);
+      }
       return true;
     }
   } catch {
@@ -186,6 +194,9 @@ export function useTerminal(termId: string) {
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const searchAddonRef = useRef<SearchAddon | null>(null);
+  // 性能 P9:本终端上次发往 main/PTY 的网格尺寸。fit() 后只有 cols/rows 真变化才发
+  // resize IPC —— 侧栏拖拽/窗口 resize 多为像素级变化不改格子数,跳过无效 IPC+PTY resize。
+  const lastSentSizeRef = useRef<{ cols: number; rows: number } | null>(null);
   const mountedRef = useRef(false);
   const [searchState, setSearchState] = useState(
     INITIAL_TERMINAL_SEARCH_STATE,
@@ -330,7 +341,7 @@ export function useTerminal(termId: string) {
     // 首屏 fit + 通知主进程初始尺寸。
     // 同步先试一次(useEffect 跑在 paint 后,容器一般已有尺寸,可省 1 帧);
     // cols/rows 拿到 0 说明容器还没 layout 完,fallback 到 RAF 下一帧重试。
-    const doFit = () => fitAndResize(term, fitAddon, termId);
+    const doFit = () => fitAndResize(term, fitAddon, termId, lastSentSizeRef);
     if (!doFit()) requestAnimationFrame(doFit);
 
     // 主进程 stdout → safeWrite 队列。第一次收到本 termId 的 data 就标 ready,
@@ -382,7 +393,7 @@ export function useTerminal(termId: string) {
 
     // 容器尺寸变化 → fit + resize
     const ro = new ResizeObserver(() => {
-      fitAndResize(term, fitAddon, termId);
+      fitAndResize(term, fitAddon, termId, lastSentSizeRef);
     });
     ro.observe(container);
 
@@ -435,7 +446,7 @@ export function useTerminal(termId: string) {
     if (!term || !fit) return;
     term.options.fontSize = fontSize;
     term.options.cursorStyle = cursorStyle;
-    fitAndResize(term, fit, termId);
+    fitAndResize(term, fit, termId, lastSentSizeRef);
   }, [fontSize, cursorStyle, termId]);
 
   // 主题切换 → 已有 term 实例同步 theme(不重建,保留历史输出)
@@ -463,7 +474,7 @@ export function useTerminal(termId: string) {
     const term = termRef.current;
     const fit = fitRef.current;
     if (!term || !fit) return;
-    const raf = requestAnimationFrame(() => fitAndResize(term, fit, termId));
+    const raf = requestAnimationFrame(() => fitAndResize(term, fit, termId, lastSentSizeRef));
     return () => cancelAnimationFrame(raf);
   }, [sidebarOpen, sidebarWidth, termId]);
 
@@ -471,7 +482,7 @@ export function useTerminal(termId: string) {
     const term = termRef.current;
     const fitAddon = fitRef.current;
     if (!term || !fitAddon) return;
-    fitAndResize(term, fitAddon, termId);
+    fitAndResize(term, fitAddon, termId, lastSentSizeRef);
   }, [termId]);
 
   // topic-22: stale-safe focus,unmount 后 termRef.current 已被 dispose 路径置 null

@@ -553,6 +553,7 @@
 
 - [`code-editor-echo-skip.spec.tsx`](./perf-audit/code-editor-echo-skip.spec.tsx)
 - [`terminal-data-demux.spec.ts`](./perf-audit/terminal-data-demux.spec.ts)
+- [`terminal-resize-gating.spec.ts`](./perf-audit/terminal-resize-gating.spec.ts)
 
 ## [PermissionEditorModal(M-Plugin v4.7 事后改主意)](./permission-editor-modal/README.md)
 

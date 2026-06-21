@@ -73,3 +73,19 @@
 **修复**:`computeTextStats(s)` 用 `charCodeAt` **单遍、零数组分配**同时算 lines/words/chars(`isWhitespaceCode` 复刻 JS 正则 `\s` 码点集 → 单词切分逐字节等价);`lineCount`/`wordCount` 也重写为无分配循环。StatusBar 改用 `computeTextStats` 一遍拿三项。每按键 2 次全文扫 + 2 大数组 → 1 遍 0 分配。
 
 **契约不变量**(`text-stats.spec.ts`:computeTextStats 与 lineCount/wordCount/charCount 一致 + 与旧 `match(/\n/g)`/`split(/\s+/)` 正则口径逐字节等价,覆盖空/全空白/CRLF/中文/尾换行;`statusbar-stats-memoized.spec.tsx`:memo 命中/失效契约不变,改 spy computeTextStats)。
+
+## P8 — CodeEditor content-as-source-of-truth 大重构(DEFER)
+
+**位置**:`CodeEditor.tsx` 每按键 `doc.toString()` → `updateContent` 写全文进 store(O(file) 而非 O(change))。
+
+**判定:DEFER(不在本打磨轮实施)。** 特征属实,但 codex 的修法(编辑器持有正文、store 只存 dirty/version、autosave 从 viewRefs 拉)是结构性大重构:`store.content` 是深度承载的单一真源(useAutoSave/save/StatusBar + **CodeEditor↔MilkdownEditor 双编辑器经它互换**),改它需为双编辑器/autosave/save/持久化重建同步机制 → 与「极简/行为保持」冲突,且风险落在大量已修的数据丢失类路径(save-race/markSaved/reloadFromDisk epoch)。P6+P7 已去掉回声第二次拷贝 + 统计额外分配,现每按键仅 1 次 O(n) toString,现实文件尺寸亚毫秒级。**codex 亦认同此 DEFER**。记为专门 ADR/重构任务候选。
+
+## P9 — 终端 resize IPC 网格变化门控(去无效 resize)
+
+**位置**:`src/panels/Terminal/useTerminal.ts` `fitAndResize()`。
+
+**问题**:`fitAndResize` 每次 `fitAddon.fit()` 后**无条件** `coApi.terminal.resize(termId, cols, rows)`。终端容器 resize、侧栏拖拽宽度变化高频回调,多为像素级变化**不改变** cols/rows 格子数,但仍触发 fit + IPC→main→PTY resize(还多发 SIGWINCH);N 个 terminal panel 放大为 N 路重复。
+
+**修复**:per-terminal `lastSentSizeRef` 缓存上次发往 PTY 的网格(= PTY 当前尺寸),fit 后仅当 cols/rows 真变化才发 IPC。`fit()` 仍每次跑(xterm DOM 布局),返回值语义不变(网格是否有效,供 RAF 重试)。侧栏拖拽/窗口 resize 的无效 IPC 降到接近实际网格变化次数。
+
+**契约不变量**(`perf-audit/terminal-resize-gating.spec.ts`:首发→同网格不再发→网格变化才再发→无效网格 cols/rows=0 返 false 供重试;neutralize:去门控 → 测试 FAIL)。
