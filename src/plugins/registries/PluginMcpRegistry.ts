@@ -57,12 +57,16 @@ export class PluginMcpError extends Error {
 
 // ── Registry ─────────────────────────────────────────────────
 
-// 内部 Map 持具体 spec 的"擦除"形态(I/O = unknown);各 spec 的强类型边界
-// 在 plugin / registry.register 入口处保留,registry 内部统一用 unknown 处理。
-type AnyToolSpec = PluginMcpToolSpec<unknown, unknown>;
+// 可维护性 M17:内部 Map 存非泛型 entry 闭包(invoke)。各 spec 的 inputSchema<I> ↔
+// run(I) 泛型配对关系留在 register<I,O> 作用域内被 TS 检查,不再 `spec as unknown as
+// AnyToolSpec` 双重断言擦除泛型(那会绕过 run 的参数类型检查)。
+interface ToolEntry {
+  /** 据 inputSchema 校验 input 后调本 spec 的 run;泛型已在 register 闭包内绑定. */
+  readonly invoke: (input: unknown) => Promise<unknown>;
+}
 
 export class PluginMcpRegistry {
-  private readonly entries = new Map<string, AnyToolSpec>();
+  private readonly entries = new Map<string, ToolEntry>();
 
   constructor(private readonly upstream: PluginMcpUpstream) {}
 
@@ -90,10 +94,19 @@ export class PluginMcpRegistry {
       description: spec.description,
       jsonSchema: spec.jsonSchema,
     });
-    // upstream 成功才登本地表(失败路径不登 → 允许重试)。
-    // 类型擦除:registry 内部统一持 unknown spec,各 plugin 的 I/O 边界
-    // 由 inputSchema 在 invokeLocal 时校验。
-    this.entries.set(spec.name, spec as unknown as AnyToolSpec);
+    // upstream 成功才登本地表(失败路径不登 → 允许重试)。invoke 闭包捕获强类型 spec:
+    // inputSchema.safeParse 得到的 parsed.data 即 I,spec.run(parsed.data) 在此处受 TS 检查。
+    const invoke = async (input: unknown): Promise<unknown> => {
+      const parsed = spec.inputSchema.safeParse(input);
+      if (!parsed.success) {
+        throw new PluginMcpError(
+          PLUGIN_MCP_ERROR_CODES.INVALID_PARAMS,
+          parsed.error.issues.map((i) => i.message).join('; '),
+        );
+      }
+      return await spec.run(parsed.data);
+    };
+    this.entries.set(spec.name, { invoke });
 
     let disposed = false;
     return {
@@ -120,20 +133,13 @@ export class PluginMcpRegistry {
    * - run 抛错 → reject 透传(原对象,含 code 也带过去)
    */
   async invokeLocal(name: string, input: unknown): Promise<unknown> {
-    const spec = this.entries.get(name);
-    if (!spec) {
+    const entry = this.entries.get(name);
+    if (!entry) {
       throw new PluginMcpError(
         PLUGIN_MCP_ERROR_CODES.NO_SUCH_TOOL,
         `plugin mcp tool not found: ${name}`,
       );
     }
-    const parsed = spec.inputSchema.safeParse(input);
-    if (!parsed.success) {
-      throw new PluginMcpError(
-        PLUGIN_MCP_ERROR_CODES.INVALID_PARAMS,
-        parsed.error.issues.map((i) => i.message).join('; '),
-      );
-    }
-    return await spec.run(parsed.data);
+    return await entry.invoke(input);
   }
 }
