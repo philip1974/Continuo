@@ -21,25 +21,21 @@ interface RecentState {
   clear(): void;
 }
 
+// 可维护性 M22:RecentEntry 运行时校验集中到 type guard,与静态类型绑定(给 RecentEntry
+// 增字段时改一处即可),取代逐项 `(item as RecentEntry).id/.ts` + `push(item as RecentEntry)`。
+function isRecentEntry(value: unknown): value is RecentEntry {
+  if (!value || typeof value !== 'object') return false;
+  const o = value as Record<string, unknown>;
+  return typeof o.id === 'string' && typeof o.ts === 'number';
+}
+
 function readFromStorage(): readonly RecentEntry[] {
   try {
     const raw = localStorage.getItem(RECENT_STORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
-    // 防御:校验每项形态
-    const valid: RecentEntry[] = [];
-    for (const item of parsed) {
-      if (
-        item &&
-        typeof item === 'object' &&
-        typeof (item as RecentEntry).id === 'string' &&
-        typeof (item as RecentEntry).ts === 'number'
-      ) {
-        valid.push(item as RecentEntry);
-      }
-    }
-    return valid;
+    return parsed.filter(isRecentEntry); // guard narrow → RecentEntry[],无重复断言
   } catch {
     return [];
   }
