@@ -336,8 +336,9 @@ export function useTerminal(termId: string) {
     // 主进程 stdout → safeWrite 队列。第一次收到本 termId 的 data 就标 ready,
     // 上层移除 loading overlay。
     let firstData = true;
-    const unsubData = coApi.terminal.onData((id: string, data: string) => {
-      if (id !== termId) return;
+    // 性能 P1:onData 现按 termId 订阅(preload 整窗单 listener 分发),cb 只收本
+    // session 的 data,无需再 `if (id !== termId) return` 自行过滤。
+    const unsubData = coApi.terminal.onData(termId, (data: string) => {
       if (firstData) {
         firstData = false;
         setIsReady(true);

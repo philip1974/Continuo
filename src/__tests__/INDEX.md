@@ -549,6 +549,10 @@
 - [`no-dangling-import.spec.ts`](./migration-step2-buffer-merge/no-dangling-import.spec.ts)
 - [`replay-completeness.spec.ts`](./migration-step2-buffer-merge/replay-completeness.spec.ts)
 
+## [perf-audit(性能优化审计 · 与 codex 协作)](./perf-audit/README.md)
+
+- [`terminal-data-demux.spec.ts`](./perf-audit/terminal-data-demux.spec.ts)
+
 ## [PermissionEditorModal(M-Plugin v4.7 事后改主意)](./permission-editor-modal/README.md)
 
 - [`permission-editor-modal.spec.tsx`](./permission-editor-modal/permission-editor-modal.spec.tsx)

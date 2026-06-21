@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
+import { createTerminalDataDemux } from './terminal-data-demux';
 import type { IpcResult } from '../shared/ipc-result';
 import type { FileEntry } from '../shared/fs-entry';
 import { FS_CHANNELS } from '../shared/fs-channels';
@@ -74,6 +75,21 @@ export interface PreloadListDirOptions {
   readonly maxDepth?: number;
   readonly exclude?: ReadonlyArray<string>;
   readonly followSymlinks?: boolean;
+}
+
+// 性能 P1:终端输出 'terminal:data' 整窗只挂一个 ipcRenderer listener,按 sessionId
+// 分发(详见 terminal-data-demux.ts)。避免 N 个 panel = N 个 listener 的 O(N) fan-out。
+const terminalDataDemux = createTerminalDataDemux();
+let terminalDataListenerInstalled = false;
+function ensureTerminalDataListener(): void {
+  if (terminalDataListenerInstalled) return;
+  ipcRenderer.on(
+    TERMINAL_CHANNELS.DATA,
+    (_: unknown, id: string, data: string) => {
+      terminalDataDemux.dispatch(id, data);
+    },
+  );
+  terminalDataListenerInstalled = true;
 }
 
 // 所有跨 IPC 的方法都返回 IpcResult<T>(详见 ADR-010),
@@ -212,11 +228,14 @@ const api = {
       ipcRenderer.on(TERMINAL_CHANNELS.SESSIONS_CHANGED, listener);
       return () => ipcRenderer.off(TERMINAL_CHANNELS.SESSIONS_CHANGED, listener);
     },
-    /** 订阅 stdout 字节流;返回 unsubscribe. */
-    onData: (cb: (id: string, data: string) => void): (() => void) => {
-      const listener = (_: unknown, id: string, data: string) => cb(id, data);
-      ipcRenderer.on(TERMINAL_CHANNELS.DATA, listener);
-      return () => ipcRenderer.off(TERMINAL_CHANNELS.DATA, listener);
+    /**
+     * 订阅指定 session 的 stdout 字节流;返回 unsubscribe。
+     * 性能 P1:整窗共享单个 'terminal:data' listener,按 id 路由到本 cb(O(1)/chunk),
+     * cb 只收已过滤的 data(旧版收 (id,data) 让调用方自己 `if(id!==termId)return`)。
+     */
+    onData: (id: string, cb: (data: string) => void): (() => void) => {
+      ensureTerminalDataListener();
+      return terminalDataDemux.add(id, cb);
     },
     onExit: (
       cb: (id: string, payload: TerminalExitPayload) => void,
