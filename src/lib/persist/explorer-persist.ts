@@ -39,12 +39,14 @@ import { debounce } from '@/lib/debounce';
 import { subscribeAll } from '@/plugins/registries/useRegistry';
 import { clampWidth } from '@/lib/use-column-resize';
 import type { IpcResult } from '../fs/types';
+import {
+  ExplorerSchema,
+  ExplorerSchemaV3,
+} from '../../../electron/shared/explorer-persistence-schema';
 
 const DEBOUNCE_MS = 300;
 const VERSION = 3 as const;
 const PRIMARY_WINDOW_SEQ = 0; // 主窗位的 windowSeq;Phase 2B 引入多窗后改成动态值
-
-const ALLOWED_SORT_BY = new Set(['name', 'mtime', 'ctime', 'size']);
 
 /**
  * v3 schema(topic-08):全局共享段(workspace.recentRoots / pinned)
@@ -266,33 +268,15 @@ export async function hydrateEditorTabs(
   }
 }
 
-// 防御性 schema 校验(主进程已校验,这里给 init 流程兜底,失败就不 hydrate)
+// 防御性 schema 校验(主进程已校验,这里给 init 流程兜底,失败就不 hydrate)。
+// 可维护性 M15:复用 main/renderer **共享**的 zod schema(electron/shared/
+// explorer-persistence-schema),不再手写谓词。接受 v2 或 v3(与旧谓词 version===2||3
+// 一致);校验比旧手写版更严(元素类型 / int / strict),合法数据(主进程写的)行为不变,
+// 仅更早拒损坏数据。类型守卫返回 `v is ExplorerSnapshot`(磁盘契约即此 renderer 形态)。
 function isExplorerSnapshot(v: unknown): v is ExplorerSnapshot {
-  if (!v || typeof v !== 'object') return false;
-  const o = v as Record<string, unknown>;
-  if (o['version'] !== 2 && o['version'] !== 3) return false;
-  if (!o['workspace'] || !o['pinned'] || !Array.isArray(o['windows'])) return false;
-  if (typeof o['nextWindowSeq'] !== 'number') return false;
-  const ws = o['workspace'] as Record<string, unknown>;
-  const pn = o['pinned'] as Record<string, unknown>;
-  if (!Array.isArray(ws['recentRoots'])) return false;
-  if (!Array.isArray(pn['paths'])) return false;
-  for (const wRaw of o['windows'] as unknown[]) {
-    if (!wRaw || typeof wRaw !== 'object') return false;
-    const w = wRaw as Record<string, unknown>;
-    if (typeof w['windowSeq'] !== 'number') return false;
-    const wsEntry = w['workspace'] as Record<string, unknown> | undefined;
-    if (!wsEntry) return false;
-    if (typeof wsEntry['root'] !== 'string' && wsEntry['root'] !== null) return false;
-    const ex = w['explorer'] as Record<string, unknown> | undefined;
-    if (!ex) return false;
-    if (typeof ex['activePath'] !== 'string' && ex['activePath'] !== null) return false;
-    if (!Array.isArray(ex['expandedPaths'])) return false;
-    const sort = ex['sort'] as Record<string, unknown> | undefined;
-    if (!sort || !ALLOWED_SORT_BY.has(sort['by'] as string)) return false;
-    if (typeof sort['reverse'] !== 'boolean') return false;
-  }
-  return true;
+  return (
+    ExplorerSchema.safeParse(v).success || ExplorerSchemaV3.safeParse(v).success
+  );
 }
 
 // ──────────────────────────────────────────────
