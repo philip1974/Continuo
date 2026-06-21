@@ -119,3 +119,13 @@
 **修复**:复用并扩展 `chromeVersion` —— activeActionSig 的 effectiveMode 还依赖 active tab 的 `milkdownUnsafe`(可不翻 dirty 而翻转,如输入 `[[`)+ store.mode,故让 chromeVersion 也在 **milkdownUnsafe 翻转** 时 bump(updateContent / reloadFromDisk,`!!` 归一化避免 undefined→false 误判)。EditorHeader 改订阅 `activeTabId` + `chromeVersion` + `mode`(均 O(1)),`useMemo` 仅这三者变时从 getState() 读 active tab 派生 [filePath, dirty, effectiveMode]。逐字节等价,常规输入 O(N)+序列化 → O(1)。
 
 **契约不变量**(`editor-store.spec.ts` perf P14:已脏 tab 输入 `[[` 使 milkdownUnsafe false→true(dirty 恒 true)仍 bump、再输入仍 unsafe 不 bump;neutralize:去 updateContent 的 milkdownUnsafe bump → FAIL;`editor-header-narrow-subscription.spec.tsx` 改用真实 action 验 content-only 不重渲 / dirty 翻转重渲)。
+
+## P15 — 外部文件同步 fs 事件 in-flight 合并(去 burst 重复 IO)
+
+**位置**:`src/panels/Editor/useExternalFileSync.ts`。
+
+**问题**:同一文件短时间多次 `fs:dir-changed`(原子写 = 临时文件+rename 多事件 / 格式化工具/生成器连续重写)→ 旧实现对每个事件都并发发起 `readFile` + `reloadFromDisk`,只有最后一次有用,前面的 IPC + 磁盘读纯浪费。旧有 `seqByPath` 只做 latest-wins 丢弃,不防并发。
+
+**修复**:按 path 做 **in-flight 合并**——某 path 的 read 在途时,新事件只标记 pending(不并发发起);在途 read 完成后若 pending 则尾随重读一次(读 burst 后的最终内容),跳过被取代的中间结果。首个事件立即读(不加延迟),仅在途期间事件被合并。每 path 读严格串行 → 并发乱序回写场景**根本不会发生**(比 seqByPath 更强,直接取代之)。dirty tab 在事件与应用两处都跳过。tab.id===filePath 不变量保证同文件不开成两个 tab,按 path 合并安全。
+
+**契约不变量**(`external-file-sync-out-of-order.spec.tsx`:3 事件 burst 在途只 1 并发读 / 中间陈旧结果不落地 / 尾随读最终内容落地 / 单事件立即读不延迟 / dirty 保护;neutralize:还原每事件并发读 → 合并测试 FAIL;`use-external-file-sync.spec.tsx` 单事件路径不变)。

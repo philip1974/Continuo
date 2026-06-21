@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
-// topic 49 · P2-BG:useExternalFileSync 并发 readFile 乱序回写竞态。
+// topic 49 · P2-BG(原 seqByPath latest-wins)→ 性能 P15(in-flight 合并取代之)。
 //
-// 根因:同一 path 短时间内多次 fs:dir-changed → 对该 path 发起多个并发、未防抖、未
-// 序列化的 readFile。Promise 可能乱序 resolve:较早发起、读到旧内容的回调若**后**
-// resolve,会用陈旧内容覆盖较新内容调 reloadFromDisk → editor 显示回退到旧版本
-// (外部 git checkout / 格式化工具快速连续重写已打开的 clean 文件时触发)。
+// 旧根因:同一 path 短时间多次 fs:dir-changed → 多个并发、未序列化的 readFile,乱序
+// resolve 时旧内容覆盖新内容。旧修复:每 path 单调 seq 丢弃过期结果。
 //
-// 修复:每 path 维护单调 seq,resolve 时丢弃非最新一轮的结果(latest-wins)。
+// P15 改为 in-flight 合并:某 path 的 read 在途时,新事件只标记 pending,不再并发发起;
+// 在途 read 完成后若 pending 则尾随重读一次(读最终内容),跳过被取代的中间结果。每
+// path 读严格串行 → 并发乱序回写的场景**根本不会发生**(比 seqByPath 更强)。本测试
+// 验证:burst 被合并 + 最终落地最新内容 + 陈旧中间结果不落地 + dirty 保护。
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
@@ -37,50 +38,66 @@ function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void } {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  storeMock.tabs = [{ id: 't1', filePath: '/dir/f.txt', dirty: false }];
+  storeMock.tabs = [{ id: '/dir/f.txt', filePath: '/dir/f.txt', dirty: false }];
 });
 
-describe('topic49 P2-BG · useExternalFileSync 乱序读丢弃过期结果', () => {
-  it('较早发起的旧读后 resolve 时不覆盖较新读的结果', async () => {
+describe('P15 · useExternalFileSync in-flight 合并', () => {
+  it('在途期间的 burst 事件被合并,只尾随一次读,最终落地最新内容,中间结果不落地', async () => {
     let cb: (changedDir: string) => void = () => {};
     fsMock.onDirChanged.mockImplementation((fn: (d: string) => void) => {
       cb = fn;
       return () => {};
     });
 
-    const d1 = deferred<{ ok: true; data: string }>();
-    const d2 = deferred<{ ok: true; data: string }>();
+    const d1 = deferred<{ ok: true; data: string }>(); // leading 读(中间/旧内容)
+    const d2 = deferred<{ ok: true; data: string }>(); // 尾随读(最终/新内容)
     fsMock.readFile
-      .mockReturnValueOnce(d1.promise) // 第一轮(旧)
-      .mockReturnValueOnce(d2.promise); // 第二轮(新)
+      .mockReturnValueOnce(d1.promise)
+      .mockReturnValueOnce(d2.promise);
 
     renderHook(() => useExternalFileSync());
 
-    // 两次 dir-changed → 两个并发 readFile
+    // 首个事件 → 立即发起 read(leading);随后 burst 内 2 个事件在途期间 → 合并,不并发
     cb('/dir');
     cb('/dir');
-    expect(fsMock.readFile).toHaveBeenCalledTimes(2);
+    cb('/dir');
+    expect(fsMock.readFile).toHaveBeenCalledTimes(1); // 合并:在途只有 1 个并发读
 
-    // 乱序:第二轮(新)先 resolve,第一轮(旧)后 resolve
-    d2.resolve({ ok: true, data: 'NEW' });
-    await Promise.resolve();
+    // leading 读完成(读到中间/旧内容)→ 因有 pending 被取代,**不落地**,尾随重读
     d1.resolve({ ok: true, data: 'STALE-OLD' });
     await Promise.resolve();
     await Promise.resolve();
-
-    // 最终落地必须是 NEW;旧读后 resolve 被 seq 守卫丢弃,不会覆盖
-    const calls = storeMock.reloadFromDisk.mock.calls;
-    expect(calls.length).toBeGreaterThanOrEqual(1);
-    const last = calls[calls.length - 1];
-    expect(last).toEqual(['t1', 'NEW']);
-    // STALE-OLD 永不应落地
+    expect(fsMock.readFile).toHaveBeenCalledTimes(2); // 尾随读发起
     expect(
-      calls.some((c) => c[1] === 'STALE-OLD'),
-    ).toBe(false);
+      storeMock.reloadFromDisk.mock.calls.some((c) => c[1] === 'STALE-OLD'),
+    ).toBe(false); // 中间结果不落地
+
+    // 尾随读完成(最终内容)→ 落地
+    d2.resolve({ ok: true, data: 'NEW' });
+    await Promise.resolve();
+    await Promise.resolve();
+    const calls = storeMock.reloadFromDisk.mock.calls;
+    expect(calls.length).toBe(1);
+    expect(calls[0]).toEqual(['/dir/f.txt', 'NEW']);
+  });
+
+  it('单个事件 → 立即读并落地(无 burst 时不延迟)', async () => {
+    let cb: (changedDir: string) => void = () => {};
+    fsMock.onDirChanged.mockImplementation((fn: (d: string) => void) => {
+      cb = fn;
+      return () => {};
+    });
+    fsMock.readFile.mockResolvedValue({ ok: true, data: 'fresh' });
+    renderHook(() => useExternalFileSync());
+    cb('/dir');
+    expect(fsMock.readFile).toHaveBeenCalledTimes(1);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(storeMock.reloadFromDisk).toHaveBeenCalledWith('/dir/f.txt', 'fresh');
   });
 
   it('dirty tab 不被外部同步覆盖(既有保护保持)', async () => {
-    storeMock.tabs = [{ id: 't1', filePath: '/dir/f.txt', dirty: true }];
+    storeMock.tabs = [{ id: '/dir/f.txt', filePath: '/dir/f.txt', dirty: true }];
     let cb: (changedDir: string) => void = () => {};
     fsMock.onDirChanged.mockImplementation((fn: (d: string) => void) => {
       cb = fn;

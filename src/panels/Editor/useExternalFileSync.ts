@@ -20,27 +20,45 @@ function dirname(p: string): string {
 
 export function useExternalFileSync(): void {
   useEffect(() => {
-    // 同一 path 在短时间内多次变更会广播多个 dir-changed → 对该 path 发起
-    // 多个并发、未防抖、未序列化的 readFile。这些 Promise 可能乱序 resolve:
-    // 较早发起、读到旧内容的回调若后 resolve,会用陈旧内容覆盖较新内容调
-    // reloadFromDisk(editor 显示回退到旧版本)。每 path 维护单调 seq,只让最新
-    // 一轮读的结果落地(latest-wins),丢弃过期回调。
-    const seqByPath = new Map<string, number>();
+    // 同一文件短时间内多次变更会广播多个 dir-changed(原子写 = 临时文件 + rename 多
+    // 事件 / 格式化工具或生成器连续重写)。旧实现对每个事件都并发发起一次 readFile +
+    // reloadFromDisk,只有最后一次有用,前面的 IPC + 磁盘读纯浪费;且并发读可能乱序
+    // resolve 用陈旧内容覆盖新内容(topic-49 P2-BG)。
+    //
+    // 性能 P15:按 path 做 **in-flight 合并**——某 path 的 read 在途时,新事件不再并发
+    // 发起,只标记 pending;在途 read 完成后若 pending 则**尾随重读一次**(读到 burst
+    // 之后的最终内容),并跳过被它取代的中间结果。首个事件立即读(不加延迟),仅在途
+    // 期间的事件被合并。每 path 读严格串行 → 不再有并发乱序回写(比旧 seqByPath 更强,
+    // 直接取代之)。dirty tab 在事件与应用(reloadFromDisk 内再查 dirty)两处都跳过。
+    // 注:tab.id === filePath(createTab 不变量),故同一文件不会开成两个 tab,按 path
+    // 合并安全。
+    const inFlight = new Set<string>();
+    const pending = new Set<string>();
+
+    const readAndApply = (path: string, tabId: string): void => {
+      inFlight.add(path);
+      void coApi.fs.readFile(path).then((r) => {
+        inFlight.delete(path);
+        const superseded = pending.delete(path); // 在途期间又有事件?
+        if (!superseded && r.ok) {
+          useEditorStore.getState().reloadFromDisk(tabId, r.data);
+        }
+        // 被合并的尾随事件 → 读最终内容并应用(本次中间结果已被取代,不落地)
+        if (superseded) readAndApply(path, tabId);
+      });
+    };
+
     const unsub = coApi.fs.onDirChanged((changedDir) => {
       const tabs = useEditorStore.getState().tabs;
       for (const tab of tabs) {
         if (tab.filePath === null) continue;
         if (tab.dirty) continue; // 保留用户改动,不覆盖
         if (dirname(tab.filePath) !== changedDir) continue;
-        const path = tab.filePath;
-        const tabId = tab.id;
-        const mySeq = (seqByPath.get(path) ?? 0) + 1;
-        seqByPath.set(path, mySeq);
-        void coApi.fs.readFile(path).then((r) => {
-          if (mySeq !== seqByPath.get(path)) return; // 已有更新一轮读发起,丢弃过期结果
-          if (!r.ok) return; // 文件被删或暂时不可读,跳过
-          useEditorStore.getState().reloadFromDisk(tabId, r.data);
-        });
+        if (inFlight.has(tab.filePath)) {
+          pending.add(tab.filePath); // 合并:在途读完成后尾随一次
+        } else {
+          readAndApply(tab.filePath, tab.id);
+        }
       }
     });
     return unsub;
