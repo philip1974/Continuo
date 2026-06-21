@@ -14,6 +14,18 @@ const CI_ELECTRON_UNIT_EXCLUDE = process.env.CI
       'src/__tests__/terminal-service/helpers.spec.ts',
       'src/__tests__/terminal-workspace-isolation/workspaceRoot-roundtrip.spec.ts',
       'src/__tests__/window-workspace-roots-map/cwd-fallback-error.spec.ts',
+      // topic-49/50 打磨与安全审计新增:经 electron/main 服务间接 import electron
+      'src/__tests__/49-polish-bugfixes/external-url-scheme-whitelist.spec.ts',
+      'src/__tests__/49-polish-bugfixes/read-git-blob-bounds.spec.ts',
+      'src/__tests__/49-polish-bugfixes/security-file-url-trust.spec.ts',
+      'src/__tests__/49-polish-bugfixes/shell-exec-cjk-bytes.spec.ts',
+      'src/__tests__/49-polish-bugfixes/shell-exec-timeout-clamp.spec.ts',
+      'src/__tests__/49-polish-bugfixes/shell-stream-abort.spec.ts',
+      'src/__tests__/49-polish-bugfixes/shell-stream-frame-trust.spec.ts',
+      'src/__tests__/49-polish-bugfixes/shell-stream-reload-kills-children.spec.ts',
+      'src/__tests__/49-polish-bugfixes/stdio-stale-window-binding.spec.ts',
+      'src/__tests__/49-polish-bugfixes/stop-hook-window-close.spec.ts',
+      'src/__tests__/49-polish-bugfixes/terminal-create-reserve-before-spawn.spec.ts',
     ]
   : [];
 
