@@ -3,9 +3,9 @@ import type { IpcResult } from '../shared/ipc-result';
 import type { FileEntry } from '../shared/fs-entry';
 import { FS_CHANNELS } from '../shared/fs-channels';
 import { TERMINAL_CHANNELS } from '../shared/terminal-channels';
-import type { OriginHint } from '../shared/origin-hint';
 import type { TerminalSessionSnapshot } from '../shared/terminal-session';
 import type { TerminalAttachRejectReason } from '../shared/terminal-attach';
+import type { TerminalCreateInput } from '../shared/terminal-create';
 import {
   PLUGINS_CHANNELS,
   type IpcPermissionsMap,
@@ -52,26 +52,10 @@ import { pluginFsRaw } from './plugin-fs.preload';
 import { pluginShellStreamRaw } from './plugin-shell-stream.preload';
 import { parseContinuoPackagedFromArgv } from './continuo-meta-parse';
 
-// terminal create 入参的轻量类型(与 main 端 zod schema 对齐)
-// export 是为了 ContinuoApi 跨 module 引用时 TS 能 name 这些类型
-// (lib/lm-api.ts 暴露 coApi: ContinuoApi 时需要)
-export interface TerminalCreateOptions {
-  readonly shell?: string;
-  readonly args?: ReadonlyArray<string>;
-  readonly cwd?: string;
-  readonly env?: Readonly<Record<string, string>>;
-  // P1 Agent Terminal MCP:metadata 字段
-  readonly name?: string;
-  readonly title?: string;
-  readonly originHint?: OriginHint;
-  readonly agentLabel?: string;
-  readonly scoped?: boolean;
-  /**
-   * 创建时 renderer 当前 workspace.root;用于跨 workspace 切换时的可见性过滤。
-   * undefined = 全局会话(所有 workspace 都可见)。
-   */
-  readonly workspaceRoot?: string;
-}
+// 可维护性 M24:terminal create 入参复用 shared TerminalCreateInput(= main zod schema
+// z.infer),单一来源避免 main/preload 漂移(此前手写 interface 漏了 attachTarget)。
+// export 是为了 ContinuoApi 跨 module 引用时 TS 能 name 这些类型(lib/lm-api.ts 需要)。
+export type TerminalCreateOptions = TerminalCreateInput;
 
 export interface TerminalExitPayload {
   readonly exitCode: number | undefined;
