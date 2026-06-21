@@ -8,7 +8,11 @@ import type { IpcResult } from '../../../electron/shared/ipc-result';
 
 type ListDirFn = (
   path: string,
-  options?: { maxDepth?: number; exclude?: readonly string[] },
+  options?: {
+    maxDepth?: number;
+    exclude?: readonly string[];
+    maxFiles?: number;
+  },
 ) => Promise<IpcResult<readonly FileEntry[]>>;
 
 function entry(p: string, name: string, isDirectory: boolean): FileEntry {
@@ -63,8 +67,24 @@ describe('walkWorkspaceFiles', () => {
     }
   });
 
+  it('perf P2 · 把 maxFiles 下推到 listDir(main 早停,不在 renderer 才截断)', async () => {
+    let captured: { maxFiles?: number } | undefined;
+    const listDir: ListDirFn = async (_p, options) => {
+      captured = options;
+      return { ok: true, data: [] };
+    };
+    // 默认上限
+    await walkWorkspaceFiles({ rootPath: '/r', listDir });
+    expect(captured?.maxFiles).toBe(5000);
+    // 显式上限透传
+    await walkWorkspaceFiles({ rootPath: '/r', listDir, maxFiles: 12 });
+    expect(captured?.maxFiles).toBe(12);
+  });
+
   it('调 listDir 时传默认 + extraExclude(dist/out/build/.next/.nuxt/.cache/.vite)', async () => {
-    let captured: { maxDepth?: number; exclude?: readonly string[] } | undefined;
+    let captured:
+      | { maxDepth?: number; exclude?: readonly string[] }
+      | undefined;
     const listDir: ListDirFn = async (_path, options) => {
       captured = options;
       return { ok: true, data: [] };

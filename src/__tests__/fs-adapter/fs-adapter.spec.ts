@@ -97,6 +97,23 @@ describe('listDir', () => {
     expect(sub!.path).toBe(path.join(dir, 'sub'));
   });
 
+  it('perf P2 · maxFiles 早停:收集够 N 个文件即停,目录不计入', async () => {
+    // beforeEach 已建:sub/(dir) + a.txt + b.txt + sub/inner.txt(深度内共 3 文件)。
+    // 再多铺几个文件确保超过上限。
+    await writeFile(path.join(dir, 'c.txt'), 'C');
+    await writeFile(path.join(dir, 'd.txt'), 'D');
+    const items = await listDir(dir, { maxDepth: 2, maxFiles: 2 });
+    const files = items.filter((i) => !i.isDirectory);
+    // 只收集到 2 个文件即停(目录不计入 maxFiles)
+    expect(files.length).toBe(2);
+  });
+
+  it('perf P2 · maxFiles 未达上限 → 结果与不传 maxFiles 完全一致(行为保持)', async () => {
+    const withCap = await listDir(dir, { maxDepth: 2, maxFiles: 9999 });
+    const without = await listDir(dir, { maxDepth: 2 });
+    expect(withCap.map((i) => i.path)).toEqual(without.map((i) => i.path));
+  });
+
   it('maxDepth=2 递归一层', async () => {
     const items = await listDir(dir, { maxDepth: 2 });
     const inner = items.find((i) => i.name === 'inner.txt');

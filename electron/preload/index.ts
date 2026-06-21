@@ -75,6 +75,8 @@ export interface PreloadListDirOptions {
   readonly maxDepth?: number;
   readonly exclude?: ReadonlyArray<string>;
   readonly followSymlinks?: boolean;
+  /** perf P2:文件数上限(深递归早停)。见 fs/list-dir.ts ListDirOptions.maxFiles。 */
+  readonly maxFiles?: number;
 }
 
 // 性能 P1:终端输出 'terminal:data' 整窗只挂一个 ipcRenderer listener,按 sessionId

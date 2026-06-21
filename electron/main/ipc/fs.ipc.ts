@@ -25,6 +25,8 @@ const ListDirOptionsSchema = z
     maxDepth: z.number().int().positive().optional(),
     exclude: z.array(z.string()).optional(),
     followSymlinks: z.boolean().optional(),
+    // perf P2:文件数上限(深递归早停)。见 fs/list-dir.ts ListDirOptions.maxFiles。
+    maxFiles: z.number().int().positive().optional(),
   })
   .strict();
 

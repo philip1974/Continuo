@@ -13,3 +13,13 @@
 **修复**:整窗对 `terminal:data` 只挂一个 listener,按 sessionId 路由到 `Map<id, Set<handler>>`。签名 `onData(cb)` → `onData(id, cb)`(cb 只收已过滤的 `data`)。每 chunk 回调开销 O(N) → O(该 id handler 数)≈ O(1)。
 
 **契约不变量**(`terminal-data-demux.spec.ts`):分发只调 id 匹配的 handler,绝不 fan-out 到别 session;unsubscribe 后不再收到;同 id 多 handler 都收到;分发中 unsubscribe 不影响本轮。
+
+## P2 — Quick Open 文件扫描把 maxFiles 下推到 main(去 late limit)
+
+**位置**:`electron/main/ipc/fs/list-dir.ts`(walker)+ `src/plugins/quick-open/walk-files.ts`(消费者);IPC schema `electron/main/ipc/fs.ipc.ts`、preload 类型 `electron/preload/index.ts`。
+
+**问题**:Quick Open 每次 ⌘P 调 `listDir(root, { maxDepth: 8 })` 全量递归,`maxFiles=5000` 只在 renderer 拿到完整结果后才 `break`。即 5k 上限只限 UI 结果数,**不限** main 实际遍历、`lstat`、每层排序、IPC 全量传输。大 monorepo 即使只需前 5000 个,仍扫深度 8 内所有未排除文件 → 每次 ⌘P 数万次 lstat + 大 IPC payload(无缓存,每次重扫)。
+
+**修复**:给 `listDir` 加可选 `maxFiles`(默认无限,只有 QuickOpen 传;Explorer/App 用浅层 listDir 不受影响),walker 收集够 `maxFiles` 个**文件**即停止遍历/递归(目录不计入)。walk-files 把 maxFiles 下推。**行为保持**:`maxFiles=Infinity`(默认)时守卫永不触发,输出与历史逐字节一致;仅文件数真超 5000 的大仓库改变候选集成员(5000 本是启发式上限,且 fuzzy 搜索对非空 query 重排,空 query 顺序变为 top-down 遍历序,方向更优)。
+
+**契约不变量**(`fs-adapter.spec.ts` maxFiles 早停 + 未达上限逐字节一致;`quick-open/walk-files.spec.ts` maxFiles 下推透传)。

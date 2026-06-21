@@ -35,7 +35,11 @@ const FULL_EXCLUDE: readonly string[] = [
 
 export type ListDirFn = (
   path: string,
-  options?: { maxDepth?: number; exclude?: readonly string[] },
+  options?: {
+    maxDepth?: number;
+    exclude?: readonly string[];
+    maxFiles?: number;
+  },
 ) => Promise<IpcResult<readonly FileEntry[]>>;
 
 export interface WalkOptions {
@@ -69,9 +73,13 @@ export async function walkWorkspaceFiles(
     ? [...FULL_EXCLUDE, ...opts.extraExclude]
     : FULL_EXCLUDE;
 
+  // perf P2:把 maxFiles 下推到 main 侧 walker,使其收集够 maxFiles 个文件即停止
+  // 遍历(不再扫完整棵树 + lstat + IPC 全量)。下面的 renderer 端 break 仍保留为
+  // 防御性二次上限(main 已截断,通常不触发)。
   const r = await listDir(rootPath, {
     maxDepth: DEFAULT_MAX_DEPTH,
     exclude,
+    maxFiles,
   });
   if (!r.ok) return r;
 
