@@ -3,6 +3,7 @@
 // 所有失败结构化返回(从 IpcResult 透传 code/message),组件层弹 toast/inline 错误。
 
 import type { FsApi } from '@/lib/fs/api';
+import { dirname } from './path-utils';
 
 export interface MutateDeps {
   fs: Pick<FsApi, 'rename' | 'remove' | 'trash' | 'createFile' | 'createDir'>;
@@ -10,14 +11,6 @@ export interface MutateDeps {
 
 export interface TreeMutationApi {
   invalidateChildrenIds: (parentPath: string) => void;
-}
-
-// 跨平台 dirname(与 tree-config 同模式,跨平台 path-browserify 不引)
-function dirname(p: string): string {
-  const trimmed = p.replace(/[\\/]+$/, '');
-  const idx = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
-  if (idx < 0) return '';
-  return trimmed.slice(0, idx) || '/';
 }
 
 // ────────────────────────────────────────────────────────────

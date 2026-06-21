@@ -27,23 +27,23 @@ interface CoreEntry {
 
 const CORES: readonly CoreEntry[] = [
   {
-    Cls: EditorPlugin as never,
+    Cls: EditorPlugin,
     manifest: { id: 'core.editor', name: 'Editor', version: '1.0.0' },
   },
   {
-    Cls: TerminalPlugin as never,
+    Cls: TerminalPlugin,
     manifest: { id: 'core.terminal', name: 'Terminal', version: '1.0.0' },
   },
   {
-    Cls: OutputPlugin as never,
+    Cls: OutputPlugin,
     manifest: { id: 'core.output', name: 'Output', version: '1.0.0' },
   },
   {
-    Cls: PluginsTabPlugin as never,
+    Cls: PluginsTabPlugin,
     manifest: { id: 'core.plugins', name: 'PluginsTab', version: '1.0.0' },
   },
   {
-    Cls: SettingsPanelPlugin as never,
+    Cls: SettingsPanelPlugin,
     manifest: {
       id: 'core.settings-panel',
       name: 'SettingsPanel',
@@ -51,31 +51,31 @@ const CORES: readonly CoreEntry[] = [
     },
   },
   {
-    Cls: KeybindingsTabPlugin as never,
+    Cls: KeybindingsTabPlugin,
     manifest: { id: 'core.keybindings', name: 'KeybindingsTab', version: '1.0.0' },
   },
   {
-    Cls: GeneralTabPlugin as never,
+    Cls: GeneralTabPlugin,
     manifest: { id: 'core.general', name: 'GeneralTab', version: '1.0.0' },
   },
   {
-    Cls: LanguageSettingPlugin as never,
+    Cls: LanguageSettingPlugin,
     manifest: { id: 'core.language-setting', name: 'LanguageSetting', version: '1.0.0' },
   },
   {
-    Cls: EditorTabPlugin as never,
+    Cls: EditorTabPlugin,
     manifest: { id: 'core.editor-tab', name: 'EditorTab', version: '1.0.0' },
   },
   {
-    Cls: ExplorerTabPlugin as never,
+    Cls: ExplorerTabPlugin,
     manifest: { id: 'core.explorer-tab', name: 'ExplorerTab', version: '1.0.0' },
   },
   {
-    Cls: TerminalTabPlugin as never,
+    Cls: TerminalTabPlugin,
     manifest: { id: 'core.terminal-tab', name: 'TerminalTab', version: '1.0.0' },
   },
   {
-    Cls: WindowPlugin as never,
+    Cls: WindowPlugin,
     manifest: { id: 'core.window', name: 'Window', version: '1.0.0' },
   },
 ];

@@ -11,6 +11,10 @@ import type {
   PermissionStore,
 } from '../permissions';
 import type { PathScope } from '../types';
+import type {
+  IpcPermissionRecord,
+  IpcPermissionsMap,
+} from '../../../electron/shared/plugins-channels';
 
 export interface PermissionRecord {
   readonly decisions: PermissionDecision[];
@@ -19,14 +23,9 @@ export interface PermissionRecord {
 
 export type PermissionState = Record<string, PermissionRecord>;
 
-type SerializedPermissionRecord =
-  | readonly PermissionDecision[]
-  | {
-      readonly decisions: readonly PermissionDecision[];
-      readonly pathScopes?: readonly PathScope[];
-    };
-
-type SerializedPermissionState = Record<string, SerializedPermissionRecord>;
+// 可维护性 M6:序列化形态复用 shared 契约(IpcPermissionsMap = 旧数组 | 新
+// { decisions, pathScopes? } union),不再本地另立 Serialized* 类型 + writePermissions
+// 时 `as never` 强转。
 
 type Cache = PermissionState;
 
@@ -99,8 +98,8 @@ export function parsePermissionState(raw: unknown): PermissionState {
 
 export function serializePermissionState(
   state: PermissionState,
-): SerializedPermissionState {
-  const out: SerializedPermissionState = {};
+): IpcPermissionsMap {
+  const out: Record<string, IpcPermissionRecord> = {};
   for (const [pluginId, record] of Object.entries(state)) {
     if (record.pathScopes === undefined) {
       out[pluginId] = record.decisions;
@@ -148,7 +147,7 @@ export class IpcPermissionStore implements PermissionStore {
       cache[pluginId] = { ...record, decisions: kept };
     }
     const r = await coApi.plugins.writePermissions(
-      serializePermissionState(cache) as never,
+      serializePermissionState(cache),
     );
     if (!r.ok) {
       console.warn(
@@ -192,7 +191,7 @@ export class IpcPermissionStore implements PermissionStore {
     ];
     cache[pluginId] = { ...existing, decisions: updated };
     const r = await coApi.plugins.writePermissions(
-      serializePermissionState(cache) as never,
+      serializePermissionState(cache),
     );
     if (!r.ok) {
       console.warn(

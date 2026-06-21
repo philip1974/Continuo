@@ -2,6 +2,7 @@
 // 纯逻辑层,不依赖 React;UI 组件 import 后传给 useTree。
 // fs 通过 deps 注入便于单测,默认调 coApi.fs(由调用方在 deps 注入).
 
+import { basename, dirname } from './path-utils';
 import {
   asyncDataLoaderFeature,
   dragAndDropFeature,
@@ -46,20 +47,6 @@ export interface CreateTreeConfigDeps {
 }
 
 const INDENT = 16;
-
-// 跨平台 basename(避免引 path-browserify)
-function basename(p: string): string {
-  const trimmed = p.replace(/[\\/]+$/, '');
-  const idx = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
-  return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
-}
-
-function dirname(p: string): string {
-  const trimmed = p.replace(/[\\/]+$/, '');
-  const idx = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
-  if (idx < 0) return '';
-  return trimmed.slice(0, idx) || '/';
-}
 
 // 窄类型 dataLoader 接口(头部 TreeDataLoader 是两种形态的 union,
 // spec 直接访问 getChildrenWithData 时 TS 不会窄化)。

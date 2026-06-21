@@ -163,6 +163,10 @@ function makeNetwork(
   };
 }
 
+// 可维护性 M7:shell stream chunk(与 preload 镜像)。迭代器 yield 此类型,结束值为 void
+// (`{ value: undefined, done: true }`),用类型表达迭代器结束语义,免 `undefined as never`。
+type ShellChunk = { stream: 'stdout' | 'stderr'; chunk: Uint8Array };
+
 function makeShell(
   pluginId: string,
   store: PermissionStore | null,
@@ -215,9 +219,7 @@ function makeShell(
       return {
         chunks: {
           [Symbol.asyncIterator]() {
-            let iterator:
-              | AsyncIterator<{ stream: 'stdout' | 'stderr'; chunk: Uint8Array }>
-              | null = null;
+            let iterator: AsyncIterator<ShellChunk, void> | null = null;
             return {
               async next() {
                 const stream = await start();
@@ -227,9 +229,9 @@ function makeShell(
               // 提前 break → 委托内层 iterator.return() 触发 ABORT,否则子进程挂到 timeout
               // (P2-AM)。start() 未 resolve(权限弹窗中)则尚未 spawn,iterator 为 null 无需
               // abort;已 resolve 才有内层 iterator 可关。
-              async return() {
+              async return(): Promise<IteratorResult<ShellChunk, void>> {
                 await iterator?.return?.();
-                return { value: undefined as never, done: true };
+                return { value: undefined, done: true };
               },
             };
           },

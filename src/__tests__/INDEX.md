@@ -268,6 +268,10 @@
 
 - [`create-input.spec.tsx`](./create-input/create-input.spec.tsx)
 
+## [create-user-terminal(新建 user terminal 共用流程)](./create-user-terminal/README.md)
+
+- [`create-user-terminal.spec.ts`](./create-user-terminal/create-user-terminal.spec.ts)
+
 ## [ct-b3-socket-safety](./ct-b3-socket-safety/README.md)
 
 - [`socket-safety.spec.ts`](./ct-b3-socket-safety/socket-safety.spec.ts)
@@ -394,6 +398,10 @@
 ## [explorer-mutate (M-Explorer Step 5)](./explorer-mutate/README.md)
 
 - [`mutate-actions.spec.ts`](./explorer-mutate/mutate-actions.spec.ts)
+
+## [explorer-path-utils(Explorer 跨平台路径 helper)](./explorer-path-utils/README.md)
+
+- [`path-utils.spec.ts`](./explorer-path-utils/path-utils.spec.ts)
 
 ## [ExplorerSidebar(VSCode 风固定侧边栏)](./explorer-sidebar/README.md)
 
@@ -710,6 +718,10 @@
 ## [SharedTab(Dockview tab header,带 motion shared layout)](./shared-tab/README.md)
 
 - [`shared-tab.spec.tsx`](./shared-tab/shared-tab.spec.tsx)
+
+## [shell-path-label(shell chrome 路径展示名)](./shell-path-label/README.md)
+
+- [`path-label.spec.ts`](./shell-path-label/path-label.spec.ts)
 
 ## [shell-service(plugin app.shell.exec 后端)](./shell-service/README.md)
 

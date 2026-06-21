@@ -4,6 +4,7 @@ import type { FileEntry } from '../shared/fs-entry';
 import { FS_CHANNELS } from '../shared/fs-channels';
 import { TERMINAL_CHANNELS } from '../shared/terminal-channels';
 import type { OriginHint } from '../shared/origin-hint';
+import type { TerminalSessionSnapshot } from '../shared/terminal-session';
 import {
   PLUGINS_CHANNELS,
   type IpcPermissionsMap,
@@ -76,25 +77,12 @@ export interface TerminalExitPayload {
   readonly signal: number | undefined;
 }
 
-/** main 推过来的 session 形态;renderer cast 为 TerminalSession. */
-export interface PreloadTerminalSession {
-  readonly id: string;
-  readonly title: string;
-  readonly cwd: string;
-  readonly originHint: OriginHint;
-  readonly agentLabel?: string;
-  readonly scoped?: boolean;
-  readonly createdAt: number;
-  readonly exitCode: number | null;
-  readonly ownerWindowId: number;
-  /** topic-05: agent attach hint;renderer 端 InternalTerminalPanel 据此判断接管。 */
-  readonly attachTarget?:
-    | { readonly kind: 'active' }
-    | { readonly kind: 'panel'; readonly panelId: string }
-    | { readonly kind: 'window'; readonly windowId: number };
-  /** 创建时所在 workspace 根目录;undefined = 全局会话(所有 workspace 都可见)。 */
-  readonly workspaceRoot?: string;
-}
+/**
+ * main 推过来的 session 形态;renderer cast 为 TerminalSession。
+ * 可维护性 M14:复用 shared TerminalSessionSnapshot 单一来源(此前内联重复了
+ * 同组字段 + attachTarget union)。
+ */
+export type PreloadTerminalSession = TerminalSessionSnapshot;
 
 // 给 fs 入参用的轻量 ListDirOptions —— 与 main 端 zod schema 对齐字段
 export interface PreloadListDirOptions {

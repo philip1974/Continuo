@@ -89,6 +89,22 @@ function DockReconcilerMount({ api }: { api: DockviewApi }): null {
   return null;
 }
 
+// 可维护性 M10:dock layout 写盘单一来源(toJSON → {version:1,...} payload → layout.write
+// → r.ok 失败 warn)。自动持久化(onDidLayoutChange debounce)与关窗 flush 共用,避免
+// payload 结构 / 版本号 / 错误处理在两处漂移。warnPrefix 区分日志来源;调用方各自决定是否
+// 再包 try/catch(flush 路径需捕获 toJSON/write 异常,debounce 路径沿用原行为不捕获)。
+async function writeDockLayoutSnapshot(
+  api: DockviewApi,
+  warnPrefix: string,
+): Promise<void> {
+  const snapshot = api.toJSON() as unknown;
+  const r = await coApi.layout.write({
+    version: 1 as const,
+    ...(snapshot as object),
+  });
+  if (!r.ok) console.warn(`${warnPrefix} failed`, r.code, r.message);
+}
+
 export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
   const apiRef = useRef<DockviewApi | null>(null);
   const [dockApi, setReconcilerApi] = useState<DockviewApi | null>(null);
@@ -140,12 +156,10 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       setEmpty(event.api.totalPanels === 0);
       onLayoutReady?.();
 
-      const persist = debounce(async () => {
-        const snapshot = event.api.toJSON() as unknown;
-        const payload = { version: 1 as const, ...(snapshot as object) };
-        const r = await coApi.layout.write(payload);
-        if (!r.ok) console.warn('[dock] layout:write failed', r.code, r.message);
-      }, 300);
+      const persist = debounce(
+        () => writeDockLayoutSnapshot(event.api, '[dock] layout:write'),
+        300,
+      );
 
       event.api.onDidLayoutChange(() => {
         persist();
@@ -199,12 +213,7 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
     const bridge = getFlushBridge();
     const off = bridge?.layout?.onFlushRequest?.(async (payload) => {
       try {
-        const snapshot = api.toJSON() as unknown;
-        const r = await coApi.layout.write({
-          version: 1 as const,
-          ...(snapshot as object),
-        });
-        if (!r.ok) console.warn('[dockview] flush save failed', r.code, r.message);
+        await writeDockLayoutSnapshot(api, '[dockview] flush save');
       } catch (err) {
         console.warn('[dockview] flush save failed', err);
       }

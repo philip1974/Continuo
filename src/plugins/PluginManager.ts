@@ -367,9 +367,8 @@ export class PluginManager {
       return;
     }
 
-    // PluginClass 是 abstract,但实际传进来的是子类构造函数
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const Ctor = loaded.PluginClass as any;
+    // 可维护性 M3:loader 现在把 PluginClass 类型为可构造的 PluginConstructor
+    // (信任边界 runtime subclass 校验集中在 loader),此处直接 new,无需 as any。
     // v5 Phase 1:plugin 拿到的是 per-plugin scoped app(持 pluginId 给
     // permission.check;fs/network 等命名空间预留 Phase 3 启用 gating)
     const { token: pluginFsToken } =
@@ -382,14 +381,14 @@ export class PluginManager {
       pluginFsToken,
     );
     // 构造器必须和 _activate 同在 try/catch 内:token 已在上面注册并设 active,
-    // 若 `new Ctor()` 同步抛错(插件构造函数 throw)而它在 try 之外,就会跳出
+    // 若 `new PluginClass()` 同步抛错(插件构造函数 throw)而它在 try 之外,就会跳出
     // activateEntry 既不撤 token 也不标 failed → entry 停在 status='enabled' 但
     // instance=undefined 的半激活态。后续 disableLocked 的 `!entry.instance` 守卫
     // 又会早退、不走 deactivateEntry → 泄漏的 plugin-fs capability token 永不回收
     // (codex 复审 loop R1)。
     let instance: Plugin;
     try {
-      instance = new Ctor(scopedApp, entry.manifest);
+      instance = new loaded.PluginClass(scopedApp, entry.manifest);
       await instance._activate();
     } catch (err) {
       console.warn(

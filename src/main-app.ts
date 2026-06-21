@@ -19,7 +19,7 @@ import { IpcPermissionStore } from './plugins/permissions/IpcPermissionStore';
 import { setUserPermissionStore } from './plugins/permissions/co-permission-store';
 import { usePermissionPromptStore } from './plugins/permissions/promptStore';
 import { startPluginFsScopeRequestBridge } from './plugins/permissions/usePluginFsScopeRequests';
-import { PermissionError } from './plugins/permissions';
+import { PermissionError, type PermissionKey } from './plugins/permissions';
 import { sandboxSweep } from './plugins/sandbox-sweep';
 import { captureLmApi, coApi } from './lib/co-api';
 import { useUpdateStore } from './marketplace/update-store';
@@ -45,10 +45,12 @@ declare const window: Window & {
     setSettingValue: (id: string, value: string | number | boolean) => void;
     getSettingValue: (id: string) => unknown;
     /** 触发权限弹窗(plugin install 流程的核心交互). */
+    // 可维护性 M9:复用真实权限键类型(与 promptStore.request 契约一致),不再用更宽的
+    // string[] + impl 处 `as never` 掩盖非法键。
     requestPermissions: (
       pluginId: string,
-      perms: readonly string[],
-    ) => Promise<readonly string[]>;
+      perms: readonly PermissionKey[],
+    ) => Promise<readonly PermissionKey[]>;
     /** 命令数量(用于 e2e 验证内置命令注册数). */
     commandCount: () => number;
     /** 注册命令(测试动态命令出现).返 dispose. */
@@ -222,9 +224,7 @@ export async function init(): Promise<void> {
         getSettingValue: (id) =>
           values.useSettingsValuesStore.getState().values[id],
         requestPermissions: (pluginId, perms) =>
-          perm.usePermissionPromptStore
-            .getState()
-            .request(pluginId, perms as never),
+          perm.usePermissionPromptStore.getState().request(pluginId, perms),
         commandCount: () => app.coApp.commands.getAll().length,
         registerCommand: (id, title, hotkey) => {
           const d = app.coApp.commands.register({

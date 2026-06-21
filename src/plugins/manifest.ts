@@ -3,7 +3,7 @@
 // 决定跳过 / 提示。
 
 import { z } from 'zod';
-import { PERMISSION_KEYS, type PermissionKey } from './permissions';
+import { PERMISSION_KEYS } from './permissions';
 import type { PluginManifest } from './types';
 import { errorMessage } from '../../electron/shared/error-message';
 
@@ -22,13 +22,8 @@ export const ManifestSchema = z.object({
   authorUrl: z.string().url().optional(),
   minLMVersion: z.string().regex(SEMVER_RE).optional(),
   isDesktopOnly: z.boolean().optional(),
-  permissions: z
-    .array(
-      z.enum(
-        PERMISSION_KEYS as unknown as [PermissionKey, ...PermissionKey[]],
-      ),
-    )
-    .optional(),
+  // 可维护性 M8:PERMISSION_KEYS 现为 `as const` tuple,z.enum 直接接受,无需 as unknown。
+  permissions: z.array(z.enum(PERMISSION_KEYS)).optional(),
 });
 
 // ── 解析结果类型 ───────────────────────────────────────

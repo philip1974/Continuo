@@ -30,30 +30,13 @@
 import { ERROR_CODES } from '../../shared/error-codes';
 import type { OriginHint } from '../../shared/origin-hint';
 import type { AttachTarget } from '../../shared/terminal-attach';
+import type { TerminalSessionSnapshot } from '../../shared/terminal-session';
 
 export type { AttachTarget } from '../../shared/terminal-attach';
 
-export interface MainTerminalSession {
-  readonly id: string;
-  readonly title: string;
-  readonly cwd: string;
-  readonly originHint: OriginHint;
-  readonly agentLabel?: string;
-  readonly scoped?: boolean;
-  readonly createdAt: number;
-  readonly exitCode: number | null;
-  // Issue #28 Phase 1:owner BrowserWindow.id。renderer 不自报,
-  // 由 IPC create handler 从 event.sender 推断后传入。
-  readonly ownerWindowId: number;
-  /** topic-05: agent attach hint;renderer 用此决定 attach 落到哪个 panel。 */
-  readonly attachTarget?: AttachTarget;
-  /**
-   * 创建时所在 workspace 的根目录绝对路径。undefined = 未选 workspace 或
-   * agent 创建(全局)。renderer 端按当前 workspaceRoot 过滤可见 sessions:
-   *   visible = (workspaceRoot === current) || workspaceRoot === undefined
-   * 主进程只存,不做过滤 — 渲染层决定 UI 可见性。
-   */
-  readonly workspaceRoot?: string;
+// 可维护性 M14:renderer-visible 字段复用 shared TerminalSessionSnapshot 单一来源;
+// 此处只追加 main-内部字段(controllerToken,绝不跨 IPC 给 renderer)。
+export interface MainTerminalSession extends TerminalSessionSnapshot {
   /**
    * 安全 S3(codex 安全审计):创建该会话的 MCP 调用方身份(HTTP=bearer token,
    * stdio=每连接 subject)。读/写/杀类 MCP 工具只允许「在本窗口且该会话由调用方

@@ -76,6 +76,34 @@ describe('parseManifest:Schema 校验', () => {
     expect(r.ok).toBe(true);
   });
 
+  // 可维护性 M8:permissions 走 z.enum(PERMISSION_KEYS)(从 const 派生,无 as unknown)。
+  // 锁定运行时仍正确收合法权限、拒非法权限(枚举确实接到了单一来源 PERMISSION_KEYS)。
+  it('permissions 全合法 → ok 且透传', () => {
+    const r = parseManifest(
+      JSON.stringify({
+        id: 'a.b',
+        name: 'X',
+        version: '1.0.0',
+        permissions: ['fs', 'network', 'shell', 'clipboard', 'mcp-tools'],
+      }),
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.data.permissions).toContain('mcp-tools');
+  });
+
+  it('permissions 含非法值 → SCHEMA_ERROR', () => {
+    const r = parseManifest(
+      JSON.stringify({
+        id: 'a.b',
+        name: 'X',
+        version: '1.0.0',
+        permissions: ['fs', 'bogus-permission'],
+      }),
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.code).toBe('SCHEMA_ERROR');
+  });
+
   it('authorUrl 非 URL → SCHEMA_ERROR', () => {
     const r = parseManifest(
       JSON.stringify({

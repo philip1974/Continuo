@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
+import { basenamePreserveTrailing, dirname } from './path-utils';
 import { useTree } from '@headless-tree/react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { ItemInstance, SetStateFn, TreeInstance } from '@headless-tree/core';
@@ -39,13 +40,6 @@ import { t, useT } from '@/i18n';
 interface CreatingState {
   type: 'file' | 'dir';
   parentDir: string;
-}
-
-function dirname(p: string): string {
-  const trimmed = p.replace(/[\\/]+$/, '');
-  const idx = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
-  if (idx < 0) return '';
-  return trimmed.slice(0, idx) || '/';
 }
 
 function isWithinRoot(path: string, root: string): boolean {
@@ -182,7 +176,7 @@ export function FolderTree({ root }: { root: string }) {
               for (const src of srcs) {
                 // 拖到原父目录 → no-op(canDrop 已挡掉拖到自身,父同位置只跳)
                 if (dirname(src) === destDir) continue;
-                const dest = pickDest(basename(src));
+                const dest = pickDest(basenamePreserveTrailing(src));
                 const r = await coApi.fs.move(src, dest);
                 if (!r.ok) {
                   console.warn('[explorer] drop move failed', src, r.code, r.message);
@@ -303,7 +297,7 @@ export function FolderTree({ root }: { root: string }) {
         // 见第二十一轮 P1-AX。
         console.warn('[explorer] open file failed:', r.code, r.message);
         notify.error(
-          `${t('quick_open.open_failed')} ${basename(path)}: ${r.message ?? r.code}`,
+          `${t('quick_open.open_failed')} ${basenamePreserveTrailing(path)}: ${r.message ?? r.code}`,
           { code: r.code, mirror: false },
         );
       }
@@ -430,7 +424,7 @@ export function FolderTree({ root }: { root: string }) {
         try {
           for (const src of paths) {
             // 计算 dest:destDir + src basename;若已存在,自动加 ` copy` 后缀
-            const dest = pickDest(basename(src));
+            const dest = pickDest(basenamePreserveTrailing(src));
             const r =
               kind === 'cut'
                 ? await coApi.fs.move(src, dest)
@@ -472,11 +466,6 @@ export function FolderTree({ root }: { root: string }) {
       })();
     },
   };
-
-  function basename(p: string): string {
-    const idx = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'));
-    return idx >= 0 ? p.slice(idx + 1) : p;
-  }
 
   // 为「单批移动/复制到同一 destDir」建一个唯一名 picker:listDir 一次拿现有
   // basename 集合,之后每次 pick 纯本地匹配(打磨 R20→R21:批量循环原先逐项
@@ -558,7 +547,7 @@ export function FolderTree({ root }: { root: string }) {
       const pickDest = await makeUniqueDestPicker(root);
       try {
         for (const src of moveable) {
-          const dest = pickDest(basename(src));
+          const dest = pickDest(basenamePreserveTrailing(src));
           const r = await coApi.fs.move(src, dest);
           if (!r.ok) {
             console.warn('[explorer] root drop move failed', src, r.code, r.message);

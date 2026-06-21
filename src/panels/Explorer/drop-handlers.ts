@@ -6,6 +6,7 @@
 
 import type { IpcResult } from '@/lib/fs/types';
 import { errorMessage } from '../../../electron/shared/error-message';
+import { dirname } from './path-utils';
 
 export interface DropTargetEntry {
   path: string;
@@ -21,13 +22,6 @@ export interface DropResult {
   written: string[];
   skipped: string[];
   failed: { name: string; code: string; message: string }[];
-}
-
-function dirname(p: string): string {
-  const trimmed = p.replace(/[\\/]+$/, '');
-  const idx = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
-  if (idx < 0) return '';
-  return trimmed.slice(0, idx) || '/';
 }
 
 /**

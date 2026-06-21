@@ -6,11 +6,7 @@ import { useMemo } from 'react';
 import { useEditorStore } from '@/stores/editor.store';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { useT } from '@/i18n';
-
-function basename(p: string): string {
-  const m = p.match(/[^/\\]+$/);
-  return m ? m[0] : p;
-}
+import { basenameForChrome } from './path-label';
 
 export function TitleBar() {
   const t = useT();
@@ -37,9 +33,9 @@ export function TitleBar() {
   }, [activeSig]);
 
   const fileLabel = hasActiveTab
-    ? `${basename(activeFilePath ?? t('panels.editor.untitled'))}${activeDirty ? ' ●' : ''}`
+    ? `${basenameForChrome(activeFilePath ?? t('panels.editor.untitled'))}${activeDirty ? ' ●' : ''}`
     : null;
-  const wsLabel = root ? basename(root) : null;
+  const wsLabel = root ? basenameForChrome(root) : null;
 
   // 拼接:[file ●] · [workspace] || Continuo
   const parts = [fileLabel, wsLabel].filter(Boolean);

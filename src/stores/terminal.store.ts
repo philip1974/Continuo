@@ -7,30 +7,11 @@
 
 import { create } from 'zustand';
 import type { ShellFamily } from '@continuo-terminal/shell-quote';
-import type { OriginHint } from '../../electron/shared/origin-hint';
+import type { TerminalSessionSnapshot } from '../../electron/shared/terminal-session';
 
-export interface TerminalSession {
-  /** 后端 PTY id (term-${uuid}). */
-  readonly id: string;
-  /** Tab 显示名. */
-  readonly title: string;
-  /** PTY spawn 时的 cwd. */
-  readonly cwd: string;
-  /** session 来源:用户手开 / agent 通过 MCP 创建. */
-  readonly originHint: OriginHint;
-  /** agent 类型才填,如 'codex' / 'gemini'. */
-  readonly agentLabel?: string;
-  /** Scoped split-pane sessions are hidden from the legacy terminal tabs. */
-  readonly scoped?: boolean;
-  /** ms epoch. */
-  readonly createdAt: number;
-  /** null = PTY 仍在运行;number = 已 exit. */
-  readonly exitCode: number | null;
-  /** owner BrowserWindow.id. */
-  readonly ownerWindowId: number;
-  /** 创建时所在 workspace.root;undefined = 全局(所有 workspace 都可见)。 */
-  readonly workspaceRoot?: string;
-}
+// 可维护性 M14:终端 session 形态复用 shared TerminalSessionSnapshot 单一来源
+// (此前 main/preload/renderer 三层平行声明同组字段并已漂移)。
+export type TerminalSession = TerminalSessionSnapshot;
 
 export interface FilterDropOpts {
   onDrop?: (

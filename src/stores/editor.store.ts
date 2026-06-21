@@ -7,6 +7,7 @@
 import { create } from 'zustand';
 import type { EditorView } from '@codemirror/view';
 import { isMilkdownUnsafe } from '@/panels/Editor/milkdown-roundtrip-safety';
+import { isMarkdownPath } from '@/panels/Editor/editor-path-utils';
 
 // ── 类型 ─────────────────────────────────────────────────────
 
@@ -435,8 +436,9 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
 }));
 
 function isMarkdownFilePath(filePath: string | null): boolean {
+  // 可维护性 M13:markdown 扩展名判定共用 editor-path-utils.isMarkdownPath。
   if (!filePath) return false;
-  return /\.(md|markdown)$/i.test(filePath);
+  return isMarkdownPath(filePath);
 }
 
 export function getEffectiveMode(tab: EditorTab | null): EditorMode {

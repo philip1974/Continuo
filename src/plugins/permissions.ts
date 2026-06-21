@@ -1,13 +1,19 @@
 // 插件权限系统(M-Plugin v3.3)。
 // 声明式 manifest.permissions + 首次启用授权门 + 决策持久化。
 
-export type PermissionKey =
-  | 'fs'
-  | 'network'
-  | 'shell'
-  | 'clipboard'
+// 可维护性 M8:权限枚举单一来源 —— union 从 PERMISSION_KEYS 常量派生,避免手写 union
+// 与数组双重维护(新增权限只改这一处);manifest schema 直接 z.enum(PERMISSION_KEYS),
+// 不再 `as unknown as [PermissionKey, ...]` 绕过 z.enum 的非空 tuple 要求。
+export const PERMISSION_KEYS = [
+  'fs',
+  'network',
+  'shell',
+  'clipboard',
   /** v5 Phase 4:plugin 注册 MCP tool 给 Agent 用. */
-  | 'mcp-tools';
+  'mcp-tools',
+] as const;
+
+export type PermissionKey = (typeof PERMISSION_KEYS)[number];
 
 /**
  * v5 Phase 1:plugin 调 fs/network/shell/clipboard 时若未授权,
@@ -23,14 +29,6 @@ export class PermissionError extends Error {
     this.name = 'PermissionError';
   }
 }
-
-export const PERMISSION_KEYS: readonly PermissionKey[] = [
-  'fs',
-  'network',
-  'shell',
-  'clipboard',
-  'mcp-tools',
-];
 
 export interface PermissionDecision {
   readonly permission: PermissionKey;

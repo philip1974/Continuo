@@ -16,6 +16,7 @@ import {
 } from '@/stores/editor.store';
 import { useT, t as translate } from '@/i18n';
 import { runContributedAction } from '@/lib/run-contributed-action';
+import { basenameForEditorPath } from './editor-path-utils';
 import {
   Button,
   IconButton,
@@ -44,10 +45,9 @@ interface EditorHeaderProps {
 }
 
 function basename(p: string | null): string {
+  // 可维护性 M12:非空 basename 规则共用 basenameForEditorPath;null fallback 文案各自处理。
   if (!p) return translate('panels.editor.untitled');
-  const trimmed = p.replace(/[\\/]+$/, '');
-  const idx = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
-  return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
+  return basenameForEditorPath(p);
 }
 
 /** 订阅 editorActions registry,渲染时按 ctx 过滤. */

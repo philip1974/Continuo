@@ -13,6 +13,10 @@ import {
   type EditorMode,
 } from '@/stores/editor.store';
 import { t as translate } from '@/i18n';
+import {
+  basenameForEditorPath,
+  isMarkdownPath as isMarkdownPathExact,
+} from './editor-path-utils';
 import { ConfirmDialog } from '@/panels/Explorer/ConfirmDialog';
 import { SegmentedControl } from '@/design';
 import { CodeEditor } from './CodeEditor';
@@ -36,15 +40,16 @@ const MODE_OPTIONS: readonly { id: EditorMode; label: string }[] = [
 ];
 
 function isMarkdownPath(p: string | null): boolean {
-  if (!p) return true; // 未保存草稿默认按 markdown 处理
-  return /\.(md|markdown)$/i.test(p);
+  // 可维护性 M13:非空判定共用 editor-path-utils.isMarkdownPath;此处只保留「草稿(null)默认
+  // 按 markdown 处理」的 EditorPanel 业务语义。
+  if (!p) return true;
+  return isMarkdownPathExact(p);
 }
 
 function basename(p: string | null): string {
+  // 可维护性 M12:非空 basename 规则共用 basenameForEditorPath;null fallback 文案各自处理。
   if (!p) return translate('panels.editor.draft');
-  const trimmed = p.replace(/[\\/]+$/, '');
-  const idx = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
-  return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
+  return basenameForEditorPath(p);
 }
 
 export function EditorPanel() {

@@ -10,16 +10,22 @@ export interface ShellStreamEvent {
   payload: Buffer | { exitCode: number | null; signal: NodeJS.Signals | null };
 }
 
+// 可维护性 M7:单个 stream chunk(stdout/stderr)。迭代器 yield 此类型,**结束值为
+// void**(`{ value: undefined, done: true }`)。此前各结束分支用 `undefined as never`
+// 压过 TS —— 把迭代器结束语义用类型(IteratorResult<ShellChunk, void>)表达后即不需断言。
+type ShellChunk = { stream: 'stdout' | 'stderr'; chunk: Uint8Array };
+const SHELL_STREAM_DONE: IteratorResult<ShellChunk, void> = {
+  value: undefined,
+  done: true,
+};
+
 export interface PluginShellStreamRaw {
   execStream(
     cmd: string,
     args: string[],
     opts?: { timeoutMs?: number; cwd?: string },
   ): {
-    chunks: AsyncIterable<{
-      stream: 'stdout' | 'stderr';
-      chunk: Uint8Array;
-    }>;
+    chunks: AsyncIterable<ShellChunk>;
     done: Promise<{ exitCode: number | null; signal: NodeJS.Signals | null }>;
   };
 }
@@ -27,14 +33,9 @@ export interface PluginShellStreamRaw {
 export const pluginShellStreamRaw: PluginShellStreamRaw = {
   execStream(cmd, args, opts) {
     const streamId = globalThis.crypto.randomUUID();
-    const chunkQueue: { stream: 'stdout' | 'stderr'; chunk: Uint8Array }[] = [];
+    const chunkQueue: ShellChunk[] = [];
     let chunkResolver:
-      | ((
-          value: IteratorResult<{
-            stream: 'stdout' | 'stderr';
-            chunk: Uint8Array;
-          }>,
-        ) => void)
+      | ((value: IteratorResult<ShellChunk, void>) => void)
       | null = null;
     let exitInfo: { exitCode: number | null; signal: NodeJS.Signals | null } | null =
       null;
@@ -56,7 +57,7 @@ export const pluginShellStreamRaw: PluginShellStreamRaw = {
           signal: NodeJS.Signals | null;
         };
         if (chunkResolver) {
-          chunkResolver({ value: undefined as never, done: true });
+          chunkResolver(SHELL_STREAM_DONE);
           chunkResolver = null;
         }
         exitResolve?.(exitInfo);
@@ -64,7 +65,7 @@ export const pluginShellStreamRaw: PluginShellStreamRaw = {
         return;
       }
 
-      const item = {
+      const item: ShellChunk = {
         stream: payload.kind,
         chunk: new Uint8Array(payload.payload as Uint8Array),
       };
@@ -86,7 +87,7 @@ export const pluginShellStreamRaw: PluginShellStreamRaw = {
       if (exitInfo) return;
       exitInfo = info;
       if (chunkResolver) {
-        chunkResolver({ value: undefined as never, done: true });
+        chunkResolver(SHELL_STREAM_DONE);
         chunkResolver = null;
       }
       exitResolve?.(exitInfo);
@@ -98,15 +99,10 @@ export const pluginShellStreamRaw: PluginShellStreamRaw = {
       .invoke(PLUGIN_SHELL_STREAM_CHANNELS.START, streamId, cmd, args, opts)
       .catch(() => synthesizeExit({ exitCode: -1, signal: null }));
 
-    const chunks: AsyncIterable<{
-      stream: 'stdout' | 'stderr';
-      chunk: Uint8Array;
-    }> = {
+    const chunks: AsyncIterable<ShellChunk> = {
       [Symbol.asyncIterator]() {
         return {
-          next(): Promise<
-            IteratorResult<{ stream: 'stdout' | 'stderr'; chunk: Uint8Array }>
-          > {
+          next(): Promise<IteratorResult<ShellChunk, void>> {
             if (chunkQueue.length > 0) {
               return Promise.resolve({
                 value: chunkQueue.shift()!,
@@ -114,7 +110,7 @@ export const pluginShellStreamRaw: PluginShellStreamRaw = {
               });
             }
             if (exitInfo) {
-              return Promise.resolve({ value: undefined as never, done: true });
+              return Promise.resolve(SHELL_STREAM_DONE);
             }
             return new Promise((resolve) => {
               chunkResolver = resolve;
@@ -124,9 +120,7 @@ export const pluginShellStreamRaw: PluginShellStreamRaw = {
           // listener。缺这个钩子时,子进程会一直跑到 timeout(最长 30min),preload 的
           // handler 驻留在 EVENT 通道、chunkQueue 随输出无界堆积。多次「读够就 break」
           // 会累积多个孤儿进程。见第十四轮 P2-AM。
-          return(): Promise<
-            IteratorResult<{ stream: 'stdout' | 'stderr'; chunk: Uint8Array }>
-          > {
+          return(): Promise<IteratorResult<ShellChunk, void>> {
             if (!exitInfo) {
               exitInfo = { exitCode: null, signal: null };
               ipcRenderer.removeListener(
@@ -138,7 +132,7 @@ export const pluginShellStreamRaw: PluginShellStreamRaw = {
                 .catch(() => {});
               exitResolve?.(exitInfo);
             }
-            return Promise.resolve({ value: undefined as never, done: true });
+            return Promise.resolve(SHELL_STREAM_DONE);
           },
         };
       },

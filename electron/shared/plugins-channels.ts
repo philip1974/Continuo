@@ -44,6 +44,24 @@ export interface IpcPermissionDecision {
   readonly decidedAt: number;
 }
 
-export type IpcPermissionsMap = Readonly<
-  Record<string, readonly IpcPermissionDecision[]>
->;
+/** 路径 scope(plugin-fs 授权)。renderer 端 PathScope 的 IPC/磁盘镜像形态. */
+export interface IpcPathScope {
+  readonly path: string;
+  readonly mode: 'r' | 'rw';
+}
+
+/**
+ * 单个 plugin 的权限磁盘/IPC 记录。两种形态:
+ *  - 旧:决策数组(v4.2 起);
+ *  - 新:`{ decisions, pathScopes? }`(plugin-fs path scope 持久化)。
+ * main / preload / renderer 共用此契约,避免 renderer 序列化时 `as never` 强转
+ * (可维护性 M6:此前 shared 只建模旧数组形态,renderer 写时被迫断言)。
+ */
+export type IpcPermissionRecord =
+  | readonly IpcPermissionDecision[]
+  | {
+      readonly decisions: readonly IpcPermissionDecision[];
+      readonly pathScopes?: readonly IpcPathScope[];
+    };
+
+export type IpcPermissionsMap = Readonly<Record<string, IpcPermissionRecord>>;

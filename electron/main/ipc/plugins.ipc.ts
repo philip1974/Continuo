@@ -28,8 +28,22 @@ const DecisionSchema = z
     decidedAt: z.number(),
   })
   .strict();
+// 可维护性 M6:与 shared IpcPermissionRecord 同步 —— 接受旧数组形态与新
+// `{ decisions, pathScopes? }` 形态,让 IPC 校验契约与 renderer 序列化契约一致。
+const PathScopeSchema = z
+  .object({ path: z.string(), mode: z.enum(['r', 'rw']) })
+  .strict();
+const PermissionRecordSchema = z.union([
+  z.array(DecisionSchema),
+  z
+    .object({
+      decisions: z.array(DecisionSchema),
+      pathScopes: z.array(PathScopeSchema).optional(),
+    })
+    .strict(),
+]);
 const WritePermissionsInput = z
-  .object({ data: z.record(z.string(), z.array(DecisionSchema)) })
+  .object({ data: z.record(z.string(), PermissionRecordSchema) })
   .strict();
 const InstallFromGitInput = z
   .object({ url: z.string().min(1), overwrite: z.boolean().optional() })

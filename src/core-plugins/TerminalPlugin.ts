@@ -4,15 +4,8 @@ import { lazy } from 'react';
 import type { IDockviewPanelProps } from 'dockview-react';
 import { Plugin } from '@/plugins/Plugin';
 import { lazyPanel } from '@/lib/lazy-panel';
-import { coApi } from '@/lib/co-api';
-import { notify } from '@/notifications/notify';
-import {
-  useWorkspaceStore,
-  waitForWorkspaceHydrated,
-} from '@/stores/workspace.store';
 import type { TerminalPanelViewParams } from '@/panels/Terminal/TerminalPanelView';
-import { ERROR_CODES } from '../../electron/shared/error-codes';
-import { t } from '@/i18n';
+import { createUserTerminal } from '@/shell/dock/create-user-terminal';
 import { getDockApi } from '@/shell/dock/dock-api-ref';
 import { toggleActiveTerminalZoom } from '@/shell/dock/terminal-panel-zoom';
 import { openTerminalSearch } from '@/panels/Terminal/terminal-search-registry';
@@ -67,29 +60,8 @@ export default class TerminalPlugin extends Plugin {
       category: 'Terminal',
       categoryKey: 'commands.terminal.category',
       hotkey: 'mod+t',
-      fn: async () => {
-        // 冷启动竞态:hydrate 未完成时 root 仍是初始 null → terminal.create 不带 cwd →
-        // main 抛 TERMINAL_CWD_UNRESOLVED,首次新建失败且不重试。先等 hydrate 完成再读 root
-        // (workspace.store 的 hydrated 契约 + stores/README 明确要求消费方等待)。(codex 复审 loop R10)
-        await waitForWorkspaceHydrated();
-        const workspaceRoot = useWorkspaceStore.getState().root ?? undefined;
-        const r = await coApi.terminal.create({
-          cwd: workspaceRoot,
-          originHint: 'user',
-          ...(workspaceRoot !== undefined ? { workspaceRoot } : {}),
-        });
-        if (!r.ok) {
-          const msg =
-            r.code === ERROR_CODES.TERMINAL_CWD_UNRESOLVED
-              ? t('errors.terminal.cwd_unresolved')
-              : t('errors.terminal.create_failed', { code: r.code ?? '?' });
-          notify.error(msg, { code: r.code });
-          return;
-        }
-        if (!r.data?.id) return;
-        const { setPendingFocus } = await import('@/shell/dock/DockReconciler');
-        setPendingFocus(r.data.id);
-      },
+      // 可维护性 M1:终端创建流程抽到 createUserTerminal(与 Dock header 新建入口共用)。
+      fn: () => createUserTerminal().then(() => undefined),
     });
   }
 }

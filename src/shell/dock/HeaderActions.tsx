@@ -6,13 +6,7 @@ import { IconButton, MenuItem } from '@/design';
 import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
 import { coApp } from '@/plugins/co-app';
 import { useRegistry } from '@/plugins/registries/useRegistry';
-import { coApi } from '@/lib/co-api';
-import { notify } from '@/notifications/notify';
-import {
-  useWorkspaceStore,
-  waitForWorkspaceHydrated,
-} from '@/stores/workspace.store';
-import { ERROR_CODES } from '../../../electron/shared/error-codes';
+import { createUserTerminal } from '@/shell/dock/create-user-terminal';
 import { useTWithFallback, t } from '@/i18n';
 
 let panelCounter = 0;
@@ -72,30 +66,11 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
       titleKey: string | undefined,
     ) => {
       if (key === TERMINAL_PANEL_TYPE) {
-        // terminal panel session-bound:不走 containerApi.addPanel,
-        // 通过 coApi.terminal.create → SessionsSync → DockReconciler addPanel(含 sessionId)。
-        // 冷启动竞态:等 hydrate 完成再读 root,否则 root=null → TERMINAL_CWD_UNRESOLVED
-        // 首次新建失败(同 TerminalPlugin.terminal.new,codex 复审 loop R10)。
-        await waitForWorkspaceHydrated();
-        const workspaceRoot = useWorkspaceStore.getState().root ?? undefined;
-        const r = await coApi.terminal.create({
-          ...(workspaceRoot !== undefined
-            ? { cwd: workspaceRoot, workspaceRoot }
-            : {}),
-          originHint: 'user',
-        });
-        if (!r.ok) {
-          const msg =
-            r.code === ERROR_CODES.TERMINAL_CWD_UNRESOLVED
-              ? t('errors.terminal.cwd_unresolved')
-              : t('errors.terminal.create_failed', { code: r.code ?? '?' });
-          notify.error(msg, { code: r.code });
-          setOpen(false);
-          return;
-        }
-        if (!r.data?.id) return;
-        const { setPendingFocus } = await import('@/shell/dock/DockReconciler');
-        setPendingFocus(r.data.id);
+        // terminal panel session-bound:不走 containerApi.addPanel,而是经
+        // createUserTerminal → coApi.terminal.create → SessionsSync → DockReconciler
+        // addPanel(含 sessionId)。创建流程(等 hydrate / 错误提示 / setPendingFocus)与
+        // 命令面板 terminal.new 共用(可维护性 M1);此处只负责关闭菜单 UI 收尾。
+        await createUserTerminal();
         setOpen(false);
         return;
       }

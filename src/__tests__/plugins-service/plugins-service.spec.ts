@@ -212,9 +212,14 @@ describe('readPermissions / writePermissions', () => {
       'p.b': [{ permission: 'shell', granted: true, decidedAt: 2000 }],
     });
     const r = await readPermissions(tmp);
-    expect(r['p.a']).toHaveLength(2);
-    expect(r['p.b']).toHaveLength(1);
-    expect(r['p.a']![0]!.permission).toBe('fs');
+    // M6:IpcPermissionsMap 现为 union(数组 | {decisions,pathScopes});readPermissions
+    // 运行时只返数组形态,测试用 Array.isArray 窄化后再索引。
+    const pa = r['p.a'];
+    const pb = r['p.b'];
+    if (!Array.isArray(pa) || !Array.isArray(pb)) throw new Error('expected array shape');
+    expect(pa).toHaveLength(2);
+    expect(pb).toHaveLength(1);
+    expect(pa[0]!.permission).toBe('fs');
   });
 
   it('JSON 损坏 → {}', async () => {

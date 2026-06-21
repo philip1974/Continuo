@@ -2,8 +2,17 @@
 // 不直接 import 而是接受 importer 注入,方便测试 + 主进程 / renderer 异路径。
 
 import { Plugin } from './Plugin';
-import type { Disposable, PluginManifest } from './types';
+import type { CoPluginApp, Disposable, PluginManifest } from './types';
 import { errorMessage } from '../../electron/shared/error-message';
+
+// 可维护性 M3:动态 import 的 default export 是 Plugin **子类**(可实例化),但
+// `typeof Plugin` 是 abstract 类型(不可 new)。用一个可构造的构造器类型表达「Plugin
+// 子类构造器」,把动态 import 的信任边界(runtime subclass 校验后的 `as`)集中在本
+// loader,调用方(PluginManager)就能直接 `new`,不必再 `as any` 关闭实例化检查。
+export type PluginConstructor = new (
+  app: CoPluginApp,
+  manifest: PluginManifest,
+) => Plugin;
 
 // ── styles 注入 ────────────────────────────────────────
 
@@ -40,7 +49,7 @@ export function injectStyles(css: string, scopeId: string): Disposable {
 // ── module 加载 ────────────────────────────────────────
 
 export type PluginModuleResult =
-  | { ok: true; PluginClass: typeof Plugin }
+  | { ok: true; PluginClass: PluginConstructor }
   | {
       ok: false;
       code: 'IMPORT_FAILED' | 'NO_DEFAULT_EXPORT' | 'NOT_PLUGIN_CLASS';
@@ -88,7 +97,8 @@ export async function loadPluginModule(
     };
   }
 
-  return { ok: true, PluginClass: def as typeof Plugin };
+  // runtime 已校验 def 是 Plugin 子类(isPluginSubclass)→ 信任边界集中在此 cast。
+  return { ok: true, PluginClass: def as PluginConstructor };
 }
 
 function isPluginSubclass(fn: unknown): boolean {

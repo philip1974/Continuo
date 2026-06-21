@@ -17,11 +17,7 @@ import { coApp } from '@/plugins/co-app';
 import type { StatusBarItemSpec } from '@/plugins/registries/StatusBarRegistry';
 import { getCachedClipboard } from '@/plugins/sandbox-sweep';
 import { useT, t as translate } from '@/i18n';
-
-function basename(p: string): string {
-  const m = p.match(/[^/\\]+$/);
-  return m ? m[0] : p;
-}
+import { basenameForChrome } from './path-label';
 
 // 一次订阅取全量(已按 priority 排序),再分侧(打磨 R6)。原先 left/right 各
 // useRegistry 一次 = 两个订阅回调 + 两次 getBySide(Array.from+filter+sort)。
@@ -144,7 +140,7 @@ export function StatusBar() {
         {root ? (
           <>
             <span className="truncate" title={root}>
-              {basename(root)}
+              {basenameForChrome(root)}
             </span>
             <span
               className="flex items-center gap-1"
@@ -207,7 +203,7 @@ export function StatusBar() {
               title={activeFilePath ?? t('statusbar.untitled_file')}
             >
               {activeFilePath
-                ? basename(activeFilePath)
+                ? basenameForChrome(activeFilePath)
                 : t('statusbar.untitled_file')}
               {activeDirty && <span className="ml-1 text-fg-muted">●</span>}
             </span>

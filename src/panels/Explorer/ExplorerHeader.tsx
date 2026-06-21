@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { IconButton, MenuItem } from '@/design';
 import { coApi } from '@/lib/co-api';
+import { basename } from './path-utils';
 import { useT } from '@/i18n';
 
 // FolderTree 顶部固定 Header:左侧 workspace 名 + 右侧 ⋯ 溢出菜单
@@ -21,12 +22,6 @@ interface ExplorerHeaderProps {
   onRefresh?: () => void;
   onNewFile?: () => void;
   onNewDir?: () => void;
-}
-
-function basename(p: string): string {
-  const trimmed = p.replace(/[\\/]+$/, '');
-  const idx = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
-  return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
 }
 
 export function ExplorerHeader({

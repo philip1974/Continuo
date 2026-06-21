@@ -8,6 +8,7 @@ import { useEffect, useMemo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useEditorStore } from '@/stores/editor.store';
 import { makeAutoSaveScheduler } from './auto-save';
+import { isMarkdownPath } from './editor-path-utils';
 import {
   registerAutoSaveFlush,
   trackInFlightAutoSave,
@@ -107,6 +108,7 @@ export function useAutoSave(
  * 决策 #3:.md / .markdown 自动保存;其它(代码 / 任意)显式 Cmd+S。
  */
 export function isAutoSaveEnabled(filePath: string | null): boolean {
+  // 可维护性 M13:markdown 扩展名判定共用 editor-path-utils.isMarkdownPath。
   if (!filePath) return false;
-  return /\.(md|markdown)$/i.test(filePath);
+  return isMarkdownPath(filePath);
 }
