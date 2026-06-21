@@ -13,36 +13,18 @@
 import { coApi } from '../lib/co-api';
 import { parseReview } from './reviews-parser';
 import type { PluginAggregateRating, Review } from './reviews-types';
+import { createSessionCache } from './session-cache';
 
-const CACHE_TTL_MS = 60 * 60 * 1000;
-const CACHE_KEY = 'continuo:marketplace:reviews';
-
-interface CachedReviews {
-  readonly fetchedAt: number;
-  readonly byPid: Record<string, PluginAggregateRating>;
-}
-
-let memoryCache: CachedReviews | null = null;
-
-function readSessionCache(): CachedReviews | null {
-  try {
-    const raw = sessionStorage.getItem(CACHE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as CachedReviews;
-    if (typeof parsed.fetchedAt !== 'number' || !parsed.byPid) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-function writeSessionCache(cache: CachedReviews): void {
-  try {
-    sessionStorage.setItem(CACHE_KEY, JSON.stringify(cache));
-  } catch {
-    /* */
-  }
-}
+// 可维护性 M19:1h sessionStorage 缓存样板复用 createSessionCache(与 index fetcher 共用)。
+// 缓存的是聚合后的 byPid(plugin id → PluginAggregateRating)Record。
+const reviewsCache = createSessionCache<
+  Record<string, PluginAggregateRating>
+>({
+  key: 'continuo:marketplace:reviews',
+  ttlMs: 60 * 60 * 1000,
+  validate: (d): d is Record<string, PluginAggregateRating> =>
+    !!d && typeof d === 'object' && !Array.isArray(d),
+});
 
 /**
  * 拉所有 reviews,按 plugin id 聚合。token + 网络在 main(IPC)。
@@ -55,36 +37,35 @@ function writeSessionCache(cache: CachedReviews): void {
 export async function fetchAllReviews(
   forceRefresh = false,
 ): Promise<ReadonlyMap<string, PluginAggregateRating>> {
-  if (!memoryCache) memoryCache = readSessionCache();
-  if (
-    !forceRefresh &&
-    memoryCache &&
-    Date.now() - memoryCache.fetchedAt < CACHE_TTL_MS
-  ) {
-    return new Map(Object.entries(memoryCache.byPid));
+  if (!forceRefresh) {
+    const fresh = reviewsCache.getFresh();
+    if (fresh) return new Map(Object.entries(fresh));
   }
 
   let res: Awaited<ReturnType<typeof coApi.marketplace.fetchReviews>>;
   try {
     res = await coApi.marketplace.fetchReviews();
   } catch (err) {
-    if (memoryCache) {
+    const stale = reviewsCache.getStale();
+    if (stale) {
       console.warn('[reviews] IPC failed, falling back to cache', err);
-      return new Map(Object.entries(memoryCache.byPid));
+      return new Map(Object.entries(stale));
     }
     throw err;
   }
 
   if (!res.ok) {
-    if (memoryCache) {
+    const stale = reviewsCache.getStale();
+    if (stale) {
       console.warn('[reviews] fetch failed, falling back to cache', res.message);
-      return new Map(Object.entries(memoryCache.byPid));
+      return new Map(Object.entries(stale));
     }
     throw new Error(res.message);
   }
 
   if (!res.data.available) {
-    if (memoryCache) return new Map(Object.entries(memoryCache.byPid));
+    const stale = reviewsCache.getStale();
+    if (stale) return new Map(Object.entries(stale));
     throw new Error('NO_TOKEN: GITHUB_TOKEN 未在 main 配置');
   }
 
@@ -94,12 +75,7 @@ export async function fetchAllReviews(
     if (parsed) reviews.push(parsed);
   }
   const byPid = aggregate(reviews);
-  const next: CachedReviews = {
-    fetchedAt: Date.now(),
-    byPid: Object.fromEntries(byPid),
-  };
-  memoryCache = next;
-  writeSessionCache(next);
+  reviewsCache.set(Object.fromEntries(byPid));
   return byPid;
 }
 
@@ -126,10 +102,5 @@ function aggregate(
 
 /** 测试用:重置 cache. */
 export function _resetReviewsCacheForTest(): void {
-  memoryCache = null;
-  try {
-    sessionStorage.removeItem(CACHE_KEY);
-  } catch {
-    /* */
-  }
+  reviewsCache.reset();
 }

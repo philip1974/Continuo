@@ -131,11 +131,12 @@ describe('fetchMarketplaceIndex', () => {
 
   it('sessionStorage hydrate:memory 空时从 sessionStorage 读', async () => {
     // 模拟"已经写过 sessionStorage,但 memory 是空"
+    // M19:缓存样板统一为 createSessionCache 的 { fetchedAt, data } 形态。
     sessionStorage.setItem(
       'continuo:marketplace:index',
       JSON.stringify({
         fetchedAt: Date.now(),
-        entries: [SAMPLE_ENTRY],
+        data: [SAMPLE_ENTRY],
       }),
     );
     const f = mockFetch({ ok: true, data: [] });

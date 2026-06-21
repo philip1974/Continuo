@@ -9,44 +9,17 @@
 
 import { getCachedFetch } from '../plugins/sandbox-sweep';
 import { entryToManifestUrl, type MarketplaceEntry } from './types';
+import { createSessionCache } from './session-cache';
 
 const INDEX_URL =
   'https://raw.githubusercontent.com/philip1974/continuo-plugins/main/index.json';
 
-const CACHE_TTL_MS = 60 * 60 * 1000;
-const CACHE_KEY = 'continuo:marketplace:index';
-
-interface CachedIndex {
-  readonly fetchedAt: number;
-  readonly entries: readonly MarketplaceEntry[];
-}
-
-let memoryCache: CachedIndex | null = null;
-
-function readSessionCache(): CachedIndex | null {
-  try {
-    const raw = sessionStorage.getItem(CACHE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as CachedIndex;
-    if (typeof parsed.fetchedAt !== 'number' || !Array.isArray(parsed.entries))
-      return null;
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-function writeSessionCache(cache: CachedIndex): void {
-  try {
-    sessionStorage.setItem(CACHE_KEY, JSON.stringify(cache));
-  } catch {
-    /* sessionStorage 满 / 禁用 → ignore,memory cache 还在 */
-  }
-}
-
-function isFresh(cache: CachedIndex): boolean {
-  return Date.now() - cache.fetchedAt < CACHE_TTL_MS;
-}
+// 可维护性 M19:1h sessionStorage 缓存样板复用 createSessionCache(与 reviews-fetcher 共用)。
+const indexCache = createSessionCache<readonly MarketplaceEntry[]>({
+  key: 'continuo:marketplace:index',
+  ttlMs: 60 * 60 * 1000,
+  validate: (d): d is readonly MarketplaceEntry[] => Array.isArray(d),
+});
 
 /**
  * 拉索引。1h cache,非强制刷新且 cache 新鲜直接返。
@@ -58,9 +31,9 @@ function isFresh(cache: CachedIndex): boolean {
 export async function fetchMarketplaceIndex(
   forceRefresh = false,
 ): Promise<readonly MarketplaceEntry[]> {
-  if (!memoryCache) memoryCache = readSessionCache();
-  if (!forceRefresh && memoryCache && isFresh(memoryCache)) {
-    return memoryCache.entries;
+  if (!forceRefresh) {
+    const fresh = indexCache.getFresh();
+    if (fresh) return fresh;
   }
 
   try {
@@ -68,17 +41,16 @@ export async function fetchMarketplaceIndex(
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const entries = (await r.json()) as readonly MarketplaceEntry[];
     if (!Array.isArray(entries)) throw new Error('index 非数组');
-    const next: CachedIndex = { fetchedAt: Date.now(), entries };
-    memoryCache = next;
-    writeSessionCache(next);
+    indexCache.set(entries);
     return entries;
   } catch (err) {
-    if (memoryCache) {
+    const stale = indexCache.getStale();
+    if (stale) {
       console.warn(
         '[marketplace] fetchIndex failed, falling back to cache',
         err,
       );
-      return memoryCache.entries;
+      return stale;
     }
     throw err;
   }
@@ -86,12 +58,7 @@ export async function fetchMarketplaceIndex(
 
 /** 测试用:重置 in-memory + sessionStorage cache. */
 export function _resetMarketplaceCacheForTest(): void {
-  memoryCache = null;
-  try {
-    sessionStorage.removeItem(CACHE_KEY);
-  } catch {
-    /* */
-  }
+  indexCache.reset();
 }
 
 /** 远程 plugin manifest 的最少字段,update check 用. */

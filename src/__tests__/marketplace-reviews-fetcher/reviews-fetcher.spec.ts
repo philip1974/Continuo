@@ -163,11 +163,12 @@ describe('fetchAllReviews — 错误处理', () => {
 
 describe('fetchAllReviews — sessionStorage hydrate', () => {
   it('memory 空但 sessionStorage 新鲜 → 直接命中,不 IPC', async () => {
+    // M19:缓存样板统一为 createSessionCache 的 { fetchedAt, data } 形态。
     sessionStorage.setItem(
       'continuo:marketplace:reviews',
       JSON.stringify({
         fetchedAt: Date.now(),
-        byPid: {
+        data: {
           a: { pluginId: 'a', count: 1, avg: 4, reviews: [] },
         },
       }),
