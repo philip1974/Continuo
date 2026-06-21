@@ -11,26 +11,25 @@ import { basenameForChrome } from './path-label';
 export function TitleBar() {
   const t = useT();
   const root = useWorkspaceStore((s) => s.root);
-  // 只订阅派生 primitive(打磨 R22 + R43 合并优化 R44):标题只依赖 active tab 的
-  // 有无 / filePath / dirty。R22 用 3 个 selector 各 some/find;R44 合并为单次 find
-  // 构造 JSON 签名串(content/reloadEpoch 不进签名,保持「不因正文变化重渲」契约),
-  // 再 useMemo 拆值。每次 editor 更新从 3 次扫描降为 1 次。
-  const activeSig = useEditorStore((s) => {
-    const found = s.tabs.find((tb) => tb.id === s.activeTabId);
-    return JSON.stringify([
-      found !== undefined,
-      found?.filePath ?? null,
-      found?.dirty ?? false,
-    ]);
-  });
+  // 标题只依赖 active tab 的有无 / filePath / dirty(打磨 R22/R44 + 性能 P13)。
+  // 旧实现每次 store 更新都 `tabs.find(...)+JSON.stringify`(O(tab 数)+小分配),虽阻止
+  // 重渲但每按键计算照跑。现复用 P12 的 chromeVersion:订阅 activeTabId + chromeVersion
+  // (均 O(1) 比较),仅 active 切换或 chrome 真变化(filePath/dirty/增删)时才从
+  // getState() 读 active tab。持续输入已脏 tab(dirty 不变)→ 两 selector 都不变 → O(1) 跳过。
+  const activeTabId = useEditorStore((s) => s.activeTabId);
+  const chromeVersion = useEditorStore((s) => s.chromeVersion);
   const { hasActiveTab, activeFilePath, activeDirty } = useMemo(() => {
-    const [exists, filePath, dirty] = JSON.parse(activeSig) as [
-      boolean,
-      string | null,
-      boolean,
-    ];
-    return { hasActiveTab: exists, activeFilePath: filePath, activeDirty: dirty };
-  }, [activeSig]);
+    const found = useEditorStore
+      .getState()
+      .tabs.find((tb) => tb.id === activeTabId);
+    return {
+      hasActiveTab: found !== undefined,
+      activeFilePath: found?.filePath ?? null,
+      activeDirty: found?.dirty ?? false,
+    };
+    // chromeVersion 作失效键:active tab 的 filePath/dirty 变化即 bump。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTabId, chromeVersion]);
 
   const fileLabel = hasActiveTab
     ? `${basenameForChrome(activeFilePath ?? t('panels.editor.untitled'))}${activeDirty ? ' ●' : ''}`

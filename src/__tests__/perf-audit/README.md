@@ -99,3 +99,13 @@
 **修复**:store 维护 `chromeVersion: number`,仅在 chrome 真变化时递增——openTab/setFilePath 必 bump,closeTab/removePath/renamePath/closeTabsOutsideRoot 经 `bumpChromeIfTabsChanged`(tabs 引用变才 bump),updateContent / markSaved 仅 **dirty 翻转** 才 bump;reloadFromDisk / switchTab 不 bump。EditorHeader 改订阅 `chromeVersion`(O(1) number 比较),useMemo 仅 version 变才从 getState() 重建 chrome 数组。持续在已脏 tab 输入(dirty 恒 true)→ 不 bump → selector O(1) 跳过。生产中 tab 仅经 action 增删(无 raw setState),故 version 不会 stale。
 
 **契约不变量**(`editor-store.spec.ts` perf P12:已脏输入不 bump / dirty 翻转 bump / openTab 新增 bump·已存在不 bump / setFilePath·真删 bump·no-op 不 bump / markSaved-dirty bump·reloadFromDisk·switchTab 不 bump;neutralize:updateContent 总是 bump → 测试 FAIL;`editor-header-narrow-subscription.spec.tsx` content-only 不重渲 / 经 openTab 新增重渲)。
+
+## P13 — TitleBar activeSig selector 复用 chromeVersion(P12 同族残留)
+
+**位置**:`src/shell/TitleBar.tsx` `activeSig` selector。
+
+**问题**:P12 修了 EditorHeader,但 TitleBar 仍每按键 `s.tabs.find(...) + JSON.stringify([exists, filePath, dirty])`(O(tab 数) find + 小分配/序列化)。持续输入已脏 tab 时标题的 filePath/dirty 没变,但 selector 照扫一遍。
+
+**修复**:复用 P12 的 `chromeVersion`——TitleBar 改订阅 `activeTabId` + `chromeVersion`(均 O(1) number 比较),`useMemo([activeTabId, chromeVersion])` 仅在 active 切换或 chrome 真变化时从 getState() 读 active tab 的 [exists, filePath, dirty]。逐字节等价(同一派生),常规输入 O(N)+分配 → O(1) 比较。
+
+**契约不变量**(`titlebar-narrow-subscription.spec.tsx`:content-only(已脏 tab updateContent)不重渲 / clean→dirty 翻转重渲 + 标题加 ●,均经真实 action;active basename + workspace 名显示)。
