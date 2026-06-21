@@ -33,3 +33,13 @@
 **修复**:同一层 dirent **按块并发** lstat(`LSTAT_CHUNK=32`,`Promise.all` 保留块内顺序),块间检查 maxFiles cap。组装/计数/递归仍按 candidates 顺序逐项进行 —— **输出与历史串行版逐字节一致**(30+ 现有 listDir 测试全过即证);**递归保持串行**避免共享 `state.fileCount` 的并发竞态(maxFiles 语义确定)。块大小同时是 maxFiles over-scan 上界(cap 命中的块最多多 lstat 31 项),避免「整层一次性并发」反而劣化 P2。等待从 O(N 连续 round-trip) 降到 O(N/32 批)。
 
 **契约不变量**(`fs-adapter.spec.ts` P3 跨块:70 文件 >2 块不乱序/不漏项/不重复 + 所有既有 listDir 输出测试不变)。
+
+## P4 — Markdown 编辑 milkdownUnsafe 派生缓存(去每按键全文重扫)
+
+**位置**:`src/stores/editor.store.ts` `getEffectiveMode()` / `computeMilkdownUnsafe()`;消费者 `EditorPanel.tsx`、`EditorHeader.tsx`(Zustand selector)、`co-app.ts`。
+
+**问题**:Markdown active tab 每次 `updateContent`(每按键)替换 tab 对象 → EditorPanel 重渲调 `getEffectiveMode(activeTab)`,EditorHeader selector 每次 store update 也调 `getEffectiveMode(found)`,co-app SDK gate 再调一次。`getEffectiveMode` → `isMilkdownUnsafe(content)` 跑 **未锚定** wiki-link 正则 `/\[\[[^\]]+\]\]/`(无 wiki-link 时全文扫描)→ 长 Markdown 每按键约 3 次 O(file) 扫描。
+
+**修复**:`milkdownUnsafe` 作为 tab 派生字段(`isMarkdownFilePath(filePath) && isMilkdownUnsafe(content)`),在 **content/filePath 任一变更**的 5 个入口算一次:createTab / updateContent / reloadFromDisk / setFilePath / getStateAfterRenamingPath(markSaved 不改 content 用 `...cur` 保留)。`getEffectiveMode` 改读缓存字段,**缺省回退现场计算**(行为逐字节等价,不破坏旧构造)。非 markdown 文件短路为 false 不扫描(保持原 0 扫描)。每按键全文扫描 3 → 1(updateContent 内一次)。
+
+**契约不变量**(`editor-store.spec.ts`:createTab 派生值正确 / updateContent 重算不 stale;neutralize:去 updateContent 重算 → freshness 测试 FAIL)。

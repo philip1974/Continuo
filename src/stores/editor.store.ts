@@ -31,6 +31,14 @@ export interface EditorTab {
    * optional:不破坏既有 tab 字面构造,缺省按 0。
    */
   readonly reloadEpoch?: number;
+  /**
+   * 性能 P4:派生缓存 = `isMarkdownFilePath(filePath) && isMilkdownUnsafe(content)`。
+   * 仅在 content / filePath 变更时(createTab / updateContent / reloadFromDisk /
+   * setFilePath)算一次,避免 getEffectiveMode 在每次渲染 / Header selector 里对
+   * 全文重复跑未锚定的 wiki-link 正则(长 Markdown 输入时 ~3 次 O(file)/按键)。
+   * optional:缺省时 getEffectiveMode 回退到现场计算(行为等价,不破坏旧构造)。
+   */
+  readonly milkdownUnsafe?: boolean;
 }
 
 // ── 纯函数 helpers(便于单测) ────────────────────────────────
@@ -45,6 +53,7 @@ export function createTab(
     content,
     originalContent: content,
     dirty: false,
+    milkdownUnsafe: computeMilkdownUnsafe(filePath, content), // perf P4
   };
 }
 
@@ -113,7 +122,13 @@ export function getStateAfterRenamingPath(
     const np = rewrite(t.filePath);
     if (np === null) return t;
     changed = true;
-    return { ...t, id: np, filePath: np };
+    // perf P4:filePath 变(可能改变 markdown 判定)→ 重算派生缓存(content 不变)。
+    return {
+      ...t,
+      id: np,
+      filePath: np,
+      milkdownUnsafe: computeMilkdownUnsafe(np, t.content),
+    };
   });
   if (!changed) return { tabs, activeTabId };
 
@@ -329,6 +344,7 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
         dirty: false,
         // 外部内容已变 → 递增 epoch,让 Milkdown 视图按 key remount 拿新内容
         reloadEpoch: (cur.reloadEpoch ?? 0) + 1,
+        milkdownUnsafe: computeMilkdownUnsafe(cur.filePath, content), // perf P4
       };
       const tabs = s.tabs.slice();
       tabs[idx] = next;
@@ -350,6 +366,7 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
         ...cur,
         content,
         dirty: content !== cur.originalContent,
+        milkdownUnsafe: computeMilkdownUnsafe(cur.filePath, content), // perf P4
       };
       const tabs = s.tabs.slice();
       tabs[idx] = next;
@@ -380,7 +397,13 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
       const idx = s.tabs.findIndex((t) => t.id === id);
       if (idx < 0) return s;
       const cur = s.tabs[idx]!;
-      const next: EditorTab = { ...cur, id: newPath, filePath: newPath };
+      // perf P4:filePath 变(可能 .md↔.txt 改变 markdown 判定)→ 重算派生缓存。
+      const next: EditorTab = {
+        ...cur,
+        id: newPath,
+        filePath: newPath,
+        milkdownUnsafe: computeMilkdownUnsafe(newPath, cur.content),
+      };
       const tabs = s.tabs.slice();
       tabs[idx] = next;
       return {
@@ -441,10 +464,21 @@ function isMarkdownFilePath(filePath: string | null): boolean {
   return isMarkdownPath(filePath);
 }
 
+// 性能 P4:milkdownUnsafe 派生值的单一计算口径。content / filePath 任一变更时调一次,
+// 结果缓存进 tab.milkdownUnsafe。isMilkdownUnsafe 跑未锚定 wiki-link 正则(O(file)),
+// 故只在 markdown 文件上算(非 markdown 短路为 false,不扫描)。
+export function computeMilkdownUnsafe(
+  filePath: string | null,
+  content: string,
+): boolean {
+  return isMarkdownFilePath(filePath) && isMilkdownUnsafe(content);
+}
+
 export function getEffectiveMode(tab: EditorTab | null): EditorMode {
   const requestedMode = useEditorStore.getState().mode;
-  if (tab && isMarkdownFilePath(tab.filePath) && isMilkdownUnsafe(tab.content)) {
-    return 'source';
-  }
-  return requestedMode;
+  if (!tab) return requestedMode;
+  // 读派生缓存;缺省(旧构造 / 未迁移路径)回退现场计算 —— 与历史逐字节等价。
+  const unsafe =
+    tab.milkdownUnsafe ?? computeMilkdownUnsafe(tab.filePath, tab.content);
+  return unsafe ? 'source' : requestedMode;
 }

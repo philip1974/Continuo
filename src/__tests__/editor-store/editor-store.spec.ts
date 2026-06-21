@@ -41,7 +41,19 @@ describe('createTab', () => {
       content: 'hello',
       originalContent: 'hello',
       dirty: false,
+      milkdownUnsafe: false, // perf P4:派生缓存,'hello' 无 frontmatter/wiki
     });
+  });
+
+  it('perf P4 · createTab 算 milkdownUnsafe 派生缓存', () => {
+    // markdown + wiki-link → true
+    expect(createTab('/x/a.md', 'see [[Note]]').milkdownUnsafe).toBe(true);
+    // markdown + frontmatter → true
+    expect(createTab('/x/a.md', '---\nk: v\n---\n').milkdownUnsafe).toBe(true);
+    // markdown + 普通正文 → false
+    expect(createTab('/x/a.md', 'plain text').milkdownUnsafe).toBe(false);
+    // 非 markdown(即便含 wiki 样式)→ false(短路不扫描)
+    expect(createTab('/x/a.ts', 'arr[[0]]').milkdownUnsafe).toBe(false);
   });
 
   it('无 filePath → id 以 untitled- 开头', () => {
@@ -645,6 +657,25 @@ describe('updateContent', () => {
     useEditorStore.getState().updateContent('/zombie', 'x');
     const tab = useEditorStore.getState().tabs.find((t) => t.id === '/a');
     expect(tab?.content).toBe('hello');
+  });
+
+  it('perf P4 · updateContent 重算 milkdownUnsafe 派生缓存(不 stale)', () => {
+    useEditorStore.setState({
+      tabs: [makeTab({ id: '/x/a.md', milkdownUnsafe: false })],
+      activeTabId: '/x/a.md',
+    });
+    // 输入含 wiki-link → 缓存翻 true
+    useEditorStore.getState().updateContent('/x/a.md', 'see [[Note]]');
+    expect(
+      useEditorStore.getState().tabs.find((t) => t.id === '/x/a.md')
+        ?.milkdownUnsafe,
+    ).toBe(true);
+    // 删回普通正文 → 缓存翻回 false
+    useEditorStore.getState().updateContent('/x/a.md', 'plain');
+    expect(
+      useEditorStore.getState().tabs.find((t) => t.id === '/x/a.md')
+        ?.milkdownUnsafe,
+    ).toBe(false);
   });
 });
 
