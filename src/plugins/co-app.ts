@@ -38,10 +38,11 @@ import type {
   EditorOpenFailureCode,
 } from './types';
 
-// Keep in sync with package.json "version" field. Bumped to 0.2.5 (2026-06-20)
-// for the topic-49 打磨 polish release (~110 P1/P2 fixes). Plugins
+// Keep in sync with package.json "version" field. Bumped to 0.2.6 (2026-06-21)
+// for the security + maintainability audit release (codex-collab: S1-S6 安全
+// 跨信任边界修复 + M1-M24 可维护性重构 + 2 preload/plugin-fs hotfix). Plugins
 // declaring minLMVersion >= 0.2.4 need this.
-const APP_VERSION = '0.2.5';
+const APP_VERSION = '0.2.6';
 
 // Workspace API — minimal v0.1 surface exposing the current renderer
 // window's workspace root (null when no folder open). Plugins use this for
