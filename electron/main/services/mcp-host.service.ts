@@ -336,7 +336,13 @@ export interface McpToolDef<I = unknown, O = unknown> {
   readonly description: string;
   /** 给 MCP client tools/list 看的 JSON Schema(非 zod). 工厂手填字面量. */
   readonly jsonSchema: Record<string, unknown>;
-  readonly inputSchema: z.ZodType<I>;
+  /**
+   * 本地校验 input 的 zod schema。**output** 类型为 I(run 拿到的 parsed.data 形态);
+   * input 类型放 unknown,以接受带 `.default()` / `.transform()` 的 schema(其 z.input
+   * 与 z.output 形态不同)。可维护性 M18:此前 await_stop_hook 因 schema 带 .default()
+   * 被迫 `awaitStopHookInputSchema as unknown as ...['inputSchema']`,放宽后可直接赋值。
+   */
+  readonly inputSchema: z.ZodType<I, z.ZodTypeDef, unknown>;
   readonly run: (input: I, ctx: McpCallCtx) => O | Promise<O>;
 }
 

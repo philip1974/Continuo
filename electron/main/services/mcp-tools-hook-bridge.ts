@@ -626,11 +626,9 @@ export function createAwaitStopHookTool(
       required: ['session_id'],
       additionalProperties: false,
     },
-    inputSchema:
-      awaitStopHookInputSchema as unknown as McpToolDef<
-        AwaitStopHookInput,
-        AwaitStopHookOutput
-      >['inputSchema'],
+    // 可维护性 M18:McpToolDef.inputSchema 已放宽接受 z.input≠z.output 的 schema
+    //(awaitStopHookInputSchema 带 .default()),直接赋值,不再 `as unknown` 强转。
+    inputSchema: awaitStopHookInputSchema,
     run: async (input, ctx) => {
       const meta = deps.getSessionMeta(input.session_id, ctx);
       if (meta === null) {
