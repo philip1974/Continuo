@@ -642,6 +642,10 @@
 
 - [`popout-mode.spec.ts`](./popout-contracts/popout-mode.spec.ts)
 
+## [preload-no-zod(preload sandbox zod 泄漏守卫)](./preload-no-zod/README.md)
+
+- [`channels-zod-free.spec.ts`](./preload-no-zod/channels-zod-free.spec.ts)
+
 ## [protocol-url(co:// 路由)](./protocol-url/README.md)
 
 - [`protocol-url.spec.ts`](./protocol-url/protocol-url.spec.ts)

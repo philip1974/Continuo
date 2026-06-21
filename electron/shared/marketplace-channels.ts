@@ -8,7 +8,10 @@
 // 绝不内联);main 只跑**固定**的 reviews 查询(owner/name/query 硬编码,不接受任意
 // query,防 renderer 内插件借代理滥用 token),返回原始 discussion nodes;renderer 只拿
 // nodes 做 parse/aggregate,接触不到 token。
-import { z } from 'zod';
+//
+// 本文件**不 import zod** —— preload(sandbox,无 zod)会 import MARKETPLACE_CHANNELS 值,
+// 若混入 zod schema 会把 zod 拖进 preload 产物致 `require('zod')` 加载失败。zod 入参
+// schema(仅 main 用)放在 ipc/marketplace.ipc.ts。(修复 S4 引入的 preload zod 泄漏)
 
 export const MARKETPLACE_CHANNELS = {
   /** main 用运行时 GITHUB_TOKEN 拉 philip1974/continuo-plugins 的 reviews discussions. */
@@ -34,7 +37,3 @@ export interface FetchReviewsResult {
   readonly available: boolean;
   readonly nodes: readonly MarketplaceReviewNode[];
 }
-
-/** 无入参(查询参数全部由 main 固定),用 strict 空对象拒任何字段. */
-export const fetchReviewsInputSchema = z.object({}).strict();
-export type FetchReviewsInput = z.infer<typeof fetchReviewsInputSchema>;
