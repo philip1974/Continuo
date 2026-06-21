@@ -4,11 +4,11 @@
 const BOUNDARY_RE = /[ ._\-/]/;
 
 /**
- * 内部打分:q 必须**已 lowercase**(打磨 R51:让 fuzzyFilter 把 query.toLowerCase()
- * 从每 item 一次降为整批一次)。空 q 返 0(子序列空集匹配)。
+ * 内部打分:q 与 t **都必须已 lowercase**。空 q 返 0(子序列空集匹配)。
+ * 性能 P16:把 target 的 lowercase 也抽出,让调用方可传预 lowercase 的 target
+ * (Quick Open 每按键对 ≤5000 条稳定 relPath 重复 lowercasing 的来源)。
  */
-function fuzzyScoreLower(q: string, target: string): number | null {
-  const t = target.toLowerCase();
+function fuzzyScoreBothLower(q: string, t: string): number | null {
   let qi = 0;
   let score = 0;
   let prevMatchedAt = -1;
@@ -27,6 +27,13 @@ function fuzzyScoreLower(q: string, target: string): number | null {
   return score;
 }
 
+/**
+ * q 必须**已 lowercase**(打磨 R51)。target 在此 lowercase。
+ */
+function fuzzyScoreLower(q: string, target: string): number | null {
+  return fuzzyScoreBothLower(q, target.toLowerCase());
+}
+
 export function fuzzyScore(query: string, target: string): number | null {
   if (!query) return 0;
   return fuzzyScoreLower(query.toLowerCase(), target);
@@ -36,12 +43,19 @@ export function fuzzyFilter<T>(
   items: readonly T[],
   query: string,
   getStr: (t: T) => string,
+  /**
+   * 性能 P16:可选——返回**已 lowercase** 的 target(scan 时预计算、跨按键稳定)。
+   * 提供时跳过每 item 每按键的 `target.toLowerCase()`;打分语义与 getStr 路径逐字节一致。
+   */
+  getStrLower?: (t: T) => string,
 ): T[] {
   if (!query) return [...items];
   const q = query.toLowerCase(); // 整批一次(打磨 R51),循环内复用
   const scored: { item: T; score: number }[] = [];
   for (const item of items) {
-    const s = fuzzyScoreLower(q, getStr(item));
+    const s = getStrLower
+      ? fuzzyScoreBothLower(q, getStrLower(item))
+      : fuzzyScoreLower(q, getStr(item));
     if (s !== null) scored.push({ item, score: s });
   }
   scored.sort((a, b) => b.score - a.score);

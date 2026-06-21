@@ -39,10 +39,12 @@ import { walkWorkspaceFiles } from '../../plugins/quick-open/walk-files';
 const walkMock = walkWorkspaceFiles as unknown as ReturnType<typeof vi.fn>;
 
 function file(name: string, relPath?: string): QuickOpenFile {
+  const rp = relPath ?? name;
   return {
     name,
-    relPath: relPath ?? name,
-    absPath: `/proj/${relPath ?? name}`,
+    relPath: rp,
+    relPathLower: rp.toLowerCase(),
+    absPath: `/proj/${rp}`,
   };
 }
 

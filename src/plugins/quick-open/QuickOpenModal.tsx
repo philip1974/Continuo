@@ -93,7 +93,17 @@ function QuickOpenBody() {
 
   // fuzzy 用 relPath 做匹配源(让用户能输 'src/foo' 这种路径片段);
   // 命名优先级保留在 fuzzyScore 词边界加分里(/ 算 boundary)。
-  const filtered = useMemo(() => fuzzyFilter(results, query, (f) => f.relPath), [results, query]);
+  // 性能 P16:传预计算的 relPathLower(scan 时一次),避免每按键对 ≤5000 候选重 lowercasing。
+  const filtered = useMemo(
+    () =>
+      fuzzyFilter(
+        results,
+        query,
+        (f) => f.relPath,
+        (f) => f.relPathLower,
+      ),
+    [results, query],
+  );
 
   // 虚拟化列表(打磨 R25):filtered 仍是逻辑全集(最多 5000),但只渲染可视行,
   // DOM 节点从最多 5000 降到几十。复用项目已有 @tanstack/react-virtual(同

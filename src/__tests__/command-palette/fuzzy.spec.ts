@@ -68,3 +68,27 @@ describe('fuzzyFilter', () => {
     expect(r).toEqual(items);
   });
 });
+
+describe('perf P16 · getStrLower 预 lowercase 入口与原路径逐字节一致', () => {
+  const items = [
+    { id: '1', s: 'Src/Foo/Bar.TS' },
+    { id: '2', s: 'README.md' },
+    { id: '3', s: 'src/index.ts' },
+    { id: '4', s: 'Components/App.TSX' },
+    { id: '5', s: 'lib/UTIL.ts' },
+  ];
+  const queries = ['s', 'sr', 'src', 'foo', 'TS', 'rdme', 'app', 'xyz', ''];
+
+  it('对各种混合大小写 query/target,有无 getStrLower 结果排序完全相同', () => {
+    for (const q of queries) {
+      const a = fuzzyFilter(items, q, (i) => i.s).map((x) => x.id);
+      const b = fuzzyFilter(
+        items,
+        q,
+        (i) => i.s,
+        (i) => i.s.toLowerCase(),
+      ).map((x) => x.id);
+      expect(b).toEqual(a);
+    }
+  });
+});

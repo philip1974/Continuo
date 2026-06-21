@@ -33,7 +33,7 @@ describe('useQuickOpenStore', () => {
       isOpen: true,
       query: 'foo',
       results: [
-        { absPath: '/a/b.ts', relPath: 'a/b.ts', name: 'b.ts' },
+        { absPath: '/a/b.ts', relPath: 'a/b.ts', relPathLower: 'a/b.ts', name: 'b.ts' },
       ],
     });
     useQuickOpenStore.getState().close();
@@ -70,7 +70,7 @@ describe('useQuickOpenStore', () => {
   });
 
   it('setResults / setLoading 独立写入', () => {
-    const results = [{ absPath: '/a', relPath: 'a', name: 'a' }];
+    const results = [{ absPath: '/a', relPath: 'a', relPathLower: 'a', name: 'a' }];
     useQuickOpenStore.getState().setResults(results);
     expect(useQuickOpenStore.getState().results).toEqual(results);
     useQuickOpenStore.getState().setLoading(true);

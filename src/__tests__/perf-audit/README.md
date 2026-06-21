@@ -129,3 +129,13 @@
 **修复**:按 path 做 **in-flight 合并**——某 path 的 read 在途时,新事件只标记 pending(不并发发起);在途 read 完成后若 pending 则尾随重读一次(读 burst 后的最终内容),跳过被取代的中间结果。首个事件立即读(不加延迟),仅在途期间事件被合并。每 path 读严格串行 → 并发乱序回写场景**根本不会发生**(比 seqByPath 更强,直接取代之)。dirty tab 在事件与应用两处都跳过。tab.id===filePath 不变量保证同文件不开成两个 tab,按 path 合并安全。
 
 **契约不变量**(`external-file-sync-out-of-order.spec.tsx`:3 事件 burst 在途只 1 并发读 / 中间陈旧结果不落地 / 尾随读最终内容落地 / 单事件立即读不延迟 / dirty 保护;neutralize:还原每事件并发读 → 合并测试 FAIL;`use-external-file-sync.spec.tsx` 单事件路径不变)。
+
+## P16 — Quick Open fuzzy 预计算 relPathLower(去每按键重复 lowercasing)
+
+**位置**:`src/plugins/command-palette/fuzzy.ts` `fuzzyScoreLower`、`src/plugins/quick-open/QuickOpenModal.tsx`、`walk-files.ts`、`store.ts`。
+
+**问题**:Quick Open 候选已限 5000,query 已整批 lower 一次(R51),但 `fuzzyScoreLower` 每次对 target 跑 `target.toLowerCase()`。relPath 在一次 scan 内稳定,用户连续输入 `s`→`sr`→`src` 时对最多 5000 条路径反复分配 lowercase 字符串(每按键 O(候选路径总长度))。
+
+**修复**:`fuzzy.ts` 抽 `fuzzyScoreBothLower`(q 与 t 均已 lower)+ `fuzzyFilter` 加可选 `getStrLower`(返回预 lower 的 target)。`QuickOpenFile` 加 `relPathLower` 字段(walk-files scan 时算一次),QuickOpenModal 传 `getStrLower=(f)=>f.relPathLower`。query 仍每批 lower 一次,打分/排序逐字节一致(`relPath.toLowerCase()` 与 `target.toLowerCase()` 同操作)。每按键 O(候选总长) lowercasing → 0(scan 时一次)。
+
+**契约不变量**(`command-palette/fuzzy.spec.ts` perf P16:对多种混合大小写 query/target,有无 getStrLower 结果排序完全相同)。

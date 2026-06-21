@@ -37,6 +37,7 @@ function mkFiles(n: number): QuickOpenFile[] {
   return Array.from({ length: n }, (_, i) => ({
     name: `file${i}.ts`,
     relPath: `src/file${i}.ts`,
+    relPathLower: `src/file${i}.ts`,
     absPath: `/work/src/file${i}.ts`,
   }));
 }

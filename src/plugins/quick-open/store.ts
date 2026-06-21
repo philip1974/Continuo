@@ -11,6 +11,11 @@ export interface QuickOpenFile {
   readonly absPath: string;
   /** 相对 rootPath 的展示路径(列表灰色辅助文字). */
   readonly relPath: string;
+  /**
+   * 性能 P16:relPath.toLowerCase() 预计算(scan 时一次)。fuzzyFilter 用它做大小写
+   * 不敏感匹配,避免每按键对全部候选重复 lowercasing。relPath 在一次 scan 内稳定。
+   */
+  readonly relPathLower: string;
   /** basename(列表主标题). */
   readonly name: string;
 }

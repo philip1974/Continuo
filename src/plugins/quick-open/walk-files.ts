@@ -89,9 +89,13 @@ export async function walkWorkspaceFiles(
   const files: QuickOpenFile[] = [];
   for (const e of r.data) {
     if (e.isDirectory) continue;
+    const relPath = e.path.startsWith(prefix)
+      ? e.path.slice(prefix.length)
+      : e.path;
     files.push({
       absPath: e.path,
-      relPath: e.path.startsWith(prefix) ? e.path.slice(prefix.length) : e.path,
+      relPath,
+      relPathLower: relPath.toLowerCase(), // perf P16:scan 时预算一次
       name: e.name,
     });
     if (files.length >= maxFiles) break;
