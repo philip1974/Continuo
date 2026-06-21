@@ -61,16 +61,36 @@ vi.mock('@/theme', () => ({ useTheme: () => ({ resolved: 'dark' }) }));
 
 import { useTerminal } from '../../panels/Terminal/useTerminal';
 import { coApi } from '@/lib/co-api';
+import { WebglAddon } from '@xterm/addon-webgl';
 
 function Host({ termId }: { termId: string }) {
   const { containerRef } = useTerminal(termId);
   return createElement('div', { ref: containerRef });
 }
 
+// 受控 rAF:捕获回调,手动 flush —— 验证 WebGL 延后到下一帧安装(Phase-5)。
+let rafCbs: Array<FrameRequestCallback | null> = [];
+function flushRaf(): void {
+  const cbs = rafCbs.slice();
+  rafCbs = [];
+  for (const cb of cbs) if (cb) cb(0);
+}
+
 beforeEach(() => {
   hoisted.capturedOnCwd = undefined;
   hoisted.registerMock.mockClear();
   hoisted.disposeMock.mockClear();
+  rafCbs = [];
+  Object.defineProperty(globalThis, 'requestAnimationFrame', {
+    configurable: true,
+    value: (cb: FrameRequestCallback) => rafCbs.push(cb),
+  });
+  Object.defineProperty(globalThis, 'cancelAnimationFrame', {
+    configurable: true,
+    value: (id: number) => {
+      if (id >= 1 && id <= rafCbs.length) rafCbs[id - 1] = null;
+    },
+  });
   Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => 640 });
   Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get: () => 360 });
   Object.defineProperty(globalThis, 'ResizeObserver', {
@@ -113,5 +133,29 @@ describe('terminal-osc7 wiring (T13)', () => {
     unmount();
 
     expect(hoisted.disposeMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('Phase-5 · WebGL 延后到下一帧(首屏接线不被 GPU init 阻塞)', () => {
+  it('mount 时 WebGL 不同步创建 + stdout listener 已同步注册(可即时清 loading)', () => {
+    render(createElement(Host, { termId: 'term-webgl' }));
+    // WebGL 还没装(挪到 rAF);但 stdout onData 已同步订阅 → 首字节可立即清 loading
+    expect(WebglAddon).not.toHaveBeenCalled();
+    expect(coApi.terminal.onData).toHaveBeenCalledTimes(1);
+    expect(coApi.terminal.readHistory).toHaveBeenCalledTimes(1);
+  });
+
+  it('flush 下一帧 → WebGL 安装', () => {
+    render(createElement(Host, { termId: 'term-webgl' }));
+    expect(WebglAddon).not.toHaveBeenCalled();
+    flushRaf();
+    expect(WebglAddon).toHaveBeenCalledTimes(1);
+  });
+
+  it('卸载先于下一帧 → WebGL 取消,不创建(不为已拆终端装 GPU)', () => {
+    const { unmount } = render(createElement(Host, { termId: 'term-webgl' }));
+    unmount();
+    flushRaf();
+    expect(WebglAddon).not.toHaveBeenCalled();
   });
 });

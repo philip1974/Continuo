@@ -257,28 +257,13 @@ export function useTerminal(termId: string) {
       }),
     );
     term.open(container);
-    // 启用 webgl renderer:dom renderer 用 letter-spacing 模拟 CJK 双宽度,
-    // 累加误差让 row content 实际渲染宽超过 row.style.width(= cols ×
-    // cellWidth),触发 row 自带的 overflow:hidden 裁 CJK 末尾几个字。
-    // webgl 用 GPU 按 cell grid 直接画字符,无 letter-spacing 路径,CJK
-    // 测量精确,不会越 row 边界。VSCode 终端默认 webgl,见 issue #15。
-    //
-    // GPU 不可用 / context lost 时静默回退 dom(终端能用,只是 CJK 边界
-    // 可能再现)。webgl context 在 main process 关 GPU 加速、用户开太多
-    // canvas 时偶发不可用,不能让 terminal 崩。
-    try {
-      const webgl = new WebglAddon();
-      webgl.onContextLoss(() => webgl.dispose());
-      term.loadAddon(webgl);
-    } catch (err) {
-      console.warn('[terminal] webgl renderer init 失败,回退 dom:', err);
-    }
-    // GPU atlas 在 bg→fg / DPR 变化 / 软 context loss 时 glyph 索引错乱
-    // (每个 cell 渲染成 atlas 里别的字符 = 全屏乱码),只能靠 resize 副作用
-    // 重 build atlas 修。installAtlasGuards 在三个 wake-up 事件上主动调
-    // clearTextureAtlas,DOM renderer 时 no-op。helper 在 react-terminal
-    // 包,Terminal.tsx 与本文件共用同一份实现,避免 mirror drift。
-    const atlasGuards = installAtlasGuards(term);
+    // 性能(Phase-5 终端新建加载):WebGL renderer 安装是**同步 GPU 初始化**(创建
+    // canvas + getContext('webgl2') + 读 GPU 参数 + glyph/rectangle/atlas 状态)~tens
+    // of ms。挪到首屏接线(open + listener + readHistory + 首字节渲染 + 清 loading)之后,
+    // 下一帧 fire-and-forget 安装 —— 让「能输入 / 看到 prompt」更快;steady-state 仍用
+    // WebGL。在 webglRaf 回调里安装(见下方 listener 注册之后)。
+    let webgl: WebglAddon | null = null;
+    let atlasGuards: ReturnType<typeof installAtlasGuards> | null = null;
     const searchAddon = new SearchAddon();
     term.loadAddon(searchAddon);
     searchAddonRef.current = searchAddon;
@@ -397,15 +382,34 @@ export function useTerminal(termId: string) {
     });
     ro.observe(container);
 
+    // 性能(Phase-5):首屏接线已完成,下一帧再装 WebGL renderer(同步 GPU init 不阻塞
+    // 上面的 open/listener/首渲染)。dom renderer 用 letter-spacing 模拟 CJK 双宽度,累加
+    // 误差会裁 CJK 末尾几字;WebGL 按 cell grid 直接画,CJK 精确(VSCode 默认 webgl,issue
+    // #15)。首帧短暂走 dom(prompt 多 ASCII),下一帧切 WebGL。GPU 不可用/context lost 静默
+    // 回退 dom(终端能用)。installAtlasGuards 跟随 WebGL(只对启用的 WebGL 有意义:在三个
+    // wake-up 事件 clearTextureAtlas 修 glyph 索引错乱;DOM 时 no-op)。teardown 已发生则不装。
+    const webglRaf = requestAnimationFrame(() => {
+      if (teardownDone) return;
+      try {
+        webgl = new WebglAddon();
+        webgl.onContextLoss(() => webgl?.dispose());
+        term.loadAddon(webgl);
+        atlasGuards = installAtlasGuards(term);
+      } catch (err) {
+        console.warn('[terminal] webgl renderer init 失败,回退 dom:', err);
+      }
+    });
+
       return () => {
         teardownDone = true;
+        cancelAnimationFrame(webglRaf); // 取消未触发的 WebGL 延后安装
         unsubData();
         unsubExit();
         onDataDisposable.dispose();
         osc7Disposable.dispose();
         searchResultsDisposable.dispose();
         ro.disconnect();
-        atlasGuards.dispose();
+        atlasGuards?.dispose(); // 已装才有 guards(rAF 未触发时为 null)
         disposeQueue(term);
         term.dispose();
         // xterm.dispose() 不移除 DOM children。StrictMode 双 mount 场景下
