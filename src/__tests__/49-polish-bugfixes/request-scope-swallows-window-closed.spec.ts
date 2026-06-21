@@ -76,6 +76,13 @@ describe('topic49 后续 · request-scope handler 收口窗口关闭取消', () 
       token,
       [],
     );
+    // handler 现在发 scope-request(进 correlator)前会先 await canonicalize/covers,
+    // 故等其发出后再结算 pending,否则 cancelBySender 拿到 0。
+    await vi.waitFor(() => {
+      if (event.sender.send.mock.calls.length === 0) {
+        throw new Error('scope-request 未发出');
+      }
+    });
     // 模拟窗口关闭:webContents 销毁 + cancelBySender 结算该窗 pending。
     destroyed = true;
     expect(corr.cancelBySender(7)).toBe(1);
@@ -94,6 +101,11 @@ describe('topic49 后续 · request-scope handler 收口窗口关闭取消', () 
       token,
       [],
     );
+    await vi.waitFor(() => {
+      if (event.sender.send.mock.calls.length === 0) {
+        throw new Error('scope-request 未发出');
+      }
+    });
     // 用 cancelBySender 触发同型 reject,但 sender 未销毁 → 应继续抛出。
     expect(corr.cancelBySender(8)).toBe(1);
     await expect(handlerPromise).rejects.toMatchObject({

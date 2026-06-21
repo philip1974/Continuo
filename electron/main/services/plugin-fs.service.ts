@@ -20,6 +20,16 @@ export interface PluginFsDeps {
   correlator: ScopeRequestCorrelator;
   /** webContents getter for hosts that need to route scope request events. */
   webContentsForSender: (senderId: number) => WebContents | null;
+  /**
+   * 冷启动水合:返回该 plugin 上次会话持久化的 path scope(canonical)。
+   * 未注入(如测试)→ 跳过水合,行为同改造前(每次都弹窗)。
+   */
+  loadPersistedScopes?: (pluginId: string) => Promise<readonly PathScope[]>;
+  /** 持久化该 plugin 当前全部已授 scope,供下次启动水合。best-effort。 */
+  persistScopes?: (
+    pluginId: string,
+    scopes: readonly PathScope[],
+  ) => Promise<void>;
 }
 
 const TRASH_TTL_MS = 24 * 60 * 60 * 1000;
@@ -460,6 +470,36 @@ export function registerPluginFsHandlers(
     'plugin-fs:request-scope',
     async (event, token: string, scopes: readonly PathScope[]) => {
       const { pluginId } = identityRegistry.resolve(token, event.sender.id);
+
+      // 归一化请求 scope 到与 registry 内存同一空间(expandHome + realpath),供覆盖
+      // 判定与落地复用。否则 `~/...` 或含符号链接组件的根授予后永不匹配 → scope 静默
+      // 死掉,插件所有 fs 操作误拒。canonicalizeScopePath 对不存在路径 fail-safe(回退
+      // 展开值,不抛),故提前到弹窗前归一化是安全的。
+      const canonicalScopes: PathScope[] = await Promise.all(
+        scopes.map(async (s) => ({
+          path: await canonicalizeScopePath(s.path),
+          mode: s.mode,
+        })),
+      );
+
+      // 冷启动水合:首次见到该 plugin 时,把上次会话已授 scope 从磁盘回填进 registry,
+      // 使重启后对同一目录的 requestScope 直接命中 covers() 而不再弹窗。读盘失败也标记
+      // 已水合,避免每个请求重复打盘。
+      if (deps.loadPersistedScopes && !pathScopeRegistry.isHydrated(pluginId)) {
+        try {
+          const persisted = await deps.loadPersistedScopes(pluginId);
+          pathScopeRegistry.hydrate(pluginId, persisted);
+        } catch {
+          pathScopeRegistry.hydrate(pluginId, []);
+        }
+      }
+
+      // 已被现有授权(本会话 grant 或已水合的持久化授权)覆盖 → 静默授予,免重复弹窗。
+      // 这是「持久化方案」省去重启后重复授权的关键路径。
+      if (pathScopeRegistry.covers(pluginId, canonicalScopes)) {
+        return 'grant';
+      }
+
       const { requestId, promise } = correlator.createRequest(
         token,
         scopes,
@@ -490,16 +530,18 @@ export function registerPluginFsHandlers(
       // 仍 active,否则会复活已撤销插件的 path-scope,同 id 重装直接继承(绕过
       // _unregister-plugin 的 revokeAll 守卫,审计 #2 同源)。见第十三轮 P2-AJ。
       if (decision === 'grant' && identityRegistry.isActive(token)) {
-        // 归一化 scope 路径到与 check 的 probe 同一空间(expandHome + realpath)。否则
-        // `~/...`(文档承诺 host-side 展开)或含符号链接组件的根(如 macOS `/tmp`→
-        // `/private/tmp`)授予后永不匹配 → 该 scope 静默死掉,插件所有 fs 操作误拒。
-        const canonicalScopes: PathScope[] = await Promise.all(
-          scopes.map(async (s) => ({
-            path: await canonicalizeScopePath(s.path),
-            mode: s.mode,
-          })),
-        );
         pathScopeRegistry.grant(pluginId, canonicalScopes);
+        // 持久化合并后的全集,供下次启动水合;best-effort,失败不影响本次授权。
+        if (deps.persistScopes) {
+          try {
+            await deps.persistScopes(
+              pluginId,
+              pathScopeRegistry.getScopes(pluginId),
+            );
+          } catch {
+            // ignore persist failure: 本会话已 grant,仅下次重启会回退到弹窗。
+          }
+        }
       }
       return decision;
     },

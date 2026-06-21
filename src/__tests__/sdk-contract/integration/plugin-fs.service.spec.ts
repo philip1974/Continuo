@@ -8,7 +8,7 @@ import { IdentityRegistry } from '../../../../electron/main/services/identity-re
 import { PathScopeRegistry } from '../../../../electron/main/services/path-scope-registry.service';
 import { ScopeRequestCorrelator } from '../../../../electron/main/services/scope-request-correlator';
 import { registerPluginFsHandlers } from '../../../../electron/main/services/plugin-fs.service';
-import { ScopeError } from '../../../plugins/types';
+import { ScopeError, type PathScope } from '../../../plugins/types';
 import {
   StubIpcMain,
   makeFakeEvent,
@@ -37,7 +37,15 @@ let tmpCanonical: string;
 let siblingRoot: string;
 let harness: FsHarness;
 
-async function makeHarness(): Promise<FsHarness> {
+interface PersistenceDeps {
+  loadPersistedScopes?: (pluginId: string) => Promise<readonly PathScope[]>;
+  persistScopes?: (
+    pluginId: string,
+    scopes: readonly PathScope[],
+  ) => Promise<void>;
+}
+
+async function makeHarness(persistence?: PersistenceDeps): Promise<FsHarness> {
   const ipc = new StubIpcMain();
   const identity = new IdentityRegistry();
   const scopes = new PathScopeRegistry(identity);
@@ -50,6 +58,7 @@ async function makeHarness(): Promise<FsHarness> {
     pathScopeRegistry: scopes,
     correlator,
     webContentsForSender: () => null,
+    ...persistence,
   });
   const event = makeFakeEvent({ id: 1 });
   const token = (
@@ -60,6 +69,40 @@ async function makeHarness(): Promise<FsHarness> {
     )
   ) as { token: string; generation: number };
   return { ipc, event, identity, scopes, correlator, token: token.token };
+}
+
+/**
+ * 等待 request-scope handler 发出 scope-request 并返回 requestId。
+ * handler 在发 send 前有 canonicalize / hydrate 等 await,故不能同步读 mock。
+ */
+async function nextRequestId(h: FsHarness): Promise<string> {
+  const call = await vi.waitFor(() => {
+    const c = h.event.sender.send.mock.calls.at(-1);
+    if (!c) throw new Error('scope-request 尚未发出');
+    return c;
+  });
+  return (call[1] as { requestId: string }).requestId;
+}
+
+/** 驱动一次完整的弹窗授权(发请求 → renderer 决策),返回 request-scope 的最终决议。 */
+async function grantViaPrompt(
+  h: FsHarness,
+  requestScopes: readonly PathScope[],
+): Promise<unknown> {
+  const pending = h.ipc.invokeWithEvent(
+    h.event,
+    PLUGIN_FS_CHANNELS.REQUEST_SCOPE,
+    h.token,
+    requestScopes,
+  );
+  const requestId = await nextRequestId(h);
+  await h.ipc.invokeWithEvent(
+    h.event,
+    PLUGIN_FS_CHANNELS.SCOPE_DECISION,
+    requestId,
+    'grant',
+  );
+  return pending;
 }
 
 beforeEach(async () => {
@@ -83,14 +126,12 @@ describe('sdk-contract integration: plugin-fs.service', () => {
       harness.token,
       [{ path: tmpCanonical, mode: 'rw' }],
     );
-    const sent = harness.event.sender.send.mock.calls[0]?.[1] as {
-      requestId: string;
-    };
+    const requestId = await nextRequestId(harness);
 
     await harness.ipc.invokeWithEvent(
       harness.event,
       PLUGIN_FS_CHANNELS.SCOPE_DECISION,
-      sent.requestId,
+      requestId,
       'grant',
     );
 
@@ -187,6 +228,71 @@ describe('sdk-contract integration: plugin-fs.service', () => {
     ).rejects.toMatchObject({
       details: { reason: 'ENOENT' },
     });
+  });
+
+  it('T8 同会话已授 scope 再次请求时静默授予,不再弹窗', async () => {
+    const persistScopes = vi.fn(async () => {});
+    const h = await makeHarness({ persistScopes });
+
+    // 第一次:走弹窗授权
+    await expect(grantViaPrompt(h, [{ path: tmpCanonical, mode: 'rw' }])).resolves.toBe(
+      'grant',
+    );
+    const sendCallsAfterFirst = h.event.sender.send.mock.calls.length;
+    expect(sendCallsAfterFirst).toBeGreaterThan(0);
+
+    // 第二次:同一(子树)scope —— 应静默 grant,不再发 scope-request
+    await expect(
+      h.ipc.invokeWithEvent(
+        h.event,
+        PLUGIN_FS_CHANNELS.REQUEST_SCOPE,
+        h.token,
+        [{ path: join(tmpCanonical, 'sub'), mode: 'rw' }],
+      ),
+    ).resolves.toBe('grant');
+    expect(h.event.sender.send.mock.calls.length).toBe(sendCallsAfterFirst);
+  });
+
+  it('T9 重启后从持久化水合,同 scope 直接静默授予', async () => {
+    // 模拟「上次会话」已持久化的 scope;本次为全新 registry(冷启动)。
+    const loadPersistedScopes = vi.fn(async () => [
+      { path: tmpCanonical, mode: 'rw' } as PathScope,
+    ]);
+    const h = await makeHarness({ loadPersistedScopes });
+
+    await expect(
+      h.ipc.invokeWithEvent(
+        h.event,
+        PLUGIN_FS_CHANNELS.REQUEST_SCOPE,
+        h.token,
+        [{ path: tmpCanonical, mode: 'rw' }],
+      ),
+    ).resolves.toBe('grant');
+
+    expect(loadPersistedScopes).toHaveBeenCalledWith('plugin.fs');
+    // 未弹窗
+    expect(h.event.sender.send).not.toHaveBeenCalled();
+    // 水合进了内存 registry
+    expect(h.scopes._peek('plugin.fs')).toEqual([
+      { path: tmpCanonical, mode: 'rw' },
+    ]);
+  });
+
+  it('T10 未覆盖的新 scope 仍弹窗,授权后持久化合并全集', async () => {
+    const persistScopes = vi.fn(async () => {});
+    const loadPersistedScopes = vi.fn(async () => []);
+    const h = await makeHarness({ loadPersistedScopes, persistScopes });
+
+    await expect(grantViaPrompt(h, [{ path: tmpCanonical, mode: 'rw' }])).resolves.toBe(
+      'grant',
+    );
+
+    // 弹过窗
+    expect(h.event.sender.send).toHaveBeenCalled();
+    // 持久化收到合并后的全集(canonical)
+    expect(persistScopes).toHaveBeenCalledWith('plugin.fs', [
+      { path: tmpCanonical, mode: 'rw' },
+    ]);
   });
 
   it('T7 rejects atomic replace across different parents even when both are rw scoped', async () => {
