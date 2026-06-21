@@ -90,6 +90,11 @@ export function CodeEditor({
   const langCompartment = useRef(new Compartment());
   const themeCompartment = useRef(new Compartment());
   const suppressNextChange = useRef(false);
+  // 性能 P6:记录「editor doc 当前反映的字符串」。本地打字时 onChange emit 的值会作为
+  // value 回传(受控回声),此 ref 让 value-sync effect 直接 `value === lastSynced` 跳过,
+  // 连 doc.toString() 比较都省 —— 否则长文件每按键多一次 O(file) 全文拷贝。初始 = 首个
+  // value(EditorState.create 用它建 doc,故 doc 一开始就反映它)。
+  const lastSyncedValueRef = useRef(value);
   const { resolved } = useTheme();
 
   // 创建 editor 一次,父用 key={tabId} 强制 remount 切 tab
@@ -112,7 +117,10 @@ export function CodeEditor({
             !suppressNextChange.current &&
             onChangeRef.current
           ) {
-            onChangeRef.current(update.state.doc.toString());
+            const next = update.state.doc.toString();
+            // doc 现反映 next;记下来,value-sync effect 据此跳过本地回声(P6)。
+            lastSyncedValueRef.current = next;
+            onChangeRef.current(next);
           }
           suppressNextChange.current = false;
         }),
@@ -159,8 +167,13 @@ export function CodeEditor({
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
+    // P6:doc 已反映该 value(本地打字回声 / 已同步过)→ 直接跳过,省一次全文 toString。
+    if (value === lastSyncedValueRef.current) return;
     const cur = view.state.doc.toString();
-    if (cur === value) return;
+    if (cur === value) {
+      lastSyncedValueRef.current = value; // 实际相等但 ref 滞后:对齐,后续回声免 toString
+      return;
+    }
     suppressNextChange.current = true;
     // 保留光标/选区:全文替换不带 selection 时 CodeMirror 会把光标甩到文档边界,用户
     // 正在文件中部阅读/定位时被外部修改打断会跳回顶部。把旧 selection clamp 到新长度后
@@ -174,6 +187,7 @@ export function CodeEditor({
         head: Math.min(oldSel.head, newLen),
       },
     });
+    lastSyncedValueRef.current = value; // doc 现反映 value(P6)
   }, [value]);
 
   // fileName 或 forceLanguage 变化 → 重配置 language

@@ -53,3 +53,13 @@
 **修复**:抽统一读取口径 `isTabMilkdownUnsafe(tab)`(cache-or-compute,getEffectiveMode 与 EditorPanel 共用单一来源);`unsafeMarkdown = isTabMilkdownUnsafe(activeTab)`(与旧 `activeIsMarkdown && isMilkdownUnsafe(content)` 逐字节等价,因 computeMilkdownUnsafe 同公式)。删 EditorPanel 内 `activeIsMarkdown` + `isMilkdownUnsafe` import。每按键扫描 2 → 1。
 
 **契约不变量**(`editor-store.spec.ts`:isTabMilkdownUnsafe 优先读缓存 / 缺省回退现场计算 / null→false)。
+
+## P6 — CodeEditor 受控回声免全文 toString
+
+**位置**:`src/panels/Editor/CodeEditor.tsx` updateListener(line ~115)+ value-sync effect(line ~162)。
+
+**问题**:CodeMirror 每按键 updateListener `doc.toString()` emit 给 `updateContent`(必要),store 更新后父把同一字符串作为 `value` 回传 → value-sync `useEffect([value])` 又 `view.state.doc.toString()` 仅为比较相等(受控回声)→ 长文件每按键 ≥2 次 O(file) 全文拷贝 + GC 压力。
+
+**修复**:`lastSyncedValueRef` 记录 editor doc 当前反映的字符串(emit 时 / 外部 dispatch 后 / 初始 = 首个 value 都更新),value-sync effect 开头 `value === lastSyncedValueRef.current` 直接 return —— 本地回声连 `doc.toString()` 都省。真正外部新值(≠ lastSynced)仍正常 toString + 带 selection-clamp 的 dispatch 同步(P2-AQ 光标保持不破)。每按键 2 → 1 次全文拷贝。
+
+**契约不变量**(`perf-audit/code-editor-echo-skip.spec.tsx`:回声 value → effect 不调 doc.toString + doc 不被多余 dispatch;外部新值 → 调 toString + dispatch 同步;`49-polish-bugfixes/code-editor-external-reload-keeps-cursor.spec.tsx` 外部 reload 光标保持仍过)。

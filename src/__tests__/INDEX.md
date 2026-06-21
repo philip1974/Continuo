@@ -551,6 +551,7 @@
 
 ## [perf-audit(性能优化审计 · 与 codex 协作)](./perf-audit/README.md)
 
+- [`code-editor-echo-skip.spec.tsx`](./perf-audit/code-editor-echo-skip.spec.tsx)
 - [`terminal-data-demux.spec.ts`](./perf-audit/terminal-data-demux.spec.ts)
 
 ## [PermissionEditorModal(M-Plugin v4.7 事后改主意)](./permission-editor-modal/README.md)
