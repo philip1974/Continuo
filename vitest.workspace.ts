@@ -34,6 +34,8 @@ const CI_ELECTRON_CONTRACT_EXCLUDE = process.env.CI
       'src/__tests__/agent-terminal-mcp-stdio-framing/framing.spec.ts',
       'src/__tests__/sdk-contract/integration/plugin-fs.service.spec.ts',
       'src/__tests__/sdk-contract/integration/shell.service.spec.ts',
+      // 间接 import electron(plugin-shell-stream.service),与上两条同源
+      'src/__tests__/sdk-contract/integration/plugin-shell-stream.service.spec.ts',
     ]
   : [];
 
@@ -51,6 +53,12 @@ const CI_WINDOWS_UNIT_EXCLUDE =
         'src/__tests__/ct-b3-socket-safety/socket-safety.spec.ts',
         'src/__tests__/i18n-strings-r2/hardcode-regression.spec.ts',
         'src/__tests__/migration-step2-buffer-merge/no-dangling-import.spec.ts',
+        // POSIX-only 测试设定在 Windows 不成立:
+        // - atomic:chmod 0o500 只读目录在 Windows 不阻止建 .tmp → 写成功不抛
+        // - canonicalize:正斜杠分隔符 / symlink 需管理员 / 临时目录短名(RUNNER~1)
+        // 产品代码于 macOS/Linux(应用运行平台)正确,ubuntu job 仍覆盖。
+        'src/__tests__/49-polish-bugfixes/plugin-fs-writefile-atomic.spec.ts',
+        'src/__tests__/49-polish-bugfixes/scope-grant-canonicalizes-path.spec.ts',
       ]
     : [];
 
