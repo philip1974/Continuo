@@ -20,6 +20,41 @@ export interface FilterDropOpts {
   ) => void;
 }
 
+/** attachTarget(optional)形态校验:undefined 或 3 个 discriminated 变体之一. */
+function isAttachTargetShape(v: unknown): boolean {
+  if (v === undefined) return true;
+  if (!v || typeof v !== 'object') return false;
+  const t = v as Record<string, unknown>;
+  if (t.kind === 'active') return true;
+  if (t.kind === 'panel') return typeof t.panelId === 'string';
+  if (t.kind === 'window') return typeof t.windowId === 'number';
+  return false;
+}
+
+/**
+ * 可维护性 M16:IPC ingress 的完整 type guard —— 校验必填**与** optional 字段形态后
+ * narrow 到 TerminalSession(= shared TerminalSessionSnapshot,M14),取代此前只校验必填
+ * 字段、最后 `obj as unknown as TerminalSession` 双重断言(optional 字段绕过类型检查)。
+ */
+function isTerminalSessionShape(v: unknown): v is TerminalSession {
+  if (!v || typeof v !== 'object') return false;
+  const obj = v as Record<string, unknown>;
+  return (
+    typeof obj.id === 'string' &&
+    typeof obj.title === 'string' &&
+    typeof obj.cwd === 'string' &&
+    (obj.originHint === 'user' || obj.originHint === 'agent') &&
+    typeof obj.createdAt === 'number' &&
+    (obj.exitCode === null || typeof obj.exitCode === 'number') &&
+    typeof obj.ownerWindowId === 'number' &&
+    (obj.agentLabel === undefined || typeof obj.agentLabel === 'string') &&
+    (obj.scoped === undefined || typeof obj.scoped === 'boolean') &&
+    (obj.workspaceRoot === undefined ||
+      typeof obj.workspaceRoot === 'string') &&
+    isAttachTargetShape(obj.attachTarget)
+  );
+}
+
 export function filterByOwnerWindow(
   sessions: readonly unknown[],
   currentWindowId: number,
@@ -33,6 +68,7 @@ export function filterByOwnerWindow(
     }
     const obj = s as Record<string, unknown>;
     const sessionId = typeof obj.id === 'string' ? obj.id : undefined;
+    // owner 检查先行,保留 missing-owner / wrong-owner 的细分 drop reason。
     if (typeof obj.ownerWindowId !== 'number') {
       opts.onDrop?.(sessionId, 'missing-owner');
       continue;
@@ -41,18 +77,11 @@ export function filterByOwnerWindow(
       opts.onDrop?.(sessionId, 'wrong-owner');
       continue;
     }
-    if (
-      typeof obj.id !== 'string' ||
-      typeof obj.createdAt !== 'number' ||
-      typeof obj.cwd !== 'string' ||
-      typeof obj.title !== 'string' ||
-      (obj.originHint !== 'user' && obj.originHint !== 'agent') ||
-      (obj.exitCode !== null && typeof obj.exitCode !== 'number')
-    ) {
+    if (!isTerminalSessionShape(obj)) {
       opts.onDrop?.(sessionId, 'shape-invalid');
       continue;
     }
-    result.push(obj as unknown as TerminalSession);
+    result.push(obj);
   }
   return result;
 }

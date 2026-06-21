@@ -76,4 +76,25 @@ describe('dock-reconciler-windowid-filter: filterByOwnerWindow pure fn', () => {
     expect(warn).not.toHaveBeenCalled();
     warn.mockRestore();
   });
+
+  // 可维护性 M16:ingress guard 现在也校验 optional 字段形态(此前只校验必填 + as unknown 强转)。
+  it('T11 合法 optional 字段(scoped/attachTarget/agentLabel/workspaceRoot)→ 通过', () => {
+    const s = {
+      ...makeSession('A'),
+      agentLabel: 'codex',
+      scoped: true,
+      workspaceRoot: '/repo',
+      attachTarget: { kind: 'active' },
+    };
+    expect(filterByOwnerWindow([s], 1).map((x) => x.id)).toEqual(['A']);
+  });
+
+  it("T12 malformed optional(scoped 非 boolean / attachTarget 形态错)→ shape-invalid drop", () => {
+    const onDrop = vi.fn<NonNullable<FilterDropOpts['onDrop']>>();
+    const badScoped = { ...makeSession('B'), scoped: 'yes' };
+    const badAttach = { ...makeSession('C'), attachTarget: { kind: 'panel' } }; // 缺 panelId
+    expect(filterByOwnerWindow([badScoped, badAttach], 1, { onDrop })).toEqual([]);
+    expect(onDrop).toHaveBeenCalledWith('B', 'shape-invalid');
+    expect(onDrop).toHaveBeenCalledWith('C', 'shape-invalid');
+  });
 });
