@@ -10,31 +10,19 @@ import type {
   SettingItemSpec,
   SettingItemValue,
 } from '../registries/SettingItemRegistry';
+import {
+  readRecord,
+  writeRecord,
+  subscribeStorageKey,
+} from '../storage/local-storage-record';
 
 const STORAGE_KEY = 'continuo.settings.values';
 
-function readStored(): Record<string, SettingItemValue> {
-  if (typeof globalThis.localStorage === 'undefined') return {};
-  try {
-    const raw = globalThis.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? (parsed as Record<string, SettingItemValue>)
-      : {};
-  } catch {
-    return {};
-  }
-}
-
-function writeStored(values: Record<string, SettingItemValue>): void {
-  if (typeof globalThis.localStorage === 'undefined') return;
-  try {
-    globalThis.localStorage.setItem(STORAGE_KEY, JSON.stringify(values));
-  } catch {
-    // quota / disabled — 静默
-  }
-}
+// 可维护性 M21:localStorage 对象持久化 + 跨窗同步样板复用 local-storage-record helper。
+const readStored = (): Record<string, SettingItemValue> =>
+  readRecord<SettingItemValue>(STORAGE_KEY);
+const writeStored = (values: Record<string, SettingItemValue>): void =>
+  writeRecord(STORAGE_KEY, values);
 
 export interface SettingsValueState {
   /** partial overrides(未写过的 key 走 spec.default). */
@@ -75,15 +63,9 @@ export const useSettingsValuesStore = create<SettingsValueState>((set) => ({
 // locale 又改回去(跨窗 locale 互斗)。监听 storage 事件(只在别的 document 改了
 // localStorage 时 fire),同一 key 就重读,让所有窗口的 values 收敛一致(设置语义上
 // 都是 app 级全局,跨窗一致也更符合预期)。
-if (
-  typeof window !== 'undefined' &&
-  typeof window.addEventListener === 'function'
-) {
-  window.addEventListener('storage', (e: StorageEvent) => {
-    if (e.key !== STORAGE_KEY) return;
-    useSettingsValuesStore.setState({ values: readStored() });
-  });
-}
+subscribeStorageKey(STORAGE_KEY, () =>
+  useSettingsValuesStore.setState({ values: readStored() }),
+);
 
 /** 取某 spec 当前值(override ?? default). 非 React 上下文用. */
 export function getSettingValue<T extends SettingItemValue>(

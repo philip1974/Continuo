@@ -11,31 +11,19 @@
 
 import { create } from 'zustand';
 import type { CommandSpec } from '../registries/CommandRegistry';
+import {
+  readRecord,
+  writeRecord,
+  subscribeStorageKey,
+} from '../storage/local-storage-record';
 
 const STORAGE_KEY = 'continuo.keybindings.overrides';
 
-function readStored(): Record<string, string> {
-  if (typeof globalThis.localStorage === 'undefined') return {};
-  try {
-    const raw = globalThis.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? (parsed as Record<string, string>)
-      : {};
-  } catch {
-    return {};
-  }
-}
-
-function writeStored(overrides: Record<string, string>): void {
-  if (typeof globalThis.localStorage === 'undefined') return;
-  try {
-    globalThis.localStorage.setItem(STORAGE_KEY, JSON.stringify(overrides));
-  } catch {
-    /* quota / disabled — 静默 */
-  }
-}
+// 可维护性 M21:localStorage 对象持久化 + 跨窗同步样板复用 local-storage-record helper。
+const readStored = (): Record<string, string> =>
+  readRecord<string>(STORAGE_KEY);
+const writeStored = (overrides: Record<string, string>): void =>
+  writeRecord(STORAGE_KEY, overrides);
 
 export interface KeybindingsState {
   /** key=commandId, value=hotkey 字符串(空 = unbind). */
@@ -76,15 +64,9 @@ export const useKeybindingsStore = create<KeybindingsState>((set) => ({
 // CommandPalette 显示陈旧 hotkey,直到 B 重载才收敛。监听 storage 事件(仅别 document
 // 改 localStorage 时 fire),同 key 重读让各窗 overrides 收敛一致(快捷键语义上 app 级
 // 全局)。镜像 settings values-store 的同款修复(第二十二轮 P2-BA)。
-if (
-  typeof window !== 'undefined' &&
-  typeof window.addEventListener === 'function'
-) {
-  window.addEventListener('storage', (e: StorageEvent) => {
-    if (e.key !== STORAGE_KEY) return;
-    useKeybindingsStore.setState({ overrides: readStored() });
-  });
-}
+subscribeStorageKey(STORAGE_KEY, () =>
+  useKeybindingsStore.setState({ overrides: readStored() }),
+);
 
 /** 取某 command 当前生效的 hotkey(override ?? spec.hotkey),空字符串视为 unbound. */
 export function getEffectiveHotkey(spec: CommandSpec): string | undefined {

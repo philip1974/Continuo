@@ -1,11 +1,5 @@
 [
   {
-    "path": "src/plugins/types.ts",
-    "line": 316,
-    "pattern": "NodeJS\\.",
-    "reason": "Type-only public API currently exposes NodeJS.Signals; tracked as follow-up SDK web-compat debt."
-  },
-  {
     "path": "src/plugins/sandbox-sweep.ts",
     "line": 4,
     "pattern": "global(?:This)?\\.",
@@ -54,51 +48,33 @@
     "reason": "Comment explains scoped network uses cached raw fetch after sandbox sweep."
   },
   {
-    "path": "src/plugins/settings/values-store.ts",
-    "line": 17,
+    "path": "src/plugins/storage/local-storage-record.ts",
+    "line": 9,
     "pattern": "global(?:This)?\\.",
-    "reason": "Renderer settings store intentionally guards localStorage availability."
+    "reason": "Shared localStorage-record helper intentionally guards localStorage availability (M21,从 settings/keybindings store 抽取)."
   },
   {
-    "path": "src/plugins/settings/values-store.ts",
-    "line": 19,
+    "path": "src/plugins/storage/local-storage-record.ts",
+    "line": 11,
     "pattern": "global(?:This)?\\.",
-    "reason": "Renderer settings store intentionally persists plugin settings in localStorage."
+    "reason": "Shared localStorage-record helper intentionally reads localStorage JSON record (M21)."
   },
   {
-    "path": "src/plugins/settings/values-store.ts",
-    "line": 31,
+    "path": "src/plugins/storage/local-storage-record.ts",
+    "line": 24,
     "pattern": "global(?:This)?\\.",
-    "reason": "Renderer settings store intentionally guards localStorage availability."
+    "reason": "Shared localStorage-record helper intentionally guards localStorage availability on write (M21)."
   },
   {
-    "path": "src/plugins/settings/values-store.ts",
-    "line": 33,
+    "path": "src/plugins/storage/local-storage-record.ts",
+    "line": 26,
     "pattern": "global(?:This)?\\.",
-    "reason": "Renderer settings store intentionally writes plugin settings to localStorage."
+    "reason": "Shared localStorage-record helper intentionally writes localStorage JSON record (M21)."
   },
   {
-    "path": "src/plugins/keybindings/keybindings-store.ts",
-    "line": 18,
-    "pattern": "global(?:This)?\\.",
-    "reason": "Renderer keybinding store intentionally guards localStorage availability."
-  },
-  {
-    "path": "src/plugins/keybindings/keybindings-store.ts",
-    "line": 20,
-    "pattern": "global(?:This)?\\.",
-    "reason": "Renderer keybinding store intentionally reads localStorage overrides."
-  },
-  {
-    "path": "src/plugins/keybindings/keybindings-store.ts",
-    "line": 32,
-    "pattern": "global(?:This)?\\.",
-    "reason": "Renderer keybinding store intentionally guards localStorage availability."
-  },
-  {
-    "path": "src/plugins/keybindings/keybindings-store.ts",
-    "line": 34,
-    "pattern": "global(?:This)?\\.",
-    "reason": "Renderer keybinding store intentionally writes localStorage overrides."
+    "path": "src/plugins/types.ts",
+    "line": 316,
+    "pattern": "NodeJS\\.",
+    "reason": "Type-only public API currently exposes NodeJS.Signals; tracked as follow-up SDK web-compat debt."
   }
 ]
