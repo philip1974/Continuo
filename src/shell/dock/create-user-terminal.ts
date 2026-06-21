@@ -11,6 +11,7 @@ import {
   useWorkspaceStore,
   waitForWorkspaceHydrated,
 } from '@/stores/workspace.store';
+import { preloadTerminalPanelChunk } from '@/lib/terminal-chunk-warmup';
 import { ERROR_CODES } from '../../../electron/shared/error-codes';
 import { t } from '@/i18n';
 
@@ -29,6 +30,12 @@ import { t } from '@/i18n';
  * UI 收尾(关闭菜单等)由调用方自理。
  */
 export async function createUserTerminal(): Promise<string | null> {
+  // 性能(Phase-5 终端新建加载):用户点了「新建终端」= 明确 intent。立即 fire-and-forget
+  // 预取 6MB+ xterm 面板 chunk,使其下载/解析与下面的 hydrate 等待 + IPC create + PTY
+  // spawn + shell 启动**并行**;否则首个终端要等 session push 后 React.lazy 才开始拉
+  // chunk(无提前量),把冷 chunk 加载推到用户可见的首屏 ready 路径上。重复调用经模块
+  // 缓存去重,无副作用。见 [[terminal-chunk-warmup]]。
+  preloadTerminalPanelChunk();
   await waitForWorkspaceHydrated();
   const workspaceRoot = useWorkspaceStore.getState().root ?? undefined;
   const r = await coApi.terminal.create({

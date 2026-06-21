@@ -24,7 +24,10 @@ import { sandboxSweep } from './plugins/sandbox-sweep';
 import { captureLmApi, coApi } from './lib/co-api';
 import { useUpdateStore } from './marketplace/update-store';
 import { useTerminalStore } from './stores/terminal.store';
-import { watchTerminalIntent } from './lib/terminal-chunk-warmup';
+import {
+  preloadTerminalPanelChunk,
+  watchTerminalIntent,
+} from './lib/terminal-chunk-warmup';
 import { setLocale as setI18nModuleLocale } from '@/i18n';
 import {
   subscribeToI18nBroadcast,
@@ -197,11 +200,9 @@ export async function init(): Promise<void> {
   // 原先无条件 idle prefetch 会让从不开终端的 session 也下载/解析这个大 chunk。改为只在
   // 出现终端会话(上次 session 恢复的终端,或用户新建)时 warm 一次 —— 与 React.lazy 的
   // 首开加载经模块缓存去重。普通无终端 session 不再触碰大 chunk 的网络/解析/内存。
-  watchTerminalIntent(useTerminalStore, () => {
-    void import('@/panels/Terminal').catch(() => {
-      /* 用户真触发时 React.lazy 会再试 */
-    });
-  });
+  // (Phase-5:与 createUserTerminal 共用 preloadTerminalPanelChunk,specifier 与 React.lazy
+  //  逐字符一致才能去重;此前这里用 '@/panels/Terminal' index 经共享模块去重,统一为精确入口。)
+  watchTerminalIntent(useTerminalStore, preloadTerminalPanelChunk);
 
   if (window.__continuoE2E === true) {
     void Promise.all([

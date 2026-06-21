@@ -10,10 +10,14 @@ const mocks = vi.hoisted(() => ({
   waitHydrated: vi.fn(() => Promise.resolve()),
   notifyError: vi.fn(),
   setPendingFocus: vi.fn(),
+  preloadChunk: vi.fn(),
 }));
 
 vi.mock('@/lib/co-api', () => ({
   coApi: { terminal: { create: mocks.create } },
+}));
+vi.mock('@/lib/terminal-chunk-warmup', () => ({
+  preloadTerminalPanelChunk: mocks.preloadChunk,
 }));
 vi.mock('@/notifications/notify', () => ({
   notify: { error: mocks.notifyError },
@@ -49,6 +53,18 @@ describe('createUserTerminal — 共用创建流程', () => {
     });
     expect(id).toBe('term-1');
     expect(mocks.setPendingFocus).toHaveBeenCalledWith('term-1');
+  });
+
+  it('Phase-5 · 调 IPC create 前先 fire 预取 Terminal chunk(与 create 并行抢跑)', async () => {
+    mocks.create.mockResolvedValue({ ok: true, data: { id: 'term-1' } });
+
+    await createUserTerminal();
+
+    expect(mocks.preloadChunk).toHaveBeenCalledOnce();
+    // 预取必须在 create 之前发起(才能与 create 往返/PTY spawn 并行)
+    expect(mocks.preloadChunk.mock.invocationCallOrder[0]!).toBeLessThan(
+      mocks.create.mock.invocationCallOrder[0]!,
+    );
   });
 
   it('root 为 null → create 不带 cwd/workspaceRoot(仅 originHint)', async () => {
