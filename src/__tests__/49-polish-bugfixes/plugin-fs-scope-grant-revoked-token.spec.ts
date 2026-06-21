@@ -72,6 +72,13 @@ describe('topic49 P2-AJ · 弹窗挂起期间被卸载则不落地 grant', () =>
       token,
       [{ path: tmpCanonical, mode: 'rw' }],
     );
+    // request-scope handler 现在发 scope-request 前会先 await canonicalize/hydrate/covers,
+    // 故不能同步读 send mock —— 等其发出后再取 requestId。
+    await vi.waitFor(() => {
+      if (event.sender.send.mock.calls.length === 0) {
+        throw new Error('scope-request 未发出');
+      }
+    });
     const sent = event.sender.send.mock.calls[0]?.[1] as { requestId: string };
 
     // 弹窗挂起期间插件被卸载:revoke token(进 drain)+ revokeAll(pluginId)
@@ -102,6 +109,13 @@ describe('topic49 P2-AJ · 弹窗挂起期间被卸载则不落地 grant', () =>
       token,
       [{ path: tmpCanonical, mode: 'rw' }],
     );
+    // request-scope handler 现在发 scope-request 前会先 await canonicalize/hydrate/covers,
+    // 故不能同步读 send mock —— 等其发出后再取 requestId。
+    await vi.waitFor(() => {
+      if (event.sender.send.mock.calls.length === 0) {
+        throw new Error('scope-request 未发出');
+      }
+    });
     const sent = event.sender.send.mock.calls[0]?.[1] as { requestId: string };
 
     await ipc.invokeWithEvent(

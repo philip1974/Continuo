@@ -1,11 +1,16 @@
 // Wraps registerPluginFsHandlers from Op5 service factory.
 // All handlers take token as first arg (after event); see (b)-branch design.
 
-import { webContents, type IpcMain, type WebContents } from 'electron';
+import { app, webContents, type IpcMain, type WebContents } from 'electron';
+import { join } from 'node:path';
 import { PLUGIN_FS_CHANNELS } from '../../shared/plugin-fs-channels';
 import { IdentityRegistry } from '../services/identity-registry.service';
 import { PathScopeRegistry } from '../services/path-scope-registry.service';
 import { registerPluginFsHandlers } from '../services/plugin-fs.service';
+import {
+  readPluginPathScopes,
+  writePluginPathScopes,
+} from '../services/plugins.service';
 import { ScopeRequestCorrelator } from '../services/scope-request-correlator';
 
 export interface RegisterPluginFsIpcArgs {
@@ -42,12 +47,23 @@ export function registerPluginFsIpc({
   const correlator = new ScopeRequestCorrelator();
   activeCorrelator = correlator;
 
+  // path-scope 持久化落在 userData/plugins/_plugin-path-scopes.json,与决策同目录、分文件。
+  const pluginsDir = join(app.getPath('userData'), 'plugins');
+
   registerPluginFsHandlers(ipcMain, {
     identityRegistry,
     pathScopeRegistry,
     correlator,
     webContentsForSender: (senderId: number): WebContents | null =>
       webContents.fromId(senderId) ?? null,
+    loadPersistedScopes: (pluginId) =>
+      readPluginPathScopes(pluginsDir, pluginId),
+    persistScopes: (pluginId, scopes) =>
+      writePluginPathScopes(
+        pluginsDir,
+        pluginId,
+        scopes.map((s) => ({ path: s.path, mode: s.mode })),
+      ),
   });
 
   pathScopeRegistry.on(

@@ -4,6 +4,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type {
+  IpcPathScope,
   IpcPermissionDecision,
   IpcPermissionsMap,
   IpcPluginDir,
@@ -195,6 +196,85 @@ export async function writePermissions(
   await fs.writeFile(file, JSON.stringify(data, null, 2), 'utf-8');
 }
 
+// ── path-scope 持久化(plugin-fs 授权跨重启保留)──────────────
+//
+// 设计:与决策(_permissions.json,renderer 写)分文件,由主进程独占读写
+// `_plugin-path-scopes.json`,规避跨进程并发覆盖。grant 时由 request-scope handler
+// 写入;冷启动由 handler 读回水合进 PathScopeRegistry;uninstall 连同 id 一并清除
+// (防同 id 重装继承旧 scope,与 _permissions.json 清理对称)。
+
+const PATH_SCOPES_FILE = '_plugin-path-scopes.json';
+
+function isIpcPathScope(x: unknown): x is IpcPathScope {
+  if (!x || typeof x !== 'object') return false;
+  const o = x as Record<string, unknown>;
+  return typeof o.path === 'string' && (o.mode === 'r' || o.mode === 'rw');
+}
+
+async function readAllPathScopes(
+  baseDir: string,
+): Promise<Record<string, IpcPathScope[]>> {
+  const file = path.join(baseDir, PATH_SCOPES_FILE);
+  try {
+    const text = await fs.readFile(file, 'utf-8');
+    const json = JSON.parse(text) as unknown;
+    if (!json || typeof json !== 'object' || Array.isArray(json)) return {};
+    const out: Record<string, IpcPathScope[]> = {};
+    for (const [pid, value] of Object.entries(json as Record<string, unknown>)) {
+      if (!Array.isArray(value)) continue;
+      const scopes = value.filter(isIpcPathScope);
+      if (scopes.length > 0) out[pid] = scopes;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+/** 读取单个 plugin 上次会话持久化的 path scope(canonical);无则空数组。 */
+export async function readPluginPathScopes(
+  baseDir: string,
+  id: string,
+): Promise<IpcPathScope[]> {
+  const all = await readAllPathScopes(baseDir);
+  return all[id] ?? [];
+}
+
+// 同文件 read-modify-write 串行化,防并发 grant 互相覆盖(镜像 installLocks 思路)。
+let pathScopesWriteChain: Promise<unknown> = Promise.resolve();
+
+/**
+ * 持久化单个 plugin 的全部已授 path scope(覆盖式)。空数组 → 删除该 id 条目。
+ * 非法 id 直接忽略(防注入畸形 key)。写入串行化避免并发 grant 互踩。
+ */
+export function writePluginPathScopes(
+  baseDir: string,
+  id: string,
+  scopes: readonly IpcPathScope[],
+): Promise<void> {
+  const run = pathScopesWriteChain.then(async () => {
+    if (!isSafePluginId(id)) return;
+    const all = await readAllPathScopes(baseDir);
+    const normalized = scopes
+      .filter(isIpcPathScope)
+      .map((s) => ({ path: s.path, mode: s.mode }));
+    if (normalized.length === 0) {
+      if (!(id in all)) return; // 无变化,不为删除空条目而触盘
+      delete all[id];
+    } else {
+      all[id] = normalized;
+    }
+    await fs.mkdir(baseDir, { recursive: true });
+    const file = path.join(baseDir, PATH_SCOPES_FILE);
+    await fs.writeFile(file, JSON.stringify(all, null, 2), 'utf-8');
+  });
+  pathScopesWriteChain = run.then(
+    () => {},
+    () => {},
+  );
+  return run;
+}
+
 // ── v4.5 git URL 安装 ──────────────────────────────────
 
 import { spawn } from 'node:child_process';
@@ -271,6 +351,9 @@ export async function uninstallPlugin(
     delete (next as Record<string, unknown>)[id];
     await writePermissions(baseDir, next);
   }
+
+  // 清 _plugin-path-scopes.json 中的 id(避免重装继承旧 path scope,与上方对称)
+  await writePluginPathScopes(baseDir, id, []);
 }
 
 export interface InstallFromGitResult {
