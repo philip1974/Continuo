@@ -5,6 +5,7 @@ import { FS_CHANNELS } from '../shared/fs-channels';
 import { TERMINAL_CHANNELS } from '../shared/terminal-channels';
 import type { OriginHint } from '../shared/origin-hint';
 import type { TerminalSessionSnapshot } from '../shared/terminal-session';
+import type { TerminalAttachRejectReason } from '../shared/terminal-attach';
 import {
   PLUGINS_CHANNELS,
   type IpcPermissionsMap,
@@ -202,7 +203,7 @@ const api = {
     // topic-05: renderer 端 tryAttachExisting 失败时反向通知 main 清理 session。
     attachRejected: (
       sessionId: string,
-      reason: 'limit' | 'duplicate' | 'not-hydrated' | 'no-target',
+      reason: TerminalAttachRejectReason, // M23:单一来源,与 main z.enum 共用
     ): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(TERMINAL_CHANNELS.ATTACH_REJECTED, { sessionId, reason }),
     updateCwd: (id: string, cwd: string): Promise<IpcResult<void>> =>

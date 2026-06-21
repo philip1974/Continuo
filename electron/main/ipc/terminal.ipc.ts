@@ -11,7 +11,10 @@ import { TERMINAL_CHANNELS } from '../../shared/terminal-channels';
 import { getDefaultShell, isAllowedShell } from '@continuo-terminal/server-node';
 import { ERROR_CODES } from '../../shared/error-codes';
 import { ORIGIN_HINTS } from '../../shared/origin-hint';
-import { AttachTargetSchema } from '../../shared/terminal-attach';
+import {
+  AttachTargetSchema,
+  TERMINAL_ATTACH_REJECT_REASONS,
+} from '../../shared/terminal-attach';
 import * as termService from '../services/terminal.service';
 import * as terminalSessions from '../services/terminal-sessions.service';
 import { mcpRevokers } from '../services/mcp-host.service';
@@ -107,7 +110,7 @@ export const noInputSchema = z.object({}).strict();
 export const attachRejectedInputSchema = z
   .object({
     sessionId: z.string().min(1),
-    reason: z.enum(['limit', 'duplicate', 'not-hydrated', 'no-target']),
+    reason: z.enum(TERMINAL_ATTACH_REJECT_REASONS), // M23:单一来源
   })
   .strict();
 
