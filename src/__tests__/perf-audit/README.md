@@ -63,3 +63,13 @@
 **修复**:`lastSyncedValueRef` 记录 editor doc 当前反映的字符串(emit 时 / 外部 dispatch 后 / 初始 = 首个 value 都更新),value-sync effect 开头 `value === lastSyncedValueRef.current` 直接 return —— 本地回声连 `doc.toString()` 都省。真正外部新值(≠ lastSynced)仍正常 toString + 带 selection-clamp 的 dispatch 同步(P2-AQ 光标保持不破)。每按键 2 → 1 次全文拷贝。
 
 **契约不变量**(`perf-audit/code-editor-echo-skip.spec.tsx`:回声 value → effect 不调 doc.toString + doc 不被多余 dispatch;外部新值 → 调 toString + dispatch 同步;`49-polish-bugfixes/code-editor-external-reload-keeps-cursor.spec.tsx` 外部 reload 光标保持仍过)。
+
+## P7 — StatusBar 文本统计单遍零分配
+
+**位置**:`src/lib/text-stats.ts`、`src/shell/StatusBar.tsx` `stats` useMemo。
+
+**问题**:`lineCount` 用 `s.match(/\n/g)`(分配全部换行的匹配数组)、`wordCount` 用 `trim().split(/\s+/)`(分配全部单词的子串数组)。active editor 每按键 `activeContent` 变 → StatusBar memo 失效重算 → 2 次全文扫描 + 2 个大临时数组(长文件 GC 压力)。memo 已挡无关重渲(R1),但内容编辑必重算。
+
+**修复**:`computeTextStats(s)` 用 `charCodeAt` **单遍、零数组分配**同时算 lines/words/chars(`isWhitespaceCode` 复刻 JS 正则 `\s` 码点集 → 单词切分逐字节等价);`lineCount`/`wordCount` 也重写为无分配循环。StatusBar 改用 `computeTextStats` 一遍拿三项。每按键 2 次全文扫 + 2 大数组 → 1 遍 0 分配。
+
+**契约不变量**(`text-stats.spec.ts`:computeTextStats 与 lineCount/wordCount/charCount 一致 + 与旧 `match(/\n/g)`/`split(/\s+/)` 正则口径逐字节等价,覆盖空/全空白/CRLF/中文/尾换行;`statusbar-stats-memoized.spec.tsx`:memo 命中/失效契约不变,改 spy computeTextStats)。

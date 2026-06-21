@@ -5,15 +5,17 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, cleanup, act } from '@testing-library/react';
 
-const { lineCountSpy, wordCountSpy, charCountSpy } = vi.hoisted(() => ({
-  lineCountSpy: vi.fn((s: string) => (s.match(/\n/g)?.length ?? 0) + 1),
-  wordCountSpy: vi.fn((s: string) => s.trim().split(/\s+/).filter(Boolean).length),
-  charCountSpy: vi.fn((s: string) => s.length),
+// perf P7:StatusBar 改用单遍 computeTextStats(替代 lineCount/wordCount/charCount
+// 三次调用)。memo 行为契约不变 —— spy computeTextStats 验命中/失效。
+const { computeTextStatsSpy } = vi.hoisted(() => ({
+  computeTextStatsSpy: vi.fn((s: string) => ({
+    lines: s.length === 0 ? 0 : (s.match(/\n/g)?.length ?? 0) + 1,
+    words: s.trim() === '' ? 0 : s.trim().split(/\s+/).length,
+    chars: s.length,
+  })),
 }));
 vi.mock('../../lib/text-stats', () => ({
-  lineCount: lineCountSpy,
-  wordCount: wordCountSpy,
-  charCount: charCountSpy,
+  computeTextStats: computeTextStatsSpy,
 }));
 
 vi.mock('../../plugins/sandbox-sweep', () => ({
@@ -69,9 +71,7 @@ beforeEach(() => {
   useLayoutUiStore.setState({ sidebarOpen: true, sidebarWidth: 280 });
   useTerminalStore.setState({ sessions: [], activeId: null });
   (coApp as { statusBar: StatusBarRegistry }).statusBar = new StatusBarRegistry();
-  lineCountSpy.mockClear();
-  wordCountSpy.mockClear();
-  charCountSpy.mockClear();
+  computeTextStatsSpy.mockClear();
 });
 
 afterEach(() => {
@@ -86,9 +86,8 @@ describe('打磨 R1 — StatusBar 文本统计 memo 化', () => {
     openTab(BIG);
     render(<StatusBar />);
 
-    const baseLine = lineCountSpy.mock.calls.length;
-    const baseWord = wordCountSpy.mock.calls.length;
-    expect(baseLine).toBeGreaterThan(0); // 首渲染算过
+    const baseCalls = computeTextStatsSpy.mock.calls.length;
+    expect(baseCalls).toBeGreaterThan(0); // 首渲染算过
 
     // 无关变化:新增 agent 终端 session。StatusBar 订阅 sessions → 重渲染,
     // 但 active 内容未变,统计应命中缓存不重算。
@@ -109,8 +108,7 @@ describe('打磨 R1 — StatusBar 文本统计 memo 化', () => {
       });
     });
 
-    expect(lineCountSpy.mock.calls.length).toBe(baseLine);
-    expect(wordCountSpy.mock.calls.length).toBe(baseWord);
+    expect(computeTextStatsSpy.mock.calls.length).toBe(baseCalls);
   });
 
   it('active 内容变化时重算统计(memo 失效)', () => {
@@ -118,12 +116,12 @@ describe('打磨 R1 — StatusBar 文本统计 memo 化', () => {
     openTab(BIG);
     render(<StatusBar />);
 
-    const baseLine = lineCountSpy.mock.calls.length;
+    const baseCalls = computeTextStatsSpy.mock.calls.length;
 
     act(() => {
       openTab(BIG + '\nnew tail line');
     });
 
-    expect(lineCountSpy.mock.calls.length).toBeGreaterThan(baseLine);
+    expect(computeTextStatsSpy.mock.calls.length).toBeGreaterThan(baseCalls);
   });
 });

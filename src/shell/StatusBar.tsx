@@ -12,7 +12,7 @@ import { useTerminalStore } from '@/stores/terminal.store';
 import { useAgentAuthStore } from '@/stores/agent-auth.store';
 import { coApi } from '@/lib/co-api';
 import { notify } from '@/notifications/notify';
-import { charCount, lineCount, wordCount } from '@/lib/text-stats';
+import { computeTextStats } from '@/lib/text-stats';
 import { coApp } from '@/plugins/co-app';
 import type { StatusBarItemSpec } from '@/plugins/registries/StatusBarRegistry';
 import { getCachedClipboard } from '@/plugins/sandbox-sweep';
@@ -101,19 +101,14 @@ export function StatusBar() {
     [statusItems],
   );
 
-  // 行/词/字符统计按 active 内容 memo 化(codex 打磨 R1)。lineCount/wordCount
-  // 会全文扫描并分配中间数组;StatusBar 因 sessions / MCP 复制态 / 插件 status
-  // item 等无关变化频繁重渲染,无 memo 时每次都重扫整篇。dep 只用 activeContent
-  // 字符串值:内容编辑 → 变 → 重算;无关重渲染 → 不变 → 命中缓存。
+  // 行/词/字符统计按 active 内容 memo 化(codex 打磨 R1)。StatusBar 因 sessions /
+  // MCP 复制态 / 插件 status item 等无关变化频繁重渲染,无 memo 时每次都重扫整篇。
+  // dep 只用 activeContent 字符串值:内容编辑 → 变 → 重算;无关重渲染 → 不变 → 命中缓存。
+  // 性能 P7:computeTextStats 单遍、零数组分配同时拿三项(旧版 lineCount/wordCount 各
+  // 全文扫一遍 + 分配 match/split 大临时数组)。
   const stats = useMemo(
     () =>
-      activeContent === undefined
-        ? null
-        : {
-            lines: lineCount(activeContent),
-            words: wordCount(activeContent),
-            chars: charCount(activeContent),
-          },
+      activeContent === undefined ? null : computeTextStats(activeContent),
     [activeContent],
   );
 

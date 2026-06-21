@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   charCount,
+  computeTextStats,
   lineCount,
   wordCount,
 } from '../../lib/text-stats';
@@ -49,5 +50,43 @@ describe('charCount', () => {
   it('返字符串长度', () => {
     expect(charCount('hello')).toBe(5);
     expect(charCount('a\nb')).toBe(3);
+  });
+});
+
+describe('perf P7 · computeTextStats 单遍与逐项函数逐字节等价', () => {
+  const cases = [
+    '',
+    '   \n\t',
+    'hello',
+    'hello world',
+    'a b c d e',
+    'a  b\tc\nd',
+    '  hello  ',
+    'a\n',
+    'a\r\nb',
+    'line0\nline1\nline2\n',
+    '中文 词 测试\n第二行',
+  ];
+  it('lines/words/chars 与 lineCount/wordCount/charCount 一致', () => {
+    for (const s of cases) {
+      expect(computeTextStats(s)).toEqual({
+        lines: lineCount(s),
+        words: wordCount(s),
+        chars: charCount(s),
+      });
+    }
+  });
+
+  it('与旧正则口径等价(回归基准)', () => {
+    const oldLines = (s: string) =>
+      s.length === 0 ? 0 : (s.match(/\n/g)?.length ?? 0) + 1;
+    const oldWords = (s: string) =>
+      s.trim() === '' ? 0 : s.trim().split(/\s+/).length;
+    for (const s of cases) {
+      const r = computeTextStats(s);
+      expect(r.lines).toBe(oldLines(s));
+      expect(r.words).toBe(oldWords(s));
+      expect(r.chars).toBe(s.length);
+    }
   });
 });
