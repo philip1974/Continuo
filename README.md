@@ -8,6 +8,8 @@
 
 Run Claude Code, Codex CLI, Aider, or your own agent inside a dockable multi-terminal GUI. Each agent operates with explicit per-plugin permission boundaries. **Bring your own agent.**
 
+> **Why it exists:** a single coding agent will tell you it's "done" when it isn't. Continuo lets you run several terminal agents in one window — one driving, another auditing — so you can see what each actually did instead of trusting a final "done".
+
 ## Demo
 
 Real Claude Code driving Codex through Continuo's MCP — Claude Code opens a *second* terminal panel itself, hands Codex a task, and reads back the result, all in one window:
