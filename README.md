@@ -60,6 +60,8 @@ Feedback/issues:
 
 Requires **Node 24** and **pnpm**.
 
+> **Platform support:** Continuo has only been run and tested on **macOS** so far. Windows and Linux are not yet tested — they may work, but expect rough edges. Reports and fixes welcome.
+
 **1 · Install + run dev build**
 
 ```bash
