@@ -14,6 +14,18 @@ const CI_ELECTRON_UNIT_EXCLUDE = process.env.CI
       'src/__tests__/terminal-service/helpers.spec.ts',
       'src/__tests__/terminal-workspace-isolation/workspaceRoot-roundtrip.spec.ts',
       'src/__tests__/window-workspace-roots-map/cwd-fallback-error.spec.ts',
+      // topic-49/50 打磨与安全审计新增:经 electron/main 服务间接 import electron
+      'src/__tests__/49-polish-bugfixes/external-url-scheme-whitelist.spec.ts',
+      'src/__tests__/49-polish-bugfixes/read-git-blob-bounds.spec.ts',
+      'src/__tests__/49-polish-bugfixes/security-file-url-trust.spec.ts',
+      'src/__tests__/49-polish-bugfixes/shell-exec-cjk-bytes.spec.ts',
+      'src/__tests__/49-polish-bugfixes/shell-exec-timeout-clamp.spec.ts',
+      'src/__tests__/49-polish-bugfixes/shell-stream-abort.spec.ts',
+      'src/__tests__/49-polish-bugfixes/shell-stream-frame-trust.spec.ts',
+      'src/__tests__/49-polish-bugfixes/shell-stream-reload-kills-children.spec.ts',
+      'src/__tests__/49-polish-bugfixes/stdio-stale-window-binding.spec.ts',
+      'src/__tests__/49-polish-bugfixes/stop-hook-window-close.spec.ts',
+      'src/__tests__/49-polish-bugfixes/terminal-create-reserve-before-spawn.spec.ts',
     ]
   : [];
 
@@ -22,6 +34,8 @@ const CI_ELECTRON_CONTRACT_EXCLUDE = process.env.CI
       'src/__tests__/agent-terminal-mcp-stdio-framing/framing.spec.ts',
       'src/__tests__/sdk-contract/integration/plugin-fs.service.spec.ts',
       'src/__tests__/sdk-contract/integration/shell.service.spec.ts',
+      // 间接 import electron(plugin-shell-stream.service),与上两条同源
+      'src/__tests__/sdk-contract/integration/plugin-shell-stream.service.spec.ts',
     ]
   : [];
 
@@ -39,6 +53,12 @@ const CI_WINDOWS_UNIT_EXCLUDE =
         'src/__tests__/ct-b3-socket-safety/socket-safety.spec.ts',
         'src/__tests__/i18n-strings-r2/hardcode-regression.spec.ts',
         'src/__tests__/migration-step2-buffer-merge/no-dangling-import.spec.ts',
+        // POSIX-only 测试设定在 Windows 不成立:
+        // - atomic:chmod 0o500 只读目录在 Windows 不阻止建 .tmp → 写成功不抛
+        // - canonicalize:正斜杠分隔符 / symlink 需管理员 / 临时目录短名(RUNNER~1)
+        // 产品代码于 macOS/Linux(应用运行平台)正确,ubuntu job 仍覆盖。
+        'src/__tests__/49-polish-bugfixes/plugin-fs-writefile-atomic.spec.ts',
+        'src/__tests__/49-polish-bugfixes/scope-grant-canonicalizes-path.spec.ts',
       ]
     : [];
 
