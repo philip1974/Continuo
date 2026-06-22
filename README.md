@@ -1,5 +1,7 @@
 # Continuo — open-source GUI substrate for terminal-native agents
 
+**English** · [简体中文](README.zh-CN.md) · [한국어](README.ko.md)
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Latest release](https://img.shields.io/github/v/release/philip1974/Continuo)](https://github.com/philip1974/Continuo/releases/latest)
 [![GitHub stars](https://img.shields.io/github/stars/philip1974/Continuo?style=social)](https://github.com/philip1974/Continuo)
