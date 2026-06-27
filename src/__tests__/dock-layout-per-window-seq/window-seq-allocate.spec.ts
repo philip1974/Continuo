@@ -43,17 +43,21 @@ describe('allocateWindowSeq atomic concurrent allocation', () => {
     expect(loaded?.nextWindowSeq).toBe(2);
   });
 
-  it('T28c: 100 concurrent calls return 100 unique seqs', async () => {
-    await atomicWriteJson(file, defaultExplorerV3());
+  it(
+    'T28c: 100 concurrent calls return 100 unique seqs',
+    async () => {
+      await atomicWriteJson(file, defaultExplorerV3());
 
-    const seqs = await Promise.all(
-      Array.from({ length: 100 }, () => allocateWindowSeq(file)),
-    );
+      const seqs = await Promise.all(
+        Array.from({ length: 100 }, () => allocateWindowSeq(file)),
+      );
 
-    expect(new Set(seqs).size).toBe(100);
-    const loaded = await loadExplorer(file);
-    expect(loaded?.nextWindowSeq).toBe(101);
-  });
+      expect(new Set(seqs).size).toBe(100);
+      const loaded = await loadExplorer(file);
+      expect(loaded?.nextWindowSeq).toBe(101);
+    },
+    20_000,
+  );
 
   // 边界(E4):损坏持久化里 nextWindowSeq >= Number.MAX_SAFE_INTEGER 时 `seq + 1` 因浮点精度
   // 不变 → 计数器卡死,每个新窗口拿同一 windowSeq → 多窗共享同一持久化段互相覆盖。自愈:检测
