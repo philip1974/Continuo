@@ -131,4 +131,49 @@ describe('migration step1 PTY handover · forceKill cleanup', () => {
     }).not.toThrow();
     expect(win.webContents.send).toHaveBeenCalledTimes(1);
   });
+
+  it('cleanupAll 不通过 id 中间数组 .map 调度强杀,且仍清理所有会话', async () => {
+    const win = makeWindow(8);
+    for (const id of ['a', 'b', 'c']) {
+      await terminalService.createTerminal(id, win, '/bin/zsh', [], '/tmp');
+      terminalSessions.add({
+        id,
+        title: id,
+        cwd: '/tmp',
+        originHint: 'user',
+        ownerWindowId: 8,
+      });
+    }
+
+    const mapSpy = vi.spyOn(Array.prototype, 'map');
+    try {
+      await terminalService.cleanupAll();
+      const mappedIdArray = mapSpy.mock.instances.some(
+        (inst) =>
+          Array.isArray(inst) &&
+          inst.length === 3 &&
+          inst.every((id) => typeof id === 'string'),
+      );
+      expect(mappedIdArray).toBe(false);
+    } finally {
+      mapSpy.mockRestore();
+    }
+
+    expect(sessionManagerMock.kill).toHaveBeenCalledTimes(3);
+    expect(sessionManagerMock.kill).toHaveBeenCalledWith({
+      session_id: 'a',
+      signal: 'SIGKILL',
+    });
+    expect(sessionManagerMock.kill).toHaveBeenCalledWith({
+      session_id: 'b',
+      signal: 'SIGKILL',
+    });
+    expect(sessionManagerMock.kill).toHaveBeenCalledWith({
+      session_id: 'c',
+      signal: 'SIGKILL',
+    });
+    expect(terminalService.has('a')).toBe(false);
+    expect(terminalService.has('b')).toBe(false);
+    expect(terminalService.has('c')).toBe(false);
+  });
 });

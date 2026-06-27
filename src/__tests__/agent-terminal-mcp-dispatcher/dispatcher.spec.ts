@@ -1,7 +1,7 @@
 // BDD: agent-terminal-mcp-dispatcher
 // MCP 标准协议路由(initialize / tools/list / tools/call)。
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { z } from 'zod';
 import {
   dispatchRpc,
@@ -143,6 +143,24 @@ describe('dispatchRpc · tools/list', () => {
       (t) => t.name,
     );
     expect(names).toEqual(['noop', 'echo', 'fail']);
+  });
+
+  it('构建 tools/list 不通过 Array.from 复制 Map values 中间数组', async () => {
+    const arrayFromSpy = vi.spyOn(Array, 'from');
+    try {
+      const r = await dispatchRpc(
+        req('tools/list'),
+        makeTools(noopTool, echoTool, failTool),
+        SERVER_INFO,
+        CTX,
+      );
+
+      expect(arrayFromSpy).not.toHaveBeenCalled();
+      expect('result' in r).toBe(true);
+      expect((r as { result: { tools: { name: string }[] } }).result.tools).toHaveLength(3);
+    } finally {
+      arrayFromSpy.mockRestore();
+    }
   });
 
   // 边界(E291,E286 字节预算族 / 聚合维度):每 tool schema/description 有上限 + tool 数有上限,但乘积

@@ -14,6 +14,7 @@ type Listener = (...args: unknown[]) => void;
 
 const electronMock = vi.hoisted(() => {
   const ipcHandlers = new Map<string, Listener[]>();
+  const appHandlers = new Map<string, Listener[]>();
   const webContentsToWindow = new WeakMap<object, MockBrowserWindow>();
   const windows: MockBrowserWindow[] = [];
   let nextId = 1;
@@ -80,6 +81,7 @@ const electronMock = vi.hoisted(() => {
       userData = value;
     },
     ipcHandlers,
+    appHandlers,
     windows,
     MockBrowserWindow,
     reset() {
@@ -103,7 +105,11 @@ vi.mock('electron', () => ({
     setPath: vi.fn(),
     requestSingleInstanceLock: vi.fn(() => true),
     quit: vi.fn(),
-    on: vi.fn(),
+    on: vi.fn((event: string, listener: Listener) => {
+      const listeners = electronMock.appHandlers.get(event) ?? [];
+      listeners.push(listener);
+      electronMock.appHandlers.set(event, listeners);
+    }),
     isReady: vi.fn(() => true),
     whenReady: vi.fn(() => new Promise(() => undefined)),
     setAsDefaultProtocolClient: vi.fn(),
@@ -167,6 +173,7 @@ vi.mock('../../../electron/main/services/terminal.service', () => ({
   interrupt: vi.fn(),
   kill: vi.fn(),
   forceKill: vi.fn(),
+  cleanupAll: vi.fn(async () => undefined),
   readOutput: vi.fn(),
 }));
 vi.mock('../../../electron/main/ipc/terminal.ipc', () => ({
@@ -398,5 +405,39 @@ describe('window close layout flush', () => {
     });
 
     expect(getActiveSeqs().has(10)).toBe(false);
+  });
+
+  it('before-quit 扫描窗口不对 getAllWindows 结果 filter 出中间数组,且仍 flush 存活窗口', async () => {
+    const a = createMockMainWindow(11);
+    const b = createMockMainWindow(12);
+    const dead = createMockMainWindow(13);
+    dead.destroyed = true;
+    const filterSpy = vi.spyOn(electronMock.windows, 'filter');
+    const handler = electronMock.appHandlers.get('before-quit')?.[0];
+    if (!handler) throw new Error('before-quit handler missing');
+    const event = { preventDefault: vi.fn() };
+
+    try {
+      const done = handler(event);
+
+      expect(event.preventDefault).toHaveBeenCalledTimes(1);
+      expect(filterSpy).not.toHaveBeenCalled();
+      expect(a.webContents.send).toHaveBeenCalledWith('layout:flush-request', {
+        windowId: a.id,
+      });
+      expect(b.webContents.send).toHaveBeenCalledWith('layout:flush-request', {
+        windowId: b.id,
+      });
+      expect(dead.webContents.send).not.toHaveBeenCalledWith(
+        'layout:flush-request',
+        expect.anything(),
+      );
+
+      ack(a);
+      ack(b);
+      await done;
+    } finally {
+      filterSpy.mockRestore();
+    }
   });
 });

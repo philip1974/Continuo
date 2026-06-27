@@ -83,8 +83,13 @@ export function routeProtocolUrl(url: string, deps: RouteProtocolUrlDeps): void 
     );
     return;
   }
-  const live = deps.windows.filter((w) => !w.isDestroyed());
-  const ready = live.filter((w) => !w.webContents.isLoading());
+  const ready: ProtoWindow[] = [];
+  const loading: ProtoWindow[] = [];
+  for (const w of deps.windows) {
+    if (w.isDestroyed()) continue;
+    if (w.webContents.isLoading()) loading.push(w);
+    else ready.push(w);
+  }
   if (ready.length === 0) {
     // 边界(E55):pending 队列条数上限 —— 窗口加载期间连发大量深链不得无界占用 main 内存。
     if (pending.length >= MAX_PENDING_PROTOCOL_URLS) {
@@ -96,7 +101,7 @@ export function routeProtocolUrl(url: string, deps: RouteProtocolUrlDeps): void 
     // 无就绪窗口:FIFO 入队(不覆盖先到的),并给当前所有 loading 窗口挂一次性 did-finish-load
     // drain。第一个就绪的窗口排空整个队列;其余 drain 见空队列即 no-op(避免重复投递)。
     pending.push(url);
-    for (const w of live) {
+    for (const w of loading) {
       w.webContents.once('did-finish-load', () => {
         if (!w.isDestroyed()) drainPendingProtocolUrls(w.webContents, channel, pending);
       });

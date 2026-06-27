@@ -154,7 +154,8 @@ export class PathScopeRegistry extends EventEmitter {
     newScopes: readonly PathScope[],
   ): PathScope[] {
     const existing = this.pluginScopes.get(pluginId) ?? [];
-    const byPath = new Map(existing.map((s) => [s.path, s]));
+    const byPath = new Map<string, PathScope>();
+    for (const s of existing) byPath.set(s.path, s);
     // 边界(E81):其它 plugin 已占的全局计数(本 plugin 现有 = existing.length)。
     const otherTotal = this.totalScopes - existing.length;
     for (const ns of newScopes) {

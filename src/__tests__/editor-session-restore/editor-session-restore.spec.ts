@@ -91,14 +91,20 @@ describe('snapshotFromStores · editor 字段', () => {
 
   it('含 untitled tab(filePath=null)→ 不进 openFilePaths', () => {
     const untitled = createTab(null, 'draft');
-    useEditorStore.setState({
-      tabs: [createTab('/x.md', 'x'), untitled, createTab('/y.md', 'y')],
-      activeTabId: untitled.id,
-    });
-    const snap = snapshotFromStores();
-    expect(snap.windows[0]!.editor!.openFilePaths).toEqual(['/x.md', '/y.md']);
-    // active 是 untitled → activePath=null
-    expect(snap.windows[0]!.editor!.activePath).toBeNull();
+    const tabs = [createTab('/x.md', 'x'), untitled, createTab('/y.md', 'y')];
+    useEditorStore.setState({ tabs, activeTabId: untitled.id });
+    const mapSpy = vi.spyOn(tabs, 'map');
+
+    try {
+      const snap = snapshotFromStores();
+
+      expect(mapSpy).not.toHaveBeenCalled();
+      expect(snap.windows[0]!.editor!.openFilePaths).toEqual(['/x.md', '/y.md']);
+      // active 是 untitled → activePath=null
+      expect(snap.windows[0]!.editor!.activePath).toBeNull();
+    } finally {
+      mapSpy.mockRestore();
+    }
   });
 
   it('activeTabId=null → activePath=null', () => {

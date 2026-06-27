@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useWorkspaceStore } from '../../stores/workspace.store';
 
 beforeEach(() => {
@@ -36,6 +36,28 @@ describe('workspace.store', () => {
     useWorkspaceStore.getState().setRoot('/b');
     useWorkspaceStore.getState().setRoot('/a');
     expect(useWorkspaceStore.getState().recentRoots).toEqual(['/a', '/b']);
+  });
+
+  it('setRoot 更新 recentRoots 单次遍历,不通过 map/filter 中间数组', () => {
+    const recentRoots = ['/a', '', '   ', '/b', '/c'];
+    useWorkspaceStore.setState({ root: '/a', recentRoots });
+    const mapSpy = vi.spyOn(recentRoots, 'map');
+    const filterSpy = vi.spyOn(recentRoots, 'filter');
+
+    try {
+      useWorkspaceStore.getState().setRoot('/b');
+
+      expect(mapSpy).not.toHaveBeenCalled();
+      expect(filterSpy).not.toHaveBeenCalled();
+      expect(useWorkspaceStore.getState().recentRoots).toEqual([
+        '/b',
+        '/a',
+        '/c',
+      ]);
+    } finally {
+      mapSpy.mockRestore();
+      filterSpy.mockRestore();
+    }
   });
 
   it('LRU 上限 5,超出截断', () => {

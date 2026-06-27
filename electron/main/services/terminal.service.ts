@@ -597,23 +597,23 @@ export function forceKill(id: string): void {
  * 返回 await 所有 SIGKILL 完成的 promise,供 before-quit 在 app.quit() 前等待。
  */
 export async function cleanupAll(): Promise<void> {
-  const ids = Array.from(instances.keys());
-  if (ids.length === 0) return; // 没开过终端就别 lazy-init SessionManager
+  if (instances.size === 0) return; // 没开过终端就别 lazy-init SessionManager
   const sm = getSessionManager();
-  await Promise.all(
-    ids.map(async (id) => {
-      const inst = instances.get(id);
-      if (inst?.killTimer) {
-        clearTimeout(inst.killTimer);
-        inst.killTimer = null;
-      }
-      // 同步本地拆除(timers / listeners / mcp token revoke),exitCode -1。
-      cleanupSessionLocal(id, -1);
-      try {
-        await sm.kill({ session_id: id, signal: 'SIGKILL' });
-      } catch {
-        // 进程正在退出,忽略 kill race。
-      }
-    }),
-  );
+  const kills: Promise<void>[] = [];
+  for (const id of instances.keys()) {
+    const inst = instances.get(id);
+    if (inst?.killTimer) {
+      clearTimeout(inst.killTimer);
+      inst.killTimer = null;
+    }
+    // 同步本地拆除(timers / listeners / mcp token revoke),exitCode -1。
+    cleanupSessionLocal(id, -1);
+    kills.push(
+      sm.kill({ session_id: id, signal: 'SIGKILL' }).then(
+        () => undefined,
+        () => undefined, // 进程正在退出,忽略 kill race。
+      ),
+    );
+  }
+  await Promise.all(kills);
 }

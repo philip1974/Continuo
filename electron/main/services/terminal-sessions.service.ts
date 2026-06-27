@@ -191,9 +191,12 @@ export function getController(id: string): string | null {
 }
 
 export function getAll(filter?: GetAllFilter): readonly MainTerminalSession[] {
-  const snap = snapshot();
-  if (!filter) return snap;
-  return snap.filter((s) => s.ownerWindowId === filter.ownerWindowId);
+  if (!filter) return snapshot();
+  const out: MainTerminalSession[] = [];
+  for (const s of sessions.values()) {
+    if (s.ownerWindowId === filter.ownerWindowId) out.push(s);
+  }
+  return out;
 }
 
 export function remove(id: string): void {

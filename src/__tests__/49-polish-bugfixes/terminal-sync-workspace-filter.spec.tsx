@@ -76,6 +76,21 @@ describe('topic49 codex-loop R12 · terminal 按 workspace 过滤', () => {
     expect(filterByWorkspaceRoot(sessions, null).map((s) => s.id)).toEqual(['g']);
   });
 
+  it('filterByWorkspaceRoot 单次循环构建可见列表,不调用 sessions.filter', () => {
+    const sessions = [session('a', '/proj-a'), session('b', '/proj-b'), session('g')];
+    const filterSpy = vi.spyOn(sessions, 'filter');
+
+    try {
+      expect(filterByWorkspaceRoot(sessions, '/proj-a').map((s) => s.id)).toEqual([
+        'a',
+        'g',
+      ]);
+      expect(filterSpy).not.toHaveBeenCalled();
+    } finally {
+      filterSpy.mockRestore();
+    }
+  });
+
   it('切 workspace 后旧项目 terminal 从 store 隐藏,global 始终可见,切回重现', async () => {
     useWorkspaceStore.setState({ root: '/proj-a' });
     render(React.createElement(TerminalSessionsSync));

@@ -208,9 +208,8 @@ export function revokeAndKillAgentSessions(): RevokeResult {
     rotated = true;
   }
   let killed = 0;
-  // 拍快照再遍历:terminalSessions.remove 会改 Map,getAll 返回的是新数组,
-  // 但保险起见显式拷贝。
-  const snapshot = Array.from(terminalSessions.getAll());
+  // terminalSessions.getAll() 已返回快照数组;remove 改 Map 不影响本轮遍历。
+  const snapshot = terminalSessions.getAll();
   for (const s of snapshot) {
     if (s.originHint !== 'agent') continue;
     terminalSessions.remove(s.id);

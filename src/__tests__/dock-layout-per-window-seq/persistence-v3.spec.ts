@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -212,6 +212,35 @@ describe('explorer.json v3 persistence schema and merge semantics', () => {
     expect(payload.windows.map((w) => w.windowSeq).sort()).toEqual([1]);
     pruneLRUClosed(payload, Infinity, new Set());
     expect(payload.windows.map((w) => w.windowSeq)).toEqual([1]);
+  });
+
+  it('pruneLRUClosed 不对 payload.windows 调 filter 产生中间数组', () => {
+    const payload = defaultExplorerV3();
+    payload.windows = [
+      { ...payload.windows[0]!, lastClosedAt: 500 },
+      {
+        windowSeq: 1,
+        workspace: { root: '/one' },
+        explorer: { activePath: null, expandedPaths: [], sort },
+        lastClosedAt: 100,
+      },
+      {
+        windowSeq: 2,
+        workspace: { root: '/two' },
+        explorer: { activePath: null, expandedPaths: [], sort },
+        lastClosedAt: 300,
+      },
+    ];
+    const filterSpy = vi.spyOn(payload.windows, 'filter');
+
+    try {
+      pruneLRUClosed(payload, 2, new Set());
+
+      expect(filterSpy).not.toHaveBeenCalled();
+      expect(payload.windows.map((w) => w.windowSeq).sort()).toEqual([0, 2]);
+    } finally {
+      filterSpy.mockRestore();
+    }
   });
 
   it('T22: writable snapshot schema rejects renderer attempts to write layout', () => {

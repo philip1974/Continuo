@@ -9,7 +9,11 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { PluginIdentityError, ScopeError } from '../../../src/plugins/types';
+import {
+  PluginIdentityError,
+  ScopeError,
+  type PathScope,
+} from '../../../src/plugins/types';
 import { IdentityRegistry } from '../services/identity-registry.service';
 import {
   PathScopeRegistry,
@@ -192,6 +196,28 @@ describe('PathScopeRegistry', () => {
 
     expect(registry._peek('com.test')).toEqual([{ path: '/tmp/p', mode: 'rw' }]);
     expect(listener).toHaveBeenCalledTimes(2);
+  });
+
+  it('T1.h2 grant merge 不通过 existing.map 分配 pairs 中间数组', () => {
+    const { registry } = makeHarness();
+    registry.grant('com.test', [
+      { path: '/tmp/a', mode: 'r' },
+      { path: '/tmp/b', mode: 'r' },
+    ]);
+    const existing = registry._peek('com.test') as PathScope[];
+    const mapSpy = vi.spyOn(existing, 'map');
+
+    try {
+      registry.grant('com.test', [{ path: '/tmp/b', mode: 'rw' }]);
+
+      expect(mapSpy).not.toHaveBeenCalled();
+      expect(registry._peek('com.test')).toEqual([
+        { path: '/tmp/a', mode: 'r' },
+        { path: '/tmp/b', mode: 'rw' },
+      ]);
+    } finally {
+      mapSpy.mockRestore();
+    }
   });
 
   it('T1.i revokeAll emits scope-updated with empty scopes', () => {

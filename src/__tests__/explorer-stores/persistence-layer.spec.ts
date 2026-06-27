@@ -78,6 +78,21 @@ describe('snapshotFromStores', () => {
     expect(w0.explorer.sort).toEqual({ by: 'size', reverse: false });
   });
 
+  it('snapshot recentRoots 归一化单次遍历,不对 recentRoots 数组 map 出中间数组', () => {
+    const recentRoots = ['/work', '', '   ', '/old'];
+    useWorkspaceStore.setState({ root: '/work', recentRoots });
+    const mapSpy = vi.spyOn(recentRoots, 'map');
+
+    try {
+      const snap = snapshotFromStores();
+
+      expect(mapSpy).not.toHaveBeenCalled();
+      expect(snap.workspace.recentRoots).toEqual(['/work', '/old']);
+    } finally {
+      mapSpy.mockRestore();
+    }
+  });
+
   it('snapshot 不含 search 字段(打磨 R19:search 已从 store 移除)', () => {
     const w0 = snapshotFromStores().windows[0]! as unknown as Record<
       string,
@@ -118,6 +133,24 @@ describe('hydrateStores', () => {
     );
     expect(useExplorerStore.getState().sort).toEqual({ by: 'mtime', reverse: true });
     expect(usePinnedStore.getState().paths).toEqual(['/work/star.md']);
+  });
+
+  it('hydrate recentRoots 归一化单次遍历,不对 snapshot recentRoots 数组 map 出中间数组', () => {
+    const recentRoots = ['/work', '', '   ', '/old'];
+    const mapSpy = vi.spyOn(recentRoots, 'map');
+    const snap: ExplorerSnapshot = {
+      ...fullSnapshot,
+      workspace: { recentRoots },
+    };
+
+    try {
+      hydrateStores(snap);
+
+      expect(mapSpy).not.toHaveBeenCalled();
+      expect(useWorkspaceStore.getState().recentRoots).toEqual(['/work', '/old']);
+    } finally {
+      mapSpy.mockRestore();
+    }
   });
 
 

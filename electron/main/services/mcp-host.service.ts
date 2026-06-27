@@ -302,11 +302,18 @@ export async function dispatchRpc(
   }
 
   if (rpc.method === 'tools/list') {
-    const toolList = Array.from(tools.values()).map((t) => ({
-      name: t.name,
-      description: t.description,
-      inputSchema: t.jsonSchema,
-    }));
+    const toolList: Array<{
+      name: string;
+      description: string;
+      inputSchema: Record<string, unknown>;
+    }> = [];
+    for (const t of tools.values()) {
+      toolList.push({
+        name: t.name,
+        description: t.description,
+        inputSchema: t.jsonSchema,
+      });
+    }
     // 边界(E291,字节预算 fail-fast):聚合 tools/list 超 MAX_TOOLS_LIST_BYTES → 在 formatRpcResult
     // 的 JSON.stringify 物化 MB 级字符串之前返错(下界永不高估,判定与精确字节等价,免 OOM)。
     if (jsonByteLowerBoundExceeds(toolList, MAX_TOOLS_LIST_BYTES)) {

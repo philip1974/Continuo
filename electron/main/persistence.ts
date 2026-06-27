@@ -121,9 +121,11 @@ export function pruneLRUClosed(
   if (!Number.isFinite(maxClosed)) return;
   if (payload.windows.length <= maxClosed) return;
 
-  const closed = payload.windows
-    .filter((w) => !activeSeqs.has(w.windowSeq))
-    .sort((a, b) => (a.lastClosedAt ?? 0) - (b.lastClosedAt ?? 0));
+  const closed: WindowEntryV3[] = [];
+  for (const w of payload.windows) {
+    if (!activeSeqs.has(w.windowSeq)) closed.push(w);
+  }
+  closed.sort((a, b) => (a.lastClosedAt ?? 0) - (b.lastClosedAt ?? 0));
 
   const toRemove = payload.windows.length - maxClosed;
   if (toRemove <= 0) return;
@@ -131,18 +133,22 @@ export function pruneLRUClosed(
   for (let i = 0; i < Math.min(toRemove, closed.length); i++) {
     removeSet.add(closed[i]!.windowSeq);
   }
-  payload.windows = payload.windows.filter(
-    (w) => !removeSet.has(w.windowSeq),
-  );
+  const kept: WindowEntryV3[] = [];
+  for (const w of payload.windows) {
+    if (!removeSet.has(w.windowSeq)) kept.push(w);
+  }
+  payload.windows = kept;
 }
 
 export function mergeWritableIntoFull(
   current: ExplorerPayloadV3 | null,
   writable: ExplorerWritablePayload,
 ): ExplorerPayloadV3 {
-  const writableBySeq = new Map(
-    writable.windows.map((w) => [w.windowSeq, w]),
-  );
+  const writableBySeq = new Map<
+    number,
+    ExplorerWritablePayload['windows'][number]
+  >();
+  for (const w of writable.windows) writableBySeq.set(w.windowSeq, w);
 
   const merged: WindowEntryV3[] = [];
   for (const cur of current?.windows ?? []) {

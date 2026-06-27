@@ -21,6 +21,7 @@
 
 import {
   createTab,
+  type EditorTab,
   useEditorStore,
 } from '@/stores/editor.store';
 import { useExplorerStore, type ExplorerSort } from '@/stores/explorer.store';
@@ -138,6 +139,32 @@ function findWindowEntry(
   return snap.windows.find((w) => w.windowSeq === windowSeq) ?? null;
 }
 
+function collectNormalizedWorkspaceRoots(
+  roots: readonly unknown[],
+): string[] {
+  const out: string[] = [];
+  for (const raw of roots) {
+    const normalized = normalizeWorkspaceRoot(raw);
+    if (normalized !== null) out.push(normalized);
+  }
+  return out;
+}
+
+function collectEditorSnapshot(
+  tabs: readonly EditorTab[],
+  activeTabId: string | null,
+): { openFilePaths: string[]; activePath: string | null } {
+  const openFilePaths: string[] = [];
+  let activePath: string | null = null;
+  for (const tab of tabs) {
+    if (tab.filePath !== null) {
+      openFilePaths.push(tab.filePath);
+      if (tab.id === activeTabId) activePath = tab.filePath;
+    }
+  }
+  return { openFilePaths, activePath };
+}
+
 export function snapshotFromStores(
   /** Phase 2A 默认主窗段;Phase 2B 调用方传当前窗口 windowSeq + 已有段合并写回. */
   prevSnap?: ExplorerSnapshot,
@@ -157,15 +184,12 @@ export function snapshotFromStores(
   const ui = useLayoutUiStore.getState();
   const ed = useEditorStore.getState();
   // 过滤掉 untitled tab(filePath=null)— 没有路径无法恢复
-  const openFilePaths = ed.tabs
-    .map((t) => t.filePath)
-    .filter((p): p is string => p !== null);
-  const activeTab = ed.tabs.find((t) => t.id === ed.activeTabId);
-  const activePath = activeTab?.filePath ?? null;
+  const { openFilePaths, activePath } = collectEditorSnapshot(
+    ed.tabs,
+    ed.activeTabId,
+  );
   const root = normalizeWorkspaceRoot(w.root);
-  const recentRoots = w.recentRoots
-    .map(normalizeWorkspaceRoot)
-    .filter((p): p is string => p !== null);
+  const recentRoots = collectNormalizedWorkspaceRoots(w.recentRoots);
 
   const myEntry: ExplorerWindowEntry = {
     windowSeq: seq,
@@ -209,9 +233,7 @@ export function hydrateStores(
   // 全局共享段
   useWorkspaceStore.setState({
     root: normalizeWorkspaceRoot(entry?.workspace.root ?? null),
-    recentRoots: snap.workspace.recentRoots
-      .map(normalizeWorkspaceRoot)
-      .filter((p): p is string => p !== null),
+    recentRoots: collectNormalizedWorkspaceRoots(snap.workspace.recentRoots),
   });
   usePinnedStore.setState({
     paths: [...snap.pinned.paths],
@@ -486,9 +508,7 @@ function hydrateStoresForNewWindow(
   useWorkspaceStore.setState({
     root: normalizeWorkspaceRoot(initialWorkspace),
     recentRoots: snap
-      ? snap.workspace.recentRoots
-          .map(normalizeWorkspaceRoot)
-          .filter((p): p is string => p !== null)
+      ? collectNormalizedWorkspaceRoots(snap.workspace.recentRoots)
       : [],
   });
   // 主窗段的 sort 拿来当默认(同项目两窗口偏好排序应一致),无则 by:name

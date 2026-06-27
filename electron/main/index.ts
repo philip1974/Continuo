@@ -988,14 +988,16 @@ app.on('before-quit', async (event) => {
   }
   // action === 'run':首次 quit,跑清理。
   event.preventDefault();
-  const wins = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed());
-  await Promise.all(
-    wins.map(async (w) => {
-      if (flushedOnQuit.has(w.id)) return;
-      await requestWindowFlush(w);
-      flushedOnQuit.add(w.id);
-    }),
-  );
+  const flushes: Promise<void>[] = [];
+  for (const w of BrowserWindow.getAllWindows()) {
+    if (w.isDestroyed() || flushedOnQuit.has(w.id)) continue;
+    flushes.push(
+      requestWindowFlush(w).then(() => {
+        flushedOnQuit.add(w.id);
+      }),
+    );
+  }
+  await Promise.all(flushes);
   // force-kill 所有 PTY,防 agent 长任务子进程被孤儿化/zombie。无论是否有窗口要 flush
   // 都必须跑(关最后一个窗口触发的 quit 路径 wins 已空,旧 every() 守卫会跳过它)。
   // 在 app.quit() 前 await:window 'closed' 清理走 3s grace timer,进程退出不触发 SIGKILL。

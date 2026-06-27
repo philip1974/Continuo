@@ -37,7 +37,7 @@ const sessionStore = vi.hoisted(() => ({
 }));
 
 const terminalSessionsMock = vi.hoisted(() => ({
-  getAll: vi.fn(() => sessionStore.list),
+  getAll: vi.fn(() => [...sessionStore.list]),
   remove: vi.fn((id: string) => {
     const index = sessionStore.list.findIndex((s) => s.id === id);
     if (index >= 0) sessionStore.list.splice(index, 1);
@@ -575,6 +575,26 @@ describe('agent-auth-service: revokeAndKillAgentSessions', () => {
     expect(terminalServiceMock.forceKill).toHaveBeenCalledWith('a');
     expect(terminalServiceMock.forceKill).toHaveBeenCalledWith('b');
     expect(sessionStore.list).toEqual([]);
+  });
+
+  it('revoke 直接遍历 terminalSessions.getAll 快照,不再 Array.from 二次复制', () => {
+    terminalServiceMock.has.mockReturnValue(false);
+    sessionStore.list = [
+      makeSession({ id: 'a', originHint: 'agent' }),
+      makeSession({ id: 'b', originHint: 'user' }),
+    ];
+    const arrayFromSpy = vi.spyOn(Array, 'from');
+
+    try {
+      const result = revokeAndKillAgentSessions();
+
+      expect(arrayFromSpy).not.toHaveBeenCalled();
+      expect(result).toEqual({ killed: 1, rotated: false });
+      expect(terminalSessionsMock.remove).toHaveBeenCalledWith('a');
+      expect(terminalSessionsMock.remove).not.toHaveBeenCalledWith('b');
+    } finally {
+      arrayFromSpy.mockRestore();
+    }
   });
 
   it('T13: null mcpHostRef still removes and kills agent sessions without rotating', () => {

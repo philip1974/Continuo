@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   defaultExplorerV3,
@@ -80,5 +80,21 @@ describe('mergeWritableIntoFull current-window-only preservation', () => {
     expect(merged.windows.find((w) => w.windowSeq === 2)).toEqual(
       writablePayload.windows[1],
     );
+  });
+
+  it('mergeWritableIntoFull 不通过 writable.windows.map 构建 Map pairs 中间数组', () => {
+    const current = defaultExplorerV3();
+    const mapSpy = vi.spyOn(writablePayload.windows, 'map');
+
+    try {
+      const merged = mergeWritableIntoFull(current, writablePayload);
+
+      expect(mapSpy).not.toHaveBeenCalled();
+      expect(merged.windows.find((w) => w.windowSeq === 1)).toMatchObject({
+        workspace: { root: '/renderer-one' },
+      });
+    } finally {
+      mapSpy.mockRestore();
+    }
   });
 });

@@ -143,11 +143,16 @@ export function filterByWorkspaceRoot(
   sessions: readonly TerminalSession[],
   currentRoot: string | null,
 ): readonly TerminalSession[] {
-  return sessions.filter(
-    (s) =>
+  const visible: TerminalSession[] = [];
+  for (const s of sessions) {
+    if (
       s.workspaceRoot === undefined ||
-      (currentRoot !== null && pathEquals(s.workspaceRoot, currentRoot)),
-  );
+      (currentRoot !== null && pathEquals(s.workspaceRoot, currentRoot))
+    ) {
+      visible.push(s);
+    }
+  }
+  return visible;
 }
 
 export function getShellFamily(sessionId: string): ShellFamily {

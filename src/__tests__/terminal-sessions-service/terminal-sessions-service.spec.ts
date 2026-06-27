@@ -142,6 +142,28 @@ describe('getAll', () => {
     expect(getAll({ ownerWindowId: 22 }).map((s) => s.id)).toEqual(['b', 'd']);
   });
 
+  it('filter { ownerWindowId } 单次遍历,不先全量 snapshot 再 filter', () => {
+    add(userInput('a', { ownerWindowId: 11 }));
+    add(userInput('b', { ownerWindowId: 22 }));
+    add(userInput('c', { ownerWindowId: 11 }));
+    const filterSpy = vi.spyOn(Array.prototype, 'filter');
+
+    try {
+      const result = getAll({ ownerWindowId: 11 });
+      const filteredSnapshot = filterSpy.mock.instances.some(
+        (inst) =>
+          Array.isArray(inst) &&
+          inst.length === 3 &&
+          inst.every((s) => typeof (s as MainTerminalSession).id === 'string'),
+      );
+
+      expect(filteredSnapshot).toBe(false);
+      expect(result.map((s) => s.id)).toEqual(['a', 'c']);
+    } finally {
+      filterSpy.mockRestore();
+    }
+  });
+
   it('filter 无匹配 → []', () => {
     add(userInput('a', { ownerWindowId: 11 }));
     expect(getAll({ ownerWindowId: 99 })).toEqual([]);

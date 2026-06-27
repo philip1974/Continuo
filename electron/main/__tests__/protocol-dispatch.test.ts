@@ -73,6 +73,25 @@ describe('race(R39) · routeProtocolUrl 先就绪后发送', () => {
     expect(pending).toEqual([]);
   });
 
+  it('窗口分组只扫描一次,不对输入窗口数组 filter 出中间数组', () => {
+    const loadingWin = makeWin({ loading: true });
+    const ready = makeWin({ loading: false });
+    const pending: string[] = [];
+    const windows = [loadingWin, ready];
+    const filterSpy = vi.spyOn(windows, 'filter');
+
+    routeProtocolUrl('co://run/one-pass', {
+      windows,
+      channel: CH,
+      pending,
+    });
+
+    expect(filterSpy).not.toHaveBeenCalled();
+    expect(ready.send).toHaveBeenCalledWith(CH, { url: 'co://run/one-pass' });
+    expect(loadingWin.send).not.toHaveBeenCalled();
+    expect(pending).toEqual([]);
+  });
+
   it('已销毁窗口不计入就绪也不收 send', () => {
     const dead = makeWin({ loading: false, destroyed: true });
     const pending: string[] = [];

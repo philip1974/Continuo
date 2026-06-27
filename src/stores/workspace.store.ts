@@ -4,6 +4,19 @@ import { PATH_STR_MAX } from '../../electron/shared/explorer-persistence-schema'
 
 const RECENT_LIMIT = 5;
 
+function buildRecentRoots(
+  recentRoots: readonly string[],
+  normalized: string,
+): string[] {
+  const next = [normalized];
+  for (const raw of recentRoots) {
+    if (next.length >= RECENT_LIMIT) break;
+    const p = normalizeWorkspaceRoot(raw);
+    if (p !== null && p !== normalized) next.push(p);
+  }
+  return next;
+}
+
 type WorkspaceState = {
   /** 当前 workspace 根目录绝对路径,null 表示未选(EmptyWorkspace 占位). */
   root: string | null;
@@ -58,11 +71,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
     useEditorStore.getState().closeTabsOutsideRoot(normalized);
     set((s) => {
       if (normalized === null) return { root: null };
-      const filtered = s.recentRoots
-        .map(normalizeWorkspaceRoot)
-        .filter((p): p is string => p !== null && p !== normalized);
-      const next = [normalized, ...filtered].slice(0, RECENT_LIMIT);
-      return { root: normalized, recentRoots: next };
+      return {
+        root: normalized,
+        recentRoots: buildRecentRoots(s.recentRoots, normalized),
+      };
     });
   },
 }));
