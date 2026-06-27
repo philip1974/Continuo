@@ -66,6 +66,13 @@ function recordsShallowEqual(
   return aCount === bCount;
 }
 
+function recordIsEmpty(record: Record<string, SettingItemValue>): boolean {
+  for (const key in record) {
+    if (Object.prototype.hasOwnProperty.call(record, key)) return false;
+  }
+  return true;
+}
+
 export interface SettingsValueState {
   /** partial overrides(未写过的 key 走 spec.default). */
   values: Record<string, SettingItemValue>;
@@ -126,6 +133,11 @@ export const useSettingsValuesStore = create<SettingsValueState>((set, get) => (
     set({ values: next });
   },
   resetAll: () => {
+    const latest = readStored();
+    if (recordIsEmpty(latest)) {
+      set((s) => (recordsShallowEqual(s.values, latest) ? s : { values: latest }));
+      return;
+    }
     writeStored({});
     set(() => ({ values: {} }));
   },

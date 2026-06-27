@@ -256,11 +256,12 @@ export function ExplorerHeader({
               {t('panels.explorer.menu.expand_all')}
             </MenuItem>
             {(() => {
-              const recentItems: ReactElement[] = [];
+              const recentItems = new Array<ReactElement>(recentRoots.length);
+              let recentItemCount = 0;
               for (const p of recentRoots) {
                 if (p === root) continue;
                 const { name } = recentRootLabelParts(p);
-                recentItems.push(
+                recentItems[recentItemCount++] = (
                   <MenuItem
                     key={p}
                     title={p}
@@ -274,10 +275,11 @@ export function ExplorerHeader({
                     }}
                   >
                     <span className="truncate">{name}</span>
-                  </MenuItem>,
+                  </MenuItem>
                 );
               }
-              if (recentItems.length === 0) return null;
+              if (recentItemCount === 0) return null;
+              recentItems.length = recentItemCount;
               return (
                 <>
                   {/* a11y(A113):role=menu 内的视觉分隔线须 role="separator"(合法 menu 子结构),

@@ -60,6 +60,13 @@ function recordsShallowEqual(
   return aCount === bCount;
 }
 
+function recordIsEmpty(record: Record<string, string>): boolean {
+  for (const key in record) {
+    if (Object.prototype.hasOwnProperty.call(record, key)) return false;
+  }
+  return true;
+}
+
 export interface KeybindingsState {
   /** key=commandId, value=hotkey 字符串(空 = unbind). */
   overrides: Record<string, string>;
@@ -114,6 +121,13 @@ export const useKeybindingsStore = create<KeybindingsState>((set, get) => ({
     set({ overrides: next });
   },
   resetAll: () => {
+    const latest = readStored();
+    if (recordIsEmpty(latest)) {
+      set((s) =>
+        recordsShallowEqual(s.overrides, latest) ? s : { overrides: latest },
+      );
+      return;
+    }
     writeStored({});
     set(() => ({ overrides: {} }));
   },

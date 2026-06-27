@@ -22,7 +22,7 @@ import { errorMessage } from '../../../electron/shared/error-message';
 interface ContributionRow {
   readonly labelKey: string;
   readonly count: number;
-  readonly samples: readonly string[];
+  readonly samplesText: string;
 }
 
 const EMPTY_PLUGIN_TAB_STRINGS: string[] = [];
@@ -67,6 +67,24 @@ export function collectStatusBarItems<T>(
   return items;
 }
 
+export function formatContributionSamples(samples: readonly string[]): string {
+  if (samples.length === 0) return '—';
+  if (samples.length === 1) return samples[0]!;
+  return samples.join(' · ');
+}
+
+function contributionRow(
+  labelKey: string,
+  count: number,
+  samples: readonly string[],
+): ContributionRow {
+  return {
+    labelKey,
+    count,
+    samplesText: formatContributionSamples(samples),
+  };
+}
+
 function snapshot(): readonly ContributionRow[] {
   // 每个 registry 只取一次快照(打磨 R4):原先 count 与 samples 各调一遍、
   // statusBar 左右各取两遍 → 重复分配/排序。局部快照后 count=.length,
@@ -82,41 +100,41 @@ function snapshot(): readonly ContributionRow[] {
   const explorerDecorators = coApp.explorerDecorators.getAll();
   const editorActions = coApp.editorActions.getAll();
   return [
-    {
-      labelKey: 'plugins_tab.label.panels',
-      count: panels.length,
-      samples: collectContributionSamples(panels, 'type'),
-    },
-    {
-      labelKey: 'plugins_tab.label.commands',
-      count: commands.length,
-      samples: collectContributionSamples(commands, 'id'),
-    },
-    {
-      labelKey: 'plugins_tab.label.statusbar',
-      count: statusItems.length,
-      samples: collectContributionSamples(statusItems, 'id'),
-    },
-    {
-      labelKey: 'plugins_tab.label.ribbon',
-      count: ribbon.length,
-      samples: collectContributionSamples(ribbon, 'id'),
-    },
-    {
-      labelKey: 'plugins_tab.label.setting_tabs',
-      count: settingTabs.length,
-      samples: collectContributionSamples(settingTabs, 'id'),
-    },
-    {
-      labelKey: 'plugins_tab.label.explorer_decorators',
-      count: explorerDecorators.length,
-      samples: EMPTY_CONTRIBUTION_SAMPLES,
-    },
-    {
-      labelKey: 'plugins_tab.label.editor_actions',
-      count: editorActions.length,
-      samples: collectContributionSamples(editorActions, 'id'),
-    },
+    contributionRow(
+      'plugins_tab.label.panels',
+      panels.length,
+      collectContributionSamples(panels, 'type'),
+    ),
+    contributionRow(
+      'plugins_tab.label.commands',
+      commands.length,
+      collectContributionSamples(commands, 'id'),
+    ),
+    contributionRow(
+      'plugins_tab.label.statusbar',
+      statusItems.length,
+      collectContributionSamples(statusItems, 'id'),
+    ),
+    contributionRow(
+      'plugins_tab.label.ribbon',
+      ribbon.length,
+      collectContributionSamples(ribbon, 'id'),
+    ),
+    contributionRow(
+      'plugins_tab.label.setting_tabs',
+      settingTabs.length,
+      collectContributionSamples(settingTabs, 'id'),
+    ),
+    contributionRow(
+      'plugins_tab.label.explorer_decorators',
+      explorerDecorators.length,
+      EMPTY_CONTRIBUTION_SAMPLES,
+    ),
+    contributionRow(
+      'plugins_tab.label.editor_actions',
+      editorActions.length,
+      collectContributionSamples(editorActions, 'id'),
+    ),
   ];
 }
 
@@ -168,7 +186,7 @@ export function PluginsTabContent() {
                 {row.count}
               </div>
               <div className="min-w-0 flex-1 truncate font-mono text-2xs text-fg-dim">
-                {row.samples.length > 0 ? row.samples.join(' · ') : '—'}
+                {row.samplesText}
               </div>
             </div>
           ))}

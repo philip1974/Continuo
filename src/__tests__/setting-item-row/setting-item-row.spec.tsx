@@ -32,6 +32,13 @@ function spec(over: Partial<SettingItemSpec>): SettingItemSpec {
 }
 
 describe('SettingItemRow — 通用', () => {
+  it('reset icon 预创建,不随每个设置项重复创建 svg element', () => {
+    const src = readFileSync(join(process.cwd(), 'src/plugins/settings/SettingItemRow.tsx'), 'utf8');
+
+    expect(src).toContain('const RESET_DEFAULT_ICON = (');
+    expect(src).toContain('{RESET_DEFAULT_ICON}');
+  });
+
   it('渲染 title + id chip + description', () => {
     const { container } = render(
       <SettingItemRow

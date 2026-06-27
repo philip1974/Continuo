@@ -44,6 +44,18 @@ function copyClipboardPaths(paths: readonly string[]): readonly string[] {
   return copied;
 }
 
+function clipboardPathsEqual(
+  a: readonly string[],
+  b: readonly string[],
+): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
 export function pruneClipboardPaths(
   paths: readonly string[],
   removedPaths: readonly string[],
@@ -71,7 +83,12 @@ export const useExplorerClipboardStore = create<ExplorerClipboardState>(
   (set) => ({
     kind: null,
     paths: EMPTY_CLIPBOARD_PATHS,
-    set: (kind, paths) => set({ kind, paths: copyClipboardPaths(paths) }),
+    set: (kind, paths) =>
+      set((s) =>
+        s.kind === kind && clipboardPathsEqual(s.paths, paths)
+          ? s
+          : { kind, paths: copyClipboardPaths(paths) },
+      ),
     clear: () =>
       set((s) =>
         s.kind === null && s.paths.length === 0

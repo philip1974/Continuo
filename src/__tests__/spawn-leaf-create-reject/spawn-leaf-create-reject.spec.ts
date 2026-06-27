@@ -43,6 +43,17 @@ describe('a11y(A129) — spawnLeaf create reject 须清账 + 反馈', () => {
     }
   });
 
+  it('pendingKeys 空态复用稳定空数组,收集结果不通过 push 扩容', () => {
+    const queue = createSpawnQueue(
+      vi.fn(),
+      new Set(),
+      'terminal-panelPendingKeysStableEmpty',
+    );
+
+    expect(queue.pendingKeys()).toBe(queue.pendingKeys());
+    expect(queue.pendingKeys.toString()).not.toContain('keys.push(');
+  });
+
   it('create reject → 派 SET_PTY_FAIL + notify.error + 清 pending', async () => {
     h.create.mockRejectedValue(new Error('ipc down'));
     const dispatch = vi.fn();

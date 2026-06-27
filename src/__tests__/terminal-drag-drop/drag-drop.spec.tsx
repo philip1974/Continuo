@@ -11,6 +11,7 @@ import { useTerminalStore, type TerminalSession } from '@/stores/terminal.store'
 import {
   useTerminalDragDrop,
   hasFiles,
+  boundedTypes,
   MAX_TERMINAL_DROP_FILES,
   MAX_TERMINAL_DROP_CHARS,
 } from '@/panels/Terminal/useTerminalDragDrop';
@@ -353,6 +354,27 @@ describe('hasFiles (E189)', () => {
     });
     expect(hasFiles({ types: proxy } as unknown as DataTransfer)).toBe(false);
     expect(reads).toBe(5000); // 逐索引读(无 Array.from 额外整组拷贝),不含 Files 故读完
+  });
+});
+
+describe('boundedTypes (E189)', () => {
+  it('DEV 调试 types 按上限预分配读取,不通过 push 扩容', () => {
+    const real = Array.from({ length: 5000 }, (_, i) => `t${i}`);
+    let reads = 0;
+    const proxy = new Proxy(real, {
+      get(t, prop, recv) {
+        if (typeof prop === 'string' && /^[0-9]+$/.test(prop)) reads += 1;
+        return Reflect.get(t, prop, recv);
+      },
+    });
+
+    const r = boundedTypes({ types: proxy } as unknown as DataTransfer);
+
+    expect(r).toHaveLength(32);
+    expect(r[0]).toBe('t0');
+    expect(r[31]).toBe('t31');
+    expect(reads).toBe(32);
+    expect(boundedTypes.toString()).not.toContain('.push(');
   });
 });
 
@@ -794,5 +816,19 @@ describe('terminal-drag-drop BDD', () => {
     expect(notifications).toContain(
       `panels.terminal.drag_drop.partial_skip:5`,
     );
+  });
+
+  it('E118 复用共享 captureBoundedFiles 捕获 FileList,不在 Terminal 内重复 push 扩容', () => {
+    const source = useTerminalDragDrop.toString();
+
+    expect(source).toContain('captureBoundedFiles');
+    expect(source).not.toContain('files.push(');
+  });
+
+  it('E118 路径和 quote 截断结果预分配,不通过 push 扩容', () => {
+    const source = useTerminalDragDrop.toString();
+
+    expect(source).not.toContain('paths.push(');
+    expect(source).not.toContain('cappedQuoted.push(');
   });
 });

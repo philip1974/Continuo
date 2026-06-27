@@ -28,6 +28,7 @@ export function ToastViewport(): ReactNode {
   const { notifications, dismiss } = useNotify();
   if (notifications.length === 0) return null;
   const visible = selectVisibleNotifications(notifications);
+  const dismissLabel = t('notifications.dismiss');
   return (
     <div
       // a11y(A113 同族):aria-label 须挂有语义 role 才能形成可导航区域 → role="region"
@@ -38,7 +39,12 @@ export function ToastViewport(): ReactNode {
       aria-label={t('notifications.viewport_label')}
     >
       {visible.map((n) => (
-        <Toast key={n.id} notification={n} onDismiss={dismiss} />
+        <Toast
+          key={n.id}
+          notification={n}
+          onDismiss={dismiss}
+          dismissLabel={dismissLabel}
+        />
       ))}
     </div>
   );

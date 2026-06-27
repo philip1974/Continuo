@@ -75,6 +75,21 @@ describe('renameItem', () => {
 // ────────────────────────────────────────────────────────────
 
 describe('removeItems', () => {
+  it('failures 按 paths.length 预分配收集,不通过 failures.push 扩容', async () => {
+    const fs = makeFs({
+      trash: vi.fn(async () => fail('FS_DENIED', 'no perm')),
+    });
+    const tree = makeTree();
+
+    const r = await removeItems(['/a/x', '/b/y'], {}, { fs }, tree);
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.failures).toHaveLength(2);
+    }
+    expect(removeItems.toString()).not.toContain('failures.push(');
+  });
+
   it('默认 trash: true → 调 fs.trash 而非 fs.remove', async () => {
     const fs = makeFs();
     const tree = makeTree();

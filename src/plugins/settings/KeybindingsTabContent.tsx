@@ -33,6 +33,17 @@ const KEYBINDING_ROW_CLASS_NAME =
   'flex items-center gap-3 px-4 py-3 text-xs';
 const KEYBINDING_ROW_BORDER_CLASS_NAME =
   `${KEYBINDING_ROW_CLASS_NAME} border-t border-line/50`;
+const EDIT_HOTKEY_ICON = (
+  <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.4">
+    <path d="M11.5 1.5l3 3-9 9-3.5.5.5-3.5z" />
+  </svg>
+);
+const RESET_HOTKEY_ICON = (
+  <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 8a5 5 0 0 1 8.5-3.5L13 6" />
+    <path d="M13 3v3h-3" />
+  </svg>
+);
 
 function useCommands(registry: CommandRegistry): readonly CommandSpec[] {
   return useRegistry(registry);
@@ -103,7 +114,18 @@ export function groupByCategory(
       break;
     }
   }
-  if (allSameCategory && isSortedByDisplayTitle(commands)) {
+  if (allSameCategory) {
+    if (!isSortedByDisplayTitle(commands)) {
+      const items = new Array<DisplayCommand>(commands.length);
+      for (let i = 0; i < commands.length; i++) items[i] = commands[i]!;
+      items.sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));
+      return [
+        {
+          category: firstCategory,
+          items,
+        },
+      ];
+    }
     return [
       {
         category: firstCategory,
@@ -388,9 +410,7 @@ export function KeybindingsTabContent() {
                         })}
                         onClick={() => setEditing(cmd)}
                       >
-                        <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.4">
-                          <path d="M11.5 1.5l3 3-9 9-3.5.5.5-3.5z" />
-                        </svg>
+                        {EDIT_HOTKEY_ICON}
                       </IconButton>
                       <IconButton
                         size="xs"
@@ -405,10 +425,7 @@ export function KeybindingsTabContent() {
                           isOverridden ? '' : 'pointer-events-none invisible'
                         }
                       >
-                        <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M3 8a5 5 0 0 1 8.5-3.5L13 6" />
-                          <path d="M13 3v3h-3" />
-                        </svg>
+                        {RESET_HOTKEY_ICON}
                       </IconButton>
                     </li>
                   );

@@ -58,6 +58,23 @@ describe('allSettledWithConcurrency', () => {
     }
   });
 
+  it('多项串行 limit=1 直接 await 单 worker,不走 Promise.all 单元素数组', async () => {
+    const allSpy = vi.spyOn(Promise, 'all');
+
+    try {
+      await expect(
+        allSettledWithConcurrency([1, 2, 3], 1, async (n) => n * 10),
+      ).resolves.toEqual([
+        { status: 'fulfilled', value: 10 },
+        { status: 'fulfilled', value: 20 },
+        { status: 'fulfilled', value: 30 },
+      ]);
+      expect(allSpy).not.toHaveBeenCalled();
+    } finally {
+      allSpy.mockRestore();
+    }
+  });
+
   it('峰值在途 ≤ limit', async () => {
     let inFlight = 0;
     let peak = 0;

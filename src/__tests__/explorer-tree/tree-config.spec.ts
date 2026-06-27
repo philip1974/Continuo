@@ -149,6 +149,16 @@ describe('createDataLoader · getChildrenWithData', () => {
     }
   });
 
+  it('FileEntry[] 包装为 tree children 时预分配数组,不通过 push 扩容', () => {
+    const entries = [entry('/work/sub', true), entry('/work/a.md')];
+
+    expect(buildTreeChildrenWithData(entries)).toEqual([
+      { id: '/work/sub', data: entries[0] },
+      { id: '/work/a.md', data: entries[1] },
+    ]);
+    expect(buildTreeChildrenWithData.toString()).not.toContain('.push(');
+  });
+
   it('空 FileEntry[] 包装为稳定空 children', () => {
     expect(buildTreeChildrenWithData([])).toEqual([]);
     expect(buildTreeChildrenWithData([])).toBe(buildTreeChildrenWithData([]));

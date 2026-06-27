@@ -199,22 +199,25 @@ export function EditorHeader({ onCloseRequest }: EditorHeaderProps) {
         className="min-w-0 flex-1 overflow-x-auto"
         ariaLabel={t('shell.tab.editor_tablist')}
       >
-        {tabsChrome.map((tab) => (
-          <TabNavItem
-            key={tab.id}
-            active={tab.id === activeTabId}
-            dirty={tab.dirty}
-            // a11y(A35):未保存状态文本传给 design TabNavItem(design 层无 i18n),AT 聚焦读出。
-            dirtyLabel={t('panels.editor.unsaved_indicator')}
-            // a11y(A106):icon-only 关闭按钮可访问名本地化(design 层无 i18n,调用点注入)。
-            closeLabel={t('shell.tab.close', { title: basename(tab.filePath) })}
-            title={tab.filePath ?? t('panels.editor.unsaved_draft')}
-            onSelect={() => switchTab(tab.id)}
-            onClose={() => onCloseRequest(tab)}
-          >
-            {basename(tab.filePath)}
-          </TabNavItem>
-        ))}
+        {tabsChrome.map((tab) => {
+          const tabTitle = basename(tab.filePath);
+          return (
+            <TabNavItem
+              key={tab.id}
+              active={tab.id === activeTabId}
+              dirty={tab.dirty}
+              // a11y(A35):未保存状态文本传给 design TabNavItem(design 层无 i18n),AT 聚焦读出。
+              dirtyLabel={t('panels.editor.unsaved_indicator')}
+              // a11y(A106):icon-only 关闭按钮可访问名本地化(design 层无 i18n,调用点注入)。
+              closeLabel={t('shell.tab.close', { title: tabTitle })}
+              title={tab.filePath ?? t('panels.editor.unsaved_draft')}
+              onSelect={() => switchTab(tab.id)}
+              onClose={() => onCloseRequest(tab)}
+            >
+              {tabTitle}
+            </TabNavItem>
+          );
+        })}
       </TabNav>
 
       {/* empty:hidden — 当无可见插件 action 时,本 div 的 children 全是 falsy

@@ -48,6 +48,7 @@ interface CreatingState {
 
 const EMPTY_SELECTED_PATHS: ReadonlySet<string> = new Set();
 const EMPTY_EXPANDED_ITEMS: readonly string[] = [];
+const EMPTY_PATH_LIST: string[] = [];
 
 // 跨平台(codex 复查 P2):复用单一来源 path-cross.isSameOrInsidePath —— 此前手写
 // startsWith 对 Windows 大小写敏感,持久化的 expandedPaths(`C:\Repo\src`)与 root
@@ -94,20 +95,25 @@ export function selectRootDropMoveablePaths(
   draggedItems: readonly Pick<ItemInstance<FileEntry>, 'getId'>[],
   root: string,
 ): string[] {
-  const moveable: string[] = [];
+  if (draggedItems.length === 0) return EMPTY_PATH_LIST;
+  const moveable = new Array<string>(draggedItems.length);
+  let count = 0;
   for (const item of draggedItems) {
     const src = item.getId();
-    if (dirname(src) !== root) moveable.push(src);
+    if (dirname(src) !== root) moveable[count++] = src;
   }
+  if (count === 0) return EMPTY_PATH_LIST;
+  moveable.length = count;
   return moveable;
 }
 
 export function selectDraggedItemPaths(
   draggedItems: readonly Pick<ItemInstance<FileEntry>, 'getId'>[],
 ): string[] {
-  const paths: string[] = [];
-  for (const item of draggedItems) {
-    paths.push(item.getId());
+  if (draggedItems.length === 0) return EMPTY_PATH_LIST;
+  const paths = new Array<string>(draggedItems.length);
+  for (let i = 0; i < draggedItems.length; i++) {
+    paths[i] = draggedItems[i]!.getId();
   }
   return paths;
 }

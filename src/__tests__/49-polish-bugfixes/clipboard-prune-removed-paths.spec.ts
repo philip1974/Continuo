@@ -44,6 +44,25 @@ describe('49 第八 session · clipboard prune 剪除失效源路径', () => {
     expect(useExplorerClipboardStore.getState().paths).toEqual(['/ws/a.ts']);
   });
 
+  it('set 相同 kind 和相同路径内容时 no-op,不复制 paths 且不通知订阅者', () => {
+    const paths = ['/ws/a.ts', '/ws/b.ts'];
+    useExplorerClipboardStore.getState().set('copy', paths);
+    const stored = useExplorerClipboardStore.getState().paths;
+    const listener = vi.fn();
+    const unsubscribe = useExplorerClipboardStore.subscribe(listener);
+
+    try {
+      useExplorerClipboardStore
+        .getState()
+        .set('copy', ['/ws/a.ts', '/ws/b.ts']);
+
+      expect(useExplorerClipboardStore.getState().paths).toBe(stored);
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
+  });
+
   it('pruneClipboardPaths 按需分配,不通过 filter/some 重建列表', () => {
     const paths = ['/ws/keep-a.ts', '/ws/remove/a.ts', '/ws/keep-b.ts'];
     const filterSpy = vi.spyOn(Array.prototype, 'filter');

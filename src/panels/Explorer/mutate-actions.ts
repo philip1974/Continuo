@@ -63,7 +63,8 @@ export async function removeItems(
   if (paths.length === 0) return { ok: true };
 
   const useTrash = opts.trash ?? true;
-  const failures: RemoveFailure[] = [];
+  const failures = new Array<RemoveFailure>(paths.length);
+  let failureCount = 0;
   const successParents = new Set<string>();
 
   for (const p of paths) {
@@ -76,11 +77,19 @@ export async function removeItems(
       r = useTrash ? await deps.fs.trash(p) : await deps.fs.remove(p);
     } catch (err) {
       const code = (err as { code?: string })?.code ?? 'EXCEPTION';
-      failures.push({ path: p, code, message: (err as Error)?.message ?? String(err) });
+      failures[failureCount++] = {
+        path: p,
+        code,
+        message: (err as Error)?.message ?? String(err),
+      };
       continue;
     }
     if (!r.ok) {
-      failures.push({ path: p, code: r.code, message: r.message });
+      failures[failureCount++] = {
+        path: p,
+        code: r.code,
+        message: r.message,
+      };
     } else {
       successParents.add(dirname(p));
     }
@@ -90,7 +99,9 @@ export async function removeItems(
     tree.invalidateChildrenIds(parent);
   }
 
-  return failures.length === 0 ? { ok: true } : { ok: false, failures };
+  if (failureCount === 0) return { ok: true };
+  failures.length = failureCount;
+  return { ok: false, failures };
 }
 
 // ────────────────────────────────────────────────────────────

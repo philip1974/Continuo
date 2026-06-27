@@ -1,4 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { resolveLink } from '../../panels/Editor/link-resolve';
 
 describe('resolveLink — external scheme', () => {
@@ -63,6 +65,18 @@ describe('resolveLink — file 路径', () => {
     } finally {
       splitSpy.mockRestore();
     }
+  });
+
+  it('本地路径 normalize 预分配路径段数组,不通过 segs.push 扩容', () => {
+    expect(resolveLink('./d/./e/../f.md', '/work/cur.md')).toEqual({
+      kind: 'file',
+      absPath: '/work/d/f.md',
+    });
+    const source = readFileSync(
+      path.join(process.cwd(), 'src/panels/Editor/link-resolve.ts'),
+      'utf-8',
+    );
+    expect(source).not.toContain('segs.push(');
   });
 
   it('绝对路径 / 开头 → file,直接用', () => {

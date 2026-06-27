@@ -546,6 +546,15 @@ describe('ExplorerHeader — ⋯ 菜单', () => {
 });
 
 describe('ExplorerHeader — 最近打开列表', () => {
+  it('recent menu items 预分配收集,不通过 recentItems.push 扩容', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/panels/Explorer/ExplorerHeader.tsx'),
+      'utf-8',
+    );
+
+    expect(src).not.toContain('recentItems.push(');
+  });
+
   it('recentOthers 空(只有当前)→ 不渲染「打开最近」', () => {
     useWorkspaceStore.setState({ root: '/proj', recentRoots: ['/proj'] });
     installFs(vi.fn());

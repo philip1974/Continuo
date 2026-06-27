@@ -44,6 +44,13 @@ describe('EditorWelcome', () => {
     expect(src).not.toContain("formatHotkeyParts('mod+s', detectPlatform()).map");
   });
 
+  it('装饰 document icon 预创建,不随 render 重建 svg element', () => {
+    const src = readFileSync(join(process.cwd(), 'src/panels/Editor/EditorWelcome.tsx'), 'utf8');
+
+    expect(src).toContain('const DOCUMENT_ICON = (');
+    expect(src).toContain('{DOCUMENT_ICON}');
+  });
+
   it('非 mac 平台:保存提示渲染 Ctrl+S(不含 ⌘,跨平台审计 P2)', () => {
     const orig = Object.getOwnPropertyDescriptor(navigator, 'platform');
     Object.defineProperty(navigator, 'platform', {

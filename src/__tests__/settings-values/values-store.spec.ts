@@ -216,6 +216,26 @@ describe('settings values-store', () => {
     );
   });
 
+  it('resetAll 空表且内存已同步时不通知订阅者且不重复写 localStorage', () => {
+    globalThis.localStorage.setItem('continuo.settings.values', '{}');
+    const values = {};
+    useSettingsValuesStore.setState({ values });
+    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
+    const listener = vi.fn();
+    const unsubscribe = useSettingsValuesStore.subscribe(listener);
+
+    try {
+      useSettingsValuesStore.getState().resetAll();
+
+      expect(useSettingsValuesStore.getState().values).toBe(values);
+      expect(setItemSpy).not.toHaveBeenCalled();
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+      setItemSpy.mockRestore();
+    }
+  });
+
   // race(R6):多窗口 lost update —— 窗口 B 基于陈旧内存快照改自己的 key,不得整表覆盖掉
   // 窗口 A 刚写进 localStorage 的另一个 key。setValue 须基于 live localStorage merge。
   it('R6 setValue 基于 live localStorage merge:不丢别窗已写的 key', () => {

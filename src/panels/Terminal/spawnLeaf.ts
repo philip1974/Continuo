@@ -62,6 +62,7 @@ interface ModulePendingEntry {
 
 const modulePending = new Map<string, ModulePendingEntry>();
 const moduleDispatches = new Map<string, PanelDispatch>();
+const EMPTY_PENDING_KEYS: string[] = [];
 
 function moduleKey(panelId: string, tabId: string, leafId: string): string {
   return `${panelId}:${tabId}:${leafId}`;
@@ -127,12 +128,18 @@ export function createSpawnQueue(
     },
     pendingKeys: () => {
       const prefix = `${panelId}:`;
-      const keys: string[] = [];
+      let keys: string[] | null = null;
+      let keyCount = 0;
       for (const key of modulePending.keys()) {
         if (key.startsWith(prefix)) {
-          keys.push(key);
+          if (!keys) {
+            keys = new Array<string>(modulePending.size);
+          }
+          keys[keyCount++] = key;
         }
       }
+      if (!keys) return EMPTY_PENDING_KEYS;
+      keys.length = keyCount;
       return keys;
     },
   };

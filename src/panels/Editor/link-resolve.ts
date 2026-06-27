@@ -75,7 +75,8 @@ function normalize(p: string): string {
     rest = p.slice(1);
   }
   const sep = root.includes('\\') ? '\\' : '/';
-  const segs: string[] = [];
+  const segs = new Array<string>(rest.length);
+  let segCount = 0;
   let start = 0;
   for (;;) {
     const slash = rest.indexOf('/', start);
@@ -87,14 +88,15 @@ function normalize(p: string): string {
     if (end > start) {
       const seg = rest.slice(start, end);
       if (seg === '..') {
-        if (segs.length > 0) segs.pop();
+        if (segCount > 0) segCount -= 1;
       } else if (seg !== '.') {
-        segs.push(seg);
+        segs[segCount++] = seg;
       }
     }
     if (end >= rest.length) break;
     start = end + 1;
   }
+  segs.length = segCount;
   return root + segs.join(sep);
 }
 

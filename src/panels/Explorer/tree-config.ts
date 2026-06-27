@@ -67,9 +67,10 @@ export function buildTreeChildrenWithData(
   entries: readonly FileEntry[],
 ): FileTreeChild[] {
   if (entries.length === 0) return EMPTY_TREE_CHILDREN;
-  const out: FileTreeChild[] = [];
-  for (const entry of entries) {
-    out.push({ id: entry.path, data: entry });
+  const out = new Array<FileTreeChild>(entries.length);
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i]!;
+    out[i] = { id: entry.path, data: entry };
   }
   return out;
 }

@@ -57,6 +57,9 @@ export interface PartitionResult {
   skippedDirs: string[];
 }
 
+const EMPTY_DROP_FILES: File[] = [];
+const EMPTY_SKIPPED_DIRS: string[] = [];
+
 /**
  * 把 DataTransferItemList 拆成 file / 目录(skip)。
  * 文件夹拖入复杂(需 webkitGetAsEntry 递归),MVP 不支持;
@@ -65,14 +68,19 @@ export interface PartitionResult {
 export function partitionDropItems(
   items: DataTransferItemList | null,
 ): PartitionResult {
-  const files: File[] = [];
-  const skippedDirs: string[] = [];
-  if (!items) return { files, skippedDirs };
+  if (!items) {
+    return { files: EMPTY_DROP_FILES, skippedDirs: EMPTY_SKIPPED_DIRS };
+  }
+
+  let files: File[] | null = null;
+  let fileCount = 0;
+  let skippedDirs: string[] | null = null;
+  let skippedDirCount = 0;
 
   // 边界(E115):总扫描上限 i < MAX_DROP_SCAN_ITEMS;另多收 1 个 File(> MAX_DROP_FILE_COUNT)
   // 即停 —— 让下游 performDrop 的 MAX_DROP_FILE_COUNT 检测仍能反馈 "too many",无需新增返回字段。
   for (let i = 0; i < items.length && i < MAX_DROP_SCAN_ITEMS; i++) {
-    if (files.length > MAX_DROP_FILE_COUNT) break;
+    if (fileCount > MAX_DROP_FILE_COUNT) break;
     const item = items[i];
     if (!item || item.kind !== 'file') continue;
 
@@ -80,14 +88,36 @@ export function partitionDropItems(
       webkitGetAsEntry?: () => { isDirectory: boolean; name: string } | null;
     }).webkitGetAsEntry?.();
     if (entry?.isDirectory) {
-      skippedDirs.push(entry.name);
+      if (!skippedDirs) {
+        skippedDirs = new Array<string>(
+          Math.min(items.length, MAX_DROP_SCAN_ITEMS),
+        );
+      }
+      skippedDirs[skippedDirCount++] = entry.name;
       continue;
     }
 
     const f = item.getAsFile();
-    if (f) files.push(f);
+    if (f) {
+      if (!files) {
+        files = new Array<File>(
+          Math.min(items.length, MAX_DROP_FILE_COUNT + 1),
+        );
+      }
+      files[fileCount++] = f;
+    }
   }
-  return { files, skippedDirs };
+
+  if (files) {
+    files.length = fileCount;
+  }
+  if (skippedDirs) {
+    skippedDirs.length = skippedDirCount;
+  }
+  return {
+    files: files ?? EMPTY_DROP_FILES,
+    skippedDirs: skippedDirs ?? EMPTY_SKIPPED_DIRS,
+  };
 }
 
 // 边界(E41,E13 读侧对偶):performDrop 此前直接 `await file.arrayBuffer()` 把整个拖入文件读进
@@ -104,15 +134,26 @@ export async function performDrop(
   targetDir: string,
   fs: DropFsApi,
 ): Promise<DropResult> {
-  const written: string[] = [];
-  const failed: { name: string; code: string; message: string }[] = [];
+  const written = new Array<string>(files.length);
+  const failed = new Array<{ name: string; code: string; message: string }>(
+    files.length,
+  );
+  let writtenCount = 0;
+  let failedCount = 0;
   let totalBytes = 0;
   let accepted = 0;
+  const recordFailure = (failure: {
+    name: string;
+    code: string;
+    message: string;
+  }) => {
+    failed[failedCount++] = failure;
+  };
 
   for (const file of files) {
     // 边界(E41):数量上限 —— 超出的项不读不写,归 failed(message 兜底展示)。
     if (accepted >= MAX_DROP_FILE_COUNT) {
-      failed.push({
+      recordFailure({
         name: file.name,
         code: 'DROP_TOO_MANY_FILES',
         message: `too many files in one drop (> ${MAX_DROP_FILE_COUNT})`,
@@ -123,7 +164,7 @@ export async function performDrop(
     // 穿越(写入子/父路径而非目标目录)或超长路径跨 IPC 放大。读 arrayBuffer / 拼 targetPath 前校验 leaf;
     // 非法直接归 failed(name 截断到 FS_NAME_MAX 防 failed 列表放大),与 main assertValidBasename 同源。
     if (!isValidLeafName(file.name)) {
-      failed.push({
+      recordFailure({
         name:
           typeof file.name === 'string'
             ? file.name.slice(0, FS_NAME_MAX)
@@ -135,7 +176,7 @@ export async function performDrop(
     }
     // 边界(E41):单文件大小预检(读前 file.size,超限不 arrayBuffer)。FS_FILE_TOO_LARGE 已 i18n。
     if (file.size > MAX_DROP_FILE_BYTES) {
-      failed.push({
+      recordFailure({
         name: file.name,
         code: 'FS_FILE_TOO_LARGE',
         message: `file too large (${file.size} > ${MAX_DROP_FILE_BYTES})`,
@@ -144,7 +185,7 @@ export async function performDrop(
     }
     // 边界(E41):累计总字节上限 —— 防海量中等文件求和成巨大 renderer 内存。
     if (totalBytes + file.size > MAX_DROP_TOTAL_BYTES) {
-      failed.push({
+      recordFailure({
         name: file.name,
         code: 'DROP_TOTAL_TOO_LARGE',
         message: `drop total size exceeds limit (${MAX_DROP_TOTAL_BYTES} bytes)`,
@@ -158,7 +199,7 @@ export async function performDrop(
     try {
       bytes = new Uint8Array(await file.arrayBuffer());
     } catch (err) {
-      failed.push({
+      recordFailure({
         name: file.name,
         code: 'READ_ERROR',
         message: errorMessage(err),
@@ -174,7 +215,7 @@ export async function performDrop(
     try {
       r = await fs.writeBinary(targetPath, bytes);
     } catch (err) {
-      failed.push({
+      recordFailure({
         name: file.name,
         code: 'WRITE_ERROR',
         message: errorMessage(err),
@@ -182,14 +223,16 @@ export async function performDrop(
       continue;
     }
     if (r.ok) {
-      written.push(targetPath);
+      written[writtenCount++] = targetPath;
     } else {
-      failed.push({ name: file.name, code: r.code, message: r.message });
+      recordFailure({ name: file.name, code: r.code, message: r.message });
     }
   }
+  written.length = writtenCount;
+  failed.length = failedCount;
 
   return {
-    ok: failed.length === 0,
+    ok: failedCount === 0,
     written,
     skipped: [],
     failed,

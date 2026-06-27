@@ -66,6 +66,16 @@ describe('打磨 R13 — 插件菜单 when 延迟到打开', () => {
     }
   });
 
+  it('多选 action targets 预分配数组,不通过 push 扩容', () => {
+    const selectedPaths = new Set(['/work/a.ts', '/work/b.ts']);
+
+    expect(getContextActionTargets(target, selectedPaths)).toEqual([
+      '/work/a.ts',
+      '/work/b.ts',
+    ]);
+    expect(getContextActionTargets.toString()).not.toContain('.push(');
+  });
+
   it('空白右键 action targets 复用稳定空数组', () => {
     const selectedPaths = new Set(['/work/a.ts']);
 
@@ -92,6 +102,25 @@ describe('打磨 R13 — 插件菜单 when 延迟到打开', () => {
     } finally {
       arrayFromSpy.mockRestore();
     }
+  });
+
+  it('插件菜单多组分桶预分配,不通过 push 扩容', () => {
+    const items: ExplorerContextMenuItemSpec[] = [
+      { id: 'late-a', label: 'Late A', group: 'z', fn: vi.fn() },
+      { id: 'early', label: 'Early', group: 'navigation', fn: vi.fn() },
+      { id: 'late-b', label: 'Late B', group: 'z', fn: vi.fn() },
+    ];
+
+    const buckets = groupPluginItems(items, {
+      target,
+      selectedPaths: new Set(['/work/a.ts']),
+      rootPath: '/work',
+    });
+
+    expect(buckets.map((bucket) => bucket.group)).toEqual(['navigation', 'z']);
+    expect(buckets[0]?.items).toEqual([items[1]]);
+    expect(buckets[1]?.items).toEqual([items[0], items[2]]);
+    expect(groupPluginItems.toString()).not.toContain('.push(');
   });
 
   it('无可见插件项分组复用稳定空桶', () => {

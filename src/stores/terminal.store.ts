@@ -195,13 +195,19 @@ export function filterByWorkspaceRoot(
 }
 
 let indexedSessionsRef: readonly TerminalSession[] | null = null;
-let indexedSessionsById = new Map<string, TerminalSession>();
+const EMPTY_TERMINAL_SESSION_INDEX = new Map<string, TerminalSession>();
+let indexedSessionsById = EMPTY_TERMINAL_SESSION_INDEX;
 
 export function getIndexedTerminalSessionById(
   sessions: readonly TerminalSession[],
   sessionId: string,
 ): TerminalSession | undefined {
   if (indexedSessionsRef !== sessions) {
+    if (sessions.length === 0) {
+      indexedSessionsRef = sessions;
+      indexedSessionsById = EMPTY_TERMINAL_SESSION_INDEX;
+      return undefined;
+    }
     const next = new Map<string, TerminalSession>();
     for (const session of sessions) next.set(session.id, session);
     indexedSessionsRef = sessions;

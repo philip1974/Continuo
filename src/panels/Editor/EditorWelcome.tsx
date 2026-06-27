@@ -9,6 +9,25 @@ import {
   detectPlatform,
 } from '@/plugins/command-palette/format-hotkey';
 
+const DOCUMENT_ICON = (
+  <svg
+    viewBox="0 0 24 24"
+    width="48"
+    height="48"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.4"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className="text-fg-dim"
+  >
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+    <path d="M14 2v6h6" />
+    <path d="M9 13h6" />
+    <path d="M9 17h6" />
+  </svg>
+);
+
 export function EditorWelcome() {
   const t = useT();
   const saveHotkeyParts = useMemo(
@@ -21,22 +40,7 @@ export function EditorWelcome() {
         aria-hidden="true"
         className="flex h-28 w-28 items-center justify-center rounded-full border border-line bg-panel-soft/40"
       >
-        <svg
-          viewBox="0 0 24 24"
-          width="48"
-          height="48"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.4"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="text-fg-dim"
-        >
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-          <path d="M14 2v6h6" />
-          <path d="M9 13h6" />
-          <path d="M9 17h6" />
-        </svg>
+        {DOCUMENT_ICON}
       </div>
       <div className="text-base font-medium text-fg">{t('editor.welcome.title')}</div>
       <div className="flex items-center gap-1.5 text-xs text-fg-muted">

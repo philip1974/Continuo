@@ -37,6 +37,22 @@ const SETTING_TOGGLE_KNOB_ON_CLASS_NAME =
 const SETTING_TOGGLE_KNOB_OFF_CLASS_NAME =
   `${SETTING_TOGGLE_KNOB_BASE_CLASS_NAME} translate-x-1 bg-fg-muted`;
 const EMPTY_SETTING_SELECT_OPTIONS: readonly SegmentedControlOption<string>[] = [];
+const RESET_DEFAULT_ICON = (
+  <svg
+    viewBox="0 0 16 16"
+    width="12"
+    height="12"
+    aria-hidden="true"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.4"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M3 8a5 5 0 0 1 8.5-3.5L13 6" />
+    <path d="M13 3v3h-3" />
+  </svg>
+);
 
 export function settingToggleSwitchClassName(checked: boolean): string {
   return checked
@@ -190,20 +206,7 @@ export function SettingItemRow({
           aria-label={t('settings.item.reset_default_aria')}
           className={isOverridden ? '' : 'pointer-events-none invisible'}
         >
-          <svg
-            viewBox="0 0 16 16"
-            width="12"
-            height="12"
-            aria-hidden="true"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.4"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M3 8a5 5 0 0 1 8.5-3.5L13 6" />
-            <path d="M13 3v3h-3" />
-          </svg>
+          {RESET_DEFAULT_ICON}
         </IconButton>
       </div>
     </div>

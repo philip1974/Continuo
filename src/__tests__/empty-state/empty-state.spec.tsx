@@ -1,11 +1,20 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fireEvent, render, cleanup, act } from '@testing-library/react';
 import { EmptyState } from '../../shell/dock/EmptyState';
 
 afterEach(() => cleanup());
 
 describe('EmptyState', () => {
+  it('装饰 empty icon 预创建,不随 render 重建 svg element', () => {
+    const src = readFileSync(join(process.cwd(), 'src/shell/dock/EmptyState.tsx'), 'utf8');
+
+    expect(src).toContain('const EMPTY_DOCK_ICON = (');
+    expect(src).toContain('{EMPTY_DOCK_ICON}');
+  });
+
   it('渲染 data-testid + 文案 + 按钮', () => {
     const { container } = render(<EmptyState onRestore={vi.fn()} />);
     expect(container.querySelector('[data-testid=empty-state]')).not.toBeNull();

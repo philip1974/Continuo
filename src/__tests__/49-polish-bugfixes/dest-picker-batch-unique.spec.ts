@@ -134,6 +134,13 @@ describe('打磨 — FolderTree root-drop 可移动路径选择', () => {
     }
   });
 
+  it('selectDraggedItemPaths 按输入长度预分配,不通过 push 扩容', () => {
+    const items = [dragged('/repo/a.ts'), dragged('/repo/b.ts')];
+
+    expect(selectDraggedItemPaths(items)).toEqual(['/repo/a.ts', '/repo/b.ts']);
+    expect(selectDraggedItemPaths.toString()).not.toContain('.push(');
+  });
+
   it('单趟从 draggedItems 取可移动路径,不先 map 再 filter', () => {
     const items = [
       dragged('/repo/a.ts'),
@@ -154,6 +161,15 @@ describe('打磨 — FolderTree root-drop 可移动路径选择', () => {
       mapSpy.mockRestore();
       filterSpy.mockRestore();
     }
+  });
+
+  it('root-drop 无可移动路径时复用稳定空数组,且不通过 push 扩容', () => {
+    const items = [dragged('/repo/a.ts'), dragged('/repo/b.ts')];
+    const first = selectRootDropMoveablePaths(items, '/repo');
+
+    expect(first).toEqual([]);
+    expect(selectRootDropMoveablePaths(items, '/repo')).toBe(first);
+    expect(selectRootDropMoveablePaths.toString()).not.toContain('.push(');
   });
 
   it('root-drop 调用点直接用 selector,不先 draggedItems.slice() 复制快照', () => {

@@ -15,6 +15,7 @@ type SettingsStoreModule = {
       readonly setLocale: (locale: Locale) => Promise<void>;
     };
     readonly setState: (patch: { locale: Locale; currentGen: number }) => void;
+    readonly subscribe: (listener: () => void) => () => void;
   };
   readonly subscribeToI18nBroadcast: () => void;
   readonly _resetSettingsStoreForTest: () => void;
@@ -68,6 +69,27 @@ describe('settings.store + coApi.i18n roundtrip', () => {
     expect(mockCoApi.i18n.setLocale).toHaveBeenCalledWith('zh');
     expect(useSettingsStore.getState().locale).toBe('zh');
     expect(useSettingsStore.getState().currentGen).toBe(1);
+  });
+
+  it('setLocale 返回相同 locale/gen 时不通知订阅者', async () => {
+    mockCoApi.i18n.setLocale.mockResolvedValue({
+      ok: true,
+      data: { ok: true, locale: 'en', gen: 3 },
+    });
+    const { useSettingsStore } = await importStore();
+    useSettingsStore.setState({ locale: 'en', currentGen: 3 });
+    const listener = vi.fn();
+    const unsubscribe = useSettingsStore.subscribe(listener);
+
+    try {
+      await useSettingsStore.getState().setLocale('en');
+
+      expect(listener).not.toHaveBeenCalled();
+      expect(useSettingsStore.getState().locale).toBe('en');
+      expect(useSettingsStore.getState().currentGen).toBe(3);
+    } finally {
+      unsubscribe();
+    }
   });
 
   it('subscribeToI18nBroadcast() 挂载后 onChange broadcast 同步 state', async () => {

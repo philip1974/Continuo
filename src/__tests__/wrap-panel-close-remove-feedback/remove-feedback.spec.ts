@@ -130,6 +130,24 @@ describe('race(R44) — EXIT 动画窗口内复活面板不删 PTY/session', () 
     }
   });
 
+  it('R80 original close 抛错时清理 suppressed 标记(无泄漏)', () => {
+    vi.useFakeTimers();
+    try {
+      h.remove.mockResolvedValue({ ok: true });
+      const panel = makeTermPanel('s8');
+      panel.api.close.mockImplementation(() => {
+        throw new Error('panel already detached');
+      });
+      wrapPanelClose(panel as never);
+      panel.api.close();
+      vi.advanceTimersByTime(EXIT_DURATION_MS + 10);
+
+      expect(consumePanelCloseSuppressed('terminal-s8')).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('close 后不取消 → timer 到点才删 PTY + 真 close(对照)', () => {
     vi.useFakeTimers();
     try {

@@ -83,9 +83,10 @@ export function getContextActionTargets(
 ): string[] {
   if (target === null) return EMPTY_CONTEXT_ACTION_TARGETS;
   if (selectedPaths.has(target.path) && selectedPaths.size > 1) {
-    const paths: string[] = [];
+    const paths = new Array<string>(selectedPaths.size);
+    let i = 0;
     for (const path of selectedPaths) {
-      paths.push(path);
+      paths[i++] = path;
     }
     return paths;
   }
@@ -114,19 +115,27 @@ export function groupPluginItems(
   if (allSameGroup) {
     return [{ group: firstGroup, items: visible }];
   }
-  const map = new Map<string, ExplorerContextMenuItemSpec[]>();
+  const map = new Map<
+    string,
+    { items: ExplorerContextMenuItemSpec[]; count: number }
+  >();
   for (const item of visible) {
     const g = item.group ?? 'plugin';
-    let arr = map.get(g);
-    if (!arr) {
-      arr = [];
-      map.set(g, arr);
+    let bucket = map.get(g);
+    if (!bucket) {
+      bucket = {
+        items: new Array<ExplorerContextMenuItemSpec>(visible.length),
+        count: 0,
+      };
+      map.set(g, bucket);
     }
-    arr.push(item);
+    bucket.items[bucket.count++] = item;
   }
-  const buckets: PluginItemBucket[] = [];
-  for (const [group, items] of map) {
-    buckets.push({ group, items });
+  const buckets = new Array<PluginItemBucket>(map.size);
+  let i = 0;
+  for (const [group, bucket] of map) {
+    bucket.items.length = bucket.count;
+    buckets[i++] = { group, items: bucket.items };
   }
   buckets.sort((a, b) => {
     const ai = groupOrderIndex(a.group);

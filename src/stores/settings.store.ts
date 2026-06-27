@@ -40,7 +40,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     }
     const next = result.data;
     // 仅当本次 gen 不旧时更新（防同窗内乱序）
-    if (next.gen < get().currentGen) return;
+    const current = get();
+    if (next.gen < current.currentGen) return;
+    if (next.locale === current.locale && next.gen === current.currentGen) return;
     set({ locale: next.locale, currentGen: next.gen });
     setI18nModuleLocale(next.locale);
     notifyLocaleChange();

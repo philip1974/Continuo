@@ -117,6 +117,18 @@ describe('打磨 R23 — EditorHeader 窄订阅', () => {
     }
   });
 
+  it('tab 标题在列表 render 内复用,不为 closeLabel 和 children 重复 basename', () => {
+    const src = readFileSync(
+      path.join(process.cwd(), 'src/panels/Editor/EditorHeader.tsx'),
+      'utf-8',
+    );
+
+    expect(src).toContain('const tabTitle = basename(tab.filePath);');
+    expect(src).toContain("closeLabel={t('shell.tab.close', { title: tabTitle })}");
+    expect(src).toContain('{tabTitle}');
+    expect(src).not.toContain("closeLabel={t('shell.tab.close', { title: basename(tab.filePath) })}");
+  });
+
   it('content-only 变化 → EditorHeader 不重渲(commit 次数不变)', () => {
     seedTabs('hello', true); // dirty 已 true,后续只改 content
     const onRender = vi.fn();

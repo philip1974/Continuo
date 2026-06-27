@@ -76,6 +76,7 @@ export function wrapPanelClose(panel: IDockviewPanel): void {
         try {
           original();
         } catch {
+          if (isTerminalPanelId(id)) suppressedPanelCloses.delete(id);
           // panel 已被其他路径(group teardown 等)移除,忽略。
         }
       }, EXIT_DURATION_MS);

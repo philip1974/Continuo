@@ -31,6 +31,18 @@ describe('unified-toast-notification: DOM rendering', () => {
     expect((region!.getAttribute('aria-label') ?? '').length).toBeGreaterThan(0);
   });
 
+  it('dismiss label 在 viewport 计算一次并传给每条 toast', () => {
+    const viewportSrc = readFileSync('src/notifications/ToastViewport.tsx', 'utf8');
+    const toastSrc = readFileSync('src/notifications/Toast.tsx', 'utf8');
+
+    expect(viewportSrc).toContain("const dismissLabel = t('notifications.dismiss');");
+    expect(viewportSrc).toContain('dismissLabel={dismissLabel}');
+    expect(toastSrc).toContain('readonly dismissLabel: string;');
+    expect(toastSrc).toContain('aria-label={dismissLabel}');
+    expect(toastSrc).not.toContain("useT");
+    expect(toastSrc).not.toContain("aria-label={t('notifications.dismiss')}");
+  });
+
   it('T12 renders a toast containing message and code without rendering full App', () => {
     render(
       <NotificationsProvider>

@@ -101,6 +101,31 @@ describe('partitionDropItems', () => {
     expect(r.files[0]?.name).toBe('real.md');
   });
 
+  it('收集 files/skippedDirs 时预分配结果数组,不通过 push 扩容', () => {
+    const items = makeItemList([
+      { kind: 'file', isDir: false, name: 'x.txt' },
+      { kind: 'file', isDir: true, name: 'mydir' },
+      { kind: 'string', isDir: false, name: 'plain' },
+      { kind: 'file', isDir: false, name: 'y.txt' },
+    ]);
+
+    const r = partitionDropItems(items);
+
+    expect(r.files.map((f) => f.name)).toEqual(['x.txt', 'y.txt']);
+    expect(r.skippedDirs).toEqual(['mydir']);
+    expect(partitionDropItems.toString()).not.toContain('.push(');
+  });
+
+  it('空输入和无可收集项复用稳定空数组', () => {
+    const empty = partitionDropItems(null);
+    const onlyString = partitionDropItems(
+      makeItemList([{ kind: 'string', isDir: false, name: 'plain' }]),
+    );
+
+    expect(onlyString.files).toBe(empty.files);
+    expect(onlyString.skippedDirs).toBe(empty.skippedDirs);
+  });
+
   // 边界(E115):partition 阶段即限数量,防超大 DataTransferItemList 在读文件前大量
   // getAsFile 物化(cap 此前只在 performDrop 太晚)。多收 1 个让 performDrop 仍能反馈 too-many。
   it('E115 超过 MAX_DROP_FILE_COUNT 的文件项在 partition 阶段截断', () => {
@@ -166,6 +191,24 @@ const makeFile = (name: string, bytes: number[] = [1, 2, 3]): File =>
   new File([new Uint8Array(bytes)], name);
 
 describe('performDrop', () => {
+  it('written/failed 结果按 files.length 预分配,不通过 push 扩容', async () => {
+    const writeBinary = vi
+      .fn<DropFsApi['writeBinary']>()
+      .mockResolvedValueOnce(ok())
+      .mockResolvedValueOnce(fail('FS_DENIED', 'no perm'));
+    const fs = makeFs(writeBinary);
+
+    const r = await performDrop([makeFile('a.md'), makeFile('b.md')], '/work', fs);
+
+    expect(r.written).toEqual(['/work/a.md']);
+    expect(r.failed).toEqual([
+      { name: 'b.md', code: 'FS_DENIED', message: 'no perm' },
+    ]);
+    const source = performDrop.toString();
+    expect(source).not.toContain('written.push(');
+    expect(source).not.toContain('failed.push(');
+  });
+
   it('空数组 → ok:true, written 空,不调 writeBinary', async () => {
     const fs = makeFs();
     const r = await performDrop([], '/work', fs);

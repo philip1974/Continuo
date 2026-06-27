@@ -124,6 +124,16 @@ function isSortedByDisplayTitle(items: readonly DisplayCommand[]): boolean {
   return true;
 }
 
+function findRecentCommandIndex(
+  items: readonly DisplayCommand[],
+  recentId: string,
+): number {
+  for (let i = 0; i < items.length; i++) {
+    if (items[i]!.cmd.id === recentId) return i;
+  }
+  return -1;
+}
+
 /** 空 query 时:recent 前 N 个置顶 + 其余按 displayTitle 字母序. */
 export function sortByRecent(
   items: readonly DisplayCommand[],
@@ -141,21 +151,21 @@ export function sortByRecent(
   }
   if (recentIds.length === 1) {
     const recentId = recentIds[0]!;
-    let recent: DisplayCommand | undefined;
-    const others = new Array<DisplayCommand>(items.length);
+    const recentIndex = findRecentCommandIndex(items, recentId);
+    if (recentIndex < 0) {
+      if (isSortedByDisplayTitle(items)) return items as DisplayCommand[];
+      const out = new Array<DisplayCommand>(items.length);
+      for (let i = 0; i < items.length; i++) out[i] = items[i]!;
+      out.sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));
+      return out;
+    }
+    const recent = items[recentIndex]!;
+    const others = new Array<DisplayCommand>(items.length - 1);
     let otherCount = 0;
-    for (const d of items) {
-      if (d.cmd.id === recentId) recent = d;
-      else others[otherCount++] = d;
+    for (let i = 0; i < items.length; i++) {
+      if (i !== recentIndex) others[otherCount++] = items[i]!;
     }
     others.length = otherCount;
-    if (!recent) {
-      if (isSortedByDisplayTitle(items)) return items as DisplayCommand[];
-      if (otherCount > 1) {
-        others.sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));
-      }
-      return others;
-    }
     if (otherCount > 1 && !isSortedByDisplayTitle(others)) {
       others.sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));
     }
@@ -174,12 +184,28 @@ export function sortByRecent(
     recentRank.set(recentIds[i]!, i);
   }
   const recent: (DisplayCommand | undefined)[] = [];
-  const others = new Array<DisplayCommand>(items.length);
+  let others: DisplayCommand[] | null = null;
   let otherCount = 0;
-  for (const d of items) {
+  for (let i = 0; i < items.length; i++) {
+    const d = items[i]!;
     const rank = recentRank.get(d.cmd.id);
-    if (rank === undefined) others[otherCount++] = d;
-    else recent[rank] = d;
+    if (rank === undefined) {
+      if (others !== null) others[otherCount++] = d;
+      continue;
+    }
+    recent[rank] = d;
+    if (others === null) {
+      others = new Array<DisplayCommand>(items.length);
+      for (let j = 0; j < i; j++) others[j] = items[j]!;
+      otherCount = i;
+    }
+  }
+  if (others === null) {
+    if (isSortedByDisplayTitle(items)) return items as DisplayCommand[];
+    const out = new Array<DisplayCommand>(items.length);
+    for (let i = 0; i < items.length; i++) out[i] = items[i]!;
+    out.sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));
+    return out;
   }
   others.length = otherCount;
   others.sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));

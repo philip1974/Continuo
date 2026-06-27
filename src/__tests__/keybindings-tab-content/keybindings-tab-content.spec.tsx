@@ -50,6 +50,18 @@ describe('KeybindingsTabContent — 列表', () => {
     expect(src).not.toContain("cmd.hotkey ?? t('keybindings.unbound')");
   });
 
+  it('行按钮 icon 预创建,不随每个命令重复创建 svg element', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/plugins/settings/KeybindingsTabContent.tsx'),
+      'utf8',
+    );
+
+    expect(src).toContain('const EDIT_HOTKEY_ICON = (');
+    expect(src).toContain('const RESET_HOTKEY_ICON = (');
+    expect(src).toContain('{EDIT_HOTKEY_ICON}');
+    expect(src).toContain('{RESET_HOTKEY_ICON}');
+  });
+
   it('一条命令都没注册 → 「暂无注册了快捷键的命令」', () => {
     const { container } = render(<KeybindingsTabContent />);
     expect(container.textContent).toContain('暂无注册了快捷键的命令');

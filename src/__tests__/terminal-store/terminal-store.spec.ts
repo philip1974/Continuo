@@ -172,6 +172,29 @@ describe('getShellFamily', () => {
       findSpy.mockRestore();
     }
   });
+
+  it('空 sessions 查询复用稳定空索引,不重建空 Map 且不返回旧缓存', () => {
+    const sessions = [makeSession({ id: '/cached' })];
+    expect(getIndexedTerminalSessionById(sessions, '/cached')).toBe(sessions[0]);
+
+    const OriginalMap = globalThis.Map;
+    let mapCtorCount = 0;
+    class CountingMap<K, V> extends OriginalMap<K, V> {
+      constructor(entries?: readonly (readonly [K, V])[] | null) {
+        mapCtorCount += 1;
+        super(entries);
+      }
+    }
+    globalThis.Map = CountingMap as MapConstructor;
+
+    try {
+      expect(getIndexedTerminalSessionById([], '/cached')).toBeUndefined();
+      expect(getIndexedTerminalSessionById([], '/missing')).toBeUndefined();
+      expect(mapCtorCount).toBe(0);
+    } finally {
+      globalThis.Map = OriginalMap;
+    }
+  });
 });
 
 // ────────────────────────────────────────────────────────────

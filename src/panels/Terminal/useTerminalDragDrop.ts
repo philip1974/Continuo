@@ -24,17 +24,20 @@ export const MAX_TERMINAL_DROP_CHARS = 1_000_000;
 // 边界(E189/E224,E176 同族有界遍历):hasFiles 收口到共享 @/lib/window-drop(与 captureBoundedFiles /
 // hasDirectoryInFirstItems 同处),Terminal 与 App.tsx 全局 drop 共用单一来源。此处 import 供本模块用 +
 // re-export 保持既有 import 路径不变(Terminal 代码 + drag-drop.spec 仍从本模块 import hasFiles)。
-import { hasFiles } from '@/lib/window-drop';
+import { captureBoundedFiles, hasFiles } from '@/lib/window-drop';
 export { hasFiles };
 
 // 边界(E189):DEV 调试日志的 types 也按上限有界读取(不全量 Array.from),防开发环境复现同类卡顿。
 const DEBUG_TYPES_MAX = 32;
-function boundedTypes(dataTransfer: DataTransfer): string[] {
+export function boundedTypes(dataTransfer: DataTransfer): string[] {
   const types = dataTransfer.types;
-  const out: string[] = [];
-  for (let i = 0; i < types.length && i < DEBUG_TYPES_MAX; i++) {
-    out.push(types[i]!);
+  const limit = Math.min(types.length, DEBUG_TYPES_MAX);
+  const out = new Array<string>(limit);
+  let count = 0;
+  for (let i = 0; i < limit; i++) {
+    out[count++] = types[i]!;
   }
+  out.length = count;
   return out;
 }
 
@@ -103,11 +106,7 @@ export function useTerminalDragDrop({
       // seed 进 droppedForLimit 保证 partial_skip 计数准确。
       const fileList = dataTransfer.files;
       const totalFiles = fileList.length;
-      const files: File[] = [];
-      for (let i = 0; i < totalFiles && files.length <= MAX_TERMINAL_DROP_FILES; i++) {
-        const f = fileList[i];
-        if (f) files.push(f);
-      }
+      const files = captureBoundedFiles(fileList, MAX_TERMINAL_DROP_FILES + 1);
       const overLimitExtra = totalFiles - files.length;
 
       if (import.meta.env.DEV) {
@@ -123,14 +122,17 @@ export function useTerminalDragDrop({
         // terminal.write() 的 IPC reject(抛错而非返回 {ok:false})此前未捕获 → unhandled
         // rejection,终端拖放文件失败时无 toast/live region 反馈。catch → 复用 write_failed。
         try {
-          const paths: string[] = [];
+          const paths = new Array<string>(
+            Math.min(files.length, MAX_TERMINAL_DROP_FILES),
+          );
+          let pathCount = 0;
           let webDragCount = 0;
           let droppedForLimit = overLimitExtra; // 因数量/长度上限被丢弃(E42 + E116 同步截断的超限数)
           let approxLen = 0;
 
           for (const file of files) {
             // 边界(E42):文件数上限 —— 超出不再 IPC 取路径(省 getPathForFile 往返)。
-            if (paths.length >= MAX_TERMINAL_DROP_FILES) {
+            if (pathCount >= MAX_TERMINAL_DROP_FILES) {
               droppedForLimit += 1;
               continue;
             }
@@ -144,7 +146,7 @@ export function useTerminalDragDrop({
               droppedForLimit += 1;
               continue;
             }
-            paths.push(path);
+            paths[pathCount++] = path;
             approxLen += path.length + 3;
           }
 
@@ -154,22 +156,25 @@ export function useTerminalDragDrop({
           // 弹误导性失败反馈。写前丢弃迟到任务。复用 effect 的 disposed 标志(per-effect)。
           if (disposed) return;
 
+          paths.length = pathCount;
           const shellFamily = getShellFamily(sessionId);
           const { quoted, skipped } = quotePaths(paths, shellFamily);
 
           // 边界(E134):写入长度上限须按 **quote 后的真实长度** 复核 —— 循环里的 path.length + 3
           // 仅估算,POSIX/PowerShell 把每个 ' 展开成多字符(如 '\''),含大量单引号的路径 quote 后可
           // 显著膨胀,构造出远超 MAX_TERMINAL_DROP_CHARS 的命令行。逐项按真实 quoted 长度累计并截断。
-          const cappedQuoted: string[] = [];
+          const cappedQuoted = new Array<string>(quoted.length);
+          let cappedQuotedCount = 0;
           let realLen = 0;
           for (const q of quoted) {
             if (realLen + q.length + 1 > MAX_TERMINAL_DROP_CHARS) {
               droppedForLimit += 1;
               continue;
             }
-            cappedQuoted.push(q);
+            cappedQuoted[cappedQuotedCount++] = q;
             realLen += q.length + 1; // +1:joinWithTrailingSpace 的分隔/尾随空格
           }
+          cappedQuoted.length = cappedQuotedCount;
 
           if (cappedQuoted.length === 0 && skipped.length === 0) {
             // 边界(E42):无可写路径时区分「全被大小/数量上限丢弃」与「全是 web drag 无 OS path」。

@@ -190,6 +190,49 @@ describe('打磨 R29 — Keybindings hotkey 预计算', () => {
     }
   });
 
+  it('同一分类但未排序时不构造 Map,仅复制后排序该组', () => {
+    const commandA = {
+      cmd: { id: 'b', title: 'Beta', hotkey: 'mod+b', fn: vi.fn() },
+      displayTitle: 'Beta',
+      displayCategory: 'Editor',
+      effectiveHotkey: 'mod+b',
+      hotkeyParts: ['mod', 'b'],
+      isOverridden: false,
+      searchHaystack: 'beta editor b mod+b',
+    };
+    const commandB = {
+      cmd: { id: 'a', title: 'Alpha', hotkey: 'mod+a', fn: vi.fn() },
+      displayTitle: 'Alpha',
+      displayCategory: 'Editor',
+      effectiveHotkey: 'mod+a',
+      hotkeyParts: ['mod', 'a'],
+      isOverridden: false,
+      searchHaystack: 'alpha editor a mod+a',
+    };
+    const commands = [commandA, commandB];
+    const OriginalMap = globalThis.Map;
+    let mapCtorCount = 0;
+    class CountingMap<K, V> extends OriginalMap<K, V> {
+      constructor(entries?: readonly (readonly [K, V])[] | null) {
+        mapCtorCount += 1;
+        super(entries);
+      }
+    }
+    globalThis.Map = CountingMap as MapConstructor;
+
+    try {
+      const buckets = groupByCategory(commands, 'Other');
+
+      expect(buckets[0]?.category).toBe('Editor');
+      expect(buckets[0]?.items).toEqual([commandB, commandA]);
+      expect(buckets[0]?.items).not.toBe(commands);
+      expect(commands).toEqual([commandA, commandB]);
+      expect(mapCtorCount).toBe(0);
+    } finally {
+      globalThis.Map = OriginalMap;
+    }
+  });
+
   it('搜索输入变化 → 不再逐行调 getEffectiveHotkey', () => {
     const { container } = render(<KeybindingsTabContent />);
     const afterRender = getEffSpy.mock.calls.length;

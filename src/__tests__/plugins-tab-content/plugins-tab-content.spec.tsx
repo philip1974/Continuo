@@ -23,6 +23,7 @@ import {
   PluginsTabContent,
   collectContributionSamples,
   collectStatusBarItems,
+  formatContributionSamples,
   hasPluginId,
   hasPluginVersion,
   pluginsTabRowClassName,
@@ -144,6 +145,22 @@ describe('PluginsTabContent — 贡献点统计', () => {
     expect(collectContributionSamples([], 'id' as never)).toBe(
       collectContributionSamples([], 'id' as never),
     );
+  });
+
+  it('贡献点 samples 文本在 snapshot 阶段预计算,render 不重复 join', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/plugins/settings/PluginsTabContent.tsx'),
+      'utf-8',
+    );
+
+    expect(formatContributionSamples([])).toBe('—');
+    expect(formatContributionSamples(['a'])).toBe('a');
+    expect(formatContributionSamples(['a', 'b'])).toBe('a · b');
+    expect(src).toContain('readonly samplesText: string;');
+    expect(src).not.toContain('readonly samples: readonly string[];');
+    expect(src).toContain('samplesText: formatContributionSamples(samples)');
+    expect(src).toContain('{row.samplesText}');
+    expect(src).not.toContain("row.samples.join(' · ')");
   });
 
   it('状态栏左右贡献预分配合并,不通过数组 spread', () => {

@@ -1,5 +1,7 @@
 // 打磨 R55(codex 性能):CommandPalette 空 query 排序 recent 置顶时,不在 comparator
 // 里反复 recentIds.indexOf;改为一次性 rank map。测试直接覆盖纯 helper,避免 UI 渲染噪声。
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it, expect, vi } from 'vitest';
 import {
   buildRecentCommandIds,
@@ -218,6 +220,40 @@ describe('打磨 R55 — CommandPalette recent rank 预计算', () => {
       const out = sortByRecent(
         items as unknown as Parameters<typeof sortByRecent>[0],
         ['missing'],
+      );
+
+      expect(out).toBe(items);
+      expect(out.map((d) => d.cmd.id)).toEqual(['a', 'b', 'c']);
+      expect(sortSpy).not.toHaveBeenCalled();
+    } finally {
+      sortSpy.mockRestore();
+    }
+  });
+
+  it('单个 stale recent id 快路径先查命中,不预分配 others 数组', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/plugins/command-palette/CommandPalette.tsx'),
+      'utf-8',
+    );
+
+    expect(src).toContain('function findRecentCommandIndex(');
+    expect(src.indexOf('const recentIndex = findRecentCommandIndex')).toBeLessThan(
+      src.indexOf('const others = new Array<DisplayCommand>(items.length - 1)'),
+    );
+  });
+
+  it('多个 stale recent id 且列表已排序时复用输入引用,不 sort', () => {
+    const items = [
+      command('a', 'Alpha'),
+      command('b', 'Beta'),
+      command('c', 'Charlie'),
+    ];
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      const out = sortByRecent(
+        items as unknown as Parameters<typeof sortByRecent>[0],
+        ['missing-a', 'missing-b'],
       );
 
       expect(out).toBe(items);
