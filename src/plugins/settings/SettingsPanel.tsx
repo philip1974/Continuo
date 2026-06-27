@@ -113,6 +113,17 @@ interface SearchBucket {
 export function groupSearchResults(
   items: readonly SettingItemSpec[],
 ): readonly SearchBucket[] {
+  if (items.length === 1) {
+    const item = items[0]!;
+    return [
+      {
+        category: item.category,
+        label: tWithFallback(CATEGORY_TITLE_KEYS[item.category], item.category),
+        items,
+      },
+    ];
+  }
+
   const map = new Map<string, { items: SettingItemSpec[]; count: number }>();
   for (const spec of items) {
     let bucket = map.get(spec.category);

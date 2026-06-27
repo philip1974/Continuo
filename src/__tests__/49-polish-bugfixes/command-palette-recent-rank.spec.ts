@@ -75,4 +75,25 @@ describe('打磨 R55 — CommandPalette recent rank 预计算', () => {
       sortSpy.mockRestore();
     }
   });
+
+  it('无 recent 时直接按标题排序,不做 rank map 查找', () => {
+    const items = [
+      command('c', 'Charlie'),
+      command('a', 'Alpha'),
+      command('b', 'Beta'),
+    ];
+    const getSpy = vi.spyOn(Map.prototype, 'get');
+
+    try {
+      const out = sortByRecent(
+        items as unknown as Parameters<typeof sortByRecent>[0],
+        [],
+      );
+
+      expect(out.map((d) => d.cmd.id)).toEqual(['a', 'b', 'c']);
+      expect(getSpy).not.toHaveBeenCalled();
+    } finally {
+      getSpy.mockRestore();
+    }
+  });
 });

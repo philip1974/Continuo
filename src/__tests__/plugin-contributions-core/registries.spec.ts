@@ -7,6 +7,33 @@ import { subscribeAll } from '../../plugins/registries/useRegistry';
 // ── subscribeAll ───────────────────────────────────────
 
 describe('subscribeAll', () => {
+  it('空 sources 走 noop 快路径,不订阅也不分配 unsubs 数组', () => {
+    const listener = vi.fn();
+    const unsubscribeAll = subscribeAll([], listener);
+
+    expect(() => unsubscribeAll()).not.toThrow();
+    expect(subscribeAll.toString()).toMatch(/sources\.length === 0/);
+    expect(subscribeAll.toString().indexOf('sources.length === 0')).toBeLessThan(
+      subscribeAll.toString().indexOf('new Array('),
+    );
+  });
+
+  it('单 source 直接返回该 source 的 unsubscribe,不分配 unsubs 数组', () => {
+    const unsubscribe = vi.fn();
+    const source = { subscribe: vi.fn(() => unsubscribe) };
+    const listener = vi.fn();
+
+    const unsubscribeAll = subscribeAll([source], listener);
+
+    expect(source.subscribe).toHaveBeenCalledWith(listener);
+    unsubscribeAll();
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+    expect(subscribeAll.toString()).toMatch(/sources\.length === 1/);
+    expect(subscribeAll.toString().indexOf('sources.length === 1')).toBeLessThan(
+      subscribeAll.toString().indexOf('new Array('),
+    );
+  });
+
   it('订阅所有 source 并一次性 unsubscribe,不通过 sources.map 生成中间数组', () => {
     const unsubs = [vi.fn(), vi.fn()];
     const sources = [

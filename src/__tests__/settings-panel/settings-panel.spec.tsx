@@ -321,6 +321,27 @@ describe('SettingsPanel · 搜索模式', () => {
     }
   });
 
+  it('单个搜索结果分组走快路径,不构造 Map', () => {
+    const item = {
+      id: 'editor.fontSize',
+      category: 'editor',
+      title: '字号',
+      type: 'number',
+      default: 14,
+    } as const;
+    const mapGetSpy = vi.spyOn(Map.prototype, 'get');
+
+    try {
+      const buckets = groupSearchResults([item]);
+      expect(buckets).toHaveLength(1);
+      expect(buckets[0]?.category).toBe('editor');
+      expect(buckets[0]?.items).toEqual([item]);
+      expect(mapGetSpy).not.toHaveBeenCalled();
+    } finally {
+      mapGetSpy.mockRestore();
+    }
+  });
+
   it('搜索 haystack 包含本地化字段/id/raw fallback,且不通过数组 join 拼接', () => {
     const joinSpy = vi.spyOn(Array.prototype, 'join');
     try {

@@ -107,12 +107,20 @@ function compileCombo(combo: string, platform: Platform): ComboSignature {
 
 /** 签名是否匹配键盘事件(精确比较四个修饰键 + 主键). */
 function signatureMatches(sig: ComboSignature, e: KeyboardEvent): boolean {
+  return signatureMatchesKey(sig, e, e.key.toLowerCase());
+}
+
+function signatureMatchesKey(
+  sig: ComboSignature,
+  e: KeyboardEvent,
+  keyLower: string,
+): boolean {
   return (
     sig.wantMeta === e.metaKey &&
     sig.wantCtrl === e.ctrlKey &&
     sig.wantShift === e.shiftKey &&
     sig.wantAlt === e.altKey &&
-    e.key.toLowerCase() === sig.key
+    keyLower === sig.key
   );
 }
 
@@ -169,14 +177,17 @@ export function useCommandHotkeys(commands: CommandRegistry): void {
   }, [snap, overrides, platform]);
 
   useEffect(() => {
+    if (bindings.length === 0) return;
+
     const handler = (e: KeyboardEvent) => {
       // a11y(A64):事件来自可编辑文本控件(input/textarea/contenteditable/select)时,放行
       // 「无 ctrl/meta/alt 修饰」的绑定(单键如 'x' 或仅 shift 如 'X')—— 否则用户在搜索框/
       // 输入框里键入该字符会被全局命令劫持并 preventDefault,文本打不进去、焦点上下文被破坏。
       // 带 ctrl/meta/alt 的全局组合(如 mod+s 保存)在编辑器内仍需生效,故只跳过无修饰类。
       const editable = isEditableTarget(e.target);
+      const keyLower = e.key.toLowerCase();
       for (const b of bindings) {
-        if (signatureMatches(b.sig, e)) {
+        if (signatureMatchesKey(b.sig, e, keyLower)) {
           if (editable && !b.sig.wantMeta && !b.sig.wantCtrl && !b.sig.wantAlt) {
             continue;
           }

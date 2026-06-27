@@ -63,6 +63,9 @@ export function subscribeAll(
   sources: ReadonlyArray<SubscribableLike>,
   listener: () => void,
 ): () => void {
+  if (sources.length === 0) return () => {};
+  if (sources.length === 1) return sources[0]!.subscribe(listener);
+
   const unsubs = new Array<() => void>(sources.length);
   for (let i = 0; i < sources.length; i++) {
     unsubs[i] = sources[i]!.subscribe(listener);

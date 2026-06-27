@@ -114,6 +114,13 @@ export function sortByRecent(
   items: readonly DisplayCommand[],
   recentIds: readonly string[],
 ): DisplayCommand[] {
+  if (recentIds.length === 0) {
+    const out = new Array<DisplayCommand>(items.length);
+    for (let i = 0; i < items.length; i++) out[i] = items[i]!;
+    out.sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));
+    return out;
+  }
+
   const recentRank = new Map<string, number>();
   for (let i = 0; i < recentIds.length && i < RECENT_TOP_N; i++) {
     recentRank.set(recentIds[i]!, i);

@@ -78,13 +78,17 @@ export function groupByCategory(
   for (const [category, bucket] of map) {
     bucket.items.length = bucket.count;
     const items = bucket.items;
-    items.sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));
+    if (bucket.count > 1) {
+      items.sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));
+    }
     buckets[i++] = {
       category,
       items,
     };
   }
-  buckets.sort((a, b) => a.category.localeCompare(b.category));
+  if (buckets.length > 1) {
+    buckets.sort((a, b) => a.category.localeCompare(b.category));
+  }
   return buckets;
 }
 
@@ -97,8 +101,8 @@ export function selectVisibleKeybindingCommands(
   commands: readonly DisplayCommand[],
   query: string,
 ): DisplayCommand[] {
-  const qLower = query.toLowerCase();
   const hasQuery = query.length > 0;
+  const qLower = hasQuery ? query.toLowerCase() : '';
   const selected = new Array<DisplayCommand>(commands.length);
   let count = 0;
 
