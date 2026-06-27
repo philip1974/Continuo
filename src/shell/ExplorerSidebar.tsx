@@ -29,6 +29,7 @@ function ExplorerSidebarBody() {
   const t = useT();
   const width = useLayoutUiStore((s) => s.sidebarWidth);
   const setWidth = useLayoutUiStore((s) => s.setSidebarWidth);
+  const resizeLabel = t('shell.aria.drag_resize');
 
   const startResize = useColumnResize({
     getCurrent: () => useLayoutUiStore.getState().sidebarWidth,
@@ -48,7 +49,7 @@ function ExplorerSidebarBody() {
       <div
         role="separator"
         aria-orientation="vertical"
-        aria-label={t('shell.aria.drag_resize')}
+        aria-label={resizeLabel}
         // a11y(A14):separator 此前只 onMouseDown,键盘用户无法聚焦/调宽,AT 不知范围/值。
         // 加 tabIndex + aria-valuemin/max/now(window-splitter 模式)+ Arrow/Home/End 键盘调宽。
         tabIndex={0}
@@ -67,7 +68,7 @@ function ExplorerSidebarBody() {
             setWidth(clampWidth(next, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH));
           }
         }}
-        title={t('shell.aria.drag_resize')}
+        title={resizeLabel}
         className="absolute top-0 right-0 z-10 h-full w-1 cursor-col-resize bg-transparent transition-colors hover:bg-accent/40 focus-visible:bg-accent/60 focus-visible:outline-none"
       />
     </aside>

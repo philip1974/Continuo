@@ -59,6 +59,9 @@ type Listener = () => void;
 const CM_ID_MAX = 256;
 const CM_LABEL_MAX = 512;
 const CM_GROUP_MAX = 256;
+const EMPTY_EXPLORER_CONTEXT_MENU_SNAPSHOT: readonly ExplorerContextMenuItemSpec[] = [];
+const EMPTY_VISIBLE_EXPLORER_CONTEXT_MENU_ITEMS: ExplorerContextMenuItemSpec[] =
+  [];
 
 function validateContextMenuItemSpec(spec: ExplorerContextMenuItemSpec): void {
   // 边界(E273,E271 registry 族):先校验 spec 是对象,否则读 spec.id/字段对 null/undefined 抛 TypeError。
@@ -138,11 +141,22 @@ export class ExplorerContextMenuRegistry {
 
   getAll(): readonly ExplorerContextMenuItemSpec[] {
     if (this.cachedAll !== null) return this.cachedAll;
+    if (this.items.size === 0) {
+      this.cachedAll = EMPTY_EXPLORER_CONTEXT_MENU_SNAPSHOT;
+      return EMPTY_EXPLORER_CONTEXT_MENU_SNAPSHOT;
+    }
 
     const items = new Array<ExplorerContextMenuItemSpec>(this.items.size);
     let i = 0;
-    for (const item of this.items.values()) items[i++] = item;
-    if (items.length > 1) {
+    let prevPriority = -Infinity;
+    let sorted = true;
+    for (const item of this.items.values()) {
+      const priority = item.priority ?? 100;
+      if (priority < prevPriority) sorted = false;
+      prevPriority = priority;
+      items[i++] = item;
+    }
+    if (items.length > 1 && !sorted) {
       items.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
     }
     this.cachedAll = items;
@@ -173,30 +187,44 @@ export class ExplorerContextMenuRegistry {
   }
 }
 
+/** 按 ctx 判断单个菜单项是否可见;when 抛错视为 false + warn. */
+export function isExplorerContextMenuItemVisible(
+  item: ExplorerContextMenuItemSpec,
+  ctx: ExplorerContextMenuItemContext,
+): boolean {
+  if (!item.when) return true;
+  try {
+    return item.when(ctx);
+  } catch (err) {
+    console.warn(
+      `[explorer-context-menu] when fn for "${item.id}" threw`,
+      err,
+    );
+    return false;
+  }
+}
+
 /** 按 ctx 过滤可见项;when 抛错视为 false + warn. */
 export function filterVisible(
   items: readonly ExplorerContextMenuItemSpec[],
   ctx: ExplorerContextMenuItemContext,
 ): ExplorerContextMenuItemSpec[] {
-  const out = new Array<ExplorerContextMenuItemSpec>(items.length);
+  let out: ExplorerContextMenuItemSpec[] | null = null;
   let count = 0;
-  for (const item of items) {
-    if (!item.when) {
-      out[count++] = item;
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i]!;
+    const visible = isExplorerContextMenuItemVisible(item, ctx);
+    if (!visible) {
+      if (out === null) {
+        out = new Array<ExplorerContextMenuItemSpec>(items.length);
+        for (let j = 0; j < i; j++) out[j] = items[j]!;
+        count = i;
+      }
       continue;
     }
-    let visible = false;
-    try {
-      visible = item.when(ctx);
-    } catch (err) {
-      console.warn(
-        `[explorer-context-menu] when fn for "${item.id}" threw`,
-        err,
-      );
-      visible = false;
-    }
-    if (visible) out[count++] = item;
+    if (out !== null) out[count++] = item;
   }
+  if (out === null) return items as ExplorerContextMenuItemSpec[];
   out.length = count;
-  return out;
+  return count === 0 ? EMPTY_VISIBLE_EXPLORER_CONTEXT_MENU_ITEMS : out;
 }

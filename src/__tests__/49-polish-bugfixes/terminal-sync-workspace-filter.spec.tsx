@@ -76,11 +76,13 @@ describe('topic49 codex-loop R12 · terminal 按 workspace 过滤', () => {
     expect(filterByWorkspaceRoot(sessions, null).map((s) => s.id)).toEqual(['g']);
   });
 
-  it('filterByWorkspaceRoot 空输入返回原引用,避免空数组分配', () => {
-    const sessions: readonly TerminalSession[] = [];
+  it('filterByWorkspaceRoot 空输入返回稳定空引用,避免空数组引用抖动', () => {
+    const a: readonly TerminalSession[] = [];
+    const b: readonly TerminalSession[] = [];
+    const filtered = filterByWorkspaceRoot(a, '/proj-a');
 
-    expect(filterByWorkspaceRoot(sessions, '/proj-a')).toBe(sessions);
-    expect(filterByWorkspaceRoot(sessions, null)).toBe(sessions);
+    expect(filtered).toEqual([]);
+    expect(filterByWorkspaceRoot(b, null)).toBe(filtered);
   });
 
   it('filterByWorkspaceRoot 全部可见时返回原引用,避免无意义数组分配', () => {

@@ -39,7 +39,17 @@ export function fileExtensionLower(fileName: string): string | undefined {
   return fileName.slice(idx + 1).toLowerCase();
 }
 
-function pickLanguage(fileName: string, forceLanguage?: CodeEditorProps['forceLanguage']) {
+const EMPTY_LANGUAGE_EXTENSIONS: Extension[] = [];
+const EMPTY_THEME_EXTENSIONS: Extension[] = [];
+
+function pickThemeExtension(resolved: string): Extension {
+  return resolved === 'dark' ? oneDark : EMPTY_THEME_EXTENSIONS;
+}
+
+export function pickLanguage(
+  fileName: string,
+  forceLanguage?: CodeEditorProps['forceLanguage'],
+): Extension {
   if (forceLanguage) {
     switch (forceLanguage) {
       case 'markdown':
@@ -77,7 +87,7 @@ function pickLanguage(fileName: string, forceLanguage?: CodeEditorProps['forceLa
     case 'markdown':
       return markdown();
     default:
-      return [];
+      return EMPTY_LANGUAGE_EXTENSIONS;
   }
 }
 
@@ -107,7 +117,7 @@ export function CodeEditor({
   useEffect(() => {
     if (!containerRef.current) return;
     const lang = pickLanguage(fileName, forceLanguage);
-    const themeExt: Extension = resolved === 'dark' ? oneDark : [];
+    const themeExt = pickThemeExtension(resolved);
 
     const state = EditorState.create({
       doc: value,
@@ -211,7 +221,7 @@ export function CodeEditor({
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
-    const themeExt: Extension = resolved === 'dark' ? oneDark : [];
+    const themeExt = pickThemeExtension(resolved);
     view.dispatch({
       effects: themeCompartment.current.reconfigure(themeExt),
     });

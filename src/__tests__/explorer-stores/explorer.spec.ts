@@ -33,6 +33,17 @@ describe('explorer.store · toggleExpand', () => {
     expect(useExplorerStore.getState().expandedPaths.has('/a')).toBe(false);
   });
 
+  it('折叠最后一个路径时复用稳定空 Set', () => {
+    useExplorerStore.getState().toggleExpand('/a');
+    useExplorerStore.getState().toggleExpand('/a');
+    const empty = useExplorerStore.getState().expandedPaths;
+
+    useExplorerStore.getState().toggleExpand('/b');
+    useExplorerStore.getState().toggleExpand('/b');
+
+    expect(useExplorerStore.getState().expandedPaths).toBe(empty);
+  });
+
   it('多个互不影响', () => {
     useExplorerStore.getState().toggleExpand('/a');
     useExplorerStore.getState().toggleExpand('/b');
@@ -90,6 +101,17 @@ describe('explorer.store · setExpandedPaths', () => {
     } finally {
       valuesSpy.mockRestore();
     }
+  });
+
+  it('setExpandedPaths 清空时复用稳定空 Set', () => {
+    useExplorerStore.getState().toggleExpand('/work');
+    useExplorerStore.getState().toggleExpand('/work');
+    const empty = useExplorerStore.getState().expandedPaths;
+
+    useExplorerStore.getState().setExpandedPaths(['/other']);
+    useExplorerStore.getState().setExpandedPaths([]);
+
+    expect(useExplorerStore.getState().expandedPaths).toBe(empty);
   });
 
   // 边界(E277,E276 同族 / 运行时状态守持久化契约):expandedPaths 不得超持久化 schema(PATH_ARRAY_MAX 条

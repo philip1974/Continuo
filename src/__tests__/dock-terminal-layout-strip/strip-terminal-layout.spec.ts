@@ -149,6 +149,33 @@ describe('stripTerminalPanelsFromLayout', () => {
     expect(r.floatingGroups![0].data.views).toEqual(['note']);
   });
 
+  it('floatingGroups/popoutGroups 空态复用稳定空数组', () => {
+    const l1 = layout(
+      [leaf('1', ['editor', 'term-1'], 'editor')],
+      {
+        editor: { contentComponent: 'editor' },
+        'term-1': { contentComponent: 'terminal' },
+      },
+      { floatingGroups: [], popoutGroups: [{ data: { id: 'p1', views: ['term-1'] } }] },
+    );
+    const l2 = layout(
+      [leaf('1', ['editor', 'term-1'], 'editor')],
+      {
+        editor: { contentComponent: 'editor' },
+        'term-1': { contentComponent: 'terminal' },
+      },
+      { floatingGroups: [], popoutGroups: [] },
+    );
+
+    const r1 = out(l1)!;
+    const r2 = out(l2)!;
+
+    expect(r1.floatingGroups).toEqual([]);
+    expect(r1.popoutGroups).toEqual([]);
+    expect(r2.floatingGroups).toBe(r1.floatingGroups);
+    expect(r2.popoutGroups).toBe(r1.popoutGroups);
+  });
+
   it('tabGroups:同步剔除终端 panelIds', () => {
     const l = layout(
       [leaf('1', ['editor', 'term-1'], 'editor', {
@@ -211,6 +238,8 @@ describe('stripTerminalPanelsFromLayout', () => {
       expect(body).not.toContain('tabGroups.push(');
       expect(body).not.toContain('children.push(');
       expect(body).not.toContain('kept.push(');
+      expect(body).not.toContain('raw ?? {}');
+      expect(body).not.toContain(': []');
     } finally {
       filterSpy.mockRestore();
       mapSpy.mockRestore();

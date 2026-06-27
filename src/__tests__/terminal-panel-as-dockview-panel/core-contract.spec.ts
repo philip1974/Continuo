@@ -97,6 +97,25 @@ describe('terminal panel reconciler core contract', () => {
     );
   });
 
+  it('同一 sessions 和 customTitles 快照重复 reconcile 时完全早退', () => {
+    const panel = makePanel('terminal-s1');
+    const api = makeApi({ 'terminal-s1': panel });
+    const sessions = [session('s1')];
+    const customTitles = new Map([['s1', 'Terminal s1']]);
+
+    reconcileTerminalPanels(api as unknown as DockviewApi, {
+      previousSessions: sessions,
+      nextSessions: sessions,
+      previousCustomTitles: customTitles,
+      customTitles,
+    });
+
+    expect(api.getPanel).not.toHaveBeenCalled();
+    expect(api.addPanel).not.toHaveBeenCalled();
+    expect(panel.api.close).not.toHaveBeenCalled();
+    expect(panel.api.setTitle).not.toHaveBeenCalled();
+  });
+
   it('收集新增 sessions 时不通过 nextSessions.filter 生成中间数组', () => {
     const api = makeApi();
     const previousSessions = [session('old')];

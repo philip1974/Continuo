@@ -8,13 +8,13 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Input, Spinner } from '@/design';
 import { coApi } from '@/lib/co-api';
 import { errorMessage } from '../../electron/shared/error-message';
-import { getUserPluginManager } from '@/plugins/PluginManager';
+import { getUserPluginManager, type PluginListItem } from '@/plugins/PluginManager';
 import { entryToGitUrl, type MarketplaceEntry } from './types';
 import { fetchMarketplaceIndex } from './fetcher';
 import { applyFilter, collectAllTags } from './filter';
 import { clampSearchQuery } from '@/lib/search-query';
 import { clampGitUrl } from '../../electron/shared/plugins-channels';
-import { useUpdateStore } from './update-store';
+import { useUpdateStore, type AvailableUpdate } from './update-store';
 import { reconcileAfterUpdate } from './reconcile-after-update';
 import { pruneLandedPending } from './prune-landed-pending';
 import { useReviewsStore } from './reviews-store';
@@ -31,6 +31,7 @@ const NEW_ACCOUNT_MS = NEW_ACCOUNT_DAYS * 24 * 60 * 60 * 1000;
 const REVIEW_DISPLAY_LIMIT = 10;
 
 type ReviewSort = 'newest' | 'helpful';
+const REVIEW_SORTS: readonly ReviewSort[] = ['newest', 'helpful'];
 
 const MARKETPLACE_TAG_BUTTON_BASE_CLASS_NAME =
   'rounded-full border px-3 py-1 text-[11px] transition';
@@ -45,6 +46,12 @@ const MARKETPLACE_REVIEW_SORT_BUTTON_ACTIVE_CLASS_NAME =
   `${MARKETPLACE_REVIEW_SORT_BUTTON_BASE_CLASS_NAME} bg-accent/20 text-accent`;
 const MARKETPLACE_REVIEW_SORT_BUTTON_INACTIVE_CLASS_NAME =
   `${MARKETPLACE_REVIEW_SORT_BUTTON_BASE_CLASS_NAME} hover:bg-hover`;
+const EMPTY_INSTALLED_IDS: ReadonlySet<string> = new Set();
+const EMPTY_MARKETPLACE_ENTRIES: readonly MarketplaceEntry[] = [];
+const EMPTY_UPDATE_VERSION_MAP: ReadonlyMap<string, string> = new Map();
+const EMPTY_REVIEWS: readonly Review[] = [];
+let cachedInstalledPlugins: readonly PluginListItem[] | null = null;
+let cachedInstalledIds: ReadonlySet<string> = EMPTY_INSTALLED_IDS;
 
 export function marketplaceTagButtonClassName(active: boolean): string {
   return active
@@ -85,13 +92,13 @@ export function sameIdSet(
 
 /** 1s 轮询当前已装 plugin id 集合(同 PluginsTabContent 模式). */
 export function useInstalledIds(): ReadonlySet<string> {
-  const [snap, setSnap] = useState<ReadonlySet<string>>(() => readIds());
+  const [snap, setSnap] = useState<ReadonlySet<string>>(() => readInstalledIds());
   useEffect(() => {
     // readIds() 每次都返回新 Set,直接 setSnap 会让 MarketplaceTab 每秒整页
     // re-render(筛选区 + 卡片列表),即使已装集合没变。函数式更新只在集合实际
     // 变化时换引用,无变化保持同引用 → React 跳过 re-render。(codex 打磨 R2)
     const t = setInterval(() => {
-      const next = readIds();
+      const next = readInstalledIds();
       setSnap((prev) => (sameIdSet(prev, next) ? prev : next));
     }, 1000);
     return () => clearInterval(t);
@@ -99,12 +106,34 @@ export function useInstalledIds(): ReadonlySet<string> {
   return snap;
 }
 
-function readIds(): ReadonlySet<string> {
+export function readInstalledIds(): ReadonlySet<string> {
   const m = getUserPluginManager();
-  if (!m) return new Set();
+  if (!m) {
+    cachedInstalledPlugins = null;
+    cachedInstalledIds = EMPTY_INSTALLED_IDS;
+    return EMPTY_INSTALLED_IDS;
+  }
+  const plugins = m.listAll();
+  if (plugins.length === 0) {
+    cachedInstalledPlugins = plugins;
+    cachedInstalledIds = EMPTY_INSTALLED_IDS;
+    return EMPTY_INSTALLED_IDS;
+  }
+  if (plugins === cachedInstalledPlugins) return cachedInstalledIds;
   const ids = new Set<string>();
-  for (const plugin of m.listAll()) ids.add(plugin.id);
+  for (const plugin of plugins) ids.add(plugin.id);
+  cachedInstalledPlugins = plugins;
+  cachedInstalledIds = ids;
   return ids;
+}
+
+export function buildUpdateVersionMap(
+  updates: readonly AvailableUpdate[],
+): ReadonlyMap<string, string> {
+  if (updates.length === 0) return EMPTY_UPDATE_VERSION_MAP;
+  const byPid = new Map<string, string>();
+  for (const update of updates) byPid.set(update.id, update.to);
+  return byPid;
 }
 
 export function MarketplaceTab() {
@@ -124,6 +153,7 @@ export function MarketplaceTab() {
   // 才串行,期间已双 clone)。一次只允许一个安装/更新操作,ref 同步占位。
   const installBusyRef = useRef(false);
   const [query, setQuery] = useState('');
+  const searchPlaceholderLabel = t('marketplace.search_placeholder');
   const [selectedTags, setSelectedTags] = useState<ReadonlySet<string>>(
     new Set(),
   );
@@ -135,9 +165,7 @@ export function MarketplaceTab() {
   // entry.id → 可用更新版本(若有)。useMemo 让 memo 子组件能受益:
   // updates 来自 zustand store,Array.prototype.map 否则每次 render 创新 Map ref.
   const updateByPid = useMemo(() => {
-    const byPid = new Map<string, string>();
-    for (const update of updates) byPid.set(update.id, update.to);
-    return byPid;
+    return buildUpdateVersionMap(updates);
   }, [updates]);
 
   // install.pending 落地(出现在 installed 真实磁盘集)后摘除:防内存泄漏 + 防卸载后
@@ -296,8 +324,8 @@ export function MarketplaceTab() {
   }, []);
 
   // Hooks 必须无条件按相同顺序;loading / error 时 entries=[],计算 noop
-  const stateEntries = state.kind === 'ok' ? state.entries : undefined;
-  const entries = useMemo(() => stateEntries ?? [], [stateEntries]);
+  const entries =
+    state.kind === 'ok' ? state.entries : EMPTY_MARKETPLACE_ENTRIES;
   const allTags = useMemo(() => collectAllTags(entries), [entries]);
   const filtered = useMemo(
     () => applyFilter(entries, { query, selectedTags }),
@@ -361,8 +389,8 @@ export function MarketplaceTab() {
         <Input
           size="sm"
           // a11y(A3,A1 同族):placeholder 无参数 → 复用作 aria-label 给屏幕阅读器稳定可访问名。
-          aria-label={t('marketplace.search_placeholder')}
-          placeholder={t('marketplace.search_placeholder')}
+          aria-label={searchPlaceholderLabel}
+          placeholder={searchPlaceholderLabel}
           value={query}
           // 边界(E281,E279/E280 同族):截断超长 query —— applyFilter 对最多 4096 远端 entry 逐项
           // 构造 haystack + toLowerCase/includes,超长 paste 一次性放大同步 CPU/内存。复用统一搜索上限。
@@ -822,14 +850,14 @@ function RatingRow({
 
   // hooks 必须无条件;hasReviews=false 时 sorted 用空数组,不影响
   const ratingReviews = rating?.reviews;
-  const sourceReviews = useMemo(() => ratingReviews ?? [], [ratingReviews]);
+  const sourceReviews = ratingReviews ?? EMPTY_REVIEWS;
   // 仅在卡片展开时才排序/截断(打磨 R41):sorted 只在 expanded 分支渲染,Marketplace
   // 列表大多数卡片默认折叠,无须为不可见 review 排序 + 复制数组。
   const sorted = useMemo(
     () =>
       expanded && hasReviews
         ? selectDisplayReviews(sourceReviews, sort, REVIEW_DISPLAY_LIMIT)
-        : [],
+        : EMPTY_REVIEWS,
     [expanded, hasReviews, sourceReviews, sort],
   );
 
@@ -915,7 +943,7 @@ function RatingRow({
             <span id={`review-sort-label-${entry.id}`}>
               {t('marketplace.reviews.sort_label')}
             </span>
-            {(['newest', 'helpful'] as const).map((s) => (
+            {REVIEW_SORTS.map((s) => (
               <button
                 key={s}
                 type="button"
@@ -1079,9 +1107,11 @@ export function selectDisplayReviews(
   sort: ReviewSort,
   limit: number,
 ): readonly Review[] {
-  if (limit <= 0) return [];
+  if (limit <= 0 || reviews.length === 0) return EMPTY_REVIEWS;
+  if (reviews.length === 1) return reviews;
   // newest:fetcher 已 createdAt DESC,只需取可见前 N 条。
   if (sort === 'newest') {
+    if (reviews.length <= limit) return reviews;
     const count = Math.min(limit, reviews.length);
     const visible = new Array<Review>(count);
     for (let i = 0; i < count; i++) {
@@ -1092,6 +1122,17 @@ export function selectDisplayReviews(
 
   // helpful:只维护最多 N 条有序窗口,避免为只渲染前 10 条复制并全量排序
   // 最多 2000 条 reviews。平手时 compare=0 保持原输入顺序(与稳定 sort 等价)。
+  if (reviews.length <= limit) {
+    let alreadySorted = true;
+    for (let i = 1; i < reviews.length; i++) {
+      if (compareHelpfulReviews(reviews[i - 1]!, reviews[i]!) > 0) {
+        alreadySorted = false;
+        break;
+      }
+    }
+    if (alreadySorted) return reviews;
+  }
+
   const top = new Array<Review>(Math.min(limit, reviews.length));
   let topCount = 0;
   for (const review of reviews) {

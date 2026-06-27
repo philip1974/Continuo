@@ -66,6 +66,14 @@ describe('打磨 R13 — 插件菜单 when 延迟到打开', () => {
     }
   });
 
+  it('空白右键 action targets 复用稳定空数组', () => {
+    const selectedPaths = new Set(['/work/a.ts']);
+
+    expect(getContextActionTargets(null, selectedPaths)).toBe(
+      getContextActionTargets(null, selectedPaths),
+    );
+  });
+
   it('插件菜单分组不通过 Array.from(entries).map 生成中间数组', () => {
     const items: ExplorerContextMenuItemSpec[] = [
       { id: 'late', label: 'Late', group: 'z', fn: vi.fn() },
@@ -83,6 +91,79 @@ describe('打磨 R13 — 插件菜单 when 延迟到打开', () => {
       expect(buckets.map((bucket) => bucket.group)).toEqual(['navigation', 'z']);
     } finally {
       arrayFromSpy.mockRestore();
+    }
+  });
+
+  it('无可见插件项分组复用稳定空桶', () => {
+    const hidden: ExplorerContextMenuItemSpec = {
+      id: 'hidden',
+      label: 'Hidden',
+      when: () => false,
+      fn: vi.fn(),
+    };
+
+    expect(
+      groupPluginItems([hidden], {
+        target,
+        selectedPaths: new Set(['/work/a.ts']),
+        rootPath: '/work',
+      }),
+    ).toBe(
+      groupPluginItems([hidden], {
+        target,
+        selectedPaths: new Set(['/work/a.ts']),
+        rootPath: '/work',
+      }),
+    );
+  });
+
+  it('单个可见插件项分组走快路径,不构造 Map 且不排序', () => {
+    const item: ExplorerContextMenuItemSpec = {
+      id: 'only',
+      label: 'Only',
+      group: 'navigation',
+      fn: vi.fn(),
+    };
+    const mapGetSpy = vi.spyOn(Map.prototype, 'get');
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      const buckets = groupPluginItems([item], {
+        target,
+        selectedPaths: new Set(['/work/a.ts']),
+        rootPath: '/work',
+      });
+      expect(mapGetSpy).not.toHaveBeenCalled();
+      expect(sortSpy).not.toHaveBeenCalled();
+      expect(buckets).toEqual([{ group: 'navigation', items: [item] }]);
+    } finally {
+      mapGetSpy.mockRestore();
+      sortSpy.mockRestore();
+    }
+  });
+
+  it('同一 group 的多条插件项复用输入 items,不构造 Map 且不排序', () => {
+    const items: ExplorerContextMenuItemSpec[] = [
+      { id: 'a', label: 'A', group: 'plugin', fn: vi.fn() },
+      { id: 'b', label: 'B', group: 'plugin', fn: vi.fn() },
+    ];
+    const mapGetSpy = vi.spyOn(Map.prototype, 'get');
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      const buckets = groupPluginItems(items, {
+        target,
+        selectedPaths: new Set(['/work/a.ts']),
+        rootPath: '/work',
+      });
+
+      expect(buckets).toEqual([{ group: 'plugin', items }]);
+      expect(buckets[0]?.items).toBe(items);
+      expect(mapGetSpy).not.toHaveBeenCalled();
+      expect(sortSpy).not.toHaveBeenCalled();
+    } finally {
+      mapGetSpy.mockRestore();
+      sortSpy.mockRestore();
     }
   });
 

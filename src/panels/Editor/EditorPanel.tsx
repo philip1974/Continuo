@@ -6,14 +6,14 @@
 //   activeTab 非 .md → 直接 CodeEditor(mode 不显示)
 //   activeTab 为 null → Welcome
 
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   getEffectiveMode,
   isTabMilkdownUnsafe,
   useEditorStore,
   type EditorMode,
 } from '@/stores/editor.store';
-import { t as translate, useT } from '@/i18n';
+import { t as translate, useLocale } from '@/i18n';
 import { localizeErrorByCode } from '@/lib/localize-error';
 import {
   basenameForEditorPath,
@@ -62,11 +62,17 @@ export function EditorPanel() {
     (s): EditorTab | null =>
       s.activeTabId === null ? null : findEditorFileTabById(s.tabs, s.activeTabId),
   );
-  const t = useT(); // i18n(I14):订阅 locale,模式切换 label 随语言更新
-  const modeOptions = MODE_IDS.map((id) => ({
-    id,
-    label: t(`panels.editor.mode.${id}`),
-  }));
+  const locale = useLocale(); // i18n(I14):订阅 locale,模式切换 label 随语言更新
+  const modeOptions = useMemo(
+    () => {
+      void locale; // deps:translate 内部按当前 locale 取值
+      return MODE_IDS.map((id) => ({
+        id,
+        label: translate(`panels.editor.mode.${id}`),
+      }));
+    },
+    [locale],
+  );
   const mode = useEditorStore((s) => s.mode);
   const setMode = useEditorStore((s) => s.setMode);
   const updateContent = useEditorStore((s) => s.updateContent);
@@ -76,6 +82,7 @@ export function EditorPanel() {
   // 里对全文重跑 isMilkdownUnsafe —— 否则每按键 = updateContent 1 次 + 此处 1 次。
   const unsafeMarkdown = isTabMilkdownUnsafe(activeTab);
   const forcedSource = unsafeMarkdown && effective !== mode;
+  const activeIsMarkdown = activeTab !== null && isMarkdownPath(activeTab.filePath);
 
   const { saveActive, saveTab, openFileByPath } = useEditorFile();
 
@@ -185,7 +192,7 @@ export function EditorPanel() {
   let body: React.ReactNode;
   if (!activeTab) {
     body = <EditorWelcome />;
-  } else if (isMarkdownPath(activeTab.filePath)) {
+  } else if (activeIsMarkdown) {
     if (effective === 'source') {
       body = (
         <CodeEditor
@@ -235,7 +242,7 @@ export function EditorPanel() {
       }}
     >
       <EditorHeader onCloseRequest={onTabCloseRequest} />
-      {activeTab && isMarkdownPath(activeTab.filePath) && (
+      {activeIsMarkdown && (
         // markdown 模式切换:tab 行下方独立一行,居中。
         // 不加 border — 与上方 tab 行 / 下方编辑器无缝衔接,只靠 SegmentedControl
         // 自身的 surface-container-low 背景与 canvas 形成视觉区分。
@@ -245,7 +252,7 @@ export function EditorPanel() {
           <SegmentedControl
             // a11y(A22,A21 同族):radiogroup 须有 group 名,否则 AT 只读一组 radio(编辑/源码/
             // 预览)不知是「编辑器模式」选择器。这是除 SettingItemRow 外另一 SegmentedControl 调用点。
-            ariaLabel={t('panels.editor.mode_group')}
+            ariaLabel={translate('panels.editor.mode_group')}
             options={modeOptions}
             value={effective}
             onChange={requestModeChange}

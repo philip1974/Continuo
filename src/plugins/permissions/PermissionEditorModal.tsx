@@ -28,22 +28,37 @@ export interface PermissionSaveGroups {
   readonly toDeny: readonly PermissionKey[];
 }
 
+const EMPTY_PERMISSION_SAVE_KEYS: readonly PermissionKey[] = [];
+const EMPTY_PERMISSION_SAVE_GROUPS: PermissionSaveGroups = {
+  toGrant: EMPTY_PERMISSION_SAVE_KEYS,
+  toDeny: EMPTY_PERMISSION_SAVE_KEYS,
+};
+
 export function splitPermissionDecisionsForSave(
   decisions: ReadonlyMap<PermissionKey, boolean | null>,
 ): PermissionSaveGroups {
-  const toGrant = new Array<PermissionKey>(decisions.size);
-  const toDeny = new Array<PermissionKey>(decisions.size);
+  if (decisions.size === 0) return EMPTY_PERMISSION_SAVE_GROUPS;
+  let toGrant: PermissionKey[] | null = null;
+  let toDeny: PermissionKey[] | null = null;
   let grantCount = 0;
   let denyCount = 0;
 
   for (const [perm, granted] of decisions) {
-    if (granted === true) toGrant[grantCount++] = perm;
-    else if (granted === false) toDeny[denyCount++] = perm;
+    if (granted === true) {
+      toGrant ??= new Array<PermissionKey>(decisions.size);
+      toGrant[grantCount++] = perm;
+    } else if (granted === false) {
+      toDeny ??= new Array<PermissionKey>(decisions.size);
+      toDeny[denyCount++] = perm;
+    }
   }
 
-  toGrant.length = grantCount;
-  toDeny.length = denyCount;
-  return { toGrant, toDeny };
+  if (toGrant !== null) toGrant.length = grantCount;
+  if (toDeny !== null) toDeny.length = denyCount;
+  return {
+    toGrant: toGrant ?? EMPTY_PERMISSION_SAVE_KEYS,
+    toDeny: toDeny ?? EMPTY_PERMISSION_SAVE_KEYS,
+  };
 }
 
 export function PermissionEditorModal({
@@ -57,7 +72,7 @@ export function PermissionEditorModal({
   const t = useT();
   // null = 未决, true = granted, false = denied
   const [decisions, setDecisions] = useState<Map<PermissionKey, boolean | null>>(
-    new Map(),
+    () => new Map(),
   );
   // a11y(A46):保存失败须给可见 + live(role=alert)反馈,不能只 console.error(用户看似无响应)。
   const [saveFailed, setSaveFailed] = useState(false);

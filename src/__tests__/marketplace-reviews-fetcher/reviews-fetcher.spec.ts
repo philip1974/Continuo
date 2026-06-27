@@ -133,6 +133,28 @@ describe('fetchAllReviews — 正路径', () => {
     }
   });
 
+  it('单条 review 聚合走快路径,不构建分组 Map', async () => {
+    okNodes([makeNode('com.foo', 5, '2026-05-05T00:00:00Z')]);
+
+    const map = await fetchAllReviews();
+    const aggregate = map.get('com.foo');
+    const source = readFileSync(
+      path.resolve(__dirname, '../../marketplace/reviews-fetcher.ts'),
+      'utf8',
+    );
+    const aggregateBody = source.slice(
+      source.indexOf('function aggregate('),
+      source.indexOf('/** 测试用:重置 cache. */'),
+    );
+
+    expect(aggregate?.count).toBe(1);
+    expect(aggregate?.avg).toBe(5);
+    expect(aggregate?.reviews).toHaveLength(1);
+    expect(aggregateBody.indexOf('reviews.length === 1')).toBeLessThan(
+      aggregateBody.indexOf('const groups = new Map'),
+    );
+  });
+
   it('main 返回的 nodes 已是全量(分页是 main 职责)→ renderer 一次聚合', async () => {
     okNodes([
       makeNode('com.a', 5, '2026-05-05T00:00:00Z'),
@@ -556,6 +578,30 @@ describe('边界(E94) — reviews 缓存业务值域校验', () => {
     });
     const r = await fetchAllReviews();
     expect(r.size).toBe(0); // 不抛,空结果
+  });
+
+  it('E243 空/全无效 reviews 复用稳定空 Map', async () => {
+    fetchReviewsMock.mockResolvedValue({
+      ok: true,
+      data: { available: true, nodes: [] } satisfies FetchReviewsResult,
+    });
+    const empty = await fetchAllReviews(true);
+    expect(empty.size).toBe(0);
+
+    fetchReviewsMock.mockResolvedValueOnce({
+      ok: true,
+      // @ts-expect-error 故意传非数组 nodes 模拟畸形 IPC payload
+      data: { available: true, nodes: 'not-an-array' },
+    });
+    await expect(fetchAllReviews(true)).resolves.toBe(empty);
+
+    fetchReviewsMock.mockResolvedValueOnce({
+      ok: true,
+      data: { available: true, nodes: [null, 'bad'] } as FetchReviewsResult,
+    });
+    await expect(fetchAllReviews(true)).resolves.toBe(empty);
+
+    await expect(fetchAllReviews()).resolves.toBe(empty);
   });
 
   it('E243 nodes 超 MAX_REVIEW_NODES → 截断到上限(只解析前 N 个)', async () => {

@@ -73,6 +73,11 @@ describe('createWindowApiHost.listPluginDirs', () => {
     }
   });
 
+  it('空 PluginDirInfo 输入复用稳定空列表', () => {
+    expect(buildPluginDirInfos([])).toEqual([]);
+    expect(buildPluginDirInfos([])).toBe(buildPluginDirInfos([]));
+  });
+
   it('ok=true → 把 mainText 转 Blob URL,其它字段透传', async () => {
     installFakeApi({
       listDirs: vi.fn().mockResolvedValue({
@@ -112,6 +117,7 @@ describe('createWindowApiHost.listPluginDirs', () => {
 
     const dirs = await host.listPluginDirs();
     expect(dirs).toEqual([]);
+    await expect(host.listPluginDirs()).resolves.toBe(dirs);
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining('listDirs failed'),
       'EIO',

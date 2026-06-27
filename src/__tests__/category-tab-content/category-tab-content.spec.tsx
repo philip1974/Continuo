@@ -80,6 +80,18 @@ describe('CategoryTabContent', () => {
     }
   });
 
+  it('groupItems 空列表 → 稳定空 buckets,不创建 Map', () => {
+    const getSpy = vi.spyOn(Map.prototype, 'get');
+
+    try {
+      expect(groupItems([])).toEqual([]);
+      expect(groupItems([])).toBe(groupItems([]));
+      expect(getSpy).not.toHaveBeenCalled();
+    } finally {
+      getSpy.mockRestore();
+    }
+  });
+
   it('groupItems 单项列表不创建 Map 查找路径', () => {
     const item = spec({ id: 'a', title: 'A', group: '外观' });
     const getSpy = vi.spyOn(Map.prototype, 'get');
@@ -90,6 +102,26 @@ describe('CategoryTabContent', () => {
       expect(buckets).toEqual([
         { group: '外观', groupKey: undefined, items: [item] },
       ]);
+    } finally {
+      getSpy.mockRestore();
+    }
+  });
+
+  it('groupItems 多项全在同一组时复用输入 items,不创建 Map 查找路径', () => {
+    const items = [
+      spec({ id: 'a', title: 'A', group: '外观' }),
+      spec({ id: 'b', title: 'B', group: '外观' }),
+    ];
+    const getSpy = vi.spyOn(Map.prototype, 'get');
+
+    try {
+      const buckets = groupItems(items);
+
+      expect(getSpy).not.toHaveBeenCalled();
+      expect(buckets).toEqual([
+        { group: '外观', groupKey: undefined, items },
+      ]);
+      expect(buckets[0]?.items).toBe(items);
     } finally {
       getSpy.mockRestore();
     }

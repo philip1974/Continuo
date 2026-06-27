@@ -140,6 +140,31 @@ describe('captureBoundedFiles (E118)', () => {
     expect(r).toHaveLength(2);
   });
 
+  it('max 非正数 → 空结果,且不读取 index', () => {
+    const real = [{ name: 'a' }] as unknown as File[];
+    let reads = 0;
+    const proxy = new Proxy(real, {
+      get(t, prop, recv) {
+        if (typeof prop === 'string' && /^[0-9]+$/.test(prop)) reads++;
+        return Reflect.get(t, prop, recv);
+      },
+    }) as unknown as ArrayLike<File>;
+
+    expect(captureBoundedFiles(proxy, 0)).toEqual([]);
+    expect(captureBoundedFiles(proxy, 0)).toBe(captureBoundedFiles(proxy, -1));
+    expect(captureBoundedFiles(proxy, -1)).toEqual([]);
+    expect(reads).toBe(0);
+  });
+
+  it('空 files → 稳定空结果', () => {
+    const files = [] as unknown as ArrayLike<File>;
+
+    expect(captureBoundedFiles(files, MAX_DROP_FILES)).toEqual([]);
+    expect(captureBoundedFiles(files, MAX_DROP_FILES)).toBe(
+      captureBoundedFiles(files, 1),
+    );
+  });
+
   it('超过 max → 截断,且只读 max 个 index(不遍历全部)', () => {
     const N = 5000;
     const real = Array.from({ length: N }, (_, i) => ({

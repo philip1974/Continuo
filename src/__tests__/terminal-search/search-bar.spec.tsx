@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TerminalSearchBar } from '@/panels/Terminal/TerminalSearchBar';
 import type { SearchApi } from '@/panels/Terminal/useTerminal';
@@ -48,6 +50,23 @@ function makeApi(overrides: Partial<SearchApi> = {}): SearchApi {
 }
 
 describe('TerminalSearchBar UI', () => {
+  it('复用输入与按钮 label 翻译结果,title/aria-label 不重复查 catalog', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/panels/Terminal/TerminalSearchBar.tsx'),
+      'utf8',
+    );
+
+    expect(src).toContain('const placeholderLabel = t(');
+    expect(src).toContain('const regexLabel = t(');
+    expect(src).toContain('const closeLabel = t(');
+    expect(src).toContain('placeholder={placeholderLabel}');
+    expect(src).toContain('aria-label={placeholderLabel}');
+    expect(src).toContain('aria-label={regexLabel}');
+    expect(src).toContain('title={regexLabel}');
+    expect(src).toContain('aria-label={closeLabel}');
+    expect(src).toContain('title={closeLabel}');
+  });
+
   it('S1 renders focused search input with no-match state', () => {
     const api = makeApi();
     const { getByPlaceholderText, getByText } = render(

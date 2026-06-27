@@ -40,6 +40,7 @@ type Listener = () => void;
 // TypeError + 刷 console.warn(虽被 try/catch 兜住);注册成千上万个 decorator 让文件树每行渲染变成
 // 无界 O(N) 调用,滚动/展开卡顿。register 入口校验 fn 为函数 + 全局数量上限,非法/超限抛、不入表。
 const MAX_DECORATORS = 256;
+const EMPTY_DECORATOR_SNAPSHOT: readonly DecoratorFn[] = [];
 
 export class ExplorerDecoratorRegistry {
   private fns: DecoratorFn[] = [];
@@ -75,6 +76,10 @@ export class ExplorerDecoratorRegistry {
 
   getAll(): readonly DecoratorFn[] {
     if (this.cachedAll !== null) return this.cachedAll;
+    if (this.fns.length === 0) {
+      this.cachedAll = EMPTY_DECORATOR_SNAPSHOT;
+      return EMPTY_DECORATOR_SNAPSHOT;
+    }
 
     const fns = new Array<DecoratorFn>(this.fns.length);
     for (let i = 0; i < this.fns.length; i++) fns[i] = this.fns[i]!;
@@ -128,7 +133,7 @@ export function mergeDecorations(
   let badgeColor: string | undefined;
   let textColor: string | undefined;
   let icon: ReactNode | undefined;
-  const tooltips = new Array<string>(DEC_TOOLTIPS_COUNT_MAX);
+  let tooltips: string[] | null = null;
   let tooltipCount = 0;
 
   for (const fn of fns) {
@@ -156,6 +161,7 @@ export function mergeDecorations(
     if (tc !== undefined) textColor = tc;
     const tip = decString(dec.tooltip, DEC_TOOLTIP_MAX);
     if (tip !== undefined && tooltipCount < DEC_TOOLTIPS_COUNT_MAX) {
+      tooltips ??= new Array<string>(DEC_TOOLTIPS_COUNT_MAX);
       tooltips[tooltipCount++] = tip;
     }
   }
@@ -171,8 +177,8 @@ export function mergeDecorations(
   // 边界(E47):合并后总长上限 —— 数量(≤32)×单长(≤1024)已有界,再对 join 结果硬截断兜底。
   let tooltip: string | undefined;
   if (tooltipCount > 0) {
-    tooltips.length = tooltipCount;
-    const joined = tooltips.join(' · ');
+    tooltips!.length = tooltipCount;
+    const joined = tooltips!.join(' · ');
     tooltip =
       joined.length > DEC_TOOLTIP_TOTAL_MAX
         ? joined.slice(0, DEC_TOOLTIP_TOTAL_MAX)

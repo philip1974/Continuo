@@ -17,6 +17,11 @@ type GridNode =
 
 type FloatingGroup = { data?: LeafData } & Record<string, unknown>;
 
+const EMPTY_FLOATING_GROUPS: FloatingGroup[] = [];
+const EMPTY_LEAF_DATA: LeafData = {};
+const EMPTY_PANEL_IDS: string[] = [];
+const EMPTY_GRID_CHILDREN: GridNode[] = [];
+
 /**
  * 从已序列化的 dockview 布局里剥离 terminal panel,保留其余(editor 等)非终端布局。
  *
@@ -57,8 +62,9 @@ export function stripTerminalPanelsFromLayout(
   const survivingGroupIds = new Set<string>();
 
   const filterGroupData = (raw: LeafData | undefined): LeafData | null => {
-    const data = raw ?? {};
-    const rawViews = Array.isArray(data.views) ? data.views : [];
+    const data = raw ?? EMPTY_LEAF_DATA;
+    const rawViews = Array.isArray(data.views) ? data.views : EMPTY_PANEL_IDS;
+    if (rawViews.length === 0) return null;
     const views = new Array<string>(rawViews.length);
     let viewCount = 0;
     for (const view of rawViews) {
@@ -81,7 +87,10 @@ export function stripTerminalPanelsFromLayout(
       >(data.tabGroups.length);
       let tabGroupCount = 0;
       for (const tg of data.tabGroups) {
-        const rawPanelIds = Array.isArray(tg.panelIds) ? tg.panelIds : [];
+        const rawPanelIds = Array.isArray(tg.panelIds)
+          ? tg.panelIds
+          : EMPTY_PANEL_IDS;
+        if (rawPanelIds.length === 0) continue;
         const panelIds = new Array<string>(rawPanelIds.length);
         let panelIdCount = 0;
         for (const id of rawPanelIds) {
@@ -110,7 +119,10 @@ export function stripTerminalPanelsFromLayout(
       return data ? { ...node, data } : null;
     }
     // branch:递归剪枝,丢弃变空的子节点;子节点全空则本 branch 也摘除。
-    const rawChildren = Array.isArray(node.data) ? node.data : [];
+    const rawChildren = Array.isArray(node.data)
+      ? node.data
+      : EMPTY_GRID_CHILDREN;
+    if (rawChildren.length === 0) return null;
     const children = new Array<GridNode>(rawChildren.length);
     let childCount = 0;
     for (const child of rawChildren) {
@@ -154,15 +166,18 @@ export function stripTerminalPanelsFromLayout(
     groups: FloatingGroup[] | undefined,
   ): FloatingGroup[] | undefined => {
     if (!Array.isArray(groups)) return groups;
-    const kept = new Array<FloatingGroup>(groups.length);
+    if (groups.length === 0) return EMPTY_FLOATING_GROUPS;
+    let kept: FloatingGroup[] | null = null;
     let keptCount = 0;
     for (const g of groups) {
       const data = filterGroupData(g?.data);
       if (data) {
+        kept ??= new Array<FloatingGroup>(groups.length);
         kept[keptCount] = { ...g, data };
         keptCount += 1;
       }
     }
+    if (kept === null) return EMPTY_FLOATING_GROUPS;
     kept.length = keptCount;
     return kept;
   };

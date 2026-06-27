@@ -13,6 +13,8 @@ import { isSameOrInsidePath } from '@/lib/path-cross';
 
 export type ClipboardKind = 'cut' | 'copy';
 
+const EMPTY_CLIPBOARD_PATHS: readonly string[] = [];
+
 interface ExplorerClipboardState {
   kind: ClipboardKind | null;
   paths: readonly string[];
@@ -35,33 +37,47 @@ function isClipboardPathRemoved(path: string, removedPaths: readonly string[]): 
   return false;
 }
 
+function copyClipboardPaths(paths: readonly string[]): readonly string[] {
+  if (paths.length === 0) return EMPTY_CLIPBOARD_PATHS;
+  const copied = new Array<string>(paths.length);
+  for (let i = 0; i < paths.length; i++) copied[i] = paths[i]!;
+  return copied;
+}
+
 export function pruneClipboardPaths(
   paths: readonly string[],
   removedPaths: readonly string[],
 ): readonly string[] {
+  if (paths.length === 0) return EMPTY_CLIPBOARD_PATHS;
   let remaining: string[] | null = null;
+  let remainingCount = 0;
   for (let i = 0; i < paths.length; i++) {
     const path = paths[i]!;
     if (isClipboardPathRemoved(path, removedPaths)) {
       if (remaining === null) {
-        remaining = [];
-        for (let j = 0; j < i; j++) {
-          remaining.push(paths[j]!);
-        }
+        remaining = new Array<string>(paths.length - 1);
+        for (let j = 0; j < i; j++) remaining[remainingCount++] = paths[j]!;
       }
       continue;
     }
-    if (remaining !== null) remaining.push(path);
+    if (remaining !== null) remaining[remainingCount++] = path;
   }
-  return remaining ?? paths;
+  if (remaining === null) return paths;
+  remaining.length = remainingCount;
+  return remainingCount === 0 ? EMPTY_CLIPBOARD_PATHS : remaining;
 }
 
 export const useExplorerClipboardStore = create<ExplorerClipboardState>(
   (set) => ({
     kind: null,
-    paths: [],
-    set: (kind, paths) => set({ kind, paths: [...paths] }),
-    clear: () => set({ kind: null, paths: [] }),
+    paths: EMPTY_CLIPBOARD_PATHS,
+    set: (kind, paths) => set({ kind, paths: copyClipboardPaths(paths) }),
+    clear: () =>
+      set((s) =>
+        s.kind === null && s.paths.length === 0
+          ? s
+          : { kind: null, paths: EMPTY_CLIPBOARD_PATHS },
+      ),
     prune: (removedPaths) =>
       set((s) => {
         if (s.kind === null || s.paths.length === 0 || removedPaths.length === 0) {
@@ -72,7 +88,9 @@ export const useExplorerClipboardStore = create<ExplorerClipboardState>(
         // 源 → Paste 报不存在/同路径新建文件误灰显待粘贴。匹配语义同 editor.store remove/rename。
         const remaining = pruneClipboardPaths(s.paths, removedPaths);
         if (remaining === s.paths) return s; // 无变化 → 引用不变,免重渲
-        if (remaining.length === 0) return { kind: null, paths: [] };
+        if (remaining.length === 0) {
+          return { kind: null, paths: EMPTY_CLIPBOARD_PATHS };
+        }
         return { kind: s.kind, paths: remaining };
       }),
   }),

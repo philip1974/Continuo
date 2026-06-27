@@ -13,6 +13,7 @@ import { getUserPermissionStore } from '../permissions/co-permission-store';
 import { PermissionEditorModal } from '../permissions/PermissionEditorModal';
 import { useUpdateStore } from '@/marketplace/update-store';
 import type { PluginListItem } from '../PluginManager';
+import type { PermissionKey } from '../permissions';
 import { useT, useTWithFallback } from '@/i18n';
 import { localizeErrorByCode } from '@/lib/localize-error';
 import { SR_ONLY_STYLE } from '@/lib/sr-only';
@@ -23,6 +24,11 @@ interface ContributionRow {
   readonly count: number;
   readonly samples: readonly string[];
 }
+
+const EMPTY_PLUGIN_TAB_STRINGS: string[] = [];
+const EMPTY_PLUGIN_TAB_ITEMS: never[] = [];
+const EMPTY_CONTRIBUTION_SAMPLES: readonly string[] = [];
+const EMPTY_DECLARED_PERMISSIONS: readonly PermissionKey[] = [];
 
 const PLUGINS_TAB_ROW_CLASS_NAME =
   'flex items-start gap-4 px-4 py-3 text-xs';
@@ -39,6 +45,7 @@ export function collectContributionSamples<T, K extends keyof T>(
   items: readonly T[],
   key: K,
 ): string[] {
+  if (items.length === 0) return EMPTY_PLUGIN_TAB_STRINGS;
   const samples = new Array<string>(items.length);
   for (let i = 0; i < items.length; i++) {
     samples[i] = String(items[i]![key]);
@@ -49,7 +56,10 @@ export function collectContributionSamples<T, K extends keyof T>(
 export function collectStatusBarItems<T>(
   left: readonly T[],
   right: readonly T[],
-): T[] {
+): readonly T[] {
+  if (left.length === 0 && right.length === 0) return EMPTY_PLUGIN_TAB_ITEMS;
+  if (left.length === 0) return right;
+  if (right.length === 0) return left;
   const items = new Array<T>(left.length + right.length);
   let i = 0;
   for (; i < left.length; i++) items[i] = left[i]!;
@@ -100,7 +110,7 @@ function snapshot(): readonly ContributionRow[] {
     {
       labelKey: 'plugins_tab.label.explorer_decorators',
       count: explorerDecorators.length,
-      samples: [],
+      samples: EMPTY_CONTRIBUTION_SAMPLES,
     },
     {
       labelKey: 'plugins_tab.label.editor_actions',
@@ -246,19 +256,22 @@ export function hasPluginVersion(
   return false;
 }
 
+export function readUserPluginList(): readonly PluginListItem[] {
+  const m = getUserPluginManager();
+  return m ? m.listAll() : EMPTY_PLUGIN_TAB_ITEMS;
+}
+
 function useUserPlugins(): {
   plugins: readonly PluginListItem[];
   refresh: () => void;
 } {
-  const [snap, setSnap] = useState<readonly PluginListItem[]>(() => {
-    const m = getUserPluginManager();
-    return m ? m.listAll() : [];
-  });
+  const [snap, setSnap] = useState<readonly PluginListItem[]>(() =>
+    readUserPluginList(),
+  );
   const refresh = () => {
-    const m = getUserPluginManager();
     // listAll() 每次返回新数组;1s 轮询直接 setSnap 会让整个插件列表每秒
     // re-render。函数式更新只在列表渲染态实际变化时换引用。(codex 打磨 R2)
-    const next = m ? m.listAll() : [];
+    const next = readUserPluginList();
     setSnap((prev) => (samePluginList(prev, next) ? prev : next));
   };
   useEffect(() => {
@@ -679,7 +692,9 @@ function UserPluginsSection() {
         <PermissionEditorModal
           open={permEditTarget !== null}
           pluginId={permEditTarget?.id ?? null}
-          declared={permEditTarget?.manifest.permissions ?? []}
+          declared={
+            permEditTarget?.manifest.permissions ?? EMPTY_DECLARED_PERMISSIONS
+          }
           store={permStore}
           onClose={() => setPermEditTarget(null)}
           pluginStillExists={() =>

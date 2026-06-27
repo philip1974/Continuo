@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 vi.mock('@tanstack/react-virtual', () => ({
   useVirtualizer: ({ count }: { count: number }) => ({
@@ -41,6 +43,22 @@ function makeReg(): CommandRegistry {
 }
 
 describe('CommandPalette UI', () => {
+  it('搜索框 placeholder label 复用,aria-label 与 placeholder 不重复查 catalog', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/plugins/command-palette/CommandPalette.tsx'),
+      'utf8',
+    );
+
+    expect(src).toContain('const placeholderLabel = t(');
+    expect(src).toContain('aria-label={placeholderLabel}');
+    expect(src).toContain('placeholder={placeholderLabel}');
+    expect(
+      src.match(/aria-label=\{t\('command_palette\.placeholder'\)\}/g)
+        ?.length ?? 0,
+    ).toBe(1);
+    expect(src).not.toContain("placeholder={t('command_palette.placeholder')}");
+  });
+
   it('行 className 不通过数组 join 重建', () => {
     const joinSpy = vi.spyOn(Array.prototype, 'join');
 

@@ -17,6 +17,7 @@ export const MAX_RECENT = 20;
 const MAX_RECENT_RAW_LENGTH = 256 * 1024;
 // 边界(E39,E5/E22 持久化读回族):command id 长度上限(与 CommandRegistry id 上限 E35 一致)。
 const RECENT_ID_MAX = 256;
+const EMPTY_RECENT_LIST: readonly RecentEntry[] = [];
 
 export interface RecentEntry {
   readonly id: string;
@@ -50,7 +51,7 @@ function isRecentEntry(value: unknown): value is RecentEntry {
 export function readFromStorage(): readonly RecentEntry[] {
   try {
     const raw = localStorage.getItem(RECENT_STORAGE_KEY);
-    if (!raw) return [];
+    if (!raw) return EMPTY_RECENT_LIST;
     // 边界(E72):解析前按原始串长度拦,防超大 raw 的 JSON.parse 卡顿(MAX_RECENT 只限解析后)。
     // 超限 = 篡改/旧残留 → 返 [] 并清毒(removeItem),避免每次 record/storage 同步反复解析。
     if (raw.length > MAX_RECENT_RAW_LENGTH) {
@@ -59,10 +60,10 @@ export function readFromStorage(): readonly RecentEntry[] {
       } catch {
         /* */
       }
-      return [];
+      return EMPTY_RECENT_LIST;
     }
     const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return [];
+    if (!Array.isArray(parsed)) return EMPTY_RECENT_LIST;
     // 边界(E39 / E209,E208 同族有界迭代):惰性循环按顺序收集合法项,凑满 MAX_RECENT 即 break ——
     // 不先 parsed.filter(isRecentEntry) 全量扫描+物化再 slice。篡改的 localStorage 可在 256KiB raw cap
     // 内塞大量短 entry,启动 / storage 同步 / 每次 record 读 live 列表都会完整遍历(MAX_RECENT=20 不早开)。
@@ -74,9 +75,10 @@ export function readFromStorage(): readonly RecentEntry[] {
       if (isRecentEntry(item)) out[count++] = item;
     }
     out.length = count;
+    if (count === 0) return EMPTY_RECENT_LIST;
     return out;
   } catch {
-    return [];
+    return EMPTY_RECENT_LIST;
   }
 }
 
@@ -135,7 +137,9 @@ export const useRecentCommandsStore = create<RecentState>((set, get) => ({
   },
 
   clear() {
-    set({ list: [] });
+    set((s) =>
+      s.list.length === 0 ? s : { list: EMPTY_RECENT_LIST },
+    );
     try {
       localStorage.removeItem(RECENT_STORAGE_KEY);
     } catch {

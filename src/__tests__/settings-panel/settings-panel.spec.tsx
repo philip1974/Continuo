@@ -8,6 +8,8 @@
 //   store.ts 旧 isOpen / open / close API 已被移除
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fireEvent, render, cleanup, act } from '@testing-library/react';
 import {
   SettingsPanel,
@@ -41,6 +43,19 @@ function makeReg(): SettingTabRegistry {
 // ────────────────────────────────────────────────────────────
 
 describe('SettingsPanel · 基础渲染', () => {
+  it('搜索框 placeholder label 复用,aria-label 与 placeholder 不重复查 catalog', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/plugins/settings/SettingsPanel.tsx'),
+      'utf8',
+    );
+
+    expect(src).toContain('const searchPlaceholderLabel = t(');
+    expect(src).toContain('aria-label={searchPlaceholderLabel}');
+    expect(src).toContain('placeholder={searchPlaceholderLabel}');
+    expect(src).not.toContain("aria-label={t('settings.panel.search_placeholder')}");
+    expect(src).not.toContain("placeholder={t('settings.panel.search_placeholder')}");
+  });
+
   it('渲染所有 tab + 默认选首项(priority 升序)', () => {
     const { container } = render(<SettingsPanel registry={makeReg()} />);
     const navBtns = container.querySelectorAll('nav button');
@@ -255,6 +270,37 @@ describe('SettingsPanel · 搜索模式', () => {
     }
   });
 
+  it('空 searchable 搜索 → 稳定空匹配结果,不 lower-case query', () => {
+    const lowerSpy = vi.spyOn(String.prototype, 'toLowerCase');
+
+    try {
+      expect(selectMatchedSettingItems([], 'theme')).toEqual([]);
+      expect(selectMatchedSettingItems([], 'theme')).toBe(
+        selectMatchedSettingItems([], 'other'),
+      );
+      expect(lowerSpy).not.toHaveBeenCalled();
+    } finally {
+      lowerSpy.mockRestore();
+    }
+  });
+
+  it('非空 searchable 无匹配 → 复用稳定空匹配结果', () => {
+    const item = {
+      id: 'general.theme',
+      category: 'general',
+      title: '主题',
+      type: 'boolean',
+      default: false,
+    } as const;
+    const searchable = [{ item, haystack: 'theme general' }];
+
+    const a = selectMatchedSettingItems(searchable, 'not-found');
+    const b = selectMatchedSettingItems(searchable, 'still-not-found');
+
+    expect(a).toEqual([]);
+    expect(b).toBe(a);
+  });
+
   it('搜索 haystack 列表构造预分配数组,不调用 items.map', () => {
     const items = [
       {
@@ -286,6 +332,11 @@ describe('SettingsPanel · 搜索模式', () => {
     } finally {
       mapSpy.mockRestore();
     }
+  });
+
+  it('空设置项 → 稳定空 searchable 列表', () => {
+    expect(buildSearchableSettingItems([])).toEqual([]);
+    expect(buildSearchableSettingItems([])).toBe(buildSearchableSettingItems([]));
   });
 
   it('搜索结果分组不通过 Array.from(entries).map 生成中间数组', () => {
@@ -339,6 +390,65 @@ describe('SettingsPanel · 搜索模式', () => {
       expect(mapGetSpy).not.toHaveBeenCalled();
     } finally {
       mapGetSpy.mockRestore();
+    }
+  });
+
+  it('同一 category 的多条搜索结果复用输入 items,不构造 Map', () => {
+    const itemA = {
+      id: 'editor.fontSize',
+      category: 'editor',
+      title: '字号',
+      type: 'number',
+      default: 14,
+    } as const;
+    const itemB = {
+      id: 'editor.tabSize',
+      category: 'editor',
+      title: 'Tab',
+      type: 'number',
+      default: 2,
+    } as const;
+    const items = [itemA, itemB];
+    const OriginalMap = globalThis.Map;
+    let mapCtorCount = 0;
+    class CountingMap<K, V> extends OriginalMap<K, V> {
+      constructor(entries?: readonly (readonly [K, V])[] | null) {
+        mapCtorCount += 1;
+        super(entries);
+      }
+    }
+    globalThis.Map = CountingMap as MapConstructor;
+
+    try {
+      const buckets = groupSearchResults(items);
+
+      expect(buckets).toEqual([
+        { category: 'editor', label: '编辑器', items },
+      ]);
+      expect(buckets[0]?.items).toBe(items);
+      expect(mapCtorCount).toBe(0);
+    } finally {
+      globalThis.Map = OriginalMap;
+    }
+  });
+
+  it('空搜索结果分组走快路径,不构造 Map', () => {
+    const OriginalMap = globalThis.Map;
+    let mapCtorCount = 0;
+    class CountingMap<K, V> extends OriginalMap<K, V> {
+      constructor(entries?: readonly (readonly [K, V])[] | null) {
+        mapCtorCount += 1;
+        super(entries);
+      }
+    }
+    globalThis.Map = CountingMap as MapConstructor;
+
+    try {
+      expect(groupSearchResults([])).toEqual([]);
+      expect(groupSearchResults([])).toBe(groupSearchResults([]));
+      expect(mapCtorCount).toBe(0);
+    } finally {
+      globalThis.Map = OriginalMap;
     }
   });
 

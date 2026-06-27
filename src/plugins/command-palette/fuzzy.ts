@@ -1,6 +1,8 @@
 // 命令面板模糊搜索(M-Plugin v1.6,纯函数)。
 // 子序列匹配 + 词边界 / 连续匹配加分,大小写不敏感。
 
+const EMPTY_FUZZY_RESULTS: readonly never[] = [];
+
 function isBoundaryChar(ch: string): boolean {
   return ch === ' ' || ch === '.' || ch === '_' || ch === '-' || ch === '/';
 }
@@ -53,8 +55,16 @@ export function fuzzyFilter<T>(
    */
   getStrLower?: (t: T) => string,
 ): readonly T[] {
+  if (items.length === 0) return items;
   if (!query) return items;
   const q = query.toLowerCase(); // 整批一次(打磨 R51),循环内复用
+  if (items.length === 1) {
+    const item = items[0]!;
+    const score = getStrLower
+      ? fuzzyScoreBothLower(q, getStrLower(item))
+      : fuzzyScoreLower(q, getStr(item));
+    return score === null ? EMPTY_FUZZY_RESULTS : items;
+  }
   const matched = new Array<T>(items.length);
   const scores = new Array<number>(items.length);
   let count = 0;
@@ -70,6 +80,7 @@ export function fuzzyFilter<T>(
   }
   matched.length = count;
   scores.length = count;
+  if (count === 0) return EMPTY_FUZZY_RESULTS;
   if (count < 2) return matched;
 
   const order = new Array<number>(count);

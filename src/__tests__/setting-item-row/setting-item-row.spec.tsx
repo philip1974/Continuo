@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fireEvent, render, cleanup, act } from '@testing-library/react';
 import {
   SettingItemRow,
@@ -206,6 +208,14 @@ describe('SettingItemRow — a11y label 关联(A21)', () => {
 });
 
 describe('SettingItemRow — select', () => {
+  it('select options 按 locale memoize,不在 JSX 中每次 render 裸 enum.map', () => {
+    const src = readFileSync(join(process.cwd(), 'src/plugins/settings/SettingItemRow.tsx'), 'utf8');
+
+    expect(src).toContain('const selectOptions = useMemo');
+    expect(src).toContain('[locale, spec.enum, spec.type, t]');
+    expect(src).not.toContain('options={spec.enum.map');
+  });
+
   it('SegmentedControl 列出 enum,点选项 setValue', () => {
     const s = spec({
       id: 'general.theme',

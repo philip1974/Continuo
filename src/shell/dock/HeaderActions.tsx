@@ -13,6 +13,26 @@ import { useTWithFallback, t } from '@/i18n';
 
 let panelCounter = 0;
 const nextPanelId = (key: string) => `${key}-${++panelCounter}`;
+const POPOUT_ICON = (
+  <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+    <path
+      d="M9 2h5v5M14 2L8 8M12 9v4a1 1 0 01-1 1H3a1 1 0 01-1-1V5a1 1 0 011-1h4"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      fill="none"
+    />
+  </svg>
+);
+const MORE_ACTIONS_ICON = (
+  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+    {/* horizontal ellipsis ⋯ */}
+    <circle cx="3.5" cy="8" r="1.1" fill="currentColor" />
+    <circle cx="8" cy="8" r="1.1" fill="currentColor" />
+    <circle cx="12.5" cy="8" r="1.1" fill="currentColor" />
+  </svg>
+);
 
 interface AnchorRect {
   readonly top: number;
@@ -26,6 +46,8 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const [anchor, setAnchor] = useState<AnchorRect | null>(null);
   const tk = useTWithFallback();
+  const popoutLabel = t('shell.dock.popout_title');
+  const moreActionsLabel = t('panels.explorer.btn.more_actions');
   // 动态读取已注册 panel 类型(含内置 + 未来第三方插件)
   const panelChoices = useRegistry(coApp.panels);
   // a11y(A18,ExplorerHeader 同族):菜单打开移焦入首项 + Escape 还原焦点 + 方向键漫游。
@@ -123,22 +145,13 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
           <IconButton
             size="sm"
             // aria-label 走 i18n(打磨 R38),复用 popout title 键,与 hover title 一致
-            aria-label={t('shell.dock.popout_title')}
-            title={t('shell.dock.popout_title')}
+            aria-label={popoutLabel}
+            title={popoutLabel}
             disabled={!activePanel}
             onClick={popout}
             className="opacity-40 transition-opacity group-hover/header:opacity-100 focus-visible:opacity-100"
           >
-            <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
-              <path
-                d="M9 2h5v5M14 2L8 8M12 9v4a1 1 0 01-1 1H3a1 1 0 01-1-1V5a1 1 0 011-1h4"
-                stroke="currentColor"
-                strokeWidth="1.4"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                fill="none"
-              />
-            </svg>
+            {POPOUT_ICON}
           </IconButton>
         </>
       )}
@@ -146,20 +159,15 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
         ref={triggerRef}
         size="sm"
         // aria-label 走 i18n(打磨 R38),复用 more_actions 键,与 hover title 一致
-        aria-label={t('panels.explorer.btn.more_actions')}
-        title={t('panels.explorer.btn.more_actions')}
+        aria-label={moreActionsLabel}
+        title={moreActionsLabel}
         // a11y(A7,A6 同族):菜单触发须告知 AT 弹 role=menu 及当前展开态。
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
         className="opacity-40 transition-opacity group-hover/header:opacity-100 focus-visible:opacity-100"
       >
-        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-          {/* horizontal ellipsis ⋯ */}
-          <circle cx="3.5" cy="8" r="1.1" fill="currentColor" />
-          <circle cx="8" cy="8" r="1.1" fill="currentColor" />
-          <circle cx="12.5" cy="8" r="1.1" fill="currentColor" />
-        </svg>
+        {MORE_ACTIONS_ICON}
       </IconButton>
       {open && anchor &&
         createPortal(

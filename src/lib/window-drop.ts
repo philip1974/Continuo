@@ -34,6 +34,7 @@ export function hasFiles(dataTransfer: DataTransfer | null): boolean {
 // MAX_DROP_FILES 个;超长路径(> MAX_DROP_PATH_LEN)不发起 isDir IPC,直接跳过。
 export const MAX_DROP_FILES = 1000;
 const MAX_DROP_PATH_LEN = 4096; // 典型文件系统 PATH_MAX 量级
+const EMPTY_CAPTURED_FILES: File[] = [];
 
 /**
  * 边界(E118,E114 残留 + E116 同款):从 DataTransfer.files(FileList)**同步按索引**最多捕获
@@ -44,10 +45,12 @@ export function captureBoundedFiles(
   files: ArrayLike<File>,
   max: number,
 ): File[] {
-  const limit = Math.min(files.length, max);
+  const fileCount = files.length;
+  if (max <= 0 || fileCount === 0) return EMPTY_CAPTURED_FILES;
+  const limit = Math.min(fileCount, max);
   const out = new Array<File>(limit);
   let count = 0;
-  for (let i = 0; i < files.length && count < max; i++) {
+  for (let i = 0; i < fileCount && count < max; i++) {
     const f = files[i];
     if (f) out[count++] = f;
   }

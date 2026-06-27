@@ -57,13 +57,17 @@ export interface FileTreeDataLoader {
   getItem: (itemId: string) => Promise<FileEntry>;
   getChildrenWithData: (
     itemId: string,
-  ) => Promise<Array<{ id: string; data: FileEntry }>>;
+  ) => Promise<FileTreeChild[]>;
 }
+
+type FileTreeChild = { id: string; data: FileEntry };
+const EMPTY_TREE_CHILDREN: FileTreeChild[] = [];
 
 export function buildTreeChildrenWithData(
   entries: readonly FileEntry[],
-): Array<{ id: string; data: FileEntry }> {
-  const out: Array<{ id: string; data: FileEntry }> = [];
+): FileTreeChild[] {
+  if (entries.length === 0) return EMPTY_TREE_CHILDREN;
+  const out: FileTreeChild[] = [];
   for (const entry of entries) {
     out.push({ id: entry.path, data: entry });
   }
@@ -115,7 +119,7 @@ export function createDataLoader(deps: CreateTreeConfigDeps): FileTreeDataLoader
         const r = await fs.listDir(itemId);
         if (!r.ok) {
           onIpcWarn(`listDir failed for ${itemId}: ${r.message}`, r.code);
-          return [];
+          return EMPTY_TREE_CHILDREN;
         }
         return buildTreeChildrenWithData(r.data);
       } catch (err) {
@@ -123,7 +127,7 @@ export function createDataLoader(deps: CreateTreeConfigDeps): FileTreeDataLoader
           `listDir threw for ${itemId}: ${(err as Error).message}`,
           'IPC_HANDLER_ERROR',
         );
-        return [];
+        return EMPTY_TREE_CHILDREN;
       }
     },
   };
@@ -138,7 +142,7 @@ export function createTreeConfig(
     return item.isFolder() ? item.getId() : dirname(item.getId());
   };
 
-  return {
+  const config: TreeConfig<FileEntry> = {
     rootItemId: deps.root,
     indent: INDENT,
     getItemName: (item) => item.getItemData().name,
@@ -150,12 +154,6 @@ export function createTreeConfig(
     initialState: {
       expandedItems: [deps.root],
     },
-    ...(deps.expandedItems
-      ? {
-          state: { expandedItems: deps.expandedItems },
-          setExpandedItems: deps.setExpandedItems,
-        }
-      : {}),
     // 文件树 drop 语义:只允许 drop into folder(no reorder);
     // 不能 drop 到自身或自身子树(loop);drop 到 file → 进父目录
     canReorder: false,
@@ -198,4 +196,11 @@ export function createTreeConfig(
       dragAndDropFeature, // 内部多选 move + 外部文件 drop on row
     ],
   };
+
+  if (deps.expandedItems) {
+    config.state = { expandedItems: deps.expandedItems };
+    config.setExpandedItems = deps.setExpandedItems;
+  }
+
+  return config;
 }

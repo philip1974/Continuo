@@ -3,6 +3,8 @@
 // isOverridden 预计算进 displayCommands(deps: allCommands/tk/overrides),行渲染只读
 // 派生字段;搜索 haystack 改用 effective hotkey(override 后能按新组合搜到)。
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { render, cleanup, act, fireEvent } from '@testing-library/react';
 
 vi.mock('../../plugins/keybindings/keybindings-store', async (importActual) => {
@@ -42,10 +44,20 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('打磨 R29 — Keybindings hotkey 预计算', () => {
+  it('命令面板提示热键预计算,不在 render 中重复 formatHotkeyParts', () => {
+    const src = readFileSync(join(process.cwd(), 'src/plugins/settings/KeybindingsTabContent.tsx'), 'utf8');
+
+    expect(src).toContain('const COMMAND_PALETTE_HOTKEY_PARTS = formatHotkeyParts');
+    expect(src).toContain('COMMAND_PALETTE_HOTKEY_PARTS.map');
+    expect(src).not.toContain("formatHotkeyParts('mod+shift+p', PLATFORM).map");
+  });
+
   it('displayCommands 构造预分配数组,不调用 allCommands.map', () => {
     const commands = [
       { id: 'save', title: 'Save', hotkey: 'mod+s', fn: vi.fn() },
       { id: 'toggle', title: 'Toggle', category: 'View', fn: vi.fn() },
+      { id: 'plain-a', title: 'Plain A', fn: vi.fn() },
+      { id: 'plain-b', title: 'Plain B', fn: vi.fn() },
     ];
     const mapSpy = vi.spyOn(commands, 'map');
     useKeybindingsStore.setState({ overrides: { toggle: 'mod+t' } });
@@ -58,15 +70,38 @@ describe('打磨 R29 — Keybindings hotkey 预计算', () => {
         'other',
       );
 
-      expect(out.map((d) => d.cmd.id)).toEqual(['save', 'toggle']);
+      expect(out.map((d) => d.cmd.id)).toEqual([
+        'save',
+        'toggle',
+        'plain-a',
+        'plain-b',
+      ]);
       expect(out[0]?.hotkeyParts).toEqual(['Ctrl', 'S']);
       expect(out[1]?.effectiveHotkey).toBe('mod+t');
       expect(out[1]?.isOverridden).toBe(true);
       expect(out[1]?.searchHaystack).toContain('mod+t');
+      expect(out[2]?.hotkeyParts).toBe(out[3]?.hotkeyParts);
       expect(mapSpy).not.toHaveBeenCalled();
     } finally {
       mapSpy.mockRestore();
     }
+  });
+
+  it('空命令列表 → 稳定空 displayCommands,不读取 hotkey', () => {
+    const commands = [] as const;
+
+    const out = buildKeybindingDisplayCommands(
+      commands,
+      (_key, fallback) => fallback,
+      {},
+      'other',
+    );
+
+    expect(out).toEqual([]);
+    expect(out).toBe(
+      buildKeybindingDisplayCommands(commands, (_key, fallback) => fallback, {}, 'mac'),
+    );
+    expect(getEffSpy).not.toHaveBeenCalled();
   });
 
   it('统计默认 hotkey 数量时不通过 filter(...).length 生成中间数组', () => {
@@ -119,6 +154,39 @@ describe('打磨 R29 — Keybindings hotkey 预计算', () => {
       expect(groupByCategory.toString()).not.toContain('.push(');
     } finally {
       arrayFromSpy.mockRestore();
+    }
+  });
+
+  it('同一分类且已按标题排序时复用输入 items,不 sort', () => {
+    const commandA = {
+      cmd: { id: 'a', title: 'Alpha', hotkey: 'mod+a', fn: vi.fn() },
+      displayTitle: 'Alpha',
+      displayCategory: 'Editor',
+      effectiveHotkey: 'mod+a',
+      hotkeyParts: ['mod', 'a'],
+      isOverridden: false,
+      searchHaystack: 'alpha editor a mod+a',
+    };
+    const commandB = {
+      cmd: { id: 'b', title: 'Beta', hotkey: 'mod+b', fn: vi.fn() },
+      displayTitle: 'Beta',
+      displayCategory: 'Editor',
+      effectiveHotkey: 'mod+b',
+      hotkeyParts: ['mod', 'b'],
+      isOverridden: false,
+      searchHaystack: 'beta editor b mod+b',
+    };
+    const commands = [commandA, commandB];
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      const buckets = groupByCategory(commands, 'Other');
+
+      expect(buckets).toEqual([{ category: 'Editor', items: commands }]);
+      expect(buckets[0]?.items).toBe(commands);
+      expect(sortSpy).not.toHaveBeenCalled();
+    } finally {
+      sortSpy.mockRestore();
     }
   });
 
@@ -236,6 +304,24 @@ describe('打磨 R29 — Keybindings hotkey 预计算', () => {
     } finally {
       filterSpy.mockRestore();
     }
+  });
+
+  it('选择可见命令无匹配结果时复用稳定空列表', () => {
+    const command = {
+      cmd: { id: 'alpha', title: 'Alpha', hotkey: 'mod+a', fn: vi.fn() },
+      displayTitle: 'Alpha',
+      displayCategory: 'Editor',
+      effectiveHotkey: 'mod+a',
+      hotkeyParts: ['mod', 'a'],
+      isOverridden: false,
+      searchHaystack: 'alpha editor alpha mod+a',
+    };
+
+    const a = selectVisibleKeybindingCommands([command], 'not-found');
+    const b = selectVisibleKeybindingCommands([command], 'still-not-found');
+
+    expect(a).toEqual([]);
+    expect(b).toBe(a);
   });
 
   it('命令行 className 不通过数组 join 重建', () => {

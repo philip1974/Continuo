@@ -19,6 +19,10 @@ import { getEffectiveHotkey } from './keybindings-store';
 const PLATFORM = detectPlatform();
 const EMPTY_CONFLICTS: readonly CommandSpec[] = [];
 
+function appendComboPart(combo: string, part: string): string {
+  return combo ? `${combo}+${part}` : part;
+}
+
 interface KeybindingCaptureModalProps {
   readonly visible: boolean;
   readonly commandId: string;
@@ -46,20 +50,17 @@ export function eventToCombo(
   if (key === 'Meta' || key === 'Control' || key === 'Shift' || key === 'Alt') {
     return null;
   }
-  const parts = new Array<string>(5);
-  let partCount = 0;
+  let combo = '';
   if (platform === 'mac') {
-    if (e.metaKey) parts[partCount++] = 'mod';
-    if (e.ctrlKey) parts[partCount++] = 'ctrl';
+    if (e.metaKey) combo = appendComboPart(combo, 'mod');
+    if (e.ctrlKey) combo = appendComboPart(combo, 'ctrl');
   } else {
-    if (e.ctrlKey) parts[partCount++] = 'mod';
-    if (e.metaKey) parts[partCount++] = 'cmd';
+    if (e.ctrlKey) combo = appendComboPart(combo, 'mod');
+    if (e.metaKey) combo = appendComboPart(combo, 'cmd');
   }
-  if (e.shiftKey) parts[partCount++] = 'shift';
-  if (e.altKey) parts[partCount++] = 'alt';
-  parts[partCount++] = key.toLowerCase();
-  parts.length = partCount;
-  const combo = parts.join('+');
+  if (e.shiftKey) combo = appendComboPart(combo, 'shift');
+  if (e.altKey) combo = appendComboPart(combo, 'alt');
+  combo = appendComboPart(combo, key.toLowerCase());
   // 边界(E145):只产出注册侧 HOTKEY_SHAPE_RE 接受的合法形态。Space(e.key === ' ')→ 含空白、
   // 主键为 '+'(→ 'shift++' 空段)等会被 compileCombo trim/split 成空主键 → 永远不触发 + 显示异常。
   // 这类无法表示的组合直接拒绝(返 null,不捕获),与注册/写端校验一致。
@@ -72,23 +73,18 @@ export function selectKeybindingConflicts(
   captured: string | null,
 ): readonly CommandSpec[] {
   if (!captured) return EMPTY_CONFLICTS;
+  let conflicts: CommandSpec[] | null = null;
   let conflictCount = 0;
   for (const command of allCommands) {
     if (command.id === commandId || getEffectiveHotkey(command) !== captured) {
       continue;
     }
+    if (conflicts === null) conflicts = new Array<CommandSpec>(allCommands.length);
+    conflicts[conflictCount] = command;
     conflictCount += 1;
   }
-  if (conflictCount === 0) return EMPTY_CONFLICTS;
-  const conflicts = new Array<CommandSpec>(conflictCount);
-  let index = 0;
-  for (const command of allCommands) {
-    if (command.id === commandId || getEffectiveHotkey(command) !== captured) {
-      continue;
-    }
-    conflicts[index] = command;
-    index += 1;
-  }
+  if (conflicts === null) return EMPTY_CONFLICTS;
+  conflicts.length = conflictCount;
   return conflicts;
 }
 
@@ -160,6 +156,14 @@ export function KeybindingCaptureModal({
   const display = captured ?? currentHotkey ?? '';
   const isUnbind = captured === '';
   const hasPending = captured !== null;
+  const displayHotkeyParts = useMemo(() => {
+    return formatHotkeyParts(display, PLATFORM);
+  }, [display]);
+  const defaultHotkeyLabel = useMemo(() => {
+    return defaultHotkey
+      ? formatHotkeyParts(defaultHotkey, PLATFORM).join(' ')
+      : '';
+  }, [defaultHotkey]);
 
   // 冲突检测:只在用户已捕获新组合(captured 非空)时检查;扫描其它命令的
   // effective hotkey 与新组合相同的(VSCode 同款 — 允许保存,只显示警告)
@@ -192,7 +196,7 @@ export function KeybindingCaptureModal({
           <span className="text-xs text-fg-dim">{t('keybindings.modal.unbound')}</span>
         ) : display ? (
           <span className="flex items-center gap-1">
-            {formatHotkeyParts(display, PLATFORM).map((p) => (
+            {displayHotkeyParts.map((p) => (
               <KeyCap key={p}>{p}</KeyCap>
             ))}
           </span>
@@ -205,7 +209,7 @@ export function KeybindingCaptureModal({
         {t('keybindings.modal.hint_press_save')}<KeyCap>Backspace</KeyCap> {t('keybindings.modal.hint_clear')}
         <KeyCap>Esc</KeyCap> {t('keybindings.modal.hint_cancel')}
         {defaultHotkey && (
-          <>{t('keybindings.modal.hint_default', { hotkey: formatHotkeyParts(defaultHotkey, PLATFORM).join(' ') })}</>
+          <>{t('keybindings.modal.hint_default', { hotkey: defaultHotkeyLabel })}</>
         )}
       </div>
 

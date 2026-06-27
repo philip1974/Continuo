@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fireEvent, render, cleanup, act } from '@testing-library/react';
 import { SharedTab } from '../../shell/motion/SharedTab';
 import { setLocale, notifyLocaleChange } from '@/i18n';
@@ -77,6 +79,18 @@ function renderTab(
 }
 
 describe('SharedTab — 渲染', () => {
+  it('静态按钮图标预创建,避免每个 tab render 重复构造 svg', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/shell/motion/SharedTab.tsx'),
+      'utf8',
+    );
+
+    expect(src).toContain('const EXIT_ZOOM_ICON = (');
+    expect(src).toContain('const CLOSE_TAB_ICON = (');
+    expect(src).toContain('{EXIT_ZOOM_ICON}');
+    expect(src).toContain('{CLOSE_TAB_ICON}');
+  });
+
   it('显示 title + close 按钮', () => {
     const api = makeApi({ title: 'Hello' });
     const { container } = renderTab(api);

@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { render, cleanup } from '@testing-library/react';
 import { BackgroundBeams } from '../../shell/decor/BackgroundBeams';
 import { Splash } from '../../shell/decor/Splash';
@@ -8,6 +10,20 @@ import { PopoutHost } from '../../shell/PopoutHost';
 afterEach(() => cleanup());
 
 describe('BackgroundBeams', () => {
+  it('静态 path 元数据预计算,render 不重复拼接 stroke/id/key', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/shell/decor/BackgroundBeams.tsx'),
+      'utf8',
+    );
+
+    expect(src).toContain('const BEAM_PATHS: readonly BeamPath[] = PATHS.map');
+    expect(src).toContain('BEAM_PATHS.map(({ key, d, stroke })');
+    expect(src).toContain('BEAM_PATHS.map((beam, index)');
+    expect(src).not.toContain('stroke={`url(#lm-beam-${index})`}');
+    expect(src).not.toContain('id={`lm-beam-${index}`}');
+    expect(src).not.toContain('key={`path-${index}`}');
+  });
+
   it('渲染 svg viewBox + aria-hidden + 50 path / 50 gradient', () => {
     const { container } = render(<BackgroundBeams />);
     const svg = container.querySelector('svg');

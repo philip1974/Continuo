@@ -67,6 +67,7 @@ function validatePanelSpec(spec: PanelSpec): void {
 }
 
 type Listener = () => void;
+const EMPTY_PANEL_SNAPSHOT: readonly PanelSpec[] = [];
 
 export class PanelRegistry {
   private items = new Map<string, PanelSpec>();
@@ -103,6 +104,10 @@ export class PanelRegistry {
 
   getAll(): readonly PanelSpec[] {
     if (this.cachedAll !== null) return this.cachedAll;
+    if (this.items.size === 0) {
+      this.cachedAll = EMPTY_PANEL_SNAPSHOT;
+      return EMPTY_PANEL_SNAPSHOT;
+    }
 
     const items = new Array<PanelSpec>(this.items.size);
     let i = 0;

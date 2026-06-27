@@ -292,7 +292,9 @@ describe('permission.check / granted', () => {
     const scoped = createScopedApp(makeLmApp(), 'p', null);
     expect(await scoped.permission.check('fs')).toBe(true);
     expect(await scoped.permission.check('network')).toBe(true);
-    expect(await scoped.permission.granted()).toEqual([]);
+    const granted = await scoped.permission.granted();
+    expect(granted).toEqual([]);
+    await expect(scoped.permission.granted()).resolves.toBe(granted);
   });
 
   it('store 非 null → 反映该 pluginId 的 granted=true 决策', async () => {
@@ -510,6 +512,13 @@ describe('授后转发 — fs / shell / clipboard / mcp / network 行为', () =>
     } finally {
       mapSpy.mockRestore();
     }
+  });
+
+  it('fs.listDir 空条目转换复用稳定空列表', () => {
+    expect(buildPluginListDirEntries('/repo', [])).toEqual([]);
+    expect(buildPluginListDirEntries('/repo', [])).toBe(
+      buildPluginListDirEntries('/other', []),
+    );
   });
 
   // 边界(E44,E29 renderer 侧对偶 / E41-E43 同族):scoped fs.writeFile 发 IPC 前预检 content/path
@@ -732,6 +741,34 @@ describe('授后转发 — fs / shell / clipboard / mcp / network 行为', () =>
       code: 'BAD_INPUT',
     });
     expect(coApiMocks.shellExec).not.toHaveBeenCalled();
+  });
+
+  it('shell.exec args 复制不通过 spread,空 args 复用稳定空数组', async () => {
+    const src = readFileSync(
+      path.resolve(__dirname, '../../plugins/scoped-app.ts'),
+      'utf-8',
+    );
+    expect(src).toContain('copyShellArgs');
+    expect(src).not.toContain('args: [...args]');
+
+    const store = new InMemoryPermissionStore();
+    await store.grant('p', ['shell']);
+    coApiMocks.shellExec.mockResolvedValue({
+      ok: true,
+      data: { stdout: '', stderr: '', exitCode: 0 },
+    });
+    const scoped = createScopedApp(makeLmApp(), 'p', store);
+
+    await scoped.shell.exec('echo', []);
+    await scoped.shell.exec('echo', []);
+    expect(coApiMocks.shellExec.mock.calls[1]![0].args).toBe(
+      coApiMocks.shellExec.mock.calls[0]![0].args,
+    );
+
+    const args = ['hi'];
+    await scoped.shell.exec('echo', args);
+    args[0] = 'changed';
+    expect(coApiMocks.shellExec.mock.calls[2]![0].args).toEqual(['hi']);
   });
 
   it('E46 shell args 单项校验单趟扫描,不调用 args.every', () => {

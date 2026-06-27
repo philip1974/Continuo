@@ -77,6 +77,11 @@ describe('perf P7 · computeTextStats 单遍与逐项函数逐字节等价', () 
     }
   });
 
+  it('空字符串统计复用稳定空对象', () => {
+    expect(computeTextStats('')).toEqual({ lines: 0, words: 0, chars: 0 });
+    expect(computeTextStats('')).toBe(computeTextStats(''));
+  });
+
   it('与旧正则口径等价(回归基准)', () => {
     const oldLines = (s: string) =>
       s.length === 0 ? 0 : (s.match(/\n/g)?.length ?? 0) + 1;

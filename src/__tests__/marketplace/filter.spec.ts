@@ -1,4 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   applyFilter,
   buildMarketplaceSearchHaystack,
@@ -35,6 +37,17 @@ const ENTRIES: readonly MarketplaceEntry[] = [
 ];
 
 describe('applyFilter', () => {
+  it('无 tags fallback 复用稳定空数组,避免每个 entry 分配 []', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/marketplace/filter.ts'),
+      'utf-8',
+    );
+
+    expect(src).toContain('EMPTY_MARKETPLACE_ENTRY_TAGS');
+    expect(src).not.toContain('entry.tags ?? []');
+    expect(src).not.toContain('e.tags ?? []');
+  });
+
   it('空 query + 空 tags → 全过', () => {
     const r = applyFilter(ENTRIES, { query: '', selectedTags: new Set() });
     expect(r).toHaveLength(3);
@@ -43,6 +56,45 @@ describe('applyFilter', () => {
   it('空 query + 空 tags → 直接复用原 entries 引用', () => {
     const r = applyFilter(ENTRIES, { query: '   ', selectedTags: new Set() });
     expect(r).toBe(ENTRIES);
+  });
+
+  it('query 生效但所有项都保留 → 复用原 entries 引用', () => {
+    const r = applyFilter(ENTRIES, {
+      query: 'com.',
+      selectedTags: new Set(),
+    });
+
+    expect(r).toBe(ENTRIES);
+  });
+
+  it('无匹配结果 → 复用稳定空列表', () => {
+    const a = applyFilter(ENTRIES, {
+      query: 'not-found',
+      selectedTags: new Set(),
+    });
+    const b = applyFilter(ENTRIES, {
+      query: '',
+      selectedTags: new Set(['not-found']),
+    });
+
+    expect(a).toEqual([]);
+    expect(b).toBe(a);
+  });
+
+  it('空 entries → 直接复用原引用,不 lower query', () => {
+    const entries: MarketplaceEntry[] = [];
+    const lowerSpy = vi.spyOn(String.prototype, 'toLowerCase');
+
+    try {
+      const r = applyFilter(entries, {
+        query: 'FOO',
+        selectedTags: new Set(['demo']),
+      });
+      expect(r).toBe(entries);
+      expect(lowerSpy).not.toHaveBeenCalled();
+    } finally {
+      lowerSpy.mockRestore();
+    }
   });
 
   // 边界(E281,E279/E280 搜索 query 上限族):applyFilter 是导出纯函数,可被非 UI 调用方传超长 query →
@@ -70,6 +122,29 @@ describe('applyFilter', () => {
       selectedTags: new Set(),
     });
     expect(r.map((e) => e.id)).toEqual(['com.foo']);
+  });
+
+  it('query 已匹配 name 时不读取 tags 构造完整 haystack', () => {
+    let tagReads = 0;
+    const entry = {
+      id: 'com.fast',
+      name: 'Fast Match',
+      description: 'desc',
+      author: 'a',
+      repo: 'a/fast',
+      get tags() {
+        tagReads += 1;
+        return ['slow'];
+      },
+    } satisfies MarketplaceEntry;
+
+    const r = applyFilter([entry], {
+      query: 'fast',
+      selectedTags: new Set(),
+    });
+
+    expect(r).toEqual([entry]);
+    expect(tagReads).toBe(0);
   });
 
   it('query 匹配 description', () => {
@@ -213,10 +288,88 @@ describe('collectAllTags', () => {
   });
 
   it('空入参 → []', () => {
-    expect(collectAllTags([])).toEqual([]);
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      const r = collectAllTags([]);
+      expect(r).toEqual([]);
+      expect(r).toBe(collectAllTags([]));
+      expect(sortSpy).not.toHaveBeenCalled();
+    } finally {
+      sortSpy.mockRestore();
+    }
   });
 
   it('全 entry 都无 tags → []', () => {
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      expect(
+        collectAllTags([
+          {
+            id: 'x',
+            name: 'X',
+            author: 'a',
+            repo: 'a/x',
+          },
+        ]),
+      ).toEqual([]);
+      expect(sortSpy).not.toHaveBeenCalled();
+    } finally {
+      sortSpy.mockRestore();
+    }
+  });
+
+  it('单个 distinct tag → 不调用 sort', () => {
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      expect(
+        collectAllTags([
+          {
+            id: 'x',
+            name: 'X',
+            author: 'a',
+            repo: 'a/x',
+            tags: ['demo'],
+          },
+        ]),
+      ).toEqual(['demo']);
+      expect(sortSpy).not.toHaveBeenCalled();
+    } finally {
+      sortSpy.mockRestore();
+    }
+  });
+
+  it('distinct tags 已按字典序出现时不调用 sort', () => {
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      expect(
+        collectAllTags([
+          {
+            id: 'a',
+            name: 'A',
+            author: 'a',
+            repo: 'a/a',
+            tags: ['alpha', 'beta'],
+          },
+          {
+            id: 'b',
+            name: 'B',
+            author: 'b',
+            repo: 'b/b',
+            tags: ['beta', 'gamma'],
+          },
+        ]),
+      ).toEqual(['alpha', 'beta', 'gamma']);
+      expect(sortSpy).not.toHaveBeenCalled();
+    } finally {
+      sortSpy.mockRestore();
+    }
+  });
+
+  it('全 entry 都无 tags → 返回稳定空数组引用', () => {
     expect(
       collectAllTags([
         {
@@ -226,7 +379,7 @@ describe('collectAllTags', () => {
           repo: 'a/x',
         },
       ]),
-    ).toEqual([]);
+    ).toBe(collectAllTags([]));
   });
 
   // 边界(E226,E210 逐项≠累计上限族):全局 distinct tag 数封顶 MAX_MARKETPLACE_TAGS,凑满即停收集。

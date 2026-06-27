@@ -26,6 +26,10 @@ import { useEditorStore } from '@/stores/editor.store';
 
 // race(R2):稳定空数组引用,跨 root 时 liveResults 返回它,避免每次渲染新建 [] 触发 useMemo。
 const EMPTY_RESULTS: readonly QuickOpenFile[] = [];
+const QUICK_OPEN_SHORTCUT_LABEL = formatHotkey(
+  'mod+shift+p',
+  detectPlatform(),
+);
 const QUICK_OPEN_ROW_BASE_CLASS_NAME =
   'flex cursor-pointer items-center gap-2 px-3 text-xs';
 const QUICK_OPEN_ROW_SELECTED_CLASS_NAME =
@@ -90,6 +94,10 @@ function QuickOpenBody() {
   const root = useWorkspaceStore((s) => s.root);
   // 重试令牌:walk 失败后用户点"重试"递增 → 重跑 effect。
   const [reloadToken, setReloadToken] = useState(0);
+  const inputAriaLabel = t('quick_open.input_aria');
+  const placeholderLabel = t('quick_open.placeholder', {
+    shortcut: QUICK_OPEN_SHORTCUT_LABEL,
+  });
 
   // 打开 modal 时(或 root 变化)异步 walk 文件。已有 results 不阻塞 UI,
   // 后台刷新 → setResults。
@@ -233,7 +241,7 @@ function QuickOpenBody() {
           autoFocus
           // a11y(A2,A1 同族):placeholder 含快捷键参数不适合作可访问名;用专用简洁
           // aria-label,给屏幕阅读器稳定的「搜索文件」名称。
-          aria-label={t('quick_open.input_aria')}
+          aria-label={inputAriaLabel}
           // a11y(A15,CommandPalette 同模式):combobox —— 焦点留输入框、上下键移动 listbox
           // 虚拟选中,须 role=combobox + aria-controls + aria-activedescendant 指向当前 option。
           role="combobox"
@@ -251,9 +259,7 @@ function QuickOpenBody() {
               ? `quick-open-option-${selectedIndex}`
               : undefined
           }
-          placeholder={t('quick_open.placeholder', {
-            shortcut: formatHotkey('mod+shift+p', detectPlatform()),
-          })}
+          placeholder={placeholderLabel}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={onKeyDown}

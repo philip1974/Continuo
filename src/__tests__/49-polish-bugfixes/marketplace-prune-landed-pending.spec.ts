@@ -39,6 +39,7 @@ describe('49 · pruneLandedPending', () => {
     const out = pruneLandedPending(pending, installed);
     expect(out.size).toBe(0);
     expect(out).not.toBe(pending);
+    expect(pruneLandedPending(new Set(['x']), new Set(['x']))).toBe(out);
   });
 
   it('「装→落地→卸载」序列:落地时摘除,卸载后不复活幻影', () => {

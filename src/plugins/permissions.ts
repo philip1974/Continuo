@@ -46,16 +46,35 @@ export interface PermissionStore {
   clearDenied(pluginId: string): Promise<void>;
 }
 
+const EMPTY_PERMISSION_DECISIONS: PermissionDecision[] = [];
+const EMPTY_PERMISSION_KEYS: readonly PermissionKey[] = [];
+
 export function keepGrantedDecisions(
   list: readonly PermissionDecision[],
 ): PermissionDecision[] {
-  const kept = new Array<PermissionDecision>(list.length);
+  if (list.length === 0) return EMPTY_PERMISSION_DECISIONS;
+  let kept: PermissionDecision[] | null = null;
   let keptCount = 0;
-  for (const decision of list) {
-    if (decision.granted) kept[keptCount++] = decision;
+  let droppedDenied = false;
+  for (let i = 0; i < list.length; i++) {
+    const decision = list[i]!;
+    if (!decision.granted) {
+      if (!droppedDenied) {
+        droppedDenied = true;
+        kept = new Array<PermissionDecision>(list.length);
+        for (let j = 0; j < keptCount; j++) kept[j] = list[j]!;
+      }
+      continue;
+    }
+    if (droppedDenied) {
+      kept![keptCount] = decision;
+    }
+    keptCount += 1;
   }
-  kept.length = keptCount;
-  return kept;
+  if (!droppedDenied) return list as PermissionDecision[];
+  if (keptCount === 0) return EMPTY_PERMISSION_DECISIONS;
+  kept!.length = keptCount;
+  return kept!;
 }
 
 export function replacePermissionDecisions(
@@ -64,6 +83,7 @@ export function replacePermissionDecisions(
   granted: boolean,
   decidedAt: number,
 ): PermissionDecision[] {
+  if (perms.length === 0) return list as PermissionDecision[];
   const replacementPerms = new Set(perms);
   const next = new Array<PermissionDecision>(list.length + perms.length);
   let nextCount = 0;
@@ -81,7 +101,7 @@ export class InMemoryPermissionStore implements PermissionStore {
   private map = new Map<string, PermissionDecision[]>();
 
   async get(pluginId: string): Promise<readonly PermissionDecision[]> {
-    return this.map.get(pluginId) ?? [];
+    return this.map.get(pluginId) ?? EMPTY_PERMISSION_DECISIONS;
   }
 
   async grant(pluginId: string, perms: readonly PermissionKey[]): Promise<void> {
@@ -105,7 +125,8 @@ export class InMemoryPermissionStore implements PermissionStore {
     perms: readonly PermissionKey[],
     granted: boolean,
   ): void {
-    const list = this.map.get(pluginId) ?? [];
+    if (perms.length === 0) return;
+    const list = this.map.get(pluginId) ?? EMPTY_PERMISSION_DECISIONS;
     const next = replacePermissionDecisions(list, perms, granted, Date.now());
     this.map.set(pluginId, next);
   }
@@ -143,10 +164,37 @@ export async function ensureAuthorized(
   prompt: PromptFn,
 ): Promise<AuthorizeResult> {
   if (requested.length === 0) {
-    return { ok: true, granted: [], denied: [] };
+    return {
+      ok: true,
+      granted: EMPTY_PERMISSION_KEYS,
+      denied: EMPTY_PERMISSION_KEYS,
+    };
   }
 
   const decisions = await store.get(pluginId);
+  if (decisions.length === 0) {
+    const userGranted = await prompt(pluginId, requested);
+    const userGrantedSet = new Set(userGranted);
+    const granted = new Array<PermissionKey>(requested.length);
+    const denied = new Array<PermissionKey>(requested.length);
+    let grantedCount = 0;
+    let deniedCount = 0;
+    for (const p of requested) {
+      if (userGrantedSet.has(p)) granted[grantedCount++] = p;
+      else denied[deniedCount++] = p;
+    }
+    granted.length = grantedCount;
+    denied.length = deniedCount;
+
+    if (userGranted.length > 0) await store.grant(pluginId, userGranted);
+    if (denied.length > 0) await store.deny(pluginId, denied);
+
+    if (granted.length === 0) {
+      return { ok: false, deniedPerms: denied };
+    }
+    return { ok: true, granted, denied };
+  }
+
   const grantedSet = new Set<PermissionKey>();
   const deniedSet = new Set<PermissionKey>();
   for (const d of decisions) {

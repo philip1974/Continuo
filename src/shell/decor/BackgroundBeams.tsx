@@ -61,11 +61,30 @@ const PATHS = [
   'M-37 -581C-37 -581 31 -176 495 -49C959 78 1027 483 1027 483',
 ];
 
+interface BeamPath {
+  readonly d: string;
+  readonly key: string;
+  readonly gradientKey: string;
+  readonly gradientId: string;
+  readonly stroke: string;
+}
+
+const BEAM_PATHS: readonly BeamPath[] = PATHS.map((d, index) => {
+  const gradientId = `lm-beam-${index}`;
+  return {
+    d,
+    key: `path-${index}`,
+    gradientKey: `gradient-${index}`,
+    gradientId,
+    stroke: `url(#${gradientId})`,
+  };
+});
+
 export const BackgroundBeams = memo(function BackgroundBeams({ className }: { className?: string }) {
   // 锁定一次性的随机参数,避免组件重渲染时 transition 重新摇。
   const transitions = useMemo(
     () =>
-      PATHS.map(() => ({
+      BEAM_PATHS.map(() => ({
         duration: Math.random() * 10 + 10,
         delay: Math.random() * 10,
         y2End: `${93 + Math.random() * 8}%`,
@@ -87,24 +106,24 @@ export const BackgroundBeams = memo(function BackgroundBeams({ className }: { cl
         viewBox="0 0 696 316"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
-        aria-hidden="true"
+          aria-hidden="true"
       >
-        {PATHS.map((path, index) => (
+        {BEAM_PATHS.map(({ key, d, stroke }) => (
           <motion.path
-            key={`path-${index}`}
-            d={path}
-            stroke={`url(#lm-beam-${index})`}
+            key={key}
+            d={d}
+            stroke={stroke}
             strokeOpacity="0.4"
             strokeWidth="0.5"
           />
         ))}
         <defs>
-          {PATHS.map((_, index) => {
+          {BEAM_PATHS.map((beam, index) => {
             const t = transitions[index]!;
             return (
               <motion.linearGradient
-                id={`lm-beam-${index}`}
-                key={`gradient-${index}`}
+                id={beam.gradientId}
+                key={beam.gradientKey}
                 initial={{ x1: '0%', x2: '0%', y1: '0%', y2: '0%' }}
                 animate={{
                   x1: ['0%', '100%'],

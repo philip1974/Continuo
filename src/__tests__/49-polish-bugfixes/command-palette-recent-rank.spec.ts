@@ -31,6 +31,64 @@ describe('打磨 R55 — CommandPalette recent rank 预计算', () => {
     }
   });
 
+  it('空 recent 列表 → 稳定空数组', () => {
+    expect(buildRecentCommandIds([])).toEqual([]);
+    expect(buildRecentCommandIds([])).toBe(buildRecentCommandIds([]));
+  });
+
+  it('空命令列表排序 → 稳定空数组,不 sort/不建 rank Map', () => {
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+    const OriginalMap = globalThis.Map;
+    let mapCtorCount = 0;
+    class CountingMap<K, V> extends OriginalMap<K, V> {
+      constructor(entries?: readonly (readonly [K, V])[] | null) {
+        mapCtorCount += 1;
+        super(entries);
+      }
+    }
+    globalThis.Map = CountingMap as MapConstructor;
+
+    try {
+      const out = sortByRecent([], ['a', 'b']);
+      expect(out).toEqual([]);
+      expect(out).toBe(sortByRecent([], []));
+      expect(sortSpy).not.toHaveBeenCalled();
+      expect(mapCtorCount).toBe(0);
+    } finally {
+      sortSpy.mockRestore();
+      globalThis.Map = OriginalMap;
+    }
+  });
+
+  it('单条命令排序 → 复用输入引用,不 sort/不建 rank Map', () => {
+    const items = [command('a', 'Alpha')];
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+    const OriginalMap = globalThis.Map;
+    let mapCtorCount = 0;
+    class CountingMap<K, V> extends OriginalMap<K, V> {
+      constructor(entries?: readonly (readonly [K, V])[] | null) {
+        mapCtorCount += 1;
+        super(entries);
+      }
+    }
+    globalThis.Map = CountingMap as MapConstructor;
+
+    try {
+      const out = sortByRecent(
+        items as unknown as Parameters<typeof sortByRecent>[0],
+        ['a'],
+      );
+
+      expect(out).toBe(items);
+      expect(out.map((d) => d.cmd.id)).toEqual(['a']);
+      expect(sortSpy).not.toHaveBeenCalled();
+      expect(mapCtorCount).toBe(0);
+    } finally {
+      sortSpy.mockRestore();
+      globalThis.Map = OriginalMap;
+    }
+  });
+
   it('recent 排序不再反复调用 recentIds.indexOf,且 recent 顺序保持', () => {
     const items = [
       command('a', 'Alpha'),
@@ -97,6 +155,28 @@ describe('打磨 R55 — CommandPalette recent rank 预计算', () => {
     }
   });
 
+  it('无 recent 且已按标题排序时复用输入引用,不 sort', () => {
+    const items = [
+      command('a', 'Alpha'),
+      command('b', 'Beta'),
+      command('c', 'Charlie'),
+    ];
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      const out = sortByRecent(
+        items as unknown as Parameters<typeof sortByRecent>[0],
+        [],
+      );
+
+      expect(out).toBe(items);
+      expect(out.map((d) => d.cmd.id)).toEqual(['a', 'b', 'c']);
+      expect(sortSpy).not.toHaveBeenCalled();
+    } finally {
+      sortSpy.mockRestore();
+    }
+  });
+
   it('单个 recent id 走线性快路径,不构造 rank Map', () => {
     const items = [
       command('a', 'Alpha'),
@@ -123,6 +203,28 @@ describe('打磨 R55 — CommandPalette recent rank 预计算', () => {
       expect(mapCtorCount).toBe(0);
     } finally {
       globalThis.Map = OriginalMap;
+    }
+  });
+
+  it('单个 stale recent id 且列表已排序时复用输入引用,不 sort', () => {
+    const items = [
+      command('a', 'Alpha'),
+      command('b', 'Beta'),
+      command('c', 'Charlie'),
+    ];
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      const out = sortByRecent(
+        items as unknown as Parameters<typeof sortByRecent>[0],
+        ['missing'],
+      );
+
+      expect(out).toBe(items);
+      expect(out.map((d) => d.cmd.id)).toEqual(['a', 'b', 'c']);
+      expect(sortSpy).not.toHaveBeenCalled();
+    } finally {
+      sortSpy.mockRestore();
     }
   });
 });

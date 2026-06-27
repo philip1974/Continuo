@@ -2,6 +2,8 @@
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { TreeConfig } from '@headless-tree/core';
 import type { FileEntry } from '../../lib/fs/types';
 import { useExplorerStore } from '../../stores/explorer.store';
@@ -89,6 +91,17 @@ afterEach(() => {
 });
 
 describe('FolderTree · expandedPaths 持久化接入', () => {
+  it('构建/回写 expandedItems 不通过 Set+spread 生成中间结构', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/panels/Explorer/FolderTree.tsx'),
+      'utf-8',
+    );
+
+    expect(src).not.toContain('new Set<string>([root])');
+    expect(src).not.toContain('return [...next]');
+    expect(src).not.toContain('setPersistedExpandedPaths([...outOfRoot, ...next])');
+  });
+
   it('把 store.expandedPaths 注入 headless-tree state,并保留 root 展开', () => {
     useExplorerStore.setState({
       expandedPaths: new Set(['/work/src', '/other/root']),

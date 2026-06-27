@@ -47,6 +47,28 @@ describe('useReviewsStore.refresh', () => {
     expect(useReviewsStore.getState().loading).toBe(false);
   });
 
+  it('refresh 已处于 loading 且无 error 时不重复通知等价入口状态', async () => {
+    useReviewsStore.setState({ loading: true, error: null });
+    let release: (v: unknown) => void = () => {};
+    fetchMock.mockReturnValue(
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+    );
+    const listener = vi.fn();
+    const unsubscribe = useReviewsStore.subscribe(listener);
+
+    try {
+      const p = useReviewsStore.getState().refresh();
+
+      expect(listener).not.toHaveBeenCalled();
+      release(new Map());
+      await p;
+    } finally {
+      unsubscribe();
+    }
+  });
+
   it('Error 抛 → error=err.message', async () => {
     fetchMock.mockRejectedValue(new Error('offline'));
     await useReviewsStore.getState().refresh();

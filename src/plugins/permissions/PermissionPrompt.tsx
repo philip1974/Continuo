@@ -1,7 +1,7 @@
 // 权限授权 Modal(M-Plugin v3.4)。
 // 订阅 promptStore,无 pending 时不渲染。
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button, Modal } from '@/design';
 import { usePermissionPromptStore } from './promptStore';
 import type { FsScopePrompt, Pending } from './promptStore';
@@ -10,6 +10,7 @@ import { useT } from '@/i18n';
 import { PERM_LABEL_KEYS } from './perm-labels';
 
 const PLUGIN_ID_MARKER = ' __PID__ ';
+const EMPTY_SELECTED_PERMISSIONS: PermissionKey[] = [];
 
 function splitPluginIdTemplate(tpl: string): {
   readonly prefix: string;
@@ -28,6 +29,7 @@ function splitPluginIdTemplate(tpl: string): {
 export function copySelectedPermissions(
   selected: ReadonlySet<PermissionKey>,
 ): PermissionKey[] {
+  if (selected.size === 0) return EMPTY_SELECTED_PERMISSIONS;
   const out = new Array<PermissionKey>(selected.size);
   let i = 0;
   for (const perm of selected) out[i++] = perm;
@@ -52,6 +54,13 @@ function ManifestPromptBody({ pending }: { pending: Pending }) {
   const t = useT();
   const grant = usePermissionPromptStore((s) => s.grant);
   const denyAll = usePermissionPromptStore((s) => s.denyAll);
+  const promptBodyTemplate = t('permissions.prompt.body', {
+    pluginId: PLUGIN_ID_MARKER,
+  });
+  const promptBodyParts = useMemo(
+    () => splitPluginIdTemplate(promptBodyTemplate),
+    [promptBodyTemplate],
+  );
   // body 仅在某次 pending 存在时挂载;同一身份的请求保持勾选,默认全选。
   // 用 pending.pluginId+perms 作 key 在 shell 端 remount 即可重置,这里直接初值全选。
   const [selected, setSelected] = useState<Set<PermissionKey>>(
@@ -79,18 +88,9 @@ function ManifestPromptBody({ pending }: { pending: Pending }) {
       </h2>
       <p className="mb-2 text-xs text-fg-muted">
         {/* tpl 含 {pluginId}；inline <code> 渲染 — 拆 prefix/suffix */}
-        {(() => {
-          const parts = splitPluginIdTemplate(
-            t('permissions.prompt.body', { pluginId: PLUGIN_ID_MARKER }),
-          );
-          return (
-            <>
-              {parts.prefix}
-              <code className="text-fg">{pending.pluginId}</code>
-              {parts.suffix}
-            </>
-          );
-        })()}
+        {promptBodyParts.prefix}
+        <code className="text-fg">{pending.pluginId}</code>
+        {promptBodyParts.suffix}
       </p>
       <p className="mb-3 text-2xs text-fg-dim">
         {t('permissions.prompt.note_prefix')}
@@ -148,6 +148,13 @@ function FsScopePromptBody({ scope }: { scope: FsScopePrompt }) {
   const t = useT();
   const grantFsScope = usePermissionPromptStore((s) => s.grantFsScope);
   const denyFsScope = usePermissionPromptStore((s) => s.denyFsScope);
+  const fsScopeBodyTemplate = t('permissions.fs_scope.body', {
+    pluginId: PLUGIN_ID_MARKER,
+  });
+  const fsScopeBodyParts = useMemo(
+    () => splitPluginIdTemplate(fsScopeBodyTemplate),
+    [fsScopeBodyTemplate],
+  );
   return (
     <Modal
       visible
@@ -160,18 +167,9 @@ function FsScopePromptBody({ scope }: { scope: FsScopePrompt }) {
       </h2>
       <p className="mb-3 text-xs text-fg-muted">
         {/* tpl 含 {pluginId};inline <code> 渲染 — 拆 prefix/suffix(同 manifest 分支) */}
-        {(() => {
-          const parts = splitPluginIdTemplate(
-            t('permissions.fs_scope.body', { pluginId: PLUGIN_ID_MARKER }),
-          );
-          return (
-            <>
-              {parts.prefix}
-              <code className="text-fg">{scope.pluginId}</code>
-              {parts.suffix}
-            </>
-          );
-        })()}
+        {fsScopeBodyParts.prefix}
+        <code className="text-fg">{scope.pluginId}</code>
+        {fsScopeBodyParts.suffix}
       </p>
       <ul className="mb-4 space-y-1 text-xs">
         {scope.scopes.map((s, i) => (

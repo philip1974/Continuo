@@ -10,7 +10,7 @@
 // 网络/Promise/解析尖峰且把 GitHub raw 打满。固定并发池钳定最大在途数,保留 allSettled 单失败不影响其它语义。
 
 import { create } from 'zustand';
-import { getUserPluginManager } from '@/plugins/PluginManager';
+import { getUserPluginManager, type PluginListItem } from '@/plugins/PluginManager';
 import { allSettledWithConcurrency } from '@/lib/map-with-concurrency';
 import { fetchMarketplaceIndex, fetchPluginManifest } from './fetcher';
 import { isNewerVersion, isValidSemver } from './semver';
@@ -26,6 +26,10 @@ export interface AvailableUpdate {
   readonly to: string;   // 远程 latest version
   readonly entry: MarketplaceEntry;
 }
+
+const EMPTY_AVAILABLE_UPDATES: readonly AvailableUpdate[] = [];
+const EMPTY_INSTALLED_PLUGINS: readonly PluginListItem[] = [];
+const EMPTY_REMOTE_VERSIONS: ReadonlyMap<string, string> = new Map();
 
 interface UpdateState {
   /** id → 远程最新 version(已知的). */
@@ -85,12 +89,12 @@ export function dismissAvailableUpdateFromList(
   }
   if (target === null || next === null) return null;
   next.length = count;
-  return { target, available: next };
+  return { target, available: count === 0 ? EMPTY_AVAILABLE_UPDATES : next };
 }
 
 export const useUpdateStore = create<UpdateState>((set, get) => ({
-  remoteVersions: new Map(),
-  available: [],
+  remoteVersions: EMPTY_REMOTE_VERSIONS,
+  available: EMPTY_AVAILABLE_UPDATES,
   checking: false,
   lastCheckedAt: null,
   dismissed: new Map(),
@@ -107,17 +111,17 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
 
   refresh: async () => {
     const myGen = ++refreshGen;
-    set({ checking: true });
+    set((s) => (s.checking ? s : { checking: true }));
     try {
       // 先读本地已安装(打磨 R54):只有已安装插件可能"有更新",故按已安装规模裁剪
       // 网络。没装任何 marketplace 插件 → 直接落空,跳过 index + 全部 manifest 请求。
       const mgr = getUserPluginManager();
-      const installed = mgr ? mgr.listAll() : [];
+      const installed = mgr ? mgr.listAll() : EMPTY_INSTALLED_PLUGINS;
       if (installed.length === 0) {
         if (myGen !== refreshGen) return;
         set({
-          remoteVersions: new Map(),
-          available: [],
+          remoteVersions: EMPTY_REMOTE_VERSIONS,
+          available: EMPTY_AVAILABLE_UPDATES,
           checking: false,
           lastCheckedAt: Date.now(),
         });
@@ -132,10 +136,22 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
       const relevant = new Array<MarketplaceEntry>(entries.length);
       let relevantCount = 0;
       for (const e of entries) {
-        entriesById.set(e.id, e);
-        if (installedIds.has(e.id)) relevant[relevantCount++] = e;
+        if (installedIds.has(e.id)) {
+          entriesById.set(e.id, e);
+          relevant[relevantCount++] = e;
+        }
       }
       relevant.length = relevantCount;
+      if (relevantCount === 0) {
+        if (myGen !== refreshGen) return;
+        set({
+          remoteVersions: EMPTY_REMOTE_VERSIONS,
+          available: EMPTY_AVAILABLE_UPDATES,
+          checking: false,
+          lastCheckedAt: Date.now(),
+        });
+        return;
+      }
 
       // 只拉「已安装插件命中的 entries」的 manifest(M ≤ N);单个失败不影响其它。
       // 边界(E234):有界并发池(MAX_MANIFEST_FETCH_CONCURRENCY)钳定最大在途 fetch 数,
@@ -157,7 +173,7 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
       // 仍含该插件 → 会把已卸载插件重新加进 available(在 dismiss 之后落库 = 过期更新提示/
       // 角标复活)。重读当前已安装集合,卸载的插件不在其中即不会被重新加入。
       const liveMgr = getUserPluginManager();
-      const liveInstalled = liveMgr ? liveMgr.listAll() : [];
+      const liveInstalled = liveMgr ? liveMgr.listAll() : EMPTY_INSTALLED_PLUGINS;
 
       // race(R78):提交前读最新 dismissed(可能在本次 refresh 在途期间被 dismiss 更新)。
       const dismissed = get().dismissed;
@@ -186,12 +202,14 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
         };
       }
       available.length = availableCount;
+      const nextAvailable =
+        availableCount === 0 ? EMPTY_AVAILABLE_UPDATES : available;
 
       // 更晚的 refresh 已开始 → 丢弃本次过期结果(由最新代际负责落库 + 清 checking)
       if (myGen !== refreshGen) return;
       set({
         remoteVersions,
-        available,
+        available: nextAvailable,
         checking: false,
         lastCheckedAt: Date.now(),
       });

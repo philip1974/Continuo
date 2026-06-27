@@ -12,6 +12,7 @@ describe('subscribeAll', () => {
     const unsubscribeAll = subscribeAll([], listener);
 
     expect(() => unsubscribeAll()).not.toThrow();
+    expect(subscribeAll([], listener)).toBe(unsubscribeAll);
     expect(subscribeAll.toString()).toMatch(/sources\.length === 0/);
     expect(subscribeAll.toString().indexOf('sources.length === 0')).toBeLessThan(
       subscribeAll.toString().indexOf('new Array('),
@@ -70,6 +71,15 @@ describe('PanelRegistry', () => {
     expect(r.getAll().map((x) => x.type)).toEqual(['foo']);
     d.dispose();
     expect(r.getAll()).toEqual([]);
+  });
+
+  it('空 registry 的 getAll/list 复用稳定空快照', () => {
+    const r = new PanelRegistry();
+    const other = new PanelRegistry();
+
+    expect(r.getAll()).toEqual([]);
+    expect(r.getAll()).toBe(other.getAll());
+    expect(r.list()).toBe(r.getAll());
   });
 
   it('重复 getAll/list 复用快照,register/dispose 后失效重建', () => {
@@ -240,6 +250,13 @@ describe('CommandRegistry', () => {
     expect(r.getAll()).toEqual([]);
   });
 
+  it('空 registry 的 getAll 复用稳定空快照', () => {
+    const r = new CommandRegistry();
+
+    expect(r.getAll()).toEqual([]);
+    expect(r.getAll()).toBe(new CommandRegistry().getAll());
+  });
+
   it('重复 getAll 复用快照,register/dispose 后失效重建且不通过 Array.from(values)', () => {
     const r = new CommandRegistry();
     const d = r.register({ id: 'a', title: 'A', fn: () => {} });
@@ -288,6 +305,24 @@ describe('CommandRegistry', () => {
     // 两个 command 都还在(只是 hotkey 冲突,getAll 不去重)
     expect(r.getAll()).toHaveLength(2);
     warn.mockRestore();
+  });
+
+  it('hotkey 冲突检测使用索引,注册时不扫描 items.values()', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const valuesSpy = vi.spyOn(Map.prototype, 'values');
+    const r = new CommandRegistry();
+
+    try {
+      r.register({ id: 'a', title: 'A', hotkey: 'mod+s', fn: () => {} });
+      r.register({ id: 'b', title: 'B', hotkey: 'mod+k', fn: () => {} });
+      r.register({ id: 'c', title: 'C', hotkey: 'mod+s', fn: () => {} });
+
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(valuesSpy).not.toHaveBeenCalled();
+    } finally {
+      valuesSpy.mockRestore();
+      warn.mockRestore();
+    }
   });
 
   // 边界(E35):register 校验贡献项长度 + hotkey 形态(防恶意插件超长字段/异常 hotkey 进全局
@@ -454,12 +489,56 @@ describe('StatusBarRegistry', () => {
     expect(r.getBySide('left')).toEqual([]);
   });
 
+  it('空 registry 的 getAll/getBySide 复用稳定空快照', () => {
+    const r = new StatusBarRegistry();
+    const other = new StatusBarRegistry();
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      expect(r.getAll()).toEqual([]);
+      expect(r.getAll()).toBe(other.getAll());
+      expect(r.getBySide('left')).toBe(other.getBySide('left'));
+      expect(r.getBySide('right')).toBe(other.getBySide('right'));
+      expect(sortSpy).not.toHaveBeenCalled();
+    } finally {
+      sortSpy.mockRestore();
+    }
+  });
+
   it('priority 升序排序', () => {
     const r = new StatusBarRegistry();
     r.register({ id: 'b', side: 'right', priority: 20, render: () => null });
     r.register({ id: 'a', side: 'right', priority: 10, render: () => null });
     r.register({ id: 'c', side: 'right', priority: 30, render: () => null });
     expect(r.getBySide('right').map((x) => x.id)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('已按 priority 注册时 getBySide/getAll 不调用 sort', () => {
+    const bySide = new StatusBarRegistry();
+    bySide.register({ id: 'a', side: 'right', priority: 10, render: () => null });
+    bySide.register({ id: 'b', side: 'right', priority: 20, render: () => null });
+    bySide.register({ id: 'c', side: 'right', priority: 30, render: () => null });
+    const all = new StatusBarRegistry();
+    all.register({ id: 'left', side: 'left', priority: 1, render: () => null });
+    all.register({ id: 'right.a', side: 'right', priority: 20, render: () => null });
+    all.register({ id: 'right.b', side: 'right', priority: 30, render: () => null });
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      expect(bySide.getBySide('right').map((x) => x.id)).toEqual([
+        'a',
+        'b',
+        'c',
+      ]);
+      expect(all.getAll().map((x) => x.id)).toEqual([
+        'left',
+        'right.a',
+        'right.b',
+      ]);
+      expect(sortSpy).not.toHaveBeenCalled();
+    } finally {
+      sortSpy.mockRestore();
+    }
   });
 
   it('重复读取同一快照时复用排序结果,register/dispose 后失效重建', () => {
@@ -474,18 +553,20 @@ describe('StatusBarRegistry', () => {
       expect(r.getBySide('right').map((x) => x.id)).toEqual(['a', 'b']);
       expect(sortSpy).toHaveBeenCalledTimes(1);
 
+      const allAfterRight = r.getAll();
+      expect(allAfterRight.map((x) => x.id)).toEqual(['a', 'b']);
+      expect(allAfterRight).toBe(r.getBySide('right'));
+      expect(sortSpy).toHaveBeenCalledTimes(1);
       expect(r.getAll().map((x) => x.id)).toEqual(['a', 'b']);
-      expect(sortSpy).toHaveBeenCalledTimes(2);
-      expect(r.getAll().map((x) => x.id)).toEqual(['a', 'b']);
-      expect(sortSpy).toHaveBeenCalledTimes(2);
+      expect(sortSpy).toHaveBeenCalledTimes(1);
 
       r.register({ id: 'c', side: 'right', priority: 5, render: () => null });
       expect(r.getBySide('right').map((x) => x.id)).toEqual(['c', 'a', 'b']);
-      expect(sortSpy).toHaveBeenCalledTimes(3);
+      expect(sortSpy).toHaveBeenCalledTimes(2);
 
       d.dispose();
       expect(r.getBySide('right').map((x) => x.id)).toEqual(['c', 'a']);
-      expect(sortSpy).toHaveBeenCalledTimes(4);
+      expect(sortSpy).toHaveBeenCalledTimes(3);
       expect(StatusBarRegistry.prototype.getBySide.toString()).not.toContain(
         'items.push(',
       );
@@ -499,12 +580,14 @@ describe('StatusBarRegistry', () => {
 
   it('单项或空侧边快照不调用 sort', () => {
     const r = new StatusBarRegistry();
+    const empty = new StatusBarRegistry();
     r.register({ id: 'left', side: 'left', render: () => null });
     const sortSpy = vi.spyOn(Array.prototype, 'sort');
 
     try {
       expect(r.getBySide('left').map((x) => x.id)).toEqual(['left']);
       expect(r.getBySide('right')).toEqual([]);
+      expect(r.getBySide('right')).toBe(empty.getBySide('right'));
       expect(r.getAll().map((x) => x.id)).toEqual(['left']);
       expect(sortSpy).not.toHaveBeenCalled();
     } finally {

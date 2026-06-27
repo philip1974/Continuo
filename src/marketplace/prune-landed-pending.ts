@@ -7,6 +7,8 @@
 //       (pendingRestart = pending.has && !installed.has;installed 展示 = installed || pending)。
 //
 // 返回**同一引用**当无可摘除项 → setState 函数式更新可据此 bail,不触发多余 re-render。
+const EMPTY_PENDING: ReadonlySet<string> = new Set();
+
 export function pruneLandedPending(
   pending: ReadonlySet<string>,
   installed: ReadonlySet<string>,
@@ -18,5 +20,6 @@ export function pruneLandedPending(
       next.delete(id);
     }
   }
+  if (next?.size === 0) return EMPTY_PENDING;
   return next ?? pending;
 }

@@ -59,6 +59,24 @@ describe('useRecentCommandsStore', () => {
     expect(readFromStorage.toString()).not.toContain('out.push(');
   });
 
+  it('readFromStorage 空/坏/全非法数据 → 稳定空数组', () => {
+    expect(readFromStorage()).toEqual([]);
+    const empty = readFromStorage();
+    expect(readFromStorage()).toBe(empty);
+
+    localStorage.setItem(RECENT_STORAGE_KEY, 'not-json');
+    expect(readFromStorage()).toBe(empty);
+
+    localStorage.setItem(RECENT_STORAGE_KEY, JSON.stringify({ nope: true }));
+    expect(readFromStorage()).toBe(empty);
+
+    localStorage.setItem(
+      RECENT_STORAGE_KEY,
+      JSON.stringify([{ id: '', ts: 1 }, { id: 'ok' }]),
+    );
+    expect(readFromStorage()).toBe(empty);
+  });
+
   it('初始 list 为空', () => {
     expect(useRecentCommandsStore.getState().list).toEqual([]);
   });
@@ -108,6 +126,23 @@ describe('useRecentCommandsStore', () => {
     useRecentCommandsStore.getState().clear();
     expect(useRecentCommandsStore.getState().list).toEqual([]);
     expect(localStorage.getItem(RECENT_STORAGE_KEY)).toBeNull();
+  });
+
+  it('clear() 在 list 已为空时不通知订阅者但仍清 localStorage', () => {
+    localStorage.setItem(RECENT_STORAGE_KEY, JSON.stringify([{ id: 'a', ts: 1 }]));
+    useRecentCommandsStore.setState({ list: [] });
+    const listener = vi.fn();
+    const unsubscribe = useRecentCommandsStore.subscribe(listener);
+
+    try {
+      useRecentCommandsStore.getState().clear();
+
+      expect(useRecentCommandsStore.getState().list).toEqual([]);
+      expect(localStorage.getItem(RECENT_STORAGE_KEY)).toBeNull();
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
   });
 
   it('storage 同步读到相同列表内容时不通知订阅者', () => {

@@ -53,10 +53,12 @@ describe('IpcPermissionStore.get', () => {
     const a = await store.get('p1');
     const b = await store.get('p1');
     const c = await store.get('p2');
+    const d = await store.get('p3');
 
     expect(a).toEqual([{ permission: 'fs', granted: true, decidedAt: 100 }]);
     expect(b).toEqual(a);
     expect(c).toEqual([]);
+    expect(d).toBe(c);
     expect(readPermissions).toHaveBeenCalledTimes(1);
   });
 
@@ -133,6 +135,19 @@ describe('IpcPermissionStore.get', () => {
 });
 
 describe('IpcPermissionStore.grant / deny', () => {
+  it('grant / deny 空 perms 为 no-op,不读不写 IPC', async () => {
+    const readPermissions = vi.fn().mockResolvedValue({ ok: true, data: {} });
+    const writePluginPermissions = vi.fn().mockResolvedValue({ ok: true });
+    installFakeApi({ readPermissions, writePluginPermissions });
+
+    const store = new IpcPermissionStore();
+    await store.grant('p1', []);
+    await store.deny('p1', []);
+
+    expect(readPermissions).not.toHaveBeenCalled();
+    expect(writePluginPermissions).not.toHaveBeenCalled();
+  });
+
   // 数据安全:store 改走 writePluginPermissions(单 plugin 合并写),
   // 不再整表写回(整表写在多窗口下会用陈旧快照覆盖别窗口的决策)。
   it('grant 新 perm → 单 plugin 写盘 + cache 反映;反向决策被替换', async () => {
@@ -328,6 +343,27 @@ describe('IpcPermissionStore.clearDenied', () => {
     expect(record).toEqual([]); // 空记录 → 删除 entry
   });
 
+  it('没有 denied 项时 clearDenied 为 no-op,不写 IPC', async () => {
+    const writePluginPermissions = vi.fn().mockResolvedValue({ ok: true });
+    installFakeApi({
+      readPermissions: vi.fn().mockResolvedValue({
+        ok: true,
+        data: {
+          p1: [
+            { permission: 'fs', granted: true, decidedAt: 1 },
+            { permission: 'network', granted: true, decidedAt: 2 },
+          ],
+        },
+      }),
+      writePluginPermissions,
+    });
+
+    const store = new IpcPermissionStore();
+    await store.clearDenied('p1');
+
+    expect(writePluginPermissions).not.toHaveBeenCalled();
+  });
+
   it('pluginId 不存在 → noop,不 IPC', async () => {
     const writePluginPermissions = vi.fn().mockResolvedValue({ ok: true });
     installFakeApi({
@@ -438,6 +474,22 @@ describe('E245 parsePermissionState 有界解析 + 字段校验', () => {
     });
     expect(r['com.p']?.decisions).toEqual([]);
     expect(r['com.p']?.pathScopes).toEqual([{ path: '/ok', mode: 'rw' }]);
+  });
+
+  it('全非法 decisions / pathScopes 复用稳定空数组', () => {
+    const raw = {
+      'com.p': {
+        decisions: [{ permission: 'fs', granted: true, decidedAt: NaN }],
+        pathScopes: [{ path: '/bad', mode: 'write' }],
+      },
+    };
+    const a = parsePermissionState(raw);
+    const b = parsePermissionState(raw);
+
+    expect(a['com.p']?.decisions).toEqual([]);
+    expect(a['com.p']?.pathScopes).toEqual([]);
+    expect(a['com.p']?.decisions).toBe(b['com.p']?.decisions);
+    expect(a['com.p']?.pathScopes).toBe(b['com.p']?.pathScopes);
   });
 
   it('合法数据原样解析(回归)', () => {

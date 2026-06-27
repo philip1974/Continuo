@@ -47,6 +47,8 @@ const MAX_DECISIONS_PER_PLUGIN = 1000; // 对齐 plugins.ipc DECISIONS_MAX
 const MAX_PATH_SCOPES_PER_PLUGIN = 256; // 对齐 plugins.service MAX_PERSISTED_SCOPES_PER_PLUGIN / plugins.ipc PATHSCOPES_MAX
 const PERMISSION_NAME_MAX = 256; // 对齐 plugins.ipc PERMISSION_MAX
 const SCOPE_PATH_MAX = 8192; // 对齐 plugins.ipc PATH_MAX
+const EMPTY_PERMISSION_DECISIONS: PermissionDecision[] = [];
+const EMPTY_PATH_SCOPES: PathScope[] = [];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -84,32 +86,38 @@ function parsePathScope(value: unknown): PathScope | null {
 }
 
 function parseDecisionList(value: unknown): PermissionDecision[] {
-  if (!Array.isArray(value)) return [];
-  const out = new Array<PermissionDecision>(
-    Math.min(value.length, MAX_DECISIONS_PER_PLUGIN),
-  );
+  if (!Array.isArray(value)) return EMPTY_PERMISSION_DECISIONS;
+  let out: PermissionDecision[] | null = null;
   let outCount = 0;
   for (const item of value) {
     if (outCount >= MAX_DECISIONS_PER_PLUGIN) break; // 边界(E245):数量上限早停
     const parsed = parseDecision(item);
-    if (parsed) out[outCount++] = parsed;
+    if (!parsed) continue;
+    out ??= new Array<PermissionDecision>(
+      Math.min(value.length, MAX_DECISIONS_PER_PLUGIN),
+    );
+    out[outCount++] = parsed;
   }
+  if (out === null) return EMPTY_PERMISSION_DECISIONS;
   out.length = outCount;
   return out;
 }
 
 function parsePathScopes(value: unknown): PathScope[] | undefined {
   if (value === undefined) return undefined;
-  if (!Array.isArray(value)) return [];
-  const out = new Array<PathScope>(
-    Math.min(value.length, MAX_PATH_SCOPES_PER_PLUGIN),
-  );
+  if (!Array.isArray(value)) return EMPTY_PATH_SCOPES;
+  let out: PathScope[] | null = null;
   let outCount = 0;
   for (const item of value) {
     if (outCount >= MAX_PATH_SCOPES_PER_PLUGIN) break; // 边界(E245):数量上限早停
     const parsed = parsePathScope(item);
-    if (parsed) out[outCount++] = parsed;
+    if (!parsed) continue;
+    out ??= new Array<PathScope>(
+      Math.min(value.length, MAX_PATH_SCOPES_PER_PLUGIN),
+    );
+    out[outCount++] = parsed;
   }
+  if (out === null) return EMPTY_PATH_SCOPES;
   out.length = outCount;
   return out;
 }
@@ -175,13 +183,14 @@ export class IpcPermissionStore implements PermissionStore {
 
   async get(pluginId: string): Promise<readonly PermissionDecision[]> {
     const cache = await this.ensureLoaded();
-    return cache[pluginId]?.decisions ?? [];
+    return cache[pluginId]?.decisions ?? EMPTY_PERMISSION_DECISIONS;
   }
 
   async grant(
     pluginId: string,
     perms: readonly PermissionKey[],
   ): Promise<void> {
+    if (perms.length === 0) return;
     await this.upsert(pluginId, perms, true);
   }
 
@@ -189,6 +198,7 @@ export class IpcPermissionStore implements PermissionStore {
     pluginId: string,
     perms: readonly PermissionKey[],
   ): Promise<void> {
+    if (perms.length === 0) return;
     await this.upsert(pluginId, perms, false);
   }
 
@@ -199,6 +209,7 @@ export class IpcPermissionStore implements PermissionStore {
       const record = cache[pluginId];
       if (!record) return;
       const kept = keepGrantedDecisions(record.decisions);
+      if (kept === record.decisions) return;
       const removeEntry = kept.length === 0 && record.pathScopes === undefined;
       // 空记录 → main 删除该 id 条目;否则保留 pathScopes,只去掉 denied decisions。
       const written: PermissionRecord = removeEntry
@@ -263,7 +274,7 @@ export class IpcPermissionStore implements PermissionStore {
     return this.runExclusive(pluginId, async () => {
       const cache = await this.ensureLoaded();
       const existing = cache[pluginId];
-      const existingDecisions = existing?.decisions ?? [];
+      const existingDecisions = existing?.decisions ?? EMPTY_PERMISSION_DECISIONS;
       const updated = replacePermissionDecisions(
         existingDecisions,
         perms,

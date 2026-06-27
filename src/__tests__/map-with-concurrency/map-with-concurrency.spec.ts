@@ -40,6 +40,24 @@ describe('allSettledWithConcurrency', () => {
     ]);
   });
 
+  it('单项输入直接执行,不启动 worker 池 / Promise.all', async () => {
+    const allSpy = vi.spyOn(Promise, 'all');
+
+    try {
+      await expect(
+        allSettledWithConcurrency([2], 4, async (n) => n * 10),
+      ).resolves.toEqual([{ status: 'fulfilled', value: 20 }]);
+      await expect(
+        allSettledWithConcurrency([2], 4, async () => {
+          throw new Error('boom');
+        }),
+      ).resolves.toEqual([{ status: 'rejected', reason: new Error('boom') }]);
+      expect(allSpy).not.toHaveBeenCalled();
+    } finally {
+      allSpy.mockRestore();
+    }
+  });
+
   it('峰值在途 ≤ limit', async () => {
     let inFlight = 0;
     let peak = 0;
@@ -100,7 +118,15 @@ describe('allSettledWithConcurrency', () => {
   });
 
   it('空输入 → []', async () => {
-    const r = await allSettledWithConcurrency([], 4, async (n) => n);
-    expect(r).toEqual([]);
+    const allSpy = vi.spyOn(Promise, 'all');
+
+    try {
+      const r = await allSettledWithConcurrency([], 4, async (n) => n);
+      expect(r).toEqual([]);
+      expect(r).toBe(await allSettledWithConcurrency([], 1, async (n) => n));
+      expect(allSpy).not.toHaveBeenCalled();
+    } finally {
+      allSpy.mockRestore();
+    }
   });
 });

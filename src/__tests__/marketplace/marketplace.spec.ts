@@ -61,6 +61,21 @@ describe('selectValidMarketplaceEntries', () => {
       filterSpy.mockRestore();
     }
   });
+
+  it('空输入 / 全非法 entry 复用稳定空列表', () => {
+    const invalid = [{ ...SAMPLE_ENTRY, id: 'bad id' }];
+
+    expect(selectValidMarketplaceEntries([])).toEqual([]);
+    expect(selectValidMarketplaceEntries([])).toBe(
+      selectValidMarketplaceEntries(invalid),
+    );
+  });
+
+  it('单条合法 entry 复用原数组引用', () => {
+    const raw = [SAMPLE_ENTRY];
+
+    expect(selectValidMarketplaceEntries(raw)).toBe(raw);
+  });
 });
 
 describe('entryToGitUrl', () => {

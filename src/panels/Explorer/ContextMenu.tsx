@@ -6,6 +6,7 @@ import type { FileEntry } from '@/lib/fs/types';
 import { useT } from '@/i18n';
 import {
   filterVisible,
+  isExplorerContextMenuItemVisible,
   type ExplorerContextMenuItemSpec,
   type ExplorerContextMenuItemContext,
 } from '@/plugins/registries/ExplorerContextMenuRegistry';
@@ -73,11 +74,14 @@ interface PluginItemBucket {
   readonly items: readonly ExplorerContextMenuItemSpec[];
 }
 
+const EMPTY_CONTEXT_ACTION_TARGETS: string[] = [];
+const EMPTY_PLUGIN_ITEM_BUCKETS: PluginItemBucket[] = [];
+
 export function getContextActionTargets(
   target: FileEntry | null,
   selectedPaths: ReadonlySet<string>,
 ): string[] {
-  if (target === null) return [];
+  if (target === null) return EMPTY_CONTEXT_ACTION_TARGETS;
   if (selectedPaths.has(target.path) && selectedPaths.size > 1) {
     const paths: string[] = [];
     for (const path of selectedPaths) {
@@ -94,6 +98,22 @@ export function groupPluginItems(
   ctx: ExplorerContextMenuItemContext,
 ): PluginItemBucket[] {
   const visible = filterVisible(raw, ctx);
+  if (visible.length === 0) return EMPTY_PLUGIN_ITEM_BUCKETS;
+  if (visible.length === 1) {
+    const item = visible[0]!;
+    return [{ group: item.group ?? 'plugin', items: visible }];
+  }
+  const firstGroup = visible[0]!.group ?? 'plugin';
+  let allSameGroup = true;
+  for (let i = 1; i < visible.length; i++) {
+    if ((visible[i]!.group ?? 'plugin') !== firstGroup) {
+      allSameGroup = false;
+      break;
+    }
+  }
+  if (allSameGroup) {
+    return [{ group: firstGroup, items: visible }];
+  }
   const map = new Map<string, ExplorerContextMenuItemSpec[]>();
   for (const item of visible) {
     const g = item.group ?? 'plugin';
@@ -146,7 +166,9 @@ export function ContextMenu({
     selectedPaths,
     rootPath,
   };
-  const pluginGroups = open ? groupPluginItems(pluginItems, pluginCtx) : [];
+  const pluginGroups = open
+    ? groupPluginItems(pluginItems, pluginCtx)
+    : EMPTY_PLUGIN_ITEM_BUCKETS;
 
   // 本次菜单操作目标:若 target 在多选集中,批量作用于 selectedPaths;否则只
   // target 自身。每次渲染算一次(打磨 R12):cut/copy/path/trash 等 6+ 处都复用,
@@ -320,7 +342,7 @@ export function ContextMenu({
                     runContributedAction(item.label, () => {
                       const live = coApp.explorerContextMenu.get(item.id);
                       if (!live) return;
-                      if (filterVisible([live], pluginCtx).length === 0) return;
+                      if (!isExplorerContextMenuItemVisible(live, pluginCtx)) return;
                       return live.fn(pluginCtx);
                     })
                   }

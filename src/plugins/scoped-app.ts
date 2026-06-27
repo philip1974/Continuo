@@ -65,6 +65,15 @@ export function areValidShellArgs(args: readonly unknown[]): boolean {
   return true;
 }
 
+const EMPTY_SHELL_ARGS: readonly string[] = [];
+
+function copyShellArgs(args: readonly string[]): readonly string[] {
+  if (args.length === 0) return EMPTY_SHELL_ARGS;
+  const copied = new Array<string>(args.length);
+  for (let i = 0; i < args.length; i++) copied[i] = args[i]!;
+  return copied;
+}
+
 // 边界(E46,E44/E45 同族):app.shell.exec/execStream 在 renderer wrapper 里先 [...args] 展开并
 // structured-clone env/input,主进程 shell.exec(E12)/plugin-shell-stream(E45)虽有上限但已太晚;
 // [...args] 对非数组 iterable 还可能无限/超大展开。发 IPC(spread)前按主进程同一上限(shared)预检,
@@ -143,10 +152,13 @@ function missingPluginFsToken(): never {
   throw new Error('[plugin-fs] no token bound');
 }
 
+const EMPTY_PLUGIN_LIST_DIR_ENTRIES: FileEntry[] = [];
+
 export function buildPluginListDirEntries(
   path: string,
   entries: readonly Pick<FileEntry, 'name' | 'isDirectory' | 'isSymlink'>[],
 ): FileEntry[] {
+  if (entries.length === 0) return EMPTY_PLUGIN_LIST_DIR_ENTRIES;
   const parent = path.replace(/[\\/]+$/, '');
   const out = new Array<FileEntry>(entries.length);
   for (let i = 0; i < entries.length; i++) {
@@ -408,7 +420,7 @@ function makeShell(
       validateShellInput(cmd, args, opts); // 边界(E46):spread/发 IPC 前预检
       const r = await coApi.shell.exec({
         cmd,
-        args: [...args],
+        args: copyShellArgs(args),
         cwd: opts?.cwd,
         env: opts?.env,
         timeoutMs: opts?.timeoutMs,
@@ -656,6 +668,8 @@ function makeNotifications(
   };
 }
 
+const EMPTY_GRANTED_PERMISSIONS: PermissionKey[] = [];
+
 function makePermission(
   pluginId: string,
   store: PermissionStore | null,
@@ -667,7 +681,7 @@ function makePermission(
       return hasGrantedPermissionDecision(decisions, perm);
     },
     async granted() {
-      if (!store) return [];
+      if (!store) return EMPTY_GRANTED_PERMISSIONS;
       const decisions = await store.get(pluginId);
       const out = new Array<PermissionKey>(decisions.length);
       let outCount = 0;

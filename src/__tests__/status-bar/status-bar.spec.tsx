@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fireEvent, render, cleanup, act, waitFor } from '@testing-library/react';
 
 // PROD 下 sandboxSweep 会涂掉 navigator.clipboard,LM UI 必须走 cached ref
@@ -66,6 +68,33 @@ afterEach(() => {
 });
 
 describe('StatusBar — 左侧 workspace', () => {
+  it('git 分支静态图标预创建,避免 footer render 时重复构造 svg', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/shell/StatusBar.tsx'),
+      'utf8',
+    );
+
+    expect(src).toContain('const GIT_BRANCH_ICON = (');
+    expect(src).toContain('{GIT_BRANCH_ICON}');
+    expect(src.indexOf('<svg viewBox="0 0 16 16" width="10" height="10"')).toBeLessThan(
+      src.indexOf('export function StatusBar()'),
+    );
+  });
+
+  it('复用 tooltip 翻译结果,title 与 aria-label 不重复查 catalog', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/shell/StatusBar.tsx'),
+      'utf8',
+    );
+
+    expect(src).toContain('const mcpTooltip = t(');
+    expect(src).toContain('const agentRevokeTooltip =');
+    expect(src).toContain('title={mcpTooltip}');
+    expect(src).toContain('aria-label={mcpTooltip}');
+    expect(src).toContain('title={agentRevokeTooltip}');
+    expect(src).toContain('aria-label={agentRevokeTooltip}');
+  });
+
   it('root=null → 「无工作区」', () => {
     installApi({});
     const { container } = render(<StatusBar />);
@@ -272,6 +301,26 @@ describe('StatusBar — 插件 statusBar items', () => {
     expect(empty.left).toBe(empty.right);
     expect(splitStatusItemsBySide(leftItems).left).toBe(leftItems);
     expect(splitStatusItemsBySide(rightItems).right).toBe(rightItems);
+  });
+
+  it('多项但全在同一侧时复用输入快照', () => {
+    const leftItems = [
+      { id: 'left.a', side: 'left' as const, render: () => null },
+      { id: 'left.b', side: 'left' as const, render: () => null },
+    ];
+    const rightItems = [
+      { id: 'right.a', side: 'right' as const, render: () => null },
+      { id: 'right.b', side: 'right' as const, render: () => null },
+    ];
+    const empty = splitStatusItemsBySide([]);
+
+    const leftSplit = splitStatusItemsBySide(leftItems);
+    const rightSplit = splitStatusItemsBySide(rightItems);
+
+    expect(leftSplit.left).toBe(leftItems);
+    expect(leftSplit.right).toBe(empty.right);
+    expect(rightSplit.left).toBe(empty.left);
+    expect(rightSplit.right).toBe(rightItems);
   });
 
   it('左侧 item render → 出现在左半', () => {

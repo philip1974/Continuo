@@ -19,6 +19,8 @@ import { MAX_TERMINAL_SESSIONS_GLOBAL } from '../../electron/shared/terminal-ses
 // (此前 main/preload/renderer 三层平行声明同组字段并已漂移)。
 export type TerminalSession = TerminalSessionSnapshot;
 
+const EMPTY_TERMINAL_SESSIONS: readonly TerminalSession[] = [];
+
 export interface FilterDropOpts {
   onDrop?: (
     sessionId: string | undefined,
@@ -93,7 +95,7 @@ export function filterByOwnerWindow(
   currentWindowId: number,
   opts: FilterDropOpts = {},
 ): readonly TerminalSession[] {
-  if (sessions.length === 0) return sessions as readonly TerminalSession[];
+  if (sessions.length === 0) return EMPTY_TERMINAL_SESSIONS;
 
   let result: TerminalSession[] | undefined;
   const ensureResult = (prefixLength: number): TerminalSession[] => {
@@ -150,6 +152,7 @@ export function filterByOwnerWindow(
   }
   const out = result;
   if (out === undefined) return sessions as readonly TerminalSession[];
+  if (count === 0) return EMPTY_TERMINAL_SESSIONS;
   out.length = count;
   return out;
 }
@@ -165,7 +168,7 @@ export function filterByWorkspaceRoot(
   sessions: readonly TerminalSession[],
   currentRoot: string | null,
 ): readonly TerminalSession[] {
-  if (sessions.length === 0) return sessions;
+  if (sessions.length === 0) return EMPTY_TERMINAL_SESSIONS;
 
   let visible: TerminalSession[] | null = null;
   let count = 0;
@@ -188,7 +191,7 @@ export function filterByWorkspaceRoot(
   }
   if (visible === null) return sessions;
   visible.length = count;
-  return visible;
+  return count === 0 ? EMPTY_TERMINAL_SESSIONS : visible;
 }
 
 let indexedSessionsRef: readonly TerminalSession[] | null = null;
@@ -276,7 +279,9 @@ export function nextActiveAfterClose(
   }
   if (remaining === null) return { sessions, activeId };
   remaining.length = count;
-  if (remaining.length === 0) return { sessions: remaining, activeId: null };
+  if (remaining.length === 0) {
+    return { sessions: EMPTY_TERMINAL_SESSIONS, activeId: null };
+  }
   if (closingId !== activeId) return { sessions: remaining, activeId };
   return { sessions: remaining, activeId: next?.id ?? prev?.id ?? null };
 }
@@ -342,6 +347,14 @@ export const useTerminalStore = create<TerminalState>((set) => ({
 
   replaceSnapshot: (newSessions) =>
     set((s) => {
+      if (
+        newSessions.length === 0 &&
+        s.sessions.length === 0 &&
+        s.activeId === null &&
+        s.customTitles.size === 0
+      ) {
+        return s;
+      }
       const applied = applySnapshot(s.sessions, s.activeId, newSessions);
       // 清理 customTitles 中已不在新 snapshot 的 id
       const newIds = new Set<string>();

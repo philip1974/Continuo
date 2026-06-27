@@ -64,6 +64,7 @@ function validateSettingTabSpec(spec: SettingTabSpec): void {
 }
 
 type Listener = () => void;
+const EMPTY_SETTING_TAB_SNAPSHOT: readonly SettingTabSpec[] = [];
 
 export class SettingTabRegistry {
   private items = new Map<string, SettingTabSpec>();
@@ -99,11 +100,22 @@ export class SettingTabRegistry {
 
   getAll(): readonly SettingTabSpec[] {
     if (this.cachedAll !== null) return this.cachedAll;
+    if (this.items.size === 0) {
+      this.cachedAll = EMPTY_SETTING_TAB_SNAPSHOT;
+      return EMPTY_SETTING_TAB_SNAPSHOT;
+    }
 
     const items = new Array<SettingTabSpec>(this.items.size);
     let i = 0;
-    for (const item of this.items.values()) items[i++] = item;
-    if (items.length > 1) {
+    let prevPriority = -Infinity;
+    let sorted = true;
+    for (const item of this.items.values()) {
+      const priority = item.priority ?? 100;
+      if (priority < prevPriority) sorted = false;
+      prevPriority = priority;
+      items[i++] = item;
+    }
+    if (items.length > 1 && !sorted) {
       items.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
     }
     this.cachedAll = items;

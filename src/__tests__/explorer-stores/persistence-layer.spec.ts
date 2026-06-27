@@ -7,7 +7,10 @@ import {
   useLayoutUiStore,
 } from '../../stores/layout-ui.store';
 import {
+  collectEditorSnapshot,
   collectNormalizedWorkspaceRoots,
+  copyPersistPathSet,
+  copyPersistPaths,
   hydrateStores,
   initExplorerPersistence,
   flushExplorerPersistence,
@@ -95,6 +98,60 @@ describe('snapshotFromStores', () => {
     } finally {
       mapSpy.mockRestore();
     }
+  });
+
+  it('snapshot recentRoots 空态复用稳定空数组', () => {
+    const empty = collectNormalizedWorkspaceRoots([]);
+    expect(empty).toEqual([]);
+    expect(collectNormalizedWorkspaceRoots([])).toBe(empty);
+    expect(collectNormalizedWorkspaceRoots(['', '   ', null])).toBe(empty);
+  });
+
+  it('collectEditorSnapshot 无可恢复文件时复用稳定空路径数组', () => {
+    const empty = collectEditorSnapshot([], null);
+    expect(empty).toEqual({ openFilePaths: [], activePath: null });
+    expect(collectEditorSnapshot([], null).openFilePaths).toBe(
+      empty.openFilePaths,
+    );
+    expect(
+      collectEditorSnapshot(
+        [
+          {
+            id: 'untitled-1',
+            filePath: null,
+            content: '',
+            originalContent: '',
+            dirty: false,
+          },
+        ],
+        'untitled-1',
+      ).openFilePaths,
+    ).toBe(empty.openFilePaths);
+  });
+
+  it('copyPersistPaths 空态复用稳定数组,非空拷贝隔离调用方 mutation', () => {
+    const empty = copyPersistPaths([]);
+    expect(empty).toEqual([]);
+    expect(copyPersistPaths([])).toBe(empty);
+
+    const paths = ['/a.md', '/b.md'];
+    const copied = copyPersistPaths(paths);
+    paths[0] = '/mutated.md';
+
+    expect(copied).toEqual(['/a.md', '/b.md']);
+  });
+
+  it('copyPersistPathSet 空态复用稳定数组,非空单趟拷贝且 snapshot 不 spread expandedPaths', () => {
+    const empty = copyPersistPathSet(new Set());
+    expect(empty).toEqual([]);
+    expect(copyPersistPathSet(new Set())).toBe(empty);
+
+    const paths = new Set(['/work', '/work/sub']);
+    expect(copyPersistPathSet(paths)).toEqual(['/work', '/work/sub']);
+
+    const src = snapshotFromStores.toString();
+    expect(src).toContain('copyPersistPathSet(e.expandedPaths)');
+    expect(src).not.toContain('[...e.expandedPaths]');
   });
 
   it('snapshot 不含 search 字段(打磨 R19:search 已从 store 移除)', () => {

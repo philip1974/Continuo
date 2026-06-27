@@ -34,6 +34,7 @@ const mockT = vi.hoisted(() =>
 
 vi.mock('@/i18n', () => ({
   useT: () => mockT,
+  useLocale: () => currentLocale,
 }));
 
 function spec(overrides: Partial<I18nSettingItemSpec>): I18nSettingItemSpec {

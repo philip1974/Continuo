@@ -269,6 +269,7 @@ function validateSettingItemSpec(spec: SettingItemSpec): void {
 }
 
 type Listener = () => void;
+const EMPTY_SETTING_ITEM_SNAPSHOT: readonly SettingItemSpec[] = [];
 
 export class SettingItemRegistry {
   private items = new Map<string, SettingItemSpec>();
@@ -305,11 +306,22 @@ export class SettingItemRegistry {
 
   getAll(): readonly SettingItemSpec[] {
     if (this.cachedAll !== null) return this.cachedAll;
+    if (this.items.size === 0) {
+      this.cachedAll = EMPTY_SETTING_ITEM_SNAPSHOT;
+      return EMPTY_SETTING_ITEM_SNAPSHOT;
+    }
 
     const items = new Array<SettingItemSpec>(this.items.size);
     let i = 0;
-    for (const item of this.items.values()) items[i++] = item;
-    if (items.length > 1) {
+    let prevPriority = -Infinity;
+    let sorted = true;
+    for (const item of this.items.values()) {
+      const priority = item.priority ?? 100;
+      if (priority < prevPriority) sorted = false;
+      prevPriority = priority;
+      items[i++] = item;
+    }
+    if (items.length > 1 && !sorted) {
       items.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
     }
     this.cachedAll = items;
@@ -330,19 +342,32 @@ export class SettingItemRegistry {
   getByCategory(category: string): readonly SettingItemSpec[] {
     const cached = this.cachedByCategory.get(category);
     if (cached !== undefined) return cached;
+    if (this.items.size === 0) {
+      this.cachedByCategory.set(category, EMPTY_SETTING_ITEM_SNAPSHOT);
+      return EMPTY_SETTING_ITEM_SNAPSHOT;
+    }
 
     // 先过滤再排序(打磨 R5):原先 getAll() 对全部 category 的 items 排序后才
     // 过滤,每个设置 tab 都为无关 category 付排序成本。filter 在前,只排本
     // category 的子集;Array.prototype.sort 稳定,输出与原契约完全一致。
     const items = new Array<SettingItemSpec>(this.items.size);
     let count = 0;
+    let prevPriority = -Infinity;
+    let sorted = true;
     for (const item of this.items.values()) {
       if (item.category === category) {
+        const priority = item.priority ?? 100;
+        if (priority < prevPriority) sorted = false;
+        prevPriority = priority;
         items[count++] = item;
       }
     }
     items.length = count;
-    if (count > 1) {
+    if (count === 0) {
+      this.cachedByCategory.set(category, EMPTY_SETTING_ITEM_SNAPSHOT);
+      return EMPTY_SETTING_ITEM_SNAPSHOT;
+    }
+    if (count > 1 && !sorted) {
       items.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
     }
     this.cachedByCategory.set(category, items);

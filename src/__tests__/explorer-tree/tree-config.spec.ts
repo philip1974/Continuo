@@ -66,6 +66,14 @@ describe('createTreeConfig · 顶层配置', () => {
     const cfg = createTreeConfig({ root: '/work', fs });
     expect(cfg.initialState?.expandedItems).toContain('/work');
   });
+
+  it('受控 expandedItems 接入不通过条件对象 spread 分配空对象', () => {
+    const src = createTreeConfig.toString();
+
+    expect(src).not.toContain('...(deps.expandedItems');
+    expect(src).not.toContain(': {})');
+    expect(src).toContain('config.state =');
+  });
 });
 
 describe('createTreeConfig · getItem', () => {
@@ -141,6 +149,11 @@ describe('createDataLoader · getChildrenWithData', () => {
     }
   });
 
+  it('空 FileEntry[] 包装为稳定空 children', () => {
+    expect(buildTreeChildrenWithData([])).toEqual([]);
+    expect(buildTreeChildrenWithData([])).toBe(buildTreeChildrenWithData([]));
+  });
+
   it('成功 → 把 FileEntry[] 映射为 { id, data }[]', async () => {
     const sub = entry('/work/sub', true);
     const md = entry('/work/a.md');
@@ -160,6 +173,9 @@ describe('createDataLoader · getChildrenWithData', () => {
     const loader = createDataLoader({ root: '/work', fs, onIpcWarn });
     const children = await loader.getChildrenWithData('/work/missing');
     expect(children).toEqual([]);
+    await expect(loader.getChildrenWithData('/work/missing')).resolves.toBe(
+      children,
+    );
     expect(onIpcWarn).toHaveBeenCalledWith(
       expect.stringContaining('/work/missing'),
       'FS_NOT_FOUND',
@@ -176,6 +192,7 @@ describe('createDataLoader · getChildrenWithData', () => {
     const loader = createDataLoader({ root: '/work', fs, onIpcWarn });
     const children = await loader.getChildrenWithData('/work');
     expect(children).toEqual([]);
+    await expect(loader.getChildrenWithData('/work')).resolves.toBe(children);
     expect(onIpcWarn).toHaveBeenCalled();
   });
 

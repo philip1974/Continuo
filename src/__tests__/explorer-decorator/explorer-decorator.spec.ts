@@ -13,6 +13,14 @@ import type { PluginManifest } from '../../plugins/types';
 const file = { path: '/a/b.ts', isDirectory: false };
 
 describe('ExplorerDecoratorRegistry', () => {
+  it('空 registry 的 getAll 复用稳定空快照', () => {
+    const r = new ExplorerDecoratorRegistry();
+    const other = new ExplorerDecoratorRegistry();
+
+    expect(r.getAll()).toEqual([]);
+    expect(r.getAll()).toBe(other.getAll());
+  });
+
   it('register / dispose / getAll', () => {
     const r = new ExplorerDecoratorRegistry();
     const fn: DecoratorFn = () => null;
@@ -127,6 +135,24 @@ describe('mergeDecorations', () => {
     ]);
     expect(result?.badge).toBe('A');
     expect(result?.badgeColor).toBe('#f00');
+  });
+
+  it('无 tooltip 时不预分配 tooltip 数组', () => {
+    const result = mergeDecorations(file, [
+      () => ({ badge: 'A' }),
+      () => ({ textColor: 'red' }),
+    ]);
+
+    expect(result).toEqual({
+      badge: 'A',
+      badgeColor: undefined,
+      textColor: 'red',
+      icon: undefined,
+      tooltip: undefined,
+    });
+    expect(mergeDecorations.toString()).not.toContain(
+      'new Array<string>(DEC_TOOLTIPS_COUNT_MAX)',
+    );
   });
 
   it('textColor:后者赢(最近覆盖)', () => {

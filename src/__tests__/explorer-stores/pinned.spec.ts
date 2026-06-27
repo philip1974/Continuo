@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   buildToggledPinnedPaths,
@@ -29,6 +31,22 @@ describe('pinned.store', () => {
     expect(usePinnedStore.getState().paths).toEqual(['/a', '/c']);
   });
 
+  it('toggle 移除最后一项时复用稳定空 paths', () => {
+    usePinnedStore.setState({ paths: ['/a'] });
+    usePinnedStore.getState().toggle('/a');
+    const empty = usePinnedStore.getState().paths;
+
+    expect(empty).toEqual([]);
+    expect(buildToggledPinnedPaths(['/b'], '/b')).toBe(empty);
+    const src = readFileSync(
+      path.join(process.cwd(), 'src/stores/pinned.store.ts'),
+      'utf-8',
+    );
+    expect(src.indexOf('paths.length === 1')).toBeLessThan(
+      src.indexOf('new Array<string>(paths.length - 1)'),
+    );
+  });
+
   it('toggle 已 pin → 不先 includes/filter 双重扫描,也不 slice 两段数组', () => {
     const paths = ['/a', '/b', '/c'];
     usePinnedStore.setState({ paths });
@@ -58,7 +76,11 @@ describe('pinned.store', () => {
   it('clear 清空', () => {
     usePinnedStore.setState({ paths: ['/a', '/b'] });
     usePinnedStore.getState().clear();
-    expect(usePinnedStore.getState().paths).toEqual([]);
+    const empty = usePinnedStore.getState().paths;
+    expect(empty).toEqual([]);
+    usePinnedStore.setState({ paths: ['/c'] });
+    usePinnedStore.getState().clear();
+    expect(usePinnedStore.getState().paths).toBe(empty);
   });
 
   it('clear 在已空时 no-op,不触发订阅', () => {

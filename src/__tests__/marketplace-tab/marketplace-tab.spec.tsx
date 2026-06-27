@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fireEvent, render, cleanup, waitFor, act } from '@testing-library/react';
 
 vi.mock('../../marketplace/fetcher', () => ({
@@ -21,6 +23,7 @@ import {
   captureLmApi,
 } from '../../lib/co-api';
 import {
+  buildUpdateVersionMap,
   MarketplaceTab,
   marketplaceReviewSortButtonClassName,
   marketplaceTagButtonClassName,
@@ -28,7 +31,7 @@ import {
 import { setLocale as setI18nLocale } from '@/i18n';
 import { fetchMarketplaceIndex, fetchPluginManifest } from '../../marketplace/fetcher';
 import { getUserPluginManager } from '../../plugins/PluginManager';
-import { useUpdateStore } from '../../marketplace/update-store';
+import { useUpdateStore, type AvailableUpdate } from '../../marketplace/update-store';
 import { useReviewsStore } from '../../marketplace/reviews-store';
 import type { MarketplaceEntry } from '../../marketplace/types';
 
@@ -81,6 +84,24 @@ beforeEach(() => {
 });
 
 describe('MarketplaceTab — className helpers', () => {
+  it('评论排序按钮使用稳定 REVIEW_SORTS,不在 render 中创建数组', () => {
+    const src = readFileSync(join(process.cwd(), 'src/marketplace/MarketplaceTab.tsx'), 'utf8');
+
+    expect(src).toContain('const REVIEW_SORTS: readonly ReviewSort[]');
+    expect(src).toContain('REVIEW_SORTS.map');
+    expect(src).not.toContain("(['newest', 'helpful'] as const).map");
+  });
+
+  it('搜索框 placeholder label 复用,aria-label 与 placeholder 不重复查 catalog', () => {
+    const src = readFileSync(join(process.cwd(), 'src/marketplace/MarketplaceTab.tsx'), 'utf8');
+
+    expect(src).toContain('const searchPlaceholderLabel = t(');
+    expect(src).toContain('aria-label={searchPlaceholderLabel}');
+    expect(src).toContain('placeholder={searchPlaceholderLabel}');
+    expect(src).not.toContain("aria-label={t('marketplace.search_placeholder')}");
+    expect(src).not.toContain("placeholder={t('marketplace.search_placeholder')}");
+  });
+
   it('tag/sort toggle className 不通过数组 join 重建', () => {
     const joinSpy = vi.spyOn(Array.prototype, 'join');
 
@@ -101,6 +122,27 @@ describe('MarketplaceTab — className helpers', () => {
     } finally {
       joinSpy.mockRestore();
     }
+  });
+});
+
+describe('MarketplaceTab — update version map helper', () => {
+  it('空 updates 复用稳定空 Map', () => {
+    expect(buildUpdateVersionMap([])).toEqual(new Map());
+    expect(buildUpdateVersionMap([])).toBe(buildUpdateVersionMap([]));
+  });
+
+  it('非空 updates 单趟构建 id → version Map', () => {
+    const updates: AvailableUpdate[] = [
+      { id: 'a', name: 'A', from: '1.0.0', to: '2.0.0', entry: entry({ id: 'a' }) },
+      { id: 'b', name: 'B', from: '1.0.0', to: '3.0.0', entry: entry({ id: 'b' }) },
+    ];
+
+    expect(buildUpdateVersionMap(updates)).toEqual(
+      new Map([
+        ['a', '2.0.0'],
+        ['b', '3.0.0'],
+      ]),
+    );
   });
 });
 

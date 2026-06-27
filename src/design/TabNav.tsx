@@ -149,7 +149,7 @@ export function TabNavItem({
       draggable={draggable}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
-      {...(dataAttrs ?? {})}
+      {...dataAttrs}
     >
       <button
         type="button"
@@ -172,9 +172,9 @@ export function TabNavItem({
         <span
           className="wm-tab-nav-item__dirty-dot"
           // 视觉圆点对 AT 隐藏;未保存状态改由 aria-describedby 指向的本地化文本承载(若提供)。
-          {...(showDirtyDesc
-            ? { id: dirtyDescId, 'aria-label': dirtyLabel }
-            : { 'aria-hidden': true })}
+          id={showDirtyDesc ? dirtyDescId : undefined}
+          aria-label={showDirtyDesc ? dirtyLabel : undefined}
+          aria-hidden={showDirtyDesc ? undefined : true}
         />
       ) : null}
       {onClose != null ? (

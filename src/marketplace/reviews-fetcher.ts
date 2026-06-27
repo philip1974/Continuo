@@ -33,6 +33,8 @@ const reviewsCache = createSessionCache<
   // 边界(E3):深度校验每个 aggregate(avg/count 有限数值、reviews 数组+字段),非法当 cache miss。
   validate: isValidAggregateRecord,
 });
+const EMPTY_REVIEW_AGGREGATES: ReadonlyMap<string, PluginAggregateRating> =
+  new Map();
 
 /**
  * 拉所有 reviews,按 plugin id 聚合。token + 网络在 main(IPC)。
@@ -87,17 +89,26 @@ export async function fetchAllReviews(
   if (!Array.isArray(rawNodes)) {
     const stale = reviewsCache.getStale();
     if (stale) return aggregateRecordToMap(stale);
-    return new Map();
+    return EMPTY_REVIEW_AGGREGATES;
   }
   const nodeCount = Math.min(rawNodes.length, MAX_REVIEW_NODES);
-  const reviews = new Array<Review>(nodeCount);
+  if (nodeCount === 0) {
+    reviewsCache.set({});
+    return EMPTY_REVIEW_AGGREGATES;
+  }
+  let reviews: Review[] | null = null;
   let reviewCount = 0;
   for (let i = 0; i < nodeCount; i++) {
     const parsed = parseReview(rawNodes[i]);
     if (parsed) {
+      reviews ??= new Array<Review>(nodeCount);
       reviews[reviewCount] = parsed;
       reviewCount += 1;
     }
+  }
+  if (reviews === null) {
+    reviewsCache.set({});
+    return EMPTY_REVIEW_AGGREGATES;
   }
   reviews.length = reviewCount;
   const byPid = aggregate(reviews);
@@ -107,13 +118,14 @@ export async function fetchAllReviews(
 
 function aggregateRecordToMap(
   record: Record<string, PluginAggregateRating>,
-): Map<string, PluginAggregateRating> {
+): ReadonlyMap<string, PluginAggregateRating> {
   const out = new Map<string, PluginAggregateRating>();
   for (const pluginId in record) {
     if (Object.prototype.hasOwnProperty.call(record, pluginId)) {
       out.set(pluginId, record[pluginId]!);
     }
   }
+  if (out.size === 0) return EMPTY_REVIEW_AGGREGATES;
   return out;
 }
 
@@ -129,7 +141,19 @@ function aggregateMapToRecord(
 
 function aggregate(
   reviews: readonly Review[],
-): Map<string, PluginAggregateRating> {
+): ReadonlyMap<string, PluginAggregateRating> {
+  if (reviews.length === 0) return EMPTY_REVIEW_AGGREGATES;
+  if (reviews.length === 1) {
+    const review = reviews[0]!;
+    const out = new Map<string, PluginAggregateRating>();
+    out.set(review.pluginId, {
+      pluginId: review.pluginId,
+      count: 1,
+      avg: review.rating,
+      reviews,
+    });
+    return out;
+  }
   const groups = new Map<
     string,
     { reviews: Review[] | null; sum: number; count: number; writeIndex: number }

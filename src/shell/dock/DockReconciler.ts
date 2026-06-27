@@ -14,6 +14,7 @@ export { markPanelCloseSuppressed };
 export interface ReconcileInput {
   previousSessions: readonly TerminalSession[];
   nextSessions: readonly TerminalSession[];
+  previousCustomTitles?: ReadonlyMap<string, string>;
   customTitles?: ReadonlyMap<string, string>;
 }
 
@@ -74,6 +75,13 @@ export function reconcileTerminalPanels(
   api: DockviewApi,
   input: ReconcileInput,
 ): void {
+  if (
+    input.previousSessions === input.nextSessions &&
+    input.previousCustomTitles === input.customTitles
+  ) {
+    return;
+  }
+
   const prevById = sessionsById(input.previousSessions);
   const nextById = sessionsById(input.nextSessions);
 
@@ -212,6 +220,7 @@ export function useDockReconciler(api: DockviewApi | null): void {
         reconcileTerminalPanels(dockApi, {
           previousSessions: prev,
           nextSessions: state.sessions,
+          previousCustomTitles: prevTitles,
           customTitles: state.customTitles,
         });
       }

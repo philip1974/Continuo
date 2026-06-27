@@ -60,6 +60,8 @@ const SPECIAL_KEYS: Record<Platform, Record<string, string>> = {
   },
 };
 
+const EMPTY_HOTKEY_PARTS: string[] = [];
+
 function formatPart(part: string, platform: Platform): string {
   const lower = part.toLowerCase();
   const mod = MOD_MAP[platform][lower];
@@ -99,7 +101,7 @@ export function formatHotkeyParts(
   raw: string,
   platform: Platform,
 ): string[] {
-  if (!raw) return [];
+  if (!raw) return EMPTY_HOTKEY_PARTS;
   let count = 0;
   let start = 0;
   for (;;) {
@@ -109,6 +111,7 @@ export function formatHotkeyParts(
     if (plus < 0) break;
     start = plus + 1;
   }
+  if (count === 0) return EMPTY_HOTKEY_PARTS;
   const parts = new Array<string>(count);
   let index = 0;
   start = 0;

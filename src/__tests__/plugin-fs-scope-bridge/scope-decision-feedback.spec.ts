@@ -60,6 +60,12 @@ describe('a11y(A126) — fs-scope 决定回传失败须反馈', () => {
     expect(buildFsScopePromptScopes.toString()).not.toContain('out.push(');
   });
 
+  it('scope prompt 空列表复用稳定空数组', () => {
+    const empty = buildFsScopePromptScopes([]);
+    expect(empty).toEqual([]);
+    expect(buildFsScopePromptScopes([])).toBe(empty);
+  });
+
   it('_scopeDecision reject → notify.error', async () => {
     h.requestFsScope.mockResolvedValue({ granted: true });
     h.scopeDecision.mockRejectedValue(new Error('ipc down'));

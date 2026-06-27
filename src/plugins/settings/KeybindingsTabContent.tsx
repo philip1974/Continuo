@@ -24,6 +24,11 @@ import { KeybindingCaptureModal } from '@/plugins/keybindings/KeybindingCaptureM
 import { useT, useTWithFallback, useLocale } from '@/i18n';
 
 const PLATFORM = detectPlatform();
+const COMMAND_PALETTE_HOTKEY_PARTS = formatHotkeyParts(
+  'mod+shift+p',
+  PLATFORM,
+);
+const EMPTY_KEYBINDING_DISPLAY_COMMANDS: DisplayCommand[] = [];
 const KEYBINDING_ROW_CLASS_NAME =
   'flex items-center gap-3 px-4 py-3 text-xs';
 const KEYBINDING_ROW_BORDER_CLASS_NAME =
@@ -52,10 +57,26 @@ export interface Bucket {
   readonly items: readonly DisplayCommand[];
 }
 
+const EMPTY_KEYBINDING_BUCKETS: Bucket[] = [];
+const EMPTY_VISIBLE_KEYBINDING_COMMANDS: DisplayCommand[] = [];
+const EMPTY_HOTKEY_PARTS: readonly string[] = [];
+
 export function keybindingRowClassName(index: number): string {
   return index > 0
     ? KEYBINDING_ROW_BORDER_CLASS_NAME
     : KEYBINDING_ROW_CLASS_NAME;
+}
+
+function isSortedByDisplayTitle(commands: readonly DisplayCommand[]): boolean {
+  for (let i = 1; i < commands.length; i++) {
+    if (
+      commands[i - 1]!.displayTitle.localeCompare(commands[i]!.displayTitle) >
+      0
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 /** 按 displayCategory 分组,每组按 displayTitle 字母序;空 category 归 defaultGroup. */
@@ -63,6 +84,34 @@ export function groupByCategory(
   commands: readonly DisplayCommand[],
   defaultGroup: string,
 ): Bucket[] {
+  if (commands.length === 0) return EMPTY_KEYBINDING_BUCKETS;
+  if (commands.length === 1) {
+    const command = commands[0]!;
+    return [
+      {
+        category: command.displayCategory || defaultGroup,
+        items: commands,
+      },
+    ];
+  }
+
+  const firstCategory = commands[0]!.displayCategory || defaultGroup;
+  let allSameCategory = true;
+  for (let i = 1; i < commands.length; i++) {
+    if ((commands[i]!.displayCategory || defaultGroup) !== firstCategory) {
+      allSameCategory = false;
+      break;
+    }
+  }
+  if (allSameCategory && isSortedByDisplayTitle(commands)) {
+    return [
+      {
+        category: firstCategory,
+        items: commands,
+      },
+    ];
+  }
+
   const map = new Map<string, { items: DisplayCommand[]; count: number }>();
   for (const d of commands) {
     const key = d.displayCategory || defaultGroup;
@@ -103,17 +152,27 @@ export function selectVisibleKeybindingCommands(
 ): DisplayCommand[] {
   const hasQuery = query.length > 0;
   const qLower = hasQuery ? query.toLowerCase() : '';
-  const selected = new Array<DisplayCommand>(commands.length);
+  let selected: DisplayCommand[] | null = null;
   let count = 0;
 
-  for (const d of commands) {
-    if (!d.cmd.hotkey && !d.isOverridden) continue;
-    if (hasQuery && !matches(d, qLower)) continue;
-    selected[count++] = d;
+  for (let i = 0; i < commands.length; i++) {
+    const d = commands[i]!;
+    const visible =
+      (d.cmd.hotkey || d.isOverridden) && (!hasQuery || matches(d, qLower));
+    if (!visible) {
+      if (selected === null) {
+        selected = new Array<DisplayCommand>(commands.length);
+        for (let j = 0; j < i; j++) selected[j] = commands[j]!;
+        count = i;
+      }
+      continue;
+    }
+    if (selected !== null) selected[count++] = d;
   }
 
+  if (selected === null) return commands as DisplayCommand[];
   selected.length = count;
-  return selected;
+  return count === 0 ? EMPTY_VISIBLE_KEYBINDING_COMMANDS : selected;
 }
 
 export function buildCommandSearchHaystack(
@@ -148,6 +207,7 @@ export function buildKeybindingDisplayCommands(
   overrides: Readonly<Record<string, string>>,
   platform: Platform,
 ): DisplayCommand[] {
+  if (allCommands.length === 0) return EMPTY_KEYBINDING_DISPLAY_COMMANDS;
   const out = new Array<DisplayCommand>(allCommands.length);
   for (let i = 0; i < allCommands.length; i++) {
     const cmd = allCommands[i]!;
@@ -159,7 +219,7 @@ export function buildKeybindingDisplayCommands(
       displayTitle,
       displayCategory,
       effectiveHotkey: effective ?? undefined,
-      hotkeyParts: effective ? formatHotkeyParts(effective, platform) : [],
+      hotkeyParts: effective ? formatHotkeyParts(effective, platform) : EMPTY_HOTKEY_PARTS,
       isOverridden: cmd.id in overrides,
       // haystack 用 effective hotkey(含 override)而非原 cmd.hotkey(打磨 R29):
       // 否则 override 后搜索仍只能命中默认组合,与列表显示的 effective 不一致。
@@ -217,6 +277,9 @@ export function KeybindingsTabContent() {
     () => countDefaultHotkeys(allCommands),
     [allCommands],
   );
+  const searchPlaceholderLabel = t('keybindings.search_placeholder');
+  const unboundLabel = t('keybindings.unbound');
+  const editHotkeyLabel = t('keybindings.edit_hotkey');
 
   // race(R50):快捷键编辑弹窗持有打开时捕获的 editing command。若弹窗打开期间插件 reload/disable
   // 把该命令移出 registry,onSave/onReset 仍会用旧 command id 写 override → 写到已不存在的命令,
@@ -233,14 +296,14 @@ export function KeybindingsTabContent() {
         <Input
           size="sm"
           // a11y(A5 同族):placeholder 无参数 → 复用作 aria-label。
-          aria-label={t('keybindings.search_placeholder')}
-          placeholder={t('keybindings.search_placeholder')}
+          aria-label={searchPlaceholderLabel}
+          placeholder={searchPlaceholderLabel}
           value={query}
           onChange={(e) => setQuery(clampSearchQuery(e.target.value))}
         />
         <div className="flex items-center gap-1.5 text-xs text-fg-muted">
           <span>{t('keybindings.total_summary_prefix', { count: totalWithHotkey })}</span>
-          {formatHotkeyParts('mod+shift+p', PLATFORM).map((p, i) => (
+          {COMMAND_PALETTE_HOTKEY_PARTS.map((p, i) => (
             <KeyCap key={i}>{p}</KeyCap>
           ))}
           <span>{t('keybindings.total_summary_suffix')}</span>
@@ -313,12 +376,12 @@ export function KeybindingsTabContent() {
                         </span>
                       ) : (
                         <span className="shrink-0 text-2xs text-fg-dim">
-                          {t('keybindings.unbound')}
+                          {unboundLabel}
                         </span>
                       )}
                       <IconButton
                         size="xs"
-                        title={t('keybindings.edit_hotkey')}
+                        title={editHotkeyLabel}
                         // a11y(A76,A75 同族):多命令行的编辑按钮可见图标通用,aria-label 补命令名以区分。
                         aria-label={t('keybindings.edit_hotkey_for_aria', {
                           command: d.displayTitle,
@@ -331,7 +394,7 @@ export function KeybindingsTabContent() {
                       </IconButton>
                       <IconButton
                         size="xs"
-                        title={t('keybindings.reset_default', { hotkey: cmd.hotkey ?? t('keybindings.unbound') })}
+                        title={t('keybindings.reset_default', { hotkey: cmd.hotkey ?? unboundLabel })}
                         aria-label={t('keybindings.reset_default_for_aria', {
                           command: d.displayTitle,
                         })}

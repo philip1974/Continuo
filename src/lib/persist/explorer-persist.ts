@@ -58,6 +58,7 @@ const PRIMARY_WINDOW_SEQ = 0; // 主窗位的 windowSeq;Phase 2B 引入多窗后
 //(真实用户 tab 数远低于此)+ 分块并发读(峰值并发钳到 RESTORE_READ_CONCURRENCY,仿 list-dir LSTAT_CHUNK)。
 const MAX_RESTORED_TABS = 256;
 const RESTORE_READ_CONCURRENCY = 32;
+const EMPTY_PERSIST_PATHS: string[] = [];
 
 /**
  * v3 schema(topic-08):全局共享段(workspace.recentRoots / pinned)
@@ -144,12 +145,17 @@ function findWindowEntry(
 export function collectNormalizedWorkspaceRoots(
   roots: readonly unknown[],
 ): string[] {
-  const out = new Array<string>(roots.length);
+  if (roots.length === 0) return EMPTY_PERSIST_PATHS;
+  let out: string[] | null = null;
   let count = 0;
   for (const raw of roots) {
     const normalized = normalizeWorkspaceRoot(raw);
-    if (normalized !== null) out[count++] = normalized;
+    if (normalized !== null) {
+      out ??= new Array<string>(roots.length);
+      out[count++] = normalized;
+    }
   }
+  if (out === null) return EMPTY_PERSIST_PATHS;
   out.length = count;
   return out;
 }
@@ -158,17 +164,43 @@ export function collectEditorSnapshot(
   tabs: readonly EditorTab[],
   activeTabId: string | null,
 ): { openFilePaths: string[]; activePath: string | null } {
-  const openFilePaths = new Array<string>(tabs.length);
+  if (tabs.length === 0) {
+    return { openFilePaths: EMPTY_PERSIST_PATHS, activePath: null };
+  }
+  let openFilePaths: string[] | null = null;
   let count = 0;
   let activePath: string | null = null;
   for (const tab of tabs) {
     if (tab.filePath !== null) {
+      openFilePaths ??= new Array<string>(tabs.length);
       openFilePaths[count++] = tab.filePath;
       if (tab.id === activeTabId) activePath = tab.filePath;
     }
   }
+  if (openFilePaths === null) {
+    return { openFilePaths: EMPTY_PERSIST_PATHS, activePath };
+  }
   openFilePaths.length = count;
   return { openFilePaths, activePath };
+}
+
+export function copyPersistPaths(paths: readonly string[]): string[] {
+  if (paths.length === 0) return EMPTY_PERSIST_PATHS;
+  const out = new Array<string>(paths.length);
+  for (let i = 0; i < paths.length; i++) {
+    out[i] = paths[i]!;
+  }
+  return out;
+}
+
+export function copyPersistPathSet(paths: ReadonlySet<string>): string[] {
+  if (paths.size === 0) return EMPTY_PERSIST_PATHS;
+  const out = new Array<string>(paths.size);
+  let index = 0;
+  for (const path of paths) {
+    out[index++] = path;
+  }
+  return out;
 }
 
 export function snapshotFromStores(
@@ -204,7 +236,7 @@ export function snapshotFromStores(
       // activePath 已不在 runtime store(打磨 R18:无生产 setter/reader)。磁盘
       // schema 维持兼容,继续写保留位 null;旧数据里的值在 hydrate 时被忽略。
       activePath: null,
-      expandedPaths: [...e.expandedPaths],
+      expandedPaths: copyPersistPathSet(e.expandedPaths),
       sort: { ...e.sort },
     },
     layoutUi: { sidebarOpen: ui.sidebarOpen, sidebarWidth: ui.sidebarWidth },
@@ -225,7 +257,7 @@ export function snapshotFromStores(
   return {
     version: VERSION,
     workspace: { recentRoots },
-    pinned: { paths: [...p.paths] },
+    pinned: { paths: copyPersistPaths(p.paths) },
     nextWindowSeq,
     windows: [myEntry],
   };
@@ -242,7 +274,7 @@ export function hydrateStores(
     recentRoots: collectNormalizedWorkspaceRoots(snap.workspace.recentRoots),
   });
   usePinnedStore.setState({
-    paths: [...snap.pinned.paths],
+    paths: copyPersistPaths(snap.pinned.paths),
   });
   // 窗口段(无 entry 时复位默认)
   if (entry) {
@@ -539,7 +571,7 @@ function hydrateStoresForNewWindow(
     sort: primary ? primary.explorer.sort : { by: 'name', reverse: false },
   });
   usePinnedStore.setState({
-    paths: snap ? [...snap.pinned.paths] : [],
+    paths: snap ? copyPersistPaths(snap.pinned.paths) : EMPTY_PERSIST_PATHS,
   });
   useLayoutUiStore.setState({
     sidebarOpen: true,

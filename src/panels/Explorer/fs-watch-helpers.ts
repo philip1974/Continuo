@@ -5,16 +5,37 @@ export interface SetDiff<T> {
   removed: ReadonlySet<T>;
 }
 
+const EMPTY_DIFF_SET: ReadonlySet<never> = new Set();
+
 /** 计算两个集合差异:next 比 prev 多/少哪些. */
 export function diffSets<T>(
   prev: ReadonlySet<T>,
   next: ReadonlySet<T>,
 ): SetDiff<T> {
-  const added = new Set<T>();
-  const removed = new Set<T>();
-  for (const x of next) if (!prev.has(x)) added.add(x);
-  for (const x of prev) if (!next.has(x)) removed.add(x);
-  return { added, removed };
+  if (prev === next) {
+    return {
+      added: EMPTY_DIFF_SET as ReadonlySet<T>,
+      removed: EMPTY_DIFF_SET as ReadonlySet<T>,
+    };
+  }
+  let added: Set<T> | null = null;
+  let removed: Set<T> | null = null;
+  for (const x of next) {
+    if (!prev.has(x)) {
+      added ??= new Set<T>();
+      added.add(x);
+    }
+  }
+  for (const x of prev) {
+    if (!next.has(x)) {
+      removed ??= new Set<T>();
+      removed.add(x);
+    }
+  }
+  return {
+    added: added ?? (EMPTY_DIFF_SET as ReadonlySet<T>),
+    removed: removed ?? (EMPTY_DIFF_SET as ReadonlySet<T>),
+  };
 }
 
 export interface PerPathDebouncer {

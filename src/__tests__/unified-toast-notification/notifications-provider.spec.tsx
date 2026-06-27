@@ -84,6 +84,34 @@ describe('unified-toast-notification: NotificationsProvider', () => {
     expect(latest?.count).toBe(0);
   });
 
+  it('dismiss 唯一通知回到空队列时复用稳定空列表', () => {
+    vi.useFakeTimers();
+    renderSlimProvider();
+
+    act(() => {
+      notify.info('first');
+    });
+    const firstId = slimApi?.notifications[0]?.id;
+    expect(firstId).toBeTruthy();
+
+    act(() => {
+      slimApi?.dismiss(firstId!);
+    });
+    const emptyAfterFirstDismiss = slimApi?.notifications;
+    expect(emptyAfterFirstDismiss).toEqual([]);
+
+    act(() => {
+      notify.info('second');
+    });
+    const secondId = slimApi?.notifications[0]?.id;
+    expect(secondId).toBeTruthy();
+
+    act(() => {
+      slimApi?.dismiss(secondId!);
+    });
+    expect(slimApi?.notifications).toBe(emptyAfterFirstDismiss);
+  });
+
   it('T1b old Provider unmount does not clear the newer Provider handle', () => {
     vi.useFakeTimers();
     const first = renderProvider();
@@ -258,5 +286,23 @@ describe('unified-toast-notification: NotificationsProvider', () => {
     } finally {
       mapSpy.mockRestore();
     }
+  });
+
+  it('dedupe 命中但 createdAt 未变化时复用通知列表引用', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1000);
+    renderSlimProvider();
+
+    act(() => {
+      notify.info('same-tick', { code: 'SAME_TICK' });
+    });
+    const firstRef = slimApi?.notifications;
+
+    act(() => {
+      notify.info('same-tick', { code: 'SAME_TICK' });
+    });
+
+    expect(slimApi?.notifications).toBe(firstRef);
+    expect(slimApi?.notifications.length).toBe(1);
   });
 });

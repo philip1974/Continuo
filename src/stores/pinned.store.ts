@@ -12,18 +12,21 @@ type PinnedState = {
   clear: () => void;
 };
 
+const EMPTY_PINNED_PATHS: readonly string[] = [];
+
 export function buildToggledPinnedPaths(
   paths: readonly string[],
   path: string,
 ): readonly string[] {
   const idx = paths.indexOf(path);
   if (idx >= 0) {
+    if (paths.length === 1) return EMPTY_PINNED_PATHS;
     const next = new Array<string>(paths.length - 1);
     let count = 0;
     for (let i = 0; i < paths.length; i++) {
       if (i !== idx) next[count++] = paths[i]!;
     }
-    return next;
+    return count === 0 ? EMPTY_PINNED_PATHS : next;
   }
   // 边界(E276,运行时状态须守持久化契约):pin 追加不得超持久化 schema 上限 —— 超 PINNED_MAX 条或单条
   // path 超 PATH_STR_MAX 则拒加(no-op)。否则 snapshotFromStores 原样写出 → explorer:write 被
@@ -38,11 +41,12 @@ export function buildToggledPinnedPaths(
 }
 
 export const usePinnedStore = create<PinnedState>((set) => ({
-  paths: [],
+  paths: EMPTY_PINNED_PATHS,
   toggle: (path) =>
     set((s) => {
       const paths = buildToggledPinnedPaths(s.paths, path);
       return paths === s.paths ? s : { paths };
     }),
-  clear: () => set((s) => (s.paths.length === 0 ? s : { paths: [] })),
+  clear: () =>
+    set((s) => (s.paths.length === 0 ? s : { paths: EMPTY_PINNED_PATHS })),
 }));

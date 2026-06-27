@@ -3,6 +3,8 @@
 // 一次,装饰器快照作为 prop 下传。本测试守护「decorators prop → 本行装饰(badge/
 // icon/textColor)正确合成渲染」,确保上提订阅后端到端行为不变。
 import { describe, it, expect, afterEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { render, cleanup } from '@testing-library/react';
 import type { ItemInstance } from '@headless-tree/core';
 import type { FileEntry } from '../../lib/fs/types';
@@ -69,6 +71,13 @@ afterEach(() => {
 });
 
 describe('打磨 R7 — FileRow 用下传的 decorators prop 合成装饰', () => {
+  it('缩进指南线 style 不通过条件对象 spread 分配', () => {
+    const src = readFileSync(join(process.cwd(), 'src/panels/Explorer/FileRow.tsx'), 'utf8');
+
+    expect(src).toMatch(/backgroundImage:\s*level > 0\s*\?/);
+    expect(src).not.toContain('...(level > 0 && {');
+  });
+
   it('行 className 不通过 filter(Boolean).join 重建', () => {
     const filterSpy = vi.spyOn(Array.prototype, 'filter');
     const joinSpy = vi.spyOn(Array.prototype, 'join');

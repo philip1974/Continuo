@@ -29,7 +29,7 @@ export function Card({ tone, className, children, ...rest }: CardProps) {
     <div
       {...rest}
       className={`wm-card${className != null ? ` ${className}` : ''}`}
-      {...(tone != null ? { 'data-tone': tone } : {})}
+      data-tone={tone ?? undefined}
     >
       {children}
     </div>

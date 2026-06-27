@@ -4,6 +4,7 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   ExplorerContextMenuRegistry,
   filterVisible,
+  isExplorerContextMenuItemVisible,
   type ExplorerContextMenuItemSpec,
   type ExplorerContextMenuItemContext,
 } from '../../plugins/registries/ExplorerContextMenuRegistry';
@@ -22,6 +23,20 @@ const ctx: ExplorerContextMenuItemContext = {
 // ────────────────────────────────────────────────────────────
 
 describe('ExplorerContextMenuRegistry', () => {
+  it('空 registry 的 getAll 复用稳定空快照', () => {
+    const r = new ExplorerContextMenuRegistry();
+    const other = new ExplorerContextMenuRegistry();
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      expect(r.getAll()).toEqual([]);
+      expect(r.getAll()).toBe(other.getAll());
+      expect(sortSpy).not.toHaveBeenCalled();
+    } finally {
+      sortSpy.mockRestore();
+    }
+  });
+
   it('register / dispose / getAll', () => {
     const r = new ExplorerContextMenuRegistry();
     const spec: ExplorerContextMenuItemSpec = {
@@ -41,6 +56,21 @@ describe('ExplorerContextMenuRegistry', () => {
     r.register({ id: 'a', label: 'A', priority: 200, fn: () => {} });
     r.register({ id: 'c', label: 'C', fn: () => {} }); // 默认 100
     expect(r.getAll().map((s) => s.id)).toEqual(['b', 'c', 'a']);
+  });
+
+  it('已按 priority 注册时复用构建顺序,不调用 sort', () => {
+    const r = new ExplorerContextMenuRegistry();
+    r.register({ id: 'top', label: 'T', priority: 1, fn: () => {} });
+    r.register({ id: 'mid', label: 'M', priority: 100, fn: () => {} });
+    r.register({ id: 'bot', label: 'B', priority: 200, fn: () => {} });
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      expect(r.getAll().map((s) => s.id)).toEqual(['top', 'mid', 'bot']);
+      expect(sortSpy).not.toHaveBeenCalled();
+    } finally {
+      sortSpy.mockRestore();
+    }
   });
 
   it('重复 getAll 复用排序结果,register/dispose 后失效重建', () => {
@@ -244,7 +274,20 @@ describe('filterVisible', () => {
     const items: ExplorerContextMenuItemSpec[] = [
       { id: 'a', label: 'A', fn: () => {} },
     ];
-    expect(filterVisible(items, ctx)).toEqual(items);
+    expect(filterVisible(items, ctx)).toBe(items);
+  });
+
+  it('全部 when 返 true 时复用输入数组且每个 when 只调用一次', () => {
+    const whenA = vi.fn(() => true);
+    const whenB = vi.fn(() => true);
+    const items: ExplorerContextMenuItemSpec[] = [
+      { id: 'a', label: 'A', when: whenA, fn: () => {} },
+      { id: 'b', label: 'B', when: whenB, fn: () => {} },
+    ];
+    const visible = filterVisible(items, ctx);
+    expect(visible).toBe(items);
+    expect(whenA).toHaveBeenCalledTimes(1);
+    expect(whenB).toHaveBeenCalledTimes(1);
   });
 
   it('when 返 true → 可见;false → 隐藏', () => {
@@ -252,8 +295,25 @@ describe('filterVisible', () => {
       { id: 'show', label: 'Show', when: () => true, fn: () => {} },
       { id: 'hide', label: 'Hide', when: () => false, fn: () => {} },
     ];
-    expect(filterVisible(items, ctx).map((s) => s.id)).toEqual(['show']);
+    const visible = filterVisible(items, ctx);
+    expect(visible).not.toBe(items);
+    expect(visible.map((s) => s.id)).toEqual(['show']);
     expect(filterVisible.toString()).not.toContain('out.push(');
+  });
+
+  it('全部隐藏 → 复用稳定空数组', () => {
+    const items: ExplorerContextMenuItemSpec[] = [
+      { id: 'a', label: 'A', when: () => false, fn: () => {} },
+      { id: 'b', label: 'B', when: () => false, fn: () => {} },
+    ];
+    const a = filterVisible(items, ctx);
+    const b = filterVisible(
+      [{ id: 'c', label: 'C', when: () => false, fn: () => {} }],
+      ctx,
+    );
+
+    expect(a).toEqual([]);
+    expect(b).toBe(a);
   });
 
   it('when 拿到 ctx target / selectedPaths / rootPath', () => {
@@ -325,6 +385,42 @@ describe('filterVisible', () => {
     ];
     expect(filterVisible(items, blankCtx)).toHaveLength(1);
     expect(saw?.target).toBeNull();
+  });
+});
+
+describe('isExplorerContextMenuItemVisible', () => {
+  it('单项复检不需要经 filterVisible 构造临时数组', () => {
+    expect(
+      isExplorerContextMenuItemVisible(
+        { id: 'a', label: 'A', fn: () => {} },
+        ctx,
+      ),
+    ).toBe(true);
+    expect(
+      isExplorerContextMenuItemVisible(
+        { id: 'b', label: 'B', when: () => false, fn: () => {} },
+        ctx,
+      ),
+    ).toBe(false);
+  });
+
+  it('when 抛错 → false + warn', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(
+      isExplorerContextMenuItemVisible(
+        {
+          id: 'boom',
+          label: 'Boom',
+          when: () => {
+            throw new Error('boom');
+          },
+          fn: () => {},
+        },
+        ctx,
+      ),
+    ).toBe(false);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
   });
 });
 

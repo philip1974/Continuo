@@ -8,6 +8,8 @@ import {
   type ReactNode,
 } from 'react';
 
+const EMPTY_LAZY_PANEL_PROPS: Record<string, never> = {};
+
 export function lazyPanel<P = unknown>(
   Lazy: ComponentType<P>,
   fallback: ReactNode = null,
@@ -18,7 +20,7 @@ export function lazyPanel<P = unknown>(
       { fallback },
       createElement(
         Lazy as ComponentType<Record<string, never>>,
-        (props ?? {}) as Record<string, never>,
+        (props ?? EMPTY_LAZY_PANEL_PROPS) as Record<string, never>,
       ),
     );
   };

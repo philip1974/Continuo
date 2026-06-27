@@ -27,6 +27,7 @@ const DEDUPE_WINDOW_MS = 1000;
 // 突发(批量安装失败 / 循环 IPC 报错)会在 state 里无界堆积。显示层只 slice 可见区,
 // 不限制底层数组本身,故在 push 时按上限丢最旧(并清其 timer)。
 export const MAX_NOTIFICATIONS = 50;
+const EMPTY_NOTIFICATIONS: readonly Notification[] = [];
 
 function appendCappedNotification(
   prev: readonly Notification[],
@@ -75,7 +76,10 @@ function removeNotificationById(
       nextCount += 1;
     }
   }
-  if (next !== null) next.length = nextCount;
+  if (next !== null) {
+    if (nextCount === 0) return EMPTY_NOTIFICATIONS;
+    next.length = nextCount;
+  }
   return next ?? notifications;
 }
 
@@ -90,6 +94,7 @@ function updateNotificationCreatedAt(
     const notification = notifications[i]!;
     let current = notification;
     if (notification.id === id) {
+      if (notification.createdAt === createdAt) return notifications;
       if (next === null) {
         next = new Array<Notification>(notifications.length);
         for (let j = 0; j < i; j++) {
@@ -124,7 +129,7 @@ interface NotificationsContextValue {
 
 export const NotificationsContext =
   createContext<NotificationsContextValue>({
-    notifications: [],
+    notifications: EMPTY_NOTIFICATIONS,
     notify: () => {
       /* noop pre-mount */
     },
@@ -144,9 +149,9 @@ export function NotificationsProvider({
   children,
 }: NotificationsProviderProps): ReactNode {
   const [notifications, setNotifications] = useState<readonly Notification[]>(
-    [],
+    EMPTY_NOTIFICATIONS,
   );
-  const notificationsRef = useRef<readonly Notification[]>([]);
+  const notificationsRef = useRef<readonly Notification[]>(EMPTY_NOTIFICATIONS);
   const counterRef = useRef(0);
   const timersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
 

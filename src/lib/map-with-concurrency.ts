@@ -5,6 +5,8 @@
 // 网络/Promise/解析尖峰(GitHub raw 被本地 burst 打满、renderer 卡顿)。本 helper 用固定大小 worker 池把
 // **最大同时在途数**钳定到 limit,同时保留 allSettled 语义(单个失败不影响其它、结果按输入顺序对位)。
 
+const EMPTY_SETTLED_RESULTS: PromiseSettledResult<never>[] = [];
+
 /**
  * 以最多 `limit` 个并发运行 `fn`,返回与输入等长、按输入顺序对位的 PromiseSettledResult 数组。
  * 单个任务 reject 记为 {status:'rejected'},不影响其它任务(同 Promise.allSettled 语义)。
@@ -15,6 +17,16 @@ export async function allSettledWithConcurrency<T, R>(
   limit: number,
   fn: (item: T, index: number) => Promise<R>,
 ): Promise<PromiseSettledResult<R>[]> {
+  if (items.length === 0) {
+    return EMPTY_SETTLED_RESULTS as PromiseSettledResult<R>[];
+  }
+  if (items.length === 1) {
+    try {
+      return [{ status: 'fulfilled', value: await fn(items[0]!, 0) }];
+    } catch (reason) {
+      return [{ status: 'rejected', reason }];
+    }
+  }
   const results = new Array<PromiseSettledResult<R>>(items.length);
   let nextIndex = 0;
   const worker = async (): Promise<void> => {

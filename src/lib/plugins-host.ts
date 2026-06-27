@@ -13,20 +13,20 @@ interface RawPluginDirInfo {
   readonly stylesText?: string;
 }
 
-export function buildPluginDirInfos(
-  dirs: readonly RawPluginDirInfo[],
-): Array<{
+type PluginDirInfo = {
   readonly id: string;
   readonly manifestText: string;
   readonly moduleUrl: string;
   readonly stylesText?: string;
-}> {
-  const out = new Array<{
-    readonly id: string;
-    readonly manifestText: string;
-    readonly moduleUrl: string;
-    readonly stylesText?: string;
-  }>(dirs.length);
+};
+
+const EMPTY_PLUGIN_DIR_INFOS: PluginDirInfo[] = [];
+
+export function buildPluginDirInfos(
+  dirs: readonly RawPluginDirInfo[],
+): PluginDirInfo[] {
+  if (dirs.length === 0) return EMPTY_PLUGIN_DIR_INFOS;
+  const out = new Array<PluginDirInfo>(dirs.length);
   for (let i = 0; i < dirs.length; i++) {
     const dir = dirs[i]!;
     const blob = new Blob([dir.mainText], {
@@ -48,7 +48,7 @@ export function createWindowApiHost(): ManagerHost {
       const r = await coApi.plugins.listDirs();
       if (!r.ok) {
         console.warn('[plugins-host] listDirs failed', r.code, r.message);
-        return [];
+        return EMPTY_PLUGIN_DIR_INFOS;
       }
       // 用 Blob URL 让 dynamic import 能拿到外部文件内容。
       // 注意:URL.revokeObjectURL 不在此调,等 plugin _deactivate 后由

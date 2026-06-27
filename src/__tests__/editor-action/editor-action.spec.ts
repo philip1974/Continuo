@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   EditorActionRegistry,
   filterVisible,
+  isEditorActionVisible,
   type EditorActionContext,
   type EditorActionSpec,
 } from '../../plugins/registries/EditorActionRegistry';
@@ -16,11 +17,40 @@ const ctx: EditorActionContext = {
 };
 
 describe('EditorActionRegistry', () => {
+  it('空 registry 的 getAll 复用稳定空快照', () => {
+    const r = new EditorActionRegistry();
+    const other = new EditorActionRegistry();
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      expect(r.getAll()).toEqual([]);
+      expect(r.getAll()).toBe(other.getAll());
+      expect(sortSpy).not.toHaveBeenCalled();
+    } finally {
+      sortSpy.mockRestore();
+    }
+  });
+
   it('register / dispose / getAll 升序', () => {
     const r = new EditorActionRegistry();
     r.register({ id: 'b', label: 'B', fn: () => {}, priority: 20 });
     r.register({ id: 'a', label: 'A', fn: () => {}, priority: 10 });
     expect(r.getAll().map((x) => x.id)).toEqual(['a', 'b']);
+  });
+
+  it('已按 priority 注册时复用构建顺序,不调用 sort', () => {
+    const r = new EditorActionRegistry();
+    r.register({ id: 'top', label: 'T', fn: () => {}, priority: 1 });
+    r.register({ id: 'mid', label: 'M', fn: () => {}, priority: 100 });
+    r.register({ id: 'bot', label: 'B', fn: () => {}, priority: 200 });
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      expect(r.getAll().map((x) => x.id)).toEqual(['top', 'mid', 'bot']);
+      expect(sortSpy).not.toHaveBeenCalled();
+    } finally {
+      sortSpy.mockRestore();
+    }
   });
 
   it('重复 getAll 复用排序结果,register/dispose 后失效重建', () => {
@@ -168,17 +198,37 @@ describe('filterVisible', () => {
   });
 
   it('无 when → 永远显', () => {
-    const r = filterVisible([make('a'), make('b')], ctx);
+    const items = [make('a'), make('b')];
+    const r = filterVisible(items, ctx);
+    expect(r).toBe(items);
     expect(r.map((x) => x.id)).toEqual(['a', 'b']);
   });
 
+  it('全部 when 返 true 时复用输入数组且每个 when 只调用一次', () => {
+    const whenA = vi.fn(() => true);
+    const whenB = vi.fn(() => true);
+    const items = [make('a', whenA), make('b', whenB)];
+    const r = filterVisible(items, ctx);
+    expect(r).toBe(items);
+    expect(whenA).toHaveBeenCalledTimes(1);
+    expect(whenB).toHaveBeenCalledTimes(1);
+  });
+
   it('when 返 false → 隐藏', () => {
-    const r = filterVisible(
-      [make('a', () => true), make('b', () => false), make('c')],
-      ctx,
-    );
+    const items = [make('a', () => true), make('b', () => false), make('c')];
+    const r = filterVisible(items, ctx);
+    expect(r).not.toBe(items);
     expect(r.map((x) => x.id)).toEqual(['a', 'c']);
     expect(filterVisible.toString()).not.toContain('out.push(');
+  });
+
+  it('全部隐藏 → 复用稳定空数组', () => {
+    const items = [make('a', () => false), make('b', () => false)];
+    const a = filterVisible(items, ctx);
+    const b = filterVisible([make('c', () => false)], ctx);
+
+    expect(a).toEqual([]);
+    expect(b).toBe(a);
   });
 
   it('when 抛错 → 视为 false + warn', () => {
@@ -205,6 +255,34 @@ describe('filterVisible', () => {
     });
     filterVisible([a], ctx);
     expect(received).toEqual(ctx);
+  });
+});
+
+describe('isEditorActionVisible', () => {
+  const make = (id: string, when?: EditorActionSpec['when']): EditorActionSpec => ({
+    id,
+    label: id,
+    fn: () => {},
+    when,
+  });
+
+  it('单项复检不需要经 filterVisible 构造临时数组', () => {
+    expect(isEditorActionVisible(make('a'), ctx)).toBe(true);
+    expect(isEditorActionVisible(make('b', () => false), ctx)).toBe(false);
+  });
+
+  it('when 抛错 → false + warn', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(
+      isEditorActionVisible(
+        make('boom', () => {
+          throw new Error('boom');
+        }),
+        ctx,
+      ),
+    ).toBe(false);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
   });
 });
 

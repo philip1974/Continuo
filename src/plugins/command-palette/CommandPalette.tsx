@@ -72,11 +72,16 @@ type TranslateWithFallback = (
   fallback: string,
 ) => string;
 
+const EMPTY_DISPLAY_COMMANDS: DisplayCommand[] = [];
+const EMPTY_RECENT_COMMAND_IDS: string[] = [];
+const EMPTY_HOTKEY_PARTS: readonly string[] = [];
+
 export function buildDisplayCommands(
   allCommands: readonly CommandSpec[],
   tk: TranslateWithFallback,
   platform: Platform,
 ): DisplayCommand[] {
+  if (allCommands.length === 0) return EMPTY_DISPLAY_COMMANDS;
   const out = new Array<DisplayCommand>(allCommands.length);
   for (let i = 0; i < allCommands.length; i++) {
     const cmd = allCommands[i]!;
@@ -90,7 +95,7 @@ export function buildDisplayCommands(
       cmd,
       displayTitle,
       displayCategory,
-      hotkeyParts: effective ? formatHotkeyParts(effective, platform) : [],
+      hotkeyParts: effective ? formatHotkeyParts(effective, platform) : EMPTY_HOTKEY_PARTS,
       // 打磨 R54:配合 fuzzyFilter(getStrLower),搜索输入变化时不再逐命令
       // 对 displayCategory/title 组成的 target 重复 toLowerCase。
       matchSourceLower: source.toLowerCase(),
@@ -102,6 +107,7 @@ export function buildDisplayCommands(
 export function buildRecentCommandIds(
   recentList: readonly RecentEntry[],
 ): string[] {
+  if (recentList.length === 0) return EMPTY_RECENT_COMMAND_IDS;
   const out = new Array<string>(recentList.length);
   for (let i = 0; i < recentList.length; i++) {
     out[i] = recentList[i]!.id;
@@ -109,12 +115,25 @@ export function buildRecentCommandIds(
   return out;
 }
 
+function isSortedByDisplayTitle(items: readonly DisplayCommand[]): boolean {
+  for (let i = 1; i < items.length; i++) {
+    if (items[i - 1]!.displayTitle.localeCompare(items[i]!.displayTitle) > 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
 /** 空 query 时:recent 前 N 个置顶 + 其余按 displayTitle 字母序. */
 export function sortByRecent(
   items: readonly DisplayCommand[],
   recentIds: readonly string[],
 ): DisplayCommand[] {
+  if (items.length === 0) return EMPTY_DISPLAY_COMMANDS;
+  if (items.length === 1) return items as DisplayCommand[];
   if (recentIds.length === 0) {
+    if (isSortedByDisplayTitle(items)) return items as DisplayCommand[];
+
     const out = new Array<DisplayCommand>(items.length);
     for (let i = 0; i < items.length; i++) out[i] = items[i]!;
     out.sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));
@@ -130,10 +149,19 @@ export function sortByRecent(
       else others[otherCount++] = d;
     }
     others.length = otherCount;
-    others.sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));
+    if (!recent) {
+      if (isSortedByDisplayTitle(items)) return items as DisplayCommand[];
+      if (otherCount > 1) {
+        others.sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));
+      }
+      return others;
+    }
+    if (otherCount > 1 && !isSortedByDisplayTitle(others)) {
+      others.sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));
+    }
     const out = new Array<DisplayCommand>(items.length);
     let count = 0;
-    if (recent) out[count++] = recent;
+    out[count++] = recent;
     for (const d of others) {
       out[count++] = d;
     }
@@ -220,6 +248,7 @@ function CommandPaletteBody({ commands }: CommandPaletteProps) {
   // locale 失效键(打磨 R31):useTWithFallback 返回函数 identity 稳定,切语言只重渲
   // 不会让下面的 memo 重算 → 标题/分类/搜索源会停留旧语言。用 locale 值驱动重算。
   const locale = useLocale();
+  const placeholderLabel = t('command_palette.placeholder');
 
   // 先 localize 成 DisplayCommand,再 filter/sort(P1-2: 按显示文本搜索/排序)。
   // hotkeyParts 用 effective(含 user override)预计算,行渲染只读它(R28)。
@@ -306,7 +335,7 @@ function CommandPaletteBody({ commands }: CommandPaletteProps) {
           autoFocus
           // a11y(A1):placeholder 不是稳定可访问名(部分 AT 不读 / 输入后消失)。补
           // aria-label 复用同一 placeholder key,给屏幕阅读器稳定的「命令搜索框」名称。
-          aria-label={t('command_palette.placeholder')}
+          aria-label={placeholderLabel}
           // a11y(A15):combobox 模式 —— 焦点留输入框、上下键移动 listbox 虚拟选中。须 role=
           // combobox + aria-controls 指向 listbox + aria-activedescendant 指向当前高亮 option,
           // 否则屏幕阅读器按上下键不知高亮哪条。
@@ -328,7 +357,7 @@ function CommandPaletteBody({ commands }: CommandPaletteProps) {
               ? `command-palette-option-${selectedIndex}`
               : undefined
           }
-          placeholder={t('command_palette.placeholder')}
+          placeholder={placeholderLabel}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={onKeyDown}

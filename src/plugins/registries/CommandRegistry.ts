@@ -28,6 +28,7 @@ export interface CommandSpec {
 }
 
 type Listener = () => void;
+const EMPTY_COMMAND_SNAPSHOT: readonly CommandSpec[] = [];
 
 // 边界(E35):register 接受第三方插件的 id/title/titleKey/hotkey/category/categoryKey 后直接入全局
 // registry,无长度/形态上限。恶意/畸形插件可注册超长标题/分类/热键 → 命令面板排序与搜索、快捷键
@@ -96,6 +97,7 @@ function validateCommandSpec(spec: CommandSpec): void {
 
 export class CommandRegistry {
   private items = new Map<string, CommandSpec>();
+  private hotkeyCounts = new Map<string, number>();
   private listeners = new Set<Listener>();
   private cachedAll: readonly CommandSpec[] | null = null;
 
@@ -108,11 +110,14 @@ export class CommandRegistry {
         `[command-registry] id "${spec.id}" 已注册,后注册赢覆盖前者`,
       );
     }
-    if (spec.hotkey && this.findByHotkey(spec.hotkey)) {
+    if (spec.hotkey && (this.hotkeyCounts.get(spec.hotkey) ?? 0) > 0) {
       console.warn(
         `[command-registry] hotkey "${spec.hotkey}" 已被另一命令占用,后注册赢`,
       );
     }
+    const previous = this.items.get(spec.id);
+    if (previous?.hotkey) this.decrementHotkey(previous.hotkey);
+    if (spec.hotkey) this.incrementHotkey(spec.hotkey);
     this.items.set(spec.id, spec);
     this.invalidateSnapshotCache();
     this.notify();
@@ -124,6 +129,7 @@ export class CommandRegistry {
         disposed = true;
         if (this.items.get(spec.id) === spec) {
           this.items.delete(spec.id);
+          if (spec.hotkey) this.decrementHotkey(spec.hotkey);
           this.invalidateSnapshotCache();
           this.notify();
         }
@@ -133,6 +139,10 @@ export class CommandRegistry {
 
   getAll(): readonly CommandSpec[] {
     if (this.cachedAll !== null) return this.cachedAll;
+    if (this.items.size === 0) {
+      this.cachedAll = EMPTY_COMMAND_SNAPSHOT;
+      return EMPTY_COMMAND_SNAPSHOT;
+    }
 
     const out = new Array<CommandSpec>(this.items.size);
     let i = 0;
@@ -162,9 +172,15 @@ export class CommandRegistry {
     return () => this.listeners.delete(listener);
   }
 
-  private findByHotkey(hotkey: string): CommandSpec | undefined {
-    for (const c of this.items.values()) if (c.hotkey === hotkey) return c;
-    return undefined;
+  private incrementHotkey(hotkey: string): void {
+    this.hotkeyCounts.set(hotkey, (this.hotkeyCounts.get(hotkey) ?? 0) + 1);
+  }
+
+  private decrementHotkey(hotkey: string): void {
+    const count = this.hotkeyCounts.get(hotkey);
+    if (count === undefined) return;
+    if (count <= 1) this.hotkeyCounts.delete(hotkey);
+    else this.hotkeyCounts.set(hotkey, count - 1);
   }
 
   private notify(): void {

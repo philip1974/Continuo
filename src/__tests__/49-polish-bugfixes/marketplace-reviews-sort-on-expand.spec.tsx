@@ -4,6 +4,8 @@
 // 仍正确渲染」—— 若 gating 错误地恒返 [],展开也不显示 review,故能作为 neutralize。
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, cleanup, waitFor, fireEvent } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 vi.mock('../../marketplace/fetcher', () => ({
   fetchMarketplaceIndex: vi.fn(),
@@ -69,6 +71,18 @@ afterEach(() => {
 });
 
 describe('打磨 R41 — review 仅在展开时排序渲染', () => {
+  it('MarketplaceTab 空 entries/reviews fallback 使用稳定引用', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/marketplace/MarketplaceTab.tsx'),
+      'utf-8',
+    );
+
+    expect(src).toContain('EMPTY_MARKETPLACE_ENTRIES');
+    expect(src).not.toContain('stateEntries ?? []');
+    expect(src).not.toContain('ratingReviews ?? []');
+    expect(src).not.toContain(': []\n    [expanded, hasReviews, sourceReviews, sort]');
+  });
+
   it('折叠时不显 review;展开后排序 review 正确渲染', async () => {
     fetchIndexMock.mockResolvedValue([entry()]);
     installApi();
@@ -178,5 +192,37 @@ describe('打磨 R41 — review 仅在展开时排序渲染', () => {
     } finally {
       sliceSpy.mockRestore();
     }
+  });
+
+  it('空 reviews / newest 未超过 limit → 复用稳定引用', () => {
+    const reviews = [review('review-0'), review('review-1')];
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      expect(selectDisplayReviews([], 'newest', 10)).toEqual([]);
+      expect(selectDisplayReviews([], 'newest', 10)).toBe(
+        selectDisplayReviews([], 'helpful', 10),
+      );
+      expect(selectDisplayReviews(reviews, 'newest', 10)).toBe(reviews);
+      expect(sortSpy).not.toHaveBeenCalled();
+    } finally {
+      sortSpy.mockRestore();
+    }
+  });
+
+  it('helpful 排序只有单条 review 时复用原数组引用', () => {
+    const reviews = [review('only', 3)];
+
+    expect(selectDisplayReviews(reviews, 'helpful', 10)).toBe(reviews);
+  });
+
+  it('helpful 排序已按有用顺序且未超过 limit 时复用原数组引用', () => {
+    const reviews = [
+      review('most-helpful', 10),
+      review('middle-helpful', 5),
+      review('least-helpful', 1),
+    ];
+
+    expect(selectDisplayReviews(reviews, 'helpful', 10)).toBe(reviews);
   });
 });

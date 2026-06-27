@@ -72,6 +72,16 @@ describe('topic49 P2-AG · update-store.dismiss 乐观摘除', () => {
     expect(ids).toEqual(['b']);
   });
 
+  it('dismiss 唯一更新时复用稳定空 available 列表', () => {
+    const resultA = dismissAvailableUpdateFromList([avail('a')], 'a');
+    const resultB = dismissAvailableUpdateFromList([avail('b')], 'b');
+
+    expect(resultA).not.toBeNull();
+    expect(resultB).not.toBeNull();
+    expect(resultA!.available).toEqual([]);
+    expect(resultA!.available).toBe(resultB!.available);
+  });
+
   it('dismiss 不存在的 id → available 引用不变(no-op,无多余渲染)', () => {
     const before = useUpdateStore.getState().available;
     useUpdateStore.getState().dismiss('zzz');

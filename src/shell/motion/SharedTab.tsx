@@ -15,6 +15,31 @@ import {
   TAB_TITLE_SPRING,
 } from './tokens';
 
+const EXIT_ZOOM_ICON = (
+  <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+    {/* 两组对角线箭头朝中心,语义 "exit fullscreen / shrink"。
+        取 VSCode codicon screen-normal 简化版。 */}
+    <path
+      d="M6 3v3H3M3 6h3V3M10 3v3h3M13 6h-3V3M6 13v-3H3M3 10h3v3M10 13v-3h3M13 10h-3v3"
+      stroke="currentColor"
+      strokeWidth="1.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      fill="none"
+    />
+  </svg>
+);
+const CLOSE_TAB_ICON = (
+  <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+    <path
+      d="M4 4l8 8M12 4l-8 8"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+    />
+  </svg>
+);
+
 function useIsActive(api: DockviewPanelApi): boolean {
   const [active, setActive] = useState(api.isActive);
   useEffect(() => {
@@ -253,18 +278,7 @@ export function SharedTab(props: IDockviewPanelHeaderProps & TabHtmlExtras) {
           onClick={onExitMaximize}
           className="text-fg-muted hover:text-fg"
         >
-          <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
-            {/* 两组对角线箭头朝中心,语义 "exit fullscreen / shrink"。
-                取 VSCode codicon screen-normal 简化版。 */}
-            <path
-              d="M6 3v3H3M3 6h3V3M10 3v3h3M13 6h-3V3M6 13v-3H3M3 10h3v3M10 13v-3h3M13 10h-3v3"
-              stroke="currentColor"
-              strokeWidth="1.2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              fill="none"
-            />
-          </svg>
+          {EXIT_ZOOM_ICON}
         </IconButton>
       )}
       <IconButton
@@ -279,14 +293,7 @@ export function SharedTab(props: IDockviewPanelHeaderProps & TabHtmlExtras) {
         onClick={onClose}
         className="opacity-0 focus-visible:opacity-100 group-hover/tab:opacity-100"
       >
-        <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
-          <path
-            d="M4 4l8 8M12 4l-8 8"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-          />
-        </svg>
+        {CLOSE_TAB_ICON}
       </IconButton>
       {active && (
         // 顶部 accent line(VSCode workbench tab 风格)。放底部会与下一行

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   applySnapshot,
+  filterByWorkspaceRoot,
   getIndexedTerminalSessionById,
   getShellFamily,
   nextActiveAfterClose,
@@ -61,6 +62,9 @@ describe('nextActiveAfterClose', () => {
     const r = nextActiveAfterClose([s('/x')], '/x', '/x');
     expect(r.sessions).toEqual([]);
     expect(r.activeId).toBeNull();
+    expect(nextActiveAfterClose([s('/y')], '/y', '/y').sessions).toBe(
+      r.sessions,
+    );
   });
   it('关不存在 id → 状态不变(同引用)', () => {
     const r = nextActiveAfterClose(list, '/a', '/missing');
@@ -111,6 +115,30 @@ describe('terminal.store · 初态', () => {
     const s = useTerminalStore.getState();
     expect(s.sessions).toEqual([]);
     expect(s.activeId).toBeNull();
+  });
+});
+
+describe('filterByWorkspaceRoot', () => {
+  it('空 session 列表复用稳定空列表', () => {
+    const a: readonly TerminalSession[] = [];
+    const b: readonly TerminalSession[] = [];
+    const filtered = filterByWorkspaceRoot(a, '/work');
+
+    expect(filtered).toEqual([]);
+    expect(filterByWorkspaceRoot(b, null)).toBe(filtered);
+  });
+
+  it('全部 session 被当前 workspace 隐藏时复用稳定空列表', () => {
+    const sessions = [
+      makeSession({ id: '/a', workspaceRoot: '/old' }),
+      makeSession({ id: '/b', workspaceRoot: '/other' }),
+    ];
+
+    const a = filterByWorkspaceRoot(sessions, '/new');
+    const b = filterByWorkspaceRoot([makeSession({ id: '/c', workspaceRoot: '/x' })], '/y');
+
+    expect(a).toEqual([]);
+    expect(a).toBe(b);
   });
 });
 
@@ -207,6 +235,27 @@ describe('replaceSnapshot', () => {
       expect(useTerminalStore.getState().sessions).toBe(sessions);
       expect(useTerminalStore.getState().activeId).toBe('/b');
       expect(useTerminalStore.getState().customTitles).toBe(customTitles);
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('重复空 snapshot 即使是新数组引用也不通知订阅者', () => {
+    useTerminalStore.setState({
+      sessions: [],
+      activeId: null,
+      customTitles: new Map(),
+    });
+    const initialSessions = useTerminalStore.getState().sessions;
+    const listener = vi.fn();
+    const unsubscribe = useTerminalStore.subscribe(listener);
+
+    try {
+      useTerminalStore.getState().replaceSnapshot([]);
+
+      expect(useTerminalStore.getState().sessions).toBe(initialSessions);
+      expect(useTerminalStore.getState().activeId).toBeNull();
       expect(listener).not.toHaveBeenCalled();
     } finally {
       unsubscribe();

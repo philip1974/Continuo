@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fireEvent, render, cleanup, act } from '@testing-library/react';
 import {
   copySelectedPermissions,
@@ -17,6 +19,19 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('PermissionPrompt UI', () => {
+  it('pluginId 模板 prefix/suffix 使用 memoized parts,不在 JSX IIFE 中重复拆分', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/plugins/permissions/PermissionPrompt.tsx'),
+      'utf8',
+    );
+
+    expect(src).toContain('const promptBodyParts = useMemo(');
+    expect(src).toContain('const fsScopeBodyParts = useMemo(');
+    expect(src).toContain('promptBodyParts.prefix');
+    expect(src).toContain('fsScopeBodyParts.prefix');
+    expect(src).not.toContain('const parts = splitPluginIdTemplate(');
+  });
+
   it('复制勾选权限时单趟扫描 Set,不调用 Array.from', () => {
     const selected = new Set(['fs', 'network'] as const);
     const arrayFromSpy = vi.spyOn(Array, 'from');
@@ -28,6 +43,13 @@ describe('PermissionPrompt UI', () => {
     } finally {
       arrayFromSpy.mockRestore();
     }
+  });
+
+  it('复制空勾选权限时复用稳定空数组', () => {
+    expect(copySelectedPermissions(new Set())).toEqual([]);
+    expect(copySelectedPermissions(new Set())).toBe(
+      copySelectedPermissions(new Set()),
+    );
   });
 
   it('无 pending → 不渲染', () => {

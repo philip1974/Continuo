@@ -28,6 +28,7 @@ import { coApp } from '@/plugins/co-app';
 import { useRegistry } from '@/plugins/registries/useRegistry';
 import {
   filterVisible,
+  isEditorActionVisible,
   type EditorActionSpec,
 } from '@/plugins/registries/EditorActionRegistry';
 
@@ -45,6 +46,8 @@ interface EditorHeaderProps {
   onCloseRequest: (tab: TabChrome) => void;
 }
 
+const EMPTY_TAB_CHROME: TabChrome[] = [];
+
 function basename(p: string | null): string {
   // 可维护性 M12:非空 basename 规则共用 basenameForEditorPath;null fallback 文案各自处理。
   if (!p) return translate('panels.editor.untitled');
@@ -52,6 +55,7 @@ function basename(p: string | null): string {
 }
 
 export function buildEditorTabChrome(tabs: readonly EditorTab[]): TabChrome[] {
+  if (tabs.length === 0) return EMPTY_TAB_CHROME;
   const out = new Array<TabChrome>(tabs.length);
   for (let i = 0; i < tabs.length; i++) {
     const tab = tabs[i]!;
@@ -109,7 +113,7 @@ const EditorActionsArea = memo(function EditorActionsArea({
       runContributedAction(a.label, () => {
         const live = coApp.editorActions.get(a.id);
         if (!live) return;
-        if (filterVisible([live], { filePath, dirty, mode }).length === 0) return;
+        if (!isEditorActionVisible(live, { filePath, dirty, mode })) return;
         return live.fn();
       });
     },

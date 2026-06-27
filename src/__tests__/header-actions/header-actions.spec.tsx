@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fireEvent, render, cleanup, act, waitFor } from '@testing-library/react';
 import { t } from '../../i18n';
 import { HeaderActions } from '../../shell/dock/HeaderActions';
@@ -47,6 +49,24 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('HeaderActions — popout', () => {
+  it('静态按钮图标预创建且 label 翻译结果复用', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/shell/dock/HeaderActions.tsx'),
+      'utf8',
+    );
+
+    expect(src).toContain('const POPOUT_ICON = (');
+    expect(src).toContain('const MORE_ACTIONS_ICON = (');
+    expect(src).toContain('const popoutLabel = t(');
+    expect(src).toContain('const moreActionsLabel = t(');
+    expect(src).toContain('aria-label={popoutLabel}');
+    expect(src).toContain('title={popoutLabel}');
+    expect(src).toContain('aria-label={moreActionsLabel}');
+    expect(src).toContain('title={moreActionsLabel}');
+    expect(src).toContain('{POPOUT_ICON}');
+    expect(src).toContain('{MORE_ACTIONS_ICON}');
+  });
+
   it('activePanel=null → popout 按钮 disabled', () => {
     const props = makeProps({ activePanel: null });
     const { container } = render(

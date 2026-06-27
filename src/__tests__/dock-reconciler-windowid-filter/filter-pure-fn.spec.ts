@@ -7,10 +7,13 @@ import { MAX_TERMINAL_SESSIONS_GLOBAL } from '../../../electron/shared/terminal-
 import { makeSession } from './fixtures';
 
 describe('dock-reconciler-windowid-filter: filterByOwnerWindow pure fn', () => {
-  it('T1 空数组 -> 空', () => {
-    const sessions: readonly unknown[] = [];
+  it('T1 空数组 -> 稳定空引用', () => {
+    const a: readonly unknown[] = [];
+    const b: readonly unknown[] = [];
+    const filtered = filterByOwnerWindow(a, 1);
 
-    expect(filterByOwnerWindow(sessions, 1)).toBe(sessions);
+    expect(filtered).toEqual([]);
+    expect(filterByOwnerWindow(b, 1)).toBe(filtered);
   });
 
   it('T2 [A:o1] wid=1 -> [A]', () => {
@@ -29,8 +32,13 @@ describe('dock-reconciler-windowid-filter: filterByOwnerWindow pure fn', () => {
   });
 
   it('T4 [A:o2, B:o2] wid=1 -> [] 全过滤', () => {
-    expect(filterByOwnerWindow([makeSession('A', { ownerWindowId: 2 }), makeSession('B', { ownerWindowId: 2 })], 1)).toEqual(
-      [],
+    const empty = filterByOwnerWindow(
+      [makeSession('A', { ownerWindowId: 2 }), makeSession('B', { ownerWindowId: 2 })],
+      1,
+    );
+    expect(empty).toEqual([]);
+    expect(filterByOwnerWindow([makeSession('C', { ownerWindowId: 2 })], 1)).toBe(
+      empty,
     );
   });
 

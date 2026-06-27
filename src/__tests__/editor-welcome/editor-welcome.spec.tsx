@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { render, cleanup } from '@testing-library/react';
 import { setLocale, t } from '@/i18n';
 import { EditorWelcome } from '../../panels/Editor/EditorWelcome';
@@ -32,6 +34,14 @@ describe('EditorWelcome', () => {
     } finally {
       if (orig) Object.defineProperty(navigator, 'platform', orig);
     }
+  });
+
+  it('保存快捷键 parts 按 mount memoize,不在每次 render 直接 detectPlatform', () => {
+    const src = readFileSync(join(process.cwd(), 'src/panels/Editor/EditorWelcome.tsx'), 'utf8');
+
+    expect(src).toContain('const saveHotkeyParts = useMemo(');
+    expect(src).toContain('saveHotkeyParts.map');
+    expect(src).not.toContain("formatHotkeyParts('mod+s', detectPlatform()).map");
   });
 
   it('非 mac 平台:保存提示渲染 Ctrl+S(不含 ⌘,跨平台审计 P2)', () => {

@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { MarketplaceEntry } from '../../marketplace/types';
 import type { RemoteManifestSnapshot } from '../../marketplace/fetcher';
 
@@ -215,10 +217,25 @@ describe('useUpdateStore.refresh', () => {
     getMgr.mockReturnValue(fakeMgr([])); // 没装任何插件
 
     await useUpdateStore.getState().refresh();
+    const remoteVersions = useUpdateStore.getState().remoteVersions;
     expect(fetchIndex).not.toHaveBeenCalled();
     expect(fetchManifest).not.toHaveBeenCalled();
     expect(useUpdateStore.getState().available).toEqual([]);
     expect(useUpdateStore.getState().lastCheckedAt).not.toBeNull();
+
+    await useUpdateStore.getState().refresh();
+    expect(useUpdateStore.getState().remoteVersions).toBe(remoteVersions);
+  });
+
+  it('PluginManager 缺失时复用稳定空 installed 快照', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/marketplace/update-store.ts'),
+      'utf-8',
+    );
+
+    expect(src).toContain('EMPTY_INSTALLED_PLUGINS');
+    expect(src).not.toContain('mgr ? mgr.listAll() : []');
+    expect(src).not.toContain('liveMgr ? liveMgr.listAll() : []');
   });
 
   it('R54:只拉已安装插件命中的 entries 的 manifest(M≤N)', async () => {
@@ -232,6 +249,21 @@ describe('useUpdateStore.refresh', () => {
     // 只为已安装的 b 拉 manifest,不拉 a/c
     expect(fetchManifest).toHaveBeenCalledTimes(1);
     expect((fetchManifest.mock.calls[0]![0] as MarketplaceEntry).id).toBe('b');
+  });
+
+  it('R54:已安装插件未命中 index → 跳过 manifest 拉取并复用空 remoteVersions', async () => {
+    fetchIndex.mockResolvedValue([entry('a'), entry('b')]);
+    getMgr.mockReturnValue(fakeMgr([{ id: 'missing', version: '0.1.0' }]));
+
+    await useUpdateStore.getState().refresh();
+    const remoteVersions = useUpdateStore.getState().remoteVersions;
+
+    expect(fetchManifest).not.toHaveBeenCalled();
+    expect(remoteVersions).toEqual(new Map());
+    expect(useUpdateStore.getState().available).toEqual([]);
+
+    await useUpdateStore.getState().refresh();
+    expect(useUpdateStore.getState().remoteVersions).toBe(remoteVersions);
   });
 
   it('构建 installedIds 不对 installed list 先 map 成中间数组', async () => {
@@ -381,5 +413,28 @@ describe('useUpdateStore.refresh', () => {
     release();
     await p;
     expect(useUpdateStore.getState().checking).toBe(false);
+  });
+
+  it('refresh 已处于 checking=true 时不重复通知等价入口状态', async () => {
+    useUpdateStore.setState({ checking: true });
+    let release: () => void = () => {};
+    fetchIndex.mockReturnValue(
+      new Promise<MarketplaceEntry[]>((resolve) => {
+        release = () => resolve([]);
+      }),
+    );
+    getMgr.mockReturnValue(fakeMgr([{ id: 'a', version: '0.1.0' }]));
+    const listener = vi.fn();
+    const unsubscribe = useUpdateStore.subscribe(listener);
+
+    try {
+      const p = useUpdateStore.getState().refresh();
+
+      expect(listener).not.toHaveBeenCalled();
+      release();
+      await p;
+    } finally {
+      unsubscribe();
+    }
   });
 });

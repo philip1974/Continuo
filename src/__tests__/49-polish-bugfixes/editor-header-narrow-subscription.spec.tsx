@@ -70,6 +70,12 @@ describe('打磨 R23 — EditorHeader 窄订阅', () => {
     }
   });
 
+  it('tab chrome 空态复用稳定空数组', () => {
+    const empty = buildEditorTabChrome([]);
+    expect(empty).toEqual([]);
+    expect(buildEditorTabChrome([])).toBe(empty);
+  });
+
   it('tab chrome 构造预分配结果数组,不通过 out.push 扩容', () => {
     const src = readFileSync(
       path.join(process.cwd(), 'src/panels/Editor/EditorHeader.tsx'),

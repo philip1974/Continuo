@@ -34,6 +34,21 @@ describe('workspace.store', () => {
     expect(useWorkspaceStore.getState().recentRoots).toEqual(['/a']);
   });
 
+  it('setRoot 重复当前 path 且 recentRoots 已规范时不触发订阅', () => {
+    useWorkspaceStore.getState().setRoot('/a');
+    const recentRoots = useWorkspaceStore.getState().recentRoots;
+    const listener = vi.fn();
+    const unsub = useWorkspaceStore.subscribe(listener);
+
+    try {
+      useWorkspaceStore.getState().setRoot('/a');
+      expect(listener).not.toHaveBeenCalled();
+      expect(useWorkspaceStore.getState().recentRoots).toBe(recentRoots);
+    } finally {
+      unsub();
+    }
+  });
+
   it('buildRecentRoots 当前 root 已在首位且列表已规范时复用原引用', () => {
     const recentRoots = ['/a', '/b', '/c'];
 
@@ -84,6 +99,18 @@ describe('workspace.store', () => {
     const s = useWorkspaceStore.getState();
     expect(s.root).toBeNull();
     expect(s.recentRoots).toEqual(['/a']);
+  });
+
+  it('setRoot(null) 已经是 null 时不触发订阅', () => {
+    const listener = vi.fn();
+    const unsub = useWorkspaceStore.subscribe(listener);
+
+    try {
+      useWorkspaceStore.getState().setRoot(null);
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsub();
+    }
   });
 
   it('markHydrated 已 hydrated 时 no-op,不触发订阅', () => {

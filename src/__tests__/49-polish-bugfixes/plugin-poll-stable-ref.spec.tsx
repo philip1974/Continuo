@@ -14,8 +14,15 @@ vi.mock('../../plugins/PluginManager', () => ({
   getUserPluginManager: () => managerRef.current,
 }));
 
-import { sameIdSet, useInstalledIds } from '../../marketplace/MarketplaceTab';
-import { samePluginList } from '../../plugins/settings/PluginsTabContent';
+import {
+  readInstalledIds,
+  sameIdSet,
+  useInstalledIds,
+} from '../../marketplace/MarketplaceTab';
+import {
+  readUserPluginList,
+  samePluginList,
+} from '../../plugins/settings/PluginsTabContent';
 
 function item(over: Partial<PluginListItem> & { id: string }): PluginListItem {
   return {
@@ -48,6 +55,15 @@ describe('打磨 R2 — sameIdSet 纯比较', () => {
 });
 
 describe('打磨 R2 — samePluginList 纯比较(不掩盖状态)', () => {
+  it('PluginManager 未初始化时复用稳定空 user plugin list', () => {
+    managerRef.current = null;
+
+    const empty = readUserPluginList();
+
+    expect(empty).toEqual([]);
+    expect(readUserPluginList()).toBe(empty);
+  });
+
   it('完全相同 → true(manifest 同引用,模拟 listAll 返回稳定 manifest)', () => {
     const mf = { id: 'p1' } as PluginListItem['manifest'];
     const a = [item({ id: 'p1', manifest: mf })];
@@ -86,6 +102,34 @@ describe('打磨 R2 — samePluginList 纯比较(不掩盖状态)', () => {
 });
 
 describe('打磨 R2 — useInstalledIds 轮询引用稳定', () => {
+  it('PluginManager 未初始化时复用稳定空 installed ids', () => {
+    managerRef.current = null;
+
+    const empty = readInstalledIds();
+
+    expect(empty).toEqual(new Set());
+    expect(readInstalledIds()).toBe(empty);
+  });
+
+  it('PluginManager 已初始化但无插件时复用稳定空 installed ids', () => {
+    managerRef.current = { listAll: () => [] };
+
+    const empty = readInstalledIds();
+
+    expect(empty).toEqual(new Set());
+    expect(readInstalledIds()).toBe(empty);
+  });
+
+  it('PluginManager listAll 快照未变时 readInstalledIds 复用同一个 Set', () => {
+    const plugins = [item({ id: 'p1' }), item({ id: 'p2' })];
+    managerRef.current = { listAll: () => plugins };
+
+    const first = readInstalledIds();
+
+    expect(first).toEqual(new Set(['p1', 'p2']));
+    expect(readInstalledIds()).toBe(first);
+  });
+
   it('已装集合不变 → 轮询后返回同引用', () => {
     managerRef.current = { listAll: () => [item({ id: 'p1' }), item({ id: 'p2' })] };
     const { result } = renderHook(() => useInstalledIds());

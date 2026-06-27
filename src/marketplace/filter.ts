@@ -13,11 +13,19 @@ export interface FilterOptions {
   readonly selectedTags: ReadonlySet<string>;
 }
 
+const EMPTY_FILTERED_MARKETPLACE_ENTRIES: readonly MarketplaceEntry[] = [];
+const EMPTY_MARKETPLACE_ENTRY_TAGS: readonly string[] = [];
+
+function entryTags(entry: MarketplaceEntry): readonly string[] {
+  return entry.tags ?? EMPTY_MARKETPLACE_ENTRY_TAGS;
+}
+
 /** 应用过滤,返回保留的 entries(原顺序). */
 export function applyFilter(
   entries: readonly MarketplaceEntry[],
   opts: FilterOptions,
 ): readonly MarketplaceEntry[] {
+  if (entries.length === 0) return entries;
   // 边界(E281):filter 层防御性截断 query(applyFilter 是导出纯函数,可被非 UI 调用方传超长 query
   // → 对 ≤4096 entry 逐项 includes 放大)。与 onChange clamp 同一上限,双层防护。
   const q = clampSearchQuery(opts.query).trim().toLowerCase();
@@ -25,20 +33,31 @@ export function applyFilter(
   const hasTags = opts.selectedTags.size > 0;
   if (!hasQuery && !hasTags) return entries;
 
-  const filtered = new Array<MarketplaceEntry>(entries.length);
+  let filtered: MarketplaceEntry[] | null = null;
   let count = 0;
-  for (const entry of entries) {
-    if (hasQuery && !matchQuery(entry, q)) continue;
-    if (hasTags && !matchTags(entry, opts.selectedTags)) continue;
-    filtered[count++] = entry;
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i]!;
+    const keep =
+      (!hasQuery || matchQuery(entry, q)) &&
+      (!hasTags || matchTags(entry, opts.selectedTags));
+    if (keep) {
+      if (filtered !== null) filtered[count] = entry;
+      count++;
+      continue;
+    }
+    if (filtered === null) {
+      filtered = new Array<MarketplaceEntry>(entries.length - 1);
+      for (let j = 0; j < count; j++) filtered[j] = entries[j]!;
+    }
   }
+  if (filtered === null) return entries;
   filtered.length = count;
-  return filtered;
+  return count === 0 ? EMPTY_FILTERED_MARKETPLACE_ENTRIES : filtered;
 }
 
 export function buildMarketplaceSearchHaystack(entry: MarketplaceEntry): string {
   let haystack = `${entry.name} ${entry.id} ${entry.description ?? ''}`;
-  for (const tag of entry.tags ?? []) {
+  for (const tag of entryTags(entry)) {
     haystack += ` ${tag}`;
   }
   return haystack.toLowerCase();
@@ -46,7 +65,15 @@ export function buildMarketplaceSearchHaystack(entry: MarketplaceEntry): string 
 
 function matchQuery(entry: MarketplaceEntry, q: string): boolean {
   if (q.length === 0) return true;
-  return buildMarketplaceSearchHaystack(entry).includes(q);
+  if (entry.name.toLowerCase().includes(q)) return true;
+  if (entry.id.toLowerCase().includes(q)) return true;
+  if (entry.description && entry.description.toLowerCase().includes(q)) {
+    return true;
+  }
+  for (const tag of entryTags(entry)) {
+    if (tag.toLowerCase().includes(q)) return true;
+  }
+  return false;
 }
 
 function matchTags(
@@ -54,7 +81,7 @@ function matchTags(
   selected: ReadonlySet<string>,
 ): boolean {
   if (selected.size === 0) return true;
-  const tags = entry.tags ?? [];
+  const tags = entryTags(entry);
   for (const tag of tags) {
     if (selected.has(tag)) return true;
   }
@@ -65,22 +92,34 @@ function matchTags(
 // 上限(4096),但二者相乘最坏数十万 distinct tags —— 畸形远程 index 否则在 collectAllTags 收集/排序 +
 // UI 渲染全部 tag 按钮处卡 renderer。凑满 MAX_MARKETPLACE_TAGS 即停收集(只渲染限度内集合)。
 export const MAX_MARKETPLACE_TAGS = 256;
+const EMPTY_MARKETPLACE_TAGS: readonly string[] = [];
 
 /** 索引去重收集所有 tags(按字典序),全局 distinct 数封顶 MAX_MARKETPLACE_TAGS(E226). */
 export function collectAllTags(
   entries: readonly MarketplaceEntry[],
 ): readonly string[] {
-  const set = new Set<string>();
-  const tags = new Array<string>(MAX_MARKETPLACE_TAGS);
+  if (entries.length === 0) return EMPTY_MARKETPLACE_TAGS;
+  let set: Set<string> | undefined;
+  let tags: string[] | undefined;
   let count = 0;
+  let prevTag = '';
+  let sorted = true;
   outer: for (const e of entries) {
-    for (const t of e.tags ?? []) {
+    for (const t of entryTags(e)) {
+      if (!set || !tags) {
+        set = new Set<string>();
+        tags = new Array<string>(MAX_MARKETPLACE_TAGS);
+      }
       if (set.has(t)) continue;
       set.add(t);
+      if (count > 0 && prevTag.localeCompare(t) > 0) sorted = false;
+      prevTag = t;
       tags[count++] = t;
       if (set.size >= MAX_MARKETPLACE_TAGS) break outer; // 全局 tag 数到顶,停止收集
     }
   }
+  if (!tags) return EMPTY_MARKETPLACE_TAGS;
   tags.length = count;
-  return tags.sort((a, b) => a.localeCompare(b));
+  if (count < 2) return tags;
+  return sorted ? tags : tags.sort((a, b) => a.localeCompare(b));
 }

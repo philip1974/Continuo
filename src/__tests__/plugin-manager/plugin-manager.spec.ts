@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 const coApiMocks = vi.hoisted(() => ({
   pluginFsRaw: {
@@ -155,6 +157,13 @@ describe('init 扫描与激活', () => {
     }
   });
 
+  it('removeActivationOrderId 删除到空时复用稳定空数组', () => {
+    const empty = removeActivationOrderId(['a'], 'a');
+    expect(empty).toEqual([]);
+    expect(removeActivationOrderId(['b'], 'b')).toBe(empty);
+    expect(removeActivationOrderId([], 'missing')).toBe(empty);
+  });
+
   it('enabled 插件被激活,disabled 被发现但不激活', async () => {
     const state: MockHostState = {
       dirs: [
@@ -206,6 +215,67 @@ describe('init 扫描与激活', () => {
     expect(list!.map((x) => x.id)).toEqual(['a', 'b']);
     expect(list!.find((x) => x.id === 'a')?.status).toBe('enabled');
     expect(list!.find((x) => x.id === 'b')?.status).toBe('disabled');
+  });
+
+  it('无权限声明 fallback 复用稳定空 permissions 数组', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/plugins/PluginManager.ts'),
+      'utf-8',
+    );
+
+    expect(src).toContain('EMPTY_PLUGIN_PERMISSIONS');
+    expect(src).not.toContain('entry.manifest.permissions ?? []');
+  });
+
+  it('listAll 非空状态复用快照,插件状态变化后失效重建', async () => {
+    const state: MockHostState = {
+      dirs: [
+        { id: 'a', manifestText: manifestText('a'), moduleUrl: 'mod://a' },
+      ],
+      enabled: new Set(['a']),
+      modules: new Map([['mod://a', { default: GoodPlugin }]]),
+      enabledWritten: new Set(),
+    };
+    const mgr = new PluginManager(fakeApp, makeHost(state));
+    await mgr.init();
+
+    const first = mgr.listAll();
+    expect(first).toBe(mgr.listAll());
+    expect(first[0]?.status).toBe('enabled');
+
+    await mgr.disable('a');
+    const disabled = mgr.listAll();
+    expect(disabled).not.toBe(first);
+    expect(disabled).toBe(mgr.listAll());
+    expect(disabled[0]?.status).toBe('disabled');
+
+    await mgr.enable('a');
+    const enabledAgain = mgr.listAll();
+    expect(enabledAgain).not.toBe(disabled);
+    expect(enabledAgain[0]?.status).toBe('enabled');
+  });
+
+  it('listAll 空插件状态复用稳定空列表', () => {
+    const stateA: MockHostState = {
+      dirs: [],
+      enabled: new Set(),
+      modules: new Map(),
+      enabledWritten: new Set(),
+    };
+    const stateB: MockHostState = {
+      dirs: [],
+      enabled: new Set(),
+      modules: new Map(),
+      enabledWritten: new Set(),
+    };
+    const a = new PluginManager(fakeApp, makeHost(stateA));
+    const b = new PluginManager(fakeApp, makeHost(stateB));
+
+    const empty = a.listAll();
+
+    expect(empty).toEqual([]);
+    expect(a.listAll()).toBe(empty);
+    expect(b.listAll()).toBe(empty);
   });
 
   it('manifest 解析失败 → 跳过 + warn,不影响其它', async () => {

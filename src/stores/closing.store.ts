@@ -9,8 +9,10 @@ type ClosingState = {
   unmark: (id: string) => void;
 };
 
+const EMPTY_CLOSING_IDS: ReadonlySet<string> = new Set();
+
 export const useClosingStore = create<ClosingState>((set) => ({
-  ids: new Set(),
+  ids: EMPTY_CLOSING_IDS,
   mark: (id) =>
     set((s) => {
       if (s.ids.has(id)) return s;
@@ -21,6 +23,7 @@ export const useClosingStore = create<ClosingState>((set) => ({
   unmark: (id) =>
     set((s) => {
       if (!s.ids.has(id)) return s;
+      if (s.ids.size === 1) return { ids: EMPTY_CLOSING_IDS };
       const next = new Set(s.ids);
       next.delete(id);
       return { ids: next };

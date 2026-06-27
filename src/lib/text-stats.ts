@@ -28,6 +28,8 @@ export interface TextStats {
   readonly chars: number;
 }
 
+const EMPTY_TEXT_STATS: TextStats = { lines: 0, words: 0, chars: 0 };
+
 /**
  * 单遍、零数组分配地算 行/词/字符。语义:
  * - lines:空串 0;否则 换行数 + 1(尾部 \n 算下一空行,只看 \n,CRLF 仅计 \n)。
@@ -36,6 +38,7 @@ export interface TextStats {
  */
 export function computeTextStats(s: string): TextStats {
   const len = s.length;
+  if (len === 0) return EMPTY_TEXT_STATS;
   let lines = len === 0 ? 0 : 1;
   let words = 0;
   let inWord = false;

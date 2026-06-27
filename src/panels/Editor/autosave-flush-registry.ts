@@ -33,8 +33,12 @@ export function trackInFlightAutoSave(p: Promise<unknown>): void {
  * 未注册且无在途时 no-op。任一失败 swallow(各 scheduler 内部已记录),不阻断 ack。
  */
 export async function flushPendingAutoSave(): Promise<void> {
-  await Promise.allSettled([
-    ...(activeFlush ? [activeFlush()] : []),
-    ...inFlightFlushes,
-  ]);
+  if (!activeFlush && inFlightFlushes.size === 0) return;
+  const pending = new Array<Promise<unknown>>(
+    inFlightFlushes.size + (activeFlush ? 1 : 0),
+  );
+  let i = 0;
+  if (activeFlush) pending[i++] = activeFlush();
+  for (const flush of inFlightFlushes) pending[i++] = flush;
+  await Promise.allSettled(pending);
 }

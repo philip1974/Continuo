@@ -9,6 +9,8 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 vi.mock('@/plugins/settings/values-store', () => ({
   useSettingValue: (_k: string, fallback: unknown) => fallback,
@@ -25,7 +27,11 @@ vi.mock('@/stores/editor.store', () => ({
   }),
 }));
 
-import { CodeEditor, fileExtensionLower } from '../../panels/Editor/CodeEditor';
+import {
+  CodeEditor,
+  fileExtensionLower,
+  pickLanguage,
+} from '../../panels/Editor/CodeEditor';
 import type { EditorView } from 'codemirror';
 
 afterEach(() => {
@@ -44,6 +50,21 @@ describe('perf-audit P6 · CodeEditor 受控回声免全文 toString', () => {
     } finally {
       splitSpy.mockRestore();
     }
+  });
+
+  it('未知文件类型复用稳定空语言扩展', () => {
+    expect(pickLanguage('README')).toEqual([]);
+    expect(pickLanguage('README')).toBe(pickLanguage('notes.unknown'));
+  });
+
+  it('浅色主题复用稳定空主题扩展,避免 render/effect 分配新数组', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/panels/Editor/CodeEditor.tsx'),
+      'utf-8',
+    );
+
+    expect(src).toContain('EMPTY_THEME_EXTENSIONS');
+    expect(src).not.toContain("resolved === 'dark' ? oneDark : []");
   });
 
   it('回声(value === 上次 emit)→ effect 跳过,不再 doc.toString();非回声 → 正常同步', () => {

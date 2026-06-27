@@ -20,6 +20,20 @@ describe('RibbonRegistry', () => {
     expect(r.getAll()).toEqual([]);
   });
 
+  it('空 registry 的 getAll 复用稳定空快照', () => {
+    const r = new RibbonRegistry();
+    const other = new RibbonRegistry();
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      expect(r.getAll()).toEqual([]);
+      expect(r.getAll()).toBe(other.getAll());
+      expect(sortSpy).not.toHaveBeenCalled();
+    } finally {
+      sortSpy.mockRestore();
+    }
+  });
+
   it('priority 升序;缺失默认 100', () => {
     const r = new RibbonRegistry();
     r.register({ id: 'def', title: 'D', icon: null, onClick: noop });
@@ -37,6 +51,21 @@ describe('RibbonRegistry', () => {
     expect(RibbonRegistry.prototype.getAll.toString()).not.toContain(
       'items.push(',
     );
+  });
+
+  it('已按 priority 注册时复用构建顺序,不调用 sort', () => {
+    const r = new RibbonRegistry();
+    r.register({ id: 'top', title: 'T', icon: null, onClick: noop, priority: 1 });
+    r.register({ id: 'mid', title: 'M', icon: null, onClick: noop, priority: 100 });
+    r.register({ id: 'bot', title: 'B', icon: null, onClick: noop, priority: 200 });
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      expect(r.getAll().map((x) => x.id)).toEqual(['top', 'mid', 'bot']);
+      expect(sortSpy).not.toHaveBeenCalled();
+    } finally {
+      sortSpy.mockRestore();
+    }
   });
 
   it('重复 getAll 复用排序结果,register/dispose 后失效重建', () => {
@@ -57,7 +86,7 @@ describe('RibbonRegistry', () => {
 
       d.dispose();
       expect(r.getAll().map((x) => x.id)).toEqual(['top', 'bot']);
-      expect(sortSpy).toHaveBeenCalledTimes(3);
+      expect(sortSpy).toHaveBeenCalledTimes(2);
     } finally {
       sortSpy.mockRestore();
     }

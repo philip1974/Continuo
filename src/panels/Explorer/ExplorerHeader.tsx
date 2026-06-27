@@ -42,6 +42,43 @@ interface ExplorerHeaderProps {
   onNewDir?: () => void;
 }
 
+const NEW_FILE_ICON = (
+  <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.4">
+    <path d="M9 1.5H3.5A1.5 1.5 0 0 0 2 3v10a1.5 1.5 0 0 0 1.5 1.5h9A1.5 1.5 0 0 0 14 13V6.5L9 1.5Z" />
+    <path d="M9 1.5V6h5" />
+  </svg>
+);
+
+const NEW_FOLDER_ICON = (
+  <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.4">
+    <path d="M1.5 4A1.5 1.5 0 0 1 3 2.5h3l1.5 1.5h5.5A1.5 1.5 0 0 1 14.5 5.5v6.5A1.5 1.5 0 0 1 13 13.5H3a1.5 1.5 0 0 1-1.5-1.5V4Z" />
+  </svg>
+);
+
+const REFRESH_ICON = (
+  <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+    <path d="M3 8a5 5 0 0 1 8.5-3.5L13 6" />
+    <path d="M13 3v3h-3" />
+    <path d="M13 8a5 5 0 0 1-8.5 3.5L3 10" />
+    <path d="M3 13v-3h3" />
+  </svg>
+);
+
+const COLLAPSE_ALL_ICON = (
+  <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.4">
+    <path d="M3 4h10M3 8h6M3 12h3" />
+    <path d="M11 7l2 2-2 2" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+const MORE_ACTIONS_ICON = (
+  <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+    <circle cx="3.5" cy="8" r="1.1" fill="currentColor" />
+    <circle cx="8" cy="8" r="1.1" fill="currentColor" />
+    <circle cx="12.5" cy="8" r="1.1" fill="currentColor" />
+  </svg>
+);
+
 export function ExplorerHeader({
   root,
   onExpandAll,
@@ -71,6 +108,11 @@ export function ExplorerHeader({
     triggerRef,
     onClose: () => setMenuOpen(false),
   });
+  const newFileLabel = t('panels.explorer.btn.new_file');
+  const newFolderLabel = t('panels.explorer.btn.new_folder');
+  const refreshLabel = t('panels.explorer.btn.refresh');
+  const collapseAllLabel = t('panels.explorer.btn.collapse_all');
+  const moreActionsLabel = t('panels.explorer.btn.more_actions');
 
   // 计算菜单坐标 — 用 trigger 按钮的 viewport rect。
   // 监听 resize / scroll 重新算,避免侧边栏滚动 / 窗口缩放后菜单错位。
@@ -145,53 +187,40 @@ export function ExplorerHeader({
           <IconButton
             size="xs"
             onClick={onNewFile}
-            title={t('panels.explorer.btn.new_file')}
-            aria-label={t('panels.explorer.btn.new_file')}
+            title={newFileLabel}
+            aria-label={newFileLabel}
           >
-            <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.4">
-              <path d="M9 1.5H3.5A1.5 1.5 0 0 0 2 3v10a1.5 1.5 0 0 0 1.5 1.5h9A1.5 1.5 0 0 0 14 13V6.5L9 1.5Z" />
-              <path d="M9 1.5V6h5" />
-            </svg>
+            {NEW_FILE_ICON}
           </IconButton>
         )}
         {onNewDir && (
           <IconButton
             size="xs"
             onClick={onNewDir}
-            title={t('panels.explorer.btn.new_folder')}
-            aria-label={t('panels.explorer.btn.new_folder')}
+            title={newFolderLabel}
+            aria-label={newFolderLabel}
           >
-            <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.4">
-              <path d="M1.5 4A1.5 1.5 0 0 1 3 2.5h3l1.5 1.5h5.5A1.5 1.5 0 0 1 14.5 5.5v6.5A1.5 1.5 0 0 1 13 13.5H3a1.5 1.5 0 0 1-1.5-1.5V4Z" />
-            </svg>
+            {NEW_FOLDER_ICON}
           </IconButton>
         )}
         {onRefresh && (
           <IconButton
             size="xs"
             onClick={onRefresh}
-            title={t('panels.explorer.btn.refresh')}
-            aria-label={t('panels.explorer.btn.refresh')}
+            title={refreshLabel}
+            aria-label={refreshLabel}
           >
-            <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
-              <path d="M3 8a5 5 0 0 1 8.5-3.5L13 6" />
-              <path d="M13 3v3h-3" />
-              <path d="M13 8a5 5 0 0 1-8.5 3.5L3 10" />
-              <path d="M3 13v-3h3" />
-            </svg>
+            {REFRESH_ICON}
           </IconButton>
         )}
         {onCollapseAll && (
           <IconButton
             size="xs"
             onClick={onCollapseAll}
-            title={t('panels.explorer.btn.collapse_all')}
-            aria-label={t('panels.explorer.btn.collapse_all')}
+            title={collapseAllLabel}
+            aria-label={collapseAllLabel}
           >
-            <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.4">
-              <path d="M3 4h10M3 8h6M3 12h3" />
-              <path d="M11 7l2 2-2 2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
+            {COLLAPSE_ALL_ICON}
           </IconButton>
         )}
       </div>
@@ -199,18 +228,14 @@ export function ExplorerHeader({
         ref={triggerRef}
         size="xs"
         onClick={() => setMenuOpen((v) => !v)}
-        title={t('panels.explorer.btn.more_actions')}
-        aria-label={t('panels.explorer.btn.more_actions')}
+        title={moreActionsLabel}
+        aria-label={moreActionsLabel}
         // a11y(A6):菜单触发按钮须告知 AT 它会弹 role=menu 弹层及当前展开态,否则只读
         // 「更多操作 button」不知可展开。
         aria-haspopup="menu"
         aria-expanded={menuOpen}
       >
-        <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
-          <circle cx="3.5" cy="8" r="1.1" fill="currentColor" />
-          <circle cx="8" cy="8" r="1.1" fill="currentColor" />
-          <circle cx="12.5" cy="8" r="1.1" fill="currentColor" />
-        </svg>
+        {MORE_ACTIONS_ICON}
       </IconButton>
       {menuOpen && anchor &&
         createPortal(

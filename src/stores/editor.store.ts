@@ -46,6 +46,8 @@ export interface EditorTab {
   readonly milkdownUnsafe?: boolean;
 }
 
+const EMPTY_EDITOR_TABS: EditorTab[] = [];
+
 // ── 纯函数 helpers(便于单测) ────────────────────────────────
 
 export function createTab(
@@ -67,6 +69,7 @@ export function replaceTabAt(
   index: number,
   nextTab: EditorTab,
 ): EditorTab[] {
+  if (tabs[index] === nextTab) return tabs as EditorTab[];
   const next = new Array<EditorTab>(tabs.length);
   for (let i = 0; i < tabs.length; i++) {
     next[i] = i === index ? nextTab : tabs[i]!;
@@ -121,7 +124,9 @@ export function getStateAfterClosingTab(
     remaining[i - 1] = tabs[i]!;
   }
 
-  if (remaining.length === 0) return { tabs: remaining, activeTabId: null };
+  if (remaining.length === 0) {
+    return { tabs: EMPTY_EDITOR_TABS, activeTabId: null };
+  }
   if (closingTabId !== activeTabId) {
     return { tabs: remaining, activeTabId };
   }
@@ -249,7 +254,9 @@ export function getStateAfterClosingTabsOutsideRoot(
   if (!changed) return { tabs, activeTabId };
   remaining ??= [];
   remaining.length = count;
-  if (remaining.length === 0) return { tabs: remaining, activeTabId: null };
+  if (remaining.length === 0) {
+    return { tabs: EMPTY_EDITOR_TABS, activeTabId: null };
+  }
   if (activeTabId !== null && activeKept) {
     return { tabs: remaining, activeTabId };
   }
@@ -316,7 +323,9 @@ export function getStateAfterRemovingPath(
 
   if (!changed) return { tabs, activeTabId };
   remaining.length = count;
-  if (remaining.length === 0) return { tabs: remaining, activeTabId: null };
+  if (remaining.length === 0) {
+    return { tabs: EMPTY_EDITOR_TABS, activeTabId: null };
+  }
   if (activeTabId === null || activeKept || !activeRemoved) {
     return { tabs: remaining, activeTabId };
   }
@@ -385,11 +394,18 @@ type EditorState = {
 };
 
 // perf P12:getStateAfter* 返回的新状态——tabs 引用变化(增删/改名)即 chrome 变,
-// bump chromeVersion;无变化(返回原 tabs 引用)则原样返回,不触发 header 重算。
-function bumpChromeIfTabsChanged(
-  prev: { tabs: EditorTab[]; chromeVersion: number },
+// bump chromeVersion;tabs 与 active 都未变时返回原 state,避免 no-op action 通知订阅者。
+function applyTabStateChange(
+  prev: {
+    tabs: EditorTab[];
+    activeTabId: string | null;
+    chromeVersion: number;
+  },
   next: CloseTabResult,
-): CloseTabResult & { chromeVersion?: number } {
+): typeof prev | (CloseTabResult & { chromeVersion?: number }) {
+  if (next.tabs === prev.tabs && next.activeTabId === prev.activeTabId) {
+    return prev;
+  }
   return next.tabs !== prev.tabs
     ? { ...next, chromeVersion: prev.chromeVersion + 1 }
     : next;
@@ -430,12 +446,12 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
   // 决定是否 bump chromeVersion(增删/改名都改 chrome)。
   closeTab: (id) =>
     set((s) =>
-      bumpChromeIfTabsChanged(s, getStateAfterClosingTab(s.tabs, s.activeTabId, id)),
+      applyTabStateChange(s, getStateAfterClosingTab(s.tabs, s.activeTabId, id)),
     ),
 
   removePath: (path) =>
     set((s) =>
-      bumpChromeIfTabsChanged(
+      applyTabStateChange(
         s,
         getStateAfterRemovingPath(s.tabs, s.activeTabId, path),
       ),
@@ -443,7 +459,7 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
 
   renamePath: (oldPath, newPath) =>
     set((s) =>
-      bumpChromeIfTabsChanged(
+      applyTabStateChange(
         s,
         getStateAfterRenamingPath(s.tabs, s.activeTabId, oldPath, newPath),
       ),
@@ -451,7 +467,7 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
 
   closeTabsOutsideRoot: (root) =>
     set((s) =>
-      bumpChromeIfTabsChanged(
+      applyTabStateChange(
         s,
         getStateAfterClosingTabsOutsideRoot(s.tabs, s.activeTabId, root),
       ),

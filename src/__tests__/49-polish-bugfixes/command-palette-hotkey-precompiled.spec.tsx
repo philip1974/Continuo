@@ -58,6 +58,7 @@ describe('打磨 R28 — CommandPalette hotkey 预计算', () => {
     const commands: CommandSpec[] = [
       { id: 'a', title: 'A', hotkey: 'mod+a', fn: vi.fn() },
       { id: 'b', title: 'B', category: 'Tools', fn: vi.fn() },
+      { id: 'c', title: 'C', fn: vi.fn() },
     ];
     const mapSpy = vi.spyOn(commands, 'map');
     try {
@@ -67,13 +68,28 @@ describe('打磨 R28 — CommandPalette hotkey 预计算', () => {
         'other',
       );
 
-      expect(out.map((d) => d.cmd.id)).toEqual(['a', 'b']);
+      expect(out.map((d) => d.cmd.id)).toEqual(['a', 'b', 'c']);
       expect(out[0]?.hotkeyParts).toEqual(['Ctrl', 'A']);
+      expect(out[1]?.hotkeyParts).toBe(out[2]?.hotkeyParts);
       expect(out[1]?.matchSourceLower).toBe('tools b');
       expect(mapSpy).not.toHaveBeenCalled();
     } finally {
       mapSpy.mockRestore();
     }
+  });
+
+  it('空命令列表 → 稳定空数组,不读取 hotkey', () => {
+    const commands: CommandSpec[] = [];
+
+    const out = buildDisplayCommands(
+      commands,
+      (_key, fallback) => fallback,
+      'other',
+    );
+
+    expect(out).toEqual([]);
+    expect(out).toBe(buildDisplayCommands(commands, (_key, fallback) => fallback, 'other'));
+    expect(getEffSpy).not.toHaveBeenCalled();
   });
 
   it('selectedIndex 变化 → 不再逐行调 getEffectiveHotkey', () => {

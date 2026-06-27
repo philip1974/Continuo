@@ -7,8 +7,14 @@
 //   - text    → Input
 //   - reset   → 始终占位的 ↺,override 时可见
 
-import { IconButton, Input, SegmentedControl } from '@/design';
-import { useT } from '@/i18n';
+import { useMemo } from 'react';
+import {
+  IconButton,
+  Input,
+  SegmentedControl,
+  type SegmentedControlOption,
+} from '@/design';
+import { useLocale, useT } from '@/i18n';
 import {
   clampSettingNumber,
   SI_TEXT_VALUE_MAX,
@@ -30,6 +36,7 @@ const SETTING_TOGGLE_KNOB_ON_CLASS_NAME =
   `${SETTING_TOGGLE_KNOB_BASE_CLASS_NAME} translate-x-[18px] bg-fg`;
 const SETTING_TOGGLE_KNOB_OFF_CLASS_NAME =
   `${SETTING_TOGGLE_KNOB_BASE_CLASS_NAME} translate-x-1 bg-fg-muted`;
+const EMPTY_SETTING_SELECT_OPTIONS: readonly SegmentedControlOption<string>[] = [];
 
 export function settingToggleSwitchClassName(checked: boolean): string {
   return checked
@@ -59,6 +66,7 @@ export function SettingItemRow({
   isStillRegistered = () => true,
 }: SettingItemRowProps) {
   const t = useT();
+  const locale = useLocale();
   const title = spec.titleKey ? t(spec.titleKey) : spec.title;
   const description = spec.descriptionKey
     ? t(spec.descriptionKey)
@@ -79,6 +87,18 @@ export function SettingItemRow({
   // a11y(A21,A4 同族):把设置标题与控件建立可访问关联 —— 标题给稳定 id,number/text/select
   // 控件 aria-labelledby 指向它,否则 AT 聚焦只读「spinbutton/edit text/radiogroup」不知编辑哪项。
   const titleId = `setting-title-${spec.id}`;
+  const selectOptions = useMemo<
+    readonly SegmentedControlOption<string>[]
+  >(() => {
+    void locale; // deps:t 内部按当前 locale 翻译 labelKey
+    if (spec.type !== 'select' || !spec.enum) {
+      return EMPTY_SETTING_SELECT_OPTIONS;
+    }
+    return spec.enum.map((o) => ({
+      id: o.value,
+      label: o.labelKey ? t(o.labelKey) : o.label,
+    }));
+  }, [locale, spec.enum, spec.type, t]);
 
   return (
     <div className="flex items-start justify-between gap-6 border-b border-line/50 py-5 last:border-b-0">
@@ -108,10 +128,7 @@ export function SettingItemRow({
           <SegmentedControl
             size="sm"
             ariaLabelledby={titleId}
-            options={spec.enum.map((o) => ({
-              id: o.value,
-              label: o.labelKey ? t(o.labelKey) : o.label,
-            }))}
+            options={selectOptions}
             value={String(value)}
             onChange={(id) => setValue(spec.id, id)}
           />

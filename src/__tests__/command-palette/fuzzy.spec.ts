@@ -80,6 +80,19 @@ describe('fuzzyFilter', () => {
     expect(r).toBe(items);
   });
 
+  it('空 items → 原引用返回,不 lower query', () => {
+    const items: { id: string }[] = [];
+    const lowerSpy = vi.spyOn(String.prototype, 'toLowerCase');
+
+    try {
+      const r = fuzzyFilter(items, 'save', (i) => i.id);
+      expect(r).toBe(items);
+      expect(lowerSpy).not.toHaveBeenCalled();
+    } finally {
+      lowerSpy.mockRestore();
+    }
+  });
+
   it('匹配结果输出不通过 scored.map 二次物化', () => {
     const items = [
       { id: 'a', name: 'save file' },
@@ -116,6 +129,26 @@ describe('fuzzyFilter', () => {
     } finally {
       sortSpy.mockRestore();
     }
+  });
+
+  it('单项匹配时直接复用原列表引用', () => {
+    const items = [{ id: 'a', name: 'save file' }];
+
+    expect(fuzzyFilter(items, 'save', (i) => i.name)).toBe(items);
+    expect(fuzzyFilter(items, 'zzzz', (i) => i.name)).toEqual([]);
+  });
+
+  it('无匹配结果 → 复用稳定空列表', () => {
+    const items = [
+      { id: 'a', name: 'save file' },
+      { id: 'b', name: 'open folder' },
+    ];
+
+    const a = fuzzyFilter(items, 'zzzz', (i) => i.name);
+    const b = fuzzyFilter(items, 'yyyy', (i) => i.name);
+
+    expect(a).toEqual([]);
+    expect(b).toBe(a);
   });
 
   it('query 长于 target 时直接判不匹配,不 lower target', () => {

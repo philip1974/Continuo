@@ -80,5 +80,16 @@ describe('动画落点契约', () => {
       expect(after.has('alpha')).toBe(true);
       useClosingStore.getState().unmark('alpha');
     });
+
+    it('unmark 移除最后一个 id 时复用稳定空 Set', () => {
+      useClosingStore.getState().mark('alpha');
+      useClosingStore.getState().unmark('alpha');
+      const empty = useClosingStore.getState().ids;
+
+      useClosingStore.getState().mark('beta');
+      useClosingStore.getState().unmark('beta');
+
+      expect(useClosingStore.getState().ids).toBe(empty);
+    });
   });
 });

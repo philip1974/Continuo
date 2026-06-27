@@ -41,6 +41,22 @@ describe('SettingItemRegistry', () => {
     expect(r.getAll()).toEqual([]);
   });
 
+  it('空 registry 的 getAll/getByCategory 复用稳定空快照', () => {
+    const r = new SettingItemRegistry();
+    const other = new SettingItemRegistry();
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      expect(r.getAll()).toEqual([]);
+      expect(r.getAll()).toBe(other.getAll());
+      expect(r.getByCategory('general')).toBe(other.getByCategory('general'));
+      expect(r.getByCategory('editor')).toBe(other.getByCategory('missing'));
+      expect(sortSpy).not.toHaveBeenCalled();
+    } finally {
+      sortSpy.mockRestore();
+    }
+  });
+
   // race(R58,R50 同族):SettingItemRow 写前按 id 复查 setting 仍注册。get(id) 提供 live 查找。
   it('get(id) live 查找:register→spec / dispose→undefined', () => {
     const r = new SettingItemRegistry();
@@ -94,6 +110,54 @@ describe('SettingItemRegistry', () => {
       'general.theme',
     ]);
     expect(r.getByCategory('nope')).toEqual([]);
+  });
+
+  it('已按 priority 注册时 getAll/getByCategory 不调用 sort', () => {
+    const r = new SettingItemRegistry();
+    r.register({
+      id: 'general.theme',
+      category: 'general',
+      title: 'Theme',
+      type: 'select',
+      default: 'dark',
+      enum: [
+        { value: 'light', label: 'Light' },
+        { value: 'dark', label: 'Dark' },
+      ],
+      priority: 1,
+    });
+    r.register({
+      id: 'editor.fontSize',
+      category: 'editor',
+      title: 'Font Size',
+      type: 'number',
+      default: 14,
+      priority: 10,
+    });
+    r.register({
+      id: 'editor.tabSize',
+      category: 'editor',
+      title: 'Tab',
+      type: 'number',
+      default: 2,
+      priority: 20,
+    });
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      expect(r.getAll().map((s) => s.id)).toEqual([
+        'general.theme',
+        'editor.fontSize',
+        'editor.tabSize',
+      ]);
+      expect(r.getByCategory('editor').map((s) => s.id)).toEqual([
+        'editor.fontSize',
+        'editor.tabSize',
+      ]);
+      expect(sortSpy).not.toHaveBeenCalled();
+    } finally {
+      sortSpy.mockRestore();
+    }
   });
 
   it('重复读取 getByCategory/getAll 复用排序结果,register/dispose 后失效重建', () => {

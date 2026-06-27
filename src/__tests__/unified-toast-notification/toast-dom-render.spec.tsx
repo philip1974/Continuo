@@ -6,7 +6,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { act, cleanup, render, screen } from '@testing-library/react';
 import { NotificationsProvider } from '@/notifications/NotificationsProvider';
-import { ToastViewport } from '@/notifications/ToastViewport';
+import {
+  ToastViewport,
+  selectVisibleNotifications,
+} from '@/notifications/ToastViewport';
 import { notify } from '@/notifications/notify';
 
 afterEach(() => cleanup());
@@ -98,5 +101,14 @@ describe('unified-toast-notification: DOM rendering', () => {
     } finally {
       sliceSpy.mockRestore();
     }
+  });
+
+  it('通知数未超过可见上限 → 复用原数组引用', () => {
+    const notifications = [
+      { id: 'notif-1' },
+      { id: 'notif-2' },
+    ];
+
+    expect(selectVisibleNotifications(notifications)).toBe(notifications);
   });
 });

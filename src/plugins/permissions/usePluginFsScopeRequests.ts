@@ -18,6 +18,7 @@ interface ScopeRequestPayload {
 // 把脏授权请求写入 prompt store。注册入口 runtime 守卫,非法 drop + warn,不进 prompt store。
 const SCOPE_REQUEST_ID_MAX = 256; // 与 agent-auth/plugin-fs requestId 上限一致
 const MAX_SCOPES_PER_REQUEST = 256;
+const EMPTY_FS_SCOPE_PROMPT_SCOPES: FsScopePromptScope[] = [];
 
 function isScopeRequestPayload(v: unknown): v is ScopeRequestPayload {
   if (v === null || typeof v !== 'object') return false;
@@ -68,6 +69,7 @@ export function expandScopePathForDisplay(path: string): string {
 export function buildFsScopePromptScopes(
   scopes: readonly PathScope[],
 ): FsScopePromptScope[] {
+  if (scopes.length === 0) return EMPTY_FS_SCOPE_PROMPT_SCOPES;
   const out = new Array<FsScopePromptScope>(scopes.length);
   for (let i = 0; i < scopes.length; i++) {
     const scope = scopes[i]!;

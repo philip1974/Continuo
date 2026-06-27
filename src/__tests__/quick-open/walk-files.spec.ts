@@ -154,6 +154,22 @@ describe('walkWorkspaceFiles', () => {
     expect(captured?.exclude).toContain('dist');
   });
 
+  it('extraExclude 为空时复用默认 exclude 引用,非空合并不走数组 spread', async () => {
+    let defaultExclude: readonly string[] | undefined;
+    let emptyExtraExclude: readonly string[] | undefined;
+    const listDir: ListDirFn = async (_p, opts) => {
+      if (!defaultExclude) defaultExclude = opts?.exclude;
+      else emptyExtraExclude = opts?.exclude;
+      return { ok: true, data: [] };
+    };
+
+    await walkWorkspaceFiles({ rootPath: '/r', listDir });
+    await walkWorkspaceFiles({ rootPath: '/r', listDir, extraExclude: [] });
+
+    expect(emptyExtraExclude).toBe(defaultExclude);
+    expect(walkWorkspaceFiles.toString()).not.toContain('[...FULL_EXCLUDE');
+  });
+
   it('maxFiles 默认 5000,文件超过截断', async () => {
     const many: FileEntry[] = [];
     for (let i = 0; i < 6000; i++) {
@@ -195,6 +211,13 @@ describe('walkWorkspaceFiles', () => {
     });
 
     expect(r).toEqual({ ok: true, data: [] });
+    const again = await walkWorkspaceFiles({
+      rootPath: '/r',
+      listDir,
+      maxFiles: -1,
+    });
+    expect(again.ok).toBe(true);
+    if (r.ok && again.ok) expect(again.data).toBe(r.data);
     expect(calls).toBe(0);
   });
 
@@ -232,6 +255,27 @@ describe('walkWorkspaceFiles', () => {
     });
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.data).toEqual([]);
+  });
+
+  it('空 workspace / 全目录结果复用稳定空 results', async () => {
+    const empty = await walkWorkspaceFiles({
+      rootPath: '/r',
+      listDir: makeListDir([]),
+    });
+    const dirsOnly = await walkWorkspaceFiles({
+      rootPath: '/r',
+      listDir: makeListDir([
+        entry('/r/src', 'src', true),
+        entry('/r/dist', 'dist', true),
+      ]),
+    });
+
+    expect(empty.ok).toBe(true);
+    expect(dirsOnly.ok).toBe(true);
+    if (empty.ok && dirsOnly.ok) {
+      expect(empty.data).toEqual([]);
+      expect(dirsOnly.data).toBe(empty.data);
+    }
   });
 
   it('rootPath 空 → fail(WORKSPACE_NOT_OPEN)', async () => {

@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { fireEvent, render, cleanup, act } from '@testing-library/react';
 import { IconSidebar } from '../../shell/IconSidebar';
@@ -68,6 +70,57 @@ describe('IconSidebar — Explorer toggle', () => {
 });
 
 describe('IconSidebar — Settings', () => {
+  it('renderItem 不通过对象 spread 传 active fallback', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/shell/IconSidebar.tsx'),
+      'utf-8',
+    );
+
+    expect(src).not.toContain('item.active === undefined ? {}');
+    expect(src).toContain('active={item.active}');
+  });
+
+  it('静态内置图标预创建,避免 IconSidebar render 时重复创建 React element', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/shell/IconSidebar.tsx'),
+      'utf-8',
+    );
+
+    expect(src).toContain('const EXPLORER_ICON = <Folder');
+    expect(src).toContain('const SETTINGS_ICON = <SettingsGearIcon');
+    expect(src).toContain('node: EXPLORER_ICON');
+    expect(src).toContain('node: SETTINGS_ICON');
+    expect(src).not.toContain('node: <Folder');
+    expect(src).not.toContain('node: <SettingsGearIcon');
+  });
+
+  it('内置单项直接渲染,不为 top/bottom 各创建一元素数组再 map', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/shell/IconSidebar.tsx'),
+      'utf-8',
+    );
+
+    expect(src).toContain('const explorerItem: IconBarItemConfig =');
+    expect(src).toContain('const settingsItem: IconBarItemConfig =');
+    expect(src).toContain('{renderItem(explorerItem)}');
+    expect(src).toContain('renderItem(settingsItem, SETTINGS_UPDATE_BADGE_ID)');
+    expect(src).not.toContain('const topItems: IconBarItemConfig[] = [');
+    expect(src).not.toContain('const bottomItems: IconBarItemConfig[] = [');
+    expect(src).not.toContain('topItems.map');
+    expect(src).not.toContain('bottomItems.map');
+  });
+
+  it('更新角标 tooltip 翻译结果复用,title 与 aria-label 不重复查 catalog', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/shell/IconSidebar.tsx'),
+      'utf-8',
+    );
+
+    expect(src).toContain('const settingsUpdateTooltip =');
+    expect(src).toContain('title={settingsUpdateTooltip}');
+    expect(src).toContain('aria-label={settingsUpdateTooltip}');
+  });
+
   it('点击设置齿轮 → toggleSettingsPanel()(toggle 行为本身在 settings-toggle 主题持有)', () => {
     const { container } = render(<IconSidebar />);
     const btn = container.querySelector(

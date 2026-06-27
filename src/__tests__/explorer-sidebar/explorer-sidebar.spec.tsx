@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { render, cleanup, fireEvent } from '@testing-library/react';
 import {
   _resetLmApiForTest,
@@ -29,6 +31,16 @@ afterEach(() => {
 });
 
 describe('ExplorerSidebar', () => {
+  it('拖拽条 label 在 render 内复用,不为 aria/title 重复翻译', () => {
+    const src = readFileSync(join(process.cwd(), 'src/shell/ExplorerSidebar.tsx'), 'utf8');
+
+    expect(src).toContain("const resizeLabel = t('shell.aria.drag_resize');");
+    expect(src).toContain('aria-label={resizeLabel}');
+    expect(src).toContain('title={resizeLabel}');
+    expect(src).not.toContain("aria-label={t('shell.aria.drag_resize')}");
+    expect(src).not.toContain("title={t('shell.aria.drag_resize')}");
+  });
+
   it('sidebarOpen=false → 不渲染', () => {
     useLayoutUiStore.setState({ sidebarOpen: false });
     const { container } = render(<ExplorerSidebar />);

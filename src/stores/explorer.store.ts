@@ -32,8 +32,10 @@ type ExplorerState = {
   setSort: (sort: ExplorerSort) => void;
 };
 
+const EMPTY_EXPANDED_PATHS: ReadonlySet<string> = new Set();
+
 export const useExplorerStore = create<ExplorerState>((set) => ({
-  expandedPaths: new Set(),
+  expandedPaths: EMPTY_EXPANDED_PATHS,
   sort: { by: 'name', reverse: false },
 
   toggleExpand: (path) =>
@@ -47,7 +49,7 @@ export const useExplorerStore = create<ExplorerState>((set) => ({
       const next = new Set(s.expandedPaths);
       if (has) {
         next.delete(path);
-        return { expandedPaths: next };
+        return { expandedPaths: next.size === 0 ? EMPTY_EXPANDED_PATHS : next };
       }
       next.add(path);
       return { expandedPaths: next };
@@ -72,7 +74,7 @@ export const useExplorerStore = create<ExplorerState>((set) => ({
         }
         if (same) return s;
       }
-      return { expandedPaths: next };
+      return { expandedPaths: next.size === 0 ? EMPTY_EXPANDED_PATHS : next };
     }),
 
   setSort: (sort) =>

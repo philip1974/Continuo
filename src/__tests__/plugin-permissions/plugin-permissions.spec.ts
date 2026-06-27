@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { describe, it, expect, vi } from 'vitest';
 import {
   InMemoryPermissionStore,
@@ -77,6 +79,41 @@ describe('InMemoryPermissionStore', () => {
     }
   });
 
+  it('keepGrantedDecisions 空输入 / 全 denied 复用稳定空数组', () => {
+    const deniedOnly: readonly PermissionDecision[] = [
+      { permission: 'fs', granted: false, decidedAt: 1 },
+    ];
+
+    expect(keepGrantedDecisions([])).toEqual([]);
+    expect(keepGrantedDecisions([])).toBe(keepGrantedDecisions([]));
+    expect(keepGrantedDecisions(deniedOnly)).toBe(keepGrantedDecisions([]));
+  });
+
+  it('keepGrantedDecisions 全 granted 时复用原数组', () => {
+    const decisions: PermissionDecision[] = [
+      { permission: 'fs', granted: true, decidedAt: 1 },
+      { permission: 'network', granted: true, decidedAt: 2 },
+    ];
+
+    expect(keepGrantedDecisions(decisions)).toBe(decisions);
+  });
+
+  it('keepGrantedDecisions 混合决策时只保留 granted 且返回新数组', () => {
+    const decisions: PermissionDecision[] = [
+      { permission: 'fs', granted: true, decidedAt: 1 },
+      { permission: 'network', granted: false, decidedAt: 2 },
+      { permission: 'shell', granted: true, decidedAt: 3 },
+    ];
+
+    const kept = keepGrantedDecisions(decisions);
+
+    expect(kept).not.toBe(decisions);
+    expect(kept).toEqual([
+      { permission: 'fs', granted: true, decidedAt: 1 },
+      { permission: 'shell', granted: true, decidedAt: 3 },
+    ]);
+  });
+
   it('replacePermissionDecisions 不通过 filter 移除被覆盖权限', () => {
     const decisions: readonly PermissionDecision[] = [
       { permission: 'fs', granted: true, decidedAt: 1 },
@@ -100,9 +137,19 @@ describe('InMemoryPermissionStore', () => {
     }
   });
 
+  it('replacePermissionDecisions 空 perms 复用原决策列表', () => {
+    const decisions: readonly PermissionDecision[] = [
+      { permission: 'fs', granted: true, decidedAt: 1 },
+    ];
+
+    expect(replacePermissionDecisions(decisions, [], false, 9)).toBe(decisions);
+  });
+
   it('未存过 → get 返空数组', async () => {
     const s = new InMemoryPermissionStore();
-    expect(await s.get('p')).toEqual([]);
+    const decisions = await s.get('p');
+    expect(decisions).toEqual([]);
+    await expect(s.get('other')).resolves.toBe(decisions);
   });
 
   it('grant + get 往返,decidedAt 在过去 100ms 内', async () => {
@@ -191,6 +238,12 @@ describe('ensureAuthorized(v5 Phase 2 partial grant)', () => {
     if (r.ok) {
       expect(r.granted).toEqual([]);
       expect(r.denied).toEqual([]);
+      const again = await ensureAuthorized('p', [], s, prompt);
+      expect(again.ok).toBe(true);
+      if (again.ok) {
+        expect(again.granted).toBe(r.granted);
+        expect(again.denied).toBe(r.denied);
+      }
     }
     expect(prompt).not.toHaveBeenCalled();
   });
@@ -311,6 +364,34 @@ describe('ensureAuthorized(v5 Phase 2 partial grant)', () => {
       expect(r.denied).toEqual([]);
     }
     expect(prompt).toHaveBeenCalledWith('p', ['fs', 'clipboard']);
+  });
+
+  it('无历史 decisions 的首次授权走快路径,不预建 granted/denied Set', async () => {
+    const store: PermissionStore = {
+      get: vi.fn(async () => []),
+      grant: vi.fn(),
+      deny: vi.fn(),
+      clearDenied: vi.fn(),
+    };
+    const prompt = vi.fn(async () => ['fs'] as PermissionKey[]);
+
+    const r = await ensureAuthorized('p', ['fs', 'network'], store, prompt);
+
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.granted).toEqual(['fs']);
+      expect(r.denied).toEqual(['network']);
+    }
+    expect(prompt).toHaveBeenCalledWith('p', ['fs', 'network']);
+    expect(store.grant).toHaveBeenCalledWith('p', ['fs']);
+    expect(store.deny).toHaveBeenCalledWith('p', ['network']);
+    const src = readFileSync(
+      path.join(process.cwd(), 'src/plugins/permissions.ts'),
+      'utf-8',
+    );
+    expect(src.indexOf('decisions.length === 0')).toBeLessThan(
+      src.indexOf('new Set<PermissionKey>()'),
+    );
   });
 
   it('待决调 prompt,用户部分授 → ok partial,denied 列出未授项', async () => {

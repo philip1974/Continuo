@@ -31,6 +31,16 @@ describe('diffSets', () => {
     expect(r.added.size).toBe(0);
     expect(r.removed.size).toBe(0);
   });
+
+  it('无差异/单侧为空时复用稳定空 Set', () => {
+    const same = new Set(['/x']);
+    const empty = diffSets(same, same).added;
+
+    expect(diffSets(new Set(['/x']), new Set(['/x'])).added).toBe(empty);
+    expect(diffSets(new Set(['/x']), new Set(['/x'])).removed).toBe(empty);
+    expect(diffSets(new Set(), new Set(['/x'])).removed).toBe(empty);
+    expect(diffSets(new Set(['/x']), new Set()).added).toBe(empty);
+  });
 });
 
 describe('makeDebouncePerPath', () => {

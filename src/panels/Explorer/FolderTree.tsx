@@ -46,6 +46,8 @@ interface CreatingState {
   parentDir: string;
 }
 
+const EMPTY_SELECTED_PATHS: ReadonlySet<string> = new Set();
+const EMPTY_EXPANDED_ITEMS: readonly string[] = [];
 
 // 跨平台(codex 复查 P2):复用单一来源 path-cross.isSameOrInsidePath —— 此前手写
 // startsWith 对 Windows 大小写敏感,持久化的 expandedPaths(`C:\Repo\src`)与 root
@@ -69,12 +71,22 @@ export function selectVisibleTreeItems(
 ): readonly ItemInstance<FileEntry>[] {
   if (showHidden) return allItems;
 
-  const items: ItemInstance<FileEntry>[] = [];
-  for (const item of allItems) {
-    if (!item.getItemData().name.startsWith('.')) {
-      items.push(item);
+  let items: ItemInstance<FileEntry>[] | null = null;
+  let count = 0;
+  for (let i = 0; i < allItems.length; i++) {
+    const item = allItems[i]!;
+    if (item.getItemData().name.startsWith('.')) {
+      if (items === null) {
+        items = new Array<ItemInstance<FileEntry>>(allItems.length);
+        for (let j = 0; j < i; j++) items[j] = allItems[j]!;
+        count = i;
+      }
+      continue;
     }
+    if (items !== null) items[count++] = item;
   }
+  if (items === null) return allItems;
+  items.length = count;
   return items;
 }
 
@@ -98,6 +110,13 @@ export function selectDraggedItemPaths(
     paths.push(item.getId());
   }
   return paths;
+}
+
+export function buildSelectedPathSet(
+  selectedItems: readonly string[] | undefined,
+): ReadonlySet<string> {
+  if (!selectedItems || selectedItems.length === 0) return EMPTY_SELECTED_PATHS;
+  return new Set(selectedItems);
 }
 
 /**
@@ -150,11 +169,14 @@ export function FolderTree({ root }: { root: string }) {
   const persistedExpandedPaths = useExplorerStore((s) => s.expandedPaths);
   const setPersistedExpandedPaths = useExplorerStore((s) => s.setExpandedPaths);
   const expandedItems = useMemo(() => {
-    const next = new Set<string>([root]);
+    const items = new Array<string>(persistedExpandedPaths.size + 1);
+    let count = 0;
+    items[count++] = root;
     for (const path of persistedExpandedPaths) {
-      if (isWithinRoot(path, root)) next.add(path);
+      if (path !== root && isWithinRoot(path, root)) items[count++] = path;
     }
-    return [...next];
+    items.length = count;
+    return items;
   }, [persistedExpandedPaths, root]);
   const setExpandedItems = useCallback<SetStateFn<string[]>>(
     (updater) => {
@@ -172,7 +194,19 @@ export function FolderTree({ root }: { root: string }) {
       }
       const next =
         typeof updater === 'function' ? updater(inRootCurrent) : updater;
-      setPersistedExpandedPaths([...outOfRoot, ...next]);
+      if (outOfRoot.length === 0) {
+        setPersistedExpandedPaths(next);
+        return;
+      }
+      if (next.length === 0) {
+        setPersistedExpandedPaths(outOfRoot);
+        return;
+      }
+      const merged = new Array<string>(outOfRoot.length + next.length);
+      let count = 0;
+      for (const path of outOfRoot) merged[count++] = path;
+      for (const path of next) merged[count++] = path;
+      setPersistedExpandedPaths(merged);
     },
     [setPersistedExpandedPaths, root],
   );
@@ -341,7 +375,7 @@ export function FolderTree({ root }: { root: string }) {
   // 维护,任何变化都会引起组件重渲,Set 自动跟新。
   const selectedItemsArr = tree.getState().selectedItems;
   const selectedPaths = useMemo<ReadonlySet<string>>(
-    () => new Set(selectedItemsArr ?? []),
+    () => buildSelectedPathSet(selectedItemsArr),
     [selectedItemsArr],
   );
 
@@ -752,15 +786,20 @@ export function FolderTree({ root }: { root: string }) {
           // 刷新 = invalidate 当前所有展开目录,触发重新 listDir。
           // 单点 invalidate(root)对 cache 中已 list 过的子目录无效,
           // 所以遍历 expandedItems 全部 invalidate 一遍。
-          const expanded = tree.getState().expandedItems ?? [];
+          const expanded =
+            tree.getState().expandedItems ?? EMPTY_EXPANDED_ITEMS;
           // root 也算「已展开」(根 children 已 list),始终 invalidate
-          for (const path of [root, ...expanded]) {
+          const refreshPath = (path: string) => {
             try {
               const it = tree.getItemInstance(path);
               void it?.invalidateChildrenIds();
             } catch {
               // 节点已不存在(外部进程删了),跳过
             }
+          };
+          refreshPath(root);
+          for (const path of expanded) {
+            if (path !== root) refreshPath(path);
           }
         }}
         onNewFile={() => setCreating({ type: 'file', parentDir: root })}

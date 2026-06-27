@@ -166,6 +166,11 @@ describe('editor.store · tab array helpers', () => {
     expect(replaceTabAt.toString()).not.toContain('.push(');
   });
 
+  it('replaceTabAt 同对象替换时返回原 tabs 引用', () => {
+    const tabs = [makeTab({ id: '/a' }), makeTab({ id: '/b' })];
+    expect(replaceTabAt(tabs, 1, tabs[1]!)).toBe(tabs);
+  });
+
   it('appendEditorTab 预分配追加,不通过 spread/push 拷贝', () => {
     const tabs = [makeTab({ id: '/a' })];
     const tab = makeTab({ id: '/b' });
@@ -356,6 +361,15 @@ describe('closeTab', () => {
     expect(s.activeTabId).toBeNull();
   });
 
+  it('getStateAfterClosingTab 关最后一个时复用稳定空 tabs', () => {
+    const first = getStateAfterClosingTab([makeTab({ id: '/a' })], '/a', '/a');
+    const second = getStateAfterClosingTab([makeTab({ id: '/b' })], '/b', '/b');
+
+    expect(first.tabs).toEqual([]);
+    expect(second.tabs).toBe(first.tabs);
+    expect(first.activeTabId).toBeNull();
+  });
+
   it('关不存在的 id → 状态不变', () => {
     useEditorStore.setState({
       tabs: [makeTab({ id: '/a' })],
@@ -365,6 +379,25 @@ describe('closeTab', () => {
     const s = useEditorStore.getState();
     expect(s.tabs.map((t) => t.id)).toEqual(['/a']);
     expect(s.activeTabId).toBe('/a');
+  });
+
+  it('关不存在的 id 时不通知订阅者', () => {
+    const tabs = [makeTab({ id: '/a' })];
+    useEditorStore.setState({
+      tabs,
+      activeTabId: '/a',
+    });
+    const listener = vi.fn();
+    const unsubscribe = useEditorStore.subscribe(listener);
+
+    try {
+      useEditorStore.getState().closeTab('/nope');
+
+      expect(useEditorStore.getState().tabs).toBe(tabs);
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
   });
 
   it('命中关闭项时单次扫描 tabs,不 findIndex 后再 push 重建', () => {
@@ -450,6 +483,22 @@ describe('getStateAfterRemovingPath', () => {
     const r = getStateAfterRemovingPath(tabs, '/x/a.md', '/x');
     expect(r.tabs).toEqual([]);
     expect(r.activeTabId).toBeNull();
+  });
+
+  it('删除路径删光 clean tabs 时复用稳定空 tabs', () => {
+    const first = getStateAfterRemovingPath(
+      [makeTab({ id: '/a.md', filePath: '/a.md' })],
+      '/a.md',
+      '/a.md',
+    );
+    const second = getStateAfterRemovingPath(
+      [makeTab({ id: '/b.md', filePath: '/b.md' })],
+      '/b.md',
+      '/b.md',
+    );
+
+    expect(first.tabs).toEqual([]);
+    expect(second.tabs).toBe(first.tabs);
   });
 
   // 数据安全(codex 复查 P1):trash 一个在编辑器里有未保存改动的文件时,无条件
@@ -828,6 +877,22 @@ describe('getStateAfterClosingTabsOutsideRoot', () => {
     const r = getStateAfterClosingTabsOutsideRoot(tabs, '/old/a.md', null);
     expect(r.tabs).toEqual([]);
     expect(r.activeTabId).toBeNull();
+  });
+
+  it('切 root 关光 clean file tabs 时复用稳定空 tabs', () => {
+    const first = getStateAfterClosingTabsOutsideRoot(
+      [makeTab({ id: '/old/a.md', filePath: '/old/a.md' })],
+      '/old/a.md',
+      '/new',
+    );
+    const second = getStateAfterClosingTabsOutsideRoot(
+      [makeTab({ id: '/other/b.md', filePath: '/other/b.md' })],
+      '/other/b.md',
+      '/new',
+    );
+
+    expect(first.tabs).toEqual([]);
+    expect(second.tabs).toBe(first.tabs);
   });
 
   it('切换到子目录 → 父目录文件关,子目录文件留', () => {

@@ -163,12 +163,12 @@ export function FileRow({
         // 缩进指南线用 CSS gradient 一笔画 N 条,替代之前每行 N 个 absolute span:
         // 起点 = padding(4) + indent/2 ; 周期 indent ; 1px 线宽。
         // background-size 限定为 level*indent,no-repeat 防止画到内容区。
-        ...(level > 0 && {
-          backgroundImage: `repeating-linear-gradient(to right, var(--color-line) 0 1px, transparent 1px ${indent}px)`,
-          backgroundPosition: `${4 + indent / 2}px 0`,
-          backgroundSize: `${level * indent}px 100%`,
-          backgroundRepeat: 'no-repeat',
-        }),
+        backgroundImage: level > 0
+          ? `repeating-linear-gradient(to right, var(--color-line) 0 1px, transparent 1px ${indent}px)`
+          : undefined,
+        backgroundPosition: level > 0 ? `${4 + indent / 2}px 0` : undefined,
+        backgroundSize: level > 0 ? `${level * indent}px 100%` : undefined,
+        backgroundRepeat: level > 0 ? 'no-repeat' : undefined,
       }}
       className={fileRowClassName({
         isFocused,

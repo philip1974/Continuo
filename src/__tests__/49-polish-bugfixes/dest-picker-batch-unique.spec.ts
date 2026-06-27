@@ -7,6 +7,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+  buildSelectedPathSet,
   joinRelativePaths,
   makeNamePicker,
   selectDraggedItemPaths,
@@ -91,6 +92,27 @@ describe('打磨 — FolderTree hidden file 过滤', () => {
     const items = [item('a.ts'), item('.env')];
     expect(selectVisibleTreeItems(items, true)).toBe(items);
   });
+
+  it('showHidden=false 且没有隐藏项时复用 allItems 引用', () => {
+    const items = [item('a.ts'), item('b.ts')];
+    expect(selectVisibleTreeItems(items, false)).toBe(items);
+  });
+});
+
+describe('打磨 — FolderTree selectedPaths 构建', () => {
+  it('空 selection 复用稳定空 Set', () => {
+    const empty = buildSelectedPathSet(undefined);
+
+    expect(empty).toEqual(new Set());
+    expect(buildSelectedPathSet([])).toBe(empty);
+    expect(buildSelectedPathSet(undefined)).toBe(empty);
+  });
+
+  it('非空 selection 构建 Set', () => {
+    expect(buildSelectedPathSet(['/repo/a.ts', '/repo/b.ts'])).toEqual(
+      new Set(['/repo/a.ts', '/repo/b.ts']),
+    );
+  });
 });
 
 describe('打磨 — FolderTree root-drop 可移动路径选择', () => {
@@ -141,5 +163,16 @@ describe('打磨 — FolderTree root-drop 可移动路径选择', () => {
     );
 
     expect(src).not.toContain('draggedItems.slice()');
+  });
+
+  it('refresh 展开项 fallback 复用稳定空数组', () => {
+    const src = readFileSync(
+      join(ROOT, 'panels', 'Explorer', 'FolderTree.tsx'),
+      'utf8',
+    );
+
+    expect(src).toContain('EMPTY_EXPANDED_ITEMS');
+    expect(src).not.toContain('tree.getState().expandedItems ?? []');
+    expect(src).not.toContain('[root, ...expanded]');
   });
 });

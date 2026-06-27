@@ -12,6 +12,7 @@ import { stripRootPrefix } from '@/lib/path-cross';
 
 const DEFAULT_MAX_FILES = 5000;
 const DEFAULT_MAX_DEPTH = 8;
+const EMPTY_QUICK_OPEN_FILES: readonly QuickOpenFile[] = [];
 
 // listDir 内置已排:.git / .svn / .hg / node_modules / .DS_Store / Thumbs.db
 // 这里追加:常见构建产物 + 缓存目录(VSCode default file.exclude 同思路)。
@@ -33,6 +34,15 @@ const FULL_EXCLUDE: readonly string[] = [
   '.cache',
   '.vite',
 ];
+
+function buildExcludeList(extraExclude: readonly string[] | undefined): readonly string[] {
+  if (!extraExclude || extraExclude.length === 0) return FULL_EXCLUDE;
+  const exclude = new Array<string>(FULL_EXCLUDE.length + extraExclude.length);
+  let count = 0;
+  for (const item of FULL_EXCLUDE) exclude[count++] = item;
+  for (const item of extraExclude) exclude[count++] = item;
+  return exclude;
+}
 
 export type ListDirFn = (
   path: string,
@@ -70,10 +80,8 @@ export async function walkWorkspaceFiles(
     };
   }
   const maxFiles = opts.maxFiles ?? DEFAULT_MAX_FILES;
-  if (maxFiles <= 0) return { ok: true, data: [] };
-  const exclude = opts.extraExclude
-    ? [...FULL_EXCLUDE, ...opts.extraExclude]
-    : FULL_EXCLUDE;
+  if (maxFiles <= 0) return { ok: true, data: EMPTY_QUICK_OPEN_FILES };
+  const exclude = buildExcludeList(opts.extraExclude);
 
   // perf P2:把 maxFiles 下推到 main 侧 walker,使其收集够 maxFiles 个文件即停止
   // 遍历(不再扫完整棵树 + lstat + IPC 全量)。下面的 renderer 端 break 仍保留为
@@ -84,6 +92,7 @@ export async function walkWorkspaceFiles(
     maxFiles,
   });
   if (!r.ok) return r;
+  if (r.data.length === 0) return { ok: true, data: EMPTY_QUICK_OPEN_FILES };
 
   // 分隔符无关地剥 rootPath 前缀 → 复用单一来源 path-cross.stripRootPrefix(X6:含路径边界
   // 保护 + 平台感知大小写)。跨平台审计 P2(codex):此前手写 `e.path.startsWith(rootPath)`
@@ -106,5 +115,8 @@ export async function walkWorkspaceFiles(
     if (fileCount >= maxFiles) break;
   }
   files.length = fileCount;
-  return { ok: true, data: files };
+  return {
+    ok: true,
+    data: fileCount === 0 ? EMPTY_QUICK_OPEN_FILES : files,
+  };
 }

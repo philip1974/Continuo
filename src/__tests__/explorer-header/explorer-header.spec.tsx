@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fireEvent, render, cleanup, act, waitFor } from '@testing-library/react';
 import {
   _resetLmApiForTest,
@@ -49,6 +51,39 @@ describe('ExplorerHeader — 标题', () => {
 });
 
 describe('ExplorerHeader — Hover 工具条', () => {
+  it('固定 toolbar/menu 图标预创建,render 只引用静态 React element', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/panels/Explorer/ExplorerHeader.tsx'),
+      'utf8',
+    );
+
+    expect(src).toContain('const NEW_FILE_ICON = (');
+    expect(src).toContain('const NEW_FOLDER_ICON = (');
+    expect(src).toContain('const REFRESH_ICON = (');
+    expect(src).toContain('const COLLAPSE_ALL_ICON = (');
+    expect(src).toContain('const MORE_ACTIONS_ICON = (');
+    expect(src).toContain('{NEW_FILE_ICON}');
+    expect(src).toContain('{NEW_FOLDER_ICON}');
+    expect(src).toContain('{REFRESH_ICON}');
+    expect(src).toContain('{COLLAPSE_ALL_ICON}');
+    expect(src).toContain('{MORE_ACTIONS_ICON}');
+  });
+
+  it('toolbar/menu 按钮 label 翻译结果复用,title 与 aria-label 不重复查 catalog', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/panels/Explorer/ExplorerHeader.tsx'),
+      'utf8',
+    );
+
+    expect(src).toContain('const newFileLabel = t(');
+    expect(src).toContain('const newFolderLabel = t(');
+    expect(src).toContain('const moreActionsLabel = t(');
+    expect(src).toContain('title={newFileLabel}');
+    expect(src).toContain('aria-label={newFileLabel}');
+    expect(src).toContain('title={moreActionsLabel}');
+    expect(src).toContain('aria-label={moreActionsLabel}');
+  });
+
   it('callbacks 缺 → 不渲染对应按钮', () => {
     installFs(vi.fn());
     const { container } = render(<ExplorerHeader root="/proj" />);

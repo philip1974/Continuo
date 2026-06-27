@@ -2,6 +2,8 @@
 // R16:eventToCombo 现在平台感知。本 spec 在 jsdom(detectPlatform()='other')下,'mod' 主修饰键
 // = Ctrl,故 combo 捕获用 ctrlKey 事件 → 编成 'mod+...'(与生产 mac 上 Cmd→'mod' 对称)。
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fireEvent, render, cleanup, act } from '@testing-library/react';
 import {
   KeybindingCaptureModal,
@@ -65,6 +67,20 @@ function getButtons(): Record<string, HTMLButtonElement> {
 }
 
 describe('KeybindingCaptureModal — 显示态', () => {
+  it('渲染优化 · 快捷键 parts 派生值 memoize,不在 JSX 中重复格式化', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/plugins/keybindings/KeybindingCaptureModal.tsx'),
+      'utf8',
+    );
+
+    expect(src).toContain('const displayHotkeyParts = useMemo(');
+    expect(src).toContain('const defaultHotkeyLabel = useMemo(');
+    expect(src).toContain('displayHotkeyParts.map');
+    expect(src).toContain('hotkey: defaultHotkeyLabel');
+    expect(src).not.toContain('formatHotkeyParts(display, PLATFORM).map');
+    expect(src).not.toContain('hotkey: formatHotkeyParts(defaultHotkey');
+  });
+
   it('captured=null + currentHotkey=undefined → 显示「按下新组合…」', () => {
     const props = defaultProps();
     render(<KeybindingCaptureModal {...props} />);
@@ -317,17 +333,20 @@ describe('KeybindingCaptureModal — 冲突检测', () => {
       { id: 'cmd.c', title: 'C', hotkey: 'mod+x', fn: () => {} },
     ];
     const filterSpy = vi.spyOn(Array.prototype, 'filter');
+    const iteratorSpy = vi.spyOn(all, Symbol.iterator);
 
     try {
       const conflicts = selectKeybindingConflicts(all, 'cmd.a', 'mod+x');
       const filterCallsDuringSelect = filterSpy.mock.calls.length;
       expect(conflicts.map((c) => c.id)).toEqual(['cmd.b', 'cmd.c']);
       expect(filterCallsDuringSelect).toBe(0);
+      expect(iteratorSpy).toHaveBeenCalledTimes(1);
       expect(selectKeybindingConflicts.toString()).not.toContain(
         'conflicts.push(',
       );
     } finally {
       filterSpy.mockRestore();
+      iteratorSpy.mockRestore();
     }
   });
 
@@ -411,10 +430,11 @@ describe('eventToCombo — E145 拒非法 hotkey 形态', () => {
     expect(eventToCombo(ev({ key: 'x', ctrlKey: true }))).toBe('mod+x');
   });
 
-  it('组合片段使用固定上限数组,不通过 parts.push 扩容', () => {
+  it('组合片段直接拼接,不分配 parts 数组/不通过 push 扩容', () => {
     expect(eventToCombo(ev({ key: 'x', ctrlKey: true, shiftKey: true }))).toBe(
       'mod+shift+x',
     );
+    expect(eventToCombo.toString()).not.toContain('new Array<string>(5)');
     expect(eventToCombo.toString()).not.toContain('parts.push(');
   });
 

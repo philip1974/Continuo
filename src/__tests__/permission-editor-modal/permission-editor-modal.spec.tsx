@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fireEvent, render, cleanup, waitFor } from '@testing-library/react';
 import {
   PermissionEditorModal,
@@ -41,9 +43,33 @@ describe('PermissionEditorModal — save helpers', () => {
     expect(splitPermissionDecisionsForSave.toString()).not.toContain('toGrant.push(');
     expect(splitPermissionDecisionsForSave.toString()).not.toContain('toDeny.push(');
   });
+
+  it('splitPermissionDecisionsForSave 空 decisions 复用稳定空 grant/deny', () => {
+    const a = splitPermissionDecisionsForSave(new Map());
+    const b = splitPermissionDecisionsForSave(new Map());
+
+    expect(a.toGrant).toEqual([]);
+    expect(a.toDeny).toEqual([]);
+    expect(a).toBe(b);
+    expect(a.toGrant).toBe(b.toGrant);
+    expect(a.toDeny).toBe(b.toDeny);
+  });
 });
 
 describe('PermissionEditorModal — 渲染条件', () => {
+  it('decisions state 使用 lazy initializer,避免每次 render eager new Map', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/plugins/permissions/PermissionEditorModal.tsx'),
+      'utf8',
+    );
+
+    expect(src).toContain('useState<Map<PermissionKey, boolean | null>>(');
+    expect(src).toContain('() => new Map()');
+    expect(src).not.toContain(
+      'useState<Map<PermissionKey, boolean | null>>(\n    new Map(),',
+    );
+  });
+
   it('pluginId=null → 不渲染', () => {
     const { container } = render(
       <PermissionEditorModal

@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fireEvent, render, cleanup, act } from '@testing-library/react';
 import {
   KeybindingsTabContent,
@@ -19,6 +21,35 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('KeybindingsTabContent — 列表', () => {
+  it('搜索框 placeholder label 复用,aria-label 与 placeholder 不重复查 catalog', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/plugins/settings/KeybindingsTabContent.tsx'),
+      'utf8',
+    );
+
+    expect(src).toContain('const searchPlaceholderLabel = t(');
+    expect(src).toContain('aria-label={searchPlaceholderLabel}');
+    expect(src).toContain('placeholder={searchPlaceholderLabel}');
+    expect(src).not.toContain("aria-label={t('keybindings.search_placeholder')}");
+    expect(src).not.toContain("placeholder={t('keybindings.search_placeholder')}");
+  });
+
+  it('行内固定 label 在 render 内复用,不随每个命令重复查 catalog', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/plugins/settings/KeybindingsTabContent.tsx'),
+      'utf8',
+    );
+
+    expect(src).toContain("const unboundLabel = t('keybindings.unbound');");
+    expect(src).toContain("const editHotkeyLabel = t('keybindings.edit_hotkey');");
+    expect(src).toContain('{unboundLabel}');
+    expect(src).toContain('title={editHotkeyLabel}');
+    expect(src).toContain('hotkey: cmd.hotkey ?? unboundLabel');
+    expect(src).not.toContain("{t('keybindings.unbound')}");
+    expect(src).not.toContain("title={t('keybindings.edit_hotkey')}");
+    expect(src).not.toContain("cmd.hotkey ?? t('keybindings.unbound')");
+  });
+
   it('一条命令都没注册 → 「暂无注册了快捷键的命令」', () => {
     const { container } = render(<KeybindingsTabContent />);
     expect(container.textContent).toContain('暂无注册了快捷键的命令');
@@ -105,7 +136,7 @@ describe('KeybindingsTabContent — 列表', () => {
 });
 
 describe('KeybindingsTabContent — 搜索', () => {
-  it('空 query 选择可见命令时不做 query lowercase', () => {
+  it('空 query 且全部命令可见时复用输入引用,不做 query lowercase', () => {
     const commands = [
       {
         cmd: {
@@ -125,14 +156,49 @@ describe('KeybindingsTabContent — 搜索', () => {
     const lowerSpy = vi.spyOn(String.prototype, 'toLowerCase');
 
     try {
-      expect(selectVisibleKeybindingCommands(commands, '')).toEqual(commands);
+      expect(selectVisibleKeybindingCommands(commands, '')).toBe(commands);
       expect(lowerSpy).not.toHaveBeenCalled();
     } finally {
       lowerSpy.mockRestore();
     }
   });
 
-  it('单个分组单个命令时不调用 sort', () => {
+  it('过滤掉无 hotkey/override 命令时返回新数组', () => {
+    const visible = {
+      cmd: {
+        id: 'a',
+        title: 'Save',
+        hotkey: 'mod+s',
+        fn: vi.fn(),
+      },
+      displayTitle: 'Save',
+      displayCategory: '',
+      effectiveHotkey: 'mod+s',
+      hotkeyParts: ['⌘', 'S'],
+      isOverridden: false,
+      searchHaystack: 'save a mod+s',
+    } satisfies DisplayCommand;
+    const hidden = {
+      cmd: {
+        id: 'b',
+        title: 'No Hotkey',
+        fn: vi.fn(),
+      },
+      displayTitle: 'No Hotkey',
+      displayCategory: '',
+      effectiveHotkey: undefined,
+      hotkeyParts: [],
+      isOverridden: false,
+      searchHaystack: 'no hotkey b',
+    } satisfies DisplayCommand;
+    const commands = [visible, hidden] satisfies readonly DisplayCommand[];
+
+    const selected = selectVisibleKeybindingCommands(commands, '');
+    expect(selected).not.toBe(commands);
+    expect(selected).toEqual([visible]);
+  });
+
+  it('单个分组单个命令时走快路径,不构造 Map 且不调用 sort', () => {
     const commands = [
       {
         cmd: {
@@ -149,15 +215,30 @@ describe('KeybindingsTabContent — 搜索', () => {
         searchHaystack: 'save editor a mod+s',
       },
     ] satisfies readonly DisplayCommand[];
+    const mapGetSpy = vi.spyOn(Map.prototype, 'get');
     const sortSpy = vi.spyOn(Array.prototype, 'sort');
 
     try {
       const buckets = groupByCategory(commands, '其他');
       expect(buckets).toHaveLength(1);
-      expect(buckets[0]?.items).toEqual(commands);
+      expect(buckets[0]?.items).toBe(commands);
+      expect(mapGetSpy).not.toHaveBeenCalled();
       expect(sortSpy).not.toHaveBeenCalled();
     } finally {
+      mapGetSpy.mockRestore();
       sortSpy.mockRestore();
+    }
+  });
+
+  it('空命令分组 → 稳定空 buckets,不构造 Map', () => {
+    const mapGetSpy = vi.spyOn(Map.prototype, 'get');
+
+    try {
+      expect(groupByCategory([], '其他')).toEqual([]);
+      expect(groupByCategory([], '其他')).toBe(groupByCategory([], 'Other'));
+      expect(mapGetSpy).not.toHaveBeenCalled();
+    } finally {
+      mapGetSpy.mockRestore();
     }
   });
 

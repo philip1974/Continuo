@@ -66,6 +66,12 @@
     "reason": "Shared localStorage-record helper intentionally writes localStorage JSON record (M21)."
   },
   {
+    "path": "src/plugins/storage/local-storage-record.ts",
+    "line": 122,
+    "pattern": "global(?:This)?\\.",
+    "reason": "Shared localStorage-record helper intentionally commits localStorage JSON record (M21)."
+  },
+  {
     "path": "src/plugins/types.ts",
     "line": 316,
     "pattern": "NodeJS\\.",

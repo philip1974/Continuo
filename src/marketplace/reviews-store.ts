@@ -24,7 +24,9 @@ export const useReviewsStore = create<ReviewsState>((set) => ({
   lastFetchedAt: null,
   refresh: async (force = false) => {
     const myGen = ++reviewsRefreshGen;
-    set({ loading: true, error: null });
+    set((s) =>
+      s.loading && s.error === null ? s : { loading: true, error: null },
+    );
     try {
       const byPid = await fetchAllReviews(force);
       if (myGen !== reviewsRefreshGen) return;

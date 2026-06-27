@@ -15,6 +15,7 @@ export interface StatusBarItemSpec {
 }
 
 type Listener = () => void;
+const EMPTY_STATUS_BAR_SNAPSHOT: readonly StatusBarItemSpec[] = [];
 
 // 边界(E50,E35/E36/E37/E40/E48/E49 兄弟 registry):register 接受插件 StatusBarItemSpec 无运行时
 // 校验。id 无长度上限,side 可为非 'left'/'right',priority 可 NaN/Infinity,render 未确认是函数。畸形
@@ -82,16 +83,32 @@ export class StatusBarRegistry {
   getBySide(side: 'left' | 'right'): readonly StatusBarItemSpec[] {
     const cached = side === 'left' ? this.cachedLeft : this.cachedRight;
     if (cached !== null) return cached;
+    if (this.items.size === 0) {
+      if (side === 'left') this.cachedLeft = EMPTY_STATUS_BAR_SNAPSHOT;
+      else this.cachedRight = EMPTY_STATUS_BAR_SNAPSHOT;
+      return EMPTY_STATUS_BAR_SNAPSHOT;
+    }
 
-    const items = new Array<StatusBarItemSpec>(this.items.size);
+    let items: StatusBarItemSpec[] | null = null;
     let count = 0;
+    let prevPriority = -Infinity;
+    let sorted = true;
     for (const item of this.items.values()) {
       if (item.side === side) {
+        if (items === null) items = new Array<StatusBarItemSpec>(this.items.size);
+        const priority = item.priority ?? 100;
+        if (priority < prevPriority) sorted = false;
+        prevPriority = priority;
         items[count++] = item;
       }
     }
+    if (items === null) {
+      if (side === 'left') this.cachedLeft = EMPTY_STATUS_BAR_SNAPSHOT;
+      else this.cachedRight = EMPTY_STATUS_BAR_SNAPSHOT;
+      return EMPTY_STATUS_BAR_SNAPSHOT;
+    }
     items.length = count;
-    if (count > 1) {
+    if (count > 1 && !sorted) {
       items.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
     }
     if (side === 'left') this.cachedLeft = items;
@@ -101,11 +118,30 @@ export class StatusBarRegistry {
 
   getAll(): readonly StatusBarItemSpec[] {
     if (this.cachedAll !== null) return this.cachedAll;
+    if (this.items.size === 0) {
+      this.cachedAll = EMPTY_STATUS_BAR_SNAPSHOT;
+      return EMPTY_STATUS_BAR_SNAPSHOT;
+    }
+    if (this.cachedLeft !== null && this.cachedLeft.length === this.items.size) {
+      this.cachedAll = this.cachedLeft;
+      return this.cachedAll;
+    }
+    if (this.cachedRight !== null && this.cachedRight.length === this.items.size) {
+      this.cachedAll = this.cachedRight;
+      return this.cachedAll;
+    }
 
     const items = new Array<StatusBarItemSpec>(this.items.size);
     let i = 0;
-    for (const item of this.items.values()) items[i++] = item;
-    if (items.length > 1) {
+    let prevPriority = -Infinity;
+    let sorted = true;
+    for (const item of this.items.values()) {
+      const priority = item.priority ?? 100;
+      if (priority < prevPriority) sorted = false;
+      prevPriority = priority;
+      items[i++] = item;
+    }
+    if (items.length > 1 && !sorted) {
       items.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
     }
     this.cachedAll = items;

@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { fireEvent, render, cleanup, act, waitFor } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 vi.mock('../../plugins/PluginManager', () => ({
   getUserPluginManager: vi.fn(),
@@ -92,6 +94,18 @@ afterEach(() => {
 });
 
 describe('PluginsTabContent — 贡献点统计', () => {
+  it('空贡献 samples / permissions fallback 使用稳定空数组', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/plugins/settings/PluginsTabContent.tsx'),
+      'utf-8',
+    );
+
+    expect(src).toContain('EMPTY_CONTRIBUTION_SAMPLES');
+    expect(src).toContain('EMPTY_DECLARED_PERMISSIONS');
+    expect(src).not.toContain('samples: []');
+    expect(src).not.toContain('permEditTarget?.manifest.permissions ?? []');
+  });
+
   it('列表行 className 不通过数组 join 重建', () => {
     const joinSpy = vi.spyOn(Array.prototype, 'join');
 
@@ -125,6 +139,13 @@ describe('PluginsTabContent — 贡献点统计', () => {
     }
   });
 
+  it('空贡献点 samples → 稳定空数组', () => {
+    expect(collectContributionSamples([], 'id' as never)).toEqual([]);
+    expect(collectContributionSamples([], 'id' as never)).toBe(
+      collectContributionSamples([], 'id' as never),
+    );
+  });
+
   it('状态栏左右贡献预分配合并,不通过数组 spread', () => {
     const left = [{ id: 'left' }];
     const right = [{ id: 'right-a' }, { id: 'right-b' }];
@@ -135,6 +156,19 @@ describe('PluginsTabContent — 贡献点统计', () => {
       'right-b',
     ]);
     expect(collectStatusBarItems.toString()).not.toContain('...');
+  });
+
+  it('状态栏左右都为空 → 稳定空数组', () => {
+    expect(collectStatusBarItems([], [])).toEqual([]);
+    expect(collectStatusBarItems([], [])).toBe(collectStatusBarItems([], []));
+  });
+
+  it('状态栏仅单侧有贡献 → 复用该侧快照,不分配合并数组', () => {
+    const left = [{ id: 'left' }];
+    const right = [{ id: 'right' }];
+
+    expect(collectStatusBarItems(left, [])).toBe(left);
+    expect(collectStatusBarItems([], right)).toBe(right);
   });
 
   it('插件存在性检查单趟扫描,不调用 plugins.some', () => {

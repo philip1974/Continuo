@@ -48,6 +48,9 @@ function SettingsGearIcon({ size }: { size: number }) {
   );
 }
 
+const EXPLORER_ICON = <Folder width={ICON_SIZE} height={ICON_SIZE} />;
+const SETTINGS_ICON = <SettingsGearIcon size={ICON_SIZE} />;
+
 function useRibbonActions(): readonly RibbonActionSpec[] {
   return useRegistry(coApp.ribbon);
 }
@@ -60,35 +63,35 @@ export function IconSidebar() {
   // Marketplace 更新数 → Settings 齿轮右上角红圈
   const updateCount = useUpdateStore((s) => s.available.length);
 
-  const topItems: IconBarItemConfig[] = [
-    {
-      id: 'explorer',
-      label: sidebarOpen
-        ? t('shell.iconbar.hide_explorer')
-        : t('shell.iconbar.show_explorer'),
-      node: <Folder width={ICON_SIZE} height={ICON_SIZE} />,
-      onClick: toggleSidebar,
-      active: sidebarOpen,
-    },
-  ];
+  const explorerItem: IconBarItemConfig = {
+    id: 'explorer',
+    label: sidebarOpen
+      ? t('shell.iconbar.hide_explorer')
+      : t('shell.iconbar.show_explorer'),
+    node: EXPLORER_ICON,
+    onClick: toggleSidebar,
+    active: sidebarOpen,
+  };
+  const settingsUpdateTooltip =
+    updateCount > 0
+      ? t('shell.iconbar.updates_tooltip', { count: updateCount })
+      : '';
 
-  const bottomItems: IconBarItemConfig[] = [
-    {
-      id: 'settings',
-      label: t('shell.iconbar.settings'),
-      node: <SettingsGearIcon size={ICON_SIZE} />,
-      onClick: () => toggleSettingsPanel(),
-    },
-  ];
+  const settingsItem: IconBarItemConfig = {
+    id: 'settings',
+    label: t('shell.iconbar.settings'),
+    node: SETTINGS_ICON,
+    onClick: toggleSettingsPanel,
+  };
 
   const renderItem = (item: IconBarItemConfig, describedById?: string) => (
     <NavRailButton
       key={item.id}
       title={item.label}
       // a11y(A33,A32 调用点传播):只有声明了状态的真 toggle(如 explorer=sidebarOpen)才传
-      // active → 暴露 aria-pressed;未声明状态的命令按钮(Settings 齿轮)不传,避免 `?? false`
-      // 强转出 aria-pressed="false" 被 AT 误读成切换按钮。
-      {...(item.active === undefined ? {} : { active: item.active })}
+      // active → 暴露 aria-pressed;undefined 会由 NavRailButton 视作未提供,避免 `?? false`
+      // 强转出 aria-pressed="false" 被 AT 误读成切换按钮,且不再为 fallback 分配对象。
+      active={item.active}
       disabled={item.disabled ?? false}
       onClick={item.onClick}
       // a11y(A34):更新角标 aria-label 在独立 span 上,经 aria-describedby 关联到按钮,聚焦时读出。
@@ -101,7 +104,7 @@ export function IconSidebar() {
   return (
     <aside className="flex w-12 shrink-0 flex-col items-center justify-between border-r border-line bg-panel py-2">
       <div className="flex flex-col items-center gap-1">
-        {topItems.map((item) => renderItem(item))}
+        {renderItem(explorerItem)}
         {ribbonActions.length > 0 && (
           <span
             className="my-1 h-px w-6 bg-line"
@@ -131,22 +134,20 @@ export function IconSidebar() {
         ))}
       </div>
       <div className="flex flex-col items-center gap-1">
-        {bottomItems.map((item) =>
-          item.id === 'settings' && updateCount > 0 ? (
-            <div key={item.id} className="relative">
-              {renderItem(item, SETTINGS_UPDATE_BADGE_ID)}
-              <span
-                id={SETTINGS_UPDATE_BADGE_ID}
-                className="pointer-events-none absolute right-0.5 top-0.5 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-error px-1 text-[9px] font-medium leading-none text-on-error"
-                title={t('shell.iconbar.updates_tooltip', { count: updateCount })}
-                aria-label={t('shell.iconbar.updates_tooltip', { count: updateCount })}
-              >
-                {updateCount > 9 ? '9+' : updateCount}
-              </span>
-            </div>
-          ) : (
-            renderItem(item)
-          ),
+        {updateCount > 0 ? (
+          <div key={settingsItem.id} className="relative">
+            {renderItem(settingsItem, SETTINGS_UPDATE_BADGE_ID)}
+            <span
+              id={SETTINGS_UPDATE_BADGE_ID}
+              className="pointer-events-none absolute right-0.5 top-0.5 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-error px-1 text-[9px] font-medium leading-none text-on-error"
+              title={settingsUpdateTooltip}
+              aria-label={settingsUpdateTooltip}
+            >
+              {updateCount > 9 ? '9+' : updateCount}
+            </span>
+          </div>
+        ) : (
+          renderItem(settingsItem)
         )}
         <AccountChip />
       </div>

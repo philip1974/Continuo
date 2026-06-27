@@ -36,6 +36,8 @@ type Listener = () => void;
 // filterVisible 的单项 when try/catch 隔离保留)。
 const EA_ID_MAX = 256;
 const EA_LABEL_MAX = 512;
+const EMPTY_EDITOR_ACTION_SNAPSHOT: readonly EditorActionSpec[] = [];
+const EMPTY_VISIBLE_EDITOR_ACTIONS: EditorActionSpec[] = [];
 
 function validateEditorActionSpec(spec: EditorActionSpec): void {
   // 边界(E273,E271 registry 族):先校验 spec 是对象,否则读 spec.id/字段对 null/undefined 抛 TypeError。
@@ -103,11 +105,22 @@ export class EditorActionRegistry {
 
   getAll(): readonly EditorActionSpec[] {
     if (this.cachedAll !== null) return this.cachedAll;
+    if (this.items.size === 0) {
+      this.cachedAll = EMPTY_EDITOR_ACTION_SNAPSHOT;
+      return EMPTY_EDITOR_ACTION_SNAPSHOT;
+    }
 
     const items = new Array<EditorActionSpec>(this.items.size);
     let i = 0;
-    for (const item of this.items.values()) items[i++] = item;
-    if (items.length > 1) {
+    let prevPriority = -Infinity;
+    let sorted = true;
+    for (const item of this.items.values()) {
+      const priority = item.priority ?? 100;
+      if (priority < prevPriority) sorted = false;
+      prevPriority = priority;
+      items[i++] = item;
+    }
+    if (items.length > 1 && !sorted) {
       items.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
     }
     this.cachedAll = items;
@@ -138,27 +151,41 @@ export class EditorActionRegistry {
   }
 }
 
+/** 按 ctx 判断单个 action 是否可见;when 抛错视为 false + warn. */
+export function isEditorActionVisible(
+  action: EditorActionSpec,
+  ctx: EditorActionContext,
+): boolean {
+  if (!action.when) return true;
+  try {
+    return action.when(ctx);
+  } catch (err) {
+    console.warn(`[editor-action] when fn for "${action.id}" threw`, err);
+    return false;
+  }
+}
+
 /** 按 ctx 过滤可见 actions;when 抛错视为 false + warn. */
 export function filterVisible(
   actions: readonly EditorActionSpec[],
   ctx: EditorActionContext,
 ): EditorActionSpec[] {
-  const out = new Array<EditorActionSpec>(actions.length);
+  let out: EditorActionSpec[] | null = null;
   let count = 0;
-  for (const a of actions) {
-    if (!a.when) {
-      out[count++] = a;
+  for (let i = 0; i < actions.length; i++) {
+    const a = actions[i]!;
+    const visible = isEditorActionVisible(a, ctx);
+    if (!visible) {
+      if (out === null) {
+        out = new Array<EditorActionSpec>(actions.length);
+        for (let j = 0; j < i; j++) out[j] = actions[j]!;
+        count = i;
+      }
       continue;
     }
-    let visible = false;
-    try {
-      visible = a.when(ctx);
-    } catch (err) {
-      console.warn(`[editor-action] when fn for "${a.id}" threw`, err);
-      visible = false;
-    }
-    if (visible) out[count++] = a;
+    if (out !== null) out[count++] = a;
   }
+  if (out === null) return actions as EditorActionSpec[];
   out.length = count;
-  return out;
+  return count === 0 ? EMPTY_VISIBLE_EDITOR_ACTIONS : out;
 }

@@ -15,6 +15,20 @@ describe('SettingTabRegistry', () => {
     expect(r.getAll()).toEqual([]);
   });
 
+  it('空 registry 的 getAll 复用稳定空快照', () => {
+    const r = new SettingTabRegistry();
+    const other = new SettingTabRegistry();
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      expect(r.getAll()).toEqual([]);
+      expect(r.getAll()).toBe(other.getAll());
+      expect(sortSpy).not.toHaveBeenCalled();
+    } finally {
+      sortSpy.mockRestore();
+    }
+  });
+
   // race(R55,R50-R54 同族):SettingsPanel 渲染前按 active id 从 live registry 复查,避免调
   // useRegistry 快照滞后期内已 unregister 的 tab 的 render。get(id) 提供该 live 查找。
   describe('get(id) live 查找(R55)', () => {
@@ -46,6 +60,21 @@ describe('SettingTabRegistry', () => {
     expect(r.getAll().map((x) => x.id)).toEqual(['top', 'def', 'bot']);
   });
 
+  it('已按 priority 注册时复用构建顺序,不调用 sort', () => {
+    const r = new SettingTabRegistry();
+    r.register({ id: 'top', title: 'T', render: noopRender, priority: 1 });
+    r.register({ id: 'mid', title: 'M', render: noopRender, priority: 100 });
+    r.register({ id: 'bot', title: 'B', render: noopRender, priority: 200 });
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      expect(r.getAll().map((x) => x.id)).toEqual(['top', 'mid', 'bot']);
+      expect(sortSpy).not.toHaveBeenCalled();
+    } finally {
+      sortSpy.mockRestore();
+    }
+  });
+
   it('重复 getAll 复用排序结果,register/dispose 后失效重建', () => {
     const r = new SettingTabRegistry();
     const d = r.register({ id: 'def', title: 'D', render: noopRender });
@@ -64,7 +93,7 @@ describe('SettingTabRegistry', () => {
 
       d.dispose();
       expect(r.getAll().map((x) => x.id)).toEqual(['top', 'bot']);
-      expect(sortSpy).toHaveBeenCalledTimes(3);
+      expect(sortSpy).toHaveBeenCalledTimes(2);
       expect(SettingTabRegistry.prototype.getAll.toString()).not.toContain(
         'items.push(',
       );

@@ -27,6 +27,7 @@ const INDEX_URL =
 const MAX_INDEX_BYTES = 4 * 1024 * 1024; // index.json 响应体上限
 const MAX_MANIFEST_BYTES = 1024 * 1024; // manifest.json 响应体上限(同 main MANIFEST_MAX_BYTES)
 export const MAX_INDEX_ENTRIES = 4096; // index 顶层数组条目硬上限
+const EMPTY_MARKETPLACE_ENTRIES: MarketplaceEntry[] = [];
 
 async function readJsonCapped(r: Response, maxBytes: number): Promise<unknown> {
   // 边界(E124):流式按真实字节硬截断(Content-Length 可缺失/伪造,text.length 是 char 数非字节)。
@@ -43,12 +44,20 @@ export function selectValidMarketplaceEntries(
   maxEntries: number = entries.length,
 ): MarketplaceEntry[] {
   const count = Math.min(entries.length, maxEntries);
+  if (count <= 0) return EMPTY_MARKETPLACE_ENTRIES;
+  if (entries.length === 1 && count === 1) {
+    const entry = entries[0];
+    return isValidMarketplaceEntry(entry)
+      ? (entries as MarketplaceEntry[])
+      : EMPTY_MARKETPLACE_ENTRIES;
+  }
   const out = new Array<MarketplaceEntry>(count);
   let outCount = 0;
   for (let i = 0; i < count; i++) {
     const entry = entries[i];
     if (isValidMarketplaceEntry(entry)) out[outCount++] = entry;
   }
+  if (outCount === 0) return EMPTY_MARKETPLACE_ENTRIES;
   out.length = outCount;
   return out;
 }

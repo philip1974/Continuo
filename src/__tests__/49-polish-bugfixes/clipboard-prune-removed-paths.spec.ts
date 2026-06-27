@@ -13,6 +13,8 @@
 // 修复:store 加 prune(removedPaths)(精确等于或目录前缀匹配,对齐 editor.store
 // getStateAfterRemovingPath),并在 onTrash/onRename/onDropItems/root-drop 四个失效点
 // 调用。本 spec 锁 prune 的语义;四个调用点接入由 FolderTree 集成保证。
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   pruneClipboardPaths,
@@ -24,6 +26,24 @@ beforeEach(() => {
 });
 
 describe('49 第八 session · clipboard prune 剪除失效源路径', () => {
+  it('set 空路径复用稳定空数组,非空仍复制隔离调用方数组', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/panels/Explorer/clipboard-store.ts'),
+      'utf-8',
+    );
+    expect(src).not.toContain('paths: [...paths]');
+
+    useExplorerClipboardStore.getState().set('copy', []);
+    const empty = useExplorerClipboardStore.getState().paths;
+    useExplorerClipboardStore.getState().set('cut', []);
+    expect(useExplorerClipboardStore.getState().paths).toBe(empty);
+
+    const paths = ['/ws/a.ts'];
+    useExplorerClipboardStore.getState().set('copy', paths);
+    paths[0] = '/ws/changed.ts';
+    expect(useExplorerClipboardStore.getState().paths).toEqual(['/ws/a.ts']);
+  });
+
   it('pruneClipboardPaths 按需分配,不通过 filter/some 重建列表', () => {
     const paths = ['/ws/keep-a.ts', '/ws/remove/a.ts', '/ws/keep-b.ts'];
     const filterSpy = vi.spyOn(Array.prototype, 'filter');
@@ -37,10 +57,19 @@ describe('49 第八 session · clipboard prune 剪除失效源路径', () => {
       expect([...remaining]).toEqual(['/ws/keep-a.ts', '/ws/keep-b.ts']);
       expect(filterCallsDuringPrune).toBe(0);
       expect(someCallsDuringPrune).toBe(0);
+      expect(pruneClipboardPaths.toString()).not.toContain('remaining.push(');
     } finally {
       filterSpy.mockRestore();
       someSpy.mockRestore();
     }
+  });
+
+  it('剪空路径时复用稳定空列表', () => {
+    const a = pruneClipboardPaths(['/ws/a.ts'], ['/ws/a.ts']);
+    const b = pruneClipboardPaths(['/ws/b.ts'], ['/ws/b.ts']);
+
+    expect([...a]).toEqual([]);
+    expect(a).toBe(b);
   });
 
   it('删除被 cut 的文件 → 从剪贴板剪除', () => {
@@ -57,6 +86,8 @@ describe('49 第八 session · clipboard prune 剪除失效源路径', () => {
     const s = useExplorerClipboardStore.getState();
     expect(s.kind).toBeNull();
     expect([...s.paths]).toEqual([]);
+    useExplorerClipboardStore.getState().clear();
+    expect(useExplorerClipboardStore.getState().paths).toBe(s.paths);
   });
 
   it('删除目录 → 剪除其下所有子路径(目录前缀匹配)', () => {
@@ -92,6 +123,19 @@ describe('49 第八 session · clipboard prune 剪除失效源路径', () => {
     const before = useExplorerClipboardStore.getState();
     useExplorerClipboardStore.getState().prune(['/ws/a.ts']);
     expect(useExplorerClipboardStore.getState()).toBe(before);
+  });
+
+  it('空剪贴板 clear → no-op,不通知订阅者', () => {
+    const listener = vi.fn();
+    const unsubscribe = useExplorerClipboardStore.subscribe(listener);
+    try {
+      const before = useExplorerClipboardStore.getState();
+      useExplorerClipboardStore.getState().clear();
+      expect(useExplorerClipboardStore.getState()).toBe(before);
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
   });
 
   it('copy 类型同样被剪除(改名/移动后旧路径失效)', () => {

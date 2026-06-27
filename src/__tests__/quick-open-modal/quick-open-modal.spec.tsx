@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fireEvent, render, cleanup, act, waitFor } from '@testing-library/react';
 
 vi.mock('../../plugins/quick-open/walk-files', () => ({
@@ -91,6 +93,27 @@ afterEach(() => {
 });
 
 describe('QuickOpenModal — 渲染态', () => {
+  it('placeholder 快捷键 label 预计算,不在 render 中重复 detectPlatform', () => {
+    const src = readFileSync(join(process.cwd(), 'src/plugins/quick-open/QuickOpenModal.tsx'), 'utf8');
+
+    expect(src).toContain('const QUICK_OPEN_SHORTCUT_LABEL = formatHotkey');
+    expect(src).toContain('shortcut: QUICK_OPEN_SHORTCUT_LABEL');
+    expect(src).not.toContain("shortcut: formatHotkey('mod+shift+p', detectPlatform())");
+  });
+
+  it('输入框 aria 与 placeholder label 在 body render 内复用', () => {
+    const src = readFileSync(join(process.cwd(), 'src/plugins/quick-open/QuickOpenModal.tsx'), 'utf8');
+
+    expect(src).toContain('const inputAriaLabel = t(');
+    expect(src).toContain('const placeholderLabel = t(');
+    expect(src).toContain('aria-label={inputAriaLabel}');
+    expect(src).toContain('placeholder={placeholderLabel}');
+    expect(
+      src.match(/aria-label=\{t\('quick_open\.input_aria'\)\}/g)?.length ?? 0,
+    ).toBe(1);
+    expect(src).not.toContain("placeholder={t('quick_open.placeholder'");
+  });
+
   it('行 className 不通过数组 join 重建', () => {
     const joinSpy = vi.spyOn(Array.prototype, 'join');
 

@@ -163,6 +163,12 @@ describe('formatHotkeyParts', () => {
     expect(formatHotkeyParts(raw, platform)).toEqual(expected);
   });
 
+  it('空结果复用稳定空 parts 数组', () => {
+    expect(formatHotkeyParts('', 'mac')).toBe(formatHotkeyParts('', 'other'));
+    expect(formatHotkeyParts('++', 'mac')).toEqual([]);
+    expect(formatHotkeyParts('++', 'mac')).toBe(formatHotkeyParts('', 'mac'));
+  });
+
   it('formatHotkey 是 formatHotkeyParts 的字符串 join 版', () => {
     const parts = formatHotkeyParts('mod+shift+h', 'mac');
     expect(parts.join('')).toBe(formatHotkey('mod+shift+h', 'mac'));

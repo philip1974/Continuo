@@ -1,7 +1,10 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { render, fireEvent, cleanup } from '@testing-library/react';
 import {
   Button,
+  Card,
   IconButton,
   KeyCap,
   MenuItem,
@@ -12,6 +15,24 @@ import {
 } from '../../design';
 
 afterEach(() => cleanup());
+
+describe('Card', () => {
+  it('tone 直接写入 data-tone,未传时不输出且不通过条件对象 spread 分配', () => {
+    const neutral = render(<Card>Neutral</Card>);
+    const neutralCard = neutral.container.querySelector('.wm-card')!;
+    expect(neutralCard.hasAttribute('data-tone')).toBe(false);
+    cleanup();
+
+    const toned = render(<Card tone="assistant">Assistant</Card>);
+    expect(toned.container.querySelector('.wm-card')!.dataset.tone).toBe(
+      'assistant',
+    );
+
+    const src = readFileSync(join(process.cwd(), 'src/design/Card.tsx'), 'utf8');
+    expect(src).toContain('data-tone={tone ?? undefined}');
+    expect(src).not.toContain("...(tone != null ? { 'data-tone': tone } : {})");
+  });
+});
 
 describe('Button data-attr 契约', () => {
   it('默认 variant=primary size=md', () => {
@@ -306,6 +327,12 @@ describe('TabNav + TabNavItem', () => {
     expect(descId).toBeTruthy();
     const desc = container.querySelector(`[id="${descId}"]`)!;
     expect(desc.getAttribute('aria-label')).toBe('未保存的更改');
+
+    const src = readFileSync(join(process.cwd(), 'src/design/TabNav.tsx'), 'utf8');
+    expect(src).toContain('{...dataAttrs}');
+    expect(src).not.toContain('{...(dataAttrs ?? {})}');
+    expect(src).toContain('aria-hidden={showDirtyDesc ? undefined : true}');
+    expect(src).not.toContain('...(showDirtyDesc');
   });
 
   it('a11y · clean tab 不暴露 aria-describedby;无 dirtyLabel 的 dirty tab 圆点仍 aria-hidden', () => {

@@ -70,6 +70,9 @@ export interface SearchableSettingItem {
   readonly haystack: string;
 }
 
+const EMPTY_SEARCHABLE_SETTING_ITEMS: SearchableSettingItem[] = [];
+const EMPTY_MATCHED_SETTING_ITEMS: readonly SettingItemSpec[] = [];
+
 export function buildSettingSearchHaystack(item: SettingItemSpec): string {
   const displayTitle = tWithFallback(item.titleKey, item.title);
   const displayDescription = tWithFallback(
@@ -84,6 +87,7 @@ export function buildSettingSearchHaystack(item: SettingItemSpec): string {
 export function buildSearchableSettingItems(
   items: readonly SettingItemSpec[],
 ): SearchableSettingItem[] {
+  if (items.length === 0) return EMPTY_SEARCHABLE_SETTING_ITEMS;
   const out = new Array<SearchableSettingItem>(items.length);
   for (let i = 0; i < items.length; i++) {
     const item = items[i]!;
@@ -109,16 +113,37 @@ interface SearchBucket {
   readonly items: readonly SettingItemSpec[];
 }
 
+const EMPTY_SEARCH_BUCKETS: readonly SearchBucket[] = [];
+
 /** 把搜索结果按 category 分组，label 走 i18n catalog（topic-20）。 */
 export function groupSearchResults(
   items: readonly SettingItemSpec[],
 ): readonly SearchBucket[] {
+  if (items.length === 0) return EMPTY_SEARCH_BUCKETS;
   if (items.length === 1) {
     const item = items[0]!;
     return [
       {
         category: item.category,
         label: tWithFallback(CATEGORY_TITLE_KEYS[item.category], item.category),
+        items,
+      },
+    ];
+  }
+
+  const firstCategory = items[0]!.category;
+  let allSameCategory = true;
+  for (let i = 1; i < items.length; i++) {
+    if (items[i]!.category !== firstCategory) {
+      allSameCategory = false;
+      break;
+    }
+  }
+  if (allSameCategory) {
+    return [
+      {
+        category: firstCategory,
+        label: tWithFallback(CATEGORY_TITLE_KEYS[firstCategory], firstCategory),
         items,
       },
     ];
@@ -150,6 +175,7 @@ export function selectMatchedSettingItems(
   searchable: readonly SearchableSettingItem[],
   trimmed: string,
 ): readonly SettingItemSpec[] {
+  if (searchable.length === 0) return EMPTY_MATCHED_SETTING_ITEMS;
   const ql = trimmed.toLowerCase();
   const matched = new Array<SettingItemSpec>(searchable.length);
   let count = 0;
@@ -157,7 +183,7 @@ export function selectMatchedSettingItems(
     if (s.haystack.includes(ql)) matched[count++] = s.item;
   }
   matched.length = count;
-  return matched;
+  return count === 0 ? EMPTY_MATCHED_SETTING_ITEMS : matched;
 }
 
 export function SettingsPanel({
@@ -180,6 +206,7 @@ export function SettingsPanel({
 
   const [query, setQuery] = useState('');
   const trimmed = query.trim();
+  const searchPlaceholderLabel = t('settings.panel.search_placeholder');
   // 搜索模式仅由 query 判定(打磨 R49):普通浏览设置 tab 时不订阅 itemRegistry、
   // 不构建搜索 haystack —— 这些都搬进仅搜索模式才挂载的 SettingsSearchResults。
   const inSearch = trimmed.length > 0;
@@ -190,8 +217,8 @@ export function SettingsPanel({
         <Input
           size="sm"
           // a11y(A5,A1 同族):placeholder 无参数 → 复用作 aria-label 给屏幕阅读器可访问名。
-          aria-label={t('settings.panel.search_placeholder')}
-          placeholder={t('settings.panel.search_placeholder')}
+          aria-label={searchPlaceholderLabel}
+          placeholder={searchPlaceholderLabel}
           value={query}
           onChange={(e) =>
             setQuery(clampSearchQuery((e.target as HTMLInputElement).value))

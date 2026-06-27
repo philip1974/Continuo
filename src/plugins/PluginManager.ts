@@ -4,7 +4,12 @@
 import { Plugin } from './Plugin';
 import { loadPluginModule } from './loader';
 import { isVersionCompatible, parseManifest } from './manifest';
-import { ensureAuthorized, type PermissionStore, type PromptFn } from './permissions';
+import {
+  ensureAuthorized,
+  type PermissionKey,
+  type PermissionStore,
+  type PromptFn,
+} from './permissions';
 import { createScopedApp } from './scoped-app';
 import type { CoApp, PluginManifest } from './types';
 import { errorMessage } from '../../electron/shared/error-message';
@@ -102,7 +107,12 @@ export interface PluginListItem {
   readonly warning?: PluginWarning;
 }
 
+const EMPTY_ACTIVATION_ORDER: string[] = [];
+const EMPTY_PLUGIN_LIST: readonly PluginListItem[] = [];
+const EMPTY_PLUGIN_PERMISSIONS: readonly PermissionKey[] = [];
+
 export function removeActivationOrderId(order: string[], id: string): string[] {
+  if (order.length === 0) return EMPTY_ACTIVATION_ORDER;
   let next: string[] | null = null;
   let count = 0;
   for (let i = 0; i < order.length; i++) {
@@ -119,6 +129,7 @@ export function removeActivationOrderId(order: string[], id: string): string[] {
     if (next !== null) next[count++] = activeId;
   }
   if (next === null) return order;
+  if (count === 0) return EMPTY_ACTIVATION_ORDER;
   next.length = count;
   return next;
 }
@@ -142,6 +153,7 @@ export function findPluginDirByManifestId(
 
 export class PluginManager {
   private entries = new Map<string, PluginEntry>();
+  private cachedList: readonly PluginListItem[] | null = null;
   /** 已激活顺序(用于 shutdown LIFO). */
   private activationOrder: string[] = [];
   /**
@@ -213,6 +225,7 @@ export class PluginManager {
         enabledIntent: intended, // race(R77):持久启用意图,reload 据此重激活
       };
       this.entries.set(manifest.id, entry);
+      this.invalidateListCache();
 
       if (entry.status === 'enabled') {
         // init 的激活也必须走生命周期锁:activateEntry 在 ensureAuthorized 处 await
@@ -281,6 +294,7 @@ export class PluginManager {
     entry.error = undefined;
     entry.warning = undefined;
     entry.enabledIntent = false; // race(R77):用户禁用 → 清持久启用意图(reload 不再重激活)
+    this.invalidateListCache();
     this.activationOrder = removeActivationOrderId(this.activationOrder, id);
 
     await this.host.mutateEnabledId(id, false);
@@ -328,6 +342,7 @@ export class PluginManager {
       entry.status = 'failed';
       entry.error = { code: parsed.code, message: parsed.message };
       entry.warning = undefined; // 失败转换清陈旧 partial-grant warning(否则 failed 行同显 error+旧 warning)
+      this.invalidateListCache();
       return;
     }
 
@@ -338,6 +353,7 @@ export class PluginManager {
     // reload→disabled 不会走 activateEntry(只 wasEnabled 才走),warning 须在此清;
     // reload→enabled 会走 activateEntry(311 清 + 342 按本次授权重设),此处清亦无害。
     entry.warning = undefined;
+    this.invalidateListCache();
 
     if (wasEnabled) {
       await this.activateEntry(entry);
@@ -374,10 +390,13 @@ export class PluginManager {
     }
     await this.host.removePluginDir(id);
     this.entries.delete(id);
+    this.invalidateListCache();
   }
 
   /** 列出所有已发现插件状态. */
   listAll(): readonly PluginListItem[] {
+    if (this.cachedList !== null) return this.cachedList;
+    if (this.entries.size === 0) return EMPTY_PLUGIN_LIST;
     const list = new Array<PluginListItem>(this.entries.size);
     let i = 0;
     for (const e of this.entries.values()) {
@@ -389,6 +408,7 @@ export class PluginManager {
         warning: e.warning,
       };
     }
+    this.cachedList = list;
     return list;
   }
 
@@ -398,6 +418,7 @@ export class PluginManager {
     // 先清前次的 error / warning,确保最终状态干净反映本次激活
     entry.error = undefined;
     entry.warning = undefined;
+    this.invalidateListCache();
 
     // v3.4 权限门:manifest 声明了 permissions 且 host 配了 store + prompt
     // 才阻塞;否则放行(向后兼容)。
@@ -405,7 +426,7 @@ export class PluginManager {
     // 代码在 import() 时即执行,若放到 load 之后,用户点"拒绝"时恶意顶层代码
     // 已运行过一次(可读 DOM / 调未 gate 的 IPC / 外带数据)。manifest 在扫描期
     // 已读到,权限判定无需先加载模块。
-    const requested = entry.manifest.permissions ?? [];
+    const requested = entry.manifest.permissions ?? EMPTY_PLUGIN_PERMISSIONS;
     if (
       requested.length > 0 &&
       this.host.permissionStore &&
@@ -427,6 +448,7 @@ export class PluginManager {
           code: 'PERMISSION_DENIED',
           message: auth.deniedPerms.join(', '),
         };
+        this.invalidateListCache();
         return;
       }
       // v5 Phase 2:partial grant → 设 warning,plugin 仍激活
@@ -439,6 +461,7 @@ export class PluginManager {
             denied: auth.denied.join(', '),
           },
         };
+        this.invalidateListCache();
       }
     }
 
@@ -453,6 +476,7 @@ export class PluginManager {
       );
       entry.status = 'failed';
       entry.error = { code: loaded.code, message: loaded.message };
+      this.invalidateListCache();
       return;
     }
 
@@ -493,14 +517,20 @@ export class PluginManager {
       entry.status = 'failed';
       entry.error = { code: 'EXCEPTION', message: errorMessage(err) };
       await this.revokePluginFsToken(entry);
+      this.invalidateListCache();
       return;
     }
 
     entry.instance = instance;
     entry.status = 'enabled';
+    this.invalidateListCache();
     // entry.error / warning 已在方法开头清(成功路径不再重复 reset 错误,
     // warning 若 partial grant 已在权限段设了)
     this.activationOrder.push(entry.id);
+  }
+
+  private invalidateListCache(): void {
+    this.cachedList = null;
   }
 
   private async deactivateEntry(

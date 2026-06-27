@@ -50,6 +50,7 @@ interface PromptState {
 // 弹窗会滞留为 currentFsScope,把后续排队的 scope 请求挡在它后面永不显示(插件侧均超时)。
 // 每个 request 挂同 TTL 本地超时:过期且仍 pending → 按 deny 收口(resolveFsScope 会推进队列)。
 const FS_SCOPE_TTL_MS = 300_000;
+const EMPTY_FS_SCOPE_QUEUE: string[] = [];
 const fsScopeTimers = new Map<string, ReturnType<typeof setTimeout>>();
 function clearFsScopeTimer(requestId: string): void {
   const timer = fsScopeTimers.get(requestId);
@@ -72,6 +73,7 @@ export function removeFsScopeQueueId(
   queue: string[],
   id: string,
 ): string[] {
+  if (queue.length === 0) return EMPTY_FS_SCOPE_QUEUE;
   let next: string[] | null = null;
   let count = 0;
   for (let i = 0; i < queue.length; i++) {
@@ -88,7 +90,10 @@ export function removeFsScopeQueueId(
     }
     if (next !== null) next[count++] = queuedId;
   }
-  if (next !== null) next.length = count;
+  if (next !== null) {
+    if (count === 0) return EMPTY_FS_SCOPE_QUEUE;
+    next.length = count;
+  }
   return next ?? queue;
 }
 
@@ -103,7 +108,7 @@ export const usePermissionPromptStore = create<PromptState>((set, get) => ({
   pending: null,
   resolve: null,
   fsScopePending: {},
-  fsScopeQueue: [],
+  fsScopeQueue: EMPTY_FS_SCOPE_QUEUE,
   currentFsScope: null,
 
   request: (pluginId, perms) => {
@@ -191,10 +196,15 @@ function resolveFsScope(
   const nextPending = { ...state.fsScopePending };
   delete nextPending[id];
   const nextQueue = removeFsScopeQueueId(state.fsScopeQueue, id);
+  const nextCurrentId = nextQueue[0];
+  const current =
+    state.currentFsScope?.requestId === nextCurrentId
+      ? state.currentFsScope
+      : publicFsScope(nextPending[nextCurrentId!]);
   set({
     fsScopePending: nextPending,
     fsScopeQueue: nextQueue,
-    currentFsScope: publicFsScope(nextPending[nextQueue[0]!]),
+    currentFsScope: current,
   });
   entry.resolve(decision);
 }

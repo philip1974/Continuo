@@ -18,6 +18,8 @@ export interface RegistryLike<T> extends SubscribableLike {
   getAll(): readonly T[];
 }
 
+const NOOP_UNSUBSCRIBE = (): void => {};
+
 export function useRegistry<T>(
   reg: RegistryLike<T>,
   selector?: () => readonly T[],
@@ -63,7 +65,7 @@ export function subscribeAll(
   sources: ReadonlyArray<SubscribableLike>,
   listener: () => void,
 ): () => void {
-  if (sources.length === 0) return () => {};
+  if (sources.length === 0) return NOOP_UNSUBSCRIBE;
   if (sources.length === 1) return sources[0]!.subscribe(listener);
 
   const unsubs = new Array<() => void>(sources.length);

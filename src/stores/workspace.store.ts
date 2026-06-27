@@ -92,10 +92,12 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
     // 切换/关闭 root 时同步清掉 root 外的 file tab,避免旧路径残留误导
     useEditorStore.getState().closeTabsOutsideRoot(normalized);
     set((s) => {
-      if (normalized === null) return { root: null };
+      if (normalized === null) return s.root === null ? s : { root: null };
+      const recentRoots = buildRecentRoots(s.recentRoots, normalized);
+      if (s.root === normalized && recentRoots === s.recentRoots) return s;
       return {
         root: normalized,
-        recentRoots: buildRecentRoots(s.recentRoots, normalized),
+        recentRoots,
       };
     });
   },

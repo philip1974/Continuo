@@ -1,6 +1,7 @@
 // 无 tab 时的占位(UI polish)。
 // 对齐 demo(industrial dark):大圆形 document icon + 标题 + KeyCap 副提示。
 
+import { useMemo } from 'react';
 import { KeyCap } from '@/design';
 import { useT } from '@/i18n';
 import {
@@ -10,6 +11,10 @@ import {
 
 export function EditorWelcome() {
   const t = useT();
+  const saveHotkeyParts = useMemo(
+    () => formatHotkeyParts('mod+s', detectPlatform()),
+    [],
+  );
   return (
     <div className="flex h-full w-full flex-col items-center justify-center gap-4 p-6 text-center">
       <div
@@ -36,7 +41,7 @@ export function EditorWelcome() {
       <div className="text-base font-medium text-fg">{t('editor.welcome.title')}</div>
       <div className="flex items-center gap-1.5 text-xs text-fg-muted">
         <span>{t('editor.welcome.hint_prefix')}</span>
-        {formatHotkeyParts('mod+s', detectPlatform()).map((p, i) => (
+        {saveHotkeyParts.map((p, i) => (
           <KeyCap key={i}>{p}</KeyCap>
         ))}
         <span>{t('editor.welcome.save')}</span>

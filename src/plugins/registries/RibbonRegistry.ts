@@ -15,6 +15,7 @@ export interface RibbonActionSpec {
 }
 
 type Listener = () => void;
+const EMPTY_RIBBON_SNAPSHOT: readonly RibbonActionSpec[] = [];
 
 // 边界(E49,E35/E36/E37/E40/E48 兄弟 registry):register 接受插件 RibbonActionSpec 无运行时校验。
 // id/title 无长度上限,priority 可 NaN/Infinity,onClick 也未确认是函数。畸形项一注册即进 Activity
@@ -84,11 +85,22 @@ export class RibbonRegistry {
 
   getAll(): readonly RibbonActionSpec[] {
     if (this.cachedAll !== null) return this.cachedAll;
+    if (this.items.size === 0) {
+      this.cachedAll = EMPTY_RIBBON_SNAPSHOT;
+      return EMPTY_RIBBON_SNAPSHOT;
+    }
 
     const items = new Array<RibbonActionSpec>(this.items.size);
     let i = 0;
-    for (const item of this.items.values()) items[i++] = item;
-    if (items.length > 1) {
+    let prevPriority = -Infinity;
+    let sorted = true;
+    for (const item of this.items.values()) {
+      const priority = item.priority ?? 100;
+      if (priority < prevPriority) sorted = false;
+      prevPriority = priority;
+      items[i++] = item;
+    }
+    if (items.length > 1 && !sorted) {
       items.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
     }
     this.cachedAll = items;

@@ -24,6 +24,14 @@ export function TerminalSearchBar({
   const t = useT();
   const inputRef = useRef<HTMLInputElement>(null);
   const result = searchApi.result;
+  const placeholderLabel = t('panels.terminal.search.placeholder');
+  const optionsGroupLabel = t('panels.terminal.search.options_group');
+  const regexLabel = t('panels.terminal.search.regex');
+  const caseSensitiveLabel = t('panels.terminal.search.case_sensitive');
+  const wholeWordLabel = t('panels.terminal.search.whole_word');
+  const previousLabel = t('panels.terminal.search.previous');
+  const nextLabel = t('panels.terminal.search.next');
+  const closeLabel = t('panels.terminal.search.close');
 
   // issue #38 R2: `autoFocus` 偶尔被 xterm textarea 在下一帧 refocus 抢走。
   // useLayoutEffect 在 paint 前同步 focus,raf 再补一次保险(xterm 内部
@@ -84,8 +92,8 @@ export function TerminalSearchBar({
             searchApi.next();
           }
         }}
-        placeholder={t('panels.terminal.search.placeholder')}
-        aria-label={t('panels.terminal.search.placeholder')}
+        placeholder={placeholderLabel}
+        aria-label={placeholderLabel}
         className="w-48"
       />
       {/* a11y(A53,A41 同族):匹配计数/无匹配随输入与上下跳转动态变化,焦点在搜索框时须经
@@ -101,13 +109,13 @@ export function TerminalSearchBar({
           保持与外层 gap-1 一致的视觉间距。 */}
       <div
         role="group"
-        aria-label={t('panels.terminal.search.options_group')}
+        aria-label={optionsGroupLabel}
         className="inline-flex items-center gap-1"
       >
         <IconButton
           size="xs"
-          aria-label={t('panels.terminal.search.regex')}
-          title={t('panels.terminal.search.regex')}
+          aria-label={regexLabel}
+          title={regexLabel}
           aria-pressed={searchApi.options.regex}
           onClick={() =>
             searchApi.setOptions(toggleOption(searchApi.options, 'regex'))
@@ -117,8 +125,8 @@ export function TerminalSearchBar({
         </IconButton>
         <IconButton
           size="xs"
-          aria-label={t('panels.terminal.search.case_sensitive')}
-          title={t('panels.terminal.search.case_sensitive')}
+          aria-label={caseSensitiveLabel}
+          title={caseSensitiveLabel}
           aria-pressed={searchApi.options.caseSensitive}
           onClick={() =>
             searchApi.setOptions(
@@ -130,8 +138,8 @@ export function TerminalSearchBar({
         </IconButton>
         <IconButton
           size="xs"
-          aria-label={t('panels.terminal.search.whole_word')}
-          title={t('panels.terminal.search.whole_word')}
+          aria-label={wholeWordLabel}
+          title={wholeWordLabel}
           aria-pressed={searchApi.options.wholeWord}
           onClick={() =>
             searchApi.setOptions(toggleOption(searchApi.options, 'wholeWord'))
@@ -142,24 +150,24 @@ export function TerminalSearchBar({
       </div>
       <IconButton
         size="xs"
-        aria-label={t('panels.terminal.search.previous')}
-        title={t('panels.terminal.search.previous')}
+        aria-label={previousLabel}
+        title={previousLabel}
         onClick={searchApi.prev}
       >
         ^
       </IconButton>
       <IconButton
         size="xs"
-        aria-label={t('panels.terminal.search.next')}
-        title={t('panels.terminal.search.next')}
+        aria-label={nextLabel}
+        title={nextLabel}
         onClick={searchApi.next}
       >
         v
       </IconButton>
       <IconButton
         size="xs"
-        aria-label={t('panels.terminal.search.close')}
-        title={t('panels.terminal.search.close')}
+        aria-label={closeLabel}
+        title={closeLabel}
         onClick={onClose}
       >
         x

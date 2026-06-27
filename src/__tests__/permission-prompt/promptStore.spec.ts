@@ -99,6 +99,13 @@ describe('usePermissionPromptStore', () => {
     expect(removeFsScopeQueueId(queue, 'missing')).toBe(queue);
   });
 
+  it('removeFsScopeQueueId 删除到空时复用稳定空队列', () => {
+    const empty = removeFsScopeQueueId(['r1'], 'r1');
+    expect(empty).toEqual([]);
+    expect(removeFsScopeQueueId(['r2'], 'r2')).toBe(empty);
+    expect(removeFsScopeQueueId([], 'missing')).toBe(empty);
+  });
+
   it('appendFsScopeQueueId 预分配追加,不通过 spread/push 拷贝', () => {
     const queue = ['r1'];
     expect(appendFsScopeQueueId(queue, 'r2')).toEqual(['r1', 'r2']);
@@ -169,5 +176,26 @@ describe('usePermissionPromptStore', () => {
     expect(usePermissionPromptStore.getState().pending?.pluginId).toBe('p1');
     usePermissionPromptStore.getState().grant(['fs']);
     expect(await first).toEqual(['fs']);
+  });
+
+  it('处理非队首 fs-scope 请求时复用当前弹窗引用', async () => {
+    const p1 = usePermissionPromptStore.getState().requestFsScope({
+      requestId: 'r1',
+      pluginId: 'p1',
+      scopes: [{ path: '/a', mode: 'r', displayPath: '/a' }],
+    });
+    const p2 = usePermissionPromptStore.getState().requestFsScope({
+      requestId: 'r2',
+      pluginId: 'p2',
+      scopes: [{ path: '/b', mode: 'r', displayPath: '/b' }],
+    });
+    const current = usePermissionPromptStore.getState().currentFsScope;
+
+    usePermissionPromptStore.getState().grantFsScope('r2');
+
+    expect(await p2).toBe('grant');
+    expect(usePermissionPromptStore.getState().currentFsScope).toBe(current);
+    usePermissionPromptStore.getState().denyFsScope('r1');
+    expect(await p1).toBe('deny');
   });
 });
