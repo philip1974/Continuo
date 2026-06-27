@@ -159,6 +159,35 @@ describe('init 扫描与激活', () => {
     expect(list.find((x) => x.id === 'b')?.status).toBe('disabled');
   });
 
+  it('listAll 构造快照时不通过 Array.from(values).map 生成中间数组', async () => {
+    const state: MockHostState = {
+      dirs: [
+        { id: 'a', manifestText: manifestText('a'), moduleUrl: 'mod://a' },
+        { id: 'b', manifestText: manifestText('b'), moduleUrl: 'mod://b' },
+      ],
+      enabled: new Set(['a']),
+      modules: new Map([
+        ['mod://a', { default: GoodPlugin }],
+        ['mod://b', { default: GoodPlugin }],
+      ]),
+      enabledWritten: new Set(),
+    };
+    const mgr = new PluginManager(fakeApp, makeHost(state));
+    await mgr.init();
+
+    const arrayFromSpy = vi.spyOn(Array, 'from');
+    let list: ReturnType<PluginManager['listAll']>;
+    try {
+      list = mgr.listAll();
+      expect(arrayFromSpy).not.toHaveBeenCalled();
+    } finally {
+      arrayFromSpy.mockRestore();
+    }
+    expect(list!.map((x) => x.id)).toEqual(['a', 'b']);
+    expect(list!.find((x) => x.id === 'a')?.status).toBe('enabled');
+    expect(list!.find((x) => x.id === 'b')?.status).toBe('disabled');
+  });
+
   it('manifest 解析失败 → 跳过 + warn,不影响其它', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const state: MockHostState = {

@@ -39,6 +39,11 @@ describe('applyFilter', () => {
     expect(r).toHaveLength(3);
   });
 
+  it('空 query + 空 tags → 直接复用原 entries 引用', () => {
+    const r = applyFilter(ENTRIES, { query: '   ', selectedTags: new Set() });
+    expect(r).toBe(ENTRIES);
+  });
+
   // 边界(E281,E279/E280 搜索 query 上限族):applyFilter 是导出纯函数,可被非 UI 调用方传超长 query →
   // 对 ≤4096 entry 逐项 includes 放大。filter 层防御性截断 query(与 UI onChange clamp 同上限,双层)。
   it('E281 超长 query 不抛、不放大(filter 层截断,仍能匹配前缀)', () => {

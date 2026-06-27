@@ -2,7 +2,9 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   InMemoryPermissionStore,
   ensureAuthorized,
+  type PermissionDecision,
   type PermissionKey,
+  type PermissionStore,
 } from '../../plugins/permissions';
 import { parseManifest } from '../../plugins/manifest';
 
@@ -85,6 +87,30 @@ describe('InMemoryPermissionStore', () => {
     expect(d[0]!.granted).toBe(false);
   });
 
+  it('批量覆盖权限 → 不对传入 perms 逐条 includes 扫描旧决策', async () => {
+    const s = new InMemoryPermissionStore();
+    await s.grant('p', ['fs', 'network', 'shell', 'clipboard']);
+    const perms: readonly PermissionKey[] = ['fs', 'network'];
+    const includesSpy = vi.spyOn(Array.prototype, 'includes');
+
+    try {
+      await s.deny('p', perms);
+      const callsOnInputPerms = includesSpy.mock.contexts.filter(
+        (ctx) => ctx === perms,
+      ).length;
+
+      expect(callsOnInputPerms).toBe(0);
+      expect(await s.get('p')).toMatchObject([
+        { permission: 'shell', granted: true },
+        { permission: 'clipboard', granted: true },
+        { permission: 'fs', granted: false },
+        { permission: 'network', granted: false },
+      ]);
+    } finally {
+      includesSpy.mockRestore();
+    }
+  });
+
   it('clearDenied 移除该插件 granted=false 的决策,保留 granted=true', async () => {
     const s = new InMemoryPermissionStore();
     await s.grant('p', ['fs']);
@@ -150,6 +176,38 @@ describe('ensureAuthorized(v5 Phase 2 partial grant)', () => {
       expect(r.denied).toEqual(['network']);
     }
     expect(prompt).not.toHaveBeenCalled(); // 都已决,不再问
+  });
+
+  it('已有 decisions → 单次遍历归类,不对 decisions 调 filter 两遍', async () => {
+    const decisions: readonly PermissionDecision[] = [
+      { permission: 'fs', granted: true, decidedAt: 1 },
+      { permission: 'network', granted: false, decidedAt: 2 },
+    ];
+    const store: PermissionStore = {
+      get: vi.fn(async () => decisions),
+      grant: vi.fn(),
+      deny: vi.fn(),
+      clearDenied: vi.fn(),
+    };
+    const prompt = vi.fn();
+    const filterSpy = vi.spyOn(Array.prototype, 'filter');
+
+    try {
+      const r = await ensureAuthorized('p', ['fs', 'network'], store, prompt);
+      const decisionFilterCalls = filterSpy.mock.contexts.filter(
+        (ctx) => ctx === decisions,
+      ).length;
+
+      expect(decisionFilterCalls).toBe(0);
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        expect(r.granted).toEqual(['fs']);
+        expect(r.denied).toEqual(['network']);
+      }
+      expect(prompt).not.toHaveBeenCalled();
+    } finally {
+      filterSpy.mockRestore();
+    }
   });
 
   it('全部已 deny → ok=false(plugin 不激活)', async () => {

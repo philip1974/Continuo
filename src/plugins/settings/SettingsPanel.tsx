@@ -39,7 +39,7 @@ function useItems(reg: SettingItemRegistry): readonly SettingItemSpec[] {
 }
 
 /** 一条设置项的搜索源:本地化标题/描述 + id + raw fallback,全 lowercase. */
-interface SearchableItem {
+export interface SearchableSettingItem {
   readonly item: SettingItemSpec;
   readonly haystack: string;
 }
@@ -59,7 +59,7 @@ interface SearchBucket {
 }
 
 /** 把搜索结果按 category 分组，label 走 i18n catalog（topic-20）。 */
-function groupSearchResults(
+export function groupSearchResults(
   items: readonly SettingItemSpec[],
 ): readonly SearchBucket[] {
   const map = new Map<string, SettingItemSpec[]>();
@@ -71,11 +71,27 @@ function groupSearchResults(
     }
     arr.push(spec);
   }
-  return Array.from(map.entries()).map(([category, items]) => ({
-    category,
-    label: tWithFallback(CATEGORY_TITLE_KEYS[category], category),
-    items,
-  }));
+  const buckets: SearchBucket[] = [];
+  for (const [category, bucketItems] of map) {
+    buckets.push({
+      category,
+      label: tWithFallback(CATEGORY_TITLE_KEYS[category], category),
+      items: bucketItems,
+    });
+  }
+  return buckets;
+}
+
+export function selectMatchedSettingItems(
+  searchable: readonly SearchableSettingItem[],
+  trimmed: string,
+): readonly SettingItemSpec[] {
+  const ql = trimmed.toLowerCase();
+  const matched: SettingItemSpec[] = [];
+  for (const s of searchable) {
+    if (s.haystack.includes(ql)) matched.push(s.item);
+  }
+  return matched;
 }
 
 export function SettingsPanel({
@@ -192,7 +208,7 @@ function SettingsSearchResults({
   // 预计算本地化 haystack:搜索源用 titleKey/descriptionKey 翻译后的可见文案
   // (SettingItemRow 实际显示的),否则中文/韩文下按屏幕文字搜不到。保留 id + raw
   // title/description 作补充。deps 含 locale 切语言重算。
-  const searchable = useMemo<readonly SearchableItem[]>(
+  const searchable = useMemo<readonly SearchableSettingItem[]>(
     () =>
       allItems.map((item) => ({
         item,
@@ -211,8 +227,7 @@ function SettingsSearchResults({
     [allItems, locale],
   );
   const matched = useMemo(() => {
-    const ql = trimmed.toLowerCase();
-    return searchable.filter((s) => s.haystack.includes(ql)).map((s) => s.item);
+    return selectMatchedSettingItems(searchable, trimmed);
   }, [trimmed, searchable]);
   const matchedBuckets = useMemo(() => groupSearchResults(matched), [matched]);
 

@@ -7,9 +7,13 @@
 //   src/plugins/settings/SettingsPanel.tsx 不存在
 //   store.ts 旧 isOpen / open / close API 已被移除
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { fireEvent, render, cleanup, act } from '@testing-library/react';
-import { SettingsPanel } from '../../plugins/settings/SettingsPanel';
+import {
+  SettingsPanel,
+  groupSearchResults,
+  selectMatchedSettingItems,
+} from '../../plugins/settings/SettingsPanel';
 import { useSettingsStore } from '../../plugins/settings/store';
 import { SettingTabRegistry } from '../../plugins/registries/SettingTabRegistry';
 import { SettingItemRegistry } from '../../plugins/registries/SettingItemRegistry';
@@ -190,6 +194,71 @@ describe('SettingsPanel · 搜索模式', () => {
 
   beforeEach(() => {
     useSettingsValuesStore.setState({ values: {} });
+  });
+
+  it('搜索匹配单次遍历 searchable,不先 filter 再 map', () => {
+    const itemA = {
+      id: 'general.theme',
+      category: 'general',
+      title: '主题',
+      type: 'boolean',
+      default: false,
+    } as const;
+    const itemB = {
+      id: 'editor.fontSize',
+      category: 'editor',
+      title: '字号',
+      type: 'number',
+      default: 14,
+    } as const;
+    const searchable = [
+      { item: itemA, haystack: 'general theme' },
+      { item: itemB, haystack: 'editor font size' },
+    ] as const;
+    const filterSpy = vi.spyOn(Array.prototype, 'filter');
+
+    try {
+      const matched = selectMatchedSettingItems(searchable, 'theme');
+      const filterCallsOnSearchable = filterSpy.mock.contexts.filter(
+        (ctx) => ctx === searchable,
+      ).length;
+
+      expect(filterCallsOnSearchable).toBe(0);
+      expect(matched).toEqual([itemA]);
+    } finally {
+      filterSpy.mockRestore();
+    }
+  });
+
+  it('搜索结果分组不通过 Array.from(entries).map 生成中间数组', () => {
+    const itemA = {
+      id: 'general.theme',
+      category: 'general',
+      title: '主题',
+      type: 'boolean',
+      default: false,
+    } as const;
+    const itemB = {
+      id: 'editor.fontSize',
+      category: 'editor',
+      title: '字号',
+      type: 'number',
+      default: 14,
+    } as const;
+    const arrayFromSpy = vi.spyOn(Array, 'from');
+
+    try {
+      const buckets = groupSearchResults([itemA, itemB]);
+      expect(arrayFromSpy).not.toHaveBeenCalled();
+      expect(buckets.map((bucket) => bucket.category)).toEqual([
+        'general',
+        'editor',
+      ]);
+      expect(buckets[0]?.items).toEqual([itemA]);
+      expect(buckets[1]?.items).toEqual([itemB]);
+    } finally {
+      arrayFromSpy.mockRestore();
+    }
   });
 
   it('搜索框输入 → 左 nav 半透明 + 右侧渲染搜索结果', () => {

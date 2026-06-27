@@ -32,11 +32,11 @@ function entry(): MarketplaceEntry {
   };
 }
 
-function review(body: string): Review {
+function review(body: string, thumbsUp = 0): Review {
   return {
     pluginId: 'com.x', rating: 5, body,
     author: { handle: 'u', avatarUrl: '', createdAt: '2020-01-01T00:00:00Z' },
-    url: `https://x/${body}`, createdAt: '2024-01-01T00:00:00Z', thumbsUp: 0,
+    url: `https://x/${body}`, createdAt: '2024-01-01T00:00:00Z', thumbsUp,
   };
 }
 
@@ -85,5 +85,45 @@ describe('打磨 R41 — review 仅在展开时排序渲染', () => {
 
     // 展开后排序 review 渲染出来(gating 错误恒返 [] 则这里失败)
     expect(container.textContent).toContain('Great plugin here');
+  });
+
+  it('切到有用排序 → 只选择前 10 条,不全量 Array.sort', async () => {
+    const reviews = Array.from({ length: 20 }, (_, i) =>
+      review(`review-${String(i).padStart(2, '0')}`, i),
+    );
+    useReviewsStore.setState({
+      byPid: new Map([
+        ['com.x', { pluginId: 'com.x', count: 20, avg: 5, reviews }],
+      ]),
+      loading: false,
+      error: null,
+      lastFetchedAt: null,
+    });
+    fetchIndexMock.mockResolvedValue([entry()]);
+    installApi();
+    const { container } = render(<MarketplaceTab />);
+    await waitFor(() => {
+      expect(container.textContent).toContain('X');
+    });
+
+    const expandBtn = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((b) => b.title === t('marketplace.reviews.expand'));
+    expect(expandBtn).toBeDefined();
+    fireEvent.click(expandBtn!);
+
+    const helpfulBtn = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((b) => b.textContent === t('marketplace.reviews.sort_helpful'));
+    expect(helpfulBtn).toBeDefined();
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+    fireEvent.click(helpfulBtn!);
+    const sortCalls = sortSpy.mock.calls.length;
+    sortSpy.mockRestore();
+
+    expect(sortCalls).toBe(0);
+    expect(container.textContent).toContain('review-19');
+    expect(container.textContent).toContain('review-10');
+    expect(container.textContent).not.toContain('review-09');
   });
 });

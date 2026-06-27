@@ -21,6 +21,11 @@ export function applyFilter(
   // 边界(E281):filter 层防御性截断 query(applyFilter 是导出纯函数,可被非 UI 调用方传超长 query
   // → 对 ≤4096 entry 逐项 includes 放大)。与 onChange clamp 同一上限,双层防护。
   const q = clampSearchQuery(opts.query).trim().toLowerCase();
+  const hasQuery = q.length > 0;
+  const hasTags = opts.selectedTags.size > 0;
+  if (!hasQuery && !hasTags) return entries;
+  if (!hasQuery) return entries.filter((e) => matchTags(e, opts.selectedTags));
+  if (!hasTags) return entries.filter((e) => matchQuery(e, q));
   return entries.filter((e) => matchQuery(e, q) && matchTags(e, opts.selectedTags));
 }
 

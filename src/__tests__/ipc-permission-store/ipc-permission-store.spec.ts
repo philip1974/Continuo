@@ -7,7 +7,10 @@ import {
 import {
   IpcPermissionStore,
   parsePermissionState,
+  serializePermissionState,
+  type PermissionState,
 } from '../../plugins/permissions/IpcPermissionStore';
+import type { PermissionKey } from '../../plugins/permissions';
 
 interface FakePerm {
   readPermissions: ReturnType<typeof vi.fn>;
@@ -190,6 +193,48 @@ describe('IpcPermissionStore.grant / deny', () => {
     expect(record).toEqual([
       expect.objectContaining({ permission: 'fs', granted: false }),
     ]);
+  });
+
+  it('批量覆盖权限 → 不对传入 perms 逐条 includes 扫描旧决策', async () => {
+    const writePluginPermissions = vi.fn().mockResolvedValue({ ok: true });
+    installFakeApi({
+      readPermissions: vi.fn().mockResolvedValue({
+        ok: true,
+        data: {
+          p1: [
+            { permission: 'fs', granted: false, decidedAt: 1 },
+            { permission: 'network', granted: true, decidedAt: 2 },
+            { permission: 'shell', granted: true, decidedAt: 3 },
+            { permission: 'clipboard', granted: true, decidedAt: 4 },
+          ],
+        },
+      }),
+      writePluginPermissions,
+    });
+    const perms: readonly PermissionKey[] = ['fs', 'network'];
+    const includesSpy = vi.spyOn(Array.prototype, 'includes');
+
+    try {
+      const store = new IpcPermissionStore();
+      await store.deny('p1', perms);
+      const callsOnInputPerms = includesSpy.mock.contexts.filter(
+        (ctx) => ctx === perms,
+      ).length;
+      const [, record] = writePluginPermissions.mock.calls[0]! as [
+        string,
+        { permission: string; granted: boolean }[],
+      ];
+
+      expect(callsOnInputPerms).toBe(0);
+      expect(record).toMatchObject([
+        { permission: 'shell', granted: true },
+        { permission: 'clipboard', granted: true },
+        { permission: 'fs', granted: false },
+        { permission: 'network', granted: false },
+      ]);
+    } finally {
+      includesSpy.mockRestore();
+    }
   });
 
   // 数据安全(codex 复查 P1):写盘失败时 grant/deny 必须抛(不再只 warn)且 cache **不被
@@ -393,5 +438,34 @@ describe('E245 parsePermissionState 有界解析 + 字段校验', () => {
     expect(r['com.p']?.decisions).toEqual([
       { permission: 'fs', granted: true, decidedAt: 1700000000000 },
     ]);
+  });
+});
+
+describe('serializePermissionState', () => {
+  it('不对 state 调 Object.entries 全量物化', () => {
+    const state: PermissionState = {
+      'com.a': {
+        decisions: [{ permission: 'fs', granted: true, decidedAt: 1 }],
+      },
+      'com.b': {
+        decisions: [{ permission: 'network', granted: false, decidedAt: 2 }],
+      },
+    };
+    const entriesSpy = vi.spyOn(Object, 'entries');
+
+    try {
+      const serialized = serializePermissionState(state);
+      const entriesCallsOnState = entriesSpy.mock.calls.filter(
+        ([arg]) => arg === state,
+      ).length;
+
+      expect(entriesCallsOnState).toBe(0);
+      expect(serialized).toEqual({
+        'com.a': [{ permission: 'fs', granted: true, decidedAt: 1 }],
+        'com.b': [{ permission: 'network', granted: false, decidedAt: 2 }],
+      });
+    } finally {
+      entriesSpy.mockRestore();
+    }
   });
 });

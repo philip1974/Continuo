@@ -33,25 +33,36 @@ interface DisplayCommand {
   readonly displayCategory: string;
   /** 预计算的 effective hotkey 段(打磨 R28:从每行 render 移到命令/overrides 变化时). */
   readonly hotkeyParts: readonly string[];
+  /** fuzzyFilter 用的预小写 target,随 title/category/locale 变化重算. */
+  readonly matchSourceLower: string;
 }
 
 function matchSource(d: DisplayCommand): string {
   return d.displayCategory ? `${d.displayCategory} ${d.displayTitle}` : d.displayTitle;
 }
 
+function matchSourceLower(d: DisplayCommand): string {
+  return d.matchSourceLower;
+}
+
 /** 空 query 时:recent 前 N 个置顶 + 其余按 displayTitle 字母序. */
-function sortByRecent(
+export function sortByRecent(
   items: readonly DisplayCommand[],
   recentIds: readonly string[],
 ): DisplayCommand[] {
-  const recentSet = new Set(recentIds.slice(0, RECENT_TOP_N));
+  const recentRank = new Map<string, number>();
+  for (let i = 0; i < recentIds.length && i < RECENT_TOP_N; i++) {
+    recentRank.set(recentIds[i]!, i);
+  }
   const recent: DisplayCommand[] = [];
   const others: DisplayCommand[] = [];
   for (const d of items) {
-    if (recentSet.has(d.cmd.id)) recent.push(d);
+    if (recentRank.has(d.cmd.id)) recent.push(d);
     else others.push(d);
   }
-  recent.sort((a, b) => recentIds.indexOf(a.cmd.id) - recentIds.indexOf(b.cmd.id));
+  recent.sort(
+    (a, b) => recentRank.get(a.cmd.id)! - recentRank.get(b.cmd.id)!,
+  );
   others.sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));
   return [...recent, ...others];
 }
@@ -117,11 +128,19 @@ function CommandPaletteBody({ commands }: CommandPaletteProps) {
     void locale; // 仅作 deps:tk 内部按 locale 翻译,切语言须重算
     return allCommands.map((cmd) => {
       const effective = getEffectiveHotkey(cmd);
+      const displayTitle = tk(cmd.titleKey, cmd.title);
+      const displayCategory = tk(cmd.categoryKey, cmd.category ?? '');
+      const source = displayCategory
+        ? `${displayCategory} ${displayTitle}`
+        : displayTitle;
       return {
         cmd,
-        displayTitle: tk(cmd.titleKey, cmd.title),
-        displayCategory: tk(cmd.categoryKey, cmd.category ?? ''),
+        displayTitle,
+        displayCategory,
         hotkeyParts: effective ? formatHotkeyParts(effective, PLATFORM) : [],
+        // 打磨 R54:配合 fuzzyFilter(getStrLower),搜索输入变化时不再逐命令
+        // 对 displayCategory/title 组成的 target 重复 toLowerCase。
+        matchSourceLower: source.toLowerCase(),
       };
     });
   }, [allCommands, tk, overrides, locale]);
@@ -129,7 +148,7 @@ function CommandPaletteBody({ commands }: CommandPaletteProps) {
   const filtered = useMemo(() => {
     if (query) {
       // 有 query → fuzzy 匹配 displayCategory + displayTitle
-      return fuzzyFilter(displayCommands, query, matchSource);
+      return fuzzyFilter(displayCommands, query, matchSource, matchSourceLower);
     }
     // 空 query → recent 置顶 + 其余按 displayTitle 字母序
     return sortByRecent(displayCommands, recentIds);

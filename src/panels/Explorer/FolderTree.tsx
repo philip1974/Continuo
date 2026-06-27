@@ -439,7 +439,10 @@ export function FolderTree({ root }: { root: string }) {
         // 纯 fs+tree helper(已测,且本为唯一生产 trash 路径却从未被调用),editor
         // tab 关闭(removePath)仍由本处对成功项补做。见第七 session R6 完整性批判。
         const result = await removeItems(paths, { trash: true }, mutateDeps, treeApi);
-        const failed = new Set(result.ok ? [] : result.failures.map((f) => f.path));
+        const failed = new Set<string>();
+        if (!result.ok) {
+          for (const f of result.failures) failed.add(f.path);
+        }
         const removed: string[] = [];
         for (const p of paths) {
           // 文件删除 → 关闭对应 editor tab(目录则关其下所有 tab)。仅对成功项。

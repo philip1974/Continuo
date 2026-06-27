@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   createTab,
   getEffectiveMode,
@@ -725,6 +725,29 @@ describe('getStateAfterClosingTabsOutsideRoot', () => {
       'C:\\new',
     );
     expect(r.tabs.map((t) => t.id)).toEqual(['C:\\new\\b.md']);
+  });
+
+  it('active 被关时单次分类 tabs,不再 filter+map 重算删除集合', () => {
+    const draft = createTab(null, 'd');
+    const tabs = [
+      makeTab({ id: '/old/a.md', filePath: '/old/a.md' }),
+      makeTab({ id: '/new/b.md', filePath: '/new/b.md' }),
+      draft,
+    ];
+    const filterSpy = vi.spyOn(Array.prototype, 'filter');
+
+    try {
+      const r = getStateAfterClosingTabsOutsideRoot(tabs, '/old/a.md', '/new');
+      const filterCallsOnTabs = filterSpy.mock.contexts.filter(
+        (ctx) => ctx === tabs,
+      ).length;
+
+      expect(filterCallsOnTabs).toBe(0);
+      expect(r.tabs.map((t) => t.id)).toEqual(['/new/b.md', draft.id]);
+      expect(r.activeTabId).toBe('/new/b.md');
+    } finally {
+      filterSpy.mockRestore();
+    }
   });
 });
 

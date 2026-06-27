@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { usePinnedStore } from '../../stores/pinned.store';
 import {
   PINNED_MAX,
@@ -24,6 +24,24 @@ describe('pinned.store', () => {
     usePinnedStore.setState({ paths: ['/a', '/b', '/c'] });
     usePinnedStore.getState().toggle('/b');
     expect(usePinnedStore.getState().paths).toEqual(['/a', '/c']);
+  });
+
+  it('toggle 已 pin → 不先 includes 再 filter 双重扫描 paths', () => {
+    const paths = ['/a', '/b', '/c'];
+    usePinnedStore.setState({ paths });
+    const includesSpy = vi.spyOn(Array.prototype, 'includes');
+
+    try {
+      usePinnedStore.getState().toggle('/b');
+      const includesCallsOnPaths = includesSpy.mock.contexts.filter(
+        (ctx) => ctx === paths,
+      ).length;
+
+      expect(includesCallsOnPaths).toBe(0);
+      expect(usePinnedStore.getState().paths).toEqual(['/a', '/c']);
+    } finally {
+      includesSpy.mockRestore();
+    }
   });
 
   it('clear 清空', () => {

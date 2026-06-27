@@ -133,8 +133,9 @@ export function serializePermissionState(
   state: PermissionState,
 ): IpcPermissionsMap {
   const out: Record<string, IpcPermissionRecord> = {};
-  for (const [pluginId, record] of Object.entries(state)) {
-    out[pluginId] = serializePermissionRecord(record);
+  for (const pluginId in state) {
+    if (!Object.prototype.hasOwnProperty.call(state, pluginId)) continue;
+    out[pluginId] = serializePermissionRecord(state[pluginId]!);
   }
   return out;
 }
@@ -253,14 +254,14 @@ export class IpcPermissionStore implements PermissionStore {
       const cache = await this.ensureLoaded();
       const existing = cache[pluginId];
       const existingDecisions = existing?.decisions ?? [];
-      const filtered = existingDecisions.filter(
-        (d) => !perms.includes(d.permission),
+      const replacementPerms = new Set(perms);
+      const updated: PermissionDecision[] = existingDecisions.filter(
+        (d) => !replacementPerms.has(d.permission),
       );
       const now = Date.now();
-      const updated: PermissionDecision[] = [
-        ...filtered,
-        ...perms.map((p) => ({ permission: p, granted, decidedAt: now })),
-      ];
+      for (const p of perms) {
+        updated.push({ permission: p, granted, decidedAt: now });
+      }
       const next: PermissionRecord = { ...existing, decisions: updated };
       // 数据安全(codex 复查 P1):**先写盘,确认成功后才提交 cache** —— 不在写确认前乐观改
       // cache,且写失败必须抛(不再只 warn)。否则磁盘写失败时 cache 进入未落盘半提交态:

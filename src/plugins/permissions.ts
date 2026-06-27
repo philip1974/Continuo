@@ -75,8 +75,9 @@ export class InMemoryPermissionStore implements PermissionStore {
     granted: boolean,
   ): void {
     const list = this.map.get(pluginId) ?? [];
+    const replacementPerms = new Set(perms);
     const next: PermissionDecision[] = list.filter(
-      (d) => !perms.includes(d.permission),
+      (d) => !replacementPerms.has(d.permission),
     );
     const now = Date.now();
     for (const p of perms) next.push({ permission: p, granted, decidedAt: now });
@@ -120,12 +121,12 @@ export async function ensureAuthorized(
   }
 
   const decisions = await store.get(pluginId);
-  const grantedSet = new Set(
-    decisions.filter((d) => d.granted).map((d) => d.permission),
-  );
-  const deniedSet = new Set(
-    decisions.filter((d) => !d.granted).map((d) => d.permission),
-  );
+  const grantedSet = new Set<PermissionKey>();
+  const deniedSet = new Set<PermissionKey>();
+  for (const d of decisions) {
+    if (d.granted) grantedSet.add(d.permission);
+    else deniedSet.add(d.permission);
+  }
 
   // 待决:既不在 granted 也不在 denied(尚未决策的项)
   const pending = requested.filter(

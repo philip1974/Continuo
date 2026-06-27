@@ -28,7 +28,7 @@ function useCommands(registry: CommandRegistry): readonly CommandSpec[] {
   return useRegistry(registry);
 }
 
-interface DisplayCommand {
+export interface DisplayCommand {
   readonly cmd: CommandSpec;
   readonly displayTitle: string;
   readonly displayCategory: string;
@@ -38,15 +38,17 @@ interface DisplayCommand {
   readonly hotkeyParts: readonly string[];
   /** 该命令是否被用户 override(决定 reset 按钮可见). */
   readonly isOverridden: boolean;
+  /** 搜索用小写 haystack,随命令/语言/override 变化预计算. */
+  readonly searchHaystack: string;
 }
 
-interface Bucket {
+export interface Bucket {
   readonly category: string;
   readonly items: readonly DisplayCommand[];
 }
 
 /** 按 displayCategory 分组,每组按 displayTitle 字母序;空 category 归 defaultGroup. */
-function groupByCategory(
+export function groupByCategory(
   commands: readonly DisplayCommand[],
   defaultGroup: string,
 ): Bucket[] {
@@ -60,30 +62,21 @@ function groupByCategory(
     }
     arr.push(d);
   }
-  return Array.from(map.entries())
-    .map(([category, items]) => ({
+  const buckets: Bucket[] = [];
+  for (const [category, items] of map) {
+    items.sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));
+    buckets.push({
       category,
-      items: [...items].sort((a, b) =>
-        a.displayTitle.localeCompare(b.displayTitle),
-      ),
-    }))
-    .sort((a, b) => a.category.localeCompare(b.category));
+      items,
+    });
+  }
+  buckets.sort((a, b) => a.category.localeCompare(b.category));
+  return buckets;
 }
 
-function matches(d: DisplayCommand, q: string): boolean {
-  if (!q) return true;
-  const lower = q.toLowerCase();
-  // haystack 用 effective hotkey(含 override)而非原 cmd.hotkey(打磨 R29):
-  // 否则 override 后搜索仍只能命中默认组合,与列表显示的 effective 不一致。
-  const haystack = [
-    d.displayTitle,
-    d.displayCategory,
-    d.cmd.id,
-    d.effectiveHotkey ?? '',
-  ]
-    .join(' ')
-    .toLowerCase();
-  return haystack.includes(lower);
+function matches(d: DisplayCommand, qLower: string): boolean {
+  if (!qLower) return true;
+  return d.searchHaystack.includes(qLower);
 }
 
 export function KeybindingsTabContent() {
@@ -107,13 +100,26 @@ export function KeybindingsTabContent() {
     void locale; // deps:tk 内部按 locale 翻译
     return allCommands.map((cmd) => {
       const effective = getEffectiveHotkey(cmd);
+      const displayTitle = tk(cmd.titleKey, cmd.title);
+      const displayCategory = tk(cmd.categoryKey, cmd.category ?? '');
       return {
         cmd,
-        displayTitle: tk(cmd.titleKey, cmd.title),
-        displayCategory: tk(cmd.categoryKey, cmd.category ?? ''),
+        displayTitle,
+        displayCategory,
         effectiveHotkey: effective ?? undefined,
         hotkeyParts: effective ? formatHotkeyParts(effective, PLATFORM) : [],
         isOverridden: cmd.id in overrides,
+        // haystack 用 effective hotkey(含 override)而非原 cmd.hotkey(打磨 R29):
+        // 否则 override 后搜索仍只能命中默认组合,与列表显示的 effective 不一致。
+        // 打磨 R52:随 displayCommands 预计算,避免每次输入都逐行 join + lower-case。
+        searchHaystack: [
+          displayTitle,
+          displayCategory,
+          cmd.id,
+          effective ?? '',
+        ]
+          .join(' ')
+          .toLowerCase(),
       };
     });
   }, [allCommands, tk, overrides, locale]);
@@ -121,13 +127,14 @@ export function KeybindingsTabContent() {
   const buckets = useMemo(() => {
     // 列出所有有「有效 hotkey」或「显式 unbind 但有默认」的命令(允许用户回头改)
     const visible = displayCommands.filter(
-      (d) => d.cmd.hotkey || d.cmd.id in overrides,
+      (d) => d.cmd.hotkey || d.isOverridden,
     );
+    const qLower = query.toLowerCase();
     const filtered = query
-      ? visible.filter((d) => matches(d, query))
+      ? visible.filter((d) => matches(d, qLower))
       : visible;
     return groupByCategory(filtered, t('keybindings.default_group'));
-  }, [displayCommands, query, overrides, t]);
+  }, [displayCommands, query, t]);
 
   const totalWithHotkey = useMemo(
     () => allCommands.filter((c) => Boolean(c.hotkey)).length,

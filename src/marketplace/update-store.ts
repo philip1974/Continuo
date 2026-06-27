@@ -92,17 +92,21 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
         });
         return;
       }
-      const installedIds = new Set(installed.map((i) => i.id));
+      const installedIds = new Set<string>();
+      for (const item of installed) installedIds.add(item.id);
 
       const entries = await fetchMarketplaceIndex();
       const remoteVersions = new Map<string, string>();
       const entriesById = new Map<string, MarketplaceEntry>();
-      for (const e of entries) entriesById.set(e.id, e);
+      const relevant: MarketplaceEntry[] = [];
+      for (const e of entries) {
+        entriesById.set(e.id, e);
+        if (installedIds.has(e.id)) relevant.push(e);
+      }
 
       // 只拉「已安装插件命中的 entries」的 manifest(M ≤ N);单个失败不影响其它。
       // 边界(E234):有界并发池(MAX_MANIFEST_FETCH_CONCURRENCY)钳定最大在途 fetch 数,
       // 防数百到上千个 manifest 请求同时发起(index 4096 / 本地目录 1024)打爆网络/renderer。
-      const relevant = entries.filter((e) => installedIds.has(e.id));
       const results = await allSettledWithConcurrency(
         relevant,
         MAX_MANIFEST_FETCH_CONCURRENCY,

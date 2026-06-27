@@ -74,6 +74,29 @@ describe('terminal panel reconciler core contract', () => {
     );
   });
 
+  it('构建 session lookup 时不对 prev/next 先 map 成中间数组', () => {
+    const api = makeApi();
+    const previousSessions = [session('old')];
+    const nextSessions = [session('old'), session('new', { createdAt: 2 })];
+    const mapSpy = vi.spyOn(Array.prototype, 'map');
+
+    try {
+      reconcileTerminalPanels(api as unknown as DockviewApi, {
+        previousSessions,
+        nextSessions,
+      });
+      const mapCallsOnSnapshots = mapSpy.mock.contexts.filter(
+        (ctx) => ctx === previousSessions || ctx === nextSessions,
+      ).length;
+      expect(mapCallsOnSnapshots).toBe(0);
+    } finally {
+      mapSpy.mockRestore();
+    }
+    expect(api.addPanel).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'terminal-new' }),
+    );
+  });
+
   it('remove: store 删除 session 时通过 api.getPanel(id)?.api.close() 关闭;不存在则 no-op', () => {
     const panel = makePanel('terminal-s1');
     const api = makeApi({ 'terminal-s1': panel });

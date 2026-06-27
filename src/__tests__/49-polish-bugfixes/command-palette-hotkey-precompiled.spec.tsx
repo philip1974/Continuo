@@ -70,4 +70,19 @@ describe('打磨 R28 — CommandPalette hotkey 预计算', () => {
     // mod 平台感知:jsdom='other' → Ctrl;KeyCap 含 A
     expect(firstRow.textContent).toContain('A');
   });
+
+  it('搜索输入变化 → 不再逐行 lower-case fuzzy target', () => {
+    render(<CommandPalette commands={makeReg()} />);
+    act(() => useCommandPaletteStore.getState().open());
+    const lowerSpy = vi.spyOn(String.prototype, 'toLowerCase');
+
+    act(() => useCommandPaletteStore.getState().setQuery('a'));
+    act(() => useCommandPaletteStore.getState().setQuery('ab'));
+
+    const contexts = lowerSpy.mock.contexts.map((ctx) => String(ctx));
+    lowerSpy.mockRestore();
+    expect(contexts.some((ctx) => ctx === 'A')).toBe(false);
+    expect(contexts.some((ctx) => ctx === 'B')).toBe(false);
+    expect(contexts.some((ctx) => ctx === 'C')).toBe(false);
+  });
 });

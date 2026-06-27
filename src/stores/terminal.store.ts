@@ -187,15 +187,27 @@ export function nextActiveAfterClose(
   activeId: string | null,
   closingId: string,
 ): { sessions: readonly TerminalSession[]; activeId: string | null } {
-  const idx = sessions.findIndex((s) => s.id === closingId);
-  if (idx === -1) {
+  let found = false;
+  let prev: TerminalSession | null = null;
+  let next: TerminalSession | null = null;
+  const remaining: TerminalSession[] = [];
+
+  for (const session of sessions) {
+    if (session.id === closingId) {
+      found = true;
+      continue;
+    }
+    if (found && next === null) next = session;
+    remaining.push(session);
+    if (!found) prev = session;
+  }
+
+  if (!found) {
     return { sessions, activeId };
   }
-  const remaining = sessions.filter((s) => s.id !== closingId);
   if (remaining.length === 0) return { sessions: remaining, activeId: null };
   if (closingId !== activeId) return { sessions: remaining, activeId };
-  const nextIdx = Math.min(idx, remaining.length - 1);
-  return { sessions: remaining, activeId: remaining[nextIdx]?.id ?? null };
+  return { sessions: remaining, activeId: next?.id ?? prev?.id ?? null };
 }
 
 /**
@@ -208,7 +220,8 @@ export function applySnapshot(
   oldActiveId: string | null,
   newSessions: readonly TerminalSession[],
 ): { sessions: readonly TerminalSession[]; activeId: string | null } {
-  const newIds = new Set(newSessions.map((s) => s.id));
+  const newIds = new Set<string>();
+  for (const s of newSessions) newIds.add(s.id);
   let cur: readonly TerminalSession[] = oldSessions;
   let activeId = oldActiveId;
   for (const old of oldSessions) {
@@ -260,7 +273,8 @@ export const useTerminalStore = create<TerminalState>((set) => ({
     set((s) => {
       const applied = applySnapshot(s.sessions, s.activeId, newSessions);
       // 清理 customTitles 中已不在新 snapshot 的 id
-      const newIds = new Set(newSessions.map((x) => x.id));
+      const newIds = new Set<string>();
+      for (const x of newSessions) newIds.add(x.id);
       let titles = s.customTitles;
       let changed = false;
       for (const id of titles.keys()) {

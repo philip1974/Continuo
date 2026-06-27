@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
+  applySnapshot,
   nextActiveAfterClose,
   useTerminalStore,
   type TerminalSession,
@@ -64,6 +65,28 @@ describe('nextActiveAfterClose', () => {
     expect(r.sessions).toBe(list);
     expect(r.activeId).toBe('/a');
   });
+  it('命中关闭项时单次遍历 sessions,不 findIndex 后再 filter', () => {
+    const findIndexSpy = vi.spyOn(Array.prototype, 'findIndex');
+    const filterSpy = vi.spyOn(Array.prototype, 'filter');
+
+    try {
+      const r = nextActiveAfterClose(list, '/b', '/b');
+      const findIndexCallsOnList = findIndexSpy.mock.contexts.filter(
+        (ctx) => ctx === list,
+      ).length;
+      const filterCallsOnList = filterSpy.mock.contexts.filter(
+        (ctx) => ctx === list,
+      ).length;
+
+      expect(findIndexCallsOnList).toBe(0);
+      expect(filterCallsOnList).toBe(0);
+      expect(r.sessions.map((x) => x.id)).toEqual(['/a', '/c']);
+      expect(r.activeId).toBe('/c');
+    } finally {
+      findIndexSpy.mockRestore();
+      filterSpy.mockRestore();
+    }
+  });
 });
 
 // ────────────────────────────────────────────────────────────
@@ -85,6 +108,26 @@ describe('terminal.store · 初态', () => {
 describe('replaceSnapshot', () => {
   const sess = (id: string, extra: Partial<TerminalSession> = {}) =>
     makeSession({ id, ...extra });
+
+  it('applySnapshot 构建 newIds 不对 newSessions 先 map 成中间数组', () => {
+    const oldSessions = [sess('/a'), sess('/b')];
+    const newSessions = [sess('/b'), sess('/c')];
+    const mapSpy = vi.spyOn(Array.prototype, 'map');
+
+    let r: ReturnType<typeof applySnapshot> | null = null;
+    try {
+      r = applySnapshot(oldSessions, '/a', newSessions);
+      const mapCallsOnNewSessions = mapSpy.mock.contexts.filter(
+        (ctx) => ctx === newSessions,
+      ).length;
+      expect(mapCallsOnNewSessions).toBe(0);
+    } finally {
+      mapSpy.mockRestore();
+    }
+
+    expect(r?.sessions).toBe(newSessions);
+    expect(r?.activeId).toBe('/b');
+  });
 
   it('空 → 非空:activeId 设为第一个', () => {
     useTerminalStore.getState().replaceSnapshot([sess('/a'), sess('/b')]);

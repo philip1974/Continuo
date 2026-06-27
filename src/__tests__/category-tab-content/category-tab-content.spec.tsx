@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, cleanup, act } from '@testing-library/react';
-import { CategoryTabContent } from '../../plugins/settings/CategoryTabContent';
+import {
+  CategoryTabContent,
+  groupItems,
+} from '../../plugins/settings/CategoryTabContent';
 import {
   SettingItemRegistry,
   type SettingItemSpec,
@@ -57,6 +60,22 @@ describe('CategoryTabContent', () => {
       (h) => h.textContent,
     );
     expect(headers).toEqual(['外观', '行为']);
+  });
+
+  it('groupItems 不通过 Array.from(entries).map 生成中间数组', () => {
+    const itemA = spec({ id: 'a', title: 'A', group: '外观' });
+    const itemB = spec({ id: 'b', title: 'B', group: '行为' });
+    const arrayFromSpy = vi.spyOn(Array, 'from');
+
+    try {
+      const buckets = groupItems([itemA, itemB]);
+      expect(arrayFromSpy).not.toHaveBeenCalled();
+      expect(buckets.map((bucket) => bucket.group)).toEqual(['外观', '行为']);
+      expect(buckets[0]?.items).toEqual([itemA]);
+      expect(buckets[1]?.items).toEqual([itemB]);
+    } finally {
+      arrayFromSpy.mockRestore();
+    }
   });
 
   it('default bucket + group bucket 共存,default 在前', () => {

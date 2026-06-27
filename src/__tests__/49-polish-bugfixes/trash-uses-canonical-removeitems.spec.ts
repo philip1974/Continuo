@@ -47,4 +47,9 @@ describe('49 · onTrash 走规范 removeItems 而非内联早退', () => {
     // 旧 bug 模式:循环里直接 await coApi.fs.trash 再 return。改用 helper 后应消失。
     expect(body).not.toMatch(/await\s+coApi\.fs\.trash\(/);
   });
+
+  it('onTrash 构建失败 path 集合不再先 failures.map 成中间数组', () => {
+    const body = onTrashBody(src);
+    expect(body).not.toMatch(/failures\.map\(\(f\)\s*=>\s*f\.path\)/);
+  });
 });

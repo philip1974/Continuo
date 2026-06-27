@@ -16,8 +16,9 @@ export const usePinnedStore = create<PinnedState>((set) => ({
   paths: [],
   toggle: (path) =>
     set((s) => {
-      if (s.paths.includes(path)) {
-        return { paths: s.paths.filter((p) => p !== path) };
+      const idx = s.paths.indexOf(path);
+      if (idx >= 0) {
+        return { paths: [...s.paths.slice(0, idx), ...s.paths.slice(idx + 1)] };
       }
       // 边界(E276,运行时状态须守持久化契约):pin 追加不得超持久化 schema 上限 —— 超 PINNED_MAX 条或单条
       // path 超 PATH_STR_MAX 则拒加(no-op)。否则 snapshotFromStores 原样写出 → explorer:write 被

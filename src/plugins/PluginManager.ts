@@ -349,13 +349,17 @@ export class PluginManager {
 
   /** 列出所有已发现插件状态. */
   listAll(): readonly PluginListItem[] {
-    return Array.from(this.entries.values()).map((e) => ({
-      id: e.id,
-      manifest: e.manifest,
-      status: e.status,
-      error: e.error,
-      warning: e.warning,
-    }));
+    const list: PluginListItem[] = [];
+    for (const e of this.entries.values()) {
+      list.push({
+        id: e.id,
+        manifest: e.manifest,
+        status: e.status,
+        error: e.error,
+        warning: e.warning,
+      });
+    }
+    return list;
   }
 
   // ── 内部 ────────────────────────────────────────────

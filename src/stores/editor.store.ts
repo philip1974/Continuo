@@ -164,28 +164,37 @@ export function getStateAfterClosingTabsOutsideRoot(
     return isSameOrInsidePath(root, tab.filePath);
   };
 
-  const remaining = tabs.filter(keep);
+  const remaining: EditorTab[] = [];
+  const removingIds = new Set<string>();
+  let activeKept = false;
+  let activeIdx = -1;
+
+  for (let i = 0; i < tabs.length; i++) {
+    const tab = tabs[i]!;
+    if (tab.id === activeTabId) activeIdx = i;
+    if (keep(tab)) {
+      remaining.push(tab);
+      if (tab.id === activeTabId) activeKept = true;
+    } else {
+      removingIds.add(tab.id);
+    }
+  }
+
   if (remaining.length === tabs.length) return { tabs, activeTabId };
   if (remaining.length === 0) return { tabs: remaining, activeTabId: null };
-  if (activeTabId !== null && remaining.some((t) => t.id === activeTabId)) {
+  if (activeTabId !== null && activeKept) {
     return { tabs: remaining, activeTabId };
   }
   // active 被关:取原序后向第一个 remaining,否则前向,否则首个
-  if (activeTabId !== null) {
-    const oldIdx = tabs.findIndex((t) => t.id === activeTabId);
-    if (oldIdx >= 0) {
-      const removingIds = new Set(
-        tabs.filter((t) => !keep(t)).map((t) => t.id),
-      );
-      for (let i = oldIdx + 1; i < tabs.length; i++) {
-        if (!removingIds.has(tabs[i]!.id)) {
-          return { tabs: remaining, activeTabId: tabs[i]!.id };
-        }
+  if (activeTabId !== null && activeIdx >= 0) {
+    for (let i = activeIdx + 1; i < tabs.length; i++) {
+      if (!removingIds.has(tabs[i]!.id)) {
+        return { tabs: remaining, activeTabId: tabs[i]!.id };
       }
-      for (let i = oldIdx - 1; i >= 0; i--) {
-        if (!removingIds.has(tabs[i]!.id)) {
-          return { tabs: remaining, activeTabId: tabs[i]!.id };
-        }
+    }
+    for (let i = activeIdx - 1; i >= 0; i--) {
+      if (!removingIds.has(tabs[i]!.id)) {
+        return { tabs: remaining, activeTabId: tabs[i]!.id };
       }
     }
   }

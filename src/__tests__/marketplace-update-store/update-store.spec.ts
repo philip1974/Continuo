@@ -234,6 +234,51 @@ describe('useUpdateStore.refresh', () => {
     expect((fetchManifest.mock.calls[0]![0] as MarketplaceEntry).id).toBe('b');
   });
 
+  it('构建 installedIds 不对 installed list 先 map 成中间数组', async () => {
+    const installedSnapshot = [
+      {
+        id: 'a',
+        manifest: { id: 'a', name: 'a', version: '0.1.0' },
+        status: 'enabled',
+      },
+    ];
+    const mgr = { listAll: vi.fn(() => installedSnapshot) };
+    fetchIndex.mockResolvedValue([entry('a')]);
+    fetchManifest.mockResolvedValue(manifest('a', '0.2.0'));
+    getMgr.mockReturnValue(mgr);
+
+    const mapSpy = vi.spyOn(Array.prototype, 'map');
+    try {
+      await useUpdateStore.getState().refresh();
+      const mapCallsOnInstalled = mapSpy.mock.contexts.filter(
+        (ctx) => ctx === installedSnapshot,
+      ).length;
+      expect(mapCallsOnInstalled).toBe(0);
+    } finally {
+      mapSpy.mockRestore();
+    }
+    expect(useUpdateStore.getState().available.map((u) => u.id)).toEqual(['a']);
+  });
+
+  it('扫描 marketplace entries 时不再 filter 二次遍历 index 快照', async () => {
+    const entriesSnapshot = [entry('a'), entry('b'), entry('c')];
+    fetchIndex.mockResolvedValue(entriesSnapshot);
+    fetchManifest.mockResolvedValue(manifest('b', '0.2.0'));
+    getMgr.mockReturnValue(fakeMgr([{ id: 'b', version: '0.1.0' }]));
+
+    const filterSpy = vi.spyOn(Array.prototype, 'filter');
+    try {
+      await useUpdateStore.getState().refresh();
+      const filterCallsOnEntries = filterSpy.mock.contexts.filter(
+        (ctx) => ctx === entriesSnapshot,
+      ).length;
+      expect(filterCallsOnEntries).toBe(0);
+    } finally {
+      filterSpy.mockRestore();
+    }
+    expect(useUpdateStore.getState().available.map((u) => u.id)).toEqual(['b']);
+  });
+
   // race(R78):dismiss(id) 只乐观删 available,不让在途 refresh 失效。旧 refresh 在 dismiss 之后、
   // mgr.reload() 落地之前提交时,用仍是旧版本的 mgr 快照重算出同一 update 覆盖回 available(角标复活)。
   // 修复:dismiss 记目标版本,refresh 提交前过滤同版本。

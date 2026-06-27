@@ -19,6 +19,7 @@ import { reconcileAfterUpdate } from './reconcile-after-update';
 import { pruneLandedPending } from './prune-landed-pending';
 import { useReviewsStore } from './reviews-store';
 import type { PluginAggregateRating, Review } from './reviews-types';
+import { isHttpUrl } from './url-safety';
 import { useT, t as translate } from '@/i18n';
 import { localizeErrorByCode } from '@/lib/localize-error';
 import { SR_ONLY_STYLE } from '@/lib/sr-only';
@@ -27,6 +28,7 @@ import { SR_ONLY_STYLE } from '@/lib/sr-only';
 const MAINTAINERS: ReadonlySet<string> = new Set(['philip1974']);
 const NEW_ACCOUNT_DAYS = 7;
 const NEW_ACCOUNT_MS = NEW_ACCOUNT_DAYS * 24 * 60 * 60 * 1000;
+const REVIEW_DISPLAY_LIMIT = 10;
 
 type ReviewSort = 'newest' | 'helpful';
 
@@ -74,7 +76,9 @@ export function useInstalledIds(): ReadonlySet<string> {
 function readIds(): ReadonlySet<string> {
   const m = getUserPluginManager();
   if (!m) return new Set();
-  return new Set(m.listAll().map((p) => p.id));
+  const ids = new Set<string>();
+  for (const plugin of m.listAll()) ids.add(plugin.id);
+  return ids;
 }
 
 export function MarketplaceTab() {
@@ -104,10 +108,11 @@ export function MarketplaceTab() {
 
   // entry.id → 可用更新版本(若有)。useMemo 让 memo 子组件能受益:
   // updates 来自 zustand store,Array.prototype.map 否则每次 render 创新 Map ref.
-  const updateByPid = useMemo(
-    () => new Map(updates.map((u) => [u.id, u.to])),
-    [updates],
-  );
+  const updateByPid = useMemo(() => {
+    const byPid = new Map<string, string>();
+    for (const update of updates) byPid.set(update.id, update.to);
+    return byPid;
+  }, [updates]);
 
   // install.pending 落地(出现在 installed 真实磁盘集)后摘除:防内存泄漏 + 防卸载后
   // 卡片残留「已安装/待重启」幻影。见 prune-landed-pending。无变化时返同引用不 re-render。
@@ -802,7 +807,7 @@ function RatingRow({
   const sorted = useMemo(
     () =>
       expanded && hasReviews
-        ? sortReviews(sourceReviews, sort).slice(0, 10)
+        ? selectDisplayReviews(sourceReviews, sort, REVIEW_DISPLAY_LIMIT)
         : [],
     [expanded, hasReviews, sourceReviews, sort],
   );
@@ -940,6 +945,7 @@ function RatingRow({
 function ReviewItem({ review: r }: { review: Review }) {
   const t = useT();
   const isMaintainer = MAINTAINERS.has(r.author.handle);
+  const avatarUrl = isHttpUrl(r.author.avatarUrl) ? r.author.avatarUrl : null;
   // 边界(E270,E253 续 / 信任信号防绕过):author.createdAt 经 E253 校验为 string + 长度,但未保证可解析为
   // 日期。畸形值(如 "not-a-date")→ getTime() 为 NaN → accountAge 为 NaN → `NaN < NEW_ACCOUNT_MS` 为
   // false → 新账号 badge 被静默绕过(新账号靠损坏 createdAt 规避风险提示)。**不可解析 = 保守视为新账号**
@@ -950,13 +956,20 @@ function ReviewItem({ review: r }: { review: Review }) {
 
   return (
     <div className="flex gap-2 border-b border-line/50 pb-1.5 last:border-0 last:pb-0">
-      <img
-        src={r.author.avatarUrl}
-        alt=""
-        loading="lazy"
-        decoding="async"
-        className="h-5 w-5 shrink-0 rounded-full"
-      />
+      {avatarUrl ? (
+        <img
+          src={avatarUrl}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          className="h-5 w-5 shrink-0 rounded-full"
+        />
+      ) : (
+        <span
+          aria-hidden="true"
+          className="h-5 w-5 shrink-0 rounded-full bg-panel-soft"
+        />
+      )}
       <div className="min-w-0 flex-1 text-2xs">
         <div className="flex items-baseline gap-1.5 text-fg-muted">
           <a
@@ -1038,16 +1051,45 @@ function ReviewItem({ review: r }: { review: Review }) {
   );
 }
 
-function sortReviews(
+function compareHelpfulReviews(a: Review, b: Review): number {
+  if (a.thumbsUp !== b.thumbsUp) return b.thumbsUp - a.thumbsUp;
+  return b.createdAt.localeCompare(a.createdAt);
+}
+
+function selectDisplayReviews(
   reviews: readonly Review[],
   sort: ReviewSort,
+  limit: number,
 ): readonly Review[] {
-  if (sort === 'newest') return reviews; // fetcher 已 createdAt DESC
-  // helpful:thumbsUp DESC,平手按 createdAt DESC
-  return [...reviews].sort((a, b) => {
-    if (a.thumbsUp !== b.thumbsUp) return b.thumbsUp - a.thumbsUp;
-    return b.createdAt.localeCompare(a.createdAt);
-  });
+  if (limit <= 0) return [];
+  // newest:fetcher 已 createdAt DESC,只需取可见前 N 条。
+  if (sort === 'newest') return reviews.slice(0, limit);
+
+  // helpful:只维护最多 N 条有序窗口,避免为只渲染前 10 条复制并全量排序
+  // 最多 2000 条 reviews。平手时 compare=0 保持原输入顺序(与稳定 sort 等价)。
+  const top: Review[] = [];
+  for (const review of reviews) {
+    if (top.length === 0) {
+      top.push(review);
+      continue;
+    }
+    if (
+      top.length === limit &&
+      compareHelpfulReviews(review, top[top.length - 1]!) >= 0
+    ) {
+      continue;
+    }
+    let insertAt = top.length;
+    while (
+      insertAt > 0 &&
+      compareHelpfulReviews(review, top[insertAt - 1]!) < 0
+    ) {
+      insertAt -= 1;
+    }
+    top.splice(insertAt, 0, review);
+    if (top.length > limit) top.pop();
+  }
+  return top;
 }
 
 /** 跳 GitHub 写新评论(预填 title 含 plugin id). */

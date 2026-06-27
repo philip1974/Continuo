@@ -202,6 +202,63 @@ describe('MarketplaceTab — 列表 + 计数', () => {
     );
   });
 
+  it('读取已安装 id 时不对 listAll 快照先 map 成中间数组', async () => {
+    const installedSnapshot = [
+      { id: 'a', manifest: { id: 'a', name: 'A', version: '1.0.0' } },
+    ];
+    getMgr.mockReturnValue({ listAll: () => installedSnapshot });
+    fetchIndexMock.mockResolvedValue([entry({ id: 'a', name: 'A' })]);
+    installApi(vi.fn());
+
+    const mapSpy = vi.spyOn(Array.prototype, 'map');
+    try {
+      const { container } = render(<MarketplaceTab />);
+      await waitFor(() => {
+        expect(container.textContent).toContain('A');
+      });
+      const mapCallsOnInstalled = mapSpy.mock.contexts.filter(
+        (ctx) => ctx === installedSnapshot,
+      ).length;
+      expect(mapCallsOnInstalled).toBe(0);
+    } finally {
+      mapSpy.mockRestore();
+    }
+  });
+
+  it('构建更新版本索引时不对 available updates 先 map 成中间数组', async () => {
+    const updatesSnapshot = [
+      {
+        id: 'a',
+        name: 'A',
+        from: '1.0.0',
+        to: '2.0.0',
+        entry: entry({ id: 'a', name: 'A' }),
+      },
+    ];
+    useUpdateStore.setState({ available: updatesSnapshot });
+    getMgr.mockReturnValue({
+      listAll: () => [
+        { id: 'a', manifest: { id: 'a', name: 'A', version: '1.0.0' } },
+      ],
+    });
+    fetchIndexMock.mockResolvedValue([entry({ id: 'a', name: 'A' })]);
+    installApi(vi.fn());
+
+    const mapSpy = vi.spyOn(Array.prototype, 'map');
+    try {
+      const { container } = render(<MarketplaceTab />);
+      await waitFor(() => {
+        expect(container.textContent).toContain('更新到 v2.0.0');
+      });
+      const mapCallsOnUpdates = mapSpy.mock.contexts.filter(
+        (ctx) => ctx === updatesSnapshot,
+      ).length;
+      expect(mapCallsOnUpdates).toBe(0);
+    } finally {
+      mapSpy.mockRestore();
+    }
+  });
+
   // a11y(A3,A1 同族):Marketplace 搜索框须有 aria-label 可访问名(屏幕阅读器),
   // placeholder 无参数 → 复用作 aria-label。locale-无关:aria-label 非空且 == placeholder。
   it('a11y · Marketplace 搜索 Input 有 aria-label 可访问名', async () => {
@@ -937,6 +994,56 @@ describe('MarketplaceTab — 评论刷新失败反馈', () => {
     expect(expandBtn!.getAttribute('aria-expanded')).toBe('false');
     fireEvent.click(expandBtn!);
     expect(expandBtn!.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  // 边界(E295):avatarUrl 为空时不渲染 <img src="">。浏览器会把空 src 当作当前页 URL,
+  // 触发无意义的页面资源请求/警告;旧缓存或异常 store 数据不应放大成网络副作用。
+  it('E295 review avatarUrl 为空 → 不渲染空 src 图片', async () => {
+    installApi(vi.fn());
+    fetchIndexMock.mockResolvedValue([entry({ id: 'a', name: 'A' })]);
+    getMgr.mockReturnValue({ listAll: () => [] });
+    act(() => {
+      useReviewsStore.setState({
+        loading: false,
+        error: null,
+        byPid: new Map([
+          [
+            'a',
+            {
+              pluginId: 'a',
+              count: 1,
+              avg: 5,
+              reviews: [
+                {
+                  pluginId: 'a',
+                  rating: 5,
+                  body: 'great',
+                  author: { handle: 'u', avatarUrl: '', createdAt: '2020-01-01' },
+                  url: 'https://x',
+                  createdAt: '2020-01-01',
+                  thumbsUp: 0,
+                },
+              ],
+            },
+          ],
+        ]),
+      });
+    });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const { container } = render(<MarketplaceTab />);
+      await waitFor(() => {
+        expect(container.textContent).toContain('A');
+      });
+      fireEvent.click(
+        container.querySelector('button[aria-expanded]') as HTMLButtonElement,
+      );
+
+      const messages = errorSpy.mock.calls.map((args) => args.join(' '));
+      expect(messages.some((m) => m.includes('empty string'))).toBe(false);
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 
   // a11y(A70,A9 同族):展开状态已由 aria-expanded 暴露,视觉三角 ▴/▾ 须 aria-hidden,

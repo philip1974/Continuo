@@ -62,12 +62,20 @@ function consumePendingFocus(sessionId: string): boolean {
   return true;
 }
 
+function sessionsById(
+  sessions: readonly TerminalSession[],
+): Map<string, TerminalSession> {
+  const byId = new Map<string, TerminalSession>();
+  for (const session of sessions) byId.set(session.id, session);
+  return byId;
+}
+
 export function reconcileTerminalPanels(
   api: DockviewApi,
   input: ReconcileInput,
 ): void {
-  const prevById = new Map(input.previousSessions.map((s) => [s.id, s]));
-  const nextById = new Map(input.nextSessions.map((s) => [s.id, s]));
+  const prevById = sessionsById(input.previousSessions);
+  const nextById = sessionsById(input.nextSessions);
 
   const added = input.nextSessions
     .filter((s) => !prevById.has(s.id))
