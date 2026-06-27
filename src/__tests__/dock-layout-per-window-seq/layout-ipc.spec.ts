@@ -377,6 +377,33 @@ describe('window-scoped layout IPC', () => {
     });
   });
 
+  it('layout:write 相同 layout → 不重复原子写文件', async () => {
+    setWindowSeq(101, 7);
+    const payload = defaultExplorerV3();
+    payload.windows = [
+      {
+        windowSeq: 7,
+        workspace: { root: '/a' },
+        explorer: { activePath: null, expandedPaths: [], sort },
+        layout: { version: 1, panel: 'same-A' },
+      },
+    ];
+    await writeExplorer(payload);
+
+    const renameSpy = vi.spyOn(fs, 'rename');
+    try {
+      const result = await invokeIpc('layout:write', {
+        version: 1,
+        panel: 'same-A',
+      });
+
+      expect(result).toEqual({ ok: true, data: undefined });
+      expect(renameSpy).not.toHaveBeenCalled();
+    } finally {
+      renameSpy.mockRestore();
+    }
+  });
+
   it('T10b: layout:write creates a missing window entry', async () => {
     setWindowSeq(101, 9);
     await writeExplorer(defaultExplorerV3());

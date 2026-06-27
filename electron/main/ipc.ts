@@ -202,6 +202,12 @@ export function registerIpc(): { pluginFsHandles: PluginFsIpcHandles } {
         const payload =
           (await loadExplorer(explorerFile)) ?? defaultExplorerV3();
         const entry = ensureWindowEntry(payload, seq);
+        if (
+          entry.layout !== undefined &&
+          JSON.stringify(entry.layout) === serialized
+        ) {
+          return;
+        }
         entry.layout = layout;
         await atomicWriteJson(explorerFile, payload);
       });

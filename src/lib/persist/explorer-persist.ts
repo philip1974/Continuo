@@ -476,6 +476,7 @@ export async function initExplorerPersistence(
   // flush 返回链尾 promise → 关窗仍能 await 到最终写完成。
   let writeChain: Promise<void> = Promise.resolve();
   let pendingWrite = false;
+  let lastWrittenSnapshotPayload: string | null = null;
   const writeNow = (): Promise<void> => {
     pendingWrite = true;
     writeChain = writeChain.then(async () => {
@@ -483,9 +484,12 @@ export async function initExplorerPersistence(
       pendingWrite = false;
       try {
         const snap = snapshotFromStores(lastSnap ?? undefined, windowSeq);
+        const serializedSnap = JSON.stringify(snap);
+        if (serializedSnap === lastWrittenSnapshotPayload) return;
         const w = await api.write(snap);
         if (w.ok) {
           lastSnap = snap;
+          lastWrittenSnapshotPayload = serializedSnap;
         } else {
           console.warn('[explorer-persist] write failed', w.code, w.message);
         }

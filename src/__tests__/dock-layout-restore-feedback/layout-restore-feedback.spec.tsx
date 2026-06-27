@@ -152,6 +152,27 @@ describe('a11y(A131) — Dock 布局恢复失败须反馈', () => {
     );
   });
 
+  it('自动保存相同 layout 快照 → 只写一次', async () => {
+    h.read.mockResolvedValue({ ok: true, data: null });
+    h.write.mockResolvedValue({ ok: true });
+    render(React.createElement(DockShell));
+    await vi.waitFor(() => {
+      expect(h.layoutChangeCb.current).not.toBeNull();
+    });
+
+    h.layoutChangeCb.current!();
+    await vi.waitFor(
+      () => {
+        expect(h.write).toHaveBeenCalledTimes(1);
+      },
+      { timeout: 1500 },
+    );
+
+    h.layoutChangeCb.current!();
+    await new Promise((r) => setTimeout(r, 400));
+    expect(h.write).toHaveBeenCalledTimes(1);
+  });
+
   // race(R42):关窗 layout:flush 回调必须在**执行时**读 apiRef.current,而非 effect 注册时闭包
   // 捕获 api。卸载后 apiRef.current=null(R30),迟到/错挂的 flush 回调应跳过写盘,不用 stale api。
   it('R42 flush 回调在 apiRef.current 为空(卸载后)时跳过 writeDockLayoutSnapshot', async () => {

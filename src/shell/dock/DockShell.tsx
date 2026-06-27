@@ -121,6 +121,7 @@ function DockReconcilerMount({ api }: { api: DockviewApi }): null {
 // 同类失败 5s 内只播报一次。
 let lastLayoutSaveNotifyAt = 0;
 const LAYOUT_SAVE_NOTIFY_MIN_INTERVAL_MS = 5000;
+let lastSuccessfulLayoutPayload: string | null = null;
 function notifyLayoutSaveFailedRateLimited(): void {
   const now = Date.now();
   if (now - lastLayoutSaveNotifyAt < LAYOUT_SAVE_NOTIFY_MIN_INTERVAL_MS) return;
@@ -148,14 +149,20 @@ async function writeDockLayoutSnapshot(
     if (dropped.length > 0) {
       console.warn(`${warnPrefix} 丢弃非 JSON-safe 值(布局仍持久化)`, dropped);
     }
-    const r = await coApi.layout.write({
+    const payload = {
       version: 1 as const,
       ...(snapshot as object),
-    });
+    };
+    const serializedPayload = JSON.stringify(payload);
+    if (serializedPayload === lastSuccessfulLayoutPayload) return;
+
+    const r = await coApi.layout.write(payload);
     if (!r.ok) {
       console.warn(`${warnPrefix} failed`, r.code, r.message);
       if (notifyOnFail) notifyLayoutSaveFailedRateLimited();
+      return;
     }
+    lastSuccessfulLayoutPayload = serializedPayload;
   } catch (err) {
     console.warn(`${warnPrefix} rejected`, err);
     if (notifyOnFail) notifyLayoutSaveFailedRateLimited();

@@ -342,6 +342,23 @@ describe('initExplorerPersistence', () => {
     }
   });
 
+  it('自动保存成功后 flush 相同 snapshot → 不重复调用 api.write', async () => {
+    vi.useFakeTimers();
+    try {
+      const api = makeApi(async () => ({ ok: true, data: null }));
+      await initExplorerPersistence(api);
+
+      useWorkspaceStore.getState().setRoot('/a');
+      await vi.advanceTimersByTimeAsync(400);
+      expect(api.write).toHaveBeenCalledTimes(1);
+
+      await flushExplorerPersistence();
+      expect(api.write).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('write 失败时不 crash(只 console.warn)', async () => {
     vi.useFakeTimers();
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
