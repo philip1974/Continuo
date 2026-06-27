@@ -90,11 +90,16 @@ export async function fetchAllReviews(
     return new Map();
   }
   const nodeCount = Math.min(rawNodes.length, MAX_REVIEW_NODES);
-  const reviews: Review[] = [];
+  const reviews = new Array<Review>(nodeCount);
+  let reviewCount = 0;
   for (let i = 0; i < nodeCount; i++) {
     const parsed = parseReview(rawNodes[i]);
-    if (parsed) reviews.push(parsed);
+    if (parsed) {
+      reviews[reviewCount] = parsed;
+      reviewCount += 1;
+    }
   }
+  reviews.length = reviewCount;
   const byPid = aggregate(reviews);
   reviewsCache.set(aggregateMapToRecord(byPid));
   return byPid;
@@ -127,24 +132,32 @@ function aggregate(
 ): Map<string, PluginAggregateRating> {
   const groups = new Map<
     string,
-    { readonly reviews: Review[]; sum: number }
+    { reviews: Review[] | null; sum: number; count: number; writeIndex: number }
   >();
   for (const r of reviews) {
     let group = groups.get(r.pluginId);
     if (!group) {
-      group = { reviews: [], sum: 0 };
+      group = { reviews: null, sum: 0, count: 0, writeIndex: 0 };
       groups.set(r.pluginId, group);
     }
-    group.reviews.push(r);
     group.sum += r.rating;
+    group.count += 1;
+  }
+  for (const group of groups.values()) {
+    group.reviews = new Array<Review>(group.count);
+  }
+  for (const r of reviews) {
+    const group = groups.get(r.pluginId)!;
+    group.reviews![group.writeIndex] = r;
+    group.writeIndex += 1;
   }
   const out = new Map<string, PluginAggregateRating>();
   for (const [pluginId, group] of groups) {
     out.set(pluginId, {
       pluginId,
-      count: group.reviews.length,
-      avg: group.sum / group.reviews.length,
-      reviews: group.reviews, // 已按 createdAt DESC(GraphQL orderBy)
+      count: group.count,
+      avg: group.sum / group.count,
+      reviews: group.reviews!, // 已按 createdAt DESC(GraphQL orderBy)
     });
   }
   return out;

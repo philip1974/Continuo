@@ -181,6 +181,20 @@ describe('walkWorkspaceFiles', () => {
     if (r.ok) expect(r.data.length).toBe(100);
   });
 
+  it('renderer 端过滤结果使用上限数组,不通过 files.push 扩容', async () => {
+    const listDir = makeListDir([
+      entry('/r/src', 'src', true),
+      entry('/r/a.ts', 'a.ts', false),
+      entry('/r/b.ts', 'b.ts', false),
+    ]);
+
+    const r = await walkWorkspaceFiles({ rootPath: '/r', listDir });
+
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.data.map((f) => f.name)).toEqual(['a.ts', 'b.ts']);
+    expect(walkWorkspaceFiles.toString()).not.toContain('files.push(');
+  });
+
   it('listDir 返 fail → 透传', async () => {
     const listDir: ListDirFn = async () => ({
       ok: false,

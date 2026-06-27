@@ -88,17 +88,22 @@ export async function walkWorkspaceFiles(
   // 保护 + 平台感知大小写)。跨平台审计 P2(codex):此前手写 `e.path.startsWith(rootPath)`
   // 仍是大小写敏感且无边界 → Windows 上 rootPath 与 FileEntry.path 仅大小写不同 / canonical
   // 形式时 relPath 退化为绝对路径 → Quick Open 路径显示 + 相对片段搜索失真。
-  const files: QuickOpenFile[] = [];
+  const capacity =
+    maxFiles > 0 ? Math.min(maxFiles, r.data.length) : 0;
+  const files = new Array<QuickOpenFile>(capacity);
+  let fileCount = 0;
   for (const e of r.data) {
     if (e.isDirectory) continue;
     const relPath = stripRootPrefix(rootPath, e.path);
-    files.push({
+    files[fileCount] = {
       absPath: e.path,
       relPath,
       relPathLower: relPath.toLowerCase(), // perf P16:scan 时预算一次
       name: e.name,
-    });
-    if (files.length >= maxFiles) break;
+    };
+    fileCount += 1;
+    if (fileCount >= maxFiles) break;
   }
+  files.length = fileCount;
   return { ok: true, data: files };
 }

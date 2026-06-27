@@ -20,11 +20,12 @@ export function pickStartupMode(
   isExistingDir: (p: string) => boolean,
 ): StartupMode {
   const seen = new Set<string>();
-  const dirs: string[] = [];
+  const dirs = new Array<string>(MAX_STARTUP_DIRS);
+  let dirCount = 0;
   for (const p of pendingOpenPaths) {
     // 边界(E58,与 pickArgvFolders 同款):目录数封顶 + 超长路径先跳过(不 stat),挡 macOS open-file
     // 缓冲被塞大量/超长路径时冷启动同步 I/O + 批量开窗。
-    if (dirs.length >= MAX_STARTUP_DIRS) break;
+    if (dirCount >= MAX_STARTUP_DIRS) break;
     if (!isWithinStartupPathLimit(p)) continue;
     if (seen.has(p)) continue;
     seen.add(p);
@@ -34,8 +35,12 @@ export function pickStartupMode(
     } catch {
       ok = false;
     }
-    if (ok) dirs.push(p);
+    if (ok) {
+      dirs[dirCount] = p;
+      dirCount += 1;
+    }
   }
-  if (dirs.length === 0) return { mode: 'restore' };
+  if (dirCount === 0) return { mode: 'restore' };
+  dirs.length = dirCount;
   return { mode: 'dock', dirs };
 }

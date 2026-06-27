@@ -22,6 +22,7 @@ import {
   MAX_REQUEST_TARGET_LEN,
   MCP_ERR_MESSAGE_MAX,
   MCP_ERR_CODE_MAX,
+  createMcpHost,
 } from '../../../electron/main/services/mcp-host.service';
 
 // ────────────────────────────────────────────────────────────
@@ -120,6 +121,12 @@ describe('sseAdmissionAllowed(E232)', () => {
     expect(sseAdmissionAllowed(63, 15)).toBe(true);
     expect(sseAdmissionAllowed(64, 15)).toBe(false);
     expect(sseAdmissionAllowed(63, 16)).toBe(false);
+  });
+});
+
+describe('createMcpHost · broadcast cleanup', () => {
+  it('广播失败连接时直接关闭,不通过 dead.push 收集二次遍历', () => {
+    expect(createMcpHost.toString()).not.toContain('dead.push(');
   });
 });
 

@@ -46,17 +46,19 @@ export function eventToCombo(
   if (key === 'Meta' || key === 'Control' || key === 'Shift' || key === 'Alt') {
     return null;
   }
-  const parts: string[] = [];
+  const parts = new Array<string>(5);
+  let partCount = 0;
   if (platform === 'mac') {
-    if (e.metaKey) parts.push('mod');
-    if (e.ctrlKey) parts.push('ctrl');
+    if (e.metaKey) parts[partCount++] = 'mod';
+    if (e.ctrlKey) parts[partCount++] = 'ctrl';
   } else {
-    if (e.ctrlKey) parts.push('mod');
-    if (e.metaKey) parts.push('cmd');
+    if (e.ctrlKey) parts[partCount++] = 'mod';
+    if (e.metaKey) parts[partCount++] = 'cmd';
   }
-  if (e.shiftKey) parts.push('shift');
-  if (e.altKey) parts.push('alt');
-  parts.push(key.toLowerCase());
+  if (e.shiftKey) parts[partCount++] = 'shift';
+  if (e.altKey) parts[partCount++] = 'alt';
+  parts[partCount++] = key.toLowerCase();
+  parts.length = partCount;
   const combo = parts.join('+');
   // 边界(E145):只产出注册侧 HOTKEY_SHAPE_RE 接受的合法形态。Space(e.key === ' ')→ 含空白、
   // 主键为 '+'(→ 'shift++' 空段)等会被 compileCombo trim/split 成空主键 → 永远不触发 + 显示异常。
@@ -70,15 +72,24 @@ export function selectKeybindingConflicts(
   captured: string | null,
 ): readonly CommandSpec[] {
   if (!captured) return EMPTY_CONFLICTS;
-  let conflicts: CommandSpec[] | null = null;
+  let conflictCount = 0;
   for (const command of allCommands) {
     if (command.id === commandId || getEffectiveHotkey(command) !== captured) {
       continue;
     }
-    if (conflicts === null) conflicts = [];
-    conflicts.push(command);
+    conflictCount += 1;
   }
-  return conflicts ?? EMPTY_CONFLICTS;
+  if (conflictCount === 0) return EMPTY_CONFLICTS;
+  const conflicts = new Array<CommandSpec>(conflictCount);
+  let index = 0;
+  for (const command of allCommands) {
+    if (command.id === commandId || getEffectiveHotkey(command) !== captured) {
+      continue;
+    }
+    conflicts[index] = command;
+    index += 1;
+  }
+  return conflicts;
 }
 
 export function KeybindingCaptureModal({

@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 const coApiMocks = vi.hoisted(() => {
@@ -257,6 +259,14 @@ describe('network.fetch 输入边界 (E264)', () => {
     await expect(scoped.network.fetch('https://x/')).rejects.toBeInstanceOf(
       PermissionError,
     );
+  });
+
+  it('headers 预检边遍历边校验,不物化 entries 中间数组', () => {
+    const source = readFileSync(
+      path.resolve(__dirname, '../../plugins/scoped-app.ts'),
+      'utf8',
+    );
+    expect(source).not.toContain('entries.push(');
   });
 });
 

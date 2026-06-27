@@ -443,13 +443,19 @@ export function createPluginMcpBridge(
     },
 
     listRegistered() {
-      const registered: Array<{ name: string; pluginId: string; wcId: number }> = [];
+      const registered = new Array<{
+        name: string;
+        pluginId: string;
+        wcId: number;
+      }>(entries.size);
+      let registeredCount = 0;
       for (const e of entries.values()) {
-        registered.push({
+        registered[registeredCount] = {
           name: e.name,
           pluginId: e.pluginId,
           wcId: e.wcId,
-        });
+        };
+        registeredCount += 1;
       }
       return registered;
     },

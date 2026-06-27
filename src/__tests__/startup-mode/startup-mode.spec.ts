@@ -90,4 +90,10 @@ describe('pickStartupMode', () => {
       expect(isDir).not.toHaveBeenCalledWith(longPath);
     });
   });
+
+  describe('冷启动目录收集分配', () => {
+    it('实现使用固定上限数组收集目录,不通过 dirs.push 扩容', () => {
+      expect(pickStartupMode.toString()).not.toContain('dirs.push(');
+    });
+  });
 });

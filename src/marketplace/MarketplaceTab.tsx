@@ -1092,28 +1092,35 @@ export function selectDisplayReviews(
 
   // helpful:只维护最多 N 条有序窗口,避免为只渲染前 10 条复制并全量排序
   // 最多 2000 条 reviews。平手时 compare=0 保持原输入顺序(与稳定 sort 等价)。
-  const top: Review[] = [];
+  const top = new Array<Review>(Math.min(limit, reviews.length));
+  let topCount = 0;
   for (const review of reviews) {
-    if (top.length === 0) {
-      top.push(review);
+    if (topCount === 0) {
+      top[0] = review;
+      topCount = 1;
       continue;
     }
     if (
-      top.length === limit &&
-      compareHelpfulReviews(review, top[top.length - 1]!) >= 0
+      topCount === limit &&
+      compareHelpfulReviews(review, top[topCount - 1]!) >= 0
     ) {
       continue;
     }
-    let insertAt = top.length;
+    let insertAt = topCount;
     while (
       insertAt > 0 &&
       compareHelpfulReviews(review, top[insertAt - 1]!) < 0
     ) {
       insertAt -= 1;
     }
-    top.splice(insertAt, 0, review);
-    if (top.length > limit) top.pop();
+    const moveFrom = topCount < limit ? topCount : limit - 1;
+    for (let i = moveFrom; i > insertAt; i--) {
+      top[i] = top[i - 1]!;
+    }
+    top[insertAt] = review;
+    if (topCount < limit) topCount += 1;
   }
+  top.length = topCount;
   return top;
 }
 

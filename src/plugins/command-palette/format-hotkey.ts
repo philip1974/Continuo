@@ -99,8 +99,29 @@ export function formatHotkeyParts(
   raw: string,
   platform: Platform,
 ): string[] {
-  const parts: string[] = [];
-  visitFormattedHotkeyParts(raw, platform, (part) => parts.push(part));
+  if (!raw) return [];
+  let count = 0;
+  let start = 0;
+  for (;;) {
+    const plus = raw.indexOf('+', start);
+    const end = plus < 0 ? raw.length : plus;
+    if (end > start) count += 1;
+    if (plus < 0) break;
+    start = plus + 1;
+  }
+  const parts = new Array<string>(count);
+  let index = 0;
+  start = 0;
+  for (;;) {
+    const plus = raw.indexOf('+', start);
+    const end = plus < 0 ? raw.length : plus;
+    if (end > start) {
+      parts[index] = formatPart(raw.slice(start, end), platform);
+      index += 1;
+    }
+    if (plus < 0) break;
+    start = plus + 1;
+  }
   return parts;
 }
 

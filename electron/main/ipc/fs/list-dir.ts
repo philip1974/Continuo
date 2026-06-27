@@ -151,10 +151,11 @@ async function resolveEntry(
 function resolveEntryBatch(
   dir: string,
   batch: readonly DirEntryLike[],
+  batchCount: number,
   followSymlinks: boolean,
 ): Array<Promise<ResolvedEntry | null>> {
-  const promises = new Array<Promise<ResolvedEntry | null>>(batch.length);
-  for (let i = 0; i < batch.length; i++) {
+  const promises = new Array<Promise<ResolvedEntry | null>>(batchCount);
+  for (let i = 0; i < batchCount; i++) {
     promises[i] = resolveEntry(dir, batch[i]!, followSymlinks);
   }
   return promises;
@@ -178,16 +179,17 @@ async function walk(
   // filter 物化一份(超宽目录会在 MAX_TOTAL_ENTRIES 检查前内存峰值/OOM)。totalCount 仍在处理阶段
   // 计数(语义/上限不变);for await 在 break/throw/完成时自动 close Dir。
   const dirHandle = await opendir(dir);
-  let chunk: DirEntryLike[] = [];
+  const chunk = new Array<DirEntryLike>(LSTAT_CHUNK);
+  let chunkCount = 0;
   let stop = false;
 
   // 处理一块:并发 lstat(保留块内顺序),逐项组装/计数/递归。stop=true 表示 maxFiles 已达,应停。
   const flushChunk = async (): Promise<void> => {
-    if (chunk.length === 0) return;
-    const batch = chunk;
-    chunk = [];
+    if (chunkCount === 0) return;
+    const batchCount = chunkCount;
+    chunkCount = 0;
     const resolved = await Promise.all(
-      resolveEntryBatch(dir, batch, followSymlinks),
+      resolveEntryBatch(dir, chunk, batchCount, followSymlinks),
     );
     for (const item of resolved) {
       if (state.fileCount >= maxFiles) {
@@ -196,7 +198,7 @@ async function walk(
       }
       if (!item) continue;
       const { full, st, isSymlink, isDirectory } = item;
-      out.push({
+      out[out.length] = {
         path: full,
         name: item.d.name,
         isDirectory,
@@ -204,7 +206,7 @@ async function walk(
         ...(st.isFile() && { size: st.size }),
         mtime: st.mtimeMs,
         ctime: st.ctimeMs,
-      });
+      };
       if (st.isFile()) state.fileCount++; // 只文件计入 maxFiles(目录不计)
       // 边界(E38):总条目(文件+目录)硬上限,超过即 fail-closed 抛(滥用/极端目录 backstop,
       // 不静默截断)。与只数文件的业务 maxFiles 正交;QuickOpen 的 maxFiles 更低会先早停。
@@ -230,7 +232,9 @@ async function walk(
           maxTotalEntries,
           state,
         );
-        out.push(...children);
+        for (let i = 0; i < children.length; i++) {
+          out[out.length] = children[i]!;
+        }
       }
     }
   };
@@ -239,8 +243,9 @@ async function walk(
   for await (const dirent of dirHandle) {
     if (state.fileCount >= maxFiles) break;
     if (exclude.has(dirent.name)) continue;
-    chunk.push({ name: dirent.name });
-    if (chunk.length >= LSTAT_CHUNK) {
+    chunk[chunkCount] = { name: dirent.name };
+    chunkCount += 1;
+    if (chunkCount >= LSTAT_CHUNK) {
       await flushChunk(); // 抛 FS_DIR_TOO_LARGE 时 for await 经迭代器 return() 关闭 Dir
       if (stop) break;
     }
@@ -252,7 +257,7 @@ async function walk(
 }
 
 function sortDirsFirst(entries: FileEntry[]): FileEntry[] {
-  return [...entries].sort((a, b) => {
+  return entries.sort((a, b) => {
     if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
     return a.name.localeCompare(b.name);
   });

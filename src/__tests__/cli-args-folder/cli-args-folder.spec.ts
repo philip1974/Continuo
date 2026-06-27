@@ -147,6 +147,12 @@ describe('pickArgvFolders', () => {
     });
   });
 
+  describe('冷启动目录收集分配', () => {
+    it('实现使用固定上限数组收集目录,不通过 dirs.push 扩容', () => {
+      expect(pickArgvFolders.toString()).not.toContain('dirs.push(');
+    });
+  });
+
   // 边界(E59):isWithinStartupPathLimit 是 argv / open-file 缓冲 / 运行期 open-file 三处共用的
   // string + 长度守卫(运行期 openPathInNewWindow 复用它,statSync 前过滤超长路径)。
   describe('E59 · isWithinStartupPathLimit', () => {

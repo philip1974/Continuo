@@ -494,15 +494,13 @@ export async function createStdioSocketServer(
       const payload: Record<string, unknown> = { jsonrpc: '2.0', method };
       if (params !== undefined) payload.params = params;
       const line = JSON.stringify(payload) + '\n';
-      const dead: Socket[] = [];
       for (const c of clients) {
         try {
           c.write(line);
         } catch {
-          dead.push(c);
+          clients.delete(c);
         }
       }
-      for (const c of dead) clients.delete(c);
     },
     async close(): Promise<void> {
       // 必须先 destroy 现存连接:server.close() 的回调要等所有现存连接关闭才触发,

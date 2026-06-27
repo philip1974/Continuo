@@ -4,6 +4,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { splitLines as splitNdjsonLines } from '@continuo-terminal/server-node';
 import {
+  createStdioSocketServer,
   hasOversizedStdioLine,
   resolveStdioHelloWindowId,
 } from '../../../electron/main/services/mcp-stdio-server.service';
@@ -18,6 +19,12 @@ function splitLines(state: FramingState, chunk: string) {
 }
 
 const empty: FramingState = { buf: '' };
+
+describe('createStdioSocketServer · broadcast cleanup', () => {
+  it('广播失败 socket 时直接删除,不通过 dead.push 收集二次遍历', () => {
+    expect(createStdioSocketServer.toString()).not.toContain('dead.push(');
+  });
+});
 
 describe('splitLines · 基础', () => {
   it('空 chunk → 状态不变,lines 空', () => {

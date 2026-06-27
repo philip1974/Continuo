@@ -28,15 +28,21 @@ export function splitStatusItemsBySide(items: readonly StatusBarItemSpec[]): {
   readonly left: readonly StatusBarItemSpec[];
   readonly right: readonly StatusBarItemSpec[];
 } {
-  const left: StatusBarItemSpec[] = [];
-  const right: StatusBarItemSpec[] = [];
+  const left = new Array<StatusBarItemSpec>(items.length);
+  const right = new Array<StatusBarItemSpec>(items.length);
+  let leftCount = 0;
+  let rightCount = 0;
   for (const item of items) {
     if (item.side === 'left') {
-      left.push(item);
+      left[leftCount] = item;
+      leftCount += 1;
     } else {
-      right.push(item);
+      right[rightCount] = item;
+      rightCount += 1;
     }
   }
+  left.length = leftCount;
+  right.length = rightCount;
   return { left, right };
 }
 

@@ -156,6 +156,7 @@ describe('dispatchRpc · tools/list', () => {
       );
 
       expect(arrayFromSpy).not.toHaveBeenCalled();
+      expect(dispatchRpc.toString()).not.toContain('toolList.push(');
       expect('result' in r).toBe(true);
       expect((r as { result: { tools: { name: string }[] } }).result.tools).toHaveLength(3);
     } finally {

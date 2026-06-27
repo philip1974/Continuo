@@ -142,6 +142,7 @@ describe('formatHotkeyParts', () => {
         'H',
       ]);
       expect(splitSpy).not.toHaveBeenCalled();
+      expect(formatHotkeyParts.toString()).not.toContain('parts.push(');
     } finally {
       splitSpy.mockRestore();
     }

@@ -30,12 +30,13 @@ export function pickArgvFolders(
 
   const start = opts.skipFirstArg ? 2 : 1;
   const seen = new Set<string>();
-  const dirs: string[] = [];
+  const dirs = new Array<string>(MAX_STARTUP_DIRS);
+  let dirCount = 0;
 
   // 边界(E192,E176/E189 有界迭代族):索引遍历原 argv,不 argv.slice(start) —— slice 在循环截断前
   // 就把尾部全量复制成新数组,畸形超长 process.argv 冷启动即产生不必要内存峰值。索引推进,凑满即 break。
   for (let i = start; i < argv.length; i++) {
-    if (dirs.length >= MAX_STARTUP_DIRS) break; // 边界(E58):目录数封顶,停止收集 + 同步 stat
+    if (dirCount >= MAX_STARTUP_DIRS) break; // 边界(E58):目录数封顶,停止收集 + 同步 stat
     const p = argv[i];
     // 边界(E58):超长/非法路径先跳过,绝不对其 isExistingDir(同步 stat)。
     if (!isWithinStartupPathLimit(p)) continue;
@@ -43,8 +44,10 @@ export function pickArgvFolders(
     if (seen.has(p)) continue;
     if (!isExistingDir(p)) continue;
     seen.add(p);
-    dirs.push(p);
+    dirs[dirCount] = p;
+    dirCount += 1;
   }
 
+  dirs.length = dirCount;
   return dirs;
 }

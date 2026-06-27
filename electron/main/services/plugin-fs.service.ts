@@ -300,12 +300,12 @@ export function registerPluginFsHandlers(
           `directory has too many entries (> ${MAX_LIST_DIR_ENTRIES})`,
         );
       }
-      out.push({
+      out[out.length] = {
         name: e.name,
         isFile: e.isFile(),
         isDirectory: e.isDirectory(),
         isSymlink: e.isSymbolicLink(),
-      });
+      };
     }
     return out;
   });
