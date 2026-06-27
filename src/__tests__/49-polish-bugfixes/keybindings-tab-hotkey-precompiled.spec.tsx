@@ -116,6 +116,7 @@ describe('打磨 R29 — Keybindings hotkey 预计算', () => {
       expect(buckets[0]?.items).toEqual([commandA]);
       expect(buckets[1]?.items).toEqual([commandB]);
       expect(groupByCategory.toString()).not.toContain('buckets.push(');
+      expect(groupByCategory.toString()).not.toContain('.push(');
     } finally {
       arrayFromSpy.mockRestore();
     }

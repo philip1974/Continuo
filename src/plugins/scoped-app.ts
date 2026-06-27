@@ -148,14 +148,15 @@ export function buildPluginListDirEntries(
   entries: readonly Pick<FileEntry, 'name' | 'isDirectory' | 'isSymlink'>[],
 ): FileEntry[] {
   const parent = path.replace(/[\\/]+$/, '');
-  const out: FileEntry[] = [];
-  for (const entry of entries) {
-    out.push({
+  const out = new Array<FileEntry>(entries.length);
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i]!;
+    out[i] = {
       path: joinPath(parent, entry.name),
       name: entry.name,
       isDirectory: entry.isDirectory,
       isSymlink: entry.isSymlink,
-    });
+    };
   }
   return out;
 }
@@ -672,8 +673,12 @@ function makePermission(
     async granted() {
       if (!store) return [];
       const decisions = await store.get(pluginId);
-      const out: PermissionKey[] = [];
-      for (const d of decisions) if (d.granted) out.push(d.permission);
+      const out = new Array<PermissionKey>(decisions.length);
+      let outCount = 0;
+      for (const d of decisions) {
+        if (d.granted) out[outCount++] = d.permission;
+      }
+      out.length = outCount;
       return out;
     },
   };

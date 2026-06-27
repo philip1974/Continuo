@@ -173,11 +173,13 @@ async function readPluginDirEntriesCapped(baseDir: string): Promise<string[]> {
   } catch {
     return []; // baseDir 不存在/不可读 = 无插件
   }
-  const names: string[] = [];
+  const names = new Array<string>(MAX_PLUGIN_DIR_ENTRIES);
+  let nameCount = 0;
   try {
     for await (const dirent of dir) {
-      names.push(dirent.name);
-      if (names.length >= MAX_PLUGIN_DIR_ENTRIES) {
+      names[nameCount] = dirent.name;
+      nameCount += 1;
+      if (nameCount >= MAX_PLUGIN_DIR_ENTRIES) {
         console.warn(
           `[plugins] 目录条目截断到 ${MAX_PLUGIN_DIR_ENTRIES}(超大/被污染?): ${baseDir}`,
         );
@@ -187,6 +189,7 @@ async function readPluginDirEntriesCapped(baseDir: string): Promise<string[]> {
   } catch {
     // 迭代中途错误 → 返回已收集(best-effort)
   }
+  names.length = nameCount;
   return names;
 }
 
@@ -218,7 +221,8 @@ export async function listPluginDirs(baseDir: string): Promise<IpcPluginDir[]> {
   // 边界(E82):有界枚举(缺目录 → [] → 返回空列表,等价旧版)。
   const entries = await readPluginDirEntriesCapped(baseDir);
 
-  const out: IpcPluginDir[] = [];
+  const out = new Array<IpcPluginDir>(entries.length);
+  let outCount = 0;
   for (const id of entries) {
     if (id.startsWith('.') || id.startsWith('_')) continue;
 
@@ -257,8 +261,10 @@ export async function listPluginDirs(baseDir: string): Promise<IpcPluginDir[]> {
       (await readFileCapped(path.join(dir, 'styles.css'), STYLES_MAX_BYTES)) ??
       undefined;
 
-    out.push({ id, manifestText, mainText, stylesText });
+    out[outCount] = { id, manifestText, mainText, stylesText };
+    outCount += 1;
   }
+  out.length = outCount;
   return out;
 }
 
@@ -292,15 +298,18 @@ export async function readEnabledIds(baseDir: string): Promise<string[]> {
       // 遇非字符串即按既有契约返 [](保持 every 的"任一非字符串→整文件非法",且早停不续扫)。
       // 边界(E85):按写端契约 canonicalize —— 合法 id(isSafePluginId + 长度上限)+ 去重 + 数量封顶。
       const seen = new Set<string>();
-      const out: string[] = [];
+      const out = new Array<string>(Math.min(json.length, MAX_ENABLED_IDS));
+      let outCount = 0;
       for (const x of json) {
         if (typeof x !== 'string') return [];
         if (x.length > PLUGIN_ID_MAX || !isSafePluginId(x)) continue;
         if (seen.has(x)) continue;
         seen.add(x);
-        out.push(x);
-        if (out.length >= MAX_ENABLED_IDS) break;
+        out[outCount] = x;
+        outCount += 1;
+        if (outCount >= MAX_ENABLED_IDS) break;
       }
+      out.length = outCount;
       return out;
     }
     return [];
@@ -386,12 +395,15 @@ function cappedAllValid<T>(
   isValid: (x: unknown) => x is T,
   max: number,
 ): T[] | null {
-  const out: T[] = [];
+  const out = new Array<T>(Math.min(arr.length, max));
+  let outCount = 0;
   for (const x of arr) {
-    if (out.length >= max) break;
+    if (outCount >= max) break;
     if (!isValid(x)) return null;
-    out.push(x);
+    out[outCount] = x;
+    outCount += 1;
   }
+  out.length = outCount;
   return out;
 }
 
@@ -405,11 +417,16 @@ function collectValidCapped<T>(
   isValid: (x: unknown) => x is T,
   max: number,
 ): T[] {
-  const out: T[] = [];
+  const out = new Array<T>(Math.min(arr.length, max));
+  let outCount = 0;
   for (const x of arr) {
-    if (out.length >= max) break;
-    if (isValid(x)) out.push(x);
+    if (outCount >= max) break;
+    if (isValid(x)) {
+      out[outCount] = x;
+      outCount += 1;
+    }
   }
+  out.length = outCount;
   return out;
 }
 
@@ -419,11 +436,16 @@ function collectMappedValidCapped<T, U>(
   mapValid: (x: T) => U,
   max: number,
 ): U[] {
-  const out: U[] = [];
+  const out = new Array<U>(Math.min(arr.length, max));
+  let outCount = 0;
   for (const x of arr) {
-    if (out.length >= max) break;
-    if (isValid(x)) out.push(mapValid(x));
+    if (outCount >= max) break;
+    if (isValid(x)) {
+      out[outCount] = mapValid(x);
+      outCount += 1;
+    }
   }
+  out.length = outCount;
   return out;
 }
 

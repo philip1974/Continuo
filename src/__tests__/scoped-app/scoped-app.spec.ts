@@ -295,6 +295,7 @@ describe('permission.check / granted', () => {
     expect(await scoped.permission.check('clipboard')).toBe(false);
     const g = await scoped.permission.granted();
     expect(g).toEqual(['fs']);
+    expect(scoped.permission.granted.toString()).not.toContain('out.push(');
   });
 
   it('per-plugin 隔离:p.a 的授权不被 p.b 看到', async () => {
@@ -495,6 +496,7 @@ describe('授后转发 — fs / shell / clipboard / mcp / network 行为', () =>
         },
       ]);
       expect(mapSpy).not.toHaveBeenCalled();
+      expect(buildPluginListDirEntries.toString()).not.toContain('out.push(');
     } finally {
       mapSpy.mockRestore();
     }
@@ -876,6 +878,7 @@ describe('授后转发 — fs / shell / clipboard / mcp / network 行为', () =>
     const scoped = createScopedApp(makeLmApp(), 'p', store);
     const granted = await scoped.permission.granted();
     expect(granted).toEqual(['fs']);
+    expect(scoped.permission.granted.toString()).not.toContain('out.push(');
   });
 });
 

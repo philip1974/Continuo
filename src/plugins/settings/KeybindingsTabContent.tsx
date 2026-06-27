@@ -63,19 +63,21 @@ export function groupByCategory(
   commands: readonly DisplayCommand[],
   defaultGroup: string,
 ): Bucket[] {
-  const map = new Map<string, DisplayCommand[]>();
+  const map = new Map<string, { items: DisplayCommand[]; count: number }>();
   for (const d of commands) {
     const key = d.displayCategory || defaultGroup;
-    let arr = map.get(key);
-    if (!arr) {
-      arr = [];
-      map.set(key, arr);
+    let bucket = map.get(key);
+    if (!bucket) {
+      bucket = { items: new Array<DisplayCommand>(commands.length), count: 0 };
+      map.set(key, bucket);
     }
-    arr.push(d);
+    bucket.items[bucket.count++] = d;
   }
   const buckets = new Array<Bucket>(map.size);
   let i = 0;
-  for (const [category, items] of map) {
+  for (const [category, bucket] of map) {
+    bucket.items.length = bucket.count;
+    const items = bucket.items;
     items.sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));
     buckets[i++] = {
       category,

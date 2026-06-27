@@ -113,22 +113,23 @@ interface SearchBucket {
 export function groupSearchResults(
   items: readonly SettingItemSpec[],
 ): readonly SearchBucket[] {
-  const map = new Map<string, SettingItemSpec[]>();
+  const map = new Map<string, { items: SettingItemSpec[]; count: number }>();
   for (const spec of items) {
-    let arr = map.get(spec.category);
-    if (!arr) {
-      arr = [];
-      map.set(spec.category, arr);
+    let bucket = map.get(spec.category);
+    if (!bucket) {
+      bucket = { items: new Array<SettingItemSpec>(items.length), count: 0 };
+      map.set(spec.category, bucket);
     }
-    arr.push(spec);
+    bucket.items[bucket.count++] = spec;
   }
   const buckets = new Array<SearchBucket>(map.size);
   let i = 0;
-  for (const [category, bucketItems] of map) {
+  for (const [category, bucket] of map) {
+    bucket.items.length = bucket.count;
     buckets[i++] = {
       category,
       label: tWithFallback(CATEGORY_TITLE_KEYS[category], category),
-      items: bucketItems,
+      items: bucket.items,
     };
   }
   return buckets;

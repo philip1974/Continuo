@@ -126,7 +126,8 @@ export async function fetchReviewNodes(): Promise<FetchReviewsResult> {
   const token = readToken();
   if (!token) return { available: false, nodes: [] };
 
-  const out: MarketplaceReviewNode[] = [];
+  const out = new Array<MarketplaceReviewNode>(MAX_TOTAL_NODES);
+  let nodeCount = 0;
   let after: string | null = null;
   let pages = 0;
   while (pages++ < MAX_PAGES) {
@@ -181,14 +182,15 @@ export async function fetchReviewNodes(): Promise<FetchReviewsResult> {
     const d = json.data?.repository?.discussions;
     if (!d || !Array.isArray(d.nodes)) break;
     for (const node of d.nodes) {
-      if (out.length >= MAX_TOTAL_NODES) break; // 边界(E57):累计节点上限
+      if (nodeCount >= MAX_TOTAL_NODES) break; // 边界(E57):累计节点上限
       // 边界(E106):外部 GraphQL node 可能 null/非对象;toNode 直接读 n.reactions/n.title 会抛 →
       // 单个坏节点让整次 reviews 拉取失败、Marketplace 评分整体退回 stale/error。逐节点校验对象
       // 形态,坏节点跳过(其余 review 仍可用)。toNode 内部对各字段已有 typeof 守卫,非空对象即安全。
       if (node === null || typeof node !== 'object') continue;
-      out.push(toNode(node));
+      out[nodeCount] = toNode(node);
+      nodeCount += 1;
     }
-    if (out.length >= MAX_TOTAL_NODES) break; // 满则停止翻页
+    if (nodeCount >= MAX_TOTAL_NODES) break; // 满则停止翻页
     // 边界(E106):pageInfo 也来自外部响应,可能缺/非对象;先判形态再读 hasNextPage/endCursor
     //(否则畸形响应在 d.pageInfo.hasNextPage 处抛)。无有效 string 游标 → 停止翻页。
     const pageInfo: unknown = d.pageInfo;
@@ -205,5 +207,6 @@ export async function fetchReviewNodes(): Promise<FetchReviewsResult> {
     if (typeof endCursor !== 'string' || endCursor.length > MAX_CURSOR_LEN) break;
     after = endCursor;
   }
+  out.length = nodeCount;
   return { available: true, nodes: out };
 }

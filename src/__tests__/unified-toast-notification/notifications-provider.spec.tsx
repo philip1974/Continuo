@@ -3,6 +3,7 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { act, cleanup, render } from '@testing-library/react';
 import {
   NotificationsProvider,
@@ -215,6 +216,9 @@ describe('unified-toast-notification: NotificationsProvider', () => {
       ).length;
 
       expect(notificationFilterCalls).toBe(0);
+      expect(readFileSync('src/notifications/NotificationsProvider.tsx', 'utf-8')).not.toContain(
+        'next.push(',
+      );
       expect(slimApi?.notifications.length).toBe(0);
     } finally {
       filterSpy.mockRestore();
@@ -247,6 +251,9 @@ describe('unified-toast-notification: NotificationsProvider', () => {
       // React/test rendering may inspect the notification array; the old provider
       // dedupe path added one extra prev.map call on top of that baseline.
       expect(notificationMapCalls).toBeLessThanOrEqual(2);
+      expect(readFileSync('src/notifications/NotificationsProvider.tsx', 'utf-8')).not.toContain(
+        'next.push(',
+      );
       expect(slimApi?.notifications.length).toBe(1);
     } finally {
       mapSpy.mockRestore();

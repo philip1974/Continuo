@@ -23,6 +23,29 @@ interface PermissionEditorModalProps {
   pluginStillExists?: () => boolean;
 }
 
+export interface PermissionSaveGroups {
+  readonly toGrant: readonly PermissionKey[];
+  readonly toDeny: readonly PermissionKey[];
+}
+
+export function splitPermissionDecisionsForSave(
+  decisions: ReadonlyMap<PermissionKey, boolean | null>,
+): PermissionSaveGroups {
+  const toGrant = new Array<PermissionKey>(decisions.size);
+  const toDeny = new Array<PermissionKey>(decisions.size);
+  let grantCount = 0;
+  let denyCount = 0;
+
+  for (const [perm, granted] of decisions) {
+    if (granted === true) toGrant[grantCount++] = perm;
+    else if (granted === false) toDeny[denyCount++] = perm;
+  }
+
+  toGrant.length = grantCount;
+  toDeny.length = denyCount;
+  return { toGrant, toDeny };
+}
+
 export function PermissionEditorModal({
   open,
   pluginId,
@@ -100,12 +123,7 @@ export function PermissionEditorModal({
       return;
     }
     setSaveFailed(false);
-    const toGrant: PermissionKey[] = [];
-    const toDeny: PermissionKey[] = [];
-    for (const [perm, granted] of decisions) {
-      if (granted === true) toGrant.push(perm);
-      else if (granted === false) toDeny.push(perm);
-    }
+    const { toGrant, toDeny } = splitPermissionDecisionsForSave(decisions);
     setSaving(true);
     try {
       if (toGrant.length > 0) await store.grant(pluginId, toGrant);

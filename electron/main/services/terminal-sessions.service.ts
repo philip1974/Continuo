@@ -240,10 +240,15 @@ export function removeByOwner(ownerWindowId: number): readonly string[] {
   // sessions)。在 early-return 之前清,覆盖「窗口建过终端但已逐个 remove」的情况。
   // 见第十六轮 P2-AS。
   titleCounter.delete(ownerWindowId);
-  const removed: string[] = [];
+  const removed = new Array<string>(sessions.size);
+  let removedCount = 0;
   for (const [id, s] of sessions) {
-    if (s.ownerWindowId === ownerWindowId) removed.push(id);
+    if (s.ownerWindowId === ownerWindowId) {
+      removed[removedCount] = id;
+      removedCount += 1;
+    }
   }
+  removed.length = removedCount;
   if (removed.length === 0) return removed;
   for (const id of removed) sessions.delete(id);
   invalidateSnapshotCache();

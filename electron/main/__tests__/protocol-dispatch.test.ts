@@ -87,6 +87,8 @@ describe('race(R39) · routeProtocolUrl 先就绪后发送', () => {
     });
 
     expect(filterSpy).not.toHaveBeenCalled();
+    expect(routeProtocolUrl.toString()).not.toContain('loading.push(');
+    expect(routeProtocolUrl.toString()).not.toContain('ready.push(');
     expect(ready.send).toHaveBeenCalledWith(CH, { url: 'co://run/one-pass' });
     expect(loadingWin.send).not.toHaveBeenCalled();
     expect(pending).toEqual([]);

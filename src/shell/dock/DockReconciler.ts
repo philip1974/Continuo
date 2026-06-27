@@ -82,14 +82,19 @@ export function reconcileTerminalPanels(
   // 后到 → 它仍是首次出现 → setActive() 抢焦点,覆盖已先到先聚焦的较新终端,用户键盘输入落到
   // 非预期(较旧)PTY。兜底仅应聚焦当前快照中**最新**的 user session;迟到的较旧 user session
   // 不抢焦点(显式 pendingFocus 路径=用户明确意图,不受此限,始终命中)。
-  const added: TerminalSession[] = [];
+  const added = new Array<TerminalSession>(input.nextSessions.length);
+  let addedCount = 0;
   let latestUserCreatedAt = -Infinity;
   for (const s of input.nextSessions) {
-    if (!prevById.has(s.id)) added.push(s);
+    if (!prevById.has(s.id)) {
+      added[addedCount] = s;
+      addedCount += 1;
+    }
     if (s.originHint === 'user' && s.createdAt > latestUserCreatedAt) {
       latestUserCreatedAt = s.createdAt;
     }
   }
+  added.length = addedCount;
   if (added.length > 1) {
     added.sort((a, b) => a.createdAt - b.createdAt);
   }

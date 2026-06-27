@@ -55,6 +55,7 @@ describe('race(R65) · plugin-fs scope-updated 广播 send 抛错不打断 grant
       expect(copyScopesForPersistence(scopes)).toEqual(scopes);
       expect(copyScopesForPersistence(scopes)).not.toBe(scopes);
       expect(mapSpy).not.toHaveBeenCalled();
+      expect(copyScopesForPersistence.toString()).not.toContain('out.push(');
     } finally {
       mapSpy.mockRestore();
     }

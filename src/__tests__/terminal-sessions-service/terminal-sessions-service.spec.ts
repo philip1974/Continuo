@@ -214,6 +214,7 @@ describe('removeByOwner', () => {
     const removed = removeByOwner(11);
     expect([...removed].sort()).toEqual(['a', 'c']);
     expect(getAll().map((s) => s.id)).toEqual(['b']);
+    expect(removeByOwner.toString()).not.toContain('removed.push(');
   });
 
   it('无匹配 → 返回 [],不触发 subscribers', () => {

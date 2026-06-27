@@ -271,6 +271,8 @@ describe('explorer.json v3 persistence schema and merge semantics', () => {
       pruneLRUClosed(payload, 2, new Set());
 
       expect(filterSpy).not.toHaveBeenCalled();
+      expect(pruneLRUClosed.toString()).not.toContain('closed.push(');
+      expect(pruneLRUClosed.toString()).not.toContain('kept.push(');
       expect(payload.windows.map((w) => w.windowSeq).sort()).toEqual([0, 2]);
     } finally {
       filterSpy.mockRestore();
@@ -304,6 +306,7 @@ describe('explorer.json v3 persistence schema and merge semantics', () => {
       const next = dedupeWindowsBySeq(payload);
 
       expect(filterSpy).not.toHaveBeenCalled();
+      expect(dedupeWindowsBySeq.toString()).not.toContain('deduped.push(');
       expect(next.windows.map((w) => w.windowSeq)).toEqual([0, 1, 2]);
       expect(next.windows.find((w) => w.windowSeq === 1)?.workspace.root).toBe(
         '/first',

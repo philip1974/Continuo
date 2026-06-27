@@ -315,6 +315,7 @@ describe('SettingsPanel · 搜索模式', () => {
       expect(buckets[0]?.items).toEqual([itemA]);
       expect(buckets[1]?.items).toEqual([itemB]);
       expect(groupSearchResults.toString()).not.toContain('buckets.push(');
+      expect(groupSearchResults.toString()).not.toContain('.push(');
     } finally {
       arrayFromSpy.mockRestore();
     }

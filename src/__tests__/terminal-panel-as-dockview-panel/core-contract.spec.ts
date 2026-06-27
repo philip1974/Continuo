@@ -116,6 +116,7 @@ describe('terminal panel reconciler core contract', () => {
         (ctx) => ctx === nextSessions,
       ).length;
       expect(filterCallsOnNextSessions).toBe(0);
+      expect(reconcileTerminalPanels.toString()).not.toContain('added.push(');
     } finally {
       filterSpy.mockRestore();
     }

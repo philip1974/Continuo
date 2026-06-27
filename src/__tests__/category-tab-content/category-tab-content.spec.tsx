@@ -74,6 +74,7 @@ describe('CategoryTabContent', () => {
       expect(buckets[0]?.items).toEqual([itemA]);
       expect(buckets[1]?.items).toEqual([itemB]);
       expect(groupItems.toString()).not.toContain('buckets.push(');
+      expect(groupItems.toString()).not.toContain('.push(');
     } finally {
       arrayFromSpy.mockRestore();
     }

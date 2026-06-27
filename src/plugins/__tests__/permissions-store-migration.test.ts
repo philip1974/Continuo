@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   parsePermissionState,
   serializePermissionState,
@@ -76,5 +76,39 @@ describe('IpcPermissionStore permission state migration', () => {
       { path: '/tmp/y', mode: 'r' },
     ]);
     expect(reparsed).toEqual(state);
+  });
+
+  it('parsePermissionState 解析 decisions/pathScopes 时预分配数组,不通过 push 扩容', () => {
+    const pushSpy = vi.spyOn(Array.prototype, 'push');
+    let parsed: ReturnType<typeof parsePermissionState>;
+
+    try {
+      parsed = parsePermissionState({
+        'com.prealloc': {
+          decisions: [
+            { permission: 'fs', granted: true, decidedAt: 1 },
+            { permission: 'network', granted: false, decidedAt: 2 },
+          ],
+          pathScopes: [
+            { path: '/tmp/a', mode: 'r' },
+            { path: '/tmp/b', mode: 'rw' },
+          ],
+        },
+      });
+      expect(pushSpy).not.toHaveBeenCalled();
+    } finally {
+      pushSpy.mockRestore();
+    }
+
+    expect(parsed!['com.prealloc']).toEqual({
+      decisions: [
+        { permission: 'fs', granted: true, decidedAt: 1 },
+        { permission: 'network', granted: false, decidedAt: 2 },
+      ],
+      pathScopes: [
+        { path: '/tmp/a', mode: 'r' },
+        { path: '/tmp/b', mode: 'rw' },
+      ],
+    });
   });
 });

@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { fireEvent, render, cleanup, waitFor } from '@testing-library/react';
-import { PermissionEditorModal } from '../../plugins/permissions/PermissionEditorModal';
+import {
+  PermissionEditorModal,
+  splitPermissionDecisionsForSave,
+} from '../../plugins/permissions/PermissionEditorModal';
 import type {
   PermissionDecision,
   PermissionKey,
@@ -21,6 +24,24 @@ function makeStore(prior: PermissionDecision[] = []): PermissionStore & {
 }
 
 afterEach(() => cleanup());
+
+describe('PermissionEditorModal — save helpers', () => {
+  it('splitPermissionDecisionsForSave 预分配 grant/deny 数组,不通过 push 扩容', () => {
+    const decisions = new Map<PermissionKey, boolean | null>([
+      ['fs', true],
+      ['network', false],
+      ['shell', null],
+      ['clipboard', true],
+    ]);
+
+    const result = splitPermissionDecisionsForSave(decisions);
+
+    expect(result.toGrant).toEqual(['fs', 'clipboard']);
+    expect(result.toDeny).toEqual(['network']);
+    expect(splitPermissionDecisionsForSave.toString()).not.toContain('toGrant.push(');
+    expect(splitPermissionDecisionsForSave.toString()).not.toContain('toDeny.push(');
+  });
+});
 
 describe('PermissionEditorModal — 渲染条件', () => {
   it('pluginId=null → 不渲染', () => {

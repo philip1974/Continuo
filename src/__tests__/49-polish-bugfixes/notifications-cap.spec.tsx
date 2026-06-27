@@ -3,6 +3,7 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { act, cleanup, render } from '@testing-library/react';
 import {
   NotificationsProvider,
@@ -78,6 +79,9 @@ describe('topic 49 · notifications 底层数组上限', () => {
       ).length;
 
       expect(notificationSliceCalls).toBe(0);
+      expect(readFileSync('src/notifications/NotificationsProvider.tsx', 'utf-8')).not.toContain(
+        'next.push(',
+      );
       expect(snapshot?.count).toBe(MAX_NOTIFICATIONS);
     } finally {
       sliceSpy.mockRestore();

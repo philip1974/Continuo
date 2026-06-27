@@ -317,6 +317,7 @@ describe('window-scoped layout IPC', () => {
     };
     const cleaned = sanitizeExplorerReadPayload(polluted);
     expect(cleaned).not.toBe(polluted);
+    expect(sanitizeExplorerReadPayload.toString()).not.toContain('windows.push(');
     expect(cleaned.windows[0]!.layout).toBeUndefined();
     expect(cleaned.windows[1]!.layout).toEqual({ version: 1, panel: 'B' });
   });
@@ -614,6 +615,9 @@ describe('window-scoped layout IPC', () => {
       const ownOnly = filterWritableSnapshotForWindowSeq(writable, 1);
 
       expect(filterSpy).not.toHaveBeenCalled();
+      expect(filterWritableSnapshotForWindowSeq.toString()).not.toContain(
+        'ownWindows.push(',
+      );
       expect(ownOnly).not.toBe(writable);
       expect(ownOnly.windows.map((w) => w.windowSeq)).toEqual([1]);
     } finally {
