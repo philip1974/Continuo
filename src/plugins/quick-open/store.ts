@@ -42,8 +42,8 @@ interface QuickOpenState {
   /**
    * race(R48):把 selectedIndex 钳到 [0, len-1](空列表置 0)。后台 scan 完成 setResults 替换
    * 列表 / query 改变使过滤结果变短时,旧 selectedIndex 可能越界 → Enter 读 filtered[idx]=undefined
-   * 打开失效、高亮/滚动停无效项。组件在 filtered.length 变化时调用。已在范围内则不改(返 {} 不触发
-   * selectedIndex 订阅者重渲染)。
+   * 打开失效、高亮/滚动停无效项。组件在 filtered.length 变化时调用。已在范围内则返回原 state,
+   * 不触发 selectedIndex 订阅者重渲染。
    */
   clampSelection: (len: number) => void;
   setResults: (files: readonly QuickOpenFile[], root?: string | null) => void;
@@ -60,25 +60,42 @@ export const useQuickOpenStore = create<QuickOpenState>((set) => ({
   loading: false,
   scanFailed: false,
 
-  open: () => set({ isOpen: true, query: '', selectedIndex: 0 }),
+  open: () =>
+    set((s) =>
+      s.isOpen && s.query === '' && s.selectedIndex === 0
+        ? s
+        : { isOpen: true, query: '', selectedIndex: 0 },
+    ),
   // 不清 results / query — 用户秒级再开还能看到上次的列表。
   // 真要 reset 在 walk 完成后才 setResults。
-  close: () => set({ isOpen: false }),
+  close: () => set((s) => (s.isOpen ? { isOpen: false } : s)),
   // 边界(E279):截断超长 query(防单次 paste 触发 O(results×queryLen) fuzzyFilter 卡死 renderer)。
-  setQuery: (q) => set({ query: clampSearchQuery(q), selectedIndex: 0 }),
+  setQuery: (q) =>
+    set((s) => {
+      const query = clampSearchQuery(q);
+      return s.query === query && s.selectedIndex === 0
+        ? s
+        : { query, selectedIndex: 0 };
+    }),
   moveSelection: (delta, max) =>
     set((s) => {
-      if (max <= 0) return { selectedIndex: 0 };
+      if (max <= 0) return s.selectedIndex === 0 ? s : { selectedIndex: 0 };
       const next = (s.selectedIndex + delta + max) % max;
-      return { selectedIndex: next };
+      return next === s.selectedIndex ? s : { selectedIndex: next };
     }),
   clampSelection: (len) =>
     set((s) => {
       const clamped = len <= 0 ? 0 : Math.min(s.selectedIndex, len - 1);
-      return clamped === s.selectedIndex ? {} : { selectedIndex: clamped };
+      return clamped === s.selectedIndex ? s : { selectedIndex: clamped };
     }),
   // root 省略(单参旧调用)→ resultsRoot 置 null;组件扫描时显式传当前 root 绑定归属。
-  setResults: (files, root = null) => set({ results: files, resultsRoot: root }),
-  setLoading: (b) => set({ loading: b }),
-  setScanFailed: (b) => set({ scanFailed: b }),
+  setResults: (files, root = null) =>
+    set((s) =>
+      s.results === files && s.resultsRoot === root
+        ? s
+        : { results: files, resultsRoot: root },
+    ),
+  setLoading: (b) => set((s) => (s.loading === b ? s : { loading: b })),
+  setScanFailed: (b) =>
+    set((s) => (s.scanFailed === b ? s : { scanFailed: b })),
 }));

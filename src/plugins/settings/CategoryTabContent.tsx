@@ -37,6 +37,18 @@ interface Bucket {
 
 /** 按 spec.group 分组,保留 priority 顺序. group 出现顺序由首项决定. */
 export function groupItems(items: readonly SettingItemSpec[]): Bucket[] {
+  if (items.length === 0) return [];
+  if (items.length === 1) {
+    const spec = items[0]!;
+    return [
+      {
+        group: spec.group,
+        groupKey: spec.groupKey,
+        items,
+      },
+    ];
+  }
+
   const map = new Map<
     string | undefined,
     { groupKey: string | undefined; items: SettingItemSpec[]; count: number }

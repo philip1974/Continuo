@@ -497,6 +497,21 @@ describe('StatusBarRegistry', () => {
     }
   });
 
+  it('单项或空侧边快照不调用 sort', () => {
+    const r = new StatusBarRegistry();
+    r.register({ id: 'left', side: 'left', render: () => null });
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      expect(r.getBySide('left').map((x) => x.id)).toEqual(['left']);
+      expect(r.getBySide('right')).toEqual([]);
+      expect(r.getAll().map((x) => x.id)).toEqual(['left']);
+      expect(sortSpy).not.toHaveBeenCalled();
+    } finally {
+      sortSpy.mockRestore();
+    }
+  });
+
   it('getBySide 不先 Array.from(values) 物化全部条目', () => {
     const r = new StatusBarRegistry();
     r.register({ id: 'left', side: 'left', render: () => null });

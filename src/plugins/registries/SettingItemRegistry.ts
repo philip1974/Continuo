@@ -309,7 +309,9 @@ export class SettingItemRegistry {
     const items = new Array<SettingItemSpec>(this.items.size);
     let i = 0;
     for (const item of this.items.values()) items[i++] = item;
-    items.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
+    if (items.length > 1) {
+      items.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
+    }
     this.cachedAll = items;
     return items;
   }
@@ -340,7 +342,9 @@ export class SettingItemRegistry {
       }
     }
     items.length = count;
-    items.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
+    if (count > 1) {
+      items.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
+    }
     this.cachedByCategory.set(category, items);
     return items;
   }

@@ -3,7 +3,10 @@
 // 该平台下 'mod' = ctrlKey,故用 ctrlKey 事件触发 mod+* 命令(验证 hook 接线,非平台细节)。
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { renderHook, act, cleanup } from '@testing-library/react';
-import { useCommandHotkeys } from '../../plugins/command-palette/useCommandHotkeys';
+import {
+  buildCompiledBindings,
+  useCommandHotkeys,
+} from '../../plugins/command-palette/useCommandHotkeys';
 import { CommandRegistry } from '../../plugins/registries/CommandRegistry';
 import { useKeybindingsStore } from '../../plugins/keybindings/keybindings-store';
 
@@ -43,6 +46,21 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('useCommandHotkeys — 命中', () => {
+  it('没有有效 hotkey 时复用空预编译表,避免空数组分配', () => {
+    const empty = buildCompiledBindings([], 'other');
+    const noHotkey = buildCompiledBindings(
+      [{ id: 'a', title: 'A', fn: vi.fn() }],
+      'other',
+    );
+    const explicitUnbind = buildCompiledBindings(
+      [{ id: 'b', title: 'B', hotkey: '', fn: vi.fn() }],
+      'other',
+    );
+
+    expect(noHotkey).toBe(empty);
+    expect(explicitUnbind).toBe(empty);
+  });
+
   it('没有有效 hotkey 时不注册全局 keydown listener', () => {
     const reg = new CommandRegistry();
     reg.register({ id: 'a', title: 'A', fn: vi.fn() });

@@ -462,6 +462,21 @@ describe('useSettingsStore · API 形态', () => {
     expect(useSettingsStore.getState().activeTabId).toBe('foo');
   });
 
+  it('setActiveTabId 写入相同 id 时不通知订阅者', () => {
+    useSettingsStore.setState({ activeTabId: 'foo' });
+    const listener = vi.fn();
+    const unsubscribe = useSettingsStore.subscribe(listener);
+
+    try {
+      useSettingsStore.getState().setActiveTabId('foo');
+
+      expect(useSettingsStore.getState().activeTabId).toBe('foo');
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
+  });
+
   it('panel unmount 后 activeTabId 仍保留(决策 #2)', () => {
     const reg = makeReg();
     const { container, unmount } = render(<SettingsPanel registry={reg} />);

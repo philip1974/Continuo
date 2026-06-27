@@ -105,6 +105,19 @@ export function buildNextRecentList(
   return next;
 }
 
+function recentListsEqual(
+  a: readonly RecentEntry[],
+  b: readonly RecentEntry[],
+): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const left = a[i]!;
+    const right = b[i]!;
+    if (left.id !== right.id || left.ts !== right.ts) return false;
+  }
+  return true;
+}
+
 export const useRecentCommandsStore = create<RecentState>((set) => ({
   // 启动期从 localStorage 读回
   list: readFromStorage(),
@@ -134,5 +147,8 @@ export const useRecentCommandsStore = create<RecentState>((set) => ({
 // (与 values-store 同款),避免本窗 in-memory 长期陈旧 + 下次 record 基于旧内存(已由
 // live 读修;此处让 UI 即时反映别窗最近命令)。
 subscribeStorageKey(RECENT_STORAGE_KEY, () =>
-  useRecentCommandsStore.setState({ list: readFromStorage() }),
+  useRecentCommandsStore.setState((s) => {
+    const list = readFromStorage();
+    return recentListsEqual(s.list, list) ? s : { list };
+  }),
 );

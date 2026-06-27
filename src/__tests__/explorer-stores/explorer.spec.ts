@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useExplorerStore } from '../../stores/explorer.store';
 import {
   PATH_ARRAY_MAX,
@@ -61,6 +61,37 @@ describe('explorer.store · setExpandedPaths', () => {
     expect(after).not.toBe(before);
   });
 
+  it('setExpandedPaths 内容未变化时保持 Set 同引用且不通知订阅者', () => {
+    const expandedPaths = new Set(['/work', '/work/src']);
+    useExplorerStore.setState({ expandedPaths });
+    const listener = vi.fn();
+    const unsubscribe = useExplorerStore.subscribe(listener);
+
+    try {
+      useExplorerStore.getState().setExpandedPaths(['/work', '/work/src']);
+
+      expect(useExplorerStore.getState().expandedPaths).toBe(expandedPaths);
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('setExpandedPaths 传入当前 Set 引用时直接早退,不遍历源集合', () => {
+    const expandedPaths = new Set(['/work', '/work/src']);
+    useExplorerStore.setState({ expandedPaths });
+    const valuesSpy = vi.spyOn(expandedPaths, Symbol.iterator);
+
+    try {
+      useExplorerStore.getState().setExpandedPaths(expandedPaths);
+
+      expect(useExplorerStore.getState().expandedPaths).toBe(expandedPaths);
+      expect(valuesSpy).not.toHaveBeenCalled();
+    } finally {
+      valuesSpy.mockRestore();
+    }
+  });
+
   // 边界(E277,E276 同族 / 运行时状态守持久化契约):expandedPaths 不得超持久化 schema(PATH_ARRAY_MAX 条
   // + 单条 ≤ PATH_STR_MAX),否则 explorer:write 拒整份 → 全 explorer 持久化失败。
   it('E277 setExpandedPaths 超 PATH_ARRAY_MAX → 截断到上限', () => {
@@ -90,11 +121,31 @@ describe('explorer.store · setExpandedPaths', () => {
     useExplorerStore.getState().toggleExpand('/' + 'y'.repeat(PATH_STR_MAX));
     expect(useExplorerStore.getState().expandedPaths.size).toBe(0);
   });
+
+  it('拒绝新 path 的上限分支先判断,不预复制 expandedPaths', () => {
+    const src = useExplorerStore.getState().toggleExpand.toString();
+
+    expect(src.indexOf('const has')).toBeLessThan(src.indexOf('new Set'));
+    expect(src.indexOf('PATH_ARRAY_MAX')).toBeLessThan(src.indexOf('new Set'));
+    expect(src.indexOf('PATH_STR_MAX')).toBeLessThan(src.indexOf('new Set'));
+  });
 });
 
 describe('explorer.store · setSort', () => {
   it('setSort 替换 sort', () => {
     useExplorerStore.getState().setSort({ by: 'mtime', reverse: true });
     expect(useExplorerStore.getState().sort).toEqual({ by: 'mtime', reverse: true });
+  });
+
+  it('setSort 设置相同值时 no-op,不触发订阅', () => {
+    const listener = vi.fn();
+    const unsub = useExplorerStore.subscribe(listener);
+
+    try {
+      useExplorerStore.getState().setSort({ by: 'name', reverse: false });
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsub();
+    }
   });
 });

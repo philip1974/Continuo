@@ -80,6 +80,21 @@ describe('CategoryTabContent', () => {
     }
   });
 
+  it('groupItems 单项列表不创建 Map 查找路径', () => {
+    const item = spec({ id: 'a', title: 'A', group: '外观' });
+    const getSpy = vi.spyOn(Map.prototype, 'get');
+
+    try {
+      const buckets = groupItems([item]);
+      expect(getSpy).not.toHaveBeenCalled();
+      expect(buckets).toEqual([
+        { group: '外观', groupKey: undefined, items: [item] },
+      ]);
+    } finally {
+      getSpy.mockRestore();
+    }
+  });
+
   it('default bucket + group bucket 共存,default 在前', () => {
     const reg = new SettingItemRegistry();
     reg.register(spec({ id: 'noGroup', title: 'NoGroup', priority: 10 }));

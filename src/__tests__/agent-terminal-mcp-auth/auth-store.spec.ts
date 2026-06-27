@@ -157,6 +157,21 @@ describe("grant('once')", () => {
     expect(() => useAgentAuthStore.getState().grant('once')).not.toThrow();
     expect(useAgentAuthStore.getState().sessionGranted).toBe(false);
   });
+
+  it("无 pending 且 grant('once') 不改变状态时不通知订阅者", () => {
+    const listener = vi.fn();
+    const unsubscribe = useAgentAuthStore.subscribe(listener);
+
+    try {
+      useAgentAuthStore.getState().grant('once');
+
+      expect(useAgentAuthStore.getState().pending).toBeNull();
+      expect(useAgentAuthStore.getState().sessionGranted).toBe(false);
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
+  });
 });
 
 describe("grant('session')", () => {
@@ -216,6 +231,21 @@ describe('deny', () => {
   it('无 pending → no-op,不抛', () => {
     expect(() => useAgentAuthStore.getState().deny()).not.toThrow();
   });
+
+  it('无 pending 且状态不变时不通知订阅者', () => {
+    const listener = vi.fn();
+    const unsubscribe = useAgentAuthStore.subscribe(listener);
+
+    try {
+      useAgentAuthStore.getState().deny();
+
+      expect(useAgentAuthStore.getState().pending).toBeNull();
+      expect(useAgentAuthStore.getState().sessionGranted).toBe(false);
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
+  });
 });
 
 // ────────────────────────────────────────────────────────────
@@ -239,6 +269,20 @@ describe('revoke', () => {
       requestId: 'x',
       method: 'foo',
     });
+  });
+
+  it('sessionGranted 已为 false 时 revoke 不通知订阅者', () => {
+    const listener = vi.fn();
+    const unsubscribe = useAgentAuthStore.subscribe(listener);
+
+    try {
+      useAgentAuthStore.getState().revoke();
+
+      expect(useAgentAuthStore.getState().sessionGranted).toBe(false);
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
   });
 
   it('revoke 后再 ensure → 重新弹窗(不再直接通过)', async () => {

@@ -128,6 +128,29 @@ describe('terminal panel reconciler core contract', () => {
     );
   });
 
+  it('无新增 session 时不预分配 added 数组', () => {
+    const api = makeApi();
+    const previousSessions = [session('old')];
+    let lengthReads = 0;
+    const nextSessions = {
+      *[Symbol.iterator]() {
+        yield previousSessions[0]!;
+      },
+      get length() {
+        lengthReads += 1;
+        return 1;
+      },
+    } as unknown as readonly TerminalSession[];
+
+    reconcileTerminalPanels(api as unknown as DockviewApi, {
+      previousSessions,
+      nextSessions,
+    });
+
+    expect(api.addPanel).not.toHaveBeenCalled();
+    expect(lengthReads).toBe(0);
+  });
+
   it('remove: store 删除 session 时通过 api.getPanel(id)?.api.close() 关闭;不存在则 no-op', () => {
     const panel = makePanel('terminal-s1');
     const api = makeApi({ 'terminal-s1': panel });

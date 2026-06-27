@@ -729,6 +729,19 @@ describe('getStateAfterClosingTabsOutsideRoot', () => {
     expect(r.activeTabId).toBe('/work/a.md');
   });
 
+  it('全部 tab 都保留时不预分配 remaining 数组', () => {
+    const tabs = [
+      makeTab({ id: '/work/a.md', filePath: '/work/a.md' }),
+      makeTab({ id: '/work/sub/b.md', filePath: '/work/sub/b.md' }),
+    ];
+    const r = getStateAfterClosingTabsOutsideRoot(tabs, '/work/a.md', '/work');
+
+    expect(r.tabs).toBe(tabs);
+    expect(getStateAfterClosingTabsOutsideRoot.toString()).not.toMatch(
+      /new Array(?:<[^>]+>)?\(tabs\.length\)/,
+    );
+  });
+
   // 数据安全(codex 复查 P2,同 path-scope isWithinScope #17):root 本身以分隔符结尾
   // (文件系统根)时,旧实现拼 `root + '/'` 得 `//` / `C:\\`,根下文件都不匹配 → clean
   // tab 全被误关 → 持久化把 openFilePaths 写空丢编辑会话。
@@ -1038,6 +1051,22 @@ describe('updateContent', () => {
       sliceSpy.mockRestore();
     }
   });
+
+  it('内容未变化时保持 tabs 同引用且不通知订阅者', () => {
+    const tabs = [makeTab({ id: '/a', content: 'hello' })];
+    useEditorStore.setState({ tabs, activeTabId: '/a' });
+    const listener = vi.fn();
+    const unsubscribe = useEditorStore.subscribe(listener);
+
+    try {
+      useEditorStore.getState().updateContent('/a', 'hello');
+
+      expect(useEditorStore.getState().tabs).toBe(tabs);
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
+  });
 });
 
 // ────────────────────────────────────────────────────────────
@@ -1059,6 +1088,29 @@ describe('markSaved', () => {
   it('id 不存在 → 不变', () => {
     useEditorStore.setState({ tabs: [makeTab({ id: '/a' })], activeTabId: '/a' });
     expect(() => useEditorStore.getState().markSaved('/nope')).not.toThrow();
+  });
+
+  it('保存结果未改变 tab 状态时保持 tabs 同引用且不通知订阅者', () => {
+    const tabs = [
+      makeTab({
+        id: '/a',
+        content: 'draft',
+        originalContent: 'persisted',
+        dirty: true,
+      }),
+    ];
+    useEditorStore.setState({ tabs, activeTabId: '/a' });
+    const listener = vi.fn();
+    const unsubscribe = useEditorStore.subscribe(listener);
+
+    try {
+      useEditorStore.getState().markSaved('/a', 'persisted');
+
+      expect(useEditorStore.getState().tabs).toBe(tabs);
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
   });
 });
 
@@ -1087,6 +1139,23 @@ describe('setFilePath', () => {
     expect(s.tabs.map((t) => t.id)).toEqual(['/a', '/c']);
     expect(s.activeTabId).toBe('/a');
   });
+
+  it('newPath 等于当前 id/filePath 时保持 tabs 同引用且不通知订阅者', () => {
+    const tabs = [makeTab({ id: '/a.md', filePath: '/a.md' })];
+    useEditorStore.setState({ tabs, activeTabId: '/a.md', chromeVersion: 0 });
+    const listener = vi.fn();
+    const unsubscribe = useEditorStore.subscribe(listener);
+
+    try {
+      useEditorStore.getState().setFilePath('/a.md', '/a.md');
+
+      expect(useEditorStore.getState().tabs).toBe(tabs);
+      expect(useEditorStore.getState().chromeVersion).toBe(0);
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
+  });
 });
 
 // ────────────────────────────────────────────────────────────
@@ -1102,6 +1171,19 @@ describe('setMode', () => {
     expect(useEditorStore.getState().mode).toBe('preview');
     set('edit');
     expect(useEditorStore.getState().mode).toBe('edit');
+  });
+
+  it('传入当前 mode 时 no-op,不触发订阅', () => {
+    useEditorStore.setState({ mode: 'source' });
+    const listener = vi.fn();
+    const unsub = useEditorStore.subscribe(listener);
+
+    try {
+      useEditorStore.getState().setMode('source');
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsub();
+    }
   });
 });
 
@@ -1150,6 +1232,18 @@ describe('getStateAfterClosingTab', () => {
     const r = getStateAfterClosingTab(tabs, '/a', '/missing');
     expect(r.tabs).toBe(tabs);
     expect(r.activeTabId).toBe('/a');
+  });
+
+  it('关不存在的 id 不预分配 remaining 数组', () => {
+    const r = getStateAfterClosingTab(tabs, '/a', '/missing');
+    const src = getStateAfterClosingTab.toString();
+
+    expect(r.tabs).toBe(tabs);
+    expect(r.activeTabId).toBe('/a');
+    expect(src.indexOf('findEditorTabIndexById')).toBeGreaterThanOrEqual(0);
+    expect(src.indexOf('findEditorTabIndexById')).toBeLessThan(
+      src.indexOf('new Array'),
+    );
   });
 
   it('关命中的 tab 不通过 tabs.filter 二次扫描生成 remaining', () => {

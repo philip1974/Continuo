@@ -44,5 +44,5 @@ export const usePinnedStore = create<PinnedState>((set) => ({
       const paths = buildToggledPinnedPaths(s.paths, path);
       return paths === s.paths ? s : { paths };
     }),
-  clear: () => set(() => ({ paths: [] })),
+  clear: () => set((s) => (s.paths.length === 0 ? s : { paths: [] })),
 }));

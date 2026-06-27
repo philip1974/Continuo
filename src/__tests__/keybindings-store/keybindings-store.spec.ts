@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   useKeybindingsStore,
   getEffectiveHotkey,
@@ -67,6 +67,53 @@ describe('keybindings-store', () => {
     );
     expect(raw).not.toBeNull();
     expect(JSON.parse(raw!)).toEqual({ 'foo.bar': 'mod+x' });
+  });
+
+  it('setHotkey 写入相同值且内存已同步时不通知订阅者且不重复写 localStorage', () => {
+    const overrides = { 'foo.bar': 'mod+x' };
+    globalThis.localStorage.setItem(
+      'continuo.keybindings.overrides',
+      JSON.stringify(overrides),
+    );
+    useKeybindingsStore.setState({ overrides });
+    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
+    const listener = vi.fn();
+    const unsubscribe = useKeybindingsStore.subscribe(listener);
+
+    try {
+      useKeybindingsStore.getState().setHotkey('foo.bar', 'mod+x');
+
+      expect(useKeybindingsStore.getState().overrides).toBe(overrides);
+      expect(setItemSpy).not.toHaveBeenCalled();
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+      setItemSpy.mockRestore();
+    }
+  });
+
+  it('storage 同步读到相同 overrides 内容时不通知订阅者', () => {
+    const overrides = { 'foo.bar': 'mod+x' };
+    globalThis.localStorage.setItem(
+      'continuo.keybindings.overrides',
+      JSON.stringify(overrides),
+    );
+    useKeybindingsStore.setState({ overrides });
+    const listener = vi.fn();
+    const unsubscribe = useKeybindingsStore.subscribe(listener);
+
+    try {
+      window.dispatchEvent(
+        new StorageEvent('storage', {
+          key: 'continuo.keybindings.overrides',
+        }),
+      );
+
+      expect(useKeybindingsStore.getState().overrides).toBe(overrides);
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
   });
 
   it('reset 删 override → 回 spec.hotkey', () => {

@@ -63,6 +63,19 @@ describe('RibbonRegistry', () => {
     }
   });
 
+  it('单项快照不调用 sort', () => {
+    const r = new RibbonRegistry();
+    r.register({ id: 'a', title: 'A', icon: null, onClick: noop });
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      expect(r.getAll().map((x) => x.id)).toEqual(['a']);
+      expect(sortSpy).not.toHaveBeenCalled();
+    } finally {
+      sortSpy.mockRestore();
+    }
+  });
+
   it('subscribe 在 register/dispose 时触发', () => {
     const r = new RibbonRegistry();
     const listener = vi.fn();

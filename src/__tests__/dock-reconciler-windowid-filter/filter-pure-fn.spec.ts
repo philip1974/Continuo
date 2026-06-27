@@ -8,7 +8,9 @@ import { makeSession } from './fixtures';
 
 describe('dock-reconciler-windowid-filter: filterByOwnerWindow pure fn', () => {
   it('T1 空数组 -> 空', () => {
-    expect(filterByOwnerWindow([], 1)).toEqual([]);
+    const sessions: readonly unknown[] = [];
+
+    expect(filterByOwnerWindow(sessions, 1)).toBe(sessions);
   });
 
   it('T2 [A:o1] wid=1 -> [A]', () => {

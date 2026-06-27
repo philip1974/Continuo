@@ -34,6 +34,12 @@ describe('workspace.store', () => {
     expect(useWorkspaceStore.getState().recentRoots).toEqual(['/a']);
   });
 
+  it('buildRecentRoots 当前 root 已在首位且列表已规范时复用原引用', () => {
+    const recentRoots = ['/a', '/b', '/c'];
+
+    expect(buildRecentRoots(recentRoots, '/a')).toBe(recentRoots);
+  });
+
   it('setRoot 已在 recent 中的旧 path:提到最前', () => {
     useWorkspaceStore.getState().setRoot('/a');
     useWorkspaceStore.getState().setRoot('/b');
@@ -78,5 +84,18 @@ describe('workspace.store', () => {
     const s = useWorkspaceStore.getState();
     expect(s.root).toBeNull();
     expect(s.recentRoots).toEqual(['/a']);
+  });
+
+  it('markHydrated 已 hydrated 时 no-op,不触发订阅', () => {
+    useWorkspaceStore.setState({ hydrated: true });
+    const listener = vi.fn();
+    const unsub = useWorkspaceStore.subscribe(listener);
+
+    try {
+      useWorkspaceStore.getState().markHydrated();
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsub();
+    }
   });
 });

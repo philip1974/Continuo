@@ -112,32 +112,24 @@ export function getStateAfterClosingTab(
   activeTabId: string | null,
   closingTabId: string,
 ): CloseTabResult {
-  const remaining = new Array<EditorTab>(Math.max(0, tabs.length - 1));
-  let count = 0;
-  let found = false;
-  let prev: EditorTab | null = null;
-  let next: EditorTab | null = null;
-  for (let i = 0; i < tabs.length; i++) {
-    const tab = tabs[i]!;
-    if (tab.id === closingTabId) {
-      found = true;
-      continue;
-    }
-    if (found && next === null) next = tab;
-    remaining[count++] = tab;
-    if (!found) prev = tab;
+  const closingIndex = findEditorTabIndexById(tabs, closingTabId);
+  if (closingIndex < 0) return { tabs, activeTabId };
+
+  const remaining = new Array<EditorTab>(tabs.length - 1);
+  for (let i = 0; i < closingIndex; i++) remaining[i] = tabs[i]!;
+  for (let i = closingIndex + 1; i < tabs.length; i++) {
+    remaining[i - 1] = tabs[i]!;
   }
 
-  if (!found) return { tabs, activeTabId };
-  remaining.length = count;
   if (remaining.length === 0) return { tabs: remaining, activeTabId: null };
   if (closingTabId !== activeTabId) {
     return { tabs: remaining, activeTabId };
   }
   // 关的是活跃 tab:优先取原序后向第一个,否则前一个。
+  const next = tabs[closingIndex + 1] ?? tabs[closingIndex - 1] ?? null;
   return {
     tabs: remaining,
-    activeTabId: next?.id ?? prev?.id ?? null,
+    activeTabId: next?.id ?? null,
   };
 }
 
@@ -219,7 +211,7 @@ export function getStateAfterClosingTabsOutsideRoot(
     return isSameOrInsidePath(root, tab.filePath);
   };
 
-  const remaining = new Array<EditorTab>(tabs.length);
+  let remaining: EditorTab[] | null = null;
   let count = 0;
   let changed = false;
   let activeFound = activeTabId === null;
@@ -236,7 +228,8 @@ export function getStateAfterClosingTabsOutsideRoot(
       seenActive = true;
     }
     if (keep(tab)) {
-      remaining[count++] = tab;
+      if (remaining !== null) remaining[count] = tab;
+      count += 1;
       if (isActive) {
         activeKept = true;
       } else if (!seenActive) {
@@ -245,11 +238,16 @@ export function getStateAfterClosingTabsOutsideRoot(
         firstKeptAfterActive = tab;
       }
     } else {
+      if (remaining === null) {
+        remaining = new Array<EditorTab>(tabs.length - 1);
+        for (let j = 0; j < count; j++) remaining[j] = tabs[j]!;
+      }
       changed = true;
     }
   }
 
   if (!changed) return { tabs, activeTabId };
+  remaining ??= [];
   remaining.length = count;
   if (remaining.length === 0) return { tabs: remaining, activeTabId: null };
   if (activeTabId !== null && activeKept) {
@@ -496,6 +494,7 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
       const idx = findEditorTabIndexById(s.tabs, id);
       if (idx < 0) return s;
       const cur = s.tabs[idx]!;
+      if (cur.content === content) return s;
       const next: EditorTab = {
         ...cur,
         content,
@@ -521,10 +520,12 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
       // 仍与磁盘一致":写盘 await 期间并发键入会让 cur.content 领先 savedContent,
       // 此时必须保留 dirty,否则那段增量既没落盘又不再触发 autosave → 静默丢失。
       const onDisk = savedContent ?? cur.content;
+      const dirty = cur.content !== onDisk;
+      if (cur.originalContent === onDisk && cur.dirty === dirty) return s;
       const next: EditorTab = {
         ...cur,
         originalContent: onDisk,
-        dirty: cur.content !== onDisk,
+        dirty,
       };
       const tabs = replaceTabAt(s.tabs, idx, next);
       // perf P12:markSaved 改 dirty(脏标→已存)即 chrome 变;dirty 未变则不 bump。
@@ -538,6 +539,7 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
       const idx = findEditorTabIndexById(s.tabs, id);
       if (idx < 0) return s;
       const cur = s.tabs[idx]!;
+      if (cur.id === newPath && cur.filePath === newPath) return s;
       // perf P4:filePath 变(可能 .md↔.txt 改变 markdown 判定)→ 重算派生缓存。
       const next: EditorTab = {
         ...cur,
@@ -553,10 +555,11 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
       };
     }),
 
-  setMode: (mode) => set(() => ({ mode })),
+  setMode: (mode) => set((s) => (s.mode === mode ? s : { mode })),
 
   registerView: (tabId, view) =>
     set((s) => {
+      if (s.viewRefs.get(tabId) === view) return s;
       const viewRefs = new Map(s.viewRefs);
       viewRefs.set(tabId, view);
       return { viewRefs };

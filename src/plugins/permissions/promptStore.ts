@@ -118,12 +118,14 @@ export const usePermissionPromptStore = create<PromptState>((set, get) => ({
 
   grant: (perms) => {
     const { resolve } = get();
+    if (!resolve && get().pending === null) return;
     set({ pending: null, resolve: null });
     resolve?.(perms);
   },
 
   denyAll: () => {
     const { resolve } = get();
+    if (!resolve && get().pending === null) return;
     set({ pending: null, resolve: null });
     resolve?.([]);
   },

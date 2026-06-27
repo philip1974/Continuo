@@ -185,6 +185,29 @@ describe('SettingItemRegistry', () => {
     }
   });
 
+  it('单项或空 category 快照不调用 sort', () => {
+    const r = new SettingItemRegistry();
+    r.register({
+      id: 'general.flag',
+      category: 'general',
+      title: 'Flag',
+      type: 'boolean',
+      default: false,
+    });
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      expect(r.getByCategory('general').map((s) => s.id)).toEqual([
+        'general.flag',
+      ]);
+      expect(r.getByCategory('editor')).toEqual([]);
+      expect(r.getAll().map((s) => s.id)).toEqual(['general.flag']);
+      expect(sortSpy).not.toHaveBeenCalled();
+    } finally {
+      sortSpy.mockRestore();
+    }
+  });
+
   it('getByCategory 不先 Array.from(values) 物化全部条目', () => {
     const r = new SettingItemRegistry();
     r.register({

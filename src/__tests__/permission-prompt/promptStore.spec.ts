@@ -127,6 +127,36 @@ describe('usePermissionPromptStore', () => {
     expect(await promise).toEqual([]);
   });
 
+  it('无 pending 时 grant 不通知订阅者', () => {
+    const listener = vi.fn();
+    const unsubscribe = usePermissionPromptStore.subscribe(listener);
+
+    try {
+      usePermissionPromptStore.getState().grant(['fs']);
+
+      expect(usePermissionPromptStore.getState().pending).toBeNull();
+      expect(usePermissionPromptStore.getState().resolve).toBeNull();
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('无 pending 时 denyAll 不通知订阅者', () => {
+    const listener = vi.fn();
+    const unsubscribe = usePermissionPromptStore.subscribe(listener);
+
+    try {
+      usePermissionPromptStore.getState().denyAll();
+
+      expect(usePermissionPromptStore.getState().pending).toBeNull();
+      expect(usePermissionPromptStore.getState().resolve).toBeNull();
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
+  });
+
   it('同时只能一个 pending,二次 request → 立即 resolve([])', async () => {
     const first = usePermissionPromptStore
       .getState()

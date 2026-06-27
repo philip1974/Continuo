@@ -8,6 +8,25 @@ export function buildRecentRoots(
   recentRoots: readonly string[],
   normalized: string,
 ): string[] {
+  if (recentRoots[0] === normalized && recentRoots.length <= RECENT_LIMIT) {
+    let canReuse = true;
+    for (let i = 0; i < recentRoots.length; i++) {
+      const p = normalizeWorkspaceRoot(recentRoots[i]);
+      if (p === null || p !== recentRoots[i]) {
+        canReuse = false;
+        break;
+      }
+      for (let j = 0; j < i; j++) {
+        if (recentRoots[j] === p) {
+          canReuse = false;
+          break;
+        }
+      }
+      if (!canReuse) break;
+    }
+    if (canReuse) return recentRoots as string[];
+  }
+
   const next = new Array<string>(Math.min(RECENT_LIMIT, recentRoots.length + 1));
   let count = 0;
   next[count++] = normalized;
@@ -67,7 +86,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
   root: null,
   recentRoots: [],
   hydrated: false,
-  markHydrated: () => set({ hydrated: true }),
+  markHydrated: () => set((s) => (s.hydrated ? s : { hydrated: true })),
   setRoot: (path) => {
     const normalized = normalizeWorkspaceRoot(path);
     // 切换/关闭 root 时同步清掉 root 外的 file tab,避免旧路径残留误导

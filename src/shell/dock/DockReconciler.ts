@@ -82,11 +82,12 @@ export function reconcileTerminalPanels(
   // 后到 → 它仍是首次出现 → setActive() 抢焦点,覆盖已先到先聚焦的较新终端,用户键盘输入落到
   // 非预期(较旧)PTY。兜底仅应聚焦当前快照中**最新**的 user session;迟到的较旧 user session
   // 不抢焦点(显式 pendingFocus 路径=用户明确意图,不受此限,始终命中)。
-  const added = new Array<TerminalSession>(input.nextSessions.length);
+  let added: TerminalSession[] | undefined;
   let addedCount = 0;
   let latestUserCreatedAt = -Infinity;
   for (const s of input.nextSessions) {
     if (!prevById.has(s.id)) {
+      added ??= new Array<TerminalSession>(input.nextSessions.length);
       added[addedCount] = s;
       addedCount += 1;
     }
@@ -94,65 +95,68 @@ export function reconcileTerminalPanels(
       latestUserCreatedAt = s.createdAt;
     }
   }
-  added.length = addedCount;
-  if (added.length > 1) {
-    added.sort((a, b) => a.createdAt - b.createdAt);
-  }
 
-  let lastRefId = findLastTerminalPanelId(api);
-  for (const session of added) {
-    const panelId = panelIdFor(session.id);
-    if (api.getPanel(panelId)) {
-      lastRefId = panelId;
-      continue;
+  if (added !== undefined) {
+    added.length = addedCount;
+    if (added.length > 1) {
+      added.sort((a, b) => a.createdAt - b.createdAt);
     }
 
-    const position = lastRefId
-      ? { referencePanel: lastRefId, direction: 'right' as const }
-      : undefined;
-    // user 路径走 coApi.terminal.create → main 同时 RPC reply + IPC push
-    // sessions-changed。renderer 的 IPC handler 可能比 RPC await resolve 先跑,
-    // 此时 user 路径的 setPendingFocus 还没执行 → pendingFocus 命不中。
-    // 用 originHint === 'user' 做时序无关兜底:user 主动创建的 session 应该 focus
-    // (对照 agent 创建的不抢 focus)。
-    // race(R25):但兜底**仅限首次出现**的 user terminal。workspace 切换时旧 workspace 的
-    // user terminal 经 workspaceRoot 过滤隐藏、切回再现 = 重新进 added,若仍走 originHint 兜底
-    // 会被误判新建而抢焦点。everAddedSessionIds 记录曾出现过的 id:重现的 session 已在其中 →
-    // 不兜底(除非显式 pendingFocus);真新建不在其中 → 保留兜底聚焦。
-    const isFirstAppearance = !everAddedSessionIds.has(session.id);
-    everAddedSessionIds.add(session.id);
-    // race(R105):兜底加「是快照中最新 user session」约束,迟到的较旧 user session 不抢焦点。
-    const isLatestUserSession =
-      session.originHint === 'user' &&
-      session.createdAt === latestUserCreatedAt;
-    const shouldFocus =
-      consumePendingFocus(session.id) ||
-      (session.originHint === 'user' &&
-        isFirstAppearance &&
-        isLatestUserSession);
-    // dockview addPanel 的 `inactive: true` 让新 group 容器在 xterm 渲染
-    // 不可见的状态(数据进 xterm 内部但屏幕全黑)。改用"默认 active 加 →
-    // 立即 setActive 回原 panel"实现 agent 不抢 focus 的等价 UX。
-    const previousActivePanelId = !shouldFocus
-      ? api.activePanel?.api.id ?? null
-      : null;
-    api.addPanel({
-      id: panelId,
-      component: TERMINAL_PANEL_TYPE,
-      title: deriveTitle(session, input.customTitles),
-      params: {
-        sessionId: session.id,
-        originHint: session.originHint,
-        cwd: session.cwd,
-      },
-      ...(position ? { position } : {}),
-    });
-    lastRefId = panelId;
+    let lastRefId = findLastTerminalPanelId(api);
+    for (const session of added) {
+      const panelId = panelIdFor(session.id);
+      if (api.getPanel(panelId)) {
+        lastRefId = panelId;
+        continue;
+      }
 
-    if (shouldFocus) {
-      api.getPanel(panelId)?.api.setActive();
-    } else if (previousActivePanelId && previousActivePanelId !== panelId) {
-      api.getPanel(previousActivePanelId)?.api.setActive();
+      const position = lastRefId
+        ? { referencePanel: lastRefId, direction: 'right' as const }
+        : undefined;
+      // user 路径走 coApi.terminal.create → main 同时 RPC reply + IPC push
+      // sessions-changed。renderer 的 IPC handler 可能比 RPC await resolve 先跑,
+      // 此时 user 路径的 setPendingFocus 还没执行 → pendingFocus 命不中。
+      // 用 originHint === 'user' 做时序无关兜底:user 主动创建的 session 应该 focus
+      // (对照 agent 创建的不抢 focus)。
+      // race(R25):但兜底**仅限首次出现**的 user terminal。workspace 切换时旧 workspace 的
+      // user terminal 经 workspaceRoot 过滤隐藏、切回再现 = 重新进 added,若仍走 originHint 兜底
+      // 会被误判新建而抢焦点。everAddedSessionIds 记录曾出现过的 id:重现的 session 已在其中 →
+      // 不兜底(除非显式 pendingFocus);真新建不在其中 → 保留兜底聚焦。
+      const isFirstAppearance = !everAddedSessionIds.has(session.id);
+      everAddedSessionIds.add(session.id);
+      // race(R105):兜底加「是快照中最新 user session」约束,迟到的较旧 user session 不抢焦点。
+      const isLatestUserSession =
+        session.originHint === 'user' &&
+        session.createdAt === latestUserCreatedAt;
+      const shouldFocus =
+        consumePendingFocus(session.id) ||
+        (session.originHint === 'user' &&
+          isFirstAppearance &&
+          isLatestUserSession);
+      // dockview addPanel 的 `inactive: true` 让新 group 容器在 xterm 渲染
+      // 不可见的状态(数据进 xterm 内部但屏幕全黑)。改用"默认 active 加 →
+      // 立即 setActive 回原 panel"实现 agent 不抢 focus 的等价 UX。
+      const previousActivePanelId = !shouldFocus
+        ? api.activePanel?.api.id ?? null
+        : null;
+      api.addPanel({
+        id: panelId,
+        component: TERMINAL_PANEL_TYPE,
+        title: deriveTitle(session, input.customTitles),
+        params: {
+          sessionId: session.id,
+          originHint: session.originHint,
+          cwd: session.cwd,
+        },
+        ...(position ? { position } : {}),
+      });
+      lastRefId = panelId;
+
+      if (shouldFocus) {
+        api.getPanel(panelId)?.api.setActive();
+      } else if (previousActivePanelId && previousActivePanelId !== panelId) {
+        api.getPanel(previousActivePanelId)?.api.setActive();
+      }
     }
   }
 

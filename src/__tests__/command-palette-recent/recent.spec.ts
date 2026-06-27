@@ -109,6 +109,25 @@ describe('useRecentCommandsStore', () => {
     expect(useRecentCommandsStore.getState().list).toEqual([]);
     expect(localStorage.getItem(RECENT_STORAGE_KEY)).toBeNull();
   });
+
+  it('storage 同步读到相同列表内容时不通知订阅者', () => {
+    const list = [{ id: 'a', ts: 1 }];
+    useRecentCommandsStore.setState({ list });
+    localStorage.setItem(RECENT_STORAGE_KEY, JSON.stringify(list));
+    const listener = vi.fn();
+    const unsubscribe = useRecentCommandsStore.subscribe(listener);
+
+    try {
+      window.dispatchEvent(
+        new StorageEvent('storage', { key: RECENT_STORAGE_KEY }),
+      );
+
+      expect(useRecentCommandsStore.getState().list).toBe(list);
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
+  });
 });
 
 describe('useRecentCommandsStore · localStorage 持久化', () => {

@@ -70,6 +70,19 @@ describe('ExplorerContextMenuRegistry', () => {
     }
   });
 
+  it('单项快照不调用 sort', () => {
+    const r = new ExplorerContextMenuRegistry();
+    r.register({ id: 'a', label: 'A', fn: () => {} });
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      expect(r.getAll().map((s) => s.id)).toEqual(['a']);
+      expect(sortSpy).not.toHaveBeenCalled();
+    } finally {
+      sortSpy.mockRestore();
+    }
+  });
+
   it('同 id 后入赢 + warn(同 EditorActionRegistry 模式)', () => {
     const r = new ExplorerContextMenuRegistry();
     const original = console.warn;

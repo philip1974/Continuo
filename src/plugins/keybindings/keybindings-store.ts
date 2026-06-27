@@ -41,6 +41,19 @@ const writeStored = (
   overrides: Record<string, string>,
 ): WriteRecordResult => writeRecord(STORAGE_KEY, overrides);
 
+function recordsShallowEqual(
+  a: Record<string, string>,
+  b: Record<string, string>,
+): boolean {
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+  if (aKeys.length !== bKeys.length) return false;
+  for (const key of aKeys) {
+    if (!Object.is(a[key], b[key])) return false;
+  }
+  return true;
+}
+
 export interface KeybindingsState {
   /** key=commandId, value=hotkey 字符串(空 = unbind). */
   overrides: Record<string, string>;
@@ -52,7 +65,7 @@ export interface KeybindingsState {
   resetAll: () => void;
 }
 
-export const useKeybindingsStore = create<KeybindingsState>((set) => ({
+export const useKeybindingsStore = create<KeybindingsState>((set, get) => ({
   overrides: readStored(),
   // race(R6 + R113 修订,values-store 同型):单 key RMW 基于 live localStorage 重读,**缓解但不
   // 根除**多窗口 lost update。⚠️ 原注释「localStorage 同步 + 跨窗 OS 串行 → 原子」**错误**:Chromium
@@ -66,7 +79,13 @@ export const useKeybindingsStore = create<KeybindingsState>((set) => ({
     if (hotkey !== '' && (hotkey.length > 256 || !HOTKEY_SHAPE_RE.test(hotkey))) {
       return;
     }
-    const next = { ...readStored(), [commandId]: hotkey };
+    const latest = readStored();
+    if (latest[commandId] === hotkey) {
+      if (recordsShallowEqual(get().overrides, latest)) return;
+      set({ overrides: latest });
+      return;
+    }
+    const next = { ...latest, [commandId]: hotkey };
     // 边界(E260,写读 cap 对称,values-store 同型):整份 overrides 序列化超读端 raw cap → 拒写且不提交
     // 内存态,避免下次启动 readRecord 整表返 {} = 所有快捷键 override 静默丢失。
     if (writeStored(next) === 'too-large') {
@@ -101,7 +120,10 @@ export const useKeybindingsStore = create<KeybindingsState>((set) => ({
 // 改 localStorage 时 fire),同 key 重读让各窗 overrides 收敛一致(快捷键语义上 app 级
 // 全局)。镜像 settings values-store 的同款修复(第二十二轮 P2-BA)。
 subscribeStorageKey(STORAGE_KEY, () =>
-  useKeybindingsStore.setState({ overrides: readStored() }),
+  useKeybindingsStore.setState((s) => {
+    const overrides = readStored();
+    return recordsShallowEqual(s.overrides, overrides) ? s : { overrides };
+  }),
 );
 
 /** 取某 command 当前生效的 hotkey(override ?? spec.hotkey),空字符串视为 unbound. */

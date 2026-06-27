@@ -23,6 +23,8 @@ export const useLayoutUiStore = create<LayoutUiState>((set) => ({
   sidebarOpen: true,
   sidebarWidth: SIDEBAR_DEFAULT_WIDTH,
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
-  setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
-  setSidebarWidth: (sidebarWidth) => set({ sidebarWidth }),
+  setSidebarOpen: (sidebarOpen) =>
+    set((s) => (s.sidebarOpen === sidebarOpen ? s : { sidebarOpen })),
+  setSidebarWidth: (sidebarWidth) =>
+    set((s) => (s.sidebarWidth === sidebarWidth ? s : { sidebarWidth })),
 }));

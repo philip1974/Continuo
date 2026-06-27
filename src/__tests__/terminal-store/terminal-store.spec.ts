@@ -67,6 +67,16 @@ describe('nextActiveAfterClose', () => {
     expect(r.sessions).toBe(list);
     expect(r.activeId).toBe('/a');
   });
+
+  it('关不存在 id 不预分配 remaining 数组', () => {
+    const r = nextActiveAfterClose(list, '/a', '/missing');
+    const src = nextActiveAfterClose.toString();
+
+    expect(r.sessions).toBe(list);
+    expect(src.indexOf('let remaining')).toBeGreaterThanOrEqual(0);
+    expect(src.indexOf('let remaining')).toBeLessThan(src.indexOf('new Array'));
+  });
+
   it('命中关闭项时单次遍历 sessions,不 findIndex 后再 filter', () => {
     const findIndexSpy = vi.spyOn(Array.prototype, 'findIndex');
     const filterSpy = vi.spyOn(Array.prototype, 'filter');
@@ -180,6 +190,29 @@ describe('replaceSnapshot', () => {
     expect(useTerminalStore.getState().activeId).toBe('/b');
   });
 
+  it('同一个 snapshot 引用且派生状态不变时不通知订阅者', () => {
+    const sessions = [sess('/a'), sess('/b')];
+    const customTitles = new Map([['/a', 'A']]);
+    useTerminalStore.setState({
+      sessions,
+      activeId: '/b',
+      customTitles,
+    });
+    const listener = vi.fn();
+    const unsubscribe = useTerminalStore.subscribe(listener);
+
+    try {
+      useTerminalStore.getState().replaceSnapshot(sessions);
+
+      expect(useTerminalStore.getState().sessions).toBe(sessions);
+      expect(useTerminalStore.getState().activeId).toBe('/b');
+      expect(useTerminalStore.getState().customTitles).toBe(customTitles);
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
+  });
+
   it('旧 active mid 被移除 → 切下一个', () => {
     useTerminalStore.setState({
       sessions: [sess('/a'), sess('/b'), sess('/c')],
@@ -290,6 +323,24 @@ describe('setActive', () => {
     useTerminalStore.getState().setActive('/pending');
     expect(useTerminalStore.getState().activeId).toBe('/pending');
   });
+
+  it('activeId 未变化时不通知订阅者', () => {
+    useTerminalStore.setState({
+      sessions: [makeSession({ id: '/a' })],
+      activeId: '/a',
+    });
+    const listener = vi.fn();
+    const unsubscribe = useTerminalStore.subscribe(listener);
+
+    try {
+      useTerminalStore.getState().setActive('/a');
+
+      expect(useTerminalStore.getState().activeId).toBe('/a');
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
+  });
 });
 
 // ────────────────────────────────────────────────────────────
@@ -333,6 +384,46 @@ describe('renameSession', () => {
     });
     useTerminalStore.getState().renameSession('/a', '   ');
     expect(useTerminalStore.getState().customTitles.has('/a')).toBe(false);
+  });
+
+  it('renameSession 设置相同标题时保持 customTitles 同引用且不通知订阅者', () => {
+    const customTitles = new Map([['/a', '调试 prompt']]);
+    useTerminalStore.setState({
+      sessions: [makeSession({ id: '/a' })],
+      activeId: '/a',
+      customTitles,
+    });
+    const listener = vi.fn();
+    const unsubscribe = useTerminalStore.subscribe(listener);
+
+    try {
+      useTerminalStore.getState().renameSession('/a', '  调试 prompt  ');
+
+      expect(useTerminalStore.getState().customTitles).toBe(customTitles);
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('renameSession 删除不存在的空标题 override 时不复制 Map 且不通知订阅者', () => {
+    const customTitles = new Map<string, string>();
+    useTerminalStore.setState({
+      sessions: [makeSession({ id: '/a' })],
+      activeId: '/a',
+      customTitles,
+    });
+    const listener = vi.fn();
+    const unsubscribe = useTerminalStore.subscribe(listener);
+
+    try {
+      useTerminalStore.getState().renameSession('/a', '   ');
+
+      expect(useTerminalStore.getState().customTitles).toBe(customTitles);
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
   });
 
   // 边界(E238):renameSession 是 renderer-only store 入口,不经主进程 terminal-create schema 的

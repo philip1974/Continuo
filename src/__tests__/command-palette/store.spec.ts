@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useCommandPaletteStore } from '../../plugins/command-palette/store';
 
 beforeEach(() => {
@@ -61,6 +61,35 @@ describe('CommandPalette store', () => {
     expect(useCommandPaletteStore.getState().selectedIndex).toBe(0);
   });
 
+  it('关闭态 close() 不重复通知订阅者', () => {
+    const listener = vi.fn();
+    const unsubscribe = useCommandPaletteStore.subscribe(listener);
+
+    try {
+      useCommandPaletteStore.getState().close();
+
+      expect(useCommandPaletteStore.getState().isOpen).toBe(false);
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('query 和 selectedIndex 都不变时 setQuery 不通知订阅者', () => {
+    useCommandPaletteStore.setState({ query: 'foo', selectedIndex: 0 });
+    const listener = vi.fn();
+    const unsubscribe = useCommandPaletteStore.subscribe(listener);
+
+    try {
+      useCommandPaletteStore.getState().setQuery('foo');
+
+      expect(useCommandPaletteStore.getState().query).toBe('foo');
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
+  });
+
   // race(R49,R48 孪生):命令集合动态变短(插件 reload/disable / registry 重算)时 selectedIndex
   // 须钳回 [0,len-1],防 Enter 读 filtered[idx]=undefined 命令无法执行 + 高亮悬空。
   describe('clampSelection(R49)', () => {
@@ -80,6 +109,21 @@ describe('CommandPalette store', () => {
       useCommandPaletteStore.setState({ selectedIndex: 2 });
       useCommandPaletteStore.getState().clampSelection(5);
       expect(useCommandPaletteStore.getState().selectedIndex).toBe(2);
+    });
+
+    it('在范围内 → 不通知订阅者', () => {
+      useCommandPaletteStore.setState({ selectedIndex: 2 });
+      const listener = vi.fn();
+      const unsubscribe = useCommandPaletteStore.subscribe(listener);
+
+      try {
+        useCommandPaletteStore.getState().clampSelection(5);
+
+        expect(useCommandPaletteStore.getState().selectedIndex).toBe(2);
+        expect(listener).not.toHaveBeenCalled();
+      } finally {
+        unsubscribe();
+      }
     });
   });
 });

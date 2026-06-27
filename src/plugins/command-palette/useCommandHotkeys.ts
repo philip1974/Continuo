@@ -137,6 +137,8 @@ interface CompiledBinding {
   readonly cmd: CommandSpec;
 }
 
+const EMPTY_COMPILED_BINDINGS: readonly CompiledBinding[] = [];
+
 /** 事件目标是否可编辑文本控件(input/textarea/select/contenteditable). */
 export function isEditableTarget(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null;
@@ -150,13 +152,15 @@ export function buildCompiledBindings(
   commands: readonly CommandSpec[],
   platform: Platform,
 ): readonly CompiledBinding[] {
-  const out = new Array<CompiledBinding>(commands.length);
+  let out: CompiledBinding[] | undefined;
   let count = 0;
   for (const cmd of commands) {
     const effective = getEffectiveHotkey(cmd);
     if (!effective) continue; // 无 hotkey 或显式 unbind
+    out ??= new Array<CompiledBinding>(commands.length);
     out[count++] = { sig: compileCombo(effective, platform), cmd };
   }
+  if (!out) return EMPTY_COMPILED_BINDINGS;
   out.length = count;
   return out;
 }

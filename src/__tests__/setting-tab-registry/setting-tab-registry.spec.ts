@@ -73,6 +73,19 @@ describe('SettingTabRegistry', () => {
     }
   });
 
+  it('单项快照不调用 sort', () => {
+    const r = new SettingTabRegistry();
+    r.register({ id: 'a', title: 'A', render: noopRender });
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      expect(r.getAll().map((x) => x.id)).toEqual(['a']);
+      expect(sortSpy).not.toHaveBeenCalled();
+    } finally {
+      sortSpy.mockRestore();
+    }
+  });
+
   it('重复 id → 后注册赢 + warn', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const r = new SettingTabRegistry();

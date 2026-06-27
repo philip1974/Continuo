@@ -61,6 +61,18 @@ describe('pinned.store', () => {
     expect(usePinnedStore.getState().paths).toEqual([]);
   });
 
+  it('clear 在已空时 no-op,不触发订阅', () => {
+    const listener = vi.fn();
+    const unsub = usePinnedStore.subscribe(listener);
+
+    try {
+      usePinnedStore.getState().clear();
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsub();
+    }
+  });
+
   it('toggle 不去重相同 path 多次调用顺序对', () => {
     usePinnedStore.getState().toggle('/a');
     usePinnedStore.getState().toggle('/a'); // off
