@@ -8,8 +8,11 @@ import {
   SIDEBAR_MIN_WIDTH,
   useLayoutUiStore,
 } from '@/stores/layout-ui.store';
-import { useColumnResize } from '@/lib/use-column-resize';
+import { useColumnResize, clampWidth } from '@/lib/use-column-resize';
 import { useT } from '@/i18n';
+
+// a11y(A14):键盘调宽步长。Arrow=±STEP,Home/End=min/max。
+const RESIZE_STEP = 16;
 
 /**
  * 轻量 shell(打磨 R50,仿 R32/R33/R49):外层只订阅 sidebarOpen,关闭直接返回 null。
@@ -46,9 +49,26 @@ function ExplorerSidebarBody() {
         role="separator"
         aria-orientation="vertical"
         aria-label={t('shell.aria.drag_resize')}
+        // a11y(A14):separator 此前只 onMouseDown,键盘用户无法聚焦/调宽,AT 不知范围/值。
+        // 加 tabIndex + aria-valuemin/max/now(window-splitter 模式)+ Arrow/Home/End 键盘调宽。
+        tabIndex={0}
+        aria-valuemin={SIDEBAR_MIN_WIDTH}
+        aria-valuemax={SIDEBAR_MAX_WIDTH}
+        aria-valuenow={width}
         onMouseDown={startResize}
+        onKeyDown={(e) => {
+          let next: number | null = null;
+          if (e.key === 'ArrowLeft') next = width - RESIZE_STEP;
+          else if (e.key === 'ArrowRight') next = width + RESIZE_STEP;
+          else if (e.key === 'Home') next = SIDEBAR_MIN_WIDTH;
+          else if (e.key === 'End') next = SIDEBAR_MAX_WIDTH;
+          if (next !== null) {
+            e.preventDefault();
+            setWidth(clampWidth(next, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH));
+          }
+        }}
         title={t('shell.aria.drag_resize')}
-        className="absolute top-0 right-0 z-10 h-full w-1 cursor-col-resize bg-transparent transition-colors hover:bg-accent/40"
+        className="absolute top-0 right-0 z-10 h-full w-1 cursor-col-resize bg-transparent transition-colors hover:bg-accent/40 focus-visible:bg-accent/60 focus-visible:outline-none"
       />
     </aside>
   );

@@ -14,8 +14,11 @@ import {
   nextDefaultTitle,
   subscribe,
   _reset,
+  MAX_TERMINAL_SESSIONS_GLOBAL_FOR_TEST,
+  MAX_TERMINAL_SESSIONS_PER_WINDOW_FOR_TEST,
   type MainTerminalSession,
 } from '../../../electron/main/services/terminal-sessions.service';
+import { ERROR_CODES } from '../../../electron/shared/error-codes';
 
 beforeEach(() => {
   _reset();
@@ -381,6 +384,78 @@ describe('subscribe', () => {
 // ────────────────────────────────────────────────────────────
 // _reset
 // ────────────────────────────────────────────────────────────
+
+// 边界(E235,E230 数量上限族):会话(真实 PTY)全局 + 每窗口数量上限。
+describe('E235 会话数量上限', () => {
+  function input(id: string, ownerWindowId: number) {
+    return {
+      id,
+      title: id,
+      cwd: '/work',
+      originHint: 'agent' as const,
+      ownerWindowId,
+    };
+  }
+
+  it('单窗口到 per-window 上限后,再 add 抛 TOO_MANY_TERMINALS,不入 sessions', () => {
+    const max = MAX_TERMINAL_SESSIONS_PER_WINDOW_FOR_TEST;
+    for (let i = 0; i < max; i++) add(input(`w1-${i}`, 1));
+    expect(getAll({ ownerWindowId: 1 })).toHaveLength(max);
+    const err = (() => {
+      try {
+        add(input('overflow', 1));
+        return null;
+      } catch (e) {
+        return e;
+      }
+    })();
+    expect((err as { code?: string }).code).toBe(ERROR_CODES.TOO_MANY_TERMINALS);
+    expect(getAll({ ownerWindowId: 1 })).toHaveLength(max); // 没增
+  });
+
+  it('remove 释放槽位后可再 add(计数随 Map 增删,含 exited-retained)', () => {
+    const max = MAX_TERMINAL_SESSIONS_PER_WINDOW_FOR_TEST;
+    for (let i = 0; i < max; i++) add(input(`w1-${i}`, 1));
+    // setExited 不释放(exited-retained 仍在 Map 计数)→ 仍溢出
+    setExited('w1-0', 0);
+    expect(() => add(input('still-full', 1))).toThrow();
+    // remove 才释放
+    remove('w1-0');
+    expect(() => add(input('revived', 1))).not.toThrow();
+    expect(getAll({ ownerWindowId: 1 })).toHaveLength(max);
+  });
+
+  it('per-window 隔离:窗口 1 满,窗口 2 仍可 add', () => {
+    const max = MAX_TERMINAL_SESSIONS_PER_WINDOW_FOR_TEST;
+    for (let i = 0; i < max; i++) add(input(`w1-${i}`, 1));
+    expect(() => add(input('w1-of', 1))).toThrow();
+    expect(() => add(input('w2-0', 2))).not.toThrow();
+  });
+
+  it('全局上限:跨多窗累计到全局上限后,新窗口 add 也被全局闸拒', () => {
+    const perWin = MAX_TERMINAL_SESSIONS_PER_WINDOW_FOR_TEST;
+    const global = MAX_TERMINAL_SESSIONS_GLOBAL_FOR_TEST;
+    let filled = 0;
+    let win = 100;
+    while (filled < global) {
+      const room = Math.min(perWin, global - filled);
+      for (let i = 0; i < room; i++) add(input(`g-${filled + i}`, win));
+      filled += room;
+      win += 1;
+    }
+    expect(getAll()).toHaveLength(global);
+    const err = (() => {
+      try {
+        add(input('fresh', 999999));
+        return null;
+      } catch (e) {
+        return e;
+      }
+    })();
+    expect((err as { code?: string }).code).toBe(ERROR_CODES.TOO_MANY_TERMINALS);
+    expect(getAll()).toHaveLength(global); // 没增
+  });
+});
 
 describe('_reset', () => {
   it('清 sessions + counter + subscribers', () => {

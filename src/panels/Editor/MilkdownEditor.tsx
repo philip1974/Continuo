@@ -104,12 +104,35 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
     onLinkClickRef.current?.(href);
   }, []);
 
+  // a11y(A152):Cmd/Ctrl+click 跳转的键盘等价 —— Cmd/Ctrl+Enter。键盘用户无法用鼠标修饰键
+  // 点击链接;用修饰键(非裸 Enter)避免与可编辑 ProseMirror 的换行冲突。链接定位优先 event
+  // target(链接获焦时),退回当前选区 anchorNode 所在的 <a>(caret 落在链接文本里时)。
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'Enter' || !(e.metaKey || e.ctrlKey)) return;
+    const fromTarget = (e.target as HTMLElement | null)?.closest?.('a') ?? null;
+    let a: HTMLAnchorElement | null = fromTarget as HTMLAnchorElement | null;
+    if (!a) {
+      const sel = (e.currentTarget.ownerDocument ?? document).getSelection();
+      const node = sel?.anchorNode ?? null;
+      const el =
+        node instanceof HTMLElement ? node : (node?.parentElement ?? null);
+      a = el?.closest('a') ?? null;
+    }
+    if (!a) return;
+    const href = a.getAttribute('href');
+    if (!href) return;
+    e.preventDefault();
+    e.stopPropagation();
+    onLinkClickRef.current?.(href);
+  }, []);
+
   return (
     <MilkdownProvider>
       <div
         className="h-full w-full overflow-auto"
         style={{ fontSize: `${fontSize}px` }}
         onClick={handleClick}
+        onKeyDown={handleKeyDown}
       >
         <CrepeEditor {...props} />
       </div>

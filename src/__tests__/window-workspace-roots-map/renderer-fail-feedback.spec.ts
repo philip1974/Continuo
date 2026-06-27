@@ -62,6 +62,8 @@ vi.mock('@/plugins/co-app', () => ({
   coApp: {
     panels: {
       getAll: vi.fn(() => mocks.panels),
+      // race(R60):HeaderActions 点击「添加 panel」时按 type 从 live registry get(type) 复查。
+      get: vi.fn((type: string) => mocks.panels.find((p) => p.type === type)),
       subscribe: vi.fn(() => () => undefined),
     },
   },

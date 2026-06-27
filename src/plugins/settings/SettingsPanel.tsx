@@ -8,6 +8,7 @@
 
 import { useMemo, useState } from 'react';
 import { Input } from '@/design';
+import { clampSearchQuery } from '@/lib/search-query';
 import { coApp } from '@/plugins/co-app';
 import { useRegistry } from '../registries/useRegistry';
 import type {
@@ -85,8 +86,15 @@ export function SettingsPanel({
   const activeTabId = useSettingsStore((s) => s.activeTabId);
   const setActiveTabId = useSettingsStore((s) => s.setActiveTabId);
   const tabs = useTabs(registry);
-  // active 兜底:未选 / id 已被 dispose → 取首项
-  const active = tabs.find((t) => t.id === activeTabId) ?? tabs[0] ?? null;
+  // nav 列表用 tabs(快照,订阅驱动重渲)。
+  // race(R55,R50-R54 同族):active.render() 调插件函数,但 useRegistry 快照(useState 订阅)
+  // 滞后 registry 一帧 —— tab 刚被插件 disable/reload unregister 时快照仍含它,直接用快照里的
+  // spec 会执行已卸载 tab 的 render(访问已释放资源 / 陈旧 UI)。改为从 **live** registry 按
+  // activeTabId 复查;已移除则回退首个 live tab,确保只调当前仍注册的 spec.render。
+  const active =
+    (activeTabId ? registry.get(activeTabId) : undefined) ??
+    registry.getAll()[0] ??
+    null;
 
   const [query, setQuery] = useState('');
   const trimmed = query.trim();
@@ -99,9 +107,13 @@ export function SettingsPanel({
       <div className="border-b border-line bg-panel-soft/50 p-3">
         <Input
           size="sm"
+          // a11y(A5,A1 同族):placeholder 无参数 → 复用作 aria-label 给屏幕阅读器可访问名。
+          aria-label={t('settings.panel.search_placeholder')}
           placeholder={t('settings.panel.search_placeholder')}
           value={query}
-          onChange={(e) => setQuery((e.target as HTMLInputElement).value)}
+          onChange={(e) =>
+            setQuery(clampSearchQuery((e.target as HTMLInputElement).value))
+          }
           // 改 search 时回到搜索结果区,避免左侧 nav 视觉错位
           autoFocus
         />
@@ -122,6 +134,13 @@ export function SettingsPanel({
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTabId(tab.id)}
+                // a11y(A17,A12 同族):搜索模式下 nav 仅 pointer-events-none(鼠标禁用)但键盘
+                // 仍可 Tab/Enter 触发 → disabled 从 tab 顺序移除 + 阻断键盘激活,与视觉禁用一致。
+                disabled={inSearch}
+                // a11y(A11):active 此前只用 className,AT 不知当前所在设置页。用 aria-current
+                // 暴露选中态(nav 是独立可 tab 的按钮列表,非箭头键 roving 的 tab 控件,故用
+                // aria-current 而非 role=tab/aria-selected,避免不完整的 tab 交互模型)。
+                aria-current={active?.id === tab.id ? 'page' : undefined}
                 className={[
                   'flex w-full items-center gap-2 border-l-2 px-4 py-2 text-left transition',
                   active?.id === tab.id
@@ -199,7 +218,9 @@ function SettingsSearchResults({
 
   return (
     <div>
-      <div className="mb-3 text-fg-dim">
+      {/* a11y(A54,A53 同族):搜索结果计数/无匹配随输入变化,焦点在搜索框时须 live region
+          (role=status/polite)播报匹配数量/无结果。 */}
+      <div className="mb-3 text-fg-dim" role="status">
         {matched.length === 0
           ? t('settings.panel.no_match', { q: trimmed })
           : t('settings.panel.matched', { count: matched.length, q: trimmed })}
@@ -213,7 +234,12 @@ function SettingsSearchResults({
             {bucket.label}
           </h3>
           {bucket.items.map((spec) => (
-            <SettingItemRow key={spec.id} spec={spec} />
+            <SettingItemRow
+              key={spec.id}
+              spec={spec}
+              // race(R58):写前 live 复查 setting 仍注册(搜索结果快照可能滞后于 unregister)。
+              isStillRegistered={(id) => itemRegistry.get(id) !== undefined}
+            />
           ))}
         </section>
       ))}

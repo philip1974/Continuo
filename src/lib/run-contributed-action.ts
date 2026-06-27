@@ -8,6 +8,7 @@
 // notify.error 默认 mirror=true → 同时写 console.error,保留原有 console 诊断输出。
 
 import { notify } from '@/notifications/notify';
+import { localizeErrorByCode } from '@/lib/localize-error';
 
 /**
  * 运行贡献回调,失败时弹 error toast(标签 + 错误信息)。返回值忽略;返回 Promise
@@ -17,10 +18,18 @@ import { notify } from '@/notifications/notify';
  * @param fn    贡献的回调。
  */
 export function runContributedAction(label: string, fn: () => unknown): void {
-  const fail = (err: unknown): void =>
-    notify.error(
-      `${label}: ${err instanceof Error ? err.message : String(err)}`,
-    );
+  const fail = (err: unknown): void => {
+    // i18n(I11,I10 同族 catch 丢 code 变体):贡献回调可能抛带 code 的 Error(如
+    // PermissionError code='PERMISSION_DENIED')。只取 err.message 会丢 code 且泄漏 raw
+    // 语言。有 code 时按 catalog 本地化(localizeErrorByCode,含占位符守卫),无 code 回退
+    // 原 message。注:PERMISSION_DENIED code 被多处复用(PluginManager 权限列表),故不在
+    // catalog 收录该 key —— PermissionError 已在源头改英文 message,这里回退即英文。
+    const raw = err instanceof Error ? err.message : String(err);
+    const code = (err as { code?: unknown }).code;
+    const message =
+      typeof code === 'string' ? localizeErrorByCode(code, raw) : raw;
+    notify.error(`${label}: ${message}`);
+  };
   try {
     void Promise.resolve(fn()).catch(fail);
   } catch (err) {

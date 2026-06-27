@@ -1,5 +1,6 @@
 import { BrowserWindow, dialog, shell } from 'electron';
 import fs from 'node:fs';
+import path from 'node:path';
 import { z } from 'zod';
 import {
   defaultIsTrustedFrame,
@@ -7,7 +8,9 @@ import {
   safeHandleWithCtx,
 } from '../safe-handle';
 import { FS_CHANNELS } from '../../shared/fs-channels';
-import { listDir } from './fs/list-dir';
+import { MAX_WRITE_BYTES } from '../../shared/fs-limits';
+import { utf8BytesExceed } from '../../shared/utf8-byte-length';
+import { listDir, MAX_TOTAL_ENTRIES } from './fs/list-dir';
 import { readFile } from './fs/read-file';
 import { atomicWriteFile } from './fs/atomic-write';
 import { renameEntry } from './fs/rename';
@@ -20,64 +23,99 @@ import { createWatcherPool } from './fs/watch';
 // schemas — 全部 .strict() 拒绝未知字段(防 IPC 注入)
 // ────────────────────────────────────────────────────────────
 
+// 边界(E21,E13 同族):fs IPC 此前只 cap 了 content,path/newName/name/dir/src/dest 及 listDir
+// exclude 无长度/数量上限。畸形 renderer/preload 调用可传超长路径或巨大 exclude 列表,在 IPC/zod/
+// exclude 扫描路径消耗内存+CPU(listDir 还对每个目录项 O(N) exclude.includes)。统一加 PATH/NAME
+// 上限 + exclude 数组上限;listDir 内把 exclude 转 Set 避免大目录线性放大(见 fs/list-dir.ts)。
+const FS_PATH_MAX = 8192;
+const FS_NAME_MAX = 1024;
+const FS_EXCLUDE_MAX = 1000;
+const fsPath = (): z.ZodString => z.string().min(1).max(FS_PATH_MAX);
+const fsName = (): z.ZodString => z.string().min(1).max(FS_NAME_MAX);
+
 const ListDirOptionsSchema = z
   .object({
     maxDepth: z.number().int().positive().optional(),
-    exclude: z.array(z.string()).optional(),
+    exclude: z.array(z.string().max(FS_NAME_MAX)).max(FS_EXCLUDE_MAX).optional(), // 边界(E21)
     followSymlinks: z.boolean().optional(),
     // perf P2:文件数上限(深递归早停)。见 fs/list-dir.ts ListDirOptions.maxFiles。
-    maxFiles: z.number().int().positive().optional(),
+    // 边界(E275):上界对齐到 MAX_TOTAL_ENTRIES 硬上限 + 安全整数 —— 此前只 positive int,畸形 IPC 可传
+    // 1e308(仍过 z.int())绕过调用方早停,迫使主进程遍历/排序/回传近 10 万条放大。超上限直接 BAD_INPUT。
+    maxFiles: z.number().int().positive().max(MAX_TOTAL_ENTRIES).optional(),
   })
   .strict();
 
 export const listDirInputSchema = z
   .object({
-    path: z.string().min(1),
+    path: fsPath(),
     options: ListDirOptionsSchema.optional(),
   })
   .strict();
 
-export const readFileInputSchema = z.object({ path: z.string().min(1) }).strict();
+export const readFileInputSchema = z.object({ path: fsPath() }).strict();
+
+// 边界(E13):fs:writeFile / fs:writeBinary 的 content 此前无大小上限。IPC payload 会先完整进入
+// 主进程,再由 atomicWriteFile 写临时文件 + fsync。畸形/误操作的超大字符串/Uint8Array 会造成主
+// 进程内存峰值、IPC 卡顿、超大临时文件(比 terminal.write 已有的 2MB cap 更不受控)。上限取
+// 64 MiB —— 这是**滥用/误操作 backstop**(32× terminal.write),远超任何现实编辑文件/拖放资产
+// (CodeMirror/Milkdown 编辑数 MB 已退化,不会到此),不破坏合法保存;真·大文件写入应另走流式/
+// 分块接口(follow-up)。超限 → safeHandle 的 zod 校验失败 → BAD_INPUT。
+// E44:MAX_WRITE_BYTES 移到 shared/fs-limits(顶部 import),plugin-fs(E29)+ renderer scoped-app
+// (E44)复用同值防漂移。
 
 export const writeFileInputSchema = z
-  .object({ path: z.string().min(1), content: z.string() })
+  .object({
+    path: fsPath(),
+    // 边界(E125):按真实 UTF-8 字节校验(非 .max()=UTF-16 code unit 数)。含 CJK/emoji 的字符串
+    // 在 content.length ≤ 64MiB 时真实字节可达数倍,绕过写盘 backstop → 超大临时文件/fsync 放大。
+    content: z.string().refine((c) => !utf8BytesExceed(c, MAX_WRITE_BYTES), {
+      message: `content 超过上限 ${MAX_WRITE_BYTES} 字节`,
+    }),
+  })
   .strict();
 
 export const writeBinaryInputSchema = z
-  .object({ path: z.string().min(1), content: z.instanceof(Uint8Array) })
+  .object({
+    path: fsPath(),
+    content: z
+      .instanceof(Uint8Array)
+      .refine((u) => u.length <= MAX_WRITE_BYTES, {
+        message: `content 超过上限 ${MAX_WRITE_BYTES} 字节`,
+      }),
+  })
   .strict();
 
 export const renameInputSchema = z
-  .object({ path: z.string().min(1), newName: z.string().min(1) })
+  .object({ path: fsPath(), newName: fsName() })
   .strict();
 
-export const removeInputSchema = z.object({ path: z.string().min(1) }).strict();
+export const removeInputSchema = z.object({ path: fsPath() }).strict();
 
 export const createFileInputSchema = z
-  .object({ dir: z.string().min(1), name: z.string().min(1) })
+  .object({ dir: fsPath(), name: fsName() })
   .strict();
 
 export const createDirInputSchema = z
-  .object({ parent: z.string().min(1), name: z.string().min(1) })
+  .object({ parent: fsPath(), name: fsName() })
   .strict();
 
-export const trashInputSchema = z.object({ path: z.string().min(1) }).strict();
+export const trashInputSchema = z.object({ path: fsPath() }).strict();
 
-export const revealInputSchema = z.object({ path: z.string().min(1) }).strict();
+export const revealInputSchema = z.object({ path: fsPath() }).strict();
 
 export const moveInputSchema = z
-  .object({ src: z.string().min(1), dest: z.string().min(1) })
+  .object({ src: fsPath(), dest: fsPath() })
   .strict();
 
 export const copyInputSchema = z
-  .object({ src: z.string().min(1), dest: z.string().min(1) })
+  .object({ src: fsPath(), dest: fsPath() })
   .strict();
 
 // select-directory 显式严格:接受 undefined,拒绝 {} 与其它值
 export const selectDirectoryInputSchema = z.undefined();
 
-export const watchInputSchema = z.object({ path: z.string().min(1) }).strict();
-export const unwatchInputSchema = z.object({ path: z.string().min(1) }).strict();
+export const watchInputSchema = z.object({ path: fsPath() }).strict();
+export const unwatchInputSchema = z.object({ path: fsPath() }).strict();
 
 // 类型导出(给 preload / renderer 用)
 export type ListDirInput = z.infer<typeof listDirInputSchema>;
@@ -160,6 +198,25 @@ export const makeSelectDirectoryHandler =
 const RECURSIVE_SUPPORTED =
   process.platform === 'darwin' || process.platform === 'win32';
 
+/**
+ * 由 watcher 回调的 (rootPath, filename) 算出实际变更的目录绝对路径。
+ * filename 是相对 rootPath 的('a.ts' → 根;'sub/dir/a.ts' → sub/dir)。
+ * 用 `pathMod.join` 拼接(平台原生分隔符):此前用 `${rootPath}/${subdir}` 在
+ * Windows 上产出混合分隔符 `C:\proj/sub`,与 renderer 原生 `C:\proj\sub` tree id
+ * 精确比较不相等 → 树刷新 / 外部文件同步漏触发(跨平台审计 P1)。
+ * pathMod 可注入(测试用 path.win32 验 Windows 行为)。
+ */
+export function resolveWatchChangedPath(
+  rootPath: string,
+  filename: string,
+  pathMod: Pick<typeof path, 'join'> = path,
+): string {
+  const norm = String(filename).replace(/\\/g, '/');
+  const slashIdx = norm.lastIndexOf('/');
+  const subdir = slashIdx >= 0 ? norm.slice(0, slashIdx) : '';
+  return subdir ? pathMod.join(rootPath, subdir) : rootPath;
+}
+
 const watcherPool = createWatcherPool((rootPath, onChange) => {
   const watcher = fs.watch(
     rootPath,
@@ -170,21 +227,26 @@ const watcherPool = createWatcherPool((rootPath, onChange) => {
         onChange(rootPath);
         return;
       }
-      const norm = String(filename).replace(/\\/g, '/');
-      const slashIdx = norm.lastIndexOf('/');
-      // filename 是相对 rootPath 的:'a.ts' → 根目录变;'sub/dir/a.ts' → sub/dir 变
-      const subdir = slashIdx >= 0 ? norm.slice(0, slashIdx) : '';
-      const changedPath = subdir ? `${rootPath}/${subdir}` : rootPath;
-      onChange(changedPath);
+      onChange(resolveWatchChangedPath(rootPath, String(filename)));
     },
   );
   return { close: () => watcher.close() };
 });
 
-function broadcastDirChanged(path: string): void {
+// 导出仅供 R66 回归测试(验证单窗口 send 抛错不中断广播);生产仍只经 watcherPool onChange 调用。
+export function broadcastDirChanged(path: string): void {
   for (const w of BrowserWindow.getAllWindows()) {
     if (w.webContents.isDestroyed()) continue;
-    w.webContents.send(FS_CHANNELS.DIR_CHANGED, { path });
+    // race(R66,R63/R64/R65 同族):isDestroyed() 检查后、send 前窗口可能销毁,send 抛
+    // "Object has been destroyed"。本函数由 fs.watch 回调(onChange)触发,裸抛会:(1)中断
+    // 循环 → 后续窗口漏收 DIR_CHANGED,Explorer/外部文件同步停在旧树/旧内容;(2)在异步事件
+    // 回调里成主进程未捕获异常(噪声/崩溃风险)。每个窗口的 send 独立 try/catch,失败只跳过/
+    // 记录并继续广播其它窗口。镜像 i18n(R64)/protocol(R63)/plugin-fs(R65)。
+    try {
+      w.webContents.send(FS_CHANNELS.DIR_CHANGED, { path });
+    } catch (err) {
+      console.error('[fs] DIR_CHANGED broadcast failed', err);
+    }
   }
 }
 

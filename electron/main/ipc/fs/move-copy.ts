@@ -34,8 +34,12 @@ export async function moveEntry(
   try {
     await lstat(destPath);
     destExists = true;
-  } catch {
-    // 不存在(ENOENT),按预期
+  } catch (err) {
+    // 只有 ENOENT(不存在)才按预期继续。EACCES/EIO 等「无法确认目标」不能 fail-open
+    // (否则下方 rename 静默覆盖已有目标,codex P1)→ 映射后抛出中止。
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw fsError(mapNodeErrnoCode(err), `lstat failed: ${destPath}`);
+    }
   }
   if (destExists) {
     throw fsError(ERROR_CODES.FS_EEXIST, `destination already exists: ${destPath}`);
@@ -53,7 +57,13 @@ export async function moveEntry(
   }
 
   try {
-    await cp(srcPath, destPath, { recursive: true, errorOnExist: true });
+    // force:false 必须显式传 —— fs.cp 默认 force:true 会击穿 errorOnExist(实测:
+    // errorOnExist 仅在 force:false 时生效),否则 EXDEV fallback 仍会静默覆盖目标。
+    await cp(srcPath, destPath, {
+      recursive: true,
+      force: false,
+      errorOnExist: true,
+    });
   } catch (err) {
     throw fsError(mapNodeErrnoCode(err), `cross-device cp failed: ${srcPath} → ${destPath}`);
   }
@@ -82,7 +92,14 @@ export async function copyEntry(
     throw fsError(mapNodeErrnoCode(err), `lstat failed: ${srcPath}`);
   }
   try {
-    await cp(srcPath, destPath, { recursive: true, errorOnExist: true });
+    // force:false 必须显式传 —— fs.cp 默认 force:true 会击穿 errorOnExist(实测:
+    // errorOnExist 仅在 force:false 时生效)。copyEntry 无 pre-check,完全依赖此选项防
+    // 覆盖;不传 force:false 则文档承诺的「已存在→FS_EEXIST」被击穿,静默覆盖原文件。
+    await cp(srcPath, destPath, {
+      recursive: true,
+      force: false,
+      errorOnExist: true,
+    });
   } catch (err) {
     throw fsError(mapNodeErrnoCode(err), `cp failed: ${srcPath} → ${destPath}`);
   }

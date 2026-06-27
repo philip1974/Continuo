@@ -1,12 +1,15 @@
-import { mkdir, stat } from 'node:fs/promises';
+import { mkdir, open } from 'node:fs/promises';
 import path from 'node:path';
 import { ERROR_CODES } from '../../../shared/error-codes';
-import { atomicWriteFile } from './atomic-write';
 import { assertValidBasename, fsError, mapNodeErrnoCode } from './path-utils';
 
 /**
  * 创建空文件。已存在 → FS_EEXIST(防覆盖既有文件)。
- * 走 atomic-write,与编辑器场景同路径,免重复实现。
+ *
+ * 用 `open(newPath, 'wx')` 原子排他创建:flag `wx` = O_CREAT|O_EXCL,内核保证「不存在
+ * 才创建,已存在即 EEXIST」,无 TOCTOU。此前用 `stat` 判不存在再 `atomicWriteFile`(其
+ * rename 无条件覆盖)有竞态窗口:stat 后、rename 前并发创建的文件会被空文件覆盖 → 丢内容
+ * (codex 数据安全复查 P1)。与紧邻 createDir 的 mkdir 排他语义一致。
  */
 export async function createFile(
   dirPath: string,
@@ -16,18 +19,15 @@ export async function createFile(
   const newPath = path.join(dirPath, name);
 
   try {
-    await stat(newPath);
-    throw fsError(ERROR_CODES.FS_EEXIST, `already exists: ${newPath}`);
+    const handle = await open(newPath, 'wx');
+    await handle.close();
   } catch (err) {
     const code = (err as { code?: string }).code;
-    if (code === ERROR_CODES.FS_EEXIST) throw err;
-    if (code !== 'ENOENT') {
-      throw fsError(mapNodeErrnoCode(err), `stat failed: ${newPath}`);
+    if (code === 'EEXIST') {
+      throw fsError(ERROR_CODES.FS_EEXIST, `already exists: ${newPath}`);
     }
-    // ENOENT 是预期的"不存在",继续
+    throw fsError(mapNodeErrnoCode(err), `create failed: ${newPath}`);
   }
-
-  await atomicWriteFile(newPath, '');
   return newPath;
 }
 

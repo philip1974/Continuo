@@ -8,6 +8,11 @@ type LinkHandler = (event: MouseEvent, url: string) => void;
 const mock = vi.hoisted(() => ({
   linkHandler: undefined as LinkHandler | undefined,
   openExternal: vi.fn().mockResolvedValue({ ok: true }),
+  notifyError: vi.fn(),
+}));
+vi.mock('@/notifications/notify', () => ({ notify: { error: mock.notifyError } }));
+vi.mock('@/lib/localize-error', () => ({
+  localizeErrorByCode: (code: string | undefined, msg?: string) => msg ?? code ?? '',
 }));
 vi.mock('@xterm/xterm', () => ({
   Terminal: vi.fn().mockImplementation(function TerminalMock(this: Record<string, unknown>, options: Record<string, unknown>) {
@@ -75,5 +80,23 @@ describe('terminal-url-click', () => {
     mountAndGetHandler()(new MouseEvent('click'), url);
     expect(mock.openExternal).toHaveBeenCalledTimes(1);
     expect(mock.openExternal).toHaveBeenCalledWith(url);
+  });
+
+  // a11y(A118,A117 同族):openExternal {ok:false} → notify.error(不静默)。
+  it('openExternal {ok:false} → notify.error', async () => {
+    mock.openExternal.mockResolvedValueOnce({ ok: false, code: 'CO_COMMAND_BLOCKED' });
+    mountAndGetHandler()(new MouseEvent('click'), 'https://x.com');
+    await vi.waitFor(() => {
+      expect(mock.notifyError).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // a11y(A118):openExternal reject(IPC 异常)→ notify.error。
+  it('openExternal reject → notify.error', async () => {
+    mock.openExternal.mockRejectedValueOnce(new Error('ipc down'));
+    mountAndGetHandler()(new MouseEvent('click'), 'https://x.com');
+    await vi.waitFor(() => {
+      expect(mock.notifyError).toHaveBeenCalledTimes(1);
+    });
   });
 });

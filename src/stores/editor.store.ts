@@ -8,6 +8,11 @@ import { create } from 'zustand';
 import type { EditorView } from '@codemirror/view';
 import { isMilkdownUnsafe } from '@/panels/Editor/milkdown-roundtrip-safety';
 import { isMarkdownPath } from '@/panels/Editor/editor-path-utils';
+import { isSameOrInsidePath } from '@/lib/path-cross';
+import {
+  PATH_ARRAY_MAX,
+  PATH_STR_MAX,
+} from '../../electron/shared/explorer-persistence-schema';
 
 // ── 类型 ─────────────────────────────────────────────────────
 
@@ -105,16 +110,14 @@ export function getStateAfterRenamingPath(
   oldPath: string,
   newPath: string,
 ): CloseTabResult {
-  const rewrite = (filePath: string): string | null => {
-    if (filePath === oldPath) return newPath;
-    if (filePath.startsWith(oldPath + '/')) {
-      return newPath + filePath.slice(oldPath.length);
-    }
-    if (filePath.startsWith(oldPath + '\\')) {
-      return newPath + filePath.slice(oldPath.length);
-    }
-    return null;
-  };
+  // 跨平台(codex 复查 P2,同 remove/close 族,单一来源 path-cross.isSameOrInsidePath):
+  // 匹配平台感知大小写(Windows 运行时 `C:\Repo\dir` 匹配 tab `c:\repo\dir\a.md`,否则 tab
+  // 指向失效旧路径)。后缀切片用**原** filePath + oldPath.length —— 大小写折叠不改长度,
+  // oldPath 无尾分隔符故 slice 点正确;精确匹配时 slice 得 '' → newPath。
+  const rewrite = (filePath: string): string | null =>
+    isSameOrInsidePath(oldPath, filePath)
+      ? newPath + filePath.slice(oldPath.length)
+      : null;
 
   let changed = false;
   const newTabs = tabs.map((t) => {
@@ -145,7 +148,7 @@ export function getStateAfterRenamingPath(
  * - untitled(filePath=null)tab 与 root 无关,始终保留
  * - **dirty(未保存编辑)tab 始终保留** —— 切 root 不得静默丢弃用户改动(审计):
  *   旧实现只按 filePath 位置判定,root 外的脏真实文件 tab 被直接关闭、编辑丢失
- * - filePath 等于 root 或位于其下(`root/` 或 `root\\` 前缀)→ 保留
+ * - filePath 等于 root 或位于其下(见 isSameOrInsidePath:跨平台分隔符 + 大小写)→ 保留
  * - 其余(包括 root=null 时所有 clean file tab)→ 关闭
  * - active tab 被关时 → 取剩余第一个(优先剩余中原序更靠后的相邻);全清则 null
  */
@@ -158,11 +161,7 @@ export function getStateAfterClosingTabsOutsideRoot(
     if (tab.filePath === null) return true; // untitled 永远保留
     if (tab.dirty) return true; // 未保存编辑 → 保留,切 root 不静默丢数据
     if (root === null) return false;
-    if (tab.filePath === root) return true;
-    return (
-      tab.filePath.startsWith(root + '/') ||
-      tab.filePath.startsWith(root + '\\')
-    );
+    return isSameOrInsidePath(root, tab.filePath);
   };
 
   const remaining = tabs.filter(keep);
@@ -206,17 +205,18 @@ export function getStateAfterRemovingPath(
   activeTabId: string | null,
   removedPath: string,
 ): CloseTabResult {
-  const isMatch = (filePath: string | null): boolean => {
-    if (filePath === null) return false;
-    if (filePath === removedPath) return true;
-    return (
-      filePath.startsWith(removedPath + '/') ||
-      filePath.startsWith(removedPath + '\\')
-    );
-  };
+  // 跨平台(codex 复查 P2):删除匹配走 isSameOrInsidePath —— Windows case-fold(`C:\Repo\dir`
+  // 匹配 `c:\repo\dir\a.md`),否则 clean tab 不随删除/trash 关闭 → 用户基于已删旧路径保存
+  // 复活文件;POSIX 保持大小写敏感。同前缀但非子(`/x/foo` 删 vs `/x/foobar.md`)仍不误匹配。
+  const isMatch = (filePath: string | null): boolean =>
+    filePath !== null && isSameOrInsidePath(removedPath, filePath);
 
+  // 数据安全:dirty(未保存编辑)tab 不随文件删除/trash 自动关闭 —— 否则会绕过
+  // EditorPanel 的 dirty 关闭确认,静默丢失内存里的未保存增量(磁盘旧版本进废纸篓
+  // 可恢复,但内存增量无处可寻)。参考 VSCode:删除有未保存改动的文件保留 dirty
+  // 编辑器。仅 clean tab 自动关闭;dirty tab 留给用户显式保存或经确认丢弃。
   const removingIds = new Set<string>();
-  for (const t of tabs) if (isMatch(t.filePath)) removingIds.add(t.id);
+  for (const t of tabs) if (isMatch(t.filePath) && !t.dirty) removingIds.add(t.id);
   if (removingIds.size === 0) return { tabs, activeTabId };
 
   const remaining = tabs.filter((t) => !removingIds.has(t.id));
@@ -327,6 +327,16 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
       const pulse = s.editorFocusPulse + 1;
       const exists = s.tabs.some((t) => t.id === tab.id);
       if (exists) return { activeTabId: tab.id, editorFocusPulse: pulse };
+      // 边界(E278,E276/E277 同族 / 运行时状态守持久化契约):file tab 经 snapshotFromStores 序列化成
+      // editor.openFilePaths(持久化 PATH_ARRAY_MAX=100000 cap + 单条 PATH_STR_MAX)。插件经 SDK openFile
+      // 循环开海量文件 → tabs 超量 → openFilePaths 超上限 → explorer:write 拒整份 → 全 explorer 持久化失败。
+      // 总 tab 数 ≥ PATH_ARRAY_MAX(untitled 极少,近似 file-tab 数)或 filePath 超 PATH_STR_MAX → 拒开(no-op)。
+      if (
+        s.tabs.length >= PATH_ARRAY_MAX ||
+        (tab.filePath !== null && tab.filePath.length > PATH_STR_MAX)
+      ) {
+        return s;
+      }
       return {
         tabs: [...s.tabs, tab],
         activeTabId: tab.id,

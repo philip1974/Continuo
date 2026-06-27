@@ -2,14 +2,18 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import { createTerminalDataDemux } from './terminal-data-demux';
 import type { IpcResult } from '../shared/ipc-result';
 import type { FileEntry } from '../shared/fs-entry';
-import { FS_CHANNELS } from '../shared/fs-channels';
+import { FS_CHANNELS, isFsDirChangedPayload } from '../shared/fs-channels';
+import { FS_PATH_MAX } from '../shared/fs-limits';
 import { TERMINAL_CHANNELS } from '../shared/terminal-channels';
 import type { TerminalSessionSnapshot } from '../shared/terminal-session';
 import type { TerminalAttachRejectReason } from '../shared/terminal-attach';
 import type { TerminalCreateInput } from '../shared/terminal-create';
 import {
   PLUGINS_CHANNELS,
+  isPluginsChangedPayload,
+  isProtocolUrlPayload,
   type IpcPermissionsMap,
+  type IpcPermissionRecord,
   type IpcPluginDir,
 } from '../shared/plugins-channels';
 import {
@@ -171,8 +175,17 @@ const api = {
       ipcRenderer.invoke(FS_CHANNELS.UNWATCH, { path }),
     /** 订阅目录变更 push 事件;返回 unsubscribe. */
     onDirChanged: (cb: (path: string) => void): (() => void) => {
-      const listener = (_: unknown, payload: { path: string }) =>
+      // 边界(E173,E168-E172 同族 IPC ingress 纵深防御):fs:dir-changed payload 此前直接 cb(payload.path)。
+      // 畸形 IPC payload(null/非对象/path 非字符串/超长)→ preload listener 抛错(null.path),或把非法
+      // key 送进 Explorer watcher / external-file-sync(目录刷新异常、debounce Map 污染、外部同步失效)。
+      // runtime guard:非对象/path 非字符串/超长 → console.warn drop;不抛、不下传脏 path。
+      const listener = (_: unknown, payload: unknown): void => {
+        if (!isFsDirChangedPayload(payload, FS_PATH_MAX)) {
+          console.warn('[fs] invalid dir-changed payload, dropped', payload);
+          return;
+        }
         cb(payload.path);
+      };
       ipcRenderer.on(FS_CHANNELS.DIR_CHANGED, listener);
       return () => ipcRenderer.off(FS_CHANNELS.DIR_CHANGED, listener);
     },
@@ -268,19 +281,45 @@ const api = {
       ipcRenderer.invoke(PLUGINS_CHANNELS.READ_ENABLED),
     writeEnabled: (ids: readonly string[]): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(PLUGINS_CHANNELS.WRITE_ENABLED, { ids }),
+    /** 数据安全:按单 plugin 启用/禁用 delta 写,防多窗口整表 RMW 互相覆盖. */
+    mutateEnabled: (id: string, enabled: boolean): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(PLUGINS_CHANNELS.MUTATE_ENABLED, { id, enabled }),
     readPermissions: (): Promise<IpcResult<IpcPermissionsMap>> =>
       ipcRenderer.invoke(PLUGINS_CHANNELS.READ_PERMISSIONS),
     writePermissions: (data: IpcPermissionsMap): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(PLUGINS_CHANNELS.WRITE_PERMISSIONS, { data }),
+    /** 数据安全:按单 plugin 合并写,防多窗口整表写互相覆盖. */
+    writePluginPermissions: (
+      id: string,
+      record: IpcPermissionRecord,
+    ): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(PLUGINS_CHANNELS.WRITE_PLUGIN_PERMISSIONS, {
+        id,
+        record,
+      }),
     /** v4.3.1 订阅 plugin 文件 mtime 变化,返 unsubscribe. */
     onChanged: (cb: (id: string) => void): (() => void) => {
-      const listener = (_: unknown, payload: { id: string }) => cb(payload.id);
+      // 边界(E242):runtime 守卫 push payload,畸形(null/非字符串/超长 id)warn+drop 不调 cb。
+      const listener = (_: unknown, payload: unknown) => {
+        if (!isPluginsChangedPayload(payload)) {
+          console.warn('[plugins] dropped malformed plugins:changed payload', payload);
+          return;
+        }
+        cb(payload.id);
+      };
       ipcRenderer.on(PLUGINS_CHANNELS.CHANGED, listener);
       return () => ipcRenderer.off(PLUGINS_CHANNELS.CHANGED, listener);
     },
     /** v4.4 订阅 co:// 外部唤起,返 unsubscribe. */
     onProtocolUrl: (cb: (url: string) => void): (() => void) => {
-      const listener = (_: unknown, payload: { url: string }) => cb(payload.url);
+      // 边界(E242):同 onChanged,孪生 push 入口同款守卫(畸形 url warn+drop)。
+      const listener = (_: unknown, payload: unknown) => {
+        if (!isProtocolUrlPayload(payload)) {
+          console.warn('[plugins] dropped malformed protocol-url payload', payload);
+          return;
+        }
+        cb(payload.url);
+      };
       ipcRenderer.on(PLUGINS_CHANNELS.PROTOCOL_URL, listener);
       return () => ipcRenderer.off(PLUGINS_CHANNELS.PROTOCOL_URL, listener);
     },

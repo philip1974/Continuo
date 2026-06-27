@@ -55,10 +55,12 @@ group 区**。再次触发或切 tab 时复原。PTY / scrollback / 各类 id �
 
 ### Layout 序列化(T7b,P1-2 v1 修正方向)
 
-`sanitizePersistedDockLayout(snapshotWithTerminal) === null` — read-time
-sanitizer 整份丢弃含 terminal panel 的 layout。zoom 状态不写持久化层(主路径
-已不动 `explorer.json`,持久化由 dockview 内部 `grid.maximizedNode` 管,
-sanitize 时被一并剥)。
+`sanitizePersistedDockLayout(snapshotWithTerminal)` — read-time sanitizer
+**剥离** terminal panel 并修补 grid 树(摘空 leaf/branch、回退 activeView/
+activeGroup),保留 editor 等非终端布局;仅当无任何非终端 panel 残留时才返回
+`null`(走默认)。详见 [`dock-terminal-layout-strip`](../dock-terminal-layout-strip/README.md)。
+zoom 状态不写持久化层(主路径已不动 `explorer.json`,持久化由 dockview 内部
+`grid.maximizedNode` 管)。
 
 ### i18n(T9)
 

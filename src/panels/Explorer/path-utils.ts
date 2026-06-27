@@ -6,15 +6,22 @@
 
 /**
  * 跨平台 dirname:吃 `/` 与 `\`。先去尾部分隔符,取最后一个分隔符位置;
- * 无分隔符 → `''`(裸文件名);分隔符在 0 位(根下直接项)→ `'/'`。
+ * 无分隔符 → `''`(裸文件名);分隔符在 0 位(POSIX 根下直接项)→ `'/'`;
+ * 父段是裸盘符 `X:`(Windows 盘根下直接项)→ `'X:\\'`(盘根)。
  *
- * 例:`/a/b` → `/a`;`/a/b/` → `/a`;`/a` → `/`;`a` → `''`;`C:\\x\\y` → `C:\\x`。
+ * 例:`/a/b` → `/a`;`/a/b/` → `/a`;`/a` → `/`;`a` → `''`;`C:\\x\\y` → `C:\\x`;
+ *     `C:\\foo` → `C:\\`(盘根,**不是** `C:` —— 后者是「该盘当前目录」,会被当成
+ *     另一路径 → listDir/invalidateChildrenIds 读错目录、UI 不刷新)。
  */
 export function dirname(p: string): string {
   const trimmed = p.replace(/[\\/]+$/, '');
   const idx = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
   if (idx < 0) return '';
-  return trimmed.slice(0, idx) || '/';
+  const head = trimmed.slice(0, idx);
+  // Windows 盘根:`C:\foo` 的父是盘根 `C:\`,不是 drive-relative `C:`。与 POSIX `/a → /`
+  // 同等(根下直接项的父=根)。codex 跨平台复查 P2。
+  if (/^[A-Za-z]:$/.test(head)) return `${head}\\`;
+  return head || '/';
 }
 
 /**

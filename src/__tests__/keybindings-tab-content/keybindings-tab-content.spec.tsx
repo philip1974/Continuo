@@ -40,6 +40,30 @@ describe('KeybindingsTabContent — 列表', () => {
     expect(container.textContent).toMatch(/S/);
   });
 
+  // a11y(A76,A75 同族):多命令行的编辑/重置按钮可访问名须含命令名以区分(否则全读「编辑快捷键」)。
+  it('a11y · 编辑按钮 aria-label 含命令名(多行可区分)', () => {
+    coApp.commands.register({
+      id: 'save',
+      title: 'Save',
+      hotkey: 'mod+s',
+      category: 'X',
+      fn: vi.fn(),
+    });
+    coApp.commands.register({
+      id: 'open',
+      title: 'Open',
+      hotkey: 'mod+o',
+      category: 'X',
+      fn: vi.fn(),
+    });
+    const { container } = render(<KeybindingsTabContent />);
+    const editLabels = Array.from(container.querySelectorAll('button'))
+      .map((b) => b.getAttribute('aria-label') ?? '')
+      .filter((l) => l.includes('编辑'));
+    expect(editLabels.some((l) => l.includes('Save'))).toBe(true);
+    expect(editLabels.some((l) => l.includes('Open'))).toBe(true);
+  });
+
   it('category 缺 → 归「其他」分组', () => {
     coApp.commands.register({
       id: 'misc',
@@ -107,6 +131,10 @@ describe('KeybindingsTabContent — 搜索', () => {
     const input = container.querySelector('input') as HTMLInputElement;
     fireEvent.change(input, { target: { value: 'zzz' } });
     expect(container.textContent).toContain('无匹配命令');
+    // a11y(A57):空态须在 live region(role=status)播报无匹配,焦点在搜索框时也能听到。
+    const status = container.querySelector('[role=status]');
+    expect(status).not.toBeNull();
+    expect(status!.textContent).toContain('无匹配命令');
   });
 
   it('query 匹配 hotkey', () => {
@@ -133,7 +161,7 @@ describe('KeybindingsTabContent — override', () => {
     });
     const { container } = render(<KeybindingsTabContent />);
     const resetBtn = container.querySelector(
-      'button[aria-label=恢复默认]',
+      'button[aria-label*="恢复默认"]',
     ) as HTMLButtonElement;
     expect(resetBtn.className).toContain('invisible');
   });
@@ -148,7 +176,7 @@ describe('KeybindingsTabContent — override', () => {
     useKeybindingsStore.setState({ overrides: { a: 'mod+x' } });
     const { container } = render(<KeybindingsTabContent />);
     const resetBtn = container.querySelector(
-      'button[aria-label=恢复默认]',
+      'button[aria-label*="恢复默认"]',
     ) as HTMLButtonElement;
     expect(resetBtn.className).not.toContain('invisible');
     fireEvent.click(resetBtn);
@@ -178,7 +206,7 @@ describe('KeybindingsTabContent — override', () => {
     });
     const { container } = render(<KeybindingsTabContent />);
     const resetBtn0 = container.querySelector(
-      'button[aria-label=恢复默认]',
+      'button[aria-label*="恢复默认"]',
     ) as HTMLButtonElement;
     expect(resetBtn0.className).toContain('invisible');
 
@@ -187,7 +215,7 @@ describe('KeybindingsTabContent — override', () => {
     });
 
     const resetBtn1 = container.querySelector(
-      'button[aria-label=恢复默认]',
+      'button[aria-label*="恢复默认"]',
     ) as HTMLButtonElement;
     expect(resetBtn1.className).not.toContain('invisible');
   });
@@ -203,7 +231,7 @@ describe('KeybindingsTabContent — 编辑 Modal', () => {
     });
     const { container } = render(<KeybindingsTabContent />);
     const editBtn = container.querySelector(
-      'button[aria-label=编辑快捷键]',
+      'button[aria-label*="编辑"]',
     ) as HTMLButtonElement;
     fireEvent.click(editBtn);
     expect(document.querySelector('.wm-modal-content')).not.toBeNull();
@@ -225,6 +253,32 @@ describe('KeybindingsTabContent — 编辑 Modal', () => {
     ).find((b) => b.textContent === '保存')!;
     fireEvent.click(saveBtn);
     expect(useKeybindingsStore.getState().overrides.a).toBe('mod+k');
+  });
+});
+
+describe('race(R50) — 编辑弹窗打开期间命令被移除', () => {
+  it('插件 reload/disable 移除命令 → 自动关闭弹窗,不写 override 到已不存在命令', () => {
+    const disp = coApp.commands.register({
+      id: 'a',
+      title: 'A',
+      hotkey: 'mod+a',
+      fn: vi.fn(),
+    });
+    const { container } = render(<KeybindingsTabContent />);
+    const editBtn = container.querySelector(
+      'button[aria-label*="编辑"]',
+    ) as HTMLButtonElement;
+    fireEvent.click(editBtn);
+    expect(document.querySelector('.wm-modal-content')).not.toBeNull();
+
+    // 弹窗打开期间插件 reload/disable 把命令移出 registry。
+    act(() => {
+      disp.dispose();
+    });
+
+    // R50:命令从 allCommands 消失 → 弹窗自动关闭,不会对已不存在的命令写 override。
+    expect(document.querySelector('.wm-modal-content')).toBeNull();
+    expect(useKeybindingsStore.getState().overrides.a).toBeUndefined();
   });
 });
 

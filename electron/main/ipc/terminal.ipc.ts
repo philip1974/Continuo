@@ -9,19 +9,29 @@ import { z } from 'zod';
 import { defaultIsTrustedFrame, processIpcCall } from '../safe-handle';
 import { TERMINAL_CHANNELS } from '../../shared/terminal-channels';
 import { getDefaultShell, isAllowedShell } from '@continuo-terminal/server-node';
+import { shellFamilyForPath } from '../services/shell-args';
 import { ERROR_CODES } from '../../shared/error-codes';
 import { TERMINAL_ATTACH_REJECT_REASONS } from '../../shared/terminal-attach';
 import {
   TerminalCreateInputSchema,
+  PATH_MAX,
   type TerminalCreateInput,
 } from '../../shared/terminal-create';
 import * as termService from '../services/terminal.service';
 import * as terminalSessions from '../services/terminal-sessions.service';
 import { mcpRevokers } from '../services/mcp-host.service';
 import { getWorkspaceRoot as getWindowWorkspaceRoot } from '../services/window-workspace-roots.service';
+// 边界(E33,E11/E23 同族):session id 此前各 schema 只 .min(1) 无上限。id 进会话表查找 + 错误消息
+// 拼接 + sessions_changed 广播,畸形超长 id/cwd 会让主进程会话表/快照/Dock 渲染携带巨大字符串。
+// id 是 `term-<uuid>` 形态,256 远超真实;cwd 复用 create 的 PATH_MAX。
+// E203:常量收口到 shared/session-id-limits(此前 terminal.store.ts / 本文件 / MCP tools 各副本,防漂移)。
+import { SESSION_ID_MAX } from '../../shared/session-id-limits';
+// 边界(E219,E125/E127/E129 字节 vs code-unit 族):terminal:write data 须按真实 UTF-8 字节限,
+// 非 .max()(UTF-16 code unit)—— CJK/emoji 在 length≤上限时真实字节数倍超,实际写 6-8MB 到 PTY/IPC。
+import { utf8BytesExceed } from '../../shared/utf8-byte-length';
 
 // ── 常量 ─────────────────────────────────────────────────────
-const MAX_WRITE_CHARS = 2_000_000; // ~2MB UTF-8 字符上限,与 Mind 1MB 字节同档
+const MAX_WRITE_BYTES = 2_000_000; // ~2MB 真实 UTF-8 字节上限(下游 PTY/IPC 写入按字节,边界语义统一)
 const UPDATE_CWD_CHANNEL = 'session:update-cwd';
 
 // ── MCP env provider(由 main/index.ts 在 mcp host 启动后注入)──
@@ -59,28 +69,36 @@ export const createInputSchema = TerminalCreateInputSchema;
 
 export const writeInputSchema = z
   .object({
-    id: z.string().min(1),
-    data: z.string().max(MAX_WRITE_CHARS),
+    id: z.string().min(1).max(SESSION_ID_MAX),
+    // 边界(E219,E129 同款):按真实 UTF-8 字节限,非 .max()(UTF-16 code unit)。CJK/emoji 多字节
+    // 输入否则 length≤上限但真实字节数倍超,实际写 6-8MB 到 PTY/IPC,与下游字节 cap 边界语义不一致。
+    data: z
+      .string()
+      .refine((s) => !utf8BytesExceed(s, MAX_WRITE_BYTES), {
+        message: `data 超过上限 ${MAX_WRITE_BYTES} 字节`,
+      }),
   })
   .strict();
 
 export const resizeInputSchema = z
   .object({
-    id: z.string().min(1),
+    id: z.string().min(1).max(SESSION_ID_MAX),
     cols: z.number().int().min(1).max(1000),
     rows: z.number().int().min(1).max(500),
   })
   .strict();
 
+// 边界(E33):cwd .max(PATH_MAX);id .max(SESSION_ID_MAX)。updateCwd 把 cwd 写进 session
+// metadata 并触发 sessions_changed 广播,超长值会让每次快照广播 + Dock 渲染携带巨大字符串。
 export const updateCwdInputSchema = z
   .object({
-    id: z.string().min(1),
-    cwd: z.string().min(1),
+    id: z.string().min(1).max(SESSION_ID_MAX),
+    cwd: z.string().min(1).max(PATH_MAX),
   })
   .strict();
 
 export const idOnlyInputSchema = z
-  .object({ id: z.string().min(1) })
+  .object({ id: z.string().min(1).max(SESSION_ID_MAX) })
   .strict();
 
 export const noInputSchema = z.object({}).strict();
@@ -88,7 +106,7 @@ export const noInputSchema = z.object({}).strict();
 // topic-05: renderer attachRejected 反向通知 schema
 export const attachRejectedInputSchema = z
   .object({
-    sessionId: z.string().min(1),
+    sessionId: z.string().min(1).max(SESSION_ID_MAX),
     reason: z.enum(TERMINAL_ATTACH_REJECT_REASONS), // M23:单一来源
   })
   .strict();
@@ -105,6 +123,12 @@ export type AttachRejectedInput = z.infer<typeof attachRejectedInputSchema>;
 const ERR_NOT_FOUND = (id: string) =>
   Object.assign(new Error(`terminal not found: ${id}`), {
     code: ERROR_CODES.TERMINAL_NOT_FOUND,
+  });
+
+// race(R4):write 实际失败(PTY 在 has() 后退出 / server-node 拒写)→ 上抛,IPC 返 ok:false。
+const ERR_WRITE_FAILED = (id: string) =>
+  Object.assign(new Error(`terminal write failed: ${id}`), {
+    code: ERROR_CODES.TERMINAL_WRITE_FAILED,
   });
 
 function senderWindowOrThrow(event: IpcMainInvokeEvent): BrowserWindow {
@@ -180,6 +204,8 @@ export function makeCreateHandler(deps?: {
       cwd,
       originHint: input.originHint ?? 'user',
       ownerWindowId: win.id,
+      // 跨平台:按真实 shell 路径标注引号族(renderer 拖拽文件据此引用,不再盲猜平台)。
+      shellFamily: shellFamilyForPath(shell),
       ...(input.agentLabel !== undefined ? { agentLabel: input.agentLabel } : {}),
       ...(input.scoped !== undefined ? { scoped: input.scoped } : {}),
       ...(input.attachTarget !== undefined ? { attachTarget: input.attachTarget } : {}),
@@ -196,6 +222,18 @@ export function makeCreateHandler(deps?: {
     } catch (err) {
       sessionStore.remove(id);
       throw err;
+    }
+    // race(R31):add()(可见 reservation)在 createTerminal 的 await 之前,但 PTY 在 await 期间才
+    // 真正建立。这段窗口内用户关 tab → makeRemoveHandler 删了 metadata,但当时 service.has(id)
+    // 仍为 false(PTY 没建)→ 不 kill;随后 createTerminal resolve 出真实 PTY,而 metadata 已删 →
+    // renderer 看不到也无法经 UI 关闭 = 不可见孤儿终端/进程。createTerminal resolve 后复查
+    // reservation:若已不在 store(被 remove 取消;区别于 exit-during-create —— 那条 setExited
+    // 保留 metadata 故 get(id) 仍在),立即 kill 刚建的 PTY 并以 CANCELLED 收场,不返回成功。
+    if (!sessionStore.get(id)) {
+      if (service.has(id)) service.kill(id);
+      throw Object.assign(new Error(`terminal create cancelled: ${id}`), {
+        code: ERROR_CODES.TERMINAL_CREATE_CANCELLED,
+      });
     }
     return input.scoped ? { id, cwd, title } : { id };
   };
@@ -284,10 +322,13 @@ export function makeWriteHandler(deps?: {
 }) {
   const service = deps?.service ?? termService;
   const sessionStore = deps?.sessionStore ?? terminalSessions;
-  return (input: WriteInput, win: BrowserWindow): void => {
+  return async (input: WriteInput, win: BrowserWindow): Promise<void> => {
     assertOwnedSession(sessionStore, input.id, win);
     if (!service.has(input.id)) throw ERR_NOT_FOUND(input.id);
-    service.write(input.id, input.data);
+    // race(R4):await 真实写入结果;失败(check 后 PTY 退出 / 写拒绝)→ 抛 TERMINAL_WRITE_FAILED,
+    // IPC 返 ok:false,让 renderer(A144)真正感知写入失败而非收到假成功。
+    const ok = await service.write(input.id, input.data);
+    if (!ok) throw ERR_WRITE_FAILED(input.id);
   };
 }
 
@@ -297,10 +338,13 @@ export function makeResizeHandler(deps?: {
 }) {
   const service = deps?.service ?? termService;
   const sessionStore = deps?.sessionStore ?? terminalSessions;
-  return (input: ResizeInput, win: BrowserWindow): void => {
+  return async (input: ResizeInput, win: BrowserWindow): Promise<void> => {
     assertOwnedSession(sessionStore, input.id, win);
     if (!service.has(input.id)) throw ERR_NOT_FOUND(input.id);
-    service.resize(input.id, input.cols, input.rows);
+    // race(R96):await 真实 resize 结果并在失败时上抛 → IPC 返回 ok:false,让 renderer 感知
+    // PTY resize 未成功、回滚 lastSize 以便同尺寸重试(否则 DOM/PTY 尺寸长期不一致)。
+    const ok = await service.resize(input.id, input.cols, input.rows);
+    if (!ok) throw ERR_NOT_FOUND(input.id);
   };
 }
 
@@ -310,10 +354,13 @@ export function makeInterruptHandler(deps?: {
 }) {
   const service = deps?.service ?? termService;
   const sessionStore = deps?.sessionStore ?? terminalSessions;
-  return (input: IdOnlyInput, win: BrowserWindow): void => {
+  return async (input: IdOnlyInput, win: BrowserWindow): Promise<void> => {
     assertOwnedSession(sessionStore, input.id, win);
     if (!service.has(input.id)) throw ERR_NOT_FOUND(input.id);
-    service.interrupt(input.id);
+    // race(R12,R4 同款):await 真实中断结果;失败(check 后 PTY 退出 / 写拒绝)→ 抛
+    // TERMINAL_WRITE_FAILED,IPC 返 ok:false,renderer 真正感知中断未送达。
+    const ok = await service.interrupt(input.id);
+    if (!ok) throw ERR_WRITE_FAILED(input.id);
   };
 }
 
@@ -350,6 +397,29 @@ export function makeAttachRejectedHandler(deps?: {
     sessionStore.remove(input.sessionId);
     if (service.has(input.sessionId)) service.kill(input.sessionId);
   };
+}
+
+/**
+ * sessions_changed 广播:严格 per-owner 路由,把按 ownerWindowId 过滤后的 session 快照
+ * 推给每个未销毁窗口。terminalSessions 的 subscriber。
+ *
+ * race(R68,R63-R67 同族):isDestroyed() 检查后、send 前窗口可能销毁,send 抛
+ * "Object has been destroyed"。裸抛会中断窗口循环 → 坏窗口之后的其它窗口漏收终端会话快照,
+ * Dock/Terminal 面板停在旧 session 列表直到下一次 session 变化。每个窗口的 send 独立 try/catch,
+ * 失败只跳过/记录并继续给其它窗口发送。导出供 R68 回归测试。
+ */
+export function broadcastSessionsChanged(): void {
+  for (const w of BrowserWindow.getAllWindows()) {
+    if (w.isDestroyed()) continue;
+    try {
+      w.webContents.send(
+        TERMINAL_CHANNELS.SESSIONS_CHANGED,
+        terminalSessions.getAll({ ownerWindowId: w.id }),
+      );
+    } catch (err) {
+      console.error('[terminal] SESSIONS_CHANGED broadcast failed', err);
+    }
+  }
 }
 
 // ── 注册 ─────────────────────────────────────────────────────
@@ -461,15 +531,7 @@ export function registerTerminalIpc(): void {
   // (topic-05 86c1799 曾给 agent session 开宽口径"广播到所有 window"以绕过
   // fallback 选错窗的问题,已回退 — 那是把 fallback bug 转嫁成 sessions 跨
   // window 漏出。正确路径:让 ctx.ownerWindowId 拿对窗,而非放宽广播。)
-  terminalSessions.subscribe(() => {
-    for (const w of BrowserWindow.getAllWindows()) {
-      if (w.isDestroyed()) continue;
-      w.webContents.send(
-        TERMINAL_CHANNELS.SESSIONS_CHANGED,
-        terminalSessions.getAll({ ownerWindowId: w.id }),
-      );
-    }
-  });
+  terminalSessions.subscribe(broadcastSessionsChanged);
 
   // window 关闭:Issue #28 Phase 1。摘 metadata + kill 该 owner 的所有 PTY。
   // 用 'browser-window-created' 监听新建窗口,再为每个窗口挂 'closed'。

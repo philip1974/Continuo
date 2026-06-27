@@ -3,6 +3,7 @@ import {
   filterByOwnerWindow,
   type FilterDropOpts,
 } from '../../stores/terminal.store';
+import { MAX_TERMINAL_SESSIONS_GLOBAL } from '../../../electron/shared/terminal-session-limits';
 import { makeSession } from './fixtures';
 
 describe('dock-reconciler-windowid-filter: filterByOwnerWindow pure fn', () => {
@@ -96,5 +97,69 @@ describe('dock-reconciler-windowid-filter: filterByOwnerWindow pure fn', () => {
     expect(filterByOwnerWindow([badScoped, badAttach], 1, { onDrop })).toEqual([]);
     expect(onDrop).toHaveBeenCalledWith('B', 'shape-invalid');
     expect(onDrop).toHaveBeenCalledWith('C', 'shape-invalid');
+  });
+
+  // 边界(E167,E23 同款 ingress 纵深防御):字符串字段镜像 create 长度上限(title/agentLabel≤512、
+  // cwd/workspaceRoot≤8192),数字字段须有限/安全整数。畸形 payload → shape-invalid drop。
+  it('T13 超长字符串字段(title/cwd/agentLabel/workspaceRoot)→ shape-invalid drop', () => {
+    const onDrop = vi.fn<NonNullable<FilterDropOpts['onDrop']>>();
+    const bigTitle = { ...makeSession('A'), title: 'x'.repeat(513) };
+    const bigCwd = { ...makeSession('B'), cwd: '/'.repeat(8193) };
+    const bigAgent = { ...makeSession('C'), agentLabel: 'z'.repeat(513) };
+    const bigRoot = { ...makeSession('D'), workspaceRoot: 'w'.repeat(8193) };
+    expect(
+      filterByOwnerWindow([bigTitle, bigCwd, bigAgent, bigRoot], 1, { onDrop }),
+    ).toEqual([]);
+    for (const id of ['A', 'B', 'C', 'D']) {
+      expect(onDrop).toHaveBeenCalledWith(id, 'shape-invalid');
+    }
+  });
+
+  it('T14 数字字段非有限/非安全整数(createdAt NaN / exitCode 小数 / ownerWindowId 负)→ shape-invalid', () => {
+    const onDrop = vi.fn<NonNullable<FilterDropOpts['onDrop']>>();
+    const nanCreated = { ...makeSession('A'), createdAt: NaN };
+    const fracExit = { ...makeSession('B'), exitCode: 1.5 };
+    const negOwner = { ...makeSession('C'), ownerWindowId: -1 };
+    expect(filterByOwnerWindow([nanCreated, fracExit], 1, { onDrop })).toEqual([]);
+    expect(onDrop).toHaveBeenCalledWith('A', 'shape-invalid');
+    expect(onDrop).toHaveBeenCalledWith('B', 'shape-invalid');
+    // ownerWindowId=-1 匹配 wid=-1 通过 owner 检查,再到 shape 守卫(>=0)拒
+    expect(filterByOwnerWindow([negOwner], -1, { onDrop })).toEqual([]);
+    expect(onDrop).toHaveBeenCalledWith('C', 'shape-invalid');
+  });
+
+  it('T15 合规边界值(title 恰 512 / createdAt 有限 / exitCode 安全整数)→ 通过(回归)', () => {
+    const s = {
+      ...makeSession('A'),
+      title: 'x'.repeat(512),
+      exitCode: 137,
+      createdAt: 1_700_000_000_000,
+    };
+    expect(filterByOwnerWindow([s], 1).map((x) => x.id)).toEqual(['A']);
+  });
+
+  // 边界(E292,E167/E174 同款 IPC-ingress 防御 / 数量维度):ingress 数组超 MAX_TERMINAL_SESSIONS_GLOBAL
+  // → 截断到上限 + 一次 over-capacity drop(防有 bug/被篡改的 main 推超大数组致 renderer O(n) 无界遍历)。
+  it('E292 ingress 超 MAX_TERMINAL_SESSIONS_GLOBAL → 截断到上限 + over-capacity drop(一次)', () => {
+    const onDrop = vi.fn();
+    const many = Array.from(
+      { length: MAX_TERMINAL_SESSIONS_GLOBAL + 50 },
+      (_, i) => makeSession(`s${i}`),
+    );
+    const r = filterByOwnerWindow(many, 1, { onDrop });
+    // neutralize 敏感:去计数闸则全 306 个返回,此断言失败。
+    expect(r.length).toBe(MAX_TERMINAL_SESSIONS_GLOBAL);
+    expect(onDrop).toHaveBeenCalledWith(undefined, 'over-capacity');
+  });
+
+  it('E292 恰好 MAX 个 → 全保留,不误触 over-capacity(边界包含)', () => {
+    const onDrop = vi.fn();
+    const exact = Array.from(
+      { length: MAX_TERMINAL_SESSIONS_GLOBAL },
+      (_, i) => makeSession(`s${i}`),
+    );
+    const r = filterByOwnerWindow(exact, 1, { onDrop });
+    expect(r.length).toBe(MAX_TERMINAL_SESSIONS_GLOBAL);
+    expect(onDrop).not.toHaveBeenCalledWith(undefined, 'over-capacity');
   });
 });

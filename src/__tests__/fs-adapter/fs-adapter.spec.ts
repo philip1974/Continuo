@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdir, mkdtemp, readFile as fspReadFile, rm, symlink, writeFile } from 'node:fs/promises';
-import { existsSync, statSync } from 'node:fs';
+import { mkdir, mkdtemp, readFile as fspReadFile, rm, symlink, truncate, writeFile } from 'node:fs/promises';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -58,6 +58,22 @@ describe('listDir', () => {
     await writeFile(path.join(dir, 'a.txt'), 'A');
     await writeFile(path.join(dir, 'b.txt'), 'B');
     await writeFile(path.join(dir, 'sub', 'inner.txt'), 'I');
+  });
+
+  // 数据安全/正确性(codex 复查 P2):followSymlinks:true 时旧实现仍 lstat link 本身,
+  // symlink-to-directory 永远 isDirectory=false → 不递归 → 静默漏掉链接目录下的文件。
+  // 改 stat(跟随到目标)后,symlink 目录被正确识别并递归。MAX_DEPTH_HARD_LIMIT 界定环。
+  it('followSymlinks:true 跟随 symlink 目录并递归(否则静默漏文件)', async () => {
+    await mkdir(path.join(dir, 'target'));
+    await writeFile(path.join(dir, 'target', 'deep.txt'), 'D');
+    await symlink(path.join(dir, 'target'), path.join(dir, 'link'));
+
+    const items = await listDir(dir, { maxDepth: 2, followSymlinks: true });
+    const names = items.map((i) => i.name);
+    // link 被识别为目录并递归 → deep.txt 出现
+    expect(names).toContain('deep.txt');
+    // link 仍标记 isSymlink(UI 可区分)
+    expect(items.find((i) => i.name === 'link')?.isSymlink).toBe(true);
   });
 
   it('默认列当前层(maxDepth=1),不递归', async () => {
@@ -131,6 +147,17 @@ describe('listDir', () => {
     expect(withCap.map((i) => i.path)).toEqual(without.map((i) => i.path));
   });
 
+  // 边界(E275):list-dir 内部自守 —— 不安全整数/非有限 maxFiles(绕过 schema 直调 helper)按非法处理走
+  // 默认硬上限(等同不传),不当成有效正数。结果与不传一致(不崩、不因 1e308 当 Infinity 异常)。
+  it('E275 maxFiles 不安全整数(1e308)→ 按默认硬上限,结果与不传一致(不崩)', async () => {
+    const evil = await listDir(dir, {
+      maxDepth: 2,
+      maxFiles: 1e308 as number,
+    });
+    const without = await listDir(dir, { maxDepth: 2 });
+    expect(evil.map((i) => i.path)).toEqual(without.map((i) => i.path));
+  });
+
   it('maxDepth=2 递归一层', async () => {
     const items = await listDir(dir, { maxDepth: 2 });
     const inner = items.find((i) => i.name === 'inner.txt');
@@ -177,6 +204,44 @@ describe('listDir', () => {
     const items = await listDir(link);
     expect(items.map((i) => i.name)).toEqual(['inner.txt']);
   });
+
+  // 边界(E38,plugin-fs E30 主侧 twin):总条目(文件+目录)硬上限,默认 100k,超过即抛
+  // FS_DIR_TOO_LARGE(不静默截断)。maxFiles(只数文件、早停返部分)是正交的更低业务上限。
+  it('E38 总条目超硬上限 → FS_DIR_TOO_LARGE(文件+目录都计数)', async () => {
+    // 顶层非排除项 3 个:sub(目录)+ a.txt + b.txt;maxTotalEntries=2 → 第 3 项触发。
+    await expectErrCode(
+      () => listDir(dir, { maxTotalEntries: 2 }),
+      'FS_DIR_TOO_LARGE',
+    );
+  });
+
+  it('E38 默认硬上限下正常目录不受影响(行为保持)', async () => {
+    const items = await listDir(dir);
+    expect(items.map((i) => i.name).sort()).toEqual(['a.txt', 'b.txt', 'sub']);
+  });
+
+  it('E38 恰好等于上限 → 不抛(> 才触发,边界正确)', async () => {
+    // 3 个条目,maxTotalEntries=3 → totalCount 到 3 不超过 3,不抛。
+    const items = await listDir(dir, { maxTotalEntries: 3 });
+    expect(items).toHaveLength(3);
+  });
+
+  // 边界(E211,E206-E210 有界迭代族):listDir 用 opendir 流式读取(Dir 内部 bufferSize 缓冲),
+  // 不用 readdir 一次性把整目录所有 dirent 物化进主进程数组 —— 超宽目录否则在 MAX_TOTAL_ENTRIES
+  // 检查前内存峰值/OOM。行为结果与 readdir 相同(node:fs/promises 导出不可 spy),故静态源码守卫
+  // 验"用 opendir 流式、不用 readdir 全量"(E146/E190 同模式)+ 行为回归。
+  it('E211 list-dir 源码用 opendir 流式,不用 readdir 全量物化整目录', async () => {
+    const src = readFileSync(
+      path.join(process.cwd(), 'electron/main/ipc/fs/list-dir.ts'),
+      'utf-8',
+    );
+    expect(src).toMatch(/\bopendir\(/); // 改用 opendir 流式
+    expect(src).not.toMatch(/\breaddir\(/); // 不再 readdir 全量物化(中和回 readdir → 含 readdir( → 失败)
+    // 行为回归:正常列目录
+    await writeFile(path.join(dir, 'a.txt'), 'a');
+    const items = await listDir(dir);
+    expect(items.some((i) => i.name === 'a.txt')).toBe(true);
+  });
 });
 
 describe('readFile', () => {
@@ -192,6 +257,35 @@ describe('readFile', () => {
 
   it('是目录 → FS_NOT_FILE', async () => {
     await expectErrCode(() => readFile(dir), 'FS_NOT_FILE');
+  });
+
+  // 边界(E18,E13 读侧对偶):超 64MiB 文件读前 stat.size 拦截,抛 FS_FILE_TOO_LARGE,不整文件
+  // 读入内存。用稀疏 truncate 扩展到 >64MiB(不实际写 64MB),size 检查在 fspReadFile 之前。
+  it('E18 超 64MiB → FS_FILE_TOO_LARGE(读前拦截)', async () => {
+    const f = path.join(dir, 'huge.txt');
+    await writeFile(f, 'x');
+    await truncate(f, 64 * 1024 * 1024 + 1); // 稀疏扩展,不写 64MB 实际数据
+    await expectErrCode(() => readFile(f), 'FS_FILE_TOO_LARGE');
+  });
+
+  // 边界(E163,stat-before-read 族 symlink 变体):此前 lstat(link).size 是链接自身(很小),
+  // 但 readFile 跟随 symlink 读超大目标 → 绕过 cap。readFileCappedFd 经 open 跟随 symlink + fstat
+  // 目标真实大小 → 超限抛 FS_FILE_TOO_LARGE。
+  it('E163 symlink 指向超大目标 → FS_FILE_TOO_LARGE(跟随 symlink 查目标大小)', async () => {
+    const target = path.join(dir, 'huge-target.bin');
+    await writeFile(target, 'x');
+    await truncate(target, 64 * 1024 * 1024 + 1); // 稀疏超大目标
+    const link = path.join(dir, 'small-link');
+    await symlink(target, link); // 链接自身很小,lstat.size ≈ target 路径长度
+    await expectErrCode(() => readFile(link), 'FS_FILE_TOO_LARGE');
+  });
+
+  it('E163 symlink 指向正常小文件 → 正常读取(回归)', async () => {
+    const target = path.join(dir, 'small-target.txt');
+    await writeFile(target, 'via link 世界');
+    const link = path.join(dir, 'ok-link');
+    await symlink(target, link);
+    expect(await readFile(link)).toBe('via link 世界');
   });
 });
 

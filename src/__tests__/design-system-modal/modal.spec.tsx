@@ -51,6 +51,101 @@ describe('Modal — 渲染条件', () => {
   });
 });
 
+describe('Modal — a11y(A10)', () => {
+  // overlay 此前误设 aria-hidden="true" 却包裹 content → 屏幕阅读器忽略整个弹窗、焦点
+  // trap 进 aria-hidden 子树。修:overlay 不再 aria-hidden,content 标记 role=dialog+aria-modal。
+  it('overlay 无 aria-hidden,content 是 role=dialog + aria-modal', () => {
+    render(
+      <Modal visible>
+        <button type="button">x</button>
+      </Modal>,
+    );
+    const overlay = document.querySelector('.wm-modal-overlay')!;
+    const content = document.querySelector('.wm-modal-content')!;
+    expect(overlay.getAttribute('aria-hidden')).toBeNull();
+    expect(content.getAttribute('role')).toBe('dialog');
+    expect(content.getAttribute('aria-modal')).toBe('true');
+  });
+
+  it('可聚焦内容不在 aria-hidden="true" 子树内', () => {
+    render(
+      <Modal visible>
+        <button type="button" data-testid="inner-btn">go</button>
+      </Modal>,
+    );
+    const btn = document.querySelector('[data-testid=inner-btn]')!;
+    // 向上遍历祖先,确认无 aria-hidden="true"
+    let el: Element | null = btn;
+    let hidden = false;
+    while (el) {
+      if (el.getAttribute('aria-hidden') === 'true') hidden = true;
+      el = el.parentElement;
+    }
+    expect(hidden).toBe(false);
+  });
+
+  // 调用方经 {...rest} 传的 aria-labelledby 须保留(role/aria-modal 置于 rest 前可被覆盖)。
+  it('调用方 aria-labelledby 经 rest 保留', () => {
+    render(
+      <Modal visible aria-labelledby="my-title">
+        <span id="my-title">Title</span>
+      </Modal>,
+    );
+    const content = document.querySelector('.wm-modal-content')!;
+    expect(content.getAttribute('aria-labelledby')).toBe('my-title');
+  });
+});
+
+describe('Modal — a11y(A20) 初始焦点', () => {
+  // Modal 初始焦点此前总是聚焦第一个可聚焦元素,忽略调用方意图;现优先 [data-autofocus]。
+  // rAF 同步化以便断言。
+  it('有 [data-autofocus] → 聚焦它而非第一个可聚焦元素', () => {
+    const raf = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((cb: FrameRequestCallback) => {
+        cb(0);
+        return 0;
+      });
+    try {
+      render(
+        <Modal visible>
+          <button type="button">first</button>
+          <button type="button" data-autofocus>
+            second
+          </button>
+        </Modal>,
+      );
+      const second = Array.from(
+        document.querySelectorAll<HTMLButtonElement>('button'),
+      ).find((b) => b.hasAttribute('data-autofocus'))!;
+      expect(document.activeElement).toBe(second);
+    } finally {
+      raf.mockRestore();
+    }
+  });
+
+  it('无 [data-autofocus] → 回退第一个可聚焦元素', () => {
+    const raf = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((cb: FrameRequestCallback) => {
+        cb(0);
+        return 0;
+      });
+    try {
+      render(
+        <Modal visible>
+          <button type="button">first</button>
+          <button type="button">second</button>
+        </Modal>,
+      );
+      const first = document.querySelector<HTMLButtonElement>('button')!;
+      expect(document.activeElement).toBe(first);
+    } finally {
+      raf.mockRestore();
+    }
+  });
+});
+
 describe('Modal — onClose 路径', () => {
   it('点 overlay → onClose', () => {
     const onClose = vi.fn();

@@ -43,6 +43,8 @@ export default class TerminalPlugin extends Plugin {
     this.addCommand({
       id: 'terminal.search.toggle',
       title: 'Find in Terminal',
+      // i18n(I17):补 titleKey,命令面板/快捷键设置经 tk(titleKey, title) 渲染本地化
+      titleKey: 'commands.terminal.search.title',
       category: 'Terminal',
       categoryKey: 'commands.terminal.category',
       hotkey: 'mod+f',

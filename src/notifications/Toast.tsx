@@ -19,7 +19,10 @@ export function Toast({ notification, onDismiss }: ToastProps): ReactNode {
   const { id, level, message, code } = notification;
   return (
     <div
-      role="status"
+      // a11y(A60):错误 toast 须 role="alert"(assertive,语义=错误/告警),其余 role="status"
+      // (polite)。此前固定 role=status 让 AT 把失败也读成普通状态消息;notify.error 是 A46-A59
+      // 大量静默失败修复的可访问反馈出口,出口语义必须正确。role 与 aria-live 严重度保持一致。
+      role={level === 'error' ? 'alert' : 'status'}
       aria-live={level === 'error' ? 'assertive' : 'polite'}
       data-level={level}
       className={`toast toast--${level}`}

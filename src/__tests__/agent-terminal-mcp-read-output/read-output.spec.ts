@@ -133,9 +133,17 @@ describe('makeReadOutputTool · 元数据', () => {
     expect(tool.name).toBe(MCP_TOOL_READ_OUTPUT);
   });
 
-  it('inputSchema 是 readOutputInputSchema', () => {
+  // 边界(E203):inputSchema 是 session_id 加 .max(SESSION_ID_MAX) 的 bounded schema(协议原 schema 无上限)。
+  it('E203 inputSchema 对 session_id 加长度上限(超 256 → 拒)', () => {
     const tool = makeReadOutputTool({ read: makeOkRead(), getSessionOwner });
-    expect(tool.inputSchema).toBe(readOutputInputSchema);
+    const longId = 'term-' + 'x'.repeat(300);
+    expect(tool.inputSchema.safeParse({ session_id: longId }).success).toBe(false);
+    expect(tool.inputSchema.safeParse({ session_id: 'term-1' }).success).toBe(true);
+    expect(readOutputInputSchema.safeParse({ session_id: longId }).success).toBe(
+      true,
+    );
+    // 边界(E204):公开 jsonSchema 同步声明 maxLength:256(advertised↔运行时一致)。
+    expect(JSON.stringify(tool.jsonSchema)).toContain('"maxLength":256');
   });
 });
 

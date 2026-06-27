@@ -1,4 +1,8 @@
 import { create } from 'zustand';
+import {
+  PATH_ARRAY_MAX,
+  PATH_STR_MAX,
+} from '../../electron/shared/explorer-persistence-schema';
 
 export type ExplorerSortBy = 'name' | 'mtime' | 'ctime' | 'size';
 export interface ExplorerSort {
@@ -35,13 +39,29 @@ export const useExplorerStore = create<ExplorerState>((set) => ({
   toggleExpand: (path) =>
     set((s) => {
       const next = new Set(s.expandedPaths);
-      if (next.has(path)) next.delete(path);
-      else next.add(path);
+      if (next.has(path)) {
+        next.delete(path);
+        return { expandedPaths: next };
+      }
+      // 边界(E277,E276 同族 / 运行时状态守持久化契约):expand 不得超持久化 schema(数量 ≤ PATH_ARRAY_MAX,
+      // 单条 path ≤ PATH_STR_MAX),否则 snapshotFromStores 写出后 explorer:write 被拒整份 → 全 explorer 持久化失败。
+      if (next.size >= PATH_ARRAY_MAX || path.length > PATH_STR_MAX) {
+        return s;
+      }
+      next.add(path);
       return { expandedPaths: next };
     }),
 
   setExpandedPaths: (paths) =>
-    set(() => ({ expandedPaths: new Set(paths) })),
+    set(() => {
+      // 边界(E277):批量设置也按持久化契约约束 —— 数量截断到 PATH_ARRAY_MAX,过滤超长 path。
+      const next = new Set<string>();
+      for (const p of paths) {
+        if (next.size >= PATH_ARRAY_MAX) break;
+        if (p.length <= PATH_STR_MAX) next.add(p);
+      }
+      return { expandedPaths: next };
+    }),
 
   setSort: (sort) => set(() => ({ sort })),
 }));

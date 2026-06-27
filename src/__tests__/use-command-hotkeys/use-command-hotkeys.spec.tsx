@@ -84,6 +84,72 @@ describe('useCommandHotkeys — 命中', () => {
   });
 });
 
+describe('useCommandHotkeys — a11y · 可编辑目标内放行无修饰键(A64)', () => {
+  function withInput(run: (input: HTMLInputElement) => void): void {
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+    try {
+      run(input);
+    } finally {
+      input.remove();
+    }
+  }
+
+  it('焦点在 input 内、绑定单键 x → 不执行命令、不阻止默认(可正常打字)', () => {
+    const fn = vi.fn();
+    const reg = new CommandRegistry();
+    reg.register({ id: 'a', title: 'A', hotkey: 'x', fn });
+    renderHook(() => useCommandHotkeys(reg));
+
+    withInput((input) => {
+      const { event, preventDefault } = keyEvent({ key: 'x' });
+      input.dispatchEvent(event);
+      expect(fn).not.toHaveBeenCalled();
+      expect(preventDefault).not.toHaveBeenCalled();
+    });
+  });
+
+  it('焦点在 input 内、绑定 shift+x(仅 shift 仍属打字)→ 同样放行', () => {
+    const fn = vi.fn();
+    const reg = new CommandRegistry();
+    reg.register({ id: 'a', title: 'A', hotkey: 'shift+x', fn });
+    renderHook(() => useCommandHotkeys(reg));
+
+    withInput((input) => {
+      const { event, preventDefault } = keyEvent({ key: 'x', shiftKey: true });
+      input.dispatchEvent(event);
+      expect(fn).not.toHaveBeenCalled();
+      expect(preventDefault).not.toHaveBeenCalled();
+    });
+  });
+
+  it('焦点在 input 内、绑定 mod+s(带修饰)→ 仍执行(全局保存等需生效)', () => {
+    const fn = vi.fn();
+    const reg = new CommandRegistry();
+    reg.register({ id: 'a', title: 'A', hotkey: 'mod+s', fn });
+    renderHook(() => useCommandHotkeys(reg));
+
+    withInput((input) => {
+      const { event, preventDefault } = keyEvent({ key: 's', ctrlKey: true });
+      input.dispatchEvent(event);
+      expect(fn).toHaveBeenCalledTimes(1);
+      expect(preventDefault).toHaveBeenCalled();
+    });
+  });
+
+  it('非可编辑目标(document)、绑定单键 x → 正常执行(全局单键仍有效)', () => {
+    const fn = vi.fn();
+    const reg = new CommandRegistry();
+    reg.register({ id: 'a', title: 'A', hotkey: 'x', fn });
+    renderHook(() => useCommandHotkeys(reg));
+
+    const { event, preventDefault } = keyEvent({ key: 'x' });
+    document.dispatchEvent(event);
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect(preventDefault).toHaveBeenCalled();
+  });
+});
+
 describe('useCommandHotkeys — overrides', () => {
   it('store 改 override → effect 重排,新 hotkey 生效,老的不再响应', () => {
     const fn = vi.fn();

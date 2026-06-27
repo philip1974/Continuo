@@ -40,6 +40,10 @@ describe('打磨 R49 — 设置搜索懒订阅', () => {
       title: '主题',
       type: 'select',
       default: 'dark',
+      enum: [
+        { value: 'light', label: 'Light' },
+        { value: 'dark', label: 'Dark' },
+      ],
     });
     const subSpy = vi.spyOn(itemReg, 'subscribe');
     const { container } = render(

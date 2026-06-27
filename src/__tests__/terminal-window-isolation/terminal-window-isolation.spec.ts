@@ -56,9 +56,12 @@ function makeService() {
       },
     ),
     has: vi.fn((id: string) => alive.has(id)),
-    write: vi.fn(),
-    resize: vi.fn(),
-    interrupt: vi.fn(),
+    // race(R4):write 现 async 返 Promise<boolean>,handler await 结果 → mock 须 resolve true。
+    write: vi.fn(async () => true),
+    // race(R96):resize 现 async 返 Promise<boolean>,handler await 结果 → mock resolve true。
+    resize: vi.fn(async () => true),
+    // race(R12):interrupt 现 async 返 Promise<boolean>,handler await 结果 → mock resolve true。
+    interrupt: vi.fn(async () => true),
     kill: vi.fn((id: string) => {
       killed.push(id);
       alive.delete(id);
@@ -261,13 +264,16 @@ describe('terminal 控制 IPC 按 owner 校验', () => {
     const interrupt = makeInterruptHandler({ service: service as never });
     const kill = makeKillHandler({ service: service as never });
 
-    expect(() => write({ id: 'term-a', data: 'x' }, fakeWin(22))).toThrow(
+    // race(R4):write handler 现 async,owner 校验失败是 reject(非同步 throw)。
+    await expect(write({ id: 'term-a', data: 'x' }, fakeWin(22))).rejects.toThrow(
       /terminal not found/,
     );
-    expect(() =>
+    // race(R96):resize handler 现 async,owner 校验失败是 reject(非同步 throw)。
+    await expect(
       resize({ id: 'term-a', cols: 80, rows: 24 }, fakeWin(22)),
-    ).toThrow(/terminal not found/);
-    expect(() => interrupt({ id: 'term-a' }, fakeWin(22))).toThrow(
+    ).rejects.toThrow(/terminal not found/);
+    // race(R12):interrupt handler 现 async,owner 校验失败是 reject。
+    await expect(interrupt({ id: 'term-a' }, fakeWin(22))).rejects.toThrow(
       /terminal not found/,
     );
     expect(() => kill({ id: 'term-a' }, fakeWin(22))).toThrow(
@@ -286,7 +292,7 @@ describe('terminal 控制 IPC 按 owner 校验', () => {
     const create = makeCreate(service, () => 'term-a');
     await create({}, fakeWin(11));
 
-    makeWriteHandler({ service: service as never })(
+    await makeWriteHandler({ service: service as never })(
       { id: 'term-a', data: 'x' },
       fakeWin(11),
     );
@@ -294,7 +300,7 @@ describe('terminal 控制 IPC 按 owner 校验', () => {
       { id: 'term-a', cols: 80, rows: 24 },
       fakeWin(11),
     );
-    makeInterruptHandler({ service: service as never })(
+    await makeInterruptHandler({ service: service as never })(
       { id: 'term-a' },
       fakeWin(11),
     );
@@ -304,6 +310,40 @@ describe('terminal 控制 IPC 按 owner 校验', () => {
     expect(service.resize).toHaveBeenCalledWith('term-a', 80, 24);
     expect(service.interrupt).toHaveBeenCalledWith('term-a');
     expect(service.kill).toHaveBeenCalledWith('term-a');
+  });
+
+  // race(R4):write 真实失败(PTY 在 has() 后退出 / server-node 拒写)→ service.write 返 false →
+  // handler 抛 TERMINAL_WRITE_FAILED,IPC 返 ok:false,renderer(A144)才能感知失败而非假成功。
+  it('R4 write 实际失败(service.write→false)→ handler 抛 TERMINAL_WRITE_FAILED', async () => {
+    const service = makeService();
+    const create = makeCreate(service, () => 'term-a');
+    await create({}, fakeWin(11));
+    service.write.mockResolvedValueOnce(false);
+
+    await expect(
+      makeWriteHandler({ service: service as never })(
+        { id: 'term-a', data: 'x' },
+        fakeWin(11),
+      ),
+    ).rejects.toMatchObject({ code: 'TERMINAL_WRITE_FAILED' });
+    expect(service.write).toHaveBeenCalledWith('term-a', 'x');
+  });
+
+  // race(R12,R4 同款):interrupt 真实失败(Ctrl-C 写入被拒 / PTY 退出)→ handler 抛
+  // TERMINAL_WRITE_FAILED,renderer 感知中断未送达而非假成功。
+  it('R12 interrupt 实际失败(service.interrupt→false)→ handler 抛 TERMINAL_WRITE_FAILED', async () => {
+    const service = makeService();
+    const create = makeCreate(service, () => 'term-a');
+    await create({}, fakeWin(11));
+    service.interrupt.mockResolvedValueOnce(false);
+
+    await expect(
+      makeInterruptHandler({ service: service as never })(
+        { id: 'term-a' },
+        fakeWin(11),
+      ),
+    ).rejects.toMatchObject({ code: 'TERMINAL_WRITE_FAILED' });
+    expect(service.interrupt).toHaveBeenCalledWith('term-a');
   });
 
   it('非 owner window 不能 remove 或 attachRejected ownerA 的 session', async () => {

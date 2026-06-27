@@ -1,11 +1,16 @@
 import { useMemo } from 'react';
+import { hasFiles } from '@/lib/window-drop'; // 边界(E225):共享早停 hasFiles
 import type { ItemInstance } from '@headless-tree/core';
 import type { FileEntry } from '@/lib/fs/types';
 import { Input } from '@/design';
+import { t } from '@/i18n';
+import { FS_NAME_MAX } from '../../../electron/shared/leaf-name';
+import { SR_ONLY_STYLE } from '@/lib/sr-only';
 import {
   mergeDecorations,
   type DecoratorFn,
 } from '@/plugins/registries/ExplorerDecoratorRegistry';
+import { coApp } from '@/plugins/co-app';
 import type { ExplorerContextMenuItemSpec } from '@/plugins/registries/ExplorerContextMenuRegistry';
 import { ContextMenu, type ContextMenuActions } from './ContextMenu';
 import { useExplorerClipboardStore } from './clipboard-store';
@@ -50,8 +55,20 @@ function useDecoration(
   isDirectory: boolean,
   decorators: readonly DecoratorFn[],
 ) {
+  // race(R57,R55/R56 同族):memo 仍以 props 的 decorators 快照作**失效键**(R7:订阅集中在
+  // FolderTree,其快照引用在插件启停时变化 → 驱动本 memo 重算,保持原有重算频率/性能);但真正
+  // 合并时读 **live** coApp.explorerDecorators.getAll()(this.fns.slice() 即时反映 unregister)。
+  // decorator 是裸函数无 id;useRegistry 快照(useState 订阅)滞后 registry 一帧,若直接合并快照,
+  // 在滞后窗口内因 path/isDirectory 变化触发的重算会执行已移除 decorator(虚拟树渲染热路径,访问
+  // 已释放资源 / 加陈旧 badge)。读 live 列表 → 已移除函数不再被调。
   return useMemo(
-    () => mergeDecorations({ path, isDirectory }, decorators),
+    () => {
+      void decorators; // 失效键(见上);执行用 live 列表。
+      return mergeDecorations(
+        { path, isDirectory },
+        coApp.explorerDecorators.getAll(),
+      );
+    },
     [path, isDirectory, decorators],
   );
 }
@@ -92,6 +109,8 @@ export function FileRow({
   const row = (
     <div
       {...item.getProps()}
+      // a11y(A110):目录加载子项时 treeitem 标 aria-busy,AT 知该行正在加载(配下方 sr-only 文本)。
+      aria-busy={isLoading || undefined}
       onClick={(e) => {
         // 上游 selectionFeature 用 mousedown,onClick 不冲突
         const upstream = (item.getProps() as { onClick?: (e: React.MouseEvent) => void })
@@ -104,7 +123,7 @@ export function FileRow({
         }
       }}
       onDragEnter={(e) => {
-        if (!e.dataTransfer.types.includes('Files')) return;
+        if (!hasFiles(e.dataTransfer)) return;
         // 文件夹 → 自身;文件 → 父目录(由 resolveDropTarget 算)
         onHoverDropTarget?.({ path: data.path, isDirectory: isDir });
       }}
@@ -141,7 +160,12 @@ export function FileRow({
           : data.path
       }
     >
-      <span className="inline-flex w-3 shrink-0 items-center justify-center text-2xs text-fg-dim">
+      {/* a11y(A71,A70 同族装饰符号):treeitem 展开态由 headless-tree row props 的 aria-expanded
+          表达,视觉箭头 ▾/▸ 纯装饰 → aria-hidden,否则混进行可访问名,SR 读文件名时夹杂三角噪声。 */}
+      <span
+        className="inline-flex w-3 shrink-0 items-center justify-center text-2xs text-fg-dim"
+        aria-hidden="true"
+      >
         {isDir ? (isExpanded ? '▾' : '▸') : ''}
       </span>
       <span className="inline-flex shrink-0 items-center" aria-hidden="true">
@@ -154,6 +178,12 @@ export function FileRow({
       {isRenaming ? (
         <Input
           {...item.getRenameInputProps()}
+          // a11y(A26,A5 同族):headless-tree getRenameInputProps() 不含 aria-label → 重命名
+          // 编辑框无可访问名。补 aria-label(含文件名),屏幕阅读器知在重命名哪个文件。
+          aria-label={t('panels.explorer.rename_input_aria', { name: data.name })}
+          // 边界(E290,CreateInput leaf 名截断兄弟):重命名输入原生 maxLength 截断到 FS_NAME_MAX,
+          // 防超长 paste 跨 IPC 到 main 才被 assertValidBasename 拒(>FS_NAME_MAX 名 ENAMETOOLONG 建不出)。
+          maxLength={FS_NAME_MAX}
           size="xs"
           ref={(el: HTMLInputElement | null) => {
             if (el) requestAnimationFrame(() => el.focus());
@@ -172,16 +202,21 @@ export function FileRow({
       )}
       {/* 插件装饰 badge(右侧),loading 优先级更高,加载完才显 */}
       {!isLoading && decoration?.badge && (
+        // a11y(A109):去掉硬编码英文 aria-label(`badge ${x}` 覆盖可见文本且 zh/ko 读英文「badge」)
+        // → 让可见 badge 文本自然进入 treeitem 朗读路径(badge 语义由插件决定,无通用本地化)。
         <span
           className="ml-auto pr-2 text-2xs tabular-nums"
           style={decoration.badgeColor ? { color: decoration.badgeColor } : undefined}
-          aria-label={`badge ${decoration.badge}`}
         >
           {decoration.badge}
         </span>
       )}
       {isLoading && (
-        <span className="ml-auto pr-2 text-2xs text-fg-dim">…</span>
+        // a11y(A110):视觉 … 纯装饰 aria-hidden;加载语义由 aria-busy(根)+ 视觉隐藏「加载中」表达。
+        <span className="ml-auto pr-2 text-2xs text-fg-dim">
+          <span aria-hidden="true">…</span>
+          <span style={SR_ONLY_STYLE}>{t('common.loading')}</span>
+        </span>
       )}
     </div>
   );

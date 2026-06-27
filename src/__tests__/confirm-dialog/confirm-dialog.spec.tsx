@@ -87,6 +87,27 @@ describe('ConfirmDialog', () => {
     expect(onCancel).not.toHaveBeenCalled();
   });
 
+  // a11y(A20):确认按钮排在取消之后,但应是初始焦点(危险操作让用户可直接确认/Esc 取消)。
+  // 此前 Modal rAF 总聚焦第一个(取消)按钮覆盖了 autoFocus;改 data-autofocus + Modal 优先。
+  it('a11y · 打开后初始焦点落在确认按钮(非取消)', () => {
+    const raf = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((cb: FrameRequestCallback) => {
+        cb(0);
+        return 0;
+      });
+    try {
+      renderD();
+      const confirm = Array.from(
+        document.querySelectorAll<HTMLButtonElement>('.wm-modal-content button'),
+      ).find((b) => b.textContent === '确认')!;
+      expect(confirm.hasAttribute('data-autofocus')).toBe(true);
+      expect(document.activeElement).toBe(confirm);
+    } finally {
+      raf.mockRestore();
+    }
+  });
+
   it('点取消 → onCancel 被调', () => {
     const onConfirm = vi.fn();
     const onCancel = vi.fn();

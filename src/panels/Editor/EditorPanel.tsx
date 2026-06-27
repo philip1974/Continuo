@@ -13,7 +13,8 @@ import {
   useEditorStore,
   type EditorMode,
 } from '@/stores/editor.store';
-import { t as translate } from '@/i18n';
+import { t as translate, useT } from '@/i18n';
+import { localizeErrorByCode } from '@/lib/localize-error';
 import {
   basenameForEditorPath,
   isMarkdownPath as isMarkdownPathExact,
@@ -33,11 +34,9 @@ import { coApi } from '@/lib/co-api';
 import { notify } from '@/notifications/notify';
 import type { EditorTab } from '@/stores/editor.store';
 
-const MODE_OPTIONS: readonly { id: EditorMode; label: string }[] = [
-  { id: 'edit', label: 'Edit' },
-  { id: 'source', label: 'Source' },
-  { id: 'preview', label: 'Preview' },
-];
+// i18n(I14):模式切换 label 走 catalog —— 此前硬编码英文 'Edit'/'Source'/'Preview',
+// zh/ko 工具栏显英文且不随 locale 切换。id 稳定,label 在组件内用 useT 生成(响应 locale)。
+const MODE_IDS: readonly EditorMode[] = ['edit', 'source', 'preview'];
 
 function isMarkdownPath(p: string | null): boolean {
   // 可维护性 M13:非空判定共用 editor-path-utils.isMarkdownPath;此处只保留「草稿(null)默认
@@ -62,6 +61,11 @@ export function EditorPanel() {
     (s): EditorTab | null =>
       s.tabs.find((t) => t.id === s.activeTabId) ?? null,
   );
+  const t = useT(); // i18n(I14):订阅 locale,模式切换 label 随语言更新
+  const modeOptions = MODE_IDS.map((id) => ({
+    id,
+    label: t(`panels.editor.mode.${id}`),
+  }));
   const mode = useEditorStore((s) => s.mode);
   const setMode = useEditorStore((s) => s.setMode);
   const updateContent = useEditorStore((s) => s.updateContent);
@@ -82,9 +86,34 @@ export function EditorPanel() {
       const target = resolveLink(href, activeTab?.filePath ?? null);
       if (!target) return;
       if (target.kind === 'file') {
-        void openFileByPath(target.absPath);
+        // a11y(A127,A117 同族):本地文件链接打开须检查 FileOpResult.ok + catch reject,否则
+        // 目标文件不存在/读取失败时无 toast/live 反馈,用户只感知链接「没反应」(同外链分支)。
+        openFileByPath(target.absPath)
+          .then((r) => {
+            if (!r.ok) {
+              notify.error(localizeErrorByCode(r.code, r.message ?? r.code), {
+                code: r.code,
+              });
+            }
+          })
+          .catch((err) => {
+            const code = (err as { code?: string })?.code ?? 'EXCEPTION';
+            notify.error(localizeErrorByCode(code, (err as Error)?.message), { code });
+          });
       } else {
-        void coApi.shell.openExternal(target.url);
+        // a11y(A117,A50/A116 同族):外链打开须检查 IpcResult.ok + catch reject,否则 URL 被
+        // 白名单拒绝或系统打开失败时无 toast/live 反馈,用户只感知链接「没反应」。
+        coApi.shell
+          .openExternal(target.url)
+          .then((r) => {
+            if (!r.ok) {
+              notify.error(localizeErrorByCode(r.code, r.message), { code: r.code });
+            }
+          })
+          .catch((err) => {
+            const code = (err as { code?: string })?.code ?? 'EXCEPTION';
+            notify.error(localizeErrorByCode(code, (err as Error)?.message), { code });
+          });
       }
     },
     [activeTab?.filePath, openFileByPath],
@@ -112,8 +141,10 @@ export function EditorPanel() {
   const handleSave = useCallback(async () => {
     const r = await saveActive();
     if (!r.ok) {
-      // UNSAVED_DRAFT / TAB_NOT_FOUND / FS_* 都到这里
-      notify.error(r.message, { code: r.code });
+      // i18n(I7,codex 复查 P1):UNSAVED_DRAFT / TAB_NOT_FOUND / NO_ACTIVE_TAB / FS_* 都到
+      // 这里,r.message 是 main/动作层的 raw(FS_* 英文、UNSAVED_DRAFT 含中文)→ 双向泄漏。
+      // 按 code 经 catalog 本地化(单一来源 localizeErrorByCode),未收录 code 回退原 message。
+      notify.error(localizeErrorByCode(r.code, r.message), { code: r.code });
     }
   }, [saveActive]);
 
@@ -211,7 +242,10 @@ export function EditorPanel() {
         //   关掉自动保存不会让模式切换跟着消失。
         <div className="flex h-9 shrink-0 items-center justify-center bg-canvas px-3">
           <SegmentedControl
-            options={MODE_OPTIONS}
+            // a11y(A22,A21 同族):radiogroup 须有 group 名,否则 AT 只读一组 radio(编辑/源码/
+            // 预览)不知是「编辑器模式」选择器。这是除 SettingItemRow 外另一 SegmentedControl 调用点。
+            ariaLabel={t('panels.editor.mode_group')}
+            options={modeOptions}
             value={effective}
             onChange={requestModeChange}
             size="sm"

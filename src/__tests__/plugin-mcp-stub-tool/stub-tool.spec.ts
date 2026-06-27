@@ -8,6 +8,8 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   createStubTool,
   createInvokeRemote,
+  MAX_INFLIGHT_INVOKES_GLOBAL_FOR_TEST,
+  MAX_INFLIGHT_INVOKES_PER_WC_FOR_TEST,
   type CreateInvokeRemoteDeps,
   type PluginMcpToolOwner,
   type PluginMcpRegistrationSpec,
@@ -347,5 +349,120 @@ describe('abortByWebContents', () => {
     void core.invoke(owner1, 'a', {});
     core.abortByWebContents(999);
     expect(core.pendingCount()).toBe(1);
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// 边界(E228):在途(pending)数量上限 —— 全局 + per-webContents 双闸
+// ────────────────────────────────────────────────────────────
+
+describe('createInvokeRemote · 在途数量上限(E228)', () => {
+  it('单 wc 在途到 per-wc 上限后,再 invoke 立即 reject TOO_MANY_REQUESTS,不入 pending、不再发 IPC', async () => {
+    const send = vi.fn();
+    const { setTimer } = makeFakeTimerSetup();
+    const core = createInvokeRemote({ send, setTimer, newRequestId: makeIdGen() });
+    const max = MAX_INFLIGHT_INVOKES_PER_WC_FOR_TEST;
+    // 凑满 per-wc 在途
+    for (let i = 0; i < max; i++) void core.invoke(owner1, 'x', {});
+    expect(core.pendingCount()).toBe(max);
+    expect(send).toHaveBeenCalledTimes(max);
+    // 第 max+1 次:立即 reject,不入 pending、不发 IPC
+    const overflow = core.invoke(owner1, 'x', {});
+    const err = await overflow.catch((e: unknown) => e);
+    expect((err as { code?: string }).code).toBe(
+      PLUGIN_MCP_ERROR_CODES.TOO_MANY_REQUESTS,
+    );
+    expect(core.pendingCount()).toBe(max); // 没增
+    expect(send).toHaveBeenCalledTimes(max); // 没多发
+  });
+
+  it('终态(reply)释放在途槽位后,可再接受新 invoke(计数对偶,无漂移)', async () => {
+    const send = vi.fn();
+    const { setTimer } = makeFakeTimerSetup();
+    const core = createInvokeRemote({ send, setTimer, newRequestId: makeIdGen('r') });
+    const max = MAX_INFLIGHT_INVOKES_PER_WC_FOR_TEST;
+    for (let i = 0; i < max; i++) void core.invoke(owner1, 'x', {});
+    // 满了 → 溢出
+    let err = await core.invoke(owner1, 'x', {}).catch((e: unknown) => e);
+    expect((err as { code?: string }).code).toBe(
+      PLUGIN_MCP_ERROR_CODES.TOO_MANY_REQUESTS,
+    );
+    // reply 第一条(r-1)释放一个槽位
+    core.handleReply({ requestId: 'r-1', ok: true, result: 'done' });
+    expect(core.pendingCount()).toBe(max - 1);
+    // 现在能再接受一个,正常进 pending + 发 IPC
+    const sendsBefore = send.mock.calls.length;
+    void core.invoke(owner1, 'x', {});
+    expect(core.pendingCount()).toBe(max);
+    expect(send).toHaveBeenCalledTimes(sendsBefore + 1);
+    // 再来一个又溢出
+    err = await core.invoke(owner1, 'x', {}).catch((e: unknown) => e);
+    expect((err as { code?: string }).code).toBe(
+      PLUGIN_MCP_ERROR_CODES.TOO_MANY_REQUESTS,
+    );
+  });
+
+  it('per-wc 上限是 per-wc 的:owner1 满了,owner2(不同 wc)仍可 invoke', async () => {
+    const send = vi.fn();
+    const { setTimer } = makeFakeTimerSetup();
+    const core = createInvokeRemote({ send, setTimer, newRequestId: makeIdGen() });
+    const max = MAX_INFLIGHT_INVOKES_PER_WC_FOR_TEST;
+    for (let i = 0; i < max; i++) void core.invoke(owner1, 'x', {});
+    // owner1 溢出
+    const e1 = await core.invoke(owner1, 'x', {}).catch((e: unknown) => e);
+    expect((e1 as { code?: string }).code).toBe(
+      PLUGIN_MCP_ERROR_CODES.TOO_MANY_REQUESTS,
+    );
+    // owner2 不受影响
+    void core.invoke(owner2, 'y', {});
+    expect(core.pendingCount()).toBe(max + 1);
+  });
+
+  it('abort 整 wc 释放该 wc 全部在途槽位,之后该 wc 可重新 invoke 满额', async () => {
+    const send = vi.fn();
+    const { setTimer } = makeFakeTimerSetup();
+    const core = createInvokeRemote({ send, setTimer, newRequestId: makeIdGen() });
+    const max = MAX_INFLIGHT_INVOKES_PER_WC_FOR_TEST;
+    const ps: Promise<unknown>[] = [];
+    for (let i = 0; i < max; i++) ps.push(core.invoke(owner1, 'x', {}).catch(() => undefined));
+    core.abortByWebContents(owner1.wcId); // 全摘 → per-wc 计数归零
+    await Promise.all(ps);
+    expect(core.pendingCount()).toBe(0);
+    // 计数无残留:可再次凑满 max 个,第 max+1 个才溢出
+    for (let i = 0; i < max; i++) void core.invoke(owner1, 'x', {});
+    const err = await core.invoke(owner1, 'x', {}).catch((e: unknown) => e);
+    expect((err as { code?: string }).code).toBe(
+      PLUGIN_MCP_ERROR_CODES.TOO_MANY_REQUESTS,
+    );
+  });
+
+  it('全局上限:跨多个 wc 累计到全局上限后,新 wc 的 invoke 也被拒', async () => {
+    const send = vi.fn();
+    const { setTimer } = makeFakeTimerSetup();
+    const core = createInvokeRemote({ send, setTimer, newRequestId: makeIdGen() });
+    const perWc = MAX_INFLIGHT_INVOKES_PER_WC_FOR_TEST;
+    const global = MAX_INFLIGHT_INVOKES_GLOBAL_FOR_TEST;
+    // 用多个 wc,每个填到 per-wc 上限,直到逼近全局上限
+    let filled = 0;
+    let wcId = 1000;
+    while (filled + perWc <= global) {
+      const owner: PluginMcpToolOwner = { pluginId: 'p', wcId: wcId++ };
+      for (let i = 0; i < perWc; i++) void core.invoke(owner, 'x', {});
+      filled += perWc;
+    }
+    // 剩余补满到全局上限
+    const lastOwner: PluginMcpToolOwner = { pluginId: 'p', wcId: wcId++ };
+    while (filled < global) {
+      void core.invoke(lastOwner, 'x', {});
+      filled += 1;
+    }
+    expect(core.pendingCount()).toBe(global);
+    // 全新 wc(per-wc 计数为 0)也应被全局闸拒
+    const freshOwner: PluginMcpToolOwner = { pluginId: 'p', wcId: 999999 };
+    const err = await core.invoke(freshOwner, 'x', {}).catch((e: unknown) => e);
+    expect((err as { code?: string }).code).toBe(
+      PLUGIN_MCP_ERROR_CODES.TOO_MANY_REQUESTS,
+    );
+    expect(core.pendingCount()).toBe(global); // 没增
   });
 });

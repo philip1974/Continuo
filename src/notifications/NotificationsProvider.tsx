@@ -96,6 +96,15 @@ export function NotificationsProvider({
         clearTimeout(t);
         timersRef.current.delete(id);
       }
+      // race(R104,R13 对偶):同步从 notificationsRef 移除,使同一 tick 内后续 notify 的 dedupe
+      // 不再看到已关闭通知。否则 dismiss() 只在 setNotificationList 的 updater(延迟到 render)里更新
+      // ref —— 同 tick 紧接的同源 non-error notify 会从旧 ref 匹配到这条「已关闭」通知走 dedupe 分支:
+      // 既不新增也不复活(其 map updater 在 dismiss 的 filter updater 之后跑,existing.id 已不在 prev
+      // → no-op),新通知被静默吞掉;还给已删 id 重挂 auto-dismiss timer。下面 functional updater 仍
+      // 是权威(落 ref);此处同步值仅为同 tick 先行可见,与 R13 notify 侧同步写 ref 对称。
+      notificationsRef.current = notificationsRef.current.filter(
+        (n) => n.id !== id,
+      );
       setNotificationList((prev) => prev.filter((n) => n.id !== id));
     },
     [setNotificationList],
@@ -151,6 +160,12 @@ export function NotificationsProvider({
 
       const id = `notif-${String(++counterRef.current)}`;
       const n: Notification = { id, level, message, code, createdAt: now };
+      // race(R13):同步把新通知写入 notificationsRef,使同一事件循环内后续 notify 的去重能看到
+      // 这条 pending 通知。ref 原本只在 setNotifications 的 updater 执行时(延迟到 render)才更新
+      // → 同 tick 连续两次同源 notify 第二次读到的 ref 仍缺第一条 → 各自入队绕过去重。下面的
+      // functional updater 仍是权威(基于 React prev 计算 + trim 后落 ref);此处同步值仅为同 tick
+      // 先行可见(updater 落 ref 后即收敛,trim 差异在 tick 内对去重无害——只是多几条可匹配项)。
+      notificationsRef.current = [...notificationsRef.current, n];
       setNotificationList((prev) => {
         const next = [...prev, n];
         if (next.length <= MAX_NOTIFICATIONS) return next;

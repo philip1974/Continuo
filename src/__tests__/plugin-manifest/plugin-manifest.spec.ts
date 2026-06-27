@@ -62,6 +62,27 @@ describe('parseManifest:Schema 校验', () => {
     expect(r.ok).toBe(false);
   });
 
+  // 边界(E123):id 为纯点段 "."/".."(路径穿越语义)→ SCHEMA_ERROR。此前裸正则 /^[a-z0-9._-]+$/
+  // 放行点段,与 main isSafePluginId / marketplace isValidPluginId 契约漂移;改用共享 isValidPluginId。
+  it('E123 id 为 "." / ".." (纯点段) → SCHEMA_ERROR', () => {
+    for (const badId of ['.', '..']) {
+      const r = parseManifest(
+        JSON.stringify({ id: badId, name: 'X', version: '1.0.0' }),
+      );
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.code).toBe('SCHEMA_ERROR');
+    }
+  });
+
+  it('E123 合法 id(含点但非纯点段,如 a.b / com.example.foo)→ 仍通过', () => {
+    for (const okId of ['a.b', 'com.example.foo', 'a.._b']) {
+      const r = parseManifest(
+        JSON.stringify({ id: okId, name: 'X', version: '1.0.0' }),
+      );
+      expect(r.ok).toBe(true);
+    }
+  });
+
   it('version 不合法格式 → SCHEMA_ERROR', () => {
     const r = parseManifest(
       JSON.stringify({ id: 'a.b', name: 'X', version: '1.0' }),
@@ -127,6 +148,77 @@ describe('parseManifest:Schema 校验', () => {
     );
     expect(r.ok).toBe(false);
   });
+
+  // 边界(E74,E24/E35 字段上限族):manifest 字段须有 .max(),挡接近 1MiB 的超长字段/超量 permissions
+  // 进入 PluginManager/PluginsTab/权限弹窗放大渲染。
+  it('E74 超长 name(>256)→ SCHEMA_ERROR(不进 UI 放大)', () => {
+    const r = parseManifest(
+      JSON.stringify({ id: 'a.b', name: 'x'.repeat(257), version: '1.0.0' }),
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.code).toBe('SCHEMA_ERROR');
+  });
+
+  it('E74 超长 description(>8192)→ SCHEMA_ERROR', () => {
+    const r = parseManifest(
+      JSON.stringify({
+        id: 'a.b',
+        name: 'X',
+        version: '1.0.0',
+        description: 'd'.repeat(8193),
+      }),
+    );
+    expect(r.ok).toBe(false);
+  });
+
+  it('E74 permissions 数量超 PERMISSION_KEYS 数(重复刷量)→ SCHEMA_ERROR', () => {
+    const r = parseManifest(
+      JSON.stringify({
+        id: 'a.b',
+        name: 'X',
+        version: '1.0.0',
+        // 5 个合法 key 全列 + 1 个重复 = 6 项 > PERMISSION_KEYS.length(5)
+        permissions: ['fs', 'network', 'shell', 'clipboard', 'mcp-tools', 'fs'],
+      }),
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.code).toBe('SCHEMA_ERROR');
+  });
+
+  it('E74 正常 manifest(字段在上限内)仍 ok', () => {
+    const r = parseManifest(
+      JSON.stringify({
+        id: 'a.b',
+        name: 'Normal Plugin',
+        version: '1.0.0',
+        description: 'a reasonable description',
+        permissions: ['fs', 'network'],
+      }),
+    );
+    expect(r.ok).toBe(true);
+  });
+
+  // 边界(E77,E73/E75/E76 错误串放大族最后一处 zod-join):SCHEMA_ERROR message 经 capJoinedMessages
+  // 限总长。zod enum 错误会回显 received 值 —— 单个超长非法 permission 元素(.max(5) 只限数组条数、
+  // 不限元素长度,E74 未覆盖)会产生 >2048 的 issue.message,须截断防进 PluginManager.entry.error/
+  // PluginsTab 渲染放大。
+  it('E77 超长非法 permission 值 → SCHEMA_ERROR message 有上限 + 截断标记', () => {
+    const r = parseManifest(
+      JSON.stringify({
+        id: 'a.b',
+        name: 'X',
+        version: '1.0.0',
+        // 数组长度 1(过 .max(5)),但元素是 3000 字符非法 enum → zod 回显该超长值
+        permissions: ['z'.repeat(3000)],
+      }),
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.code).toBe('SCHEMA_ERROR');
+      expect(r.message.length).toBeLessThanOrEqual(2048 + 64); // 远小于未截断的 ~3KB
+      expect(r.message).toContain('truncated');
+    }
+  });
 });
 
 describe('parseManifest:不抛错保证', () => {
@@ -165,5 +257,23 @@ describe('isVersionCompatible(app, min)', () => {
     expect(isVersionCompatible('1.0', '1.0.0')).toBe(false);
     expect(isVersionCompatible('1.0.0', 'foo')).toBe(false);
     expect(isVersionCompatible('', '1.0.0')).toBe(false);
+  });
+
+  // 边界(E9,E7/E8 同族):数字段超 MAX_SAFE_INTEGER 变 Infinity/不安全整数 → 兼容比较失真。
+  // 任一段不安全 → parseVer null → fail-closed 保守拒载(false)。
+  it('E9 不安全整数版本段 → false(保守拒载,不进失真比较)', () => {
+    // appVersion 超大:不安全 → false
+    expect(
+      isVersionCompatible('99999999999999999999.0.0', '1.0.0'),
+    ).toBe(false);
+    // minLMVersion 超大:不安全 → false(畸形 plugin manifest 不会被误判兼容)
+    expect(
+      isVersionCompatible('1.0.0', '99999999999999999999.0.0'),
+    ).toBe(false);
+    expect(isVersionCompatible('1.0.0', '1.9007199254740993.0')).toBe(false);
+  });
+
+  it('E9 边界:MAX_SAFE_INTEGER 段仍合法比较', () => {
+    expect(isVersionCompatible('9007199254740991.0.0', '1.0.0')).toBe(true);
   });
 });

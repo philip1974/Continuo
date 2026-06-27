@@ -82,6 +82,44 @@ describe('EventBus', () => {
     expect(a).not.toHaveBeenCalled();
     expect(b).not.toHaveBeenCalled();
   });
+
+  // 边界(E56,插件 API 输入校验):on 校验 name(有限长度字符串)+ listener(函数)+ 数量上限。
+  describe('E56 · on 输入校验', () => {
+    it('超长/空/非字符串 name → 抛', () => {
+      const bus = new EventBus();
+      expect(() => bus.on('x'.repeat(257), () => {})).toThrow(
+        /event name must be/i,
+      );
+      expect(() => bus.on('', () => {})).toThrow(/event name must be/i);
+      expect(() => bus.on(123 as never, () => {})).toThrow(/event name must be/i);
+    });
+
+    it('非函数 listener → 抛', () => {
+      const bus = new EventBus();
+      expect(() => bus.on('e', 'nope' as never)).toThrow(
+        /listener must be a function/i,
+      );
+    });
+
+    it('单事件 listener 数超上限(1024)→ 抛', () => {
+      const bus = new EventBus();
+      for (let i = 0; i < 1024; i++) bus.on('e', () => {});
+      expect(() => bus.on('e', () => {})).toThrow(/too many listeners/i);
+    });
+
+    it('事件名总数超上限(1024)→ 抛', () => {
+      const bus = new EventBus();
+      for (let i = 0; i < 1024; i++) bus.on(`e${i}`, () => {});
+      expect(() => bus.on('overflow', () => {})).toThrow(
+        /too many distinct event names/i,
+      );
+    });
+
+    it('emit 非字符串 name → no-op(不抛)', () => {
+      const bus = new EventBus();
+      expect(() => bus.emit(123 as never, null)).not.toThrow();
+    });
+  });
 });
 
 describe('Plugin.registerEvent 集成', () => {

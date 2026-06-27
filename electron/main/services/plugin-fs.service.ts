@@ -3,6 +3,7 @@ import { promises as fs, type Dirent } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { app, type IpcMain, type WebContents } from 'electron';
 import { PLUGIN_FS_CHANNELS } from '../../shared/plugin-fs-channels';
+import { createByteCappedBuffer } from '../lib/byte-capped-buffer';
 import { IdentityRegistry } from './identity-registry.service';
 import { PathScopeRegistry } from './path-scope-registry.service';
 import { ScopeRequestCorrelator } from './scope-request-correlator';
@@ -13,6 +14,17 @@ import {
 } from '../../../src/plugins/types';
 import { canonicalizeScopePath } from './path-resolve.helper';
 import { atomicWriteFile } from '../ipc/fs/atomic-write';
+import { readFile as readFileCapped } from '../ipc/fs/read-file';
+import {
+  MAX_WRITE_BYTES,
+  MAX_SCOPE_REQUEST_COUNT,
+  validateScopesShape,
+  isValidGitBlobSha,
+} from '../../shared/fs-limits';
+import { utf8BytesExceed } from '../../shared/utf8-byte-length';
+import { fsError } from '../ipc/fs/path-utils';
+import { ERROR_CODES } from '../../shared/error-codes';
+import { isSafePluginId } from './plugins.service';
 
 export interface PluginFsDeps {
   identityRegistry: IdentityRegistry;
@@ -35,10 +47,27 @@ export interface PluginFsDeps {
 const TRASH_TTL_MS = 24 * 60 * 60 * 1000;
 const TRASH_PREFIX = '.trash-';
 
+// 边界(E30):plugin-fs:list-dir 单层目录条目数硬上限(滥用 backstop,防超大数组 + IPC 全量返回)。
+// 导出供测试用(避免在测试里硬编码 magic number)。
+export const MAX_LIST_DIR_ENTRIES = 100_000;
+
+// 边界(E31/E239):plugin-fs:request-scope 的 scopes 是插件直传 IPC payload。数量/路径长度上限 + mode
+// 枚举收口到 shared(fs-limits.validateScopesShape),main 与 renderer scoped-app 共用单一来源。此处
+// re-export MAX_SCOPE_REQUEST_COUNT 维持既有测试 import 路径(实义在 shared)。
+export { MAX_SCOPE_REQUEST_COUNT };
+// 边界(E96):scope-decision 的 requestId 上限(correlator 用的是 UUID,~36 字符,256 留足余量)。
+const MAX_REQUEST_ID_LEN = 256;
+// 边界(E97):注册入口 pluginId 长度上限(对齐 manifest id 上限 E74 NAME_MAX)。
+const MAX_PLUGIN_ID_LEN = 256;
+
 // 审计 P2-B:git cat-file 子进程的超时与输出上限。旧实现无 timeout、stdout 无界,
 // 超大 blob 或 git 卡死(如 cwd 在网络挂载)会让 Promise 永不 resolve + 内存持续增长。
 const GIT_BLOB_TIMEOUT_MS = 30_000;
 const GIT_BLOB_MAX_BYTES = 64 * 1024 * 1024; // 64 MB 上限,够大但防 OOM
+// 边界(E63,E62 同款):cat-file stderr 累积上限(失败时拼进 ScopeError message)。
+const GIT_BLOB_STDERR_MAX = 64 * 1024;
+// 边界(E63 / E314):git blob sha hex 形态校验收口到 shared/fs-limits(renderer scoped-app readGitBlob
+// 发 IPC 前同款预检,单一来源防漂移)。
 
 /**
  * 读取单个 git blob(`git cat-file blob <sha>`),带超时与字节上限。
@@ -56,7 +85,8 @@ export function readGitBlob(
     let total = 0;
     let done = false;
     const child = spawn('git', ['cat-file', 'blob', sha], { cwd });
-    let stderr = '';
+    // 边界(E63 + E132,E131 同款):按真实 UTF-8 字节累积/截断 stderr,decode 延后整体进行。
+    const stderrCap = createByteCappedBuffer(GIT_BLOB_STDERR_MAX);
     const fail = (err: Error): void => {
       if (done) return;
       done = true;
@@ -88,9 +118,8 @@ export function readGitBlob(
       }
       chunks.push(chunk);
     });
-    child.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString();
-    });
+    // 边界(E63 + E132):stderr 累积上限(按真实字节),超限停止追加(防超大错误输出膨胀 + 撑爆 message)。
+    child.stderr.on('data', (chunk: Buffer) => stderrCap.push(chunk));
     child.on('close', (code) => {
       if (done) return;
       done = true;
@@ -100,7 +129,7 @@ export function readGitBlob(
         return;
       }
       reject(
-        new ScopeError(`git cat-file failed (exit ${code}): ${stderr}`, {
+        new ScopeError(`git cat-file failed (exit ${code}): ${stderrCap.text()}`, {
           target: sha,
         }),
       );
@@ -143,8 +172,22 @@ export function registerPluginFsHandlers(
 ): void {
   const { identityRegistry, pathScopeRegistry, correlator } = deps;
 
-  ipcMain.handle('plugin-fs:_register-plugin', async (event, pluginId: string) =>
-    identityRegistry.register(pluginId, event.sender.id),
+  ipcMain.handle(
+    'plugin-fs:_register-plugin',
+    async (event, pluginId: unknown) => {
+      // 边界(E97):pluginId 来自 renderer,裸 register 绕过 manifest id 正则 + E86/E87 持久化
+      // canonicalize 前门。超长/非法 id 会经 request-scope/persist/broadcast 携带 → 主进程 Map
+      // 长期驻留 + 路径 scope 持久化键污染 + IPC payload 放大。注册入口复用插件 id 规则
+      //(isSafePluginId:^[a-z0-9._-]+$ 且非 . / ..)+ 长度上限;非法固定 BAD_INPUT,不进 registry。
+      if (
+        typeof pluginId !== 'string' ||
+        pluginId.length > MAX_PLUGIN_ID_LEN ||
+        !isSafePluginId(pluginId)
+      ) {
+        throw fsError(ERROR_CODES.BAD_INPUT, 'invalid pluginId');
+      }
+      return identityRegistry.register(pluginId, event.sender.id);
+    },
   );
 
   ipcMain.handle('plugin-fs:_unregister-plugin', async (_event, token: string) => {
@@ -174,7 +217,11 @@ export function registerPluginFsHandlers(
         target,
         'r',
       );
-      return fs.readFile(canonicalPath(r), 'utf-8');
+      // 边界(E28,E18 平行入口):scope 校验后直接 fs.readFile(.., 'utf-8') 无大小上限,
+      // 已授权插件可让主进程整块读入超大文件再经 IPC 回 renderer → 内存峰值/卡死。复用主
+      // fs:read-file 的 readFile(E18:读前 stat.size,超 64MiB 抛 FS_FILE_TOO_LARGE +
+      // 目录守卫 + errno 映射),单一来源,与 write-file 复用 atomicWriteFile(R4)同手法。
+      return readFileCapped(canonicalPath(r));
     },
   );
 
@@ -189,6 +236,17 @@ export function registerPluginFsHandlers(
         'rw',
       );
       if (!('fullPath' in r)) throw new ScopeError('write resolution failed');
+      // 边界(E29,E13 平行入口):content 此前无大小上限直接进 atomicWriteFile。已授权插件可经
+      // 单次 IPC 发超大字符串 → 主进程 IPC 内存峰值 + 超大临时文件 + fsync/rename 长时间阻塞。复用
+      // 主 fs:write-file 的 MAX_WRITE_BYTES(64MiB,按 content.length 与主入口一致),进 atomicWriteFile
+      // 前拒绝超限并抛 FS_FILE_TOO_LARGE(与 E28 读侧 twin 同错误码)。是 read-file E28 的写侧对偶。
+      // 边界(E125):真实 UTF-8 字节(非 .length=UTF-16 code unit),与主 fs:write-file 同款。
+      if (utf8BytesExceed(content, MAX_WRITE_BYTES)) {
+        throw fsError(
+          ERROR_CODES.FS_FILE_TOO_LARGE,
+          `content 超过上限 ${MAX_WRITE_BYTES} 字节`,
+        );
+      }
       // crash-safe 原子写:裸 fs.writeFile 默认以 'w' 打开先 truncate,写入中途
       // ENOSPC/崩溃/掉电/进程被杀会把用户文件留成空/半截且无法回滚。复用 Explorer
       // fs:write-file 同款 atomicWriteFile(写同目录 tmp + fsync + rename 原子替换 +
@@ -206,13 +264,34 @@ export function registerPluginFsHandlers(
       target,
       'r',
     );
-    const entries = await fs.readdir(canonicalPath(r), { withFileTypes: true });
-    return entries.map((e) => ({
-      name: e.name,
-      isFile: e.isFile(),
-      isDirectory: e.isDirectory(),
-      isSymlink: e.isSymbolicLink(),
-    }));
+    // 边界(E30,plugin-fs 平行入口):此前 fs.readdir 整目录后全量 map 返回,无条目数上限。
+    // 已授权插件对超大目录调 listDir 会让主进程一次性构造巨大数组并经 IPC 全量返回 → 内存/CPU/
+    // IPC 卡顿。用 opendir 惰性迭代(不先把全部 Dirent 物化进内存),累计到硬上限即 fail-closed
+    // 抛 FS_DIR_TOO_LARGE(不静默截断 —— 截断会让插件误判「文件不存在」)。上限 100k 是滥用
+    // backstop:单层目录 >10 万直接子项极罕见,远超任何现实插件目录。
+    const out: {
+      name: string;
+      isFile: boolean;
+      isDirectory: boolean;
+      isSymlink: boolean;
+    }[] = [];
+    const dir = await fs.opendir(canonicalPath(r));
+    for await (const e of dir) {
+      if (out.length >= MAX_LIST_DIR_ENTRIES) {
+        // for-await 在抛出时调用迭代器 return() 自动关闭 dir,无句柄泄漏。
+        throw fsError(
+          ERROR_CODES.FS_DIR_TOO_LARGE,
+          `directory has too many entries (> ${MAX_LIST_DIR_ENTRIES})`,
+        );
+      }
+      out.push({
+        name: e.name,
+        isFile: e.isFile(),
+        isDirectory: e.isDirectory(),
+        isSymlink: e.isSymbolicLink(),
+      });
+    }
+    return out;
   });
 
   ipcMain.handle('plugin-fs:stat', async (event, token: string, target: string) => {
@@ -274,10 +353,11 @@ export function registerPluginFsHandlers(
   ipcMain.handle(
     'plugin-fs:rename',
     async (event, token: string, src: string, dst: string) => {
+      // 'rename-src' 走不跟随 leaf 解析:移动的是链接本身而非 realpath 跟随后的目标。
       const rSrc = await pathScopeRegistry.check(
         token,
         event.sender.id,
-        'read',
+        'rename-src',
         src,
         'rw',
       );
@@ -302,8 +382,11 @@ export function registerPluginFsHandlers(
       let dstStat: Awaited<ReturnType<typeof fs.lstat>> | null = null;
       try {
         dstStat = await fs.lstat(rDst.fullPath);
-      } catch {
-        dstStat = null; // ENOENT:目标不存在,正常改名
+      } catch (err) {
+        // 只有 ENOENT(不存在)才正常改名;EACCES/EIO 等「无法确认目标」不能 fail-open
+        // (否则 rename 静默覆盖已有目标,codex P1 同族)→ 抛出中止。
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+        dstStat = null;
       }
       if (dstStat) {
         let srcStat: Awaited<ReturnType<typeof fs.lstat>> | null = null;
@@ -335,10 +418,11 @@ export function registerPluginFsHandlers(
       target: string,
       opts?: { recursive?: boolean; force?: boolean },
     ) => {
+      // 'remove' 走不跟随 leaf 解析:删的是链接本身而非 realpath 跟随后的目标数据。
       const r = await pathScopeRegistry.check(
         token,
         event.sender.id,
-        'read',
+        'remove',
         target,
         'rw',
       );
@@ -380,7 +464,10 @@ export function registerPluginFsHandlers(
       let cpDstStat: Awaited<ReturnType<typeof fs.lstat>> | null = null;
       try {
         cpDstStat = await fs.lstat(rDst.fullPath);
-      } catch {
+      } catch (err) {
+        // 只有 ENOENT 才正常复制;其它 lstat 错误不 fail-open(同 rename 守卫,codex P1
+        // 同族)。cp 自身已 force:false+errorOnExist 兜底,此处提前抛出更清晰一致。
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
         cpDstStat = null; // ENOENT:目标不存在,正常复制
       }
       if (cpDstStat) {
@@ -389,15 +476,37 @@ export function registerPluginFsHandlers(
           reason: 'EEXIST',
         });
       }
-      await fs.cp(canonicalPath(rSrc), rDst.fullPath, {
-        recursive: opts?.recursive ?? false,
-      });
+      // force:false + errorOnExist:true 关闭 lstat→cp 之间的 TOCTOU 窗口:fs.cp 默认
+      // force:true 会击穿 errorOnExist(实测仅 force:false 时生效),目标若在 lstat 后被
+      // 并发创建仍会静默覆盖。前置 lstat 保留只为更早给出友好的 ScopeError。
+      try {
+        await fs.cp(canonicalPath(rSrc), rDst.fullPath, {
+          recursive: opts?.recursive ?? false,
+          force: false,
+          errorOnExist: true,
+        });
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'ERR_FS_CP_EEXIST') {
+          throw new ScopeError('copy: destination already exists', {
+            target: dst,
+            reason: 'EEXIST',
+          });
+        }
+        throw err;
+      }
     },
   );
 
   ipcMain.handle(
     'plugin-fs:read-git-blob',
     async (event, token: string, repoDir: string, sha: string) => {
+      // 边界(E63):sha 进 git cat-file argv 前先校验固定 hex 形态 + 长度(挡超长 sha 触发 spawn
+      // E2BIG / argv 内存放大;非 hex 也直接拒,绝不进 spawn)。
+      if (!isValidGitBlobSha(sha)) {
+        throw new ScopeError('invalid git blob sha (must be 4-64 hex chars)', {
+          target: typeof sha === 'string' ? sha.slice(0, 64) : 'non-string',
+        });
+      }
       const r = await pathScopeRegistry.check(
         token,
         event.sender.id,
@@ -471,6 +580,17 @@ export function registerPluginFsHandlers(
     async (event, token: string, scopes: readonly PathScope[]) => {
       const { pluginId } = identityRegistry.resolve(token, event.sender.id);
 
+      // 边界(E31):scopes 是插件直传的 IPC payload,此前无运行时校验就批量 canonicalize
+      // (realpath)+ 原样发 renderer 弹窗 + 可能进 registry/persist。畸形插件可传超大数组/
+      // 超长路径/非法 mode → 主进程批量 realpath、大 IPC payload、弹窗渲染卡顿;非法 mode 还污染
+      // 后续授权匹配语义。入口 fail-closed 校验数量/路径长度/mode 枚举,超限直接拒绝(不进
+      // canonicalize/弹窗/持久化)。其余 IPC 入口校验同族:E11/E12/E16/E17/E23。
+      // 边界(E31/E239):共享 helper 校验(数量 + 每项 path/mode),与 renderer scoped-app 同一来源。
+      const scopesErr = validateScopesShape(scopes);
+      if (scopesErr) {
+        throw fsError(ERROR_CODES.BAD_INPUT, scopesErr);
+      }
+
       // 归一化请求 scope 到与 registry 内存同一空间(expandHome + realpath),供覆盖
       // 判定与落地复用。否则 `~/...` 或含符号链接组件的根授予后永不匹配 → scope 静默
       // 死掉,插件所有 fs 操作误拒。canonicalizeScopePath 对不存在路径 fail-safe(回退
@@ -500,16 +620,33 @@ export function registerPluginFsHandlers(
         return 'grant';
       }
 
+      // 边界(E227):未决 scope 请求数到顶(全局/单窗口)→ 终态 deny 收口,不入 pending、不向 renderer
+      // 发弹窗。插件 spam request-scope 否则让主进程 pending Map / renderer 弹窗队列 / TTL 定时器线性增长。
+      if (!correlator.canAccept(event.sender.id)) {
+        return 'deny';
+      }
       const { requestId, promise } = correlator.createRequest(
         token,
         scopes,
         event.sender.id,
       );
-      event.sender.send('plugin-fs:scope-request', {
-        requestId,
-        pluginId,
-        scopes,
-      });
+      // race(R73,agent-auth R62 同族):createRequest 登记 pending 后、send 前 sender 可能销毁
+      // (renderer reload/关窗),send 抛 "Object has been destroyed"。下方 try 只裹 `await promise`,
+      // 不裹这次 send;若 send 裸抛,该 pending 会泄漏到 5min TTL 才被 sweep —— 插件侧
+      // requestScope() 一直挂着,且用户从未看到授权弹窗(发送失败),形成「授权请求假死」。send 包
+      // try/catch:失败时立即 cancelBySender 清掉本 sender 的 pending(sender 已死),按终态 deny
+      // 收口。promise.catch 吞掉 cancel 触发的 reject,避免 unhandled rejection(此处不再 await 它)。
+      try {
+        event.sender.send('plugin-fs:scope-request', {
+          requestId,
+          pluginId,
+          scopes,
+        });
+      } catch {
+        promise.catch(() => undefined);
+        correlator.cancelBySender(event.sender.id);
+        return 'deny';
+      }
       let decision: 'grant' | 'deny';
       try {
         decision = await promise;
@@ -549,11 +686,21 @@ export function registerPluginFsHandlers(
 
   ipcMain.handle(
     'plugin-fs:scope-decision',
-    async (
-      event,
-      requestId: string,
-      decision: 'grant' | 'deny',
-    ): Promise<void> => {
+    async (event, requestId: unknown, decision: unknown): Promise<void> => {
+      // 边界(E96):requestId/decision 来自 renderer,裸 handle 无 schema 校验。超长 requestId 会被
+      // 塞进 ScopeRequestTimeoutError 经 IPC reject/log/toast 链路放大;非法 decision 命中 pending
+      // 会 resolve 成非预期值,破坏授权决策契约。入口 fail-closed:requestId 非空且 ≤ 上限、decision
+      // 须 enum;非法抛 BAD_INPUT(固定文案,不把原始 requestId 拼进错误)。
+      if (
+        typeof requestId !== 'string' ||
+        requestId.length === 0 ||
+        requestId.length > MAX_REQUEST_ID_LEN
+      ) {
+        throw fsError(ERROR_CODES.BAD_INPUT, 'invalid scope-decision requestId');
+      }
+      if (decision !== 'grant' && decision !== 'deny') {
+        throw fsError(ERROR_CODES.BAD_INPUT, 'invalid scope-decision value');
+      }
       correlator.resolve(requestId, decision, event.sender.id);
     },
   );
@@ -586,8 +733,11 @@ async function atomicReplacePaths(
   try {
     await fs.access(finalPath);
     finalExists = true;
-  } catch {
-    // doesn't exist - fine
+  } catch (err) {
+    // 只有 ENOENT 才是「不存在」。EACCES/EIO/ELOOP 等「无法确认目标状态」不能 fail-open
+    // (否则走无覆盖分支 rename 仍可能替换实际存在的 final,绕过 overwrite:false 契约 —
+    // 与 rename/move/cp fail-closed 守卫一致,codex P1)。抛出中止 replace。
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
   }
   if (!finalExists) {
     try {

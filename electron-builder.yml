@@ -16,6 +16,19 @@ extraMetadata:
   main: out-pack/main/index.js
 asar: true
 
+# co:// 自定义协议注册。放在**顶层**而非某个平台块内:
+# - macOS:写 Info.plist CFBundleURLTypes ✓
+# - Linux:写 .desktop 的 MimeType=x-scheme-handler/co ✓
+# 此前埋在 mac: 块内 → linux 包不注册 scheme(cross-platform-audit P1)。
+# ⚠ Windows:经核查 electron-builder 26.8.1 源码,NSIS/portable target **不消费**顶层
+#   protocols(只读 fileAssociations),故此处不会写 HKCU\Software\Classes\co。Windows
+#   的 co:// 注册需 NSIS custom include 脚本(install 写注册表 / uninstall 清),已记入
+#   doc/cross-platform-audit.md DEFER —— 在此前**勿误以为 Windows 深链已可用**。
+protocols:
+  - name: Continuo Protocol
+    schemes:
+      - co
+
 mac:
   icon: build/icon.icns
   category: public.app-category.developer-tools
@@ -26,10 +39,6 @@ mac:
       arch: arm64
     - target: zip
       arch: arm64
-  protocols:
-    - name: Continuo Protocol
-      schemes:
-        - co
   # 跳过 codesign / notarize(本地测试)
   identity: null
   # macOS dock 接受文件夹拖入(issue #23):必须在 Info.plist 声明 app
@@ -46,4 +55,26 @@ mac:
           - public.directory
     NSAppleEventsUsageDescription: Continuo needs Apple Events to open folders.
 
-# Linux / Windows 留空,以后用到再补
+win:
+  # 未提供 build/icon.ico 时,electron-builder 会自动从 build/icon.png(1024×1024,
+  # ≥256 即可)生成多尺寸 .ico,故这里指向 png(本机无 .ico 转换工具)。
+  icon: build/icon.png
+  target:
+    - target: nsis
+      arch: x64
+    - target: portable
+      arch: x64
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+
+linux:
+  icon: build/icon.png
+  category: Development
+  target:
+    - target: AppImage
+      arch: x64
+    - target: deb
+      arch: x64

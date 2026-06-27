@@ -15,6 +15,11 @@
 //   mount 顺序里旧 Provider 卸载清新单例)。
 
 import type { NotificationLevel } from './types';
+// 边界(E311):本地 notify 路径与 IPC-push(isNotifyPushPayload)/ SDK(co-app)对称限长,单一来源常量。
+import {
+  NOTIFY_MESSAGE_MAX,
+  NOTIFY_CODE_MAX,
+} from '../../electron/shared/notify-channels';
 
 export interface NotifyOpts {
   readonly code?: string;
@@ -72,11 +77,26 @@ function notifyCore(
   level: NotificationLevel = 'info',
   opts?: NotifyOpts,
 ): void {
-  if (opts?.mirror !== false) {
-    mirrorToConsole(level, message, opts?.code);
+  // 边界(E311):本地 notify 路径此前无长度上限,而 main→renderer notify:push(isNotifyPushPayload)与 SDK
+  // coApp.notifications.show(co-app)均限长。renderer 各处 notify.error(err.message) 的 err.message 可超长
+  //(畸形/插件抛超长串)→ 进 console mirror + Toast DOM 放大。本地路径在唯一入口 notifyCore 截断到同一
+  // NOTIFY_MESSAGE_MAX/NOTIFY_CODE_MAX(与 push/SDK 对称),截断(非拒)保留可见反馈。
+  const cappedMessage =
+    message.length > NOTIFY_MESSAGE_MAX
+      ? message.slice(0, NOTIFY_MESSAGE_MAX)
+      : message;
+  const rawCode = opts?.code;
+  const cappedCode =
+    typeof rawCode === 'string' && rawCode.length > NOTIFY_CODE_MAX
+      ? rawCode.slice(0, NOTIFY_CODE_MAX)
+      : rawCode;
+  const cappedOpts =
+    cappedCode === rawCode ? opts : { ...opts, code: cappedCode };
+  if (cappedOpts?.mirror !== false) {
+    mirrorToConsole(level, cappedMessage, cappedOpts?.code);
   }
   // Provider 未 mount 时:仅 console mirror,不 buffer(简化,见 plan-v4 Op6 决定)
-  _api?.notify(message, level, opts);
+  _api?.notify(cappedMessage, level, cappedOpts);
 }
 
 type SugarOpts = Omit<NotifyOpts, 'level'>;

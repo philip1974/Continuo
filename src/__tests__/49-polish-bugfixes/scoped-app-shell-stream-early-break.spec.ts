@@ -47,7 +47,8 @@ vi.mock('@/lib/co-api', () => ({
 
 import { createScopedApp } from '../../plugins/scoped-app';
 import { createTestCoApp } from '../../plugins/test-utils';
-import { InMemoryPermissionStore } from '../../plugins/permissions';
+import { InMemoryPermissionStore, type PermissionStore } from '../../plugins/permissions';
+import { coApi } from '@/lib/co-api';
 import type { CoApp } from '../../plugins/types';
 
 function makeApp(): CoApp {
@@ -71,6 +72,36 @@ describe('topic49 P2-AM · 提前 break 触发内层 iterator.return()(abort)', 
     expect(count).toBe(1);
     // break 必须触达内层 iterator.return()(否则子进程挂到 timeout)
     expect(returnSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+// race(R94):execStream 急切 start();若消费者在 shell 权限等待期间 break/return(此时内层 iterator
+// 尚为 null),权限 resolve 后 start() 不得再 spawn 子进程(否则已取消命令迟到执行 + 泄漏)。
+describe('race(R94) · 权限等待期间取消 → 权限通过后不 spawn', () => {
+  it('权限挂起时 chunks.return() → 权限 grant 后不调 execStreamRaw,done 收敛', async () => {
+    (coApi.pluginShellStreamRaw.execStream as ReturnType<typeof vi.fn>).mockClear();
+    // 自定义 store:get() 返回可控的 pending promise(模拟权限弹窗等待)。
+    let resolveGet: (d: ReadonlyArray<{ permission: string; granted: boolean; decidedAt: number }>) => void = () => {};
+    const store = {
+      get: () =>
+        new Promise((r) => {
+          resolveGet = r as typeof resolveGet;
+        }),
+    } as unknown as PermissionStore;
+
+    const app = createScopedApp(makeApp(), 'p', store);
+    const stream = app.shell.execStream('rm', ['-rf', 'x']); // 急切 start(),卡在 store.get
+
+    // 消费者在权限等待期间取消(内层 iterator 尚未创建)。
+    const it = stream.chunks[Symbol.asyncIterator]();
+    await it.return!();
+
+    // 权限此刻才通过(grant shell)。
+    resolveGet([{ permission: 'shell', granted: true, decidedAt: 0 }]);
+    await stream.done; // 应收敛(不挂),来自合成终止 stream
+
+    // 关键:已取消 → 绝不真正 spawn 子进程。
+    expect(coApi.pluginShellStreamRaw.execStream).not.toHaveBeenCalled();
   });
 });
 

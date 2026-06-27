@@ -6,8 +6,14 @@
 // BDD: src/__tests__/terminal-store/
 
 import { create } from 'zustand';
+import { pathEquals } from '@/lib/path-cross';
 import type { ShellFamily } from '@continuo-terminal/shell-quote';
 import type { TerminalSessionSnapshot } from '../../electron/shared/terminal-session';
+import { LABEL_MAX, PATH_MAX } from '../../electron/shared/terminal-create';
+// E203:SESSION_ID_MAX 收口到 shared/session-id-limits(此前本文件 / terminal.ipc.ts / MCP tools 各副本,防漂移)。
+import { SESSION_ID_MAX } from '../../electron/shared/session-id-limits';
+// E292:renderer IPC ingress 计数闸,复用 main 的全局会话上限单一来源。
+import { MAX_TERMINAL_SESSIONS_GLOBAL } from '../../electron/shared/terminal-session-limits';
 
 // 可维护性 M14:终端 session 形态复用 shared TerminalSessionSnapshot 单一来源
 // (此前 main/preload/renderer 三层平行声明同组字段并已漂移)。
@@ -16,7 +22,13 @@ export type TerminalSession = TerminalSessionSnapshot;
 export interface FilterDropOpts {
   onDrop?: (
     sessionId: string | undefined,
-    reason: 'not-object' | 'missing-owner' | 'wrong-owner' | 'shape-invalid',
+    reason:
+      | 'not-object'
+      | 'missing-owner'
+      | 'wrong-owner'
+      | 'shape-invalid'
+      // 边界(E292):ingress 数组超 MAX_TERMINAL_SESSIONS_GLOBAL 时,超额项被丢弃。
+      | 'over-capacity',
   ) => void;
 }
 
@@ -26,8 +38,16 @@ function isAttachTargetShape(v: unknown): boolean {
   if (!v || typeof v !== 'object') return false;
   const t = v as Record<string, unknown>;
   if (t.kind === 'active') return true;
-  if (t.kind === 'panel') return typeof t.panelId === 'string';
-  if (t.kind === 'window') return typeof t.windowId === 'number';
+  // 边界(E23):与 AttachTargetSchema 同步 —— panelId 限长、windowId 须非负安全整数,防畸形
+  // attachTarget 经 sessions_changed 广播进各 renderer metadata 膨胀/匹配逻辑失真。
+  if (t.kind === 'panel')
+    return typeof t.panelId === 'string' && t.panelId.length <= 256;
+  if (t.kind === 'window')
+    return (
+      typeof t.windowId === 'number' &&
+      Number.isSafeInteger(t.windowId) &&
+      t.windowId >= 0
+    );
   return false;
 }
 
@@ -36,21 +56,34 @@ function isAttachTargetShape(v: unknown): boolean {
  * narrow 到 TerminalSession(= shared TerminalSessionSnapshot,M14),取代此前只校验必填
  * 字段、最后 `obj as unknown as TerminalSession` 双重断言(optional 字段绕过类型检查)。
  */
+// 边界(E167,E23 同款 IPC-ingress 防御):session 经 sessions_changed/listSessions 广播进各
+// renderer store。主进程写入口(create / updateCwd)已按 LABEL_MAX/PATH_MAX cap,本守卫是 renderer
+// ingress 的纵深防御(对齐 E23 已给 attachTarget.panelId/windowId 加的长度/安全整数校验):字符串
+// 字段镜像 create 的长度上限,数字字段须有限/安全整数,防畸形 payload 进 store 致 UI 卡顿/状态污染。
 function isTerminalSessionShape(v: unknown): v is TerminalSession {
   if (!v || typeof v !== 'object') return false;
   const obj = v as Record<string, unknown>;
   return (
     typeof obj.id === 'string' &&
+    obj.id.length <= SESSION_ID_MAX &&
     typeof obj.title === 'string' &&
+    obj.title.length <= LABEL_MAX &&
     typeof obj.cwd === 'string' &&
+    obj.cwd.length <= PATH_MAX &&
     (obj.originHint === 'user' || obj.originHint === 'agent') &&
     typeof obj.createdAt === 'number' &&
-    (obj.exitCode === null || typeof obj.exitCode === 'number') &&
+    Number.isFinite(obj.createdAt) &&
+    (obj.exitCode === null ||
+      (typeof obj.exitCode === 'number' && Number.isSafeInteger(obj.exitCode))) &&
     typeof obj.ownerWindowId === 'number' &&
-    (obj.agentLabel === undefined || typeof obj.agentLabel === 'string') &&
+    Number.isSafeInteger(obj.ownerWindowId) &&
+    obj.ownerWindowId >= 0 &&
+    (obj.agentLabel === undefined ||
+      (typeof obj.agentLabel === 'string' && obj.agentLabel.length <= LABEL_MAX)) &&
     (obj.scoped === undefined || typeof obj.scoped === 'boolean') &&
     (obj.workspaceRoot === undefined ||
-      typeof obj.workspaceRoot === 'string') &&
+      (typeof obj.workspaceRoot === 'string' &&
+        obj.workspaceRoot.length <= PATH_MAX)) &&
     isAttachTargetShape(obj.attachTarget)
   );
 }
@@ -61,7 +94,20 @@ export function filterByOwnerWindow(
   opts: FilterDropOpts = {},
 ): readonly TerminalSession[] {
   const result: TerminalSession[] = [];
+  // 边界(E292,E167/E174 同款 IPC-ingress 纵深防御 / 数量维度):main 已按 MAX_TERMINAL_SESSIONS_GLOBAL
+  // 双闸(E235)封顶真实会话数,但 renderer 此前对 sessions_changed / listSessions 推来的数组**长度**无
+  // 上限 —— 有 bug / 被篡改的 main 推超大数组时,本 for 循环 O(n) 全量遍历 + 入 store + 渲染 n 个 tab,
+  // 拖垮 renderer。超 MAX_TERMINAL_SESSIONS_GLOBAL 的超额项一律丢弃(只可能来自异常 main;正常全局 ≤256
+  // 必在前 256 内,不丢任何合法会话)。
+  let processed = 0;
   for (const s of sessions) {
+    // 一次性发 over-capacity 信号并 break —— 不再遍历病态超大数组余项(全局合法 ≤256 必在前 256 内,
+    // 故 break 不丢任何合法会话;只有异常 main 推超额项会触发)。
+    if (processed >= MAX_TERMINAL_SESSIONS_GLOBAL) {
+      opts.onDrop?.(undefined, 'over-capacity');
+      break;
+    }
+    processed += 1;
     if (!s || typeof s !== 'object') {
       opts.onDrop?.(undefined, 'not-object');
       continue;
@@ -98,7 +144,9 @@ export function filterByWorkspaceRoot(
   currentRoot: string | null,
 ): readonly TerminalSession[] {
   return sessions.filter(
-    (s) => s.workspaceRoot === undefined || s.workspaceRoot === currentRoot,
+    (s) =>
+      s.workspaceRoot === undefined ||
+      (currentRoot !== null && pathEquals(s.workspaceRoot, currentRoot)),
   );
 }
 
@@ -231,7 +279,11 @@ export const useTerminalStore = create<TerminalState>((set) => ({
 
   renameSession: (id, title) =>
     set((s) => {
-      const trimmed = title.trim();
+      // 边界(E238):自定义标题按 LABEL_MAX(512,复用主进程 create/title 同款上限)截断。renameSession 是
+      // renderer-only store 入口,不经主进程 terminal-create schema —— 极长标题否则进 customTitles 被
+      // DockReconciler/Dock tab title 反复渲染,绕过主进程 512 边界致 UI 卡顿/内存膨胀。截断而非拒绝:
+      // 保留用户重命名意图,只钳长度(空串仍走 delete 分支恢复默认标题)。
+      const trimmed = title.trim().slice(0, LABEL_MAX);
       const next = new Map(s.customTitles);
       if (trimmed.length === 0) {
         next.delete(id);

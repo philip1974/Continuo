@@ -39,7 +39,12 @@ export async function renameEntry(
     }
   } catch (err) {
     if ((err as { code?: string }).code === ERROR_CODES.FS_EEXIST) throw err;
-    // ENOENT = 目标不存在,正常继续改名
+    // 只有 ENOENT(目标不存在)才继续改名。EACCES/EIO/ELOOP 等「无法确认目标状态」的
+    // lstat 错误**不能** fail-open —— 否则防覆盖守卫被绕过,POSIX rename 静默覆盖已有目标
+    // (codex P1)。映射后抛出中止 rename。
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw fsError(mapNodeErrnoCode(err), `lstat failed: ${newPath}`);
+    }
   }
 
   try {

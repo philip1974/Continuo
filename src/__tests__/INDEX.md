@@ -32,6 +32,8 @@
 - [`agent-auth-cancel-by-window.spec.ts`](./49-polish-bugfixes/agent-auth-cancel-by-window.spec.ts)
 - [`atomic-write-concurrent-same-path.spec.ts`](./49-polish-bugfixes/atomic-write-concurrent-same-path.spec.ts)
 - [`atomic-write-no-backup-window.spec.ts`](./49-polish-bugfixes/atomic-write-no-backup-window.spec.ts)
+- [`atomic-write-symlink-resolve-fail-closed.spec.ts`](./49-polish-bugfixes/atomic-write-symlink-resolve-fail-closed.spec.ts)
+- [`atomic-write-symlink-target.spec.ts`](./49-polish-bugfixes/atomic-write-symlink-target.spec.ts)
 - [`autosave-failure-notified-once.spec.ts`](./49-polish-bugfixes/autosave-failure-notified-once.spec.ts)
 - [`autosave-inflight-flush-on-close.spec.tsx`](./49-polish-bugfixes/autosave-inflight-flush-on-close.spec.tsx)
 - [`autosave-narrow-subscription.spec.tsx`](./49-polish-bugfixes/autosave-narrow-subscription.spec.tsx)
@@ -47,6 +49,7 @@
 - [`contextmenu-plugin-when-lazy.spec.tsx`](./49-polish-bugfixes/contextmenu-plugin-when-lazy.spec.tsx)
 - [`contributed-action-error-surfaced.spec.ts`](./49-polish-bugfixes/contributed-action-error-surfaced.spec.ts)
 - [`dest-picker-batch-unique.spec.ts`](./49-polish-bugfixes/dest-picker-batch-unique.spec.ts)
+- [`dir-changed-broadcast-send-throw.spec.ts`](./49-polish-bugfixes/dir-changed-broadcast-send-throw.spec.ts)
 - [`dock-api-ref-cancels-pending-close.spec.ts`](./49-polish-bugfixes/dock-api-ref-cancels-pending-close.spec.ts)
 - [`editor-header-narrow-subscription.spec.tsx`](./49-polish-bugfixes/editor-header-narrow-subscription.spec.tsx)
 - [`editor-panel-active-tab-subscription.spec.tsx`](./49-polish-bugfixes/editor-panel-active-tab-subscription.spec.tsx)
@@ -58,6 +61,8 @@
 - [`external-url-scheme-whitelist.spec.ts`](./49-polish-bugfixes/external-url-scheme-whitelist.spec.ts)
 - [`filerow-decorators-prop.spec.tsx`](./49-polish-bugfixes/filerow-decorators-prop.spec.tsx)
 - [`fuzzy-filter-query-lowercase.spec.ts`](./49-polish-bugfixes/fuzzy-filter-query-lowercase.spec.ts)
+- [`hook-broker-ingest-stop-race.spec.ts`](./49-polish-bugfixes/hook-broker-ingest-stop-race.spec.ts)
+- [`hook-broker-start-stop-timer-race.spec.ts`](./49-polish-bugfixes/hook-broker-start-stop-timer-race.spec.ts)
 - [`hotkey-command-error-surfaced.spec.tsx`](./49-polish-bugfixes/hotkey-command-error-surfaced.spec.tsx)
 - [`hotkey-platform-aware-mod.spec.ts`](./49-polish-bugfixes/hotkey-platform-aware-mod.spec.ts)
 - [`install-atomic-overwrite.spec.ts`](./49-polish-bugfixes/install-atomic-overwrite.spec.ts)
@@ -72,9 +77,11 @@
 - [`marketplace-reviews-lazy-fetch.spec.tsx`](./49-polish-bugfixes/marketplace-reviews-lazy-fetch.spec.tsx)
 - [`marketplace-reviews-sort-on-expand.spec.tsx`](./49-polish-bugfixes/marketplace-reviews-sort-on-expand.spec.tsx)
 - [`marketplace-verified-i18n.spec.tsx`](./49-polish-bugfixes/marketplace-verified-i18n.spec.tsx)
+- [`mcp-host-reverify-on-rotate.spec.ts`](./49-polish-bugfixes/mcp-host-reverify-on-rotate.spec.ts)
 - [`merge-preserves-restore-all-windows.spec.ts`](./49-polish-bugfixes/merge-preserves-restore-all-windows.spec.ts)
 - [`milkdown-external-reload-epoch.spec.ts`](./49-polish-bugfixes/milkdown-external-reload-epoch.spec.ts)
 - [`modal-stacked-esc-top-only.spec.tsx`](./49-polish-bugfixes/modal-stacked-esc-top-only.spec.tsx)
+- [`move-copy-no-overwrite.spec.ts`](./49-polish-bugfixes/move-copy-no-overwrite.spec.ts)
 - [`multi-window-no-cross-clobber.spec.ts`](./49-polish-bugfixes/multi-window-no-cross-clobber.spec.ts)
 - [`notifications-cap.spec.tsx`](./49-polish-bugfixes/notifications-cap.spec.tsx)
 - [`panel-close-resurrect-cancels.spec.ts`](./49-polish-bugfixes/panel-close-resurrect-cancels.spec.ts)
@@ -96,6 +103,7 @@
 - [`plugin-mcp-unregister-aborts-invoke.spec.ts`](./49-polish-bugfixes/plugin-mcp-unregister-aborts-invoke.spec.ts)
 - [`plugin-poll-stable-ref.spec.tsx`](./49-polish-bugfixes/plugin-poll-stable-ref.spec.tsx)
 - [`plugin-warning-cleared-on-transition.spec.ts`](./49-polish-bugfixes/plugin-warning-cleared-on-transition.spec.ts)
+- [`plugins-changed-broadcast-send-throw.spec.ts`](./49-polish-bugfixes/plugins-changed-broadcast-send-throw.spec.ts)
 - [`popout-consumers-use-helper.spec.ts`](./49-polish-bugfixes/popout-consumers-use-helper.spec.ts)
 - [`popout-url-detection.spec.ts`](./49-polish-bugfixes/popout-url-detection.spec.ts)
 - [`popout-window-resource-cleanup.spec.ts`](./49-polish-bugfixes/popout-window-resource-cleanup.spec.ts)
@@ -104,24 +112,28 @@
 - [`quick-open-virtualized.spec.tsx`](./49-polish-bugfixes/quick-open-virtualized.spec.tsx)
 - [`quit-cleanup-guard-reentry.spec.ts`](./49-polish-bugfixes/quit-cleanup-guard-reentry.spec.ts)
 - [`read-git-blob-bounds.spec.ts`](./49-polish-bugfixes/read-git-blob-bounds.spec.ts)
+- [`rename-move-lstat-fail-closed.spec.ts`](./49-polish-bugfixes/rename-move-lstat-fail-closed.spec.ts)
 - [`rename-no-silent-overwrite.spec.ts`](./49-polish-bugfixes/rename-no-silent-overwrite.spec.ts)
 - [`request-scope-swallows-window-closed.spec.ts`](./49-polish-bugfixes/request-scope-swallows-window-closed.spec.ts)
 - [`root-drop-partial-refresh.spec.ts`](./49-polish-bugfixes/root-drop-partial-refresh.spec.ts)
 - [`save-race-dirty-preserve.spec.ts`](./49-polish-bugfixes/save-race-dirty-preserve.spec.ts)
 - [`scope-correlator-cancel-by-sender.spec.ts`](./49-polish-bugfixes/scope-correlator-cancel-by-sender.spec.ts)
 - [`scope-grant-canonicalizes-path.spec.ts`](./49-polish-bugfixes/scope-grant-canonicalizes-path.spec.ts)
+- [`scope-updated-broadcast-send-throw.spec.ts`](./49-polish-bugfixes/scope-updated-broadcast-send-throw.spec.ts)
 - [`scoped-app-shell-stream-early-break.spec.ts`](./49-polish-bugfixes/scoped-app-shell-stream-early-break.spec.ts)
 - [`security-file-url-trust.spec.ts`](./49-polish-bugfixes/security-file-url-trust.spec.ts)
 - [`security-marketplace-token-main.spec.ts`](./49-polish-bugfixes/security-marketplace-token-main.spec.ts)
 - [`security-terminal-mcp-auth-gate.spec.ts`](./49-polish-bugfixes/security-terminal-mcp-auth-gate.spec.ts)
 - [`security-terminal-mcp-capability.spec.ts`](./49-polish-bugfixes/security-terminal-mcp-capability.spec.ts)
 - [`semver-prerelease-precedence.spec.ts`](./49-polish-bugfixes/semver-prerelease-precedence.spec.ts)
+- [`sessions-changed-broadcast-send-throw.spec.ts`](./49-polish-bugfixes/sessions-changed-broadcast-send-throw.spec.ts)
 - [`settings-cross-window-sync.spec.ts`](./49-polish-bugfixes/settings-cross-window-sync.spec.ts)
 - [`settings-search-lazy-subscribe.spec.tsx`](./49-polish-bugfixes/settings-search-lazy-subscribe.spec.tsx)
 - [`settings-search-localized.spec.tsx`](./49-polish-bugfixes/settings-search-localized.spec.tsx)
 - [`shell-exec-cjk-bytes.spec.ts`](./49-polish-bugfixes/shell-exec-cjk-bytes.spec.ts)
 - [`shell-exec-timeout-clamp.spec.ts`](./49-polish-bugfixes/shell-exec-timeout-clamp.spec.ts)
 - [`shell-stream-abort.spec.ts`](./49-polish-bugfixes/shell-stream-abort.spec.ts)
+- [`shell-stream-concurrent-next.spec.ts`](./49-polish-bugfixes/shell-stream-concurrent-next.spec.ts)
 - [`shell-stream-frame-trust.spec.ts`](./49-polish-bugfixes/shell-stream-frame-trust.spec.ts)
 - [`shell-stream-reload-kills-children.spec.ts`](./49-polish-bugfixes/shell-stream-reload-kills-children.spec.ts)
 - [`shell-stream-start-reject.spec.ts`](./49-polish-bugfixes/shell-stream-start-reject.spec.ts)
@@ -142,6 +154,7 @@
 - [`terminal-panel-fallback-i18n.spec.tsx`](./49-polish-bugfixes/terminal-panel-fallback-i18n.spec.tsx)
 - [`terminal-panel-title-subscription.spec.tsx`](./49-polish-bugfixes/terminal-panel-title-subscription.spec.tsx)
 - [`terminal-readhistory-after-unmount.spec.ts`](./49-polish-bugfixes/terminal-readhistory-after-unmount.spec.ts)
+- [`terminal-search-hotkey-after-reinit.spec.ts`](./49-polish-bugfixes/terminal-search-hotkey-after-reinit.spec.ts)
 - [`terminal-sessions-title-counter-cleanup.spec.ts`](./49-polish-bugfixes/terminal-sessions-title-counter-cleanup.spec.ts)
 - [`terminal-sync-late-list-no-clobber.spec.tsx`](./49-polish-bugfixes/terminal-sync-late-list-no-clobber.spec.tsx)
 - [`terminal-sync-workspace-filter.spec.tsx`](./49-polish-bugfixes/terminal-sync-workspace-filter.spec.tsx)
@@ -157,6 +170,10 @@
 ## [AgentAuthPrompt(Agent MCP 授权弹窗)](./agent-auth-prompt/README.md)
 
 - [`agent-auth-prompt.spec.tsx`](./agent-auth-prompt/agent-auth-prompt.spec.tsx)
+
+## [agent-auth-respond-schema (E146)](./agent-auth-respond-schema/README.md)
+
+- [`agent-auth-respond-schema.spec.ts`](./agent-auth-respond-schema/agent-auth-respond-schema.spec.ts)
 
 ## [agent-auth-service](./agent-auth-service/README.md)
 
@@ -188,6 +205,7 @@
 
 ## [agent-terminal-mcp-install-stop-hook](./agent-terminal-mcp-install-stop-hook/README.md)
 
+- [`install-stop-hook-read-error-fail-closed.spec.ts`](./agent-terminal-mcp-install-stop-hook/install-stop-hook-read-error-fail-closed.spec.ts)
 - [`install-stop-hook.spec.ts`](./agent-terminal-mcp-install-stop-hook/install-stop-hook.spec.ts)
 
 ## [agent-terminal-mcp-kill (Agent Terminal MCP Phase 4)](./agent-terminal-mcp-kill/README.md)
@@ -222,6 +240,27 @@
 
 - [`contracts.spec.ts`](./animation-contracts/contracts.spec.ts)
 
+## [assert-json-value-sparse (E183)](./assert-json-value-sparse/README.md)
+
+- [`sparse-array.spec.ts`](./assert-json-value-sparse/sparse-array.spec.ts)
+
+## [attach-target-bounds](./attach-target-bounds/README.md)
+
+- [`attach-target-bounds.spec.ts`](./attach-target-bounds/attach-target-bounds.spec.ts)
+
+## [bounded-input-preflight(E255/E256/E257 schema-阶段放大族)](./bounded-input-preflight/README.md)
+
+- [`plugin-mcp-reply-preflight.spec.ts`](./bounded-input-preflight/plugin-mcp-reply-preflight.spec.ts)
+- [`shared-helper.spec.ts`](./bounded-input-preflight/shared-helper.spec.ts)
+
+## [byte-capped-buffer (E131)](./byte-capped-buffer/README.md)
+
+- [`byte-capped-buffer.spec.ts`](./byte-capped-buffer/byte-capped-buffer.spec.ts)
+
+## [cap-joined-messages(错误串放大族)](./cap-joined-messages/README.md)
+
+- [`cap-joined-messages.spec.ts`](./cap-joined-messages/cap-joined-messages.spec.ts)
+
 ## [CategoryTabContent(Settings 内通用 category 渲染器)](./category-tab-content/README.md)
 
 - [`category-tab-content.spec.tsx`](./category-tab-content/category-tab-content.spec.tsx)
@@ -241,6 +280,14 @@
 ## [column-resize (Sidebar 拖拽改宽)](./column-resize/README.md)
 
 - [`compute.spec.ts`](./column-resize/compute.spec.ts)
+
+## [combobox-virtual-activedescendant](./combobox-virtual-activedescendant/README.md)
+
+- [`virtual-window.spec.tsx`](./combobox-virtual-activedescendant/virtual-window.spec.tsx)
+
+## [command-hotkey-live-lookup](./command-hotkey-live-lookup/README.md)
+
+- [`live-lookup.spec.tsx`](./command-hotkey-live-lookup/live-lookup.spec.tsx)
 
 ## [command-hotkeys(全局快捷键派发)](./command-hotkeys/README.md)
 
@@ -303,6 +350,10 @@
 
 - [`dock-api-ref.spec.ts`](./dock-api-ref/dock-api-ref.spec.ts)
 
+## [dock-layout-json-safe-write — 布局写盘前清洗成 JSON-safe](./dock-layout-json-safe-write/README.md)
+
+- [`make-json-safe.spec.ts`](./dock-layout-json-safe-write/make-json-safe.spec.ts)
+
 ## [dock-layout-per-window-seq](./dock-layout-per-window-seq/README.md)
 
 - [`atomic-write.spec.ts`](./dock-layout-per-window-seq/atomic-write.spec.ts)
@@ -316,6 +367,14 @@
 - [`window-seq-allocate.spec.ts`](./dock-layout-per-window-seq/window-seq-allocate.spec.ts)
 - [`window-seq-service.spec.ts`](./dock-layout-per-window-seq/window-seq-service.spec.ts)
 
+## [dock-layout-restore-feedback](./dock-layout-restore-feedback/README.md)
+
+- [`layout-restore-feedback.spec.tsx`](./dock-layout-restore-feedback/layout-restore-feedback.spec.tsx)
+
+## [dock-reconciler-api-rebuild](./dock-reconciler-api-rebuild/README.md)
+
+- [`api-rebuild.spec.tsx`](./dock-reconciler-api-rebuild/api-rebuild.spec.tsx)
+
 ## [dock-reconciler-windowid-filter](./dock-reconciler-windowid-filter/README.md)
 
 - [`filter-pure-fn.spec.ts`](./dock-reconciler-windowid-filter/filter-pure-fn.spec.ts)
@@ -327,9 +386,17 @@
 - [`single-window-noop.spec.ts`](./dock-reconciler-windowid-filter/single-window-noop.spec.ts)
 - [`warn-rate-limit.spec.ts`](./dock-reconciler-windowid-filter/warn-rate-limit.spec.ts)
 
+## [dock-terminal-layout-strip — 持久化布局剥离终端 panel](./dock-terminal-layout-strip/README.md)
+
+- [`strip-terminal-layout.spec.ts`](./dock-terminal-layout-strip/strip-terminal-layout.spec.ts)
+
 ## [editor-action(EditorHeader 工具按钮贡献)](./editor-action/README.md)
 
 - [`editor-action.spec.ts`](./editor-action/editor-action.spec.ts)
+
+## [editor-external-link-feedback](./editor-external-link-feedback/README.md)
+
+- [`external-link-feedback.spec.tsx`](./editor-external-link-feedback/external-link-feedback.spec.tsx)
 
 ## [EditorHeader(单行 Header,tabs + mode 切换)](./editor-header/README.md)
 
@@ -379,6 +446,7 @@
 ## [explorer-context-menu(资源管理器右键菜单 plugin 贡献点 V1)](./explorer-context-menu/README.md)
 
 - [`explorer-context-menu.spec.ts`](./explorer-context-menu/explorer-context-menu.spec.ts)
+- [`menu-close-focus.spec.ts`](./explorer-context-menu/menu-close-focus.spec.ts)
 
 ## [explorer-decorator(文件树装饰贡献)](./explorer-decorator/README.md)
 
@@ -396,9 +464,16 @@
 
 - [`explorer-header.spec.tsx`](./explorer-header/explorer-header.spec.tsx)
 
+## [explorer-hydrate-vs-user-root](./explorer-hydrate-vs-user-root/README.md)
+
+- [`hydrate-vs-user-root.spec.ts`](./explorer-hydrate-vs-user-root/hydrate-vs-user-root.spec.ts)
+
 ## [explorer-mutate (M-Explorer Step 5)](./explorer-mutate/README.md)
 
+- [`copy-to-clipboard.spec.ts`](./explorer-mutate/copy-to-clipboard.spec.ts)
 - [`mutate-actions.spec.ts`](./explorer-mutate/mutate-actions.spec.ts)
+- [`open-recent-root.spec.ts`](./explorer-mutate/open-recent-root.spec.ts)
+- [`reveal-or-notify.spec.ts`](./explorer-mutate/reveal-or-notify.spec.ts)
 
 ## [explorer-path-utils(Explorer 跨平台路径 helper)](./explorer-path-utils/README.md)
 
@@ -433,6 +508,10 @@
 
 - [`file-icon.spec.ts`](./file-icon/file-icon.spec.ts)
 
+## [folder-tree-rename-feedback](./folder-tree-rename-feedback/README.md)
+
+- [`rename-reject-feedback.spec.tsx`](./folder-tree-rename-feedback/rename-reject-feedback.spec.tsx)
+
 ## [format-hotkey(命令 hotkey 显示格式化)](./format-hotkey/README.md)
 
 - [`format-hotkey.spec.ts`](./format-hotkey/format-hotkey.spec.ts)
@@ -441,6 +520,10 @@
 
 - [`fs-adapter.spec.ts`](./fs-adapter/fs-adapter.spec.ts)
 
+## [fs-dir-changed-payload-guard (E173)](./fs-dir-changed-payload-guard/README.md)
+
+- [`guard.spec.ts`](./fs-dir-changed-payload-guard/guard.spec.ts)
+
 ## [fs-ipc-bridge (M-Explorer Step 2)](./fs-ipc-bridge/README.md)
 
 - [`fs-ipc-bridge.spec.ts`](./fs-ipc-bridge/fs-ipc-bridge.spec.ts)
@@ -448,6 +531,10 @@
 ## [HeaderActions(Dockview group header 自定义按钮)](./header-actions/README.md)
 
 - [`header-actions.spec.tsx`](./header-actions/header-actions.spec.tsx)
+
+## [hook-broker-field-caps (E150)](./hook-broker-field-caps/README.md)
+
+- [`parse-stop-payload-caps.spec.ts`](./hook-broker-field-caps/parse-stop-payload-caps.spec.ts)
 
 ## [topic 16 i18n en zh ko](./i18n-en-zh-ko/README.md)
 
@@ -463,11 +550,18 @@
 - [`settings-service.spec.ts`](./i18n-en-zh-ko/settings-service.spec.ts)
 - [`t-fallback.spec.ts`](./i18n-en-zh-ko/t-fallback.spec.ts)
 
+## [i18n-set-locale-commit-gen](./i18n-set-locale-commit-gen/README.md)
+
+- [`commit-gen.spec.ts`](./i18n-set-locale-commit-gen/commit-gen.spec.ts)
+
 ## [i18n-strings-r2 — i18n 字符串迁移第二批 BDD](./i18n-strings-r2/README.md)
 
 - [`core-plugins-titlekey.spec.ts`](./i18n-strings-r2/core-plugins-titlekey.spec.ts)
 - [`dock-locale-sync.spec.tsx`](./i18n-strings-r2/dock-locale-sync.spec.tsx)
+- [`editor-mode-switch-i18n.spec.tsx`](./i18n-strings-r2/editor-mode-switch-i18n.spec.tsx)
 - [`hardcode-regression.spec.ts`](./i18n-strings-r2/hardcode-regression.spec.ts)
+- [`localize-fs-error.spec.ts`](./i18n-strings-r2/localize-fs-error.spec.ts)
+- [`output-panel-i18n.spec.tsx`](./i18n-strings-r2/output-panel-i18n.spec.tsx)
 - [`registry-titlekey.spec.ts`](./i18n-strings-r2/registry-titlekey.spec.ts)
 - [`t-with-fallback.spec.ts`](./i18n-strings-r2/t-with-fallback.spec.ts)
 
@@ -487,6 +581,12 @@
 
 - [`safe-handle.spec.ts`](./ipc-safe-handle/safe-handle.spec.ts)
 
+## [json-byte-budget (E286)](./json-byte-budget/README.md)
+
+- [`invoke-result-order.spec.ts`](./json-byte-budget/invoke-result-order.spec.ts)
+- [`json-byte-budget.spec.ts`](./json-byte-budget/json-byte-budget.spec.ts)
+- [`jsonschema-order.spec.ts`](./json-byte-budget/jsonschema-order.spec.ts)
+
 ## [KeybindingCaptureModal(快捷键捕获 modal)](./keybinding-capture-modal/README.md)
 
 - [`keybinding-capture-modal.spec.tsx`](./keybinding-capture-modal/keybinding-capture-modal.spec.tsx)
@@ -499,9 +599,29 @@
 
 - [`keybindings-tab-content.spec.tsx`](./keybindings-tab-content/keybindings-tab-content.spec.tsx)
 
+## [latest-wins](./latest-wins/README.md)
+
+- [`latest-wins.spec.ts`](./latest-wins/latest-wins.spec.ts)
+
+## [leaf-name-guard(E274,E268 收口)](./leaf-name-guard/README.md)
+
+- [`leaf-name.spec.ts`](./leaf-name-guard/leaf-name.spec.ts)
+
+## [local-storage-record-guard](./local-storage-record-guard/README.md)
+
+- [`local-storage-record-guard.spec.ts`](./local-storage-record-guard/local-storage-record-guard.spec.ts)
+
 ## [M4 Continuo adopt host](./m4-continuo-adopt-host/README.md)
 
 - [`env-compat.spec.ts`](./m4-continuo-adopt-host/env-compat.spec.ts)
+
+## [map-with-concurrency (E234/E251)](./map-with-concurrency/README.md)
+
+- [`map-with-concurrency.spec.ts`](./map-with-concurrency/map-with-concurrency.spec.ts)
+
+## [markdown-link-keyboard](./markdown-link-keyboard/README.md)
+
+- [`link-keyboard-activate.spec.tsx`](./markdown-link-keyboard/link-keyboard-activate.spec.tsx)
 
 ## [Markdown 链接解析(`resolveLink`)](./markdown-link-resolve/README.md)
 
@@ -513,6 +633,7 @@
 - [`marketplace.spec.ts`](./marketplace/marketplace.spec.ts)
 - [`reviews-parser.spec.ts`](./marketplace/reviews-parser.spec.ts)
 - [`semver.spec.ts`](./marketplace/semver.spec.ts)
+- [`session-cache.spec.ts`](./marketplace/session-cache.spec.ts)
 
 ## [marketplace reviews-fetcher(评论拉取)](./marketplace-reviews-fetcher/README.md)
 
@@ -549,6 +670,18 @@
 - [`no-dangling-import.spec.ts`](./migration-step2-buffer-merge/no-dangling-import.spec.ts)
 - [`replay-completeness.spec.ts`](./migration-step2-buffer-merge/replay-completeness.spec.ts)
 
+## [ndjson-line-decoder (E135)](./ndjson-line-decoder/README.md)
+
+- [`ndjson-line-decoder.spec.ts`](./ndjson-line-decoder/ndjson-line-decoder.spec.ts)
+
+## [notify-root-when-hydrated](./notify-root-when-hydrated/README.md)
+
+- [`notify-root-when-hydrated.spec.ts`](./notify-root-when-hydrated/notify-root-when-hydrated.spec.ts)
+
+## [path-cross](./path-cross/README.md)
+
+- [`path-cross.spec.ts`](./path-cross/path-cross.spec.ts)
+
 ## [perf-audit(性能优化审计 · 与 codex 协作)](./perf-audit/README.md)
 
 - [`code-editor-echo-skip.spec.tsx`](./perf-audit/code-editor-echo-skip.spec.tsx)
@@ -576,6 +709,19 @@
 ## [plugin-data(loadData / saveData)](./plugin-data/README.md)
 
 - [`plugin-data.spec.ts`](./plugin-data/plugin-data.spec.ts)
+- [`serialize-order.spec.ts`](./plugin-data/serialize-order.spec.ts)
+
+## [plugin-fs-read-cap (E28 + E29 + E30 + E31)](./plugin-fs-read-cap/README.md)
+
+- [`read-file-size-cap.spec.ts`](./plugin-fs-read-cap/read-file-size-cap.spec.ts)
+
+## [plugin-fs-scope-bridge](./plugin-fs-scope-bridge/README.md)
+
+- [`scope-decision-feedback.spec.ts`](./plugin-fs-scope-bridge/scope-decision-feedback.spec.ts)
+
+## [plugin-fs-token-revoke-retry](./plugin-fs-token-revoke-retry/README.md)
+
+- [`token-revoke-retry.spec.ts`](./plugin-fs-token-revoke-retry/token-revoke-retry.spec.ts)
 
 ## [plugin-loader(ESM 动态加载 + styles 注入)](./plugin-loader/README.md)
 
@@ -616,6 +762,11 @@
 ## [plugin-mcp-registry (Plugin → MCP Bridge · 模块层)](./plugin-mcp-registry/README.md)
 
 - [`registry.spec.ts`](./plugin-mcp-registry/registry.spec.ts)
+- [`validate-order.spec.ts`](./plugin-mcp-registry/validate-order.spec.ts)
+
+## [plugin-mcp-send-fail-abort](./plugin-mcp-send-fail-abort/README.md)
+
+- [`send-fail-abort.spec.ts`](./plugin-mcp-send-fail-abort/send-fail-abort.spec.ts)
 
 ## [plugin-mcp-stub-tool (Plugin → MCP Bridge · main 侧 stub)](./plugin-mcp-stub-tool/README.md)
 
@@ -629,9 +780,25 @@
 
 - [`plugin-permissions.spec.ts`](./plugin-permissions/plugin-permissions.spec.ts)
 
+## [plugin-reload-gate](./plugin-reload-gate/README.md)
+
+- [`plugin-reload-gate.spec.ts`](./plugin-reload-gate/plugin-reload-gate.spec.ts)
+
+## [plugin-shell-stream-backpressure (E61)](./plugin-shell-stream-backpressure/README.md)
+
+- [`backpressure.spec.ts`](./plugin-shell-stream-backpressure/backpressure.spec.ts)
+
 ## [plugins-host(renderer 端 ManagerHost)](./plugins-host/README.md)
 
 - [`plugins-host.spec.ts`](./plugins-host/plugins-host.spec.ts)
+
+## [plugins-ipc-input-limits](./plugins-ipc-input-limits/README.md)
+
+- [`plugins-ipc-input-limits.spec.ts`](./plugins-ipc-input-limits/plugins-ipc-input-limits.spec.ts)
+
+## [plugins-push-payload-guard (E242)](./plugins-push-payload-guard/README.md)
+
+- [`guard.spec.ts`](./plugins-push-payload-guard/guard.spec.ts)
 
 ## [plugins-service(主进程插件目录扫描)](./plugins-service/README.md)
 
@@ -648,6 +815,7 @@
 ## [popout 契约 (M5)](./popout-contracts/README.md) `[contract]`
 
 - [`popout-mode.spec.ts`](./popout-contracts/popout-mode.spec.ts)
+- [`popout-open-schema.spec.ts`](./popout-contracts/popout-open-schema.spec.ts)
 
 ## [preload-no-zod(preload sandbox zod 泄漏守卫)](./preload-no-zod/README.md)
 
@@ -657,6 +825,10 @@
 
 - [`protocol-url.spec.ts`](./protocol-url/protocol-url.spec.ts)
 
+## [protocol-url-listener-before-load](./protocol-url-listener-before-load/README.md)
+
+- [`wire-protocol-url.spec.ts`](./protocol-url-listener-before-load/wire-protocol-url.spec.ts)
+
 ## [quick-open(⌘P 文件模糊搜索)](./quick-open/README.md)
 
 - [`store.spec.ts`](./quick-open/store.spec.ts)
@@ -665,6 +837,10 @@
 ## [QuickOpenModal(VSCode ⌘P 文件搜索)](./quick-open-modal/README.md)
 
 - [`quick-open-modal.spec.tsx`](./quick-open-modal/quick-open-modal.spec.tsx)
+
+## [registry-capacity (E236)](./registry-capacity/README.md)
+
+- [`registry-capacity.spec.ts`](./registry-capacity/registry-capacity.spec.ts)
 
 ## [ribbon-registry(IconSidebar 活动栏图标贡献)](./ribbon-registry/README.md)
 
@@ -702,6 +878,18 @@
 - [`notifications-scoped-wrapper.spec.ts`](./sdk-notifications-namespace/notifications-scoped-wrapper.spec.ts)
 - [`notifications-show-raw.spec.ts`](./sdk-notifications-namespace/notifications-show-raw.spec.ts)
 
+## [search-query-limit(E279)](./search-query-limit/README.md)
+
+- [`search-query-limit.spec.ts`](./search-query-limit/search-query-limit.spec.ts)
+
+## [select-directory-single-flight](./select-directory-single-flight/README.md)
+
+- [`select-directory-single-flight.spec.ts`](./select-directory-single-flight/select-directory-single-flight.spec.ts)
+
+## [serialize-per-key 链排空后回收(race R100)](./serialize-per-key-cleanup/README.md)
+
+- [`runserialperkey-cleanup.spec.ts`](./serialize-per-key-cleanup/runserialperkey-cleanup.spec.ts)
+
 ## [setting-item-registry](./setting-item-registry/README.md)
 
 - [`setting-item-registry.spec.ts`](./setting-item-registry/setting-item-registry.spec.ts)
@@ -730,6 +918,10 @@
 
 - [`shared-tab.spec.tsx`](./shared-tab/shared-tab.spec.tsx)
 
+## [shell-exec-input-limits](./shell-exec-input-limits/README.md)
+
+- [`exec-input-limits.spec.ts`](./shell-exec-input-limits/exec-input-limits.spec.ts)
+
 ## [shell-path-label(shell chrome 路径展示名)](./shell-path-label/README.md)
 
 - [`path-label.spec.ts`](./shell-path-label/path-label.spec.ts)
@@ -737,6 +929,22 @@
 ## [shell-service(plugin app.shell.exec 后端)](./shell-service/README.md)
 
 - [`shell-service.spec.ts`](./shell-service/shell-service.spec.ts)
+
+## [shell-stream-event-parse (E175)](./shell-stream-event-parse/README.md)
+
+- [`parse.spec.ts`](./shell-stream-event-parse/parse.spec.ts)
+
+## [spawn-leaf-cancel-remove-safe](./spawn-leaf-cancel-remove-safe/README.md)
+
+- [`cancel-remove-safe.spec.ts`](./spawn-leaf-cancel-remove-safe/cancel-remove-safe.spec.ts)
+
+## [spawn-leaf-create-reject](./spawn-leaf-create-reject/README.md)
+
+- [`spawn-leaf-create-reject.spec.ts`](./spawn-leaf-create-reject/spawn-leaf-create-reject.spec.ts)
+
+## [spec-object-guard(E273,E271 registry 族)](./spec-object-guard/README.md)
+
+- [`spec-object-guard.spec.ts`](./spec-object-guard/spec-object-guard.spec.ts)
 
 ## [Spotlight(装饰用聚光灯 SVG)](./spotlight/README.md)
 
@@ -750,6 +958,10 @@
 
 - [`status-bar.spec.tsx`](./status-bar/status-bar.spec.tsx)
 
+## [statusbar-copy-feedback-timer](./statusbar-copy-feedback-timer/README.md)
+
+- [`copy-feedback-timer.spec.tsx`](./statusbar-copy-feedback-timer/copy-feedback-timer.spec.tsx)
+
 ## [tab-icons(SettingTab icon 工厂集合)](./tab-icons/README.md)
 
 - [`tab-icons.spec.tsx`](./tab-icons/tab-icons.spec.tsx)
@@ -758,10 +970,18 @@
 
 - [`buffer-capacity.spec.ts`](./terminal-buffer-capacity/buffer-capacity.spec.ts)
 
+## [terminal-create-cancel-orphan](./terminal-create-cancel-orphan/README.md)
+
+- [`create-cancel-orphan.spec.ts`](./terminal-create-cancel-orphan/create-cancel-orphan.spec.ts)
+
 ## [terminal-drag-drop](./terminal-drag-drop/README.md)
 
 - [`drag-drop.spec.tsx`](./terminal-drag-drop/drag-drop.spec.tsx)
 - [`shell-quote.spec.ts`](./terminal-drag-drop/shell-quote.spec.ts)
+
+## [terminal-input-write-feedback](./terminal-input-write-feedback/README.md)
+
+- [`input-write-reject.spec.ts`](./terminal-input-write-feedback/input-write-reject.spec.ts)
 
 ## [terminal-ipc (M-Terminal Step T2)](./terminal-ipc/README.md) `[integration]`
 
@@ -788,6 +1008,10 @@
 ## [terminal-panel-keyboard-new](./terminal-panel-keyboard-new/README.md)
 
 - [`command-keybinding.spec.ts`](./terminal-panel-keyboard-new/command-keybinding.spec.ts)
+
+## [terminal-readhistory-failure-feedback](./terminal-readhistory-failure-feedback/README.md)
+
+- [`readhistory-failure-clears-loading.spec.ts`](./terminal-readhistory-failure-feedback/readhistory-failure-clears-loading.spec.ts)
 
 ## [terminal-search](./terminal-search/README.md)
 
@@ -892,6 +1116,14 @@
 - [`service.spec.ts`](./window-workspace-roots-map/service.spec.ts)
 - [`workspace-store-empty-string.spec.ts`](./window-workspace-roots-map/workspace-store-empty-string.spec.ts)
 
+## [workspace-root-selection-guard](./workspace-root-selection-guard/README.md)
+
+- [`shared-guard.spec.ts`](./workspace-root-selection-guard/shared-guard.spec.ts)
+
 ## [wrap-panel-close(dock 关闭动画拦截)](./wrap-panel-close/README.md)
 
 - [`wrap-panel-close.spec.ts`](./wrap-panel-close/wrap-panel-close.spec.ts)
+
+## [wrap-panel-close-remove-feedback](./wrap-panel-close-remove-feedback/README.md)
+
+- [`remove-feedback.spec.ts`](./wrap-panel-close-remove-feedback/remove-feedback.spec.ts)

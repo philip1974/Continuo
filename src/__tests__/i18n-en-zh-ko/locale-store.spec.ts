@@ -92,6 +92,44 @@ describe('settings.store + coApi.i18n roundtrip', () => {
     expect(useSettingsStore.getState().currentGen).toBe(2);
   });
 
+  // 边界(E170,E168/E169 同族 IPC ingress 纵深防御):畸形 i18n:changed 广播 payload → drop + warn,
+  // 不更新 store/module locale(防 catalog 不存在的 locale 致 translate() DICTS[locale] undefined 崩溃,
+  // 及 NaN gen 污染乱序保护)。
+  it('E170 畸形 broadcast(非法 locale / NaN gen / null / 非对象 / 负 gen)→ drop,state 不变', () => {
+    return importStore().then(({ subscribeToI18nBroadcast, useSettingsStore }) => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      useSettingsStore.setState({ locale: 'en', currentGen: 5 });
+      subscribeToI18nBroadcast();
+      const fire = mockCoApi.capturedOnChange as ((p: unknown) => void) | undefined;
+      const bad: unknown[] = [
+        null,
+        'string',
+        { locale: 'fr', gen: 9 }, // catalog 不存在的 locale
+        { locale: 'en', gen: Number.NaN }, // NaN gen
+        { locale: 'en', gen: Infinity }, // Infinity gen
+        { locale: 'en', gen: 6.5 }, // 非整数 gen
+        { locale: 'en', gen: -1 }, // 负 gen
+        { locale: 123, gen: 9 }, // locale 非字符串
+        { gen: 9 }, // 缺 locale
+      ];
+      for (const p of bad) fire?.(p);
+      // state 保持初始(未被任何畸形广播污染)
+      expect(useSettingsStore.getState().locale).toBe('en');
+      expect(useSettingsStore.getState().currentGen).toBe(5);
+      expect(warn).toHaveBeenCalled();
+      warn.mockRestore();
+    });
+  });
+
+  it('E170 合规 broadcast(locale ∈ catalog,gen 安全整数)→ 正常更新(回归)', () => {
+    return importStore().then(({ subscribeToI18nBroadcast, useSettingsStore }) => {
+      subscribeToI18nBroadcast();
+      mockCoApi.capturedOnChange?.({ locale: 'zh', gen: 3 });
+      expect(useSettingsStore.getState().locale).toBe('zh');
+      expect(useSettingsStore.getState().currentGen).toBe(3);
+    });
+  });
+
   it('setLocale 失败时 throw 且保留原 state', async () => {
     mockCoApi.i18n.setLocale.mockResolvedValue({
       ok: false,

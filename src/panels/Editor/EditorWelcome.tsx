@@ -3,6 +3,10 @@
 
 import { KeyCap } from '@/design';
 import { useT } from '@/i18n';
+import {
+  formatHotkeyParts,
+  detectPlatform,
+} from '@/plugins/command-palette/format-hotkey';
 
 export function EditorWelcome() {
   const t = useT();
@@ -32,8 +36,9 @@ export function EditorWelcome() {
       <div className="text-base font-medium text-fg">{t('editor.welcome.title')}</div>
       <div className="flex items-center gap-1.5 text-xs text-fg-muted">
         <span>{t('editor.welcome.hint_prefix')}</span>
-        <KeyCap>⌘</KeyCap>
-        <KeyCap>S</KeyCap>
+        {formatHotkeyParts('mod+s', detectPlatform()).map((p, i) => (
+          <KeyCap key={i}>{p}</KeyCap>
+        ))}
         <span>{t('editor.welcome.save')}</span>
       </div>
     </div>

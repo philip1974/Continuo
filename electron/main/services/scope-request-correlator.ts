@@ -22,6 +22,11 @@ export interface CreateRequestResult {
 const DEFAULT_TTL_MS = 300_000;
 const GC_INTERVAL_MS = 60_000;
 const PING_REFRESH_MS = 300_000;
+// 边界(E227):未决 scope 请求数量上限。单次 request-scope 的 scopes 已限,但插件可连续 spam 大量未决
+// 请求 —— 每个在 pending Map 驻留至 resolve / 5min TTL,且 renderer 弹窗队列随之线性增长 → 内存/弹窗放大。
+// 全局 + per-webContents 双闸,超限由调用方按终态 deny 收口(不入 pending、不弹窗)。
+const MAX_PENDING_SCOPE_REQUESTS = 256; // 全局未决上限(远超任何正常并发授权)
+const MAX_PENDING_PER_WEBCONTENTS = 64; // 单窗口未决上限
 
 export class ScopeRequestCorrelator {
   private readonly pending = new Map<string, PendingEntry>();
@@ -36,6 +41,23 @@ export class ScopeRequestCorrelator {
     if (opts?.ttlMs !== undefined) {
       this._ttlMs = opts.ttlMs;
     }
+  }
+
+  /**
+   * 边界(E227):是否可再接受一个未决 scope 请求(全局 + per-webContents 双闸)。调用方在 createRequest +
+   * 弹窗前检查,false → 按终态 deny 收口(不入 pending、不向 renderer 发弹窗),防插件 spam 让 pending /
+   * renderer 弹窗队列线性增长。pending Map 已封顶后此遍历 O(≤MAX_PENDING_SCOPE_REQUESTS)。
+   */
+  canAccept(webContentsId: number): boolean {
+    if (this.pending.size >= MAX_PENDING_SCOPE_REQUESTS) return false;
+    let n = 0;
+    for (const e of this.pending.values()) {
+      if (!e.resolved && e.webContentsId === webContentsId) {
+        n += 1;
+        if (n >= MAX_PENDING_PER_WEBCONTENTS) return false;
+      }
+    }
+    return true;
   }
 
   createRequest(

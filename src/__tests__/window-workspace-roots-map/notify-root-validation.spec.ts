@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { WINDOW_CHANNELS } from '../../../electron/shared/window-channels';
 import { IPC_ERR } from '../../../electron/shared/ipc-result';
+import { MAX_BOUNDED_OBJECT_KEYS } from '../../../electron/shared/bounded-input';
 import { registerWindowIpc } from '../../../electron/main/ipc/window.ipc';
 import {
   _reset,
@@ -160,6 +161,61 @@ describe('window-workspace-roots-map: NotifyRoot validation', () => {
     const result = notify({ root: '' });
 
     expect(result).toMatchObject({ ok: false, code: 'BAD_ROOT' });
+    warn.mockRestore();
+  });
+
+  // 边界(E34,E11/E33 同族):root 无长度上限时超长 absolute 串会驻留 windowId→root map,
+  // 并作为 MCP/terminal create cwd 回退带进 resolve/stat/错误消息。root .max(2048),超限 BAD_ROOT。
+  it('E34: rejects over-length absolute root as BAD_ROOT, does not store', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const longRoot = '/' + 'x'.repeat(2048); // 2049 chars > ROOT_MAX
+    const result = notify({ root: longRoot });
+
+    expect(result).toMatchObject({ ok: false, code: 'BAD_ROOT' });
+    expect(setWorkspaceRoot).not.toHaveBeenCalled(); // 超限不落 map
+    warn.mockRestore();
+  });
+
+  it('E34: accepts an absolute root at the length limit', () => {
+    const atLimit = '/' + 'x'.repeat(2047); // 2048 chars == ROOT_MAX
+    const result = notify({ root: atLimit });
+
+    expect(result).toEqual({ ok: true });
+    expect(setWorkspaceRoot).toHaveBeenCalledWith(42, atLimit);
+  });
+
+  // 边界(E258,E255/E256/E257 同族 / schema-阶段放大):此 handler 是手写 ipcMain.handle 绕过 safeHandle
+  // 预检,NotifyRootInput 是 .strict() object。畸形 payload 塞海量未知短 key → safeParse 前 bounded 预检
+  // 应拦下不进 Zod。outcome(BAD_INPUT)与去预检后 Zod 失败相同,故靠 '(oversized)' warn 标记区分路径。
+  it('E258: 海量未知 key payload → BAD_INPUT(走预检,不进 Zod),不写 map', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const evil: Record<string, unknown> = { root: '/abs' };
+    for (let i = 0; i <= MAX_BOUNDED_OBJECT_KEYS; i += 1) evil[`u${i}`] = 1;
+    const result = notify(evil);
+
+    expect(result).toMatchObject({ ok: false, code: 'BAD_INPUT' });
+    expect(setWorkspaceRoot).not.toHaveBeenCalled();
+    // neutralize 敏感:预检路径 warn 含 '(oversized)';去掉预检会走 Zod 路径(不含此标记)。
+    const warnMsg = String(warn.mock.calls[0]?.[0] ?? '');
+    expect(warnMsg).toContain('oversized');
+    warn.mockRestore();
+  });
+
+  // 边界(E258 第二缺口):parse 失败日志不得打印完整 parsed.error.issues(.strict() 大量未知 key 时
+  // issues 数组本身是放大面)。warn 须用 capped string,不传 issues 数组对象。
+  it('E258: BAD_INPUT 日志用 capped string,不传完整 issues 数组', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    notify({ root: 42 }); // 非 string root → .strict() 通过 key 集但 root 类型失败 → safeParse fail
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    const args = warn.mock.calls[0] ?? [];
+    // 任一参数都不应是数组(原实现传 parsed.error.issues 数组 → 放大面)
+    for (const a of args) {
+      expect(Array.isArray(a)).toBe(false);
+    }
     warn.mockRestore();
   });
 

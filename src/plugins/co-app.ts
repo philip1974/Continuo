@@ -25,6 +25,7 @@ import {
 } from '@/panels/Editor/editor-path-utils';
 import { scrollToLine } from '@/panels/Editor/scrollToLine';
 import { getEffectiveMode, useEditorStore } from '@/stores/editor.store';
+import { pathEquals } from '@/lib/path-cross';
 import { errorMessage } from '../../electron/shared/error-message';
 import { openOrFocusPanel } from '@/shell/dock/dock-api-ref';
 import { notify } from '@/notifications/notify';
@@ -38,11 +39,11 @@ import type {
   EditorOpenFailureCode,
 } from './types';
 
-// Keep in sync with package.json "version" field. Bumped to 0.2.6 (2026-06-21)
-// for the security + maintainability audit release (codex-collab: S1-S6 安全
-// 跨信任边界修复 + M1-M24 可维护性重构 + 2 preload/plugin-fs hotfix). Plugins
-// declaring minLMVersion >= 0.2.4 need this.
-const APP_VERSION = '0.2.6';
+// Keep in sync with package.json "version" field. Bumped to 0.2.7 (2026-06-27)
+// for the cross-platform hardening audit release (codex-collab topics 54-59:
+// 数据安全 + 跨平台正确性 + i18n + a11y + race-condition + 边界/畸形输入硬化).
+// Plugins declaring minLMVersion >= 0.2.4 need this.
+const APP_VERSION = '0.2.7';
 
 // Workspace API — minimal v0.1 surface exposing the current renderer
 // window's workspace root (null when no folder open). Plugins use this for
@@ -110,15 +111,20 @@ const editor: CoEditorApi = {
       return { ok: true, lineApplied: false, reason: 'no-line-arg' };
     }
 
+    // 跨平台(codex 复查 P2,X10 的 SDK 兄弟):用平台感知 pathEquals 找已开 tab —— Windows
+    // 上插件传的 path 与既有 tab id 仅大小写不同时,openFileByPath(X10)已切到既有 tab,但
+    // 这里若用 `t.id === path` 找不到 activeTab、waitForViewRef 用错 key → 行号跳转失败。
+    // viewRef 必须用**已开 tab 的真实 id**(大小写可能不同)查。
     const state = useEditorStore.getState();
-    const activeTab = state.tabs.find((t) => t.id === path);
+    const activeTab = state.tabs.find((t) => pathEquals(t.filePath ?? t.id, path));
+    const viewKey = activeTab?.id ?? path;
     const inMilkdown =
       isMarkdownPath(path) && getEffectiveMode(activeTab ?? null) !== 'source';
     if (activeTab && inMilkdown) {
       return { ok: true, lineApplied: false, reason: 'milkdown-engine' };
     }
 
-    const view = await useEditorStore.getState().waitForViewRef(path, 500);
+    const view = await useEditorStore.getState().waitForViewRef(viewKey, 500);
     if (!view) {
       return { ok: true, lineApplied: false, reason: 'tab-not-mounted' };
     }
@@ -143,13 +149,40 @@ const dock: CoDockApi = {
   },
 };
 
+// 边界(E52,插件 API 输入校验):app.notifications.show() 的 message/code 是插件直传,直接进
+// notify() → console mirror → Toast DOM 渲染。单条通知不走 MAX_NOTIFICATIONS 队列上限,畸形/恶意
+// 插件可传超大字符串造成 renderer 内存膨胀 + console/DOM 卡顿。入口校验:message 必须非空 string 且
+// 截断到上限,code 非字符串/超长则丢弃(降级为无 code 通知,不渲染垃圾)。
+const NOTIFY_MESSAGE_MAX = 4096;
+const NOTIFY_CODE_MAX = 256;
+
 const notifications: CoNotificationsApi = {
-  show({ kind, message, code }) {
+  // 边界(E271,E52 续 / 插件 API 对象形态守卫):opts 为插件直传 —— JS 插件可传 null/undefined/非对象。
+  // 此前在参数处直接解构 `{ kind, message, code }`,对 null/非对象会抛 TypeError 冒泡到插件激活/命令执行
+  // (本应按边界策略静默丢弃非法通知)。改按 unknown 接收(满足接口:参数逆变),先判对象形态再读字段。
+  show(rawOpts: unknown) {
+    if (rawOpts === null || typeof rawOpts !== 'object' || Array.isArray(rawOpts)) {
+      return;
+    }
+    const { kind, message, code } = rawOpts as {
+      kind?: unknown;
+      message?: unknown;
+      code?: unknown;
+    };
     const level = isNotificationLevel(kind) ? kind : 'info';
+    if (typeof message !== 'string' || message.length === 0) return; // 非法 message 不渲染
+    const safeMessage =
+      message.length > NOTIFY_MESSAGE_MAX
+        ? message.slice(0, NOTIFY_MESSAGE_MAX)
+        : message;
+    const safeCode =
+      typeof code === 'string' && code.length > 0 && code.length <= NOTIFY_CODE_MAX
+        ? code
+        : undefined;
     notify(
-      message,
+      safeMessage,
       level,
-      code === undefined ? undefined : { code },
+      safeCode === undefined ? undefined : { code: safeCode },
     );
   },
 };

@@ -174,6 +174,42 @@ describe('plugin-shell-stream.service', () => {
     expect(exit.signal === 'SIGTERM' || (exit.exitCode ?? 0) !== 0).toBe(true);
   });
 
+  // 边界(E10):raw IPC 的 opts.timeoutMs 无 schema。NaN/负数会让旧 `Math.min(x, MAX)` 得 NaN/负值,
+  // setTimeout(.., timeoutMs) 退化为立即触发 → 合法长命令一启动就被 SIGTERM。非法值须回默认值。
+  it('E10 timeoutMs=NaN → 不立即 SIGTERM(回默认值,长命令继续运行)', async () => {
+    const { ipc, sender } = makeHarness();
+    const id = 'e10-nan';
+    childrenToAbort.push({ ipc, sender, id });
+
+    await ipc.invoke(sender, PLUGIN_SHELL_STREAM_CHANNELS.START, id, process.execPath, [
+      '-e',
+      'setInterval(() => {}, 1000)',
+    ], { timeoutMs: NaN });
+
+    await new Promise((r) => setTimeout(r, 200));
+    const exited = streamEvents(sender).some(
+      (e) => e.streamId === id && e.kind === 'exit',
+    );
+    expect(exited).toBe(false); // NaN 未退化为立即触发
+  });
+
+  it('E10 timeoutMs=负数 → 同样回默认值不立即杀', async () => {
+    const { ipc, sender } = makeHarness();
+    const id = 'e10-neg';
+    childrenToAbort.push({ ipc, sender, id });
+
+    await ipc.invoke(sender, PLUGIN_SHELL_STREAM_CHANNELS.START, id, process.execPath, [
+      '-e',
+      'setInterval(() => {}, 1000)',
+    ], { timeoutMs: -5 });
+
+    await new Promise((r) => setTimeout(r, 200));
+    const exited = streamEvents(sender).some(
+      (e) => e.streamId === id && e.kind === 'exit',
+    );
+    expect(exited).toBe(false);
+  });
+
   it('T3.e duplicate streamId throws', async () => {
     const { ipc, sender } = makeHarness();
     const id = 'duplicate';
@@ -190,6 +226,49 @@ describe('plugin-shell-stream.service', () => {
         'process.exit(0)',
       ]),
     ).rejects.toThrow('streamId already active');
+  });
+
+  // race(R72,R71 同构):send 在 isDestroyed() 检查后、实际 send 前 webContents 销毁会抛。
+  // child.on('error') 里先 send('stderr') 再 finalize(-1):若 send 抛,finalize 不执行 →
+  // active 条目 + timeoutTimer 泄漏(spawn error 子进程不发 'close',finalize 永不触发)。
+  // send 须内部 try/catch,保证 error 路径的 finalize 始终清 active。
+  it('R72 send 抛错时 child error 路径仍 finalize 清 active(不泄漏)', async () => {
+    const { ipc, sender } = makeHarness();
+    const id = 'send-throw-error-path';
+    // 模拟 isDestroyed() 检查通过但 send 抛(检查后销毁的竞态):isDestroyed 仍 false。
+    sender.send = () => {
+      throw new Error('Object has been destroyed');
+    };
+
+    // 无效可执行 → child emit 'error' → send('stderr') 抛 → 若 finalize 不执行则 active 泄漏。
+    await ipc.invoke(
+      sender,
+      PLUGIN_SHELL_STREAM_CHANNELS.START,
+      id,
+      '/nonexistent/definitely-not-a-binary-xyz-123',
+      [],
+    );
+
+    // 轮询:等 child 'error' 异步触发 + finalize 跑完。active 已清则同 id 可重新 START
+    // (否则抛 "already active" → 说明 send 抛阻断了 finalize → 泄漏)。
+    let restarted = false;
+    const deadline = Date.now() + 3000;
+    while (Date.now() < deadline) {
+      try {
+        await ipc.invoke(
+          sender,
+          PLUGIN_SHELL_STREAM_CHANNELS.START,
+          id,
+          process.execPath,
+          ['-e', 'process.exit(0)'],
+        );
+        restarted = true;
+        break;
+      } catch {
+        await new Promise((r) => setTimeout(r, 30));
+      }
+    }
+    expect(restarted).toBe(true);
   });
 
   it('T3.f kills stream child + clears active when webContents destroyed', async () => {

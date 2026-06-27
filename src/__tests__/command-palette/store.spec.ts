@@ -60,4 +60,26 @@ describe('CommandPalette store', () => {
     useCommandPaletteStore.getState().moveSelection(1, 0);
     expect(useCommandPaletteStore.getState().selectedIndex).toBe(0);
   });
+
+  // race(R49,R48 孪生):命令集合动态变短(插件 reload/disable / registry 重算)时 selectedIndex
+  // 须钳回 [0,len-1],防 Enter 读 filtered[idx]=undefined 命令无法执行 + 高亮悬空。
+  describe('clampSelection(R49)', () => {
+    it('越界 → 钳到末项', () => {
+      useCommandPaletteStore.setState({ selectedIndex: 30 });
+      useCommandPaletteStore.getState().clampSelection(5);
+      expect(useCommandPaletteStore.getState().selectedIndex).toBe(4);
+    });
+
+    it('空列表 → 钳到 0', () => {
+      useCommandPaletteStore.setState({ selectedIndex: 4 });
+      useCommandPaletteStore.getState().clampSelection(0);
+      expect(useCommandPaletteStore.getState().selectedIndex).toBe(0);
+    });
+
+    it('在范围内 → 不变', () => {
+      useCommandPaletteStore.setState({ selectedIndex: 2 });
+      useCommandPaletteStore.getState().clampSelection(5);
+      expect(useCommandPaletteStore.getState().selectedIndex).toBe(2);
+    });
+  });
 });

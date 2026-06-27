@@ -6,6 +6,11 @@
 //
 // 修复前 bug:两条路径无条件叠加 → dock 拖文件夹冷启出现 3 个 window。
 
+import {
+  MAX_STARTUP_DIRS,
+  isWithinStartupPathLimit,
+} from './cli-args.service';
+
 export type StartupMode =
   | { readonly mode: 'dock'; readonly dirs: readonly string[] }
   | { readonly mode: 'restore' };
@@ -17,6 +22,10 @@ export function pickStartupMode(
   const seen = new Set<string>();
   const dirs: string[] = [];
   for (const p of pendingOpenPaths) {
+    // 边界(E58,与 pickArgvFolders 同款):目录数封顶 + 超长路径先跳过(不 stat),挡 macOS open-file
+    // 缓冲被塞大量/超长路径时冷启动同步 I/O + 批量开窗。
+    if (dirs.length >= MAX_STARTUP_DIRS) break;
+    if (!isWithinStartupPathLimit(p)) continue;
     if (seen.has(p)) continue;
     seen.add(p);
     let ok = false;

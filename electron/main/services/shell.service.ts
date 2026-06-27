@@ -22,14 +22,24 @@ const DEFAULT_MAX_OUTPUT_BYTES = 10 * 1024 * 1024; // 10MB
 const MAX_OUTPUT_BYTES_CAP = 100 * 1024 * 1024; // 100MB 硬上限,防超大值钉住内存
 const SIGKILL_GRACE_MS = 500;
 
-/** timeoutMs 落到 [_, MAX_TIMEOUT_MS];缺省走 DEFAULT。纯函数,便于测试 clamp。 */
+// 边界(E248,E10/E122 clamp 非有限值族):helper 自身完整归一化,不依赖 IPC zod 前门。execShell 与这两个
+// helper 都是导出 service 入口(单测/SDK 集成/未来内部调用直接用,绕过 schema)。旧实现仅 Math.min(input,
+// MAX) —— input=NaN → Math.min(NaN,MAX)=NaN(setTimeout 立即触发 / 截断逻辑不可预期),input≤0/负 →
+// 原样返回(负 timeout 立即超时)。非有限/≤0 回默认值,有限正数再 Math.trunc(整数 ms/字节)+ 上限裁剪。
+/** timeoutMs 归一到 (0, MAX_TIMEOUT_MS];非有限/≤0/缺省走 DEFAULT。纯函数,便于测试 clamp。 */
 export function clampExecTimeoutMs(input?: number): number {
-  return Math.min(input ?? DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS);
+  if (input === undefined || !Number.isFinite(input) || input <= 0) {
+    return DEFAULT_TIMEOUT_MS;
+  }
+  return Math.min(Math.trunc(input), MAX_TIMEOUT_MS);
 }
 
-/** maxOutputBytes 落到 [_, MAX_OUTPUT_BYTES_CAP];缺省走 DEFAULT。纯函数。 */
+/** maxOutputBytes 归一到 (0, MAX_OUTPUT_BYTES_CAP];非有限/≤0/缺省走 DEFAULT。纯函数。 */
 export function clampExecMaxBytes(input?: number): number {
-  return Math.min(input ?? DEFAULT_MAX_OUTPUT_BYTES, MAX_OUTPUT_BYTES_CAP);
+  if (input === undefined || !Number.isFinite(input) || input <= 0) {
+    return DEFAULT_MAX_OUTPUT_BYTES;
+  }
+  return Math.min(Math.trunc(input), MAX_OUTPUT_BYTES_CAP);
 }
 
 export const EXEC_LIMITS_FOR_TEST = {
@@ -50,6 +60,11 @@ export function execShell(input: IpcShellExecInput): Promise<IpcShellExecResult>
 
     let child;
     try {
+      // 注:不用 `shell: true`。spawn 的契约是参数数组原子传递;Windows 上 shell:true
+      // 会把 args[] 重新拼进 cmd.exe 命令行,含空格/`&`/`|`/`%` 的参数被拆分或当 shell
+      // 语法执行 → 破坏参数原子性 + 命令注入面(codex diff 复查)。Windows 下 `.cmd`/
+      // `.bat`(npm/pnpm 等)无法直接 spawn 的正确解法是 PATHEXT 检测 + 仅对 .cmd/.bat
+      // 走 `cmd.exe /d /s /c` 并对每个 arg 做 Windows quoting,需 Windows 实测 → DEFER。
       child = spawn(input.cmd, [...input.args], {
         cwd: input.cwd,
         env,

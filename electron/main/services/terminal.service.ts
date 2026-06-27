@@ -13,6 +13,8 @@ import * as terminalSessions from './terminal-sessions.service';
 import { mcpRevokers } from './mcp-host.service';
 import { getCurrentLocale } from './settings.service';
 import { withPtyLangEnv } from './pty-lang';
+import { defaultShellArgs } from './shell-args';
+import { utf8ByteLength } from '../../shared/utf8-byte-length';
 
 // ── 常量(节流参数,沿用 Mind 决策 #5)──────────────────────────
 const OVERFLOW_THRESHOLD_BYTES = 2 * 1024 * 1024; // 2 MB/s 触发 overflow
@@ -35,7 +37,9 @@ function handleChunk(id: string, chunk: string): void {
     inst.flushTimer = null;
   };
 
-  inst.bytesPerSecond += chunk.length;
+  // 边界(E149,E125 同族):按真实 UTF-8 字节计 overflow 节流(非 chunk.length=UTF-16 code unit),
+  // 否则大量 CJK/emoji 输出真实字节数倍超 2MiB/s 仍不触发 overflow,IPC/renderer 输出膨胀。
+  inst.bytesPerSecond += utf8ByteLength(chunk);
 
   const isOverflow = inst.bytesPerSecond > OVERFLOW_THRESHOLD_BYTES;
   if (isOverflow) {
@@ -106,7 +110,19 @@ function setTarget(id: string, target: WebContents): void {
 function safeSend(id: string, channel: string, ...args: unknown[]): void {
   const target = sessionTargets.get(id);
   if (!target || target.isDestroyed()) return;
-  target.send(channel, ...args);
+  // race(R71):isDestroyed() 检查后、send 前 webContents 可能销毁,send 抛 "Object has been
+  // destroyed"。safeSend 由 PTY onData/flush timer/exit 回调调用 —— 尤其 handleChunk 的 flush
+  // 闭包:若 send 抛,后面的 `pendingData=''` + `flushTimer=null` 都不执行 → 下个 chunk 因
+  // flushTimer 仍非空(但已 fire)不再调度 setTimeout → 终端面板永久卡在旧输出;且在 setTimeout/
+  // 事件回调里成主进程未捕获异常(崩溃/噪声)。名为 safeSend 必须真正"安全":send 包 try/catch,
+  // 失败只 warnOnce 不冒泡,保证调用方(flush)继续清 pending/timer。后续 send 由上面的
+  // isDestroyed() 检查短路(销毁的 webContents isDestroyed() 返 true),无需显式删 target。
+  // 镜像广播族 R62-R70 的「投递失败不冒泡」。
+  try {
+    target.send(channel, ...args);
+  } catch (err) {
+    warnOnce(`safeSend:${id}`, `send to destroyed target failed: ${String(err)}`);
+  }
 }
 
 // Test-only reset (P1-5 fix from red-team-v3)
@@ -117,6 +133,7 @@ export function __resetForTest(): void {
   }
   sessionManager = null;
   sessionTargets.clear();
+  resizeChains.clear();
 }
 
 /**
@@ -244,6 +261,7 @@ function cleanupSessionLocal(id: string, exitCode: number): void {
   // 5. Remove from all maps (finally-style — even if above threw)
   instances.delete(id);
   sessionTargets.delete(id);
+  resizeChains.delete(id); // race(R17):清 resize 串行链,防 session 关闭后泄漏
 }
 
 interface Instance {
@@ -258,6 +276,11 @@ interface Instance {
 }
 
 const instances = new Map<string, Instance>();
+// race(R17):per-session resize 串行链。连续 resize IPC 各自启动 SessionManager.resize() 不
+// 串行,底层 Promise 可能乱序完成 —— 较早的小尺寸若晚于较新的大尺寸完成,会把 PTY 行列数回退
+// 到旧值(UI 已按最新尺寸渲染但 PTY 停在旧 cols/rows → 换行/全屏 TUI/光标错乱)。经此链按调用
+// 顺序串行应用,最新一次自然最后生效(last-wins,不回退)。
+const resizeChains = new Map<string, Promise<void>>();
 
 // ── 纯函数(可单测,export)─────────────────────────────────────
 
@@ -266,10 +289,40 @@ const instances = new Map<string, Instance>();
  * 在尾部窗口 32 字节内向前找 ESC(0x1b),从那里截断 — 防 ANSI escape
  * 序列(如 `\x1b[31m`)被切成两半成乱码。
  */
-export function safeTruncate(data: string, maxBytes: number): string {
-  if (data.length <= maxBytes) return data;
+// 边界(E244):前置的 ANSI reset(`\x1b[0m`)是 4 个 ASCII 字节。截断预算须先扣除它,否则返回值
+// (reset + 尾部数据)真实字节数 = maxBytes + 4,违反"≤ maxBytes"契约(小上限/通用复用时明显超限)。
+const RESET_PREFIX = '\x1b[0m';
+const RESET_PREFIX_BYTES = 4;
 
-  let cutPoint = data.length - maxBytes;
+export function safeTruncate(data: string, maxBytes: number): string {
+  // 边界(E149,E125 同族):按真实 UTF-8 字节判定/截断(旧实现 data.length=UTF-16 code unit →
+  // 多字节输出保留远超 maxBytes 字节)。从尾部累积字节,找保留 ≤ maxBytes 字节的最早**字符边界**。
+  if (utf8ByteLength(data) <= maxBytes) return data;
+
+  // 边界(E244):预算扣除 reset 前缀字节,使最终返回值(reset + slice)总字节 ≤ maxBytes。
+  // maxBytes < 前缀字节(4)时预算为 0 → 仅返回 reset(此退化场景无法更小,前缀本身即 4 字节)。
+  const budget = Math.max(0, maxBytes - RESET_PREFIX_BYTES);
+  let bytes = 0;
+  let cutPoint = data.length;
+  for (let i = data.length - 1; i >= 0; ) {
+    let step = 1;
+    let cp = data.charCodeAt(i);
+    // 低代理:与前一个高代理合成 astral code point(4 bytes,消费 2 code unit)。
+    if (cp >= 0xdc00 && cp <= 0xdfff && i > 0) {
+      const hi = data.charCodeAt(i - 1);
+      if (hi >= 0xd800 && hi <= 0xdbff) {
+        cp = 0x10000;
+        step = 2;
+      }
+    }
+    const b = cp < 0x80 ? 1 : cp < 0x800 ? 2 : cp >= 0x10000 ? 4 : 3;
+    if (bytes + b > budget) break; // 边界(E244):用扣除 reset 前缀后的预算
+    bytes += b;
+    cutPoint = i - step + 1;
+    i -= step;
+  }
+
+  // ANSI 边界(同原逻辑):cutPoint 落在不完整 ESC 序列起点则回退到 ESC 前,防半截色码。
   const searchStart = Math.max(0, cutPoint - 32);
   for (let i = cutPoint; i >= searchStart; i--) {
     if (data.charCodeAt(i) === 0x1b) {
@@ -282,7 +335,7 @@ export function safeTruncate(data: string, maxBytes: number): string {
     }
   }
 
-  return '\x1b[0m' + data.slice(cutPoint);
+  return RESET_PREFIX + data.slice(cutPoint);
 }
 
 /**
@@ -358,7 +411,9 @@ export async function createTerminal(
   // 强制 login + interactive shell:对齐 iTerm 默认行为 (`exec -l zsh`)。
   // 没 -l/-i 时 zsh 偶发不启 ZLE → zsh-autosuggestions 等 widget plugin 失效。
   // 用户传 args 优先,只在用户没传时加默认 flag。
-  const finalArgs = args.length === 0 ? ['-l', '-i'] : args;
+  // 跨平台:`-l -i` 是 POSIX 交互 shell 语义,Windows powershell/cmd 不识别会启动失败,
+  // /bin/sh(dash)/ 未知 shell 也未必支持 → defaultShellArgs 仅对 zsh/bash/fish 追加。
+  const finalArgs = args.length === 0 ? defaultShellArgs(shell) : args;
   const inst: Instance = {
     pendingData: '',
     flushTimer: null,
@@ -426,30 +481,69 @@ export function has(id: string): boolean {
   return instances.has(id);
 }
 
-export function write(id: string, data: string): boolean {
+// race(R4):必须 await sendInput 并把真实结果上抛。此前 fire-and-forget 恒返 true → IPC 恒
+// ok:true,即使 PTY 在 instances.get(id) 与实际 sendInput 之间退出 / server-node 拒绝写入,
+// renderer 也收到假成功 —— 用户输入在终端退出/重启边界被静默丢弃,前端 A144 的 r.ok 检查失效。
+export async function write(id: string, data: string): Promise<boolean> {
   const inst = instances.get(id);
   if (!inst) return false;
-  void getSessionManager()
-    .sendInput({ session_id: id, data })
-    .catch((err) => warnOnce(`sendInput:${id}`, `sendInput failed for ${id}: ${(err as Error).message}`));
-  return true;
+  try {
+    await getSessionManager().sendInput({ session_id: id, data });
+    return true;
+  } catch (err) {
+    warnOnce(`sendInput:${id}`, `sendInput failed for ${id}: ${(err as Error).message}`);
+    return false;
+  }
 }
 
-export function resize(id: string, cols: number, rows: number): boolean {
+export async function resize(
+  id: string,
+  cols: number,
+  rows: number,
+): Promise<boolean> {
   const inst = instances.get(id);
   if (!inst) return false;
-  void getSessionManager()
-    .resize({ session_id: id, cols, rows })
-    .catch((err) => warnOnce(`resize:${id}`, `resize failed for ${id}: ${(err as Error).message}`));
-  return true;
+  // race(R17):把本次 resize 接到该 session 的串行链尾 —— 保证按调用顺序应用到 PTY,避免乱序
+  // 完成导致旧尺寸覆盖新尺寸。链尾吞错,前次失败不阻断后续 resize。
+  // race(R96):此前 fire-and-forget 恒返 true,PTY resize 失败只 warn → renderer 无从感知,
+  // 误以为该尺寸已同步、后续同尺寸不重试 → xterm DOM 与 PTY 尺寸长期不一致(TUI 错乱)。改为
+  // 等本次 resize 在串行链中的真实结果并上抛(true/false)。链尾仍保持 void+吞错供后续串行,
+  // 本调用单独返回自己这次的布尔结果。
+  const prev = resizeChains.get(id) ?? Promise.resolve();
+  const task = prev.then(() =>
+    getSessionManager()
+      .resize({ session_id: id, cols, rows })
+      .then(
+        () => true,
+        (err) => {
+          warnOnce(
+            `resize:${id}`,
+            `resize failed for ${id}: ${(err as Error).message}`,
+          );
+          return false;
+        },
+      ),
+  );
+  resizeChains.set(
+    id,
+    task.then(() => undefined),
+  );
+  return task;
 }
 
-export function interrupt(id: string): void {
+// race(R12,R4 同族):await Ctrl-C 写入并上抛真实结果。此前 fire-and-forget 恒「成功」→ IPC
+// 在实际中断前返回成功,PTY 检查后退出 / 写入失败时中断静默丢失,用户/agent 以为已中断但
+// 进程可能继续跑。返回 false 让 IPC handler 上抛供 renderer 感知。
+export async function interrupt(id: string): Promise<boolean> {
   const inst = instances.get(id);
-  if (!inst) return;
-  void getSessionManager()
-    .sendInput({ session_id: id, data: '\x03' })
-    .catch((err) => warnOnce(`interrupt:${id}`, `interrupt failed for ${id}: ${(err as Error).message}`));
+  if (!inst) return false;
+  try {
+    await getSessionManager().sendInput({ session_id: id, data: '\x03' });
+    return true;
+  } catch (err) {
+    warnOnce(`interrupt:${id}`, `interrupt failed for ${id}: ${(err as Error).message}`);
+    return false;
+  }
 }
 
 /**

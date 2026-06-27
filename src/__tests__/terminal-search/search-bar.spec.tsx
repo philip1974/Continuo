@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TerminalSearchBar } from '@/panels/Terminal/TerminalSearchBar';
 import type { SearchApi } from '@/panels/Terminal/useTerminal';
+import { MAX_SEARCH_QUERY_LEN } from '@/lib/search-query';
 
 vi.mock('@/panels/Terminal/useTerminal', async () => {
   const actual =
@@ -72,6 +73,9 @@ describe('TerminalSearchBar UI', () => {
 
     expect(api.setTerm).toHaveBeenCalledWith('warn');
     expect(getByText('2 / 4')).toBeTruthy();
+    // a11y(A53):匹配计数须在 live region(role=status)播报,焦点在搜索框时也能听到。
+    const count = getByText('2 / 4');
+    expect(count.closest('[role=status]')).not.toBeNull();
   });
 
   it('S3 empty query is forwarded to the state machine', () => {
@@ -128,6 +132,26 @@ describe('TerminalSearchBar UI', () => {
     });
   });
 
+  // a11y(A99,A97 同族):regex/case/whole-word 三 toggle 成组,须 role=group + 组名(aria-label)。
+  it('S8 a11y · 搜索选项三 toggle 在 role=group 内且组有可访问名', () => {
+    const api = makeApi();
+    const { container, getByLabelText } = render(
+      <TerminalSearchBar searchApi={api} onClose={vi.fn()} />,
+    );
+    const group = container.querySelector('[role=group][aria-label]');
+    expect(group).not.toBeNull();
+    expect((group!.getAttribute('aria-label') ?? '').length).toBeGreaterThan(0);
+    // 三个选项 toggle 都在该组内
+    expect(group!.contains(getByLabelText('panels.terminal.search.regex'))).toBe(true);
+    expect(
+      group!.contains(getByLabelText('panels.terminal.search.case_sensitive')),
+    ).toBe(true);
+    expect(group!.contains(getByLabelText('panels.terminal.search.whole_word'))).toBe(
+      true,
+    );
+    expect(group!.querySelectorAll('button[aria-pressed]').length).toBe(3);
+  });
+
   it('S6 Escape and close button call onClose', () => {
     const onClose = vi.fn();
     const { getByLabelText, getByPlaceholderText } = render(
@@ -151,5 +175,20 @@ describe('TerminalSearchBar UI', () => {
     fireEvent.blur(getByPlaceholderText('panels.terminal.search.placeholder'));
 
     expect(api.clearActiveDecoration).toHaveBeenCalledTimes(1);
+  });
+
+  // 边界(E280,E279 同族):超长 query 截断到 MAX_SEARCH_QUERY_LEN 再进 setTerm → xterm SearchAddon
+  // (防超长 pattern × scrollback 同步放大;regex 模式更甚)。
+  it('E280 超长 query 截断后才进 setTerm', () => {
+    const api = makeApi();
+    const { getByPlaceholderText } = render(
+      <TerminalSearchBar searchApi={api} onClose={vi.fn()} />,
+    );
+    fireEvent.change(getByPlaceholderText('panels.terminal.search.placeholder'), {
+      target: { value: 'x'.repeat(MAX_SEARCH_QUERY_LEN + 5000) },
+    });
+    const passed = (api.setTerm as ReturnType<typeof vi.fn>).mock
+      .calls[0]![0] as string;
+    expect(passed.length).toBe(MAX_SEARCH_QUERY_LEN);
   });
 });

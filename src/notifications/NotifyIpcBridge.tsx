@@ -15,12 +15,21 @@ import type { ReactNode } from 'react';
 import { coApi } from '@/lib/co-api';
 import { translate as i18nTranslate } from '@/i18n';
 import { notify } from './notify';
-import type { NotifyPushPayload } from '../../electron/shared/notify-channels';
+import {
+  isNotifyPushPayload,
+  type NotifyPushPayload,
+} from '../../electron/shared/notify-channels';
 
 export function NotifyIpcBridge(): ReactNode {
   useEffect(() => {
     const myWindowId = coApi.system.windowId;
     const unsubscribe = coApi.notify.onPush((payload: NotifyPushPayload) => {
+      // 边界(E168):IPC ingress 纵深防御 —— 先 runtime 形态/长度校验,畸形 payload(null/非对象/
+      // 非法 level/超长 message·code/畸形 params/非安全 windowId)drop + warn,不进通知队列/不抛。
+      if (!isNotifyPushPayload(payload)) {
+        console.warn('[notify-bridge] invalid payload, dropped', payload);
+        return;
+      }
       // ingress filter:有 windowId 且不匹配本窗 → 丢弃;缺省 → broadcast,放行
       if (payload.windowId !== undefined && payload.windowId !== myWindowId) {
         return;

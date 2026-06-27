@@ -52,6 +52,10 @@ vi.mock('@/theme', () => ({
 }));
 
 import { FolderTree } from '../../panels/Explorer/FolderTree';
+import { t } from '@/i18n';
+
+// a11y(A25):捕获 getContainerProps 的 treeLabel 实参,验证 FolderTree 给 role=tree 传可访问名。
+const getContainerPropsSpy = vi.fn(() => ({}));
 
 function fakeTree(config: TreeConfig<FileEntry>) {
   return {
@@ -60,7 +64,7 @@ function fakeTree(config: TreeConfig<FileEntry>) {
       selectedItems: [],
       expandedItems: config.state?.expandedItems ?? [],
     }),
-    getContainerProps: () => ({}),
+    getContainerProps: getContainerPropsSpy,
     getItemInstance: () => ({
       invalidateChildrenIds: vi.fn(),
       startRenaming: vi.fn(),
@@ -104,6 +108,23 @@ describe('FolderTree · expandedPaths 持久化接入', () => {
 
     expect(useExplorerStore.getState().expandedPaths).toEqual(
       new Set(['/work', '/work/src']),
+    );
+  });
+});
+
+// a11y(A25):headless-tree role="tree" 默认 aria-label="" → 须经 getContainerProps(treeLabel)
+// 给主文件树一个可访问名。getContainerProps 仅在 items 非空(渲染 tree 容器)时调用。
+describe('FolderTree · a11y(A25) tree 可访问名', () => {
+  it('给 role=tree 容器传本地化 aria-label', () => {
+    getContainerPropsSpy.mockClear();
+    useTreeMock.mockImplementation((config: TreeConfig<FileEntry>) => ({
+      ...fakeTree(config),
+      // 非空 items → 渲染 tree 容器(virtualizer 仍 mock 空,不渲染 FileRow)
+      getItems: () => [{ getItemData: () => ({ name: 'a.txt' }) }],
+    }));
+    render(<FolderTree root="/work" />);
+    expect(getContainerPropsSpy).toHaveBeenCalledWith(
+      t('panels.explorer.tree_aria'),
     );
   });
 });

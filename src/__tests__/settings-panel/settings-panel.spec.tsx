@@ -41,12 +41,50 @@ describe('SettingsPanel · 基础渲染', () => {
     expect(container.textContent).toContain('通用内容');
   });
 
+  // a11y(A5,A1 同族):设置面板搜索框须有 aria-label 可访问名(屏幕阅读器)。
+  it('a11y · 搜索 Input 有 aria-label 可访问名', () => {
+    const { container } = render(<SettingsPanel registry={makeReg()} />);
+    const input = container.querySelector('input') as HTMLInputElement | null;
+    expect(input).not.toBeNull();
+    const ariaLabel = input!.getAttribute('aria-label') ?? '';
+    expect(ariaLabel.length).toBeGreaterThan(0);
+    expect(ariaLabel).toBe(input!.getAttribute('placeholder'));
+  });
+
   it('点击 tab → 切换右侧内容 + 写 store.activeTabId', () => {
     const { container } = render(<SettingsPanel registry={makeReg()} />);
     const navBtns = container.querySelectorAll('nav button');
     fireEvent.click(navBtns[1]!);
     expect(container.textContent).toContain('编辑器内容');
     expect(useSettingsStore.getState().activeTabId).toBe('editor');
+  });
+
+  // a11y(A11):tab 导航 active 项须用 aria-current=page 暴露选中态(原只用 className)。
+  it('a11y · 当前 tab 有 aria-current=page,其余无', () => {
+    const { container } = render(<SettingsPanel registry={makeReg()} />);
+    const navBtns = Array.from(container.querySelectorAll('nav button'));
+    // 默认选首项(通用)
+    expect(navBtns[0]!.getAttribute('aria-current')).toBe('page');
+    expect(navBtns[1]!.getAttribute('aria-current')).toBeNull();
+    // 切到第二项 → aria-current 跟随
+    fireEvent.click(navBtns[1]!);
+    const after = Array.from(container.querySelectorAll('nav button'));
+    expect(after[1]!.getAttribute('aria-current')).toBe('page');
+    expect(after[0]!.getAttribute('aria-current')).toBeNull();
+  });
+
+  // a11y(A17,A12 同族):搜索模式下左侧 nav 仅 pointer-events-none(鼠标禁用)但键盘仍可
+  // Tab/Enter → nav 按钮须 disabled,与视觉禁用一致。
+  it('a11y · 搜索模式下 nav 按钮 disabled(键盘也不可触发)', () => {
+    const { container } = render(<SettingsPanel registry={makeReg()} />);
+    const navBtns = () =>
+      Array.from(container.querySelectorAll<HTMLButtonElement>('nav button'));
+    expect(navBtns().every((b) => !b.disabled)).toBe(true); // 非搜索:可用
+    // 输入搜索 → inSearch=true
+    const searchInput = container.querySelector('input') as HTMLInputElement;
+    fireEvent.change(searchInput, { target: { value: 'theme' } });
+    expect(navBtns().length).toBeGreaterThan(0);
+    expect(navBtns().every((b) => b.disabled)).toBe(true); // 搜索:全 disabled
   });
 
   it('store 预置 activeTabId → 渲染时直接选中该 tab', () => {
@@ -162,6 +200,10 @@ describe('SettingsPanel · 搜索模式', () => {
     fireEvent.change(input, { target: { value: '主题' } });
     expect(container.textContent).toMatch(/匹配\s*1\s*项/);
     expect(container.querySelector('nav')!.className).toContain('opacity-40');
+    // a11y(A54):搜索结果摘要须在 live region(role=status)播报匹配数量/无结果。
+    const status = container.querySelector('[role=status]');
+    expect(status).not.toBeNull();
+    expect(status!.textContent).toMatch(/匹配/);
   });
 
   it('match 命中 title / description / id', () => {

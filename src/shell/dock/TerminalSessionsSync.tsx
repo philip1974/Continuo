@@ -1,5 +1,7 @@
 import { useEffect, useMemo } from 'react';
 import { coApi } from '@/lib/co-api';
+import { notify } from '@/notifications/notify';
+import { t as translate } from '@/i18n';
 import {
   filterByOwnerWindow,
   filterByWorkspaceRoot,
@@ -59,14 +61,39 @@ export function TerminalSessionsSync(): null {
         .replaceSnapshot(filterByWorkspaceRoot(rawOwned, root));
     };
 
-    void coApi.terminal.listSessions().then((r) => {
-      if (cancelled || sawPush || !r.ok || !Array.isArray(r.data?.sessions))
-        return;
-      rawOwned = filterByOwnerWindow(r.data.sessions, winId, { onDrop: warnOnDrop });
-      applyWorkspaceFilter();
-    });
+    coApi.terminal
+      .listSessions()
+      .then((r) => {
+        if (cancelled || sawPush) return; // 被实时推送取代 → 不算失败
+        if (!r.ok || !Array.isArray(r.data?.sessions)) {
+          // a11y(A130,A129 同族):初始会话恢复失败此前静默早返(列表缺失无反馈)→ notify。
+          notify.error(translate('errors.terminal.sessions_restore_failed'));
+          return;
+        }
+        rawOwned = filterByOwnerWindow(r.data.sessions, winId, {
+          onDrop: warnOnDrop,
+        });
+        applyWorkspaceFilter();
+      })
+      .catch(() => {
+        // a11y(A130):IPC reject 此前是未处理 rejection + 静默失败 → notify(被推送取代则跳过)。
+        if (cancelled || sawPush) return;
+        notify.error(translate('errors.terminal.sessions_restore_failed'));
+      });
 
     const unsub = coApi.terminal.onSessionsChanged((snapshot) => {
+      // 边界(E174,E168-E173 同族 IPC ingress 纵深防御):实时广播 snapshot 须先校验是数组 —— 初始
+      // listSessions 路径已有 Array.isArray 守卫(line 68),广播路径此前缺,畸形 payload(null/对象/
+      // 字符串)在 filterByOwnerWindow 的 `for (const s of sessions)` 处抛 → 中断会话同步、列表停旧态。
+      // 非法 → warn + notify(同初始路径 UX),且**不置 sawPush**(畸形广播不应抑制有效的初始 hydration)。
+      if (!Array.isArray(snapshot)) {
+        console.warn(
+          '[terminal-sync] invalid sessions_changed payload, dropped',
+          snapshot,
+        );
+        notify.error(translate('errors.terminal.sessions_restore_failed'));
+        return;
+      }
       sawPush = true;
       rawOwned = filterByOwnerWindow(snapshot, winId, { onDrop: warnOnDrop });
       applyWorkspaceFilter();

@@ -11,6 +11,11 @@ import {
   useAgentAuthStore,
 } from '../../stores/agent-auth.store';
 
+const notifyError = vi.fn();
+vi.mock('../../notifications/notify', () => ({
+  notify: { error: (...a: unknown[]) => notifyError(...a) },
+}));
+
 interface FakeAuthApi {
   onRequest: ReturnType<typeof vi.fn>;
   respond: ReturnType<typeof vi.fn>;
@@ -124,7 +129,8 @@ describe('AgentAuthPrompt — 订阅 onRequest', () => {
       cb = fn as never;
       return unsub;
     });
-    const respond = vi.fn();
+    // respond 真实返回 IpcResult(A58:调用点检查 !ok / catch)→ mock 返成功。
+    const respond = vi.fn(async () => ({ ok: true }));
     const unsub = vi.fn();
     installApi({ onRequest, respond });
 
@@ -149,5 +155,84 @@ describe('AgentAuthPrompt — 订阅 onRequest', () => {
 
     unmount();
     expect(unsub).toHaveBeenCalledTimes(1);
+  });
+
+  // a11y(A58,A50 同族):respond 失败(ok=false / reject)此前 void 丢弃 → 用户/AT 不知决定未生效。
+  it('a11y · respond ok=false → notify.error 反馈', async () => {
+    notifyError.mockReset();
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    let cb: ((p: { requestId: string; method: string }) => void) | null = null;
+    const onRequest = vi.fn((fn: (p: never) => void) => {
+      cb = fn as never;
+      return vi.fn();
+    });
+    const respond = vi.fn(async () => ({ ok: false, code: 'IPC_FAIL', message: 'x' }));
+    installApi({ onRequest, respond });
+    render(<AgentAuthPrompt />);
+    act(() => {
+      cb!({ requestId: 'rq-1', method: 'terminal.create_session' });
+    });
+    await waitFor(() => {
+      expect(document.querySelector('.wm-modal-content')).not.toBeNull();
+    });
+    fireEvent.click(getButtons()['仅本次']!);
+    await waitFor(() => {
+      expect(notifyError).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // 边界(E171,E168/E169/E170 同族 IPC ingress 纵深防御):畸形 agent-auth:request payload runtime
+  // 校验失败 → drop + warn,不解构(防 null 解构抛 rejection)、不调 ensure/respond(防 main pending
+  // 超时)、不弹 Modal。
+  it('E171 畸形 payload(null/缺 requestId·method/超长)→ drop,不弹 Modal/不 respond', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    let cb: ((p: unknown) => void) | null = null;
+    const onRequest = vi.fn((fn: (p: never) => void) => {
+      cb = fn as never;
+      return vi.fn();
+    });
+    const respond = vi.fn(async () => ({ ok: true }));
+    installApi({ onRequest, respond });
+    render(<AgentAuthPrompt />);
+
+    const bad: unknown[] = [
+      null,
+      'a string',
+      { method: 'terminal.kill' }, // 缺 requestId
+      { requestId: 'rq' }, // 缺 method
+      { requestId: '', method: 'terminal.kill' }, // 空 requestId
+      { requestId: 'rq', method: '' }, // 空 method
+      { requestId: 'x'.repeat(257), method: 'terminal.kill' }, // 超长 requestId
+      { requestId: 'rq', method: 'm'.repeat(257) }, // 超长 method
+      { requestId: 'rq', method: 'terminal.kill', agentLabel: 'z'.repeat(513) }, // 超长 label
+    ];
+    for (const p of bad) {
+      // 不应抛(尤其 null 解构):用 act 包裹并断言不 throw
+      act(() => {
+        cb!(p);
+      });
+    }
+    // 无 Modal 弹出、respond 从未调用
+    expect(document.querySelector('.wm-modal-content')).toBeNull();
+    expect(respond).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('E171 合规 payload(含 agentLabel)→ 正常弹 Modal(回归)', async () => {
+    let cb: ((p: unknown) => void) | null = null;
+    const onRequest = vi.fn((fn: (p: never) => void) => {
+      cb = fn as never;
+      return vi.fn();
+    });
+    const respond = vi.fn(async () => ({ ok: true }));
+    installApi({ onRequest, respond });
+    render(<AgentAuthPrompt />);
+    act(() => {
+      cb!({ requestId: 'rq-ok', method: 'terminal.create_session', agentLabel: 'codex' });
+    });
+    await waitFor(() => {
+      expect(document.querySelector('.wm-modal-content')).not.toBeNull();
+    });
   });
 });

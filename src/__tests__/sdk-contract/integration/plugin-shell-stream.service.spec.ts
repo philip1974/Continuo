@@ -122,4 +122,64 @@ describe('sdk-contract integration: plugin-shell-stream.service', () => {
     const exit = await waitForEvent(event, streamId, 'exit');
     expect(exit.kind).toBe('exit');
   }, 5000);
+
+  // 边界(E45,E12 shell.exec 同族):START 在 spawn 前校验 cmd/args/cwd/streamId 长度/数量,
+  // 畸形巨量输入 fail-closed 抛 BAD_INPUT,绝不进入 spawn(防 IPC/内存放大 + spawn E2BIG)。
+  describe('E45 · START 输入校验', () => {
+    const startWith = (
+      ipc: StubIpcMain,
+      event: StubIpcEvent,
+      streamId: string,
+      cmd: string,
+      args: unknown,
+      opts?: unknown,
+    ) =>
+      ipc.invokeWithEvent(
+        event,
+        PLUGIN_SHELL_STREAM_CHANNELS.START,
+        streamId,
+        cmd,
+        args,
+        opts,
+      );
+
+    it('streamId 超 256 → BAD_INPUT,不 spawn', async () => {
+      const { ipc, event } = makeHarness();
+      await expect(
+        startWith(ipc, event, 'x'.repeat(257), process.execPath, []),
+      ).rejects.toMatchObject({ code: 'BAD_INPUT' });
+      expect(event.sender.send).not.toHaveBeenCalled();
+    });
+
+    it('cmd 超 8192 → BAD_INPUT', async () => {
+      const { ipc, event } = makeHarness();
+      await expect(
+        startWith(ipc, event, 'ok', 'x'.repeat(8193), []),
+      ).rejects.toMatchObject({ code: 'BAD_INPUT' });
+    });
+
+    it('args 数量超 1024 → BAD_INPUT', async () => {
+      const { ipc, event } = makeHarness();
+      const manyArgs = Array.from({ length: 1025 }, () => 'a');
+      await expect(
+        startWith(ipc, event, 'ok', process.execPath, manyArgs),
+      ).rejects.toMatchObject({ code: 'BAD_INPUT' });
+    });
+
+    it('单 arg 超 16384 → BAD_INPUT', async () => {
+      const { ipc, event } = makeHarness();
+      await expect(
+        startWith(ipc, event, 'ok', process.execPath, ['x'.repeat(16385)]),
+      ).rejects.toMatchObject({ code: 'BAD_INPUT' });
+    });
+
+    it('cwd 超 8192 → BAD_INPUT', async () => {
+      const { ipc, event } = makeHarness();
+      await expect(
+        startWith(ipc, event, 'ok', process.execPath, [], {
+          cwd: '/' + 'x'.repeat(8192),
+        }),
+      ).rejects.toMatchObject({ code: 'BAD_INPUT' });
+    });
+  });
 });

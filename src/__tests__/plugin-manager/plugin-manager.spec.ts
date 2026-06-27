@@ -71,9 +71,14 @@ function makeHost(state: MockHostState): ManagerHost {
   return {
     listPluginDirs: () => state.dirs,
     readEnabledIds: () => state.enabled,
-    writeEnabledIds: (ids) => {
-      state.enabledWritten = new Set(ids);
-      state.enabled = new Set(ids);
+    // 数据安全:enable/disable 走 main 端 delta 写(mutateEnabledId),mock 在内存里做
+    // 同样的 read-modify-write(对 state.enabled 加/删 id),复现主进程 setEnabledId 行为。
+    mutateEnabledId: (id, enabled) => {
+      const next = new Set(state.enabled);
+      if (enabled) next.add(id);
+      else next.delete(id);
+      state.enabled = next;
+      state.enabledWritten = next;
     },
     importModule: async (url) => {
       const mod = state.modules.get(url);
@@ -273,6 +278,103 @@ describe('enable / disable 动态', () => {
     expect([...state.enabledWritten]).toEqual(['a']);
   });
 
+  // race(R101):生命周期串行链(withLifecycleLock→runSerialPerKey)排空后必须删除 lifecycleLocks
+  // 条目,否则 Map 随操作过的不同插件 id 单调增长 = 内存泄漏。
+  it('生命周期链排空后回收 lifecycleLocks 条目(不随 id 单调增长)', async () => {
+    const state: MockHostState = {
+      dirs: [
+        { id: 'a', manifestText: manifestText('a'), moduleUrl: 'mod://a' },
+        { id: 'b', manifestText: manifestText('b'), moduleUrl: 'mod://b' },
+      ],
+      enabled: new Set(),
+      modules: new Map([
+        ['mod://a', { default: GoodPlugin }],
+        ['mod://b', { default: GoodPlugin }],
+      ]),
+      enabledWritten: new Set(),
+    };
+    const mgr = new PluginManager(fakeApp, makeHost(state));
+    await mgr.init();
+    const locks = (mgr as unknown as { lifecycleLocks: Map<string, unknown> })
+      .lifecycleLocks;
+    await mgr.enable('a');
+    await mgr.enable('b');
+    await Promise.resolve(); // cleanup 微任务
+    expect(locks.size).toBe(0); // 两 id 链排空后全回收
+  });
+
+  // 数据安全(codex 复查 P1):_enabled.json 读失败(IO 错误)时 host.readEnabledIds 现传播
+  // 异常。init 须降级(不崩、不激活、不写),避免启动因一次读错误崩溃。
+  it('host.readEnabledIds 读失败 → init 降级不崩(不激活、不写)', async () => {
+    const state: MockHostState = {
+      dirs: [
+        { id: 'a', manifestText: manifestText('a'), moduleUrl: 'mod://a' },
+      ],
+      enabled: new Set(),
+      modules: new Map([['mod://a', { default: GoodPlugin }]]),
+      enabledWritten: new Set(),
+    };
+    const failingHost: ManagerHost = {
+      ...makeHost(state),
+      readEnabledIds: async () => {
+        throw Object.assign(new Error('EACCES'), { code: 'EACCES' });
+      },
+    };
+    const mgr = new PluginManager(fakeApp, failingHost);
+
+    // init 读失败 → 降级,不抛、不激活任何插件
+    await expect(mgr.init()).resolves.toBeUndefined();
+    expect(GoodPlugin.loaded).toEqual([]);
+  });
+
+  // 数据安全(codex 复查 P1/P2):enable/disable 走 main 端 delta 写(host.mutateEnabledId)。
+  // 主进程 setEnabledId 在串行链内 RMW;读/写失败时 mutateEnabledId reject → enable 须 reject
+  // (失败可见),不再静默 resolve 让用户以为已切换但盘未写。跨窗口无 lost update 的串行性由
+  // 主进程 setEnabledId 测试覆盖(见 electron/main/__tests__/plugins-enabled-mutate.test.ts)。
+  it('host.mutateEnabledId 持久化失败 → enable 抛(不静默报成功)', async () => {
+    const state: MockHostState = {
+      dirs: [
+        { id: 'a', manifestText: manifestText('a'), moduleUrl: 'mod://a' },
+      ],
+      enabled: new Set(),
+      modules: new Map([['mod://a', { default: GoodPlugin }]]),
+      enabledWritten: new Set(),
+    };
+    const failingHost: ManagerHost = {
+      ...makeHost(state),
+      mutateEnabledId: async () => {
+        throw Object.assign(new Error('EACCES'), { code: 'EACCES' });
+      },
+    };
+    const mgr = new PluginManager(fakeApp, failingHost);
+    await mgr.init();
+    await expect(mgr.enable('a')).rejects.toThrow();
+  });
+
+  it('并发 enable 不同插件 → 都经 delta 写落盘启用(renderer 转发两个 delta)', async () => {
+    const state: MockHostState = {
+      dirs: [
+        { id: 'a', manifestText: manifestText('a'), moduleUrl: 'mod://a' },
+        { id: 'b', manifestText: manifestText('b'), moduleUrl: 'mod://b' },
+      ],
+      enabled: new Set(),
+      modules: new Map([
+        ['mod://a', { default: GoodPlugin }],
+        ['mod://b', { default: GoodPlugin }],
+      ]),
+      enabledWritten: new Set(),
+    };
+    // renderer 不再整表 RMW,只对每个 id 发 mutateEnabledId(id, true) delta;两个 delta
+    // 各自应用,无相互覆盖。跨窗口竞态(两个 PluginManager 各自 RMW)的真正修复在主进程
+    // setEnabledId 串行链,由 plugins-enabled-mutate.test.ts 覆盖。
+    const mgr = new PluginManager(fakeApp, makeHost(state));
+    await mgr.init();
+
+    await Promise.all([mgr.enable('a'), mgr.enable('b')]);
+
+    expect([...state.enabled].sort()).toEqual(['a', 'b']);
+  });
+
   it('enable 不存在的 id → 抛错', async () => {
     const state: MockHostState = {
       dirs: [],
@@ -366,6 +468,31 @@ describe('reload(id)', () => {
     await mgr.reload('r');
     expect(TrackPlugin.unloaded).toEqual(['r']);
     expect(TrackPlugin.loaded).toEqual(['r:old', 'r:new']);
+  });
+
+  // race(R77):reload 据「用户启用意图」而非瞬时 status 判重激活。连续热重载中先读到坏
+  // manifest 把已启用插件置 'failed',文件修好再 reload 时不能因 status 非 'enabled' 就停用。
+  it('R77 reload 遇瞬时坏 manifest 置 failed,修好后再 reload 仍按启用意图重激活', async () => {
+    const state: MockHostState = {
+      dirs: [{ id: 'r', manifestText: manifestText('r'), moduleUrl: 'mod://r' }],
+      enabled: new Set(['r']),
+      modules: new Map([['mod://r', { default: GoodPlugin }]]),
+      enabledWritten: new Set(),
+    };
+    const mgr = new PluginManager(fakeApp, makeHost(state));
+    await mgr.init();
+    expect(mgr.listAll().find((x) => x.id === 'r')?.status).toBe('enabled');
+
+    // 1) 热重载读到半写入 manifest:JSON 合法、id 对(故 reload 能 find 到),但缺 name/version
+    // → parseManifest 失败 → 已启用插件被置 'failed'(先 deactivate)。
+    state.dirs[0]!.manifestText = JSON.stringify({ id: 'r' });
+    await mgr.reload('r');
+    expect(mgr.listAll().find((x) => x.id === 'r')?.status).toBe('failed');
+
+    // 2) 文件修好再次 reload → 按用户启用意图重激活,而非因瞬时坏快照推断成 disabled。
+    state.dirs[0]!.manifestText = manifestText('r');
+    await mgr.reload('r');
+    expect(mgr.listAll().find((x) => x.id === 'r')?.status).toBe('enabled');
   });
 
   it('并发 reload 同 id → 串行,不泄漏 fs token、不留僵尸实例(topic49 第九轮 P1-Y)', async () => {
@@ -568,7 +695,7 @@ describe('uninstall(id)', () => {
     const host: ManagerHost = {
       listPluginDirs: baseHost.listPluginDirs,
       readEnabledIds: baseHost.readEnabledIds,
-      writeEnabledIds: baseHost.writeEnabledIds,
+      mutateEnabledId: baseHost.mutateEnabledId,
       importModule: baseHost.importModule,
       // intentionally omit removePluginDir
     };
@@ -667,7 +794,8 @@ describe('权限门 ensureAuthorized 集成', () => {
     const list = mgr.listAll();
     const entry = list.find((x) => x.id === 'a');
     expect(entry?.status).toBe('failed');
-    expect(entry?.error).toContain('PERMISSION_DENIED');
+    // i18n(I4):error 改结构化 {code, message}
+    expect(entry?.error?.code).toBe('PERMISSION_DENIED');
     warn.mockRestore();
   });
 
@@ -694,9 +822,11 @@ describe('权限门 ensureAuthorized 集成', () => {
     expect(GoodPlugin.loaded).toEqual(['a']); // 仍激活
     const item = mgr.listAll()[0]!;
     expect(item.status).toBe('enabled');
-    expect(item.warning).toContain('部分授权');
-    expect(item.warning).toContain('fs');
-    expect(item.warning).toContain('network');
+    // i18n(I3):warning 改结构化 {code, params},manager 不再拼可见文本(renderer 经
+    // catalog 渲染,避免中文泄漏到 en/ko 且随 locale 响应)。
+    expect(item.warning?.code).toBe('plugins_tab.warning.partial_grant');
+    expect(item.warning?.params?.granted).toBe('fs'); // 只授 fs
+    expect(item.warning?.params?.denied).toBe('network'); // 未授 network
     expect(item.error).toBeUndefined();
   });
 
@@ -726,7 +856,9 @@ describe('权限门 ensureAuthorized 集成', () => {
     };
     const mgr = new PluginManager(fakeApp, host);
     await mgr.init();
-    expect(mgr.listAll()[0]?.warning).toContain('部分授权');
+    expect(mgr.listAll()[0]?.warning?.code).toBe(
+      'plugins_tab.warning.partial_grant',
+    );
 
     // 模拟用户在 PermissionEditorModal 改:授 network(已有 fs grant 不动,deny 翻 grant)
     await store.grant('a', ['network']);
@@ -763,7 +895,8 @@ describe('权限门 ensureAuthorized 集成', () => {
     };
     const mgr = new PluginManager(fakeApp, host);
     await mgr.init();
-    expect(mgr.listAll()[0]?.error).toContain('PERMISSION_DENIED');
+    // i18n(I4):error 改结构化 {code, message}
+    expect(mgr.listAll()[0]?.error?.code).toBe('PERMISSION_DENIED');
 
     await mgr.enable('a');
     expect(mgr.listAll()[0]?.status).toBe('enabled');

@@ -96,6 +96,103 @@ describe('P15 · useExternalFileSync in-flight 合并', () => {
     expect(storeMock.reloadFromDisk).toHaveBeenCalledWith('/dir/f.txt', 'fresh');
   });
 
+  // 数据安全(codex 复查 P2):readFile 的 promise reject(桥/进程/通道异常,非 handler
+  // 的 {ok:false})时,旧实现只有 .then 无 .catch/.finally → inFlight 永不清,该 path
+  // 后续 dir-changed 只 pending.add 不再重读 → clean tab 长期停旧内容,用户基于旧内容
+  // 编辑保存覆盖外部新内容。加 catch/finally 后:reject 不落地、清 inFlight、后续事件能重读。
+  it('readFile reject → 不落地 + inFlight 清,后续事件能重读恢复(不卡死陈旧内容)', async () => {
+    let cb: (changedDir: string) => void = () => {};
+    fsMock.onDirChanged.mockImplementation((fn: (d: string) => void) => {
+      cb = fn;
+      return () => {};
+    });
+
+    let rejectFirst!: (e: unknown) => void;
+    const p1 = new Promise<{ ok: true; data: string }>((_, rej) => {
+      rejectFirst = rej;
+    });
+    fsMock.readFile
+      .mockReturnValueOnce(p1)
+      .mockResolvedValue({ ok: true, data: 'RECOVERED' });
+
+    renderHook(() => useExternalFileSync());
+
+    cb('/dir'); // 第一次读(将 reject)
+    expect(fsMock.readFile).toHaveBeenCalledTimes(1);
+
+    rejectFirst(new Error('bridge crash')); // 桥/进程异常 → promise reject
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    // 本次不落地
+    expect(storeMock.reloadFromDisk).not.toHaveBeenCalled();
+
+    // inFlight 已清 → 后续 dir-changed 能再次发起 read(不再只 pending.add)
+    cb('/dir');
+    expect(fsMock.readFile).toHaveBeenCalledTimes(2);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(storeMock.reloadFromDisk).toHaveBeenCalledWith(
+      '/dir/f.txt',
+      'RECOVERED',
+    );
+  });
+
+  // race(R79):effect cleanup 只 unsub 不失效在途 readFile → 卸载/重挂(StrictMode 双 effect)
+  // 后旧 effect 的慢读仍会 reloadFromDisk(tabId, 旧快照),回滚 clean tab。cancelled 令牌:
+  // cleanup 后迟到的 settle 直接丢弃。
+  it('R79 effect unmount 后在途 read 的迟到结果不落地(不回滚 clean tab)', async () => {
+    let cb: (changedDir: string) => void = () => {};
+    const unsub = vi.fn();
+    fsMock.onDirChanged.mockImplementation((fn: (d: string) => void) => {
+      cb = fn;
+      return unsub;
+    });
+    const d1 = deferred<{ ok: true; data: string }>();
+    fsMock.readFile.mockReturnValueOnce(d1.promise);
+
+    const { unmount } = renderHook(() => useExternalFileSync());
+    cb('/dir'); // 发起在途 read
+    expect(fsMock.readFile).toHaveBeenCalledTimes(1);
+
+    // effect cleanup(卸载):应失效在途 read。
+    unmount();
+    expect(unsub).toHaveBeenCalledTimes(1);
+
+    // 在途 read 此刻才 resolve(迟到)→ 过期 effect 结果,绝不落地。
+    d1.resolve({ ok: true, data: 'STALE-AFTER-UNMOUNT' });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(storeMock.reloadFromDisk).not.toHaveBeenCalled();
+  });
+
+  // race(R97):读在途期间 tab 被 close+reopen(同路径 → 同 id 但新 tab 实例),旧读迟到回写会覆盖
+  // 新 tab(可能已是更新内容)。捕获 tabRef + settle 前比对实例 identity,不匹配则丢弃。
+  it('R97 读在途时 tab 被 close+reopen(同 id 新实例)→ 迟到读不覆盖新 tab', async () => {
+    let cb: (changedDir: string) => void = () => {};
+    fsMock.onDirChanged.mockImplementation((fn: (d: string) => void) => {
+      cb = fn;
+      return () => {};
+    });
+    const d = deferred<{ ok: true; data: string }>();
+    fsMock.readFile.mockReturnValueOnce(d.promise);
+    const tabA = { id: '/dir/f.txt', filePath: '/dir/f.txt', dirty: false };
+    storeMock.tabs = [tabA];
+
+    renderHook(() => useExternalFileSync());
+    cb('/dir'); // readAndApply 捕获 tabRef = tabA(读在途)
+    expect(fsMock.readFile).toHaveBeenCalledTimes(1);
+
+    // 模拟 close+reopen 同路径:同 id 的全新 tab 对象(clean)。
+    storeMock.tabs = [{ id: '/dir/f.txt', filePath: '/dir/f.txt', dirty: false }];
+
+    // 旧读此刻才 resolve(迟到):live tab(新实例)!== 捕获的 tabRef(tabA)→ 丢弃,不覆盖新 tab。
+    d.resolve({ ok: true, data: 'STALE-FROM-CLOSED-TAB' });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(storeMock.reloadFromDisk).not.toHaveBeenCalled();
+  });
+
   it('dirty tab 不被外部同步覆盖(既有保护保持)', async () => {
     storeMock.tabs = [{ id: '/dir/f.txt', filePath: '/dir/f.txt', dirty: true }];
     let cb: (changedDir: string) => void = () => {};
@@ -106,5 +203,58 @@ describe('P15 · useExternalFileSync in-flight 合并', () => {
     renderHook(() => useExternalFileSync());
     cb('/dir');
     expect(fsMock.readFile).not.toHaveBeenCalled();
+  });
+
+  // 跨平台(codex 复查 P1):dir 匹配走共享 dirname(盘根正确)+ 平台感知 pathEquals。
+  // Windows 上 watcher 广播目录与 tab 父目录仅大小写不同、或文件位于盘根时,clean tab 须
+  // 仍收到外部 reload(否则旧内容覆盖磁盘新内容)。
+  it('Windows 大小写不同目录 → clean tab 仍匹配并重读', async () => {
+    const orig = Object.getOwnPropertyDescriptor(navigator, 'platform');
+    Object.defineProperty(navigator, 'platform', {
+      value: 'Win32',
+      configurable: true,
+    });
+    try {
+      storeMock.tabs = [
+        { id: 'C:\\Dir\\f.txt', filePath: 'C:\\Dir\\f.txt', dirty: false },
+      ];
+      let cb: (changedDir: string) => void = () => {};
+      fsMock.onDirChanged.mockImplementation((fn: (d: string) => void) => {
+        cb = fn;
+        return () => {};
+      });
+      fsMock.readFile.mockResolvedValue({ ok: true, data: 'fresh' });
+      renderHook(() => useExternalFileSync());
+      cb('c:\\dir'); // watcher 广播大小写不同的目录
+      expect(fsMock.readFile).toHaveBeenCalledWith('C:\\Dir\\f.txt');
+    } finally {
+      if (orig) Object.defineProperty(navigator, 'platform', orig);
+      else delete (navigator as { platform?: string }).platform;
+    }
+  });
+
+  it('Windows 盘根文件 → dir 匹配盘根并重读(不再因 dirname 返 C: 漏匹配)', async () => {
+    const orig = Object.getOwnPropertyDescriptor(navigator, 'platform');
+    Object.defineProperty(navigator, 'platform', {
+      value: 'Win32',
+      configurable: true,
+    });
+    try {
+      storeMock.tabs = [
+        { id: 'C:\\a.txt', filePath: 'C:\\a.txt', dirty: false },
+      ];
+      let cb: (changedDir: string) => void = () => {};
+      fsMock.onDirChanged.mockImplementation((fn: (d: string) => void) => {
+        cb = fn;
+        return () => {};
+      });
+      fsMock.readFile.mockResolvedValue({ ok: true, data: 'fresh' });
+      renderHook(() => useExternalFileSync());
+      cb('C:\\'); // 盘根
+      expect(fsMock.readFile).toHaveBeenCalledWith('C:\\a.txt');
+    } finally {
+      if (orig) Object.defineProperty(navigator, 'platform', orig);
+      else delete (navigator as { platform?: string }).platform;
+    }
   });
 });

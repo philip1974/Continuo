@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useExplorerStore } from '../../stores/explorer.store';
+import {
+  PATH_ARRAY_MAX,
+  PATH_STR_MAX,
+} from '../../../electron/shared/explorer-persistence-schema';
 
 beforeEach(() => {
   // 复位到初态(避免 spec 间互相污染)
@@ -55,6 +59,36 @@ describe('explorer.store · setExpandedPaths', () => {
     const after = useExplorerStore.getState().expandedPaths;
     expect(after).toEqual(new Set(['/work', '/work/src']));
     expect(after).not.toBe(before);
+  });
+
+  // 边界(E277,E276 同族 / 运行时状态守持久化契约):expandedPaths 不得超持久化 schema(PATH_ARRAY_MAX 条
+  // + 单条 ≤ PATH_STR_MAX),否则 explorer:write 拒整份 → 全 explorer 持久化失败。
+  it('E277 setExpandedPaths 超 PATH_ARRAY_MAX → 截断到上限', () => {
+    const many = Array.from({ length: PATH_ARRAY_MAX + 50 }, (_, i) => `/p${i}`);
+    useExplorerStore.getState().setExpandedPaths(many);
+    expect(useExplorerStore.getState().expandedPaths.size).toBe(PATH_ARRAY_MAX);
+  });
+
+  it('E277 setExpandedPaths 过滤超长 path', () => {
+    const longPath = '/' + 'x'.repeat(PATH_STR_MAX);
+    useExplorerStore.getState().setExpandedPaths(['/ok', longPath]);
+    const s = useExplorerStore.getState().expandedPaths;
+    expect(s.has('/ok')).toBe(true);
+    expect(s.has(longPath)).toBe(false);
+  });
+
+  it('E277 toggleExpand 达 PATH_ARRAY_MAX 后新 path 拒加;超长 path 拒加', () => {
+    const full = new Set(
+      Array.from({ length: PATH_ARRAY_MAX }, (_, i) => `/p${i}`),
+    );
+    useExplorerStore.setState({ expandedPaths: full });
+    useExplorerStore.getState().toggleExpand('/overflow');
+    expect(useExplorerStore.getState().expandedPaths.size).toBe(PATH_ARRAY_MAX);
+    expect(useExplorerStore.getState().expandedPaths.has('/overflow')).toBe(false);
+
+    useExplorerStore.setState({ expandedPaths: new Set() });
+    useExplorerStore.getState().toggleExpand('/' + 'y'.repeat(PATH_STR_MAX));
+    expect(useExplorerStore.getState().expandedPaths.size).toBe(0);
   });
 });
 

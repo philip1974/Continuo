@@ -8,6 +8,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { defaultIsTrustedFrame, safeHandle } from '../safe-handle';
+import { boundedObjectAdmissible } from '../../shared/bounded-input';
+import { formatZodErrorCapped } from '../lib/format-zod-error';
 import {
   WINDOW_CHANNELS,
   type IpcWindowCreateInput,
@@ -72,6 +74,11 @@ async function createWindowHandler(
   return { windowId: win.id };
 }
 
+// 边界(E34,E11/E33 同族):root 与同文件 CreateInput.workspace 对齐 .max(2048)。root 经 notify-root
+// 写入 windowId→root map 长期驻留主进程,并作为 MCP/terminal create 未传 cwd 时 agent session 的回退
+// 工作目录;畸形超长 absolute 串会带进后续 resolve/stat 路径 + 错误消息 → 内存 + 同步 fs 检查开销。
+const ROOT_MAX = 2048;
+
 const NotifyRootInput = z
   .object({
     root: z.string().nullable(),
@@ -103,12 +110,26 @@ export function registerWindowIpc(): void {
         };
       }
       const win = BrowserWindow.fromWebContents(event.sender);
+      // 边界(E258,E255/E256/E257 同族 / schema-阶段放大):此 handler 是手写 ipcMain.handle(为拿
+      // event.sender→BrowserWindow),绕过 safeHandle 的 bounded 预检。NotifyRootInput 是 .strict()
+      // object,畸形 payload 塞海量未知短 key 会在 Zod 阶段枚举/构造 issue 放大(notify-root 是高频
+      // workspace 同步入口)。safeParse 前复用 shared boundedObjectAdmissible,超限直接 BAD_INPUT 不进 Zod。
+      if (!boundedObjectAdmissible(raw).ok) {
+        console.warn('[window-ipc] notifyRoot BAD_INPUT (oversized) win=%s', win?.id);
+        return {
+          ok: false as const,
+          code: ERROR_CODES.BAD_INPUT,
+          message: 'invalid input shape',
+        };
+      }
       const parsed = NotifyRootInput.safeParse(raw);
       if (!parsed.success) {
+        // 边界(E258):日志用 capped formatter,不打印完整 parsed.error.issues(.strict() 大量未知 key
+        // 时 issues 数组本身就是放大面 —— 即便走到 Zod 也不让日志二次放大;同 E73/E157 错误串限幅纪律)。
         console.warn(
-          '[window-ipc] notifyRoot BAD_INPUT win=%s',
+          '[window-ipc] notifyRoot BAD_INPUT win=%s %s',
           win?.id,
-          parsed.error.issues,
+          formatZodErrorCapped(parsed.error),
         );
         return {
           ok: false as const,
@@ -117,7 +138,11 @@ export function registerWindowIpc(): void {
         };
       }
       const root = parsed.data.root;
-      if (root !== null && (root === '' || !path.isAbsolute(root))) {
+      // 边界(E34):root 非空时须 absolute 且 ≤ROOT_MAX(防超长串驻留 map + 带进 cwd 回退路径)。
+      if (
+        root !== null &&
+        (root === '' || root.length > ROOT_MAX || !path.isAbsolute(root))
+      ) {
         console.warn(
           '[window-ipc] notifyRoot BAD_ROOT win=%s root=%s',
           win?.id,

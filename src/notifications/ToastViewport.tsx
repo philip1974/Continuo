@@ -15,7 +15,14 @@ export function ToastViewport(): ReactNode {
   if (notifications.length === 0) return null;
   const visible = notifications.slice(-VISIBLE_LIMIT);
   return (
-    <div className="toast-viewport" aria-label={t('notifications.viewport_label')}>
+    <div
+      // a11y(A113 同族):aria-label 须挂有语义 role 才能形成可导航区域 → role="region"
+      // 让 toast 容器成为命名「通知」landmark/region,SR 可按区域回看通知栈(此前 label 挂
+      // 无 role div 无效)。
+      role="region"
+      className="toast-viewport"
+      aria-label={t('notifications.viewport_label')}
+    >
       {visible.map((n) => (
         <Toast key={n.id} notification={n} onDismiss={dismiss} />
       ))}

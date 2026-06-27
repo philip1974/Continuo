@@ -127,4 +127,48 @@ describe('unified-toast-notification: NotificationsProvider', () => {
     });
     expect(latest?.messages.filter((m) => m === 'same-error')).toHaveLength(2);
   });
+
+  // race(R13):同一事件循环内连续两次同源非 error notify 也须去重 —— 去重读 notificationsRef,
+  // 此前 ref 仅在 setNotifications updater(延迟到 render)才更新,同 tick 第二次看不到第一条
+  // pending → 绕过去重各自入队。修复后 notify 同步更新 ref,同 tick 也去重。
+  it('R13 同一 tick 连续两次同源 notify → 去重为 1(不绕过 DEDUPE)', () => {
+    vi.useFakeTimers();
+    renderProvider();
+
+    // 关键:两次 notify 在同一个 act/tick 内,中间不 flush re-render(ref 未经 updater 更新)。
+    act(() => {
+      notify.success('dup-same', { code: 'DUP' });
+      notify.success('dup-same', { code: 'DUP' });
+    });
+
+    expect(latest?.messages.filter((m) => m === 'dup-same')).toHaveLength(1);
+    expect(latest?.count).toBe(1);
+  });
+
+  // race(R104,R13 对偶):同一 tick 内 dismiss(id) 后紧接同源 non-error notify。dismiss 此前只在
+  // setNotificationList 的 updater(延迟)里更新 ref,同 tick 第二次 notify 的 dedupe 从旧 ref 仍看到
+  // 那条「已关闭」通知 → 走 dedupe 分支,新通知既不新增也不复活(map updater 在 filter updater 后跑,
+  // existing.id 已不在 prev → no-op)被吞掉。修复后 dismiss 同步更新 ref,新通知正常入队。
+  it('R104 同 tick 内 dismiss 后再同源 notify → 新通知不被吞(dismiss 同步更新 ref)', () => {
+    vi.useFakeTimers();
+    renderProvider();
+
+    act(() => {
+      notify.success('reopen', { code: 'RE' });
+    });
+    expect(latest?.count).toBe(1);
+    const firstId = latest?.ids[0];
+    expect(firstId).toBeTruthy();
+
+    // 关键:dismiss + 同源 notify 在同一 act/tick 内,中间不 flush(ref 未经 updater 更新)。
+    act(() => {
+      latest?.dismiss(firstId!);
+      notify.success('reopen', { code: 'RE' });
+    });
+
+    // 新通知必须存在且是新 id —— 未被旧 ref 里已关闭通知 dedupe 吞掉。
+    expect(latest?.messages).toContain('reopen');
+    expect(latest?.count).toBe(1);
+    expect(latest?.ids[0]).not.toBe(firstId);
+  });
 });

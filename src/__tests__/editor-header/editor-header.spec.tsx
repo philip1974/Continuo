@@ -52,6 +52,8 @@ describe('EditorHeader — tab 数量', () => {
     // 唯一 TabNavItem 必须是收紧的(flex-shrink:0 + max-width),不撑满
     expect(tablist?.querySelectorAll('[role=tab]').length).toBe(1);
     expect(container.textContent).toContain('x.md');
+    // a11y(A107):tablist 有本地化可访问名(默认 locale=zh → 「编辑器标签」)。
+    expect((tablist!.getAttribute('aria-label') ?? '').length).toBeGreaterThan(0);
   });
 
   it('tabs=2 → TabNav 列出每个 basename', () => {
@@ -118,10 +120,11 @@ describe('EditorHeader — 单 tab close', () => {
         onCloseRequest={onCloseRequest}
       />,
     );
-    // TabNavItem close button:aria-label="Close <title>"
-    const closeBtn = container.querySelector(
-      'button[aria-label="Close /x.md"]',
-    ) as HTMLButtonElement;
+    // a11y(A106):close 按钮 aria-label 经 closeLabel 本地化(默认 locale=zh → 「关闭 x.md」,
+    // title=basename);用子串匹配定位,locale-健壮。
+    const closeBtn = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button[aria-label]'),
+    ).find((b) => (b.getAttribute('aria-label') ?? '').includes('x.md'))!;
     expect(closeBtn).not.toBeNull();
     fireEvent.click(closeBtn);
     expect(onCloseRequest).toHaveBeenCalledWith({

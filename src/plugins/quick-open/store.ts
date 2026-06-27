@@ -5,6 +5,7 @@
 // - 加 loading: walk 期间 spinner
 
 import { create } from 'zustand';
+import { clampSearchQuery } from '@/lib/search-query';
 
 export interface QuickOpenFile {
   /** 绝对路径(用于 openFileByPath). */
@@ -25,6 +26,12 @@ interface QuickOpenState {
   query: string;
   selectedIndex: number;
   results: readonly QuickOpenFile[];
+  /**
+   * race(R2):results 归属的 workspace root。切 workspace 后重开 Quick Open,旧 root 的
+   * results 仍在 store(秒级再开复用优化),若不绑定 root 会在新 root 扫描期间展示并允许打开
+   * 旧 workspace 文件(跨 root 泄漏)。setResults 记录 root,渲染只信任 resultsRoot === 当前 root。
+   */
+  resultsRoot: string | null;
   loading: boolean;
   /** walk 失败标志 —— 与"workspace 真为空"区分,避免静默失败伪装成空列表。 */
   scanFailed: boolean;
@@ -32,7 +39,14 @@ interface QuickOpenState {
   close: () => void;
   setQuery: (q: string) => void;
   moveSelection: (delta: number, max: number) => void;
-  setResults: (files: readonly QuickOpenFile[]) => void;
+  /**
+   * race(R48):把 selectedIndex 钳到 [0, len-1](空列表置 0)。后台 scan 完成 setResults 替换
+   * 列表 / query 改变使过滤结果变短时,旧 selectedIndex 可能越界 → Enter 读 filtered[idx]=undefined
+   * 打开失效、高亮/滚动停无效项。组件在 filtered.length 变化时调用。已在范围内则不改(返 {} 不触发
+   * selectedIndex 订阅者重渲染)。
+   */
+  clampSelection: (len: number) => void;
+  setResults: (files: readonly QuickOpenFile[], root?: string | null) => void;
   setLoading: (b: boolean) => void;
   setScanFailed: (b: boolean) => void;
 }
@@ -42,6 +56,7 @@ export const useQuickOpenStore = create<QuickOpenState>((set) => ({
   query: '',
   selectedIndex: 0,
   results: [],
+  resultsRoot: null,
   loading: false,
   scanFailed: false,
 
@@ -49,14 +64,21 @@ export const useQuickOpenStore = create<QuickOpenState>((set) => ({
   // 不清 results / query — 用户秒级再开还能看到上次的列表。
   // 真要 reset 在 walk 完成后才 setResults。
   close: () => set({ isOpen: false }),
-  setQuery: (q) => set({ query: q, selectedIndex: 0 }),
+  // 边界(E279):截断超长 query(防单次 paste 触发 O(results×queryLen) fuzzyFilter 卡死 renderer)。
+  setQuery: (q) => set({ query: clampSearchQuery(q), selectedIndex: 0 }),
   moveSelection: (delta, max) =>
     set((s) => {
       if (max <= 0) return { selectedIndex: 0 };
       const next = (s.selectedIndex + delta + max) % max;
       return { selectedIndex: next };
     }),
-  setResults: (files) => set({ results: files }),
+  clampSelection: (len) =>
+    set((s) => {
+      const clamped = len <= 0 ? 0 : Math.min(s.selectedIndex, len - 1);
+      return clamped === s.selectedIndex ? {} : { selectedIndex: clamped };
+    }),
+  // root 省略(单参旧调用)→ resultsRoot 置 null;组件扫描时显式传当前 root 绑定归属。
+  setResults: (files, root = null) => set({ results: files, resultsRoot: root }),
   setLoading: (b) => set({ loading: b }),
   setScanFailed: (b) => set({ scanFailed: b }),
 }));

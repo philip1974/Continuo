@@ -72,6 +72,27 @@ describe('ExplorerSchema v2', () => {
     expect(await loadExplorer(file)).toBeNull();
   });
 
+  // 边界(E15,E14 漏改的 v2 多行形式):legacy v2 schema 的 recentRoots/pinned 此前仍裸
+  // z.array(z.string()),畸形 v2 文件可用超大数组绕过 v3 上限(loadExplorer 接受 v2 后 migrate
+  // 原样搬到 v3)。v2 也须加 cap。
+  it('E15 v2 schema recentRoots 超 1000 → fail', () => {
+    const p = {
+      ...v2ValidPayload,
+      workspace: {
+        recentRoots: Array.from({ length: 1001 }, (_, i) => `/r/${i}`),
+      },
+    };
+    expect(ExplorerSchema.safeParse(p).success).toBe(false);
+  });
+
+  it('E15 v2 schema pinned.paths 超 10000 → fail', () => {
+    const p = {
+      ...v2ValidPayload,
+      pinned: { paths: Array.from({ length: 10001 }, (_, i) => `/p/${i}`) },
+    };
+    expect(ExplorerSchema.safeParse(p).success).toBe(false);
+  });
+
   it('损坏 JSON → null,不抛', async () => {
     await writeFile(file, '{not json');
     expect(await loadExplorer(file)).toBeNull();
@@ -195,6 +216,51 @@ describe('ExplorerSchemaV3', () => {
       dock: { panels: [] },
     });
     expect(parsed.windows[0]!.lastClosedAt).toBe(123);
+  });
+
+  // 边界(E14):路径数组/字符串无上限 → 损坏快照超大数组被接受致启动卡顿/内存峰值。schema 加 cap,
+  // 超限 safeParse 失败(loadExplorer 视作损坏 → 降级默认)。cap 远超现实工作区,不破坏合法快照。
+  describe('E14 数组/字符串上限', () => {
+    // 深拷贝:migrateV2ToV3 与输入共享嵌套数组引用,直接 mutate 会污染 v2ValidPayload 致后续测试失败。
+    const base = (): ExplorerPayloadV3 =>
+      structuredClone(migrateV2ToV3(v2ValidPayload));
+
+    it('正常规模 → ok', () => {
+      expect(ExplorerSchemaV3.safeParse(base()).success).toBe(true);
+    });
+
+    it('recentRoots 超 1000 → fail', () => {
+      const p = base();
+      (p.workspace as { recentRoots: string[] }).recentRoots = Array.from(
+        { length: 1001 },
+        (_, i) => `/r/${i}`,
+      );
+      expect(ExplorerSchemaV3.safeParse(p).success).toBe(false);
+    });
+
+    it('expandedPaths 超 100000 → fail', () => {
+      const p = base();
+      (p.windows[0]!.explorer as { expandedPaths: string[] }).expandedPaths =
+        Array.from({ length: 100001 }, (_, i) => `/e/${i}`);
+      expect(ExplorerSchemaV3.safeParse(p).success).toBe(false);
+    });
+
+    it('单条路径串超 8192 → fail', () => {
+      const p = base();
+      (p.workspace as { recentRoots: string[] }).recentRoots = [
+        '/' + 'x'.repeat(8192),
+      ];
+      expect(ExplorerSchemaV3.safeParse(p).success).toBe(false);
+    });
+
+    it('pinned.paths 超 10000 → fail', () => {
+      const p = base();
+      (p.pinned as { paths: string[] }).paths = Array.from(
+        { length: 10001 },
+        (_, i) => `/p/${i}`,
+      );
+      expect(ExplorerSchemaV3.safeParse(p).success).toBe(false);
+    });
   });
 });
 

@@ -38,7 +38,27 @@ export interface ParsedProtocolUrl {
   readonly params: Readonly<Record<string, string>>;
 }
 
+// 边界(E55):renderer 防御性上限 —— 即便 main 已 cap(MAX_PROTOCOL_URL_LEN/队列),parseProtocolUrl
+// 也自带长度 + params 数量上限,挡绕过 main 的测试/未来入口(深链解析在 new URL/遍历 query 处会被
+// 超长 URL / 海量 params 放大)。值与 main protocol-dispatch 的 MAX_PROTOCOL_URL_LEN 对齐。
+const MAX_PARSE_URL_LEN = 8192;
+const MAX_PARSE_PARAMS = 256;
+// 边界(E98):字段级长度上限。E55 只限 URL 总长 + params 数量,但 8KB 内仍可塞超长单字段
+// (co://<8k-host>/<8k-target>?<huge-key>=<huge-value>)完整进返回对象 + 日志放大。
+const MAX_ACTION_LEN = 256;
+const MAX_TARGET_LEN = 256;
+const MAX_PARAM_KEY_LEN = 128;
+const MAX_PARAM_VALUE_LEN = 1024;
+
+/** 边界(E98):日志只打印截断摘要,不把超长 URL/字段原样拼进 console.warn。 */
+function truncForLog(s: string, max = 128): string {
+  return s.length > max ? `${s.slice(0, max)}…(len=${s.length})` : s;
+}
+
 export function parseProtocolUrl(url: string): ParsedProtocolUrl | null {
+  if (typeof url !== 'string' || url.length === 0 || url.length > MAX_PARSE_URL_LEN) {
+    return null; // 边界(E55):非法/超长 URL 不解析
+  }
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -50,10 +70,19 @@ export function parseProtocolUrl(url: string): ParsedProtocolUrl | null {
   const action = parsed.host;
   const target = parsed.pathname.replace(/^\/+/, '');
   if (!action || !target) return null;
+  // 边界(E98):action/target 单字段上限,超限视为畸形 → null。
+  if (action.length > MAX_ACTION_LEN || target.length > MAX_TARGET_LEN) {
+    return null;
+  }
   const params: Record<string, string> = {};
-  parsed.searchParams.forEach((v, k) => {
+  let count = 0;
+  for (const [k, v] of parsed.searchParams) {
+    if (count >= MAX_PARSE_PARAMS) break; // 边界(E55):params 数量上限
+    // 边界(E98):超长 param key/value 跳过(不进返回对象,防字段放大)。
+    if (k.length > MAX_PARAM_KEY_LEN || v.length > MAX_PARAM_VALUE_LEN) continue;
     params[k] = v;
-  });
+    count += 1;
+  }
   return { action, target, params };
 }
 
@@ -65,7 +94,8 @@ export async function handleProtocolUrl(
 ): Promise<void> {
   const parsed = parseProtocolUrl(url);
   if (!parsed) {
-    console.warn(`[protocol] invalid co:// URL: ${url}`);
+    // 边界(E98):拒绝路径只打印截断摘要(url 可达 8KB)。
+    console.warn(`[protocol] invalid co:// URL: ${truncForLog(url)}`);
     return;
   }
 
@@ -89,5 +119,10 @@ export async function handleProtocolUrl(
     return;
   }
 
-  console.warn(`[protocol] unsupported action "${parsed.action}" in ${url}`);
+  // 边界(E99,E98 兄弟分支):unsupported action 分支也截断日志 —— url 可达 8KB,
+  // 合法但不支持的 co://panel/...?... 绕过 invalid 分支会在此完整输出(E98 日志放大修复未传播)。
+  // parsed.action 已被 parseProtocolUrl 截到 ≤256,url 用 truncForLog。
+  console.warn(
+    `[protocol] unsupported action "${parsed.action}" in ${truncForLog(url)}`,
+  );
 }

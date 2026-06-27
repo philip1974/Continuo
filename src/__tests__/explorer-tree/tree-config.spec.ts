@@ -211,6 +211,27 @@ describe('createTreeConfig · 拖拽语义', () => {
     expect(cfg.canDrop!([dir], mkTarget('/work/dir/sub', true))).toBe(false);
   });
 
+  // 跨平台(codex 复查 P2):canDrop 自身/子树防护走 path-cross.isSameOrInsidePath(运行时
+  // 大小写)。Windows 上源/目标仅大小写不同应仍拦 move-into-descendant。
+  it('canDrop:Windows 大小写不敏感 → 拦仅大小写不同的子树 drop', () => {
+    const orig = Object.getOwnPropertyDescriptor(navigator, 'platform');
+    Object.defineProperty(navigator, 'platform', {
+      value: 'Win32',
+      configurable: true,
+    });
+    try {
+      const fs = makeFs(() => ok([]));
+      const cfg = createTreeConfig({ root: 'C:\\work', fs });
+      const dir = mkItem('C:\\work\\dir', true);
+      expect(cfg.canDrop!([dir], mkTarget('c:\\WORK\\Dir\\sub', true))).toBe(
+        false,
+      );
+    } finally {
+      if (orig) Object.defineProperty(navigator, 'platform', orig);
+      else delete (navigator as { platform?: string }).platform;
+    }
+  });
+
   it('canDrop:文件 drop 到目录 → true', () => {
     const fs = makeFs(() => ok([]));
     const cfg = createTreeConfig({ root: '/work', fs });
@@ -273,6 +294,22 @@ describe('createTreeConfig · 拖拽语义', () => {
         mkTarget('/x', true),
       ),
     ).toBe(false);
+  });
+
+  // 边界(E225,E224 兄弟):canDrop 复用共享早停 hasFiles(非裸 types.includes),命中即短路不全量扫描。
+  it('E225 canDropForeignDragObject 用早停 hasFiles(命中 Files 后不遍历后续 types)', () => {
+    const fs = makeFs(() => ok([]));
+    const cfg = createTreeConfig({ root: '/x', fs });
+    const types = ['Files'] as string[];
+    Object.defineProperty(types, 'length', { value: 2 });
+    Object.defineProperty(types, 1, {
+      get() {
+        throw new Error('E225 regression: 命中 Files 后仍遍历后续 types');
+      },
+    });
+    expect(
+      cfg.canDropForeignDragObject!({ types } as never, mkTarget('/x', true)),
+    ).toBe(true);
   });
 
   it('onDropForeignDragObject → onDropForeign(dataTransfer, dest)', () => {

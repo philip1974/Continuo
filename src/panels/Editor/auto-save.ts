@@ -31,9 +31,14 @@ export function makeAutoSaveScheduler(
 ): AutoSaveScheduler {
   let timer: ReturnType<typeof setTimeout> | null = null;
   let lastFailed = false;
+  // 当前在途的保存 promise。timer 自然 fire 后 `timer=null` 但写盘可能仍未完成;
+  // 不记录它的话,关窗 flush() 在 timer 已清空时会走 no-op、在落盘 IPC 完成前就 ack
+  // 退出 → 丢最后一次编辑(codex 数据安全复查 P1)。记录后 flush() 在无 timer 时也
+  // await 它,把「定时器已触发但还没写完」的保存纳入关窗握手。
+  let inFlight: Promise<void> | null = null;
 
-  const runSave = (): Promise<void> =>
-    Promise.resolve()
+  const runSave = (): Promise<void> => {
+    const p = Promise.resolve()
       .then(() => saveFile())
       .then(() => {
         lastFailed = false;
@@ -46,6 +51,12 @@ export function makeAutoSaveScheduler(
           onError?.(err);
         }
       });
+    inFlight = p;
+    void p.finally(() => {
+      if (inFlight === p) inFlight = null;
+    });
+    return p;
+  };
 
   return {
     schedule() {
@@ -67,6 +78,8 @@ export function makeAutoSaveScheduler(
         timer = null;
         return runSave();
       }
+      // timer 已 fire 但保存可能仍在途 → 等它落盘,避免关窗 ack 早于写盘。
+      if (inFlight) return inFlight;
       return Promise.resolve();
     },
   };

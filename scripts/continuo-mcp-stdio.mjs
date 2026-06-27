@@ -31,7 +31,12 @@ function appSupportDir() {
   if (process.platform === 'darwin') {
     return path.join(os.homedir(), 'Library', 'Application Support');
   }
-  return process.env.XDG_CONFIG_HOME ?? path.join(os.homedir(), '.config');
+  // Linux:仅当 XDG_CONFIG_HOME 非空**且为绝对路径**时采用(Electron app.getPath
+  // 同款语义);空字符串 / 相对路径会算出相对或错误 socket 路径,与 main 端不一致
+  // → CLI proxy 连不上(跨平台审计 P2)。`??` 不拦空串,故显式判断。
+  const xdg = process.env.XDG_CONFIG_HOME;
+  if (xdg && path.isAbsolute(xdg)) return xdg;
+  return path.join(os.homedir(), '.config');
 }
 
 function packagedSocketPath() {

@@ -3,6 +3,8 @@
 // fs 通过 deps 注入便于单测,默认调 coApi.fs(由调用方在 deps 注入).
 
 import { basename, dirname } from './path-utils';
+import { hasFiles } from '@/lib/window-drop'; // 边界(E225,E224 兄弟):共享早停 hasFiles 替代 types.includes('Files')
+import { isSameOrInsidePath } from '@/lib/path-cross';
 import {
   asyncDataLoaderFeature,
   dragAndDropFeature,
@@ -149,14 +151,10 @@ export function createTreeConfig(
         const srcId = it.getId();
         // drop 到自身
         if (srcId === target.item.getId()) return false;
-        // 目录 drop 到自身子树:srcId 是 destDir 的祖先
-        if (
-          destDir === srcId ||
-          destDir.startsWith(srcId + '/') ||
-          destDir.startsWith(srcId + '\\')
-        ) {
-          return false;
-        }
+        // 目录 drop 到自身子树:srcId 是 destDir 的祖先(含相等)。跨平台(codex 复查 P2):
+        // 复用 path-cross.isSameOrInsidePath —— 此前大小写敏感,Windows 源/目标仅大小写
+        // 不同时误判可 drop → 放行 move-into-self/descendant → 底层 move 报错/UI 错乱。
+        if (isSameOrInsidePath(srcId, destDir)) return false;
       }
       // 注意:dirname(srcId) === destDir(拖到当前父目录 = no-op)在这里 *不* 拦,
       // 否则 headless-tree 的 getDragTarget(canReorder=false)会因 canBecomeSibling=false
@@ -168,9 +166,9 @@ export function createTreeConfig(
       deps.onDropItems?.(items, resolveDest(target));
     },
     canDropForeignDragObject: (dataTransfer) =>
-      dataTransfer.types.includes('Files'),
+      hasFiles(dataTransfer),
     canDragForeignDragObjectOver: (dataTransfer) =>
-      dataTransfer.types.includes('Files'),
+      hasFiles(dataTransfer),
     onDropForeignDragObject: (dataTransfer, target) => {
       deps.onDropForeign?.(dataTransfer, resolveDest(target));
     },

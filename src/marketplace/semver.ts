@@ -21,10 +21,44 @@ export function isNewerVersion(a: string, b: string): boolean {
     if (pa.prerelease === pb.prerelease) return false; // 都无 / 完全相同后缀
     if (pa.prerelease === null) return true; // a 稳定,b prerelease → a 更新
     if (pb.prerelease === null) return false; // a prerelease,b 稳定 → a 更旧
-    return pa.prerelease > pb.prerelease; // 都 prerelease → 后缀字符串序
+    // 边界(E272):都 prerelease → 按 SemVer §11 点分 identifier 比较,**非**裸字符串序。裸字符串序
+    // 会把 `1.0.0-beta.10` 判为不新于 `1.0.0-beta.2`(逐字符 '1'<'2')→ 更新检查反向/漏报。
+    return comparePrerelease(pa.prerelease, pb.prerelease) > 0;
   }
   // 任一解析失败(四段 / 纯文字 / 非法)→ 字符串比较 fallback
   return a > b;
+}
+
+/**
+ * 边界(E272):SemVer §11 prerelease 比较。返回 >0 表示 a 优先级更高(更新)、<0 更低、0 相等。
+ * 规则:按 `.` 分段逐段比 —— 纯数字段按整数比(避免大数 Number 精度,用去前导零后「长度→字典序」);
+ * 数字段优先级 < 非数字段;都非数字按 ASCII 字典序;所有公共段相等时段数多者更高
+ * (`1.0.0-alpha.1` > `1.0.0-alpha`)。
+ */
+function comparePrerelease(a: string, b: string): number {
+  if (a === b) return 0;
+  const as = a.split('.');
+  const bs = b.split('.');
+  const len = Math.min(as.length, bs.length);
+  for (let i = 0; i < len; i += 1) {
+    const x = as[i] ?? '';
+    const y = bs[i] ?? '';
+    if (x === y) continue;
+    const xNum = /^\d+$/.test(x);
+    const yNum = /^\d+$/.test(y);
+    if (xNum && yNum) {
+      // 纯数字段:去前导零后「长度多者大,等长按字典序」= 任意长度整数精确比较(免 Number 精度问题)。
+      const xd = x.replace(/^0+(?=\d)/, '');
+      const yd = y.replace(/^0+(?=\d)/, '');
+      if (xd.length !== yd.length) return xd.length - yd.length;
+      if (xd !== yd) return xd < yd ? -1 : 1;
+      continue; // 仅前导零不同 → 视为相等,继续下一段
+    }
+    if (xNum !== yNum) return xNum ? -1 : 1; // 数字段优先级低于非数字段(alphanumeric)
+    return x < y ? -1 : 1; // 都非数字 → ASCII 字典序
+  }
+  // 所有公共段相等 → 段数多者优先级更高(更长 prerelease 集 > 较短)
+  return as.length - bs.length;
 }
 
 interface ParsedSemver {
@@ -38,10 +72,23 @@ interface ParsedSemver {
 function parseSemver(s: string): ParsedSemver | null {
   const m = s.match(/^(\d+)\.(\d+)\.(\d+)(?:-(.+))?$/);
   if (!m) return null;
-  return {
-    major: Number(m[1]),
-    minor: Number(m[2]),
-    patch: Number(m[3]),
-    prerelease: m[4] ?? null,
-  };
+  const major = Number(m[1]);
+  const minor = Number(m[2]);
+  const patch = Number(m[3]);
+  // 边界(E7):`\d+` 允许任意长度数字段,`Number('999…999')` 超 Number.MAX_SAFE_INTEGER 会变不安全
+  // 整数甚至 Infinity,仍参与 > 比较 → 畸形远端 manifest.version 被误判「有更新」、甚至把不可表示
+  // 版本写入已安装状态。任一段非安全整数即视为不可解析(返 null)。
+  if (
+    !Number.isSafeInteger(major) ||
+    !Number.isSafeInteger(minor) ||
+    !Number.isSafeInteger(patch)
+  ) {
+    return null;
+  }
+  return { major, minor, patch, prerelease: m[4] ?? null };
+}
+
+/** 边界(E7):是否合法 X.Y.Z[-pre](数字段为安全整数)。update-check 用它跳过畸形远端版本。 */
+export function isValidSemver(s: string): boolean {
+  return parseSemver(s) !== null;
 }

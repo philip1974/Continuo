@@ -87,4 +87,58 @@ describe('topic49 codex-loop R13 · editor restore 校验 workspace', () => {
     expect(useEditorStore.getState().tabs.find((t) => t.id === '/proj-a/a.md')).toBeDefined();
     expect(useEditorStore.getState().activeTabId).toBe('/proj-a/a.md');
   });
+
+  // 跨平台(codex 复查 P2,pathEquals 相等族):root 守卫此前用字节级 `!==` 比较。Windows
+  // 文件系统大小写不敏感,恢复异步窗口期内若同一文件夹以不同大小写被设为 root(recent/
+  // CLI/drag 传入不同 case),守卫误判「已切到别 workspace」→ 整轮跳过恢复 → 后续把
+  // openFilePaths 写空。改用平台感知 pathEquals 后,Windows 同路径不同大小写仍恢复。
+  it('Windows 同路径不同大小写 → 守卫不误判,仍正常 restore', async () => {
+    const orig = Object.getOwnPropertyDescriptor(navigator, 'platform');
+    Object.defineProperty(navigator, 'platform', {
+      value: 'Win32',
+      configurable: true,
+    });
+    try {
+      useWorkspaceStore.setState({ root: 'C:\\Proj' });
+      const { fs, resolve } = deferredFs('C:\\Proj\\a.md');
+      const snap = snapForRoot('C:\\Proj', ['C:\\Proj\\a.md'], 'C:\\Proj\\a.md');
+
+      const p = hydrateEditorTabs(snap, fs, 0);
+      // restore 在途,同一文件夹以不同大小写被(重新)设为 root
+      useWorkspaceStore.setState({ root: 'c:\\proj' });
+      resolve();
+      await p;
+
+      expect(
+        useEditorStore.getState().tabs.find((t) => t.id === 'C:\\Proj\\a.md'),
+      ).toBeDefined();
+    } finally {
+      if (orig) Object.defineProperty(navigator, 'platform', orig);
+      else delete (navigator as { platform?: string }).platform;
+    }
+  });
+
+  // POSIX 大小写敏感:仅大小写不同 = 真的是不同 root,守卫仍须丢弃(零行为变化)。
+  it('POSIX 仅大小写不同 → 视为不同 root,整轮丢弃', async () => {
+    const orig = Object.getOwnPropertyDescriptor(navigator, 'platform');
+    Object.defineProperty(navigator, 'platform', {
+      value: 'MacIntel',
+      configurable: true,
+    });
+    try {
+      useWorkspaceStore.setState({ root: '/Proj' });
+      const { fs, resolve } = deferredFs('/Proj/a.md');
+      const snap = snapForRoot('/Proj', ['/Proj/a.md'], '/Proj/a.md');
+
+      const p = hydrateEditorTabs(snap, fs, 0);
+      useWorkspaceStore.setState({ root: '/proj' }); // 大小写不同 = 不同目录
+      resolve();
+      await p;
+
+      expect(useEditorStore.getState().tabs).toHaveLength(0);
+    } finally {
+      if (orig) Object.defineProperty(navigator, 'platform', orig);
+      else delete (navigator as { platform?: string }).platform;
+    }
+  });
 });

@@ -9,6 +9,7 @@ import { createScopedApp } from './scoped-app';
 import type { CoApp, PluginManifest } from './types';
 import { errorMessage } from '../../electron/shared/error-message';
 import { coApi } from '@/lib/co-api';
+import { runSerialPerKey } from '@/lib/serialize-per-key';
 
 // ── Host 注入接口 ──────────────────────────────────────
 
@@ -28,8 +29,11 @@ export interface ManagerHost {
   listPluginDirs(): readonly PluginDirInfo[] | Promise<readonly PluginDirInfo[]>;
   /** 读取 enabled.json. */
   readEnabledIds(): ReadonlySet<string> | Promise<ReadonlySet<string>>;
-  /** 写 enabled.json. */
-  writeEnabledIds(ids: readonly string[]): void | Promise<void>;
+  /**
+   * 启用/禁用单个插件 id(数据安全:read-modify-write 收口到主进程全局串行 delta 写,
+   * 跨窗口无 lost update;renderer 不再整表 RMW)。enabled=true 加入、false 移除。
+   */
+  mutateEnabledId(id: string, enabled: boolean): void | Promise<void>;
   /** 动态 import,可注入 mock. */
   importModule(url: string): Promise<unknown>;
   /** v3.4 权限存储(可选,缺省 → 不做权限门). */
@@ -49,20 +53,53 @@ interface PluginEntry {
   manifest: PluginManifest;     // reload 时可重新解析
   dirInfo: PluginDirInfo;       // reload 时刷新 moduleUrl / manifestText
   status: Status;
+  /**
+   * race(R77):用户「启用意图」,与运行态 status 解耦。init 自 _enabled.json,仅
+   * enable/disable(及 uninstall 删 entry)修改 —— 镜像 _enabled.json 的内存副本。
+   * reload 按此意图决定是否重激活,而非用瞬时 status 推断:否则热重载连续事件中先读到
+   * 半写入/非法 manifest 把已启用插件置 'failed',文件修好再 reload 时 status 已非
+   * 'enabled' → 被推断成 disabled 不激活 → 持久启用的插件因一次坏快照在会话内停用。
+   */
+  enabledIntent: boolean;
   instance?: Plugin;
   pluginFsToken?: string;
-  error?: string;
-  /** v5 Phase 2:partial grant 时记 "部分授权:已授 X;未授 Y". */
-  warning?: string;
+  /** i18n(I4):存结构化 code+message,不存拼好的可见串. */
+  error?: PluginError;
+  /** v5 Phase 2:partial grant 标记. i18n(I3):存结构化 code+params,不存可见文本. */
+  warning?: PluginWarning;
+}
+
+/**
+ * 结构化 warning —— i18n(codex 复查 P1,I3):manager 不拼可见文本(否则激活时按当时
+ * locale 拼的中文会泄漏到 en/ko,且 locale 切换后陈旧)。存 catalog key + 插值参数,
+ * renderer 渲染时才 t(code, params),随 locale 响应。
+ */
+export interface PluginWarning {
+  readonly code: string;
+  readonly params?: Readonly<Record<string, string | number>>;
+}
+
+/**
+ * 结构化 error —— i18n(codex 复查 P1,I4):同 warning,manager 不存拼好的可见串
+ * (loader NO_DEFAULT_EXPORT/NOT_PLUGIN_CLASS 的 message 是硬编码中文,旧实现 `${code}:
+ * ${message}` 存进 entry.error 直接渲染 → en/ko 泄漏中文且不随 locale 重算)。error 来源
+ * 异构(loader/manifest 解析/权限/catch-all),故存 code + 自由 message:renderer 用
+ * tWithFallback(`errors.${code}`, `${code}: ${message}`) —— catalog 收录的 code 显本地化
+ * 文案,未收录(PERMISSION_DENIED/IMPORT_FAILED/EXCEPTION 等动态 message)保留旧 `code:
+ * message` 格式。
+ */
+export interface PluginError {
+  readonly code: string;
+  readonly message: string;
 }
 
 export interface PluginListItem {
   readonly id: string;
   readonly manifest: PluginManifest;
   readonly status: Status;
-  readonly error?: string;
+  readonly error?: PluginError;
   /** v5 Phase 2:partial grant 标记(plugin 已激活但部分权限未授). */
-  readonly warning?: string;
+  readonly warning?: PluginWarning;
 }
 
 // ── PluginManager ──────────────────────────────────────
@@ -86,24 +123,29 @@ export class PluginManager {
     private readonly host: ManagerHost,
   ) {}
 
-  /** 同 id 生命周期操作串行化(见 lifecycleLocks 注释). */
+  /** 同 id 生命周期操作串行化(见 lifecycleLocks 注释).
+   * race(R101):串行 + 排空回收收口到共享 runSerialPerKey(原 inline 副本漏删 key →
+   * lifecycleLocks 随操作过的不同插件 id 单调增长内存泄漏)。 */
   private withLifecycleLock<T>(id: string, fn: () => Promise<T>): Promise<T> {
-    const prev = this.lifecycleLocks.get(id) ?? Promise.resolve();
-    const run = prev.then(fn, fn);
-    this.lifecycleLocks.set(
-      id,
-      run.then(
-        () => {},
-        () => {},
-      ),
-    );
-    return run;
+    return runSerialPerKey(this.lifecycleLocks, id, fn);
   }
 
   /** 扫描全部目录 + 解析 manifest + 激活 enabled. */
   async init(): Promise<void> {
     const dirs = await this.host.listPluginDirs();
-    const enabledIds = await this.host.readEnabledIds();
+    // 读 _enabled.json 失败(IO 错误)→ 本次不激活任何插件(降级),但**不**写回:init
+    // 不触发任何 enabled 写,故不会抹盘。避免启动因一次读错误崩溃。enable/disable 的写路径
+    // (host.mutateEnabledId → main setEnabledId)在主进程内 RMW,读错误会传播以中止写。
+    let enabledIds: ReadonlySet<string>;
+    try {
+      enabledIds = await this.host.readEnabledIds();
+    } catch (err) {
+      console.warn(
+        '[PluginManager] readEnabledIds failed at init — activating none',
+        err,
+      );
+      enabledIds = new Set();
+    }
 
     for (const dir of dirs) {
       const parsed = parseManifest(dir.manifestText);
@@ -126,11 +168,13 @@ export class PluginManager {
         continue;
       }
 
+      const intended = enabledIds.has(manifest.id);
       const entry: PluginEntry = {
         id: manifest.id,
         manifest,
         dirInfo: dir,
-        status: enabledIds.has(manifest.id) ? 'enabled' : 'disabled',
+        status: intended ? 'enabled' : 'disabled',
+        enabledIntent: intended, // race(R77):持久启用意图,reload 据此重激活
       };
       this.entries.set(manifest.id, entry);
 
@@ -177,8 +221,8 @@ export class PluginManager {
     // 重新从 map 取拿到 widening 后的类型。
     const after = this.entries.get(id);
     if (after?.status === 'enabled') {
-      const ids = [...(await this.host.readEnabledIds()), id];
-      await this.host.writeEnabledIds(Array.from(new Set(ids)));
+      after.enabledIntent = true; // race(R77):与 _enabled.json 持久化同步置意图
+      await this.host.mutateEnabledId(id, true);
     }
   }
 
@@ -200,12 +244,10 @@ export class PluginManager {
     // 只在重新激活时清(311)→ 离开 active 的转换此前漏清(对称性缺口)。
     entry.error = undefined;
     entry.warning = undefined;
+    entry.enabledIntent = false; // race(R77):用户禁用 → 清持久启用意图(reload 不再重激活)
     this.activationOrder = this.activationOrder.filter((x) => x !== id);
 
-    const remaining = [...(await this.host.readEnabledIds())].filter(
-      (x) => x !== id,
-    );
-    await this.host.writeEnabledIds(remaining);
+    await this.host.mutateEnabledId(id, false);
   }
 
   /**
@@ -242,7 +284,10 @@ export class PluginManager {
       throw new Error(`Plugin ${id} no longer exists in plugins dir`);
     }
 
-    const wasEnabled = entry.status === 'enabled';
+    // race(R77):据「用户启用意图」而非瞬时 status 判是否重激活。否则连续热重载中先读到
+    // 坏 manifest 把已启用插件置 'failed',文件修好再 reload 时 status 已非 'enabled' →
+    // 被推断成 disabled 不激活 → 持久启用的插件因一次坏快照在会话内停用,直到手动启用/重启。
+    const wasEnabled = entry.enabledIntent;
     if (wasEnabled && entry.instance) {
       await this.deactivateEntry(entry, `reload ${id}`);
       this.activationOrder = this.activationOrder.filter((x) => x !== id);
@@ -252,7 +297,7 @@ export class PluginManager {
     const parsed = parseManifest(fresh.manifestText);
     if (!parsed.ok) {
       entry.status = 'failed';
-      entry.error = `${parsed.code}: ${parsed.message}`;
+      entry.error = { code: parsed.code, message: parsed.message };
       entry.warning = undefined; // 失败转换清陈旧 partial-grant warning(否则 failed 行同显 error+旧 warning)
       return;
     }
@@ -344,12 +389,22 @@ export class PluginManager {
           auth.deniedPerms,
         );
         entry.status = 'failed';
-        entry.error = `PERMISSION_DENIED: ${auth.deniedPerms.join(', ')}`;
+        entry.error = {
+          code: 'PERMISSION_DENIED',
+          message: auth.deniedPerms.join(', '),
+        };
         return;
       }
       // v5 Phase 2:partial grant → 设 warning,plugin 仍激活
+      // i18n(I3):存结构化 code+params,renderer 用 catalog 渲染(避免 manager 拼中文)。
       if (auth.denied.length > 0) {
-        entry.warning = `部分授权:已授 ${auth.granted.join(', ')};未授 ${auth.denied.join(', ')}`;
+        entry.warning = {
+          code: 'plugins_tab.warning.partial_grant',
+          params: {
+            granted: auth.granted.join(', '),
+            denied: auth.denied.join(', '),
+          },
+        };
       }
     }
 
@@ -363,7 +418,7 @@ export class PluginManager {
         `[plugin-manager] load ${entry.id} failed: ${loaded.code} ${loaded.message}`,
       );
       entry.status = 'failed';
-      entry.error = `${loaded.code}: ${loaded.message}`;
+      entry.error = { code: loaded.code, message: loaded.message };
       return;
     }
 
@@ -371,6 +426,12 @@ export class PluginManager {
     // (信任边界 runtime subclass 校验集中在 loader),此处直接 new,无需 as any。
     // v5 Phase 1:plugin 拿到的是 per-plugin scoped app(持 pluginId 给
     // permission.check;fs/network 等命名空间预留 Phase 3 启用 gating)
+    // race(R29):若上次停用时 _unregisterPlugin 失败,entry.pluginFsToken 会被保留(见
+    // revokePluginFsToken)。注册新 token 前先尝试回收残留的旧 token,否则下一行的赋值会用新
+    // token 覆盖旧 token 引用 → 旧 token 永久泄漏。生命周期锁串行化同 id 操作,此处无并发
+    // deactivate 竞争(见 lifecycleLocks 注释)。revoke best-effort 不抛;若仍失败,旧 token
+    // 保留但会被新 token 覆盖(仅在 main IPC 持续不可用时发生,届时 token 记账本就无解)。
+    await this.revokePluginFsToken(entry);
     const { token: pluginFsToken } =
       await coApi.pluginFsRaw._registerPlugin(entry.id);
     entry.pluginFsToken = pluginFsToken;
@@ -396,7 +457,7 @@ export class PluginManager {
         err,
       );
       entry.status = 'failed';
-      entry.error = errorMessage(err);
+      entry.error = { code: 'EXCEPTION', message: errorMessage(err) };
       await this.revokePluginFsToken(entry);
       return;
     }
@@ -423,10 +484,23 @@ export class PluginManager {
   }
 
   private async revokePluginFsToken(entry: PluginEntry): Promise<void> {
-    if (!entry.pluginFsToken) return;
     const token = entry.pluginFsToken;
-    entry.pluginFsToken = undefined;
-    await coApi.pluginFsRaw._unregisterPlugin(token);
+    if (!token) return;
+    try {
+      await coApi.pluginFsRaw._unregisterPlugin(token);
+      // race(R29):仅在 unregister 成功后才清 token。此前是「先清 token 再 await」——
+      // unregister IPC reject 时本地丢 token 而 main 侧仍有效 = 不可回收的 capability 泄漏;
+      // 且异常上抛会让 deactivateEntry 的 finally 半提交(instance 已清、status 没落到
+      // 'disabled'),后续 disableLocked 的 `!entry.instance` 守卫又早退,无法重试回收。
+      entry.pluginFsToken = undefined;
+    } catch (err) {
+      // 保留 token(不清、不抛):本地拆除照常完成(status 正常落 'disabled'),token 仍被
+      // 追踪,可在下次激活前的 flush(见 activateEntry)重试回收。
+      console.warn(
+        '[plugin-manager] _unregisterPlugin failed, token retained for retry',
+        err,
+      );
+    }
   }
 }
 

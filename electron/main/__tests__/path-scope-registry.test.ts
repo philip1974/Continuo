@@ -3,6 +3,7 @@ import {
   mkdtempSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -54,6 +55,60 @@ describe('PathScopeRegistry', () => {
     await expect(registry.check(token, 10, 'read', file, 'r')).resolves.toEqual({
       canonical: realpathSync(file),
     });
+  });
+
+  // 数据安全(codex 复查 P1):rm/lstat/rename-src 此前走 'read' 模式 → resolveForRead
+  // realpath 跟随 symlink leaf,导致 rm 删的是链接「目标」数据而非链接本身,lstat 也
+  // 失去「不跟随链接」语义(与 SDK 暴露的 lstat/isSymlink + 目录列表 symlink 标记矛盾)。
+  // 改用「不跟随 leaf」解析:realpath 父目录 + 原 leaf,作用在链接本身。
+  it('T1.a2 rm/lstat/rename-src 解析到链接本身而非 realpath 目标(不跟随 symlink leaf)', async () => {
+    const { registry, token } = makeHarness();
+    const root = makeTempDir();
+    const target = join(root, 'target.txt');
+    const link = join(root, 'link.txt');
+    writeFileSync(target, 'precious');
+    symlinkSync(target, link);
+    registry.grant('com.test', [{ path: realpathSync(root), mode: 'rw' }]);
+
+    const canonRoot = realpathSync(root);
+    for (const op of ['remove', 'lstat', 'rename-src'] as const) {
+      const r = await registry.check(token, 10, op, link, 'rw');
+      expect('fullPath' in r).toBe(true);
+      if ('fullPath' in r) {
+        // 链接路径本身,而非 realpath 跟随后的 target
+        expect(r.fullPath).toBe(join(canonRoot, 'link.txt'));
+        expect(r.fullPath).not.toBe(realpathSync(target));
+      }
+    }
+  });
+
+  it('T1.a3 no-follow leaf 仍 realpath 父目录,经父级 .. 逃逸被 scope 拒', async () => {
+    const { registry, token } = makeHarness();
+    const root = makeTempDir();
+    registry.grant('com.test', [{ path: realpathSync(root), mode: 'rw' }]);
+    await expect(
+      registry.check(token, 10, 'remove', join(root, '..', 'escape'), 'rw'),
+    ).rejects.toThrow(ScopeError);
+  });
+
+  // 数据安全(codex 复查 P2):根目录 scope `/` 的前缀匹配 `probe.startsWith('/' + sep)`
+  // 变成 startsWith('//') → 任何子路径都不命中,根目录授权后仍误拒/反复弹窗。check + covers
+  // 都须把「scope 覆盖子树」对根目录也成立。
+  it('T1.root 根目录 scope 覆盖任意子路径(check + covers)', async () => {
+    const { registry, token } = makeHarness();
+    const root = makeTempDir();
+    const file = join(root, 'f.txt');
+    writeFileSync(file, 'x');
+    registry.grant('com.test', [{ path: '/', mode: 'rw' }]);
+
+    // check 命中(不抛)
+    await expect(
+      registry.check(token, 10, 'read', file, 'rw'),
+    ).resolves.toBeDefined();
+    // covers 命中(同款前缀语义)
+    expect(
+      registry.covers('com.test', [{ path: realpathSync(file), mode: 'rw' }]),
+    ).toBe(true);
   });
 
   it('T1.b check unknown token throws PluginIdentityError', async () => {

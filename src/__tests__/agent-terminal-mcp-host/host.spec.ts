@@ -13,6 +13,15 @@ import {
   formatRpcError,
   isLocalhostBindAddr,
   isLoopbackHostHeader,
+  sseAdmissionAllowed,
+  checkToolArgsBounded,
+  MAX_TOOL_ARG_KEYS,
+  MAX_TOOL_ARG_KEY_LEN,
+  formatToolCallError,
+  parseHttpRequestTarget,
+  MAX_REQUEST_TARGET_LEN,
+  MCP_ERR_MESSAGE_MAX,
+  MCP_ERR_CODE_MAX,
 } from '../../../electron/main/services/mcp-host.service';
 
 // ────────────────────────────────────────────────────────────
@@ -88,8 +97,138 @@ describe('verifyBearer', () => {
 });
 
 // ────────────────────────────────────────────────────────────
+// 边界(E232):SSE 接入准入(全局 + per-token 数量上限)
+// ────────────────────────────────────────────────────────────
+
+describe('sseAdmissionAllowed(E232)', () => {
+  it('全局与 per-token 均未达上限 → 准入', () => {
+    expect(sseAdmissionAllowed(0, 0)).toBe(true);
+    expect(sseAdmissionAllowed(10, 5)).toBe(true);
+  });
+
+  it('全局达上限(64)→ 拒(即便该 token 连接很少)', () => {
+    expect(sseAdmissionAllowed(64, 0)).toBe(false);
+    expect(sseAdmissionAllowed(100, 1)).toBe(false);
+  });
+
+  it('per-token 达上限(16)→ 拒(即便全局还有空间)', () => {
+    expect(sseAdmissionAllowed(20, 16)).toBe(false);
+    expect(sseAdmissionAllowed(0, 16)).toBe(false);
+  });
+
+  it('上限边界:差一即准入,到达即拒(全局 63→ok/64→拒;token 15→ok/16→拒)', () => {
+    expect(sseAdmissionAllowed(63, 15)).toBe(true);
+    expect(sseAdmissionAllowed(64, 15)).toBe(false);
+    expect(sseAdmissionAllowed(63, 16)).toBe(false);
+  });
+});
+
+// 边界(E255):tools/call arguments bounded 预检(key 数 / 单 key 长度)。safeParse 前挡 1MB body
+// 海量未知短 key 在 Zod .strict() 枚举 + unrecognized_keys issue 构造阶段放大 CPU/内存。
+describe('checkToolArgsBounded(E255)', () => {
+  it('正常对象 → ok', () => {
+    expect(checkToolArgsBounded({})).toEqual({ ok: true });
+    expect(checkToolArgsBounded({ a: 1, b: 'x', c: true })).toEqual({ ok: true });
+  });
+
+  it('恰好上限内的 key 数 → ok', () => {
+    const o: Record<string, unknown> = {};
+    for (let i = 0; i < MAX_TOOL_ARG_KEYS; i++) o[`k${i}`] = 1;
+    expect(checkToolArgsBounded(o)).toEqual({ ok: true });
+  });
+
+  it('key 数超 MAX_TOOL_ARG_KEYS → 拒(too many argument keys)', () => {
+    const o: Record<string, unknown> = {};
+    for (let i = 0; i <= MAX_TOOL_ARG_KEYS; i++) o[`k${i}`] = 1;
+    const r = checkToolArgsBounded(o);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.message).toMatch(/too many argument keys/i);
+  });
+
+  it('单 key 长度超 MAX_TOOL_ARG_KEY_LEN → 拒(argument key too long)', () => {
+    const longKey = 'x'.repeat(MAX_TOOL_ARG_KEY_LEN + 1);
+    const r = checkToolArgsBounded({ [longKey]: 1 });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.message).toMatch(/argument key too long/i);
+  });
+
+  it('恰好 MAX_TOOL_ARG_KEY_LEN 的 key → ok', () => {
+    expect(
+      checkToolArgsBounded({ ['x'.repeat(MAX_TOOL_ARG_KEY_LEN)]: 1 }),
+    ).toEqual({ ok: true });
+  });
+});
+
+// 边界(E266,E73/E157 错误串放大族):tools/call catch 把 tool.run 抛出的 err.message/code 塞进 JSON-RPC
+// error 回外部 MCP client,须在 host 边界截断,防畸形/恶意 tool 抛超长串经 JSON-RPC 放大。
+describe('formatToolCallError(E266)', () => {
+  it('普通 Error → code -32603 + message 透传(短串不变)', () => {
+    const r = formatToolCallError(new Error('boom'));
+    expect(r.code).toBe(-32603);
+    expect(r.message).toBe('boom');
+    expect(r.data).toBeUndefined();
+  });
+
+  it('带 code 字串 → data.code 透传(短串不变)', () => {
+    const r = formatToolCallError(
+      Object.assign(new Error('nope'), { code: 'TOOL_FAIL' }),
+    );
+    expect(r.data).toEqual({ code: 'TOOL_FAIL' });
+  });
+
+  it('超长 message → 截断到 MCP_ERR_MESSAGE_MAX(附剩余长度,不含完整原串)', () => {
+    const huge = 'm'.repeat(MCP_ERR_MESSAGE_MAX + 5000);
+    const r = formatToolCallError(new Error(huge));
+    expect(r.message.length).toBeLessThan(MCP_ERR_MESSAGE_MAX + 50);
+    expect(r.message.startsWith('m'.repeat(MCP_ERR_MESSAGE_MAX))).toBe(true);
+    expect(r.message).toContain('…');
+    expect(r.message).not.toContain('m'.repeat(MCP_ERR_MESSAGE_MAX + 1));
+  });
+
+  it('超长 code → data.code 截断到 MCP_ERR_CODE_MAX', () => {
+    const r = formatToolCallError(
+      Object.assign(new Error('x'), { code: 'C'.repeat(MCP_ERR_CODE_MAX + 500) }),
+    );
+    expect(r.data!.code.length).toBeLessThan(MCP_ERR_CODE_MAX + 50);
+    expect(r.data!.code).toContain('…');
+  });
+
+  it('非 string message → fallback internal error', () => {
+    expect(formatToolCallError({}).message).toBe('internal error');
+    expect(formatToolCallError(null).message).toBe('internal error');
+  });
+});
+
+// ────────────────────────────────────────────────────────────
 // parseRpcMessage
 // ────────────────────────────────────────────────────────────
+
+describe('parseHttpRequestTarget(E295)', () => {
+  it('普通 path 无 query → 原样返回,tooLong=false', () => {
+    expect(parseHttpRequestTarget('/mcp')).toEqual({ tooLong: false, path: '/mcp' });
+  });
+  it('带 query → 去掉 ?后半,只留 path', () => {
+    expect(parseHttpRequestTarget('/mcp?a=1&b=2')).toEqual({
+      tooLong: false,
+      path: '/mcp',
+    });
+  });
+  it('undefined req.url → 默认 "/"', () => {
+    expect(parseHttpRequestTarget(undefined)).toEqual({ tooLong: false, path: '/' });
+  });
+  it('多个 ? → 只在第一个 ? 截断(indexOf,不 split 物化所有分段)', () => {
+    expect(parseHttpRequestTarget('/mcp?x=?y=?z').path).toBe('/mcp');
+  });
+  it('E295 超 MAX_REQUEST_TARGET_LEN → tooLong=true(调用方回 414)', () => {
+    const huge = '/mcp?' + 'a'.repeat(MAX_REQUEST_TARGET_LEN);
+    expect(parseHttpRequestTarget(huge).tooLong).toBe(true);
+  });
+  it('E295 恰好 MAX_REQUEST_TARGET_LEN → tooLong=false(边界包含)', () => {
+    const exact = '/' + 'a'.repeat(MAX_REQUEST_TARGET_LEN - 1);
+    expect(exact.length).toBe(MAX_REQUEST_TARGET_LEN);
+    expect(parseHttpRequestTarget(exact).tooLong).toBe(false);
+  });
+});
 
 describe('parseRpcMessage', () => {
   it('合法请求(string id)→ 结构化', () => {

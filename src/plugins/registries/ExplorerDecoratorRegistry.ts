@@ -35,11 +35,25 @@ export type DecoratorFn = (entry: DecoratorEntry) => Decoration | null;
 
 type Listener = () => void;
 
+// 边界(E54,E47 输入侧对偶):register(fn) 此前信任插件输入,不校验 fn 是函数,也无注册数量上限
+//(E47 只限制 decorator 输出字段)。非函数 fn 会在每个可见 FileRow 的 mergeDecorations 中反复抛
+// TypeError + 刷 console.warn(虽被 try/catch 兜住);注册成千上万个 decorator 让文件树每行渲染变成
+// 无界 O(N) 调用,滚动/展开卡顿。register 入口校验 fn 为函数 + 全局数量上限,非法/超限抛、不入表。
+const MAX_DECORATORS = 256;
+
 export class ExplorerDecoratorRegistry {
   private fns: DecoratorFn[] = [];
   private listeners = new Set<Listener>();
 
   register(fn: DecoratorFn): Disposable {
+    if (typeof fn !== 'function') {
+      throw new Error('[explorer-decorator] register expects a function');
+    }
+    if (this.fns.length >= MAX_DECORATORS) {
+      throw new Error(
+        `[explorer-decorator] too many decorators registered (>= ${MAX_DECORATORS})`,
+      );
+    }
     this.fns.push(fn);
     this.notify();
     let disposed = false;
@@ -70,11 +84,28 @@ export class ExplorerDecoratorRegistry {
   }
 }
 
+// 边界(E47,插件输出校验):mergeDecorations 此前信任插件 decorator 返回值,badge/tooltip/
+// textColor/badgeColor 不校验类型/长度,tooltips 无数量/总长上限,最后 join(' · ') 塞进每个 FileRow
+// 的 title。畸形 decorator 可对每个可见文件返回超长 tooltip/badge 或非字符串值 → 虚拟列表滚动反复
+// 拼接巨大 title 卡顿;非字符串 badge 进 React 渲染路径触发异常/怪异输出。合并时只接受有限长度
+// 字符串,限制 tooltip 数量 + 合并后总长,非法字段丢弃(保留单 decorator try/catch 隔离)。
+const DEC_BADGE_MAX = 64; // 短标签('M'/'12K'/'+3')
+const DEC_COLOR_MAX = 64; // CSS color 串
+const DEC_TOOLTIP_MAX = 1024; // 单 tooltip
+const DEC_TOOLTIPS_COUNT_MAX = 32; // tooltip 数量
+const DEC_TOOLTIP_TOTAL_MAX = 4096; // 合并后总长
+
+function decString(v: unknown, max: number): string | undefined {
+  return typeof v === 'string' && v.length > 0 && v.length <= max
+    ? v
+    : undefined;
+}
+
 /**
  * 合并多个装饰器对同一 entry 的输出。
- * - badge / badgeColor / icon:取首个非空(first-wins)
- * - textColor:后者赢(最近覆盖)
- * - tooltip:全部用 ` · ` 拼接
+ * - badge / badgeColor / icon:取首个非空(first-VALID-wins;非法字段丢弃)
+ * - textColor:后者赢(最近的合法覆盖)
+ * - tooltip:合法项用 ` · ` 拼接(数量 + 总长上限)
  * - 单 fn 抛错 → 跳过该 fn,其它继续
  */
 export function mergeDecorations(
@@ -95,16 +126,25 @@ export function mergeDecorations(
       console.warn('[explorer-decorator] fn threw', err);
       continue;
     }
-    if (!dec) continue;
-    if (badge === undefined && dec.badge !== undefined) {
-      badge = dec.badge;
-      badgeColor = dec.badgeColor;
+    if (!dec || typeof dec !== 'object') continue;
+    // 边界(E47):badge 只接受有限长度字符串;非法则丢弃,让后续 decorator 的合法 badge 赢
+    //(first-VALID-wins)。badgeColor 与 badge 绑定,独立校验。
+    if (badge === undefined) {
+      const b = decString(dec.badge, DEC_BADGE_MAX);
+      if (b !== undefined) {
+        badge = b;
+        badgeColor = decString(dec.badgeColor, DEC_COLOR_MAX);
+      }
     }
     if (icon === undefined && dec.icon !== undefined) {
       icon = dec.icon;
     }
-    if (dec.textColor !== undefined) textColor = dec.textColor;
-    if (dec.tooltip !== undefined) tooltips.push(dec.tooltip);
+    const tc = decString(dec.textColor, DEC_COLOR_MAX);
+    if (tc !== undefined) textColor = tc;
+    const tip = decString(dec.tooltip, DEC_TOOLTIP_MAX);
+    if (tip !== undefined && tooltips.length < DEC_TOOLTIPS_COUNT_MAX) {
+      tooltips.push(tip);
+    }
   }
 
   if (
@@ -115,11 +155,14 @@ export function mergeDecorations(
   ) {
     return null;
   }
-  return {
-    badge,
-    badgeColor,
-    textColor,
-    icon,
-    tooltip: tooltips.length > 0 ? tooltips.join(' · ') : undefined,
-  };
+  // 边界(E47):合并后总长上限 —— 数量(≤32)×单长(≤1024)已有界,再对 join 结果硬截断兜底。
+  let tooltip: string | undefined;
+  if (tooltips.length > 0) {
+    const joined = tooltips.join(' · ');
+    tooltip =
+      joined.length > DEC_TOOLTIP_TOTAL_MAX
+        ? joined.slice(0, DEC_TOOLTIP_TOTAL_MAX)
+        : joined;
+  }
+  return { badge, badgeColor, textColor, icon, tooltip };
 }

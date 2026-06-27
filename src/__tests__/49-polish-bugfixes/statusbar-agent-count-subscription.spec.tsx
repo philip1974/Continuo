@@ -76,7 +76,7 @@ describe('打磨 R39 — StatusBar 订阅派生 agent 计数', () => {
   it('新增 agent session → 重渲 + 计数+1', () => {
     installApi();
     const { container } = render(<StatusBar />);
-    expect(container.textContent).toMatch(/1 agent/);
+    expect(container.textContent).toMatch(/1.*agent/);
 
     act(() => {
       useTerminalStore.setState((s) => ({
@@ -84,6 +84,18 @@ describe('打磨 R39 — StatusBar 订阅派生 agent 计数', () => {
       }));
     });
 
-    expect(container.textContent).toMatch(/2 agent/);
+    expect(container.textContent).toMatch(/2.*agent/); // i18n(I19):locale-无关(zh '2 个 agent')
+  });
+
+  // a11y(A74,A2 同族):agent revoke 按钮可见文本只表计数,撤销动作语义须进 aria-label(非仅 title)。
+  it('a11y · agent revoke 按钮 aria-label 含撤销语义', () => {
+    installApi();
+    const { container } = render(<StatusBar />);
+    const btn = Array.from(container.querySelectorAll('button')).find((b) =>
+      (b.getAttribute('aria-label') ?? '').includes('撤销'),
+    );
+    expect(btn).toBeTruthy();
+    // 可访问名(aria-label)优先于可见文本,含撤销/terminal 语义
+    expect(btn!.getAttribute('aria-label')).toContain('撤销');
   });
 });

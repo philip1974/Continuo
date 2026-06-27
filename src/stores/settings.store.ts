@@ -1,7 +1,24 @@
 import { create } from 'zustand';
 import { coApi } from '@/lib/co-api';
 import { setLocale as setI18nModuleLocale, notifyLocaleChange } from '@/i18n';
-import type { Locale } from '@shared/i18n-types';
+import { LocaleSchema, type Locale } from '@shared/i18n-types';
+
+// 边界(E170,E168/E169 同族 IPC ingress 纵深防御):i18n:changed 广播驱动全局 locale + translate()。
+// 此前 onChange 回调直接用 payload.locale/payload.gen。非法 locale(catalog 不存在,如 'fr')→
+// setI18nModuleLocale 后 translate() 的 DICTS[locale] 为 undefined → 全 UI 渲染崩溃(跨窗广播,影响
+// 所有窗口);NaN/Infinity gen 污染乱序保护(`gen < currentGen` 对 NaN 恒 false → 后续广播全被旧 gen
+// 挡或反之)。主进程 setLocale IPC 已用 LocaleSchema 校验(故生产不可达),但广播 ingress 仍补齐校验
+// (后果严重 + 复用单源 LocaleSchema,与 E168/E169 一致)。非法 drop + warn,不更新 store/module。
+function isValidI18nChangedPayload(
+  v: unknown,
+): v is { locale: Locale; gen: number } {
+  if (v === null || typeof v !== 'object') return false;
+  const o = v as Record<string, unknown>;
+  if (!LocaleSchema.safeParse(o.locale).success) return false;
+  return (
+    typeof o.gen === 'number' && Number.isSafeInteger(o.gen) && o.gen >= 0
+  );
+}
 
 export interface SettingsState {
   /** 当前 locale — 启动时由 main.tsx bootstrap 用 main 真值 setState 注入；之后随 setLocale 更新。 */
@@ -41,6 +58,11 @@ export function subscribeToI18nBroadcast(): void {
   if (_subscribed) return;
   _subscribed = true;
   coApi.i18n.onChange((payload) => {
+    // 边界(E170):广播 ingress runtime 校验,非法 payload drop + warn,不污染 locale/乱序保护。
+    if (!isValidI18nChangedPayload(payload)) {
+      console.warn('[i18n-broadcast] invalid payload, dropped', payload);
+      return;
+    }
     const current = useSettingsStore.getState();
     if (payload.gen < current.currentGen) return;
     if (payload.locale === current.locale && payload.gen === current.currentGen) return;

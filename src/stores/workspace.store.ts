@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { useEditorStore } from './editor.store';
+import { PATH_STR_MAX } from '../../electron/shared/explorer-persistence-schema';
 
 const RECENT_LIMIT = 5;
 
@@ -23,7 +24,7 @@ type WorkspaceState = {
 };
 
 /**
- * 归一化 workspace root: 仅过滤空字符串 / 全空白 / 非字符串 → null.
+ * 归一化 workspace root: 过滤空字符串 / 全空白 / 非字符串 / 超 PATH_STR_MAX → null.
  * **不规范化路径语义, 不 trim 返回值** — 文件系统允许前后空格的合法路径 (e.g. '/tmp/proj ').
  * 应用于:
  * - setRoot (用户/UI 触发)
@@ -31,9 +32,18 @@ type WorkspaceState = {
  * - hydrateStoresForNewWindow
  * - snapshotFromStores (持久化前清洗)
  * - recentRoots 过滤
+ *
+ * 边界(E317,E276/E277/E278 同族:运行时把状态约束在持久化契约内):root/recentRoots 经
+ * snapshotFromStores 写入 ExplorerWritableSnapshotSchema —— root=pathStr().nullable()、
+ * recentRoots=array(pathStr()),pathStr() 即 z.string().max(PATH_STR_MAX)。运行时若持有超
+ * PATH_STR_MAX 的 root/recentRoot,snapshot 写出后整份 schema 拒 → explorer 持久化全失败(连带
+ * recentRoots/pinned/各窗口/layout/editor 会话一起丢)。故在唯一 chokepoint 加同一上限:超限 → null
+ *(root 视作未选,recentRoot 被过滤),与 explorer/editor/pinned store 的运行时 cap 一致。真实路径远
+ * 短于 8192,行为保持;仅挡畸形/恶意超长路径(拖拽深嵌目录 / 插件经 open-folder 入口传超长串)。
  */
 export function normalizeWorkspaceRoot(path: unknown): string | null {
   if (typeof path !== 'string') return null;
+  if (path.length > PATH_STR_MAX) return null;
   return path.trim().length === 0 ? null : path;
 }
 

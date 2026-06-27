@@ -40,6 +40,26 @@ describe('keybindings-store', () => {
     expect(getEffectiveHotkey(open)).toBeUndefined();
   });
 
+  // 边界(E145,写端形态校验):畸形 hotkey(含空白/空段/超长)会让 compileCombo 产出空主键
+  //(永不触发)+ UI 异常 → setHotkey 拒写(no-op)。'' = unbind 放行,合法形态写入。
+  it('E145 setHotkey 畸形 hotkey(含空白 / 空段 / 超长)→ no-op,不写', () => {
+    const s = useKeybindingsStore.getState();
+    s.setHotkey('settings.open', 'mod+ '); // 含空白
+    expect(useKeybindingsStore.getState().overrides['settings.open']).toBeUndefined();
+    s.setHotkey('settings.open', 'shift++'); // 空段(主键 '+')
+    expect(useKeybindingsStore.getState().overrides['settings.open']).toBeUndefined();
+    s.setHotkey('settings.open', 'x'.repeat(257)); // 超长
+    expect(useKeybindingsStore.getState().overrides['settings.open']).toBeUndefined();
+  });
+
+  it('E145 setHotkey 合法形态 → 写入;空串 unbind → 写入', () => {
+    const s = useKeybindingsStore.getState();
+    s.setHotkey('settings.open', 'mod+k');
+    expect(useKeybindingsStore.getState().overrides['settings.open']).toBe('mod+k');
+    s.setHotkey('settings.open', '');
+    expect(useKeybindingsStore.getState().overrides['settings.open']).toBe('');
+  });
+
   it('setHotkey 持久化 localStorage', () => {
     useKeybindingsStore.getState().setHotkey('foo.bar', 'mod+x');
     const raw = globalThis.localStorage.getItem(
@@ -136,5 +156,64 @@ describe('keybindings-store · readStored 防御', () => {
     expect(mod.useKeybindingsStore.getState().overrides).toEqual({
       'cmd.x': 'mod+x',
     });
+  });
+});
+
+// race(R6,values-store 同型):多窗口 lost update —— 基于 live localStorage merge 单 key,不整表覆盖别窗 key。
+describe('keybindings-store · R6 多窗口 lost update', () => {
+  it('setHotkey 基于 live localStorage merge:不丢别窗已写的 override', () => {
+    globalThis.localStorage.setItem(
+      'continuo.keybindings.overrides',
+      JSON.stringify({ 'cmd.a': 'mod+a', 'cmd.b': 'mod+b' }),
+    );
+    useKeybindingsStore.setState({ overrides: { 'cmd.a': 'mod+a' } }); // 陈旧快照只有 a
+    useKeybindingsStore.getState().setHotkey('cmd.a', 'mod+shift+a');
+    const persisted = JSON.parse(
+      globalThis.localStorage.getItem('continuo.keybindings.overrides')!,
+    );
+    expect(persisted).toEqual({ 'cmd.a': 'mod+shift+a', 'cmd.b': 'mod+b' });
+  });
+
+  it('reset 基于 live localStorage:删自己 override 不丢别窗 override', () => {
+    globalThis.localStorage.setItem(
+      'continuo.keybindings.overrides',
+      JSON.stringify({ 'cmd.a': 'mod+a', 'cmd.b': 'mod+b' }),
+    );
+    useKeybindingsStore.setState({ overrides: { 'cmd.a': 'mod+a' } });
+    useKeybindingsStore.getState().reset('cmd.a');
+    const persisted = JSON.parse(
+      globalThis.localStorage.getItem('continuo.keybindings.overrides')!,
+    );
+    expect(persisted).toEqual({ 'cmd.b': 'mod+b' });
+  });
+
+  // 边界(E240,E145 写端对偶):读端 valueGuard 复用写端 HOTKEY_SHAPE_RE。篡改/旧版本残留的畸形
+  // localStorage override(mod++s 空段等)被读端放行会让 compileCombo 当成 mod+s 参与全局快捷键匹配 →
+  // 意外触发命令。读端只接受 '' 或形态合法值,其余丢弃(降级默认),与写端语义一致。
+  it('E240 读回畸形 override(mod++s 空段)→ 丢弃,不混入有效快捷键', () => {
+    // 直接写畸形 localStorage(模拟篡改/旧版本残留),含一个合法 + 一个畸形 + 一个空(unbind)。
+    globalThis.localStorage.setItem(
+      'continuo.keybindings.overrides',
+      JSON.stringify({
+        'cmd.good': 'mod+shift+x', // 合法 → 保留
+        'cmd.bad': 'mod++s', // 空段畸形 → 丢弃
+        'cmd.unbind': '', // 空串 unbind → 保留
+        'cmd.space': 'mod+ s', // 含空白畸形 → 丢弃
+      }),
+    );
+    // 经 storage 事件触发读端重读(同跨窗同步路径)。
+    window.dispatchEvent(
+      new StorageEvent('storage', {
+        key: 'continuo.keybindings.overrides',
+        newValue: globalThis.localStorage.getItem(
+          'continuo.keybindings.overrides',
+        ),
+      }),
+    );
+    const ov = useKeybindingsStore.getState().overrides;
+    expect(ov['cmd.good']).toBe('mod+shift+x'); // 合法保留
+    expect(ov['cmd.unbind']).toBe(''); // unbind 保留
+    expect('cmd.bad' in ov).toBe(false); // 畸形丢弃
+    expect('cmd.space' in ov).toBe(false); // 畸形丢弃
   });
 });

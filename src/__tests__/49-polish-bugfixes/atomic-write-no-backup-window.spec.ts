@@ -41,10 +41,11 @@ describe('49 · atomicWriteFile 不再有 .backup 数据丢失窗口', () => {
     await atomicWriteFile(file, 'NEW');
 
     expect(await readFile(file, 'utf-8')).toBe('NEW');
-    // 唯一的 rename 应是 tmp → file;不得有 file → *.backup。tmp 是固定 `${file}.tmp`
-    // (并发安全由 per-path 串行化保证,而非唯一 tmp 名 — 见 atomic-write.ts P1-AL 修订)
+    // 唯一的 rename 应是 tmp → file;不得有 file → *.backup。tmp 是固定隐藏标记名
+    // `.<base>.continuo.tmp`(避免撞用户真实 ${file}.tmp,codex P1;并发安全由 per-path
+    // 串行化保证 — 见 atomic-write.ts P1-AL 修订)
     expect(renameCalls.length).toBe(1);
-    expect(renameCalls[0]!.from).toBe(`${file}.tmp`);
+    expect(renameCalls[0]!.from).toBe(join(dir, '.doc.md.continuo.tmp'));
     expect(renameCalls[0]!.to).toBe(file);
     expect(renameCalls.some((c) => c.to.endsWith('.backup'))).toBe(false);
     expect(renameCalls.some((c) => c.from === file)).toBe(false);
@@ -58,7 +59,7 @@ describe('49 · atomicWriteFile 不再有 .backup 数据丢失窗口', () => {
 
     expect(await readFile(file, 'utf-8')).toBe('hello');
     expect(renameCalls.length).toBe(1);
-    expect(renameCalls[0]!.from).toBe(`${file}.tmp`);
+    expect(renameCalls[0]!.from).toBe(join(dir, '.fresh.txt.continuo.tmp'));
     expect(renameCalls[0]!.to).toBe(file);
   });
 });

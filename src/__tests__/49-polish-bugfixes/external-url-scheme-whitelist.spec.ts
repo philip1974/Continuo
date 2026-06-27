@@ -12,6 +12,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { isAllowedExternalUrl } from '../../../electron/main/services/shell.service';
+import { MAX_EXTERNAL_URL_LEN } from '../../../electron/shared/url-limits';
 
 const ROOT = join(__dirname, '..', '..', '..');
 
@@ -43,5 +44,23 @@ describe('topic49 6thS · external URL scheme whitelist', () => {
     expect(src).toMatch(/isAllowedExternalUrl/);
     // 不再出现裸 `shell.openExternal(url);` 顶格调用(必须包在 if 守卫内)
     expect(src).toMatch(/if \(isAllowedExternalUrl\(url\)\)\s*\{\s*shell\.openExternal\(url\)/);
+  });
+
+  // 边界(E190):windowOpenHandler 在 new URL / openExternal 之前先做 url 长度上限(共享
+  // MAX_EXTERNAL_URL_LEN),防超长 url 大字符串解析 + 交系统协议处理器。index.ts 不可直接 import
+  //(顶层 app 副作用,E146),静态守卫 + 断言共享常量与 openExternal schema 同源。
+  it('E190 windowOpenHandler 在 new URL 前有 url 长度上限(共享 MAX_EXTERNAL_URL_LEN)', () => {
+    const src = readFileSync(join(ROOT, 'electron/main/index.ts'), 'utf-8');
+    expect(src).toMatch(/MAX_EXTERNAL_URL_LEN/);
+    // 长度守卫出现在 new URL(url) 之前(否则超长 url 仍先全量解析)
+    const guardIdx = src.indexOf('url.length > MAX_EXTERNAL_URL_LEN');
+    const newUrlIdx = src.indexOf('new URL(url)');
+    expect(guardIdx).toBeGreaterThan(-1);
+    expect(newUrlIdx).toBeGreaterThan(-1);
+    expect(guardIdx).toBeLessThan(newUrlIdx);
+  });
+
+  it('E190 MAX_EXTERNAL_URL_LEN 共享常量 = 2048(与 openExternal schema / Markdown 外链同源)', () => {
+    expect(MAX_EXTERNAL_URL_LEN).toBe(2048);
   });
 });

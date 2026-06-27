@@ -1,4 +1,5 @@
-import { open, rename, rm } from 'node:fs/promises';
+import { lstat, open, realpath, rename, rm } from 'node:fs/promises';
+import { basename, dirname, join } from 'node:path';
 import { fsError, mapNodeErrnoCode } from './path-utils';
 
 /**
@@ -49,23 +50,66 @@ function withPathLock<T>(filePath: string, fn: () => Promise<T>): Promise<T> {
   return run;
 }
 
-export function atomicWriteFile(
+/**
+ * 若 filePath 的 leaf 是 symlink,解析到真实目标后再写。读取(fs.readFile)跟随
+ * symlink 到 target,保存也必须写穿到 target —— 否则 `rename(tmp, filePath)` 会用普通
+ * 文件**替换链接本身**:链接断成普通文件、target 未更新,用户编辑落在断链副本里
+ * (读/写语义不对称,codex 数据安全复查 P1)。与 plugin-fs 的 rm/lstat/rename「实体
+ * 操作不跟随 symlink」相反:内容读/写应对称跟随到目标。
+ * 非 symlink / 不存在(新建)/ 断链(realpath 失败)→ 用原路径正常创建或替换。
+ */
+async function resolveSymlinkTarget(filePath: string): Promise<string> {
+  // 数据安全:lstat/realpath 的错误必须**只对 ENOENT 回退**,其它(EACCES/EIO 等)抛出。
+  // catch-all 会把「无法确认状态」当新建/断链 → 回退原路径后 rename 用普通文件替换 symlink
+  // 本身(断链、读写不对称),重现已修过的损坏(codex P1,#11 的连带缺口)。
+  let st;
+  try {
+    st = await lstat(filePath);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return filePath; // 新建文件
+    throw err; // 无法确认:不盲目当普通文件写(可能覆盖/断链)
+  }
+  if (!st.isSymbolicLink()) return filePath; // 普通文件
+  try {
+    return await realpath(filePath); // symlink → 写穿到 canonical target
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return filePath; // 断链:替换链接(既有语义)
+    throw err; // 无法确认目标:不 fail-open 断链
+  }
+}
+
+export async function atomicWriteFile(
   filePath: string,
   content: string | Uint8Array,
 ): Promise<void> {
-  return withPathLock(filePath, () => atomicWriteFileInner(filePath, content));
+  // symlink → 写穿到 canonical target,并以 target 作锁 key(经不同 symlink 指向同一
+  // target 的并发写也能正确串行)。
+  const realPath = await resolveSymlinkTarget(filePath);
+  return withPathLock(realPath, () => atomicWriteFileInner(realPath, content));
 }
 
 async function atomicWriteFileInner(
   filePath: string,
   content: string | Uint8Array,
 ): Promise<void> {
-  const tmpPath = `${filePath}.tmp`;
+  // tmp 用**隐藏标记名** `.<base>.continuo.tmp`(而非旧的可预测 `${filePath}.tmp`):
+  // 旧名会与用户真实文件(如 `foo.md.tmp` —— 常见后缀)撞名,`open('w')` 直接截断它、
+  // 随后 rename 连内容带文件一起销毁 → 数据丢失(codex P1)。隐藏 + 应用标记的 sibling
+  // 实务上不可能是用户文件。仍是固定名(per-path 串行 + crash 残留自愈,见上方注释)。
+  const tmpPath = join(dirname(filePath), `.${basename(filePath)}.continuo.tmp`);
 
-  // ① 写 tmp + fsync
-  let fd;
+  // ① 写 tmp + fsync。open 'wx' 排他:绝不盲目截断已存在文件。EEXIST 只可能是本应用上次
+  // crash(open→rename 窗口被杀)残留的同名标记 tmp(用户不会创建此名)→ 安全删除后重试
+  // 一次,保留「固定名 crash 残留自愈」语义(第十八轮设计),同时不再有截断用户文件之虞。
+  let fd: Awaited<ReturnType<typeof open>> | undefined;
   try {
-    fd = await open(tmpPath, 'w');
+    try {
+      fd = await open(tmpPath, 'wx');
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+      await rm(tmpPath, { force: true }).catch(() => {});
+      fd = await open(tmpPath, 'wx'); // 重试;再 EEXIST(跨进程竞态)则抛
+    }
     if (typeof content === 'string') {
       await fd.writeFile(content, 'utf-8');
     } else {

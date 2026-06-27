@@ -50,9 +50,9 @@ function makeHost(modules: Map<string, unknown>, dirs: PluginDirInfo[], enabled:
   return {
     listPluginDirs: () => dirs,
     readEnabledIds: () => enabled,
-    writeEnabledIds: (ids) => {
-      enabled.clear();
-      for (const i of ids) enabled.add(i);
+    mutateEnabledId: (id, on) => {
+      if (on) enabled.add(id);
+      else enabled.delete(id);
     },
     importModule: async (url) => {
       const mod = modules.get(url);

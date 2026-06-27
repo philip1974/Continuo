@@ -3,6 +3,7 @@ import {
   partitionDropItems,
   performDrop,
   resolveDropTarget,
+  MAX_DROP_FILE_COUNT,
   type DropFsApi,
   type DropTargetEntry,
 } from '../../panels/Explorer/drop-handlers';
@@ -99,6 +100,58 @@ describe('partitionDropItems', () => {
     expect(r.files).toHaveLength(1);
     expect(r.files[0]?.name).toBe('real.md');
   });
+
+  // 边界(E115):partition 阶段即限数量,防超大 DataTransferItemList 在读文件前大量
+  // getAsFile 物化(cap 此前只在 performDrop 太晚)。多收 1 个让 performDrop 仍能反馈 too-many。
+  it('E115 超过 MAX_DROP_FILE_COUNT 的文件项在 partition 阶段截断', () => {
+    let getAsFileCalls = 0;
+    // 直接造一个会计数 getAsFile 的 item 列表(5000 个文件项)
+    const N = 5000;
+    const arr = Array.from({ length: N }, (_, i) => ({
+      kind: 'file' as const,
+      type: '',
+      getAsFile: (): File | null => {
+        getAsFileCalls++;
+        return new File([new Uint8Array([1])], `f${i}.txt`);
+      },
+      getAsString: () => {},
+      webkitGetAsEntry: () => ({ isDirectory: false, name: `f${i}.txt` }),
+    }));
+    const list = arr as unknown as DataTransferItemList;
+    Object.defineProperty(list, 'length', { value: arr.length });
+
+    const r = partitionDropItems(list);
+    // 最多收 MAX_DROP_FILE_COUNT+1(多 1 个让 performDrop 反馈 too-many),远小于 N
+    expect(r.files.length).toBe(MAX_DROP_FILE_COUNT + 1);
+    expect(getAsFileCalls).toBe(MAX_DROP_FILE_COUNT + 1);
+    expect(r.files.length).toBeLessThan(N);
+  });
+
+  it('E115 超大目录项列表受总扫描上限约束(skippedDirs/webkitGetAsEntry 不跑满)', () => {
+    let entryCalls = 0;
+    const N = 100000;
+    // 全是目录项(kind=file + isDirectory)→ 每个调 webkitGetAsEntry 进 skippedDirs;
+    // 验证总扫描上限阻止全量遍历(否则 entryCalls / skippedDirs 会达 N)。
+    const arr = Array.from({ length: N }, (_, i) => ({
+      kind: 'file' as const,
+      type: '',
+      getAsFile: (): File | null => null,
+      getAsString: () => {},
+      webkitGetAsEntry: () => {
+        entryCalls++;
+        return { isDirectory: true, name: `d${i}` };
+      },
+    }));
+    const list = arr as unknown as DataTransferItemList;
+    Object.defineProperty(list, 'length', { value: arr.length });
+
+    const r = partitionDropItems(list);
+    expect(r.files).toHaveLength(0);
+    // 受 MAX_DROP_SCAN_ITEMS 约束:远小于 N(不全量遍历)。
+    expect(entryCalls).toBeLessThan(N);
+    expect(r.skippedDirs.length).toBeLessThan(N);
+    expect(r.skippedDirs.length).toBeLessThanOrEqual(entryCalls);
+  });
 });
 
 // ────────────────────────────────────────────────────────────
@@ -134,6 +187,50 @@ describe('performDrop', () => {
     );
     const call = writeBinary.mock.calls[0]!;
     expect(Array.from(call[1])).toEqual([9, 8, 7]);
+  });
+
+  // 边界(E268):外部 File.name 不可信 —— 含 / \ .. / 控制字符 / 超长 → 路径穿越或超长路径放大。
+  // 读 arrayBuffer / 拼 targetPath 前校验 leaf;非法归 failed(FS_BAD_NAME)且不调 writeBinary。
+  it('E268 file.name 含路径分隔符 → FS_BAD_NAME,不写(防穿越到子路径)', async () => {
+    const writeBinary = vi.fn<DropFsApi['writeBinary']>(async () => ok());
+    const fs = makeFs(writeBinary);
+    const r = await performDrop([makeFile('sub/evil.txt')], '/work', fs);
+    expect(r.ok).toBe(false);
+    expect(r.written).toEqual([]);
+    expect(writeBinary).not.toHaveBeenCalled();
+    expect(r.failed[0]!.code).toBe('FS_BAD_NAME');
+  });
+
+  it('E268 file.name 为 .. → FS_BAD_NAME,不写(防穿越到父路径)', async () => {
+    const writeBinary = vi.fn<DropFsApi['writeBinary']>(async () => ok());
+    const fs = makeFs(writeBinary);
+    const r = await performDrop([makeFile('..')], '/work', fs);
+    expect(r.failed[0]!.code).toBe('FS_BAD_NAME');
+    expect(writeBinary).not.toHaveBeenCalled();
+  });
+
+  it('E268 file.name 含反斜杠 / 控制字符 → FS_BAD_NAME', async () => {
+    const fs = makeFs();
+    const r1 = await performDrop([makeFile('a\\b.txt')], '/work', fs);
+    expect(r1.failed[0]!.code).toBe('FS_BAD_NAME');
+    const r2 = await performDrop([makeFile('a\nb.txt')], '/work', fs);
+    expect(r2.failed[0]!.code).toBe('FS_BAD_NAME');
+  });
+
+  it('E268 超长 file.name → FS_BAD_NAME 且 failed.name 截断(不放大)', async () => {
+    const fs = makeFs();
+    const longName = 'x'.repeat(5000) + '.txt';
+    const r = await performDrop([makeFile(longName)], '/work', fs);
+    expect(r.failed[0]!.code).toBe('FS_BAD_NAME');
+    expect(r.failed[0]!.name.length).toBeLessThanOrEqual(255);
+  });
+
+  it('E268 合法 file.name 仍正常写(回归)', async () => {
+    const writeBinary = vi.fn<DropFsApi['writeBinary']>(async () => ok());
+    const fs = makeFs(writeBinary);
+    const r = await performDrop([makeFile('normal.txt')], '/work', fs);
+    expect(r.ok).toBe(true);
+    expect(r.written).toEqual(['/work/normal.txt']);
   });
 
   it('多文件全成功 → written 全列出', async () => {
@@ -183,6 +280,26 @@ describe('performDrop', () => {
     expect(fs.writeBinary).not.toHaveBeenCalled();
   });
 
+  // a11y(A137):writeBinary reject(IPC 抛错而非返回 {ok:false})须归类到 failed,
+  // 不能让 performDrop 整体 reject(否则调用点漏报且 unhandled rejection)。
+  it('writeBinary reject → failed WRITE_ERROR(不 reject)', async () => {
+    const writeBinary = vi
+      .fn<DropFsApi['writeBinary']>()
+      .mockResolvedValueOnce(ok())
+      .mockRejectedValueOnce(new Error('ipc down'))
+      .mockResolvedValueOnce(ok());
+    const fs = makeFs(writeBinary);
+    const r = await performDrop(
+      [makeFile('a'), makeFile('b'), makeFile('c')],
+      '/work',
+      fs,
+    );
+    expect(r.ok).toBe(false);
+    expect(r.written).toEqual(['/work/a', '/work/c']);
+    expect(r.failed).toHaveLength(1);
+    expect(r.failed[0]).toMatchObject({ name: 'b', code: 'WRITE_ERROR' });
+  });
+
   it('同名不主动跳过(交给 atomic write 覆盖)', async () => {
     const writeBinary = vi.fn(async () => ok());
     const fs = makeFs(writeBinary);
@@ -194,5 +311,65 @@ describe('performDrop', () => {
     expect(r.ok).toBe(true);
     expect(writeBinary).toHaveBeenCalledTimes(2);
     expect(r.written).toEqual(['/work/dup', '/work/dup']);
+  });
+
+  // 边界(E41,E13 读侧对偶):performDrop 读前用 file.size 预检 —— 超大/海量拖放在
+  // arrayBuffer() 把整个文件读进 renderer 内存之前就拒绝,挡 renderer OOM(主进程写入上限
+  // 只在 IPC 后生效,挡不住 renderer 先 OOM)。
+  describe('E41 · 拖放大小/数量预检', () => {
+    // size getter only,arrayBuffer 应当不被调(读前拒绝)。
+    const fakeFile = (name: string, size: number): File => {
+      const arrayBuffer = vi.fn(async () => new ArrayBuffer(0));
+      return { name, size, arrayBuffer } as unknown as File;
+    };
+
+    it('单文件超 64MiB → failed FS_FILE_TOO_LARGE,不调 arrayBuffer/writeBinary', async () => {
+      const writeBinary = vi.fn<DropFsApi['writeBinary']>(async () => ok());
+      const fs = makeFs(writeBinary);
+      const huge = fakeFile('huge.bin', 64 * 1024 * 1024 + 1);
+      const r = await performDrop([huge], '/work', fs);
+      expect(r.ok).toBe(false);
+      expect(r.failed[0]).toMatchObject({
+        name: 'huge.bin',
+        code: 'FS_FILE_TOO_LARGE',
+      });
+      expect(huge.arrayBuffer).not.toHaveBeenCalled(); // 读前拒绝,不进内存
+      expect(writeBinary).not.toHaveBeenCalled();
+    });
+
+    it('累计总字节超 512MiB → 超出项 failed DROP_TOTAL_TOO_LARGE', async () => {
+      const writeBinary = vi.fn<DropFsApi['writeBinary']>(async () => ok());
+      const fs = makeFs(writeBinary);
+      // 9 个 60MiB 文件(各 ≤64MiB 单文件上限);累计 540MiB,第 9 个跨过 512MiB。
+      const files = Array.from({ length: 9 }, (_, i) =>
+        fakeFile(`f${i}.bin`, 60 * 1024 * 1024),
+      );
+      const r = await performDrop(files, '/work', fs);
+      expect(r.ok).toBe(false);
+      // 前 8 个被接受(480MiB ≤ 512),第 9 个超 → DROP_TOTAL_TOO_LARGE。
+      expect(writeBinary).toHaveBeenCalledTimes(8);
+      expect(r.failed).toHaveLength(1);
+      expect(r.failed[0]).toMatchObject({ code: 'DROP_TOTAL_TOO_LARGE' });
+    });
+
+    it('文件数超 1000 → 超出项 failed DROP_TOO_MANY_FILES', async () => {
+      const writeBinary = vi.fn<DropFsApi['writeBinary']>(async () => ok());
+      const fs = makeFs(writeBinary);
+      const files = Array.from({ length: 1001 }, (_, i) =>
+        fakeFile(`f${i}`, 1),
+      );
+      const r = await performDrop(files, '/work', fs);
+      expect(r.ok).toBe(false);
+      expect(writeBinary).toHaveBeenCalledTimes(1000); // 前 1000 接受
+      expect(r.failed).toHaveLength(1);
+      expect(r.failed[0]).toMatchObject({ code: 'DROP_TOO_MANY_FILES' });
+    });
+
+    it('上限内正常文件不受影响(行为保持)', async () => {
+      const fs = makeFs();
+      const r = await performDrop([makeFile('a.md', [1, 2, 3])], '/work', fs);
+      expect(r.ok).toBe(true);
+      expect(r.written).toEqual(['/work/a.md']);
+    });
   });
 });

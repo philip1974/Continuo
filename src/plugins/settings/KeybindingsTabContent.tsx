@@ -2,8 +2,9 @@
 // 订阅 commands registry,只列有 hotkey 的命令,按 category 分组。
 // KeyCap 渲染 hotkey,跟 CommandPalette 风格一致。
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { IconButton, Input, KeyCap } from '@/design';
+import { clampSearchQuery } from '@/lib/search-query';
 import { coApp } from '@/plugins/co-app';
 import { useRegistry } from '../registries/useRegistry';
 import type {
@@ -133,20 +134,31 @@ export function KeybindingsTabContent() {
     [allCommands],
   );
 
+  // race(R50):快捷键编辑弹窗持有打开时捕获的 editing command。若弹窗打开期间插件 reload/disable
+  // 把该命令移出 registry,onSave/onReset 仍会用旧 command id 写 override → 写到已不存在的命令,
+  // 同 id 命令日后重注册时意外继承旧绑定(stale write)。命令从 allCommands 消失即自动关闭弹窗。
+  useEffect(() => {
+    if (editing && !allCommands.some((c) => c.id === editing.id)) {
+      setEditing(null);
+    }
+  }, [editing, allCommands]);
+
   return (
     <div className="space-y-6">
       <div className="space-y-2">
         <Input
           size="sm"
+          // a11y(A5 同族):placeholder 无参数 → 复用作 aria-label。
+          aria-label={t('keybindings.search_placeholder')}
           placeholder={t('keybindings.search_placeholder')}
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => setQuery(clampSearchQuery(e.target.value))}
         />
         <div className="flex items-center gap-1.5 text-xs text-fg-muted">
           <span>{t('keybindings.total_summary_prefix', { count: totalWithHotkey })}</span>
-          <KeyCap>⌘</KeyCap>
-          <KeyCap>⇧</KeyCap>
-          <KeyCap>P</KeyCap>
+          {formatHotkeyParts('mod+shift+p', PLATFORM).map((p, i) => (
+            <KeyCap key={i}>{p}</KeyCap>
+          ))}
           <span>{t('keybindings.total_summary_suffix')}</span>
         </div>
       </div>
@@ -159,12 +171,32 @@ export function KeybindingsTabContent() {
         defaultHotkey={editing?.hotkey}
         allCommands={allCommands}
         onClose={() => setEditing(null)}
-        onSave={(combo) => editing && setHotkey(editing.id, combo)}
-        onResetToDefault={() => editing && reset(editing.id)}
+        onSave={(combo) => {
+          // race(R50):保存瞬间从当前 registry 复检命令仍存在(覆盖 effect 关闭弹窗前的同帧
+          // 点击);已移除则关弹窗不写,防 override 写到不存在的命令。
+          if (!editing) return;
+          if (!allCommands.some((c) => c.id === editing.id)) {
+            setEditing(null);
+            return;
+          }
+          setHotkey(editing.id, combo);
+        }}
+        onResetToDefault={() => {
+          if (!editing) return;
+          if (!allCommands.some((c) => c.id === editing.id)) {
+            setEditing(null);
+            return;
+          }
+          reset(editing.id);
+        }}
       />
 
       {buckets.length === 0 ? (
-        <div className="rounded-md border border-dashed border-line bg-panel-soft/40 px-4 py-8 text-center text-xs text-fg-dim">
+        // a11y(A57,A54/A56 同族):焦点锁搜索框,输入致空时须 live region(role=status)播报无匹配。
+        <div
+          role="status"
+          className="rounded-md border border-dashed border-line bg-panel-soft/40 px-4 py-8 text-center text-xs text-fg-dim"
+        >
           {totalWithHotkey === 0
             ? t('keybindings.empty')
             : t('keybindings.no_match')}
@@ -206,7 +238,10 @@ export function KeybindingsTabContent() {
                       <IconButton
                         size="xs"
                         title={t('keybindings.edit_hotkey')}
-                        aria-label={t('keybindings.edit_hotkey')}
+                        // a11y(A76,A75 同族):多命令行的编辑按钮可见图标通用,aria-label 补命令名以区分。
+                        aria-label={t('keybindings.edit_hotkey_for_aria', {
+                          command: d.displayTitle,
+                        })}
                         onClick={() => setEditing(cmd)}
                       >
                         <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.4">
@@ -216,8 +251,12 @@ export function KeybindingsTabContent() {
                       <IconButton
                         size="xs"
                         title={t('keybindings.reset_default', { hotkey: cmd.hotkey ?? t('keybindings.unbound') })}
-                        aria-label={t('keybindings.reset_default_aria')}
+                        aria-label={t('keybindings.reset_default_for_aria', {
+                          command: d.displayTitle,
+                        })}
                         onClick={() => isOverridden && reset(cmd.id)}
+                        // a11y(A12 同族):未覆盖时 disabled,避免键盘 Tab 到不可见无效按钮。
+                        disabled={!isOverridden}
                         className={
                           isOverridden ? '' : 'pointer-events-none invisible'
                         }

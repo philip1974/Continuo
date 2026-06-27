@@ -17,6 +17,7 @@ import {
   type WebContents,
 } from 'electron';
 import { defaultIsTrustedFrame, processIpcCall } from '../safe-handle';
+import { boundedObjectAdmissible } from '../../shared/bounded-input';
 import { PLUGIN_MCP_CHANNELS } from '../../shared/plugin-mcp-channels';
 import {
   RegisterPayloadSchema,
@@ -65,13 +66,16 @@ export function startPluginMcpIpc(
   // host 内部 tools Map 在 createMcpHost 里是 ReadonlyMap 对外暴露,
   // removeTool 已在 host 加方法直接调即可。
   const localInvoke = createInvokeRemote({
-    send(owner: PluginMcpToolOwner, channel, payload) {
+    send(owner: PluginMcpToolOwner, channel, payload): boolean {
       const wc = webContents.fromId(owner.wcId);
       if (!wc || wc.isDestroyed()) {
-        // wc 已没,本不该走到这里(register 必跟 wc 生命周期挂钩);保险起见 noop
-        return;
+        // race(R32):wc 已销毁(插件窗口刚关 / reload)。返 false 让 createInvokeRemote 立即清
+        // pending + reject PLUGIN_GONE,而非静默 noop 让在途 invoke 干等满 30s timeout
+        // (登记 pending 与本次 send 之间 destroyed-cleanup 可能已先跑完,新 pending 无人 abort)。
+        return false;
       }
       wc.send(channel, payload);
+      return true;
     },
   });
 
@@ -127,20 +131,43 @@ export function startPluginMcpIpc(
   // INVOKE_REPLY:renderer 答 invoke,无需返回 → 用 ipcMain.on(send 配对)。
   // 与同模块 REGISTER/UNREGISTER 对齐:校验 senderFrame 可信,拒绝不受信 frame
   // (被注入的子 frame / 未来 iframe 插件隔离)伪造 reply 提前 resolve 挂起的 invoke。
+  // 边界(E265,E263 main 侧对偶 / 读端独立校验):bounded/schema 校验失败时**不**把 raw reply 交 handleReply
+  //(它信任 raw 的 ok/result/message/code:ok:true→resolve 超大 result、ok:false→reject 超长 message,绕过
+  // InvokeReplySchema 10MB/8192/256 上限经 mcp-host 编进 JSON-RPC 放大 main)。改为仅提取 requestId(O(1) 属性
+  // 读,不枚举)按固定 INVALID_REPLY 拒绝对应 pending:既收口不挂 30s,又绝不传播 raw 超大/超长字段;无可用
+  // requestId 的垃圾 payload 静默丢弃(无法关联)。承第七/topic-49 session「畸形 reply 立即 reject 不挂起」语义。
+  const rejectInvalidReply = (rawReply: unknown): void => {
+    const rid =
+      rawReply !== null &&
+      typeof rawReply === 'object' &&
+      !Array.isArray(rawReply)
+        ? (rawReply as Record<string, unknown>)['requestId']
+        : undefined;
+    if (typeof rid === 'string' && rid.length > 0) {
+      localInvoke.rejectPendingInvalid(rid);
+    } else {
+      console.warn('[plugin-mcp-invoke] invalid reply, dropped (no requestId)');
+    }
+  };
+
   ipcMain.on(PLUGIN_MCP_CHANNELS.INVOKE_REPLY, (event, raw: unknown) => {
     if (!defaultIsTrustedFrame(event.senderFrame)) return;
-    const parsed = InvokeReplySchema.safeParse(raw);
-    if (parsed.success) {
-      localInvoke.handleReply(parsed.data);
+    // 边界(E257,E255/E256 同族 / schema-阶段放大):此 raw ipcMain.on 绕过 safeHandle 的 bounded
+    // 预检,直接 InvokeReplySchema.safeParse(raw)。该 schema 是 strict discriminated union,畸形 reply
+    // 带海量未知短 key 仍会先触发 Zod 枚举 + 构造 unknown-keys issue(在主进程 schema 阶段放大 CPU/内存)。
+    // safeParse 前用同一 shared boundedObjectAdmissible 预检;超限不进 Zod,按 requestId 立即收口 pending。
+    if (!boundedObjectAdmissible(raw).ok) {
+      rejectInvalidReply(raw); // 边界(E265):不传播 raw 字段
       return;
     }
-    // schema 失败的畸形 reply 仍交给 handleReply(它对 raw 全防御):带 string requestId 但 ok
-    // 畸形(缺失/非布尔)的 reply 会被立即 reject INVALID_REPLY,而非静默丢弃让对应 pending
-    // invoke 干等满 30s timeout(外部 agent tools/call 看起来卡死)。完全无 requestId 的垃圾
-    // payload 由 handleReply 内部静默丢弃(requestId 非 string → return)。第七 session 硬化了
-    // handleReply 的 INVALID_REPLY 立即-reject,但生产入口的 schema-gate 之前把它挡在门外
-    // 不可达(helper 正确但生产入口绕过 helper)。(codex 复审 loop R20-confirm)
-    localInvoke.handleReply(raw);
+    const parsed = InvokeReplySchema.safeParse(raw);
+    if (parsed.success) {
+      localInvoke.handleReply(parsed.data); // 已过 schema(≤10MB/8192/256),安全交 handleReply
+      return;
+    }
+    // 边界(E265):schema 失败的畸形 reply 不再整体交 handleReply(会信任 raw 字段传播超大 result /
+    // 超长 message),改按 requestId 固定 INVALID_REPLY 收口(承 topic-49「立即 reject 不挂 30s」语义)。
+    rejectInvalidReply(raw);
   });
 
   return { bridge: localBridge, invokeRemote: localInvoke };

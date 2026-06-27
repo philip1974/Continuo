@@ -30,6 +30,8 @@ const mocks = vi.hoisted(() => ({
   ),
   setCurrentLocale: vi.fn<(locale: Locale) => Promise<number> | number>(() => 1),
   getSetLocaleGen: vi.fn<() => number>(() => 1),
+  // race(R36):handler 改用 commitSetLocaleGen 判广播(true=最新成功提交)。
+  commitSetLocaleGen: vi.fn<(gen: number) => boolean>(() => true),
   getCurrentLocale: vi.fn<() => Locale>(() => 'en'),
   BrowserWindow: {
     getAllWindows: vi.fn<() => PopoutWindow[]>(() => []),
@@ -44,6 +46,7 @@ vi.mock('../../../electron/main/services/settings.service', () => ({
   getCurrentLocale: mocks.getCurrentLocale,
   setCurrentLocale: mocks.setCurrentLocale,
   getSetLocaleGen: mocks.getSetLocaleGen,
+  commitSetLocaleGen: mocks.commitSetLocaleGen,
 }));
 
 vi.mock('electron', () => ({

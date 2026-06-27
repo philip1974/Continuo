@@ -89,6 +89,26 @@ describe('topic49 后续 · request-scope handler 收口窗口关闭取消', () 
     await expect(handlerPromise).resolves.toBe('deny');
   });
 
+  // race(R73,agent-auth R62 同族):createRequest 登记 pending 后、send 前 sender 销毁致 send 抛。
+  // 不处理则 pending 泄漏到 5min TTL,插件 requestScope() 假死且用户看不到弹窗。send 须 try/catch:
+  // 失败立即 cancelBySender 清 pending + 返回 deny。
+  it('R73 scope-request send 抛错 → handler 返回 deny + pending 不泄漏(不挂到 TTL)', async () => {
+    const { ipc, correlator: corr, token } = await makeHarness(11);
+    const event: StubIpcEvent = makeFakeEvent({ id: 11, isDestroyed: () => false });
+    // send 抛(模拟登记 pending 后、send 前 webContents 销毁的竞态)。
+    event.sender.send.mockImplementation(() => {
+      throw new Error('Object has been destroyed');
+    });
+
+    // handler 不挂到 TTL,立即解析为 deny。
+    await expect(
+      ipc.invokeWithEvent(event, PLUGIN_FS_CHANNELS.REQUEST_SCOPE, token, []),
+    ).resolves.toBe('deny');
+
+    // pending 已清:此刻 cancelBySender 返回 0(无残留),证明 send 抛后立即清理而非泄漏到 TTL。
+    expect(corr.cancelBySender(11)).toBe(0);
+  });
+
   it('renderer 仍存活的 TTL 超时仍按原契约 reject', async () => {
     const { ipc, correlator: corr, token } = await makeHarness(8);
     const event: StubIpcEvent = makeFakeEvent({

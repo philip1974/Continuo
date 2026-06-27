@@ -42,11 +42,17 @@ function read(rel: string): string {
 }
 
 describe('unified-toast-notification: ERROR_CODES enum', () => {
-  it('T9 exposes exactly 34 unique business error code keys', () => {
+  it('T9 exposes exactly 39 unique business error code keys', () => {
     expect(Object.keys(ERROR_CODES).sort()).toEqual(
       Array.from(new Set(Object.keys(ERROR_CODES))).sort(),
     );
-    expect(Object.keys(ERROR_CODES)).toHaveLength(34);
+    // race(R4):+TERMINAL_WRITE_FAILED(34→35),write 真实失败上抛供 renderer 感知。
+    // race(R31):+TERMINAL_CREATE_CANCELLED(35→36),create 期间被取消 → kill 孤儿 PTY 并以此收场。
+    // 边界(E18):+FS_FILE_TOO_LARGE(36→37),readFile 超 64MiB 拦截。
+    // 边界(E30):+FS_DIR_TOO_LARGE(37→38),plugin-fs list-dir 条目数超硬上限拦截。
+    // 边界(E230):+TOO_MANY_STREAMS(38→39),流式 shell active 子进程超全局/per-sender 并发上限拦截。
+    // 边界(E235):+TOO_MANY_TERMINALS(39→40),终端会话(真实 PTY)超全局/每窗口数量上限拦截。
+    expect(Object.keys(ERROR_CODES)).toHaveLength(40);
     expect(ERROR_CODES.TERMINAL_CWD_UNRESOLVED).toBe(
       'TERMINAL_CWD_UNRESOLVED',
     );

@@ -73,8 +73,16 @@ function useCommands(registry: CommandRegistry): readonly CommandSpec[] {
 export function CommandPalette({ commands }: CommandPaletteProps) {
   const isOpen = useCommandPaletteStore((s) => s.isOpen);
   const close = useCommandPaletteStore((s) => s.close);
+  const t = useT(); // a11y(A13):给无标题 dialog 命名
   return (
-    <Modal visible={isOpen} onClose={close} size="md" className="!p-0 !rounded-md">
+    <Modal
+      visible={isOpen}
+      onClose={close}
+      size="md"
+      className="!p-0 !rounded-md"
+      // a11y(A13):无可见标题的 dialog → 用 aria-label 给屏幕阅读器命名(复用 placeholder key)。
+      aria-label={t('command_palette.placeholder')}
+    >
       {isOpen && <CommandPaletteBody commands={commands} />}
     </Modal>
   );
@@ -86,6 +94,7 @@ function CommandPaletteBody({ commands }: CommandPaletteProps) {
   const close = useCommandPaletteStore((s) => s.close);
   const setQuery = useCommandPaletteStore((s) => s.setQuery);
   const moveSelection = useCommandPaletteStore((s) => s.moveSelection);
+  const clampSelection = useCommandPaletteStore((s) => s.clampSelection);
 
   const allCommands = useCommands(commands);
   const recentList = useRecentCommandsStore((s) => s.list);
@@ -136,11 +145,23 @@ function CommandPaletteBody({ commands }: CommandPaletteProps) {
     estimateSize: () => ROW_H,
     overscan: 10,
   });
+  // race(R49,R48 孪生):filtered 随 commands registry / 插件 reload·disable / locale·hotkey·recent
+  // 重算而动态变短时,把 selectedIndex 钳回 [0,len-1],防 Enter 读 filtered[idx]=undefined 命令
+  // 无法执行 + 高亮/滚动悬空。须在下方 scroll effect 之前生效(声明在前)。
+  useEffect(() => {
+    clampSelection(filtered.length);
+  }, [filtered.length, clampSelection]);
   // 键盘改 selectedIndex → 滚到可视区(虚拟化后选中行可能未挂载)。
   useEffect(() => {
     if (filtered.length === 0) return;
     rowVirtualizer.scrollToIndex(selectedIndex);
   }, [selectedIndex, filtered.length, rowVirtualizer]);
+  // a11y(A112,A111 后续):aria-activedescendant 只能指向 DOM 中真实挂载的 option。虚拟列表
+  // 里选中项可能在逻辑上有效但不在渲染窗口内(scrollToIndex 滚入前的瞬态)→ 须校验该 index
+  // 在 getVirtualItems() 渲染窗口内,否则引用悬空,SR 拿不到当前项。
+  const activeOptionRendered = rowVirtualizer
+    .getVirtualItems()
+    .some((vRow) => vRow.index === selectedIndex);
 
   const execute = useCallback(
     (d: DisplayCommand) => {
@@ -148,9 +169,15 @@ function CommandPaletteBody({ commands }: CommandPaletteProps) {
       recordRecent(d.cmd.id);
       // 命令抛错经 runContributedAction 弹 error toast(显示 localize 后的 title),
       // 不再只 console.warn —— 面板已关,旧实现下用户看不到任何失败反馈。见第二十一轮 P1-AX。
-      runContributedAction(d.displayTitle, () => d.cmd.fn());
+      // race(R51):按 id 从 live registry 重查再执行,而非调列表项缓存的 d.cmd.fn()。命令被插件
+      // disable/reload unregister 后,filtered 快照仍持旧 CommandSpec;重查使死命令静默忽略。
+      runContributedAction(d.displayTitle, () => {
+        const live = commands.get(d.cmd.id);
+        if (!live) return;
+        return live.fn();
+      });
     },
-    [close, recordRecent],
+    [close, recordRecent, commands],
   );
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -173,6 +200,30 @@ function CommandPaletteBody({ commands }: CommandPaletteProps) {
         <Input
           size="sm"
           autoFocus
+          // a11y(A1):placeholder 不是稳定可访问名(部分 AT 不读 / 输入后消失)。补
+          // aria-label 复用同一 placeholder key,给屏幕阅读器稳定的「命令搜索框」名称。
+          aria-label={t('command_palette.placeholder')}
+          // a11y(A15):combobox 模式 —— 焦点留输入框、上下键移动 listbox 虚拟选中。须 role=
+          // combobox + aria-controls 指向 listbox + aria-activedescendant 指向当前高亮 option,
+          // 否则屏幕阅读器按上下键不知高亮哪条。
+          role="combobox"
+          // a11y(A100):此 modal combobox 打开即弹层可见(无结果也显示「无匹配」空态)→
+          // aria-expanded 恒 true 表弹层展开;按结果数设 false 会与可见状态矛盾(宣告 collapsed)。
+          // 无结果只移除 aria-activedescendant(下方),不改 expanded。
+          aria-expanded
+          // a11y(A101,A100 后续):listbox <ul id> 只在有结果时渲染 → 仅有结果时设 aria-controls,
+          // 否则引用悬空(指向不存在元素,combobox 关系断裂)。
+          aria-controls={
+            filtered.length > 0 ? 'command-palette-listbox' : undefined
+          }
+          // a11y(A111,A101 同族):校验 selectedIndex 不越界,避免结果变短时指向不存在 option。
+          aria-activedescendant={
+            selectedIndex >= 0 &&
+            selectedIndex < filtered.length &&
+            activeOptionRendered
+              ? `command-palette-option-${selectedIndex}`
+              : undefined
+          }
           placeholder={t('command_palette.placeholder')}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -181,11 +232,14 @@ function CommandPaletteBody({ commands }: CommandPaletteProps) {
       </div>
       <div ref={scrollRef} className="max-h-[360px] overflow-y-auto py-1">
         {filtered.length === 0 ? (
-          <div className="px-3 py-4 text-center text-xs text-fg-dim">
+          // a11y(A56,A53-A55 同族):焦点锁在搜索框,输入致结果空时须 live region(role=status)
+          // 播报「无匹配」,否则 AT 用户不知已无结果。
+          <div role="status" className="px-3 py-4 text-center text-xs text-fg-dim">
             {allCommands.length === 0 ? t('command_palette.empty') : t('command_palette.no_match')}
           </div>
         ) : (
           <ul
+            id="command-palette-listbox"
             role="listbox"
             aria-label={t('command_palette.list_aria')}
             style={{
@@ -199,6 +253,7 @@ function CommandPaletteBody({ commands }: CommandPaletteProps) {
               return (
                 <li
                   key={d.cmd.id}
+                  id={`command-palette-option-${idx}`}
                   role="option"
                   aria-selected={idx === selectedIndex}
                   style={{

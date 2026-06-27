@@ -60,3 +60,28 @@ describe('topic49 6thS · ScopeRequestCorrelator.cancelBySender', () => {
     expect(correlator.cancelBySender(999)).toBe(0);
   });
 });
+
+// 边界(E227):未决 scope 请求数量上限(canAccept 全局 + per-webContents 双闸),防插件 spam 让 pending
+// Map / renderer 弹窗队列线性增长。
+describe('E227 · ScopeRequestCorrelator.canAccept(pending 数量上限)', () => {
+  it('per-webContents:单窗口未决达 64 → canAccept 该窗口 false,其它窗口仍 true', () => {
+    correlator = new ScopeRequestCorrelator();
+    const c = correlator;
+    for (let i = 0; i < 64; i++) c.createRequest('t', [], 7); // 同一 wc 64 个未决
+    expect(c.canAccept(7)).toBe(false); // 该窗口到顶
+    expect(c.canAccept(8)).toBe(true); // 别的窗口不受影响
+  });
+
+  it('global:总未决达 256 → canAccept 任何窗口 false', () => {
+    correlator = new ScopeRequestCorrelator();
+    const c = correlator;
+    // 256 个未决跨多窗口(每窗 <64,只触发全局闸)
+    for (let i = 0; i < 256; i++) c.createRequest('t', [], 1000 + i);
+    expect(c.canAccept(1)).toBe(false); // 全局到顶
+  });
+
+  it('未达上限 → canAccept true(回归)', () => {
+    correlator = new ScopeRequestCorrelator();
+    expect(correlator.canAccept(1)).toBe(true);
+  });
+});

@@ -30,6 +30,8 @@ const mocks = vi.hoisted(() => ({
   ),
   setCurrentLocale: vi.fn<(locale: Locale) => Promise<number> | number>(() => 2),
   getSetLocaleGen: vi.fn<() => number>(() => 2),
+  // race(R36):handler 改用 commitSetLocaleGen 判广播(true=最新成功提交)。
+  commitSetLocaleGen: vi.fn<(gen: number) => boolean>(() => true),
   getCurrentLocale: vi.fn<() => Locale>(() => 'en'),
   BrowserWindow: {
     getAllWindows: vi.fn<() => MockWindow[]>(() => []),
@@ -44,6 +46,7 @@ vi.mock('../../../electron/main/services/settings.service', () => ({
   getCurrentLocale: mocks.getCurrentLocale,
   setCurrentLocale: mocks.setCurrentLocale,
   getSetLocaleGen: mocks.getSetLocaleGen,
+  commitSetLocaleGen: mocks.commitSetLocaleGen,
 }));
 
 vi.mock('electron', () => ({
@@ -96,5 +99,32 @@ describe('popout locale broadcast', () => {
       I18N_CHANNELS.CHANGED,
       payload,
     );
+  });
+
+  // race(R64,R63 同族):一个窗口 send 抛错(isDestroyed 检查后销毁)不应中断广播或让
+  // SET_LOCALE 返回 ok:false —— locale 已落 disk/main,handler 失败会让发起 renderer 停旧语言。
+  it('R64: 一个窗口 send 抛错 → 其它窗口仍收到广播 + handler 仍返回 ok', async () => {
+    const dead = makeWindow(1);
+    (dead.webContents.send as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      throw new Error('Object has been destroyed');
+    });
+    const healthy = makeWindow(2);
+    mocks.BrowserWindow.getAllWindows.mockReturnValue([dead, healthy]);
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { registerI18nIpc, setMenuRebuilder } = await import(
+      '../../../electron/main/ipc/i18n.ipc'
+    );
+
+    registerI18nIpc(() => true);
+    setMenuRebuilder(vi.fn());
+    const result = await setLocaleHandler()('ko');
+
+    // 抛错窗口之后的健康窗口仍收到广播(循环未中断)。
+    expect(healthy.webContents.send).toHaveBeenCalledWith(
+      I18N_CHANNELS.CHANGED,
+      { locale: 'ko', gen: 2 },
+    );
+    // handler 不因单窗口 send 失败而返回 ok:false(否则发起 renderer 不更新语言 = 分裂)。
+    expect(result).toEqual({ ok: true, locale: 'ko', gen: 2 });
   });
 });

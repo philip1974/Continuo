@@ -34,6 +34,38 @@ describe('EditorActionRegistry', () => {
     warn.mockRestore();
   });
 
+  // race(R53,R51/R52 同族):EditorHeader 按钮 onClick 捕获 spec,插件 unregister 后旧 handler
+  // 仍可触发 → click 时按 id 从 live registry 重查执行。get(id) 提供 live 查找,dispose 后 undefined。
+  describe('get(id) live 查找(R53)', () => {
+    it('register → get(id) 返回 spec;dispose 后返 undefined', () => {
+      const r = new EditorActionRegistry();
+      const d = r.register({ id: 'a', label: 'A', fn: () => {} });
+      expect(r.get('a')?.id).toBe('a');
+      d.dispose();
+      expect(r.get('a')).toBeUndefined();
+    });
+
+    it('get 返回当前 live spec(重复 id 后注册赢)', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const r = new EditorActionRegistry();
+      r.register({ id: 'x', label: 'old', fn: () => {} });
+      r.register({ id: 'x', label: 'new', fn: () => {} });
+      expect(r.get('x')?.label).toBe('new');
+      warn.mockRestore();
+    });
+
+    it('已 dispose 的 action 经 get→filterVisible 复检后不执行(stale-skip 语义)', () => {
+      const r = new EditorActionRegistry();
+      const fn = vi.fn();
+      const d = r.register({ id: 'a', label: 'A', fn });
+      d.dispose();
+      // 模拟点击时的重查 + 复检:get 返 undefined → 不执行 stale fn。
+      const live = r.get('a');
+      if (live && filterVisible([live], ctx).length > 0) live.fn();
+      expect(fn).not.toHaveBeenCalled();
+    });
+  });
+
   it('subscribe register/dispose 触发', () => {
     const r = new EditorActionRegistry();
     const listener = vi.fn();
@@ -41,6 +73,49 @@ describe('EditorActionRegistry', () => {
     const d = r.register({ id: 'a', label: 'A', fn: () => {} });
     d.dispose();
     expect(listener).toHaveBeenCalledTimes(2);
+  });
+
+  // 边界(E51,E35-E50 兄弟 registry):register 校验 id/label 长度 + priority finite + when/fn 为函数。
+  // 畸形 action 进 editor header 排序/渲染,超长 label 污染按钮,非函数 when/fn 渲染过滤/点击时抛。
+  describe('E51 · 贡献项边界校验', () => {
+    it('合法 spec → ok', () => {
+      const r = new EditorActionRegistry();
+      expect(() => r.register({ id: 'a', label: 'A', fn: () => {} })).not.toThrow();
+    });
+
+    it('超长 id/label → 抛,不入 registry', () => {
+      const r = new EditorActionRegistry();
+      expect(() =>
+        r.register({ id: 'x'.repeat(257), label: 'L', fn: () => {} }),
+      ).toThrow(/id exceeds max length/i);
+      expect(() =>
+        r.register({ id: 'a', label: 'L'.repeat(513), fn: () => {} }),
+      ).toThrow(/label exceeds max length/i);
+      expect(r.getAll()).toEqual([]);
+    });
+
+    it('空 id/label → 抛', () => {
+      const r = new EditorActionRegistry();
+      expect(() => r.register({ id: '', label: 'L', fn: () => {} })).toThrow(
+        /id must be a non-empty/i,
+      );
+      expect(() => r.register({ id: 'a', label: '', fn: () => {} })).toThrow(
+        /label must be a non-empty/i,
+      );
+    });
+
+    it('非有限 priority / when 非函数 / fn 非函数 → 抛', () => {
+      const r = new EditorActionRegistry();
+      expect(() =>
+        r.register({ id: 'a', label: 'L', fn: () => {}, priority: Infinity }),
+      ).toThrow(/priority must be finite/i);
+      expect(() =>
+        r.register({ id: 'b', label: 'L', fn: () => {}, when: 'x' as never }),
+      ).toThrow(/when must be a function/i);
+      expect(() =>
+        r.register({ id: 'c', label: 'L', fn: 'x' as never }),
+      ).toThrow(/fn must be a function/i);
+    });
   });
 });
 

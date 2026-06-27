@@ -1,8 +1,12 @@
 // BDD: startup-mode (Issue #30)
 // 纯函数 pickStartupMode(pendingPaths, isExistingDir) — 决策 dock vs restore。
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { pickStartupMode } from '../../../electron/main/services/startup-mode.service';
+import {
+  MAX_STARTUP_DIRS,
+  MAX_STARTUP_DIR_PATH_LEN,
+} from '../../../electron/main/services/cli-args.service';
 
 const allDirs = (_p: string) => true;
 const noDirs = (_p: string) => false;
@@ -61,6 +65,29 @@ describe('pickStartupMode', () => {
     expect(pickStartupMode(['/throws', '/ok'], isDir)).toEqual({
       mode: 'dock',
       dirs: ['/ok'],
+    });
+  });
+
+  // 边界(E58,与 pickArgvFolders 同款):目录数封顶 + 超长路径先跳过(不 stat)。
+  describe('E58 · 数量/路径长度上限', () => {
+    it('目录数超上限 → 封顶到 MAX_STARTUP_DIRS', () => {
+      const isDir = vi.fn(() => true);
+      const many = Array.from(
+        { length: MAX_STARTUP_DIRS + 20 },
+        (_, i) => `/d${i}`,
+      );
+      const r = pickStartupMode(many, isDir);
+      expect(r.mode).toBe('dock');
+      if (r.mode === 'dock') expect(r.dirs).toHaveLength(MAX_STARTUP_DIRS);
+      expect(isDir.mock.calls.length).toBeLessThanOrEqual(MAX_STARTUP_DIRS);
+    });
+
+    it('超长路径 → 跳过且不 stat', () => {
+      const isDir = vi.fn(() => true);
+      const longPath = '/' + 'x'.repeat(MAX_STARTUP_DIR_PATH_LEN);
+      const r = pickStartupMode([longPath, '/ok'], isDir);
+      expect(r).toEqual({ mode: 'dock', dirs: ['/ok'] });
+      expect(isDir).not.toHaveBeenCalledWith(longPath);
     });
   });
 });

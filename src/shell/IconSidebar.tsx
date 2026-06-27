@@ -25,6 +25,8 @@ interface IconBarItemConfig {
 }
 
 const ICON_SIZE = 22;
+// a11y(A34):Settings 更新角标的稳定 id,供 NavRailButton aria-describedby 关联。
+const SETTINGS_UPDATE_BADGE_ID = 'icon-sidebar-settings-updates';
 
 /** Lucide Settings 齿轮 SVG(stroke 风格,跟 Folder 等图标视觉一致). */
 function SettingsGearIcon({ size }: { size: number }) {
@@ -79,13 +81,18 @@ export function IconSidebar() {
     },
   ];
 
-  const renderItem = (item: IconBarItemConfig) => (
+  const renderItem = (item: IconBarItemConfig, describedById?: string) => (
     <NavRailButton
       key={item.id}
       title={item.label}
-      active={item.active ?? false}
+      // a11y(A33,A32 调用点传播):只有声明了状态的真 toggle(如 explorer=sidebarOpen)才传
+      // active → 暴露 aria-pressed;未声明状态的命令按钮(Settings 齿轮)不传,避免 `?? false`
+      // 强转出 aria-pressed="false" 被 AT 误读成切换按钮。
+      {...(item.active === undefined ? {} : { active: item.active })}
       disabled={item.disabled ?? false}
       onClick={item.onClick}
+      // a11y(A34):更新角标 aria-label 在独立 span 上,经 aria-describedby 关联到按钮,聚焦时读出。
+      describedById={describedById}
     >
       {item.node}
     </NavRailButton>
@@ -94,7 +101,7 @@ export function IconSidebar() {
   return (
     <aside className="flex w-12 shrink-0 flex-col items-center justify-between border-r border-line bg-panel py-2">
       <div className="flex flex-col items-center gap-1">
-        {topItems.map(renderItem)}
+        {topItems.map((item) => renderItem(item))}
         {ribbonActions.length > 0 && (
           <span
             className="my-1 h-px w-6 bg-line"
@@ -108,7 +115,16 @@ export function IconSidebar() {
             // ribbon onClick 可返回 Promise(契约允许);插件抛错(同步 throw 或 async
             // reject)经 runContributedAction 弹 error toast,不再静默吞。见第十四轮
             // P2-AO + 第二十一轮 P1-AX(统一到共享 helper)。
-            onClick={() => runContributedAction(r.title, r.onClick)}
+            // race(R52,R51 同族):click 时按 id 从 live coApp.ribbon 重查再执行,而非调捕获的
+            // r.onClick。插件 disable/reload unregister 后、到 React 重渲移除按钮前,旧 handler 仍可
+            // 触发已卸载插件 action;重查使死 action 静默忽略。
+            onClick={() =>
+              runContributedAction(r.title, () => {
+                const live = coApp.ribbon.get(r.id);
+                if (!live) return;
+                return live.onClick();
+              })
+            }
           >
             {r.icon}
           </NavRailButton>
@@ -118,8 +134,9 @@ export function IconSidebar() {
         {bottomItems.map((item) =>
           item.id === 'settings' && updateCount > 0 ? (
             <div key={item.id} className="relative">
-              {renderItem(item)}
+              {renderItem(item, SETTINGS_UPDATE_BADGE_ID)}
               <span
+                id={SETTINGS_UPDATE_BADGE_ID}
                 className="pointer-events-none absolute right-0.5 top-0.5 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-error px-1 text-[9px] font-medium leading-none text-on-error"
                 title={t('shell.iconbar.updates_tooltip', { count: updateCount })}
                 aria-label={t('shell.iconbar.updates_tooltip', { count: updateCount })}

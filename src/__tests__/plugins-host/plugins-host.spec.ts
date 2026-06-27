@@ -10,6 +10,7 @@ interface FakePluginsApi {
   listDirs: ReturnType<typeof vi.fn>;
   readEnabled: ReturnType<typeof vi.fn>;
   writeEnabled: ReturnType<typeof vi.fn>;
+  mutateEnabled: ReturnType<typeof vi.fn>;
   uninstall: ReturnType<typeof vi.fn>;
 }
 
@@ -102,40 +103,39 @@ describe('createWindowApiHost.readEnabledIds', () => {
     expect(Array.from(set).sort()).toEqual(['a', 'b']);
   });
 
-  it('ok=false → console.warn + 空 Set', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  // 数据安全(codex 复查 P1):读失败必须**传播**而非降级空 Set —— 否则 mutateEnabledIds
+  // 的 RMW 会基于空集合写回,抹掉其它已启用插件。main 端仅 ENOENT 返回 [](ok=true 空),
+  // ok=false 只在 EACCES/EIO 等真错误时出现 → host 抛带 code。
+  it('ok=false → 抛 Error 带 code(不再降级空 Set)', async () => {
     installFakeApi({
       readEnabled: vi.fn().mockResolvedValue({
         ok: false,
-        code: 'NOENT',
-        message: 'missing',
+        code: 'EACCES',
+        message: 'denied',
       }),
     });
     const host = createWindowApiHost();
-    const set = await host.readEnabledIds();
-    expect(set.size).toBe(0);
-    expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining('readEnabled failed'),
-      'NOENT',
-      'missing',
-    );
+    await expect(host.readEnabledIds()).rejects.toMatchObject({
+      code: 'EACCES',
+    });
   });
 });
 
-describe('createWindowApiHost.writeEnabledIds', () => {
-  it('ok=true → 把 ids 透传给 IPC,不抛', async () => {
-    const writeEnabled = vi.fn().mockResolvedValue({ ok: true });
-    installFakeApi({ writeEnabled });
+describe('createWindowApiHost.mutateEnabledId', () => {
+  it('ok=true → 把 (id, enabled) delta 透传给 IPC,不抛', async () => {
+    const mutateEnabled = vi.fn().mockResolvedValue({ ok: true });
+    installFakeApi({ mutateEnabled });
 
     const host = createWindowApiHost();
-    await host.writeEnabledIds(['x', 'y']);
-    expect(writeEnabled).toHaveBeenCalledWith(['x', 'y']);
+    await host.mutateEnabledId('x', true);
+    expect(mutateEnabled).toHaveBeenCalledWith('x', true);
   });
 
-  it('ok=false → console.warn,不抛', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  // 数据安全(codex 复查 P2):持久化失败必须传播而非静默 warn —— 否则 enable/disable
+  // 静默 resolve,用户以为已切换但盘未写,重启回滚/禁用插件复活。
+  it('ok=false → 抛 Error 带 code(不再静默 warn)', async () => {
     installFakeApi({
-      writeEnabled: vi.fn().mockResolvedValue({
+      mutateEnabled: vi.fn().mockResolvedValue({
         ok: false,
         code: 'EACCES',
         message: 'denied',
@@ -143,12 +143,9 @@ describe('createWindowApiHost.writeEnabledIds', () => {
     });
 
     const host = createWindowApiHost();
-    await expect(host.writeEnabledIds(['a'])).resolves.toBeUndefined();
-    expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining('writeEnabled failed'),
-      'EACCES',
-      'denied',
-    );
+    await expect(host.mutateEnabledId('a', false)).rejects.toMatchObject({
+      code: 'EACCES',
+    });
   });
 });
 

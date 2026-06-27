@@ -1,8 +1,11 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { fireEvent, render, cleanup } from '@testing-library/react';
+import { fireEvent, render, cleanup, act } from '@testing-library/react';
 import { SettingItemRow } from '../../plugins/settings/SettingItemRow';
-import type { SettingItemSpec } from '../../plugins/registries/SettingItemRegistry';
+import {
+  SI_TEXT_VALUE_MAX,
+  type SettingItemSpec,
+} from '../../plugins/registries/SettingItemRegistry';
 import { useSettingsValuesStore } from '../../plugins/settings/values-store';
 
 beforeEach(() => {
@@ -44,6 +47,23 @@ describe('SettingItemRow — 通用', () => {
     );
     expect(container.textContent).not.toMatch(/应用整体配色/);
   });
+
+  // a11y(A12):未覆盖默认值时 reset 按钮仅 invisible 仍可 Tab 聚焦 → 须 disabled 从 tab
+  // 顺序移除。覆盖后(store 有值)按钮启用。
+  it('a11y · reset 按钮未覆盖时 disabled、覆盖后启用', () => {
+    const { container } = render(
+      <SettingItemRow spec={spec({ id: 'general.x', type: 'boolean', default: false })} />,
+    );
+    const resetBtn = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((b) => b.getAttribute('aria-label') === '恢复默认')!;
+    expect(resetBtn).toBeDefined();
+    expect(resetBtn.disabled).toBe(true); // 未覆盖 → 不可聚焦/不可点
+    act(() => {
+      useSettingsValuesStore.getState().setValue('general.x', true);
+    });
+    expect(resetBtn.disabled).toBe(false); // 覆盖后启用
+  });
 });
 
 describe('SettingItemRow — boolean', () => {
@@ -56,6 +76,108 @@ describe('SettingItemRow — boolean', () => {
     expect(toggle.getAttribute('aria-checked')).toBe('false');
     fireEvent.click(toggle);
     expect(useSettingsValuesStore.getState().values['general.show']).toBe(true);
+  });
+
+  // race(R58):setting item 已被插件 unregister(isStillRegistered=false)→ 控件写入被跳过,
+  // 不把 override 写到已不存在的 setting id(localStorage 残留 + 同 id 重注册意外继承)。
+  it('R58 isStillRegistered=false → 点 toggle 不写 settings value', () => {
+    const s = spec({ id: 'gone.flag', type: 'boolean', default: false });
+    const { container } = render(
+      <SettingItemRow spec={s} isStillRegistered={() => false} />,
+    );
+    const toggle = container.querySelector(
+      'button[role=switch]',
+    ) as HTMLButtonElement;
+    fireEvent.click(toggle);
+    expect(useSettingsValuesStore.getState().values['gone.flag']).toBeUndefined();
+  });
+
+  it('R58 isStillRegistered=true(默认)→ 正常写入(对照)', () => {
+    const s = spec({ id: 'live.flag', type: 'boolean', default: false });
+    const { container } = render(
+      <SettingItemRow spec={s} isStillRegistered={() => true} />,
+    );
+    fireEvent.click(
+      container.querySelector('button[role=switch]') as HTMLButtonElement,
+    );
+    expect(useSettingsValuesStore.getState().values['live.flag']).toBe(true);
+  });
+
+  // a11y(A4):role=switch 须有可访问名(= 设置标题),否则屏幕阅读器只读「switch checked」
+  // 不知切换哪个设置。jsdom 断言 switch 的 aria-label == title。
+  it('a11y · boolean switch 有可访问名(= 设置标题)', () => {
+    const s = spec({ id: 'general.show', type: 'boolean', title: '显示隐藏文件' });
+    const { container } = render(<SettingItemRow spec={s} />);
+    const toggle = container.querySelector(
+      'button[role=switch]',
+    ) as HTMLButtonElement;
+    expect(toggle.getAttribute('aria-label')).toBe('显示隐藏文件');
+  });
+});
+
+// a11y(A21,A4 同族):number/text/select 控件须与设置标题建立可访问关联(aria-labelledby
+// 指向标题 id,且该 id 元素文本 == 标题),否则 AT 聚焦只读「spinbutton/edit text/radiogroup」。
+function expectLabelledByTitle(
+  container: HTMLElement,
+  el: HTMLElement | null,
+  title: string,
+): void {
+  expect(el).not.toBeNull();
+  const id = el!.getAttribute('aria-labelledby');
+  expect(id).toBeTruthy();
+  // id 含 '.'(如 setting-title-general.theme)→ 用属性选择器,避免 '#' 把 .x 当 class
+  const labelEl = container.querySelector(`[id="${id}"]`);
+  expect(labelEl).not.toBeNull();
+  expect(labelEl!.textContent).toBe(title);
+}
+
+describe('SettingItemRow — a11y label 关联(A21)', () => {
+  it('number 输入 aria-labelledby 指向标题', () => {
+    const { container } = render(
+      <SettingItemRow
+        spec={spec({ id: 'editor.fontSize', type: 'number', title: '字号', default: 14 })}
+      />,
+    );
+    expectLabelledByTitle(
+      container,
+      container.querySelector('input[type=number]'),
+      '字号',
+    );
+  });
+
+  it('text 输入 aria-labelledby 指向标题', () => {
+    const { container } = render(
+      <SettingItemRow
+        spec={spec({ id: 'editor.font', type: 'text', title: '字体', default: 'mono' })}
+      />,
+    );
+    expectLabelledByTitle(
+      container,
+      container.querySelector('input[type=text]'),
+      '字体',
+    );
+  });
+
+  it('select radiogroup aria-labelledby 指向标题', () => {
+    const { container } = render(
+      <SettingItemRow
+        spec={spec({
+          id: 'general.theme',
+          type: 'select',
+          title: '主题',
+          default: 'dark',
+          enum: [
+            { value: 'dark', label: 'Dark' },
+            { value: 'light', label: 'Light' },
+          ],
+        })}
+      />,
+    );
+    expectLabelledByTitle(
+      container,
+      container.querySelector('[role=radiogroup]'),
+      '主题',
+    );
   });
 });
 
@@ -124,6 +246,31 @@ describe('SettingItemRow — text', () => {
     expect(useSettingsValuesStore.getState().values['editor.font']).toBe(
       'JetBrains Mono',
     );
+  });
+
+  // 边界(E293,E290 同族 / before-store 输入截断):text 设置值 Input 加原生 maxLength + onChange slice
+  // 到 SI_TEXT_VALUE_MAX(UI-transient 防御,持久层 values-store 另有截断 E142/E241)。
+  it('E293 text Input 原生 maxLength = SI_TEXT_VALUE_MAX(neutralize 敏感:原无 maxLength → -1)', () => {
+    const s = spec({ id: 'editor.font', type: 'text', default: 'monospace' });
+    const { container } = render(<SettingItemRow spec={s} />);
+    const input = container.querySelector(
+      'input[type=text]',
+    ) as HTMLInputElement;
+    expect(input.maxLength).toBe(SI_TEXT_VALUE_MAX);
+  });
+
+  it('E293 超长 paste → onChange slice + store 截断,最终值长度 ≤ SI_TEXT_VALUE_MAX(回归)', () => {
+    const s = spec({ id: 'editor.font', type: 'text', default: 'monospace' });
+    const { container } = render(<SettingItemRow spec={s} />);
+    const input = container.querySelector(
+      'input[type=text]',
+    ) as HTMLInputElement;
+    fireEvent.change(input, {
+      target: { value: 'x'.repeat(SI_TEXT_VALUE_MAX + 5000) },
+    });
+    const stored = useSettingsValuesStore.getState().values['editor.font'];
+    expect(typeof stored).toBe('string');
+    expect((stored as string).length).toBe(SI_TEXT_VALUE_MAX);
   });
 });
 

@@ -31,9 +31,13 @@ describe('TerminalView', () => {
     useTerminalMock.mockImplementation(makeRefImpl(false));
     const { container } = render(<TerminalView termId="t1" />);
     expect(container.textContent).toContain('启动 shell…');
-    const overlay = container.querySelector('[aria-label="启动 shell"]');
-    expect(overlay).not.toBeNull();
-    expect(overlay!.className).toContain('pointer-events-none');
+    // a11y(A103):启动文本在 role=status live region(此前用 aria-label 挂无 role div 不可靠)。
+    const status = Array.from(container.querySelectorAll('[role=status]')).find(
+      (s) => (s.textContent ?? '').includes('启动 shell'),
+    );
+    expect(status).toBeTruthy();
+    // Spinner 标 aria-hidden,避免泛化 Loading 与启动文本双重播报
+    expect(status!.querySelector('[aria-hidden="true"]')).not.toBeNull();
   });
 
   it('isReady=true → 无 overlay', () => {
@@ -41,8 +45,10 @@ describe('TerminalView', () => {
     const { container } = render(<TerminalView termId="t1" />);
     expect(container.textContent).not.toContain('启动 shell…');
     expect(
-      container.querySelector('[aria-label="启动 shell"]'),
-    ).toBeNull();
+      Array.from(container.querySelectorAll('[role=status]')).some((s) =>
+        (s.textContent ?? '').includes('启动 shell'),
+      ),
+    ).toBe(false);
   });
 
   it('xterm 宿主有 minHeight:0 inline style', () => {

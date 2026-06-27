@@ -198,6 +198,89 @@ describe('window-scoped layout IPC', () => {
     expect(result).toEqual({ ok: true, data: { version: 1, panel: 'A' } });
   });
 
+  // 边界(E215,E89 写端对偶):layout:read 读端复用写端 JSON-safe + 字节上限。旧版/手工污染的
+  // explorer.json 可含 >2MiB(MAX_LAYOUT_BYTES)但 <16MiB(文件上限)的合法 JSON layout → 读端返 null
+  //(renderer 走默认布局),不让 renderer fromJSON 处理超大 layout 放大。
+  it('E215: layout:read 超大持久化 layout(>2MiB)→ 返回 null(走默认布局)', async () => {
+    setWindowSeq(101, 7);
+    const payload = defaultExplorerV3();
+    // >2MiB 但 <16MiB 的合法 JSON layout(loadExplorer 不拒,但读端守卫拒)。
+    const huge = { version: 1, blob: 'x'.repeat(2 * 1024 * 1024 + 16) };
+    payload.windows = [
+      {
+        windowSeq: 7,
+        workspace: { root: '/a' },
+        explorer: { activePath: null, expandedPaths: [], sort },
+        layout: huge,
+      },
+    ];
+    await writeExplorer(payload);
+
+    const result = await invokeIpc('layout:read', undefined);
+
+    // 中和(读端去守卫直接 passthrough)→ data 为超大 huge,该断言失败。
+    expect(result).toEqual({ ok: true, data: null });
+  });
+
+  // 边界(E261,E215 同入口对偶 / 读端 cap 绕过):explorer:read 返回完整 payload(含 windows[].layout),
+  // layout 的 2MiB 读端 cap 此前只用于 layout:read。污染/旧版 explorer.json 的超大 layout 可经 explorer:read
+  // 绕过 layout 读 cap → renderer hydrate 无谓传输巨大 layout。explorer:read 返回前对每个 window.layout
+  // 复用 sanitizeReadLayout:超限剥离(renderer 走默认布局),合法保留。
+  it('E261: explorer:read 剥离超大 window.layout(>2MiB),保留合法 layout 与其它字段', async () => {
+    const payload = defaultExplorerV3();
+    const huge = { version: 1, blob: 'x'.repeat(2 * 1024 * 1024 + 16) }; // >2MiB <16MiB
+    const okLayout = { version: 1, panel: 'B' };
+    payload.windows = [
+      {
+        windowSeq: 7,
+        workspace: { root: '/a' },
+        explorer: { activePath: null, expandedPaths: [], sort },
+        layout: huge,
+      },
+      {
+        windowSeq: 8,
+        workspace: { root: '/b' },
+        explorer: { activePath: null, expandedPaths: [], sort },
+        layout: okLayout,
+      },
+    ];
+    await writeExplorer(payload);
+
+    const result = (await invokeIpc('explorer:read', undefined)) as {
+      ok: true;
+      data: ExplorerPayloadV3;
+    };
+    expect(result.ok).toBe(true);
+    const wins = result.data.windows;
+    // 超大 layout 被剥离(走默认布局),但窗口其它字段保留
+    const w7 = wins.find((w) => w.windowSeq === 7)!;
+    expect(w7.layout).toBeUndefined();
+    expect(w7.workspace.root).toBe('/a');
+    // 合法 layout 原样保留
+    const w8 = wins.find((w) => w.windowSeq === 8)!;
+    expect(w8.layout).toEqual(okLayout);
+  });
+
+  it('E261: explorer:read 无 layout 的窗口原样返回(回归)', async () => {
+    const payload = defaultExplorerV3();
+    payload.windows = [
+      {
+        windowSeq: 7,
+        workspace: { root: '/a' },
+        explorer: { activePath: null, expandedPaths: [], sort },
+      },
+    ];
+    await writeExplorer(payload);
+
+    const result = (await invokeIpc('explorer:read', undefined)) as {
+      ok: true;
+      data: ExplorerPayloadV3;
+    };
+    expect(result.ok).toBe(true);
+    expect(result.data.windows[0]!.workspace.root).toBe('/a');
+    expect(result.data.windows[0]!.layout).toBeUndefined();
+  });
+
   it('T9b: layout:read without BrowserWindow returns NO_WINDOW', async () => {
     const unknownSender = {};
 
@@ -269,6 +352,83 @@ describe('window-scoped layout IPC', () => {
       workspace: { root: null },
       layout: { version: 1, panel: 'created' },
     });
+  });
+
+  // 边界(E89,E67 对偶):layout:write 序列化字节上限,防超大 layout 撑爆 explorer.json 致
+  // 下次 loadExplorer 命中 16MiB 上限拒读 + 写路径 fail-closed。
+  it('E89: layout:write 超 2MiB → PAYLOAD_TOO_LARGE 且旧 layout 保留', async () => {
+    setWindowSeq(101, 7);
+    const payload = defaultExplorerV3();
+    payload.windows = [
+      {
+        windowSeq: 7,
+        workspace: { root: '/a' },
+        explorer: { activePath: null, expandedPaths: [], sort },
+        layout: { version: 1, panel: 'old-A' },
+      },
+    ];
+    await writeExplorer(payload);
+
+    const huge = { version: 1, blob: 'x'.repeat(2 * 1024 * 1024 + 100) };
+    const result = (await invokeIpc('layout:write', huge)) as {
+      ok: boolean;
+      code?: string;
+    };
+    expect(result.ok).toBe(false);
+    expect(result.code).toBe('PAYLOAD_TOO_LARGE');
+    // 写被拒 → 旧 layout 原样保留(未覆盖)
+    const saved = await loadExplorer(explorerFile);
+    expect(saved?.windows.find((w) => w.windowSeq === 7)?.layout).toEqual({
+      version: 1,
+      panel: 'old-A',
+    });
+  });
+
+  // 边界(E119,E105/E117 同族):LayoutSchema 是 .passthrough(),layout 含 Infinity/NaN/undefined
+  //(structured-clone 经 IPC 保留)只判 stringify 大小会被静默改写(→null/丢字段)→ 重启后与
+  // 内存态不一致。写盘前 assertJsonValue 拒非 JSON 安全值,旧 layout 保留。
+  it('E119: layout:write 含非 JSON 安全值(Infinity/NaN)→ BAD_INPUT 且旧 layout 保留', async () => {
+    setWindowSeq(101, 7);
+    const payload = defaultExplorerV3();
+    payload.windows = [
+      {
+        windowSeq: 7,
+        workspace: { root: '/a' },
+        explorer: { activePath: null, expandedPaths: [], sort },
+        layout: { version: 1, panel: 'old-A' },
+      },
+    ];
+    await writeExplorer(payload);
+
+    for (const bad of [
+      { version: 1, params: { x: Infinity } },
+      { version: 1, params: { x: NaN } },
+      { version: 1, params: { keep: 1, drop: undefined } },
+    ]) {
+      const result = (await invokeIpc('layout:write', bad)) as {
+        ok: boolean;
+        code?: string;
+      };
+      expect(result.ok).toBe(false);
+      expect(result.code).toBe('BAD_INPUT');
+    }
+    // 写被拒 → 旧 layout 原样保留
+    const saved = await loadExplorer(explorerFile);
+    expect(saved?.windows.find((w) => w.windowSeq === 7)?.layout).toEqual({
+      version: 1,
+      panel: 'old-A',
+    });
+  });
+
+  it('E119: layout:write 正常 JSON-safe layout → 仍写入', async () => {
+    setWindowSeq(101, 7);
+    await writeExplorer(defaultExplorerV3());
+    const result = (await invokeIpc('layout:write', {
+      version: 1,
+      panel: 'A',
+      params: { n: 42, s: 'ok', nested: { arr: [1, 2, 3] } },
+    })) as { ok: boolean };
+    expect(result.ok).toBe(true);
   });
 
   it('T13: multi-window layout writes do not affect another window entry', async () => {

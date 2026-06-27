@@ -298,6 +298,78 @@ describe('installStopHookForSession', () => {
     expect(toml).not.toContain('/old/hook-events');
   });
 
+  // 数据安全(codex 复查 P1):真实首装写出的 command 经 JSON.stringify 含转义引号 \"
+  // (mkdir -p "..." 的内层引号)。drift 替换的 `"[^"]*"` 正则在第一个 \" 处截断 → 旧命令
+  // 尾巴残留、损坏 .codex/config.toml。转义感知正则须完整替换。I6 用手工无转义 command
+  // 故未触发,此处用真实两次安装复现。
+  it('I6b hookEventsDir drift 替换转义引号 command 不残留旧命令(真实两次安装)', async () => {
+    const cwd = await makeCwd();
+    const oldDir = join(cwd, '.continuo', 'old-hk');
+    const newDir = join(cwd, '.continuo', 'new-hk');
+
+    await expect(
+      installStopHookForSession({
+        cwd,
+        agentLabel: 'codex',
+        hookEventsDir: oldDir,
+        windowId: 1,
+      }),
+    ).resolves.toEqual({ installed: true });
+
+    await expect(
+      installStopHookForSession({
+        cwd,
+        agentLabel: 'codex',
+        hookEventsDir: newDir,
+        windowId: 1,
+      }),
+    ).resolves.toEqual({ installed: true });
+
+    const toml = await readText(join(cwd, '.codex', 'config.toml'));
+    expect(toml).toContain(newDir);
+    expect(toml).not.toContain(oldDir); // 旧命令完全被替换,无残留
+    // 只有一个 managed command(未因截断残留半截旧命令)
+    expect(toml.match(/codex_\$\{CONTINUO_WINDOW_ID/g)?.length).toBe(1);
+  });
+
+  // 数据安全(codex 复查 P1):managed marker 块缺/坏 command 时,无块边界的正则会一路
+  // 跨过 [[hooks.Stop]] 匹配到用户自有 Stop 的 command 并误替/写坏(违反 README I6 契约)。
+  // 块边界正则:managed 块无 command 则不匹配 → 不跨块改写用户 hook。
+  it('I6c managed 块缺 command 时不跨 [[hooks.Stop]] 块改写用户 Stop command', async () => {
+    const cwd = await makeCwd();
+    const configPath = join(cwd, '.codex', 'config.toml');
+    await writeText(
+      configPath,
+      [
+        '[[hooks.Stop]]',
+        '# user-owned',
+        'command = "echo user-stop"',
+        '',
+        '# continuo-managed',
+        '[[hooks.Stop]]',
+        '[[hooks.Stop.hooks]]',
+        'type = "command"',
+        '', // managed command 缺失(损坏)
+        '[[hooks.Stop]]',
+        '# user-owned-2',
+        'command = "echo another-user"',
+        '',
+      ].join('\n'),
+    );
+
+    await installStopHookForSession({
+      cwd,
+      agentLabel: 'codex',
+      hookEventsDir: join(cwd, '.continuo', 'hk'),
+      windowId: 1,
+    });
+
+    const toml = await readText(configPath);
+    // 两个用户自有 Stop command 都未被跨块误替
+    expect(toml).toContain('echo user-stop');
+    expect(toml).toContain('echo another-user');
+  });
+
   it('I7 should finish install after cwd resolve and before spawn', async () => {
     const cwd = await makeCwd();
     const driver = makeDriver();

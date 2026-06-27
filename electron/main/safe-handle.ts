@@ -4,6 +4,69 @@ import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
 import type { IpcResult } from '../shared/ipc-result';
 import { IPC_ERR } from '../shared/ipc-result';
+import { formatZodErrorCapped } from './lib/format-zod-error';
+import { MAX_WINDOW_URL_LEN } from '../shared/url-limits';
+import {
+  boundedObjectAdmissible,
+  MAX_BOUNDED_OBJECT_KEYS,
+  MAX_BOUNDED_OBJECT_KEY_LEN,
+} from '../shared/bounded-input';
+
+// 边界(E157,E73 同族):BAD_INPUT 错误经 formatZodErrorCapped 限幅,但 handler 抛出的 Error 的
+// code/message 此前原样回传。任一 handler 把外部错误/超长路径/子进程 stderr 拼进 Error.message,
+// 都会经 IPC structured-clone 把巨量字符串送回 renderer → 主/renderer 内存与 UI 放大。统一对回传
+// 的 code/message 限幅(两个 processIpcCall* 共用 helper),与 BAD_INPUT 限幅边界对齐。
+export const ERR_CODE_MAX = 256;
+export const ERR_MESSAGE_MAX = 8192;
+
+function capErrText(s: string, max: number): string {
+  return s.length > max ? `${s.slice(0, max)}… (+${s.length - max})` : s;
+}
+
+/** 把 catch 到的 err 规整为限幅后的 IpcResult 错误(code≤ERR_CODE_MAX,message≤ERR_MESSAGE_MAX)。 */
+function toCappedErrorResult(err: unknown): IpcResult<never> {
+  const e = err as { code?: unknown; message?: unknown };
+  const code = typeof e.code === 'string' ? e.code : IPC_ERR.HANDLER_ERROR;
+  const message = typeof e.message === 'string' ? e.message : String(err);
+  if (code === IPC_ERR.HANDLER_ERROR) {
+    console.error('[ipc] unhandled error in handler:', err);
+  }
+  return {
+    ok: false,
+    code: capErrText(code, ERR_CODE_MAX),
+    message: capErrText(message, ERR_MESSAGE_MAX),
+  };
+}
+
+// 边界(E256,E255 同族 / generic IPC 入口收口):processIpcCall* 直接对 rawInput 执行
+// schema.safeParse()。大量 IPC schema 是 `.strict()` object,畸形 renderer/preload 调用可在 1MiB 级
+// structured-clone 后塞海量未知短 key —— Zod 会先**枚举全部 key** 并为 unrecognized_keys 构造 issue/
+// message 数组,错误串 cap(formatZodErrorCapped,E73)在这之后才生效 → 单请求即可让 main 进程在
+// schema 阶段 CPU/内存放大,且影响面比 MCP(E255)更广(fs/window/plugins/terminal/shell 所有 IPC)。
+// 故在 safeParse **之前**对 plain object 做通用 bounded 预检:限制自有 key 数与单 key 长度,超限直接
+// BAD_INPUT 不进入 Zod。非 plain object(string/number/array 等合法 schema 输入)不拦,交给 schema。
+// 边界(E257 重构):核心逻辑收口到 shared boundedObjectAdmissible(三入口单一来源消漂移),此处只做
+// 领域错误文案映射,保持本入口既有契约(常量名 / message)。
+export const MAX_IPC_INPUT_KEYS = MAX_BOUNDED_OBJECT_KEYS;
+export const MAX_IPC_INPUT_KEY_LEN = MAX_BOUNDED_OBJECT_KEY_LEN;
+
+/**
+ * 边界(E256):IPC rawInput 的 bounded 预检(纯函数,便于测试)。在 safeParse 前调用。
+ * 委托 shared boundedObjectAdmissible,失败时映射成 IPC 领域文案。
+ */
+export function ipcInputBounded(
+  rawInput: unknown,
+): { ok: true } | { ok: false; message: string } {
+  const r = boundedObjectAdmissible(rawInput);
+  if (r.ok) return { ok: true };
+  return {
+    ok: false,
+    message:
+      r.reason === 'too-many-keys'
+        ? 'ipc input: too many keys'
+        : 'ipc input: key too long',
+  };
+}
 
 // ── 安全 S1:受信 renderer 入口 file URL 收紧 ──────────────────────────
 // 旧实现把**任意** file:// frame/弹窗当作受信并注入 preload。攻击:renderer 内代码
@@ -36,6 +99,10 @@ export function _resetTrustedRendererFileForTest(): void {
  * 都不匹配 → 拒。
  */
 export function isTrustedRendererFileUrl(url: string): boolean {
+  // 边界(E196 同族,isPopoutUrl 对偶):defaultIsTrustedFrame 在每次 IPC 调用本函数对 frame.url 做
+  // new URL(O(N) 解析)。畸形超长 frame.url 否则每次 IPC ingress 被完整解析。超 MAX_WINDOW_URL_LEN 必
+  // 非法,fail-closed 视为不受信(false)。startsWith 是 O(1) 前缀,不受影响。
+  if (typeof url !== 'string' || url.length > MAX_WINDOW_URL_LEN) return false;
   if (trustedRendererPathname === null) return url.startsWith('file://');
   try {
     const u = new URL(url);
@@ -73,12 +140,20 @@ export async function processIpcCall<I, O>(
     };
   }
 
+  // 边界(E256):safeParse 前 bounded 预检(plain object key 数 / 单 key 长度),挡海量未知 key
+  // 在 Zod .strict() 枚举 + unrecognized_keys issue 构造阶段放大(E73 错误串 cap 在 parse 后才生效)。
+  const bounded = ipcInputBounded(rawInput);
+  if (!bounded.ok) {
+    return { ok: false, code: IPC_ERR.BAD_INPUT, message: bounded.message };
+  }
+
   const parsed = schema.safeParse(rawInput);
   if (!parsed.success) {
     return {
       ok: false,
       code: IPC_ERR.BAD_INPUT,
-      message: parsed.error.issues.map((i) => i.message).join('; '),
+      // 边界(E73):错误串经 cap,防 .strict() schema 大量未知 key 产生无界 message。
+      message: formatZodErrorCapped(parsed.error),
     };
   }
 
@@ -86,14 +161,7 @@ export async function processIpcCall<I, O>(
     const data = await handler(parsed.data);
     return { ok: true, data };
   } catch (err) {
-    const e = err as { code?: unknown; message?: unknown };
-    const code = typeof e.code === 'string' ? e.code : IPC_ERR.HANDLER_ERROR;
-    const message =
-      typeof e.message === 'string' ? e.message : String(err);
-    if (code === IPC_ERR.HANDLER_ERROR) {
-      console.error('[ipc] unhandled error in handler:', err);
-    }
-    return { ok: false, code, message };
+    return toCappedErrorResult(err); // 边界(E157):限幅 handler 抛错 code/message
   }
 }
 
@@ -119,11 +187,20 @@ export function safeHandle<I, O>(
  */
 export function defaultIsTrustedFrame(frame: FrameLike): boolean {
   if (!frame || !frame.url) return false;
+  // 边界(E196 同族):本函数在每次 IPC 调用,frame.url 经两处 new URL(O(N) 解析)。超长 frame.url
+  // fail-closed 视为不受信,绝不进入任何 new URL 解析(isTrustedRendererFileUrl 已自带同闸,这里再挡
+  // 下面的 dev origin 比较分支)。
+  if (typeof frame.url !== 'string' || frame.url.length > MAX_WINDOW_URL_LEN) {
+    return false;
+  }
   // 安全 S1:只信真实 renderer 入口 file URL(prod 注册后严格),不再信任意 file://。
   if (isTrustedRendererFileUrl(frame.url)) return true;
 
   const expected = process.env['ELECTRON_RENDERER_URL'];
-  if (!expected) return false;
+  // 边界(E303,E196/E302 同族 / dev URL 解析兄弟入口):expected(ELECTRON_RENDERER_URL)此前无长度上限 ——
+  // frame.url 已限长(line 193),但 expected 每次 IPC 调用都 new URL 解析一次,开发误配/OS 上界超长 env
+  // 会被反复 O(N) 解析。对齐 frame.url 的 MAX_WINDOW_URL_LEN 闸(任何真实 dev URL 远在内),超长 fail-closed。
+  if (!expected || expected.length > MAX_WINDOW_URL_LEN) return false;
 
   try {
     return new URL(frame.url).origin === new URL(expected).origin;
@@ -152,21 +229,20 @@ export async function processIpcCallWithCtx<I, O>(
   if (!isTrustedFrame(event.senderFrame)) {
     return { ok: false, code: IPC_ERR.DENIED, message: 'sender frame is not trusted' };
   }
+  // 边界(E256):safeParse 前 bounded 预检(同 processIpcCall,ctx-aware 孪生入口一并收口)。
+  const bounded = ipcInputBounded(rawInput);
+  if (!bounded.ok) {
+    return { ok: false, code: IPC_ERR.BAD_INPUT, message: bounded.message };
+  }
   const parsed = schema.safeParse(rawInput);
   if (!parsed.success) {
-    return { ok: false, code: IPC_ERR.BAD_INPUT, message: parsed.error.issues.map((i) => i.message).join('; ') };
+    return { ok: false, code: IPC_ERR.BAD_INPUT, message: formatZodErrorCapped(parsed.error) }; // 边界(E73):错误串 cap
   }
   try {
     const data = await handler(parsed.data, { event });
     return { ok: true, data };
   } catch (err) {
-    const e = err as { code?: unknown; message?: unknown };
-    const code = typeof e.code === 'string' ? e.code : IPC_ERR.HANDLER_ERROR;
-    const message = typeof e.message === 'string' ? e.message : String(err);
-    if (code === IPC_ERR.HANDLER_ERROR) {
-      console.error('[ipc] unhandled error in handler:', err);
-    }
-    return { ok: false, code, message };
+    return toCappedErrorResult(err); // 边界(E157):限幅 handler 抛错 code/message
   }
 }
 

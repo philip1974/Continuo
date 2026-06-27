@@ -2,8 +2,9 @@
 // 左:workspace 名 + sidebar 收起提示 + git 分支占位。
 // 右:active editor tab 文件名 + dirty + 行 / 词 / 字符 + 编码占位。
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
+import { SR_ONLY_STYLE } from '@/lib/sr-only';
 import { useRegistry } from '@/plugins/registries/useRegistry';
 import { useEditorStore } from '@/stores/editor.store';
 import { useWorkspaceStore } from '@/stores/workspace.store';
@@ -26,12 +27,33 @@ function splitBySide(items: readonly StatusBarItemSpec[], side: 'left' | 'right'
   return items.filter((it) => it.side === side);
 }
 
+// race(R56,R55 同族):渲染时按 id 从 live coApp.statusBar 复查再调 render(),而非调订阅快照里
+// 缓存的 item.render。快照(useRegistry useState 订阅)滞后 registry 一帧,item 刚 unregister 时
+// 快照仍含它 → 会执行已卸载插件的 render。复查使死 item 跳过(返 null);同时 try/catch 隔离单个
+// 插件 item 的 render 同步抛错,不连累整条状态栏。
+function liveRenderStatusItem(item: StatusBarItemSpec): React.ReactNode {
+  const live = coApp.statusBar.get(item.id);
+  if (!live) return null;
+  try {
+    return live.render();
+  } catch (err) {
+    console.warn(`[statusbar] item "${item.id}" render threw`, err);
+    return null;
+  }
+}
+
+// race(R92):revoke 代际。两次 revoke 并发时,失败回滚必须只由「最新」那次执行 —— 否则先发的
+// 迟到失败会用其调用开始时的旧 wasGranted 快照把 sessionGranted 回滚成 true,覆盖后发已成功撤销
+// 的状态 → renderer 误以为仍授权,后续 agent auth 被无提示放行,与 main 已撤销/旋转的真实态不符。
+let revokeGen = 0;
+
 async function handleRevokeAgentTerminals(count: number): Promise<void> {
   if (count <= 0) return;
   const confirmed = window.confirm(
     translate('permissions.revoke_all.confirm', { count }),
   );
   if (!confirmed) return;
+  const myGen = ++revokeGen; // race(R92):本次 revoke 代际
   // 本地先撤,UI 即时反馈;main 推 sessions_changed 后 sessions 也清空。
   const wasGranted = useAgentAuthStore.getState().sessionGranted;
   useAgentAuthStore.getState().revoke();
@@ -44,6 +66,9 @@ async function handleRevokeAgentTerminals(count: number): Promise<void> {
     const r = await coApi.agentAuth.revoke();
     if (!r.ok) throw new Error(r.code ?? 'revoke failed');
   } catch (err) {
+    // race(R92):仅当本次仍是最新 revoke(无更晚的 revoke 覆盖)才回滚/报错。更晚的成功 revoke
+    // 已把状态正确置为 revoked,先发的迟到失败不得用旧 wasGranted 把 sessionGranted 翻回 true。
+    if (myGen !== revokeGen) return;
     if (wasGranted) useAgentAuthStore.setState({ sessionGranted: true });
     notify.error(translate('permissions.revoke_all.failed'), {
       code: (err as { code?: string })?.code,
@@ -52,10 +77,13 @@ async function handleRevokeAgentTerminals(count: number): Promise<void> {
 }
 
 async function handleCopyMcpConfig(): Promise<'ok' | 'unavailable' | 'fail'> {
-  const r = await coApi.mcp.getStdioConfig();
-  if (!r.ok) return 'fail';
-  if (!r.data.available || !r.data.claudeAddCommand) return 'unavailable';
+  // a11y(A115,A50 同族):整体 try/catch —— getStdioConfig() IPC reject 时若不捕获,
+  // onCopyMcp() 会 reject,而点击处 void onCopyMcp() 丢弃异常 → 无失败文本/无 live 播报。
+  // 任何 reject 都归 'fail',复用既有失败按钮文案 + role=status live region(A51)。
   try {
+    const r = await coApi.mcp.getStdioConfig();
+    if (!r.ok) return 'fail';
+    if (!r.data.available || !r.data.claudeAddCommand) return 'unavailable';
     // PROD 下 sandboxSweep 已涂掉 navigator.clipboard,必须走 cached raw ref
     await getCachedClipboard().writeText(r.data.claudeAddCommand);
     return 'ok';
@@ -115,10 +143,29 @@ export function StatusBar() {
   const [mcpCopyState, setMcpCopyState] = useState<
     'idle' | 'ok' | 'unavailable' | 'fail'
   >('idle');
+  // race(R9):复制反馈的清空 timer 须保存 + 递增 token 校验。裸 setTimeout 不清旧 timer:连续
+  // 复制时第一轮的 1500ms timeout 会在第二轮反馈刚显示后把状态清回 idle(SR/用户错过真实结果);
+  // 慢 handleCopyMcpConfig 先后返回也可能旧结果覆盖新结果。
+  const mcpCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mcpCopyTokenRef = useRef(0);
+  useEffect(
+    () => () => {
+      if (mcpCopyTimerRef.current !== null) clearTimeout(mcpCopyTimerRef.current);
+    },
+    [],
+  );
   const onCopyMcp = async () => {
+    const token = ++mcpCopyTokenRef.current;
     const r = await handleCopyMcpConfig();
+    // 过期请求(其后已有更新的复制发起)→ 不更新状态,由最新请求负责。
+    if (token !== mcpCopyTokenRef.current) return;
+    if (mcpCopyTimerRef.current !== null) clearTimeout(mcpCopyTimerRef.current);
     setMcpCopyState(r);
-    setTimeout(() => setMcpCopyState('idle'), 1500);
+    mcpCopyTimerRef.current = setTimeout(() => {
+      mcpCopyTimerRef.current = null;
+      // 仅当仍是本次反馈(无更新复制)才清回 idle —— 旧 timer 不得清掉新反馈。
+      if (token === mcpCopyTokenRef.current) setMcpCopyState('idle');
+    }, 1500);
   };
   const mcpLabel =
     mcpCopyState === 'ok'
@@ -162,33 +209,46 @@ export function StatusBar() {
         {!sidebarOpen && (
           <span className="text-fg-dim/60">{t('statusbar.sidebar_hidden')}</span>
         )}
-        {/* 插件贡献的左侧 statusBar items */}
+        {/* 插件贡献的左侧 statusBar items(race R56:render 时 live 复查) */}
         {leftItems.map((item) => (
-          <span key={item.id}>{item.render()}</span>
+          <span key={item.id}>{liveRenderStatusItem(item)}</span>
         ))}
       </div>
       <div className="flex items-center gap-3">
-        {/* 插件贡献的右侧 statusBar items(在内置项左边) */}
+        {/* 插件贡献的右侧 statusBar items(在内置项左边;race R56:render 时 live 复查) */}
         {rightItems.map((item) => (
-          <span key={item.id}>{item.render()}</span>
+          <span key={item.id}>{liveRenderStatusItem(item)}</span>
         ))}
         <button
           type="button"
           onClick={() => void onCopyMcp()}
           title={t('statusbar.mcp.tooltip')}
+          // a11y(A82,A74 同族):按钮可见文本 mcpLabel 随复制状态变化(idle/copied/failed),
+          // 动作语义只在 title → 稳定 aria-label 表「复制 MCP 配置」,结果由下方 live region(A51)
+          // 播报,按钮名不随状态漂移成结果文本。
+          aria-label={t('statusbar.mcp.tooltip')}
           className="text-fg-dim hover:text-fg transition-colors"
         >
           {mcpLabel}
         </button>
+        {/* a11y(A51,A41 同族):复制结果只靠按钮文本短暂变化,焦点在按钮时不一定被播报 →
+            视觉隐藏 role=status(polite)live region 镜像结果(仅非 idle),状态变化时播报。 */}
+        <span style={SR_ONLY_STYLE} role="status">
+          {mcpCopyState !== 'idle' ? mcpLabel : ''}
+        </span>
         {agentSessionCount > 0 && (
           <button
             type="button"
             onClick={() => void handleRevokeAgentTerminals(agentSessionCount)}
             title={t('statusbar.mcp.revoke_tooltip', { count: agentSessionCount })}
+            // a11y(A74,A2 同族):按钮可见文本只表「N 个 agent 会话」,撤销动作语义仅在 title
+            //(SR 有可见文本时不一定读 title)→ aria-label 用含撤销语义的 revoke_tooltip 作可访问名。
+            aria-label={t('statusbar.mcp.revoke_tooltip', { count: agentSessionCount })}
             className="flex items-center gap-1 text-accent hover:text-fg transition-colors"
           >
             <span aria-hidden>●</span>
-            {agentSessionCount} agent
+            {/* i18n(I19):agent 计数走 catalog,zh/ko 不再显英文 'N agent' */}
+            {t('statusbar.agent_sessions', { count: agentSessionCount })}
           </button>
         )}
         {hasActiveTab ? (
@@ -200,7 +260,17 @@ export function StatusBar() {
               {activeFilePath
                 ? basenameForChrome(activeFilePath)
                 : t('statusbar.untitled_file')}
-              {activeDirty && <span className="ml-1 text-fg-muted">●</span>}
+              {activeDirty && (
+                <>
+                  {/* a11y(A37):● 仅视觉;未保存状态用视觉隐藏的真实文本给 AT(状态栏文本流可读)。 */}
+                  <span className="ml-1 text-fg-muted" aria-hidden="true">
+                    ●
+                  </span>
+                  <span style={SR_ONLY_STYLE}>
+                    {t('statusbar.unsaved_changes')}
+                  </span>
+                </>
+              )}
             </span>
             <span>
               {t('statusbar.editor_stats', {

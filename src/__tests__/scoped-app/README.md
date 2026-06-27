@@ -44,4 +44,4 @@ permission 是持 pluginId 的闭包。permission.check / granted 真读 store�
 
 - `code = 'PERMISSION_DENIED'`(常量字面)
 - `permission: PermissionKey` 暴露被拒的具体权限
-- 默认 message `权限 X 未授权`,可覆盖
+- 默认 message `Permission denied: X`(i18n I11 改英文),可覆盖

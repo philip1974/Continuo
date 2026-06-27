@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, cleanup } from '@testing-library/react';
+import { render, cleanup, fireEvent } from '@testing-library/react';
 import {
   _resetLmApiForTest,
   captureLmApi,
@@ -42,6 +42,31 @@ describe('ExplorerSidebar', () => {
     expect(aside!.style.width).toBe('280px');
     const handle = container.querySelector('.cursor-col-resize');
     expect(handle).not.toBeNull();
+  });
+
+  // a11y(A14):resize separator 须键盘可达(tabIndex + window-splitter aria-value*),
+  // 且 Arrow/Home/End 调宽。
+  it('a11y · separator 可聚焦 + aria-value* + 键盘调宽', () => {
+    const { container } = render(<ExplorerSidebar />);
+    const sep = container.querySelector(
+      '[role=separator]',
+    ) as HTMLDivElement;
+    expect(sep).not.toBeNull();
+    expect(sep.getAttribute('tabindex')).toBe('0');
+    expect(sep.getAttribute('aria-valuemin')).toBe('200');
+    expect(sep.getAttribute('aria-valuemax')).toBe('500');
+    expect(sep.getAttribute('aria-valuenow')).toBe('280');
+    // ArrowRight → +16
+    fireEvent.keyDown(sep, { key: 'ArrowRight' });
+    expect(useLayoutUiStore.getState().sidebarWidth).toBe(296);
+    // ArrowLeft → -16
+    fireEvent.keyDown(sep, { key: 'ArrowLeft' });
+    expect(useLayoutUiStore.getState().sidebarWidth).toBe(280);
+    // Home → min(clamp),End → max
+    fireEvent.keyDown(sep, { key: 'Home' });
+    expect(useLayoutUiStore.getState().sidebarWidth).toBe(200);
+    fireEvent.keyDown(sep, { key: 'End' });
+    expect(useLayoutUiStore.getState().sidebarWidth).toBe(500);
   });
 
   it('store sidebarWidth 变化 → aside style.width 更新', () => {

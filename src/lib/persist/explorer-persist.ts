@@ -36,8 +36,10 @@ import {
   useWorkspaceStore,
 } from '@/stores/workspace.store';
 import { debounce } from '@/lib/debounce';
+import { workspaceRootSelectionGuard } from '@/lib/workspace-root-guard';
 import { subscribeAll } from '@/plugins/registries/useRegistry';
 import { clampWidth } from '@/lib/use-column-resize';
+import { pathEquals } from '@/lib/path-cross';
 import type { IpcResult } from '../fs/types';
 import {
   ExplorerSchema,
@@ -47,6 +49,12 @@ import {
 const DEBOUNCE_MS = 300;
 const VERSION = 3 as const;
 const PRIMARY_WINDOW_SEQ = 0; // 主窗位的 windowSeq;Phase 2B 引入多窗后改成动态值
+// 边界(E216):editor 会话恢复的 tab 数硬上限 + 读取并发上限。explorer.json schema 允许至多 100k
+// openFilePaths,畸形/旧快照在启动时 paths.map(readFile)+allSettled 会一次性发起海量并发 IPC/文件读
+// promise(单文件大小 cap 不防并发 fan-out)→ renderer/main 卡顿/资源耗尽。截断到 MAX_RESTORED_TABS
+//(真实用户 tab 数远低于此)+ 分块并发读(峰值并发钳到 RESTORE_READ_CONCURRENCY,仿 list-dir LSTAT_CHUNK)。
+const MAX_RESTORED_TABS = 256;
+const RESTORE_READ_CONCURRENCY = 32;
 
 /**
  * v3 schema(topic-08):全局共享段(workspace.recentRoots / pinned)
@@ -135,6 +143,14 @@ export function snapshotFromStores(
   prevSnap?: ExplorerSnapshot,
   windowSeq: number = PRIMARY_WINDOW_SEQ,
 ): ExplorerSnapshot {
+  // 边界(E137,E8 同族):windowSeq 须非负安全整数。query 解析处(initial-workspace E8)已守卫,
+  // 但本函数是导出 API、且 `windowSeq + 1`(下方 nextWindowSeq)对 unsafe integer 会因 IEEE-754
+  // 精度 no-op/碰撞,污染 nextWindowSeq 与窗口段索引(新窗复用 seq / 段匹配错乱)。在使用点防御性
+  // 兜底:非法 → 回退主窗位(fail-closed)。对正常(始终安全)调用为 no-op。
+  const seq =
+    Number.isSafeInteger(windowSeq) && windowSeq >= 0
+      ? windowSeq
+      : PRIMARY_WINDOW_SEQ;
   const w = useWorkspaceStore.getState();
   const e = useExplorerStore.getState();
   const p = usePinnedStore.getState();
@@ -152,7 +168,7 @@ export function snapshotFromStores(
     .filter((p): p is string => p !== null);
 
   const myEntry: ExplorerWindowEntry = {
-    windowSeq,
+    windowSeq: seq,
     workspace: { root },
     explorer: {
       // activePath 已不在 runtime store(打磨 R18:无生产 setter/reader)。磁盘
@@ -172,8 +188,8 @@ export function snapshotFromStores(
   // (else merged.push(cur))。若这里携带陈旧 otherWindows,反而会把别的窗口
   // 已写盘的最新 root/tabs/expanded 回退成本窗启动时的旧值(跨窗状态丢失)。
   const nextWindowSeq = Math.max(
-    prevSnap?.nextWindowSeq ?? windowSeq + 1,
-    windowSeq + 1,
+    prevSnap?.nextWindowSeq ?? seq + 1,
+    seq + 1,
   );
 
   return {
@@ -251,12 +267,39 @@ export async function hydrateEditorTabs(
   // workspace 是陈旧状态(还会写出 root=新 / openFilePaths=旧 的混合持久化)→ 整轮丢弃。
   // (codex 复审 loop R13;与 R10 终端 hydrate 竞态同类的迟到-restore-vs-切换 race。)
   const expectedRoot = normalizeWorkspaceRoot(entry.workspace.root);
-  const paths = entry.editor.openFilePaths;
-  const results = await Promise.all(paths.map((p) => fs.readFile(p)));
-  if (useWorkspaceStore.getState().root !== expectedRoot) return;
+  // 边界(E216):截断到 MAX_RESTORED_TABS —— 超量 openFilePaths(畸形/旧快照,schema 允许至多 100k)
+  // 不一次性恢复;canonical snapshot 下次持久化按恢复集写回,逐步收敛掉超量路径。
+  const allPaths = entry.editor.openFilePaths;
+  const paths =
+    allPaths.length > MAX_RESTORED_TABS
+      ? allPaths.slice(0, MAX_RESTORED_TABS)
+      : allPaths;
+  // 数据安全(codex 复查 P2):必须 allSettled,不能 Promise.all —— readFile 的 promise 若
+  // reject(桥/进程/通道异常,非 handler 的 {ok:false}),Promise.all 会整轮抛 → 违反
+  // 本函数「不抛、单文件失败静默跳过」契约 → initExplorerPersistence catch 后 0 tab,
+  // 下次变化把 editor.openFilePaths 写成空数组 → 丢掉本可恢复的整个编辑会话。allSettled
+  // 把 reject 当作该文件失败逐项跳过,保留其它成功恢复的 tab。
+  // 边界(E216):分块并发读,峰值并发钳到 RESTORE_READ_CONCURRENCY(不一次性 fan-out 全部 readFile)。
+  const settled: PromiseSettledResult<IpcResult<string>>[] = [];
+  for (let i = 0; i < paths.length; i += RESTORE_READ_CONCURRENCY) {
+    const chunk = paths.slice(i, i + RESTORE_READ_CONCURRENCY);
+    settled.push(...(await Promise.allSettled(chunk.map((p) => fs.readFile(p)))));
+  }
+  // 跨平台(codex 复查 P2,pathEquals 相等族):root 守卫须用平台感知相等,不能字节级 `!==`。
+  // expectedRoot / currentRoot 均经 normalizeWorkspaceRoot,可能为 null。Windows 文件系统
+  // 大小写不敏感,恢复在途若同一文件夹以不同大小写被(重新)设为 root,字节比较会误判
+  // 「已切到别 workspace」→ 整轮跳过恢复 → 后续把 openFilePaths 写空。POSIX 仍大小写敏感。
+  const currentRoot = useWorkspaceStore.getState().root;
+  const rootChanged =
+    expectedRoot === null
+      ? currentRoot !== null
+      : currentRoot === null || !pathEquals(currentRoot, expectedRoot);
+  if (rootChanged) return;
   const store = useEditorStore.getState();
   for (let i = 0; i < paths.length; i++) {
-    const r = results[i];
+    const s = settled[i];
+    if (!s || s.status !== 'fulfilled') continue; // reject → 当失败跳过(不抛)
+    const r = s.value;
     if (!r || !r.ok) continue;
     store.openTab(createTab(paths[i]!, r.data));
   }
@@ -304,28 +347,55 @@ export async function initExplorerPersistence(
   const initialWorkspace = extras?.initialWorkspace;
   const fresh = extras?.fresh === true;
 
+  // race(R38):捕获启动 root 选择代际。initExplorerPersistence 是 fire-and-forget,UI 在
+  // `await api.read()` 完成前就以 root=null 渲染、可交互;冷启动磁盘/IPC 慢时用户可能经
+  // EmptyWorkspace/drop/recent 选了新 workspace(setRoot,经 workspaceRootSelectionGuard begin)。
+  // 此时迟到的 hydrate 会用旧 snapshot 覆盖用户选择(root/recent/pinned/layout/editor)+ 随后写订阅
+  // 持久化错误 workspace。begin() 把本次启动恢复登记为「当前 root 选择」;若 read 期间有任何用户
+  // root 选择(或同步 root 变更)发生,下方 isLatestRootSelection() 为 false → 跳过迟到 hydrate,
+  // 但仍注册写订阅持久化用户的当前选择。与 R27/R28 共用同一守卫(全局 last-wins)。
+  const isLatestRootSelection = workspaceRootSelectionGuard.begin();
+
   // 1. read + sync hydrate(失败不 crash)
   let hydratedSnap: ExplorerSnapshot | null = null;
+  // 数据安全(codex 复查 P1):区分「可信加载」与「读失败」。read ok(含首启无文件 null /
+  // 合法 snapshot / 损坏都算成功读到磁盘当前态)→ 可信;!ok(EACCES/EIO 经 safeHandle)/
+  // reject → 磁盘真实态未知、store 仍默认态,**不可信**。仅可信时才注册写订阅(见步骤 3)。
+  let loadTrusted = false;
   try {
     const r = await api.read();
-    if (r.ok && r.data && isExplorerSnapshot(r.data)) {
-      hydratedSnap = r.data;
-      const myEntry = findWindowEntry(r.data, windowSeq);
-      if (fresh && initialWorkspace !== undefined) {
-        // Issue #45:dock 模式 / CLI argv / 用户拖文件夹打开新窗口 ⇒ 强制覆盖该段
-        hydrateStoresForNewWindow(r.data, initialWorkspace);
-      } else if (myEntry) {
-        // 重启恢复(restore-loop / 老窗段已存在)⇒ 按段恢复(含 workspace.root、UI、editor)
-        hydrateStores(r.data, windowSeq);
+    if (r.ok) {
+      loadTrusted = true;
+      if (!isLatestRootSelection()) {
+        // race(R38):read 期间用户已选新 workspace(EmptyWorkspace/drop/recent)→ 迟到的本次 hydrate
+        // 是过期请求,跳过所有 hydrate-into-stores(及随后 editor tabs restore,因 hydratedSnap 保持
+        // null),避免用旧 snapshot 覆盖用户选择;loadTrusted 仍为 true,下方照常注册写订阅持久化新选择。
+        console.warn(
+          '[explorer-persist] user selected workspace during hydrate — skip stale restore',
+        );
+      } else if (r.data && isExplorerSnapshot(r.data)) {
+        hydratedSnap = r.data;
+        const myEntry = findWindowEntry(r.data, windowSeq);
+        if (fresh && initialWorkspace !== undefined) {
+          // Issue #45:dock 模式 / CLI argv / 用户拖文件夹打开新窗口 ⇒ 强制覆盖该段
+          hydrateStoresForNewWindow(r.data, initialWorkspace);
+        } else if (myEntry) {
+          // 重启恢复(restore-loop / 老窗段已存在)⇒ 按段恢复(含 workspace.root、UI、editor)
+          hydrateStores(r.data, windowSeq);
+        } else if (initialWorkspace !== undefined) {
+          // 段缺失但 query 有 workspace(首次启动 / corrupted snap)⇒ 用 query 作 root
+          hydrateStoresForNewWindow(r.data, initialWorkspace);
+        } else {
+          // 新窗(本来不该走到 — main.tsx 不会缺 windowSeq + 缺 query)→ 默认
+          hydrateStores(r.data, windowSeq);
+        }
       } else if (initialWorkspace !== undefined) {
-        // 段缺失但 query 有 workspace(首次启动 / corrupted snap)⇒ 用 query 作 root
-        hydrateStoresForNewWindow(r.data, initialWorkspace);
-      } else {
-        // 新窗(本来不该走到 — main.tsx 不会缺 windowSeq + 缺 query)→ 默认
-        hydrateStores(r.data, windowSeq);
+        // 读成功但无 explorer.json / 损坏 → 按新窗 default 处理(既有契约)
+        hydrateStoresForNewWindow(null, initialWorkspace);
       }
-    } else if (initialWorkspace !== undefined) {
-      hydrateStoresForNewWindow(null, initialWorkspace);
+    } else {
+      // read 失败:不 hydrate、不可信(下方跳过写订阅,避免用默认态覆盖磁盘真实数据)
+      console.warn('[explorer-persist] read not ok', r.code, r.message);
     }
   } catch (err) {
     console.warn('[explorer-persist] read failed', err);
@@ -346,20 +416,45 @@ export async function initExplorerPersistence(
   // 不论 read 是否成功(包含没有 explorer.json 的首次启动)都置 true。
   useWorkspaceStore.getState().markHydrated();
 
+  // 数据安全(codex 复查 P1):仅在「可信加载」后才注册写订阅/flush。read 失败(!ok/reject)
+  // 时磁盘真实态未知、store 仍默认/未恢复态:若注册写订阅,后续任意 root/tab/expanded 变化会把
+  // 默认态 snapshot 写回 → main 端 explorer:write 重读 merge 后把真实 recentRoots/pinned/
+  // window/editor 段覆盖为空/默认。不可信 → 不订阅、不 flush,留待下次重启重读恢复(磁盘不动)。
+  if (!loadTrusted) {
+    console.warn(
+      '[explorer-persist] load not trusted (read failed) — skip write subscription to avoid clobbering on-disk data',
+    );
+    return;
+  }
+
   // 3. 订阅 + debounce 写。所有窗口都订阅,各写各段(prevSnap 合并保留其它段)。
   let lastSnap: ExplorerSnapshot | null = hydratedSnap;
-  const writeNow = async (): Promise<void> => {
-    try {
-      const snap = snapshotFromStores(lastSnap ?? undefined, windowSeq);
-      const w = await api.write(snap);
-      if (w.ok) {
-        lastSnap = snap;
-      } else {
-        console.warn('[explorer-persist] write failed', w.code, w.message);
+  // race(R87):单飞写链。debounce 自动写与关窗 flush(activeFlush)可并发提交不同时间点的
+  // snapshot;此前各自 snapshotFromStores 后裸 await api.write 无序列化 —— 慢盘/IPC 下旧 snapshot
+  // 的 write 可能后进 main 文件 mutex,main 只互斥不判新旧 → 旧窗口段覆盖新 → 刚开/关的 tab、
+  // expandedPaths、workspace UI 态被回滚。改为:同一窗口一次只允许一个 api.write 在途(链串行);
+  // snapshotFromStores 在链节执行时(而非入队时)读 → 总是写当下最新态;pendingWrite 合并冗余写。
+  // flush 返回链尾 promise → 关窗仍能 await 到最终写完成。
+  let writeChain: Promise<void> = Promise.resolve();
+  let pendingWrite = false;
+  const writeNow = (): Promise<void> => {
+    pendingWrite = true;
+    writeChain = writeChain.then(async () => {
+      if (!pendingWrite) return; // 已被链上前一个写覆盖(合并),跳过冗余写
+      pendingWrite = false;
+      try {
+        const snap = snapshotFromStores(lastSnap ?? undefined, windowSeq);
+        const w = await api.write(snap);
+        if (w.ok) {
+          lastSnap = snap;
+        } else {
+          console.warn('[explorer-persist] write failed', w.code, w.message);
+        }
+      } catch (err) {
+        console.warn('[explorer-persist] write threw', err);
       }
-    } catch (err) {
-      console.warn('[explorer-persist] write threw', err);
-    }
+    });
+    return writeChain;
   };
   const persist = debounce(() => {
     void writeNow();

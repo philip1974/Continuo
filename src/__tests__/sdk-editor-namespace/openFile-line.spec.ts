@@ -62,4 +62,40 @@ describe('app.editor.openFile line jump', () => {
       reason: 'no-line-arg',
     });
   });
+
+  // 跨平台(codex 复查 P2,X10 的 SDK 兄弟):Windows 上插件传的 path 与既有 tab id 仅大小写
+  // 不同时,须用 pathEquals 找到 tab 并用其真实 id 查 viewRef,否则行号跳转失败。
+  it('T-win Windows 大小写不同 path → 用已开 tab 真实 id 查 viewRef 并跳行', async () => {
+    const orig = Object.getOwnPropertyDescriptor(navigator, 'platform');
+    Object.defineProperty(navigator, 'platform', {
+      value: 'Win32',
+      configurable: true,
+    });
+    try {
+      const waitForViewRef = vi.fn(async () => view);
+      useEditorStore.setState({
+        tabs: [
+          {
+            id: 'C:\\Work\\a.ts',
+            filePath: 'C:\\Work\\a.ts',
+            content: 'one\ntwo',
+            originalContent: 'one\ntwo',
+            dirty: false,
+          },
+        ],
+        activeTabId: 'C:\\Work\\a.ts',
+        mode: 'edit',
+        waitForViewRef,
+      } as unknown as Partial<ReturnType<typeof useEditorStore.getState>>);
+
+      const result = await coApp.editor.openFile('c:\\work\\a.ts', { line: 2 });
+
+      expect(waitForViewRef).toHaveBeenCalledWith('C:\\Work\\a.ts', 500);
+      expect(mockedScrollToLine).toHaveBeenCalledWith(view, 2);
+      expect(result).toEqual({ ok: true, lineApplied: true });
+    } finally {
+      if (orig) Object.defineProperty(navigator, 'platform', orig);
+      else delete (navigator as { platform?: string }).platform;
+    }
+  });
 });

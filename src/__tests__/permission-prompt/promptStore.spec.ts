@@ -1,10 +1,76 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { usePermissionPromptStore } from '../../plugins/permissions/promptStore';
 
 beforeEach(() => {
   usePermissionPromptStore.setState({
     pending: null,
     resolve: null,
+    fsScopePending: {},
+    fsScopeQueue: [],
+    currentFsScope: null,
+  });
+});
+
+// race(R89,R88 同型):main scope-request-correlator 的 TTL(300s)到点只在 main reject pending,
+// 不通知 renderer 清 fs-scope prompt。renderer 端同 TTL 本地超时:过期 → deny + 推进队列,避免过期
+// 弹窗滞留挡住后续 scope 请求。
+describe('race(R89) · fs-scope prompt 同 TTL 本地超时自清', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('300s 无应答 → requestFsScope resolve deny + currentFsScope 清空', async () => {
+    vi.useFakeTimers();
+    const p = usePermissionPromptStore.getState().requestFsScope({
+      requestId: 'r1',
+      pluginId: 'p1',
+      scopes: [{ path: '/x', mode: 'r', displayPath: '/x' }],
+    });
+    expect(usePermissionPromptStore.getState().currentFsScope?.requestId).toBe('r1');
+
+    await vi.advanceTimersByTimeAsync(300_000);
+    await expect(p).resolves.toBe('deny');
+    expect(usePermissionPromptStore.getState().currentFsScope).toBeNull();
+  });
+
+  it('队首请求超时 → 队列推进到下一个,后续请求得以显示', async () => {
+    vi.useFakeTimers();
+    const p1 = usePermissionPromptStore.getState().requestFsScope({
+      requestId: 'r1',
+      pluginId: 'p1',
+      scopes: [{ path: '/a', mode: 'r', displayPath: '/a' }],
+    });
+    // r2 晚 1s 到达 → 其 TTL deadline 比 r1 晚,推进到 r1 deadline 时 r2 仍 pending。
+    await vi.advanceTimersByTimeAsync(1_000);
+    const p2 = usePermissionPromptStore.getState().requestFsScope({
+      requestId: 'r2',
+      pluginId: 'p2',
+      scopes: [{ path: '/b', mode: 'r', displayPath: '/b' }],
+    });
+    // 队首是 r1。
+    expect(usePermissionPromptStore.getState().currentFsScope?.requestId).toBe('r1');
+
+    // 推进到 r1 deadline(从 r1 起共 300s)→ r1 超时 deny + 推进到 r2;r2 尚有 1s 余,仍 pending。
+    await vi.advanceTimersByTimeAsync(299_000);
+    await expect(p1).resolves.toBe('deny');
+    expect(usePermissionPromptStore.getState().currentFsScope?.requestId).toBe('r2');
+
+    // r2 用户授权(超时前)。
+    usePermissionPromptStore.getState().grantFsScope('r2');
+    await expect(p2).resolves.toBe('grant');
+  });
+
+  it('超时前 grant → 不被超时 deny 覆盖(timer 已清)', async () => {
+    vi.useFakeTimers();
+    const p = usePermissionPromptStore.getState().requestFsScope({
+      requestId: 'r1',
+      pluginId: 'p1',
+      scopes: [{ path: '/x', mode: 'r', displayPath: '/x' }],
+    });
+    usePermissionPromptStore.getState().grantFsScope('r1');
+    await expect(p).resolves.toBe('grant');
+    await vi.advanceTimersByTimeAsync(300_000); // 不应再触发
+    expect(usePermissionPromptStore.getState().currentFsScope).toBeNull();
   });
 });
 

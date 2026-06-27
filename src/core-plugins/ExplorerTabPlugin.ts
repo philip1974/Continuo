@@ -26,6 +26,8 @@ export default class ExplorerTabPlugin extends Plugin {
       title: 'Toggle Explorer sidebar',
       titleKey: 'settings.explorer.toggle_sidebar',
       category: 'Explorer',
+      // i18n(I18,I17 同族缺 Key):补 categoryKey,命令面板/快捷键分类经 tk 本地化
+      categoryKey: 'commands.explorer.category',
       hotkey: 'mod+b',
       fn: () => useLayoutUiStore.getState().toggleSidebar(),
     });

@@ -37,6 +37,27 @@ describe('RibbonRegistry', () => {
     expect(listener).toHaveBeenCalledTimes(2);
   });
 
+  // race(R52,R51 同族):NavRailButton 的 onClick 捕获 spec,插件 unregister 后旧 handler 仍可
+  // 触发 → click 时按 id 从 live registry 重查执行。get(id) 提供该 live 查找,dispose 后返 undefined。
+  describe('get(id) live 查找(R52)', () => {
+    it('register → get(id) 返回 spec;dispose 后返 undefined', () => {
+      const r = new RibbonRegistry();
+      const d = r.register({ id: 'a', title: 'A', icon: null, onClick: noop });
+      expect(r.get('a')?.id).toBe('a');
+      d.dispose();
+      expect(r.get('a')).toBeUndefined();
+    });
+
+    it('get 返回当前 live spec(重复 id 后注册赢)', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const r = new RibbonRegistry();
+      r.register({ id: 'x', title: 'old', icon: null, onClick: noop });
+      r.register({ id: 'x', title: 'new', icon: null, onClick: noop });
+      expect(r.get('x')?.title).toBe('new');
+      warn.mockRestore();
+    });
+  });
+
   it('重复 id → 后注册赢 + warn', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const r = new RibbonRegistry();
@@ -46,6 +67,69 @@ describe('RibbonRegistry', () => {
     expect(r.getAll()[0]!.title).toBe('B');
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
+  });
+
+  // 边界(E49,E35/E36/E37/E40/E48 兄弟 registry):register 校验 id/title 长度 + priority finite
+  // + onClick 为函数。畸形项进 Activity Bar 排序/渲染,超长 title 污染 tooltip,非函数 onClick 点击崩。
+  describe('E49 · 贡献项边界校验', () => {
+    it('合法 spec → ok', () => {
+      const r = new RibbonRegistry();
+      expect(() =>
+        r.register({ id: 'a', title: 'A', icon: null, onClick: noop }),
+      ).not.toThrow();
+    });
+
+    it('超长 id/title → 抛,不入 registry', () => {
+      const r = new RibbonRegistry();
+      expect(() =>
+        r.register({
+          id: 'x'.repeat(257),
+          title: 'T',
+          icon: null,
+          onClick: noop,
+        }),
+      ).toThrow(/id exceeds max length/i);
+      expect(() =>
+        r.register({
+          id: 'a',
+          title: 'T'.repeat(513),
+          icon: null,
+          onClick: noop,
+        }),
+      ).toThrow(/title exceeds max length/i);
+      expect(r.getAll()).toEqual([]);
+    });
+
+    it('空 id/title → 抛', () => {
+      const r = new RibbonRegistry();
+      expect(() =>
+        r.register({ id: '', title: 'T', icon: null, onClick: noop }),
+      ).toThrow(/id must be a non-empty/i);
+      expect(() =>
+        r.register({ id: 'a', title: '', icon: null, onClick: noop }),
+      ).toThrow(/title must be a non-empty/i);
+    });
+
+    it('非有限 priority / onClick 非函数 → 抛', () => {
+      const r = new RibbonRegistry();
+      expect(() =>
+        r.register({
+          id: 'a',
+          title: 'T',
+          icon: null,
+          onClick: noop,
+          priority: Infinity,
+        }),
+      ).toThrow(/priority must be finite/i);
+      expect(() =>
+        r.register({
+          id: 'b',
+          title: 'T',
+          icon: null,
+          onClick: 'nope' as never,
+        }),
+      ).toThrow(/onClick must be a function/i);
+    });
   });
 });
 

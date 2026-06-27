@@ -1,4 +1,6 @@
 import { coApi } from '@/lib/co-api';
+import { notify } from '@/notifications/notify';
+import { t as translate } from '@/i18n';
 
 type SpawnReason = 'hydrate' | 'split' | 'addTab' | 'retry';
 type SpawnLeafDispatchAction = {
@@ -127,29 +129,58 @@ export function createSpawnQueue(
       Array.from(modulePending.keys()).filter((k) => k.startsWith(`${panelId}:`)),
   };
 
+  // race(R43):取消 / 无 dispatch 的迟到 spawn 成功结果须清掉 main 侧已建的孤儿 PTY。统一 await +
+  // try/catch + 检查 ok:false:remove IPC reject 此前在「取消」分支(await 无 try/catch)会让 run()
+  // 产生未处理 rejection,在「orphan」分支(void remove 不检查)会静默漏掉清理失败 → 不可见孤儿
+  // PTY/session(后续仍占资源或被会话同步带回)。本 helper 不抛(失败仅记录),两分支共用。
+  async function removeOrphanPty(id: string, reason: string): Promise<void> {
+    removedPtyIds.add(id);
+    try {
+      const r = await coApi.terminal.remove(id);
+      if (!r.ok) {
+        console.warn(`[pane-split] ${reason} remove ok=false`, id, r);
+      }
+    } catch (err) {
+      console.warn(`[pane-split] ${reason} remove rejected`, id, err);
+    }
+  }
+
   async function run(req: SpawnRequest, key: string): Promise<void> {
     console.debug('[pane-split] spawn-start', req.reason, req.tabId, req.leafId);
-    const result = (await coApi.terminal.create({
-      cwd: req.cwd,
-      scoped: req.scoped,
-      title: req.title,
-      ...(req.workspaceRoot !== undefined ? { workspaceRoot: req.workspaceRoot } : {}),
-    })) as Awaited<ReturnType<typeof coApi.terminal.create>> & {
+    let result: Awaited<ReturnType<typeof coApi.terminal.create>> & {
       data?: { id: string; cwd?: string };
     };
+    try {
+      result = (await coApi.terminal.create({
+        cwd: req.cwd,
+        scoped: req.scoped,
+        title: req.title,
+        ...(req.workspaceRoot !== undefined ? { workspaceRoot: req.workspaceRoot } : {}),
+      })) as Awaited<ReturnType<typeof coApi.terminal.create>> & {
+        data?: { id: string; cwd?: string };
+      };
+    } catch (err) {
+      // a11y(A128 同族):create IPC reject 此前由外层 void run() 丢弃 → modulePending 不清、
+      // 不派 SET_PTY_FAIL,终端 leaf 永久停在 loading。这里清账 + 派 fail(若仍有 live dispatch)
+      // + notify.error,让 leaf 退出 loading 并给用户/SR 反馈。
+      modulePending.delete(key);
+      console.warn('[pane-split] spawn-rejected', req.reason, err);
+      if (req.cancelled.current) return;
+      const code = (err as { code?: string })?.code ?? 'EXCEPTION';
+      moduleDispatches.get(panelId)?.({
+        type: 'PANE_ACTION',
+        tabId: req.tabId,
+        action: { type: 'SET_PTY_FAIL', leafId: req.leafId },
+      });
+      notify.error(translate('errors.terminal.create_failed', { code }), { code });
+      return;
+    }
     modulePending.delete(key);
 
     if (req.cancelled.current) {
       if (result.ok && result.data?.id) {
-        removedPtyIds.add(result.data.id);
-        const removeResult = await coApi.terminal.remove(result.data.id);
-        if (!removeResult.ok) {
-          console.warn(
-            '[pane-split] cancelled-spawn remove ok=false',
-            result.data.id,
-            removeResult,
-          );
-        }
+        // race(R43):await + 内部 catch,不让 remove reject 冒泡成 run() 的未处理 rejection。
+        await removeOrphanPty(result.data.id, 'cancelled-spawn');
         console.debug('[pane-split] spawn-cancelled', req.reason, result.data.id);
       }
       return;
@@ -160,8 +191,8 @@ export function createSpawnQueue(
     if (!liveDispatch) {
       // panel 已彻底关 (cancelPanelSpawns 清了 dispatch);spawn 是孤儿
       if (result.ok && result.data?.id) {
-        removedPtyIds.add(result.data.id);
-        void coApi.terminal.remove(result.data.id);
+        // race(R43):await + 内部 catch,清理失败可见(此前 void remove 不检查 → 静默漏孤儿)。
+        await removeOrphanPty(result.data.id, 'spawn-orphan-no-dispatch');
         console.debug(
           '[pane-split] spawn-orphan-no-dispatch',
           req.reason,

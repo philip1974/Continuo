@@ -67,6 +67,39 @@ describe('walkWorkspaceFiles', () => {
     }
   });
 
+  it('Windows 反斜杠 rootPath → relPath 分隔符无关剥离(不退化为绝对路径)', async () => {
+    const listDir = makeListDir([
+      entry('C:\\repo\\src\\a.ts', 'a.ts', false),
+    ]);
+    const r = await walkWorkspaceFiles({ rootPath: 'C:\\repo', listDir });
+    if (r.ok) {
+      expect(r.data[0]?.relPath).toBe('src\\a.ts');
+    }
+  });
+
+  // 跨平台(codex 复查 P2):relPath 剥离复用 path-cross.stripRootPrefix(边界+平台感知大小写)。
+  it('Windows 大小写不同 rootPath/FileEntry → 仍剥成相对(不退化绝对)', async () => {
+    const orig = Object.getOwnPropertyDescriptor(navigator, 'platform');
+    Object.defineProperty(navigator, 'platform', {
+      value: 'Win32',
+      configurable: true,
+    });
+    try {
+      const listDir = makeListDir([entry('C:\\Repo\\src\\a.ts', 'a.ts', false)]);
+      const r = await walkWorkspaceFiles({ rootPath: 'c:\\repo', listDir });
+      if (r.ok) expect(r.data[0]?.relPath).toBe('src\\a.ts');
+    } finally {
+      if (orig) Object.defineProperty(navigator, 'platform', orig);
+      else delete (navigator as { platform?: string }).platform;
+    }
+  });
+
+  it('同前缀非子目录(边界)→ relPath 不被错剥(原样绝对)', async () => {
+    const listDir = makeListDir([entry('/rooted/a.ts', 'a.ts', false)]);
+    const r = await walkWorkspaceFiles({ rootPath: '/root', listDir });
+    if (r.ok) expect(r.data[0]?.relPath).toBe('/rooted/a.ts'); // 不退化成 'ed/a.ts'
+  });
+
   it('perf P2 · 把 maxFiles 下推到 listDir(main 早停,不在 renderer 才截断)', async () => {
     let captured: { maxFiles?: number } | undefined;
     const listDir: ListDirFn = async (_p, options) => {

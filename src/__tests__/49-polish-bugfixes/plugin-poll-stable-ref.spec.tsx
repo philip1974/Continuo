@@ -63,7 +63,14 @@ describe('打磨 R2 — samePluginList 纯比较(不掩盖状态)', () => {
   it('warning(partial-grant ⚠)出现 → false', () => {
     const mf = { id: 'p1' } as PluginListItem['manifest'];
     const a = [item({ id: 'p1', manifest: mf })];
-    const b = [item({ id: 'p1', manifest: mf, warning: 'partial' })];
+    // i18n(I3):warning 改结构化 {code, params}
+    const b = [
+      item({
+        id: 'p1',
+        manifest: mf,
+        warning: { code: 'plugins_tab.warning.partial_grant' },
+      }),
+    ];
     expect(samePluginList(a, b)).toBe(false);
   });
   it('长度变化 → false', () => {

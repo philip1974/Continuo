@@ -57,4 +57,26 @@ describe('安全 S1 — file:// 受信收紧', () => {
     expect(isTrustedRendererFileUrl('https://evil.com/index.html')).toBe(false);
     expect(defaultIsTrustedFrame({ url: 'https://evil.com/' })).toBe(false);
   });
+
+  // 边界(E196 同族,isPopoutUrl 主进程对偶):defaultIsTrustedFrame/isTrustedRendererFileUrl 在每次 IPC
+  // 调用对 frame.url 做 new URL(O(N))。超长 frame.url fail-closed 视为不受信(绝不进 new URL 解析)。
+  describe('E196 同族 · frame.url 长度上限(每 IPC 热路径,fail-closed)', () => {
+    it('未注册:超长 file:// → isTrustedRendererFileUrl false(不解析,不再宽松放行)', () => {
+      const huge = `file:///tmp/${'a'.repeat(70000)}.html`;
+      expect(huge.length).toBeGreaterThan(65536);
+      expect(isTrustedRendererFileUrl(huge)).toBe(false);
+    });
+
+    it('注册后:超长入口前缀 file:// → defaultIsTrustedFrame false(fail-closed)', () => {
+      setTrustedRendererFile(ENTRY);
+      const huge = `file://${ENTRY}?pad=${'a'.repeat(70000)}`;
+      expect(huge.length).toBeGreaterThan(65536);
+      expect(defaultIsTrustedFrame({ url: huge })).toBe(false);
+    });
+
+    it('上限内正常入口 file:// → 仍受信(回归)', () => {
+      setTrustedRendererFile(ENTRY);
+      expect(defaultIsTrustedFrame({ url: `file://${ENTRY}` })).toBe(true);
+    });
+  });
 });
