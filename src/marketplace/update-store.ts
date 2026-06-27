@@ -68,21 +68,23 @@ export function dismissAvailableUpdateFromList(
 ): DismissAvailableUpdateResult | null {
   let target: AvailableUpdate | null = null;
   let next: AvailableUpdate[] | null = null;
+  let count = 0;
   for (let i = 0; i < available.length; i++) {
     const update = available[i]!;
     if (update.id === id) {
       if (target === null) target = update;
       if (next === null) {
-        next = [];
+        next = new Array<AvailableUpdate>(Math.max(0, available.length - 1));
         for (let j = 0; j < i; j++) {
-          next.push(available[j]!);
+          next[count++] = available[j]!;
         }
       }
       continue;
     }
-    if (next !== null) next.push(update);
+    if (next !== null) next[count++] = update;
   }
   if (target === null || next === null) return null;
+  next.length = count;
   return { target, available: next };
 }
 

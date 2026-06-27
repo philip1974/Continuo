@@ -104,8 +104,9 @@ export class EditorActionRegistry {
   getAll(): readonly EditorActionSpec[] {
     if (this.cachedAll !== null) return this.cachedAll;
 
-    const items: EditorActionSpec[] = [];
-    for (const item of this.items.values()) items.push(item);
+    const items = new Array<EditorActionSpec>(this.items.size);
+    let i = 0;
+    for (const item of this.items.values()) items[i++] = item;
     items.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
     this.cachedAll = items;
     return items;
@@ -140,10 +141,11 @@ export function filterVisible(
   actions: readonly EditorActionSpec[],
   ctx: EditorActionContext,
 ): EditorActionSpec[] {
-  const out: EditorActionSpec[] = [];
+  const out = new Array<EditorActionSpec>(actions.length);
+  let count = 0;
   for (const a of actions) {
     if (!a.when) {
-      out.push(a);
+      out[count++] = a;
       continue;
     }
     let visible = false;
@@ -153,7 +155,8 @@ export function filterVisible(
       console.warn(`[editor-action] when fn for "${a.id}" threw`, err);
       visible = false;
     }
-    if (visible) out.push(a);
+    if (visible) out[count++] = a;
   }
+  out.length = count;
   return out;
 }

@@ -168,6 +168,7 @@ describe('getAll', () => {
       expect(ownerB).not.toBe(ownerA);
       expect(ownerB.map((s) => s.id)).toEqual(['a', 'c']);
       expect(arrayFromSpy).not.toHaveBeenCalled();
+      expect(terminalSessions.getAll.toString()).not.toContain('out.push(');
     } finally {
       arrayFromSpy.mockRestore();
     }

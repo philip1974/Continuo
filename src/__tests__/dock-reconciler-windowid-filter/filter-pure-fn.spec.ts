@@ -149,6 +149,7 @@ describe('dock-reconciler-windowid-filter: filterByOwnerWindow pure fn', () => {
     const r = filterByOwnerWindow(many, 1, { onDrop });
     // neutralize 敏感:去计数闸则全 306 个返回,此断言失败。
     expect(r.length).toBe(MAX_TERMINAL_SESSIONS_GLOBAL);
+    expect(filterByOwnerWindow.toString()).not.toContain('result.push(');
     expect(onDrop).toHaveBeenCalledWith(undefined, 'over-capacity');
   });
 

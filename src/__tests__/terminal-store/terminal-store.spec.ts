@@ -82,6 +82,7 @@ describe('nextActiveAfterClose', () => {
 
       expect(findIndexCallsOnList).toBe(0);
       expect(filterCallsOnList).toBe(0);
+      expect(nextActiveAfterClose.toString()).not.toContain('remaining.push(');
       expect(r.sessions.map((x) => x.id)).toEqual(['/a', '/c']);
       expect(r.activeId).toBe('/c');
     } finally {

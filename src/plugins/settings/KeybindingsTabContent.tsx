@@ -73,13 +73,14 @@ export function groupByCategory(
     }
     arr.push(d);
   }
-  const buckets: Bucket[] = [];
+  const buckets = new Array<Bucket>(map.size);
+  let i = 0;
   for (const [category, items] of map) {
     items.sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));
-    buckets.push({
+    buckets[i++] = {
       category,
       items,
-    });
+    };
   }
   buckets.sort((a, b) => a.category.localeCompare(b.category));
   return buckets;
@@ -96,14 +97,16 @@ export function selectVisibleKeybindingCommands(
 ): DisplayCommand[] {
   const qLower = query.toLowerCase();
   const hasQuery = query.length > 0;
-  const selected: DisplayCommand[] = [];
+  const selected = new Array<DisplayCommand>(commands.length);
+  let count = 0;
 
   for (const d of commands) {
     if (!d.cmd.hotkey && !d.isOverridden) continue;
     if (hasQuery && !matches(d, qLower)) continue;
-    selected.push(d);
+    selected[count++] = d;
   }
 
+  selected.length = count;
   return selected;
 }
 

@@ -390,7 +390,7 @@ function makeNetwork(
     async fetch(url, init) {
       await ensurePerm(pluginId, 'network', store);
       validateNetworkInput(url, init); // 边界(E264):发 raw fetch 前校验 URL/headers
-      // 用 module 顶部 cached raw fetch,sandboxSweep 后 globalThis.fetch
+      // 用 module 顶部 cached raw fetch,sandboxSweep 后全局 fetch
       // 已涂掉但本闭包仍能调
       return getCachedFetch()(url, init);
     },

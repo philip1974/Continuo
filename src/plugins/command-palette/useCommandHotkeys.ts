@@ -138,6 +138,21 @@ export function isEditableTarget(target: EventTarget | null): boolean {
   return el.isContentEditable === true;
 }
 
+export function buildCompiledBindings(
+  commands: readonly CommandSpec[],
+  platform: Platform,
+): readonly CompiledBinding[] {
+  const out = new Array<CompiledBinding>(commands.length);
+  let count = 0;
+  for (const cmd of commands) {
+    const effective = getEffectiveHotkey(cmd);
+    if (!effective) continue; // 无 hotkey 或显式 unbind
+    out[count++] = { sig: compileCombo(effective, platform), cmd };
+  }
+  out.length = count;
+  return out;
+}
+
 export function useCommandHotkeys(commands: CommandRegistry): void {
   const snap = useRegistry(commands);
   // 用户改键时也要重排监听 — 订阅 keybindings overrides 让预编译表重建
@@ -148,13 +163,7 @@ export function useCommandHotkeys(commands: CommandRegistry): void {
   // 每个 hotkey 解析一次。高频 keydown 路径只做字段比较,不再逐键 split/lowercase/Set
   // + 逐命令读 keybindings store。只保留真有 effective hotkey 的命令。
   const bindings = useMemo<readonly CompiledBinding[]>(() => {
-    const out: CompiledBinding[] = [];
-    for (const cmd of snap) {
-      const effective = getEffectiveHotkey(cmd);
-      if (!effective) continue; // 无 hotkey 或显式 unbind
-      out.push({ sig: compileCombo(effective, platform), cmd });
-    }
-    return out;
+    return buildCompiledBindings(snap, platform);
     // overrides 不直接被 body 引用,但它变化时 getEffectiveHotkey 结果变 → 必须重建。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [snap, overrides, platform]);

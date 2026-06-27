@@ -56,6 +56,9 @@ describe('ExplorerDecoratorRegistry', () => {
       d.dispose();
       expect(r.getAll()).toEqual([b, c]);
       expect(sliceSpy).not.toHaveBeenCalled();
+      expect(ExplorerDecoratorRegistry.prototype.getAll.toString()).not.toContain(
+        'fns.push(',
+      );
     } finally {
       sliceSpy.mockRestore();
     }
@@ -234,6 +237,7 @@ describe('mergeDecorations', () => {
       const result = mergeDecorations(file, fns);
       const count = result?.tooltip?.split(' · ').length ?? 0;
       expect(count).toBe(32);
+      expect(mergeDecorations.toString()).not.toContain('tooltips.push(');
     });
 
     it('合并后总长超上限 → 截断兜底', () => {

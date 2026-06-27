@@ -63,9 +63,9 @@ export function subscribeAll(
   sources: ReadonlyArray<SubscribableLike>,
   listener: () => void,
 ): () => void {
-  const unsubs: Array<() => void> = [];
-  for (const source of sources) {
-    unsubs.push(source.subscribe(listener));
+  const unsubs = new Array<() => void>(sources.length);
+  for (let i = 0; i < sources.length; i++) {
+    unsubs[i] = sources[i]!.subscribe(listener);
   }
   return () => {
     for (const u of unsubs) u();

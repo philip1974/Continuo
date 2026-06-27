@@ -1083,9 +1083,9 @@ export function selectDisplayReviews(
   // newest:fetcher 已 createdAt DESC,只需取可见前 N 条。
   if (sort === 'newest') {
     const count = Math.min(limit, reviews.length);
-    const visible: Review[] = [];
+    const visible = new Array<Review>(count);
     for (let i = 0; i < count; i++) {
-      visible.push(reviews[i]!);
+      visible[i] = reviews[i]!;
     }
     return visible;
   }

@@ -51,13 +51,15 @@ export function fuzzyFilter<T>(
 ): T[] {
   if (!query) return [...items];
   const q = query.toLowerCase(); // 整批一次(打磨 R51),循环内复用
-  const scored: { item: T; score: number }[] = [];
+  const scored = new Array<{ item: T; score: number }>(items.length);
+  let count = 0;
   for (const item of items) {
     const s = getStrLower
       ? fuzzyScoreBothLower(q, getStrLower(item))
       : fuzzyScoreLower(q, getStr(item));
-    if (s !== null) scored.push({ item, score: s });
+    if (s !== null) scored[count++] = { item, score: s };
   }
+  scored.length = count;
   scored.sort((a, b) => b.score - a.score);
   const result: T[] = new Array(scored.length);
   for (let i = 0; i < scored.length; i++) {

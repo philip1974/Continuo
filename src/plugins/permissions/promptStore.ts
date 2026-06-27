@@ -73,20 +73,30 @@ export function removeFsScopeQueueId(
   id: string,
 ): string[] {
   let next: string[] | null = null;
+  let count = 0;
   for (let i = 0; i < queue.length; i++) {
     const queuedId = queue[i]!;
     if (queuedId === id) {
       if (next === null) {
-        next = [];
+        next = new Array<string>(queue.length - 1);
         for (let j = 0; j < i; j++) {
-          next.push(queue[j]!);
+          next[j] = queue[j]!;
         }
+        count = i;
       }
       continue;
     }
-    if (next !== null) next.push(queuedId);
+    if (next !== null) next[count++] = queuedId;
   }
+  if (next !== null) next.length = count;
   return next ?? queue;
+}
+
+export function appendFsScopeQueueId(queue: readonly string[], id: string): string[] {
+  const next = new Array<string>(queue.length + 1);
+  for (let i = 0; i < queue.length; i++) next[i] = queue[i]!;
+  next[queue.length] = id;
+  return next;
 }
 
 export const usePermissionPromptStore = create<PromptState>((set, get) => ({
@@ -130,7 +140,7 @@ export const usePermissionPromptStore = create<PromptState>((set, get) => ({
         ...state.fsScopePending,
         [prompt.requestId]: entry,
       };
-      const nextQueue = [...state.fsScopeQueue, prompt.requestId];
+      const nextQueue = appendFsScopeQueueId(state.fsScopeQueue, prompt.requestId);
       set({
         fsScopePending: nextPending,
         fsScopeQueue: nextQueue,

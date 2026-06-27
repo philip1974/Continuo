@@ -86,6 +86,7 @@ describe('topic49 codex-loop R12 · terminal 按 workspace 过滤', () => {
         'g',
       ]);
       expect(filterSpy).not.toHaveBeenCalled();
+      expect(filterByWorkspaceRoot.toString()).not.toContain('visible.push(');
     } finally {
       filterSpy.mockRestore();
     }

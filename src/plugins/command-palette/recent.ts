@@ -67,11 +67,13 @@ export function readFromStorage(): readonly RecentEntry[] {
     // 不先 parsed.filter(isRecentEntry) 全量扫描+物化再 slice。篡改的 localStorage 可在 256KiB raw cap
     // 内塞大量短 entry,启动 / storage 同步 / 每次 record 读 live 列表都会完整遍历(MAX_RECENT=20 不早开)。
     // 列表最近优先(record 前插),头部即保留最近 MAX_RECENT 条。
-    const out: RecentEntry[] = [];
+    const out = new Array<RecentEntry>(MAX_RECENT);
+    let count = 0;
     for (const item of parsed) {
-      if (out.length >= MAX_RECENT) break;
-      if (isRecentEntry(item)) out.push(item);
+      if (count >= MAX_RECENT) break;
+      if (isRecentEntry(item)) out[count++] = item;
     }
+    out.length = count;
     return out;
   } catch {
     return [];
@@ -91,12 +93,15 @@ export function buildNextRecentList(
   id: string,
   ts: number,
 ): RecentEntry[] {
-  const next: RecentEntry[] = [{ id, ts }];
+  const next = new Array<RecentEntry>(Math.min(MAX_RECENT, live.length + 1));
+  let count = 0;
+  next[count++] = { id, ts };
   for (const entry of live) {
     if (entry.id === id) continue;
-    next.push(entry);
-    if (next.length >= MAX_RECENT) break;
+    if (count >= MAX_RECENT) break;
+    next[count++] = entry;
   }
+  next.length = count;
   return next;
 }
 

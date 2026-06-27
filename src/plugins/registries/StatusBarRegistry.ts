@@ -83,12 +83,14 @@ export class StatusBarRegistry {
     const cached = side === 'left' ? this.cachedLeft : this.cachedRight;
     if (cached !== null) return cached;
 
-    const items: StatusBarItemSpec[] = [];
+    const items = new Array<StatusBarItemSpec>(this.items.size);
+    let count = 0;
     for (const item of this.items.values()) {
       if (item.side === side) {
-        items.push(item);
+        items[count++] = item;
       }
     }
+    items.length = count;
     items.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
     if (side === 'left') this.cachedLeft = items;
     else this.cachedRight = items;
@@ -98,8 +100,9 @@ export class StatusBarRegistry {
   getAll(): readonly StatusBarItemSpec[] {
     if (this.cachedAll !== null) return this.cachedAll;
 
-    const items: StatusBarItemSpec[] = [];
-    for (const item of this.items.values()) items.push(item);
+    const items = new Array<StatusBarItemSpec>(this.items.size);
+    let i = 0;
+    for (const item of this.items.values()) items[i++] = item;
     items.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
     this.cachedAll = items;
     return items;

@@ -50,6 +50,8 @@ describe('打磨 R55 — CommandPalette recent rank 预计算', () => {
 
     expect(calls).toBe(0);
     expect(out.map((d) => d.cmd.id)).toEqual(['c', 'a', 'b', 'd']);
+    expect(sortByRecent.toString()).not.toContain('others.push(');
+    expect(sortByRecent.toString()).not.toContain('out.push(');
   });
 
   it('recent 置顶用 rank slot 单趟放置,不再额外 sort recent 小数组', () => {

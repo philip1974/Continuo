@@ -73,6 +73,7 @@ describe('CategoryTabContent', () => {
       expect(buckets.map((bucket) => bucket.group)).toEqual(['外观', '行为']);
       expect(buckets[0]?.items).toEqual([itemA]);
       expect(buckets[1]?.items).toEqual([itemB]);
+      expect(groupItems.toString()).not.toContain('buckets.push(');
     } finally {
       arrayFromSpy.mockRestore();
     }

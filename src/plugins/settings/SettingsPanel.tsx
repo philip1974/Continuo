@@ -122,13 +122,14 @@ export function groupSearchResults(
     }
     arr.push(spec);
   }
-  const buckets: SearchBucket[] = [];
+  const buckets = new Array<SearchBucket>(map.size);
+  let i = 0;
   for (const [category, bucketItems] of map) {
-    buckets.push({
+    buckets[i++] = {
       category,
       label: tWithFallback(CATEGORY_TITLE_KEYS[category], category),
       items: bucketItems,
-    });
+    };
   }
   return buckets;
 }
@@ -138,10 +139,12 @@ export function selectMatchedSettingItems(
   trimmed: string,
 ): readonly SettingItemSpec[] {
   const ql = trimmed.toLowerCase();
-  const matched: SettingItemSpec[] = [];
+  const matched = new Array<SettingItemSpec>(searchable.length);
+  let count = 0;
   for (const s of searchable) {
-    if (s.haystack.includes(ql)) matched.push(s.item);
+    if (s.haystack.includes(ql)) matched[count++] = s.item;
   }
+  matched.length = count;
   return matched;
 }
 

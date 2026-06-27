@@ -28,8 +28,9 @@ function splitPluginIdTemplate(tpl: string): {
 export function copySelectedPermissions(
   selected: ReadonlySet<PermissionKey>,
 ): PermissionKey[] {
-  const out: PermissionKey[] = [];
-  for (const perm of selected) out.push(perm);
+  const out = new Array<PermissionKey>(selected.size);
+  let i = 0;
+  for (const perm of selected) out[i++] = perm;
   return out;
 }
 

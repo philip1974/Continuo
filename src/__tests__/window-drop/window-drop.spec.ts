@@ -156,6 +156,7 @@ describe('captureBoundedFiles (E118)', () => {
     expect(r).toHaveLength(MAX_DROP_FILES);
     expect(reads).toBeLessThanOrEqual(MAX_DROP_FILES);
     expect(reads).toBeLessThan(N);
+    expect(captureBoundedFiles.toString()).not.toContain('.push(');
   });
 });
 

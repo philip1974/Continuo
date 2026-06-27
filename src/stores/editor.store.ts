@@ -62,16 +62,36 @@ export function createTab(
   };
 }
 
-function replaceTabAt(
+export function replaceTabAt(
   tabs: readonly EditorTab[],
   index: number,
   nextTab: EditorTab,
 ): EditorTab[] {
-  const next: EditorTab[] = [];
+  const next = new Array<EditorTab>(tabs.length);
   for (let i = 0; i < tabs.length; i++) {
-    next.push(i === index ? nextTab : tabs[i]!);
+    next[i] = i === index ? nextTab : tabs[i]!;
   }
   return next;
+}
+
+export function appendEditorTab(
+  tabs: readonly EditorTab[],
+  tab: EditorTab,
+): EditorTab[] {
+  const next = new Array<EditorTab>(tabs.length + 1);
+  for (let i = 0; i < tabs.length; i++) next[i] = tabs[i]!;
+  next[tabs.length] = tab;
+  return next;
+}
+
+export function findEditorTabIndexById(
+  tabs: readonly EditorTab[],
+  id: string,
+): number {
+  for (let i = 0; i < tabs.length; i++) {
+    if (tabs[i]!.id === id) return i;
+  }
+  return -1;
 }
 
 export interface CloseTabResult {
@@ -92,22 +112,32 @@ export function getStateAfterClosingTab(
   activeTabId: string | null,
   closingTabId: string,
 ): CloseTabResult {
-  const idx = tabs.findIndex((t) => t.id === closingTabId);
-  if (idx === -1) return { tabs, activeTabId };
-
-  const remaining: EditorTab[] = [];
+  const remaining = new Array<EditorTab>(Math.max(0, tabs.length - 1));
+  let count = 0;
+  let found = false;
+  let prev: EditorTab | null = null;
+  let next: EditorTab | null = null;
   for (let i = 0; i < tabs.length; i++) {
-    if (i !== idx) remaining.push(tabs[i]!);
+    const tab = tabs[i]!;
+    if (tab.id === closingTabId) {
+      found = true;
+      continue;
+    }
+    if (found && next === null) next = tab;
+    remaining[count++] = tab;
+    if (!found) prev = tab;
   }
+
+  if (!found) return { tabs, activeTabId };
+  remaining.length = count;
   if (remaining.length === 0) return { tabs: remaining, activeTabId: null };
   if (closingTabId !== activeTabId) {
     return { tabs: remaining, activeTabId };
   }
-  // 关的是活跃 tab:取原索引位的下一个,溢出则取前一个
-  const nextIdx = Math.min(idx, remaining.length - 1);
+  // 关的是活跃 tab:优先取原序后向第一个,否则前一个。
   return {
     tabs: remaining,
-    activeTabId: remaining[nextIdx]?.id ?? null,
+    activeTabId: next?.id ?? prev?.id ?? null,
   };
 }
 
@@ -140,7 +170,7 @@ export function getStateAfterRenamingPath(
   for (let i = 0; i < tabs.length; i++) {
     const t = tabs[i]!;
     if (t.filePath === null) {
-      if (newTabs !== null) newTabs.push(t);
+      if (newTabs !== null) newTabs[i] = t;
       continue;
     }
     const np = rewrite(t.filePath);
@@ -148,8 +178,8 @@ export function getStateAfterRenamingPath(
 
     if (np !== null) {
       if (newTabs === null) {
-        newTabs = [];
-        for (let j = 0; j < i; j++) newTabs.push(tabs[j]!);
+        newTabs = new Array<EditorTab>(tabs.length);
+        for (let j = 0; j < i; j++) newTabs[j] = tabs[j]!;
       }
       // perf P4:filePath 变(可能改变 markdown 判定)→ 重算派生缓存(content 不变)。
       nextTab = {
@@ -161,7 +191,7 @@ export function getStateAfterRenamingPath(
       if (t.id === activeTabId) nextActive = nextTab.id;
     }
 
-    if (newTabs !== null) newTabs.push(nextTab);
+    if (newTabs !== null) newTabs[i] = nextTab;
   }
 
   if (newTabs === null) return { tabs, activeTabId };
@@ -189,39 +219,46 @@ export function getStateAfterClosingTabsOutsideRoot(
     return isSameOrInsidePath(root, tab.filePath);
   };
 
-  const remaining: EditorTab[] = [];
-  const removingIds = new Set<string>();
+  const remaining = new Array<EditorTab>(tabs.length);
+  let count = 0;
+  let changed = false;
+  let activeFound = activeTabId === null;
   let activeKept = false;
-  let activeIdx = -1;
+  let seenActive = activeTabId === null;
+  let lastKeptBeforeActive: EditorTab | null = null;
+  let firstKeptAfterActive: EditorTab | null = null;
 
   for (let i = 0; i < tabs.length; i++) {
     const tab = tabs[i]!;
-    if (tab.id === activeTabId) activeIdx = i;
+    const isActive = tab.id === activeTabId;
+    if (isActive) {
+      activeFound = true;
+      seenActive = true;
+    }
     if (keep(tab)) {
-      remaining.push(tab);
-      if (tab.id === activeTabId) activeKept = true;
+      remaining[count++] = tab;
+      if (isActive) {
+        activeKept = true;
+      } else if (!seenActive) {
+        lastKeptBeforeActive = tab;
+      } else if (firstKeptAfterActive === null) {
+        firstKeptAfterActive = tab;
+      }
     } else {
-      removingIds.add(tab.id);
+      changed = true;
     }
   }
 
-  if (remaining.length === tabs.length) return { tabs, activeTabId };
+  if (!changed) return { tabs, activeTabId };
+  remaining.length = count;
   if (remaining.length === 0) return { tabs: remaining, activeTabId: null };
   if (activeTabId !== null && activeKept) {
     return { tabs: remaining, activeTabId };
   }
   // active 被关:取原序后向第一个 remaining,否则前向,否则首个
-  if (activeTabId !== null && activeIdx >= 0) {
-    for (let i = activeIdx + 1; i < tabs.length; i++) {
-      if (!removingIds.has(tabs[i]!.id)) {
-        return { tabs: remaining, activeTabId: tabs[i]!.id };
-      }
-    }
-    for (let i = activeIdx - 1; i >= 0; i--) {
-      if (!removingIds.has(tabs[i]!.id)) {
-        return { tabs: remaining, activeTabId: tabs[i]!.id };
-      }
-    }
+  if (activeTabId !== null && activeFound) {
+    const next = firstKeptAfterActive ?? lastKeptBeforeActive;
+    return { tabs: remaining, activeTabId: next?.id ?? null };
   }
   return { tabs: remaining, activeTabId: remaining[0]!.id };
 }
@@ -249,7 +286,8 @@ export function getStateAfterRemovingPath(
   // EditorPanel 的 dirty 关闭确认,静默丢失内存里的未保存增量(磁盘旧版本进废纸篓
   // 可恢复,但内存增量无处可寻)。参考 VSCode:删除有未保存改动的文件保留 dirty
   // 编辑器。仅 clean tab 自动关闭;dirty tab 留给用户显式保存或经确认丢弃。
-  const remaining: EditorTab[] = [];
+  const remaining = new Array<EditorTab>(tabs.length);
+  let count = 0;
   let changed = false;
   let activeKept = false;
   let activeRemoved = false;
@@ -268,7 +306,7 @@ export function getStateAfterRemovingPath(
       continue;
     }
 
-    remaining.push(tab);
+    remaining[count++] = tab;
     if (isActive) {
       activeKept = true;
     } else if (!seenActive) {
@@ -279,6 +317,7 @@ export function getStateAfterRemovingPath(
   }
 
   if (!changed) return { tabs, activeTabId };
+  remaining.length = count;
   if (remaining.length === 0) return { tabs: remaining, activeTabId: null };
   if (activeTabId === null || activeKept || !activeRemoved) {
     return { tabs: remaining, activeTabId };
@@ -369,8 +408,8 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
   openTab: (tab) =>
     set((s) => {
       const pulse = s.editorFocusPulse + 1;
-      const exists = s.tabs.some((t) => t.id === tab.id);
-      if (exists) return { activeTabId: tab.id, editorFocusPulse: pulse };
+      const existingIndex = findEditorTabIndexById(s.tabs, tab.id);
+      if (existingIndex >= 0) return { activeTabId: tab.id, editorFocusPulse: pulse };
       // 边界(E278,E276/E277 同族 / 运行时状态守持久化契约):file tab 经 snapshotFromStores 序列化成
       // editor.openFilePaths(持久化 PATH_ARRAY_MAX=100000 cap + 单条 PATH_STR_MAX)。插件经 SDK openFile
       // 循环开海量文件 → tabs 超量 → openFilePaths 超上限 → explorer:write 拒整份 → 全 explorer 持久化失败。
@@ -382,7 +421,7 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
         return s;
       }
       return {
-        tabs: [...s.tabs, tab],
+        tabs: appendEditorTab(s.tabs, tab),
         activeTabId: tab.id,
         editorFocusPulse: pulse,
         chromeVersion: s.chromeVersion + 1, // perf P12:新增 tab → chrome 变
@@ -422,7 +461,7 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
 
   reloadFromDisk: (tabId, content) =>
     set((s) => {
-      const idx = s.tabs.findIndex((t) => t.id === tabId);
+      const idx = findEditorTabIndexById(s.tabs, tabId);
       if (idx < 0) return s;
       const cur = s.tabs[idx]!;
       // dirty:保留用户改动,不覆盖
@@ -454,7 +493,7 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
 
   updateContent: (id, content) =>
     set((s) => {
-      const idx = s.tabs.findIndex((t) => t.id === id);
+      const idx = findEditorTabIndexById(s.tabs, id);
       if (idx < 0) return s;
       const cur = s.tabs[idx]!;
       const next: EditorTab = {
@@ -475,7 +514,7 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
 
   markSaved: (id, savedContent) =>
     set((s) => {
-      const idx = s.tabs.findIndex((t) => t.id === id);
+      const idx = findEditorTabIndexById(s.tabs, id);
       if (idx < 0) return s;
       const cur = s.tabs[idx]!;
       // 已写盘内容 = savedContent(省略则退化为当前内容)。dirty 反映"当前内容是否
@@ -496,7 +535,7 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
 
   setFilePath: (id, newPath) =>
     set((s) => {
-      const idx = s.tabs.findIndex((t) => t.id === id);
+      const idx = findEditorTabIndexById(s.tabs, id);
       if (idx < 0) return s;
       const cur = s.tabs[idx]!;
       // perf P4:filePath 变(可能 .md↔.txt 改变 markdown 判定)→ 重算派生缓存。

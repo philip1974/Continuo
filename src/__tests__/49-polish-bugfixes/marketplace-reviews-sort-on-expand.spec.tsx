@@ -150,6 +150,7 @@ describe('打磨 R41 — review 仅在展开时排序渲染', () => {
         'review-9',
       ]);
       expect(sliceSpy).not.toHaveBeenCalled();
+      expect(selectDisplayReviews.toString()).not.toContain('visible.push(');
     } finally {
       sliceSpy.mockRestore();
     }

@@ -141,29 +141,33 @@ function findWindowEntry(
   return findWindowEntryBySeq(snap.windows, windowSeq);
 }
 
-function collectNormalizedWorkspaceRoots(
+export function collectNormalizedWorkspaceRoots(
   roots: readonly unknown[],
 ): string[] {
-  const out: string[] = [];
+  const out = new Array<string>(roots.length);
+  let count = 0;
   for (const raw of roots) {
     const normalized = normalizeWorkspaceRoot(raw);
-    if (normalized !== null) out.push(normalized);
+    if (normalized !== null) out[count++] = normalized;
   }
+  out.length = count;
   return out;
 }
 
-function collectEditorSnapshot(
+export function collectEditorSnapshot(
   tabs: readonly EditorTab[],
   activeTabId: string | null,
 ): { openFilePaths: string[]; activePath: string | null } {
-  const openFilePaths: string[] = [];
+  const openFilePaths = new Array<string>(tabs.length);
+  let count = 0;
   let activePath: string | null = null;
   for (const tab of tabs) {
     if (tab.filePath !== null) {
-      openFilePaths.push(tab.filePath);
+      openFilePaths[count++] = tab.filePath;
       if (tab.id === activeTabId) activePath = tab.filePath;
     }
   }
+  openFilePaths.length = count;
   return { openFilePaths, activePath };
 }
 
@@ -295,9 +299,9 @@ export async function hydrateEditorTabs(
   // 不一次性恢复;canonical snapshot 下次持久化按恢复集写回,逐步收敛掉超量路径。
   const allPaths = entry.editor.openFilePaths;
   const pathCount = Math.min(allPaths.length, MAX_RESTORED_TABS);
-  const paths: string[] = [];
+  const paths = new Array<string>(pathCount);
   for (let i = 0; i < pathCount; i++) {
-    paths.push(allPaths[i]!);
+    paths[i] = allPaths[i]!;
   }
   // 数据安全(codex 复查 P2):必须 allSettled,不能 Promise.all —— readFile 的 promise 若
   // reject(桥/进程/通道异常,非 handler 的 {ok:false}),Promise.all 会整轮抛 → 违反

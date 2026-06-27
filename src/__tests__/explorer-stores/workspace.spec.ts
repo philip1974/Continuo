@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { useWorkspaceStore } from '../../stores/workspace.store';
+import {
+  buildRecentRoots,
+  useWorkspaceStore,
+} from '../../stores/workspace.store';
 
 beforeEach(() => {
   useWorkspaceStore.setState({ root: null, recentRoots: [] });
@@ -54,6 +57,7 @@ describe('workspace.store', () => {
         '/a',
         '/c',
       ]);
+      expect(buildRecentRoots.toString()).not.toContain('.push(');
     } finally {
       mapSpy.mockRestore();
       filterSpy.mockRestore();

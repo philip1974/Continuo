@@ -249,6 +249,7 @@ describe('SettingsPanel · 搜索模式', () => {
 
       expect(filterCallsOnSearchable).toBe(0);
       expect(matched).toEqual([itemA]);
+      expect(selectMatchedSettingItems.toString()).not.toContain('matched.push(');
     } finally {
       filterSpy.mockRestore();
     }
@@ -313,6 +314,7 @@ describe('SettingsPanel · 搜索模式', () => {
       ]);
       expect(buckets[0]?.items).toEqual([itemA]);
       expect(buckets[1]?.items).toEqual([itemB]);
+      expect(groupSearchResults.toString()).not.toContain('buckets.push(');
     } finally {
       arrayFromSpy.mockRestore();
     }

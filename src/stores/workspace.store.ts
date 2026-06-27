@@ -4,16 +4,19 @@ import { PATH_STR_MAX } from '../../electron/shared/explorer-persistence-schema'
 
 const RECENT_LIMIT = 5;
 
-function buildRecentRoots(
+export function buildRecentRoots(
   recentRoots: readonly string[],
   normalized: string,
 ): string[] {
-  const next = [normalized];
+  const next = new Array<string>(Math.min(RECENT_LIMIT, recentRoots.length + 1));
+  let count = 0;
+  next[count++] = normalized;
   for (const raw of recentRoots) {
-    if (next.length >= RECENT_LIMIT) break;
+    if (count >= RECENT_LIMIT) break;
     const p = normalizeWorkspaceRoot(raw);
-    if (p !== null && p !== normalized) next.push(p);
+    if (p !== null && p !== normalized) next[count++] = p;
   }
+  next.length = count;
   return next;
 }
 

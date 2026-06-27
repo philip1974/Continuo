@@ -85,8 +85,9 @@ export class RibbonRegistry {
   getAll(): readonly RibbonActionSpec[] {
     if (this.cachedAll !== null) return this.cachedAll;
 
-    const items: RibbonActionSpec[] = [];
-    for (const item of this.items.values()) items.push(item);
+    const items = new Array<RibbonActionSpec>(this.items.size);
+    let i = 0;
+    for (const item of this.items.values()) items[i++] = item;
     items.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
     this.cachedAll = items;
     return items;

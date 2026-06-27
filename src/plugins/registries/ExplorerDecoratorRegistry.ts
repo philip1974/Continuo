@@ -76,8 +76,8 @@ export class ExplorerDecoratorRegistry {
   getAll(): readonly DecoratorFn[] {
     if (this.cachedAll !== null) return this.cachedAll;
 
-    const fns: DecoratorFn[] = [];
-    for (const fn of this.fns) fns.push(fn);
+    const fns = new Array<DecoratorFn>(this.fns.length);
+    for (let i = 0; i < this.fns.length; i++) fns[i] = this.fns[i]!;
     this.cachedAll = fns;
     return fns;
   }
@@ -128,7 +128,8 @@ export function mergeDecorations(
   let badgeColor: string | undefined;
   let textColor: string | undefined;
   let icon: ReactNode | undefined;
-  const tooltips: string[] = [];
+  const tooltips = new Array<string>(DEC_TOOLTIPS_COUNT_MAX);
+  let tooltipCount = 0;
 
   for (const fn of fns) {
     let dec: Decoration | null;
@@ -154,8 +155,8 @@ export function mergeDecorations(
     const tc = decString(dec.textColor, DEC_COLOR_MAX);
     if (tc !== undefined) textColor = tc;
     const tip = decString(dec.tooltip, DEC_TOOLTIP_MAX);
-    if (tip !== undefined && tooltips.length < DEC_TOOLTIPS_COUNT_MAX) {
-      tooltips.push(tip);
+    if (tip !== undefined && tooltipCount < DEC_TOOLTIPS_COUNT_MAX) {
+      tooltips[tooltipCount++] = tip;
     }
   }
 
@@ -163,13 +164,14 @@ export function mergeDecorations(
     badge === undefined &&
     textColor === undefined &&
     icon === undefined &&
-    tooltips.length === 0
+    tooltipCount === 0
   ) {
     return null;
   }
   // 边界(E47):合并后总长上限 —— 数量(≤32)×单长(≤1024)已有界,再对 join 结果硬截断兜底。
   let tooltip: string | undefined;
-  if (tooltips.length > 0) {
+  if (tooltipCount > 0) {
+    tooltips.length = tooltipCount;
     const joined = tooltips.join(' · ');
     tooltip =
       joined.length > DEC_TOOLTIP_TOTAL_MAX

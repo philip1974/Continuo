@@ -22,6 +22,7 @@ describe('subscribeAll', () => {
       expect(sources[0]!.subscribe).toHaveBeenCalledWith(listener);
       expect(sources[1]!.subscribe).toHaveBeenCalledWith(listener);
       expect(mapSpy).not.toHaveBeenCalled();
+      expect(subscribeAll.toString()).not.toContain('unsubs.push(');
 
       unsubscribeAll();
       expect(unsubs[0]).toHaveBeenCalledTimes(1);
@@ -63,6 +64,9 @@ describe('PanelRegistry', () => {
       d.dispose();
       expect(r.getAll().map((x) => x.type)).toEqual(['bar', 'baz']);
       expect(arrayFromSpy).not.toHaveBeenCalled();
+      expect(PanelRegistry.prototype.getAll.toString()).not.toContain(
+        'items.push(',
+      );
     } finally {
       arrayFromSpy.mockRestore();
     }
@@ -455,6 +459,12 @@ describe('StatusBarRegistry', () => {
       d.dispose();
       expect(r.getBySide('right').map((x) => x.id)).toEqual(['c', 'a']);
       expect(sortSpy).toHaveBeenCalledTimes(4);
+      expect(StatusBarRegistry.prototype.getBySide.toString()).not.toContain(
+        'items.push(',
+      );
+      expect(StatusBarRegistry.prototype.getAll.toString()).not.toContain(
+        'items.push(',
+      );
     } finally {
       sortSpy.mockRestore();
     }

@@ -36,12 +36,13 @@ export function pickWindowsToRestore(
 ): RestoreEntry[] {
   // 默认只开主窗;显式 true 才恢复其他 window (session-restore opt-in)
   if (data.restoreAllWindowsOnLaunch !== true) return [];
-  const out: RestoreEntry[] = [];
+  const out = new Array<RestoreEntry>(MAX_RESTORE_WINDOWS);
+  let count = 0;
   // 边界(E84):防御性按 windowSeq 去重 —— 即便 explorer.json 含重复 windowSeq 段(load 端
   // canonicalize 已主防),也不为同一 seq 开多窗(多窗共享同段会互相覆盖会话)。
   const seenSeq = new Set<number>();
   for (const entry of data.windows) {
-    if (out.length >= MAX_RESTORE_WINDOWS) break; // 边界(E60):启动开窗数上限,停止 + 停止同步 stat
+    if (count >= MAX_RESTORE_WINDOWS) break; // 边界(E60):启动开窗数上限,停止 + 停止同步 stat
     if (entry.windowSeq === 0) continue;
     // 边界(E91):windowSeq 须安全整数。ExplorerSchemaV3 只校验 int().nonnegative(),畸形
     // explorer.json 的 9007199254740993(>MAX_SAFE_INTEGER)能过 schema;main 用它建窗注入
@@ -54,7 +55,8 @@ export function pickWindowsToRestore(
     if (!isWithinStartupPathLimit(ws)) continue; // 边界(E60):超长路径先跳过,绝不 stat
     if (!isExistingDir(ws)) continue;
     seenSeq.add(entry.windowSeq);
-    out.push({ windowSeq: entry.windowSeq, workspace: ws });
+    out[count++] = { windowSeq: entry.windowSeq, workspace: ws };
   }
+  out.length = count;
   return out;
 }

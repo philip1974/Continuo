@@ -174,6 +174,12 @@ describe('SettingItemRegistry', () => {
         'editor.lineNumbers',
       ]);
       expect(sortSpy).toHaveBeenCalledTimes(4);
+      expect(SettingItemRegistry.prototype.getByCategory.toString()).not.toContain(
+        'items.push(',
+      );
+      expect(SettingItemRegistry.prototype.getAll.toString()).not.toContain(
+        'items.push(',
+      );
     } finally {
       sortSpy.mockRestore();
     }

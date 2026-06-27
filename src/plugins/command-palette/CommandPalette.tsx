@@ -119,20 +119,24 @@ export function sortByRecent(
     recentRank.set(recentIds[i]!, i);
   }
   const recent: (DisplayCommand | undefined)[] = [];
-  const others: DisplayCommand[] = [];
+  const others = new Array<DisplayCommand>(items.length);
+  let otherCount = 0;
   for (const d of items) {
     const rank = recentRank.get(d.cmd.id);
-    if (rank === undefined) others.push(d);
+    if (rank === undefined) others[otherCount++] = d;
     else recent[rank] = d;
   }
+  others.length = otherCount;
   others.sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));
-  const out: DisplayCommand[] = [];
+  const out = new Array<DisplayCommand>(items.length);
+  let count = 0;
   for (const d of recent) {
-    if (d) out.push(d);
+    if (d) out[count++] = d;
   }
   for (const d of others) {
-    out.push(d);
+    out[count++] = d;
   }
+  out.length = count;
   return out;
 }
 

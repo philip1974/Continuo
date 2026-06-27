@@ -115,6 +115,7 @@ describe('打磨 R29 — Keybindings hotkey 预计算', () => {
       ]);
       expect(buckets[0]?.items).toEqual([commandA]);
       expect(buckets[1]?.items).toEqual([commandB]);
+      expect(groupByCategory.toString()).not.toContain('buckets.push(');
     } finally {
       arrayFromSpy.mockRestore();
     }
@@ -228,6 +229,9 @@ describe('打磨 R29 — Keybindings hotkey 预计算', () => {
         visibleOverride,
       ]);
       expect(filterSpy.mock.contexts.some((ctx) => ctx === commands)).toBe(false);
+      expect(selectVisibleKeybindingCommands.toString()).not.toContain(
+        'selected.push(',
+      );
     } finally {
       filterSpy.mockRestore();
     }

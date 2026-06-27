@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
+  appendFsScopeQueueId,
   removeFsScopeQueueId,
   usePermissionPromptStore,
 } from '../../plugins/permissions/promptStore';
@@ -87,9 +88,22 @@ describe('usePermissionPromptStore', () => {
       const filterCallsDuringRemove = filterSpy.mock.calls.length;
       expect([...next]).toEqual(['r2', 'r3']);
       expect(filterCallsDuringRemove).toBe(0);
+      expect(removeFsScopeQueueId.toString()).not.toContain('.push(');
     } finally {
       filterSpy.mockRestore();
     }
+  });
+
+  it('removeFsScopeQueueId 未命中 → 返回原队列引用', () => {
+    const queue = ['r1', 'r2'];
+    expect(removeFsScopeQueueId(queue, 'missing')).toBe(queue);
+  });
+
+  it('appendFsScopeQueueId 预分配追加,不通过 spread/push 拷贝', () => {
+    const queue = ['r1'];
+    expect(appendFsScopeQueueId(queue, 'r2')).toEqual(['r1', 'r2']);
+    expect(appendFsScopeQueueId.toString()).not.toContain('.push(');
+    expect(appendFsScopeQueueId.toString()).not.toContain('...');
   });
 
   it('request 设 pending,grant 后 Promise resolve 收授权列表', async () => {

@@ -134,8 +134,9 @@ export class CommandRegistry {
   getAll(): readonly CommandSpec[] {
     if (this.cachedAll !== null) return this.cachedAll;
 
-    const out: CommandSpec[] = [];
-    for (const item of this.items.values()) out.push(item);
+    const out = new Array<CommandSpec>(this.items.size);
+    let i = 0;
+    for (const item of this.items.values()) out[i++] = item;
     this.cachedAll = out;
     return out;
   }

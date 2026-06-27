@@ -65,6 +65,9 @@ describe('SettingTabRegistry', () => {
       d.dispose();
       expect(r.getAll().map((x) => x.id)).toEqual(['top', 'bot']);
       expect(sortSpy).toHaveBeenCalledTimes(3);
+      expect(SettingTabRegistry.prototype.getAll.toString()).not.toContain(
+        'items.push(',
+      );
     } finally {
       sortSpy.mockRestore();
     }

@@ -141,6 +141,7 @@ describe('pickWindowsToRestore', () => {
       const r = pickWindowsToRestore(data, isDir);
       expect(r).toHaveLength(MAX_RESTORE_WINDOWS); // 封顶,不批量开成千上万窗
       expect(isDir.mock.calls.length).toBeLessThanOrEqual(MAX_RESTORE_WINDOWS);
+      expect(pickWindowsToRestore.toString()).not.toContain('out.push(');
     });
 
     it('超长 workspace 路径 → 跳过且不 stat', () => {

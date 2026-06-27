@@ -68,13 +68,14 @@ export function expandScopePathForDisplay(path: string): string {
 export function buildFsScopePromptScopes(
   scopes: readonly PathScope[],
 ): FsScopePromptScope[] {
-  const out: FsScopePromptScope[] = [];
-  for (const scope of scopes) {
-    out.push({
+  const out = new Array<FsScopePromptScope>(scopes.length);
+  for (let i = 0; i < scopes.length; i++) {
+    const scope = scopes[i]!;
+    out[i] = {
       path: scope.path,
       mode: scope.mode,
       displayPath: expandScopePathForDisplay(scope.path),
-    });
+    };
   }
   return out;
 }

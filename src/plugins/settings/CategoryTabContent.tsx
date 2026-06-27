@@ -50,13 +50,14 @@ export function groupItems(items: readonly SettingItemSpec[]): Bucket[] {
     }
     entry.items.push(spec);
   }
-  const buckets: Bucket[] = [];
+  const buckets = new Array<Bucket>(map.size);
+  let i = 0;
   for (const [group, entry] of map) {
-    buckets.push({
+    buckets[i++] = {
       group,
       groupKey: entry.groupKey,
       items: entry.items,
-    });
+    };
   }
   return buckets;
 }

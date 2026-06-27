@@ -14,6 +14,7 @@ vi.mock('../../plugins/keybindings/keybindings-store', async (importActual) => {
 });
 
 import {
+  buildCompiledBindings,
   matchesHotkey,
   useCommandHotkeys,
 } from '../../plugins/command-palette/useCommandHotkeys';
@@ -72,6 +73,17 @@ describe('打磨 R26 — 命令 hotkey 预编译', () => {
     for (const k of ['x', 'y', 'z', 'q', 'w']) fireKey(k);
 
     expect(getEffSpy.mock.calls.length).toBe(afterCompile);
+  });
+
+  it('预编译绑定表按命令数预分配,不通过 out.push 扩容', () => {
+    const commands = [
+      { id: 'a', title: 'A', hotkey: 'mod+a', fn: vi.fn() },
+      { id: 'b', title: 'B', fn: vi.fn() },
+      { id: 'c', title: 'C', hotkey: 'mod+c', fn: vi.fn() },
+    ];
+
+    expect(buildCompiledBindings(commands, 'other')).toHaveLength(2);
+    expect(buildCompiledBindings.toString()).not.toContain('out.push(');
   });
 
   it('命中的 hotkey 仍正确触发命令(预编译表匹配)', () => {

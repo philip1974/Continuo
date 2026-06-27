@@ -20,6 +20,7 @@ import { setLocale as setI18nLocale } from '@/i18n';
 import {
   PluginsTabContent,
   collectContributionSamples,
+  collectStatusBarItems,
   hasPluginId,
   hasPluginVersion,
   pluginsTabRowClassName,
@@ -122,6 +123,18 @@ describe('PluginsTabContent — 贡献点统计', () => {
     } finally {
       mapSpy.mockRestore();
     }
+  });
+
+  it('状态栏左右贡献预分配合并,不通过数组 spread', () => {
+    const left = [{ id: 'left' }];
+    const right = [{ id: 'right-a' }, { id: 'right-b' }];
+
+    expect(collectStatusBarItems(left, right).map((item) => item.id)).toEqual([
+      'left',
+      'right-a',
+      'right-b',
+    ]);
+    expect(collectStatusBarItems.toString()).not.toContain('...');
   });
 
   it('插件存在性检查单趟扫描,不调用 plugins.some', () => {

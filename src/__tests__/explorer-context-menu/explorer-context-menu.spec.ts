@@ -62,6 +62,9 @@ describe('ExplorerContextMenuRegistry', () => {
       d.dispose();
       expect(r.getAll().map((s) => s.id)).toEqual(['c', 'a']);
       expect(sortSpy).toHaveBeenCalledTimes(3);
+      expect(ExplorerContextMenuRegistry.prototype.getAll.toString()).not.toContain(
+        'items.push(',
+      );
     } finally {
       sortSpy.mockRestore();
     }
@@ -237,6 +240,7 @@ describe('filterVisible', () => {
       { id: 'hide', label: 'Hide', when: () => false, fn: () => {} },
     ];
     expect(filterVisible(items, ctx).map((s) => s.id)).toEqual(['show']);
+    expect(filterVisible.toString()).not.toContain('out.push(');
   });
 
   it('when 拿到 ctx target / selectedPaths / rootPath', () => {

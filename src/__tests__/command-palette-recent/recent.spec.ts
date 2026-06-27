@@ -7,6 +7,7 @@ import {
   RECENT_STORAGE_KEY,
   MAX_RECENT,
   buildNextRecentList,
+  readFromStorage,
 } from '../../plugins/command-palette/recent';
 
 beforeEach(() => {
@@ -38,9 +39,24 @@ describe('useRecentCommandsStore', () => {
       expect(next[0]).toEqual({ id: 'cmd-10', ts: 999 });
       expect(duplicateCount).toBe(1);
       expect(filterCallsDuringBuild).toBe(0);
+      expect(buildNextRecentList.toString()).not.toContain('.push(');
     } finally {
       filterSpy.mockRestore();
     }
+  });
+
+  it('readFromStorage 收集合法项时按 MAX_RECENT 预分配,不通过 out.push 扩容', () => {
+    localStorage.setItem(
+      RECENT_STORAGE_KEY,
+      JSON.stringify([
+        { id: 'a', ts: 1 },
+        { id: '', ts: 2 },
+        { id: 'b', ts: 3 },
+      ]),
+    );
+
+    expect(readFromStorage().map((entry) => entry.id)).toEqual(['a', 'b']);
+    expect(readFromStorage.toString()).not.toContain('out.push(');
   });
 
   it('初始 list 为空', () => {

@@ -28,6 +28,17 @@ describe('RibbonRegistry', () => {
     expect(r.getAll().map((x) => x.id)).toEqual(['top', 'def', 'bot']);
   });
 
+  it('getAll 构造排序快照时按 Map size 预分配,不通过 items.push 扩容', () => {
+    const r = new RibbonRegistry();
+    r.register({ id: 'b', title: 'B', icon: null, onClick: noop, priority: 2 });
+    r.register({ id: 'a', title: 'A', icon: null, onClick: noop, priority: 1 });
+
+    expect(r.getAll().map((x) => x.id)).toEqual(['a', 'b']);
+    expect(RibbonRegistry.prototype.getAll.toString()).not.toContain(
+      'items.push(',
+    );
+  });
+
   it('重复 getAll 复用排序结果,register/dispose 后失效重建', () => {
     const r = new RibbonRegistry();
     const d = r.register({ id: 'def', title: 'D', icon: null, onClick: noop });

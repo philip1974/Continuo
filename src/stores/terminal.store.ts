@@ -93,7 +93,10 @@ export function filterByOwnerWindow(
   currentWindowId: number,
   opts: FilterDropOpts = {},
 ): readonly TerminalSession[] {
-  const result: TerminalSession[] = [];
+  const result = new Array<TerminalSession>(
+    Math.min(sessions.length, MAX_TERMINAL_SESSIONS_GLOBAL),
+  );
+  let count = 0;
   // 边界(E292,E167/E174 同款 IPC-ingress 纵深防御 / 数量维度):main 已按 MAX_TERMINAL_SESSIONS_GLOBAL
   // 双闸(E235)封顶真实会话数,但 renderer 此前对 sessions_changed / listSessions 推来的数组**长度**无
   // 上限 —— 有 bug / 被篡改的 main 推超大数组时,本 for 循环 O(n) 全量遍历 + 入 store + 渲染 n 个 tab,
@@ -127,8 +130,9 @@ export function filterByOwnerWindow(
       opts.onDrop?.(sessionId, 'shape-invalid');
       continue;
     }
-    result.push(obj);
+    result[count++] = obj;
   }
+  result.length = count;
   return result;
 }
 
@@ -143,15 +147,17 @@ export function filterByWorkspaceRoot(
   sessions: readonly TerminalSession[],
   currentRoot: string | null,
 ): readonly TerminalSession[] {
-  const visible: TerminalSession[] = [];
+  const visible = new Array<TerminalSession>(sessions.length);
+  let count = 0;
   for (const s of sessions) {
     if (
       s.workspaceRoot === undefined ||
       (currentRoot !== null && pathEquals(s.workspaceRoot, currentRoot))
     ) {
-      visible.push(s);
+      visible[count++] = s;
     }
   }
+  visible.length = count;
   return visible;
 }
 
@@ -216,7 +222,8 @@ export function nextActiveAfterClose(
   let found = false;
   let prev: TerminalSession | null = null;
   let next: TerminalSession | null = null;
-  const remaining: TerminalSession[] = [];
+  const remaining = new Array<TerminalSession>(Math.max(0, sessions.length - 1));
+  let count = 0;
 
   for (const session of sessions) {
     if (session.id === closingId) {
@@ -224,13 +231,14 @@ export function nextActiveAfterClose(
       continue;
     }
     if (found && next === null) next = session;
-    remaining.push(session);
+    remaining[count++] = session;
     if (!found) prev = session;
   }
 
   if (!found) {
     return { sessions, activeId };
   }
+  remaining.length = count;
   if (remaining.length === 0) return { sessions: remaining, activeId: null };
   if (closingId !== activeId) return { sessions: remaining, activeId };
   return { sessions: remaining, activeId: next?.id ?? prev?.id ?? null };

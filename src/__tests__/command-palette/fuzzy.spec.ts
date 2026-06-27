@@ -81,6 +81,7 @@ describe('fuzzyFilter', () => {
       const mapCallsDuringFilter = mapSpy.mock.calls.length;
       expect(r.map((x) => x.id)).toEqual(['a', 'b']);
       expect(mapCallsDuringFilter).toBe(0);
+      expect(fuzzyFilter.toString()).not.toContain('scored.push(');
     } finally {
       mapSpy.mockRestore();
     }

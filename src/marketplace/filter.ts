@@ -25,12 +25,14 @@ export function applyFilter(
   const hasTags = opts.selectedTags.size > 0;
   if (!hasQuery && !hasTags) return entries;
 
-  const filtered: MarketplaceEntry[] = [];
+  const filtered = new Array<MarketplaceEntry>(entries.length);
+  let count = 0;
   for (const entry of entries) {
     if (hasQuery && !matchQuery(entry, q)) continue;
     if (hasTags && !matchTags(entry, opts.selectedTags)) continue;
-    filtered.push(entry);
+    filtered[count++] = entry;
   }
+  filtered.length = count;
   return filtered;
 }
 
@@ -69,14 +71,16 @@ export function collectAllTags(
   entries: readonly MarketplaceEntry[],
 ): readonly string[] {
   const set = new Set<string>();
-  const tags: string[] = [];
+  const tags = new Array<string>(MAX_MARKETPLACE_TAGS);
+  let count = 0;
   outer: for (const e of entries) {
     for (const t of e.tags ?? []) {
       if (set.has(t)) continue;
       set.add(t);
-      tags.push(t);
+      tags[count++] = t;
       if (set.size >= MAX_MARKETPLACE_TAGS) break outer; // 全局 tag 数到顶,停止收集
     }
   }
+  tags.length = count;
   return tags.sort((a, b) => a.localeCompare(b));
 }

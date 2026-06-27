@@ -149,6 +149,7 @@ describe('init 扫描与激活', () => {
       const filterCallsDuringRemove = filterSpy.mock.calls.length;
       expect(next).toEqual(['b', 'c']);
       expect(filterCallsDuringRemove).toBe(0);
+      expect(removeActivationOrderId.toString()).not.toContain('next.push(');
     } finally {
       filterSpy.mockRestore();
     }
@@ -199,6 +200,9 @@ describe('init 扫描与激活', () => {
     } finally {
       arrayFromSpy.mockRestore();
     }
+    expect(PluginManager.prototype.listAll.toString()).not.toContain(
+      'list.push(',
+    );
     expect(list!.map((x) => x.id)).toEqual(['a', 'b']);
     expect(list!.find((x) => x.id === 'a')?.status).toBe('enabled');
     expect(list!.find((x) => x.id === 'b')?.status).toBe('disabled');

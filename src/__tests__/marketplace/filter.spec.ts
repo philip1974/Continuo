@@ -179,6 +179,7 @@ describe('applyFilter', () => {
       });
       expect(r.map((e) => e.id)).toEqual(['com.foo', 'com.bar']);
       expect(filterSpy.mock.contexts.some((ctx) => ctx === ENTRIES)).toBe(false);
+      expect(applyFilter.toString()).not.toContain('filtered.push(');
     } finally {
       filterSpy.mockRestore();
     }
@@ -205,6 +206,7 @@ describe('collectAllTags', () => {
     try {
       expect(collectAllTags(ENTRIES)).toEqual(['demo', 'productivity', 'tools']);
       expect(arrayFromSpy).not.toHaveBeenCalled();
+      expect(collectAllTags.toString()).not.toContain('tags.push(');
     } finally {
       arrayFromSpy.mockRestore();
     }
