@@ -121,7 +121,7 @@ jobs:
         if: matrix.os == 'windows-latest'
         # Windows runners have intermittently crashed Vitest workers under the
         # default full parallelism with "Worker exited unexpectedly".
-        run: pnpm exec vitest run --project unit --maxWorkers=2 --minWorkers=1
+        run: pnpm exec vitest run --project unit --maxWorkers=1 --minWorkers=1 --no-file-parallelism
 
       - name: Run contract tests
         run: pnpm test:contract
