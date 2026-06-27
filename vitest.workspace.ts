@@ -14,6 +14,10 @@ const CI_ELECTRON_UNIT_EXCLUDE = process.env.CI
       'src/__tests__/terminal-service/helpers.spec.ts',
       'src/__tests__/terminal-workspace-isolation/workspaceRoot-roundtrip.spec.ts',
       'src/__tests__/window-workspace-roots-map/cwd-fallback-error.spec.ts',
+      'src/__tests__/i18n-set-locale-commit-gen/commit-gen.spec.ts',
+      'src/__tests__/plugins-ipc-input-limits/plugins-ipc-input-limits.spec.ts',
+      'src/__tests__/shell-exec-input-limits/exec-input-limits.spec.ts',
+      'src/__tests__/terminal-create-cancel-orphan/create-cancel-orphan.spec.ts',
       // topic-49/50 打磨与安全审计新增:经 electron/main 服务间接 import electron
       'src/__tests__/49-polish-bugfixes/external-url-scheme-whitelist.spec.ts',
       'src/__tests__/49-polish-bugfixes/read-git-blob-bounds.spec.ts',

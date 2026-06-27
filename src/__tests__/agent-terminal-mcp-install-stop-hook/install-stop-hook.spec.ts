@@ -51,6 +51,10 @@ async function readText(path: string): Promise<string> {
   return readFile(path, 'utf8');
 }
 
+function tomlStringFragment(value: string): string {
+  return value.replaceAll('\\', '\\\\');
+}
+
 async function listBackups(cwd: string): Promise<string[]> {
   const names = await readdir(cwd, { recursive: true });
   return names
@@ -326,8 +330,8 @@ describe('installStopHookForSession', () => {
     ).resolves.toEqual({ installed: true });
 
     const toml = await readText(join(cwd, '.codex', 'config.toml'));
-    expect(toml).toContain(newDir);
-    expect(toml).not.toContain(oldDir); // 旧命令完全被替换,无残留
+    expect(toml).toContain(tomlStringFragment(newDir));
+    expect(toml).not.toContain(tomlStringFragment(oldDir)); // 旧命令完全被替换,无残留
     // 只有一个 managed command(未因截断残留半截旧命令)
     expect(toml.match(/codex_\$\{CONTINUO_WINDOW_ID/g)?.length).toBe(1);
   });

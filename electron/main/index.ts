@@ -202,6 +202,13 @@ function wireWindowCloseFlush(win: BrowserWindow): void {
     event.preventDefault();
     // race(R45):已有 flush 在途 → 只阻止本次关闭,不再发第二个 flush(避免覆盖 pending ack)。
     if (flushing) return;
+    // UX:数据安全 flush 仍在后台完成,但关闭按钮点击后先隐藏窗口,
+    // 避免用户看到 10s 兜底窗口内的"无反应"状态。
+    try {
+      if (!win.isDestroyed()) win.hide();
+    } catch {
+      // close 竞态下 hide 失败不影响 flush / close 兜底。
+    }
     flushing = true;
     void (async () => {
       await requestWindowFlush(win);

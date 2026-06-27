@@ -39,11 +39,11 @@ import type {
   EditorOpenFailureCode,
 } from './types';
 
-// Keep in sync with package.json "version" field. Bumped to 0.2.7 (2026-06-27)
-// for the cross-platform hardening audit release (codex-collab topics 54-59:
+// Keep in sync with package.json "version" field. Bumped to 0.2.8 (2026-06-27)
+// for the terminal output buffer cap release after the cross-platform hardening audit:
 // 数据安全 + 跨平台正确性 + i18n + a11y + race-condition + 边界/畸形输入硬化).
 // Plugins declaring minLMVersion >= 0.2.4 need this.
-const APP_VERSION = '0.2.7';
+const APP_VERSION = '0.2.8';
 
 // Workspace API — minimal v0.1 surface exposing the current renderer
 // window's workspace root (null when no folder open). Plugins use this for

@@ -47,6 +47,7 @@ const electronMock = vi.hoisted(() => {
     readonly loadURL = vi.fn();
     readonly loadFile = vi.fn();
     readonly setMenu = vi.fn();
+    readonly hide = vi.fn();
     readonly isDestroyed = vi.fn(() => this.destroyed);
     readonly isMinimized = vi.fn(() => false);
     readonly restore = vi.fn();
@@ -245,6 +246,7 @@ describe('window close layout flush', () => {
     expect(win.webContents.send).toHaveBeenCalledWith('layout:flush-request', {
       windowId: win.id,
     });
+    expect(win.hide).toHaveBeenCalledTimes(1);
     expect(win.destroyed).toBe(false);
 
     ack(win);
@@ -265,6 +267,7 @@ describe('window close layout flush', () => {
       (c) => c[0] === 'layout:flush-request',
     );
     expect(flushSends).toHaveLength(1); // 只发一次(旧实现会发两次并覆盖 pending ack)
+    expect(win.hide).toHaveBeenCalledTimes(1);
     expect(win.destroyed).toBe(false);
 
     ack(win); // 单个 ack 即可结算(未被第二次覆盖)
@@ -296,6 +299,7 @@ describe('window close layout flush', () => {
     // 数据安全(codex 复查 P1):放宽超时前不应关窗 —— 慢盘合法 flush 不被 1s 切断。
     await vi.advanceTimersByTimeAsync(1000);
     await tick();
+    expect(win.hide).toHaveBeenCalledTimes(1);
     expect(win.destroyed).toBe(false); // 1s 时仍在等 ack(旧值会在此误关)
 
     await vi.advanceTimersByTimeAsync(FLUSH_ACK_TIMEOUT_MS);
