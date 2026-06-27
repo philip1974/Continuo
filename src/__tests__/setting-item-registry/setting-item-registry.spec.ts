@@ -2,10 +2,27 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   SettingItemRegistry,
   clampSettingNumber,
+  hasSettingEnumValue,
   type SettingItemSpec,
 } from '../../plugins/registries/SettingItemRegistry';
 
 describe('SettingItemRegistry', () => {
+  it('select enum value 查找单趟扫描,不调用 enum.some', () => {
+    const options = [
+      { value: 'light', label: 'Light' },
+      { value: 'dark', label: 'Dark' },
+    ];
+    const someSpy = vi.spyOn(options, 'some');
+
+    try {
+      expect(hasSettingEnumValue(options, 'dark')).toBe(true);
+      expect(hasSettingEnumValue(options, 'system')).toBe(false);
+      expect(someSpy).not.toHaveBeenCalled();
+    } finally {
+      someSpy.mockRestore();
+    }
+  });
+
   it('register / dispose / getAll', () => {
     const r = new SettingItemRegistry();
     const d = r.register({

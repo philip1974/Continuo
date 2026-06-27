@@ -135,6 +135,32 @@ describe('applyFilter', () => {
     expect(r.map((e) => e.id).sort()).toEqual(['com.bar', 'com.foo']);
   });
 
+  it('selectedTags 匹配单趟扫描 tags,不调用 Array.prototype.some', () => {
+    const tags = ['demo', 'productivity'];
+    const entries: readonly MarketplaceEntry[] = [
+      {
+        id: 'com.demo',
+        name: 'Demo',
+        author: 'a',
+        repo: 'a/demo',
+        tags,
+      },
+    ];
+    const someSpy = vi.spyOn(tags, 'some');
+
+    try {
+      expect(
+        applyFilter(entries, {
+          query: '',
+          selectedTags: new Set(['productivity']),
+        }).map((entry) => entry.id),
+      ).toEqual(['com.demo']);
+      expect(someSpy).not.toHaveBeenCalled();
+    } finally {
+      someSpy.mockRestore();
+    }
+  });
+
   it('query + tags 同时生效(AND)', () => {
     const r = applyFilter(ENTRIES, {
       query: 'foo',

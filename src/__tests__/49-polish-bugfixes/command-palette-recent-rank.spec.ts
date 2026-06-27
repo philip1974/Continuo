@@ -33,4 +33,26 @@ describe('打磨 R55 — CommandPalette recent rank 预计算', () => {
     expect(calls).toBe(0);
     expect(out.map((d) => d.cmd.id)).toEqual(['c', 'a', 'b', 'd']);
   });
+
+  it('recent 置顶用 rank slot 单趟放置,不再额外 sort recent 小数组', () => {
+    const items = [
+      command('a', 'Alpha'),
+      command('b', 'Beta'),
+      command('c', 'Charlie'),
+      command('d', 'Delta'),
+    ];
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      const out = sortByRecent(
+        items as unknown as Parameters<typeof sortByRecent>[0],
+        ['c', 'a'],
+      );
+
+      expect(out.map((d) => d.cmd.id)).toEqual(['c', 'a', 'b', 'd']);
+      expect(sortSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      sortSpy.mockRestore();
+    }
+  });
 });

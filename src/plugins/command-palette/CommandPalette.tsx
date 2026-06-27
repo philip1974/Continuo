@@ -38,6 +38,16 @@ export function commandPaletteRowClassName(selected: boolean): string {
     : COMMAND_PALETTE_ROW_IDLE_CLASS_NAME;
 }
 
+export function isCommandPaletteVirtualIndexRendered(
+  virtualItems: readonly { readonly index: number }[],
+  selectedIndex: number,
+): boolean {
+  for (const item of virtualItems) {
+    if (item.index === selectedIndex) return true;
+  }
+  return false;
+}
+
 /** 渲染中间体:已 localize 的 title/category（topic-19 P1-2）。 */
 interface DisplayCommand {
   readonly cmd: CommandSpec;
@@ -66,20 +76,22 @@ export function sortByRecent(
   for (let i = 0; i < recentIds.length && i < RECENT_TOP_N; i++) {
     recentRank.set(recentIds[i]!, i);
   }
-  const recent: DisplayCommand[] = [];
+  const recent: (DisplayCommand | undefined)[] = [];
   const others: DisplayCommand[] = [];
   for (const d of items) {
-    if (recentRank.has(d.cmd.id)) recent.push(d);
-    else others.push(d);
+    const rank = recentRank.get(d.cmd.id);
+    if (rank === undefined) others.push(d);
+    else recent[rank] = d;
   }
-  recent.sort(
-    (a, b) => recentRank.get(a.cmd.id)! - recentRank.get(b.cmd.id)!,
-  );
   others.sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));
-  for (const d of others) {
-    recent.push(d);
+  const out: DisplayCommand[] = [];
+  for (const d of recent) {
+    if (d) out.push(d);
   }
-  return recent;
+  for (const d of others) {
+    out.push(d);
+  }
+  return out;
 }
 
 interface CommandPaletteProps {
@@ -193,9 +205,10 @@ function CommandPaletteBody({ commands }: CommandPaletteProps) {
   // a11y(A112,A111 后续):aria-activedescendant 只能指向 DOM 中真实挂载的 option。虚拟列表
   // 里选中项可能在逻辑上有效但不在渲染窗口内(scrollToIndex 滚入前的瞬态)→ 须校验该 index
   // 在 getVirtualItems() 渲染窗口内,否则引用悬空,SR 拿不到当前项。
-  const activeOptionRendered = rowVirtualizer
-    .getVirtualItems()
-    .some((vRow) => vRow.index === selectedIndex);
+  const activeOptionRendered = isCommandPaletteVirtualIndexRendered(
+    rowVirtualizer.getVirtualItems(),
+    selectedIndex,
+  );
 
   const execute = useCallback(
     (d: DisplayCommand) => {

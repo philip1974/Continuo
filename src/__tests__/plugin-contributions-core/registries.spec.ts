@@ -2,6 +2,35 @@ import { describe, it, expect, vi } from 'vitest';
 import { PanelRegistry } from '../../plugins/registries/PanelRegistry';
 import { CommandRegistry } from '../../plugins/registries/CommandRegistry';
 import { StatusBarRegistry } from '../../plugins/registries/StatusBarRegistry';
+import { subscribeAll } from '../../plugins/registries/useRegistry';
+
+// ── subscribeAll ───────────────────────────────────────
+
+describe('subscribeAll', () => {
+  it('订阅所有 source 并一次性 unsubscribe,不通过 sources.map 生成中间数组', () => {
+    const unsubs = [vi.fn(), vi.fn()];
+    const sources = [
+      { subscribe: vi.fn(() => unsubs[0]!) },
+      { subscribe: vi.fn(() => unsubs[1]!) },
+    ];
+    const listener = vi.fn();
+    const mapSpy = vi.spyOn(sources, 'map');
+
+    try {
+      const unsubscribeAll = subscribeAll(sources, listener);
+
+      expect(sources[0]!.subscribe).toHaveBeenCalledWith(listener);
+      expect(sources[1]!.subscribe).toHaveBeenCalledWith(listener);
+      expect(mapSpy).not.toHaveBeenCalled();
+
+      unsubscribeAll();
+      expect(unsubs[0]).toHaveBeenCalledTimes(1);
+      expect(unsubs[1]).toHaveBeenCalledTimes(1);
+    } finally {
+      mapSpy.mockRestore();
+    }
+  });
+});
 
 // ── PanelRegistry ───────────────────────────────────────
 

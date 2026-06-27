@@ -37,6 +37,16 @@ export function quickOpenRowClassName(selected: boolean): string {
   return selected ? QUICK_OPEN_ROW_SELECTED_CLASS_NAME : QUICK_OPEN_ROW_IDLE_CLASS_NAME;
 }
 
+export function isVirtualIndexRendered(
+  virtualItems: readonly { readonly index: number }[],
+  selectedIndex: number,
+): boolean {
+  for (const item of virtualItems) {
+    if (item.index === selectedIndex) return true;
+  }
+  return false;
+}
+
 /**
  * 轻量 shell(打磨 R33,仿 R32 CommandPalette):QuickOpenModal 常驻挂在 App 顶层。
  * 外层只订阅 isOpen/close 渲染 Modal,**仅 isOpen 时才挂载 QuickOpenBody** —— 关闭
@@ -170,9 +180,10 @@ function QuickOpenBody() {
   }, [selectedIndex, filtered.length, rowVirtualizer]);
   // a11y(A112,A111 后续):aria-activedescendant 只能指向 DOM 中真实挂载的 option;虚拟列表里
   // 选中项可能不在渲染窗口内 → 须校验其在 getVirtualItems() 内,否则引用悬空。
-  const activeOptionRendered = rowVirtualizer
-    .getVirtualItems()
-    .some((vRow) => vRow.index === selectedIndex);
+  const activeOptionRendered = isVirtualIndexRendered(
+    rowVirtualizer.getVirtualItems(),
+    selectedIndex,
+  );
 
   const openFile = useCallback(
     async (file: QuickOpenFile) => {

@@ -29,7 +29,10 @@ vi.mock('@tanstack/react-virtual', () => ({
   },
 }));
 
-import { QuickOpenModal } from '../../plugins/quick-open/QuickOpenModal';
+import {
+  QuickOpenModal,
+  isVirtualIndexRendered,
+} from '../../plugins/quick-open/QuickOpenModal';
 import { useQuickOpenStore, type QuickOpenFile } from '../../plugins/quick-open/store';
 import { useWorkspaceStore } from '../../stores/workspace.store';
 
@@ -60,6 +63,22 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('打磨 R25 — Quick Open 虚拟化', () => {
+  it('active option 渲染窗口判断用单趟循环,不调用 virtualItems.some', () => {
+    const rows = [
+      { index: 0, start: 0, size: 28, key: 0 },
+      { index: 1, start: 28, size: 28, key: 1 },
+    ];
+    const someSpy = vi.spyOn(rows, 'some');
+
+    try {
+      expect(isVirtualIndexRendered(rows, 1)).toBe(true);
+      expect(isVirtualIndexRendered(rows, 3)).toBe(false);
+      expect(someSpy).not.toHaveBeenCalled();
+    } finally {
+      someSpy.mockRestore();
+    }
+  });
+
   it('100 条结果 → 只渲染 virtualizer 窗口(3 行),不是全部 100 行', () => {
     const { container } = render(<QuickOpenModal />);
     const options = container.querySelectorAll('[role=option]');

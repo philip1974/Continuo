@@ -40,9 +40,12 @@ async function readJsonCapped(r: Response, maxBytes: number): Promise<unknown> {
 
 export function selectValidMarketplaceEntries(
   entries: readonly unknown[],
+  maxEntries: number = entries.length,
 ): MarketplaceEntry[] {
   const out: MarketplaceEntry[] = [];
-  for (const entry of entries) {
+  const count = Math.min(entries.length, maxEntries);
+  for (let i = 0; i < count; i++) {
+    const entry = entries[i];
     if (isValidMarketplaceEntry(entry)) out.push(entry);
   }
   return out;
@@ -89,9 +92,8 @@ export async function fetchMarketplaceIndex(
     if (!Array.isArray(raw)) throw new Error('MARKETPLACE_INDEX_INVALID');
     // 边界(E64):顶层数组条目数硬上限 —— 超大数组先截断,再逐 entry 校验/缓存(防超大 index
     // 数组在 filter/排序/渲染/sessionStorage 缓存放大)。
-    const limited =
-      raw.length > MAX_INDEX_ENTRIES ? raw.slice(0, MAX_INDEX_ENTRIES) : raw;
-    if (limited.length < raw.length) {
+    const entryCount = Math.min(raw.length, MAX_INDEX_ENTRIES);
+    if (entryCount < raw.length) {
       console.warn(
         `[marketplace] index truncated to ${MAX_INDEX_ENTRIES} entries (had ${raw.length})`,
       );
@@ -99,11 +101,11 @@ export async function fetchMarketplaceIndex(
     // 边界(E2):逐 entry 校验形态,丢弃畸形项(null/缺 repo/字段类型错),防其在 filter/渲染/
     // 更新检查里触发 TypeError 崩面板,或拼出 github.com/undefined.git。一个坏社区条目不应让整个
     // 市场不可用 → 过滤而非整体拒绝;只缓存合法 entry。
-    const entries = selectValidMarketplaceEntries(limited);
-    if (entries.length < limited.length) {
+    const entries = selectValidMarketplaceEntries(raw, entryCount);
+    if (entries.length < entryCount) {
       console.warn(
-        `[marketplace] dropped ${limited.length - entries.length} malformed index entr${
-          limited.length - entries.length === 1 ? 'y' : 'ies'
+        `[marketplace] dropped ${entryCount - entries.length} malformed index entr${
+          entryCount - entries.length === 1 ? 'y' : 'ies'
         }`,
       );
     }

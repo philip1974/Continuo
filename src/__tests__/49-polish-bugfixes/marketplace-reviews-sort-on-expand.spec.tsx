@@ -15,7 +15,10 @@ vi.mock('../../plugins/PluginManager', () => ({
 }));
 
 import { _resetLmApiForTest, captureLmApi } from '../../lib/co-api';
-import { MarketplaceTab } from '../../marketplace/MarketplaceTab';
+import {
+  MarketplaceTab,
+  selectDisplayReviews,
+} from '../../marketplace/MarketplaceTab';
 import { fetchMarketplaceIndex } from '../../marketplace/fetcher';
 import { useUpdateStore } from '../../marketplace/update-store';
 import { useReviewsStore } from '../../marketplace/reviews-store';
@@ -125,5 +128,30 @@ describe('打磨 R41 — review 仅在展开时排序渲染', () => {
     expect(container.textContent).toContain('review-19');
     expect(container.textContent).toContain('review-10');
     expect(container.textContent).not.toContain('review-09');
+  });
+
+  it('newest 排序只拷贝可见前 N 条,不通过 slice 分配中间数组', () => {
+    const reviews = Array.from({ length: 20 }, (_, i) => review(`review-${i}`));
+    const sliceSpy = vi.spyOn(Array.prototype, 'slice');
+
+    try {
+      const visible = selectDisplayReviews(reviews, 'newest', 10);
+
+      expect(visible.map((r) => r.body)).toEqual([
+        'review-0',
+        'review-1',
+        'review-2',
+        'review-3',
+        'review-4',
+        'review-5',
+        'review-6',
+        'review-7',
+        'review-8',
+        'review-9',
+      ]);
+      expect(sliceSpy).not.toHaveBeenCalled();
+    } finally {
+      sliceSpy.mockRestore();
+    }
   });
 });

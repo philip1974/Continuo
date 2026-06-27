@@ -646,10 +646,8 @@ export function FolderTree({ root }: { root: string }) {
       const dnd = tree.getState().dnd;
       if (!dnd?.draggedItems || dnd.draggedItems.length === 0) return;
       e.preventDefault();
-      const items = dnd.draggedItems.slice();
-      // 同步清掉 dnd 状态,避免后续 dragend 处理脏状态
       // 已经在 root 下的不动(VSCode 同款)
-      const moveable = selectRootDropMoveablePaths(items, root);
+      const moveable = selectRootDropMoveablePaths(dnd.draggedItems, root);
       if (moveable.length === 0) return;
       // 与 onDropItems/onPaste 同款部分成功刷新(README P2-BB):中途某项失败提前
       // 中止时,已成功移动项也要在 finally 刷新源父目录 + root,否则已移走的文件在

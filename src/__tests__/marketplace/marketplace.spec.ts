@@ -541,6 +541,25 @@ describe('fetchMarketplaceIndex', () => {
     const r = await fetchMarketplaceIndex();
     expect(r).toHaveLength(MAX_INDEX_ENTRIES); // 封顶,不无界缓存
   });
+
+  it('E64 顶层数组超上限时按索引有界遍历,不 slice 复制大 index', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const many = Array.from({ length: MAX_INDEX_ENTRIES + 50 }, (_, i) => ({
+      ...SAMPLE_ENTRY,
+      id: `com.example.e${i}`,
+    }));
+    mockFetch({ ok: true, data: many });
+    const sliceSpy = vi.spyOn(Array.prototype, 'slice');
+
+    try {
+      const r = await fetchMarketplaceIndex();
+
+      expect(r).toHaveLength(MAX_INDEX_ENTRIES);
+      expect(sliceSpy).not.toHaveBeenCalled();
+    } finally {
+      sliceSpy.mockRestore();
+    }
+  });
 });
 
 describe('fetchPluginManifest', () => {

@@ -4,6 +4,8 @@
 // 内多个同名项各自只见磁盘旧态、都选到同一个 ` copy` 名 → 第二个 move 覆盖第一
 // 个(批量重名碰撞 = 潜在数据丢失)。
 import { describe, it, expect, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   joinRelativePaths,
   makeNamePicker,
@@ -11,6 +13,8 @@ import {
   selectRootDropMoveablePaths,
   selectVisibleTreeItems,
 } from '../../panels/Explorer/FolderTree';
+
+const ROOT = join(__dirname, '..', '..');
 
 describe('打磨 R21 — makeNamePicker 唯一名解析', () => {
   it('目标不存在 → 用原 basename', () => {
@@ -128,5 +132,14 @@ describe('打磨 — FolderTree root-drop 可移动路径选择', () => {
       mapSpy.mockRestore();
       filterSpy.mockRestore();
     }
+  });
+
+  it('root-drop 调用点直接用 selector,不先 draggedItems.slice() 复制快照', () => {
+    const src = readFileSync(
+      join(ROOT, 'panels', 'Explorer', 'FolderTree.tsx'),
+      'utf8',
+    );
+
+    expect(src).not.toContain('draggedItems.slice()');
   });
 });

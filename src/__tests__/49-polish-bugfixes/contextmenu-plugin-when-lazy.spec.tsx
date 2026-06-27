@@ -6,6 +6,7 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import { render, cleanup, fireEvent } from '@testing-library/react';
 import {
   ContextMenu,
+  getContextActionTargets,
   groupPluginItems,
   type ContextMenuActions,
 } from '../../panels/Explorer/ContextMenu';
@@ -50,6 +51,21 @@ function renderMenu(items: readonly ExplorerContextMenuItemSpec[]) {
 afterEach(() => cleanup());
 
 describe('打磨 R13 — 插件菜单 when 延迟到打开', () => {
+  it('多选 action targets 单趟拷贝 selectedPaths,不通过 Array.from', () => {
+    const selectedPaths = new Set(['/work/a.ts', '/work/b.ts']);
+    const arrayFromSpy = vi.spyOn(Array, 'from');
+
+    try {
+      expect(getContextActionTargets(target, selectedPaths)).toEqual([
+        '/work/a.ts',
+        '/work/b.ts',
+      ]);
+      expect(arrayFromSpy).not.toHaveBeenCalled();
+    } finally {
+      arrayFromSpy.mockRestore();
+    }
+  });
+
   it('插件菜单分组不通过 Array.from(entries).map 生成中间数组', () => {
     const items: ExplorerContextMenuItemSpec[] = [
       { id: 'late', label: 'Late', group: 'z', fn: vi.fn() },

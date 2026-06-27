@@ -22,7 +22,10 @@ vi.mock('@tanstack/react-virtual', () => ({
 }));
 
 import { render, cleanup, act, fireEvent } from '@testing-library/react';
-import { CommandPalette } from '../../plugins/command-palette/CommandPalette';
+import {
+  CommandPalette,
+  isCommandPaletteVirtualIndexRendered,
+} from '../../plugins/command-palette/CommandPalette';
 import { useCommandPaletteStore } from '../../plugins/command-palette/store';
 import { CommandRegistry } from '../../plugins/registries/CommandRegistry';
 
@@ -42,6 +45,22 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('打磨 R48 — CommandPalette 虚拟化', () => {
+  it('active option 渲染窗口判断用单趟循环,不调用 virtualItems.some', () => {
+    const rows = [
+      { index: 0, start: 0, size: 30, key: 0 },
+      { index: 1, start: 30, size: 30, key: 1 },
+    ];
+    const someSpy = vi.spyOn(rows, 'some');
+
+    try {
+      expect(isCommandPaletteVirtualIndexRendered(rows, 1)).toBe(true);
+      expect(isCommandPaletteVirtualIndexRendered(rows, 3)).toBe(false);
+      expect(someSpy).not.toHaveBeenCalled();
+    } finally {
+      someSpy.mockRestore();
+    }
+  });
+
   it('100 命令 → 只渲染窗口(3 行),virtualizer count = 全集', () => {
     render(<CommandPalette commands={makeReg(100)} />);
     act(() => useCommandPaletteStore.getState().open());

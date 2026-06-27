@@ -37,6 +37,7 @@ import {
   useWorkspaceStore,
 } from '@/stores/workspace.store';
 import { debounce } from '@/lib/debounce';
+import { allSettledWithConcurrency } from '@/lib/map-with-concurrency';
 import { workspaceRootSelectionGuard } from '@/lib/workspace-root-guard';
 import { subscribeAll } from '@/plugins/registries/useRegistry';
 import { clampWidth } from '@/lib/use-column-resize';
@@ -292,21 +293,22 @@ export async function hydrateEditorTabs(
   // 边界(E216):截断到 MAX_RESTORED_TABS —— 超量 openFilePaths(畸形/旧快照,schema 允许至多 100k)
   // 不一次性恢复;canonical snapshot 下次持久化按恢复集写回,逐步收敛掉超量路径。
   const allPaths = entry.editor.openFilePaths;
-  const paths =
-    allPaths.length > MAX_RESTORED_TABS
-      ? allPaths.slice(0, MAX_RESTORED_TABS)
-      : allPaths;
+  const pathCount = Math.min(allPaths.length, MAX_RESTORED_TABS);
+  const paths: string[] = [];
+  for (let i = 0; i < pathCount; i++) {
+    paths.push(allPaths[i]!);
+  }
   // 数据安全(codex 复查 P2):必须 allSettled,不能 Promise.all —— readFile 的 promise 若
   // reject(桥/进程/通道异常,非 handler 的 {ok:false}),Promise.all 会整轮抛 → 违反
   // 本函数「不抛、单文件失败静默跳过」契约 → initExplorerPersistence catch 后 0 tab,
   // 下次变化把 editor.openFilePaths 写成空数组 → 丢掉本可恢复的整个编辑会话。allSettled
   // 把 reject 当作该文件失败逐项跳过,保留其它成功恢复的 tab。
-  // 边界(E216):分块并发读,峰值并发钳到 RESTORE_READ_CONCURRENCY(不一次性 fan-out 全部 readFile)。
-  const settled: PromiseSettledResult<IpcResult<string>>[] = [];
-  for (let i = 0; i < paths.length; i += RESTORE_READ_CONCURRENCY) {
-    const chunk = paths.slice(i, i + RESTORE_READ_CONCURRENCY);
-    settled.push(...(await Promise.allSettled(chunk.map((p) => fs.readFile(p)))));
-  }
+  // 边界(E216):固定 worker 池并发读,峰值并发钳到 RESTORE_READ_CONCURRENCY(不一次性 fan-out 全部 readFile)。
+  const settled = await allSettledWithConcurrency(
+    paths,
+    RESTORE_READ_CONCURRENCY,
+    (path) => fs.readFile(path),
+  );
   // 跨平台(codex 复查 P2,pathEquals 相等族):root 守卫须用平台感知相等,不能字节级 `!==`。
   // expectedRoot / currentRoot 均经 normalizeWorkspaceRoot,可能为 null。Windows 文件系统
   // 大小写不敏感,恢复在途若同一文件夹以不同大小写被(重新)设为 root,字节比较会误判
@@ -328,9 +330,19 @@ export async function hydrateEditorTabs(
   // 重读最新 store(openTab 改了状态)
   const next = useEditorStore.getState();
   const desired = entry.editor.activePath;
-  if (desired && next.tabs.some((t) => t.id === desired)) {
+  if (desired && hasEditorTabWithId(next.tabs, desired)) {
     next.switchTab(desired);
   }
+}
+
+export function hasEditorTabWithId(
+  tabs: readonly { readonly id: string }[],
+  id: string,
+): boolean {
+  for (const tab of tabs) {
+    if (tab.id === id) return true;
+  }
+  return false;
 }
 
 // 防御性 schema 校验(主进程已校验,这里给 init 流程兜底,失败就不 hydrate)。

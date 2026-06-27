@@ -16,6 +16,7 @@ import {
   useLayoutUiStore,
 } from '../../stores/layout-ui.store';
 import {
+  hasEditorTabWithId,
   hydrateEditorTabs,
   initExplorerPersistence,
   snapshotFromStores,
@@ -197,6 +198,28 @@ describe('hydrateEditorTabs', () => {
     expect(useEditorStore.getState().tabs).toHaveLength(256);
   });
 
+  it('E216 分批恢复不再对 openFilePaths 反复 slice 出 chunk', async () => {
+    const files: Record<string, string> = {};
+    const paths: string[] = [];
+    for (let i = 0; i < 40; i++) {
+      const p = `/chunk-${i}.md`;
+      files[p] = 'x';
+      paths.push(p);
+    }
+    const fs = makeFs(files);
+    const sliceSpy = vi.spyOn(paths, 'slice');
+
+    try {
+      await hydrateEditorTabs(snapWithEditor(paths, null), fs);
+
+      expect(sliceSpy).not.toHaveBeenCalled();
+      expect((fs.readFile as ReturnType<typeof vi.fn>).mock.calls.length).toBe(40);
+      expect(useEditorStore.getState().tabs).toHaveLength(40);
+    } finally {
+      sliceSpy.mockRestore();
+    }
+  });
+
   it('多 path → 顺序 openTab,内容来自 fs.readFile', async () => {
     const fs = makeFs({ '/a.md': 'A', '/b.md': 'B' });
     await hydrateEditorTabs(snapWithEditor(['/a.md', '/b.md'], '/a.md'), fs);
@@ -237,6 +260,18 @@ describe('hydrateEditorTabs', () => {
     const fs = makeFs({ '/a.md': 'A', '/b.md': 'B' });
     await hydrateEditorTabs(snapWithEditor(['/a.md', '/b.md'], '/b.md'), fs);
     expect(useEditorStore.getState().activeTabId).toBe('/b.md');
+  });
+
+  it('activePath 恢复查找 helper 单趟扫描 tabs,不通过 tabs.some', () => {
+    const tabs = [{ id: '/a.md' }, { id: '/b.md' }];
+    const someSpy = vi.spyOn(tabs, 'some');
+
+    try {
+      expect(hasEditorTabWithId(tabs, '/b.md')).toBe(true);
+      expect(someSpy).not.toHaveBeenCalled();
+    } finally {
+      someSpy.mockRestore();
+    }
   });
 
   it('activePath 不在已恢复 tabs 内(被跳过)→ 不调 switchTab', async () => {

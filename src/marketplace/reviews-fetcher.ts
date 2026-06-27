@@ -89,13 +89,10 @@ export async function fetchAllReviews(
     if (stale) return aggregateRecordToMap(stale);
     return new Map();
   }
-  const nodes =
-    rawNodes.length > MAX_REVIEW_NODES
-      ? rawNodes.slice(0, MAX_REVIEW_NODES)
-      : rawNodes;
+  const nodeCount = Math.min(rawNodes.length, MAX_REVIEW_NODES);
   const reviews: Review[] = [];
-  for (const node of nodes) {
-    const parsed = parseReview(node);
+  for (let i = 0; i < nodeCount; i++) {
+    const parsed = parseReview(rawNodes[i]);
     if (parsed) reviews.push(parsed);
   }
   const byPid = aggregate(reviews);

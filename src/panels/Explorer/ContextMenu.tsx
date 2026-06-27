@@ -73,6 +73,21 @@ interface PluginItemBucket {
   readonly items: readonly ExplorerContextMenuItemSpec[];
 }
 
+export function getContextActionTargets(
+  target: FileEntry | null,
+  selectedPaths: ReadonlySet<string>,
+): string[] {
+  if (target === null) return [];
+  if (selectedPaths.has(target.path) && selectedPaths.size > 1) {
+    const paths: string[] = [];
+    for (const path of selectedPaths) {
+      paths.push(path);
+    }
+    return paths;
+  }
+  return [target.path];
+}
+
 /** 把 plugin 贡献项按 group 排序、聚合,过滤不可见. */
 export function groupPluginItems(
   raw: readonly ExplorerContextMenuItemSpec[],
@@ -136,14 +151,7 @@ export function ContextMenu({
   // 本次菜单操作目标:若 target 在多选集中,批量作用于 selectedPaths;否则只
   // target 自身。每次渲染算一次(打磨 R12):cut/copy/path/trash 等 6+ 处都复用,
   // 原先各调一次 deleteTargets() → 多选时重复 Array.from(selectedPaths)。
-  const computeActionTargets = (): string[] => {
-    if (target === null) return [];
-    if (selectedPaths.has(target.path) && selectedPaths.size > 1) {
-      return Array.from(selectedPaths);
-    }
-    return [target.path];
-  };
-  const actionTargets = computeActionTargets();
+  const actionTargets = getContextActionTargets(target, selectedPaths);
   const actionTargetCount = actionTargets.length;
 
   // 创建上下文目录:文件夹 right-click → 它本身;文件 → 它的父;空白 → root

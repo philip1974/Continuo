@@ -69,6 +69,16 @@ export function clampSettingNumber(spec: SettingItemSpec, n: number): number {
 // useSettingValue 都经 coerceSettingValue,在此截断使读≡写。
 export const SI_TEXT_VALUE_MAX = 64 * 1024;
 
+export function hasSettingEnumValue(
+  options: readonly SettingItemEnumOption[],
+  value: string,
+): boolean {
+  for (const option of options) {
+    if (option.value === value) return true;
+  }
+  return false;
+}
+
 // 边界(E139,E6/E122 同族读路径净化):按 spec 把已持久化/篡改的值规整到合法域 —— number clamp
 // 到 min/max(E6),select 校验属于 spec.enum(否则回退 default,防非法字符串喂给消费者,如
 // terminal.cursorStyle → xterm)。getSettingValue(非 hook)与 useSettingValue(hook)共用单一来源,
@@ -82,7 +92,7 @@ export function coerceSettingValue(
   }
   if (spec.type === 'select' && spec.enum !== undefined && spec.enum.length > 0) {
     const ok =
-      typeof value === 'string' && spec.enum.some((o) => o.value === value);
+      typeof value === 'string' && hasSettingEnumValue(spec.enum, value);
     return ok ? value : spec.default;
   }
   // 边界(E241,E142 写端对偶):text/string 值按 SI_TEXT_VALUE_MAX 截断。写端 setValue 已截断,但
@@ -250,7 +260,7 @@ function validateSettingItemSpec(spec: SettingItemSpec): void {
   // 边界(E141):select 若声明 enum,default 必须命中某选项 —— 否则 E139 对非法持久化值的「回退
   // default」仍回到非法值,消费者继续拿到 enum 外的字符串(如 xterm cursorStyle)。
   if (spec.type === 'select' && spec.enum !== undefined && spec.enum.length > 0) {
-    if (!spec.enum.some((o) => o.value === d)) {
+    if (!hasSettingEnumValue(spec.enum, d as string)) {
       throw new Error(
         '[setting-item-registry] select default must be one of enum values',
       );

@@ -53,7 +53,10 @@ function matchTags(
 ): boolean {
   if (selected.size === 0) return true;
   const tags = entry.tags ?? [];
-  return tags.some((t) => selected.has(t));
+  for (const tag of tags) {
+    if (selected.has(tag)) return true;
+  }
+  return false;
 }
 
 // 边界(E226,E210 逐项≠累计上限族):全局 distinct tag 数上限。单 entry tags 有上限、index entries 有

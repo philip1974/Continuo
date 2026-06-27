@@ -547,4 +547,21 @@ describe('边界(E94) — reviews 缓存业务值域校验', () => {
     const r = await fetchAllReviews();
     expect(r.get('com.bulk')?.count).toBe(MAX_REVIEW_NODES); // 截断,非 +5
   });
+
+  it('E243 nodes 超上限时按索引有界遍历,不 slice 复制超大 IPC 数组', async () => {
+    const many = Array.from({ length: MAX_REVIEW_NODES + 5 }, (_, i) =>
+      makeNode('com.bulk', 5, `2026-05-${String((i % 27) + 1).padStart(2, '0')}T00:00:00Z`),
+    );
+    okNodes(many);
+    const sliceSpy = vi.spyOn(many, 'slice');
+
+    try {
+      const r = await fetchAllReviews();
+
+      expect(r.get('com.bulk')?.count).toBe(MAX_REVIEW_NODES);
+      expect(sliceSpy).not.toHaveBeenCalled();
+    } finally {
+      sliceSpy.mockRestore();
+    }
+  });
 });

@@ -1074,14 +1074,21 @@ function compareHelpfulReviews(a: Review, b: Review): number {
   return b.createdAt.localeCompare(a.createdAt);
 }
 
-function selectDisplayReviews(
+export function selectDisplayReviews(
   reviews: readonly Review[],
   sort: ReviewSort,
   limit: number,
 ): readonly Review[] {
   if (limit <= 0) return [];
   // newest:fetcher 已 createdAt DESC,只需取可见前 N 条。
-  if (sort === 'newest') return reviews.slice(0, limit);
+  if (sort === 'newest') {
+    const count = Math.min(limit, reviews.length);
+    const visible: Review[] = [];
+    for (let i = 0; i < count; i++) {
+      visible.push(reviews[i]!);
+    }
+    return visible;
+  }
 
   // helpful:只维护最多 N 条有序窗口,避免为只渲染前 10 条复制并全量排序
   // 最多 2000 条 reviews。平手时 compare=0 保持原输入顺序(与稳定 sort 等价)。
