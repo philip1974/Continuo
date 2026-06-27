@@ -7,6 +7,33 @@ import { subscribeAll } from '../../plugins/registries/useRegistry';
 // ── subscribeAll ───────────────────────────────────────
 
 describe('subscribeAll', () => {
+  it('空 sources 走 noop 快路径,不订阅也不分配 unsubs 数组', () => {
+    const listener = vi.fn();
+    const unsubscribeAll = subscribeAll([], listener);
+
+    expect(() => unsubscribeAll()).not.toThrow();
+    expect(subscribeAll.toString()).toMatch(/sources\.length === 0/);
+    expect(subscribeAll.toString().indexOf('sources.length === 0')).toBeLessThan(
+      subscribeAll.toString().indexOf('new Array('),
+    );
+  });
+
+  it('单 source 直接返回该 source 的 unsubscribe,不分配 unsubs 数组', () => {
+    const unsubscribe = vi.fn();
+    const source = { subscribe: vi.fn(() => unsubscribe) };
+    const listener = vi.fn();
+
+    const unsubscribeAll = subscribeAll([source], listener);
+
+    expect(source.subscribe).toHaveBeenCalledWith(listener);
+    unsubscribeAll();
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+    expect(subscribeAll.toString()).toMatch(/sources\.length === 1/);
+    expect(subscribeAll.toString().indexOf('sources.length === 1')).toBeLessThan(
+      subscribeAll.toString().indexOf('new Array('),
+    );
+  });
+
   it('订阅所有 source 并一次性 unsubscribe,不通过 sources.map 生成中间数组', () => {
     const unsubs = [vi.fn(), vi.fn()];
     const sources = [
@@ -22,6 +49,7 @@ describe('subscribeAll', () => {
       expect(sources[0]!.subscribe).toHaveBeenCalledWith(listener);
       expect(sources[1]!.subscribe).toHaveBeenCalledWith(listener);
       expect(mapSpy).not.toHaveBeenCalled();
+      expect(subscribeAll.toString()).not.toContain('unsubs.push(');
 
       unsubscribeAll();
       expect(unsubs[0]).toHaveBeenCalledTimes(1);
@@ -63,6 +91,9 @@ describe('PanelRegistry', () => {
       d.dispose();
       expect(r.getAll().map((x) => x.type)).toEqual(['bar', 'baz']);
       expect(arrayFromSpy).not.toHaveBeenCalled();
+      expect(PanelRegistry.prototype.getAll.toString()).not.toContain(
+        'items.push(',
+      );
     } finally {
       arrayFromSpy.mockRestore();
     }
@@ -455,6 +486,27 @@ describe('StatusBarRegistry', () => {
       d.dispose();
       expect(r.getBySide('right').map((x) => x.id)).toEqual(['c', 'a']);
       expect(sortSpy).toHaveBeenCalledTimes(4);
+      expect(StatusBarRegistry.prototype.getBySide.toString()).not.toContain(
+        'items.push(',
+      );
+      expect(StatusBarRegistry.prototype.getAll.toString()).not.toContain(
+        'items.push(',
+      );
+    } finally {
+      sortSpy.mockRestore();
+    }
+  });
+
+  it('单项或空侧边快照不调用 sort', () => {
+    const r = new StatusBarRegistry();
+    r.register({ id: 'left', side: 'left', render: () => null });
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      expect(r.getBySide('left').map((x) => x.id)).toEqual(['left']);
+      expect(r.getBySide('right')).toEqual([]);
+      expect(r.getAll().map((x) => x.id)).toEqual(['left']);
+      expect(sortSpy).not.toHaveBeenCalled();
     } finally {
       sortSpy.mockRestore();
     }

@@ -47,6 +47,19 @@ const writeStored = (
   values: Record<string, SettingItemValue>,
 ): WriteRecordResult => writeRecord(STORAGE_KEY, values);
 
+function recordsShallowEqual(
+  a: Record<string, SettingItemValue>,
+  b: Record<string, SettingItemValue>,
+): boolean {
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+  if (aKeys.length !== bKeys.length) return false;
+  for (const key of aKeys) {
+    if (!Object.is(a[key], b[key])) return false;
+  }
+  return true;
+}
+
 export interface SettingsValueState {
   /** partial overrides(未写过的 key 走 spec.default). */
   values: Record<string, SettingItemValue>;
@@ -57,7 +70,7 @@ export interface SettingsValueState {
   resetAll: () => void;
 }
 
-export const useSettingsValuesStore = create<SettingsValueState>((set) => ({
+export const useSettingsValuesStore = create<SettingsValueState>((set, get) => ({
   values: readStored(),
   // race(R6 + R113 修订):单 key RMW 基于 live localStorage 重读而非本窗内存快照,**缓解**但
   // **不能根除**多窗口 lost update。⚠️ R6 原注释声称「localStorage 读写同步、跨窗 OS 串行 →
@@ -77,7 +90,13 @@ export const useSettingsValuesStore = create<SettingsValueState>((set) => ({
     if (typeof v === 'string' && v.length > MAX_SETTING_TEXT_LEN) {
       v = v.slice(0, MAX_SETTING_TEXT_LEN);
     }
-    const next = { ...readStored(), [id]: v };
+    const latest = readStored();
+    if (Object.is(latest[id], v)) {
+      if (recordsShallowEqual(get().values, latest)) return;
+      set({ values: latest });
+      return;
+    }
+    const next = { ...latest, [id]: v };
     // 边界(E260,写读 cap 对称):若整份 overrides 序列化超读端 raw cap,拒写且**不提交内存态** ——
     // 否则本会话内存 vs 磁盘发散,下次启动 readRecord 整表返 {} = 所有设置静默丢失。保留上次有效状态。
     if (writeStored(next) === 'too-large') {
@@ -114,7 +133,10 @@ export const useSettingsValuesStore = create<SettingsValueState>((set) => ({
 // localStorage 时 fire),同一 key 就重读,让所有窗口的 values 收敛一致(设置语义上
 // 都是 app 级全局,跨窗一致也更符合预期)。
 subscribeStorageKey(STORAGE_KEY, () =>
-  useSettingsValuesStore.setState({ values: readStored() }),
+  useSettingsValuesStore.setState((s) => {
+    const values = readStored();
+    return recordsShallowEqual(s.values, values) ? s : { values };
+  }),
 );
 
 /** 取某 spec 当前值(override ?? default). 非 React 上下文用. */

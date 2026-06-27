@@ -24,6 +24,7 @@ describe('PermissionPrompt UI', () => {
     try {
       expect(copySelectedPermissions(selected)).toEqual(['fs', 'network']);
       expect(arrayFromSpy).not.toHaveBeenCalled();
+      expect(copySelectedPermissions.toString()).not.toContain('out.push(');
     } finally {
       arrayFromSpy.mockRestore();
     }

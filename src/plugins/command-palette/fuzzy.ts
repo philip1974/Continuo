@@ -1,7 +1,9 @@
 // 命令面板模糊搜索(M-Plugin v1.6,纯函数)。
 // 子序列匹配 + 词边界 / 连续匹配加分,大小写不敏感。
 
-const BOUNDARY_RE = /[ ._\-/]/;
+function isBoundaryChar(ch: string): boolean {
+  return ch === ' ' || ch === '.' || ch === '_' || ch === '-' || ch === '/';
+}
 
 /**
  * 内部打分:q 与 t **都必须已 lowercase**。空 q 返 0(子序列空集匹配)。
@@ -15,7 +17,7 @@ function fuzzyScoreBothLower(q: string, t: string): number | null {
   for (let ti = 0; ti < t.length && qi < q.length; ti++) {
     if (t[ti] === q[qi]) {
       // 词边界加分:首字符 / 前一字符是空 . _ - /
-      const isBoundary = ti === 0 || BOUNDARY_RE.test(t[ti - 1]!);
+      const isBoundary = ti === 0 || isBoundaryChar(t[ti - 1]!);
       score += isBoundary ? 10 : 1;
       // 连续匹配加分
       if (prevMatchedAt === ti - 1) score += 5;
@@ -48,20 +50,33 @@ export function fuzzyFilter<T>(
    * 提供时跳过每 item 每按键的 `target.toLowerCase()`;打分语义与 getStr 路径逐字节一致。
    */
   getStrLower?: (t: T) => string,
-): T[] {
-  if (!query) return [...items];
+): readonly T[] {
+  if (!query) return items;
   const q = query.toLowerCase(); // 整批一次(打磨 R51),循环内复用
-  const scored: { item: T; score: number }[] = [];
+  const matched = new Array<T>(items.length);
+  const scores = new Array<number>(items.length);
+  let count = 0;
   for (const item of items) {
     const s = getStrLower
       ? fuzzyScoreBothLower(q, getStrLower(item))
       : fuzzyScoreLower(q, getStr(item));
-    if (s !== null) scored.push({ item, score: s });
+    if (s !== null) {
+      matched[count] = item;
+      scores[count] = s;
+      count++;
+    }
   }
-  scored.sort((a, b) => b.score - a.score);
-  const result: T[] = new Array(scored.length);
-  for (let i = 0; i < scored.length; i++) {
-    result[i] = scored[i]!.item;
+  matched.length = count;
+  scores.length = count;
+  if (count < 2) return matched;
+
+  const order = new Array<number>(count);
+  for (let i = 0; i < count; i++) order[i] = i;
+  order.sort((a, b) => scores[b]! - scores[a]! || a - b);
+
+  const result: T[] = new Array(count);
+  for (let i = 0; i < count; i++) {
+    result[i] = matched[order[i]!]!;
   }
   return result;
 }

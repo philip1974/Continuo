@@ -46,16 +46,27 @@ export function collectContributionSamples<T, K extends keyof T>(
   return samples;
 }
 
+export function collectStatusBarItems<T>(
+  left: readonly T[],
+  right: readonly T[],
+): T[] {
+  const items = new Array<T>(left.length + right.length);
+  let i = 0;
+  for (; i < left.length; i++) items[i] = left[i]!;
+  for (let j = 0; j < right.length; j++, i++) items[i] = right[j]!;
+  return items;
+}
+
 function snapshot(): readonly ContributionRow[] {
-  // 每个 registry 只取一次快照(打磨 R4):getAll()/getBySide() 都 Array.from
-  // (+sort),原先 count 与 samples 各调一遍、statusBar 左右各取两遍 → 重复
-  // 分配/排序。局部快照后 count=.length、samples=.map,行为完全等价。
+  // 每个 registry 只取一次快照(打磨 R4):原先 count 与 samples 各调一遍、
+  // statusBar 左右各取两遍 → 重复分配/排序。局部快照后 count=.length,
+  // samples 单趟收集,行为完全等价。
   const panels = coApp.panels.getAll();
   const commands = coApp.commands.getAll();
-  const statusItems = [
-    ...coApp.statusBar.getBySide('left'),
-    ...coApp.statusBar.getBySide('right'),
-  ];
+  const statusItems = collectStatusBarItems(
+    coApp.statusBar.getBySide('left'),
+    coApp.statusBar.getBySide('right'),
+  );
   const ribbon = coApp.ribbon.getAll();
   const settingTabs = coApp.settingTabs.getAll();
   const explorerDecorators = coApp.explorerDecorators.getAll();

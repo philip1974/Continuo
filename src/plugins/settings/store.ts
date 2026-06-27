@@ -18,5 +18,6 @@ interface SettingsState {
 
 export const useSettingsStore = create<SettingsState>((set) => ({
   activeTabId: null,
-  setActiveTabId: (id) => set({ activeTabId: id }),
+  setActiveTabId: (id) =>
+    set((s) => (s.activeTabId === id ? s : { activeTabId: id })),
 }));

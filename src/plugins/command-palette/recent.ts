@@ -67,11 +67,13 @@ export function readFromStorage(): readonly RecentEntry[] {
     // 不先 parsed.filter(isRecentEntry) 全量扫描+物化再 slice。篡改的 localStorage 可在 256KiB raw cap
     // 内塞大量短 entry,启动 / storage 同步 / 每次 record 读 live 列表都会完整遍历(MAX_RECENT=20 不早开)。
     // 列表最近优先(record 前插),头部即保留最近 MAX_RECENT 条。
-    const out: RecentEntry[] = [];
+    const out = new Array<RecentEntry>(MAX_RECENT);
+    let count = 0;
     for (const item of parsed) {
-      if (out.length >= MAX_RECENT) break;
-      if (isRecentEntry(item)) out.push(item);
+      if (count >= MAX_RECENT) break;
+      if (isRecentEntry(item)) out[count++] = item;
     }
+    out.length = count;
     return out;
   } catch {
     return [];
@@ -91,13 +93,29 @@ export function buildNextRecentList(
   id: string,
   ts: number,
 ): RecentEntry[] {
-  const next: RecentEntry[] = [{ id, ts }];
+  const next = new Array<RecentEntry>(Math.min(MAX_RECENT, live.length + 1));
+  let count = 0;
+  next[count++] = { id, ts };
   for (const entry of live) {
     if (entry.id === id) continue;
-    next.push(entry);
-    if (next.length >= MAX_RECENT) break;
+    if (count >= MAX_RECENT) break;
+    next[count++] = entry;
   }
+  next.length = count;
   return next;
+}
+
+function recentListsEqual(
+  a: readonly RecentEntry[],
+  b: readonly RecentEntry[],
+): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const left = a[i]!;
+    const right = b[i]!;
+    if (left.id !== right.id || left.ts !== right.ts) return false;
+  }
+  return true;
 }
 
 export const useRecentCommandsStore = create<RecentState>((set) => ({
@@ -129,5 +147,8 @@ export const useRecentCommandsStore = create<RecentState>((set) => ({
 // (与 values-store 同款),避免本窗 in-memory 长期陈旧 + 下次 record 基于旧内存(已由
 // live 读修;此处让 UI 即时反映别窗最近命令)。
 subscribeStorageKey(RECENT_STORAGE_KEY, () =>
-  useRecentCommandsStore.setState({ list: readFromStorage() }),
+  useRecentCommandsStore.setState((s) => {
+    const list = readFromStorage();
+    return recentListsEqual(s.list, list) ? s : { list };
+  }),
 );

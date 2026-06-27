@@ -1,6 +1,7 @@
 import {
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   realpathSync,
   rmSync,
   symlinkSync,
@@ -239,6 +240,15 @@ describe('PathScopeRegistry', () => {
     } finally {
       mapSpy.mockRestore();
     }
+  });
+
+  it('T1.h3 mergeScopes 构造合并快照不通过 values spread 复制', () => {
+    const source = readFileSync(
+      join(__dirname, '../services/path-scope-registry.service.ts'),
+      'utf8',
+    );
+
+    expect(source).not.toContain('[...byPath.values()]');
   });
 
   it('T1.i revokeAll emits scope-updated with empty scopes', () => {

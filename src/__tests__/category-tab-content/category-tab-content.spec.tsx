@@ -73,8 +73,25 @@ describe('CategoryTabContent', () => {
       expect(buckets.map((bucket) => bucket.group)).toEqual(['外观', '行为']);
       expect(buckets[0]?.items).toEqual([itemA]);
       expect(buckets[1]?.items).toEqual([itemB]);
+      expect(groupItems.toString()).not.toContain('buckets.push(');
+      expect(groupItems.toString()).not.toContain('.push(');
     } finally {
       arrayFromSpy.mockRestore();
+    }
+  });
+
+  it('groupItems 单项列表不创建 Map 查找路径', () => {
+    const item = spec({ id: 'a', title: 'A', group: '外观' });
+    const getSpy = vi.spyOn(Map.prototype, 'get');
+
+    try {
+      const buckets = groupItems([item]);
+      expect(getSpy).not.toHaveBeenCalled();
+      expect(buckets).toEqual([
+        { group: '外观', groupKey: undefined, items: [item] },
+      ]);
+    } finally {
+      getSpy.mockRestore();
     }
   });
 

@@ -104,20 +104,23 @@ export interface PluginListItem {
 
 export function removeActivationOrderId(order: string[], id: string): string[] {
   let next: string[] | null = null;
+  let count = 0;
   for (let i = 0; i < order.length; i++) {
     const activeId = order[i]!;
     if (activeId === id) {
       if (next === null) {
-        next = [];
+        next = new Array<string>(Math.max(0, order.length - 1));
         for (let j = 0; j < i; j++) {
-          next.push(order[j]!);
+          next[count++] = order[j]!;
         }
       }
       continue;
     }
-    if (next !== null) next.push(activeId);
+    if (next !== null) next[count++] = activeId;
   }
-  return next ?? order;
+  if (next === null) return order;
+  next.length = count;
+  return next;
 }
 
 export function findPluginDirByManifestId(
@@ -375,15 +378,16 @@ export class PluginManager {
 
   /** 列出所有已发现插件状态. */
   listAll(): readonly PluginListItem[] {
-    const list: PluginListItem[] = [];
+    const list = new Array<PluginListItem>(this.entries.size);
+    let i = 0;
     for (const e of this.entries.values()) {
-      list.push({
+      list[i++] = {
         id: e.id,
         manifest: e.manifest,
         status: e.status,
         error: e.error,
         warning: e.warning,
-      });
+      };
     }
     return list;
   }

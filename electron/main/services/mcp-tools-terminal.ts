@@ -171,9 +171,10 @@ export function makeListSessionsTool(
     },
     inputSchema: listSessionsInputSchema,
     run: (_input: ListSessionsInput, ctx: McpCallCtx) => {
-      const sessions: ListSessionItem[] = [];
-      for (const session of deps.getSessions(ctx)) {
-        sessions.push(toItem(session));
+      const rawSessions = deps.getSessions(ctx);
+      const sessions = new Array<ListSessionItem>(rawSessions.length);
+      for (let i = 0; i < rawSessions.length; i++) {
+        sessions[i] = toItem(rawSessions[i]!);
       }
       return { sessions };
     },

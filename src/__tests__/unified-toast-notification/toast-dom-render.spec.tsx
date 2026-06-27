@@ -3,6 +3,7 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { act, cleanup, render, screen } from '@testing-library/react';
 import { NotificationsProvider } from '@/notifications/NotificationsProvider';
 import { ToastViewport } from '@/notifications/ToastViewport';
@@ -88,6 +89,9 @@ describe('unified-toast-notification: DOM rendering', () => {
       ).length;
 
       expect(notificationSliceCalls).toBe(0);
+      expect(readFileSync('src/notifications/ToastViewport.tsx', 'utf-8')).not.toContain(
+        'visible.push(',
+      );
       expect(screen.getAllByRole('alert')).toHaveLength(5);
       expect(screen.queryByText('boom-0')).toBeNull();
       expect(screen.getByText(/boom-5/)).toBeTruthy();

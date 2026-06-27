@@ -67,6 +67,7 @@ describe('createWindowApiHost.listPluginDirs', () => {
         },
       ]);
       expect(mapSpy).not.toHaveBeenCalled();
+      expect(buildPluginDirInfos.toString()).not.toContain('out.push(');
     } finally {
       mapSpy.mockRestore();
     }

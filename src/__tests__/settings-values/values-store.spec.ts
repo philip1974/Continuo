@@ -52,6 +52,51 @@ describe('settings values-store', () => {
     expect(getSettingValue(themeSpec)).toBe('light');
   });
 
+  it('setValue 写入相同值且内存已同步时不通知订阅者且不重复写 localStorage', () => {
+    const values = { 'general.theme': 'light' };
+    globalThis.localStorage.setItem(
+      'continuo.settings.values',
+      JSON.stringify(values),
+    );
+    useSettingsValuesStore.setState({ values });
+    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
+    const listener = vi.fn();
+    const unsubscribe = useSettingsValuesStore.subscribe(listener);
+
+    try {
+      useSettingsValuesStore.getState().setValue('general.theme', 'light');
+
+      expect(useSettingsValuesStore.getState().values).toBe(values);
+      expect(setItemSpy).not.toHaveBeenCalled();
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+      setItemSpy.mockRestore();
+    }
+  });
+
+  it('storage 同步读到相同 values 内容时不通知订阅者', () => {
+    const values = { 'general.theme': 'light' };
+    globalThis.localStorage.setItem(
+      'continuo.settings.values',
+      JSON.stringify(values),
+    );
+    useSettingsValuesStore.setState({ values });
+    const listener = vi.fn();
+    const unsubscribe = useSettingsValuesStore.subscribe(listener);
+
+    try {
+      window.dispatchEvent(
+        new StorageEvent('storage', { key: 'continuo.settings.values' }),
+      );
+
+      expect(useSettingsValuesStore.getState().values).toBe(values);
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
+  });
+
   // 边界(E260,写读 cap 对称):整份 overrides 序列化超 localStorage 读端 raw cap(1MiB)时,setValue
   // 拒写且**不提交内存态** —— 否则本会话内存 vs 磁盘发散,下次启动 readRecord 整表返 {} = 所有设置静默丢失。
   it('E260 整份超 1MiB → setValue 拒写且不提交内存态(保留上次有效状态)', () => {

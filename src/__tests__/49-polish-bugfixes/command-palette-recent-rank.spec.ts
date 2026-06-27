@@ -50,6 +50,8 @@ describe('打磨 R55 — CommandPalette recent rank 预计算', () => {
 
     expect(calls).toBe(0);
     expect(out.map((d) => d.cmd.id)).toEqual(['c', 'a', 'b', 'd']);
+    expect(sortByRecent.toString()).not.toContain('others.push(');
+    expect(sortByRecent.toString()).not.toContain('out.push(');
   });
 
   it('recent 置顶用 rank slot 单趟放置,不再额外 sort recent 小数组', () => {
@@ -71,6 +73,27 @@ describe('打磨 R55 — CommandPalette recent rank 预计算', () => {
       expect(sortSpy).toHaveBeenCalledTimes(1);
     } finally {
       sortSpy.mockRestore();
+    }
+  });
+
+  it('无 recent 时直接按标题排序,不做 rank map 查找', () => {
+    const items = [
+      command('c', 'Charlie'),
+      command('a', 'Alpha'),
+      command('b', 'Beta'),
+    ];
+    const getSpy = vi.spyOn(Map.prototype, 'get');
+
+    try {
+      const out = sortByRecent(
+        items as unknown as Parameters<typeof sortByRecent>[0],
+        [],
+      );
+
+      expect(out.map((d) => d.cmd.id)).toEqual(['a', 'b', 'c']);
+      expect(getSpy).not.toHaveBeenCalled();
+    } finally {
+      getSpy.mockRestore();
     }
   });
 });

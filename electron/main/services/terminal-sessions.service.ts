@@ -117,8 +117,9 @@ function sessionCountForWindow(ownerWindowId: number): number {
 function snapshot(): readonly MainTerminalSession[] {
   if (cachedSnapshot !== null) return cachedSnapshot;
 
-  const out: MainTerminalSession[] = [];
-  for (const session of sessions.values()) out.push(session);
+  const out = new Array<MainTerminalSession>(sessions.size);
+  let i = 0;
+  for (const session of sessions.values()) out[i++] = session;
   cachedSnapshot = out;
   return out;
 }
@@ -208,10 +209,12 @@ export function getAll(filter?: GetAllFilter): readonly MainTerminalSession[] {
   const cached = cachedSnapshotsByOwner.get(filter.ownerWindowId);
   if (cached !== undefined) return cached;
 
-  const out: MainTerminalSession[] = [];
+  const out = new Array<MainTerminalSession>(sessions.size);
+  let count = 0;
   for (const s of sessions.values()) {
-    if (s.ownerWindowId === filter.ownerWindowId) out.push(s);
+    if (s.ownerWindowId === filter.ownerWindowId) out[count++] = s;
   }
+  out.length = count;
   cachedSnapshotsByOwner.set(filter.ownerWindowId, out);
   return out;
 }
@@ -237,10 +240,15 @@ export function removeByOwner(ownerWindowId: number): readonly string[] {
   // sessions)。在 early-return 之前清,覆盖「窗口建过终端但已逐个 remove」的情况。
   // 见第十六轮 P2-AS。
   titleCounter.delete(ownerWindowId);
-  const removed: string[] = [];
+  const removed = new Array<string>(sessions.size);
+  let removedCount = 0;
   for (const [id, s] of sessions) {
-    if (s.ownerWindowId === ownerWindowId) removed.push(id);
+    if (s.ownerWindowId === ownerWindowId) {
+      removed[removedCount] = id;
+      removedCount += 1;
+    }
   }
+  removed.length = removedCount;
   if (removed.length === 0) return removed;
   for (const id of removed) sessions.delete(id);
   invalidateSnapshotCache();

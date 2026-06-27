@@ -56,6 +56,7 @@ describe('selectValidMarketplaceEntries', () => {
         'com.example.bar',
       ]);
       expect(filterCallsDuringSelect).toBe(0);
+      expect(selectValidMarketplaceEntries.toString()).not.toContain('out.push(');
     } finally {
       filterSpy.mockRestore();
     }

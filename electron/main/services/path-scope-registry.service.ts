@@ -176,7 +176,11 @@ export class PathScopeRegistry extends EventEmitter {
       if (otherTotal + byPath.size >= MAX_SCOPES_GLOBAL) continue;
       byPath.set(ns.path, { path: ns.path, mode: ns.mode });
     }
-    const merged = [...byPath.values()];
+    const merged = new Array<PathScope>(byPath.size);
+    let mergedCount = 0;
+    for (const scope of byPath.values()) {
+      merged[mergedCount++] = scope;
+    }
     this.totalScopes += merged.length - existing.length;
     this.pluginScopes.set(pluginId, merged);
     return merged;

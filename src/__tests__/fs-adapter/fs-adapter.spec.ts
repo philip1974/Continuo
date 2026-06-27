@@ -248,8 +248,14 @@ describe('listDir', () => {
       path.join(process.cwd(), 'electron/main/ipc/fs/list-dir.ts'),
       'utf-8',
     );
-    expect(src).toMatch(/new Array<Promise<ResolvedEntry \| null>>\(batch\.length\)/);
+    expect(src).toMatch(
+      /new Array<Promise<ResolvedEntry \| null>>\(batchCount\)/,
+    );
     expect(src).not.toMatch(/batch\.map\(/);
+    expect(src).not.toContain('chunk.push(');
+    expect(src).not.toContain('out.push(...children)');
+    expect(src).not.toContain('out.push({');
+    expect(src).not.toContain('[...entries].sort(');
   });
 });
 

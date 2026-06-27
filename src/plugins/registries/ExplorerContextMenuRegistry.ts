@@ -139,9 +139,12 @@ export class ExplorerContextMenuRegistry {
   getAll(): readonly ExplorerContextMenuItemSpec[] {
     if (this.cachedAll !== null) return this.cachedAll;
 
-    const items: ExplorerContextMenuItemSpec[] = [];
-    for (const item of this.items.values()) items.push(item);
-    items.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
+    const items = new Array<ExplorerContextMenuItemSpec>(this.items.size);
+    let i = 0;
+    for (const item of this.items.values()) items[i++] = item;
+    if (items.length > 1) {
+      items.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
+    }
     this.cachedAll = items;
     return items;
   }
@@ -175,10 +178,11 @@ export function filterVisible(
   items: readonly ExplorerContextMenuItemSpec[],
   ctx: ExplorerContextMenuItemContext,
 ): ExplorerContextMenuItemSpec[] {
-  const out: ExplorerContextMenuItemSpec[] = [];
+  const out = new Array<ExplorerContextMenuItemSpec>(items.length);
+  let count = 0;
   for (const item of items) {
     if (!item.when) {
-      out.push(item);
+      out[count++] = item;
       continue;
     }
     let visible = false;
@@ -191,7 +195,8 @@ export function filterVisible(
       );
       visible = false;
     }
-    if (visible) out.push(item);
+    if (visible) out[count++] = item;
   }
+  out.length = count;
   return out;
 }

@@ -7,6 +7,7 @@ import {
   useLayoutUiStore,
 } from '../../stores/layout-ui.store';
 import {
+  collectNormalizedWorkspaceRoots,
   hydrateStores,
   initExplorerPersistence,
   flushExplorerPersistence,
@@ -88,6 +89,9 @@ describe('snapshotFromStores', () => {
 
       expect(mapSpy).not.toHaveBeenCalled();
       expect(snap.workspace.recentRoots).toEqual(['/work', '/old']);
+      expect(collectNormalizedWorkspaceRoots.toString()).not.toContain(
+        'out.push(',
+      );
     } finally {
       mapSpy.mockRestore();
     }

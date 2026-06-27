@@ -145,6 +145,9 @@ describe('handleRegister · 首注册', () => {
 
       expect(fromSpy).not.toHaveBeenCalled();
       expect(mapSpy).not.toHaveBeenCalled();
+      expect(bridge.listRegistered.toString()).not.toContain(
+        'registered.push(',
+      );
       expect(list).toEqual([
         { name: 'a', pluginId: 'p', wcId: 11 },
         { name: 'b', pluginId: 'p', wcId: 22 },

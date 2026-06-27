@@ -1,12 +1,15 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
+  appendEditorTab,
   createTab,
+  findEditorTabIndexById,
   getEffectiveMode,
   getStateAfterClosingTab,
   getStateAfterClosingTabsOutsideRoot,
   getStateAfterRemovingPath,
   getStateAfterRenamingPath,
   isTabMilkdownUnsafe,
+  replaceTabAt,
   useEditorStore,
   type EditorTab,
 } from '../../stores/editor.store';
@@ -140,6 +143,40 @@ describe('editor.store · 初态', () => {
   });
 });
 
+describe('editor.store · tab array helpers', () => {
+  it('findEditorTabIndexById 单趟查找,不调用 tabs.findIndex', () => {
+    const tabs = [makeTab({ id: '/a' }), makeTab({ id: '/b' })];
+    const findIndexSpy = vi.spyOn(tabs, 'findIndex');
+
+    try {
+      expect(findEditorTabIndexById(tabs, '/b')).toBe(1);
+      expect(findEditorTabIndexById(tabs, '/missing')).toBe(-1);
+      expect(findIndexSpy).not.toHaveBeenCalled();
+    } finally {
+      findIndexSpy.mockRestore();
+    }
+  });
+
+  it('replaceTabAt 预分配替换,不通过 push 扩容', () => {
+    const tabs = [makeTab({ id: '/a' }), makeTab({ id: '/b' })];
+    const replacement = makeTab({ id: '/next' });
+    const next = replaceTabAt(tabs, 1, replacement);
+
+    expect(next).toEqual([tabs[0], replacement]);
+    expect(replaceTabAt.toString()).not.toContain('.push(');
+  });
+
+  it('appendEditorTab 预分配追加,不通过 spread/push 拷贝', () => {
+    const tabs = [makeTab({ id: '/a' })];
+    const tab = makeTab({ id: '/b' });
+    const next = appendEditorTab(tabs, tab);
+
+    expect(next).toEqual([tabs[0], tab]);
+    expect(appendEditorTab.toString()).not.toContain('.push(');
+    expect(appendEditorTab.toString()).not.toContain('...');
+  });
+});
+
 // ────────────────────────────────────────────────────────────
 // openTab
 // ────────────────────────────────────────────────────────────
@@ -164,6 +201,24 @@ describe('openTab', () => {
     expect(s.tabs).toHaveLength(2);
     expect(s.tabs.map((t) => t.id)).toEqual(['/a', '/b']);
     expect(s.activeTabId).toBe('/a');
+  });
+
+  it('查重已打开 tab 走单趟 helper,不调用 tabs.some/findIndex', () => {
+    const tabs = [makeTab({ id: '/a' }), makeTab({ id: '/b' })];
+    useEditorStore.setState({ tabs, activeTabId: '/a' });
+    const someSpy = vi.spyOn(tabs, 'some');
+    const findIndexSpy = vi.spyOn(tabs, 'findIndex');
+
+    try {
+      useEditorStore.getState().openTab(makeTab({ id: '/b' }));
+      expect(someSpy).not.toHaveBeenCalled();
+      expect(findIndexSpy).not.toHaveBeenCalled();
+      expect(useEditorStore.getState().tabs).toBe(tabs);
+      expect(useEditorStore.getState().activeTabId).toBe('/b');
+    } finally {
+      someSpy.mockRestore();
+      findIndexSpy.mockRestore();
+    }
   });
 });
 
@@ -311,6 +366,26 @@ describe('closeTab', () => {
     expect(s.tabs.map((t) => t.id)).toEqual(['/a']);
     expect(s.activeTabId).toBe('/a');
   });
+
+  it('命中关闭项时单次扫描 tabs,不 findIndex 后再 push 重建', () => {
+    const tabs = [
+      makeTab({ id: '/a' }),
+      makeTab({ id: '/b' }),
+      makeTab({ id: '/c' }),
+    ];
+    const findIndexSpy = vi.spyOn(tabs, 'findIndex');
+
+    try {
+      const r = getStateAfterClosingTab(tabs, '/b', '/b');
+
+      expect(findIndexSpy).not.toHaveBeenCalled();
+      expect(getStateAfterClosingTab.toString()).not.toContain('.push(');
+      expect(r.tabs.map((t) => t.id)).toEqual(['/a', '/c']);
+      expect(r.activeTabId).toBe('/c');
+    } finally {
+      findIndexSpy.mockRestore();
+    }
+  });
 });
 
 // ────────────────────────────────────────────────────────────
@@ -453,6 +528,9 @@ describe('getStateAfterRemovingPath', () => {
       ).length;
 
       expect(filterCallsOnTabs).toBe(0);
+      expect(getStateAfterRemovingPath.toString()).not.toContain(
+        'remaining.push(',
+      );
       expect(r.tabs.map((t) => t.id)).toEqual(['/x/b.md', '/y/c.md']);
       expect(r.activeTabId).toBe('/x/b.md');
     } finally {
@@ -596,6 +674,7 @@ describe('getStateAfterRenamingPath', () => {
       ).length;
 
       expect(mapCallsOnTabs).toBe(0);
+      expect(getStateAfterRenamingPath.toString()).not.toContain('.push(');
       expect(r.tabs[0]?.id).toBe('/x/bar/a.md');
       expect(r.tabs[1]?.id).toBe('/x/bar/b.md');
       expect(r.tabs[2]?.id).toBe('/y/c.md');
@@ -648,6 +727,19 @@ describe('getStateAfterClosingTabsOutsideRoot', () => {
     const r = getStateAfterClosingTabsOutsideRoot(tabs, '/work/a.md', '/work');
     expect(r.tabs).toBe(tabs);
     expect(r.activeTabId).toBe('/work/a.md');
+  });
+
+  it('全部 tab 都保留时不预分配 remaining 数组', () => {
+    const tabs = [
+      makeTab({ id: '/work/a.md', filePath: '/work/a.md' }),
+      makeTab({ id: '/work/sub/b.md', filePath: '/work/sub/b.md' }),
+    ];
+    const r = getStateAfterClosingTabsOutsideRoot(tabs, '/work/a.md', '/work');
+
+    expect(r.tabs).toBe(tabs);
+    expect(getStateAfterClosingTabsOutsideRoot.toString()).not.toMatch(
+      /new Array(?:<[^>]+>)?\(tabs\.length\)/,
+    );
   });
 
   // 数据安全(codex 复查 P2,同 path-scope isWithinScope #17):root 本身以分隔符结尾
@@ -794,6 +886,12 @@ describe('getStateAfterClosingTabsOutsideRoot', () => {
       ).length;
 
       expect(filterCallsOnTabs).toBe(0);
+      expect(getStateAfterClosingTabsOutsideRoot.toString()).not.toContain(
+        'remaining.push(',
+      );
+      expect(getStateAfterClosingTabsOutsideRoot.toString()).not.toContain(
+        'new Set',
+      );
       expect(r.tabs.map((t) => t.id)).toEqual(['/new/b.md', draft.id]);
       expect(r.activeTabId).toBe('/new/b.md');
     } finally {
@@ -953,6 +1051,22 @@ describe('updateContent', () => {
       sliceSpy.mockRestore();
     }
   });
+
+  it('内容未变化时保持 tabs 同引用且不通知订阅者', () => {
+    const tabs = [makeTab({ id: '/a', content: 'hello' })];
+    useEditorStore.setState({ tabs, activeTabId: '/a' });
+    const listener = vi.fn();
+    const unsubscribe = useEditorStore.subscribe(listener);
+
+    try {
+      useEditorStore.getState().updateContent('/a', 'hello');
+
+      expect(useEditorStore.getState().tabs).toBe(tabs);
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
+  });
 });
 
 // ────────────────────────────────────────────────────────────
@@ -974,6 +1088,29 @@ describe('markSaved', () => {
   it('id 不存在 → 不变', () => {
     useEditorStore.setState({ tabs: [makeTab({ id: '/a' })], activeTabId: '/a' });
     expect(() => useEditorStore.getState().markSaved('/nope')).not.toThrow();
+  });
+
+  it('保存结果未改变 tab 状态时保持 tabs 同引用且不通知订阅者', () => {
+    const tabs = [
+      makeTab({
+        id: '/a',
+        content: 'draft',
+        originalContent: 'persisted',
+        dirty: true,
+      }),
+    ];
+    useEditorStore.setState({ tabs, activeTabId: '/a' });
+    const listener = vi.fn();
+    const unsubscribe = useEditorStore.subscribe(listener);
+
+    try {
+      useEditorStore.getState().markSaved('/a', 'persisted');
+
+      expect(useEditorStore.getState().tabs).toBe(tabs);
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
   });
 });
 
@@ -1002,6 +1139,23 @@ describe('setFilePath', () => {
     expect(s.tabs.map((t) => t.id)).toEqual(['/a', '/c']);
     expect(s.activeTabId).toBe('/a');
   });
+
+  it('newPath 等于当前 id/filePath 时保持 tabs 同引用且不通知订阅者', () => {
+    const tabs = [makeTab({ id: '/a.md', filePath: '/a.md' })];
+    useEditorStore.setState({ tabs, activeTabId: '/a.md', chromeVersion: 0 });
+    const listener = vi.fn();
+    const unsubscribe = useEditorStore.subscribe(listener);
+
+    try {
+      useEditorStore.getState().setFilePath('/a.md', '/a.md');
+
+      expect(useEditorStore.getState().tabs).toBe(tabs);
+      expect(useEditorStore.getState().chromeVersion).toBe(0);
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
+  });
 });
 
 // ────────────────────────────────────────────────────────────
@@ -1017,6 +1171,19 @@ describe('setMode', () => {
     expect(useEditorStore.getState().mode).toBe('preview');
     set('edit');
     expect(useEditorStore.getState().mode).toBe('edit');
+  });
+
+  it('传入当前 mode 时 no-op,不触发订阅', () => {
+    useEditorStore.setState({ mode: 'source' });
+    const listener = vi.fn();
+    const unsub = useEditorStore.subscribe(listener);
+
+    try {
+      useEditorStore.getState().setMode('source');
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsub();
+    }
   });
 });
 
@@ -1065,6 +1232,18 @@ describe('getStateAfterClosingTab', () => {
     const r = getStateAfterClosingTab(tabs, '/a', '/missing');
     expect(r.tabs).toBe(tabs);
     expect(r.activeTabId).toBe('/a');
+  });
+
+  it('关不存在的 id 不预分配 remaining 数组', () => {
+    const r = getStateAfterClosingTab(tabs, '/a', '/missing');
+    const src = getStateAfterClosingTab.toString();
+
+    expect(r.tabs).toBe(tabs);
+    expect(r.activeTabId).toBe('/a');
+    expect(src.indexOf('findEditorTabIndexById')).toBeGreaterThanOrEqual(0);
+    expect(src.indexOf('findEditorTabIndexById')).toBeLessThan(
+      src.indexOf('new Array'),
+    );
   });
 
   it('关命中的 tab 不通过 tabs.filter 二次扫描生成 remaining', () => {

@@ -107,12 +107,20 @@ function compileCombo(combo: string, platform: Platform): ComboSignature {
 
 /** 签名是否匹配键盘事件(精确比较四个修饰键 + 主键). */
 function signatureMatches(sig: ComboSignature, e: KeyboardEvent): boolean {
+  return signatureMatchesKey(sig, e, e.key.toLowerCase());
+}
+
+function signatureMatchesKey(
+  sig: ComboSignature,
+  e: KeyboardEvent,
+  keyLower: string,
+): boolean {
   return (
     sig.wantMeta === e.metaKey &&
     sig.wantCtrl === e.ctrlKey &&
     sig.wantShift === e.shiftKey &&
     sig.wantAlt === e.altKey &&
-    e.key.toLowerCase() === sig.key
+    keyLower === sig.key
   );
 }
 
@@ -129,6 +137,8 @@ interface CompiledBinding {
   readonly cmd: CommandSpec;
 }
 
+const EMPTY_COMPILED_BINDINGS: readonly CompiledBinding[] = [];
+
 /** 事件目标是否可编辑文本控件(input/textarea/select/contenteditable). */
 export function isEditableTarget(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null;
@@ -136,6 +146,23 @@ export function isEditableTarget(target: EventTarget | null): boolean {
   const tag = el.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
   return el.isContentEditable === true;
+}
+
+export function buildCompiledBindings(
+  commands: readonly CommandSpec[],
+  platform: Platform,
+): readonly CompiledBinding[] {
+  let out: CompiledBinding[] | undefined;
+  let count = 0;
+  for (const cmd of commands) {
+    const effective = getEffectiveHotkey(cmd);
+    if (!effective) continue; // 无 hotkey 或显式 unbind
+    out ??= new Array<CompiledBinding>(commands.length);
+    out[count++] = { sig: compileCombo(effective, platform), cmd };
+  }
+  if (!out) return EMPTY_COMPILED_BINDINGS;
+  out.length = count;
+  return out;
 }
 
 export function useCommandHotkeys(commands: CommandRegistry): void {
@@ -148,26 +175,23 @@ export function useCommandHotkeys(commands: CommandRegistry): void {
   // 每个 hotkey 解析一次。高频 keydown 路径只做字段比较,不再逐键 split/lowercase/Set
   // + 逐命令读 keybindings store。只保留真有 effective hotkey 的命令。
   const bindings = useMemo<readonly CompiledBinding[]>(() => {
-    const out: CompiledBinding[] = [];
-    for (const cmd of snap) {
-      const effective = getEffectiveHotkey(cmd);
-      if (!effective) continue; // 无 hotkey 或显式 unbind
-      out.push({ sig: compileCombo(effective, platform), cmd });
-    }
-    return out;
+    return buildCompiledBindings(snap, platform);
     // overrides 不直接被 body 引用,但它变化时 getEffectiveHotkey 结果变 → 必须重建。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [snap, overrides, platform]);
 
   useEffect(() => {
+    if (bindings.length === 0) return;
+
     const handler = (e: KeyboardEvent) => {
       // a11y(A64):事件来自可编辑文本控件(input/textarea/contenteditable/select)时,放行
       // 「无 ctrl/meta/alt 修饰」的绑定(单键如 'x' 或仅 shift 如 'X')—— 否则用户在搜索框/
       // 输入框里键入该字符会被全局命令劫持并 preventDefault,文本打不进去、焦点上下文被破坏。
       // 带 ctrl/meta/alt 的全局组合(如 mod+s 保存)在编辑器内仍需生效,故只跳过无修饰类。
       const editable = isEditableTarget(e.target);
+      const keyLower = e.key.toLowerCase();
       for (const b of bindings) {
-        if (signatureMatches(b.sig, e)) {
+        if (signatureMatchesKey(b.sig, e, keyLower)) {
           if (editable && !b.sig.wantMeta && !b.sig.wantCtrl && !b.sig.wantAlt) {
             continue;
           }

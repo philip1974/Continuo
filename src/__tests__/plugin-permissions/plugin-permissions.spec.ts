@@ -70,6 +70,7 @@ describe('InMemoryPermissionStore', () => {
       const kept = keepGrantedDecisions(decisions);
       const filterCallsDuringKeep = filterSpy.mock.calls.length;
       expect(kept.map((d) => d.permission)).toEqual(['fs', 'shell']);
+      expect(keepGrantedDecisions.toString()).not.toContain('kept.push(');
       expect(filterCallsDuringKeep).toBe(0);
     } finally {
       filterSpy.mockRestore();
@@ -92,6 +93,7 @@ describe('InMemoryPermissionStore', () => {
         { permission: 'fs', granted: false, decidedAt: 9 },
         { permission: 'network', granted: false, decidedAt: 9 },
       ]);
+      expect(replacePermissionDecisions.toString()).not.toContain('next.push(');
       expect(filterCallsDuringReplace).toBe(0);
     } finally {
       filterSpy.mockRestore();
@@ -246,6 +248,10 @@ describe('ensureAuthorized(v5 Phase 2 partial grant)', () => {
         expect(r.granted).toEqual(['fs']);
         expect(r.denied).toEqual(['network']);
       }
+      expect(ensureAuthorized.toString()).not.toContain('pending.push(');
+      expect(ensureAuthorized.toString()).not.toContain('newDeny.push(');
+      expect(ensureAuthorized.toString()).not.toContain('granted.push(');
+      expect(ensureAuthorized.toString()).not.toContain('denied.push(');
       expect(prompt).not.toHaveBeenCalled();
     } finally {
       filterSpy.mockRestore();

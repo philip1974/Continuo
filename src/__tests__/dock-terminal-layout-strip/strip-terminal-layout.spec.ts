@@ -205,6 +205,12 @@ describe('stripTerminalPanelsFromLayout', () => {
       const tg = r.grid.root.data[0].data.tabGroups as Array<{ panelIds: string[] }>;
       expect(tg).toHaveLength(1);
       expect(tg[0]!.panelIds).toEqual(['editor']);
+      const body = stripTerminalPanelsFromLayout.toString();
+      expect(body).not.toContain('views.push(');
+      expect(body).not.toContain('panelIds.push(');
+      expect(body).not.toContain('tabGroups.push(');
+      expect(body).not.toContain('children.push(');
+      expect(body).not.toContain('kept.push(');
     } finally {
       filterSpy.mockRestore();
       mapSpy.mockRestore();

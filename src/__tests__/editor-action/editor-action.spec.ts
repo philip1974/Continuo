@@ -42,6 +42,22 @@ describe('EditorActionRegistry', () => {
       d.dispose();
       expect(r.getAll().map((x) => x.id)).toEqual(['c', 'a']);
       expect(sortSpy).toHaveBeenCalledTimes(3);
+      expect(EditorActionRegistry.prototype.getAll.toString()).not.toContain(
+        'items.push(',
+      );
+    } finally {
+      sortSpy.mockRestore();
+    }
+  });
+
+  it('单项快照不调用 sort', () => {
+    const r = new EditorActionRegistry();
+    r.register({ id: 'a', label: 'A', fn: () => {} });
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      expect(r.getAll().map((x) => x.id)).toEqual(['a']);
+      expect(sortSpy).not.toHaveBeenCalled();
     } finally {
       sortSpy.mockRestore();
     }
@@ -162,6 +178,7 @@ describe('filterVisible', () => {
       ctx,
     );
     expect(r.map((x) => x.id)).toEqual(['a', 'c']);
+    expect(filterVisible.toString()).not.toContain('out.push(');
   });
 
   it('when 抛错 → 视为 false + warn', () => {

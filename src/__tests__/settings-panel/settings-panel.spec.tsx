@@ -249,6 +249,7 @@ describe('SettingsPanel · 搜索模式', () => {
 
       expect(filterCallsOnSearchable).toBe(0);
       expect(matched).toEqual([itemA]);
+      expect(selectMatchedSettingItems.toString()).not.toContain('matched.push(');
     } finally {
       filterSpy.mockRestore();
     }
@@ -313,8 +314,31 @@ describe('SettingsPanel · 搜索模式', () => {
       ]);
       expect(buckets[0]?.items).toEqual([itemA]);
       expect(buckets[1]?.items).toEqual([itemB]);
+      expect(groupSearchResults.toString()).not.toContain('buckets.push(');
+      expect(groupSearchResults.toString()).not.toContain('.push(');
     } finally {
       arrayFromSpy.mockRestore();
+    }
+  });
+
+  it('单个搜索结果分组走快路径,不构造 Map', () => {
+    const item = {
+      id: 'editor.fontSize',
+      category: 'editor',
+      title: '字号',
+      type: 'number',
+      default: 14,
+    } as const;
+    const mapGetSpy = vi.spyOn(Map.prototype, 'get');
+
+    try {
+      const buckets = groupSearchResults([item]);
+      expect(buckets).toHaveLength(1);
+      expect(buckets[0]?.category).toBe('editor');
+      expect(buckets[0]?.items).toEqual([item]);
+      expect(mapGetSpy).not.toHaveBeenCalled();
+    } finally {
+      mapGetSpy.mockRestore();
     }
   });
 
@@ -436,6 +460,21 @@ describe('useSettingsStore · API 形态', () => {
   it('setActiveTabId 写入状态', () => {
     useSettingsStore.getState().setActiveTabId('foo');
     expect(useSettingsStore.getState().activeTabId).toBe('foo');
+  });
+
+  it('setActiveTabId 写入相同 id 时不通知订阅者', () => {
+    useSettingsStore.setState({ activeTabId: 'foo' });
+    const listener = vi.fn();
+    const unsubscribe = useSettingsStore.subscribe(listener);
+
+    try {
+      useSettingsStore.getState().setActiveTabId('foo');
+
+      expect(useSettingsStore.getState().activeTabId).toBe('foo');
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
   });
 
   it('panel unmount 后 activeTabId 仍保留(决策 #2)', () => {

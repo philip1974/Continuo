@@ -98,6 +98,7 @@ export const useAgentAuthStore = create<AgentAuthState>((set, get) => ({
     clearPendingTimer();
     const resolver = pendingResolver;
     pendingResolver = null;
+    if (!resolver && get().pending === null && kind !== 'session') return;
     if (kind === 'session') {
       set({ pending: null, sessionGranted: true });
     } else {
@@ -110,12 +111,13 @@ export const useAgentAuthStore = create<AgentAuthState>((set, get) => ({
     clearPendingTimer();
     const resolver = pendingResolver;
     pendingResolver = null;
+    if (!resolver && get().pending === null) return;
     set({ pending: null });
     resolver?.('denied');
   },
 
   revoke() {
-    set({ sessionGranted: false });
+    set((s) => (s.sessionGranted ? { sessionGranted: false } : s));
   },
 }));
 

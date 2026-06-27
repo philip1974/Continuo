@@ -1,7 +1,7 @@
 // BDD: quick-open / store
 // useQuickOpenStore 行为契约。
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useQuickOpenStore } from '../../plugins/quick-open/store';
 
 beforeEach(() => {
@@ -69,12 +69,74 @@ describe('useQuickOpenStore', () => {
     expect(useQuickOpenStore.getState().selectedIndex).toBe(0);
   });
 
+  it('关闭态 close() 不重复通知订阅者', () => {
+    const listener = vi.fn();
+    const unsubscribe = useQuickOpenStore.subscribe(listener);
+
+    try {
+      useQuickOpenStore.getState().close();
+
+      expect(useQuickOpenStore.getState().isOpen).toBe(false);
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('query 和 selectedIndex 都不变时 setQuery 不通知订阅者', () => {
+    useQuickOpenStore.setState({ query: 'foo', selectedIndex: 0 });
+    const listener = vi.fn();
+    const unsubscribe = useQuickOpenStore.subscribe(listener);
+
+    try {
+      useQuickOpenStore.getState().setQuery('foo');
+
+      expect(useQuickOpenStore.getState().query).toBe('foo');
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
+  });
+
   it('setResults / setLoading 独立写入', () => {
     const results = [{ absPath: '/a', relPath: 'a', relPathLower: 'a', name: 'a' }];
     useQuickOpenStore.getState().setResults(results);
     expect(useQuickOpenStore.getState().results).toEqual(results);
     useQuickOpenStore.getState().setLoading(true);
     expect(useQuickOpenStore.getState().loading).toBe(true);
+  });
+
+  it('setResults 写入相同 results 引用和 root 时不通知订阅者', () => {
+    const results = [{ absPath: '/a', relPath: 'a', relPathLower: 'a', name: 'a' }];
+    useQuickOpenStore.setState({ results, resultsRoot: '/work' });
+    const listener = vi.fn();
+    const unsubscribe = useQuickOpenStore.subscribe(listener);
+
+    try {
+      useQuickOpenStore.getState().setResults(results, '/work');
+
+      expect(useQuickOpenStore.getState().results).toBe(results);
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('setLoading / setScanFailed 写入相同值时不通知订阅者', () => {
+    useQuickOpenStore.setState({ loading: true, scanFailed: true });
+    const listener = vi.fn();
+    const unsubscribe = useQuickOpenStore.subscribe(listener);
+
+    try {
+      useQuickOpenStore.getState().setLoading(true);
+      useQuickOpenStore.getState().setScanFailed(true);
+
+      expect(useQuickOpenStore.getState().loading).toBe(true);
+      expect(useQuickOpenStore.getState().scanFailed).toBe(true);
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
   });
 
   // race(R48):列表异步变短(setResults 替换 / query 收窄)时 selectedIndex 须钳回 [0,len-1],
@@ -96,6 +158,21 @@ describe('useQuickOpenStore', () => {
       useQuickOpenStore.setState({ selectedIndex: 3 });
       useQuickOpenStore.getState().clampSelection(10);
       expect(useQuickOpenStore.getState().selectedIndex).toBe(3);
+    });
+
+    it('在范围内 → 不通知订阅者', () => {
+      useQuickOpenStore.setState({ selectedIndex: 3 });
+      const listener = vi.fn();
+      const unsubscribe = useQuickOpenStore.subscribe(listener);
+
+      try {
+        useQuickOpenStore.getState().clampSelection(10);
+
+        expect(useQuickOpenStore.getState().selectedIndex).toBe(3);
+        expect(listener).not.toHaveBeenCalled();
+      } finally {
+        unsubscribe();
+      }
     });
 
     it('恰在末项边界(len-1)→ 不变', () => {

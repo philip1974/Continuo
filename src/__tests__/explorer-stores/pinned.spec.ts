@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { usePinnedStore } from '../../stores/pinned.store';
+import {
+  buildToggledPinnedPaths,
+  usePinnedStore,
+} from '../../stores/pinned.store';
 import {
   PINNED_MAX,
   PATH_STR_MAX,
@@ -43,6 +46,8 @@ describe('pinned.store', () => {
 
       expect(includesCallsOnPaths).toBe(0);
       expect(sliceCallsOnPaths).toBe(0);
+      expect(buildToggledPinnedPaths.toString()).not.toContain('.push(');
+      expect(buildToggledPinnedPaths.toString()).not.toContain('...');
       expect(usePinnedStore.getState().paths).toEqual(['/a', '/c']);
     } finally {
       includesSpy.mockRestore();
@@ -54,6 +59,18 @@ describe('pinned.store', () => {
     usePinnedStore.setState({ paths: ['/a', '/b'] });
     usePinnedStore.getState().clear();
     expect(usePinnedStore.getState().paths).toEqual([]);
+  });
+
+  it('clear 在已空时 no-op,不触发订阅', () => {
+    const listener = vi.fn();
+    const unsub = usePinnedStore.subscribe(listener);
+
+    try {
+      usePinnedStore.getState().clear();
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsub();
+    }
   });
 
   it('toggle 不去重相同 path 多次调用顺序对', () => {

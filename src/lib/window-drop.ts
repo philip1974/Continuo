@@ -44,11 +44,14 @@ export function captureBoundedFiles(
   files: ArrayLike<File>,
   max: number,
 ): File[] {
-  const out: File[] = [];
-  for (let i = 0; i < files.length && out.length < max; i++) {
+  const limit = Math.min(files.length, max);
+  const out = new Array<File>(limit);
+  let count = 0;
+  for (let i = 0; i < files.length && count < max; i++) {
     const f = files[i];
-    if (f) out.push(f);
+    if (f) out[count++] = f;
   }
+  out.length = count;
   return out;
 }
 

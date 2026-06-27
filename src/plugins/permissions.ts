@@ -49,10 +49,12 @@ export interface PermissionStore {
 export function keepGrantedDecisions(
   list: readonly PermissionDecision[],
 ): PermissionDecision[] {
-  const kept: PermissionDecision[] = [];
+  const kept = new Array<PermissionDecision>(list.length);
+  let keptCount = 0;
   for (const decision of list) {
-    if (decision.granted) kept.push(decision);
+    if (decision.granted) kept[keptCount++] = decision;
   }
+  kept.length = keptCount;
   return kept;
 }
 
@@ -63,13 +65,15 @@ export function replacePermissionDecisions(
   decidedAt: number,
 ): PermissionDecision[] {
   const replacementPerms = new Set(perms);
-  const next: PermissionDecision[] = [];
+  const next = new Array<PermissionDecision>(list.length + perms.length);
+  let nextCount = 0;
   for (const decision of list) {
-    if (!replacementPerms.has(decision.permission)) next.push(decision);
+    if (!replacementPerms.has(decision.permission)) next[nextCount++] = decision;
   }
   for (const permission of perms) {
-    next.push({ permission, granted, decidedAt });
+    next[nextCount++] = { permission, granted, decidedAt };
   }
+  next.length = nextCount;
   return next;
 }
 
@@ -151,18 +155,22 @@ export async function ensureAuthorized(
   }
 
   // 待决:既不在 granted 也不在 denied(尚未决策的项)
-  const pending: PermissionKey[] = [];
+  const pending = new Array<PermissionKey>(requested.length);
+  let pendingCount = 0;
   for (const p of requested) {
-    if (!grantedSet.has(p) && !deniedSet.has(p)) pending.push(p);
+    if (!grantedSet.has(p) && !deniedSet.has(p)) pending[pendingCount++] = p;
   }
+  pending.length = pendingCount;
 
   if (pending.length > 0) {
     const userGranted = await prompt(pluginId, pending);
     const userGrantedSet = new Set(userGranted);
-    const newDeny: PermissionKey[] = [];
+    const newDeny = new Array<PermissionKey>(pending.length);
+    let newDenyCount = 0;
     for (const p of pending) {
-      if (!userGrantedSet.has(p)) newDeny.push(p);
+      if (!userGrantedSet.has(p)) newDeny[newDenyCount++] = p;
     }
+    newDeny.length = newDenyCount;
 
     if (userGranted.length > 0) await store.grant(pluginId, userGranted);
     if (newDeny.length > 0) await store.deny(pluginId, newDeny);
@@ -171,12 +179,16 @@ export async function ensureAuthorized(
     for (const p of newDeny) deniedSet.add(p);
   }
 
-  const granted: PermissionKey[] = [];
-  const denied: PermissionKey[] = [];
+  const granted = new Array<PermissionKey>(requested.length);
+  const denied = new Array<PermissionKey>(requested.length);
+  let grantedCount = 0;
+  let deniedCount = 0;
   for (const p of requested) {
-    if (grantedSet.has(p)) granted.push(p);
-    else if (deniedSet.has(p)) denied.push(p);
+    if (grantedSet.has(p)) granted[grantedCount++] = p;
+    else if (deniedSet.has(p)) denied[deniedCount++] = p;
   }
+  granted.length = grantedCount;
+  denied.length = deniedCount;
 
   // 全拒(无任何 granted)→ status=failed,触发 v4.7 [启用] retry 路径
   if (granted.length === 0) {

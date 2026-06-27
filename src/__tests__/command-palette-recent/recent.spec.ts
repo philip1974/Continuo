@@ -7,6 +7,7 @@ import {
   RECENT_STORAGE_KEY,
   MAX_RECENT,
   buildNextRecentList,
+  readFromStorage,
 } from '../../plugins/command-palette/recent';
 
 beforeEach(() => {
@@ -38,9 +39,24 @@ describe('useRecentCommandsStore', () => {
       expect(next[0]).toEqual({ id: 'cmd-10', ts: 999 });
       expect(duplicateCount).toBe(1);
       expect(filterCallsDuringBuild).toBe(0);
+      expect(buildNextRecentList.toString()).not.toContain('.push(');
     } finally {
       filterSpy.mockRestore();
     }
+  });
+
+  it('readFromStorage 收集合法项时按 MAX_RECENT 预分配,不通过 out.push 扩容', () => {
+    localStorage.setItem(
+      RECENT_STORAGE_KEY,
+      JSON.stringify([
+        { id: 'a', ts: 1 },
+        { id: '', ts: 2 },
+        { id: 'b', ts: 3 },
+      ]),
+    );
+
+    expect(readFromStorage().map((entry) => entry.id)).toEqual(['a', 'b']);
+    expect(readFromStorage.toString()).not.toContain('out.push(');
   });
 
   it('初始 list 为空', () => {
@@ -92,6 +108,25 @@ describe('useRecentCommandsStore', () => {
     useRecentCommandsStore.getState().clear();
     expect(useRecentCommandsStore.getState().list).toEqual([]);
     expect(localStorage.getItem(RECENT_STORAGE_KEY)).toBeNull();
+  });
+
+  it('storage 同步读到相同列表内容时不通知订阅者', () => {
+    const list = [{ id: 'a', ts: 1 }];
+    useRecentCommandsStore.setState({ list });
+    localStorage.setItem(RECENT_STORAGE_KEY, JSON.stringify(list));
+    const listener = vi.fn();
+    const unsubscribe = useRecentCommandsStore.subscribe(listener);
+
+    try {
+      window.dispatchEvent(
+        new StorageEvent('storage', { key: RECENT_STORAGE_KEY }),
+      );
+
+      expect(useRecentCommandsStore.getState().list).toBe(list);
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
   });
 });
 

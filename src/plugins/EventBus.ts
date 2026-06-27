@@ -66,6 +66,16 @@ export class EventBus {
     if (typeof name !== 'string') return; // 边界(E56):非字符串 name no-op(listener 数已由 on cap)
     const set = this.byName.get(name);
     if (!set) return;
+    if (set.size === 1) {
+      const fn = set.values().next().value;
+      if (!fn) return;
+      try {
+        fn(payload);
+      } catch (err) {
+        console.warn(`[event-bus] listener for "${name}" threw`, err);
+      }
+      return;
+    }
     // 拷贝防 listener 内自取消导致迭代异常
     const snapshot = new Array<Listener>(set.size);
     let index = 0;

@@ -49,6 +49,10 @@ describe('listPluginDirs', () => {
     expect(await listPluginDirs(tmp)).toEqual([]);
   });
 
+  it('结果数组构建不使用动态 push 扩容', () => {
+    expect(listPluginDirs.toString()).not.toContain('out.push(');
+  });
+
   it('收 manifest+main.js 完整目录', async () => {
     makeDir('com.foo', { id: 'com.foo', name: 'Foo', version: '0.1.0' });
     const r = await listPluginDirs(tmp);
@@ -293,6 +297,10 @@ describe('listPluginDirs', () => {
 describe('readEnabledIds / writeEnabledIds', () => {
   it('未写过 → []', async () => {
     expect(await readEnabledIds(tmp)).toEqual([]);
+  });
+
+  it('canonicalize 结果数组构建不使用动态 push 扩容', () => {
+    expect(readEnabledIds.toString()).not.toContain('out.push(');
   });
 
   it('write + read 往返', async () => {

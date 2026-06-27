@@ -174,6 +174,35 @@ describe('SettingItemRegistry', () => {
         'editor.lineNumbers',
       ]);
       expect(sortSpy).toHaveBeenCalledTimes(4);
+      expect(SettingItemRegistry.prototype.getByCategory.toString()).not.toContain(
+        'items.push(',
+      );
+      expect(SettingItemRegistry.prototype.getAll.toString()).not.toContain(
+        'items.push(',
+      );
+    } finally {
+      sortSpy.mockRestore();
+    }
+  });
+
+  it('单项或空 category 快照不调用 sort', () => {
+    const r = new SettingItemRegistry();
+    r.register({
+      id: 'general.flag',
+      category: 'general',
+      title: 'Flag',
+      type: 'boolean',
+      default: false,
+    });
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      expect(r.getByCategory('general').map((s) => s.id)).toEqual([
+        'general.flag',
+      ]);
+      expect(r.getByCategory('editor')).toEqual([]);
+      expect(r.getAll().map((s) => s.id)).toEqual(['general.flag']);
+      expect(sortSpy).not.toHaveBeenCalled();
     } finally {
       sortSpy.mockRestore();
     }

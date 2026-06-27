@@ -20,6 +20,22 @@ describe('editor store CodeMirror view refs', () => {
     expect(useEditorStore.getState().viewRefs.get('/work/a.ts')).toBe(viewA);
   });
 
+  it('registerView 重复登记同一个 view 时不复制 Map 且不通知订阅者', () => {
+    const viewRefs = new Map([['/work/a.ts', viewA as never]]);
+    useEditorStore.setState({ viewRefs });
+    const listener = vi.fn();
+    const unsubscribe = useEditorStore.subscribe(listener);
+
+    try {
+      useEditorStore.getState().registerView('/work/a.ts', viewA as never);
+
+      expect(useEditorStore.getState().viewRefs).toBe(viewRefs);
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
+  });
+
   it('T2 unregisters only when the expected view matches', () => {
     const store = useEditorStore.getState();
     store.registerView('/work/a.ts', viewA as never);
@@ -48,4 +64,3 @@ describe('editor store CodeMirror view refs', () => {
     vi.useRealTimers();
   });
 });
-

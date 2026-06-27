@@ -65,6 +65,22 @@ describe('SettingTabRegistry', () => {
       d.dispose();
       expect(r.getAll().map((x) => x.id)).toEqual(['top', 'bot']);
       expect(sortSpy).toHaveBeenCalledTimes(3);
+      expect(SettingTabRegistry.prototype.getAll.toString()).not.toContain(
+        'items.push(',
+      );
+    } finally {
+      sortSpy.mockRestore();
+    }
+  });
+
+  it('单项快照不调用 sort', () => {
+    const r = new SettingTabRegistry();
+    r.register({ id: 'a', title: 'A', render: noopRender });
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      expect(r.getAll().map((x) => x.id)).toEqual(['a']);
+      expect(sortSpy).not.toHaveBeenCalled();
     } finally {
       sortSpy.mockRestore();
     }

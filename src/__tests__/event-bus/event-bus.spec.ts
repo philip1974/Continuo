@@ -53,6 +53,22 @@ describe('EventBus', () => {
     expect(emitBody).not.toMatch(/\.push\(/);
   });
 
+  it('emit 单 listener 走快路径,不构造快照数组', () => {
+    const src = readFileSync(
+      path.join(process.cwd(), 'src/plugins/EventBus.ts'),
+      'utf-8',
+    );
+    const emitBody = src.slice(
+      src.indexOf('  emit(name: string, payload: unknown): void {'),
+      src.indexOf('  clear(name?: string): void {'),
+    );
+
+    expect(emitBody).toMatch(/set\.size === 1/);
+    expect(emitBody.indexOf('set.size === 1')).toBeLessThan(
+      emitBody.indexOf('new Array<Listener>(set.size)'),
+    );
+  });
+
   it('emit 使用快照:listener 中 dispose 后续 listener,本轮仍会调用', () => {
     const bus = new EventBus();
     const f2 = vi.fn();

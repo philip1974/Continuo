@@ -148,14 +148,15 @@ export function buildPluginListDirEntries(
   entries: readonly Pick<FileEntry, 'name' | 'isDirectory' | 'isSymlink'>[],
 ): FileEntry[] {
   const parent = path.replace(/[\\/]+$/, '');
-  const out: FileEntry[] = [];
-  for (const entry of entries) {
-    out.push({
+  const out = new Array<FileEntry>(entries.length);
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i]!;
+    out[i] = {
       path: joinPath(parent, entry.name),
       name: entry.name,
       isDirectory: entry.isDirectory,
       isSymlink: entry.isSymlink,
-    });
+    };
   }
   return out;
 }
@@ -348,30 +349,11 @@ function validateNetworkInput(url: unknown, init?: unknown): void {
   const headers = (init as { headers?: unknown }).headers;
   if (headers === undefined || headers === null) return;
 
-  // 归一化为 [key,value][] 并边收集边 cap 条数(不先全量物化超量 headers);Headers 实例 forEach
-  // 无法 early-break,但其条数由插件自身构造、已物化,push 后统一判上限。
-  const entries: Array<[unknown, unknown]> = [];
-  const pushEntry = (k: unknown, v: unknown): void => {
-    entries.push([k, v]);
-    if (entries.length > NETWORK_HEADERS_MAX) bad(`headers > ${NETWORK_HEADERS_MAX}`);
-  };
-  if (Array.isArray(headers)) {
-    for (const pair of headers) {
-      if (!Array.isArray(pair)) bad('invalid header entry (not a pair)');
-      pushEntry((pair as unknown[])[0], (pair as unknown[])[1]);
-    }
-  } else if (typeof (headers as Headers).forEach === 'function') {
-    (headers as Headers).forEach((v, k) => pushEntry(k, v));
-    if (entries.length > NETWORK_HEADERS_MAX) bad(`headers > ${NETWORK_HEADERS_MAX}`);
-  } else if (typeof headers === 'object') {
-    for (const k in headers as Record<string, unknown>) {
-      if (!Object.prototype.hasOwnProperty.call(headers, k)) continue;
-      pushEntry(k, (headers as Record<string, unknown>)[k]);
-    }
-  } else {
-    bad('invalid headers');
-  }
-  for (const [k, v] of entries) {
+  let headerCount = 0;
+  const validateHeaderEntry = (k: unknown, v: unknown): void => {
+    headerCount += 1;
+    if (headerCount > NETWORK_HEADERS_MAX)
+      bad(`headers > ${NETWORK_HEADERS_MAX}`);
     // 边界(E269,E264 自引入缺口):**要求** key/value 都是 string 再校验长度。此前 `typeof x==='string'
     // && len>MAX` 让**非 string** key/value 直接通过预检,随后 fetch/Headers 隐式 String()(如
     // {toString(){return huge}})在 raw fetch 边界再触发超长转换 → 削弱"fetch 前校验"契约。非 string 直接拒。
@@ -379,6 +361,21 @@ function validateNetworkInput(url: unknown, init?: unknown): void {
       bad(`invalid header key (non-string or > ${NETWORK_HEADER_KEY_MAX})`);
     if (typeof v !== 'string' || v.length > NETWORK_HEADER_VALUE_MAX)
       bad(`invalid header value (non-string or > ${NETWORK_HEADER_VALUE_MAX})`);
+  };
+  if (Array.isArray(headers)) {
+    for (const pair of headers) {
+      if (!Array.isArray(pair)) bad('invalid header entry (not a pair)');
+      validateHeaderEntry((pair as unknown[])[0], (pair as unknown[])[1]);
+    }
+  } else if (typeof (headers as Headers).forEach === 'function') {
+    (headers as Headers).forEach((v, k) => validateHeaderEntry(k, v));
+  } else if (typeof headers === 'object') {
+    for (const k in headers as Record<string, unknown>) {
+      if (!Object.prototype.hasOwnProperty.call(headers, k)) continue;
+      validateHeaderEntry(k, (headers as Record<string, unknown>)[k]);
+    }
+  } else {
+    bad('invalid headers');
   }
 }
 
@@ -390,7 +387,7 @@ function makeNetwork(
     async fetch(url, init) {
       await ensurePerm(pluginId, 'network', store);
       validateNetworkInput(url, init); // 边界(E264):发 raw fetch 前校验 URL/headers
-      // 用 module 顶部 cached raw fetch,sandboxSweep 后 globalThis.fetch
+      // 用 module 顶部 cached raw fetch,sandboxSweep 后全局 fetch
       // 已涂掉但本闭包仍能调
       return getCachedFetch()(url, init);
     },
@@ -672,8 +669,12 @@ function makePermission(
     async granted() {
       if (!store) return [];
       const decisions = await store.get(pluginId);
-      const out: PermissionKey[] = [];
-      for (const d of decisions) if (d.granted) out.push(d.permission);
+      const out = new Array<PermissionKey>(decisions.length);
+      let outCount = 0;
+      for (const d of decisions) {
+        if (d.granted) out[outCount++] = d.permission;
+      }
+      out.length = outCount;
       return out;
     },
   };

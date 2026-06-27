@@ -100,9 +100,12 @@ export class SettingTabRegistry {
   getAll(): readonly SettingTabSpec[] {
     if (this.cachedAll !== null) return this.cachedAll;
 
-    const items: SettingTabSpec[] = [];
-    for (const item of this.items.values()) items.push(item);
-    items.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
+    const items = new Array<SettingTabSpec>(this.items.size);
+    let i = 0;
+    for (const item of this.items.values()) items[i++] = item;
+    if (items.length > 1) {
+      items.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
+    }
     this.cachedAll = items;
     return items;
   }

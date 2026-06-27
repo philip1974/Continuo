@@ -21,6 +21,12 @@ import { getCachedClipboard } from '@/plugins/sandbox-sweep';
 import { useT, t as translate } from '@/i18n';
 import { basenameForChrome } from './path-label';
 
+const EMPTY_STATUS_ITEMS: readonly StatusBarItemSpec[] = [];
+const EMPTY_STATUS_SPLIT = {
+  left: EMPTY_STATUS_ITEMS,
+  right: EMPTY_STATUS_ITEMS,
+};
+
 // 一次订阅取全量(已按 priority 排序),再分侧(打磨 R6)。原先 left/right 各
 // useRegistry 一次 = 两个订阅回调 + 两次 getBySide(Array.from+filter+sort)。
 // getAll() 全局按 priority 排序,filter 保序 → 与 getBySide(side) 输出等价。
@@ -28,15 +34,28 @@ export function splitStatusItemsBySide(items: readonly StatusBarItemSpec[]): {
   readonly left: readonly StatusBarItemSpec[];
   readonly right: readonly StatusBarItemSpec[];
 } {
-  const left: StatusBarItemSpec[] = [];
-  const right: StatusBarItemSpec[] = [];
+  if (items.length === 0) return EMPTY_STATUS_SPLIT;
+  if (items.length === 1) {
+    return items[0]!.side === 'left'
+      ? { left: items, right: EMPTY_STATUS_ITEMS }
+      : { left: EMPTY_STATUS_ITEMS, right: items };
+  }
+
+  const left = new Array<StatusBarItemSpec>(items.length);
+  const right = new Array<StatusBarItemSpec>(items.length);
+  let leftCount = 0;
+  let rightCount = 0;
   for (const item of items) {
     if (item.side === 'left') {
-      left.push(item);
+      left[leftCount] = item;
+      leftCount += 1;
     } else {
-      right.push(item);
+      right[rightCount] = item;
+      rightCount += 1;
     }
   }
+  left.length = leftCount;
+  right.length = rightCount;
   return { left, right };
 }
 

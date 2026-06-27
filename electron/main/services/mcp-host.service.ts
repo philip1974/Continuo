@@ -302,17 +302,19 @@ export async function dispatchRpc(
   }
 
   if (rpc.method === 'tools/list') {
-    const toolList: Array<{
+    const toolList = new Array<{
       name: string;
       description: string;
       inputSchema: Record<string, unknown>;
-    }> = [];
+    }>(tools.size);
+    let toolIndex = 0;
     for (const t of tools.values()) {
-      toolList.push({
+      toolList[toolIndex] = {
         name: t.name,
         description: t.description,
         inputSchema: t.jsonSchema,
-      });
+      };
+      toolIndex += 1;
     }
     // 边界(E291,字节预算 fail-fast):聚合 tools/list 超 MAX_TOOLS_LIST_BYTES → 在 formatRpcResult
     // 的 JSON.stringify 物化 MB 级字符串之前返错(下界永不高估,判定与精确字节等价,免 OOM)。
@@ -913,15 +915,13 @@ export async function createMcpHost(
       const payload: Record<string, unknown> = { jsonrpc: '2.0', method };
       if (params !== undefined) payload.params = params;
       const line = `data: ${JSON.stringify(payload)}\n\n`;
-      const dead: ServerResponse[] = [];
       for (const c of sseClients.keys()) {
         try {
           c.write(line);
         } catch {
-          dead.push(c);
+          closeSseClient(c);
         }
       }
-      for (const c of dead) closeSseClient(c);
     },
     rotateToken(): void {
       windowTokens.clear();

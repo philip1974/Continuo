@@ -50,6 +50,16 @@ beforeEach(() => {
 });
 
 describe('a11y(A126) — fs-scope 决定回传失败须反馈', () => {
+  it('scope prompt 列表按 scopes.length 预分配,不通过 out.push 扩容', () => {
+    expect(
+      buildFsScopePromptScopes([
+        { path: '~/x', mode: 'r' },
+        { path: '/tmp/y', mode: 'rw' },
+      ]).map((scope) => scope.mode),
+    ).toEqual(['r', 'rw']);
+    expect(buildFsScopePromptScopes.toString()).not.toContain('out.push(');
+  });
+
   it('_scopeDecision reject → notify.error', async () => {
     h.requestFsScope.mockResolvedValue({ granted: true });
     h.scopeDecision.mockRejectedValue(new Error('ipc down'));

@@ -57,6 +57,9 @@ describe('topic49 P2-AG · update-store.dismiss 乐观摘除', () => {
       expect(result!.available.map((u) => u.id)).toEqual(['b']);
       expect(findCallsDuringDismiss).toBe(0);
       expect(filterCallsDuringDismiss).toBe(0);
+      expect(dismissAvailableUpdateFromList.toString()).not.toContain(
+        'next.push(',
+      );
     } finally {
       findSpy.mockRestore();
       filterSpy.mockRestore();

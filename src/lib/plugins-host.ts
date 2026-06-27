@@ -21,22 +21,23 @@ export function buildPluginDirInfos(
   readonly moduleUrl: string;
   readonly stylesText?: string;
 }> {
-  const out: Array<{
+  const out = new Array<{
     readonly id: string;
     readonly manifestText: string;
     readonly moduleUrl: string;
     readonly stylesText?: string;
-  }> = [];
-  for (const dir of dirs) {
+  }>(dirs.length);
+  for (let i = 0; i < dirs.length; i++) {
+    const dir = dirs[i]!;
     const blob = new Blob([dir.mainText], {
       type: 'application/javascript',
     });
-    out.push({
+    out[i] = {
       id: dir.id,
       manifestText: dir.manifestText,
       moduleUrl: URL.createObjectURL(blob),
       stylesText: dir.stylesText,
-    });
+    };
   }
   return out;
 }

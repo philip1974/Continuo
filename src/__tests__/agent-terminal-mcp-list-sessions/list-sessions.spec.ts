@@ -255,6 +255,7 @@ describe('makeListSessionsTool', () => {
       const out = tool.run({}, ctx) as { sessions: Array<{ session_id: string }> };
 
       expect(mapSpy).not.toHaveBeenCalled();
+      expect(tool.run.toString()).not.toContain('sessions.push(');
       expect(out.sessions.map((s) => s.session_id)).toEqual([
         'term-1',
         'term-2',

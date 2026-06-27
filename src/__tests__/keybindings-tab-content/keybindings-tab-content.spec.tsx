@@ -1,7 +1,12 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { fireEvent, render, cleanup, act } from '@testing-library/react';
-import { KeybindingsTabContent } from '../../plugins/settings/KeybindingsTabContent';
+import {
+  KeybindingsTabContent,
+  groupByCategory,
+  selectVisibleKeybindingCommands,
+  type DisplayCommand,
+} from '../../plugins/settings/KeybindingsTabContent';
 import { coApp } from '../../plugins/co-app';
 import { CommandRegistry } from '../../plugins/registries/CommandRegistry';
 import { useKeybindingsStore } from '../../plugins/keybindings/keybindings-store';
@@ -100,6 +105,62 @@ describe('KeybindingsTabContent — 列表', () => {
 });
 
 describe('KeybindingsTabContent — 搜索', () => {
+  it('空 query 选择可见命令时不做 query lowercase', () => {
+    const commands = [
+      {
+        cmd: {
+          id: 'a',
+          title: 'Save',
+          hotkey: 'mod+s',
+          fn: vi.fn(),
+        },
+        displayTitle: 'Save',
+        displayCategory: '',
+        effectiveHotkey: 'mod+s',
+        hotkeyParts: ['⌘', 'S'],
+        isOverridden: false,
+        searchHaystack: 'save a mod+s',
+      },
+    ] satisfies readonly DisplayCommand[];
+    const lowerSpy = vi.spyOn(String.prototype, 'toLowerCase');
+
+    try {
+      expect(selectVisibleKeybindingCommands(commands, '')).toEqual(commands);
+      expect(lowerSpy).not.toHaveBeenCalled();
+    } finally {
+      lowerSpy.mockRestore();
+    }
+  });
+
+  it('单个分组单个命令时不调用 sort', () => {
+    const commands = [
+      {
+        cmd: {
+          id: 'a',
+          title: 'Save',
+          hotkey: 'mod+s',
+          fn: vi.fn(),
+        },
+        displayTitle: 'Save',
+        displayCategory: 'Editor',
+        effectiveHotkey: 'mod+s',
+        hotkeyParts: ['⌘', 'S'],
+        isOverridden: false,
+        searchHaystack: 'save editor a mod+s',
+      },
+    ] satisfies readonly DisplayCommand[];
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      const buckets = groupByCategory(commands, '其他');
+      expect(buckets).toHaveLength(1);
+      expect(buckets[0]?.items).toEqual(commands);
+      expect(sortSpy).not.toHaveBeenCalled();
+    } finally {
+      sortSpy.mockRestore();
+    }
+  });
+
   it('query 过滤 title 大小写不敏感', () => {
     coApp.commands.register({
       id: 'a',

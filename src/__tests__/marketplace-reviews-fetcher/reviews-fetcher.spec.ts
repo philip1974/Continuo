@@ -2,6 +2,8 @@
 // 安全 S4:token + GitHub fetch 已移到 main(IPC)。renderer 只 mock
 // coApi.marketplace.fetchReviews(返 IpcResult<FetchReviewsResult>),验证 parse/aggregate
 // /cache/降级逻辑。renderer 再无 VITE_GITHUB_TOKEN / 直连 fetch。
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 const fetchReviewsMock = vi.hoisted(() => vi.fn());
@@ -98,6 +100,24 @@ describe('fetchAllReviews — 正路径', () => {
     } finally {
       reduceSpy.mockRestore();
     }
+  });
+
+  it('聚合分组 reviews 时按组计数预分配,不通过 group.reviews.push 扩容', async () => {
+    okNodes([
+      makeNode('com.foo', 5, '2026-05-05T00:00:00Z'),
+      makeNode('com.foo', 3, '2026-05-04T00:00:00Z'),
+      makeNode('com.bar', 4, '2026-05-03T00:00:00Z'),
+    ]);
+
+    const map = await fetchAllReviews();
+
+    expect(map.get('com.foo')?.reviews.map((r) => r.rating)).toEqual([5, 3]);
+    expect(map.get('com.bar')?.reviews.map((r) => r.rating)).toEqual([4]);
+    const source = readFileSync(
+      path.resolve(__dirname, '../../marketplace/reviews-fetcher.ts'),
+      'utf8',
+    );
+    expect(source).not.toContain('group.reviews.push(');
   });
 
   it('写入 reviews cache 时不通过 Object.fromEntries 泛化转换 Map', async () => {
@@ -563,5 +583,17 @@ describe('边界(E94) — reviews 缓存业务值域校验', () => {
     } finally {
       sliceSpy.mockRestore();
     }
+  });
+
+  it('E243 nodes 解析到 reviews 时预分配上限数组,不 push 扩容', async () => {
+    okNodes([
+      makeNode('com.bulk', 5, '2026-05-05T00:00:00Z'),
+      makeNode('com.bulk', 4, '2026-05-04T00:00:00Z'),
+    ]);
+
+    const r = await fetchAllReviews();
+
+    expect(r.get('com.bulk')?.count).toBe(2);
+    expect(fetchAllReviews.toString()).not.toContain('reviews.push(');
   });
 });

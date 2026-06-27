@@ -68,21 +68,23 @@ export function dismissAvailableUpdateFromList(
 ): DismissAvailableUpdateResult | null {
   let target: AvailableUpdate | null = null;
   let next: AvailableUpdate[] | null = null;
+  let count = 0;
   for (let i = 0; i < available.length; i++) {
     const update = available[i]!;
     if (update.id === id) {
       if (target === null) target = update;
       if (next === null) {
-        next = [];
+        next = new Array<AvailableUpdate>(Math.max(0, available.length - 1));
         for (let j = 0; j < i; j++) {
-          next.push(available[j]!);
+          next[count++] = available[j]!;
         }
       }
       continue;
     }
-    if (next !== null) next.push(update);
+    if (next !== null) next[count++] = update;
   }
   if (target === null || next === null) return null;
+  next.length = count;
   return { target, available: next };
 }
 
@@ -127,11 +129,13 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
       const entries = await fetchMarketplaceIndex();
       const remoteVersions = new Map<string, string>();
       const entriesById = new Map<string, MarketplaceEntry>();
-      const relevant: MarketplaceEntry[] = [];
+      const relevant = new Array<MarketplaceEntry>(entries.length);
+      let relevantCount = 0;
       for (const e of entries) {
         entriesById.set(e.id, e);
-        if (installedIds.has(e.id)) relevant.push(e);
+        if (installedIds.has(e.id)) relevant[relevantCount++] = e;
       }
+      relevant.length = relevantCount;
 
       // 只拉「已安装插件命中的 entries」的 manifest(M ≤ N);单个失败不影响其它。
       // 边界(E234):有界并发池(MAX_MANIFEST_FETCH_CONCURRENCY)钳定最大在途 fetch 数,
@@ -159,7 +163,8 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
       const dismissed = get().dismissed;
 
       // 跟本地 PluginManager 比较
-      const available: AvailableUpdate[] = [];
+      const available = new Array<AvailableUpdate>(liveInstalled.length);
+      let availableCount = 0;
       for (const item of liveInstalled) {
         const remoteV = remoteVersions.get(item.id);
         if (!remoteV) continue;
@@ -172,14 +177,15 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
         if (dismissed.get(item.id) === remoteV) continue;
         const entry = entriesById.get(item.id);
         if (!entry) continue;
-        available.push({
+        available[availableCount++] = {
           id: item.id,
           name: item.manifest.name,
           from: item.manifest.version,
           to: remoteV,
           entry,
-        });
+        };
       }
+      available.length = availableCount;
 
       // 更晚的 refresh 已开始 → 丢弃本次过期结果(由最新代际负责落库 + 清 checking)
       if (myGen !== refreshGen) return;

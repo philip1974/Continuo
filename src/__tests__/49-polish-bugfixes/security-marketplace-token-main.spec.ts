@@ -190,6 +190,7 @@ describe('E57 · marketplace reviews 外部响应边界', () => {
     const r = await fetchReviewNodes();
     expect(r.nodes).toHaveLength(2000); // 封顶,不无界累计
     expect(fetchSpy.mock.calls.length).toBeLessThanOrEqual(20); // 100/页 × 20 = 2000
+    expect(fetchReviewNodes.toString()).not.toContain('out.push(');
   });
 
   it('响应体 Content-Length 超上限 → 抛(不 json 解析)', async () => {

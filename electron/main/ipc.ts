@@ -51,19 +51,25 @@ export function filterWritableSnapshotForWindowSeq(
   seq: number,
 ): ExplorerWritablePayload {
   let ownWindows: ExplorerWritablePayload['windows'] | null = null;
+  let ownWindowCount = 0;
 
   for (let i = 0; i < writable.windows.length; i++) {
     const w = writable.windows[i]!;
     if (w.windowSeq !== seq) {
       if (ownWindows === null) {
-        ownWindows = [];
-        for (let j = 0; j < i; j++) ownWindows.push(writable.windows[j]!);
+        ownWindows = new Array<ExplorerWritablePayload['windows'][number]>(
+          writable.windows.length - 1,
+        );
+        for (let j = 0; j < i; j++) {
+          ownWindows[ownWindowCount++] = writable.windows[j]!;
+        }
       }
       continue;
     }
-    if (ownWindows !== null) ownWindows.push(w);
+    if (ownWindows !== null) ownWindows[ownWindowCount++] = w;
   }
 
+  if (ownWindows !== null) ownWindows.length = ownWindowCount;
   return ownWindows === null ? writable : { ...writable, windows: ownWindows };
 }
 
@@ -71,23 +77,29 @@ export function sanitizeExplorerReadPayload(
   payload: ExplorerPayloadV3,
 ): ExplorerPayloadV3 {
   let windows: ExplorerPayloadV3['windows'] | null = null;
+  let windowCount = 0;
 
   for (let i = 0; i < payload.windows.length; i++) {
     const w = payload.windows[i]!;
     if (w.layout == null || sanitizeReadLayout(w.layout) !== null) {
-      if (windows !== null) windows.push(w);
+      if (windows !== null) windows[windowCount++] = w;
       continue;
     }
 
     if (windows === null) {
-      windows = [];
-      for (let j = 0; j < i; j++) windows.push(payload.windows[j]!);
+      windows = new Array<ExplorerPayloadV3['windows'][number]>(
+        payload.windows.length,
+      );
+      for (let j = 0; j < i; j++) {
+        windows[windowCount++] = payload.windows[j]!;
+      }
     }
     const rest = { ...w };
     delete rest.layout; // 超大/非 JSON-safe layout → 剥离
-    windows.push(rest);
+    windows[windowCount++] = rest;
   }
 
+  if (windows !== null) windows.length = windowCount;
   return windows === null ? payload : { ...payload, windows };
 }
 

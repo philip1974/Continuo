@@ -16,6 +16,7 @@ import {
   useLayoutUiStore,
 } from '../../stores/layout-ui.store';
 import {
+  collectEditorSnapshot,
   hasEditorTabWithId,
   hydrateEditorTabs,
   initExplorerPersistence,
@@ -101,6 +102,9 @@ describe('snapshotFromStores · editor 字段', () => {
 
       expect(mapSpy).not.toHaveBeenCalled();
       expect(snap.windows[0]!.editor!.openFilePaths).toEqual(['/x.md', '/y.md']);
+      expect(collectEditorSnapshot.toString()).not.toContain(
+        'openFilePaths.push(',
+      );
       // active 是 untitled → activePath=null
       expect(snap.windows[0]!.editor!.activePath).toBeNull();
     } finally {
@@ -213,6 +217,7 @@ describe('hydrateEditorTabs', () => {
       await hydrateEditorTabs(snapWithEditor(paths, null), fs);
 
       expect(sliceSpy).not.toHaveBeenCalled();
+      expect(hydrateEditorTabs.toString()).not.toContain('paths.push(');
       expect((fs.readFile as ReturnType<typeof vi.fn>).mock.calls.length).toBe(40);
       expect(useEditorStore.getState().tabs).toHaveLength(40);
     } finally {

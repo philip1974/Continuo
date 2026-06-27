@@ -60,6 +60,15 @@ describe('CommandRegistry 数量上限集成(E236)', () => {
     ).not.toThrow();
     expect(reg.getAll()).toHaveLength(MAX_REGISTRY_ITEMS);
   });
+
+  it('getAll 构造缓存快照时按 Map size 预分配,不通过 out.push 扩容', () => {
+    const reg = new CommandRegistry();
+    reg.register({ id: 'a', title: 'A', fn: () => {} });
+    reg.register({ id: 'b', title: 'B', fn: () => {} });
+
+    expect(reg.getAll().map((x) => x.id)).toEqual(['a', 'b']);
+    expect(CommandRegistry.prototype.getAll.toString()).not.toContain('out.push(');
+  });
 });
 
 // 家族接线守卫:全 8 个 Map 型 registry 都必须调用共享 helper(防某个兄弟漏接/回归)。

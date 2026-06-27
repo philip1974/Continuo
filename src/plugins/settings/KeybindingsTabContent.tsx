@@ -63,25 +63,32 @@ export function groupByCategory(
   commands: readonly DisplayCommand[],
   defaultGroup: string,
 ): Bucket[] {
-  const map = new Map<string, DisplayCommand[]>();
+  const map = new Map<string, { items: DisplayCommand[]; count: number }>();
   for (const d of commands) {
     const key = d.displayCategory || defaultGroup;
-    let arr = map.get(key);
-    if (!arr) {
-      arr = [];
-      map.set(key, arr);
+    let bucket = map.get(key);
+    if (!bucket) {
+      bucket = { items: new Array<DisplayCommand>(commands.length), count: 0 };
+      map.set(key, bucket);
     }
-    arr.push(d);
+    bucket.items[bucket.count++] = d;
   }
-  const buckets: Bucket[] = [];
-  for (const [category, items] of map) {
-    items.sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));
-    buckets.push({
+  const buckets = new Array<Bucket>(map.size);
+  let i = 0;
+  for (const [category, bucket] of map) {
+    bucket.items.length = bucket.count;
+    const items = bucket.items;
+    if (bucket.count > 1) {
+      items.sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));
+    }
+    buckets[i++] = {
       category,
       items,
-    });
+    };
   }
-  buckets.sort((a, b) => a.category.localeCompare(b.category));
+  if (buckets.length > 1) {
+    buckets.sort((a, b) => a.category.localeCompare(b.category));
+  }
   return buckets;
 }
 
@@ -94,16 +101,18 @@ export function selectVisibleKeybindingCommands(
   commands: readonly DisplayCommand[],
   query: string,
 ): DisplayCommand[] {
-  const qLower = query.toLowerCase();
   const hasQuery = query.length > 0;
-  const selected: DisplayCommand[] = [];
+  const qLower = hasQuery ? query.toLowerCase() : '';
+  const selected = new Array<DisplayCommand>(commands.length);
+  let count = 0;
 
   for (const d of commands) {
     if (!d.cmd.hotkey && !d.isOverridden) continue;
     if (hasQuery && !matches(d, qLower)) continue;
-    selected.push(d);
+    selected[count++] = d;
   }
 
+  selected.length = count;
   return selected;
 }
 

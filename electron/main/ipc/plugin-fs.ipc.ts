@@ -43,9 +43,10 @@ export function cancelScopeRequestsForWebContents(webContentsId: number): number
 export function copyScopesForPersistence(
   scopes: readonly { path: string; mode: 'r' | 'rw' }[],
 ): PathScope[] {
-  const out: PathScope[] = [];
-  for (const scope of scopes) {
-    out.push({ path: scope.path, mode: scope.mode });
+  const out = new Array<PathScope>(scopes.length);
+  for (let i = 0; i < scopes.length; i++) {
+    const scope = scopes[i]!;
+    out[i] = { path: scope.path, mode: scope.mode };
   }
   return out;
 }

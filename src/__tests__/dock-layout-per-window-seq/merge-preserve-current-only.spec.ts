@@ -90,6 +90,7 @@ describe('mergeWritableIntoFull current-window-only preservation', () => {
       const merged = mergeWritableIntoFull(current, writablePayload);
 
       expect(mapSpy).not.toHaveBeenCalled();
+      expect(mergeWritableIntoFull.toString()).not.toContain('merged.push(');
       expect(merged.windows.find((w) => w.windowSeq === 1)).toMatchObject({
         workspace: { root: '/renderer-one' },
       });

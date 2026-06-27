@@ -41,11 +41,14 @@ function appendCappedNotification(
     }
   }
 
-  const next: Notification[] = [];
+  const keptCount = prev.length - dropCount;
+  const next = new Array<Notification>(keptCount + 1);
+  let nextCount = 0;
   for (let i = dropCount; i < prev.length; i++) {
-    next.push(prev[i]!);
+    next[nextCount] = prev[i]!;
+    nextCount += 1;
   }
-  next.push(notification);
+  next[nextCount] = notification;
   return next;
 }
 
@@ -54,17 +57,25 @@ function removeNotificationById(
   id: string,
 ): readonly Notification[] {
   let next: Notification[] | null = null;
+  let nextCount = 0;
   for (let i = 0; i < notifications.length; i++) {
     const notification = notifications[i]!;
     if (notification.id === id) {
       if (next === null) {
-        next = [];
-        for (let j = 0; j < i; j++) next.push(notifications[j]!);
+        next = new Array<Notification>(notifications.length - 1);
+        for (let j = 0; j < i; j++) {
+          next[j] = notifications[j]!;
+        }
+        nextCount = i;
       }
       continue;
     }
-    if (next !== null) next.push(notification);
+    if (next !== null) {
+      next[nextCount] = notification;
+      nextCount += 1;
+    }
   }
+  if (next !== null) next.length = nextCount;
   return next ?? notifications;
 }
 
@@ -74,17 +85,24 @@ function updateNotificationCreatedAt(
   createdAt: number,
 ): readonly Notification[] {
   let next: Notification[] | null = null;
+  let nextCount = 0;
   for (let i = 0; i < notifications.length; i++) {
     const notification = notifications[i]!;
     let current = notification;
     if (notification.id === id) {
       if (next === null) {
-        next = [];
-        for (let j = 0; j < i; j++) next.push(notifications[j]!);
+        next = new Array<Notification>(notifications.length);
+        for (let j = 0; j < i; j++) {
+          next[j] = notifications[j]!;
+        }
+        nextCount = i;
       }
       current = { ...notification, createdAt };
     }
-    if (next !== null) next.push(current);
+    if (next !== null) {
+      next[nextCount] = current;
+      nextCount += 1;
+    }
   }
   return next ?? notifications;
 }

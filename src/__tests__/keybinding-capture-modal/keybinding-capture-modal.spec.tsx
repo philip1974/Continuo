@@ -323,6 +323,9 @@ describe('KeybindingCaptureModal — 冲突检测', () => {
       const filterCallsDuringSelect = filterSpy.mock.calls.length;
       expect(conflicts.map((c) => c.id)).toEqual(['cmd.b', 'cmd.c']);
       expect(filterCallsDuringSelect).toBe(0);
+      expect(selectKeybindingConflicts.toString()).not.toContain(
+        'conflicts.push(',
+      );
     } finally {
       filterSpy.mockRestore();
     }
@@ -406,6 +409,13 @@ describe('eventToCombo — E145 拒非法 hotkey 形态', () => {
 
   it('合法 ctrl+x → "mod+x"(jsdom other:ctrl→mod)', () => {
     expect(eventToCombo(ev({ key: 'x', ctrlKey: true }))).toBe('mod+x');
+  });
+
+  it('组合片段使用固定上限数组,不通过 parts.push 扩容', () => {
+    expect(eventToCombo(ev({ key: 'x', ctrlKey: true, shiftKey: true }))).toBe(
+      'mod+shift+x',
+    );
+    expect(eventToCombo.toString()).not.toContain('parts.push(');
   });
 
   it('纯修饰键 → null(不算完整组合)', () => {

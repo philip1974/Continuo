@@ -113,22 +113,35 @@ interface SearchBucket {
 export function groupSearchResults(
   items: readonly SettingItemSpec[],
 ): readonly SearchBucket[] {
-  const map = new Map<string, SettingItemSpec[]>();
-  for (const spec of items) {
-    let arr = map.get(spec.category);
-    if (!arr) {
-      arr = [];
-      map.set(spec.category, arr);
-    }
-    arr.push(spec);
+  if (items.length === 1) {
+    const item = items[0]!;
+    return [
+      {
+        category: item.category,
+        label: tWithFallback(CATEGORY_TITLE_KEYS[item.category], item.category),
+        items,
+      },
+    ];
   }
-  const buckets: SearchBucket[] = [];
-  for (const [category, bucketItems] of map) {
-    buckets.push({
+
+  const map = new Map<string, { items: SettingItemSpec[]; count: number }>();
+  for (const spec of items) {
+    let bucket = map.get(spec.category);
+    if (!bucket) {
+      bucket = { items: new Array<SettingItemSpec>(items.length), count: 0 };
+      map.set(spec.category, bucket);
+    }
+    bucket.items[bucket.count++] = spec;
+  }
+  const buckets = new Array<SearchBucket>(map.size);
+  let i = 0;
+  for (const [category, bucket] of map) {
+    bucket.items.length = bucket.count;
+    buckets[i++] = {
       category,
       label: tWithFallback(CATEGORY_TITLE_KEYS[category], category),
-      items: bucketItems,
-    });
+      items: bucket.items,
+    };
   }
   return buckets;
 }
@@ -138,10 +151,12 @@ export function selectMatchedSettingItems(
   trimmed: string,
 ): readonly SettingItemSpec[] {
   const ql = trimmed.toLowerCase();
-  const matched: SettingItemSpec[] = [];
+  const matched = new Array<SettingItemSpec>(searchable.length);
+  let count = 0;
   for (const s of searchable) {
-    if (s.haystack.includes(ql)) matched.push(s.item);
+    if (s.haystack.includes(ql)) matched[count++] = s.item;
   }
+  matched.length = count;
   return matched;
 }
 

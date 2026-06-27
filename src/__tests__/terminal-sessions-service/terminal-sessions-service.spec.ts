@@ -168,6 +168,7 @@ describe('getAll', () => {
       expect(ownerB).not.toBe(ownerA);
       expect(ownerB.map((s) => s.id)).toEqual(['a', 'c']);
       expect(arrayFromSpy).not.toHaveBeenCalled();
+      expect(terminalSessions.getAll.toString()).not.toContain('out.push(');
     } finally {
       arrayFromSpy.mockRestore();
     }
@@ -213,6 +214,7 @@ describe('removeByOwner', () => {
     const removed = removeByOwner(11);
     expect([...removed].sort()).toEqual(['a', 'c']);
     expect(getAll().map((s) => s.id)).toEqual(['b']);
+    expect(removeByOwner.toString()).not.toContain('removed.push(');
   });
 
   it('无匹配 → 返回 [],不触发 subscribers', () => {

@@ -37,26 +37,44 @@ interface Bucket {
 
 /** 按 spec.group 分组,保留 priority 顺序. group 出现顺序由首项决定. */
 export function groupItems(items: readonly SettingItemSpec[]): Bucket[] {
+  if (items.length === 0) return [];
+  if (items.length === 1) {
+    const spec = items[0]!;
+    return [
+      {
+        group: spec.group,
+        groupKey: spec.groupKey,
+        items,
+      },
+    ];
+  }
+
   const map = new Map<
     string | undefined,
-    { groupKey: string | undefined; items: SettingItemSpec[] }
+    { groupKey: string | undefined; items: SettingItemSpec[]; count: number }
   >();
   for (const spec of items) {
     const key = spec.group;
     let entry = map.get(key);
     if (!entry) {
-      entry = { groupKey: spec.groupKey, items: [] };
+      entry = {
+        groupKey: spec.groupKey,
+        items: new Array<SettingItemSpec>(items.length),
+        count: 0,
+      };
       map.set(key, entry);
     }
-    entry.items.push(spec);
+    entry.items[entry.count++] = spec;
   }
-  const buckets: Bucket[] = [];
+  const buckets = new Array<Bucket>(map.size);
+  let i = 0;
   for (const [group, entry] of map) {
-    buckets.push({
+    entry.items.length = entry.count;
+    buckets[i++] = {
       group,
       groupKey: entry.groupKey,
       items: entry.items,
-    });
+    };
   }
   return buckets;
 }

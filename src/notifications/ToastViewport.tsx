@@ -13,9 +13,11 @@ function selectVisibleNotifications<T>(
   notifications: readonly T[],
 ): readonly T[] {
   const start = Math.max(0, notifications.length - VISIBLE_LIMIT);
-  const visible: T[] = [];
+  const visible = new Array<T>(notifications.length - start);
+  let visibleCount = 0;
   for (let i = start; i < notifications.length; i++) {
-    visible.push(notifications[i]!);
+    visible[visibleCount] = notifications[i]!;
+    visibleCount += 1;
   }
   return visible;
 }

@@ -126,10 +126,12 @@ export function pruneLRUClosed(
   if (!Number.isFinite(maxClosed)) return;
   if (payload.windows.length <= maxClosed) return;
 
-  const closed: WindowEntryV3[] = [];
+  const closed = new Array<WindowEntryV3>(payload.windows.length);
+  let closedCount = 0;
   for (const w of payload.windows) {
-    if (!activeSeqs.has(w.windowSeq)) closed.push(w);
+    if (!activeSeqs.has(w.windowSeq)) closed[closedCount++] = w;
   }
+  closed.length = closedCount;
   closed.sort((a, b) => (a.lastClosedAt ?? 0) - (b.lastClosedAt ?? 0));
 
   const toRemove = payload.windows.length - maxClosed;
@@ -138,10 +140,12 @@ export function pruneLRUClosed(
   for (let i = 0; i < Math.min(toRemove, closed.length); i++) {
     removeSet.add(closed[i]!.windowSeq);
   }
-  const kept: WindowEntryV3[] = [];
+  const kept = new Array<WindowEntryV3>(payload.windows.length - removeSet.size);
+  let keptCount = 0;
   for (const w of payload.windows) {
-    if (!removeSet.has(w.windowSeq)) kept.push(w);
+    if (!removeSet.has(w.windowSeq)) kept[keptCount++] = w;
   }
+  kept.length = keptCount;
   payload.windows = kept;
 }
 
@@ -155,25 +159,30 @@ export function mergeWritableIntoFull(
   >();
   for (const w of writable.windows) writableBySeq.set(w.windowSeq, w);
 
-  const merged: WindowEntryV3[] = [];
-  for (const cur of current?.windows ?? []) {
+  const currentWindows = current?.windows ?? [];
+  const merged = new Array<WindowEntryV3>(
+    currentWindows.length + writableBySeq.size,
+  );
+  let mergedCount = 0;
+  for (const cur of currentWindows) {
     const w = writableBySeq.get(cur.windowSeq);
     if (w) {
-      merged.push({
+      merged[mergedCount++] = {
         ...w,
         ...(cur.layout !== undefined ? { layout: cur.layout } : {}),
         ...(cur.lastClosedAt !== undefined
           ? { lastClosedAt: cur.lastClosedAt }
           : {}),
-      });
+      };
       writableBySeq.delete(cur.windowSeq);
     } else {
-      merged.push(cur);
+      merged[mergedCount++] = cur;
     }
   }
   for (const w of writableBySeq.values()) {
-    merged.push(w as WindowEntryV3);
+    merged[mergedCount++] = w as WindowEntryV3;
   }
+  merged.length = mergedCount;
 
   // nextWindowSeq 是 main 独占的单调计数器(allocateWindowSeq 在 file-mutex 内
   // 自增)。renderer 的 writable 携带的是 hydrate 时读到的旧值,直接 ...writable
@@ -271,6 +280,7 @@ async function readExplorerCapped(filePath: string): Promise<string | null> {
 export function dedupeWindowsBySeq(payload: ExplorerPayloadV3): ExplorerPayloadV3 {
   const seen = new Set<number>();
   let deduped: WindowEntryV3[] | null = null;
+  let dedupedCount = 0;
   let dropped = 0;
 
   for (let i = 0; i < payload.windows.length; i++) {
@@ -278,16 +288,19 @@ export function dedupeWindowsBySeq(payload: ExplorerPayloadV3): ExplorerPayloadV
     if (seen.has(w.windowSeq)) {
       dropped++;
       if (deduped === null) {
-        deduped = [];
-        for (let j = 0; j < i; j++) deduped.push(payload.windows[j]!);
+        deduped = new Array<WindowEntryV3>(payload.windows.length - 1);
+        for (let j = 0; j < i; j++) {
+          deduped[dedupedCount++] = payload.windows[j]!;
+        }
       }
       continue;
     }
     seen.add(w.windowSeq);
-    if (deduped !== null) deduped.push(w);
+    if (deduped !== null) deduped[dedupedCount++] = w;
   }
 
   if (deduped === null) return payload;
+  deduped.length = dedupedCount;
   console.warn(
     `[explorer] dropped ${dropped} window segment(s) with duplicate windowSeq`,
   );

@@ -93,22 +93,37 @@ export function filterByOwnerWindow(
   currentWindowId: number,
   opts: FilterDropOpts = {},
 ): readonly TerminalSession[] {
-  const result: TerminalSession[] = [];
+  if (sessions.length === 0) return sessions as readonly TerminalSession[];
+
+  let result: TerminalSession[] | undefined;
+  const ensureResult = (prefixLength: number): TerminalSession[] => {
+    if (result === undefined) {
+      result = new Array<TerminalSession>(
+        Math.min(sessions.length, MAX_TERMINAL_SESSIONS_GLOBAL),
+      );
+      for (let i = 0; i < prefixLength; i++) {
+        result[i] = sessions[i] as TerminalSession;
+      }
+    }
+    return result;
+  };
+  let count = 0;
   // 边界(E292,E167/E174 同款 IPC-ingress 纵深防御 / 数量维度):main 已按 MAX_TERMINAL_SESSIONS_GLOBAL
   // 双闸(E235)封顶真实会话数,但 renderer 此前对 sessions_changed / listSessions 推来的数组**长度**无
   // 上限 —— 有 bug / 被篡改的 main 推超大数组时,本 for 循环 O(n) 全量遍历 + 入 store + 渲染 n 个 tab,
   // 拖垮 renderer。超 MAX_TERMINAL_SESSIONS_GLOBAL 的超额项一律丢弃(只可能来自异常 main;正常全局 ≤256
   // 必在前 256 内,不丢任何合法会话)。
-  let processed = 0;
-  for (const s of sessions) {
+  for (let i = 0; i < sessions.length; i++) {
     // 一次性发 over-capacity 信号并 break —— 不再遍历病态超大数组余项(全局合法 ≤256 必在前 256 内,
     // 故 break 不丢任何合法会话;只有异常 main 推超额项会触发)。
-    if (processed >= MAX_TERMINAL_SESSIONS_GLOBAL) {
+    if (i >= MAX_TERMINAL_SESSIONS_GLOBAL) {
+      ensureResult(count);
       opts.onDrop?.(undefined, 'over-capacity');
       break;
     }
-    processed += 1;
+    const s = sessions[i];
     if (!s || typeof s !== 'object') {
+      ensureResult(count);
       opts.onDrop?.(undefined, 'not-object');
       continue;
     }
@@ -116,20 +131,27 @@ export function filterByOwnerWindow(
     const sessionId = typeof obj.id === 'string' ? obj.id : undefined;
     // owner 检查先行,保留 missing-owner / wrong-owner 的细分 drop reason。
     if (typeof obj.ownerWindowId !== 'number') {
+      ensureResult(count);
       opts.onDrop?.(sessionId, 'missing-owner');
       continue;
     }
     if (obj.ownerWindowId !== currentWindowId) {
+      ensureResult(count);
       opts.onDrop?.(sessionId, 'wrong-owner');
       continue;
     }
     if (!isTerminalSessionShape(obj)) {
+      ensureResult(count);
       opts.onDrop?.(sessionId, 'shape-invalid');
       continue;
     }
-    result.push(obj);
+    if (result !== undefined) result[count] = obj;
+    count += 1;
   }
-  return result;
+  const out = result;
+  if (out === undefined) return sessions as readonly TerminalSession[];
+  out.length = count;
+  return out;
 }
 
 /**
@@ -143,15 +165,29 @@ export function filterByWorkspaceRoot(
   sessions: readonly TerminalSession[],
   currentRoot: string | null,
 ): readonly TerminalSession[] {
-  const visible: TerminalSession[] = [];
-  for (const s of sessions) {
-    if (
+  if (sessions.length === 0) return sessions;
+
+  let visible: TerminalSession[] | null = null;
+  let count = 0;
+  for (let i = 0; i < sessions.length; i++) {
+    const s = sessions[i]!;
+    const isVisible =
       s.workspaceRoot === undefined ||
-      (currentRoot !== null && pathEquals(s.workspaceRoot, currentRoot))
-    ) {
-      visible.push(s);
+      (currentRoot !== null && pathEquals(s.workspaceRoot, currentRoot));
+    if (isVisible) {
+      if (visible !== null) visible[count] = s;
+      count += 1;
+      continue;
+    }
+    if (visible === null) {
+      visible = new Array<TerminalSession>(sessions.length);
+      for (let j = 0; j < count; j++) {
+        visible[j] = sessions[j]!;
+      }
     }
   }
+  if (visible === null) return sessions;
+  visible.length = count;
   return visible;
 }
 
@@ -216,21 +252,30 @@ export function nextActiveAfterClose(
   let found = false;
   let prev: TerminalSession | null = null;
   let next: TerminalSession | null = null;
-  const remaining: TerminalSession[] = [];
+  let remaining: TerminalSession[] | null = null;
+  let count = 0;
 
   for (const session of sessions) {
     if (session.id === closingId) {
+      remaining = new Array<TerminalSession>(Math.max(0, sessions.length - 1));
+      count = 0;
+      for (const kept of sessions) {
+        if (kept.id === closingId) break;
+        remaining[count++] = kept;
+      }
       found = true;
       continue;
     }
     if (found && next === null) next = session;
-    remaining.push(session);
+    if (remaining !== null) remaining[count++] = session;
     if (!found) prev = session;
   }
 
   if (!found) {
     return { sessions, activeId };
   }
+  if (remaining === null) return { sessions, activeId };
+  remaining.length = count;
   if (remaining.length === 0) return { sessions: remaining, activeId: null };
   if (closingId !== activeId) return { sessions: remaining, activeId };
   return { sessions: remaining, activeId: next?.id ?? prev?.id ?? null };
@@ -312,10 +357,17 @@ export const useTerminalStore = create<TerminalState>((set) => ({
           (titles as Map<string, string>).delete(id);
         }
       }
+      if (
+        applied.sessions === s.sessions &&
+        applied.activeId === s.activeId &&
+        titles === s.customTitles
+      ) {
+        return s;
+      }
       return { ...applied, customTitles: titles };
     }),
 
-  setActive: (id) => set(() => ({ activeId: id })),
+  setActive: (id) => set((s) => (s.activeId === id ? s : { activeId: id })),
 
   renameSession: (id, title) =>
     set((s) => {
@@ -324,6 +376,9 @@ export const useTerminalStore = create<TerminalState>((set) => ({
       // DockReconciler/Dock tab title 反复渲染,绕过主进程 512 边界致 UI 卡顿/内存膨胀。截断而非拒绝:
       // 保留用户重命名意图,只钳长度(空串仍走 delete 分支恢复默认标题)。
       const trimmed = title.trim().slice(0, LABEL_MAX);
+      const current = s.customTitles.get(id);
+      if (trimmed.length === 0 && current === undefined) return s;
+      if (trimmed.length > 0 && current === trimmed) return s;
       const next = new Map(s.customTitles);
       if (trimmed.length === 0) {
         next.delete(id);

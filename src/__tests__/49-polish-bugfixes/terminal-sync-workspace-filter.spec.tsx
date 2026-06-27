@@ -76,6 +76,22 @@ describe('topic49 codex-loop R12 · terminal 按 workspace 过滤', () => {
     expect(filterByWorkspaceRoot(sessions, null).map((s) => s.id)).toEqual(['g']);
   });
 
+  it('filterByWorkspaceRoot 空输入返回原引用,避免空数组分配', () => {
+    const sessions: readonly TerminalSession[] = [];
+
+    expect(filterByWorkspaceRoot(sessions, '/proj-a')).toBe(sessions);
+    expect(filterByWorkspaceRoot(sessions, null)).toBe(sessions);
+  });
+
+  it('filterByWorkspaceRoot 全部可见时返回原引用,避免无意义数组分配', () => {
+    const sessions = [session('a', '/proj-a'), session('g')];
+
+    expect(filterByWorkspaceRoot(sessions, '/proj-a')).toBe(sessions);
+    expect(filterByWorkspaceRoot.toString()).not.toContain(
+      'const visible = new Array',
+    );
+  });
+
   it('filterByWorkspaceRoot 单次循环构建可见列表,不调用 sessions.filter', () => {
     const sessions = [session('a', '/proj-a'), session('b', '/proj-b'), session('g')];
     const filterSpy = vi.spyOn(sessions, 'filter');
@@ -86,6 +102,7 @@ describe('topic49 codex-loop R12 · terminal 按 workspace 过滤', () => {
         'g',
       ]);
       expect(filterSpy).not.toHaveBeenCalled();
+      expect(filterByWorkspaceRoot.toString()).not.toContain('visible.push(');
     } finally {
       filterSpy.mockRestore();
     }

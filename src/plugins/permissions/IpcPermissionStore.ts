@@ -85,24 +85,32 @@ function parsePathScope(value: unknown): PathScope | null {
 
 function parseDecisionList(value: unknown): PermissionDecision[] {
   if (!Array.isArray(value)) return [];
-  const out: PermissionDecision[] = [];
+  const out = new Array<PermissionDecision>(
+    Math.min(value.length, MAX_DECISIONS_PER_PLUGIN),
+  );
+  let outCount = 0;
   for (const item of value) {
-    if (out.length >= MAX_DECISIONS_PER_PLUGIN) break; // 边界(E245):数量上限早停
+    if (outCount >= MAX_DECISIONS_PER_PLUGIN) break; // 边界(E245):数量上限早停
     const parsed = parseDecision(item);
-    if (parsed) out.push(parsed);
+    if (parsed) out[outCount++] = parsed;
   }
+  out.length = outCount;
   return out;
 }
 
 function parsePathScopes(value: unknown): PathScope[] | undefined {
   if (value === undefined) return undefined;
   if (!Array.isArray(value)) return [];
-  const out: PathScope[] = [];
+  const out = new Array<PathScope>(
+    Math.min(value.length, MAX_PATH_SCOPES_PER_PLUGIN),
+  );
+  let outCount = 0;
   for (const item of value) {
-    if (out.length >= MAX_PATH_SCOPES_PER_PLUGIN) break; // 边界(E245):数量上限早停
+    if (outCount >= MAX_PATH_SCOPES_PER_PLUGIN) break; // 边界(E245):数量上限早停
     const parsed = parsePathScope(item);
-    if (parsed) out.push(parsed);
+    if (parsed) out[outCount++] = parsed;
   }
+  out.length = outCount;
   return out;
 }
 

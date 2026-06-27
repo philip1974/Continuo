@@ -253,6 +253,27 @@ describe('StatusBar — 插件 statusBar items', () => {
     }
   });
 
+  it('分左右侧时不在已知长度快照上追加数组', () => {
+    expect(splitStatusItemsBySide.toString()).not.toContain('left.push(');
+    expect(splitStatusItemsBySide.toString()).not.toContain('right.push(');
+  });
+
+  it('空/单项分侧走快路径,避免预分配两组数组', () => {
+    const empty = splitStatusItemsBySide([]);
+    const leftItem = { id: 'left', side: 'left' as const, render: () => null };
+    const leftItems = [leftItem];
+    const rightItem = {
+      id: 'right',
+      side: 'right' as const,
+      render: () => null,
+    };
+    const rightItems = [rightItem];
+
+    expect(empty.left).toBe(empty.right);
+    expect(splitStatusItemsBySide(leftItems).left).toBe(leftItems);
+    expect(splitStatusItemsBySide(rightItems).right).toBe(rightItems);
+  });
+
   it('左侧 item render → 出现在左半', () => {
     installApi({});
     coApp.statusBar.register({

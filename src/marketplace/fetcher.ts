@@ -42,12 +42,14 @@ export function selectValidMarketplaceEntries(
   entries: readonly unknown[],
   maxEntries: number = entries.length,
 ): MarketplaceEntry[] {
-  const out: MarketplaceEntry[] = [];
   const count = Math.min(entries.length, maxEntries);
+  const out = new Array<MarketplaceEntry>(count);
+  let outCount = 0;
   for (let i = 0; i < count; i++) {
     const entry = entries[i];
-    if (isValidMarketplaceEntry(entry)) out.push(entry);
+    if (isValidMarketplaceEntry(entry)) out[outCount++] = entry;
   }
+  out.length = outCount;
   return out;
 }
 

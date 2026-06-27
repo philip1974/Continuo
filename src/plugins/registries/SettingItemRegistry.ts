@@ -306,9 +306,12 @@ export class SettingItemRegistry {
   getAll(): readonly SettingItemSpec[] {
     if (this.cachedAll !== null) return this.cachedAll;
 
-    const items: SettingItemSpec[] = [];
-    for (const item of this.items.values()) items.push(item);
-    items.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
+    const items = new Array<SettingItemSpec>(this.items.size);
+    let i = 0;
+    for (const item of this.items.values()) items[i++] = item;
+    if (items.length > 1) {
+      items.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
+    }
     this.cachedAll = items;
     return items;
   }
@@ -331,13 +334,17 @@ export class SettingItemRegistry {
     // 先过滤再排序(打磨 R5):原先 getAll() 对全部 category 的 items 排序后才
     // 过滤,每个设置 tab 都为无关 category 付排序成本。filter 在前,只排本
     // category 的子集;Array.prototype.sort 稳定,输出与原契约完全一致。
-    const items: SettingItemSpec[] = [];
+    const items = new Array<SettingItemSpec>(this.items.size);
+    let count = 0;
     for (const item of this.items.values()) {
       if (item.category === category) {
-        items.push(item);
+        items[count++] = item;
       }
     }
-    items.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
+    items.length = count;
+    if (count > 1) {
+      items.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
+    }
     this.cachedByCategory.set(category, items);
     return items;
   }

@@ -257,6 +257,9 @@ describe('useUpdateStore.refresh', () => {
     } finally {
       mapSpy.mockRestore();
     }
+    expect(useUpdateStore.getState().refresh.toString()).not.toContain(
+      'available.push(',
+    );
     expect(useUpdateStore.getState().available.map((u) => u.id)).toEqual(['a']);
   });
 
@@ -276,6 +279,9 @@ describe('useUpdateStore.refresh', () => {
     } finally {
       filterSpy.mockRestore();
     }
+    expect(useUpdateStore.getState().refresh.toString()).not.toContain(
+      'relevant.push(',
+    );
     expect(useUpdateStore.getState().available.map((u) => u.id)).toEqual(['b']);
   });
 

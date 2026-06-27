@@ -130,6 +130,30 @@ describe('打磨 R41 — review 仅在展开时排序渲染', () => {
     expect(container.textContent).not.toContain('review-09');
   });
 
+  it('有用排序维护短窗口时不通过 push/splice/pop 调整数组', () => {
+    const reviews = Array.from({ length: 20 }, (_, i) =>
+      review(`review-${String(i).padStart(2, '0')}`, i),
+    );
+
+    const visible = selectDisplayReviews(reviews, 'helpful', 10);
+
+    expect(visible.map((r) => r.body)).toEqual([
+      'review-19',
+      'review-18',
+      'review-17',
+      'review-16',
+      'review-15',
+      'review-14',
+      'review-13',
+      'review-12',
+      'review-11',
+      'review-10',
+    ]);
+    expect(selectDisplayReviews.toString()).not.toContain('top.push(');
+    expect(selectDisplayReviews.toString()).not.toContain('top.splice(');
+    expect(selectDisplayReviews.toString()).not.toContain('top.pop(');
+  });
+
   it('newest 排序只拷贝可见前 N 条,不通过 slice 分配中间数组', () => {
     const reviews = Array.from({ length: 20 }, (_, i) => review(`review-${i}`));
     const sliceSpy = vi.spyOn(Array.prototype, 'slice');
@@ -150,6 +174,7 @@ describe('打磨 R41 — review 仅在展开时排序渲染', () => {
         'review-9',
       ]);
       expect(sliceSpy).not.toHaveBeenCalled();
+      expect(selectDisplayReviews.toString()).not.toContain('visible.push(');
     } finally {
       sliceSpy.mockRestore();
     }

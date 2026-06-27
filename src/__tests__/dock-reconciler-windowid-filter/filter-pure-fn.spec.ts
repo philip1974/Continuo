@@ -8,7 +8,9 @@ import { makeSession } from './fixtures';
 
 describe('dock-reconciler-windowid-filter: filterByOwnerWindow pure fn', () => {
   it('T1 空数组 -> 空', () => {
-    expect(filterByOwnerWindow([], 1)).toEqual([]);
+    const sessions: readonly unknown[] = [];
+
+    expect(filterByOwnerWindow(sessions, 1)).toBe(sessions);
   });
 
   it('T2 [A:o1] wid=1 -> [A]', () => {
@@ -149,6 +151,7 @@ describe('dock-reconciler-windowid-filter: filterByOwnerWindow pure fn', () => {
     const r = filterByOwnerWindow(many, 1, { onDrop });
     // neutralize 敏感:去计数闸则全 306 个返回,此断言失败。
     expect(r.length).toBe(MAX_TERMINAL_SESSIONS_GLOBAL);
+    expect(filterByOwnerWindow.toString()).not.toContain('result.push(');
     expect(onDrop).toHaveBeenCalledWith(undefined, 'over-capacity');
   });
 

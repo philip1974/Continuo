@@ -8,8 +8,11 @@ describe('dock-reconciler-windowid-filter: single-window noop', () => {
     const b = makeSession('B');
     const sessions = [a, b] as const;
     const filtered = filterByOwnerWindow(sessions, 1);
-    expect(filtered).toEqual(sessions);
+    expect(filtered).toBe(sessions);
     expect(filtered[0]).toBe(a);
     expect(filtered[1]).toBe(b);
+    expect(filterByOwnerWindow.toString()).not.toContain(
+      'const result = new Array',
+    );
   });
 });

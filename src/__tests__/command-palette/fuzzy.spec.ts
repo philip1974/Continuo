@@ -48,6 +48,17 @@ describe('fuzzyScore', () => {
     const split = fuzzyScore('sa', 'space')!;
     expect(consecutive).toBeGreaterThan(split);
   });
+
+  it('词边界判断不通过 RegExp.test 热路径调用', () => {
+    const testSpy = vi.spyOn(RegExp.prototype, 'test');
+
+    try {
+      expect(fuzzyScore('sf', 'save file')).not.toBeNull();
+      expect(testSpy).not.toHaveBeenCalled();
+    } finally {
+      testSpy.mockRestore();
+    }
+  });
 });
 
 describe('fuzzyFilter', () => {
@@ -66,6 +77,7 @@ describe('fuzzyFilter', () => {
     const items = [{ id: 'a' }, { id: 'b' }];
     const r = fuzzyFilter(items, '', (i) => i.id);
     expect(r).toEqual(items);
+    expect(r).toBe(items);
   });
 
   it('匹配结果输出不通过 scored.map 二次物化', () => {
@@ -81,8 +93,28 @@ describe('fuzzyFilter', () => {
       const mapCallsDuringFilter = mapSpy.mock.calls.length;
       expect(r.map((x) => x.id)).toEqual(['a', 'b']);
       expect(mapCallsDuringFilter).toBe(0);
+      expect(fuzzyFilter.toString()).not.toContain('scored.push(');
+      expect(fuzzyFilter.toString()).not.toContain('item, score');
     } finally {
       mapSpy.mockRestore();
+    }
+  });
+
+  it('匹配结果少于两项时不调用 sort', () => {
+    const items = [
+      { id: 'a', name: 'save file' },
+      { id: 'b', name: 'open folder' },
+    ];
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      expect(fuzzyFilter(items, 'save', (i) => i.name).map((x) => x.id)).toEqual([
+        'a',
+      ]);
+      expect(fuzzyFilter(items, 'zzzz', (i) => i.name)).toEqual([]);
+      expect(sortSpy).not.toHaveBeenCalled();
+    } finally {
+      sortSpy.mockRestore();
     }
   });
 });

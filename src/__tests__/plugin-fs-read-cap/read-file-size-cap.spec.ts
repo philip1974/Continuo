@@ -13,6 +13,7 @@ import {
   readFile,
   access,
 } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -151,6 +152,14 @@ describe('E30 · plugin-fs:list-dir 条目数硬上限', () => {
       tmpCanonical,
     )) as { name: string }[];
     expect(entries.map((e) => e.name).sort()).toEqual(['a.txt', 'b.txt']);
+  });
+
+  it('源码守卫:热路径单项追加不通过 out.push 调用', () => {
+    const source = readFileSync(
+      join(process.cwd(), 'electron/main/services/plugin-fs.service.ts'),
+      'utf8',
+    );
+    expect(source).not.toContain('out.push({');
   });
 
   it('条目数超硬上限 → 抛 FS_DIR_TOO_LARGE(惰性迭代,不静默截断)', async () => {

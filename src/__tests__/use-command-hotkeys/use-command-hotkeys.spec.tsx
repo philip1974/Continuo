@@ -3,7 +3,10 @@
 // 该平台下 'mod' = ctrlKey,故用 ctrlKey 事件触发 mod+* 命令(验证 hook 接线,非平台细节)。
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { renderHook, act, cleanup } from '@testing-library/react';
-import { useCommandHotkeys } from '../../plugins/command-palette/useCommandHotkeys';
+import {
+  buildCompiledBindings,
+  useCommandHotkeys,
+} from '../../plugins/command-palette/useCommandHotkeys';
 import { CommandRegistry } from '../../plugins/registries/CommandRegistry';
 import { useKeybindingsStore } from '../../plugins/keybindings/keybindings-store';
 
@@ -43,6 +46,37 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('useCommandHotkeys — 命中', () => {
+  it('没有有效 hotkey 时复用空预编译表,避免空数组分配', () => {
+    const empty = buildCompiledBindings([], 'other');
+    const noHotkey = buildCompiledBindings(
+      [{ id: 'a', title: 'A', fn: vi.fn() }],
+      'other',
+    );
+    const explicitUnbind = buildCompiledBindings(
+      [{ id: 'b', title: 'B', hotkey: '', fn: vi.fn() }],
+      'other',
+    );
+
+    expect(noHotkey).toBe(empty);
+    expect(explicitUnbind).toBe(empty);
+  });
+
+  it('没有有效 hotkey 时不注册全局 keydown listener', () => {
+    const reg = new CommandRegistry();
+    reg.register({ id: 'a', title: 'A', fn: vi.fn() });
+    const addSpy = vi.spyOn(document, 'addEventListener');
+
+    try {
+      renderHook(() => useCommandHotkeys(reg));
+      const keydownAdds = addSpy.mock.calls.filter(
+        ([type]) => type === 'keydown',
+      );
+      expect(keydownAdds).toHaveLength(0);
+    } finally {
+      addSpy.mockRestore();
+    }
+  });
+
   it('matches hotkey → 调 fn + preventDefault + stopPropagation', () => {
     const fn = vi.fn();
     const reg = new CommandRegistry();
@@ -65,6 +99,21 @@ describe('useCommandHotkeys — 命中', () => {
     document.dispatchEvent(event);
     expect(fn).not.toHaveBeenCalled();
     expect(preventDefault).not.toHaveBeenCalled();
+  });
+
+  it('一次 keydown 只归一化事件 key 一次,不按绑定数重复 lowercase', () => {
+    const reg = new CommandRegistry();
+    reg.register({ id: 'a', title: 'A', hotkey: 'mod+s', fn: vi.fn() });
+    reg.register({ id: 'b', title: 'B', hotkey: 'mod+k', fn: vi.fn() });
+    renderHook(() => useCommandHotkeys(reg));
+    const lowerSpy = vi.spyOn(String.prototype, 'toLowerCase');
+
+    try {
+      document.dispatchEvent(keyEvent({ key: 'q', ctrlKey: true }).event);
+      expect(lowerSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      lowerSpy.mockRestore();
+    }
   });
 
   it('多 cmd 同 hotkey → 第一条命中即 return', () => {
