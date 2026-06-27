@@ -740,4 +740,29 @@ describe('readPluginPathScopes / writePluginPathScopes 读盘 canonicalize (E86)
     expect(filteredScopeArray).toBe(false); // 新实现不对 257-len scope 数组 filter(旧 filter+slice 会)
     expect(scopes).toHaveLength(256); // 结果回归:前 256 合法
   });
+
+  it('writePluginPathScopes 归一化不通过中间数组 .map 二次遍历', async () => {
+    const many = Array.from({ length: 257 }, (_, i) => ({
+      path: `/w/${i}`,
+      mode: 'r' as const,
+      extra: 'drop-me',
+    }));
+    const mapSpy = vi.spyOn(Array.prototype, 'map');
+    try {
+      await writePluginPathScopes(tmp, 'com.write', many);
+      const mappedScopeArray = mapSpy.mock.instances.some(
+        (inst) => Array.isArray(inst) && (inst as unknown[]).length === 256,
+      );
+      expect(mappedScopeArray).toBe(false);
+    } finally {
+      mapSpy.mockRestore();
+    }
+
+    const raw = JSON.parse(
+      readFileSync(join(tmp, '_plugin-path-scopes.json'), 'utf-8'),
+    ) as Record<string, Array<Record<string, unknown>>>;
+    expect(raw['com.write']).toHaveLength(256);
+    expect(raw['com.write']![0]).toEqual({ path: '/w/0', mode: 'r' });
+    expect(raw['com.write']![255]).toEqual({ path: '/w/255', mode: 'r' });
+  });
 });

@@ -413,6 +413,20 @@ function collectValidCapped<T>(
   return out;
 }
 
+function collectMappedValidCapped<T, U>(
+  arr: readonly unknown[],
+  isValid: (x: unknown) => x is T,
+  mapValid: (x: T) => U,
+  max: number,
+): U[] {
+  const out: U[] = [];
+  for (const x of arr) {
+    if (out.length >= max) break;
+    if (isValid(x)) out.push(mapValid(x));
+  }
+  return out;
+}
+
 export async function readPermissions(
   baseDir: string,
 ): Promise<IpcPermissionsMap> {
@@ -668,11 +682,12 @@ export function writePluginPathScopes(
     // readAllPathScopes 同步。此前裸 .filter().map() 无数量上限 —— exported service 入口可被进程内/未来
     // 调用绕过 IPC schema(PATHSCOPES_MAX=256),写超量 scope 落盘成功但 readAllPathScopes 只读回前 256 →
     // 写成功重启读回丢数据 + 全量物化卡顿。collectValidCapped 凑满 MAX 即停(同 writePluginPermissions E247)。
-    const normalized = collectValidCapped(
+    const normalized = collectMappedValidCapped(
       scopes,
       isIpcPathScope,
+      (s) => ({ path: s.path, mode: s.mode }),
       MAX_PERSISTED_SCOPES_PER_PLUGIN,
-    ).map((s) => ({ path: s.path, mode: s.mode }));
+    );
     if (normalized.length === 0) {
       if (!(id in all)) return; // 无变化,不为删除空条目而触盘
       delete all[id];
