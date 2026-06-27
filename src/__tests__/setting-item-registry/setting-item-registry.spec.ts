@@ -79,6 +79,38 @@ describe('SettingItemRegistry', () => {
     expect(r.getByCategory('nope')).toEqual([]);
   });
 
+  it('getByCategory 不先 Array.from(values) 物化全部条目', () => {
+    const r = new SettingItemRegistry();
+    r.register({
+      id: 'editor.fontSize',
+      category: 'editor',
+      title: '字号',
+      type: 'number',
+      default: 14,
+    });
+    r.register({
+      id: 'general.theme',
+      category: 'general',
+      title: '主题',
+      type: 'select',
+      default: 'dark',
+      enum: [
+        { value: 'light', label: 'Light' },
+        { value: 'dark', label: 'Dark' },
+      ],
+    });
+    const arrayFromSpy = vi.spyOn(Array, 'from');
+
+    try {
+      expect(r.getByCategory('editor').map((s) => s.id)).toEqual([
+        'editor.fontSize',
+      ]);
+      expect(arrayFromSpy).not.toHaveBeenCalled();
+    } finally {
+      arrayFromSpy.mockRestore();
+    }
+  });
+
   // 打磨 R5:getByCategory 改为先 filter 再 sort。等优先级时必须保持注册顺序
   // (稳定排序),且只受本 category 项影响 — 锁住「filter 在前」的等价性。
   it('同 category 等优先级 → 保持注册顺序(稳定排序)', () => {

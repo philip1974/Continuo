@@ -46,4 +46,19 @@ describe('translate() fallback chain + dedup warn', () => {
       'File not found: /tmp/a.md',
     );
   });
+
+  it('有 params 时不通过 Object.keys(params).length 判断是否插值', () => {
+    setI18nLocale('en');
+    const params = { path: '/tmp/a.md' };
+    const keysSpy = vi.spyOn(Object, 'keys');
+
+    try {
+      expect(translate('errors.FS_NOT_FOUND', params)).toBe(
+        'File not found: /tmp/a.md',
+      );
+      expect(keysSpy.mock.calls.some(([arg]) => arg === params)).toBe(false);
+    } finally {
+      keysSpy.mockRestore();
+    }
+  });
 });

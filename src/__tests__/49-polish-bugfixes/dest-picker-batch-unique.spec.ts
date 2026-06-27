@@ -3,8 +3,8 @@
 // 每次 pick 把选中名加进 existing 集合 —— 不只省 N-1 次同目录 IPC,还防同批次
 // 内多个同名项各自只见磁盘旧态、都选到同一个 ` copy` 名 → 第二个 move 覆盖第一
 // 个(批量重名碰撞 = 潜在数据丢失)。
-import { describe, it, expect } from 'vitest';
-import { makeNamePicker } from '../../panels/Explorer/FolderTree';
+import { describe, it, expect, vi } from 'vitest';
+import { joinRelativePaths, makeNamePicker } from '../../panels/Explorer/FolderTree';
 
 describe('打磨 R21 — makeNamePicker 唯一名解析', () => {
   it('目标不存在 → 用原 basename', () => {
@@ -38,5 +38,19 @@ describe('打磨 R21 — makeNamePicker 唯一名解析', () => {
     const pick = makeNamePicker('/d', new Set(['.env']));
     // lastIndexOf('.')===0 → dot>0 为 false → 整体当 stem
     expect(pick('.env')).toBe('/d/.env copy');
+  });
+});
+
+describe('打磨 — FolderTree 相对路径拼接', () => {
+  it('复制相对路径时不通过 paths.map(...).join 生成中间数组', () => {
+    const paths = ['/repo/src/a.ts', '/repo/docs/readme.md'];
+    const mapSpy = vi.spyOn(Array.prototype, 'map');
+
+    try {
+      expect(joinRelativePaths('/repo', paths)).toBe('src/a.ts\ndocs/readme.md');
+      expect(mapSpy.mock.contexts.some((ctx) => ctx === paths)).toBe(false);
+    } finally {
+      mapSpy.mockRestore();
+    }
   });
 });

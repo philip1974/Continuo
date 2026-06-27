@@ -13,7 +13,10 @@ vi.mock('../../plugins/keybindings/keybindings-store', async (importActual) => {
   return { ...actual, getEffectiveHotkey: vi.fn(actual.getEffectiveHotkey) };
 });
 
-import { useCommandHotkeys } from '../../plugins/command-palette/useCommandHotkeys';
+import {
+  matchesHotkey,
+  useCommandHotkeys,
+} from '../../plugins/command-palette/useCommandHotkeys';
 import { CommandRegistry } from '../../plugins/registries/CommandRegistry';
 import {
   getEffectiveHotkey,
@@ -35,6 +38,27 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('打磨 R26 — 命令 hotkey 预编译', () => {
+  it('hotkey 预编译不再通过 split/map/Set 解析组合键', () => {
+    const splitSpy = vi.spyOn(String.prototype, 'split');
+
+    try {
+      expect(
+        matchesHotkey(
+          'mod+shift+h',
+          new KeyboardEvent('keydown', {
+            key: 'h',
+            ctrlKey: true,
+            shiftKey: true,
+          }),
+          'other',
+        ),
+      ).toBe(true);
+      expect(splitSpy).not.toHaveBeenCalled();
+    } finally {
+      splitSpy.mockRestore();
+    }
+  });
+
   it('keydown 不再逐键调 getEffectiveHotkey(已移到预编译表)', () => {
     const reg = new CommandRegistry();
     reg.register({ id: 'a', title: 'A', hotkey: 'mod+s', fn: vi.fn() });

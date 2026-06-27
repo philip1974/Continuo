@@ -76,13 +76,24 @@ function normalize(p: string): string {
   }
   const sep = root.includes('\\') ? '\\' : '/';
   const segs: string[] = [];
-  for (const seg of rest.split(/[\\/]/)) {
-    if (seg === '' || seg === '.') continue;
-    if (seg === '..') {
-      if (segs.length > 0) segs.pop();
-      continue;
+  let start = 0;
+  for (;;) {
+    const slash = rest.indexOf('/', start);
+    const backslash = rest.indexOf('\\', start);
+    let end: number;
+    if (slash < 0) end = backslash < 0 ? rest.length : backslash;
+    else if (backslash < 0) end = slash;
+    else end = Math.min(slash, backslash);
+    if (end > start) {
+      const seg = rest.slice(start, end);
+      if (seg === '..') {
+        if (segs.length > 0) segs.pop();
+      } else if (seg !== '.') {
+        segs.push(seg);
+      }
     }
-    segs.push(seg);
+    if (end >= rest.length) break;
+    start = end + 1;
   }
   return root + segs.join(sep);
 }

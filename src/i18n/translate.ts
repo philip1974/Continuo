@@ -22,6 +22,15 @@ let currentLocale: Locale = 'en';
 /** 用于 missing-key warning 去重（议题 P2-3 + plan-v3 Op4） */
 const missingWarned = new Set<string>();
 
+function hasOwnParam(params: TranslateParams): boolean {
+  for (const key in params) {
+    if (Object.prototype.hasOwnProperty.call(params, key)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function getLocale(): Locale {
   return currentLocale;
 }
@@ -54,7 +63,7 @@ export function translate(
   }
 
   // 简单 {paramName} 插值
-  if (params && Object.keys(params).length > 0) {
+  if (params && hasOwnParam(params)) {
     return template.replace(/\{(\w+)\}/g, (m, name) => {
       const v = params[name];
       return v === undefined ? m : String(v);

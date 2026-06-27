@@ -47,7 +47,7 @@ export async function fetchAllReviews(
 ): Promise<ReadonlyMap<string, PluginAggregateRating>> {
   if (!forceRefresh) {
     const fresh = reviewsCache.getFresh();
-    if (fresh) return new Map(Object.entries(fresh));
+    if (fresh) return aggregateRecordToMap(fresh);
   }
 
   let res: Awaited<ReturnType<typeof coApi.marketplace.fetchReviews>>;
@@ -57,7 +57,7 @@ export async function fetchAllReviews(
     const stale = reviewsCache.getStale();
     if (stale) {
       console.warn('[reviews] IPC failed, falling back to cache', err);
-      return new Map(Object.entries(stale));
+      return aggregateRecordToMap(stale);
     }
     throw err;
   }
@@ -66,14 +66,14 @@ export async function fetchAllReviews(
     const stale = reviewsCache.getStale();
     if (stale) {
       console.warn('[reviews] fetch failed, falling back to cache', res.message);
-      return new Map(Object.entries(stale));
+      return aggregateRecordToMap(stale);
     }
     throw new Error(res.message);
   }
 
   if (!res.data.available) {
     const stale = reviewsCache.getStale();
-    if (stale) return new Map(Object.entries(stale));
+    if (stale) return aggregateRecordToMap(stale);
     // i18n(I12,I5 同族):抛稳定 code(非中文 prose),UI 按 errors.<CODE> catalog 本地化
     // (en/ko 不泄漏中文)。网络等动态错误仍走原 message(无 catalog 回退)。
     throw new Error('MARKETPLACE_REVIEWS_NO_TOKEN');
@@ -86,7 +86,7 @@ export async function fetchAllReviews(
   const rawNodes: unknown = res.data.nodes;
   if (!Array.isArray(rawNodes)) {
     const stale = reviewsCache.getStale();
-    if (stale) return new Map(Object.entries(stale));
+    if (stale) return aggregateRecordToMap(stale);
     return new Map();
   }
   const nodes =
@@ -99,26 +99,55 @@ export async function fetchAllReviews(
     if (parsed) reviews.push(parsed);
   }
   const byPid = aggregate(reviews);
-  reviewsCache.set(Object.fromEntries(byPid));
+  reviewsCache.set(aggregateMapToRecord(byPid));
   return byPid;
+}
+
+function aggregateRecordToMap(
+  record: Record<string, PluginAggregateRating>,
+): Map<string, PluginAggregateRating> {
+  const out = new Map<string, PluginAggregateRating>();
+  for (const pluginId in record) {
+    if (Object.prototype.hasOwnProperty.call(record, pluginId)) {
+      out.set(pluginId, record[pluginId]!);
+    }
+  }
+  return out;
+}
+
+function aggregateMapToRecord(
+  map: ReadonlyMap<string, PluginAggregateRating>,
+): Record<string, PluginAggregateRating> {
+  const record: Record<string, PluginAggregateRating> = {};
+  for (const [pluginId, aggregateRating] of map) {
+    record[pluginId] = aggregateRating;
+  }
+  return record;
 }
 
 function aggregate(
   reviews: readonly Review[],
 ): Map<string, PluginAggregateRating> {
-  const groups = new Map<string, Review[]>();
+  const groups = new Map<
+    string,
+    { readonly reviews: Review[]; sum: number }
+  >();
   for (const r of reviews) {
-    if (!groups.has(r.pluginId)) groups.set(r.pluginId, []);
-    groups.get(r.pluginId)!.push(r);
+    let group = groups.get(r.pluginId);
+    if (!group) {
+      group = { reviews: [], sum: 0 };
+      groups.set(r.pluginId, group);
+    }
+    group.reviews.push(r);
+    group.sum += r.rating;
   }
   const out = new Map<string, PluginAggregateRating>();
-  for (const [pluginId, rs] of groups) {
-    const sum = rs.reduce((s, r) => s + r.rating, 0);
+  for (const [pluginId, group] of groups) {
     out.set(pluginId, {
       pluginId,
-      count: rs.length,
-      avg: sum / rs.length,
-      reviews: rs, // 已按 createdAt DESC(GraphQL orderBy)
+      count: group.reviews.length,
+      avg: group.sum / group.reviews.length,
+      reviews: group.reviews, // 已按 createdAt DESC(GraphQL orderBy)
     });
   }
   return out;

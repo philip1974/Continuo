@@ -4,7 +4,7 @@
 // 此 spec 在实装前会 red(module 不存在)。实装目标:
 //   src/panels/Explorer/file-icon.tsx 按下面 import 的形态 export。
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   Document,
   Folder,
@@ -190,6 +190,17 @@ describe('getFileIconComponent · 特殊文件名', () => {
 
   it('特殊名大小写不敏感兜底:Readme.md → Markdown', () => {
     expect(getFileIconComponent('Readme.md', false)).toBe(Markdown);
+  });
+
+  it('特殊名大小写不敏感兜底不每次 Object.keys 全量枚举', () => {
+    const keysSpy = vi.spyOn(Object, 'keys');
+
+    try {
+      expect(getFileIconComponent('Readme.md', false)).toBe(Markdown);
+      expect(keysSpy.mock.calls.some(([arg]) => arg !== undefined)).toBe(false);
+    } finally {
+      keysSpy.mockRestore();
+    }
   });
 
   it('特殊名大小写不敏感兜底:license → License', () => {

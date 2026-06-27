@@ -75,9 +75,14 @@ export class StatusBarRegistry {
   }
 
   getBySide(side: 'left' | 'right'): readonly StatusBarItemSpec[] {
-    return Array.from(this.items.values())
-      .filter((x) => x.side === side)
-      .sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
+    const items: StatusBarItemSpec[] = [];
+    for (const item of this.items.values()) {
+      if (item.side === side) {
+        items.push(item);
+      }
+    }
+    items.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
+    return items;
   }
 
   getAll(): readonly StatusBarItemSpec[] {

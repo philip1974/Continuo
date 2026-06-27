@@ -15,6 +15,7 @@ vi.mock('../../plugins/keybindings/keybindings-store', async (importActual) => {
 
 import {
   KeybindingsTabContent,
+  countDefaultHotkeys,
   groupByCategory,
 } from '../../plugins/settings/KeybindingsTabContent';
 import { coApp } from '../../plugins/co-app';
@@ -36,6 +37,22 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('打磨 R29 — Keybindings hotkey 预计算', () => {
+  it('统计默认 hotkey 数量时不通过 filter(...).length 生成中间数组', () => {
+    const commands = [
+      { id: 'save', title: 'Save', hotkey: 'mod+s', fn: vi.fn() },
+      { id: 'open', title: 'Open', fn: vi.fn() },
+      { id: 'find', title: 'Find', hotkey: 'mod+f', fn: vi.fn() },
+    ];
+    const filterSpy = vi.spyOn(Array.prototype, 'filter');
+
+    try {
+      expect(countDefaultHotkeys(commands)).toBe(2);
+      expect(filterSpy.mock.contexts.some((ctx) => ctx === commands)).toBe(false);
+    } finally {
+      filterSpy.mockRestore();
+    }
+  });
+
   it('分组命令时不通过 Array.from(entries).map 生成中间数组', () => {
     const commandA = {
       cmd: { id: 'a', title: 'Alpha', hotkey: 'mod+a', fn: vi.fn() },

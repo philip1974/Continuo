@@ -32,6 +32,17 @@ beforeEach(() => {
 });
 
 describe('a11y(A129) — spawnLeaf create reject 须清账 + 反馈', () => {
+  it('pendingKeys 不通过 Array.from(keys).filter 生成中间数组', () => {
+    const queue = createSpawnQueue(vi.fn(), new Set(), 'terminal-panelPendingKeys');
+    const arrayFromSpy = vi.spyOn(Array, 'from');
+    try {
+      expect(queue.pendingKeys()).toEqual([]);
+      expect(arrayFromSpy).not.toHaveBeenCalled();
+    } finally {
+      arrayFromSpy.mockRestore();
+    }
+  });
+
   it('create reject → 派 SET_PTY_FAIL + notify.error + 清 pending', async () => {
     h.create.mockRejectedValue(new Error('ipc down'));
     const dispatch = vi.fn();

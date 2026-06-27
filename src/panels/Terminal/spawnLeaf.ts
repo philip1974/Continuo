@@ -125,8 +125,16 @@ export function createSpawnQueue(
         modulePending.delete(key);
       }
     },
-    pendingKeys: () =>
-      Array.from(modulePending.keys()).filter((k) => k.startsWith(`${panelId}:`)),
+    pendingKeys: () => {
+      const prefix = `${panelId}:`;
+      const keys: string[] = [];
+      for (const key of modulePending.keys()) {
+        if (key.startsWith(prefix)) {
+          keys.push(key);
+        }
+      }
+      return keys;
+    },
   };
 
   // race(R43):取消 / 无 dispatch 的迟到 spawn 成功结果须清掉 main 侧已建的孤儿 PTY。统一 await +
@@ -226,4 +234,3 @@ export function createSpawnQueue(
 
   return queue;
 }
-

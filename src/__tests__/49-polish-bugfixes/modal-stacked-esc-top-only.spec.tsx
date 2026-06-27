@@ -20,6 +20,18 @@ function pressEsc(): void {
   });
 }
 
+function pressTab(shiftKey = false): void {
+  act(() => {
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'Tab',
+        shiftKey,
+        bubbles: true,
+      }),
+    );
+  });
+}
+
 describe('topic49 P1-AU · 叠加 Modal 的 Esc 只关栈顶', () => {
   it('两个 Modal 叠加 → Esc 只触发后开(栈顶)的 onClose', () => {
     const onCloseBack = vi.fn(); // 背景(如命令面板)
@@ -85,5 +97,30 @@ describe('topic49 P1-AU · 叠加 Modal 的 Esc 只关栈顶', () => {
     );
     pressEsc();
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('Tab focus trap 不通过 Array.from 物化 focusable NodeList', () => {
+    render(
+      <Modal visible>
+        <button type="button">first</button>
+        <button type="button">last</button>
+      </Modal>,
+    );
+    const buttons = document.querySelectorAll<HTMLButtonElement>(
+      '.wm-modal-content button',
+    );
+    buttons[1]!.focus();
+    const fromSpy = vi.spyOn(Array, 'from');
+
+    try {
+      pressTab();
+      expect(document.activeElement).toBe(buttons[0]);
+      const nodeListCalls = fromSpy.mock.calls.filter(
+        ([arg]) => arg instanceof NodeList,
+      );
+      expect(nodeListCalls).toHaveLength(0);
+    } finally {
+      fromSpy.mockRestore();
+    }
   });
 });

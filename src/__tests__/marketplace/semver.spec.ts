@@ -1,7 +1,22 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { isNewerVersion, isValidSemver } from '../../marketplace/semver';
 
 describe('isNewerVersion', () => {
+  it('解析与 prerelease 比较不通过 split/match 物化中间结构', () => {
+    const splitSpy = vi.spyOn(String.prototype, 'split');
+    const matchSpy = vi.spyOn(String.prototype, 'match');
+
+    try {
+      expect(isValidSemver('1.2.3-beta.10')).toBe(true);
+      expect(isNewerVersion('1.0.0-beta.10', '1.0.0-beta.2')).toBe(true);
+      expect(splitSpy).not.toHaveBeenCalled();
+      expect(matchSpy).not.toHaveBeenCalled();
+    } finally {
+      splitSpy.mockRestore();
+      matchSpy.mockRestore();
+    }
+  });
+
   it('major 升级', () => {
     expect(isNewerVersion('1.0.0', '0.9.9')).toBe(true);
   });

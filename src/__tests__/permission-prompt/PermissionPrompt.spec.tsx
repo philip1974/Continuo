@@ -1,11 +1,15 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { fireEvent, render, cleanup, act } from '@testing-library/react';
 import { PermissionPrompt } from '../../plugins/permissions/PermissionPrompt';
 import { usePermissionPromptStore } from '../../plugins/permissions/promptStore';
 
 beforeEach(() => {
-  usePermissionPromptStore.setState({ pending: null, resolve: null });
+  usePermissionPromptStore.setState({
+    pending: null,
+    resolve: null,
+    currentFsScope: null,
+  });
 });
 afterEach(() => cleanup());
 
@@ -40,6 +44,26 @@ describe('PermissionPrompt UI', () => {
     );
     expect(checkboxes.length).toBe(2);
     expect(Array.from(checkboxes).every((c) => c.checked)).toBe(true);
+  });
+
+  it('pluginId 模板拆分不通过 split(marker) 物化 parts 数组', () => {
+    const splitSpy = vi.spyOn(String.prototype, 'split');
+
+    try {
+      render(<PermissionPrompt />);
+      act(() => {
+        void usePermissionPromptStore.getState().request('com.x', ['fs']);
+      });
+      expect(document.querySelector('.wm-modal-content code')?.textContent).toBe(
+        'com.x',
+      );
+      const markerCalls = splitSpy.mock.calls.filter(
+        ([sep]) => sep === ' __PID__ ',
+      );
+      expect(markerCalls).toHaveLength(0);
+    } finally {
+      splitSpy.mockRestore();
+    }
   });
 
   it('点击 checkbox 切换勾选,授权按钮显数量', () => {

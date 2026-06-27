@@ -16,7 +16,7 @@ vi.mock('../../plugins/sandbox-sweep', () => ({
 }));
 
 import { _resetLmApiForTest, captureLmApi } from '../../lib/co-api';
-import { StatusBar } from '../../shell/StatusBar';
+import { StatusBar, countAgentSessions } from '../../shell/StatusBar';
 import { useWorkspaceStore } from '../../stores/workspace.store';
 import { useLayoutUiStore } from '../../stores/layout-ui.store';
 import { useTerminalStore } from '../../stores/terminal.store';
@@ -50,6 +50,18 @@ afterEach(() => {
 });
 
 describe('打磨 R39 — StatusBar 订阅派生 agent 计数', () => {
+  it('agent 计数不通过 filter(...).length 生成中间数组', () => {
+    const sessions = [sess('a1', 'agent'), sess('u1', 'user'), sess('a2', 'agent')];
+    const filterSpy = vi.spyOn(Array.prototype, 'filter');
+
+    try {
+      expect(countAgentSessions(sessions)).toBe(2);
+      expect(filterSpy.mock.contexts.some((ctx) => ctx === sessions)).toBe(false);
+    } finally {
+      filterSpy.mockRestore();
+    }
+  });
+
   it('非 agent session 变化(计数不变)→ StatusBar 不重渲', () => {
     installApi();
     const onRender = vi.fn();

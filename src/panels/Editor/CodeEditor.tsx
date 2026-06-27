@@ -33,6 +33,12 @@ interface CodeEditorProps {
   forceLanguage?: 'markdown' | 'javascript' | 'typescript' | 'json' | 'css' | 'html';
 }
 
+export function fileExtensionLower(fileName: string): string | undefined {
+  const idx = fileName.lastIndexOf('.');
+  if (idx < 0 || idx === fileName.length - 1) return undefined;
+  return fileName.slice(idx + 1).toLowerCase();
+}
+
 function pickLanguage(fileName: string, forceLanguage?: CodeEditorProps['forceLanguage']) {
   if (forceLanguage) {
     switch (forceLanguage) {
@@ -50,7 +56,7 @@ function pickLanguage(fileName: string, forceLanguage?: CodeEditorProps['forceLa
         return html();
     }
   }
-  const ext = fileName.split('.').pop()?.toLowerCase();
+  const ext = fileExtensionLower(fileName);
   switch (ext) {
     case 'js':
     case 'jsx':

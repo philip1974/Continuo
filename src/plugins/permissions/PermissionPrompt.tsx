@@ -9,6 +9,22 @@ import type { PermissionKey } from '../permissions';
 import { useT } from '@/i18n';
 import { PERM_LABEL_KEYS } from './perm-labels';
 
+const PLUGIN_ID_MARKER = ' __PID__ ';
+
+function splitPluginIdTemplate(tpl: string): {
+  readonly prefix: string;
+  readonly suffix: string;
+} {
+  const markerStart = tpl.indexOf(PLUGIN_ID_MARKER);
+  if (markerStart < 0) return { prefix: tpl, suffix: '' };
+  const suffixStart = markerStart + PLUGIN_ID_MARKER.length;
+  const nextMarker = tpl.indexOf(PLUGIN_ID_MARKER, suffixStart);
+  return {
+    prefix: tpl.slice(0, markerStart),
+    suffix: tpl.slice(suffixStart, nextMarker < 0 ? tpl.length : nextMarker),
+  };
+}
+
 /**
  * 轻量 shell(打磨 R52,仿 R32/R50):权限弹窗绝大多数时间为空闲态。外层只订阅
  * pending / currentFsScope 两个队列字段,都空时直接返回 null。manifest 弹窗与
@@ -55,13 +71,14 @@ function ManifestPromptBody({ pending }: { pending: Pending }) {
       <p className="mb-2 text-xs text-fg-muted">
         {/* tpl 含 {pluginId}；inline <code> 渲染 — 拆 prefix/suffix */}
         {(() => {
-          const tpl = t('permissions.prompt.body', { pluginId: ' __PID__ ' });
-          const parts = tpl.split(' __PID__ ');
+          const parts = splitPluginIdTemplate(
+            t('permissions.prompt.body', { pluginId: PLUGIN_ID_MARKER }),
+          );
           return (
             <>
-              {parts[0]}
+              {parts.prefix}
               <code className="text-fg">{pending.pluginId}</code>
-              {parts[1] ?? ''}
+              {parts.suffix}
             </>
           );
         })()}
@@ -135,13 +152,14 @@ function FsScopePromptBody({ scope }: { scope: FsScopePrompt }) {
       <p className="mb-3 text-xs text-fg-muted">
         {/* tpl 含 {pluginId};inline <code> 渲染 — 拆 prefix/suffix(同 manifest 分支) */}
         {(() => {
-          const tpl = t('permissions.fs_scope.body', { pluginId: ' __PID__ ' });
-          const parts = tpl.split(' __PID__ ');
+          const parts = splitPluginIdTemplate(
+            t('permissions.fs_scope.body', { pluginId: PLUGIN_ID_MARKER }),
+          );
           return (
             <>
-              {parts[0]}
+              {parts.prefix}
               <code className="text-fg">{scope.pluginId}</code>
-              {parts[1] ?? ''}
+              {parts.suffix}
             </>
           );
         })()}

@@ -79,6 +79,16 @@ function matches(d: DisplayCommand, qLower: string): boolean {
   return d.searchHaystack.includes(qLower);
 }
 
+export function countDefaultHotkeys(commands: readonly CommandSpec[]): number {
+  let count = 0;
+  for (const command of commands) {
+    if (command.hotkey) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
 export function KeybindingsTabContent() {
   const allCommands = useCommands(coApp.commands);
   const [query, setQuery] = useState('');
@@ -137,7 +147,7 @@ export function KeybindingsTabContent() {
   }, [displayCommands, query, t]);
 
   const totalWithHotkey = useMemo(
-    () => allCommands.filter((c) => Boolean(c.hotkey)).length,
+    () => countDefaultHotkeys(allCommands),
     [allCommands],
   );
 

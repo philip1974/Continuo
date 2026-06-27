@@ -21,7 +21,7 @@ import {
   _resetLmApiForTest,
   captureLmApi,
 } from '../../lib/co-api';
-import { StatusBar } from '../../shell/StatusBar';
+import { splitStatusItemsBySide, StatusBar } from '../../shell/StatusBar';
 import { useEditorStore } from '../../stores/editor.store';
 import { useWorkspaceStore } from '../../stores/workspace.store';
 import { useLayoutUiStore } from '../../stores/layout-ui.store';
@@ -236,6 +236,23 @@ describe('StatusBar — agent 计数', () => {
 });
 
 describe('StatusBar — 插件 statusBar items', () => {
+  it('分左右侧时不对同一 statusItems 做两次 filter', () => {
+    const statusItems = [
+      { id: 'left', side: 'left' as const, render: () => null },
+      { id: 'right', side: 'right' as const, render: () => null },
+    ];
+    const filterSpy = vi.spyOn(Array.prototype, 'filter');
+
+    try {
+      const split = splitStatusItemsBySide(statusItems);
+      expect(split.left.map((item) => item.id)).toEqual(['left']);
+      expect(split.right.map((item) => item.id)).toEqual(['right']);
+      expect(filterSpy.mock.contexts.some((ctx) => ctx === statusItems)).toBe(false);
+    } finally {
+      filterSpy.mockRestore();
+    }
+  });
+
   it('左侧 item render → 出现在左半', () => {
     installApi({});
     coApp.statusBar.register({

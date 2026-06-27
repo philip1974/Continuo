@@ -80,6 +80,23 @@ describe('isValidMarketplaceEntry bounds (E25)', () => {
     ).toBe(true);
   });
 
+  it('repo/branch 段级校验不通过 split 物化路径段', () => {
+    const splitSpy = vi.spyOn(String.prototype, 'split');
+
+    try {
+      expect(
+        isValidMarketplaceEntry({
+          ...base,
+          repo: 'owner.x/repo-y',
+          branch: 'feature/foo-bar',
+        }),
+      ).toBe(true);
+      expect(splitSpy).not.toHaveBeenCalled();
+    } finally {
+      splitSpy.mockRestore();
+    }
+  });
+
   it('超长 id/name/author/description → false', () => {
     expect(isValidMarketplaceEntry({ ...base, id: 'x'.repeat(257) })).toBe(
       false,

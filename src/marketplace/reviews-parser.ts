@@ -147,40 +147,113 @@ function capVersion(v: string | undefined): string | undefined {
 /** "### Foo\nbar baz\n### Qux\n..." → Map { foo: "bar baz", qux: ... }(key 小写). */
 function parseSections(body: string): Map<string, string> {
   const out = new Map<string, string>();
-  const lines = body.split(/\r?\n/);
   let curKey: string | null = null;
   let curBuf: string[] = [];
   const flush = () => {
     if (curKey) out.set(curKey, curBuf.join('\n').trim());
   };
-  for (const line of lines) {
-    const m = line.match(/^###\s+(.+?)\s*$/);
-    if (m) {
+  let start = 0;
+  for (;;) {
+    const newline = body.indexOf('\n', start);
+    let end = newline < 0 ? body.length : newline;
+    if (end > start && body.charCodeAt(end - 1) === 13) end -= 1;
+    const line = body.slice(start, end);
+    const headingKey = parseHeadingKey(line);
+    if (headingKey !== null) {
       flush();
-      curKey = (m[1] ?? '').toLowerCase();
+      curKey = headingKey;
       curBuf = [];
     } else if (curKey) {
       curBuf.push(line);
     }
+    if (newline < 0) break;
+    start = newline + 1;
   }
   flush();
   return out;
 }
 
+function isAsciiWhitespace(code: number): boolean {
+  return (
+    code === 32 ||
+    code === 9 ||
+    code === 10 ||
+    code === 13 ||
+    code === 11 ||
+    code === 12
+  );
+}
+
+function parseHeadingKey(line: string): string | null {
+  if (
+    line.length < 5 ||
+    line.charCodeAt(0) !== 35 ||
+    line.charCodeAt(1) !== 35 ||
+    line.charCodeAt(2) !== 35 ||
+    !isAsciiWhitespace(line.charCodeAt(3))
+  ) {
+    return null;
+  }
+  let start = 4;
+  while (start < line.length && isAsciiWhitespace(line.charCodeAt(start))) {
+    start += 1;
+  }
+  let end = line.length;
+  while (end > start && isAsciiWhitespace(line.charCodeAt(end - 1))) {
+    end -= 1;
+  }
+  return start < end ? line.slice(start, end).toLowerCase() : null;
+}
+
+function isPluginIdTitleChar(code: number): boolean {
+  return (
+    (code >= 65 && code <= 90) ||
+    (code >= 97 && code <= 122) ||
+    (code >= 48 && code <= 57) ||
+    code === 46 ||
+    code === 95 ||
+    code === 45
+  );
+}
+
 function extractPluginIdFromTitle(title: string): string | null {
-  const m = title.match(/^\s*\[([a-z0-9._-]+)\]/i);
-  return m ? (m[1] ?? null) : null;
+  let start = 0;
+  while (start < title.length && isAsciiWhitespace(title.charCodeAt(start))) {
+    start += 1;
+  }
+  if (title.charCodeAt(start) !== 91) return null;
+  start += 1;
+  let end = start;
+  while (end < title.length && isPluginIdTitleChar(title.charCodeAt(end))) {
+    end += 1;
+  }
+  if (end === start || title.charCodeAt(end) !== 93) return null;
+  return title.slice(start, end);
 }
 
 function parseRating(raw: string | undefined): Review['rating'] | null {
   if (!raw) return null;
   // "★★★★★ 5" / "★★★ 3" / "5" / "5/5" 都能解析
-  const stars = (raw.match(/★/g) ?? []).length;
+  let stars = 0;
+  for (let i = 0; i < raw.length; i += 1) {
+    if (raw.charCodeAt(i) === 9733) stars += 1;
+  }
   if (stars >= 1 && stars <= 5) return stars as Review['rating'];
-  const m = raw.match(/\b([1-5])\b/);
-  if (m) {
-    const n = Number(m[1]);
-    if (n >= 1 && n <= 5) return n as Review['rating'];
+  for (let i = 0; i < raw.length; i += 1) {
+    const code = raw.charCodeAt(i);
+    if (code < 49 || code > 53) continue;
+    const prevWord = i > 0 && isRegexWord(raw.charCodeAt(i - 1));
+    const nextWord = i + 1 < raw.length && isRegexWord(raw.charCodeAt(i + 1));
+    if (!prevWord && !nextWord) return (code - 48) as Review['rating'];
   }
   return null;
+}
+
+function isRegexWord(code: number): boolean {
+  return (
+    (code >= 65 && code <= 90) ||
+    (code >= 97 && code <= 122) ||
+    (code >= 48 && code <= 57) ||
+    code === 95
+  );
 }

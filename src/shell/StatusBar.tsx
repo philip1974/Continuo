@@ -9,7 +9,7 @@ import { useRegistry } from '@/plugins/registries/useRegistry';
 import { useEditorStore } from '@/stores/editor.store';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { useLayoutUiStore } from '@/stores/layout-ui.store';
-import { useTerminalStore } from '@/stores/terminal.store';
+import { useTerminalStore, type TerminalSession } from '@/stores/terminal.store';
 import { useAgentAuthStore } from '@/stores/agent-auth.store';
 import { coApi } from '@/lib/co-api';
 import { notify } from '@/notifications/notify';
@@ -23,8 +23,20 @@ import { basenameForChrome } from './path-label';
 // 一次订阅取全量(已按 priority 排序),再分侧(打磨 R6)。原先 left/right 各
 // useRegistry 一次 = 两个订阅回调 + 两次 getBySide(Array.from+filter+sort)。
 // getAll() 全局按 priority 排序,filter 保序 → 与 getBySide(side) 输出等价。
-function splitBySide(items: readonly StatusBarItemSpec[], side: 'left' | 'right') {
-  return items.filter((it) => it.side === side);
+export function splitStatusItemsBySide(items: readonly StatusBarItemSpec[]): {
+  readonly left: readonly StatusBarItemSpec[];
+  readonly right: readonly StatusBarItemSpec[];
+} {
+  const left: StatusBarItemSpec[] = [];
+  const right: StatusBarItemSpec[] = [];
+  for (const item of items) {
+    if (item.side === 'left') {
+      left.push(item);
+    } else {
+      right.push(item);
+    }
+  }
+  return { left, right };
 }
 
 // race(R56,R55 同族):渲染时按 id 从 live coApp.statusBar 复查再调 render(),而非调订阅快照里
@@ -40,6 +52,16 @@ function liveRenderStatusItem(item: StatusBarItemSpec): React.ReactNode {
     console.warn(`[statusbar] item "${item.id}" render threw`, err);
     return null;
   }
+}
+
+export function countAgentSessions(sessions: readonly TerminalSession[]): number {
+  let count = 0;
+  for (const session of sessions) {
+    if (session.originHint === 'agent') {
+      count += 1;
+    }
+  }
+  return count;
 }
 
 // race(R92):revoke 代际。两次 revoke 并发时,失败回滚必须只由「最新」那次执行 —— 否则先发的
@@ -99,7 +121,7 @@ export function StatusBar() {
   // 只订阅派生的 agent 计数(打磨 R39,延续 R22/R24):终端标题/退出状态/普通
   // 用户终端变化不影响 agent 数 → number 不变 → StatusBar 不重渲。
   const agentSessionCount = useTerminalStore(
-    (s) => s.sessions.filter((x) => x.originHint === 'agent').length,
+    (s) => countAgentSessions(s.sessions),
   );
 
   // 只订阅 active tab 的派生 primitive(打磨 R24 + 合并优化 R46)。非 active tab 的
@@ -120,12 +142,8 @@ export function StatusBar() {
       }),
     );
   const statusItems = useRegistry(coApp.statusBar);
-  const leftItems = useMemo(
-    () => splitBySide(statusItems, 'left'),
-    [statusItems],
-  );
-  const rightItems = useMemo(
-    () => splitBySide(statusItems, 'right'),
+  const { left: leftItems, right: rightItems } = useMemo(
+    () => splitStatusItemsBySide(statusItems),
     [statusItems],
   );
 

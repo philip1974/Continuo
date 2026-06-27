@@ -19,14 +19,12 @@ export function handleTablistArrowKeys(e: KeyboardEvent<HTMLElement>): void {
     key !== 'End'
   )
     return;
-  const tabs = Array.from(
-    e.currentTarget.querySelectorAll<HTMLButtonElement>(
-      '[role="tab"]:not([disabled])',
-    ),
+  const tabs = e.currentTarget.querySelectorAll<HTMLButtonElement>(
+    '[role="tab"]:not([disabled])',
   );
   if (tabs.length === 0) return;
   const active = document.activeElement as HTMLElement | null;
-  const idx = active ? tabs.indexOf(active as HTMLButtonElement) : -1;
+  const idx = active ? indexOfTab(tabs, active) : -1;
   let next: number;
   if (key === 'Home') next = 0;
   else if (key === 'End') next = tabs.length - 1;
@@ -35,4 +33,14 @@ export function handleTablistArrowKeys(e: KeyboardEvent<HTMLElement>): void {
   else next = idx <= 0 ? tabs.length - 1 : idx - 1; // ArrowLeft / ArrowUp
   e.preventDefault();
   tabs[next]?.focus();
+}
+
+function indexOfTab(
+  tabs: NodeListOf<HTMLButtonElement>,
+  active: HTMLElement,
+): number {
+  for (let i = 0; i < tabs.length; i += 1) {
+    if (tabs[i] === active) return i;
+  }
+  return -1;
 }

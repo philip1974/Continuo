@@ -54,6 +54,15 @@ function isWithinRoot(path: string, root: string): boolean {
   return isSameOrInsidePath(root, path);
 }
 
+export function joinRelativePaths(root: string, paths: readonly string[]): string {
+  let out = '';
+  for (let i = 0; i < paths.length; i++) {
+    if (i > 0) out += '\n';
+    out += stripRootPrefix(root, paths[i]!);
+  }
+  return out;
+}
+
 /**
  * 纯唯一名 picker:给定 destDir 与已存在 basename 集合,返回一个 pick(name) 函数。
  * 候选序:basename / `${stem} copy${ext}` / `${stem} copy 2${ext}` / ...(上限 100,
@@ -365,8 +374,6 @@ export function FolderTree({ root }: { root: string }) {
     (s) => s.kind !== null && s.paths.length > 0,
   );
 
-  const stripRoot = (p: string): string => stripRootPrefix(root, p);
-
   const contextActions: ContextMenuActions = {
     onRename: (path) => tree.getItemInstance(path)?.startRenaming(),
     onNewFile: (parentDir) => setCreating({ type: 'file', parentDir }),
@@ -384,7 +391,7 @@ export function FolderTree({ root }: { root: string }) {
     },
     onCopyRelativePath: (paths: string[]) => {
       if (paths.length === 0) return;
-      const rels = paths.map(stripRoot).join('\n');
+      const rels = joinRelativePaths(root, paths);
       void copyToClipboardOrNotify(rels, tt('panels.explorer.copy_path_failed'));
     },
     // a11y(A49,A47/A48 同族):reveal 失败须可见+可播报反馈(toast),不静默(见 reveal-or-notify.ts)。

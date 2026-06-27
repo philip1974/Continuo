@@ -74,7 +74,7 @@ interface PluginItemBucket {
 }
 
 /** 把 plugin 贡献项按 group 排序、聚合,过滤不可见. */
-function groupPluginItems(
+export function groupPluginItems(
   raw: readonly ExplorerContextMenuItemSpec[],
   ctx: ExplorerContextMenuItemContext,
 ): PluginItemBucket[] {
@@ -89,14 +89,17 @@ function groupPluginItems(
     }
     arr.push(item);
   }
-  return Array.from(map.entries())
-    .sort(([a], [b]) => {
-      const ai = groupOrderIndex(a);
-      const bi = groupOrderIndex(b);
-      if (ai !== bi) return ai - bi;
-      return a.localeCompare(b);
-    })
-    .map(([group, items]) => ({ group, items }));
+  const buckets: PluginItemBucket[] = [];
+  for (const [group, items] of map) {
+    buckets.push({ group, items });
+  }
+  buckets.sort((a, b) => {
+    const ai = groupOrderIndex(a.group);
+    const bi = groupOrderIndex(b.group);
+    if (ai !== bi) return ai - bi;
+    return a.group.localeCompare(b.group);
+  });
+  return buckets;
 }
 
 // 右键菜单包装。children 为接收右键的可见区域(行 / 空白容器)。

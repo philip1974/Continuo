@@ -70,6 +70,24 @@ function formatPart(part: string, platform: Platform): string {
   return part.toUpperCase();
 }
 
+function visitFormattedHotkeyParts(
+  raw: string,
+  platform: Platform,
+  visit: (part: string) => void,
+): void {
+  if (!raw) return;
+  let start = 0;
+  for (;;) {
+    const plus = raw.indexOf('+', start);
+    const end = plus < 0 ? raw.length : plus;
+    if (end > start) {
+      visit(formatPart(raw.slice(start, end), platform));
+    }
+    if (plus < 0) return;
+    start = plus + 1;
+  }
+}
+
 /**
  * 拆 raw 为 platform-aware 的 parts 数组。给 KeyCap 渲染用(每个 part
  * 一个 keycap)。例:`mod+shift+h` mac → ['⌘','⇧','H'];other →
@@ -81,18 +99,20 @@ export function formatHotkeyParts(
   raw: string,
   platform: Platform,
 ): string[] {
-  if (!raw) return [];
-  return raw
-    .split('+')
-    .filter((p) => p.length > 0)
-    .map((p) => formatPart(p, platform));
+  const parts: string[] = [];
+  visitFormattedHotkeyParts(raw, platform, (part) => parts.push(part));
+  return parts;
 }
 
 export function formatHotkey(raw: string, platform: Platform): string {
-  const parts = formatHotkeyParts(raw, platform);
-  if (parts.length === 0) return '';
-  // mac 紧贴拼接,other 用 + 分隔
-  return platform === 'mac' ? parts.join('') : parts.join('+');
+  let formatted = '';
+  let needsSeparator = false;
+  visitFormattedHotkeyParts(raw, platform, (part) => {
+    if (platform !== 'mac' && needsSeparator) formatted += '+';
+    formatted += part;
+    needsSeparator = true;
+  });
+  return formatted;
 }
 
 export function detectPlatform(): Platform {

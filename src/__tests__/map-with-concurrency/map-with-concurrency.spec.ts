@@ -1,8 +1,22 @@
 // BDD: map-with-concurrency (E234/E251)
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { allSettledWithConcurrency } from '../../lib/map-with-concurrency';
 
 describe('allSettledWithConcurrency', () => {
+  it('启动 worker 不通过 Array.from({ length }) 构造临时数组', async () => {
+    const fromSpy = vi.spyOn(Array, 'from');
+
+    try {
+      const r = await allSettledWithConcurrency([1, 2, 3], 2, async (n) => n);
+      expect(r.map((x) => (x.status === 'fulfilled' ? x.value : null))).toEqual([
+        1, 2, 3,
+      ]);
+      expect(fromSpy).not.toHaveBeenCalled();
+    } finally {
+      fromSpy.mockRestore();
+    }
+  });
+
   it('结果按输入顺序对位 + allSettled 语义(单失败不影响其它)', async () => {
     const r = await allSettledWithConcurrency([1, 2, 3], 2, async (n) => {
       if (n === 2) throw new Error('boom');

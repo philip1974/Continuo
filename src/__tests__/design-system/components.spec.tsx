@@ -255,6 +255,32 @@ describe('TabNav + TabNavItem', () => {
     expect(document.activeElement).toBe(tabs[0]);
   });
 
+  it('a11y · tablist 方向键导航不通过 Array.from 物化 tab NodeList', () => {
+    const { container } = render(
+      <TabNav>
+        <TabNavItem active onSelect={() => {}}>
+          a
+        </TabNavItem>
+        <TabNavItem onSelect={() => {}}>b</TabNavItem>
+      </TabNav>,
+    );
+    const tabs = container.querySelectorAll<HTMLButtonElement>('[role=tab]');
+    const tablist = container.querySelector('[role=tablist]')!;
+    tabs[0]!.focus();
+    const fromSpy = vi.spyOn(Array, 'from');
+
+    try {
+      fireEvent.keyDown(tablist, { key: 'ArrowRight' });
+      expect(document.activeElement).toBe(tabs[1]);
+      const nodeListCalls = fromSpy.mock.calls.filter(
+        ([arg]) => arg instanceof NodeList,
+      );
+      expect(nodeListCalls).toHaveLength(0);
+    } finally {
+      fromSpy.mockRestore();
+    }
+  });
+
   // a11y(A35):dirty tab 须把「未保存」状态经 aria-describedby 暴露给 AT(视觉圆点 aria-hidden);
   // clean tab 不暴露。dirtyLabel 由调用方(EditorHeader)传本地化文本(design 层无 i18n)。
   it('a11y · dirty tab 经 aria-describedby 暴露未保存状态', () => {

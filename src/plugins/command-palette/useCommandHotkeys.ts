@@ -23,6 +23,43 @@ interface ComboSignature {
   readonly key: string; // 已 lowercase
 }
 
+function isTrimWhitespace(code: number): boolean {
+  return code === 32 || code === 9 || code === 10 || code === 13;
+}
+
+function trimSegmentStart(combo: string, start: number, end: number): number {
+  while (start < end && isTrimWhitespace(combo.charCodeAt(start))) start += 1;
+  return start;
+}
+
+function trimSegmentEnd(combo: string, start: number, end: number): number {
+  while (end > start && isTrimWhitespace(combo.charCodeAt(end - 1))) end -= 1;
+  return end;
+}
+
+function segmentEquals(
+  combo: string,
+  start: number,
+  end: number,
+  token: string,
+): boolean {
+  const s = trimSegmentStart(combo, start, end);
+  const e = trimSegmentEnd(combo, s, end);
+  if (e - s !== token.length) return false;
+  for (let i = 0; i < token.length; i += 1) {
+    const code = combo.charCodeAt(s + i);
+    const lowerCode = code >= 65 && code <= 90 ? code + 32 : code;
+    if (lowerCode !== token.charCodeAt(i)) return false;
+  }
+  return true;
+}
+
+function lowerTrimmedSegment(combo: string, start: number, end: number): string {
+  const s = trimSegmentStart(combo, start, end);
+  const e = trimSegmentEnd(combo, s, end);
+  return s < e ? combo.slice(s, e).toLowerCase() : '';
+}
+
 /**
  * 把 'mod+shift+h' 解析成平台感知的修饰键签名(打磨 R26:从每次 keydown 解析
  * 移到配置变化时一次性预编译)。
@@ -33,16 +70,38 @@ interface ComboSignature {
  * (codex 复审 loop R15)
  */
 function compileCombo(combo: string, platform: Platform): ComboSignature {
-  const parts = combo.toLowerCase().split('+').map((s) => s.trim());
-  const key = parts[parts.length - 1]!;
-  const mods = new Set(parts.slice(0, -1));
   const isMac = platform === 'mac';
+  let wantMeta = false;
+  let wantCtrl = false;
+  let wantShift = false;
+  let wantAlt = false;
+  let start = 0;
+  for (;;) {
+    const plus = combo.indexOf('+', start);
+    if (plus < 0) break;
+    if (segmentEquals(combo, start, plus, 'cmd')) {
+      wantMeta = true;
+    } else if (segmentEquals(combo, start, plus, 'ctrl')) {
+      wantCtrl = true;
+    } else if (segmentEquals(combo, start, plus, 'mod')) {
+      if (isMac) wantMeta = true;
+      else wantCtrl = true;
+    } else if (segmentEquals(combo, start, plus, 'shift')) {
+      wantShift = true;
+    } else if (
+      segmentEquals(combo, start, plus, 'alt') ||
+      segmentEquals(combo, start, plus, 'option')
+    ) {
+      wantAlt = true;
+    }
+    start = plus + 1;
+  }
   return {
-    wantMeta: mods.has('cmd') || (mods.has('mod') && isMac),
-    wantCtrl: mods.has('ctrl') || (mods.has('mod') && !isMac),
-    wantShift: mods.has('shift'),
-    wantAlt: mods.has('alt') || mods.has('option'),
-    key,
+    wantMeta,
+    wantCtrl,
+    wantShift,
+    wantAlt,
+    key: lowerTrimmedSegment(combo, start, combo.length),
   };
 }
 

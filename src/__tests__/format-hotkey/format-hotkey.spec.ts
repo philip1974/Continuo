@@ -1,7 +1,7 @@
 // BDD: format-hotkey
 // 纯函数 formatHotkey + detectPlatform 行为契约。
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   formatHotkey,
   formatHotkeyParts,
@@ -132,6 +132,21 @@ describe('formatHotkey · 边界', () => {
 // ────────────────────────────────────────────────────────────
 
 describe('formatHotkeyParts', () => {
+  it('解析 parts 不通过 split/filter/map 物化中间数组', () => {
+    const splitSpy = vi.spyOn(String.prototype, 'split');
+
+    try {
+      expect(formatHotkeyParts('mod+shift+h', 'other')).toEqual([
+        'Ctrl',
+        'Shift',
+        'H',
+      ]);
+      expect(splitSpy).not.toHaveBeenCalled();
+    } finally {
+      splitSpy.mockRestore();
+    }
+  });
+
   it.each<[string, 'mac' | 'other', string[]]>([
     ['mod+s', 'mac', ['⌘', 'S']],
     ['mod+s', 'other', ['Ctrl', 'S']],

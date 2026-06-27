@@ -25,7 +25,7 @@ vi.mock('@/stores/editor.store', () => ({
   }),
 }));
 
-import { CodeEditor } from '../../panels/Editor/CodeEditor';
+import { CodeEditor, fileExtensionLower } from '../../panels/Editor/CodeEditor';
 import type { EditorView } from 'codemirror';
 
 afterEach(() => {
@@ -34,6 +34,18 @@ afterEach(() => {
 });
 
 describe('perf-audit P6 · CodeEditor 受控回声免全文 toString', () => {
+  it('文件扩展名推断不通过 split/pop 分配数组', () => {
+    const splitSpy = vi.spyOn(String.prototype, 'split');
+
+    try {
+      expect(fileExtensionLower('/repo/src/app.TSX')).toBe('tsx');
+      expect(fileExtensionLower('/repo/README')).toBeUndefined();
+      expect(splitSpy).not.toHaveBeenCalled();
+    } finally {
+      splitSpy.mockRestore();
+    }
+  });
+
   it('回声(value === 上次 emit)→ effect 跳过,不再 doc.toString();非回声 → 正常同步', () => {
     const emitted: string[] = [];
     const onChange = (v: string) => emitted.push(v);

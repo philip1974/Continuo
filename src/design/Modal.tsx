@@ -84,13 +84,13 @@ export function Modal({
       if (e.key !== 'Tab') return;
       const root = contentRef.current;
       if (root == null) return;
-      const focusables = Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
+      const focusables = root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
       if (focusables.length === 0) {
         e.preventDefault();
         return;
       }
-      const first = focusables.at(0);
-      const last = focusables.at(-1);
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
       if (first == null || last == null) {
         e.preventDefault();
         return;

@@ -43,7 +43,9 @@ export function stripTerminalPanelsFromLayout(
   if (!panels || typeof panels !== 'object') return layout ?? null;
 
   const terminalIds = new Set<string>();
-  for (const [id, p] of Object.entries(panels)) {
+  for (const id in panels) {
+    if (!Object.prototype.hasOwnProperty.call(panels, id)) continue;
+    const p = panels[id];
     if (p?.contentComponent === TERMINAL_PANEL_TYPE) terminalIds.add(id);
   }
   if (terminalIds.size === 0) return layout; // 无终端,原样返回(引用不变)
@@ -98,8 +100,9 @@ export function stripTerminalPanelsFromLayout(
   if (!root) return null; // 整棵树无非终端 panel → 走默认布局
 
   const nextPanels: Record<string, unknown> = {};
-  for (const [id, p] of Object.entries(panels)) {
-    if (!terminalIds.has(id)) nextPanels[id] = p;
+  for (const id in panels) {
+    if (!Object.prototype.hasOwnProperty.call(panels, id)) continue;
+    if (!terminalIds.has(id)) nextPanels[id] = panels[id];
   }
 
   // 可变工作类型(松散)与严格的 SerializedDockview 解耦,避免 floatingGroups(要求 position 等)

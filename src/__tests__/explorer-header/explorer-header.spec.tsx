@@ -274,6 +274,33 @@ describe('ExplorerHeader — ⋯ 菜单', () => {
     expect(document.activeElement).toBe(moreBtn);
   });
 
+  it('a11y · 菜单方向键漫游不通过 Array.from 物化 menuitem 列表', () => {
+    installFs(vi.fn());
+    const { container } = render(
+      <ExplorerHeader root="/proj" onExpandAll={vi.fn()} />,
+    );
+    fireEvent.click(
+      container.querySelector(
+        'button[aria-label=更多操作]',
+      ) as HTMLButtonElement,
+    );
+    const menu = document.querySelector('[role=menu]') as HTMLElement;
+    const fromSpy = vi.spyOn(Array, 'from');
+
+    try {
+      fireEvent.keyDown(menu, { key: 'ArrowDown' });
+      expect((document.activeElement as HTMLElement).textContent).toBe(
+        '切换文件夹…',
+      );
+      const nodeListCalls = fromSpy.mock.calls.filter(
+        ([arg]) => arg instanceof NodeList,
+      );
+      expect(nodeListCalls).toHaveLength(0);
+    } finally {
+      fromSpy.mockRestore();
+    }
+  });
+
   // a11y(A30,A18/A27 同族):自写 menu 项激活后须把焦点还原到触发按钮(否则随菜单卸载焦点落
   // body)。普通项(展开全部等,不会主动聚焦新目标)用 closeAndRestore。
   it('a11y · 菜单项激活后焦点还原到触发按钮', () => {

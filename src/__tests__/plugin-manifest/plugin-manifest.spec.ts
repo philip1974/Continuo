@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   parseManifest,
   isVersionCompatible,
@@ -232,6 +232,17 @@ describe('parseManifest:不抛错保证', () => {
 // ── isVersionCompatible ──────────────────────────────────
 
 describe('isVersionCompatible(app, min)', () => {
+  it('版本兼容比较不通过 String.match 解析三段版本', () => {
+    const matchSpy = vi.spyOn(String.prototype, 'match');
+
+    try {
+      expect(isVersionCompatible('1.2.0-rc.1', '1.1.0')).toBe(true);
+      expect(matchSpy).not.toHaveBeenCalled();
+    } finally {
+      matchSpy.mockRestore();
+    }
+  });
+
   it('app > min → true', () => {
     expect(isVersionCompatible('1.2.0', '1.1.0')).toBe(true);
     expect(isVersionCompatible('2.0.0', '1.99.99')).toBe(true);

@@ -352,6 +352,20 @@ describe('StatusBarRegistry', () => {
     expect(r.getBySide('right').map((x) => x.id)).toEqual(['a', 'b', 'c']);
   });
 
+  it('getBySide 不先 Array.from(values) 物化全部条目', () => {
+    const r = new StatusBarRegistry();
+    r.register({ id: 'left', side: 'left', render: () => null });
+    r.register({ id: 'right', side: 'right', render: () => null });
+    const arrayFromSpy = vi.spyOn(Array, 'from');
+
+    try {
+      expect(r.getBySide('left').map((x) => x.id)).toEqual(['left']);
+      expect(arrayFromSpy).not.toHaveBeenCalled();
+    } finally {
+      arrayFromSpy.mockRestore();
+    }
+  });
+
   // race(R56,R55 同族):StatusBar 渲染前按 id 从 live registry 复查再调 render,避免调 useRegistry
   // 快照滞后期内已 unregister 的 item 的 render。get(id) 提供该 live 查找。
   describe('get(id) live 查找(R56)', () => {

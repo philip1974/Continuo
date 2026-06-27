@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { resolveLink } from '../../panels/Editor/link-resolve';
 
 describe('resolveLink — external scheme', () => {
@@ -51,6 +51,20 @@ describe('resolveLink — 锚点', () => {
 });
 
 describe('resolveLink — file 路径', () => {
+  it('本地路径 normalize 不通过 split 物化所有路径段', () => {
+    const splitSpy = vi.spyOn(String.prototype, 'split');
+
+    try {
+      expect(resolveLink('./d/./e/../f.md', '/work/cur.md')).toEqual({
+        kind: 'file',
+        absPath: '/work/d/f.md',
+      });
+      expect(splitSpy).not.toHaveBeenCalled();
+    } finally {
+      splitSpy.mockRestore();
+    }
+  });
+
   it('绝对路径 / 开头 → file,直接用', () => {
     expect(resolveLink('/abs/x.md', '/work/cur.md')).toEqual({
       kind: 'file',

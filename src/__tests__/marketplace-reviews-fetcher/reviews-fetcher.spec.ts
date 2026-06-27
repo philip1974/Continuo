@@ -84,6 +84,35 @@ describe('fetchAllReviews — 正路径', () => {
     expect(map.get('com.bar')?.avg).toBe(4);
   });
 
+  it('聚合评分时不通过 reduce 二次扫描每组 reviews', async () => {
+    okNodes([
+      makeNode('com.foo', 5, '2026-05-05T00:00:00Z'),
+      makeNode('com.foo', 3, '2026-05-04T00:00:00Z'),
+    ]);
+    const reduceSpy = vi.spyOn(Array.prototype, 'reduce');
+
+    try {
+      const map = await fetchAllReviews();
+      expect(map.get('com.foo')?.avg).toBe(4);
+      expect(reduceSpy).not.toHaveBeenCalled();
+    } finally {
+      reduceSpy.mockRestore();
+    }
+  });
+
+  it('写入 reviews cache 时不通过 Object.fromEntries 泛化转换 Map', async () => {
+    okNodes([makeNode('com.foo', 5, '2026-05-05T00:00:00Z')]);
+    const fromEntriesSpy = vi.spyOn(Object, 'fromEntries');
+
+    try {
+      const map = await fetchAllReviews();
+      expect(map.get('com.foo')?.count).toBe(1);
+      expect(fromEntriesSpy).not.toHaveBeenCalled();
+    } finally {
+      fromEntriesSpy.mockRestore();
+    }
+  });
+
   it('main 返回的 nodes 已是全量(分页是 main 职责)→ renderer 一次聚合', async () => {
     okNodes([
       makeNode('com.a', 5, '2026-05-05T00:00:00Z'),
@@ -99,6 +128,20 @@ describe('fetchAllReviews — 正路径', () => {
     await fetchAllReviews();
     await fetchAllReviews();
     expect(fetchReviewsMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('memory cache 命中时不通过 Object.entries 生成中间数组', async () => {
+    okNodes([makeNode('a', 5, 'now')]);
+    await fetchAllReviews();
+
+    const entriesSpy = vi.spyOn(Object, 'entries');
+    try {
+      const map = await fetchAllReviews();
+      expect(map.get('a')?.count).toBe(1);
+      expect(entriesSpy).not.toHaveBeenCalled();
+    } finally {
+      entriesSpy.mockRestore();
+    }
   });
 
   it('forceRefresh=true → 跳 cache 重 IPC', async () => {

@@ -57,11 +57,39 @@ const MP_TAGS_COUNT_MAX = 64;
 // charset 收敛后 entry.id 即 URL/路径安全。非法 id 整条 entry 丢弃(不缓存)。
 // E113:isValidPluginId 抽到共享 ./plugin-id(reviews 链路同款复用)。
 
-const REPO_SEG_RE = /^[A-Za-z0-9._-]+$/;
+function isSafeRepoPathChar(code: number): boolean {
+  return (
+    (code >= 65 && code <= 90) ||
+    (code >= 97 && code <= 122) ||
+    (code >= 48 && code <= 57) ||
+    code === 46 ||
+    code === 95 ||
+    code === 45
+  );
+}
+
+function isSafeRepoPathSegment(v: string, start: number, end: number): boolean {
+  if (start >= end) return false;
+  if (
+    v.charCodeAt(start) === 46 &&
+    (end - start === 1 || (end - start === 2 && v.charCodeAt(start + 1) === 46))
+  )
+    return false;
+  for (let i = start; i < end; i += 1) {
+    if (!isSafeRepoPathChar(v.charCodeAt(i))) return false;
+  }
+  return true;
+}
+
 function isValidRepo(r: string): boolean {
-  const segs = r.split('/');
-  if (segs.length !== 2) return false; // 必须正好 owner/name 两段
-  return segs.every((s) => REPO_SEG_RE.test(s) && s !== '.' && s !== '..');
+  const slash = r.indexOf('/');
+  if (slash <= 0 || slash !== r.lastIndexOf('/') || slash >= r.length - 1) {
+    return false;
+  }
+  return (
+    isSafeRepoPathSegment(r, 0, slash) &&
+    isSafeRepoPathSegment(r, slash + 1, r.length)
+  );
 }
 
 
@@ -70,13 +98,16 @@ function isValidRepo(r: string): boolean {
 // 路径,旧正则放行 "../../other/repo/main" 会逃出 owner/repo/<branch>/manifest.json 结构 → 拉错
 // manifest / 错误更新提示 / 安装元数据错位。逐段校验:非空、无前导/尾随 /、无连续 //、每段
 // 仅 [A-Za-z0-9._-] 且非 '.'/'..'(charset 已排除控制字符且 URL-safe,无需额外 encode)。
-const BRANCH_SEG_RE = /^[A-Za-z0-9._-]+$/;
 function isValidBranch(b: string): boolean {
   if (b.length === 0 || b.length > MP_BRANCH_MAX) return false;
-  if (b.startsWith('/') || b.endsWith('/') || b.includes('//')) return false;
-  return b
-    .split('/')
-    .every((s) => BRANCH_SEG_RE.test(s) && s !== '.' && s !== '..');
+  let start = 0;
+  for (;;) {
+    const slash = b.indexOf('/', start);
+    const end = slash < 0 ? b.length : slash;
+    if (!isSafeRepoPathSegment(b, start, end)) return false;
+    if (slash < 0) return true;
+    start = slash + 1;
+  }
 }
 
 export function isValidMarketplaceEntry(v: unknown): v is MarketplaceEntry {

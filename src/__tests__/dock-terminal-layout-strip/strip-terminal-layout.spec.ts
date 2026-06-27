@@ -1,5 +1,5 @@
 // 持久化 dockview 布局剥离终端 panel 的纯函数规范。见 ./README.md。
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import type { SerializedDockview } from 'dockview-react';
 import { stripTerminalPanelsFromLayout } from '@/shell/dock/strip-terminal-layout';
 
@@ -42,6 +42,21 @@ describe('stripTerminalPanelsFromLayout', () => {
       editor: { contentComponent: 'editor' },
     });
     expect(stripTerminalPanelsFromLayout(l)).toBe(l);
+  });
+
+  it('扫描 panels 时不通过 Object.entries 全量物化', () => {
+    const l = layout([leaf('1', ['editor', 'term-1'], 'term-1')], {
+      editor: { contentComponent: 'editor' },
+      'term-1': { contentComponent: 'terminal' },
+    });
+    const entriesSpy = vi.spyOn(Object, 'entries');
+
+    try {
+      expect(out(l)!.panels).toEqual({ editor: { contentComponent: 'editor' } });
+      expect(entriesSpy).not.toHaveBeenCalled();
+    } finally {
+      entriesSpy.mockRestore();
+    }
   });
 
   it('leaf 含 editor+终端 → 剥终端,views 仅剩 editor,activeView 从终端回退到 editor', () => {

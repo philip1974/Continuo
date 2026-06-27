@@ -36,7 +36,7 @@ export function useMenuKeyboard(opts: {
   // callback ref:菜单节点挂载即把焦点移入首个可用 menuitem(unmount 时置 null)。
   const menuRef = useCallback((node: HTMLElement | null) => {
     menuNode.current = node;
-    if (node && openRef.current) getMenuItems(node)[0]?.focus();
+    if (node && openRef.current) getMenuItems(node)?.[0]?.focus();
   }, []);
 
   // a11y(A30):关闭菜单并把焦点还原到触发按钮。供「不会主动聚焦新目标」的菜单项激活时调用
@@ -60,9 +60,9 @@ export function useMenuKeyboard(opts: {
       return;
     }
     const items = getMenuItems(menuNode.current);
-    if (items.length === 0) return;
+    if (!items || items.length === 0) return;
     const current = document.activeElement as HTMLElement | null;
-    const idx = current ? items.indexOf(current as HTMLButtonElement) : -1;
+    const idx = current ? indexOfMenuItem(items, current) : -1;
     let next: number | null = null;
     if (e.key === 'ArrowDown') next = idx < 0 ? 0 : (idx + 1) % items.length;
     else if (e.key === 'ArrowUp') next = idx <= 0 ? items.length - 1 : idx - 1;
@@ -78,11 +78,21 @@ export function useMenuKeyboard(opts: {
 }
 
 /** 菜单内所有「可用」menuitem(排除 disabled),按 DOM 顺序。 */
-function getMenuItems(menu: HTMLElement | null): HTMLButtonElement[] {
-  if (!menu) return [];
-  return Array.from(
-    menu.querySelectorAll<HTMLButtonElement>(
-      '[role="menuitem"]:not([disabled])',
-    ),
+function getMenuItems(
+  menu: HTMLElement | null,
+): NodeListOf<HTMLButtonElement> | null {
+  if (!menu) return null;
+  return menu.querySelectorAll<HTMLButtonElement>(
+    '[role="menuitem"]:not([disabled])',
   );
+}
+
+function indexOfMenuItem(
+  items: NodeListOf<HTMLButtonElement>,
+  current: HTMLElement,
+): number {
+  for (let i = 0; i < items.length; i += 1) {
+    if (items[i] === current) return i;
+  }
+  return -1;
 }

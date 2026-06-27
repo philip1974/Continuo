@@ -4,7 +4,11 @@
 // 评估第三方 when();只有用户真正弹出菜单时才按当前上下文计算。
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { render, cleanup, fireEvent } from '@testing-library/react';
-import { ContextMenu, type ContextMenuActions } from '../../panels/Explorer/ContextMenu';
+import {
+  ContextMenu,
+  groupPluginItems,
+  type ContextMenuActions,
+} from '../../panels/Explorer/ContextMenu';
 import type { ExplorerContextMenuItemSpec } from '../../plugins/registries/ExplorerContextMenuRegistry';
 import type { FileEntry } from '../../lib/fs/types';
 
@@ -46,6 +50,26 @@ function renderMenu(items: readonly ExplorerContextMenuItemSpec[]) {
 afterEach(() => cleanup());
 
 describe('打磨 R13 — 插件菜单 when 延迟到打开', () => {
+  it('插件菜单分组不通过 Array.from(entries).map 生成中间数组', () => {
+    const items: ExplorerContextMenuItemSpec[] = [
+      { id: 'late', label: 'Late', group: 'z', fn: vi.fn() },
+      { id: 'early', label: 'Early', group: 'navigation', fn: vi.fn() },
+    ];
+    const arrayFromSpy = vi.spyOn(Array, 'from');
+
+    try {
+      const buckets = groupPluginItems(items, {
+        target,
+        selectedPaths: ['/work/a.ts'],
+        rootPath: '/work',
+      });
+      expect(arrayFromSpy).not.toHaveBeenCalled();
+      expect(buckets.map((bucket) => bucket.group)).toEqual(['navigation', 'z']);
+    } finally {
+      arrayFromSpy.mockRestore();
+    }
+  });
+
   it('菜单未打开 → 不评估插件 when', () => {
     const when = vi.fn(() => true);
     renderMenu([{ id: 'p1', label: 'Plugin Item', when, fn: vi.fn() }]);

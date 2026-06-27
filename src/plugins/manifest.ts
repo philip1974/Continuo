@@ -95,23 +95,43 @@ export function parseManifest(jsonText: string): ManifestParseResult {
 // ── SemVer 比对 ────────────────────────────────────────
 
 function parseVer(v: string): readonly [number, number, number] | null {
-  const m = v.match(/^(\d+)\.(\d+)\.(\d+)/);
-  if (!m) return null;
-  const major = Number(m[1]);
-  const minor = Number(m[2]);
-  const patch = Number(m[3]);
+  const firstDot = v.indexOf('.');
+  if (firstDot <= 0) return null;
+  const secondDot = v.indexOf('.', firstDot + 1);
+  if (secondDot <= firstDot + 1) return null;
+  let patchEnd = secondDot + 1;
+  while (patchEnd < v.length) {
+    const code = v.charCodeAt(patchEnd);
+    if (code < 48 || code > 57) break;
+    patchEnd += 1;
+  }
+  if (patchEnd === secondDot + 1) return null;
+  const major = parseSafeIntSegment(v, 0, firstDot);
+  const minor = parseSafeIntSegment(v, firstDot + 1, secondDot);
+  const patch = parseSafeIntSegment(v, secondDot + 1, patchEnd);
   // 边界(E9,E7/E8 同族):`\d+` 允许任意长度数字段,`Number('999…999')` 超 Number.MAX_SAFE_INTEGER
   // 变 Infinity/不安全整数,参与兼容比较时语义失真(畸形 plugin manifest 可通过 schema 污染兼容
   // 判断,minLMVersion vs app version 在极端数字下不可靠)。任一段非安全整数即视为非法版本 →
   // 返 null,下方 isVersionCompatible 对 null fail-closed(保守拒载)。
-  if (
-    !Number.isSafeInteger(major) ||
-    !Number.isSafeInteger(minor) ||
-    !Number.isSafeInteger(patch)
-  ) {
+  if (major === null || minor === null || patch === null) {
     return null;
   }
   return [major, minor, patch] as const;
+}
+
+function parseSafeIntSegment(
+  v: string,
+  start: number,
+  end: number,
+): number | null {
+  let n = 0;
+  for (let i = start; i < end; i += 1) {
+    const code = v.charCodeAt(i);
+    if (code < 48 || code > 57) return null;
+    n = n * 10 + (code - 48);
+    if (!Number.isSafeInteger(n)) return null;
+  }
+  return n;
 }
 
 /**

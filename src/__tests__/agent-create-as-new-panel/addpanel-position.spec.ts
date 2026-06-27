@@ -76,6 +76,32 @@ describe('agent create as new dockview panel', () => {
     expect(api.panels['terminal-old']?.api.setActive).toHaveBeenCalledTimes(1);
   });
 
+  it('Record panels fallback 不通过 Object.values 全量物化 panels', () => {
+    const valuesSpy = vi.spyOn(Object, 'values');
+    const api = makeApi();
+    api.panels['terminal-old'] = makePanel('terminal-old');
+    api.activePanel = api.panels['terminal-old'];
+
+    try {
+      reconcileTerminalPanels(api as unknown as DockviewApi, {
+        previousSessions: [makeSession('old', { createdAt: 1 })],
+        nextSessions: [
+          makeSession('old', { createdAt: 1 }),
+          makeSession('agent-1', { originHint: 'agent', createdAt: 2 }),
+        ],
+      });
+
+      expect(api.addPanel).toHaveBeenCalledWith(
+        expect.objectContaining({
+          position: { referencePanel: 'terminal-old', direction: 'right' },
+        }),
+      );
+      expect(valuesSpy).not.toHaveBeenCalled();
+    } finally {
+      valuesSpy.mockRestore();
+    }
+  });
+
   it('user path: setPendingFocus 命中 → addPanel 后 setActive,并清空 pendingFocus', () => {
     const api = makeApi();
     setPendingFocus('user-1');

@@ -176,6 +176,16 @@ const SPECIAL_FILE_NAMES: Readonly<Record<string, IconComp>> = {
   'astro.config.ts': Astro,
 };
 
+const SPECIAL_FILE_NAMES_LOWER: Readonly<Record<string, IconComp>> = (() => {
+  const out: Record<string, IconComp> = {};
+  for (const name in SPECIAL_FILE_NAMES) {
+    if (Object.prototype.hasOwnProperty.call(SPECIAL_FILE_NAMES, name)) {
+      out[name.toLowerCase()] = SPECIAL_FILE_NAMES[name]!;
+    }
+  }
+  return out;
+})();
+
 // 扩展名 → icon(case-insensitive,取最后一段)
 const EXT_MAP: Readonly<Record<string, IconComp>> = {
   // TypeScript / JavaScript
@@ -346,11 +356,8 @@ export function getFileIconComponent(
 
   // 2. case-insensitive 兜底特殊名(README / Readme / readme 都通)
   const lower = name.toLowerCase();
-  for (const key of Object.keys(SPECIAL_FILE_NAMES)) {
-    if (key.toLowerCase() === lower) {
-      return SPECIAL_FILE_NAMES[key]!;
-    }
-  }
+  const specialLower = SPECIAL_FILE_NAMES_LOWER[lower];
+  if (specialLower) return specialLower;
 
   // 3. .d.ts 比通用 .ts 更专精
   if (lower.endsWith('.d.ts')) return Dts;

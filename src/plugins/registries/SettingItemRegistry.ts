@@ -310,9 +310,14 @@ export class SettingItemRegistry {
     // 先过滤再排序(打磨 R5):原先 getAll() 对全部 category 的 items 排序后才
     // 过滤,每个设置 tab 都为无关 category 付排序成本。filter 在前,只排本
     // category 的子集;Array.prototype.sort 稳定,输出与原契约完全一致。
-    return Array.from(this.items.values())
-      .filter((s) => s.category === category)
-      .sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
+    const items: SettingItemSpec[] = [];
+    for (const item of this.items.values()) {
+      if (item.category === category) {
+        items.push(item);
+      }
+    }
+    items.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
+    return items;
   }
 
   subscribe(listener: Listener): () => void {

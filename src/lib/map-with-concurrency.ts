@@ -35,6 +35,10 @@ export async function allSettledWithConcurrency<T, R>(
   const safeLimit =
     Number.isFinite(limit) && limit > 0 ? Math.trunc(limit) : 1;
   const workerCount = Math.min(safeLimit, items.length);
-  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  const workers: Promise<void>[] = [];
+  for (let i = 0; i < workerCount; i += 1) {
+    workers.push(worker());
+  }
+  await Promise.all(workers);
   return results;
 }

@@ -47,6 +47,28 @@ com.example.foo
 0.2.0`;
 
 describe('parseReview — 模板正路径', () => {
+  it('模板解析不通过 split/match 物化 body 行和正则匹配结果', () => {
+    const splitSpy = vi.spyOn(String.prototype, 'split');
+    const matchSpy = vi.spyOn(String.prototype, 'match');
+
+    try {
+      const r = parseReview({
+        title: '[com.example.foo] great',
+        body: TEMPLATE_BODY,
+        url: 'https://x',
+        createdAt: '2026-05-05T00:00:00Z',
+        author: AUTHOR,
+      });
+      expect(r?.pluginId).toBe('com.example.foo');
+      expect(r?.rating).toBe(5);
+      expect(splitSpy).not.toHaveBeenCalled();
+      expect(matchSpy).not.toHaveBeenCalled();
+    } finally {
+      splitSpy.mockRestore();
+      matchSpy.mockRestore();
+    }
+  });
+
   it('完整模板 → 全字段抽出', () => {
     const r = parseReview({
       title: '[com.example.foo] great',

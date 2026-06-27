@@ -37,28 +37,74 @@ export function isNewerVersion(a: string, b: string): boolean {
  */
 function comparePrerelease(a: string, b: string): number {
   if (a === b) return 0;
-  const as = a.split('.');
-  const bs = b.split('.');
-  const len = Math.min(as.length, bs.length);
-  for (let i = 0; i < len; i += 1) {
-    const x = as[i] ?? '';
-    const y = bs[i] ?? '';
-    if (x === y) continue;
-    const xNum = /^\d+$/.test(x);
-    const yNum = /^\d+$/.test(y);
-    if (xNum && yNum) {
-      // 纯数字段:去前导零后「长度多者大,等长按字典序」= 任意长度整数精确比较(免 Number 精度问题)。
-      const xd = x.replace(/^0+(?=\d)/, '');
-      const yd = y.replace(/^0+(?=\d)/, '');
-      if (xd.length !== yd.length) return xd.length - yd.length;
-      if (xd !== yd) return xd < yd ? -1 : 1;
-      continue; // 仅前导零不同 → 视为相等,继续下一段
-    }
-    if (xNum !== yNum) return xNum ? -1 : 1; // 数字段优先级低于非数字段(alphanumeric)
-    return x < y ? -1 : 1; // 都非数字 → ASCII 字典序
+  let ai = 0;
+  let bi = 0;
+  for (;;) {
+    const aHas = ai < a.length;
+    const bHas = bi < b.length;
+    if (!aHas || !bHas) return (aHas ? 1 : 0) - (bHas ? 1 : 0);
+    const aDot = a.indexOf('.', ai);
+    const bDot = b.indexOf('.', bi);
+    const ae = aDot < 0 ? a.length : aDot;
+    const be = bDot < 0 ? b.length : bDot;
+    const cmp = comparePrereleaseSegment(a, ai, ae, b, bi, be);
+    if (cmp !== 0) return cmp;
+    ai = ae < a.length ? ae + 1 : a.length;
+    bi = be < b.length ? be + 1 : b.length;
   }
-  // 所有公共段相等 → 段数多者优先级更高(更长 prerelease 集 > 较短)
-  return as.length - bs.length;
+}
+
+function isDigitsOnly(s: string, start: number, end: number): boolean {
+  if (start >= end) return false;
+  for (let i = start; i < end; i += 1) {
+    const code = s.charCodeAt(i);
+    if (code < 48 || code > 57) return false;
+  }
+  return true;
+}
+
+function trimLeadingZeroes(s: string, start: number, end: number): number {
+  while (end - start > 1 && s.charCodeAt(start) === 48) start += 1;
+  return start;
+}
+
+function compareAsciiSlices(
+  a: string,
+  as: number,
+  ae: number,
+  b: string,
+  bs: number,
+  be: number,
+): number {
+  const len = Math.min(ae - as, be - bs);
+  for (let i = 0; i < len; i += 1) {
+    const ac = a.charCodeAt(as + i);
+    const bc = b.charCodeAt(bs + i);
+    if (ac !== bc) return ac < bc ? -1 : 1;
+  }
+  return ae - as - (be - bs);
+}
+
+function comparePrereleaseSegment(
+  a: string,
+  as: number,
+  ae: number,
+  b: string,
+  bs: number,
+  be: number,
+): number {
+  const aNum = isDigitsOnly(a, as, ae);
+  const bNum = isDigitsOnly(b, bs, be);
+  if (aNum && bNum) {
+    // 纯数字段:去前导零后「长度多者大,等长按字典序」= 任意长度整数精确比较(免 Number 精度问题)。
+    const ad = trimLeadingZeroes(a, as, ae);
+    const bd = trimLeadingZeroes(b, bs, be);
+    const lenDiff = ae - ad - (be - bd);
+    if (lenDiff !== 0) return lenDiff;
+    return compareAsciiSlices(a, ad, ae, b, bd, be);
+  }
+  if (aNum !== bNum) return aNum ? -1 : 1; // 数字段优先级低于非数字段(alphanumeric)
+  return compareAsciiSlices(a, as, ae, b, bs, be); // 都非数字 → ASCII 字典序
 }
 
 interface ParsedSemver {
@@ -70,22 +116,43 @@ interface ParsedSemver {
 }
 
 function parseSemver(s: string): ParsedSemver | null {
-  const m = s.match(/^(\d+)\.(\d+)\.(\d+)(?:-(.+))?$/);
-  if (!m) return null;
-  const major = Number(m[1]);
-  const minor = Number(m[2]);
-  const patch = Number(m[3]);
+  const firstDot = s.indexOf('.');
+  if (firstDot <= 0) return null;
+  const secondDot = s.indexOf('.', firstDot + 1);
+  if (secondDot <= firstDot + 1) return null;
+  const dash = s.indexOf('-', secondDot + 1);
+  const patchEnd = dash < 0 ? s.length : dash;
+  if (patchEnd <= secondDot + 1 || dash === s.length - 1) return null;
+  const major = parseSafeIntSegment(s, 0, firstDot);
+  const minor = parseSafeIntSegment(s, firstDot + 1, secondDot);
+  const patch = parseSafeIntSegment(s, secondDot + 1, patchEnd);
   // 边界(E7):`\d+` 允许任意长度数字段,`Number('999…999')` 超 Number.MAX_SAFE_INTEGER 会变不安全
   // 整数甚至 Infinity,仍参与 > 比较 → 畸形远端 manifest.version 被误判「有更新」、甚至把不可表示
   // 版本写入已安装状态。任一段非安全整数即视为不可解析(返 null)。
-  if (
-    !Number.isSafeInteger(major) ||
-    !Number.isSafeInteger(minor) ||
-    !Number.isSafeInteger(patch)
-  ) {
+  if (major === null || minor === null || patch === null) {
     return null;
   }
-  return { major, minor, patch, prerelease: m[4] ?? null };
+  return {
+    major,
+    minor,
+    patch,
+    prerelease: dash < 0 ? null : s.slice(dash + 1),
+  };
+}
+
+function parseSafeIntSegment(
+  s: string,
+  start: number,
+  end: number,
+): number | null {
+  let n = 0;
+  for (let i = start; i < end; i += 1) {
+    const code = s.charCodeAt(i);
+    if (code < 48 || code > 57) return null;
+    n = n * 10 + (code - 48);
+    if (!Number.isSafeInteger(n)) return null;
+  }
+  return n;
 }
 
 /** 边界(E7):是否合法 X.Y.Z[-pre](数字段为安全整数)。update-check 用它跳过畸形远端版本。 */
