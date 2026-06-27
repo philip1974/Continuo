@@ -1,5 +1,5 @@
 // 布局写盘前 JSON-safe 清洗的纯函数规范。见 ./README.md。
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { makeJsonSafe } from '../../../electron/shared/make-json-safe';
 import { assertJsonValue } from '../../../electron/shared/assert-json-value';
 
@@ -43,6 +43,19 @@ describe('makeJsonSafe', () => {
   it('数组元素非有限 / undefined → 置 null(保索引,同 JSON.stringify)', () => {
     const { value } = makeJsonSafe([1, NaN, 'a', undefined, Infinity]);
     expect(value).toEqual([1, null, 'a', null, null]);
+  });
+
+  it('数组清洗单趟扫描,不调用 input.map', () => {
+    const input = [1, NaN, 'a'];
+    const mapSpy = vi.spyOn(input, 'map');
+
+    try {
+      const { value } = makeJsonSafe(input);
+      expect(value).toEqual([1, null, 'a']);
+      expect(mapSpy).not.toHaveBeenCalled();
+    } finally {
+      mapSpy.mockRestore();
+    }
   });
 
   it('深层 grid 树内的非有限 size → 清除,其余结构保留', () => {

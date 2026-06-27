@@ -19,6 +19,8 @@ import {
 import { setLocale as setI18nLocale } from '@/i18n';
 import {
   PluginsTabContent,
+  hasPluginId,
+  hasPluginVersion,
   pluginsTabRowClassName,
 } from '../../plugins/settings/PluginsTabContent';
 import { coApp } from '../../plugins/co-app';
@@ -100,6 +102,24 @@ describe('PluginsTabContent — 贡献点统计', () => {
       expect(joinSpy).not.toHaveBeenCalled();
     } finally {
       joinSpy.mockRestore();
+    }
+  });
+
+  it('插件存在性检查单趟扫描,不调用 plugins.some', () => {
+    const plugins = [
+      plugin({ id: 'alpha', manifest: { id: 'alpha', version: '1.0.0' } as never }),
+      plugin({ id: 'beta', manifest: { id: 'beta', version: '2.0.0' } as never }),
+    ];
+    const someSpy = vi.spyOn(plugins, 'some');
+
+    try {
+      expect(hasPluginId(plugins, 'beta')).toBe(true);
+      expect(hasPluginId(plugins, 'missing')).toBe(false);
+      expect(hasPluginVersion(plugins, 'beta', '2.0.0')).toBe(true);
+      expect(hasPluginVersion(plugins, 'beta', '1.0.0')).toBe(false);
+      expect(someSpy).not.toHaveBeenCalled();
+    } finally {
+      someSpy.mockRestore();
     }
   });
 

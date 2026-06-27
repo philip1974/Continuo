@@ -5,8 +5,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { Profiler } from 'react';
 import { render, cleanup, act } from '@testing-library/react';
-import { EditorHeader } from '../../panels/Editor/EditorHeader';
-import { useEditorStore } from '../../stores/editor.store';
+import {
+  buildEditorTabChrome,
+  EditorHeader,
+  findEditorTabById,
+} from '../../panels/Editor/EditorHeader';
+import { useEditorStore, type EditorTab } from '../../stores/editor.store';
 import { coApp } from '../../plugins/co-app';
 import { EditorActionRegistry } from '../../plugins/registries/EditorActionRegistry';
 
@@ -34,6 +38,64 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('打磨 R23 — EditorHeader 窄订阅', () => {
+  it('tab chrome 构造单趟扫描,不调用 tabs.map', () => {
+    const tabs = [
+      {
+        id: '/a.md',
+        filePath: '/a.md',
+        content: 'a',
+        originalContent: 'a',
+        dirty: false,
+      },
+      {
+        id: '/b.md',
+        filePath: '/b.md',
+        content: 'b',
+        originalContent: 'b',
+        dirty: true,
+      },
+    ] satisfies EditorTab[];
+    const mapSpy = vi.spyOn(tabs, 'map');
+
+    try {
+      expect(buildEditorTabChrome(tabs)).toEqual([
+        { id: '/a.md', filePath: '/a.md', dirty: false },
+        { id: '/b.md', filePath: '/b.md', dirty: true },
+      ]);
+      expect(mapSpy).not.toHaveBeenCalled();
+    } finally {
+      mapSpy.mockRestore();
+    }
+  });
+
+  it('active tab 查找单趟扫描,不调用 tabs.find', () => {
+    const tabs = [
+      {
+        id: '/a.md',
+        filePath: '/a.md',
+        content: 'a',
+        originalContent: 'a',
+        dirty: false,
+      },
+      {
+        id: '/b.md',
+        filePath: '/b.md',
+        content: 'b',
+        originalContent: 'b',
+        dirty: true,
+      },
+    ] satisfies EditorTab[];
+    const findSpy = vi.spyOn(tabs, 'find');
+
+    try {
+      expect(findEditorTabById(tabs, '/b.md')).toBe(tabs[1]);
+      expect(findEditorTabById(tabs, '/missing')).toBeNull();
+      expect(findSpy).not.toHaveBeenCalled();
+    } finally {
+      findSpy.mockRestore();
+    }
+  });
+
   it('content-only 变化 → EditorHeader 不重渲(commit 次数不变)', () => {
     seedTabs('hello', true); // dirty 已 true,后续只改 content
     const onRender = vi.fn();

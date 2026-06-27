@@ -1,6 +1,9 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PLUGIN_SHELL_STREAM_CHANNELS } from '../../shared/plugin-shell-stream-channels';
-import { registerPluginShellStreamHandlers } from '../services/plugin-shell-stream.service';
+import {
+  areValidPluginShellStreamArgs,
+  registerPluginShellStreamHandlers,
+} from '../services/plugin-shell-stream.service';
 
 type Handler = (
   event: { sender: MockWebContents; senderFrame?: { url: string } },
@@ -111,6 +114,19 @@ afterEach(async () => {
 });
 
 describe('plugin-shell-stream.service', () => {
+  it('E45 START args 单项校验单趟扫描,不调用 args.every', () => {
+    const args = ['ok', 'x'.repeat(16_385)];
+    const everySpy = vi.spyOn(args, 'every');
+
+    try {
+      expect(areValidPluginShellStreamArgs(args)).toBe(false);
+      expect(areValidPluginShellStreamArgs(['ok', 'still-ok'])).toBe(true);
+      expect(everySpy).not.toHaveBeenCalled();
+    } finally {
+      everySpy.mockRestore();
+    }
+  });
+
   it('T3.a streams stdout, stderr, and zero exit', async () => {
     const { ipc, sender } = makeHarness();
     const id = 'happy';

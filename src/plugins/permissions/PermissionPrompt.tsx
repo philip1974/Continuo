@@ -25,6 +25,14 @@ function splitPluginIdTemplate(tpl: string): {
   };
 }
 
+export function copySelectedPermissions(
+  selected: ReadonlySet<PermissionKey>,
+): PermissionKey[] {
+  const out: PermissionKey[] = [];
+  for (const perm of selected) out.push(perm);
+  return out;
+}
+
 /**
  * 轻量 shell(打磨 R52,仿 R32/R50):权限弹窗绝大多数时间为空闲态。外层只订阅
  * pending / currentFsScope 两个队列字段,都空时直接返回 null。manifest 弹窗与
@@ -125,7 +133,7 @@ function ManifestPromptBody({ pending }: { pending: Pending }) {
           <Button
             variant="primary"
             size="sm"
-            onClick={() => grant(Array.from(selected))}
+            onClick={() => grant(copySelectedPermissions(selected))}
           >
             {t('permissions.prompt.grant_selected', { count: selected.size })}
           </Button>

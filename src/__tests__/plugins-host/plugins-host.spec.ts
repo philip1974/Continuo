@@ -4,7 +4,10 @@ import {
   _resetLmApiForTest,
   captureLmApi,
 } from '../../lib/co-api';
-import { createWindowApiHost } from '../../lib/plugins-host';
+import {
+  buildPluginDirInfos,
+  createWindowApiHost,
+} from '../../lib/plugins-host';
 
 interface FakePluginsApi {
   listDirs: ReturnType<typeof vi.fn>;
@@ -43,6 +46,32 @@ afterEach(() => {
 });
 
 describe('createWindowApiHost.listPluginDirs', () => {
+  it('PluginDirInfo 构造单趟扫描,不调用 dirs.map', () => {
+    const dirs = [
+      {
+        id: 'p1',
+        manifestText: '{"id":"p1"}',
+        mainText: 'export default {}',
+        stylesText: '.a{}',
+      },
+    ];
+    const mapSpy = vi.spyOn(dirs, 'map');
+
+    try {
+      expect(buildPluginDirInfos(dirs)).toEqual([
+        {
+          id: 'p1',
+          manifestText: '{"id":"p1"}',
+          moduleUrl: 'blob:mock-url',
+          stylesText: '.a{}',
+        },
+      ]);
+      expect(mapSpy).not.toHaveBeenCalled();
+    } finally {
+      mapSpy.mockRestore();
+    }
+  });
+
   it('ok=true → 把 mainText 转 Blob URL,其它字段透传', async () => {
     installFakeApi({
       listDirs: vi.fn().mockResolvedValue({

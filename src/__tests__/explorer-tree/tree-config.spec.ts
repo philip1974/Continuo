@@ -6,7 +6,11 @@ import {
   renamingFeature,
   selectionFeature,
 } from '@headless-tree/core';
-import { createDataLoader, createTreeConfig } from '../../panels/Explorer/tree-config';
+import {
+  buildTreeChildrenWithData,
+  createDataLoader,
+  createTreeConfig,
+} from '../../panels/Explorer/tree-config';
 import type { FileEntry, IpcResult } from '../../lib/fs/types';
 
 const ok = <T,>(data: T): IpcResult<T> => ({ ok: true, data });
@@ -108,6 +112,21 @@ describe('createTreeConfig · getItem', () => {
 });
 
 describe('createDataLoader · getChildrenWithData', () => {
+  it('FileEntry[] 包装为 tree children 时单趟扫描,不调用 entries.map', () => {
+    const entries = [entry('/work/sub', true), entry('/work/a.md')];
+    const mapSpy = vi.spyOn(entries, 'map');
+
+    try {
+      expect(buildTreeChildrenWithData(entries)).toEqual([
+        { id: '/work/sub', data: entries[0] },
+        { id: '/work/a.md', data: entries[1] },
+      ]);
+      expect(mapSpy).not.toHaveBeenCalled();
+    } finally {
+      mapSpy.mockRestore();
+    }
+  });
+
   it('成功 → 把 FileEntry[] 映射为 { id, data }[]', async () => {
     const sub = entry('/work/sub', true);
     const md = entry('/work/a.md');

@@ -41,6 +41,25 @@ afterEach(() => {
 });
 
 describe('race(R65) · plugin-fs scope-updated 广播 send 抛错不打断 grant/revoke', () => {
+  it('持久化 scope 复制单趟扫描,不调用 scopes.map', async () => {
+    const { copyScopesForPersistence } = await import(
+      '../../../electron/main/ipc/plugin-fs.ipc'
+    );
+    const scopes = [
+      { path: '/a', mode: 'r' as const },
+      { path: '/b', mode: 'rw' as const },
+    ];
+    const mapSpy = vi.spyOn(scopes, 'map');
+
+    try {
+      expect(copyScopesForPersistence(scopes)).toEqual(scopes);
+      expect(copyScopesForPersistence(scopes)).not.toBe(scopes);
+      expect(mapSpy).not.toHaveBeenCalled();
+    } finally {
+      mapSpy.mockRestore();
+    }
+  });
+
   it('第一个 wc.send 抛错 → emit 不抛 + 其后健康 wc 仍收到 SCOPE_UPDATED', async () => {
     const dead = makeWc(1, { throwOnSend: true });
     const healthy = makeWc(2);

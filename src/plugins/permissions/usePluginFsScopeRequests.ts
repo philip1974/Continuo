@@ -65,6 +65,20 @@ export function expandScopePathForDisplay(path: string): string {
   return path;
 }
 
+export function buildFsScopePromptScopes(
+  scopes: readonly PathScope[],
+): FsScopePromptScope[] {
+  const out: FsScopePromptScope[] = [];
+  for (const scope of scopes) {
+    out.push({
+      path: scope.path,
+      mode: scope.mode,
+      displayPath: expandScopePathForDisplay(scope.path),
+    });
+  }
+  return out;
+}
+
 export function startPluginFsScopeRequestBridge(): () => void {
   // race(R99,R98 同型):active 守卫。unsub 只移除后续 onScopeRequest 监听,但已进入的
   // requestFsScope(...).then(_scopeDecision) 是异步的;bridge 卸载/HMR/重启后旧生命周期的授权/
@@ -81,10 +95,7 @@ export function startPluginFsScopeRequestBridge(): () => void {
         );
         return;
       }
-      const scopes: FsScopePromptScope[] = payload.scopes.map((scope) => ({
-        ...scope,
-        displayPath: expandScopePathForDisplay(scope.path),
-      }));
+      const scopes = buildFsScopePromptScopes(payload.scopes);
       void usePermissionPromptStore
         .getState()
         .requestFsScope({

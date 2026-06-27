@@ -219,12 +219,18 @@ export class PathScopeRegistry extends EventEmitter {
   covers(pluginId: string, requested: readonly PathScope[]): boolean {
     const scopes = this.pluginScopes.get(pluginId) ?? [];
     if (scopes.length === 0) return false;
-    return requested.every((req) =>
-      scopes.some((s) => {
-        if (req.mode === 'rw' && s.mode !== 'rw') return false;
-        return isWithinScope(s.path, req.path);
-      }),
-    );
+    for (const req of requested) {
+      let covered = false;
+      for (const scope of scopes) {
+        if (req.mode === 'rw' && scope.mode !== 'rw') continue;
+        if (isWithinScope(scope.path, req.path)) {
+          covered = true;
+          break;
+        }
+      }
+      if (!covered) return false;
+    }
+    return true;
   }
 
   /** 当前已授 scope 快照(持久化用)。 */

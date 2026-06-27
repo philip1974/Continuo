@@ -13,6 +13,7 @@ import {
   getEffectiveMode,
   useEditorStore,
   type EditorMode,
+  type EditorTab,
 } from '@/stores/editor.store';
 import { useT, t as translate } from '@/i18n';
 import { runContributedAction } from '@/lib/run-contributed-action';
@@ -48,6 +49,29 @@ function basename(p: string | null): string {
   // 可维护性 M12:非空 basename 规则共用 basenameForEditorPath;null fallback 文案各自处理。
   if (!p) return translate('panels.editor.untitled');
   return basenameForEditorPath(p);
+}
+
+export function buildEditorTabChrome(tabs: readonly EditorTab[]): TabChrome[] {
+  const out: TabChrome[] = [];
+  for (const tab of tabs) {
+    out.push({
+      id: tab.id,
+      filePath: tab.filePath,
+      dirty: tab.dirty,
+    });
+  }
+  return out;
+}
+
+export function findEditorTabById(
+  tabs: readonly EditorTab[],
+  id: string | null,
+): EditorTab | null {
+  if (id === null) return null;
+  for (const tab of tabs) {
+    if (tab.id === id) return tab;
+  }
+  return null;
 }
 
 /** 订阅 editorActions registry,渲染时按 ctx 过滤. */
@@ -134,12 +158,7 @@ export function EditorHeader({ onCloseRequest }: EditorHeaderProps) {
   // useMemo 仅在 version 变化时从 getState() 重建 chrome 对象数组。
   const chromeVersion = useEditorStore((s) => s.chromeVersion);
   const tabsChrome = useMemo<readonly TabChrome[]>(
-    () =>
-      useEditorStore.getState().tabs.map((tb) => ({
-        id: tb.id,
-        filePath: tb.filePath,
-        dirty: tb.dirty,
-      })),
+    () => buildEditorTabChrome(useEditorStore.getState().tabs),
     // chromeVersion 作"失效键":body 用 getState() 读最新 tabs,version 变(chrome 真
     // 变)才重建对象数组。lint 看不到 body 引用 chromeVersion 故误判 unnecessary。
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -155,8 +174,7 @@ export function EditorHeader({ onCloseRequest }: EditorHeaderProps) {
   // [filePath, dirty, effectiveMode]。持续输入已脏 tab → 三者不变 → O(1) 跳过。
   const requestedMode = useEditorStore((s) => s.mode);
   const { activeFilePath, dirty, effectiveMode } = useMemo(() => {
-    const found =
-      useEditorStore.getState().tabs.find((tb) => tb.id === activeTabId) ?? null;
+    const found = findEditorTabById(useEditorStore.getState().tabs, activeTabId);
     return {
       activeFilePath: found?.filePath ?? null,
       dirty: found?.dirty ?? false,

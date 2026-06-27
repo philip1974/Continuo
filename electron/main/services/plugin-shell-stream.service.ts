@@ -27,6 +27,17 @@ const STREAM_ID_MAX = 256;
 const MAX_ACTIVE_STREAMS_GLOBAL = 128; // 全局并发流上限(远超任何正常插件并发)
 const MAX_ACTIVE_STREAMS_PER_SENDER = 32; // 单 webContents 并发流上限
 
+export function areValidPluginShellStreamArgs(
+  args: readonly unknown[],
+): boolean {
+  for (const arg of args) {
+    if (typeof arg !== 'string' || arg.length > ARG_MAX_LEN) {
+      return false;
+    }
+  }
+  return true;
+}
+
 interface ActiveStream {
   child: ChildProcessByStdio<null, Readable, Readable>;
   timeoutTimer: NodeJS.Timeout | null;
@@ -133,9 +144,7 @@ export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
       if (!Array.isArray(args) || args.length > ARGS_MAX_COUNT) {
         badInput(`invalid args (not array or count > ${ARGS_MAX_COUNT})`);
       }
-      if (
-        !args.every((a) => typeof a === 'string' && a.length <= ARG_MAX_LEN)
-      ) {
+      if (!areValidPluginShellStreamArgs(args)) {
         badInput(`invalid arg entry (non-string or > ${ARG_MAX_LEN})`);
       }
       if (

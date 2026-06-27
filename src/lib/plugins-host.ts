@@ -6,6 +6,41 @@
 import type { ManagerHost } from '@/plugins/PluginManager';
 import { coApi } from './co-api';
 
+interface RawPluginDirInfo {
+  readonly id: string;
+  readonly manifestText: string;
+  readonly mainText: string;
+  readonly stylesText?: string;
+}
+
+export function buildPluginDirInfos(
+  dirs: readonly RawPluginDirInfo[],
+): Array<{
+  readonly id: string;
+  readonly manifestText: string;
+  readonly moduleUrl: string;
+  readonly stylesText?: string;
+}> {
+  const out: Array<{
+    readonly id: string;
+    readonly manifestText: string;
+    readonly moduleUrl: string;
+    readonly stylesText?: string;
+  }> = [];
+  for (const dir of dirs) {
+    const blob = new Blob([dir.mainText], {
+      type: 'application/javascript',
+    });
+    out.push({
+      id: dir.id,
+      manifestText: dir.manifestText,
+      moduleUrl: URL.createObjectURL(blob),
+      stylesText: dir.stylesText,
+    });
+  }
+  return out;
+}
+
 export function createWindowApiHost(): ManagerHost {
   return {
     listPluginDirs: async () => {
@@ -17,17 +52,7 @@ export function createWindowApiHost(): ManagerHost {
       // 用 Blob URL 让 dynamic import 能拿到外部文件内容。
       // 注意:URL.revokeObjectURL 不在此调,等 plugin _deactivate 后由
       // 浏览器 GC(主流程是 LM 整个生命周期持有 plugin instance)。
-      return r.data.map((dir) => {
-        const blob = new Blob([dir.mainText], {
-          type: 'application/javascript',
-        });
-        return {
-          id: dir.id,
-          manifestText: dir.manifestText,
-          moduleUrl: URL.createObjectURL(blob),
-          stylesText: dir.stylesText,
-        };
-      });
+      return buildPluginDirInfos(r.data);
     },
     readEnabledIds: async () => {
       const r = await coApi.plugins.readEnabled();

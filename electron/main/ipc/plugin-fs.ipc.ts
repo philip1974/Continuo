@@ -12,6 +12,7 @@ import {
   writePluginPathScopes,
 } from '../services/plugins.service';
 import { ScopeRequestCorrelator } from '../services/scope-request-correlator';
+import type { PathScope } from '../../../src/plugins/types';
 
 export interface RegisterPluginFsIpcArgs {
   ipcMain: IpcMain;
@@ -39,6 +40,16 @@ export function cancelScopeRequestsForWebContents(webContentsId: number): number
   return activeCorrelator?.cancelBySender(webContentsId) ?? 0;
 }
 
+export function copyScopesForPersistence(
+  scopes: readonly { path: string; mode: 'r' | 'rw' }[],
+): PathScope[] {
+  const out: PathScope[] = [];
+  for (const scope of scopes) {
+    out.push({ path: scope.path, mode: scope.mode });
+  }
+  return out;
+}
+
 export function registerPluginFsIpc({
   ipcMain,
 }: RegisterPluginFsIpcArgs): PluginFsIpcHandles {
@@ -62,7 +73,7 @@ export function registerPluginFsIpc({
       writePluginPathScopes(
         pluginsDir,
         pluginId,
-        scopes.map((s) => ({ path: s.path, mode: s.mode })),
+        copyScopesForPersistence(scopes),
       ),
   });
 

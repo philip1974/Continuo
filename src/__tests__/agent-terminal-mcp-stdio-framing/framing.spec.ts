@@ -1,9 +1,10 @@
 // BDD: agent-terminal-mcp-stdio-framing
 // NDJSON 行切分纯函数。
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { splitLines as splitNdjsonLines } from '@continuo-terminal/server-node';
 import {
+  hasOversizedStdioLine,
   resolveStdioHelloWindowId,
 } from '../../../electron/main/services/mcp-stdio-server.service';
 
@@ -194,5 +195,20 @@ describe('_continuo/hello · window token', () => {
     // neutralize 敏感:去 token 长度上限则进 resolveWindowId(called=true)且返回 11。
     expect(r).toBeNull();
     expect(called).toBe(false);
+  });
+});
+
+describe('stdio line size guard', () => {
+  it('完整行字节上限检查单趟扫描,不调用 lines.some', () => {
+    const lines = ['ok', '中'.repeat(40)];
+    const someSpy = vi.spyOn(lines, 'some');
+
+    try {
+      expect(hasOversizedStdioLine(lines, 100)).toBe(true);
+      expect(hasOversizedStdioLine(['ok', 'still ok'], 100)).toBe(false);
+      expect(someSpy).not.toHaveBeenCalled();
+    } finally {
+      someSpy.mockRestore();
+    }
   });
 });

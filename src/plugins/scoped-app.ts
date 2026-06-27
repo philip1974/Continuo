@@ -21,10 +21,12 @@ import type {
   PluginPermissionApi,
   PluginShellApi,
 } from './types';
+import type { FileEntry } from '../../electron/shared/fs-entry';
 import type { PluginMcpToolSpec } from './registries/PluginMcpRegistry';
 import type { PluginDataStore } from './PluginDataStore';
 import {
   PermissionError,
+  type PermissionDecision,
   type PermissionKey,
   type PermissionStore,
 } from './permissions';
@@ -54,6 +56,15 @@ import {
   SHELL_STDIN_MAX,
 } from '../../electron/shared/shell-limits';
 
+export function areValidShellArgs(args: readonly unknown[]): boolean {
+  for (const arg of args) {
+    if (typeof arg !== 'string' || arg.length > SHELL_ARG_MAX_LEN) {
+      return false;
+    }
+  }
+  return true;
+}
+
 // 边界(E46,E44/E45 同族):app.shell.exec/execStream 在 renderer wrapper 里先 [...args] 展开并
 // structured-clone env/input,主进程 shell.exec(E12)/plugin-shell-stream(E45)虽有上限但已太晚;
 // [...args] 对非数组 iterable 还可能无限/超大展开。发 IPC(spread)前按主进程同一上限(shared)预检,
@@ -71,11 +82,8 @@ function validateShellInput(
   // 关键:先确认是数组再(由调用方)spread —— 非数组 iterable 的 [...x] 可能无限/超大展开。
   if (!Array.isArray(args) || args.length > SHELL_ARGS_MAX_COUNT)
     bad(`invalid args (not array or count > ${SHELL_ARGS_MAX_COUNT})`);
-  if (
-    !(args as readonly unknown[]).every(
-      (a) => typeof a === 'string' && a.length <= SHELL_ARG_MAX_LEN,
-    )
-  )
+  const shellArgs = args as readonly unknown[];
+  if (!areValidShellArgs(shellArgs))
     bad(`invalid arg entry (non-string or > ${SHELL_ARG_MAX_LEN})`);
   if (
     opts?.cwd !== undefined &&
@@ -109,6 +117,16 @@ function validateShellInput(
   }
 }
 
+export function hasGrantedPermissionDecision(
+  decisions: readonly PermissionDecision[],
+  perm: PermissionKey,
+): boolean {
+  for (const decision of decisions) {
+    if (decision.permission === perm && decision.granted) return true;
+  }
+  return false;
+}
+
 /** 检查 plugin 是否拿到 perm 授权;未授抛 PermissionError. store=null 跳过检查. */
 async function ensurePerm(
   pluginId: string,
@@ -117,14 +135,29 @@ async function ensurePerm(
 ): Promise<void> {
   if (!store) return;
   const decisions = await store.get(pluginId);
-  const granted = decisions.some(
-    (d) => d.permission === perm && d.granted,
-  );
+  const granted = hasGrantedPermissionDecision(decisions, perm);
   if (!granted) throw new PermissionError(perm);
 }
 
 function missingPluginFsToken(): never {
   throw new Error('[plugin-fs] no token bound');
+}
+
+export function buildPluginListDirEntries(
+  path: string,
+  entries: readonly Pick<FileEntry, 'name' | 'isDirectory' | 'isSymlink'>[],
+): FileEntry[] {
+  const parent = path.replace(/[\\/]+$/, '');
+  const out: FileEntry[] = [];
+  for (const entry of entries) {
+    out.push({
+      path: joinPath(parent, entry.name),
+      name: entry.name,
+      isDirectory: entry.isDirectory,
+      isSymlink: entry.isSymlink,
+    });
+  }
+  return out;
 }
 
 // 边界(E180,E178 renderer 对偶 / E44 同族):app.fs.* 的路径参数发 coApi.pluginFsRaw.* IPC 前预检。
@@ -213,13 +246,7 @@ function makeFs(
         token ?? missingPluginFsToken(),
         path,
       );
-      const parent = path.replace(/[\\/]+$/, '');
-      return entries.map((entry) => ({
-        path: joinPath(parent, entry.name),
-        name: entry.name,
-        isDirectory: entry.isDirectory,
-        isSymlink: entry.isSymlink,
-      }));
+      return buildPluginListDirEntries(path, entries);
     },
     stat: async (path) => {
       await ensurePerm(pluginId, 'fs', store);
@@ -640,7 +667,7 @@ function makePermission(
     async check(perm) {
       if (!store) return true; // 无 store(向后兼容/测试)→ 视为已授
       const decisions = await store.get(pluginId);
-      return decisions.some((d) => d.permission === perm && d.granted);
+      return hasGrantedPermissionDecision(decisions, perm);
     },
     async granted() {
       if (!store) return [];

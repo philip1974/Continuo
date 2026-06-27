@@ -25,7 +25,10 @@ vi.mock('../../plugins/permissions/promptStore', () => ({
   },
 }));
 
-import { startPluginFsScopeRequestBridge } from '../../plugins/permissions/usePluginFsScopeRequests';
+import {
+  buildFsScopePromptScopes,
+  startPluginFsScopeRequestBridge,
+} from '../../plugins/permissions/usePluginFsScopeRequests';
 
 type Handler = (p: {
   requestId: string;
@@ -126,6 +129,24 @@ describe('race(R99) — bridge 卸载后迟到决定不回传', () => {
 // 边界(E169,E168 同族 IPC ingress 纵深防御):plugin-fs:scope-request payload runtime 守卫。
 // 畸形 payload → drop + warn,不进 prompt store(requestFsScope 不调用)、不抛(scopes.map/scope.path)。
 describe('E169 — scope-request payload runtime 校验', () => {
+  it('prompt scopes 构造单趟扫描,不调用 scopes.map', () => {
+    const scopes = [
+      { path: '/repo/a', mode: 'r' },
+      { path: '/repo/b', mode: 'rw' },
+    ] as const;
+    const mapSpy = vi.spyOn(scopes, 'map');
+
+    try {
+      expect(buildFsScopePromptScopes(scopes)).toEqual([
+        { path: '/repo/a', mode: 'r', displayPath: '/repo/a' },
+        { path: '/repo/b', mode: 'rw', displayPath: '/repo/b' },
+      ]);
+      expect(mapSpy).not.toHaveBeenCalled();
+    } finally {
+      mapSpy.mockRestore();
+    }
+  });
+
   it('畸形 payload(null/scopes 非数组/scope 缺 mode/超长 path/非法 pluginId/超长 requestId)→ drop', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     startPluginFsScopeRequestBridge();

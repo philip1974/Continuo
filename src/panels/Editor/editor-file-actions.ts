@@ -9,7 +9,11 @@
 import type { FsApi } from '@/lib/fs/api';
 import type { IpcResult } from '@/lib/fs/types';
 import { errorMessage } from '../../../electron/shared/error-message';
-import { createTab, useEditorStore } from '@/stores/editor.store';
+import {
+  createTab,
+  useEditorStore,
+  type EditorTab,
+} from '@/stores/editor.store';
 import { pathEquals } from '@/lib/path-cross';
 import { runSerialPerKey } from '@/lib/serialize-per-key';
 
@@ -31,6 +35,26 @@ const exception = (err: unknown): FileOpResult => ({
   message: errorMessage(err),
 });
 
+export function findEditorFileTabByPath(
+  tabs: readonly EditorTab[],
+  path: string,
+): EditorTab | null {
+  for (const tab of tabs) {
+    if (pathEquals(tab.filePath ?? tab.id, path)) return tab;
+  }
+  return null;
+}
+
+export function findEditorFileTabById(
+  tabs: readonly EditorTab[],
+  tabId: string,
+): EditorTab | null {
+  for (const tab of tabs) {
+    if (tab.id === tabId) return tab;
+  }
+  return null;
+}
+
 /**
  * Explorer 单击文件触发。已开过同 path → 只 switchTab(不重读);
  * 否则 fs.readFile + createTab + openTab。
@@ -44,9 +68,7 @@ export async function openFileByPath(
   // 上同一文件以 `C:\Repo\a.md` / `c:\repo\a.md` 不同大小写打开,`===` 判不等 → 开出两个
   // tab,分别编辑保存同一文件 → 后保存者覆盖前者丢改。switchTab 用**已存在 tab 的真实 id**
   // (大小写可能与传入 path 不同)。POSIX 大小写敏感不变(pathEquals 在非 Windows 即 ===)。
-  const existing = store
-    .getState()
-    .tabs.find((t) => pathEquals(t.filePath ?? t.id, path));
+  const existing = findEditorFileTabByPath(store.getState().tabs, path);
   if (existing) {
     store.getState().switchTab(existing.id);
     return { ok: true, data: undefined };
@@ -64,9 +86,7 @@ export async function openFileByPath(
   // (尤其 Windows 不同大小写路径 C:\Repo\a.md / c:\repo\a.md)时,两个调用都在读前看不到
   // existing,读后各自 createTab → 同一磁盘文件出现两个 tab,分别保存互相覆盖(重现 X10
   // pathEquals 想防的数据丢失)。读后、建 tab 前再用 pathEquals 复检 store,已存在则只切换。
-  const raced = store
-    .getState()
-    .tabs.find((t) => pathEquals(t.filePath ?? t.id, path));
+  const raced = findEditorFileTabByPath(store.getState().tabs, path);
   if (raced) {
     store.getState().switchTab(raced.id);
     return { ok: true, data: undefined };
@@ -94,7 +114,7 @@ async function saveFileNow(
   deps: EditorFileDeps,
 ): Promise<FileOpResult> {
   const { fs, store } = deps;
-  const tab = store.getState().tabs.find((t) => t.id === tabId);
+  const tab = findEditorFileTabById(store.getState().tabs, tabId);
   if (!tab) {
     return {
       ok: false,

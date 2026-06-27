@@ -127,6 +127,16 @@ export function countDefaultHotkeys(commands: readonly CommandSpec[]): number {
   return count;
 }
 
+export function hasCommandId(
+  commands: readonly CommandSpec[],
+  id: string,
+): boolean {
+  for (const command of commands) {
+    if (command.id === id) return true;
+  }
+  return false;
+}
+
 export function KeybindingsTabContent() {
   const allCommands = useCommands(coApp.commands);
   const [query, setQuery] = useState('');
@@ -185,7 +195,7 @@ export function KeybindingsTabContent() {
   // 把该命令移出 registry,onSave/onReset 仍会用旧 command id 写 override → 写到已不存在的命令,
   // 同 id 命令日后重注册时意外继承旧绑定(stale write)。命令从 allCommands 消失即自动关闭弹窗。
   useEffect(() => {
-    if (editing && !allCommands.some((c) => c.id === editing.id)) {
+    if (editing && !hasCommandId(allCommands, editing.id)) {
       setEditing(null);
     }
   }, [editing, allCommands]);
@@ -222,7 +232,7 @@ export function KeybindingsTabContent() {
           // race(R50):保存瞬间从当前 registry 复检命令仍存在(覆盖 effect 关闭弹窗前的同帧
           // 点击);已移除则关弹窗不写,防 override 写到不存在的命令。
           if (!editing) return;
-          if (!allCommands.some((c) => c.id === editing.id)) {
+          if (!hasCommandId(allCommands, editing.id)) {
             setEditing(null);
             return;
           }
@@ -230,7 +240,7 @@ export function KeybindingsTabContent() {
         }}
         onResetToDefault={() => {
           if (!editing) return;
-          if (!allCommands.some((c) => c.id === editing.id)) {
+          if (!hasCommandId(allCommands, editing.id)) {
             setEditing(null);
             return;
           }

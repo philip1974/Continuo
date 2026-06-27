@@ -287,6 +287,30 @@ describe('PathScopeRegistry', () => {
     ).toBe(false);
   });
 
+  it('T2.d covers 单趟显式扫描,不调用 requested.every / scopes.some', () => {
+    const { registry } = makeHarness();
+    registry.grant('com.test', [
+      { path: '/ws/a', mode: 'rw' },
+      { path: '/ws/b', mode: 'r' },
+    ]);
+    const scopes = registry._peek('com.test') as PathScope[];
+    const requested = [
+      { path: '/ws/a/x', mode: 'rw' },
+      { path: '/ws/b/y', mode: 'r' },
+    ] as PathScope[];
+    const everySpy = vi.spyOn(requested, 'every');
+    const someSpy = vi.spyOn(scopes, 'some');
+
+    try {
+      expect(registry.covers('com.test', requested)).toBe(true);
+      expect(everySpy).not.toHaveBeenCalled();
+      expect(someSpy).not.toHaveBeenCalled();
+    } finally {
+      everySpy.mockRestore();
+      someSpy.mockRestore();
+    }
+  });
+
   it('T3.a hydrate 回填持久化 scope 且幂等、静默(不 emit)', () => {
     const { registry } = makeHarness();
     const listener = vi.fn<(event: ScopeUpdatedEvent) => void>();

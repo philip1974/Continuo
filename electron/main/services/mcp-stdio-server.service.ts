@@ -45,6 +45,16 @@ export interface ResolveStdioHelloDeps {
 // client 可在 1MB 行内塞超长 token,经 resolveWindowId(Map.get/比较)放大 CPU/内存。超限直接 null。
 const MAX_HELLO_TOKEN_LEN = 256;
 
+export function hasOversizedStdioLine(
+  lines: readonly string[],
+  maxBytes: number,
+): boolean {
+  for (const line of lines) {
+    if (utf8BytesExceed(line, maxBytes)) return true;
+  }
+  return false;
+}
+
 export function resolveStdioHelloWindowId(
   params: unknown,
   deps: ResolveStdioHelloDeps,
@@ -402,7 +412,7 @@ export async function createStdioSocketServer(
       // CJK/emoji 大行真实字节可数倍超 1MB 仍放行/继续累积,削弱输入背压并让超大 JSON 进 parse。
       if (
         utf8BytesExceed(lineDecoder.buffered, MAX_STDIO_LINE_BYTES) ||
-        lines.some((l) => utf8BytesExceed(l, MAX_STDIO_LINE_BYTES))
+        hasOversizedStdioLine(lines, MAX_STDIO_LINE_BYTES)
       ) {
         try {
           sock.write(

@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
+  findEditorFileTabById,
+  findEditorFileTabByPath,
   openFileByPath,
   saveFile,
   type EditorFileDeps,
@@ -37,6 +39,34 @@ beforeEach(() => {
 // ────────────────────────────────────────────────────────────
 // openFileByPath
 // ────────────────────────────────────────────────────────────
+
+describe('editor-file-actions tab lookup helpers', () => {
+  it('按 path 查找单趟扫描,不调用 tabs.find', () => {
+    const tabs = [createTab('/x/a.md', 'a'), createTab('/x/b.md', 'b')];
+    const findSpy = vi.spyOn(tabs, 'find');
+
+    try {
+      expect(findEditorFileTabByPath(tabs, '/x/b.md')).toBe(tabs[1]);
+      expect(findEditorFileTabByPath(tabs, '/x/missing.md')).toBeNull();
+      expect(findSpy).not.toHaveBeenCalled();
+    } finally {
+      findSpy.mockRestore();
+    }
+  });
+
+  it('按 id 查找单趟扫描,不调用 tabs.find', () => {
+    const tabs = [createTab('/x/a.md', 'a'), createTab('/x/b.md', 'b')];
+    const findSpy = vi.spyOn(tabs, 'find');
+
+    try {
+      expect(findEditorFileTabById(tabs, '/x/a.md')).toBe(tabs[0]);
+      expect(findEditorFileTabById(tabs, '/x/missing.md')).toBeNull();
+      expect(findSpy).not.toHaveBeenCalled();
+    } finally {
+      findSpy.mockRestore();
+    }
+  });
+});
 
 describe('openFileByPath', () => {
   it('新文件:fs.readFile → createTab + openTab,active 变', async () => {

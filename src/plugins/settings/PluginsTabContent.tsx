@@ -203,6 +203,27 @@ export function samePluginList(
   return true;
 }
 
+export function hasPluginId(
+  plugins: readonly PluginListItem[],
+  id: string,
+): boolean {
+  for (const plugin of plugins) {
+    if (plugin.id === id) return true;
+  }
+  return false;
+}
+
+export function hasPluginVersion(
+  plugins: readonly PluginListItem[],
+  id: string,
+  version: string,
+): boolean {
+  for (const plugin of plugins) {
+    if (plugin.id === id && plugin.manifest.version === version) return true;
+  }
+  return false;
+}
+
 function useUserPlugins(): {
   plugins: readonly PluginListItem[];
   refresh: () => void;
@@ -264,7 +285,7 @@ function UserPluginsSection() {
   // 插件从 live 列表消失即自动关闭弹窗(覆盖轮询);保存瞬间也 pluginStillExists 复检(覆盖
   // 本 effect 关闭前的同帧点击),同 KeybindingsTabContent R50。
   useEffect(() => {
-    if (permEditTarget && !plugins.some((p) => p.id === permEditTarget.id)) {
+    if (permEditTarget && !hasPluginId(plugins, permEditTarget.id)) {
       setPermEditTarget(null);
     }
   }, [permEditTarget, plugins]);
@@ -279,10 +300,10 @@ function UserPluginsSection() {
   useEffect(() => {
     if (
       uninstallTarget &&
-      !plugins.some(
-        (p) =>
-          p.id === uninstallTarget.id &&
-          p.manifest.version === uninstallTarget.manifest.version,
+      !hasPluginVersion(
+        plugins,
+        uninstallTarget.id,
+        uninstallTarget.manifest.version,
       )
     ) {
       setUninstallTarget(null);
@@ -641,7 +662,7 @@ function UserPluginsSection() {
           onClose={() => setPermEditTarget(null)}
           pluginStillExists={() =>
             permEditTarget !== null &&
-            plugins.some((p) => p.id === permEditTarget.id)
+            hasPluginId(plugins, permEditTarget.id)
           }
         />
       )}

@@ -53,10 +53,12 @@ export function makeJsonSafe(input: unknown): {
     }
     if (isJsonSafeScalar(value)) return { keep: true, value };
     if (Array.isArray(value)) {
-      const out = value.map((el, i) => {
+      const out = new Array<unknown>(value.length);
+      for (let i = 0; i < value.length; i += 1) {
+        const el = value[i];
         const r = walk(el, `${path}[${i}]`, depth + 1);
-        return r.keep ? r.value : null; // 不安全元素 / 洞 → null(保索引,同 JSON.stringify)
-      });
+        out[i] = r.keep ? r.value : null; // 不安全元素 / 洞 → null(保索引,同 JSON.stringify)
+      }
       return { keep: true, value: out };
     }
     if (isPlainObject(value)) {

@@ -60,6 +60,16 @@ export interface FileTreeDataLoader {
   ) => Promise<Array<{ id: string; data: FileEntry }>>;
 }
 
+export function buildTreeChildrenWithData(
+  entries: readonly FileEntry[],
+): Array<{ id: string; data: FileEntry }> {
+  const out: Array<{ id: string; data: FileEntry }> = [];
+  for (const entry of entries) {
+    out.push({ id: entry.path, data: entry });
+  }
+  return out;
+}
+
 export function createDataLoader(deps: CreateTreeConfigDeps): FileTreeDataLoader {
   const { root, fs, onIpcWarn = (m, c) => console.warn('[explorer-tree]', m, c) } = deps;
 
@@ -97,10 +107,7 @@ export function createDataLoader(deps: CreateTreeConfigDeps): FileTreeDataLoader
           onIpcWarn(`listDir failed for ${itemId}: ${r.message}`, r.code);
           return [];
         }
-        return r.data.map((entry) => ({
-          id: entry.path,
-          data: entry,
-        }));
+        return buildTreeChildrenWithData(r.data);
       } catch (err) {
         onIpcWarn(
           `listDir threw for ${itemId}: ${(err as Error).message}`,

@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { fireEvent, render, cleanup, act } from '@testing-library/react';
-import { PermissionPrompt } from '../../plugins/permissions/PermissionPrompt';
+import {
+  copySelectedPermissions,
+  PermissionPrompt,
+} from '../../plugins/permissions/PermissionPrompt';
 import { usePermissionPromptStore } from '../../plugins/permissions/promptStore';
 
 beforeEach(() => {
@@ -14,6 +17,18 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('PermissionPrompt UI', () => {
+  it('复制勾选权限时单趟扫描 Set,不调用 Array.from', () => {
+    const selected = new Set(['fs', 'network'] as const);
+    const arrayFromSpy = vi.spyOn(Array, 'from');
+
+    try {
+      expect(copySelectedPermissions(selected)).toEqual(['fs', 'network']);
+      expect(arrayFromSpy).not.toHaveBeenCalled();
+    } finally {
+      arrayFromSpy.mockRestore();
+    }
+  });
+
   it('无 pending → 不渲染', () => {
     const { container } = render(<PermissionPrompt />);
     expect(container.querySelector('.wm-modal-content')).toBeNull();

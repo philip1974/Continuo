@@ -90,7 +90,12 @@ function afterEachClear(): void {
     vi.restoreAllMocks();
   });
 }
-import { createScopedApp } from '../../plugins/scoped-app';
+import {
+  areValidShellArgs,
+  buildPluginListDirEntries,
+  createScopedApp,
+  hasGrantedPermissionDecision,
+} from '../../plugins/scoped-app';
 import {
   MAX_WRITE_BYTES,
   FS_PATH_MAX,
@@ -256,6 +261,23 @@ describe('network.fetch 输入边界 (E264)', () => {
 });
 
 describe('permission.check / granted', () => {
+  it('授权决策查找单趟扫描,不调用 decisions.some', () => {
+    const decisions = [
+      { permission: 'fs', granted: false, decidedAt: 1 },
+      { permission: 'network', granted: true, decidedAt: 2 },
+    ] as const;
+    const someSpy = vi.spyOn(decisions, 'some');
+
+    try {
+      expect(hasGrantedPermissionDecision(decisions, 'network')).toBe(true);
+      expect(hasGrantedPermissionDecision(decisions, 'fs')).toBe(false);
+      expect(hasGrantedPermissionDecision(decisions, 'shell')).toBe(false);
+      expect(someSpy).not.toHaveBeenCalled();
+    } finally {
+      someSpy.mockRestore();
+    }
+  });
+
   it('store 为 null → check 一律 true,granted 返 []', async () => {
     const scoped = createScopedApp(makeLmApp(), 'p', null);
     expect(await scoped.permission.check('fs')).toBe(true);
@@ -448,6 +470,34 @@ describe('授后转发 — fs / shell / clipboard / mcp / network 行为', () =>
       'test-token',
       '/x',
     );
+  });
+
+  it('fs.listDir 条目转换单趟扫描,不调用 entries.map', () => {
+    const entries = [
+      { name: 'a.txt', isDirectory: false, isSymlink: false },
+      { name: 'dir', isDirectory: true, isSymlink: true },
+    ];
+    const mapSpy = vi.spyOn(entries, 'map');
+
+    try {
+      expect(buildPluginListDirEntries('/repo/', entries)).toEqual([
+        {
+          path: '/repo/a.txt',
+          name: 'a.txt',
+          isDirectory: false,
+          isSymlink: false,
+        },
+        {
+          path: '/repo/dir',
+          name: 'dir',
+          isDirectory: true,
+          isSymlink: true,
+        },
+      ]);
+      expect(mapSpy).not.toHaveBeenCalled();
+    } finally {
+      mapSpy.mockRestore();
+    }
   });
 
   // 边界(E44,E29 renderer 侧对偶 / E41-E43 同族):scoped fs.writeFile 发 IPC 前预检 content/path
@@ -670,6 +720,19 @@ describe('授后转发 — fs / shell / clipboard / mcp / network 行为', () =>
       code: 'BAD_INPUT',
     });
     expect(coApiMocks.shellExec).not.toHaveBeenCalled();
+  });
+
+  it('E46 shell args 单项校验单趟扫描,不调用 args.every', () => {
+    const args = ['ok', 'x'.repeat(16_385)];
+    const everySpy = vi.spyOn(args, 'every');
+
+    try {
+      expect(areValidShellArgs(args)).toBe(false);
+      expect(areValidShellArgs(['ok', 'still-ok'])).toBe(true);
+      expect(everySpy).not.toHaveBeenCalled();
+    } finally {
+      everySpy.mockRestore();
+    }
   });
 
   it('E46 shell.exec 单 arg 超 16384 / 超长 input·cmd → 抛 BAD_INPUT', async () => {

@@ -18,6 +18,7 @@ import {
   buildCommandSearchHaystack,
   countDefaultHotkeys,
   groupByCategory,
+  hasCommandId,
   keybindingRowClassName,
   selectVisibleKeybindingCommands,
 } from '../../plugins/settings/KeybindingsTabContent';
@@ -216,6 +217,22 @@ describe('打磨 R29 — Keybindings hotkey 预计算', () => {
       expect(joinSpy).not.toHaveBeenCalled();
     } finally {
       joinSpy.mockRestore();
+    }
+  });
+
+  it('命令存在性检查单趟扫描,不调用 commands.some', () => {
+    const commands = [
+      { id: 'save', title: 'Save', hotkey: 'mod+s', fn: vi.fn() },
+      { id: 'find', title: 'Find', hotkey: 'mod+f', fn: vi.fn() },
+    ];
+    const someSpy = vi.spyOn(commands, 'some');
+
+    try {
+      expect(hasCommandId(commands, 'find')).toBe(true);
+      expect(hasCommandId(commands, 'missing')).toBe(false);
+      expect(someSpy).not.toHaveBeenCalled();
+    } finally {
+      someSpy.mockRestore();
     }
   });
 });
