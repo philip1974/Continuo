@@ -91,10 +91,10 @@ function getSessionManager(): SessionManager {
   sessionManager = new SessionManager({
     onData: handleChunk,
     onExit: handleExit,
-    // 4 MiB: 恢复 @continuo-terminal/server-node 的库默认 MAX_BUFFER_BYTES。
-    // 此前压到 64KiB 会让较长的 agent 报告(codex 等)在 terminal_read_output
-    // 读取前就被环形缓冲 FIFO 丢弃(truncated)。容量按字节/每会话计。
-    maxBytes: 4 * 1024 * 1024,
+    // 1 MiB: 每会话环形缓冲容量(按字节计)。低于此(如曾经的 64KiB)会让较长的
+    // agent 报告(codex 等)在 terminal_read_output 读取前就被 FIFO 丢弃(truncated);
+    // 1 MiB 是 B3 防回退下限,保留长报告不提前丢的最低保障。
+    maxBytes: 1 * 1024 * 1024,
   });
   return sessionManager;
 }

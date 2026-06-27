@@ -6,11 +6,11 @@ Continuo 的终端 PTY 输出走 `@continuo-terminal/server-node` 的 `SessionMa
 
 当缓冲容量过小时，较长的 agent 报告（例如经 Continuo MCP 终端跑的 codex 复审报告）会在被 `terminal_read_output` 读取**之前**就从缓冲头部被 FIFO 丢弃，导致读到的内容残缺（`truncated=true`），无法看到报告全文。
 
-历史上 `terminal.service.ts` 把 `maxBytes` 硬编码压到 64 KiB，远小于库默认的 4 MiB。本主题把它恢复为库默认 **4 MiB**，并用规范锁定这一容量契约，防止再次回退。
+历史上 `terminal.service.ts` 把 `maxBytes` 硬编码压到 64 KiB，过小导致长报告提前丢失；曾恢复为库默认 4 MiB。当前 Continuo 显式选定 **1 MiB**（= B3 防回退下限），在内存占用与"长报告防丢"之间取折中，并用规范锁定这一容量契约，防止再次回退到 KiB 量级。
 
 ## 行为契约
 
-- **B1 缓冲容量恢复库默认**：Continuo 实例化 `SessionManager` 时传入的 `maxBytes` 必须为 4 MiB（`4 * 1024 * 1024` 字节），即 `@continuo-terminal/server-node` 的库默认 `MAX_BUFFER_BYTES`。
+- **B1 缓冲容量为显式选定值**：Continuo 实例化 `SessionManager` 时传入的 `maxBytes` 必须为 1 MiB（`1 * 1024 * 1024` 字节）—— Continuo 显式选定的每会话缓冲容量。
 
 - **B2 容量是显式声明而非沿用隐式默认**：Continuo 必须在构造 `SessionManager` 时**显式**传入 `maxBytes`，使容量是仓内可审计的契约，而不是依赖上游库的默认值（上游改默认不应静默改变 Continuo 的行为）。
 

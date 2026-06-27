@@ -49,8 +49,8 @@ vi.mock('../../../electron/main/services/pty-lang', () => ({
 
 import * as service from '../../../electron/main/services/terminal.service';
 
-// @continuo-terminal/server-node 的库默认 MAX_BUFFER_BYTES（私有 const，未导出）。
-const LIBRARY_DEFAULT_MAX_BUFFER_BYTES = 4 * 1024 * 1024;
+// Continuo 显式选定的每会话缓冲容量 = 1 MiB（= B3 防回退下限）。
+const CONTINUO_MAX_BUFFER_BYTES = 1 * 1024 * 1024;
 const ONE_MIB = 1 * 1024 * 1024;
 
 describe('terminal-buffer-capacity · 终端输出缓冲区容量', () => {
@@ -74,10 +74,10 @@ describe('terminal-buffer-capacity · 终端输出缓冲区容量', () => {
     await service.createTerminal('cap-probe', win, '/bin/zsh', [], '/tmp');
   }
 
-  it('B1 缓冲容量恢复为库默认 4 MiB', async () => {
+  it('B1 缓冲容量为显式选定的 1 MiB', async () => {
     await instantiateSessionManager();
 
-    expect(sessionManagerMock.options?.maxBytes).toBe(LIBRARY_DEFAULT_MAX_BUFFER_BYTES);
+    expect(sessionManagerMock.options?.maxBytes).toBe(CONTINUO_MAX_BUFFER_BYTES);
   });
 
   it('B2 容量是显式声明，不沿用上游隐式默认', async () => {
