@@ -9,7 +9,7 @@
 //  - raw default omit (P1-4) — broker 返回完整 payload, awaitStopHookTool.run() 仅 input.include_raw=true 时加 output
 //  - start fail degrade (P2-1) — broker.start throw → 上层 startMcpHost 不注册 tool
 
-import { watch, type FSWatcher } from 'node:fs';
+import { watch } from 'node:fs';
 import {
   copyFile,
   mkdir,
@@ -230,6 +230,16 @@ export interface HookFileBroker {
   readonly hookEventsDir: string;
 }
 
+export interface HookWatcher {
+  close(): void;
+  on?(event: 'error', listener: (err: Error) => void): unknown;
+}
+
+export type HookWatchFactory = (
+  hookEventsDir: string,
+  onFile: (fileName: string) => void,
+) => HookWatcher;
+
 export function createHookFileBroker(
   hookEventsDir: string,
   config: {
@@ -240,6 +250,8 @@ export function createHookFileBroker(
     maxDirEntries?: number;
     /** 边界(E150):buffered 总字节预算(默认 MAX_BUFFERED_BYTES);可注入便于测试。 */
     maxBufferedBytes?: number;
+    /** 测试可注入 watcher,避免 Windows CI 触发 Node/libuv fs.watch 原生断言。 */
+    watchFactory?: HookWatchFactory;
   } = {},
 ): HookFileBroker {
   const maxEntries = config.maxEntries ?? BROKER_DEFAULTS.maxEntries;
@@ -248,8 +260,20 @@ export function createHookFileBroker(
     config.cleanupIntervalMs ?? BROKER_DEFAULTS.cleanupIntervalMs;
   const maxDirEntries = config.maxDirEntries ?? MAX_HOOK_DIR_ENTRIES;
   const maxBufferedBytes = config.maxBufferedBytes ?? MAX_BUFFERED_BYTES;
+  const watchFactory =
+    config.watchFactory ??
+    ((dir, onFile) =>
+      watch(
+        dir,
+        { persistent: false, encoding: 'utf8' },
+        (_eventType, fileName) => {
+          if (typeof fileName === 'string' && fileName.length > 0) {
+            onFile(fileName);
+          }
+        },
+      ));
 
-  let watcher: FSWatcher | null = null;
+  let watcher: HookWatcher | null = null;
   let cleanupTimer: NodeJS.Timeout | null = null;
   let started = false;
   let stopped = false;
@@ -460,16 +484,8 @@ export function createHookFileBroker(
       // → 永久漏事件,terminal.await_stop_hook 假超时。现在:watcher 先就位捕获扫描期间/之后的
       // 新文件,readdir 再补扫 watch 前已存在的文件;两者重叠的文件由 ingestFile 经
       // processed/inFlight 去重(幂等),无双 ingest。
-      watcher = watch(
-        hookEventsDir,
-        { persistent: false, encoding: 'utf8' },
-        (_eventType, fileName) => {
-          if (typeof fileName === 'string' && fileName.length > 0) {
-            void ingestFile(fileName);
-          }
-        },
-      );
-      watcher.on('error', () => {});
+      watcher = watchFactory(hookEventsDir, (fileName) => void ingestFile(fileName));
+      watcher.on?.('error', () => {});
       const myWatcher = watcher; // race(R108):捕获本次 start 创建的 watcher,供过期时清理
 
       try {

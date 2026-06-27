@@ -15,6 +15,7 @@ import {
   createAwaitStopHookTool,
   createHookFileBroker,
   type HookFileBroker,
+  type HookWatchFactory,
 } from '../../../electron/main/services/mcp-tools-hook-bridge';
 
 const DONE_BUFFER_CAP = 500;
@@ -38,6 +39,9 @@ interface AwaitStopHookInput {
 
 const tmpRoots: string[] = [];
 const brokers: HookFileBroker[] = [];
+const noopWatchFactory: HookWatchFactory = () => ({
+  close() {},
+});
 
 afterEach(async () => {
   await Promise.all(brokers.splice(0).map((broker) => broker.stop()));
@@ -85,6 +89,7 @@ async function makeDriver(doneDir: string, sessions: readonly FakeSession[]) {
     maxEntries: DONE_BUFFER_CAP,
     maxAgeMs: DONE_ENTRY_MAX_AGE_MS,
     cleanupIntervalMs: 60_000,
+    watchFactory: noopWatchFactory,
   });
   await broker.start();
   brokers.push(broker);
@@ -130,6 +135,7 @@ describe('terminal.await_stop_hook', () => {
       maxAgeMs: 60_000,
       cleanupIntervalMs: 60_000,
       maxDirEntries: 5, // 注入低上限:8 文件 > 5 → 截断
+      watchFactory: noopWatchFactory,
     });
     brokers.push(broker);
     await broker.start();
@@ -205,6 +211,7 @@ describe('terminal.await_stop_hook', () => {
     const capBroker = createHookFileBroker(capDir, {
       maxEntries: DONE_BUFFER_CAP,
       maxAgeMs: DONE_ENTRY_MAX_AGE_MS,
+      watchFactory: noopWatchFactory,
     });
     await capBroker.start();
     brokers.push(capBroker);
@@ -419,6 +426,7 @@ describe('terminal.await_stop_hook', () => {
       maxEntries: DONE_BUFFER_CAP,
       maxAgeMs: DONE_ENTRY_MAX_AGE_MS,
       cleanupIntervalMs: 60_000,
+      watchFactory: noopWatchFactory,
     });
     await broker.start(); // start 的 readdir 会 ingest 这个文件
     brokers.push(broker);
@@ -488,6 +496,7 @@ describe('terminal.await_stop_hook', () => {
       maxAgeMs: DONE_ENTRY_MAX_AGE_MS,
       cleanupIntervalMs: 60_000,
       maxBufferedBytes: 3000,
+      watchFactory: noopWatchFactory,
     });
     await broker.start(); // start 扫描即 ingest 3 条 → 字节淘汰至 1 条
     brokers.push(broker);

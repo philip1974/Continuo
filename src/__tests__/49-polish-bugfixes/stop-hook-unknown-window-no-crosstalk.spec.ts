@@ -8,16 +8,46 @@
 // null entry 一律不匹配,但真实 windowId 的事件不受影响。
 
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdtemp, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import {
   createHookFileBroker,
   type HookFileBroker,
+  type HookWatchFactory,
 } from '../../../electron/main/services/mcp-tools-hook-bridge';
 
 const brokers: HookFileBroker[] = [];
+const pollingWatchFactory: HookWatchFactory = (dir, onFile) => {
+  const seen = new Set<string>();
+  let closed = false;
+
+  async function scan(): Promise<void> {
+    if (closed) return;
+    let names: string[];
+    try {
+      names = await readdir(dir);
+    } catch {
+      return;
+    }
+    if (closed) return;
+    for (const name of names) {
+      if (seen.has(name)) continue;
+      seen.add(name);
+      onFile(name);
+    }
+  }
+
+  const timer = setInterval(() => void scan(), 20);
+  void scan();
+  return {
+    close() {
+      closed = true;
+      clearInterval(timer);
+    },
+  };
+};
 
 async function makeDir(): Promise<string> {
   return mkdtemp(join(tmpdir(), `hook-crosstalk-${randomUUID()}-`));
@@ -28,6 +58,7 @@ async function makeBroker(dir: string): Promise<HookFileBroker> {
     maxEntries: 64,
     maxAgeMs: 600_000,
     cleanupIntervalMs: 60_000,
+    watchFactory: pollingWatchFactory,
   });
   await broker.start();
   brokers.push(broker);
