@@ -3,6 +3,7 @@ import { render, fireEvent, cleanup } from '@testing-library/react';
 import {
   Button,
   IconButton,
+  KeyCap,
   MenuItem,
   NavRailButton,
   SegmentedControl,
@@ -49,6 +50,15 @@ describe('IconButton', () => {
   it('size=xs 写入 data-size', () => {
     const { container } = render(<IconButton size="xs">×</IconButton>);
     expect(container.querySelector('button')!.dataset.size).toBe('xs');
+  });
+});
+
+describe('KeyCap', () => {
+  it('className 合并而非覆盖 wm-keycap', () => {
+    const { container } = render(<KeyCap className="extra">K</KeyCap>);
+    const cls = container.querySelector('kbd')!.className;
+    expect(cls).toContain('wm-keycap');
+    expect(cls).toContain('extra');
   });
 });
 

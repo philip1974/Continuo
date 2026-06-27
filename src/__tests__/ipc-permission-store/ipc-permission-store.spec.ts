@@ -213,19 +213,23 @@ describe('IpcPermissionStore.grant / deny', () => {
     });
     const perms: readonly PermissionKey[] = ['fs', 'network'];
     const includesSpy = vi.spyOn(Array.prototype, 'includes');
+    const filterSpy = vi.spyOn(Array.prototype, 'filter');
 
     try {
       const store = new IpcPermissionStore();
       await store.deny('p1', perms);
-      const callsOnInputPerms = includesSpy.mock.contexts.filter(
-        (ctx) => ctx === perms,
-      ).length;
+      const filterCallsDuringDeny = filterSpy.mock.calls.length;
+      let callsOnInputPerms = 0;
+      for (const ctx of includesSpy.mock.contexts) {
+        if (ctx === perms) callsOnInputPerms++;
+      }
       const [, record] = writePluginPermissions.mock.calls[0]! as [
         string,
         { permission: string; granted: boolean }[],
       ];
 
       expect(callsOnInputPerms).toBe(0);
+      expect(filterCallsDuringDeny).toBe(0);
       expect(record).toMatchObject([
         { permission: 'shell', granted: true },
         { permission: 'clipboard', granted: true },
@@ -234,6 +238,7 @@ describe('IpcPermissionStore.grant / deny', () => {
       ]);
     } finally {
       includesSpy.mockRestore();
+      filterSpy.mockRestore();
     }
   });
 
@@ -281,13 +286,17 @@ describe('IpcPermissionStore.clearDenied', () => {
     });
 
     const store = new IpcPermissionStore();
+    const filterSpy = vi.spyOn(Array.prototype, 'filter');
     await store.clearDenied('p1');
+    const filterCallsDuringClear = filterSpy.mock.calls.length;
+    filterSpy.mockRestore();
 
     const [id, record] = writePluginPermissions.mock.calls[0]! as [
       string,
       { permission: string; granted: boolean }[],
     ];
     expect(id).toBe('p1');
+    expect(filterCallsDuringClear).toBe(0);
     expect(record).toEqual([
       expect.objectContaining({ permission: 'fs', granted: true }),
     ]);

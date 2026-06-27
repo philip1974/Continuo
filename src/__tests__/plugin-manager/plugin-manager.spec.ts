@@ -48,6 +48,7 @@ vi.mock('@/lib/co-api', () => ({
 import { Plugin } from '../../plugins/Plugin';
 import {
   PluginManager,
+  removeActivationOrderId,
   type ManagerHost,
   type PluginDirInfo,
 } from '../../plugins/PluginManager';
@@ -138,6 +139,20 @@ beforeEach(() => {
 // ── init:扫描 + 激活 ──────────────────────────────────
 
 describe('init 扫描与激活', () => {
+  it('removeActivationOrderId 按需复制激活顺序,不通过 filter 重建', () => {
+    const order = ['a', 'b', 'a', 'c'];
+    const filterSpy = vi.spyOn(Array.prototype, 'filter');
+
+    try {
+      const next = removeActivationOrderId(order, 'a');
+      const filterCallsDuringRemove = filterSpy.mock.calls.length;
+      expect(next).toEqual(['b', 'c']);
+      expect(filterCallsDuringRemove).toBe(0);
+    } finally {
+      filterSpy.mockRestore();
+    }
+  });
+
   it('enabled 插件被激活,disabled 被发现但不激活', async () => {
     const state: MockHostState = {
       dirs: [

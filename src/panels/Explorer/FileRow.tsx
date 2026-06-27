@@ -44,6 +44,35 @@ const ICON_SIZE = 16;
 // 28px 比 24 更松,Lokus / VSCode 同档(他们用 32);保持紧凑同时呼吸感更好
 const ROW_HEIGHT = 28;
 export const DEFAULT_INDENT = 16;
+const FILE_ROW_BASE_CLASS_NAME =
+  'flex items-center gap-1 text-xs select-none border-l-2';
+const FILE_ROW_DROP_CLASS_NAME =
+  'bg-accent/30 text-fg ring-1 ring-inset ring-accent/60';
+const FILE_ROW_SELECTED_CLASS_NAME = 'bg-hover text-fg';
+const FILE_ROW_IDLE_CLASS_NAME = 'text-fg-muted hover:bg-panel-soft';
+
+export interface FileRowClassNameState {
+  readonly isFocused: boolean;
+  readonly isSelected: boolean;
+  readonly isDropTarget: boolean;
+  readonly isCutMarked: boolean;
+}
+
+export function fileRowClassName({
+  isFocused,
+  isSelected,
+  isDropTarget,
+  isCutMarked,
+}: FileRowClassNameState): string {
+  const focusClass = isFocused ? 'border-accent' : 'border-transparent';
+  const stateClass = isDropTarget
+    ? FILE_ROW_DROP_CLASS_NAME
+    : isSelected
+      ? FILE_ROW_SELECTED_CLASS_NAME
+      : FILE_ROW_IDLE_CLASS_NAME;
+  const base = `${FILE_ROW_BASE_CLASS_NAME} ${focusClass} ${stateClass}`;
+  return isCutMarked ? `${base} opacity-50` : base;
+}
 
 /**
  * 由 FolderTree 一次订阅的装饰器快照(打磨 R7)合成本行装饰。原先每个可见
@@ -141,19 +170,12 @@ export function FileRow({
           backgroundRepeat: 'no-repeat',
         }),
       }}
-      className={[
-        'flex items-center gap-1 text-xs select-none',
-        'border-l-2',
-        isFocused ? 'border-accent' : 'border-transparent',
-        isDropHover || isInternalDropOver
-          ? 'bg-accent/30 text-fg ring-1 ring-inset ring-accent/60'
-          : isSelected
-            ? 'bg-hover text-fg'
-            : 'text-fg-muted hover:bg-panel-soft',
-        isCutMarked && 'opacity-50',
-      ]
-        .filter(Boolean)
-        .join(' ')}
+      className={fileRowClassName({
+        isFocused,
+        isSelected,
+        isDropTarget: isDropHover || isInternalDropOver,
+        isCutMarked,
+      })}
       title={
         decoration?.tooltip
           ? `${data.path} · ${decoration.tooltip}`

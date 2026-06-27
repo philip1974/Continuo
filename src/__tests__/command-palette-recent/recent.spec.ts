@@ -6,6 +6,7 @@ import {
   useRecentCommandsStore,
   RECENT_STORAGE_KEY,
   MAX_RECENT,
+  buildNextRecentList,
 } from '../../plugins/command-palette/recent';
 
 beforeEach(() => {
@@ -19,6 +20,29 @@ beforeEach(() => {
 });
 
 describe('useRecentCommandsStore', () => {
+  it('buildNextRecentList 一次循环去重置顶,不通过 filter 重建 live 列表', () => {
+    const live = Array.from({ length: MAX_RECENT * 3 }, (_, i) => ({
+      id: `cmd-${i}`,
+      ts: i,
+    }));
+    const filterSpy = vi.spyOn(Array.prototype, 'filter');
+
+    try {
+      const next = buildNextRecentList(live, 'cmd-10', 999);
+      const filterCallsDuringBuild = filterSpy.mock.calls.length;
+      let duplicateCount = 0;
+      for (const entry of next) {
+        if (entry.id === 'cmd-10') duplicateCount++;
+      }
+      expect(next).toHaveLength(MAX_RECENT);
+      expect(next[0]).toEqual({ id: 'cmd-10', ts: 999 });
+      expect(duplicateCount).toBe(1);
+      expect(filterCallsDuringBuild).toBe(0);
+    } finally {
+      filterSpy.mockRestore();
+    }
+  });
+
   it('初始 list 为空', () => {
     expect(useRecentCommandsStore.getState().list).toEqual([]);
   });

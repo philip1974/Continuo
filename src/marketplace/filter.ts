@@ -24,22 +24,27 @@ export function applyFilter(
   const hasQuery = q.length > 0;
   const hasTags = opts.selectedTags.size > 0;
   if (!hasQuery && !hasTags) return entries;
-  if (!hasQuery) return entries.filter((e) => matchTags(e, opts.selectedTags));
-  if (!hasTags) return entries.filter((e) => matchQuery(e, q));
-  return entries.filter((e) => matchQuery(e, q) && matchTags(e, opts.selectedTags));
+
+  const filtered: MarketplaceEntry[] = [];
+  for (const entry of entries) {
+    if (hasQuery && !matchQuery(entry, q)) continue;
+    if (hasTags && !matchTags(entry, opts.selectedTags)) continue;
+    filtered.push(entry);
+  }
+  return filtered;
+}
+
+export function buildMarketplaceSearchHaystack(entry: MarketplaceEntry): string {
+  let haystack = `${entry.name} ${entry.id} ${entry.description ?? ''}`;
+  for (const tag of entry.tags ?? []) {
+    haystack += ` ${tag}`;
+  }
+  return haystack.toLowerCase();
 }
 
 function matchQuery(entry: MarketplaceEntry, q: string): boolean {
   if (q.length === 0) return true;
-  const haystack = [
-    entry.name,
-    entry.id,
-    entry.description ?? '',
-    ...(entry.tags ?? []),
-  ]
-    .join(' ')
-    .toLowerCase();
-  return haystack.includes(q);
+  return buildMarketplaceSearchHaystack(entry).includes(q);
 }
 
 function matchTags(
@@ -61,11 +66,14 @@ export function collectAllTags(
   entries: readonly MarketplaceEntry[],
 ): readonly string[] {
   const set = new Set<string>();
+  const tags: string[] = [];
   outer: for (const e of entries) {
     for (const t of e.tags ?? []) {
+      if (set.has(t)) continue;
       set.add(t);
+      tags.push(t);
       if (set.size >= MAX_MARKETPLACE_TAGS) break outer; // 全局 tag 数到顶,停止收集
     }
   }
-  return Array.from(set).sort((a, b) => a.localeCompare(b));
+  return tags.sort((a, b) => a.localeCompare(b));
 }

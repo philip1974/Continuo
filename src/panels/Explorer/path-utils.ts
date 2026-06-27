@@ -44,3 +44,29 @@ export function basenamePreserveTrailing(p: string): string {
   const idx = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'));
   return idx >= 0 ? p.slice(idx + 1) : p;
 }
+
+/**
+ * Recent root 的显示 helper:逐字保留旧 `p.match(/[^/\\]+$/)` 语义,但不走正则匹配分配。
+ * 尾部是分隔符时旧逻辑匹配不到 → name=原路径,parent=''。
+ */
+export function recentRootLabelParts(p: string): { name: string; parent: string } {
+  let end = p.length - 1;
+  if (end < 0 || p.charCodeAt(end) === 47 || p.charCodeAt(end) === 92) {
+    return { name: p, parent: '' };
+  }
+
+  while (end >= 0) {
+    const code = p.charCodeAt(end);
+    if (code === 47 || code === 92) break;
+    end -= 1;
+  }
+
+  const nameStart = end + 1;
+  const name = p.slice(nameStart);
+  let parentEnd = nameStart;
+  if (parentEnd > 0) {
+    const code = p.charCodeAt(parentEnd - 1);
+    if (code === 47 || code === 92) parentEnd -= 1;
+  }
+  return { name, parent: p.slice(0, parentEnd) };
+}

@@ -46,6 +46,33 @@ export interface PermissionStore {
   clearDenied(pluginId: string): Promise<void>;
 }
 
+export function keepGrantedDecisions(
+  list: readonly PermissionDecision[],
+): PermissionDecision[] {
+  const kept: PermissionDecision[] = [];
+  for (const decision of list) {
+    if (decision.granted) kept.push(decision);
+  }
+  return kept;
+}
+
+export function replacePermissionDecisions(
+  list: readonly PermissionDecision[],
+  perms: readonly PermissionKey[],
+  granted: boolean,
+  decidedAt: number,
+): PermissionDecision[] {
+  const replacementPerms = new Set(perms);
+  const next: PermissionDecision[] = [];
+  for (const decision of list) {
+    if (!replacementPerms.has(decision.permission)) next.push(decision);
+  }
+  for (const permission of perms) {
+    next.push({ permission, granted, decidedAt });
+  }
+  return next;
+}
+
 export class InMemoryPermissionStore implements PermissionStore {
   private map = new Map<string, PermissionDecision[]>();
 
@@ -64,7 +91,7 @@ export class InMemoryPermissionStore implements PermissionStore {
   async clearDenied(pluginId: string): Promise<void> {
     const list = this.map.get(pluginId);
     if (!list) return;
-    const kept = list.filter((d) => d.granted);
+    const kept = keepGrantedDecisions(list);
     if (kept.length === 0) this.map.delete(pluginId);
     else this.map.set(pluginId, kept);
   }
@@ -75,12 +102,7 @@ export class InMemoryPermissionStore implements PermissionStore {
     granted: boolean,
   ): void {
     const list = this.map.get(pluginId) ?? [];
-    const replacementPerms = new Set(perms);
-    const next: PermissionDecision[] = list.filter(
-      (d) => !replacementPerms.has(d.permission),
-    );
-    const now = Date.now();
-    for (const p of perms) next.push({ permission: p, granted, decidedAt: now });
+    const next = replacePermissionDecisions(list, perms, granted, Date.now());
     this.map.set(pluginId, next);
   }
 }
@@ -129,14 +151,18 @@ export async function ensureAuthorized(
   }
 
   // 待决:既不在 granted 也不在 denied(尚未决策的项)
-  const pending = requested.filter(
-    (p) => !grantedSet.has(p) && !deniedSet.has(p),
-  );
+  const pending: PermissionKey[] = [];
+  for (const p of requested) {
+    if (!grantedSet.has(p) && !deniedSet.has(p)) pending.push(p);
+  }
 
   if (pending.length > 0) {
     const userGranted = await prompt(pluginId, pending);
     const userGrantedSet = new Set(userGranted);
-    const newDeny = pending.filter((p) => !userGrantedSet.has(p));
+    const newDeny: PermissionKey[] = [];
+    for (const p of pending) {
+      if (!userGrantedSet.has(p)) newDeny.push(p);
+    }
 
     if (userGranted.length > 0) await store.grant(pluginId, userGranted);
     if (newDeny.length > 0) await store.deny(pluginId, newDeny);
@@ -145,8 +171,12 @@ export async function ensureAuthorized(
     for (const p of newDeny) deniedSet.add(p);
   }
 
-  const granted = requested.filter((p) => grantedSet.has(p));
-  const denied = requested.filter((p) => deniedSet.has(p));
+  const granted: PermissionKey[] = [];
+  const denied: PermissionKey[] = [];
+  for (const p of requested) {
+    if (grantedSet.has(p)) granted.push(p);
+    else if (deniedSet.has(p)) denied.push(p);
+  }
 
   // 全拒(无任何 granted)→ status=failed,触发 v4.7 [启用] retry 路径
   if (granted.length === 0) {

@@ -4,7 +4,13 @@
 // 内多个同名项各自只见磁盘旧态、都选到同一个 ` copy` 名 → 第二个 move 覆盖第一
 // 个(批量重名碰撞 = 潜在数据丢失)。
 import { describe, it, expect, vi } from 'vitest';
-import { joinRelativePaths, makeNamePicker } from '../../panels/Explorer/FolderTree';
+import {
+  joinRelativePaths,
+  makeNamePicker,
+  selectDraggedItemPaths,
+  selectRootDropMoveablePaths,
+  selectVisibleTreeItems,
+} from '../../panels/Explorer/FolderTree';
 
 describe('打磨 R21 — makeNamePicker 唯一名解析', () => {
   it('目标不存在 → 用原 basename', () => {
@@ -51,6 +57,76 @@ describe('打磨 — FolderTree 相对路径拼接', () => {
       expect(mapSpy.mock.contexts.some((ctx) => ctx === paths)).toBe(false);
     } finally {
       mapSpy.mockRestore();
+    }
+  });
+});
+
+describe('打磨 — FolderTree hidden file 过滤', () => {
+  function item(name: string) {
+    return {
+      getItemData: () => ({ name }),
+    } as never;
+  }
+
+  it('showHidden=false 时单趟保序选择非隐藏项,不调用 Array.prototype.filter', () => {
+    const items = [item('a.ts'), item('.env'), item('b.ts')];
+    const filterSpy = vi.spyOn(Array.prototype, 'filter');
+
+    try {
+      expect(selectVisibleTreeItems(items, false)).toEqual([
+        items[0],
+        items[2],
+      ]);
+      expect(filterSpy.mock.contexts.some((ctx) => ctx === items)).toBe(false);
+    } finally {
+      filterSpy.mockRestore();
+    }
+  });
+
+  it('showHidden=true 时直接复用 allItems 引用', () => {
+    const items = [item('a.ts'), item('.env')];
+    expect(selectVisibleTreeItems(items, true)).toBe(items);
+  });
+});
+
+describe('打磨 — FolderTree root-drop 可移动路径选择', () => {
+  function dragged(path: string) {
+    return {
+      getId: () => path,
+    } as never;
+  }
+
+  it('selectDraggedItemPaths 单趟取路径,不通过 Array.prototype.map', () => {
+    const items = [dragged('/repo/a.ts'), dragged('/repo/b.ts')];
+    const mapSpy = vi.spyOn(Array.prototype, 'map');
+
+    try {
+      expect(selectDraggedItemPaths(items)).toEqual(['/repo/a.ts', '/repo/b.ts']);
+      expect(mapSpy.mock.contexts.some((ctx) => ctx === items)).toBe(false);
+    } finally {
+      mapSpy.mockRestore();
+    }
+  });
+
+  it('单趟从 draggedItems 取可移动路径,不先 map 再 filter', () => {
+    const items = [
+      dragged('/repo/a.ts'),
+      dragged('/repo/child/b.ts'),
+      dragged('/repo/other/c.ts'),
+    ];
+    const mapSpy = vi.spyOn(Array.prototype, 'map');
+    const filterSpy = vi.spyOn(Array.prototype, 'filter');
+
+    try {
+      expect(selectRootDropMoveablePaths(items, '/repo')).toEqual([
+        '/repo/child/b.ts',
+        '/repo/other/c.ts',
+      ]);
+      expect(mapSpy.mock.contexts.some((ctx) => ctx === items)).toBe(false);
+      expect(filterSpy.mock.contexts.some((ctx) => ctx === items)).toBe(false);
+    } finally {
+      mapSpy.mockRestore();
+      filterSpy.mockRestore();
     }
   });
 });

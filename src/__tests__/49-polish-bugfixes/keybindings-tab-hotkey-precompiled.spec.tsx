@@ -15,8 +15,11 @@ vi.mock('../../plugins/keybindings/keybindings-store', async (importActual) => {
 
 import {
   KeybindingsTabContent,
+  buildCommandSearchHaystack,
   countDefaultHotkeys,
   groupByCategory,
+  keybindingRowClassName,
+  selectVisibleKeybindingCommands,
 } from '../../plugins/settings/KeybindingsTabContent';
 import { coApp } from '../../plugins/co-app';
 import { CommandRegistry } from '../../plugins/registries/CommandRegistry';
@@ -138,5 +141,81 @@ describe('打磨 R29 — Keybindings hotkey 预计算', () => {
     lowerSpy.mockRestore();
     expect(contexts.some((ctx) => ctx.includes('Save'))).toBe(false);
     expect(contexts.some((ctx) => ctx.includes('Find'))).toBe(false);
+  });
+
+  it('构建搜索 haystack 不通过数组 join 生成中间数组', () => {
+    const joinSpy = vi.spyOn(Array.prototype, 'join');
+    try {
+      const haystack = buildCommandSearchHaystack(
+        'Save File',
+        'Editor',
+        'editor.saveFile',
+        'mod+s',
+      );
+
+      expect(joinSpy).not.toHaveBeenCalled();
+      expect(haystack).toContain('save file');
+      expect(haystack).toContain('editor');
+      expect(haystack).toContain('editor.savefile');
+      expect(haystack).toContain('mod+s');
+    } finally {
+      joinSpy.mockRestore();
+    }
+  });
+
+  it('选择可见命令时单趟过滤并保留显式 override 命令', () => {
+    const visibleHotkey = {
+      cmd: { id: 'alpha', title: 'Alpha', hotkey: 'mod+a', fn: vi.fn() },
+      displayTitle: 'Alpha',
+      displayCategory: 'Editor',
+      effectiveHotkey: 'mod+a',
+      hotkeyParts: ['mod', 'a'],
+      isOverridden: false,
+      searchHaystack: 'alpha editor alpha mod+a',
+    };
+    const hiddenNoHotkey = {
+      cmd: { id: 'beta', title: 'Beta', fn: vi.fn() },
+      displayTitle: 'Beta',
+      displayCategory: 'Editor',
+      effectiveHotkey: undefined,
+      hotkeyParts: [],
+      isOverridden: false,
+      searchHaystack: 'beta editor beta',
+    };
+    const visibleOverride = {
+      cmd: { id: 'gamma', title: 'Gamma', fn: vi.fn() },
+      displayTitle: 'Gamma',
+      displayCategory: 'Editor',
+      effectiveHotkey: undefined,
+      hotkeyParts: [],
+      isOverridden: true,
+      searchHaystack: 'gamma editor gamma',
+    };
+    const commands = [visibleHotkey, hiddenNoHotkey, visibleOverride];
+    const filterSpy = vi.spyOn(Array.prototype, 'filter');
+
+    try {
+      expect(selectVisibleKeybindingCommands(commands, 'gamma')).toEqual([
+        visibleOverride,
+      ]);
+      expect(filterSpy.mock.contexts.some((ctx) => ctx === commands)).toBe(false);
+    } finally {
+      filterSpy.mockRestore();
+    }
+  });
+
+  it('命令行 className 不通过数组 join 重建', () => {
+    const joinSpy = vi.spyOn(Array.prototype, 'join');
+
+    try {
+      expect(keybindingRowClassName(0)).toContain(
+        'flex items-center gap-3 px-4 py-3 text-xs',
+      );
+      expect(keybindingRowClassName(0)).not.toContain('border-t');
+      expect(keybindingRowClassName(1)).toContain('border-t border-line/50');
+      expect(joinSpy).not.toHaveBeenCalled();
+    } finally {
+      joinSpy.mockRestore();
+    }
   });
 });

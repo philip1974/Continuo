@@ -27,7 +27,10 @@ import {
   _resetLmApiForTest,
   captureLmApi,
 } from '../../lib/co-api';
-import { QuickOpenModal } from '../../plugins/quick-open/QuickOpenModal';
+import {
+  QuickOpenModal,
+  quickOpenRowClassName,
+} from '../../plugins/quick-open/QuickOpenModal';
 import {
   useQuickOpenStore,
   type QuickOpenFile,
@@ -88,6 +91,20 @@ afterEach(() => {
 });
 
 describe('QuickOpenModal — 渲染态', () => {
+  it('行 className 不通过数组 join 重建', () => {
+    const joinSpy = vi.spyOn(Array.prototype, 'join');
+
+    try {
+      expect(quickOpenRowClassName(true)).toContain('bg-hover text-fg');
+      expect(quickOpenRowClassName(false)).toContain(
+        'text-fg-muted hover:bg-hover/50',
+      );
+      expect(joinSpy).not.toHaveBeenCalled();
+    } finally {
+      joinSpy.mockRestore();
+    }
+  });
+
   it('isOpen=false → 不渲染 Modal', () => {
     installFs();
     render(<QuickOpenModal />);

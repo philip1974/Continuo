@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { fuzzyScore, fuzzyFilter } from '../../plugins/command-palette/fuzzy';
 
 describe('fuzzyScore', () => {
@@ -66,6 +66,24 @@ describe('fuzzyFilter', () => {
     const items = [{ id: 'a' }, { id: 'b' }];
     const r = fuzzyFilter(items, '', (i) => i.id);
     expect(r).toEqual(items);
+  });
+
+  it('匹配结果输出不通过 scored.map 二次物化', () => {
+    const items = [
+      { id: 'a', name: 'save file' },
+      { id: 'b', name: 'save all' },
+      { id: 'c', name: 'reload' },
+    ];
+    const mapSpy = vi.spyOn(Array.prototype, 'map');
+
+    try {
+      const r = fuzzyFilter(items, 'save', (i) => i.name);
+      const mapCallsDuringFilter = mapSpy.mock.calls.length;
+      expect(r.map((x) => x.id)).toEqual(['a', 'b']);
+      expect(mapCallsDuringFilter).toBe(0);
+    } finally {
+      mapSpy.mockRestore();
+    }
   });
 });
 

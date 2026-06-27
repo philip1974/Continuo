@@ -28,6 +28,34 @@ interface ExplorerClipboardState {
   prune(removedPaths: readonly string[]): void;
 }
 
+function isClipboardPathRemoved(path: string, removedPaths: readonly string[]): boolean {
+  for (const removedPath of removedPaths) {
+    if (isSameOrInsidePath(removedPath, path)) return true;
+  }
+  return false;
+}
+
+export function pruneClipboardPaths(
+  paths: readonly string[],
+  removedPaths: readonly string[],
+): readonly string[] {
+  let remaining: string[] | null = null;
+  for (let i = 0; i < paths.length; i++) {
+    const path = paths[i]!;
+    if (isClipboardPathRemoved(path, removedPaths)) {
+      if (remaining === null) {
+        remaining = [];
+        for (let j = 0; j < i; j++) {
+          remaining.push(paths[j]!);
+        }
+      }
+      continue;
+    }
+    if (remaining !== null) remaining.push(path);
+  }
+  return remaining ?? paths;
+}
+
 export const useExplorerClipboardStore = create<ExplorerClipboardState>(
   (set) => ({
     kind: null,
@@ -42,10 +70,8 @@ export const useExplorerClipboardStore = create<ExplorerClipboardState>(
         // 跨平台(codex 复查 P2):复用单一来源 path-cross.isSameOrInsidePath —— 此前手写
         // 大小写敏感前缀,Windows 上剪贴板源与删除/改名旧路径仅大小写不同时不剪除 → 保留失效
         // 源 → Paste 报不存在/同路径新建文件误灰显待粘贴。匹配语义同 editor.store remove/rename。
-        const isRemoved = (p: string): boolean =>
-          removedPaths.some((r) => isSameOrInsidePath(r, p));
-        const remaining = s.paths.filter((p) => !isRemoved(p));
-        if (remaining.length === s.paths.length) return s; // 无变化 → 引用不变,免重渲
+        const remaining = pruneClipboardPaths(s.paths, removedPaths);
+        if (remaining === s.paths) return s; // 无变化 → 引用不变,免重渲
         if (remaining.length === 0) return { kind: null, paths: [] };
         return { kind: s.kind, paths: remaining };
       }),

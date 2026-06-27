@@ -16,7 +16,7 @@ vi.mock('../../plugins/settings/values-store', () => ({
   useSettingValue: (_k: string, fallback: unknown) => fallback,
 }));
 
-import { FileRow } from '../../panels/Explorer/FileRow';
+import { FileRow, fileRowClassName } from '../../panels/Explorer/FileRow';
 import { coApp } from '../../plugins/co-app';
 
 // race(R57):FileRow 合并装饰时读 live coApp.explorerDecorators.getAll()(防快照滞后期执行已
@@ -69,6 +69,59 @@ afterEach(() => {
 });
 
 describe('打磨 R7 — FileRow 用下传的 decorators prop 合成装饰', () => {
+  it('行 className 不通过 filter(Boolean).join 重建', () => {
+    const filterSpy = vi.spyOn(Array.prototype, 'filter');
+    const joinSpy = vi.spyOn(Array.prototype, 'join');
+
+    try {
+      expect(
+        fileRowClassName({
+          isFocused: true,
+          isSelected: false,
+          isDropTarget: true,
+          isCutMarked: true,
+        }),
+      ).toContain('border-accent');
+      expect(
+        fileRowClassName({
+          isFocused: true,
+          isSelected: false,
+          isDropTarget: true,
+          isCutMarked: true,
+        }),
+      ).toContain('bg-accent/30 text-fg ring-1 ring-inset ring-accent/60');
+      expect(
+        fileRowClassName({
+          isFocused: false,
+          isSelected: true,
+          isDropTarget: false,
+          isCutMarked: false,
+        }),
+      ).toContain('bg-hover text-fg');
+      expect(
+        fileRowClassName({
+          isFocused: false,
+          isSelected: false,
+          isDropTarget: false,
+          isCutMarked: false,
+        }),
+      ).toContain('text-fg-muted hover:bg-panel-soft');
+      expect(
+        fileRowClassName({
+          isFocused: true,
+          isSelected: false,
+          isDropTarget: true,
+          isCutMarked: true,
+        }),
+      ).toContain('opacity-50');
+      expect(filterSpy).not.toHaveBeenCalled();
+      expect(joinSpy).not.toHaveBeenCalled();
+    } finally {
+      filterSpy.mockRestore();
+      joinSpy.mockRestore();
+    }
+  });
+
   // a11y(A109):badge 不再用硬编码英文 aria-label,可见文本自然朗读;用 .tabular-nums 定位 badge span。
   it('badge 装饰器 → 渲染 badge(可见文本,无英文 aria-label)', () => {
     const deco: DecoratorFn = () => ({ badge: '3' });

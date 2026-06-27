@@ -8,8 +8,11 @@
 // 修复:update-store 加乐观 `dismiss(id)`,onUpdate 成功后立即摘除该 id 让按钮即时收起,
 // 再异步 refresh 与磁盘对账。
 
-import { describe, it, expect, beforeEach } from 'vitest';
-import { useUpdateStore } from '../../marketplace/update-store';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import {
+  dismissAvailableUpdateFromList,
+  useUpdateStore,
+} from '../../marketplace/update-store';
 import type { AvailableUpdate } from '../../marketplace/update-store';
 import type { MarketplaceEntry } from '../../marketplace/types';
 
@@ -40,6 +43,26 @@ beforeEach(() => {
 });
 
 describe('topic49 P2-AG · update-store.dismiss 乐观摘除', () => {
+  it('dismissAvailableUpdateFromList 一次循环找目标并摘除,不走 find/filter', () => {
+    const available = [avail('a'), avail('b'), avail('a', '1.0.0', '2.1.0')];
+    const findSpy = vi.spyOn(Array.prototype, 'find');
+    const filterSpy = vi.spyOn(Array.prototype, 'filter');
+
+    try {
+      const result = dismissAvailableUpdateFromList(available, 'a');
+      const findCallsDuringDismiss = findSpy.mock.calls.length;
+      const filterCallsDuringDismiss = filterSpy.mock.calls.length;
+      expect(result).not.toBeNull();
+      expect(result!.target.to).toBe('2.0.0');
+      expect(result!.available.map((u) => u.id)).toEqual(['b']);
+      expect(findCallsDuringDismiss).toBe(0);
+      expect(filterCallsDuringDismiss).toBe(0);
+    } finally {
+      findSpy.mockRestore();
+      filterSpy.mockRestore();
+    }
+  });
+
   it('dismiss(id) 立即从 available 摘掉该条,保留其它', () => {
     useUpdateStore.getState().dismiss('a');
     const ids = useUpdateStore.getState().available.map((u) => u.id);

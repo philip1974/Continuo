@@ -17,7 +17,10 @@ import {
   captureLmApi,
 } from '../../lib/co-api';
 import { setLocale as setI18nLocale } from '@/i18n';
-import { PluginsTabContent } from '../../plugins/settings/PluginsTabContent';
+import {
+  PluginsTabContent,
+  pluginsTabRowClassName,
+} from '../../plugins/settings/PluginsTabContent';
 import { coApp } from '../../plugins/co-app';
 import { CommandRegistry } from '../../plugins/registries/CommandRegistry';
 import { PanelRegistry } from '../../plugins/registries/PanelRegistry';
@@ -85,6 +88,21 @@ afterEach(() => {
 });
 
 describe('PluginsTabContent — 贡献点统计', () => {
+  it('列表行 className 不通过数组 join 重建', () => {
+    const joinSpy = vi.spyOn(Array.prototype, 'join');
+
+    try {
+      expect(pluginsTabRowClassName(false)).toContain(
+        'flex items-start gap-4 px-4 py-3 text-xs',
+      );
+      expect(pluginsTabRowClassName(false)).not.toContain('border-t');
+      expect(pluginsTabRowClassName(true)).toContain('border-t border-line/50');
+      expect(joinSpy).not.toHaveBeenCalled();
+    } finally {
+      joinSpy.mockRestore();
+    }
+  });
+
   it('空 registry → 7 行 count=0,samples=「—」', () => {
     const { container } = render(<PluginsTabContent />);
     expect(container.textContent).toContain('已注册贡献点');

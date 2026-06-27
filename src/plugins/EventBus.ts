@@ -9,7 +9,7 @@ type Listener = (payload: unknown) => void;
 
 // 边界(E56,插件 API 输入校验):on/emit/clear 对插件传入的事件名和 listener 无运行时校验,也无
 // 事件名数量/单事件 listener 数量上限。畸形插件可注册超长/非字符串事件名或成千上万个监听器;
-// emit() 会 Array.from(set) 拷贝并同步逐个调用 → 单次事件触发内存峰值 + renderer 卡顿;非函数
+// emit() 会拷贝快照并同步逐个调用 → 单次事件触发内存峰值 + renderer 卡顿;非函数
 // listener 还会每次 emit 反复抛错刷日志。on 入口校验 name 为有限长度字符串 + listener 为函数 +
 // 总事件数/每事件 listener 数上限,非法/超限抛、不注册;emit/clear 对非字符串 name no-op。
 const EVENT_NAME_MAX = 256;
@@ -67,7 +67,9 @@ export class EventBus {
     const set = this.byName.get(name);
     if (!set) return;
     // 拷贝防 listener 内自取消导致迭代异常
-    for (const fn of Array.from(set)) {
+    const snapshot: Listener[] = [];
+    for (const fn of set) snapshot.push(fn);
+    for (const fn of snapshot) {
       try {
         fn(payload);
       } catch (err) {

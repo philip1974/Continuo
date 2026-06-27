@@ -12,6 +12,7 @@ import {
 } from '@/lib/select-directory-single-flight';
 import { useT } from '@/i18n';
 import { SR_ONLY_STYLE } from '@/lib/sr-only';
+import { recentRootLabelParts } from './path-utils';
 
 // 未选 workspace 时占位:中央"打开文件夹"按钮(VSCode 风)。
 // 调 fs.selectDirectory(原生对话框)→ setRoot,store 一变 Explorer 容器自动切到 FolderTree。
@@ -81,9 +82,7 @@ export function EmptyWorkspace() {
               全宽),保持视觉一致又恢复正确语义。 */}
           <ul aria-label={t('panels.explorer.empty.recent')}>
             {recentRoots.map((p) => {
-              const m = p.match(/[^/\\]+$/);
-              const name = m ? m[0] : p;
-              const parent = m ? p.slice(0, p.length - m[0].length).replace(/[/\\]$/, '') : '';
+              const { name, parent } = recentRootLabelParts(p);
               return (
                 <li key={p}>
                   <Button

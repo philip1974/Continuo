@@ -24,6 +24,17 @@ interface ContributionRow {
   readonly samples: readonly string[];
 }
 
+const PLUGINS_TAB_ROW_CLASS_NAME =
+  'flex items-start gap-4 px-4 py-3 text-xs';
+const PLUGINS_TAB_ROW_BORDER_CLASS_NAME =
+  `${PLUGINS_TAB_ROW_CLASS_NAME} border-t border-line/50`;
+
+export function pluginsTabRowClassName(hasTopBorder: boolean): string {
+  return hasTopBorder
+    ? PLUGINS_TAB_ROW_BORDER_CLASS_NAME
+    : PLUGINS_TAB_ROW_CLASS_NAME;
+}
+
 function snapshot(): readonly ContributionRow[] {
   // 每个 registry 只取一次快照(打磨 R4):getAll()/getBySide() 都 Array.from
   // (+sort),原先 count 与 samples 各调一遍、statusBar 左右各取两遍 → 重复
@@ -118,10 +129,7 @@ export function PluginsTabContent() {
           {contribs.map((row, i) => (
             <div
               key={row.labelKey}
-              className={[
-                'flex items-start gap-4 px-4 py-3 text-xs',
-                i > 0 ? 'border-t border-line/50' : '',
-              ].join(' ')}
+              className={pluginsTabRowClassName(i > 0)}
             >
               <div className="w-32 shrink-0 text-fg-muted">{t(row.labelKey)}</div>
               <div className="w-8 shrink-0 text-right tabular-nums text-fg">
@@ -144,10 +152,7 @@ export function PluginsTabContent() {
           {CORE_PLUGINS.map((p, i) => (
             <div
               key={p.id}
-              className={[
-                'flex items-start gap-4 px-4 py-3 text-xs',
-                i > 0 ? 'border-t border-line/50' : '',
-              ].join(' ')}
+              className={pluginsTabRowClassName(i > 0)}
             >
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-medium text-fg">
@@ -460,10 +465,7 @@ function UserPluginsSection() {
           {plugins.map((p, i) => (
             <div
               key={p.id}
-              className={[
-                'flex items-start gap-4 px-4 py-3 text-xs',
-                i > 0 || pendingInstall ? 'border-t border-line/50' : '',
-              ].join(' ')}
+              className={pluginsTabRowClassName(i > 0 || Boolean(pendingInstall))}
             >
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline gap-2">

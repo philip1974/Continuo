@@ -102,6 +102,24 @@ export interface PluginListItem {
   readonly warning?: PluginWarning;
 }
 
+export function removeActivationOrderId(order: string[], id: string): string[] {
+  let next: string[] | null = null;
+  for (let i = 0; i < order.length; i++) {
+    const activeId = order[i]!;
+    if (activeId === id) {
+      if (next === null) {
+        next = [];
+        for (let j = 0; j < i; j++) {
+          next.push(order[j]!);
+        }
+      }
+      continue;
+    }
+    if (next !== null) next.push(activeId);
+  }
+  return next ?? order;
+}
+
 // ── PluginManager ──────────────────────────────────────
 
 export class PluginManager {
@@ -245,7 +263,7 @@ export class PluginManager {
     entry.error = undefined;
     entry.warning = undefined;
     entry.enabledIntent = false; // race(R77):用户禁用 → 清持久启用意图(reload 不再重激活)
-    this.activationOrder = this.activationOrder.filter((x) => x !== id);
+    this.activationOrder = removeActivationOrderId(this.activationOrder, id);
 
     await this.host.mutateEnabledId(id, false);
   }
@@ -290,7 +308,7 @@ export class PluginManager {
     const wasEnabled = entry.enabledIntent;
     if (wasEnabled && entry.instance) {
       await this.deactivateEntry(entry, `reload ${id}`);
-      this.activationOrder = this.activationOrder.filter((x) => x !== id);
+      this.activationOrder = removeActivationOrderId(this.activationOrder, id);
     }
 
     // 解析新 manifest(可能 version / permissions 等变了)

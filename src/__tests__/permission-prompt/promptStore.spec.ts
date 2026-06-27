@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { usePermissionPromptStore } from '../../plugins/permissions/promptStore';
+import {
+  removeFsScopeQueueId,
+  usePermissionPromptStore,
+} from '../../plugins/permissions/promptStore';
 
 beforeEach(() => {
   usePermissionPromptStore.setState({
@@ -75,6 +78,20 @@ describe('race(R89) · fs-scope prompt 同 TTL 本地超时自清', () => {
 });
 
 describe('usePermissionPromptStore', () => {
+  it('removeFsScopeQueueId 按需复制队列,不通过 filter 重建', () => {
+    const queue = ['r1', 'r2', 'r1', 'r3'];
+    const filterSpy = vi.spyOn(Array.prototype, 'filter');
+
+    try {
+      const next = removeFsScopeQueueId(queue, 'r1');
+      const filterCallsDuringRemove = filterSpy.mock.calls.length;
+      expect([...next]).toEqual(['r2', 'r3']);
+      expect(filterCallsDuringRemove).toBe(0);
+    } finally {
+      filterSpy.mockRestore();
+    }
+  });
+
   it('request 设 pending,grant 后 Promise resolve 收授权列表', async () => {
     const promise = usePermissionPromptStore
       .getState()

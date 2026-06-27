@@ -17,6 +17,32 @@ import {
 } from '../registries/SettingItemRegistry';
 import { useSettingsValuesStore } from './values-store';
 
+const SETTING_TOGGLE_SWITCH_BASE_CLASS_NAME =
+  'relative inline-flex h-4 w-8 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40';
+const SETTING_TOGGLE_SWITCH_ON_CLASS_NAME =
+  `${SETTING_TOGGLE_SWITCH_BASE_CLASS_NAME} bg-accent`;
+const SETTING_TOGGLE_SWITCH_OFF_CLASS_NAME =
+  `${SETTING_TOGGLE_SWITCH_BASE_CLASS_NAME} border border-line bg-panel-soft`;
+
+const SETTING_TOGGLE_KNOB_BASE_CLASS_NAME =
+  'absolute h-2.5 w-2.5 rounded-full transition-transform';
+const SETTING_TOGGLE_KNOB_ON_CLASS_NAME =
+  `${SETTING_TOGGLE_KNOB_BASE_CLASS_NAME} translate-x-[18px] bg-fg`;
+const SETTING_TOGGLE_KNOB_OFF_CLASS_NAME =
+  `${SETTING_TOGGLE_KNOB_BASE_CLASS_NAME} translate-x-1 bg-fg-muted`;
+
+export function settingToggleSwitchClassName(checked: boolean): string {
+  return checked
+    ? SETTING_TOGGLE_SWITCH_ON_CLASS_NAME
+    : SETTING_TOGGLE_SWITCH_OFF_CLASS_NAME;
+}
+
+export function settingToggleKnobClassName(checked: boolean): string {
+  return checked
+    ? SETTING_TOGGLE_KNOB_ON_CLASS_NAME
+    : SETTING_TOGGLE_KNOB_OFF_CLASS_NAME;
+}
+
 interface SettingItemRowProps {
   readonly spec: SettingItemSpec;
   /**
@@ -186,20 +212,9 @@ function ToggleSwitch({ checked, onChange, ariaLabel }: ToggleSwitchProps) {
       aria-checked={checked}
       aria-label={ariaLabel}
       onClick={() => onChange(!checked)}
-      className={[
-        'relative inline-flex h-4 w-8 shrink-0 items-center rounded-full transition-colors',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40',
-        checked ? 'bg-accent' : 'border border-line bg-panel-soft',
-      ].join(' ')}
+      className={settingToggleSwitchClassName(checked)}
     >
-      <span
-        className={[
-          'absolute h-2.5 w-2.5 rounded-full transition-transform',
-          checked
-            ? 'translate-x-[18px] bg-fg'
-            : 'translate-x-1 bg-fg-muted',
-        ].join(' ')}
-      />
+      <span className={settingToggleKnobClassName(checked)} />
     </button>
   );
 }

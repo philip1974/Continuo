@@ -1,4 +1,10 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import {
+  type ReactElement,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { IconButton, MenuItem } from '@/design';
@@ -15,7 +21,7 @@ import {
   releaseSelectDirectoryLock,
 } from '@/lib/select-directory-single-flight';
 import { useMenuKeyboard } from '@/lib/use-menu-keyboard';
-import { basename } from './path-utils';
+import { basename, recentRootLabelParts } from './path-utils';
 import { useT } from '@/i18n';
 
 // FolderTree 顶部固定 Header:左侧 workspace 名 + 右侧 ⋯ 溢出菜单
@@ -46,7 +52,6 @@ export function ExplorerHeader({
 }: ExplorerHeaderProps) {
   const setRoot = useWorkspaceStore((s) => s.setRoot);
   const recentRoots = useWorkspaceStore((s) => s.recentRoots);
-  const recentOthers = recentRoots.filter((p) => p !== root);
   const [busy, setBusy] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [anchor, setAnchor] = useState<{ top: number; right: number } | null>(
@@ -225,44 +230,49 @@ export function ExplorerHeader({
             >
               {t('panels.explorer.menu.expand_all')}
             </MenuItem>
-            {recentOthers.length > 0 && (
-              <>
-                {/* a11y(A113):role=menu 内的视觉分隔线须 role="separator"(合法 menu 子结构),
-                    否则 AT 把装饰 div 当异常菜单内容。 */}
-                <div role="separator" className="my-1 h-px bg-line" />
-                {/* a11y(A113):最近项用 role="group" + aria-label 成组(组名经 aria-label 提供),
-                    视觉标题 aria-hidden(纯视觉,避免与组名重复朗读)。 */}
-                <div role="group" aria-label={t('panels.explorer.menu.open_recent')}>
-                  <div
-                    aria-hidden="true"
-                    className="px-2 pb-0.5 text-2xs uppercase tracking-wider text-fg-dim"
+            {(() => {
+              const recentItems: ReactElement[] = [];
+              for (const p of recentRoots) {
+                if (p === root) continue;
+                const { name } = recentRootLabelParts(p);
+                recentItems.push(
+                  <MenuItem
+                    key={p}
+                    title={p}
+                    // a11y(A78):菜单项只显视觉 basename,同名目录无法区分 → aria-label 注入完整路径。
+                    ariaLabel={t('panels.explorer.menu.open_recent_item_aria', {
+                      path: p,
+                    })}
+                    onClick={() => {
+                      closeAndRestore(); // a11y(A30):激活后还原焦点到触发按钮
+                      void openRecentRootOrNotify(p, setRoot);
+                    }}
                   >
-                    {t('panels.explorer.menu.open_recent')}
+                    <span className="truncate">{name}</span>
+                  </MenuItem>,
+                );
+              }
+              if (recentItems.length === 0) return null;
+              return (
+                <>
+                  {/* a11y(A113):role=menu 内的视觉分隔线须 role="separator"(合法 menu 子结构),
+                      否则 AT 把装饰 div 当异常菜单内容。 */}
+                  <div role="separator" className="my-1 h-px bg-line" />
+                  {/* a11y(A113):最近项用 role="group" + aria-label 成组(组名经 aria-label 提供),
+                      视觉标题 aria-hidden(纯视觉,避免与组名重复朗读)。 */}
+                  <div role="group" aria-label={t('panels.explorer.menu.open_recent')}>
+                    <div
+                      aria-hidden="true"
+                      className="px-2 pb-0.5 text-2xs uppercase tracking-wider text-fg-dim"
+                    >
+                      {t('panels.explorer.menu.open_recent')}
+                    </div>
+                    {recentItems}
                   </div>
-                  {recentOthers.map((p) => {
-                    const m = p.match(/[^/\\]+$/);
-                    const name = m ? m[0] : p;
-                    return (
-                      <MenuItem
-                        key={p}
-                        title={p}
-                        // a11y(A78):菜单项只显视觉 basename,同名目录无法区分 → aria-label 注入完整路径。
-                        ariaLabel={t('panels.explorer.menu.open_recent_item_aria', {
-                          path: p,
-                        })}
-                        onClick={() => {
-                          closeAndRestore(); // a11y(A30):激活后还原焦点到触发按钮
-                          void openRecentRootOrNotify(p, setRoot);
-                        }}
-                      >
-                        <span className="truncate">{name}</span>
-                      </MenuItem>
-                    );
-                  })}
-                </div>
-                <div role="separator" className="my-1 h-px bg-line" />
-              </>
-            )}
+                  <div role="separator" className="my-1 h-px bg-line" />
+                </>
+              );
+            })()}
             <MenuItem disabled={busy} onClick={switchFolder}>
               {t('panels.explorer.menu.switch_folder')}
             </MenuItem>

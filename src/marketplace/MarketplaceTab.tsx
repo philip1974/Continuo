@@ -32,6 +32,32 @@ const REVIEW_DISPLAY_LIMIT = 10;
 
 type ReviewSort = 'newest' | 'helpful';
 
+const MARKETPLACE_TAG_BUTTON_BASE_CLASS_NAME =
+  'rounded-full border px-3 py-1 text-[11px] transition';
+const MARKETPLACE_TAG_BUTTON_ACTIVE_CLASS_NAME =
+  `${MARKETPLACE_TAG_BUTTON_BASE_CLASS_NAME} border-accent bg-accent text-canvas`;
+const MARKETPLACE_TAG_BUTTON_INACTIVE_CLASS_NAME =
+  `${MARKETPLACE_TAG_BUTTON_BASE_CLASS_NAME} border-line bg-panel text-fg-muted hover:bg-hover hover:text-fg`;
+
+const MARKETPLACE_REVIEW_SORT_BUTTON_BASE_CLASS_NAME =
+  'rounded px-1.5 py-0.5';
+const MARKETPLACE_REVIEW_SORT_BUTTON_ACTIVE_CLASS_NAME =
+  `${MARKETPLACE_REVIEW_SORT_BUTTON_BASE_CLASS_NAME} bg-accent/20 text-accent`;
+const MARKETPLACE_REVIEW_SORT_BUTTON_INACTIVE_CLASS_NAME =
+  `${MARKETPLACE_REVIEW_SORT_BUTTON_BASE_CLASS_NAME} hover:bg-hover`;
+
+export function marketplaceTagButtonClassName(active: boolean): string {
+  return active
+    ? MARKETPLACE_TAG_BUTTON_ACTIVE_CLASS_NAME
+    : MARKETPLACE_TAG_BUTTON_INACTIVE_CLASS_NAME;
+}
+
+export function marketplaceReviewSortButtonClassName(active: boolean): string {
+  return active
+    ? MARKETPLACE_REVIEW_SORT_BUTTON_ACTIVE_CLASS_NAME
+    : MARKETPLACE_REVIEW_SORT_BUTTON_INACTIVE_CLASS_NAME;
+}
+
 type LoadState =
   | { kind: 'loading' }
   | { kind: 'ok'; entries: readonly MarketplaceEntry[] }
@@ -578,12 +604,7 @@ const TagButton = memo(function TagButton({
       // a11y(A8):tag filter 是 toggle,active 只改 className → 补 aria-pressed 暴露选中态给 AT。
       aria-pressed={active}
       onClick={() => onToggle(tag)}
-      className={[
-        'rounded-full border px-3 py-1 text-[11px] transition',
-        active
-          ? 'border-accent bg-accent text-canvas'
-          : 'border-line bg-panel text-fg-muted hover:bg-hover hover:text-fg',
-      ].join(' ')}
+      className={marketplaceTagButtonClassName(active)}
     >
       {tag}
     </button>
@@ -902,10 +923,7 @@ function RatingRow({
                 // 给 AT(单选组,pressed 项即当前排序)。
                 aria-pressed={sort === s}
                 onClick={() => setSort(s)}
-                className={[
-                  'rounded px-1.5 py-0.5',
-                  sort === s ? 'bg-accent/20 text-accent' : 'hover:bg-hover',
-                ].join(' ')}
+                className={marketplaceReviewSortButtonClassName(sort === s)}
               >
                 {s === 'newest'
                   ? t('marketplace.reviews.sort_newest')

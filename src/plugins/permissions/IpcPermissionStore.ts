@@ -6,10 +6,12 @@
 
 import { coApi } from '@/lib/co-api';
 import { runSerialPerKey } from '@/lib/serialize-per-key';
-import type {
-  PermissionDecision,
-  PermissionKey,
-  PermissionStore,
+import {
+  keepGrantedDecisions,
+  replacePermissionDecisions,
+  type PermissionDecision,
+  type PermissionKey,
+  type PermissionStore,
 } from '../permissions';
 import type { PathScope } from '../types';
 import type {
@@ -188,7 +190,7 @@ export class IpcPermissionStore implements PermissionStore {
       const cache = await this.ensureLoaded();
       const record = cache[pluginId];
       if (!record) return;
-      const kept = record.decisions.filter((d) => d.granted);
+      const kept = keepGrantedDecisions(record.decisions);
       const removeEntry = kept.length === 0 && record.pathScopes === undefined;
       // 空记录 → main 删除该 id 条目;否则保留 pathScopes,只去掉 denied decisions。
       const written: PermissionRecord = removeEntry
@@ -254,14 +256,12 @@ export class IpcPermissionStore implements PermissionStore {
       const cache = await this.ensureLoaded();
       const existing = cache[pluginId];
       const existingDecisions = existing?.decisions ?? [];
-      const replacementPerms = new Set(perms);
-      const updated: PermissionDecision[] = existingDecisions.filter(
-        (d) => !replacementPerms.has(d.permission),
+      const updated = replacePermissionDecisions(
+        existingDecisions,
+        perms,
+        granted,
+        Date.now(),
       );
-      const now = Date.now();
-      for (const p of perms) {
-        updated.push({ permission: p, granted, decidedAt: now });
-      }
       const next: PermissionRecord = { ...existing, decisions: updated };
       // 数据安全(codex 复查 P1):**先写盘,确认成功后才提交 cache** —— 不在写确认前乐观改
       // cache,且写失败必须抛(不再只 warn)。否则磁盘写失败时 cache 进入未落盘半提交态:

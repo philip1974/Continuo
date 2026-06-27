@@ -38,10 +38,47 @@ function useItems(reg: SettingItemRegistry): readonly SettingItemSpec[] {
   return useRegistry(reg);
 }
 
+const SETTINGS_NAV_BASE_CLASS_NAME =
+  'flex w-[180px] shrink-0 flex-col overflow-y-auto border-r border-line bg-panel-soft py-2 text-xs transition-opacity';
+const SETTINGS_NAV_SEARCH_CLASS_NAME =
+  `${SETTINGS_NAV_BASE_CLASS_NAME} pointer-events-none opacity-40`;
+const SETTINGS_NAV_NORMAL_CLASS_NAME =
+  `${SETTINGS_NAV_BASE_CLASS_NAME} opacity-100`;
+
+const SETTINGS_TAB_BUTTON_BASE_CLASS_NAME =
+  'flex w-full items-center gap-2 border-l-2 px-4 py-2 text-left transition';
+const SETTINGS_TAB_BUTTON_ACTIVE_CLASS_NAME =
+  `${SETTINGS_TAB_BUTTON_BASE_CLASS_NAME} border-accent bg-hover text-fg`;
+const SETTINGS_TAB_BUTTON_INACTIVE_CLASS_NAME =
+  `${SETTINGS_TAB_BUTTON_BASE_CLASS_NAME} border-transparent text-fg-muted hover:bg-hover/50`;
+
+export function settingsNavClassName(inSearch: boolean): string {
+  return inSearch
+    ? SETTINGS_NAV_SEARCH_CLASS_NAME
+    : SETTINGS_NAV_NORMAL_CLASS_NAME;
+}
+
+export function settingsTabButtonClassName(active: boolean): string {
+  return active
+    ? SETTINGS_TAB_BUTTON_ACTIVE_CLASS_NAME
+    : SETTINGS_TAB_BUTTON_INACTIVE_CLASS_NAME;
+}
+
 /** 一条设置项的搜索源:本地化标题/描述 + id + raw fallback,全 lowercase. */
 export interface SearchableSettingItem {
   readonly item: SettingItemSpec;
   readonly haystack: string;
+}
+
+export function buildSettingSearchHaystack(item: SettingItemSpec): string {
+  const displayTitle = tWithFallback(item.titleKey, item.title);
+  const displayDescription = tWithFallback(
+    item.descriptionKey,
+    item.description ?? '',
+  );
+  return `${displayTitle} ${displayDescription} ${item.id} ${item.title} ${
+    item.description ?? ''
+  }`.toLowerCase();
 }
 
 // 内置 4 类 category → catalog tab_title key 映射；plugin 自定义 category fallback raw 字符串
@@ -136,10 +173,7 @@ export function SettingsPanel({
       </div>
       <div className="flex min-h-0 flex-1">
         <nav
-          className={[
-            'flex w-[180px] shrink-0 flex-col overflow-y-auto border-r border-line bg-panel-soft py-2 text-xs transition-opacity',
-            inSearch ? 'pointer-events-none opacity-40' : 'opacity-100',
-          ].join(' ')}
+          className={settingsNavClassName(inSearch)}
           aria-label={t('settings.panel.nav_aria')}
         >
           {tabs.length === 0 ? (
@@ -157,12 +191,7 @@ export function SettingsPanel({
                 // 暴露选中态(nav 是独立可 tab 的按钮列表,非箭头键 roving 的 tab 控件,故用
                 // aria-current 而非 role=tab/aria-selected,避免不完整的 tab 交互模型)。
                 aria-current={active?.id === tab.id ? 'page' : undefined}
-                className={[
-                  'flex w-full items-center gap-2 border-l-2 px-4 py-2 text-left transition',
-                  active?.id === tab.id
-                    ? 'border-accent bg-hover text-fg'
-                    : 'border-transparent text-fg-muted hover:bg-hover/50',
-                ].join(' ')}
+                className={settingsTabButtonClassName(active?.id === tab.id)}
               >
                 {tab.icon && (
                   <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center">
@@ -212,15 +241,7 @@ function SettingsSearchResults({
     () =>
       allItems.map((item) => ({
         item,
-        haystack: [
-          tWithFallback(item.titleKey, item.title),
-          tWithFallback(item.descriptionKey, item.description ?? ''),
-          item.id,
-          item.title,
-          item.description ?? '',
-        ]
-          .join(' ')
-          .toLowerCase(),
+        haystack: buildSettingSearchHaystack(item),
       })),
     // locale 作失效键:tWithFallback 内部按当前 locale 翻译,lint 看不到该依赖。
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -68,6 +68,27 @@ function publicFsScope(entry: FsScopeEntry | undefined): FsScopePrompt | null {
   };
 }
 
+export function removeFsScopeQueueId(
+  queue: string[],
+  id: string,
+): string[] {
+  let next: string[] | null = null;
+  for (let i = 0; i < queue.length; i++) {
+    const queuedId = queue[i]!;
+    if (queuedId === id) {
+      if (next === null) {
+        next = [];
+        for (let j = 0; j < i; j++) {
+          next.push(queue[j]!);
+        }
+      }
+      continue;
+    }
+    if (next !== null) next.push(queuedId);
+  }
+  return next ?? queue;
+}
+
 export const usePermissionPromptStore = create<PromptState>((set, get) => ({
   pending: null,
   resolve: null,
@@ -157,7 +178,7 @@ function resolveFsScope(
   clearFsScopeTimer(id); // race(R89):resolved → 清本地超时,防误触/泄漏
   const nextPending = { ...state.fsScopePending };
   delete nextPending[id];
-  const nextQueue = state.fsScopeQueue.filter((x) => x !== id);
+  const nextQueue = removeFsScopeQueueId(state.fsScopeQueue, id);
   set({
     fsScopePending: nextPending,
     fsScopeQueue: nextQueue,

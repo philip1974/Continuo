@@ -20,7 +20,11 @@ import {
   _resetLmApiForTest,
   captureLmApi,
 } from '../../lib/co-api';
-import { MarketplaceTab } from '../../marketplace/MarketplaceTab';
+import {
+  MarketplaceTab,
+  marketplaceReviewSortButtonClassName,
+  marketplaceTagButtonClassName,
+} from '../../marketplace/MarketplaceTab';
 import { setLocale as setI18nLocale } from '@/i18n';
 import { fetchMarketplaceIndex, fetchPluginManifest } from '../../marketplace/fetcher';
 import { getUserPluginManager } from '../../plugins/PluginManager';
@@ -73,6 +77,30 @@ beforeEach(() => {
     loading: false,
     error: null,
     lastFetchedAt: null,
+  });
+});
+
+describe('MarketplaceTab — className helpers', () => {
+  it('tag/sort toggle className 不通过数组 join 重建', () => {
+    const joinSpy = vi.spyOn(Array.prototype, 'join');
+
+    try {
+      expect(marketplaceTagButtonClassName(true)).toContain(
+        'border-accent bg-accent text-canvas',
+      );
+      expect(marketplaceTagButtonClassName(false)).toContain(
+        'border-line bg-panel text-fg-muted hover:bg-hover hover:text-fg',
+      );
+      expect(marketplaceReviewSortButtonClassName(true)).toContain(
+        'bg-accent/20 text-accent',
+      );
+      expect(marketplaceReviewSortButtonClassName(false)).toContain(
+        'hover:bg-hover',
+      );
+      expect(joinSpy).not.toHaveBeenCalled();
+    } finally {
+      joinSpy.mockRestore();
+    }
   });
 });
 

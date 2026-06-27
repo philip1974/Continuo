@@ -2,6 +2,8 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   InMemoryPermissionStore,
   ensureAuthorized,
+  keepGrantedDecisions,
+  replacePermissionDecisions,
   type PermissionDecision,
   type PermissionKey,
   type PermissionStore,
@@ -56,6 +58,46 @@ describe('Manifest permissions schema', () => {
 });
 
 describe('InMemoryPermissionStore', () => {
+  it('keepGrantedDecisions 不通过 filter 重建 granted 子集', () => {
+    const decisions: readonly PermissionDecision[] = [
+      { permission: 'fs', granted: true, decidedAt: 1 },
+      { permission: 'network', granted: false, decidedAt: 2 },
+      { permission: 'shell', granted: true, decidedAt: 3 },
+    ];
+    const filterSpy = vi.spyOn(Array.prototype, 'filter');
+
+    try {
+      const kept = keepGrantedDecisions(decisions);
+      const filterCallsDuringKeep = filterSpy.mock.calls.length;
+      expect(kept.map((d) => d.permission)).toEqual(['fs', 'shell']);
+      expect(filterCallsDuringKeep).toBe(0);
+    } finally {
+      filterSpy.mockRestore();
+    }
+  });
+
+  it('replacePermissionDecisions 不通过 filter 移除被覆盖权限', () => {
+    const decisions: readonly PermissionDecision[] = [
+      { permission: 'fs', granted: true, decidedAt: 1 },
+      { permission: 'network', granted: true, decidedAt: 2 },
+      { permission: 'shell', granted: true, decidedAt: 3 },
+    ];
+    const filterSpy = vi.spyOn(Array.prototype, 'filter');
+
+    try {
+      const next = replacePermissionDecisions(decisions, ['fs', 'network'], false, 9);
+      const filterCallsDuringReplace = filterSpy.mock.calls.length;
+      expect(next).toMatchObject([
+        { permission: 'shell', granted: true },
+        { permission: 'fs', granted: false, decidedAt: 9 },
+        { permission: 'network', granted: false, decidedAt: 9 },
+      ]);
+      expect(filterCallsDuringReplace).toBe(0);
+    } finally {
+      filterSpy.mockRestore();
+    }
+  });
+
   it('未存过 → get 返空数组', async () => {
     const s = new InMemoryPermissionStore();
     expect(await s.get('p')).toEqual([]);
@@ -205,6 +247,36 @@ describe('ensureAuthorized(v5 Phase 2 partial grant)', () => {
         expect(r.denied).toEqual(['network']);
       }
       expect(prompt).not.toHaveBeenCalled();
+    } finally {
+      filterSpy.mockRestore();
+    }
+  });
+
+  it('requested 归类不通过 filter 多次重扫', async () => {
+    const requested: readonly PermissionKey[] = ['fs', 'network'];
+    const store: PermissionStore = {
+      get: vi.fn(async () => [
+        { permission: 'fs', granted: true, decidedAt: 1 },
+        { permission: 'network', granted: false, decidedAt: 2 },
+      ]),
+      grant: vi.fn(),
+      deny: vi.fn(),
+      clearDenied: vi.fn(),
+    };
+    const filterSpy = vi.spyOn(Array.prototype, 'filter');
+
+    try {
+      const r = await ensureAuthorized('p', requested, store, vi.fn());
+      let requestedFilterCalls = 0;
+      for (const ctx of filterSpy.mock.contexts) {
+        if (ctx === requested) requestedFilterCalls++;
+      }
+      expect(requestedFilterCalls).toBe(0);
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        expect(r.granted).toEqual(['fs']);
+        expect(r.denied).toEqual(['network']);
+      }
     } finally {
       filterSpy.mockRestore();
     }

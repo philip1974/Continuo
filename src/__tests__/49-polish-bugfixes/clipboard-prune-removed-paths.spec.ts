@@ -13,14 +13,36 @@
 // 修复:store 加 prune(removedPaths)(精确等于或目录前缀匹配,对齐 editor.store
 // getStateAfterRemovingPath),并在 onTrash/onRename/onDropItems/root-drop 四个失效点
 // 调用。本 spec 锁 prune 的语义;四个调用点接入由 FolderTree 集成保证。
-import { describe, it, expect, beforeEach } from 'vitest';
-import { useExplorerClipboardStore } from '../../panels/Explorer/clipboard-store';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import {
+  pruneClipboardPaths,
+  useExplorerClipboardStore,
+} from '../../panels/Explorer/clipboard-store';
 
 beforeEach(() => {
   useExplorerClipboardStore.setState({ kind: null, paths: [] });
 });
 
 describe('49 第八 session · clipboard prune 剪除失效源路径', () => {
+  it('pruneClipboardPaths 按需分配,不通过 filter/some 重建列表', () => {
+    const paths = ['/ws/keep-a.ts', '/ws/remove/a.ts', '/ws/keep-b.ts'];
+    const filterSpy = vi.spyOn(Array.prototype, 'filter');
+    const someSpy = vi.spyOn(Array.prototype, 'some');
+
+    try {
+      const remaining = pruneClipboardPaths(paths, ['/ws/remove']);
+      const filterCallsDuringPrune = filterSpy.mock.calls.length;
+      const someCallsDuringPrune = someSpy.mock.calls.length;
+      expect(remaining).not.toBe(paths);
+      expect([...remaining]).toEqual(['/ws/keep-a.ts', '/ws/keep-b.ts']);
+      expect(filterCallsDuringPrune).toBe(0);
+      expect(someCallsDuringPrune).toBe(0);
+    } finally {
+      filterSpy.mockRestore();
+      someSpy.mockRestore();
+    }
+  });
+
   it('删除被 cut 的文件 → 从剪贴板剪除', () => {
     useExplorerClipboardStore.getState().set('cut', ['/ws/a.ts', '/ws/b.ts']);
     useExplorerClipboardStore.getState().prune(['/ws/a.ts']);

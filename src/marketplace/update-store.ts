@@ -57,6 +57,35 @@ interface UpdateState {
 // 的 gen 乱序防护)。
 let refreshGen = 0;
 
+interface DismissAvailableUpdateResult {
+  readonly target: AvailableUpdate;
+  readonly available: readonly AvailableUpdate[];
+}
+
+export function dismissAvailableUpdateFromList(
+  available: readonly AvailableUpdate[],
+  id: string,
+): DismissAvailableUpdateResult | null {
+  let target: AvailableUpdate | null = null;
+  let next: AvailableUpdate[] | null = null;
+  for (let i = 0; i < available.length; i++) {
+    const update = available[i]!;
+    if (update.id === id) {
+      if (target === null) target = update;
+      if (next === null) {
+        next = [];
+        for (let j = 0; j < i; j++) {
+          next.push(available[j]!);
+        }
+      }
+      continue;
+    }
+    if (next !== null) next.push(update);
+  }
+  if (target === null || next === null) return null;
+  return { target, available: next };
+}
+
 export const useUpdateStore = create<UpdateState>((set, get) => ({
   remoteVersions: new Map(),
   available: [],
@@ -66,12 +95,12 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
 
   dismiss: (id) =>
     set((s) => {
-      const target = s.available.find((u) => u.id === id);
-      if (!target) return s;
+      const nextAvailable = dismissAvailableUpdateFromList(s.available, id);
+      if (!nextAvailable) return s;
       // race(R78):记下被摘除的目标版本,供 refresh 提交前过滤,防迟到的在途 refresh 复活它。
       const dismissed = new Map(s.dismissed);
-      dismissed.set(id, target.to);
-      return { available: s.available.filter((u) => u.id !== id), dismissed };
+      dismissed.set(id, nextAvailable.target.to);
+      return { available: nextAvailable.available, dismissed };
     }),
 
   refresh: async () => {

@@ -11,7 +11,10 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { fireEvent, render, cleanup, act } from '@testing-library/react';
 import {
   SettingsPanel,
+  buildSettingSearchHaystack,
   groupSearchResults,
+  settingsNavClassName,
+  settingsTabButtonClassName,
   selectMatchedSettingItems,
 } from '../../plugins/settings/SettingsPanel';
 import { useSettingsStore } from '../../plugins/settings/store';
@@ -101,6 +104,26 @@ describe('SettingsPanel · 基础渲染', () => {
     useSettingsStore.setState({ activeTabId: 'no-such-tab' });
     const { container } = render(<SettingsPanel registry={makeReg()} />);
     expect(container.textContent).toContain('通用内容');
+  });
+
+  it('nav 和 tab className 不通过数组 join 重建', () => {
+    const joinSpy = vi.spyOn(Array.prototype, 'join');
+
+    try {
+      expect(settingsNavClassName(false)).toContain('opacity-100');
+      expect(settingsNavClassName(true)).toContain(
+        'pointer-events-none opacity-40',
+      );
+      expect(settingsTabButtonClassName(true)).toContain(
+        'border-accent bg-hover text-fg',
+      );
+      expect(settingsTabButtonClassName(false)).toContain(
+        'border-transparent text-fg-muted hover:bg-hover/50',
+      );
+      expect(joinSpy).not.toHaveBeenCalled();
+    } finally {
+      joinSpy.mockRestore();
+    }
   });
 });
 
@@ -258,6 +281,27 @@ describe('SettingsPanel · 搜索模式', () => {
       expect(buckets[1]?.items).toEqual([itemB]);
     } finally {
       arrayFromSpy.mockRestore();
+    }
+  });
+
+  it('搜索 haystack 包含本地化字段/id/raw fallback,且不通过数组 join 拼接', () => {
+    const joinSpy = vi.spyOn(Array.prototype, 'join');
+    try {
+      const haystack = buildSettingSearchHaystack({
+        id: 'editor.fontSize',
+        category: 'editor',
+        title: 'Font Size Raw',
+        description: 'Raw Description',
+        type: 'number',
+        default: 14,
+      });
+
+      expect(joinSpy).not.toHaveBeenCalled();
+      expect(haystack).toContain('font size raw');
+      expect(haystack).toContain('raw description');
+      expect(haystack).toContain('editor.fontsize');
+    } finally {
+      joinSpy.mockRestore();
     }
   });
 

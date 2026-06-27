@@ -23,6 +23,10 @@ import { KeybindingCaptureModal } from '@/plugins/keybindings/KeybindingCaptureM
 import { useT, useTWithFallback, useLocale } from '@/i18n';
 
 const PLATFORM = detectPlatform();
+const KEYBINDING_ROW_CLASS_NAME =
+  'flex items-center gap-3 px-4 py-3 text-xs';
+const KEYBINDING_ROW_BORDER_CLASS_NAME =
+  `${KEYBINDING_ROW_CLASS_NAME} border-t border-line/50`;
 
 function useCommands(registry: CommandRegistry): readonly CommandSpec[] {
   return useRegistry(registry);
@@ -45,6 +49,12 @@ export interface DisplayCommand {
 export interface Bucket {
   readonly category: string;
   readonly items: readonly DisplayCommand[];
+}
+
+export function keybindingRowClassName(index: number): string {
+  return index > 0
+    ? KEYBINDING_ROW_BORDER_CLASS_NAME
+    : KEYBINDING_ROW_CLASS_NAME;
 }
 
 /** 按 displayCategory 分组,每组按 displayTitle 字母序;空 category 归 defaultGroup. */
@@ -77,6 +87,34 @@ export function groupByCategory(
 function matches(d: DisplayCommand, qLower: string): boolean {
   if (!qLower) return true;
   return d.searchHaystack.includes(qLower);
+}
+
+export function selectVisibleKeybindingCommands(
+  commands: readonly DisplayCommand[],
+  query: string,
+): DisplayCommand[] {
+  const qLower = query.toLowerCase();
+  const hasQuery = query.length > 0;
+  const selected: DisplayCommand[] = [];
+
+  for (const d of commands) {
+    if (!d.cmd.hotkey && !d.isOverridden) continue;
+    if (hasQuery && !matches(d, qLower)) continue;
+    selected.push(d);
+  }
+
+  return selected;
+}
+
+export function buildCommandSearchHaystack(
+  displayTitle: string,
+  displayCategory: string,
+  commandId: string,
+  effectiveHotkey: string | undefined,
+): string {
+  return `${displayTitle} ${displayCategory} ${commandId} ${
+    effectiveHotkey ?? ''
+  }`.toLowerCase();
 }
 
 export function countDefaultHotkeys(commands: readonly CommandSpec[]): number {
@@ -122,27 +160,19 @@ export function KeybindingsTabContent() {
         // haystack 用 effective hotkey(含 override)而非原 cmd.hotkey(打磨 R29):
         // 否则 override 后搜索仍只能命中默认组合,与列表显示的 effective 不一致。
         // 打磨 R52:随 displayCommands 预计算,避免每次输入都逐行 join + lower-case。
-        searchHaystack: [
+        searchHaystack: buildCommandSearchHaystack(
           displayTitle,
           displayCategory,
           cmd.id,
-          effective ?? '',
-        ]
-          .join(' ')
-          .toLowerCase(),
+          effective,
+        ),
       };
     });
   }, [allCommands, tk, overrides, locale]);
 
   const buckets = useMemo(() => {
     // 列出所有有「有效 hotkey」或「显式 unbind 但有默认」的命令(允许用户回头改)
-    const visible = displayCommands.filter(
-      (d) => d.cmd.hotkey || d.isOverridden,
-    );
-    const qLower = query.toLowerCase();
-    const filtered = query
-      ? visible.filter((d) => matches(d, qLower))
-      : visible;
+    const filtered = selectVisibleKeybindingCommands(displayCommands, query);
     return groupByCategory(filtered, t('keybindings.default_group'));
   }, [displayCommands, query, t]);
 
@@ -232,10 +262,7 @@ export function KeybindingsTabContent() {
                   return (
                     <li
                       key={cmd.id}
-                      className={[
-                        'flex items-center gap-3 px-4 py-3 text-xs',
-                        idx > 0 ? 'border-t border-line/50' : '',
-                      ].join(' ')}
+                      className={keybindingRowClassName(idx)}
                     >
                       <span className="truncate text-sm text-fg">{d.displayTitle}</span>
                       <code className="ml-auto shrink-0 rounded bg-panel-soft/70 px-1.5 py-0.5 text-2xs uppercase tracking-wider text-fg-muted/70">

@@ -63,6 +63,43 @@ export function joinRelativePaths(root: string, paths: readonly string[]): strin
   return out;
 }
 
+export function selectVisibleTreeItems(
+  allItems: readonly ItemInstance<FileEntry>[],
+  showHidden: boolean,
+): readonly ItemInstance<FileEntry>[] {
+  if (showHidden) return allItems;
+
+  const items: ItemInstance<FileEntry>[] = [];
+  for (const item of allItems) {
+    if (!item.getItemData().name.startsWith('.')) {
+      items.push(item);
+    }
+  }
+  return items;
+}
+
+export function selectRootDropMoveablePaths(
+  draggedItems: readonly Pick<ItemInstance<FileEntry>, 'getId'>[],
+  root: string,
+): string[] {
+  const moveable: string[] = [];
+  for (const item of draggedItems) {
+    const src = item.getId();
+    if (dirname(src) !== root) moveable.push(src);
+  }
+  return moveable;
+}
+
+export function selectDraggedItemPaths(
+  draggedItems: readonly Pick<ItemInstance<FileEntry>, 'getId'>[],
+): string[] {
+  const paths: string[] = [];
+  for (const item of draggedItems) {
+    paths.push(item.getId());
+  }
+  return paths;
+}
+
 /**
  * 纯唯一名 picker:给定 destDir 与已存在 basename 集合,返回一个 pick(name) 函数。
  * 候选序:basename / `${stem} copy${ext}` / `${stem} copy 2${ext}` / ...(上限 100,
@@ -192,7 +229,7 @@ export function FolderTree({ root }: { root: string }) {
         // 内部多选拖动 → 批量 fs.move,语义同 cut→paste(但不经剪贴板)
         onDropItems: (items, destDir) => {
           void (async () => {
-            const srcs = items.map((it) => it.getId());
+            const srcs = selectDraggedItemPaths(items);
             // 记录已成功移动项涉及的源父目录。即使中途某项失败提前中止,也要在
             // finally 里刷新这些目录 + destDir,否则已移动文件会在树上凭空消失
             // (源目录没刷=还显示,目标目录没刷=不显示),而其 editor tab 路径已改 →
@@ -294,10 +331,7 @@ export function FolderTree({ root }: { root: string }) {
     false,
   );
   const items = useMemo(
-    () =>
-      showHidden
-        ? allItems
-        : allItems.filter((it) => !it.getItemData().name.startsWith('.')),
+    () => selectVisibleTreeItems(allItems, showHidden),
     [allItems, showHidden],
   );
 
@@ -614,9 +648,8 @@ export function FolderTree({ root }: { root: string }) {
       e.preventDefault();
       const items = dnd.draggedItems.slice();
       // 同步清掉 dnd 状态,避免后续 dragend 处理脏状态
-      const srcs = items.map((it) => it.getId());
       // 已经在 root 下的不动(VSCode 同款)
-      const moveable = srcs.filter((s) => dirname(s) !== root);
+      const moveable = selectRootDropMoveablePaths(items, root);
       if (moveable.length === 0) return;
       // 与 onDropItems/onPaste 同款部分成功刷新(README P2-BB):中途某项失败提前
       // 中止时,已成功移动项也要在 finally 刷新源父目录 + root,否则已移走的文件在

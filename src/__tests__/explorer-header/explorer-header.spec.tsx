@@ -130,6 +130,38 @@ describe('ExplorerHeader — ⋯ 菜单', () => {
     expect(labels.some((l) => l.includes('/b/work'))).toBe(true);
   });
 
+  it('recent 菜单排除当前 root', () => {
+    installFs(vi.fn());
+    useWorkspaceStore.setState({
+      root: '/proj',
+      recentRoots: ['/proj', '/old'],
+    });
+    const { container } = render(<ExplorerHeader root="/proj" />);
+    fireEvent.click(
+      container.querySelector('button[aria-label=更多操作]') as HTMLButtonElement,
+    );
+    const labels = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[role=menuitem]'),
+    )
+      .map((b) => b.getAttribute('aria-label') ?? '')
+      .filter((l) => l.includes('打开最近'));
+    expect(labels.some((l) => l.includes('/old'))).toBe(true);
+    expect(labels.some((l) => l.includes('/proj'))).toBe(false);
+  });
+
+  it('recentRoots 只有当前 root 时不渲染 recent group', () => {
+    installFs(vi.fn());
+    useWorkspaceStore.setState({
+      root: '/proj',
+      recentRoots: ['/proj'],
+    });
+    const { container } = render(<ExplorerHeader root="/proj" />);
+    fireEvent.click(
+      container.querySelector('button[aria-label=更多操作]') as HTMLButtonElement,
+    );
+    expect(document.querySelector('[role=group][aria-label]')).toBeNull();
+  });
+
   // a11y(A113):role=menu 内 recent 区结构完整 —— 分隔线 role=separator、最近项在 role=group(有组名)。
   it('a11y · recent 菜单区有 separator + 命名 group 包住最近项', () => {
     installFs(vi.fn());

@@ -24,6 +24,32 @@ describe('EventBus', () => {
     expect(f2).toHaveBeenCalled();
   });
 
+  it('emit 构造 listener 快照不调用 Array.from', () => {
+    const bus = new EventBus();
+    bus.on('e', vi.fn());
+    bus.on('e', vi.fn());
+    const arrayFromSpy = vi.spyOn(Array, 'from');
+
+    try {
+      bus.emit('e', null);
+      expect(arrayFromSpy).not.toHaveBeenCalled();
+    } finally {
+      arrayFromSpy.mockRestore();
+    }
+  });
+
+  it('emit 使用快照:listener 中 dispose 后续 listener,本轮仍会调用', () => {
+    const bus = new EventBus();
+    const f2 = vi.fn();
+    let d2: { dispose(): void } | null = null;
+    bus.on('e', () => d2?.dispose());
+    d2 = bus.on('e', f2);
+
+    bus.emit('e', null);
+
+    expect(f2).toHaveBeenCalledTimes(1);
+  });
+
   it('on 返回 Disposable;dispose 移除监听', () => {
     const bus = new EventBus();
     const fn = vi.fn();

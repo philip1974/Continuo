@@ -1,7 +1,11 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { fireEvent, render, cleanup, act } from '@testing-library/react';
-import { SettingItemRow } from '../../plugins/settings/SettingItemRow';
+import {
+  SettingItemRow,
+  settingToggleKnobClassName,
+  settingToggleSwitchClassName,
+} from '../../plugins/settings/SettingItemRow';
 import {
   SI_TEXT_VALUE_MAX,
   type SettingItemSpec,
@@ -112,6 +116,26 @@ describe('SettingItemRow — boolean', () => {
       'button[role=switch]',
     ) as HTMLButtonElement;
     expect(toggle.getAttribute('aria-label')).toBe('显示隐藏文件');
+  });
+
+  it('switch className 不通过数组 join 重建', () => {
+    const joinSpy = vi.spyOn(Array.prototype, 'join');
+
+    try {
+      expect(settingToggleSwitchClassName(true)).toContain('bg-accent');
+      expect(settingToggleSwitchClassName(false)).toContain(
+        'border border-line bg-panel-soft',
+      );
+      expect(settingToggleKnobClassName(true)).toContain(
+        'translate-x-[18px] bg-fg',
+      );
+      expect(settingToggleKnobClassName(false)).toContain(
+        'translate-x-1 bg-fg-muted',
+      );
+      expect(joinSpy).not.toHaveBeenCalled();
+    } finally {
+      joinSpy.mockRestore();
+    }
   });
 });
 

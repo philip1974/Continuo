@@ -86,6 +86,20 @@ function writeToStorage(list: readonly RecentEntry[]): void {
   }
 }
 
+export function buildNextRecentList(
+  live: readonly RecentEntry[],
+  id: string,
+  ts: number,
+): RecentEntry[] {
+  const next: RecentEntry[] = [{ id, ts }];
+  for (const entry of live) {
+    if (entry.id === id) continue;
+    next.push(entry);
+    if (next.length >= MAX_RECENT) break;
+  }
+  return next;
+}
+
 export const useRecentCommandsStore = create<RecentState>((set) => ({
   // 启动期从 localStorage 读回
   list: readFromStorage(),
@@ -96,11 +110,7 @@ export const useRecentCommandsStore = create<RecentState>((set) => ({
     // get().list 整表写回 —— 多窗口几乎同时执行不同命令时,各自用旧列表整表写会让后写窗口覆盖
     // 先写窗口刚记录的命令(最近列表丢项/排序回退)。读 live 列表(含别窗刚记录的)再把本次置顶。
     const live = readFromStorage();
-    const without = live.filter((e) => e.id !== id);
-    const next: RecentEntry[] = [{ id, ts: now }, ...without].slice(
-      0,
-      MAX_RECENT,
-    );
+    const next = buildNextRecentList(live, id, now);
     set({ list: next });
     writeToStorage(next);
   },

@@ -6,6 +6,7 @@ import {
   basename,
   basenamePreserveTrailing,
   dirname,
+  recentRootLabelParts,
 } from '@/panels/Explorer/path-utils';
 
 describe('Explorer path-utils · dirname(跨平台)', () => {
@@ -70,5 +71,34 @@ describe('Explorer path-utils · basenamePreserveTrailing(不 trim,FolderTree �
   it('与 basename 的语义差异:尾斜杠**不** trim → 空段', () => {
     expect(basenamePreserveTrailing('/a/b/')).toBe(''); // 不 trim
     expect(basename('/a/b/')).toBe('b'); // 对照
+  });
+});
+
+describe('Explorer path-utils · recentRootLabelParts(保留旧 recent-root 显示语义)', () => {
+  it('无尾部分隔符时返回 basename + 去掉末尾分隔符的 parent', () => {
+    expect(recentRootLabelParts('/Users/foo/projects/myapp')).toEqual({
+      name: 'myapp',
+      parent: '/Users/foo/projects',
+    });
+    expect(recentRootLabelParts('C:\\Users\\foo\\work')).toEqual({
+      name: 'work',
+      parent: 'C:\\Users\\foo',
+    });
+  });
+
+  it('裸名 / 根下直接项沿用旧正则语义', () => {
+    expect(recentRootLabelParts('myapp')).toEqual({ name: 'myapp', parent: '' });
+    expect(recentRootLabelParts('/myapp')).toEqual({ name: 'myapp', parent: '' });
+    expect(recentRootLabelParts('//myapp')).toEqual({ name: 'myapp', parent: '/' });
+    expect(recentRootLabelParts('C:\\work')).toEqual({ name: 'work', parent: 'C:' });
+  });
+
+  it('尾部分隔符不 trim:无末尾段时 name 返回原路径且 parent 为空', () => {
+    expect(recentRootLabelParts('/a/b/')).toEqual({ name: '/a/b/', parent: '' });
+    expect(recentRootLabelParts('C:\\a\\b\\')).toEqual({
+      name: 'C:\\a\\b\\',
+      parent: '',
+    });
+    expect(recentRootLabelParts('')).toEqual({ name: '', parent: '' });
   });
 });

@@ -129,7 +129,9 @@ export class CommandRegistry {
   }
 
   getAll(): readonly CommandSpec[] {
-    return Array.from(this.items.values());
+    const out: CommandSpec[] = [];
+    for (const item of this.items.values()) out.push(item);
+    return out;
   }
 
   /**

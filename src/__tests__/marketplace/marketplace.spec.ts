@@ -18,6 +18,7 @@ import {
   fetchMarketplaceIndex,
   fetchPluginManifest,
   MAX_INDEX_ENTRIES,
+  selectValidMarketplaceEntries,
 } from '../../marketplace/fetcher';
 import {
   entryToGitUrl,
@@ -37,6 +38,29 @@ const SAMPLE_ENTRY: MarketplaceEntry = {
   tags: ['demo'],
   verified: true,
 };
+
+describe('selectValidMarketplaceEntries', () => {
+  it('用一次循环保留合法 entry,不通过 filter 物化', () => {
+    const raw: readonly unknown[] = [
+      SAMPLE_ENTRY,
+      { ...SAMPLE_ENTRY, id: 'bad id' },
+      { ...SAMPLE_ENTRY, id: 'com.example.bar', repo: 'me/bar' },
+    ];
+    const filterSpy = vi.spyOn(Array.prototype, 'filter');
+
+    try {
+      const entries = selectValidMarketplaceEntries(raw);
+      const filterCallsDuringSelect = filterSpy.mock.calls.length;
+      expect(entries.map((entry) => entry.id)).toEqual([
+        'com.example.foo',
+        'com.example.bar',
+      ]);
+      expect(filterCallsDuringSelect).toBe(0);
+    } finally {
+      filterSpy.mockRestore();
+    }
+  });
+});
 
 describe('entryToGitUrl', () => {
   it('拼成 https://github.com/owner/name.git', () => {

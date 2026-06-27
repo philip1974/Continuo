@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   applyFilter,
+  buildMarketplaceSearchHaystack,
   collectAllTags,
   MAX_MARKETPLACE_TAGS,
 } from '../../marketplace/filter';
@@ -95,6 +96,29 @@ describe('applyFilter', () => {
     expect(r.map((e) => e.id)).toEqual(['com.baz']);
   });
 
+  it('搜索 haystack 包含 name/id/description/tags,且不通过数组 join 拼接', () => {
+    const joinSpy = vi.spyOn(Array.prototype, 'join');
+    try {
+      const haystack = buildMarketplaceSearchHaystack({
+        id: 'com.foo',
+        name: 'Foo Plugin',
+        description: 'Productivity plugin',
+        author: 'a',
+        repo: 'a/foo',
+        tags: ['tools', 'demo'],
+      });
+
+      expect(joinSpy).not.toHaveBeenCalled();
+      expect(haystack).toContain('foo plugin');
+      expect(haystack).toContain('com.foo');
+      expect(haystack).toContain('productivity plugin');
+      expect(haystack).toContain('tools');
+      expect(haystack).toContain('demo');
+    } finally {
+      joinSpy.mockRestore();
+    }
+  });
+
   it('selectedTags 单选 → entry.tags 含该 tag 才过', () => {
     const r = applyFilter(ENTRIES, {
       query: '',
@@ -119,6 +143,21 @@ describe('applyFilter', () => {
     expect(r).toEqual([]);
   });
 
+  it('query/tags 生效时单趟收集,不对 entries 调用 Array.prototype.filter', () => {
+    const filterSpy = vi.spyOn(Array.prototype, 'filter');
+
+    try {
+      const r = applyFilter(ENTRIES, {
+        query: 'plugin',
+        selectedTags: new Set(['demo', 'tools']),
+      });
+      expect(r.map((e) => e.id)).toEqual(['com.foo', 'com.bar']);
+      expect(filterSpy.mock.contexts.some((ctx) => ctx === ENTRIES)).toBe(false);
+    } finally {
+      filterSpy.mockRestore();
+    }
+  });
+
   it('entry 无 tags → tag filter 非空时被过滤', () => {
     const r = applyFilter(ENTRIES, {
       query: '',
@@ -132,6 +171,17 @@ describe('collectAllTags', () => {
   it('去重 + 按字典序', () => {
     const r = collectAllTags(ENTRIES);
     expect(r).toEqual(['demo', 'productivity', 'tools']);
+  });
+
+  it('收集 tag 时不通过 Array.from(set) 生成排序输入', () => {
+    const arrayFromSpy = vi.spyOn(Array, 'from');
+
+    try {
+      expect(collectAllTags(ENTRIES)).toEqual(['demo', 'productivity', 'tools']);
+      expect(arrayFromSpy).not.toHaveBeenCalled();
+    } finally {
+      arrayFromSpy.mockRestore();
+    }
   });
 
   it('空入参 → []', () => {

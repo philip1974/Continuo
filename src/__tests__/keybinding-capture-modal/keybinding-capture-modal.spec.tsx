@@ -6,6 +6,7 @@ import { fireEvent, render, cleanup, act } from '@testing-library/react';
 import {
   KeybindingCaptureModal,
   eventToCombo,
+  selectKeybindingConflicts,
 } from '../../plugins/keybindings/KeybindingCaptureModal';
 import { useKeybindingsStore } from '../../plugins/keybindings/keybindings-store';
 import type { CommandSpec } from '../../plugins/registries/CommandRegistry';
@@ -309,6 +310,24 @@ describe('KeybindingCaptureModal — 保存 / 重置', () => {
 });
 
 describe('KeybindingCaptureModal — 冲突检测', () => {
+  it('selectKeybindingConflicts 用一次循环收集冲突,不通过 filter 物化', () => {
+    const all: CommandSpec[] = [
+      { id: 'cmd.a', title: 'A', hotkey: 'mod+old', fn: () => {} },
+      { id: 'cmd.b', title: 'B', hotkey: 'mod+x', fn: () => {} },
+      { id: 'cmd.c', title: 'C', hotkey: 'mod+x', fn: () => {} },
+    ];
+    const filterSpy = vi.spyOn(Array.prototype, 'filter');
+
+    try {
+      const conflicts = selectKeybindingConflicts(all, 'cmd.a', 'mod+x');
+      const filterCallsDuringSelect = filterSpy.mock.calls.length;
+      expect(conflicts.map((c) => c.id)).toEqual(['cmd.b', 'cmd.c']);
+      expect(filterCallsDuringSelect).toBe(0);
+    } finally {
+      filterSpy.mockRestore();
+    }
+  });
+
   it('其它命令的 effective hotkey 与 captured 相同 → 显示警告', () => {
     const all: CommandSpec[] = [
       { id: 'cmd.a', title: 'A', hotkey: 'mod+old', fn: () => {} },

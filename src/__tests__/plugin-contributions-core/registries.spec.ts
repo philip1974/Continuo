@@ -156,6 +156,20 @@ describe('CommandRegistry', () => {
     expect(r.getAll()).toEqual([]);
   });
 
+  it('getAll 不通过 Array.from(values) 物化快照', () => {
+    const r = new CommandRegistry();
+    r.register({ id: 'a', title: 'A', fn: () => {} });
+    r.register({ id: 'b', title: 'B', fn: () => {} });
+    const arrayFromSpy = vi.spyOn(Array, 'from');
+
+    try {
+      expect(r.getAll().map((c) => c.id)).toEqual(['a', 'b']);
+      expect(arrayFromSpy).not.toHaveBeenCalled();
+    } finally {
+      arrayFromSpy.mockRestore();
+    }
+  });
+
   it('execute(id) 调对应 fn', async () => {
     const r = new CommandRegistry();
     const fn = vi.fn();

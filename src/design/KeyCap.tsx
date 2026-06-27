@@ -13,7 +13,7 @@ export interface KeyCapProps {
 export function KeyCap({ children, className, title }: KeyCapProps) {
   return (
     <kbd
-      className={['wm-keycap', className].filter(Boolean).join(' ')}
+      className={className ? `wm-keycap ${className}` : 'wm-keycap'}
       title={title}
     >
       {children}

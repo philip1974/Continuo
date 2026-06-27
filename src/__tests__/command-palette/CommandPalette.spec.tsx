@@ -16,7 +16,10 @@ vi.mock('../../notifications/notify', () => ({
   notify: { error: (...a: unknown[]) => notifyError(...a) },
 }));
 
-import { CommandPalette } from '../../plugins/command-palette/CommandPalette';
+import {
+  CommandPalette,
+  commandPaletteRowClassName,
+} from '../../plugins/command-palette/CommandPalette';
 import { useCommandPaletteStore } from '../../plugins/command-palette/store';
 import { CommandRegistry } from '../../plugins/registries/CommandRegistry';
 
@@ -38,6 +41,20 @@ function makeReg(): CommandRegistry {
 }
 
 describe('CommandPalette UI', () => {
+  it('行 className 不通过数组 join 重建', () => {
+    const joinSpy = vi.spyOn(Array.prototype, 'join');
+
+    try {
+      expect(commandPaletteRowClassName(true)).toContain('bg-hover text-fg');
+      expect(commandPaletteRowClassName(false)).toContain(
+        'text-fg-muted hover:bg-hover/50',
+      );
+      expect(joinSpy).not.toHaveBeenCalled();
+    } finally {
+      joinSpy.mockRestore();
+    }
+  });
+
   it('isOpen=false → 不渲染 Modal 内容', () => {
     const { container } = render(<CommandPalette commands={makeReg()} />);
     expect(container.querySelector('.wm-modal-content')).toBeNull();

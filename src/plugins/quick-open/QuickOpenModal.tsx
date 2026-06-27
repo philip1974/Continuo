@@ -26,6 +26,16 @@ import { useEditorStore } from '@/stores/editor.store';
 
 // race(R2):稳定空数组引用,跨 root 时 liveResults 返回它,避免每次渲染新建 [] 触发 useMemo。
 const EMPTY_RESULTS: readonly QuickOpenFile[] = [];
+const QUICK_OPEN_ROW_BASE_CLASS_NAME =
+  'flex cursor-pointer items-center gap-2 px-3 text-xs';
+const QUICK_OPEN_ROW_SELECTED_CLASS_NAME =
+  `${QUICK_OPEN_ROW_BASE_CLASS_NAME} bg-hover text-fg`;
+const QUICK_OPEN_ROW_IDLE_CLASS_NAME =
+  `${QUICK_OPEN_ROW_BASE_CLASS_NAME} text-fg-muted hover:bg-hover/50`;
+
+export function quickOpenRowClassName(selected: boolean): string {
+  return selected ? QUICK_OPEN_ROW_SELECTED_CLASS_NAME : QUICK_OPEN_ROW_IDLE_CLASS_NAME;
+}
 
 /**
  * 轻量 shell(打磨 R33,仿 R32 CommandPalette):QuickOpenModal 常驻挂在 App 顶层。
@@ -301,13 +311,8 @@ function QuickOpenBody() {
                       height: vRow.size,
                       transform: `translateY(${vRow.start}px)`,
                     }}
-                    className={[
-                      'flex cursor-pointer items-center gap-2 px-3 text-xs',
-                      // 键盘 selectedIndex 走 active bg(深色),独立于鼠标 hover
-                      idx === selectedIndex
-                        ? 'bg-hover text-fg'
-                        : 'text-fg-muted hover:bg-hover/50',
-                    ].join(' ')}
+                    // 键盘 selectedIndex 走 active bg(深色),独立于鼠标 hover
+                    className={quickOpenRowClassName(idx === selectedIndex)}
                     onClick={() => void openFile(f)}
                   >
                     <span className="truncate font-medium">{f.name}</span>

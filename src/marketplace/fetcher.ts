@@ -38,6 +38,16 @@ async function readJsonCapped(r: Response, maxBytes: number): Promise<unknown> {
   return JSON.parse(text);
 }
 
+export function selectValidMarketplaceEntries(
+  entries: readonly unknown[],
+): MarketplaceEntry[] {
+  const out: MarketplaceEntry[] = [];
+  for (const entry of entries) {
+    if (isValidMarketplaceEntry(entry)) out.push(entry);
+  }
+  return out;
+}
+
 // 可维护性 M19:1h sessionStorage 缓存样板复用 createSessionCache(与 reviews-fetcher 共用)。
 const indexCache = createSessionCache<readonly MarketplaceEntry[]>({
   key: 'continuo:marketplace:index',
@@ -89,7 +99,7 @@ export async function fetchMarketplaceIndex(
     // 边界(E2):逐 entry 校验形态,丢弃畸形项(null/缺 repo/字段类型错),防其在 filter/渲染/
     // 更新检查里触发 TypeError 崩面板,或拼出 github.com/undefined.git。一个坏社区条目不应让整个
     // 市场不可用 → 过滤而非整体拒绝;只缓存合法 entry。
-    const entries = limited.filter(isValidMarketplaceEntry);
+    const entries = selectValidMarketplaceEntries(limited);
     if (entries.length < limited.length) {
       console.warn(
         `[marketplace] dropped ${limited.length - entries.length} malformed index entr${

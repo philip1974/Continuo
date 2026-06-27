@@ -59,5 +59,9 @@ export function fuzzyFilter<T>(
     if (s !== null) scored.push({ item, score: s });
   }
   scored.sort((a, b) => b.score - a.score);
-  return scored.map((x) => x.item);
+  const result: T[] = new Array(scored.length);
+  for (let i = 0; i < scored.length; i++) {
+    result[i] = scored[i]!.item;
+  }
+  return result;
 }

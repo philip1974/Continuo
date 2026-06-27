@@ -17,6 +17,7 @@ import { useT } from '@/i18n';
 import { getEffectiveHotkey } from './keybindings-store';
 
 const PLATFORM = detectPlatform();
+const EMPTY_CONFLICTS: readonly CommandSpec[] = [];
 
 interface KeybindingCaptureModalProps {
   readonly visible: boolean;
@@ -61,6 +62,23 @@ export function eventToCombo(
   // 主键为 '+'(→ 'shift++' 空段)等会被 compileCombo trim/split 成空主键 → 永远不触发 + 显示异常。
   // 这类无法表示的组合直接拒绝(返 null,不捕获),与注册/写端校验一致。
   return HOTKEY_SHAPE_RE.test(combo) ? combo : null;
+}
+
+export function selectKeybindingConflicts(
+  allCommands: readonly CommandSpec[],
+  commandId: string,
+  captured: string | null,
+): readonly CommandSpec[] {
+  if (!captured) return EMPTY_CONFLICTS;
+  let conflicts: CommandSpec[] | null = null;
+  for (const command of allCommands) {
+    if (command.id === commandId || getEffectiveHotkey(command) !== captured) {
+      continue;
+    }
+    if (conflicts === null) conflicts = [];
+    conflicts.push(command);
+  }
+  return conflicts ?? EMPTY_CONFLICTS;
 }
 
 export function KeybindingCaptureModal({
@@ -135,10 +153,7 @@ export function KeybindingCaptureModal({
   // 冲突检测:只在用户已捕获新组合(captured 非空)时检查;扫描其它命令的
   // effective hotkey 与新组合相同的(VSCode 同款 — 允许保存,只显示警告)
   const conflicts = useMemo(() => {
-    if (!captured) return []; // null 或 unbind 都不冲突
-    return allCommands.filter(
-      (c) => c.id !== commandId && getEffectiveHotkey(c) === captured,
-    );
+    return selectKeybindingConflicts(allCommands, commandId, captured);
   }, [captured, allCommands, commandId]);
 
   return (
