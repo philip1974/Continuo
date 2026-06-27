@@ -58,9 +58,11 @@ export function stripTerminalPanelsFromLayout(
 
   const filterGroupData = (raw: LeafData | undefined): LeafData | null => {
     const data = raw ?? {};
-    const views = (Array.isArray(data.views) ? data.views : []).filter(
-      (v) => !terminalIds.has(v),
-    );
+    const rawViews = Array.isArray(data.views) ? data.views : [];
+    const views: string[] = [];
+    for (const view of rawViews) {
+      if (!terminalIds.has(view)) views.push(view);
+    }
     if (views.length === 0) return null; // 该 group 仅含终端 → 整组摘除
     const activeView =
       data.activeView && views.includes(data.activeView)
@@ -69,14 +71,18 @@ export function stripTerminalPanelsFromLayout(
     const next: LeafData = { ...data, views, activeView };
     // tabGroups(罕见高级特性):同步剔除终端 panelIds,丢弃变空的 tabGroup。
     if (Array.isArray(data.tabGroups)) {
-      next.tabGroups = data.tabGroups
-        .map((tg) => ({
-          ...tg,
-          panelIds: (Array.isArray(tg.panelIds) ? tg.panelIds : []).filter(
-            (id) => !terminalIds.has(id),
-          ),
-        }))
-        .filter((tg) => tg.panelIds.length > 0);
+      const tabGroups: Array<{ panelIds?: string[] } & Record<string, unknown>> = [];
+      for (const tg of data.tabGroups) {
+        const rawPanelIds = Array.isArray(tg.panelIds) ? tg.panelIds : [];
+        const panelIds: string[] = [];
+        for (const id of rawPanelIds) {
+          if (!terminalIds.has(id)) panelIds.push(id);
+        }
+        if (panelIds.length > 0) {
+          tabGroups.push({ ...tg, panelIds });
+        }
+      }
+      next.tabGroups = tabGroups;
     }
     if (typeof data.id === 'string') survivingGroupIds.add(data.id);
     return next;
@@ -89,9 +95,12 @@ export function stripTerminalPanelsFromLayout(
       return data ? { ...node, data } : null;
     }
     // branch:递归剪枝,丢弃变空的子节点;子节点全空则本 branch 也摘除。
-    const children = (Array.isArray(node.data) ? node.data : [])
-      .map(pruneNode)
-      .filter((n): n is GridNode => n !== null);
+    const rawChildren = Array.isArray(node.data) ? node.data : [];
+    const children: GridNode[] = [];
+    for (const child of rawChildren) {
+      const pruned = pruneNode(child);
+      if (pruned !== null) children.push(pruned);
+    }
     if (children.length === 0) return null;
     return { ...node, data: children };
   };

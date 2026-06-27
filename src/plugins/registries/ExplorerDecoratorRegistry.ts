@@ -44,6 +44,7 @@ const MAX_DECORATORS = 256;
 export class ExplorerDecoratorRegistry {
   private fns: DecoratorFn[] = [];
   private listeners = new Set<Listener>();
+  private cachedAll: readonly DecoratorFn[] | null = null;
 
   register(fn: DecoratorFn): Disposable {
     if (typeof fn !== 'function') {
@@ -55,6 +56,7 @@ export class ExplorerDecoratorRegistry {
       );
     }
     this.fns.push(fn);
+    this.invalidateSnapshotCache();
     this.notify();
     let disposed = false;
     return {
@@ -64,6 +66,7 @@ export class ExplorerDecoratorRegistry {
         const i = this.fns.indexOf(fn);
         if (i >= 0) {
           this.fns.splice(i, 1);
+          this.invalidateSnapshotCache();
           this.notify();
         }
       },
@@ -71,7 +74,12 @@ export class ExplorerDecoratorRegistry {
   }
 
   getAll(): readonly DecoratorFn[] {
-    return this.fns.slice();
+    if (this.cachedAll !== null) return this.cachedAll;
+
+    const fns: DecoratorFn[] = [];
+    for (const fn of this.fns) fns.push(fn);
+    this.cachedAll = fns;
+    return fns;
   }
 
   subscribe(listener: Listener): () => void {
@@ -81,6 +89,10 @@ export class ExplorerDecoratorRegistry {
 
   private notify(): void {
     for (const l of this.listeners) l();
+  }
+
+  private invalidateSnapshotCache(): void {
+    this.cachedAll = null;
   }
 }
 

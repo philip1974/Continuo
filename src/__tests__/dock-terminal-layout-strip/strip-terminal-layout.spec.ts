@@ -164,6 +164,53 @@ describe('stripTerminalPanelsFromLayout', () => {
     expect(tg[0].panelIds).toEqual(['editor']);
   });
 
+  it('剪枝 views/tabGroups/branch children 时不通过 filter/map 生成中间数组', () => {
+    const rootChildren = [
+      leaf('1', ['editor', 'term-1'], 'term-1', {
+        tabGroups: [
+          { id: 'tg1', collapsed: false, panelIds: ['editor', 'term-1'] },
+          { id: 'tg2', collapsed: false, panelIds: ['term-2'] },
+        ],
+      }),
+      leaf('2', ['term-2'], 'term-2'),
+    ];
+    const views = (rootChildren[0] as { data: { views: string[] } }).data.views;
+    const tabGroups = (rootChildren[0] as { data: { tabGroups: Array<{ panelIds: string[] }> } }).data.tabGroups;
+    const panelIds = tabGroups[0]!.panelIds;
+    const l = layout(rootChildren, {
+      editor: { contentComponent: 'editor' },
+      'term-1': { contentComponent: 'terminal' },
+      'term-2': { contentComponent: 'terminal' },
+    });
+    const filterSpy = vi.spyOn(Array.prototype, 'filter');
+    const mapSpy = vi.spyOn(Array.prototype, 'map');
+
+    try {
+      const r = out(l)!;
+      const filterCallsOnLayoutArrays = filterSpy.mock.contexts.filter(
+        (ctx) =>
+          ctx === views ||
+          ctx === tabGroups ||
+          ctx === panelIds ||
+          ctx === rootChildren,
+      ).length;
+      const mapCallsOnLayoutArrays = mapSpy.mock.contexts.filter(
+        (ctx) => ctx === tabGroups || ctx === rootChildren,
+      ).length;
+
+      expect(filterCallsOnLayoutArrays).toBe(0);
+      expect(mapCallsOnLayoutArrays).toBe(0);
+      expect(r.grid.root.data).toHaveLength(1);
+      expect(r.grid.root.data[0].data.views).toEqual(['editor']);
+      const tg = r.grid.root.data[0].data.tabGroups as Array<{ panelIds: string[] }>;
+      expect(tg).toHaveLength(1);
+      expect(tg[0]!.panelIds).toEqual(['editor']);
+    } finally {
+      filterSpy.mockRestore();
+      mapSpy.mockRestore();
+    }
+  });
+
   it('缺 grid 但 panels 含终端 → 返回 null(无法安全剥离)', () => {
     const l = { panels: { 'term-1': { contentComponent: 'terminal' } } } as unknown as SerializedDockview;
     expect(stripTerminalPanelsFromLayout(l)).toBeNull();

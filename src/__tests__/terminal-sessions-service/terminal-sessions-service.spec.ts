@@ -142,6 +142,37 @@ describe('getAll', () => {
     expect(getAll({ ownerWindowId: 22 }).map((s) => s.id)).toEqual(['b', 'd']);
   });
 
+  it('同一状态下复用全量和按 owner 快照,mutation 后失效重建', () => {
+    add(userInput('a', { ownerWindowId: 11 }));
+    add(userInput('b', { ownerWindowId: 22 }));
+    add(userInput('c', { ownerWindowId: 11 }));
+    const arrayFromSpy = vi.spyOn(Array, 'from');
+
+    try {
+      const allA = getAll();
+      expect(allA.map((s) => s.id)).toEqual(['a', 'b', 'c']);
+      expect(getAll()).toBe(allA);
+      expect(arrayFromSpy).not.toHaveBeenCalled();
+
+      const ownerA = getAll({ ownerWindowId: 11 });
+      expect(ownerA.map((s) => s.id)).toEqual(['a', 'c']);
+      expect(getAll({ ownerWindowId: 11 })).toBe(ownerA);
+      expect(arrayFromSpy).not.toHaveBeenCalled();
+
+      updateCwd('a', '/next');
+      const allB = getAll();
+      expect(allB).not.toBe(allA);
+      expect(allB.find((s) => s.id === 'a')?.cwd).toBe('/next');
+
+      const ownerB = getAll({ ownerWindowId: 11 });
+      expect(ownerB).not.toBe(ownerA);
+      expect(ownerB.map((s) => s.id)).toEqual(['a', 'c']);
+      expect(arrayFromSpy).not.toHaveBeenCalled();
+    } finally {
+      arrayFromSpy.mockRestore();
+    }
+  });
+
   it('filter { ownerWindowId } 单次遍历,不先全量 snapshot 再 filter', () => {
     add(userInput('a', { ownerWindowId: 11 }));
     add(userInput('b', { ownerWindowId: 22 }));

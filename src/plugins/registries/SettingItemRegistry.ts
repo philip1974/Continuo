@@ -263,6 +263,8 @@ type Listener = () => void;
 export class SettingItemRegistry {
   private items = new Map<string, SettingItemSpec>();
   private listeners = new Set<Listener>();
+  private cachedAll: readonly SettingItemSpec[] | null = null;
+  private cachedByCategory = new Map<string, readonly SettingItemSpec[]>();
 
   register(spec: SettingItemSpec): Disposable {
     validateSettingItemSpec(spec); // 边界(E36):注册前校验长度/枚举/数值/default 类型
@@ -274,6 +276,7 @@ export class SettingItemRegistry {
       );
     }
     this.items.set(spec.id, spec);
+    this.invalidateSnapshotCache();
     this.notify();
 
     let disposed = false;
@@ -283,6 +286,7 @@ export class SettingItemRegistry {
         disposed = true;
         if (this.items.get(spec.id) === spec) {
           this.items.delete(spec.id);
+          this.invalidateSnapshotCache();
           this.notify();
         }
       },
@@ -290,9 +294,13 @@ export class SettingItemRegistry {
   }
 
   getAll(): readonly SettingItemSpec[] {
-    return Array.from(this.items.values()).sort(
-      (a, b) => (a.priority ?? 100) - (b.priority ?? 100),
-    );
+    if (this.cachedAll !== null) return this.cachedAll;
+
+    const items: SettingItemSpec[] = [];
+    for (const item of this.items.values()) items.push(item);
+    items.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
+    this.cachedAll = items;
+    return items;
   }
 
   /**
@@ -307,6 +315,9 @@ export class SettingItemRegistry {
 
   /** 取某 category 下的所有 items(已排序),供 CategoryTabContent 使用. */
   getByCategory(category: string): readonly SettingItemSpec[] {
+    const cached = this.cachedByCategory.get(category);
+    if (cached !== undefined) return cached;
+
     // 先过滤再排序(打磨 R5):原先 getAll() 对全部 category 的 items 排序后才
     // 过滤,每个设置 tab 都为无关 category 付排序成本。filter 在前,只排本
     // category 的子集;Array.prototype.sort 稳定,输出与原契约完全一致。
@@ -317,6 +328,7 @@ export class SettingItemRegistry {
       }
     }
     items.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
+    this.cachedByCategory.set(category, items);
     return items;
   }
 
@@ -327,5 +339,10 @@ export class SettingItemRegistry {
 
   private notify(): void {
     for (const l of this.listeners) l();
+  }
+
+  private invalidateSnapshotCache(): void {
+    this.cachedAll = null;
+    this.cachedByCategory.clear();
   }
 }

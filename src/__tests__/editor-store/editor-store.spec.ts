@@ -932,7 +932,26 @@ describe('updateContent', () => {
     expect(
       useEditorStore.getState().tabs.find((t) => t.id === '/x/a.md')
         ?.milkdownUnsafe,
-    ).toBe(false);
+      ).toBe(false);
+  });
+
+  it('更新单个 tab 时不通过 tabs.slice 复制整组', () => {
+    const tabs = [makeTab({ id: '/a' }), makeTab({ id: '/b' })];
+    useEditorStore.setState({ tabs, activeTabId: '/b' });
+    const sliceSpy = vi.spyOn(Array.prototype, 'slice');
+
+    try {
+      useEditorStore.getState().updateContent('/b', 'changed');
+      const sliceCallsOnTabs = sliceSpy.mock.contexts.filter(
+        (ctx) => ctx === tabs,
+      ).length;
+
+      expect(sliceCallsOnTabs).toBe(0);
+      expect(useEditorStore.getState().tabs.map((t) => t.id)).toEqual(['/a', '/b']);
+      expect(useEditorStore.getState().tabs[1]?.content).toBe('changed');
+    } finally {
+      sliceSpy.mockRestore();
+    }
   });
 });
 

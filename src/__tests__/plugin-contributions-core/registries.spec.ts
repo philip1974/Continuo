@@ -15,6 +15,30 @@ describe('PanelRegistry', () => {
     expect(r.getAll()).toEqual([]);
   });
 
+  it('重复 getAll/list 复用快照,register/dispose 后失效重建', () => {
+    const r = new PanelRegistry();
+    const d = r.register({ type: 'foo', factory: () => null, title: 'Foo' });
+    r.register({ type: 'bar', factory: () => null, title: 'Bar' });
+    const arrayFromSpy = vi.spyOn(Array, 'from');
+
+    try {
+      expect(r.getAll().map((x) => x.type)).toEqual(['foo', 'bar']);
+      expect(arrayFromSpy).not.toHaveBeenCalled();
+      expect(r.list().map((x) => x.type)).toEqual(['foo', 'bar']);
+      expect(arrayFromSpy).not.toHaveBeenCalled();
+
+      r.register({ type: 'baz', factory: () => null, title: 'Baz' });
+      expect(r.getAll().map((x) => x.type)).toEqual(['foo', 'bar', 'baz']);
+      expect(arrayFromSpy).not.toHaveBeenCalled();
+
+      d.dispose();
+      expect(r.getAll().map((x) => x.type)).toEqual(['bar', 'baz']);
+      expect(arrayFromSpy).not.toHaveBeenCalled();
+    } finally {
+      arrayFromSpy.mockRestore();
+    }
+  });
+
   // race(R59,R55-R58 同族):DockShell component wrapper 渲染时按 type 从 live registry 查 factory。
   // get(type) 提供 live 查找,dispose 后 undefined → wrapper 渲染空,不实例化已移除插件 factory。
   describe('get(type) live 查找(R59)', () => {
@@ -156,14 +180,26 @@ describe('CommandRegistry', () => {
     expect(r.getAll()).toEqual([]);
   });
 
-  it('getAll 不通过 Array.from(values) 物化快照', () => {
+  it('重复 getAll 复用快照,register/dispose 后失效重建且不通过 Array.from(values)', () => {
     const r = new CommandRegistry();
-    r.register({ id: 'a', title: 'A', fn: () => {} });
+    const d = r.register({ id: 'a', title: 'A', fn: () => {} });
     r.register({ id: 'b', title: 'B', fn: () => {} });
     const arrayFromSpy = vi.spyOn(Array, 'from');
 
     try {
-      expect(r.getAll().map((c) => c.id)).toEqual(['a', 'b']);
+      const first = r.getAll();
+      expect(first.map((c) => c.id)).toEqual(['a', 'b']);
+      expect(r.getAll()).toBe(first);
+      expect(arrayFromSpy).not.toHaveBeenCalled();
+
+      r.register({ id: 'c', title: 'C', fn: () => {} });
+      const second = r.getAll();
+      expect(second).not.toBe(first);
+      expect(second.map((c) => c.id)).toEqual(['a', 'b', 'c']);
+      expect(arrayFromSpy).not.toHaveBeenCalled();
+
+      d.dispose();
+      expect(r.getAll().map((c) => c.id)).toEqual(['b', 'c']);
       expect(arrayFromSpy).not.toHaveBeenCalled();
     } finally {
       arrayFromSpy.mockRestore();

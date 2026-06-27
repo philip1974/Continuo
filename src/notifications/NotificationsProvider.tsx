@@ -28,6 +28,67 @@ const DEDUPE_WINDOW_MS = 1000;
 // 不限制底层数组本身,故在 push 时按上限丢最旧(并清其 timer)。
 export const MAX_NOTIFICATIONS = 50;
 
+function appendCappedNotification(
+  prev: readonly Notification[],
+  notification: Notification,
+  onDrop: (notification: Notification) => void,
+): readonly Notification[] {
+  const dropCount = Math.max(0, prev.length + 1 - MAX_NOTIFICATIONS);
+  if (dropCount > 0) {
+    for (let i = 0; i < dropCount; i++) {
+      const dropped = prev[i];
+      if (dropped !== undefined) onDrop(dropped);
+    }
+  }
+
+  const next: Notification[] = [];
+  for (let i = dropCount; i < prev.length; i++) {
+    next.push(prev[i]!);
+  }
+  next.push(notification);
+  return next;
+}
+
+function removeNotificationById(
+  notifications: readonly Notification[],
+  id: string,
+): readonly Notification[] {
+  let next: Notification[] | null = null;
+  for (let i = 0; i < notifications.length; i++) {
+    const notification = notifications[i]!;
+    if (notification.id === id) {
+      if (next === null) {
+        next = [];
+        for (let j = 0; j < i; j++) next.push(notifications[j]!);
+      }
+      continue;
+    }
+    if (next !== null) next.push(notification);
+  }
+  return next ?? notifications;
+}
+
+function updateNotificationCreatedAt(
+  notifications: readonly Notification[],
+  id: string,
+  createdAt: number,
+): readonly Notification[] {
+  let next: Notification[] | null = null;
+  for (let i = 0; i < notifications.length; i++) {
+    const notification = notifications[i]!;
+    let current = notification;
+    if (notification.id === id) {
+      if (next === null) {
+        next = [];
+        for (let j = 0; j < i; j++) next.push(notifications[j]!);
+      }
+      current = { ...notification, createdAt };
+    }
+    if (next !== null) next.push(current);
+  }
+  return next ?? notifications;
+}
+
 export interface NotifyOpts {
   readonly code?: string;
   readonly mirror?: boolean; // notify.ts 用;Provider 内部不读
@@ -89,25 +150,30 @@ export function NotificationsProvider({
     [],
   );
 
+  const clearDismissTimer = useCallback((id: string) => {
+    const t = timersRef.current.get(id);
+    if (t !== undefined) {
+      clearTimeout(t);
+      timersRef.current.delete(id);
+    }
+  }, []);
+
   const dismiss = useCallback(
     (id: string) => {
-      const t = timersRef.current.get(id);
-      if (t !== undefined) {
-        clearTimeout(t);
-        timersRef.current.delete(id);
-      }
+      clearDismissTimer(id);
       // race(R104,R13 对偶):同步从 notificationsRef 移除,使同一 tick 内后续 notify 的 dedupe
       // 不再看到已关闭通知。否则 dismiss() 只在 setNotificationList 的 updater(延迟到 render)里更新
       // ref —— 同 tick 紧接的同源 non-error notify 会从旧 ref 匹配到这条「已关闭」通知走 dedupe 分支:
       // 既不新增也不复活(其 map updater 在 dismiss 的 filter updater 之后跑,existing.id 已不在 prev
       // → no-op),新通知被静默吞掉;还给已删 id 重挂 auto-dismiss timer。下面 functional updater 仍
       // 是权威(落 ref);此处同步值仅为同 tick 先行可见,与 R13 notify 侧同步写 ref 对称。
-      notificationsRef.current = notificationsRef.current.filter(
-        (n) => n.id !== id,
+      notificationsRef.current = removeNotificationById(
+        notificationsRef.current,
+        id,
       );
-      setNotificationList((prev) => prev.filter((n) => n.id !== id));
+      setNotificationList((prev) => removeNotificationById(prev, id));
     },
-    [setNotificationList],
+    [clearDismissTimer, setNotificationList],
   );
 
   const scheduleDismiss = useCallback(
@@ -116,7 +182,11 @@ export function NotificationsProvider({
       if (existing !== undefined) clearTimeout(existing);
       const t = setTimeout(() => {
         timersRef.current.delete(id);
-        setNotificationList((prev) => prev.filter((p) => p.id !== id));
+        notificationsRef.current = removeNotificationById(
+          notificationsRef.current,
+          id,
+        );
+        setNotificationList((prev) => removeNotificationById(prev, id));
       }, DISMISS_MS[level]);
       timersRef.current.set(id, t);
     },
@@ -148,9 +218,16 @@ export function NotificationsProvider({
           }
         }
         if (existing) {
+          notificationsRef.current = updateNotificationCreatedAt(
+            notificationsRef.current,
+            existing.id,
+            now,
+          );
           setNotificationList((prev) =>
-            prev.map((n) =>
-              n.id === existing.id ? { ...n, createdAt: now } : n,
+            updateNotificationCreatedAt(
+              prev,
+              existing.id,
+              now,
             ),
           );
           scheduleDismiss(existing.id, level);
@@ -165,26 +242,16 @@ export function NotificationsProvider({
       // → 同 tick 连续两次同源 notify 第二次读到的 ref 仍缺第一条 → 各自入队绕过去重。下面的
       // functional updater 仍是权威(基于 React prev 计算 + trim 后落 ref);此处同步值仅为同 tick
       // 先行可见(updater 落 ref 后即收敛,trim 差异在 tick 内对去重无害——只是多几条可匹配项)。
-      notificationsRef.current = [...notificationsRef.current, n];
-      setNotificationList((prev) => {
-        const next = [...prev, n];
-        if (next.length <= MAX_NOTIFICATIONS) return next;
-        // 丢最旧的若干条,并清掉它们的 auto-dismiss timer,防 timer 泄漏。
-        const dropCount = next.length - MAX_NOTIFICATIONS;
-        for (let i = 0; i < dropCount; i++) {
-          const dropped = next[i];
-          if (dropped === undefined) continue;
-          const t = timersRef.current.get(dropped.id);
-          if (t !== undefined) {
-            clearTimeout(t);
-            timersRef.current.delete(dropped.id);
-          }
-        }
-        return next.slice(dropCount);
-      });
+      const onDrop = (dropped: Notification) => clearDismissTimer(dropped.id);
+      notificationsRef.current = appendCappedNotification(
+        notificationsRef.current,
+        n,
+        onDrop,
+      );
+      setNotificationList((prev) => appendCappedNotification(prev, n, onDrop));
       scheduleDismiss(id, level);
     },
-    [scheduleDismiss, setNotificationList],
+    [clearDismissTimer, scheduleDismiss, setNotificationList],
   );
 
   // epoch race 防护:mount 时注册,unmount 时仅当自身 epoch === 当前 currentEpoch 才清空

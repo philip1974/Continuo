@@ -19,6 +19,7 @@ interface ProbeState {
 }
 
 let latest: ProbeState | null = null;
+let slimApi: ReturnType<typeof useNotify> | null = null;
 
 function Probe() {
   const api = useNotify();
@@ -42,9 +43,24 @@ function renderProvider() {
   );
 }
 
+function SlimProbe() {
+  const api = useNotify();
+  slimApi = api;
+  return <div data-testid="count">{api.notifications.length}</div>;
+}
+
+function renderSlimProvider() {
+  return render(
+    <NotificationsProvider>
+      <SlimProbe />
+    </NotificationsProvider>,
+  );
+}
+
 afterEach(() => {
   vi.useRealTimers();
   latest = null;
+  slimApi = null;
   cleanup();
 });
 
@@ -170,5 +186,70 @@ describe('unified-toast-notification: NotificationsProvider', () => {
     expect(latest?.messages).toContain('reopen');
     expect(latest?.count).toBe(1);
     expect(latest?.ids[0]).not.toBe(firstId);
+  });
+
+  it('dismiss / auto-dismiss 不通过 filter 复制通知数组', () => {
+    vi.useFakeTimers();
+    renderSlimProvider();
+    act(() => {
+      notify.info('a');
+      notify.info('b');
+    });
+    const firstId = slimApi?.notifications[0]?.id;
+    expect(firstId).toBeTruthy();
+    const filterSpy = vi.spyOn(Array.prototype, 'filter');
+
+    try {
+      act(() => {
+        slimApi?.dismiss(firstId!);
+        vi.advanceTimersByTime(5001);
+      });
+      const notificationFilterCalls = filterSpy.mock.contexts.filter(
+        (ctx) =>
+          Array.isArray(ctx) &&
+          ctx.every(
+            (item) =>
+              typeof (item as { id?: unknown }).id === 'string' &&
+              (item as { id: string }).id.startsWith('notif-'),
+          ),
+      ).length;
+
+      expect(notificationFilterCalls).toBe(0);
+      expect(slimApi?.notifications.length).toBe(0);
+    } finally {
+      filterSpy.mockRestore();
+    }
+  });
+
+  it('dedupe 刷新 createdAt 不通过 map 复制通知数组', () => {
+    vi.useFakeTimers();
+    renderSlimProvider();
+    act(() => {
+      notify.info('same', { code: 'SAME' });
+    });
+    const mapSpy = vi.spyOn(Array.prototype, 'map');
+
+    try {
+      act(() => {
+        vi.advanceTimersByTime(500);
+        notify.info('same', { code: 'SAME' });
+      });
+      const notificationMapCalls = mapSpy.mock.contexts.filter(
+        (ctx) =>
+          Array.isArray(ctx) &&
+          ctx.every(
+            (item) =>
+              typeof (item as { id?: unknown }).id === 'string' &&
+              (item as { id: string }).id.startsWith('notif-'),
+          ),
+      ).length;
+
+      // React/test rendering may inspect the notification array; the old provider
+      // dedupe path added one extra prev.map call on top of that baseline.
+      expect(notificationMapCalls).toBeLessThanOrEqual(2);
+      expect(slimApi?.notifications.length).toBe(1);
+    } finally {
+      mapSpy.mockRestore();
+    }
   });
 });

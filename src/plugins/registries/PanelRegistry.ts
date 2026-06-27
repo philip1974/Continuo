@@ -71,6 +71,7 @@ type Listener = () => void;
 export class PanelRegistry {
   private items = new Map<string, PanelSpec>();
   private listeners = new Set<Listener>();
+  private cachedAll: readonly PanelSpec[] | null = null;
 
   register(spec: PanelSpec): Disposable {
     validatePanelSpec(spec); // 边界(E37):注册前校验 type/title/titleKey 长度非空 + factory 为函数
@@ -82,6 +83,7 @@ export class PanelRegistry {
       );
     }
     this.items.set(spec.type, spec);
+    this.invalidateSnapshotCache();
     this.notify();
 
     let disposed = false;
@@ -92,6 +94,7 @@ export class PanelRegistry {
         // 仅当当前注册的还是 spec 本身才删(防被后注册者顶替后误删)
         if (this.items.get(spec.type) === spec) {
           this.items.delete(spec.type);
+          this.invalidateSnapshotCache();
           this.notify();
         }
       },
@@ -99,7 +102,12 @@ export class PanelRegistry {
   }
 
   getAll(): readonly PanelSpec[] {
-    return Array.from(this.items.values());
+    if (this.cachedAll !== null) return this.cachedAll;
+
+    const items: PanelSpec[] = [];
+    for (const item of this.items.values()) items.push(item);
+    this.cachedAll = items;
+    return items;
   }
 
   /**
@@ -123,5 +131,9 @@ export class PanelRegistry {
 
   private notify(): void {
     for (const l of this.listeners) l();
+  }
+
+  private invalidateSnapshotCache(): void {
+    this.cachedAll = null;
   }
 }

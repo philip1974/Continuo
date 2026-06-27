@@ -26,21 +26,27 @@ describe('pinned.store', () => {
     expect(usePinnedStore.getState().paths).toEqual(['/a', '/c']);
   });
 
-  it('toggle 已 pin → 不先 includes 再 filter 双重扫描 paths', () => {
+  it('toggle 已 pin → 不先 includes/filter 双重扫描,也不 slice 两段数组', () => {
     const paths = ['/a', '/b', '/c'];
     usePinnedStore.setState({ paths });
     const includesSpy = vi.spyOn(Array.prototype, 'includes');
+    const sliceSpy = vi.spyOn(Array.prototype, 'slice');
 
     try {
       usePinnedStore.getState().toggle('/b');
       const includesCallsOnPaths = includesSpy.mock.contexts.filter(
         (ctx) => ctx === paths,
       ).length;
+      const sliceCallsOnPaths = sliceSpy.mock.contexts.filter(
+        (ctx) => ctx === paths,
+      ).length;
 
       expect(includesCallsOnPaths).toBe(0);
+      expect(sliceCallsOnPaths).toBe(0);
       expect(usePinnedStore.getState().paths).toEqual(['/a', '/c']);
     } finally {
       includesSpy.mockRestore();
+      sliceSpy.mockRestore();
     }
   });
 

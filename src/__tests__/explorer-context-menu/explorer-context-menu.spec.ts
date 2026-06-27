@@ -43,6 +43,30 @@ describe('ExplorerContextMenuRegistry', () => {
     expect(r.getAll().map((s) => s.id)).toEqual(['b', 'c', 'a']);
   });
 
+  it('重复 getAll 复用排序结果,register/dispose 后失效重建', () => {
+    const r = new ExplorerContextMenuRegistry();
+    const d = r.register({ id: 'b', label: 'B', priority: 20, fn: () => {} });
+    r.register({ id: 'a', label: 'A', priority: 10, fn: () => {} });
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      expect(r.getAll().map((s) => s.id)).toEqual(['a', 'b']);
+      expect(sortSpy).toHaveBeenCalledTimes(1);
+      expect(r.getAll().map((s) => s.id)).toEqual(['a', 'b']);
+      expect(sortSpy).toHaveBeenCalledTimes(1);
+
+      r.register({ id: 'c', label: 'C', priority: 5, fn: () => {} });
+      expect(r.getAll().map((s) => s.id)).toEqual(['c', 'a', 'b']);
+      expect(sortSpy).toHaveBeenCalledTimes(2);
+
+      d.dispose();
+      expect(r.getAll().map((s) => s.id)).toEqual(['c', 'a']);
+      expect(sortSpy).toHaveBeenCalledTimes(3);
+    } finally {
+      sortSpy.mockRestore();
+    }
+  });
+
   it('同 id 后入赢 + warn(同 EditorActionRegistry 模式)', () => {
     const r = new ExplorerContextMenuRegistry();
     const original = console.warn;

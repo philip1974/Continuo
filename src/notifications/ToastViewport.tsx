@@ -9,11 +9,22 @@ import './ToastViewport.css';
 
 const VISIBLE_LIMIT = 5;
 
+function selectVisibleNotifications<T>(
+  notifications: readonly T[],
+): readonly T[] {
+  const start = Math.max(0, notifications.length - VISIBLE_LIMIT);
+  const visible: T[] = [];
+  for (let i = start; i < notifications.length; i++) {
+    visible.push(notifications[i]!);
+  }
+  return visible;
+}
+
 export function ToastViewport(): ReactNode {
   const t = useT();
   const { notifications, dismiss } = useNotify();
   if (notifications.length === 0) return null;
-  const visible = notifications.slice(-VISIBLE_LIMIT);
+  const visible = selectVisibleNotifications(notifications);
   return (
     <div
       // a11y(A113 同族):aria-label 须挂有语义 role 才能形成可导航区域 → role="region"

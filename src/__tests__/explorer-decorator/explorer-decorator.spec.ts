@@ -31,6 +31,36 @@ describe('ExplorerDecoratorRegistry', () => {
     expect(r.getAll()).toEqual([a, b]);
   });
 
+  it('重复 getAll 复用快照,register/dispose 后失效重建', () => {
+    const r = new ExplorerDecoratorRegistry();
+    const a: DecoratorFn = () => null;
+    const b: DecoratorFn = () => null;
+    const c: DecoratorFn = () => null;
+    const d = r.register(a);
+    r.register(b);
+    const sliceSpy = vi.spyOn(Array.prototype, 'slice');
+
+    try {
+      const first = r.getAll();
+      expect(first).toEqual([a, b]);
+      expect(sliceSpy).not.toHaveBeenCalled();
+      expect(r.getAll()).toBe(first);
+      expect(sliceSpy).not.toHaveBeenCalled();
+
+      r.register(c);
+      const second = r.getAll();
+      expect(second).not.toBe(first);
+      expect(second).toEqual([a, b, c]);
+      expect(sliceSpy).not.toHaveBeenCalled();
+
+      d.dispose();
+      expect(r.getAll()).toEqual([b, c]);
+      expect(sliceSpy).not.toHaveBeenCalled();
+    } finally {
+      sliceSpy.mockRestore();
+    }
+  });
+
   // race(R57,R55/R56 同族):FileRow 合并装饰时读 live getAll()(而非 useRegistry 快照)。dispose
   // 后 live getAll() 不含该 fn → mergeDecorations 不再执行已移除 decorator(快照滞后期内若用快照
   // 则会执行死函数)。getAll() 返 this.fns.slice() 即时反映,无滞后。

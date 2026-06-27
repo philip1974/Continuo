@@ -97,6 +97,7 @@ function validateCommandSpec(spec: CommandSpec): void {
 export class CommandRegistry {
   private items = new Map<string, CommandSpec>();
   private listeners = new Set<Listener>();
+  private cachedAll: readonly CommandSpec[] | null = null;
 
   register(spec: CommandSpec): Disposable {
     validateCommandSpec(spec); // 边界(E35):注册前校验长度 + hotkey 形态
@@ -113,6 +114,7 @@ export class CommandRegistry {
       );
     }
     this.items.set(spec.id, spec);
+    this.invalidateSnapshotCache();
     this.notify();
 
     let disposed = false;
@@ -122,6 +124,7 @@ export class CommandRegistry {
         disposed = true;
         if (this.items.get(spec.id) === spec) {
           this.items.delete(spec.id);
+          this.invalidateSnapshotCache();
           this.notify();
         }
       },
@@ -129,8 +132,11 @@ export class CommandRegistry {
   }
 
   getAll(): readonly CommandSpec[] {
+    if (this.cachedAll !== null) return this.cachedAll;
+
     const out: CommandSpec[] = [];
     for (const item of this.items.values()) out.push(item);
+    this.cachedAll = out;
     return out;
   }
 
@@ -162,5 +168,9 @@ export class CommandRegistry {
 
   private notify(): void {
     for (const l of this.listeners) l();
+  }
+
+  private invalidateSnapshotCache(): void {
+    this.cachedAll = null;
   }
 }

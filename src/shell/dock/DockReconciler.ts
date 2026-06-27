@@ -77,20 +77,21 @@ export function reconcileTerminalPanels(
   const prevById = sessionsById(input.previousSessions);
   const nextById = sessionsById(input.nextSessions);
 
-  const added = input.nextSessions
-    .filter((s) => !prevById.has(s.id))
-    .sort((a, b) => a.createdAt - b.createdAt);
-
   // race(R105):originHint==='user' 时序兜底(见下方 shouldFocus)对**每个**首次出现的 user
   // terminal 都聚焦。两个 terminal.create 并发 + session push 乱序时,较早请求的 session 可能
   // 后到 → 它仍是首次出现 → setActive() 抢焦点,覆盖已先到先聚焦的较新终端,用户键盘输入落到
   // 非预期(较旧)PTY。兜底仅应聚焦当前快照中**最新**的 user session;迟到的较旧 user session
   // 不抢焦点(显式 pendingFocus 路径=用户明确意图,不受此限,始终命中)。
+  const added: TerminalSession[] = [];
   let latestUserCreatedAt = -Infinity;
   for (const s of input.nextSessions) {
+    if (!prevById.has(s.id)) added.push(s);
     if (s.originHint === 'user' && s.createdAt > latestUserCreatedAt) {
       latestUserCreatedAt = s.createdAt;
     }
+  }
+  if (added.length > 1) {
+    added.sort((a, b) => a.createdAt - b.createdAt);
   }
 
   let lastRefId = findLastTerminalPanelId(api);

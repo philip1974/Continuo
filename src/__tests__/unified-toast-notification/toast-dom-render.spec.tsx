@@ -2,7 +2,7 @@
 
 // @vitest-environment jsdom
 import React from 'react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render, screen } from '@testing-library/react';
 import { NotificationsProvider } from '@/notifications/NotificationsProvider';
 import { ToastViewport } from '@/notifications/ToastViewport';
@@ -60,5 +60,39 @@ describe('unified-toast-notification: DOM rendering', () => {
       notify.error('boom');
     });
     expect(screen.getByRole('alert').textContent).toContain('boom');
+  });
+
+  it('可见 toast 列表不通过 notifications.slice(-limit) 构建', () => {
+    render(
+      <NotificationsProvider>
+        <ToastViewport />
+      </NotificationsProvider>,
+    );
+    const sliceSpy = vi.spyOn(Array.prototype, 'slice');
+
+    try {
+      act(() => {
+        for (let i = 0; i < 6; i++) {
+          notify.error(`boom-${i}`, { code: `E${i}` });
+        }
+      });
+      const notificationSliceCalls = sliceSpy.mock.contexts.filter(
+        (ctx) =>
+          Array.isArray(ctx) &&
+          ctx.length > 5 &&
+          ctx.every(
+            (item) =>
+              typeof (item as { id?: unknown }).id === 'string' &&
+              (item as { id: string }).id.startsWith('notif-'),
+          ),
+      ).length;
+
+      expect(notificationSliceCalls).toBe(0);
+      expect(screen.getAllByRole('alert')).toHaveLength(5);
+      expect(screen.queryByText('boom-0')).toBeNull();
+      expect(screen.getByText(/boom-5/)).toBeTruthy();
+    } finally {
+      sliceSpy.mockRestore();
+    }
   });
 });

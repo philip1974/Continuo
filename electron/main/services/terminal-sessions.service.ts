@@ -91,6 +91,8 @@ export type SessionsSubscriber = (
 const sessions = new Map<string, MainTerminalSession>();
 const subscribers = new Set<SessionsSubscriber>();
 const titleCounter: Map<number, number> = new Map();
+let cachedSnapshot: readonly MainTerminalSession[] | null = null;
+const cachedSnapshotsByOwner = new Map<number, readonly MainTerminalSession[]>();
 
 // 边界(E235,E230 数量上限族):终端会话数量上限。每个 session 占一个**真实 PTY 子进程** + 4MiB ring
 // buffer + throttle interval + metadata 快照广播 + Dock panel —— 数量上限族里最重的资源。此前 add() 无
@@ -113,7 +115,17 @@ function sessionCountForWindow(ownerWindowId: number): number {
 // ── helpers ────────────────────────────────────────────────────
 
 function snapshot(): readonly MainTerminalSession[] {
-  return Array.from(sessions.values());
+  if (cachedSnapshot !== null) return cachedSnapshot;
+
+  const out: MainTerminalSession[] = [];
+  for (const session of sessions.values()) out.push(session);
+  cachedSnapshot = out;
+  return out;
+}
+
+function invalidateSnapshotCache(): void {
+  cachedSnapshot = null;
+  cachedSnapshotsByOwner.clear();
 }
 
 function notify(): void {
@@ -178,6 +190,7 @@ export function add(input: AddSessionInput): void {
       : {}),
   };
   sessions.set(input.id, session);
+  invalidateSnapshotCache();
   notify();
 }
 
@@ -192,16 +205,21 @@ export function getController(id: string): string | null {
 
 export function getAll(filter?: GetAllFilter): readonly MainTerminalSession[] {
   if (!filter) return snapshot();
+  const cached = cachedSnapshotsByOwner.get(filter.ownerWindowId);
+  if (cached !== undefined) return cached;
+
   const out: MainTerminalSession[] = [];
   for (const s of sessions.values()) {
     if (s.ownerWindowId === filter.ownerWindowId) out.push(s);
   }
+  cachedSnapshotsByOwner.set(filter.ownerWindowId, out);
   return out;
 }
 
 export function remove(id: string): void {
   if (!sessions.has(id)) return;
   sessions.delete(id);
+  invalidateSnapshotCache();
   notify();
 }
 
@@ -209,6 +227,7 @@ export function updateCwd(id: string, cwd: string): void {
   const cur = sessions.get(id);
   if (!cur || cur.cwd === cwd) return;
   sessions.set(id, { ...cur, cwd });
+  invalidateSnapshotCache();
   notify();
 }
 
@@ -224,6 +243,7 @@ export function removeByOwner(ownerWindowId: number): readonly string[] {
   }
   if (removed.length === 0) return removed;
   for (const id of removed) sessions.delete(id);
+  invalidateSnapshotCache();
   notify();
   return removed;
 }
@@ -232,6 +252,7 @@ export function setExited(id: string, exitCode: number): void {
   const cur = sessions.get(id);
   if (!cur) return;
   sessions.set(id, { ...cur, exitCode });
+  invalidateSnapshotCache();
   notify();
 }
 
@@ -258,6 +279,7 @@ export function _reset(): void {
   sessions.clear();
   subscribers.clear();
   titleCounter.clear();
+  invalidateSnapshotCache();
 }
 
 // 边界(E235)测试用:会话数量上限常量。

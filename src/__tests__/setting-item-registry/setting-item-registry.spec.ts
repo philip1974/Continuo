@@ -79,6 +79,89 @@ describe('SettingItemRegistry', () => {
     expect(r.getByCategory('nope')).toEqual([]);
   });
 
+  it('重复读取 getByCategory/getAll 复用排序结果,register/dispose 后失效重建', () => {
+    const r = new SettingItemRegistry();
+    const d = r.register({
+      id: 'editor.fontSize',
+      category: 'editor',
+      title: '字号',
+      type: 'number',
+      default: 14,
+      priority: 20,
+    });
+    r.register({
+      id: 'editor.lineNumbers',
+      category: 'editor',
+      title: '行号',
+      type: 'boolean',
+      default: true,
+      priority: 10,
+    });
+    r.register({
+      id: 'general.theme',
+      category: 'general',
+      title: '主题',
+      type: 'select',
+      default: 'dark',
+      enum: [
+        { value: 'light', label: 'Light' },
+        { value: 'dark', label: 'Dark' },
+      ],
+      priority: 5,
+    });
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      expect(r.getByCategory('editor').map((s) => s.id)).toEqual([
+        'editor.lineNumbers',
+        'editor.fontSize',
+      ]);
+      expect(sortSpy).toHaveBeenCalledTimes(1);
+      expect(r.getByCategory('editor').map((s) => s.id)).toEqual([
+        'editor.lineNumbers',
+        'editor.fontSize',
+      ]);
+      expect(sortSpy).toHaveBeenCalledTimes(1);
+
+      expect(r.getAll().map((s) => s.id)).toEqual([
+        'general.theme',
+        'editor.lineNumbers',
+        'editor.fontSize',
+      ]);
+      expect(sortSpy).toHaveBeenCalledTimes(2);
+      expect(r.getAll().map((s) => s.id)).toEqual([
+        'general.theme',
+        'editor.lineNumbers',
+        'editor.fontSize',
+      ]);
+      expect(sortSpy).toHaveBeenCalledTimes(2);
+
+      r.register({
+        id: 'editor.tabSize',
+        category: 'editor',
+        title: 'Tab',
+        type: 'number',
+        default: 2,
+        priority: 5,
+      });
+      expect(r.getByCategory('editor').map((s) => s.id)).toEqual([
+        'editor.tabSize',
+        'editor.lineNumbers',
+        'editor.fontSize',
+      ]);
+      expect(sortSpy).toHaveBeenCalledTimes(3);
+
+      d.dispose();
+      expect(r.getByCategory('editor').map((s) => s.id)).toEqual([
+        'editor.tabSize',
+        'editor.lineNumbers',
+      ]);
+      expect(sortSpy).toHaveBeenCalledTimes(4);
+    } finally {
+      sortSpy.mockRestore();
+    }
+  });
+
   it('getByCategory 不先 Array.from(values) 物化全部条目', () => {
     const r = new SettingItemRegistry();
     r.register({

@@ -107,6 +107,7 @@ function validateContextMenuItemSpec(spec: ExplorerContextMenuItemSpec): void {
 export class ExplorerContextMenuRegistry {
   private items = new Map<string, ExplorerContextMenuItemSpec>();
   private listeners = new Set<Listener>();
+  private cachedAll: readonly ExplorerContextMenuItemSpec[] | null = null;
 
   register(spec: ExplorerContextMenuItemSpec): Disposable {
     validateContextMenuItemSpec(spec); // 边界(E48):注册前校验长度/priority finite/when·fn 为函数
@@ -118,6 +119,7 @@ export class ExplorerContextMenuRegistry {
       );
     }
     this.items.set(spec.id, spec);
+    this.invalidateSnapshotCache();
     this.notify();
 
     let disposed = false;
@@ -127,6 +129,7 @@ export class ExplorerContextMenuRegistry {
         disposed = true;
         if (this.items.get(spec.id) === spec) {
           this.items.delete(spec.id);
+          this.invalidateSnapshotCache();
           this.notify();
         }
       },
@@ -134,9 +137,13 @@ export class ExplorerContextMenuRegistry {
   }
 
   getAll(): readonly ExplorerContextMenuItemSpec[] {
-    return Array.from(this.items.values()).sort(
-      (a, b) => (a.priority ?? 100) - (b.priority ?? 100),
-    );
+    if (this.cachedAll !== null) return this.cachedAll;
+
+    const items: ExplorerContextMenuItemSpec[] = [];
+    for (const item of this.items.values()) items.push(item);
+    items.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
+    this.cachedAll = items;
+    return items;
   }
 
   /**
@@ -156,6 +163,10 @@ export class ExplorerContextMenuRegistry {
 
   private notify(): void {
     for (const l of this.listeners) l();
+  }
+
+  private invalidateSnapshotCache(): void {
+    this.cachedAll = null;
   }
 }
 

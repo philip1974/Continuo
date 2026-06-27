@@ -62,6 +62,18 @@ export function createTab(
   };
 }
 
+function replaceTabAt(
+  tabs: readonly EditorTab[],
+  index: number,
+  nextTab: EditorTab,
+): EditorTab[] {
+  const next: EditorTab[] = [];
+  for (let i = 0; i < tabs.length; i++) {
+    next.push(i === index ? nextTab : tabs[i]!);
+  }
+  return next;
+}
+
 export interface CloseTabResult {
   tabs: EditorTab[];
   activeTabId: string | null;
@@ -426,8 +438,7 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
         reloadEpoch: (cur.reloadEpoch ?? 0) + 1,
         milkdownUnsafe: computeMilkdownUnsafe(cur.filePath, content), // perf P4
       };
-      const tabs = s.tabs.slice();
-      tabs[idx] = next;
+      const tabs = replaceTabAt(s.tabs, idx, next);
       // perf P14:外部 reload 改 content,chrome(id/filePath/dirty)不变,但若 milkdownUnsafe
       // 翻转则 effectiveMode 变 → bump 让 EditorHeader action 区更新;否则不 bump。
       return !!next.milkdownUnsafe !== !!cur.milkdownUnsafe
@@ -452,8 +463,7 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
         dirty: content !== cur.originalContent,
         milkdownUnsafe: computeMilkdownUnsafe(cur.filePath, content), // perf P4
       };
-      const tabs = s.tabs.slice();
-      tabs[idx] = next;
+      const tabs = replaceTabAt(s.tabs, idx, next);
       // perf P12/P14:dirty 翻转 或 milkdownUnsafe 翻转(影响 EditorHeader action 区的
       // effectiveMode)才 bump;持续在已脏 tab 输入(dirty 恒 true、unsafe 不变)不 bump
       // → header chrome + action selector 均 O(1) 跳过。`!!` 归一化避免 undefined→false 误判。
@@ -477,8 +487,7 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
         originalContent: onDisk,
         dirty: cur.content !== onDisk,
       };
-      const tabs = s.tabs.slice();
-      tabs[idx] = next;
+      const tabs = replaceTabAt(s.tabs, idx, next);
       // perf P12:markSaved 改 dirty(脏标→已存)即 chrome 变;dirty 未变则不 bump。
       return next.dirty !== cur.dirty
         ? { tabs, chromeVersion: s.chromeVersion + 1 }
@@ -497,8 +506,7 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
         filePath: newPath,
         milkdownUnsafe: computeMilkdownUnsafe(newPath, cur.content),
       };
-      const tabs = s.tabs.slice();
-      tabs[idx] = next;
+      const tabs = replaceTabAt(s.tabs, idx, next);
       return {
         tabs,
         activeTabId: s.activeTabId === id ? newPath : s.activeTabId,

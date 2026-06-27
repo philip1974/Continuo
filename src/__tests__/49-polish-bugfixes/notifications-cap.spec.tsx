@@ -50,4 +50,37 @@ describe('topic 49 · notifications 底层数组上限', () => {
     expect(snapshot?.messages).toContain(`err-${total - 1}`);
     expect(snapshot?.messages).not.toContain('err-0');
   });
+
+  it('超过上限时不通过 slice 复制截断通知数组', () => {
+    vi.useFakeTimers();
+    render(
+      <NotificationsProvider>
+        <Probe />
+      </NotificationsProvider>,
+    );
+    const sliceSpy = vi.spyOn(Array.prototype, 'slice');
+
+    try {
+      act(() => {
+        for (let i = 0; i < MAX_NOTIFICATIONS + 3; i++) {
+          notify.error(`err-${i}`, { code: `E${i}` });
+        }
+      });
+      const notificationSliceCalls = sliceSpy.mock.contexts.filter(
+        (ctx) =>
+          Array.isArray(ctx) &&
+          ctx.length > MAX_NOTIFICATIONS &&
+          ctx.every(
+            (item) =>
+              typeof (item as { id?: unknown }).id === 'string' &&
+              ((item as { id: string }).id).startsWith('notif-'),
+          ),
+      ).length;
+
+      expect(notificationSliceCalls).toBe(0);
+      expect(snapshot?.count).toBe(MAX_NOTIFICATIONS);
+    } finally {
+      sliceSpy.mockRestore();
+    }
+  });
 });
