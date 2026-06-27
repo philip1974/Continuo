@@ -70,6 +70,16 @@ export function buildTreeChildrenWithData(
   return out;
 }
 
+export function findFileEntryByPath(
+  entries: readonly FileEntry[],
+  path: string,
+): FileEntry | null {
+  for (const entry of entries) {
+    if (entry.path === path) return entry;
+  }
+  return null;
+}
+
 export function createDataLoader(deps: CreateTreeConfigDeps): FileTreeDataLoader {
   const { root, fs, onIpcWarn = (m, c) => console.warn('[explorer-tree]', m, c) } = deps;
 
@@ -87,7 +97,7 @@ export function createDataLoader(deps: CreateTreeConfigDeps): FileTreeDataLoader
         if (!r.ok) {
           onIpcWarn(`getItem: listDir failed for ${parent}: ${r.message}`, r.code);
         } else {
-          const found = r.data.find((e) => e.path === itemId);
+          const found = findFileEntryByPath(r.data, itemId);
           if (found) return found;
         }
       } catch (err) {

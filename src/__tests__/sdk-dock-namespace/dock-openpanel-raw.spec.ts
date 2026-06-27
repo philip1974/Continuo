@@ -74,6 +74,27 @@ describe('app.dock.openPanel raw namespace', () => {
     });
   });
 
+  it('T1.5b resolves registered panel via direct get,不调用 panels.list', () => {
+    const api = fakeApi();
+    registerPanel('sdk-dock-direct-get', 'Direct');
+    setDockApi(api as never);
+    const listSpy = vi.spyOn(coApp.panels, 'list');
+
+    try {
+      coApp.dock.openPanel('sdk-dock-direct-get');
+
+      expect(api.addPanel).toHaveBeenCalledWith({
+        id: 'sdk-dock-direct-get',
+        component: 'sdk-dock-direct-get',
+        title: 'Direct',
+        params: { titleKey: 'sdk-dock-direct-get.title' },
+      });
+      expect(listSpy).not.toHaveBeenCalled();
+    } finally {
+      listSpy.mockRestore();
+    }
+  });
+
   it('T1.6 silently no-ops when Dockview is not ready', () => {
     registerPanel('sdk-dock-not-ready', 'Not Ready');
 

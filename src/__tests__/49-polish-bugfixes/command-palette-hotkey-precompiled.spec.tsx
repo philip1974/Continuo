@@ -24,9 +24,13 @@ vi.mock('../../plugins/keybindings/keybindings-store', async (importActual) => {
   return { ...actual, getEffectiveHotkey: vi.fn(actual.getEffectiveHotkey) };
 });
 
-import { CommandPalette } from '../../plugins/command-palette/CommandPalette';
+import {
+  buildDisplayCommands,
+  CommandPalette,
+} from '../../plugins/command-palette/CommandPalette';
 import { useCommandPaletteStore } from '../../plugins/command-palette/store';
 import { CommandRegistry } from '../../plugins/registries/CommandRegistry';
+import type { CommandSpec } from '../../plugins/registries/CommandRegistry';
 import {
   getEffectiveHotkey,
   useKeybindingsStore,
@@ -50,6 +54,28 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('打磨 R28 — CommandPalette hotkey 预计算', () => {
+  it('displayCommands 构造预分配数组,不调用 allCommands.map', () => {
+    const commands: CommandSpec[] = [
+      { id: 'a', title: 'A', hotkey: 'mod+a', fn: vi.fn() },
+      { id: 'b', title: 'B', category: 'Tools', fn: vi.fn() },
+    ];
+    const mapSpy = vi.spyOn(commands, 'map');
+    try {
+      const out = buildDisplayCommands(
+        commands,
+        (_key, fallback) => fallback,
+        'other',
+      );
+
+      expect(out.map((d) => d.cmd.id)).toEqual(['a', 'b']);
+      expect(out[0]?.hotkeyParts).toEqual(['Ctrl', 'A']);
+      expect(out[1]?.matchSourceLower).toBe('tools b');
+      expect(mapSpy).not.toHaveBeenCalled();
+    } finally {
+      mapSpy.mockRestore();
+    }
+  });
+
   it('selectedIndex 变化 → 不再逐行调 getEffectiveHotkey', () => {
     render(<CommandPalette commands={makeReg()} />);
     act(() => useCommandPaletteStore.getState().open());

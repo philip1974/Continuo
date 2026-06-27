@@ -1,5 +1,7 @@
 // BDD: map-with-concurrency (E234/E251)
 import { describe, it, expect, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { allSettledWithConcurrency } from '../../lib/map-with-concurrency';
 
 describe('allSettledWithConcurrency', () => {
@@ -15,6 +17,15 @@ describe('allSettledWithConcurrency', () => {
     } finally {
       fromSpy.mockRestore();
     }
+  });
+
+  it('worker promise 数组按 workerCount 预分配,不通过 workers.push 扩容', () => {
+    const src = readFileSync(
+      path.join(process.cwd(), 'src/lib/map-with-concurrency.ts'),
+      'utf-8',
+    );
+    expect(src).toMatch(/new Array<Promise<void>>\(workerCount\)/);
+    expect(src).not.toMatch(/workers\.push\(/);
   });
 
   it('结果按输入顺序对位 + allSettled 语义(单失败不影响其它)', async () => {

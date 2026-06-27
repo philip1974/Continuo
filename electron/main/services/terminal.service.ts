@@ -599,7 +599,8 @@ export function forceKill(id: string): void {
 export async function cleanupAll(): Promise<void> {
   if (instances.size === 0) return; // 没开过终端就别 lazy-init SessionManager
   const sm = getSessionManager();
-  const kills: Promise<void>[] = [];
+  const kills = new Array<Promise<void>>(instances.size);
+  let killCount = 0;
   for (const id of instances.keys()) {
     const inst = instances.get(id);
     if (inst?.killTimer) {
@@ -608,12 +609,12 @@ export async function cleanupAll(): Promise<void> {
     }
     // 同步本地拆除(timers / listeners / mcp token revoke),exitCode -1。
     cleanupSessionLocal(id, -1);
-    kills.push(
+    kills[killCount++] =
       sm.kill({ session_id: id, signal: 'SIGKILL' }).then(
         () => undefined,
         () => undefined, // 进程正在退出,忽略 kill race。
-      ),
-    );
+      );
   }
+  kills.length = killCount;
   await Promise.all(kills);
 }

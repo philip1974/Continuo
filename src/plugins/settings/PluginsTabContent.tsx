@@ -35,6 +35,17 @@ export function pluginsTabRowClassName(hasTopBorder: boolean): string {
     : PLUGINS_TAB_ROW_CLASS_NAME;
 }
 
+export function collectContributionSamples<T, K extends keyof T>(
+  items: readonly T[],
+  key: K,
+): string[] {
+  const samples = new Array<string>(items.length);
+  for (let i = 0; i < items.length; i++) {
+    samples[i] = String(items[i]![key]);
+  }
+  return samples;
+}
+
 function snapshot(): readonly ContributionRow[] {
   // 每个 registry 只取一次快照(打磨 R4):getAll()/getBySide() 都 Array.from
   // (+sort),原先 count 与 samples 各调一遍、statusBar 左右各取两遍 → 重复
@@ -53,27 +64,27 @@ function snapshot(): readonly ContributionRow[] {
     {
       labelKey: 'plugins_tab.label.panels',
       count: panels.length,
-      samples: panels.map((p) => p.type),
+      samples: collectContributionSamples(panels, 'type'),
     },
     {
       labelKey: 'plugins_tab.label.commands',
       count: commands.length,
-      samples: commands.map((c) => c.id),
+      samples: collectContributionSamples(commands, 'id'),
     },
     {
       labelKey: 'plugins_tab.label.statusbar',
       count: statusItems.length,
-      samples: statusItems.map((x) => x.id),
+      samples: collectContributionSamples(statusItems, 'id'),
     },
     {
       labelKey: 'plugins_tab.label.ribbon',
       count: ribbon.length,
-      samples: ribbon.map((r) => r.id),
+      samples: collectContributionSamples(ribbon, 'id'),
     },
     {
       labelKey: 'plugins_tab.label.setting_tabs',
       count: settingTabs.length,
-      samples: settingTabs.map((t) => t.id),
+      samples: collectContributionSamples(settingTabs, 'id'),
     },
     {
       labelKey: 'plugins_tab.label.explorer_decorators',
@@ -83,7 +94,7 @@ function snapshot(): readonly ContributionRow[] {
     {
       labelKey: 'plugins_tab.label.editor_actions',
       count: editorActions.length,
-      samples: editorActions.map((a) => a.id),
+      samples: collectContributionSamples(editorActions, 'id'),
     },
   ];
 }

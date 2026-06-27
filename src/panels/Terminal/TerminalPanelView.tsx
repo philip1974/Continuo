@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useRef } from 'react';
 import type { IDockviewPanelProps } from 'dockview-react';
+import { useShallow } from 'zustand/react/shallow';
 import { Spinner } from '@/design';
-import { useTerminalStore } from '@/stores/terminal.store';
+import {
+  getIndexedTerminalSessionById,
+  useTerminalStore,
+} from '@/stores/terminal.store';
 import { useTerminal } from './useTerminal';
 import { useTerminalDragDrop } from './useTerminalDragDrop';
 import { registerTerminalFocus } from './terminal-focus-registry';
@@ -33,30 +37,19 @@ export function TerminalPanelView(
       props.api.close();
     }
   }, [sessionId, props.api]);
-  // 只订阅派生 primitive(打磨 R40 + R43):dock title 只需 title / originHint /
-  // 是否存在。R40 拆成 3 个 selector 各 find/some 一遍;R43 合并为单次 find 构造
-  // JSON 签名串(primitive,字段不变 → 引用稳定 → 不因无关字段/别的 session 重渲),
-  // 再用 useMemo 解析出三值。多终端时每次 snapshot 从「面板数×3 次扫描」降为×1。
-  const sessionSig = useTerminalStore((s) => {
-    const found = s.sessions.find((x) => x.id === sessionId);
-    return JSON.stringify([
-      found !== undefined,
-      found?.title ?? null,
-      found?.originHint ?? null,
-    ]);
-  });
-  const { sessionExists, sessionTitle, sessionOriginHint } = useMemo(() => {
-    const [exists, title, originHint] = JSON.parse(sessionSig) as [
-      boolean,
-      string | null,
-      OriginHint | null,
-    ];
-    return {
-      sessionExists: exists,
-      sessionTitle: title ?? undefined,
-      sessionOriginHint: originHint ?? undefined,
-    };
-  }, [sessionSig]);
+  // 只订阅派生 primitive(打磨 R40 + R43 + P16):dock title 只需 title / originHint /
+  // 是否存在。复用 terminal.store 的 sessionId 索引缓存,多终端面板收到同一 snapshot 时只
+  // 为 sessions 引用建一次 Map;再用 useShallow 比较扁平 primitive,避免 JSON 签名串分配/解析。
+  const { sessionExists, sessionTitle, sessionOriginHint } = useTerminalStore(
+    useShallow((s) => {
+      const found = getIndexedTerminalSessionById(s.sessions, sessionId);
+      return {
+        sessionExists: found !== undefined,
+        sessionTitle: found?.title,
+        sessionOriginHint: found?.originHint,
+      };
+    }),
+  );
   const customTitle = useTerminalStore((s) => s.customTitles.get(sessionId));
   const derivedTitle = useMemo(() => {
     const base =

@@ -15,6 +15,7 @@ vi.mock('../../plugins/keybindings/keybindings-store', async (importActual) => {
 
 import {
   KeybindingsTabContent,
+  buildKeybindingDisplayCommands,
   buildCommandSearchHaystack,
   countDefaultHotkeys,
   groupByCategory,
@@ -41,6 +42,33 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('打磨 R29 — Keybindings hotkey 预计算', () => {
+  it('displayCommands 构造预分配数组,不调用 allCommands.map', () => {
+    const commands = [
+      { id: 'save', title: 'Save', hotkey: 'mod+s', fn: vi.fn() },
+      { id: 'toggle', title: 'Toggle', category: 'View', fn: vi.fn() },
+    ];
+    const mapSpy = vi.spyOn(commands, 'map');
+    useKeybindingsStore.setState({ overrides: { toggle: 'mod+t' } });
+
+    try {
+      const out = buildKeybindingDisplayCommands(
+        commands,
+        (_key, fallback) => fallback,
+        { toggle: 'mod+t' },
+        'other',
+      );
+
+      expect(out.map((d) => d.cmd.id)).toEqual(['save', 'toggle']);
+      expect(out[0]?.hotkeyParts).toEqual(['Ctrl', 'S']);
+      expect(out[1]?.effectiveHotkey).toBe('mod+t');
+      expect(out[1]?.isOverridden).toBe(true);
+      expect(out[1]?.searchHaystack).toContain('mod+t');
+      expect(mapSpy).not.toHaveBeenCalled();
+    } finally {
+      mapSpy.mockRestore();
+    }
+  });
+
   it('统计默认 hotkey 数量时不通过 filter(...).length 生成中间数组', () => {
     const commands = [
       { id: 'save', title: 'Save', hotkey: 'mod+s', fn: vi.fn() },

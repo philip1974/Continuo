@@ -16,6 +16,7 @@ import * as terminalSessions from './terminal-sessions.service';
 import * as termService from './terminal.service';
 import type { McpHost } from './mcp-host.service';
 import { isPopoutUrl } from '../popout-url';
+import { pickMainWindowPreferNonPopout } from './main-window-picker.service';
 
 // 5 分钟无应答 → 默认拒绝(防 renderer 卡死时 tool Promise 永远悬挂)
 const PROMPT_TIMEOUT_MS = 5 * 60 * 1000;
@@ -45,16 +46,6 @@ function pendingCountForWindow(windowId: number): number {
   return n;
 }
 
-function pickMainWindow(): BrowserWindow | null {
-  const wins = BrowserWindow.getAllWindows();
-  // 优先非 popout 主窗(popout 子窗不挂 AgentAuthPrompt UI)
-  for (const w of wins) {
-    if (w.isDestroyed()) continue;
-    if (!isPopoutUrl(w.webContents.getURL())) return w;
-  }
-  return wins.find((w) => !w.isDestroyed()) ?? null;
-}
-
 export interface AgentAuthInfo {
   readonly method: string;
   readonly agentLabel?: string;
@@ -77,7 +68,7 @@ export async function requestAgentAuth(
     !targetWin.isDestroyed() &&
     !isPopoutUrl(targetWin.webContents.getURL())
       ? targetWin
-      : pickMainWindow();
+      : pickMainWindowPreferNonPopout();
   if (!win) return 'denied';
   // 边界(E229):全局 + per-window 未决授权双闸,超限直接终态 'denied'(不入 pending、不起 timer、
   // 不发 IPC),防外部 agent spam 让 pending/timer/IPC 线性放大。renderer 合法并发由 store.ensure 处理,

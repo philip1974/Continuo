@@ -16,9 +16,11 @@ export function capJoinedMessages(
   messages: readonly string[],
   moreLabel = 'more',
 ): string {
-  const shown = messages.slice(0, MAX_JOINED_ITEMS);
+  const limit = Math.min(messages.length, MAX_JOINED_ITEMS);
+  const shown = new Array<string>(limit);
+  for (let i = 0; i < limit; i++) shown[i] = messages[i]!;
   let msg = shown.join('; ');
-  const extra = messages.length - shown.length;
+  const extra = messages.length - limit;
   if (extra > 0) msg += `; …(+${extra} ${moreLabel})`;
   if (msg.length > MAX_JOINED_LENGTH) {
     msg = `${msg.slice(0, MAX_JOINED_LENGTH)}…(truncated)`;
@@ -37,8 +39,8 @@ export function capJoinedMessagesFrom<T>(
   moreLabel = 'more',
 ): string {
   const limit = Math.min(items.length, MAX_JOINED_ITEMS);
-  const shown: string[] = [];
-  for (let i = 0; i < limit; i++) shown.push(mapper(items[i]!));
+  const shown = new Array<string>(limit);
+  for (let i = 0; i < limit; i++) shown[i] = mapper(items[i]!);
   let msg = shown.join('; ');
   const extra = items.length - limit;
   if (extra > 0) msg += `; …(+${extra} ${moreLabel})`;

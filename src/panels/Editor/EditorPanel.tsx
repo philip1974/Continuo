@@ -25,6 +25,7 @@ import { CodeEditor } from './CodeEditor';
 import { EditorHeader, type TabChrome } from './EditorHeader';
 import { EditorWelcome } from './EditorWelcome';
 import { MilkdownEditor } from './MilkdownEditor';
+import { findEditorFileTabById } from './editor-tab-lookup';
 import { useAutoSave, isAutoSaveEnabled } from './useAutoSave';
 import { useEditorFile } from './useEditorFile';
 import { useExternalFileSync } from './useExternalFileSync';
@@ -59,7 +60,7 @@ export function EditorPanel() {
   // EditorHeader 自己窄订阅,不依赖这里。
   const activeTab = useEditorStore(
     (s): EditorTab | null =>
-      s.tabs.find((t) => t.id === s.activeTabId) ?? null,
+      s.activeTabId === null ? null : findEditorFileTabById(s.tabs, s.activeTabId),
   );
   const t = useT(); // i18n(I14):订阅 locale,模式切换 label 随语言更新
   const modeOptions = MODE_IDS.map((id) => ({

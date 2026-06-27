@@ -1,7 +1,10 @@
 // 打磨 R55(codex 性能):CommandPalette 空 query 排序 recent 置顶时,不在 comparator
 // 里反复 recentIds.indexOf;改为一次性 rank map。测试直接覆盖纯 helper,避免 UI 渲染噪声。
 import { describe, it, expect, vi } from 'vitest';
-import { sortByRecent } from '../../plugins/command-palette/CommandPalette';
+import {
+  buildRecentCommandIds,
+  sortByRecent,
+} from '../../plugins/command-palette/CommandPalette';
 
 interface TestDisplayCommand {
   readonly cmd: { readonly id: string };
@@ -13,6 +16,21 @@ function command(id: string, title: string): TestDisplayCommand {
 }
 
 describe('打磨 R55 — CommandPalette recent rank 预计算', () => {
+  it('recent id 派生预分配数组,不调用 recentList.map', () => {
+    const recentList = [
+      { id: 'a', ts: 3 },
+      { id: 'b', ts: 2 },
+      { id: 'c', ts: 1 },
+    ];
+    const mapSpy = vi.spyOn(recentList, 'map');
+    try {
+      expect(buildRecentCommandIds(recentList)).toEqual(['a', 'b', 'c']);
+      expect(mapSpy).not.toHaveBeenCalled();
+    } finally {
+      mapSpy.mockRestore();
+    }
+  });
+
   it('recent 排序不再反复调用 recentIds.indexOf,且 recent 顺序保持', () => {
     const items = [
       command('a', 'Alpha'),

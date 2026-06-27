@@ -116,10 +116,12 @@ interface ResolvedEntry {
   readonly isDirectory: boolean;
 }
 
+type DirEntryLike = { name: string };
+
 // 解析单个 dirent 的 stat。lstat 失败(边读边删竞态)→ null(跳过)。
 async function resolveEntry(
   dir: string,
-  d: { name: string },
+  d: DirEntryLike,
   followSymlinks: boolean,
 ): Promise<ResolvedEntry | null> {
   const full = path.join(dir, d.name);
@@ -146,6 +148,18 @@ async function resolveEntry(
   return { d, full, st, isSymlink, isDirectory };
 }
 
+function resolveEntryBatch(
+  dir: string,
+  batch: readonly DirEntryLike[],
+  followSymlinks: boolean,
+): Array<Promise<ResolvedEntry | null>> {
+  const promises = new Array<Promise<ResolvedEntry | null>>(batch.length);
+  for (let i = 0; i < batch.length; i++) {
+    promises[i] = resolveEntry(dir, batch[i]!, followSymlinks);
+  }
+  return promises;
+}
+
 async function walk(
   dir: string,
   depth: number,
@@ -164,7 +178,7 @@ async function walk(
   // filter 物化一份(超宽目录会在 MAX_TOTAL_ENTRIES 检查前内存峰值/OOM)。totalCount 仍在处理阶段
   // 计数(语义/上限不变);for await 在 break/throw/完成时自动 close Dir。
   const dirHandle = await opendir(dir);
-  let chunk: { name: string }[] = [];
+  let chunk: DirEntryLike[] = [];
   let stop = false;
 
   // 处理一块:并发 lstat(保留块内顺序),逐项组装/计数/递归。stop=true 表示 maxFiles 已达,应停。
@@ -173,7 +187,7 @@ async function walk(
     const batch = chunk;
     chunk = [];
     const resolved = await Promise.all(
-      batch.map((d) => resolveEntry(dir, d, followSymlinks)),
+      resolveEntryBatch(dir, batch, followSymlinks),
     );
     for (const item of resolved) {
       if (state.fileCount >= maxFiles) {

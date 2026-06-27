@@ -35,6 +35,7 @@ import { AgentAuthRespondSchema } from './agent-auth-schema';
 import { PopoutOpenInput } from './popout-open-schema';
 import { utf8ByteLength } from '../shared/utf8-byte-length';
 import { jsonByteLowerBoundExceeds } from '../shared/json-byte-budget';
+import { findWindowEntryBySeq } from '../shared/window-entry-lookup';
 import {
   resolveAgentAuthRequest,
   revokeAndKillAgentSessions,
@@ -123,7 +124,8 @@ export function registerIpc(): { pluginFsHandles: PluginFsIpcHandles } {
         });
       }
       const payload = await loadExplorer(explorerFile);
-      const entry = payload?.windows.find((w) => w.windowSeq === seq);
+      const entry =
+        payload === null ? null : findWindowEntryBySeq(payload.windows, seq);
       // 边界(E215,E89 写端对偶):读端复用写端 JSON-safe + 字节上限,旧版/污染的超大 layout → null
       //(走默认布局),不让 renderer fromJSON 处理超大 layout 卡顿/放大。
       return sanitizeReadLayout(entry?.layout ?? null);

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   applySnapshot,
+  getIndexedTerminalSessionById,
   getShellFamily,
   nextActiveAfterClose,
   useTerminalStore,
@@ -103,6 +104,19 @@ describe('terminal.store · 初态', () => {
 });
 
 describe('getShellFamily', () => {
+  it('按 session id 读取索引缓存不调用 sessions.find 线性扫描', () => {
+    const sessions = [makeSession({ id: '/a' }), makeSession({ id: '/b' })];
+    const findSpy = vi.spyOn(sessions, 'find');
+
+    try {
+      expect(getIndexedTerminalSessionById(sessions, '/b')).toBe(sessions[1]);
+      expect(getIndexedTerminalSessionById(sessions, '/missing')).toBeUndefined();
+      expect(findSpy).not.toHaveBeenCalled();
+    } finally {
+      findSpy.mockRestore();
+    }
+  });
+
   it('按 session id 读取 shellFamily 不调用 sessions.find 线性扫描', () => {
     const sessions = [
       makeSession({ id: '/a' }),

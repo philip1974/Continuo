@@ -1,4 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { z } from 'zod';
 import {
   capJoinedMessages,
@@ -14,6 +16,18 @@ describe('capJoinedMessages(已物化 string[])', () => {
     const many = Array.from({ length: 25 }, (_, i) => `e${i}`);
     const msg = capJoinedMessages(many);
     expect(msg).toContain('…(+5 more)'); // 25 - 20
+  });
+
+  it('展示项数组预分配,不调用 messages.slice', () => {
+    const messages = ['a', 'b', 'c'];
+    const sliceSpy = vi.spyOn(messages, 'slice');
+
+    try {
+      expect(capJoinedMessages(messages)).toBe('a; b; c');
+      expect(sliceSpy).not.toHaveBeenCalled();
+    } finally {
+      sliceSpy.mockRestore();
+    }
   });
 });
 
@@ -35,6 +49,15 @@ describe('capJoinedMessagesFrom(mapper 变体,E222)', () => {
 
   it('空数组 → 空串', () => {
     expect(capJoinedMessagesFrom([], (n: number) => `${n}`)).toBe('');
+  });
+
+  it('展示项数组预分配,不通过 shown.push 扩容', () => {
+    const src = readFileSync(
+      path.join(process.cwd(), 'electron/shared/cap-joined-messages.ts'),
+      'utf-8',
+    );
+    expect(src).toMatch(/new Array<string>\(limit\)/);
+    expect(src).not.toMatch(/shown\.push\(/);
   });
 });
 

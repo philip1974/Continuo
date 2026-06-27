@@ -7,6 +7,7 @@ import { useEditorStore } from '@/stores/editor.store';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { useT } from '@/i18n';
 import { SR_ONLY_STYLE } from '@/lib/sr-only';
+import { findEditorFileTabById } from '@/panels/Editor/editor-tab-lookup';
 import { basenameForChrome } from './path-label';
 
 export function TitleBar() {
@@ -20,11 +21,12 @@ export function TitleBar() {
   const activeTabId = useEditorStore((s) => s.activeTabId);
   const chromeVersion = useEditorStore((s) => s.chromeVersion);
   const { hasActiveTab, activeFilePath, activeDirty } = useMemo(() => {
-    const found = useEditorStore
-      .getState()
-      .tabs.find((tb) => tb.id === activeTabId);
+    const found =
+      activeTabId === null
+        ? null
+        : findEditorFileTabById(useEditorStore.getState().tabs, activeTabId);
     return {
-      hasActiveTab: found !== undefined,
+      hasActiveTab: found !== null,
       activeFilePath: found?.filePath ?? null,
       activeDirty: found?.dirty ?? false,
     };

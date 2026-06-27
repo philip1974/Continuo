@@ -20,11 +20,12 @@ import {
 } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { canonicalizeScopePath } from '../../../electron/main/services/path-resolve.helper';
 import { IdentityRegistry } from '../../../electron/main/services/identity-registry.service';
 import { PathScopeRegistry } from '../../../electron/main/services/path-scope-registry.service';
 import { ScopeError } from '../../plugins/types';
+import { canonicalizePathScopes } from '../../../electron/main/services/plugin-fs.service';
 
 const tempRoots: string[] = [];
 function makeTempDir(): string {
@@ -78,6 +79,25 @@ describe('49 第八 session · canonicalizeScopePath', () => {
     const out = await canonicalizeScopePath('~/__continuo_nonexistent_dir__');
     expect(out).toBe(join(homedir(), '__continuo_nonexistent_dir__'));
     expect(out).not.toContain('~');
+  });
+
+  it('request-scope 批量归一化单趟预分配,不调用 scopes.map', async () => {
+    const real = makeTempDir();
+    const missing = join(real, 'missing');
+    const scopes = [
+      { path: real, mode: 'r' as const },
+      { path: missing, mode: 'rw' as const },
+    ];
+    const mapSpy = vi.spyOn(scopes, 'map');
+    try {
+      await expect(canonicalizePathScopes(scopes)).resolves.toEqual([
+        { path: realpathSync(real), mode: 'r' },
+        { path: missing, mode: 'rw' },
+      ]);
+      expect(mapSpy).not.toHaveBeenCalled();
+    } finally {
+      mapSpy.mockRestore();
+    }
   });
 });
 

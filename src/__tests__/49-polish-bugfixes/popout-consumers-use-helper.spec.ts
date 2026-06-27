@@ -4,7 +4,8 @@
 // 但只接入了 index.ts。agent-auth.service / mcp-stdio-server.service 三处仍用裸
 // 子串 `includes('popout=1')` → workspace 路径含该子串的普通主窗被误判为 popout,
 // 授权弹窗 / MCP tools/call fallback 路由到错误窗口。
-// 本守卫:静态断言这些消费方不再出现裸子串判定(防回退),且都 import isPopoutUrl。
+// 本守卫:静态断言这些消费方不再出现裸子串判定(防回退),且直接或通过共享 picker
+// 走 isPopoutUrl。
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -25,8 +26,17 @@ describe('49 · popout 判定消费方统一走 isPopoutUrl', () => {
     expect(src).not.toMatch(/includes\(\s*['"]popout=1['"]\s*\)/);
   });
 
-  it.each(CONSUMER_FILES)('%s import isPopoutUrl helper', (rel) => {
+  it.each(CONSUMER_FILES)('%s 直接或间接走 isPopoutUrl helper', (rel) => {
     const src = readFileSync(join(ROOT, rel), 'utf-8');
+    expect(src).toMatch(/isPopoutUrl|pickMainWindowPreferNonPopout/);
+  });
+
+  it('main-window picker 统一走 isPopoutUrl helper', () => {
+    const src = readFileSync(
+      join(ROOT, 'electron/main/services/main-window-picker.service.ts'),
+      'utf-8',
+    );
     expect(src).toMatch(/isPopoutUrl/);
+    expect(src).not.toMatch(/includes\(\s*['"]popout=1['"]\s*\)/);
   });
 });

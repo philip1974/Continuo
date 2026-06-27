@@ -15,6 +15,7 @@ import { coApi } from '@/lib/co-api';
 import { notify } from '@/notifications/notify';
 import { computeTextStats } from '@/lib/text-stats';
 import { coApp } from '@/plugins/co-app';
+import { findEditorFileTabById } from '@/panels/Editor/editor-tab-lookup';
 import type { StatusBarItemSpec } from '@/plugins/registries/StatusBarRegistry';
 import { getCachedClipboard } from '@/plugins/sandbox-sweep';
 import { useT, t as translate } from '@/i18n';
@@ -132,9 +133,12 @@ export function StatusBar() {
   const { hasActiveTab, activeFilePath, activeDirty, activeContent } =
     useEditorStore(
       useShallow((s) => {
-        const found = s.tabs.find((tb) => tb.id === s.activeTabId);
+        const found =
+          s.activeTabId === null
+            ? null
+            : findEditorFileTabById(s.tabs, s.activeTabId);
         return {
-          hasActiveTab: found !== undefined,
+          hasActiveTab: found !== null,
           activeFilePath: found?.filePath ?? null,
           activeDirty: found?.dirty ?? false,
           activeContent: found?.content,

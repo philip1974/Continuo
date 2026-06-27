@@ -10,6 +10,7 @@ import {
   buildTreeChildrenWithData,
   createDataLoader,
   createTreeConfig,
+  findFileEntryByPath,
 } from '../../panels/Explorer/tree-config';
 import type { FileEntry, IpcResult } from '../../lib/fs/types';
 
@@ -68,6 +69,19 @@ describe('createTreeConfig · 顶层配置', () => {
 });
 
 describe('createTreeConfig · getItem', () => {
+  it('findFileEntryByPath 单趟扫描,不调用 entries.find', () => {
+    const entries = [entry('/work/a.md'), entry('/work/b.md')];
+    const findSpy = vi.spyOn(entries, 'find');
+
+    try {
+      expect(findFileEntryByPath(entries, '/work/b.md')).toBe(entries[1]);
+      expect(findFileEntryByPath(entries, '/work/missing.md')).toBeNull();
+      expect(findSpy).not.toHaveBeenCalled();
+    } finally {
+      findSpy.mockRestore();
+    }
+  });
+
   it('itemId === root → 构造 root entry,name = basename(root)', async () => {
     const fs = makeFs(() => ok([]));
     const loader = createDataLoader({ root: '/Users/me/work', fs });

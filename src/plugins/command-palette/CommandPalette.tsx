@@ -15,8 +15,8 @@ import { useRegistry } from '../registries/useRegistry';
 import type { CommandRegistry, CommandSpec } from '../registries/CommandRegistry';
 import { useCommandPaletteStore } from './store';
 import { fuzzyFilter } from './fuzzy';
-import { useRecentCommandsStore } from './recent';
-import { formatHotkeyParts, detectPlatform } from './format-hotkey';
+import { useRecentCommandsStore, type RecentEntry } from './recent';
+import { formatHotkeyParts, detectPlatform, type Platform } from './format-hotkey';
 import { getEffectiveHotkey, useKeybindingsStore } from '../keybindings/keybindings-store';
 import { useTWithFallback, useT, useLocale } from '@/i18n';
 import { runContributedAction } from '@/lib/run-contributed-action';
@@ -49,7 +49,7 @@ export function isCommandPaletteVirtualIndexRendered(
 }
 
 /** 渲染中间体:已 localize 的 title/category（topic-19 P1-2）。 */
-interface DisplayCommand {
+export interface DisplayCommand {
   readonly cmd: CommandSpec;
   readonly displayTitle: string;
   readonly displayCategory: string;
@@ -65,6 +65,48 @@ function matchSource(d: DisplayCommand): string {
 
 function matchSourceLower(d: DisplayCommand): string {
   return d.matchSourceLower;
+}
+
+type TranslateWithFallback = (
+  key: string | undefined,
+  fallback: string,
+) => string;
+
+export function buildDisplayCommands(
+  allCommands: readonly CommandSpec[],
+  tk: TranslateWithFallback,
+  platform: Platform,
+): DisplayCommand[] {
+  const out = new Array<DisplayCommand>(allCommands.length);
+  for (let i = 0; i < allCommands.length; i++) {
+    const cmd = allCommands[i]!;
+    const effective = getEffectiveHotkey(cmd);
+    const displayTitle = tk(cmd.titleKey, cmd.title);
+    const displayCategory = tk(cmd.categoryKey, cmd.category ?? '');
+    const source = displayCategory
+      ? `${displayCategory} ${displayTitle}`
+      : displayTitle;
+    out[i] = {
+      cmd,
+      displayTitle,
+      displayCategory,
+      hotkeyParts: effective ? formatHotkeyParts(effective, platform) : [],
+      // 打磨 R54:配合 fuzzyFilter(getStrLower),搜索输入变化时不再逐命令
+      // 对 displayCategory/title 组成的 target 重复 toLowerCase。
+      matchSourceLower: source.toLowerCase(),
+    };
+  }
+  return out;
+}
+
+export function buildRecentCommandIds(
+  recentList: readonly RecentEntry[],
+): string[] {
+  const out = new Array<string>(recentList.length);
+  for (let i = 0; i < recentList.length; i++) {
+    out[i] = recentList[i]!.id;
+  }
+  return out;
 }
 
 /** 空 query 时:recent 前 N 个置顶 + 其余按 displayTitle 字母序. */
@@ -137,7 +179,7 @@ function CommandPaletteBody({ commands }: CommandPaletteProps) {
   const allCommands = useCommands(commands);
   const recentList = useRecentCommandsStore((s) => s.list);
   const recordRecent = useRecentCommandsStore((s) => s.record);
-  const recentIds = useMemo(() => recentList.map((e) => e.id), [recentList]);
+  const recentIds = useMemo(() => buildRecentCommandIds(recentList), [recentList]);
   // 订阅 overrides:用户改 hotkey 时 displayCommands 重算 hotkeyParts(打磨 R28:
   // 之前只为触发 re-render、行内逐行读 store;现把 overrides 接住进 deps,
   // hotkeyParts 在命令/overrides 变化时一次性预计算)。
@@ -153,23 +195,7 @@ function CommandPaletteBody({ commands }: CommandPaletteProps) {
   const displayCommands = useMemo<readonly DisplayCommand[]>(() => {
     void overrides; // 仅作 deps:getEffectiveHotkey 内部读 store,override 变须重算
     void locale; // 仅作 deps:tk 内部按 locale 翻译,切语言须重算
-    return allCommands.map((cmd) => {
-      const effective = getEffectiveHotkey(cmd);
-      const displayTitle = tk(cmd.titleKey, cmd.title);
-      const displayCategory = tk(cmd.categoryKey, cmd.category ?? '');
-      const source = displayCategory
-        ? `${displayCategory} ${displayTitle}`
-        : displayTitle;
-      return {
-        cmd,
-        displayTitle,
-        displayCategory,
-        hotkeyParts: effective ? formatHotkeyParts(effective, PLATFORM) : [],
-        // 打磨 R54:配合 fuzzyFilter(getStrLower),搜索输入变化时不再逐命令
-        // 对 displayCategory/title 组成的 target 重复 toLowerCase。
-        matchSourceLower: source.toLowerCase(),
-      };
-    });
+    return buildDisplayCommands(allCommands, tk, PLATFORM);
   }, [allCommands, tk, overrides, locale]);
 
   const filtered = useMemo(() => {

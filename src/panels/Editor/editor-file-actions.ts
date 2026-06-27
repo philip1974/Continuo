@@ -9,13 +9,14 @@
 import type { FsApi } from '@/lib/fs/api';
 import type { IpcResult } from '@/lib/fs/types';
 import { errorMessage } from '../../../electron/shared/error-message';
-import {
-  createTab,
-  useEditorStore,
-  type EditorTab,
-} from '@/stores/editor.store';
-import { pathEquals } from '@/lib/path-cross';
+import { createTab, useEditorStore } from '@/stores/editor.store';
 import { runSerialPerKey } from '@/lib/serialize-per-key';
+import {
+  findEditorFileTabById,
+  findEditorFileTabByPath,
+} from './editor-tab-lookup';
+
+export { findEditorFileTabById, findEditorFileTabByPath } from './editor-tab-lookup';
 
 // race(R21):同一 tab 的保存串行链。autosave(旧内容)在途时用户编辑 + 手动保存(新内容),若
 // 二者乱序完成,旧内容会最后落盘覆盖新的。按 tabId 串行保证按发起顺序写盘,最后发起者最后落盘。
@@ -34,26 +35,6 @@ const exception = (err: unknown): FileOpResult => ({
   code: 'EXCEPTION',
   message: errorMessage(err),
 });
-
-export function findEditorFileTabByPath(
-  tabs: readonly EditorTab[],
-  path: string,
-): EditorTab | null {
-  for (const tab of tabs) {
-    if (pathEquals(tab.filePath ?? tab.id, path)) return tab;
-  }
-  return null;
-}
-
-export function findEditorFileTabById(
-  tabs: readonly EditorTab[],
-  tabId: string,
-): EditorTab | null {
-  for (const tab of tabs) {
-    if (tab.id === tabId) return tab;
-  }
-  return null;
-}
 
 /**
  * Explorer 单击文件触发。已开过同 path → 只 switchTab(不重读);

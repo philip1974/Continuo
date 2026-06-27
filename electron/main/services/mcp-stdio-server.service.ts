@@ -20,7 +20,6 @@ import { BrowserWindow } from 'electron';
 import * as crypto from 'node:crypto';
 import { mkdir, unlink, chmod, lstat, stat } from 'node:fs/promises';
 import path from 'node:path';
-import { isPopoutUrl } from '../popout-url';
 import {
   RPC_ERROR_CODES,
   NO_WINDOW_CTX_MESSAGE,
@@ -34,6 +33,7 @@ import {
 } from './mcp-host.service';
 import { utf8BytesExceed } from '../../shared/utf8-byte-length';
 import { createNdjsonLineDecoder } from '../lib/ndjson-line-decoder';
+import { pickMainWindowPreferNonPopout } from './main-window-picker.service';
 
 export interface ResolveStdioHelloDeps {
   resolveWindowId: (token: string) => number | null;
@@ -300,16 +300,7 @@ async function handleLine(
   // 非 popout 主窗。mirror agent-auth.pickMainWindow 策略。tools/list 无需 ctx
   // (dispatchRpc 自行短路),只有 tools/call 路径需要。
   if (ctx === null) {
-    const wins = BrowserWindow.getAllWindows();
-    let fallback: BrowserWindow | null = null;
-    for (const w of wins) {
-      if (w.isDestroyed()) continue;
-      if (!isPopoutUrl(w.webContents.getURL())) {
-        fallback = w;
-        break;
-      }
-    }
-    if (!fallback) fallback = wins.find((w) => !w.isDestroyed()) ?? null;
+    const fallback = pickMainWindowPreferNonPopout();
     if (fallback) ctx = { ownerWindowId: fallback.id, callerSubject, signal };
   }
   const response = await dispatchRpc(rpc, tools, serverInfo, ctx);

@@ -134,10 +134,14 @@ export class PathScopeRegistry extends EventEmitter {
     }
 
     const probe = 'fullPath' in resolved ? resolved.fullPath : resolved.canonical;
-    const match = scopes.find((s) => {
-      if (mode === 'rw' && s.mode !== 'rw') return false;
-      return isWithinScope(s.path, probe);
-    });
+    let match: PathScope | null = null;
+    for (const s of scopes) {
+      if (mode === 'rw' && s.mode !== 'rw') continue;
+      if (isWithinScope(s.path, probe)) {
+        match = s;
+        break;
+      }
+    }
     if (!match) {
       throw new ScopeError('target not in any granted scope', {
         target: probe,

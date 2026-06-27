@@ -28,6 +28,7 @@ import {
   ExplorerSchemaV3,
   ExplorerV1Schema,
 } from '../shared/explorer-persistence-schema';
+import { findWindowEntryBySeq } from '../shared/window-entry-lookup';
 import type {
   ExplorerPayloadV2,
   ExplorerPayloadV3,
@@ -82,12 +83,16 @@ export function migrateV1ToV2(v1: ExplorerV1Payload): ExplorerPayloadV2 {
 }
 
 export function migrateV2ToV3(v2: ExplorerPayloadV2): ExplorerPayloadV3 {
+  const windows = new Array<WindowEntryV3>(v2.windows.length);
+  for (let i = 0; i < v2.windows.length; i++) {
+    windows[i] = { ...v2.windows[i]! };
+  }
   return {
     version: 3,
     workspace: v2.workspace,
     pinned: v2.pinned,
     nextWindowSeq: v2.nextWindowSeq,
-    windows: v2.windows.map((w) => ({ ...w })),
+    windows,
     ...(v2.restoreAllWindowsOnLaunch !== undefined
       ? { restoreAllWindowsOnLaunch: v2.restoreAllWindowsOnLaunch }
       : {}),
@@ -98,7 +103,7 @@ export function ensureWindowEntry(
   payload: ExplorerPayloadV3,
   seq: number,
 ): WindowEntryV3 {
-  let entry = payload.windows.find((w) => w.windowSeq === seq);
+  let entry = findWindowEntryBySeq(payload.windows, seq);
   if (entry) return entry;
   entry = {
     windowSeq: seq,

@@ -175,6 +175,27 @@ describe('PathScopeRegistry', () => {
     });
   });
 
+  it('T1.f2 check scope 匹配单趟扫描,不调用 scopes.find', async () => {
+    const { registry, token } = makeHarness();
+    const root = makeTempDir();
+    const canonicalRoot = realpathSync(root);
+    const target = join(root, 'newfile.txt');
+    registry.grant('com.test', [{ path: canonicalRoot, mode: 'rw' }]);
+    const scopes = registry._peek('com.test') as PathScope[];
+    const findSpy = vi.spyOn(scopes, 'find');
+
+    try {
+      await expect(registry.check(token, 10, 'write', target, 'rw')).resolves.toEqual({
+        parentCanonical: canonicalRoot,
+        leaf: 'newfile.txt',
+        fullPath: join(canonicalRoot, 'newfile.txt'),
+      });
+      expect(findSpy).not.toHaveBeenCalled();
+    } finally {
+      findSpy.mockRestore();
+    }
+  });
+
   it('T1.g check unknown opType throws ScopeError', async () => {
     const { registry, token } = makeHarness();
 

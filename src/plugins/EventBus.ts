@@ -67,8 +67,11 @@ export class EventBus {
     const set = this.byName.get(name);
     if (!set) return;
     // 拷贝防 listener 内自取消导致迭代异常
-    const snapshot: Listener[] = [];
-    for (const fn of set) snapshot.push(fn);
+    const snapshot = new Array<Listener>(set.size);
+    let index = 0;
+    for (const fn of set) {
+      snapshot[index++] = fn;
+    }
     for (const fn of snapshot) {
       try {
         fn(payload);

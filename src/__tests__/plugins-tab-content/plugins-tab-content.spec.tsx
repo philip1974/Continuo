@@ -19,6 +19,7 @@ import {
 import { setLocale as setI18nLocale } from '@/i18n';
 import {
   PluginsTabContent,
+  collectContributionSamples,
   hasPluginId,
   hasPluginVersion,
   pluginsTabRowClassName,
@@ -102,6 +103,24 @@ describe('PluginsTabContent — 贡献点统计', () => {
       expect(joinSpy).not.toHaveBeenCalled();
     } finally {
       joinSpy.mockRestore();
+    }
+  });
+
+  it('贡献点 samples 预分配收集,不调用 items.map', () => {
+    const items = [
+      { id: 'command.a', type: 'A' },
+      { id: 'command.b', type: 'B' },
+    ];
+    const mapSpy = vi.spyOn(items, 'map');
+
+    try {
+      expect(collectContributionSamples(items, 'id')).toEqual([
+        'command.a',
+        'command.b',
+      ]);
+      expect(mapSpy).not.toHaveBeenCalled();
+    } finally {
+      mapSpy.mockRestore();
     }
   });
 

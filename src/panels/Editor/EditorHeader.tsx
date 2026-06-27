@@ -52,13 +52,14 @@ function basename(p: string | null): string {
 }
 
 export function buildEditorTabChrome(tabs: readonly EditorTab[]): TabChrome[] {
-  const out: TabChrome[] = [];
-  for (const tab of tabs) {
-    out.push({
+  const out = new Array<TabChrome>(tabs.length);
+  for (let i = 0; i < tabs.length; i++) {
+    const tab = tabs[i]!;
+    out[i] = {
       id: tab.id,
       filePath: tab.filePath,
       dirty: tab.dirty,
-    });
+    };
   }
   return out;
 }

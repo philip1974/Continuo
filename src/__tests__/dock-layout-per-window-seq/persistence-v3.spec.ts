@@ -121,6 +121,19 @@ describe('explorer.json v3 persistence schema and merge semantics', () => {
     expect(migrated.windows[0]!.lastClosedAt).toBeUndefined();
   });
 
+  it('migrateV2ToV3 预分配 windows 克隆数组,不调用 windows.map', () => {
+    const mapSpy = vi.spyOn(v2Payload.windows, 'map');
+    try {
+      const migrated = migrateV2ToV3(v2Payload);
+      expect(mapSpy).not.toHaveBeenCalled();
+      expect(migrated.windows).toEqual(v2Payload.windows);
+      expect(migrated.windows).not.toBe(v2Payload.windows);
+      expect(migrated.windows[0]).not.toBe(v2Payload.windows[0]);
+    } finally {
+      mapSpy.mockRestore();
+    }
+  });
+
   it('T3: v1 payload migrates to v3 through the v2 migration path', () => {
     const migrated = migrateV2ToV3(migrateV1ToV2(v1Payload));
 
@@ -213,6 +226,26 @@ describe('explorer.json v3 persistence schema and merge semantics', () => {
     expect(payload.windows.map((w) => w.windowSeq).sort()).toEqual([1]);
     pruneLRUClosed(payload, Infinity, new Set());
     expect(payload.windows.map((w) => w.windowSeq)).toEqual([1]);
+  });
+
+  it('ensureWindowEntry 按 windowSeq 查找走单趟 helper,不调用 windows.find', () => {
+    const payload = defaultExplorerV3();
+    payload.windows = [
+      payload.windows[0]!,
+      {
+        windowSeq: 1,
+        workspace: { root: '/one' },
+        explorer: { activePath: null, expandedPaths: [], sort },
+      },
+    ];
+    const findSpy = vi.spyOn(payload.windows, 'find');
+
+    try {
+      expect(ensureWindowEntry(payload, 1)).toBe(payload.windows[1]);
+      expect(findSpy).not.toHaveBeenCalled();
+    } finally {
+      findSpy.mockRestore();
+    }
   });
 
   it('pruneLRUClosed 不对 payload.windows 调 filter 产生中间数组', () => {

@@ -42,6 +42,7 @@ import { workspaceRootSelectionGuard } from '@/lib/workspace-root-guard';
 import { subscribeAll } from '@/plugins/registries/useRegistry';
 import { clampWidth } from '@/lib/use-column-resize';
 import { pathEquals } from '@/lib/path-cross';
+import { findWindowEntryBySeq } from '../../../electron/shared/window-entry-lookup';
 import type { IpcResult } from '../fs/types';
 import {
   ExplorerSchema,
@@ -137,7 +138,7 @@ function findWindowEntry(
   snap: ExplorerSnapshot,
   windowSeq: number,
 ): ExplorerWindowEntry | null {
-  return snap.windows.find((w) => w.windowSeq === windowSeq) ?? null;
+  return findWindowEntryBySeq(snap.windows, windowSeq);
 }
 
 function collectNormalizedWorkspaceRoots(

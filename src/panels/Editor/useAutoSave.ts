@@ -9,6 +9,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { useEditorStore } from '@/stores/editor.store';
 import { makeAutoSaveScheduler } from './auto-save';
 import { isMarkdownPath } from './editor-path-utils';
+import { findEditorFileTabById } from './editor-tab-lookup';
 import {
   registerAutoSaveFlush,
   trackInFlightAutoSave,
@@ -36,7 +37,8 @@ export function useAutoSave(
   // 避免序列化大文档正文)。
   const active = useEditorStore(
     useShallow((s) => {
-      const found = s.tabs.find((t) => t.id === s.activeTabId);
+      const found =
+        s.activeTabId === null ? null : findEditorFileTabById(s.tabs, s.activeTabId);
       return {
         id: found?.id ?? null,
         filePath: found?.filePath ?? null,

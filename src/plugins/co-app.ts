@@ -19,13 +19,13 @@ import { useWorkspaceStore } from '@/stores/workspace.store';
 import { createIpcPluginMcpUpstream } from './plugin-mcp-upstream';
 import { coApi } from '@/lib/co-api';
 import { openFileByPath } from '@/panels/Editor/editor-file-actions';
+import { findEditorFileTabByPath } from '@/panels/Editor/editor-tab-lookup';
 import {
   isAbsolutePath,
   isMarkdownPath,
 } from '@/panels/Editor/editor-path-utils';
 import { scrollToLine } from '@/panels/Editor/scrollToLine';
 import { getEffectiveMode, useEditorStore } from '@/stores/editor.store';
-import { pathEquals } from '@/lib/path-cross';
 import { errorMessage } from '../../electron/shared/error-message';
 import { openOrFocusPanel } from '@/shell/dock/dock-api-ref';
 import { notify } from '@/notifications/notify';
@@ -116,7 +116,7 @@ const editor: CoEditorApi = {
     // 这里若用 `t.id === path` 找不到 activeTab、waitForViewRef 用错 key → 行号跳转失败。
     // viewRef 必须用**已开 tab 的真实 id**(大小写可能不同)查。
     const state = useEditorStore.getState();
-    const activeTab = state.tabs.find((t) => pathEquals(t.filePath ?? t.id, path));
+    const activeTab = findEditorFileTabByPath(state.tabs, path);
     const viewKey = activeTab?.id ?? path;
     const inMilkdown =
       isMarkdownPath(path) && getEffectiveMode(activeTab ?? null) !== 'source';
@@ -143,7 +143,7 @@ const editor: CoEditorApi = {
 
 const dock: CoDockApi = {
   openPanel(panelId) {
-    const spec = coApp.panels.list().find((panel) => panel.type === panelId);
+    const spec = coApp.panels.get(panelId);
     if (!spec) return;
     openOrFocusPanel(spec.type, spec.type, spec.title, spec.titleKey);
   },

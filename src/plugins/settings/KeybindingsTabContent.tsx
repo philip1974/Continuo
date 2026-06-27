@@ -14,6 +14,7 @@ import type {
 import {
   formatHotkeyParts,
   detectPlatform,
+  type Platform,
 } from '@/plugins/command-palette/format-hotkey';
 import {
   getEffectiveHotkey,
@@ -127,6 +128,44 @@ export function countDefaultHotkeys(commands: readonly CommandSpec[]): number {
   return count;
 }
 
+type TranslateWithFallback = (
+  key: string | undefined,
+  fallback: string,
+) => string;
+
+export function buildKeybindingDisplayCommands(
+  allCommands: readonly CommandSpec[],
+  tk: TranslateWithFallback,
+  overrides: Readonly<Record<string, string>>,
+  platform: Platform,
+): DisplayCommand[] {
+  const out = new Array<DisplayCommand>(allCommands.length);
+  for (let i = 0; i < allCommands.length; i++) {
+    const cmd = allCommands[i]!;
+    const effective = getEffectiveHotkey(cmd);
+    const displayTitle = tk(cmd.titleKey, cmd.title);
+    const displayCategory = tk(cmd.categoryKey, cmd.category ?? '');
+    out[i] = {
+      cmd,
+      displayTitle,
+      displayCategory,
+      effectiveHotkey: effective ?? undefined,
+      hotkeyParts: effective ? formatHotkeyParts(effective, platform) : [],
+      isOverridden: cmd.id in overrides,
+      // haystack 用 effective hotkey(含 override)而非原 cmd.hotkey(打磨 R29):
+      // 否则 override 后搜索仍只能命中默认组合,与列表显示的 effective 不一致。
+      // 打磨 R52:随 displayCommands 预计算,避免每次输入都逐行 join + lower-case。
+      searchHaystack: buildCommandSearchHaystack(
+        displayTitle,
+        displayCategory,
+        cmd.id,
+        effective,
+      ),
+    };
+  }
+  return out;
+}
+
 export function hasCommandId(
   commands: readonly CommandSpec[],
   id: string,
@@ -156,28 +195,7 @@ export function KeybindingsTabContent() {
   const displayCommands = useMemo<readonly DisplayCommand[]>(() => {
     void overrides; // deps:getEffectiveHotkey/isOverridden 依赖 overrides
     void locale; // deps:tk 内部按 locale 翻译
-    return allCommands.map((cmd) => {
-      const effective = getEffectiveHotkey(cmd);
-      const displayTitle = tk(cmd.titleKey, cmd.title);
-      const displayCategory = tk(cmd.categoryKey, cmd.category ?? '');
-      return {
-        cmd,
-        displayTitle,
-        displayCategory,
-        effectiveHotkey: effective ?? undefined,
-        hotkeyParts: effective ? formatHotkeyParts(effective, PLATFORM) : [],
-        isOverridden: cmd.id in overrides,
-        // haystack 用 effective hotkey(含 override)而非原 cmd.hotkey(打磨 R29):
-        // 否则 override 后搜索仍只能命中默认组合,与列表显示的 effective 不一致。
-        // 打磨 R52:随 displayCommands 预计算,避免每次输入都逐行 join + lower-case。
-        searchHaystack: buildCommandSearchHaystack(
-          displayTitle,
-          displayCategory,
-          cmd.id,
-          effective,
-        ),
-      };
-    });
+    return buildKeybindingDisplayCommands(allCommands, tk, overrides, PLATFORM);
   }, [allCommands, tk, overrides, locale]);
 
   const buckets = useMemo(() => {

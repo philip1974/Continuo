@@ -13,6 +13,7 @@ import { coApi } from '@/lib/co-api';
 import { useEditorStore, type EditorTab } from '@/stores/editor.store';
 import { dirname } from '@/panels/Explorer/path-utils';
 import { pathEquals } from '@/lib/path-cross';
+import { findEditorFileTabById } from './editor-tab-lookup';
 // 跨平台(codex 复查 P1):此前本地 dirname 是 Explorer path-utils dirname 的有问题副本 ——
 // 对 `C:\a.md` 返回 drive-relative `C:`(应盘根 `C:\`,同 X2)、对 POSIX 根 `/a.md` 返回 ''
 // (应 `/`),且下方比较为字节级 → Windows 盘根/大小写不同目录、甚至 mac 根 workspace 的
@@ -63,8 +64,7 @@ export function useExternalFileSync(): void {
         // 回写会覆盖新 tab(新 tab 可能已是更新内容 / 用户随后编辑保存把较新内容回退)。store 更新
         // 用 slice()+只替换变更项,未变 tab 保留对象 identity → 发起读取时捕获 tabRef,落地前复查
         // live tab 仍是同一实例(未被 close+reopen、未被更新的 reload 替换、未变 dirty)才回写;否则丢弃。
-        const live =
-          useEditorStore.getState().tabs.find((t) => t.id === tabId) ?? null;
+        const live = findEditorFileTabById(useEditorStore.getState().tabs, tabId);
         if (live !== null && live === tabRef) {
           useEditorStore.getState().reloadFromDisk(tabId, r.data);
         }
@@ -75,8 +75,7 @@ export function useExternalFileSync(): void {
 
     const readAndApply = (path: string, tabId: string): void => {
       // race(R97):捕获发起读取时的 tab 实例引用,供 settle 复查(防 close+reopen 同路径迟到覆盖)。
-      const tabRef =
-        useEditorStore.getState().tabs.find((t) => t.id === tabId) ?? null;
+      const tabRef = findEditorFileTabById(useEditorStore.getState().tabs, tabId);
       inFlight.add(path);
       void coApi.fs.readFile(path).then(
         (r) => settle(path, tabId, tabRef, r),

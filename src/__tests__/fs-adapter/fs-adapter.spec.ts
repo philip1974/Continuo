@@ -242,6 +242,15 @@ describe('listDir', () => {
     const items = await listDir(dir);
     expect(items.some((i) => i.name === 'a.txt')).toBe(true);
   });
+
+  it('perf · list-dir 块内 lstat Promise 预分配,不用 batch.map 回调分配', () => {
+    const src = readFileSync(
+      path.join(process.cwd(), 'electron/main/ipc/fs/list-dir.ts'),
+      'utf-8',
+    );
+    expect(src).toMatch(/new Array<Promise<ResolvedEntry \| null>>\(batch\.length\)/);
+    expect(src).not.toMatch(/batch\.map\(/);
+  });
 });
 
 describe('readFile', () => {

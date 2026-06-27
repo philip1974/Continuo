@@ -1,4 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { EventBus } from '../../plugins/EventBus';
 import { Plugin } from '../../plugins/Plugin';
 import { createTestApp } from '../../plugins/test-utils';
@@ -36,6 +38,19 @@ describe('EventBus', () => {
     } finally {
       arrayFromSpy.mockRestore();
     }
+  });
+
+  it('emit listener 快照预分配数组,不通过 snapshot.push 扩容', () => {
+    const src = readFileSync(
+      path.join(process.cwd(), 'src/plugins/EventBus.ts'),
+      'utf-8',
+    );
+    const emitBody = src.slice(
+      src.indexOf('  emit(name: string, payload: unknown): void {'),
+      src.indexOf('  clear(name?: string): void {'),
+    );
+    expect(emitBody).toMatch(/new Array<Listener>\(set\.size\)/);
+    expect(emitBody).not.toMatch(/\.push\(/);
   });
 
   it('emit 使用快照:listener 中 dispose 后续 listener,本轮仍会调用', () => {

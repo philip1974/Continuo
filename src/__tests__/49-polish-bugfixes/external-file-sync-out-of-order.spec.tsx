@@ -96,6 +96,31 @@ describe('P15 · useExternalFileSync in-flight 合并', () => {
     expect(storeMock.reloadFromDisk).toHaveBeenCalledWith('/dir/f.txt', 'fresh');
   });
 
+  it('tab identity 复查走单趟 helper,不调用 tabs.find', async () => {
+    let cb: (changedDir: string) => void = () => {};
+    fsMock.onDirChanged.mockImplementation((fn: (d: string) => void) => {
+      cb = fn;
+      return () => {};
+    });
+    fsMock.readFile.mockResolvedValue({ ok: true, data: 'fresh' });
+    const findSpy = vi.spyOn(storeMock.tabs, 'find');
+
+    try {
+      renderHook(() => useExternalFileSync());
+      cb('/dir');
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(storeMock.reloadFromDisk).toHaveBeenCalledWith(
+        '/dir/f.txt',
+        'fresh',
+      );
+      expect(findSpy).not.toHaveBeenCalled();
+    } finally {
+      findSpy.mockRestore();
+    }
+  });
+
   // 数据安全(codex 复查 P2):readFile 的 promise reject(桥/进程/通道异常,非 handler
   // 的 {ok:false})时,旧实现只有 .then 无 .catch/.finally → inFlight 永不清,该 path
   // 后续 dir-changed 只 pending.add 不再重读 → clean tab 长期停旧内容,用户基于旧内容

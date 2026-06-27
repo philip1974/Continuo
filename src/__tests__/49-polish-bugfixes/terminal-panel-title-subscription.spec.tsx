@@ -72,6 +72,18 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('打磨 R40 — TerminalPanelView 订阅派生 title primitive', () => {
+  it('按 sessionId 查标题走索引缓存,不调用 sessions.find', () => {
+    const sessions = useTerminalStore.getState().sessions;
+    const findSpy = vi.spyOn(sessions, 'find');
+
+    try {
+      render(<TerminalPanelView {...makeProps('t1')} />);
+      expect(findSpy).not.toHaveBeenCalled();
+    } finally {
+      findSpy.mockRestore();
+    }
+  });
+
   it('无关字段(exitCode)变化 → 面板不重渲', () => {
     const onRender = vi.fn();
     render(

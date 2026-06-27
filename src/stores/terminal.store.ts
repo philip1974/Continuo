@@ -158,8 +158,10 @@ export function filterByWorkspaceRoot(
 let indexedSessionsRef: readonly TerminalSession[] | null = null;
 let indexedSessionsById = new Map<string, TerminalSession>();
 
-function getSessionById(sessionId: string): TerminalSession | undefined {
-  const sessions = useTerminalStore.getState().sessions;
+export function getIndexedTerminalSessionById(
+  sessions: readonly TerminalSession[],
+  sessionId: string,
+): TerminalSession | undefined {
   if (indexedSessionsRef !== sessions) {
     const next = new Map<string, TerminalSession>();
     for (const session of sessions) next.set(session.id, session);
@@ -167,6 +169,13 @@ function getSessionById(sessionId: string): TerminalSession | undefined {
     indexedSessionsById = next;
   }
   return indexedSessionsById.get(sessionId);
+}
+
+function getSessionById(sessionId: string): TerminalSession | undefined {
+  return getIndexedTerminalSessionById(
+    useTerminalStore.getState().sessions,
+    sessionId,
+  );
 }
 
 export function getShellFamily(sessionId: string): ShellFamily {

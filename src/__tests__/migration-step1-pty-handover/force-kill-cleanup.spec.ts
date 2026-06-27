@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { makeWindow } from './fixtures';
 
 const sessionManagerMock = vi.hoisted(() => ({
@@ -175,5 +177,14 @@ describe('migration step1 PTY handover · forceKill cleanup', () => {
     expect(terminalService.has('a')).toBe(false);
     expect(terminalService.has('b')).toBe(false);
     expect(terminalService.has('c')).toBe(false);
+  });
+
+  it('cleanupAll 预分配 kill promise 数组,不通过 kills.push 扩容', () => {
+    const src = readFileSync(
+      path.join(process.cwd(), 'electron/main/services/terminal.service.ts'),
+      'utf-8',
+    );
+    expect(src).toMatch(/new Array<Promise<void>>\(instances\.size\)/);
+    expect(src).not.toMatch(/kills\.push\(/);
   });
 });

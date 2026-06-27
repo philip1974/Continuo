@@ -166,6 +166,22 @@ function canonicalPath(r: { canonical: string } | { fullPath: string }): string 
   return 'canonical' in r ? r.canonical : r.fullPath;
 }
 
+export async function canonicalizePathScopes(
+  scopes: readonly PathScope[],
+): Promise<PathScope[]> {
+  const pathPromises = new Array<Promise<string>>(scopes.length);
+  for (let i = 0; i < scopes.length; i++) {
+    pathPromises[i] = canonicalizeScopePath(scopes[i]!.path);
+  }
+
+  const paths = await Promise.all(pathPromises);
+  const canonicalScopes = new Array<PathScope>(scopes.length);
+  for (let i = 0; i < scopes.length; i++) {
+    canonicalScopes[i] = { path: paths[i]!, mode: scopes[i]!.mode };
+  }
+  return canonicalScopes;
+}
+
 export function registerPluginFsHandlers(
   ipcMain: IpcMain,
   deps: PluginFsDeps,
@@ -595,12 +611,7 @@ export function registerPluginFsHandlers(
       // 判定与落地复用。否则 `~/...` 或含符号链接组件的根授予后永不匹配 → scope 静默
       // 死掉,插件所有 fs 操作误拒。canonicalizeScopePath 对不存在路径 fail-safe(回退
       // 展开值,不抛),故提前到弹窗前归一化是安全的。
-      const canonicalScopes: PathScope[] = await Promise.all(
-        scopes.map(async (s) => ({
-          path: await canonicalizeScopePath(s.path),
-          mode: s.mode,
-        })),
-      );
+      const canonicalScopes = await canonicalizePathScopes(scopes);
 
       // 冷启动水合:首次见到该 plugin 时,把上次会话已授 scope 从磁盘回填进 registry,
       // 使重启后对同一目录的 requestScope 直接命中 covers() 而不再弹窗。读盘失败也标记

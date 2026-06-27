@@ -52,6 +52,20 @@ describe('app.editor.openFile line jump', () => {
     expect(result).toEqual({ ok: true, lineApplied: true });
   });
 
+  it('T1b line jump tab lookup 走单趟 helper,不调用 tabs.find', async () => {
+    const tabs = useEditorStore.getState().tabs;
+    const findSpy = vi.spyOn(tabs, 'find');
+
+    try {
+      const result = await coApp.editor.openFile('/work/a.ts', { line: 2 });
+
+      expect(result).toEqual({ ok: true, lineApplied: true });
+      expect(findSpy).not.toHaveBeenCalled();
+    } finally {
+      findSpy.mockRestore();
+    }
+  });
+
   it('T2 does not scroll when line is omitted', async () => {
     const result = await coApp.editor.openFile('/work/a.ts');
 

@@ -47,6 +47,7 @@ vi.mock('@/lib/co-api', () => ({
 
 import { Plugin } from '../../plugins/Plugin';
 import {
+  findPluginDirByManifestId,
   PluginManager,
   removeActivationOrderId,
   type ManagerHost,
@@ -476,6 +477,22 @@ describe('shutdown', () => {
 // ── v4.3 reload ────────────────────────────────────────
 
 describe('reload(id)', () => {
+  it('findPluginDirByManifestId 单趟扫描,不调用 dirs.find,并跳过坏 manifest', () => {
+    const dirs: PluginDirInfo[] = [
+      { id: 'bad', manifestText: 'not json', moduleUrl: 'mod://bad' },
+      { id: 'r', manifestText: manifestText('r'), moduleUrl: 'mod://r' },
+    ];
+    const findSpy = vi.spyOn(dirs, 'find');
+
+    try {
+      expect(findPluginDirByManifestId(dirs, 'r')).toBe(dirs[1]);
+      expect(findPluginDirByManifestId(dirs, 'missing')).toBeNull();
+      expect(findSpy).not.toHaveBeenCalled();
+    } finally {
+      findSpy.mockRestore();
+    }
+  });
+
   it('启用中插件 reload → _deactivate + 重 activate(用最新 mainText)', async () => {
     let mainText = 'old';
     class TrackPlugin extends Plugin {

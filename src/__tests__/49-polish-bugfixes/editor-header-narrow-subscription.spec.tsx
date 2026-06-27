@@ -3,6 +3,8 @@
 // JSON 签名 + active 派生 primitive,不再订阅整份 tabs / 接完整 activeTab。用户
 // 编辑正文(tabs[].content 变)时签名不变 → 顶部 tab 栏不重渲(Profiler 验证)。
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { Profiler } from 'react';
 import { render, cleanup, act } from '@testing-library/react';
 import {
@@ -66,6 +68,19 @@ describe('打磨 R23 — EditorHeader 窄订阅', () => {
     } finally {
       mapSpy.mockRestore();
     }
+  });
+
+  it('tab chrome 构造预分配结果数组,不通过 out.push 扩容', () => {
+    const src = readFileSync(
+      path.join(process.cwd(), 'src/panels/Editor/EditorHeader.tsx'),
+      'utf-8',
+    );
+    const fnBody = src.slice(
+      src.indexOf('export function buildEditorTabChrome'),
+      src.indexOf('export function findEditorTabById'),
+    );
+    expect(fnBody).toMatch(/new Array<TabChrome>\(tabs\.length\)/);
+    expect(fnBody).not.toMatch(/\.push\(/);
   });
 
   it('active tab 查找单趟扫描,不调用 tabs.find', () => {

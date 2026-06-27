@@ -16,6 +16,7 @@ import {
   type AgentAuthDecision,
   type AgentAuthRequestPayload,
 } from '../../../electron/shared/agent-auth-channels';
+import { pickMainWindowPreferNonPopout } from '../../../electron/main/services/main-window-picker.service';
 import type { McpHost } from '../../../electron/main/services/mcp-host.service';
 import type { MainTerminalSession } from '../../../electron/main/services/terminal-sessions.service';
 
@@ -150,6 +151,23 @@ afterEach(() => {
 });
 
 describe('agent-auth-service: requestAgentAuth', () => {
+  it('pickMainWindowPreferNonPopout 单趟扫描,不调用 windows.find', () => {
+    const destroyed = makeWin(1, { destroyed: true });
+    const popout = makeWin(2, { popout: true });
+    const normal = makeWin(3);
+    const windows = [destroyed, popout, normal];
+    const findSpy = vi.spyOn(windows, 'find');
+
+    try {
+      expect(pickMainWindowPreferNonPopout(windows)).toBe(normal);
+      expect(pickMainWindowPreferNonPopout([destroyed, popout])).toBe(popout);
+      expect(pickMainWindowPreferNonPopout([destroyed])).toBeNull();
+      expect(findSpy).not.toHaveBeenCalled();
+    } finally {
+      findSpy.mockRestore();
+    }
+  });
+
   it('T1: sends auth request to the main window and resolves with renderer decision', async () => {
     const win = makeWin(1);
     electronMock.windows = [win];

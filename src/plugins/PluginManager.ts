@@ -120,6 +120,21 @@ export function removeActivationOrderId(order: string[], id: string): string[] {
   return next ?? order;
 }
 
+export function findPluginDirByManifestId(
+  dirs: readonly PluginDirInfo[],
+  id: string,
+): PluginDirInfo | null {
+  for (const dir of dirs) {
+    try {
+      const manifest = JSON.parse(dir.manifestText) as { id?: unknown };
+      if (manifest.id === id) return dir;
+    } catch {
+      // 半写入/损坏 manifest:reload 继续找其它目录,保持旧行为。
+    }
+  }
+  return null;
+}
+
 // ── PluginManager ──────────────────────────────────────
 
 export class PluginManager {
@@ -290,14 +305,7 @@ export class PluginManager {
 
     const dirs = await this.host.listPluginDirs();
     // 用 manifest.id 匹配(目录名可能跟 id 不一致;manifest.id 是真源)
-    const fresh = dirs.find((d) => {
-      try {
-        const m = JSON.parse(d.manifestText) as { id?: unknown };
-        return m.id === id;
-      } catch {
-        return false;
-      }
-    });
+    const fresh = findPluginDirByManifestId(dirs, id);
     if (!fresh) {
       throw new Error(`Plugin ${id} no longer exists in plugins dir`);
     }

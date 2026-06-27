@@ -81,6 +81,20 @@ export function buildSettingSearchHaystack(item: SettingItemSpec): string {
   }`.toLowerCase();
 }
 
+export function buildSearchableSettingItems(
+  items: readonly SettingItemSpec[],
+): SearchableSettingItem[] {
+  const out = new Array<SearchableSettingItem>(items.length);
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i]!;
+    out[i] = {
+      item,
+      haystack: buildSettingSearchHaystack(item),
+    };
+  }
+  return out;
+}
+
 // 内置 4 类 category → catalog tab_title key 映射；plugin 自定义 category fallback raw 字符串
 const CATEGORY_TITLE_KEYS: Record<string, string> = {
   general: 'settings.general.tab_title',
@@ -238,11 +252,7 @@ function SettingsSearchResults({
   // (SettingItemRow 实际显示的),否则中文/韩文下按屏幕文字搜不到。保留 id + raw
   // title/description 作补充。deps 含 locale 切语言重算。
   const searchable = useMemo<readonly SearchableSettingItem[]>(
-    () =>
-      allItems.map((item) => ({
-        item,
-        haystack: buildSettingSearchHaystack(item),
-      })),
+    () => buildSearchableSettingItems(allItems),
     // locale 作失效键:tWithFallback 内部按当前 locale 翻译,lint 看不到该依赖。
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [allItems, locale],

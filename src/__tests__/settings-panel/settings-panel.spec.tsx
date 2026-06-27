@@ -11,6 +11,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { fireEvent, render, cleanup, act } from '@testing-library/react';
 import {
   SettingsPanel,
+  buildSearchableSettingItems,
   buildSettingSearchHaystack,
   groupSearchResults,
   settingsNavClassName,
@@ -250,6 +251,39 @@ describe('SettingsPanel · 搜索模式', () => {
       expect(matched).toEqual([itemA]);
     } finally {
       filterSpy.mockRestore();
+    }
+  });
+
+  it('搜索 haystack 列表构造预分配数组,不调用 items.map', () => {
+    const items = [
+      {
+        id: 'general.theme',
+        category: 'general',
+        title: '主题',
+        description: 'Light / Dark',
+        type: 'boolean',
+        default: false,
+      },
+      {
+        id: 'editor.fontSize',
+        category: 'editor',
+        title: '字号',
+        type: 'number',
+        default: 14,
+      },
+    ] as const;
+    const mapSpy = vi.spyOn(items, 'map');
+
+    try {
+      const searchable = buildSearchableSettingItems(items);
+      expect(searchable.map((entry) => entry.item.id)).toEqual([
+        'general.theme',
+        'editor.fontSize',
+      ]);
+      expect(searchable[0]?.haystack).toContain('light / dark');
+      expect(mapSpy).not.toHaveBeenCalled();
+    } finally {
+      mapSpy.mockRestore();
     }
   });
 
