@@ -20,12 +20,30 @@ import { isPopoutUrl } from '../popout-url';
 // 5 分钟无应答 → 默认拒绝(防 renderer 卡死时 tool Promise 永远悬挂)
 const PROMPT_TIMEOUT_MS = 5 * 60 * 1000;
 
+// 边界(E229,E227/E228 pending 数量上限族):未决授权请求数量上限。requestAgentAuth 每次登记一条
+// pending + 起 5min timer + 向 renderer 发 IPC;此前无数量上限 —— 外部 MCP/agent 可并发 spam 大量
+// 需授权的 tool 调用,renderer 同一时间只弹一个,其余全堆在 main 等满 5min 超时 → pending Map + timer +
+// IPC 线性放大内存/事件循环,发起的外部 agent 进程干等假死。全局 + per-window 双闸(对齐 E227
+// ScopeRequestCorrelator),超限直接终态 'denied'(不入 pending、不起 timer、不发 IPC)。backstop 值远超
+// 任何正常并发授权(renderer store.ensure 仍处理合法并发 pending,见文件头注释),只挡 spam。
+const MAX_PENDING_AUTH_GLOBAL = 256; // 全局未决授权上限
+const MAX_PENDING_AUTH_PER_WINDOW = 64; // 单窗口未决授权上限
+
 interface PendingAuth {
   /** 弹窗目标窗口 id(target 或 pickMainWindow 兜底)。窗口关闭即按它结算。 */
   readonly windowId: number;
   readonly settle: (decision: AgentAuthDecision) => void;
 }
 const pending = new Map<string, PendingAuth>();
+
+/** 边界(E229):统计某窗口当前未决授权数。pending 已封顶后 O(≤MAX_PENDING_AUTH_GLOBAL)。 */
+function pendingCountForWindow(windowId: number): number {
+  let n = 0;
+  for (const e of pending.values()) {
+    if (e.windowId === windowId) n += 1;
+  }
+  return n;
+}
 
 function pickMainWindow(): BrowserWindow | null {
   const wins = BrowserWindow.getAllWindows();
@@ -61,6 +79,15 @@ export async function requestAgentAuth(
       ? targetWin
       : pickMainWindow();
   if (!win) return 'denied';
+  // 边界(E229):全局 + per-window 未决授权双闸,超限直接终态 'denied'(不入 pending、不起 timer、
+  // 不发 IPC),防外部 agent spam 让 pending/timer/IPC 线性放大。renderer 合法并发由 store.ensure 处理,
+  // 此 backstop 远高于正常并发量,只挡恶意 spam。
+  if (
+    pending.size >= MAX_PENDING_AUTH_GLOBAL ||
+    pendingCountForWindow(win.id) >= MAX_PENDING_AUTH_PER_WINDOW
+  ) {
+    return 'denied';
+  }
   const requestId = `req-${crypto.randomUUID()}`;
   return new Promise<AgentAuthDecision>((resolve) => {
     const timer = setTimeout(() => {
@@ -81,7 +108,21 @@ export async function requestAgentAuth(
       method: info.method,
       ...(info.agentLabel !== undefined ? { agentLabel: info.agentLabel } : {}),
     };
-    win.webContents.send(AGENT_AUTH_CHANNELS.REQUEST, payload);
+    // race(R62):pending.set 在前、send 在后。若 win 通过了上面的 isDestroyed 检查,但其
+    // webContents 在此刻已销毁(窗口正在关闭的竞态窗口),send 会同步抛("Object has been
+    // destroyed")。不捕获则 Promise executor 抛错使 Promise reject(契约要求失败返 'denied'
+    // 而非抛),且已登记的 pending 条目 + timer 会泄漏到 5min 超时才清 —— 期间发起请求的、
+    // 仍存活的外部 agent 进程干等假死。投递失败立即清 pending + timer 并 resolve('denied'),
+    // 与 plugin-mcp send-fail-abort 同族(那条已修,这是未传播的兄弟入口)。
+    try {
+      win.webContents.send(AGENT_AUTH_CHANNELS.REQUEST, payload);
+    } catch {
+      if (pending.has(requestId)) {
+        clearTimeout(timer);
+        pending.delete(requestId);
+        resolve('denied');
+      }
+    }
   });
 }
 
@@ -123,6 +164,10 @@ export function _resetPendingForTest(): void {
   pending.clear();
 }
 
+// 边界(E229)测试用:未决授权上限常量。
+export const MAX_PENDING_AUTH_GLOBAL_FOR_TEST = MAX_PENDING_AUTH_GLOBAL;
+export const MAX_PENDING_AUTH_PER_WINDOW_FOR_TEST = MAX_PENDING_AUTH_PER_WINDOW;
+
 // ── revoke(状态栏"终止全部 agent terminal"按钮触发)─────────────
 
 let mcpHostRef: McpHost | null = null;
@@ -149,6 +194,14 @@ export interface RevokeResult {
  * 这部分本服务不包(避免循环依赖)。
  */
 export function revokeAndKillAgentSessions(): RevokeResult {
+  // race(R91,安全):撤销时同步把所有 pending 授权请求结算为 denied 并清空。否则撤销前卡在授权
+  // 等待中的请求,若随后收到 renderer **迟到的** respond('session'),resolveAgentAuthRequest 仍会
+  // 按旧 requestId 放行 → 撤销后那次 MCP tool call 仍执行一次,违反「撤销即时生效」的安全边界。
+  // 清空 pending 后,迟到 respond 找不到条目 → no-op,无法复活已撤销的授权。
+  for (const [requestId, entry] of [...pending]) {
+    pending.delete(requestId);
+    entry.settle('denied');
+  }
   let rotated = false;
   if (mcpHostRef) {
     mcpHostRef.rotateToken();

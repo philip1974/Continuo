@@ -27,6 +27,7 @@ type SpikeGateModule = {
     },
     packaged: boolean,
   ): () => void;
+  parseDevRendererUrl(rawUrl: string | undefined): URL | null;
 };
 
 const implementationPath = resolve(process.cwd(), 'electron/main/spike-gate.ts');
@@ -127,6 +128,29 @@ describeIfImplemented('topic 45 packaged spike gate', () => {
     ).toEqual({ spike: 'plugin-isolation', workspace: '/foo' });
   });
 
+  // 边界(E299):dev 渲染 URL 解析 total —— 合法 → URL;缺失/畸形 env → null(调用方回退 loadFile,
+  // 不让 new URL 同步抛崩溃 createMainWindow)。
+  it('E299 parseDevRendererUrl: 合法 URL → URL 实例', async () => {
+    const u = (await loadSpikeGate()).parseDevRendererUrl('http://localhost:5173/');
+    expect(u).toBeInstanceOf(URL);
+    expect(u?.host).toBe('localhost:5173');
+  });
+
+  it('E299 parseDevRendererUrl: 缺失/畸形 env → null,不抛', async () => {
+    const m = await loadSpikeGate();
+    expect(m.parseDevRendererUrl(undefined)).toBeNull();
+    expect(m.parseDevRendererUrl('')).toBeNull();
+    expect(() => m.parseDevRendererUrl('not a url ::: %%%')).not.toThrow();
+    expect(m.parseDevRendererUrl('not a url ::: %%%')).toBeNull();
+  });
+
+  // 边界(E302):parse 前先限长 —— 超 8192 的合法 scheme URL 也返 null(parse-before-cap 一致性)。
+  it('E302 parseDevRendererUrl: 超长 URL(> 8192)→ null(new URL 前限长)', async () => {
+    const m = await loadSpikeGate();
+    const huge = 'http://localhost:5173/' + 'a'.repeat(9000);
+    expect(m.parseDevRendererUrl(huge)).toBeNull();
+  });
+
   it('buildRendererQuery assembles renderer query fields before spike stripping', async () => {
     expect(
       (await loadSpikeGate()).buildRendererQuery({
@@ -186,6 +210,44 @@ describeIfImplemented('topic 45 packaged spike gate', () => {
         packaged: true,
       }),
     ).toEqual({ allowed: true, reason: 'env-opt-in' });
+  });
+
+  // 边界(E191):超长导航 URL 不跑正则(O(N) 扫描),视为无 spike query → packaged 下仍拦(env-missing),
+  // 不会因超长 url 含 spike= 而走 packaged-blocked 分支的全量扫描;dev 仍放行(导航不受影响)。
+  it('E191 packaged 超长 url(含 spike=)→ 不扫描正则,reason env-missing(不 packaged-blocked)', async () => {
+    const longUrl = `file:///app/index.html?spike=x&pad=${'a'.repeat(9000)}`;
+    expect(
+      (await loadSpikeGate()).spikeAllowed({
+        url: longUrl,
+        argv: [],
+        packaged: true,
+      }),
+    ).toEqual({ allowed: false, reason: 'env-missing' });
+  });
+
+  it('E191 上限内 url 含 spike= → 仍 packaged-blocked(回归,正则照常)', async () => {
+    expect(
+      (await loadSpikeGate()).spikeAllowed({
+        url: 'file:///app/index.html?spike=x',
+        argv: [],
+        packaged: true,
+      }),
+    ).toEqual({ allowed: false, reason: 'packaged-blocked' });
+  });
+
+  it('E191 guardNav 超长 url 阻止时日志只记截断摘要(不写完整 url)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const longUrl = `file:///app/index.html?pad=${'a'.repeat(9000)}`;
+    (await loadSpikeGate()).guardNav(
+      { preventDefault: () => undefined },
+      longUrl,
+      true,
+    );
+    expect(warn).toHaveBeenCalled();
+    const logged = JSON.stringify(warn.mock.calls);
+    expect(logged).toContain('…');
+    expect(logged).not.toContain('a'.repeat(300)); // 不写完整超长 url
+    warn.mockRestore();
   });
 
   it('does not wire did-frame-navigate because top-level will-navigate/guardOpen are the intended gates', async () => {

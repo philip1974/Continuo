@@ -12,8 +12,30 @@ export interface UseTerminalDragDropInput {
   readonly api: Pick<DockviewGroupPanelApi, 'onDidLocationChange'>;
 }
 
-function hasFiles(dataTransfer: DataTransfer | null): dataTransfer is DataTransfer {
-  return dataTransfer !== null && Array.from(dataTransfer.types).includes('Files');
+// 边界(E42,E41 终端 drop 兄弟):终端文件拖放此前把 dataTransfer.files 全量取 OS path 后对全部
+// quotePaths()+join 一次性构造写入字符串,renderer 侧无文件数/输出长度上限。拖入海量文件/超长路径时
+// 即使主 terminal.write 用 2MB schema 拒绝,renderer 已先做大量 getPathForFile IPC + 构造超大命令行
+// 字符串 → UI 卡顿/内存峰值。读路径时累计:文件数超 MAX_TERMINAL_DROP_FILES 的项不再 IPC 取路径;
+// 累计写入长度超 MAX_TERMINAL_DROP_CHARS(低于主 2MB 写入上限留 quote 余量)的项不再加入。超限项
+// 计入 skipped 提示,绝不构造/写入超大字符串。
+export const MAX_TERMINAL_DROP_FILES = 1000;
+export const MAX_TERMINAL_DROP_CHARS = 1_000_000;
+
+// 边界(E189/E224,E176 同族有界遍历):hasFiles 收口到共享 @/lib/window-drop(与 captureBoundedFiles /
+// hasDirectoryInFirstItems 同处),Terminal 与 App.tsx 全局 drop 共用单一来源。此处 import 供本模块用 +
+// re-export 保持既有 import 路径不变(Terminal 代码 + drag-drop.spec 仍从本模块 import hasFiles)。
+import { hasFiles } from '@/lib/window-drop';
+export { hasFiles };
+
+// 边界(E189):DEV 调试日志的 types 也按上限有界读取(不全量 Array.from),防开发环境复现同类卡顿。
+const DEBUG_TYPES_MAX = 32;
+function boundedTypes(dataTransfer: DataTransfer): string[] {
+  const types = dataTransfer.types;
+  const out: string[] = [];
+  for (let i = 0; i < types.length && i < DEBUG_TYPES_MAX; i++) {
+    out.push(types[i]!);
+  }
+  return out;
 }
 
 function pointInRect(
@@ -75,54 +97,117 @@ export function useTerminalDragDrop({
       e.preventDefault();
       e.stopImmediatePropagation();
       const dataTransfer = e.dataTransfer;
-      const files = Array.from(dataTransfer.files);
+      // 边界(E116,E114/E115 同族):DataTransfer.files 仅事件期有效须同步捕获,但不全量
+      // Array.from 物化超大 FileList。同步截断到 MAX_TERMINAL_DROP_FILES + 1(多 1 个让下游
+      // getPathForFile 循环的 cap 检测仍触发 partial_skip);未捕获的超限数记入 overLimitExtra,
+      // seed 进 droppedForLimit 保证 partial_skip 计数准确。
+      const fileList = dataTransfer.files;
+      const totalFiles = fileList.length;
+      const files: File[] = [];
+      for (let i = 0; i < totalFiles && files.length <= MAX_TERMINAL_DROP_FILES; i++) {
+        const f = fileList[i];
+        if (f) files.push(f);
+      }
+      const overLimitExtra = totalFiles - files.length;
 
       if (import.meta.env.DEV) {
         console.debug('[terminal-drag-drop] capture drop', {
           sessionId,
-          files: files.length,
-          types: Array.from(dataTransfer.types),
+          files: totalFiles,
+          types: boundedTypes(dataTransfer), // 边界(E189):有界读取,不全量物化
         });
       }
 
       void (async () => {
-        const paths: string[] = [];
-        let webDragCount = 0;
+        // a11y(A140 同族):fire-and-forget async 包 try/catch —— getPathForFile() 与
+        // terminal.write() 的 IPC reject(抛错而非返回 {ok:false})此前未捕获 → unhandled
+        // rejection,终端拖放文件失败时无 toast/live region 反馈。catch → 复用 write_failed。
+        try {
+          const paths: string[] = [];
+          let webDragCount = 0;
+          let droppedForLimit = overLimitExtra; // 因数量/长度上限被丢弃(E42 + E116 同步截断的超限数)
+          let approxLen = 0;
 
-        for (const file of files) {
-          const path = await coApi.window.getPathForFile(file);
-          if (path) {
+          for (const file of files) {
+            // 边界(E42):文件数上限 —— 超出不再 IPC 取路径(省 getPathForFile 往返)。
+            if (paths.length >= MAX_TERMINAL_DROP_FILES) {
+              droppedForLimit += 1;
+              continue;
+            }
+            const path = await coApi.window.getPathForFile(file);
+            if (!path) {
+              webDragCount += 1;
+              continue;
+            }
+            // 边界(E42):累计写入长度上限 —— +3 估算 quote/空格余量,超出不再加入,防构造超大命令行。
+            if (approxLen + path.length + 3 > MAX_TERMINAL_DROP_CHARS) {
+              droppedForLimit += 1;
+              continue;
+            }
             paths.push(path);
-          } else {
-            webDragCount += 1;
+            approxLen += path.length + 3;
           }
-        }
 
-        const shellFamily = getShellFamily(sessionId);
-        const { quoted, skipped } = quotePaths(paths, shellFamily);
+          // race(R85):getPathForFile 循环可能跨多次 IPC 让权,期间用户关闭/切换 terminal panel
+          // → effect cleanup(disposed=true)或以新 sessionId re-init。此处捕获的 sessionId/focus
+          // 是旧实例的;不复查就 write 会向旧 session **意外注入输入**(若仍存活),或对已关闭实例
+          // 弹误导性失败反馈。写前丢弃迟到任务。复用 effect 的 disposed 标志(per-effect)。
+          if (disposed) return;
 
-        if (quoted.length === 0 && skipped.length === 0) {
-          notify.warn(t('panels.terminal.drag_drop.no_os_path'));
-          return;
-        }
+          const shellFamily = getShellFamily(sessionId);
+          const { quoted, skipped } = quotePaths(paths, shellFamily);
 
-        const r = await coApi.terminal.write(
-          sessionId,
-          joinWithTrailingSpace(quoted),
-        );
-        if (!r.ok) {
-          notify.warn(t('panels.terminal.drag_drop.write_failed'));
-        } else {
-          focus();
-        }
+          // 边界(E134):写入长度上限须按 **quote 后的真实长度** 复核 —— 循环里的 path.length + 3
+          // 仅估算,POSIX/PowerShell 把每个 ' 展开成多字符(如 '\''),含大量单引号的路径 quote 后可
+          // 显著膨胀,构造出远超 MAX_TERMINAL_DROP_CHARS 的命令行。逐项按真实 quoted 长度累计并截断。
+          const cappedQuoted: string[] = [];
+          let realLen = 0;
+          for (const q of quoted) {
+            if (realLen + q.length + 1 > MAX_TERMINAL_DROP_CHARS) {
+              droppedForLimit += 1;
+              continue;
+            }
+            cappedQuoted.push(q);
+            realLen += q.length + 1; // +1:joinWithTrailingSpace 的分隔/尾随空格
+          }
 
-        const skippedCount = skipped.length + webDragCount;
-        if (skippedCount > 0) {
-          notify.warn(
-            t('panels.terminal.drag_drop.partial_skip', {
-              count: skippedCount,
-            }),
+          if (cappedQuoted.length === 0 && skipped.length === 0) {
+            // 边界(E42):无可写路径时区分「全被大小/数量上限丢弃」与「全是 web drag 无 OS path」。
+            // 前者(如单个 >1MB 路径)应提示 partial_skip,而非误导性的 no_os_path。
+            if (droppedForLimit > 0) {
+              notify.warn(
+                t('panels.terminal.drag_drop.partial_skip', {
+                  count: droppedForLimit + webDragCount,
+                }),
+              );
+            } else {
+              notify.warn(t('panels.terminal.drag_drop.no_os_path'));
+            }
+            return;
+          }
+
+          const r = await coApi.terminal.write(
+            sessionId,
+            joinWithTrailingSpace(cappedQuoted),
           );
+          // race(R85):write IPC 期间若已 cleanup,不 focus 旧实例、不弹(对已关闭 panel)误导性反馈。
+          if (disposed) return;
+          if (!r.ok) {
+            notify.warn(t('panels.terminal.drag_drop.write_failed'));
+          } else {
+            focus();
+          }
+
+          const skippedCount = skipped.length + webDragCount + droppedForLimit;
+          if (skippedCount > 0) {
+            notify.warn(
+              t('panels.terminal.drag_drop.partial_skip', {
+                count: skippedCount,
+              }),
+            );
+          }
+        } catch {
+          notify.warn(t('panels.terminal.drag_drop.write_failed'));
         }
       })();
     };

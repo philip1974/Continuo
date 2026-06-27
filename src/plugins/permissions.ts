@@ -25,7 +25,9 @@ export class PermissionError extends Error {
     readonly permission: PermissionKey,
     message?: string,
   ) {
-    super(message ?? `权限 ${permission} 未授权`);
+    // i18n(I11):默认 message 改英文(SDK/开发者面向,且经 run-contributed-action 展示给
+    // 用户时不泄漏中文到 en/ko)。含权限名;调用方可传 message 覆盖。
+    super(message ?? `Permission denied: ${permission}`);
     this.name = 'PermissionError';
   }
 }

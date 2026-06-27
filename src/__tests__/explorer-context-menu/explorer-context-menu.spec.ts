@@ -1,6 +1,6 @@
 // BDD: explorer-context-menu / registry + filterVisible + Plugin proxy
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   ExplorerContextMenuRegistry,
   filterVisible,
@@ -82,6 +82,116 @@ describe('ExplorerContextMenuRegistry', () => {
     d.dispose();
     d.dispose();
     expect(r.getAll()).toEqual([]);
+  });
+
+  // race(R54,R51/R52/R53 同族):菜单 onSelect 捕获 spec,菜单打开期间 unregister 后旧菜单仍可
+  // 触发 → select 时按 id 从 live registry 重查 + 复检 when 执行。get(id) 提供 live 查找。
+  describe('get(id) live 查找(R54)', () => {
+    it('register → get(id) 返回 spec;dispose 后返 undefined', () => {
+      const r = new ExplorerContextMenuRegistry();
+      const d = r.register({ id: 'a', label: 'A', fn: () => {} });
+      expect(r.get('a')?.id).toBe('a');
+      d.dispose();
+      expect(r.get('a')).toBeUndefined();
+    });
+
+    it('已 dispose 项经 get→filterVisible 复检后不执行(stale-skip 语义)', () => {
+      const r = new ExplorerContextMenuRegistry();
+      const fn = vi.fn();
+      const d = r.register({ id: 'a', label: 'A', fn });
+      d.dispose();
+      const live = r.get('a');
+      if (live && filterVisible([live], ctx).length > 0) live.fn(ctx);
+      expect(fn).not.toHaveBeenCalled();
+    });
+
+    it('live 项当前 ctx 下 when=false → 经复检不执行', () => {
+      const r = new ExplorerContextMenuRegistry();
+      const fn = vi.fn();
+      r.register({ id: 'a', label: 'A', fn, when: () => false });
+      const live = r.get('a');
+      if (live && filterVisible([live], ctx).length > 0) live.fn(ctx);
+      expect(fn).not.toHaveBeenCalled();
+    });
+  });
+
+  // 边界(E48,E35/E36/E37/E40 兄弟 registry):register 校验 id/label/group 长度 + priority finite
+  // + when/fn 为函数。畸形项进 sort/分组渲染或在打开/点击时抛错,坏整个右键菜单。
+  describe('E48 · 贡献项边界校验', () => {
+    it('合法 spec → ok', () => {
+      const r = new ExplorerContextMenuRegistry();
+      expect(() =>
+        r.register({ id: 'a', label: 'A', fn: () => {} }),
+      ).not.toThrow();
+    });
+
+    it('超长 id/label/group → 抛,不入 registry', () => {
+      const r = new ExplorerContextMenuRegistry();
+      expect(() =>
+        r.register({ id: 'x'.repeat(257), label: 'L', fn: () => {} }),
+      ).toThrow(/id exceeds max length/i);
+      expect(() =>
+        r.register({ id: 'a', label: 'L'.repeat(513), fn: () => {} }),
+      ).toThrow(/label exceeds max length/i);
+      expect(() =>
+        r.register({
+          id: 'b',
+          label: 'L',
+          group: 'g'.repeat(257),
+          fn: () => {},
+        }),
+      ).toThrow(/group exceeds max length/i);
+      expect(r.getAll()).toEqual([]);
+    });
+
+    it('空 id/label → 抛', () => {
+      const r = new ExplorerContextMenuRegistry();
+      expect(() => r.register({ id: '', label: 'L', fn: () => {} })).toThrow(
+        /id must be a non-empty/i,
+      );
+      expect(() => r.register({ id: 'a', label: '', fn: () => {} })).toThrow(
+        /label must be a non-empty/i,
+      );
+    });
+
+    it('非有限 priority / when 非函数 / fn 非函数 → 抛', () => {
+      const r = new ExplorerContextMenuRegistry();
+      expect(() =>
+        r.register({ id: 'a', label: 'L', priority: NaN, fn: () => {} }),
+      ).toThrow(/priority must be finite/i);
+      expect(() =>
+        r.register({
+          id: 'b',
+          label: 'L',
+          fn: () => {},
+          when: 'nope' as never,
+        }),
+      ).toThrow(/when must be a function/i);
+      expect(() =>
+        r.register({ id: 'c', label: 'L', fn: 'nope' as never }),
+      ).toThrow(/fn must be a function/i);
+    });
+
+    // 边界(E155,E153/E154 兄弟):可选 group 此前只有 length 上限无 typeof(group:{}/group:123
+    // 经 `({}).length === undefined > max` 为 false 绕过)→ 菜单打开 groupPluginItems() 排序
+    // localeCompare 崩溃。补 typeof 守卫,非法不入 registry。
+    it('E155 group 非字符串(对象/数字)→ 抛,不入 registry', () => {
+      const r = new ExplorerContextMenuRegistry();
+      expect(() =>
+        r.register({ id: 'a', label: 'L', group: {} as never, fn: () => {} }),
+      ).toThrow(/group must be a string/i);
+      expect(() =>
+        r.register({ id: 'b', label: 'L', group: 123 as never, fn: () => {} }),
+      ).toThrow(/group must be a string/i);
+      expect(r.getAll()).toEqual([]);
+    });
+
+    it('E155 合法 string group 仍 ok(回归)', () => {
+      const r = new ExplorerContextMenuRegistry();
+      expect(() =>
+        r.register({ id: 'a', label: 'L', group: 'plugin', fn: () => {} }),
+      ).not.toThrow();
+    });
   });
 });
 

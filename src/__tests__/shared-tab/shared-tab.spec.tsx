@@ -2,13 +2,19 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { fireEvent, render, cleanup, act } from '@testing-library/react';
 import { SharedTab } from '../../shell/motion/SharedTab';
+import { setLocale, notifyLocaleChange } from '@/i18n';
 
 interface FakeApi {
   id: string;
   title: string;
   isActive: boolean;
-  group: { id: string; api: { isMaximized: () => boolean } };
+  group: {
+    id: string;
+    api: { isMaximized: () => boolean };
+    panels?: ReadonlyArray<{ id: string; api: { setActive: () => void } }>;
+  };
   close: ReturnType<typeof vi.fn>;
+  setActive: ReturnType<typeof vi.fn>;
   onDidActiveChange: (cb: (e: { isActive: boolean }) => void) => {
     dispose: () => void;
   };
@@ -29,6 +35,7 @@ function makeApi(over: Partial<FakeApi> = {}): FakeApi {
     // topic-22: SharedTab now reads api.group.api.isMaximized() initially
     group: { id: 'g1', api: { isMaximized: () => false } },
     close: vi.fn(),
+    setActive: vi.fn(),
     onDidActiveChange: (cb) => {
       activeCb = cb;
       return { dispose: vi.fn() };
@@ -74,9 +81,30 @@ describe('SharedTab — 渲染', () => {
     const api = makeApi({ title: 'Hello' });
     const { container } = renderTab(api);
     expect(container.textContent).toContain('Hello');
+    // a11y(A105):关闭按钮 aria-label 本地化(默认测试 locale=zh → 「关闭 Hello」),含 title。
     expect(
-      container.querySelector('button[aria-label="Close Hello"]'),
+      container.querySelector('button[aria-label="关闭 Hello"]'),
     ).not.toBeNull();
+  });
+
+  // a11y(A105):icon-only 关闭按钮可访问名随 locale 本地化(原硬编码英文 `Close ${title}`)。
+  it('a11y · 关闭按钮 aria-label 随 locale 本地化', () => {
+    setLocale('en');
+    try {
+      const api = makeApi({ title: 'Hello' });
+      const { container } = renderTab(api);
+      const btn = container.querySelector('button[aria-label*="Hello"]');
+      expect(btn).not.toBeNull();
+      expect(btn!.getAttribute('aria-label')).toBe('Close Hello');
+    } finally {
+      setLocale('zh');
+    }
+    cleanup();
+    const api2 = makeApi({ title: 'Hello' });
+    const { container: c2 } = renderTab(api2);
+    const btn2 = c2.querySelector('button[aria-label*="Hello"]');
+    expect(btn2!.getAttribute('aria-label')).toContain('关闭');
+    expect(btn2!.getAttribute('aria-label')).not.toContain('Close');
   });
 });
 
@@ -112,10 +140,177 @@ describe('SharedTab — close 按钮', () => {
     const api = makeApi();
     const { container } = renderTab(api);
     const closeBtn = container.querySelector(
-      'button[aria-label^="Close"]',
+      'button[aria-label^="关闭"]',
     ) as HTMLButtonElement;
     fireEvent.click(closeBtn);
     expect(api.close).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('SharedTab — a11y(A119)tab 语义 + 键盘激活', () => {
+  it('tab 根有 role=tab + aria-selected + roving tabIndex', () => {
+    const active = makeApi({ isActive: true });
+    const a = renderTab(active);
+    const tabA = a.container.querySelector('[role=tab]') as HTMLElement;
+    expect(tabA).not.toBeNull();
+    expect(tabA.getAttribute('aria-selected')).toBe('true');
+    expect(tabA.getAttribute('tabindex')).toBe('0'); // active 在 Tab 顺序
+    cleanup();
+    const inactive = makeApi({ isActive: false });
+    const b = renderTab(inactive);
+    const tabB = b.container.querySelector('[role=tab]') as HTMLElement;
+    expect(tabB.getAttribute('aria-selected')).toBe('false');
+    expect(tabB.getAttribute('tabindex')).toBe('-1'); // inactive 移出 Tab 顺序
+  });
+
+  it('Enter/Space → api.setActive()(键盘激活切 tab)', () => {
+    const api = makeApi();
+    const { container } = renderTab(api);
+    const root = container.querySelector('[role=tab]') as HTMLElement;
+    fireEvent.keyDown(root, { key: 'Enter' });
+    expect(api.setActive).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(root, { key: ' ' });
+    expect(api.setActive).toHaveBeenCalledTimes(2);
+  });
+
+  // a11y(A120):完整 tablist 方向键模型 —— ArrowRight/Left 在同组 tab 间循环激活,Home/End 首尾。
+  it('ArrowRight/Left/Home/End → 激活同组相邻/首尾 tab', () => {
+    const next = { id: 'p-next', api: { setActive: vi.fn() } };
+    const prev = { id: 'p-prev', api: { setActive: vi.fn() } };
+    // panel 顺序:prev, self(p1), next → ArrowRight=next, ArrowLeft=prev, Home=prev, End=next。
+    const api = makeApi();
+    api.group.panels = [prev, { id: api.id, api: { setActive: api.setActive } }, next];
+    const { container } = renderTab(api);
+    const root = container.querySelector('[role=tab]') as HTMLElement;
+
+    fireEvent.keyDown(root, { key: 'ArrowRight' });
+    expect(next.api.setActive).toHaveBeenCalledTimes(1);
+
+    fireEvent.keyDown(root, { key: 'ArrowLeft' });
+    expect(prev.api.setActive).toHaveBeenCalledTimes(1);
+
+    fireEvent.keyDown(root, { key: 'Home' });
+    expect(prev.api.setActive).toHaveBeenCalledTimes(2);
+
+    fireEvent.keyDown(root, { key: 'End' });
+    expect(next.api.setActive).toHaveBeenCalledTimes(2);
+  });
+
+  // a11y(A124,A123 后续):退出最大化按钮移出 Tab 顺序后,最大化态须有键盘等价入口(Escape)。
+  it('最大化态 Escape → containerApi.exitMaximizedGroup()', () => {
+    const api = makeApi();
+    api.group.api.isMaximized = () => true; // 强制 maximized 初始态
+    const exitMaximizedGroup = vi.fn();
+    const props = {
+      api,
+      containerApi: {
+        onDidMaximizedGroupChange: () => ({ dispose: vi.fn() }),
+        exitMaximizedGroup,
+      } as never,
+      params: {},
+    } as unknown as Parameters<typeof SharedTab>[0];
+    const { container } = render(<SharedTab {...props} />);
+    const root = container.querySelector('[role=tab]') as HTMLElement;
+    fireEvent.keyDown(root, { key: 'Escape' });
+    expect(exitMaximizedGroup).toHaveBeenCalledTimes(1);
+  });
+
+  it('非最大化态 Escape → 不调 exitMaximizedGroup', () => {
+    const api = makeApi(); // isMaximized() = false(默认)
+    const exitMaximizedGroup = vi.fn();
+    const props = {
+      api,
+      containerApi: {
+        onDidMaximizedGroupChange: () => ({ dispose: vi.fn() }),
+        exitMaximizedGroup,
+      } as never,
+      params: {},
+    } as unknown as Parameters<typeof SharedTab>[0];
+    const { container } = render(<SharedTab {...props} />);
+    const root = container.querySelector('[role=tab]') as HTMLElement;
+    fireEvent.keyDown(root, { key: 'Escape' });
+    expect(exitMaximizedGroup).not.toHaveBeenCalled();
+  });
+
+  // a11y(A123,A29 同族):tab 内关闭按钮移出 Tab 顺序(tabIndex=-1)保 roving;Delete/Backspace 关闭。
+  it('关闭按钮 tabIndex=-1 + Delete/Backspace 关闭当前 tab', () => {
+    const api = makeApi();
+    const { container } = renderTab(api);
+    const closeBtn = container.querySelector(
+      'button[aria-label^="关闭"]',
+    ) as HTMLButtonElement;
+    expect(closeBtn.getAttribute('tabindex')).toBe('-1');
+    const root = container.querySelector('[role=tab]') as HTMLElement;
+    fireEvent.keyDown(root, { key: 'Delete' });
+    expect(api.close).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(root, { key: 'Backspace' });
+    expect(api.close).toHaveBeenCalledTimes(2);
+  });
+
+  it('单 tab(panels.length<=1)→ 方向键不激活(无相邻)', () => {
+    const api = makeApi();
+    api.group.panels = [{ id: api.id, api: { setActive: api.setActive } }];
+    const { container } = renderTab(api);
+    const root = container.querySelector('[role=tab]') as HTMLElement;
+    fireEvent.keyDown(root, { key: 'ArrowRight' });
+    expect(api.setActive).not.toHaveBeenCalled();
+  });
+
+  // a11y(A125,A121 后续):tablist aria-label 须随 locale 切换更新(useT 订阅 + 去「仅缺失时设」守卫)。
+  it('locale 切换 → .dv-tabs-container aria-label 随之更新', () => {
+    const api = makeApi();
+    const stripContainer = document.createElement('div');
+    stripContainer.className = 'dv-tabs-container';
+    document.body.appendChild(stripContainer);
+    try {
+      const props = {
+        api,
+        containerApi: {
+          onDidMaximizedGroupChange: () => ({ dispose: vi.fn() }),
+          exitMaximizedGroup: vi.fn(),
+        } as never,
+        params: {},
+      } as unknown as Parameters<typeof SharedTab>[0];
+      setLocale('en');
+      render(<SharedTab {...props} />, { container: stripContainer });
+      expect(stripContainer.getAttribute('aria-label')).toBe('Panel tabs');
+      // 切到 zh → notifyLocaleChange 让 useT 重渲 → effect 重写 aria-label
+      // (生产路径 settings.store.setLocale 会同时调 setI18nModuleLocale + notifyLocaleChange)。
+      act(() => {
+        setLocale('zh');
+        notifyLocaleChange();
+      });
+      expect(stripContainer.getAttribute('aria-label')).toBe('面板标签');
+    } finally {
+      setLocale('zh');
+      stripContainer.remove();
+    }
+  });
+
+  // a11y(A121):role=tab 须有父 role=tablist;挂载时给 dockview .dv-tabs-container 补 tablist 语义。
+  it('挂载 → 最近 .dv-tabs-container 补 role=tablist + aria-label', () => {
+    const api = makeApi();
+    // 模拟 dockview 的 tab-strip 容器作为渲染目标(SharedTab 是其后代)。
+    const stripContainer = document.createElement('div');
+    stripContainer.className = 'dv-tabs-container';
+    document.body.appendChild(stripContainer);
+    try {
+      const props = {
+        api,
+        containerApi: {
+          onDidMaximizedGroupChange: () => ({ dispose: vi.fn() }),
+          exitMaximizedGroup: vi.fn(),
+        } as never,
+        params: {},
+      } as unknown as Parameters<typeof SharedTab>[0];
+      render(<SharedTab {...props} />, { container: stripContainer });
+      expect(stripContainer.getAttribute('role')).toBe('tablist');
+      expect((stripContainer.getAttribute('aria-label') ?? '').length).toBeGreaterThan(
+        0,
+      );
+    } finally {
+      stripContainer.remove();
+    }
   });
 });
 

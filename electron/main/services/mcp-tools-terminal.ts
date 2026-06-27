@@ -22,7 +22,6 @@ import {
   type ListSessionsInput,
   type ListSessionsOutput,
   type ListSessionItem,
-  type CreateSessionInput,
   type CreateSessionOutput,
   type SendInputInput,
   type SendInputOutput,
@@ -36,8 +35,78 @@ import {
   type KillOutput,
 } from '../../shared/mcp-terminal-schemas';
 import { ERROR_CODES } from '../../shared/error-codes';
+import { truncateSessionIdForEcho } from '../lib/session-id-echo';
+import { utf8BytesExceed } from '../../shared/utf8-byte-length';
 import type { OriginHint } from '../../shared/origin-hint';
+import { PATH_MAX, LABEL_MAX } from '../../shared/terminal-create';
+import { AttachTargetSchema } from '../../shared/terminal-attach';
 import type { McpCallCtx, McpToolDef } from './mcp-host.service';
+import { z } from 'zod';
+import { SESSION_ID_MAX } from '../../shared/session-id-limits';
+
+// 边界(E202,无消费的解析放大面):Continuo 的 create_session 工具只消费
+// cwd/name/agentLabel/autorun/target/install_stop_hook/include_raw(见下方 ptyInput 构造),
+// **不消费** shell/args/cols/rows/env —— 那些是 server-node(协议包另一消费者)才用的 PTY spawn 字段。
+// 协议 createSessionInputSchema(node_modules,与 server-node 共享契约,不可改)含 args: z.array /
+// env: z.record **无数量/长度上限**:外部 MCP client 可在 1MB body 塞海量 args/env,让 zod 在工具
+// 执行前(mcp-host safeParse)全量深校验这些数组/record,而本工具随即丢弃 = 纯放大面。
+// 故 Continuo 侧 omit 未消费字段:strict 下它们成 unrecognized key 被**浅拒**(不深校验内容),
+// inputSchema 与本工具 advertised jsonSchema(additionalProperties:false,仅列消费字段)对齐。
+// 边界(E32):autorun 64KB backstop(远超任何真实命令)。run() 用 utf8BytesExceed 精确按字节兜底,
+// 此处 zod .max 是 code-unit 粗上限(advertised/parse 早拒超长),两者上限同值 MCP_AUTORUN_MAX 防漂移。
+const MCP_AUTORUN_MAX = 65536;
+// 边界(E205,E203/E204 同族,create_session 三层对齐):此前 createSessionBoundedSchema 只 omit 未消费
+// 字段,cwd/name/agentLabel/autorun 的长度上限只在 run()(E32 手动 .length/byte 检查)兜底,zod schema 与
+// advertised jsonSchema 都没声明 → MCP client/LLM 看到的入约允许超长字符串,调用时才在 run() 失败(公开
+// schema↔zod↔运行时三层漂移)。.extend 给这些字段补 .max(与 run() 上限同值;autorun 的精确 byte 检查仍
+// 由 run() 兜底),advertised jsonSchema 同步补 maxLength(见下方 jsonSchema)。保留 .optional()。
+const createSessionBoundedSchema = createSessionInputSchema
+  .omit({
+    shell: true,
+    args: true,
+    cols: true,
+    rows: true,
+    env: true,
+  })
+  .extend({
+    cwd: z.string().max(PATH_MAX).optional(),
+    name: z.string().max(LABEL_MAX).optional(),
+    agentLabel: z.string().max(LABEL_MAX).optional(),
+    autorun: z.string().max(MCP_AUTORUN_MAX).optional(),
+  });
+type CreateSessionBoundedInput = z.infer<typeof createSessionBoundedSchema>;
+
+// 边界(E203):协议各 tool schema 的 session_id 仅 z.string().min(1) **无长度上限**(JSON schema 也只
+// minLength:1)。外部 MCP client 可传 1MB session_id,校验通过后进 deps.has/getSessionOwner/write/read/kill
+// 的 Map/lookup,虽错误回显已截断(E148/E151),运行期仍反复处理超长 key。Continuo 侧 .extend 把 session_id
+// 收窄到 .max(SESSION_ID_MAX)(同 string 类型,z.infer 不变 → 无需改工厂类型)。不改协议包(server-node 共用)。
+const sessionIdBounded = z.string().min(1).max(SESSION_ID_MAX);
+// 边界(E220,E219 兄弟,字节 vs code-unit 族):send_input/send_text 的 data/text 协议用
+// z.string().max(SEND_INPUT_MAX_CHARS) 是 UTF-16 code unit;下游写 PTY 按真实字节。CJK/emoji 多字节
+// 输入 length≤上限时真实字节数倍超 → 与 terminal:write(E219)字节语义统一。Continuo 侧 extend 改字节 refine。
+const SEND_DATA_MAX_BYTES = 2_000_000;
+const sendDataBounded = z
+  .string()
+  .refine((s) => !utf8BytesExceed(s, SEND_DATA_MAX_BYTES), {
+    message: `超过上限 ${SEND_DATA_MAX_BYTES} 字节`,
+  });
+const sendInputBoundedSchema = sendInputInputSchema.extend({
+  session_id: sessionIdBounded,
+  data: sendDataBounded,
+});
+const sendTextBoundedSchema = sendTextInputSchema.extend({
+  session_id: sessionIdBounded,
+  text: sendDataBounded,
+});
+const pressKeyBoundedSchema = pressKeyInputSchema.extend({
+  session_id: sessionIdBounded,
+});
+const readOutputBoundedSchema = readOutputInputSchema.extend({
+  session_id: sessionIdBounded,
+});
+const killBoundedSchema = killInputSchema.extend({
+  session_id: sessionIdBounded,
+});
 
 // ── 输入侧的 store 形态(handler 期望的字段) ────────────────────
 
@@ -149,7 +218,7 @@ export interface CreateSessionToolDeps {
 
 export function makeCreateSessionTool(
   deps: CreateSessionToolDeps,
-): McpTool<CreateSessionInput, CreateSessionOutput> {
+): McpTool<CreateSessionBoundedInput, CreateSessionOutput> {
   return {
     name: MCP_TOOL_CREATE_SESSION,
     description:
@@ -158,20 +227,25 @@ export function makeCreateSessionTool(
     jsonSchema: {
       type: 'object',
       properties: {
+        // 边界(E205):advertised maxLength 同步 zod .max / run() 上限(三层一致,防漂移)。
         cwd: {
           type: 'string',
+          maxLength: PATH_MAX,
           description: 'Working directory for the spawned shell (default: user home).',
         },
         name: {
           type: 'string',
+          maxLength: LABEL_MAX,
           description: 'Tab title (default: "Terminal N").',
         },
         agentLabel: {
           type: 'string',
+          maxLength: LABEL_MAX,
           description: 'Short label for the agent (e.g. "codex"). Shown on the tab.',
         },
         autorun: {
           type: 'string',
+          maxLength: MCP_AUTORUN_MAX,
           description: 'Command auto-typed into the shell after spawn (with trailing newline).',
         },
         install_stop_hook: {
@@ -187,12 +261,47 @@ export function makeCreateSessionTool(
       },
       additionalProperties: false,
     },
-    inputSchema: createSessionInputSchema,
-    run: async (input: CreateSessionInput, ctx: McpCallCtx) => {
+    inputSchema: createSessionBoundedSchema,
+    run: async (input: CreateSessionBoundedInput, ctx: McpCallCtx) => {
+      // 边界(E32):入参尺寸 fail-closed,先于授权弹窗(畸形请求不该弹窗烦用户),也先于
+      // 任何副作用。cwd/name/agentLabel 复用 E11 上限;autorun 用 64KB backstop;target 走
+      // AttachTargetSchema(E23,panelId≤256 / windowId 安全整数)。超限 → BAD_INPUT。
+      if (
+        (input.cwd !== undefined && input.cwd.length > PATH_MAX) ||
+        (input.name !== undefined && input.name.length > LABEL_MAX) ||
+        (input.agentLabel !== undefined && input.agentLabel.length > LABEL_MAX) ||
+        // 边界(E133,E125 同族):autorun 是 64KB **字节** backstop,按真实 UTF-8 字节(非
+        // .length=UTF-16 code unit),否则 CJK/emoji autorun 真实字节可数倍超 64KB 仍注入 PTY。
+        (input.autorun !== undefined &&
+          utf8BytesExceed(input.autorun, MCP_AUTORUN_MAX))
+      ) {
+        throw Object.assign(
+          new Error('create_session input field exceeds size limit'),
+          { code: ERROR_CODES.BAD_INPUT },
+        );
+      }
+      if (
+        input.target !== undefined &&
+        !AttachTargetSchema.safeParse(input.target).success
+      ) {
+        throw Object.assign(new Error('invalid create_session target'), {
+          code: ERROR_CODES.BAD_INPUT,
+        });
+      }
+
       const decision = await deps.ensureAuthorized(ctx.ownerWindowId);
       if (decision === 'denied') {
         throw Object.assign(
           new Error('agent terminal not authorized by user'),
+          { code: ERROR_CODES.AGENT_NOT_AUTHORIZED },
+        );
+      }
+      // race(R111):用户在授权弹窗上停留期间调用方(stdio proxy)可能已断开 → ctx.signal abort。
+      // 此时即便用户点了授权,也不创建会话:否则留下无调用方的孤儿 agent terminal(响应写回死
+      // socket、autorun 副作用照跑)。在 installStopHook / createSession 等真正副作用前复查。
+      if (ctx.signal?.aborted) {
+        throw Object.assign(
+          new Error('caller disconnected before session creation'),
           { code: ERROR_CODES.AGENT_NOT_AUTHORIZED },
         );
       }
@@ -231,7 +340,8 @@ export function makeCreateSessionTool(
 
 export interface SendInputToolDeps {
   readonly has: (sessionId: string) => boolean;
-  readonly write: (sessionId: string, data: string) => boolean;
+  // race(R4):write 现 async(await 真实写入结果);保留 boolean 兼容同步 mock。
+  readonly write: (sessionId: string, data: string) => boolean | Promise<boolean>;
   readonly getSessionOwner: (sessionId: string) => number | null;
 }
 
@@ -254,10 +364,13 @@ export function preparePtyData(raw: string): string {
   return unescaped.replace(/\n/g, '\r');
 }
 
+// 边界(E148,E151 同族):session_id 回显截断逻辑已收口到共享 helper(session-id-echo.ts),
+// 供本文件与 mcp-tools-hook-bridge.ts 单一来源复用。
 const ERR_TERMINAL_SESSION_NOT_FOUND = (id: string) =>
-  Object.assign(new Error(`terminal session not found: ${id}`), {
-    code: ERROR_CODES.TERMINAL_SESSION_NOT_FOUND,
-  });
+  Object.assign(
+    new Error(`terminal session not found: ${truncateSessionIdForEcho(id)}`),
+    { code: ERROR_CODES.TERMINAL_SESSION_NOT_FOUND },
+  );
 
 function assertSessionInCurrentWindow(
   sessionId: string,
@@ -289,6 +402,9 @@ export function makeSendInputTool(
         session_id: {
           type: 'string',
           minLength: 1,
+          // 边界(E204,E203 advertised 对偶):公开 jsonSchema 同步 inputSchema 的 .max(SESSION_ID_MAX),
+          // 否则 MCP client/LLM 看到的入约允许超长 session_id、调用时却被运行时 schema 拒 = advertised↔运行时不一致。
+          maxLength: SESSION_ID_MAX,
           description: 'Target terminal session id from create_session / list_sessions.',
         },
         data: {
@@ -301,7 +417,7 @@ export function makeSendInputTool(
       required: ['session_id', 'data'],
       additionalProperties: false,
     },
-    inputSchema: sendInputInputSchema,
+    inputSchema: sendInputBoundedSchema,
     run: async (input: SendInputInput, ctx: McpCallCtx) => {
       if (!deps.has(input.session_id)) {
         throw ERR_TERMINAL_SESSION_NOT_FOUND(input.session_id);
@@ -312,7 +428,7 @@ export function makeSendInputTool(
         deps.getSessionOwner,
       );
       // preparePtyData:LF→CR + 字面 escape unescape,容错 LLM 误传 \n
-      const ok = deps.write(input.session_id, preparePtyData(input.data));
+      const ok = await deps.write(input.session_id, preparePtyData(input.data));
       if (!ok) throw ERR_TERMINAL_SESSION_NOT_FOUND(input.session_id);
       return {};
     },
@@ -338,6 +454,9 @@ export function makeSendTextTool(
         session_id: {
           type: 'string',
           minLength: 1,
+          // 边界(E204,E203 advertised 对偶):公开 jsonSchema 同步 inputSchema 的 .max(SESSION_ID_MAX),
+          // 否则 MCP client/LLM 看到的入约允许超长 session_id、调用时却被运行时 schema 拒 = advertised↔运行时不一致。
+          maxLength: SESSION_ID_MAX,
           description: 'Target terminal session id.',
         },
         text: {
@@ -350,7 +469,7 @@ export function makeSendTextTool(
       required: ['session_id', 'text'],
       additionalProperties: false,
     },
-    inputSchema: sendTextInputSchema,
+    inputSchema: sendTextBoundedSchema,
     run: async (input: SendTextInput, ctx: McpCallCtx) => {
       if (!deps.has(input.session_id)) {
         throw ERR_TERMINAL_SESSION_NOT_FOUND(input.session_id);
@@ -360,7 +479,7 @@ export function makeSendTextTool(
         ctx.ownerWindowId,
         deps.getSessionOwner,
       );
-      const ok = deps.write(input.session_id, input.text);
+      const ok = await deps.write(input.session_id, input.text);
       if (!ok) throw ERR_TERMINAL_SESSION_NOT_FOUND(input.session_id);
       return {};
     },
@@ -388,6 +507,9 @@ export function makePressKeyTool(
         session_id: {
           type: 'string',
           minLength: 1,
+          // 边界(E204,E203 advertised 对偶):公开 jsonSchema 同步 inputSchema 的 .max(SESSION_ID_MAX),
+          // 否则 MCP client/LLM 看到的入约允许超长 session_id、调用时却被运行时 schema 拒 = advertised↔运行时不一致。
+          maxLength: SESSION_ID_MAX,
           description: 'Target terminal session id.',
         },
         key: {
@@ -400,7 +522,7 @@ export function makePressKeyTool(
       required: ['session_id', 'key'],
       additionalProperties: false,
     },
-    inputSchema: pressKeyInputSchema,
+    inputSchema: pressKeyBoundedSchema,
     run: async (input: PressKeyInput, ctx: McpCallCtx) => {
       if (!deps.has(input.session_id)) {
         throw ERR_TERMINAL_SESSION_NOT_FOUND(input.session_id);
@@ -411,7 +533,7 @@ export function makePressKeyTool(
         deps.getSessionOwner,
       );
       const bytes = KEY_BYTES[input.key];
-      const ok = deps.write(input.session_id, bytes);
+      const ok = await deps.write(input.session_id, bytes);
       if (!ok) throw ERR_TERMINAL_SESSION_NOT_FOUND(input.session_id);
       return {};
     },
@@ -446,6 +568,9 @@ export function makeReadOutputTool(
         session_id: {
           type: 'string',
           minLength: 1,
+          // 边界(E204,E203 advertised 对偶):公开 jsonSchema 同步 inputSchema 的 .max(SESSION_ID_MAX),
+          // 否则 MCP client/LLM 看到的入约允许超长 session_id、调用时却被运行时 schema 拒 = advertised↔运行时不一致。
+          maxLength: SESSION_ID_MAX,
           description: 'Target terminal session id.',
         },
         since_seq: {
@@ -469,7 +594,7 @@ export function makeReadOutputTool(
       required: ['session_id'],
       additionalProperties: false,
     },
-    inputSchema: readOutputInputSchema,
+    inputSchema: readOutputBoundedSchema,
     run: async (input: ReadOutputInput, ctx: McpCallCtx) => {
       assertSessionInCurrentWindow(
         input.session_id,
@@ -522,6 +647,9 @@ export function makeKillTool(
         session_id: {
           type: 'string',
           minLength: 1,
+          // 边界(E204,E203 advertised 对偶):公开 jsonSchema 同步 inputSchema 的 .max(SESSION_ID_MAX),
+          // 否则 MCP client/LLM 看到的入约允许超长 session_id、调用时却被运行时 schema 拒 = advertised↔运行时不一致。
+          maxLength: SESSION_ID_MAX,
           description: 'Target terminal session id.',
         },
         signal: {
@@ -533,7 +661,7 @@ export function makeKillTool(
       required: ['session_id'],
       additionalProperties: false,
     },
-    inputSchema: killInputSchema,
+    inputSchema: killBoundedSchema,
     run: async (input: KillInput, ctx: McpCallCtx) => {
       if (!deps.has(input.session_id)) {
         throw ERR_TERMINAL_SESSION_NOT_FOUND(input.session_id);

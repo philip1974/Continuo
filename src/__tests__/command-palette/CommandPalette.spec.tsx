@@ -52,6 +52,44 @@ describe('CommandPalette UI', () => {
     expect(items[0]!.textContent).toContain('保存文件');
   });
 
+  // a11y(A1):搜索框须有稳定可访问名(aria-label),否则屏幕阅读器聚焦时只读「编辑框」无名。
+  // placeholder 不算可靠可访问名。locale-无关:断言 aria-label 非空且与 placeholder 一致。
+  it('a11y · 搜索 Input 有 aria-label 可访问名(非仅 placeholder)', () => {
+    render(<CommandPalette commands={makeReg()} />);
+    act(() => useCommandPaletteStore.getState().open());
+    const input = document.querySelector(
+      '.wm-modal-content input',
+    ) as HTMLInputElement | null;
+    expect(input).not.toBeNull();
+    const ariaLabel = input!.getAttribute('aria-label') ?? '';
+    expect(ariaLabel.length).toBeGreaterThan(0);
+    expect(ariaLabel).toBe(input!.getAttribute('placeholder'));
+  });
+
+  // a11y(A15):combobox 模式 —— input 经 aria-activedescendant 指向当前高亮 option(焦点
+  // 留 input),否则屏幕阅读器按上下键不知高亮哪条。断言 role=combobox + activedescendant
+  // 指向存在的 option,且随 selectedIndex 移动。
+  it('a11y · input 是 combobox,aria-activedescendant 跟随 selectedIndex', () => {
+    render(<CommandPalette commands={makeReg()} />);
+    act(() => useCommandPaletteStore.getState().open());
+    const input = document.querySelector(
+      '.wm-modal-content input',
+    ) as HTMLInputElement;
+    expect(input.getAttribute('role')).toBe('combobox');
+    expect(input.getAttribute('aria-controls')).toBe('command-palette-listbox');
+    const ad0 = input.getAttribute('aria-activedescendant');
+    expect(ad0).toBe('command-palette-option-0');
+    expect(document.getElementById(ad0!)).not.toBeNull(); // 指向真实存在的 option
+    act(() => useCommandPaletteStore.setState({ selectedIndex: 1 }));
+    expect(input.getAttribute('aria-activedescendant')).toBe(
+      'command-palette-option-1',
+    );
+    // a11y(A111):selectedIndex 越界(结果变短遗留旧下标)→ aria-activedescendant 须移除,
+    // 不能指向不存在的 option id。
+    act(() => useCommandPaletteStore.setState({ selectedIndex: 999 }));
+    expect(input.getAttribute('aria-activedescendant')).toBeNull();
+  });
+
   it('输入 query → fuzzy 过滤', () => {
     const reg = makeReg();
     render(<CommandPalette commands={reg} />);
@@ -70,6 +108,19 @@ describe('CommandPalette UI', () => {
     expect(
       document.querySelector('.wm-modal-content')!.textContent,
     ).toContain('无匹配');
+    // a11y(A56):空态须在 live region(role=status)播报「无匹配」,焦点在搜索框时也能听到。
+    const status = document.querySelector('.wm-modal-content [role=status]');
+    expect(status).not.toBeNull();
+    expect(status!.textContent).toContain('无匹配');
+    // a11y(A100):无结果时 combobox 仍是展开态(弹层可见显示空态),aria-expanded 须保持 true,
+    // 不能随结果数变 false(否则与可见状态矛盾);aria-activedescendant 此时移除。
+    const input = document.querySelector(
+      '.wm-modal-content input',
+    ) as HTMLInputElement;
+    expect(input.getAttribute('aria-expanded')).toBe('true');
+    expect(input.getAttribute('aria-activedescendant')).toBeNull();
+    // a11y(A101):listbox 不存在(无结果)→ aria-controls 移除,避免引用悬空。
+    expect(input.getAttribute('aria-controls')).toBeNull();
   });
 
   it('点击命令行 → 执行 fn 并关闭', async () => {

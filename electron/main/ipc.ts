@@ -26,8 +26,13 @@ import {
 } from './ipc/plugin-fs.ipc';
 import { registerPluginDataIpc } from './ipc/plugin-data.ipc';
 import { registerPluginShellStreamIpc } from './ipc/plugin-shell-stream.ipc';
-import { AGENT_AUTH_CHANNELS, AGENT_AUTH_DECISIONS } from '../shared/agent-auth-channels';
+import { AGENT_AUTH_CHANNELS } from '../shared/agent-auth-channels';
 import { ERROR_CODES } from '../shared/error-codes';
+import { assertJsonValue } from '../shared/assert-json-value';
+import { AgentAuthRespondSchema } from './agent-auth-schema';
+import { PopoutOpenInput } from './popout-open-schema';
+import { utf8ByteLength } from '../shared/utf8-byte-length';
+import { jsonByteLowerBoundExceeds } from '../shared/json-byte-budget';
 import {
   resolveAgentAuthRequest,
   revokeAndKillAgentSessions,
@@ -38,10 +43,16 @@ import { getStdioConfig } from './services/mcp-stdio-config.service';
 // layout:read 入参为空(renderer ipcRenderer.invoke 不传第二参 → undefined)
 const NoInput = z.undefined();
 
-// popout:open 入参占位 schema,M5 真实现时再扩展 bounds 等字段
-const PopoutOpenInput = z
-  .object({ panelId: z.string().min(1) })
-  .passthrough();
+// 边界(E89/E215):单窗口 dockview layout 序列化字节上限 + 读端守卫,收口到 lib/layout-read-guard
+//(写端 layout:write 与读端 layout:read 共用;ipc.ts 顶层 app 副作用不可测试导入,故抽出可导入模块)。
+import {
+  MAX_LAYOUT_BYTES,
+  sanitizeReadLayout,
+} from './lib/layout-read-guard';
+
+// popout:open 入参 schema 见 ./popout-open-schema(单列以便测试 import,E316;
+// panelId ≤256 + .strict(),与 AgentAuthRespondSchema 同型)。
+// Agent Terminal MCP 授权应答 schema 见 ./agent-auth-schema(单列以便测试 import,E146)。
 
 export function registerIpc(): { pluginFsHandles: PluginFsIpcHandles } {
   const userData = app.getPath('userData');
@@ -66,7 +77,9 @@ export function registerIpc(): { pluginFsHandles: PluginFsIpcHandles } {
       }
       const payload = await loadExplorer(explorerFile);
       const entry = payload?.windows.find((w) => w.windowSeq === seq);
-      return entry?.layout ?? null;
+      // 边界(E215,E89 写端对偶):读端复用写端 JSON-safe + 字节上限,旧版/污染的超大 layout → null
+      //(走默认布局),不让 renderer fromJSON 处理超大 layout 卡顿/放大。
+      return sanitizeReadLayout(entry?.layout ?? null);
     },
     trusted,
   );
@@ -88,11 +101,47 @@ export function registerIpc(): { pluginFsHandles: PluginFsIpcHandles } {
         });
       }
 
+      const layout = LayoutSchema.parse(json);
+      // 边界(E89,E67 对偶):LayoutSchema 是 .passthrough() 无序列化大小上限。畸形 renderer/
+      // dockview 状态可写入超大 layout → explorer.json 撑爆 → 下次 loadExplorer 命中 16MiB
+      // 上限(E67)拒读 → 布局/窗口/会话恢复整体失效 + 写路径 fail-closed 卡死。写盘前按序列化
+      // 字节上限校验(远小于 explorer 16MiB,确保整文件仍可读),超限拒写并保留旧 layout。
+      // 边界(E308,E305-E307 reorder 同族 / 校验顺序 fail-fast):字节下界 fail-fast 在 assertJsonValue
+      // 全量遍历之前 —— 超 2MiB 但 shape 合法(≤assertJsonValue 1M/10万/256 上限)的 layout 不被 assertJsonValue
+      // 完整遍历后才拒。jsonByteLowerBoundExceeds 对任意输入安全(E288)可先跑。(仅「既非 JSON-safe 又超限」
+      // 病态 layout 错误码从 BAD_INPUT 变 PAYLOAD_TOO_LARGE —— 两者皆拒写,单-bad 不变。)
+      if (jsonByteLowerBoundExceeds(layout, MAX_LAYOUT_BYTES)) {
+        throw Object.assign(
+          new Error(`layout too large (> ${MAX_LAYOUT_BYTES})`),
+          { code: ERROR_CODES.PAYLOAD_TOO_LARGE },
+        );
+      }
+      // 边界(E119,E105/E117 同族):LayoutSchema 是 .passthrough(),layout 可含 Infinity/NaN/
+      // undefined(structured-clone 经 IPC 保留)。仅 JSON.stringify 判大小会静默把这些改成 null/
+      // 丢字段 → 写盘后 dock layout/面板 params 与内存态不一致。assertJsonValue 拒非 JSON 安全值。
+      try {
+        assertJsonValue(layout);
+      } catch {
+        throw Object.assign(
+          new Error('layout contains non-JSON-safe values'),
+          { code: ERROR_CODES.BAD_INPUT },
+        );
+      }
+      const serialized = JSON.stringify(layout);
+      // 边界(E125):真实 UTF-8 字节(非 .length=UTF-16 code unit),防多字节 layout 绕过上限撑爆 explorer.json。
+      const layoutBytes = utf8ByteLength(serialized);
+      if (layoutBytes > MAX_LAYOUT_BYTES) {
+        throw Object.assign(
+          new Error(`layout too large (${layoutBytes} > ${MAX_LAYOUT_BYTES})`),
+          { code: ERROR_CODES.PAYLOAD_TOO_LARGE },
+        );
+      }
+
       await withExplorerFileMutex(async () => {
         const payload =
           (await loadExplorer(explorerFile)) ?? defaultExplorerV3();
         const entry = ensureWindowEntry(payload, seq);
-        entry.layout = LayoutSchema.parse(json);
+        entry.layout = layout;
         await atomicWriteJson(explorerFile, payload);
       });
     },
@@ -103,7 +152,25 @@ export function registerIpc(): { pluginFsHandles: PluginFsIpcHandles } {
   safeHandle(
     'explorer:read',
     NoInput,
-    () => loadExplorer(explorerFile),
+    async () => {
+      const payload = await loadExplorer(explorerFile);
+      if (!payload) return payload; // null(首次启动 / 损坏保留)
+      // 边界(E261,E215 同入口对偶 / 读端 cap 绕过):explorer:read 返回完整 payload(含 windows[].layout)。
+      // layout 的 2MiB 读端 cap(sanitizeReadLayout,E215)此前只用于 layout:read —— 污染/旧版 explorer.json
+      // 可携带接近 16MiB 文件上限的超大 layout 经 LayoutSchema.passthrough() 绕过 layout 读 cap,使 renderer
+      // 启动 hydrate 无谓 structured-clone/传输巨大 layout 卡顿/内存峰值。返回前对每个 window.layout 复用
+      // 同一读端守卫:超限/非 JSON-safe → 剥离该 layout(renderer 走默认布局),合法则原样保留。
+      return {
+        ...payload,
+        windows: payload.windows.map((w) => {
+          if (w.layout == null) return w;
+          if (sanitizeReadLayout(w.layout) !== null) return w; // 合法,原样保留
+          const rest = { ...w };
+          delete rest.layout; // 超大/非 JSON-safe layout → 剥离
+          return rest;
+        }),
+      };
+    },
     trusted,
   );
   safeHandleWithCtx(
@@ -180,16 +247,10 @@ export function registerIpc(): { pluginFsHandles: PluginFsIpcHandles } {
   // 多窗口支持(issue #23 Phase 1):window.create
   registerWindowIpc();
 
-  // Agent Terminal MCP — 授权应答通道(P2)
-  const agentAuthRespondSchema = z
-    .object({
-      requestId: z.string().min(1),
-      decision: z.enum(AGENT_AUTH_DECISIONS),
-    })
-    .strict();
+  // Agent Terminal MCP — 授权应答通道(P2)。schema 见模块级 AgentAuthRespondSchema(E146)。
   safeHandle(
     AGENT_AUTH_CHANNELS.RESPOND,
-    agentAuthRespondSchema,
+    AgentAuthRespondSchema,
     ({ requestId, decision }) => {
       resolveAgentAuthRequest(requestId, decision);
     },

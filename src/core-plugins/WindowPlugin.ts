@@ -4,6 +4,11 @@
 import { Plugin } from '@/plugins/Plugin';
 import { coApi } from '@/lib/co-api';
 import { notify } from '@/notifications/notify';
+import { localizeErrorByCode } from '@/lib/localize-error';
+import {
+  trySelectDirectoryLock,
+  releaseSelectDirectoryLock,
+} from '@/lib/select-directory-single-flight';
 
 export default class WindowPlugin extends Plugin {
   onload(): void {
@@ -19,7 +24,13 @@ export default class WindowPlugin extends Plugin {
         const r = await coApi.window.create({});
         if (!r.ok) {
           console.warn('[window.new] create failed', r.code, r.message);
-          notify.error(r.message, { code: r.code, mirror: false });
+          // i18n(I9,I6-I8 同族):window.create 返回 WORKSPACE_*/NO_WINDOW_SEQ 等有三语言
+          // catalog 的 code,按 code 本地化(zh/ko 不看英文 raw)。WORKSPACE_* 带占位符,
+          // helper 的占位符守卫会自动回退 raw message。
+          notify.error(localizeErrorByCode(r.code, r.message), {
+            code: r.code,
+            mirror: false,
+          });
         }
       },
     });
@@ -32,20 +43,29 @@ export default class WindowPlugin extends Plugin {
       category: 'Window',
       categoryKey: 'commands.window.category',
       fn: async () => {
-        const dr = await coApi.fs.selectDirectory();
-        if (!dr.ok) {
-          console.warn('[window.openFolderInNew] selectDirectory failed', dr);
-          return;
-        }
-        if (dr.data === null) return; // 用户取消
-        const cr = await coApi.window.create({ workspace: dr.data });
-        if (!cr.ok) {
-          console.warn(
-            '[window.openFolderInNew] window.create failed',
-            cr.code,
-            cr.message,
-          );
-          notify.error(cr.message, { code: cr.code });
+        // race(R106,R8 同族):同步单飞闸门防同 tick 重复触发并发弹原生选择器(与 EmptyWorkspace /
+        // ExplorerHeader 共享全局锁 → 全 app 同时只一个目录选择器)。
+        if (!trySelectDirectoryLock()) return;
+        try {
+          const dr = await coApi.fs.selectDirectory();
+          if (!dr.ok) {
+            console.warn('[window.openFolderInNew] selectDirectory failed', dr);
+            return;
+          }
+          if (dr.data === null) return; // 用户取消
+          const cr = await coApi.window.create({ workspace: dr.data });
+          if (!cr.ok) {
+            console.warn(
+              '[window.openFolderInNew] window.create failed',
+              cr.code,
+              cr.message,
+            );
+            notify.error(localizeErrorByCode(cr.code, cr.message), {
+              code: cr.code,
+            });
+          }
+        } finally {
+          releaseSelectDirectoryLock();
         }
       },
     });

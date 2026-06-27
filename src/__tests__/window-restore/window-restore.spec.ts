@@ -1,5 +1,9 @@
-import { describe, it, expect } from 'vitest';
-import { pickWindowsToRestore } from '../../../electron/main/services/window-restore.service';
+import { describe, it, expect, vi } from 'vitest';
+import {
+  pickWindowsToRestore,
+  MAX_RESTORE_WINDOWS,
+} from '../../../electron/main/services/window-restore.service';
+import { MAX_STARTUP_DIR_PATH_LEN } from '../../../electron/main/services/cli-args.service';
 import type { ExplorerPayload } from '../../../electron/main/persistence';
 
 const allDirs = (_p: string) => true;
@@ -121,5 +125,73 @@ describe('pickWindowsToRestore', () => {
       false,
     );
     expect(pickWindowsToRestore(data, allDirs)).toEqual([]);
+  });
+
+  // 边界(E60,E58/E59 启动外部输入族):启动恢复窗口数上限 + 超长 workspace 路径先跳过(不 stat)。
+  describe('E60 · 启动恢复上限', () => {
+    it('恢复窗口数超 MAX_RESTORE_WINDOWS → 封顶且停止同步 stat', () => {
+      const isDir = vi.fn(() => true);
+      const windows = [
+        win({ windowSeq: 0, workspace: { root: '/p0' } }),
+        ...Array.from({ length: MAX_RESTORE_WINDOWS + 30 }, (_, i) =>
+          win({ windowSeq: i + 1, workspace: { root: `/p${i + 1}` } }),
+        ),
+      ];
+      const data = snap(windows, windows.length, true);
+      const r = pickWindowsToRestore(data, isDir);
+      expect(r).toHaveLength(MAX_RESTORE_WINDOWS); // 封顶,不批量开成千上万窗
+      expect(isDir.mock.calls.length).toBeLessThanOrEqual(MAX_RESTORE_WINDOWS);
+    });
+
+    it('超长 workspace 路径 → 跳过且不 stat', () => {
+      const isDir = vi.fn(() => true);
+      const longRoot = '/' + 'x'.repeat(MAX_STARTUP_DIR_PATH_LEN);
+      const data = snap(
+        [
+          win({ windowSeq: 0, workspace: { root: '/p0' } }),
+          win({ windowSeq: 1, workspace: { root: longRoot } }),
+          win({ windowSeq: 2, workspace: { root: '/ok' } }),
+        ],
+        3,
+        true,
+      );
+      const r = pickWindowsToRestore(data, isDir);
+      expect(r.map((x) => x.workspace)).toEqual(['/ok']);
+      expect(isDir).not.toHaveBeenCalledWith(longRoot);
+    });
+  });
+
+  // 边界(E84,数据完整性):重复 windowSeq 段不为同一 seq 开多窗(会共享同段互相覆盖会话)。
+  describe('E84 · 重复 windowSeq 去重', () => {
+    it('多个相同 windowSeq 段 → 只恢复一次(首个 workspace)', () => {
+      const data = snap([
+        win({ windowSeq: 0, workspace: { root: '/p0' } }),
+        win({ windowSeq: 1, workspace: { root: '/dup-first' } }),
+        win({ windowSeq: 1, workspace: { root: '/dup-second' } }),
+        win({ windowSeq: 2, workspace: { root: '/p2' } }),
+      ]);
+      expect(pickWindowsToRestore(data, allDirs)).toEqual([
+        { windowSeq: 1, workspace: '/dup-first' }, // 同 seq 只一次,取首个
+        { windowSeq: 2, workspace: '/p2' },
+      ]);
+    });
+  });
+
+  // 边界(E91):windowSeq 须安全整数。畸形 explorer.json 的 >MAX_SAFE_INTEGER seq 能过 schema
+  // (int().nonnegative()),但 main/renderer 段编号认知不一致 → 启动恢复跳过。
+  describe('E91 · 非安全整数 windowSeq', () => {
+    it('windowSeq > MAX_SAFE_INTEGER → 启动恢复跳过', () => {
+      const data = snap([
+        win({ windowSeq: 0, workspace: { root: '/p0' } }),
+        win({
+          windowSeq: Number.MAX_SAFE_INTEGER + 2, // 9007199254740993,不安全整数
+          workspace: { root: '/unsafe' },
+        }),
+        win({ windowSeq: 3, workspace: { root: '/p3' } }),
+      ]);
+      expect(pickWindowsToRestore(data, allDirs)).toEqual([
+        { windowSeq: 3, workspace: '/p3' }, // 不安全 seq 段被跳过
+      ]);
+    });
   });
 });

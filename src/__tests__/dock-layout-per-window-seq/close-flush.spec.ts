@@ -29,6 +29,7 @@ const electronMock = vi.hoisted(() => {
       once: vi.fn(),
       on: vi.fn(),
       getURL: vi.fn(() => ''),
+      isDestroyed: vi.fn(() => this.destroyed),
     };
     readonly close = vi.fn(() => {
       const event = {
@@ -183,7 +184,9 @@ vi.mock('../../../electron/main/ipc/plugin-mcp.ipc', () => ({
   startPluginMcpIpc: vi.fn(),
 }));
 
-const { createMainWindow } = await import('../../../electron/main/index');
+const { createMainWindow, FLUSH_ACK_TIMEOUT_MS } = await import(
+  '../../../electron/main/index'
+);
 
 let dir: string;
 
@@ -252,6 +255,24 @@ describe('window close layout flush', () => {
     await waitForLastClosedAt(5);
   });
 
+  it('R45: flush 在途时重复 close 不重发 flush(不覆盖 pending ack)', async () => {
+    const win = createMockMainWindow(7);
+
+    win.close(); // 首次 close → 发 flush-request,flush 在途
+    win.close(); // flush 未 ack 时再次 close → 应只 preventDefault,不重发
+
+    const flushSends = win.webContents.send.mock.calls.filter(
+      (c) => c[0] === 'layout:flush-request',
+    );
+    expect(flushSends).toHaveLength(1); // 只发一次(旧实现会发两次并覆盖 pending ack)
+    expect(win.destroyed).toBe(false);
+
+    ack(win); // 单个 ack 即可结算(未被第二次覆盖)
+    await tick();
+    expect(win.destroyed).toBe(true);
+    await waitForLastClosedAt(7);
+  });
+
   it('T14b: ack completes once and later timer cannot close twice', async () => {
     vi.useFakeTimers();
     const win = createMockMainWindow(5);
@@ -272,12 +293,30 @@ describe('window close layout flush', () => {
     const win = createMockMainWindow(5);
 
     win.close();
+    // 数据安全(codex 复查 P1):放宽超时前不应关窗 —— 慢盘合法 flush 不被 1s 切断。
     await vi.advanceTimersByTimeAsync(1000);
     await tick();
+    expect(win.destroyed).toBe(false); // 1s 时仍在等 ack(旧值会在此误关)
 
-    expect(win.destroyed).toBe(true);
+    await vi.advanceTimersByTimeAsync(FLUSH_ACK_TIMEOUT_MS);
+    await tick();
+    expect(win.destroyed).toBe(true); // 兜底超时仍会关(防挂死)
     expect(win.close).toHaveBeenCalledTimes(2);
     await waitForLastClosedAt(5);
+  });
+
+  it('T14f: webContents 已销毁 → flush 立即放行(不空等满超时)', async () => {
+    vi.useFakeTimers();
+    const win = createMockMainWindow(5);
+    win.destroyed = true; // renderer 已不可交互
+
+    win.close();
+    await tick();
+
+    // 不需推进任何定时器即关闭(立即放行)
+    expect(win.destroyed).toBe(true);
+    expect(win.close).toHaveBeenCalledTimes(2);
+    await waitForLastClosedAt(5); // 等 closed 持久化完成,避免与 afterEach 删目录竞态
   });
 
   it('T14d: cross-window ack spoof is ignored', async () => {
@@ -299,7 +338,7 @@ describe('window close layout flush', () => {
     await tick();
     expect(win.destroyed).toBe(false);
 
-    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(FLUSH_ACK_TIMEOUT_MS);
     await tick();
     expect(win.destroyed).toBe(true);
     await waitForLastClosedAt(5);
@@ -323,7 +362,7 @@ describe('window close layout flush', () => {
     await tick();
     expect(win.destroyed).toBe(false);
 
-    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(FLUSH_ACK_TIMEOUT_MS);
     await tick();
     expect(win.destroyed).toBe(true);
     await waitForLastClosedAt(5);

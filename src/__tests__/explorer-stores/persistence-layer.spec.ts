@@ -9,6 +9,7 @@ import {
 import {
   hydrateStores,
   initExplorerPersistence,
+  flushExplorerPersistence,
   snapshotFromStores,
   type ExplorerPersistApi,
   type ExplorerSnapshot,
@@ -232,6 +233,42 @@ describe('initExplorerPersistence', () => {
     expect(useWorkspaceStore.getState().root).toBeNull();
   });
 
+  // 数据安全(codex 复查 P1):read 失败(EACCES/EIO → ok:false)= 不可信加载,store 仍默认态。
+  // 此时**不得**注册写订阅 —— 否则后续任意变化把默认态 snapshot 写盘 → main merge 覆盖真实
+  // recentRoots/pinned/window/editor。
+  it('read 失败(ok=false)→ 不注册写订阅:后续 store 变化不调用 api.write', async () => {
+    vi.useFakeTimers();
+    try {
+      const api = makeApi(async () => ({
+        ok: false as const,
+        code: 'EACCES',
+        message: 'denied',
+      }));
+      await initExplorerPersistence(api);
+      useWorkspaceStore.getState().setRoot('/a');
+      useExplorerStore.getState().toggleExpand('/a');
+      await vi.advanceTimersByTimeAsync(400);
+      expect(api.write).not.toHaveBeenCalled(); // 不可信加载 → 绝不写盘
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('read reject(promise 异常)→ 同样不注册写订阅', async () => {
+    vi.useFakeTimers();
+    try {
+      const api = makeApi(async () => {
+        throw new Error('bridge crash');
+      });
+      await initExplorerPersistence(api);
+      useWorkspaceStore.getState().setRoot('/a');
+      await vi.advanceTimersByTimeAsync(400);
+      expect(api.write).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('read 数据非合法 schema → 不 hydrate(降级到初态),不 crash', async () => {
     const api = makeApi(async () => ({
       ok: true,
@@ -282,6 +319,51 @@ describe('initExplorerPersistence', () => {
       expect(warn).toHaveBeenCalled();
     } finally {
       warn.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  // race(R87):debounce 自动写与关窗 flush 并发时,写必须串行 —— 旧 snapshot 不得在新之后落盘。
+  it('R87 写串行:in-flight 写期间的 flush 不并发调 api.write,且最终落最新 snapshot', async () => {
+    vi.useFakeTimers();
+    try {
+      const writeCalls: ExplorerSnapshot[] = [];
+      const resolvers: Array<() => void> = [];
+      const api: ExplorerPersistApi = {
+        read: async () => ({ ok: true, data: null }),
+        write: vi.fn((snap: ExplorerSnapshot) => {
+          writeCalls.push(snap);
+          return new Promise<{ ok: true; data: undefined }>((r) => {
+            resolvers.push(() => r({ ok: true, data: undefined }));
+          });
+        }),
+      };
+      await initExplorerPersistence(api);
+
+      // 写#1:root=/a → debounce 触发 → writeNow#1 → api.write#1(deferred,在途)。
+      useWorkspaceStore.getState().setRoot('/a');
+      await vi.advanceTimersByTimeAsync(400);
+      expect(writeCalls.length).toBe(1);
+
+      // #1 在途时改 store + 关窗 flush → writeNow#2。单飞:不并发调 api.write。
+      useWorkspaceStore.getState().setRoot('/b');
+      const flushP = flushExplorerPersistence();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(writeCalls.length).toBe(1); // 关键:#2 排队,未与 #1 并发
+
+      // 放行 #1 → 链推进 → #2 执行,执行时重读最新 snap(root=/b)。
+      resolvers[0]!();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(writeCalls.length).toBe(2);
+
+      resolvers[1]!();
+      await flushP;
+
+      // 最后落盘的是最新态 root=/b(旧 /a 不在新之后覆盖)。
+      const last = writeCalls[writeCalls.length - 1]!;
+      const w0 = last.windows.find((w) => w.windowSeq === 0)!;
+      expect(w0.workspace.root).toBe('/b');
+    } finally {
       vi.useRealTimers();
     }
   });

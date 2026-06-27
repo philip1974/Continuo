@@ -60,3 +60,24 @@ describe('topic49 6thS · mergeWritableIntoFull preserves restoreAllWindowsOnLau
     expect(merged.restoreAllWindowsOnLaunch).toBe(true);
   });
 });
+
+// 边界(E138,E137 主进程写盘侧对偶):writable 来自 renderer IPC,schema 只校验 nonnegative int
+//(zod .int() 不拒 unsafe integer)。merge 时只采纳安全整数的 writable.nextWindowSeq,否则忽略。
+describe('mergeWritableIntoFull · nextWindowSeq safe-integer 守卫(E138)', () => {
+  it('E138 writable.nextWindowSeq 为 unsafe integer → 忽略,保留磁盘安全值(不污染)', () => {
+    const current = defaultExplorerV3();
+    current.nextWindowSeq = 7; // 磁盘 main-owned 安全值
+    const w = { ...writable(), nextWindowSeq: Number.MAX_SAFE_INTEGER + 2 };
+    const merged = mergeWritableIntoFull(current, w);
+    expect(Number.isSafeInteger(merged.nextWindowSeq)).toBe(true);
+    expect(merged.nextWindowSeq).toBe(7); // unsafe 被忽略,max 保留磁盘值
+  });
+
+  it('E138 writable.nextWindowSeq 安全且更大 → 正常取 max(不回退)', () => {
+    const current = defaultExplorerV3();
+    current.nextWindowSeq = 2;
+    const w = { ...writable(), nextWindowSeq: 9 };
+    const merged = mergeWritableIntoFull(current, w);
+    expect(merged.nextWindowSeq).toBe(9);
+  });
+});

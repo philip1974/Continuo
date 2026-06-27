@@ -41,4 +41,26 @@ describe('49 · isPopoutUrl 精确判定 popout 子窗', () => {
     expect(isPopoutUrl('not a url')).toBe(false);
     expect(isPopoutUrl('')).toBe(false);
   });
+
+  // 边界(E196,renderer isPopoutWindow E195 主进程对偶):isPopoutUrl 在窗口创建/agent-auth/MCP fallback
+  // 等热路径对 webContents.getURL() 反复调用,new URL 前须 typeof + 长度闸,挡畸形超长窗口 URL 反复完整解析。
+  describe('E196 · 窗口 URL 长度上限(主进程热路径)', () => {
+    it('超长窗口 URL(> MAX_WINDOW_URL_LEN)→ false(不解析)', () => {
+      const huge = `file:///app/index.html?popout=1&pad=${'a'.repeat(70000)}`;
+      expect(huge.length).toBeGreaterThan(65536);
+      expect(isPopoutUrl(huge)).toBe(false);
+    });
+
+    it('非字符串 → false 不抛', () => {
+      expect(isPopoutUrl(undefined as unknown as string)).toBe(false);
+      expect(isPopoutUrl(123 as unknown as string)).toBe(false);
+      expect(isPopoutUrl(null as unknown as string)).toBe(false);
+    });
+
+    it('上限内正常窗口 URL → 照常精确判定(回归)', () => {
+      const longPath = `file:///Users/me/${'sub/'.repeat(1000)}proj/index.html?popout=1`;
+      expect(longPath.length).toBeLessThan(65536);
+      expect(isPopoutUrl(longPath)).toBe(true);
+    });
+  });
 });

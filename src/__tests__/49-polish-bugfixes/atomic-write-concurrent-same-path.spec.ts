@@ -64,17 +64,31 @@ describe('49 P1-AL · atomicWriteFile 同路径并发写不损坏', () => {
     expect(left).toEqual([]);
   });
 
-  it('固定 tmp 名:crash 残留的孤儿 .tmp 被下次写复用、不累积(自审回归锁定)', async () => {
+  it('固定隐藏标记 tmp 名:crash 残留的孤儿被下次写复用、不累积(自审回归锁定)', async () => {
     const dir = await tempDir();
     const file = join(dir, 'doc.md');
-    // 模拟上次 crash 在 fsync→rename 窗口残留的孤儿 tmp
-    await writeFile(`${file}.tmp`, 'STALE-ORPHAN');
+    // 模拟上次 crash 在 fsync→rename 窗口残留的孤儿(隐藏标记名 .<base>.continuo.tmp)
+    await writeFile(join(dir, '.doc.md.continuo.tmp'), 'STALE-ORPHAN');
 
     await atomicWriteFile(file, 'fresh');
 
-    // 固定 tmp 名 → 被复用覆盖并 rename 消费,目录里不再有任何 .tmp(不累积孤儿)
+    // EEXIST 标记残留 → rm 后重试 + rename 消费,目录里不再有任何 .tmp(不累积孤儿)
     expect(await readFile(file, 'utf-8')).toBe('fresh');
     const left = (await readdir(dir)).filter((n) => n.endsWith('.tmp'));
     expect(left).toEqual([]);
+  });
+
+  // 数据安全(codex 复查 P1):tmp 旧用可预测 `${file}.tmp`,会截断同名用户真实文件。
+  // 改隐藏标记名后,用户的 `foo.md.tmp` 不再被保存 foo.md 的过程销毁。
+  it('保存 foo.md 不破坏用户真实文件 foo.md.tmp(tmp 用隐藏标记名)', async () => {
+    const dir = await tempDir();
+    const file = join(dir, 'foo.md');
+    const userTmp = join(dir, 'foo.md.tmp');
+    await writeFile(userTmp, 'USER DATA');
+
+    await atomicWriteFile(file, 'saved');
+
+    expect(await readFile(file, 'utf-8')).toBe('saved');
+    expect(await readFile(userTmp, 'utf-8')).toBe('USER DATA'); // 未被销毁
   });
 });

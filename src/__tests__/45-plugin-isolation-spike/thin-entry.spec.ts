@@ -81,6 +81,23 @@ describeIfImplemented('topic 45 thin renderer entry', () => {
 
     expect(typeof mainAppModule.init).toBe('function');
   });
+
+  // 边界(E194,E193 兄弟入口):thin-entry 的 spike 判定复用 safeStartupParams 的长度闸。
+  // 畸形超长 location.search(> MAX_STARTUP_QUERY_LEN 64KiB)→ safeStartupParams 返 null → 不解析 →
+  // 当作非 spike → 加载 main-app(而非在最早入口完整解析超长 query)。
+  it('E194 super-long location.search is length-capped (not parsed for spike) → routes to main-app', async () => {
+    const run = vi.fn();
+    const init = vi.fn();
+    vi.doMock(spikeModulePath, () => ({ run }));
+    vi.doMock(mainAppModulePath, () => ({ init }));
+
+    // 含 spike=plugin-isolation 但整体超长 → 无长度闸时会被解析并命中 spike;有闸则当非 spike。
+    const huge = `?spike=plugin-isolation&pad=${'a'.repeat(70000)}`;
+    await runEntry(huge);
+
+    expect(run).not.toHaveBeenCalled();
+    expect(init).toHaveBeenCalledOnce();
+  });
 });
 
 describe('topic 45 main-app top-level AST contract', () => {

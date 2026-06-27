@@ -11,7 +11,10 @@ vi.mock('../../plugins/PluginManager', () => ({
   getUserPluginManager: vi.fn(),
 }));
 
-import { useUpdateStore } from '../../marketplace/update-store';
+import {
+  useUpdateStore,
+  MAX_MANIFEST_FETCH_CONCURRENCY,
+} from '../../marketplace/update-store';
 import {
   fetchMarketplaceIndex,
   fetchPluginManifest,
@@ -69,6 +72,20 @@ describe('useUpdateStore.refresh', () => {
     vi.restoreAllMocks();
   });
 
+  // 边界(E7):远端 manifest.version 为畸形/超长数字段(不安全整数)→ 跳过该插件更新,不因
+  // Infinity/字符串比较误判「有更新」显示角标/按钮。
+  it('E7 远端 version 畸形(超长数字段)→ 不收录更新', async () => {
+    fetchIndex.mockResolvedValue([entry('a')]);
+    fetchManifest.mockImplementation(async () =>
+      manifest('a', '99999999999999999999.0.0'),
+    );
+    getMgr.mockReturnValue(fakeMgr([{ id: 'a', version: '0.1.0' }]));
+
+    await useUpdateStore.getState().refresh();
+    const s = useUpdateStore.getState();
+    expect(s.available).toHaveLength(0); // 畸形远端版本不误判有更新
+  });
+
   it('正路径:remote > local → available 收录;remote = local → 不收', async () => {
     fetchIndex.mockResolvedValue([entry('a'), entry('b')]);
     fetchManifest.mockImplementation(async (e: MarketplaceEntry) => {
@@ -120,6 +137,20 @@ describe('useUpdateStore.refresh', () => {
     await p1;
     // 关键:过期的 refresh1 即使算出 [a@0.2.0] 也被 gen 守卫丢弃,不覆盖最新结果
     expect(useUpdateStore.getState().available).toHaveLength(0);
+  });
+
+  // race(R7):refresh 网络期间用户卸载插件 → 提交前 live 重读 installed,不把已卸载插件
+  // 重新加入 available(否则在 dismiss 之后落库 = 角标/更新列表复活)。
+  it('R7 网络期间卸载插件 → 提交时用 live installed,不复活已卸载插件', async () => {
+    fetchIndex.mockResolvedValue([entry('a')]);
+    fetchManifest.mockResolvedValue(manifest('a', '0.2.0')); // remote > local,旧快照会算出有更新
+    // 第一次 listAll(请求前快照)含 a;第二次(提交前 live)a 已被卸载。
+    getMgr
+      .mockReturnValueOnce(fakeMgr([{ id: 'a', version: '0.1.0' }]))
+      .mockReturnValueOnce(fakeMgr([]));
+
+    await useUpdateStore.getState().refresh();
+    expect(useUpdateStore.getState().available).toEqual([]);
   });
 
   it('某 manifest 失败 → 跳过它,其它正常处理', async () => {
@@ -201,6 +232,87 @@ describe('useUpdateStore.refresh', () => {
     // 只为已安装的 b 拉 manifest,不拉 a/c
     expect(fetchManifest).toHaveBeenCalledTimes(1);
     expect((fetchManifest.mock.calls[0]![0] as MarketplaceEntry).id).toBe('b');
+  });
+
+  // race(R78):dismiss(id) 只乐观删 available,不让在途 refresh 失效。旧 refresh 在 dismiss 之后、
+  // mgr.reload() 落地之前提交时,用仍是旧版本的 mgr 快照重算出同一 update 覆盖回 available(角标复活)。
+  // 修复:dismiss 记目标版本,refresh 提交前过滤同版本。
+  it('R78 dismiss 后在途 refresh 用旧快照不复活该 update', async () => {
+    useUpdateStore.setState({
+      remoteVersions: new Map(),
+      available: [
+        { id: 'a', name: 'a', from: '1.0.0', to: '2.0.0', entry: entry('a') },
+      ],
+      checking: false,
+      lastCheckedAt: null,
+      dismissed: new Map(),
+    });
+    // reload 尚未落地:mgr 仍报 a@1.0.0(< 远程 2.0.0)。
+    getMgr.mockReturnValue(fakeMgr([{ id: 'a', version: '1.0.0' }]));
+    fetchIndex.mockResolvedValue([entry('a')]);
+    let resolveM: (m: RemoteManifestSnapshot) => void = () => {};
+    fetchManifest.mockImplementation(
+      () =>
+        new Promise<RemoteManifestSnapshot>((res) => {
+          resolveM = res;
+        }),
+    );
+
+    const p = useUpdateStore.getState().refresh(); // 在途
+    await vi.waitFor(() => {
+      if (fetchManifest.mock.calls.length === 0) throw new Error('manifest 未请求');
+    });
+
+    // 更新成功的乐观 dismiss(此时 available 仍含 a,记录目标版本 2.0.0)。
+    useUpdateStore.getState().dismiss('a');
+    expect(useUpdateStore.getState().available.map((u) => u.id)).toEqual([]);
+
+    // 在途 refresh 提交:mgr 仍 a@1.0.0 < 2.0.0,但 dismissed{a:2.0.0} 过滤掉 → 不复活。
+    resolveM(manifest('a', '2.0.0'));
+    await p;
+    expect(useUpdateStore.getState().available.map((u) => u.id)).toEqual([]);
+  });
+
+  // 边界(E234,E216 并发 fan-out 同族):manifest 拉取用有界并发池,最大同时在途 fetch 数
+  // ≤ MAX_MANIFEST_FETCH_CONCURRENCY。旧 `Promise.allSettled(relevant.map(...))` 会同时发起全部(可达
+  // index 4096 / 本地目录 1024),打爆网络/renderer。N 远大于上限时,峰值在途数应恰好钳到上限。
+  it('E234 manifest 拉取有界并发(峰值在途 ≤ MAX_MANIFEST_FETCH_CONCURRENCY)', async () => {
+    const N = 50; // 远大于上限(12),不限并发则会同时发起 50 个
+    const ids = Array.from({ length: N }, (_, i) => `p${String(i).padStart(3, '0')}`);
+    fetchIndex.mockResolvedValue(ids.map((id) => entry(id)));
+    getMgr.mockReturnValue(fakeMgr(ids.map((id) => ({ id, version: '0.1.0' }))));
+
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const releasers: (() => void)[] = [];
+    fetchManifest.mockImplementation((e: MarketplaceEntry) => {
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      return new Promise<RemoteManifestSnapshot>((res) => {
+        releasers.push(() => {
+          inFlight -= 1;
+          res(manifest(e.id, '0.1.0'));
+        });
+      });
+    });
+
+    const p = useUpdateStore.getState().refresh();
+    // 逐个放行在途 fetch:每放行一个,池中空出的 worker 会启动下一个(push 新 releaser)。
+    let released = 0;
+    while (released < N) {
+      await vi.waitFor(() => {
+        if (releasers.length <= released) throw new Error('等待下一个 fetch 启动');
+      });
+      releasers[released]!();
+      released += 1;
+      await Promise.resolve(); // 让池调度下一个
+    }
+    await p;
+
+    // 峰值在途恰好钳到上限(N > 上限,池一开始就填满 worker)。
+    expect(maxInFlight).toBe(MAX_MANIFEST_FETCH_CONCURRENCY);
+    // 全部 50 个最终都拉取过(单失败不影响其它的 allSettled 语义保留)。
+    expect(fetchManifest).toHaveBeenCalledTimes(N);
   });
 
   it('refresh 期间 checking=true', async () => {

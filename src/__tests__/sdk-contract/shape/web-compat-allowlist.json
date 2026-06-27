@@ -43,31 +43,31 @@
   },
   {
     "path": "src/plugins/scoped-app.ts",
-    "line": 159,
+    "line": 366,
     "pattern": "global(?:This)?\\.",
     "reason": "Comment explains scoped network uses cached raw fetch after sandbox sweep."
   },
   {
     "path": "src/plugins/storage/local-storage-record.ts",
-    "line": 9,
+    "line": 35,
     "pattern": "global(?:This)?\\.",
     "reason": "Shared localStorage-record helper intentionally guards localStorage availability (M21,从 settings/keybindings store 抽取)."
   },
   {
     "path": "src/plugins/storage/local-storage-record.ts",
-    "line": 11,
+    "line": 37,
     "pattern": "global(?:This)?\\.",
     "reason": "Shared localStorage-record helper intentionally reads localStorage JSON record (M21)."
   },
   {
     "path": "src/plugins/storage/local-storage-record.ts",
-    "line": 24,
+    "line": 98,
     "pattern": "global(?:This)?\\.",
     "reason": "Shared localStorage-record helper intentionally guards localStorage availability on write (M21)."
   },
   {
     "path": "src/plugins/storage/local-storage-record.ts",
-    "line": 26,
+    "line": 117,
     "pattern": "global(?:This)?\\.",
     "reason": "Shared localStorage-record helper intentionally writes localStorage JSON record (M21)."
   },

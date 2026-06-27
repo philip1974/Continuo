@@ -10,6 +10,12 @@ import type { FsApi } from '@/lib/fs/api';
 import type { IpcResult } from '@/lib/fs/types';
 import { errorMessage } from '../../../electron/shared/error-message';
 import { createTab, useEditorStore } from '@/stores/editor.store';
+import { pathEquals } from '@/lib/path-cross';
+import { runSerialPerKey } from '@/lib/serialize-per-key';
+
+// race(R21):同一 tab 的保存串行链。autosave(旧内容)在途时用户编辑 + 手动保存(新内容),若
+// 二者乱序完成,旧内容会最后落盘覆盖新的。按 tabId 串行保证按发起顺序写盘,最后发起者最后落盘。
+const saveChains = new Map<string, Promise<unknown>>();
 
 export interface EditorFileDeps {
   fs: Pick<FsApi, 'readFile' | 'writeFile'>;
@@ -34,10 +40,15 @@ export async function openFileByPath(
   deps: EditorFileDeps,
 ): Promise<FileOpResult> {
   const { fs, store } = deps;
-  // 已开过 → 只切换
-  const existing = store.getState().tabs.find((t) => t.id === path);
+  // 已开过 → 只切换。跨平台(codex 复查 P1):用平台感知 pathEquals 而非 `===` —— Windows
+  // 上同一文件以 `C:\Repo\a.md` / `c:\repo\a.md` 不同大小写打开,`===` 判不等 → 开出两个
+  // tab,分别编辑保存同一文件 → 后保存者覆盖前者丢改。switchTab 用**已存在 tab 的真实 id**
+  // (大小写可能与传入 path 不同)。POSIX 大小写敏感不变(pathEquals 在非 Windows 即 ===)。
+  const existing = store
+    .getState()
+    .tabs.find((t) => pathEquals(t.filePath ?? t.id, path));
   if (existing) {
-    store.getState().switchTab(path);
+    store.getState().switchTab(existing.id);
     return { ok: true, data: undefined };
   }
 
@@ -49,6 +60,18 @@ export async function openFileByPath(
   }
   if (!r.ok) return r;
 
+  // race(R20):check(上面 existing)→ read → create 之间是 TOCTOU 窗口。并发打开同一文件
+  // (尤其 Windows 不同大小写路径 C:\Repo\a.md / c:\repo\a.md)时,两个调用都在读前看不到
+  // existing,读后各自 createTab → 同一磁盘文件出现两个 tab,分别保存互相覆盖(重现 X10
+  // pathEquals 想防的数据丢失)。读后、建 tab 前再用 pathEquals 复检 store,已存在则只切换。
+  const raced = store
+    .getState()
+    .tabs.find((t) => pathEquals(t.filePath ?? t.id, path));
+  if (raced) {
+    store.getState().switchTab(raced.id);
+    return { ok: true, data: undefined };
+  }
+
   store.getState().openTab(createTab(path, r.data));
   return { ok: true, data: undefined };
 }
@@ -58,6 +81,15 @@ export async function openFileByPath(
  * 成功后 store.markSaved。
  */
 export async function saveFile(
+  tabId: string,
+  deps: EditorFileDeps,
+): Promise<FileOpResult> {
+  // race(R21):同 tab 的保存按发起顺序串行写盘 —— 防 autosave 旧内容晚于手动保存新内容落盘而
+  // 覆盖。每次进链时重读 tab.content(在 task 内取快照),保证串行后写的是当时最新内容。
+  return runSerialPerKey(saveChains, tabId, () => saveFileNow(tabId, deps));
+}
+
+async function saveFileNow(
   tabId: string,
   deps: EditorFileDeps,
 ): Promise<FileOpResult> {

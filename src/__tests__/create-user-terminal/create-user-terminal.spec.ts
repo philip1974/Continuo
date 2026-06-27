@@ -99,6 +99,18 @@ describe('createUserTerminal — 共用创建流程', () => {
     );
   });
 
+  // a11y(A116,A50/A115 同族):coApi.terminal.create promise reject(IPC 异常)须被捕获,
+  // notify.error + 返 null,不让异常经调用点 void 蒸发(用户点新建终端无反馈)。
+  it('create promise reject(IPC 异常)→ notify.error + 返 null,不 focus', async () => {
+    mocks.create.mockRejectedValue(new Error('ipc down'));
+
+    const id = await createUserTerminal();
+
+    expect(id).toBeNull();
+    expect(mocks.notifyError).toHaveBeenCalledOnce();
+    expect(mocks.setPendingFocus).not.toHaveBeenCalled();
+  });
+
   it('成功但无 id → 返 null,不 focus', async () => {
     mocks.create.mockResolvedValue({ ok: true, data: {} });
 

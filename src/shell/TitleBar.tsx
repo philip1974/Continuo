@@ -6,6 +6,7 @@ import { useMemo } from 'react';
 import { useEditorStore } from '@/stores/editor.store';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { useT } from '@/i18n';
+import { SR_ONLY_STYLE } from '@/lib/sr-only';
 import { basenameForChrome } from './path-label';
 
 export function TitleBar() {
@@ -31,19 +32,28 @@ export function TitleBar() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTabId, chromeVersion]);
 
-  const fileLabel = hasActiveTab
-    ? `${basenameForChrome(activeFilePath ?? t('panels.editor.untitled'))}${activeDirty ? ' ●' : ''}`
+  const fileName = hasActiveTab
+    ? basenameForChrome(activeFilePath ?? t('panels.editor.untitled'))
     : null;
   const wsLabel = root ? basenameForChrome(root) : null;
-
-  // 拼接:[file ●] · [workspace] || Continuo
-  const parts = [fileLabel, wsLabel].filter(Boolean);
-  const text = parts.length > 0 ? parts.join('  ·  ') : 'Continuo';
+  // 拼接:[file ●] · [workspace] || Continuo。dirty ● 仅视觉(aria-hidden),
+  // 未保存语义改由视觉隐藏的本地化文本承载(a11y A40,同 A35/A37 dirty 族)。
+  const sep = fileName && wsLabel ? '  ·  ' : '';
+  const fallback = !fileName && !wsLabel ? 'Continuo' : '';
 
   return (
     <header className="flex h-9 shrink-0 items-center justify-center border-b border-line bg-panel/40 text-xs text-fg-muted select-none [-webkit-app-region:drag]">
       <span className="truncate px-12" title={activeFilePath ?? root ?? undefined}>
-        {text}
+        {fileName}
+        {hasActiveTab && activeDirty && (
+          <>
+            <span aria-hidden="true"> ●</span>
+            <span style={SR_ONLY_STYLE}> {t('statusbar.unsaved_changes')}</span>
+          </>
+        )}
+        {sep}
+        {wsLabel}
+        {fallback}
       </span>
     </header>
   );

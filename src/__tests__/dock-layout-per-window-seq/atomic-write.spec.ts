@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs/promises';
+import crypto from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -55,6 +56,34 @@ describe('atomic explorer persistence writes', () => {
 
     await expect(atomicWriteJson(file, payload)).rejects.toThrow(
       /circular structure/i,
+    );
+    expect(existsSync(file)).toBe(false);
+  });
+
+  // 数据安全(codex 复查 P2):temp 用 open('wx') 排他创建,绝不盲目截断已存在同名文件。
+  // helper 被 permissions/path-scopes/enabled/settings/explorer/plugin-data 复用,temp 名
+  // 撞到已有文件时旧 'w' 会先截断它、失败再 unlink → 销毁非本次创建的文件。固定 randomBytes
+  // 强制每次 temp 同名 → 预置该 temp 文件后,'wx' 全部 EEXIST → 抛错,且原文件不被截断/删除。
+  it('T18: temp 名撞已有文件 → wx 不截断、不删该文件,target 不创建', async () => {
+    // 固定随机字节 → temp 名恒定,可确定复现撞名
+    vi.spyOn(crypto, 'randomBytes').mockReturnValue(
+      Buffer.from('deadbeef', 'hex') as unknown as ReturnType<
+        typeof crypto.randomBytes
+      >,
+    );
+    const collidingTemp = path.join(
+      dir,
+      `.explorer.json.${process.pid}.deadbeef.tmp`,
+    );
+    await fs.writeFile(collidingTemp, 'PRE-EXISTING-SENTINEL', 'utf-8');
+
+    await expect(atomicWriteJson(file, { version: 3 })).rejects.toMatchObject({
+      code: 'EEXIST',
+    });
+
+    // 撞名文件未被截断(内容完好)、未被 unlink,target 未创建
+    expect(await fs.readFile(collidingTemp, 'utf-8')).toBe(
+      'PRE-EXISTING-SENTINEL',
     );
     expect(existsSync(file)).toBe(false);
   });

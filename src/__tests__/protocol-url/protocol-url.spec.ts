@@ -43,6 +43,48 @@ describe('parseProtocolUrl', () => {
     expect(r?.action).toBe('panel');
     expect(r?.target).toBe('editor');
   });
+
+  // 边界(E55):renderer 防御性长度 + params 数量上限(挡绕过 main cap 的入口)。
+  it('E55 超长 URL(>8192)→ null(不解析)', () => {
+    const huge = 'co://command/' + 'x'.repeat(8192);
+    expect(parseProtocolUrl(huge)).toBeNull();
+  });
+
+  it('E55 海量 query params → 截断到 256', () => {
+    const many = Array.from({ length: 400 }, (_, i) => `p${i}=${i}`).join('&');
+    const r = parseProtocolUrl(`co://command/foo?${many}`);
+    expect(r).not.toBeNull();
+    expect(Object.keys(r!.params).length).toBe(256);
+  });
+
+  // 边界(E98):字段级长度上限(action/target ≤256、param key ≤128、value ≤1024),8KB 内的
+  // 超长单字段不进返回对象。
+  it('E98 超长 target(>256,URL 仍 <8KB)→ null', () => {
+    const r = parseProtocolUrl(`co://command/${'t'.repeat(300)}`);
+    expect(r).toBeNull();
+  });
+
+  it('E98 超长 action(>256)→ null', () => {
+    const r = parseProtocolUrl(`co://${'a'.repeat(300)}/foo`);
+    expect(r).toBeNull();
+  });
+
+  it('E98 超长 param value(>1024)→ 跳过该 param,合法 param 保留', () => {
+    const r = parseProtocolUrl(
+      `co://command/foo?big=${'v'.repeat(2000)}&ok=1`,
+    );
+    expect(r).not.toBeNull();
+    expect(r!.params.big).toBeUndefined(); // 超长 value 跳过
+    expect(r!.params.ok).toBe('1'); // 合法 param 保留
+  });
+
+  it('E98 超长 param key(>128)→ 跳过该 param', () => {
+    const r = parseProtocolUrl(
+      `co://command/foo?${'k'.repeat(200)}=1&ok=2`,
+    );
+    expect(r).not.toBeNull();
+    expect(Object.keys(r!.params)).toEqual(['ok']); // 超长 key 跳过
+  });
 });
 
 describe('handleProtocolUrl', () => {
@@ -108,6 +150,21 @@ describe('handleProtocolUrl', () => {
     const app = createTestApp();
     await handleProtocolUrl('co://panel/editor', app);
     expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  // 边界(E99,E98 兄弟分支):unsupported action 分支日志也截断 url(8KB 合法但不支持的 URL
+  // 绕过 invalid 分支,在此不应完整输出)。
+  it('E99 unsupported action 长 URL → warn 截断,不回显完整 url', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const app = createTestApp();
+    // 合法 co://panel/...(action 'panel' 不支持)+ 长 param value(<8KB,过 URL 总长但参数被跳过)
+    const longTail = 'x'.repeat(4000);
+    await handleProtocolUrl(`co://panel/editor?d=${longTail}`, app);
+    expect(warn).toHaveBeenCalled();
+    const msg = String(warn.mock.calls[0]?.[0] ?? '');
+    expect(msg).not.toContain(longTail); // 不回显完整超长 url
+    expect(msg.length).toBeLessThan(400); // 日志被截断
     warn.mockRestore();
   });
 

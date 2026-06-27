@@ -6,16 +6,17 @@
 
 import { useEffect } from 'react';
 import { useQuickOpenStore } from './store';
+import { detectPlatform } from '@/plugins/command-palette/format-hotkey';
 
 export function useQuickOpenHotkey(): void {
   useEffect(() => {
+    // mac:Cmd(meta)是 mod;非 mac:只认 Ctrl —— 否则 Windows/Linux 的 Super/Win 键
+    // (= metaKey)会误触发面板(跨平台审计 P2)。mac 仍兼容 Ctrl(行为不变)。
+    const isMac = detectPlatform() === 'mac';
     const handler = (e: KeyboardEvent) => {
-      // ⌘P (mac) / Ctrl+P (others),不带 shift(带 shift 留给 CommandPalette)
-      if (
-        (e.metaKey || e.ctrlKey) &&
-        !e.shiftKey &&
-        e.key.toLowerCase() === 'p'
-      ) {
+      const mod = isMac ? e.metaKey || e.ctrlKey : e.ctrlKey;
+      // mod+P,不带 shift(带 shift 留给 CommandPalette)
+      if (mod && !e.shiftKey && e.key.toLowerCase() === 'p') {
         e.preventDefault();
         const { isOpen, open, close } = useQuickOpenStore.getState();
         if (isOpen) close();

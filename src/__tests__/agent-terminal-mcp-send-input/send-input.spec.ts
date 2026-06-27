@@ -153,9 +153,41 @@ describe('makeSendInputTool · 元数据', () => {
     expect(tool.name).toBe(MCP_TOOL_SEND_INPUT);
   });
 
-  it('inputSchema 是 sendInputInputSchema', () => {
+  // 边界(E203):inputSchema 是 Continuo-local bounded schema(session_id 加 .max(SESSION_ID_MAX)),
+  // 不再是协议原 schema —— 协议 session_id 仅 min(1) 无上限,1MB session_id 会进 Map/lookup 反复处理。
+  it('E203 inputSchema 对 session_id 加长度上限(超 256 → 拒;协议原 schema 仍接受)', () => {
     const tool = makeSendInputTool(makeDeps());
-    expect(tool.inputSchema).toBe(sendInputInputSchema);
+    const longId = 'term-' + 'x'.repeat(300); // > 256
+    expect(
+      tool.inputSchema.safeParse({ session_id: longId, data: 'hi' }).success,
+    ).toBe(false);
+    // 正常 id 照常通过
+    expect(
+      tool.inputSchema.safeParse({ session_id: 'term-1', data: 'hi' }).success,
+    ).toBe(true);
+    // 对比:协议原 schema 无上限,仍接受超长 id(本工具刻意收窄,不动协议)
+    expect(
+      sendInputInputSchema.safeParse({ session_id: longId, data: 'hi' }).success,
+    ).toBe(true);
+    // 边界(E204):公开 jsonSchema 同步声明 maxLength:256(advertised↔运行时一致)。
+    expect(JSON.stringify(tool.jsonSchema)).toContain('"maxLength":256');
+  });
+
+  // 边界(E220,E219 兄弟,字节 vs code-unit):data 按真实 UTF-8 字节限,非协议的 .max()(code unit)。
+  it('E220 inputSchema 对 data 加真实字节上限(CJK byteLength>2M,length≤2M → 拒)', () => {
+    const tool = makeSendInputTool(makeDeps());
+    const cjk = '中'.repeat(700_000); // length 700k ≤ 2M,但 UTF-8 ≈2.1MB > 2M
+    expect(tool.inputSchema.safeParse({ session_id: 'term-1', data: cjk }).success).toBe(
+      false,
+    );
+    // 上限内 ASCII 照常通过
+    expect(
+      tool.inputSchema.safeParse({ session_id: 'term-1', data: 'hi' }).success,
+    ).toBe(true);
+    // 对比:协议原 schema 是 code-unit,仍接受 700k CJK
+    expect(
+      sendInputInputSchema.safeParse({ session_id: 'term-1', data: cjk }).success,
+    ).toBe(true);
   });
 });
 
@@ -168,6 +200,22 @@ describe('makeSendInputTool · run', () => {
       tool.run({ session_id: 'nope', data: 'x' }, ctx),
     ).rejects.toMatchObject({ code: 'TERMINAL_SESSION_NOT_FOUND' });
     expect(write).not.toHaveBeenCalled();
+  });
+
+  // 边界(E148):超长 session_id(外部 protocol schema 只 .min(1) 无上限)not-found 时不回显超长原串,
+  // 错误消息截断到 256(防放大 JSON-RPC 错误响应/日志)。
+  it('E148 超长 session_id not-found → 错误消息截断(不回显超长原串)', async () => {
+    const has = vi.fn<HasFn>(() => false);
+    const tool = makeSendInputTool(makeDeps({ has }));
+    const longId = 'x'.repeat(5000);
+    const err = await tool
+      .run({ session_id: longId, data: 'x' }, ctx)
+      .catch((e: unknown) => e as Error);
+    expect((err as { code?: string }).code).toBe('TERMINAL_SESSION_NOT_FOUND');
+    // 消息含截断标记 '…',且远短于原始 5000(不回显超长原串)
+    expect(err.message).toContain('…');
+    expect(err.message.length).toBeLessThan(400);
+    expect(err.message).not.toContain('x'.repeat(300));
   });
 
   it('has=true + write 成功 → 返回 {}(经 preparePtyData 处理 \\n→\\r)', async () => {

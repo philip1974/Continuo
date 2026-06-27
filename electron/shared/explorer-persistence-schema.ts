@@ -12,6 +12,21 @@
 
 import { z } from 'zod';
 
+// 边界(E14):explorer.json 的路径数组/字符串此前无上限。损坏/畸形快照只要 shape 对就通过,
+// loadExplorer/hydrate 会接受超大数组,随后批量恢复 tab、展开树、写回快照 → 启动卡顿、IPC/JSON
+// 写入膨胀、内存峰值。下列 cap 远超任何现实工作区(深树展开/多 tab/多最近目录),只挡损坏/滥用;
+// 超限 → safeParse 失败 → loadExplorer 视作损坏快照降级默认(原文件存 .corrupt,不丢已存数据)。
+// 边界(E276):PATH_STR_MAX / PINNED_MAX 导出供 pinned.store 运行时把状态约束在持久化契约内
+// (否则运行时超限 → snapshotFromStores 写出后 ExplorerWritableSnapshotSchema 拒整份 → explorer 持久化全失败)。
+export const PATH_STR_MAX = 8192; // 单条路径字符串(远超真实路径)
+export const PATH_ARRAY_MAX = 100_000; // expandedPaths / openFilePaths(大树/多 tab)(E277 运行时同守)
+const RECENT_ROOTS_MAX = 1000; // recentRoots
+export const PINNED_MAX = 10_000; // pinned.paths
+const WINDOWS_MAX = 10_000; // windows 段数
+const pathStr = (): z.ZodString => z.string().max(PATH_STR_MAX);
+const pathArray = (): z.ZodArray<z.ZodString> =>
+  z.array(z.string().max(PATH_STR_MAX)).max(PATH_ARRAY_MAX);
+
 // ─────────────────────────────────────────────────────
 // DockviewReact 序列化输出。顶层 version 锁 1,passthrough 保留 dockview 自带字段。
 // ─────────────────────────────────────────────────────
@@ -35,8 +50,8 @@ const LayoutUiSchema = z
 
 const EditorSessionSchema = z
   .object({
-    openFilePaths: z.array(z.string()),
-    activePath: z.string().nullable(),
+    openFilePaths: pathArray(), // 边界(E14)
+    activePath: pathStr().nullable(),
   })
   .strict();
 
@@ -46,20 +61,20 @@ export const ExplorerV1Schema = z
     version: z.literal(1),
     workspace: z
       .object({
-        root: z.string().nullable(),
-        recentRoots: z.array(z.string()),
+        root: pathStr().nullable(),
+        recentRoots: z.array(pathStr()).max(RECENT_ROOTS_MAX), // 边界(E14)
       })
       .strict(),
     explorer: z
       .object({
-        activePath: z.string().nullable(),
-        expandedPaths: z.array(z.string()),
+        activePath: pathStr().nullable(), // 边界(E15)
+        expandedPaths: pathArray(), // 边界(E14)
         sort: ExplorerSortSchema,
       })
       .strict(),
     pinned: z
       .object({
-        paths: z.array(z.string()),
+        paths: z.array(pathStr()).max(PINNED_MAX), // 边界(E14)
       })
       .strict(),
     layoutUi: LayoutUiSchema.optional(),
@@ -75,13 +90,13 @@ const WindowEntrySchema = z
     windowSeq: z.number().int().nonnegative(),
     workspace: z
       .object({
-        root: z.string().nullable(),
+        root: pathStr().nullable(), // 边界(E15)
       })
       .strict(),
     explorer: z
       .object({
-        activePath: z.string().nullable(),
-        expandedPaths: z.array(z.string()),
+        activePath: pathStr().nullable(), // 边界(E15)
+        expandedPaths: pathArray(), // 边界(E14)
         sort: ExplorerSortSchema,
       })
       .strict(),
@@ -96,18 +111,18 @@ export const ExplorerSchema = z
     version: z.literal(2),
     workspace: z
       .object({
-        recentRoots: z.array(z.string()),
+        recentRoots: z.array(pathStr()).max(RECENT_ROOTS_MAX), // 边界(E15,E14 漏改的 v2 多行形式)
       })
       .strict(),
     pinned: z
       .object({
-        paths: z.array(z.string()),
+        paths: z.array(pathStr()).max(PINNED_MAX), // 边界(E15)
       })
       .strict(),
     /** 下一个开新窗时分配的 windowSeq;主窗用 0,新窗自增. */
     nextWindowSeq: z.number().int().nonnegative(),
     /** 每窗口持久化段。windowSeq 跨重启稳定,关闭窗口段先保留(LRU 由调用方控制). */
-    windows: z.array(WindowEntrySchema),
+    windows: z.array(WindowEntrySchema).max(WINDOWS_MAX), // 边界(E14)
     /**
      * 启动时是否自动恢复非主窗 (windowSeq > 0)。默认 false — 跟 VSCode "只开主窗" 一致。
      * 显式设 true 才走 #29 multi-window session-restore 行为。
@@ -129,11 +144,11 @@ export const MAIN_OWNED_WINDOW_FIELDS = ['layout', 'lastClosedAt'] as const;
 const ExplorerWritableWindowEntrySchema = z
   .object({
     windowSeq: z.number().int().nonnegative(),
-    workspace: z.object({ root: z.string().nullable() }).strict(),
+    workspace: z.object({ root: pathStr().nullable() }).strict(),
     explorer: z
       .object({
-        activePath: z.string().nullable(),
-        expandedPaths: z.array(z.string()),
+        activePath: pathStr().nullable(), // 边界(E15)
+        expandedPaths: pathArray(), // 边界(E14)
         sort: ExplorerSortSchema,
       })
       .strict(),
@@ -152,10 +167,14 @@ const WindowEntrySchemaV3 = ExplorerWritableWindowEntrySchema.extend({
 export const ExplorerWritableSnapshotSchema = z
   .object({
     version: z.literal(3),
-    workspace: z.object({ recentRoots: z.array(z.string()) }).strict(),
-    pinned: z.object({ paths: z.array(z.string()) }).strict(),
+    workspace: z
+      .object({ recentRoots: z.array(pathStr()).max(RECENT_ROOTS_MAX) })
+      .strict(), // 边界(E14)
+    pinned: z
+      .object({ paths: z.array(pathStr()).max(PINNED_MAX) })
+      .strict(), // 边界(E14)
     nextWindowSeq: z.number().int().nonnegative(),
-    windows: z.array(ExplorerWritableWindowEntrySchema),
+    windows: z.array(ExplorerWritableWindowEntrySchema).max(WINDOWS_MAX), // 边界(E14)
     restoreAllWindowsOnLaunch: z.boolean().optional(),
   })
   .strict();
@@ -164,10 +183,14 @@ export const ExplorerWritableSnapshotSchema = z
 export const ExplorerSchemaV3 = z
   .object({
     version: z.literal(3),
-    workspace: z.object({ recentRoots: z.array(z.string()) }).strict(),
-    pinned: z.object({ paths: z.array(z.string()) }).strict(),
+    workspace: z
+      .object({ recentRoots: z.array(pathStr()).max(RECENT_ROOTS_MAX) })
+      .strict(), // 边界(E14)
+    pinned: z
+      .object({ paths: z.array(pathStr()).max(PINNED_MAX) })
+      .strict(), // 边界(E14)
     nextWindowSeq: z.number().int().nonnegative(),
-    windows: z.array(WindowEntrySchemaV3),
+    windows: z.array(WindowEntrySchemaV3).max(WINDOWS_MAX), // 边界(E14)
     restoreAllWindowsOnLaunch: z.boolean().optional(),
   })
   .strict();

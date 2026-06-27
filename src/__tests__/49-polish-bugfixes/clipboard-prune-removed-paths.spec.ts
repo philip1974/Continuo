@@ -79,4 +79,26 @@ describe('49 第八 session · clipboard prune 剪除失效源路径', () => {
     expect(s.kind).toBe('copy');
     expect([...s.paths]).toEqual(['/ws/c.ts']);
   });
+
+  // 跨平台(codex 复查 P2):prune 复用 path-cross.isSameOrInsidePath(运行时大小写)。
+  // Windows 上剪贴板源与删除/改名旧路径仅大小写不同应剪除;否则保留失效源致 Paste 失败。
+  it('Windows 大小写不敏感:仅大小写不同的失效源被剪除', () => {
+    const orig = Object.getOwnPropertyDescriptor(navigator, 'platform');
+    Object.defineProperty(navigator, 'platform', {
+      value: 'Win32',
+      configurable: true,
+    });
+    try {
+      useExplorerClipboardStore
+        .getState()
+        .set('cut', ['C:\\ws\\dir\\a.ts', 'C:\\ws\\keep.ts']);
+      useExplorerClipboardStore.getState().prune(['c:\\WS\\Dir']); // 不同大小写目录
+      expect([...useExplorerClipboardStore.getState().paths]).toEqual([
+        'C:\\ws\\keep.ts',
+      ]);
+    } finally {
+      if (orig) Object.defineProperty(navigator, 'platform', orig);
+      else delete (navigator as { platform?: string }).platform;
+    }
+  });
 });

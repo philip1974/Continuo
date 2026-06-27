@@ -8,7 +8,12 @@ import type {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NotificationsProvider, useNotify } from '@/notifications/NotificationsProvider';
 import { useTerminalStore, type TerminalSession } from '@/stores/terminal.store';
-import { useTerminalDragDrop } from '@/panels/Terminal/useTerminalDragDrop';
+import {
+  useTerminalDragDrop,
+  hasFiles,
+  MAX_TERMINAL_DROP_FILES,
+  MAX_TERMINAL_DROP_CHARS,
+} from '@/panels/Terminal/useTerminalDragDrop';
 
 const mocks = vi.hoisted(() => ({
   getPathForFile: vi.fn<(file: File) => string>(),
@@ -313,6 +318,44 @@ function renderHost(
   return { dropZone, focus };
 }
 
+// 边界(E189,E176 同族有界遍历):hasFiles 按索引遍历 types + 命中即短路,不 Array.from 全量物化
+// (高频 dragenter/dragover/drop 事件,畸形/超大 types 列表每次全量分配致卡顿)。
+describe('hasFiles (E189)', () => {
+  it('types 含 Files(任意位置)→ true;不含 → false;null → false', () => {
+    expect(hasFiles({ types: ['text/plain', 'Files'] } as unknown as DataTransfer)).toBe(true);
+    expect(hasFiles({ types: ['Files'] } as unknown as DataTransfer)).toBe(true);
+    expect(hasFiles({ types: ['text/plain', 'text/html'] } as unknown as DataTransfer)).toBe(false);
+    expect(hasFiles(null)).toBe(false);
+    expect(hasFiles({ types: [] } as unknown as DataTransfer)).toBe(false);
+  });
+
+  it('命中 Files 即短路 + 不全量物化(Proxy 计 index 读 / 无 Symbol.iterator 全量遍历)', () => {
+    const real = ['Files', ...Array.from({ length: 5000 }, (_, i) => `t${i}`)];
+    let reads = 0;
+    const proxy = new Proxy(real, {
+      get(t, prop, recv) {
+        if (typeof prop === 'string' && /^[0-9]+$/.test(prop)) reads += 1;
+        return Reflect.get(t, prop, recv);
+      },
+    });
+    expect(hasFiles({ types: proxy } as unknown as DataTransfer)).toBe(true);
+    expect(reads).toBe(1); // 命中 index 0 即停,不读后续 5000 项,不 Array.from
+  });
+
+  it('超大 types 无 Files → false 但只索引遍历(无 Array.from 一次性物化)', () => {
+    const real = Array.from({ length: 5000 }, (_, i) => `t${i}`);
+    let reads = 0;
+    const proxy = new Proxy(real, {
+      get(t, prop, recv) {
+        if (typeof prop === 'string' && /^[0-9]+$/.test(prop)) reads += 1;
+        return Reflect.get(t, prop, recv);
+      },
+    });
+    expect(hasFiles({ types: proxy } as unknown as DataTransfer)).toBe(false);
+    expect(reads).toBe(5000); // 逐索引读(无 Array.from 额外整组拷贝),不含 Files 故读完
+  });
+});
+
 describe('terminal-drag-drop BDD', () => {
   it('S1 single-file drop on macOS/zsh inserts POSIX-quoted path plus trailing space', async () => {
     const { dropZone, focus } = renderHost();
@@ -336,6 +379,49 @@ describe('terminal-drag-drop BDD', () => {
       'term-1',
       '/Users/me/a.txt /Users/me/b.txt ',
     );
+  });
+
+  it('E116 超大 FileList 同步捕获按上限截断,不全量物化(index 访问 ≤ cap+2)', async () => {
+    const { dropZone } = renderHost();
+    const N = 5000;
+    const realFiles = Array.from({ length: N }, (_, i) => file(`f${i}.txt`));
+    let indexReads = 0;
+    const filesProxy = new Proxy(realFiles, {
+      get(t, prop, recv) {
+        if (typeof prop === 'string' && /^[0-9]+$/.test(prop)) indexReads++;
+        return Reflect.get(t, prop, recv);
+      },
+    }) as unknown as readonly File[];
+    mocks.getPathForFile.mockReturnValue('/tmp/f');
+    const dt = {
+      files: filesProxy,
+      types: ['Files'],
+      dropEffect: 'none',
+    } as unknown as TestDataTransfer;
+    const dragover = dragEvent('dragover', realFiles);
+    const dropped = new DragEvent('drop', {
+      bubbles: true,
+      cancelable: true,
+      clientX: 50,
+      clientY: 60,
+      dataTransfer: dt as unknown as DataTransfer,
+    });
+
+    await act(async () => {
+      dropZone.dispatchEvent(dragover);
+      dropZone.dispatchEvent(dropped);
+      await settleDrop();
+    });
+
+    // 边界(E116):同步捕获只读 ~MAX_TERMINAL_DROP_FILES+1 个 index,而非全量 N(旧 Array.from 读全部)。
+    expect(indexReads).toBeLessThanOrEqual(MAX_TERMINAL_DROP_FILES + 2);
+    expect(indexReads).toBeLessThan(N);
+    // 超限被丢弃 → 仍触发 partial_skip 反馈。
+    expect(
+      notifications.some((m) =>
+        m.startsWith('panels.terminal.drag_drop.partial_skip'),
+      ),
+    ).toBe(true);
   });
 
   it('S3 path with spaces is single-quoted on POSIX', async () => {
@@ -461,6 +547,51 @@ describe('terminal-drag-drop BDD', () => {
     expect(mocks.write).toHaveBeenCalledWith('term-a', '/Users/me/a.txt ');
   });
 
+  // race(R85):drop 的 async 任务(getPathForFile→write→focus)在 await 后不复查 disposed。
+  // 拖文件后立刻关 panel,迟到任务仍向旧 sessionId write + focus → 旧 session 误注入输入 / 误导反馈。
+  // 写前 + focus 前查 disposed(复用 effect disposed 标志),cleanup 后丢弃迟到任务。
+  it('S19(R85) drop 在途时 unmount → 迟到任务不向旧 session write/focus', async () => {
+    const focus = vi.fn();
+    let resolvePath: (p: string) => void = () => {};
+    mocks.getPathForFile.mockReturnValue(
+      new Promise<string>((r) => {
+        resolvePath = r;
+      }) as unknown as string,
+    );
+    const view = render(
+      <NotificationsProvider>
+        <Probe />
+        <Host focus={focus} />
+      </NotificationsProvider>,
+    );
+    const dropZone = view.container.querySelector('[data-terminal-drop-zone="term-1"]');
+    if (!(dropZone instanceof HTMLElement)) {
+      throw new Error('missing terminal drop zone');
+    }
+    stubRect(dropZone);
+
+    const f = file('inflight.txt');
+    // 派 drop:async 任务卡在 getPathForFile(pending,未 resolve)。
+    await act(async () => {
+      document.body.dispatchEvent(dragEvent('dragover', [f]));
+      document.body.dispatchEvent(dragEvent('drop', [f]));
+      await Promise.resolve();
+    });
+
+    // 关闭 panel → effect cleanup → disposed=true。
+    view.unmount();
+
+    // getPathForFile 此刻才 resolve(迟到)→ 任务恢复,写前查 disposed 丢弃,不 write/focus。
+    await act(async () => {
+      resolvePath('/abs/inflight.txt');
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mocks.write).not.toHaveBeenCalled();
+    expect(focus).not.toHaveBeenCalled();
+  });
+
   it('S11 unmounted panel cleans up native capture listeners', async () => {
     const view = render(
       <NotificationsProvider>
@@ -570,6 +701,37 @@ describe('terminal-drag-drop BDD', () => {
     expect(addB).not.toHaveBeenCalled();
   });
 
+  // a11y(A141,A140 同族):fire-and-forget async 须 catch terminal.write / getPathForFile
+  // 的 IPC reject(否则 unhandled rejection + 失败无反馈)。catch → 复用 write_failed 提示。
+  it('S17 terminal.write reject → warns write_failed(不 unhandled)', async () => {
+    mocks.write.mockReset().mockRejectedValue(new Error('ipc down'));
+    const { dropZone } = renderHost();
+    const f = file('a.txt');
+
+    await drop(dropZone, [f], ['/Users/me/a.txt']);
+
+    expect(notifications).toContain('panels.terminal.drag_drop.write_failed');
+  });
+
+  it('S18 getPathForFile reject → warns write_failed(不 unhandled)', async () => {
+    const { dropZone } = renderHost();
+    const f = file('a.txt');
+    // 绕过 drop helper 的 setPathMap:dispatch 后再让 getPathForFile 抛错。
+    mocks.getPathForFile.mockImplementation(() => {
+      throw new Error('getPath down');
+    });
+    const sentinel = addBubbleSentinels();
+    await act(async () => {
+      dropZone.dispatchEvent(dragEvent('dragover', [f]));
+      dropZone.dispatchEvent(dragEvent('drop', [f]));
+      await settleDrop();
+    });
+    sentinel.cleanup();
+
+    expect(notifications).toContain('panels.terminal.drag_drop.write_failed');
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+
   it('S16 idempotent rebind on same ownerDocument', async () => {
     const location = createLocationApi();
     const docA = document.implementation.createHTMLDocument('A');
@@ -585,5 +747,52 @@ describe('terminal-drag-drop BDD', () => {
     await flushMicrotasks();
 
     expect(addA).toHaveBeenCalledTimes(3);
+  });
+
+  // 边界(E42,E41 终端 drop 兄弟):renderer 侧文件数 + 累计写入长度上限,防海量文件/超长路径在
+  // 主 IPC 拒绝前先做大量 getPathForFile + 构造超大命令行字符串卡住 UI。
+  it('E42 累计写入长度超上限 → 超长路径不写,partial_skip 提示', async () => {
+    const { dropZone } = renderHost();
+    const longPath = '/Users/me/' + 'x'.repeat(600_000); // ~600KB / 条
+    const a = file('a');
+    const b = file('b');
+    const c = file('c');
+    // 3 × ~600KB = 1.8MB > 1MB 上限:第 1 条接受,第 2/3 条被长度上限丢弃。
+    await drop(dropZone, [a, b, c], [longPath, longPath, longPath]);
+
+    expect(mocks.write).toHaveBeenCalledTimes(1);
+    const written = mocks.write.mock.calls[0]![1] as string;
+    expect(written.length).toBeLessThanOrEqual(MAX_TERMINAL_DROP_CHARS);
+    expect(notifications).toContain(
+      'panels.terminal.drag_drop.partial_skip:2',
+    );
+  });
+
+  // 边界(E134,E42 同族):写入长度上限须按 **quote 后真实长度** 复核 —— path.length+3 估算对
+  // 含大量单引号的路径严重低估(POSIX 把每个 ' 展开成 '\'' = 4 字符)。raw 过估算闸但 quote 后膨胀超上限。
+  it('E134 quote 后膨胀超 MAX_TERMINAL_DROP_CHARS(大量单引号路径)→ 不写 + partial_skip', async () => {
+    const { dropZone } = renderHost();
+    // raw ~300K(过 estimate 上限 path.length+3 < 1M),但 300K 个 ' 经 POSIX quote → ~1.2M > 1M。
+    const quoteHeavy = "/Users/me/" + "'".repeat(300_000);
+    const a = file('a');
+    await drop(dropZone, [a], [quoteHeavy]);
+
+    // quote 后真实长度超上限 → 丢弃、不 write;partial_skip 反馈。
+    expect(mocks.write).not.toHaveBeenCalled();
+    expect(notifications).toContain('panels.terminal.drag_drop.partial_skip:1');
+  });
+
+  it('E42 文件数超上限 → 超出文件不取路径(不调 getPathForFile),partial_skip', async () => {
+    const { dropZone } = renderHost();
+    const n = MAX_TERMINAL_DROP_FILES + 5;
+    const files = Array.from({ length: n }, (_, i) => file(`f${i}`));
+    const paths = files.map((_, i) => `/p/${i}`);
+    await drop(dropZone, files, paths);
+
+    // 仅前 MAX_TERMINAL_DROP_FILES 个取路径(超出的不再 IPC)。
+    expect(mocks.getPathForFile).toHaveBeenCalledTimes(MAX_TERMINAL_DROP_FILES);
+    expect(notifications).toContain(
+      `panels.terminal.drag_drop.partial_skip:5`,
+    );
   });
 });

@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import {
   mkdtempSync,
+  promises as fsp,
   realpathSync,
   rmSync,
   symlinkSync,
@@ -8,7 +9,7 @@ import {
 } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ScopeError } from '../../../src/plugins/types';
 import {
   _validateLeafForTest,
@@ -78,6 +79,28 @@ describe('path-resolve.helper', () => {
 
     await expect(resolveForWrite(sym)).rejects.toThrow(ScopeError);
     await expect(resolveForWrite(sym)).rejects.toThrow('symlink leaf rejected');
+  });
+
+  // 数据安全(codex 复查 P1):symlink-leaf 守卫的 lstat(leaf) 非 ENOENT 错误此前被吞 →
+  // fail-open 绕过「symlink leaf rejected」。EACCES/EIO 等「无法确认 leaf」须抛 ScopeError。
+  it('T20.E2 resolveForWrite:leaf lstat EACCES → 抛(不 fail-open)', async () => {
+    const dir = makeTempDir();
+    const realLstat = fsp.lstat;
+    const spy = vi
+      .spyOn(fsp, 'lstat')
+      .mockImplementation(async (p: Parameters<typeof realLstat>[0]) => {
+        if (String(p).endsWith('leaf.txt')) {
+          throw Object.assign(new Error('EACCES'), { code: 'EACCES' });
+        }
+        return realLstat(p);
+      });
+    await expect(resolveForWrite(join(dir, 'leaf.txt'))).rejects.toThrow(
+      ScopeError,
+    );
+    await expect(resolveForWrite(join(dir, 'leaf.txt'))).rejects.toThrow(
+      'cannot stat write leaf',
+    );
+    spy.mockRestore();
   });
 
   it('T20.F ~ expansion resolves homedir realpath', async () => {

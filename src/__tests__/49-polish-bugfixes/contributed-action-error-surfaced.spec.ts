@@ -10,9 +10,12 @@ vi.mock('@/notifications/notify', () => ({
 }));
 
 import { runContributedAction } from '@/lib/run-contributed-action';
+import { setLocale } from '@/i18n';
+import { PermissionError } from '@/plugins/permissions';
 
 beforeEach(() => {
   errorSpy.mockReset();
+  setLocale('en');
 });
 
 describe('runContributedAction', () => {
@@ -53,5 +56,27 @@ describe('runContributedAction', () => {
     });
     expect(errorSpy).toHaveBeenCalledOnce();
     expect(String(errorSpy.mock.calls[0]?.[0])).toContain('just a string');
+  });
+
+  // i18n(I11):抛带 catalog code 的 Error → 按 code 本地化(zh/ko 不看 main raw 英文)。
+  it('抛带 catalog code 的 Error(FS_DENIED)→ toast 显本地化文案', () => {
+    setLocale('en');
+    runContributedAction('Do Thing', () => {
+      throw Object.assign(new Error('access denied'), { code: 'FS_DENIED' });
+    });
+    expect(errorSpy).toHaveBeenCalledOnce();
+    // en catalog errors.FS_DENIED = 'Access denied'
+    expect(String(errorSpy.mock.calls[0]?.[0])).toContain('Access denied');
+  });
+
+  // i18n(I11):PermissionError 默认 message 改英文 → en/ko 不再看到中文「权限 X 未授权」。
+  it('抛 PermissionError → toast 英文,不泄漏中文', () => {
+    runContributedAction('Plugin Cmd', () => {
+      throw new PermissionError('fs');
+    });
+    expect(errorSpy).toHaveBeenCalledOnce();
+    const msg = String(errorSpy.mock.calls[0]?.[0]);
+    expect(msg).toContain('Permission denied: fs');
+    expect(msg).not.toContain('未授权'); // 不泄漏中文
   });
 });

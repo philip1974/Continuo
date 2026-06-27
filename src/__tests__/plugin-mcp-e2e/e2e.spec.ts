@@ -142,6 +142,16 @@ function helloSpec(): PluginMcpToolSpec {
   };
 }
 
+function emptySpec(): PluginMcpToolSpec {
+  return {
+    name: 'empty.result',
+    description: 'Returns undefined (empty result)',
+    jsonSchema: { type: 'object', additionalProperties: false },
+    inputSchema: z.object({}).strict(),
+    run: () => undefined,
+  };
+}
+
 function boomSpec(code?: string): PluginMcpToolSpec {
   return {
     name: 'boom',
@@ -202,6 +212,60 @@ describe('场景 1 · 注册后 MCP client 看得到', () => {
     expect(content).toHaveLength(1);
     expect(content[0]!.type).toBe('text');
     expect(JSON.parse(content[0]!.text)).toEqual({ greet: 'hello mcp' });
+  });
+
+  // 边界(E120,E117 配套):tool 返回 undefined(空结果)→ host 不应产出 text:undefined
+  //(JSON-RPC 序列化省略成 {type:'text'} 不合法 MCP content),应回退空字符串。
+  it('E120 tool 返回 undefined → content text 为空串(非缺失字段)', async () => {
+    await h.registry.register(emptySpec(), h.pluginId);
+    const r = await rpc(h.host, 'tools/call', {
+      name: 'empty.result',
+      arguments: {},
+    });
+    const content = (r.result as { content: Array<{ type: string; text: string }> }).content;
+    expect(content).toHaveLength(1);
+    expect(content[0]!.type).toBe('text');
+    expect(content[0]!.text).toBe('');
+    // text 字段必须存在(否则 JSON-RPC 序列化省略 → 不合法 MCP content)
+    expect('text' in content[0]!).toBe(true);
+  });
+
+  // 边界(E267,E266 result-path 对偶):host 对 tool.run 成功结果须有通用字节上限。内置/未来 tool 返回
+  // 超大结果 → 序列化成巨大 content[0].text 经 HTTP/SSE/stdio 回传放大。超 RESULT_BYTES_MAX → RESULT_TOO_LARGE。
+  it('E267 内置 tool 返回超大结果(>10MB)→ tools/call 返 RESULT_TOO_LARGE,不回传巨型 content', async () => {
+    h.host.registerTool({
+      name: 'huge.builtin',
+      description: 'returns oversized result',
+      jsonSchema: { type: 'object', additionalProperties: false },
+      inputSchema: z.object({}).strict(),
+      run: () => ({ blob: 'x'.repeat(10 * 1024 * 1024 + 16) }), // >10MB 序列化
+    });
+    const r = await rpc(h.host, 'tools/call', {
+      name: 'huge.builtin',
+      arguments: {},
+    });
+    expect(r.result).toBeUndefined();
+    expect(r.error).toBeDefined();
+    expect((r.error!.data as { code?: string }).code).toBe('RESULT_TOO_LARGE');
+    // 不回传巨型 content
+    expect(JSON.stringify(r.error).length).toBeLessThan(1000);
+  });
+
+  it('E267 内置 tool 返回正常结果 → 仍正常 content(回归)', async () => {
+    h.host.registerTool({
+      name: 'ok.builtin',
+      description: 'returns small result',
+      jsonSchema: { type: 'object', additionalProperties: false },
+      inputSchema: z.object({}).strict(),
+      run: () => ({ ok: 'small' }),
+    });
+    const r = await rpc(h.host, 'tools/call', {
+      name: 'ok.builtin',
+      arguments: {},
+    });
+    const content = (r.result as { content: Array<{ type: string; text: string }> })
+      .content;
+    expect(JSON.parse(content[0]!.text)).toEqual({ ok: 'small' });
   });
 });
 

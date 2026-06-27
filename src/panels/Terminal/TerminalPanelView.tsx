@@ -180,12 +180,14 @@ function TerminalPanelContent({
         <TerminalSearchBar searchApi={searchApi} onClose={searchApi.close} />
       )}
       {!isReady && (
-        <div
-          className="pointer-events-none absolute inset-0 flex items-center justify-center bg-canvas/70 backdrop-blur-[2px]"
-          aria-label={t('panels.terminal.aria.start_shell')}
-        >
-          <div className="flex items-center gap-2 text-xs text-fg-dim">
-            <Spinner size="sm" />
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-canvas/70 backdrop-blur-[2px]">
+          {/* a11y(A103,A102 同族):启动 overlay 具体文本须 role=status 播报,Spinner aria-hidden
+              抑制泛化 Loading(TerminalView 的兄弟入口,同 overlay 模式)。 */}
+          <div
+            role="status"
+            className="flex items-center gap-2 text-xs text-fg-dim"
+          >
+            <Spinner size="sm" aria-hidden />
             <span>{t('panels.terminal.starting_shell')}</span>
           </div>
         </div>

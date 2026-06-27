@@ -2,6 +2,8 @@ import type { IDockviewPanel } from 'dockview-react';
 import { useClosingStore } from '@/stores/closing.store';
 import { EXIT_DURATION_MS } from '@/shell/motion/tokens';
 import { coApi } from '@/lib/co-api';
+import { notify } from '@/notifications/notify';
+import { t as translate } from '@/i18n';
 import { cancelPanelSpawns } from '@/panels/Terminal/spawnLeaf';
 import { isTerminalPanelId, sessionIdFromPanel } from './terminal-panel-id';
 
@@ -55,9 +57,22 @@ export function wrapPanelClose(panel: IDockviewPanel): void {
       const store = useClosingStore.getState();
       if (store.ids.has(id)) return;
       store.mark(id);
-      removeTerminalPtysForPanel(panel);
       const timer = setTimeout(() => {
         pendingCloseTimers.delete(id);
+        // race(R44):terminal PTY/session 删除 + cancel spawn 移到延迟 timer 内、紧挨 original()
+        // 前执行。此前在排定 close 时立即执行,早于这段可取消的真 close;用户在 EXIT 动画窗口内复活
+        // 面板(cancelPendingPanelClose 清 timer)时,close 被取消但 PTY/session 已删 → 留下 session
+        // 缺失的死面板。移入 timer:取消路径清掉 timer 即不会执行 terminal 删除,面板与会话都保留。
+        removeTerminalPtysForPanel(panel);
+        // race(R80):按 src/shell/dock/README.md 约定,真实 close 路径必须在 original() 之前
+        // markPanelCloseSuppressed(id)。否则 original() 触发 dockview onDidRemovePanel →
+        // handleTerminalPanelRemoved 时 consumePanelCloseSuppressed 返回 false → 经 move-vs-close
+        // 兜底(panel 已删)再发**第二次** terminal.remove。两 remove IPC 并发:若第二个先删
+        // metadata,第一个(removeTerminalPtysForPanel 内)收 NOT_FOUND → 误报「关闭失败」,且重复
+        // kill 同一 PTY session。标记后 onDidRemovePanel 只负责 move-vs-close 兜底,不反向重复删除。
+        // 仅 terminal panel 需要(consume 端只对 terminal panel 接线);非 terminal id 不标记,
+        // 以免泄漏进 suppressedPanelCloses 集(无人 consume)。
+        if (isTerminalPanelId(id)) markPanelCloseSuppressed(id);
         try {
           original();
         } catch {
@@ -77,11 +92,19 @@ function removeTerminalPtysForPanel(panel: IDockviewPanel): void {
   cancelPanelSpawns(panel.api.id);
   const sessionId = sessionIdFromPanel(panel);
   if (!sessionId) return;
+  // a11y(A128):关闭终端 panel 时 remove 失败此前只 console.warn → panel 已消失但 PTY/session
+  // 可能未关,用户/SR 无失败反馈。ok:false 与 reject 都补 notify.error(保留 console.warn 作日志)。
   void coApi.terminal.remove(sessionId).then((r) => {
     if (!r.ok) {
       console.warn('[terminal-panel] remove ok=false', sessionId, r);
+      notify.error(
+        translate('errors.terminal.remove_failed', { code: r.code ?? '?' }),
+        { code: r.code },
+      );
     }
   }, (err) => {
     console.warn('[terminal-panel] remove rejected', sessionId, err);
+    const code = (err as { code?: string })?.code ?? 'EXCEPTION';
+    notify.error(translate('errors.terminal.remove_failed', { code }), { code });
   });
 }

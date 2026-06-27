@@ -10,6 +10,7 @@
 
 import type { OriginHint } from './origin-hint';
 import type { AttachTarget } from './terminal-attach';
+import type { ShellFamily } from '@continuo-terminal/shell-quote';
 
 export interface TerminalSessionSnapshot {
   /** 后端 PTY id (term-${uuid}). */
@@ -37,4 +38,10 @@ export interface TerminalSessionSnapshot {
    * 主进程只存,renderer 端按当前 workspaceRoot 过滤可见 sessions。
    */
   readonly workspaceRoot?: string;
+  /**
+   * 跨平台审计:PTY 实际 shell 的引号族(posix/cmd/powershell)。main 创建时按 shell
+   * 路径算好,renderer 终端拖拽文件按此引用路径(取代按 navigator.platform 盲猜)。
+   * undefined = 旧会话 / 未知,renderer 回退平台默认。
+   */
+  readonly shellFamily?: ShellFamily;
 }

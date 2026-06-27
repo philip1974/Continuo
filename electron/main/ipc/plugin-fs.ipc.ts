@@ -74,7 +74,18 @@ export function registerPluginFsIpc({
     }) => {
       for (const wc of webContents.getAllWebContents()) {
         if (wc.isDestroyed()) continue;
-        wc.send(PLUGIN_FS_CHANNELS.SCOPE_UPDATED, payload);
+        // race(R65,R63/R64 同族):isDestroyed() 检查后、send 前 wc 可能销毁,send 抛
+        // "Object has been destroyed"。本回调是 pathScopeRegistry 的 EventEmitter listener,
+        // grant()/revokeAll() 会同步 emit('scope-updated') 触发它;若 send 抛错冒泡出 listener
+        // → 反向打断 grant/revokeAll 的调用栈 → 对应 IPC handler(request-scope / _unregister-
+        // plugin)收到异常返回失败,但 scope 可能已写入内存(grant)或 token 已 revoke / scope
+        // 已清(unregister),形成「授权状态已变更但调用方感知失败」的不一致。每个 wc.send 独立
+        // try/catch,失败只跳过/记录,不让广播异常冒泡。镜像 i18n(R64)/protocol(R63)。
+        try {
+          wc.send(PLUGIN_FS_CHANNELS.SCOPE_UPDATED, payload);
+        } catch (err) {
+          console.error('[plugin-fs] scope-updated broadcast failed', err);
+        }
       }
     },
   );

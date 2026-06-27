@@ -81,4 +81,19 @@ describe('打磨 R35 — Marketplace verified 徽章本地化', () => {
       expect(container.textContent).toContain('verified');
     });
   });
+
+  // a11y(A73,A72 同族装饰符号):"已验证"文本已表义,勾 ✓ 须 aria-hidden,不混进徽章可访问名。
+  it('a11y · verified 徽章勾 ✓ 在 aria-hidden span 内', async () => {
+    setLocale('zh');
+    fetchIndexMock.mockResolvedValue([verifiedEntry()]);
+    installApi();
+    const { container } = render(<MarketplaceTab />);
+    await waitFor(() => {
+      expect(container.textContent).toContain('已验证');
+    });
+    const check = Array.from(container.querySelectorAll('span[aria-hidden="true"]')).find(
+      (s) => (s.textContent ?? '').includes('✓'),
+    );
+    expect(check).toBeTruthy();
+  });
 });

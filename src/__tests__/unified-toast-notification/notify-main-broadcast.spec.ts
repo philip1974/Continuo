@@ -60,6 +60,41 @@ describe('unified-toast-notification: main pushNotification', () => {
     expect(errorSpy.mock.calls[0]?.[0]).toBe('[notify-push]');
   });
 
+  // race(R70,R62-R68 同族):isDestroyed() 检查后窗口销毁致 send 抛。pushNotification 常被失败
+  // 处理路径当兜底反馈,定向 send 抛会遮蔽原业务错误;广播 send 抛会中断后续窗口。每次 send 独立
+  // try/catch。
+  it('R70 定向 send 抛错 → pushNotification 不抛(不遮蔽原业务错误)', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const target = win(2);
+    target.webContents.send.mockImplementation(() => {
+      throw new Error('Object has been destroyed');
+    });
+    electronMock.windows = [win(1), target];
+
+    expect(() =>
+      pushNotification({ level: 'error', message: 'x', code: 'X', windowId: 2 }),
+    ).not.toThrow();
+  });
+
+  it('R70 广播首窗 send 抛错 → 不抛 + 后续窗口仍收到', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const dead = win(1);
+    dead.webContents.send.mockImplementation(() => {
+      throw new Error('Object has been destroyed');
+    });
+    const healthy = win(2);
+    electronMock.windows = [dead, healthy];
+
+    expect(() =>
+      pushNotification({ level: 'info', message: 'm', code: 'M' }),
+    ).not.toThrow();
+    expect(healthy.webContents.send).toHaveBeenCalledWith(NOTIFY_CHANNELS.PUSH, {
+      level: 'info',
+      message: 'm',
+      code: 'M',
+    });
+  });
+
   it('T8 sends only to BrowserWindow.fromId(windowId) when windowId is provided', () => {
     pushNotification({
       level: 'error',

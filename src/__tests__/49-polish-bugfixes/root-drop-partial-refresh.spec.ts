@@ -26,7 +26,8 @@ describe('topic49 6thS · root-drop 部分成功刷新契约', () => {
     const marker = 'root level)';
     const start = SRC.indexOf(marker);
     expect(start).toBeGreaterThan(-1);
-    const branch = SRC.slice(start, start + 2400);
+    // 窗口 3200:a11y(A136)给 root-drop 加 catch(err)→notify.error 后 finally 后移,加宽以覆盖。
+    const branch = SRC.slice(start, start + 3200);
     // 必须出现 movedAny 累积标志 + finally + 在 finally 内 refreshParent(root)
     expect(branch).toMatch(/let movedAny = false/);
     expect(branch).toMatch(/}\s*finally\s*{/);

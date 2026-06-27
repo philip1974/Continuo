@@ -1,5 +1,7 @@
 import * as Menu from '@radix-ui/react-context-menu';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { dirname } from './path-utils';
+import { createMenuFocusRestore } from './menu-close-focus';
 import type { FileEntry } from '@/lib/fs/types';
 import { useT } from '@/i18n';
 import {
@@ -8,6 +10,7 @@ import {
   type ExplorerContextMenuItemContext,
 } from '@/plugins/registries/ExplorerContextMenuRegistry';
 import { runContributedAction } from '@/lib/run-contributed-action';
+import { coApp } from '@/plugins/co-app';
 
 export interface ContextMenuActions {
   onRename: (path: string) => void;
@@ -118,6 +121,8 @@ export function ContextMenu({
   // 挂一个菜单,常规滚动/hover/剪贴板变化触发的行重渲染本不需要这些计算。用
   // onOpenChange 维护 open,未打开时 pluginGroups 直接为空,弹出时才按当前上下文算。
   const [open, setOpen] = useState(false);
+  // a11y(A27):默认保留 Radix 关闭后焦点还原;仅「新建/重命名」(会打开自聚焦输入框)一次性跳过。
+  const focusRestore = useRef(createMenuFocusRestore()).current;
   const pluginCtx: ExplorerContextMenuItemContext = {
     target,
     selectedPaths,
@@ -142,11 +147,11 @@ export function ContextMenu({
   const createParent = (): string => {
     if (isFolder) return target!.path;
     if (isFile) {
-      const idx = Math.max(
-        target!.path.lastIndexOf('/'),
-        target!.path.lastIndexOf('\\'),
-      );
-      return idx >= 0 ? target!.path.slice(0, idx) : rootPath;
+      // 跨平台(codex 复查 P1):复用共享 dirname —— 此前手写 slice 对文件系统根下直接子
+      // 文件算错父目录(`/a.md`→'',`C:\a.md`→`C:` drive-relative),根 workspace 右键
+      // 「新建」会传错 parentDir。dirname 正确返 `/` / `C:\`;裸文件名(无分隔符,绝对路径
+      // 下不出现)→ rootPath 兜底。
+      return dirname(target!.path) || rootPath;
     }
     return rootPath;
   };
@@ -158,22 +163,28 @@ export function ContextMenu({
         <Menu.Content
           className={contentCls}
           collisionPadding={8}
-          // 关闭后不要把 focus 还给行 div(默认行为)。
-          // 否则 RenameInput / CreateInput 的 useEffect.focus 会被它抢回去,
-          // 导致 Esc 在错误元素上触发,被树容器 hotkeys 吃掉。
-          onCloseAutoFocus={(e) => e.preventDefault()}
+          // a11y(A27):默认保留 Radix 焦点还原(Esc / 普通项关闭 → 焦点回触发行,键盘可用)。
+          // 仅「新建/重命名」一次性跳过还原 —— 它们随后打开 CreateInput/RenameInput 并 rAF
+          // 自聚焦,还原会把焦点抢回行 div(导致 Esc 落错元素被树 hotkeys 吞)。见 menu-close-focus.ts。
+          onCloseAutoFocus={focusRestore.onCloseAutoFocus}
         >
           {(isFolder || isBlank) && (
             <>
               <Menu.Item
                 className={itemCls}
-                onSelect={() => actions.onNewFile(createParent())}
+                onSelect={() => {
+                  focusRestore.skipOnce(); // 将打开 CreateInput 并自聚焦 → 跳过还原
+                  actions.onNewFile(createParent());
+                }}
               >
                 {t('panels.explorer.ctx.new_file')}
               </Menu.Item>
               <Menu.Item
                 className={itemCls}
-                onSelect={() => actions.onNewDir(createParent())}
+                onSelect={() => {
+                  focusRestore.skipOnce(); // 将打开 CreateInput 并自聚焦 → 跳过还原
+                  actions.onNewDir(createParent());
+                }}
               >
                 {t('panels.explorer.ctx.new_folder')}
               </Menu.Item>
@@ -208,7 +219,10 @@ export function ContextMenu({
 
               <Menu.Item
                 className={itemCls}
-                onSelect={() => actions.onRename(target!.path)}
+                onSelect={() => {
+                  focusRestore.skipOnce(); // 将打开 RenameInput 并自聚焦 → 跳过还原
+                  actions.onRename(target!.path);
+                }}
               >
                 {t('panels.explorer.ctx.rename')}
                 <span className="ml-auto text-2xs text-fg-dim">F2</span>
@@ -287,8 +301,17 @@ export function ContextMenu({
                   className={itemCls}
                   // 插件右键项抛错经 runContributedAction 弹 error toast,不再只
                   // console.warn(菜单已关,用户看不到失败)。见第二十一轮 P1-AX。
+                  // race(R54,R51/R52/R53 同族):select 时按 id 从 live coApp.explorerContextMenu
+                  // 重查 + 用当前 pluginCtx 复检 when 再执行,而非调菜单打开时捕获的 item.fn。
+                  // 菜单打开期间插件 disable/reload unregister 后旧菜单仍可触发;重查使死项 / 当前
+                  // ctx 下不可见项静默忽略,不执行已卸载插件代码。
                   onSelect={() =>
-                    runContributedAction(item.label, () => item.fn(pluginCtx))
+                    runContributedAction(item.label, () => {
+                      const live = coApp.explorerContextMenu.get(item.id);
+                      if (!live) return;
+                      if (filterVisible([live], pluginCtx).length === 0) return;
+                      return live.fn(pluginCtx);
+                    })
                   }
                 >
                   {item.icon && (

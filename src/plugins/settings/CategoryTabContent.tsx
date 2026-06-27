@@ -77,7 +77,12 @@ export function CategoryTabContent({
             </h3>
           )}
           {bucket.items.map((spec) => (
-            <SettingItemRow key={spec.id} spec={spec} />
+            <SettingItemRow
+              key={spec.id}
+              spec={spec}
+              // race(R58):写前 live 复查 setting 仍注册(快照可能滞后于 unregister)。
+              isStillRegistered={(id) => registry.get(id) !== undefined}
+            />
           ))}
         </section>
       ))}

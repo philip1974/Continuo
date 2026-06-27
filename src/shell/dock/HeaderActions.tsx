@@ -3,10 +3,12 @@ import { createPortal } from 'react-dom';
 import type { IDockviewHeaderActionsProps } from 'dockview-react';
 import { isPopoutWindow, popoutUrlFor } from '@/lib/popout-mode';
 import { IconButton, MenuItem } from '@/design';
+import { useMenuKeyboard } from '@/lib/use-menu-keyboard';
 import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
 import { coApp } from '@/plugins/co-app';
 import { useRegistry } from '@/plugins/registries/useRegistry';
 import { createUserTerminal } from '@/shell/dock/create-user-terminal';
+import { notify } from '@/notifications/notify';
 import { useTWithFallback, t } from '@/i18n';
 
 let panelCounter = 0;
@@ -22,11 +24,20 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
   const [anchor, setAnchor] = useState<AnchorRect | null>(null);
   const tk = useTWithFallback();
   // 动态读取已注册 panel 类型(含内置 + 未来第三方插件)
   const panelChoices = useRegistry(coApp.panels);
+  // a11y(A18,ExplorerHeader 同族):菜单打开移焦入首项 + Escape 还原焦点 + 方向键漫游。
+  const {
+    menuRef,
+    menuNode,
+    onKeyDown: onMenuKeyDown,
+  } = useMenuKeyboard({
+    open,
+    triggerRef,
+    onClose: () => setOpen(false),
+  });
 
   // 计算菜单坐标 — 用 trigger 按钮的 viewport rect。
   // 必须 portal 到 document.body:Dockview 祖先有 transform: translate3d(0,0,0)
@@ -52,12 +63,12 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
     const onDocPointer = (e: PointerEvent) => {
       const target = e.target as Node;
       const inTrigger = ref.current?.contains(target) ?? false;
-      const inMenu = menuRef.current?.contains(target) ?? false;
+      const inMenu = menuNode.current?.contains(target) ?? false;
       if (!inTrigger && !inMenu) setOpen(false);
     };
     document.addEventListener('pointerdown', onDocPointer);
     return () => document.removeEventListener('pointerdown', onDocPointer);
-  }, [open]);
+  }, [open, menuNode]);
 
   const addPanel = useCallback(
     async (
@@ -89,9 +100,16 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
 
   const popout = useCallback(() => {
     if (!activePanel) return;
-    void containerApi.addPopoutGroup(activePanel, {
-      popoutUrl: popoutUrlFor(window.location.href),
-    });
+    // a11y(A50,A46-A49 同族):addPopoutGroup 返回 Promise<boolean>,此前直接 void 丢弃异常 →
+    // 弹出失败时按钮无响应、无 toast/live 反馈。catch 后 notify.error 给可见+可播报反馈。
+    void containerApi
+      .addPopoutGroup(activePanel, {
+        popoutUrl: popoutUrlFor(window.location.href),
+      })
+      .catch((err) => {
+        console.warn('[dock] popout failed', err);
+        notify.error(t('shell.dock.popout_failed'));
+      });
   }, [activePanel, containerApi]);
   const isPopout = isPopoutWindow();
 
@@ -130,6 +148,9 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
         // aria-label 走 i18n(打磨 R38),复用 more_actions 键,与 hover title 一致
         aria-label={t('panels.explorer.btn.more_actions')}
         title={t('panels.explorer.btn.more_actions')}
+        // a11y(A7,A6 同族):菜单触发须告知 AT 弹 role=menu 及当前展开态。
+        aria-haspopup="menu"
+        aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
         className="opacity-40 transition-opacity group-hover/header:opacity-100 focus-visible:opacity-100"
       >
@@ -145,6 +166,7 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
           <div
             ref={menuRef}
             role="menu"
+            onKeyDown={onMenuKeyDown}
             style={{ position: 'fixed', top: anchor.top, right: anchor.right }}
             className="z-modal min-w-[140px] overflow-hidden rounded-md border border-line bg-panel py-1 shadow-lg shadow-black/40"
           >
@@ -153,7 +175,18 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
               return (
                 <MenuItem
                   key={c.type}
-                  onClick={() => addPanel(c.type, label, c.titleKey)}
+                  // race(R60,R59 同族):点击时按 type 从 live coApp.panels 复查,而非用打开菜单时
+                  // 捕获的快照。菜单打开期间该 panel type 可能被插件 disable/reload unregister;
+                  // 已移除则关菜单不创建(否则得到 component 不存在的空白 panel,同 type 重注册时还
+                  // 可能以旧 title/params 复活)。存在则用 live title/titleKey。
+                  onClick={() => {
+                    const live = coApp.panels.get(c.type);
+                    if (!live) {
+                      setOpen(false);
+                      return;
+                    }
+                    addPanel(c.type, tk(live.titleKey, live.title), live.titleKey);
+                  }}
                 >
                   {label}
                 </MenuItem>

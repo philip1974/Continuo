@@ -156,4 +156,43 @@ describe('_continuo/hello · window token', () => {
     );
     expect(r).toBeNull();
   });
+
+  // 边界(E252):windowId 须安全非负整数(对齐 AttachTargetSchema.windowId)。负数/不安全整数/小数/
+  // 非有限值即便 token 匹配也拒,防精度碰撞/误探窗口。
+  it('E252 windowId 非安全非负整数(负/不安全/小数/NaN/Infinity)→ 拒绝绑定', () => {
+    const deps = {
+      // resolveWindowId 故意回传与传入相同的 windowId(若不挡形态就会通过 ===)
+      resolveWindowId: () => -1,
+      windowExists: () => true,
+    };
+    for (const bad of [-1, 1.5, NaN, Infinity, -Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(
+        resolveStdioHelloWindowId({ windowId: bad, token: 'tok-a' }, {
+          resolveWindowId: () => bad as number,
+          windowExists: () => true,
+        }),
+      ).toBeNull();
+    }
+    // 引用 deps 避免未使用告警(语义同上)
+    expect(resolveStdioHelloWindowId({ windowId: -1, token: 't' }, deps)).toBeNull();
+  });
+
+  // 边界(E297,E252 同一 stdio hello payload 兄弟字段):token 超长(合法 host token 43 字符)→ 拒绝绑定,
+  // 不进 resolveWindowId(防 1MB token 经 Map.get/比较放大)。
+  it('E297 超长 token(> 256)→ 拒绝绑定,resolveWindowId 不被调用', () => {
+    let called = false;
+    const r = resolveStdioHelloWindowId(
+      { windowId: 11, token: 'x'.repeat(257) },
+      {
+        resolveWindowId: () => {
+          called = true;
+          return 11;
+        },
+        windowExists: () => true,
+      },
+    );
+    // neutralize 敏感:去 token 长度上限则进 resolveWindowId(called=true)且返回 11。
+    expect(r).toBeNull();
+    expect(called).toBe(false);
+  });
 });

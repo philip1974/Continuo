@@ -257,6 +257,31 @@ describe('renameSession', () => {
     expect(useTerminalStore.getState().customTitles.has('/a')).toBe(false);
   });
 
+  // 边界(E238):renameSession 是 renderer-only store 入口,不经主进程 terminal-create schema 的
+  // LABEL_MAX(512)校验。极长自定义标题须截断,否则进 customTitles 被 Dock tab 反复渲染绕过主进程边界。
+  it('E238 renameSession 超 LABEL_MAX(512)的标题 → 截断到 512 写入', () => {
+    useTerminalStore.setState({
+      sessions: [makeSession({ id: '/a' })],
+      activeId: '/a',
+      customTitles: new Map(),
+    });
+    const long = 'x'.repeat(5000);
+    useTerminalStore.getState().renameSession('/a', long);
+    const stored = useTerminalStore.getState().customTitles.get('/a');
+    expect(stored).toBeDefined();
+    expect(stored!.length).toBe(512); // 截断到 LABEL_MAX,不是 5000
+  });
+
+  it('E238 前后空白 + 超长 → 先 trim 再截断到 512', () => {
+    useTerminalStore.setState({
+      sessions: [makeSession({ id: '/a' })],
+      activeId: '/a',
+      customTitles: new Map(),
+    });
+    useTerminalStore.getState().renameSession('/a', `   ${'y'.repeat(5000)}   `);
+    expect(useTerminalStore.getState().customTitles.get('/a')!.length).toBe(512);
+  });
+
   it('replaceSnapshot 移除已不存在 id 的 customTitle(防泄漏)', () => {
     useTerminalStore.setState({
       sessions: [makeSession({ id: '/a' }), makeSession({ id: '/b' })],

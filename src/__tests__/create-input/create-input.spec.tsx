@@ -57,6 +57,19 @@ describe('CreateInput — 键盘行为', () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
+  // race(R82):父层 setCreating(null)(卸载)等 React commit,快速双 Enter 会两次 onSubmit →
+  // 并发两次 createFile/createDir(第二笔 EEXIST 报错)。submittedRef once 守卫:只提交一次。
+  it('R82 快速双 Enter → onSubmit 只调一次(once 守卫)', () => {
+    const { input, onSubmit, onCancel } = setup();
+    fireEvent.change(input, { target: { value: 'a.ts' } });
+    fireKey(input, 'Enter');
+    fireKey(input, 'Enter'); // commit/卸载前的第二次 Enter
+    fireKey(input, 'Enter');
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit).toHaveBeenCalledWith('a.ts');
+    expect(onCancel).not.toHaveBeenCalled();
+  });
+
   it('Enter + 空字符串 → onCancel', () => {
     const { input, onSubmit, onCancel } = setup();
     fireKey(input, 'Enter');
@@ -70,6 +83,28 @@ describe('CreateInput — 键盘行为', () => {
     fireKey(input, 'Escape');
     expect(onCancel).toHaveBeenCalledTimes(1);
     expect(onSubmit).not.toHaveBeenCalled();
+  });
+});
+
+describe('CreateInput — E290 leaf 名长度截断(before-IPC 输入截断族)', () => {
+  it('超长 paste → 受控 value 截断到 FS_NAME_MAX(255),不整段进 React state', () => {
+    const { input } = setup();
+    fireEvent.change(input, { target: { value: 'x'.repeat(10_000) } });
+    // onChange slice(FS_NAME_MAX)→ 受控 value 重渲染后 ≤ 255。
+    expect(input.value.length).toBe(255);
+  });
+
+  it('超长 paste 后 Enter → onSubmit 收到 ≤ FS_NAME_MAX 的名(不跨 IPC 放大)', () => {
+    const { input, onSubmit } = setup();
+    fireEvent.change(input, { target: { value: 'a'.repeat(5_000) } });
+    fireKey(input, 'Enter');
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect((onSubmit.mock.calls[0]![0] as string).length).toBe(255);
+  });
+
+  it('原生 maxLength 属性兜底 = FS_NAME_MAX', () => {
+    const { input } = setup();
+    expect(input.maxLength).toBe(255);
   });
 });
 

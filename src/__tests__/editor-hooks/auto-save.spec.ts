@@ -70,6 +70,35 @@ describe('makeAutoSaveScheduler', () => {
     expect(saveFile).not.toHaveBeenCalled();
   });
 
+  it('flush 等待「定时器已触发但仍在途」的保存(关窗不丢最后编辑,数据安全 P1)', async () => {
+    let resolveSave!: () => void;
+    const savePromise = new Promise<void>((r) => {
+      resolveSave = r;
+    });
+    let started = false;
+    const saveFile = vi.fn(() => {
+      started = true;
+      return savePromise;
+    });
+    const s = makeAutoSaveScheduler(saveFile, 100);
+    s.schedule();
+    await vi.advanceTimersByTimeAsync(110); // timer fire → runSave 开始,timer=null
+    expect(started).toBe(true);
+    expect(saveFile).toHaveBeenCalledTimes(1);
+
+    // 此刻保存仍在途;flush() 必须 await 它,而不是 no-op 立即 resolve。
+    let flushResolved = false;
+    const flushP = s.flush().then(() => {
+      flushResolved = true;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(flushResolved).toBe(false); // 仍在等在途写盘
+
+    resolveSave();
+    await flushP;
+    expect(flushResolved).toBe(true);
+  });
+
   it('saveFile 抛错时被吞掉(不污染未来 schedule)', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {

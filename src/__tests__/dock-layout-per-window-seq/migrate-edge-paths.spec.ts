@@ -96,4 +96,33 @@ describe('migrateExplorerFileToV3 edge paths', () => {
     expect(await fs.readFile(explorerFile, 'utf-8')).toBe('{not json');
     expect(existsSync(legacyLayoutFile)).toBe(true);
   });
+
+  // 数据安全(codex 复查 P1):explorer.json access EACCES(存在但不可读)+ legacy 存在时,
+  // fileExists 此前当「不存在」→ 进入「写默认 + 删 legacy」分支,抹掉 recentRoots/pinned/
+  // window 段。只 ENOENT 算不存在;access 错误跳过迁移(不写不删)。
+  it('T12: explorer.json access EACCES → 跳过迁移,不写默认覆盖、不删 legacy', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await fs.writeFile(
+      explorerFile,
+      '{"version":3,"SENTINEL":"keep","nextWindowSeq":5,"windows":[]}',
+    );
+    await fs.writeFile(legacyLayoutFile, JSON.stringify({ version: 1 }));
+
+    const realAccess = fs.access.bind(fs);
+    vi.spyOn(fs, 'access').mockImplementation(
+      async (p: Parameters<typeof realAccess>[0], ...rest: unknown[]) => {
+        if (String(p) === explorerFile) {
+          throw Object.assign(new Error('EACCES'), { code: 'EACCES' });
+        }
+        return (realAccess as (...a: unknown[]) => Promise<void>)(p, ...rest);
+      },
+    );
+
+    await migrateExplorerFileToV3(explorerFile, legacyLayoutFile);
+
+    expect(warn).toHaveBeenCalled();
+    // explorer.json 未被默认覆盖(SENTINEL 仍在),legacy 未删
+    expect(await fs.readFile(explorerFile, 'utf-8')).toContain('SENTINEL');
+    expect(existsSync(legacyLayoutFile)).toBe(true);
+  });
 });

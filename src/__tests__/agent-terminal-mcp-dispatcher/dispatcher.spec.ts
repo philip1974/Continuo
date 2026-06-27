@@ -5,6 +5,8 @@ import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
 import {
   dispatchRpc,
+  parseRpcMessage,
+  RPC_ERROR_CODES,
   type RpcRequest,
   type AnyMcpTool,
   type ServerInfo,
@@ -141,6 +143,37 @@ describe('dispatchRpc · tools/list', () => {
       (t) => t.name,
     );
     expect(names).toEqual(['noop', 'echo', 'fail']);
+  });
+
+  // 边界(E291,E286 字节预算族 / 聚合维度):每 tool schema/description 有上限 + tool 数有上限,但乘积
+  // (~2048×64KiB)无聚合上限 → formatRpcResult JSON.stringify MB 级 OOM。tools/list 加聚合字节 fail-fast。
+  it('E291 聚合 tools/list 超 MAX_TOOLS_LIST_BYTES → RESULT_TOO_LARGE 错误(非物化巨响应)', async () => {
+    const big = 'x'.repeat(1024 * 1024); // 1MiB/tool
+    const manyBig = makeTools(
+      ...Array.from({ length: 20 }, (_, i) => ({
+        name: `big${i}`,
+        description: 'big tool',
+        jsonSchema: { big },
+        inputSchema: z.object({}).strict(),
+        run: () => ({}),
+      })),
+    ); // ~20MiB 聚合 > 16MiB
+    const r = await dispatchRpc(req('tools/list'), manyBig, SERVER_INFO, CTX);
+    // neutralize 敏感:去聚合 fail-fast 则返回 { result: { tools: [...] } }(20MiB),此断言失败。
+    expect('error' in r).toBe(true);
+    expect((r as { error: { code: number } }).error.code).toBe(
+      RPC_ERROR_CODES.RESULT_TOO_LARGE,
+    );
+  });
+
+  it('E291 正常 tool 集(小 schema)→ 仍返回 result(回归,聚合远低于上限)', async () => {
+    const r = await dispatchRpc(
+      req('tools/list'),
+      makeTools(echoTool, failTool, noopTool),
+      SERVER_INFO,
+      CTX,
+    );
+    expect('result' in r).toBe(true);
   });
 });
 
@@ -313,5 +346,83 @@ describe('dispatchRpc · 未知 method', () => {
       CTX,
     );
     expect(r).toMatchObject({ error: { code: -32601 } });
+  });
+});
+
+// 边界(E78):JSON-RPC id/method 与 tools/call params.name 加长度上限,超限不回显原超长串。
+describe('parseRpcMessage · 字段长度上限(E78)', () => {
+  it('正常 method/id → 解析成功', () => {
+    const r = parseRpcMessage({ jsonrpc: '2.0', id: 'req-1', method: 'tools/call' });
+    expect(r).not.toBeNull();
+  });
+
+  it('超长 method(>1024)→ null(走固定 PARSE_ERROR,不回显)', () => {
+    const r = parseRpcMessage({
+      jsonrpc: '2.0',
+      id: '1',
+      method: 'x'.repeat(1025),
+    });
+    expect(r).toBeNull();
+  });
+
+  it('超长 string id(>1024)→ null', () => {
+    const r = parseRpcMessage({
+      jsonrpc: '2.0',
+      id: 'y'.repeat(1025),
+      method: 'tools/call',
+    });
+    expect(r).toBeNull();
+  });
+
+  it('number id 不受字符串长度限制 → 解析成功', () => {
+    const r = parseRpcMessage({ jsonrpc: '2.0', id: 12345, method: 'initialize' });
+    expect(r).not.toBeNull();
+  });
+
+  // 边界(E95):number id 须安全整数,否则 JSON.stringify 序列化时 Infinity→null/大整数舍入,
+  // 响应 id ≠ 请求 id,client 无法关联。
+  it('E95 number id = Infinity → null(parse error)', () => {
+    expect(
+      parseRpcMessage({ jsonrpc: '2.0', id: Infinity, method: 'initialize' }),
+    ).toBeNull();
+  });
+
+  it('E95 number id 超 MAX_SAFE_INTEGER → null', () => {
+    expect(
+      parseRpcMessage({
+        jsonrpc: '2.0',
+        id: Number.MAX_SAFE_INTEGER + 2, // 9007199254740993,不安全整数
+        method: 'initialize',
+      }),
+    ).toBeNull();
+  });
+
+  it('E95 number id 小数 → null', () => {
+    expect(
+      parseRpcMessage({ jsonrpc: '2.0', id: 1.5, method: 'initialize' }),
+    ).toBeNull();
+  });
+
+  it('E95 number id 安全整数 → 解析成功', () => {
+    expect(
+      parseRpcMessage({ jsonrpc: '2.0', id: 42, method: 'initialize' }),
+    ).not.toBeNull();
+  });
+});
+
+describe('dispatchRpc · tools/call params.name 长度上限(E78)', () => {
+  it('超长 name(>1024)→ INVALID_PARAMS 且不回显超长串', async () => {
+    const longName = 'n'.repeat(2000);
+    const r = await dispatchRpc(
+      req('tools/call', { name: longName, arguments: {} }),
+      makeTools(echoTool),
+      SERVER_INFO,
+      CTX,
+    );
+    expect(r).toMatchObject({ error: { code: -32602 } }); // INVALID_PARAMS
+    if ('error' in r) {
+      expect(r.error.message).not.toContain(longName); // 不回显超长 name
+      expect(r.error.message.length).toBeLessThan(200);
+    }
   });
 });

@@ -32,6 +32,15 @@ export function _resetForTest(): void {
  * test can pin the format without booting Electron。Replaces manual UX verify
  * (dev build → StatusBar 按钮 → clipboard diff)per ADR 0006 CT-B3 P1-1。
  */
-export function buildClaudeAddCommand(cliPath: string): string {
+export function buildClaudeAddCommand(
+  cliPath: string,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  if (platform === 'win32') {
+    // Windows 无 shebang 机制,不能把 `.mjs` 当可执行直接 spawn,且路径常含空格
+    // (e.g. Program Files)→ 用 `node "<path>"` 显式调用并引用(跨平台审计 P1)。
+    // 非 win 保持原 byte-exact 格式(UX 契约,见上)。
+    return `claude mcp add --transport stdio continuo -- node "${cliPath}"`;
+  }
   return `claude mcp add --transport stdio continuo -- ${cliPath}`;
 }

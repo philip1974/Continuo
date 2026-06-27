@@ -47,8 +47,9 @@ function ManifestPromptBody({ pending }: { pending: Pending }) {
   };
 
   return (
-    <Modal visible onClose={denyAll}>
-      <h2 className="mb-1 text-sm font-medium text-fg">
+    <Modal visible onClose={denyAll} aria-labelledby="permission-prompt-title">
+      {/* a11y(A13):dialog(A10)须经 aria-labelledby 关联标题,否则 AT 只听到无名 dialog。 */}
+      <h2 id="permission-prompt-title" className="mb-1 text-sm font-medium text-fg">
         {t('permissions.prompt.title')}
       </h2>
       <p className="mb-2 text-xs text-fg-muted">
@@ -122,8 +123,13 @@ function FsScopePromptBody({ scope }: { scope: FsScopePrompt }) {
   const grantFsScope = usePermissionPromptStore((s) => s.grantFsScope);
   const denyFsScope = usePermissionPromptStore((s) => s.denyFsScope);
   return (
-    <Modal visible onClose={() => denyFsScope(scope.requestId)}>
-      <h2 className="mb-1 text-sm font-medium text-fg">
+    <Modal
+      visible
+      onClose={() => denyFsScope(scope.requestId)}
+      aria-labelledby="permission-fs-scope-title"
+    >
+      {/* a11y(A13):同上,fs-scope 弹窗关联标题。 */}
+      <h2 id="permission-fs-scope-title" className="mb-1 text-sm font-medium text-fg">
         {t('permissions.fs_scope.title')}
       </h2>
       <p className="mb-3 text-xs text-fg-muted">

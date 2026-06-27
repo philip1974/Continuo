@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { ERROR_CODES } from '../../../shared/error-codes';
 import type { FsErrorCode } from '../../../shared/error-codes';
+import { isValidLeafName } from '../../../shared/leaf-name';
 
 /**
  * 路径规范化:相对 → 绝对,解析 ../ 防遍历。
@@ -27,7 +28,9 @@ export function mapNodeErrnoCode(err: unknown): FsErrorCode {
       return ERROR_CODES.FS_NOT_DIRECTORY;
     case 'EISDIR':
       return ERROR_CODES.FS_NOT_FILE;
+    // ERR_FS_CP_EEXIST:fs.cp(force:false, errorOnExist:true) 目标已存在时的专用码,语义同 EEXIST。
     case 'EEXIST':
+    case 'ERR_FS_CP_EEXIST':
       return ERROR_CODES.FS_EEXIST;
     case 'EACCES':
     case 'EPERM':
@@ -42,10 +45,12 @@ export function mapNodeErrnoCode(err: unknown): FsErrorCode {
  * 不能含路径分隔符,不能是 . / ..(防越级越权)。
  */
 export function assertValidBasename(name: string): void {
-  if (!name || name === '.' || name === '..') {
-    throw fsError(ERROR_CODES.FS_BAD_NAME, `invalid name: "${name}"`);
-  }
-  if (name.includes('/') || name.includes('\\')) {
-    throw fsError(ERROR_CODES.FS_BAD_NAME, `name must not contain path separator: "${name}"`);
+  // 边界(E268):委托共享 isValidLeafName(单一来源,消漂移 + 增长度/控制字符上限)。错误串只含长度摘要,
+  // 不嵌入完整 name(可能超长/含控制字符 → 错误串放大/污染,同 E254)。
+  if (!isValidLeafName(name)) {
+    throw fsError(
+      ERROR_CODES.FS_BAD_NAME,
+      `invalid leaf name (len ${typeof name === 'string' ? name.length : 'n/a'})`,
+    );
   }
 }

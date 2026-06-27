@@ -51,6 +51,8 @@ beforeEach(() => {
     query: '',
     selectedIndex: 0,
     results: mkFiles(100),
+    // race(R2):results 绑定当前 root,否则 liveResults 守卫视为跨 root 旧结果而过滤掉。
+    resultsRoot: '/work',
     loading: false,
     scanFailed: false,
   });

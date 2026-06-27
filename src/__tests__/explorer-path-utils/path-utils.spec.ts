@@ -34,6 +34,17 @@ describe('Explorer path-utils · dirname(跨平台)', () => {
     expect(dirname('C:\\x\\y\\')).toBe('C:\\x');
   });
 
+  // 跨平台(codex 复查 P2):Windows 盘根下直接项的父=盘根 `C:\`,不是 drive-relative
+  // `C:`(后者=该盘当前目录,会被 listDir/invalidateChildrenIds 当成另一路径 → 读错目录/
+  // UI 不刷新)。与 POSIX `/a → /` 同等。盘符大小写均覆盖。
+  it('Windows 盘根下直接项 → 盘根 "X:\\"(非 drive-relative "X:")', () => {
+    expect(dirname('C:\\foo')).toBe('C:\\');
+    expect(dirname('C:\\foo\\')).toBe('C:\\');
+    expect(dirname('d:\\bar')).toBe('d:\\');
+    // 盘根再往上仍是盘根本身(已 trim 尾分隔符 → 无父分隔符 → 裸 "C:" 无分隔符返 "")
+    expect(dirname('C:\\')).toBe('');
+  });
+
   it('混合分隔符取最后一个', () => {
     expect(dirname('/a\\b')).toBe('/a');
     expect(dirname('a/b\\c')).toBe('a/b');

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { createElement } from 'react';
 import {
   ExplorerDecoratorRegistry,
@@ -29,6 +29,50 @@ describe('ExplorerDecoratorRegistry', () => {
     r.register(a);
     r.register(b);
     expect(r.getAll()).toEqual([a, b]);
+  });
+
+  // race(R57,R55/R56 同族):FileRow 合并装饰时读 live getAll()(而非 useRegistry 快照)。dispose
+  // 后 live getAll() 不含该 fn → mergeDecorations 不再执行已移除 decorator(快照滞后期内若用快照
+  // 则会执行死函数)。getAll() 返 this.fns.slice() 即时反映,无滞后。
+  it('R57 dispose 后 live getAll() 不含该 fn → mergeDecorations 不执行它', () => {
+    const r = new ExplorerDecoratorRegistry();
+    const spy = vi.fn((): Decoration | null => null);
+    const d = r.register(spy);
+    d.dispose();
+    mergeDecorations(file, r.getAll()); // live 列表已不含 spy
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('R57 未 dispose 时 live getAll() 含该 fn → mergeDecorations 执行(对照)', () => {
+    const r = new ExplorerDecoratorRegistry();
+    const spy = vi.fn((): Decoration | null => null);
+    r.register(spy);
+    mergeDecorations(file, r.getAll());
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  // 边界(E54,E47 输入侧对偶):register 校验 fn 为函数 + 全局数量上限,挡非函数(每行 render 抛)
+  // 与海量 decorator(每行无界 O(N) 调用卡顿)。
+  describe('E54 · register 输入校验', () => {
+    it('非函数 fn → 抛,不入表', () => {
+      const r = new ExplorerDecoratorRegistry();
+      expect(() => r.register('nope' as never)).toThrow(/expects a function/i);
+      expect(r.getAll()).toEqual([]);
+    });
+
+    it('超过数量上限(256)→ 抛', () => {
+      const r = new ExplorerDecoratorRegistry();
+      for (let i = 0; i < 256; i++) r.register(() => null);
+      expect(() => r.register(() => null)).toThrow(/too many decorators/i);
+      expect(r.getAll()).toHaveLength(256);
+    });
+
+    it('上限内正常注册 → ok', () => {
+      const r = new ExplorerDecoratorRegistry();
+      const fn: DecoratorFn = () => null;
+      expect(() => r.register(fn)).not.toThrow();
+      expect(r.getAll()).toEqual([fn]);
+    });
   });
 });
 
@@ -120,6 +164,56 @@ describe('mergeDecorations', () => {
     const icon = createElement('span', { 'data-id': 'I' });
     const result = mergeDecorations(file, [() => null, () => ({ icon })]);
     expect(result?.icon).toBe(icon);
+  });
+
+  // 边界(E47,插件输出校验):mergeDecorations 校验 decorator 返回值的类型/长度/数量,挡畸形
+  // decorator 返回超长/非字符串 badge·tooltip(虚拟列表滚动反复拼接巨大 title + 非字符串进 React)。
+  describe('E47 · 输出校验', () => {
+    it('非字符串 badge/tooltip/textColor → 丢弃(不进 React/title)', () => {
+      const result = mergeDecorations(file, [
+        () =>
+          ({
+            badge: 123,
+            tooltip: { evil: true },
+            textColor: ['red'],
+          }) as never,
+      ]);
+      expect(result).toBeNull(); // 全部非法 → 无有效装饰
+    });
+
+    it('超长 badge → 丢弃,让后续合法 badge 赢(first-VALID-wins)', () => {
+      const result = mergeDecorations(file, [
+        () => ({ badge: 'x'.repeat(65) }), // > 64 → 丢
+        () => ({ badge: 'M' }),
+      ]);
+      expect(result?.badge).toBe('M');
+    });
+
+    it('超长 tooltip → 丢弃;合法 tooltip 保留', () => {
+      const result = mergeDecorations(file, [
+        () => ({ tooltip: 'x'.repeat(1025) }), // > 1024 → 丢
+        () => ({ tooltip: 'ok' }),
+      ]);
+      expect(result?.tooltip).toBe('ok');
+    });
+
+    it('tooltip 数量超 32 → 截断到 32', () => {
+      const fns = Array.from({ length: 40 }, (_, i) => () => ({
+        tooltip: `t${i}`,
+      }));
+      const result = mergeDecorations(file, fns);
+      const count = result?.tooltip?.split(' · ').length ?? 0;
+      expect(count).toBe(32);
+    });
+
+    it('合并后总长超上限 → 截断兜底', () => {
+      // 32 × 1000 字符 ≈ 32K,> 4096 总长上限 → slice 到 4096。
+      const fns = Array.from({ length: 32 }, () => () => ({
+        tooltip: 'x'.repeat(1000),
+      }));
+      const result = mergeDecorations(file, fns);
+      expect((result?.tooltip?.length ?? 0)).toBeLessThanOrEqual(4096);
+    });
   });
 });
 

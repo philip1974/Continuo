@@ -76,6 +76,20 @@ describe('IconSidebar — Settings', () => {
     fireEvent.click(btn);
     expect(toggleSettingsMock).toHaveBeenCalledTimes(1);
   });
+
+  // a11y(A33,A32 调用点传播):Settings 齿轮未声明 toggle 状态 → 不应渲染 aria-pressed
+  // (否则 AT 误读成切换按钮);Explorer 是真 toggle(active=sidebarOpen)→ 应有 aria-pressed。
+  it('a11y · Settings 齿轮无 aria-pressed;Explorer toggle 有', () => {
+    const { container } = render(<IconSidebar />);
+    const settings = container.querySelector(
+      'button[title="设置"]',
+    ) as HTMLButtonElement;
+    expect(settings.hasAttribute('aria-pressed')).toBe(false);
+    const explorer = container.querySelector(
+      'button[title="隐藏 Explorer"]',
+    ) as HTMLButtonElement;
+    expect(explorer.getAttribute('aria-pressed')).toBe('true'); // sidebarOpen=true
+  });
 });
 
 describe('IconSidebar — Ribbon', () => {
@@ -174,6 +188,14 @@ describe('IconSidebar — updateCount 角标', () => {
     );
     expect(badge).not.toBeNull();
     expect(badge!.textContent).toBe('3');
+
+    // a11y(A34):角标须经 aria-describedby 关联到 Settings 按钮(聚焦时 AT 读出更新数)。
+    const settingsBtn = container.querySelector(
+      'button[title="设置"]',
+    ) as HTMLButtonElement;
+    const describedBy = settingsBtn.getAttribute('aria-describedby');
+    expect(describedBy).toBeTruthy();
+    expect(badge!.id).toBe(describedBy); // 指向角标元素
   });
 
   it('≥10 → 角标显「9+」', () => {

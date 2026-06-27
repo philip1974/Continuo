@@ -42,10 +42,14 @@ beforeEach(resetAll);
 
 function makeFs(
   files: Record<string, string>,
-  opts: { fail?: ReadonlySet<string> } = {},
+  opts: { fail?: ReadonlySet<string>; reject?: ReadonlySet<string> } = {},
 ): EditorSessionFsApi {
   return {
     readFile: vi.fn(async (path: string) => {
+      if (opts.reject?.has(path)) {
+        // 模拟 IPC 桥/进程/通道异常:invoke 的 promise 本身 reject(非 handler 的 {ok:false})
+        throw Object.assign(new Error('bridge crash'), { code: 'EPIPE' });
+      }
       if (opts.fail?.has(path)) {
         return { ok: false as const, code: 'FS_ENOENT', message: 'not found' };
       }
@@ -170,6 +174,23 @@ describe('hydrateEditorTabs', () => {
     expect(fs.readFile).not.toHaveBeenCalled();
   });
 
+  // 边界(E216):openFilePaths 超 MAX_RESTORED_TABS(256)→ 截断恢复,不一次性 fan-out 海量 readFile。
+  // schema 允许至多 100k openFilePaths,畸形/旧快照启动时全量并发读 → 资源耗尽。
+  it('E216 openFilePaths 超 MAX_RESTORED_TABS(256)→ 只读前 256 并截断恢复', async () => {
+    const files: Record<string, string> = {};
+    const paths: string[] = [];
+    for (let i = 0; i < 300; i++) {
+      const p = `/f${i}.md`;
+      files[p] = 'x';
+      paths.push(p);
+    }
+    const fs = makeFs(files);
+    await hydrateEditorTabs(snapWithEditor(paths, null), fs);
+    // 中和(去 MAX_RESTORED_TABS 截断)→ readFile 调 300 次、tabs 300,断言失败。
+    expect((fs.readFile as ReturnType<typeof vi.fn>).mock.calls.length).toBe(256);
+    expect(useEditorStore.getState().tabs).toHaveLength(256);
+  });
+
   it('多 path → 顺序 openTab,内容来自 fs.readFile', async () => {
     const fs = makeFs({ '/a.md': 'A', '/b.md': 'B' });
     await hydrateEditorTabs(snapWithEditor(['/a.md', '/b.md'], '/a.md'), fs);
@@ -188,6 +209,22 @@ describe('hydrateEditorTabs', () => {
     );
     const tabs = useEditorStore.getState().tabs;
     expect(tabs.map((t) => t.filePath)).toEqual(['/a.md', '/c.md']);
+  });
+
+  // 数据安全(codex 复查 P2):readFile 的 promise reject(桥/进程/通道异常,非 handler
+  // 的 {ok:false})此前因 Promise.all 整轮抛 → hydrateEditorTabs 违反「不抛」契约 →
+  // init catch 后 0 tab → 下次持久化把 openFilePaths 写空 → 丢整个编辑会话。allSettled
+  // 后:单文件 reject 逐项跳过、不抛,其它 tab 仍恢复。
+  it('单个 readFile promise reject(非 {ok:false})→ 不抛,跳过该 path,其他仍恢复', async () => {
+    const fs = makeFs(
+      { '/a.md': 'A', '/c.md': 'C' },
+      { reject: new Set(['/b.md']) },
+    );
+    await expect(
+      hydrateEditorTabs(snapWithEditor(['/a.md', '/b.md', '/c.md'], '/a.md'), fs),
+    ).resolves.toBeUndefined(); // 不抛
+    const tabs = useEditorStore.getState().tabs;
+    expect(tabs.map((t) => t.filePath)).toEqual(['/a.md', '/c.md']); // 其它仍恢复
   });
 
   it('activePath 在已恢复 tabs 内 → switchTab', async () => {

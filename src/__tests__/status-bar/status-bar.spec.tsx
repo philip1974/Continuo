@@ -121,6 +121,45 @@ describe('StatusBar — 右侧文件信息', () => {
     expect(container.textContent).toContain('LF');
   });
 
+  // a11y(A37,A35 同族):状态栏 dirty 只用视觉 ● → AT 须有「未保存」文本,● 标 aria-hidden。
+  it('a11y · dirty → AT 可读「未保存」文本 + ● aria-hidden;clean → 无', () => {
+    installApi({});
+    useEditorStore.setState({
+      tabs: [
+        {
+          id: '/x.md',
+          filePath: '/x.md',
+          content: 'a',
+          originalContent: 'b',
+          dirty: true,
+        },
+      ],
+      activeTabId: '/x.md',
+    });
+    const { container, rerender } = render(<StatusBar />);
+    expect(container.textContent).toContain('未保存的更改');
+    const dot = Array.from(container.querySelectorAll('span')).find(
+      (s) => s.textContent === '●',
+    )!;
+    expect(dot.getAttribute('aria-hidden')).toBe('true');
+
+    // clean → 无未保存文本
+    useEditorStore.setState({
+      tabs: [
+        {
+          id: '/x.md',
+          filePath: '/x.md',
+          content: 'a',
+          originalContent: 'a',
+          dirty: false,
+        },
+      ],
+      activeTabId: '/x.md',
+    });
+    rerender(<StatusBar />);
+    expect(container.textContent).not.toContain('未保存的更改');
+  });
+
   it('active.filePath=null(草稿) → 「未命名」', () => {
     installApi({});
     useEditorStore.setState({
@@ -189,7 +228,10 @@ describe('StatusBar — agent 计数', () => {
       activeId: 't1',
     });
     const { container } = render(<StatusBar />);
-    expect(container.textContent).toMatch(/1 agent/);
+    // i18n(I19):agent 计数走 catalog,默认 locale=zh 渲染「1 个 agent」。用 locale-无关
+    // 断言(count + 'agent'),不再钉死旧英文 '1 agent';并验 zh 本地化(含「个」)非纯英文。
+    expect(container.textContent).toMatch(/1.*agent/);
+    expect(container.textContent).toContain('个 agent'); // zh catalog,非英文 raw '1 agent'
   });
 });
 
@@ -254,6 +296,31 @@ describe('StatusBar — 插件 statusBar items', () => {
 });
 
 describe('StatusBar — MCP 复制', () => {
+  // a11y(A82,A74 同族):按钮可见文本随复制状态变化,aria-label 须稳定表「复制 MCP 配置」语义,
+  // 不随状态漂移成结果文本(结果由 live region 播报)。
+  it('a11y · MCP copy 按钮 aria-label 稳定(不随复制状态漂移)', async () => {
+    installApi({
+      mcp: {
+        getStdioConfig: vi.fn().mockResolvedValue({
+          ok: true,
+          data: { available: true, claudeAddCommand: 'claude mcp add ...' },
+        }),
+      },
+    });
+    const { container } = render(<StatusBar />);
+    const btn = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((b) => (b.getAttribute('aria-label') ?? '').includes('claude mcp add'))!;
+    expect(btn).toBeDefined();
+    const before = btn.getAttribute('aria-label');
+    fireEvent.click(btn);
+    await waitFor(() => {
+      expect(container.textContent).toContain('已复制'); // 可见文本变了
+    });
+    // 但 aria-label 不变(稳定动作语义)
+    expect(btn.getAttribute('aria-label')).toBe(before);
+  });
+
   it('ok=true + claudeAddCommand 有 + clipboard 写成功 → 文案变「已复制」', async () => {
     installApi({
       mcp: {
@@ -272,6 +339,10 @@ describe('StatusBar — MCP 复制', () => {
       expect(container.textContent).toContain('已复制');
     });
     expect(writeTextMock).toHaveBeenCalledWith('claude mcp add ...');
+    // a11y(A51):复制结果须在 live region(role=status)播报,焦点在按钮时也能听到。
+    const status = container.querySelector('[role=status]');
+    expect(status).not.toBeNull();
+    expect(status!.textContent).toContain('已复制');
   });
 
   // 回归 issue #16/#17:PROD 下 sandboxSweep 涂掉 navigator.clipboard 后,
@@ -286,6 +357,23 @@ describe('StatusBar — MCP 复制', () => {
           ok: true,
           data: { available: true, claudeAddCommand: 'claude mcp add ...' },
         }),
+      },
+    });
+    const { container } = render(<StatusBar />);
+    const btn = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((b) => b.textContent === '复制 MCP 配置')!;
+    fireEvent.click(btn);
+    await waitFor(() => {
+      expect(container.textContent).toContain('复制失败');
+    });
+  });
+
+  // a11y(A115,A50 同族):getStdioConfig() IPC reject 时也须归「复制失败」,不被 void 丢弃。
+  it('getStdioConfig reject → 「复制失败」(IPC 异常不静默)', async () => {
+    installApi({
+      mcp: {
+        getStdioConfig: vi.fn().mockRejectedValue(new Error('ipc down')),
       },
     });
     const { container } = render(<StatusBar />);
@@ -360,7 +448,7 @@ describe('StatusBar — agent 撤销', () => {
     const { container } = render(<StatusBar />);
     const btn = Array.from(
       container.querySelectorAll<HTMLButtonElement>('button'),
-    ).find((b) => /\d+\s*agent/.test(b.textContent ?? ''))!;
+    ).find((b) => /\d+.*agent/.test(b.textContent ?? ''))!;
     fireEvent.click(btn);
 
     await waitFor(() => {
@@ -393,7 +481,7 @@ describe('StatusBar — agent 撤销', () => {
     const { container } = render(<StatusBar />);
     const btn = Array.from(
       container.querySelectorAll<HTMLButtonElement>('button'),
-    ).find((b) => /\d+\s*agent/.test(b.textContent ?? ''))!;
+    ).find((b) => /\d+.*agent/.test(b.textContent ?? ''))!;
     fireEvent.click(btn);
 
     await Promise.resolve();
@@ -420,7 +508,7 @@ describe('StatusBar — agent 撤销', () => {
     const { container } = render(<StatusBar />);
     const btn = Array.from(
       container.querySelectorAll<HTMLButtonElement>('button'),
-    ).find((b) => /\d+\s*agent/.test(b.textContent ?? ''))!;
+    ).find((b) => /\d+.*agent/.test(b.textContent ?? ''))!;
     fireEvent.click(btn);
 
     await waitFor(() => {
@@ -448,13 +536,61 @@ describe('StatusBar — agent 撤销', () => {
     const { container } = render(<StatusBar />);
     const btn = Array.from(
       container.querySelectorAll<HTMLButtonElement>('button'),
-    ).find((b) => /\d+\s*agent/.test(b.textContent ?? ''))!;
+    ).find((b) => /\d+.*agent/.test(b.textContent ?? ''))!;
     fireEvent.click(btn);
 
     await waitFor(() => {
       expect(errSpy).toHaveBeenCalled();
     });
     expect(useAgentAuthStore.getState().sessionGranted).toBe(true);
+    confirmSpy.mockRestore();
+    errSpy.mockRestore();
+  });
+
+  // race(R92):两次 revoke 并发,先发的迟到失败不得用旧 wasGranted 快照把 sessionGranted 回滚成
+  // true 覆盖后发已成功的撤销(否则 renderer 误以为仍授权,后续 agent auth 被无提示放行)。
+  it('R92: 先发 revoke 迟到失败,在后发成功之后不回滚 sessionGranted', async () => {
+    const errSpy = vi.spyOn(notify, 'error').mockImplementation(() => {});
+    let rejectFirst: (e: unknown) => void = () => {};
+    const revoke = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            rejectFirst = reject;
+          }),
+      )
+      .mockResolvedValueOnce({ ok: true });
+    installApi({ agentAuth: { revoke } });
+    useTerminalStore.setState({
+      sessions: [
+        { id: 't1', title: 'a', cwd: '/', originHint: 'agent', createdAt: 0, exitCode: null, ownerWindowId: 1 },
+      ],
+      activeId: 't1',
+    });
+    useAgentAuthStore.setState({ pending: null, sessionGranted: true });
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    const { container } = render(<StatusBar />);
+    const btn = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((b) => /\d+.*agent/.test(b.textContent ?? ''))!;
+
+    // 第一次 revoke(A):wasGranted=true,sessionGranted→false,IPC#1 在途(deferred,将失败)。
+    fireEvent.click(btn);
+    // 第二次 revoke(B):IPC#2 成功(resolve ok)→ 不回滚。
+    fireEvent.click(btn);
+    await waitFor(() => {
+      expect(revoke).toHaveBeenCalledTimes(2);
+    });
+
+    // A 的 IPC 此刻才迟到失败:因 A 非最新 revoke,不得回滚。
+    rejectFirst(new Error('late fail'));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // 关键:sessionGranted 保持 false(后发 B 已成功撤销,A 迟到失败未覆盖)。
+    expect(useAgentAuthStore.getState().sessionGranted).toBe(false);
     confirmSpy.mockRestore();
     errSpy.mockRestore();
   });

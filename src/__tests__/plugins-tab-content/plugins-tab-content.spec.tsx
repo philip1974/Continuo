@@ -16,6 +16,7 @@ import {
   _resetLmApiForTest,
   captureLmApi,
 } from '../../lib/co-api';
+import { setLocale as setI18nLocale } from '@/i18n';
 import { PluginsTabContent } from '../../plugins/settings/PluginsTabContent';
 import { coApp } from '../../plugins/co-app';
 import { CommandRegistry } from '../../plugins/registries/CommandRegistry';
@@ -178,7 +179,7 @@ describe('PluginsTabContent — 第三方插件:列表渲染', () => {
       listAll: () => [
         plugin({ id: 'a', status: 'enabled' }),
         plugin({ id: 'b', status: 'disabled' }),
-        plugin({ id: 'c', status: 'failed', error: 'EBOOM: kaput' }),
+        plugin({ id: 'c', status: 'failed', error: { code: 'EBOOM', message: 'kaput' } }),
       ],
     };
     getMgr.mockReturnValue(fakeMgr);
@@ -194,6 +195,140 @@ describe('PluginsTabContent — 第三方插件:列表渲染', () => {
     expect(enableBtns.length).toBe(2);
     // failed 行有 error
     expect(textContent).toContain('EBOOM');
+  });
+
+  // a11y(A95,A94 同族):Plugins Git URL 安装 loading 须 aria-busy + 视觉隐藏 role=status 播报。
+  it('a11y · Git URL 安装 loading → 按钮 aria-busy + role=status 播报安装中', async () => {
+    const installFromGit = vi.fn().mockReturnValue(new Promise(() => {})); // 永不 resolve
+    installPluginsApi(installFromGit);
+    getMgr.mockReturnValue({ listAll: () => [] });
+    const { container } = render(<PluginsTabContent />);
+    const input = container.querySelector('input') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'https://github.com/u/p.git' } });
+    fireEvent.click(
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+        (b) => b.textContent === '安装',
+      )!,
+    );
+    await waitFor(() => {
+      const busy = Array.from(
+        container.querySelectorAll<HTMLButtonElement>('button'),
+      ).find((b) => b.getAttribute('aria-busy') === 'true');
+      expect(busy).toBeDefined();
+    });
+    const statuses = Array.from(container.querySelectorAll('[role=status]'));
+    expect(statuses.some((s) => (s.textContent ?? '').includes('安装中'))).toBe(true);
+  });
+
+  // a11y(A75,A2 同族):多插件行的操作按钮可见文本通用(都叫「卸载/禁用」),须 aria-label
+  // 含插件名以区分,否则 SR 用户导航时无法知道操作哪个插件(误操作风险)。
+  it('a11y · 行操作按钮 aria-label 含插件名(多行可区分)', () => {
+    installPluginsApi(vi.fn());
+    const fakeMgr: FakeManager = {
+      listAll: () => [
+        plugin({ id: 'alpha', status: 'enabled' }),
+        plugin({ id: 'beta', status: 'enabled' }),
+      ],
+    };
+    getMgr.mockReturnValue(fakeMgr);
+    const { container } = render(<PluginsTabContent />);
+    const labels = Array.from(container.querySelectorAll('button'))
+      .map((b) => b.getAttribute('aria-label') ?? '')
+      .filter((l) => l.includes('卸载'));
+    // 两个卸载按钮各含各自插件名,可区分
+    expect(labels.some((l) => l.includes('alpha'))).toBe(true);
+    expect(labels.some((l) => l.includes('beta'))).toBe(true);
+  });
+
+  // a11y(A68,A41 同族):插件运行时 error 异步出现须 live region(失败=role=alert)。
+  it('a11y · 插件 error → 在 role=alert', () => {
+    installPluginsApi(vi.fn());
+    const fakeMgr: FakeManager = {
+      listAll: () => [
+        plugin({ id: 'c', status: 'failed', error: { code: 'EBOOM', message: 'kaput' } }),
+      ],
+    };
+    getMgr.mockReturnValue(fakeMgr);
+    const { container } = render(<PluginsTabContent />);
+    const alert = container.querySelector('[role=alert]');
+    expect(alert).not.toBeNull();
+    expect(alert!.textContent).toContain('EBOOM');
+  });
+
+  // a11y(A68):插件运行时 warning(部分授权等)异步出现 → role=status(可覆盖警告=polite)。
+  it('a11y · 插件 warning → 在 role=status', () => {
+    installPluginsApi(vi.fn());
+    const fakeMgr: FakeManager = {
+      listAll: () => [
+        plugin({
+          id: 'a',
+          status: 'enabled',
+          warning: {
+            code: 'plugins_tab.warning.partial_grant',
+            params: { granted: 'fs', denied: 'network' },
+          },
+        }),
+      ],
+    };
+    getMgr.mockReturnValue(fakeMgr);
+    const { container } = render(<PluginsTabContent />);
+    const statuses = Array.from(container.querySelectorAll('[role=status]'));
+    const warn = statuses.find((s) => s.textContent?.includes('部分授权'));
+    expect(warn).toBeTruthy();
+    // a11y(A84):⚠ 装饰符号须在 aria-hidden span 内,不混进 live region 播报。
+    const warnSign = warn!.querySelector('span[aria-hidden="true"]');
+    expect(warnSign).not.toBeNull();
+    expect(warnSign!.textContent).toContain('⚠');
+  });
+
+  // i18n(I4):error 结构化后,catalog 收录的 code(NO_DEFAULT_EXPORT)按 locale 渲染本地化
+  // 文案;未收录 code 保留旧 `code: message` 格式。验证 en/zh 各显对应语言,不泄漏中文到 en。
+  it('failed error code 在 catalog(NO_DEFAULT_EXPORT)→ 按 locale 渲染本地化', () => {
+    installPluginsApi(vi.fn());
+    const fakeMgr: FakeManager = {
+      listAll: () => [
+        plugin({
+          id: 'a',
+          status: 'failed',
+          error: {
+            code: 'NO_DEFAULT_EXPORT',
+            message: 'Plugin a has no default export', // fallback,不应被显示
+          },
+        }),
+      ],
+    };
+    getMgr.mockReturnValue(fakeMgr);
+    // 默认 zh
+    const zh = render(<PluginsTabContent />);
+    expect(zh.container.textContent).toContain('没有 export default');
+    cleanup();
+    // en
+    setI18nLocale('en');
+    try {
+      const en = render(<PluginsTabContent />);
+      expect(en.container.textContent).toContain('no default export');
+      expect(en.container.textContent).not.toContain('没有');
+    } finally {
+      setI18nLocale('zh');
+    }
+  });
+
+  // i18n(I4):catalog 未收录的 code(PERMISSION_DENIED 等动态 message)保留 `code: message`。
+  it('failed error code 不在 catalog → 回退 `code: message` 格式', () => {
+    installPluginsApi(vi.fn());
+    const fakeMgr: FakeManager = {
+      listAll: () => [
+        plugin({
+          id: 'a',
+          status: 'failed',
+          error: { code: 'PERMISSION_DENIED', message: 'fs, network' },
+        }),
+      ],
+    };
+    getMgr.mockReturnValue(fakeMgr);
+    const { container } = render(<PluginsTabContent />);
+    expect(container.textContent).toContain('PERMISSION_DENIED');
+    expect(container.textContent).toContain('fs, network');
   });
 
   it('manifest.permissions 非空 + permStore 存在 → 显「权限」按钮', () => {
@@ -226,6 +361,54 @@ describe('PluginsTabContent — 第三方插件:列表渲染', () => {
     expect(permBtn).toBeDefined();
   });
 
+  // race(R102):权限编辑弹窗打开期间该插件被卸载(轮询刷新后从 listAll 消失)→ 弹窗自动关闭,
+  // 防保存把已卸载插件的 ghost 权限写回。
+  it('打开权限弹窗后插件被卸载(轮询刷新)→ 弹窗自动关闭', async () => {
+    vi.useFakeTimers();
+    try {
+      installPluginsApi(vi.fn());
+      let live: PluginListItem[] = [
+        plugin({
+          id: 'a',
+          status: 'enabled',
+          manifest: {
+            id: 'a',
+            name: 'A',
+            version: '0.1.0',
+            permissions: ['fs'],
+          } as never,
+        }),
+      ];
+      getMgr.mockReturnValue({ listAll: () => live });
+      getPerm.mockReturnValue({
+        get: vi.fn().mockResolvedValue([]),
+        grant: vi.fn(),
+        deny: vi.fn(),
+        clearDenied: vi.fn(),
+      });
+      const { container } = render(<PluginsTabContent />);
+      const permBtn = Array.from(
+        container.querySelectorAll<HTMLButtonElement>('button'),
+      ).find((b) => b.textContent === '权限')!;
+      act(() => {
+        fireEvent.click(permBtn);
+      });
+      // 弹窗已开(标题渲染)
+      expect(document.querySelector('.wm-modal-content')).toBeTruthy();
+
+      // 另一窗口卸载了插件 a → 下次 1s 轮询 listAll 不再含 a
+      live = [];
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+
+      // 弹窗因 permEditTarget 从 live 列表消失而自动关闭
+      expect(document.querySelector('.wm-modal-content')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('manifest.permissions 空 → 不显「权限」按钮', () => {
     installPluginsApi(vi.fn());
     const fakeMgr: FakeManager = {
@@ -246,20 +429,54 @@ describe('PluginsTabContent — 第三方插件:列表渲染', () => {
     ).toBeUndefined();
   });
 
-  it('warning 文案显示', () => {
+  // i18n(I3):warning 改结构化 {code, params},renderer 经 catalog 渲染(默认测试 locale=zh)。
+  it('warning 文案显示(结构化 → catalog 渲染)', () => {
     installPluginsApi(vi.fn());
     const fakeMgr: FakeManager = {
       listAll: () => [
         plugin({
           id: 'a',
           status: 'enabled',
-          warning: '某 API 已 deprecated',
+          warning: {
+            code: 'plugins_tab.warning.partial_grant',
+            params: { granted: 'fs', denied: 'network' },
+          },
         }),
       ],
     };
     getMgr.mockReturnValue(fakeMgr);
     const { container } = render(<PluginsTabContent />);
-    expect(container.textContent).toContain('某 API 已 deprecated');
+    // zh catalog: '部分授权:已授 {granted};未授 {denied}'
+    expect(container.textContent).toContain('部分授权');
+    expect(container.textContent).toContain('fs');
+    expect(container.textContent).toContain('network');
+  });
+
+  // i18n(I3):locale=en 时 partial-grant warning 用英文 catalog,不泄漏中文(manager 不再拼中文)。
+  it('warning locale=en → 英文 catalog 文案,不泄漏中文', () => {
+    setI18nLocale('en');
+    try {
+      installPluginsApi(vi.fn());
+      const fakeMgr: FakeManager = {
+        listAll: () => [
+          plugin({
+            id: 'a',
+            status: 'enabled',
+            warning: {
+              code: 'plugins_tab.warning.partial_grant',
+              params: { granted: 'fs', denied: 'network' },
+            },
+          }),
+        ],
+      };
+      getMgr.mockReturnValue(fakeMgr);
+      const { container } = render(<PluginsTabContent />);
+      // en catalog: 'Partial grant — granted: {granted}; not granted: {denied}'
+      expect(container.textContent).toContain('Partial grant');
+      expect(container.textContent).not.toContain('部分授权');
+    } finally {
+      setI18nLocale('zh');
+    }
   });
 });
 
@@ -341,6 +558,12 @@ describe('PluginsTabContent — 启用/禁用/重载', () => {
         expect.any(Error),
       );
     });
+    // a11y(A47):生命周期操作失败须 live region(role=alert)反馈,不只 console.warn。
+    await waitFor(() => {
+      const alert = container.querySelector('[role=alert]');
+      expect(alert).not.toBeNull();
+      expect(alert!.textContent).toContain('permission denied');
+    });
   });
 });
 
@@ -384,6 +607,12 @@ describe('PluginsTabContent — Git URL 安装', () => {
     expect(container.textContent).toContain('p.x');
     // gitUrl 清空
     expect(input.value).toBe('');
+    // a11y(A42):安装成功结果须在 live region(成功=role=status/polite)主动播报。
+    // A95 起新增 loading 用 role=status(idle 空)→ 同页多个 role=status,用 .some() 按文本定位。
+    const statuses = Array.from(container.querySelectorAll('[role=status]'));
+    expect(
+      statuses.some((s) => (s.textContent ?? '').includes('已安装 Plugin X')),
+    ).toBe(true);
   });
 
   it('安装失败 ok=false → 「✘ [code] message」', async () => {
@@ -398,6 +627,65 @@ describe('PluginsTabContent — Git URL 安装', () => {
     fireEvent.change(input, {
       target: { value: 'https://github.com/x/p.git' },
     });
+    fireEvent.click(
+      Array.from(
+        container.querySelectorAll<HTMLButtonElement>('button'),
+      ).find((b) => b.textContent === '安装')!,
+    );
+    await waitFor(() => {
+      expect(container.textContent).toContain('CLONE_FAILED');
+      expect(container.textContent).toContain('auth required');
+    });
+    // a11y(A42):安装失败结果须在 live region(失败=role=alert/assertive)主动播报。
+    const alert = container.querySelector('[role=alert]');
+    expect(alert).not.toBeNull();
+    expect(alert!.textContent).toContain('CLONE_FAILED');
+  });
+
+  // i18n(codex 复查 P1):installFromGit 各错误站点的 message 是硬编码中文,经 safeHandle
+  // 原样传到 renderer。若直接展示 r.message,en/ko 界面会看到中文。renderer 须按稳定 r.code
+  // 经 catalog(errors.<CODE> 三语言齐)翻译;catalog 命中时不得泄漏中文原文。
+  it('安装失败 code 在 catalog(BAD_URL)+ locale=en → 显英文文案,不泄漏中文 message', async () => {
+    setI18nLocale('en');
+    try {
+      const installFromGit = vi.fn().mockResolvedValue({
+        ok: false,
+        code: 'BAD_URL',
+        message: '不支持的 git URL: ftp://x', // main 硬编码中文
+      });
+      installPluginsApi(installFromGit);
+      const { container } = render(<PluginsTabContent />);
+      const input = container.querySelector('input') as HTMLInputElement;
+      fireEvent.change(input, { target: { value: 'ftp://x' } });
+      fireEvent.click(
+        Array.from(
+          container.querySelectorAll<HTMLButtonElement>('button'),
+        ).find((b) => b.textContent === 'Install')!,
+      );
+      await waitFor(() => {
+        // en catalog 的 errors.BAD_URL = 'Bad URL'
+        expect(container.textContent).toContain('Bad URL');
+      });
+      // 中文原文不得泄漏到 en 界面
+      expect(container.textContent).not.toContain('不支持的 git URL');
+      // code 仍展示(稳定标识,非语言相关)
+      expect(container.textContent).toContain('BAD_URL');
+    } finally {
+      setI18nLocale('zh');
+    }
+  });
+
+  // catalog 未收录的 code → 回退原始 message(不破坏既有 CLONE_FAILED 行为)。
+  it('安装失败 code 不在 catalog(CLONE_FAILED)→ 回退原始 message', async () => {
+    const installFromGit = vi.fn().mockResolvedValue({
+      ok: false,
+      code: 'CLONE_FAILED',
+      message: 'auth required',
+    });
+    installPluginsApi(installFromGit);
+    const { container } = render(<PluginsTabContent />);
+    const input = container.querySelector('input') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'https://github.com/x/p.git' } });
     fireEvent.click(
       Array.from(
         container.querySelectorAll<HTMLButtonElement>('button'),
@@ -499,5 +787,111 @@ describe('PluginsTabContent — 卸载流程', () => {
       expect(warn).toHaveBeenCalled();
       expect(container.textContent).toContain('卸载失败');
     });
+  });
+
+  // i18n(I10):uninstall 抛回带 code 的 Error(main RM_FAILED message 是中文「删除失败:…」),
+  // catch 须按 code 经 catalog 本地化,locale=en 不泄漏中文。
+  it('卸载抛带 code(RM_FAILED 中文 message)+ locale=en → 英文 catalog,不泄漏中文', async () => {
+    setI18nLocale('en');
+    try {
+      installPluginsApi(vi.fn());
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const uninstall = vi
+        .fn()
+        .mockRejectedValue(
+          Object.assign(new Error('删除失败: EACCES'), { code: 'RM_FAILED' }),
+        );
+      const fakeMgr: FakeManager = {
+        listAll: () => [plugin({ id: 'p.del', status: 'disabled' })],
+        uninstall,
+      };
+      getMgr.mockReturnValue(fakeMgr);
+      const { container } = render(<PluginsTabContent />);
+      fireEvent.click(
+        Array.from(
+          container.querySelectorAll<HTMLButtonElement>('button'),
+        ).find((b) => b.textContent === 'Uninstall')!,
+      );
+      fireEvent.click(
+        Array.from(
+          document.querySelectorAll<HTMLButtonElement>('.wm-modal-content button'),
+        ).find((b) => b.textContent === 'Uninstall')!,
+      );
+      await waitFor(() => {
+        expect(warn).toHaveBeenCalled();
+        // en catalog errors.RM_FAILED = 'Remove failed'
+        expect(container.textContent).toContain('Remove failed');
+      });
+      expect(container.textContent).not.toContain('删除失败'); // 不泄漏中文
+    } finally {
+      setI18nLocale('zh');
+    }
+  });
+
+  // race(R103,R102 同族):卸载确认弹窗打开期间该插件被卸载(轮询刷新后从 listAll 消失)→ 弹窗自动
+  // 关闭,防迟到确认删错实例。
+  it('打开卸载弹窗后插件消失(轮询刷新)→ 弹窗自动关闭', async () => {
+    vi.useFakeTimers();
+    try {
+      installPluginsApi(vi.fn());
+      let live: PluginListItem[] = [plugin({ id: 'p.del', status: 'disabled' })];
+      getMgr.mockReturnValue({ listAll: () => live, uninstall: vi.fn() });
+      const { container } = render(<PluginsTabContent />);
+      act(() => {
+        fireEvent.click(
+          Array.from(
+            container.querySelectorAll<HTMLButtonElement>('button'),
+          ).find((b) => b.textContent === '卸载')!,
+        );
+      });
+      expect(document.querySelector('.wm-modal-content')).not.toBeNull();
+      live = []; // 另一窗口已卸载
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+      expect(document.querySelector('.wm-modal-content')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // race(R103):卸载确认弹窗打开期间该插件被卸载+重装成不同 version(=不同实例,id 仍在但 version 变)
+  // → effect 因 id+version 不再匹配自动关弹窗,防迟到确认删掉用户从未确认的新实例。
+  it('打开卸载弹窗后插件被重装成不同 version(轮询刷新)→ 弹窗自动关闭', async () => {
+    vi.useFakeTimers();
+    try {
+      installPluginsApi(vi.fn());
+      let live: PluginListItem[] = [
+        plugin({
+          id: 'p.del',
+          status: 'disabled',
+          manifest: { id: 'p.del', name: 'p.del', version: '1.0.0' } as never,
+        }),
+      ];
+      getMgr.mockReturnValue({ listAll: () => live, uninstall: vi.fn() });
+      const { container } = render(<PluginsTabContent />);
+      act(() => {
+        fireEvent.click(
+          Array.from(
+            container.querySelectorAll<HTMLButtonElement>('button'),
+          ).find((b) => b.textContent === '卸载')!,
+        );
+      });
+      expect(document.querySelector('.wm-modal-content')).not.toBeNull();
+      // 另一窗口卸载+重装同 id 但不同 version(新实例)
+      live = [
+        plugin({
+          id: 'p.del',
+          status: 'disabled',
+          manifest: { id: 'p.del', name: 'p.del', version: '2.0.0' } as never,
+        }),
+      ];
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+      expect(document.querySelector('.wm-modal-content')).toBeNull(); // 不同实例 → 关弹窗
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

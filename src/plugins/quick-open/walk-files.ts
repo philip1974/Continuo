@@ -8,6 +8,7 @@
 import type { FileEntry } from '../../../electron/shared/fs-entry';
 import type { IpcResult } from '../../../electron/shared/ipc-result';
 import type { QuickOpenFile } from './store';
+import { stripRootPrefix } from '@/lib/path-cross';
 
 const DEFAULT_MAX_FILES = 5000;
 const DEFAULT_MAX_DEPTH = 8;
@@ -83,15 +84,14 @@ export async function walkWorkspaceFiles(
   });
   if (!r.ok) return r;
 
-  // rootPath 末尾可能带 / — 统一截 prefix(留 1 字符给前导 /)
-  const prefix = rootPath.endsWith('/') ? rootPath : `${rootPath}/`;
-
+  // 分隔符无关地剥 rootPath 前缀 → 复用单一来源 path-cross.stripRootPrefix(X6:含路径边界
+  // 保护 + 平台感知大小写)。跨平台审计 P2(codex):此前手写 `e.path.startsWith(rootPath)`
+  // 仍是大小写敏感且无边界 → Windows 上 rootPath 与 FileEntry.path 仅大小写不同 / canonical
+  // 形式时 relPath 退化为绝对路径 → Quick Open 路径显示 + 相对片段搜索失真。
   const files: QuickOpenFile[] = [];
   for (const e of r.data) {
     if (e.isDirectory) continue;
-    const relPath = e.path.startsWith(prefix)
-      ? e.path.slice(prefix.length)
-      : e.path;
+    const relPath = stripRootPrefix(rootPath, e.path);
     files.push({
       absPath: e.path,
       relPath,

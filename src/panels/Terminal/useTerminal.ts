@@ -14,6 +14,8 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import { coApi } from '@/lib/co-api';
+import { notify } from '@/notifications/notify';
+import { localizeErrorByCode } from '@/lib/localize-error';
 import { useSettingValue } from '@/plugins/settings/values-store';
 import { useLayoutUiStore } from '@/stores/layout-ui.store';
 import { useTheme } from '@/theme';
@@ -140,8 +142,20 @@ export function fitAndResize(
       // fit() 仍每次跑(调 xterm DOM 布局);返回值语义不变 = 网格是否有效(供 RAF 重试)。
       const prev = lastSize.current;
       if (!prev || prev.cols !== term.cols || prev.rows !== term.rows) {
-        lastSize.current = { cols: term.cols, rows: term.rows };
-        void coApi.terminal.resize(termId, term.cols, term.rows);
+        // race(R96):乐观更新 lastSize 阻止在途重复 resize;但 resize IPC 失败(ok:false / reject)
+        // 时必须回滚,否则 lastSize 谎称该尺寸已同步 → 后续相同 cols/rows 不再重试 → xterm DOM 与
+        // PTY 尺寸长期不一致(TUI 换行/光标错乱)。回滚到 prev(与 target 不同 → 同尺寸可重试);
+        // 仅当 lastSize 仍是本次 target 时回滚(被更新的 resize 覆盖则不动 = latest-wins)。
+        const target = { cols: term.cols, rows: term.rows };
+        lastSize.current = target;
+        void coApi.terminal.resize(termId, target.cols, target.rows).then(
+          (r) => {
+            if (!r.ok && lastSize.current === target) lastSize.current = prev;
+          },
+          () => {
+            if (lastSize.current === target) lastSize.current = prev;
+          },
+        );
       }
       return true;
     }
@@ -214,6 +228,12 @@ export function useTerminal(termId: string) {
   useEffect(() => {
     mountedRef.current = true;
     setIsReady(false); // 切 session 时回 loading
+    // race(R47):lastSentSizeRef 是 hook 级、跨 termId 持久;若同一 useTerminal 实例切 session
+    // (TerminalPanelContent 未按 sessionId 加 key,React 复用 hook 实例),新 xterm 首次
+    // fitAndResize 算出的 cols/rows 若与上个 session 残留值相同,会被 P9 去重跳过 → 新 PTY 永远
+    // 停在默认 80×24(直到窗口尺寸再变),换行/全屏 TUI 尺寸错乱。切 session 即重置,保证每个新
+    // session 至少发一次初始 resize。
+    lastSentSizeRef.current = null;
     const container = containerRef.current;
     if (!container || !termId) {
       return () => {
@@ -253,7 +273,19 @@ export function useTerminal(termId: string) {
     term.loadAddon(fitAddon);
     term.loadAddon(
       new WebLinksAddon((_event, url) => {
-        void coApi.shell.openExternal(url);
+        // a11y(A118,A117 同族):外链打开须检查 IpcResult.ok + catch reject,否则 URL 被拒绝
+        // 或系统打开失败时无 toast/live 反馈,用户只感知链接「无响应」。与 EditorPanel 同步。
+        coApi.shell
+          .openExternal(url)
+          .then((r) => {
+            if (!r.ok) {
+              notify.error(localizeErrorByCode(r.code, r.message), { code: r.code });
+            }
+          })
+          .catch((err) => {
+            const code = (err as { code?: string })?.code ?? 'EXCEPTION';
+            notify.error(localizeErrorByCode(code, (err as Error)?.message), { code });
+          });
       }),
     );
     term.open(container);
@@ -301,7 +333,12 @@ export function useTerminal(termId: string) {
     term.attachCustomKeyEventHandler((event) => {
       if (event.type === 'keydown' && isSearchHotkey(event)) {
         queueMicrotask(() => {
-          if (mountedRef.current) {
+          // race(R84):用本次 init 作用域的 teardownDone 守卫,而非 hook 级 mountedRef。session
+          // 切换 / StrictMode remount 同一 tick 内,旧 term 排队的这个微任务会在新 term 已 mount
+          // 后才跑;mountedRef 此刻已被新 mount 置回 true → 旧微任务误把搜索框打开到新实例。
+          // teardownDone 是 per-term 的(旧 term cleanup 时置位),旧微任务据此直接丢弃。与本文件
+          // 其它异步回调(readHistory/safeWrite/resize)一致。
+          if (!teardownDone) {
             setSearchState((state) =>
               terminalSearchReducer(state, { type: 'open' }),
             );
@@ -357,23 +394,65 @@ export function useTerminal(termId: string) {
     // 输出(shell prompt 等),从 main buffer 把已有 raw chunks replay 进 xterm。
     // 先 subscribe 后 replay,中间窗口期的 chunk 走 onData 路径(虽然可能与
     // history 末尾重叠几个字符,但 xterm 容忍重复 ANSI/字符;比丢失初始 prompt 好)。
-    void coApi.terminal.readHistory(termId).then((r) => {
-      // panel 已卸载 / term 已 dispose → 不写已死 xterm。disposeQueue 删了 WeakMap
-      // 条目,迟到的 safeWrite 会新建一个 disposed:false 的队列绕过其 disposed 守卫,
-      // 直接 term.write() 到已拆除的 core(报 "Object has been disposed")。见 P1-AR。
-      if (teardownDone) return;
-      if (!r.ok || !r.data.data) return;
+    // a11y(A143):readHistory 失败(reject 或 !r.ok)此前只 return / 无 .catch,而 lazy-mount
+    // 终端的初始输出(prompt)在 PTY 已 spawn 后、panel mount 前产出,只在 history 里 —— history
+    // 读失败则 onData 不会补发,firstData 恒真 →「Starting shell…」spinner 永久悬浮 + 无反馈。
+    // 失败分支也清 loading(setIsReady(true))并 notify.error。空历史(ok+无 data)仍留 loading
+    // 给 onData 补(prompt 尚未产出的正常态)。
+    const clearLoadingOverlay = () => {
       if (firstData) {
         firstData = false;
         setIsReady(true);
       }
-      safeWrite(term, r.data.data);
-    });
+    };
+    void coApi.terminal
+      .readHistory(termId)
+      .then((r) => {
+        // panel 已卸载 / term 已 dispose → 不写已死 xterm。disposeQueue 删了 WeakMap
+        // 条目,迟到的 safeWrite 会新建一个 disposed:false 的队列绕过其 disposed 守卫,
+        // 直接 term.write() 到已拆除的 core(报 "Object has been disposed")。见 P1-AR。
+        if (teardownDone) return;
+        if (!r.ok) {
+          clearLoadingOverlay();
+          notify.error(localizeErrorByCode(r.code, r.message), { code: r.code });
+          return;
+        }
+        if (!r.data.data) return;
+        clearLoadingOverlay();
+        safeWrite(term, r.data.data);
+      })
+      .catch((err) => {
+        if (teardownDone) return;
+        clearLoadingOverlay();
+        const code = (err as { code?: string })?.code ?? 'EXCEPTION';
+        notify.error(localizeErrorByCode(code, (err as Error)?.message), { code });
+      });
 
     // 用户输入 → IPC write
+    // a11y(A144,A141 同族):write 此前 fire-and-forget 既不判 ok:false 也无 catch,写入失败
+    // (PTY 已死 / IPC 异常)用户键入「没反应」却无反馈。但每个按键都 write,无差别弹 toast
+    // 会刷屏 —— 用 3s 限流(连续失败只提示一次,对齐 A132 dock autosave 限流思路)。
+    let lastWriteFailAt = 0;
+    const notifyWriteFail = (code: string, message?: string) => {
+      if (teardownDone) return;
+      const now = Date.now();
+      if (now - lastWriteFailAt < 3000) return;
+      lastWriteFailAt = now;
+      notify.error(localizeErrorByCode(code, message ?? code), { code });
+    };
     const onDataDisposable = term.onData((data: string) => {
       const outgoing = consumeMappedKeyOnData(__mappedKeyState__, data);
-      void coApi.terminal.write(termId, outgoing);
+      void coApi.terminal
+        .write(termId, outgoing)
+        .then((r) => {
+          if (!r.ok) notifyWriteFail(r.code, r.message);
+        })
+        .catch((err) => {
+          notifyWriteFail(
+            (err as { code?: string })?.code ?? 'EXCEPTION',
+            (err as Error)?.message,
+          );
+        });
     });
 
     // 容器尺寸变化 → fit + resize

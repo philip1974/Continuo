@@ -93,9 +93,36 @@ describe('makeSendTextTool · 元数据', () => {
     expect(tool.name).toBe(MCP_TOOL_SEND_TEXT);
   });
 
-  it('inputSchema 是 sendTextInputSchema', () => {
+  // 边界(E203):inputSchema 是 session_id 加 .max(SESSION_ID_MAX) 的 bounded schema(协议原 schema 无上限)。
+  it('E203 inputSchema 对 session_id 加长度上限(超 256 → 拒)', () => {
     const tool = makeSendTextTool(makeDeps());
-    expect(tool.inputSchema).toBe(sendTextInputSchema);
+    const longId = 'term-' + 'x'.repeat(300);
+    expect(
+      tool.inputSchema.safeParse({ session_id: longId, text: 'hi' }).success,
+    ).toBe(false);
+    expect(
+      tool.inputSchema.safeParse({ session_id: 'term-1', text: 'hi' }).success,
+    ).toBe(true);
+    expect(
+      sendTextInputSchema.safeParse({ session_id: longId, text: 'hi' }).success,
+    ).toBe(true);
+    // 边界(E204):公开 jsonSchema 同步声明 maxLength:256(advertised↔运行时一致)。
+    expect(JSON.stringify(tool.jsonSchema)).toContain('"maxLength":256');
+  });
+
+  // 边界(E220,E219 兄弟,字节 vs code-unit):text 按真实 UTF-8 字节限,非协议的 .max()(code unit)。
+  it('E220 inputSchema 对 text 加真实字节上限(CJK byteLength>2M,length≤2M → 拒)', () => {
+    const tool = makeSendTextTool(makeDeps());
+    const cjk = '中'.repeat(700_000);
+    expect(
+      tool.inputSchema.safeParse({ session_id: 'term-1', text: cjk }).success,
+    ).toBe(false);
+    expect(
+      tool.inputSchema.safeParse({ session_id: 'term-1', text: 'hi' }).success,
+    ).toBe(true);
+    expect(
+      sendTextInputSchema.safeParse({ session_id: 'term-1', text: cjk }).success,
+    ).toBe(true);
   });
 });
 

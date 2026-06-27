@@ -38,17 +38,28 @@ function logFallback(payload: NotifyPushPayload): void {
 export function pushNotification(payload: NotifyPushPayload): void {
   logFallback(payload);
 
+  // race(R70,R62-R68 同族):isDestroyed() 检查后、send 前窗口可能销毁,send 抛
+  // "Object has been destroyed"。pushNotification 常被失败处理路径当兜底反馈调用,定向 send 裸抛
+  // 会**反过来遮蔽原业务错误处理**;广播 send 裸抛会中断循环使后续窗口漏收通知。每次 send 独立
+  // try/catch,失败只记录(logFallback 已 console 过 payload)并继续。
   if (payload.windowId !== undefined) {
     const win = BrowserWindow.fromId(payload.windowId);
     if (win && !win.isDestroyed()) {
-      win.webContents.send(NOTIFY_CHANNELS.PUSH, payload);
+      try {
+        win.webContents.send(NOTIFY_CHANNELS.PUSH, payload);
+      } catch (err) {
+        console.error('[notify-push] targeted send failed', err);
+      }
     }
     return;
   }
 
   for (const w of BrowserWindow.getAllWindows()) {
-    if (!w.isDestroyed()) {
+    if (w.isDestroyed()) continue;
+    try {
       w.webContents.send(NOTIFY_CHANNELS.PUSH, payload);
+    } catch (err) {
+      console.error('[notify-push] broadcast send failed', err);
     }
   }
 }

@@ -45,4 +45,25 @@ describe('49 第八 session · execShell timeout/bytes 上界 clamp', () => {
     expect(clampExecMaxBytes(undefined)).toBe(L.DEFAULT_MAX_OUTPUT_BYTES);
     expect(L.DEFAULT_MAX_OUTPUT_BYTES).toBe(10 * 1024 * 1024);
   });
+
+  // 边界(E248,E10/E122 clamp 非有限值族):helper 自身归一化非有限/≤0(绕过 IPC zod 的 service 直调)。
+  it('E248 timeoutMs 畸形(NaN/Infinity/0/负)→ 回 DEFAULT,不产出 NaN/立即超时', () => {
+    expect(clampExecTimeoutMs(NaN)).toBe(L.DEFAULT_TIMEOUT_MS);
+    expect(clampExecTimeoutMs(Infinity)).toBe(L.DEFAULT_TIMEOUT_MS);
+    expect(clampExecTimeoutMs(-Infinity)).toBe(L.DEFAULT_TIMEOUT_MS);
+    expect(clampExecTimeoutMs(0)).toBe(L.DEFAULT_TIMEOUT_MS);
+    expect(clampExecTimeoutMs(-5)).toBe(L.DEFAULT_TIMEOUT_MS);
+  });
+
+  it('E248 maxOutputBytes 畸形(NaN/Infinity/0/负)→ 回 DEFAULT', () => {
+    expect(clampExecMaxBytes(NaN)).toBe(L.DEFAULT_MAX_OUTPUT_BYTES);
+    expect(clampExecMaxBytes(Infinity)).toBe(L.DEFAULT_MAX_OUTPUT_BYTES);
+    expect(clampExecMaxBytes(0)).toBe(L.DEFAULT_MAX_OUTPUT_BYTES);
+    expect(clampExecMaxBytes(-100)).toBe(L.DEFAULT_MAX_OUTPUT_BYTES);
+  });
+
+  it('E248 有限正小数 → Math.trunc 取整(整数 ms/字节)', () => {
+    expect(clampExecTimeoutMs(200.9)).toBe(200);
+    expect(clampExecMaxBytes(1024.7)).toBe(1024);
+  });
 });

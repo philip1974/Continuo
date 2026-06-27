@@ -139,6 +139,44 @@ describe('removeItems', () => {
     expect(fs.remove).not.toHaveBeenCalled();
     expect(tree.invalidateChildrenIds).not.toHaveBeenCalled();
   });
+
+  // a11y(A138,A137 同族):trash/remove 的 IPC reject 须归类到 failures,不能让 removeItems
+  // 整体 reject(否则调用点 onTrash 漏报 + unhandled rejection)。
+  it('trash reject → 归类到 failures(不 reject),成功项的父仍刷', async () => {
+    const trash = vi
+      .fn<(p: string) => Promise<IpcResult<void>>>()
+      .mockResolvedValueOnce(ok(undefined as void))
+      .mockRejectedValueOnce(Object.assign(new Error('ipc down'), { code: 'EIO' }))
+      .mockResolvedValueOnce(ok(undefined as void));
+    const fs = makeFs({ trash });
+    const tree = makeTree();
+    const r = await removeItems(['/a/x', '/b/y', '/c/z'], {}, { fs }, tree);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.failures).toEqual([
+        { path: '/b/y', code: 'EIO', message: 'ipc down' },
+      ]);
+    }
+    const invalidatedParents = (
+      tree.invalidateChildrenIds as ReturnType<typeof vi.fn>
+    ).mock.calls.map((c) => c[0]);
+    expect(new Set(invalidatedParents)).toEqual(new Set(['/a', '/c']));
+  });
+
+  it('remove(硬删)reject 无 code → 归类 failures code=EXCEPTION', async () => {
+    const remove = vi
+      .fn<(p: string) => Promise<IpcResult<void>>>()
+      .mockRejectedValueOnce(new Error('boom'));
+    const fs = makeFs({ remove });
+    const tree = makeTree();
+    const r = await removeItems(['/a/x'], { trash: false }, { fs }, tree);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.failures).toEqual([
+        { path: '/a/x', code: 'EXCEPTION', message: 'boom' },
+      ]);
+    }
+  });
 });
 
 // ────────────────────────────────────────────────────────────
@@ -164,6 +202,19 @@ describe('createNewFile', () => {
     expect(r).toEqual({ ok: false, code: 'FS_EEXIST', message: 'already' });
     expect(tree.invalidateChildrenIds).not.toHaveBeenCalled();
   });
+
+  // a11y(A139,A138 同族):createFile reject 归类为 ActionFail(不 reject),code 取 err.code ?? EXCEPTION。
+  it('createFile reject(带 code)→ ActionFail, 不刷', async () => {
+    const fs = makeFs({
+      createFile: vi.fn(async () => {
+        throw Object.assign(new Error('disk full'), { code: 'ENOSPC' });
+      }),
+    });
+    const tree = makeTree();
+    const r = await createNewFile('/work', 'a.md', { fs }, tree);
+    expect(r).toEqual({ ok: false, code: 'ENOSPC', message: 'disk full' });
+    expect(tree.invalidateChildrenIds).not.toHaveBeenCalled();
+  });
 });
 
 // ────────────────────────────────────────────────────────────
@@ -187,6 +238,19 @@ describe('createNewDir', () => {
     const tree = makeTree();
     const r = await createNewDir('/work', 'a/b', { fs }, tree);
     expect(r).toEqual({ ok: false, code: 'FS_BAD_NAME', message: 'has slash' });
+    expect(tree.invalidateChildrenIds).not.toHaveBeenCalled();
+  });
+
+  // a11y(A139):createDir reject(无 code)→ ActionFail code=EXCEPTION,不 reject。
+  it('createDir reject(无 code)→ ActionFail code=EXCEPTION, 不刷', async () => {
+    const fs = makeFs({
+      createDir: vi.fn(async () => {
+        throw new Error('boom');
+      }),
+    });
+    const tree = makeTree();
+    const r = await createNewDir('/work', 'docs', { fs }, tree);
+    expect(r).toEqual({ ok: false, code: 'EXCEPTION', message: 'boom' });
     expect(tree.invalidateChildrenIds).not.toHaveBeenCalled();
   });
 });

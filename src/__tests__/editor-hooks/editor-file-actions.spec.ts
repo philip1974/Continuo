@@ -76,6 +76,48 @@ describe('openFileByPath', () => {
     expect(deps.fs.readFile).not.toHaveBeenCalled();
   });
 
+  // 跨平台(codex 复查 P1):去重用平台感知 pathEquals。Windows 上同一文件不同大小写打开
+  // 不得开两个 tab(否则分别保存 → 后者覆盖前者丢改);只切到已开 tab 的真实 id,不重读。
+  it('Windows 大小写不敏感:同文件不同大小写 → 不开新 tab,只切已开', async () => {
+    const orig = Object.getOwnPropertyDescriptor(navigator, 'platform');
+    Object.defineProperty(navigator, 'platform', {
+      value: 'Win32',
+      configurable: true,
+    });
+    try {
+      useEditorStore.setState({
+        tabs: [createTab('C:\\Repo\\a.md', 'cached')],
+        activeTabId: null,
+      });
+      const readFile = vi.fn(async () => ok('SHOULD-NOT-BE-USED'));
+      const r = await openFileByPath('c:\\repo\\a.md', makeDeps({ readFile }));
+      expect(r.ok).toBe(true);
+      expect(useEditorStore.getState().tabs).toHaveLength(1); // 未开新 tab
+      expect(useEditorStore.getState().activeTabId).toBe('C:\\Repo\\a.md'); // 切已开真实 id
+      expect(readFile).not.toHaveBeenCalled(); // 不重读
+    } finally {
+      if (orig) Object.defineProperty(navigator, 'platform', orig);
+      else delete (navigator as { platform?: string }).platform;
+    }
+  });
+
+  it('POSIX 大小写敏感:不同大小写视为不同文件 → 开新 tab', async () => {
+    Object.defineProperty(navigator, 'platform', {
+      value: 'MacIntel',
+      configurable: true,
+    });
+    useEditorStore.setState({
+      tabs: [createTab('/repo/a.md', 'cached')],
+      activeTabId: null,
+    });
+    const r = await openFileByPath(
+      '/repo/A.md',
+      makeDeps({ readFile: vi.fn(async () => ok('new')) }),
+    );
+    expect(r.ok).toBe(true);
+    expect(useEditorStore.getState().tabs).toHaveLength(2); // 不同文件
+  });
+
   it('fs.readFile IpcFail → 不 open,返 IpcFail 透传', async () => {
     const deps = makeDeps({
       readFile: vi.fn(async () => fail('FS_NOT_FOUND', 'gone')),
@@ -96,6 +138,69 @@ describe('openFileByPath', () => {
     if (!r.ok) {
       expect(r.code).toBe('EXCEPTION');
       expect(r.message).toContain('boom');
+    }
+  });
+
+  // race(R20):check→read→create 之间的 TOCTOU。并发打开同一文件,两调用都在读前看不到
+  // existing,读后须用 pathEquals 复检,只建一个 tab,另一个切换 —— 否则同一磁盘文件两个 tab。
+  it('R20 并发打开同一文件 → 只建一个 tab(读后复检去重)', async () => {
+    let resolve1!: (v: IpcResult<string>) => void;
+    let resolve2!: (v: IpcResult<string>) => void;
+    const readFile = vi
+      .fn<(p: string) => Promise<IpcResult<string>>>()
+      .mockImplementationOnce(
+        () =>
+          new Promise((res) => {
+            resolve1 = res;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise((res) => {
+            resolve2 = res;
+          }),
+      );
+    const deps = makeDeps({ readFile });
+
+    // 两次并发打开同一文件(读前都看不到 existing)
+    const p1 = openFileByPath('/x/a.md', deps);
+    const p2 = openFileByPath('/x/a.md', deps);
+
+    resolve1(ok('content-1')); // 第一个读完 → 建 tab
+    await p1;
+    resolve2(ok('content-2')); // 第二个读完 → 复检发现已存在 → 只切换
+    await p2;
+
+    const paths = useEditorStore.getState().tabs.map((t) => t.filePath ?? t.id);
+    expect(paths).toEqual(['/x/a.md']); // 只一个 tab,不重复
+  });
+
+  it('R20 并发打开同一文件不同大小写 → pathEquals 复检仍只一个 tab(Windows)', async () => {
+    // 强制 Windows 运行时(pathEquals 大小写不敏感)。
+    const orig = Object.getOwnPropertyDescriptor(navigator, 'platform');
+    Object.defineProperty(navigator, 'platform', {
+      value: 'Win32',
+      configurable: true,
+    });
+    try {
+      let r1!: (v: IpcResult<string>) => void;
+      let r2!: (v: IpcResult<string>) => void;
+      const readFile = vi
+        .fn<(p: string) => Promise<IpcResult<string>>>()
+        .mockImplementationOnce(() => new Promise((res) => (r1 = res)))
+        .mockImplementationOnce(() => new Promise((res) => (r2 = res)));
+      const deps = makeDeps({ readFile });
+
+      const p1 = openFileByPath('C:\\Repo\\a.md', deps);
+      const p2 = openFileByPath('c:\\repo\\a.md', deps);
+      r1(ok('x'));
+      await p1;
+      r2(ok('y'));
+      await p2;
+
+      expect(useEditorStore.getState().tabs).toHaveLength(1);
+    } finally {
+      if (orig) Object.defineProperty(navigator, 'platform', orig);
     }
   });
 });
@@ -192,5 +297,58 @@ describe('saveFile', () => {
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.code).toBe('EXCEPTION');
     expect(useEditorStore.getState().tabs[0]?.dirty).toBe(true);
+  });
+
+  // race(R21):同一 tab 的并发保存须按发起顺序串行写盘 —— 否则旧内容(autosave)晚于新内容
+  // (手动保存)完成会覆盖磁盘。串行后:第一个 write 完成才启动第二个 write,最后发起者最后落盘。
+  it('R21 同 tab 并发保存 → 串行写盘(第二个 write 在第一个完成后才启动)', async () => {
+    useEditorStore.setState({
+      tabs: [
+        {
+          id: '/x/a',
+          filePath: '/x/a',
+          content: 'A',
+          originalContent: 'orig',
+          dirty: true,
+        },
+      ],
+      activeTabId: '/x/a',
+      mode: 'edit',
+    });
+    const order: string[] = [];
+    let resolve1!: () => void;
+    const writeFile = vi
+      .fn<(p: string, c: string) => Promise<IpcResult<void>>>()
+      .mockImplementationOnce((_p, c) => {
+        order.push(`start:${c}`);
+        return new Promise((res) => {
+          resolve1 = () => {
+            order.push(`end:${c}`);
+            res(ok(undefined as void));
+          };
+        });
+      })
+      .mockImplementationOnce((_p, c) => {
+        order.push(`start:${c}`);
+        return Promise.resolve(ok(undefined as void));
+      });
+    const deps = makeDeps({ writeFile });
+
+    // 第一次保存(write1 挂起)
+    const p1 = saveFile('/x/a', deps);
+    await Promise.resolve();
+    // 第二次保存:内容已变 B。串行下 write2 不得在 write1 完成前启动。
+    useEditorStore.setState((s) => ({
+      tabs: s.tabs.map((t) => (t.id === '/x/a' ? { ...t, content: 'B' } : t)),
+    }));
+    const p2 = saveFile('/x/a', deps);
+    await Promise.resolve();
+
+    expect(order).toEqual(['start:A']); // write2 尚未启动(等 write1)
+    resolve1(); // write1 完成 → write2 启动
+    await Promise.all([p1, p2]);
+
+    // 严格保序:write1 完整结束后 write2 才开始 → 最后落盘是 B(最新内容)
+    expect(order).toEqual(['start:A', 'end:A', 'start:B']);
   });
 });

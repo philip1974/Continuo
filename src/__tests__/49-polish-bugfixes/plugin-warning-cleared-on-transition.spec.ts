@@ -74,8 +74,11 @@ async function makePartialGrantManager(manifest: string): Promise<{
   const host: ManagerHost = {
     listPluginDirs: () => state.dirs,
     readEnabledIds: () => state.enabled,
-    writeEnabledIds: (ids) => {
-      state.enabled = new Set(ids);
+    mutateEnabledId: (id, enabled) => {
+      const next = new Set(state.enabled);
+      if (enabled) next.add(id);
+      else next.delete(id);
+      state.enabled = next;
     },
     importModule: async (url) => {
       const m = state.modules.get(url);

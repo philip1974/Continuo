@@ -8,7 +8,7 @@
 //   - markdown 模式切换(Edit/Source/Preview)已搬到 EditorPanel 中的 EditorModeBar
 //     —— tab 行下方独立一行,与编辑器同宽,视觉上更干净。
 
-import { memo, useMemo } from 'react';
+import { memo, useCallback, useMemo } from 'react';
 import {
   getEffectiveMode,
   useEditorStore,
@@ -76,6 +76,20 @@ const EditorActionsArea = memo(function EditorActionsArea({
   mode,
 }: EditorActionsAreaProps) {
   const allActions = useEditorActions();
+  // race(R53,R51/R52 同族):点击时按 id 从 live registry 重查 + 按当前 ctx 重检 when 再执行,
+  // 而非调渲染时捕获的 a.fn。插件 disable/reload unregister 后、到重渲移除按钮前旧 handler 仍可
+  // 触发;重查使死 action / 当前 ctx 下不可见的 action 静默忽略,不执行已卸载插件代码。
+  const runAction = useCallback(
+    (a: EditorActionSpec) => {
+      runContributedAction(a.label, () => {
+        const live = coApp.editorActions.get(a.id);
+        if (!live) return;
+        if (filterVisible([live], { filePath, dirty, mode }).length === 0) return;
+        return live.fn();
+      });
+    },
+    [filePath, dirty, mode],
+  );
   const visibleActions = useMemo(
     () => filterVisible(allActions, { filePath, dirty, mode }),
     [allActions, filePath, dirty, mode],
@@ -89,7 +103,7 @@ const EditorActionsArea = memo(function EditorActionsArea({
             size="xs"
             // 插件贡献的编辑器 action,抛错经 runContributedAction 弹 error toast,不再
             // 静默吞(旧 `void a.fn()` 连 console 都没有)。见第二十一轮 P1-AX。
-            onClick={() => runContributedAction(a.label, a.fn)}
+            onClick={() => runAction(a)}
             title={a.label}
             aria-label={a.label}
           >
@@ -100,7 +114,7 @@ const EditorActionsArea = memo(function EditorActionsArea({
             key={a.id}
             variant="ghost"
             size="sm"
-            onClick={() => runContributedAction(a.label, a.fn)}
+            onClick={() => runAction(a)}
             title={a.label}
           >
             {a.label}
@@ -157,12 +171,20 @@ export function EditorHeader({ onCloseRequest }: EditorHeaderProps) {
 
   return (
     <div className="flex h-9 shrink-0 items-stretch bg-canvas">
-      <TabNav className="min-w-0 flex-1 overflow-x-auto">
+      {/* a11y(A107):给 tablist 注入本地化组名(design 层无 i18n)。 */}
+      <TabNav
+        className="min-w-0 flex-1 overflow-x-auto"
+        ariaLabel={t('shell.tab.editor_tablist')}
+      >
         {tabsChrome.map((tab) => (
           <TabNavItem
             key={tab.id}
             active={tab.id === activeTabId}
             dirty={tab.dirty}
+            // a11y(A35):未保存状态文本传给 design TabNavItem(design 层无 i18n),AT 聚焦读出。
+            dirtyLabel={t('panels.editor.unsaved_indicator')}
+            // a11y(A106):icon-only 关闭按钮可访问名本地化(design 层无 i18n,调用点注入)。
+            closeLabel={t('shell.tab.close', { title: basename(tab.filePath) })}
             title={tab.filePath ?? t('panels.editor.unsaved_draft')}
             onSelect={() => switchTab(tab.id)}
             onClose={() => onCloseRequest(tab)}

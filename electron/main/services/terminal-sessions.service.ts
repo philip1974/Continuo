@@ -28,9 +28,14 @@
 // BDD: src/__tests__/terminal-sessions-service/
 
 import { ERROR_CODES } from '../../shared/error-codes';
+import {
+  MAX_TERMINAL_SESSIONS_GLOBAL,
+  MAX_TERMINAL_SESSIONS_PER_WINDOW,
+} from '../../shared/terminal-session-limits';
 import type { OriginHint } from '../../shared/origin-hint';
 import type { AttachTarget } from '../../shared/terminal-attach';
 import type { TerminalSessionSnapshot } from '../../shared/terminal-session';
+import type { ShellFamily } from '@continuo-terminal/shell-quote';
 
 export type { AttachTarget } from '../../shared/terminal-attach';
 
@@ -56,6 +61,8 @@ export interface AddSessionInput {
   readonly ownerWindowId: number;
   readonly attachTarget?: AttachTarget;
   readonly workspaceRoot?: string;
+  /** 跨平台:PTY shell 引号族(见 TerminalSessionSnapshot.shellFamily). */
+  readonly shellFamily?: ShellFamily;
   /** 安全 S3:创建该会话的 MCP 调用方身份(见 MainTerminalSession.controllerToken). */
   readonly controllerToken?: string;
 }
@@ -84,6 +91,24 @@ export type SessionsSubscriber = (
 const sessions = new Map<string, MainTerminalSession>();
 const subscribers = new Set<SessionsSubscriber>();
 const titleCounter: Map<number, number> = new Map();
+
+// 边界(E235,E230 数量上限族):终端会话数量上限。每个 session 占一个**真实 PTY 子进程** + 4MiB ring
+// buffer + throttle interval + metadata 快照广播 + Dock panel —— 数量上限族里最重的资源。此前 add() 无
+// 数量上限,terminal:create / MCP create_session 可持续创建直至拖垮 main/renderer/系统。add() 是 PTY
+// spawn **前**的 reservation 单一漏斗(IPC handler 先 add 再 service.createTerminal),在此加全局 +
+// 每窗口双闸 → 超限抛 TOO_MANY_TERMINALS,既不入 sessions 也不会 spawn PTY(不漏子进程)。计数含 live 与
+// exited-retained(都在 Map 中,remove/removeByOwner 后释放)。值远超任何正常人工/agent 并发终端数。
+// E292:常量移到 shared/terminal-session-limits,renderer ingress(terminal.store filterByOwnerWindow)
+// 复用同值作计数闸(此前 renderer 无对应上限)。
+
+/** 边界(E235):某窗口当前会话数(含 live 与 exited-retained)。sessions 已封顶后 O(≤256)。 */
+function sessionCountForWindow(ownerWindowId: number): number {
+  let n = 0;
+  for (const s of sessions.values()) {
+    if (s.ownerWindowId === ownerWindowId) n += 1;
+  }
+  return n;
+}
 
 // ── helpers ────────────────────────────────────────────────────
 
@@ -114,6 +139,27 @@ export function add(input: AddSessionInput): void {
       { code: ERROR_CODES.TERMINAL_SESSION_DUPLICATE },
     );
   }
+  // 边界(E235):全局 + 每窗口会话数量双闸。在 spawn PTY 前的 reservation 处拒绝,超限不入 sessions、
+  // 不触发后续 PTY spawn(IPC handler 见到 add 抛错即不调 createTerminal)→ 不漏真实子进程。
+  if (sessions.size >= MAX_TERMINAL_SESSIONS_GLOBAL) {
+    throw Object.assign(
+      new Error(
+        `terminal session global limit (${MAX_TERMINAL_SESSIONS_GLOBAL}) reached`,
+      ),
+      { code: ERROR_CODES.TOO_MANY_TERMINALS },
+    );
+  }
+  if (
+    sessionCountForWindow(input.ownerWindowId) >=
+    MAX_TERMINAL_SESSIONS_PER_WINDOW
+  ) {
+    throw Object.assign(
+      new Error(
+        `terminal session per-window limit (${MAX_TERMINAL_SESSIONS_PER_WINDOW}) reached`,
+      ),
+      { code: ERROR_CODES.TOO_MANY_TERMINALS },
+    );
+  }
   const session: MainTerminalSession = {
     id: input.id,
     title: input.title,
@@ -126,6 +172,7 @@ export function add(input: AddSessionInput): void {
     ownerWindowId: input.ownerWindowId,
     ...(input.attachTarget !== undefined ? { attachTarget: input.attachTarget } : {}),
     ...(input.workspaceRoot !== undefined ? { workspaceRoot: input.workspaceRoot } : {}),
+    ...(input.shellFamily !== undefined ? { shellFamily: input.shellFamily } : {}),
     ...(input.controllerToken !== undefined
       ? { controllerToken: input.controllerToken }
       : {}),
@@ -209,3 +256,8 @@ export function _reset(): void {
   subscribers.clear();
   titleCounter.clear();
 }
+
+// 边界(E235)测试用:会话数量上限常量。
+export const MAX_TERMINAL_SESSIONS_GLOBAL_FOR_TEST = MAX_TERMINAL_SESSIONS_GLOBAL;
+export const MAX_TERMINAL_SESSIONS_PER_WINDOW_FOR_TEST =
+  MAX_TERMINAL_SESSIONS_PER_WINDOW;

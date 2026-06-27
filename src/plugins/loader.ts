@@ -86,14 +86,17 @@ export async function loadPluginModule(
     return {
       ok: false,
       code: 'NO_DEFAULT_EXPORT',
-      message: `Plugin ${opts.manifest.id} 没有 export default`,
+      // i18n(I4):message 仅作 fallback —— UI 经 errors.NO_DEFAULT_EXPORT catalog 渲染
+      // (含 zh/ko)。这里改英文(开发者面向)去掉硬编码中文,避免 catalog 缺失时泄漏中文。
+      message: `Plugin ${opts.manifest.id} has no default export`,
     };
   }
   if (typeof def !== 'function' || !isPluginSubclass(def)) {
     return {
       ok: false,
       code: 'NOT_PLUGIN_CLASS',
-      message: `Plugin ${opts.manifest.id} 的 default export 不是 Plugin 子类`,
+      // i18n(I4):同上,message 作 fallback,UI 经 errors.NOT_PLUGIN_CLASS catalog 渲染。
+      message: `Plugin ${opts.manifest.id} default export is not a Plugin subclass`,
     };
   }
 

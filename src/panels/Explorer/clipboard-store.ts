@@ -9,6 +9,7 @@
 // copy 粘贴成功后保留(允许多次粘贴到不同位置)。
 
 import { create } from 'zustand';
+import { isSameOrInsidePath } from '@/lib/path-cross';
 
 export type ClipboardKind = 'cut' | 'copy';
 
@@ -38,10 +39,11 @@ export const useExplorerClipboardStore = create<ExplorerClipboardState>(
         if (s.kind === null || s.paths.length === 0 || removedPaths.length === 0) {
           return s;
         }
+        // 跨平台(codex 复查 P2):复用单一来源 path-cross.isSameOrInsidePath —— 此前手写
+        // 大小写敏感前缀,Windows 上剪贴板源与删除/改名旧路径仅大小写不同时不剪除 → 保留失效
+        // 源 → Paste 报不存在/同路径新建文件误灰显待粘贴。匹配语义同 editor.store remove/rename。
         const isRemoved = (p: string): boolean =>
-          removedPaths.some(
-            (r) => p === r || p.startsWith(r + '/') || p.startsWith(r + '\\'),
-          );
+          removedPaths.some((r) => isSameOrInsidePath(r, p));
         const remaining = s.paths.filter((p) => !isRemoved(p));
         if (remaining.length === s.paths.length) return s; // 无变化 → 引用不变,免重渲
         if (remaining.length === 0) return { kind: null, paths: [] };

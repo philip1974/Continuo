@@ -23,6 +23,23 @@ describe('topic-19 core-plugins titleKey hits catalog', () => {
     expect(violations).toEqual([]);
   });
 
+  // i18n(I17/I18 漏检盲区闭合):现有测试只验「有 key 的命中 catalog」,不验「每个命令
+  // 都有 key」→ 缺 titleKey/categoryKey 的命令静默回退英文 title/category。强化:凡命令
+  // 有 title 必有 titleKey、有 category 必有 categoryKey。
+  it('每个 CommandSpec 有 title→必有 titleKey、有 category→必有 categoryKey', () => {
+    bootCorePlugins();
+    const violations: string[] = [];
+    for (const cmd of coApp.commands.getAll()) {
+      if (cmd.title && !cmd.titleKey) {
+        violations.push(`command.${cmd.id} missing titleKey`);
+      }
+      if (cmd.category && !cmd.categoryKey) {
+        violations.push(`command.${cmd.id} missing categoryKey`);
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
   it('每个含 titleKey 的 PanelSpec 在 catalog 内', () => {
     bootCorePlugins();
     const violations: string[] = [];
@@ -42,6 +59,10 @@ describe('topic-19 core-plugins titleKey hits catalog', () => {
       coApp.panels.getAll().find((p) => p.type === type);
 
     expect(findCmd('terminal.new')?.titleKey).toBe('commands.terminal.new.title');
+    // i18n(I17):terminal.search.toggle 此前缺 titleKey → 命令面板/快捷键 zh/ko 显英文
+    expect(findCmd('terminal.search.toggle')?.titleKey).toBe(
+      'commands.terminal.search.title',
+    );
     expect(findCmd('window.new')?.titleKey).toBe('commands.window.new.title');
     expect(findCmd('window.openFolderInNew')?.titleKey).toBe(
       'commands.window.open_folder.title',

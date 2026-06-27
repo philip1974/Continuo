@@ -14,6 +14,8 @@ import { coApp, getPluginMcpRegistry } from './plugins/co-app';
 import { startPluginMcpInvokeBridge } from './plugins/plugin-mcp-invoke-bridge';
 import { Plugin } from './plugins/Plugin';
 import { PluginManager, setUserPluginManager } from './plugins/PluginManager';
+import { wirePluginReloadGate } from './plugins/plugin-reload-gate';
+import { wireProtocolUrl } from './plugins/protocol/wire-protocol-url';
 import { createWindowApiHost } from './lib/plugins-host';
 import { IpcPermissionStore } from './plugins/permissions/IpcPermissionStore';
 import { setUserPermissionStore } from './plugins/permissions/co-permission-store';
@@ -139,22 +141,26 @@ export async function init(): Promise<void> {
       usePermissionPromptStore.getState().request(pid, perms),
   });
   setUserPluginManager(userPluginManager);
-  void userPluginManager.init().catch((err) => {
-    console.warn('[main] user plugin manager init failed', err);
-  });
 
-  // M-Plugin v4.3.1:主进程 mtime watch 推 changed → 自动 reload
-  coApi.plugins.onChanged((id) => {
-    void userPluginManager.reload(id).catch((err) => {
-      console.warn(`[main] auto-reload ${id} failed`, err);
-    });
+  // M-Plugin v4.3.1:主进程 mtime watch 推 changed → 自动 reload。
+  // race(R16):init() 与 onChanged 订阅经 reload-gate 解耦 —— init 仍在扫描时到达的变更先
+  // 缓冲(去重),init 完成(成功/失败)后逐个 reload,避免窗口期变更被「Plugin not found」丢弃。
+  wirePluginReloadGate({
+    init: () => userPluginManager.init(),
+    reload: (id) => userPluginManager.reload(id),
+    onChanged: (cb) => coApi.plugins.onChanged(cb),
+    onError: (where, err) =>
+      console.warn(`[main] user plugin manager ${where} failed`, err),
   });
 
   // M-Plugin v4.4:co:// 外部唤起 → 路由到 commands.execute
-  import('./plugins/protocol/handler').then(({ handleProtocolUrl }) => {
-    coApi.plugins.onProtocolUrl((url) => {
-      void handleProtocolUrl(url, coApp);
-    });
+  // race(R33):同步注册 onProtocolUrl 监听、handler 懒加载。此前订阅写在 import().then 里,
+  // 监听要等动态 import 微任务 resolve 才挂;而 main 冷启动在 did-finish-load 只推一次
+  // PROTOCOL_URL 无 replay → import 晚于 did-finish-load 时深链丢失。见 wireProtocolUrl。
+  wireProtocolUrl({
+    onProtocolUrl: (cb) => coApi.plugins.onProtocolUrl(cb),
+    loadHandler: () => import('./plugins/protocol/handler'),
+    app: coApp,
   });
 
   // 资源管理器持久化(M-Explorer Step 3 + Step 4)+ Editor session 恢复(Step E5)。

@@ -70,6 +70,15 @@ interface CompiledBinding {
   readonly cmd: CommandSpec;
 }
 
+/** 事件目标是否可编辑文本控件(input/textarea/select/contenteditable). */
+export function isEditableTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  if (!el || typeof el.tagName !== 'string') return false;
+  const tag = el.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+  return el.isContentEditable === true;
+}
+
 export function useCommandHotkeys(commands: CommandRegistry): void {
   const snap = useRegistry(commands);
   // 用户改键时也要重排监听 — 订阅 keybindings overrides 让预编译表重建
@@ -93,22 +102,36 @@ export function useCommandHotkeys(commands: CommandRegistry): void {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      // a11y(A64):事件来自可编辑文本控件(input/textarea/contenteditable/select)时,放行
+      // 「无 ctrl/meta/alt 修饰」的绑定(单键如 'x' 或仅 shift 如 'X')—— 否则用户在搜索框/
+      // 输入框里键入该字符会被全局命令劫持并 preventDefault,文本打不进去、焦点上下文被破坏。
+      // 带 ctrl/meta/alt 的全局组合(如 mod+s 保存)在编辑器内仍需生效,故只跳过无修饰类。
+      const editable = isEditableTarget(e.target);
       for (const b of bindings) {
         if (signatureMatches(b.sig, e)) {
+          if (editable && !b.sig.wantMeta && !b.sig.wantCtrl && !b.sig.wantAlt) {
+            continue;
+          }
           e.preventDefault();
           e.stopPropagation();
           // 经 runContributedAction 走:命令(任意插件代码,可 network/fs)同步 throw 或
           // async reject 时弹 error toast,与命令面板 execute 路径(CommandPalette.tsx)
           // 一致。旧实现裸 `void cmd.fn()` → hotkey 触发的失败"按了没反应"完全静默。
           // label 用 localize 后 title 与面板对齐。
-          runContributedAction(tWithFallback(b.cmd.titleKey, b.cmd.title), () =>
-            b.cmd.fn(),
-          );
+          // race(R51):触发时按 id 从 live registry 重查再执行,而非调缓存的 b.cmd.fn()。命令被
+          // 插件 disable/reload 同步 unregister 后、到 React 重渲替换本 handler 前的窗口内,旧
+          // bindings 闭包仍持已卸载命令的 fn;重查使死命令静默忽略,不再执行已卸载插件代码。
+          runContributedAction(tWithFallback(b.cmd.titleKey, b.cmd.title), () => {
+            const live = commands.get(b.cmd.id);
+            if (!live) return;
+            return live.fn();
+          });
           return;
         }
       }
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [bindings]);
+    // commands 是稳定 registry 实例(挂载期不变);handler 内 commands.get 做 R51 live 查找。
+  }, [bindings, commands]);
 }

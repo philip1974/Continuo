@@ -3,7 +3,9 @@
 // panel 内嵌 tab 上启用。drag handler 挂在 wrap div(根)而非 select button,避免
 // button click/drag 互相干扰。
 import './TabNav.css';
-import type { DragEvent, MouseEvent, ReactNode } from 'react';
+import { useId } from 'react';
+import type { DragEvent, KeyboardEvent, MouseEvent, ReactNode } from 'react';
+import { handleTablistArrowKeys } from './roving-tablist';
 
 /**
  * Props for a horizontal IDE-style tab strip.
@@ -16,6 +18,11 @@ export interface TabNavProps {
   readonly children: ReactNode;
   /** Optional host class for layout integration. Defaults to no extra class. */
   readonly className?: string;
+  /**
+   * a11y(A107):role="tablist" 的可访问名。Caller 传本地化组名(如「编辑器标签」),否则 AT
+   * 进入 tablist 只听到泛化"tab list"。design 层无 i18n,文本由调用点注入。Defaults to none.
+   */
+  readonly ariaLabel?: string;
 }
 
 /**
@@ -29,6 +36,17 @@ export interface TabNavItemProps {
   readonly active?: boolean;
   /** Shows a primary dirty indicator dot. Defaults to `false`. */
   readonly dirty?: boolean;
+  /**
+   * a11y(A35):localized text for the unsaved/dirty state (e.g. "Unsaved changes"). When provided
+   * and `dirty`, it is associated with the tab via `aria-describedby` so AT announces unsaved state
+   * (the visual dot alone is `aria-hidden`). Caller supplies the i18n text (design layer has no i18n).
+   */
+  readonly dirtyLabel?: string;
+  /**
+   * a11y(A106):icon-only 关闭按钮的可访问名。Caller 传本地化文本(含 title),design 层无 i18n
+   * 依赖;未提供时回退英文默认 `Close {title}` / `Close tab`(同 dirtyLabel 模式)。
+   */
+  readonly closeLabel?: string;
   /** Applies a dimmed treatment for inactive or exited tabs. Defaults to `false`. */
   readonly muted?: boolean;
   /** Prevents selecting or closing this tab. Defaults to `false`. */
@@ -56,9 +74,19 @@ export interface TabNavItemProps {
   readonly children: ReactNode;
 }
 
-export function TabNav({ children, className }: TabNavProps) {
+export function TabNav({ children, className, ariaLabel }: TabNavProps) {
+  // Continuo-local 微调(a11y A23/A28):role="tablist" 须配 WAI-ARIA 键盘模型 —— 方向键在 tab
+  // 间移动焦点(配合 TabNavItem 的 roving tabindex:仅 active tab 在 Tab 顺序内)。手动激活:
+  // 方向键只移焦点,Enter/Space 由原生 button 触发 onSelect。逻辑抽到共享 roving-tablist.ts
+  // (与 design Tabs 单一来源)。Nous 上游纯展示 tab 无此模型,通用增强应推回。
   return (
-    <nav className={`wm-tab-nav${className != null ? ` ${className}` : ''}`} role="tablist">
+    <nav
+      className={`wm-tab-nav${className != null ? ` ${className}` : ''}`}
+      role="tablist"
+      // a11y(A107):caller 注入的本地化组名(design 层无 i18n)。
+      aria-label={ariaLabel}
+      onKeyDown={handleTablistArrowKeys}
+    >
       {children}
     </nav>
   );
@@ -73,17 +101,40 @@ export function TabNavItem({
   onSelect,
   onClose,
   onRename,
+  dirtyLabel,
+  closeLabel: closeLabelProp,
   draggable = false,
   onDragStart,
   onDragEnd,
   dataAttrs,
   children,
 }: TabNavItemProps) {
-  const closeLabel = title != null && title.length > 0 ? `Close ${title}` : 'Close tab';
+  // a11y(A106):优先用 caller 注入的本地化 closeLabel;未提供回退英文默认(design 层无 i18n)。
+  const closeLabel =
+    closeLabelProp != null && closeLabelProp.length > 0
+      ? closeLabelProp
+      : title != null && title.length > 0
+        ? `Close ${title}`
+        : 'Close tab';
+  const dirtyDescId = useId();
+  const showDirtyDesc = dirty && dirtyLabel != null && dirtyLabel.length > 0;
 
   const handleClose = (event: MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
     onClose?.();
+  };
+
+  // a11y(A29):close 按钮被移出 Tab 顺序(见下 tabIndex=-1),改由 tab 聚焦时 Delete/Backspace
+  // 触发关闭,保持「一次 Tab 进出 tablist、方向键在 tab 间移动」的键盘模型不被额外 tab stop 破坏。
+  const handleSelectKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    if (
+      onClose != null &&
+      !disabled &&
+      (event.key === 'Delete' || event.key === 'Backspace')
+    ) {
+      event.preventDefault();
+      onClose();
+    }
   };
 
   return (
@@ -105,19 +156,36 @@ export function TabNavItem({
         role="tab"
         className="wm-tab-nav-item__select"
         aria-selected={active}
+        // a11y(A23):roving tabindex —— 仅 active tab 在 Tab 顺序内(0),其余 -1,由 tablist
+        // 方向键导航;键盘用户一次 Tab 进/出整个 tablist,不再逐个穿过所有 tab。
+        tabIndex={active ? 0 : -1}
         disabled={disabled}
+        // a11y(A35):dirty 且调用方提供 dirtyLabel 时,经 aria-describedby 关联未保存状态文本。
+        aria-describedby={showDirtyDesc ? dirtyDescId : undefined}
         onClick={onSelect}
         onDoubleClick={onRename}
+        onKeyDown={handleSelectKeyDown}
       >
         <span className="wm-tab-nav-item__label">{children}</span>
       </button>
-      {dirty ? <span className="wm-tab-nav-item__dirty-dot" aria-hidden="true" /> : null}
+      {dirty ? (
+        <span
+          className="wm-tab-nav-item__dirty-dot"
+          // 视觉圆点对 AT 隐藏;未保存状态改由 aria-describedby 指向的本地化文本承载(若提供)。
+          {...(showDirtyDesc
+            ? { id: dirtyDescId, 'aria-label': dirtyLabel }
+            : { 'aria-hidden': true })}
+        />
+      ) : null}
       {onClose != null ? (
         <button
           type="button"
           className="wm-tab-nav-item__close"
           aria-label={closeLabel}
           disabled={disabled}
+          // a11y(A29):移出 Tab 顺序,避免 tablist 内混入非 tab 的额外 tab stop(鼠标仍可点;
+          // 键盘经聚焦 tab 后 Delete/Backspace 关闭)。
+          tabIndex={-1}
           onClick={handleClose}
         >
           {/* Continuo-local 微调:'x' → '✕'(U+2715 multiplication X)与

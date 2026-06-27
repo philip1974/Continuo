@@ -4,6 +4,7 @@
 // 双重过滤;空 query / 空 tag 选择视为 pass。
 
 import type { MarketplaceEntry } from './types';
+import { clampSearchQuery } from '@/lib/search-query';
 
 export interface FilterOptions {
   /** 大小写不敏感子串匹配,空串 = pass. */
@@ -17,7 +18,9 @@ export function applyFilter(
   entries: readonly MarketplaceEntry[],
   opts: FilterOptions,
 ): readonly MarketplaceEntry[] {
-  const q = opts.query.trim().toLowerCase();
+  // 边界(E281):filter 层防御性截断 query(applyFilter 是导出纯函数,可被非 UI 调用方传超长 query
+  // → 对 ≤4096 entry 逐项 includes 放大)。与 onChange clamp 同一上限,双层防护。
+  const q = clampSearchQuery(opts.query).trim().toLowerCase();
   return entries.filter((e) => matchQuery(e, q) && matchTags(e, opts.selectedTags));
 }
 
@@ -43,13 +46,21 @@ function matchTags(
   return tags.some((t) => selected.has(t));
 }
 
-/** 索引去重收集所有 tags(按字典序). */
+// 边界(E226,E210 逐项≠累计上限族):全局 distinct tag 数上限。单 entry tags 有上限、index entries 有
+// 上限(4096),但二者相乘最坏数十万 distinct tags —— 畸形远程 index 否则在 collectAllTags 收集/排序 +
+// UI 渲染全部 tag 按钮处卡 renderer。凑满 MAX_MARKETPLACE_TAGS 即停收集(只渲染限度内集合)。
+export const MAX_MARKETPLACE_TAGS = 256;
+
+/** 索引去重收集所有 tags(按字典序),全局 distinct 数封顶 MAX_MARKETPLACE_TAGS(E226). */
 export function collectAllTags(
   entries: readonly MarketplaceEntry[],
 ): readonly string[] {
   const set = new Set<string>();
-  for (const e of entries) {
-    for (const t of e.tags ?? []) set.add(t);
+  outer: for (const e of entries) {
+    for (const t of e.tags ?? []) {
+      set.add(t);
+      if (set.size >= MAX_MARKETPLACE_TAGS) break outer; // 全局 tag 数到顶,停止收集
+    }
   }
   return Array.from(set).sort((a, b) => a.localeCompare(b));
 }

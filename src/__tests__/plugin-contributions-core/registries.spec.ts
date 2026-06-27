@@ -15,6 +15,28 @@ describe('PanelRegistry', () => {
     expect(r.getAll()).toEqual([]);
   });
 
+  // race(R59,R55-R58 同族):DockShell component wrapper 渲染时按 type 从 live registry 查 factory。
+  // get(type) 提供 live 查找,dispose 后 undefined → wrapper 渲染空,不实例化已移除插件 factory。
+  describe('get(type) live 查找(R59)', () => {
+    it('register → get(type) 返回 spec;dispose 后返 undefined', () => {
+      const r = new PanelRegistry();
+      const d = r.register({ type: 'foo', factory: () => null, title: 'Foo' });
+      expect(r.get('foo')?.type).toBe('foo');
+      d.dispose();
+      expect(r.get('foo')).toBeUndefined();
+    });
+
+    it('已 dispose type 经 live 查找跳过,factory 不被调(stale-skip 语义)', () => {
+      const r = new PanelRegistry();
+      const factory = vi.fn(() => null);
+      const d = r.register({ type: 'foo', factory, title: 'Foo' });
+      d.dispose();
+      const live = r.get('foo');
+      if (live) live.factory({});
+      expect(factory).not.toHaveBeenCalled();
+    });
+  });
+
   it('subscribe 在 register / dispose 时触发', () => {
     const r = new PanelRegistry();
     const listener = vi.fn();
@@ -52,6 +74,75 @@ describe('PanelRegistry', () => {
     d.dispose();
     expect(() => d.dispose()).not.toThrow();
   });
+
+  // 边界(E37,E35/E36 兄弟 registry):register 校验 type/title/titleKey 长度非空 + factory 为函数。
+  // 畸形 spec 会污染 Dockview components map / panel id,或在 DockShell 渲染时因 factory 非函数崩。
+  describe('E37 · 贡献项边界校验', () => {
+    it('合法 spec → ok', () => {
+      const r = new PanelRegistry();
+      expect(() =>
+        r.register({ type: 'foo', factory: () => null, title: 'Foo' }),
+      ).not.toThrow();
+    });
+
+    it('超长 type / title / titleKey → 抛,不入 registry', () => {
+      const r = new PanelRegistry();
+      expect(() =>
+        r.register({
+          type: 'x'.repeat(257),
+          factory: () => null,
+          title: 'T',
+        }),
+      ).toThrow(/type exceeds max length/i);
+      expect(() =>
+        r.register({ type: 'a', factory: () => null, title: 'T'.repeat(513) }),
+      ).toThrow(/title exceeds max length/i);
+      expect(() =>
+        r.register({
+          type: 'b',
+          factory: () => null,
+          title: 'T',
+          titleKey: 'k'.repeat(257),
+        }),
+      ).toThrow(/titleKey exceeds max length/i);
+      expect(r.getAll()).toEqual([]);
+    });
+
+    it('空 type / 空 title → 抛', () => {
+      const r = new PanelRegistry();
+      expect(() =>
+        r.register({ type: '', factory: () => null, title: 'T' }),
+      ).toThrow(/type must be a non-empty/i);
+      expect(() =>
+        r.register({ type: 'a', factory: () => null, title: '' }),
+      ).toThrow(/title must be a non-empty/i);
+    });
+
+    it('factory 非函数 → 抛(防 DockShell 渲染崩)', () => {
+      const r = new PanelRegistry();
+      expect(() =>
+        r.register({
+          type: 'a',
+          factory: 'not-a-fn' as never,
+          title: 'T',
+        }),
+      ).toThrow(/factory must be a function/i);
+    });
+
+    // 边界(E153,与 CommandRegistry 同族):可选 titleKey 此前只有 length 上限无 typeof 守卫
+    // (titleKey:123 经 `(123).length === undefined > max` 为 false 绕过)→ 补 typeof 校验。
+    it('E153 titleKey 非字符串 → 抛', () => {
+      const r = new PanelRegistry();
+      expect(() =>
+        r.register({
+          type: 'a',
+          factory: () => null,
+          title: 'T',
+          titleKey: 123 as never,
+        }),
+      ).toThrow(/titleKey must be a string/i);
+    });
+  });
 });
 
 // ── CommandRegistry ─────────────────────────────────────
@@ -88,6 +179,153 @@ describe('CommandRegistry', () => {
     expect(r.getAll()).toHaveLength(2);
     warn.mockRestore();
   });
+
+  // 边界(E35):register 校验贡献项长度 + hotkey 形态(防恶意插件超长字段/异常 hotkey 进全局
+  // registry 拖慢命令面板/快捷键编译/UI 渲染)。非法 spec 抛可诊断错误、不入 registry。
+  describe('E35 · 贡献项边界校验', () => {
+    it('标点主键 hotkey(mod+, / mod+/)→ 合法', () => {
+      const r = new CommandRegistry();
+      expect(() =>
+        r.register({ id: 'a', title: 'A', hotkey: 'mod+,', fn: () => {} }),
+      ).not.toThrow();
+      expect(() =>
+        r.register({ id: 'b', title: 'B', hotkey: 'mod+/', fn: () => {} }),
+      ).not.toThrow();
+      expect(() =>
+        r.register({
+          id: 'c',
+          title: 'C',
+          hotkey: 'shift+mod+enter',
+          fn: () => {},
+        }),
+      ).not.toThrow();
+    });
+
+    it('超长 title → 抛,不入 registry', () => {
+      const r = new CommandRegistry();
+      expect(() =>
+        r.register({ id: 'x', title: 'T'.repeat(513), fn: () => {} }),
+      ).toThrow(/title.*max length/i);
+      expect(r.getAll()).toEqual([]);
+    });
+
+    it('超长 id / category / titleKey → 抛', () => {
+      const r = new CommandRegistry();
+      expect(() =>
+        r.register({ id: 'x'.repeat(257), title: 'T', fn: () => {} }),
+      ).toThrow(/id.*max length/i);
+      expect(() =>
+        r.register({
+          id: 'y',
+          title: 'T',
+          category: 'c'.repeat(257),
+          fn: () => {},
+        }),
+      ).toThrow(/category.*max length/i);
+      expect(() =>
+        r.register({
+          id: 'z',
+          title: 'T',
+          titleKey: 'k'.repeat(257),
+          fn: () => {},
+        }),
+      ).toThrow(/titleKey.*max length/i);
+    });
+
+    it('超长 hotkey → 抛', () => {
+      const r = new CommandRegistry();
+      expect(() =>
+        r.register({
+          id: 'x',
+          title: 'T',
+          hotkey: 'mod+' + 'a'.repeat(64),
+          fn: () => {},
+        }),
+      ).toThrow(/hotkey.*max length/i);
+    });
+
+    it('异常 hotkey 形态(空段/含空白)→ 抛', () => {
+      const r = new CommandRegistry();
+      expect(() =>
+        r.register({ id: 'x', title: 'T', hotkey: 'mod++s', fn: () => {} }),
+      ).toThrow(/invalid hotkey/i);
+      expect(() =>
+        r.register({ id: 'y', title: 'T', hotkey: 'mod + s', fn: () => {} }),
+      ).toThrow(/invalid hotkey/i);
+    });
+  });
+
+  // 边界(E153,E37 兄弟):CommandSpec 来自未类型化第三方 JS plugin,TS 类型不构成运行时保证。
+  // E35 只按 .length 做上限,假设字段都是 string;畸形 spec(id:{}/title:123/hotkey:42/fn:'x')
+  // 会绕过 length 校验进 registry,后续 execute/分发按 string/function 使用 → 崩溃或不可触发命令。
+  // register 边界须显式校验运行时类型 + 必填非空(对齐 PanelRegistry E37)。
+  describe('E153 · 贡献项运行时类型校验', () => {
+    // 用 unknown 强转模拟未类型化 JS plugin 传入畸形 spec。
+    const bad =
+      (spec: unknown) => (r: CommandRegistry) =>
+        r.register(spec as never);
+
+    it('id 非字符串(对象/数字)→ 抛 + 不入 registry', () => {
+      const r = new CommandRegistry();
+      expect(() => bad({ id: {}, title: 'T', fn: () => {} })(r)).toThrow(
+        /id must be a non-empty string/i,
+      );
+      expect(() => bad({ id: 42, title: 'T', fn: () => {} })(r)).toThrow(
+        /id must be a non-empty string/i,
+      );
+      expect(r.getAll()).toEqual([]);
+    });
+
+    it('id 空字符串 → 抛', () => {
+      const r = new CommandRegistry();
+      expect(() => bad({ id: '', title: 'T', fn: () => {} })(r)).toThrow(
+        /id must be a non-empty string/i,
+      );
+    });
+
+    it('title 非字符串 / 空 → 抛', () => {
+      const r = new CommandRegistry();
+      expect(() => bad({ id: 'a', title: 123, fn: () => {} })(r)).toThrow(
+        /title must be a non-empty string/i,
+      );
+      expect(() => bad({ id: 'a', title: '', fn: () => {} })(r)).toThrow(
+        /title must be a non-empty string/i,
+      );
+    });
+
+    it('fn 非函数(字符串/缺失)→ 抛(防 execute 调用崩溃)', () => {
+      const r = new CommandRegistry();
+      expect(() => bad({ id: 'a', title: 'T', fn: 'x' })(r)).toThrow(
+        /fn must be a function/i,
+      );
+      expect(() => bad({ id: 'a', title: 'T' })(r)).toThrow(
+        /fn must be a function/i,
+      );
+    });
+
+    it('可选字段非字符串(hotkey:42 / category:{} / titleKey:1)→ 抛', () => {
+      const r = new CommandRegistry();
+      // hotkey:42 此前经 String 强转能通过 HOTKEY_SHAPE_RE → 现 typeof 守卫拦下
+      expect(() =>
+        bad({ id: 'a', title: 'T', hotkey: 42, fn: () => {} })(r),
+      ).toThrow(/hotkey.*must be a string/i);
+      expect(() =>
+        bad({ id: 'b', title: 'T', category: {}, fn: () => {} })(r),
+      ).toThrow(/category.*must be a string/i);
+      expect(() =>
+        bad({ id: 'c', title: 'T', titleKey: 1, fn: () => {} })(r),
+      ).toThrow(/titleKey.*must be a string/i);
+      expect(r.getAll()).toEqual([]);
+    });
+
+    it('合法 spec 仍 ok(回归)', () => {
+      const r = new CommandRegistry();
+      expect(() =>
+        r.register({ id: 'a', title: 'T', hotkey: 'mod+k', fn: () => {} }),
+      ).not.toThrow();
+      expect(r.getAll()).toHaveLength(1);
+    });
+  });
 });
 
 // ── StatusBarRegistry ───────────────────────────────────
@@ -112,6 +350,28 @@ describe('StatusBarRegistry', () => {
     r.register({ id: 'a', side: 'right', priority: 10, render: () => null });
     r.register({ id: 'c', side: 'right', priority: 30, render: () => null });
     expect(r.getBySide('right').map((x) => x.id)).toEqual(['a', 'b', 'c']);
+  });
+
+  // race(R56,R55 同族):StatusBar 渲染前按 id 从 live registry 复查再调 render,避免调 useRegistry
+  // 快照滞后期内已 unregister 的 item 的 render。get(id) 提供该 live 查找。
+  describe('get(id) live 查找(R56)', () => {
+    it('register → get(id) 返回 spec;dispose 后返 undefined', () => {
+      const r = new StatusBarRegistry();
+      const d = r.register({ id: 'git', side: 'left', render: () => null });
+      expect(r.get('git')?.id).toBe('git');
+      d.dispose();
+      expect(r.get('git')).toBeUndefined();
+    });
+
+    it('已 dispose item 经 live 查找跳过,render 不被调(stale-skip 语义)', () => {
+      const r = new StatusBarRegistry();
+      const render = vi.fn(() => null);
+      const d = r.register({ id: 'git', side: 'left', render });
+      d.dispose();
+      const live = r.get('git');
+      if (live) live.render();
+      expect(render).not.toHaveBeenCalled();
+    });
   });
 
   it('priority 缺失 → 默认 100,与显式 100 后注册赢', () => {
@@ -159,5 +419,53 @@ describe('StatusBarRegistry', () => {
     d1.dispose();
     expect(r.getBySide('left').map((x) => x.id)).toEqual(['a']);
     d2.dispose();
+  });
+
+  // 边界(E50,E35-E49 兄弟 registry):register 校验 id 长度 + side 枚举 + priority finite + render
+  // 为函数。非法 side 变不可见脏条目,NaN priority 让排序失真,非函数 render 每次重渲反复告警。
+  describe('E50 · 贡献项边界校验', () => {
+    it('合法 spec → ok', () => {
+      const r = new StatusBarRegistry();
+      expect(() =>
+        r.register({ id: 'a', side: 'left', render: () => null }),
+      ).not.toThrow();
+    });
+
+    it('超长 id / 空 id → 抛,不入 registry', () => {
+      const r = new StatusBarRegistry();
+      expect(() =>
+        r.register({ id: 'x'.repeat(257), side: 'left', render: () => null }),
+      ).toThrow(/id exceeds max length/i);
+      expect(() =>
+        r.register({ id: '', side: 'left', render: () => null }),
+      ).toThrow(/id must be a non-empty/i);
+      expect(r.getAll()).toEqual([]);
+    });
+
+    it('非法 side → 抛(防不可见脏条目)', () => {
+      const r = new StatusBarRegistry();
+      expect(() =>
+        r.register({
+          id: 'a',
+          side: 'middle' as never,
+          render: () => null,
+        }),
+      ).toThrow(/side must be/i);
+    });
+
+    it('非有限 priority / render 非函数 → 抛', () => {
+      const r = new StatusBarRegistry();
+      expect(() =>
+        r.register({
+          id: 'a',
+          side: 'left',
+          priority: NaN,
+          render: () => null,
+        }),
+      ).toThrow(/priority must be finite/i);
+      expect(() =>
+        r.register({ id: 'b', side: 'left', render: 'nope' as never }),
+      ).toThrow(/render must be a function/i);
+    });
   });
 });

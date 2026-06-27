@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   createTab,
   getEffectiveMode,
@@ -10,6 +10,10 @@ import {
   useEditorStore,
   type EditorTab,
 } from '../../stores/editor.store';
+import {
+  PATH_ARRAY_MAX,
+  PATH_STR_MAX,
+} from '../../../electron/shared/explorer-persistence-schema';
 
 const makeTab = (overrides: Partial<EditorTab> = {}): EditorTab => ({
   id: '/x/a.md',
@@ -29,6 +33,17 @@ beforeEach(() => {
     chromeVersion: 0,
   });
 });
+
+// 跨平台(codex 复查 P2):路径包含判定走 path-cross.isSameOrInsidePath 的「平台感知」大小写
+// (Windows 运行时不敏感),与 pathEquals 同策。Windows 行为测试需 mock navigator.platform。
+const origPlatform = Object.getOwnPropertyDescriptor(navigator, 'platform');
+afterEach(() => {
+  if (origPlatform) Object.defineProperty(navigator, 'platform', origPlatform);
+  else delete (navigator as { platform?: string }).platform; // 删 own-prop 覆盖,防 Win32 泄漏
+});
+function setPlatform(p: string): void {
+  Object.defineProperty(navigator, 'platform', { value: p, configurable: true });
+}
 
 // ────────────────────────────────────────────────────────────
 // createTab
@@ -197,6 +212,26 @@ describe('editorFocusPulse', () => {
     expect(useEditorStore.getState().editorFocusPulse).toBe(6);
   });
 
+  // 边界(E278,E276/E277 同族 / 运行时状态守持久化契约):tabs 经 snapshotFromStores → openFilePaths
+  //(PATH_ARRAY_MAX cap)。插件 SDK 循环 openFile 海量文件 → 超量则 explorer:write 拒整份。openTab 自限。
+  it('E278 filePath 超 PATH_STR_MAX → 拒开(no-op)', () => {
+    const longPath = '/' + 'x'.repeat(PATH_STR_MAX);
+    useEditorStore.getState().openTab(makeTab({ id: longPath, filePath: longPath }));
+    expect(useEditorStore.getState().tabs.length).toBe(0);
+  });
+
+  it('E278 tabs 达 PATH_ARRAY_MAX → 拒开新 tab(不超持久化上限)', () => {
+    const full = Array.from({ length: PATH_ARRAY_MAX }, (_, i) =>
+      makeTab({ id: `/f${i}`, filePath: `/f${i}` }),
+    );
+    useEditorStore.setState({ tabs: full, activeTabId: '/f0' });
+    useEditorStore.getState().openTab(makeTab({ id: '/overflow', filePath: '/overflow' }));
+    expect(useEditorStore.getState().tabs.length).toBe(PATH_ARRAY_MAX);
+    expect(
+      useEditorStore.getState().tabs.some((t) => t.id === '/overflow'),
+    ).toBe(false);
+  });
+
   it('switchTab 同 id → activeTabId 不变也 pulse +1(#22)', () => {
     useEditorStore.setState({
       tabs: [makeTab({ id: '/a' })],
@@ -342,6 +377,27 @@ describe('getStateAfterRemovingPath', () => {
     expect(r.activeTabId).toBeNull();
   });
 
+  // 数据安全(codex 复查 P1):trash 一个在编辑器里有未保存改动的文件时,无条件
+  // 关闭 tab 会绕过 EditorPanel 的 dirty 关闭确认 → 内存未保存编辑静默丢失(磁盘
+  // 旧版本进废纸篓可恢复,但内存增量永久丢)。参考 VSCode:删除有未保存改动的文件
+  // 保留 dirty 编辑器。故 dirty tab 必须存活,仅 clean tab 自动关闭。
+  it('删除单文件命中 dirty tab → 保留该 tab(不静默丢未保存编辑)', () => {
+    const tabs = [makeTab({ id: '/x/a.md', filePath: '/x/a.md', dirty: true })];
+    const r = getStateAfterRemovingPath(tabs, '/x/a.md', '/x/a.md');
+    expect(r.tabs.map((t) => t.id)).toEqual(['/x/a.md']); // 保留
+    expect(r.activeTabId).toBe('/x/a.md'); // 仍为活动
+  });
+
+  it('删除目录 → clean 子 tab 关闭,dirty 子 tab 保留', () => {
+    const tabs = [
+      makeTab({ id: '/x/clean.md', filePath: '/x/clean.md', dirty: false }),
+      makeTab({ id: '/x/dirty.md', filePath: '/x/dirty.md', dirty: true }),
+      makeTab({ id: '/y/c.md', filePath: '/y/c.md', dirty: false }),
+    ];
+    const r = getStateAfterRemovingPath(tabs, '/x/clean.md', '/x');
+    expect(r.tabs.map((t) => t.id)).toEqual(['/x/dirty.md', '/y/c.md']);
+  });
+
   it('untitled tab(filePath=null)不受任何路径影响', () => {
     const draft = createTab(null, 'd');
     const tabs = [draft, makeTab({ id: '/x/a.md', filePath: '/x/a.md' })];
@@ -357,6 +413,29 @@ describe('getStateAfterRemovingPath', () => {
     ];
     const r = getStateAfterRemovingPath(tabs, 'C:\\x\\a.md', 'C:\\x');
     expect(r.tabs.map((t) => t.id)).toEqual(['C:\\y\\b.md']);
+  });
+
+  // 跨平台(codex 复查 P2):Windows FS 大小写不敏感,删除 'C:\Repo\dir' 应关其下 clean tab
+  // 'c:\repo\dir\a.md'(大小写不同);否则 tab 不关,用户基于已删旧路径保存会复活文件。
+  it('Windows 大小写不敏感:删除目录关其下仅大小写不同的 clean 子文件', () => {
+    setPlatform('Win32');
+    const tabs = [
+      makeTab({ id: 'c:\\repo\\dir\\a.md', filePath: 'c:\\repo\\dir\\a.md' }),
+      makeTab({ id: 'C:\\repo\\other\\b.md', filePath: 'C:\\repo\\other\\b.md' }),
+    ];
+    const r = getStateAfterRemovingPath(tabs, 'c:\\repo\\dir\\a.md', 'C:\\Repo\\dir');
+    // 仅 dir 下的 a.md 被关(大小写折叠匹配);other/b.md 保留
+    expect(r.tabs.map((t) => t.id)).toEqual(['C:\\repo\\other\\b.md']);
+  });
+
+  it('POSIX 大小写敏感:删除 /repo/Dir 不关 /repo/dir/a.md(不同目录)', () => {
+    setPlatform('MacIntel');
+    const tabs = [
+      makeTab({ id: '/repo/dir/a.md', filePath: '/repo/dir/a.md' }),
+    ];
+    const r = getStateAfterRemovingPath(tabs, '/repo/dir/a.md', '/repo/Dir');
+    // POSIX:/repo/Dir ≠ /repo/dir → 不匹配 → tab 不关(状态不变)
+    expect(r.tabs).toBe(tabs);
   });
 });
 
@@ -376,6 +455,35 @@ describe('getStateAfterRenamingPath', () => {
     );
     expect(r.tabs).toBe(tabs);
     expect(r.activeTabId).toBe('/x/a.md');
+  });
+
+  // 跨平台(codex 复查 P2,同 remove/close 族):Windows 大小写不敏感,rename 目录时仅
+  // 大小写不同的子 tab 须跟改路径,否则 tab 指向失效旧路径。后缀大小写按原 filePath 保留。
+  it('Windows 大小写不敏感:rename 目录改其下仅大小写不同的子 tab', () => {
+    setPlatform('Win32');
+    const tabs = [
+      makeTab({ id: 'c:\\repo\\dir\\a.md', filePath: 'c:\\repo\\dir\\a.md' }),
+    ];
+    const r = getStateAfterRenamingPath(
+      tabs,
+      'c:\\repo\\dir\\a.md',
+      'C:\\Repo\\dir',
+      'C:\\Repo\\newdir',
+    );
+    // 子 tab 跟改:newPath + 原后缀(后缀大小写来自原 filePath)
+    expect(r.tabs[0]?.filePath).toBe('C:\\Repo\\newdir\\a.md');
+  });
+
+  it('POSIX 大小写敏感:rename /repo/Dir 不影响 /repo/dir/a.md', () => {
+    setPlatform('MacIntel');
+    const tabs = [makeTab({ id: '/repo/dir/a.md', filePath: '/repo/dir/a.md' })];
+    const r = getStateAfterRenamingPath(
+      tabs,
+      '/repo/dir/a.md',
+      '/repo/Dir',
+      '/repo/Renamed',
+    );
+    expect(r.tabs).toBe(tabs); // 不同目录(大小写敏感)→ 不改
   });
 
   it('精确匹配 → tab.id 与 filePath 同步改成 newPath,dirty 保留', () => {
@@ -489,6 +597,61 @@ describe('getStateAfterClosingTabsOutsideRoot', () => {
     const r = getStateAfterClosingTabsOutsideRoot(tabs, '/work/a.md', '/work');
     expect(r.tabs).toBe(tabs);
     expect(r.activeTabId).toBe('/work/a.md');
+  });
+
+  // 数据安全(codex 复查 P2,同 path-scope isWithinScope #17):root 本身以分隔符结尾
+  // (文件系统根)时,旧实现拼 `root + '/'` 得 `//` / `C:\\`,根下文件都不匹配 → clean
+  // tab 全被误关 → 持久化把 openFilePaths 写空丢编辑会话。
+  it('root=POSIX 根 "/" → 根下 clean tab 保留(不被误判 root 外)', () => {
+    const tabs = [
+      makeTab({ id: '/a.md', filePath: '/a.md' }),
+      makeTab({ id: '/sub/b.md', filePath: '/sub/b.md' }),
+    ];
+    const r = getStateAfterClosingTabsOutsideRoot(tabs, '/a.md', '/');
+    expect(r.tabs).toBe(tabs); // 全保留,状态不变
+    expect(r.activeTabId).toBe('/a.md');
+  });
+
+  it('root=Windows 盘根 "C:\\\\" → 盘根下 clean tab 保留', () => {
+    const tabs = [
+      makeTab({ id: 'C:\\a.md', filePath: 'C:\\a.md' }),
+      makeTab({ id: 'C:\\sub\\b.md', filePath: 'C:\\sub\\b.md' }),
+    ];
+    const r = getStateAfterClosingTabsOutsideRoot(tabs, 'C:\\a.md', 'C:\\');
+    expect(r.tabs).toBe(tabs);
+    expect(r.activeTabId).toBe('C:\\a.md');
+  });
+
+  it('root=根 "/" 仍关闭其它盘/不存在的怪异路径之外项(前缀仍生效)', () => {
+    // 根 "/" 下任意绝对路径都应保留;只有非 "/" 开头(理论上不会出现)才关。
+    const tabs = [makeTab({ id: '/x/y.md', filePath: '/x/y.md' })];
+    const r = getStateAfterClosingTabsOutsideRoot(tabs, '/x/y.md', '/');
+    expect(r.tabs).toBe(tabs);
+  });
+
+  // 跨平台(codex 复查 P2):Windows 文件系统大小写不敏感,root 与 tab path 仅大小写不同
+  // (如 root='c:\\repo' vs tab='C:\\Repo\\a.md',drive letter / 目录大小写常因来源不同而异)
+  // 是同一 workspace;大小写敏感 startsWith 会判 root 外 → 误关 clean tab 丢编辑会话。
+  it('Windows 路径大小写不敏感:仅大小写不同的 root 下 clean tab 保留', () => {
+    setPlatform('Win32');
+    const tabs = [
+      makeTab({ id: 'C:\\Repo\\a.md', filePath: 'C:\\Repo\\a.md' }),
+      makeTab({ id: 'c:\\repo\\sub\\b.md', filePath: 'c:\\repo\\sub\\b.md' }),
+    ];
+    const r = getStateAfterClosingTabsOutsideRoot(tabs, 'C:\\Repo\\a.md', 'c:\\repo');
+    expect(r.tabs).toBe(tabs); // 全保留(大小写折叠后都在 root 下)
+  });
+
+  it('POSIX 路径保持大小写敏感:/repo 不含 /Repo/a.md(应关闭)', () => {
+    setPlatform('MacIntel');
+    const draft = createTab(null, 'd');
+    const tabs = [
+      makeTab({ id: '/Repo/a.md', filePath: '/Repo/a.md' }), // 大小写不同 → root 外
+      draft,
+    ];
+    const r = getStateAfterClosingTabsOutsideRoot(tabs, '/Repo/a.md', '/repo');
+    // POSIX 大小写敏感:/Repo/a.md 不在 /repo 下 → 关;untitled 保留
+    expect(r.tabs.map((t) => t.id)).toEqual([draft.id]);
   });
 
   it('切换到不重叠 root → 全部 file tab 关闭,untitled 保留', () => {

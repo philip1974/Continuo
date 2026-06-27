@@ -1,10 +1,17 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DockviewApi } from 'dockview-react';
 import {
   reconcileTerminalPanels,
   setPendingFocus,
+  __resetReconcilerForTest,
 } from '@/shell/dock/DockReconciler';
 import { makeSession } from '../dock-reconciler-windowid-filter/fixtures';
+
+// race(R25):everAddedSessionIds 是模块级,测试间须 reset,否则前一用例的 session id
+// 会让后一用例的同 id session 被当「重现」而不走 originHint 首次兜底聚焦。
+beforeEach(() => {
+  __resetReconcilerForTest();
+});
 
 function makePanel(id: string) {
   return {
@@ -143,5 +150,170 @@ describe('agent create as new dockview panel', () => {
         position: { referencePanel: 'terminal-second', direction: 'right' },
       }),
     );
+  });
+
+  // race(R25):user terminal 经 workspace 切换隐藏后切回再现,不得被 originHint 兜底误判为
+  // 新建而抢焦点(用户可能在别的面板键入)。兜底仅对首次出现的 user terminal 生效。
+  it('R25 user terminal workspace 切走再切回 → 重现不抢焦点(兜底仅首次出现)', () => {
+    // close 时从 panels 移除(模拟真实 dockview),让切回走 addPanel 重现路径。
+    const panels: Record<
+      string,
+      { id: string; api: { id: string; setActive: ReturnType<typeof vi.fn>; close: () => void; setTitle: ReturnType<typeof vi.fn> } }
+    > = {};
+    const api = {
+      activePanel: undefined as unknown,
+      getPanel: vi.fn((id: string) => panels[id]),
+      addPanel: vi.fn((opts: { id: string }) => {
+        const p = {
+          id: opts.id,
+          api: {
+            id: opts.id,
+            setActive: vi.fn(),
+            close: () => {
+              delete panels[opts.id];
+            },
+            setTitle: vi.fn(),
+          },
+        };
+        panels[opts.id] = p;
+        api.activePanel = p;
+        return p;
+      }),
+      panels,
+    };
+    const s = makeSession('user-1', { originHint: 'user' });
+
+    // 1. 首次创建 → 聚焦(originHint 兜底首次生效)
+    reconcileTerminalPanels(api as unknown as DockviewApi, {
+      previousSessions: [],
+      nextSessions: [s],
+    });
+    expect(panels['terminal-user-1']?.api.setActive).toHaveBeenCalledTimes(1);
+
+    // 2. 切走 workspace → 旧 terminal 被过滤隐藏(removed → close 移除 panel)
+    reconcileTerminalPanels(api as unknown as DockviewApi, {
+      previousSessions: [s],
+      nextSessions: [],
+    });
+    expect(panels['terminal-user-1']).toBeUndefined();
+
+    // 3. 切回 workspace → terminal 重现(added),不得抢焦点
+    reconcileTerminalPanels(api as unknown as DockviewApi, {
+      previousSessions: [],
+      nextSessions: [s],
+    });
+    expect(panels['terminal-user-1']?.api.setActive).not.toHaveBeenCalled();
+  });
+
+  // race(R25):重现的 user terminal 若有显式 pendingFocus(罕见但合法)仍应聚焦
+  // (everAdded 不影响 consumePendingFocus 分支)。
+  it('R25 重现 + 显式 setPendingFocus → 仍聚焦(close 移除 panel 的重现路径)', () => {
+    const panels: Record<
+      string,
+      { id: string; api: { id: string; setActive: ReturnType<typeof vi.fn>; close: () => void; setTitle: ReturnType<typeof vi.fn> } }
+    > = {};
+    const api = {
+      activePanel: undefined as unknown,
+      getPanel: vi.fn((id: string) => panels[id]),
+      addPanel: vi.fn((opts: { id: string }) => {
+        const p = {
+          id: opts.id,
+          api: {
+            id: opts.id,
+            setActive: vi.fn(),
+            close: () => {
+              delete panels[opts.id];
+            },
+            setTitle: vi.fn(),
+          },
+        };
+        panels[opts.id] = p;
+        api.activePanel = p;
+        return p;
+      }),
+      panels,
+    };
+    const s = makeSession('user-1', { originHint: 'user' });
+    reconcileTerminalPanels(api as unknown as DockviewApi, {
+      previousSessions: [],
+      nextSessions: [s],
+    }); // 首次(记入 everAdded)
+    reconcileTerminalPanels(api as unknown as DockviewApi, {
+      previousSessions: [s],
+      nextSessions: [],
+    }); // 切走(close 删 panel)
+    setPendingFocus('user-1'); // 切回前显式 pending
+    reconcileTerminalPanels(api as unknown as DockviewApi, {
+      previousSessions: [],
+      nextSessions: [s],
+    }); // 重现 + pendingFocus 命中 → 聚焦
+    expect(panels['terminal-user-1']?.api.setActive).toHaveBeenCalledTimes(1);
+  });
+
+  // race(R105):两个 terminal.create 并发 + session push 乱序。较新的 user-2 先到并聚焦,
+  // 较旧的 user-1 后到(仍是首次出现)不得 originHint 兜底抢焦点——它不是快照中最新 user session。
+  it('R105 迟到的较旧 user session(非快照最新)不抢焦点', () => {
+    const api = makeApi();
+    api.panels['terminal-old'] = makePanel('terminal-old');
+    api.activePanel = api.panels['terminal-old'];
+
+    // 第一轮:较新的 user-2(createdAt=20)先到 → 聚焦
+    reconcileTerminalPanels(api as unknown as DockviewApi, {
+      previousSessions: [makeSession('old', { createdAt: 1 })],
+      nextSessions: [
+        makeSession('old', { createdAt: 1 }),
+        makeSession('user-2', { originHint: 'user', createdAt: 20 }),
+      ],
+    });
+    expect(api.panels['terminal-user-2']?.api.setActive).toHaveBeenCalledTimes(1);
+
+    // 第二轮:较旧的 user-1(createdAt=10)乱序后到。它首次出现,但快照中 user-2(20)更新
+    // → user-1 不是最新 user session → 不抢焦点(否则键盘输入落到较旧 PTY)。
+    reconcileTerminalPanels(api as unknown as DockviewApi, {
+      previousSessions: [
+        makeSession('old', { createdAt: 1 }),
+        makeSession('user-2', { originHint: 'user', createdAt: 20 }),
+      ],
+      nextSessions: [
+        makeSession('old', { createdAt: 1 }),
+        makeSession('user-2', { originHint: 'user', createdAt: 20 }),
+        makeSession('user-1', { originHint: 'user', createdAt: 10 }),
+      ],
+    });
+    expect(api.panels['terminal-user-1']?.api.setActive).not.toHaveBeenCalled();
+    // user-1 不抢焦点 → reconciler 把焦点恢复回先前 active 的 user-2(restore 机制再调一次
+    // setActive),即较新的 user-2 始终保持聚焦,不被迟到的较旧 user-1 覆盖。
+    expect(api.panels['terminal-user-2']?.api.setActive).toHaveBeenCalled();
+  });
+
+  // race(R105):较新的 user session 后到(乱序)仍应聚焦——它是快照中最新 user session。
+  it('R105 后到的较新 user session(快照最新)正常聚焦', () => {
+    const api = makeApi();
+    api.panels['terminal-old'] = makePanel('terminal-old');
+    api.activePanel = api.panels['terminal-old'];
+
+    // 较旧 user-1(10)先到 → 聚焦
+    reconcileTerminalPanels(api as unknown as DockviewApi, {
+      previousSessions: [makeSession('old', { createdAt: 1 })],
+      nextSessions: [
+        makeSession('old', { createdAt: 1 }),
+        makeSession('user-1', { originHint: 'user', createdAt: 10 }),
+      ],
+    });
+    expect(api.panels['terminal-user-1']?.api.setActive).toHaveBeenCalledTimes(1);
+
+    // 较新 user-2(20)后到 = 快照最新 user session → 聚焦(last create wins)
+    reconcileTerminalPanels(api as unknown as DockviewApi, {
+      previousSessions: [
+        makeSession('old', { createdAt: 1 }),
+        makeSession('user-1', { originHint: 'user', createdAt: 10 }),
+      ],
+      nextSessions: [
+        makeSession('old', { createdAt: 1 }),
+        makeSession('user-1', { originHint: 'user', createdAt: 10 }),
+        makeSession('user-2', { originHint: 'user', createdAt: 20 }),
+      ],
+    });
+    expect(api.panels['terminal-user-2']?.api.setActive).toHaveBeenCalledTimes(1);
   });
 });

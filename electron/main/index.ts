@@ -22,7 +22,16 @@ import {
 } from './persistence';
 import { pickWindowsToRestore } from './services/window-restore.service';
 import { pickStartupMode } from './services/startup-mode.service';
-import { pickArgvFolders } from './services/cli-args.service';
+import {
+  pickArgvFolders,
+  isWithinStartupPathLimit,
+  MAX_STARTUP_DIRS,
+} from './services/cli-args.service';
+import { extractProtocolUrl } from './protocol-argv';
+import {
+  routeProtocolUrl,
+  attachWindowDrain,
+} from './protocol-dispatch';
 import {
   clearWindow,
   getActiveSeqs,
@@ -68,11 +77,18 @@ import {
   isTrustedRendererFileUrl,
   setTrustedRendererFile,
 } from './safe-handle';
-import { buildRendererQuery, stripSpikeQuery, spikeAllowed, installSpikeGate } from './spike-gate';
+import {
+  buildRendererQuery,
+  stripSpikeQuery,
+  spikeAllowed,
+  installSpikeGate,
+  parseDevRendererUrl,
+} from './spike-gate';
 import { buildCommonWebPreferences } from './continuo-meta-args';
 import { isPopoutUrl } from './popout-url';
 import { releaseFsWatchersForWindow } from './ipc/fs.ipc';
 import { isAllowedExternalUrl } from './services/shell.service';
+import { MAX_EXTERNAL_URL_LEN } from './../shared/url-limits';
 import { cancelScopeRequestsForWebContents } from './ipc/plugin-fs.ipc';
 
 // 窗口级资源清理器(scope 授权 / fs watcher / agent 授权)。挂在覆盖全窗口的
@@ -104,6 +120,13 @@ if (isDev) {
 const LRU_MAX_CLOSED = Infinity;
 const pendingFlushAcks = new Map<number, () => void>();
 const flushedOnQuit = new Set<number>();
+// 关窗 flush 的 ack 等待上限。数据安全(codex 复查 P1):renderer 的 flush-ack 在 DockShell
+// 依次 await layout/explorer/autosave 落盘后才发;此超时是**防挂死兜底**(renderer 崩溃/死循环
+// 永不 ack 时仍能关窗),但旧值 1s 太短 —— 大 markdown autosave / 慢盘的合法 flush 可能 >1s,
+// 超时先 fire → 在 renderer 写完前关窗 → 丢最后编辑。放宽到 10s:远超正常 flush(通常 <100ms),
+// 给慢盘充足余量;真正挂死的 renderer 也只多等 9s 才关(罕见、可接受)。ack 一到立即 resolve,
+// 不等满超时。webContents 已销毁则立即放行(见 requestWindowFlush)。
+export const FLUSH_ACK_TIMEOUT_MS = 10_000;
 // 退出清理(flush + PTY 强杀)只跑一次。原实现用 `wins.every(flushedOnQuit)` 兼当
 // 守卫,但关掉最后一个窗口触发的 window-all-closed→quit 路径里 wins 已空,
 // `[].every()` 恒 true → 提前 return 跳过 cleanupAll(),Linux/Windows 上长任务 PTY
@@ -149,7 +172,12 @@ function requestWindowFlush(win: BrowserWindow): Promise<void> {
       resolve();
     };
     pendingFlushAcks.set(win.id, done);
-    timer = setTimeout(done, 1000);
+    // webContents 已销毁 → renderer 无法 flush/ack,立即放行(不空等满超时)。
+    if (win.webContents.isDestroyed()) {
+      done();
+      return;
+    }
+    timer = setTimeout(done, FLUSH_ACK_TIMEOUT_MS);
     try {
       win.webContents.send('layout:flush-request', { windowId: win.id });
     } catch {
@@ -160,6 +188,11 @@ function requestWindowFlush(win: BrowserWindow): Promise<void> {
 
 function wireWindowCloseFlush(win: BrowserWindow): void {
   let flushed = flushedOnQuit.has(win.id);
+  // race(R45):flush 在途守卫。requestWindowFlush 是异步(等 renderer ack / 10s 超时),其间
+  // `flushed` 仍为 false;若不挡住,快速重复关窗 / 系统关窗 / app.quit 触发的第二个 close 会再次
+  // requestWindowFlush,用同 win.id 覆盖 pendingFlushAcks → renderer 的 ack 只 resolve 最新请求,
+  // 旧 promise 干等满超时才放行,且 flush 完成后可能重复 win.close()。
+  let flushing = false;
   win.on('close', (event) => {
     // flushedOnQuit 也要查:`before-quit` 路径可能已经 flush 过本窗并写入
     // flushedOnQuit,但本闭包的局部 `flushed` 不会被它更新 —— 只看局部量会让
@@ -167,6 +200,9 @@ function wireWindowCloseFlush(win: BrowserWindow): void {
     // 二次阻塞退出)。
     if (flushed || flushedOnQuit.has(win.id)) return;
     event.preventDefault();
+    // race(R45):已有 flush 在途 → 只阻止本次关闭,不再发第二个 flush(避免覆盖 pending ack)。
+    if (flushing) return;
+    flushing = true;
     void (async () => {
       await requestWindowFlush(win);
       flushed = true;
@@ -180,6 +216,16 @@ function wireWindowCloseFlush(win: BrowserWindow): void {
 // 同源 → allow + 注入我们的 preload + 安全 webPreferences。
 // 外站 → 转交系统浏览器,deny 弹窗。
 function windowOpenHandler({ url }: HandlerDetails): WindowOpenHandlerResponse {
+  // 边界(E190,E179/E152 同族外链长度):window.open url 的类型/长度前置闸,先于 new URL 解析与
+  // shell.openExternal。否则超长 url 让主进程先做大字符串 URL 解析,并可能把巨大 URL 交给系统协议
+  // 处理器(绕过 shell.openExternal IPC 的 2048 上限与 Markdown 外链上限)。对齐共享 MAX_EXTERNAL_URL_LEN。
+  if (
+    typeof url !== 'string' ||
+    url.length === 0 ||
+    url.length > MAX_EXTERNAL_URL_LEN
+  ) {
+    return { action: 'deny' };
+  }
   let allow = false;
   try {
     const target = new URL(url);
@@ -187,10 +233,11 @@ function windowOpenHandler({ url }: HandlerDetails): WindowOpenHandlerResponse {
     // 的 file URL(精确 pathname),不再放行任意 file://(否则恶意 file:// 弹窗会被注入
     // 全量 preload → 越权 IPC)。
     if (isDev) {
-      const rendererOrigin = new URL(
-        process.env['ELECTRON_RENDERER_URL'] ?? '',
-      ).origin;
-      allow = target.origin === rendererOrigin;
+      // 边界(E304,E302/E303 同族 dev URL 解析第三入口 / family sweep):此前 new URL(env) 无长度上限
+      //(在 try/catch 内故不崩,但 windowOpenHandler 每次弹窗都解析一次无界 OS env)。复用 parseDevRendererUrl
+      //(限长 MAX_RENDERER_URL_LEN + total),与 createMainWindow(E299)/safe-handle(E303)单一来源同源。
+      const rendererUrl = parseDevRendererUrl(process.env['ELECTRON_RENDERER_URL']);
+      allow = rendererUrl !== null && target.origin === rendererUrl.origin;
     } else {
       allow = isTrustedRendererFileUrl(url);
     }
@@ -247,11 +294,19 @@ interface CreateMainWindowOpts {
   readonly fresh?: boolean;
 }
 
+// race(R40/R41):co:// 深链 FIFO 缓冲队列。无就绪窗口期间到达的深链全部入队;每个新窗口
+// (createMainWindow)did-finish-load 后都尝试排空,确保「应用无窗口时收到的深链」由下一个创建的
+// 窗口消费,而非只挂在 bootstrap 窗口上(声明在 createMainWindow 之前,供其闭包引用)。
+const pendingProtocolUrls: string[] = [];
+
 export function createMainWindow(opts: CreateMainWindowOpts) {
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
-    titleBarStyle: 'hiddenInset',
+    // `hiddenInset` 是 macOS 专属语义(隐藏标题栏但保留内嵌红绿灯按钮);Windows/Linux
+    // 上它是未定义行为,可能导致 chrome 显示异常 → 非 darwin 用 'default' 原生标题栏。
+    // (Windows/Linux 的自定义 chrome + 窗口控件 overlay 精修留作 follow-up。跨平台审计 P2)
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     backgroundColor: '#020617',
     webPreferences: buildCommonWebPreferences({
       preload: PRELOAD,
@@ -304,15 +359,22 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
   });
   const queryParts = stripSpikeQuery(baseQuery, gateResult.allowed);
 
-  if (isDev && process.env['ELECTRON_RENDERER_URL']) {
-    const url = new URL(process.env['ELECTRON_RENDERER_URL']);
+  // 边界(E299):dev env URL 解析失败(缺失/畸形,开发误配)→ parseDevRendererUrl 返 null,回退 loadFile,
+  // 不让 new URL 同步抛崩溃 createMainWindow(应用启动无窗口)。
+  const devUrl = isDev ? parseDevRendererUrl(process.env['ELECTRON_RENDERER_URL']) : null;
+  if (devUrl) {
     for (const [k, v] of Object.entries(queryParts)) {
-      url.searchParams.set(k, v);
+      devUrl.searchParams.set(k, v);
     }
-    win.loadURL(url.toString());
+    win.loadURL(devUrl.toString());
   } else {
     win.loadFile(RENDERER_FILE, { query: queryParts });
   }
+
+  // race(R41):每个新窗口就绪后都尝试排空协议队列 —— 无就绪窗口期入队的 co:// 由「下一个就绪的
+  // 任意窗口」消费。此前 drain 只挂在 bootstrap 窗口上,后续 newWindow / openPathInNewWindow /
+  // macOS activate 创建的窗口不 drain → 应用无窗口时收到的深链永久挂队列。见 attachWindowDrain。
+  attachWindowDrain(win, PLUGINS_CHANNELS.PROTOCOL_URL, pendingProtocolUrls);
 
   return win;
 }
@@ -453,19 +515,16 @@ app.on('browser-window-created', (_evt, win) => {
 // macOS:open-url(用户点 co://...);Windows / Linux:single-instance argv
 
 const PROTOCOL = 'co';
-let pendingProtocolUrl: string | null = null;
 
 function dispatchProtocolUrl(url: string): void {
-  const wins = BrowserWindow.getAllWindows();
-  if (wins.length === 0) {
-    pendingProtocolUrl = url;
-    return;
-  }
-  for (const win of wins) {
-    if (!win.isDestroyed()) {
-      win.webContents.send(PLUGINS_CHANNELS.PROTOCOL_URL, { url });
-    }
-  }
+  // race(R39):只投给已就绪(renderer did-finish-load 完成、preload onProtocolUrl 已挂)的窗口;
+  // 无就绪窗口时入队 + 给 loading 窗口挂一次性 did-finish-load drain(冷启动「无窗口」仍入队,
+  // 由 createMainWindow 的 drain 兜底)。见 routeProtocolUrl。
+  routeProtocolUrl(url, {
+    windows: BrowserWindow.getAllWindows(),
+    channel: PLUGINS_CHANNELS.PROTOCOL_URL,
+    pending: pendingProtocolUrls,
+  });
 }
 
 if (process.defaultApp) {
@@ -483,8 +542,23 @@ if (!gotLock) {
   app.quit();
 } else {
   app.on('second-instance', (_e, argv) => {
-    const url = argv.find((a) => a.startsWith(`${PROTOCOL}://`));
+    // co:// 深链(大小写无关,见 extractProtocolUrl)
+    const url = extractProtocolUrl(argv, PROTOCOL);
     if (url) dispatchProtocolUrl(url);
+    // Windows/Linux:运行中通过 OS/CLI 传入的目录 argv(如 "用 Continuo 打开文件夹")
+    // 此前被忽略 → 在已有实例里按目录打开新窗口(跨平台审计 P2)。
+    const folders = pickArgvFolders(
+      argv,
+      (p) => {
+        try {
+          return nodeFs.statSync(p).isDirectory();
+        } catch {
+          return false;
+        }
+      },
+      { skipFirstArg: !!process.defaultApp, skipAll: false },
+    );
+    for (const folder of folders) void openPathInNewWindow(folder);
     const wins = BrowserWindow.getAllWindows();
     if (wins[0]) {
       if (wins[0].isMinimized()) wins[0].restore();
@@ -524,17 +598,39 @@ pendingOpenPaths.push(
   ),
 );
 
+// 边界(E59,E58 运行期 sibling):macOS open-file 在 app ready 后直接走本入口,绕过冷启动
+// pendingOpenPaths/pickStartupMode 的数量/长度上限。畸形/自动化 open-file 事件可在运行中连续送入
+// 大量目录或超长路径 → 对每个先同步 statSync + 批量 allocateWindowSeq/createMainWindow,主进程
+// 同步 I/O 卡顿 + 批量开窗。复用启动路径长度守卫(超长不 statSync)+ 运行期并发开窗上限。
+let openInFlight = 0;
 async function openPathInNewWindow(absPath: string): Promise<void> {
-  let isDir = false;
-  try {
-    isDir = nodeFs.statSync(absPath).isDirectory();
-  } catch {
-    /* 路径不存在 / 无权限 → 跳过 */
+  // 超长/非法路径先跳过,绝不对其 statSync。
+  if (!isWithinStartupPathLimit(absPath)) {
+    console.warn('[open-file] dropping invalid/oversize path');
+    return;
   }
-  if (!isDir) return;
-  const explorerFile = path.join(app.getPath('userData'), 'explorer.json');
-  const windowSeq = await allocateWindowSeq(explorerFile);
-  createMainWindow({ windowSeq, workspace: absPath, fresh: true });
+  // 运行期并发开窗上限:挡 open-file 事件洪水批量开窗(冷启动有 pickStartupMode 上限,运行期靠此)。
+  if (openInFlight >= MAX_STARTUP_DIRS) {
+    console.warn(
+      `[open-file] too many concurrent opens (>= ${MAX_STARTUP_DIRS}), dropping`,
+    );
+    return;
+  }
+  openInFlight += 1;
+  try {
+    let isDir = false;
+    try {
+      isDir = nodeFs.statSync(absPath).isDirectory();
+    } catch {
+      /* 路径不存在 / 无权限 → 跳过 */
+    }
+    if (!isDir) return;
+    const explorerFile = path.join(app.getPath('userData'), 'explorer.json');
+    const windowSeq = await allocateWindowSeq(explorerFile);
+    createMainWindow({ windowSeq, workspace: absPath, fresh: true });
+  } finally {
+    openInFlight -= 1;
+  }
 }
 
 app.on('open-file', (event, filePath) => {
@@ -583,7 +679,9 @@ async function createSessionForAgent(
     const cmd = input.autorun;
     setTimeout(() => {
       if (termService.has(r.id)) {
-        termService.write(r.id, `${cmd}\n`);
+        // autorun 是尽力而为(prompt 就绪近似),写入结果无 UI 反馈通道 → fire-and-forget。
+        // write 现返 Promise(R4),内部已 catch 不 reject,void 显式忽略避免 floating-promise。
+        void termService.write(r.id, `${cmd}\n`);
       }
     }, AUTORUN_DELAY_MS);
   }
@@ -808,10 +906,11 @@ app.whenReady().then(async () => {
   };
   const startup = pickStartupMode(pendingOpenPaths.splice(0), isDir);
 
-  let win: BrowserWindow;
+  // 主窗由 createMainWindow 创建(有副作用:开窗 + 挂 attachWindowDrain);冷启动协议 URL 经
+  // dispatchProtocolUrl 走统一队列消费(R69),不再需要持有主窗引用直发。
   if (startup.mode === 'dock') {
     // 第一个 dir 作主窗 workspace,覆盖持久化的 windows[0].workspace.root
-    win = createMainWindow({
+    createMainWindow({
       windowSeq: 0,
       workspace: startup.dirs[0]!,
       fresh: true,
@@ -827,7 +926,7 @@ app.whenReady().then(async () => {
     }
   } else {
     // 正常启动:主窗 windowSeq=0(workspace 由 renderer 从 explorer.json 段恢复)
-    win = createMainWindow({ windowSeq: 0 });
+    createMainWindow({ windowSeq: 0 });
     // Phase 2C(issue #23):上次会话的非主窗(windowSeq>0)逐个恢复
     void (async () => {
       try {
@@ -845,25 +944,19 @@ app.whenReady().then(async () => {
     })();
   }
 
-  // 冷启 + open-url 顺序处理:可能在 mainwindow 未就绪前已收 url
-  if (pendingProtocolUrl) {
-    win.webContents.once('did-finish-load', () => {
-      if (pendingProtocolUrl) {
-        win.webContents.send(PLUGINS_CHANNELS.PROTOCOL_URL, {
-          url: pendingProtocolUrl,
-        });
-        pendingProtocolUrl = null;
-      }
-    });
-  }
+  // 冷启 + open-url 顺序处理:可能在 mainwindow 未就绪前已收 url。race(R41):协议队列 drain 已
+  // 统一移入 createMainWindow(每个新窗口 did-finish-load 都排空),bootstrap 窗口同样经
+  // createMainWindow 创建,故此处不再单独挂 drain(避免只覆盖 bootstrap 窗口)。
 
   if (!process.defaultApp) {
-    const url = process.argv.find((a) => a.startsWith(`${PROTOCOL}://`));
-    if (url) {
-      win.webContents.once('did-finish-load', () => {
-        win.webContents.send(PLUGINS_CHANNELS.PROTOCOL_URL, { url });
-      });
-    }
+    const url = extractProtocolUrl(process.argv, PROTOCOL);
+    // race(R69):此前在 did-finish-load 回调里直发 win.webContents.send,绕过统一 routeProtocolUrl
+    // 的 FIFO 队列 + R63 的「send 成功才出队 / 失败保留队首」韧性逻辑。两个漏洞:(1)主窗在 load
+    // 前关闭 → did-finish-load 永不触发 → 冷启动深链永久丢失;(2)load 后、send 前窗口销毁 → send
+    // 抛 "Object has been destroyed" → 深链丢失 + 在事件回调里成未捕获异常。改为交统一协议路由:
+    // win 经 createMainWindow 已挂 attachWindowDrain(line ~353),dispatchProtocolUrl 入
+    // pendingProtocolUrls 后由该 drain 在就绪时韧性消费(send 失败保留队首,留给下个窗口)。
+    if (url) dispatchProtocolUrl(url);
   }
 
   app.on('activate', () => {
@@ -900,8 +993,12 @@ app.on('before-quit', async (event) => {
   // 都必须跑(关最后一个窗口触发的 quit 路径 wins 已空,旧 every() 守卫会跳过它)。
   // 在 app.quit() 前 await:window 'closed' 清理走 3s grace timer,进程退出不触发 SIGKILL。
   await termService.cleanupAll().catch(() => {});
-  void mcpHost?.close().catch(() => {});
-  void mcpStdio?.close().catch(() => {});
+  // race(R83):此前 mcpHost/mcpStdio close 是 void fire-and-forget,随后立即 markFinished() +
+  // app.quit() → 进程可能在 HTTP/SSE server 关闭、unix socket server close + mcp.sock unlink
+  // 完成前退出:SSE/keepalive/socket 清理与退出竞态,mcp.sock 残留到下次启动兜底清理,退出/测试
+  // 路径也无法可靠等待资源释放。纳入与 cleanupAll 同一段 awaited 清理,等齐再退出。allSettled:
+  // 单个 close 失败/reject 不阻断另一个,也不阻断退出。
+  await Promise.allSettled([mcpHost?.close(), mcpStdio?.close()]);
   quitGuard.markFinished();
   app.quit();
 });

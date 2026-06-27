@@ -46,10 +46,15 @@ export function TerminalView({ termId }: TerminalViewProps) {
           // pointer-events-none 让 overlay 不挡住 xterm 焦点(用户立刻可输入,
           // 即使 prompt 还没出来,字符会缓冲到 PTY)
           className="pointer-events-none absolute inset-0 flex items-center justify-center bg-canvas/70 backdrop-blur-[2px]"
-          aria-label={t('panels.terminal.aria.start_shell')}
         >
-          <div className="flex items-center gap-2 text-xs text-fg-dim">
-            <Spinner size="sm" />
+          {/* a11y(A103,A102 同族):启动 overlay 具体文本「启动 shell」须 role=status 播报
+              (此前 aria-label 挂无 role 的 div 不可靠 + Spinner 仅泛化 Loading);Spinner
+              aria-hidden 抑制泛化 status,避免双重/只听 Loading。 */}
+          <div
+            role="status"
+            className="flex items-center gap-2 text-xs text-fg-dim"
+          >
+            <Spinner size="sm" aria-hidden />
             <span>{t('panels.terminal.aria.start_shell')}…</span>
           </div>
         </div>

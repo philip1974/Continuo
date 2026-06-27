@@ -4,10 +4,22 @@
 
 import { z } from 'zod';
 
+// 边界(E23,E11/E21 同族):panelId/windowId 此前只 .min(1)/.int(),无长度/安全整数/非负边界。
+// 被 TerminalCreateInputSchema 复用 → MCP create_session / renderer 可传超长 panelId 或不安全巨大
+// windowId,该对象进 terminal session metadata 并随 sessions_changed 广播到所有 renderer,造成
+// IPC/UI 膨胀,或窗口匹配逻辑在不安全整数上行为不可预测。panelId 限长 256;windowId 非负 + 安全
+// 整数(.max MAX_SAFE_INTEGER 挡 ≥2^53 的舍入值,同 E4/E7/E8)。
 export const AttachTargetSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('active') }).strict(),
-  z.object({ kind: z.literal('panel'), panelId: z.string().min(1) }).strict(),
-  z.object({ kind: z.literal('window'), windowId: z.number().int() }).strict(),
+  z
+    .object({ kind: z.literal('panel'), panelId: z.string().min(1).max(256) })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('window'),
+      windowId: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+    })
+    .strict(),
 ]);
 
 export type AttachTarget = z.infer<typeof AttachTargetSchema>;

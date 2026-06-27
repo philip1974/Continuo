@@ -38,20 +38,32 @@ export async function createUserTerminal(): Promise<string | null> {
   preloadTerminalPanelChunk();
   await waitForWorkspaceHydrated();
   const workspaceRoot = useWorkspaceStore.getState().root ?? undefined;
-  const r = await coApi.terminal.create({
-    originHint: 'user',
-    ...(workspaceRoot !== undefined ? { cwd: workspaceRoot, workspaceRoot } : {}),
-  });
-  if (!r.ok) {
-    const msg =
-      r.code === ERROR_CODES.TERMINAL_CWD_UNRESOLVED
-        ? t('errors.terminal.cwd_unresolved')
-        : t('errors.terminal.create_failed', { code: r.code ?? '?' });
-    notify.error(msg, { code: r.code });
+  // a11y(A116,A50/A115 同族):整体 try/catch —— coApi.terminal.create 只返 {ok:false} 处理
+  // 业务失败,但 IPC promise reject 会直接抛;调用点(HeaderActions onClick void addPanel)
+  // 不 await/catch → 用户点「新建终端」无反馈、菜单不关。reject 也走 create_failed notify。
+  try {
+    const r = await coApi.terminal.create({
+      originHint: 'user',
+      ...(workspaceRoot !== undefined ? { cwd: workspaceRoot, workspaceRoot } : {}),
+    });
+    if (!r.ok) {
+      const msg =
+        r.code === ERROR_CODES.TERMINAL_CWD_UNRESOLVED
+          ? t('errors.terminal.cwd_unresolved')
+          : t('errors.terminal.create_failed', { code: r.code ?? '?' });
+      notify.error(msg, { code: r.code });
+      return null;
+    }
+    if (!r.data?.id) return null;
+    const { setPendingFocus } = await import('@/shell/dock/DockReconciler');
+    setPendingFocus(r.data.id);
+    return r.data.id;
+  } catch (err) {
+    const code = (err as { code?: string })?.code ?? 'EXCEPTION';
+    // race(R31):用户在 create 期间关掉了刚开的 tab → main 复查 reservation 已取消、kill 了孤儿
+    // PTY 并以 TERMINAL_CREATE_CANCELLED 收场。这是用户主动行为,不是失败,静默 no-op 不弹错误。
+    if (code === ERROR_CODES.TERMINAL_CREATE_CANCELLED) return null;
+    notify.error(t('errors.terminal.create_failed', { code }), { code });
     return null;
   }
-  if (!r.data?.id) return null;
-  const { setPendingFocus } = await import('@/shell/dock/DockReconciler');
-  setPendingFocus(r.data.id);
-  return r.data.id;
 }

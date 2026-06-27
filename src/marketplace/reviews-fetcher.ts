@@ -12,8 +12,16 @@
 
 import { coApi } from '../lib/co-api';
 import { parseReview } from './reviews-parser';
-import type { PluginAggregateRating, Review } from './reviews-types';
+import {
+  isValidAggregateRecord,
+  type PluginAggregateRating,
+  type Review,
+} from './reviews-types';
 import { createSessionCache } from './session-cache';
+
+// 边界(E243):renderer 侧 review nodes 数量上限(对齐 main marketplace-reviews.service MAX_TOTAL_NODES=2000)。
+// 读端独立截断,防畸形/超大 IPC payload 绕过 main 上限。导出供测试。
+export const MAX_REVIEW_NODES = 2000;
 
 // 可维护性 M19:1h sessionStorage 缓存样板复用 createSessionCache(与 index fetcher 共用)。
 // 缓存的是聚合后的 byPid(plugin id → PluginAggregateRating)Record。
@@ -22,8 +30,8 @@ const reviewsCache = createSessionCache<
 >({
   key: 'continuo:marketplace:reviews',
   ttlMs: 60 * 60 * 1000,
-  validate: (d): d is Record<string, PluginAggregateRating> =>
-    !!d && typeof d === 'object' && !Array.isArray(d),
+  // 边界(E3):深度校验每个 aggregate(avg/count 有限数值、reviews 数组+字段),非法当 cache miss。
+  validate: isValidAggregateRecord,
 });
 
 /**
@@ -66,11 +74,27 @@ export async function fetchAllReviews(
   if (!res.data.available) {
     const stale = reviewsCache.getStale();
     if (stale) return new Map(Object.entries(stale));
-    throw new Error('NO_TOKEN: GITHUB_TOKEN 未在 main 配置');
+    // i18n(I12,I5 同族):抛稳定 code(非中文 prose),UI 按 errors.<CODE> catalog 本地化
+    // (en/ko 不泄漏中文)。网络等动态错误仍走原 message(无 catalog 回退)。
+    throw new Error('MARKETPLACE_REVIEWS_NO_TOKEN');
   }
 
+  // 边界(E243,E215 读端独立校验族):res.data.nodes 来自 IPC,renderer 不应只信 main 侧约束 ——
+  // 畸形 payload(非数组)会让 for...of 抛;超大数组(畸形/未来 main 回归)绕过 renderer 侧上限放大
+  // parse/aggregate/渲染。读端独立守卫:非数组当无 reviews(回退 stale 或空,稳定不抛),数组按
+  // MAX_REVIEW_NODES(对齐 main MAX_TOTAL_NODES=2000)截断。
+  const rawNodes: unknown = res.data.nodes;
+  if (!Array.isArray(rawNodes)) {
+    const stale = reviewsCache.getStale();
+    if (stale) return new Map(Object.entries(stale));
+    return new Map();
+  }
+  const nodes =
+    rawNodes.length > MAX_REVIEW_NODES
+      ? rawNodes.slice(0, MAX_REVIEW_NODES)
+      : rawNodes;
   const reviews: Review[] = [];
-  for (const node of res.data.nodes) {
+  for (const node of nodes) {
     const parsed = parseReview(node);
     if (parsed) reviews.push(parsed);
   }

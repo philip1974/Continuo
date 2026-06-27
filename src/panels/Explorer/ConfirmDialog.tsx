@@ -46,7 +46,9 @@ export function ConfirmDialog({
           variant={destructive ? 'danger' : 'primary'}
           size="sm"
           onClick={onConfirm}
-          autoFocus
+          // a11y(A20):确认按钮排在取消之后,但应是初始焦点。用 data-autofocus(Modal 优先
+          // 聚焦它),取代 React autoFocus —— 后者会被 Modal rAF 覆盖到第一个(取消)按钮。
+          data-autofocus
         >
           {confirmText}
         </Button>

@@ -76,4 +76,32 @@ describe('useQuickOpenStore', () => {
     useQuickOpenStore.getState().setLoading(true);
     expect(useQuickOpenStore.getState().loading).toBe(true);
   });
+
+  // race(R48):列表异步变短(setResults 替换 / query 收窄)时 selectedIndex 须钳回 [0,len-1],
+  // 防 Enter 读 filtered[idx]=undefined 打开失效 + 高亮停越界项。
+  describe('clampSelection(R48)', () => {
+    it('selectedIndex 越界 → 钳到末项', () => {
+      useQuickOpenStore.setState({ selectedIndex: 50 });
+      useQuickOpenStore.getState().clampSelection(10); // 新列表只有 10 项
+      expect(useQuickOpenStore.getState().selectedIndex).toBe(9);
+    });
+
+    it('空列表 → 钳到 0', () => {
+      useQuickOpenStore.setState({ selectedIndex: 7 });
+      useQuickOpenStore.getState().clampSelection(0);
+      expect(useQuickOpenStore.getState().selectedIndex).toBe(0);
+    });
+
+    it('在范围内 → 不变', () => {
+      useQuickOpenStore.setState({ selectedIndex: 3 });
+      useQuickOpenStore.getState().clampSelection(10);
+      expect(useQuickOpenStore.getState().selectedIndex).toBe(3);
+    });
+
+    it('恰在末项边界(len-1)→ 不变', () => {
+      useQuickOpenStore.setState({ selectedIndex: 9 });
+      useQuickOpenStore.getState().clampSelection(10);
+      expect(useQuickOpenStore.getState().selectedIndex).toBe(9);
+    });
+  });
 });

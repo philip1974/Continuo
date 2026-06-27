@@ -1,4 +1,5 @@
 import { mkdtemp, rm, mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
+import { promises as nodeFsPromises } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -191,6 +192,37 @@ describe('sdk-contract integration: plugin-fs.service', () => {
     await expect(readFile(staging, 'utf-8')).rejects.toMatchObject({
       code: 'ENOENT',
     });
+  });
+
+  // 数据安全(codex 复查 P1):access(finalPath) 非 ENOENT 错误此前被吞 → finalExists=false
+  // → 无覆盖分支 rename 仍可能替换实际存在的 final,绕过 overwrite:false。只 ENOENT→不存在,
+  // 其它 access 错误抛出中止(与 rename/move/cp fail-closed 守卫一致)。
+  it('T4b atomicReplace:access EACCES → 抛,不绕过 overwrite:false 覆盖 final', async () => {
+    harness.scopes.grant('plugin.fs', [{ path: tmpCanonical, mode: 'rw' }]);
+    const staging = join(tmpRoot, 'file.tmp');
+    const final = join(tmpRoot, 'file.txt');
+    await writeFile(staging, 'next', 'utf-8');
+    await writeFile(final, 'old', 'utf-8');
+
+    const spy = vi
+      .spyOn(nodeFsPromises, 'access')
+      .mockRejectedValue(
+        Object.assign(new Error('EACCES'), { code: 'EACCES' }),
+      );
+    await expect(
+      harness.ipc.invokeWithEvent(
+        harness.event,
+        PLUGIN_FS_CHANNELS.ATOMIC_REPLACE,
+        harness.token,
+        staging,
+        final,
+        {}, // overwrite 未开启
+      ),
+    ).rejects.toThrow();
+    spy.mockRestore();
+
+    // final 未被覆盖(EACCES 不当作「不存在」走 rename)
+    await expect(readFile(final, 'utf-8')).resolves.toBe('old');
   });
 
   it('T5 atomicReplaceWithinScope enforces same parent', async () => {

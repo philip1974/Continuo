@@ -27,9 +27,12 @@
     "vitest.config.ts",
     "scripts",
     "src/lib/co-api.ts",
+    "src/lib/serialize-per-key.ts",
     "src/notifications/types.ts",
     "src/plugins/EventBus.ts",
     "src/plugins/PluginDataStore.ts",
+    "src/plugins/manifest.ts",
+    "src/plugins/plugin-id.ts",
     "src/plugins/permissions.ts",
     "src/plugins/registries/*.ts",
     "src/plugins/types.ts"

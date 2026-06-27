@@ -12,6 +12,7 @@ import {
   createFileInputSchema,
   listDirHandler,
   listDirInputSchema,
+  moveInputSchema,
   makeSelectDirectoryHandler,
   makeTrashHandler,
   readFileHandler,
@@ -24,6 +25,7 @@ import {
   trashInputSchema,
   writeFileHandler,
   writeFileInputSchema,
+  writeBinaryInputSchema,
 } from '../../../electron/main/ipc/fs.ipc';
 
 let dir: string;
@@ -103,6 +105,34 @@ describe('listDirInputSchema', () => {
       listDirInputSchema.safeParse({ path: '/x', options: { maxDepth: -1 } }).success,
     ).toBe(false);
   });
+
+  // 边界(E275):maxFiles 上界对齐 MAX_TOTAL_ENTRIES + 安全整数;畸形大值/不安全整数被 schema 拒。
+  it('E275 maxFiles 在上限内 → ok,超 MAX_TOTAL_ENTRIES / 1e308 → fail', () => {
+    expect(
+      listDirInputSchema.safeParse({ path: '/x', options: { maxFiles: 1000 } })
+        .success,
+    ).toBe(true);
+    expect(
+      listDirInputSchema.safeParse({
+        path: '/x',
+        options: { maxFiles: 100_000 },
+      }).success,
+    ).toBe(true); // 恰好 MAX_TOTAL_ENTRIES
+    expect(
+      listDirInputSchema.safeParse({
+        path: '/x',
+        options: { maxFiles: 100_001 },
+      }).success,
+    ).toBe(false); // 超硬上限
+    expect(
+      listDirInputSchema.safeParse({ path: '/x', options: { maxFiles: 1e308 } })
+        .success,
+    ).toBe(false); // 不安全整数(此前 z.int() 放行)
+    expect(
+      listDirInputSchema.safeParse({ path: '/x', options: { maxFiles: 0 } })
+        .success,
+    ).toBe(false);
+  });
   it('顶层未知字段 → fail(strict)', () => {
     expect(
       listDirInputSchema.safeParse({ path: '/x', extra: 1 }).success,
@@ -135,6 +165,93 @@ describe('writeFileInputSchema', () => {
     expect(
       writeFileInputSchema.safeParse({ path: '/x', content: 123 }).success,
     ).toBe(false);
+  });
+
+  // 边界(E13):content 加 64MiB 上限(滥用/误操作 backstop),超限 → fail(走 BAD_INPUT)。
+  it('E13 正常大小 content → ok;超 64MiB → fail', () => {
+    const cap = 64 * 1024 * 1024;
+    expect(
+      writeFileInputSchema.safeParse({ path: '/x', content: 'x'.repeat(1000) })
+        .success,
+    ).toBe(true);
+    expect(
+      writeFileInputSchema.safeParse({
+        path: '/x',
+        content: 'x'.repeat(cap + 1),
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe('writeBinaryInputSchema (E13)', () => {
+  const cap = 64 * 1024 * 1024;
+  it('正常 Uint8Array → ok', () => {
+    expect(
+      writeBinaryInputSchema.safeParse({
+        path: '/x',
+        content: new Uint8Array([1, 2, 3]),
+      }).success,
+    ).toBe(true);
+  });
+  it('content 非 Uint8Array → fail', () => {
+    expect(
+      writeBinaryInputSchema.safeParse({ path: '/x', content: 'hi' }).success,
+    ).toBe(false);
+  });
+  it('超 64MiB → fail(滥用 backstop)', () => {
+    expect(
+      writeBinaryInputSchema.safeParse({
+        path: '/x',
+        content: new Uint8Array(cap + 1),
+      }).success,
+    ).toBe(false);
+  });
+});
+
+// 边界(E21,E13 同族):fs IPC 的 path/newName/name/dir/src/dest/exclude 加长度与数量上限,
+// 防超长路径/巨大 exclude 列表在 IPC/zod/扫描路径耗内存+CPU。
+describe('E21 fs IPC 路径/名称/exclude 上限', () => {
+  it('path 超 8192 → fail', () => {
+    expect(
+      readFileInputSchema.safeParse({ path: '/' + 'x'.repeat(8192) }).success,
+    ).toBe(false);
+    expect(
+      removeInputSchema.safeParse({ path: '/' + 'x'.repeat(8192) }).success,
+    ).toBe(false);
+  });
+  it('newName / name 超 1024 → fail', () => {
+    expect(
+      renameInputSchema.safeParse({ path: '/x', newName: 'x'.repeat(1025) })
+        .success,
+    ).toBe(false);
+    expect(
+      createFileInputSchema.safeParse({ dir: '/x', name: 'x'.repeat(1025) })
+        .success,
+    ).toBe(false);
+  });
+  it('src/dest 超 8192 → fail', () => {
+    expect(
+      moveInputSchema.safeParse({ src: '/' + 'x'.repeat(8192), dest: '/y' })
+        .success,
+    ).toBe(false);
+  });
+  it('listDir exclude 数量超 1000 → fail', () => {
+    const exclude = Array.from({ length: 1001 }, (_, i) => `e${i}`);
+    expect(
+      listDirInputSchema.safeParse({ path: '/x', options: { exclude } }).success,
+    ).toBe(false);
+  });
+  it('正常 path/name/exclude → ok', () => {
+    expect(
+      listDirInputSchema.safeParse({
+        path: '/Users/me/proj',
+        options: { exclude: ['.git', 'node_modules'] },
+      }).success,
+    ).toBe(true);
+    expect(
+      renameInputSchema.safeParse({ path: '/x/a.txt', newName: 'b.txt' })
+        .success,
+    ).toBe(true);
   });
 });
 

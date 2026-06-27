@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { HTMLAttributes, PointerEvent } from 'react';
+import type { HTMLAttributes, KeyboardEvent, PointerEvent } from 'react';
 import { motion } from 'motion/react';
 import type {
   DockviewApi,
@@ -7,7 +7,7 @@ import type {
   IDockviewPanelHeaderProps,
 } from 'dockview-react';
 import { IconButton } from '@/design';
-import { t } from '@/i18n';
+import { useT } from '@/i18n';
 import {
   panelTitleLayoutId,
   tabIndicatorLayoutId,
@@ -66,11 +66,30 @@ type TabHtmlExtras = Pick<
 
 export function SharedTab(props: IDockviewPanelHeaderProps & TabHtmlExtras) {
   const { api, containerApi, onPointerDown, onPointerUp, onPointerLeave } = props;
+  // a11y(A125):用 useT() 订阅 locale,使关闭/退出缩放/tablist 等可访问名随语言切换实时更新
+  //(此前静态 t 在 locale 变化时不重渲,aria-label 停留旧语言)。
+  const t = useT();
   const active = useIsActive(api);
   const title = useTitle(api);
   const isMaximized = useIsThisGroupMaximized(api, containerApi);
   const groupId = api.group.id;
   const isMiddleDown = useRef(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // a11y(A121):SharedTab 子项是 role="tab",但 dockview 生成的父 tab-strip 容器
+  // (.dv-tabs-container)没有 role="tablist"/名称 → role=tab 孤立,AT 不知这些 tab 同属一组,
+  // 方向键 composite 模型也缺父语义。挂载时给最近的 tabs 容器补 role=tablist + 本地化 aria-label
+  // (幂等:同容器多 tab 重复设无副作用;dockview 不控的 DOM 用 setAttribute 补语义)。
+  useEffect(() => {
+    const container = rootRef.current?.closest('.dv-tabs-container');
+    if (!container) return;
+    if (container.getAttribute('role') !== 'tablist') {
+      container.setAttribute('role', 'tablist');
+    }
+    // a11y(A125):每次(含 locale 变化 → useT 重渲)重写 aria-label,使组名随语言更新,不再用
+    // 「仅缺失时设」守卫(否则切语言后停留旧语言)。
+    container.setAttribute('aria-label', t('shell.tab.dock_tablist'));
+  });
 
   // topic-22 follow-up: 点击 icon = exitMaximizedGroup(整 group 退,与 zoom toggle
   // 命令对称)。stopPropagation 防止 tab pointerDown 把 drag 起来。
@@ -125,8 +144,84 @@ export function SharedTab(props: IDockviewPanelHeaderProps & TabHtmlExtras) {
     [onPointerLeave],
   );
 
+  // a11y(A119/A120):tab 根键盘模型。Enter/Space 激活当前 tab;A120 补完整 WAI-ARIA tablist
+  // 方向键模型 —— ArrowLeft/Right 在同组 tab 间循环移动并激活,Home/End 到首尾,且焦点跟随到
+  // 新 active tab(经 data-panel-id 定位)。否则键盘用户 Tab 只能落到 active tab,无法切其它。
+  const handleKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLDivElement>) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        api.setActive();
+        return;
+      }
+      // a11y(A123,A29 同族):tab 内关闭按钮移出 Tab 顺序(下方 tabIndex=-1)保 roving 复合控件
+      // 模型;键盘关闭改由 tab 聚焦时 Delete/Backspace 触发。
+      if (event.key === 'Delete' || event.key === 'Backspace') {
+        event.preventDefault();
+        api.close();
+        return;
+      }
+      // a11y(A124,A123 后续):退出最大化按钮已移出 Tab 顺序(tabIndex=-1),须给键盘等价入口 —
+      // 最大化状态下 Escape 退出缩放(覆盖任意 Dock group,非仅 terminal.zoom.toggle 的 terminal)。
+      if (event.key === 'Escape' && isMaximized) {
+        event.preventDefault();
+        try {
+          containerApi.exitMaximizedGroup();
+        } catch {
+          /* ignore — group 不再处于 maximized */
+        }
+        return;
+      }
+      const isArrow =
+        event.key === 'ArrowLeft' ||
+        event.key === 'ArrowRight' ||
+        event.key === 'Home' ||
+        event.key === 'End';
+      if (!isArrow) return;
+      // 同组有序 panel 列表;每个 panel 暴露 id + api.setActive()。
+      const panels = api.group.panels as ReadonlyArray<{
+        id: string;
+        api: { setActive: () => void };
+      }>;
+      if (panels.length <= 1) return;
+      event.preventDefault();
+      const idx = panels.findIndex((p) => p.id === api.id);
+      if (idx < 0) return;
+      let targetIdx: number;
+      if (event.key === 'Home') targetIdx = 0;
+      else if (event.key === 'End') targetIdx = panels.length - 1;
+      else {
+        const delta = event.key === 'ArrowRight' ? 1 : -1;
+        targetIdx = (idx + delta + panels.length) % panels.length;
+      }
+      const target = panels[targetIdx];
+      if (!target || target.id === api.id) return;
+      target.api.setActive();
+      // 焦点跟随到新 active tab(roving:WAI-ARIA tablist 焦点须随选中移动)。best-effort:
+      // setActive 触发重渲后该 tab tabIndex 变 0,下一帧用 data-panel-id 定位并聚焦。
+      const targetId = target.id;
+      requestAnimationFrame(() => {
+        const el = document.querySelector<HTMLElement>(
+          `[role="tab"][data-panel-id="${targetId}"]`,
+        );
+        el?.focus();
+      });
+    },
+    [api, isMaximized, containerApi],
+  );
+
   return (
     <div
+      ref={rootRef}
+      // a11y(A119):Dock tab 须有 tab 语义 + 键盘模型。role=tab + aria-selected 暴露选中态;
+      // roving tabIndex(仅 active 在 Tab 顺序);Enter/Space 激活(切到该 tab)。dockview 用
+      // pointer 激活,这里补等价键盘入口。
+      role="tab"
+      aria-selected={active}
+      tabIndex={active ? 0 : -1}
+      // a11y(A120):data-panel-id 供方向键导航后焦点跟随定位新 active tab。
+      data-panel-id={api.id}
+      onKeyDown={handleKeyDown}
       className="group/tab relative flex h-full cursor-pointer items-center gap-2 pl-3 pr-2 text-sm text-fg"
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
@@ -152,6 +247,8 @@ export function SharedTab(props: IDockviewPanelHeaderProps & TabHtmlExtras) {
           size="xs"
           aria-label={t('shell.tab.exit_zoom')}
           data-testid="tab-maximize-indicator"
+          // a11y(A123):移出 Tab 顺序保 tablist roving 复合控件模型(同关闭按钮)。
+          tabIndex={-1}
           onPointerDown={(e) => e.preventDefault()}
           onClick={onExitMaximize}
           className="text-fg-muted hover:text-fg"
@@ -172,7 +269,12 @@ export function SharedTab(props: IDockviewPanelHeaderProps & TabHtmlExtras) {
       )}
       <IconButton
         size="xs"
-        aria-label={`Close ${title}`}
+        // a11y(A105):icon-only 关闭按钮可访问名须本地化(原硬编码英文 `Close ${title}`,
+        // zh/ko 界面 SR 读英文);含 title 区分多 tab。
+        aria-label={t('shell.tab.close', { title })}
+        // a11y(A123,A29 同族):关闭按钮移出 Tab 顺序,保「一次 Tab 进 tablist、方向键移动」
+        // 复合控件模型;键盘关闭由 tab 根 Delete/Backspace 触发(见 handleKeyDown)。
+        tabIndex={-1}
         onPointerDown={(e) => e.preventDefault()}
         onClick={onClose}
         className="opacity-0 focus-visible:opacity-100 group-hover/tab:opacity-100"

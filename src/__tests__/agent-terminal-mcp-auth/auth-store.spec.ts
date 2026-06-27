@@ -1,7 +1,7 @@
 // BDD: agent-terminal-mcp-auth
 // agent 控制内置 terminal 的授权 store。每个 test 重置状态。
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   useAgentAuthStore,
   _resetAgentAuthForTest,
@@ -9,6 +9,43 @@ import {
 
 beforeEach(() => {
   _resetAgentAuthForTest();
+});
+
+// race(R88):main 端 5min timeout 把请求 resolve 为 denied 但不通知 renderer。renderer 端同 TTL
+// 本地超时:过期 → deny + 清 pending,避免失效弹窗滞留 + 阻塞后续 agent auth 请求。
+describe('race(R88) · pending 同 TTL 本地超时自清', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('5min 无应答 → ensure resolve denied + pending 清空 + 后续请求不被阻塞', async () => {
+    vi.useFakeTimers();
+    const p = useAgentAuthStore
+      .getState()
+      .ensure({ method: 'terminal.create_session' });
+    expect(useAgentAuthStore.getState().pending).not.toBeNull();
+
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+
+    await expect(p).resolves.toBe('denied');
+    expect(useAgentAuthStore.getState().pending).toBeNull();
+
+    // 旧弹窗已自清 → 新请求能重新挂起(不再因 pending!==null 立即拒)。
+    void useAgentAuthStore.getState().ensure({ method: 'terminal.write' });
+    expect(useAgentAuthStore.getState().pending?.method).toBe('terminal.write');
+  });
+
+  it('超时前用户 grant once → 不被超时 deny 覆盖(timer 已清)', async () => {
+    vi.useFakeTimers();
+    const p = useAgentAuthStore
+      .getState()
+      .ensure({ method: 'terminal.create_session' });
+    useAgentAuthStore.getState().grant('once');
+    await expect(p).resolves.toBe('once');
+    // 推进过 TTL:不应再触发(grant 已 clearPendingTimer)。
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+    expect(useAgentAuthStore.getState().pending).toBeNull();
+  });
 });
 
 describe('agent-auth.store · 初态', () => {

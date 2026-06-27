@@ -2,6 +2,7 @@ import { promises as fs, type Stats } from 'node:fs';
 import { homedir, platform } from 'node:os';
 import { dirname, isAbsolute, sep } from 'node:path';
 import { ScopeError } from '../../../src/plugins/types';
+import { leafNameRejectReason } from '../../shared/leaf-name';
 
 export interface ResolveReadResult {
   canonical: string;
@@ -10,19 +11,6 @@ export interface ResolveReadResult {
 export interface ResolveWriteResult {
   parentCanonical: string;
   leaf: string;
-}
-
-const MAX_PATH_POSIX = 4096;
-const MAX_PATH_WIN = 260;
-const WIN_RESERVED = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\..*)?$/i;
-const NTFS_83_ALIAS = /~[0-9]/;
-
-function hasControlChar(s: string): boolean {
-  for (let i = 0; i < s.length; i++) {
-    const c = s.charCodeAt(i);
-    if (c >= 0 && c <= 0x1f) return true;
-  }
-  return false;
 }
 
 function expandHome(p: string): string {
@@ -46,36 +34,16 @@ function expandHome(p: string): string {
  * Returns void on success; throws ScopeError on rejection.
  */
 function validateLeaf(leaf: string, fullTarget: string): void {
-  const reject = (reason: string): never => {
+  // 边界(E274):收口到共享 leafNameRejectReason(与 Explorer drop/create/rename 的 isValidLeafName 同一
+  // 规则集,消漂移)。规则不变(POSIX + Windows 危险名);超限上限收紧到 FS_NAME_MAX=255(单组件名上限,
+  // 严于原 260/4096,无安全回归)。
+  const reason = leafNameRejectReason(leaf);
+  if (reason !== null) {
     throw new ScopeError(`leaf rejected: ${reason}`, {
       target: fullTarget,
       reason,
     });
-  };
-  if (leaf === '') reject('empty leaf');
-  if (leaf === '.' || leaf === '..') reject(`leaf is "${leaf}"`);
-  if (leaf.includes('/') || leaf.includes('\\')) {
-    reject('leaf contains path separator');
   }
-  if (NTFS_83_ALIAS.test(leaf)) {
-    reject('leaf matches NTFS 8.3 short-name pattern');
-  }
-  if (leaf.includes('~')) reject('leaf contains ~');
-  if (leaf.includes('..')) reject('leaf contains ..');
-  if (hasControlChar(leaf)) reject('leaf contains control char');
-  if (leaf.length > MAX_PATH_WIN) {
-    reject('leaf exceeds 260 chars (Windows MAX_PATH)');
-  }
-  if (leaf.length > MAX_PATH_POSIX) reject('leaf exceeds 4096 chars (POSIX)');
-  if (leaf.startsWith('/') || leaf.startsWith('\\')) {
-    reject('leaf starts with separator');
-  }
-  if (leaf.includes(':')) reject('leaf contains : (Windows ADS hazard)');
-  if (WIN_RESERVED.test(leaf)) reject('leaf is Windows reserved device name');
-  if (leaf.endsWith('.') || leaf.endsWith(' ')) {
-    reject('leaf has trailing dot or space');
-  }
-  if (leaf.normalize('NFC') !== leaf) reject('leaf is not NFC-normalized');
 }
 
 // Test-only export, do not use in non-test code.
@@ -102,8 +70,9 @@ export async function resolveForRead(target: string): Promise<ResolveReadResult>
   }
 }
 
-export async function resolveForWrite(
+async function resolveLeafPreserving(
   target: string,
+  rejectSymlinkLeaf: boolean,
 ): Promise<ResolveWriteResult> {
   const expanded = expandHome(target);
   if (!isAbsolute(expanded)) {
@@ -131,17 +100,46 @@ export async function resolveForWrite(
     );
   }
 
-  const fullPath = `${parentCanonical}${sep}${leaf}`;
-  let leafStat: Stats | null = null;
-  try {
-    leafStat = await fs.lstat(fullPath);
-  } catch {
-    // doesn't exist - fine for write
-  }
-  if (leafStat && leafStat.isSymbolicLink()) {
-    throw new ScopeError('symlink leaf rejected', { target: fullPath });
+  if (rejectSymlinkLeaf) {
+    const fullPath = `${parentCanonical}${sep}${leaf}`;
+    let leafStat: Stats | null = null;
+    try {
+      leafStat = await fs.lstat(fullPath);
+    } catch (err) {
+      // 只有 ENOENT 才是「leaf 不存在,可写」。EACCES/EIO/ELOOP 等「无法确认 leaf 是否
+      // symlink」不能 fail-open —— 否则绕过 symlink-leaf-rejected 安全契约,plugin 可经
+      // 链接叶子写到 scope 外(codex P1,与 rename/move/atomicReplace fail-closed 守卫一致)。
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        throw new ScopeError(
+          'cannot stat write leaf',
+          { target: fullPath },
+          { cause: err },
+        );
+      }
+    }
+    if (leafStat && leafStat.isSymbolicLink()) {
+      throw new ScopeError('symlink leaf rejected', { target: fullPath });
+    }
   }
   return { parentCanonical, leaf };
+}
+
+export function resolveForWrite(target: string): Promise<ResolveWriteResult> {
+  return resolveLeafPreserving(target, true);
+}
+
+/**
+ * 解析「不跟随 leaf 符号链接」的源路径(rm / lstat / rename-src 用)。
+ * 与 resolveForWrite 一样 realpath 父目录 + 保留原 leaf(防 `..` 逃逸 + 防父目录
+ * 符号链接逃逸),但**不拒绝** symlink leaf —— 这些操作要作用在「链接本身」而非其
+ * 目标:rm 删链接、lstat 看链接、rename 移链接。若改用 resolveForRead(realpath 整
+ * 条路径)会跟随到 target,导致删/改/stat 的是目标数据,违反「不跟随链接」语义
+ * (SDK 暴露 lstat/isSymlink,listDir 也保留 symlink 标记 → API 本应区分链接 vs 目标)。
+ * 安全性与 write 同级:父目录已 realpath、leaf 经 validateLeaf(拒 `..`/分隔符等),
+ * fs.rm/lstat/rename 作用在 fullPath(链接)上不会跟随,故不构成 scope 逃逸。
+ */
+export function resolveNoFollowLeaf(target: string): Promise<ResolveWriteResult> {
+  return resolveLeafPreserving(target, false);
 }
 
 export const resolveForRenameDst = resolveForWrite;

@@ -15,6 +15,21 @@ describe('PermissionPrompt UI', () => {
     expect(container.querySelector('.wm-modal-content')).toBeNull();
   });
 
+  // a11y(A13):Modal 现为 role=dialog(A10),须经 aria-labelledby 关联标题,否则 AT 进
+  // 弹窗只听到无名 dialog。断言 dialog 有可访问名(= 标题文本)。
+  it('a11y · 弹窗是有可访问名的 role=dialog', () => {
+    render(<PermissionPrompt />);
+    act(() => {
+      void usePermissionPromptStore.getState().request('com.x', ['fs']);
+    });
+    const dialog = document.querySelector('.wm-modal-content')!;
+    expect(dialog.getAttribute('role')).toBe('dialog');
+    const labelledby = dialog.getAttribute('aria-labelledby');
+    expect(labelledby).toBeTruthy();
+    const title = document.getElementById(labelledby!);
+    expect(title?.textContent?.length ?? 0).toBeGreaterThan(0);
+  });
+
   it('pending 渲染 + 默认全选', () => {
     render(<PermissionPrompt />);
     act(() => {

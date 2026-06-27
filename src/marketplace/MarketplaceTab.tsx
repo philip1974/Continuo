@@ -4,7 +4,7 @@
 // 已装的卡片显 "已安装" disabled;未装显 [安装] primary,点击调
 // installFromGit(走 v4.5 已有 IPC)。安装成功 toast 在卡片下方提示。
 
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Input, Spinner } from '@/design';
 import { coApi } from '@/lib/co-api';
 import { errorMessage } from '../../electron/shared/error-message';
@@ -12,12 +12,16 @@ import { getUserPluginManager } from '@/plugins/PluginManager';
 import { entryToGitUrl, type MarketplaceEntry } from './types';
 import { fetchMarketplaceIndex } from './fetcher';
 import { applyFilter, collectAllTags } from './filter';
+import { clampSearchQuery } from '@/lib/search-query';
+import { clampGitUrl } from '../../electron/shared/plugins-channels';
 import { useUpdateStore } from './update-store';
 import { reconcileAfterUpdate } from './reconcile-after-update';
 import { pruneLandedPending } from './prune-landed-pending';
 import { useReviewsStore } from './reviews-store';
 import type { PluginAggregateRating, Review } from './reviews-types';
 import { useT, t as translate } from '@/i18n';
+import { localizeErrorByCode } from '@/lib/localize-error';
+import { SR_ONLY_STYLE } from '@/lib/sr-only';
 
 /** 项目维护者(角标用),hard-coded. */
 const MAINTAINERS: ReadonlySet<string> = new Set(['philip1974']);
@@ -34,8 +38,8 @@ type LoadState =
 interface InstallState {
   /** 正在装的 entry id. */
   busy: string | null;
-  /** 安装结果消息(per entry). */
-  msgs: ReadonlyMap<string, string>;
+  /** 安装结果消息(per entry)。a11y(A44):带严重度 → 渲染按语义选 live region。 */
+  msgs: ReadonlyMap<string, { text: string; isError: boolean }>;
   /** 刚装成功但 PluginManager 还没扫到的 id(下次 LM 启动才入表). */
   pending: ReadonlySet<string>;
 }
@@ -85,6 +89,10 @@ export function MarketplaceTab() {
     msgs: new Map(),
     pending: new Set(),
   });
+  // race(R8):同步 in-flight 闸门。install.busy 是 render 后异步状态,同一事件循环内双击
+  // install/update 会在 busy 生效前重入 → 双 installFromGit(主进程 lock 要等 clone+manifest
+  // 才串行,期间已双 clone)。一次只允许一个安装/更新操作,ref 同步占位。
+  const installBusyRef = useRef(false);
   const [query, setQuery] = useState('');
   const [selectedTags, setSelectedTags] = useState<ReadonlySet<string>>(
     new Set(),
@@ -127,9 +135,12 @@ export function MarketplaceTab() {
         if (!cancelled) setState({ kind: 'ok', entries });
       } catch (err) {
         if (!cancelled) {
+          // i18n(I5):fetcher 对可本地化的失败抛稳定 code(MARKETPLACE_INDEX_INVALID),
+          // 这里按 errors.<CODE> catalog 翻译;网络/HTTP 等动态错误无 catalog → 回退原文。
+          const raw = errorMessage(err);
           setState({
             kind: 'error',
-            message: errorMessage(err),
+            message: localizeErrorByCode(raw, raw),
           });
         }
       }
@@ -142,21 +153,33 @@ export function MarketplaceTab() {
   // useCallback 稳定 handler ref,让 MarketplaceCard memo 不被 inline arrow 撑破。
   // setInstall 函数式更新,不依赖外部 state → deps 仅 store action。
   const onInstall = useCallback(async (entry: MarketplaceEntry) => {
+    // race(R8):同步单飞 —— 同 tick 双击在 busy state 生效前直接挡掉重入。
+    if (installBusyRef.current) return;
+    installBusyRef.current = true;
     setInstall((prev) => ({ ...prev, busy: entry.id }));
     let msg: string;
     let success = false;
     try {
       const r = await coApi.plugins.installFromGit(entryToGitUrl(entry));
       success = r.ok;
+      // i18n(codex 复查 P1,I1 同族兄弟):installFromGit 各错误站点 Error.message 是硬编码
+      // 中文,直接展示会让 en/ko 卡片看到中文。改用稳定 r.code 经 catalog(errors.<CODE>)
+      // 翻译,命中用本地化文案、未知 code 回退原 message,再套本地化外壳。
       msg = r.ok
         ? translate('marketplace.install_success', { name: r.data.name, version: r.data.version })
-        : `✘ [${r.code}] ${r.message}`;
+        : translate('marketplace.install_failed_code', {
+            code: r.code,
+            message: localizeErrorByCode(r.code, r.message),
+          });
     } catch (err) {
-      msg = `✘ ${errorMessage(err)}`;
+      // a11y(A85,A84 同族):不把装饰性 ✘ 拼进 message 字符串 —— 失败严重度由 isError+role=alert
+      // 表达,符号入文本会被 live region 当内容播报成"cross mark …"噪声。
+      msg = errorMessage(err);
     }
+    installBusyRef.current = false; // race(R8):清同步闸门(与 busy:null 同步)。
     setInstall((prev) => {
       const nextMsgs = new Map(prev.msgs);
-      nextMsgs.set(entry.id, msg);
+      nextMsgs.set(entry.id, { text: msg, isError: !success });
       const nextPending = new Set(prev.pending);
       if (success) nextPending.add(entry.id);
       return { busy: null, msgs: nextMsgs, pending: nextPending };
@@ -169,23 +192,32 @@ export function MarketplaceTab() {
       // 卸载成功但重装失败(网络/clone 错),插件就从磁盘消失且无回滚(审计 #2)。
       // installFromGit overwrite 在 main 端做 staging+rename swap,失败保留旧版本;
       // 且保留 _enabled / _permissions,更新后无需重新授权(语义更贴近"更新")。
+      // race(R8):同步单飞 —— 同 tick 双击 / 与 install 并发在 busy 生效前重入直接挡掉。
+      if (installBusyRef.current) return;
+      installBusyRef.current = true;
       setInstall((prev) => ({ ...prev, busy: entry.id }));
       let msg: string;
       let success = false;
       try {
         const r = await coApi.plugins.installFromGit(entryToGitUrl(entry), true);
         success = r.ok;
+        // i18n(codex 复查 P1,I1 同族):message 经 r.code 走 catalog 翻译再插本地化外壳,
+        // 否则 update_failed_code 的 {message} 会塞进 main 硬编码中文 → en/ko 看到中文。
         msg = r.ok
           ? translate('marketplace.update_success', { name: r.data.name, version: r.data.version })
-          : translate('marketplace.update_failed_code', { code: r.code, message: r.message });
+          : translate('marketplace.update_failed_code', {
+              code: r.code,
+              message: localizeErrorByCode(r.code, r.message),
+            });
       } catch (err) {
         msg = translate('marketplace.update_failed_msg', {
           message: errorMessage(err),
         });
       }
+      installBusyRef.current = false; // race(R8):清同步闸门(与 busy:null 同步)。
       setInstall((prev) => {
         const nextMsgs = new Map(prev.msgs);
-        nextMsgs.set(entry.id, msg);
+        nextMsgs.set(entry.id, { text: msg, isError: !success });
         const nextPending = new Set(prev.pending);
         if (success) nextPending.add(entry.id);
         return { busy: null, msgs: nextMsgs, pending: nextPending };
@@ -243,15 +275,26 @@ export function MarketplaceTab() {
 
   if (state.kind === 'loading') {
     return (
-      <div className="flex h-32 items-center justify-center text-fg-dim">
-        <Spinner />
+      // a11y(A104,A102 同族):初始索引加载须 role=status 播报具体「正在加载插件市场」语义,
+      // Spinner aria-hidden 抑制泛化 Loading(否则 SR 只听通用加载,不知等的是市场索引)。
+      <div
+        role="status"
+        className="flex h-32 items-center justify-center gap-2 text-fg-dim"
+      >
+        <Spinner aria-hidden />
+        <span className="text-xs">{t('marketplace.loading')}</span>
       </div>
     );
   }
 
   if (state.kind === 'error') {
     return (
-      <div className="rounded border border-line bg-panel-soft/40 p-4 text-xs text-error">
+      // a11y(A66,A41 同族):索引异步加载失败的错误块须 live region(失败 → role=alert/assertive),
+      // 否则焦点在面板/搜索入口附近时 SR 用户只感知"无内容",不知是加载失败。
+      <div
+        role="alert"
+        className="rounded border border-line bg-panel-soft/40 p-4 text-xs text-error"
+      >
         {t('marketplace.index_fetch_failed', { message: state.message })}
         <div className="mt-1 text-fg-dim">
           {t('marketplace.index_fetch_hint')}
@@ -262,7 +305,12 @@ export function MarketplaceTab() {
 
   if (state.entries.length === 0) {
     return (
-      <div className="rounded border border-dashed border-line bg-panel-soft/40 px-3 py-6 text-center text-xs text-fg-dim">
+      // a11y(A67,A56/A66 同族):索引加载成功但为空是一个异步加载结果,焦点停在原控件时 SR 用户
+      // 不会获知"市场为空" → role=status(polite 中性空态结果)。失败态用 alert(A66),空态用 status。
+      <div
+        role="status"
+        className="rounded border border-dashed border-line bg-panel-soft/40 px-3 py-6 text-center text-xs text-fg-dim"
+      >
         {t('marketplace.empty_index_prefix')}
         <a
           href="https://github.com/philip1974/continuo-plugins"
@@ -281,13 +329,26 @@ export function MarketplaceTab() {
       <div className="space-y-2">
         <Input
           size="sm"
+          // a11y(A3,A1 同族):placeholder 无参数 → 复用作 aria-label 给屏幕阅读器稳定可访问名。
+          aria-label={t('marketplace.search_placeholder')}
           placeholder={t('marketplace.search_placeholder')}
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          // 边界(E281,E279/E280 同族):截断超长 query —— applyFilter 对最多 4096 远端 entry 逐项
+          // 构造 haystack + toLowerCase/includes,超长 paste 一次性放大同步 CPU/内存。复用统一搜索上限。
+          onChange={(e) => setQuery(clampSearchQuery(e.target.value))}
         />
         {allTags.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="mr-1 text-2xs uppercase tracking-wider text-fg-dim">
+          // a11y(A98,A97 同族):tag 筛选 toggle 组用 role=group + aria-labelledby 关联
+          // 「Popular tags」标签,否则 SR 逐个聚焦只听到 tag 名+pressed,不知是筛选条件组。
+          <div
+            role="group"
+            aria-labelledby="marketplace-popular-tags-label"
+            className="flex flex-wrap items-center gap-1.5"
+          >
+            <span
+              id="marketplace-popular-tags-label"
+              className="mr-1 text-2xs uppercase tracking-wider text-fg-dim"
+            >
               {t('marketplace.popular_tags')}
             </span>
             {allTags.map((tag) => (
@@ -311,7 +372,9 @@ export function MarketplaceTab() {
         )}
       </div>
       <div className="flex items-center justify-between gap-2 text-2xs text-fg-dim">
-        <span>
+        {/* a11y(A55,A53/A54 同族):搜索/标签过滤结果摘要随输入与 tag toggle 动态变化,焦点在
+            搜索框/tag 按钮时须 live region(role=status/polite)播报筛选结果数量。 */}
+        <span role="status">
           {t('marketplace.count_summary', {
             shown: filtered.length,
             total: state.entries.length,
@@ -321,19 +384,36 @@ export function MarketplaceTab() {
           type="button"
           onClick={() => void refreshReviews(true)}
           disabled={reviewsLoading}
+          // a11y(A93,A51 同族):刷新进行中用 aria-busy 标注按钮忙碌态。
+          aria-busy={reviewsLoading}
           className="rounded px-2 py-0.5 text-fg-muted hover:bg-hover hover:text-fg disabled:opacity-50"
           title={t('marketplace.reviews.refresh_title')}
         >
+          {/* a11y(A90,A88 同族):刷新图标 ⟳ 纯视觉,catalog 已去符号 → aria-hidden 单独渲染,
+              按钮可访问名只剩纯文本(刷新评分/刷新中)。 */}
+          <span aria-hidden="true">⟳</span>{' '}
           {reviewsLoading
             ? t('marketplace.reviews.refreshing')
             : t('marketplace.reviews.refresh')}
         </button>
+        {/* a11y(A93,A51 同族):loading 是瞬时状态,按钮文字变化+disabled 焦点在按钮时不一定被
+            播报 → 视觉隐藏 role=status(polite)镜像「刷新中」(仅 loading 时输出,idle 空不打扰)。 */}
+        <span style={SR_ONLY_STYLE} role="status">
+          {reviewsLoading ? t('marketplace.reviews.refreshing') : ''}
+        </span>
       </div>
       {reviewsError && !reviewsLoading && (
         // 刷新评论失败必须给反馈,否则按钮恢复原样 + 评论区无变化 → 用户无法区分
         // "刷新成功但无新评论" vs "刷新失败"。见第二十二轮 P2-BC。
-        <div className="text-2xs text-error">
-          {t('marketplace.reviews.refresh_failed', { message: reviewsError })}
+        <div className="text-2xs text-error" role="alert">
+          {/* a11y(A41):异步刷新失败文本须 role=alert(隐式 aria-live=assertive),否则插入
+              页面后焦点仍在按钮、AT 不主动播报失败。 */}
+          {/* i18n(I12,I5 同族):reviewsError 可能是 fetcher 抛的稳定 code
+              (MARKETPLACE_REVIEWS_NO_TOKEN),按 errors.<CODE> catalog 本地化;
+              网络等动态错误无 catalog key → 回退原文。 */}
+          {t('marketplace.reviews.refresh_failed', {
+            message: localizeErrorByCode(reviewsError, reviewsError),
+          })}
         </div>
       )}
       {filtered.length === 0 ? (
@@ -373,29 +453,48 @@ function GitUrlInstallSection() {
   const t = useT();
   const [url, setUrl] = useState('');
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
+  // race(R8):同步 in-flight 闸门(同 PluginsTabContent.onInstall)—— disabled={busy} render 滞后,
+  // 同 tick 双击/Enter 会双 installFromGit。
+  const busyRef = useRef(false);
+  // a11y(A43,A42 同族):结果消息带严重度 → 渲染时按语义选 live region(成功 status/失败 alert)。
+  const [msg, setMsg] = useState<{ text: string; isError: boolean } | null>(
+    null,
+  );
 
   const onInstall = async () => {
     const u = url.trim();
     if (!u) return;
+    if (busyRef.current) return; // race(R8):同步单飞,重入直接挡掉。
+    busyRef.current = true;
     setBusy(true);
     setMsg(null);
     try {
       const r = await coApi.plugins.installFromGit(u);
       if (!r.ok) {
-        setMsg(`✘ [${r.code}] ${r.message}`);
+        // i18n(I1 同族,Git URL 安装段兄弟入口):同卡片安装,按 r.code 经 catalog 翻译,
+        // 未知 code 回退原 message,再套本地化外壳,避免 en/ko 看到 main 硬编码中文。
+        setMsg({
+          text: translate('marketplace.install_failed_code', {
+            code: r.code,
+            message: localizeErrorByCode(r.code, r.message),
+          }),
+          isError: true,
+        });
       } else {
-        setMsg(
-          translate('marketplace.install_success', {
+        setMsg({
+          text: translate('marketplace.install_success', {
             name: r.data.name,
             version: r.data.version,
           }),
-        );
+          isError: false,
+        });
         setUrl('');
       }
     } catch (err) {
-      setMsg(`✘ ${errorMessage(err)}`);
+      // a11y(A85,A84 同族):同上,不把 ✘ 拼进 alert 文本(severity 由 isError+role=alert 表达)。
+      setMsg({ text: errorMessage(err), isError: true });
     } finally {
+      busyRef.current = false; // race(R8):清同步闸门。
       setBusy(false);
     }
   };
@@ -411,9 +510,12 @@ function GitUrlInstallSection() {
       <div className="mt-3 flex items-center gap-2">
         <Input
           size="sm"
+          // a11y(A5 同族):placeholder 是 URL 示例非标签 → 用 section 标题作 aria-label。
+          aria-label={t('marketplace.git_url_section_title')}
           placeholder="https://github.com/user/extension-repo.git"
           value={url}
-          onChange={(e) => setUrl(e.target.value)}
+          // 边界(E282):截断超长 git URL(防 paste 撑 React state + IPC structured-clone 放大,main schema 才拒)。
+          onChange={(e) => setUrl(clampGitUrl(e.target.value))}
           disabled={busy}
           className="flex-1"
         />
@@ -422,13 +524,28 @@ function GitUrlInstallSection() {
           size="sm"
           onClick={onInstall}
           disabled={busy || !url.trim()}
+          // a11y(A94,A93 同族):安装中标 aria-busy(忙碌语义)。
+          aria-busy={busy}
         >
           {busy
             ? t('marketplace.installing')
             : t('marketplace.install_extension')}
         </Button>
       </div>
-      {msg && <div className="mt-2 text-xs text-fg-muted">{msg}</div>}
+      {/* a11y(A94,A51 同族):安装 loading 瞬时态,焦点在按钮时文字变化不一定被播报 →
+          视觉隐藏 role=status 镜像「安装中」(仅 busy 时输出)。 */}
+      <span style={SR_ONLY_STYLE} role="status">
+        {busy ? t('marketplace.installing') : ''}
+      </span>
+      {msg && (
+        // a11y(A43,A42 同族):异步安装结果须 live region 主动播报(失败 alert/成功 status)。
+        <div
+          className="mt-2 text-xs text-fg-muted"
+          role={msg.isError ? 'alert' : 'status'}
+        >
+          {msg.text}
+        </div>
+      )}
       <div className="mt-3 flex items-start gap-2 rounded-md border border-accent/20 bg-accent/5 p-3 text-xs text-fg-muted">
         <span aria-hidden className="mt-0.5 leading-none text-accent">
           ⓘ
@@ -453,6 +570,8 @@ const TagButton = memo(function TagButton({
   return (
     <button
       type="button"
+      // a11y(A8):tag filter 是 toggle,active 只改 className → 补 aria-pressed 暴露选中态给 AT。
+      aria-pressed={active}
       onClick={() => onToggle(tag)}
       className={[
         'rounded-full border px-3 py-1 text-[11px] transition',
@@ -475,7 +594,7 @@ interface CardProps {
   updateAvailable: string | null;
   installing: boolean;
   installDisabled: boolean;
-  message: string | null;
+  message: { text: string; isError: boolean } | null;
   /** 评分聚合(reviews Phase 1),null 或 count=0 不显. */
   rating: PluginAggregateRating | null;
   /** 父组件 useCallback 稳定;card 内 onClick 闭包 entry 给它. */
@@ -526,7 +645,9 @@ const MarketplaceCard = memo(function MarketplaceCard({
                 className="rounded bg-accent/20 px-1.5 py-0.5 text-2xs text-accent"
                 title={t('marketplace.reviews.official_review')}
               >
-                ✓ {t('marketplace.verified')}
+                {/* a11y(A72 同族装饰符号):"Verified" 文本已表义,勾 ✓ 纯视觉 → aria-hidden,
+                    否则 SR 额外读出 checkmark 造成徽标名称噪声。 */}
+                <span aria-hidden="true">✓</span> {t('marketplace.verified')}
               </span>
             )}
             <code className="text-2xs text-fg-dim">{entry.id}</code>
@@ -543,6 +664,14 @@ const MarketplaceCard = memo(function MarketplaceCard({
               onClick={handleUpdate}
               disabled={installing || installDisabled}
               title={t('marketplace.update_tooltip', { version: updateAvailable })}
+              aria-busy={installing}
+              // a11y(A77,A75 同族):多卡片操作按钮可见文本通用,aria-label 补插件名以区分。
+              aria-label={t('marketplace.card_action_aria', {
+                action: installing
+                  ? t('marketplace.updating')
+                  : t('marketplace.update_to', { version: updateAvailable }),
+                name: entry.name,
+              })}
             >
               {installing
                 ? t('marketplace.updating')
@@ -558,6 +687,12 @@ const MarketplaceCard = memo(function MarketplaceCard({
                   ? t('marketplace.install.disk_ready_hint')
                   : t('marketplace.install.in_user_list')
               }
+              aria-label={t('marketplace.card_action_aria', {
+                action: pendingRestart
+                  ? t('marketplace.installed_pending_restart')
+                  : t('marketplace.installed'),
+                name: entry.name,
+              })}
             >
               {pendingRestart
                 ? t('marketplace.installed_pending_restart')
@@ -569,6 +704,13 @@ const MarketplaceCard = memo(function MarketplaceCard({
               size="sm"
               onClick={handleInstall}
               disabled={installing || installDisabled}
+              aria-busy={installing}
+              aria-label={t('marketplace.card_action_aria', {
+                action: installing
+                  ? t('marketplace.installing')
+                  : t('marketplace.install'),
+                name: entry.name,
+              })}
             >
               {installing
                 ? t('marketplace.installing')
@@ -577,8 +719,19 @@ const MarketplaceCard = memo(function MarketplaceCard({
           )}
         </div>
       </div>
+      {/* a11y(A94,A51 同族):卡片安装/更新 loading 瞬时态 → 视觉隐藏 role=status 镜像「安装中」
+          (仅 installing 时输出;成功/失败结果由下方 message live region 播报)。 */}
+      <span style={SR_ONLY_STYLE} role="status">
+        {installing ? t('marketplace.installing') : ''}
+      </span>
       {message && (
-        <div className="mt-1 text-2xs text-fg-muted">{message}</div>
+        // a11y(A44,A42/A43 同族):卡片级安装/更新结果须 live region 主动播报(失败 alert/成功 status)。
+        <div
+          className="mt-1 text-2xs text-fg-muted"
+          role={message.isError ? 'alert' : 'status'}
+        >
+          {message.text}
+        </div>
       )}
       <RatingRow entry={entry} rating={rating} />
 
@@ -618,7 +771,9 @@ const MarketplaceCard = memo(function MarketplaceCard({
           rel="noopener noreferrer"
           className="text-accent hover:underline"
         >
-          {entry.repo} ↗
+          {/* a11y(A72,A70 同族装饰符号):链接目的已由仓库名表达,外链箭头 ↗ 纯视觉提示 →
+              aria-hidden,否则混进链接可访问名读成"repo arrow"噪声。 */}
+          {entry.repo} <span aria-hidden="true">↗</span>
         </a>
       </div>
     </div>
@@ -661,8 +816,16 @@ function RatingRow({
           target="_blank"
           rel="noopener noreferrer"
           className="text-accent hover:underline"
+          // a11y(A79,A77 同族):多卡片 review 链接可见文本通用,aria-label 注入插件名以区分。
+          aria-label={t('marketplace.card_action_aria', {
+            action: t('marketplace.reviews.write_first'),
+            name: entry.name,
+          })}
         >
-          {t('marketplace.reviews.write_first')}
+          {/* a11y(A88,A86 同族):图标/箭头是纯视觉,catalog 文案已去符号,aria-label 用纯文本;
+              视觉 ✏️/↗ 在 JSX 用 aria-hidden 单独渲染,不入可访问名。 */}
+          <span aria-hidden="true">✏️</span> {t('marketplace.reviews.write_first')}{' '}
+          <span aria-hidden="true">↗</span>
         </a>
       </div>
     );
@@ -674,6 +837,8 @@ function RatingRow({
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
+          // a11y(A9):展开/折叠按钮只用 title+▴/▾ 表状态 → 补 aria-expanded 暴露给 AT。
+          aria-expanded={expanded}
           className="flex items-center gap-1.5 hover:text-fg"
           title={
             expanded
@@ -691,7 +856,9 @@ function RatingRow({
           <span className="text-fg-dim">
             {t('marketplace.reviews.count', { count: rating.count })}
           </span>
-          <span className="text-fg-dim">{expanded ? '▴' : '▾'}</span>
+          {/* a11y(A69 同族装饰符号):展开状态已由按钮 aria-expanded 暴露,视觉三角是纯装饰 →
+              aria-hidden,否则 ▴/▾ 混进按钮可访问名造成与 expanded 重复的噪声。 */}
+          <span className="text-fg-dim" aria-hidden="true">{expanded ? '▴' : '▾'}</span>
         </button>
         <span className="text-fg-dim">·</span>
         <a
@@ -699,18 +866,36 @@ function RatingRow({
           target="_blank"
           rel="noopener noreferrer"
           className="text-accent hover:underline"
+          // a11y(A79,A77 同族):多卡片 review 链接可见文本通用,aria-label 注入插件名以区分。
+          aria-label={t('marketplace.card_action_aria', {
+            action: t('marketplace.reviews.write_review'),
+            name: entry.name,
+          })}
         >
-          {t('marketplace.reviews.write_review')}
+          {/* a11y(A88):视觉 ✏️/↗ aria-hidden,可访问名用纯文本 catalog。 */}
+          <span aria-hidden="true">✏️</span> {t('marketplace.reviews.write_review')}{' '}
+          <span aria-hidden="true">↗</span>
         </a>
       </div>
       {expanded && (
         <div className="space-y-1.5 rounded border border-line bg-panel/50 p-2">
-          <div className="flex items-center gap-1 pb-1 text-2xs text-fg-dim">
-            <span>{t('marketplace.reviews.sort_label')}</span>
+          {/* a11y(A97):排序 toggle 组用 role=group + aria-labelledby 关联「Sort:」标签,
+              否则 SR 逐个聚焦只听到按钮状态,不知这是 review 排序控件。id 带 entry.id 保唯一。 */}
+          <div
+            role="group"
+            aria-labelledby={`review-sort-label-${entry.id}`}
+            className="flex items-center gap-1 pb-1 text-2xs text-fg-dim"
+          >
+            <span id={`review-sort-label-${entry.id}`}>
+              {t('marketplace.reviews.sort_label')}
+            </span>
             {(['newest', 'helpful'] as const).map((s) => (
               <button
                 key={s}
                 type="button"
+                // a11y(A16,A8 同族):排序 toggle 组当前项只改 className → 补 aria-pressed 暴露
+                // 给 AT(单选组,pressed 项即当前排序)。
+                aria-pressed={sort === s}
                 onClick={() => setSort(s)}
                 className={[
                   'rounded px-1.5 py-0.5',
@@ -734,8 +919,15 @@ function RatingRow({
                 target="_blank"
                 rel="noopener noreferrer"
                 className="ml-1 text-accent hover:underline"
+                // a11y(A81,A79 同族):多卡片展开该链接同名,aria-label 注入插件名以区分。
+                aria-label={t('marketplace.card_action_aria', {
+                  action: t('marketplace.reviews.see_all_in_github'),
+                  name: entry.name,
+                })}
               >
-                {t('marketplace.reviews.see_all_in_github')}
+                {/* a11y(A88):视觉 ↗ aria-hidden,可访问名用纯文本 catalog。 */}
+                {t('marketplace.reviews.see_all_in_github')}{' '}
+                <span aria-hidden="true">↗</span>
               </a>
             </div>
           )}
@@ -748,8 +940,13 @@ function RatingRow({
 function ReviewItem({ review: r }: { review: Review }) {
   const t = useT();
   const isMaintainer = MAINTAINERS.has(r.author.handle);
+  // 边界(E270,E253 续 / 信任信号防绕过):author.createdAt 经 E253 校验为 string + 长度,但未保证可解析为
+  // 日期。畸形值(如 "not-a-date")→ getTime() 为 NaN → accountAge 为 NaN → `NaN < NEW_ACCOUNT_MS` 为
+  // false → 新账号 badge 被静默绕过(新账号靠损坏 createdAt 规避风险提示)。**不可解析 = 保守视为新账号**
+  // (未知账龄 = 假定风险,显 badge)。注:不在数据层把畸形 createdAt 兜底成 epoch —— epoch 解析为很旧账号
+  // → 反而绕过 badge,会重新打开本漏洞;故在此 UI 判定处用 Number.isFinite 兜底为"新"。
   const accountAge = Date.now() - new Date(r.author.createdAt).getTime();
-  const isNewAccount = accountAge < NEW_ACCOUNT_MS;
+  const isNewAccount = !Number.isFinite(accountAge) || accountAge < NEW_ACCOUNT_MS;
 
   return (
     <div className="flex gap-2 border-b border-line/50 pb-1.5 last:border-0 last:pb-0">
@@ -775,6 +972,9 @@ function ReviewItem({ review: r }: { review: Review }) {
               className="rounded bg-accent/20 px-1 py-0.5 text-[9px] text-accent"
               title={t('marketplace.reviews.maintainer')}
             >
+              {/* a11y(A92,A88 同族):视觉盾牌 🛡 纯装饰,catalog 已去符号 → aria-hidden;
+                  "维护者"文本已表义。 */}
+              <span aria-hidden="true">🛡</span>{' '}
               {t('marketplace.reviews.maintainer_badge')}
             </span>
           )}
@@ -783,16 +983,37 @@ function ReviewItem({ review: r }: { review: Review }) {
               className="rounded bg-warning/20 px-1 py-0.5 text-[9px] text-warning"
               title={t('marketplace.reviews.new_account_warn', { days: NEW_ACCOUNT_DAYS })}
             >
+              {/* a11y(A91):视觉 ⚠ 纯装饰 → aria-hidden(catalog 已去符号)。 */}
+              <span aria-hidden="true">⚠</span>{' '}
               {t('marketplace.reviews.new_account_badge')}
+              {/* a11y(A91):风险说明此前只在 title(键盘不可 hover、SR 读 title 不可靠)→
+                  视觉隐藏可读文本,让 AT 拿到「账号小于 N 天需谨慎」的完整说明。 */}
+              <span style={SR_ONLY_STYLE}>
+                {' '}
+                {t('marketplace.reviews.new_account_warn', { days: NEW_ACCOUNT_DAYS })}
+              </span>
             </span>
           )}
-          <span className="text-amber-400">{renderStars(r.rating)}</span>
+          <span
+            className="text-amber-400"
+            // a11y(A38,A37 同族 + 镜像聚合评分):星级是纯视觉符号 ★/☆,须给 AT 可访问名,
+            // 否则只听到一串星号。复用聚合评分同款 stars_aria 模式。
+            aria-label={t('marketplace.reviews.stars_aria', {
+              avg: String(r.rating),
+            })}
+          >
+            {renderStars(r.rating)}
+          </span>
           {r.thumbsUp > 0 && (
             <span
               className="text-fg-dim"
               title={t('marketplace.reviews.thumbs_up', { count: r.thumbsUp })}
             >
-              👍 {r.thumbsUp}
+              {/* a11y(A39):👍+数字仅视觉;语义用视觉隐藏的本地化文本给 AT(文本流可读)。 */}
+              <span aria-hidden="true">👍 {r.thumbsUp}</span>
+              <span style={SR_ONLY_STYLE}>
+                {t('marketplace.reviews.thumbs_up', { count: r.thumbsUp })}
+              </span>
             </span>
           )}
           <span className="text-fg-dim">{formatDate(r.createdAt)}</span>
@@ -802,8 +1023,13 @@ function ReviewItem({ review: r }: { review: Review }) {
             rel="noopener noreferrer"
             className="ml-auto text-accent hover:underline"
             title={t('marketplace.reviews.open_in_github')}
+            // a11y(A36):图标-only 链接(仅 ↗)须有可访问名,否则 AT 只读箭头符号。
+            // a11y(A83,A79 同族):多条 review 同名不可区分 → aria-label 注入作者上下文。
+            aria-label={t('marketplace.reviews.open_in_github_by', {
+              author: r.author.handle,
+            })}
           >
-            ↗
+            <span aria-hidden="true">↗</span>
           </a>
         </div>
         <p className="mt-0.5 whitespace-pre-wrap text-fg">{r.body}</p>

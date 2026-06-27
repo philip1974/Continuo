@@ -13,8 +13,7 @@ import { watch, type FSWatcher } from 'node:fs';
 import {
   copyFile,
   mkdir,
-  readFile,
-  readdir,
+  opendir,
   stat,
   unlink,
 } from 'node:fs/promises';
@@ -28,7 +27,18 @@ import {
   type AwaitStopHookOutput,
 } from '../../shared/mcp-terminal-schemas';
 import { ERROR_CODES } from '../../shared/error-codes';
+import { readFileCappedFd } from '../lib/read-fh-capped';
+import { truncateSessionIdForEcho } from '../lib/session-id-echo';
 import type { McpCallCtx, McpToolDef } from './mcp-host.service';
+import { z } from 'zod';
+import { SESSION_ID_MAX } from '../../shared/session-id-limits';
+
+// 边界(E203,mcp-tools-terminal 同族):协议 awaitStopHookInputSchema 的 session_id 仅 min(1) 无上限。
+// 1MB session_id 校验通过后进 broker / Map / 错误回显路径(回显已截断 E151,但运行期仍处理超长 key)。
+// .extend 收窄 session_id 加 .max(SESSION_ID_MAX),保留 timeout_sec/include_raw 的 .default()(z.output 不变)。
+const awaitStopHookBoundedSchema = awaitStopHookInputSchema.extend({
+  session_id: z.string().min(1).max(SESSION_ID_MAX),
+});
 
 export type RunnerKind = 'cc' | 'codex' | 'unknown';
 
@@ -62,6 +72,57 @@ const BROKER_DEFAULTS = {
   maxAgeMs: 600_000,
   cleanupIntervalMs: 60_000,
 } as const;
+
+// 边界(E26,E18/E20/E24 兄弟):stop-hook event 文件来自外部 CLI(claude/codex)写入,内容完全
+// 不可控。ingestFile 此前直接 readFile(.., 'utf8') 整块读入再 JSON.parse,无文件大小上限;解析后的
+// 完整 raw 还被缓冲在 buffered entry(最多 maxEntries=500 条)并在 include_raw 时跨 MCP 传回 client。
+// 畸形 hook 文件或异常 CLI 输出可让主进程整块读入超大 JSON → 内存峰值 + 事件循环长时间阻塞 +
+// buffered 累积放大。ingestFile 在 stat 之后(fileStat 已就绪,零额外 syscall)即按 size 拦截:超限
+// 当作损坏文件隔离(标 processed + unlink),不读不解析不缓冲。该上限同时反向钳住下游 raw /
+// last_assistant_message / include_raw payload 的字节数(全部派生自被钳的 jsonText)。
+const MAX_HOOK_FILE_BYTES = 1024 * 1024; // 1 MiB:stop-hook 是小元数据 JSON,留足余量
+// 边界(E150):buffered 仅按条数(maxEntries=500)淘汰,每条可达 ~1MiB(MAX_HOOK_FILE_BYTES)→
+// main 进程常驻最坏 ~500MiB。加 buffered **总字节预算**:超预算时按 FIFO 淘汰最旧,把常驻内存
+// 钳到 budget(与条数上限取双闸,谁先到先淘汰)。
+const MAX_BUFFERED_BYTES = 16 * 1024 * 1024; // buffered 总字节预算(远超正常元数据量)
+export const FIELD_MAX = 1024; // session_id/turn_id/cwd/transcript_path 标识/路径字段上限
+export const LAST_MSG_MAX = 64 * 1024; // last_assistant_message 正文上限
+
+// 边界(E83,E82/E30 数量上限族):hook 目录文件数上限。maxEntries 只限解析后 buffer、
+// MAX_HOOK_FILE_BYTES 只限单文件大小,目录文件**数量**无界 —— 畸形/堆积的 cc_*/codex_* 文件让
+// start() 初始扫描 + 每轮 cleanupStale 被海量 stat/read/parse/unlink 拖垮(每文件 stat+read+parse+
+// unlink 才是主导开销),主进程 I/O/CPU 被外部目录状态放大。每轮枚举后截断到 N 候选,超限告警 +
+// 留给后续轮继续清理(cleanupStale 周期跑,每轮再削 N)。start 扫描与 cleanupStale 共用。
+const MAX_HOOK_DIR_ENTRIES = 4096;
+
+async function readHookDirCapped(dir: string, max: number): Promise<string[]> {
+  // 边界(E212,E211 同模式):用 opendir 流式枚举,累计到 max 即关闭返回 —— 不用 readdir 一次性把
+  // 堆积/畸形 hook 目录的所有文件名物化进内存(MAX_HOOK_DIR_ENTRIES 只限后续处理,挡不住枚举阶段)。
+  // for await 在 break/完成时自动 close Dir。语义保持:>max 时截断到 max 个 + 告警。
+  let dirHandle;
+  try {
+    dirHandle = await opendir(dir);
+  } catch {
+    return []; // 目录不存在/不可读
+  }
+  const names: string[] = [];
+  let truncated = false;
+  for await (const dirent of dirHandle) {
+    if (names.length >= max) {
+      truncated = true; // 还有第 max+1 项 → 确实超限
+      break;
+    }
+    names.push(dirent.name);
+  }
+  if (truncated) {
+    console.warn(`[hook-broker] dir entries truncated to ${max}: ${dir}`);
+  }
+  // opendir 流式枚举顺序不保证(与旧 readdir 可能不同),而 ingest 顺序决定同 session 多 hook 文件
+  // 谁先入 buffered(首个匹配胜出)。排序使枚举顺序确定(旧 readdir 顺序本是未定义),消除"谁胜出"
+  // 的平台/实现相关性。
+  names.sort();
+  return names;
+}
 
 export function inferRunner(session: TerminalSessionMetaLike): RunnerKind {
   const label = session.agentLabel?.toLowerCase() ?? '';
@@ -101,29 +162,26 @@ export function parseStopPayload(
   }
 
   const r = raw as Record<string, unknown>;
-  const sessionId =
-    typeof r.session_id === 'string' && r.session_id.length > 0
-      ? r.session_id
+  // 边界(E150):各字段长度上限。MAX_HOOK_FILE_BYTES 已把整文件钳到 1MiB,但单字段(尤其
+  // last_assistant_message)仍可接近 1MiB,进 buffered/非 raw MCP 响应/日志放大。标识/路径上限 1024,
+  // 正文上限 64KiB(超出截断;不影响匹配,匹配只看 runner/windowId/cwd 前缀且 cwd 已限长)。
+  const capStr = (v: unknown, max: number): string | null =>
+    typeof v === 'string' && v.length > 0
+      ? v.length > max
+        ? v.slice(0, max)
+        : v
       : null;
+
+  const sessionId = capStr(r.session_id, FIELD_MAX);
   if (sessionId === null) return null;
 
   return {
     runner,
     cliSessionId: sessionId,
-    turnId:
-      typeof r.turn_id === 'string' && r.turn_id.length > 0
-        ? r.turn_id
-        : null,
-    cwd: typeof r.cwd === 'string' && r.cwd.length > 0 ? r.cwd : null,
-    transcriptPath:
-      typeof r.transcript_path === 'string' && r.transcript_path.length > 0
-        ? r.transcript_path
-        : null,
-    lastAssistantMessage:
-      typeof r.last_assistant_message === 'string' &&
-      r.last_assistant_message.length > 0
-        ? r.last_assistant_message
-        : null,
+    turnId: capStr(r.turn_id, FIELD_MAX),
+    cwd: capStr(r.cwd, FIELD_MAX),
+    transcriptPath: capStr(r.transcript_path, FIELD_MAX),
+    lastAssistantMessage: capStr(r.last_assistant_message, LAST_MSG_MAX),
     raw: r,
   };
 }
@@ -133,6 +191,8 @@ interface BufferedEntry {
   readonly payload: NormalizedPayload;
   readonly windowId: number | null;
   readonly ingestedAt: number;
+  /** 边界(E150):该 entry 的源 JSON 字节数,用于 buffered 总字节预算淘汰。 */
+  readonly byteSize: number;
 }
 
 interface PendingWaiter {
@@ -176,17 +236,31 @@ export function createHookFileBroker(
     maxEntries?: number;
     maxAgeMs?: number;
     cleanupIntervalMs?: number;
+    /** 边界(E83):每轮目录枚举候选上限(默认 MAX_HOOK_DIR_ENTRIES);可注入便于测试。 */
+    maxDirEntries?: number;
+    /** 边界(E150):buffered 总字节预算(默认 MAX_BUFFERED_BYTES);可注入便于测试。 */
+    maxBufferedBytes?: number;
   } = {},
 ): HookFileBroker {
   const maxEntries = config.maxEntries ?? BROKER_DEFAULTS.maxEntries;
   const maxAgeMs = config.maxAgeMs ?? BROKER_DEFAULTS.maxAgeMs;
   const cleanupIntervalMs =
     config.cleanupIntervalMs ?? BROKER_DEFAULTS.cleanupIntervalMs;
+  const maxDirEntries = config.maxDirEntries ?? MAX_HOOK_DIR_ENTRIES;
+  const maxBufferedBytes = config.maxBufferedBytes ?? MAX_BUFFERED_BYTES;
 
   let watcher: FSWatcher | null = null;
   let cleanupTimer: NodeJS.Timeout | null = null;
   let started = false;
   let stopped = false;
+  // race(R81):启动代际。start() 在 `await mkdir` 处让权,期间 stop()(stopped=true)或又一次
+  // start() 可能插入;mkdir 返回后据此判定本次启动是否仍当前,过期则不 attach watcher/interval。
+  let startGen = 0;
+  // race(R90):ingest 代际,stop() 时 +1。ingestFile 在 stat/readFile 的 await 处让权,期间
+  // stop()(清空 pending/buffered/processed)甚至 restart 可能发生;迟到的 ingestFile 若继续
+  // processed.set/匹配 pending/buffered.push,会重污染已清空(或新一代)的状态,后续
+  // await_stop_hook 误消费上一代 hook 事件。捕获本次 gen,每个 await 后复查 stopped + gen 未变。
+  let ingestGen = 0;
   // fileName → 处理时刻(ms)。用 Map 而非 Set 以便在 cleanupStale 里按年龄淘汰,
   // 否则长开 app + 频繁 stop-hook(文件名带 ns 时间戳永远唯一)会单调膨胀(审计 P1)。
   const processed = new Map<string, number>();
@@ -194,6 +268,7 @@ export function createHookFileBroker(
   // 与 processed 分离,使读/解析失败的文件不被永久标记,允许写入完成后重试。
   const inFlight = new Set<string>();
   const buffered: BufferedEntry[] = [];
+  let bufferedBytes = 0; // 边界(E150):buffered 当前总字节数(总字节预算淘汰用)
   const pendingByKey = new Map<string, PendingWaiter>();
 
   function matchesFilter(entry: BufferedEntry, filter: AwaitFilter): boolean {
@@ -218,6 +293,8 @@ export function createHookFileBroker(
     const runner = inferRunnerFromFilename(fileName);
     if (runner === null) return;
 
+    // race(R90):捕获本次 ingest 代际,await 后据此丢弃过期(stop/restart 期间发起的)结果。
+    const myGen = ingestGen;
     inFlight.add(fileName);
     try {
       const filePath = path.join(hookEventsDir, fileName);
@@ -227,6 +304,9 @@ export function createHookFileBroker(
       } catch {
         return; // 文件消失/不可读 → 不标 processed,允许后续 watch 事件重试
       }
+      // race(R90):stat 期间若 stop()/restart → 本次已过期,不再写任何共享状态(processed/
+      // unlink/pending/buffered),避免污染已清空或新一代的 broker 状态。
+      if (stopped || myGen !== ingestGen) return;
 
       if (Date.now() - fileStat.mtimeMs > maxAgeMs) {
         processed.set(fileName, Date.now());
@@ -234,12 +314,39 @@ export function createHookFileBroker(
         return;
       }
 
-      let jsonText: string;
-      try {
-        jsonText = await readFile(filePath, 'utf8');
-      } catch {
-        return; // 读失败(可能写入未完成)→ 不标 processed/不 unlink,等下次事件重试
+      // 边界(E26):超大 hook 文件 = 损坏/异常 CLI 输出,绝不整块读入。标 processed + unlink
+      // 隔离(同 maxAge 分支语义:不重试、不留残留),不读不解析不缓冲。fileStat 已就绪,零额外
+      // syscall。该上限反向钳住下游 raw / last_assistant_message / include_raw 字节数。
+      if (fileStat.size > MAX_HOOK_FILE_BYTES) {
+        console.warn(
+          `[hook-broker] dropping oversize hook file ${fileName} (${fileStat.size} bytes > ${MAX_HOOK_FILE_BYTES})`,
+        );
+        processed.set(fileName, Date.now());
+        void unlink(filePath).catch(() => {});
+        return;
       }
+
+      // 边界(E162,stat-before-read TOCTOU 修正):上面的 fileStat.size 仅作早期快速丢弃;stat 与
+      // 读取之间 hook JSON 可被替换/增长绕过 MAX_HOOK_FILE_BYTES,故实际读取用共享 readFileCappedFd
+      // (单 fd open→fstat 同 inode→有界读),size 上限在读取的同一 fd 上权威生效。too-large 按既有
+      // 语义 processed + unlink 隔离(不重试);读失败仍 return 保留重试。
+      let read: Awaited<ReturnType<typeof readFileCappedFd>>;
+      try {
+        read = await readFileCappedFd(filePath, MAX_HOOK_FILE_BYTES);
+      } catch {
+        return; // 读失败/文件消失(写入未完成)→ 不标 processed/不 unlink,等下次事件重试
+      }
+      // race(R90):读取期间若 stop()/restart → 丢弃,不写共享状态(同上)。
+      if (stopped || myGen !== ingestGen) return;
+      if (read.tooLarge) {
+        console.warn(
+          `[hook-broker] dropping oversize hook file ${fileName} (${read.size} bytes > ${MAX_HOOK_FILE_BYTES})`,
+        );
+        processed.set(fileName, Date.now());
+        void unlink(filePath).catch(() => {});
+        return;
+      }
+      const jsonText = read.text as string; // tooLarge=false 时必为 string
 
       const payload = parseStopPayload(runner, fileName, jsonText);
       if (payload === null) {
@@ -258,6 +365,7 @@ export function createHookFileBroker(
         payload,
         windowId: parseFilenameForWindowId(fileName),
         ingestedAt: Date.now(),
+        byteSize: Buffer.byteLength(jsonText, 'utf8'),
       };
 
       for (const [key, pending] of pendingByKey) {
@@ -271,9 +379,16 @@ export function createHookFileBroker(
       }
 
       buffered.push(entry);
-      if (buffered.length > maxEntries) {
+      bufferedBytes += entry.byteSize;
+      // 边界(E150):双闸淘汰 —— 条数超 maxEntries 或总字节超 MAX_BUFFERED_BYTES,FIFO 淘汰最旧,
+      // 把 buffered 常驻内存钳到预算(防 500×1MiB ≈ 500MiB)。至少保留 1 条(刚 push 的)。
+      while (
+        buffered.length > 1 &&
+        (buffered.length > maxEntries || bufferedBytes > maxBufferedBytes)
+      ) {
         const dropped = buffered.shift();
         if (dropped !== undefined) {
+          bufferedBytes -= dropped.byteSize;
           void unlink(path.join(hookEventsDir, dropped.fileName)).catch(() => {});
         }
       }
@@ -289,6 +404,7 @@ export function createHookFileBroker(
       if (entry !== undefined && now - entry.ingestedAt > maxAgeMs) {
         const stale = buffered.splice(i, 1)[0];
         if (stale !== undefined) {
+          bufferedBytes -= stale.byteSize; // 边界(E150):同步 buffered 字节计数
           void unlink(path.join(hookEventsDir, stale.fileName)).catch(() => {});
         }
       }
@@ -304,7 +420,7 @@ export function createHookFileBroker(
     // 中的文件跳过(前者等消费、后者正处理)。这是"不在解析失败时立即 unlink"的
     // 兜底,避免长会话里此类文件累积。
     try {
-      const names = await readdir(hookEventsDir);
+      const names = await readHookDirCapped(hookEventsDir, maxDirEntries); // 边界(E83):有界枚举
       for (const name of names) {
         if (inferRunnerFromFilename(name) === null) continue;
         if (inFlight.has(name)) continue;
@@ -331,16 +447,19 @@ export function createHookFileBroker(
       if (started) return;
       started = true;
       stopped = false;
+      const myGen = ++startGen;
       await mkdir(hookEventsDir, { recursive: true });
-      try {
-        const entries = await readdir(hookEventsDir);
-        for (const name of entries) {
-          await ingestFile(name);
-        }
-      } catch {
-        // Ignore startup directory races; watcher handles later files.
-      }
+      // race(R81):mkdir 期间若 stop()(stopped=true)或又一次 start()(startGen 前进)插入,本次
+      // 是过期启动 → 直接返回,不 attach watcher/interval。否则 broker 已停却"复活":watcher +
+      // cleanupTimer 泄漏(stop 已跑过、不会再清),且 stopped 态与实际资源不一致,后续 hook 文件
+      // 仍被 ingest。started/stopped 已由插入的 stop()/start() 维护,此处只负责不接资源。
+      if (stopped || myGen !== startGen) return;
 
+      // race(R3):必须先 attach watcher 再做存量扫描。此前顺序相反(先 readdir 扫描、再 watch),
+      // 扫描完成与 watcher 注册之间写入的 stop-hook 事件文件既不在初始扫描里、也不触发 watcher
+      // → 永久漏事件,terminal.await_stop_hook 假超时。现在:watcher 先就位捕获扫描期间/之后的
+      // 新文件,readdir 再补扫 watch 前已存在的文件;两者重叠的文件由 ingestFile 经
+      // processed/inFlight 去重(幂等),无双 ingest。
       watcher = watch(
         hookEventsDir,
         { persistent: false, encoding: 'utf8' },
@@ -351,6 +470,34 @@ export function createHookFileBroker(
         },
       );
       watcher.on('error', () => {});
+      const myWatcher = watcher; // race(R108):捕获本次 start 创建的 watcher,供过期时清理
+
+      try {
+        const entries = await readHookDirCapped(hookEventsDir, maxDirEntries); // 边界(E83):有界枚举
+        for (const name of entries) {
+          await ingestFile(name);
+        }
+      } catch {
+        // Ignore startup directory races; watcher handles later files.
+      }
+
+      // race(R108,R81/R90 同族):初始 readdir/ingestFile 扫描在 await 处让权,期间 stop()
+      // (stopped=true)或又一次 start()(startGen 前进)可能插入。此时本次已过期 → 绝不创建
+      // cleanupTimer:否则 stop() 当时看不到尚未创建的 timer、清不掉,迟到的 setInterval 泄漏,
+      // 甚至在 broker 已停/重启后继续跑 stale cleanupStale 污染新生命周期;新 start 情况下还会
+      // 用旧 timer 引用覆盖新 start 的 cleanupTimer(新 timer 引用丢失、stop 清不到)。同时关掉
+      // 本次创建的 watcher 防孤儿泄漏:stop() 情况它已被关+置 null(close 幂等);新 start 覆盖了
+      // 模块 watcher 引用时,只关我们这只孤儿、不动当前 ref。
+      if (stopped || myGen !== startGen) {
+        try {
+          myWatcher.close();
+        } catch {
+          /* close 幂等 */
+        }
+        if (watcher === myWatcher) watcher = null;
+        return;
+      }
+
       cleanupTimer = setInterval(() => void cleanupStale(), cleanupIntervalMs);
     },
     awaitNext(filter) {
@@ -377,6 +524,7 @@ export function createHookFileBroker(
           const hit = buffered[i];
           if (hit !== undefined && matchesFilter(hit, filter)) {
             buffered.splice(i, 1);
+            bufferedBytes -= hit.byteSize; // 边界(E150):同步 buffered 字节计数
             void unlink(path.join(hookEventsDir, hit.fileName)).catch(() => {});
             resolve(hit);
             return;
@@ -414,6 +562,7 @@ export function createHookFileBroker(
     async stop() {
       stopped = true;
       started = false;
+      ingestGen += 1; // race(R90):invalidate 在途 ingestFile,迟到结果不再污染已清空状态
       if (watcher !== null) {
         try {
           watcher.close();
@@ -432,6 +581,7 @@ export function createHookFileBroker(
       }
       pendingByKey.clear();
       buffered.length = 0;
+      bufferedBytes = 0; // 边界(E150):同步 buffered 字节计数
       processed.clear();
     },
   };
@@ -442,10 +592,42 @@ type InstallStopHookResult = {
   readonly reason?:
     | 'already-installed'
     | 'parse-error'
+    | 'read-error'
+    | 'config-too-large'
     | 'unknown-runner'
     | 'no-cwd'
     | 'unrecognized-existing-stop-hook';
 };
+
+// 边界(E66,E26 同款 / E18 stat-before-read 族):安装 stop-hook 时要读用户工作区的配置文件
+// (.claude/settings.local.json / .codex/config.toml)—— 这是工作区外部输入。此前两处直接
+// readFile(.., 'utf8') 整块读入,无大小上限:畸形/超大配置会让 main 进程在装 hook 时内存/CPU
+// 峰值,.codex/config.toml 还会让 regex/replace 在超大文本上跑并构造更大的写入串。共用 capped-read
+// helper:先 stat.size 拦,超限不进 parse/regex/atomicWrite。E26 已给 ingestFile 的 hook 输出文件
+// 加过同款 cap,这两处配置读入是其平行入口。
+const MAX_CONFIG_FILE_BYTES = 1024 * 1024; // 1 MiB:stop-hook 配置是小文本,留足余量
+
+type CappedConfigRead =
+  | { readonly kind: 'ok'; readonly text: string }
+  | { readonly kind: 'missing' } // ENOENT → 新建
+  | { readonly kind: 'too-large' }
+  | { readonly kind: 'read-error' };
+
+// 边界(E162,E66 stat-before-read TOCTOU 修正):此前 `stat(path).size` 预检 + `readFile(path)` 两次
+// 独立路径解析,检查与读取之间配置可被替换/增长绕过 MAX_CONFIG_FILE_BYTES。改用共享 readFileCappedFd
+// (单 fd open→fstat 同 inode→有界读)。语义保持:open ENOENT→missing(新建);其他 open 错误→
+// read-error(不能当空配置→见两 merge 函数的「读失败当空→写覆盖」注释);too-large→too-large。
+async function readConfigCapped(filePath: string): Promise<CappedConfigRead> {
+  let read: Awaited<ReturnType<typeof readFileCappedFd>>;
+  try {
+    read = await readFileCappedFd(filePath, MAX_CONFIG_FILE_BYTES);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { kind: 'missing' };
+    return { kind: 'read-error' };
+  }
+  if (read.tooLarge) return { kind: 'too-large' };
+  return { kind: 'ok', text: read.text as string };
+}
 
 export async function installStopHookForSession(
   cwd: string,
@@ -468,20 +650,27 @@ async function mergeClaudeCodeSettings(
   let existing: Record<string, unknown> = {};
   let fileExists = false;
 
-  try {
-    const text = await readFile(settingsPath, 'utf8');
+  // 边界(E66):stat.size 预检的 capped-read。too-large/read-error 直接 fail-fast,不进
+  // JSON.parse / atomicWrite。read-error 同既有「读失败当空→写覆盖」族:不能当空配置覆盖。
+  const read = await readConfigCapped(settingsPath);
+  if (read.kind === 'too-large') {
+    return { installed: false, reason: 'config-too-large' };
+  }
+  if (read.kind === 'read-error') {
+    return { installed: false, reason: 'read-error' };
+  }
+  if (read.kind === 'ok') {
     fileExists = true;
     try {
-      const parsed = JSON.parse(text) as unknown;
+      const parsed = JSON.parse(read.text) as unknown;
       if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
         existing = parsed as Record<string, unknown>;
       }
     } catch {
       return { installed: false, reason: 'parse-error' };
     }
-  } catch {
-    // file missing, create new
   }
+  // kind === 'missing' → fileExists 保持 false,新建
 
   const hooks =
     existing.hooks !== null &&
@@ -536,19 +725,34 @@ async function mergeCodexConfig(
   const configPath = path.join(cwd, '.codex', 'config.toml');
   let text = '';
   let fileExists = false;
-  try {
-    text = await readFile(configPath, 'utf8');
-    fileExists = true;
-  } catch {
-    // file missing, create new
+  // 边界(E66,同 mergeClaudeCodeSettings):stat.size 预检的 capped-read,超大不进 regex/
+  // replace/atomicWrite(超大文本上跑正则 + 构造更大写入串)。read-error 不当空配置覆盖。
+  const read = await readConfigCapped(configPath);
+  if (read.kind === 'too-large') {
+    return { installed: false, reason: 'config-too-large' };
   }
+  if (read.kind === 'read-error') {
+    return { installed: false, reason: 'read-error' };
+  }
+  if (read.kind === 'ok') {
+    text = read.text;
+    fileExists = true;
+  }
+  // kind === 'missing' → text 保持 '',新建
 
   if (/\[\[hooks\.Stop\]\][\s\S]*?command\s*=\s*'''/.test(text)) {
     return { installed: false, reason: 'unrecognized-existing-stop-hook' };
   }
 
+  // 转义感知 quoted-string:command 经 JSON.stringify 含 \" 转义,`"[^"]*"` 会在第一个
+  // \" 处截断(codex P1)。用 "(?:\\.|[^"\\])*" 正确跨越转义引号。
+  // 块边界:managed marker 到 command 之间不得跨入**下一个** [[hooks.Stop]](否则
+  // managed 块缺/坏 command 时会一路匹配到用户自有 Stop 的 command,误替/写坏 config —
+  // README I6 契约,codex P1)。兼容两种格式:marker 在 Stop 块前(生产 mergeCodexConfig)
+  // 用 `(?:\[\[hooks\.Stop\]\]\s*)?` 吞掉 managed 自身的 Stop 头;marker 在块内(I6 测试)
+  // 时该可选段缺省。其后 `(?!\[\[hooks\.Stop\]\])` 禁止跨入下一段。转义引号见上注。
   const managedStopPattern =
-    /# continuo-managed[\s\S]*?command\s*=\s*"([^"]*)"/;
+    /# continuo-managed\s*(?:\[\[hooks\.Stop\]\]\s*)?(?:(?!\[\[hooks\.Stop\]\])[\s\S])*?command\s*=\s*"(?:\\.|[^"\\])*"/;
   const managedStop = managedStopPattern.exec(text);
   if (managedStop !== null) {
     if (text.includes(hookEventsDir)) {
@@ -587,8 +791,14 @@ async function replaceManagedCodexStopHook(
     `mkdir -p "${hookEventsDir}" && ` +
     `cat > "\${CONTINUO_HOOK_EVENTS_DIR:-${hookEventsDir}}/` +
     'codex_${CONTINUO_WINDOW_ID:-unknown}_$(date +%s%N).jsonl"';
+  // 转义感知 quoted-string(见 mergeCodexConfig 注释):command 含 JSON 转义引号 \",
+  // `"[^"]*"` 只匹配到第一个 \" 即截断,替换后旧 command 尾巴残留 → 损坏 .codex/config.toml
+  // (codex P1)。`"(?:\\.|[^"\\])*"` 跨越转义引号完整匹配整个 command 字符串。
+  // 块边界(见 mergeCodexConfig managedStopPattern 注释):不跨入下一个 [[hooks.Stop]],
+  // 兼容 marker 在块前/块内两种格式。managed 块缺/坏 command 时不匹配 → 返回 unrecognized
+  // (下方 next===text),绝不误替用户自有 Stop 的 command。
   const next = text.replace(
-    /(# continuo-managed[\s\S]*?command\s*=\s*)"[^"]*"/,
+    /(# continuo-managed\s*(?:\[\[hooks\.Stop\]\]\s*)?(?:(?!\[\[hooks\.Stop\]\])[\s\S])*?command\s*=\s*)"(?:\\.|[^"\\])*"/,
     `$1${JSON.stringify(command)}`,
   );
   if (next === text) {
@@ -619,7 +829,8 @@ export function createAwaitStopHookTool(
     jsonSchema: {
       type: 'object',
       properties: {
-        session_id: { type: 'string', minLength: 1 },
+        // 边界(E204,E203 advertised 对偶):公开 jsonSchema 同步 inputSchema 的 .max(SESSION_ID_MAX)。
+        session_id: { type: 'string', minLength: 1, maxLength: SESSION_ID_MAX },
         timeout_sec: { type: 'integer', minimum: 1, maximum: 600 },
         include_raw: { type: 'boolean' },
       },
@@ -628,12 +839,16 @@ export function createAwaitStopHookTool(
     },
     // 可维护性 M18:McpToolDef.inputSchema 已放宽接受 z.input≠z.output 的 schema
     //(awaitStopHookInputSchema 带 .default()),直接赋值,不再 `as unknown` 强转。
-    inputSchema: awaitStopHookInputSchema,
+    // 边界(E203):用 session_id 加上限的 bounded 版(.default() 字段不变)。
+    inputSchema: awaitStopHookBoundedSchema,
     run: async (input, ctx) => {
+      // 边界(E151,E148 兄弟入口):session_id 仅 minLength,not-found/unknown-runner 错误
+      // 不可原样回显超长原串(放大 JSON-RPC error/日志/内存)→ 复用共享截断 helper。
+      const echoId = truncateSessionIdForEcho(input.session_id);
       const meta = deps.getSessionMeta(input.session_id, ctx);
       if (meta === null) {
         throw Object.assign(
-          new Error(`terminal session not found: ${input.session_id}`),
+          new Error(`terminal session not found: ${echoId}`),
           { code: ERROR_CODES.TERMINAL_SESSION_NOT_FOUND },
         );
       }
@@ -642,7 +857,7 @@ export function createAwaitStopHookTool(
       if (runner === 'unknown') {
         throw Object.assign(
           new Error(
-            `unknown runner for session ${input.session_id}; cannot await stop hook`,
+            `unknown runner for session ${echoId}; cannot await stop hook`,
           ),
           { code: ERROR_CODES.TERMINAL_SESSION_NOT_FOUND },
         );

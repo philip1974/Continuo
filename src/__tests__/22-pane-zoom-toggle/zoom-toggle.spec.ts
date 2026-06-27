@@ -334,14 +334,70 @@ describe('onDidMaximizedGroupChange focus dispatch (T6 / T6c)', () => {
 // T7b — sanitize layout (delegated to existing DockShell sanitize fn)
 // ────────────────────────────────────────────────────────────
 
-describe('sanitizePersistedDockLayout terminal layout dropped (T7b)', () => {
-  it('snapshot 含 terminal panel → sanitize 返回 null', async () => {
+describe('sanitizePersistedDockLayout terminal layout stripped (T7b)', () => {
+  it('snapshot 含 terminal panel → 剥离终端,保留 editor 布局(不再整体弃用/不报错)', async () => {
     const { sanitizePersistedDockLayout } = await import('@/shell/dock/DockShell');
     const snapshot = {
-      panels: {
-        'terminal-1': { contentComponent: 'terminal' },
-        editor: { contentComponent: 'editor' },
+      grid: {
+        root: {
+          type: 'branch',
+          data: [
+            {
+              type: 'leaf',
+              data: { views: ['editor', 'terminal-1'], activeView: 'terminal-1', id: '1' },
+              size: 700,
+            },
+            {
+              type: 'leaf',
+              data: { views: ['terminal-2'], activeView: 'terminal-2', id: '2' },
+              size: 700,
+            },
+          ],
+          size: 800,
+        },
+        width: 1400,
+        height: 800,
+        orientation: 'HORIZONTAL',
       },
+      panels: {
+        editor: { contentComponent: 'editor' },
+        'terminal-1': { contentComponent: 'terminal' },
+        'terminal-2': { contentComponent: 'terminal' },
+      },
+      activeGroup: '2', // 指向只含终端的 group → 应被回退清除
+    };
+    const out = sanitizePersistedDockLayout(snapshot) as {
+      panels: Record<string, unknown>;
+      grid: { root: { data: Array<{ data: { views: string[]; activeView?: string } }> } };
+      activeGroup?: string;
+    };
+    expect(out).not.toBeNull();
+    // 终端 panel 被剥离,editor 保留
+    expect(Object.keys(out.panels)).toEqual(['editor']);
+    // 只含终端的 group "2" 被摘除 → root 仅剩 1 个 leaf
+    expect(out.grid.root.data).toHaveLength(1);
+    const leaf = out.grid.root.data[0].data;
+    expect(leaf.views).toEqual(['editor']);
+    // activeView 原指向 terminal-1 → 回退到 editor
+    expect(leaf.activeView).toBe('editor');
+    // 悬空 activeGroup("2" 已摘除)被清除
+    expect(out.activeGroup).toBeUndefined();
+  });
+
+  it('snapshot 仅含 terminal panel(无非终端残留)→ 返回 null(走默认)', async () => {
+    const { sanitizePersistedDockLayout } = await import('@/shell/dock/DockShell');
+    const snapshot = {
+      grid: {
+        root: {
+          type: 'branch',
+          data: [{ type: 'leaf', data: { views: ['terminal-1'], id: '1' }, size: 800 }],
+          size: 800,
+        },
+        width: 1400,
+        height: 800,
+        orientation: 'HORIZONTAL',
+      },
+      panels: { 'terminal-1': { contentComponent: 'terminal' } },
     };
     expect(sanitizePersistedDockLayout(snapshot)).toBeNull();
   });
@@ -354,6 +410,23 @@ describe('sanitizePersistedDockLayout terminal layout dropped (T7b)', () => {
         explorer: { contentComponent: 'explorer' },
       },
     };
+    expect(sanitizePersistedDockLayout(snapshot)).toBe(snapshot);
+  });
+
+  // 边界(E217,E197/E199 有界迭代族 + E215 同族):panel 数超 MAX_LAYOUT_PANELS(256)→ 丢弃 layout
+  // 返 null(走默认布局)。畸形 layout 即便在 2MiB 字节上限内仍可塞海量短 panel key。
+  it('E217 panel 数超 MAX_LAYOUT_PANELS(256)→ sanitize 返回 null(丢弃走默认)', async () => {
+    const { sanitizePersistedDockLayout } = await import('@/shell/dock/DockShell');
+    const panels: Record<string, { contentComponent: string }> = {};
+    for (let i = 0; i < 300; i++) panels[`p${i}`] = { contentComponent: 'editor' }; // 300 > 256
+    expect(sanitizePersistedDockLayout({ panels })).toBeNull();
+  });
+
+  it('E217 panel 数在上限内(非终端)→ 不改变(回归)', async () => {
+    const { sanitizePersistedDockLayout } = await import('@/shell/dock/DockShell');
+    const panels: Record<string, { contentComponent: string }> = {};
+    for (let i = 0; i < 200; i++) panels[`p${i}`] = { contentComponent: 'editor' }; // 200 < 256
+    const snapshot = { panels };
     expect(sanitizePersistedDockLayout(snapshot)).toBe(snapshot);
   });
 });

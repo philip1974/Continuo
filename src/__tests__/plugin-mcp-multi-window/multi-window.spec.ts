@@ -397,5 +397,66 @@ describe('notifyToolsChanged · 钩子触发时机', () => {
   });
 });
 
+// ────────────────────────────────────────────────────────────
+// 边界(E79):注册 tool 数量上限(per-wc + 全局),防海量注册撑爆 main + 广播放大
+// ────────────────────────────────────────────────────────────
+
+describe('handleRegister · 数量上限(E79)', () => {
+  it('单 wc 超 256 tool → 抛 TOO_MANY_TOOLS,host.registerTool 不再调', () => {
+    const { bridge, host } = makeBridge();
+    for (let i = 0; i < 256; i += 1) {
+      bridge.handleRegister(11, regPayload(`t${i}`));
+    }
+    expect(host.tools.size).toBe(256);
+    let thrown: unknown;
+    try {
+      bridge.handleRegister(11, regPayload('overflow'));
+    } catch (e) {
+      thrown = e;
+    }
+    expect((thrown as { code?: string }).code).toBe(
+      PLUGIN_MCP_ERROR_CODES.TOO_MANY_TOOLS,
+    );
+    expect(host.tools.size).toBe(256); // 未注册第 257 个
+  });
+
+  it('unregister 释放 per-wc 名额 → 可再注册', () => {
+    const { bridge } = makeBridge();
+    for (let i = 0; i < 256; i += 1) {
+      bridge.handleRegister(11, regPayload(`t${i}`));
+    }
+    bridge.handleUnregister(11, 't0'); // 腾 1 个
+    expect(() => bridge.handleRegister(11, regPayload('again'))).not.toThrow();
+  });
+
+  it('wcGone 释放整 wc 名额 → 可再注册', () => {
+    const { bridge } = makeBridge();
+    for (let i = 0; i < 256; i += 1) {
+      bridge.handleRegister(11, regPayload(`t${i}`));
+    }
+    bridge.handleWebContentsGone(11); // 整 wc 清空
+    expect(() => bridge.handleRegister(11, regPayload('fresh'))).not.toThrow();
+  });
+
+  it('全局超 2048 tool(跨多 wc)→ 抛 TOO_MANY_TOOLS', () => {
+    const { bridge } = makeBridge();
+    // 8 wc × 256 = 2048 填满全局上限(每 wc 不超 per-wc 上限)
+    for (let w = 0; w < 8; w += 1) {
+      for (let i = 0; i < 256; i += 1) {
+        bridge.handleRegister(w, regPayload(`w${w}_t${i}`));
+      }
+    }
+    let thrown: unknown;
+    try {
+      bridge.handleRegister(99, regPayload('global-overflow'));
+    } catch (e) {
+      thrown = e;
+    }
+    expect((thrown as { code?: string }).code).toBe(
+      PLUGIN_MCP_ERROR_CODES.TOO_MANY_TOOLS,
+    );
+  });
+});
+
 // 让 vi 被 import,免 lint 抱怨
 void vi;
