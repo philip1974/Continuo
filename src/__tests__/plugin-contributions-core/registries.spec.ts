@@ -366,6 +366,35 @@ describe('StatusBarRegistry', () => {
     expect(r.getBySide('right').map((x) => x.id)).toEqual(['a', 'b', 'c']);
   });
 
+  it('重复读取同一快照时复用排序结果,register/dispose 后失效重建', () => {
+    const r = new StatusBarRegistry();
+    const d = r.register({ id: 'b', side: 'right', priority: 20, render: () => null });
+    r.register({ id: 'a', side: 'right', priority: 10, render: () => null });
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      expect(r.getBySide('right').map((x) => x.id)).toEqual(['a', 'b']);
+      expect(sortSpy).toHaveBeenCalledTimes(1);
+      expect(r.getBySide('right').map((x) => x.id)).toEqual(['a', 'b']);
+      expect(sortSpy).toHaveBeenCalledTimes(1);
+
+      expect(r.getAll().map((x) => x.id)).toEqual(['a', 'b']);
+      expect(sortSpy).toHaveBeenCalledTimes(2);
+      expect(r.getAll().map((x) => x.id)).toEqual(['a', 'b']);
+      expect(sortSpy).toHaveBeenCalledTimes(2);
+
+      r.register({ id: 'c', side: 'right', priority: 5, render: () => null });
+      expect(r.getBySide('right').map((x) => x.id)).toEqual(['c', 'a', 'b']);
+      expect(sortSpy).toHaveBeenCalledTimes(3);
+
+      d.dispose();
+      expect(r.getBySide('right').map((x) => x.id)).toEqual(['c', 'a']);
+      expect(sortSpy).toHaveBeenCalledTimes(4);
+    } finally {
+      sortSpy.mockRestore();
+    }
+  });
+
   it('getBySide 不先 Array.from(values) 物化全部条目', () => {
     const r = new StatusBarRegistry();
     r.register({ id: 'left', side: 'left', render: () => null });

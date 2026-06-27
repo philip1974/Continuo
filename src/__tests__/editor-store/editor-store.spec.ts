@@ -437,6 +437,28 @@ describe('getStateAfterRemovingPath', () => {
     // POSIX:/repo/Dir ≠ /repo/dir → 不匹配 → tab 不关(状态不变)
     expect(r.tabs).toBe(tabs);
   });
+
+  it('删除路径命中时单次分类 tabs,不再 tabs.filter 生成 remaining', () => {
+    const tabs = [
+      makeTab({ id: '/x/a.md', filePath: '/x/a.md' }),
+      makeTab({ id: '/x/b.md', filePath: '/x/b.md', dirty: true }),
+      makeTab({ id: '/y/c.md', filePath: '/y/c.md' }),
+    ];
+    const filterSpy = vi.spyOn(Array.prototype, 'filter');
+
+    try {
+      const r = getStateAfterRemovingPath(tabs, '/x/a.md', '/x');
+      const filterCallsOnTabs = filterSpy.mock.contexts.filter(
+        (ctx) => ctx === tabs,
+      ).length;
+
+      expect(filterCallsOnTabs).toBe(0);
+      expect(r.tabs.map((t) => t.id)).toEqual(['/x/b.md', '/y/c.md']);
+      expect(r.activeTabId).toBe('/x/b.md');
+    } finally {
+      filterSpy.mockRestore();
+    }
+  });
 });
 
 // ────────────────────────────────────────────────────────────
@@ -552,6 +574,35 @@ describe('getStateAfterRenamingPath', () => {
       'C:\\y',
     );
     expect(r.tabs[0]?.id).toBe('C:\\y\\a.md');
+  });
+
+  it('rename 命中时不通过 tabs.map 生成整组中间数组', () => {
+    const tabs = [
+      makeTab({ id: '/x/foo/a.md', filePath: '/x/foo/a.md' }),
+      makeTab({ id: '/x/foo/b.md', filePath: '/x/foo/b.md' }),
+      makeTab({ id: '/y/c.md', filePath: '/y/c.md' }),
+    ];
+    const mapSpy = vi.spyOn(Array.prototype, 'map');
+
+    try {
+      const r = getStateAfterRenamingPath(
+        tabs,
+        '/x/foo/b.md',
+        '/x/foo',
+        '/x/bar',
+      );
+      const mapCallsOnTabs = mapSpy.mock.contexts.filter(
+        (ctx) => ctx === tabs,
+      ).length;
+
+      expect(mapCallsOnTabs).toBe(0);
+      expect(r.tabs[0]?.id).toBe('/x/bar/a.md');
+      expect(r.tabs[1]?.id).toBe('/x/bar/b.md');
+      expect(r.tabs[2]?.id).toBe('/y/c.md');
+      expect(r.activeTabId).toBe('/x/bar/b.md');
+    } finally {
+      mapSpy.mockRestore();
+    }
   });
 });
 
@@ -995,6 +1046,23 @@ describe('getStateAfterClosingTab', () => {
     const r = getStateAfterClosingTab(tabs, '/a', '/missing');
     expect(r.tabs).toBe(tabs);
     expect(r.activeTabId).toBe('/a');
+  });
+
+  it('关命中的 tab 不通过 tabs.filter 二次扫描生成 remaining', () => {
+    const filterSpy = vi.spyOn(Array.prototype, 'filter');
+
+    try {
+      const r = getStateAfterClosingTab(tabs, '/b', '/b');
+      const filterCallsOnTabs = filterSpy.mock.contexts.filter(
+        (ctx) => ctx === tabs,
+      ).length;
+
+      expect(filterCallsOnTabs).toBe(0);
+      expect(r.tabs.map((t) => t.id)).toEqual(['/a', '/c']);
+      expect(r.activeTabId).toBe('/c');
+    } finally {
+      filterSpy.mockRestore();
+    }
   });
 });
 

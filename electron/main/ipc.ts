@@ -8,6 +8,8 @@ import {
   ensureWindowEntry,
   loadExplorer,
   mergeWritableIntoFull,
+  type ExplorerPayloadV3,
+  type ExplorerWritablePayload,
 } from './persistence';
 import { defaultIsTrustedFrame, safeHandle, safeHandleWithCtx } from './safe-handle';
 import { atomicWriteJson } from './lib/atomic-write';
@@ -42,6 +44,51 @@ import { getStdioConfig } from './services/mcp-stdio-config.service';
 
 // layout:read 入参为空(renderer ipcRenderer.invoke 不传第二参 → undefined)
 const NoInput = z.undefined();
+
+export function filterWritableSnapshotForWindowSeq(
+  writable: ExplorerWritablePayload,
+  seq: number,
+): ExplorerWritablePayload {
+  let ownWindows: ExplorerWritablePayload['windows'] | null = null;
+
+  for (let i = 0; i < writable.windows.length; i++) {
+    const w = writable.windows[i]!;
+    if (w.windowSeq !== seq) {
+      if (ownWindows === null) {
+        ownWindows = [];
+        for (let j = 0; j < i; j++) ownWindows.push(writable.windows[j]!);
+      }
+      continue;
+    }
+    if (ownWindows !== null) ownWindows.push(w);
+  }
+
+  return ownWindows === null ? writable : { ...writable, windows: ownWindows };
+}
+
+export function sanitizeExplorerReadPayload(
+  payload: ExplorerPayloadV3,
+): ExplorerPayloadV3 {
+  let windows: ExplorerPayloadV3['windows'] | null = null;
+
+  for (let i = 0; i < payload.windows.length; i++) {
+    const w = payload.windows[i]!;
+    if (w.layout == null || sanitizeReadLayout(w.layout) !== null) {
+      if (windows !== null) windows.push(w);
+      continue;
+    }
+
+    if (windows === null) {
+      windows = [];
+      for (let j = 0; j < i; j++) windows.push(payload.windows[j]!);
+    }
+    const rest = { ...w };
+    delete rest.layout; // 超大/非 JSON-safe layout → 剥离
+    windows.push(rest);
+  }
+
+  return windows === null ? payload : { ...payload, windows };
+}
 
 // 边界(E89/E215):单窗口 dockview layout 序列化字节上限 + 读端守卫,收口到 lib/layout-read-guard
 //(写端 layout:write 与读端 layout:read 共用;ipc.ts 顶层 app 副作用不可测试导入,故抽出可导入模块)。
@@ -160,16 +207,7 @@ export function registerIpc(): { pluginFsHandles: PluginFsIpcHandles } {
       // 可携带接近 16MiB 文件上限的超大 layout 经 LayoutSchema.passthrough() 绕过 layout 读 cap,使 renderer
       // 启动 hydrate 无谓 structured-clone/传输巨大 layout 卡顿/内存峰值。返回前对每个 window.layout 复用
       // 同一读端守卫:超限/非 JSON-safe → 剥离该 layout(renderer 走默认布局),合法则原样保留。
-      return {
-        ...payload,
-        windows: payload.windows.map((w) => {
-          if (w.layout == null) return w;
-          if (sanitizeReadLayout(w.layout) !== null) return w; // 合法,原样保留
-          const rest = { ...w };
-          delete rest.layout; // 超大/非 JSON-safe layout → 剥离
-          return rest;
-        }),
-      };
+      return sanitizeExplorerReadPayload(payload);
     },
     trusted,
   );
@@ -195,10 +233,7 @@ export function registerIpc(): { pluginFsHandles: PluginFsIpcHandles } {
           code: ERROR_CODES.NO_WINDOW_SEQ,
         });
       }
-      const ownOnly = {
-        ...writable,
-        windows: writable.windows.filter((w) => w.windowSeq === seq),
-      };
+      const ownOnly = filterWritableSnapshotForWindowSeq(writable, seq);
       await withExplorerFileMutex(async () => {
         const current = await loadExplorer(explorerFile);
         const merged = mergeWritableIntoFull(current, ownOnly);

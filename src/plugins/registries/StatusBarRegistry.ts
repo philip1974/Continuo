@@ -48,6 +48,9 @@ function validateStatusBarItemSpec(spec: StatusBarItemSpec): void {
 export class StatusBarRegistry {
   private items = new Map<string, StatusBarItemSpec>();
   private listeners = new Set<Listener>();
+  private cachedAll: readonly StatusBarItemSpec[] | null = null;
+  private cachedLeft: readonly StatusBarItemSpec[] | null = null;
+  private cachedRight: readonly StatusBarItemSpec[] | null = null;
 
   register(spec: StatusBarItemSpec): Disposable {
     validateStatusBarItemSpec(spec); // 边界(E50):注册前校验 id 长度/side 枚举/priority finite/render 为函数
@@ -59,6 +62,7 @@ export class StatusBarRegistry {
       );
     }
     this.items.set(spec.id, spec);
+    this.invalidateSnapshotCache();
     this.notify();
 
     let disposed = false;
@@ -68,6 +72,7 @@ export class StatusBarRegistry {
         disposed = true;
         if (this.items.get(spec.id) === spec) {
           this.items.delete(spec.id);
+          this.invalidateSnapshotCache();
           this.notify();
         }
       },
@@ -75,6 +80,9 @@ export class StatusBarRegistry {
   }
 
   getBySide(side: 'left' | 'right'): readonly StatusBarItemSpec[] {
+    const cached = side === 'left' ? this.cachedLeft : this.cachedRight;
+    if (cached !== null) return cached;
+
     const items: StatusBarItemSpec[] = [];
     for (const item of this.items.values()) {
       if (item.side === side) {
@@ -82,13 +90,19 @@ export class StatusBarRegistry {
       }
     }
     items.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
+    if (side === 'left') this.cachedLeft = items;
+    else this.cachedRight = items;
     return items;
   }
 
   getAll(): readonly StatusBarItemSpec[] {
-    return Array.from(this.items.values()).sort(
-      (a, b) => (a.priority ?? 100) - (b.priority ?? 100),
-    );
+    if (this.cachedAll !== null) return this.cachedAll;
+
+    const items: StatusBarItemSpec[] = [];
+    for (const item of this.items.values()) items.push(item);
+    items.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
+    this.cachedAll = items;
+    return items;
   }
 
   /**
@@ -108,5 +122,11 @@ export class StatusBarRegistry {
 
   private notify(): void {
     for (const l of this.listeners) l();
+  }
+
+  private invalidateSnapshotCache(): void {
+    this.cachedAll = null;
+    this.cachedLeft = null;
+    this.cachedRight = null;
   }
 }

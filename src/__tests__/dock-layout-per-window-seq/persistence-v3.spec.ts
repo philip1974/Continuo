@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import {
+  dedupeWindowsBySeq,
   defaultExplorerV3,
   ensureWindowEntry,
   ExplorerSchemaV3,
@@ -240,6 +241,44 @@ describe('explorer.json v3 persistence schema and merge semantics', () => {
       expect(payload.windows.map((w) => w.windowSeq).sort()).toEqual([0, 2]);
     } finally {
       filterSpy.mockRestore();
+    }
+  });
+
+  it('dedupeWindowsBySeq 不对 payload.windows 调 filter 产生中间数组', () => {
+    const payload = defaultExplorerV3();
+    payload.windows = [
+      { ...payload.windows[0]! },
+      {
+        windowSeq: 1,
+        workspace: { root: '/first' },
+        explorer: { activePath: null, expandedPaths: [], sort },
+      },
+      {
+        windowSeq: 1,
+        workspace: { root: '/duplicate' },
+        explorer: { activePath: null, expandedPaths: [], sort },
+      },
+      {
+        windowSeq: 2,
+        workspace: { root: '/second' },
+        explorer: { activePath: null, expandedPaths: [], sort },
+      },
+    ];
+    const filterSpy = vi.spyOn(payload.windows, 'filter');
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    try {
+      const next = dedupeWindowsBySeq(payload);
+
+      expect(filterSpy).not.toHaveBeenCalled();
+      expect(next.windows.map((w) => w.windowSeq)).toEqual([0, 1, 2]);
+      expect(next.windows.find((w) => w.windowSeq === 1)?.workspace.root).toBe(
+        '/first',
+      );
+      expect(warnSpy).toHaveBeenCalled();
+    } finally {
+      filterSpy.mockRestore();
+      warnSpy.mockRestore();
     }
   });
 

@@ -243,4 +243,25 @@ describe('makeListSessionsTool', () => {
     const out = tool.run({}, ctx);
     expect(listSessionsOutputSchema.safeParse(out).success).toBe(true);
   });
+
+  it('构建输出时不调用 sessions.map 生成中间数组', () => {
+    const sessions = [userSess, agentSess, exitedSess];
+    const mapSpy = vi.spyOn(sessions, 'map');
+    const tool = makeListSessionsTool({
+      getSessions: () => sessions,
+    });
+
+    try {
+      const out = tool.run({}, ctx) as { sessions: Array<{ session_id: string }> };
+
+      expect(mapSpy).not.toHaveBeenCalled();
+      expect(out.sessions.map((s) => s.session_id)).toEqual([
+        'term-1',
+        'term-2',
+        'term-3',
+      ]);
+    } finally {
+      mapSpy.mockRestore();
+    }
+  });
 });

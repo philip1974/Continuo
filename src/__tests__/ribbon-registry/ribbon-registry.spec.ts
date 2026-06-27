@@ -28,6 +28,30 @@ describe('RibbonRegistry', () => {
     expect(r.getAll().map((x) => x.id)).toEqual(['top', 'def', 'bot']);
   });
 
+  it('重复 getAll 复用排序结果,register/dispose 后失效重建', () => {
+    const r = new RibbonRegistry();
+    const d = r.register({ id: 'def', title: 'D', icon: null, onClick: noop });
+    r.register({ id: 'top', title: 'T', icon: null, onClick: noop, priority: 1 });
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      expect(r.getAll().map((x) => x.id)).toEqual(['top', 'def']);
+      expect(sortSpy).toHaveBeenCalledTimes(1);
+      expect(r.getAll().map((x) => x.id)).toEqual(['top', 'def']);
+      expect(sortSpy).toHaveBeenCalledTimes(1);
+
+      r.register({ id: 'bot', title: 'B', icon: null, onClick: noop, priority: 200 });
+      expect(r.getAll().map((x) => x.id)).toEqual(['top', 'def', 'bot']);
+      expect(sortSpy).toHaveBeenCalledTimes(2);
+
+      d.dispose();
+      expect(r.getAll().map((x) => x.id)).toEqual(['top', 'bot']);
+      expect(sortSpy).toHaveBeenCalledTimes(3);
+    } finally {
+      sortSpy.mockRestore();
+    }
+  });
+
   it('subscribe 在 register/dispose 时触发', () => {
     const r = new RibbonRegistry();
     const listener = vi.fn();

@@ -23,6 +23,30 @@ describe('EditorActionRegistry', () => {
     expect(r.getAll().map((x) => x.id)).toEqual(['a', 'b']);
   });
 
+  it('重复 getAll 复用排序结果,register/dispose 后失效重建', () => {
+    const r = new EditorActionRegistry();
+    const d = r.register({ id: 'b', label: 'B', fn: () => {}, priority: 20 });
+    r.register({ id: 'a', label: 'A', fn: () => {}, priority: 10 });
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      expect(r.getAll().map((x) => x.id)).toEqual(['a', 'b']);
+      expect(sortSpy).toHaveBeenCalledTimes(1);
+      expect(r.getAll().map((x) => x.id)).toEqual(['a', 'b']);
+      expect(sortSpy).toHaveBeenCalledTimes(1);
+
+      r.register({ id: 'c', label: 'C', fn: () => {}, priority: 5 });
+      expect(r.getAll().map((x) => x.id)).toEqual(['c', 'a', 'b']);
+      expect(sortSpy).toHaveBeenCalledTimes(2);
+
+      d.dispose();
+      expect(r.getAll().map((x) => x.id)).toEqual(['c', 'a']);
+      expect(sortSpy).toHaveBeenCalledTimes(3);
+    } finally {
+      sortSpy.mockRestore();
+    }
+  });
+
   it('重复 id → 后注册赢 + warn', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const r = new EditorActionRegistry();

@@ -263,16 +263,28 @@ async function readExplorerCapped(filePath: string): Promise<string | null> {
 // 的「命中首个」语义一致),丢弃重复段并告警。用 schema refine 会因一个重复段令整个 explorer.json
 // 落入 corrupt → 默认值覆盖(丢 recentRoots/pinned/全部窗口),与 loadExplorer 的数据保留原则相悖,
 // 故选 canonicalize 而非 fatal refine。
-function dedupeWindowsBySeq(payload: ExplorerPayloadV3): ExplorerPayloadV3 {
+export function dedupeWindowsBySeq(payload: ExplorerPayloadV3): ExplorerPayloadV3 {
   const seen = new Set<number>();
-  const deduped = payload.windows.filter((w) => {
-    if (seen.has(w.windowSeq)) return false;
+  let deduped: WindowEntryV3[] | null = null;
+  let dropped = 0;
+
+  for (let i = 0; i < payload.windows.length; i++) {
+    const w = payload.windows[i]!;
+    if (seen.has(w.windowSeq)) {
+      dropped++;
+      if (deduped === null) {
+        deduped = [];
+        for (let j = 0; j < i; j++) deduped.push(payload.windows[j]!);
+      }
+      continue;
+    }
     seen.add(w.windowSeq);
-    return true;
-  });
-  if (deduped.length === payload.windows.length) return payload;
+    if (deduped !== null) deduped.push(w);
+  }
+
+  if (deduped === null) return payload;
   console.warn(
-    `[explorer] dropped ${payload.windows.length - deduped.length} window segment(s) with duplicate windowSeq`,
+    `[explorer] dropped ${dropped} window segment(s) with duplicate windowSeq`,
   );
   return { ...payload, windows: deduped };
 }

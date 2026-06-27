@@ -17,10 +17,15 @@ import { usePinnedStore } from '../../stores/pinned.store';
 import { useWorkspaceStore } from '../../stores/workspace.store';
 import {
   defaultExplorerV3,
+  type ExplorerWritablePayload,
   loadExplorer,
   type ExplorerPayloadV3,
 } from '../../../electron/main/persistence';
-import { registerIpc } from '../../../electron/main/ipc';
+import {
+  filterWritableSnapshotForWindowSeq,
+  registerIpc,
+  sanitizeExplorerReadPayload,
+} from '../../../electron/main/ipc';
 import {
   _reset as resetWindowSeq,
   setWindowSeq,
@@ -279,6 +284,41 @@ describe('window-scoped layout IPC', () => {
     expect(result.ok).toBe(true);
     expect(result.data.windows[0]!.workspace.root).toBe('/a');
     expect(result.data.windows[0]!.layout).toBeUndefined();
+  });
+
+  it('E261: explorer:read layout 清洗只在实际剥离时复制,不对合法 windows 调 map', () => {
+    const payload = defaultExplorerV3();
+    payload.windows = [
+      {
+        windowSeq: 7,
+        workspace: { root: '/a' },
+        explorer: { activePath: null, expandedPaths: [], sort },
+      },
+      {
+        windowSeq: 8,
+        workspace: { root: '/b' },
+        explorer: { activePath: null, expandedPaths: [], sort },
+        layout: { version: 1, panel: 'B' },
+      },
+    ];
+    const mapSpy = vi.spyOn(payload.windows, 'map');
+
+    try {
+      expect(sanitizeExplorerReadPayload(payload)).toBe(payload);
+      expect(mapSpy).not.toHaveBeenCalled();
+    } finally {
+      mapSpy.mockRestore();
+    }
+
+    const huge = { version: 1, blob: 'x'.repeat(2 * 1024 * 1024 + 16) };
+    const polluted: ExplorerPayloadV3 = {
+      ...payload,
+      windows: [{ ...payload.windows[0]!, layout: huge }, payload.windows[1]!],
+    };
+    const cleaned = sanitizeExplorerReadPayload(polluted);
+    expect(cleaned).not.toBe(polluted);
+    expect(cleaned.windows[0]!.layout).toBeUndefined();
+    expect(cleaned.windows[1]!.layout).toEqual({ version: 1, panel: 'B' });
   });
 
   it('T9b: layout:read without BrowserWindow returns NO_WINDOW', async () => {
@@ -547,6 +587,44 @@ describe('window-scoped layout IPC', () => {
     expect(saved?.windows.find((w) => w.windowSeq === 1)?.workspace.root).toBe('/new-a');
     // 别窗段(seq 2)保持磁盘原值,foreign 段被丢弃,未被回滚
     expect(saved?.windows.find((w) => w.windowSeq === 2)?.workspace.root).toBe('/keep-b');
+  });
+
+  it('R11: writable windowSeq 过滤不调用 windows.filter,且全为自己段时复用原 snapshot', () => {
+    const writable: ExplorerWritablePayload = {
+      version: 3,
+      workspace: { recentRoots: [] },
+      pinned: { paths: [] },
+      nextWindowSeq: 3,
+      windows: [
+        {
+          windowSeq: 1,
+          workspace: { root: '/new-a' },
+          explorer: { activePath: null, expandedPaths: [], sort },
+        },
+        {
+          windowSeq: 2,
+          workspace: { root: '/foreign-b' },
+          explorer: { activePath: null, expandedPaths: [], sort },
+        },
+      ],
+    };
+    const filterSpy = vi.spyOn(writable.windows, 'filter');
+
+    try {
+      const ownOnly = filterWritableSnapshotForWindowSeq(writable, 1);
+
+      expect(filterSpy).not.toHaveBeenCalled();
+      expect(ownOnly).not.toBe(writable);
+      expect(ownOnly.windows.map((w) => w.windowSeq)).toEqual([1]);
+    } finally {
+      filterSpy.mockRestore();
+    }
+
+    const alreadyOwn: ExplorerWritablePayload = {
+      ...writable,
+      windows: [writable.windows[0]!],
+    };
+    expect(filterWritableSnapshotForWindowSeq(alreadyOwn, 1)).toBe(alreadyOwn);
   });
 
   it('T25: layout:write on cold start creates explorer.json and current window entry', async () => {

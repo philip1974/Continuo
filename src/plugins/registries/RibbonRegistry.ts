@@ -53,6 +53,7 @@ function validateRibbonActionSpec(spec: RibbonActionSpec): void {
 export class RibbonRegistry {
   private items = new Map<string, RibbonActionSpec>();
   private listeners = new Set<Listener>();
+  private cachedAll: readonly RibbonActionSpec[] | null = null;
 
   register(spec: RibbonActionSpec): Disposable {
     validateRibbonActionSpec(spec); // 边界(E49):注册前校验长度/priority finite/onClick 为函数
@@ -64,6 +65,7 @@ export class RibbonRegistry {
       );
     }
     this.items.set(spec.id, spec);
+    this.invalidateSnapshotCache();
     this.notify();
 
     let disposed = false;
@@ -73,6 +75,7 @@ export class RibbonRegistry {
         disposed = true;
         if (this.items.get(spec.id) === spec) {
           this.items.delete(spec.id);
+          this.invalidateSnapshotCache();
           this.notify();
         }
       },
@@ -80,9 +83,13 @@ export class RibbonRegistry {
   }
 
   getAll(): readonly RibbonActionSpec[] {
-    return Array.from(this.items.values()).sort(
-      (a, b) => (a.priority ?? 100) - (b.priority ?? 100),
-    );
+    if (this.cachedAll !== null) return this.cachedAll;
+
+    const items: RibbonActionSpec[] = [];
+    for (const item of this.items.values()) items.push(item);
+    items.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
+    this.cachedAll = items;
+    return items;
   }
 
   /**
@@ -101,5 +108,9 @@ export class RibbonRegistry {
 
   private notify(): void {
     for (const l of this.listeners) l();
+  }
+
+  private invalidateSnapshotCache(): void {
+    this.cachedAll = null;
   }
 }

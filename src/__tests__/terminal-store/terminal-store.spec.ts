@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   applySnapshot,
+  getShellFamily,
   nextActiveAfterClose,
   useTerminalStore,
   type TerminalSession,
@@ -98,6 +99,25 @@ describe('terminal.store · 初态', () => {
     const s = useTerminalStore.getState();
     expect(s.sessions).toEqual([]);
     expect(s.activeId).toBeNull();
+  });
+});
+
+describe('getShellFamily', () => {
+  it('按 session id 读取 shellFamily 不调用 sessions.find 线性扫描', () => {
+    const sessions = [
+      makeSession({ id: '/a' }),
+      makeSession({ id: '/b' }),
+    ] as Array<TerminalSession & { shellFamily?: 'posix' | 'powershell' }>;
+    sessions[1] = { ...sessions[1]!, shellFamily: 'powershell' };
+    useTerminalStore.setState({ sessions, activeId: '/b' });
+    const findSpy = vi.spyOn(sessions, 'find');
+
+    try {
+      expect(getShellFamily('/b')).toBe('powershell');
+      expect(findSpy).not.toHaveBeenCalled();
+    } finally {
+      findSpy.mockRestore();
+    }
   });
 });
 

@@ -292,6 +292,7 @@ export function createHookFileBroker(
   // 与 processed 分离,使读/解析失败的文件不被永久标记,允许写入完成后重试。
   const inFlight = new Set<string>();
   const buffered: BufferedEntry[] = [];
+  const bufferedNames = new Set<string>();
   let bufferedBytes = 0; // 边界(E150):buffered 当前总字节数(总字节预算淘汰用)
   const pendingByKey = new Map<string, PendingWaiter>();
 
@@ -403,6 +404,7 @@ export function createHookFileBroker(
       }
 
       buffered.push(entry);
+      bufferedNames.add(entry.fileName);
       bufferedBytes += entry.byteSize;
       // 边界(E150):双闸淘汰 —— 条数超 maxEntries 或总字节超 MAX_BUFFERED_BYTES,FIFO 淘汰最旧,
       // 把 buffered 常驻内存钳到预算(防 500×1MiB ≈ 500MiB)。至少保留 1 条(刚 push 的)。
@@ -412,6 +414,7 @@ export function createHookFileBroker(
       ) {
         const dropped = buffered.shift();
         if (dropped !== undefined) {
+          bufferedNames.delete(dropped.fileName);
           bufferedBytes -= dropped.byteSize;
           void unlink(path.join(hookEventsDir, dropped.fileName)).catch(() => {});
         }
@@ -428,6 +431,7 @@ export function createHookFileBroker(
       if (entry !== undefined && now - entry.ingestedAt > maxAgeMs) {
         const stale = buffered.splice(i, 1)[0];
         if (stale !== undefined) {
+          bufferedNames.delete(stale.fileName);
           bufferedBytes -= stale.byteSize; // 边界(E150):同步 buffered 字节计数
           void unlink(path.join(hookEventsDir, stale.fileName)).catch(() => {});
         }
@@ -448,7 +452,7 @@ export function createHookFileBroker(
       for (const name of names) {
         if (inferRunnerFromFilename(name) === null) continue;
         if (inFlight.has(name)) continue;
-        if (buffered.some((e) => e.fileName === name)) continue;
+        if (bufferedNames.has(name)) continue;
         const p = path.join(hookEventsDir, name);
         try {
           const s = await stat(p);
@@ -540,6 +544,7 @@ export function createHookFileBroker(
           const hit = buffered[i];
           if (hit !== undefined && matchesFilter(hit, filter)) {
             buffered.splice(i, 1);
+            bufferedNames.delete(hit.fileName);
             bufferedBytes -= hit.byteSize; // 边界(E150):同步 buffered 字节计数
             void unlink(path.join(hookEventsDir, hit.fileName)).catch(() => {});
             resolve(hit);
@@ -597,6 +602,7 @@ export function createHookFileBroker(
       }
       pendingByKey.clear();
       buffered.length = 0;
+      bufferedNames.clear();
       bufferedBytes = 0; // 边界(E150):同步 buffered 字节计数
       processed.clear();
     },

@@ -523,6 +523,41 @@ describe('terminal.await_stop_hook', () => {
     await expect(second).resolves.toMatchObject({ status: 'timeout' });
   });
 
+  it('cleanupStale 用 buffered 文件名索引跳过已缓冲文件,不对每个目录项 buffered.some', async () => {
+    const doneDir = await makeDoneDir();
+    for (const ns of ['a', 'b', 'c']) {
+      await writeFixture(doneDir, {
+        runner: 'cc',
+        windowId: 4,
+        cliSessionId: `cli-${ns}`,
+        ns,
+        payload: { session_id: `cli-${ns}`, cwd: '/repo' },
+      });
+    }
+    const broker = createHookFileBroker(doneDir, {
+      maxEntries: DONE_BUFFER_CAP,
+      maxAgeMs: DONE_ENTRY_MAX_AGE_MS,
+      cleanupIntervalMs: 5,
+      watchFactory: noopWatchFactory,
+    });
+    await broker.start();
+    brokers.push(broker);
+    const orphan = join(doneDir, 'cc_4_orphan_cleanup.jsonl');
+    await writeFile(orphan, '{bad json', 'utf8');
+    const old = new Date(Date.now() - DONE_ENTRY_MAX_AGE_MS - 1_000);
+    await utimes(orphan, old, old);
+    const someSpy = vi.spyOn(Array.prototype, 'some');
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+
+      await expect(readFile(orphan, 'utf8')).rejects.toThrow();
+      expect(someSpy).not.toHaveBeenCalled();
+    } finally {
+      someSpy.mockRestore();
+    }
+  });
+
   // 边界(E151,E148 兄弟入口):await_stop_hook 的 session_id 仅 minLength;not-found 时不可把
   // 超长原串原样拼进错误消息(放大 JSON-RPC error/日志/内存)。复用共享 truncateSessionIdForEcho。
   it('E151 超长 session_id not-found → 错误消息截断(不回显超长原串)', async () => {

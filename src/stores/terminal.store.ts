@@ -155,10 +155,22 @@ export function filterByWorkspaceRoot(
   return visible;
 }
 
+let indexedSessionsRef: readonly TerminalSession[] | null = null;
+let indexedSessionsById = new Map<string, TerminalSession>();
+
+function getSessionById(sessionId: string): TerminalSession | undefined {
+  const sessions = useTerminalStore.getState().sessions;
+  if (indexedSessionsRef !== sessions) {
+    const next = new Map<string, TerminalSession>();
+    for (const session of sessions) next.set(session.id, session);
+    indexedSessionsRef = sessions;
+    indexedSessionsById = next;
+  }
+  return indexedSessionsById.get(sessionId);
+}
+
 export function getShellFamily(sessionId: string): ShellFamily {
-  const session = useTerminalStore
-    .getState()
-    .sessions.find((s) => s.id === sessionId);
+  const session = getSessionById(sessionId);
   const shellFamily = (session as (TerminalSession & { shellFamily?: ShellFamily }) | undefined)
     ?.shellFamily;
   if (shellFamily) return shellFamily;

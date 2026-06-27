@@ -72,6 +72,7 @@ function validateEditorActionSpec(spec: EditorActionSpec): void {
 export class EditorActionRegistry {
   private items = new Map<string, EditorActionSpec>();
   private listeners = new Set<Listener>();
+  private cachedAll: readonly EditorActionSpec[] | null = null;
 
   register(spec: EditorActionSpec): Disposable {
     validateEditorActionSpec(spec); // 边界(E51):注册前校验长度/priority finite/when·fn 为函数
@@ -83,6 +84,7 @@ export class EditorActionRegistry {
       );
     }
     this.items.set(spec.id, spec);
+    this.invalidateSnapshotCache();
     this.notify();
 
     let disposed = false;
@@ -92,6 +94,7 @@ export class EditorActionRegistry {
         disposed = true;
         if (this.items.get(spec.id) === spec) {
           this.items.delete(spec.id);
+          this.invalidateSnapshotCache();
           this.notify();
         }
       },
@@ -99,9 +102,13 @@ export class EditorActionRegistry {
   }
 
   getAll(): readonly EditorActionSpec[] {
-    return Array.from(this.items.values()).sort(
-      (a, b) => (a.priority ?? 100) - (b.priority ?? 100),
-    );
+    if (this.cachedAll !== null) return this.cachedAll;
+
+    const items: EditorActionSpec[] = [];
+    for (const item of this.items.values()) items.push(item);
+    items.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
+    this.cachedAll = items;
+    return items;
   }
 
   /**
@@ -121,6 +128,10 @@ export class EditorActionRegistry {
 
   private notify(): void {
     for (const l of this.listeners) l();
+  }
+
+  private invalidateSnapshotCache(): void {
+    this.cachedAll = null;
   }
 }
 

@@ -133,6 +133,28 @@ describe('handleRegister · 首注册', () => {
     expect(list).toEqual([{ name: 'echo', pluginId: 'demo.alpha', wcId: 11 }]);
   });
 
+  it('listRegistered 构造快照时不通过 Array.from(values).map 生成中间数组', () => {
+    const { bridge } = makeBridge();
+    bridge.handleRegister(11, regPayload('a'));
+    bridge.handleRegister(22, regPayload('b'));
+    const fromSpy = vi.spyOn(Array, 'from');
+    const mapSpy = vi.spyOn(Array.prototype, 'map');
+
+    try {
+      const list = bridge.listRegistered();
+
+      expect(fromSpy).not.toHaveBeenCalled();
+      expect(mapSpy).not.toHaveBeenCalled();
+      expect(list).toEqual([
+        { name: 'a', pluginId: 'p', wcId: 11 },
+        { name: 'b', pluginId: 'p', wcId: 22 },
+      ]);
+    } finally {
+      fromSpy.mockRestore();
+      mapSpy.mockRestore();
+    }
+  });
+
   it('多 wc 注册不同 name → 全部入 host.tools', () => {
     const { bridge, host } = makeBridge();
     bridge.handleRegister(11, regPayload('a'));

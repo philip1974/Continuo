@@ -83,7 +83,10 @@ export function getStateAfterClosingTab(
   const idx = tabs.findIndex((t) => t.id === closingTabId);
   if (idx === -1) return { tabs, activeTabId };
 
-  const remaining = tabs.filter((t) => t.id !== closingTabId);
+  const remaining: EditorTab[] = [];
+  for (let i = 0; i < tabs.length; i++) {
+    if (i !== idx) remaining.push(tabs[i]!);
+  }
   if (remaining.length === 0) return { tabs: remaining, activeTabId: null };
   if (closingTabId !== activeTabId) {
     return { tabs: remaining, activeTabId };
@@ -119,27 +122,37 @@ export function getStateAfterRenamingPath(
       ? newPath + filePath.slice(oldPath.length)
       : null;
 
-  let changed = false;
-  const newTabs = tabs.map((t) => {
-    if (t.filePath === null) return t;
-    const np = rewrite(t.filePath);
-    if (np === null) return t;
-    changed = true;
-    // perf P4:filePath 变(可能改变 markdown 判定)→ 重算派生缓存(content 不变)。
-    return {
-      ...t,
-      id: np,
-      filePath: np,
-      milkdownUnsafe: computeMilkdownUnsafe(np, t.content),
-    };
-  });
-  if (!changed) return { tabs, activeTabId };
-
+  let newTabs: EditorTab[] | null = null;
   let nextActive = activeTabId;
-  if (activeTabId !== null) {
-    const idx = tabs.findIndex((t) => t.id === activeTabId);
-    if (idx >= 0) nextActive = newTabs[idx]!.id;
+
+  for (let i = 0; i < tabs.length; i++) {
+    const t = tabs[i]!;
+    if (t.filePath === null) {
+      if (newTabs !== null) newTabs.push(t);
+      continue;
+    }
+    const np = rewrite(t.filePath);
+    let nextTab = t;
+
+    if (np !== null) {
+      if (newTabs === null) {
+        newTabs = [];
+        for (let j = 0; j < i; j++) newTabs.push(tabs[j]!);
+      }
+      // perf P4:filePath 变(可能改变 markdown 判定)→ 重算派生缓存(content 不变)。
+      nextTab = {
+        ...t,
+        id: np,
+        filePath: np,
+        milkdownUnsafe: computeMilkdownUnsafe(np, t.content),
+      };
+      if (t.id === activeTabId) nextActive = nextTab.id;
+    }
+
+    if (newTabs !== null) newTabs.push(nextTab);
   }
+
+  if (newTabs === null) return { tabs, activeTabId };
   return { tabs: newTabs, activeTabId: nextActive };
 }
 
@@ -224,31 +237,41 @@ export function getStateAfterRemovingPath(
   // EditorPanel 的 dirty 关闭确认,静默丢失内存里的未保存增量(磁盘旧版本进废纸篓
   // 可恢复,但内存增量无处可寻)。参考 VSCode:删除有未保存改动的文件保留 dirty
   // 编辑器。仅 clean tab 自动关闭;dirty tab 留给用户显式保存或经确认丢弃。
-  const removingIds = new Set<string>();
-  for (const t of tabs) if (isMatch(t.filePath) && !t.dirty) removingIds.add(t.id);
-  if (removingIds.size === 0) return { tabs, activeTabId };
+  const remaining: EditorTab[] = [];
+  let changed = false;
+  let activeKept = false;
+  let activeRemoved = false;
+  let seenActive = activeTabId === null;
+  let lastKeptBeforeActive: EditorTab | null = null;
+  let firstKeptAfterActive: EditorTab | null = null;
 
-  const remaining = tabs.filter((t) => !removingIds.has(t.id));
+  for (const tab of tabs) {
+    const isActive = tab.id === activeTabId;
+    if (isActive) seenActive = true;
+    const shouldRemove = isMatch(tab.filePath) && !tab.dirty;
+
+    if (shouldRemove) {
+      changed = true;
+      if (isActive) activeRemoved = true;
+      continue;
+    }
+
+    remaining.push(tab);
+    if (isActive) {
+      activeKept = true;
+    } else if (!seenActive) {
+      lastKeptBeforeActive = tab;
+    } else if (firstKeptAfterActive === null) {
+      firstKeptAfterActive = tab;
+    }
+  }
+
+  if (!changed) return { tabs, activeTabId };
   if (remaining.length === 0) return { tabs: remaining, activeTabId: null };
-  if (activeTabId === null || !removingIds.has(activeTabId)) {
+  if (activeTabId === null || activeKept || !activeRemoved) {
     return { tabs: remaining, activeTabId };
   }
-  const oldIdx = tabs.findIndex((t) => t.id === activeTabId);
-  let next: EditorTab | null = null;
-  for (let i = oldIdx + 1; i < tabs.length; i++) {
-    if (!removingIds.has(tabs[i]!.id)) {
-      next = tabs[i]!;
-      break;
-    }
-  }
-  if (!next) {
-    for (let i = oldIdx - 1; i >= 0; i--) {
-      if (!removingIds.has(tabs[i]!.id)) {
-        next = tabs[i]!;
-        break;
-      }
-    }
-  }
+  const next = firstKeptAfterActive ?? lastKeptBeforeActive;
   return { tabs: remaining, activeTabId: next?.id ?? null };
 }
 
