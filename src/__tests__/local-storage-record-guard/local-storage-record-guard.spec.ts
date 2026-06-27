@@ -141,6 +141,18 @@ describe('writeRecord 写读 cap 对称 (E260)', () => {
     expect(readRecord(KEY)).toEqual({ a: 'x', b: 'y' });
   });
 
+  it('写入内容与现有 raw 完全相同 → ok 且不重复 setItem', () => {
+    globalThis.localStorage.setItem(KEY, JSON.stringify({ a: 'x', b: 'y' }));
+    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
+
+    try {
+      expect(writeRecord(KEY, { a: 'x', b: 'y' })).toBe('ok');
+      expect(setItemSpy).not.toHaveBeenCalled();
+    } finally {
+      setItemSpy.mockRestore();
+    }
+  });
+
   it('超 maxRawLength → too-large 且拒写(保留上次有效值)', () => {
     expect(writeRecord(KEY, { keep: 'prev' })).toBe('ok'); // 先写有效值
     const r = writeRecord(KEY, { big: 'x'.repeat(200) }, { maxRawLength: 50 });

@@ -11,6 +11,7 @@ function isBoundaryChar(ch: string): boolean {
  * (Quick Open 每按键对 ≤5000 条稳定 relPath 重复 lowercasing 的来源)。
  */
 function fuzzyScoreBothLower(q: string, t: string): number | null {
+  if (q.length > t.length) return null;
   let qi = 0;
   let score = 0;
   let prevMatchedAt = -1;
@@ -33,6 +34,7 @@ function fuzzyScoreBothLower(q: string, t: string): number | null {
  * q 必须**已 lowercase**(打磨 R51)。target 在此 lowercase。
  */
 function fuzzyScoreLower(q: string, target: string): number | null {
+  if (q.length > target.length) return null;
   return fuzzyScoreBothLower(q, target.toLowerCase());
 }
 

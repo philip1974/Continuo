@@ -122,6 +122,23 @@ describe('useQuickOpenStore', () => {
     }
   });
 
+  it('setResults 写入相同内容的新数组和相同 root 时不通知订阅者', () => {
+    const results = [{ absPath: '/a', relPath: 'a', relPathLower: 'a', name: 'a' }];
+    const sameResults = [{ absPath: '/a', relPath: 'a', relPathLower: 'a', name: 'a' }];
+    useQuickOpenStore.setState({ results, resultsRoot: '/work' });
+    const listener = vi.fn();
+    const unsubscribe = useQuickOpenStore.subscribe(listener);
+
+    try {
+      useQuickOpenStore.getState().setResults(sameResults, '/work');
+
+      expect(useQuickOpenStore.getState().results).toBe(results);
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
+  });
+
   it('setLoading / setScanFailed 写入相同值时不通知订阅者', () => {
     useQuickOpenStore.setState({ loading: true, scanFailed: true });
     const listener = vi.fn();

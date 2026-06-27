@@ -60,17 +60,21 @@ describe('settings values-store', () => {
     );
     useSettingsValuesStore.setState({ values });
     const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
+    const objectKeysSpy = vi.spyOn(Object, 'keys');
     const listener = vi.fn();
     const unsubscribe = useSettingsValuesStore.subscribe(listener);
 
     try {
       useSettingsValuesStore.getState().setValue('general.theme', 'light');
+      const objectKeysCalls = objectKeysSpy.mock.calls.length;
 
       expect(useSettingsValuesStore.getState().values).toBe(values);
       expect(setItemSpy).not.toHaveBeenCalled();
+      expect(objectKeysCalls).toBe(0);
       expect(listener).not.toHaveBeenCalled();
     } finally {
       unsubscribe();
+      objectKeysSpy.mockRestore();
       setItemSpy.mockRestore();
     }
   });

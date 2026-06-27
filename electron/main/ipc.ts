@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import path from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
 import {
   ExplorerWritableSnapshotSchema,
@@ -257,6 +258,7 @@ export function registerIpc(): { pluginFsHandles: PluginFsIpcHandles } {
       await withExplorerFileMutex(async () => {
         const current = await loadExplorer(explorerFile);
         const merged = mergeWritableIntoFull(current, ownOnly);
+        if (current !== null && isDeepStrictEqual(merged, current)) return;
         await atomicWriteJson(explorerFile, merged);
       });
     },

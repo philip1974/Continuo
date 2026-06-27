@@ -120,6 +120,26 @@ export function sortByRecent(
     out.sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));
     return out;
   }
+  if (recentIds.length === 1) {
+    const recentId = recentIds[0]!;
+    let recent: DisplayCommand | undefined;
+    const others = new Array<DisplayCommand>(items.length);
+    let otherCount = 0;
+    for (const d of items) {
+      if (d.cmd.id === recentId) recent = d;
+      else others[otherCount++] = d;
+    }
+    others.length = otherCount;
+    others.sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));
+    const out = new Array<DisplayCommand>(items.length);
+    let count = 0;
+    if (recent) out[count++] = recent;
+    for (const d of others) {
+      out[count++] = d;
+    }
+    out.length = count;
+    return out;
+  }
 
   const recentRank = new Map<string, number>();
   for (let i = 0; i < recentIds.length && i < RECENT_TOP_N; i++) {

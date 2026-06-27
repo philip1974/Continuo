@@ -77,17 +77,21 @@ describe('keybindings-store', () => {
     );
     useKeybindingsStore.setState({ overrides });
     const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
+    const objectKeysSpy = vi.spyOn(Object, 'keys');
     const listener = vi.fn();
     const unsubscribe = useKeybindingsStore.subscribe(listener);
 
     try {
       useKeybindingsStore.getState().setHotkey('foo.bar', 'mod+x');
+      const objectKeysCalls = objectKeysSpy.mock.calls.length;
 
       expect(useKeybindingsStore.getState().overrides).toBe(overrides);
       expect(setItemSpy).not.toHaveBeenCalled();
+      expect(objectKeysCalls).toBe(0);
       expect(listener).not.toHaveBeenCalled();
     } finally {
       unsubscribe();
+      objectKeysSpy.mockRestore();
       setItemSpy.mockRestore();
     }
   });

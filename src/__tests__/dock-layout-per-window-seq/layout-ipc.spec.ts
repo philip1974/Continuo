@@ -568,6 +568,45 @@ describe('window-scoped layout IPC', () => {
     });
   });
 
+  it('explorer:write merge 后 payload 不变 → 不重复原子写文件', async () => {
+    setWindowSeq(101, 0);
+    const current = defaultExplorerV3();
+    current.workspace.recentRoots = ['/same'];
+    current.pinned.paths = ['/same/pinned.md'];
+    current.windows = [
+      {
+        windowSeq: 0,
+        workspace: { root: '/same' },
+        explorer: { activePath: null, expandedPaths: ['/same'], sort },
+        layout: { version: 1, panel: 'keep-layout' },
+        lastClosedAt: 111,
+      },
+    ];
+    await writeExplorer(current);
+
+    const renameSpy = vi.spyOn(fs, 'rename');
+    try {
+      const result = await invokeIpc('explorer:write', {
+        version: 3,
+        workspace: { recentRoots: ['/same'] },
+        pinned: { paths: ['/same/pinned.md'] },
+        nextWindowSeq: current.nextWindowSeq,
+        windows: [
+          {
+            windowSeq: 0,
+            workspace: { root: '/same' },
+            explorer: { activePath: null, expandedPaths: ['/same'], sort },
+          },
+        ],
+      });
+
+      expect(result).toEqual({ ok: true, data: undefined });
+      expect(renameSpy).not.toHaveBeenCalled();
+    } finally {
+      renameSpy.mockRestore();
+    }
+  });
+
   // codex 复审 loop R11:单窗陈旧/回归快照夹带别窗 entry 时,main 必须按 sender 真实 seq
   // 过滤,不能覆盖别窗持久化段(否则跨窗 workspace/tab/展开态被一个窗口的陈旧写回滚)。
   it('R11: explorer:write 丢弃非 sender windowSeq 的 foreign 段,不覆盖别窗', async () => {

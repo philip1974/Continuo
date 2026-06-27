@@ -153,36 +153,61 @@ export function mergeWritableIntoFull(
   current: ExplorerPayloadV3 | null,
   writable: ExplorerWritablePayload,
 ): ExplorerPayloadV3 {
-  const writableBySeq = new Map<
-    number,
-    ExplorerWritablePayload['windows'][number]
-  >();
-  for (const w of writable.windows) writableBySeq.set(w.windowSeq, w);
-
   const currentWindows = current?.windows ?? [];
-  const merged = new Array<WindowEntryV3>(
-    currentWindows.length + writableBySeq.size,
-  );
-  let mergedCount = 0;
-  for (const cur of currentWindows) {
-    const w = writableBySeq.get(cur.windowSeq);
-    if (w) {
-      merged[mergedCount++] = {
-        ...w,
-        ...(cur.layout !== undefined ? { layout: cur.layout } : {}),
-        ...(cur.lastClosedAt !== undefined
-          ? { lastClosedAt: cur.lastClosedAt }
-          : {}),
-      };
-      writableBySeq.delete(cur.windowSeq);
-    } else {
-      merged[mergedCount++] = cur;
+  let merged: WindowEntryV3[];
+
+  if (writable.windows.length === 1) {
+    const w = writable.windows[0]!;
+    merged = new Array<WindowEntryV3>(currentWindows.length + 1);
+    let mergedCount = 0;
+    let matched = false;
+    for (const cur of currentWindows) {
+      if (cur.windowSeq === w.windowSeq) {
+        merged[mergedCount++] = {
+          ...w,
+          ...(cur.layout !== undefined ? { layout: cur.layout } : {}),
+          ...(cur.lastClosedAt !== undefined
+            ? { lastClosedAt: cur.lastClosedAt }
+            : {}),
+        };
+        matched = true;
+      } else {
+        merged[mergedCount++] = cur;
+      }
     }
+    if (!matched) merged[mergedCount++] = w as WindowEntryV3;
+    merged.length = mergedCount;
+  } else {
+    const writableBySeq = new Map<
+      number,
+      ExplorerWritablePayload['windows'][number]
+    >();
+    for (const w of writable.windows) writableBySeq.set(w.windowSeq, w);
+
+    merged = new Array<WindowEntryV3>(
+      currentWindows.length + writableBySeq.size,
+    );
+    let mergedCount = 0;
+    for (const cur of currentWindows) {
+      const w = writableBySeq.get(cur.windowSeq);
+      if (w) {
+        merged[mergedCount++] = {
+          ...w,
+          ...(cur.layout !== undefined ? { layout: cur.layout } : {}),
+          ...(cur.lastClosedAt !== undefined
+            ? { lastClosedAt: cur.lastClosedAt }
+            : {}),
+        };
+        writableBySeq.delete(cur.windowSeq);
+      } else {
+        merged[mergedCount++] = cur;
+      }
+    }
+    for (const w of writableBySeq.values()) {
+      merged[mergedCount++] = w as WindowEntryV3;
+    }
+    merged.length = mergedCount;
   }
-  for (const w of writableBySeq.values()) {
-    merged[mergedCount++] = w as WindowEntryV3;
-  }
-  merged.length = mergedCount;
 
   // nextWindowSeq 是 main 独占的单调计数器(allocateWindowSeq 在 file-mutex 内
   // 自增)。renderer 的 writable 携带的是 hydrate 时读到的旧值,直接 ...writable

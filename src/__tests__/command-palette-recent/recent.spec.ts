@@ -128,6 +128,28 @@ describe('useRecentCommandsStore', () => {
       unsubscribe();
     }
   });
+
+  it('record 生成相同列表时不通知订阅者且不重复写 localStorage', () => {
+    const list = [{ id: 'a', ts: 1 }];
+    localStorage.setItem(RECENT_STORAGE_KEY, JSON.stringify(list));
+    useRecentCommandsStore.setState({ list });
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1);
+    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
+    const listener = vi.fn();
+    const unsubscribe = useRecentCommandsStore.subscribe(listener);
+
+    try {
+      useRecentCommandsStore.getState().record('a');
+
+      expect(useRecentCommandsStore.getState().list).toBe(list);
+      expect(setItemSpy).not.toHaveBeenCalled();
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+      setItemSpy.mockRestore();
+      nowSpy.mockRestore();
+    }
+  });
 });
 
 describe('useRecentCommandsStore · localStorage 持久化', () => {

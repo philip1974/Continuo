@@ -70,6 +70,7 @@ export async function walkWorkspaceFiles(
     };
   }
   const maxFiles = opts.maxFiles ?? DEFAULT_MAX_FILES;
+  if (maxFiles <= 0) return { ok: true, data: [] };
   const exclude = opts.extraExclude
     ? [...FULL_EXCLUDE, ...opts.extraExclude]
     : FULL_EXCLUDE;

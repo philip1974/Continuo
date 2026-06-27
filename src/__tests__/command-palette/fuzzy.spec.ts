@@ -117,6 +117,23 @@ describe('fuzzyFilter', () => {
       sortSpy.mockRestore();
     }
   });
+
+  it('query 长于 target 时直接判不匹配,不 lower target', () => {
+    const items = [
+      { id: 'a', name: 'a' },
+      { id: 'b', name: 'bb' },
+    ];
+    const lowerSpy = vi.spyOn(String.prototype, 'toLowerCase');
+
+    try {
+      expect(fuzzyFilter(items, 'abcdef', (i) => i.name)).toEqual([]);
+      const lowerCallsDuringFilter = lowerSpy.mock.calls.length;
+      // 只允许 query.toLowerCase() 一次;target 长度已不足,不应再 lower 每个 target。
+      expect(lowerCallsDuringFilter).toBe(1);
+    } finally {
+      lowerSpy.mockRestore();
+    }
+  });
 });
 
 describe('perf P16 · getStrLower 预 lowercase 入口与原路径逐字节一致', () => {

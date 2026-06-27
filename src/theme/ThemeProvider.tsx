@@ -97,6 +97,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
   }, [resolved]);
 
   const setMode = useCallback((next: ThemeMode) => {
+    if (next === mode) return;
     setModeState(next); // 内存态 + DOM class(useEffect)始终更新
     // 边界(E88):setItem 可抛 quota/security error —— 写失败只忽略持久化,绝不中断主题切换。
     if (typeof globalThis.localStorage !== 'undefined') {
@@ -106,7 +107,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
         // 存储满/禁用/受限 → 只丢持久化,内存态与 DOM 已更新
       }
     }
-  }, []);
+  }, [mode]);
 
   const value = useMemo<ThemeContextValue>(
     () => ({ mode, resolved, setMode }),

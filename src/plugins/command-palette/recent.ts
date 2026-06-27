@@ -118,7 +118,7 @@ function recentListsEqual(
   return true;
 }
 
-export const useRecentCommandsStore = create<RecentState>((set) => ({
+export const useRecentCommandsStore = create<RecentState>((set, get) => ({
   // 启动期从 localStorage 读回
   list: readFromStorage(),
 
@@ -129,6 +129,7 @@ export const useRecentCommandsStore = create<RecentState>((set) => ({
     // 先写窗口刚记录的命令(最近列表丢项/排序回退)。读 live 列表(含别窗刚记录的)再把本次置顶。
     const live = readFromStorage();
     const next = buildNextRecentList(live, id, now);
+    if (recentListsEqual(get().list, next)) return;
     set({ list: next });
     writeToStorage(next);
   },

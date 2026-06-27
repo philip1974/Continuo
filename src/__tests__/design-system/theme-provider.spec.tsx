@@ -58,6 +58,19 @@ describe('ThemeProvider', () => {
     expect(document.documentElement.classList.contains('dark')).toBe(true);
   });
 
+  it('setMode 写入当前 mode 时不重复写 localStorage', () => {
+    let captured: ReturnType<typeof useTheme> | null = null;
+    render(
+      <ThemeProvider>
+        <Probe onMount={(c) => (captured = c)} />
+      </ThemeProvider>,
+    );
+    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
+    act(() => captured!.setMode('dark'));
+    expect(setItemSpy).not.toHaveBeenCalled();
+    setItemSpy.mockRestore();
+  });
+
   it('storage 非法值 → 兜底 dark', () => {
     localStorage.setItem(STORAGE_KEY, 'invalid');
     let captured: ReturnType<typeof useTheme> | null = null;

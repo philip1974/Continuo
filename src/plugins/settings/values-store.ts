@@ -51,13 +51,19 @@ function recordsShallowEqual(
   a: Record<string, SettingItemValue>,
   b: Record<string, SettingItemValue>,
 ): boolean {
-  const aKeys = Object.keys(a);
-  const bKeys = Object.keys(b);
-  if (aKeys.length !== bKeys.length) return false;
-  for (const key of aKeys) {
+  if (a === b) return true;
+  let aCount = 0;
+  let bCount = 0;
+  for (const key in a) {
+    if (!Object.prototype.hasOwnProperty.call(a, key)) continue;
+    aCount += 1;
     if (!Object.is(a[key], b[key])) return false;
   }
-  return true;
+  for (const key in b) {
+    if (!Object.prototype.hasOwnProperty.call(b, key)) continue;
+    bCount += 1;
+  }
+  return aCount === bCount;
 }
 
 export interface SettingsValueState {

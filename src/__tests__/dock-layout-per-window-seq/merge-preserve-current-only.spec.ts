@@ -98,4 +98,45 @@ describe('mergeWritableIntoFull current-window-only preservation', () => {
       mapSpy.mockRestore();
     }
   });
+
+  it('mergeWritableIntoFull 单窗口 writable 快路径不构造 Map', () => {
+    const current = defaultExplorerV3();
+    current.windows = [
+      {
+        windowSeq: 1,
+        workspace: { root: '/old-one' },
+        explorer: { activePath: null, expandedPaths: [], sort },
+        layout: { version: 1, keep: 'main-owned' },
+        lastClosedAt: 20,
+      },
+    ];
+    const writable: ExplorerWritablePayload = {
+      ...writablePayload,
+      windows: [writablePayload.windows[0]!],
+    };
+    const OriginalMap = globalThis.Map;
+    let mapCtorCount = 0;
+    class CountingMap<K, V> extends OriginalMap<K, V> {
+      constructor(entries?: readonly (readonly [K, V])[] | null) {
+        mapCtorCount += 1;
+        super(entries);
+      }
+    }
+    globalThis.Map = CountingMap as MapConstructor;
+
+    try {
+      const merged = mergeWritableIntoFull(current, writable);
+
+      expect(mapCtorCount).toBe(0);
+      expect(merged.windows).toHaveLength(1);
+      expect(merged.windows[0]).toMatchObject({
+        windowSeq: 1,
+        workspace: { root: '/renderer-one' },
+        layout: { version: 1, keep: 'main-owned' },
+        lastClosedAt: 20,
+      });
+    } finally {
+      globalThis.Map = OriginalMap;
+    }
+  });
 });

@@ -114,6 +114,11 @@ export function writeRecord<V>(
     return 'too-large';
   }
   try {
+    if (globalThis.localStorage.getItem(key) === serialized) return 'ok';
+  } catch {
+    // Ignore getItem failures; setItem below preserves the previous fallback.
+  }
+  try {
     globalThis.localStorage.setItem(key, serialized);
     return 'ok';
   } catch {

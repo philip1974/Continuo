@@ -51,6 +51,27 @@ interface QuickOpenState {
   setScanFailed: (b: boolean) => void;
 }
 
+function quickOpenResultsEqual(
+  a: readonly QuickOpenFile[],
+  b: readonly QuickOpenFile[],
+): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const left = a[i]!;
+    const right = b[i]!;
+    if (
+      left.absPath !== right.absPath ||
+      left.relPath !== right.relPath ||
+      left.relPathLower !== right.relPathLower ||
+      left.name !== right.name
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export const useQuickOpenStore = create<QuickOpenState>((set) => ({
   isOpen: false,
   query: '',
@@ -91,7 +112,7 @@ export const useQuickOpenStore = create<QuickOpenState>((set) => ({
   // root 省略(单参旧调用)→ resultsRoot 置 null;组件扫描时显式传当前 root 绑定归属。
   setResults: (files, root = null) =>
     set((s) =>
-      s.results === files && s.resultsRoot === root
+      s.resultsRoot === root && quickOpenResultsEqual(s.results, files)
         ? s
         : { results: files, resultsRoot: root },
     ),

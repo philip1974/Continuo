@@ -96,4 +96,33 @@ describe('打磨 R55 — CommandPalette recent rank 预计算', () => {
       getSpy.mockRestore();
     }
   });
+
+  it('单个 recent id 走线性快路径,不构造 rank Map', () => {
+    const items = [
+      command('a', 'Alpha'),
+      command('b', 'Beta'),
+      command('c', 'Charlie'),
+    ];
+    const OriginalMap = globalThis.Map;
+    let mapCtorCount = 0;
+    class CountingMap<K, V> extends OriginalMap<K, V> {
+      constructor(entries?: readonly (readonly [K, V])[] | null) {
+        mapCtorCount += 1;
+        super(entries);
+      }
+    }
+    globalThis.Map = CountingMap as MapConstructor;
+
+    try {
+      const out = sortByRecent(
+        items as unknown as Parameters<typeof sortByRecent>[0],
+        ['c'],
+      );
+
+      expect(out.map((d) => d.cmd.id)).toEqual(['c', 'a', 'b']);
+      expect(mapCtorCount).toBe(0);
+    } finally {
+      globalThis.Map = OriginalMap;
+    }
+  });
 });
