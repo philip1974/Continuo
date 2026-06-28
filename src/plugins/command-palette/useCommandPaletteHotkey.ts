@@ -8,6 +8,10 @@ import { useEffect } from 'react';
 import { useCommandPaletteStore } from './store';
 import { detectPlatform } from './format-hotkey';
 
+function isPKey(key: string): boolean {
+  return key === 'p' || key === 'P';
+}
+
 export function useCommandPaletteHotkey(): void {
   useEffect(() => {
     // mac:Cmd(meta)是 mod;非 mac:只认 Ctrl —— 否则 Windows/Linux 的 Super/Win 键
@@ -16,7 +20,7 @@ export function useCommandPaletteHotkey(): void {
     const handler = (e: KeyboardEvent) => {
       const mod = isMac ? e.metaKey || e.ctrlKey : e.ctrlKey;
       // mod+Shift+P
-      if (mod && e.shiftKey && e.key.toLowerCase() === 'p') {
+      if (mod && e.shiftKey && isPKey(e.key)) {
         e.preventDefault();
         const { isOpen, open, close } = useCommandPaletteStore.getState();
         if (isOpen) close();

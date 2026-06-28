@@ -13,6 +13,7 @@
 import {
   mkdirSync,
   mkdtempSync,
+  promises as nodeFsPromises,
   realpathSync,
   rmSync,
   symlinkSync,
@@ -97,6 +98,31 @@ describe('49 第八 session · canonicalizeScopePath', () => {
       expect(mapSpy).not.toHaveBeenCalled();
     } finally {
       mapSpy.mockRestore();
+    }
+  });
+
+  it('request-scope 批量归一化限制 realpath 并发峰值', async () => {
+    const scopes = Array.from({ length: 32 }, (_, i) => ({
+      path: `/tmp/continuo-scope-${i}`,
+      mode: 'r' as const,
+    }));
+    let active = 0;
+    let maxActive = 0;
+    const realpathSpy = vi
+      .spyOn(nodeFsPromises, 'realpath')
+      .mockImplementation(async (p) => {
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        active -= 1;
+        return String(p);
+      });
+
+    try {
+      await expect(canonicalizePathScopes(scopes)).resolves.toHaveLength(32);
+      expect(maxActive).toBeLessThanOrEqual(16);
+    } finally {
+      realpathSpy.mockRestore();
     }
   });
 });

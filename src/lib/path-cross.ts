@@ -9,9 +9,9 @@
  * 都没有则默认 `/`)。先去掉 dir 尾部多余分隔符,避免 `a//b`。
  */
 export function joinPath(dir: string, name: string): string {
-  const d = dir.replace(/[\\/]+$/, '');
+  const d = trimTrailingSeparators(dir);
   const useBackslash =
-    d.lastIndexOf('\\') > d.lastIndexOf('/') || /^[a-zA-Z]:$/.test(d);
+    d.lastIndexOf('\\') > d.lastIndexOf('/') || isBareWindowsDrive(d);
   return `${d}${useBackslash ? '\\' : '/'}${name}`;
 }
 
@@ -25,13 +25,60 @@ export function joinPath(dir: string, name: string): string {
  */
 export function stripRootPrefix(root: string, p: string): string {
   if (!isSameOrInsidePath(root, p)) return p;
-  return p.slice(root.length).replace(/^[\\/]+/, '');
+  return trimLeadingSeparators(p.slice(root.length));
 }
 
 function isWindowsRuntime(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const platform = navigator.platform ?? '';
   return (
-    typeof navigator !== 'undefined' && /^win/i.test(navigator.platform ?? '')
+    platform.length >= 3 &&
+    (platform.charCodeAt(0) | 32) === 119 &&
+    (platform.charCodeAt(1) | 32) === 105 &&
+    (platform.charCodeAt(2) | 32) === 110
   );
+}
+
+function isPathSeparatorCode(code: number): boolean {
+  return code === 47 || code === 92;
+}
+
+function isAsciiAlphaCode(code: number): boolean {
+  return (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+}
+
+function isBareWindowsDrive(value: string): boolean {
+  return (
+    value.length === 2 &&
+    isAsciiAlphaCode(value.charCodeAt(0)) &&
+    value.charCodeAt(1) === 58
+  );
+}
+
+function trimTrailingSeparators(value: string): string {
+  let end = value.length;
+  while (end > 0 && isPathSeparatorCode(value.charCodeAt(end - 1))) {
+    end -= 1;
+  }
+  return end === value.length ? value : value.slice(0, end);
+}
+
+function trimLeadingSeparators(value: string): string {
+  let start = 0;
+  while (start < value.length && isPathSeparatorCode(value.charCodeAt(start))) {
+    start += 1;
+  }
+  return start === 0 ? value : value.slice(start);
+}
+
+function lowerIfNeeded(value: string): string {
+  for (let i = 0; i < value.length; i += 1) {
+    const code = value.charCodeAt(i);
+    if ((code >= 65 && code <= 90) || code > 127) {
+      return value.toLowerCase();
+    }
+  }
+  return value;
 }
 
 /**
@@ -41,7 +88,7 @@ function isWindowsRuntime(): boolean {
  */
 export function pathEquals(a: string, b: string): boolean {
   if (a === b) return true;
-  return isWindowsRuntime() && a.toLowerCase() === b.toLowerCase();
+  return isWindowsRuntime() && lowerIfNeeded(a) === lowerIfNeeded(b);
 }
 
 /**
@@ -56,8 +103,9 @@ export function pathEquals(a: string, b: string): boolean {
  * - 大小写与 `pathEquals` 同策:Windows 运行时不敏感,mac/Linux 严格(零行为变化)。
  */
 export function isSameOrInsidePath(base: string, filePath: string): boolean {
-  const fold = (s: string): string => (isWindowsRuntime() ? s.toLowerCase() : s);
-  const stripped = base.replace(/[\\/]+$/, '');
+  const windows = isWindowsRuntime();
+  const fold = (s: string): string => (windows ? lowerIfNeeded(s) : s);
+  const stripped = trimTrailingSeparators(base);
   if (stripped === '') return true; // base 为纯分隔符根(如 "/")→ 其下任意路径都算内
   const b = fold(stripped);
   const fp = fold(filePath);

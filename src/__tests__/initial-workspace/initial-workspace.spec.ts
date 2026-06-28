@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   parseInitialWorkspace,
   parseInitialWindowSeq,
@@ -31,6 +31,18 @@ describe('parseInitialWorkspace', () => {
 
   it('?workspace=  (仅空白,decoded)→ null', () => {
     expect(parseInitialWorkspace('?workspace=%20%20')).toBeNull();
+  });
+
+  it('全空白 workspace 判定不调用 String.prototype.trim,且保留 Unicode trim 语义', () => {
+    const trimSpy = vi.spyOn(String.prototype, 'trim');
+
+    try {
+      expect(parseInitialWorkspace('?workspace=%20%09%C2%A0%E3%80%80')).toBeNull();
+      expect(parseInitialWorkspace('?workspace=%20%2Flead')).toBe(' /lead');
+      expect(trimSpy).not.toHaveBeenCalled();
+    } finally {
+      trimSpy.mockRestore();
+    }
   });
 
   it('保留合法的前后空格路径(不 trim,符合 workspace.store 契约)', () => {
@@ -69,6 +81,21 @@ describe('parseInitialWindowSeq', () => {
     expect(parseInitialWindowSeq('?windowSeq=-1')).toBe(0);
     expect(parseInitialWindowSeq('?windowSeq=3.14')).toBe(0);
     expect(parseInitialWindowSeq('?windowSeq=')).toBe(0);
+  });
+
+  it('数字串判断不调用 RegExp.test', () => {
+    const testSpy = vi.spyOn(RegExp.prototype, 'test');
+
+    try {
+      expect(parseInitialWindowSeq('?windowSeq=42')).toBe(42);
+      expect(parseInitialWindowSeq('?windowSeq=3.14')).toBe(0);
+      const digitRegexCalls = testSpy.mock.contexts.filter(
+        (context) => context instanceof RegExp && context.source === '^\\d+$',
+      );
+      expect(digitRegexCalls).toHaveLength(0);
+    } finally {
+      testSpy.mockRestore();
+    }
   });
 
   it('与 ?workspace 共存', () => {

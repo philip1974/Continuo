@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import path from 'node:path';
 import { resolveWatchChangedPath } from '../ipc/fs.ipc';
 
@@ -18,5 +18,18 @@ describe('resolveWatchChangedPath — watcher 变更目录路径(平台原生分
     expect(resolveWatchChangedPath('C:\\proj', 'a.ts', path.win32)).toBe(
       'C:\\proj',
     );
+  });
+
+  it('相对路径分隔符归一化走尾部扫描,不调用 String.replace', () => {
+    const replaceSpy = vi.spyOn(String.prototype, 'replace');
+    try {
+      expect(
+        resolveWatchChangedPath('/proj', 'sub\\dir/a.ts', path.posix),
+      ).toBe('/proj/sub/dir');
+      expect(resolveWatchChangedPath('/proj', 'a.ts', path.posix)).toBe('/proj');
+      expect(replaceSpy).not.toHaveBeenCalled();
+    } finally {
+      replaceSpy.mockRestore();
+    }
   });
 });

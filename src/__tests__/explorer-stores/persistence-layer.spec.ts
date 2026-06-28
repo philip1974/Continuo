@@ -399,8 +399,9 @@ describe('initExplorerPersistence', () => {
     }
   });
 
-  it('自动保存成功后 flush 相同 snapshot → 不重复调用 api.write', async () => {
+  it('自动保存成功后 clean flush → 不重复调用 api.write 且不重建 snapshot JSON', async () => {
     vi.useFakeTimers();
+    const stringifySpy = vi.spyOn(JSON, 'stringify');
     try {
       const api = makeApi(async () => ({ ok: true, data: null }));
       await initExplorerPersistence(api);
@@ -409,9 +410,12 @@ describe('initExplorerPersistence', () => {
       await vi.advanceTimersByTimeAsync(400);
       expect(api.write).toHaveBeenCalledTimes(1);
 
+      stringifySpy.mockClear();
       await flushExplorerPersistence();
       expect(api.write).toHaveBeenCalledTimes(1);
+      expect(stringifySpy).not.toHaveBeenCalled();
     } finally {
+      stringifySpy.mockRestore();
       vi.useRealTimers();
     }
   });

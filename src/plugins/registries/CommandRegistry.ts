@@ -46,6 +46,42 @@ const CMD_HOTKEY_MAX = 64;
 // 防捕获/override 写入注册侧会拒绝的畸形 hotkey(空段 / 含空白 / 主键为分隔符 '+')。
 export const HOTKEY_SHAPE_RE = /^[^+\s]+(\+[^+\s]+)*$/;
 
+function isEcmaWhitespaceCode(code: number): boolean {
+  return (
+    code === 9 ||
+    code === 10 ||
+    code === 11 ||
+    code === 12 ||
+    code === 13 ||
+    code === 32 ||
+    code === 160 ||
+    code === 5760 ||
+    code === 65279 ||
+    code === 8232 ||
+    code === 8233 ||
+    code === 8239 ||
+    code === 8287 ||
+    code === 12288 ||
+    (code >= 8192 && code <= 8202)
+  );
+}
+
+export function isValidHotkeyShape(hotkey: string): boolean {
+  if (hotkey.length === 0) return false;
+  let prevWasPlus = true;
+  for (let i = 0; i < hotkey.length; i += 1) {
+    const code = hotkey.charCodeAt(i);
+    if (code === 43) {
+      if (prevWasPlus || i === hotkey.length - 1) return false;
+      prevWasPlus = true;
+      continue;
+    }
+    if (isEcmaWhitespaceCode(code)) return false;
+    prevWasPlus = false;
+  }
+  return true;
+}
+
 function validateCommandSpec(spec: CommandSpec): void {
   // 边界(E273,E271 registry 族):先校验 spec 是对象,否则读 spec.id/字段对 null/undefined 抛 TypeError。
   if (!isSpecObject(spec)) {
@@ -88,7 +124,7 @@ function validateCommandSpec(spec: CommandSpec): void {
     }
   }
   // hotkey 此处已确认为 string(非 string 上面已抛),再校验形态。
-  if (spec.hotkey !== undefined && !HOTKEY_SHAPE_RE.test(spec.hotkey)) {
+  if (spec.hotkey !== undefined && !isValidHotkeyShape(spec.hotkey)) {
     throw new Error(
       `[command-registry] invalid hotkey shape: "${spec.hotkey}"`,
     );

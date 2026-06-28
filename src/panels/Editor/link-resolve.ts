@@ -26,16 +26,93 @@ const MAX_FILE_LINK_LEN = 8192; // 对齐 FS_PATH_MAX(文件链接路径)
 // 外链上限用共享 MAX_EXTERNAL_URL_LEN(E190 收口:与 windowOpenHandler / shell.openExternal 单一来源)。
 const MAX_EXTERNAL_LINK_LEN = MAX_EXTERNAL_URL_LEN;
 
-const SAFE_EXTERNAL_SCHEME = /^(https?|mailto):/i;
-const ANY_SCHEME = /^[a-z][a-z0-9+.-]*:/i;
 // Windows 绝对路径:盘符 `C:\`/`C:/` 或 UNC `\\server`。必须在 ANY_SCHEME 之前甄别,
 // 否则 `C:\foo.md` 会被 ANY_SCHEME 当成 `C:` scheme 拒绝(跨平台审计 P1)。
-const WIN_DRIVE = /^[a-zA-Z]:[\\/]/;
-const WIN_UNC = /^\\\\/;
+function isPathSeparatorCode(code: number): boolean {
+  return code === 47 || code === 92;
+}
+
+function isAsciiAlphaCode(code: number): boolean {
+  return (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+}
+
+function isAsciiSchemeCharCode(code: number): boolean {
+  return (
+    isAsciiAlphaCode(code) ||
+    (code >= 48 && code <= 57) ||
+    code === 43 ||
+    code === 45 ||
+    code === 46
+  );
+}
+
+function hasAnyScheme(href: string): boolean {
+  if (!isAsciiAlphaCode(href.charCodeAt(0))) return false;
+  for (let i = 1; i < href.length; i += 1) {
+    const code = href.charCodeAt(i);
+    if (code === 58) return true;
+    if (!isAsciiSchemeCharCode(code)) return false;
+  }
+  return false;
+}
+
+function startsWithAllowedExternalScheme(href: string): boolean {
+  if (
+    href.length >= 5 &&
+    (href.charCodeAt(0) | 32) === 104 &&
+    (href.charCodeAt(1) | 32) === 116 &&
+    (href.charCodeAt(2) | 32) === 116 &&
+    (href.charCodeAt(3) | 32) === 112
+  ) {
+    const next = href.charCodeAt(4);
+    return next === 58 || ((next | 32) === 115 && href.charCodeAt(5) === 58);
+  }
+  return (
+    href.length >= 7 &&
+    (href.charCodeAt(0) | 32) === 109 &&
+    (href.charCodeAt(1) | 32) === 97 &&
+    (href.charCodeAt(2) | 32) === 105 &&
+    (href.charCodeAt(3) | 32) === 108 &&
+    (href.charCodeAt(4) | 32) === 116 &&
+    (href.charCodeAt(5) | 32) === 111 &&
+    href.charCodeAt(6) === 58
+  );
+}
+
+function isWindowsDriveAbsolute(p: string): boolean {
+  return (
+    p.length >= 3 &&
+    isAsciiAlphaCode(p.charCodeAt(0)) &&
+    p.charCodeAt(1) === 58 &&
+    isPathSeparatorCode(p.charCodeAt(2))
+  );
+}
+
+function isUncPath(p: string): boolean {
+  return p.charCodeAt(0) === 92 && p.charCodeAt(1) === 92;
+}
+
+function readUncRoot(
+  p: string,
+): { root: string; restStart: number } | null {
+  let i = 2;
+  const serverStart = i;
+  while (i < p.length && !isPathSeparatorCode(p.charCodeAt(i))) i += 1;
+  if (i === serverStart || i >= p.length) return null;
+
+  while (i < p.length && isPathSeparatorCode(p.charCodeAt(i))) i += 1;
+  const shareStart = i;
+  while (i < p.length && !isPathSeparatorCode(p.charCodeAt(i))) i += 1;
+  if (i === shareStart) return null;
+
+  const rootEnd = i;
+  while (i < p.length && isPathSeparatorCode(p.charCodeAt(i))) i += 1;
+  return { root: `${p.slice(0, rootEnd)}\\`, restStart: i };
+}
 
 /** 跨平台绝对路径:POSIX `/`、Windows 盘符、UNC。 */
 function isAbsolutePathLike(p: string): boolean {
-  return p.startsWith('/') || WIN_DRIVE.test(p) || WIN_UNC.test(p);
+  return p.charCodeAt(0) === 47 || isWindowsDriveAbsolute(p) || isUncPath(p);
 }
 
 /** 取 currentFilePath 所在目录(`/` 或 `\\` 作分隔符);裸文件名返 null. */
@@ -54,20 +131,20 @@ function dirnameOf(p: string): string | null {
 function normalize(p: string): string {
   let root = '';
   let rest = p;
-  if (WIN_UNC.test(p)) {
+  if (isUncPath(p)) {
     // UNC:`\\server\share` 是**不可越过的根**(host+share 构成卷根,`..` 不得弹出)。
     // 跨平台审计 P2(codex):旧实现 root 仅取 `\\`,把 server/share 当可弹 segs → 相对
     // 链接 `..\..\a.md` 从 `\\server\share\dir\cur.md` 错解析成 `\\server\a.md`,应停在
     // `\\server\share\a.md`(与 drive/POSIX 的 root 不可弹一致)。
-    const m = /^(\\\\[^\\/]+[\\/]+[^\\/]+)(?:[\\/]+|$)/.exec(p);
-    if (m) {
-      root = `${m[1]}\\`; // 统一带反斜杠尾(同 drive root "C:\")
-      rest = p.slice(m[0].length);
+    const uncRoot = readUncRoot(p);
+    if (uncRoot !== null) {
+      root = uncRoot.root; // 统一带反斜杠尾(同 drive root "C:\")
+      rest = p.slice(uncRoot.restStart);
     } else {
       root = '\\\\'; // 残缺 UNC(仅 \\server,无 share)→ 退回旧语义
       rest = p.slice(2);
     }
-  } else if (WIN_DRIVE.test(p)) {
+  } else if (isWindowsDriveAbsolute(p)) {
     root = p.slice(0, 3); // "C:\" 或 "C:/"
     rest = p.slice(3);
   } else if (p.startsWith('/')) {
@@ -114,8 +191,8 @@ export function resolveLink(
   if (href.startsWith('#')) return null;
 
   // protocol 链接(先排除 Windows 盘符/UNC 绝对路径,它们不是 URL scheme)
-  if (!isAbsolutePathLike(href) && ANY_SCHEME.test(href)) {
-    if (SAFE_EXTERNAL_SCHEME.test(href)) {
+  if (!isAbsolutePathLike(href) && hasAnyScheme(href)) {
+    if (startsWithAllowedExternalScheme(href)) {
       // 边界(E179):外链上限对齐 openExternal,超限不进 IPC(否则超长 URL structured-clone 后才被主进程拒)。
       if (href.length > MAX_EXTERNAL_LINK_LEN) return null;
       return { kind: 'external', url: href };

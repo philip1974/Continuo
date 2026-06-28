@@ -10,7 +10,8 @@ vi.mock('../../plugins/quick-open/walk-files', () => ({
   walkWorkspaceFiles: vi.fn(async () => ({ ok: true as const, data: [] })),
 }));
 
-const { scrollToIndexSpy, virtualizerSpy } = vi.hoisted(() => ({
+const { getVirtualItemsSpy, scrollToIndexSpy, virtualizerSpy } = vi.hoisted(() => ({
+  getVirtualItemsSpy: vi.fn(),
   scrollToIndexSpy: vi.fn(),
   virtualizerSpy: vi.fn(),
 }));
@@ -20,10 +21,12 @@ vi.mock('@tanstack/react-virtual', () => ({
     virtualizerSpy(opts.count);
     return {
       getTotalSize: () => opts.count * 28,
-      getVirtualItems: () =>
-        [0, 1, 2]
+      getVirtualItems: () => {
+        getVirtualItemsSpy();
+        return [0, 1, 2]
           .filter((i) => i < opts.count)
-          .map((i) => ({ index: i, start: i * 28, size: 28, key: i })),
+          .map((i) => ({ index: i, start: i * 28, size: 28, key: i }));
+      },
       scrollToIndex: scrollToIndexSpy,
     };
   },
@@ -46,6 +49,7 @@ function mkFiles(n: number): QuickOpenFile[] {
 }
 
 beforeEach(() => {
+  getVirtualItemsSpy.mockClear();
   scrollToIndexSpy.mockClear();
   virtualizerSpy.mockClear();
   useWorkspaceStore.setState({ root: '/work', recentRoots: [] });
@@ -83,6 +87,11 @@ describe('打磨 R25 — Quick Open 虚拟化', () => {
     const { container } = render(<QuickOpenModal />);
     const options = container.querySelectorAll('[role=option]');
     expect(options.length).toBe(3); // 窗口内 3 行,而非 100
+  });
+
+  it('复用 virtual items 快照,getVirtualItems 不按同一 render 重复调用', () => {
+    render(<QuickOpenModal />);
+    expect(getVirtualItemsSpy.mock.calls.length).toBeLessThan(3);
   });
 
   it('virtualizer count = filtered 全集(逻辑全集仍是 100)', () => {

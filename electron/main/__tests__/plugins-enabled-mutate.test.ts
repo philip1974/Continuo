@@ -48,8 +48,18 @@ describe('setEnabledId(主进程全局串行 delta 写)', () => {
   });
 
   it('enabled=false 移除不存在的 id → 幂等(不抛、集合不变)', async () => {
+    const renameSpy = vi.spyOn(fsp, 'rename');
+
     await setEnabledId(baseDir, 'a', true);
+    const callsAfterInitialWrite = renameSpy.mock.calls.length;
+    expect(callsAfterInitialWrite).toBeGreaterThan(0);
+
     await setEnabledId(baseDir, 'x', false);
+    expect(renameSpy.mock.calls).toHaveLength(callsAfterInitialWrite);
+
+    await setEnabledId(baseDir, 'a', true);
+    expect(renameSpy.mock.calls).toHaveLength(callsAfterInitialWrite);
+
     expect([...(await readEnabledIds(baseDir))]).toEqual(['a']);
   });
 

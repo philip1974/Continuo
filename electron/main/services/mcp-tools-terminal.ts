@@ -101,6 +101,19 @@ const sendTextBoundedSchema = sendTextInputSchema.extend({
 const pressKeyBoundedSchema = pressKeyInputSchema.extend({
   session_id: sessionIdBounded,
 });
+const PRESS_KEY_ENUM: ReadonlyArray<keyof typeof KEY_BYTES> = [
+  'enter',
+  'tab',
+  'escape',
+  'backspace',
+  'ctrl_c',
+  'ctrl_d',
+  'ctrl_z',
+  'up',
+  'down',
+  'right',
+  'left',
+];
 const readOutputBoundedSchema = readOutputInputSchema.extend({
   session_id: sessionIdBounded,
 });
@@ -359,14 +372,49 @@ export interface SendInputToolDeps {
  * send_text / press_key 内部不调此函数(它们语义保证 verbatim / 显式按键映射)。
  */
 export function preparePtyData(raw: string): string {
-  const unescaped = raw
-    .replace(/\\n/g, '\n')
-    .replace(/\\r/g, '\r')
-    .replace(/\\t/g, '\t')
-    .replace(/\\x([0-9a-fA-F]{2})/g, (_, hex: string) =>
-      String.fromCharCode(parseInt(hex, 16)),
-    );
-  return unescaped.replace(/\n/g, '\r');
+  let out = '';
+  for (let i = 0; i < raw.length; i += 1) {
+    const code = raw.charCodeAt(i);
+    if (code === 10) {
+      out += '\r';
+      continue;
+    }
+    if (code !== 92 || i + 1 >= raw.length) {
+      out += raw[i]!;
+      continue;
+    }
+    const next = raw.charCodeAt(i + 1);
+    if (next === 110) {
+      out += '\r';
+      i += 1;
+    } else if (next === 114) {
+      out += '\r';
+      i += 1;
+    } else if (next === 116) {
+      out += '\t';
+      i += 1;
+    } else if (next === 120 && i + 3 < raw.length) {
+      const hi = hexValue(raw.charCodeAt(i + 2));
+      const lo = hexValue(raw.charCodeAt(i + 3));
+      if (hi >= 0 && lo >= 0) {
+        const value = hi * 16 + lo;
+        out += value === 10 ? '\r' : String.fromCharCode(value);
+        i += 3;
+      } else {
+        out += raw[i]!;
+      }
+    } else {
+      out += raw[i]!;
+    }
+  }
+  return out;
+}
+
+function hexValue(code: number): number {
+  if (code >= 48 && code <= 57) return code - 48;
+  if (code >= 65 && code <= 70) return code - 55;
+  if (code >= 97 && code <= 102) return code - 87;
+  return -1;
 }
 
 // 边界(E148,E151 同族):session_id 回显截断逻辑已收口到共享 helper(session-id-echo.ts),
@@ -519,7 +567,7 @@ export function makePressKeyTool(
         },
         key: {
           type: 'string',
-          enum: Object.keys(KEY_BYTES),
+          enum: PRESS_KEY_ENUM,
           description:
             'Key to press. enter=submit (raw-mode TUIs); ctrl_c=interrupt; ctrl_d=EOF; arrows=cursor; backspace=DEL.',
         },

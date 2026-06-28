@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { isSafePluginId } from '../../../electron/main/services/plugins.service';
+import { isValidPluginId } from '../../plugins/plugin-id';
 
 // P1 安全回归:旧正则 `^[a-z0-9._-]+$` 允许纯点段,manifest.id='..' 通过校验 →
 // path.join(baseDir,'..') 解析到 baseDir 父目录,overwrite 安装(marketplace「更新」)
@@ -30,5 +31,22 @@ describe('49 · isSafePluginId 拒绝路径穿越 id', () => {
     expect(isSafePluginId('Foo')).toBe(false);
     expect(isSafePluginId('a b')).toBe(false);
     expect(isSafePluginId('')).toBe(false);
+  });
+
+  it('main/renderer plugin id 校验不调用 RegExp.test', () => {
+    const testSpy = vi.spyOn(RegExp.prototype, 'test');
+
+    try {
+      expect(isSafePluginId('my.plugin_v2-beta')).toBe(true);
+      expect(isSafePluginId('BadId')).toBe(false);
+      expect(isValidPluginId('my.plugin_v2-beta')).toBe(true);
+      expect(isValidPluginId('BadId')).toBe(false);
+      const pluginIdRegexCalls = testSpy.mock.contexts.filter(
+        (context) => context instanceof RegExp && context.source === '^[a-z0-9._-]+$',
+      );
+      expect(pluginIdRegexCalls).toHaveLength(0);
+    } finally {
+      testSpy.mockRestore();
+    }
   });
 });

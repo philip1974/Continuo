@@ -11,11 +11,22 @@ import type { ShellFamily } from '@continuo-terminal/shell-quote';
 
 const POSIX_LOGIN_SHELLS = new Set(['zsh', 'bash', 'fish']);
 
+function lowerIfNeeded(value: string): string {
+  for (let i = 0; i < value.length; i += 1) {
+    const code = value.charCodeAt(i);
+    if ((code >= 65 && code <= 90) || code > 127) {
+      return value.toLowerCase();
+    }
+  }
+  return value;
+}
+
 /** 取 shell 路径的 basename(吃 `/` 与 `\`),小写并去掉 `.exe` 后缀。 */
 function shellBaseName(shell: string): string {
   const idx = Math.max(shell.lastIndexOf('/'), shell.lastIndexOf('\\'));
   const base = idx >= 0 ? shell.slice(idx + 1) : shell;
-  return base.toLowerCase().replace(/\.exe$/, '');
+  const lower = lowerIfNeeded(base);
+  return lower.endsWith('.exe') ? lower.slice(0, -4) : lower;
 }
 
 /** 用户未传 args 时的默认参数:仅 zsh/bash/fish 用 login+interactive,其余为空。 */

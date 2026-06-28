@@ -26,11 +26,24 @@ export interface PluginDataStoreDeps {
 // plugin id 必须是单段安全标识符 —— 与 plugins.service / loader 的 id 正则一致。
 // 拒绝路径分隔符 / .. / 空,防 dataFile() 的 join 越出 plugins 目录(路径穿越:
 // save('../../foo',...) 可在 userData 外任意写/删/读文件)。
-const PLUGIN_ID_RE = /^[a-z0-9._-]+$/;
 // 边界(E177):pluginId 长度上限(对齐 plugins.service / plugin-mcp-schemas / plugins.ipc 的
 // PLUGIN_ID_MAX=256)。绕过 wrapper 直调 pluginDataRaw.load/save/clear 时,超长合法 id 会进正则扫描/
 // path join/lockfile/错误链路放大主进程 CPU/内存/日志或触发 ENAMETOOLONG。
 const PLUGIN_ID_MAX = 256;
+
+function hasOnlyPluginIdChars(pluginId: string): boolean {
+  for (let i = 0; i < pluginId.length; i += 1) {
+    const code = pluginId.charCodeAt(i);
+    const ok =
+      (code >= 97 && code <= 122) ||
+      (code >= 48 && code <= 57) ||
+      code === 46 ||
+      code === 95 ||
+      code === 45;
+    if (!ok) return false;
+  }
+  return true;
+}
 
 function assertPluginId(pluginId: unknown): asserts pluginId is string {
   if (
@@ -39,7 +52,7 @@ function assertPluginId(pluginId: unknown): asserts pluginId is string {
     pluginId.length > PLUGIN_ID_MAX ||
     pluginId === '.' ||
     pluginId === '..' ||
-    !PLUGIN_ID_RE.test(pluginId)
+    !hasOnlyPluginIdChars(pluginId)
   ) {
     // 边界(E177,E148 echo 族):不回显原始(可能超长)id,防错误消息经 IPC/日志放大;附稳定 code。
     throw Object.assign(new Error('invalid plugin id'), {

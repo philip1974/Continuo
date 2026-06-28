@@ -509,7 +509,9 @@ export async function initExplorerPersistence(
   let writeChain: Promise<void> = Promise.resolve();
   let pendingWrite = false;
   let lastWrittenSnapshotPayload: string | null = null;
+  let hasDirtyStoreChanges = true;
   const writeNow = (): Promise<void> => {
+    if (!hasDirtyStoreChanges && !pendingWrite) return writeChain;
     pendingWrite = true;
     writeChain = writeChain.then(async () => {
       if (!pendingWrite) return; // 已被链上前一个写覆盖(合并),跳过冗余写
@@ -517,11 +519,15 @@ export async function initExplorerPersistence(
       try {
         const snap = snapshotFromStores(lastSnap ?? undefined, windowSeq);
         const serializedSnap = JSON.stringify(snap);
-        if (serializedSnap === lastWrittenSnapshotPayload) return;
+        if (serializedSnap === lastWrittenSnapshotPayload) {
+          hasDirtyStoreChanges = false;
+          return;
+        }
         const w = await api.write(snap);
         if (w.ok) {
           lastSnap = snap;
           lastWrittenSnapshotPayload = serializedSnap;
+          hasDirtyStoreChanges = false;
         } else {
           console.warn('[explorer-persist] write failed', w.code, w.message);
         }
@@ -537,6 +543,11 @@ export async function initExplorerPersistence(
   // 注册立即落盘句柄,供 flushExplorerPersistence()(关窗 / 退出)调用。
   activeFlush = writeNow;
 
+  const markDirtyAndPersist = (): void => {
+    hasDirtyStoreChanges = true;
+    persist();
+  };
+
   subscribeAll(
     [
       useWorkspaceStore,
@@ -545,7 +556,7 @@ export async function initExplorerPersistence(
       useLayoutUiStore,
       useEditorStore,
     ],
-    persist,
+    markDirtyAndPersist,
   );
 }
 

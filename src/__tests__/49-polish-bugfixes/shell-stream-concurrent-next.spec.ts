@@ -75,6 +75,21 @@ describe('race(R93) · shell-stream chunks 并发 next() FIFO 不丢等待者', 
     await expect(p2).resolves.toEqual({ value: undefined, done: true });
   });
 
+  it('FIFO 队列不通过 Array.shift 移动数组头部', async () => {
+    const { chunks } = pluginShellStreamRaw.execStream('cmd', []);
+    const streamId = invokeCalls[0]![1] as string;
+    const it = chunks[Symbol.asyncIterator]();
+
+    const p1 = it.next();
+    const p2 = it.next();
+    fire(streamId, 'stdout', new Uint8Array([97]));
+    fire(streamId, 'stdout', new Uint8Array([98]));
+
+    await expect(p1).resolves.toMatchObject({ done: false });
+    await expect(p2).resolves.toMatchObject({ done: false });
+    expect(pluginShellStreamRaw.execStream.toString()).not.toContain('.shift(');
+  });
+
   // 边界(E231,E61 同族/E230 preload 侧):pending next() 等待者数量上限。无缓冲且未退出时海量 next()
   // 不 await 会无界 push resolver;超限视为滥用 → ABORT + 合成错误 exit 收敛全部等待者。
   it('E231 pending next() 超 MAX_PENDING_NEXT_RESOLVERS → ABORT + 合成 exit,全部收敛 done', async () => {

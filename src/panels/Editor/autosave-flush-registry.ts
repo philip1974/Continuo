@@ -34,6 +34,14 @@ export function trackInFlightAutoSave(p: Promise<unknown>): void {
  */
 export async function flushPendingAutoSave(): Promise<void> {
   if (!activeFlush && inFlightFlushes.size === 0) return;
+  if (activeFlush && inFlightFlushes.size === 0) {
+    try {
+      await activeFlush();
+    } catch {
+      /* scheduler 内部已记录;不阻断关窗 ack */
+    }
+    return;
+  }
   const pending = new Array<Promise<unknown>>(
     inFlightFlushes.size + (activeFlush ? 1 : 0),
   );

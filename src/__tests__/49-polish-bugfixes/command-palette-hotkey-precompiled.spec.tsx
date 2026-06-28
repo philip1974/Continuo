@@ -78,6 +78,57 @@ describe('打磨 R28 — CommandPalette hotkey 预计算', () => {
     }
   });
 
+  it('无 hotkey 且无 override 的命令不调用 getEffectiveHotkey', () => {
+    const commands: CommandSpec[] = [
+      { id: 'a', title: 'A', hotkey: 'mod+a', fn: vi.fn() },
+      { id: 'b', title: 'B', fn: vi.fn() },
+      { id: 'c', title: 'C', fn: vi.fn() },
+    ];
+    useKeybindingsStore.setState({ overrides: { c: 'mod+c' } });
+
+    const out = buildDisplayCommands(
+      commands,
+      (_key, fallback) => fallback,
+      'other',
+      { c: 'mod+c' },
+    );
+
+    expect(out.map((d) => d.cmd.id)).toEqual(['a', 'b', 'c']);
+    expect(out[0]?.hotkeyParts).toEqual(['Ctrl', 'A']);
+    expect(out[1]?.hotkeyParts).toEqual([]);
+    expect(out[2]?.hotkeyParts).toEqual(['Ctrl', 'C']);
+    expect(getEffSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('已小写搜索源不调用 toLowerCase', () => {
+    const commands: CommandSpec[] = [
+      { id: 'a', title: 'save', category: 'file', fn: vi.fn() },
+    ];
+    const lowerSpy = vi.spyOn(String.prototype, 'toLowerCase');
+
+    try {
+      const out = buildDisplayCommands(
+        commands,
+        (_key, fallback) => fallback,
+        'other',
+      );
+
+      expect(out[0]?.matchSourceLower).toBe('file save');
+      expect(
+        lowerSpy.mock.contexts.some((ctx) => String(ctx) === 'file save'),
+      ).toBe(false);
+      expect(
+        buildDisplayCommands(
+          [{ id: 'b', title: 'Save', category: 'File', fn: vi.fn() }],
+          (_key, fallback) => fallback,
+          'other',
+        )[0]?.matchSourceLower,
+      ).toBe('file save');
+    } finally {
+      lowerSpy.mockRestore();
+    }
+  });
+
   it('空命令列表 → 稳定空数组,不读取 hotkey', () => {
     const commands: CommandSpec[] = [];
 

@@ -274,6 +274,22 @@ describe('isValidMarketplaceEntry bounds (E25)', () => {
       }),
     ).toBe(true);
   });
+
+  it('tags 校验单趟循环,不调用 Array.prototype.every', () => {
+    const everySpy = vi.spyOn(Array.prototype, 'every');
+
+    try {
+      expect(isValidMarketplaceEntry({ ...base, tags: ['tools', 'demo'] })).toBe(
+        true,
+      );
+      expect(
+        isValidMarketplaceEntry({ ...base, tags: ['ok', 'x'.repeat(129)] }),
+      ).toBe(false);
+      expect(everySpy).not.toHaveBeenCalled();
+    } finally {
+      everySpy.mockRestore();
+    }
+  });
 });
 
 // 边界(E124):readResponseTextCapped 按真实字节流式硬截断(旧 readJsonCapped 在大小检查前
@@ -532,6 +548,33 @@ describe('fetchMarketplaceIndex', () => {
     const r = await fetchMarketplaceIndex();
     expect(r).toHaveLength(1);
     expect(f).not.toHaveBeenCalled(); // sessionStorage 命中,没走网络
+  });
+
+  it('sessionStorage hydrate:entry 数组校验单趟循环,不调用 Array.prototype.every', async () => {
+    const cached = {
+      id: 'com.example.cached',
+      name: 'Cached',
+      author: 'me',
+      repo: 'me/cached',
+    } satisfies MarketplaceEntry;
+    sessionStorage.setItem(
+      'continuo:marketplace:index',
+      JSON.stringify({
+        fetchedAt: Date.now(),
+        data: [cached],
+      }),
+    );
+    const f = mockFetch({ ok: true, data: [SAMPLE_ENTRY] });
+    const everySpy = vi.spyOn(Array.prototype, 'every');
+
+    try {
+      const r = await fetchMarketplaceIndex();
+      expect(r.map((e) => e.id)).toEqual(['com.example.cached']);
+      expect(f).not.toHaveBeenCalled();
+      expect(everySpy).not.toHaveBeenCalled();
+    } finally {
+      everySpy.mockRestore();
+    }
   });
 
   // 边界(E64,E57 renderer 同族):index.json 响应体上限(解析前拦)+ 顶层数组条目数硬上限。

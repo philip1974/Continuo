@@ -8,6 +8,9 @@ import { render } from '@testing-library/react';
 const h = vi.hoisted(() => ({
   read: vi.fn(),
   write: vi.fn().mockResolvedValue({ ok: true }),
+  flushExplorerPersistence: vi.fn().mockResolvedValue(undefined),
+  flushPendingAutoSave: vi.fn().mockResolvedValue(undefined),
+  toJSON: vi.fn(() => ({ panels: {} })),
   notifyError: vi.fn(),
   layoutChangeCb: { current: null as (() => void) | null },
   // race(R22):注册数 / dispose 数计数,验卸载时「注册的全部被 dispose」。
@@ -33,7 +36,7 @@ vi.mock('dockview-react', () => ({
       () => ({
         totalPanels: 1,
         fromJSON: vi.fn(),
-        toJSON: vi.fn(() => ({ panels: {} })),
+        toJSON: h.toJSON,
         getPanel: vi.fn(() => null),
         addPanel: vi.fn(() => ({ api: { setActive: vi.fn() } })),
         onDidLayoutChange: fakeDisposable((cb) => {
@@ -61,6 +64,12 @@ vi.mock('@/lib/co-api', () => ({
   },
 }));
 vi.mock('@/notifications/notify', () => ({ notify: { error: h.notifyError } }));
+vi.mock('@/lib/persist/explorer-persist', () => ({
+  flushExplorerPersistence: h.flushExplorerPersistence,
+}));
+vi.mock('@/panels/Editor/autosave-flush-registry', () => ({
+  flushPendingAutoSave: h.flushPendingAutoSave,
+}));
 
 import { DockShell } from '@/shell/dock/DockShell';
 
@@ -69,6 +78,12 @@ beforeEach(() => {
   h.notifyError.mockReset();
   h.write.mockReset();
   h.write.mockResolvedValue({ ok: true });
+  h.flushExplorerPersistence.mockReset();
+  h.flushExplorerPersistence.mockResolvedValue(undefined);
+  h.flushPendingAutoSave.mockReset();
+  h.flushPendingAutoSave.mockResolvedValue(undefined);
+  h.toJSON.mockReset();
+  h.toJSON.mockReturnValue({ panels: {} });
   h.regCount.value = 0;
   h.disposeCount.value = 0;
   h.layoutChangeCb.current = null;
@@ -171,6 +186,108 @@ describe('a11y(A131) — Dock 布局恢复失败须反馈', () => {
     h.layoutChangeCb.current!();
     await new Promise((r) => setTimeout(r, 400));
     expect(h.write).toHaveBeenCalledTimes(1);
+  });
+
+  it('已自动保存且无 layout 变更时,close flush 跳过 dock 快照重建', async () => {
+    let flushCb: ((p?: { windowId: number }) => Promise<void>) | null = null;
+    const sendFlushAck = vi.fn();
+    (window as { electron?: unknown }).electron = {
+      layout: {
+        onFlushRequest: (cb: (p?: { windowId: number }) => Promise<void>) => {
+          flushCb = cb;
+          return () => {};
+        },
+        sendFlushAck,
+      },
+      system: { windowId: 1 },
+    };
+    h.read.mockResolvedValue({ ok: true, data: null });
+    h.write.mockResolvedValue({ ok: true });
+    h.toJSON.mockReturnValue({
+      panels: { stable: { contentComponent: 'editor' } },
+    });
+    render(React.createElement(DockShell));
+    await vi.waitFor(() => {
+      expect(h.layoutChangeCb.current).not.toBeNull();
+      expect(flushCb).not.toBeNull();
+    });
+
+    h.layoutChangeCb.current!();
+    await vi.waitFor(
+      () => {
+        expect(h.write).toHaveBeenCalledTimes(1);
+      },
+      { timeout: 1500 },
+    );
+
+    h.toJSON.mockClear();
+    h.write.mockClear();
+    await flushCb!({ windowId: 1 });
+
+    expect(h.toJSON).not.toHaveBeenCalled();
+    expect(h.write).not.toHaveBeenCalled();
+    expect(sendFlushAck).toHaveBeenCalledWith(1);
+  });
+
+  it('close flush 并行启动 layout / explorer / autosave,但三者完成后才 ack', async () => {
+    let flushCb: ((p?: { windowId: number }) => Promise<void>) | null = null;
+    const sendFlushAck = vi.fn();
+    (window as { electron?: unknown }).electron = {
+      layout: {
+        onFlushRequest: (cb: (p?: { windowId: number }) => Promise<void>) => {
+          flushCb = cb;
+          return () => {};
+        },
+        sendFlushAck,
+      },
+      system: { windowId: 1 },
+    };
+    h.read.mockResolvedValue({ ok: true, data: null });
+
+    let resolveLayout: (v: { ok: true }) => void = () => {};
+    let resolveExplorer: () => void = () => {};
+    let resolveAutoSave: () => void = () => {};
+    h.toJSON.mockReturnValue({
+      panels: { parallel: { contentComponent: 'editor' } },
+    });
+    h.write.mockReturnValue(
+      new Promise((resolve) => {
+        resolveLayout = resolve;
+      }),
+    );
+    h.flushExplorerPersistence.mockReturnValue(
+      new Promise<void>((resolve) => {
+        resolveExplorer = resolve;
+      }),
+    );
+    h.flushPendingAutoSave.mockReturnValue(
+      new Promise<void>((resolve) => {
+        resolveAutoSave = resolve;
+      }),
+    );
+
+    render(React.createElement(DockShell));
+    await vi.waitFor(() => expect(flushCb).not.toBeNull());
+
+    const flushPromise = flushCb!({ windowId: 1 });
+    await Promise.resolve();
+
+    expect(h.write).toHaveBeenCalledTimes(1);
+    expect(h.flushExplorerPersistence).toHaveBeenCalledTimes(1);
+    expect(h.flushPendingAutoSave).toHaveBeenCalledTimes(1);
+    expect(sendFlushAck).not.toHaveBeenCalled();
+
+    resolveLayout({ ok: true });
+    await Promise.resolve();
+    expect(sendFlushAck).not.toHaveBeenCalled();
+
+    resolveExplorer();
+    await Promise.resolve();
+    expect(sendFlushAck).not.toHaveBeenCalled();
+
+    resolveAutoSave();
+    await flushPromise;
+    expect(sendFlushAck).toHaveBeenCalledWith(1);
   });
 
   // race(R42):关窗 layout:flush 回调必须在**执行时**读 apiRef.current,而非 effect 注册时闭包

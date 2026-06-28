@@ -32,15 +32,18 @@ export function drainPendingProtocolUrls(
   // 会中断 while 循环,使后续 pending 也停发。改为成功投递才出队;send 抛错时保留队首 URL 在
   // pending(留给下一个就绪/新建窗口 drain),并停止向这个已死 wc 继续投递(不再抛给调用方,
   // 否则 did-finish-load 回调里抛错变 Electron 未捕获异常)。send-fail-abort 同族(见 R62)。
-  while (pending.length > 0) {
-    const url = pending[0]!;
+  let sent = 0;
+  while (sent < pending.length) {
+    const url = pending[sent]!;
     try {
       wc.send(channel, { url });
     } catch {
+      if (sent > 0) pending.splice(0, sent);
       return; // wc 已销毁:保留 url 在队列,停止本次 drain。
     }
-    pending.shift();
+    sent += 1;
   }
+  if (sent > 0) pending.splice(0, sent);
 }
 
 /**

@@ -73,15 +73,25 @@ export interface SearchableSettingItem {
 const EMPTY_SEARCHABLE_SETTING_ITEMS: SearchableSettingItem[] = [];
 const EMPTY_MATCHED_SETTING_ITEMS: readonly SettingItemSpec[] = [];
 
+function lowerIfNeeded(value: string): string {
+  for (let i = 0; i < value.length; i += 1) {
+    const code = value.charCodeAt(i);
+    if ((code >= 65 && code <= 90) || code > 127) {
+      return value.toLowerCase();
+    }
+  }
+  return value;
+}
+
 export function buildSettingSearchHaystack(item: SettingItemSpec): string {
   const displayTitle = tWithFallback(item.titleKey, item.title);
   const displayDescription = tWithFallback(
     item.descriptionKey,
     item.description ?? '',
   );
-  return `${displayTitle} ${displayDescription} ${item.id} ${item.title} ${
+  return lowerIfNeeded(`${displayTitle} ${displayDescription} ${item.id} ${item.title} ${
     item.description ?? ''
-  }`.toLowerCase();
+  }`);
 }
 
 export function buildSearchableSettingItems(
@@ -176,7 +186,7 @@ export function selectMatchedSettingItems(
   trimmed: string,
 ): readonly SettingItemSpec[] {
   if (searchable.length === 0) return EMPTY_MATCHED_SETTING_ITEMS;
-  const ql = trimmed.toLowerCase();
+  const ql = lowerIfNeeded(trimmed);
   const matched = new Array<SettingItemSpec>(searchable.length);
   let count = 0;
   for (const s of searchable) {

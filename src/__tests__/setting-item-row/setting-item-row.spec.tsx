@@ -223,6 +223,13 @@ describe('SettingItemRow — select', () => {
     expect(src).not.toContain('options={spec.enum.map');
   });
 
+  it('select options 用预分配数组构造,避免 enum.map callback 分配', () => {
+    const src = readFileSync(join(process.cwd(), 'src/plugins/settings/SettingItemRow.tsx'), 'utf8');
+
+    expect(src).not.toContain('return spec.enum.map');
+    expect(src).toContain('new Array<SegmentedControlOption<string>>(spec.enum.length)');
+  });
+
   it('SegmentedControl 列出 enum,点选项 setValue', () => {
     const s = spec({
       id: 'general.theme',

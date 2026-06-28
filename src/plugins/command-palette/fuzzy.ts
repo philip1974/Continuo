@@ -68,11 +68,15 @@ export function fuzzyFilter<T>(
   const matched = new Array<T>(items.length);
   const scores = new Array<number>(items.length);
   let count = 0;
+  let prevScore = Infinity;
+  let scoresSorted = true;
   for (const item of items) {
     const s = getStrLower
       ? fuzzyScoreBothLower(q, getStrLower(item))
       : fuzzyScoreLower(q, getStr(item));
     if (s !== null) {
+      if (s > prevScore) scoresSorted = false;
+      prevScore = s;
       matched[count] = item;
       scores[count] = s;
       count++;
@@ -82,6 +86,7 @@ export function fuzzyFilter<T>(
   scores.length = count;
   if (count === 0) return EMPTY_FUZZY_RESULTS;
   if (count < 2) return matched;
+  if (scoresSorted) return matched;
 
   const order = new Array<number>(count);
   for (let i = 0; i < count; i++) order[i] = i;

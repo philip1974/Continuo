@@ -370,8 +370,9 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
   // 不让 new URL 同步抛崩溃 createMainWindow(应用启动无窗口)。
   const devUrl = isDev ? parseDevRendererUrl(process.env['ELECTRON_RENDERER_URL']) : null;
   if (devUrl) {
-    for (const [k, v] of Object.entries(queryParts)) {
-      devUrl.searchParams.set(k, v);
+    for (const key in queryParts) {
+      if (!Object.prototype.hasOwnProperty.call(queryParts, key)) continue;
+      devUrl.searchParams.set(key, queryParts[key]!);
     }
     win.loadURL(devUrl.toString());
   } else {
@@ -492,6 +493,10 @@ export function rebuildAppMenu(): void {
   setDockMenu();
 }
 
+function isReloadKey(key: string): boolean {
+  return key === 'r' || key === 'R' || key === 'F5';
+}
+
 // popout 子窗口禁止刷新。
 // 原因:dockview 用 portal 把 panel 注到子窗 body,reload 清空 portal 目标
 // 但 main 端 dockview state 还在 → 子窗黑屏。
@@ -510,10 +515,10 @@ app.on('browser-window-created', (_evt, win) => {
     win.setMenu(null);
     win.webContents.on('before-input-event', (event, input) => {
       if (input.type !== 'keyDown') return;
-      const isReloadKey =
-        ((input.meta || input.control) && input.key.toLowerCase() === 'r') ||
-        input.key === 'F5';
-      if (isReloadKey) event.preventDefault();
+      const reload = isReloadKey(input.key);
+      if ((reload && (input.meta || input.control)) || input.key === 'F5') {
+        event.preventDefault();
+      }
     });
   });
 });
@@ -922,10 +927,10 @@ app.whenReady().then(async () => {
       workspace: startup.dirs[0]!,
       fresh: true,
     });
-    const extras = startup.dirs.slice(1);
-    if (extras.length > 0) {
+    if (startup.dirs.length > 1) {
       void (async () => {
-        for (const dir of extras) {
+        for (let i = 1; i < startup.dirs.length; i += 1) {
+          const dir = startup.dirs[i]!;
           const windowSeq = await allocateWindowSeq(explorerFile);
           createMainWindow({ windowSeq, workspace: dir, fresh: true });
         }

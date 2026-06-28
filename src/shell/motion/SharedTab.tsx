@@ -210,7 +210,13 @@ export function SharedTab(props: IDockviewPanelHeaderProps & TabHtmlExtras) {
       }>;
       if (panels.length <= 1) return;
       event.preventDefault();
-      const idx = panels.findIndex((p) => p.id === api.id);
+      let idx = -1;
+      for (let i = 0; i < panels.length; i += 1) {
+        if (panels[i]?.id === api.id) {
+          idx = i;
+          break;
+        }
+      }
       if (idx < 0) return;
       let targetIdx: number;
       if (event.key === 'Home') targetIdx = 0;

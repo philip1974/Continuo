@@ -188,8 +188,9 @@ function QuickOpenBody() {
   }, [selectedIndex, filtered.length, rowVirtualizer]);
   // a11y(A112,A111 后续):aria-activedescendant 只能指向 DOM 中真实挂载的 option;虚拟列表里
   // 选中项可能不在渲染窗口内 → 须校验其在 getVirtualItems() 内,否则引用悬空。
+  const virtualItems = rowVirtualizer.getVirtualItems();
   const activeOptionRendered = isVirtualIndexRendered(
-    rowVirtualizer.getVirtualItems(),
+    virtualItems,
     selectedIndex,
   );
 
@@ -311,7 +312,7 @@ function QuickOpenBody() {
                 position: 'relative',
               }}
             >
-              {rowVirtualizer.getVirtualItems().map((vRow) => {
+              {virtualItems.map((vRow) => {
                 const idx = vRow.index;
                 const f = filtered[idx]!;
                 return (

@@ -76,16 +76,30 @@ const EMPTY_DISPLAY_COMMANDS: DisplayCommand[] = [];
 const EMPTY_RECENT_COMMAND_IDS: string[] = [];
 const EMPTY_HOTKEY_PARTS: readonly string[] = [];
 
+function lowerIfNeeded(value: string): string {
+  for (let i = 0; i < value.length; i += 1) {
+    const code = value.charCodeAt(i);
+    if ((code >= 65 && code <= 90) || code > 127) {
+      return value.toLowerCase();
+    }
+  }
+  return value;
+}
+
 export function buildDisplayCommands(
   allCommands: readonly CommandSpec[],
   tk: TranslateWithFallback,
   platform: Platform,
+  overrides: Readonly<Record<string, string>> = {},
 ): DisplayCommand[] {
   if (allCommands.length === 0) return EMPTY_DISPLAY_COMMANDS;
   const out = new Array<DisplayCommand>(allCommands.length);
   for (let i = 0; i < allCommands.length; i++) {
     const cmd = allCommands[i]!;
-    const effective = getEffectiveHotkey(cmd);
+    const effective =
+      cmd.hotkey || overrides[cmd.id] !== undefined
+        ? getEffectiveHotkey(cmd)
+        : undefined;
     const displayTitle = tk(cmd.titleKey, cmd.title);
     const displayCategory = tk(cmd.categoryKey, cmd.category ?? '');
     const source = displayCategory
@@ -98,7 +112,7 @@ export function buildDisplayCommands(
       hotkeyParts: effective ? formatHotkeyParts(effective, platform) : EMPTY_HOTKEY_PARTS,
       // 打磨 R54:配合 fuzzyFilter(getStrLower),搜索输入变化时不再逐命令
       // 对 displayCategory/title 组成的 target 重复 toLowerCase。
-      matchSourceLower: source.toLowerCase(),
+      matchSourceLower: lowerIfNeeded(source),
     };
   }
   return out;
@@ -183,7 +197,9 @@ export function sortByRecent(
   for (let i = 0; i < recentIds.length && i < RECENT_TOP_N; i++) {
     recentRank.set(recentIds[i]!, i);
   }
-  const recent: (DisplayCommand | undefined)[] = [];
+  const recent = new Array<DisplayCommand | undefined>(
+    Math.min(recentIds.length, RECENT_TOP_N),
+  );
   let others: DisplayCommand[] | null = null;
   let otherCount = 0;
   for (let i = 0; i < items.length; i++) {
@@ -208,7 +224,9 @@ export function sortByRecent(
     return out;
   }
   others.length = otherCount;
-  others.sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));
+  if (otherCount > 1 && !isSortedByDisplayTitle(others)) {
+    others.sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));
+  }
   const out = new Array<DisplayCommand>(items.length);
   let count = 0;
   for (const d of recent) {
@@ -279,9 +297,8 @@ function CommandPaletteBody({ commands }: CommandPaletteProps) {
   // 先 localize 成 DisplayCommand,再 filter/sort(P1-2: 按显示文本搜索/排序)。
   // hotkeyParts 用 effective(含 user override)预计算,行渲染只读它(R28)。
   const displayCommands = useMemo<readonly DisplayCommand[]>(() => {
-    void overrides; // 仅作 deps:getEffectiveHotkey 内部读 store,override 变须重算
     void locale; // 仅作 deps:tk 内部按 locale 翻译,切语言须重算
-    return buildDisplayCommands(allCommands, tk, PLATFORM);
+    return buildDisplayCommands(allCommands, tk, PLATFORM, overrides);
   }, [allCommands, tk, overrides, locale]);
 
   const filtered = useMemo(() => {
@@ -317,8 +334,9 @@ function CommandPaletteBody({ commands }: CommandPaletteProps) {
   // a11y(A112,A111 后续):aria-activedescendant 只能指向 DOM 中真实挂载的 option。虚拟列表
   // 里选中项可能在逻辑上有效但不在渲染窗口内(scrollToIndex 滚入前的瞬态)→ 须校验该 index
   // 在 getVirtualItems() 渲染窗口内,否则引用悬空,SR 拿不到当前项。
+  const virtualItems = rowVirtualizer.getVirtualItems();
   const activeOptionRendered = isCommandPaletteVirtualIndexRendered(
-    rowVirtualizer.getVirtualItems(),
+    virtualItems,
     selectedIndex,
   );
 
@@ -406,7 +424,7 @@ function CommandPaletteBody({ commands }: CommandPaletteProps) {
               position: 'relative',
             }}
           >
-            {rowVirtualizer.getVirtualItems().map((vRow) => {
+            {virtualItems.map((vRow) => {
               const idx = vRow.index;
               const d = filtered[idx]!;
               return (

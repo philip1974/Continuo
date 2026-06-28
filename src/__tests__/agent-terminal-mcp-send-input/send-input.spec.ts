@@ -69,6 +69,17 @@ describe('preparePtyData', () => {
   it('混合:文字 + 字面 \\n + 真 \\n + Ctrl+C', () => {
     expect(preparePtyData('hi\\n\nworld\\x03')).toBe('hi\r\rworld\x03');
   });
+
+  it('反转义走单趟字符扫描,不调用 String.replace', () => {
+    const replaceSpy = vi.spyOn(String.prototype, 'replace');
+    try {
+      expect(preparePtyData('hi\\n\\r\\t\\x03\n')).toBe('hi\r\r\t\x03\r');
+      expect(preparePtyData('\\x5cn')).toBe('\\n');
+      expect(replaceSpy).not.toHaveBeenCalled();
+    } finally {
+      replaceSpy.mockRestore();
+    }
+  });
 });
 
 describe('sendInputInputSchema', () => {

@@ -123,6 +123,32 @@ describe('打磨 R13 — 插件菜单 when 延迟到打开', () => {
     expect(groupPluginItems.toString()).not.toContain('.push(');
   });
 
+  it('插件菜单多组已按渲染顺序时不调用 sort', () => {
+    const items: ExplorerContextMenuItemSpec[] = [
+      { id: 'new-a', label: 'New A', group: 'new', fn: vi.fn() },
+      { id: 'plugin-a', label: 'Plugin A', group: 'plugin', fn: vi.fn() },
+      { id: 'custom-a', label: 'Custom A', group: 'z', fn: vi.fn() },
+    ];
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      const buckets = groupPluginItems(items, {
+        target,
+        selectedPaths: new Set(['/work/a.ts']),
+        rootPath: '/work',
+      });
+
+      expect(sortSpy).not.toHaveBeenCalled();
+      expect(buckets.map((bucket) => bucket.group)).toEqual([
+        'new',
+        'plugin',
+        'z',
+      ]);
+    } finally {
+      sortSpy.mockRestore();
+    }
+  });
+
   it('无可见插件项分组复用稳定空桶', () => {
     const hidden: ExplorerContextMenuItemSpec = {
       id: 'hidden',

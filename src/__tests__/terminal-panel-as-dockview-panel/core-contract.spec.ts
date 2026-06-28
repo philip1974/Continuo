@@ -147,6 +147,36 @@ describe('terminal panel reconciler core contract', () => {
     );
   });
 
+  it('新增 sessions 已按 createdAt 顺序时不调用 sort', () => {
+    const api = makeApi();
+    const previousSessions = [session('old')];
+    const nextSessions = [
+      session('old'),
+      session('older-new', { createdAt: 2 }),
+      session('newer-new', { createdAt: 3 }),
+    ];
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      reconcileTerminalPanels(api as unknown as DockviewApi, {
+        previousSessions,
+        nextSessions,
+      });
+
+      expect(sortSpy).not.toHaveBeenCalled();
+    } finally {
+      sortSpy.mockRestore();
+    }
+    expect(api.addPanel).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ id: 'terminal-older-new' }),
+    );
+    expect(api.addPanel).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ id: 'terminal-newer-new' }),
+    );
+  });
+
   it('无新增 session 时不预分配 added 数组', () => {
     const api = makeApi();
     const previousSessions = [session('old')];

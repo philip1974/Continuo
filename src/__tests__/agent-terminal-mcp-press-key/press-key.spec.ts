@@ -1,6 +1,8 @@
 // BDD: agent-terminal-mcp-press-key
 
 import { describe, it, expect, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   MCP_TOOL_PRESS_KEY,
   pressKeyInputSchema,
@@ -133,6 +135,29 @@ describe('makePressKeyTool · 元数据', () => {
   it('name 与契约常量一致', () => {
     const tool = makePressKeyTool(makeDeps());
     expect(tool.name).toBe(MCP_TOOL_PRESS_KEY);
+  });
+
+  it('构建 jsonSchema enum 复用预计算 key 列表,不在工厂调用时 Object.keys', () => {
+    const keysSpy = vi.spyOn(Object, 'keys');
+
+    try {
+      const tool = makePressKeyTool(makeDeps());
+
+      expect(tool.jsonSchema.properties.key.enum).toContain('enter');
+      expect(keysSpy).not.toHaveBeenCalled();
+    } finally {
+      keysSpy.mockRestore();
+    }
+  });
+
+  it('预计算 key enum 不在模块加载时调用 Object.keys(KEY_BYTES)', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'electron/main/services/mcp-tools-terminal.ts'),
+      'utf8',
+    );
+
+    expect(src).not.toContain('Object.keys(KEY_BYTES)');
+    expect(src).toContain('PRESS_KEY_ENUM');
   });
 
   // 边界(E203):inputSchema 是 session_id 加 .max(SESSION_ID_MAX) 的 bounded schema(协议原 schema 无上限)。

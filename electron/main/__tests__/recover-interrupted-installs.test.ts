@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, mkdir, rm, writeFile, readdir, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -53,6 +53,29 @@ describe('recoverInterruptedInstalls', () => {
     await mkdir(path.join(baseDir, '.baz.installing-uuid789'));
     await recoverInterruptedInstalls(baseDir);
     expect(await readdir(baseDir)).not.toContain('.baz.installing-uuid789');
+  });
+
+  it('残留名解析走字符扫描,不调用 RegExp.exec/test', async () => {
+    await mkdir(path.join(baseDir, '.foo.old-part.old-uuid123'));
+    await writeFile(
+      path.join(baseDir, '.foo.old-part.old-uuid123', 'manifest.json'),
+      '{"id":"foo.old-part"}',
+    );
+    await mkdir(path.join(baseDir, '.bar.installing-uuid456'));
+    const execSpy = vi.spyOn(RegExp.prototype, 'exec');
+    const testSpy = vi.spyOn(RegExp.prototype, 'test');
+    try {
+      await recoverInterruptedInstalls(baseDir);
+      expect(execSpy).not.toHaveBeenCalled();
+      expect(testSpy).not.toHaveBeenCalled();
+    } finally {
+      execSpy.mockRestore();
+      testSpy.mockRestore();
+    }
+
+    const entries = await readdir(baseDir);
+    expect(entries).toContain('foo.old-part');
+    expect(entries).not.toContain('.bar.installing-uuid456');
   });
 
   it('无残留 → 幂等 no-op(普通插件目录不动)', async () => {

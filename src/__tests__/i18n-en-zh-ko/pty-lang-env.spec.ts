@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { withPtyLangEnv } from '../../../electron/main/services/pty-lang';
 
 describe('PTY LANG safeguard', () => {
@@ -7,6 +7,21 @@ describe('PTY LANG safeguard', () => {
 
     expect(env.LANG).toBe('ja_JP.UTF-8');
     expect(env.PATH).toBe('/x');
+  });
+
+  it('UTF-8 LANG 判断走字符扫描,不调用 RegExp.test', async () => {
+    const testSpy = vi.spyOn(RegExp.prototype, 'test');
+    try {
+      expect(withPtyLangEnv({ LANG: 'ja_JP.utf8' }, 'ko').LANG).toBe(
+        'ja_JP.utf8',
+      );
+      expect(withPtyLangEnv({ LANG: 'ja-JP.UTF-8' }, 'ko').LANG).toBe(
+        'ko_KR.UTF-8',
+      );
+      expect(testSpy).not.toHaveBeenCalled();
+    } finally {
+      testSpy.mockRestore();
+    }
   });
 
   it('env.LANG=zh_CN.GBK 被替换为 LANG_MAP[currentLocale]', async () => {

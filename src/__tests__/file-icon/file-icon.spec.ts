@@ -132,6 +132,20 @@ describe('getFileIconComponent · 目录', () => {
       expect(getFileIconComponent(name, true)).toBe(Folder);
     },
   );
+
+  it('目录名已是小写时不调用 toLowerCase', () => {
+    const lowerSpy = vi.spyOn(String.prototype, 'toLowerCase');
+
+    try {
+      expect(getFileIconComponent('src', true)).toBe(FolderSrc);
+      expect(
+        lowerSpy.mock.contexts.some((ctx) => String(ctx) === 'src'),
+      ).toBe(false);
+      expect(getFileIconComponent('Src', true)).toBe(FolderSrc);
+    } finally {
+      lowerSpy.mockRestore();
+    }
+  });
 });
 
 // ────────────────────────────────────────────────────────────
@@ -247,6 +261,20 @@ describe('getFileIconComponent · ext 编程语言', () => {
 
   it('ext 大小写不敏感:foo.TS → TypeScript', () => {
     expect(getFileIconComponent('foo.TS', false)).toBe(TypeScript);
+  });
+
+  it('ext 已是小写时不调用 toLowerCase', () => {
+    const lowerSpy = vi.spyOn(String.prototype, 'toLowerCase');
+
+    try {
+      expect(getFileIconComponent('app.ts', false)).toBe(TypeScript);
+      expect(
+        lowerSpy.mock.contexts.some((ctx) => String(ctx) === 'ts'),
+      ).toBe(false);
+      expect(getFileIconComponent('app.TS', false)).toBe(TypeScript);
+    } finally {
+      lowerSpy.mockRestore();
+    }
   });
 });
 

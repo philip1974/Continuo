@@ -58,6 +58,21 @@ describe('makeJsonSafe', () => {
     }
   });
 
+  it('对象清洗不先 Object.keys 物化 key 数组', () => {
+    const input = { a: 1, bad: NaN };
+    const keysSpy = vi.spyOn(Object, 'keys');
+
+    try {
+      const { value, dropped } = makeJsonSafe(input);
+
+      expect(value).toEqual({ a: 1 });
+      expect(dropped).toEqual(['$.bad']);
+      expect(keysSpy).not.toHaveBeenCalled();
+    } finally {
+      keysSpy.mockRestore();
+    }
+  });
+
   it('深层 grid 树内的非有限 size → 清除,其余结构保留', () => {
     const layout = {
       version: 1,

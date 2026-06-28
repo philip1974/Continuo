@@ -736,6 +736,32 @@ describe('PluginsTabContent — Git URL 安装', () => {
     ).toBe(true);
   });
 
+  it('Git URL trim 只在输入变化后派生一次,点击安装复用结果', () => {
+    const installFromGit = vi.fn().mockReturnValue(new Promise(() => {}));
+    installPluginsApi(installFromGit);
+    const { container } = render(<PluginsTabContent />);
+    const input = container.querySelector('input') as HTMLInputElement;
+    const installBtn = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((b) => b.textContent === '安装')!;
+    const trimSpy = vi.spyOn(String.prototype, 'trim');
+
+    try {
+      fireEvent.change(input, {
+        target: { value: '  https://github.com/me/plugin.git  ' },
+      });
+      expect(installBtn.disabled).toBe(false);
+      fireEvent.click(installBtn);
+
+      expect(installFromGit).toHaveBeenCalledWith(
+        'https://github.com/me/plugin.git',
+      );
+      expect(trimSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      trimSpy.mockRestore();
+    }
+  });
+
   it('安装失败 ok=false → 「✘ [code] message」', async () => {
     const installFromGit = vi.fn().mockResolvedValue({
       ok: false,

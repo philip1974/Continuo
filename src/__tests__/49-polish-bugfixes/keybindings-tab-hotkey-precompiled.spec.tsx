@@ -52,7 +52,7 @@ describe('打磨 R29 — Keybindings hotkey 预计算', () => {
     expect(src).not.toContain("formatHotkeyParts('mod+shift+p', PLATFORM).map");
   });
 
-  it('displayCommands 构造预分配数组,不调用 allCommands.map', () => {
+  it('displayCommands 构造时跳过无 hotkey/override 的命令,不调用 allCommands.map', () => {
     const commands = [
       { id: 'save', title: 'Save', hotkey: 'mod+s', fn: vi.fn() },
       { id: 'toggle', title: 'Toggle', category: 'View', fn: vi.fn() },
@@ -60,12 +60,13 @@ describe('打磨 R29 — Keybindings hotkey 预计算', () => {
       { id: 'plain-b', title: 'Plain B', fn: vi.fn() },
     ];
     const mapSpy = vi.spyOn(commands, 'map');
+    const tk = vi.fn((_key: string | undefined, fallback: string) => fallback);
     useKeybindingsStore.setState({ overrides: { toggle: 'mod+t' } });
 
     try {
       const out = buildKeybindingDisplayCommands(
         commands,
-        (_key, fallback) => fallback,
+        tk,
         { toggle: 'mod+t' },
         'other',
       );
@@ -73,14 +74,18 @@ describe('打磨 R29 — Keybindings hotkey 预计算', () => {
       expect(out.map((d) => d.cmd.id)).toEqual([
         'save',
         'toggle',
-        'plain-a',
-        'plain-b',
       ]);
       expect(out[0]?.hotkeyParts).toEqual(['Ctrl', 'S']);
       expect(out[1]?.effectiveHotkey).toBe('mod+t');
       expect(out[1]?.isOverridden).toBe(true);
       expect(out[1]?.searchHaystack).toContain('mod+t');
-      expect(out[2]?.hotkeyParts).toBe(out[3]?.hotkeyParts);
+      expect(getEffSpy).toHaveBeenCalledTimes(2);
+      expect(tk.mock.calls.map((call) => call[1])).toEqual([
+        'Save',
+        '',
+        'Toggle',
+        'View',
+      ]);
       expect(mapSpy).not.toHaveBeenCalled();
     } finally {
       mapSpy.mockRestore();
@@ -230,6 +235,63 @@ describe('打磨 R29 — Keybindings hotkey 预计算', () => {
       expect(mapCtorCount).toBe(0);
     } finally {
       globalThis.Map = OriginalMap;
+    }
+  });
+
+  it('多分类且分类/标题都已排序时不调用 sort', () => {
+    const commandA = {
+      cmd: { id: 'a', title: 'Alpha', hotkey: 'mod+a', fn: vi.fn() },
+      displayTitle: 'Alpha',
+      displayCategory: 'Editor',
+      effectiveHotkey: 'mod+a',
+      hotkeyParts: ['mod', 'a'],
+      isOverridden: false,
+      searchHaystack: 'alpha editor a mod+a',
+    };
+    const commandB = {
+      cmd: { id: 'b', title: 'Beta', hotkey: 'mod+b', fn: vi.fn() },
+      displayTitle: 'Beta',
+      displayCategory: 'Editor',
+      effectiveHotkey: 'mod+b',
+      hotkeyParts: ['mod', 'b'],
+      isOverridden: false,
+      searchHaystack: 'beta editor b mod+b',
+    };
+    const commandC = {
+      cmd: { id: 'c', title: 'Copy', hotkey: 'mod+c', fn: vi.fn() },
+      displayTitle: 'Copy',
+      displayCategory: 'File',
+      effectiveHotkey: 'mod+c',
+      hotkeyParts: ['mod', 'c'],
+      isOverridden: false,
+      searchHaystack: 'copy file c mod+c',
+    };
+    const commandD = {
+      cmd: { id: 'd', title: 'Delete', hotkey: 'del', fn: vi.fn() },
+      displayTitle: 'Delete',
+      displayCategory: 'File',
+      effectiveHotkey: 'del',
+      hotkeyParts: ['del'],
+      isOverridden: false,
+      searchHaystack: 'delete file d del',
+    };
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      const buckets = groupByCategory(
+        [commandA, commandB, commandC, commandD],
+        'Other',
+      );
+
+      expect(sortSpy).not.toHaveBeenCalled();
+      expect(buckets.map((bucket) => bucket.category)).toEqual([
+        'Editor',
+        'File',
+      ]);
+      expect(buckets[0]?.items).toEqual([commandA, commandB]);
+      expect(buckets[1]?.items).toEqual([commandC, commandD]);
+    } finally {
+      sortSpy.mockRestore();
     }
   });
 

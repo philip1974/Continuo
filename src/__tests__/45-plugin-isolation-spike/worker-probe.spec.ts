@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -128,6 +128,11 @@ describeIfImplemented('topic 45 worker probe', () => {
     const result = await (await loadWorkerProbe()).runWorkerProbe();
 
     expect(result.cspContent).toBeNull();
+  });
+
+  it('computes ping average without Array.reduce callback', () => {
+    const src = readFileSync(implementationPath, 'utf8');
+    expect(src).not.toContain('samples.reduce(');
   });
 });
 

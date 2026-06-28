@@ -1,6 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import { PanelRegistry } from '../../plugins/registries/PanelRegistry';
-import { CommandRegistry } from '../../plugins/registries/CommandRegistry';
+import {
+  CommandRegistry,
+  isValidHotkeyShape,
+} from '../../plugins/registries/CommandRegistry';
 import { StatusBarRegistry } from '../../plugins/registries/StatusBarRegistry';
 import { subscribeAll } from '../../plugins/registries/useRegistry';
 
@@ -397,6 +400,31 @@ describe('CommandRegistry', () => {
       expect(() =>
         r.register({ id: 'y', title: 'T', hotkey: 'mod + s', fn: () => {} }),
       ).toThrow(/invalid hotkey/i);
+    });
+
+    it('hotkey 形态校验走字符扫描,不调用 RegExp.test', () => {
+      const r = new CommandRegistry();
+      const testSpy = vi.spyOn(RegExp.prototype, 'test');
+      try {
+        expect(isValidHotkeyShape('mod+shift+/')).toBe(true);
+        expect(isValidHotkeyShape('mod+\u00A0')).toBe(false);
+        expect(() =>
+          r.register({ id: 'scan', title: 'Scan', hotkey: 'mod+s', fn: () => {} }),
+        ).not.toThrow();
+        const err = (() => {
+          try {
+            r.register({ id: 'bad', title: 'Bad', hotkey: 'mod++s', fn: () => {} });
+            return null;
+          } catch (e) {
+            return e;
+          }
+        })();
+        expect(err).toBeInstanceOf(Error);
+        expect(String((err as Error).message)).toContain('invalid hotkey');
+        expect(testSpy).not.toHaveBeenCalled();
+      } finally {
+        testSpy.mockRestore();
+      }
     });
   });
 

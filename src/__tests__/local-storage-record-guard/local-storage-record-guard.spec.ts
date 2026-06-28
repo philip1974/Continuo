@@ -111,6 +111,12 @@ describe('readRecord value guard / limits (E22)', () => {
     globalThis.localStorage.setItem(KEY, '{not json');
     expect(readRecord(KEY, { maxEntries: 5 })).toEqual({});
   });
+
+  it('整份脏记录会清毒,后续读取不重复解析同一坏值', () => {
+    globalThis.localStorage.setItem(KEY, '{not json');
+    expect(readRecord(KEY, { maxEntries: 5 })).toEqual({});
+    expect(globalThis.localStorage.getItem(KEY)).toBeNull();
+  });
 });
 
 // 边界(E70,E64/E67/E68 解析前上限族):E22 守卫都在 JSON.parse 后,挡不住解析前成本。
@@ -121,7 +127,9 @@ describe('readRecord 原始串长度上限 (E70)', () => {
     const big = JSON.stringify({ a: 'x'.repeat(200) });
     globalThis.localStorage.setItem(KEY, big);
     expect(readRecord(KEY, { maxRawLength: 50 })).toEqual({});
+    expect(globalThis.localStorage.getItem(KEY)).toBeNull();
     // 同样合法 JSON,放宽上限 → 正常解析
+    globalThis.localStorage.setItem(KEY, big);
     expect(readRecord(KEY, { maxRawLength: 1024 })).toEqual({ a: 'x'.repeat(200) });
   });
 

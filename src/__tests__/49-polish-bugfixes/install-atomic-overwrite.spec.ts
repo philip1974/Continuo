@@ -88,6 +88,25 @@ describe('topic 49 · installFromGit 原子覆盖 + 回滚', () => {
     expect(await readVersion('p')).toBe('2.0.0');
   });
 
+  it('git URL scheme 校验走字符扫描,不调用 RegExp.test', async () => {
+    const testSpy = vi.spyOn(RegExp.prototype, 'test');
+    try {
+      await expect(
+        installFromGit('ftp://example.com/p.git', baseDir),
+      ).rejects.toMatchObject({
+        code: 'BAD_URL',
+      });
+      expect(testSpy).not.toHaveBeenCalled();
+    } finally {
+      testSpy.mockRestore();
+    }
+  });
+
+  it('git URL scheme 大小写不敏感(HTTPS:// 仍允许)', async () => {
+    const r = await installFromGit('HTTPS://example.com/p.git', baseDir);
+    expect(r).toMatchObject({ id: 'p', name: 'P', version: '1.0.0' });
+  });
+
   it('已安装且 overwrite!=true → 抛 EEXIST,旧版本不动', async () => {
     await installFromGit(URL, baseDir);
     ctl.manifest = { id: 'p', name: 'P', version: '9.9.9' };

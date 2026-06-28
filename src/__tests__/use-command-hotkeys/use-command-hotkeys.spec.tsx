@@ -101,7 +101,7 @@ describe('useCommandHotkeys — 命中', () => {
     expect(preventDefault).not.toHaveBeenCalled();
   });
 
-  it('一次 keydown 只归一化事件 key 一次,不按绑定数重复 lowercase', () => {
+  it('一次大写 keydown 只归一化事件 key 一次,不按绑定数重复 lowercase', () => {
     const reg = new CommandRegistry();
     reg.register({ id: 'a', title: 'A', hotkey: 'mod+s', fn: vi.fn() });
     reg.register({ id: 'b', title: 'B', hotkey: 'mod+k', fn: vi.fn() });
@@ -109,8 +109,26 @@ describe('useCommandHotkeys — 命中', () => {
     const lowerSpy = vi.spyOn(String.prototype, 'toLowerCase');
 
     try {
-      document.dispatchEvent(keyEvent({ key: 'q', ctrlKey: true }).event);
+      document.dispatchEvent(keyEvent({ key: 'Q', ctrlKey: true }).event);
       expect(lowerSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      lowerSpy.mockRestore();
+    }
+  });
+
+  it('小写 keydown 不调用 toLowerCase 也能匹配', () => {
+    const fn = vi.fn();
+    const reg = new CommandRegistry();
+    reg.register({ id: 'a', title: 'A', hotkey: 'mod+s', fn });
+    renderHook(() => useCommandHotkeys(reg));
+    const lowerSpy = vi.spyOn(String.prototype, 'toLowerCase');
+
+    try {
+      document.dispatchEvent(keyEvent({ key: 's', ctrlKey: true }).event);
+      expect(fn).toHaveBeenCalledTimes(1);
+      expect(lowerSpy.mock.contexts.some((ctx) => String(ctx) === 's')).toBe(
+        false,
+      );
     } finally {
       lowerSpy.mockRestore();
     }

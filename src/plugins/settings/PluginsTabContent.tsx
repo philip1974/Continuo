@@ -1,7 +1,7 @@
 // '插件' SettingTab 内容(M-Plugin v3.5)。
 // 自检视图:贡献点统计 + 内置插件清单 + 用户插件占位(等 v4 IPC)。
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Input } from '@/design';
 import { clampGitUrl } from '../../../electron/shared/plugins-channels';
 import { ConfirmDialog } from '@/panels/Explorer/ConfirmDialog';
@@ -308,6 +308,7 @@ function UserPluginsSection() {
   const { plugins, refresh } = useUserPlugins();
   const mgr = getUserPluginManager();
   const [gitUrl, setGitUrl] = useState('');
+  const trimmedGitUrl = useMemo(() => gitUrl.trim(), [gitUrl]);
   const [installing, setInstalling] = useState(false);
   // race(R8):同步 in-flight 闸门。disabled={installing} 是 render 后状态,异步滞后 —— 同一事件
   // 循环内双击/Enter 会在 setInstalling(true) 生效前两次进 onInstall,启动两次 installFromGit
@@ -396,14 +397,14 @@ function UserPluginsSection() {
   };
 
   const onInstall = async () => {
-    if (!gitUrl.trim()) return;
+    if (!trimmedGitUrl) return;
     // race(R8):同步单飞 —— 重入(同 tick 双击/Enter)在 installing state 生效前直接挡掉。
     if (installingRef.current) return;
     installingRef.current = true;
     setInstalling(true);
     setInstallMsg(null);
     try {
-      const r = await coApi.plugins.installFromGit(gitUrl.trim());
+      const r = await coApi.plugins.installFromGit(trimmedGitUrl);
       if (!r.ok) {
         // i18n(codex 复查 P1):installFromGit 各错误站点的 Error.message 是硬编码中文
         // (不支持的 git URL / manifest 缺字段 / main 入口非法 / 删除失败…),经 safeHandle
@@ -485,7 +486,7 @@ function UserPluginsSection() {
             variant="primary"
             size="sm"
             onClick={onInstall}
-            disabled={installing || !gitUrl.trim()}
+            disabled={installing || !trimmedGitUrl}
             // a11y(A95,A94 同族):安装中标 aria-busy(Marketplace loading 修复的兄弟入口)。
             aria-busy={installing}
           >

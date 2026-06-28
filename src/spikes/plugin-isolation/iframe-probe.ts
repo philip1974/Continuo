@@ -49,14 +49,14 @@ async function runBlobIframeProbe(): Promise<IframeVerdict> {
 
     await waitForLoad(iframe, MAIN_TIMEOUT_MS);
 
-    const samples: number[] = [];
+    let totalMs = 0;
     for (let i = 0; i < PING_COUNT; i += 1) {
-      samples.push(await pingIframe(iframe, MAIN_TIMEOUT_MS));
+      totalMs += await pingIframe(iframe, MAIN_TIMEOUT_MS);
     }
 
     return {
       state: 'blob-loaded-ok',
-      ms: samples.reduce((sum, sample) => sum + sample, 0) / samples.length,
+      ms: totalMs / PING_COUNT,
     };
   } catch (error) {
     if (isFrameBlobBlocked(error)) {
@@ -178,4 +178,3 @@ function isFrameBlobBlocked(error: unknown): boolean {
   const text = String(error);
   return text.includes('frame-blob-blocked') || text.includes('CSP') || text.includes('Refused');
 }
-

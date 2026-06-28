@@ -14,6 +14,7 @@ import {
 import {
   createAwaitStopHookTool,
   createHookFileBroker,
+  sortHookDirNames,
   type HookFileBroker,
   type HookWatchFactory,
 } from '../../../electron/main/services/mcp-tools-hook-bridge';
@@ -57,6 +58,18 @@ async function makeDoneDir(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'continuo-await-stop-hook-'));
   tmpRoots.push(root);
   return root;
+}
+
+async function waitForFileRemoved(file: string): Promise<void> {
+  for (let i = 0; i < 50; i++) {
+    try {
+      await readFile(file, 'utf8');
+    } catch {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  await expect(readFile(file, 'utf8')).rejects.toThrow();
 }
 
 async function writeFixture(
@@ -118,6 +131,36 @@ async function makeDriver(doneDir: string, sessions: readonly FakeSession[]) {
 }
 
 describe('terminal.await_stop_hook', () => {
+  it('hook 目录文件名已排序时不调用 sort', () => {
+    const names = ['cc_1.jsonl', 'cc_2.jsonl', 'codex_1.jsonl'];
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      expect(sortHookDirNames(names)).toBe(names);
+      expect(sortSpy).not.toHaveBeenCalled();
+    } finally {
+      sortSpy.mockRestore();
+    }
+  });
+
+  it('hook 目录文件名排序使用 ASCII 比较,不调用 localeCompare', () => {
+    const localeSpy = vi.spyOn(String.prototype, 'localeCompare');
+
+    try {
+      expect(sortHookDirNames(['codex_2.jsonl', 'cc_1.jsonl'])).toEqual([
+        'cc_1.jsonl',
+        'codex_2.jsonl',
+      ]);
+      expect(sortHookDirNames(['cc_1.jsonl', 'codex_2.jsonl'])).toEqual([
+        'cc_1.jsonl',
+        'codex_2.jsonl',
+      ]);
+      expect(localeSpy).not.toHaveBeenCalled();
+    } finally {
+      localeSpy.mockRestore();
+    }
+  });
+
   // 边界(E83,E82/E30 数量上限族):hook 目录文件数上限。start 扫描经 opendir 惰性枚举,累计到
   // 上限(maxDirEntries,可注入)即停 + 告警,畸形/堆积目录不整目录读入。注入低上限 + 少量真文件验证。
   it('E83 hook 目录文件数超 maxDirEntries → start 扫描截断 + 告警', async () => {
@@ -141,6 +184,45 @@ describe('terminal.await_stop_hook', () => {
     await broker.start();
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('truncated to 5'));
     warn.mockRestore();
+  });
+
+  it('hook 文件名 windowId 解析不调用 RegExp.exec', async () => {
+    const doneDir = await makeDoneDir();
+    await writeFixture(doneDir, {
+      runner: 'codex',
+      windowId: 4,
+      ns: '123',
+      payload: {
+        session_id: 'cli-1',
+        cwd: '/repo',
+      },
+    });
+    const execSpy = vi.spyOn(RegExp.prototype, 'exec');
+    const broker = createHookFileBroker(doneDir, {
+      maxEntries: DONE_BUFFER_CAP,
+      maxAgeMs: DONE_ENTRY_MAX_AGE_MS,
+      cleanupIntervalMs: 60_000,
+      watchFactory: noopWatchFactory,
+    });
+    brokers.push(broker);
+
+    try {
+      await broker.start();
+      await expect(
+        broker.awaitNext({ windowId: 4, runner: 'codex', cwd: '/repo' }),
+      ).resolves.toMatchObject({
+        payload: { runner: 'codex', cliSessionId: 'cli-1' },
+        windowId: 4,
+      });
+      const filenameRegexCalls = execSpy.mock.contexts.filter(
+        (context) =>
+          context instanceof RegExp &&
+          context.source === '^(cc|codex)_([0-9]+)_',
+      );
+      expect(filenameRegexCalls).toHaveLength(0);
+    } finally {
+      execSpy.mockRestore();
+    }
   });
 
   it('should expose schema in tools/list with session_id timeout_sec include_raw and output fields', async () => {
@@ -521,6 +603,7 @@ describe('terminal.await_stop_hook', () => {
     const second = run({ session_id: 'term-cc', timeout_sec: 1 });
     await vi.advanceTimersByTimeAsync(1000);
     await expect(second).resolves.toMatchObject({ status: 'timeout' });
+    expect(createHookFileBroker.toString()).not.toContain('buffered.shift(');
   });
 
   it('cleanupStale 用 buffered 文件名索引跳过已缓冲文件,不对每个目录项 buffered.some', async () => {
@@ -549,7 +632,7 @@ describe('terminal.await_stop_hook', () => {
     const someSpy = vi.spyOn(Array.prototype, 'some');
 
     try {
-      await new Promise((resolve) => setTimeout(resolve, 30));
+      await waitForFileRemoved(orphan);
 
       await expect(readFile(orphan, 'utf8')).rejects.toThrow();
       expect(someSpy).not.toHaveBeenCalled();

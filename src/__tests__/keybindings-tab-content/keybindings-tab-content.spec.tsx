@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { fireEvent, render, cleanup, act } from '@testing-library/react';
 import {
   KeybindingsTabContent,
+  buildCommandSearchHaystack,
   groupByCategory,
   selectVisibleKeybindingCommands,
   type DisplayCommand,
@@ -148,6 +149,26 @@ describe('KeybindingsTabContent — 列表', () => {
 });
 
 describe('KeybindingsTabContent — 搜索', () => {
+  it('已小写搜索 haystack 源不调用 toLowerCase', () => {
+    const lowerSpy = vi.spyOn(String.prototype, 'toLowerCase');
+
+    try {
+      expect(buildCommandSearchHaystack('save', 'file', 'cmd.save', 'mod+s')).toBe(
+        'save file cmd.save mod+s',
+      );
+      expect(
+        lowerSpy.mock.contexts.some(
+          (ctx) => String(ctx) === 'save file cmd.save mod+s',
+        ),
+      ).toBe(false);
+      expect(buildCommandSearchHaystack('Save', 'File', 'CMD.Save', 'MOD+S')).toBe(
+        'save file cmd.save mod+s',
+      );
+    } finally {
+      lowerSpy.mockRestore();
+    }
+  });
+
   it('空 query 且全部命令可见时复用输入引用,不做 query lowercase', () => {
     const commands = [
       {
@@ -170,6 +191,40 @@ describe('KeybindingsTabContent — 搜索', () => {
     try {
       expect(selectVisibleKeybindingCommands(commands, '')).toBe(commands);
       expect(lowerSpy).not.toHaveBeenCalled();
+    } finally {
+      lowerSpy.mockRestore();
+    }
+  });
+
+  it('小写 query 搜索不调用 toLowerCase', () => {
+    const commands = [
+      {
+        cmd: {
+          id: 'a',
+          title: 'Save',
+          hotkey: 'mod+s',
+          fn: vi.fn(),
+        },
+        displayTitle: 'Save',
+        displayCategory: '',
+        effectiveHotkey: 'mod+s',
+        hotkeyParts: ['⌘', 'S'],
+        isOverridden: false,
+        searchHaystack: 'save a mod+s',
+      },
+    ] satisfies readonly DisplayCommand[];
+    const lowerSpy = vi.spyOn(String.prototype, 'toLowerCase');
+
+    try {
+      expect(selectVisibleKeybindingCommands(commands, 'save')).toEqual([
+        commands[0],
+      ]);
+      expect(
+        lowerSpy.mock.contexts.some((ctx) => String(ctx) === 'save'),
+      ).toBe(false);
+      expect(selectVisibleKeybindingCommands(commands, 'SAVE')).toEqual([
+        commands[0],
+      ]);
     } finally {
       lowerSpy.mockRestore();
     }

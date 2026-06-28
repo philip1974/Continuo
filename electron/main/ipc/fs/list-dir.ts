@@ -256,9 +256,22 @@ async function walk(
   return sortDirsFirst(out);
 }
 
-function sortDirsFirst(entries: FileEntry[]): FileEntry[] {
-  return entries.sort((a, b) => {
-    if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
-    return a.name.localeCompare(b.name);
-  });
+export function sortDirsFirst(entries: FileEntry[]): FileEntry[] {
+  for (let i = 1; i < entries.length; i++) {
+    const prev = entries[i - 1]!;
+    const cur = entries[i]!;
+    if (prev.isDirectory !== cur.isDirectory) {
+      if (!prev.isDirectory) return entries.sort(compareDirsFirst);
+      continue;
+    }
+    if (prev.name.localeCompare(cur.name) > 0) {
+      return entries.sort(compareDirsFirst);
+    }
+  }
+  return entries;
+}
+
+function compareDirsFirst(a: FileEntry, b: FileEntry): number {
+  if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+  return a.name.localeCompare(b.name);
 }

@@ -10,7 +10,7 @@
 // 持久化:localStorage(同 settings values store 的轻量策略)。
 
 import { create } from 'zustand';
-import { HOTKEY_SHAPE_RE, type CommandSpec } from '../registries/CommandRegistry';
+import { isValidHotkeyShape, type CommandSpec } from '../registries/CommandRegistry';
 import {
   readRecord,
   writeRecord,
@@ -24,7 +24,7 @@ const STORAGE_KEY = 'continuo.keybindings.overrides';
 // 边界(E22):value 守卫 + 上限。畸形/篡改 overrides 混入非字符串值会让 getEffectiveHotkey →
 // compileCombo(effective).toLowerCase() 崩溃;hotkey 串本就短,限长 256;commandId(key)限长 256;
 // 条目数封顶。非法项丢弃(降级到默认快捷键),不崩。
-// 边界(E240,E145 写端对偶):读端 valueGuard 复用写端(setHotkey)同一 HOTKEY_SHAPE_RE 形态校验 ——
+// 边界(E240,E145 写端对偶):读端 valueGuard 复用写端(setHotkey)同一 isValidHotkeyShape 形态校验 ——
 // 此前读端只验 string + 长度,但写端/注册端均拒非法形态。篡改/旧版本残留的畸形 localStorage 值(如
 // mod++s 空段)会被 readStored 放行 → compileCombo 当成 mod+s 参与全局快捷键匹配 → 意外触发命令。
 // 读端只接受 ''(unbind)或形态合法的 hotkey,其余丢弃(降级默认),与写端语义一致(读≡写,防旁路)。
@@ -33,7 +33,7 @@ const readStored = (): Record<string, string> =>
     valueGuard: (v): v is string =>
       typeof v === 'string' &&
       v.length <= 256 &&
-      (v === '' || HOTKEY_SHAPE_RE.test(v)),
+      (v === '' || isValidHotkeyShape(v)),
     maxKeyLength: 256,
     maxEntries: 10_000,
   });
@@ -87,9 +87,9 @@ export const useKeybindingsStore = create<KeybindingsState>((set, get) => ({
   // 写,工作量大且反转既有持久化层决策,暂缓(低频、可重设)。详见 doc/race-condition-audit.md R113。
   setHotkey: (commandId, hotkey) => {
     // 边界(E145,写端校验):'' = unbind(放行);非空 hotkey 须长度 ≤ 256 且形态合法
-    //(HOTKEY_SHAPE_RE,与注册侧/捕获侧同一来源)。畸形 override(含空白/空段/超长)会让
+    //(isValidHotkeyShape,与注册侧/捕获侧同一来源)。畸形 override(含空白/空段/超长)会让
     // getEffectiveHotkey→compileCombo 产出空主键(永不触发)+ UI 显示异常 → 拒写(no-op)。
-    if (hotkey !== '' && (hotkey.length > 256 || !HOTKEY_SHAPE_RE.test(hotkey))) {
+    if (hotkey !== '' && (hotkey.length > 256 || !isValidHotkeyShape(hotkey))) {
       return;
     }
     const latest = readStored();

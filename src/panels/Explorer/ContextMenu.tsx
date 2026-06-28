@@ -69,6 +69,27 @@ function groupOrderIndex(group: string): number {
   return i >= 0 ? i : BUILTIN_GROUP_ORDER.length; // 自定义 group 排在 'danger' 后
 }
 
+function comparePluginItemBuckets(
+  a: PluginItemBucket,
+  b: PluginItemBucket,
+): number {
+  const ai = groupOrderIndex(a.group);
+  const bi = groupOrderIndex(b.group);
+  if (ai !== bi) return ai - bi;
+  return a.group.localeCompare(b.group);
+}
+
+function arePluginItemBucketsSorted(
+  buckets: readonly PluginItemBucket[],
+): boolean {
+  for (let i = 1; i < buckets.length; i++) {
+    if (comparePluginItemBuckets(buckets[i - 1]!, buckets[i]!) > 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
 interface PluginItemBucket {
   readonly group: string;
   readonly items: readonly ExplorerContextMenuItemSpec[];
@@ -137,12 +158,9 @@ export function groupPluginItems(
     bucket.items.length = bucket.count;
     buckets[i++] = { group, items: bucket.items };
   }
-  buckets.sort((a, b) => {
-    const ai = groupOrderIndex(a.group);
-    const bi = groupOrderIndex(b.group);
-    if (ai !== bi) return ai - bi;
-    return a.group.localeCompare(b.group);
-  });
+  if (!arePluginItemBucketsSorted(buckets)) {
+    buckets.sort(comparePluginItemBuckets);
+  }
   return buckets;
 }
 

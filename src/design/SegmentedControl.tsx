@@ -66,7 +66,13 @@ export function SegmentedControl<T extends string>({
     )
       return;
     if (options.length === 0) return;
-    const cur = options.findIndex((o) => o.id === value);
+    let cur = -1;
+    for (let i = 0; i < options.length; i += 1) {
+      if (options[i]?.id === value) {
+        cur = i;
+        break;
+      }
+    }
     let next: number;
     if (key === 'Home') next = 0;
     else if (key === 'End') next = options.length - 1;

@@ -108,6 +108,13 @@ export async function loadSettings(): Promise<Settings> {
 export async function saveSettings(next: Settings): Promise<void> {
   return withSettingsMutex(async () => {
     SettingsSchema.parse(next); // 校验
+    if (
+      cached !== null &&
+      cached.version === next.version &&
+      cached.locale === next.locale
+    ) {
+      return;
+    }
     await atomicWriteJson(settingsFile(), next);
     cached = next;
   });

@@ -159,10 +159,10 @@ export function isValidMarketplaceEntry(v: unknown): v is MarketplaceEntry {
   if (e.tags !== undefined) {
     if (!Array.isArray(e.tags) || e.tags.length > MP_TAGS_COUNT_MAX)
       return false;
-    if (
-      !e.tags.every((t) => typeof t === 'string' && t.length <= MP_TAG_MAX)
-    )
-      return false;
+    for (let i = 0; i < e.tags.length; i += 1) {
+      const tag = e.tags[i];
+      if (typeof tag !== 'string' || tag.length > MP_TAG_MAX) return false;
+    }
   }
   return true;
 }

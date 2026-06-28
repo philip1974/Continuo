@@ -1,6 +1,8 @@
 // BDD: startup-mode (Issue #30)
 // 纯函数 pickStartupMode(pendingPaths, isExistingDir) — 决策 dock vs restore。
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it, expect, vi } from 'vitest';
 import { pickStartupMode } from '../../../electron/main/services/startup-mode.service';
 import {
@@ -94,6 +96,15 @@ describe('pickStartupMode', () => {
   describe('冷启动目录收集分配', () => {
     it('实现使用固定上限数组收集目录,不通过 dirs.push 扩容', () => {
       expect(pickStartupMode.toString()).not.toContain('dirs.push(');
+    });
+
+    it('index.ts 消费额外 dock dirs 不通过 slice(1) 物化中间数组', () => {
+      const src = readFileSync(
+        join(process.cwd(), 'electron/main/index.ts'),
+        'utf8',
+      );
+
+      expect(src).not.toContain('startup.dirs.slice(1)');
     });
   });
 });

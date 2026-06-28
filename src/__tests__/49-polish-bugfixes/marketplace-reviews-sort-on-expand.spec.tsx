@@ -225,4 +225,26 @@ describe('打磨 R41 — review 仅在展开时排序渲染', () => {
 
     expect(selectDisplayReviews(reviews, 'helpful', 10)).toBe(reviews);
   });
+
+  it('helpful 同 thumbsUp 时按 ISO createdAt 倒序,不调用 localeCompare', () => {
+    const older = {
+      ...review('older', 5),
+      createdAt: '2024-01-01T00:00:00Z',
+    };
+    const newer = {
+      ...review('newer', 5),
+      createdAt: '2024-02-01T00:00:00Z',
+    };
+    const localeSpy = vi.spyOn(String.prototype, 'localeCompare');
+
+    try {
+      expect(selectDisplayReviews([older, newer], 'helpful', 10)).toEqual([
+        newer,
+        older,
+      ]);
+      expect(localeSpy).not.toHaveBeenCalled();
+    } finally {
+      localeSpy.mockRestore();
+    }
+  });
 });

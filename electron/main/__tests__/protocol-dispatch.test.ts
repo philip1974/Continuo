@@ -248,6 +248,38 @@ describe('race(R40) · 多深链 FIFO 缓冲不丢', () => {
     ]);
     expect(pending).toEqual([]);
   });
+
+  it('drainPendingProtocolUrls 不逐条 shift 队列,成功前缀一次性删除', () => {
+    const w = makeWin({ loading: false });
+    const pending = ['co://a', 'co://b', 'co://c'];
+    const shiftSpy = vi.spyOn(pending, 'shift');
+
+    try {
+      drainPendingProtocolUrls(w.webContents, CH, pending);
+      expect(shiftSpy).not.toHaveBeenCalled();
+      expect(pending).toEqual([]);
+    } finally {
+      shiftSpy.mockRestore();
+    }
+  });
+
+  it('drainPendingProtocolUrls 中途 send 抛错 → 只删除已成功投递前缀', () => {
+    const wc = {
+      isLoading: () => false,
+      send: vi.fn((_channel: string, payload: { url: string }) => {
+        if (payload.url === 'co://b') {
+          throw new Error('Object has been destroyed');
+        }
+      }),
+      once: () => {},
+    };
+    const pending = ['co://a', 'co://b', 'co://c'];
+
+    drainPendingProtocolUrls(wc, CH, pending);
+
+    expect(wc.send).toHaveBeenCalledTimes(2);
+    expect(pending).toEqual(['co://b', 'co://c']);
+  });
 });
 
 // 边界(E55):co:// 深链外部输入面 —— 单 URL 长度上限 + pending 队列条数上限,防恶意网页/命令行

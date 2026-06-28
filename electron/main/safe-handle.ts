@@ -104,6 +104,7 @@ export function isTrustedRendererFileUrl(url: string): boolean {
   // 非法,fail-closed 视为不受信(false)。startsWith 是 O(1) 前缀,不受影响。
   if (typeof url !== 'string' || url.length > MAX_WINDOW_URL_LEN) return false;
   if (trustedRendererPathname === null) return url.startsWith('file://');
+  if (!url.startsWith('file://')) return false;
   try {
     const u = new URL(url);
     if (u.protocol !== 'file:') return false;
@@ -111,6 +112,20 @@ export function isTrustedRendererFileUrl(url: string): boolean {
   } catch {
     return false;
   }
+}
+
+let cachedExpectedRendererUrl: string | null = null;
+let cachedExpectedRendererOrigin: string | null = null;
+
+function getExpectedRendererOrigin(expected: string): string | null {
+  if (cachedExpectedRendererUrl === expected) return cachedExpectedRendererOrigin;
+  cachedExpectedRendererUrl = expected;
+  try {
+    cachedExpectedRendererOrigin = new URL(expected).origin;
+  } catch {
+    cachedExpectedRendererOrigin = null;
+  }
+  return cachedExpectedRendererOrigin;
 }
 
 // 测试与生产共享的 frame 形状。生产环境是 Electron WebFrameMain,
@@ -201,9 +216,11 @@ export function defaultIsTrustedFrame(frame: FrameLike): boolean {
   // frame.url 已限长(line 193),但 expected 每次 IPC 调用都 new URL 解析一次,开发误配/OS 上界超长 env
   // 会被反复 O(N) 解析。对齐 frame.url 的 MAX_WINDOW_URL_LEN 闸(任何真实 dev URL 远在内),超长 fail-closed。
   if (!expected || expected.length > MAX_WINDOW_URL_LEN) return false;
+  const expectedOrigin = getExpectedRendererOrigin(expected);
+  if (expectedOrigin === null) return false;
 
   try {
-    return new URL(frame.url).origin === new URL(expected).origin;
+    return new URL(frame.url).origin === expectedOrigin;
   } catch {
     return false;
   }

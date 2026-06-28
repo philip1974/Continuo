@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { useEditorStore } from './editor.store';
+import { isBlankString } from '../lib/blank-string';
 import { PATH_STR_MAX } from '../../electron/shared/explorer-persistence-schema';
 
 const RECENT_LIMIT = 5;
@@ -79,7 +80,7 @@ type WorkspaceState = {
 export function normalizeWorkspaceRoot(path: unknown): string | null {
   if (typeof path !== 'string') return null;
   if (path.length > PATH_STR_MAX) return null;
-  return path.trim().length === 0 ? null : path;
+  return isBlankString(path) ? null : path;
 }
 
 export const useWorkspaceStore = create<WorkspaceState>((set) => ({

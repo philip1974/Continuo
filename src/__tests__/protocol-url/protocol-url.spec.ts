@@ -15,6 +15,24 @@ describe('parseProtocolUrl', () => {
     });
   });
 
+  it('target 去前导 slash 不调用 replace 正则', () => {
+    const replaceSpy = vi.spyOn(String.prototype, 'replace');
+
+    try {
+      expect(parseProtocolUrl('co://command/sample.hello')).toEqual({
+        action: 'command',
+        target: 'sample.hello',
+        params: {},
+      });
+      const trimRegexCalls = replaceSpy.mock.calls.filter(
+        ([pattern]) => pattern instanceof RegExp && pattern.source === '^\\/+',
+      );
+      expect(trimRegexCalls).toHaveLength(0);
+    } finally {
+      replaceSpy.mockRestore();
+    }
+  });
+
   it('带 query → params', () => {
     const r = parseProtocolUrl('co://command/foo?a=1&b=hi');
     expect(r?.params).toEqual({ a: '1', b: 'hi' });

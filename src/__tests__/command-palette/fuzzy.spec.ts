@@ -131,6 +131,25 @@ describe('fuzzyFilter', () => {
     }
   });
 
+  it('匹配结果已按 score 降序时不调用 sort', () => {
+    const items = [
+      { id: 'a', name: 'save file' },
+      { id: 'b', name: 'save all' },
+      { id: 'c', name: 'open file' },
+    ];
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      expect(fuzzyFilter(items, 'save', (i) => i.name).map((x) => x.id)).toEqual([
+        'a',
+        'b',
+      ]);
+      expect(sortSpy).not.toHaveBeenCalled();
+    } finally {
+      sortSpy.mockRestore();
+    }
+  });
+
   it('单项匹配时直接复用原列表引用', () => {
     const items = [{ id: 'a', name: 'save file' }];
 

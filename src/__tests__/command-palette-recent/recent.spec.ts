@@ -77,6 +77,20 @@ describe('useRecentCommandsStore', () => {
     expect(readFromStorage()).toBe(empty);
   });
 
+  it('readFromStorage 损坏 JSON → 空数组并清毒,后续不重复解析同一坏值', () => {
+    localStorage.setItem(RECENT_STORAGE_KEY, 'not-json');
+
+    expect(readFromStorage()).toEqual([]);
+    expect(localStorage.getItem(RECENT_STORAGE_KEY)).toBeNull();
+  });
+
+  it('readFromStorage 顶层非数组 → 空数组并清毒', () => {
+    localStorage.setItem(RECENT_STORAGE_KEY, JSON.stringify({ nope: true }));
+
+    expect(readFromStorage()).toEqual([]);
+    expect(localStorage.getItem(RECENT_STORAGE_KEY)).toBeNull();
+  });
+
   it('初始 list 为空', () => {
     expect(useRecentCommandsStore.getState().list).toEqual([]);
   });

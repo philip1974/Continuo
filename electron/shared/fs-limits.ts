@@ -14,7 +14,20 @@ export const FS_PATH_MAX = 8192; // 路径字符串上限(与 fs.ipc fsPath / pl
 export const GIT_BLOB_SHA_RE = /^[0-9a-fA-F]{4,64}$/;
 /** sha 是否合法 git blob 形态(有效性谓词:非 string → false → 无效 → 调用方拒). */
 export function isValidGitBlobSha(sha: unknown): boolean {
-  return typeof sha === 'string' && GIT_BLOB_SHA_RE.test(sha);
+  if (typeof sha !== 'string' || sha.length < 4 || sha.length > 64) {
+    return false;
+  }
+  for (let i = 0; i < sha.length; i += 1) {
+    const code = sha.charCodeAt(i);
+    const isHex =
+      (code >= 48 && code <= 57) ||
+      (code >= 65 && code <= 70) ||
+      (code >= 97 && code <= 102);
+    if (!isHex) {
+      return false;
+    }
+  }
+  return true;
 }
 
 // 边界(E239,E44/E180 pre-IPC 预检族):request-scope 的 scopes 数组上限 + 形态校验,main + renderer

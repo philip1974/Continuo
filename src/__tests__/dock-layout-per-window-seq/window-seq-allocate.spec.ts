@@ -85,4 +85,8 @@ describe('allocateWindowSeq atomic concurrent allocation', () => {
     expect(await allocateWindowSeq(file)).toBe(7); // 安全值原样返回
     expect((await loadExplorer(file))?.nextWindowSeq).toBe(8);
   });
+
+  it('E4 自愈求 max windowSeq 使用单趟循环,不通过 reduce callback', () => {
+    expect(allocateWindowSeq.toString()).not.toContain('.reduce(');
+  });
 });

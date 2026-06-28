@@ -45,6 +45,7 @@
 - [`command-hotkeys-precompiled.spec.tsx`](./49-polish-bugfixes/command-hotkeys-precompiled.spec.tsx)
 - [`command-palette-closed-no-subscribe.spec.tsx`](./49-polish-bugfixes/command-palette-closed-no-subscribe.spec.tsx)
 - [`command-palette-hotkey-precompiled.spec.tsx`](./49-polish-bugfixes/command-palette-hotkey-precompiled.spec.tsx)
+- [`command-palette-recent-rank.spec.ts`](./49-polish-bugfixes/command-palette-recent-rank.spec.ts)
 - [`command-palette-virtualized.spec.tsx`](./49-polish-bugfixes/command-palette-virtualized.spec.tsx)
 - [`contextmenu-plugin-when-lazy.spec.tsx`](./49-polish-bugfixes/contextmenu-plugin-when-lazy.spec.tsx)
 - [`contributed-action-error-surfaced.spec.ts`](./49-polish-bugfixes/contributed-action-error-surfaced.spec.ts)
@@ -543,6 +544,7 @@
 - [`error-codes-message-catalog.spec.ts`](./i18n-en-zh-ko/error-codes-message-catalog.spec.ts)
 - [`locale-concurrent.spec.ts`](./i18n-en-zh-ko/locale-concurrent.spec.ts)
 - [`locale-store.spec.ts`](./i18n-en-zh-ko/locale-store.spec.ts)
+- [`main-i18n.spec.ts`](./i18n-en-zh-ko/main-i18n.spec.ts)
 - [`main-menu-rebuild.spec.ts`](./i18n-en-zh-ko/main-menu-rebuild.spec.ts)
 - [`popout-locale-broadcast.spec.ts`](./i18n-en-zh-ko/popout-locale-broadcast.spec.ts)
 - [`pty-lang-env.spec.ts`](./i18n-en-zh-ko/pty-lang-env.spec.ts)
@@ -602,6 +604,14 @@
 ## [latest-wins](./latest-wins/README.md)
 
 - [`latest-wins.spec.ts`](./latest-wins/latest-wins.spec.ts)
+
+## [layout-ui-store](./layout-ui-store/README.md)
+
+- [`layout-ui-store.spec.ts`](./layout-ui-store/layout-ui-store.spec.ts)
+
+## [lazy-panel](./lazy-panel/README.md)
+
+- [`lazy-panel.spec.tsx`](./lazy-panel/lazy-panel.spec.tsx)
 
 ## [leaf-name-guard(E274,E268 收口)](./leaf-name-guard/README.md)
 
@@ -831,6 +841,7 @@
 
 ## [quick-open(⌘P 文件模糊搜索)](./quick-open/README.md)
 
+- [`hotkey.spec.tsx`](./quick-open/hotkey.spec.tsx)
 - [`store.spec.ts`](./quick-open/store.spec.ts)
 - [`walk-files.spec.ts`](./quick-open/walk-files.spec.ts)
 

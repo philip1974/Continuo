@@ -4,7 +4,7 @@
 // 此 spec 在 Phase 1 实装前会 red(module 不存在)。实装目标:
 //   electron/main/services/mcp-host.service.ts 按下面 import 的形态 export。
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   generateToken,
   verifyBearer,
@@ -67,6 +67,18 @@ describe('verifyBearer', () => {
     expect(verifyBearer(`BeArEr ${TOKEN}`, TOKEN)).toBe(true);
   });
 
+  it('Bearer header 解析走字符扫描,不调用 RegExp.exec', () => {
+    const execSpy = vi.spyOn(RegExp.prototype, 'exec');
+    try {
+      expect(verifyBearer(`BeArEr ${TOKEN}`, TOKEN)).toBe(true);
+      expect(verifyBearer(`Basic ${TOKEN}`, TOKEN)).toBe(false);
+      expect(verifyBearer(`Bearer ${TOKEN}\n`, TOKEN)).toBe(false);
+      expect(execSpy).not.toHaveBeenCalled();
+    } finally {
+      execSpy.mockRestore();
+    }
+  });
+
   it('header 缺失 → false', () => {
     expect(verifyBearer(undefined, TOKEN)).toBe(false);
   });
@@ -127,6 +139,23 @@ describe('sseAdmissionAllowed(E232)', () => {
 describe('createMcpHost · broadcast cleanup', () => {
   it('广播失败连接时直接关闭,不通过 dead.push 收集二次遍历', () => {
     expect(createMcpHost.toString()).not.toContain('dead.push(');
+  });
+
+  it('verifyAndResolveCtx 复用字符扫描 Bearer 解析,不调用 RegExp.exec', async () => {
+    const host = await createMcpHost({});
+    const token = host.issueWindowToken(7);
+    const execSpy = vi.spyOn(RegExp.prototype, 'exec');
+    try {
+      expect(host.verifyAndResolveCtx(`BeArEr ${token}`)).toEqual({
+        ownerWindowId: 7,
+        callerSubject: token,
+      });
+      expect(host.verifyAndResolveCtx(`Bearer ${token}\n`)).toBeNull();
+      expect(execSpy).not.toHaveBeenCalled();
+    } finally {
+      execSpy.mockRestore();
+      await host.close();
+    }
   });
 });
 
@@ -394,5 +423,24 @@ describe('isLoopbackHostHeader', () => {
 
   it('port<=0 一律 false', () => {
     expect(isLoopbackHostHeader('127.0.0.1:0', 0)).toBe(false);
+  });
+
+  it('常见小写 Host 不调用 toLowerCase', () => {
+    const lowerSpy = vi.spyOn(String.prototype, 'toLowerCase');
+
+    try {
+      expect(isLoopbackHostHeader('localhost:8080', 8080)).toBe(true);
+      expect(isLoopbackHostHeader('127.0.0.1:8080', 8080)).toBe(true);
+      expect(
+        lowerSpy.mock.contexts.some(
+          (ctx) =>
+            String(ctx) === 'localhost:8080' ||
+            String(ctx) === '127.0.0.1:8080',
+        ),
+      ).toBe(false);
+      expect(isLoopbackHostHeader('LOCALHOST:8080', 8080)).toBe(true);
+    } finally {
+      lowerSpy.mockRestore();
+    }
   });
 });

@@ -20,7 +20,7 @@ import {
   isMarkdownPath as isMarkdownPathExact,
 } from './editor-path-utils';
 import { ConfirmDialog } from '@/panels/Explorer/ConfirmDialog';
-import { SegmentedControl } from '@/design';
+import { SegmentedControl, type SegmentedControlOption } from '@/design';
 import { CodeEditor } from './CodeEditor';
 import { EditorHeader, type TabChrome } from './EditorHeader';
 import { EditorWelcome } from './EditorWelcome';
@@ -52,6 +52,10 @@ function basename(p: string | null): string {
   return basenameForEditorPath(p);
 }
 
+function isSKey(key: string): boolean {
+  return key === 's' || key === 'S';
+}
+
 export function EditorPanel() {
   // 只订阅 active tab 对象(打磨 R27,延续 R22-R24 正文热路径收敛)。editor store
   // 的 updateContent/reloadFromDisk/markSaved 只替换被改的 tab 对象 → 非 active tab
@@ -66,10 +70,17 @@ export function EditorPanel() {
   const modeOptions = useMemo(
     () => {
       void locale; // deps:translate 内部按当前 locale 取值
-      return MODE_IDS.map((id) => ({
-        id,
-        label: translate(`panels.editor.mode.${id}`),
-      }));
+      const options = new Array<SegmentedControlOption<EditorMode>>(
+        MODE_IDS.length,
+      );
+      for (let i = 0; i < MODE_IDS.length; i += 1) {
+        const id = MODE_IDS[i]!;
+        options[i] = {
+          id,
+          label: translate(`panels.editor.mode.${id}`),
+        };
+      }
+      return options;
     },
     [locale],
   );
@@ -235,7 +246,7 @@ export function EditorPanel() {
       className="flex h-full w-full flex-col bg-canvas"
       onKeyDown={(e) => {
         // Cmd/Ctrl+S 显式保存(Crepe 不会拦 ⌘S,所以可以放心)
-        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
+        if ((e.metaKey || e.ctrlKey) && isSKey(e.key)) {
           e.preventDefault();
           void handleSave();
         }

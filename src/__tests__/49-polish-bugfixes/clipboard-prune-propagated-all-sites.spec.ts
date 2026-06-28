@@ -35,6 +35,7 @@ describe('49 第八 session · clipboard prune 传播到所有源失效入口', 
   it('onPaste cut 不再用 allOk 门控清剪贴板(部分成功也剪已移走项)', () => {
     // 修复前是 `if (kind === 'cut' && allOk) ...clear()`;修复后无 allOk 门控,改 movedSrcs prune。
     expect(SRC).not.toMatch(/kind === 'cut' && allOk/);
-    expect(SRC).toMatch(/kind === 'cut' && movedSrcs\.length > 0/);
+    expect(SRC).toMatch(/kind === 'cut' && movedSrcs !== null && movedSrcCount > 0/);
+    expect(SRC).toMatch(/movedSrcs\.length = movedSrcCount/);
   });
 });

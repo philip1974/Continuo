@@ -159,7 +159,7 @@ export function buildPluginListDirEntries(
   entries: readonly Pick<FileEntry, 'name' | 'isDirectory' | 'isSymlink'>[],
 ): FileEntry[] {
   if (entries.length === 0) return EMPTY_PLUGIN_LIST_DIR_ENTRIES;
-  const parent = path.replace(/[\\/]+$/, '');
+  const parent = path;
   const out = new Array<FileEntry>(entries.length);
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i]!;

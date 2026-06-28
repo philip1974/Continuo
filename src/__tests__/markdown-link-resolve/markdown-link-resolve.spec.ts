@@ -22,6 +22,25 @@ describe('resolveLink — external scheme', () => {
       url: 'mailto:foo@bar.com',
     });
   });
+
+  it('scheme 判断走字符扫描,不调用 RegExp.test', () => {
+    const testSpy = vi.spyOn(RegExp.prototype, 'test');
+
+    try {
+      expect(resolveLink('HTTPS://example.com', null)).toEqual({
+        kind: 'external',
+        url: 'HTTPS://example.com',
+      });
+      expect(resolveLink('custom+scheme://x', '/x.md')).toBeNull();
+      expect(resolveLink('1bad://x', '/x.md')).toEqual({
+        kind: 'file',
+        absPath: '/1bad:/x',
+      });
+      expect(testSpy).not.toHaveBeenCalled();
+    } finally {
+      testSpy.mockRestore();
+    }
+  });
 });
 
 describe('resolveLink — 不安全 / 未知 scheme → null', () => {
@@ -159,6 +178,29 @@ describe('resolveLink — Windows 路径', () => {
     });
   });
 
+  it('Windows 绝对路径轻量判断不调用 RegExp.test', () => {
+    const testSpy = vi.spyOn(RegExp.prototype, 'test');
+
+    try {
+      expect(resolveLink('C:\\work\\notes.md', '/cur.md')).toEqual({
+        kind: 'file',
+        absPath: 'C:\\work\\notes.md',
+      });
+      expect(resolveLink('\\\\server\\share\\f.md', '/cur.md')).toEqual({
+        kind: 'file',
+        absPath: '\\\\server\\share\\f.md',
+      });
+      const windowsPathRegexCalls = testSpy.mock.contexts.filter(
+        (context) =>
+          context instanceof RegExp &&
+          (context.source === '^[a-zA-Z]:[\\\\/]' || context.source === '^\\\\\\\\'),
+      );
+      expect(windowsPathRegexCalls).toHaveLength(0);
+    } finally {
+      testSpy.mockRestore();
+    }
+  });
+
   // 跨平台(codex 复查 P2):UNC `\\server\share` 是不可越过的卷根,相对链接 `..` 不得弹出
   // host/share;旧实现 root 仅取 `\\` → `..\..` 越过 share 错解析成 `\\server\a.md`。
   it('UNC 工作区相对链接 .. 不越过 share 根', () => {
@@ -178,6 +220,22 @@ describe('resolveLink — Windows 路径', () => {
       kind: 'file',
       absPath: '\\\\server\\share\\dir\\sub\\b.md',
     });
+  });
+
+  it('UNC 根解析走字符扫描,不调用 RegExp.exec', () => {
+    const execSpy = vi.spyOn(RegExp.prototype, 'exec');
+
+    try {
+      expect(
+        resolveLink('..\\..\\a.md', '\\\\server\\share\\dir\\cur.md'),
+      ).toEqual({
+        kind: 'file',
+        absPath: '\\\\server\\share\\a.md',
+      });
+      expect(execSpy).not.toHaveBeenCalled();
+    } finally {
+      execSpy.mockRestore();
+    }
   });
 
   it('Windows 风格相对路径 ..\\ 正确折叠', () => {

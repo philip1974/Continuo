@@ -31,6 +31,42 @@ function hasOwnParam(params: TranslateParams): boolean {
   return false;
 }
 
+function isTemplateParamChar(code: number): boolean {
+  return (
+    code === 95 ||
+    (code >= 48 && code <= 57) ||
+    (code >= 65 && code <= 90) ||
+    (code >= 97 && code <= 122)
+  );
+}
+
+function interpolateTemplate(template: string, params: TranslateParams): string {
+  let out = '';
+  let last = 0;
+  for (let i = 0; i < template.length - 2; i += 1) {
+    if (template.charCodeAt(i) !== 123) continue;
+    let end = i + 1;
+    if (!isTemplateParamChar(template.charCodeAt(end))) continue;
+    end += 1;
+    while (end < template.length && isTemplateParamChar(template.charCodeAt(end))) {
+      end += 1;
+    }
+    if (template.charCodeAt(end) !== 125) {
+      i = end;
+      continue;
+    }
+    const name = template.slice(i + 1, end);
+    const original = template.slice(i, end + 1);
+    const value = params[name];
+    out += template.slice(last, i);
+    out += value === undefined ? original : String(value);
+    last = end + 1;
+    i = end;
+  }
+  if (last === 0) return template;
+  return out + template.slice(last);
+}
+
 export function getLocale(): Locale {
   return currentLocale;
 }
@@ -64,10 +100,7 @@ export function translate(
 
   // 简单 {paramName} 插值
   if (params && hasOwnParam(params)) {
-    return template.replace(/\{(\w+)\}/g, (m, name) => {
-      const v = params[name];
-      return v === undefined ? m : String(v);
-    });
+    return interpolateTemplate(template, params);
   }
 
   return template;

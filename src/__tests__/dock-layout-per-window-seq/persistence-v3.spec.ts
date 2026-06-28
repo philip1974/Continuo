@@ -279,6 +279,35 @@ describe('explorer.json v3 persistence schema and merge semantics', () => {
     }
   });
 
+  it('pruneLRUClosed 关闭窗口已按 LRU 顺序时不调用 sort', () => {
+    const payload = defaultExplorerV3();
+    payload.windows = [
+      { ...payload.windows[0]!, lastClosedAt: 100 },
+      {
+        windowSeq: 1,
+        workspace: { root: '/one' },
+        explorer: { activePath: null, expandedPaths: [], sort },
+        lastClosedAt: 200,
+      },
+      {
+        windowSeq: 2,
+        workspace: { root: '/two' },
+        explorer: { activePath: null, expandedPaths: [], sort },
+        lastClosedAt: 300,
+      },
+    ];
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      pruneLRUClosed(payload, 1, new Set());
+
+      expect(sortSpy).not.toHaveBeenCalled();
+      expect(payload.windows.map((w) => w.windowSeq)).toEqual([2]);
+    } finally {
+      sortSpy.mockRestore();
+    }
+  });
+
   it('dedupeWindowsBySeq 不对 payload.windows 调 filter 产生中间数组', () => {
     const payload = defaultExplorerV3();
     payload.windows = [

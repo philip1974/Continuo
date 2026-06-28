@@ -69,26 +69,41 @@ interface BeamPath {
   readonly stroke: string;
 }
 
-const BEAM_PATHS: readonly BeamPath[] = PATHS.map((d, index) => {
-  const gradientId = `lm-beam-${index}`;
-  return {
-    d,
-    key: `path-${index}`,
-    gradientKey: `gradient-${index}`,
-    gradientId,
-    stroke: `url(#${gradientId})`,
-  };
-});
+interface BeamTransition {
+  readonly duration: number;
+  readonly delay: number;
+  readonly y2End: string;
+}
+
+const BEAM_PATHS: readonly BeamPath[] = (() => {
+  const paths = new Array<BeamPath>(PATHS.length);
+  for (let index = 0; index < PATHS.length; index += 1) {
+    const gradientId = `lm-beam-${index}`;
+    paths[index] = {
+      d: PATHS[index]!,
+      key: `path-${index}`,
+      gradientKey: `gradient-${index}`,
+      gradientId,
+      stroke: `url(#${gradientId})`,
+    };
+  }
+  return paths;
+})();
 
 export const BackgroundBeams = memo(function BackgroundBeams({ className }: { className?: string }) {
   // 锁定一次性的随机参数,避免组件重渲染时 transition 重新摇。
   const transitions = useMemo(
-    () =>
-      BEAM_PATHS.map(() => ({
-        duration: Math.random() * 10 + 10,
-        delay: Math.random() * 10,
-        y2End: `${93 + Math.random() * 8}%`,
-      })),
+    () => {
+      const values = new Array<BeamTransition>(BEAM_PATHS.length);
+      for (let i = 0; i < BEAM_PATHS.length; i += 1) {
+        values[i] = {
+          duration: Math.random() * 10 + 10,
+          delay: Math.random() * 10,
+          y2End: `${93 + Math.random() * 8}%`,
+        };
+      }
+      return values;
+    },
     [],
   );
 

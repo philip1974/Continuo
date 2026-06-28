@@ -511,6 +511,7 @@ export function MarketplaceTab() {
 function GitUrlInstallSection() {
   const t = useT();
   const [url, setUrl] = useState('');
+  const trimmedUrl = useMemo(() => url.trim(), [url]);
   const [busy, setBusy] = useState(false);
   // race(R8):同步 in-flight 闸门(同 PluginsTabContent.onInstall)—— disabled={busy} render 滞后,
   // 同 tick 双击/Enter 会双 installFromGit。
@@ -521,14 +522,13 @@ function GitUrlInstallSection() {
   );
 
   const onInstall = async () => {
-    const u = url.trim();
-    if (!u) return;
+    if (!trimmedUrl) return;
     if (busyRef.current) return; // race(R8):同步单飞,重入直接挡掉。
     busyRef.current = true;
     setBusy(true);
     setMsg(null);
     try {
-      const r = await coApi.plugins.installFromGit(u);
+      const r = await coApi.plugins.installFromGit(trimmedUrl);
       if (!r.ok) {
         // i18n(I1 同族,Git URL 安装段兄弟入口):同卡片安装,按 r.code 经 catalog 翻译,
         // 未知 code 回退原 message,再套本地化外壳,避免 en/ko 看到 main 硬编码中文。
@@ -582,7 +582,7 @@ function GitUrlInstallSection() {
           variant="primary"
           size="sm"
           onClick={onInstall}
-          disabled={busy || !url.trim()}
+          disabled={busy || !trimmedUrl}
           // a11y(A94,A93 同族):安装中标 aria-busy(忙碌语义)。
           aria-busy={busy}
         >
@@ -860,6 +860,8 @@ function RatingRow({
         : EMPTY_REVIEWS,
     [expanded, hasReviews, sourceReviews, sort],
   );
+  // 展开区同一次 render 复用同一个 now 快照;避免每条 ReviewItem 分别 Date.now().
+  const reviewNowMs = expanded ? Date.now() : 0;
 
   if (!hasReviews) {
     return (
@@ -960,7 +962,7 @@ function RatingRow({
             ))}
           </div>
           {sorted.map((r) => (
-            <ReviewItem key={r.url} review={r} />
+            <ReviewItem key={r.url} review={r} nowMs={reviewNowMs} />
           ))}
           {rating.reviews.length > 10 && (
             <div className="pt-1 text-2xs text-fg-dim">
@@ -988,7 +990,7 @@ function RatingRow({
   );
 }
 
-function ReviewItem({ review: r }: { review: Review }) {
+function ReviewItem({ review: r, nowMs }: { review: Review; nowMs: number }) {
   const t = useT();
   const isMaintainer = MAINTAINERS.has(r.author.handle);
   const avatarUrl = isHttpUrl(r.author.avatarUrl) ? r.author.avatarUrl : null;
@@ -997,8 +999,7 @@ function ReviewItem({ review: r }: { review: Review }) {
   // false → 新账号 badge 被静默绕过(新账号靠损坏 createdAt 规避风险提示)。**不可解析 = 保守视为新账号**
   // (未知账龄 = 假定风险,显 badge)。注:不在数据层把畸形 createdAt 兜底成 epoch —— epoch 解析为很旧账号
   // → 反而绕过 badge,会重新打开本漏洞;故在此 UI 判定处用 Number.isFinite 兜底为"新"。
-  const accountAge = Date.now() - new Date(r.author.createdAt).getTime();
-  const isNewAccount = !Number.isFinite(accountAge) || accountAge < NEW_ACCOUNT_MS;
+  const isNewAccount = isNewAccountCreatedAt(r.author.createdAt, nowMs);
 
   return (
     <div className="flex gap-2 border-b border-line/50 pb-1.5 last:border-0 last:pb-0">
@@ -1075,7 +1076,7 @@ function ReviewItem({ review: r }: { review: Review }) {
               </span>
             </span>
           )}
-          <span className="text-fg-dim">{formatDate(r.createdAt)}</span>
+          <span className="text-fg-dim">{formatDateAt(r.createdAt, nowMs)}</span>
           <a
             href={r.url}
             target="_blank"
@@ -1099,7 +1100,8 @@ function ReviewItem({ review: r }: { review: Review }) {
 
 function compareHelpfulReviews(a: Review, b: Review): number {
   if (a.thumbsUp !== b.thumbsUp) return b.thumbsUp - a.thumbsUp;
-  return b.createdAt.localeCompare(a.createdAt);
+  if (a.createdAt === b.createdAt) return 0;
+  return a.createdAt > b.createdAt ? -1 : 1;
 }
 
 export function selectDisplayReviews(
@@ -1171,10 +1173,17 @@ function buildNewReviewUrl(pluginId: string): string {
   return `https://github.com/philip1974/continuo-plugins/discussions/new?category=general&title=${title}`;
 }
 
-/** 简单 friendly 日期。formatDate 是 module helper,不在 React tree,
+export function isNewAccountCreatedAt(createdAt: string, nowMs: number): boolean {
+  const createdAtMs = Date.parse(createdAt);
+  return !Number.isFinite(createdAtMs) || nowMs - createdAtMs < NEW_ACCOUNT_MS;
+}
+
+/** 简单 friendly 日期。formatDateAt 是 module helper,不在 React tree,
  *  调 translate() 直读 module-level locale state (topic-19 pattern). */
-function formatDate(iso: string): string {
-  const ms = Date.now() - new Date(iso).getTime();
+export function formatDateAt(iso: string, nowMs: number): string {
+  const createdAtMs = Date.parse(iso);
+  if (!Number.isFinite(createdAtMs)) return iso;
+  const ms = nowMs - createdAtMs;
   if (Number.isNaN(ms)) return iso;
   const min = Math.floor(ms / 60_000);
   if (min < 60) return min <= 0 ? translate('marketplace.time.now') : translate('marketplace.time.minutes_ago', { n: min });

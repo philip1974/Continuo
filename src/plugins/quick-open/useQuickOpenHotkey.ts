@@ -8,6 +8,10 @@ import { useEffect } from 'react';
 import { useQuickOpenStore } from './store';
 import { detectPlatform } from '@/plugins/command-palette/format-hotkey';
 
+function isPKey(key: string): boolean {
+  return key === 'p' || key === 'P';
+}
+
 export function useQuickOpenHotkey(): void {
   useEffect(() => {
     // mac:Cmd(meta)是 mod;非 mac:只认 Ctrl —— 否则 Windows/Linux 的 Super/Win 键
@@ -16,7 +20,7 @@ export function useQuickOpenHotkey(): void {
     const handler = (e: KeyboardEvent) => {
       const mod = isMac ? e.metaKey || e.ctrlKey : e.ctrlKey;
       // mod+P,不带 shift(带 shift 留给 CommandPalette)
-      if (mod && !e.shiftKey && e.key.toLowerCase() === 'p') {
+      if (mod && !e.shiftKey && isPKey(e.key)) {
         e.preventDefault();
         const { isOpen, open, close } = useQuickOpenStore.getState();
         if (isOpen) close();

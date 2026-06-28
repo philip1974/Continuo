@@ -16,12 +16,24 @@ describe('BackgroundBeams', () => {
       'utf8',
     );
 
-    expect(src).toContain('const BEAM_PATHS: readonly BeamPath[] = PATHS.map');
+    expect(src).toContain('const BEAM_PATHS: readonly BeamPath[] = (() => {');
+    expect(src).toContain('new Array<BeamPath>(PATHS.length)');
+    expect(src).not.toContain('const BEAM_PATHS: readonly BeamPath[] = PATHS.map');
     expect(src).toContain('BEAM_PATHS.map(({ key, d, stroke })');
     expect(src).toContain('BEAM_PATHS.map((beam, index)');
     expect(src).not.toContain('stroke={`url(#lm-beam-${index})`}');
     expect(src).not.toContain('id={`lm-beam-${index}`}');
     expect(src).not.toContain('key={`path-${index}`}');
+  });
+
+  it('挂载期随机 transition 参数用预分配数组构造', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/shell/decor/BackgroundBeams.tsx'),
+      'utf8',
+    );
+
+    expect(src).toContain('new Array<BeamTransition>(BEAM_PATHS.length)');
+    expect(src).not.toContain('BEAM_PATHS.map(() => ({');
   });
 
   it('渲染 svg viewBox + aria-hidden + 50 path / 50 gradient', () => {

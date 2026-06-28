@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import fsp, { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {
@@ -84,6 +84,28 @@ describe('writePluginPermissions(单 plugin 串行 merge)', () => {
       decisions: [{ permission: 'fs', granted: true, decidedAt: 1 }],
       pathScopes: [{ path: '/tmp/x', mode: 'rw' }],
     });
+  });
+
+  it('重复写入同一记录时不重复原子写盘', async () => {
+    const renameSpy = vi.spyOn(fsp, 'rename');
+
+    try {
+      await writePluginPermissions(baseDir, 'p.a', {
+        decisions: [{ permission: 'fs', granted: true, decidedAt: 1 }],
+        pathScopes: [{ path: '/tmp/x', mode: 'rw' }],
+      });
+      const callsAfterFirstWrite = renameSpy.mock.calls.length;
+      expect(callsAfterFirstWrite).toBeGreaterThan(0);
+
+      await writePluginPermissions(baseDir, 'p.a', {
+        decisions: [{ permission: 'fs', granted: true, decidedAt: 1 }],
+        pathScopes: [{ path: '/tmp/x', mode: 'rw' }],
+      });
+
+      expect(renameSpy.mock.calls).toHaveLength(callsAfterFirstWrite);
+    } finally {
+      renameSpy.mockRestore();
+    }
   });
 
   it('空记录 → 删除该 id,但保留其它 plugin', async () => {

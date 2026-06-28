@@ -430,6 +430,20 @@ describe('eventToCombo — E145 拒非法 hotkey 形态', () => {
     expect(eventToCombo(ev({ key: 'x', ctrlKey: true }))).toBe('mod+x');
   });
 
+  it('小写主键不调用 toLowerCase', () => {
+    const lowerSpy = vi.spyOn(String.prototype, 'toLowerCase');
+
+    try {
+      expect(eventToCombo(ev({ key: 'x', ctrlKey: true }))).toBe('mod+x');
+      expect(lowerSpy.mock.contexts.some((ctx) => String(ctx) === 'x')).toBe(
+        false,
+      );
+      expect(eventToCombo(ev({ key: 'X', ctrlKey: true }))).toBe('mod+x');
+    } finally {
+      lowerSpy.mockRestore();
+    }
+  });
+
   it('组合片段直接拼接,不分配 parts 数组/不通过 push 扩容', () => {
     expect(eventToCombo(ev({ key: 'x', ctrlKey: true, shiftKey: true }))).toBe(
       'mod+shift+x',

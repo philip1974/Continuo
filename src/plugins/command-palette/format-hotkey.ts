@@ -62,8 +62,18 @@ const SPECIAL_KEYS: Record<Platform, Record<string, string>> = {
 
 const EMPTY_HOTKEY_PARTS: string[] = [];
 
+function lowerIfNeeded(value: string): string {
+  for (let i = 0; i < value.length; i += 1) {
+    const code = value.charCodeAt(i);
+    if ((code >= 65 && code <= 90) || code > 127) {
+      return value.toLowerCase();
+    }
+  }
+  return value;
+}
+
 function formatPart(part: string, platform: Platform): string {
-  const lower = part.toLowerCase();
+  const lower = lowerIfNeeded(part);
   const mod = MOD_MAP[platform][lower];
   if (mod) return mod;
   const special = SPECIAL_KEYS[platform][lower];
@@ -139,6 +149,15 @@ export function formatHotkey(raw: string, platform: Platform): string {
   return formatted;
 }
 
+function containsApplePlatformToken(value: string): boolean {
+  return (
+    value.includes('Mac') ||
+    value.includes('iPhone') ||
+    value.includes('iPad') ||
+    value.includes('iPod')
+  );
+}
+
 export function detectPlatform(): Platform {
   if (typeof navigator === 'undefined') return 'other';
   // navigator.platform 有的浏览器已 deprecate,但 Electron 永远填值
@@ -146,7 +165,7 @@ export function detectPlatform(): Platform {
   const platform =
     typeof navigator.platform === 'string' ? navigator.platform : '';
   const ua = typeof navigator.userAgent === 'string' ? navigator.userAgent : '';
-  if (/Mac|iPhone|iPad|iPod/.test(platform)) return 'mac';
-  if (/Mac|iPhone|iPad|iPod/.test(ua)) return 'mac';
+  if (containsApplePlatformToken(platform)) return 'mac';
+  if (containsApplePlatformToken(ua)) return 'mac';
   return 'other';
 }

@@ -16,8 +16,92 @@ export interface FilterOptions {
 const EMPTY_FILTERED_MARKETPLACE_ENTRIES: readonly MarketplaceEntry[] = [];
 const EMPTY_MARKETPLACE_ENTRY_TAGS: readonly string[] = [];
 
+interface MarketplaceSearchCache {
+  idSource?: string;
+  idLower?: string;
+  nameSource?: string;
+  nameLower?: string;
+  descriptionReady?: boolean;
+  descriptionSource?: string;
+  descriptionLower?: string;
+  tagsSource?: readonly string[];
+  tagsLower?: readonly string[];
+}
+
+const marketplaceSearchCache = new WeakMap<
+  MarketplaceEntry,
+  MarketplaceSearchCache
+>();
+
 function entryTags(entry: MarketplaceEntry): readonly string[] {
   return entry.tags ?? EMPTY_MARKETPLACE_ENTRY_TAGS;
+}
+
+function searchCacheFor(entry: MarketplaceEntry): MarketplaceSearchCache {
+  let cache = marketplaceSearchCache.get(entry);
+  if (cache === undefined) {
+    cache = {};
+    marketplaceSearchCache.set(entry, cache);
+  }
+  return cache;
+}
+
+function lowerIfNeeded(value: unknown): string {
+  if (typeof value !== 'string') {
+    return (value as { toLowerCase: () => string }).toLowerCase();
+  }
+  for (let i = 0; i < value.length; i += 1) {
+    const code = value.charCodeAt(i);
+    if ((code >= 65 && code <= 90) || code > 127) {
+      return value.toLowerCase();
+    }
+  }
+  return value;
+}
+
+function lowerName(entry: MarketplaceEntry): string {
+  const cache = searchCacheFor(entry);
+  const value = entry.name;
+  if (cache.nameSource !== value) {
+    cache.nameSource = value;
+    cache.nameLower = lowerIfNeeded(value);
+  }
+  return cache.nameLower!;
+}
+
+function lowerId(entry: MarketplaceEntry): string {
+  const cache = searchCacheFor(entry);
+  const value = entry.id;
+  if (cache.idSource !== value) {
+    cache.idSource = value;
+    cache.idLower = lowerIfNeeded(value);
+  }
+  return cache.idLower!;
+}
+
+function lowerDescription(entry: MarketplaceEntry): string {
+  const cache = searchCacheFor(entry);
+  const value = entry.description;
+  if (!cache.descriptionReady || cache.descriptionSource !== value) {
+    cache.descriptionReady = true;
+    cache.descriptionSource = value;
+    cache.descriptionLower = value === undefined ? '' : lowerIfNeeded(value);
+  }
+  return cache.descriptionLower!;
+}
+
+function lowerTags(entry: MarketplaceEntry): readonly string[] {
+  const cache = searchCacheFor(entry);
+  const tags = entryTags(entry);
+  if (cache.tagsSource !== tags) {
+    const lower = new Array<string>(tags.length);
+    for (let i = 0; i < tags.length; i++) {
+      lower[i] = lowerIfNeeded(tags[i]!);
+    }
+    cache.tagsSource = tags;
+    cache.tagsLower = lower;
+  }
+  return cache.tagsLower!;
 }
 
 /** 应用过滤,返回保留的 entries(原顺序). */
@@ -28,7 +112,7 @@ export function applyFilter(
   if (entries.length === 0) return entries;
   // 边界(E281):filter 层防御性截断 query(applyFilter 是导出纯函数,可被非 UI 调用方传超长 query
   // → 对 ≤4096 entry 逐项 includes 放大)。与 onChange clamp 同一上限,双层防护。
-  const q = clampSearchQuery(opts.query).trim().toLowerCase();
+  const q = lowerIfNeeded(clampSearchQuery(opts.query).trim());
   const hasQuery = q.length > 0;
   const hasTags = opts.selectedTags.size > 0;
   if (!hasQuery && !hasTags) return entries;
@@ -56,22 +140,21 @@ export function applyFilter(
 }
 
 export function buildMarketplaceSearchHaystack(entry: MarketplaceEntry): string {
-  let haystack = `${entry.name} ${entry.id} ${entry.description ?? ''}`;
-  for (const tag of entryTags(entry)) {
+  let haystack = `${lowerName(entry)} ${lowerId(entry)} ${lowerDescription(entry)}`;
+  for (const tag of lowerTags(entry)) {
     haystack += ` ${tag}`;
   }
-  return haystack.toLowerCase();
+  return haystack;
 }
 
 function matchQuery(entry: MarketplaceEntry, q: string): boolean {
   if (q.length === 0) return true;
-  if (entry.name.toLowerCase().includes(q)) return true;
-  if (entry.id.toLowerCase().includes(q)) return true;
-  if (entry.description && entry.description.toLowerCase().includes(q)) {
-    return true;
-  }
-  for (const tag of entryTags(entry)) {
-    if (tag.toLowerCase().includes(q)) return true;
+  if (lowerName(entry).includes(q)) return true;
+  if (lowerId(entry).includes(q)) return true;
+  if (lowerDescription(entry).includes(q)) return true;
+  const tags = lowerTags(entry);
+  for (let i = 0; i < tags.length; i++) {
+    if (tags[i]!.includes(q)) return true;
   }
   return false;
 }

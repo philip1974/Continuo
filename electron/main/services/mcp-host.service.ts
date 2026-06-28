@@ -138,6 +138,27 @@ export function generateToken(): string {
 
 // ── Bearer 校验 ─────────────────────────────────────────────────
 
+function bearerTokenFromHeader(authHeader: string): string | null {
+  if (authHeader.length < 8 || authHeader.charCodeAt(6) !== 32) return null;
+  if (
+    (authHeader.charCodeAt(0) | 32) !== 98 ||
+    (authHeader.charCodeAt(1) | 32) !== 101 ||
+    (authHeader.charCodeAt(2) | 32) !== 97 ||
+    (authHeader.charCodeAt(3) | 32) !== 114 ||
+    (authHeader.charCodeAt(4) | 32) !== 101 ||
+    (authHeader.charCodeAt(5) | 32) !== 114
+  ) {
+    return null;
+  }
+  for (let i = 7; i < authHeader.length; i += 1) {
+    const code = authHeader.charCodeAt(i);
+    if (code === 10 || code === 13 || code === 0x2028 || code === 0x2029) {
+      return null;
+    }
+  }
+  return authHeader.slice(7);
+}
+
 /**
  * 校验 `Authorization: Bearer <token>`,scheme 大小写不敏感,
  * token 与 expected 走常量时间比较;长度不同先短路,避免 timingSafeEqual 抛错。
@@ -150,9 +171,7 @@ export function verifyBearer(
 ): boolean {
   if (typeof expected !== 'string' || expected.length === 0) return false;
   if (typeof authHeader !== 'string' || authHeader.length === 0) return false;
-  const m = /^bearer (.+)$/i.exec(authHeader);
-  if (!m) return false;
-  const token = m[1];
+  const token = bearerTokenFromHeader(authHeader);
   if (!token || token.length !== expected.length) return false;
   try {
     return timingSafeEqual(Buffer.from(token), Buffer.from(expected));
@@ -242,6 +261,18 @@ export function isLocalhostBindAddr(addr: string): boolean {
   return LOCALHOST_ADDRS.has(addr);
 }
 
+function equalsAsciiIgnoreCase(value: string, expectedLower: string): boolean {
+  if (value.length !== expectedLower.length) return false;
+  for (let i = 0; i < expectedLower.length; i += 1) {
+    const actual = value.charCodeAt(i);
+    const expected = expectedLower.charCodeAt(i);
+    if (actual === expected) continue;
+    const folded = actual >= 65 && actual <= 90 ? actual + 32 : actual;
+    if (folded !== expected) return false;
+  }
+  return true;
+}
+
 /**
  * Host header 必须是本机回环地址 + 当前端口。用于挫败 DNS rebinding
  * (rebinding 后浏览器发来的 Host 是攻击者域名,与回环地址不符)。
@@ -251,11 +282,10 @@ export function isLoopbackHostHeader(
   port: number,
 ): boolean {
   if (typeof hostHeader !== 'string' || port <= 0) return false;
-  const h = hostHeader.toLowerCase();
   return (
-    h === `127.0.0.1:${port}` ||
-    h === `localhost:${port}` ||
-    h === `[::1]:${port}`
+    hostHeader === `127.0.0.1:${port}` ||
+    equalsAsciiIgnoreCase(hostHeader, `localhost:${port}`) ||
+    hostHeader === `[::1]:${port}`
   );
 }
 
@@ -892,9 +922,7 @@ export async function createMcpHost(
     },
     verifyAndResolveCtx(authHeader: string | undefined): McpCallCtx | null {
       if (!authHeader) return null;
-      const m = /^bearer (.+)$/i.exec(authHeader);
-      if (!m) return null;
-      const token = m[1];
+      const token = bearerTokenFromHeader(authHeader);
       if (!token) return null;
       const wid = windowTokens.get(token);
       if (typeof wid !== 'number') return null;

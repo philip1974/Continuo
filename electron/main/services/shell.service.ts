@@ -202,7 +202,28 @@ export function execShell(input: IpcShellExecInput): Promise<IpcShellExecResult>
 // Windows `file://attacker/share`(UNC,触发外连 + 凭据泄漏),用户点链接即由 OS 打开
 // 本地文件/应用。本地文件导航走 IDE 内编辑器(无 scheme 的相对/绝对路径,见
 // link-resolve.ts 的 kind:'file' 分支),不需要也不应经 OS openExternal。
-const OPEN_EXTERNAL_SCHEME_WHITELIST = /^(https?|mailto):/i;
+function startsWithAllowedExternalScheme(url: string): boolean {
+  if (
+    url.length >= 5 &&
+    (url.charCodeAt(0) | 32) === 104 &&
+    (url.charCodeAt(1) | 32) === 116 &&
+    (url.charCodeAt(2) | 32) === 116 &&
+    (url.charCodeAt(3) | 32) === 112
+  ) {
+    const next = url.charCodeAt(4);
+    return next === 58 || (next | 32) === 115 && url.charCodeAt(5) === 58;
+  }
+  return (
+    url.length >= 7 &&
+    (url.charCodeAt(0) | 32) === 109 &&
+    (url.charCodeAt(1) | 32) === 97 &&
+    (url.charCodeAt(2) | 32) === 105 &&
+    (url.charCodeAt(3) | 32) === 108 &&
+    (url.charCodeAt(4) | 32) === 116 &&
+    (url.charCodeAt(5) | 32) === 111 &&
+    url.charCodeAt(6) === 58
+  );
+}
 
 /**
  * 是否允许把该 URL 交给系统打开。所有调用 `shell.openExternal` 的入口都必须先过
@@ -211,7 +232,7 @@ const OPEN_EXTERNAL_SCHEME_WHITELIST = /^(https?|mailto):/i;
  * 漏接白名单成为协议处理器投放面。
  */
 export function isAllowedExternalUrl(url: string): boolean {
-  return OPEN_EXTERNAL_SCHEME_WHITELIST.test(url);
+  return startsWithAllowedExternalScheme(url);
 }
 
 export async function openExternalUrl(

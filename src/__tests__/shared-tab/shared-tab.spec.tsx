@@ -210,6 +210,29 @@ describe('SharedTab — a11y(A119)tab 语义 + 键盘激活', () => {
     expect(next.api.setActive).toHaveBeenCalledTimes(2);
   });
 
+  it('方向键定位当前 tab 时不调用 panels.findIndex', () => {
+    const next = { id: 'p-next', api: { setActive: vi.fn() } };
+    const panels = [
+      { id: 'p-prev', api: { setActive: vi.fn() } },
+      { id: 'p1', api: { setActive: vi.fn() } },
+      next,
+    ];
+    const findIndexSpy = vi.spyOn(panels, 'findIndex');
+    const api = makeApi();
+    api.group.panels = panels;
+    const { container } = renderTab(api);
+    const root = container.querySelector('[role=tab]') as HTMLElement;
+
+    try {
+      fireEvent.keyDown(root, { key: 'ArrowRight' });
+
+      expect(next.api.setActive).toHaveBeenCalledTimes(1);
+      expect(findIndexSpy).not.toHaveBeenCalled();
+    } finally {
+      findIndexSpy.mockRestore();
+    }
+  });
+
   // a11y(A124,A123 后续):退出最大化按钮移出 Tab 顺序后,最大化态须有键盘等价入口(Escape)。
   it('最大化态 Escape → containerApi.exitMaximizedGroup()', () => {
     const api = makeApi();

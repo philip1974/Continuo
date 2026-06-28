@@ -15,8 +15,50 @@ export const FS_NAME_MAX = 255;
 
 const MAX_PATH_WIN = 260; // Windows MAX_PATH
 const MAX_PATH_POSIX = 4096;
-const WIN_RESERVED = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\..*)?$/i;
-const NTFS_83_ALIAS = /~[0-9]/;
+
+function hasNtfs83AliasMarker(name: string): boolean {
+  for (let i = 0; i < name.length - 1; i += 1) {
+    if (name.charCodeAt(i) !== 126) continue;
+    const next = name.charCodeAt(i + 1);
+    if (next >= 48 && next <= 57) return true;
+  }
+  return false;
+}
+
+function asciiLower(code: number): number {
+  return code >= 65 && code <= 90 ? code + 32 : code;
+}
+
+function startsWithAsciiWord(name: string, word: string): boolean {
+  if (name.length < word.length) return false;
+  for (let i = 0; i < word.length; i += 1) {
+    if (asciiLower(name.charCodeAt(i)) !== word.charCodeAt(i)) return false;
+  }
+  return name.length === word.length || name.charCodeAt(word.length) === 46;
+}
+
+function isWindowsReservedDeviceName(name: string): boolean {
+  if (startsWithAsciiWord(name, 'con')) return true;
+  if (startsWithAsciiWord(name, 'prn')) return true;
+  if (startsWithAsciiWord(name, 'aux')) return true;
+  if (startsWithAsciiWord(name, 'nul')) return true;
+  if (name.length >= 4) {
+    const head0 = asciiLower(name.charCodeAt(0));
+    const head1 = asciiLower(name.charCodeAt(1));
+    const digit = name.charCodeAt(3);
+    const hasValidTail = name.length === 4 || name.charCodeAt(4) === 46;
+    if (
+      hasValidTail &&
+      digit >= 49 &&
+      digit <= 57 &&
+      ((head0 === 99 && head1 === 111 && asciiLower(name.charCodeAt(2)) === 109) ||
+        (head0 === 108 && head1 === 112 && asciiLower(name.charCodeAt(2)) === 116))
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
 
 /**
  * 返回 leaf 不合法的原因(null = 合法)。规则顺序与文案与原 plugin-fs validateLeaf 逐字一致(单一来源)。
@@ -30,7 +72,7 @@ export function leafNameRejectReason(name: unknown): string | null {
   if (name.includes('/') || name.includes('\\')) {
     return 'leaf contains path separator';
   }
-  if (NTFS_83_ALIAS.test(name)) return 'leaf matches NTFS 8.3 short-name pattern';
+  if (hasNtfs83AliasMarker(name)) return 'leaf matches NTFS 8.3 short-name pattern';
   if (name.includes('~')) return 'leaf contains ~';
   if (name.includes('..')) return 'leaf contains ..';
   for (let i = 0; i < name.length; i += 1) {
@@ -41,7 +83,7 @@ export function leafNameRejectReason(name: unknown): string | null {
   }
   if (name.length > MAX_PATH_POSIX) return 'leaf exceeds 4096 chars (POSIX)';
   if (name.includes(':')) return 'leaf contains : (Windows ADS hazard)';
-  if (WIN_RESERVED.test(name)) return 'leaf is Windows reserved device name';
+  if (isWindowsReservedDeviceName(name)) return 'leaf is Windows reserved device name';
   if (name.endsWith('.') || name.endsWith(' ')) {
     return 'leaf has trailing dot or space';
   }

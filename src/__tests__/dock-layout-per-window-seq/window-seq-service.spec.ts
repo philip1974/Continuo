@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   _reset,
@@ -60,5 +60,33 @@ describe('window sequence service API', () => {
 
     expect(getWindowSeq(1)).toBeNull();
     expect(getActiveSeqs().size).toBe(0);
+  });
+
+  it('getActiveSeqs 复用内部 active seq 集合,不通过 map.values 重建', () => {
+    setWindowSeq(1, 5);
+    setWindowSeq(2, 6);
+    const valuesSpy = vi.spyOn(Map.prototype, 'values');
+
+    try {
+      const first = getActiveSeqs();
+      const second = getActiveSeqs();
+
+      expect(first).toBe(second);
+      expect(first).toEqual(new Set([5, 6]));
+      expect(valuesSpy).not.toHaveBeenCalled();
+    } finally {
+      valuesSpy.mockRestore();
+    }
+  });
+
+  it('同一 seq 被多个 windowId 引用时 clear 只在最后一个窗口关闭后移除 active seq', () => {
+    setWindowSeq(1, 5);
+    setWindowSeq(2, 5);
+
+    clearWindow(1);
+    expect(getActiveSeqs()).toEqual(new Set([5]));
+
+    clearWindow(2);
+    expect(getActiveSeqs()).toEqual(new Set());
   });
 });

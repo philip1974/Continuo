@@ -22,10 +22,38 @@ import { parseManifest } from '../../../src/plugins/manifest';
 function isAbsolutePathLike(value: string): boolean {
   return (
     path.isAbsolute(value) ||
-    /^[a-zA-Z]:[\\/]/.test(value) ||
+    isWindowsDriveAbsolute(value) ||
     value.startsWith('\\\\') ||
     value.startsWith('//')
   );
+}
+
+function isWindowsDriveAbsolute(value: string): boolean {
+  if (value.length < 3) return false;
+  const first = value.charCodeAt(0);
+  const third = value.charCodeAt(2);
+  return (
+    ((first >= 65 && first <= 90) || (first >= 97 && first <= 122)) &&
+    value.charCodeAt(1) === 58 &&
+    (third === 47 || third === 92)
+  );
+}
+
+function hasParentPathSegment(value: string): boolean {
+  let segmentStart = 0;
+  for (let i = 0; i <= value.length; i += 1) {
+    const code = i < value.length ? value.charCodeAt(i) : 47;
+    if (code !== 47 && code !== 92) continue;
+    if (
+      i - segmentStart === 2 &&
+      value.charCodeAt(segmentStart) === 46 &&
+      value.charCodeAt(segmentStart + 1) === 46
+    ) {
+      return true;
+    }
+    segmentStart = i + 1;
+  }
+  return false;
 }
 
 export function resolvePluginMainPath(
@@ -34,7 +62,7 @@ export function resolvePluginMainPath(
 ): string | null {
   if (!mainName || mainName.includes('\0')) return null;
   if (isAbsolutePathLike(mainName)) return null;
-  if (mainName.split(/[\\/]+/).includes('..')) return null;
+  if (hasParentPathSegment(mainName)) return null;
 
   const root = path.resolve(pluginDir);
   const resolved = path.resolve(root, mainName);
@@ -50,8 +78,22 @@ export function resolvePluginMainPath(
  * 路径穿越(审计 P1)。与 fs `renameEntry` 拒 `.`/`..` 同款防御。
  */
 export function isSafePluginId(id: string): boolean {
-  if (!/^[a-z0-9._-]+$/.test(id)) return false;
   if (id === '.' || id === '..') return false;
+  return hasOnlyPluginIdChars(id);
+}
+
+function hasOnlyPluginIdChars(id: string): boolean {
+  if (id.length === 0) return false;
+  for (let i = 0; i < id.length; i += 1) {
+    const code = id.charCodeAt(i);
+    const ok =
+      (code >= 97 && code <= 122) ||
+      (code >= 48 && code <= 57) ||
+      code === 46 ||
+      code === 95 ||
+      code === 45;
+    if (!ok) return false;
+  }
   return true;
 }
 
@@ -97,13 +139,29 @@ function getPluginMainName(manifest: unknown): string {
  *   - 残留 `.<id>.installing-<uuid>` staging → 删除。
  * 幂等:无残留时纯 no-op,可安全在每次启动调用。
  */
+function parseInterruptedBackupId(name: string): string | null {
+  if (name.charCodeAt(0) !== 46) return null;
+  const marker = '.old-';
+  const markerIndex = name.lastIndexOf(marker);
+  if (markerIndex <= 1 || markerIndex + marker.length >= name.length) {
+    return null;
+  }
+  return name.slice(1, markerIndex);
+}
+
+function isInterruptedInstallingName(name: string): boolean {
+  if (name.charCodeAt(0) !== 46) return false;
+  const marker = '.installing-';
+  const markerIndex = name.lastIndexOf(marker);
+  return markerIndex > 1 && markerIndex + marker.length < name.length;
+}
+
 export async function recoverInterruptedInstalls(baseDir: string): Promise<void> {
   // 边界(E82):有界枚举(缺目录 → [] → 循环 no-op,等价旧版早返)。
   const entries = await readPluginDirEntriesCapped(baseDir);
   for (const name of entries) {
-    const oldMatch = /^\.(.+)\.old-[^/]+$/.exec(name);
-    if (oldMatch && oldMatch[1]) {
-      const id = oldMatch[1];
+    const id = parseInterruptedBackupId(name);
+    if (id !== null) {
       const backupPath = path.join(baseDir, name);
       const targetPath = path.join(baseDir, id);
       let targetExists = false;
@@ -123,7 +181,7 @@ export async function recoverInterruptedInstalls(baseDir: string): Promise<void>
       continue;
     }
     // 残留 staging(cp 完但还没 swap 就崩)→ 清理
-    if (/^\..+\.installing-[^/]+$/.test(name)) {
+    if (isInterruptedInstallingName(name)) {
       await rm(path.join(baseDir, name), { recursive: true, force: true }).catch(
         () => {},
       );
@@ -348,9 +406,16 @@ export function setEnabledId(
   enabled: boolean,
 ): Promise<void> {
   const run = enabledWriteChain.then(async () => {
-    const ids = new Set(await readEnabledIds(baseDir));
-    if (enabled) ids.add(id);
-    else ids.delete(id);
+    const current = await readEnabledIds(baseDir);
+    const ids = new Set(current);
+    const hasId = ids.has(id);
+    if (enabled) {
+      if (hasId) return;
+      ids.add(id);
+    } else {
+      if (!hasId) return;
+      ids.delete(id);
+    }
     await writeEnabledIds(baseDir, [...ids]);
   });
   enabledWriteChain = run.then(
@@ -447,6 +512,60 @@ function collectMappedValidCapped<T, U>(
   }
   out.length = outCount;
   return out;
+}
+
+function pathScopesEqual(
+  a: readonly IpcPathScope[] | undefined,
+  b: readonly IpcPathScope[],
+): boolean {
+  if (a === undefined || a.length !== b.length) return false;
+  for (let i = 0; i < b.length; i += 1) {
+    const left = a[i]!;
+    const right = b[i]!;
+    if (left.path !== right.path || left.mode !== right.mode) return false;
+  }
+  return true;
+}
+
+function permissionDecisionsEqual(
+  a: readonly IpcPermissionDecision[] | undefined,
+  b: readonly IpcPermissionDecision[],
+): boolean {
+  if (a === undefined || a.length !== b.length) return false;
+  for (let i = 0; i < b.length; i += 1) {
+    const left = a[i]!;
+    const right = b[i]!;
+    if (
+      left.permission !== right.permission ||
+      left.granted !== right.granted ||
+      left.decidedAt !== right.decidedAt
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function permissionRecordEqual(
+  existing: IpcPermissionRecord | undefined,
+  decisions: readonly IpcPermissionDecision[],
+  scopes: readonly IpcPathScope[] | undefined,
+): boolean {
+  if (existing === undefined) return false;
+  if (Array.isArray(existing)) {
+    return (
+      scopes === undefined && permissionDecisionsEqual(existing, decisions)
+    );
+  }
+  const objectRecord = existing as {
+    readonly decisions: readonly IpcPermissionDecision[];
+    readonly pathScopes?: readonly IpcPathScope[];
+  };
+  return (
+    scopes !== undefined &&
+    permissionDecisionsEqual(objectRecord.decisions, decisions) &&
+    pathScopesEqual(objectRecord.pathScopes, scopes)
+  );
 }
 
 export async function readPermissions(
@@ -581,6 +700,7 @@ export function writePluginPermissions(
       if (!(id in all)) return; // 无变化,不为删空条目而触盘
       delete all[id];
     } else {
+      if (permissionRecordEqual(all[id], decisions, scopes)) return;
       all[id] =
         scopes === undefined ? decisions : { decisions, pathScopes: scopes };
     }
@@ -714,6 +834,7 @@ export function writePluginPathScopes(
       if (!(id in all)) return; // 无变化,不为删除空条目而触盘
       delete all[id];
     } else {
+      if (pathScopesEqual(all[id], normalized)) return;
       all[id] = normalized;
     }
     await fs.mkdir(baseDir, { recursive: true });
@@ -835,7 +956,19 @@ export interface InstallFromGitResult {
 }
 
 // 仅允许 https(去掉 git://明文无认证、ssh://可被指向内网做 SSRF/探测)。
-const GIT_URL_RE = /^https:\/\//i;
+function startsWithHttpsScheme(url: string): boolean {
+  return (
+    url.length >= 8 &&
+    (url.charCodeAt(0) | 32) === 104 &&
+    (url.charCodeAt(1) | 32) === 116 &&
+    (url.charCodeAt(2) | 32) === 116 &&
+    (url.charCodeAt(3) | 32) === 112 &&
+    (url.charCodeAt(4) | 32) === 115 &&
+    url.charCodeAt(5) === 58 &&
+    url.charCodeAt(6) === 47 &&
+    url.charCodeAt(7) === 47
+  );
+}
 const GIT_CLONE_TIMEOUT_MS = 60_000;
 // 边界(E62,E1/E61 累积缓冲族):runGit 的 git 子进程 stderr 此前 `stderr += String(d)` 无限累积,
 // 失败时整段拼进 Error message。恶意/异常远端或协议错误可产生超大 stderr → main 内存膨胀 + 巨大
@@ -853,7 +986,7 @@ export async function installFromGit(
   baseDir: string,
   opts: { overwrite?: boolean } = {},
 ): Promise<InstallFromGitResult> {
-  if (!GIT_URL_RE.test(gitUrl)) {
+  if (!startsWithHttpsScheme(gitUrl)) {
     throw Object.assign(new Error(`不支持的 git URL: ${gitUrl}`), {
       code: ERROR_CODES.BAD_URL,
     });

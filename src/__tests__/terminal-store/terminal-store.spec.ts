@@ -225,6 +225,18 @@ describe('replaceSnapshot', () => {
     expect(r?.activeId).toBe('/b');
   });
 
+  it('applySnapshot 多项删除时直接推导 active,不逐个调用 nextActiveAfterClose', () => {
+    const oldSessions = [sess('/a'), sess('/b'), sess('/c'), sess('/d')];
+
+    expect(applySnapshot(oldSessions, '/b', [sess('/a'), sess('/d')]).activeId).toBe(
+      '/d',
+    );
+    expect(applySnapshot(oldSessions, '/c', [sess('/a'), sess('/b')]).activeId).toBe(
+      '/b',
+    );
+    expect(applySnapshot.toString()).not.toContain('nextActiveAfterClose(');
+  });
+
   it('空 → 非空:activeId 设为第一个', () => {
     useTerminalStore.getState().replaceSnapshot([sess('/a'), sess('/b')]);
     const s = useTerminalStore.getState();
@@ -521,6 +533,28 @@ describe('renameSession', () => {
     });
     useTerminalStore.getState().renameSession('/a', `   ${'y'.repeat(5000)}   `);
     expect(useTerminalStore.getState().customTitles.get('/a')!.length).toBe(512);
+  });
+
+  it('E238 超长标题 trim+截断不调用 String.prototype.trim', () => {
+    useTerminalStore.setState({
+      sessions: [makeSession({ id: '/a' })],
+      activeId: '/a',
+      customTitles: new Map(),
+    });
+    const trimSpy = vi.spyOn(String.prototype, 'trim');
+
+    try {
+      useTerminalStore
+        .getState()
+        .renameSession('/a', `\u00a0${'z'.repeat(5000)}\u3000`);
+
+      expect(useTerminalStore.getState().customTitles.get('/a')).toBe(
+        'z'.repeat(512),
+      );
+      expect(trimSpy).not.toHaveBeenCalled();
+    } finally {
+      trimSpy.mockRestore();
+    }
   });
 
   it('replaceSnapshot 移除已不存在 id 的 customTitle(防泄漏)', () => {

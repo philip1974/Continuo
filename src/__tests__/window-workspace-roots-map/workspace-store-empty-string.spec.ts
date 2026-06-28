@@ -71,6 +71,18 @@ describe('window-workspace-roots-map: workspace root normalization', () => {
     expect(normalizeWorkspaceRoot('   ')).toBeNull();
   });
 
+  it('T28a: normalizeWorkspaceRoot 全空白判定不调用 trim,且保留 Unicode trim 语义', () => {
+    const trimSpy = vi.spyOn(String.prototype, 'trim');
+
+    try {
+      expect(normalizeWorkspaceRoot(' \t\u00a0\u3000')).toBeNull();
+      expect(normalizeWorkspaceRoot(' /abs')).toBe(' /abs');
+      expect(trimSpy).not.toHaveBeenCalled();
+    } finally {
+      trimSpy.mockRestore();
+    }
+  });
+
   it("T28b: normalizeWorkspaceRoot('  /abs  ') preserves whitespace", () => {
     expect(normalizeWorkspaceRoot('  /abs  ')).toBe('  /abs  ');
   });

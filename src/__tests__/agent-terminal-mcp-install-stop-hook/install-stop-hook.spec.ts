@@ -93,6 +93,51 @@ function makeDriver() {
 }
 
 describe('installStopHookForSession', () => {
+  it('inferRunner 对常见小写 label/autorun 不调用 toLowerCase', () => {
+    const lowerSpy = vi.spyOn(String.prototype, 'toLowerCase');
+
+    try {
+      expect(inferRunner({ id: 'term', cwd: '/repo', agentLabel: 'codex' })).toBe(
+        'codex',
+      );
+      expect(
+        inferRunner({ id: 'term', cwd: '/repo', autorun: 'claude --danger' }),
+      ).toBe('cc');
+      expect(
+        lowerSpy.mock.contexts.some(
+          (ctx) => String(ctx) === 'codex' || String(ctx) === 'claude --danger',
+        ),
+      ).toBe(false);
+      expect(inferRunner({ id: 'term', cwd: '/repo', agentLabel: 'CLAUDE' })).toBe(
+        'cc',
+      );
+    } finally {
+      lowerSpy.mockRestore();
+    }
+  });
+
+  it('inferRunner autorun token 空白边界判断不调用 RegExp.test', () => {
+    const testSpy = vi.spyOn(RegExp.prototype, 'test');
+
+    try {
+      expect(
+        inferRunner({ id: 'term', cwd: '/repo', autorun: 'claude\t--danger' }),
+      ).toBe('cc');
+      expect(
+        inferRunner({ id: 'term', cwd: '/repo', autorun: 'codex\u00A0--yolo' }),
+      ).toBe('codex');
+      expect(
+        inferRunner({ id: 'term', cwd: '/repo', autorun: 'codexish --nope' }),
+      ).toBe('unknown');
+      const whitespaceRegexCalls = testSpy.mock.contexts.filter(
+        (context) => context instanceof RegExp && context.source === '\\s',
+      );
+      expect(whitespaceRegexCalls).toHaveLength(0);
+    } finally {
+      testSpy.mockRestore();
+    }
+  });
+
   it('I1 should merge Claude Code settings with managed stop hook command and return installed true', async () => {
     const cwd = await makeCwd();
     const hookEventsDir = join(cwd, '.continuo', 'hook-events');
@@ -227,6 +272,38 @@ describe('installStopHookForSession', () => {
     await expect(readText(configPath)).resolves.toBe(existing);
   });
 
+  it('Codex multiline Stop hook 检测走字符扫描,不调用 RegExp.test', async () => {
+    const cwd = await makeCwd();
+    const configPath = join(cwd, '.codex', 'config.toml');
+    await writeText(
+      configPath,
+      ['[[hooks.Stop]]', "command\t=\n'''", 'echo stop', "'''", ''].join('\n'),
+    );
+    const testSpy = vi.spyOn(RegExp.prototype, 'test');
+
+    try {
+      await expect(
+        installStopHookForSession({
+          cwd,
+          agentLabel: 'codex',
+          hookEventsDir: join(cwd, '.continuo', 'hook-events'),
+          windowId: 4,
+        }),
+      ).resolves.toEqual({
+        installed: false,
+        reason: 'unrecognized-existing-stop-hook',
+      });
+      const stopTomlRegexCalls = testSpy.mock.contexts.filter(
+        (context) =>
+          context instanceof RegExp &&
+          context.source.includes('\\[\\[hooks\\.Stop\\]\\]'),
+      );
+      expect(stopTomlRegexCalls).toHaveLength(0);
+    } finally {
+      testSpy.mockRestore();
+    }
+  });
+
   it('I4 should skip unknown runner and leave cwd untouched', async () => {
     const cwd = await makeCwd();
 
@@ -334,6 +411,39 @@ describe('installStopHookForSession', () => {
     expect(toml).not.toContain(tomlStringFragment(oldDir)); // 旧命令完全被替换,无残留
     // 只有一个 managed command(未因截断残留半截旧命令)
     expect(toml.match(/codex_\$\{CONTINUO_WINDOW_ID/g)?.length).toBe(1);
+  });
+
+  it('I6d managed Stop command 定位走字符扫描,不调用 RegExp.exec', async () => {
+    const cwd = await makeCwd();
+    const oldDir = join(cwd, '.continuo', 'old-hk');
+    const newDir = join(cwd, '.continuo', 'new-hk');
+    await expect(
+      installStopHookForSession({
+        cwd,
+        agentLabel: 'codex',
+        hookEventsDir: oldDir,
+        windowId: 1,
+      }),
+    ).resolves.toEqual({ installed: true });
+    const execSpy = vi.spyOn(RegExp.prototype, 'exec');
+
+    try {
+      await expect(
+        installStopHookForSession({
+          cwd,
+          agentLabel: 'codex',
+          hookEventsDir: newDir,
+          windowId: 1,
+        }),
+      ).resolves.toEqual({ installed: true });
+      const managedRegexCalls = execSpy.mock.contexts.filter(
+        (context) =>
+          context instanceof RegExp && context.source.includes('continuo-managed'),
+      );
+      expect(managedRegexCalls).toHaveLength(0);
+    } finally {
+      execSpy.mockRestore();
+    }
   });
 
   // 数据安全(codex 复查 P1):managed marker 块缺/坏 command 时,无块边界的正则会一路

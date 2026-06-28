@@ -18,8 +18,34 @@ describe('joinPath — 沿用目录活动分隔符', () => {
   it('盘符根 C: 用 \\', () => {
     expect(joinPath('C:', 'a.ts')).toBe('C:\\a.ts');
   });
+  it('盘符根判断不调用 RegExp.test', () => {
+    const testSpy = vi.spyOn(RegExp.prototype, 'test');
+
+    try {
+      expect(joinPath('C:', 'a.ts')).toBe('C:\\a.ts');
+      const driveRootRegexCalls = testSpy.mock.contexts.filter(
+        (context) => context instanceof RegExp && context.source === '^[a-zA-Z]:$',
+      );
+      expect(driveRootRegexCalls).toHaveLength(0);
+    } finally {
+      testSpy.mockRestore();
+    }
+  });
   it('正斜杠盘符目录保留 /', () => {
     expect(joinPath('C:/work', 'a.ts')).toBe('C:/work/a.ts');
+  });
+  it('裁剪尾部分隔符不调用 String.replace', () => {
+    const replaceSpy = vi.spyOn(String.prototype, 'replace');
+
+    try {
+      expect(joinPath('/work/dir///', 'a.ts')).toBe('/work/dir/a.ts');
+      expect(joinPath('C:\\work\\dir\\\\', 'a.ts')).toBe(
+        'C:\\work\\dir\\a.ts',
+      );
+      expect(replaceSpy).not.toHaveBeenCalled();
+    } finally {
+      replaceSpy.mockRestore();
+    }
   });
 });
 
@@ -56,6 +82,16 @@ describe('stripRootPrefix — 分隔符无关剥前缀', () => {
       else delete (navigator as { platform?: string }).platform;
     }
   });
+  it('剥前导分隔符不调用 String.replace', () => {
+    const replaceSpy = vi.spyOn(String.prototype, 'replace');
+
+    try {
+      expect(stripRootPrefix('/root', '/root///src/a.ts')).toBe('src/a.ts');
+      expect(replaceSpy).not.toHaveBeenCalled();
+    } finally {
+      replaceSpy.mockRestore();
+    }
+  });
 });
 
 describe('pathEquals — 平台感知路径相等', () => {
@@ -83,6 +119,36 @@ describe('pathEquals — 平台感知路径相等', () => {
     setPlatform('Win32');
     expect(pathEquals('C:\\Repo', 'c:\\repo')).toBe(true);
     expect(pathEquals('C:\\Repo', 'C:\\Other')).toBe(false);
+  });
+  it('Windows 平台检测不调用 RegExp.test', () => {
+    setPlatform('Win32');
+    const testSpy = vi.spyOn(RegExp.prototype, 'test');
+
+    try {
+      expect(pathEquals('C:\\Repo', 'c:\\repo')).toBe(true);
+      const platformRegexCalls = testSpy.mock.contexts.filter(
+        (context) => context instanceof RegExp && context.source === '^win',
+      );
+      expect(platformRegexCalls).toHaveLength(0);
+    } finally {
+      testSpy.mockRestore();
+    }
+  });
+  it('Windows:已小写 ASCII 路径比较不调用 toLowerCase', () => {
+    setPlatform('Win32');
+    const lowerSpy = vi.spyOn(String.prototype, 'toLowerCase');
+
+    try {
+      expect(pathEquals('c:\\repo', 'c:\\other')).toBe(false);
+      expect(
+        lowerSpy.mock.contexts.some(
+          (ctx) => String(ctx) === 'c:\\repo' || String(ctx) === 'c:\\other',
+        ),
+      ).toBe(false);
+      expect(pathEquals('C:\\Repo', 'c:\\repo')).toBe(true);
+    } finally {
+      lowerSpy.mockRestore();
+    }
   });
 });
 
@@ -123,5 +189,36 @@ describe('isSameOrInsidePath — 路径包含(分隔符 + 平台感知大小写)
     expect(isSameOrInsidePath('C:\\Repo', 'c:\\repo')).toBe(true); // 精确(折叠)
     expect(isSameOrInsidePath('C:\\', 'c:\\foo')).toBe(true); // 盘根含其下
     expect(isSameOrInsidePath('C:\\repo', 'C:\\other\\a.md')).toBe(false);
+  });
+
+  it('单次判断只读取一次 navigator.platform', () => {
+    let platformReads = 0;
+    Object.defineProperty(navigator, 'platform', {
+      configurable: true,
+      get: () => {
+        platformReads += 1;
+        return 'Win32';
+      },
+    });
+
+    expect(isSameOrInsidePath('c:\\repo', 'C:\\Repo\\a.md')).toBe(true);
+    expect(platformReads).toBe(1);
+  });
+
+  it('Windows:已小写 ASCII 子路径判断不调用 toLowerCase', () => {
+    setPlatform('Win32');
+    const lowerSpy = vi.spyOn(String.prototype, 'toLowerCase');
+
+    try {
+      expect(isSameOrInsidePath('c:\\repo', 'c:\\repo\\a.md')).toBe(true);
+      expect(
+        lowerSpy.mock.contexts.some(
+          (ctx) => String(ctx) === 'c:\\repo' || String(ctx) === 'c:\\repo\\a.md',
+        ),
+      ).toBe(false);
+      expect(isSameOrInsidePath('C:\\Repo', 'c:\\repo\\a.md')).toBe(true);
+    } finally {
+      lowerSpy.mockRestore();
+    }
   });
 });

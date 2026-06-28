@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, cleanup } from '@testing-library/react';
 import { useCommandPaletteHotkey } from '../../plugins/command-palette/useCommandPaletteHotkey';
 import { useCommandPaletteStore } from '../../plugins/command-palette/store';
@@ -36,6 +36,24 @@ describe('useCommandPaletteHotkey', () => {
       new KeyboardEvent('keydown', { key: 'p', metaKey: true, shiftKey: true }),
     );
     expect(useCommandPaletteStore.getState().isOpen).toBe(true);
+  });
+
+  it('Meta+Shift+P 大写 key 不调用 toLowerCase 也能打开', () => {
+    render(<Probe />);
+    const lowerSpy = vi.spyOn(String.prototype, 'toLowerCase');
+    try {
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'P',
+          metaKey: true,
+          shiftKey: true,
+        }),
+      );
+      expect(useCommandPaletteStore.getState().isOpen).toBe(true);
+      expect(lowerSpy).not.toHaveBeenCalled();
+    } finally {
+      lowerSpy.mockRestore();
+    }
   });
 
   it('Ctrl+Shift+P 同样打开(非 mac)', () => {

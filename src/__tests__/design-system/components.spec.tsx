@@ -197,6 +197,29 @@ describe('SegmentedControl', () => {
     fireEvent.keyDown(group, { key: 'Home' });
     expect(onChange).toHaveBeenLastCalledWith('a');
   });
+
+  it('方向键定位当前 segment 时不调用 options.findIndex', () => {
+    const options = [
+      { id: 'a', label: 'A' },
+      { id: 'b', label: 'B' },
+      { id: 'c', label: 'C' },
+    ];
+    const findIndexSpy = vi.spyOn(options, 'findIndex');
+    const onChange = vi.fn();
+    const { container } = render(
+      <SegmentedControl options={options} value="a" onChange={onChange} />,
+    );
+    const group = container.querySelector('[role=radiogroup]')!;
+
+    try {
+      fireEvent.keyDown(group, { key: 'ArrowRight' });
+
+      expect(onChange).toHaveBeenLastCalledWith('b');
+      expect(findIndexSpy).not.toHaveBeenCalled();
+    } finally {
+      findIndexSpy.mockRestore();
+    }
+  });
 });
 
 describe('TabNav + TabNavItem', () => {

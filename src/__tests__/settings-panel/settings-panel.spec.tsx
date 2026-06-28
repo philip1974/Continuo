@@ -284,6 +284,28 @@ describe('SettingsPanel · 搜索模式', () => {
     }
   });
 
+  it('小写 query 搜索不调用 toLowerCase', () => {
+    const item = {
+      id: 'general.theme',
+      category: 'general',
+      title: '主题',
+      type: 'boolean',
+      default: false,
+    } as const;
+    const searchable = [{ item, haystack: 'theme general' }];
+    const lowerSpy = vi.spyOn(String.prototype, 'toLowerCase');
+
+    try {
+      expect(selectMatchedSettingItems(searchable, 'theme')).toEqual([item]);
+      expect(
+        lowerSpy.mock.contexts.some((ctx) => String(ctx) === 'theme'),
+      ).toBe(false);
+      expect(selectMatchedSettingItems(searchable, 'THEME')).toEqual([item]);
+    } finally {
+      lowerSpy.mockRestore();
+    }
+  });
+
   it('非空 searchable 无匹配 → 复用稳定空匹配结果', () => {
     const item = {
       id: 'general.theme',
@@ -331,6 +353,41 @@ describe('SettingsPanel · 搜索模式', () => {
       expect(mapSpy).not.toHaveBeenCalled();
     } finally {
       mapSpy.mockRestore();
+    }
+  });
+
+  it('已小写搜索 haystack 源不调用 toLowerCase', () => {
+    const lowerSpy = vi.spyOn(String.prototype, 'toLowerCase');
+
+    try {
+      expect(
+        buildSettingSearchHaystack({
+          id: 'general.theme',
+          category: 'general',
+          title: 'theme',
+          description: 'switch mode',
+          type: 'boolean',
+          default: false,
+        }),
+      ).toBe('theme switch mode general.theme theme switch mode');
+      expect(
+        lowerSpy.mock.contexts.some(
+          (ctx) =>
+            String(ctx) === 'theme switch mode general.theme theme switch mode',
+        ),
+      ).toBe(false);
+      expect(
+        buildSettingSearchHaystack({
+          id: 'General.Theme',
+          category: 'general',
+          title: 'Theme',
+          description: 'Switch Mode',
+          type: 'boolean',
+          default: false,
+        }),
+      ).toBe('theme switch mode general.theme theme switch mode');
+    } finally {
+      lowerSpy.mockRestore();
     }
   });
 

@@ -335,6 +335,23 @@ const SPECIAL_DIR_NAMES: Readonly<Record<string, IconComp>> = {
   '.nuxt': FolderBuild,
 };
 
+function sliceLowerIfNeeded(value: string, start: number): string {
+  let hasUpper = false;
+  for (let i = start; i < value.length; i += 1) {
+    const code = value.charCodeAt(i);
+    if (code >= 65 && code <= 90) {
+      hasUpper = true;
+      break;
+    }
+  }
+  const sliced = value.slice(start);
+  return hasUpper ? sliced.toLowerCase() : sliced;
+}
+
+function lowerIfNeeded(value: string): string {
+  return sliceLowerIfNeeded(value, 0);
+}
+
 /**
  * 根据文件名 / 目录名返回对应图标 component。
  *
@@ -346,7 +363,7 @@ export function getFileIconComponent(
   isDirectory: boolean,
 ): IconComp {
   if (isDirectory) {
-    return SPECIAL_DIR_NAMES[name.toLowerCase()] ?? Folder;
+    return SPECIAL_DIR_NAMES[lowerIfNeeded(name)] ?? Folder;
   }
   if (!name) return Document;
 
@@ -355,7 +372,7 @@ export function getFileIconComponent(
   if (exact) return exact;
 
   // 2. case-insensitive 兜底特殊名(README / Readme / readme 都通)
-  const lower = name.toLowerCase();
+  const lower = lowerIfNeeded(name);
   const specialLower = SPECIAL_FILE_NAMES_LOWER[lower];
   if (specialLower) return specialLower;
 
@@ -365,7 +382,7 @@ export function getFileIconComponent(
   // 4. ext(取最后一段,case-insensitive)
   const idx = name.lastIndexOf('.');
   if (idx <= 0) return Document; // 无 ext or 隐藏文件(.bashrc 等)
-  const ext = name.slice(idx + 1).toLowerCase();
+  const ext = sliceLowerIfNeeded(name, idx + 1);
   return EXT_MAP[ext] ?? Document;
 }
 

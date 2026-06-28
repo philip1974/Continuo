@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   buildSelectedPathSet,
+  formatDropFailureLines,
   joinRelativePaths,
   makeNamePicker,
   selectDraggedItemPaths,
@@ -96,6 +97,48 @@ describe('打磨 — FolderTree hidden file 过滤', () => {
   it('showHidden=false 且没有隐藏项时复用 allItems 引用', () => {
     const items = [item('a.ts'), item('b.ts')];
     expect(selectVisibleTreeItems(items, false)).toBe(items);
+  });
+});
+
+describe('打磨 — FolderTree drop 失败消息格式化', () => {
+  it('单趟拼接失败明细,不通过 failed.map(...).join 生成中间数组', () => {
+    const failed = [
+      { name: 'a.txt', code: 'FS_BAD_NAME', message: 'bad name' },
+      { name: 'b.txt', code: 'FS_BAD_NAME', message: 'bad name' },
+    ];
+    const mapSpy = vi.spyOn(Array.prototype, 'map');
+
+    try {
+      expect(formatDropFailureLines(failed)).toBe(
+        '  a.txt: [FS_BAD_NAME] 文件名不合法\n' +
+          '  b.txt: [FS_BAD_NAME] 文件名不合法',
+      );
+      expect(mapSpy.mock.contexts.some((ctx) => ctx === failed)).toBe(false);
+    } finally {
+      mapSpy.mockRestore();
+    }
+  });
+
+  it('外部 drop 提示直接条件 notify,不创建 msgs 临时数组', () => {
+    const src = readFileSync(
+      join(ROOT, 'panels', 'Explorer', 'FolderTree.tsx'),
+      'utf8',
+    );
+
+    expect(src).not.toContain('const msgs: string[] = []');
+    expect(src).not.toContain('msgs.forEach((m) => notify.error(m))');
+  });
+
+  it('批量 move/paste/trash 成功路径按输入长度预分配,不通过 push 扩容', () => {
+    const src = readFileSync(
+      join(ROOT, 'panels', 'Explorer', 'FolderTree.tsx'),
+      'utf8',
+    );
+
+    expect(src).not.toContain('const movedSrcs: string[] = []');
+    expect(src).not.toContain('const removed: string[] = []');
+    expect(src).not.toContain('movedSrcs.push(src)');
+    expect(src).not.toContain('removed.push(p)');
   });
 });
 

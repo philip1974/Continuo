@@ -7,6 +7,7 @@
 
 import { create } from 'zustand';
 import { pathEquals } from '@/lib/path-cross';
+import { trimStringToMax } from '@/lib/blank-string';
 import type { ShellFamily } from '@continuo-terminal/shell-quote';
 import type { TerminalSessionSnapshot } from '../../electron/shared/terminal-session';
 import { LABEL_MAX, PATH_MAX } from '../../electron/shared/terminal-create';
@@ -294,8 +295,8 @@ export function nextActiveAfterClose(
 
 /**
  * 应用 main 推的 snapshot,保留 close 时的"切下一个"语义。
- * 算法:遍历 oldSessions,对不在 newSessions 中的 id 累计调用
- * nextActiveAfterClose;最后用 newSessions 覆盖 sessions 字段。
+ * 算法:一次构建 newSessions id 集合;旧 active 存活则保留,否则按 oldSessions
+ * 顺序找 active 后方第一个幸存项,再找前方第一个幸存项。
  */
 export function applySnapshot(
   oldSessions: readonly TerminalSession[],
@@ -304,15 +305,38 @@ export function applySnapshot(
 ): { sessions: readonly TerminalSession[]; activeId: string | null } {
   const newIds = new Set<string>();
   for (const s of newSessions) newIds.add(s.id);
-  let cur: readonly TerminalSession[] = oldSessions;
   let activeId = oldActiveId;
-  for (const old of oldSessions) {
-    if (!newIds.has(old.id)) {
-      const r = nextActiveAfterClose(cur, activeId, old.id);
-      cur = r.sessions;
-      activeId = r.activeId;
+
+  if (activeId !== null && !newIds.has(activeId)) {
+    let activeIndex = -1;
+    for (let i = 0; i < oldSessions.length; i++) {
+      if (oldSessions[i]!.id === activeId) {
+        activeIndex = i;
+        break;
+      }
+    }
+
+    if (activeIndex >= 0) {
+      activeId = null;
+      for (let i = activeIndex + 1; i < oldSessions.length; i++) {
+        const candidate = oldSessions[i]!;
+        if (newIds.has(candidate.id)) {
+          activeId = candidate.id;
+          break;
+        }
+      }
+      if (activeId === null) {
+        for (let i = activeIndex - 1; i >= 0; i--) {
+          const candidate = oldSessions[i]!;
+          if (newIds.has(candidate.id)) {
+            activeId = candidate.id;
+            break;
+          }
+        }
+      }
     }
   }
+
   // 兜底:旧 active 仍非 null 但被神奇地不在新 snapshot,fallback 第一个
   if (activeId !== null && !newIds.has(activeId)) {
     activeId = newSessions[0]?.id ?? null;
@@ -393,8 +417,9 @@ export const useTerminalStore = create<TerminalState>((set) => ({
       // 边界(E238):自定义标题按 LABEL_MAX(512,复用主进程 create/title 同款上限)截断。renameSession 是
       // renderer-only store 入口,不经主进程 terminal-create schema —— 极长标题否则进 customTitles 被
       // DockReconciler/Dock tab title 反复渲染,绕过主进程 512 边界致 UI 卡顿/内存膨胀。截断而非拒绝:
-      // 保留用户重命名意图,只钳长度(空串仍走 delete 分支恢复默认标题)。
-      const trimmed = title.trim().slice(0, LABEL_MAX);
+      // 保留用户重命名意图,只钳长度(空串仍走 delete 分支恢复默认标题)。扫描 trim 边界后只切
+      // LABEL_MAX,避免超长标题先物化完整 trimmed 字符串。
+      const trimmed = trimStringToMax(title, LABEL_MAX);
       const current = s.customTitles.get(id);
       if (trimmed.length === 0 && current === undefined) return s;
       if (trimmed.length > 0 && current === trimmed) return s;

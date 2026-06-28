@@ -52,20 +52,49 @@ export const MAX_PENDING_NEXT_RESOLVERS_FOR_TEST = MAX_PENDING_NEXT_RESOLVERS;
 export const pluginShellStreamRaw: PluginShellStreamRaw = {
   execStream(cmd, args, opts) {
     const streamId = globalThis.crypto.randomUUID();
-    const chunkQueue: ShellChunk[] = [];
+    const chunkQueue: Array<ShellChunk | undefined> = [];
+    let chunkQueueHead = 0;
     let queuedBytes = 0; // 边界(E61):chunkQueue 中未消费字节数
     // race(R93):FIFO 等待者队列(不是单 resolver)。两个 next() 并发等待时,单 resolver 会被后者
     // 覆盖 → 先发 next() 的 Promise 永久不 resolve,消费方(预取/并发读 stream 的插件/封装库)挂死;
     // 且后续 chunk/exit 只能唤醒最后一个等待者。FIFO 队列:chunk 到达 resolve 队首,exit/synthesize/
     // return 时 resolve 所有 pending 为 done。不变量:chunkQueue 与 chunkResolvers 不会同时非空
     // (next 先查 queue 命中即返,不会再 push resolver)。
-    const chunkResolvers: Array<
-      (value: IteratorResult<ShellChunk, void>) => void
-    > = [];
-    const resolveAllChunksDone = (): void => {
-      while (chunkResolvers.length > 0) {
-        chunkResolvers.shift()!(SHELL_STREAM_DONE);
+    type ChunkResolver = (value: IteratorResult<ShellChunk, void>) => void;
+    const chunkResolvers: Array<ChunkResolver | undefined> = [];
+    let chunkResolverHead = 0;
+    const pendingResolverCount = (): number =>
+      chunkResolvers.length - chunkResolverHead;
+    const dequeueResolver = (): ChunkResolver | undefined => {
+      if (chunkResolverHead >= chunkResolvers.length) return undefined;
+      const waiter = chunkResolvers[chunkResolverHead];
+      chunkResolvers[chunkResolverHead] = undefined;
+      chunkResolverHead += 1;
+      if (chunkResolverHead === chunkResolvers.length) {
+        chunkResolvers.length = 0;
+        chunkResolverHead = 0;
       }
+      return waiter;
+    };
+    const dequeueChunk = (): ShellChunk | undefined => {
+      if (chunkQueueHead >= chunkQueue.length) return undefined;
+      const chunk = chunkQueue[chunkQueueHead];
+      chunkQueue[chunkQueueHead] = undefined;
+      chunkQueueHead += 1;
+      if (chunkQueueHead === chunkQueue.length) {
+        chunkQueue.length = 0;
+        chunkQueueHead = 0;
+      }
+      return chunk;
+    };
+    const resolveAllChunksDone = (): void => {
+      for (let i = chunkResolverHead; i < chunkResolvers.length; i += 1) {
+        const resolve = chunkResolvers[i];
+        chunkResolvers[i] = undefined;
+        resolve?.(SHELL_STREAM_DONE);
+      }
+      chunkResolvers.length = 0;
+      chunkResolverHead = 0;
     };
     let exitInfo: { exitCode: number | null; signal: NodeJS.Signals | null } | null =
       null;
@@ -112,7 +141,7 @@ export const pluginShellStreamRaw: PluginShellStreamRaw = {
       }
 
       const item: ShellChunk = { stream: parsed.stream, chunk: parsed.bytes };
-      const waiter = chunkResolvers.shift(); // race(R93):FIFO 唤醒队首
+      const waiter = dequeueResolver(); // race(R93):FIFO 唤醒队首
       if (waiter) {
         waiter({ value: item, done: false });
       } else {
@@ -153,8 +182,8 @@ export const pluginShellStreamRaw: PluginShellStreamRaw = {
       [Symbol.asyncIterator]() {
         return {
           next(): Promise<IteratorResult<ShellChunk, void>> {
-            if (chunkQueue.length > 0) {
-              const c = chunkQueue.shift()!;
+            const c = dequeueChunk();
+            if (c) {
               queuedBytes -= c.chunk.length; // 边界(E61):消费即释放缓冲计数
               return Promise.resolve({ value: c, done: false });
             }
@@ -163,7 +192,7 @@ export const pluginShellStreamRaw: PluginShellStreamRaw = {
             }
             // 边界(E231):pending next() 等待者数量上限。超限视为滥用(海量 next() 不 await)→
             // 与 E61 字节背压同构:ABORT 子进程 + 合成错误 exit 收敛全部等待者(含本次),停止接收。
-            if (chunkResolvers.length >= MAX_PENDING_NEXT_RESOLVERS) {
+            if (pendingResolverCount() >= MAX_PENDING_NEXT_RESOLVERS) {
               ipcRenderer.removeListener(
                 PLUGIN_SHELL_STREAM_CHANNELS.EVENT,
                 handler,

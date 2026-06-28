@@ -55,6 +55,14 @@ function truncForLog(s: string, max = 128): string {
   return s.length > max ? `${s.slice(0, max)}…(len=${s.length})` : s;
 }
 
+function stripLeadingSlashes(pathname: string): string {
+  let start = 0;
+  while (start < pathname.length && pathname.charCodeAt(start) === 47) {
+    start += 1;
+  }
+  return start === 0 ? pathname : pathname.slice(start);
+}
+
 export function parseProtocolUrl(url: string): ParsedProtocolUrl | null {
   if (typeof url !== 'string' || url.length === 0 || url.length > MAX_PARSE_URL_LEN) {
     return null; // 边界(E55):非法/超长 URL 不解析
@@ -68,7 +76,7 @@ export function parseProtocolUrl(url: string): ParsedProtocolUrl | null {
   if (parsed.protocol !== 'co:') return null;
   // co://command/<id>:host='command',pathname='/<id>'
   const action = parsed.host;
-  const target = parsed.pathname.replace(/^\/+/, '');
+  const target = stripLeadingSlashes(parsed.pathname);
   if (!action || !target) return null;
   // 边界(E98):action/target 单字段上限,超限视为畸形 → null。
   if (action.length > MAX_ACTION_LEN || target.length > MAX_TARGET_LEN) {

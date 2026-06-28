@@ -90,6 +90,15 @@ function isSortedByDisplayTitle(commands: readonly DisplayCommand[]): boolean {
   return true;
 }
 
+function areBucketsSortedByCategory(buckets: readonly Bucket[]): boolean {
+  for (let i = 1; i < buckets.length; i++) {
+    if (buckets[i - 1]!.category.localeCompare(buckets[i]!.category) > 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
 /** 按 displayCategory 分组,每组按 displayTitle 字母序;空 category 归 defaultGroup. */
 export function groupByCategory(
   commands: readonly DisplayCommand[],
@@ -149,7 +158,7 @@ export function groupByCategory(
   for (const [category, bucket] of map) {
     bucket.items.length = bucket.count;
     const items = bucket.items;
-    if (bucket.count > 1) {
+    if (bucket.count > 1 && !isSortedByDisplayTitle(items)) {
       items.sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));
     }
     buckets[i++] = {
@@ -157,7 +166,7 @@ export function groupByCategory(
       items,
     };
   }
-  if (buckets.length > 1) {
+  if (buckets.length > 1 && !areBucketsSortedByCategory(buckets)) {
     buckets.sort((a, b) => a.category.localeCompare(b.category));
   }
   return buckets;
@@ -168,12 +177,22 @@ function matches(d: DisplayCommand, qLower: string): boolean {
   return d.searchHaystack.includes(qLower);
 }
 
+function lowerIfNeeded(value: string): string {
+  for (let i = 0; i < value.length; i += 1) {
+    const code = value.charCodeAt(i);
+    if ((code >= 65 && code <= 90) || code > 127) {
+      return value.toLowerCase();
+    }
+  }
+  return value;
+}
+
 export function selectVisibleKeybindingCommands(
   commands: readonly DisplayCommand[],
   query: string,
 ): DisplayCommand[] {
   const hasQuery = query.length > 0;
-  const qLower = hasQuery ? query.toLowerCase() : '';
+  const qLower = hasQuery ? lowerIfNeeded(query) : '';
   let selected: DisplayCommand[] | null = null;
   let count = 0;
 
@@ -203,9 +222,9 @@ export function buildCommandSearchHaystack(
   commandId: string,
   effectiveHotkey: string | undefined,
 ): string {
-  return `${displayTitle} ${displayCategory} ${commandId} ${
+  return lowerIfNeeded(`${displayTitle} ${displayCategory} ${commandId} ${
     effectiveHotkey ?? ''
-  }`.toLowerCase();
+  }`);
 }
 
 export function countDefaultHotkeys(commands: readonly CommandSpec[]): number {
@@ -231,18 +250,21 @@ export function buildKeybindingDisplayCommands(
 ): DisplayCommand[] {
   if (allCommands.length === 0) return EMPTY_KEYBINDING_DISPLAY_COMMANDS;
   const out = new Array<DisplayCommand>(allCommands.length);
+  let outCount = 0;
   for (let i = 0; i < allCommands.length; i++) {
     const cmd = allCommands[i]!;
+    const isOverridden = cmd.id in overrides;
+    if (!cmd.hotkey && !isOverridden) continue;
     const effective = getEffectiveHotkey(cmd);
     const displayTitle = tk(cmd.titleKey, cmd.title);
     const displayCategory = tk(cmd.categoryKey, cmd.category ?? '');
-    out[i] = {
+    out[outCount++] = {
       cmd,
       displayTitle,
       displayCategory,
       effectiveHotkey: effective ?? undefined,
       hotkeyParts: effective ? formatHotkeyParts(effective, platform) : EMPTY_HOTKEY_PARTS,
-      isOverridden: cmd.id in overrides,
+      isOverridden,
       // haystack 用 effective hotkey(含 override)而非原 cmd.hotkey(打磨 R29):
       // 否则 override 后搜索仍只能命中默认组合,与列表显示的 effective 不一致。
       // 打磨 R52:随 displayCommands 预计算,避免每次输入都逐行 join + lower-case。
@@ -254,7 +276,8 @@ export function buildKeybindingDisplayCommands(
       ),
     };
   }
-  return out;
+  out.length = outCount;
+  return outCount === 0 ? EMPTY_KEYBINDING_DISPLAY_COMMANDS : out;
 }
 
 export function hasCommandId(

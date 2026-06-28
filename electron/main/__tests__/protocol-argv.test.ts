@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { extractProtocolUrl } from '../protocol-argv';
 import { MAX_PROTOCOL_URL_LEN } from '../protocol-dispatch';
 
@@ -22,6 +22,55 @@ describe('extractProtocolUrl — 从 argv 提取 co:// 深链(大小写无关)',
     expect(
       extractProtocolUrl(['co://command/foo?a=1&b=hi'], 'co'),
     ).toBe('co://command/foo?a=1&b=hi');
+  });
+
+  it('常见 co:// 前缀路径不调用 URL 构造器解析', () => {
+    const urlSpy = vi.spyOn(globalThis, 'URL');
+
+    try {
+      expect(extractProtocolUrl(['CO://command/foo'], 'co')).toBe(
+        'CO://command/foo',
+      );
+      expect(urlSpy).not.toHaveBeenCalled();
+    } finally {
+      urlSpy.mockRestore();
+    }
+  });
+
+  it('常见小写 protocol 参数不调用 toLowerCase', () => {
+    const lowerSpy = vi.spyOn(String.prototype, 'toLowerCase');
+
+    try {
+      expect(extractProtocolUrl(['co://command/foo'], 'co')).toBe(
+        'co://command/foo',
+      );
+      expect(
+        lowerSpy.mock.contexts.some((ctx) => String(ctx) === 'co'),
+      ).toBe(false);
+      expect(extractProtocolUrl(['CO://command/foo'], 'CO')).toBe(
+        'CO://command/foo',
+      );
+    } finally {
+      lowerSpy.mockRestore();
+    }
+  });
+
+  it('fallback URL protocol 已小写时不调用 toLowerCase', () => {
+    const lowerSpy = vi.spyOn(String.prototype, 'toLowerCase');
+
+    try {
+      expect(extractProtocolUrl(['co:command/foo'], 'co')).toBe(
+        'co:command/foo',
+      );
+      expect(
+        lowerSpy.mock.contexts.some((ctx) => String(ctx) === 'co:'),
+      ).toBe(false);
+      expect(extractProtocolUrl(['CO:command/foo'], 'co')).toBe(
+        'CO:command/foo',
+      );
+    } finally {
+      lowerSpy.mockRestore();
+    }
   });
 
   it('无深链 → null(忽略目录/普通参数)', () => {

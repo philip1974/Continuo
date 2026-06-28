@@ -54,10 +54,20 @@ function segmentEquals(
   return true;
 }
 
+function lowerIfNeeded(value: string): string {
+  for (let i = 0; i < value.length; i += 1) {
+    const code = value.charCodeAt(i);
+    if ((code >= 65 && code <= 90) || code > 127) {
+      return value.toLowerCase();
+    }
+  }
+  return value;
+}
+
 function lowerTrimmedSegment(combo: string, start: number, end: number): string {
   const s = trimSegmentStart(combo, start, end);
   const e = trimSegmentEnd(combo, s, end);
-  return s < e ? combo.slice(s, e).toLowerCase() : '';
+  return s < e ? lowerIfNeeded(combo.slice(s, e)) : '';
 }
 
 /**
@@ -107,7 +117,7 @@ function compileCombo(combo: string, platform: Platform): ComboSignature {
 
 /** 签名是否匹配键盘事件(精确比较四个修饰键 + 主键). */
 function signatureMatches(sig: ComboSignature, e: KeyboardEvent): boolean {
-  return signatureMatchesKey(sig, e, e.key.toLowerCase());
+  return signatureMatchesKey(sig, e, lowerIfNeeded(e.key));
 }
 
 function signatureMatchesKey(
@@ -151,10 +161,12 @@ export function isEditableTarget(target: EventTarget | null): boolean {
 export function buildCompiledBindings(
   commands: readonly CommandSpec[],
   platform: Platform,
+  overrides: Readonly<Record<string, string>> = {},
 ): readonly CompiledBinding[] {
   let out: CompiledBinding[] | undefined;
   let count = 0;
   for (const cmd of commands) {
+    if (!cmd.hotkey && overrides[cmd.id] === undefined) continue;
     const effective = getEffectiveHotkey(cmd);
     if (!effective) continue; // 无 hotkey 或显式 unbind
     out ??= new Array<CompiledBinding>(commands.length);
@@ -175,9 +187,7 @@ export function useCommandHotkeys(commands: CommandRegistry): void {
   // 每个 hotkey 解析一次。高频 keydown 路径只做字段比较,不再逐键 split/lowercase/Set
   // + 逐命令读 keybindings store。只保留真有 effective hotkey 的命令。
   const bindings = useMemo<readonly CompiledBinding[]>(() => {
-    return buildCompiledBindings(snap, platform);
-    // overrides 不直接被 body 引用,但它变化时 getEffectiveHotkey 结果变 → 必须重建。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return buildCompiledBindings(snap, platform, overrides);
   }, [snap, overrides, platform]);
 
   useEffect(() => {
@@ -189,7 +199,7 @@ export function useCommandHotkeys(commands: CommandRegistry): void {
       // 输入框里键入该字符会被全局命令劫持并 preventDefault,文本打不进去、焦点上下文被破坏。
       // 带 ctrl/meta/alt 的全局组合(如 mod+s 保存)在编辑器内仍需生效,故只跳过无修饰类。
       const editable = isEditableTarget(e.target);
-      const keyLower = e.key.toLowerCase();
+      const keyLower = lowerIfNeeded(e.key);
       for (const b of bindings) {
         if (signatureMatchesKey(b.sig, e, keyLower)) {
           if (editable && !b.sig.wantMeta && !b.sig.wantCtrl && !b.sig.wantAlt) {

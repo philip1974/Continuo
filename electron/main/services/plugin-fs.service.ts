@@ -59,6 +59,10 @@ export { MAX_SCOPE_REQUEST_COUNT };
 const MAX_REQUEST_ID_LEN = 256;
 // 边界(E97):注册入口 pluginId 长度上限(对齐 manifest id 上限 E74 NAME_MAX)。
 const MAX_PLUGIN_ID_LEN = 256;
+// 边界(E315,E234 并发 fan-out 同族):单次 request-scope 最多 256 条,路径归一化要 realpath。
+// 全量 Promise.all 会把 256 个 realpath 同时打进主进程/libuv。固定 worker 池平滑 IO 峰值,
+// 顺序仍由 canonicalizePathScopes 的结果数组按输入下标保持。
+const CANONICALIZE_SCOPE_CONCURRENCY = 16;
 
 // 审计 P2-B:git cat-file 子进程的超时与输出上限。旧实现无 timeout、stdout 无界,
 // 超大 blob 或 git 卡死(如 cwd 在网络挂载)会让 Promise 永不 resolve + 内存持续增长。
@@ -169,16 +173,26 @@ function canonicalPath(r: { canonical: string } | { fullPath: string }): string 
 export async function canonicalizePathScopes(
   scopes: readonly PathScope[],
 ): Promise<PathScope[]> {
-  const pathPromises = new Array<Promise<string>>(scopes.length);
-  for (let i = 0; i < scopes.length; i++) {
-    pathPromises[i] = canonicalizeScopePath(scopes[i]!.path);
-  }
-
-  const paths = await Promise.all(pathPromises);
   const canonicalScopes = new Array<PathScope>(scopes.length);
-  for (let i = 0; i < scopes.length; i++) {
-    canonicalScopes[i] = { path: paths[i]!, mode: scopes[i]!.mode };
+  let nextIndex = 0;
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      const i = nextIndex;
+      nextIndex += 1;
+      if (i >= scopes.length) return;
+      const scope = scopes[i]!;
+      canonicalScopes[i] = {
+        path: await canonicalizeScopePath(scope.path),
+        mode: scope.mode,
+      };
+    }
+  };
+  const workerCount = Math.min(CANONICALIZE_SCOPE_CONCURRENCY, scopes.length);
+  const workers = new Array<Promise<void>>(workerCount);
+  for (let i = 0; i < workerCount; i++) {
+    workers[i] = worker();
   }
+  await Promise.all(workers);
   return canonicalScopes;
 }
 

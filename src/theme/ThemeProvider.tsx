@@ -36,6 +36,7 @@ function readStoredMode(): ThemeMode {
   try {
     const v = globalThis.localStorage.getItem(STORAGE_KEY);
     if (v === 'light' || v === 'dark' || v === 'system') return v;
+    if (v !== null) globalThis.localStorage.removeItem(STORAGE_KEY);
   } catch {
     // 存储不可用 → 用默认主题
   }

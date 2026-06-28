@@ -129,4 +129,19 @@ describe('topic49 P1-AE · 关窗/退出 flush pending markdown autosave', () =>
       allSettledSpy.mockRestore();
     }
   });
+
+  it('只有一个 active flush 时直接 await,不构造 Promise.allSettled', async () => {
+    const allSettledSpy = vi.spyOn(Promise, 'allSettled');
+    const flush = vi.fn(async () => {});
+    registerAutoSaveFlush(flush);
+
+    try {
+      await flushPendingAutoSave();
+
+      expect(flush).toHaveBeenCalledTimes(1);
+      expect(allSettledSpy).not.toHaveBeenCalled();
+    } finally {
+      allSettledSpy.mockRestore();
+    }
+  });
 });

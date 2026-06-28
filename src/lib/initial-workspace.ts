@@ -4,6 +4,8 @@
 // hydrate 时优先用此值,跳过 explorer.json 里的 workspace.current,实现多窗口
 // 看不同 folder。无 query 时返 null,走原 explorer.json 持久化路径(主窗口默认)。
 
+import { isBlankString } from './blank-string';
+
 const WORKSPACE_PARAM = 'workspace';
 const WINDOW_SEQ_PARAM = 'windowSeq';
 const FRESH_PARAM = 'fresh';
@@ -29,6 +31,15 @@ export function safeStartupParams(search: string): URLSearchParams | null {
   return new URLSearchParams(normalized);
 }
 
+function isUnsignedDecimal(value: string): boolean {
+  if (value.length === 0) return false;
+  for (let i = 0; i < value.length; i += 1) {
+    const code = value.charCodeAt(i);
+    if (code < 48 || code > 57) return false;
+  }
+  return true;
+}
+
 /**
  * 从 query string 解 ?workspace=<path>。
  *  - 缺失 / 空 / 仅空白 → null
@@ -41,10 +52,10 @@ export function parseInitialWorkspace(search: string): string | null {
   if (!params) return null;
   const raw = params.get(WORKSPACE_PARAM);
   if (raw === null) return null;
-  // 仅用 trim 判断是否全空白;**返回原始值不 trim** —— 文件系统允许前后带空格的
+  // 仅判断是否全空白;**返回原始值不 trim** —— 文件系统允许前后带空格的
   // 合法路径(e.g. '/tmp/proj '),与 workspace.store「不规范化、不 trim 返回值」契约
   // 一致。此前 return trimmed 会破坏这类路径(跨平台审计 P2)。
-  if (raw.trim().length === 0) return null;
+  if (isBlankString(raw)) return null;
   return raw;
 }
 
@@ -59,7 +70,7 @@ export function parseInitialWindowSeq(search: string): number {
   const raw = params.get(WINDOW_SEQ_PARAM);
   if (raw === null) return 0;
   // 严格整数:整数才接,小数 / 字母拒
-  if (!/^\d+$/.test(raw)) return 0;
+  if (!isUnsignedDecimal(raw)) return 0;
   const n = Number(raw);
   // 边界(E8,E4/E7 同族):须 safe integer。`?windowSeq=9007199254740993`(> MAX_SAFE_INTEGER)
   // 经 Number 会舍入成 9007199254740992,Number.isInteger 仍为 true → 不可安全表示的 windowSeq

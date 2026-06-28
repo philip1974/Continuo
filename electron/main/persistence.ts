@@ -128,11 +128,20 @@ export function pruneLRUClosed(
 
   const closed = new Array<WindowEntryV3>(payload.windows.length);
   let closedCount = 0;
+  let closedSorted = true;
+  let prevClosedAt = -Infinity;
   for (const w of payload.windows) {
-    if (!activeSeqs.has(w.windowSeq)) closed[closedCount++] = w;
+    if (!activeSeqs.has(w.windowSeq)) {
+      const closedAt = w.lastClosedAt ?? 0;
+      if (closedAt < prevClosedAt) closedSorted = false;
+      prevClosedAt = closedAt;
+      closed[closedCount++] = w;
+    }
   }
   closed.length = closedCount;
-  closed.sort((a, b) => (a.lastClosedAt ?? 0) - (b.lastClosedAt ?? 0));
+  if (closedCount > 1 && !closedSorted) {
+    closed.sort((a, b) => (a.lastClosedAt ?? 0) - (b.lastClosedAt ?? 0));
+  }
 
   const toRemove = payload.windows.length - maxClosed;
   if (toRemove <= 0) return;
@@ -390,11 +399,13 @@ export async function allocateWindowSeq(explorerFile: string): Promise<number> {
     // 重算为 max(现有段 windowSeq, 0) + 1(主窗占 0、新窗 ≥1 且大于所有现存安全段 → 不冲突),
     // 不丢任何持久化段(优于 schema .safe() 整文件失效丢全部段)。
     if (!Number.isSafeInteger(seq)) {
-      const maxSeg = payload.windows.reduce(
-        (m, w) =>
-          Number.isSafeInteger(w.windowSeq) ? Math.max(m, w.windowSeq) : m,
-        0,
-      );
+      let maxSeg = 0;
+      for (let i = 0; i < payload.windows.length; i += 1) {
+        const windowSeq = payload.windows[i]!.windowSeq;
+        if (Number.isSafeInteger(windowSeq) && windowSeq > maxSeg) {
+          maxSeg = windowSeq;
+        }
+      }
       seq = maxSeg + 1;
     }
     payload.nextWindowSeq = seq + 1;

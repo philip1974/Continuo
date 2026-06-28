@@ -32,19 +32,37 @@ function capUrlForLog(url: unknown): string {
 
 export function spikeAllowed(input: SpikeAllowedInput): SpikeAllowedResult {
   const { url, argv, packaged } = input;
-  const envOptIn =
-    argv.some((arg) => arg.startsWith('CONTINUO_SPIKE=1') || arg === '--spike') ||
-    process.env.CONTINUO_SPIKE === '1';
-  // 边界(E191):非字符串/超长 url 不跑正则(O(N) 扫描),视为无 spike query(packaged 下两分支都拦)。
-  const hasSpikeQuery =
-    typeof url === 'string' &&
-    url.length <= MAX_NAV_URL_LEN &&
-    /[?&]spike=/.test(url);
-
   if (!packaged) return { allowed: true, reason: 'dev' };
+
+  if (process.env.CONTINUO_SPIKE === '1') {
+    return { allowed: true, reason: 'env-opt-in' };
+  }
+  const envOptIn =
+    argv.some((arg) => arg.startsWith('CONTINUO_SPIKE=1') || arg === '--spike');
   if (envOptIn) return { allowed: true, reason: 'env-opt-in' };
+  const hasSpikeQuery = hasSpikeQueryParam(url);
   if (hasSpikeQuery) return { allowed: false, reason: 'packaged-blocked' };
   return { allowed: false, reason: 'env-missing' };
+}
+
+function hasSpikeQueryParam(url: unknown): boolean {
+  // 边界(E191):非字符串/超长 url 不跑正则(O(N) 扫描),视为无 spike query(packaged 下两分支都拦)。
+  if (typeof url !== 'string' || url.length > MAX_NAV_URL_LEN) return false;
+  for (let i = 0; i <= url.length - 7; i += 1) {
+    const sep = url.charCodeAt(i);
+    if (sep !== 63 && sep !== 38) continue;
+    if (
+      url.charCodeAt(i + 1) === 115 &&
+      url.charCodeAt(i + 2) === 112 &&
+      url.charCodeAt(i + 3) === 105 &&
+      url.charCodeAt(i + 4) === 107 &&
+      url.charCodeAt(i + 5) === 101 &&
+      url.charCodeAt(i + 6) === 61
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export function buildRendererQuery(input: RendererQueryInput): Record<string, string> {
@@ -83,9 +101,10 @@ export function stripSpikeQuery(
   if (allowed) return { ...query };
 
   const out: Record<string, string> = {};
-  for (const [key, value] of Object.entries(query)) {
+  for (const key in query) {
+    if (!Object.prototype.hasOwnProperty.call(query, key)) continue;
     if (key === 'spike' || key.startsWith('spike')) continue;
-    out[key] = value;
+    out[key] = query[key]!;
   }
   return out;
 }

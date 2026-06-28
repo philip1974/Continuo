@@ -102,6 +102,7 @@ import {
   MAX_WRITE_BYTES,
   FS_PATH_MAX,
   MAX_SCOPE_REQUEST_COUNT,
+  isValidGitBlobSha,
 } from '../../../electron/shared/fs-limits';
 import {
   NETWORK_URL_MAX,
@@ -514,6 +515,28 @@ describe('授后转发 — fs / shell / clipboard / mcp / network 行为', () =>
     }
   });
 
+  it('fs.listDir parent path trim 不调用 replace 正则', () => {
+    const entries = [{ name: 'a.txt', isDirectory: false, isSymlink: false }];
+    const replaceSpy = vi.spyOn(String.prototype, 'replace');
+
+    try {
+      expect(buildPluginListDirEntries('/repo///', entries)).toEqual([
+        {
+          path: '/repo/a.txt',
+          name: 'a.txt',
+          isDirectory: false,
+          isSymlink: false,
+        },
+      ]);
+      const trimRegexCalls = replaceSpy.mock.calls.filter(
+        ([pattern]) => pattern instanceof RegExp && pattern.source === '[\\\\/]+$',
+      );
+      expect(trimRegexCalls).toHaveLength(0);
+    } finally {
+      replaceSpy.mockRestore();
+    }
+  });
+
   it('fs.listDir 空条目转换复用稳定空列表', () => {
     expect(buildPluginListDirEntries('/repo', [])).toEqual([]);
     expect(buildPluginListDirEntries('/repo', [])).toBe(
@@ -624,6 +647,16 @@ describe('授后转发 — fs / shell / clipboard / mcp / network 行为', () =>
     const scoped = createScopedApp(makeLmApp(), 'p', store, 'test-token');
     await scoped.fs.readGitBlob('/repo', 'abcd1234');
     expect(coApiMocks.pluginFsRaw.readGitBlob).toHaveBeenCalled();
+  });
+
+  it('E314 shared sha 校验走字符扫描,不调用 RegExp.test', () => {
+    const testSpy = vi.spyOn(RegExp.prototype, 'test');
+    expect(isValidGitBlobSha('abcd1234')).toBe(true);
+    expect(isValidGitBlobSha('ABCDEF012345')).toBe(true);
+    expect(isValidGitBlobSha('abc')).toBe(false);
+    expect(isValidGitBlobSha('not-hex-zz')).toBe(false);
+    expect(isValidGitBlobSha('a'.repeat(65))).toBe(false);
+    expect(testSpy).not.toHaveBeenCalled();
   });
 
   // 边界(E315,E313 同族 / 不转发 raw 外部对象):mkdir/rm/cp/atomicReplace 的 opts 只转发契约 boolean

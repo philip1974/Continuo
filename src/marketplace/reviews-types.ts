@@ -75,9 +75,32 @@ const isStrMax = (v: unknown, max: number): v is string =>
 // a/b、x?tab=repositories 等非 GitHub login → 渲染指向错误账号/路径的可点击链接 + 错误徽章。
 // 按 GitHub login 规则校验:1–39 字符,仅字母数字与单个中横线,首尾非 -、无连续 --(收敛后即
 // URL/路径安全)。fresh-fetch(parseReview)与 cache-read(isValidReview)两端共用此校验。
-const GITHUB_LOGIN_RE = /^[a-zA-Z0-9](?:-?[a-zA-Z0-9])*$/;
+function isAsciiAlphaNum(code: number): boolean {
+  return (
+    (code >= 48 && code <= 57) ||
+    (code >= 65 && code <= 90) ||
+    (code >= 97 && code <= 122)
+  );
+}
+
 export function isGitHubLogin(s: string): boolean {
-  return s.length >= 1 && s.length <= 39 && GITHUB_LOGIN_RE.test(s);
+  if (s.length < 1 || s.length > 39) {
+    return false;
+  }
+  let prevHyphen = false;
+  for (let i = 0; i < s.length; i += 1) {
+    const code = s.charCodeAt(i);
+    if (isAsciiAlphaNum(code)) {
+      prevHyphen = false;
+      continue;
+    }
+    if (code === 45 && i > 0 && i < s.length - 1 && !prevHyphen) {
+      prevHyphen = true;
+      continue;
+    }
+    return false;
+  }
+  return true;
 }
 
 // 边界(E93):thumbsUp 须非负安全整数(点赞数不可为负/小数);与 main toNode canonicalize 对齐。
@@ -139,11 +162,14 @@ function isValidAggregate(v: unknown): v is PluginAggregateRating {
   if (g.reviews.length > MAX_REVIEWS_PER_PLUGIN) return false;
   // 边界(E94):count 须与 reviews.length 一致(aggregate 构造时 count=rs.length;不一致=篡改)。
   if (g.count !== g.reviews.length) return false;
-  if (!g.reviews.every(isValidReview)) return false;
   // 边界(E113):aggregate 构造时每条 review 按 pluginId 分组(key=pluginId=aggregate.pluginId=
   // 每条 review.pluginId)。篡改缓存可让三者不一致 → 评分错配到别的插件。强制每条 review.pluginId
   // 与 aggregate.pluginId 一致(key 与 aggregate.pluginId 的一致性在 isValidAggregateRecord 校验)。
-  return (g.reviews as readonly Review[]).every((r) => r.pluginId === g.pluginId);
+  for (const review of g.reviews) {
+    if (!isValidReview(review)) return false;
+    if (review.pluginId !== g.pluginId) return false;
+  }
+  return true;
 }
 
 /** 边界(E3):reviews 缓存深度校验 —— 是非数组对象且每个 value 是合法 aggregate。 */

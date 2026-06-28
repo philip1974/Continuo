@@ -1,5 +1,32 @@
 import { tWithFallback } from '@/i18n';
 
+function isPlaceholderStart(code: number): boolean {
+  return (
+    code === 95 ||
+    (code >= 65 && code <= 90) ||
+    (code >= 97 && code <= 122)
+  );
+}
+
+function isPlaceholderRest(code: number): boolean {
+  return isPlaceholderStart(code) || (code >= 48 && code <= 57);
+}
+
+function hasCatalogPlaceholder(text: string): boolean {
+  for (let i = 0; i < text.length - 2; i += 1) {
+    if (text.charCodeAt(i) !== 123) continue;
+    const first = text.charCodeAt(i + 1);
+    if (!isPlaceholderStart(first)) continue;
+    let end = i + 2;
+    while (end < text.length && isPlaceholderRest(text.charCodeAt(end))) {
+      end += 1;
+    }
+    if (text.charCodeAt(end) === 125) return true;
+    i = end;
+  }
+  return false;
+}
+
 /**
  * i18n(I6/I7,codex 复查 P1):把 main/IPC 返回的「带稳定 code 的 error」在 renderer 展示前
  * 按 `errors.<CODE>` catalog 本地化。
@@ -19,6 +46,6 @@ export function localizeErrorByCode(code: string, message: string): string {
   // 无 params,直接返回会渲染**字面 `{path}`**。这类情形退回原 message(main 的 raw message
   // 通常已含具体路径/细节,比露占位符好)。非参数化 code(FS_DENIED/FS_IO/FS_EEXIST 等
   // 绝大多数)正常本地化。
-  if (/\{[A-Za-z_]\w*\}/.test(localized)) return message;
+  if (hasCatalogPlaceholder(localized)) return message;
   return localized;
 }

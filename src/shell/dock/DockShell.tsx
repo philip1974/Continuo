@@ -122,6 +122,7 @@ function DockReconcilerMount({ api }: { api: DockviewApi }): null {
 let lastLayoutSaveNotifyAt = 0;
 const LAYOUT_SAVE_NOTIFY_MIN_INTERVAL_MS = 5000;
 let lastSuccessfulLayoutPayload: string | null = null;
+const cleanLayoutApis = new WeakSet<DockviewApi>();
 function notifyLayoutSaveFailedRateLimited(): void {
   const now = Date.now();
   if (now - lastLayoutSaveNotifyAt < LAYOUT_SAVE_NOTIFY_MIN_INTERVAL_MS) return;
@@ -136,6 +137,7 @@ async function writeDockLayoutSnapshot(
   // 重启会丢);关窗 flush 路径传 false(默认)→ 沿用「可见日志 + 抛出由调用方 try/catch」语义。
   notifyOnFail = false,
 ): Promise<void> {
+  if (cleanLayoutApis.has(api)) return;
   try {
     // 写盘前剥离终端 panel(彻底修复:持久化 layout 不再携带终端的 sessionId/cwd 等陈旧/敏感
     // 数据;读端 sanitize 仍是兜底防线,处理历史 explorer.json 与竞态)。仅含终端(无非终端
@@ -154,7 +156,10 @@ async function writeDockLayoutSnapshot(
       ...(snapshot as object),
     };
     const serializedPayload = JSON.stringify(payload);
-    if (serializedPayload === lastSuccessfulLayoutPayload) return;
+    if (serializedPayload === lastSuccessfulLayoutPayload) {
+      cleanLayoutApis.add(api);
+      return;
+    }
 
     const r = await coApi.layout.write(payload);
     if (!r.ok) {
@@ -163,6 +168,7 @@ async function writeDockLayoutSnapshot(
       return;
     }
     lastSuccessfulLayoutPayload = serializedPayload;
+    cleanLayoutApis.add(api);
   } catch (err) {
     console.warn(`${warnPrefix} rejected`, err);
     if (notifyOnFail) notifyLayoutSaveFailedRateLimited();
@@ -282,6 +288,7 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       // race(R22):保存各 onDid* 返回的 disposable,卸载/重建时统一 dispose。
       dockDisposablesRef.current.push(
         event.api.onDidLayoutChange(() => {
+          cleanLayoutApis.delete(event.api);
           persist();
           setEmpty(event.api.totalPanels === 0);
         }),
@@ -344,30 +351,38 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       // apiRef.current 换成新 api,旧闭包会用 stale api 写盘 → 关窗落盘旧 dock 布局,覆盖/丢失当前
       // 窗口的 panel 增删/移动。apiRef.current 由 onReady 同步更新、卸载置 null(R30 同款基准)。
       const api = apiRef.current;
-      if (api) {
+      const layoutFlush = (async () => {
+        if (!api) return;
         try {
           await writeDockLayoutSnapshot(api, '[dockview] flush save');
         } catch (err) {
           console.warn('[dockview] flush save failed', err);
         }
-      }
+      })();
       // 除 dockview layout 外,explorer/editor 段(workspace 切换、打开的 tab、
       // 树展开)走的是独立的 300ms debounce 链,关窗前必须一并同步落盘,
       // 否则 ack 返回但这些改动随未触发的 timer 丢失。见审计 #4。
-      try {
-        await flushExplorerPersistence();
-      } catch (err) {
-        console.warn('[dockview] explorer flush failed', err);
-      }
+      const explorerFlush = (async () => {
+        try {
+          await flushExplorerPersistence();
+        } catch (err) {
+          console.warn('[dockview] explorer flush failed', err);
+        }
+      })();
       // pending 的 markdown autosave 内容卡在 useAutoSave 的 2s 防抖 timer 里,
       // 只在 React unmount cleanup 才 flush,而 win.close() 销毁 renderer 时
       // React cleanup 不保证执行 → 编辑 md 后 2s 内关窗会丢最后一段。关窗前
       // 在 ack 之前同步落盘(P1-AE)。
-      try {
-        await flushPendingAutoSave();
-      } catch (err) {
-        console.warn('[dockview] autosave flush failed', err);
-      }
+      const autosaveFlush = (async () => {
+        try {
+          await flushPendingAutoSave();
+        } catch (err) {
+          console.warn('[dockview] autosave flush failed', err);
+        }
+      })();
+      // 三条 flush 数据域独立;layout/explorer 如最终共享 explorer.json,main 侧 file mutex
+      // 仍负责串行化磁盘合并。renderer 这里并行启动,减少关闭按钮等待首个慢任务串住后续落盘。
+      await Promise.all([layoutFlush, explorerFlush, autosaveFlush]);
       const latest = getFlushBridge();
       latest?.layout?.sendFlushAck?.(
         payload?.windowId ?? latest.system?.windowId ?? 0,

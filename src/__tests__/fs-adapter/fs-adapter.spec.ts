@@ -1,11 +1,11 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdir, mkdtemp, readFile as fspReadFile, rm, symlink, truncate, writeFile } from 'node:fs/promises';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { normalizePath } from '../../../electron/main/ipc/fs/path-utils';
-import { listDir } from '../../../electron/main/ipc/fs/list-dir';
+import { listDir, sortDirsFirst } from '../../../electron/main/ipc/fs/list-dir';
 import { readFile } from '../../../electron/main/ipc/fs/read-file';
 import { atomicWriteFile } from '../../../electron/main/ipc/fs/atomic-write';
 import { renameEntry } from '../../../electron/main/ipc/fs/rename';
@@ -103,6 +103,23 @@ describe('listDir', () => {
     const items = await listDir(dir);
     // 默认 exclude 排掉 .git/node_modules,剩下 sub(dir) + a.txt + b.txt
     expect(items.map((i) => i.name)).toEqual(['sub', 'a.txt', 'b.txt']);
+  });
+
+  it('sortDirsFirst 输入已是目录优先且按名称排序时不调用 sort', () => {
+    const entries = [
+      { path: '/p/a-dir', name: 'a-dir', isDirectory: true },
+      { path: '/p/b-dir', name: 'b-dir', isDirectory: true },
+      { path: '/p/a.txt', name: 'a.txt', isDirectory: false },
+      { path: '/p/b.txt', name: 'b.txt', isDirectory: false },
+    ];
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      expect(sortDirsFirst(entries)).toBe(entries);
+      expect(sortSpy).not.toHaveBeenCalled();
+    } finally {
+      sortSpy.mockRestore();
+    }
   });
 
   it('FileEntry 字段含 path / name / isDirectory', async () => {

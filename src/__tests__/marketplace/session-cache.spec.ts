@@ -48,4 +48,22 @@ describe('createSessionCache 原始串长度上限 (E71)', () => {
     getSpy.mockRestore();
     removeSpy.mockRestore();
   });
+
+  it('validate 失败的脏缓存会清毒,后续 stale 读取不重复 validate', () => {
+    sessionStorage.setItem(
+      KEY,
+      JSON.stringify({ fetchedAt: Date.now(), data: [1] }),
+    );
+    const validate = vi.fn(isStrArr);
+    const c = createSessionCache<string[]>({
+      key: KEY,
+      ttlMs: 60_000,
+      validate,
+    });
+
+    expect(c.getFresh()).toBeNull();
+    expect(sessionStorage.getItem(KEY)).toBeNull();
+    expect(c.getStale()).toBeNull();
+    expect(validate).toHaveBeenCalledTimes(1);
+  });
 });

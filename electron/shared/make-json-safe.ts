@@ -17,6 +17,7 @@
 // 场景 —— 那些仍由 assertJsonValue 硬拒(数据安全优先)。返回被丢弃字段的 path 列表供诊断日志。
 
 const MAX_DEPTH = 256;
+const hasOwn = Object.prototype.hasOwnProperty;
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   if (typeof v !== 'object' || v === null) return false;
@@ -63,7 +64,8 @@ export function makeJsonSafe(input: unknown): {
     }
     if (isPlainObject(value)) {
       const out: Record<string, unknown> = {};
-      for (const k of Object.keys(value)) {
+      for (const k in value) {
+        if (!hasOwn.call(value, k)) continue;
         const r = walk(value[k], `${path}.${k}`, depth + 1);
         if (r.keep) out[k] = r.value; // 不安全 → 删键(path 已记录于递归内)
       }

@@ -3,7 +3,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   isValidLeafName,
   leafNameRejectReason,
@@ -56,6 +56,28 @@ describe('isValidLeafName(E274)', () => {
     expect(leafNameRejectReason('CON')).toContain('Windows reserved');
     expect(leafNameRejectReason('foo.')).toContain('trailing dot or space');
     expect(leafNameRejectReason('café')).toContain('not NFC-normalized');
+  });
+
+  it('Windows/NTFS 危险名检测走字符扫描,不调用 RegExp.test', () => {
+    const testSpy = vi.spyOn(RegExp.prototype, 'test');
+    try {
+      expect(leafNameRejectReason('CON.txt')).toBe(
+        'leaf is Windows reserved device name',
+      );
+      expect(leafNameRejectReason('COM1.log')).toBe(
+        'leaf is Windows reserved device name',
+      );
+      expect(leafNameRejectReason('LPT9')).toBe(
+        'leaf is Windows reserved device name',
+      );
+      expect(leafNameRejectReason('PROGRA~1')).toBe(
+        'leaf matches NTFS 8.3 short-name pattern',
+      );
+      expect(leafNameRejectReason('COM0')).toBeNull();
+      expect(testSpy).not.toHaveBeenCalled();
+    } finally {
+      testSpy.mockRestore();
+    }
   });
 
   it('FS_NAME_MAX 截断常量存在(drop failed.name 显示用)', () => {

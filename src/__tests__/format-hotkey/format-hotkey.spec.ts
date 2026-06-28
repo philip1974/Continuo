@@ -132,6 +132,27 @@ describe('formatHotkey · 边界', () => {
 // ────────────────────────────────────────────────────────────
 
 describe('formatHotkeyParts', () => {
+  it('常见小写 hotkey token 不调用 toLowerCase', () => {
+    const lowerSpy = vi.spyOn(String.prototype, 'toLowerCase');
+
+    try {
+      expect(formatHotkeyParts('mod+shift+h', 'other')).toEqual([
+        'Ctrl',
+        'Shift',
+        'H',
+      ]);
+      expect(formatHotkey('mod+enter', 'mac')).toBe('⌘↵');
+      expect(
+        lowerSpy.mock.contexts.some((ctx) =>
+          ['mod', 'shift', 'h', 'enter'].includes(String(ctx)),
+        ),
+      ).toBe(false);
+      expect(formatHotkey('MOD+SHIFT+H', 'mac')).toBe('⌘⇧H');
+    } finally {
+      lowerSpy.mockRestore();
+    }
+  });
+
   it('解析 parts 不通过 split/filter/map 物化中间数组', () => {
     const splitSpy = vi.spyOn(String.prototype, 'split');
 
@@ -185,5 +206,42 @@ describe('detectPlatform', () => {
 
   it('jsdom 环境(navigator.platform 通常空)→ other,不抛', () => {
     expect(() => detectPlatform()).not.toThrow();
+  });
+
+  it('Mac 平台检测不调用 RegExp.test', () => {
+    const platformDesc = Object.getOwnPropertyDescriptor(navigator, 'platform');
+    const userAgentDesc = Object.getOwnPropertyDescriptor(navigator, 'userAgent');
+    const testSpy = vi.spyOn(RegExp.prototype, 'test');
+
+    try {
+      Object.defineProperty(navigator, 'platform', {
+        value: 'MacIntel',
+        configurable: true,
+      });
+      Object.defineProperty(navigator, 'userAgent', {
+        value: '',
+        configurable: true,
+      });
+      expect(detectPlatform()).toBe('mac');
+
+      Object.defineProperty(navigator, 'platform', {
+        value: '',
+        configurable: true,
+      });
+      Object.defineProperty(navigator, 'userAgent', {
+        value: 'Mozilla/5.0 (iPhone)',
+        configurable: true,
+      });
+      expect(detectPlatform()).toBe('mac');
+
+      const applePlatformRegexCalls = testSpy.mock.contexts.filter(
+        (context) => context instanceof RegExp && context.source === 'Mac|iPhone|iPad|iPod',
+      );
+      expect(applePlatformRegexCalls).toHaveLength(0);
+    } finally {
+      testSpy.mockRestore();
+      if (platformDesc) Object.defineProperty(navigator, 'platform', platformDesc);
+      if (userAgentDesc) Object.defineProperty(navigator, 'userAgent', userAgentDesc);
+    }
   });
 });

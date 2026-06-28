@@ -125,6 +125,24 @@ export function buildSelectedPathSet(
   return new Set(selectedItems);
 }
 
+interface DropFailureLine {
+  readonly name: string;
+  readonly code: string;
+  readonly message: string;
+}
+
+export function formatDropFailureLines(
+  failed: readonly DropFailureLine[],
+): string {
+  let out = '';
+  for (let i = 0; i < failed.length; i += 1) {
+    const f = failed[i]!;
+    if (i > 0) out += '\n';
+    out += `  ${f.name}: [${f.code}] ${localizeErrorByCode(f.code, f.message)}`;
+  }
+  return out;
+}
+
 /**
  * 纯唯一名 picker:给定 destDir 与已存在 basename 集合,返回一个 pick(name) 函数。
  * 候选序:basename / `${stem} copy${ext}` / `${stem} copy 2${ext}` / ...(上限 100,
@@ -193,11 +211,20 @@ export function FolderTree({ root }: { root: string }) {
       // 单次分区(打磨 R8):原先 filter 两遍各跑一次 isWithinRoot,跨 root 累积
       // 集合越大重复扫描越明显。一次 for...of 分出 in/out-of-root,各分区内部
       // 顺序与原 filter 一致 → 行为等价(见 P2-AF 契约测试)。
-      const inRootCurrent: string[] = [];
-      const outOfRoot: string[] = [];
-      for (const p of useExplorerStore.getState().expandedPaths) {
-        (isWithinRoot(p, root) ? inRootCurrent : outOfRoot).push(p);
+      const expandedPaths = useExplorerStore.getState().expandedPaths;
+      const inRootCurrent = new Array<string>(expandedPaths.size);
+      const outOfRoot = new Array<string>(expandedPaths.size);
+      let inRootCount = 0;
+      let outOfRootCount = 0;
+      for (const p of expandedPaths) {
+        if (isWithinRoot(p, root)) {
+          inRootCurrent[inRootCount++] = p;
+        } else {
+          outOfRoot[outOfRootCount++] = p;
+        }
       }
+      inRootCurrent.length = inRootCount;
+      outOfRoot.length = outOfRootCount;
       const next =
         typeof updater === 'function' ? updater(inRootCurrent) : updater;
       if (outOfRoot.length === 0) {
@@ -275,7 +302,8 @@ export function FolderTree({ root }: { root: string }) {
             // (源目录没刷=还显示,目标目录没刷=不显示),而其 editor tab 路径已改 →
             // 树/tab/磁盘三者不一致。对齐 mutate-actions.removeItems 的部分成功刷新。
             const touchedSrcParents = new Set<string>();
-            const movedSrcs: string[] = [];
+            const movedSrcs = new Array<string>(srcs.length);
+            let movedSrcCount = 0;
             let movedAny = false;
             try {
               // a11y(A134,A133 同族):makeUniqueDestPicker(目标名探测)与 move 循环都包进 try —
@@ -300,7 +328,7 @@ export function FolderTree({ root }: { root: string }) {
                 }
                 useEditorStore.getState().renamePath(src, dest);
                 touchedSrcParents.add(dirname(src));
-                movedSrcs.push(src);
+                movedSrcs[movedSrcCount++] = src;
                 movedAny = true;
               }
             } catch (err) {
@@ -313,6 +341,7 @@ export function FolderTree({ root }: { root: string }) {
                   if (sp !== destDir) refreshParent(sp);
                 }
                 // 移走的源旧路径已不存在 → 剪除剪贴板里引用它的 cut/copy 项。
+                movedSrcs.length = movedSrcCount;
                 useExplorerClipboardStore.getState().prune(movedSrcs);
               }
             }
@@ -329,25 +358,18 @@ export function FolderTree({ root }: { root: string }) {
               if (files.length === 0 && skippedDirs.length === 0) return;
               const r = await performDrop(files, destDir, coApi.fs);
               refreshParent(destDir);
-              const msgs: string[] = [];
               if (skippedDirs.length > 0) {
-                msgs.push(
+                notify.error(
                   t('errors.folder.skipped_dirs', { count: skippedDirs.length }),
                 );
               }
               if (!r.ok) {
-                msgs.push(
+                notify.error(
                   t('errors.folder.batch_failed', { count: r.failed.length }) +
                     '\n' +
-                    r.failed
-                      .map(
-                        (f) =>
-                          `  ${f.name}: [${f.code}] ${localizeErrorByCode(f.code, f.message)}`,
-                      )
-                      .join('\n'),
+                    formatDropFailureLines(r.failed),
                 );
               }
-              msgs.forEach((m) => notify.error(m));
             } catch (err) {
               const code = (err as { code?: string })?.code ?? 'EXCEPTION';
               notify.error(localizeErrorByCode(code, (err as Error)?.message ?? code), {
@@ -524,16 +546,18 @@ export function FolderTree({ root }: { root: string }) {
         if (!result.ok) {
           for (const f of result.failures) failed.add(f.path);
         }
-        const removed: string[] = [];
+        const removed = new Array<string>(paths.length);
+        let removedCount = 0;
         for (const p of paths) {
           // 文件删除 → 关闭对应 editor tab(目录则关其下所有 tab)。仅对成功项。
           if (!failed.has(p)) {
             useEditorStore.getState().removePath(p);
-            removed.push(p);
+            removed[removedCount++] = p;
           }
         }
         // 删除的源若在剪贴板里(cut/copy 后又删),剪除避免幻影 cut 灰显 + 失效 Paste。
-        if (removed.length > 0) {
+        if (removedCount > 0) {
+          removed.length = removedCount;
           useExplorerClipboardStore.getState().prune(removed);
         }
         if (!result.ok) {
@@ -564,7 +588,8 @@ export function FolderTree({ root }: { root: string }) {
         // 也要在 finally 刷新已成功项涉及的目录,否则已移动/复制文件在树上不显示
         // 而 editor tab 路径已改 → 三者不一致(同 onDropItems 的修复)。
         const touchedSrcParents = new Set<string>();
-        const movedSrcs: string[] = [];
+        const movedSrcs = kind === 'cut' ? new Array<string>(paths.length) : null;
+        let movedSrcCount = 0;
         let okAny = false;
         try {
           // a11y(A135,A134/A133 同族):makeUniqueDestPicker(目标名探测)与 move/copy 循环都
@@ -594,7 +619,7 @@ export function FolderTree({ root }: { root: string }) {
             if (kind === 'cut') {
               useEditorStore.getState().renamePath(src, dest);
               touchedSrcParents.add(dirname(src));
-              movedSrcs.push(src);
+              movedSrcs![movedSrcCount++] = src;
             }
             okAny = true;
           }
@@ -607,7 +632,8 @@ export function FolderTree({ root }: { root: string }) {
           // 时 clear,部分成功把已移走的幻影源留在剪贴板(灰显 + 失效 Paste)——与兄弟
           // onDropItems/root-drop 的 finally prune(movedSrcs) 不对等(第八 session R7 完整性
           // 批判揪出的同族遗漏入口)。copy 不动源,不剪。
-          if (kind === 'cut' && movedSrcs.length > 0) {
+          if (kind === 'cut' && movedSrcs !== null && movedSrcCount > 0) {
+            movedSrcs.length = movedSrcCount;
             useExplorerClipboardStore.getState().prune(movedSrcs);
           }
           if (okAny) {
@@ -695,7 +721,8 @@ export function FolderTree({ root }: { root: string }) {
       // 树/tab/磁盘三者不一致。此前 P2-BB 只修了 onDropItems/onPaste 两个兄弟调用点,
       // 漏了这个 root-drop 分支(「修复未传播到平行调用点」)。
       const touchedSrcParents = new Set<string>();
-      const movedSrcs: string[] = [];
+      const movedSrcs = new Array<string>(moveable.length);
+      let movedSrcCount = 0;
       let movedAny = false;
       try {
         // a11y(A136,A135/A134/A133 同族):root-drop(拖到空白)是 async 事件处理器,React 不
@@ -719,7 +746,7 @@ export function FolderTree({ root }: { root: string }) {
           }
           useEditorStore.getState().renamePath(src, dest);
           touchedSrcParents.add(dirname(src));
-          movedSrcs.push(src);
+          movedSrcs[movedSrcCount++] = src;
           movedAny = true;
         }
       } catch (err) {
@@ -732,6 +759,7 @@ export function FolderTree({ root }: { root: string }) {
             if (sp !== root) refreshParent(sp);
           }
           // 移走的源旧路径已不存在 → 剪除剪贴板里引用它的 cut/copy 项。
+          movedSrcs.length = movedSrcCount;
           useExplorerClipboardStore.getState().prune(movedSrcs);
         }
       }
@@ -750,23 +778,16 @@ export function FolderTree({ root }: { root: string }) {
       const r = await performDrop(files, target, coApi.fs);
       refreshParent(target);
       // 仅在有问题时提示;成功 fs.watch 已自动刷新树
-      const msgs: string[] = [];
       if (skippedDirs.length > 0) {
-        msgs.push(t('errors.folder.skipped_dirs', { count: skippedDirs.length }));
+        notify.error(t('errors.folder.skipped_dirs', { count: skippedDirs.length }));
       }
       if (!r.ok) {
-        msgs.push(
+        notify.error(
           t('errors.folder.batch_failed', { count: r.failed.length }) +
             '\n' +
-            r.failed
-              .map(
-                (f) =>
-                  `  ${f.name}: [${f.code}] ${localizeErrorByCode(f.code, f.message)}`,
-              )
-              .join('\n'),
+            formatDropFailureLines(r.failed),
         );
       }
-      msgs.forEach((m) => notify.error(m));
     } catch (err) {
       const code = (err as { code?: string })?.code ?? 'EXCEPTION';
       notify.error(localizeErrorByCode(code, (err as Error)?.message ?? code), { code });

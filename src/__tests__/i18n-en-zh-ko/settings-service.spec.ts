@@ -87,6 +87,26 @@ describe('settings.service (settings.json) — P2-1 表驱动', () => {
     await expect(service.loadSettings()).resolves.toEqual(settings);
   });
 
+  it('saveSettings 写入相同 settings 时不重复原子写盘', async () => {
+    const service = await importPending<SettingsServiceModule>(
+      '../../../electron/main/services/settings.service',
+    );
+    const renameSpy = vi.spyOn(fs, 'rename');
+    const settings: SettingsData = { version: 1, locale: 'ko' };
+
+    try {
+      await service.saveSettings(settings);
+      const callsAfterFirstWrite = renameSpy.mock.calls.length;
+      expect(callsAfterFirstWrite).toBeGreaterThan(0);
+
+      await service.saveSettings({ version: 1, locale: 'ko' });
+
+      expect(renameSpy.mock.calls).toHaveLength(callsAfterFirstWrite);
+    } finally {
+      renameSpy.mockRestore();
+    }
+  });
+
   // 数据安全(codex 复查 P2):settings.json 真实读错误(EACCES/EIO)此前与解析失败混为
   // 一谈,缓存默认 → 后续 saveSettings 写回覆盖已存 locale。EACCES 须返回默认但不缓存
   // (不污染、可重试恢复),仅 ENOENT/损坏才缓存默认。
@@ -162,5 +182,19 @@ describe('settings.service (settings.json) — P2-1 表驱动', () => {
     );
 
     expect(mapSystemLocale(input)).toBe(expected);
+  });
+
+  it('mapSystemLocale 不通过 split 物化 locale 段数组', async () => {
+    const { mapSystemLocale } = await importPending<SettingsServiceModule>(
+      '../../../electron/main/services/settings.service',
+    );
+    const splitSpy = vi.spyOn(String.prototype, 'split');
+
+    try {
+      expect(mapSystemLocale('zh-CN')).toBe('zh');
+      expect(splitSpy).not.toHaveBeenCalled();
+    } finally {
+      splitSpy.mockRestore();
+    }
   });
 });

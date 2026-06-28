@@ -100,6 +100,8 @@ describe('FolderTree · expandedPaths 持久化接入', () => {
     expect(src).not.toContain('new Set<string>([root])');
     expect(src).not.toContain('return [...next]');
     expect(src).not.toContain('setPersistedExpandedPaths([...outOfRoot, ...next])');
+    expect(src).not.toContain('(isWithinRoot(p, root) ? inRootCurrent : outOfRoot).push(p)');
+    expect(src).toContain('new Array<string>(expandedPaths.size)');
   });
 
   it('把 store.expandedPaths 注入 headless-tree state,并保留 root 展开', () => {

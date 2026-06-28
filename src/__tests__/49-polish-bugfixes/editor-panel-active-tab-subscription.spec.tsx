@@ -6,7 +6,7 @@ import { Profiler } from 'react';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, act } from '@testing-library/react';
+import { cleanup, fireEvent, render, act } from '@testing-library/react';
 import { useEditorStore } from '../../stores/editor.store';
 import { EditorPanel } from '../../panels/Editor/EditorPanel';
 
@@ -64,6 +64,14 @@ describe('打磨 R27 — EditorPanel 只订阅 active tab', () => {
     expect(src).not.toContain('const modeOptions = MODE_IDS.map');
   });
 
+  it('模式切换 options 用预分配数组构造,避免 MODE_IDS.map callback 分配', () => {
+    const src = readFileSync(join(process.cwd(), 'src/panels/Editor/EditorPanel.tsx'), 'utf8');
+
+    expect(src).not.toContain('return MODE_IDS.map');
+    expect(src).toContain('new Array<SegmentedControlOption<EditorMode>>(');
+    expect(src).toContain('MODE_IDS.length');
+  });
+
   it('active markdown 判定复用派生值,不在主体和 toolbar 各算一次', () => {
     const src = readFileSync(join(process.cwd(), 'src/panels/Editor/EditorPanel.tsx'), 'utf8');
 
@@ -101,5 +109,21 @@ describe('打磨 R27 — EditorPanel 只订阅 active tab', () => {
     });
 
     expect(getByTestId('code-editor').textContent).toBe('aaa typed more');
+  });
+
+  it('Cmd/Ctrl+S 大写 key 不调用 toLowerCase 也走保存快捷键判断', () => {
+    const { container } = render(<EditorPanel />);
+    const root = container.firstElementChild;
+    if (!root) throw new Error('missing editor root');
+    const lowerSpy = vi.spyOn(String.prototype, 'toLowerCase');
+
+    try {
+      fireEvent.keyDown(root, { key: 'S', metaKey: true });
+      expect(
+        lowerSpy.mock.contexts.some((ctx) => String(ctx) === 'S'),
+      ).toBe(false);
+    } finally {
+      lowerSpy.mockRestore();
+    }
   });
 });

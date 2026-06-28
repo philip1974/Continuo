@@ -6,9 +6,23 @@
 //   - reviews parseReview / isValidReview / isValidAggregate 的 pluginId(../marketplace,E113)
 // pluginId 被用作 reviews aggregate byPid key、与 marketplace entry.id 对账、拼进 URL/路径、
 // 写进 PluginManager 列表 → 每个抽取/校验入口都须统一收敛形态(三处历史漂移见 E123)。
-const PLUGIN_ID_RE = /^[a-z0-9._-]+$/;
-
 /** plugin id 形态合法:仅小写字母数字与 `. _ -`,且非 `.`/`..`(路径段语义)。 */
 export function isValidPluginId(id: string): boolean {
-  return PLUGIN_ID_RE.test(id) && id !== '.' && id !== '..';
+  if (id === '.' || id === '..') return false;
+  return hasOnlyPluginIdChars(id);
+}
+
+function hasOnlyPluginIdChars(id: string): boolean {
+  if (id.length === 0) return false;
+  for (let i = 0; i < id.length; i += 1) {
+    const code = id.charCodeAt(i);
+    const ok =
+      (code >= 97 && code <= 122) ||
+      (code >= 48 && code <= 57) ||
+      code === 46 ||
+      code === 95 ||
+      code === 45;
+    if (!ok) return false;
+  }
+  return true;
 }

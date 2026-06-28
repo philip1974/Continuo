@@ -45,6 +45,14 @@ export function createSessionCache<T>(opts: {
 }): SessionCache<T> {
   let memory: Wrapped<T> | null = null;
 
+  function clearStorage(): void {
+    try {
+      sessionStorage.removeItem(opts.key);
+    } catch {
+      /* */
+    }
+  }
+
   function readStorage(): Wrapped<T> | null {
     try {
       const raw = sessionStorage.getItem(opts.key);
@@ -52,11 +60,7 @@ export function createSessionCache<T>(opts: {
       // 边界(E71):解析前按原始串长度拦,防超大缓存的 JSON.parse 卡顿。超限 = 篡改/旧残留 →
       // cache-miss + 清毒(removeItem),避免坏缓存反复触发解析。
       if (raw.length > (opts.maxRawLength ?? DEFAULT_MAX_RAW_LENGTH)) {
-        try {
-          sessionStorage.removeItem(opts.key);
-        } catch {
-          /* */
-        }
+        clearStorage();
         return null;
       }
       const parsed = JSON.parse(raw) as { fetchedAt?: unknown; data?: unknown };
@@ -71,11 +75,16 @@ export function createSessionCache<T>(opts: {
         ts < 0 ||
         ts > Date.now() + FUTURE_SKEW_MS
       ) {
+        clearStorage();
         return null;
       }
-      if (!opts.validate(parsed.data)) return null;
+      if (!opts.validate(parsed.data)) {
+        clearStorage();
+        return null;
+      }
       return { fetchedAt: ts, data: parsed.data };
     } catch {
+      clearStorage();
       return null;
     }
   }
@@ -104,11 +113,7 @@ export function createSessionCache<T>(opts: {
     },
     reset() {
       memory = null;
-      try {
-        sessionStorage.removeItem(opts.key);
-      } catch {
-        /* */
-      }
+      clearStorage();
     },
   };
 }

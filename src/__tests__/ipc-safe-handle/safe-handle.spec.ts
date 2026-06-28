@@ -319,6 +319,30 @@ describe('defaultIsTrustedFrame', () => {
     });
   });
 
+  it('dev 下重复校验同一 expected origin 时缓存 ELECTRON_RENDERER_URL 解析结果', () => {
+    const expected = 'http://127.0.0.1:46173/';
+    const RealURL = globalThis.URL;
+    let expectedConstructs = 0;
+    globalThis.URL = function URLSpy(raw: string | URL, base?: string | URL) {
+      if (raw === expected) expectedConstructs += 1;
+      return new RealURL(raw, base);
+    } as unknown as typeof URL;
+
+    try {
+      withEnv(expected, () => {
+        expect(
+          defaultIsTrustedFrame({ url: 'http://127.0.0.1:46173/index.html' }),
+        ).toBe(true);
+        expect(
+          defaultIsTrustedFrame({ url: 'http://127.0.0.1:46173/other.html' }),
+        ).toBe(true);
+      });
+      expect(expectedConstructs).toBe(1);
+    } finally {
+      globalThis.URL = RealURL;
+    }
+  });
+
   it('跨 origin → false', () => {
     withEnv('http://localhost:5173/', () => {
       expect(defaultIsTrustedFrame({ url: 'http://evil.com/' })).toBe(false);

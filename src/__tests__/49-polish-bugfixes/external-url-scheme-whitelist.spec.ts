@@ -10,7 +10,7 @@
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { isAllowedExternalUrl } from '../../../electron/main/services/shell.service';
 import { MAX_EXTERNAL_URL_LEN } from '../../../electron/shared/url-limits';
 
@@ -21,6 +21,18 @@ describe('topic49 6thS · external URL scheme whitelist', () => {
     expect(isAllowedExternalUrl('https://github.com/x/y')).toBe(true);
     expect(isAllowedExternalUrl('http://example.com')).toBe(true);
     expect(isAllowedExternalUrl('mailto:a@b.com')).toBe(true);
+  });
+
+  it('scheme 白名单走字符扫描,不调用 RegExp.test', () => {
+    const testSpy = vi.spyOn(RegExp.prototype, 'test');
+    try {
+      expect(isAllowedExternalUrl('HTTPS://github.com/x/y')).toBe(true);
+      expect(isAllowedExternalUrl('MAILTO:a@b.com')).toBe(true);
+      expect(isAllowedExternalUrl('javascript:alert(1)')).toBe(false);
+      expect(testSpy).not.toHaveBeenCalled();
+    } finally {
+      testSpy.mockRestore();
+    }
   });
 
   it('安全 S6:拒绝 file:(含 UNC)—— 远程不受信数据(marketplace authorUrl 等)不得经 OS 打开本地文件', () => {

@@ -294,6 +294,50 @@ const resizeChains = new Map<string, Promise<void>>();
 const RESET_PREFIX = '\x1b[0m';
 const RESET_PREFIX_BYTES = 4;
 
+function hasCompleteAnsiCsi(slice: string): boolean {
+  for (let i = 0; i < slice.length - 2; i += 1) {
+    if (slice.charCodeAt(i) !== 0x1b || slice.charCodeAt(i + 1) !== 91) {
+      continue;
+    }
+
+    for (let j = i + 2; j < slice.length; j += 1) {
+      const code = slice.charCodeAt(j);
+      if ((code >= 48 && code <= 57) || code === 59) {
+        continue;
+      }
+      return (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+    }
+  }
+
+  return false;
+}
+
+function hasInPlaceAnsiCsi(data: string): boolean {
+  for (let i = 0; i < data.length - 2; i += 1) {
+    if (data.charCodeAt(i) !== 0x1b || data.charCodeAt(i + 1) !== 91) {
+      continue;
+    }
+
+    for (let j = i + 2; j < data.length; j += 1) {
+      const code = data.charCodeAt(j);
+      if (code >= 48 && code <= 57) {
+        continue;
+      }
+      return (
+        code === 65 ||
+        code === 66 ||
+        code === 67 ||
+        code === 68 ||
+        code === 71 ||
+        code === 72 ||
+        code === 75
+      );
+    }
+  }
+
+  return false;
+}
+
 export function safeTruncate(data: string, maxBytes: number): string {
   // 边界(E149,E125 同族):按真实 UTF-8 字节判定/截断(旧实现 data.length=UTF-16 code unit →
   // 多字节输出保留远超 maxBytes 字节)。从尾部累积字节,找保留 ≤ maxBytes 字节的最早**字符边界**。
@@ -327,8 +371,7 @@ export function safeTruncate(data: string, maxBytes: number): string {
   for (let i = cutPoint; i >= searchStart; i--) {
     if (data.charCodeAt(i) === 0x1b) {
       const slice = data.slice(i, cutPoint + 1);
-      // eslint-disable-next-line no-control-regex
-      if (!/\x1b\[[\d;]*[A-Za-z]/.test(slice)) {
+      if (!hasCompleteAnsiCsi(slice)) {
         cutPoint = i;
       }
       break;
@@ -344,8 +387,7 @@ export function safeTruncate(data: string, maxBytes: number): string {
  * in-place 更新延后到 64ms 降帧率,避免大量重绘抖动。
  */
 export function isInPlaceUpdate(data: string): boolean {
-  // eslint-disable-next-line no-control-regex
-  return /\x1b\[\d*[ABCDGHK]/.test(data) && data.length < 512;
+  return data.length < 512 && hasInPlaceAnsiCsi(data);
 }
 
 // ── PTY 生命周期 ──────────────────────────────────────────────

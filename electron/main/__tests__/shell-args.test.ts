@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { defaultShellArgs, shellFamilyForPath } from '../services/shell-args';
 
 describe('defaultShellArgs — 跨平台默认 shell 参数', () => {
@@ -26,6 +26,42 @@ describe('defaultShellArgs — 跨平台默认 shell 参数', () => {
       '-l',
       '-i',
     ]);
+  });
+
+  it('去 .exe 后缀不通过正则 replace 分配', () => {
+    const replaceSpy = vi.spyOn(String.prototype, 'replace');
+
+    try {
+      expect(defaultShellArgs('C:\\msys64\\usr\\bin\\BASH.EXE')).toEqual([
+        '-l',
+        '-i',
+      ]);
+      expect(
+        replaceSpy.mock.calls.some((args) => String(args[0]) === '/\\.exe$/'),
+      ).toBe(false);
+    } finally {
+      replaceSpy.mockRestore();
+    }
+  });
+
+  it('已小写 ASCII shell 名不调用 toLowerCase', () => {
+    const lowerSpy = vi.spyOn(String.prototype, 'toLowerCase');
+
+    try {
+      expect(defaultShellArgs('/bin/zsh')).toEqual(['-l', '-i']);
+      expect(shellFamilyForPath('/usr/bin/bash')).toBe('posix');
+      expect(
+        lowerSpy.mock.contexts.some(
+          (ctx) => String(ctx) === 'zsh' || String(ctx) === 'bash',
+        ),
+      ).toBe(false);
+      expect(defaultShellArgs('C:\\msys64\\usr\\bin\\BASH.EXE')).toEqual([
+        '-l',
+        '-i',
+      ]);
+    } finally {
+      lowerSpy.mockRestore();
+    }
   });
 });
 

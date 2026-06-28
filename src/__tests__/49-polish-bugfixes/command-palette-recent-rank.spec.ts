@@ -114,7 +114,7 @@ describe('打磨 R55 — CommandPalette recent rank 预计算', () => {
     expect(sortByRecent.toString()).not.toContain('out.push(');
   });
 
-  it('recent 置顶用 rank slot 单趟放置,不再额外 sort recent 小数组', () => {
+  it('recent 置顶用 rank slot 单趟放置,others 已排序时不 sort', () => {
     const items = [
       command('a', 'Alpha'),
       command('b', 'Beta'),
@@ -130,10 +130,43 @@ describe('打磨 R55 — CommandPalette recent rank 预计算', () => {
       );
 
       expect(out.map((d) => d.cmd.id)).toEqual(['c', 'a', 'b', 'd']);
+      expect(sortSpy).not.toHaveBeenCalled();
+    } finally {
+      sortSpy.mockRestore();
+    }
+  });
+
+  it('recent 置顶后 others 未排序时仍排序一次', () => {
+    const items = [
+      command('d', 'Delta'),
+      command('a', 'Alpha'),
+      command('c', 'Charlie'),
+      command('b', 'Beta'),
+    ];
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      const out = sortByRecent(
+        items as unknown as Parameters<typeof sortByRecent>[0],
+        ['c', 'a'],
+      );
+
+      expect(out.map((d) => d.cmd.id)).toEqual(['c', 'a', 'b', 'd']);
       expect(sortSpy).toHaveBeenCalledTimes(1);
     } finally {
       sortSpy.mockRestore();
     }
+  });
+
+  it('recent rank slots 按 top-N 预分配,不靠稀疏数组扩容', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/plugins/command-palette/CommandPalette.tsx'),
+      'utf-8',
+    );
+
+    expect(src).not.toContain('const recent: (DisplayCommand | undefined)[] = []');
+    expect(src).toContain('new Array<DisplayCommand | undefined>(');
+    expect(src).toContain('Math.min(recentIds.length, RECENT_TOP_N)');
   });
 
   it('无 recent 时直接按标题排序,不做 rank map 查找', () => {

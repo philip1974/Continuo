@@ -87,6 +87,9 @@ const MAX_HOOK_FILE_BYTES = 1024 * 1024; // 1 MiB:stop-hook 是小元数据 JSON
 const MAX_BUFFERED_BYTES = 16 * 1024 * 1024; // buffered 总字节预算(远超正常元数据量)
 export const FIELD_MAX = 1024; // session_id/turn_id/cwd/transcript_path 标识/路径字段上限
 export const LAST_MSG_MAX = 64 * 1024; // last_assistant_message 正文上限
+const CODEX_STOP_HEADER = '[[hooks.Stop]]';
+const CODEX_MANAGED_MARKER = '# continuo-managed';
+const COMMAND_KEY = 'command';
 
 // 边界(E83,E82/E30 数量上限族):hook 目录文件数上限。maxEntries 只限解析后 buffer、
 // MAX_HOOK_FILE_BYTES 只限单文件大小,目录文件**数量**无界 —— 畸形/堆积的 cc_*/codex_* 文件让
@@ -94,6 +97,19 @@ export const LAST_MSG_MAX = 64 * 1024; // last_assistant_message 正文上限
 // unlink 才是主导开销),主进程 I/O/CPU 被外部目录状态放大。每轮枚举后截断到 N 候选,超限告警 +
 // 留给后续轮继续清理(cleanupStale 周期跑,每轮再削 N)。start 扫描与 cleanupStale 共用。
 const MAX_HOOK_DIR_ENTRIES = 4096;
+
+export function sortHookDirNames(names: string[]): string[] {
+  for (let i = 1; i < names.length; i++) {
+    if (compareHookDirName(names[i - 1]!, names[i]!) > 0) {
+      return names.sort(compareHookDirName);
+    }
+  }
+  return names;
+}
+
+function compareHookDirName(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
 
 async function readHookDirCapped(dir: string, max: number): Promise<string[]> {
   // 边界(E212,E211 同模式):用 opendir 流式枚举,累计到 max 即关闭返回 —— 不用 readdir 一次性把
@@ -120,21 +136,155 @@ async function readHookDirCapped(dir: string, max: number): Promise<string[]> {
   // opendir 流式枚举顺序不保证(与旧 readdir 可能不同),而 ingest 顺序决定同 session 多 hook 文件
   // 谁先入 buffered(首个匹配胜出)。排序使枚举顺序确定(旧 readdir 顺序本是未定义),消除"谁胜出"
   // 的平台/实现相关性。
-  names.sort();
-  return names;
+  return sortHookDirNames(names);
+}
+
+function equalsAsciiIgnoreCase(value: string, expectedLower: string): boolean {
+  if (value.length !== expectedLower.length) return false;
+  for (let i = 0; i < expectedLower.length; i += 1) {
+    const actual = value.charCodeAt(i);
+    const expected = expectedLower.charCodeAt(i);
+    if (actual === expected) continue;
+    const folded = actual >= 65 && actual <= 90 ? actual + 32 : actual;
+    if (folded !== expected) return false;
+  }
+  return true;
+}
+
+function startsWithRunnerToken(value: string, tokenLower: 'claude' | 'codex'): boolean {
+  if (value.length < tokenLower.length) return false;
+  for (let i = 0; i < tokenLower.length; i += 1) {
+    const actual = value.charCodeAt(i);
+    const expected = tokenLower.charCodeAt(i);
+    if (actual === expected) continue;
+    const folded = actual >= 65 && actual <= 90 ? actual + 32 : actual;
+    if (folded !== expected) return false;
+  }
+  return (
+    value.length === tokenLower.length ||
+    isEcmaWhitespaceCode(value.charCodeAt(tokenLower.length))
+  );
+}
+
+function isEcmaWhitespaceCode(code: number): boolean {
+  return (
+    (code >= 9 && code <= 13) ||
+    code === 32 ||
+    code === 160 ||
+    code === 5760 ||
+    (code >= 8192 && code <= 8202) ||
+    code === 8232 ||
+    code === 8233 ||
+    code === 8239 ||
+    code === 8287 ||
+    code === 12288 ||
+    code === 65279
+  );
+}
+
+function skipEcmaWhitespace(text: string, index: number, limit = text.length): number {
+  let i = index;
+  while (i < limit && isEcmaWhitespaceCode(text.charCodeAt(i))) {
+    i += 1;
+  }
+  return i;
+}
+
+function findCodexCommandAssignment(
+  text: string,
+  from: number,
+  limit: number,
+): { quoteStart: number; quoteEnd: number } | null {
+  let commandAt = text.indexOf(COMMAND_KEY, from);
+  while (commandAt >= 0 && commandAt < limit) {
+    let i = skipEcmaWhitespace(text, commandAt + COMMAND_KEY.length, limit);
+    if (i < limit && text.charCodeAt(i) === 61) {
+      i = skipEcmaWhitespace(text, i + 1, limit);
+      if (i < limit && text.charCodeAt(i) === 34) {
+        for (let j = i + 1; j < limit; j += 1) {
+          const code = text.charCodeAt(j);
+          if (code === 92) {
+            j += 1;
+            continue;
+          }
+          if (code === 34) {
+            return { quoteStart: i, quoteEnd: j + 1 };
+          }
+        }
+        return null;
+      }
+    }
+    commandAt = text.indexOf(COMMAND_KEY, commandAt + 1);
+  }
+
+  return null;
+}
+
+function hasCodexMultilineStopHookCommand(text: string): boolean {
+  const stopAt = text.indexOf(CODEX_STOP_HEADER);
+  if (stopAt < 0) return false;
+
+  let commandAt = text.indexOf(COMMAND_KEY, stopAt + CODEX_STOP_HEADER.length);
+  while (commandAt >= 0) {
+    let i = skipEcmaWhitespace(text, commandAt + COMMAND_KEY.length);
+    if (text.charCodeAt(i) === 61) {
+      i = skipEcmaWhitespace(text, i + 1);
+      if (
+        text.charCodeAt(i) === 39 &&
+        text.charCodeAt(i + 1) === 39 &&
+        text.charCodeAt(i + 2) === 39
+      ) {
+        return true;
+      }
+    }
+    commandAt = text.indexOf(COMMAND_KEY, commandAt + 1);
+  }
+
+  return false;
+}
+
+function findManagedCodexStopCommand(
+  text: string,
+): { quoteStart: number; quoteEnd: number } | null {
+  let markerAt = text.indexOf(CODEX_MANAGED_MARKER);
+  while (markerAt >= 0) {
+    let scanStart = skipEcmaWhitespace(
+      text,
+      markerAt + CODEX_MANAGED_MARKER.length,
+    );
+    if (text.startsWith(CODEX_STOP_HEADER, scanStart)) {
+      scanStart = skipEcmaWhitespace(text, scanStart + CODEX_STOP_HEADER.length);
+    }
+
+    const nextStopAt = text.indexOf(CODEX_STOP_HEADER, scanStart);
+    const limit = nextStopAt >= 0 ? nextStopAt : text.length;
+    const command = findCodexCommandAssignment(text, scanStart, limit);
+    if (command !== null) return command;
+
+    markerAt = text.indexOf(CODEX_MANAGED_MARKER, markerAt + 1);
+  }
+
+  return null;
 }
 
 export function inferRunner(session: TerminalSessionMetaLike): RunnerKind {
-  const label = session.agentLabel?.toLowerCase() ?? '';
-  if (label === 'cc' || label === 'claude' || label === 'claude-code') {
-    return 'cc';
+  const label = session.agentLabel;
+  if (label !== undefined) {
+    if (
+      equalsAsciiIgnoreCase(label, 'cc') ||
+      equalsAsciiIgnoreCase(label, 'claude') ||
+      equalsAsciiIgnoreCase(label, 'claude-code')
+    ) {
+      return 'cc';
+    }
+    if (equalsAsciiIgnoreCase(label, 'codex')) return 'codex';
   }
-  if (label === 'codex') return 'codex';
 
-  const autorun = session.autorun?.toLowerCase() ?? '';
-  const match = /^(claude|codex)(?:\s|$)/.exec(autorun);
-  if (match?.[1] === 'claude') return 'cc';
-  if (match?.[1] === 'codex') return 'codex';
+  const autorun = session.autorun;
+  if (autorun !== undefined) {
+    if (startsWithRunnerToken(autorun, 'claude')) return 'cc';
+    if (startsWithRunnerToken(autorun, 'codex')) return 'codex';
+  }
   return 'unknown';
 }
 
@@ -212,9 +362,19 @@ function filterKey(filter: AwaitFilter): string {
 }
 
 function parseFilenameForWindowId(fileName: string): number | null {
-  const match = /^(cc|codex)_([0-9]+)_/.exec(fileName);
-  if (match?.[2] === undefined) return null;
-  return Number.parseInt(match[2], 10);
+  let start: number;
+  if (fileName.startsWith('cc_')) start = 3;
+  else if (fileName.startsWith('codex_')) start = 6;
+  else return null;
+
+  let end = start;
+  while (end < fileName.length) {
+    const code = fileName.charCodeAt(end);
+    if (code < 48 || code > 57) break;
+    end += 1;
+  }
+  if (end === start || fileName.charCodeAt(end) !== 95) return null;
+  return Number.parseInt(fileName.slice(start, end), 10);
 }
 
 export interface HookFileBroker {
@@ -408,16 +568,24 @@ export function createHookFileBroker(
       bufferedBytes += entry.byteSize;
       // 边界(E150):双闸淘汰 —— 条数超 maxEntries 或总字节超 MAX_BUFFERED_BYTES,FIFO 淘汰最旧,
       // 把 buffered 常驻内存钳到预算(防 500×1MiB ≈ 500MiB)。至少保留 1 条(刚 push 的)。
+      let dropCount = 0;
+      let dropBytes = 0;
       while (
-        buffered.length > 1 &&
-        (buffered.length > maxEntries || bufferedBytes > maxBufferedBytes)
+        buffered.length - dropCount > 1 &&
+        (buffered.length - dropCount > maxEntries ||
+          bufferedBytes - dropBytes > maxBufferedBytes)
       ) {
-        const dropped = buffered.shift();
+        const dropped = buffered[dropCount];
         if (dropped !== undefined) {
           bufferedNames.delete(dropped.fileName);
-          bufferedBytes -= dropped.byteSize;
+          dropBytes += dropped.byteSize;
           void unlink(path.join(hookEventsDir, dropped.fileName)).catch(() => {});
         }
+        dropCount += 1;
+      }
+      if (dropCount > 0) {
+        buffered.splice(0, dropCount);
+        bufferedBytes -= dropBytes;
       }
     } finally {
       inFlight.delete(fileName);
@@ -762,20 +930,17 @@ async function mergeCodexConfig(
   }
   // kind === 'missing' → text 保持 '',新建
 
-  if (/\[\[hooks\.Stop\]\][\s\S]*?command\s*=\s*'''/.test(text)) {
+  if (hasCodexMultilineStopHookCommand(text)) {
     return { installed: false, reason: 'unrecognized-existing-stop-hook' };
   }
 
-  // 转义感知 quoted-string:command 经 JSON.stringify 含 \" 转义,`"[^"]*"` 会在第一个
-  // \" 处截断(codex P1)。用 "(?:\\.|[^"\\])*" 正确跨越转义引号。
+  // 转义感知 quoted-string:command 经 JSON.stringify 含 \" 转义,朴素引号扫描会在第一个
+  // \" 处截断(codex P1)。findManagedCodexStopCommand 会跨过转义字符,完整定位 command 字符串。
   // 块边界:managed marker 到 command 之间不得跨入**下一个** [[hooks.Stop]](否则
   // managed 块缺/坏 command 时会一路匹配到用户自有 Stop 的 command,误替/写坏 config —
   // README I6 契约,codex P1)。兼容两种格式:marker 在 Stop 块前(生产 mergeCodexConfig)
-  // 用 `(?:\[\[hooks\.Stop\]\]\s*)?` 吞掉 managed 自身的 Stop 头;marker 在块内(I6 测试)
-  // 时该可选段缺省。其后 `(?!\[\[hooks\.Stop\]\])` 禁止跨入下一段。转义引号见上注。
-  const managedStopPattern =
-    /# continuo-managed\s*(?:\[\[hooks\.Stop\]\]\s*)?(?:(?!\[\[hooks\.Stop\]\])[\s\S])*?command\s*=\s*"(?:\\.|[^"\\])*"/;
-  const managedStop = managedStopPattern.exec(text);
+  // 时吞掉 managed 自身的 Stop 头;marker 在块内(I6 测试)时从 marker 后直接扫描。
+  const managedStop = findManagedCodexStopCommand(text);
   if (managedStop !== null) {
     if (text.includes(hookEventsDir)) {
       return { installed: false, reason: 'already-installed' };
@@ -816,16 +981,17 @@ async function replaceManagedCodexStopHook(
   // 转义感知 quoted-string(见 mergeCodexConfig 注释):command 含 JSON 转义引号 \",
   // `"[^"]*"` 只匹配到第一个 \" 即截断,替换后旧 command 尾巴残留 → 损坏 .codex/config.toml
   // (codex P1)。`"(?:\\.|[^"\\])*"` 跨越转义引号完整匹配整个 command 字符串。
-  // 块边界(见 mergeCodexConfig managedStopPattern 注释):不跨入下一个 [[hooks.Stop]],
+  // 块边界(见 mergeCodexConfig 注释):不跨入下一个 [[hooks.Stop]],
   // 兼容 marker 在块前/块内两种格式。managed 块缺/坏 command 时不匹配 → 返回 unrecognized
   // (下方 next===text),绝不误替用户自有 Stop 的 command。
-  const next = text.replace(
-    /(# continuo-managed\s*(?:\[\[hooks\.Stop\]\]\s*)?(?:(?!\[\[hooks\.Stop\]\])[\s\S])*?command\s*=\s*)"(?:\\.|[^"\\])*"/,
-    `$1${JSON.stringify(command)}`,
-  );
-  if (next === text) {
+  const managedStop = findManagedCodexStopCommand(text);
+  if (managedStop === null) {
     return { installed: false, reason: 'unrecognized-existing-stop-hook' };
   }
+  const next =
+    text.slice(0, managedStop.quoteStart) +
+    JSON.stringify(command) +
+    text.slice(managedStop.quoteEnd);
   await copyFile(configPath, `${configPath}.continuo-bak.${Date.now()}`);
   // crash-safe 原子写(同 R6 理由)
   await atomicWriteFile(configPath, next);

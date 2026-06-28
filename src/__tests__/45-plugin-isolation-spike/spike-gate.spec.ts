@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -122,6 +122,21 @@ describeIfImplemented('topic 45 packaged spike gate', () => {
     ).toEqual({ workspace: '/foo' });
   });
 
+  it('stripSpikeQuery gate closed 时单趟 for-in,不通过 Object.entries 物化中间数组', async () => {
+    const entriesSpy = vi.spyOn(Object, 'entries');
+    try {
+      expect(
+        (await loadSpikeGate()).stripSpikeQuery(
+          { spike: 'plugin-isolation', spikeAck: '1', workspace: '/foo' },
+          false,
+        ),
+      ).toEqual({ workspace: '/foo' });
+      expect(entriesSpy).not.toHaveBeenCalled();
+    } finally {
+      entriesSpy.mockRestore();
+    }
+  });
+
   it('stripSpikeQuery keeps spike query when gate is open', async () => {
     expect(
       (await loadSpikeGate()).stripSpikeQuery({ spike: 'plugin-isolation', workspace: '/foo' }, true),
@@ -162,6 +177,15 @@ describeIfImplemented('topic 45 packaged spike gate', () => {
     ).toEqual({ windowSeq: '2', workspace: '/foo', fresh: '1', spike: 'plugin-isolation' });
   });
 
+  it('createMainWindow dev URL query 注入不通过 Object.entries(queryParts) 物化中间数组', () => {
+    const src = readFileSync(
+      resolve(process.cwd(), 'electron/main/index.ts'),
+      'utf8',
+    );
+
+    expect(src).not.toContain('Object.entries(queryParts)');
+  });
+
   it('spikeAllowed returns dev reason in development', async () => {
     expect(
       (await loadSpikeGate()).spikeAllowed({
@@ -172,11 +196,64 @@ describeIfImplemented('topic 45 packaged spike gate', () => {
     ).toEqual({ allowed: true, reason: 'dev' });
   });
 
+  it('dev 模式先按 packaged 短路,不扫描 argv/url', async () => {
+    const argv = ['--spike'];
+    Object.defineProperty(argv, 0, {
+      get() {
+        throw new Error('E310 regression: dev mode should not scan argv');
+      },
+    });
+
+    expect(
+      (await loadSpikeGate()).spikeAllowed({
+        url: 'http://localhost:5173/?spike=plugin-isolation',
+        argv,
+        packaged: false,
+      }),
+    ).toEqual({ allowed: true, reason: 'dev' });
+  });
+
   it('spikeAllowed returns env-opt-in reason for packaged opt-in', async () => {
     expect(
       (await loadSpikeGate()).spikeAllowed({
         url: 'file:///app/index.html?spike=plugin-isolation',
         argv: ['CONTINUO_SPIKE=1'],
+        packaged: true,
+      }),
+    ).toEqual({ allowed: true, reason: 'env-opt-in' });
+  });
+
+  it('packaged 已 opt-in 时不再扫描 url query', async () => {
+    const m = await loadSpikeGate();
+    const charSpy = vi.spyOn(String.prototype, 'charCodeAt').mockImplementation(() => {
+      throw new Error('E310 regression: opt-in should not scan url');
+    });
+    try {
+      expect(
+        m.spikeAllowed({
+          url: 'file:///app/index.html?spike=plugin-isolation',
+          argv: ['CONTINUO_SPIKE=1'],
+          packaged: true,
+        }),
+      ).toEqual({ allowed: true, reason: 'env-opt-in' });
+    } finally {
+      charSpy.mockRestore();
+    }
+  });
+
+  it('packaged 已通过 env opt-in 时不扫描 argv', async () => {
+    process.env.CONTINUO_SPIKE = '1';
+    const argv = ['--spike'];
+    Object.defineProperty(argv, 0, {
+      get() {
+        throw new Error('E310 regression: env opt-in should not scan argv');
+      },
+    });
+
+    expect(
+      (await loadSpikeGate()).spikeAllowed({
+        url: 'file:///app/index.html?spike=plugin-isolation',
+        argv,
         packaged: true,
       }),
     ).toEqual({ allowed: true, reason: 'env-opt-in' });
@@ -233,6 +310,30 @@ describeIfImplemented('topic 45 packaged spike gate', () => {
         packaged: true,
       }),
     ).toEqual({ allowed: false, reason: 'packaged-blocked' });
+  });
+
+  it('E191 spike query 检测走字符扫描,不调用 RegExp.test', async () => {
+    const m = await loadSpikeGate();
+    const testSpy = vi.spyOn(RegExp.prototype, 'test');
+    try {
+      expect(
+        m.spikeAllowed({
+          url: 'file:///app/index.html?x=1&spike=x',
+          argv: [],
+          packaged: true,
+        }),
+      ).toEqual({ allowed: false, reason: 'packaged-blocked' });
+      expect(
+        m.spikeAllowed({
+          url: 'file:///app/index.html?x=1&spikeX=x',
+          argv: [],
+          packaged: true,
+        }),
+      ).toEqual({ allowed: false, reason: 'env-missing' });
+      expect(testSpy).not.toHaveBeenCalled();
+    } finally {
+      testSpy.mockRestore();
+    }
   });
 
   it('E191 guardNav 超长 url 阻止时日志只记截断摘要(不写完整 url)', async () => {

@@ -4,6 +4,30 @@
 // FolderTree / drop-handlers / mutate-actions 曾各自手写同一段 dirname,路径边界
 // 规则一改要同步四处易漂移 → 收敛到此单一来源。
 
+function isPathSeparatorCode(code: number): boolean {
+  return code === 47 || code === 92;
+}
+
+function isAsciiAlphaCode(code: number): boolean {
+  return (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+}
+
+function isBareWindowsDrive(value: string): boolean {
+  return (
+    value.length === 2 &&
+    isAsciiAlphaCode(value.charCodeAt(0)) &&
+    value.charCodeAt(1) === 58
+  );
+}
+
+function trimTrailingSeparators(path: string): string {
+  let end = path.length;
+  while (end > 0 && isPathSeparatorCode(path.charCodeAt(end - 1))) {
+    end -= 1;
+  }
+  return end === path.length ? path : path.slice(0, end);
+}
+
 /**
  * 跨平台 dirname:吃 `/` 与 `\`。先去尾部分隔符,取最后一个分隔符位置;
  * 无分隔符 → `''`(裸文件名);分隔符在 0 位(POSIX 根下直接项)→ `'/'`;
@@ -14,13 +38,13 @@
  *     另一路径 → listDir/invalidateChildrenIds 读错目录、UI 不刷新)。
  */
 export function dirname(p: string): string {
-  const trimmed = p.replace(/[\\/]+$/, '');
+  const trimmed = trimTrailingSeparators(p);
   const idx = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
   if (idx < 0) return '';
   const head = trimmed.slice(0, idx);
   // Windows 盘根:`C:\foo` 的父是盘根 `C:\`,不是 drive-relative `C:`。与 POSIX `/a → /`
   // 同等(根下直接项的父=根)。codex 跨平台复查 P2。
-  if (/^[A-Za-z]:$/.test(head)) return `${head}\\`;
+  if (isBareWindowsDrive(head)) return `${head}\\`;
   return head || '/';
 }
 
@@ -29,7 +53,7 @@ export function dirname(p: string): string {
  * tree-config(root entry name)/ ExplorerHeader(面包屑)用此 trim 语义。
  */
 export function basename(p: string): string {
-  const trimmed = p.replace(/[\\/]+$/, '');
+  const trimmed = trimTrailingSeparators(p);
   const idx = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
   return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
 }

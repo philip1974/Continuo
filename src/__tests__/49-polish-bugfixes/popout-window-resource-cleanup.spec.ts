@@ -67,4 +67,9 @@ describe('topic49 · index.ts 经 helper 覆盖全窗口', () => {
   it('窗口级资源清理挂在覆盖全窗口的 browser-window-created(含 popout)', () => {
     expect(src).toMatch(/browser-window-created/);
   });
+
+  it('popout reload 快捷键判断不对 input.key 做 lowercase 分配', () => {
+    expect(src).not.toContain('input.key.toLowerCase()');
+    expect(src).toContain('isReloadKey(input.key)');
+  });
 });

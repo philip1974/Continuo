@@ -86,6 +86,21 @@ describe('打磨 R26 — 命令 hotkey 预编译', () => {
     expect(buildCompiledBindings.toString()).not.toContain('out.push(');
   });
 
+  it('无 hotkey 且无 override 的命令不调用 getEffectiveHotkey', () => {
+    const commands = [
+      { id: 'a', title: 'A', hotkey: 'mod+a', fn: vi.fn() },
+      { id: 'b', title: 'B', fn: vi.fn() },
+      { id: 'c', title: 'C', fn: vi.fn() },
+    ];
+    useKeybindingsStore.setState({ overrides: { c: 'mod+c' } });
+
+    const bindings = buildCompiledBindings(commands, 'other', { c: 'mod+c' });
+
+    expect(bindings).toHaveLength(2);
+    expect(bindings.map((binding) => binding.cmd.id)).toEqual(['a', 'c']);
+    expect(getEffSpy).toHaveBeenCalledTimes(2);
+  });
+
   it('命中的 hotkey 仍正确触发命令(预编译表匹配)', () => {
     const fn = vi.fn();
     const reg = new CommandRegistry();

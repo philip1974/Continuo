@@ -36,7 +36,16 @@ interface CodeEditorProps {
 export function fileExtensionLower(fileName: string): string | undefined {
   const idx = fileName.lastIndexOf('.');
   if (idx < 0 || idx === fileName.length - 1) return undefined;
-  return fileName.slice(idx + 1).toLowerCase();
+  let hasUpper = false;
+  for (let i = idx + 1; i < fileName.length; i += 1) {
+    const code = fileName.charCodeAt(i);
+    if (code >= 65 && code <= 90) {
+      hasUpper = true;
+      break;
+    }
+  }
+  const ext = fileName.slice(idx + 1);
+  return hasUpper ? ext.toLowerCase() : ext;
 }
 
 const EMPTY_LANGUAGE_EXTENSIONS: Extension[] = [];

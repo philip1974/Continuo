@@ -10,7 +10,7 @@ import {
   type Platform,
 } from '@/plugins/command-palette/format-hotkey';
 import {
-  HOTKEY_SHAPE_RE,
+  isValidHotkeyShape,
   type CommandSpec,
 } from '@/plugins/registries/CommandRegistry';
 import { useT } from '@/i18n';
@@ -21,6 +21,16 @@ const EMPTY_CONFLICTS: readonly CommandSpec[] = [];
 
 function appendComboPart(combo: string, part: string): string {
   return combo ? `${combo}+${part}` : part;
+}
+
+function lowerIfNeeded(value: string): string {
+  for (let i = 0; i < value.length; i += 1) {
+    const code = value.charCodeAt(i);
+    if ((code >= 65 && code <= 90) || code > 127) {
+      return value.toLowerCase();
+    }
+  }
+  return value;
 }
 
 interface KeybindingCaptureModalProps {
@@ -60,11 +70,11 @@ export function eventToCombo(
   }
   if (e.shiftKey) combo = appendComboPart(combo, 'shift');
   if (e.altKey) combo = appendComboPart(combo, 'alt');
-  combo = appendComboPart(combo, key.toLowerCase());
-  // 边界(E145):只产出注册侧 HOTKEY_SHAPE_RE 接受的合法形态。Space(e.key === ' ')→ 含空白、
+  combo = appendComboPart(combo, lowerIfNeeded(key));
+  // 边界(E145):只产出注册侧 isValidHotkeyShape 接受的合法形态。Space(e.key === ' ')→ 含空白、
   // 主键为 '+'(→ 'shift++' 空段)等会被 compileCombo trim/split 成空主键 → 永远不触发 + 显示异常。
   // 这类无法表示的组合直接拒绝(返 null,不捕获),与注册/写端校验一致。
-  return HOTKEY_SHAPE_RE.test(combo) ? combo : null;
+  return isValidHotkeyShape(combo) ? combo : null;
 }
 
 export function selectKeybindingConflicts(

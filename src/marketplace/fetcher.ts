@@ -72,11 +72,18 @@ const indexCache = createSessionCache<readonly MarketplaceEntry[]>({
   // 边界(E121,E111 reviews 读/写不对称同族):fresh path 把 index 截到 MAX_INDEX_ENTRIES,但
   // 缓存读端此前无数量上限 → 被篡改/旧版本 sessionStorage 可塞 raw cap(16MiB)内的大量合法小
   // entry,绕过截断进入 filter/排序/渲染/update-check 放大。读端镜像同款数量上限,超量当 cache miss。
-  validate: (d): d is readonly MarketplaceEntry[] =>
-    Array.isArray(d) &&
-    d.length <= MAX_INDEX_ENTRIES &&
-    d.every(isValidMarketplaceEntry),
+  validate: isValidMarketplaceEntryArray,
 });
+
+function isValidMarketplaceEntryArray(
+  d: unknown,
+): d is readonly MarketplaceEntry[] {
+  if (!Array.isArray(d) || d.length > MAX_INDEX_ENTRIES) return false;
+  for (let i = 0; i < d.length; i += 1) {
+    if (!isValidMarketplaceEntry(d[i])) return false;
+  }
+  return true;
+}
 
 /**
  * 拉索引。1h cache,非强制刷新且 cache 新鲜直接返。

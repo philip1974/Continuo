@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { parseReview } from '../../marketplace/reviews-parser';
 import {
+  isGitHubLogin,
   isValidAggregateRecord,
   REVIEW_URL_MAX,
 } from '../../marketplace/reviews-types';
@@ -47,6 +48,74 @@ com.example.foo
 0.2.0`;
 
 describe('parseReview — 模板正路径', () => {
+  it('section 内容只在 parseSections flush 时 trim 一次,parseReview 不重复 trim', () => {
+    const trimSpy = vi.spyOn(String.prototype, 'trim');
+
+    try {
+      const r = parseReview({
+        title: '[com.example.foo] great',
+        body: TEMPLATE_BODY,
+        url: 'https://x',
+        createdAt: '2026-05-05T00:00:00Z',
+        author: AUTHOR,
+      });
+      expect(r?.pluginId).toBe('com.example.foo');
+      expect(r?.body).toBe('很好用,推荐。');
+      expect(r?.continuoVersion).toBe('0.1.0');
+      expect(r?.pluginVersion).toBe('0.2.0');
+      expect(trimSpy).toHaveBeenCalledTimes(5);
+    } finally {
+      trimSpy.mockRestore();
+    }
+  });
+
+  it('英文小写 section heading 不调用 toLowerCase', () => {
+    const lowerSpy = vi.spyOn(String.prototype, 'toLowerCase');
+
+    try {
+      const r = parseReview({
+        title: '[com.example.foo] great',
+        body: [
+          '### plugin id',
+          'com.example.foo',
+          '### rating',
+          '5',
+          '### review',
+          'solid',
+        ].join('\n'),
+        url: 'https://x',
+        createdAt: '2026-05-05T00:00:00Z',
+        author: AUTHOR,
+      });
+      expect(r?.pluginId).toBe('com.example.foo');
+      expect(r?.rating).toBe(5);
+      expect(r?.body).toBe('solid');
+      expect(
+        lowerSpy.mock.contexts.some((ctx) =>
+          ['plugin id', 'rating', 'review'].includes(String(ctx)),
+        ),
+      ).toBe(false);
+      expect(
+        parseReview({
+          title: '[com.example.foo] great',
+          body: [
+            '### Plugin ID',
+            'com.example.foo',
+            '### Rating',
+            '5',
+            '### Review',
+            'solid',
+          ].join('\n'),
+          url: 'https://x',
+          createdAt: '2026-05-05T00:00:00Z',
+          author: AUTHOR,
+        })?.body,
+      ).toBe('solid');
+    } finally {
+      lowerSpy.mockRestore();
+    }
+  });
+
   it('模板解析不通过 split/match 物化 body 行和正则匹配结果', () => {
     const splitSpy = vi.spyOn(String.prototype, 'split');
     const matchSpy = vi.spyOn(String.prototype, 'match');
@@ -278,6 +347,20 @@ describe('parseReview — E112 author handle 须合法 GitHub login', () => {
       'x'.repeat(40),
     ]) {
       expect(mk(bad)).toBeNull();
+    }
+  });
+
+  it('login 形态校验走字符扫描,不调用 RegExp.test', () => {
+    const testSpy = vi.spyOn(RegExp.prototype, 'test');
+    try {
+      expect(isGitHubLogin('alice')).toBe(true);
+      expect(isGitHubLogin('a-b-c')).toBe(true);
+      expect(isGitHubLogin('a--b')).toBe(false);
+      expect(isGitHubLogin('foo-')).toBe(false);
+      expect(isGitHubLogin('has space')).toBe(false);
+      expect(testSpy).not.toHaveBeenCalled();
+    } finally {
+      testSpy.mockRestore();
     }
   });
 });
@@ -521,6 +604,25 @@ describe('E197 · isValidAggregateRecord 有界单次遍历', () => {
     expect(
       isValidAggregateRecord({ a: { pluginId: 'a', count: 0, avg: 9, reviews: [] } }),
     ).toBe(false);
+  });
+
+  it('aggregate reviews 校验单趟完成,不调用 Array.prototype.every', () => {
+    const everySpy = vi.spyOn(Array.prototype, 'every');
+
+    try {
+      expect(isValidAggregateRecord({ a: aggWithReviews('a', 2) })).toBe(true);
+      expect(
+        isValidAggregateRecord({
+          a: {
+            ...aggWithReviews('a', 1),
+            reviews: [{ ...aggWithReviews('b', 1).reviews[0]!, pluginId: 'b' }],
+          },
+        }),
+      ).toBe(false);
+      expect(everySpy).not.toHaveBeenCalled();
+    } finally {
+      everySpy.mockRestore();
+    }
   });
 
   it('空 record {} → true;非对象 / 数组 → false', () => {

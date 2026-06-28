@@ -71,7 +71,7 @@ describe('ThemeProvider', () => {
     setItemSpy.mockRestore();
   });
 
-  it('storage 非法值 → 兜底 dark', () => {
+  it('storage 非法值 → 兜底 dark 并清掉脏 key', () => {
     localStorage.setItem(STORAGE_KEY, 'invalid');
     let captured: ReturnType<typeof useTheme> | null = null;
     render(
@@ -80,6 +80,7 @@ describe('ThemeProvider', () => {
       </ThemeProvider>,
     );
     expect(captured!.mode).toBe('dark');
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
   });
 
   // 边界(E88,local-storage-record 同款兜底):localStorage 被禁用/损坏/受限时 getItem/setItem

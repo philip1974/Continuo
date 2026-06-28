@@ -43,7 +43,8 @@ export function createNdjsonLineDecoder(): NdjsonLineDecoder {
           overflow = true;
           break;
         }
-        lines.push(residual.slice(start, nl).replace(/\r$/, ''));
+        const lineEnd = nl > start && residual.charCodeAt(nl - 1) === 13 ? nl - 1 : nl;
+        lines.push(residual.slice(start, lineEnd));
         start = nl + 1;
       }
       residual = overflow ? '' : residual.slice(start);

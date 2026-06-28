@@ -1,4 +1,4 @@
-import { LANG_MAP, UTF8_LANG_RE } from '../../shared/i18n-types';
+import { LANG_MAP, isUtf8LangName } from '../../shared/i18n-types';
 import type { Locale } from '../../shared/i18n-types';
 
 export { LANG_MAP } from '../../shared/i18n-types';
@@ -8,7 +8,7 @@ export function withPtyLangEnv(
   locale: Locale = 'en',
 ): Record<string, string | undefined> {
   const current = env.LANG;
-  if (current && UTF8_LANG_RE.test(current)) {
+  if (current && isUtf8LangName(current)) {
     return env;
   }
   const lang = LANG_MAP[locale];

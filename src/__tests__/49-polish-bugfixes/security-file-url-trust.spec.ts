@@ -58,6 +58,23 @@ describe('安全 S1 — file:// 受信收紧', () => {
     expect(defaultIsTrustedFrame({ url: 'https://evil.com/' })).toBe(false);
   });
 
+  it('注册后非 file:// URL 在 file 信任检查里前缀短路,不构造 URL 对象', () => {
+    setTrustedRendererFile(ENTRY);
+    const RealURL = globalThis.URL;
+    let constructed = false;
+    globalThis.URL = function URLSpy(raw: string) {
+      constructed = true;
+      return new RealURL(raw);
+    } as unknown as typeof URL;
+
+    try {
+      expect(isTrustedRendererFileUrl('https://evil.com/index.html')).toBe(false);
+      expect(constructed).toBe(false);
+    } finally {
+      globalThis.URL = RealURL;
+    }
+  });
+
   // 边界(E196 同族,isPopoutUrl 主进程对偶):defaultIsTrustedFrame/isTrustedRendererFileUrl 在每次 IPC
   // 调用对 frame.url 做 new URL(O(N))。超长 frame.url fail-closed 视为不受信(绝不进 new URL 解析)。
   describe('E196 同族 · frame.url 长度上限(每 IPC 热路径,fail-closed)', () => {

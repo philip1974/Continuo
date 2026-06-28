@@ -23,6 +23,22 @@ import { jsonStringLengthLowerBoundExceeds } from '../../../electron/shared/json
  */
 const DEFAULT_MAX_RAW_LENGTH = 1024 * 1024; // 1 MiB
 
+function getLocalStorage(): Storage | undefined {
+  try {
+    return globalThis.localStorage;
+  } catch {
+    return undefined;
+  }
+}
+
+function clearRecord(storage: Storage | undefined, key: string): void {
+  try {
+    storage?.removeItem(key);
+  } catch {
+    // localStorage may be disabled or throwing; readRecord still degrades to {}.
+  }
+}
+
 export function readRecord<V>(
   key: string,
   opts?: {
@@ -32,14 +48,19 @@ export function readRecord<V>(
     readonly maxRawLength?: number;
   },
 ): Record<string, V> {
-  if (typeof globalThis.localStorage === 'undefined') return {};
+  const storage = getLocalStorage();
+  if (storage === undefined) return {};
   try {
-    const raw = globalThis.localStorage.getItem(key);
+    const raw = storage.getItem(key);
     if (!raw) return {};
     // 边界(E70):解析前按原始串长度拦,防超大 JSON 的 parse/Object.entries 枚举卡顿。
-    if (raw.length > (opts?.maxRawLength ?? DEFAULT_MAX_RAW_LENGTH)) return {};
+    if (raw.length > (opts?.maxRawLength ?? DEFAULT_MAX_RAW_LENGTH)) {
+      clearRecord(storage, key);
+      return {};
+    }
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      clearRecord(storage, key);
       return {};
     }
     const constrained =
@@ -66,6 +87,7 @@ export function readRecord<V>(
     }
     return out;
   } catch {
+    clearRecord(storage, key);
     return {};
   }
 }
@@ -95,7 +117,8 @@ export function writeRecord<V>(
   value: Record<string, V>,
   opts?: { readonly maxRawLength?: number },
 ): WriteRecordResult {
-  if (typeof globalThis.localStorage === 'undefined') return 'unavailable';
+  const storage = getLocalStorage();
+  if (storage === undefined) return 'unavailable';
   const maxRawLength = opts?.maxRawLength ?? DEFAULT_MAX_RAW_LENGTH;
   // 边界(E309,E286 字节预算族 / .length 变体):序列化 .length 下界 > maxRawLength ⇒ 必超限,在
   // JSON.stringify 物化巨字符串之前提前拒(否则超 1MiB 的 settings/keybindings 记录先物化整串才按 .length cap
@@ -114,12 +137,12 @@ export function writeRecord<V>(
     return 'too-large';
   }
   try {
-    if (globalThis.localStorage.getItem(key) === serialized) return 'ok';
+    if (storage.getItem(key) === serialized) return 'ok';
   } catch {
     // Ignore getItem failures; setItem below preserves the previous fallback.
   }
   try {
-    globalThis.localStorage.setItem(key, serialized);
+    storage.setItem(key, serialized);
     return 'ok';
   } catch {
     return 'unavailable'; // quota / disabled — 静默(内存态由调用方决定是否保留)

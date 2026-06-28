@@ -1,7 +1,7 @@
 // 边界(E135,E131/E132 跨 chunk 解码同族):NDJSON 流式行解码器须跨 socket chunk 正确还原多字节
 // UTF-8 字符。外部 splitLines 的 `buffer + chunk.toString()` 逐 chunk 解码会把被切开的多字节字符
 // 各自变成 U+FFFD(中文/韩文/emoji 参数损坏 / JSON 解析失败)。
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { createNdjsonLineDecoder } from '../../../electron/main/lib/ndjson-line-decoder';
 
 describe('createNdjsonLineDecoder (E135)', () => {
@@ -36,6 +36,24 @@ describe('createNdjsonLineDecoder (E135)', () => {
     const lines = dec.push(Buffer.from('a\r\nb\nc', 'utf8')).lines;
     expect(lines).toEqual(['a', 'b']);
     expect(dec.buffered).toBe('c'); // 残行(未终结)
+  });
+
+  it('剥离 CRLF 的尾随 CR 不调用 replace 正则', () => {
+    const dec = createNdjsonLineDecoder();
+    const replaceSpy = vi.spyOn(String.prototype, 'replace');
+
+    try {
+      expect(dec.push(Buffer.from('a\r\nb\n', 'utf8')).lines).toEqual([
+        'a',
+        'b',
+      ]);
+      const trimCrRegexCalls = replaceSpy.mock.calls.filter(
+        ([pattern]) => pattern instanceof RegExp && pattern.source === '\\r$',
+      );
+      expect(trimCrRegexCalls).toHaveLength(0);
+    } finally {
+      replaceSpy.mockRestore();
+    }
   });
 
   it('ASCII 跨 chunk 正常', () => {

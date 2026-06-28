@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -112,6 +112,11 @@ describeIfImplemented('topic 45 iframe probe', () => {
 
     expect(result.main.state).not.toBe('csp-blocks-inline');
     expect(result.inline?.state).toBe('csp-blocks-inline');
+  });
+
+  it('computes ping average without Array.reduce callback', () => {
+    const src = readFileSync(implementationPath, 'utf8');
+    expect(src).not.toContain('samples.reduce(');
   });
 });
 

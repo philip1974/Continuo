@@ -55,6 +55,37 @@ export function hasOversizedStdioLine(
   return false;
 }
 
+function isEcmaTrimWhitespaceCode(code: number): boolean {
+  if (code <= 0x20) {
+    return (
+      code === 0x09 ||
+      code === 0x0a ||
+      code === 0x0b ||
+      code === 0x0c ||
+      code === 0x0d ||
+      code === 0x20
+    );
+  }
+  if (code >= 0x2000 && code <= 0x200a) return true;
+  return (
+    code === 0x00a0 ||
+    code === 0x1680 ||
+    code === 0x2028 ||
+    code === 0x2029 ||
+    code === 0x202f ||
+    code === 0x205f ||
+    code === 0x3000 ||
+    code === 0xfeff
+  );
+}
+
+export function isBlankStdioLine(line: string): boolean {
+  for (let i = 0; i < line.length; i += 1) {
+    if (!isEcmaTrimWhitespaceCode(line.charCodeAt(i))) return false;
+  }
+  return true;
+}
+
 export function resolveStdioHelloWindowId(
   params: unknown,
   deps: ResolveStdioHelloDeps,
@@ -217,7 +248,7 @@ async function handleLine(
   resolveWindowId: (token: string) => number | null,
   signal: AbortSignal,
 ): Promise<void> {
-  if (!line.trim()) return;
+  if (isBlankStdioLine(line)) return;
 
   let raw: unknown;
   try {
@@ -425,7 +456,7 @@ export async function createStdioSocketServer(
       // 非空行数超 MAX_STDIO_LINES_PER_CHUNK → parse error + 断开(挡 1MB \n\n\n... / 海量极短行放大)。
       let chained = 0;
       for (const line of lines) {
-        if (line.trim() === '') continue; // 空白行:NDJSON 忽略,不入链
+        if (isBlankStdioLine(line)) continue; // 空白行:NDJSON 忽略,不入链
         chained += 1;
         if (chained > MAX_STDIO_LINES_PER_CHUNK) {
           try {

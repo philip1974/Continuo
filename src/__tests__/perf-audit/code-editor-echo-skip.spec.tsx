@@ -52,6 +52,20 @@ describe('perf-audit P6 · CodeEditor 受控回声免全文 toString', () => {
     }
   });
 
+  it('文件扩展名已是小写时不调用 toLowerCase', () => {
+    const lowerSpy = vi.spyOn(String.prototype, 'toLowerCase');
+
+    try {
+      expect(fileExtensionLower('/repo/src/app.tsx')).toBe('tsx');
+      expect(
+        lowerSpy.mock.contexts.some((ctx) => String(ctx) === 'tsx'),
+      ).toBe(false);
+      expect(fileExtensionLower('/repo/src/app.TSX')).toBe('tsx');
+    } finally {
+      lowerSpy.mockRestore();
+    }
+  });
+
   it('未知文件类型复用稳定空语言扩展', () => {
     expect(pickLanguage('README')).toEqual([]);
     expect(pickLanguage('README')).toBe(pickLanguage('notes.unknown'));

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   isInPlaceUpdate,
   safeTruncate,
@@ -27,6 +27,18 @@ describe('safeTruncate', () => {
     expect(r.startsWith('\x1b[0m')).toBe(true);
     // 截断点应该在 ansi 起点 ESC 之后(或之前回退)
     // 实际就是说不会切到 \x1b[31m 中间
+  });
+
+  it('ANSI 截断边界检测走字符扫描,不调用 RegExp.test', () => {
+    const testSpy = vi.spyOn(RegExp.prototype, 'test');
+    try {
+      const data = 'x'.repeat(100) + '\x1b[31mfinal';
+      const r = safeTruncate(data, 20);
+      expect(r.startsWith('\x1b[0m')).toBe(true);
+      expect(testSpy).not.toHaveBeenCalled();
+    } finally {
+      testSpy.mockRestore();
+    }
   });
 
   it('单字符 max 也能工作(不 crash)', () => {
@@ -105,5 +117,16 @@ describe('isInPlaceUpdate', () => {
 
   it('彩色文本 ESC[31m 不算 in-place(只是属性,不是定位)', () => {
     expect(isInPlaceUpdate('\x1b[31mhello')).toBe(false);
+  });
+
+  it('ANSI 原地更新检测走字符扫描,不调用 RegExp.test', () => {
+    const testSpy = vi.spyOn(RegExp.prototype, 'test');
+    try {
+      expect(isInPlaceUpdate('\x1b[12A')).toBe(true);
+      expect(isInPlaceUpdate('\x1b[31mhello')).toBe(false);
+      expect(testSpy).not.toHaveBeenCalled();
+    } finally {
+      testSpy.mockRestore();
+    }
   });
 });

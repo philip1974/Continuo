@@ -1,8 +1,8 @@
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
+import fsp, { mkdir, mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   readPluginPathScopes,
   uninstallPlugin,
@@ -110,6 +110,29 @@ describe('plugins.service path-scope persistence', () => {
       { path: '/ws/a', mode: 'rw' },
       { path: '/ws/c', mode: 'rw' },
     ]);
+  });
+
+  it('重复写入同一组 scopes 时不重复原子写盘', async () => {
+    const base = await makeBaseDir();
+    const renameSpy = vi.spyOn(fsp, 'rename');
+
+    try {
+      await writePluginPathScopes(base, 'com.a', [
+        { path: '/ws/a', mode: 'rw' },
+        { path: '/ws/b', mode: 'r' },
+      ]);
+      const callsAfterFirstWrite = renameSpy.mock.calls.length;
+      expect(callsAfterFirstWrite).toBeGreaterThan(0);
+
+      await writePluginPathScopes(base, 'com.a', [
+        { path: '/ws/a', mode: 'rw' },
+        { path: '/ws/b', mode: 'r' },
+      ]);
+
+      expect(renameSpy.mock.calls).toHaveLength(callsAfterFirstWrite);
+    } finally {
+      renameSpy.mockRestore();
+    }
   });
 
   it('P5 空数组写入删除该 id,不影响其它 plugin', async () => {

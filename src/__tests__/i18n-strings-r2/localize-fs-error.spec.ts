@@ -4,7 +4,7 @@
 // 入口的单一本地化来源(Explorer FolderTree FS toast、Editor 保存失败 等):按 code 经
 // errors.<CODE> catalog 翻译,未收录 code 回退原 message。
 
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { localizeErrorByCode } from '@/lib/localize-error';
 import { setLocale } from '@/i18n';
 
@@ -52,6 +52,22 @@ describe('localizeErrorByCode(code, message)', () => {
     const r = localizeErrorByCode('FS_NOT_FOUND', raw);
     expect(r).toBe(raw);
     expect(r).not.toContain('{path}'); // 不泄漏字面占位符
+  });
+
+  it('占位符检测走字符扫描,不调用 RegExp.test', () => {
+    setLocale('en');
+    const testSpy = vi.spyOn(RegExp.prototype, 'test');
+    try {
+      expect(localizeErrorByCode('FS_NOT_FOUND', 'File not found: /x')).toBe(
+        'File not found: /x',
+      );
+      expect(localizeErrorByCode('FS_EEXIST', 'already exists')).toBe(
+        'Already exists',
+      );
+      expect(testSpy).not.toHaveBeenCalled();
+    } finally {
+      testSpy.mockRestore();
+    }
   });
 
   // I9:Window 命令 WORKSPACE_* code 也带占位符({path}/{workspace}),守卫同样回退 raw。

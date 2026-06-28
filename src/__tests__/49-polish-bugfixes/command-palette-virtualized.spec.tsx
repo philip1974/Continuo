@@ -3,7 +3,8 @@
 // 只渲染 virtualizer 给的可视窗口行,而非把 filtered 全集一次性 map 成 <li>。
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
-const { scrollToIndexSpy, virtualizerSpy } = vi.hoisted(() => ({
+const { getVirtualItemsSpy, scrollToIndexSpy, virtualizerSpy } = vi.hoisted(() => ({
+  getVirtualItemsSpy: vi.fn(),
   scrollToIndexSpy: vi.fn(),
   virtualizerSpy: vi.fn(),
 }));
@@ -12,10 +13,12 @@ vi.mock('@tanstack/react-virtual', () => ({
     virtualizerSpy(opts.count);
     return {
       getTotalSize: () => opts.count * 30,
-      getVirtualItems: () =>
-        [0, 1, 2]
+      getVirtualItems: () => {
+        getVirtualItemsSpy();
+        return [0, 1, 2]
           .filter((i) => i < opts.count)
-          .map((i) => ({ index: i, start: i * 30, size: 30, key: i })),
+          .map((i) => ({ index: i, start: i * 30, size: 30, key: i }));
+      },
       scrollToIndex: scrollToIndexSpy,
     };
   },
@@ -38,6 +41,7 @@ function makeReg(n: number): CommandRegistry {
 }
 
 beforeEach(() => {
+  getVirtualItemsSpy.mockClear();
   scrollToIndexSpy.mockClear();
   virtualizerSpy.mockClear();
   useCommandPaletteStore.setState({ isOpen: false, query: '', selectedIndex: 0 });
@@ -66,6 +70,13 @@ describe('打磨 R48 — CommandPalette 虚拟化', () => {
     act(() => useCommandPaletteStore.getState().open());
     expect(document.querySelectorAll('[role=option]').length).toBe(3);
     expect(virtualizerSpy).toHaveBeenCalledWith(100);
+  });
+
+  it('同一 render 复用 virtual items 快照,不重复调用 getVirtualItems', () => {
+    render(<CommandPalette commands={makeReg(100)} />);
+    getVirtualItemsSpy.mockClear();
+    act(() => useCommandPaletteStore.getState().open());
+    expect(getVirtualItemsSpy).toHaveBeenCalledTimes(1);
   });
 
   it('键盘下移 → scrollToIndex 跟随选中行', () => {

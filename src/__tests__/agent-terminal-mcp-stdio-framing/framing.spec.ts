@@ -6,6 +6,7 @@ import { splitLines as splitNdjsonLines } from '@continuo-terminal/server-node';
 import {
   createStdioSocketServer,
   hasOversizedStdioLine,
+  isBlankStdioLine,
   resolveStdioHelloWindowId,
 } from '../../../electron/main/services/mcp-stdio-server.service';
 
@@ -110,6 +111,21 @@ describe('splitLines · 空行 / 边界', () => {
     const r = splitLines(empty, '\n');
     expect(r.lines).toEqual(['']);
     expect(r.state.buf).toBe('');
+  });
+});
+
+describe('stdio blank line guard', () => {
+  it('空白行判定不调用 String.prototype.trim,且保留 Unicode trim 语义', () => {
+    const trimSpy = vi.spyOn(String.prototype, 'trim');
+
+    try {
+      expect(isBlankStdioLine('')).toBe(true);
+      expect(isBlankStdioLine(' \t\u00a0\u3000')).toBe(true);
+      expect(isBlankStdioLine(' {} ')).toBe(false);
+      expect(trimSpy).not.toHaveBeenCalled();
+    } finally {
+      trimSpy.mockRestore();
+    }
   });
 });
 

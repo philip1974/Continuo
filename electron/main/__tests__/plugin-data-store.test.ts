@@ -226,6 +226,26 @@ describe('plugin-data-store.service', () => {
     }
   });
 
+  it('pluginId 字符集校验不调用 RegExp.test', async () => {
+    const { ipc } = await makeHarness();
+    const testSpy = vi.spyOn(RegExp.prototype, 'test');
+
+    try {
+      await expect(ipc.invoke('plugin-data:load', 'p.safe-id_1')).resolves.toEqual(
+        {},
+      );
+      await expect(ipc.invoke('plugin-data:load', 'BadId')).rejects.toThrow(
+        /invalid plugin id/,
+      );
+      const pluginIdRegexCalls = testSpy.mock.contexts.filter(
+        (context) => context instanceof RegExp && context.source === '^[a-z0-9._-]+$',
+      );
+      expect(pluginIdRegexCalls).toHaveLength(0);
+    } finally {
+      testSpy.mockRestore();
+    }
+  });
+
   // 边界(E177):pluginId 长度上限(PLUGIN_ID_MAX=256,对齐 plugins.service/plugin-mcp/plugins.ipc)。
   // 超长合法字符 id 绕过 wrapper 直调 → 拒绝 + 错误不回显原始超长 id。
   it('E177 超长 pluginId(>256,合法字符)→ 拒绝,错误不回显原始超长 id', async () => {

@@ -110,10 +110,15 @@ export function SettingItemRow({
     if (spec.type !== 'select' || !spec.enum) {
       return EMPTY_SETTING_SELECT_OPTIONS;
     }
-    return spec.enum.map((o) => ({
-      id: o.value,
-      label: o.labelKey ? t(o.labelKey) : o.label,
-    }));
+    const options = new Array<SegmentedControlOption<string>>(spec.enum.length);
+    for (let i = 0; i < spec.enum.length; i += 1) {
+      const o = spec.enum[i]!;
+      options[i] = {
+        id: o.value,
+        label: o.labelKey ? t(o.labelKey) : o.label,
+      };
+    }
+    return options;
   }, [locale, spec.enum, spec.type, t]);
 
   return (

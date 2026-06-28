@@ -1,7 +1,7 @@
 // 可维护性 M4(codex 协作):Explorer 的跨平台 dirname 曾在 tree-config / FolderTree /
 // drop-handlers / mutate-actions 四处字面复制,收敛到 src/panels/Explorer/path-utils.ts。
 // 本规范锁定 dirname 的跨平台行为契约(单一来源,改路径规则只改一处 + 看这一份测试)。
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   basename,
   basenamePreserveTrailing,
@@ -18,6 +18,21 @@ describe('Explorer path-utils · dirname(跨平台)', () => {
   it('去尾部分隔符后再取父目录', () => {
     expect(dirname('/a/b/')).toBe('/a');
     expect(dirname('/a/b///')).toBe('/a');
+  });
+
+  it('去尾部分隔符不走 replace 正则', () => {
+    const replaceSpy = vi.spyOn(String.prototype, 'replace');
+
+    try {
+      expect(dirname('/a/b///')).toBe('/a');
+      expect(dirname('C:\\foo\\\\')).toBe('C:\\');
+      const trimRegexCalls = replaceSpy.mock.calls.filter(
+        ([pattern]) => pattern instanceof RegExp && pattern.source === '[\\\\/]+$',
+      );
+      expect(trimRegexCalls).toHaveLength(0);
+    } finally {
+      replaceSpy.mockRestore();
+    }
   });
 
   it('根下直接项 → "/"', () => {
@@ -46,6 +61,21 @@ describe('Explorer path-utils · dirname(跨平台)', () => {
     expect(dirname('C:\\')).toBe('');
   });
 
+  it('Windows 盘根判断不调用 RegExp.test', () => {
+    const testSpy = vi.spyOn(RegExp.prototype, 'test');
+
+    try {
+      expect(dirname('C:\\foo')).toBe('C:\\');
+      expect(dirname('d:\\bar')).toBe('d:\\');
+      const driveRootRegexCalls = testSpy.mock.contexts.filter(
+        (context) => context instanceof RegExp && context.source === '^[A-Za-z]:$',
+      );
+      expect(driveRootRegexCalls).toHaveLength(0);
+    } finally {
+      testSpy.mockRestore();
+    }
+  });
+
   it('混合分隔符取最后一个', () => {
     expect(dirname('/a\\b')).toBe('/a');
     expect(dirname('a/b\\c')).toBe('a/b');
@@ -59,6 +89,21 @@ describe('Explorer path-utils · basename(trim 尾部分隔符)', () => {
     expect(basename('/a/b///')).toBe('b');
     expect(basename('file.txt')).toBe('file.txt');
     expect(basename('C:\\x\\y')).toBe('y');
+  });
+
+  it('去尾部分隔符不走 replace 正则', () => {
+    const replaceSpy = vi.spyOn(String.prototype, 'replace');
+
+    try {
+      expect(basename('/a/b///')).toBe('b');
+      expect(basename('C:\\x\\y\\\\')).toBe('y');
+      const trimRegexCalls = replaceSpy.mock.calls.filter(
+        ([pattern]) => pattern instanceof RegExp && pattern.source === '[\\\\/]+$',
+      );
+      expect(trimRegexCalls).toHaveLength(0);
+    } finally {
+      replaceSpy.mockRestore();
+    }
   });
 });
 

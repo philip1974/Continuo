@@ -211,10 +211,35 @@ export function resolveWatchChangedPath(
   filename: string,
   pathMod: Pick<typeof path, 'join'> = path,
 ): string {
-  const norm = String(filename).replace(/\\/g, '/');
-  const slashIdx = norm.lastIndexOf('/');
-  const subdir = slashIdx >= 0 ? norm.slice(0, slashIdx) : '';
+  const rel = String(filename);
+  const slashIdx = lastRelativePathSeparatorIndex(rel);
+  const subdir = slashIdx >= 0 ? normalizeRelativeSubdir(rel, slashIdx) : '';
   return subdir ? pathMod.join(rootPath, subdir) : rootPath;
+}
+
+function lastRelativePathSeparatorIndex(value: string): number {
+  for (let i = value.length - 1; i >= 0; i -= 1) {
+    const code = value.charCodeAt(i);
+    if (code === 47 || code === 92) return i;
+  }
+  return -1;
+}
+
+function normalizeRelativeSubdir(value: string, endExclusive: number): string {
+  let firstBackslash = -1;
+  for (let i = 0; i < endExclusive; i += 1) {
+    if (value.charCodeAt(i) === 92) {
+      firstBackslash = i;
+      break;
+    }
+  }
+  if (firstBackslash < 0) return value.slice(0, endExclusive);
+
+  let out = value.slice(0, firstBackslash);
+  for (let i = firstBackslash; i < endExclusive; i += 1) {
+    out += value.charCodeAt(i) === 92 ? '/' : value[i]!;
+  }
+  return out;
 }
 
 const watcherPool = createWatcherPool((rootPath, onChange) => {

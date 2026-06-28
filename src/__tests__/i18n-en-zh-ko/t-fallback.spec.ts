@@ -47,6 +47,20 @@ describe('translate() fallback chain + dedup warn', () => {
     );
   });
 
+  it('模板插值走字符扫描,不调用 String.replace', () => {
+    setI18nLocale('en');
+    const replaceSpy = vi.spyOn(String.prototype, 'replace');
+
+    try {
+      expect(translate('errors.FS_NOT_FOUND', { path: '/tmp/a.md' })).toBe(
+        'File not found: /tmp/a.md',
+      );
+      expect(replaceSpy).not.toHaveBeenCalled();
+    } finally {
+      replaceSpy.mockRestore();
+    }
+  });
+
   it('有 params 时不通过 Object.keys(params).length 判断是否插值', () => {
     setI18nLocale('en');
     const params = { path: '/tmp/a.md' };

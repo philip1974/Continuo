@@ -24,6 +24,8 @@ import {
 } from '../../lib/co-api';
 import {
   buildUpdateVersionMap,
+  formatDateAt,
+  isNewAccountCreatedAt,
   MarketplaceTab,
   marketplaceReviewSortButtonClassName,
   marketplaceTagButtonClassName,
@@ -143,6 +145,34 @@ describe('MarketplaceTab — update version map helper', () => {
         ['b', '3.0.0'],
       ]),
     );
+  });
+});
+
+describe('MarketplaceTab — review date helpers', () => {
+  it('formatDateAt 使用传入 now 快照,不自行读取 Date.now', () => {
+    const dateNowSpy = vi.spyOn(Date, 'now');
+
+    try {
+      expect(formatDateAt('2026-01-01T00:00:00.000Z', Date.parse('2026-01-01T00:03:00.000Z'))).toContain('3');
+      expect(dateNowSpy).not.toHaveBeenCalled();
+    } finally {
+      dateNowSpy.mockRestore();
+    }
+  });
+
+  it('isNewAccountCreatedAt 不可解析日期保守视为新账号', () => {
+    expect(
+      isNewAccountCreatedAt(
+        'not-a-date',
+        Date.parse('2026-01-08T00:00:00.000Z'),
+      ),
+    ).toBe(true);
+    expect(
+      isNewAccountCreatedAt(
+        '2026-01-01T00:00:00.000Z',
+        Date.parse('2026-01-08T00:00:01.000Z'),
+      ),
+    ).toBe(false);
   });
 });
 
@@ -644,6 +674,67 @@ describe('MarketplaceTab — 安装按钮', () => {
       container.querySelectorAll('span[aria-hidden="true"]'),
     ).find((s) => (s.textContent ?? '').includes('⚠'));
     expect(hiddenWarn).toBeTruthy(); // 不可解析 createdAt 仍触发 badge
+  });
+
+  it('展开多条 reviews 时 Date.now 不随 review 条数放大', async () => {
+    installApi(vi.fn());
+    fetchIndexMock.mockResolvedValue([entry({ id: 'a', name: 'A' })]);
+    getMgr.mockReturnValue({ listAll: () => [] });
+    act(() => {
+      useReviewsStore.setState({
+        loading: false,
+        error: null,
+        lastFetchedAt: 1,
+        byPid: new Map([
+          [
+            'a',
+            {
+              pluginId: 'a',
+              count: 2,
+              avg: 5,
+              reviews: [
+                {
+                  pluginId: 'a',
+                  rating: 5,
+                  body: 'one',
+                  author: { handle: 'alice', avatarUrl: '', createdAt: '2020-01-01' },
+                  url: 'https://x/1',
+                  createdAt: '2026-01-01T00:00:00.000Z',
+                  thumbsUp: 0,
+                },
+                {
+                  pluginId: 'a',
+                  rating: 5,
+                  body: 'two',
+                  author: { handle: 'bob', avatarUrl: '', createdAt: '2020-01-01' },
+                  url: 'https://x/2',
+                  createdAt: '2026-01-01T00:01:00.000Z',
+                  thumbsUp: 0,
+                },
+              ],
+            },
+          ],
+        ]),
+      });
+    });
+    const nowSpy = vi
+      .spyOn(Date, 'now')
+      .mockReturnValue(Date.parse('2026-01-01T00:03:00.000Z'));
+
+    try {
+      const { container } = render(<MarketplaceTab />);
+      await waitFor(() => expect(container.textContent).toContain('A'));
+      nowSpy.mockClear();
+      fireEvent.click(
+        container.querySelector('button[aria-expanded]') as HTMLButtonElement,
+      );
+
+      expect(container.textContent).toContain('one');
+      expect(container.textContent).toContain('two');
+      expect(nowSpy.mock.calls.length).toBeLessThan(3);
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 
   // a11y(A90,A88 同族):刷新评分按钮文本含装饰 ⟳,catalog 已去符号,⟳ 在 aria-hidden span。
@@ -1428,6 +1519,38 @@ describe('MarketplaceTab — Git URL 安装段', () => {
     expect(
       statuses.some((s) => (s.textContent ?? '').includes('已安装 P')),
     ).toBe(true);
+  });
+
+  it('Git URL trim 只在输入变化后派生一次,点击安装复用结果', async () => {
+    const installFromGit = vi.fn().mockReturnValue(new Promise(() => {}));
+    installApi(installFromGit);
+    fetchIndexMock.mockResolvedValue([entry({ id: 'a' })]);
+    const { container } = render(<MarketplaceTab />);
+    await waitFor(() => {
+      expect(container.textContent).toContain('从 Git URL 安装');
+    });
+    const input = container.querySelector(
+      'input[placeholder^="https"]',
+    ) as HTMLInputElement;
+    const installBtn = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((b) => b.textContent === '安装扩展')!;
+    const trimSpy = vi.spyOn(String.prototype, 'trim');
+
+    try {
+      fireEvent.change(input, {
+        target: { value: '  https://github.com/x/p.git  ' },
+      });
+      expect(installBtn.disabled).toBe(false);
+      fireEvent.click(installBtn);
+
+      expect(installFromGit).toHaveBeenCalledWith(
+        'https://github.com/x/p.git',
+      );
+      expect(trimSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      trimSpy.mockRestore();
+    }
   });
 
   it('Git URL 安装失败 ok=false → 「[code] message」(catalog 已去 ✘)', async () => {

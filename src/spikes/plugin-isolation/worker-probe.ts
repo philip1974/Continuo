@@ -18,14 +18,14 @@ export async function runWorkerProbe(): Promise<WorkerVerdict> {
     objectUrl = URL.createObjectURL(new Blob([workerCode], { type: 'application/javascript' }));
     worker = new Worker(objectUrl, { type: 'module' });
 
-    const samples: number[] = [];
+    let totalMs = 0;
     for (let i = 0; i < PING_COUNT; i += 1) {
-      samples.push(await ping(worker));
+      totalMs += await ping(worker);
     }
 
     return {
       ok: true,
-      ms: samples.reduce((sum, sample) => sum + sample, 0) / samples.length,
+      ms: totalMs / PING_COUNT,
       cspContent,
     };
   } catch (error) {
@@ -89,4 +89,3 @@ function isCspCreateError(error: unknown): boolean {
 function isTimeoutError(error: unknown): boolean {
   return error instanceof Error && error.message === 'timeout';
 }
-

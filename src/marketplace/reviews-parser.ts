@@ -66,7 +66,7 @@ export function parseReview(rawInput: unknown): Review | null {
 
   // pluginId:优先 body section,fallback title 第一对方括号
   const pluginId =
-    sections.get('plugin id')?.trim() ?? extractPluginIdFromTitle(safeTitle);
+    sections.get('plugin id') ?? extractPluginIdFromTitle(safeTitle);
   // 边界(E113):body section 路径此前只 trim() 不校验形态(title fallback 正则反而有
   // [a-z0-9._-]+ 约束,不对称)。pluginId 被用作 aggregate byPid key + 与 entry.id 对账,
   // 畸形值(空格 / / .. / 超长)会污染聚合/缓存。两条路径统一复用共享 isValidPluginId。
@@ -77,8 +77,8 @@ export function parseReview(rawInput: unknown): Review | null {
   if (rating === null) return null;
 
   const body =
-    sections.get('评论正文')?.trim() ??
-    sections.get('review')?.trim() ??
+    sections.get('评论正文') ??
+    sections.get('review') ??
     safeBody.trim();
   if (body.length === 0) return null;
 
@@ -131,8 +131,8 @@ export function parseReview(rawInput: unknown): Review | null {
     url: raw.url,
     createdAt: raw.createdAt,
     // 边界(E253):版本字段长度上限 REVIEW_VERSION_MAX(与 cache-read isValidReview 对齐),超长→undefined。
-    continuoVersion: capVersion(sections.get('continuo 版本(可选)')?.trim()),
-    pluginVersion: capVersion(sections.get('plugin 版本(可选)')?.trim()),
+    continuoVersion: capVersion(sections.get('continuo 版本(可选)')),
+    pluginVersion: capVersion(sections.get('plugin 版本(可选)')),
   };
 }
 
@@ -184,6 +184,16 @@ function isAsciiWhitespace(code: number): boolean {
   );
 }
 
+function lowerIfNeeded(value: string): string {
+  for (let i = 0; i < value.length; i += 1) {
+    const code = value.charCodeAt(i);
+    if ((code >= 65 && code <= 90) || code > 127) {
+      return value.toLowerCase();
+    }
+  }
+  return value;
+}
+
 function parseHeadingKey(line: string): string | null {
   if (
     line.length < 5 ||
@@ -202,7 +212,7 @@ function parseHeadingKey(line: string): string | null {
   while (end > start && isAsciiWhitespace(line.charCodeAt(end - 1))) {
     end -= 1;
   }
-  return start < end ? line.slice(start, end).toLowerCase() : null;
+  return start < end ? lowerIfNeeded(line.slice(start, end)) : null;
 }
 
 function isPluginIdTitleChar(code: number): boolean {

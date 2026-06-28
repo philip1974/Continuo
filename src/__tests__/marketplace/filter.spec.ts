@@ -124,6 +124,29 @@ describe('applyFilter', () => {
     expect(r.map((e) => e.id)).toEqual(['com.foo']);
   });
 
+  it('小写 query 不调用 toLowerCase', () => {
+    const lowerSpy = vi.spyOn(String.prototype, 'toLowerCase');
+
+    try {
+      const r = applyFilter(ENTRIES, {
+        query: 'foo',
+        selectedTags: new Set(),
+      });
+      expect(r.map((e) => e.id)).toEqual(['com.foo']);
+      expect(
+        lowerSpy.mock.contexts.some((ctx) => String(ctx) === 'foo'),
+      ).toBe(false);
+      expect(
+        applyFilter(ENTRIES, {
+          query: 'FOO',
+          selectedTags: new Set(),
+        }).map((e) => e.id),
+      ).toEqual(['com.foo']);
+    } finally {
+      lowerSpy.mockRestore();
+    }
+  });
+
   it('query 已匹配 name 时不读取 tags 构造完整 haystack', () => {
     let tagReads = 0;
     const entry = {
@@ -145,6 +168,74 @@ describe('applyFilter', () => {
 
     expect(r).toEqual([entry]);
     expect(tagReads).toBe(0);
+  });
+
+  it('重复过滤同一 entry 时复用字段 lowercase 缓存', () => {
+    const calls = { id: 0, name: 0, description: 0, tag: 0 };
+    const lowerable = (key: keyof typeof calls, lower: string) =>
+      ({
+        toLowerCase: () => {
+          calls[key] += 1;
+          return lower;
+        },
+      }) as unknown as string;
+    const entry = {
+      id: lowerable('id', 'com.fast'),
+      name: lowerable('name', 'fast match'),
+      description: lowerable('description', 'desc'),
+      author: 'a',
+      repo: 'a/fast',
+      tags: [lowerable('tag', 'tools')],
+    } satisfies MarketplaceEntry;
+
+    expect(
+      applyFilter([entry], { query: 'tools', selectedTags: new Set() }),
+    ).toEqual([entry]);
+    expect(
+      applyFilter([entry], { query: 'tools', selectedTags: new Set() }),
+    ).toEqual([entry]);
+
+    expect(calls).toEqual({ id: 1, name: 1, description: 1, tag: 1 });
+  });
+
+  it('已小写 ASCII entry 字段构建 haystack 不调用 toLowerCase', () => {
+    const lowerSpy = vi.spyOn(String.prototype, 'toLowerCase');
+
+    try {
+      expect(
+        buildMarketplaceSearchHaystack({
+          id: 'com.fast',
+          name: 'fast match',
+          description: 'tiny helper',
+          author: 'a',
+          repo: 'a/fast',
+          tags: ['tools', 'demo'],
+        }),
+      ).toBe('fast match com.fast tiny helper tools demo');
+      expect(
+        lowerSpy.mock.contexts.some((ctx) =>
+          [
+            'com.fast',
+            'fast match',
+            'tiny helper',
+            'tools',
+            'demo',
+          ].includes(String(ctx)),
+        ),
+      ).toBe(false);
+      expect(
+        buildMarketplaceSearchHaystack({
+          id: 'COM.FAST',
+          name: 'Fast Match',
+          description: 'Tiny Helper',
+          author: 'a',
+          repo: 'a/fast',
+          tags: ['Tools'],
+        }),
+      ).toBe('fast match com.fast tiny helper tools');
+    } finally {
+      lowerSpy.mockRestore();
+    }
   });
 
   it('query 匹配 description', () => {

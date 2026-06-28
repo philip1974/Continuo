@@ -92,10 +92,14 @@ export function reconcileTerminalPanels(
   // 不抢焦点(显式 pendingFocus 路径=用户明确意图,不受此限,始终命中)。
   let added: TerminalSession[] | undefined;
   let addedCount = 0;
+  let addedSorted = true;
+  let prevAddedCreatedAt = -Infinity;
   let latestUserCreatedAt = -Infinity;
   for (const s of input.nextSessions) {
     if (!prevById.has(s.id)) {
       added ??= new Array<TerminalSession>(input.nextSessions.length);
+      if (s.createdAt < prevAddedCreatedAt) addedSorted = false;
+      prevAddedCreatedAt = s.createdAt;
       added[addedCount] = s;
       addedCount += 1;
     }
@@ -106,7 +110,7 @@ export function reconcileTerminalPanels(
 
   if (added !== undefined) {
     added.length = addedCount;
-    if (added.length > 1) {
+    if (added.length > 1 && !addedSorted) {
       added.sort((a, b) => a.createdAt - b.createdAt);
     }
 
