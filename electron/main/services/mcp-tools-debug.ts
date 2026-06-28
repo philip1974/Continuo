@@ -7,6 +7,7 @@ import {
   MCP_TOOL_DEBUG_LAUNCH,
   MCP_TOOL_DEBUG_LIST_SESSIONS,
   MCP_TOOL_DEBUG_SET_BREAKPOINT,
+  MCP_TOOL_DEBUG_SCOPES,
   MCP_TOOL_DEBUG_STACK,
   MCP_TOOL_DEBUG_STEP_IN,
   MCP_TOOL_DEBUG_STEP_OUT,
@@ -30,6 +31,8 @@ import {
   debugSetBreakpointInputJsonSchema,
   debugSetBreakpointInputSchema,
   debugSetBreakpointOutputSchema,
+  debugScopesInputJsonSchema,
+  debugScopesInputSchema,
   debugStackInputJsonSchema,
   debugStackInputSchema,
   debugStepInInputSchema,
@@ -53,6 +56,7 @@ import { ERROR_CODES } from '../../shared/error-codes';
 import type { AnyMcpTool, McpCallCtx, McpToolDef } from './mcp-host.service';
 import type {
   DebugCallerContext,
+  DebugScope,
   DebugStackFrame,
   DebugVariable,
   LaunchSessionInput,
@@ -67,6 +71,7 @@ export type DebugStepInOutput = z.infer<typeof debugStepInOutputSchema>;
 export type DebugStepOutInput = z.infer<typeof debugStepOutInputSchema>;
 export type DebugStepOutOutput = z.infer<typeof debugStepOutOutputSchema>;
 export type DebugStackInput = z.infer<typeof debugStackInputSchema>;
+export type DebugScopesInput = z.infer<typeof debugScopesInputSchema>;
 export type DebugDisconnectInput = z.infer<typeof debugDisconnectInputSchema>;
 export type DebugDisconnectOutput = z.infer<typeof debugDisconnectOutputSchema>;
 export type DebugListSessionsInput = z.infer<typeof debugListSessionsInputSchema>;
@@ -88,6 +93,10 @@ export interface DebugVariablesToolOutput {
   readonly variables: readonly DebugVariable[];
   readonly truncated: boolean;
   readonly next_start?: number;
+}
+
+export interface DebugScopesToolOutput {
+  readonly scopes: readonly DebugScope[];
 }
 
 export interface DebugListSessionsToolOutput {
@@ -126,11 +135,15 @@ export interface DebugToolService {
   stackTrace(
     sessionId: string,
     input: {
-      readonly threadId: number;
+      readonly threadId?: number;
       readonly startFrame?: number;
       readonly levels?: number;
     },
   ): Promise<DebugStackToolOutput>;
+  scopes(
+    sessionId: string,
+    input: { readonly frameId: number },
+  ): Promise<DebugScopesToolOutput>;
   variables(
     sessionId: string,
     input: {
@@ -382,10 +395,26 @@ export function makeDebugStackTool(
     run: (input) =>
       runDebugTool(() =>
         deps.service.stackTrace(input.session_id, {
-          threadId: input.thread_id,
+          ...(input.thread_id !== undefined ? { threadId: input.thread_id } : {}),
           startFrame: input.start_frame,
           levels: input.levels,
         }),
+      ),
+  };
+}
+
+export function makeDebugScopesTool(
+  deps: DebugToolsDeps,
+): DebugTool<DebugScopesInput, DebugScopesToolOutput> {
+  return {
+    name: MCP_TOOL_DEBUG_SCOPES,
+    description:
+      'Read the variable scopes (Local/Closure/Global) for a stack frame from debug.stack. Use a returned scope variables_reference with debug.variables to read its variables.',
+    jsonSchema: debugScopesInputJsonSchema,
+    inputSchema: debugScopesInputSchema,
+    run: (input) =>
+      runDebugTool(() =>
+        deps.service.scopes(input.session_id, { frameId: input.frame_id }),
       ),
   };
 }
@@ -477,6 +506,7 @@ export function makeDebugTools(deps: DebugToolsDeps): readonly AnyMcpTool[] {
     makeDebugStepInTool(deps),
     makeDebugStepOutTool(deps),
     makeDebugStackTool(deps),
+    makeDebugScopesTool(deps),
     makeDebugVariablesTool(deps),
     makeDebugEvaluateTool(deps),
     makeDebugDisconnectTool(deps),

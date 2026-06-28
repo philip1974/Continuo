@@ -142,6 +142,13 @@ class FakeDapClient implements DebugDapClientLike {
   }
 
   private responseBody(command: string): DapJson {
+    if (command === 'threads') {
+      return { threads: [{ id: 1, name: 'main' }] };
+    }
+    if (command === 'continue') {
+      // js-debug 真实行为:只续单线程,allThreadsContinued=false。
+      return { allThreadsContinued: false };
+    }
     if (command === 'stackTrace') {
       return {
         stackFrames: [
@@ -248,6 +255,78 @@ describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
     const waiter = service.waitForStop(sessionId, { afterStopSeq: 1, timeoutMs: 30_000 });
     await service.disconnect(sessionId, { terminateDebuggee: true });
     await expect(waiter).rejects.toThrow(/disconnected/i);
+  });
+
+  it('stackTrace 省略 thread_id 时用 stopped 记录的线程(含 0),不再撞 min(1) 也不多发 threads (#1)', async () => {
+    const { service, parent } = makeFakeService();
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      { ownerWindowId: 9, controllerToken: 'agent-thr' },
+    );
+    parent.emit('stopped', { reason: 'breakpoint', threadId: 0 });
+
+    const stack = await service.stackTrace(sessionId, { startFrame: 0, levels: 1 });
+    expect(stack.frames[0]).toMatchObject({ id: 7 });
+
+    // 用 currentThreadId=0(stopped 记录),不发 threads 请求
+    expect(parent.requestLog.some((r) => r.command === 'threads')).toBe(false);
+    const stackReq = parent.requestLog.find((r) => r.command === 'stackTrace');
+    expect(stackReq?.args).toMatchObject({ threadId: 0 });
+  });
+
+  it('stopped 未带 threadId 时省略 thread_id 回退 threads 请求解析首个线程', async () => {
+    const { service, parent } = makeFakeService();
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      { ownerWindowId: 14, controllerToken: 'agent-fallback' },
+    );
+    parent.emit('stopped', { reason: 'breakpoint' });
+
+    await service.stackTrace(sessionId, { startFrame: 0, levels: 1 });
+    expect(parent.requestLog.some((r) => r.command === 'threads')).toBe(true);
+    const stackReq = parent.requestLog.find((r) => r.command === 'stackTrace');
+    expect(stackReq?.args).toMatchObject({ threadId: 1 });
+  });
+
+  it('threadId 0 是合法的(js-debug Node 线程=0),显式透传不再被拒、直接传给 adapter', async () => {
+    const { service, parent } = makeFakeService();
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      { ownerWindowId: 10, controllerToken: 'agent-thr0' },
+    );
+    parent.emit('stopped', { reason: 'breakpoint', threadId: 0 });
+
+    await service.stepOver(sessionId, { threadId: 0 });
+    const nextReq = parent.requestLog.find((r) => r.command === 'next');
+    expect(nextReq?.args).toMatchObject({ threadId: 0 });
+    // 省略 thread_id 才走 threads 解析(此处不应发 threads 请求)
+    expect(parent.requestLog.some((r) => r.command === 'threads')).toBe(false);
+  });
+
+  it('continue 请求成功即 continued:true,原始 allThreadsContinued:false 仅放 all_threads_continued (修误导返回值 #3)', async () => {
+    const { service, parent } = makeFakeService();
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      { ownerWindowId: 12, controllerToken: 'agent-cont' },
+    );
+    parent.emit('stopped', { reason: 'breakpoint', threadId: 1 });
+
+    await expect(service.continue(sessionId, { threadId: 1 })).resolves.toMatchObject({
+      continued: true,
+      all_threads_continued: false,
+    });
+  });
+
+  it('scopes(frameId) 返回带 variables_reference 的作用域 (debug.scopes 工具补全 stack→scopes→variables 链 #5)', async () => {
+    const { service, parent } = makeFakeService();
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      { ownerWindowId: 13, controllerToken: 'agent-scope' },
+    );
+    parent.emit('stopped', { reason: 'breakpoint', threadId: 1 });
+
+    const { scopes } = await service.scopes(sessionId, { frameId: 7 });
+    expect(scopes[0]).toMatchObject({ name: 'Local', variables_reference: 44 });
   });
 
   it('向注入式 event sink 发状态事件,terminated 在 remove session 前发出', async () => {

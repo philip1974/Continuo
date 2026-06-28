@@ -16,6 +16,7 @@ export const MCP_TOOL_DEBUG_STEP_OVER = 'debug.step_over';
 export const MCP_TOOL_DEBUG_STEP_IN = 'debug.step_in';
 export const MCP_TOOL_DEBUG_STEP_OUT = 'debug.step_out';
 export const MCP_TOOL_DEBUG_STACK = 'debug.stack';
+export const MCP_TOOL_DEBUG_SCOPES = 'debug.scopes';
 export const MCP_TOOL_DEBUG_VARIABLES = 'debug.variables';
 export const MCP_TOOL_DEBUG_EVALUATE = 'debug.evaluate';
 export const MCP_TOOL_DEBUG_DISCONNECT = 'debug.disconnect';
@@ -25,7 +26,9 @@ const sessionIdSchema = z.string().min(1).max(DEBUG_SESSION_ID_MAX);
 const pathSchema = z.string().min(1).max(DEBUG_PATH_MAX);
 const nonNegativeIntSchema = z.number().int().min(0);
 const positiveIntSchema = z.number().int().min(1);
-const threadIdSchema = positiveIntSchema.optional();
+// js-debug 的 Node 线程 id 是 0(DAP threadId 允许 0)。thread_id 用 nonNegative,
+// 可选:省略时引擎用 threads 请求解析。历史上误设 min(1) 把合法的 0 拒了。
+const threadIdSchema = nonNegativeIntSchema.optional();
 
 const dapVariableSchema = z
   .object({
@@ -44,6 +47,14 @@ const stackFrameSchema = z
     source_path: z.string().optional(),
     line: positiveIntSchema,
     column: positiveIntSchema.optional(),
+  })
+  .strict();
+
+const debugScopeSchema = z
+  .object({
+    name: z.string(),
+    variables_reference: z.number().int().min(0),
+    expensive: z.boolean(),
   })
   .strict();
 
@@ -128,7 +139,7 @@ export const debugWaitForStopOutputSchema = z
     session_id: sessionIdSchema,
     stop_seq: nonNegativeIntSchema,
     reason: z.string(),
-    thread_id: positiveIntSchema.optional(),
+    thread_id: nonNegativeIntSchema.optional(),
     description: z.string().optional(),
   })
   .strict();
@@ -159,7 +170,9 @@ export const debugStepOutOutputSchema = debugThreadControlOutputSchema;
 export const debugStackInputSchema = z
   .object({
     session_id: sessionIdSchema,
-    thread_id: positiveIntSchema,
+    // thread_id 可选:省略时引擎用 threads 请求解析当前活跃线程。
+    // (js-debug 的 stopped 事件可能报 threadId:0,直接透传会撞 min(1)。)
+    thread_id: threadIdSchema,
     start_frame: nonNegativeIntSchema.default(0),
     levels: z.number().int().min(1).max(100).default(20),
   })
@@ -169,6 +182,19 @@ export const debugStackOutputSchema = z
   .object({
     frames: z.array(stackFrameSchema).max(100),
     total_frames: nonNegativeIntSchema.optional(),
+  })
+  .strict();
+
+export const debugScopesInputSchema = z
+  .object({
+    session_id: sessionIdSchema,
+    frame_id: nonNegativeIntSchema,
+  })
+  .strict();
+
+export const debugScopesOutputSchema = z
+  .object({
+    scopes: z.array(debugScopeSchema).max(50),
   })
   .strict();
 
@@ -261,6 +287,8 @@ export type DebugVariablesInput = z.infer<typeof debugVariablesInputSchema>;
 export type DebugVariablesOutput = z.infer<typeof debugVariablesOutputSchema>;
 export type DebugEvaluateInput = z.infer<typeof debugEvaluateInputSchema>;
 export type DebugEvaluateOutput = z.infer<typeof debugEvaluateOutputSchema>;
+export type DebugScopesInput = z.infer<typeof debugScopesInputSchema>;
+export type DebugScopesOutput = z.infer<typeof debugScopesOutputSchema>;
 
 type JsonSchema = Record<string, unknown>;
 
@@ -294,7 +322,11 @@ const pathJson = stringSchema(DEBUG_PATH_MAX);
 const threadControlInputJson = objectSchema(
   {
     session_id: sessionIdJson,
-    thread_id: intSchema(1),
+    thread_id: {
+      ...intSchema(0),
+      description:
+        'Optional. js-debug reports the Node thread id as 0 (valid). Omit to let the engine resolve it.',
+    },
   },
   ['session_id'],
 );
@@ -404,7 +436,7 @@ export const debugWaitForStopOutputJsonSchema = objectSchema(
     session_id: sessionIdJson,
     stop_seq: intSchema(0),
     reason: stringSchema(),
-    thread_id: intSchema(1),
+    thread_id: intSchema(0),
     description: stringSchema(),
   },
   ['session_id', 'stop_seq', 'reason'],
@@ -412,11 +444,15 @@ export const debugWaitForStopOutputJsonSchema = objectSchema(
 export const debugStackInputJsonSchema = objectSchema(
   {
     session_id: sessionIdJson,
-    thread_id: intSchema(1),
+    thread_id: {
+      ...intSchema(0),
+      description:
+        'Optional. Omit to let the engine resolve the active thread (recommended; js-debug reports the Node thread id as 0).',
+    },
     start_frame: intSchema(0),
     levels: intSchema(1, 100),
   },
-  ['session_id', 'thread_id'],
+  ['session_id'],
 );
 export const debugStackOutputJsonSchema = objectSchema(
   {
@@ -424,6 +460,30 @@ export const debugStackOutputJsonSchema = objectSchema(
     total_frames: intSchema(0),
   },
   ['frames'],
+);
+const scopeJson = objectSchema(
+  {
+    name: stringSchema(),
+    variables_reference: intSchema(0),
+    expensive: boolSchema(),
+  },
+  ['name', 'variables_reference', 'expensive'],
+);
+export const debugScopesInputJsonSchema = objectSchema(
+  {
+    session_id: sessionIdJson,
+    frame_id: {
+      ...intSchema(0),
+      description: 'A frame id from debug.stack. Resolve scopes here, then read debug.variables with a scope variables_reference.',
+    },
+  },
+  ['session_id', 'frame_id'],
+);
+export const debugScopesOutputJsonSchema = objectSchema(
+  {
+    scopes: arraySchema(scopeJson, 50),
+  },
+  ['scopes'],
 );
 export const debugVariablesInputJsonSchema = objectSchema(
   {
@@ -540,6 +600,13 @@ export const DEBUG_TOOL_SCHEMAS = [
     outputSchema: debugStackOutputSchema,
     inputJsonSchema: debugStackInputJsonSchema,
     outputJsonSchema: debugStackOutputJsonSchema,
+  },
+  {
+    name: MCP_TOOL_DEBUG_SCOPES,
+    inputSchema: debugScopesInputSchema,
+    outputSchema: debugScopesOutputSchema,
+    inputJsonSchema: debugScopesInputJsonSchema,
+    outputJsonSchema: debugScopesOutputJsonSchema,
   },
   {
     name: MCP_TOOL_DEBUG_VARIABLES,

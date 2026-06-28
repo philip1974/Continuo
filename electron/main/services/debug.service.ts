@@ -527,22 +527,52 @@ export class DebugService {
     });
   }
 
+  // thread_id 解析。js-debug 的 Node 线程 id 是 0(合法,DAP threadId 允许 0),
+  // 所以 provided 给定就直接透传(含 0);省略时发 DAP threads 请求取首个线程。
+  // DAP next/stepIn/stepOut/continue/stackTrace 都需要 threadId,故统一在此解析。
+  private async resolveThreadId(
+    sessionId: string,
+    provided?: number,
+  ): Promise<number> {
+    if (provided !== undefined) return provided;
+    // 优先用最近 stopped 事件记录的线程:多线程(worker)下这才是真正停住的那条,
+    // 也省掉一次 threads 往返。0 是 Node 主线程的合法 id。
+    const stopped = debugSessions.get(sessionId)?.currentThreadId;
+    if (stopped !== undefined) return stopped;
+    // 回退:无停点记录(如停点事件未带 threadId)→ threads 请求取首个线程。
+    const runtime = this.requireRuntime(sessionId);
+    const response = await runtime.activeClient.sendRequest(
+      'threads',
+      {},
+      this.requestTimeoutMs,
+    );
+    const threads = asArray(asRecord(response.body).threads);
+    const first = threads[0];
+    if (first !== undefined) {
+      const id = numberField(asRecord(first as DapJson), 'id');
+      if (id !== undefined) return id;
+    }
+    throw new Error('debug session has no active thread to resolve');
+  }
+
   async continue(
     sessionId: string,
     input: { readonly threadId?: number } = {},
   ): Promise<{ continued: boolean; all_threads_continued?: boolean }> {
     const runtime = this.requireRuntime(sessionId);
+    const threadId = await this.resolveThreadId(sessionId, input.threadId);
     const response = await runtime.activeClient.sendRequest(
       'continue',
-      {
-        ...(input.threadId !== undefined ? { threadId: input.threadId } : {}),
-      },
+      { threadId },
       this.requestTimeoutMs,
     );
     this.markContinued(sessionId, response.body);
     const body = asRecord(response.body);
     return {
-      continued: boolField(body, 'allThreadsContinued') ?? true,
+      // 请求成功即已恢复执行。DAP allThreadsContinued 仅表"是否所有线程都续",
+      // js-debug 常返 false(只续单线程),不应让调用方误判没 continue —— 以
+      // 后续 wait_for_stop 拿到下一停点为准。原始值仍放 all_threads_continued。
+      continued: true,
       ...(boolField(body, 'allThreadsContinued') !== undefined
         ? { all_threads_continued: boolField(body, 'allThreadsContinued') }
         : {}),
@@ -563,13 +593,14 @@ export class DebugService {
 
   async stackTrace(
     sessionId: string,
-    input: { readonly threadId: number; readonly startFrame?: number; readonly levels?: number },
+    input: { readonly threadId?: number; readonly startFrame?: number; readonly levels?: number },
   ): Promise<{ frames: readonly DebugStackFrame[]; total_frames?: number }> {
     const runtime = this.requireRuntime(sessionId);
+    const threadId = await this.resolveThreadId(sessionId, input.threadId);
     const response = await runtime.activeClient.sendRequest(
       'stackTrace',
       {
-        threadId: input.threadId,
+        threadId,
         startFrame: input.startFrame ?? 0,
         levels: input.levels ?? 20,
       },
@@ -754,17 +785,17 @@ export class DebugService {
     input: { readonly threadId?: number },
   ) {
     const runtime = this.requireRuntime(sessionId);
+    const threadId = await this.resolveThreadId(sessionId, input.threadId);
     const response = await runtime.activeClient.sendRequest(
       command,
-      {
-        ...(input.threadId !== undefined ? { threadId: input.threadId } : {}),
-      },
+      { threadId },
       this.requestTimeoutMs,
     );
     this.markContinued(sessionId, response.body);
     const body = asRecord(response.body);
     return {
-      continued: boolField(body, 'allThreadsContinued') ?? true,
+      // 见 continue():请求成功即已恢复执行,不透传可能误导的 allThreadsContinued。
+      continued: true,
       ...(boolField(body, 'allThreadsContinued') !== undefined
         ? { all_threads_continued: boolField(body, 'allThreadsContinued') }
         : {}),

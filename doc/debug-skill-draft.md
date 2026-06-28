@@ -37,10 +37,22 @@ Agent 准备"加 console.log → 重跑 → 看输出"来定位一个运行时�
 ## 标准工作流（用 debug_* 工具时）
 1. `debug_launch`（或 attach）目标 TS 入口 / 失败的测试文件。
 2. `debug_set_breakpoint`(file, line)——设在**怀疑状态出错的那一行**，不是随便铺。
-3. `debug_wait_for_stop`——阻塞等命中。
-4. 命中后：先 `debug_variables` 读**整个当前帧作用域**；再 `debug_evaluate` 评你的具体假设表达式；必要时 `debug_stack` 看是谁调过来的。
+3. `debug_wait_for_stop`——阻塞等命中（以它拿到下一停点为"是否停住/停在哪"的唯一真相，**别信 continue 的返回值、别信 reason 字段**，见下方契约）。
+4. 命中后读暂停帧（**必须走 stack→scopes→variables 链**）：
+   - `debug_stack`（可省略 `thread_id`，引擎自解析）→ 拿当前 `frame_id`，看调用链；
+   - `debug_scopes`(`frame_id`) → 拿各作用域（Local/Closure/Global）的 `variables_reference`；
+   - `debug_variables`(`variables_reference`) 读该作用域变量；`debug_evaluate`(`frame_id`, 表达式) 评你的具体假设。
+   - ⚠️ **不能**直接拿 `frame_id` 当 `variables_reference` 传给 `debug_variables`（会返回空数组）——必须先 `debug_scopes`。
 5. 决定下一步：`debug_continue` / `debug_step_*`——**带着假设走一步看一步**，不是机械单步到底。
 6. 定位到后退出会话，去改代码 + 加/跑测试固化。
+
+## 工具调用契约（实战坑，必读）
+> 这些是真实使用 debug_* 工具时踩到的行为，写死在 skill 里避免重复踩。
+
+- **`thread_id` 省略即可**：js-debug 把 Node 线程 id 报成 `0`（合法）。`debug_stack`/`debug_step_*`/`debug_continue` 的 `thread_id` 都是可选的，**直接省略**让引擎解析最稳；要传也接受 `0`（不会再被拒）。`wait_for_stop` 返回的 `thread_id` 可能是 0，照样能用。
+- **`reason` 字段不可靠**：`wait_for_stop` 的 `reason`（entry/breakpoint/step）在某些停点会标错（如命中断点仍报 `entry`）。判断"停在哪"**以 `debug_stack` 的真实文件/行号为准**，不要用 `reason` 做控制流分支。
+- **`continue` 的返回值别信**：`debug_continue` 可能返回 `continued:false`（DAP `allThreadsContinued` 的原值），但执行其实已恢复——**以随后的 `debug_wait_for_stop` 拿到下一停点为准**。
+- **`frame_id` / `variables_reference` 每次停点失效**：`step`/`continue` 之后，旧的 `frame_id`、`variables_reference` 立即失效（DAP 语义，仅暂停期有效）。每次停下要读变量，都得**重新** `debug_stack` → `debug_scopes` 取新 id，不能复用上一停点的。
 
 ## race / 异步 bug 的纪律（codex 复核重点）
 - 断点对 race 的正确用法是**"受控调度点"**：在 `await` 间隙、迟到回调、状态快照分叉处停住，**人为放大 interleaving 窗口**来验证根因（例：保存竞态——停在 `await writeFile` 前后读 store 当前内容）。
