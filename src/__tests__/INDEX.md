@@ -26,6 +26,11 @@
 - [`main-inject.spec.ts`](./48-main-inject-continuo-meta/main-inject.spec.ts)
 - [`preload-bridge.spec.ts`](./48-main-inject-continuo-meta/preload-bridge.spec.ts)
 
+## [Agent-controllable debug spike](./49-agent-controllable-debug/README.md)
+
+- [`dap-framing.spec.ts`](./49-agent-controllable-debug/dap-framing.spec.ts)
+- [`dap-spike.spec.ts`](./49-agent-controllable-debug/dap-spike.spec.ts)
+
 ## [topic 49 · 打磨阶段缺陷修复(P1 批次)](./49-polish-bugfixes/README.md)
 
 - [`account-chip-not-button.spec.tsx`](./49-polish-bugfixes/account-chip-not-button.spec.tsx)

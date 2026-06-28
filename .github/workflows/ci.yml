@@ -129,6 +129,49 @@ jobs:
       - name: Run integration tests
         run: pnpm test:integration
 
+  debug-spike:
+    name: Debug spike (DAP)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # pnpm workspace 依赖同级仓 philip1974/ContinuoTerminal(public)的 @continuo-terminal/* 包。
+      # CI runner 默认只 checkout 本仓,需把 ContinuoTerminal clone 到 $GITHUB_WORKSPACE 的同级路径。
+      - name: Checkout ContinuoTerminal (workspace sibling)
+        run: git clone --depth 1 https://github.com/philip1974/ContinuoTerminal.git "${{ github.workspace }}/../ContinuoTerminal"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build debug spike fixture
+        run: pnpm exec tsc -p scripts/debug-spike/tsconfig.json
+
+      # Fetches pinned vscode-js-debug DAP release v1.117.0 (~4MB), then verifies its pinned sha256.
+      - name: Fetch pinned js-debug DAP adapter
+        run: node scripts/debug-spike/fetch-adapter.mjs
+
+      - name: Assert js-debug DAP adapter exists
+        run: test -f scripts/debug-spike/.adapter/js-debug/src/dapDebugServer.js
+
+      - name: Run debug spike specs without adapter skip
+        run: pnpm exec vitest run --project unit src/__tests__/49-agent-controllable-debug --reporter=verbose
+
+      - name: Run electron main-context DAP teardown spec without adapter skip
+        run: pnpm exec vitest run --project electron electron/main/__tests__/dap-teardown-mini.spec.ts --reporter=verbose
+
   perf-bench:
     name: Plugin DataStore perf bench
     runs-on: ubuntu-latest

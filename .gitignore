@@ -32,3 +32,5 @@ examples/*
 .codex/
 # Plan 02 临时执行报告;commit 前 user 可删
 EXECUTION_CONTEXT.md
+scripts/debug-spike/.adapter/
+scripts/debug-spike/.out/

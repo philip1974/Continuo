@@ -15,6 +15,8 @@ export default tseslint.config(
       'out-pack',
       'dist',
       'dist-electron',
+      'scripts/debug-spike/.adapter',
+      'scripts/debug-spike/.out',
       'node_modules',
       'coverage',
       'test-results',
