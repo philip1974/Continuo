@@ -221,9 +221,19 @@ export class DapClient {
       await fs.rm(this.socketPath, { force: true });
     }
 
+    // nodePath 默认 process.execPath。在打包/dev 的 Electron 里 process.execPath 是
+    // Electron 二进制,必须设 ELECTRON_RUN_AS_NODE=1 让它以纯 Node 跑 dapDebugServer.js;
+    // 否则 Electron 会把脚本当成 app 入口加载 → "Dynamic require of fs is not supported"。
+    // 同时按 safeguard 剥离敏感 env(不把 CONTINUO_MCP_TOKEN 泄漏给 adapter/debuggee)。
+    const adapterEnv: NodeJS.ProcessEnv = {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: '1',
+    };
+    delete adapterEnv.CONTINUO_MCP_TOKEN;
     const server = spawn(this.nodePath, [this.adapterPath, endpoint], {
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: process.platform !== 'win32',
+      env: adapterEnv,
     });
     this.server = server;
     server.stderr.on('data', (chunk: Buffer) => {

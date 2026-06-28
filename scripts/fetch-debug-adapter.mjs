@@ -20,6 +20,18 @@ const dapServerPath = path.join(
   'src',
   'dapDebugServer.js',
 );
+// dapDebugServer.js 是 CommonJS bundle(用 require)。仓库 root package.json 是
+// "type":"module",若不在 js-debug/ 放一个 type:commonjs 标记,node 会按最近的
+// root package.json 把 .js 当 ESM 加载 → require 未定义 → "Dynamic require of fs"。
+// 写一个本地 package.json 覆盖继承的 type,让 adapter .js 按 CJS 加载。
+const cjsMarkerPath = path.join(adapterRoot, 'js-debug', 'package.json');
+async function ensureCommonjsMarker() {
+  try {
+    await fs.writeFile(cjsMarkerPath, '{ "type": "commonjs" }\n');
+  } catch {
+    /* best-effort; adapter dir 必已存在 */
+  }
+}
 
 function failClear(reason, details = {}) {
   console.error(`[fetch-debug-adapter] FAIL: ${reason}`);
@@ -184,6 +196,7 @@ async function extractEntries(entries) {
 
 async function main() {
   if (await fileExists(dapServerPath)) {
+    await ensureCommonjsMarker();
     console.log(`[fetch-debug-adapter] cache hit: ${dapServerPath}`);
     return;
   }
@@ -220,6 +233,7 @@ async function main() {
       return;
     }
 
+    await ensureCommonjsMarker();
     console.log(`[fetch-debug-adapter] extracted ${entries.length} entries`);
     console.log(`[fetch-debug-adapter] ready: ${dapServerPath}`);
   } catch (err) {
