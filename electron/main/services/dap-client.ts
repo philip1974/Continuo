@@ -1,6 +1,6 @@
 import { spawn, type ChildProcessByStdio } from 'node:child_process';
 import { once } from 'node:events';
-import { promises as fs } from 'node:fs';
+import { appendFileSync, promises as fs } from 'node:fs';
 import { type Readable } from 'node:stream';
 import net, { type Socket } from 'node:net';
 import os from 'node:os';
@@ -72,6 +72,7 @@ export interface DapClientOptions {
   readonly tcpPort?: number;
   readonly transcript?: DapTranscriptEntry[];
   readonly startDebuggingHandler?: StartDebuggingHandler | null;
+  readonly traceId?: string;
 }
 
 export const defaultAdapterPath = path.join(
@@ -178,6 +179,44 @@ function isDapRequest(message: DapMessage): message is DapRequestMessage {
   return message.type === 'request' && typeof message.command === 'string';
 }
 
+let dapTraceCounter = 0;
+function nextDapTraceId(): string {
+  dapTraceCounter += 1;
+  return `dap${dapTraceCounter}`;
+}
+
+// dev-gated DAP transcript logger:设 CONTINUO_DEBUG_DAP_TRACE=<file> 时,把每条 DAP
+// 收发落 JSONL(client 标识/方向/类型/seq/关键 body)。未设=零开销。永不抛错。
+// 用途:定位 parent/child 多 session 下 stopped 事件的真实 reason 序列(#2)。
+function traceDap(
+  traceId: string,
+  direction: 'send' | 'recv',
+  message: DapMessage,
+): void {
+  const file = process.env.CONTINUO_DEBUG_DAP_TRACE;
+  if (!file) return;
+  try {
+    const m = message as unknown as Record<string, unknown>;
+    const entry = {
+      t: Date.now(),
+      client: traceId,
+      dir: direction,
+      type: m.type,
+      ...(m.command !== undefined ? { command: m.command } : {}),
+      ...(m.event !== undefined ? { event: m.event } : {}),
+      ...(m.seq !== undefined ? { seq: m.seq } : {}),
+      ...(m.request_seq !== undefined ? { request_seq: m.request_seq } : {}),
+      ...(m.success !== undefined ? { success: m.success } : {}),
+      // 事件给全 body(stopped 含 reason);请求给 arguments;响应略 body(避免 variables/stack 巨量)。
+      ...(m.type === 'event' ? { body: m.body } : {}),
+      ...(m.type === 'request' ? { arguments: m.arguments } : {}),
+    };
+    appendFileSync(file, `${JSON.stringify(entry)}\n`);
+  } catch {
+    // tracing 绝不破坏调试
+  }
+}
+
 export class DapClient {
   readonly adapterPath: string;
   readonly nodePath: string;
@@ -198,6 +237,7 @@ export class DapClient {
   private childSessions: DapClient[] = [];
   private startDebuggingHandler: StartDebuggingHandler | null;
   private disposed = false;
+  private readonly traceId: string;
 
   constructor(options: DapClientOptions = {}) {
     this.adapterPath = options.adapterPath ?? defaultAdapterPath;
@@ -210,6 +250,7 @@ export class DapClient {
     this.tcpPort = options.tcpPort ?? randomTcpPort();
     this.transcript = options.transcript ?? [];
     this.startDebuggingHandler = options.startDebuggingHandler ?? null;
+    this.traceId = options.traceId ?? nextDapTraceId();
   }
 
   async spawnServer(): Promise<this> {
@@ -272,6 +313,7 @@ export class DapClient {
       socketPath: this.socketPath,
       tcpPort: this.tcpPort,
       transcript: this.transcript,
+      traceId: `${this.traceId}>child${this.childSessions.length}`,
       ...options,
     });
     this.childSessions.push(child);
@@ -387,11 +429,13 @@ export class DapClient {
       throw new Error('DAP socket is not connected');
     }
     this.transcript.push({ direction: 'client', message });
+    traceDap(this.traceId, 'send', message);
     this.socket.write(encodeDapMessage(message));
   }
 
   receiveMessage(message: DapMessage): void {
     this.transcript.push({ direction: 'server', message });
+    traceDap(this.traceId, 'recv', message);
     if (isDapResponse(message)) {
       const pending = this.pending.get(message.request_seq);
       if (!pending) return;
