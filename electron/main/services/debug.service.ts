@@ -1,4 +1,6 @@
 import { execFile as execFileCb } from 'node:child_process';
+import { realpath } from 'node:fs/promises';
+import path from 'node:path';
 import { promisify } from 'node:util';
 
 import {
@@ -10,6 +12,8 @@ import {
 } from './dap-client';
 import { resolveDebugAdapterPath } from './debug-adapter-provision';
 import * as debugSessions from './debug-sessions.service';
+import { getWorkspaceRoot } from './window-workspace-roots.service';
+import { ERROR_CODES } from '../../shared/error-codes';
 import type { DebugViewEvent } from '../../shared/debug-view-channels';
 
 const execFile = promisify(execFileCb);
@@ -67,6 +71,18 @@ export interface DebugEventSink {
   emit(ownerWindowId: number, event: DebugViewEvent): void;
 }
 
+// 安全:debug.launch 的 program/cwd 来自 agent,必须锁在 owner window 的 workspace 内,
+// 否则 agent 可让 js-debug 启动工作区外任意脚本。注入式以便单测(realpath 需真实 FS)。
+export interface DebugWorkspaceGuard {
+  getWorkspaceRoot(windowId: number): string | null;
+  realpath(target: string): Promise<string>;
+}
+
+const DEFAULT_WORKSPACE_GUARD: DebugWorkspaceGuard = {
+  getWorkspaceRoot,
+  realpath: (target) => realpath(target),
+};
+
 export interface DebugServiceOptions {
   readonly adapterPath?: string;
   readonly requestTimeoutMs?: number;
@@ -76,6 +92,7 @@ export interface DebugServiceOptions {
   }) => DebugDapClientLike;
   readonly processOps?: DebugProcessOps;
   readonly eventSink?: DebugEventSink;
+  readonly workspace?: DebugWorkspaceGuard;
 }
 
 export interface LaunchSessionInput {
@@ -364,6 +381,7 @@ export class DebugService {
     requestTimeoutMs: number;
   }) => DebugDapClientLike;
   private readonly processOps: DebugProcessOps;
+  private readonly workspace: DebugWorkspaceGuard;
   private readonly runtimes = new Map<string, RuntimeDebugSession>();
   private readonly teardownInFlight = new Map<string, Promise<void>>();
   private eventSink: DebugEventSink | null;
@@ -381,7 +399,56 @@ export class DebugService {
           requestTimeoutMs: clientOptions.requestTimeoutMs,
         }));
     this.processOps = options.processOps ?? DEFAULT_PROCESS_OPS;
+    this.workspace = options.workspace ?? DEFAULT_WORKSPACE_GUARD;
     this.eventSink = options.eventSink ?? null;
+  }
+
+  // 安全闸:program/cwd 必须落在 owner window 的 workspace 内(realpath 后比较,防
+  // symlink 逃逸与 `..` 穿越)。无 workspace 记录 → fail-closed 拒绝。
+  private async assertLaunchInsideWorkspace(
+    ownerWindowId: number,
+    program: string,
+    cwd: string,
+  ): Promise<void> {
+    const root = this.workspace.getWorkspaceRoot(ownerWindowId);
+    if (root === null || root === '') {
+      throw Object.assign(
+        new Error('debug launch requires a workspace root for this window'),
+        { code: ERROR_CODES.DEBUG_PROGRAM_OUTSIDE_WORKSPACE },
+      );
+    }
+    let realRoot: string;
+    try {
+      realRoot = await this.workspace.realpath(root);
+    } catch {
+      realRoot = root;
+    }
+    await this.assertPathInside(realRoot, program, 'program');
+    await this.assertPathInside(realRoot, cwd, 'cwd');
+  }
+
+  private async assertPathInside(
+    realRoot: string,
+    target: string,
+    label: 'program' | 'cwd',
+  ): Promise<void> {
+    let realTarget: string;
+    try {
+      realTarget = await this.workspace.realpath(target);
+    } catch {
+      throw Object.assign(
+        new Error(`debug ${label} not found or inaccessible: ${target}`),
+        { code: ERROR_CODES.DEBUG_PROGRAM_OUTSIDE_WORKSPACE },
+      );
+    }
+    const rel = path.relative(realRoot, realTarget);
+    const inside = rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+    if (!inside) {
+      throw Object.assign(
+        new Error(`debug ${label} must be inside the workspace: ${target}`),
+        { code: ERROR_CODES.DEBUG_PROGRAM_OUTSIDE_WORKSPACE },
+      );
+    }
   }
 
   setEventSink(eventSink: DebugEventSink | null): void {
@@ -392,6 +459,17 @@ export class DebugService {
     input: LaunchSessionInput,
     ctx: DebugCallerContext,
   ): Promise<{ session_id: string; state: 'starting' | 'running' | 'stopped' }> {
+    // 安全闸:先验 program/cwd 落在 workspace 内,再花成本 spawn adapter。
+    // cwd 省略时默认 workspace root(不再回退 main 进程 cwd)。
+    const root = this.workspace.getWorkspaceRoot(ctx.ownerWindowId);
+    const effectiveCwd = input.cwd ?? root ?? process.cwd();
+    await this.assertLaunchInsideWorkspace(
+      ctx.ownerWindowId,
+      input.program,
+      effectiveCwd,
+    );
+    const normalizedInput: LaunchSessionInput = { ...input, cwd: effectiveCwd };
+
     const id = makeSessionId();
     const parentClient = this.createDapClient({
       adapterPath: this.resolveAdapterPathLazy(),
@@ -406,7 +484,7 @@ export class DebugService {
       parentClient,
       activeClient: parentClient,
       childClients: [],
-      launch: input,
+      launch: normalizedInput,
       waiters: new Set(),
       breakpoints: [],
       initialized: false,
@@ -419,7 +497,7 @@ export class DebugService {
       ownerWindowId: ctx.ownerWindowId,
       controllerToken: ctx.controllerToken,
       program: input.program,
-      cwd: input.cwd ?? process.cwd(),
+      cwd: effectiveCwd,
       ...(input.name !== undefined ? { name: input.name } : {}),
       ...(adapterPid !== undefined ? { adapterPid } : {}),
       ...(getSocketPath(parentClient) !== undefined

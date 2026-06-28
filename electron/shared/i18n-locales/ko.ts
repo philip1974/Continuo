@@ -34,6 +34,7 @@ export const ko: Record<TranslationKey, string> = {
   'errors.BAD_URL': '잘못된 URL',
   'errors.DEBUG_ADAPTER_LAUNCH_FAILED': '디버그 어댑터 시작 실패',
   'errors.DEBUG_NOT_AUTHORIZED': '디버그 제어가 승인되지 않았습니다',
+  'errors.DEBUG_PROGRAM_OUTSIDE_WORKSPACE': '디버그 대상은 워크스페이스 안에 있어야 합니다',
   'errors.DEBUG_RESULT_TOO_LARGE': '디버그 결과가 너무 큽니다',
   'errors.DEBUG_SESSION_NOT_FOUND': '디버그 세션을 찾을 수 없습니다',
   'errors.DEBUG_WAIT_TIMEOUT': '디버그 중지를 기다리다 시간이 초과되었습니다',

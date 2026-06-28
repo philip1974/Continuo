@@ -34,6 +34,7 @@ export const zh: Record<TranslationKey, string> = {
   'errors.BAD_URL': 'URL 无效',
   'errors.DEBUG_ADAPTER_LAUNCH_FAILED': '调试适配器启动失败',
   'errors.DEBUG_NOT_AUTHORIZED': '未授权调试控制',
+  'errors.DEBUG_PROGRAM_OUTSIDE_WORKSPACE': '调试目标必须在工作区内',
   'errors.DEBUG_RESULT_TOO_LARGE': '调试结果过大',
   'errors.DEBUG_SESSION_NOT_FOUND': '找不到调试会话',
   'errors.DEBUG_WAIT_TIMEOUT': '等待调试暂停超时',

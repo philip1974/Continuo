@@ -11,6 +11,7 @@
 - DebugService 的 plain Error 在 MCP 工具边界归一化为稳定 debug 错误码，避免向 MCP client 回显超长 session id、program 或 adapter path。
 - `variables` / `evaluate` 保持分页、深度、字节预算与默认值边界。
 - KC#1: MVP 暂不暴露 renderer/editor context 的断点映射能力，降级为 main-context DAP 调试；源码映射与编辑器联动留给后续批次。
+- 安全(program-workspace 锁): `debug.launch` 的 `program`/`cwd` 来自 agent，必须落在 owner window 的 workspace root 内(realpath 规范化后比较，防 symlink 逃逸与 `..` 穿越)；窗口无 workspace 记录则 fail-closed 拒绝；`cwd` 省略时默认 workspace root，不回退 main 进程 cwd。该契约由 `electron/main/__tests__/debug-service.spec.ts` 覆盖。
 
 ## 规范文件
 

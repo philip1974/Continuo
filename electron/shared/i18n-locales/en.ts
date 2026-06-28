@@ -42,6 +42,8 @@ export const en = {
   'errors.BAD_URL': 'Bad URL',
   'errors.DEBUG_ADAPTER_LAUNCH_FAILED': 'Failed to launch debug adapter',
   'errors.DEBUG_NOT_AUTHORIZED': 'Debug control not authorized',
+  'errors.DEBUG_PROGRAM_OUTSIDE_WORKSPACE':
+    'Debug target must be inside the workspace',
   'errors.DEBUG_RESULT_TOO_LARGE': 'Debug result too large',
   'errors.DEBUG_SESSION_NOT_FOUND': 'Debug session not found',
   'errors.DEBUG_WAIT_TIMEOUT': 'Timed out waiting for debug stop',

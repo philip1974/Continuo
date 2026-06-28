@@ -53,7 +53,7 @@ describe('unified-toast-notification: ERROR_CODES enum', () => {
     // 边界(E230):+TOO_MANY_STREAMS(38→39),流式 shell active 子进程超全局/per-sender 并发上限拦截。
     // 边界(E235):+TOO_MANY_TERMINALS(39→40),终端会话(真实 PTY)超全局/每窗口数量上限拦截。
     // topic-50:+5 DEBUG_* 业务错误码(40→45),agent MCP debug 工具错误稳定本地化。
-    expect(Object.keys(ERROR_CODES)).toHaveLength(45);
+    expect(Object.keys(ERROR_CODES)).toHaveLength(46);
     expect(ERROR_CODES.TERMINAL_CWD_UNRESOLVED).toBe(
       'TERMINAL_CWD_UNRESOLVED',
     );

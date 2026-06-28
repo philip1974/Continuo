@@ -13,6 +13,7 @@ import {
   type DebugDapClientLike,
   type DebugProcessOps,
   type DebugVariable,
+  type DebugWorkspaceGuard,
 } from '../services/debug.service';
 import * as debugSessions from '../services/debug-sessions.service';
 import type {
@@ -175,7 +176,16 @@ class FakeDapClient implements DebugDapClientLike {
   }
 }
 
-function makeFakeService(parent = new FakeDapClient(1001)) {
+// 默认宽松 workspace guard:root='/' → 任意绝对路径在内;realpath 恒等(测试文件不必真实存在)。
+const PERMISSIVE_WORKSPACE: DebugWorkspaceGuard = {
+  getWorkspaceRoot: () => '/',
+  realpath: async (p) => p,
+};
+
+function makeFakeService(
+  parent = new FakeDapClient(1001),
+  workspace: DebugWorkspaceGuard = PERMISSIVE_WORKSPACE,
+) {
   const processOps: DebugProcessOps = {
     processInfo: vi.fn(async () => ({ pid: 1001, ppid: process.pid, pgid: 1001, command: 'fake-adapter' })),
     pidsInProcessGroup: vi.fn(async () => [
@@ -187,6 +197,7 @@ function makeFakeService(parent = new FakeDapClient(1001)) {
   const service = new DebugService({
     createDapClient: () => parent,
     processOps,
+    workspace,
   });
   return { service, parent, processOps };
 }
@@ -327,6 +338,72 @@ describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
 
     const { scopes } = await service.scopes(sessionId, { frameId: 7 });
     expect(scopes[0]).toMatchObject({ name: 'Local', variables_reference: 44 });
+  });
+
+  it('安全:program 在 workspace 外 → 拒绝且不 spawn adapter (program-workspace 锁)', async () => {
+    const parent = new FakeDapClient(1001);
+    const { service } = makeFakeService(parent, {
+      getWorkspaceRoot: () => '/repo',
+      realpath: async (p) => p,
+    });
+    await expect(
+      service.launchSession(
+        { program: '/etc/evil.js', cwd: '/repo' },
+        { ownerWindowId: 20, controllerToken: 'agent-sec' },
+      ),
+    ).rejects.toMatchObject({ code: 'DEBUG_PROGRAM_OUTSIDE_WORKSPACE' });
+    expect(parent.requestLog.length).toBe(0);
+  });
+
+  it('安全:cwd 在 workspace 外 → 拒绝', async () => {
+    const { service } = makeFakeService(new FakeDapClient(1001), {
+      getWorkspaceRoot: () => '/repo',
+      realpath: async (p) => p,
+    });
+    await expect(
+      service.launchSession(
+        { program: '/repo/app.js', cwd: '/tmp' },
+        { ownerWindowId: 21, controllerToken: 'agent-sec2' },
+      ),
+    ).rejects.toMatchObject({ code: 'DEBUG_PROGRAM_OUTSIDE_WORKSPACE' });
+  });
+
+  it('安全:`..` 穿越 program(规范化后逃出 root)→ 拒绝', async () => {
+    const { service } = makeFakeService(new FakeDapClient(1001), {
+      getWorkspaceRoot: () => '/repo',
+      realpath: async (p) => p,
+    });
+    await expect(
+      service.launchSession(
+        { program: '/repo/../secrets/app.js', cwd: '/repo' },
+        { ownerWindowId: 22, controllerToken: 'agent-sec3' },
+      ),
+    ).rejects.toMatchObject({ code: 'DEBUG_PROGRAM_OUTSIDE_WORKSPACE' });
+  });
+
+  it('安全:窗口无 workspace 记录 → fail-closed 拒绝', async () => {
+    const { service } = makeFakeService(new FakeDapClient(1001), {
+      getWorkspaceRoot: () => null,
+      realpath: async (p) => p,
+    });
+    await expect(
+      service.launchSession(
+        { program: '/repo/app.js', cwd: '/repo' },
+        { ownerWindowId: 23, controllerToken: 'agent-sec4' },
+      ),
+    ).rejects.toMatchObject({ code: 'DEBUG_PROGRAM_OUTSIDE_WORKSPACE' });
+  });
+
+  it('安全:cwd 省略 → 默认 workspace root(不回退 main 进程 cwd)', async () => {
+    const { service } = makeFakeService(new FakeDapClient(1001), {
+      getWorkspaceRoot: () => '/repo',
+      realpath: async (p) => p,
+    });
+    const { session_id } = await service.launchSession(
+      { program: '/repo/app.js' },
+      { ownerWindowId: 24, controllerToken: 'agent-sec5' },
+    );
+    expect(debugSessions.get(session_id)?.cwd).toBe('/repo');
   });
 
   it('向注入式 event sink 发状态事件,terminated 在 remove session 前发出', async () => {
@@ -536,6 +613,8 @@ describe.skipIf(!adapterExists)('DebugService real adapter', () => {
         adapterPath: adapterCopy.adapterPath,
         processOps,
         requestTimeoutMs: 30_000,
+        // program/cwd 都在 spikeDir 下;identity realpath(无 symlink)即可通过 workspace 闸。
+        workspace: { getWorkspaceRoot: () => spikeDir, realpath: async (p) => p },
       });
       try {
         const { session_id: sessionId } = await service.launchSession(
