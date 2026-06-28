@@ -149,10 +149,28 @@ export function cancelAgentAuthByWindow(windowId: number): number {
   return count;
 }
 
+export interface AgentAuthControllerTeardown {
+  readonly listControllerTokens: () => readonly string[];
+  readonly killByController: (controllerToken: string, reason: string) => void;
+}
+
+let controllerTeardown: AgentAuthControllerTeardown | null = null;
+
+/**
+ * main/index.ts 注入 debug teardown 钩子。agent-auth 不能直接 import DebugService,
+ * 否则会把授权 transport 与 debug runtime 绑成循环依赖。
+ */
+export function setAgentAuthControllerTeardown(
+  teardown: AgentAuthControllerTeardown | null,
+): void {
+  controllerTeardown = teardown;
+}
+
 /** 测试用:清空所有 pending(test 隔离). */
 export function _resetPendingForTest(): void {
   for (const [, r] of pending) r.settle('denied');
   pending.clear();
+  controllerTeardown = null;
 }
 
 // 边界(E229)测试用:未决授权上限常量。
@@ -199,10 +217,19 @@ export function revokeAndKillAgentSessions(): RevokeResult {
     rotated = true;
   }
   let killed = 0;
+  const controllerTokens = new Set<string>();
+  if (controllerTeardown) {
+    for (const token of controllerTeardown.listControllerTokens()) {
+      if (typeof token === 'string' && token.length > 0) controllerTokens.add(token);
+    }
+  }
   // terminalSessions.getAll() 已返回快照数组;remove 改 Map 不影响本轮遍历。
   const snapshot = terminalSessions.getAll();
   for (const s of snapshot) {
     if (s.originHint !== 'agent') continue;
+    if (typeof s.controllerToken === 'string' && s.controllerToken.length > 0) {
+      controllerTokens.add(s.controllerToken);
+    }
     terminalSessions.remove(s.id);
     // 用户**显式撤销** agent 授权是安全动作:用 forceKill(立即 SIGKILL)而非
     // kill()(先 Ctrl+C、3s grace 后才 SIGKILL)。否则吞 SIGINT / 正在跑破坏性
@@ -210,6 +237,11 @@ export function revokeAndKillAgentSessions(): RevokeResult {
     // MCP 调用,但已在跑的本地子进程不受 token 影响,必须立即强杀。
     if (termService.has(s.id)) termService.forceKill(s.id);
     killed += 1;
+  }
+  if (controllerTeardown) {
+    for (const token of controllerTokens) {
+      controllerTeardown.killByController(token, 'revoked');
+    }
   }
   return { killed, rotated };
 }

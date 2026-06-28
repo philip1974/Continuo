@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+// Frozen topic-49 one-off falsification spike.
+// Production DAP implementation has moved to electron/main/services/dap-client.ts.
+// Keep this directory only for committed topic-49 test coverage; do not import it from production code.
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { promises as fs } from 'node:fs';

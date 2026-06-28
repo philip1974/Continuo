@@ -12,6 +12,8 @@ files:
 extraResources:
   - from: scripts/continuo-mcp-stdio.mjs
     to: continuo-mcp-stdio.mjs
+  - from: scripts/debug-spike/.adapter/js-debug
+    to: js-debug
 extraMetadata:
   main: out-pack/main/index.js
 asar: true

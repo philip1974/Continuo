@@ -1,5 +1,5 @@
-// topic-15 unified-toast-notification: 全仓业务错误码枚举(34 unique keys)。
-// 范围:main 端 object-literal `code: 'X'`(MAIN_ERROR_CODES, 27 keys)+ fs/** `fsError('FS_X', ...)` / `mapNodeErrnoCode()` 返回(FS_ERROR_CODES, 7 keys)。
+// topic-15 unified-toast-notification: 全仓业务错误码枚举(45 unique keys)。
+// 范围:main 端 object-literal `code: 'X'`(MAIN_ERROR_CODES, 36 keys)+ fs/** `fsError('FS_X', ...)` / `mapNodeErrnoCode()` 返回(FS_ERROR_CODES, 9 keys)。
 // 不含:IPC_ERR.*(infra-level, 已是常量见 ipc-result.ts)、plugin user code、third-party error.code。
 
 export const MAIN_ERROR_CODES = {
@@ -10,6 +10,11 @@ export const MAIN_ERROR_CODES = {
   BAD_MANIFEST: 'BAD_MANIFEST',
   BAD_ROOT: 'BAD_ROOT',
   BAD_URL: 'BAD_URL',
+  DEBUG_ADAPTER_LAUNCH_FAILED: 'DEBUG_ADAPTER_LAUNCH_FAILED',
+  DEBUG_NOT_AUTHORIZED: 'DEBUG_NOT_AUTHORIZED',
+  DEBUG_RESULT_TOO_LARGE: 'DEBUG_RESULT_TOO_LARGE',
+  DEBUG_SESSION_NOT_FOUND: 'DEBUG_SESSION_NOT_FOUND',
+  DEBUG_WAIT_TIMEOUT: 'DEBUG_WAIT_TIMEOUT',
   EEXIST: 'EEXIST',
   GIT_FAILED: 'GIT_FAILED',
   GIT_SPAWN_FAILED: 'GIT_SPAWN_FAILED',

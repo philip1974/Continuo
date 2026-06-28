@@ -173,6 +173,12 @@
 - [`watch-pool-evict-after-create.spec.ts`](./49-polish-bugfixes/watch-pool-evict-after-create.spec.ts)
 - [`watch-unwatch-owner-ownership.spec.ts`](./49-polish-bugfixes/watch-unwatch-owner-ownership.spec.ts)
 
+## [50 · Agent Debug Engine MVP](./50-agent-debug-engine-mvp/README.md)
+
+- [`dap-framing.spec.ts`](./50-agent-debug-engine-mvp/dap-framing.spec.ts)
+- [`debug-schemas.spec.ts`](./50-agent-debug-engine-mvp/debug-schemas.spec.ts)
+- [`mcp-debug-host.spec.ts`](./50-agent-debug-engine-mvp/mcp-debug-host.spec.ts)
+
 ## [AgentAuthPrompt(Agent MCP 授权弹窗)](./agent-auth-prompt/README.md)
 
 - [`agent-auth-prompt.spec.tsx`](./agent-auth-prompt/agent-auth-prompt.spec.tsx)

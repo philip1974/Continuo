@@ -61,8 +61,12 @@ import { makeCreateHandler, setMcpEnvProvider, setStopHookCanceller } from './ip
 import {
   cancelAgentAuthByWindow,
   requestAgentAuth,
+  setAgentAuthControllerTeardown,
   setMcpHostRef,
 } from './services/agent-auth.service';
+import { DebugService } from './services/debug.service';
+import * as debugSessions from './services/debug-sessions.service';
+import { makeDebugMcpTools } from './services/mcp-debug-host';
 import { createContinuoMcpEnv } from './services/continuo-terminal-host-adapter';
 import { buildClaudeAddCommand, setStdioConfig } from './services/mcp-stdio-config.service';
 import {
@@ -135,6 +139,7 @@ export const FLUSH_ACK_TIMEOUT_MS = 10_000;
 // 守卫区分 started/finished:清理在途时用户再次 quit 必须继续拦截,不能放行绕过 cleanupAll
 // (codex 复审 F1,见 quit-cleanup-guard.ts)。
 const quitGuard = makeQuitCleanupGuard();
+const debugService = new DebugService();
 
 ipcMain.on('window:id', (event: IpcMainEvent) => {
   // 与 layout:flush-ack / plugin-mcp INVOKE_REPLY 对齐:不受信 frame
@@ -508,7 +513,12 @@ app.on('browser-window-created', (_evt, win) => {
   // webContents id ≠ BrowserWindow id 且 'closed' 后 webContents 已销毁不可读 →
   // 在创建期(此刻 webContents 存活)先捕获 wcId。
   const wcId = win.webContents.id;
-  win.once('closed', () => releaseWindowResources(win.id, wcId));
+  win.once('closed', () => {
+    void debugService.killByOwner(win.id, 'window-closed').catch((err) => {
+      console.warn('[debug] killByOwner failed during window close', err);
+    });
+    releaseWindowResources(win.id, wcId);
+  });
 
   win.webContents.once('did-finish-load', () => {
     if (!isPopoutUrl(win.webContents.getURL())) return;
@@ -745,6 +755,17 @@ async function startMcpHost(): Promise<void> {
         createSession: createSessionForAgent,
         installStopHook,
       }),
+      ...makeDebugMcpTools({
+        service: debugService,
+        getSessionOwner: (id) => debugSessions.get(id)?.ownerWindowId ?? null,
+        getSessionController: (id) =>
+          debugSessions.get(id)?.controllerToken ?? null,
+        ensureAuthorized: (ownerWindowId: number, method?: string) =>
+          requestAgentAuth({
+            method: method ?? 'debug.*',
+            ownerWindowId,
+          }),
+      }),
     ];
     if (brokerStarted) {
       initialTools.push(
@@ -776,6 +797,17 @@ async function startMcpHost(): Promise<void> {
     setMcpRevokers({
       byWindow: (windowId) => mcpHost!.revokeWindowTokens(windowId),
       byToken: (token) => mcpHost!.revokeToken(token),
+    });
+    setAgentAuthControllerTeardown({
+      listControllerTokens: () =>
+        Array.from(
+          new Set(debugSessions.list().map((session) => session.controllerToken)),
+        ),
+      killByController: (controllerToken, reason) => {
+        void debugService.killByController(controllerToken, reason).catch((err) => {
+          console.warn('[debug] killByController failed during revoke', err);
+        });
+      },
     });
     app.once('before-quit', async () => {
       if (!brokerStarted) return;
@@ -1006,7 +1038,10 @@ app.on('before-quit', async (event) => {
   // force-kill 所有 PTY,防 agent 长任务子进程被孤儿化/zombie。无论是否有窗口要 flush
   // 都必须跑(关最后一个窗口触发的 quit 路径 wins 已空,旧 every() 守卫会跳过它)。
   // 在 app.quit() 前 await:window 'closed' 清理走 3s grace timer,进程退出不触发 SIGKILL。
-  await termService.cleanupAll().catch(() => {});
+  await Promise.allSettled([
+    termService.cleanupAll(),
+    debugService.cleanupAll('before-quit'),
+  ]);
   // race(R83):此前 mcpHost/mcpStdio close 是 void fire-and-forget,随后立即 markFinished() +
   // app.quit() → 进程可能在 HTTP/SSE server 关闭、unix socket server close + mcp.sock unlink
   // 完成前退出:SSE/keepalive/socket 清理与退出竞态,mcp.sock 残留到下次启动兜底清理,退出/测试
