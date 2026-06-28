@@ -340,6 +340,37 @@ describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
     expect(scopes[0]).toMatchObject({ name: 'Local', variables_reference: 44 });
   });
 
+  it('reason 归一:js-debug 命中断点发 reason:entry + hitBreakpointIds → wait_for_stop 报 breakpoint (#2)', async () => {
+    const { service, parent } = makeFakeService();
+    const { session_id } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      { ownerWindowId: 30, controllerToken: 'agent-r2' },
+    );
+    const waiting = service.waitForStop(session_id, { afterStopSeq: 0, timeoutMs: 5_000 });
+    // js-debug parent/child 实测 body:reason 恒 entry,真实信号在 hitBreakpointIds + description。
+    parent.emit('stopped', {
+      reason: 'entry',
+      description: 'Paused on breakpoint',
+      threadId: 0,
+      hitBreakpointIds: [1],
+    });
+    await expect(waiting).resolves.toMatchObject({
+      reason: 'breakpoint',
+      description: 'Paused on breakpoint',
+    });
+  });
+
+  it('reason 归一:无 hitBreakpointIds 时保留原 reason(step / 真 entry)', async () => {
+    const { service, parent } = makeFakeService();
+    const { session_id } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      { ownerWindowId: 31, controllerToken: 'agent-r3' },
+    );
+    const stepped = service.waitForStop(session_id, { afterStopSeq: 0, timeoutMs: 5_000 });
+    parent.emit('stopped', { reason: 'step', threadId: 0 });
+    await expect(stepped).resolves.toMatchObject({ reason: 'step' });
+  });
+
   it('安全:program 在 workspace 外 → 拒绝且不 spawn adapter (program-workspace 锁)', async () => {
     const parent = new FakeDapClient(1001);
     const { service } = makeFakeService(parent, {

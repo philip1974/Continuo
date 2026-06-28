@@ -988,10 +988,16 @@ export class DebugService {
     const body = asRecord(bodyJson);
     const session = this.requireSession(sessionId);
     const stopSeq = session.stopSeq + 1;
+    // js-debug 在 parent/child 配置下命中断点时仍发 reason:'entry'(真实原因在
+    // description='Paused on breakpoint' + hitBreakpointIds:[...])。hitBreakpointIds
+    // 是 DAP 标准的断点命中权威信号:非空即归一为 'breakpoint'(step/真 entry 不带,保留原 reason)。
+    const rawReason = stringField(body, 'reason') ?? 'stopped';
+    const reason =
+      asArray(body.hitBreakpointIds).length > 0 ? 'breakpoint' : rawReason;
     const output: WaitForStopOutput = {
       session_id: sessionId,
       stop_seq: stopSeq,
-      reason: stringField(body, 'reason') ?? 'stopped',
+      reason,
       ...(numberField(body, 'threadId') !== undefined
         ? { thread_id: numberField(body, 'threadId') }
         : {}),
