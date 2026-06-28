@@ -159,9 +159,10 @@ jobs:
       - name: Build debug spike fixture
         run: pnpm exec tsc -p scripts/debug-spike/tsconfig.json
 
-      # Fetches pinned vscode-js-debug DAP release v1.117.0 (~4MB), then verifies its pinned sha256.
+      # Fetches pinned vscode-js-debug DAP release v1.117.0 (~4MB), verifies its pinned sha256,
+      # and writes the type:commonjs marker (production fetcher; replaced the spike duplicate).
       - name: Fetch pinned js-debug DAP adapter
-        run: node scripts/debug-spike/fetch-adapter.mjs
+        run: node scripts/fetch-debug-adapter.mjs
 
       - name: Assert js-debug DAP adapter exists
         run: test -f scripts/debug-spike/.adapter/js-debug/src/dapDebugServer.js

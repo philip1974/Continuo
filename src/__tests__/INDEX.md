@@ -29,7 +29,6 @@
 ## [Agent-controllable debug spike](./49-agent-controllable-debug/README.md)
 
 - [`dap-framing.spec.ts`](./49-agent-controllable-debug/dap-framing.spec.ts)
-- [`dap-spike.spec.ts`](./49-agent-controllable-debug/dap-spike.spec.ts)
 
 ## [topic 49 · 打磨阶段缺陷修复(P1 批次)](./49-polish-bugfixes/README.md)
 
