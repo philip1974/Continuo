@@ -50,6 +50,13 @@ import {
   type I18nSetLocaleResult,
   type I18nChangedPayload,
 } from '../shared/i18n-channels';
+import {
+  DEBUG_VIEW_CHANNELS,
+  type DebugGetScopesInput,
+  type DebugGetStackInput,
+  type DebugGetVariablesInput,
+  type DebugViewEvent,
+} from '../shared/debug-view-channels';
 import type { Locale } from '../shared/i18n-types';
 import type { NotifyPushPayload } from '../shared/notify-channels';
 import { pluginDataRaw } from './plugin-data.preload';
@@ -420,6 +427,23 @@ const api = {
       ipcRenderer.on(NOTIFY_CHANNELS.PUSH, wrapped);
       return () => ipcRenderer.removeListener(NOTIFY_CHANNELS.PUSH, wrapped);
     },
+  },
+  debug: {
+    subscribe: (): Promise<IpcResult<unknown>> =>
+      ipcRenderer.invoke(DEBUG_VIEW_CHANNELS.SUBSCRIBE, {}),
+    onEvent: (listener: (payload: DebugViewEvent) => void): (() => void) => {
+      const wrapped = (_evt: unknown, payload: DebugViewEvent) => listener(payload);
+      ipcRenderer.on(DEBUG_VIEW_CHANNELS.EVENT, wrapped);
+      return () => ipcRenderer.removeListener(DEBUG_VIEW_CHANNELS.EVENT, wrapped);
+    },
+    getStack: (input: DebugGetStackInput): Promise<IpcResult<unknown>> =>
+      ipcRenderer.invoke(DEBUG_VIEW_CHANNELS.GET_STACK, input),
+    getScopes: (input: DebugGetScopesInput): Promise<IpcResult<unknown>> =>
+      ipcRenderer.invoke(DEBUG_VIEW_CHANNELS.GET_SCOPES, input),
+    getVariables: (
+      input: DebugGetVariablesInput,
+    ): Promise<IpcResult<unknown>> =>
+      ipcRenderer.invoke(DEBUG_VIEW_CHANNELS.GET_VARIABLES, input),
   },
   i18n: {
     /** 同步初值用 — main settings.service 已 hydrate 后返当前 locale。 */

@@ -10,6 +10,7 @@ import GeneralTabPlugin from './GeneralTabPlugin';
 import LanguageSettingPlugin from './LanguageSettingPlugin';
 import TerminalTabPlugin from './TerminalTabPlugin';
 import TerminalPlugin from './TerminalPlugin';
+import DebugPanelPlugin from './DebugPanelPlugin';
 import OutputPlugin from './OutputPlugin';
 import PluginsTabPlugin from './PluginsTabPlugin';
 import SettingsPanelPlugin from './SettingsPanelPlugin';
@@ -33,6 +34,10 @@ const CORES: readonly CoreEntry[] = [
   {
     Cls: TerminalPlugin,
     manifest: { id: 'core.terminal', name: 'Terminal', version: '1.0.0' },
+  },
+  {
+    Cls: DebugPanelPlugin,
+    manifest: { id: 'core.debug-panel', name: 'DebugPanel', version: '1.0.0' },
   },
   {
     Cls: OutputPlugin,

@@ -22,6 +22,7 @@ import { oneDark } from '@codemirror/theme-one-dark';
 import { useSettingValue } from '@/plugins/settings/values-store';
 import { useEditorStore } from '@/stores/editor.store';
 import { useTheme } from '@/theme';
+import { debugDecorationsExtension } from './decorations/debug-decorations';
 
 interface CodeEditorProps {
   tabId: string;
@@ -134,6 +135,7 @@ export function CodeEditor({
         basicSetup,
         themeCompartment.current.of(themeExt),
         langCompartment.current.of(lang),
+        debugDecorationsExtension(),
         EditorView.editable.of(!readonly),
         EditorState.readOnly.of(readonly),
         EditorView.updateListener.of((update: ViewUpdate) => {
@@ -162,12 +164,13 @@ export function CodeEditor({
           },
           // 横向 padding 16px:不让 markdown / 代码内容贴 editor 容器右边
           // (尤其中文长段无空格 wrap 时贴边格外难读);左侧 gutter 之后加
-          // 16px 给视觉呼吸,无 gutter 时(lineNumbers=false)整体往内缩。
+          // 16px 给视觉呼吸,无行号时(lineNumbers=false)整体往内缩。
           '.cm-content': { padding: '12px 16px', fontSize: 'inherit' },
           '.cm-gutters': { border: 'none', fontSize: 'inherit' },
           // editor.lineNumbers=false 时:.cm-editor 加 .cm-no-gutters,
-          // 整列 gutters(行号 + fold marker)隐藏。开关由 useEffect 同步到 dom.classList
-          '&.cm-no-gutters .cm-gutters': { display: 'none' },
+          // 只隐藏 CodeMirror 自带行号/fold gutter,保留独立 debug 断点 gutter。
+          '&.cm-no-gutters .cm-lineNumbers': { display: 'none !important' },
+          '&.cm-no-gutters .cm-foldGutter': { display: 'none !important' },
         }),
       ],
     });

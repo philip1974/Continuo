@@ -10,6 +10,7 @@ import {
 } from './dap-client';
 import { resolveDebugAdapterPath } from './debug-adapter-provision';
 import * as debugSessions from './debug-sessions.service';
+import type { DebugViewEvent } from '../../shared/debug-view-channels';
 
 const execFile = promisify(execFileCb);
 
@@ -62,6 +63,10 @@ export interface DebugProcessOps {
   ) => Promise<readonly number[]>;
 }
 
+export interface DebugEventSink {
+  emit(ownerWindowId: number, event: DebugViewEvent): void;
+}
+
 export interface DebugServiceOptions {
   readonly adapterPath?: string;
   readonly requestTimeoutMs?: number;
@@ -70,6 +75,7 @@ export interface DebugServiceOptions {
     requestTimeoutMs: number;
   }) => DebugDapClientLike;
   readonly processOps?: DebugProcessOps;
+  readonly eventSink?: DebugEventSink;
 }
 
 export interface LaunchSessionInput {
@@ -360,6 +366,7 @@ export class DebugService {
   private readonly processOps: DebugProcessOps;
   private readonly runtimes = new Map<string, RuntimeDebugSession>();
   private readonly teardownInFlight = new Map<string, Promise<void>>();
+  private eventSink: DebugEventSink | null;
 
   constructor(options: DebugServiceOptions = {}) {
     this.adapterPath =
@@ -374,6 +381,11 @@ export class DebugService {
           requestTimeoutMs: clientOptions.requestTimeoutMs,
         }));
     this.processOps = options.processOps ?? DEFAULT_PROCESS_OPS;
+    this.eventSink = options.eventSink ?? null;
+  }
+
+  setEventSink(eventSink: DebugEventSink | null): void {
+    this.eventSink = eventSink;
   }
 
   async launchSession(
@@ -462,7 +474,7 @@ export class DebugService {
     await this.ensureLaunchStarted(runtime);
     const body = asRecord(response.body);
     const breakpoint = asRecord(asArray(body.breakpoints)[0] as DapJson | undefined);
-    return {
+    const result = {
       verified: boolField(breakpoint, 'verified') ?? true,
       ...(numberField(breakpoint, 'line') !== undefined
         ? { line: numberField(breakpoint, 'line') }
@@ -471,6 +483,18 @@ export class DebugService {
         ? { message: stringField(breakpoint, 'message') }
         : {}),
     };
+    this.emitSessionEvent(sessionId, {
+      type: 'breakpoints-changed',
+      sessionId,
+      breakpoint: {
+        file: input.file,
+        line: result.line ?? input.line,
+        ...(input.column !== undefined ? { column: input.column } : {}),
+        verified: result.verified,
+        ...(result.message !== undefined ? { message: result.message } : {}),
+      },
+    });
+    return result;
   }
 
   waitForStop(
@@ -875,6 +899,16 @@ export class DebugService {
       ...(output.thread_id !== undefined ? { currentThreadId: output.thread_id } : {}),
       stoppedReason: output.reason,
     });
+    this.emitSessionEvent(sessionId, {
+      type: 'stopped',
+      sessionId,
+      stopSeq,
+      reason: output.reason,
+      ...(output.thread_id !== undefined ? { threadId: output.thread_id } : {}),
+      ...(output.description !== undefined
+        ? { description: output.description }
+        : {}),
+    });
 
     for (const waiter of Array.from(runtime.waiters)) {
       if (stopSeq <= waiter.afterStopSeq) continue;
@@ -899,6 +933,19 @@ export class DebugService {
       scopeRefs: [],
       stoppedReason: undefined,
     });
+    this.emitSessionEvent(sessionId, {
+      type: 'continued',
+      sessionId,
+      runSeq: session.runSeq + 1,
+    });
+  }
+
+  private emitSessionEvent(sessionId: string, event: DebugViewEvent): void {
+    const sink = this.eventSink;
+    if (!sink) return;
+    const session = debugSessions.get(sessionId);
+    if (!session) return;
+    sink.emit(session.ownerWindowId, event);
   }
 
   private rejectWaiters(sessionId: string, err: Error): void {
@@ -977,6 +1024,11 @@ export class DebugService {
 
     const task = this.doTeardownSession(sessionId, reason).finally(() => {
       debugSessions.markDone(sessionId);
+      this.emitSessionEvent(sessionId, {
+        type: 'terminated',
+        sessionId,
+        reason,
+      });
       debugSessions.remove(sessionId);
       this.runtimes.delete(sessionId);
       this.teardownInFlight.delete(sessionId);

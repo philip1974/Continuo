@@ -6,7 +6,7 @@
 //   activeTab 非 .md → 直接 CodeEditor(mode 不显示)
 //   activeTab 为 null → Welcome
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   getEffectiveMode,
   isTabMilkdownUnsafe,
@@ -30,6 +30,7 @@ import { useAutoSave, isAutoSaveEnabled } from './useAutoSave';
 import { useEditorFile } from './useEditorFile';
 import { useExternalFileSync } from './useExternalFileSync';
 import { resolveLink } from './link-resolve';
+import { startDebugDecorationSync } from './decorations/debug-decoration-sync';
 import { useSettingValue } from '@/plugins/settings/values-store';
 import { coApi } from '@/lib/co-api';
 import { notify } from '@/notifications/notify';
@@ -155,6 +156,8 @@ export function EditorPanel() {
 
   // 外部进程修改文件时,自动同步 non-dirty tab 的内容
   useExternalFileSync();
+
+  useEffect(() => startDebugDecorationSync(), []);
 
   // 显式保存(Cmd+S 或 toolbar)
   const handleSave = useCallback(async () => {

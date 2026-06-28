@@ -94,6 +94,8 @@ import { releaseFsWatchersForWindow } from './ipc/fs.ipc';
 import { isAllowedExternalUrl } from './services/shell.service';
 import { MAX_EXTERNAL_URL_LEN } from './../shared/url-limits';
 import { cancelScopeRequestsForWebContents } from './ipc/plugin-fs.ipc';
+import { registerDebugViewIpc } from './ipc/debug-view.ipc';
+import { DEBUG_VIEW_CHANNELS } from '../shared/debug-view-channels';
 
 // 窗口级资源清理器(scope 授权 / fs watcher / agent 授权)。挂在覆盖全窗口的
 // browser-window-created(见下),主窗与 dockview popout 子窗一视同仁 —— popout 不走
@@ -140,6 +142,20 @@ export const FLUSH_ACK_TIMEOUT_MS = 10_000;
 // (codex 复审 F1,见 quit-cleanup-guard.ts)。
 const quitGuard = makeQuitCleanupGuard();
 const debugService = new DebugService();
+
+debugService.setEventSink({
+  emit(ownerWindowId, event) {
+    const win = BrowserWindow.fromId(ownerWindowId);
+    if (!win || win.isDestroyed()) return;
+    try {
+      win.webContents.send(DEBUG_VIEW_CHANNELS.EVENT, event);
+    } catch (err) {
+      console.error('[debug-view] event send failed', err);
+    }
+  },
+});
+
+registerDebugViewIpc(debugService);
 
 ipcMain.on('window:id', (event: IpcMainEvent) => {
   // 与 layout:flush-ack / plugin-mcp INVOKE_REPLY 对齐:不受信 frame

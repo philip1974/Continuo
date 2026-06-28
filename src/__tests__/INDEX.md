@@ -179,6 +179,13 @@
 - [`debug-schemas.spec.ts`](./50-agent-debug-engine-mvp/debug-schemas.spec.ts)
 - [`mcp-debug-host.spec.ts`](./50-agent-debug-engine-mvp/mcp-debug-host.spec.ts)
 
+## [topic-51 debug breakpoint UI](./51-debug-breakpoint-ui/README.md)
+
+- [`debug-panel.spec.tsx`](./51-debug-breakpoint-ui/debug-panel.spec.tsx)
+- [`debug-store.spec.ts`](./51-debug-breakpoint-ui/debug-store.spec.ts)
+- [`decorations.spec.tsx`](./51-debug-breakpoint-ui/decorations.spec.tsx)
+- [`sync.spec.tsx`](./51-debug-breakpoint-ui/sync.spec.tsx)
+
 ## [AgentAuthPrompt(Agent MCP 授权弹窗)](./agent-auth-prompt/README.md)
 
 - [`agent-auth-prompt.spec.tsx`](./agent-auth-prompt/agent-auth-prompt.spec.tsx)

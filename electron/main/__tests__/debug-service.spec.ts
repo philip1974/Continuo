@@ -21,6 +21,7 @@ import type {
   DapRequestMessage,
   DapResponseMessage,
 } from '../services/dap-client';
+import type { DebugViewEvent } from '../../shared/debug-view-channels';
 
 const execFile = promisify(execFileCb);
 
@@ -247,6 +248,63 @@ describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
     const waiter = service.waitForStop(sessionId, { afterStopSeq: 1, timeoutMs: 30_000 });
     await service.disconnect(sessionId, { terminateDebuggee: true });
     await expect(waiter).rejects.toThrow(/disconnected/i);
+  });
+
+  it('向注入式 event sink 发状态事件,terminated 在 remove session 前发出', async () => {
+    const { service, parent } = makeFakeService();
+    const events: Array<{
+      ownerWindowId: number;
+      event: DebugViewEvent;
+      sessionVisibleAtEmit: boolean;
+    }> = [];
+    service.setEventSink({
+      emit(ownerWindowId, event) {
+        events.push({
+          ownerWindowId,
+          event,
+          sessionVisibleAtEmit: debugSessions.get(event.sessionId) !== undefined,
+        });
+      },
+    });
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      { ownerWindowId: 11, controllerToken: 'agent-events' },
+    );
+
+    await service.setBreakpoints(sessionId, { file: '/fixture.ts', line: 14 });
+    parent.emit('stopped', { reason: 'breakpoint', threadId: 3 });
+    await service.continue(sessionId, { threadId: 3 });
+    await service.killByOwner(11, 'window-closed');
+
+    expect(events.map((entry) => entry.ownerWindowId)).toEqual([11, 11, 11, 11]);
+    expect(events.map((entry) => entry.event.type)).toEqual([
+      'breakpoints-changed',
+      'stopped',
+      'continued',
+      'terminated',
+    ]);
+    expect(events[0]!.event).toMatchObject({
+      type: 'breakpoints-changed',
+      sessionId,
+      breakpoint: { file: '/fixture.ts', line: 14, verified: true },
+    });
+    expect(events[1]!.event).toMatchObject({
+      type: 'stopped',
+      sessionId,
+      stopSeq: 1,
+      reason: 'breakpoint',
+      threadId: 3,
+    });
+    expect(events[2]!.event).toMatchObject({
+      type: 'continued',
+      sessionId,
+      runSeq: 2,
+    });
+    expect(events[3]).toMatchObject({
+      event: { type: 'terminated', sessionId, reason: 'window-closed' },
+      sessionVisibleAtEmit: true,
+    });
+    expect(debugSessions.get(sessionId)).toBeUndefined();
   });
 });
 

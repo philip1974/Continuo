@@ -31,6 +31,10 @@
   --wm-duration-spotlight: 2s;        /* Splash 装饰 spotlight 进场 */
   --wm-delay-spotlight: 400ms;        /* spotlight 启动前等一拍 */
   --wm-blur-sm: 4px;                  /* Modal 背板毛玻璃 */
+
+  /* Debug 可视化:断点 gutter 红点 + 当前命中行背景(light 占位也给完整槽位) */
+  --md-debug-breakpoint: #d32f2f;
+  --md-debug-exec-line: rgba(211, 47, 47, 0.14);
 }
 
 /* ── Continuo 暗色身份(对齐 demo Industrial IDE Dark)──────── */
@@ -75,6 +79,10 @@
   --md-primary-container: #2563eb;
   --md-on-primary-container: #eeefff;
   --md-focus-ring: #2563eb;
+
+  /* Debug 可视化 */
+  --md-debug-breakpoint: #ff6b6b;
+  --md-debug-exec-line: rgba(255, 107, 107, 0.16);
 }
 
 /* ── Tailwind v4 @theme:把 LM 14 个语义 token 映射到 MD3 ───── */
@@ -102,6 +110,8 @@
   --color-warning: var(--md-warning);
   --color-success: var(--md-success);
   --color-info: var(--md-info);
+  --color-debug-breakpoint: var(--md-debug-breakpoint);
+  --color-debug-exec-line: var(--md-debug-exec-line);
 
   /* 字号补漏:wm-text-2xs(10px)暴露成 Tailwind utility text-2xs,
    * 消灭组件里散落的 ~44 处 text-[10px] arbitrary value。
