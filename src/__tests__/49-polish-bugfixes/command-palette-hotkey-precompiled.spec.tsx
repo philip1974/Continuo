@@ -17,17 +17,11 @@ import { render, cleanup, act } from '@testing-library/react';
 vi.mock('../../notifications/notify', () => ({ notify: { error: vi.fn() } }));
 
 vi.mock('../../plugins/keybindings/keybindings-store', async (importActual) => {
-  const actual =
-    await importActual<
-      typeof import('../../plugins/keybindings/keybindings-store')
-    >();
+  const actual = await importActual<typeof import('../../plugins/keybindings/keybindings-store')>();
   return { ...actual, getEffectiveHotkey: vi.fn(actual.getEffectiveHotkey) };
 });
 
-import {
-  buildDisplayCommands,
-  CommandPalette,
-} from '../../plugins/command-palette/CommandPalette';
+import { buildDisplayCommands, CommandPalette } from '../../plugins/command-palette/CommandPalette';
 import { useCommandPaletteStore } from '../../plugins/command-palette/store';
 import { CommandRegistry } from '../../plugins/registries/CommandRegistry';
 import type { CommandSpec } from '../../plugins/registries/CommandRegistry';
@@ -62,11 +56,7 @@ describe('打磨 R28 — CommandPalette hotkey 预计算', () => {
     ];
     const mapSpy = vi.spyOn(commands, 'map');
     try {
-      const out = buildDisplayCommands(
-        commands,
-        (_key, fallback) => fallback,
-        'other',
-      );
+      const out = buildDisplayCommands(commands, (_key, fallback) => fallback, 'other');
 
       expect(out.map((d) => d.cmd.id)).toEqual(['a', 'b', 'c']);
       expect(out[0]?.hotkeyParts).toEqual(['Ctrl', 'A']);
@@ -78,45 +68,34 @@ describe('打磨 R28 — CommandPalette hotkey 预计算', () => {
     }
   });
 
-  it('无 hotkey 且无 override 的命令不调用 getEffectiveHotkey', () => {
+  it('用传入 overrides 预计算 hotkey,不逐命令读 keybindings store', () => {
     const commands: CommandSpec[] = [
       { id: 'a', title: 'A', hotkey: 'mod+a', fn: vi.fn() },
       { id: 'b', title: 'B', fn: vi.fn() },
       { id: 'c', title: 'C', fn: vi.fn() },
     ];
-    useKeybindingsStore.setState({ overrides: { c: 'mod+c' } });
+    useKeybindingsStore.setState({ overrides: {} });
 
-    const out = buildDisplayCommands(
-      commands,
-      (_key, fallback) => fallback,
-      'other',
-      { c: 'mod+c' },
-    );
+    const out = buildDisplayCommands(commands, (_key, fallback) => fallback, 'other', {
+      c: 'mod+c',
+    });
 
     expect(out.map((d) => d.cmd.id)).toEqual(['a', 'b', 'c']);
     expect(out[0]?.hotkeyParts).toEqual(['Ctrl', 'A']);
     expect(out[1]?.hotkeyParts).toEqual([]);
     expect(out[2]?.hotkeyParts).toEqual(['Ctrl', 'C']);
-    expect(getEffSpy).toHaveBeenCalledTimes(2);
+    expect(getEffSpy).not.toHaveBeenCalled();
   });
 
   it('已小写搜索源不调用 toLowerCase', () => {
-    const commands: CommandSpec[] = [
-      { id: 'a', title: 'save', category: 'file', fn: vi.fn() },
-    ];
+    const commands: CommandSpec[] = [{ id: 'a', title: 'save', category: 'file', fn: vi.fn() }];
     const lowerSpy = vi.spyOn(String.prototype, 'toLowerCase');
 
     try {
-      const out = buildDisplayCommands(
-        commands,
-        (_key, fallback) => fallback,
-        'other',
-      );
+      const out = buildDisplayCommands(commands, (_key, fallback) => fallback, 'other');
 
       expect(out[0]?.matchSourceLower).toBe('file save');
-      expect(
-        lowerSpy.mock.contexts.some((ctx) => String(ctx) === 'file save'),
-      ).toBe(false);
+      expect(lowerSpy.mock.contexts.some((ctx) => String(ctx) === 'file save')).toBe(false);
       expect(
         buildDisplayCommands(
           [{ id: 'b', title: 'Save', category: 'File', fn: vi.fn() }],
@@ -132,24 +111,20 @@ describe('打磨 R28 — CommandPalette hotkey 预计算', () => {
   it('空命令列表 → 稳定空数组,不读取 hotkey', () => {
     const commands: CommandSpec[] = [];
 
-    const out = buildDisplayCommands(
-      commands,
-      (_key, fallback) => fallback,
-      'other',
-    );
+    const out = buildDisplayCommands(commands, (_key, fallback) => fallback, 'other');
 
     expect(out).toEqual([]);
     expect(out).toBe(buildDisplayCommands(commands, (_key, fallback) => fallback, 'other'));
     expect(getEffSpy).not.toHaveBeenCalled();
   });
 
-  it('selectedIndex 变化 → 不再逐行调 getEffectiveHotkey', () => {
+  it('打开与 selectedIndex 变化都不逐行调 getEffectiveHotkey', () => {
     render(<CommandPalette commands={makeReg()} />);
     act(() => useCommandPaletteStore.getState().open());
     const afterOpen = getEffSpy.mock.calls.length;
-    expect(afterOpen).toBeGreaterThan(0); // 预计算时调过
+    expect(afterOpen).toBe(0);
 
-    // ↓↓↓ 改 selectedIndex,整列重渲但 hotkey 已预计算,不应再调
+    // ↓↓↓ 改 selectedIndex,整列重渲但 hotkey 已预计算,不应调全局 store helper
     act(() => useCommandPaletteStore.getState().moveSelection(1, 3));
     act(() => useCommandPaletteStore.getState().moveSelection(1, 3));
 

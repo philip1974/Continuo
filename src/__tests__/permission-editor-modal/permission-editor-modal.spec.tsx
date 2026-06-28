@@ -57,6 +57,23 @@ describe('PermissionEditorModal — save helpers', () => {
 });
 
 describe('PermissionEditorModal — 渲染条件', () => {
+  it('open=false / pluginId=null shell 直接返回,不初始化 body 状态或 i18n', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/plugins/permissions/PermissionEditorModal.tsx'),
+      'utf8',
+    );
+    const shellStart = src.indexOf('export function PermissionEditorModal(');
+    const bodyStart = src.indexOf('function PermissionEditorModalBody');
+    const shellSrc = src.slice(shellStart, bodyStart);
+
+    expect(shellStart).toBeGreaterThanOrEqual(0);
+    expect(bodyStart).toBeGreaterThan(shellStart);
+    expect(shellSrc).toContain('if (!open || !pluginId) return null;');
+    expect(shellSrc).not.toContain('useT(');
+    expect(shellSrc).not.toContain('useState(');
+    expect(src.indexOf('const t = useT();')).toBeGreaterThan(bodyStart);
+  });
+
   it('decisions state 使用 lazy initializer,避免每次 render eager new Map', () => {
     const src = readFileSync(
       join(process.cwd(), 'src/plugins/permissions/PermissionEditorModal.tsx'),
@@ -83,18 +100,19 @@ describe('PermissionEditorModal — 渲染条件', () => {
     expect(container.querySelector('.wm-modal-content')).toBeNull();
   });
 
-  it('open=false → Modal 不可见(visible 透传给 design Modal)', () => {
+  it('open=false → 不挂载 body,不触发权限加载', () => {
+    const store = makeStore();
     render(
       <PermissionEditorModal
         open={false}
         pluginId="p1"
         declared={['fs']}
-        store={makeStore()}
+        store={store}
         onClose={vi.fn()}
       />,
     );
-    // design Modal 在 visible=false 时不挂载
     expect(document.querySelector('.wm-modal-content')).toBeNull();
+    expect(store.get).not.toHaveBeenCalled();
   });
 });
 

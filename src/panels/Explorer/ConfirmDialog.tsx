@@ -16,6 +16,13 @@ interface ConfirmDialogProps {
 // design Modal 自带 ESC + overlay 点击 → onClose,这里把 onClose 接到 onCancel。
 export function ConfirmDialog({
   open,
+  ...props
+}: ConfirmDialogProps) {
+  if (!open) return null;
+  return <ConfirmDialogBody {...props} />;
+}
+
+function ConfirmDialogBody({
   title,
   description,
   confirmLabel,
@@ -23,12 +30,12 @@ export function ConfirmDialog({
   destructive = false,
   onConfirm,
   onCancel,
-}: ConfirmDialogProps) {
+}: Omit<ConfirmDialogProps, 'open'>) {
   const t = useT();
   const confirmText = confirmLabel ?? t('panels.explorer.confirm.confirm');
   const cancelText = cancelLabel ?? t('panels.explorer.confirm.cancel');
   return (
-    <Modal visible={open} onClose={onCancel} aria-labelledby="confirm-dialog-title">
+    <Modal visible onClose={onCancel} aria-labelledby="confirm-dialog-title">
       <h2
         id="confirm-dialog-title"
         className="mb-2 text-sm font-medium text-fg"

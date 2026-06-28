@@ -51,13 +51,16 @@ export function selectValidMarketplaceEntries(
       ? (entries as MarketplaceEntry[])
       : EMPTY_MARKETPLACE_ENTRIES;
   }
-  const out = new Array<MarketplaceEntry>(count);
+  let out: MarketplaceEntry[] | null = null;
   let outCount = 0;
   for (let i = 0; i < count; i++) {
     const entry = entries[i];
-    if (isValidMarketplaceEntry(entry)) out[outCount++] = entry;
+    if (isValidMarketplaceEntry(entry)) {
+      out ??= new Array<MarketplaceEntry>(count);
+      out[outCount++] = entry;
+    }
   }
-  if (outCount === 0) return EMPTY_MARKETPLACE_ENTRIES;
+  if (out === null) return EMPTY_MARKETPLACE_ENTRIES;
   out.length = outCount;
   return out;
 }

@@ -5,16 +5,28 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fireEvent, render, cleanup, act } from '@testing-library/react';
+
+vi.mock('../../plugins/keybindings/keybindings-store', async (importActual) => {
+  const actual = await importActual<typeof import('../../plugins/keybindings/keybindings-store')>();
+  return { ...actual, getEffectiveHotkey: vi.fn(actual.getEffectiveHotkey) };
+});
+
 import {
   KeybindingCaptureModal,
   eventToCombo,
   selectKeybindingConflicts,
 } from '../../plugins/keybindings/KeybindingCaptureModal';
-import { useKeybindingsStore } from '../../plugins/keybindings/keybindings-store';
+import {
+  getEffectiveHotkey,
+  useKeybindingsStore,
+} from '../../plugins/keybindings/keybindings-store';
 import type { CommandSpec } from '../../plugins/registries/CommandRegistry';
+
+const getEffSpy = getEffectiveHotkey as unknown as ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   useKeybindingsStore.setState({ overrides: {} });
+  getEffSpy.mockClear();
 });
 
 afterEach(() => cleanup());
@@ -27,6 +39,7 @@ function defaultProps(over: Partial<Parameters<typeof KeybindingCaptureModal>[0]
     currentHotkey: undefined,
     defaultHotkey: undefined,
     allCommands: [] as readonly CommandSpec[],
+    overrides: {},
     onSave: vi.fn(),
     onClose: vi.fn(),
     onResetToDefault: vi.fn(),
@@ -58,9 +71,7 @@ function dispatchKey(opts: {
 
 function getButtons(): Record<string, HTMLButtonElement> {
   const out: Record<string, HTMLButtonElement> = {};
-  for (const b of document.querySelectorAll<HTMLButtonElement>(
-    '.wm-modal-content button',
-  )) {
+  for (const b of document.querySelectorAll<HTMLButtonElement>('.wm-modal-content button')) {
     out[b.textContent ?? ''] = b;
   }
   return out;
@@ -81,12 +92,27 @@ describe('KeybindingCaptureModal — 显示态', () => {
     expect(src).not.toContain('hotkey: formatHotkeyParts(defaultHotkey');
   });
 
+  it('visible=false shell 直接返回,不订阅 i18n 或初始化捕获状态', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/plugins/keybindings/KeybindingCaptureModal.tsx'),
+      'utf8',
+    );
+    const shellStart = src.indexOf('export function KeybindingCaptureModal(');
+    const bodyStart = src.indexOf('function KeybindingCaptureModalBody');
+    const shellSrc = src.slice(shellStart, bodyStart);
+
+    expect(shellStart).toBeGreaterThanOrEqual(0);
+    expect(bodyStart).toBeGreaterThan(shellStart);
+    expect(shellSrc).toContain('if (!visible) return null;');
+    expect(shellSrc).not.toContain('useT(');
+    expect(shellSrc).not.toContain('useState(');
+    expect(src.indexOf('const t = useT();')).toBeGreaterThan(bodyStart);
+  });
+
   it('captured=null + currentHotkey=undefined → 显示「按下新组合…」', () => {
     const props = defaultProps();
     render(<KeybindingCaptureModal {...props} />);
-    expect(document.querySelector('.wm-modal-content')!.textContent).toContain(
-      '按下新组合…',
-    );
+    expect(document.querySelector('.wm-modal-content')!.textContent).toContain('按下新组合…');
   });
 
   it('visible=false → 不渲染 Modal', () => {
@@ -116,9 +142,7 @@ describe('KeybindingCaptureModal — 显示态', () => {
     render(<KeybindingCaptureModal {...props} />);
     dispatchKey({ key: 'x', ctrlKey: true }); // → 'mod+x' 与 cmd.b 冲突
     // A61 起捕获结果框本身也是 role=status → 同页两个 live region,用 .some() 按文本定位冲突警告。
-    const statuses = Array.from(
-      document.querySelectorAll('.wm-modal-content [role=status]'),
-    );
+    const statuses = Array.from(document.querySelectorAll('.wm-modal-content [role=status]'));
     const conflict = statuses.find((s) => s.textContent?.includes('Other Command'));
     expect(conflict).toBeTruthy();
     // a11y(A89):conflict_title catalog 已去 ⚠️;视觉 emoji 在 aria-hidden span 内。
@@ -133,23 +157,17 @@ describe('KeybindingCaptureModal — 显示态', () => {
     const props = defaultProps();
     render(<KeybindingCaptureModal {...props} />);
     // 占位态:框含「按下新组合…」且在 role=status 内
-    const statuses0 = Array.from(
-      document.querySelectorAll('.wm-modal-content [role=status]'),
-    );
+    const statuses0 = Array.from(document.querySelectorAll('.wm-modal-content [role=status]'));
     const box0 = statuses0.find((s) => s.textContent?.includes('按下新组合'));
     expect(box0).toBeTruthy();
     // 按下组合 → 同一 role=status 框反映新组合(X)
     dispatchKey({ key: 'x', ctrlKey: true });
-    const statuses1 = Array.from(
-      document.querySelectorAll('.wm-modal-content [role=status]'),
-    );
+    const statuses1 = Array.from(document.querySelectorAll('.wm-modal-content [role=status]'));
     const box1 = statuses1.find((s) => /X/i.test(s.textContent ?? ''));
     expect(box1).toBeTruthy();
     // Backspace → 未绑定,仍在 role=status 内
     dispatchKey({ key: 'Backspace' });
-    const statuses2 = Array.from(
-      document.querySelectorAll('.wm-modal-content [role=status]'),
-    );
+    const statuses2 = Array.from(document.querySelectorAll('.wm-modal-content [role=status]'));
     const box2 = statuses2.find((s) => s.textContent?.includes('未绑定'));
     expect(box2).toBeTruthy();
   });
@@ -175,9 +193,7 @@ describe('KeybindingCaptureModal — 按键', () => {
     expect(ev.defaultPrevented).toBe(false);
     // 未捕获任何组合 → 保存仍 disabled、占位文案仍在
     expect(getButtons()['保存'].disabled).toBe(true);
-    expect(document.querySelector('.wm-modal-content')!.textContent).toContain(
-      '按下新组合…',
-    );
+    expect(document.querySelector('.wm-modal-content')!.textContent).toContain('按下新组合…');
   });
 
   // Shift+Tab 同理(key 仍是 'Tab')须放行反向焦点导航。
@@ -270,9 +286,7 @@ describe('KeybindingCaptureModal — 按键', () => {
     const props = defaultProps();
     render(<KeybindingCaptureModal {...props} />);
     dispatchKey({ key: 'Backspace' });
-    expect(document.querySelector('.wm-modal-content')!.textContent).toContain(
-      '未绑定',
-    );
+    expect(document.querySelector('.wm-modal-content')!.textContent).toContain('未绑定');
   });
 });
 
@@ -341,13 +355,27 @@ describe('KeybindingCaptureModal — 冲突检测', () => {
       expect(conflicts.map((c) => c.id)).toEqual(['cmd.b', 'cmd.c']);
       expect(filterCallsDuringSelect).toBe(0);
       expect(iteratorSpy).toHaveBeenCalledTimes(1);
-      expect(selectKeybindingConflicts.toString()).not.toContain(
-        'conflicts.push(',
-      );
+      expect(selectKeybindingConflicts.toString()).not.toContain('conflicts.push(');
     } finally {
       filterSpy.mockRestore();
       iteratorSpy.mockRestore();
     }
+  });
+
+  it('冲突检测使用传入 overrides 快照,不逐条 getEffectiveHotkey 读 store', () => {
+    const all: CommandSpec[] = [
+      { id: 'cmd.a', title: 'A', hotkey: 'mod+old', fn: () => {} },
+      { id: 'cmd.b', title: 'B', hotkey: 'mod+b', fn: () => {} },
+      { id: 'cmd.c', title: 'C', hotkey: 'mod+x', fn: () => {} },
+    ];
+    useKeybindingsStore.setState({ overrides: {} });
+
+    const conflicts = selectKeybindingConflicts(all, 'cmd.a', 'mod+x', {
+      'cmd.b': 'mod+x',
+    });
+
+    expect(conflicts.map((c) => c.id)).toEqual(['cmd.b', 'cmd.c']);
+    expect(getEffSpy).not.toHaveBeenCalled();
   });
 
   it('其它命令的 effective hotkey 与 captured 相同 → 显示警告', () => {
@@ -364,14 +392,10 @@ describe('KeybindingCaptureModal — 冲突检测', () => {
   });
 
   it('captured=null → 不显示警告', () => {
-    const all: CommandSpec[] = [
-      { id: 'cmd.b', title: 'B', hotkey: 'mod+x', fn: () => {} },
-    ];
+    const all: CommandSpec[] = [{ id: 'cmd.b', title: 'B', hotkey: 'mod+x', fn: () => {} }];
     const props = defaultProps({ allCommands: all });
     render(<KeybindingCaptureModal {...props} />);
-    expect(
-      document.querySelector('.wm-modal-content')!.textContent,
-    ).not.toContain('此组合已绑定');
+    expect(document.querySelector('.wm-modal-content')!.textContent).not.toContain('此组合已绑定');
   });
 });
 
@@ -383,9 +407,7 @@ describe('KeybindingCaptureModal — visible 切换 → captured 复位', () => 
     rerender(<KeybindingCaptureModal {...props} visible={false} />);
     rerender(<KeybindingCaptureModal {...props} visible={true} />);
 
-    expect(document.querySelector('.wm-modal-content')!.textContent).toContain(
-      '按下新组合…',
-    );
+    expect(document.querySelector('.wm-modal-content')!.textContent).toContain('按下新组合…');
   });
 });
 
@@ -435,9 +457,7 @@ describe('eventToCombo — E145 拒非法 hotkey 形态', () => {
 
     try {
       expect(eventToCombo(ev({ key: 'x', ctrlKey: true }))).toBe('mod+x');
-      expect(lowerSpy.mock.contexts.some((ctx) => String(ctx) === 'x')).toBe(
-        false,
-      );
+      expect(lowerSpy.mock.contexts.some((ctx) => String(ctx) === 'x')).toBe(false);
       expect(eventToCombo(ev({ key: 'X', ctrlKey: true }))).toBe('mod+x');
     } finally {
       lowerSpy.mockRestore();
@@ -445,9 +465,7 @@ describe('eventToCombo — E145 拒非法 hotkey 形态', () => {
   });
 
   it('组合片段直接拼接,不分配 parts 数组/不通过 push 扩容', () => {
-    expect(eventToCombo(ev({ key: 'x', ctrlKey: true, shiftKey: true }))).toBe(
-      'mod+shift+x',
-    );
+    expect(eventToCombo(ev({ key: 'x', ctrlKey: true, shiftKey: true }))).toBe('mod+shift+x');
     expect(eventToCombo.toString()).not.toContain('new Array<string>(5)');
     expect(eventToCombo.toString()).not.toContain('parts.push(');
   });

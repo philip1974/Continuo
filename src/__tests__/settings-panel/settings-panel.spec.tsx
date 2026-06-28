@@ -44,10 +44,7 @@ function makeReg(): SettingTabRegistry {
 
 describe('SettingsPanel · 基础渲染', () => {
   it('搜索框 placeholder label 复用,aria-label 与 placeholder 不重复查 catalog', () => {
-    const src = readFileSync(
-      join(process.cwd(), 'src/plugins/settings/SettingsPanel.tsx'),
-      'utf8',
-    );
+    const src = readFileSync(join(process.cwd(), 'src/plugins/settings/SettingsPanel.tsx'), 'utf8');
 
     expect(src).toContain('const searchPlaceholderLabel = t(');
     expect(src).toContain('aria-label={searchPlaceholderLabel}');
@@ -100,8 +97,7 @@ describe('SettingsPanel · 基础渲染', () => {
   // Tab/Enter → nav 按钮须 disabled,与视觉禁用一致。
   it('a11y · 搜索模式下 nav 按钮 disabled(键盘也不可触发)', () => {
     const { container } = render(<SettingsPanel registry={makeReg()} />);
-    const navBtns = () =>
-      Array.from(container.querySelectorAll<HTMLButtonElement>('nav button'));
+    const navBtns = () => Array.from(container.querySelectorAll<HTMLButtonElement>('nav button'));
     expect(navBtns().every((b) => !b.disabled)).toBe(true); // 非搜索:可用
     // 输入搜索 → inSearch=true
     const searchInput = container.querySelector('input') as HTMLInputElement;
@@ -127,12 +123,8 @@ describe('SettingsPanel · 基础渲染', () => {
 
     try {
       expect(settingsNavClassName(false)).toContain('opacity-100');
-      expect(settingsNavClassName(true)).toContain(
-        'pointer-events-none opacity-40',
-      );
-      expect(settingsTabButtonClassName(true)).toContain(
-        'border-accent bg-hover text-fg',
-      );
+      expect(settingsNavClassName(true)).toContain('pointer-events-none opacity-40');
+      expect(settingsTabButtonClassName(true)).toContain('border-accent bg-hover text-fg');
       expect(settingsTabButtonClassName(false)).toContain(
         'border-transparent text-fg-muted hover:bg-hover/50',
       );
@@ -275,9 +267,7 @@ describe('SettingsPanel · 搜索模式', () => {
 
     try {
       expect(selectMatchedSettingItems([], 'theme')).toEqual([]);
-      expect(selectMatchedSettingItems([], 'theme')).toBe(
-        selectMatchedSettingItems([], 'other'),
-      );
+      expect(selectMatchedSettingItems([], 'theme')).toBe(selectMatchedSettingItems([], 'other'));
       expect(lowerSpy).not.toHaveBeenCalled();
     } finally {
       lowerSpy.mockRestore();
@@ -297,9 +287,7 @@ describe('SettingsPanel · 搜索模式', () => {
 
     try {
       expect(selectMatchedSettingItems(searchable, 'theme')).toEqual([item]);
-      expect(
-        lowerSpy.mock.contexts.some((ctx) => String(ctx) === 'theme'),
-      ).toBe(false);
+      expect(lowerSpy.mock.contexts.some((ctx) => String(ctx) === 'theme')).toBe(false);
       expect(selectMatchedSettingItems(searchable, 'THEME')).toEqual([item]);
     } finally {
       lowerSpy.mockRestore();
@@ -321,6 +309,13 @@ describe('SettingsPanel · 搜索模式', () => {
 
     expect(a).toEqual([]);
     expect(b).toBe(a);
+  });
+
+  it('非空 searchable 无匹配路径不预分配 matched 数组', () => {
+    const src = readFileSync(join(process.cwd(), 'src/plugins/settings/SettingsPanel.tsx'), 'utf8');
+
+    expect(src).toContain('let matched: SettingItemSpec[] | null = null;');
+    expect(src).not.toContain('const matched = new Array<SettingItemSpec>(searchable.length);');
   });
 
   it('搜索 haystack 列表构造预分配数组,不调用 items.map', () => {
@@ -372,8 +367,7 @@ describe('SettingsPanel · 搜索模式', () => {
       ).toBe('theme switch mode general.theme theme switch mode');
       expect(
         lowerSpy.mock.contexts.some(
-          (ctx) =>
-            String(ctx) === 'theme switch mode general.theme theme switch mode',
+          (ctx) => String(ctx) === 'theme switch mode general.theme theme switch mode',
         ),
       ).toBe(false);
       expect(
@@ -416,10 +410,7 @@ describe('SettingsPanel · 搜索模式', () => {
     try {
       const buckets = groupSearchResults([itemA, itemB]);
       expect(arrayFromSpy).not.toHaveBeenCalled();
-      expect(buckets.map((bucket) => bucket.category)).toEqual([
-        'general',
-        'editor',
-      ]);
+      expect(buckets.map((bucket) => bucket.category)).toEqual(['general', 'editor']);
       expect(buckets[0]?.items).toEqual([itemA]);
       expect(buckets[1]?.items).toEqual([itemB]);
       expect(groupSearchResults.toString()).not.toContain('buckets.push(');
@@ -479,9 +470,7 @@ describe('SettingsPanel · 搜索模式', () => {
     try {
       const buckets = groupSearchResults(items);
 
-      expect(buckets).toEqual([
-        { category: 'editor', label: '编辑器', items },
-      ]);
+      expect(buckets).toEqual([{ category: 'editor', label: '编辑器', items }]);
       expect(buckets[0]?.items).toBe(items);
       expect(mapCtorCount).toBe(0);
     } finally {
@@ -578,9 +567,7 @@ describe('SettingsPanel · 搜索模式', () => {
 
     // 搜 a 命中所有(包含 description / title)
     fireEvent.change(input, { target: { value: 'a' } });
-    const headers = Array.from(container.querySelectorAll('h3')).map(
-      (h) => h.textContent,
-    );
+    const headers = Array.from(container.querySelectorAll('h3')).map((h) => h.textContent);
     // pluginland 是自定义 category,fallback raw 显示
     expect(headers).toContain('pluginland');
     // 内置 category 应显示中文 label
@@ -598,9 +585,7 @@ describe('SettingsPanel · 搜索模式', () => {
     expect(container.querySelector('nav')!.className).toContain('opacity-40');
 
     fireEvent.change(input, { target: { value: '' } });
-    expect(container.querySelector('nav')!.className).not.toContain(
-      'opacity-40',
-    );
+    expect(container.querySelector('nav')!.className).not.toContain('opacity-40');
   });
 
   it('全空白 query 视为非搜索模式', () => {

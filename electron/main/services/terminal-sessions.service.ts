@@ -93,6 +93,8 @@ const subscribers = new Set<SessionsSubscriber>();
 const titleCounter: Map<number, number> = new Map();
 let cachedSnapshot: readonly MainTerminalSession[] | null = null;
 const cachedSnapshotsByOwner = new Map<number, readonly MainTerminalSession[]>();
+const EMPTY_TERMINAL_SESSION_SNAPSHOT: readonly MainTerminalSession[] = [];
+const EMPTY_REMOVED_SESSION_IDS: readonly string[] = [];
 
 // 边界(E235,E230 数量上限族):终端会话数量上限。每个 session 占一个**真实 PTY 子进程** + 4MiB ring
 // buffer + throttle interval + metadata 快照广播 + Dock panel —— 数量上限族里最重的资源。此前 add() 无
@@ -116,6 +118,10 @@ function sessionCountForWindow(ownerWindowId: number): number {
 
 function snapshot(): readonly MainTerminalSession[] {
   if (cachedSnapshot !== null) return cachedSnapshot;
+  if (sessions.size === 0) {
+    cachedSnapshot = EMPTY_TERMINAL_SESSION_SNAPSHOT;
+    return cachedSnapshot;
+  }
 
   const out = new Array<MainTerminalSession>(sessions.size);
   let i = 0;
@@ -209,10 +215,19 @@ export function getAll(filter?: GetAllFilter): readonly MainTerminalSession[] {
   const cached = cachedSnapshotsByOwner.get(filter.ownerWindowId);
   if (cached !== undefined) return cached;
 
-  const out = new Array<MainTerminalSession>(sessions.size);
+  let out: MainTerminalSession[] | null = null;
   let count = 0;
+  let scanned = 0;
   for (const s of sessions.values()) {
-    if (s.ownerWindowId === filter.ownerWindowId) out[count++] = s;
+    if (s.ownerWindowId === filter.ownerWindowId) {
+      if (out === null) out = new Array<MainTerminalSession>(sessions.size - scanned);
+      out[count++] = s;
+    }
+    scanned += 1;
+  }
+  if (out === null) {
+    cachedSnapshotsByOwner.set(filter.ownerWindowId, EMPTY_TERMINAL_SESSION_SNAPSHOT);
+    return EMPTY_TERMINAL_SESSION_SNAPSHOT;
   }
   out.length = count;
   cachedSnapshotsByOwner.set(filter.ownerWindowId, out);
@@ -240,16 +255,21 @@ export function removeByOwner(ownerWindowId: number): readonly string[] {
   // sessions)。在 early-return 之前清,覆盖「窗口建过终端但已逐个 remove」的情况。
   // 见第十六轮 P2-AS。
   titleCounter.delete(ownerWindowId);
-  const removed = new Array<string>(sessions.size);
+  let removed: string[] | null = null;
   let removedCount = 0;
+  let scanned = 0;
   for (const [id, s] of sessions) {
     if (s.ownerWindowId === ownerWindowId) {
+      if (removed === null) {
+        removed = new Array<string>(sessions.size - scanned);
+      }
       removed[removedCount] = id;
       removedCount += 1;
     }
+    scanned += 1;
   }
+  if (removed === null) return EMPTY_REMOVED_SESSION_IDS;
   removed.length = removedCount;
-  if (removed.length === 0) return removed;
   for (const id of removed) sessions.delete(id);
   invalidateSnapshotCache();
   notify();

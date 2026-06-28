@@ -291,7 +291,7 @@ export function getStateAfterRemovingPath(
   // EditorPanel 的 dirty 关闭确认,静默丢失内存里的未保存增量(磁盘旧版本进废纸篓
   // 可恢复,但内存增量无处可寻)。参考 VSCode:删除有未保存改动的文件保留 dirty
   // 编辑器。仅 clean tab 自动关闭;dirty tab 留给用户显式保存或经确认丢弃。
-  const remaining = new Array<EditorTab>(tabs.length);
+  let remaining: EditorTab[] | null = null;
   let count = 0;
   let changed = false;
   let activeKept = false;
@@ -306,12 +306,17 @@ export function getStateAfterRemovingPath(
     const shouldRemove = isMatch(tab.filePath) && !tab.dirty;
 
     if (shouldRemove) {
+      if (remaining === null) {
+        remaining = new Array<EditorTab>(tabs.length - 1);
+        for (let j = 0; j < count; j++) remaining[j] = tabs[j]!;
+      }
       changed = true;
       if (isActive) activeRemoved = true;
       continue;
     }
 
-    remaining[count++] = tab;
+    if (remaining !== null) remaining[count] = tab;
+    count += 1;
     if (isActive) {
       activeKept = true;
     } else if (!seenActive) {
@@ -322,6 +327,7 @@ export function getStateAfterRemovingPath(
   }
 
   if (!changed) return { tabs, activeTabId };
+  remaining ??= [];
   remaining.length = count;
   if (remaining.length === 0) {
     return { tabs: EMPTY_EDITOR_TABS, activeTabId: null };

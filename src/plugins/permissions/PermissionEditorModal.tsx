@@ -64,11 +64,26 @@ export function splitPermissionDecisionsForSave(
 export function PermissionEditorModal({
   open,
   pluginId,
+  ...props
+}: PermissionEditorModalProps) {
+  if (!open || !pluginId) return null;
+  return <PermissionEditorModalBody pluginId={pluginId} {...props} />;
+}
+
+type PermissionEditorModalBodyProps = Omit<
+  PermissionEditorModalProps,
+  'open' | 'pluginId'
+> & {
+  readonly pluginId: string;
+};
+
+function PermissionEditorModalBody({
+  pluginId,
   declared,
   store,
   onClose,
   pluginStillExists,
-}: PermissionEditorModalProps) {
+}: PermissionEditorModalBodyProps) {
   const t = useT();
   // null = 未决, true = granted, false = denied
   const [decisions, setDecisions] = useState<Map<PermissionKey, boolean | null>>(
@@ -90,7 +105,6 @@ export function PermissionEditorModal({
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (!open || !pluginId) return;
     let cancelled = false;
     setLoadFailed(false);
     setLoading(true);
@@ -115,9 +129,7 @@ export function PermissionEditorModal({
     return () => {
       cancelled = true;
     };
-  }, [open, pluginId, declared, store]);
-
-  if (!pluginId) return null;
+  }, [pluginId, declared, store]);
 
   const toggle = (perm: PermissionKey) => {
     setDecisions((m) => {
@@ -157,7 +169,7 @@ export function PermissionEditorModal({
   };
 
   return (
-    <Modal visible={open} onClose={onClose} aria-labelledby="permission-editor-title">
+    <Modal visible onClose={onClose} aria-labelledby="permission-editor-title">
       {/* a11y(A13):dialog 关联标题。 */}
       <h2 id="permission-editor-title" className="mb-1 text-sm font-medium text-fg">
         {t('permissions.editor.title')}

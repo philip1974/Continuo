@@ -460,14 +460,16 @@ function cappedAllValid<T>(
   isValid: (x: unknown) => x is T,
   max: number,
 ): T[] | null {
-  const out = new Array<T>(Math.min(arr.length, max));
+  let out: T[] | null = null;
   let outCount = 0;
   for (const x of arr) {
     if (outCount >= max) break;
     if (!isValid(x)) return null;
+    out ??= new Array<T>(Math.min(arr.length, max));
     out[outCount] = x;
     outCount += 1;
   }
+  if (out === null) return [];
   out.length = outCount;
   return out;
 }
@@ -482,15 +484,17 @@ function collectValidCapped<T>(
   isValid: (x: unknown) => x is T,
   max: number,
 ): T[] {
-  const out = new Array<T>(Math.min(arr.length, max));
+  let out: T[] | null = null;
   let outCount = 0;
   for (const x of arr) {
     if (outCount >= max) break;
     if (isValid(x)) {
+      out ??= new Array<T>(Math.min(arr.length, max));
       out[outCount] = x;
       outCount += 1;
     }
   }
+  if (out === null) return [];
   out.length = outCount;
   return out;
 }
@@ -501,15 +505,17 @@ function collectMappedValidCapped<T, U>(
   mapValid: (x: T) => U,
   max: number,
 ): U[] {
-  const out = new Array<U>(Math.min(arr.length, max));
+  let out: U[] | null = null;
   let outCount = 0;
   for (const x of arr) {
     if (outCount >= max) break;
     if (isValid(x)) {
+      out ??= new Array<U>(Math.min(arr.length, max));
       out[outCount] = mapValid(x);
       outCount += 1;
     }
   }
+  if (out === null) return [];
   out.length = outCount;
   return out;
 }

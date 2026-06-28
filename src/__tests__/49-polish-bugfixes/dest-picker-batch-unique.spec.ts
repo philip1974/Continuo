@@ -79,10 +79,7 @@ describe('打磨 — FolderTree hidden file 过滤', () => {
     const filterSpy = vi.spyOn(Array.prototype, 'filter');
 
     try {
-      expect(selectVisibleTreeItems(items, false)).toEqual([
-        items[0],
-        items[2],
-      ]);
+      expect(selectVisibleTreeItems(items, false)).toEqual([items[0], items[2]]);
       expect(filterSpy.mock.contexts.some((ctx) => ctx === items)).toBe(false);
     } finally {
       filterSpy.mockRestore();
@@ -110,8 +107,7 @@ describe('打磨 — FolderTree drop 失败消息格式化', () => {
 
     try {
       expect(formatDropFailureLines(failed)).toBe(
-        '  a.txt: [FS_BAD_NAME] 文件名不合法\n' +
-          '  b.txt: [FS_BAD_NAME] 文件名不合法',
+        '  a.txt: [FS_BAD_NAME] 文件名不合法\n' + '  b.txt: [FS_BAD_NAME] 文件名不合法',
       );
       expect(mapSpy.mock.contexts.some((ctx) => ctx === failed)).toBe(false);
     } finally {
@@ -120,20 +116,14 @@ describe('打磨 — FolderTree drop 失败消息格式化', () => {
   });
 
   it('外部 drop 提示直接条件 notify,不创建 msgs 临时数组', () => {
-    const src = readFileSync(
-      join(ROOT, 'panels', 'Explorer', 'FolderTree.tsx'),
-      'utf8',
-    );
+    const src = readFileSync(join(ROOT, 'panels', 'Explorer', 'FolderTree.tsx'), 'utf8');
 
     expect(src).not.toContain('const msgs: string[] = []');
     expect(src).not.toContain('msgs.forEach((m) => notify.error(m))');
   });
 
   it('批量 move/paste/trash 成功路径按输入长度预分配,不通过 push 扩容', () => {
-    const src = readFileSync(
-      join(ROOT, 'panels', 'Explorer', 'FolderTree.tsx'),
-      'utf8',
-    );
+    const src = readFileSync(join(ROOT, 'panels', 'Explorer', 'FolderTree.tsx'), 'utf8');
 
     expect(src).not.toContain('const movedSrcs: string[] = []');
     expect(src).not.toContain('const removed: string[] = []');
@@ -185,11 +175,7 @@ describe('打磨 — FolderTree root-drop 可移动路径选择', () => {
   });
 
   it('单趟从 draggedItems 取可移动路径,不先 map 再 filter', () => {
-    const items = [
-      dragged('/repo/a.ts'),
-      dragged('/repo/child/b.ts'),
-      dragged('/repo/other/c.ts'),
-    ];
+    const items = [dragged('/repo/a.ts'), dragged('/repo/child/b.ts'), dragged('/repo/other/c.ts')];
     const mapSpy = vi.spyOn(Array.prototype, 'map');
     const filterSpy = vi.spyOn(Array.prototype, 'filter');
 
@@ -216,22 +202,23 @@ describe('打磨 — FolderTree root-drop 可移动路径选择', () => {
   });
 
   it('root-drop 调用点直接用 selector,不先 draggedItems.slice() 复制快照', () => {
-    const src = readFileSync(
-      join(ROOT, 'panels', 'Explorer', 'FolderTree.tsx'),
-      'utf8',
-    );
+    const src = readFileSync(join(ROOT, 'panels', 'Explorer', 'FolderTree.tsx'), 'utf8');
 
     expect(src).not.toContain('draggedItems.slice()');
   });
 
   it('refresh 展开项 fallback 复用稳定空数组', () => {
-    const src = readFileSync(
-      join(ROOT, 'panels', 'Explorer', 'FolderTree.tsx'),
-      'utf8',
-    );
+    const src = readFileSync(join(ROOT, 'panels', 'Explorer', 'FolderTree.tsx'), 'utf8');
 
     expect(src).toContain('EMPTY_EXPANDED_ITEMS');
     expect(src).not.toContain('tree.getState().expandedItems ?? []');
     expect(src).not.toContain('[root, ...expanded]');
+  });
+
+  it('Explorer 右键菜单 actions 对象通过 useMemo 稳定引用', () => {
+    const src = readFileSync(join(ROOT, 'panels', 'Explorer', 'FolderTree.tsx'), 'utf8');
+
+    expect(src).toContain('const contextActions = useMemo<ContextMenuActions>');
+    expect(src).not.toContain('const contextActions: ContextMenuActions = {');
   });
 });

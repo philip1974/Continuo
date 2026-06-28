@@ -23,6 +23,8 @@ export interface RestoreEntry {
   readonly workspace: string;
 }
 
+const EMPTY_RESTORE_ENTRIES: RestoreEntry[] = [];
+
 // 边界(E60,E58/E59 启动外部输入族):ExplorerSchemaV3 允许 windows 最多 10,000 段(数据保留用)。
 // 但启动恢复(restoreAllWindowsOnLaunch:true)会对每个非主窗段同步 isExistingDir(stat)+ index.ts
 // 逐个 createMainWindow。畸形/手工编辑的 explorer.json 开 restore-all 即可在启动时做成千上万次同步
@@ -35,12 +37,12 @@ export function pickWindowsToRestore(
   isExistingDir: (path: string) => boolean,
 ): RestoreEntry[] {
   // 默认只开主窗;显式 true 才恢复其他 window (session-restore opt-in)
-  if (data.restoreAllWindowsOnLaunch !== true) return [];
-  const out = new Array<RestoreEntry>(MAX_RESTORE_WINDOWS);
+  if (data.restoreAllWindowsOnLaunch !== true) return EMPTY_RESTORE_ENTRIES;
+  let out: RestoreEntry[] | null = null;
   let count = 0;
   // 边界(E84):防御性按 windowSeq 去重 —— 即便 explorer.json 含重复 windowSeq 段(load 端
   // canonicalize 已主防),也不为同一 seq 开多窗(多窗共享同段会互相覆盖会话)。
-  const seenSeq = new Set<number>();
+  let seenSeq: Set<number> | null = null;
   for (const entry of data.windows) {
     if (count >= MAX_RESTORE_WINDOWS) break; // 边界(E60):启动开窗数上限,停止 + 停止同步 stat
     if (entry.windowSeq === 0) continue;
@@ -49,14 +51,17 @@ export function pickWindowsToRestore(
     // query,但 renderer parseInitialWindowSeq 判非法回退 0 → main/renderer 段编号认知不一致
     //(恢复窗按主窗段 hydrate / 后续写命不中自己段)。启动恢复跳过不安全 seq,不传 createMainWindow。
     if (!Number.isSafeInteger(entry.windowSeq)) continue;
-    if (seenSeq.has(entry.windowSeq)) continue; // 边界(E84):同 seq 只恢复一次
+    if (seenSeq?.has(entry.windowSeq)) continue; // 边界(E84):同 seq 只恢复一次
     const ws = entry.workspace.root;
     if (ws === null) continue;
     if (!isWithinStartupPathLimit(ws)) continue; // 边界(E60):超长路径先跳过,绝不 stat
     if (!isExistingDir(ws)) continue;
+    if (out === null) out = new Array<RestoreEntry>(MAX_RESTORE_WINDOWS);
+    if (seenSeq === null) seenSeq = new Set<number>();
     seenSeq.add(entry.windowSeq);
     out[count++] = { windowSeq: entry.windowSeq, workspace: ws };
   }
+  if (out === null) return EMPTY_RESTORE_ENTRIES;
   out.length = count;
   return out;
 }

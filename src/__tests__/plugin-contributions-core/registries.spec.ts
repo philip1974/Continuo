@@ -606,6 +606,37 @@ describe('StatusBarRegistry', () => {
     }
   });
 
+  it('左右侧缓存均存在时 getAll 线性合并缓存,不重新排序', () => {
+    const r = new StatusBarRegistry();
+    r.register({ id: 'right.40', side: 'right', priority: 40, render: () => null });
+    r.register({ id: 'left.30', side: 'left', priority: 30, render: () => null });
+    r.register({ id: 'right.20', side: 'right', priority: 20, render: () => null });
+    r.register({ id: 'left.10', side: 'left', priority: 10, render: () => null });
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      expect(r.getBySide('left').map((x) => x.id)).toEqual([
+        'left.10',
+        'left.30',
+      ]);
+      expect(r.getBySide('right').map((x) => x.id)).toEqual([
+        'right.20',
+        'right.40',
+      ]);
+      expect(sortSpy).toHaveBeenCalledTimes(2);
+
+      expect(r.getAll().map((x) => x.id)).toEqual([
+        'left.10',
+        'right.20',
+        'left.30',
+        'right.40',
+      ]);
+      expect(sortSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      sortSpy.mockRestore();
+    }
+  });
+
   it('单项或空侧边快照不调用 sort', () => {
     const r = new StatusBarRegistry();
     const empty = new StatusBarRegistry();

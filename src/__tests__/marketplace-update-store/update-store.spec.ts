@@ -264,6 +264,17 @@ describe('useUpdateStore.refresh', () => {
 
     await useUpdateStore.getState().refresh();
     expect(useUpdateStore.getState().remoteVersions).toBe(remoteVersions);
+
+    const src = readFileSync(
+      join(process.cwd(), 'src/marketplace/update-store.ts'),
+      'utf-8',
+    );
+    expect(src).toContain('let relevant: MarketplaceEntry[] | null = null;');
+    expect(src).toContain('let entriesById: Map<string, MarketplaceEntry> | null = null;');
+    expect(src).not.toContain(
+      'const relevant = new Array<MarketplaceEntry>(entries.length)',
+    );
+    expect(src).not.toContain('const entriesById = new Map<string, MarketplaceEntry>()');
   });
 
   it('构建 installedIds 不对 installed list 先 map 成中间数组', async () => {
@@ -313,6 +324,12 @@ describe('useUpdateStore.refresh', () => {
     }
     expect(useUpdateStore.getState().refresh.toString()).not.toContain(
       'relevant.push(',
+    );
+    expect(useUpdateStore.getState().refresh.toString()).not.toContain(
+      'const available = new Array<AvailableUpdate>(liveInstalled.length)',
+    );
+    expect(useUpdateStore.getState().refresh.toString()).toContain(
+      'let available',
     );
     expect(useUpdateStore.getState().available.map((u) => u.id)).toEqual(['b']);
   });

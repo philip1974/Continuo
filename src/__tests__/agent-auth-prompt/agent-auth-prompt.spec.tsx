@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { fireEvent, render, cleanup, act, waitFor } from '@testing-library/react';
 import {
@@ -52,6 +54,23 @@ function getButtons(): Record<string, HTMLButtonElement> {
 }
 
 describe('AgentAuthPrompt — 渲染条件', () => {
+  it('pending=null shell 保留 onRequest 订阅,但不调用 useT', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/shell/AgentAuthPrompt.tsx'),
+      'utf-8',
+    );
+    const shellStart = src.indexOf('export function AgentAuthPrompt()');
+    const bodyStart = src.indexOf('function AgentAuthPromptBody');
+    const shellSrc = src.slice(shellStart, bodyStart);
+
+    expect(shellStart).toBeGreaterThanOrEqual(0);
+    expect(bodyStart).toBeGreaterThan(shellStart);
+    expect(shellSrc).toContain('coApi.agentAuth.onRequest');
+    expect(shellSrc).toContain('if (!pending) return null;');
+    expect(shellSrc).not.toContain('useT(');
+    expect(src.indexOf('const t = useT();')).toBeGreaterThan(bodyStart);
+  });
+
   it('pending=null → 不渲染 Modal', () => {
     installApi({ onRequest: vi.fn(() => () => {}), respond: vi.fn() });
     render(<AgentAuthPrompt />);

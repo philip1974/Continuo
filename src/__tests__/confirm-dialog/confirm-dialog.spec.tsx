@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fireEvent, render, cleanup } from '@testing-library/react';
 import { ConfirmDialog } from '../../panels/Explorer/ConfirmDialog';
 
@@ -19,6 +21,22 @@ function renderD(over: Partial<Parameters<typeof ConfirmDialog>[0]> = {}) {
 }
 
 describe('ConfirmDialog', () => {
+  it('open=false shell 直接返回,不订阅 i18n', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/panels/Explorer/ConfirmDialog.tsx'),
+      'utf8',
+    );
+    const shellStart = src.indexOf('export function ConfirmDialog(');
+    const bodyStart = src.indexOf('function ConfirmDialogBody');
+    const shellSrc = src.slice(shellStart, bodyStart);
+
+    expect(shellStart).toBeGreaterThanOrEqual(0);
+    expect(bodyStart).toBeGreaterThan(shellStart);
+    expect(shellSrc).toContain('if (!open) return null;');
+    expect(shellSrc).not.toContain('useT(');
+    expect(src.indexOf('const t = useT();')).toBeGreaterThan(bodyStart);
+  });
+
   it('open=false → 不渲染', () => {
     const { container } = render(
       <ConfirmDialog

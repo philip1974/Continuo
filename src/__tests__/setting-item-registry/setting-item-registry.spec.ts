@@ -304,6 +304,44 @@ describe('SettingItemRegistry', () => {
     }
   });
 
+  it('getByCategory 缺失 category 时不预分配结果数组', () => {
+    const r = new SettingItemRegistry();
+    r.register({
+      id: 'general.theme',
+      category: 'general',
+      title: 'Theme',
+      type: 'select',
+      default: 'dark',
+      enum: [
+        { value: 'light', label: 'Light' },
+        { value: 'dark', label: 'Dark' },
+      ],
+    });
+    r.register({
+      id: 'editor.fontSize',
+      category: 'editor',
+      title: 'Font Size',
+      type: 'number',
+      default: 14,
+    });
+    const other = new SettingItemRegistry();
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      expect(r.getByCategory('missing')).toBe(other.getByCategory('missing'));
+      expect(sortSpy).not.toHaveBeenCalled();
+      const source = SettingItemRegistry.prototype.getByCategory.toString();
+      expect(source).toContain('let items');
+      expect(source).toContain('items === null');
+      expect(source).not.toContain(
+        'const items = new Array<SettingItemSpec>(this.items.size)',
+      );
+      expect(source).not.toContain('const items = new Array(this.items.size)');
+    } finally {
+      sortSpy.mockRestore();
+    }
+  });
+
   // 打磨 R5:getByCategory 改为先 filter 再 sort。等优先级时必须保持注册顺序
   // (稳定排序),且只受本 category 项影响 — 锁住「filter 在前」的等价性。
   it('同 category 等优先级 → 保持注册顺序(稳定排序)', () => {

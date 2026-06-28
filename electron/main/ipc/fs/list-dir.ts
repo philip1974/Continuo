@@ -23,6 +23,7 @@ const DEFAULT_EXCLUDE: readonly string[] = [
   '.DS_Store',
   'Thumbs.db',
 ];
+const DEFAULT_EXCLUDE_SET: ReadonlySet<string> = new Set(DEFAULT_EXCLUDE);
 
 export interface ListDirOptions {
   /** 默认 1(只列当前层)。受 MAX_DEPTH_HARD_LIMIT=10 截断。 */
@@ -58,7 +59,8 @@ export async function listDir(
   const maxDepth = Math.min(Math.max(requested, 1), MAX_DEPTH_HARD_LIMIT);
   // 边界(E21,perf):exclude 转 Set,大目录下每个目录项的排除判断从 O(N) includes 降为 O(1) has
   // (巨大 exclude 列表 × 宽目录 = 线性放大;schema 已 cap exclude ≤1000,Set 进一步消除热路径开销)。
-  const exclude = new Set(opts.exclude ?? DEFAULT_EXCLUDE);
+  const exclude =
+    opts.exclude === undefined ? DEFAULT_EXCLUDE_SET : new Set(opts.exclude);
   const followSymlinks = opts.followSymlinks ?? false;
   // 边界(E275,clamp 非有限/不安全整数族):maxFiles 经 IPC schema(已加 .max(MAX_TOTAL_ENTRIES))进来,
   // 但 list-dir 作为内部 helper 须自守(防 schema 旁路/不安全整数 1e308 仍过 z.int())。要求安全正整数,

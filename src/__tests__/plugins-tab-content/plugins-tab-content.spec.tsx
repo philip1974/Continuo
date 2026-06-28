@@ -14,10 +14,7 @@ vi.mock('../../plugins/permissions/co-permission-store', () => ({
   setUserPermissionStore: vi.fn(),
 }));
 
-import {
-  _resetLmApiForTest,
-  captureLmApi,
-} from '../../lib/co-api';
+import { _resetLmApiForTest, captureLmApi } from '../../lib/co-api';
 import { setLocale as setI18nLocale } from '@/i18n';
 import {
   PluginsTabContent,
@@ -83,7 +80,8 @@ beforeEach(() => {
   (coApp as { ribbon: RibbonRegistry }).ribbon = new RibbonRegistry();
   (coApp as { settingTabs: SettingTabRegistry }).settingTabs = new SettingTabRegistry();
   (coApp as { editorActions: EditorActionRegistry }).editorActions = new EditorActionRegistry();
-  (coApp as { explorerDecorators: ExplorerDecoratorRegistry }).explorerDecorators = new ExplorerDecoratorRegistry();
+  (coApp as { explorerDecorators: ExplorerDecoratorRegistry }).explorerDecorators =
+    new ExplorerDecoratorRegistry();
   getMgr.mockReturnValue(null);
   getPerm.mockReturnValue(null);
 });
@@ -111,9 +109,7 @@ describe('PluginsTabContent — 贡献点统计', () => {
     const joinSpy = vi.spyOn(Array.prototype, 'join');
 
     try {
-      expect(pluginsTabRowClassName(false)).toContain(
-        'flex items-start gap-4 px-4 py-3 text-xs',
-      );
+      expect(pluginsTabRowClassName(false)).toContain('flex items-start gap-4 px-4 py-3 text-xs');
       expect(pluginsTabRowClassName(false)).not.toContain('border-t');
       expect(pluginsTabRowClassName(true)).toContain('border-t border-line/50');
       expect(joinSpy).not.toHaveBeenCalled();
@@ -130,10 +126,7 @@ describe('PluginsTabContent — 贡献点统计', () => {
     const mapSpy = vi.spyOn(items, 'map');
 
     try {
-      expect(collectContributionSamples(items, 'id')).toEqual([
-        'command.a',
-        'command.b',
-      ]);
+      expect(collectContributionSamples(items, 'id')).toEqual(['command.a', 'command.b']);
       expect(mapSpy).not.toHaveBeenCalled();
     } finally {
       mapSpy.mockRestore();
@@ -251,6 +244,16 @@ describe('PluginsTabContent — 贡献点统计', () => {
     expect(container.textContent).toContain('sb.right.one');
   });
 
+  it('statusBar 贡献统计直接复用 getAll 快照,不再按左右侧合并', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/plugins/settings/PluginsTabContent.tsx'),
+      'utf-8',
+    );
+
+    expect(src).toContain('const statusItems = coApp.statusBar.getAll();');
+    expect(src).not.toContain('coApp.statusBar.getBySide(');
+  });
+
   it('动态注册 → useEffect subscribe 更新', () => {
     const { container } = render(<PluginsTabContent />);
     expect(container.textContent).not.toContain('plugin.late');
@@ -262,6 +265,17 @@ describe('PluginsTabContent — 贡献点统计', () => {
       });
     });
     expect(container.textContent).toContain('plugin.late');
+  });
+
+  it('动态注册 Explorer decorator → 贡献统计同步更新', () => {
+    const { getByText } = render(<PluginsTabContent />);
+    const row = () => getByText('Explorer 装饰器').parentElement!;
+
+    expect(row().textContent).toContain('0');
+    act(() => {
+      coApp.explorerDecorators.register(() => null);
+    });
+    expect(row().textContent).toContain('1');
   });
 });
 
@@ -310,9 +324,9 @@ describe('PluginsTabContent — 第三方插件:列表渲染', () => {
     // enabled → 「禁用」
     expect(textContent).toContain('禁用');
     // disabled & failed 都有「启用」
-    const enableBtns = Array.from(
-      container.querySelectorAll<HTMLButtonElement>('button'),
-    ).filter((b) => b.textContent === '启用');
+    const enableBtns = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).filter(
+      (b) => b.textContent === '启用',
+    );
     expect(enableBtns.length).toBe(2);
     // failed 行有 error
     expect(textContent).toContain('EBOOM');
@@ -332,9 +346,9 @@ describe('PluginsTabContent — 第三方插件:列表渲染', () => {
       )!,
     );
     await waitFor(() => {
-      const busy = Array.from(
-        container.querySelectorAll<HTMLButtonElement>('button'),
-      ).find((b) => b.getAttribute('aria-busy') === 'true');
+      const busy = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+        (b) => b.getAttribute('aria-busy') === 'true',
+      );
       expect(busy).toBeDefined();
     });
     const statuses = Array.from(container.querySelectorAll('[role=status]'));
@@ -476,9 +490,9 @@ describe('PluginsTabContent — 第三方插件:列表渲染', () => {
       clearDenied: vi.fn(),
     });
     const { container } = render(<PluginsTabContent />);
-    const permBtn = Array.from(
-      container.querySelectorAll<HTMLButtonElement>('button'),
-    ).find((b) => b.textContent === '权限');
+    const permBtn = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+      (b) => b.textContent === '权限',
+    );
     expect(permBtn).toBeDefined();
   });
 
@@ -508,9 +522,9 @@ describe('PluginsTabContent — 第三方插件:列表渲染', () => {
         clearDenied: vi.fn(),
       });
       const { container } = render(<PluginsTabContent />);
-      const permBtn = Array.from(
-        container.querySelectorAll<HTMLButtonElement>('button'),
-      ).find((b) => b.textContent === '权限')!;
+      const permBtn = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+        (b) => b.textContent === '权限',
+      )!;
       act(() => {
         fireEvent.click(permBtn);
       });
@@ -611,9 +625,9 @@ describe('PluginsTabContent — 启用/禁用/重载', () => {
     };
     getMgr.mockReturnValue(fakeMgr);
     const { container } = render(<PluginsTabContent />);
-    const btn = Array.from(
-      container.querySelectorAll<HTMLButtonElement>('button'),
-    ).find((b) => b.textContent === '禁用')!;
+    const btn = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+      (b) => b.textContent === '禁用',
+    )!;
     fireEvent.click(btn);
     await waitFor(() => {
       expect(disable).toHaveBeenCalledWith('a');
@@ -630,9 +644,9 @@ describe('PluginsTabContent — 启用/禁用/重载', () => {
     getMgr.mockReturnValue(fakeMgr);
     const { container } = render(<PluginsTabContent />);
     fireEvent.click(
-      Array.from(
-        container.querySelectorAll<HTMLButtonElement>('button'),
-      ).find((b) => b.textContent === '启用')!,
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+        (b) => b.textContent === '启用',
+      )!,
     );
     await waitFor(() => {
       expect(enable).toHaveBeenCalledWith('b');
@@ -649,9 +663,9 @@ describe('PluginsTabContent — 启用/禁用/重载', () => {
     getMgr.mockReturnValue(fakeMgr);
     const { container } = render(<PluginsTabContent />);
     fireEvent.click(
-      Array.from(
-        container.querySelectorAll<HTMLButtonElement>('button'),
-      ).find((b) => b.textContent === '重载')!,
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+        (b) => b.textContent === '重载',
+      )!,
     );
     await waitFor(() => {
       expect(reload).toHaveBeenCalledWith('a');
@@ -669,15 +683,12 @@ describe('PluginsTabContent — 启用/禁用/重载', () => {
     getMgr.mockReturnValue(fakeMgr);
     const { container } = render(<PluginsTabContent />);
     fireEvent.click(
-      Array.from(
-        container.querySelectorAll<HTMLButtonElement>('button'),
-      ).find((b) => b.textContent === '启用')!,
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+        (b) => b.textContent === '启用',
+      )!,
     );
     await waitFor(() => {
-      expect(warn).toHaveBeenCalledWith(
-        expect.stringContaining('enable'),
-        expect.any(Error),
-      );
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('enable'), expect.any(Error));
     });
     // a11y(A47):生命周期操作失败须 live region(role=alert)反馈,不只 console.warn。
     await waitFor(() => {
@@ -692,9 +703,9 @@ describe('PluginsTabContent — Git URL 安装', () => {
   it('输入空 → 安装按钮 disabled', () => {
     installPluginsApi(vi.fn());
     const { container } = render(<PluginsTabContent />);
-    const installBtn = Array.from(
-      container.querySelectorAll<HTMLButtonElement>('button'),
-    ).find((b) => b.textContent === '安装')!;
+    const installBtn = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+      (b) => b.textContent === '安装',
+    )!;
     expect(installBtn.disabled).toBe(true);
   });
 
@@ -709,15 +720,13 @@ describe('PluginsTabContent — Git URL 安装', () => {
     fireEvent.change(input, {
       target: { value: 'https://github.com/me/plugin.git' },
     });
-    const installBtn = Array.from(
-      container.querySelectorAll<HTMLButtonElement>('button'),
-    ).find((b) => b.textContent === '安装')!;
+    const installBtn = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+      (b) => b.textContent === '安装',
+    )!;
     fireEvent.click(installBtn);
 
     await waitFor(() => {
-      expect(installFromGit).toHaveBeenCalledWith(
-        'https://github.com/me/plugin.git',
-      );
+      expect(installFromGit).toHaveBeenCalledWith('https://github.com/me/plugin.git');
     });
     // installFromGit 是 mockResolvedValue,resolve 进 microtask + React 重渲染
     // 还要再一个 tick;不能只等 mock 被调,得 waitFor 直到 UI 反映安装完成
@@ -731,9 +740,7 @@ describe('PluginsTabContent — Git URL 安装', () => {
     // a11y(A42):安装成功结果须在 live region(成功=role=status/polite)主动播报。
     // A95 起新增 loading 用 role=status(idle 空)→ 同页多个 role=status,用 .some() 按文本定位。
     const statuses = Array.from(container.querySelectorAll('[role=status]'));
-    expect(
-      statuses.some((s) => (s.textContent ?? '').includes('已安装 Plugin X')),
-    ).toBe(true);
+    expect(statuses.some((s) => (s.textContent ?? '').includes('已安装 Plugin X'))).toBe(true);
   });
 
   it('Git URL trim 只在输入变化后派生一次,点击安装复用结果', () => {
@@ -741,9 +748,9 @@ describe('PluginsTabContent — Git URL 安装', () => {
     installPluginsApi(installFromGit);
     const { container } = render(<PluginsTabContent />);
     const input = container.querySelector('input') as HTMLInputElement;
-    const installBtn = Array.from(
-      container.querySelectorAll<HTMLButtonElement>('button'),
-    ).find((b) => b.textContent === '安装')!;
+    const installBtn = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+      (b) => b.textContent === '安装',
+    )!;
     const trimSpy = vi.spyOn(String.prototype, 'trim');
 
     try {
@@ -753,9 +760,7 @@ describe('PluginsTabContent — Git URL 安装', () => {
       expect(installBtn.disabled).toBe(false);
       fireEvent.click(installBtn);
 
-      expect(installFromGit).toHaveBeenCalledWith(
-        'https://github.com/me/plugin.git',
-      );
+      expect(installFromGit).toHaveBeenCalledWith('https://github.com/me/plugin.git');
       expect(trimSpy).toHaveBeenCalledTimes(1);
     } finally {
       trimSpy.mockRestore();
@@ -775,9 +780,9 @@ describe('PluginsTabContent — Git URL 安装', () => {
       target: { value: 'https://github.com/x/p.git' },
     });
     fireEvent.click(
-      Array.from(
-        container.querySelectorAll<HTMLButtonElement>('button'),
-      ).find((b) => b.textContent === '安装')!,
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+        (b) => b.textContent === '安装',
+      )!,
     );
     await waitFor(() => {
       expect(container.textContent).toContain('CLONE_FAILED');
@@ -805,9 +810,9 @@ describe('PluginsTabContent — Git URL 安装', () => {
       const input = container.querySelector('input') as HTMLInputElement;
       fireEvent.change(input, { target: { value: 'ftp://x' } });
       fireEvent.click(
-        Array.from(
-          container.querySelectorAll<HTMLButtonElement>('button'),
-        ).find((b) => b.textContent === 'Install')!,
+        Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+          (b) => b.textContent === 'Install',
+        )!,
       );
       await waitFor(() => {
         // en catalog 的 errors.BAD_URL = 'Bad URL'
@@ -834,9 +839,9 @@ describe('PluginsTabContent — Git URL 安装', () => {
     const input = container.querySelector('input') as HTMLInputElement;
     fireEvent.change(input, { target: { value: 'https://github.com/x/p.git' } });
     fireEvent.click(
-      Array.from(
-        container.querySelectorAll<HTMLButtonElement>('button'),
-      ).find((b) => b.textContent === '安装')!,
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+        (b) => b.textContent === '安装',
+      )!,
     );
     await waitFor(() => {
       expect(container.textContent).toContain('CLONE_FAILED');
@@ -853,9 +858,9 @@ describe('PluginsTabContent — Git URL 安装', () => {
       target: { value: 'https://github.com/x/p.git' },
     });
     fireEvent.click(
-      Array.from(
-        container.querySelectorAll<HTMLButtonElement>('button'),
-      ).find((b) => b.textContent === '安装')!,
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+        (b) => b.textContent === '安装',
+      )!,
     );
     await waitFor(() => {
       expect(container.textContent).toContain('network down');
@@ -873,14 +878,12 @@ describe('PluginsTabContent — 卸载流程', () => {
     getMgr.mockReturnValue(fakeMgr);
     const { container } = render(<PluginsTabContent />);
     fireEvent.click(
-      Array.from(
-        container.querySelectorAll<HTMLButtonElement>('button'),
-      ).find((b) => b.textContent === '卸载')!,
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+        (b) => b.textContent === '卸载',
+      )!,
     );
     expect(document.querySelector('.wm-modal-content')).not.toBeNull();
-    expect(document.querySelector('.wm-modal-content')!.textContent).toContain(
-      'p.del',
-    );
+    expect(document.querySelector('.wm-modal-content')!.textContent).toContain('p.del');
   });
 
   it('Confirm 确认 → mgr.uninstall(id)', async () => {
@@ -893,14 +896,12 @@ describe('PluginsTabContent — 卸载流程', () => {
     getMgr.mockReturnValue(fakeMgr);
     const { container } = render(<PluginsTabContent />);
     fireEvent.click(
-      Array.from(
-        container.querySelectorAll<HTMLButtonElement>('button'),
-      ).find((b) => b.textContent === '卸载')!,
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+        (b) => b.textContent === '卸载',
+      )!,
     );
     const dialogConfirm = Array.from(
-      document.querySelectorAll<HTMLButtonElement>(
-        '.wm-modal-content button',
-      ),
+      document.querySelectorAll<HTMLButtonElement>('.wm-modal-content button'),
     ).find((b) => b.textContent === '卸载')!;
     fireEvent.click(dialogConfirm);
     await waitFor(() => {
@@ -919,16 +920,14 @@ describe('PluginsTabContent — 卸载流程', () => {
     getMgr.mockReturnValue(fakeMgr);
     const { container } = render(<PluginsTabContent />);
     fireEvent.click(
-      Array.from(
-        container.querySelectorAll<HTMLButtonElement>('button'),
-      ).find((b) => b.textContent === '卸载')!,
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+        (b) => b.textContent === '卸载',
+      )!,
     );
     fireEvent.click(
-      Array.from(
-        document.querySelectorAll<HTMLButtonElement>(
-          '.wm-modal-content button',
-        ),
-      ).find((b) => b.textContent === '卸载')!,
+      Array.from(document.querySelectorAll<HTMLButtonElement>('.wm-modal-content button')).find(
+        (b) => b.textContent === '卸载',
+      )!,
     );
     await waitFor(() => {
       expect(warn).toHaveBeenCalled();
@@ -945,9 +944,7 @@ describe('PluginsTabContent — 卸载流程', () => {
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
       const uninstall = vi
         .fn()
-        .mockRejectedValue(
-          Object.assign(new Error('删除失败: EACCES'), { code: 'RM_FAILED' }),
-        );
+        .mockRejectedValue(Object.assign(new Error('删除失败: EACCES'), { code: 'RM_FAILED' }));
       const fakeMgr: FakeManager = {
         listAll: () => [plugin({ id: 'p.del', status: 'disabled' })],
         uninstall,
@@ -955,14 +952,14 @@ describe('PluginsTabContent — 卸载流程', () => {
       getMgr.mockReturnValue(fakeMgr);
       const { container } = render(<PluginsTabContent />);
       fireEvent.click(
-        Array.from(
-          container.querySelectorAll<HTMLButtonElement>('button'),
-        ).find((b) => b.textContent === 'Uninstall')!,
+        Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+          (b) => b.textContent === 'Uninstall',
+        )!,
       );
       fireEvent.click(
-        Array.from(
-          document.querySelectorAll<HTMLButtonElement>('.wm-modal-content button'),
-        ).find((b) => b.textContent === 'Uninstall')!,
+        Array.from(document.querySelectorAll<HTMLButtonElement>('.wm-modal-content button')).find(
+          (b) => b.textContent === 'Uninstall',
+        )!,
       );
       await waitFor(() => {
         expect(warn).toHaveBeenCalled();
@@ -986,9 +983,9 @@ describe('PluginsTabContent — 卸载流程', () => {
       const { container } = render(<PluginsTabContent />);
       act(() => {
         fireEvent.click(
-          Array.from(
-            container.querySelectorAll<HTMLButtonElement>('button'),
-          ).find((b) => b.textContent === '卸载')!,
+          Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+            (b) => b.textContent === '卸载',
+          )!,
         );
       });
       expect(document.querySelector('.wm-modal-content')).not.toBeNull();
@@ -1019,9 +1016,9 @@ describe('PluginsTabContent — 卸载流程', () => {
       const { container } = render(<PluginsTabContent />);
       act(() => {
         fireEvent.click(
-          Array.from(
-            container.querySelectorAll<HTMLButtonElement>('button'),
-          ).find((b) => b.textContent === '卸载')!,
+          Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+            (b) => b.textContent === '卸载',
+          )!,
         );
       });
       expect(document.querySelector('.wm-modal-content')).not.toBeNull();

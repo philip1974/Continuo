@@ -48,12 +48,16 @@ export function captureBoundedFiles(
   const fileCount = files.length;
   if (max <= 0 || fileCount === 0) return EMPTY_CAPTURED_FILES;
   const limit = Math.min(fileCount, max);
-  const out = new Array<File>(limit);
+  let out: File[] | null = null;
   let count = 0;
   for (let i = 0; i < fileCount && count < max; i++) {
     const f = files[i];
-    if (f) out[count++] = f;
+    if (f) {
+      out ??= new Array<File>(limit);
+      out[count++] = f;
+    }
   }
+  if (out === null) return EMPTY_CAPTURED_FILES;
   out.length = count;
   return out;
 }

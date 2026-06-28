@@ -59,6 +59,21 @@ describe('race(R39) · routeProtocolUrl 先就绪后发送', () => {
     expect(pending).toEqual(['co://run/z']);
   });
 
+  it('无窗口冷启动入队时不预分配 ready/loading 分组数组', () => {
+    const pending: string[] = [];
+
+    routeProtocolUrl('co://run/cold', { windows: [], channel: CH, pending });
+
+    expect(pending).toEqual(['co://run/cold']);
+    expect(routeProtocolUrl.toString()).toContain('let ready');
+    expect(routeProtocolUrl.toString()).not.toContain(
+      'const ready = new Array',
+    );
+    expect(routeProtocolUrl.toString()).not.toContain(
+      'const loading = new Array',
+    );
+  });
+
   it('混合:就绪窗口收到,loading 窗口被忽略', () => {
     const ready = makeWin({ loading: false });
     const loadingWin = makeWin({ loading: true });

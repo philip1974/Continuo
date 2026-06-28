@@ -2,6 +2,8 @@
 // 打磨 R32(codex 性能):CommandPalette 常驻挂在 App 顶层。拆成 shell + body 后,
 // 关闭状态(isOpen=false)下不挂载 CommandPaletteBody → 不订阅 commands registry
 // (也不订阅 recent/overrides/locale、不重算 display/filter)。仅打开时才订阅+派生。
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 vi.mock('@tanstack/react-virtual', () => ({
@@ -23,6 +25,22 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('打磨 R32 — 关闭时不订阅命令 registry', () => {
+  it('isOpen=false shell 不调用 useT,避免关闭态订阅 i18n', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/plugins/command-palette/CommandPalette.tsx'),
+      'utf-8',
+    );
+    const shellStart = src.indexOf('export function CommandPalette(');
+    const dialogStart = src.indexOf('function CommandPaletteDialog');
+    const shellSrc = src.slice(shellStart, dialogStart);
+
+    expect(shellStart).toBeGreaterThanOrEqual(0);
+    expect(dialogStart).toBeGreaterThan(shellStart);
+    expect(shellSrc).toContain('if (!isOpen) return null;');
+    expect(shellSrc).not.toContain('useT(');
+    expect(src.indexOf('const t = useT(); // a11y(A13)')).toBeGreaterThan(dialogStart);
+  });
+
   it('isOpen=false → body 不挂载,commands.subscribe 不被调用', () => {
     const reg = new CommandRegistry();
     const subSpy = vi.spyOn(reg, 'subscribe');

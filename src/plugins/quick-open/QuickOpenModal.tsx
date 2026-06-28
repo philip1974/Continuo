@@ -60,17 +60,26 @@ export function isVirtualIndexRendered(
 export function QuickOpenModal() {
   const isOpen = useQuickOpenStore((s) => s.isOpen);
   const close = useQuickOpenStore((s) => s.close);
+  if (!isOpen) return null;
+  return <QuickOpenDialog close={close} />;
+}
+
+interface QuickOpenDialogProps {
+  readonly close: () => void;
+}
+
+function QuickOpenDialog({ close }: QuickOpenDialogProps) {
   const t = useT(); // a11y(A13):给无标题 dialog 命名
   return (
     <Modal
-      visible={isOpen}
+      visible
       onClose={close}
       size="lg"
       className="!p-0 !rounded-md"
       // a11y(A13):无可见标题的 dialog → aria-label 命名(复用 input_aria「搜索文件」)。
       aria-label={t('quick_open.input_aria')}
     >
-      {isOpen && <QuickOpenBody />}
+      <QuickOpenBody />
     </Modal>
   );
 }

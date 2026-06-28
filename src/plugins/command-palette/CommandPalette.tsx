@@ -17,7 +17,7 @@ import { useCommandPaletteStore } from './store';
 import { fuzzyFilter } from './fuzzy';
 import { useRecentCommandsStore, type RecentEntry } from './recent';
 import { formatHotkeyParts, detectPlatform, type Platform } from './format-hotkey';
-import { getEffectiveHotkey, useKeybindingsStore } from '../keybindings/keybindings-store';
+import { useKeybindingsStore } from '../keybindings/keybindings-store';
 import { useTWithFallback, useT, useLocale } from '@/i18n';
 import { runContributedAction } from '@/lib/run-contributed-action';
 
@@ -25,17 +25,12 @@ import { runContributedAction } from '@/lib/run-contributed-action';
 const PLATFORM = detectPlatform();
 
 const RECENT_TOP_N = 5;
-const COMMAND_PALETTE_ROW_BASE_CLASS_NAME =
-  'flex cursor-pointer items-center gap-2 px-3 text-xs';
-const COMMAND_PALETTE_ROW_SELECTED_CLASS_NAME =
-  `${COMMAND_PALETTE_ROW_BASE_CLASS_NAME} bg-hover text-fg`;
-const COMMAND_PALETTE_ROW_IDLE_CLASS_NAME =
-  `${COMMAND_PALETTE_ROW_BASE_CLASS_NAME} text-fg-muted hover:bg-hover/50`;
+const COMMAND_PALETTE_ROW_BASE_CLASS_NAME = 'flex cursor-pointer items-center gap-2 px-3 text-xs';
+const COMMAND_PALETTE_ROW_SELECTED_CLASS_NAME = `${COMMAND_PALETTE_ROW_BASE_CLASS_NAME} bg-hover text-fg`;
+const COMMAND_PALETTE_ROW_IDLE_CLASS_NAME = `${COMMAND_PALETTE_ROW_BASE_CLASS_NAME} text-fg-muted hover:bg-hover/50`;
 
 export function commandPaletteRowClassName(selected: boolean): string {
-  return selected
-    ? COMMAND_PALETTE_ROW_SELECTED_CLASS_NAME
-    : COMMAND_PALETTE_ROW_IDLE_CLASS_NAME;
+  return selected ? COMMAND_PALETTE_ROW_SELECTED_CLASS_NAME : COMMAND_PALETTE_ROW_IDLE_CLASS_NAME;
 }
 
 export function isCommandPaletteVirtualIndexRendered(
@@ -67,10 +62,7 @@ function matchSourceLower(d: DisplayCommand): string {
   return d.matchSourceLower;
 }
 
-type TranslateWithFallback = (
-  key: string | undefined,
-  fallback: string,
-) => string;
+type TranslateWithFallback = (key: string | undefined, fallback: string) => string;
 
 const EMPTY_DISPLAY_COMMANDS: DisplayCommand[] = [];
 const EMPTY_RECENT_COMMAND_IDS: string[] = [];
@@ -96,15 +88,12 @@ export function buildDisplayCommands(
   const out = new Array<DisplayCommand>(allCommands.length);
   for (let i = 0; i < allCommands.length; i++) {
     const cmd = allCommands[i]!;
+    const override = overrides[cmd.id];
     const effective =
-      cmd.hotkey || overrides[cmd.id] !== undefined
-        ? getEffectiveHotkey(cmd)
-        : undefined;
+      override !== undefined ? (override === '' ? undefined : override) : cmd.hotkey;
     const displayTitle = tk(cmd.titleKey, cmd.title);
     const displayCategory = tk(cmd.categoryKey, cmd.category ?? '');
-    const source = displayCategory
-      ? `${displayCategory} ${displayTitle}`
-      : displayTitle;
+    const source = displayCategory ? `${displayCategory} ${displayTitle}` : displayTitle;
     out[i] = {
       cmd,
       displayTitle,
@@ -118,9 +107,7 @@ export function buildDisplayCommands(
   return out;
 }
 
-export function buildRecentCommandIds(
-  recentList: readonly RecentEntry[],
-): string[] {
+export function buildRecentCommandIds(recentList: readonly RecentEntry[]): string[] {
   if (recentList.length === 0) return EMPTY_RECENT_COMMAND_IDS;
   const out = new Array<string>(recentList.length);
   for (let i = 0; i < recentList.length; i++) {
@@ -138,12 +125,17 @@ function isSortedByDisplayTitle(items: readonly DisplayCommand[]): boolean {
   return true;
 }
 
-function findRecentCommandIndex(
-  items: readonly DisplayCommand[],
-  recentId: string,
-): number {
+function findRecentCommandIndex(items: readonly DisplayCommand[], recentId: string): number {
   for (let i = 0; i < items.length; i++) {
     if (items[i]!.cmd.id === recentId) return i;
+  }
+  return -1;
+}
+
+function findRecentRank(recentIds: readonly string[], id: string): number {
+  const limit = Math.min(recentIds.length, RECENT_TOP_N);
+  for (let i = limit - 1; i >= 0; i--) {
+    if (recentIds[i] === id) return i;
   }
   return -1;
 }
@@ -193,21 +185,19 @@ export function sortByRecent(
     return out;
   }
 
-  const recentRank = new Map<string, number>();
-  for (let i = 0; i < recentIds.length && i < RECENT_TOP_N; i++) {
-    recentRank.set(recentIds[i]!, i);
-  }
-  const recent = new Array<DisplayCommand | undefined>(
-    Math.min(recentIds.length, RECENT_TOP_N),
-  );
+  const recentLimit = Math.min(recentIds.length, RECENT_TOP_N);
+  let recent: Array<DisplayCommand | undefined> | null = null;
   let others: DisplayCommand[] | null = null;
   let otherCount = 0;
   for (let i = 0; i < items.length; i++) {
     const d = items[i]!;
-    const rank = recentRank.get(d.cmd.id);
-    if (rank === undefined) {
+    const rank = findRecentRank(recentIds, d.cmd.id);
+    if (rank < 0) {
       if (others !== null) others[otherCount++] = d;
       continue;
+    }
+    if (recent === null) {
+      recent = new Array<DisplayCommand | undefined>(recentLimit);
     }
     recent[rank] = d;
     if (others === null) {
@@ -229,8 +219,10 @@ export function sortByRecent(
   }
   const out = new Array<DisplayCommand>(items.length);
   let count = 0;
-  for (const d of recent) {
-    if (d) out[count++] = d;
+  if (recent !== null) {
+    for (const d of recent) {
+      if (d) out[count++] = d;
+    }
   }
   for (const d of others) {
     out[count++] = d;
@@ -256,17 +248,29 @@ function useCommands(registry: CommandRegistry): readonly CommandSpec[] {
 export function CommandPalette({ commands }: CommandPaletteProps) {
   const isOpen = useCommandPaletteStore((s) => s.isOpen);
   const close = useCommandPaletteStore((s) => s.close);
+  if (!isOpen) return null;
+  return <CommandPaletteDialog commands={commands} close={close} />;
+}
+
+interface CommandPaletteDialogProps extends CommandPaletteProps {
+  readonly close: () => void;
+}
+
+function CommandPaletteDialog({
+  commands,
+  close,
+}: CommandPaletteDialogProps) {
   const t = useT(); // a11y(A13):给无标题 dialog 命名
   return (
     <Modal
-      visible={isOpen}
+      visible
       onClose={close}
       size="md"
       className="!p-0 !rounded-md"
       // a11y(A13):无可见标题的 dialog → 用 aria-label 给屏幕阅读器命名(复用 placeholder key)。
       aria-label={t('command_palette.placeholder')}
     >
-      {isOpen && <CommandPaletteBody commands={commands} />}
+      <CommandPaletteBody commands={commands} />
     </Modal>
   );
 }
@@ -335,10 +339,7 @@ function CommandPaletteBody({ commands }: CommandPaletteProps) {
   // 里选中项可能在逻辑上有效但不在渲染窗口内(scrollToIndex 滚入前的瞬态)→ 须校验该 index
   // 在 getVirtualItems() 渲染窗口内,否则引用悬空,SR 拿不到当前项。
   const virtualItems = rowVirtualizer.getVirtualItems();
-  const activeOptionRendered = isCommandPaletteVirtualIndexRendered(
-    virtualItems,
-    selectedIndex,
-  );
+  const activeOptionRendered = isCommandPaletteVirtualIndexRendered(virtualItems, selectedIndex);
 
   const execute = useCallback(
     (d: DisplayCommand) => {
@@ -390,14 +391,10 @@ function CommandPaletteBody({ commands }: CommandPaletteProps) {
           aria-expanded
           // a11y(A101,A100 后续):listbox <ul id> 只在有结果时渲染 → 仅有结果时设 aria-controls,
           // 否则引用悬空(指向不存在元素,combobox 关系断裂)。
-          aria-controls={
-            filtered.length > 0 ? 'command-palette-listbox' : undefined
-          }
+          aria-controls={filtered.length > 0 ? 'command-palette-listbox' : undefined}
           // a11y(A111,A101 同族):校验 selectedIndex 不越界,避免结果变短时指向不存在 option。
           aria-activedescendant={
-            selectedIndex >= 0 &&
-            selectedIndex < filtered.length &&
-            activeOptionRendered
+            selectedIndex >= 0 && selectedIndex < filtered.length && activeOptionRendered
               ? `command-palette-option-${selectedIndex}`
               : undefined
           }

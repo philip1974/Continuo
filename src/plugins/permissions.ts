@@ -84,6 +84,13 @@ export function replacePermissionDecisions(
   decidedAt: number,
 ): PermissionDecision[] {
   if (perms.length === 0) return list as PermissionDecision[];
+  if (list.length === 0) {
+    const next = new Array<PermissionDecision>(perms.length);
+    for (let i = 0; i < perms.length; i++) {
+      next[i] = { permission: perms[i]!, granted, decidedAt };
+    }
+    return next;
+  }
   const replacementPerms = new Set(perms);
   const next = new Array<PermissionDecision>(list.length + perms.length);
   let nextCount = 0;
@@ -174,6 +181,10 @@ export async function ensureAuthorized(
   const decisions = await store.get(pluginId);
   if (decisions.length === 0) {
     const userGranted = await prompt(pluginId, requested);
+    if (userGranted.length === 0) {
+      await store.deny(pluginId, requested);
+      return { ok: false, deniedPerms: requested };
+    }
     const userGrantedSet = new Set(userGranted);
     const granted = new Array<PermissionKey>(requested.length);
     const denied = new Array<PermissionKey>(requested.length);
@@ -212,19 +223,24 @@ export async function ensureAuthorized(
 
   if (pending.length > 0) {
     const userGranted = await prompt(pluginId, pending);
-    const userGrantedSet = new Set(userGranted);
-    const newDeny = new Array<PermissionKey>(pending.length);
-    let newDenyCount = 0;
-    for (const p of pending) {
-      if (!userGrantedSet.has(p)) newDeny[newDenyCount++] = p;
+    if (userGranted.length === 0) {
+      await store.deny(pluginId, pending);
+      for (const p of pending) deniedSet.add(p);
+    } else {
+      const userGrantedSet = new Set(userGranted);
+      const newDeny = new Array<PermissionKey>(pending.length);
+      let newDenyCount = 0;
+      for (const p of pending) {
+        if (!userGrantedSet.has(p)) newDeny[newDenyCount++] = p;
+      }
+      newDeny.length = newDenyCount;
+
+      if (userGranted.length > 0) await store.grant(pluginId, userGranted);
+      if (newDeny.length > 0) await store.deny(pluginId, newDeny);
+
+      for (const p of userGranted) grantedSet.add(p);
+      for (const p of newDeny) deniedSet.add(p);
     }
-    newDeny.length = newDenyCount;
-
-    if (userGranted.length > 0) await store.grant(pluginId, userGranted);
-    if (newDeny.length > 0) await store.deny(pluginId, newDeny);
-
-    for (const p of userGranted) grantedSet.add(p);
-    for (const p of newDeny) deniedSet.add(p);
   }
 
   const granted = new Array<PermissionKey>(requested.length);

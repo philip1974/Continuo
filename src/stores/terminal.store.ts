@@ -303,47 +303,59 @@ export function applySnapshot(
   oldActiveId: string | null,
   newSessions: readonly TerminalSession[],
 ): { sessions: readonly TerminalSession[]; activeId: string | null } {
+  if (newSessions.length === 0) {
+    return { sessions: newSessions, activeId: null };
+  }
+
+  if (oldActiveId === null) {
+    return { sessions: newSessions, activeId: newSessions[0]!.id };
+  }
+
+  let activeStillExists = false;
+  for (const session of newSessions) {
+    if (session.id === oldActiveId) {
+      activeStillExists = true;
+      break;
+    }
+  }
+  if (activeStillExists) {
+    return { sessions: newSessions, activeId: oldActiveId };
+  }
+
   const newIds = new Set<string>();
   for (const s of newSessions) newIds.add(s.id);
-  let activeId = oldActiveId;
+  let activeIndex = -1;
+  for (let i = 0; i < oldSessions.length; i++) {
+    if (oldSessions[i]!.id === oldActiveId) {
+      activeIndex = i;
+      break;
+    }
+  }
 
-  if (activeId !== null && !newIds.has(activeId)) {
-    let activeIndex = -1;
-    for (let i = 0; i < oldSessions.length; i++) {
-      if (oldSessions[i]!.id === activeId) {
-        activeIndex = i;
+  let activeId: string | null = oldActiveId;
+  if (activeIndex >= 0) {
+    activeId = null;
+    for (let i = activeIndex + 1; i < oldSessions.length; i++) {
+      const candidate = oldSessions[i]!;
+      if (newIds.has(candidate.id)) {
+        activeId = candidate.id;
         break;
       }
     }
-
-    if (activeIndex >= 0) {
-      activeId = null;
-      for (let i = activeIndex + 1; i < oldSessions.length; i++) {
+    if (activeId === null) {
+      for (let i = activeIndex - 1; i >= 0; i--) {
         const candidate = oldSessions[i]!;
         if (newIds.has(candidate.id)) {
           activeId = candidate.id;
           break;
         }
       }
-      if (activeId === null) {
-        for (let i = activeIndex - 1; i >= 0; i--) {
-          const candidate = oldSessions[i]!;
-          if (newIds.has(candidate.id)) {
-            activeId = candidate.id;
-            break;
-          }
-        }
-      }
     }
   }
 
-  // 兜底:旧 active 仍非 null 但被神奇地不在新 snapshot,fallback 第一个
-  if (activeId !== null && !newIds.has(activeId)) {
+  // 兜底:旧 active 不在旧 snapshot 或无相邻幸存项时,fallback 第一个。
+  if (activeId === null || !newIds.has(activeId)) {
     activeId = newSessions[0]?.id ?? null;
-  }
-  // 空 → 非空:activeId 设为第一个
-  if (activeId === null && newSessions.length > 0) {
-    activeId = newSessions[0]!.id;
   }
   return { sessions: newSessions, activeId };
 }
@@ -387,17 +399,19 @@ export const useTerminalStore = create<TerminalState>((set) => ({
       }
       const applied = applySnapshot(s.sessions, s.activeId, newSessions);
       // 清理 customTitles 中已不在新 snapshot 的 id
-      const newIds = new Set<string>();
-      for (const x of newSessions) newIds.add(x.id);
       let titles = s.customTitles;
-      let changed = false;
-      for (const id of titles.keys()) {
-        if (!newIds.has(id)) {
-          if (!changed) {
-            titles = new Map(titles);
-            changed = true;
+      if (titles.size > 0) {
+        const newIds = new Set<string>();
+        for (const x of newSessions) newIds.add(x.id);
+        let changed = false;
+        for (const id of titles.keys()) {
+          if (!newIds.has(id)) {
+            if (!changed) {
+              titles = new Map(titles);
+              changed = true;
+            }
+            (titles as Map<string, string>).delete(id);
           }
-          (titles as Map<string, string>).delete(id);
         }
       }
       if (

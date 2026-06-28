@@ -9,15 +9,12 @@ import {
   detectPlatform,
   type Platform,
 } from '@/plugins/command-palette/format-hotkey';
-import {
-  isValidHotkeyShape,
-  type CommandSpec,
-} from '@/plugins/registries/CommandRegistry';
+import { isValidHotkeyShape, type CommandSpec } from '@/plugins/registries/CommandRegistry';
 import { useT } from '@/i18n';
-import { getEffectiveHotkey } from './keybindings-store';
 
 const PLATFORM = detectPlatform();
 const EMPTY_CONFLICTS: readonly CommandSpec[] = [];
+const EMPTY_OVERRIDES: Readonly<Record<string, string>> = {};
 
 function appendComboPart(combo: string, part: string): string {
   return combo ? `${combo}+${part}` : part;
@@ -41,6 +38,8 @@ interface KeybindingCaptureModalProps {
   readonly defaultHotkey: string | undefined;
   /** 全部命令快照,用于冲突检测. */
   readonly allCommands: readonly CommandSpec[];
+  /** 用户快捷键 override 快照,用于冲突检测. */
+  readonly overrides: Readonly<Record<string, string>>;
   /** 保存为新组合(空 = unbind);null 取消. */
   readonly onSave: (hotkey: string) => void;
   readonly onClose: () => void;
@@ -52,10 +51,7 @@ interface KeybindingCaptureModalProps {
  *  非 mac 上 ctrlKey=主修饰键存 'mod'、metaKey 存 'cmd'。否则塌缩成 'mod' 会让 mac 用户按
  *  Ctrl+K 存成 mod+k,而 R15 后 mod+k 只匹配 Cmd+K → 用户刚按的 Ctrl 绑定失效、冲突检测也
  *  拿错组合比对。(codex 复审 loop R16,R15 捕获侧兄弟) */
-export function eventToCombo(
-  e: KeyboardEvent,
-  platform: Platform = PLATFORM,
-): string | null {
+export function eventToCombo(e: KeyboardEvent, platform: Platform = PLATFORM): string | null {
   const key = e.key;
   if (key === 'Meta' || key === 'Control' || key === 'Shift' || key === 'Alt') {
     return null;
@@ -77,16 +73,26 @@ export function eventToCombo(
   return isValidHotkeyShape(combo) ? combo : null;
 }
 
+function selectEffectiveHotkey(
+  command: CommandSpec,
+  overrides: Readonly<Record<string, string>>,
+): string | undefined {
+  const override = overrides[command.id];
+  if (override !== undefined) return override === '' ? undefined : override;
+  return command.hotkey;
+}
+
 export function selectKeybindingConflicts(
   allCommands: readonly CommandSpec[],
   commandId: string,
   captured: string | null,
+  overrides: Readonly<Record<string, string>> = EMPTY_OVERRIDES,
 ): readonly CommandSpec[] {
   if (!captured) return EMPTY_CONFLICTS;
   let conflicts: CommandSpec[] | null = null;
   let conflictCount = 0;
   for (const command of allCommands) {
-    if (command.id === commandId || getEffectiveHotkey(command) !== captured) {
+    if (command.id === commandId || selectEffectiveHotkey(command, overrides) !== captured) {
       continue;
     }
     if (conflicts === null) conflicts = new Array<CommandSpec>(allCommands.length);
@@ -100,11 +106,20 @@ export function selectKeybindingConflicts(
 
 export function KeybindingCaptureModal({
   visible,
+  ...props
+}: KeybindingCaptureModalProps) {
+  if (!visible) return null;
+  return <KeybindingCaptureModalBody visible={visible} {...props} />;
+}
+
+function KeybindingCaptureModalBody({
+  visible,
   commandId,
   commandTitle,
   currentHotkey,
   defaultHotkey,
   allCommands,
+  overrides,
   onSave,
   onClose,
   onResetToDefault,
@@ -170,16 +185,14 @@ export function KeybindingCaptureModal({
     return formatHotkeyParts(display, PLATFORM);
   }, [display]);
   const defaultHotkeyLabel = useMemo(() => {
-    return defaultHotkey
-      ? formatHotkeyParts(defaultHotkey, PLATFORM).join(' ')
-      : '';
+    return defaultHotkey ? formatHotkeyParts(defaultHotkey, PLATFORM).join(' ') : '';
   }, [defaultHotkey]);
 
   // 冲突检测:只在用户已捕获新组合(captured 非空)时检查;扫描其它命令的
   // effective hotkey 与新组合相同的(VSCode 同款 — 允许保存,只显示警告)
   const conflicts = useMemo(() => {
-    return selectKeybindingConflicts(allCommands, commandId, captured);
-  }, [captured, allCommands, commandId]);
+    return selectKeybindingConflicts(allCommands, commandId, captured, overrides);
+  }, [captured, allCommands, commandId, overrides]);
 
   return (
     <Modal
@@ -189,9 +202,12 @@ export function KeybindingCaptureModal({
       aria-labelledby="keybinding-capture-title"
     >
       {/* a11y(A13):dialog 关联标题。 */}
-      <h2 id="keybinding-capture-title" className="text-sm font-medium text-fg">{t('keybindings.modal.title')}</h2>
+      <h2 id="keybinding-capture-title" className="text-sm font-medium text-fg">
+        {t('keybindings.modal.title')}
+      </h2>
       <div className="mt-1 text-xs text-fg-muted">
-        {t('keybindings.modal.command_label')}<span className="text-fg">{commandTitle}</span>
+        {t('keybindings.modal.command_label')}
+        <span className="text-fg">{commandTitle}</span>
       </div>
 
       {/* a11y(A61,A52 同族:捕获结果框本身):按键由 document capture 处理,焦点不在此框上,
@@ -216,7 +232,8 @@ export function KeybindingCaptureModal({
       </div>
 
       <div className="mt-2 text-2xs text-fg-dim">
-        {t('keybindings.modal.hint_press_save')}<KeyCap>Backspace</KeyCap> {t('keybindings.modal.hint_clear')}
+        {t('keybindings.modal.hint_press_save')}
+        <KeyCap>Backspace</KeyCap> {t('keybindings.modal.hint_clear')}
         <KeyCap>Esc</KeyCap> {t('keybindings.modal.hint_cancel')}
         {defaultHotkey && (
           <>{t('keybindings.modal.hint_default', { hotkey: defaultHotkeyLabel })}</>
@@ -238,14 +255,11 @@ export function KeybindingCaptureModal({
           <ul className="mt-1 list-inside list-disc space-y-0.5">
             {conflicts.map((c) => (
               <li key={c.id}>
-                {c.title}{' '}
-                <code className="text-2xs text-warning/70">{c.id}</code>
+                {c.title} <code className="text-2xs text-warning/70">{c.id}</code>
               </li>
             ))}
           </ul>
-          <div className="mt-1 text-warning/80">
-            {t('keybindings.modal.conflict_advice')}
-          </div>
+          <div className="mt-1 text-warning/80">{t('keybindings.modal.conflict_advice')}</div>
         </div>
       )}
 

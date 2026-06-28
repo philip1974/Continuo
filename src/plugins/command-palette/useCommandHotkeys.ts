@@ -6,10 +6,7 @@
 import { useEffect, useMemo } from 'react';
 import { useRegistry } from '../registries/useRegistry';
 import type { CommandRegistry, CommandSpec } from '../registries/CommandRegistry';
-import {
-  getEffectiveHotkey,
-  useKeybindingsStore,
-} from '../keybindings/keybindings-store';
+import { useKeybindingsStore } from '../keybindings/keybindings-store';
 import { tWithFallback } from '@/i18n';
 import { runContributedAction } from '@/lib/run-contributed-action';
 import { detectPlatform, type Platform } from './format-hotkey';
@@ -37,12 +34,7 @@ function trimSegmentEnd(combo: string, start: number, end: number): number {
   return end;
 }
 
-function segmentEquals(
-  combo: string,
-  start: number,
-  end: number,
-  token: string,
-): boolean {
+function segmentEquals(combo: string, start: number, end: number, token: string): boolean {
   const s = trimSegmentStart(combo, start, end);
   const e = trimSegmentEnd(combo, s, end);
   if (e - s !== token.length) return false;
@@ -120,11 +112,7 @@ function signatureMatches(sig: ComboSignature, e: KeyboardEvent): boolean {
   return signatureMatchesKey(sig, e, lowerIfNeeded(e.key));
 }
 
-function signatureMatchesKey(
-  sig: ComboSignature,
-  e: KeyboardEvent,
-  keyLower: string,
-): boolean {
+function signatureMatchesKey(sig: ComboSignature, e: KeyboardEvent, keyLower: string): boolean {
   return (
     sig.wantMeta === e.metaKey &&
     sig.wantCtrl === e.ctrlKey &&
@@ -166,8 +154,10 @@ export function buildCompiledBindings(
   let out: CompiledBinding[] | undefined;
   let count = 0;
   for (const cmd of commands) {
-    if (!cmd.hotkey && overrides[cmd.id] === undefined) continue;
-    const effective = getEffectiveHotkey(cmd);
+    const override = overrides[cmd.id];
+    if (!cmd.hotkey && override === undefined) continue;
+    const effective =
+      override !== undefined ? (override === '' ? undefined : override) : cmd.hotkey;
     if (!effective) continue; // 无 hotkey 或显式 unbind
     out ??= new Array<CompiledBinding>(commands.length);
     out[count++] = { sig: compileCombo(effective, platform), cmd };

@@ -6,10 +6,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { renderHook, cleanup } from '@testing-library/react';
 
 vi.mock('../../plugins/keybindings/keybindings-store', async (importActual) => {
-  const actual =
-    await importActual<
-      typeof import('../../plugins/keybindings/keybindings-store')
-    >();
+  const actual = await importActual<typeof import('../../plugins/keybindings/keybindings-store')>();
   return { ...actual, getEffectiveHotkey: vi.fn(actual.getEffectiveHotkey) };
 });
 
@@ -27,9 +24,7 @@ import {
 const getEffSpy = getEffectiveHotkey as unknown as ReturnType<typeof vi.fn>;
 
 function fireKey(key: string): void {
-  document.dispatchEvent(
-    new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }),
-  );
+  document.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
 }
 
 beforeEach(() => {
@@ -60,14 +55,14 @@ describe('打磨 R26 — 命令 hotkey 预编译', () => {
     }
   });
 
-  it('keydown 不再逐键调 getEffectiveHotkey(已移到预编译表)', () => {
+  it('keydown 与预编译都不逐命令调 getEffectiveHotkey', () => {
     const reg = new CommandRegistry();
     reg.register({ id: 'a', title: 'A', hotkey: 'mod+s', fn: vi.fn() });
     reg.register({ id: 'b', title: 'B', hotkey: 'mod+p', fn: vi.fn() });
     renderHook(() => useCommandHotkeys(reg));
 
     const afterCompile = getEffSpy.mock.calls.length;
-    expect(afterCompile).toBeGreaterThan(0); // 预编译时调过
+    expect(afterCompile).toBe(0);
 
     // 连打 5 个不相关的键:不应再触发任何 getEffectiveHotkey
     for (const k of ['x', 'y', 'z', 'q', 'w']) fireKey(k);
@@ -86,19 +81,19 @@ describe('打磨 R26 — 命令 hotkey 预编译', () => {
     expect(buildCompiledBindings.toString()).not.toContain('out.push(');
   });
 
-  it('无 hotkey 且无 override 的命令不调用 getEffectiveHotkey', () => {
+  it('用传入 overrides 预编译绑定,不逐命令读 keybindings store', () => {
     const commands = [
       { id: 'a', title: 'A', hotkey: 'mod+a', fn: vi.fn() },
       { id: 'b', title: 'B', fn: vi.fn() },
       { id: 'c', title: 'C', fn: vi.fn() },
     ];
-    useKeybindingsStore.setState({ overrides: { c: 'mod+c' } });
+    useKeybindingsStore.setState({ overrides: {} });
 
     const bindings = buildCompiledBindings(commands, 'other', { c: 'mod+c' });
 
     expect(bindings).toHaveLength(2);
     expect(bindings.map((binding) => binding.cmd.id)).toEqual(['a', 'c']);
-    expect(getEffSpy).toHaveBeenCalledTimes(2);
+    expect(getEffSpy).not.toHaveBeenCalled();
   });
 
   it('命中的 hotkey 仍正确触发命令(预编译表匹配)', () => {

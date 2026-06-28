@@ -42,6 +42,15 @@ export async function flushPendingAutoSave(): Promise<void> {
     }
     return;
   }
+  if (!activeFlush && inFlightFlushes.size === 1) {
+    const only = inFlightFlushes.values().next().value;
+    try {
+      await only;
+    } catch {
+      /* scheduler 内部已记录;不阻断关窗 ack */
+    }
+    return;
+  }
   const pending = new Array<Promise<unknown>>(
     inFlightFlushes.size + (activeFlush ? 1 : 0),
   );

@@ -1,5 +1,6 @@
 // 打磨 R55(codex 性能):CommandPalette 空 query 排序 recent 置顶时,不在 comparator
-// 里反复 recentIds.indexOf;改为一次性 rank map。测试直接覆盖纯 helper,避免 UI 渲染噪声。
+// 里反复 recentIds.indexOf;recent top-N 很小,用固定上限 rank scan 并懒分配 rank slots。
+// 测试直接覆盖纯 helper,避免 UI 渲染噪声。
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it, expect, vi } from 'vitest';
@@ -158,15 +159,19 @@ describe('打磨 R55 — CommandPalette recent rank 预计算', () => {
     }
   });
 
-  it('recent rank slots 按 top-N 预分配,不靠稀疏数组扩容', () => {
+  it('recent rank slots 命中后才按 top-N 预分配,不靠稀疏数组扩容', () => {
     const src = readFileSync(
       join(process.cwd(), 'src/plugins/command-palette/CommandPalette.tsx'),
       'utf-8',
     );
 
     expect(src).not.toContain('const recent: (DisplayCommand | undefined)[] = []');
-    expect(src).toContain('new Array<DisplayCommand | undefined>(');
+    expect(src).toContain('let recent: Array<DisplayCommand | undefined> | null = null;');
+    expect(src.indexOf('const rank = findRecentRank')).toBeLessThan(
+      src.indexOf('recent = new Array<DisplayCommand | undefined>('),
+    );
     expect(src).toContain('Math.min(recentIds.length, RECENT_TOP_N)');
+    expect(src).not.toContain('new Map<string, number>()');
   });
 
   it('无 recent 时直接按标题排序,不做 rank map 查找', () => {
@@ -282,6 +287,15 @@ describe('打磨 R55 — CommandPalette recent rank 预计算', () => {
       command('c', 'Charlie'),
     ];
     const sortSpy = vi.spyOn(Array.prototype, 'sort');
+    const OriginalMap = globalThis.Map;
+    let mapCtorCount = 0;
+    class CountingMap<K, V> extends OriginalMap<K, V> {
+      constructor(entries?: readonly (readonly [K, V])[] | null) {
+        mapCtorCount += 1;
+        super(entries);
+      }
+    }
+    globalThis.Map = CountingMap as MapConstructor;
 
     try {
       const out = sortByRecent(
@@ -292,8 +306,10 @@ describe('打磨 R55 — CommandPalette recent rank 预计算', () => {
       expect(out).toBe(items);
       expect(out.map((d) => d.cmd.id)).toEqual(['a', 'b', 'c']);
       expect(sortSpy).not.toHaveBeenCalled();
+      expect(mapCtorCount).toBe(0);
     } finally {
       sortSpy.mockRestore();
+      globalThis.Map = OriginalMap;
     }
   });
 });

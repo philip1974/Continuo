@@ -94,6 +94,11 @@ function lowerTags(entry: MarketplaceEntry): readonly string[] {
   const cache = searchCacheFor(entry);
   const tags = entryTags(entry);
   if (cache.tagsSource !== tags) {
+    if (tags.length === 0) {
+      cache.tagsSource = tags;
+      cache.tagsLower = EMPTY_MARKETPLACE_ENTRY_TAGS;
+      return cache.tagsLower;
+    }
     const lower = new Array<string>(tags.length);
     for (let i = 0; i < tags.length; i++) {
       lower[i] = lowerIfNeeded(tags[i]!);

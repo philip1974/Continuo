@@ -43,6 +43,19 @@ describe('unified-toast-notification: DOM rendering', () => {
     expect(toastSrc).not.toContain("aria-label={t('notifications.dismiss')}");
   });
 
+  it('空通知视口先返回,不订阅 i18n 翻译 hook', () => {
+    const viewportSrc = readFileSync('src/notifications/ToastViewport.tsx', 'utf8');
+    const shellStart = viewportSrc.indexOf('export function ToastViewport()');
+    const contentStart = viewportSrc.indexOf('function ToastViewportContent');
+    const shellSrc = viewportSrc.slice(shellStart, contentStart);
+
+    expect(shellStart).toBeGreaterThanOrEqual(0);
+    expect(contentStart).toBeGreaterThan(shellStart);
+    expect(shellSrc).toContain('if (notifications.length === 0) return null;');
+    expect(shellSrc).not.toContain('useT(');
+    expect(viewportSrc.indexOf('const t = useT();')).toBeGreaterThan(contentStart);
+  });
+
   it('T12 renders a toast containing message and code without rendering full App', () => {
     render(
       <NotificationsProvider>

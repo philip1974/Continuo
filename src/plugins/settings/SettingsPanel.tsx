@@ -11,14 +11,8 @@ import { Input } from '@/design';
 import { clampSearchQuery } from '@/lib/search-query';
 import { coApp } from '@/plugins/co-app';
 import { useRegistry } from '../registries/useRegistry';
-import type {
-  SettingItemRegistry,
-  SettingItemSpec,
-} from '../registries/SettingItemRegistry';
-import type {
-  SettingTabRegistry,
-  SettingTabSpec,
-} from '../registries/SettingTabRegistry';
+import type { SettingItemRegistry, SettingItemSpec } from '../registries/SettingItemRegistry';
+import type { SettingTabRegistry, SettingTabSpec } from '../registries/SettingTabRegistry';
 import { SettingItemRow } from './SettingItemRow';
 import { useSettingsStore } from './store';
 import { useT, useLocale, tWithFallback } from '@/i18n';
@@ -40,28 +34,20 @@ function useItems(reg: SettingItemRegistry): readonly SettingItemSpec[] {
 
 const SETTINGS_NAV_BASE_CLASS_NAME =
   'flex w-[180px] shrink-0 flex-col overflow-y-auto border-r border-line bg-panel-soft py-2 text-xs transition-opacity';
-const SETTINGS_NAV_SEARCH_CLASS_NAME =
-  `${SETTINGS_NAV_BASE_CLASS_NAME} pointer-events-none opacity-40`;
-const SETTINGS_NAV_NORMAL_CLASS_NAME =
-  `${SETTINGS_NAV_BASE_CLASS_NAME} opacity-100`;
+const SETTINGS_NAV_SEARCH_CLASS_NAME = `${SETTINGS_NAV_BASE_CLASS_NAME} pointer-events-none opacity-40`;
+const SETTINGS_NAV_NORMAL_CLASS_NAME = `${SETTINGS_NAV_BASE_CLASS_NAME} opacity-100`;
 
 const SETTINGS_TAB_BUTTON_BASE_CLASS_NAME =
   'flex w-full items-center gap-2 border-l-2 px-4 py-2 text-left transition';
-const SETTINGS_TAB_BUTTON_ACTIVE_CLASS_NAME =
-  `${SETTINGS_TAB_BUTTON_BASE_CLASS_NAME} border-accent bg-hover text-fg`;
-const SETTINGS_TAB_BUTTON_INACTIVE_CLASS_NAME =
-  `${SETTINGS_TAB_BUTTON_BASE_CLASS_NAME} border-transparent text-fg-muted hover:bg-hover/50`;
+const SETTINGS_TAB_BUTTON_ACTIVE_CLASS_NAME = `${SETTINGS_TAB_BUTTON_BASE_CLASS_NAME} border-accent bg-hover text-fg`;
+const SETTINGS_TAB_BUTTON_INACTIVE_CLASS_NAME = `${SETTINGS_TAB_BUTTON_BASE_CLASS_NAME} border-transparent text-fg-muted hover:bg-hover/50`;
 
 export function settingsNavClassName(inSearch: boolean): string {
-  return inSearch
-    ? SETTINGS_NAV_SEARCH_CLASS_NAME
-    : SETTINGS_NAV_NORMAL_CLASS_NAME;
+  return inSearch ? SETTINGS_NAV_SEARCH_CLASS_NAME : SETTINGS_NAV_NORMAL_CLASS_NAME;
 }
 
 export function settingsTabButtonClassName(active: boolean): string {
-  return active
-    ? SETTINGS_TAB_BUTTON_ACTIVE_CLASS_NAME
-    : SETTINGS_TAB_BUTTON_INACTIVE_CLASS_NAME;
+  return active ? SETTINGS_TAB_BUTTON_ACTIVE_CLASS_NAME : SETTINGS_TAB_BUTTON_INACTIVE_CLASS_NAME;
 }
 
 /** 一条设置项的搜索源:本地化标题/描述 + id + raw fallback,全 lowercase. */
@@ -85,13 +71,10 @@ function lowerIfNeeded(value: string): string {
 
 export function buildSettingSearchHaystack(item: SettingItemSpec): string {
   const displayTitle = tWithFallback(item.titleKey, item.title);
-  const displayDescription = tWithFallback(
-    item.descriptionKey,
-    item.description ?? '',
+  const displayDescription = tWithFallback(item.descriptionKey, item.description ?? '');
+  return lowerIfNeeded(
+    `${displayTitle} ${displayDescription} ${item.id} ${item.title} ${item.description ?? ''}`,
   );
-  return lowerIfNeeded(`${displayTitle} ${displayDescription} ${item.id} ${item.title} ${
-    item.description ?? ''
-  }`);
 }
 
 export function buildSearchableSettingItems(
@@ -126,9 +109,7 @@ interface SearchBucket {
 const EMPTY_SEARCH_BUCKETS: readonly SearchBucket[] = [];
 
 /** 把搜索结果按 category 分组，label 走 i18n catalog（topic-20）。 */
-export function groupSearchResults(
-  items: readonly SettingItemSpec[],
-): readonly SearchBucket[] {
+export function groupSearchResults(items: readonly SettingItemSpec[]): readonly SearchBucket[] {
   if (items.length === 0) return EMPTY_SEARCH_BUCKETS;
   if (items.length === 1) {
     const item = items[0]!;
@@ -187,13 +168,16 @@ export function selectMatchedSettingItems(
 ): readonly SettingItemSpec[] {
   if (searchable.length === 0) return EMPTY_MATCHED_SETTING_ITEMS;
   const ql = lowerIfNeeded(trimmed);
-  const matched = new Array<SettingItemSpec>(searchable.length);
+  let matched: SettingItemSpec[] | null = null;
   let count = 0;
   for (const s of searchable) {
-    if (s.haystack.includes(ql)) matched[count++] = s.item;
+    if (!s.haystack.includes(ql)) continue;
+    if (matched === null) matched = new Array<SettingItemSpec>(searchable.length);
+    matched[count++] = s.item;
   }
+  if (matched === null) return EMPTY_MATCHED_SETTING_ITEMS;
   matched.length = count;
-  return count === 0 ? EMPTY_MATCHED_SETTING_ITEMS : matched;
+  return matched;
 }
 
 export function SettingsPanel({
@@ -210,9 +194,7 @@ export function SettingsPanel({
   // spec 会执行已卸载 tab 的 render(访问已释放资源 / 陈旧 UI)。改为从 **live** registry 按
   // activeTabId 复查;已移除则回退首个 live tab,确保只调当前仍注册的 spec.render。
   const active =
-    (activeTabId ? registry.get(activeTabId) : undefined) ??
-    registry.getAll()[0] ??
-    null;
+    (activeTabId ? registry.get(activeTabId) : undefined) ?? registry.getAll()[0] ?? null;
 
   const [query, setQuery] = useState('');
   const trimmed = query.trim();
@@ -230,18 +212,13 @@ export function SettingsPanel({
           aria-label={searchPlaceholderLabel}
           placeholder={searchPlaceholderLabel}
           value={query}
-          onChange={(e) =>
-            setQuery(clampSearchQuery((e.target as HTMLInputElement).value))
-          }
+          onChange={(e) => setQuery(clampSearchQuery((e.target as HTMLInputElement).value))}
           // 改 search 时回到搜索结果区,避免左侧 nav 视觉错位
           autoFocus
         />
       </div>
       <div className="flex min-h-0 flex-1">
-        <nav
-          className={settingsNavClassName(inSearch)}
-          aria-label={t('settings.panel.nav_aria')}
-        >
+        <nav className={settingsNavClassName(inSearch)} aria-label={t('settings.panel.nav_aria')}>
           {tabs.length === 0 ? (
             <div className="px-4 py-4 text-fg-dim">{t('settings.panel.no_items')}</div>
           ) : (
@@ -264,9 +241,7 @@ export function SettingsPanel({
                     {tab.icon}
                   </span>
                 )}
-                <span className="truncate">
-                  {tWithFallback(tab.titleKey, tab.title)}
-                </span>
+                <span className="truncate">{tWithFallback(tab.titleKey, tab.title)}</span>
               </button>
             ))
           )}
@@ -324,10 +299,7 @@ function SettingsSearchResults({
           : t('settings.panel.matched', { count: matched.length, q: trimmed })}
       </div>
       {matchedBuckets.map((bucket) => (
-        <section
-          key={bucket.category}
-          className="first:mt-0 [&:not(:first-child)]:mt-10"
-        >
+        <section key={bucket.category} className="first:mt-0 [&:not(:first-child)]:mt-10">
           <h3 className="mb-3 border-b border-line pb-3 text-base font-medium text-fg">
             {bucket.label}
           </h3>

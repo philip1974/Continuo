@@ -24,6 +24,45 @@ const EMPTY_STATUS_BAR_SNAPSHOT: readonly StatusBarItemSpec[] = [];
 // id 非空限长 + side 枚举 + priority finite + render 为函数,非法抛不入。
 const SB_ID_MAX = 256;
 
+function statusBarPriority(item: StatusBarItemSpec): number {
+  return item.priority ?? 100;
+}
+
+function mergeSortedStatusBarItems(
+  left: readonly StatusBarItemSpec[],
+  right: readonly StatusBarItemSpec[],
+): readonly StatusBarItemSpec[] | null {
+  if (left.length === 0) return right;
+  if (right.length === 0) return left;
+  const merged = new Array<StatusBarItemSpec>(left.length + right.length);
+  let li = 0;
+  let ri = 0;
+  let mi = 0;
+  while (li < left.length && ri < right.length) {
+    const l = left[li]!;
+    const r = right[ri]!;
+    const leftPriority = statusBarPriority(l);
+    const rightPriority = statusBarPriority(r);
+    if (leftPriority === rightPriority) return null;
+    if (leftPriority < rightPriority) {
+      merged[mi++] = l;
+      li += 1;
+    } else {
+      merged[mi++] = r;
+      ri += 1;
+    }
+  }
+  while (li < left.length) {
+    merged[mi++] = left[li]!;
+    li += 1;
+  }
+  while (ri < right.length) {
+    merged[mi++] = right[ri]!;
+    ri += 1;
+  }
+  return merged;
+}
+
 function validateStatusBarItemSpec(spec: StatusBarItemSpec): void {
   // 边界(E273,E271 registry 族):先校验 spec 是对象,否则读 spec.id/字段对 null/undefined 抛 TypeError。
   if (!isSpecObject(spec)) {
@@ -96,7 +135,7 @@ export class StatusBarRegistry {
     for (const item of this.items.values()) {
       if (item.side === side) {
         if (items === null) items = new Array<StatusBarItemSpec>(this.items.size);
-        const priority = item.priority ?? 100;
+        const priority = statusBarPriority(item);
         if (priority < prevPriority) sorted = false;
         prevPriority = priority;
         items[count++] = item;
@@ -109,7 +148,7 @@ export class StatusBarRegistry {
     }
     items.length = count;
     if (count > 1 && !sorted) {
-      items.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
+      items.sort((a, b) => statusBarPriority(a) - statusBarPriority(b));
     }
     if (side === 'left') this.cachedLeft = items;
     else this.cachedRight = items;
@@ -121,6 +160,16 @@ export class StatusBarRegistry {
     if (this.items.size === 0) {
       this.cachedAll = EMPTY_STATUS_BAR_SNAPSHOT;
       return EMPTY_STATUS_BAR_SNAPSHOT;
+    }
+    if (this.cachedLeft !== null && this.cachedRight !== null) {
+      const merged = mergeSortedStatusBarItems(
+        this.cachedLeft,
+        this.cachedRight,
+      );
+      if (merged !== null) {
+        this.cachedAll = merged;
+        return this.cachedAll;
+      }
     }
     if (this.cachedLeft !== null && this.cachedLeft.length === this.items.size) {
       this.cachedAll = this.cachedLeft;
@@ -136,13 +185,13 @@ export class StatusBarRegistry {
     let prevPriority = -Infinity;
     let sorted = true;
     for (const item of this.items.values()) {
-      const priority = item.priority ?? 100;
+      const priority = statusBarPriority(item);
       if (priority < prevPriority) sorted = false;
       prevPriority = priority;
       items[i++] = item;
     }
     if (items.length > 1 && !sorted) {
-      items.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
+      items.sort((a, b) => statusBarPriority(a) - statusBarPriority(b));
     }
     this.cachedAll = items;
     return items;

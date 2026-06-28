@@ -65,8 +65,8 @@ export function fuzzyFilter<T>(
       : fuzzyScoreLower(q, getStr(item));
     return score === null ? EMPTY_FUZZY_RESULTS : items;
   }
-  const matched = new Array<T>(items.length);
-  const scores = new Array<number>(items.length);
+  let matched: T[] | null = null;
+  let scores: number[] | null = null;
   let count = 0;
   let prevScore = Infinity;
   let scoresSorted = true;
@@ -75,16 +75,20 @@ export function fuzzyFilter<T>(
       ? fuzzyScoreBothLower(q, getStrLower(item))
       : fuzzyScoreLower(q, getStr(item));
     if (s !== null) {
+      if (matched === null) {
+        matched = new Array<T>(items.length);
+        scores = new Array<number>(items.length);
+      }
       if (s > prevScore) scoresSorted = false;
       prevScore = s;
       matched[count] = item;
-      scores[count] = s;
+      scores![count] = s;
       count++;
     }
   }
+  if (matched === null || scores === null) return EMPTY_FUZZY_RESULTS;
   matched.length = count;
   scores.length = count;
-  if (count === 0) return EMPTY_FUZZY_RESULTS;
   if (count < 2) return matched;
   if (scoresSorted) return matched;
 

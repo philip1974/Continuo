@@ -48,6 +48,27 @@ describe('applyFilter', () => {
     expect(src).not.toContain('e.tags ?? []');
   });
 
+  it('显式空 tags 的 lowercase 缓存也复用稳定空数组', () => {
+    const entry = {
+      id: 'com.empty-tags',
+      name: 'empty tags',
+      description: 'tiny',
+      author: 'a',
+      repo: 'a/empty-tags',
+      tags: [],
+    } satisfies MarketplaceEntry;
+
+    expect(buildMarketplaceSearchHaystack(entry)).toBe(
+      'empty tags com.empty-tags tiny',
+    );
+    const src = readFileSync(
+      join(process.cwd(), 'src/marketplace/filter.ts'),
+      'utf-8',
+    );
+    expect(src).toContain('if (tags.length === 0)');
+    expect(src).toContain('cache.tagsLower = EMPTY_MARKETPLACE_ENTRY_TAGS');
+  });
+
   it('空 query + 空 tags → 全过', () => {
     const r = applyFilter(ENTRIES, { query: '', selectedTags: new Set() });
     expect(r).toHaveLength(3);

@@ -175,6 +175,19 @@ describe('makeListSessionsTool', () => {
     expect(tool.run({}, ctx)).toEqual({ sessions: [] });
   });
 
+  it('空 sessions 复用稳定空数组,不预分配输出数组', () => {
+    const tool = makeListSessionsTool({ getSessions: () => [] });
+    const first = tool.run({}, ctx);
+    const second = tool.run({}, ctx);
+    const src = tool.run.toString();
+
+    expect(first.sessions).toBe(second.sessions);
+    expect(src.indexOf('rawSessions.length === 0')).toBeGreaterThanOrEqual(0);
+    expect(src.indexOf('rawSessions.length === 0')).toBeLessThan(
+      src.indexOf('new Array'),
+    );
+  });
+
   it('user session 字段映射(camelCase → snake_case)', () => {
     const tool = makeListSessionsTool({ getSessions: () => [userSess] });
     expect(tool.run({}, ctx)).toEqual({

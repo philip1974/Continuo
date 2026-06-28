@@ -146,6 +146,7 @@ export interface ListSessionsToolDeps {
  * `tool.name` / `tool.run` 不直接依赖 mcp-host 的 generic 默认值。
  */
 export type McpTool<I, O> = McpToolDef<I, O>;
+const EMPTY_LIST_SESSION_ITEMS: ListSessionItem[] = [];
 
 // ── 字段映射:camelCase store → snake_case 对外 ────────────────
 
@@ -185,6 +186,9 @@ export function makeListSessionsTool(
     inputSchema: listSessionsInputSchema,
     run: (_input: ListSessionsInput, ctx: McpCallCtx) => {
       const rawSessions = deps.getSessions(ctx);
+      if (rawSessions.length === 0) {
+        return { sessions: EMPTY_LIST_SESSION_ITEMS };
+      }
       const sessions = new Array<ListSessionItem>(rawSessions.length);
       for (let i = 0; i < rawSessions.length; i++) {
         sessions[i] = toItem(rawSessions[i]!);

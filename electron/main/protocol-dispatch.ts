@@ -86,14 +86,19 @@ export function routeProtocolUrl(url: string, deps: RouteProtocolUrlDeps): void 
     );
     return;
   }
-  const ready = new Array<ProtoWindow>(deps.windows.length);
-  const loading = new Array<ProtoWindow>(deps.windows.length);
+  let ready: ProtoWindow[] | null = null;
+  let loading: ProtoWindow[] | null = null;
   let readyCount = 0;
   let loadingCount = 0;
   for (const w of deps.windows) {
     if (w.isDestroyed()) continue;
-    if (w.webContents.isLoading()) loading[loadingCount++] = w;
-    else ready[readyCount++] = w;
+    if (w.webContents.isLoading()) {
+      if (loading === null) loading = new Array<ProtoWindow>(deps.windows.length);
+      loading[loadingCount++] = w;
+    } else {
+      if (ready === null) ready = new Array<ProtoWindow>(deps.windows.length);
+      ready[readyCount++] = w;
+    }
   }
   if (readyCount === 0) {
     // 边界(E55):pending 队列条数上限 —— 窗口加载期间连发大量深链不得无界占用 main 内存。
@@ -107,7 +112,7 @@ export function routeProtocolUrl(url: string, deps: RouteProtocolUrlDeps): void 
     // drain。第一个就绪的窗口排空整个队列;其余 drain 见空队列即 no-op(避免重复投递)。
     pending.push(url);
     for (let i = 0; i < loadingCount; i++) {
-      const w = loading[i]!;
+      const w = loading![i]!;
       w.webContents.once('did-finish-load', () => {
         if (!w.isDestroyed()) drainPendingProtocolUrls(w.webContents, channel, pending);
       });
@@ -116,12 +121,12 @@ export function routeProtocolUrl(url: string, deps: RouteProtocolUrlDeps): void 
   }
   // 有就绪窗口:先把队列里残留(若有)按 FIFO 排空到一个就绪窗口,再投本次 url(保留既有
   // 「广播到所有就绪窗口」语义)。
-  drainPendingProtocolUrls(ready[0]!.webContents, channel, pending);
+  drainPendingProtocolUrls(ready![0]!.webContents, channel, pending);
   // race(R63 同族):逐窗口 try/catch。某个就绪窗口在 ready 过滤后、send 前销毁时 send 会抛,
   // 不捕获则中断循环 → 其余就绪窗口漏投本次 url。每个独立 try/catch 使一个已死窗口不拖累其它。
   let delivered = false;
   for (let i = 0; i < readyCount; i++) {
-    const w = ready[i]!;
+    const w = ready![i]!;
     try {
       w.webContents.send(channel, { url });
       delivered = true;

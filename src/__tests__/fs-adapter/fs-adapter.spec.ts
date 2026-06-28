@@ -92,6 +92,19 @@ describe('listDir', () => {
     expect(names).not.toContain('node_modules');
   });
 
+  it('默认 exclude 复用预建 Set,自定义 exclude 才构建 Set', () => {
+    const src = readFileSync(
+      path.join(process.cwd(), 'electron/main/ipc/fs/list-dir.ts'),
+      'utf-8',
+    );
+
+    expect(src).toContain('const DEFAULT_EXCLUDE_SET');
+    expect(src).toContain(
+      'opts.exclude === undefined ? DEFAULT_EXCLUDE_SET : new Set(opts.exclude)',
+    );
+    expect(src).not.toContain('new Set(opts.exclude ?? DEFAULT_EXCLUDE)');
+  });
+
   it('自定义 exclude=[] → 显式要看 .git', async () => {
     const items = await listDir(dir, { exclude: [] });
     const names = items.map((i) => i.name);

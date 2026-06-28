@@ -7,39 +7,46 @@ import { IconButton, Input, KeyCap } from '@/design';
 import { clampSearchQuery } from '@/lib/search-query';
 import { coApp } from '@/plugins/co-app';
 import { useRegistry } from '../registries/useRegistry';
-import type {
-  CommandRegistry,
-  CommandSpec,
-} from '@/plugins/registries/CommandRegistry';
+import type { CommandRegistry, CommandSpec } from '@/plugins/registries/CommandRegistry';
 import {
   formatHotkeyParts,
   detectPlatform,
   type Platform,
 } from '@/plugins/command-palette/format-hotkey';
-import {
-  getEffectiveHotkey,
-  useKeybindingsStore,
-} from '@/plugins/keybindings/keybindings-store';
+import { getEffectiveHotkey, useKeybindingsStore } from '@/plugins/keybindings/keybindings-store';
 import { KeybindingCaptureModal } from '@/plugins/keybindings/KeybindingCaptureModal';
 import { useT, useTWithFallback, useLocale } from '@/i18n';
 
 const PLATFORM = detectPlatform();
-const COMMAND_PALETTE_HOTKEY_PARTS = formatHotkeyParts(
-  'mod+shift+p',
-  PLATFORM,
-);
+const COMMAND_PALETTE_HOTKEY_PARTS = formatHotkeyParts('mod+shift+p', PLATFORM);
 const EMPTY_KEYBINDING_DISPLAY_COMMANDS: DisplayCommand[] = [];
-const KEYBINDING_ROW_CLASS_NAME =
-  'flex items-center gap-3 px-4 py-3 text-xs';
-const KEYBINDING_ROW_BORDER_CLASS_NAME =
-  `${KEYBINDING_ROW_CLASS_NAME} border-t border-line/50`;
+const KEYBINDING_ROW_CLASS_NAME = 'flex items-center gap-3 px-4 py-3 text-xs';
+const KEYBINDING_ROW_BORDER_CLASS_NAME = `${KEYBINDING_ROW_CLASS_NAME} border-t border-line/50`;
 const EDIT_HOTKEY_ICON = (
-  <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.4">
+  <svg
+    viewBox="0 0 16 16"
+    width="11"
+    height="11"
+    aria-hidden="true"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.4"
+  >
     <path d="M11.5 1.5l3 3-9 9-3.5.5.5-3.5z" />
   </svg>
 );
 const RESET_HOTKEY_ICON = (
-  <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+  <svg
+    viewBox="0 0 16 16"
+    width="11"
+    height="11"
+    aria-hidden="true"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.4"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
     <path d="M3 8a5 5 0 0 1 8.5-3.5L13 6" />
     <path d="M13 3v3h-3" />
   </svg>
@@ -73,17 +80,12 @@ const EMPTY_VISIBLE_KEYBINDING_COMMANDS: DisplayCommand[] = [];
 const EMPTY_HOTKEY_PARTS: readonly string[] = [];
 
 export function keybindingRowClassName(index: number): string {
-  return index > 0
-    ? KEYBINDING_ROW_BORDER_CLASS_NAME
-    : KEYBINDING_ROW_CLASS_NAME;
+  return index > 0 ? KEYBINDING_ROW_BORDER_CLASS_NAME : KEYBINDING_ROW_CLASS_NAME;
 }
 
 function isSortedByDisplayTitle(commands: readonly DisplayCommand[]): boolean {
   for (let i = 1; i < commands.length; i++) {
-    if (
-      commands[i - 1]!.displayTitle.localeCompare(commands[i]!.displayTitle) >
-      0
-    ) {
+    if (commands[i - 1]!.displayTitle.localeCompare(commands[i]!.displayTitle) > 0) {
       return false;
     }
   }
@@ -198,8 +200,7 @@ export function selectVisibleKeybindingCommands(
 
   for (let i = 0; i < commands.length; i++) {
     const d = commands[i]!;
-    const visible =
-      (d.cmd.hotkey || d.isOverridden) && (!hasQuery || matches(d, qLower));
+    const visible = (d.cmd.hotkey || d.isOverridden) && (!hasQuery || matches(d, qLower));
     if (!visible) {
       if (selected === null) {
         selected = new Array<DisplayCommand>(commands.length);
@@ -222,9 +223,7 @@ export function buildCommandSearchHaystack(
   commandId: string,
   effectiveHotkey: string | undefined,
 ): string {
-  return lowerIfNeeded(`${displayTitle} ${displayCategory} ${commandId} ${
-    effectiveHotkey ?? ''
-  }`);
+  return lowerIfNeeded(`${displayTitle} ${displayCategory} ${commandId} ${effectiveHotkey ?? ''}`);
 }
 
 export function countDefaultHotkeys(commands: readonly CommandSpec[]): number {
@@ -237,10 +236,7 @@ export function countDefaultHotkeys(commands: readonly CommandSpec[]): number {
   return count;
 }
 
-type TranslateWithFallback = (
-  key: string | undefined,
-  fallback: string,
-) => string;
+type TranslateWithFallback = (key: string | undefined, fallback: string) => string;
 
 export function buildKeybindingDisplayCommands(
   allCommands: readonly CommandSpec[],
@@ -249,13 +245,16 @@ export function buildKeybindingDisplayCommands(
   platform: Platform,
 ): DisplayCommand[] {
   if (allCommands.length === 0) return EMPTY_KEYBINDING_DISPLAY_COMMANDS;
-  const out = new Array<DisplayCommand>(allCommands.length);
+  let out: DisplayCommand[] | null = null;
   let outCount = 0;
   for (let i = 0; i < allCommands.length; i++) {
     const cmd = allCommands[i]!;
     const isOverridden = cmd.id in overrides;
     if (!cmd.hotkey && !isOverridden) continue;
-    const effective = getEffectiveHotkey(cmd);
+    if (out === null) out = new Array<DisplayCommand>(allCommands.length);
+    const override = overrides[cmd.id];
+    const effective =
+      override !== undefined ? (override === '' ? undefined : override) : cmd.hotkey;
     const displayTitle = tk(cmd.titleKey, cmd.title);
     const displayCategory = tk(cmd.categoryKey, cmd.category ?? '');
     out[outCount++] = {
@@ -268,22 +267,15 @@ export function buildKeybindingDisplayCommands(
       // haystack 用 effective hotkey(含 override)而非原 cmd.hotkey(打磨 R29):
       // 否则 override 后搜索仍只能命中默认组合,与列表显示的 effective 不一致。
       // 打磨 R52:随 displayCommands 预计算,避免每次输入都逐行 join + lower-case。
-      searchHaystack: buildCommandSearchHaystack(
-        displayTitle,
-        displayCategory,
-        cmd.id,
-        effective,
-      ),
+      searchHaystack: buildCommandSearchHaystack(displayTitle, displayCategory, cmd.id, effective),
     };
   }
+  if (out === null) return EMPTY_KEYBINDING_DISPLAY_COMMANDS;
   out.length = outCount;
-  return outCount === 0 ? EMPTY_KEYBINDING_DISPLAY_COMMANDS : out;
+  return out;
 }
 
-export function hasCommandId(
-  commands: readonly CommandSpec[],
-  id: string,
-): boolean {
+export function hasCommandId(commands: readonly CommandSpec[], id: string): boolean {
   for (const command of commands) {
     if (command.id === id) return true;
   }
@@ -318,10 +310,7 @@ export function KeybindingsTabContent() {
     return groupByCategory(filtered, t('keybindings.default_group'));
   }, [displayCommands, query, t]);
 
-  const totalWithHotkey = useMemo(
-    () => countDefaultHotkeys(allCommands),
-    [allCommands],
-  );
+  const totalWithHotkey = useMemo(() => countDefaultHotkeys(allCommands), [allCommands]);
   const searchPlaceholderLabel = t('keybindings.search_placeholder');
   const unboundLabel = t('keybindings.unbound');
   const editHotkeyLabel = t('keybindings.edit_hotkey');
@@ -362,6 +351,7 @@ export function KeybindingsTabContent() {
         currentHotkey={editing ? getEffectiveHotkey(editing) : undefined}
         defaultHotkey={editing?.hotkey}
         allCommands={allCommands}
+        overrides={overrides}
         onClose={() => setEditing(null)}
         onSave={(combo) => {
           // race(R50):保存瞬间从当前 registry 复检命令仍存在(覆盖 effect 关闭弹窗前的同帧
@@ -389,9 +379,7 @@ export function KeybindingsTabContent() {
           role="status"
           className="rounded-md border border-dashed border-line bg-panel-soft/40 px-4 py-8 text-center text-xs text-fg-dim"
         >
-          {totalWithHotkey === 0
-            ? t('keybindings.empty')
-            : t('keybindings.no_match')}
+          {totalWithHotkey === 0 ? t('keybindings.empty') : t('keybindings.no_match')}
         </div>
       ) : (
         <div className="space-y-8">
@@ -405,10 +393,7 @@ export function KeybindingsTabContent() {
                   const cmd = d.cmd;
                   const { hotkeyParts, isOverridden } = d; // 预计算(打磨 R29)
                   return (
-                    <li
-                      key={cmd.id}
-                      className={keybindingRowClassName(idx)}
-                    >
+                    <li key={cmd.id} className={keybindingRowClassName(idx)}>
                       <span className="truncate text-sm text-fg">{d.displayTitle}</span>
                       <code className="ml-auto shrink-0 rounded bg-panel-soft/70 px-1.5 py-0.5 text-2xs uppercase tracking-wider text-fg-muted/70">
                         {cmd.id}
@@ -420,9 +405,7 @@ export function KeybindingsTabContent() {
                           ))}
                         </span>
                       ) : (
-                        <span className="shrink-0 text-2xs text-fg-dim">
-                          {unboundLabel}
-                        </span>
+                        <span className="shrink-0 text-2xs text-fg-dim">{unboundLabel}</span>
                       )}
                       <IconButton
                         size="xs"
@@ -437,16 +420,16 @@ export function KeybindingsTabContent() {
                       </IconButton>
                       <IconButton
                         size="xs"
-                        title={t('keybindings.reset_default', { hotkey: cmd.hotkey ?? unboundLabel })}
+                        title={t('keybindings.reset_default', {
+                          hotkey: cmd.hotkey ?? unboundLabel,
+                        })}
                         aria-label={t('keybindings.reset_default_for_aria', {
                           command: d.displayTitle,
                         })}
                         onClick={() => isOverridden && reset(cmd.id)}
                         // a11y(A12 同族):未覆盖时 disabled,避免键盘 Tab 到不可见无效按钮。
                         disabled={!isOverridden}
-                        className={
-                          isOverridden ? '' : 'pointer-events-none invisible'
-                        }
+                        className={isOverridden ? '' : 'pointer-events-none invisible'}
                       >
                         {RESET_HOTKEY_ICON}
                       </IconButton>

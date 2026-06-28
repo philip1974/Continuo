@@ -131,18 +131,18 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
       for (const item of installed) installedIds.add(item.id);
 
       const entries = await fetchMarketplaceIndex();
-      const remoteVersions = new Map<string, string>();
-      const entriesById = new Map<string, MarketplaceEntry>();
-      const relevant = new Array<MarketplaceEntry>(entries.length);
+      let entriesById: Map<string, MarketplaceEntry> | null = null;
+      let relevant: MarketplaceEntry[] | null = null;
       let relevantCount = 0;
       for (const e of entries) {
         if (installedIds.has(e.id)) {
+          entriesById ??= new Map<string, MarketplaceEntry>();
+          relevant ??= new Array<MarketplaceEntry>(entries.length);
           entriesById.set(e.id, e);
           relevant[relevantCount++] = e;
         }
       }
-      relevant.length = relevantCount;
-      if (relevantCount === 0) {
+      if (relevant === null || entriesById === null) {
         if (myGen !== refreshGen) return;
         set({
           remoteVersions: EMPTY_REMOTE_VERSIONS,
@@ -152,6 +152,8 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
         });
         return;
       }
+      relevant.length = relevantCount;
+      const remoteVersions = new Map<string, string>();
 
       // 只拉「已安装插件命中的 entries」的 manifest(M ≤ N);单个失败不影响其它。
       // 边界(E234):有界并发池(MAX_MANIFEST_FETCH_CONCURRENCY)钳定最大在途 fetch 数,
@@ -179,7 +181,7 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
       const dismissed = get().dismissed;
 
       // 跟本地 PluginManager 比较
-      const available = new Array<AvailableUpdate>(liveInstalled.length);
+      let available: AvailableUpdate[] | null = null;
       let availableCount = 0;
       for (const item of liveInstalled) {
         const remoteV = remoteVersions.get(item.id);
@@ -193,6 +195,7 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
         if (dismissed.get(item.id) === remoteV) continue;
         const entry = entriesById.get(item.id);
         if (!entry) continue;
+        available ??= new Array<AvailableUpdate>(liveInstalled.length);
         available[availableCount++] = {
           id: item.id,
           name: item.manifest.name,
@@ -201,9 +204,9 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
           entry,
         };
       }
-      available.length = availableCount;
+      if (available !== null) available.length = availableCount;
       const nextAvailable =
-        availableCount === 0 ? EMPTY_AVAILABLE_UPDATES : available;
+        available === null ? EMPTY_AVAILABLE_UPDATES : available;
 
       // 更晚的 refresh 已开始 → 丢弃本次过期结果(由最新代际负责落库 + 清 checking)
       if (myGen !== refreshGen) return;

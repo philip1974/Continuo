@@ -28,9 +28,7 @@ describe('fuzzyScore', () => {
   });
 
   it('大小写不敏感', () => {
-    expect(fuzzyScore('SAVE', 'save file')).toEqual(
-      fuzzyScore('save', 'save file'),
-    );
+    expect(fuzzyScore('SAVE', 'save file')).toEqual(fuzzyScore('save', 'save file'));
   });
 
   it('词边界匹配比中间匹配分高', () => {
@@ -121,9 +119,7 @@ describe('fuzzyFilter', () => {
     const sortSpy = vi.spyOn(Array.prototype, 'sort');
 
     try {
-      expect(fuzzyFilter(items, 'save', (i) => i.name).map((x) => x.id)).toEqual([
-        'a',
-      ]);
+      expect(fuzzyFilter(items, 'save', (i) => i.name).map((x) => x.id)).toEqual(['a']);
       expect(fuzzyFilter(items, 'zzzz', (i) => i.name)).toEqual([]);
       expect(sortSpy).not.toHaveBeenCalled();
     } finally {
@@ -140,10 +136,7 @@ describe('fuzzyFilter', () => {
     const sortSpy = vi.spyOn(Array.prototype, 'sort');
 
     try {
-      expect(fuzzyFilter(items, 'save', (i) => i.name).map((x) => x.id)).toEqual([
-        'a',
-        'b',
-      ]);
+      expect(fuzzyFilter(items, 'save', (i) => i.name).map((x) => x.id)).toEqual(['a', 'b']);
       expect(sortSpy).not.toHaveBeenCalled();
     } finally {
       sortSpy.mockRestore();
@@ -168,6 +161,12 @@ describe('fuzzyFilter', () => {
 
     expect(a).toEqual([]);
     expect(b).toBe(a);
+  });
+
+  it('多项无匹配路径不预分配 matched/scores 数组', () => {
+    expect(fuzzyFilter.toString()).toContain('let matched = null');
+    expect(fuzzyFilter.toString()).not.toContain('const matched = new Array(items.length)');
+    expect(fuzzyFilter.toString()).not.toContain('const scores = new Array(items.length)');
   });
 
   it('query 长于 target 时直接判不匹配,不 lower target', () => {

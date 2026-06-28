@@ -350,23 +350,24 @@ export class SettingItemRegistry {
     // 先过滤再排序(打磨 R5):原先 getAll() 对全部 category 的 items 排序后才
     // 过滤,每个设置 tab 都为无关 category 付排序成本。filter 在前,只排本
     // category 的子集;Array.prototype.sort 稳定,输出与原契约完全一致。
-    const items = new Array<SettingItemSpec>(this.items.size);
+    let items: SettingItemSpec[] | null = null;
     let count = 0;
     let prevPriority = -Infinity;
     let sorted = true;
     for (const item of this.items.values()) {
       if (item.category === category) {
+        if (items === null) items = new Array<SettingItemSpec>(this.items.size);
         const priority = item.priority ?? 100;
         if (priority < prevPriority) sorted = false;
         prevPriority = priority;
         items[count++] = item;
       }
     }
-    items.length = count;
-    if (count === 0) {
+    if (items === null) {
       this.cachedByCategory.set(category, EMPTY_SETTING_ITEM_SNAPSHOT);
       return EMPTY_SETTING_ITEM_SNAPSHOT;
     }
+    items.length = count;
     if (count > 1 && !sorted) {
       items.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
     }

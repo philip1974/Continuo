@@ -228,6 +228,32 @@ describe('explorer.json v3 persistence schema and merge semantics', () => {
     expect(payload.windows.map((w) => w.windowSeq)).toEqual([1]);
   });
 
+  it('pruneLRUClosed 全部窗口仍 active 时不预分配 closed 数组', () => {
+    const payload = defaultExplorerV3();
+    payload.windows = [
+      { ...payload.windows[0]!, lastClosedAt: 1 },
+      {
+        windowSeq: 1,
+        workspace: { root: '/active-one' },
+        explorer: { activePath: null, expandedPaths: [], sort },
+        lastClosedAt: 2,
+      },
+      {
+        windowSeq: 2,
+        workspace: { root: '/active-two' },
+        explorer: { activePath: null, expandedPaths: [], sort },
+        lastClosedAt: 3,
+      },
+    ];
+
+    pruneLRUClosed(payload, 1, new Set([0, 1, 2]));
+
+    expect(payload.windows.map((w) => w.windowSeq)).toEqual([0, 1, 2]);
+    expect(pruneLRUClosed.toString()).not.toContain(
+      'const closed = new Array',
+    );
+  });
+
   it('ensureWindowEntry 按 windowSeq 查找走单趟 helper,不调用 windows.find', () => {
     const payload = defaultExplorerV3();
     payload.windows = [

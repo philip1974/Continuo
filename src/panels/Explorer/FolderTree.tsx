@@ -13,12 +13,7 @@ import { DropOverlay } from './DropOverlay';
 import { ExplorerHeader } from './ExplorerHeader';
 import { createTreeConfig } from './tree-config';
 import { DEFAULT_INDENT, FILE_ROW_HEIGHT, FileRow } from './FileRow';
-import {
-  createNewDir,
-  createNewFile,
-  removeItems,
-  renameItem,
-} from './mutate-actions';
+import { createNewDir, createNewFile, removeItems, renameItem } from './mutate-actions';
 import {
   partitionDropItems,
   performDrop,
@@ -131,9 +126,7 @@ interface DropFailureLine {
   readonly message: string;
 }
 
-export function formatDropFailureLines(
-  failed: readonly DropFailureLine[],
-): string {
+export function formatDropFailureLines(failed: readonly DropFailureLine[]): string {
   let out = '';
   for (let i = 0; i < failed.length; i += 1) {
     const f = failed[i]!;
@@ -150,21 +143,13 @@ export function formatDropFailureLines(
  * 不会都选到同一个 ` copy` 名(批量重名碰撞 → 第二个 move 覆盖第一个的潜在数据丢失)。
  * 抽成模块级纯函数以便单测;makeUniqueDestPicker 先 listDir 一次再委托它。
  */
-export function makeNamePicker(
-  destDir: string,
-  existing: Set<string>,
-): (name: string) => string {
+export function makeNamePicker(destDir: string, existing: Set<string>): (name: string) => string {
   return (name: string): string => {
     const dot = name.lastIndexOf('.');
     const stem = dot > 0 ? name.slice(0, dot) : name;
     const ext = dot > 0 ? name.slice(dot) : '';
     for (let i = 0; i < 100; i++) {
-      const candidate =
-        i === 0
-          ? name
-          : i === 1
-            ? `${stem} copy${ext}`
-            : `${stem} copy ${i}${ext}`;
+      const candidate = i === 0 ? name : i === 1 ? `${stem} copy${ext}` : `${stem} copy ${i}${ext}`;
       if (!existing.has(candidate)) {
         existing.add(candidate); // 预留,防同批后续项再撞同名
         return joinPath(destDir, candidate);
@@ -225,8 +210,7 @@ export function FolderTree({ root }: { root: string }) {
       }
       inRootCurrent.length = inRootCount;
       outOfRoot.length = outOfRootCount;
-      const next =
-        typeof updater === 'function' ? updater(inRootCurrent) : updater;
+      const next = typeof updater === 'function' ? updater(inRootCurrent) : updater;
       if (outOfRoot.length === 0) {
         setPersistedExpandedPaths(next);
         return;
@@ -244,14 +228,32 @@ export function FolderTree({ root }: { root: string }) {
     [setPersistedExpandedPaths, root],
   );
 
-  const refreshParent = (parentPath: string) => {
+  const refreshParent = useCallback((parentPath: string) => {
     try {
       const parentItem = treeRef.current?.getItemInstance(parentPath);
       parentItem?.invalidateChildrenIds();
     } catch {
       treeRef.current?.rebuildTree();
     }
-  };
+  }, []);
+
+  // 为「单批移动/复制到同一 destDir」建一个唯一名 picker:listDir 一次拿现有
+  // basename 集合,之后每次 pick 纯本地匹配(打磨 R20→R21:批量循环原先逐项
+  // listDir → N 次同目录 IPC,现降为 1 次)。pick 还把已分配的候选名加进集合,
+  // 防同一批次内两个同名项各自只看到磁盘旧态、都选到同一个 ` copy` 名 → 第二个
+  // move 覆盖第一个(批量重名碰撞,潜在数据丢失)。候选序:basename /
+  // `${stem} copy${ext}` / `${stem} copy 2${ext}` / ... 上限 100 次,兜底加时间戳。
+  const makeUniqueDestPicker = useCallback(
+    async (destDir: string): Promise<(name: string) => string> => {
+      const r = await coApi.fs.listDir(destDir);
+      const existing = new Set<string>();
+      if (r.ok) {
+        for (const e of r.data) existing.add(e.name);
+      }
+      return makeNamePicker(destDir, existing);
+    },
+    [],
+  );
 
   const config = useMemo(
     () =>
@@ -359,9 +361,7 @@ export function FolderTree({ root }: { root: string }) {
               const r = await performDrop(files, destDir, coApi.fs);
               refreshParent(destDir);
               if (skippedDirs.length > 0) {
-                notify.error(
-                  t('errors.folder.skipped_dirs', { count: skippedDirs.length }),
-                );
+                notify.error(t('errors.folder.skipped_dirs', { count: skippedDirs.length }));
               }
               if (!r.ok) {
                 notify.error(
@@ -381,21 +381,15 @@ export function FolderTree({ root }: { root: string }) {
         expandedItems,
         setExpandedItems,
       }),
-    [expandedItems, root, setExpandedItems],
+    [expandedItems, makeUniqueDestPicker, refreshParent, root, setExpandedItems],
   );
   const tree = useTree<FileEntry>(config);
   treeRef.current = tree;
 
   const allItems = tree.getItems();
   // explorer.showHiddenFiles=false(默认)过滤 . 开头的 entries(.git / .env 等)
-  const showHidden = useSettingValue<boolean>(
-    'explorer.showHiddenFiles',
-    false,
-  );
-  const items = useMemo(
-    () => selectVisibleTreeItems(allItems, showHidden),
-    [allItems, showHidden],
-  );
+  const showHidden = useSettingValue<boolean>('explorer.showHiddenFiles', false);
+  const items = useMemo(() => selectVisibleTreeItems(allItems, showHidden), [allItems, showHidden]);
 
   // 多选集合数据源 = headless-tree selectionFeature 真实状态。
   // 不再读 explorer.store.selectedPaths(从未被同步,留 cleanup 单独提交)。
@@ -432,8 +426,8 @@ export function FolderTree({ root }: { root: string }) {
     overscan: 8,
   });
 
-  const treeApi = { invalidateChildrenIds: refreshParent };
-  const mutateDeps = { fs: coApi.fs };
+  const treeApi = useMemo(() => ({ invalidateChildrenIds: refreshParent }), [refreshParent]);
+  const mutateDeps = useMemo(() => ({ fs: coApi.fs }), []);
 
   // Explorer ↔ Editor 联动(Step E5):单击文件 → openFileByPath
   const { openFileByPath } = useEditorFile();
@@ -466,205 +460,190 @@ export function FolderTree({ root }: { root: string }) {
     [openFileByPath],
   );
 
-  const hasClipboard = useExplorerClipboardStore(
-    (s) => s.kind !== null && s.paths.length > 0,
-  );
+  const hasClipboard = useExplorerClipboardStore((s) => s.kind !== null && s.paths.length > 0);
 
-  const contextActions: ContextMenuActions = {
-    onRename: (path) => tree.getItemInstance(path)?.startRenaming(),
-    onNewFile: (parentDir) => setCreating({ type: 'file', parentDir }),
-    onNewDir: (parentDir) => setCreating({ type: 'dir', parentDir }),
-    onCopyPath: (paths: string[]) => {
-      // 多选 → \n 拼接;空数组(防御性)→ 不动.
-      // 走 cached clipboard:PROD sandboxSweep 后 navigator.clipboard 已被涂掉,
-      // LM UI 自身必须用 module 顶部缓存的 raw ref 才能写系统剪贴板.
-      if (paths.length === 0) return;
-      // a11y(A48):剪贴板写失败须给可见+可播报反馈(toast),否则用户以为已复制(见 copy-to-clipboard.ts)。
-      void copyToClipboardOrNotify(
-        paths.join('\n'),
-        tt('panels.explorer.copy_path_failed'),
-      );
-    },
-    onCopyRelativePath: (paths: string[]) => {
-      if (paths.length === 0) return;
-      const rels = joinRelativePaths(root, paths);
-      void copyToClipboardOrNotify(rels, tt('panels.explorer.copy_path_failed'));
-    },
-    // a11y(A49,A47/A48 同族):reveal 失败须可见+可播报反馈(toast),不静默(见 reveal-or-notify.ts)。
-    onRevealInFinder: (path: string) => {
-      void revealPathOrNotify(path);
-    },
-    onOpenInTerminal: (dir: string) => {
-      // 新建 terminal session,cwd 设到该目录;sessions_changed 推送会自动
-      // 触发 TerminalPanel 切到新 session(activeId 设)。打开 dockview
-      // terminal panel 让用户立即看到。
-      // COLORFGBG 让 P10k 等 prompt 框架启动时检测到当前主题亮度
-      // —— 已在跑的 PTY 不会因主题切换而重渲。
-      void (async () => {
-        // a11y(A140,A139 同族):fire-and-forget async 包 try/catch —— terminal.create()
-        // 的 IPC reject(抛错而非返回 {ok:false})与动态 import dock-api-ref 的 reject 此前
-        // 未捕获 → unhandled rejection,右键「在终端打开」失败时无 toast/live region 反馈。
-        try {
-          const r = await coApi.terminal.create({
-            cwd: dir,
-            env: { COLORFGBG: theme === 'dark' ? '15;0' : '0;15' },
-            // 归属当前 workspace(虽然 cwd 是子目录),便于跨 workspace 切换时
-            // 该 terminal 跟随显示/隐藏。
-            workspaceRoot: root,
-          });
-          if (!r.ok) {
-            console.warn('[explorer] open in terminal failed', r.code, r.message);
-            notify.error(localizeErrorByCode(r.code, r.message), {
-              code: r.code,
-              mirror: false,
+  const contextActions = useMemo<ContextMenuActions>(
+    () => ({
+      onRename: (path) => treeRef.current?.getItemInstance(path)?.startRenaming(),
+      onNewFile: (parentDir) => setCreating({ type: 'file', parentDir }),
+      onNewDir: (parentDir) => setCreating({ type: 'dir', parentDir }),
+      onCopyPath: (paths: string[]) => {
+        // 多选 → \n 拼接;空数组(防御性)→ 不动.
+        // 走 cached clipboard:PROD sandboxSweep 后 navigator.clipboard 已被涂掉,
+        // LM UI 自身必须用 module 顶部缓存的 raw ref 才能写系统剪贴板.
+        if (paths.length === 0) return;
+        // a11y(A48):剪贴板写失败须给可见+可播报反馈(toast),否则用户以为已复制(见 copy-to-clipboard.ts)。
+        void copyToClipboardOrNotify(paths.join('\n'), tt('panels.explorer.copy_path_failed'));
+      },
+      onCopyRelativePath: (paths: string[]) => {
+        if (paths.length === 0) return;
+        const rels = joinRelativePaths(root, paths);
+        void copyToClipboardOrNotify(rels, tt('panels.explorer.copy_path_failed'));
+      },
+      // a11y(A49,A47/A48 同族):reveal 失败须可见+可播报反馈(toast),不静默(见 reveal-or-notify.ts)。
+      onRevealInFinder: (path: string) => {
+        void revealPathOrNotify(path);
+      },
+      onOpenInTerminal: (dir: string) => {
+        // 新建 terminal session,cwd 设到该目录;sessions_changed 推送会自动
+        // 触发 TerminalPanel 切到新 session(activeId 设)。打开 dockview
+        // terminal panel 让用户立即看到。
+        // COLORFGBG 让 P10k 等 prompt 框架启动时检测到当前主题亮度
+        // —— 已在跑的 PTY 不会因主题切换而重渲。
+        void (async () => {
+          // a11y(A140,A139 同族):fire-and-forget async 包 try/catch —— terminal.create()
+          // 的 IPC reject(抛错而非返回 {ok:false})与动态 import dock-api-ref 的 reject 此前
+          // 未捕获 → unhandled rejection,右键「在终端打开」失败时无 toast/live region 反馈。
+          try {
+            const r = await coApi.terminal.create({
+              cwd: dir,
+              env: { COLORFGBG: theme === 'dark' ? '15;0' : '0;15' },
+              // 归属当前 workspace(虽然 cwd 是子目录),便于跨 workspace 切换时
+              // 该 terminal 跟随显示/隐藏。
+              workspaceRoot: root,
             });
-            return;
-          }
-          // 动态 import dock-api-ref 防早期加载循环
-          const { openOrFocusPanel } = await import('@/shell/dock/dock-api-ref');
-          openOrFocusPanel(
-            TERMINAL_PANEL_TYPE,
-            TERMINAL_PANEL_TYPE,
-            'Terminal',
-            'panels.terminal.title',
-          );
-        } catch (err) {
-          const code = (err as { code?: string })?.code ?? 'EXCEPTION';
-          notify.error(localizeErrorByCode(code, (err as Error)?.message), { code });
-        }
-      })();
-    },
-    onTrash: (paths: string[]) => {
-      void (async () => {
-        // 走规范的 mutate-actions.removeItems(遍历全部项、收集所有失败、刷新所有
-        // 成功项父目录),而非内联首失早退 —— 旧实现一旦某项 trash 失败就 return,
-        // 静默跳过其余选中项(多选删除时后续项既不删也不报错)。removeItems 是
-        // 纯 fs+tree helper(已测,且本为唯一生产 trash 路径却从未被调用),editor
-        // tab 关闭(removePath)仍由本处对成功项补做。见第七 session R6 完整性批判。
-        const result = await removeItems(paths, { trash: true }, mutateDeps, treeApi);
-        const failed = new Set<string>();
-        if (!result.ok) {
-          for (const f of result.failures) failed.add(f.path);
-        }
-        const removed = new Array<string>(paths.length);
-        let removedCount = 0;
-        for (const p of paths) {
-          // 文件删除 → 关闭对应 editor tab(目录则关其下所有 tab)。仅对成功项。
-          if (!failed.has(p)) {
-            useEditorStore.getState().removePath(p);
-            removed[removedCount++] = p;
-          }
-        }
-        // 删除的源若在剪贴板里(cut/copy 后又删),剪除避免幻影 cut 灰显 + 失效 Paste。
-        if (removedCount > 0) {
-          removed.length = removedCount;
-          useExplorerClipboardStore.getState().prune(removed);
-        }
-        if (!result.ok) {
-          for (const f of result.failures) {
-            console.warn('[explorer] trash failed', f.path, f.code, f.message);
-            notify.error(
-              t('errors.folder.trash_failed', {
-                path: f.path,
-                message: localizeErrorByCode(f.code, f.message),
-              }),
-              { code: f.code, mirror: false },
-            );
-          }
-        }
-      })();
-    },
-    onCut: (paths: string[]) => {
-      useExplorerClipboardStore.getState().set('cut', paths);
-    },
-    onCopy: (paths: string[]) => {
-      useExplorerClipboardStore.getState().set('copy', paths);
-    },
-    onPaste: (destDir: string) => {
-      void (async () => {
-        const { kind, paths } = useExplorerClipboardStore.getState();
-        if (!kind || paths.length === 0) return;
-        // 记录已成功 cut 移动项的源父目录 + 是否有成功项。即使中途失败提前中止,
-        // 也要在 finally 刷新已成功项涉及的目录,否则已移动/复制文件在树上不显示
-        // 而 editor tab 路径已改 → 三者不一致(同 onDropItems 的修复)。
-        const touchedSrcParents = new Set<string>();
-        const movedSrcs = kind === 'cut' ? new Array<string>(paths.length) : null;
-        let movedSrcCount = 0;
-        let okAny = false;
-        try {
-          // a11y(A135,A134/A133 同族):makeUniqueDestPicker(目标名探测)与 move/copy 循环都
-          // 包进 try —— 此前 picker 在 try 外、循环只处理 !r.ok,move/copy/listDir 的 IPC reject
-          // 直接丢到 unhandled promise(void 链),粘贴失败无 toast/live 反馈。catch 统一 notify;
-          // finally 仍剪贴板清理 + 部分成功刷新。
-          const pickDest = await makeUniqueDestPicker(destDir);
-          for (const src of paths) {
-            // 计算 dest:destDir + src basename;若已存在,自动加 ` copy` 后缀
-            const dest = pickDest(basenamePreserveTrailing(src));
-            const r =
-              kind === 'cut'
-                ? await coApi.fs.move(src, dest)
-                : await coApi.fs.copy(src, dest);
             if (!r.ok) {
-              console.warn(`[explorer] paste(${kind}) failed`, src, r.code, r.message);
-              notify.error(
-                t('errors.folder.paste_failed', {
-                  src,
-                  message: localizeErrorByCode(r.code, r.message),
-                }),
-                { code: r.code, mirror: false },
-              );
+              console.warn('[explorer] open in terminal failed', r.code, r.message);
+              notify.error(localizeErrorByCode(r.code, r.message), {
+                code: r.code,
+                mirror: false,
+              });
               return;
             }
-            // cut = move:同步 editor tab 路径(目录则前缀 rewrite 全部子 tab)
-            if (kind === 'cut') {
-              useEditorStore.getState().renamePath(src, dest);
-              touchedSrcParents.add(dirname(src));
-              movedSrcs![movedSrcCount++] = src;
+            // 动态 import dock-api-ref 防早期加载循环
+            const { openOrFocusPanel } = await import('@/shell/dock/dock-api-ref');
+            openOrFocusPanel(
+              TERMINAL_PANEL_TYPE,
+              TERMINAL_PANEL_TYPE,
+              'Terminal',
+              'panels.terminal.title',
+            );
+          } catch (err) {
+            const code = (err as { code?: string })?.code ?? 'EXCEPTION';
+            notify.error(localizeErrorByCode(code, (err as Error)?.message), {
+              code,
+            });
+          }
+        })();
+      },
+      onTrash: (paths: string[]) => {
+        void (async () => {
+          // 走规范的 mutate-actions.removeItems(遍历全部项、收集所有失败、刷新所有
+          // 成功项父目录),而非内联首失早退 —— 旧实现一旦某项 trash 失败就 return,
+          // 静默跳过其余选中项(多选删除时后续项既不删也不报错)。removeItems 是
+          // 纯 fs+tree helper(已测,且本为唯一生产 trash 路径却从未被调用),editor
+          // tab 关闭(removePath)仍由本处对成功项补做。见第七 session R6 完整性批判。
+          const result = await removeItems(paths, { trash: true }, mutateDeps, treeApi);
+          const failed = new Set<string>();
+          if (!result.ok) {
+            for (const f of result.failures) failed.add(f.path);
+          }
+          const removed = new Array<string>(paths.length);
+          let removedCount = 0;
+          for (const p of paths) {
+            // 文件删除 → 关闭对应 editor tab(目录则关其下所有 tab)。仅对成功项。
+            if (!failed.has(p)) {
+              useEditorStore.getState().removePath(p);
+              removed[removedCount++] = p;
             }
-            okAny = true;
           }
-        } catch (err) {
-          const code = (err as { code?: string })?.code ?? 'EXCEPTION';
-          notify.error(localizeErrorByCode(code, (err as Error)?.message), { code });
-        } finally {
-          // cut 是 move:已成功移走的源旧路径已失效,从剪贴板剪除。全成功 → 剪空(等价
-          // 原 clear());**部分成功 → 只剪走已移走的,保留未移项供重试**。此前只在 allOk
-          // 时 clear,部分成功把已移走的幻影源留在剪贴板(灰显 + 失效 Paste)——与兄弟
-          // onDropItems/root-drop 的 finally prune(movedSrcs) 不对等(第八 session R7 完整性
-          // 批判揪出的同族遗漏入口)。copy 不动源,不剪。
-          if (kind === 'cut' && movedSrcs !== null && movedSrcCount > 0) {
-            movedSrcs.length = movedSrcCount;
-            useExplorerClipboardStore.getState().prune(movedSrcs);
+          // 删除的源若在剪贴板里(cut/copy 后又删),剪除避免幻影 cut 灰显 + 失效 Paste。
+          if (removedCount > 0) {
+            removed.length = removedCount;
+            useExplorerClipboardStore.getState().prune(removed);
           }
-          if (okAny) {
-            // 触发树刷新:目标父目录 invalidate
-            treeApi.invalidateChildrenIds(destDir);
-            // cut 时已成功移动项的源父目录也要刷新(文件不在源了)
-            if (kind === 'cut') {
-              for (const sp of touchedSrcParents) treeApi.invalidateChildrenIds(sp);
+          if (!result.ok) {
+            for (const f of result.failures) {
+              console.warn('[explorer] trash failed', f.path, f.code, f.message);
+              notify.error(
+                t('errors.folder.trash_failed', {
+                  path: f.path,
+                  message: localizeErrorByCode(f.code, f.message),
+                }),
+                { code: f.code, mirror: false },
+              );
             }
           }
-        }
-      })();
-    },
-  };
-
-  // 为「单批移动/复制到同一 destDir」建一个唯一名 picker:listDir 一次拿现有
-  // basename 集合,之后每次 pick 纯本地匹配(打磨 R20→R21:批量循环原先逐项
-  // listDir → N 次同目录 IPC,现降为 1 次)。pick 还把已分配的候选名加进集合,
-  // 防同一批次内两个同名项各自只看到磁盘旧态、都选到同一个 ` copy` 名 → 第二个
-  // move 覆盖第一个(批量重名碰撞,潜在数据丢失)。候选序:basename /
-  // `${stem} copy${ext}` / `${stem} copy 2${ext}` / ... 上限 100 次,兜底加时间戳。
-  async function makeUniqueDestPicker(
-    destDir: string,
-  ): Promise<(name: string) => string> {
-    const r = await coApi.fs.listDir(destDir);
-    const existing = new Set<string>();
-    if (r.ok) {
-      for (const e of r.data) existing.add(e.name);
-    }
-    return makeNamePicker(destDir, existing);
-  }
+        })();
+      },
+      onCut: (paths: string[]) => {
+        useExplorerClipboardStore.getState().set('cut', paths);
+      },
+      onCopy: (paths: string[]) => {
+        useExplorerClipboardStore.getState().set('copy', paths);
+      },
+      onPaste: (destDir: string) => {
+        void (async () => {
+          const { kind, paths } = useExplorerClipboardStore.getState();
+          if (!kind || paths.length === 0) return;
+          // 记录已成功 cut 移动项的源父目录 + 是否有成功项。即使中途失败提前中止,
+          // 也要在 finally 刷新已成功项涉及的目录,否则已移动/复制文件在树上不显示
+          // 而 editor tab 路径已改 → 三者不一致(同 onDropItems 的修复)。
+          const touchedSrcParents = new Set<string>();
+          const movedSrcs = kind === 'cut' ? new Array<string>(paths.length) : null;
+          let movedSrcCount = 0;
+          let okAny = false;
+          try {
+            // a11y(A135,A134/A133 同族):makeUniqueDestPicker(目标名探测)与 move/copy 循环都
+            // 包进 try —— 此前 picker 在 try 外、循环只处理 !r.ok,move/copy/listDir 的 IPC reject
+            // 直接丢到 unhandled promise(void 链),粘贴失败无 toast/live 反馈。catch 统一 notify;
+            // finally 仍剪贴板清理 + 部分成功刷新。
+            const pickDest = await makeUniqueDestPicker(destDir);
+            for (const src of paths) {
+              // 计算 dest:destDir + src basename;若已存在,自动加 ` copy` 后缀
+              const dest = pickDest(basenamePreserveTrailing(src));
+              const r =
+                kind === 'cut' ? await coApi.fs.move(src, dest) : await coApi.fs.copy(src, dest);
+              if (!r.ok) {
+                console.warn(`[explorer] paste(${kind}) failed`, src, r.code, r.message);
+                notify.error(
+                  t('errors.folder.paste_failed', {
+                    src,
+                    message: localizeErrorByCode(r.code, r.message),
+                  }),
+                  { code: r.code, mirror: false },
+                );
+                return;
+              }
+              // cut = move:同步 editor tab 路径(目录则前缀 rewrite 全部子 tab)
+              if (kind === 'cut') {
+                useEditorStore.getState().renamePath(src, dest);
+                touchedSrcParents.add(dirname(src));
+                movedSrcs![movedSrcCount++] = src;
+              }
+              okAny = true;
+            }
+          } catch (err) {
+            const code = (err as { code?: string })?.code ?? 'EXCEPTION';
+            notify.error(localizeErrorByCode(code, (err as Error)?.message), {
+              code,
+            });
+          } finally {
+            // cut 是 move:已成功移走的源旧路径已失效,从剪贴板剪除。全成功 → 剪空(等价
+            // 原 clear());**部分成功 → 只剪走已移走的,保留未移项供重试**。此前只在 allOk
+            // 时 clear,部分成功把已移走的幻影源留在剪贴板(灰显 + 失效 Paste)——与兄弟
+            // onDropItems/root-drop 的 finally prune(movedSrcs) 不对等(第八 session R7 完整性
+            // 批判揪出的同族遗漏入口)。copy 不动源,不剪。
+            if (kind === 'cut' && movedSrcs !== null && movedSrcCount > 0) {
+              movedSrcs.length = movedSrcCount;
+              useExplorerClipboardStore.getState().prune(movedSrcs);
+            }
+            if (okAny) {
+              // 触发树刷新:目标父目录 invalidate
+              treeApi.invalidateChildrenIds(destDir);
+              // cut 时已成功移动项的源父目录也要刷新(文件不在源了)
+              if (kind === 'cut') {
+                for (const sp of touchedSrcParents) {
+                  treeApi.invalidateChildrenIds(sp);
+                }
+              }
+            }
+          }
+        })();
+      },
+    }),
+    [makeUniqueDestPicker, mutateDeps, root, theme, treeApi, tt],
+  );
 
   const submitCreate = async (name: string) => {
     if (!creating) return;
@@ -813,8 +792,7 @@ export function FolderTree({ root }: { root: string }) {
           // 刷新 = invalidate 当前所有展开目录,触发重新 listDir。
           // 单点 invalidate(root)对 cache 中已 list 过的子目录无效,
           // 所以遍历 expandedItems 全部 invalidate 一遍。
-          const expanded =
-            tree.getState().expandedItems ?? EMPTY_EXPANDED_ITEMS;
+          const expanded = tree.getState().expandedItems ?? EMPTY_EXPANDED_ITEMS;
           // root 也算「已展开」(根 children 已 list),始终 invalidate
           const refreshPath = (path: string) => {
             try {
@@ -849,14 +827,9 @@ export function FolderTree({ root }: { root: string }) {
         hasClipboard={hasClipboard}
         pluginItems={pluginMenuItems}
       >
-        <div
-          ref={scrollRef}
-          className="min-h-0 flex-1 overflow-auto bg-canvas"
-        >
+        <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto bg-canvas">
           {items.length === 0 ? (
-            <div className="p-4 text-xs text-fg-dim">
-              {tt('panels.explorer.loading_or_empty')}
-            </div>
+            <div className="p-4 text-xs text-fg-dim">{tt('panels.explorer.loading_or_empty')}</div>
           ) : (
             <div
               // a11y(A25):headless-tree role="tree" 默认 aria-label="" → 屏幕阅读器进主文件树
@@ -886,9 +859,7 @@ export function FolderTree({ root }: { root: string }) {
                     rootPath={root}
                     contextActions={contextActions}
                     onHoverDropTarget={setHoverTarget}
-                    isDropHover={
-                      dragActive && hoverTarget?.path === item.getId()
-                    }
+                    isDropHover={dragActive && hoverTarget?.path === item.getId()}
                     onFileOpen={handleFileOpen}
                     decorators={decorators}
                     hasClipboard={hasClipboard}
@@ -901,7 +872,6 @@ export function FolderTree({ root }: { root: string }) {
           )}
         </div>
       </ContextMenu>
-
     </div>
   );
 }

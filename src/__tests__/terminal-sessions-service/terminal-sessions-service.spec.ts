@@ -200,6 +200,20 @@ describe('getAll', () => {
     add(userInput('a', { ownerWindowId: 11 }));
     expect(getAll({ ownerWindowId: 99 })).toEqual([]);
   });
+
+  it('filter 无匹配时复用稳定空快照,不按 sessions.size 预分配数组', () => {
+    add(userInput('a', { ownerWindowId: 11 }));
+    add(userInput('b', { ownerWindowId: 22 }));
+
+    const first = getAll({ ownerWindowId: 99 });
+    const second = getAll({ ownerWindowId: 99 });
+
+    expect(first).toEqual([]);
+    expect(second).toBe(first);
+    expect(getAll.toString()).not.toMatch(
+      /new Array(?:<[^>]+>)?\(sessions\.size\)/,
+    );
+  });
 });
 
 // ────────────────────────────────────────────────────────────
@@ -223,6 +237,18 @@ describe('removeByOwner', () => {
     subscribe(fn);
     expect(removeByOwner(99)).toEqual([]);
     expect(fn).not.toHaveBeenCalled();
+  });
+
+  it('无匹配时不按 sessions.size 预分配 removed 数组', () => {
+    add(userInput('a', { ownerWindowId: 11 }));
+    add(userInput('b', { ownerWindowId: 22 }));
+
+    const removed = removeByOwner(99);
+
+    expect(removed).toEqual([]);
+    expect(removeByOwner.toString()).not.toMatch(
+      /new Array(?:<[^>]+>)?\(sessions\.size\)/,
+    );
   });
 
   it('有匹配 → 触发 subscribers 一次,推剩余全量快照', () => {

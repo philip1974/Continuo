@@ -4,6 +4,7 @@ import React from 'react';
 import type { ReactNode } from 'react';
 import { useNotify } from './NotificationsProvider';
 import { Toast } from './Toast';
+import type { Notification } from './types';
 import { useT } from '@/i18n';
 import './ToastViewport.css';
 
@@ -24,9 +25,26 @@ export function selectVisibleNotifications<T>(
 }
 
 export function ToastViewport(): ReactNode {
-  const t = useT();
   const { notifications, dismiss } = useNotify();
   if (notifications.length === 0) return null;
+  return (
+    <ToastViewportContent
+      notifications={notifications}
+      dismiss={dismiss}
+    />
+  );
+}
+
+interface ToastViewportContentProps {
+  readonly notifications: readonly Notification[];
+  readonly dismiss: (id: string) => void;
+}
+
+function ToastViewportContent({
+  notifications,
+  dismiss,
+}: ToastViewportContentProps): ReactNode {
+  const t = useT();
   const visible = selectVisibleNotifications(notifications);
   const dismissLabel = t('notifications.dismiss');
   return (

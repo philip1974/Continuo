@@ -485,6 +485,33 @@ describe('readPermissions / writePermissions', () => {
     expect(rec.pathScopes).toHaveLength(256);
   });
 
+  it('E207/E208 有界收集 helper 首个有效项前不预分配结果数组', async () => {
+    writeFileSync(
+      join(tmp, '_permissions.json'),
+      JSON.stringify({
+        'com.bad': [{ permission: 'fs' /* no granted */ }],
+      }),
+    );
+    writeFileSync(
+      join(tmp, '_plugin-path-scopes.json'),
+      JSON.stringify({
+        'com.empty': [{ path: 42, mode: 'r' }],
+      }),
+    );
+
+    expect(await readPermissions(tmp)).toEqual({});
+    expect(await readPluginPathScopes(tmp, 'com.empty')).toEqual([]);
+
+    const src = readFileSync(
+      join(process.cwd(), 'electron/main/services/plugins.service.ts'),
+      'utf-8',
+    );
+    expect(src).toContain('let out: T[] | null = null;');
+    expect(src).toContain('let out: U[] | null = null;');
+    expect(src).not.toContain('const out = new Array<T>(Math.min(arr.length, max))');
+    expect(src).not.toContain('const out = new Array<U>(Math.min(arr.length, max))');
+  });
+
   it('JSON 损坏 → {}', async () => {
     writeFileSync(join(tmp, '_permissions.json'), '{{{');
     expect(await readPermissions(tmp)).toEqual({});

@@ -41,6 +41,17 @@ describe('pickWindowsToRestore', () => {
     expect(pickWindowsToRestore(data, allDirs)).toEqual([]);
   });
 
+  it('只有主窗段时复用稳定空数组,不预分配恢复数组', () => {
+    const data = snap([win({ windowSeq: 0, workspace: { root: '/p' } })]);
+    const first = pickWindowsToRestore(data, allDirs);
+    const second = pickWindowsToRestore(data, allDirs);
+    const src = pickWindowsToRestore.toString();
+
+    expect(second).toBe(first);
+    expect(src).not.toContain('const out = new Array');
+    expect(src).not.toContain('const seenSeq = new Set');
+  });
+
   it('多窗段(0 + 1 + 2)→ 跳过 0,返回其它 windowSeq + workspace', () => {
     const data = snap([
       win({ windowSeq: 0, workspace: { root: '/p0' } }),

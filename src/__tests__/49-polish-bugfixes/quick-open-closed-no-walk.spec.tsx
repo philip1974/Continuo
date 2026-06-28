@@ -5,6 +5,8 @@
 //
 // 验证用 useVirtualizer:它是组件级 hook,**pre-R33 即使关闭(渲染 null)也会跑**
 // (hooks 无条件执行);R33 后 body 不挂载 → 关闭时不再创建 virtualizer。
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, cleanup, act } from '@testing-library/react';
 
@@ -42,6 +44,22 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('打磨 R33 — 关闭时不挂载 body / 不创建 virtualizer', () => {
+  it('isOpen=false shell 不调用 useT,避免关闭态订阅 i18n', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/plugins/quick-open/QuickOpenModal.tsx'),
+      'utf-8',
+    );
+    const shellStart = src.indexOf('export function QuickOpenModal()');
+    const dialogStart = src.indexOf('function QuickOpenDialog');
+    const shellSrc = src.slice(shellStart, dialogStart);
+
+    expect(shellStart).toBeGreaterThanOrEqual(0);
+    expect(dialogStart).toBeGreaterThan(shellStart);
+    expect(shellSrc).toContain('if (!isOpen) return null;');
+    expect(shellSrc).not.toContain('useT(');
+    expect(src.indexOf('const t = useT(); // a11y(A13)')).toBeGreaterThan(dialogStart);
+  });
+
   it('isOpen=false → body 不挂载,useVirtualizer 不被调用', () => {
     render(<QuickOpenModal />);
     expect(virtualizerSpy).not.toHaveBeenCalled();

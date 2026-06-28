@@ -4,6 +4,8 @@
 // 评估第三方 when();只有用户真正弹出菜单时才按当前上下文计算。
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { render, cleanup, fireEvent } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   ContextMenu,
   getContextActionTargets,
@@ -56,10 +58,7 @@ describe('打磨 R13 — 插件菜单 when 延迟到打开', () => {
     const arrayFromSpy = vi.spyOn(Array, 'from');
 
     try {
-      expect(getContextActionTargets(target, selectedPaths)).toEqual([
-        '/work/a.ts',
-        '/work/b.ts',
-      ]);
+      expect(getContextActionTargets(target, selectedPaths)).toEqual(['/work/a.ts', '/work/b.ts']);
       expect(arrayFromSpy).not.toHaveBeenCalled();
     } finally {
       arrayFromSpy.mockRestore();
@@ -69,10 +68,7 @@ describe('打磨 R13 — 插件菜单 when 延迟到打开', () => {
   it('多选 action targets 预分配数组,不通过 push 扩容', () => {
     const selectedPaths = new Set(['/work/a.ts', '/work/b.ts']);
 
-    expect(getContextActionTargets(target, selectedPaths)).toEqual([
-      '/work/a.ts',
-      '/work/b.ts',
-    ]);
+    expect(getContextActionTargets(target, selectedPaths)).toEqual(['/work/a.ts', '/work/b.ts']);
     expect(getContextActionTargets.toString()).not.toContain('.push(');
   });
 
@@ -139,11 +135,7 @@ describe('打磨 R13 — 插件菜单 when 延迟到打开', () => {
       });
 
       expect(sortSpy).not.toHaveBeenCalled();
-      expect(buckets.map((bucket) => bucket.group)).toEqual([
-        'new',
-        'plugin',
-        'z',
-      ]);
+      expect(buckets.map((bucket) => bucket.group)).toEqual(['new', 'plugin', 'z']);
     } finally {
       sortSpy.mockRestore();
     }
@@ -228,11 +220,58 @@ describe('打磨 R13 — 插件菜单 when 延迟到打开', () => {
     expect(when).not.toHaveBeenCalled();
   });
 
+  it('菜单未打开 → 不计算 action targets', () => {
+    const has = vi.fn(() => true);
+    const size = vi.fn(() => 1);
+    const selectedPaths = {
+      has,
+      [Symbol.iterator]: function* () {
+        yield '/work/a.ts';
+      },
+    } as unknown as ReadonlySet<string>;
+    Object.defineProperty(selectedPaths, 'size', {
+      configurable: true,
+      get: size,
+    });
+
+    render(
+      <ContextMenu
+        target={target}
+        selectedPaths={selectedPaths}
+        rootPath="/work"
+        actions={noopActions}
+        hasClipboard={false}
+        pluginItems={[]}
+      >
+        <div data-testid="trigger">row</div>
+      </ContextMenu>,
+    );
+
+    expect(has).not.toHaveBeenCalled();
+    expect(size).not.toHaveBeenCalled();
+  });
+
+  it('菜单未打开 → 不构建 Menu.Content 子树', () => {
+    const src = readFileSync(join(process.cwd(), 'src/panels/Explorer/ContextMenu.tsx'), 'utf-8');
+
+    expect(src).toMatch(/\{open && \(\s*<ContextMenuContent/);
+    expect(src).toMatch(/function ContextMenuContent\([\s\S]*<Menu\.Portal>/);
+  });
+
+  it('菜单未打开 → ContextMenu 外壳不订阅 i18n', () => {
+    const src = readFileSync(join(process.cwd(), 'src/panels/Explorer/ContextMenu.tsx'), 'utf-8');
+    const shellStart = src.indexOf('export function ContextMenu({');
+    const contentStart = src.indexOf('function ContextMenuContent({');
+    expect(shellStart).toBeGreaterThanOrEqual(0);
+    expect(contentStart).toBeGreaterThan(shellStart);
+
+    expect(src.slice(shellStart, contentStart)).not.toContain('useT()');
+    expect(src.slice(contentStart)).toContain('useT()');
+  });
+
   it('右键打开菜单 → 评估 when 且可见项渲染', () => {
     const when = vi.fn(() => true);
-    const { getByTestId } = renderMenu([
-      { id: 'p1', label: 'Plugin Item', when, fn: vi.fn() },
-    ]);
+    const { getByTestId } = renderMenu([{ id: 'p1', label: 'Plugin Item', when, fn: vi.fn() }]);
     fireEvent.contextMenu(getByTestId('trigger'));
     expect(when).toHaveBeenCalled();
     // Content 经 Portal 挂到 document.body

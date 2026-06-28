@@ -225,6 +225,30 @@ describe('replaceSnapshot', () => {
     expect(r?.activeId).toBe('/b');
   });
 
+  it('applySnapshot 旧 active 仍在新 snapshot 时不构建 Set', () => {
+    const oldSessions = [sess('/a'), sess('/b'), sess('/c')];
+    const newSessions = [sess('/a'), sess('/b'), sess('/c')];
+    const OriginalSet = globalThis.Set;
+    let setCtorCount = 0;
+    class CountingSet<T> extends OriginalSet<T> {
+      constructor(values?: readonly T[] | null) {
+        setCtorCount += 1;
+        super(values);
+      }
+    }
+    globalThis.Set = CountingSet as SetConstructor;
+
+    try {
+      const r = applySnapshot(oldSessions, '/b', newSessions);
+
+      expect(r.sessions).toBe(newSessions);
+      expect(r.activeId).toBe('/b');
+      expect(setCtorCount).toBe(0);
+    } finally {
+      globalThis.Set = OriginalSet;
+    }
+  });
+
   it('applySnapshot 多项删除时直接推导 active,不逐个调用 nextActiveAfterClose', () => {
     const oldSessions = [sess('/a'), sess('/b'), sess('/c'), sess('/d')];
 
@@ -273,6 +297,32 @@ describe('replaceSnapshot', () => {
       expect(listener).not.toHaveBeenCalled();
     } finally {
       unsubscribe();
+    }
+  });
+
+  it('customTitles 为空时 replaceSnapshot 不为标题清理重复构建 Set', () => {
+    useTerminalStore.setState({
+      sessions: [sess('/a'), sess('/b')],
+      activeId: '/a',
+      customTitles: new Map(),
+    });
+    const OriginalSet = globalThis.Set;
+    let setCtorCount = 0;
+    class CountingSet<T> extends OriginalSet<T> {
+      constructor(values?: readonly T[] | null) {
+        setCtorCount += 1;
+        super(values);
+      }
+    }
+    globalThis.Set = CountingSet as SetConstructor;
+
+    try {
+      useTerminalStore.getState().replaceSnapshot([sess('/b')]);
+
+      expect(useTerminalStore.getState().activeId).toBe('/b');
+      expect(setCtorCount).toBe(1);
+    } finally {
+      globalThis.Set = OriginalSet;
     }
   });
 

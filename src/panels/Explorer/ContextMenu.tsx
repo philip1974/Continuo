@@ -1,7 +1,7 @@
 import * as Menu from '@radix-ui/react-context-menu';
 import { useRef, useState } from 'react';
 import { dirname } from './path-utils';
-import { createMenuFocusRestore } from './menu-close-focus';
+import { createMenuFocusRestore, type MenuFocusRestore } from './menu-close-focus';
 import type { FileEntry } from '@/lib/fs/types';
 import { useT } from '@/i18n';
 import {
@@ -69,19 +69,14 @@ function groupOrderIndex(group: string): number {
   return i >= 0 ? i : BUILTIN_GROUP_ORDER.length; // 自定义 group 排在 'danger' 后
 }
 
-function comparePluginItemBuckets(
-  a: PluginItemBucket,
-  b: PluginItemBucket,
-): number {
+function comparePluginItemBuckets(a: PluginItemBucket, b: PluginItemBucket): number {
   const ai = groupOrderIndex(a.group);
   const bi = groupOrderIndex(b.group);
   if (ai !== bi) return ai - bi;
   return a.group.localeCompare(b.group);
 }
 
-function arePluginItemBucketsSorted(
-  buckets: readonly PluginItemBucket[],
-): boolean {
+function arePluginItemBucketsSorted(buckets: readonly PluginItemBucket[]): boolean {
   for (let i = 1; i < buckets.length; i++) {
     if (comparePluginItemBuckets(buckets[i - 1]!, buckets[i]!) > 0) {
       return false;
@@ -136,10 +131,7 @@ export function groupPluginItems(
   if (allSameGroup) {
     return [{ group: firstGroup, items: visible }];
   }
-  const map = new Map<
-    string,
-    { items: ExplorerContextMenuItemSpec[]; count: number }
-  >();
+  const map = new Map<string, { items: ExplorerContextMenuItemSpec[]; count: number }>();
   for (const item of visible) {
     const g = item.group ?? 'plugin';
     let bucket = map.get(g);
@@ -176,6 +168,44 @@ export function ContextMenu({
   pluginItems,
   children,
 }: ContextMenuProps) {
+  // 插件 when / 菜单文案 / action targets 都延迟到菜单真正打开时执行。虚拟列表每个
+  // 可见 FileRow 都挂 ContextMenu,关闭态只保留 Root+Trigger,避免常规滚动/hover/剪贴板
+  // 变化触发整批菜单内容构建与 i18n 订阅。
+  const [open, setOpen] = useState(false);
+  // a11y(A27):默认保留 Radix 关闭后焦点还原;仅「新建/重命名」(会打开自聚焦输入框)一次性跳过。
+  const focusRestore = useRef(createMenuFocusRestore()).current;
+
+  return (
+    <Menu.Root onOpenChange={setOpen}>
+      <Menu.Trigger asChild>{children}</Menu.Trigger>
+      {open && (
+        <ContextMenuContent
+          target={target}
+          selectedPaths={selectedPaths}
+          rootPath={rootPath}
+          actions={actions}
+          hasClipboard={hasClipboard}
+          pluginItems={pluginItems}
+          focusRestore={focusRestore}
+        />
+      )}
+    </Menu.Root>
+  );
+}
+
+interface ContextMenuContentProps extends Omit<ContextMenuProps, 'children'> {
+  readonly focusRestore: MenuFocusRestore;
+}
+
+function ContextMenuContent({
+  target,
+  selectedPaths,
+  rootPath,
+  actions,
+  hasClipboard,
+  pluginItems,
+  focusRestore,
+}: ContextMenuContentProps) {
   const t = useT();
   const isFile = target !== null && !target.isDirectory;
   const isFolder = target !== null && target.isDirectory;
@@ -183,23 +213,16 @@ export function ContextMenu({
 
   // 插件 when 过滤延迟到菜单真正打开时执行(打磨 R13):groupPluginItems →
   // filterVisible 会逐个跑第三方同步 when() 谓词;虚拟列表里每个可见 FileRow 都
-  // 挂一个菜单,常规滚动/hover/剪贴板变化触发的行重渲染本不需要这些计算。用
-  // onOpenChange 维护 open,未打开时 pluginGroups 直接为空,弹出时才按当前上下文算。
-  const [open, setOpen] = useState(false);
-  // a11y(A27):默认保留 Radix 关闭后焦点还原;仅「新建/重命名」(会打开自聚焦输入框)一次性跳过。
-  const focusRestore = useRef(createMenuFocusRestore()).current;
+  // 挂一个菜单,常规滚动/hover/剪贴板变化触发的行重渲染本不需要这些计算。
   const pluginCtx: ExplorerContextMenuItemContext = {
     target,
     selectedPaths,
     rootPath,
   };
-  const pluginGroups = open
-    ? groupPluginItems(pluginItems, pluginCtx)
-    : EMPTY_PLUGIN_ITEM_BUCKETS;
+  const pluginGroups = groupPluginItems(pluginItems, pluginCtx);
 
   // 本次菜单操作目标:若 target 在多选集中,批量作用于 selectedPaths;否则只
-  // target 自身。每次渲染算一次(打磨 R12):cut/copy/path/trash 等 6+ 处都复用,
-  // 原先各调一次 deleteTargets() → 多选时重复 Array.from(selectedPaths)。
+  // target 自身。ContextMenuContent 仅打开时挂载,因此这里不会影响关闭态行渲染。
   const actionTargets = getContextActionTargets(target, selectedPaths);
   const actionTargetCount = actionTargets.length;
 
@@ -217,173 +240,148 @@ export function ContextMenu({
   };
 
   return (
-    <Menu.Root onOpenChange={setOpen}>
-      <Menu.Trigger asChild>{children}</Menu.Trigger>
-      <Menu.Portal>
-        <Menu.Content
-          className={contentCls}
-          collisionPadding={8}
-          // a11y(A27):默认保留 Radix 焦点还原(Esc / 普通项关闭 → 焦点回触发行,键盘可用)。
-          // 仅「新建/重命名」一次性跳过还原 —— 它们随后打开 CreateInput/RenameInput 并 rAF
-          // 自聚焦,还原会把焦点抢回行 div(导致 Esc 落错元素被树 hotkeys 吞)。见 menu-close-focus.ts。
-          onCloseAutoFocus={focusRestore.onCloseAutoFocus}
-        >
-          {(isFolder || isBlank) && (
-            <>
-              <Menu.Item
-                className={itemCls}
-                onSelect={() => {
-                  focusRestore.skipOnce(); // 将打开 CreateInput 并自聚焦 → 跳过还原
-                  actions.onNewFile(createParent());
-                }}
-              >
-                {t('panels.explorer.ctx.new_file')}
+    <Menu.Portal>
+      <Menu.Content
+        className={contentCls}
+        collisionPadding={8}
+        // a11y(A27):默认保留 Radix 关闭后焦点还原(Esc / 普通项关闭 → 焦点回触发行,键盘可用)。
+        // 仅「新建/重命名」一次性跳过还原 —— 它们随后打开 CreateInput/RenameInput 并 rAF
+        // 自聚焦,还原会把焦点抢回行 div(导致 Esc 落错元素被树 hotkeys 吞)。见 menu-close-focus.ts。
+        onCloseAutoFocus={focusRestore.onCloseAutoFocus}
+      >
+        {(isFolder || isBlank) && (
+          <>
+            <Menu.Item
+              className={itemCls}
+              onSelect={() => {
+                focusRestore.skipOnce(); // 将打开 CreateInput 并自聚焦 → 跳过还原
+                actions.onNewFile(createParent());
+              }}
+            >
+              {t('panels.explorer.ctx.new_file')}
+            </Menu.Item>
+            <Menu.Item
+              className={itemCls}
+              onSelect={() => {
+                focusRestore.skipOnce(); // 将打开 CreateInput 并自聚焦 → 跳过还原
+                actions.onNewDir(createParent());
+              }}
+            >
+              {t('panels.explorer.ctx.new_folder')}
+            </Menu.Item>
+            {hasClipboard && (
+              <Menu.Item className={itemCls} onSelect={() => actions.onPaste(createParent())}>
+                {t('panels.explorer.ctx.paste')}
               </Menu.Item>
-              <Menu.Item
-                className={itemCls}
-                onSelect={() => {
-                  focusRestore.skipOnce(); // 将打开 CreateInput 并自聚焦 → 跳过还原
-                  actions.onNewDir(createParent());
-                }}
-              >
-                {t('panels.explorer.ctx.new_folder')}
-              </Menu.Item>
-              {hasClipboard && (
-                <Menu.Item
-                  className={itemCls}
-                  onSelect={() => actions.onPaste(createParent())}
-                >
-                  {t('panels.explorer.ctx.paste')}
-                </Menu.Item>
-              )}
-              {!isBlank && <Menu.Separator className={sepCls} />}
-            </>
-          )}
+            )}
+            {!isBlank && <Menu.Separator className={sepCls} />}
+          </>
+        )}
 
-          {!isBlank && (
-            <>
-              {/* 剪切 / 复制(in-app 剪贴板) */}
-              <Menu.Item
-                className={itemCls}
-                onSelect={() => actions.onCut(actionTargets)}
-              >
-                {t('panels.explorer.ctx.cut')}
-              </Menu.Item>
-              <Menu.Item
-                className={itemCls}
-                onSelect={() => actions.onCopy(actionTargets)}
-              >
-                {t('panels.explorer.ctx.copy')}
-              </Menu.Item>
-              <Menu.Separator className={sepCls} />
-
-              <Menu.Item
-                className={itemCls}
-                onSelect={() => {
-                  focusRestore.skipOnce(); // 将打开 RenameInput 并自聚焦 → 跳过还原
-                  actions.onRename(target!.path);
-                }}
-              >
-                {t('panels.explorer.ctx.rename')}
-                <span className="ml-auto text-2xs text-fg-dim">F2</span>
-              </Menu.Item>
-              <Menu.Separator className={sepCls} />
-
-              {/* 路径剪贴板段:多选时复制全部(\n 拼接,VSCode 同款) */}
-              <Menu.Item
-                className={itemCls}
-                onSelect={() => actions.onCopyPath(actionTargets)}
-              >
-                {t('panels.explorer.ctx.copy_path')}
-                {actionTargetCount > 1 && (
-                  <span className="ml-auto text-2xs text-fg-dim">
-                    {t('panels.explorer.ctx.items_count', { count: actionTargetCount })}
-                  </span>
-                )}
-              </Menu.Item>
-              <Menu.Item
-                className={itemCls}
-                onSelect={() => actions.onCopyRelativePath(actionTargets)}
-              >
-                {t('panels.explorer.ctx.copy_relative_path')}
-                {actionTargetCount > 1 && (
-                  <span className="ml-auto text-2xs text-fg-dim">
-                    {t('panels.explorer.ctx.items_count', { count: actionTargetCount })}
-                  </span>
-                )}
-              </Menu.Item>
-              <Menu.Separator className={sepCls} />
-
-              {/* 系统集成段 */}
-              <Menu.Item
-                className={itemCls}
-                onSelect={() => actions.onRevealInFinder(target!.path)}
-              >
-                {t('panels.explorer.ctx.reveal_in_finder')}
-              </Menu.Item>
-              {isFolder && (
-                <Menu.Item
-                  className={itemCls}
-                  onSelect={() => actions.onOpenInTerminal(target!.path)}
-                >
-                  {t('panels.explorer.ctx.open_in_terminal')}
-                </Menu.Item>
-              )}
-              <Menu.Separator className={sepCls} />
-
-              {/* 移到废纸篓(安全删除,可恢复) */}
-              <Menu.Item
-                className={itemCls}
-                onSelect={() => actions.onTrash(actionTargets)}
-              >
-                {t('panels.explorer.ctx.trash')}
-                {actionTargetCount > 1 && (
-                  <span className="ml-auto text-2xs text-fg-dim">
-                    {t('panels.explorer.ctx.items_count', { count: actionTargetCount })}
-                  </span>
-                )}
-              </Menu.Item>
-            </>
-          )}
-
-          {/* Plugin 贡献项,按 group 分组,group 间分隔线。三种菜单状态(文件 /
-              文件夹 / 空白)都必有内置项,故有 plugin 段时总要前置分隔符(打磨 R11:
-              删除恒真的 builtinHasItems 伪条件)。 */}
-          {pluginGroups.length > 0 && (
+        {!isBlank && (
+          <>
+            {/* 剪切 / 复制(in-app 剪贴板) */}
+            <Menu.Item className={itemCls} onSelect={() => actions.onCut(actionTargets)}>
+              {t('panels.explorer.ctx.cut')}
+            </Menu.Item>
+            <Menu.Item className={itemCls} onSelect={() => actions.onCopy(actionTargets)}>
+              {t('panels.explorer.ctx.copy')}
+            </Menu.Item>
             <Menu.Separator className={sepCls} />
-          )}
-          {pluginGroups.map((bucket, gi) => (
-            <div key={bucket.group}>
-              {gi > 0 && <Menu.Separator className={sepCls} />}
-              {bucket.items.map((item) => (
-                <Menu.Item
-                  key={item.id}
-                  className={itemCls}
-                  // 插件右键项抛错经 runContributedAction 弹 error toast,不再只
-                  // console.warn(菜单已关,用户看不到失败)。见第二十一轮 P1-AX。
-                  // race(R54,R51/R52/R53 同族):select 时按 id 从 live coApp.explorerContextMenu
-                  // 重查 + 用当前 pluginCtx 复检 when 再执行,而非调菜单打开时捕获的 item.fn。
-                  // 菜单打开期间插件 disable/reload unregister 后旧菜单仍可触发;重查使死项 / 当前
-                  // ctx 下不可见项静默忽略,不执行已卸载插件代码。
-                  onSelect={() =>
-                    runContributedAction(item.label, () => {
-                      const live = coApp.explorerContextMenu.get(item.id);
-                      if (!live) return;
-                      if (!isExplorerContextMenuItemVisible(live, pluginCtx)) return;
-                      return live.fn(pluginCtx);
-                    })
-                  }
-                >
-                  {item.icon && (
-                    <span className="inline-flex shrink-0">{item.icon}</span>
-                  )}
-                  <span className="truncate">{item.label}</span>
-                </Menu.Item>
-              ))}
-            </div>
-          ))}
-        </Menu.Content>
-      </Menu.Portal>
-    </Menu.Root>
+
+            <Menu.Item
+              className={itemCls}
+              onSelect={() => {
+                focusRestore.skipOnce(); // 将打开 RenameInput 并自聚焦 → 跳过还原
+                actions.onRename(target!.path);
+              }}
+            >
+              {t('panels.explorer.ctx.rename')}
+              <span className="ml-auto text-2xs text-fg-dim">F2</span>
+            </Menu.Item>
+            <Menu.Separator className={sepCls} />
+
+            {/* 路径剪贴板段:多选时复制全部(\n 拼接,VSCode 同款) */}
+            <Menu.Item className={itemCls} onSelect={() => actions.onCopyPath(actionTargets)}>
+              {t('panels.explorer.ctx.copy_path')}
+              {actionTargetCount > 1 && (
+                <span className="ml-auto text-2xs text-fg-dim">
+                  {t('panels.explorer.ctx.items_count', { count: actionTargetCount })}
+                </span>
+              )}
+            </Menu.Item>
+            <Menu.Item
+              className={itemCls}
+              onSelect={() => actions.onCopyRelativePath(actionTargets)}
+            >
+              {t('panels.explorer.ctx.copy_relative_path')}
+              {actionTargetCount > 1 && (
+                <span className="ml-auto text-2xs text-fg-dim">
+                  {t('panels.explorer.ctx.items_count', { count: actionTargetCount })}
+                </span>
+              )}
+            </Menu.Item>
+            <Menu.Separator className={sepCls} />
+
+            {/* 系统集成段 */}
+            <Menu.Item className={itemCls} onSelect={() => actions.onRevealInFinder(target!.path)}>
+              {t('panels.explorer.ctx.reveal_in_finder')}
+            </Menu.Item>
+            {isFolder && (
+              <Menu.Item
+                className={itemCls}
+                onSelect={() => actions.onOpenInTerminal(target!.path)}
+              >
+                {t('panels.explorer.ctx.open_in_terminal')}
+              </Menu.Item>
+            )}
+            <Menu.Separator className={sepCls} />
+
+            {/* 移到废纸篓(安全删除,可恢复) */}
+            <Menu.Item className={itemCls} onSelect={() => actions.onTrash(actionTargets)}>
+              {t('panels.explorer.ctx.trash')}
+              {actionTargetCount > 1 && (
+                <span className="ml-auto text-2xs text-fg-dim">
+                  {t('panels.explorer.ctx.items_count', { count: actionTargetCount })}
+                </span>
+              )}
+            </Menu.Item>
+          </>
+        )}
+
+        {/* Plugin 贡献项,按 group 分组,group 间分隔线。三种菜单状态(文件 /
+                文件夹 / 空白)都必有内置项,故有 plugin 段时总要前置分隔符(打磨 R11:
+                删除恒真的 builtinHasItems 伪条件)。 */}
+        {pluginGroups.length > 0 && <Menu.Separator className={sepCls} />}
+        {pluginGroups.map((bucket, gi) => (
+          <div key={bucket.group}>
+            {gi > 0 && <Menu.Separator className={sepCls} />}
+            {bucket.items.map((item) => (
+              <Menu.Item
+                key={item.id}
+                className={itemCls}
+                // 插件右键项抛错经 runContributedAction 弹 error toast,不再只
+                // console.warn(菜单已关,用户看不到失败)。见第二十一轮 P1-AX。
+                // race(R54,R51/R52/R53 同族):select 时按 id 从 live coApp.explorerContextMenu
+                // 重查 + 用当前 pluginCtx 复检 when 再执行,而非调菜单打开时捕获的 item.fn。
+                // 菜单打开期间插件 disable/reload unregister 后旧菜单仍可触发;重查使死项 / 当前
+                // ctx 下不可见项静默忽略,不执行已卸载插件代码。
+                onSelect={() =>
+                  runContributedAction(item.label, () => {
+                    const live = coApp.explorerContextMenu.get(item.id);
+                    if (!live) return;
+                    if (!isExplorerContextMenuItemVisible(live, pluginCtx)) return;
+                    return live.fn(pluginCtx);
+                  })
+                }
+              >
+                {item.icon && <span className="inline-flex shrink-0">{item.icon}</span>}
+                <span className="truncate">{item.label}</span>
+              </Menu.Item>
+            ))}
+          </div>
+        ))}
+      </Menu.Content>
+    </Menu.Portal>
   );
 }

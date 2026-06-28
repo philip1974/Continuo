@@ -73,6 +73,29 @@ describe('topic49 codexF2 · 切 tab 在途 flush 纳入关窗 ack', () => {
     expect(settled).toBe(true);
   });
 
+  it('只有一个在途 flush 且无 active flush 时直接 await,不走 allSettled 数组路径', async () => {
+    const allSettledSpy = vi.spyOn(Promise, 'allSettled');
+    const d = deferred();
+    trackInFlightAutoSave(d.promise);
+
+    try {
+      let settled = false;
+      const fp = flushPendingAutoSave().then(() => {
+        settled = true;
+      });
+      await Promise.resolve();
+      expect(settled).toBe(false);
+      expect(allSettledSpy).not.toHaveBeenCalled();
+
+      d.resolve();
+      await fp;
+      expect(settled).toBe(true);
+      expect(allSettledSpy).not.toHaveBeenCalled();
+    } finally {
+      allSettledSpy.mockRestore();
+    }
+  });
+
   it('编辑 A 后切到 B 再立即关窗:关窗握手 await A 的在途落盘(不丢最后编辑)', async () => {
     const gate = deferred();
     const saveTab = vi.fn((id: string) =>

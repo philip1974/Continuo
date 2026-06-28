@@ -24,15 +24,6 @@ const METHOD_LABEL_KEYS: Record<string, TranslationKey> = {
 
 export function AgentAuthPrompt() {
   const pending = useAgentAuthStore((s) => s.pending);
-  const grant = useAgentAuthStore((s) => s.grant);
-  const deny = useAgentAuthStore((s) => s.deny);
-  const t = useT();
-
-  function methodLabel(method: string): string {
-    const k = METHOD_LABEL_KEYS[method];
-    if (k) return t(k);
-    return t('permissions.agent.generic', { method });
-  }
 
   // 订阅 main 推的请求 — sessionGranted 时 ensure 自动短路返回 'session',
   // Modal 不渲染;否则 ensure 设 pending,UI 弹出。
@@ -65,6 +56,23 @@ export function AgentAuthPrompt() {
   }, []);
 
   if (!pending) return null;
+  return <AgentAuthPromptBody pending={pending} />;
+}
+
+function AgentAuthPromptBody({
+  pending,
+}: {
+  readonly pending: NonNullable<ReturnType<typeof useAgentAuthStore.getState>['pending']>;
+}) {
+  const grant = useAgentAuthStore((s) => s.grant);
+  const deny = useAgentAuthStore((s) => s.deny);
+  const t = useT();
+
+  function methodLabel(method: string): string {
+    const k = METHOD_LABEL_KEYS[method];
+    if (k) return t(k);
+    return t('permissions.agent.generic', { method });
+  }
 
   return (
     <Modal visible onClose={deny} aria-labelledby="agent-auth-title">

@@ -126,18 +126,24 @@ export function pruneLRUClosed(
   if (!Number.isFinite(maxClosed)) return;
   if (payload.windows.length <= maxClosed) return;
 
-  const closed = new Array<WindowEntryV3>(payload.windows.length);
+  let closed: WindowEntryV3[] | null = null;
   let closedCount = 0;
   let closedSorted = true;
   let prevClosedAt = -Infinity;
+  let scanned = 0;
   for (const w of payload.windows) {
     if (!activeSeqs.has(w.windowSeq)) {
+      if (closed === null) {
+        closed = new Array<WindowEntryV3>(payload.windows.length - scanned);
+      }
       const closedAt = w.lastClosedAt ?? 0;
       if (closedAt < prevClosedAt) closedSorted = false;
       prevClosedAt = closedAt;
       closed[closedCount++] = w;
     }
+    scanned += 1;
   }
+  if (closed === null) return;
   closed.length = closedCount;
   if (closedCount > 1 && !closedSorted) {
     closed.sort((a, b) => (a.lastClosedAt ?? 0) - (b.lastClosedAt ?? 0));

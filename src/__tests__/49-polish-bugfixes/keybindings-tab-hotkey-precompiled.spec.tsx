@@ -8,10 +8,7 @@ import { join } from 'node:path';
 import { render, cleanup, act, fireEvent } from '@testing-library/react';
 
 vi.mock('../../plugins/keybindings/keybindings-store', async (importActual) => {
-  const actual =
-    await importActual<
-      typeof import('../../plugins/keybindings/keybindings-store')
-    >();
+  const actual = await importActual<typeof import('../../plugins/keybindings/keybindings-store')>();
   return { ...actual, getEffectiveHotkey: vi.fn(actual.getEffectiveHotkey) };
 });
 
@@ -45,7 +42,10 @@ afterEach(() => cleanup());
 
 describe('打磨 R29 — Keybindings hotkey 预计算', () => {
   it('命令面板提示热键预计算,不在 render 中重复 formatHotkeyParts', () => {
-    const src = readFileSync(join(process.cwd(), 'src/plugins/settings/KeybindingsTabContent.tsx'), 'utf8');
+    const src = readFileSync(
+      join(process.cwd(), 'src/plugins/settings/KeybindingsTabContent.tsx'),
+      'utf8',
+    );
 
     expect(src).toContain('const COMMAND_PALETTE_HOTKEY_PARTS = formatHotkeyParts');
     expect(src).toContain('COMMAND_PALETTE_HOTKEY_PARTS.map');
@@ -61,31 +61,18 @@ describe('打磨 R29 — Keybindings hotkey 预计算', () => {
     ];
     const mapSpy = vi.spyOn(commands, 'map');
     const tk = vi.fn((_key: string | undefined, fallback: string) => fallback);
-    useKeybindingsStore.setState({ overrides: { toggle: 'mod+t' } });
+    useKeybindingsStore.setState({ overrides: {} });
 
     try {
-      const out = buildKeybindingDisplayCommands(
-        commands,
-        tk,
-        { toggle: 'mod+t' },
-        'other',
-      );
+      const out = buildKeybindingDisplayCommands(commands, tk, { toggle: 'mod+t' }, 'other');
 
-      expect(out.map((d) => d.cmd.id)).toEqual([
-        'save',
-        'toggle',
-      ]);
+      expect(out.map((d) => d.cmd.id)).toEqual(['save', 'toggle']);
       expect(out[0]?.hotkeyParts).toEqual(['Ctrl', 'S']);
       expect(out[1]?.effectiveHotkey).toBe('mod+t');
       expect(out[1]?.isOverridden).toBe(true);
       expect(out[1]?.searchHaystack).toContain('mod+t');
-      expect(getEffSpy).toHaveBeenCalledTimes(2);
-      expect(tk.mock.calls.map((call) => call[1])).toEqual([
-        'Save',
-        '',
-        'Toggle',
-        'View',
-      ]);
+      expect(getEffSpy).not.toHaveBeenCalled();
+      expect(tk.mock.calls.map((call) => call[1])).toEqual(['Save', '', 'Toggle', 'View']);
       expect(mapSpy).not.toHaveBeenCalled();
     } finally {
       mapSpy.mockRestore();
@@ -95,18 +82,31 @@ describe('打磨 R29 — Keybindings hotkey 预计算', () => {
   it('空命令列表 → 稳定空 displayCommands,不读取 hotkey', () => {
     const commands = [] as const;
 
-    const out = buildKeybindingDisplayCommands(
-      commands,
-      (_key, fallback) => fallback,
-      {},
-      'other',
-    );
+    const out = buildKeybindingDisplayCommands(commands, (_key, fallback) => fallback, {}, 'other');
 
     expect(out).toEqual([]);
     expect(out).toBe(
       buildKeybindingDisplayCommands(commands, (_key, fallback) => fallback, {}, 'mac'),
     );
     expect(getEffSpy).not.toHaveBeenCalled();
+  });
+
+  it('没有可显示命令时复用稳定空 displayCommands,不预分配结果数组', () => {
+    const commands = [
+      { id: 'plain-a', title: 'Plain A', fn: vi.fn() },
+      { id: 'plain-b', title: 'Plain B', fn: vi.fn() },
+    ];
+    const tk = vi.fn((_key: string | undefined, fallback: string) => fallback);
+
+    const out = buildKeybindingDisplayCommands(commands, tk, {}, 'other');
+
+    expect(out).toBe(
+      buildKeybindingDisplayCommands(commands, tk, {}, 'mac'),
+    );
+    expect(tk).not.toHaveBeenCalled();
+    expect(buildKeybindingDisplayCommands.toString()).not.toMatch(
+      /const out = new Array\(allCommands\.length\)/,
+    );
   });
 
   it('统计默认 hotkey 数量时不通过 filter(...).length 生成中间数组', () => {
@@ -149,10 +149,7 @@ describe('打磨 R29 — Keybindings hotkey 预计算', () => {
     try {
       const buckets = groupByCategory([commandA, commandB], 'Other');
       expect(arrayFromSpy).not.toHaveBeenCalled();
-      expect(buckets.map((bucket) => bucket.category)).toEqual([
-        'Editor',
-        'Other',
-      ]);
+      expect(buckets.map((bucket) => bucket.category)).toEqual(['Editor', 'Other']);
       expect(buckets[0]?.items).toEqual([commandA]);
       expect(buckets[1]?.items).toEqual([commandB]);
       expect(groupByCategory.toString()).not.toContain('buckets.push(');
@@ -278,16 +275,10 @@ describe('打磨 R29 — Keybindings hotkey 预计算', () => {
     const sortSpy = vi.spyOn(Array.prototype, 'sort');
 
     try {
-      const buckets = groupByCategory(
-        [commandA, commandB, commandC, commandD],
-        'Other',
-      );
+      const buckets = groupByCategory([commandA, commandB, commandC, commandD], 'Other');
 
       expect(sortSpy).not.toHaveBeenCalled();
-      expect(buckets.map((bucket) => bucket.category)).toEqual([
-        'Editor',
-        'File',
-      ]);
+      expect(buckets.map((bucket) => bucket.category)).toEqual(['Editor', 'File']);
       expect(buckets[0]?.items).toEqual([commandA, commandB]);
       expect(buckets[1]?.items).toEqual([commandC, commandD]);
     } finally {
@@ -295,10 +286,10 @@ describe('打磨 R29 — Keybindings hotkey 预计算', () => {
     }
   });
 
-  it('搜索输入变化 → 不再逐行调 getEffectiveHotkey', () => {
+  it('渲染与搜索输入变化都不逐行调 getEffectiveHotkey', () => {
     const { container } = render(<KeybindingsTabContent />);
     const afterRender = getEffSpy.mock.calls.length;
-    expect(afterRender).toBeGreaterThan(0);
+    expect(afterRender).toBe(0);
 
     const input = container.querySelector('input')!;
     act(() => {
@@ -399,13 +390,9 @@ describe('打磨 R29 — Keybindings hotkey 预计算', () => {
     const filterSpy = vi.spyOn(Array.prototype, 'filter');
 
     try {
-      expect(selectVisibleKeybindingCommands(commands, 'gamma')).toEqual([
-        visibleOverride,
-      ]);
+      expect(selectVisibleKeybindingCommands(commands, 'gamma')).toEqual([visibleOverride]);
       expect(filterSpy.mock.contexts.some((ctx) => ctx === commands)).toBe(false);
-      expect(selectVisibleKeybindingCommands.toString()).not.toContain(
-        'selected.push(',
-      );
+      expect(selectVisibleKeybindingCommands.toString()).not.toContain('selected.push(');
     } finally {
       filterSpy.mockRestore();
     }
@@ -433,9 +420,7 @@ describe('打磨 R29 — Keybindings hotkey 预计算', () => {
     const joinSpy = vi.spyOn(Array.prototype, 'join');
 
     try {
-      expect(keybindingRowClassName(0)).toContain(
-        'flex items-center gap-3 px-4 py-3 text-xs',
-      );
+      expect(keybindingRowClassName(0)).toContain('flex items-center gap-3 px-4 py-3 text-xs');
       expect(keybindingRowClassName(0)).not.toContain('border-t');
       expect(keybindingRowClassName(1)).toContain('border-t border-line/50');
       expect(joinSpy).not.toHaveBeenCalled();

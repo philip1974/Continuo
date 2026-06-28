@@ -30,15 +30,11 @@ const EMPTY_PLUGIN_TAB_ITEMS: never[] = [];
 const EMPTY_CONTRIBUTION_SAMPLES: readonly string[] = [];
 const EMPTY_DECLARED_PERMISSIONS: readonly PermissionKey[] = [];
 
-const PLUGINS_TAB_ROW_CLASS_NAME =
-  'flex items-start gap-4 px-4 py-3 text-xs';
-const PLUGINS_TAB_ROW_BORDER_CLASS_NAME =
-  `${PLUGINS_TAB_ROW_CLASS_NAME} border-t border-line/50`;
+const PLUGINS_TAB_ROW_CLASS_NAME = 'flex items-start gap-4 px-4 py-3 text-xs';
+const PLUGINS_TAB_ROW_BORDER_CLASS_NAME = `${PLUGINS_TAB_ROW_CLASS_NAME} border-t border-line/50`;
 
 export function pluginsTabRowClassName(hasTopBorder: boolean): string {
-  return hasTopBorder
-    ? PLUGINS_TAB_ROW_BORDER_CLASS_NAME
-    : PLUGINS_TAB_ROW_CLASS_NAME;
+  return hasTopBorder ? PLUGINS_TAB_ROW_BORDER_CLASS_NAME : PLUGINS_TAB_ROW_CLASS_NAME;
 }
 
 export function collectContributionSamples<T, K extends keyof T>(
@@ -53,10 +49,7 @@ export function collectContributionSamples<T, K extends keyof T>(
   return samples;
 }
 
-export function collectStatusBarItems<T>(
-  left: readonly T[],
-  right: readonly T[],
-): readonly T[] {
+export function collectStatusBarItems<T>(left: readonly T[], right: readonly T[]): readonly T[] {
   if (left.length === 0 && right.length === 0) return EMPTY_PLUGIN_TAB_ITEMS;
   if (left.length === 0) return right;
   if (right.length === 0) return left;
@@ -91,10 +84,7 @@ function snapshot(): readonly ContributionRow[] {
   // samples 单趟收集,行为完全等价。
   const panels = coApp.panels.getAll();
   const commands = coApp.commands.getAll();
-  const statusItems = collectStatusBarItems(
-    coApp.statusBar.getBySide('left'),
-    coApp.statusBar.getBySide('right'),
-  );
+  const statusItems = coApp.statusBar.getAll();
   const ribbon = coApp.ribbon.getAll();
   const settingTabs = coApp.settingTabs.getAll();
   const explorerDecorators = coApp.explorerDecorators.getAll();
@@ -146,6 +136,7 @@ function useContributionSnapshot(): readonly ContributionRow[] {
       coApp.statusBar,
       coApp.ribbon,
       coApp.settingTabs,
+      coApp.explorerDecorators,
       coApp.editorActions,
     ],
     snapshot,
@@ -161,7 +152,12 @@ const CORE_PLUGINS: ReadonlyArray<{
   { id: 'core.editor', name: 'Editor', descKey: 'plugins_tab.core.editor_desc' },
   { id: 'core.terminal', name: 'Terminal', descKey: 'plugins_tab.core.terminal_desc' },
   { id: 'core.output', name: 'Output', descKey: 'plugins_tab.core.output_desc' },
-  { id: 'core.plugins', name: 'Plugin management', nameKey: 'plugins_tab.core.plugins_name', descKey: 'plugins_tab.core.plugins_desc' },
+  {
+    id: 'core.plugins',
+    name: 'Plugin management',
+    nameKey: 'plugins_tab.core.plugins_name',
+    descKey: 'plugins_tab.core.plugins_desc',
+  },
 ];
 
 export function PluginsTabContent() {
@@ -177,14 +173,9 @@ export function PluginsTabContent() {
         </h3>
         <div className="rounded-md border border-line bg-panel-soft/40">
           {contribs.map((row, i) => (
-            <div
-              key={row.labelKey}
-              className={pluginsTabRowClassName(i > 0)}
-            >
+            <div key={row.labelKey} className={pluginsTabRowClassName(i > 0)}>
               <div className="w-32 shrink-0 text-fg-muted">{t(row.labelKey)}</div>
-              <div className="w-8 shrink-0 text-right tabular-nums text-fg">
-                {row.count}
-              </div>
+              <div className="w-8 shrink-0 text-right tabular-nums text-fg">{row.count}</div>
               <div className="min-w-0 flex-1 truncate font-mono text-2xs text-fg-dim">
                 {row.samplesText}
               </div>
@@ -200,10 +191,7 @@ export function PluginsTabContent() {
         </h3>
         <div className="rounded-md border border-line bg-panel-soft/40">
           {CORE_PLUGINS.map((p, i) => (
-            <div
-              key={p.id}
-              className={pluginsTabRowClassName(i > 0)}
-            >
+            <div key={p.id} className={pluginsTabRowClassName(i > 0)}>
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-medium text-fg">
                   {p.nameKey ? t(p.nameKey) : p.name}
@@ -253,10 +241,7 @@ export function samePluginList(
   return true;
 }
 
-export function hasPluginId(
-  plugins: readonly PluginListItem[],
-  id: string,
-): boolean {
+export function hasPluginId(plugins: readonly PluginListItem[], id: string): boolean {
   for (const plugin of plugins) {
     if (plugin.id === id) return true;
   }
@@ -283,9 +268,7 @@ function useUserPlugins(): {
   plugins: readonly PluginListItem[];
   refresh: () => void;
 } {
-  const [snap, setSnap] = useState<readonly PluginListItem[]>(() =>
-    readUserPluginList(),
-  );
+  const [snap, setSnap] = useState<readonly PluginListItem[]>(() => readUserPluginList());
   const refresh = () => {
     // listAll() 每次返回新数组;1s 轮询直接 setSnap 会让整个插件列表每秒
     // re-render。函数式更新只在列表渲染态实际变化时换引用。(codex 打磨 R2)
@@ -325,12 +308,8 @@ function UserPluginsSection() {
     name: string;
     version: string;
   } | null>(null);
-  const [uninstallTarget, setUninstallTarget] = useState<PluginListItem | null>(
-    null,
-  );
-  const [permEditTarget, setPermEditTarget] = useState<PluginListItem | null>(
-    null,
-  );
+  const [uninstallTarget, setUninstallTarget] = useState<PluginListItem | null>(null);
+  const [permEditTarget, setPermEditTarget] = useState<PluginListItem | null>(null);
   const permStore = getUserPermissionStore();
 
   // race(R102,R50 同族):权限编辑弹窗持有打开时捕获的 PluginListItem。弹窗打开期间该插件被
@@ -354,11 +333,7 @@ function UserPluginsSection() {
   useEffect(() => {
     if (
       uninstallTarget &&
-      !hasPluginVersion(
-        plugins,
-        uninstallTarget.id,
-        uninstallTarget.manifest.version,
-      )
+      !hasPluginVersion(plugins, uninstallTarget.id, uninstallTarget.manifest.version)
     ) {
       setUninstallTarget(null);
     }
@@ -385,9 +360,7 @@ function UserPluginsSection() {
       // 本地化,无 code(如 "Plugin x not found")回退原文。
       const code = (err as { code?: unknown }).code;
       const message =
-        typeof code === 'string'
-          ? localizeErrorByCode(code, errorMessage(err))
-          : errorMessage(err);
+        typeof code === 'string' ? localizeErrorByCode(code, errorMessage(err)) : errorMessage(err);
       setInstallMsg({
         text: t('plugins_tab.install.uninstall_fail', { message }),
         isError: true,
@@ -446,9 +419,7 @@ function UserPluginsSection() {
   const reportActionError = (err: unknown) => {
     const code = (err as { code?: unknown }).code;
     const message =
-      typeof code === 'string'
-        ? localizeErrorByCode(code, errorMessage(err))
-        : errorMessage(err);
+      typeof code === 'string' ? localizeErrorByCode(code, errorMessage(err)) : errorMessage(err);
     setInstallMsg({
       text: t('plugins_tab.error.generic', { message }),
       isError: true,
@@ -466,9 +437,7 @@ function UserPluginsSection() {
         <div className="text-sm font-medium text-fg">
           {t('plugins_tab.section.install_from_git')}
         </div>
-        <div className="mt-1 text-xs text-fg-muted">
-          {t('plugins_tab.section.install_warning')}
-        </div>
+        <div className="mt-1 text-xs text-fg-muted">{t('plugins_tab.section.install_warning')}</div>
         <div className="mt-3 flex items-center gap-2">
           <Input
             size="sm"
@@ -490,9 +459,7 @@ function UserPluginsSection() {
             // a11y(A95,A94 同族):安装中标 aria-busy(Marketplace loading 修复的兄弟入口)。
             aria-busy={installing}
           >
-            {installing
-              ? t('plugins_tab.install.installing')
-              : t('plugins_tab.install.install')}
+            {installing ? t('plugins_tab.install.installing') : t('plugins_tab.install.install')}
           </Button>
         </div>
         {/* a11y(A95,A51 同族):安装 loading 瞬时态 → 视觉隐藏 role=status 镜像「安装中」
@@ -521,36 +488,25 @@ function UserPluginsSection() {
             <div className="flex items-start gap-4 px-4 py-3 text-xs">
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline gap-2">
-                  <span className="text-sm font-medium text-fg">
-                    {pendingInstall.name}
-                  </span>
+                  <span className="text-sm font-medium text-fg">{pendingInstall.name}</span>
                   <code className="rounded bg-panel-soft/70 px-1.5 py-0.5 text-2xs uppercase tracking-wider text-fg-muted/70">
                     {pendingInstall.id}
                   </code>
-                  <span className="text-2xs text-fg-dim">
-                    v{pendingInstall.version}
-                  </span>
+                  <span className="text-2xs text-fg-dim">v{pendingInstall.version}</span>
                 </div>
-                <div className="mt-1 text-fg-muted">
-                  {t('plugins_tab.user.pending_hint')}
-                </div>
+                <div className="mt-1 text-fg-muted">{t('plugins_tab.user.pending_hint')}</div>
               </div>
             </div>
           )}
           {plugins.map((p, i) => (
-            <div
-              key={p.id}
-              className={pluginsTabRowClassName(i > 0 || Boolean(pendingInstall))}
-            >
+            <div key={p.id} className={pluginsTabRowClassName(i > 0 || Boolean(pendingInstall))}>
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline gap-2">
                   <span className="text-sm font-medium text-fg">{p.manifest.name}</span>
                   <code className="rounded bg-panel-soft/70 px-1.5 py-0.5 text-2xs uppercase tracking-wider text-fg-muted/70">
                     {p.id}
                   </code>
-                  <span className="text-2xs text-fg-dim">
-                    v{p.manifest.version}
-                  </span>
+                  <span className="text-2xs text-fg-dim">v{p.manifest.version}</span>
                 </div>
                 {p.manifest.description && (
                   <div className="mt-1 text-fg-muted">{p.manifest.description}</div>
@@ -562,10 +518,7 @@ function UserPluginsSection() {
                     {/* i18n(I4):error 结构化 {code,message},按 code 经 catalog 渲染;
                         未收录 code(PERMISSION_DENIED/IMPORT_FAILED/EXCEPTION 等动态
                         message)保留旧 `code: message` 格式作 fallback。 */}
-                    {tf(
-                      `errors.${p.error.code}`,
-                      `${p.error.code}: ${p.error.message}`,
-                    )}
+                    {tf(`errors.${p.error.code}`, `${p.error.code}: ${p.error.message}`)}
                   </div>
                 )}
                 {p.warning && (
@@ -573,8 +526,7 @@ function UserPluginsSection() {
                   <div role="status" className="mt-1 text-2xs text-warning">
                     {/* a11y(A84,A73 同族装饰符号):⚠ 是纯视觉装饰,严重度由 role/文本表达 →
                         aria-hidden,否则混进 live region 播报成"warning sign …"噪声。 */}
-                    <span aria-hidden="true">⚠</span>{' '}
-                    {t(p.warning.code, p.warning.params)}
+                    <span aria-hidden="true">⚠</span> {t(p.warning.code, p.warning.params)}
                   </div>
                 )}
               </div>
@@ -711,14 +663,11 @@ function UserPluginsSection() {
         <PermissionEditorModal
           open={permEditTarget !== null}
           pluginId={permEditTarget?.id ?? null}
-          declared={
-            permEditTarget?.manifest.permissions ?? EMPTY_DECLARED_PERMISSIONS
-          }
+          declared={permEditTarget?.manifest.permissions ?? EMPTY_DECLARED_PERMISSIONS}
           store={permStore}
           onClose={() => setPermEditTarget(null)}
           pluginStillExists={() =>
-            permEditTarget !== null &&
-            hasPluginId(plugins, permEditTarget.id)
+            permEditTarget !== null && hasPluginId(plugins, permEditTarget.id)
           }
         />
       )}

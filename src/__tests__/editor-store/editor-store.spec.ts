@@ -435,6 +435,19 @@ describe('getStateAfterRemovingPath', () => {
     expect(r.activeTabId).toBe('/x/a.md');
   });
 
+  it('没有 tab 匹配时不预分配 remaining 数组', () => {
+    const tabs = [
+      makeTab({ id: '/x/a.md', filePath: '/x/a.md' }),
+      makeTab({ id: '/x/b.md', filePath: '/x/b.md' }),
+    ];
+    const r = getStateAfterRemovingPath(tabs, '/x/a.md', '/y/none.md');
+
+    expect(r.tabs).toBe(tabs);
+    expect(getStateAfterRemovingPath.toString()).not.toMatch(
+      /new Array(?:<[^>]+>)?\(tabs\.length\)/,
+    );
+  });
+
   it('删除单文件,精确匹配 → 关该 tab', () => {
     const tabs = [
       makeTab({ id: '/x/a.md' }),

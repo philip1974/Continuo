@@ -165,6 +165,20 @@ describe('captureBoundedFiles (E118)', () => {
     );
   });
 
+  it('空洞 files → 不预分配结果数组,复用稳定空结果', () => {
+    const files = { length: 3 } as unknown as ArrayLike<File>;
+
+    expect(captureBoundedFiles(files, MAX_DROP_FILES)).toEqual([]);
+    expect(captureBoundedFiles(files, MAX_DROP_FILES)).toBe(
+      captureBoundedFiles([], MAX_DROP_FILES),
+    );
+    const source = captureBoundedFiles.toString();
+    expect(source).toContain('let out');
+    expect(source).toContain('out === null');
+    expect(source).not.toContain('const out = new Array<File>(limit)');
+    expect(source).not.toContain('const out = new Array(limit)');
+  });
+
   it('超过 max → 截断,且只读 max 个 index(不遍历全部)', () => {
     const N = 5000;
     const real = Array.from({ length: N }, (_, i) => ({

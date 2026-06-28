@@ -69,6 +69,13 @@ describe('selectValidMarketplaceEntries', () => {
     expect(selectValidMarketplaceEntries([])).toBe(
       selectValidMarketplaceEntries(invalid),
     );
+    const source = selectValidMarketplaceEntries.toString();
+    expect(source).toContain('let out');
+    expect(source).toContain('out === null');
+    expect(source).not.toContain(
+      'const out = new Array<MarketplaceEntry>(count)',
+    );
+    expect(source).not.toContain('const out = new Array(count)');
   });
 
   it('单条合法 entry 复用原数组引用', () => {
