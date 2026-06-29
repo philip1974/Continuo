@@ -2,6 +2,12 @@
 // 重复执行同 id → 移到头部不重复.
 import { test, expect } from './fixtures/electron-app';
 
+const SETTINGS = /^(设置|Settings|설정)$/;
+const COMMAND_SEARCH = /^(输入命令名…|Type a command…|명령어 입력…)$/;
+const COMMAND_LIST = /^(命令列表|Command list|명령어 목록)$/;
+const SETTINGS_TITLE = /(切换 Settings|Toggle Settings|설정 토글)/;
+const CLOSE_SETTINGS = /^(关闭 Settings|Close Settings|Settings 닫기)$/;
+
 async function openPalette(window: import('@playwright/test').Page): Promise<void> {
   await window.evaluate(() => {
     document.dispatchEvent(
@@ -20,25 +26,25 @@ test('多次执行同命令 → recent 不重复 + 该命令始终置顶', async
   window,
 }) => {
   // 等就绪
-  await expect(window.locator('button[title="设置"]')).toBeVisible({
+  const settingsButton = window.getByRole('button', { name: SETTINGS });
+  await expect(settingsButton).toBeVisible({
     timeout: 10_000,
   });
+  const settingsQuery =
+    (await settingsButton.getAttribute('title'))?.toLocaleLowerCase() ??
+    'settings';
 
-  // 三次执行 settings.open
+  // 三次执行 settings.toggle
   for (let i = 0; i < 3; i++) {
     await openPalette(window);
-    const input = window.locator(
-      '.wm-modal-content input[placeholder^="输入命令名"]',
-    );
+    const input = window.getByRole('combobox', { name: COMMAND_SEARCH });
     await expect(input).toBeVisible();
-    await input.fill('打开 Settings');
+    await input.fill(settingsQuery);
     await window.keyboard.press('Enter');
     await expect(input).toBeHidden();
 
     // 关掉 settings panel(避免堆叠)
-    const closeSettings = window.locator(
-      'button[aria-label="Close Settings"]',
-    );
+    const closeSettings = window.getByRole('button', { name: CLOSE_SETTINGS });
     if (await closeSettings.count()) {
       await closeSettings.click();
       await window.waitForTimeout(300);
@@ -47,13 +53,13 @@ test('多次执行同命令 → recent 不重复 + 该命令始终置顶', async
 
   // 第四次打开命令面板 → 第一项仍是 Settings 相关(LRU 头部不重复)
   await openPalette(window);
-  const firstItem = window.locator('.wm-modal-content li').first();
-  await expect(firstItem).toContainText(/Settings|设置/);
+  const options = window
+    .getByRole('listbox', { name: COMMAND_LIST })
+    .getByRole('option');
+  const firstItem = options.first();
+  await expect(firstItem).toContainText(SETTINGS_TITLE);
 
-  // 由于 settings.open 是唯一带 Settings category 的命令,只占 1 个 li
-  const settingsCount = await window
-    .locator('.wm-modal-content li')
-    .filter({ hasText: '打开 Settings' })
-    .count();
+  // 由于 settings.toggle 是唯一带 Settings category 的命令,只占 1 个 option
+  const settingsCount = await options.filter({ hasText: SETTINGS_TITLE }).count();
   expect(settingsCount).toBe(1);
 });
