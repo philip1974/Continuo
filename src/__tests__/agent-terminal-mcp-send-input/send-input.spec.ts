@@ -219,9 +219,14 @@ describe('makeSendInputTool · run', () => {
     const has = vi.fn<HasFn>(() => false);
     const tool = makeSendInputTool(makeDeps({ has }));
     const longId = 'x'.repeat(5000);
-    const err = await tool
-      .run({ session_id: longId, data: 'x' }, ctx)
-      .catch((e: unknown) => e as Error);
+    const err = await Promise.resolve(
+      tool.run({ session_id: longId, data: 'x' }, ctx),
+    ).then(
+      () => {
+        throw new Error('expected send_input to reject');
+      },
+      (e: unknown) => e as Error,
+    );
     expect((err as { code?: string }).code).toBe('TERMINAL_SESSION_NOT_FOUND');
     // 消息含截断标记 '…',且远短于原始 5000(不回显超长原串)
     expect(err.message).toContain('…');
