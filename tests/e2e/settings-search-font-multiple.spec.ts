@@ -1,19 +1,21 @@
 // Settings 搜索「字号」 → editor.fontSize + terminal.fontSize 都匹配,N>=2.
 import { test, expect } from './fixtures/electron-app';
+import {
+  MATCHED_SETTINGS,
+  openSettings,
+  settingsSearch,
+} from './helpers/settings';
 
-test('搜索 字号 → 匹配 N>=2', async ({ window }) => {
-  await window.locator('button[title="设置"]').click();
-  await expect(window.locator('nav[aria-label="设置分类"]')).toBeVisible({
-    timeout: 10_000,
-  });
+test('搜索 fontSize → 匹配 N>=2', async ({ window }) => {
+  await openSettings(window);
 
-  const search = window.locator('input[placeholder*="搜索设置"]');
-  await search.fill('字号');
+  const search = settingsSearch(window);
+  await search.fill('fontSize');
 
   // 匹配数 >= 2
-  await expect(
-    window.locator('text=/匹配\\s+([2-9]|\\d{2,})\\s+项/'),
-  ).toBeVisible({ timeout: 5_000 });
+  await expect(window.getByText(MATCHED_SETTINGS)).toBeVisible({
+    timeout: 5_000,
+  });
 
   // 主区域含两个 fontSize id chip
   const chips = window

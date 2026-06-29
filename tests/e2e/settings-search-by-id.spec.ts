@@ -1,13 +1,10 @@
 // Settings 搜索 setting id 片段 'editor.font' → editor.fontSize 匹配.
 import { test, expect } from './fixtures/electron-app';
+import { openSettings, settingsSearch } from './helpers/settings';
 
 test('搜索 editor.font → editor.fontSize 匹配', async ({ window }) => {
-  await window.locator('button[title="设置"]').click();
-  await expect(window.locator('nav[aria-label="设置分类"]')).toBeVisible({
-    timeout: 10_000,
-  });
-
-  const search = window.locator('input[placeholder*="搜索设置"]');
+  await openSettings(window);
+  const search = settingsSearch(window);
   await search.fill('editor.font');
 
   // 主区域含 chip 'editor.fontSize'
