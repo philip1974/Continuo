@@ -2,6 +2,8 @@
 // content 来自 store 已修改值).
 import { test, expect } from './fixtures/with-workspace';
 
+const UNSAVED_CHANGES = /^(未保存的更改|Unsaved changes|저장되지 않은 변경 사항)$/;
+
 test('编辑 a.ts → 切 b.ts → 切回 a.ts → content 保留(未保存)', async ({
   window,
 }) => {
@@ -13,9 +15,7 @@ test('编辑 a.ts → 切 b.ts → 切回 a.ts → content 保留(未保存)', a
   await window.keyboard.type(' // edited');
 
   // dirty 圆点出现
-  await expect(
-    window.locator('span[aria-label="未保存修改"]'),
-  ).toBeVisible();
+  await expect(window.getByText(UNSAVED_CHANGES).first()).toBeVisible();
 
   // 切到 b.ts
   await window.locator('text=b.ts').first().click();
