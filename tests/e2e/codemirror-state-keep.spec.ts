@@ -3,6 +3,7 @@
 import { test, expect } from './fixtures/with-workspace';
 
 const UNSAVED_CHANGES = /^(未保存的更改|Unsaved changes|저장되지 않은 변경 사항)$/;
+const EDITOR_TABS = /^(编辑器标签|Editor tabs|편집기 탭)$/;
 
 test('编辑 a.ts → 切 b.ts → 切回 a.ts → content 保留(未保存)', async ({
   window,
@@ -23,10 +24,8 @@ test('编辑 a.ts → 切 b.ts → 切回 a.ts → content 保留(未保存)', a
 
   // 切回 a.ts
   const aTab = window
-    .locator('main [role=tablist]')
-    .first()
-    .locator('[role=tab]')
-    .filter({ hasText: 'a.ts' });
+    .getByRole('tablist', { name: EDITOR_TABS })
+    .getByRole('tab', { name: 'a.ts' });
   await aTab.click();
 
   // CodeMirror 重新渲染 a.ts content;由 store 提供 → 含 'edited'
