@@ -3,8 +3,12 @@
 // 多次按下 ArrowDown 不会越界,顶到末尾后回 0.
 import { test, expect } from './fixtures/electron-app';
 
+const SETTINGS = /^(设置|Settings|설정)$/;
+const COMMAND_SEARCH = /^(输入命令名…|Type a command…|명령어 입력…)$/;
+const COMMAND_LIST = /^(命令列表|Command list|명령어 목록)$/;
+
 test('ArrowDown N 次 → wrap 回 0 / 不越界', async ({ window }) => {
-  await expect(window.locator('button[title="设置"]')).toBeVisible({
+  await expect(window.getByRole('button', { name: SETTINGS })).toBeVisible({
     timeout: 10_000,
   });
   await window.evaluate(() => {
@@ -18,12 +22,12 @@ test('ArrowDown N 次 → wrap 回 0 / 不越界', async ({ window }) => {
       }),
     );
   });
-  const input = window.locator(
-    '.wm-modal-content input[placeholder^="输入命令名"]',
-  );
+  const input = window.getByRole('combobox', { name: COMMAND_SEARCH });
   await expect(input).toBeVisible();
 
-  const items = window.locator('.wm-modal-content li');
+  const items = window
+    .getByRole('listbox', { name: COMMAND_LIST })
+    .getByRole('option');
   const count = await items.count();
   expect(count).toBeGreaterThan(0);
 
