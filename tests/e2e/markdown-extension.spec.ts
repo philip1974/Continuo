@@ -1,5 +1,10 @@
 // .markdown 扩展也启 markdown 模式(SegmentedControl 显).
 import { _electron as electron, expect, test } from '@playwright/test';
+import {
+  EDITOR_MODE_EDIT,
+  EDITOR_MODE_PREVIEW,
+  EDITOR_MODE_SOURCE,
+} from './helpers/editor';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -43,9 +48,15 @@ test('打开 .markdown 文件 → SegmentedControl Edit/Source/Preview 显', asy
     );
 
     const main = win.locator('main');
-    await expect(main).toContainText('Edit');
-    await expect(main).toContainText('Source');
-    await expect(main).toContainText('Preview');
+    await expect(
+      main.locator('button').filter({ hasText: EDITOR_MODE_EDIT }),
+    ).toBeVisible();
+    await expect(
+      main.locator('button').filter({ hasText: EDITOR_MODE_SOURCE }),
+    ).toBeVisible();
+    await expect(
+      main.locator('button').filter({ hasText: EDITOR_MODE_PREVIEW }),
+    ).toBeVisible();
 
     await app.close();
   } finally {

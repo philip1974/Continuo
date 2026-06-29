@@ -1,7 +1,7 @@
 import type { Locator, Page } from '@playwright/test';
 
 export const EXPLORER_NEW_FILE = /^(新建文件|New [Ff]ile|새 파일)$/;
-export const EXPLORER_NEW_FOLDER = /^(新建文件夹|New folder|새 폴더)$/;
+export const EXPLORER_NEW_FOLDER = /^(新建文件夹|New [Ff]older|새 폴더)$/;
 export const EXPLORER_REFRESH =
   /^(刷新资源管理器|Refresh|탐색기 새로 고침)$/;
 export const EXPLORER_COLLAPSE_ALL = /^(折叠全部|Collapse all|모두 접기)$/;
@@ -31,6 +31,8 @@ export const EXPLORER_OPEN_IN_TERMINAL =
   /^(在集成终端中打开|Open in Integrated Terminal|통합 터미널에서 열기)$/;
 export const EXPLORER_NEW_FILE_PLACEHOLDER =
   /^(新建文件名…|New file name…|새 파일 이름…)$/;
+export const EXPLORER_NEW_FOLDER_PLACEHOLDER =
+  /^(新建文件夹名…|New folder name…|새 폴더 이름…)$/;
 
 export function explorerSidebar(window: Page): Locator {
   return window.locator('main aside').nth(1);

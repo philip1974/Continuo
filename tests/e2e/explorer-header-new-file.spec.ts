@@ -2,6 +2,10 @@
 import { stat } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
+import {
+  EXPLORER_NEW_FILE,
+  EXPLORER_NEW_FILE_PLACEHOLDER,
+} from './helpers/explorer';
 
 test('header「新建文件」按钮 → 输入 root.txt → 落到根目录', async ({
   window,
@@ -10,11 +14,13 @@ test('header「新建文件」按钮 → 输入 root.txt → 落到根目录', a
   const aside = window.locator('main aside').nth(1);
   await aside.locator('div.group').first().hover();
 
-  const newFileBtn = aside.locator('button[aria-label="新建文件"]');
+  const newFileBtn = aside.getByRole('button', { name: EXPLORER_NEW_FILE });
   await expect(newFileBtn).toBeVisible({ timeout: 5_000 });
   await newFileBtn.click();
 
-  const createInput = window.locator('input[placeholder^="新建文件名"]');
+  const createInput = window.getByRole('textbox', {
+    name: EXPLORER_NEW_FILE_PLACEHOLDER,
+  });
   await expect(createInput).toBeVisible({ timeout: 5_000 });
   await createInput.fill('root.txt');
   await createInput.press('Enter');
