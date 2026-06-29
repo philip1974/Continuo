@@ -210,7 +210,7 @@ describe('window-scoped layout IPC', () => {
     setWindowSeq(101, 7);
     const payload = defaultExplorerV3();
     // >2MiB 但 <16MiB 的合法 JSON layout(loadExplorer 不拒,但读端守卫拒)。
-    const huge = { version: 1, blob: 'x'.repeat(2 * 1024 * 1024 + 16) };
+    const huge = { version: 1 as const, blob: 'x'.repeat(2 * 1024 * 1024 + 16) };
     payload.windows = [
       {
         windowSeq: 7,
@@ -233,8 +233,8 @@ describe('window-scoped layout IPC', () => {
   // 复用 sanitizeReadLayout:超限剥离(renderer 走默认布局),合法保留。
   it('E261: explorer:read 剥离超大 window.layout(>2MiB),保留合法 layout 与其它字段', async () => {
     const payload = defaultExplorerV3();
-    const huge = { version: 1, blob: 'x'.repeat(2 * 1024 * 1024 + 16) }; // >2MiB <16MiB
-    const okLayout = { version: 1, panel: 'B' };
+    const huge = { version: 1 as const, blob: 'x'.repeat(2 * 1024 * 1024 + 16) }; // >2MiB <16MiB
+    const okLayout = { version: 1 as const, panel: 'B' };
     payload.windows = [
       {
         windowSeq: 7,
@@ -310,7 +310,7 @@ describe('window-scoped layout IPC', () => {
       mapSpy.mockRestore();
     }
 
-    const huge = { version: 1, blob: 'x'.repeat(2 * 1024 * 1024 + 16) };
+    const huge = { version: 1 as const, blob: 'x'.repeat(2 * 1024 * 1024 + 16) };
     const polluted: ExplorerPayloadV3 = {
       ...payload,
       windows: [{ ...payload.windows[0]!, layout: huge }, payload.windows[1]!],
