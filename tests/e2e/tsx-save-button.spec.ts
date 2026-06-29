@@ -1,5 +1,6 @@
 // .tsx file → 视为代码 → Save button.
 import { _electron as electron, expect, test } from '@playwright/test';
+import { EDITOR_SAVE_LABEL } from './helpers/editor';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -9,7 +10,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const MAIN_ENTRY = path.join(REPO_ROOT, 'out/main/index.js');
 
-test('Component.tsx → Save button 显', async () => {
+test('Component.tsx → 不显示 Save button', async () => {
   test.setTimeout(30_000);
   const ud = mkdtempSync(path.join(tmpdir(), 'continuo-tsx-'));
   const ws = mkdtempSync(path.join(tmpdir(), 'continuo-tsx-ws-'));
@@ -46,11 +47,8 @@ test('Component.tsx → Save button 显', async () => {
     );
 
     const saveBtn = win
-      .locator('main')
-      .locator('button')
-      .filter({ hasText: /^保存$/ })
-      .first();
-    await expect(saveBtn).toBeVisible();
+      .getByRole('button', { name: EDITOR_SAVE_LABEL });
+    await expect(saveBtn).toHaveCount(0);
 
     await app.close();
   } finally {

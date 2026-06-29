@@ -1,18 +1,19 @@
-// 代码文件:dirty 时「保存」按钮 enable;无脏 disabled.
+// 代码文件:dirty 走 tab indicator + Cmd/Ctrl+S,不显示保存按钮.
 import { test, expect } from './fixtures/with-workspace';
+import {
+  EDITOR_SAVE_LABEL,
+  EDITOR_UNSAVED_CHANGES_SELECTOR,
+} from './helpers/editor';
 
-test('a.ts 默认 → 保存按钮 disabled;输入 → enable;Cmd+S 后 → 又 disabled', async ({
+test('a.ts 默认无保存按钮;输入 → dirty;Cmd+S 后 → dirty 清除', async ({
   window,
 }) => {
   await window.locator('text=src').first().click();
   await window.locator('text=a.ts').first().click();
 
-  const main = window.locator('main');
-  const saveBtn = main
-    .locator('button')
-    .filter({ hasText: /^保存$/ })
-    .first();
-  await expect(saveBtn).toBeDisabled();
+  await expect(
+    window.getByRole('button', { name: EDITOR_SAVE_LABEL }),
+  ).toHaveCount(0);
 
   // 输入
   const cm = window.locator('.cm-content');
@@ -20,12 +21,17 @@ test('a.ts 默认 → 保存按钮 disabled;输入 → enable;Cmd+S 后 → 又 
   await cm.click();
   await window.keyboard.type(' // dirty');
 
-  // enable
-  await expect(saveBtn).toBeEnabled();
+  // dirty 后仍不显示保存按钮,用 tab dirty indicator 表示.
+  await expect(window.locator(EDITOR_UNSAVED_CHANGES_SELECTOR)).toBeVisible();
+  await expect(
+    window.getByRole('button', { name: EDITOR_SAVE_LABEL }),
+  ).toHaveCount(0);
 
   // Cmd+S
   await cm.press('ControlOrMeta+KeyS');
 
   // 等保存 + dirty 清
-  await expect(saveBtn).toBeDisabled({ timeout: 5_000 });
+  await expect(window.locator(EDITOR_UNSAVED_CHANGES_SELECTOR)).toHaveCount(0, {
+    timeout: 5_000,
+  });
 });

@@ -1,16 +1,23 @@
 // 新建 .ts 代码文件 → SegmentedControl 不显(autoSaveEnabled=false 路径).
 import { test, expect } from './fixtures/with-workspace';
+import { EDITOR_MODE_EDIT, EDITOR_SAVE_LABEL } from './helpers/editor';
+import {
+  EXPLORER_NEW_FILE,
+  EXPLORER_NEW_FILE_PLACEHOLDER,
+} from './helpers/explorer';
 
-test('新建 hello.ts → 打开 → 显「保存」按钮 + 不显 SegmentedControl', async ({
+test('新建 hello.ts → 打开 → 不显保存按钮 + 不显 SegmentedControl', async ({
   window,
 }) => {
   await window.locator('text=src').first().click();
   await window.locator('text=src').first().click({ button: 'right' });
   await window
-    .getByRole('menuitem', { name: '新建文件', exact: true })
+    .getByRole('menuitem', { name: EXPLORER_NEW_FILE })
     .click();
 
-  const input = window.locator('input[placeholder^="新建文件名"]');
+  const input = window.getByRole('textbox', {
+    name: EXPLORER_NEW_FILE_PLACEHOLDER,
+  });
   await input.fill('hello.ts');
   await input.press('Enter');
 
@@ -25,18 +32,18 @@ test('新建 hello.ts → 打开 → 显「保存」按钮 + 不显 SegmentedCon
     .click();
   await expect(window.locator('header').first()).toContainText('hello.ts');
 
-  // 「保存」按钮存在(disabled 因无脏)
+  // 「保存」按钮不显
   const main = window.locator('main');
   await expect(
-    main.locator('button').filter({ hasText: /^保存$/ }).first(),
-  ).toBeVisible();
+    window.getByRole('button', { name: EDITOR_SAVE_LABEL }),
+  ).toHaveCount(0);
 
   // SegmentedControl 不显:Edit / Source / Preview 按钮不可见
   // (SegmentedControl 仅 markdown 时渲染)
   expect(
     await main
       .locator('button, [role=tab]')
-      .filter({ hasText: /^Edit$/ })
+      .filter({ hasText: EDITOR_MODE_EDIT })
       .count(),
   ).toBe(0);
 });
