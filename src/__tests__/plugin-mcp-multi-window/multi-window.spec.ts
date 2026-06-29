@@ -51,21 +51,27 @@ interface FakeInvokeRemote extends InvokeRemoteCore {
   readonly invokeCalls: { owner: { pluginId: string; wcId: number }; name: string; input: unknown }[];
   readonly abortCalls: number[];
   readonly abortToolCalls: { wcId: number; name: string }[];
+  readonly rejectInvalidCalls: string[];
 }
 
 function makeFakeInvokeRemote(): FakeInvokeRemote {
   const invokeCalls: FakeInvokeRemote['invokeCalls'] = [];
   const abortCalls: number[] = [];
   const abortToolCalls: FakeInvokeRemote['abortToolCalls'] = [];
+  const rejectInvalidCalls: string[] = [];
   return {
     invokeCalls,
     abortCalls,
     abortToolCalls,
+    rejectInvalidCalls,
     async invoke(owner, name, input) {
       invokeCalls.push({ owner, name, input });
       return { fromOwner: owner.wcId };
     },
     handleReply: () => {},
+    rejectPendingInvalid(requestId) {
+      rejectInvalidCalls.push(requestId);
+    },
     abortByWebContents(wcId) {
       abortCalls.push(wcId);
     },
