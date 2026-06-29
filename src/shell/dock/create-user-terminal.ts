@@ -14,6 +14,7 @@ import {
 import { preloadTerminalPanelChunk } from '@/lib/terminal-chunk-warmup';
 import { ERROR_CODES } from '../../../electron/shared/error-codes';
 import { t } from '@/i18n';
+import { setPendingFocus } from './DockReconciler';
 
 /**
  * 新建一个 user terminal,返回新 terminal id(失败返 null)。
@@ -55,7 +56,6 @@ export async function createUserTerminal(): Promise<string | null> {
       return null;
     }
     if (!r.data?.id) return null;
-    const { setPendingFocus } = await import('@/shell/dock/DockReconciler');
     setPendingFocus(r.data.id);
     return r.data.id;
   } catch (err) {
