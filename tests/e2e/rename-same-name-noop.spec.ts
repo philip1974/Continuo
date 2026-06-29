@@ -2,6 +2,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
+import { EXPLORER_RENAME } from './helpers/explorer';
 
 test('rename a.ts → a.ts 同名 → noop + 内容不变', async ({
   window,
@@ -15,7 +16,7 @@ test('rename a.ts → a.ts 同名 → noop + 内容不变', async ({
     .filter({ hasText: /^a\.ts$/ })
     .first()
     .click({ button: 'right' });
-  await window.getByRole('menuitem', { name: /^重命名/ }).click();
+  await window.getByRole('menuitem', { name: EXPLORER_RENAME }).click();
 
   const input = window.locator('input:focus');
   // 不变名字直接 Enter

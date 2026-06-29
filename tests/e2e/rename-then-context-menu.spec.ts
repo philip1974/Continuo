@@ -1,5 +1,6 @@
 // rename 后,新名仍可右键操作.
 import { test, expect } from './fixtures/with-workspace';
+import { EXPLORER_RENAME, EXPLORER_TRASH } from './helpers/explorer';
 
 test('rename a.ts → renamed.ts → 右键 renamed.ts → 菜单显', async ({
   window,
@@ -10,7 +11,7 @@ test('rename a.ts → renamed.ts → 右键 renamed.ts → 菜单显', async ({
     .filter({ hasText: /^a\.ts$/ })
     .first()
     .click({ button: 'right' });
-  await window.getByRole('menuitem', { name: /^重命名/ }).click();
+  await window.getByRole('menuitem', { name: EXPLORER_RENAME }).click();
 
   const input = window.locator('input:focus');
   await input.press('ControlOrMeta+KeyA');
@@ -30,6 +31,6 @@ test('rename a.ts → renamed.ts → 右键 renamed.ts → 菜单显', async ({
     .click({ button: 'right' });
   const menu = window.getByRole('menu').last();
   await expect(menu).toBeVisible();
-  await expect(menu).toContainText('移到废纸篓');
-  await expect(menu).toContainText('重命名');
+  await expect(menu).toContainText(EXPLORER_TRASH);
+  await expect(menu).toContainText(EXPLORER_RENAME);
 });

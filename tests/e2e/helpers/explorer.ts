@@ -20,6 +20,11 @@ export const EXPLORER_RECENT = /^(最近打开|Recent|최근 열기)$/;
 export const EXPLORER_RECENT_TEXT = /(最近打开|Recent|최근 열기)/;
 export const EXPLORER_RENAME = /(重命名|Rename|이름 바꾸기)/;
 export const EXPLORER_TRASH = /(移到废纸篓|Move to Trash|휴지통으로 이동)/;
+export const EXPLORER_CUT = /^(剪切|Cut|잘라내기)$/;
+export const EXPLORER_COPY = /^(复制|Copy|복사)$/;
+export const EXPLORER_COPY_PATH = /^(复制路径|Copy Path|경로 복사)$/;
+export const EXPLORER_COPY_RELATIVE_PATH =
+  /^(复制相对路径|Copy Relative Path|상대 경로 복사)$/;
 export const EXPLORER_MORE_ACTIONS =
   /^(更多操作|More actions|추가 작업)$/;
 

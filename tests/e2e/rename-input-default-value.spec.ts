@@ -1,5 +1,6 @@
 // 右键 a.ts → 重命名 → input value 默认 'a.ts'.
 import { test, expect } from './fixtures/with-workspace';
+import { EXPLORER_RENAME } from './helpers/explorer';
 
 test('右键 a.ts → 重命名 → input value=a.ts', async ({ window }) => {
   await window.locator('text=src').first().click();
@@ -8,7 +9,7 @@ test('右键 a.ts → 重命名 → input value=a.ts', async ({ window }) => {
     .filter({ hasText: /^a\.ts$/ })
     .first()
     .click({ button: 'right' });
-  await window.getByRole('menuitem', { name: /^重命名/ }).click();
+  await window.getByRole('menuitem', { name: EXPLORER_RENAME }).click();
 
   const input = window.locator('input:focus');
   await expect(input).toBeVisible({ timeout: 5_000 });

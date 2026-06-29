@@ -2,6 +2,7 @@
 import { stat } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
+import { EXPLORER_RENAME } from './helpers/explorer';
 
 test('打开 src/a.ts → 重命名 src 为 lib → 文件路径同步 + tab 路径同步', async ({
   window,
@@ -20,7 +21,7 @@ test('打开 src/a.ts → 重命名 src 为 lib → 文件路径同步 + tab 路
     .filter({ hasText: 'src' })
     .first()
     .click({ button: 'right' });
-  await window.getByRole('menuitem', { name: /^重命名/ }).click();
+  await window.getByRole('menuitem', { name: EXPLORER_RENAME }).click();
 
   const input = window.locator('input:focus');
   await expect(input).toBeVisible({ timeout: 5_000 });

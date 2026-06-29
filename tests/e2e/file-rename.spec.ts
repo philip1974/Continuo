@@ -2,6 +2,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
+import { EXPLORER_RENAME } from './helpers/explorer';
 
 test('右键 README.md → 「重命名」 → 改名提交', async ({
   window,
@@ -15,7 +16,7 @@ test('右键 README.md → 「重命名」 → 改名提交', async ({
   await row.click({ button: 'right' });
 
   // 菜单项「重命名」(menuitem role)
-  const renameItem = window.getByRole('menuitem', { name: /重命名/ });
+  const renameItem = window.getByRole('menuitem', { name: EXPLORER_RENAME });
   await expect(renameItem).toBeVisible({ timeout: 5_000 });
   await renameItem.click();
 

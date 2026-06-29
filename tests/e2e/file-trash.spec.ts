@@ -5,13 +5,14 @@
 import { stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
+import { EXPLORER_TRASH } from './helpers/explorer';
 
 test('右键 README.md → 移到废纸篓 → 直接执行(无 confirm dialog)', async ({
   window,
   workspaceRoot,
 }) => {
   await window.locator('text=README.md').first().click({ button: 'right' });
-  const trashItem = window.getByRole('menuitem', { name: /移到废纸篓/ });
+  const trashItem = window.getByRole('menuitem', { name: EXPLORER_TRASH });
   await expect(trashItem).toBeVisible({ timeout: 5_000 });
   await trashItem.click();
 
@@ -32,7 +33,7 @@ test('右键文件夹 src → 「移到废纸篓」批量删', async ({
   await writeFile(path.join(workspaceRoot, 'src/c.ts'), 'export const c = 3;');
 
   await window.locator('text=src').first().click({ button: 'right' });
-  const trashItem = window.getByRole('menuitem', { name: /移到废纸篓/ });
+  const trashItem = window.getByRole('menuitem', { name: EXPLORER_TRASH });
   await trashItem.click();
 
   await expect(async () => {

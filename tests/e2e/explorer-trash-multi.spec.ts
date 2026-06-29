@@ -2,6 +2,7 @@
 import { stat } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
+import { EXPLORER_TRASH } from './helpers/explorer';
 
 test('Cmd-click 多选 a.ts + b.ts → 移到废纸篓 → 都消失', async ({
   window,
@@ -19,7 +20,7 @@ test('Cmd-click 多选 a.ts + b.ts → 移到废纸篓 → 都消失', async ({
     button: 'right',
     modifiers: ['ControlOrMeta'],
   });
-  await window.getByRole('menuitem', { name: /移到废纸篓/ }).click();
+  await window.getByRole('menuitem', { name: EXPLORER_TRASH }).click();
 
   // 两个文件都消失
   await expect(async () => {

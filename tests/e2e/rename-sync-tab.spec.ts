@@ -1,5 +1,6 @@
 // 重命名一个已打开的文件 → editor tab 路径同步 + StatusBar / TitleBar 也同步.
 import { test, expect } from './fixtures/with-workspace';
+import { EXPLORER_RENAME } from './helpers/explorer';
 
 test('打开 a.ts → 重命名为 renamed.ts → editor tab 同步新名', async ({
   window,
@@ -16,7 +17,7 @@ test('打开 a.ts → 重命名为 renamed.ts → editor tab 同步新名', asyn
     .filter({ hasText: 'a.ts' })
     .first()
     .click({ button: 'right' });
-  await window.getByRole('menuitem', { name: /^重命名/ }).click();
+  await window.getByRole('menuitem', { name: EXPLORER_RENAME }).click();
 
   const input = window.locator('input:focus');
   await expect(input).toBeVisible({ timeout: 5_000 });

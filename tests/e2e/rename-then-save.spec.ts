@@ -2,6 +2,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
+import { EXPLORER_RENAME } from './helpers/explorer';
 
 test('dirty + rename → Cmd+S → 新文件落盘新内容', async ({
   window,
@@ -21,7 +22,7 @@ test('dirty + rename → Cmd+S → 新文件落盘新内容', async ({
     .filter({ hasText: /^a\.ts$/ })
     .first()
     .click({ button: 'right' });
-  await window.getByRole('menuitem', { name: /^重命名/ }).click();
+  await window.getByRole('menuitem', { name: EXPLORER_RENAME }).click();
   const input = window.locator('input:focus');
   await input.press('ControlOrMeta+KeyA');
   await input.fill('renamed.ts');
