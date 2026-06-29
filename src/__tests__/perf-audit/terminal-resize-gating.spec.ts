@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // race(R96):coApi.terminal.resize 现返回 Promise<IpcResult>(fitAndResize 失败回滚需 .then);
 // mock 须返回 resolved promise,否则 .then on undefined 抛错。
 const { resizeSpy } = vi.hoisted(() => ({
-  resizeSpy: vi.fn(async () => ({ ok: true as const })),
+  resizeSpy: vi.fn<() => Promise<{ ok: boolean }>>(async () => ({ ok: true })),
 }));
 vi.mock('@/lib/co-api', () => ({
   coApi: { terminal: { resize: resizeSpy } },
