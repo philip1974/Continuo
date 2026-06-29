@@ -77,6 +77,12 @@ function getButtons(): Record<string, HTMLButtonElement> {
   return out;
 }
 
+function getButton(label: string): HTMLButtonElement {
+  const button = getButtons()[label];
+  expect(button).toBeDefined();
+  return button!;
+}
+
 describe('KeybindingCaptureModal — 显示态', () => {
   it('渲染优化 · 快捷键 parts 派生值 memoize,不在 JSX 中重复格式化', () => {
     const src = readFileSync(
@@ -192,7 +198,7 @@ describe('KeybindingCaptureModal — 按键', () => {
     // Tab 未被 preventDefault → 默认 Tab 焦点导航可进行
     expect(ev.defaultPrevented).toBe(false);
     // 未捕获任何组合 → 保存仍 disabled、占位文案仍在
-    expect(getButtons()['保存'].disabled).toBe(true);
+    expect(getButton('保存').disabled).toBe(true);
     expect(document.querySelector('.wm-modal-content')!.textContent).toContain('按下新组合…');
   });
 
@@ -210,7 +216,7 @@ describe('KeybindingCaptureModal — 按键', () => {
       document.dispatchEvent(ev);
     });
     expect(ev.defaultPrevented).toBe(false);
-    expect(getButtons()['保存'].disabled).toBe(true);
+    expect(getButton('保存').disabled).toBe(true);
   });
 
   // a11y(A63,A62 同族):焦点在按钮上时 Enter/Space 须放行激活,不能被当组合捕获。
@@ -220,7 +226,7 @@ describe('KeybindingCaptureModal — 按键', () => {
     // 先捕获一个组合,使 captured 非空(便于检测 Enter 是否会改写它)
     dispatchKey({ key: 'x', ctrlKey: true });
     const before = document.querySelector('.wm-modal-content')!.textContent;
-    const saveBtn = getButtons()['保存'];
+    const saveBtn = getButton('保存');
     // 在按钮上派发 Enter(document capture handler 会收到,e.target=按钮)
     const ev = new KeyboardEvent('keydown', {
       key: 'Enter',
@@ -240,7 +246,7 @@ describe('KeybindingCaptureModal — 按键', () => {
     render(<KeybindingCaptureModal {...props} />);
     dispatchKey({ key: 'x', ctrlKey: true });
     const before = document.querySelector('.wm-modal-content')!.textContent;
-    const saveBtn = getButtons()['保存'];
+    const saveBtn = getButton('保存');
     const ev = new KeyboardEvent('keydown', {
       key: ' ',
       bubbles: true,
@@ -257,7 +263,7 @@ describe('KeybindingCaptureModal — 按键', () => {
   it('a11y · mod+Enter 仍捕获为组合(不放行)', () => {
     const props = defaultProps();
     render(<KeybindingCaptureModal {...props} />);
-    const saveBtn = getButtons()['保存'];
+    const saveBtn = getButton('保存');
     const ev = new KeyboardEvent('keydown', {
       key: 'Enter',
       ctrlKey: true,
@@ -269,7 +275,7 @@ describe('KeybindingCaptureModal — 按键', () => {
     });
     expect(ev.defaultPrevented).toBe(true);
     // 捕获成 'mod+enter' → 保存可用
-    expect(getButtons()['保存'].disabled).toBe(false);
+    expect(getButton('保存').disabled).toBe(false);
   });
 
   it('单独修饰键不更新 captured(保存按钮仍 disabled)', () => {
