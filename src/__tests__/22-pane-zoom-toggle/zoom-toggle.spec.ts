@@ -376,7 +376,9 @@ describe('sanitizePersistedDockLayout terminal layout stripped (T7b)', () => {
     expect(Object.keys(out.panels)).toEqual(['editor']);
     // 只含终端的 group "2" 被摘除 → root 仅剩 1 个 leaf
     expect(out.grid.root.data).toHaveLength(1);
-    const leaf = out.grid.root.data[0].data;
+    const firstLeaf = out.grid.root.data[0];
+    expect(firstLeaf).toBeDefined();
+    const leaf = firstLeaf!.data;
     expect(leaf.views).toEqual(['editor']);
     // activeView 原指向 terminal-1 → 回退到 editor
     expect(leaf.activeView).toBe('editor');
