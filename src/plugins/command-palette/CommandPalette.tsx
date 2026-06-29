@@ -297,6 +297,7 @@ function CommandPaletteBody({ commands }: CommandPaletteProps) {
   // 不会让下面的 memo 重算 → 标题/分类/搜索源会停留旧语言。用 locale 值驱动重算。
   const locale = useLocale();
   const placeholderLabel = t('command_palette.placeholder');
+  const effectiveQuery = query.trim();
 
   // 先 localize 成 DisplayCommand,再 filter/sort(P1-2: 按显示文本搜索/排序)。
   // hotkeyParts 用 effective(含 user override)预计算,行渲染只读它(R28)。
@@ -306,13 +307,13 @@ function CommandPaletteBody({ commands }: CommandPaletteProps) {
   }, [allCommands, tk, overrides, locale]);
 
   const filtered = useMemo(() => {
-    if (query) {
+    if (effectiveQuery) {
       // 有 query → fuzzy 匹配 displayCategory + displayTitle
-      return fuzzyFilter(displayCommands, query, matchSource, matchSourceLower);
+      return fuzzyFilter(displayCommands, effectiveQuery, matchSource, matchSourceLower);
     }
     // 空 query → recent 置顶 + 其余按 displayTitle 字母序
     return sortByRecent(displayCommands, recentIds);
-  }, [displayCommands, query, recentIds]);
+  }, [displayCommands, effectiveQuery, recentIds]);
 
   // 虚拟化列表(打磨 R48,复用 QuickOpen R25 模式):filtered 仍是逻辑全集,但只
   // 渲染可视行,插件命令增多时打开/搜索/键盘移动不再 reconcile 全列表。

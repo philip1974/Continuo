@@ -135,6 +135,23 @@ describe('CommandPalette UI', () => {
     expect(items[0]!.textContent).toContain('退出应用');
   });
 
+  it('全空白 query 按空 query 渲染全部命令', () => {
+    const reg = makeReg();
+    render(<CommandPalette commands={reg} />);
+    act(() => useCommandPaletteStore.getState().open());
+    const initial = document.querySelectorAll('.wm-modal-content li').length;
+
+    act(() => useCommandPaletteStore.getState().setQuery('   '));
+
+    expect(
+      (document.querySelector('.wm-modal-content input') as HTMLInputElement)
+        .value,
+    ).toBe('   ');
+    expect(document.querySelectorAll('.wm-modal-content li').length).toBe(
+      initial,
+    );
+  });
+
   it('无匹配 → 显空态文案', () => {
     const reg = makeReg();
     render(<CommandPalette commands={reg} />);
