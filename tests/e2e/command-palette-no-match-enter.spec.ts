@@ -1,6 +1,7 @@
 // CommandPalette 无匹配时按 Enter → 无 cmd 可执行,modal 仍开 + 不抛.
 import { test, expect } from './fixtures/electron-app';
 
+const SETTINGS = /^(设置|Settings|설정)$/;
 const COMMAND_SEARCH = /^(输入命令名…|Type a command…|명령어 입력…)$/;
 const NO_MATCH = /^(无匹配命令|No matching command|일치하는 명령어 없음)$/;
 
@@ -19,6 +20,10 @@ async function openPalette(window: import('@playwright/test').Page): Promise<voi
 }
 
 test('无匹配时 Enter → modal 仍开 + 不抛', async ({ window }) => {
+  await expect(window.getByRole('button', { name: SETTINGS })).toBeVisible({
+    timeout: 10_000,
+  });
+
   await openPalette(window);
   const dialog = window.getByRole('dialog', { name: COMMAND_SEARCH });
   const input = dialog.getByRole('combobox', { name: COMMAND_SEARCH });
