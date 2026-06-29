@@ -1,6 +1,6 @@
 // ThemeProvider 持久化:setMode('light') → localStorage 'layoutmotion.theme.mode'.
 import { test, expect } from './fixtures/electron-app';
-import { SETTINGS, SETTINGS_NAV } from './helpers/settings';
+import { LIGHT_THEME, SETTINGS, SETTINGS_NAV } from './helpers/settings';
 
 test('切 light → localStorage layoutmotion.theme.mode=light', async ({
   window,
@@ -16,7 +16,7 @@ test('切 light → localStorage layoutmotion.theme.mode=light', async ({
   // 切 light
   await window
     .locator('button, [role=tab]')
-    .filter({ hasText: /^Light$/i })
+    .filter({ hasText: LIGHT_THEME })
     .first()
     .click();
   await expect(window.locator('html')).not.toHaveClass(/dark/);

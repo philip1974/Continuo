@@ -2,6 +2,7 @@
 import { test, expect } from './fixtures/electron-app';
 import {
   clickFirstVisibleResetDefault,
+  LIGHT_THEME,
   SETTINGS,
   SETTINGS_NAV,
 } from './helpers/settings';
@@ -17,7 +18,7 @@ test('改 theme=light → reset → html 重新加 .dark', async ({ window }) =>
 
   const lightBtn = window
     .locator('button, [role=tab]')
-    .filter({ hasText: /^Light$/i });
+    .filter({ hasText: LIGHT_THEME });
   await lightBtn.first().click();
   await expect(window.locator('html')).not.toHaveClass(/dark/, {
     timeout: 5_000,

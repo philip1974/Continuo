@@ -1,6 +1,12 @@
 // 改非主题设置(fontSize)+ 切 light → fontSize 仍是修改后值.
 import { test, expect } from './fixtures/electron-app';
-import { EDITOR_TAB, SETTINGS, SETTINGS_NAV } from './helpers/settings';
+import {
+  EDITOR_TAB,
+  GENERAL_TAB,
+  LIGHT_THEME,
+  SETTINGS,
+  SETTINGS_NAV,
+} from './helpers/settings';
 
 test('改 fontSize=18 + 切 light → fontSize 仍 18', async ({ window }) => {
   await window.getByRole('button', { name: SETTINGS }).click();
@@ -11,10 +17,10 @@ test('改 fontSize=18 + 切 light → fontSize 仍 18', async ({ window }) => {
   await window.locator('input[type=number]').first().fill('18');
 
   // 切 light
-  await nav.getByRole('button', { name: '通用', exact: true }).click();
+  await nav.getByRole('button', { name: GENERAL_TAB }).click();
   await window
     .locator('button, [role=tab]')
-    .filter({ hasText: /^Light$/i })
+    .filter({ hasText: LIGHT_THEME })
     .first()
     .click();
   await expect(window.locator('html')).not.toHaveClass(/dark/);

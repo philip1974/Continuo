@@ -1,4 +1,4 @@
-import { SETTINGS, SETTINGS_NAV } from './helpers/settings';
+import { LIGHT_THEME, SETTINGS, SETTINGS_NAV } from './helpers/settings';
 // 主题切换持久化:set light → 关 app → 同 userDataDir 重启 → 仍 light.
 //
 // 默认 fixture 每个 spec 启全新 app + 用 afterEach 删 userDataDir。
@@ -35,7 +35,7 @@ test('theme=light 持久化:重启同 userData 仍 light', async () => {
     });
     const lightBtn = win1
       .locator('button, [role=tab]')
-      .filter({ hasText: /^Light$/i });
+      .filter({ hasText: LIGHT_THEME });
     await lightBtn.first().click();
     await expect(win1.locator('html')).not.toHaveClass(/dark/);
 

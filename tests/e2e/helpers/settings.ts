@@ -21,6 +21,8 @@ export const RESET_DEFAULT_SELECTOR = [
 export const SHOW_LINE_NUMBERS =
   /^(显示行号|Show line numbers|줄 번호 표시)$/;
 export const LIGHT_THEME = /^(亮色|Light|라이트)$/;
+export const DARK_THEME = /^(暗色|Dark|다크)$/;
+export const SYSTEM_THEME = /^(跟随系统|System|시스템)$/;
 export const AUTO_SAVE_MARKDOWN =
   /^(自动保存 Markdown|Auto-save Markdown|Markdown 자동 저장)$/;
 export const KEYBINDINGS_TOTAL_SUMMARY =
