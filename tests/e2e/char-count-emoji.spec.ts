@@ -9,7 +9,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const MAIN_ENTRY = path.join(REPO_ROOT, 'out/main/index.js');
 
-test('🌍 file → footer 显「2 字符」(UTF-16 代码单元)', async () => {
+test('🌍 file → footer 显 2 chars(UTF-16 代码单元)', async () => {
   test.setTimeout(30_000);
   const ud = mkdtempSync(path.join(tmpdir(), 'continuo-emoji-'));
   const ws = mkdtempSync(path.join(tmpdir(), 'continuo-emoji-ws-'));
@@ -43,7 +43,7 @@ test('🌍 file → footer 显「2 字符」(UTF-16 代码单元)', async () => 
 
     const footer = win.locator('footer');
     // '🌍'.length === 2(UTF-16)
-    await expect(footer).toContainText(/2\s*字符/);
+    await expect(footer).toContainText(/2\s*(字符|chars|자)/);
 
     await app.close();
   } finally {
