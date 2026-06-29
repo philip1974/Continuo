@@ -102,6 +102,9 @@ vi.mock('electron', () => ({
     getPath: vi.fn((name: string) =>
       name === 'userData' ? electronMock.userData : tmpdir(),
     ),
+    commandLine: {
+      getSwitchValue: vi.fn(() => ''),
+    },
     setPath: vi.fn(),
     requestSingleInstanceLock: vi.fn(() => true),
     quit: vi.fn(),

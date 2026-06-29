@@ -1,6 +1,6 @@
 {
   "name": "continuo",
-  "version": "0.2.9",
+  "version": "0.2.10",
   "description": "Open-source GUI substrate for terminal-native agents (Claude Code, Codex CLI, Aider, etc.)",
   "keywords": [
     "agent",

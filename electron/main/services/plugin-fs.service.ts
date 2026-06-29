@@ -1,7 +1,8 @@
 import { spawn } from 'node:child_process';
 import { promises as fs, type Dirent } from 'node:fs';
+import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
-import { app, type IpcMain, type WebContents } from 'electron';
+import type { IpcMain, WebContents } from 'electron';
 import { PLUGIN_FS_CHANNELS } from '../../shared/plugin-fs-channels';
 import { createByteCappedBuffer } from '../lib/byte-capped-buffer';
 import { IdentityRegistry } from './identity-registry.service';
@@ -602,7 +603,7 @@ export function registerPluginFsHandlers(
 
   ipcMain.handle(PLUGIN_FS_CHANNELS.USER_HOME, async (event, token: string) => {
     identityRegistry.resolve(token, event.sender.id);
-    return app.getPath('home');
+    return homedir();
   });
 
   ipcMain.handle(
