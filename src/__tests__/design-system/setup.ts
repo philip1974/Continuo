@@ -16,7 +16,9 @@ if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
 
 // Node 25 exposes an experimental global localStorage when launched without a
 // valid --localstorage-file. In Vitest jsdom that can shadow jsdom's Storage and
-// lacks clear(), breaking specs that rely on browser Storage semantics.
+// lacks clear(), breaking specs that rely on browser Storage semantics. Keep
+// localStorage/sessionStorage on the same Storage prototype so prototype spies
+// in specs keep observing instance calls.
 if (
   typeof window !== 'undefined' &&
   typeof globalThis.localStorage !== 'undefined' &&
@@ -50,7 +52,8 @@ if (
     }
   }
 
-  const storage = new MemoryStorage();
+  const localStorage = new MemoryStorage();
+  const sessionStorage = new MemoryStorage();
   Object.defineProperty(globalThis, 'Storage', {
     configurable: true,
     value: MemoryStorage,
@@ -61,11 +64,19 @@ if (
   });
   Object.defineProperty(globalThis, 'localStorage', {
     configurable: true,
-    value: storage,
+    value: localStorage,
   });
   Object.defineProperty(window, 'localStorage', {
     configurable: true,
-    value: storage,
+    value: localStorage,
+  });
+  Object.defineProperty(globalThis, 'sessionStorage', {
+    configurable: true,
+    value: sessionStorage,
+  });
+  Object.defineProperty(window, 'sessionStorage', {
+    configurable: true,
+    value: sessionStorage,
   });
 }
 
