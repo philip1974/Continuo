@@ -177,8 +177,8 @@ describe('makeListSessionsTool', () => {
 
   it('空 sessions 复用稳定空数组,不预分配输出数组', () => {
     const tool = makeListSessionsTool({ getSessions: () => [] });
-    const first = tool.run({}, ctx);
-    const second = tool.run({}, ctx);
+    const first = tool.run({}, ctx) as { readonly sessions: readonly unknown[] };
+    const second = tool.run({}, ctx) as { readonly sessions: readonly unknown[] };
     const src = tool.run.toString();
 
     expect(first.sessions).toBe(second.sessions);
