@@ -1,6 +1,7 @@
 // explorer.json 损坏 / 不合 schema → 启动时 fallback 默认 store(EmptyWorkspace).  @edge
 // 用户不丢信任,UI 仍可用.
 import { _electron as electron, expect, test } from '@playwright/test';
+import { EXPLORER_NO_FOLDER_OPEN } from './helpers/explorer';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -19,7 +20,7 @@ async function launchAndAssertEmpty(ud: string): Promise<void> {
   await win.waitForLoadState('domcontentloaded');
 
   // EmptyWorkspace 渲染
-  await expect(win.locator('text=未打开文件夹')).toBeVisible({
+  await expect(win.getByText(EXPLORER_NO_FOLDER_OPEN)).toBeVisible({
     timeout: 10_000,
   });
 

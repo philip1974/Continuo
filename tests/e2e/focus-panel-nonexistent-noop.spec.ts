@@ -1,5 +1,6 @@
 // focusPanel 不存在 id → 不抛 + 当前 panel 不变.
 import { test, expect } from './fixtures/electron-app';
+import { EDITOR_NO_FILE_OPEN } from './helpers/editor';
 
 test('focusPanel("does-not-exist") → 不抛 + EditorWelcome 仍显', async ({
   window,
@@ -13,7 +14,7 @@ test('focusPanel("does-not-exist") → 不抛 + EditorWelcome 仍显', async ({
   );
 
   // 默认 → Editor panel + EditorWelcome
-  await expect(window.getByText('未打开文件').first()).toBeVisible();
+  await expect(window.getByText(EDITOR_NO_FILE_OPEN).first()).toBeVisible();
 
   await window.evaluate(() => {
     const t = (
@@ -25,5 +26,5 @@ test('focusPanel("does-not-exist") → 不抛 + EditorWelcome 仍显', async ({
   });
 
   // 仍 EditorWelcome
-  await expect(window.getByText('未打开文件').first()).toBeVisible();
+  await expect(window.getByText(EDITOR_NO_FILE_OPEN).first()).toBeVisible();
 });

@@ -1,5 +1,6 @@
 // explorer.json version=99(未来版本/损坏)→ schema 校验失败 → fallback EmptyWorkspace.
 import { _electron as electron, expect, test } from '@playwright/test';
+import { EXPLORER_NO_FOLDER_OPEN } from './helpers/explorer';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -33,7 +34,7 @@ test('version=99 → fallback EmptyWorkspace + 不抛', async () => {
     const win = await app.firstWindow();
     await win.waitForLoadState('domcontentloaded');
 
-    await expect(win.locator('text=未打开文件夹')).toBeVisible({
+    await expect(win.getByText(EXPLORER_NO_FOLDER_OPEN)).toBeVisible({
       timeout: 10_000,
     });
     await app.close();

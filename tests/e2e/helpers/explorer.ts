@@ -10,8 +10,14 @@ export const EXPLORER_CLOSE_FOLDER =
   /^(关闭文件夹|Close folder|폴더 닫기)$/;
 export const EXPLORER_OPEN_RECENT =
   /^(打开最近|Open recent|최근 항목 열기)$/;
+export const EXPLORER_OPEN_FOLDER =
+  /^(打开文件夹|Open Folder|폴더 열기)$/;
 export const EXPLORER_NO_FOLDER_OPEN =
   /^(未打开文件夹|No folder open|열린 폴더 없음)$/;
+export const EXPLORER_NO_FOLDER_OPEN_TEXT =
+  /(未打开文件夹|No folder open|열린 폴더 없음)/;
+export const EXPLORER_RECENT = /^(最近打开|Recent|최근 열기)$/;
+export const EXPLORER_RECENT_TEXT = /(最近打开|Recent|최근 열기)/;
 export const EXPLORER_RENAME = /(重命名|Rename|이름 바꾸기)/;
 export const EXPLORER_TRASH = /(移到废纸篓|Move to Trash|휴지통으로 이동)/;
 export const EXPLORER_MORE_ACTIONS =

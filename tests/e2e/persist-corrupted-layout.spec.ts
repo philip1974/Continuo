@@ -1,5 +1,6 @@
 // layout.json 损坏 → fromJSON 失败 → fallback 默认布局(Editor panel 出现).  @edge
 import { _electron as electron, expect, test } from '@playwright/test';
+import { EDITOR_NO_FILE_OPEN } from './helpers/editor';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -26,7 +27,7 @@ test('layout.json 是垃圾 JSON → fallback 默认布局(Editor panel 渲染)'
     await win.waitForLoadState('domcontentloaded');
 
     // 默认布局含 Editor panel → EditorWelcome「未打开文件」
-    await expect(win.getByText('未打开文件').first()).toBeVisible({
+    await expect(win.getByText(EDITOR_NO_FILE_OPEN).first()).toBeVisible({
       timeout: 10_000,
     });
 

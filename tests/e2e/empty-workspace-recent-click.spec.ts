@@ -9,6 +9,10 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  EXPLORER_NO_FOLDER_OPEN_TEXT,
+  EXPLORER_RECENT_TEXT,
+} from './helpers/explorer';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -50,12 +54,12 @@ test('explorer.json: root=null + recentRoots=[ws] → 点击 ws 项 → 切 Fold
     await window.waitForLoadState('domcontentloaded');
 
     const explorerArea = window.locator('main aside').nth(1);
-    await expect(explorerArea).toContainText('未打开文件夹');
-    await expect(explorerArea).toContainText('最近打开');
+    await expect(explorerArea).toContainText(EXPLORER_NO_FOLDER_OPEN_TEXT);
+    await expect(explorerArea).toContainText(EXPLORER_RECENT_TEXT);
 
     // 点击 ws basename 进入
     const wsName = path.basename(ws);
-    await explorerArea.getByRole('menuitem', { name: new RegExp(wsName) }).click();
+    await explorerArea.getByRole('button', { name: new RegExp(wsName) }).click();
 
     // FolderTree 出现 → 渲染 README.md 文件
     await expect(window.locator('text=README.md')).toBeVisible({

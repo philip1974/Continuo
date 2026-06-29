@@ -1,5 +1,6 @@
 // 首次启动:userData 中没有 explorer.json → 应用使用默认值不抛 + 写出空 store snapshot.
 import { _electron as electron, expect, test } from '@playwright/test';
+import { EXPLORER_NO_FOLDER_OPEN } from './helpers/explorer';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -23,7 +24,7 @@ test('fresh userData(无 explorer.json)→ EmptyWorkspace + 默认值不抛', as
     await win.waitForLoadState('domcontentloaded');
 
     // 默认 → EmptyWorkspace
-    await expect(win.locator('text=未打开文件夹')).toBeVisible({
+    await expect(win.getByText(EXPLORER_NO_FOLDER_OPEN)).toBeVisible({
       timeout: 10_000,
     });
     // sidebar 默认 open + width 280
