@@ -12,6 +12,8 @@ export const EXPLORER_OPEN_RECENT =
   /^(打开最近|Open recent|최근 항목 열기)$/;
 export const EXPLORER_NO_FOLDER_OPEN =
   /^(未打开文件夹|No folder open|열린 폴더 없음)$/;
+export const EXPLORER_RENAME = /(重命名|Rename|이름 바꾸기)/;
+export const EXPLORER_TRASH = /(移到废纸篓|Move to Trash|휴지통으로 이동)/;
 export const EXPLORER_MORE_ACTIONS =
   /^(更多操作|More actions|추가 작업)$/;
 

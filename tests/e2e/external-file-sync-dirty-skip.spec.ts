@@ -2,6 +2,7 @@
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
+import { EDITOR_UNSAVED_CHANGES_SELECTOR } from './helpers/editor';
 
 test('a.ts dirty → 外部 writeFile → CM 仍显内部修改 + 仍 dirty', async ({
   window,
@@ -16,7 +17,7 @@ test('a.ts dirty → 外部 writeFile → CM 仍显内部修改 + 仍 dirty', as
   await cm.click();
   await window.keyboard.type(' // mine');
   await expect(cm).toContainText('mine');
-  await expect(window.locator('span[aria-label="未保存修改"]')).toBeVisible();
+  await expect(window.locator(EDITOR_UNSAVED_CHANGES_SELECTOR)).toBeVisible();
 
   // 外部 writeFile,本应推 fs:dir-changed
   await writeFile(
@@ -30,5 +31,5 @@ test('a.ts dirty → 外部 writeFile → CM 仍显内部修改 + 仍 dirty', as
   // CM 仍显 'mine'(内部修改未被外部覆盖)
   await expect(cm).toContainText('mine');
   // dirty 仍在
-  await expect(window.locator('span[aria-label="未保存修改"]')).toBeVisible();
+  await expect(window.locator(EDITOR_UNSAVED_CHANGES_SELECTOR)).toBeVisible();
 });

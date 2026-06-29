@@ -3,6 +3,10 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
+import {
+  EDITOR_TABS,
+  EDITOR_UNSAVED_CHANGES_SELECTOR,
+} from './helpers/editor';
 
 test('打开 a.ts → 输入 → dirty 圆点 → Ctrl+S → 磁盘更新 + dirty 清', async ({
   window,
@@ -25,7 +29,7 @@ test('打开 a.ts → 输入 → dirty 圆点 → Ctrl+S → 磁盘更新 + dirt
   await window.keyboard.type(' // edit-by-e2e');
 
   // dirty 状态:EditorHeader 紧凑模式右侧的「未保存修改」蓝点
-  const dirtyDot = window.locator('span[aria-label="未保存修改"]');
+  const dirtyDot = window.locator(EDITOR_UNSAVED_CHANGES_SELECTOR);
   await expect(dirtyDot).toBeVisible({ timeout: 5_000 });
 
   // Cmd/Ctrl+S 由 EditorPanel 的 onKeyDown 处理(不是全局 useCommandHotkeys),
@@ -60,9 +64,8 @@ test('编辑后切到另一文件 → 切回保留 dirty 状态', async ({ windo
 
   // 切回 a.ts(从 TabNav 点)— TabNavItem 包含 a.ts
   const aTab = window
-    .locator('main [role=tablist]')
-    .first()
-    .locator('[role=tab]')
+    .getByRole('tablist', { name: EDITOR_TABS })
+    .getByRole('tab')
     .filter({ hasText: 'a.ts' });
   await aTab.click();
 

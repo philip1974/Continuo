@@ -1,5 +1,6 @@
 // 编辑 a.ts → 输入 → Cmd+Z → CodeMirror 撤销,dirty 圆点消失.
 import { test, expect } from './fixtures/with-workspace';
+import { EDITOR_UNSAVED_CHANGES_SELECTOR } from './helpers/editor';
 
 test('a.ts: 输入 → Cmd+Z → 内容恢复 + dirty 圆点消失', async ({ window }) => {
   await window.locator('text=src').first().click();
@@ -11,7 +12,7 @@ test('a.ts: 输入 → Cmd+Z → 内容恢复 + dirty 圆点消失', async ({ wi
   await window.keyboard.type(' // undo-me');
 
   // dirty 圆点应出现
-  await expect(window.locator('span[aria-label="未保存修改"]')).toBeVisible();
+  await expect(window.locator(EDITOR_UNSAVED_CHANGES_SELECTOR)).toBeVisible();
 
   // Cmd+Z(在 CodeMirror 上)
   await cm.press('ControlOrMeta+KeyZ');
@@ -20,7 +21,7 @@ test('a.ts: 输入 → Cmd+Z → 内容恢复 + dirty 圆点消失', async ({ wi
   await expect(cm).not.toContainText('undo-me', { timeout: 5_000 });
 
   // 撤销到原始内容 → dirty 应清(editor.store updateContent 比对 originalContent)
-  await expect(window.locator('span[aria-label="未保存修改"]')).toBeHidden({
+  await expect(window.locator(EDITOR_UNSAVED_CHANGES_SELECTOR)).toBeHidden({
     timeout: 5_000,
   });
 });

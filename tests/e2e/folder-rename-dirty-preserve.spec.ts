@@ -1,5 +1,7 @@
 // dirty src/a.ts + 重命名 src → lib → tab path 同步 prefix + dirty 仍在.
 import { test, expect } from './fixtures/with-workspace';
+import { EDITOR_UNSAVED_CHANGES_SELECTOR } from './helpers/editor';
+import { EXPLORER_RENAME } from './helpers/explorer';
 
 test('dirty src/a.ts → rename src → lib → tab/header 显 a.ts + dirty 保留', async ({
   window,
@@ -12,7 +14,7 @@ test('dirty src/a.ts → rename src → lib → tab/header 显 a.ts + dirty 保�
   await expect(cm).toBeVisible({ timeout: 10_000 });
   await cm.click();
   await window.keyboard.type(' // dirty');
-  await expect(window.locator('span[aria-label="未保存修改"]')).toBeVisible();
+  await expect(window.locator(EDITOR_UNSAVED_CHANGES_SELECTOR)).toBeVisible();
 
   // rename src
   await window
@@ -20,7 +22,7 @@ test('dirty src/a.ts → rename src → lib → tab/header 显 a.ts + dirty 保�
     .filter({ hasText: 'src' })
     .first()
     .click({ button: 'right' });
-  await window.getByRole('menuitem', { name: /^重命名/ }).click();
+  await window.getByRole('menuitem', { name: EXPLORER_RENAME }).click();
   const input = window.locator('input:focus');
   await input.press('ControlOrMeta+KeyA');
   await input.fill('lib');
@@ -31,7 +33,7 @@ test('dirty src/a.ts → rename src → lib → tab/header 显 a.ts + dirty 保�
     timeout: 5_000,
   });
   // dirty 仍在(rename 不影响 dirty)
-  await expect(window.locator('span[aria-label="未保存修改"]')).toBeVisible();
+  await expect(window.locator(EDITOR_UNSAVED_CHANGES_SELECTOR)).toBeVisible();
 
   // footer span[title] 应反映新 path 含 'lib'
   const titles = await window.locator('footer span[title]').all();

@@ -1,9 +1,11 @@
-// 改 a.ts dirty → 右键 trash → 文件被删 + tab 也被自动关闭(removePath 不询问 dirty).
+// 改 a.ts dirty → 右键 trash → 文件被删 + dirty tab 保留.
 import { stat } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
+import { EDITOR_UNSAVED_CHANGES_SELECTOR } from './helpers/editor';
+import { EXPLORER_TRASH } from './helpers/explorer';
 
-test('dirty a.ts → trash → tab 自动关 + 文件被删', async ({
+test('dirty a.ts → trash → dirty tab 保留 + 文件被删', async ({
   window,
   workspaceRoot,
 }) => {
@@ -13,7 +15,7 @@ test('dirty a.ts → trash → tab 自动关 + 文件被删', async ({
   await expect(cm).toBeVisible({ timeout: 10_000 });
   await cm.click();
   await window.keyboard.type(' // dirty-trash');
-  await expect(window.locator('span[aria-label="未保存修改"]')).toBeVisible();
+  await expect(window.locator(EDITOR_UNSAVED_CHANGES_SELECTOR)).toBeVisible();
 
   // 右键 a.ts → 移到废纸篓
   await window
@@ -21,12 +23,13 @@ test('dirty a.ts → trash → tab 自动关 + 文件被删', async ({
     .filter({ hasText: /^a\.ts$/ })
     .first()
     .click({ button: 'right' });
-  await window.getByRole('menuitem', { name: /移到废纸篓/ }).click();
+  await window.getByRole('menuitem', { name: EXPLORER_TRASH }).click();
 
-  // tab 被关:header 不再显 a.ts
-  await expect(window.locator('header').first()).not.toContainText('a.ts ●', {
+  // dirty tab 保留,避免删除文件时静默丢失未保存编辑.
+  await expect(window.locator('header').first()).toContainText('a.ts ●', {
     timeout: 5_000,
   });
+  await expect(window.locator(EDITOR_UNSAVED_CHANGES_SELECTOR)).toBeVisible();
   // 文件被删
   await expect(async () => {
     const exists = await stat(path.join(workspaceRoot, 'src/a.ts'))

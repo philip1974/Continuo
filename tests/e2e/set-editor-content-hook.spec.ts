@@ -1,5 +1,6 @@
 // __continuoTest.setEditorContent → store update → CM 显示新内容.
 import { test, expect } from './fixtures/with-workspace';
+import { EDITOR_UNSAVED_CHANGES_SELECTOR } from './helpers/editor';
 
 test('open a.ts → setEditorContent → CM 内容更新 + dirty 出', async ({
   window,
@@ -33,5 +34,5 @@ test('open a.ts → setEditorContent → CM 内容更新 + dirty 出', async ({
 
   await expect(cm).toContainText('HOOK', { timeout: 5_000 });
   await expect(cm).toContainText('42');
-  await expect(window.locator('span[aria-label="未保存修改"]')).toBeVisible();
+  await expect(window.locator(EDITOR_UNSAVED_CHANGES_SELECTOR)).toBeVisible();
 });

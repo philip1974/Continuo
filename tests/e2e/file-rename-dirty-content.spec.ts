@@ -1,5 +1,7 @@
 // 修改 a.ts 内容(dirty)→ rename → 编辑器内容仍 dirty + tab 名变.
 import { test, expect } from './fixtures/with-workspace';
+import { EDITOR_UNSAVED_CHANGES_SELECTOR } from './helpers/editor';
+import { EXPLORER_RENAME } from './helpers/explorer';
 
 test('dirty a.ts → rename → 内容 dirty 仍在 + tab 名变', async ({ window }) => {
   await window.locator('text=src').first().click();
@@ -10,7 +12,7 @@ test('dirty a.ts → rename → 内容 dirty 仍在 + tab 名变', async ({ wind
   await expect(cm).toBeVisible({ timeout: 10_000 });
   await cm.click();
   await window.keyboard.type(' // dirty-rename');
-  await expect(window.locator('span[aria-label="未保存修改"]')).toBeVisible();
+  await expect(window.locator(EDITOR_UNSAVED_CHANGES_SELECTOR)).toBeVisible();
 
   // 右键 a.ts → 重命名
   await window
@@ -18,7 +20,7 @@ test('dirty a.ts → rename → 内容 dirty 仍在 + tab 名变', async ({ wind
     .filter({ hasText: /^a\.ts$/ })
     .first()
     .click({ button: 'right' });
-  await window.getByRole('menuitem', { name: /^重命名/ }).click();
+  await window.getByRole('menuitem', { name: EXPLORER_RENAME }).click();
 
   const input = window.locator('input:focus');
   await input.press('ControlOrMeta+KeyA');
@@ -32,5 +34,5 @@ test('dirty a.ts → rename → 内容 dirty 仍在 + tab 名变', async ({ wind
 
   // 内容 dirty 仍在(rename 不影响 dirty 状态)
   await expect(cm).toContainText('dirty-rename');
-  await expect(window.locator('span[aria-label="未保存修改"]')).toBeVisible();
+  await expect(window.locator(EDITOR_UNSAVED_CHANGES_SELECTOR)).toBeVisible();
 });

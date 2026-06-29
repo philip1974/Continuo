@@ -2,6 +2,7 @@
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
+import { EDITOR_UNSAVED_CHANGES_SELECTOR } from './helpers/editor';
 
 test('打开 a.ts (non-dirty) → 外部 writeFile 新内容 → CM 自动同步', async ({
   window,
@@ -25,5 +26,5 @@ test('打开 a.ts (non-dirty) → 外部 writeFile 新内容 → CM 自动同步
   await expect(cm).toContainText('99');
 
   // dirty 不应被触发(reloadFromDisk 不算 dirty)
-  await expect(window.locator('span[aria-label="未保存修改"]')).toBeHidden();
+  await expect(window.locator(EDITOR_UNSAVED_CHANGES_SELECTOR)).toBeHidden();
 });

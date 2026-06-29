@@ -7,6 +7,13 @@
 // 真实点击交互留人工 QA 或后续稳定性调查.
 
 import { test, expect } from './fixtures/with-workspace';
+import {
+  EDITOR_CANCEL,
+  EDITOR_CLOSE_A_TS,
+  EDITOR_DISCARD_CONFIRM,
+  EDITOR_DISCARD_TITLE,
+  EDITOR_UNSAVED_CHANGES_SELECTOR,
+} from './helpers/editor';
 
 test('改 a.ts → 关 → 弹 ConfirmDialog 「放弃未保存的修改?」 + 两个按钮', async ({
   window,
@@ -19,16 +26,16 @@ test('改 a.ts → 关 → 弹 ConfirmDialog 「放弃未保存的修改?」 + �
   await cm.click();
   await window.keyboard.type(' // dirty');
 
-  await expect(window.locator('span[aria-label="未保存修改"]')).toBeVisible({
+  await expect(window.locator(EDITOR_UNSAVED_CHANGES_SELECTOR)).toBeVisible({
     timeout: 5_000,
   });
 
-  await window.locator('button[aria-label=关闭文件]').click();
+  await window.getByRole('button', { name: EDITOR_CLOSE_A_TS }).click();
 
   const dialog = window.locator('.wm-modal-content');
   await expect(dialog).toBeVisible();
   // 文案 + 按钮文本(不依赖 aria-role,避免 Modal focus trap 期间 role 短暂错位)
-  await expect(dialog).toContainText('放弃未保存的修改');
-  await expect(dialog).toContainText('取消');
-  await expect(dialog).toContainText('不保存关闭');
+  await expect(dialog).toContainText(EDITOR_DISCARD_TITLE);
+  await expect(dialog).toContainText(EDITOR_CANCEL);
+  await expect(dialog).toContainText(EDITOR_DISCARD_CONFIRM);
 });
