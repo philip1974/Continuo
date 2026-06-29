@@ -1,6 +1,7 @@
 // 预置 workspace 后的 Explorer + Quick Open 流程.
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
+import { openQuickOpen, quickOpenInput } from './helpers/palette';
 
 test('hydrate 后 Explorer 显示 workspace 名 + 文件树', async ({
   window,
@@ -29,19 +30,8 @@ test('Status Bar 显示 workspace basename + main 占位', async ({
 });
 
 test('Ctrl+P Quick Open 列出 workspace 文件', async ({ window }) => {
-  await window.evaluate(() => {
-    document.dispatchEvent(
-      new KeyboardEvent('keydown', {
-        key: 'p',
-        ctrlKey: true,
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
-  });
-  const input = window.locator(
-    '.wm-modal-content input[placeholder*="搜索文件名"]',
-  );
+  await openQuickOpen(window);
+  const input = quickOpenInput(window);
   await expect(input).toBeVisible();
 
   // walk 完成后列表里应有 README.md 与 src/a.ts

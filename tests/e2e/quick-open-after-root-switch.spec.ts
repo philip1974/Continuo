@@ -4,6 +4,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { EXPLORER_MORE_ACTIONS } from './helpers/explorer';
+import { openQuickOpen, quickOpenInput } from './helpers/palette';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -47,26 +49,18 @@ test('切 root → Cmd+P 列新 workspace 文件', async () => {
     });
 
     // 切 root → ws2
-    await win.locator('button[aria-label=更多操作]').click();
+    await win
+      .locator('main aside')
+      .nth(1)
+      .getByRole('button', { name: EXPLORER_MORE_ACTIONS })
+      .click();
     await win.getByRole('menuitem', { name: wsName2, exact: false }).click();
     await expect(win.locator('text=CHANGELOG-WS2.md')).toBeVisible({
       timeout: 10_000,
     });
 
-    // Cmd+P
-    await win.evaluate(() => {
-      document.dispatchEvent(
-        new KeyboardEvent('keydown', {
-          key: 'p',
-          ctrlKey: true,
-          bubbles: true,
-          cancelable: true,
-        }),
-      );
-    });
-    const input = win.locator(
-      '.wm-modal-content input[placeholder*="搜索文件名"]',
-    );
+    await openQuickOpen(win);
+    const input = quickOpenInput(win);
     await expect(input).toBeVisible({ timeout: 5_000 });
 
     // 等 walk

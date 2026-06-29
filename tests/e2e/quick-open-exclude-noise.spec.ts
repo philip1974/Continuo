@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { openQuickOpen, quickOpenInput } from './helpers/palette';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -46,19 +47,8 @@ test('node_modules / .git / dist 内文件不在 Cmd+P 列表', async () => {
     const win = await app.firstWindow();
     await win.waitForLoadState('domcontentloaded');
 
-    await win.evaluate(() => {
-      document.dispatchEvent(
-        new KeyboardEvent('keydown', {
-          key: 'p',
-          ctrlKey: true,
-          bubbles: true,
-          cancelable: true,
-        }),
-      );
-    });
-    const input = win.locator(
-      '.wm-modal-content input[placeholder*="搜索文件名"]',
-    );
+    await openQuickOpen(win);
+    const input = quickOpenInput(win);
     await expect(input).toBeVisible({ timeout: 5_000 });
     await expect(win.locator('.wm-modal-content')).toContainText(
       'visible.ts',

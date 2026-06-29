@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { openQuickOpen, quickOpenInput } from './helpers/palette';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -37,19 +38,8 @@ test('Cmd+P 输 笔记 → 列出 我的笔记.md', async () => {
     const win = await app.firstWindow();
     await win.waitForLoadState('domcontentloaded');
 
-    await win.evaluate(() => {
-      document.dispatchEvent(
-        new KeyboardEvent('keydown', {
-          key: 'p',
-          ctrlKey: true,
-          bubbles: true,
-          cancelable: true,
-        }),
-      );
-    });
-    const input = win.locator(
-      '.wm-modal-content input[placeholder*="搜索文件名"]',
-    );
+    await openQuickOpen(win);
+    const input = quickOpenInput(win);
     await expect(input).toBeVisible();
     await expect(win.locator('.wm-modal-content')).toContainText(
       '我的笔记.md',

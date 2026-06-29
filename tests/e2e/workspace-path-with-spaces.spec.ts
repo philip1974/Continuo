@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { openQuickOpen, quickOpenInput } from './helpers/palette';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -44,20 +45,8 @@ test('ws path 含空格 → 正常', async () => {
       timeout: 10_000,
     });
 
-    // Cmd+P
-    await win.evaluate(() => {
-      document.dispatchEvent(
-        new KeyboardEvent('keydown', {
-          key: 'p',
-          ctrlKey: true,
-          bubbles: true,
-          cancelable: true,
-        }),
-      );
-    });
-    await expect(
-      win.locator('.wm-modal-content input[placeholder*="搜索文件名"]'),
-    ).toBeVisible();
+    await openQuickOpen(win);
+    await expect(quickOpenInput(win)).toBeVisible();
     await expect(win.locator('.wm-modal-content')).toContainText(
       'README.md',
       { timeout: 10_000 },

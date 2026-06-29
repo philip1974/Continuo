@@ -4,6 +4,10 @@ const SETTINGS_BUTTON = /^(设置|Settings|설정)$/;
 export const COMMAND_SEARCH = /^(输入命令名…|Type a command…|명령어 입력…)$/;
 export const COMMAND_LIST = /^(命令列表|Command list|명령어 목록)$/;
 export const QUICK_OPEN_SEARCH = /^(搜索文件|Search files|파일 검색)$/;
+export const QUICK_OPEN_PLACEHOLDER =
+  /(搜索文件名|Search file name|파일 이름)/;
+export const QUICK_OPEN_NO_WORKSPACE =
+  /(请先在 Explorer 打开工作区|Please open a workspace in Explorer first|먼저 Explorer에서 워크스페이스를 여세요)/;
 export const SETTINGS_COMMAND_TITLE =
   /(切换 Settings|Toggle Settings|설정 토글)/;
 

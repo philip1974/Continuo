@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { openQuickOpen, quickOpenInput } from './helpers/palette';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -35,19 +36,8 @@ test('空 ws + Cmd+P → modal 显占位 + 0 li', async () => {
     const win = await app.firstWindow();
     await win.waitForLoadState('domcontentloaded');
 
-    await win.evaluate(() => {
-      document.dispatchEvent(
-        new KeyboardEvent('keydown', {
-          key: 'p',
-          ctrlKey: true,
-          bubbles: true,
-          cancelable: true,
-        }),
-      );
-    });
-    const input = win.locator(
-      '.wm-modal-content input[placeholder*="搜索文件名"]',
-    );
+    await openQuickOpen(win);
+    const input = quickOpenInput(win);
     await expect(input).toBeVisible({ timeout: 5_000 });
 
     // li 数 = 0(无文件可选)
