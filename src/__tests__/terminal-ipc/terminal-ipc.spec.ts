@@ -278,6 +278,13 @@ describe('write/resize id 上限 (E33)', () => {
 
 describe('makeCreateHandler', () => {
   const fakeWin = { id: 11 } as unknown as import('electron').BrowserWindow;
+  type StoredSession = {
+    id: string;
+    title?: string;
+    originHint?: 'user' | 'agent';
+    agentLabel?: string;
+    ownerWindowId?: number;
+  };
   const makeService = () => ({
     createTerminal: vi.fn(),
     has: vi.fn(() => false),
@@ -293,9 +300,9 @@ describe('makeCreateHandler', () => {
   // 取消(关 tab)。mock 须模型真实 store:add 后 get 返回该 session(否则恒 undefined 会被
   // 误判为「已取消」)。用有状态 map 让 add/get/remove 一致。
   const makeSessionStore = () => {
-    const map = new Map<string, { id: string }>();
+    const map = new Map<string, StoredSession>();
     return {
-      add: vi.fn((input: { id: string }) => {
+      add: vi.fn((input: StoredSession) => {
         map.set(input.id, input);
       }),
       get: vi.fn((id: string) => map.get(id)),
