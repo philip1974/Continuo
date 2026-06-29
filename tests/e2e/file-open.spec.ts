@@ -28,6 +28,10 @@ test('点击 README.md → Editor 打开 + StatusBar 显示行/词/字符', asyn
 
 test('Ctrl+P 选 a.ts + Enter 打开', async ({ window, workspaceRoot }) => {
   void workspaceRoot; // 保留语义,Quick Open 走 walk(workspace)
+  await expect(window.locator('text=README.md').first()).toBeVisible({
+    timeout: 10_000,
+  });
+
   await window.evaluate(() => {
     document.dispatchEvent(
       new KeyboardEvent('keydown', {
