@@ -399,12 +399,20 @@ describe('Phase 3 runtime gating', () => {
     const scoped = createScopedApp(makeLmApp(), 'p', store);
     const errNonStr = await scoped.clipboard
       .writeText(42 as unknown as string)
-      .catch((e: unknown) => e as { code?: string });
+      .then(
+        () => {
+          throw new Error('expected clipboard.writeText to reject');
+        },
+        (e: unknown) => e as { code?: string },
+      );
     expect(errNonStr.code).toBe('BAD_INPUT');
     const huge = 'x'.repeat(16 * 1024 * 1024 + 1);
-    const errBig = await scoped.clipboard
-      .writeText(huge)
-      .catch((e: unknown) => e as { code?: string });
+    const errBig = await scoped.clipboard.writeText(huge).then(
+      () => {
+        throw new Error('expected clipboard.writeText to reject');
+      },
+      (e: unknown) => e as { code?: string },
+    );
     expect(errBig.code).toBe('BAD_INPUT');
   });
 
@@ -894,8 +902,10 @@ describe('授后转发 — fs / shell / clipboard / mcp / network 行为', () =>
     const r = scoped.shell.execStream('echo', ['hi'], optsWithExtras);
     await r.done; // 触发 start() → validateShellInput + raw execStream
     expect(coApiMocks.pluginShellStreamRaw.execStream).toHaveBeenCalledTimes(1);
-    const passedOpts =
-      coApiMocks.pluginShellStreamRaw.execStream.mock.calls[0]?.[2];
+    const firstCall = coApiMocks.pluginShellStreamRaw.execStream.mock.calls[0] as
+      | readonly unknown[]
+      | undefined;
+    const passedOpts = firstCall?.[2];
     // neutralize 敏感:旧码传整 opts → passedOpts 含 evil/env。
     expect(passedOpts).toEqual({ cwd: '/w', timeoutMs: 5000 });
   });
