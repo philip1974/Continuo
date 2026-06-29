@@ -1,15 +1,9 @@
 // autoSave.delayMs 行 unit 'ms'.
 import { test, expect } from './fixtures/electron-app';
+import { EDITOR_TAB, openSettingsTab } from './helpers/settings';
 
 test('编辑器 tab → autoSave delay 行 unit 显「ms」', async ({ window }) => {
-  await window.locator('button[title="设置"]').click();
-  await expect(window.locator('nav[aria-label="设置分类"]')).toBeVisible({
-    timeout: 10_000,
-  });
-  await window
-    .locator('nav[aria-label="设置分类"]')
-    .getByRole('button', { name: '编辑器', exact: true })
-    .click();
+  await openSettingsTab(window, EDITOR_TAB);
 
   const main = window.locator('main');
   const msChip = main
