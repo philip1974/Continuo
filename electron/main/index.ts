@@ -41,6 +41,7 @@ import { withExplorerFileMutex } from './lib/file-mutex';
 import { atomicWriteJson } from './lib/atomic-write';
 import { makeWindowResourceCleanup } from './window-resource-cleanup';
 import { makeQuitCleanupGuard } from './quit-cleanup-guard';
+import { resolveUserDataPath } from './user-data-path';
 import { PLUGINS_CHANNELS } from '../shared/plugins-channels';
 import { ERROR_CODES } from '../shared/error-codes';
 import {
@@ -119,8 +120,14 @@ const RENDERER_FILE = path.join(__dirname, '../renderer/index.html');
 // (b) <userData>/mcp.sock 会被后者 unlink,冲掉前者正在监听的 socket;
 // (c) explorer.json / LevelDB / Cookies 并发写报错。
 // 必须在 requestSingleInstanceLock 与任何 getPath('userData') 之前调用。
-if (isDev) {
-  app.setPath('userData', path.join(app.getPath('appData'), 'Continuo Dev'));
+const resolvedUserDataPath = resolveUserDataPath({
+  appDataPath: app.getPath('appData'),
+  e2eUserDataDir: app.commandLine.getSwitchValue('user-data-dir'),
+  isDev,
+  isE2E: process.env['CONTINUO_E2E'] === '1',
+});
+if (resolvedUserDataPath !== null) {
+  app.setPath('userData', resolvedUserDataPath);
 }
 
 const LRU_MAX_CLOSED = Infinity;
