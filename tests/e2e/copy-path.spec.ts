@@ -17,12 +17,15 @@ test('右键 README.md →「复制路径」→ 剪贴板 = 绝对路径', async
 }) => {
   await window.locator('text=README.md').first().click({ button: 'right' });
   const copyItem = window.getByRole('menuitem', { name: COPY_PATH });
+  await expect(copyItem).toBeVisible();
   await copyItem.click();
 
-  const clip = await electronApp.evaluate(({ clipboard }) =>
-    clipboard.readText(),
-  );
-  expect(clip).toBe(path.join(workspaceRoot, 'README.md'));
+  await expect
+    .poll(
+      () => electronApp.evaluate(({ clipboard }) => clipboard.readText()),
+      { timeout: 5_000 },
+    )
+    .toBe(path.join(workspaceRoot, 'README.md'));
 });
 
 test('右键 README.md →「复制相对路径」→ 剪贴板 = 文件名', async ({
@@ -31,10 +34,13 @@ test('右键 README.md →「复制相对路径」→ 剪贴板 = 文件名', as
 }) => {
   await window.locator('text=README.md').first().click({ button: 'right' });
   const copyItem = window.getByRole('menuitem', { name: COPY_RELATIVE_PATH });
+  await expect(copyItem).toBeVisible();
   await copyItem.click();
 
-  const clip = await electronApp.evaluate(({ clipboard }) =>
-    clipboard.readText(),
-  );
-  expect(clip).toBe('README.md');
+  await expect
+    .poll(
+      () => electronApp.evaluate(({ clipboard }) => clipboard.readText()),
+      { timeout: 5_000 },
+    )
+    .toBe('README.md');
 });

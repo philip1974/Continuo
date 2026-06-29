@@ -17,5 +17,5 @@ test('copy README → paste → 再右键 → 「粘贴」 仍显', async ({ win
   await window.locator('text=src').first().click({ button: 'right' });
   const menu = window.getByRole('menu').last();
   await expect(menu).toBeVisible();
-  await expect(menu).toContainText(PASTE);
+  await expect(menu.getByRole('menuitem', { name: PASTE })).toBeVisible();
 });
