@@ -1,5 +1,9 @@
 // keybinding tab 计数随动态注册带 hotkey 命令变化.
 import { test, expect } from './fixtures/electron-app';
+import { KEYBINDINGS_TAB, openSettingsTab } from './helpers/settings';
+
+const KEYBINDINGS_TOTAL =
+  /(共\s*\d+\s*个有快捷键的命令|\d+\s*commands with hotkey|단축키가 있는 명령어\s*\d+개)/;
 
 test('register e2e.X(hotkey)→ keybindings tab 计数 +1', async ({ window }) => {
   await window.waitForFunction(
@@ -11,18 +15,14 @@ test('register e2e.X(hotkey)→ keybindings tab 计数 +1', async ({ window }) =
   );
 
   // 打开 Settings → 快捷键 tab
-  await window.locator('button[title="设置"]').click();
-  await window
-    .locator('nav[aria-label="设置分类"]')
-    .getByRole('button', { name: '快捷键', exact: true })
-    .click();
+  await openSettingsTab(window, KEYBINDINGS_TAB);
 
-  await expect(
-    window.locator('text=/共\\s*\\d+\\s*个有快捷键的命令/'),
-  ).toBeVisible({ timeout: 10_000 });
+  await expect(window.getByText(KEYBINDINGS_TOTAL)).toBeVisible({
+    timeout: 10_000,
+  });
 
   const before = await window
-    .locator('text=/共\\s*\\d+\\s*个有快捷键的命令/')
+    .getByText(KEYBINDINGS_TOTAL)
     .first()
     .textContent();
   const beforeNum = Number(before?.match(/(\d+)/)?.[1] ?? '0');
@@ -46,7 +46,7 @@ test('register e2e.X(hotkey)→ keybindings tab 计数 +1', async ({ window }) =
   // 计数 +1
   await expect(async () => {
     const after = await window
-      .locator('text=/共\\s*\\d+\\s*个有快捷键的命令/')
+      .getByText(KEYBINDINGS_TOTAL)
       .first()
       .textContent();
     const afterNum = Number(after?.match(/(\d+)/)?.[1] ?? '0');
