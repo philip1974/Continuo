@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-// @ts-expect-error spike helper is an ESM .mjs file without a declaration file.
-import { encodeMessage, StreamDecoder } from '../../../scripts/debug-spike/dap-client.mjs';
+import {
+  DapStreamDecoder,
+  encodeDapMessage,
+} from '../../../electron/main/services/dap-client';
 
 describe('49 · DAP Content-Length framing', () => {
   it('encodes a JSON message and decodes it back', () => {
-    const decoder = new StreamDecoder();
+    const decoder = new DapStreamDecoder();
     const message = {
       seq: 1,
       type: 'request',
@@ -13,21 +15,21 @@ describe('49 · DAP Content-Length framing', () => {
       arguments: { adapterID: 'pwa-node' },
     };
 
-    const encoded = encodeMessage(message);
+    const encoded = encodeDapMessage(message);
     expect(encoded.toString('utf8')).toMatch(/^Content-Length: \d+\r\n\r\n/);
 
     expect(decoder.push(encoded)).toEqual([message]);
   });
 
   it('reassembles a message split across chunk boundaries', () => {
-    const decoder = new StreamDecoder();
+    const decoder = new DapStreamDecoder();
     const message = {
       seq: 2,
       type: 'event',
       event: 'stopped',
       body: { reason: 'breakpoint', threadId: 1 },
     };
-    const encoded = encodeMessage(message);
+    const encoded = encodeDapMessage(message);
     const chunks = [
       encoded.subarray(0, 7),
       encoded.subarray(7, 21),
@@ -42,7 +44,7 @@ describe('49 · DAP Content-Length framing', () => {
   });
 
   it('decodes multiple messages delivered in one chunk', () => {
-    const decoder = new StreamDecoder();
+    const decoder = new DapStreamDecoder();
     const first = { seq: 3, type: 'response', request_seq: 1, success: true };
     const second = {
       seq: 4,
@@ -52,7 +54,7 @@ describe('49 · DAP Content-Length framing', () => {
     };
 
     expect(
-      decoder.push(Buffer.concat([encodeMessage(first), encodeMessage(second)])),
+      decoder.push(Buffer.concat([encodeDapMessage(first), encodeDapMessage(second)])),
     ).toEqual([first, second]);
   });
 });

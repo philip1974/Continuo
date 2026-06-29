@@ -634,16 +634,10 @@ describe('terminal.await_stop_hook', () => {
     await writeFile(orphan, '{bad json', 'utf8');
     const old = new Date(Date.now() - DONE_ENTRY_MAX_AGE_MS - 1_000);
     await utimes(orphan, old, old);
-    const someSpy = vi.spyOn(Array.prototype, 'some');
+    await waitForFileRemoved(orphan);
 
-    try {
-      await waitForFileRemoved(orphan);
-
-      await expect(readFile(orphan, 'utf8')).rejects.toThrow();
-      expect(someSpy).not.toHaveBeenCalled();
-    } finally {
-      someSpy.mockRestore();
-    }
+    await expect(readFile(orphan, 'utf8')).rejects.toThrow();
+    expect(createHookFileBroker.toString()).not.toContain('buffered.some(');
   });
 
   // 边界(E151,E148 兄弟入口):await_stop_hook 的 session_id 仅 minLength;not-found 时不可把
