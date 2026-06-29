@@ -124,7 +124,12 @@ describe('E257 plugin-mcp invoke-reply bounded 预检', () => {
       message: hugeMsg,
     });
 
-    const err = await p.catch((e: unknown) => e as Error & { code?: string });
+    const err = await p.then(
+      () => {
+        throw new Error('expected invoke reply to reject');
+      },
+      (e: unknown) => e as Error & { code?: string },
+    );
     expect(err.code).toBe(PLUGIN_MCP_ERROR_CODES.INVALID_REPLY);
     // 关键:固定错误串,不传播插件超长 message(防 mcp-host 编进 JSON-RPC 放大)
     expect(err.message).not.toContain('m'.repeat(8192));
