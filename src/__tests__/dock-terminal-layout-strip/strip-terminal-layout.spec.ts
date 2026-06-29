@@ -67,8 +67,9 @@ describe('stripTerminalPanelsFromLayout', () => {
     const r = out(l)!;
     expect(Object.keys(r.panels)).toEqual(['editor']);
     expect(r.grid.root.data).toHaveLength(1);
-    expect(r.grid.root.data[0].data.views).toEqual(['editor']);
-    expect(r.grid.root.data[0].data.activeView).toBe('editor');
+    const root = r.grid.root.data[0]!;
+    expect(root.data.views).toEqual(['editor']);
+    expect(root.data.activeView).toBe('editor');
   });
 
   it('leaf 仅含终端 → 整 leaf 摘除;另一 leaf 保留', () => {
@@ -81,7 +82,7 @@ describe('stripTerminalPanelsFromLayout', () => {
     );
     const r = out(l)!;
     expect(r.grid.root.data).toHaveLength(1);
-    expect(r.grid.root.data[0].data.views).toEqual(['editor']);
+    expect(r.grid.root.data[0]!.data.views).toEqual(['editor']);
   });
 
   it('嵌套 branch 内子节点全为终端 → 整个子 branch 摘除', () => {
@@ -97,8 +98,9 @@ describe('stripTerminalPanelsFromLayout', () => {
     });
     const r = out(l)!;
     expect(r.grid.root.data).toHaveLength(1);
-    expect(r.grid.root.data[0].type).toBe('leaf');
-    expect(r.grid.root.data[0].data.views).toEqual(['editor']);
+    const root = r.grid.root.data[0]!;
+    expect(root.type).toBe('leaf');
+    expect(root.data.views).toEqual(['editor']);
   });
 
   it('整棵树仅含终端 → 返回 null(走默认)', () => {
@@ -146,7 +148,7 @@ describe('stripTerminalPanelsFromLayout', () => {
     });
     const r = out(l)!;
     expect(r.floatingGroups).toHaveLength(1);
-    expect(r.floatingGroups![0].data.views).toEqual(['note']);
+    expect(r.floatingGroups![0]!.data.views).toEqual(['note']);
   });
 
   it('floatingGroups/popoutGroups 空态复用稳定空数组', () => {
@@ -187,8 +189,9 @@ describe('stripTerminalPanelsFromLayout', () => {
       },
     );
     const r = out(l)!;
-    const tg = r.grid.root.data[0].data.tabGroups as Array<{ panelIds: string[] }>;
-    expect(tg[0].panelIds).toEqual(['editor']);
+    const root = r.grid.root.data[0]!;
+    const tg = root.data.tabGroups as Array<{ panelIds: string[] }>;
+    expect(tg[0]!.panelIds).toEqual(['editor']);
   });
 
   it('剪枝 views/tabGroups/branch children 时不通过 filter/map 生成中间数组', () => {
@@ -201,8 +204,8 @@ describe('stripTerminalPanelsFromLayout', () => {
       }),
       leaf('2', ['term-2'], 'term-2'),
     ];
-    const views = (rootChildren[0] as { data: { views: string[] } }).data.views;
-    const tabGroups = (rootChildren[0] as { data: { tabGroups: Array<{ panelIds: string[] }> } }).data.tabGroups;
+    const views = (rootChildren[0]! as unknown as { data: { views: string[] } }).data.views;
+    const tabGroups = (rootChildren[0]! as unknown as { data: { tabGroups: Array<{ panelIds: string[] }> } }).data.tabGroups;
     const panelIds = tabGroups[0]!.panelIds;
     const l = layout(rootChildren, {
       editor: { contentComponent: 'editor' },
@@ -228,8 +231,9 @@ describe('stripTerminalPanelsFromLayout', () => {
       expect(filterCallsOnLayoutArrays).toBe(0);
       expect(mapCallsOnLayoutArrays).toBe(0);
       expect(r.grid.root.data).toHaveLength(1);
-      expect(r.grid.root.data[0].data.views).toEqual(['editor']);
-      const tg = r.grid.root.data[0].data.tabGroups as Array<{ panelIds: string[] }>;
+      const root = r.grid.root.data[0]!;
+      expect(root.data.views).toEqual(['editor']);
+      const tg = root.data.tabGroups as Array<{ panelIds: string[] }>;
       expect(tg).toHaveLength(1);
       expect(tg[0]!.panelIds).toEqual(['editor']);
       const body = stripTerminalPanelsFromLayout.toString();
