@@ -4,6 +4,8 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
 
+const UNSAVED_CHANGES = /^(未保存的更改|Unsaved changes|저장되지 않은 변경 사항)$/;
+
 test('打开 a.ts → updateContent → 不自动保存(代码必须 ⌘S)', async ({
   window,
   workspaceRoot,
@@ -68,7 +70,5 @@ test('打开 a.ts → updateContent → 不自动保存(代码必须 ⌘S)', asy
   expect(after).toBe(before);
 
   // 但 dirty 圆点已显示(EditorHeader 紧凑模式)
-  await expect(
-    window.locator('span[aria-label="未保存修改"]'),
-  ).toBeVisible();
+  await expect(window.getByText(UNSAVED_CHANGES).first()).toBeVisible();
 });
