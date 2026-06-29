@@ -21,6 +21,7 @@ import {
   writePermissions,
   writePluginPathScopes,
 } from '../../../electron/main/services/plugins.service';
+import type { IpcPermissionRecord } from '../../../electron/shared/plugins-channels';
 
 let tmp: string;
 beforeEach(() => {
@@ -38,6 +39,18 @@ function makeDir(id: string, manifest: object, mainText = '/* main */', stylesTe
   writeFileSync(join(dir, 'manifest.json'), JSON.stringify(manifest));
   writeFileSync(join(dir, 'main.js'), mainText);
   if (stylesText !== undefined) writeFileSync(join(dir, 'styles.css'), stylesText);
+}
+
+type IpcPermissionObjectRecord = Extract<
+  IpcPermissionRecord,
+  { readonly decisions: readonly unknown[] }
+>;
+
+function expectPermissionObject(
+  rec: IpcPermissionRecord | undefined,
+): IpcPermissionObjectRecord {
+  if (Array.isArray(rec) || !rec) throw new Error('expected object shape');
+  return rec as IpcPermissionObjectRecord;
 }
 
 describe('listPluginDirs', () => {
@@ -419,8 +432,7 @@ describe('readPermissions / writePermissions', () => {
         pathScopes: [{ path: '/ws/proj', mode: 'rw' }],
       },
     });
-    const rec = (await readPermissions(tmp))['p.scoped'];
-    if (Array.isArray(rec) || !rec) throw new Error('expected object shape preserved');
+    const rec = expectPermissionObject((await readPermissions(tmp))['p.scoped']);
     expect(rec.decisions).toHaveLength(1);
     expect(rec.decisions[0]!.permission).toBe('fs');
     expect(rec.pathScopes).toEqual([{ path: '/ws/proj', mode: 'rw' }]);
@@ -480,8 +492,7 @@ describe('readPermissions / writePermissions', () => {
         },
       }),
     );
-    const rec = (await readPermissions(tmp))['com.scoped'];
-    if (Array.isArray(rec) || !rec) throw new Error('expected object shape');
+    const rec = expectPermissionObject((await readPermissions(tmp))['com.scoped']);
     expect(rec.pathScopes).toHaveLength(256);
   });
 
@@ -613,7 +624,7 @@ describe('readPermissions / writePermissions', () => {
   // spy 筛选:只看「以含这两个 key 的目标对象为参」的 Object.entries 调用,免全套并行下其它文件的
   // 全局 Object.entries 调用污染计数(Object 是全局,异步 await 期间可能有别处调用)。
   const entriesCalledOn = (
-    spy: ReturnType<typeof vi.spyOn>,
+    spy: { readonly mock: { readonly calls: readonly (readonly unknown[])[] } },
     ...keys: string[]
   ): boolean =>
     spy.mock.calls.some(
