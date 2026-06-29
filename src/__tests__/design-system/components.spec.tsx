@@ -24,7 +24,7 @@ describe('Card', () => {
     cleanup();
 
     const toned = render(<Card tone="assistant">Assistant</Card>);
-    expect(toned.container.querySelector('.wm-card')!.dataset.tone).toBe(
+    expect(toned.container.querySelector<HTMLElement>('.wm-card')!.dataset.tone).toBe(
       'assistant',
     );
 
