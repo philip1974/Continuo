@@ -37,6 +37,15 @@ export const AUTO_SAVE_MARKDOWN =
   /^(自动保存 Markdown|Auto-save Markdown|Markdown 자동 저장)$/;
 export const KEYBINDINGS_TOTAL_SUMMARY =
   /(共\s*\d+\s*个有快捷键的命令|\d+\s*commands with hotkey|단축키가 있는 명령어\s*\d+개)/;
+export const EDIT_HOTKEY_SELECTOR = [
+  '[title="编辑快捷键"]',
+  '[title="Edit hotkey"]',
+  '[title="단축키 편집"]',
+].join(', ');
+export const KEYBINDING_CAPTURE_MODAL =
+  /^(设置快捷键|Set hotkey|단축키 설정)$/;
+export const KEYBINDING_CONFLICT_WARNING =
+  /(此组合已绑定到其它命令|This combination is already bound to other commands|이 조합은 다른 명령에 이미 바인딩되어 있습니다)/;
 export const PLUGINS_SETTING_TABS_LABELS = [
   '设置 Tab',
   'Setting Tabs',
