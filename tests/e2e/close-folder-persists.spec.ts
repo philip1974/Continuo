@@ -60,9 +60,13 @@ test('⋯ 关闭文件夹 → explorer.json root=null,recentRoots 仍 [ws1]', as
 
     const raw = readFileSync(path.join(ud, 'explorer.json'), 'utf8');
     const data = JSON.parse(raw) as {
-      workspace: { root: string | null; recentRoots: string[] };
+      workspace: { root?: string | null; recentRoots: string[] };
+      windows?: Array<{ windowSeq: number; workspace: { root: string | null } }>;
     };
-    expect(data.workspace.root).toBeNull();
+    const persistedRoot = Array.isArray(data.windows)
+      ? data.windows.find((w) => w.windowSeq === 0)?.workspace.root
+      : data.workspace.root;
+    expect(persistedRoot).toBeNull();
     expect(data.workspace.recentRoots).toContain(ws1);
   } finally {
     await app?.close();
