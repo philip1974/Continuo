@@ -1,30 +1,37 @@
-// 关闭 Explorer sidebar 后,IconSidebar 其它按钮仍可用(齿轮 / Account chip).
+// 关闭 Explorer sidebar 后,IconSidebar 其它入口仍可用/可见(齿轮 / Account chip).
 import { test, expect } from './fixtures/electron-app';
+import type { Page } from '@playwright/test';
+
+const HIDE_EXPLORER = /^(隐藏 Explorer|Hide Explorer|Explorer 숨기기)$/;
+const SETTINGS = /^(设置|Settings|설정)$/;
+const SETTINGS_NAV = /^(设置分类|Setting categories|설정 카테고리)$/;
+
+async function ensureExplorerSidebarClosed(window: Page): Promise<void> {
+  const sidebars = window.locator('main aside');
+  if ((await sidebars.count()) > 1) {
+    await window.getByRole('button', { name: HIDE_EXPLORER }).click();
+  }
+  await expect(sidebars).toHaveCount(1, { timeout: 5_000 });
+}
 
 test('sidebar 关闭后,设置齿轮仍能打开 SettingsPanel', async ({ window }) => {
   // 关 sidebar
-  await window.locator('button[title="隐藏 Explorer"]').click();
-  await expect(window.locator('main aside')).toHaveCount(1, {
-    timeout: 5_000,
-  });
+  await ensureExplorerSidebarClosed(window);
 
   // IconSidebar 仍存在(.w-12 aside),Settings 齿轮仍可点
-  await window.locator('button[title="设置"]').click();
-  await expect(window.locator('nav[aria-label="设置分类"]')).toBeVisible({
-    timeout: 10_000,
-  });
+  await window.getByRole('button', { name: SETTINGS }).click();
+  await expect(
+    window.getByRole('navigation', { name: SETTINGS_NAV }),
+  ).toBeVisible({ timeout: 10_000 });
 });
 
-test('sidebar 关闭后,AccountChip 仍可点击不抛', async ({ window }) => {
-  await window.locator('button[title="隐藏 Explorer"]').click();
-  await expect(window.locator('main aside')).toHaveCount(1, {
-    timeout: 5_000,
-  });
+test('sidebar 关闭后,AccountChip 仍可见', async ({ window }) => {
+  await ensureExplorerSidebarClosed(window);
 
-  const chip = window.locator(
-    'button[aria-label="账户:Continuo Dev,PRO Plan"]',
-  );
+  const chip = window.getByTitle('Continuo Dev · PRO Plan');
   await expect(chip).toBeVisible();
-  await chip.click(); // 占位 noop;只验证不崩
+  await expect(chip).toHaveText('CD');
+  expect(await chip.evaluate((el) => el.tagName)).not.toBe('BUTTON');
+  await expect(chip).not.toHaveAttribute('role', 'button');
   await expect(chip).toBeVisible();
 });

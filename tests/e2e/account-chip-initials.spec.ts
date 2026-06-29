@@ -2,9 +2,9 @@
 import { test, expect } from './fixtures/electron-app';
 
 test('AccountChip 文本含「CD」', async ({ window }) => {
-  const chip = window.locator(
-    'button[aria-label="账户:Continuo Dev,PRO Plan"]',
-  );
+  const chip = window.getByTitle('Continuo Dev · PRO Plan');
   await expect(chip).toBeVisible({ timeout: 5_000 });
   await expect(chip).toHaveText('CD');
+  expect(await chip.evaluate((el) => el.tagName)).not.toBe('BUTTON');
+  await expect(chip).not.toHaveAttribute('role', 'button');
 });
