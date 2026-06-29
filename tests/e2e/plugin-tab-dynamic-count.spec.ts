@@ -1,5 +1,14 @@
 // Plugins tab 「命令」 计数随动态 register 同步 +1.
 import { test, expect } from './fixtures/electron-app';
+import {
+  PLUGINS_TAB,
+  openSettingsTab,
+  pluginContributionCount,
+} from './helpers/settings';
+
+const COMMAND_LABELS = ['命令', 'Commands', '명령'];
+const REGISTERED_CONTRIBUTIONS =
+  /^(已注册贡献点|Registered contribution points|등록된 기여 항목)$/;
 
 test('register 命令 → 插件 tab 命令计数 +1', async ({ window }) => {
   await window.waitForFunction(
@@ -11,31 +20,15 @@ test('register 命令 → 插件 tab 命令计数 +1', async ({ window }) => {
   );
 
   // 打开 Settings → 插件 tab
-  await window.locator('button[title="设置"]').click();
-  await window
-    .locator('nav[aria-label="设置分类"]')
-    .getByRole('button', { name: '插件', exact: true })
-    .click();
+  await openSettingsTab(window, PLUGINS_TAB);
 
   // 等贡献点 section
-  await expect(window.locator('text=已注册贡献点')).toBeVisible({
+  await expect(window.getByText(REGISTERED_CONTRIBUTIONS)).toBeVisible({
     timeout: 10_000,
   });
 
   // 取「命令」行计数
-  const main = window.locator('main');
-  const before = await main.evaluate((root: Element) => {
-    const rows = Array.from(root.querySelectorAll('div')).filter((d) =>
-      Array.from(d.children).some(
-        (c) =>
-          c.textContent?.trim() === '命令' &&
-          c.classList.contains('w-32'),
-      ),
-    );
-    if (rows.length === 0) return -1;
-    const numCell = rows[0]!.querySelector('div.tabular-nums');
-    return Number(numCell?.textContent?.trim() ?? '0');
-  });
+  const before = await pluginContributionCount(window, COMMAND_LABELS);
   expect(before).toBeGreaterThan(0);
 
   // register 4 个新命令
@@ -55,18 +48,7 @@ test('register 命令 → 插件 tab 命令计数 +1', async ({ window }) => {
 
   // 计数 +4
   await expect(async () => {
-    const after = await main.evaluate((root: Element) => {
-      const rows = Array.from(root.querySelectorAll('div')).filter((d) =>
-        Array.from(d.children).some(
-          (c) =>
-            c.textContent?.trim() === '命令' &&
-            c.classList.contains('w-32'),
-        ),
-      );
-      if (rows.length === 0) return -1;
-      const numCell = rows[0]!.querySelector('div.tabular-nums');
-      return Number(numCell?.textContent?.trim() ?? '0');
-    });
+    const after = await pluginContributionCount(window, COMMAND_LABELS);
     expect(after).toBe(before + 4);
   }).toPass({ timeout: 5_000 });
 });
