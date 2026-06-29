@@ -35,6 +35,7 @@ import { fetchMarketplaceIndex, fetchPluginManifest } from '../../marketplace/fe
 import { getUserPluginManager } from '../../plugins/PluginManager';
 import { useUpdateStore, type AvailableUpdate } from '../../marketplace/update-store';
 import { useReviewsStore } from '../../marketplace/reviews-store';
+import type { PluginAggregateRating, Review } from '../../marketplace/reviews-types';
 import type { MarketplaceEntry } from '../../marketplace/types';
 
 const fetchIndexMock = fetchMarketplaceIndex as unknown as ReturnType<typeof vi.fn>;
@@ -784,7 +785,7 @@ describe('MarketplaceTab — 安装按钮', () => {
     installApi(vi.fn());
     fetchIndexMock.mockResolvedValue([entry({ id: 'a', name: 'Foo' })]);
     getMgr.mockReturnValue({ listAll: () => [] });
-    const reviews = Array.from({ length: 11 }, (_, i) => ({
+    const reviews: Review[] = Array.from({ length: 11 }, (_, i) => ({
       pluginId: 'a',
       rating: 5,
       body: 'b' + i,
@@ -797,7 +798,9 @@ describe('MarketplaceTab — 安装按钮', () => {
       useReviewsStore.setState({
         loading: false,
         error: null,
-        byPid: new Map([['a', { pluginId: 'a', count: 11, avg: 5, reviews }]]),
+        byPid: new Map<string, PluginAggregateRating>([
+          ['a', { pluginId: 'a', count: 11, avg: 5, reviews }],
+        ]),
       });
     });
     const { container } = render(<MarketplaceTab />);
@@ -1316,7 +1319,7 @@ describe('MarketplaceTab — 评论刷新失败反馈', () => {
     installApi(vi.fn());
     fetchIndexMock.mockResolvedValue([entry({ id: 'a', name: 'A' })]);
     getMgr.mockReturnValue({ listAll: () => [] });
-    const mk = (handle: string, url: string) => ({
+    const mk = (handle: string, url: string): Review => ({
       pluginId: 'a',
       rating: 5,
       body: 'b',
@@ -1329,7 +1332,7 @@ describe('MarketplaceTab — 评论刷新失败反馈', () => {
       useReviewsStore.setState({
         loading: false,
         error: null,
-        byPid: new Map([
+        byPid: new Map<string, PluginAggregateRating>([
           [
             'a',
             {
