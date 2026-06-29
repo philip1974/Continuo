@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  encodeMessage,
-  StreamDecoder,
-} from '../../../scripts/debug-spike/dap-client.mjs';
+// @ts-expect-error spike helper is an ESM .mjs file without a declaration file.
+import { encodeMessage, StreamDecoder } from '../../../scripts/debug-spike/dap-client.mjs';
 
 describe('49 · DAP Content-Length framing', () => {
   it('encodes a JSON message and decodes it back', () => {
