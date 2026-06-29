@@ -1,32 +1,26 @@
-// CommandPalette 输 settings → Enter → settings.open 命令执行 → Settings panel 出.
+// CommandPalette 选择 settings.toggle 命令 → Settings panel 出.
 import { test, expect } from './fixtures/electron-app';
+import {
+  commandPaletteInput,
+  openCommandPalette,
+  settingsCommandOption,
+} from './helpers/palette';
+import { SETTINGS_NAV } from './helpers/settings';
 
-test('Cmd+Shift+P → settings → Enter → Settings nav 出', async ({
+test('Cmd+Shift+P → 选择 Settings 命令 → Settings nav 出', async ({
   window,
 }) => {
-  await window.evaluate(() => {
-    document.dispatchEvent(
-      new KeyboardEvent('keydown', {
-        key: 'p',
-        ctrlKey: true,
-        shiftKey: true,
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
-  });
-  const input = window.locator(
-    '.wm-modal-content input[placeholder^="输入命令名"]',
-  );
+  await openCommandPalette(window);
+  const input = commandPaletteInput(window);
   await expect(input).toBeVisible();
-  await input.fill('Settings');
-  await expect(window.locator('.wm-modal-content li').first()).toBeVisible();
+  const option = settingsCommandOption(window);
+  await expect(option).toBeVisible();
 
-  await window.keyboard.press('Enter');
+  await option.click();
   await expect(input).toBeHidden({ timeout: 5_000 });
 
   // Settings nav
-  await expect(window.locator('nav[aria-label="设置分类"]')).toBeVisible({
-    timeout: 5_000,
-  });
+  await expect(
+    window.getByRole('navigation', { name: SETTINGS_NAV }),
+  ).toBeVisible({ timeout: 5_000 });
 });

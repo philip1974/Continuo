@@ -1,20 +1,15 @@
 // Quick Open 打开后按 ESC → modal 关闭.
 import { test, expect } from './fixtures/electron-app';
+import {
+  commandPaletteInput,
+  openCommandPalette,
+  openQuickOpen,
+  quickOpenInput,
+} from './helpers/palette';
 
 test('Ctrl+P 打开 → ESC → modal 关闭', async ({ window }) => {
-  await window.evaluate(() => {
-    document.dispatchEvent(
-      new KeyboardEvent('keydown', {
-        key: 'p',
-        ctrlKey: true,
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
-  });
-  const input = window.locator(
-    '.wm-modal-content input[placeholder*="搜索文件名"]',
-  );
+  await openQuickOpen(window);
+  const input = quickOpenInput(window);
   await expect(input).toBeVisible();
 
   await window.keyboard.press('Escape');
@@ -22,20 +17,8 @@ test('Ctrl+P 打开 → ESC → modal 关闭', async ({ window }) => {
 });
 
 test('Ctrl+Shift+P 打开命令面板 → ESC → modal 关闭', async ({ window }) => {
-  await window.evaluate(() => {
-    document.dispatchEvent(
-      new KeyboardEvent('keydown', {
-        key: 'p',
-        ctrlKey: true,
-        shiftKey: true,
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
-  });
-  const input = window.locator(
-    '.wm-modal-content input[placeholder^="输入命令名"]',
-  );
+  await openCommandPalette(window);
+  const input = commandPaletteInput(window);
   await expect(input).toBeVisible();
 
   await window.keyboard.press('Escape');

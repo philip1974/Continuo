@@ -1,30 +1,25 @@
 // CommandPalette recent 持久化:执行命令 → localStorage 'continuo:command-palette:recent'.
 import { test, expect } from './fixtures/electron-app';
+import {
+  commandPaletteInput,
+  openCommandPalette,
+  settingsCommandOption,
+} from './helpers/palette';
+import { SETTINGS } from './helpers/settings';
 
-test('执行 settings.open → localStorage recent 含 settings.open id', async ({
+test('执行 settings.toggle → localStorage recent 含 settings.toggle id', async ({
   window,
 }) => {
-  await expect(window.locator('button[title="设置"]')).toBeVisible({
+  await expect(window.getByRole('button', { name: SETTINGS })).toBeVisible({
     timeout: 10_000,
   });
 
-  await window.evaluate(() => {
-    document.dispatchEvent(
-      new KeyboardEvent('keydown', {
-        key: 'p',
-        ctrlKey: true,
-        shiftKey: true,
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
-  });
-  const input = window.locator(
-    '.wm-modal-content input[placeholder^="输入命令名"]',
-  );
+  await openCommandPalette(window);
+  const input = commandPaletteInput(window);
   await expect(input).toBeVisible();
-  await input.fill('打开 Settings');
-  await window.keyboard.press('Enter');
+  const option = settingsCommandOption(window);
+  await expect(option).toBeVisible();
+  await option.click();
   await expect(input).toBeHidden();
 
   // localStorage 写入
@@ -33,5 +28,5 @@ test('执行 settings.open → localStorage recent 含 settings.open id', async 
   );
   expect(raw).not.toBeNull();
   const list = JSON.parse(raw!) as Array<{ id: string; ts: number }>;
-  expect(list[0]?.id).toBe('settings.open');
+  expect(list[0]?.id).toBe('settings.toggle');
 });

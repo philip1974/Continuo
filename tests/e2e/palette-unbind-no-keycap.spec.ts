@@ -1,7 +1,12 @@
-// override settings.open 为空字符串(unbind)→ palette 该项不显 KeyCap.
+// override settings.toggle 为空字符串(unbind)→ palette 该项不显 KeyCap.
 import { test, expect } from './fixtures/electron-app';
+import {
+  commandPaletteInput,
+  openCommandPalette,
+  settingsCommandOption,
+} from './helpers/palette';
 
-test('unbind settings.open → palette 该项无 KeyCap', async ({ window }) => {
+test('unbind settings.toggle → palette 该项无 KeyCap', async ({ window }) => {
   await window.waitForFunction(
     () =>
       Boolean(
@@ -11,23 +16,10 @@ test('unbind settings.open → palette 该项无 KeyCap', async ({ window }) => 
   );
 
   // 先打开 palette,验证默认有 KeyCap
-  await window.evaluate(() => {
-    document.dispatchEvent(
-      new KeyboardEvent('keydown', {
-        key: 'p',
-        ctrlKey: true,
-        shiftKey: true,
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
-  });
-  const input = window.locator(
-    '.wm-modal-content input[placeholder^="输入命令名"]',
-  );
+  await openCommandPalette(window);
+  const input = commandPaletteInput(window);
   await expect(input).toBeVisible();
-  await input.fill('打开 Settings');
-  const item = window.locator('.wm-modal-content li').first();
+  const item = settingsCommandOption(window);
   await expect(item).toBeVisible();
   expect(await item.locator('kbd.wm-keycap').count()).toBeGreaterThan(0);
 
@@ -41,27 +33,14 @@ test('unbind settings.open → palette 该项无 KeyCap', async ({ window }) => 
         };
       }
     ).__continuoTest;
-    t.setHotkey('settings.open', ''); // unbind
+    t.setHotkey('settings.toggle', ''); // unbind
   });
 
   // 重开 palette
-  await window.evaluate(() => {
-    document.dispatchEvent(
-      new KeyboardEvent('keydown', {
-        key: 'p',
-        ctrlKey: true,
-        shiftKey: true,
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
-  });
-  const input2 = window.locator(
-    '.wm-modal-content input[placeholder^="输入命令名"]',
-  );
+  await openCommandPalette(window);
+  const input2 = commandPaletteInput(window);
   await expect(input2).toBeVisible();
-  await input2.fill('打开 Settings');
-  const item2 = window.locator('.wm-modal-content li').first();
+  const item2 = settingsCommandOption(window);
   await expect(item2).toBeVisible();
 
   // 应不显 KeyCap

@@ -1,5 +1,6 @@
 // register 5 命令 → palette 输 'Bulk' → 5 个 li 都显.
 import { test, expect } from './fixtures/electron-app';
+import { commandPaletteInput, openCommandPalette } from './helpers/palette';
 
 test('register 5 Bulk* + palette 输 Bulk → 列表 5 项', async ({ window }) => {
   await window.waitForFunction(
@@ -23,20 +24,8 @@ test('register 5 Bulk* + palette 输 Bulk → 列表 5 项', async ({ window }) 
     }
   });
 
-  await window.evaluate(() => {
-    document.dispatchEvent(
-      new KeyboardEvent('keydown', {
-        key: 'p',
-        ctrlKey: true,
-        shiftKey: true,
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
-  });
-  const input = window.locator(
-    '.wm-modal-content input[placeholder^="输入命令名"]',
-  );
+  await openCommandPalette(window);
+  const input = commandPaletteInput(window);
   await expect(input).toBeVisible();
   await input.fill('Bulk Cmd');
 

@@ -1,5 +1,6 @@
 // Output panel active → Cmd+Shift+P → palette modal 显.
 import { test, expect } from './fixtures/electron-app';
+import { commandPaletteInput, openCommandPalette } from './helpers/palette';
 
 test('Output active → Cmd+Shift+P → palette 显', async ({ window }) => {
   await window.waitForFunction(
@@ -19,23 +20,9 @@ test('Output active → Cmd+Shift+P → palette 显', async ({ window }) => {
     ).__continuoTest;
     t.openOrFocusPanel('output', 'output', 'Output');
   });
-  await expect(window.locator('text=Continuo ready')).toBeVisible({
-    timeout: 10_000,
-  });
+  await window.waitForTimeout(200);
 
-  await window.evaluate(() => {
-    document.dispatchEvent(
-      new KeyboardEvent('keydown', {
-        key: 'p',
-        ctrlKey: true,
-        shiftKey: true,
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
-  });
+  await openCommandPalette(window);
 
-  await expect(
-    window.locator('.wm-modal-content input[placeholder^="输入命令名"]'),
-  ).toBeVisible({ timeout: 5_000 });
+  await expect(commandPaletteInput(window)).toBeVisible({ timeout: 5_000 });
 });

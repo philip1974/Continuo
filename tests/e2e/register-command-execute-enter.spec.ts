@@ -1,5 +1,6 @@
 // 动态注册的命令 + Enter 在 palette 中执行 → modal 关闭(fn 是 noop).
 import { test, expect } from './fixtures/electron-app';
+import { commandPaletteInput, openCommandPalette } from './helpers/palette';
 
 test('动态命令 → palette → Enter → modal 关', async ({ window }) => {
   await window.waitForFunction(
@@ -21,20 +22,8 @@ test('动态命令 → palette → Enter → modal 关', async ({ window }) => {
     t.registerCommand('e2e.execute-noop', 'ExecuteNoOp');
   });
 
-  await window.evaluate(() => {
-    document.dispatchEvent(
-      new KeyboardEvent('keydown', {
-        key: 'p',
-        ctrlKey: true,
-        shiftKey: true,
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
-  });
-  const input = window.locator(
-    '.wm-modal-content input[placeholder^="输入命令名"]',
-  );
+  await openCommandPalette(window);
+  const input = commandPaletteInput(window);
   await expect(input).toBeVisible();
   await input.fill('ExecuteNoOp');
 
