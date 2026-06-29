@@ -4,6 +4,7 @@
 // 而非拖拽 → 写回流程。拖拽走 useColumnResize 的 native mousemove,Playwright 在
 // dockview-react 的边界处难稳定模拟;真行为已被 use-column-resize 单测覆盖.
 import { _electron as electron, expect, test } from '@playwright/test';
+import { SIDEBAR_HIDDEN_TEXT } from './helpers/explorer';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -88,8 +89,8 @@ test('explorer.json 的 layoutUi.sidebarOpen=false → aside 不渲染', async (
 
     // 只剩 IconSidebar(48px),没有 ExplorerSidebar
     await expect.poll(async () => win.locator('main aside').count()).toBe(1);
-    // StatusBar 出现「侧栏已隐藏」
-    await expect(win.locator('footer')).toContainText('侧栏已隐藏');
+    // StatusBar 出现 sidebar hidden 提示.
+    await expect(win.locator('footer')).toContainText(SIDEBAR_HIDDEN_TEXT);
 
     await app.close();
   } finally {

@@ -27,6 +27,12 @@ export const EXPLORER_COPY_RELATIVE_PATH =
   /^(复制相对路径|Copy Relative Path|상대 경로 복사)$/;
 export const EXPLORER_MORE_ACTIONS =
   /^(更多操作|More actions|추가 작업)$/;
+export const EXPLORER_HIDE =
+  /^(隐藏 Explorer|Hide Explorer|Explorer 숨기기)$/;
+export const EXPLORER_SHOW =
+  /^(显示 Explorer|Show Explorer|Explorer 표시)$/;
+export const SIDEBAR_HIDDEN_TEXT =
+  /(侧栏已隐藏|Sidebar hidden|사이드바 숨김)/;
 export const EXPLORER_OPEN_IN_TERMINAL =
   /^(在集成终端中打开|Open in Integrated Terminal|통합 터미널에서 열기)$/;
 export const EXPLORER_NEW_FILE_PLACEHOLDER =

@@ -1,9 +1,14 @@
-// IconSidebar Explorer 按钮 + 状态栏「侧栏已隐藏」+ 重启持久化.
+// IconSidebar Explorer 按钮 + 状态栏 hidden hint + 重启持久化.
 //
 // 同样的开关也应该可以通过命令面板 / hotkey 触发?查 commands 注册.
 // SettingsPanelPlugin 注册了 'settings.open',ExplorerSidebar toggle 没有命令.
 // 这里改测:点击 → toggle → 重启状态保留(layoutUi.sidebarOpen).
 import { _electron as electron, expect, test } from '@playwright/test';
+import {
+  EXPLORER_HIDE,
+  EXPLORER_SHOW,
+  SIDEBAR_HIDDEN_TEXT,
+} from './helpers/explorer';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -24,7 +29,7 @@ test('点 Explorer 关闭 sidebar → 关 → 重启 → sidebar 仍关', async 
     await win1.waitForLoadState('domcontentloaded');
 
     // 默认 sidebar 开 → 「隐藏 Explorer」按钮可见
-    await win1.locator('button[title="隐藏 Explorer"]').click();
+    await win1.getByRole('button', { name: EXPLORER_HIDE }).click();
     // 等 explorer-persist debounce 写盘
     await win1.waitForTimeout(500);
     await app1.close();
@@ -37,11 +42,11 @@ test('点 Explorer 关闭 sidebar → 关 → 重启 → sidebar 仍关', async 
     const win2 = await app2.firstWindow();
     await win2.waitForLoadState('domcontentloaded');
 
-    // sidebar 关 → IconSidebar 显「显示 Explorer」 + StatusBar 显「侧栏已隐藏」
+    // sidebar 关 → IconSidebar 显 show label + StatusBar 显 hidden hint.
     await expect(
-      win2.locator('button[title="显示 Explorer"]'),
+      win2.getByRole('button', { name: EXPLORER_SHOW }),
     ).toBeVisible();
-    await expect(win2.locator('footer')).toContainText('侧栏已隐藏');
+    await expect(win2.locator('footer')).toContainText(SIDEBAR_HIDDEN_TEXT);
 
     await app2.close();
   } finally {
