@@ -327,7 +327,7 @@ describe('ensureAuthorized(v5 Phase 2 partial grant)', () => {
   it('requested 归类不通过 filter 多次重扫', async () => {
     const requested: readonly PermissionKey[] = ['fs', 'network'];
     const store: PermissionStore = {
-      get: vi.fn(async () => [
+      get: vi.fn(async (_pluginId: string): Promise<readonly PermissionDecision[]> => [
         { permission: 'fs', granted: true, decidedAt: 1 },
         { permission: 'network', granted: false, decidedAt: 2 },
       ]),
@@ -468,7 +468,7 @@ describe('ensureAuthorized(v5 Phase 2 partial grant)', () => {
 
   it('部分已 grant + pending 全拒 → 不为 pending 空授权构建 Set/newDeny', async () => {
     const store: PermissionStore = {
-      get: vi.fn(async () => [
+      get: vi.fn(async (_pluginId: string): Promise<readonly PermissionDecision[]> => [
         { permission: 'fs', granted: true, decidedAt: 1 },
       ]),
       grant: vi.fn(),
