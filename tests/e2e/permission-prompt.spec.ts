@@ -2,6 +2,10 @@
 //
 // 通过 testing hook 调 promptStore.request → modal 出现.
 import { test, expect } from './fixtures/electron-app';
+import {
+  PERMISSION_GRANT_SELECTED,
+  permissionGrantSelectedText,
+} from './helpers/permission-prompt';
 
 test('请求 fs/network 权限 → modal 列出两条,默认全选 + 授权按钮显数', async ({
   window,
@@ -41,11 +45,15 @@ test('请求 fs/network 权限 → modal 列出两条,默认全选 + 授权按�
   expect(await cbs.first().isChecked()).toBe(true);
   expect(await cbs.last().isChecked()).toBe(true);
   // 授权按钮显数 (2)
-  await expect(modal).toContainText(/授权选中.*2.*/);
+  await expect(
+    modal.locator('button').filter({ hasText: PERMISSION_GRANT_SELECTED }),
+  ).toHaveText(permissionGrantSelectedText(2));
 
   // 取消其中一个
   await cbs.first().click();
-  await expect(modal).toContainText(/授权选中.*1.*/);
+  await expect(
+    modal.locator('button').filter({ hasText: PERMISSION_GRANT_SELECTED }),
+  ).toHaveText(permissionGrantSelectedText(1));
 });
 
 test('点「授权选中」→ Promise resolve 含勾选项', async ({ window }) => {
@@ -77,7 +85,7 @@ test('点「授权选中」→ Promise resolve 含勾选项', async ({ window })
   // 点「授权选中」(默认全选 1 个)— 文本搜:「授权选中(1)」
   const grantBtn = modal
     .locator('button')
-    .filter({ hasText: /授权选中/ });
+    .filter({ hasText: PERMISSION_GRANT_SELECTED });
   await grantBtn.click();
 
   const granted = (await grantedPromise) as readonly string[];

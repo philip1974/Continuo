@@ -1,5 +1,9 @@
 // PermissionPrompt 默认全选 → 直接「授权选中(N)」 → resolve 含全部.
 import { test, expect } from './fixtures/electron-app';
+import {
+  PERMISSION_GRANT_SELECTED,
+  permissionGrantSelectedText,
+} from './helpers/permission-prompt';
 
 test('请求 fs+network+clipboard → 默认全选 → 授权 → resolve 三项', async ({
   window,
@@ -29,9 +33,14 @@ test('请求 fs+network+clipboard → 默认全选 → 授权 → resolve 三项
   const modal = window.locator('.wm-modal-content');
   await expect(modal).toBeVisible();
   // 「授权选中(3)」
-  await expect(modal).toContainText(/授权选中.*3.*/);
+  await expect(
+    modal.locator('button').filter({ hasText: PERMISSION_GRANT_SELECTED }),
+  ).toHaveText(permissionGrantSelectedText(3));
 
-  await modal.locator('button').filter({ hasText: /授权选中/ }).click();
+  await modal
+    .locator('button')
+    .filter({ hasText: PERMISSION_GRANT_SELECTED })
+    .click();
 
   const granted = (await grantedPromise) as readonly string[];
   // 顺序不严格,但应含三项

@@ -1,5 +1,9 @@
 // PermissionPrompt:取消所有 checkbox + 「授权选中」(数量=0)→ resolve [].
 import { test, expect } from './fixtures/electron-app';
+import {
+  PERMISSION_GRANT_SELECTED,
+  permissionGrantSelectedText,
+} from './helpers/permission-prompt';
 
 test('全部 uncheck → 「授权选中(0)」 → resolve []', async ({ window }) => {
   await window.waitForFunction(
@@ -32,10 +36,15 @@ test('全部 uncheck → 「授权选中(0)」 → resolve []', async ({ window 
   await cbs.first().click(); // fs uncheck
   await cbs.last().click(); // network uncheck
 
-  await expect(modal).toContainText(/授权选中.*0.*/);
+  await expect(
+    modal.locator('button').filter({ hasText: PERMISSION_GRANT_SELECTED }),
+  ).toHaveText(permissionGrantSelectedText(0));
 
   // 点「授权选中」
-  await modal.locator('button').filter({ hasText: /授权选中/ }).click();
+  await modal
+    .locator('button')
+    .filter({ hasText: PERMISSION_GRANT_SELECTED })
+    .click();
 
   const granted = (await grantedPromise) as readonly string[];
   expect(granted).toEqual([]);

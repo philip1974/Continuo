@@ -1,5 +1,6 @@
 // PermissionPrompt 拒绝按钮 → resolve 空数组(没授权).
 import { test, expect } from './fixtures/electron-app';
+import { PERMISSION_DENY_ALL } from './helpers/permission-prompt';
 
 test('点「拒绝」 → Promise resolve []', async ({ window }) => {
   await window.waitForFunction(
@@ -28,7 +29,7 @@ test('点「拒绝」 → Promise resolve []', async ({ window }) => {
   await expect(modal).toBeVisible();
 
   // 「拒绝」按钮(promptStore.deny → resolve [])
-  const denyBtn = modal.locator('button').filter({ hasText: '拒绝' });
+  const denyBtn = modal.locator('button').filter({ hasText: PERMISSION_DENY_ALL });
   await denyBtn.click();
 
   const granted = (await grantedPromise) as readonly string[];
