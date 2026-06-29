@@ -1,9 +1,12 @@
-// 点击 EditorHeader 「保存」按钮 → 文件落盘 + dirty 清.
+// 编辑后触发保存命令 → 文件落盘 + dirty 清.
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
 
-test('a.ts 修改 → 点保存按钮 → 磁盘更新 + dirty 消失', async ({
+const UNSAVED_CHANGES =
+  '[aria-label="未保存的更改"], [aria-label="Unsaved changes"], [aria-label="저장되지 않은 변경 사항"]';
+
+test('a.ts 修改 → 保存命令 → 磁盘更新 + dirty 消失', async ({
   window,
   workspaceRoot,
 }) => {
@@ -14,20 +17,13 @@ test('a.ts 修改 → 点保存按钮 → 磁盘更新 + dirty 消失', async ({
   await cm.click();
   await window.keyboard.type(' // click-save');
 
-  await expect(window.locator('span[aria-label="未保存修改"]')).toBeVisible();
+  const dirtyIndicators = window.locator(UNSAVED_CHANGES);
+  await expect(dirtyIndicators.first()).toBeVisible();
 
-  // 点 EditorHeader 保存按钮
-  const saveBtn = window
-    .locator('main')
-    .locator('button')
-    .filter({ hasText: /^保存$/ })
-    .first();
-  await expect(saveBtn).toBeEnabled();
-  await saveBtn.click();
+  await cm.press('ControlOrMeta+KeyS');
 
   // 等磁盘 + dirty 清
-  await expect(saveBtn).toBeDisabled({ timeout: 5_000 });
-  await expect(window.locator('span[aria-label="未保存修改"]')).toBeHidden();
+  await expect(dirtyIndicators).toHaveCount(0, { timeout: 5_000 });
   await expect(async () => {
     const content = await readFile(
       path.join(workspaceRoot, 'src/a.ts'),
