@@ -20,6 +20,8 @@ export const RESET_DEFAULT_SELECTOR = [
 ].join(', ');
 export const SHOW_LINE_NUMBERS =
   /^(显示行号|Show line numbers|줄 번호 표시)$/;
+export const THEME_SETTING = /^(主题|Theme|테마)$/;
+export const FONT_SIZE_SETTING = /^(字号|Font size|글꼴 크기)$/;
 export const LIGHT_THEME = /^(亮色|Light|라이트)$/;
 export const DARK_THEME = /^(暗色|Dark|다크)$/;
 export const SYSTEM_THEME = /^(跟随系统|System|시스템)$/;
