@@ -9,7 +9,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const MAIN_ENTRY = path.join(REPO_ROOT, 'out/main/index.js');
 
-test('autoSave.delayMs=42 → 关 → 重启 → getSettingValue 仍 42', async () => {
+test('autoSave.delayMs=1500 → 关 → 重启 → getSettingValue 仍 1500', async () => {
   test.setTimeout(60_000);
   const ud = mkdtempSync(path.join(tmpdir(), 'continuo-settings-persist-'));
   try {
@@ -21,10 +21,7 @@ test('autoSave.delayMs=42 → 关 → 重启 → getSettingValue 仍 42', async 
     const win1 = await app1.firstWindow();
     await win1.waitForLoadState('domcontentloaded');
     await win1.waitForFunction(
-      () =>
-        Boolean(
-          (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-        ),
+      () => Boolean((window as unknown as { __continuoTest?: unknown }).__continuoTest),
       { timeout: 5_000 },
     );
     await win1.evaluate(() => {
@@ -35,14 +32,12 @@ test('autoSave.delayMs=42 → 关 → 重启 → getSettingValue 仍 42', async 
           };
         }
       ).__continuoTest;
-      t.setSettingValue('autoSave.delayMs', 42);
+      t.setSettingValue('autoSave.delayMs', 1500);
     });
     // 等 localStorage flush
     await win1.waitForTimeout(200);
-    const stored = await win1.evaluate(() =>
-      localStorage.getItem('continuo.settings.values'),
-    );
-    expect(stored).toContain('"autoSave.delayMs":42');
+    const stored = await win1.evaluate(() => localStorage.getItem('continuo.settings.values'));
+    expect(stored).toContain('"autoSave.delayMs":1500');
     await app1.close();
 
     // ── 第二次:重启 ──
@@ -53,10 +48,7 @@ test('autoSave.delayMs=42 → 关 → 重启 → getSettingValue 仍 42', async 
     const win2 = await app2.firstWindow();
     await win2.waitForLoadState('domcontentloaded');
     await win2.waitForFunction(
-      () =>
-        Boolean(
-          (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-        ),
+      () => Boolean((window as unknown as { __continuoTest?: unknown }).__continuoTest),
       { timeout: 5_000 },
     );
 
@@ -68,7 +60,7 @@ test('autoSave.delayMs=42 → 关 → 重启 → getSettingValue 仍 42', async 
       ).__continuoTest;
       return t.getSettingValue('autoSave.delayMs');
     });
-    expect(restored).toBe(42);
+    expect(restored).toBe(1500);
 
     await app2.close();
   } finally {

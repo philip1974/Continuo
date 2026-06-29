@@ -3,6 +3,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
+import { EDITOR_MODE_SOURCE, editorModeButton, openWorkspaceFile } from './helpers/editor';
 
 test('README.md autoSave delay=10s + 输入 + Cmd+S → 立即写盘', async ({
   window,
@@ -10,10 +11,7 @@ test('README.md autoSave delay=10s + 输入 + Cmd+S → 立即写盘', async ({
 }) => {
   // 拉长 autoSave delay 让 autoSave 不抢
   await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
+    () => Boolean((window as unknown as { __continuoTest?: unknown }).__continuoTest),
     { timeout: 5_000 },
   );
   await window.evaluate(() => {
@@ -27,18 +25,10 @@ test('README.md autoSave delay=10s + 输入 + Cmd+S → 立即写盘', async ({
     t.setSettingValue('autoSave.delayMs', 10000);
   });
 
-  await window.locator('text=README.md').first().click();
-  await expect(window.locator('header').first()).toContainText('README.md', {
-    timeout: 10_000,
-  });
+  await openWorkspaceFile(window, ['README.md']);
 
   // 切到 Source mode 让 CodeMirror 接收输入(milkdown 输入相对慢且 fragile)
-  await window
-    .locator('main')
-    .locator('button')
-    .filter({ hasText: /^Source$/ })
-    .first()
-    .click();
+  await editorModeButton(window, EDITOR_MODE_SOURCE).click();
 
   const cm = window.locator('.cm-content');
   await expect(cm).toBeVisible({ timeout: 10_000 });
@@ -50,10 +40,7 @@ test('README.md autoSave delay=10s + 输入 + Cmd+S → 立即写盘', async ({
   await cm.press('ControlOrMeta+KeyS');
 
   await expect(async () => {
-    const content = await readFile(
-      path.join(workspaceRoot, 'README.md'),
-      'utf8',
-    );
+    const content = await readFile(path.join(workspaceRoot, 'README.md'), 'utf8');
     expect(content).toContain('explicit-save');
   }).toPass({ timeout: 3_000 });
 });

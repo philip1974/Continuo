@@ -5,10 +5,28 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { openWorkspaceFile } from './helpers/editor';
+import { explorerTreeItem } from './helpers/explorer';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const MAIN_ENTRY = path.join(REPO_ROOT, 'out/main/index.js');
+
+function writeExplorerSeed(userDataDir: string, workspaceRoot: string): void {
+  writeFileSync(
+    path.join(userDataDir, 'explorer.json'),
+    JSON.stringify({
+      version: 1,
+      workspace: { root: workspaceRoot, recentRoots: [workspaceRoot] },
+      explorer: {
+        activePath: null,
+        expandedPaths: [workspaceRoot],
+        sort: { by: 'name', reverse: false },
+      },
+      pinned: { paths: [] },
+    }),
+  );
+}
 
 test('Settings 改 indentSize=24 → 重启 → padding 同步', async () => {
   test.setTimeout(60_000);
@@ -17,19 +35,7 @@ test('Settings 改 indentSize=24 → 重启 → padding 同步', async () => {
   try {
     mkdirSync(path.join(ws, 'src'), { recursive: true });
     writeFileSync(path.join(ws, 'src/a.ts'), 'export\n');
-    writeFileSync(
-      path.join(ud, 'explorer.json'),
-      JSON.stringify({
-        version: 1,
-        workspace: { root: ws, recentRoots: [ws] },
-        explorer: {
-          activePath: null,
-          expandedPaths: [ws],
-          sort: { by: 'name', reverse: false },
-        },
-        pinned: { paths: [] },
-      }),
-    );
+    writeExplorerSeed(ud, ws);
 
     // 第一次:改 setting
     const app1 = await electron.launch({
@@ -49,6 +55,7 @@ test('Settings 改 indentSize=24 → 重启 → padding 同步', async () => {
     await indentInput.fill('24');
     await win1.waitForTimeout(300);
     await app1.close();
+    writeExplorerSeed(ud, ws);
 
     // 第二次:重启同 ud
     const app2 = await electron.launch({
@@ -58,16 +65,10 @@ test('Settings 改 indentSize=24 → 重启 → padding 同步', async () => {
     const win2 = await app2.firstWindow();
     await win2.waitForLoadState('domcontentloaded');
 
-    await win2.locator('text=src').first().click();
-    await expect(win2.locator('text=a.ts').first()).toBeVisible({
-      timeout: 10_000,
-    });
+    await openWorkspaceFile(win2, ['src', 'a.ts']);
 
     // src/a.ts level=1 → paddingLeft = 4 + 24 = 28px
-    const aRow = win2
-      .locator('[role=treeitem]')
-      .filter({ hasText: /^a\.ts$/ })
-      .first();
+    const aRow = explorerTreeItem(win2, /^a\.ts$/);
     const paddingLeft = await aRow.evaluate((el) => {
       const inner = el.querySelector<HTMLElement>('[style*="padding-left"]');
       return inner ? inner.style.paddingLeft : (el as HTMLElement).style.paddingLeft;

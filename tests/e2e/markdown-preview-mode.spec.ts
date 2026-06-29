@@ -1,17 +1,11 @@
 // Markdown 切 Preview mode → 渲染 readonly milkdown(没 .cm-content,有 prose 内容).
 import { test, expect } from './fixtures/with-workspace';
+import { EDITOR_MODE_PREVIEW, editorModeButton, openWorkspaceFile } from './helpers/editor';
 
-test('打开 README.md → 切 Preview → milkdown readonly + 不显 CodeMirror', async ({
-  window,
-}) => {
-  await window.locator('text=README.md').first().click();
-  await expect(window.locator('header').first()).toContainText('README.md');
+test('打开 README.md → 切 Preview → milkdown readonly + 不显 CodeMirror', async ({ window }) => {
+  await openWorkspaceFile(window, ['README.md']);
 
-  const previewBtn = window
-    .locator('main')
-    .locator('button')
-    .filter({ hasText: /^Preview$/ })
-    .first();
+  const previewBtn = editorModeButton(window, EDITOR_MODE_PREVIEW);
   await previewBtn.click();
 
   // CodeMirror 不显(.cm-content 没在 main 内)

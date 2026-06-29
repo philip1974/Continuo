@@ -5,10 +5,27 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { explorerTreeItem } from './helpers/explorer';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const MAIN_ENTRY = path.join(REPO_ROOT, 'out/main/index.js');
+
+function writeExplorerSeed(userDataDir: string, workspaceRoot: string): void {
+  writeFileSync(
+    path.join(userDataDir, 'explorer.json'),
+    JSON.stringify({
+      version: 1,
+      workspace: { root: workspaceRoot, recentRoots: [workspaceRoot] },
+      explorer: {
+        activePath: null,
+        expandedPaths: [workspaceRoot],
+        sort: { by: 'name', reverse: false },
+      },
+      pinned: { paths: [] },
+    }),
+  );
+}
 
 test('toggle showHiddenFiles → 重启 → 仍 true + .secret 显', async () => {
   test.setTimeout(60_000);
@@ -17,19 +34,7 @@ test('toggle showHiddenFiles → 重启 → 仍 true + .secret 显', async () =>
   try {
     writeFileSync(path.join(ws, '.secret'), 'x');
     writeFileSync(path.join(ws, 'visible.md'), '# v\n');
-    writeFileSync(
-      path.join(ud, 'explorer.json'),
-      JSON.stringify({
-        version: 1,
-        workspace: { root: ws, recentRoots: [ws] },
-        explorer: {
-          activePath: null,
-          expandedPaths: [ws],
-          sort: { by: 'name', reverse: false },
-        },
-        pinned: { paths: [] },
-      }),
-    );
+    writeExplorerSeed(ud, ws);
 
     // 第一次:toggle setting
     const app1 = await electron.launch({
@@ -51,6 +56,7 @@ test('toggle showHiddenFiles → 重启 → 仍 true + .secret 显', async () =>
     await expect(toggle).toHaveAttribute('aria-checked', 'true');
     await win1.waitForTimeout(200);
     await app1.close();
+    writeExplorerSeed(ud, ws);
 
     // 第二次:reload
     const app2 = await electron.launch({
@@ -61,9 +67,9 @@ test('toggle showHiddenFiles → 重启 → 仍 true + .secret 显', async () =>
     await win2.waitForLoadState('domcontentloaded');
 
     // .secret 显
-    await expect(
-      win2.locator('[role=treeitem]').filter({ hasText: /^\.secret$/ }),
-    ).toBeVisible({ timeout: 10_000 });
+    await expect(explorerTreeItem(win2, /^\.secret$/)).toBeVisible({
+      timeout: 10_000,
+    });
 
     await app2.close();
   } finally {

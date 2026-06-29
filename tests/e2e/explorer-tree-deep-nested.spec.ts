@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { expandTreeItem, explorerTreeItem, openTreeItem } from './helpers/explorer';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -14,10 +15,7 @@ test('深 3 层目录:逐级展开 + 打开 leaf.ts', async () => {
   const ws = mkdtempSync(path.join(tmpdir(), 'continuo-deep-ws-'));
   try {
     mkdirSync(path.join(ws, 'src/sub1/sub2'), { recursive: true });
-    writeFileSync(
-      path.join(ws, 'src/sub1/sub2/leaf.ts'),
-      'export const leaf = true;\n',
-    );
+    writeFileSync(path.join(ws, 'src/sub1/sub2/leaf.ts'), 'export const leaf = true;\n');
     writeFileSync(
       path.join(ud, 'explorer.json'),
       JSON.stringify({
@@ -39,24 +37,21 @@ test('深 3 层目录:逐级展开 + 打开 leaf.ts', async () => {
     const win = await app.firstWindow();
     await win.waitForLoadState('domcontentloaded');
 
-    // 单击 src 展开
-    await win.locator('text=src').first().click();
-    await expect(win.locator('text=sub1').first()).toBeVisible({
+    await expandTreeItem(win, /^src$/);
+    await expect(explorerTreeItem(win, /^sub1$/)).toBeVisible({
       timeout: 10_000,
     });
-    // 单击 sub1
-    await win.locator('text=sub1').first().click();
-    await expect(win.locator('text=sub2').first()).toBeVisible({
+    await expandTreeItem(win, /^sub1$/);
+    await expect(explorerTreeItem(win, /^sub2$/)).toBeVisible({
       timeout: 10_000,
     });
-    // 单击 sub2
-    await win.locator('text=sub2').first().click();
-    await expect(win.locator('text=leaf.ts').first()).toBeVisible({
+    await expandTreeItem(win, /^sub2$/);
+    await expect(explorerTreeItem(win, /^leaf\.ts$/)).toBeVisible({
       timeout: 10_000,
     });
 
     // 单击 leaf.ts → editor 打开
-    await win.locator('text=leaf.ts').first().click();
+    await openTreeItem(win, /^leaf\.ts$/);
     await expect(win.locator('header').first()).toContainText('leaf.ts', {
       timeout: 10_000,
     });

@@ -1,49 +1,109 @@
-import type { Locator, Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 
 export const EXPLORER_NEW_FILE = /^(新建文件|New [Ff]ile|새 파일)$/;
 export const EXPLORER_NEW_FOLDER = /^(新建文件夹|New [Ff]older|새 폴더)$/;
-export const EXPLORER_REFRESH =
-  /^(刷新资源管理器|Refresh|탐색기 새로 고침)$/;
+export const EXPLORER_REFRESH = /^(刷新资源管理器|Refresh|탐색기 새로 고침)$/;
 export const EXPLORER_COLLAPSE_ALL = /^(折叠全部|Collapse all|모두 접기)$/;
 export const EXPLORER_LOADING_OR_EMPTY =
   /^(读取中或空目录|Loading or empty folder|로딩 중이거나 빈 폴더)$/;
 export const EXPLORER_EXPAND_ALL = /^(展开全部|Expand all|모두 펼치기)$/;
-export const EXPLORER_CLOSE_FOLDER =
-  /^(关闭文件夹|Close folder|폴더 닫기)$/;
-export const EXPLORER_OPEN_RECENT =
-  /^(打开最近|Open recent|최근 항목 열기)$/;
-export const EXPLORER_OPEN_FOLDER =
-  /^(打开文件夹|Open Folder|폴더 열기)$/;
-export const EXPLORER_NO_FOLDER_OPEN =
-  /^(未打开文件夹|No folder open|열린 폴더 없음)$/;
-export const EXPLORER_NO_FOLDER_OPEN_TEXT =
-  /(未打开文件夹|No folder open|열린 폴더 없음)/;
+export const EXPLORER_CLOSE_FOLDER = /^(关闭文件夹|Close folder|폴더 닫기)$/;
+export const EXPLORER_OPEN_RECENT = /^(打开最近|Open recent|최근 항목 열기)$/;
+export const EXPLORER_OPEN_FOLDER = /^(打开文件夹|Open Folder|폴더 열기)$/;
+export const EXPLORER_NO_FOLDER_OPEN = /^(未打开文件夹|No folder open|열린 폴더 없음)$/;
+export const EXPLORER_NO_FOLDER_OPEN_TEXT = /(未打开文件夹|No folder open|열린 폴더 없음)/;
 export const EXPLORER_RECENT = /^(最近打开|Recent|최근 열기)$/;
 export const EXPLORER_RECENT_TEXT = /(最近打开|Recent|최근 열기)/;
 export const EXPLORER_RENAME = /(重命名|Rename|이름 바꾸기)/;
 export const EXPLORER_TRASH = /(移到废纸篓|Move to Trash|휴지통으로 이동)/;
 export const EXPLORER_CUT = /^(剪切|Cut|잘라내기)$/;
 export const EXPLORER_COPY = /^(复制|Copy|복사)$/;
-export const EXPLORER_COPY_PATH = /^(复制路径|Copy Path|경로 복사)$/;
+export const EXPLORER_REVEAL_IN_FINDER = /^(在 Finder 中显示|Reveal in Finder|Finder에서 보기)$/;
+export const EXPLORER_COPY_PATH = /^(复制路径|Copy Path|경로 복사)(?:\s+.+)?$/;
 export const EXPLORER_COPY_RELATIVE_PATH =
-  /^(复制相对路径|Copy Relative Path|상대 경로 복사)$/;
-export const EXPLORER_MORE_ACTIONS =
-  /^(更多操作|More actions|추가 작업)$/;
-export const EXPLORER_HIDE =
-  /^(隐藏 Explorer|Hide Explorer|Explorer 숨기기)$/;
-export const EXPLORER_SHOW =
-  /^(显示 Explorer|Show Explorer|Explorer 표시)$/;
-export const SIDEBAR_HIDDEN_TEXT =
-  /(侧栏已隐藏|Sidebar hidden|사이드바 숨김)/;
+  /^(复制相对路径|Copy Relative Path|상대 경로 복사)(?:\s+.+)?$/;
+export const EXPLORER_MORE_ACTIONS = /^(更多操作|More actions|추가 작업)$/;
+export const EXPLORER_HIDE = /^(隐藏 Explorer|Hide Explorer|Explorer 숨기기)$/;
+export const EXPLORER_SHOW = /^(显示 Explorer|Show Explorer|Explorer 표시)$/;
+export const EXPLORER_TOGGLE =
+  /^(显示 Explorer|隐藏 Explorer|Show Explorer|Hide Explorer|Explorer 표시|Explorer 숨기기)$/;
+export const SIDEBAR_HIDDEN_TEXT = /(侧栏已隐藏|Sidebar hidden|사이드바 숨김)/;
+export const SIDEBAR_RESIZE = /^(拖拽改变宽度|Drag to resize|드래그하여 너비 조절)$/;
 export const EXPLORER_OPEN_IN_TERMINAL =
   /^(在集成终端中打开|Open in Integrated Terminal|통합 터미널에서 열기)$/;
-export const EXPLORER_NEW_FILE_PLACEHOLDER =
-  /^(新建文件名…|New file name…|새 파일 이름…)$/;
-export const EXPLORER_NEW_FOLDER_PLACEHOLDER =
-  /^(新建文件夹名…|New folder name…|새 폴더 이름…)$/;
+export const EXPLORER_NEW_FILE_PLACEHOLDER = /^(新建文件名…|New file name…|새 파일 이름…)$/;
+export const EXPLORER_NEW_FOLDER_PLACEHOLDER = /^(新建文件夹名…|New folder name…|새 폴더 이름…)$/;
 
 export function explorerSidebar(window: Page): Locator {
   return window.locator('main aside').nth(1);
+}
+
+export function sidebarResizeHandle(window: Page): Locator {
+  return explorerSidebar(window).getByRole('separator', {
+    name: SIDEBAR_RESIZE,
+  });
+}
+
+export async function dragSidebarResize(window: Page, deltaX: number): Promise<void> {
+  const handle = sidebarResizeHandle(window);
+  await expect(handle).toBeVisible({ timeout: 10_000 });
+  const box = await handle.boundingBox();
+  if (!box) throw new Error('sidebar resize handle box null');
+  const startX = box.x + box.width / 2;
+  const startY = box.y + box.height / 2;
+  await handle.evaluate(
+    (el, coords) => {
+      el.dispatchEvent(
+        new MouseEvent('mousedown', {
+          clientX: coords.startX,
+          clientY: coords.startY,
+          button: 0,
+          buttons: 1,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      document.dispatchEvent(
+        new MouseEvent('mousemove', {
+          clientX: coords.startX + coords.deltaX,
+          clientY: coords.startY,
+          button: 0,
+          buttons: 1,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      document.dispatchEvent(
+        new MouseEvent('mouseup', {
+          clientX: coords.startX + coords.deltaX,
+          clientY: coords.startY,
+          button: 0,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    },
+    { startX, startY, deltaX },
+  );
+}
+
+export function explorerTreeItem(window: Page, name: string | RegExp): Locator {
+  return window.getByRole('treeitem', { name }).first();
+}
+
+export async function expandTreeItem(window: Page, name: string | RegExp): Promise<void> {
+  const row = explorerTreeItem(window, name);
+  await expect(row).toBeVisible({ timeout: 10_000 });
+  const expanded = await row.getAttribute('aria-expanded');
+  if (expanded !== 'true') {
+    await row.click();
+  }
+}
+
+export async function openTreeItem(window: Page, name: string | RegExp): Promise<void> {
+  const row = explorerTreeItem(window, name);
+  await expect(row).toBeVisible({ timeout: 10_000 });
+  await row.click();
 }
 
 export function explorerMoreActionsButton(window: Page): Locator {

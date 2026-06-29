@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { statusChars } from './helpers/status-bar';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -43,7 +44,7 @@ test('empty file → 打开不崩 + footer 0 字符', async () => {
     // CM 显
     await expect(win.locator('.cm-content').first()).toBeVisible();
     // footer 0 字符
-    await expect(win.locator('footer')).toContainText(/0\s*字符/);
+    await expect(win.locator('footer')).toContainText(statusChars(0));
 
     await app.close();
   } finally {

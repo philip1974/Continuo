@@ -4,6 +4,8 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { openTreeItem } from './helpers/explorer';
+import { statusLines } from './helpers/status-bar';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -37,21 +39,14 @@ test('多行 file → footer N 行计数正确', async () => {
     const win = await app.firstWindow();
     await win.waitForLoadState('domcontentloaded');
 
-    await win.locator('text=multi.txt').first().click();
+    await openTreeItem(win, /^multi\.txt$/);
     await expect(win.locator('header').first()).toContainText('multi.txt', {
       timeout: 10_000,
     });
 
     // lineCount 实现: split('\n').length。'a\nb\nc\nd\ne\n'.split('\n') = 6 段(末尾 \n 后空段)
-    // 所以会显 '6 行' (但 lineCount 取 max(1, total-1))?让我直接断言 行 出现且数字 ≥ 5
     const footer = win.locator('footer');
-    const text = await footer.textContent();
-    expect(text).toMatch(/\d+\s*行/);
-    const m = text?.match(/(\d+)\s*行/);
-    if (m) {
-      const n = Number(m[1]);
-      expect(n).toBeGreaterThanOrEqual(5);
-    }
+    await expect(footer).toContainText(statusLines(6));
 
     await app.close();
   } finally {

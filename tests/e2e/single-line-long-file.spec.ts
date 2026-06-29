@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { statusChars, statusLines } from './helpers/status-bar';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -44,9 +45,9 @@ test('1000 char 无换行 → footer 1 行 + 1000 字符', async () => {
 
     const footer = win.locator('footer');
     // 1000 字符
-    await expect(footer).toContainText(/1000\s*字符/);
+    await expect(footer).toContainText(statusChars(1000));
     // 1 行(无换行 → 单行)
-    await expect(footer).toContainText(/^.*1\s*行/);
+    await expect(footer).toContainText(statusLines(1));
 
     await app.close();
   } finally {

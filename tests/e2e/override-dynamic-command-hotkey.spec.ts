@@ -1,14 +1,10 @@
 // 动态命令 hotkey override → palette 显新组合(KeyCap 反映 override).
 import { test, expect } from './fixtures/electron-app';
+import { commandPaletteInput, openCommandPalette } from './helpers/palette';
 
-test('register + setHotkey override → palette 显示新 hotkey', async ({
-  window,
-}) => {
+test('register + setHotkey override → palette 显示新 hotkey', async ({ window }) => {
   await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
+    () => Boolean((window as unknown as { __continuoTest?: unknown }).__continuoTest),
     { timeout: 5_000 },
   );
 
@@ -17,11 +13,7 @@ test('register + setHotkey override → palette 显示新 hotkey', async ({
     const t = (
       window as unknown as {
         __continuoTest: {
-          registerCommand: (
-            id: string,
-            title: string,
-            hotkey?: string,
-          ) => () => void;
+          registerCommand: (id: string, title: string, hotkey?: string) => () => void;
           setHotkey: (id: string, hotkey: string) => void;
         };
       }
@@ -32,21 +24,8 @@ test('register + setHotkey override → palette 显示新 hotkey', async ({
   });
 
   // 打开 palette → 搜命令
-  await window.evaluate(() => {
-    document.dispatchEvent(
-      new KeyboardEvent('keydown', {
-        key: 'p',
-        ctrlKey: true,
-        shiftKey: true,
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
-  });
-  const input = window.locator(
-    '.wm-modal-content input[placeholder^="输入命令名"]',
-  );
-  await expect(input).toBeVisible();
+  await openCommandPalette(window);
+  const input = commandPaletteInput(window);
   await input.fill('DynOverride');
   const item = window.locator('.wm-modal-content li').first();
   await expect(item).toContainText('DynOverride');

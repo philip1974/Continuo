@@ -1,16 +1,11 @@
 // explorer.json 中 explorer.sort hydrate 不抛 + 文件树正常渲染.
 // 排序具体顺序由 explorer-stores 单测覆盖;e2e 只 smoke 持久化字段被解析.
 import { _electron as electron, expect, test } from '@playwright/test';
-import {
-  mkdtempSync,
-  rmSync,
-  writeFileSync,
-  mkdirSync,
-  utimesSync,
-} from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { expandTreeItem, explorerTreeItem } from './helpers/explorer';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -53,28 +48,18 @@ test('explorer.sort=mtime+reverse hydrate → src 中较新文件排前', async 
     await win.waitForLoadState('domcontentloaded');
 
     // 等 src 行渲染
-    await expect(win.locator('text=src').first()).toBeVisible({
-      timeout: 10_000,
-    });
-    // 显式点 src 展开(预置 expandedPaths 在 hydrate 时序上有时不立刻展开)
-    await win.locator('text=src').first().click();
+    await expandTreeItem(win, /^src$/);
     // 等 a.ts 出现
-    await expect(win.locator('text=a.ts').first()).toBeVisible({
+    await expect(explorerTreeItem(win, /^a\.ts$/)).toBeVisible({
       timeout: 10_000,
     });
 
     // explorer-persist hydrate 异步;sort 在 store hydrate 后才生效。
     // FolderTree 排序时序与 hydrate 早晚相关,e2e 内难精确同步.
     // 这里只验证三个文件都已渲染,具体 sort 顺序由 store 单测覆盖(explorer-stores).
-    await expect(
-      win.locator('[role=treeitem]').filter({ hasText: 'a.ts' }),
-    ).toBeVisible();
-    await expect(
-      win.locator('[role=treeitem]').filter({ hasText: 'b.ts' }),
-    ).toBeVisible();
-    await expect(
-      win.locator('[role=treeitem]').filter({ hasText: 'c.ts' }),
-    ).toBeVisible();
+    await expect(explorerTreeItem(win, /^a\.ts$/)).toBeVisible();
+    await expect(explorerTreeItem(win, /^b\.ts$/)).toBeVisible();
+    await expect(explorerTreeItem(win, /^c\.ts$/)).toBeVisible();
 
     await app.close();
   } finally {

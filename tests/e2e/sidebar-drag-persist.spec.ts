@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { dragSidebarResize } from './helpers/explorer';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -22,34 +23,21 @@ test('拖拽 sidebar → width 写盘 + 重启复原', async () => {
 
     const sidebar = win1.locator('main aside').nth(1);
     await expect(sidebar).toBeVisible();
-    const handle = sidebar.locator('.cursor-col-resize');
-    const box = await handle.boundingBox();
-    if (!box) throw new Error('handle box null');
-
-    const startX = box.x + box.width / 2;
-    const startY = box.y + box.height / 2;
-    await win1.mouse.move(startX, startY);
-    await win1.mouse.down();
     // 拖右移 50px,新 width = 280 + 50 = 330
-    await win1.mouse.move(startX + 50, startY, { steps: 5 });
-    await win1.mouse.up();
+    await dragSidebarResize(win1, 50);
 
     await expect
-      .poll(async () =>
-        sidebar.evaluate((el: HTMLElement) => el.style.width),
-      )
+      .poll(async () => sidebar.evaluate((el: HTMLElement) => el.style.width))
       .toBe('330px');
 
-    // 等 explorer-persist debounce 写盘
-    await win1.waitForTimeout(800);
+    await app1.close();
 
     const raw = readFileSync(path.join(ud, 'explorer.json'), 'utf8');
     const data = JSON.parse(raw) as {
       layoutUi?: { sidebarWidth?: number };
+      windows?: Array<{ layoutUi?: { sidebarWidth?: number } }>;
     };
-    expect(data.layoutUi?.sidebarWidth).toBe(330);
-
-    await app1.close();
+    expect(data.windows?.[0]?.layoutUi?.sidebarWidth ?? data.layoutUi?.sidebarWidth).toBe(330);
 
     // ── 第二次启动:复原 ──
     const app2 = await electron.launch({
@@ -61,9 +49,7 @@ test('拖拽 sidebar → width 写盘 + 重启复原', async () => {
     const sidebar2 = win2.locator('main aside').nth(1);
     await expect(sidebar2).toBeVisible();
     await expect
-      .poll(async () =>
-        sidebar2.evaluate((el: HTMLElement) => el.style.width),
-      )
+      .poll(async () => sidebar2.evaluate((el: HTMLElement) => el.style.width))
       .toBe('330px');
     await app2.close();
   } finally {

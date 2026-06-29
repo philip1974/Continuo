@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { openWorkspaceFile } from './helpers/editor';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -38,8 +39,7 @@ test('编辑 a.ts + Cmd+S + 关 → 重启同 ud + ws → 磁盘新值在', asyn
     const win1 = await app1.firstWindow();
     await win1.waitForLoadState('domcontentloaded');
 
-    await win1.locator('text=src').first().click();
-    await win1.locator('text=a.ts').first().click();
+    await openWorkspaceFile(win1, ['src', 'a.ts']);
     const cm1 = win1.locator('.cm-content');
     await expect(cm1).toBeVisible({ timeout: 10_000 });
     await cm1.click();
@@ -65,9 +65,9 @@ test('编辑 a.ts + Cmd+S + 关 → 重启同 ud + ws → 磁盘新值在', asyn
 
     // workspace 还原
     const wsName = path.basename(ws);
-    await expect(
-      win2.locator('main aside').nth(1).getByText(wsName).first(),
-    ).toBeVisible({ timeout: 10_000 });
+    await expect(win2.locator('main aside').nth(1).getByText(wsName).first()).toBeVisible({
+      timeout: 10_000,
+    });
 
     // 磁盘读
     const after = readFileSync(path.join(ws, 'src/a.ts'), 'utf8');

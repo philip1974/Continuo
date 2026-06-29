@@ -1,17 +1,9 @@
 // Modal overlay 区域点击 → onClose 触发 → modal 关闭(以 QuickOpen 为载体).
 import { test, expect } from './fixtures/electron-app';
+import { openQuickOpen } from './helpers/palette';
 
 test('Ctrl+P 打开 QuickOpen → 点 overlay → 关闭', async ({ window }) => {
-  await window.evaluate(() => {
-    document.dispatchEvent(
-      new KeyboardEvent('keydown', {
-        key: 'p',
-        ctrlKey: true,
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
-  });
+  await openQuickOpen(window);
   const overlay = window.locator('.wm-modal-overlay');
   await expect(overlay).toBeVisible();
 
@@ -21,16 +13,7 @@ test('Ctrl+P 打开 QuickOpen → 点 overlay → 关闭', async ({ window }) =>
 });
 
 test('点 modal-content 内部 → 不会关闭', async ({ window }) => {
-  await window.evaluate(() => {
-    document.dispatchEvent(
-      new KeyboardEvent('keydown', {
-        key: 'p',
-        ctrlKey: true,
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
-  });
+  await openQuickOpen(window);
   const overlay = window.locator('.wm-modal-overlay');
   const content = window.locator('.wm-modal-content');
   await expect(content).toBeVisible();

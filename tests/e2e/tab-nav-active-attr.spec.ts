@@ -1,20 +1,14 @@
 // TabNav 切 tab → wm-tab-nav-item data-active 同步;data-active=true 的只有 1 个.
 import { test, expect } from './fixtures/with-workspace';
+import { editorTabItem, openWorkspaceFile } from './helpers/editor';
 
 test('切 tab → 当前 item data-active=true,其他 false', async ({ window }) => {
-  await window.locator('text=README.md').first().click();
-  await window.locator('text=src').first().click();
-  await window.locator('text=a.ts').first().click();
+  await openWorkspaceFile(window, ['README.md']);
+  await openWorkspaceFile(window, ['src', 'a.ts']);
   // 现在 active = a.ts
 
-  const items = window
-    .locator('main [role=tablist]')
-    .first()
-    .locator('div.wm-tab-nav-item');
-  await expect(items).toHaveCount(2);
-
-  const aItem = items.filter({ hasText: 'a.ts' });
-  const readmeItem = items.filter({ hasText: 'README.md' });
+  const aItem = editorTabItem(window, 'a.ts');
+  const readmeItem = editorTabItem(window, 'README.md');
   await expect(aItem).toHaveAttribute('data-active', 'true');
   await expect(readmeItem).toHaveAttribute('data-active', 'false');
 
