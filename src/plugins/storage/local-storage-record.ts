@@ -152,17 +152,19 @@ export function writeRecord<V>(
 /**
  * 监听别的同源 document 对 localStorage[key] 的修改(跨窗口同步)。`storage` 事件仅在
  * **其它** document 改 localStorage 时 fire,故同窗自己的写不会回环。调用方在 onChange 里
- * 重读并 setState,让各窗口收敛一致。无 window / SSR 时 no-op。
+ * 重读并 setState,让各窗口收敛一致。无 window / SSR 时返回 no-op cleanup。
  */
-export function subscribeStorageKey(key: string, onChange: () => void): void {
+export function subscribeStorageKey(key: string, onChange: () => void): () => void {
   if (
     typeof window === 'undefined' ||
     typeof window.addEventListener !== 'function'
   ) {
-    return;
+    return () => {};
   }
-  window.addEventListener('storage', (e: StorageEvent) => {
+  const handler = (e: StorageEvent): void => {
     if (e.key !== key) return;
     onChange();
-  });
+  };
+  window.addEventListener('storage', handler);
+  return () => window.removeEventListener('storage', handler);
 }

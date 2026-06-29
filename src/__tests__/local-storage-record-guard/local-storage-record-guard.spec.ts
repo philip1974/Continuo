@@ -3,7 +3,11 @@
 // (如 keybindings overrides 混入非字符串)会被读进内存,下游 .toLowerCase() 崩溃。opts 提供 value
 // 守卫 + 上限,非法 value 丢弃、超长 key 跳过、超条目数截断;不传 opts 保持旧行为。
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { readRecord, writeRecord } from '@/plugins/storage/local-storage-record';
+import {
+  readRecord,
+  subscribeStorageKey,
+  writeRecord,
+} from '@/plugins/storage/local-storage-record';
 
 const KEY = 'test.record';
 
@@ -200,5 +204,37 @@ describe('writeRecord 写读 cap 对称 (E260)', () => {
     // '中'×40:.length 40(UTF-8 ~120 字节)。serialized={"a":"中×40"} .length≈48 ≤ 100 → ok。
     const r = writeRecord(KEY, { a: '中'.repeat(40) }, { maxRawLength: 100 });
     expect(r).toBe('ok');
+  });
+});
+
+describe('subscribeStorageKey cleanup', () => {
+  it('只响应目标 key,unsubscribe 后不再触发', () => {
+    const onChange = vi.fn();
+    const unsubscribe = subscribeStorageKey(KEY, onChange);
+
+    window.dispatchEvent(
+      new StorageEvent('storage', {
+        key: 'other.record',
+        newValue: JSON.stringify({ a: 1 }),
+      }),
+    );
+    expect(onChange).not.toHaveBeenCalled();
+
+    window.dispatchEvent(
+      new StorageEvent('storage', {
+        key: KEY,
+        newValue: JSON.stringify({ a: 1 }),
+      }),
+    );
+    expect(onChange).toHaveBeenCalledTimes(1);
+
+    unsubscribe();
+    window.dispatchEvent(
+      new StorageEvent('storage', {
+        key: KEY,
+        newValue: JSON.stringify({ a: 2 }),
+      }),
+    );
+    expect(onChange).toHaveBeenCalledTimes(1);
   });
 });

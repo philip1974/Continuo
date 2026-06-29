@@ -18,6 +18,7 @@ export default defineConfig({
       ['src/__tests__/design-system/**', 'jsdom'],
       ['src/__tests__/settings-values/**', 'jsdom'],
       ['src/__tests__/keybindings-store/**', 'jsdom'],
+      ['src/__tests__/local-storage-record-guard/**', 'jsdom'],
       // topic-05: DataTransfer / document / requestAnimationFrame / React testing
       ['src/__tests__/terminal-tab-drag-split/**', 'jsdom'],
       ['src/__tests__/terminal-drag-drop/**', 'jsdom'],
