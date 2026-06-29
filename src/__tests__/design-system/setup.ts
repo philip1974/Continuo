@@ -15,14 +15,21 @@ if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
 }
 
 // Node 25 exposes an experimental global localStorage when launched without a
-// valid --localstorage-file. In Vitest jsdom that can shadow jsdom's Storage and
-// lacks clear(), breaking specs that rely on browser Storage semantics. Keep
-// localStorage/sessionStorage on the same Storage prototype so prototype spies
-// in specs keep observing instance calls.
+// valid --localstorage-file. Touching that getter in Vitest jsdom emits a
+// warning and returns a non-browser-shaped object. Detect via descriptor so we
+// can install deterministic Storage before specs import stores that read it.
+const globalLocalStorageDescriptor =
+  typeof window === 'undefined'
+    ? undefined
+    : Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+const globalLocalStorageValue =
+  globalLocalStorageDescriptor && 'value' in globalLocalStorageDescriptor
+    ? globalLocalStorageDescriptor.value
+    : undefined;
+
 if (
   typeof window !== 'undefined' &&
-  typeof globalThis.localStorage !== 'undefined' &&
-  typeof globalThis.localStorage.clear !== 'function'
+  typeof globalLocalStorageValue?.clear !== 'function'
 ) {
   class MemoryStorage implements Storage {
     private readonly data = new Map<string, string>();
@@ -54,6 +61,7 @@ if (
 
   const localStorage = new MemoryStorage();
   const sessionStorage = new MemoryStorage();
+
   Object.defineProperty(globalThis, 'Storage', {
     configurable: true,
     value: MemoryStorage,
