@@ -34,7 +34,9 @@ test('编辑器 tab 第二 number input = 2000 + 改后 store=4000', async ({
     await window.getByRole('button', { name: SETTINGS }).click();
   }
   await expect(settingsNav).toBeVisible({ timeout: 10_000 });
-  await settingsNav.getByRole('button', { name: EDITOR_TAB }).click();
+  const editorTab = settingsNav.getByRole('button', { name: EDITOR_TAB });
+  await expect(editorTab).toBeVisible();
+  await editorTab.dispatchEvent('click');
   await window.evaluate(() =>
     (
       window as unknown as {
