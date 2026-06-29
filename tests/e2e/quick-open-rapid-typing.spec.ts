@@ -1,20 +1,10 @@
 // 快速 fill 不同 query → 列表稳定收敛于最后值.  @edge
 import { test, expect } from './fixtures/with-workspace';
+import { openQuickOpen, quickOpenInput } from './helpers/palette';
 
 test('Cmd+P fill a → fill ab → fill abc → 列表反映 abc', async ({ window }) => {
-  await window.evaluate(() => {
-    document.dispatchEvent(
-      new KeyboardEvent('keydown', {
-        key: 'p',
-        ctrlKey: true,
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
-  });
-  const input = window.locator(
-    '.wm-modal-content input[placeholder*="搜索文件名"]',
-  );
+  await openQuickOpen(window);
+  const input = quickOpenInput(window);
   await expect(input).toBeVisible();
   await expect(window.locator('.wm-modal-content')).toContainText('a.ts', {
     timeout: 10_000,

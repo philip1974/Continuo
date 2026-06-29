@@ -1,23 +1,13 @@
 // Quick Open ArrowDown / Enter 键盘流程.
 import { test, expect } from './fixtures/with-workspace';
+import { openQuickOpen, quickOpenInput } from './helpers/palette';
 
 test('ArrowDown 移到第二项 → Enter 打开 b.ts(不是默认第一项)', async ({
   window,
 }) => {
   // 展开 src(walk-files 不依赖 expand,但 Explorer 显示一致)
-  await window.evaluate(() => {
-    document.dispatchEvent(
-      new KeyboardEvent('keydown', {
-        key: 'p',
-        ctrlKey: true,
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
-  });
-  const input = window.locator(
-    '.wm-modal-content input[placeholder*="搜索文件名"]',
-  );
+  await openQuickOpen(window);
+  const input = quickOpenInput(window);
   await expect(input).toBeVisible();
 
   await expect(window.locator('.wm-modal-content')).toContainText('a.ts', {

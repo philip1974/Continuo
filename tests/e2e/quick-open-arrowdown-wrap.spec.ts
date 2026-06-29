@@ -1,20 +1,10 @@
 // Cmd+P 列表 N 项 → ArrowDown N 次 → 回到第一项 active(wrap-around).
 import { test, expect } from './fixtures/with-workspace';
+import { openQuickOpen, quickOpenInput } from './helpers/palette';
 
 test('3 文件 → ArrowDown 3 次 → 第一项 active', async ({ window }) => {
-  await window.evaluate(() => {
-    document.dispatchEvent(
-      new KeyboardEvent('keydown', {
-        key: 'p',
-        ctrlKey: true,
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
-  });
-  const input = window.locator(
-    '.wm-modal-content input[placeholder*="搜索文件名"]',
-  );
+  await openQuickOpen(window);
+  const input = quickOpenInput(window);
   await expect(input).toBeVisible();
   await expect(window.locator('.wm-modal-content')).toContainText('a.ts', {
     timeout: 10_000,

@@ -1,20 +1,10 @@
 // Quick Open 输入路径片段 (e.g. 'src/a') → 匹配 src/a.ts.
 import { test, expect } from './fixtures/with-workspace';
+import { openQuickOpen, quickOpenInput } from './helpers/palette';
 
 test('搜 src/a → 列出 src/a.ts', async ({ window }) => {
-  await window.evaluate(() => {
-    document.dispatchEvent(
-      new KeyboardEvent('keydown', {
-        key: 'p',
-        ctrlKey: true,
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
-  });
-  const input = window.locator(
-    '.wm-modal-content input[placeholder*="搜索文件名"]',
-  );
+  await openQuickOpen(window);
+  const input = quickOpenInput(window);
   await expect(input).toBeVisible();
   // 等 walk
   await expect(window.locator('.wm-modal-content')).toContainText('a.ts', {
