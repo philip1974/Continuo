@@ -40,7 +40,12 @@ test('多次执行同命令 → recent 不重复 + 该命令始终置顶', async
     const input = window.getByRole('combobox', { name: COMMAND_SEARCH });
     await expect(input).toBeVisible();
     await input.fill(settingsQuery);
-    await window.keyboard.press('Enter');
+    const settingsCommand = window
+      .getByRole('listbox', { name: COMMAND_LIST })
+      .getByRole('option')
+      .filter({ hasText: SETTINGS_TITLE });
+    await expect(settingsCommand).toBeVisible();
+    await settingsCommand.click();
     await expect(input).toBeHidden();
 
     // 关掉 settings panel(避免堆叠)

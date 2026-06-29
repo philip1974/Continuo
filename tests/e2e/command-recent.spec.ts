@@ -34,14 +34,12 @@ test('执行 settings.toggle → 关 + 重开 → recent 第一项是 Settings �
   const input = window.getByRole('combobox', { name: COMMAND_SEARCH });
   await expect(input).toBeVisible();
   await input.fill(settingsQuery);
-  await expect(
-    window
-      .getByRole('listbox', { name: COMMAND_LIST })
-      .getByRole('option')
-      .filter({ hasText: SETTINGS_TITLE }),
-  ).toBeVisible();
-  // Enter 执行(打开 Settings panel)
-  await window.keyboard.press('Enter');
+  const settingsCommand = window
+    .getByRole('listbox', { name: COMMAND_LIST })
+    .getByRole('option')
+    .filter({ hasText: SETTINGS_TITLE });
+  await expect(settingsCommand).toBeVisible();
+  await settingsCommand.click();
   await expect(input).toBeHidden();
 
   // 第二次:打开命令面板,空 query 时第一项应是刚才执行的命令
