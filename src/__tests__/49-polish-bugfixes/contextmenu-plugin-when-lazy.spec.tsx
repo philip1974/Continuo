@@ -90,7 +90,7 @@ describe('打磨 R13 — 插件菜单 when 延迟到打开', () => {
     try {
       const buckets = groupPluginItems(items, {
         target,
-        selectedPaths: ['/work/a.ts'],
+        selectedPaths: new Set(['/work/a.ts']),
         rootPath: '/work',
       });
       expect(arrayFromSpy).not.toHaveBeenCalled();
