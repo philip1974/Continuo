@@ -1,3 +1,4 @@
+import { SETTINGS_NAV } from './helpers/settings';
 // keybindings overrides 持久化:override → 关 → 重启同 userData → 仍生效.
 import { _electron as electron, expect, test } from '@playwright/test';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -87,7 +88,7 @@ test('override settings.open=mod+shift+y → 关 → 重启 → 新组合仍触�
       );
     });
 
-    await expect(win2.locator('nav[aria-label="设置分类"]')).toBeVisible({
+    await expect(win2.getByRole('navigation', { name: SETTINGS_NAV })).toBeVisible({
       timeout: 10_000,
     });
 

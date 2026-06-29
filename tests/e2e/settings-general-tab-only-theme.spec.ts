@@ -1,9 +1,10 @@
 // 通用 tab 仅 1 个 setting:general.theme.
 import { test, expect } from './fixtures/electron-app';
+import { SETTINGS, SETTINGS_NAV } from './helpers/settings';
 
 test('通用 tab 仅 general.theme(主题)', async ({ window }) => {
-  await window.locator('button[title="设置"]').click();
-  await expect(window.locator('nav[aria-label="设置分类"]')).toBeVisible({
+  await window.getByRole('button', { name: SETTINGS }).click();
+  await expect(window.getByRole('navigation', { name: SETTINGS_NAV })).toBeVisible({
     timeout: 10_000,
   });
   // 默认 active 即「通用」

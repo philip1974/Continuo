@@ -1,12 +1,13 @@
 // Marketplace 加载完成 + allTags > 0 → 显「热门标签」prefix.
 // 离线 / index 错 / 空 tags → 跳过.
 import { test, expect } from './fixtures/electron-app';
+import { MARKETPLACE_TAB, SETTINGS, SETTINGS_NAV } from './helpers/settings';
 
 test('Marketplace ok 态 → 显「热门标签」prefix', async ({ window }) => {
-  await window.locator('button[title="设置"]').click();
+  await window.getByRole('button', { name: SETTINGS }).click();
   const marketplaceTab = window
-    .locator('nav[aria-label="设置分类"]')
-    .getByRole('button', { name: '插件商店', exact: true });
+    .getByRole('navigation', { name: SETTINGS_NAV })
+    .getByRole('button', { name: MARKETPLACE_TAB });
   if ((await marketplaceTab.count()) === 0) {
     test.skip(true, '无 marketplace tab');
   }

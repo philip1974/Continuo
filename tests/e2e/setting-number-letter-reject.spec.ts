@@ -1,14 +1,15 @@
 // fontSize input(type=number)对字母输入容错:浏览器 native 已挡,setValue 不被 NaN 污染.
 import { test, expect } from './fixtures/electron-app';
+import { EDITOR_TAB, SETTINGS, SETTINGS_NAV } from './helpers/settings';
 
 test('fontSize input 改后 store 仍是合法数字', async ({ window }) => {
-  await window.locator('button[title="设置"]').click();
-  await expect(window.locator('nav[aria-label="设置分类"]')).toBeVisible({
+  await window.getByRole('button', { name: SETTINGS }).click();
+  await expect(window.getByRole('navigation', { name: SETTINGS_NAV })).toBeVisible({
     timeout: 10_000,
   });
   await window
-    .locator('nav[aria-label="设置分类"]')
-    .getByRole('button', { name: '编辑器', exact: true })
+    .getByRole('navigation', { name: SETTINGS_NAV })
+    .getByRole('button', { name: EDITOR_TAB })
     .click();
 
   const input = window.locator('input[type=number]').first();

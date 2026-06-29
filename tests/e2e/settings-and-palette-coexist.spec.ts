@@ -1,11 +1,12 @@
 // Settings panel 在 dock 内 + Cmd+Shift+P → palette modal 显示在 settings 之上.
 import { test, expect } from './fixtures/electron-app';
+import { SETTINGS, SETTINGS_NAV } from './helpers/settings';
 
 test('Settings open + Cmd+Shift+P → palette 显 + Settings nav 仍在', async ({
   window,
 }) => {
-  await window.locator('button[title="设置"]').click();
-  const nav = window.locator('nav[aria-label="设置分类"]');
+  await window.getByRole('button', { name: SETTINGS }).click();
+  const nav = window.getByRole('navigation', { name: SETTINGS_NAV });
   await expect(nav).toBeVisible({ timeout: 10_000 });
 
   await window.evaluate(() => {

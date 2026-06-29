@@ -1,7 +1,8 @@
 // 默认 hotkey ⌘+, → 打开 Settings panel.
 import { test, expect } from './fixtures/electron-app';
+import { SETTINGS_NAV } from './helpers/settings';
 
-test('Ctrl+, → Settings nav 出现', async ({ window }) => {
+test('Mod+, → Settings nav 出现', async ({ window }) => {
   // 等命令面板 commands 注册到位 + listener 挂上
   await window.waitForFunction(
     () =>
@@ -16,14 +17,14 @@ test('Ctrl+, → Settings nav 出现', async ({ window }) => {
     document.dispatchEvent(
       new KeyboardEvent('keydown', {
         key: ',',
-        ctrlKey: true,
+        metaKey: true,
         bubbles: true,
         cancelable: true,
       }),
     );
   });
 
-  await expect(window.locator('nav[aria-label="设置分类"]')).toBeVisible({
+  await expect(window.getByRole('navigation', { name: SETTINGS_NAV })).toBeVisible({
     timeout: 10_000,
   });
 });

@@ -1,3 +1,4 @@
+import { EXPLORER_TAB, SETTINGS, SETTINGS_NAV } from './helpers/settings';
 // indentSize 通过 Settings UI input 改 → 立即 + 重启同 ud 仍生效.
 import { _electron as electron, expect, test } from '@playwright/test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -38,10 +39,10 @@ test('Settings 改 indentSize=24 → 重启 → padding 同步', async () => {
     const win1 = await app1.firstWindow();
     await win1.waitForLoadState('domcontentloaded');
 
-    await win1.locator('button[title="设置"]').click();
+    await win1.getByRole('button', { name: SETTINGS }).click();
     await win1
-      .locator('nav[aria-label="设置分类"]')
-      .getByRole('button', { name: '资源管理器', exact: true })
+      .getByRole('navigation', { name: SETTINGS_NAV })
+      .getByRole('button', { name: EXPLORER_TAB })
       .click();
     const indentInput = win1.locator('input[type=number]').first();
     await expect(indentInput).toHaveValue('16');

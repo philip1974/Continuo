@@ -1,3 +1,4 @@
+import { SETTINGS, SETTINGS_NAV } from './helpers/settings';
 // 主题切换持久化:set light → 关 app → 同 userDataDir 重启 → 仍 light.
 //
 // 默认 fixture 每个 spec 启全新 app + 用 afterEach 删 userDataDir。
@@ -28,8 +29,8 @@ test('theme=light 持久化:重启同 userData 仍 light', async () => {
     await expect(win1.locator('html')).toHaveClass(/dark/);
 
     // 改成 light(通过 SettingsPanel)
-    await win1.locator('button[title="设置"]').click();
-    await expect(win1.locator('nav[aria-label="设置分类"]')).toBeVisible({
+    await win1.getByRole('button', { name: SETTINGS }).click();
+    await expect(win1.getByRole('navigation', { name: SETTINGS_NAV })).toBeVisible({
       timeout: 10_000,
     });
     const lightBtn = win1

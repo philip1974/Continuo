@@ -1,5 +1,6 @@
 // 编辑 hotkey 时按下已绑定的组合 → 冲突警告显示.
 import { test, expect } from './fixtures/electron-app';
+import { KEYBINDINGS_TAB, SETTINGS, SETTINGS_NAV } from './helpers/settings';
 
 test('register e2e.X (mod+shift+t) → 编辑 settings.open → 按 t → 警告', async ({
   window,
@@ -29,10 +30,10 @@ test('register e2e.X (mod+shift+t) → 编辑 settings.open → 按 t → 警告
   });
 
   // 打开 Settings → 快捷键 tab → 第一个编辑按钮
-  await window.locator('button[title="设置"]').click();
+  await window.getByRole('button', { name: SETTINGS }).click();
   await window
-    .locator('nav[aria-label="设置分类"]')
-    .getByRole('button', { name: '快捷键', exact: true })
+    .getByRole('navigation', { name: SETTINGS_NAV })
+    .getByRole('button', { name: KEYBINDINGS_TAB })
     .click();
   await expect(window.locator('main li').first()).toBeVisible({
     timeout: 10_000,

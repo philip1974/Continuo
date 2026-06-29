@@ -4,6 +4,12 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  clickFirstVisibleResetDefault,
+  EDITOR_TAB,
+  SETTINGS,
+  SETTINGS_NAV,
+} from './helpers/settings';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -20,23 +26,19 @@ test('改 → reset → 重启同 ud → fontSize input 仍 13', async () => {
     const win1 = await app1.firstWindow();
     await win1.waitForLoadState('domcontentloaded');
 
-    await win1.locator('button[title="设置"]').click();
+    await win1.getByRole('button', { name: SETTINGS }).click();
+    await expect(win1.getByRole('navigation', { name: SETTINGS_NAV })).toBeVisible({
+      timeout: 10_000,
+    });
     await win1
-      .locator('nav[aria-label="设置分类"]')
-      .getByRole('button', { name: '编辑器', exact: true })
-      .click();
+      .getByRole('navigation', { name: SETTINGS_NAV })
+      .getByRole('button', { name: EDITOR_TAB })
+      .dispatchEvent('click');
 
     const fi1 = win1.locator('input[type=number]').first();
     await fi1.fill('20');
     await win1.waitForTimeout(150);
-    await win1.evaluate(() => {
-      const btn = Array.from(
-        document.querySelectorAll<HTMLButtonElement>(
-          'button[aria-label="恢复默认"]',
-        ),
-      ).find((b) => !b.className.includes('invisible'));
-      btn?.click();
-    });
+    await clickFirstVisibleResetDefault(win1);
     await expect(fi1).toHaveValue('13');
     await win1.waitForTimeout(200);
     await app1.close();
@@ -49,11 +51,14 @@ test('改 → reset → 重启同 ud → fontSize input 仍 13', async () => {
     const win2 = await app2.firstWindow();
     await win2.waitForLoadState('domcontentloaded');
 
-    await win2.locator('button[title="设置"]').click();
+    await win2.getByRole('button', { name: SETTINGS }).click();
+    await expect(win2.getByRole('navigation', { name: SETTINGS_NAV })).toBeVisible({
+      timeout: 10_000,
+    });
     await win2
-      .locator('nav[aria-label="设置分类"]')
-      .getByRole('button', { name: '编辑器', exact: true })
-      .click();
+      .getByRole('navigation', { name: SETTINGS_NAV })
+      .getByRole('button', { name: EDITOR_TAB })
+      .dispatchEvent('click');
     await expect(win2.locator('input[type=number]').first()).toHaveValue('13');
     await app2.close();
   } finally {

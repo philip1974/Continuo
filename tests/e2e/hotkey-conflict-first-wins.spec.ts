@@ -1,5 +1,6 @@
 // 同 hotkey 多命令 → useCommandHotkeys 内 for 循环命中第一条 return,后注册的不响应.
 import { test, expect } from './fixtures/electron-app';
+import { SETTINGS_NAV } from './helpers/settings';
 
 test('注册同 hotkey 第二条命令 → 第一条仍优先(getAll insertion 顺序)', async ({
   window,
@@ -41,7 +42,7 @@ test('注册同 hotkey 第二条命令 → 第一条仍优先(getAll insertion �
   });
 
   // settings.open 仍触发(第一注册者赢)→ Settings panel 出现
-  await expect(window.locator('nav[aria-label="设置分类"]')).toBeVisible({
+  await expect(window.getByRole('navigation', { name: SETTINGS_NAV })).toBeVisible({
     timeout: 10_000,
   });
 });

@@ -1,5 +1,6 @@
 // 注册无 hotkey 命令 → 不影响现有 hotkey;Cmd+, 仍触发 settings.open.
 import { test, expect } from './fixtures/electron-app';
+import { SETTINGS_NAV } from './helpers/settings';
 
 test('register e2e.silent(无 hotkey)→ Cmd+, 仍触发 settings.open', async ({
   window,
@@ -38,7 +39,7 @@ test('register e2e.silent(无 hotkey)→ Cmd+, 仍触发 settings.open', async (
       }),
     );
   });
-  await expect(window.locator('nav[aria-label="设置分类"]')).toBeVisible({
+  await expect(window.getByRole('navigation', { name: SETTINGS_NAV })).toBeVisible({
     timeout: 5_000,
   });
 });

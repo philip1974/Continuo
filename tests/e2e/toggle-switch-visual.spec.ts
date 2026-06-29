@@ -1,16 +1,17 @@
 // ToggleSwitch checked=true → class 含 bg-accent;false → bg-panel-soft.
 import { test, expect } from './fixtures/electron-app';
+import { EDITOR_TAB, SETTINGS, SETTINGS_NAV } from './helpers/settings';
 
 test('显示行号 toggle: 默认 bg-accent → 切 false → bg-panel-soft', async ({
   window,
 }) => {
-  await window.locator('button[title="设置"]').click();
-  await expect(window.locator('nav[aria-label="设置分类"]')).toBeVisible({
+  await window.getByRole('button', { name: SETTINGS }).click();
+  await expect(window.getByRole('navigation', { name: SETTINGS_NAV })).toBeVisible({
     timeout: 10_000,
   });
   await window
-    .locator('nav[aria-label="设置分类"]')
-    .getByRole('button', { name: '编辑器', exact: true })
+    .getByRole('navigation', { name: SETTINGS_NAV })
+    .getByRole('button', { name: EDITOR_TAB })
     .click();
 
   const toggle = window.locator('button[role=switch]').first();

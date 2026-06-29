@@ -1,5 +1,6 @@
 // unbind hotkey(空字符串覆盖)→ 该 hotkey 不再触发命令.
 import { test, expect } from './fixtures/electron-app';
+import { SETTINGS, SETTINGS_NAV } from './helpers/settings';
 
 test('unbind settings.open(空字符串)→ ⌘, 不再触发', async ({
   window,
@@ -38,11 +39,11 @@ test('unbind settings.open(空字符串)→ ⌘, 不再触发', async ({
   await window.waitForTimeout(500);
 
   // Settings panel 不应打开
-  await expect(window.locator('nav[aria-label="设置分类"]')).toHaveCount(0);
+  await expect(window.getByRole('navigation', { name: SETTINGS_NAV })).toHaveCount(0);
 
   // 但齿轮按钮点击仍能开
-  await window.locator('button[title="设置"]').click();
-  await expect(window.locator('nav[aria-label="设置分类"]')).toBeVisible({
+  await window.getByRole('button', { name: SETTINGS }).click();
+  await expect(window.getByRole('navigation', { name: SETTINGS_NAV })).toBeVisible({
     timeout: 10_000,
   });
 });

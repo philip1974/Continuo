@@ -1,3 +1,4 @@
+import { EXPLORER_TAB, SETTINGS, SETTINGS_NAV } from './helpers/settings';
 // showHiddenFiles UI toggle → 重启同 ud → setting 仍 true.
 import { _electron as electron, expect, test } from '@playwright/test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -38,10 +39,10 @@ test('toggle showHiddenFiles → 重启 → 仍 true + .secret 显', async () =>
     const win1 = await app1.firstWindow();
     await win1.waitForLoadState('domcontentloaded');
 
-    await win1.locator('button[title="设置"]').click();
+    await win1.getByRole('button', { name: SETTINGS }).click();
     await win1
-      .locator('nav[aria-label="设置分类"]')
-      .getByRole('button', { name: '资源管理器', exact: true })
+      .getByRole('navigation', { name: SETTINGS_NAV })
+      .getByRole('button', { name: EXPLORER_TAB })
       .click();
 
     const toggle = win1.locator('button[role=switch]').first();

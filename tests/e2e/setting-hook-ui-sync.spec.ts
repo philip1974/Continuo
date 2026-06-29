@@ -1,14 +1,15 @@
 // SettingsPanel 打开时 setSettingValue → input value 同步.
 import { test, expect } from './fixtures/electron-app';
+import { EDITOR_TAB, SETTINGS, SETTINGS_NAV } from './helpers/settings';
 
 test('SettingsPanel 显 + hook setValue → input 同步', async ({ window }) => {
-  await window.locator('button[title="设置"]').click();
-  await expect(window.locator('nav[aria-label="设置分类"]')).toBeVisible({
+  await window.getByRole('button', { name: SETTINGS }).click();
+  await expect(window.getByRole('navigation', { name: SETTINGS_NAV })).toBeVisible({
     timeout: 10_000,
   });
   await window
-    .locator('nav[aria-label="设置分类"]')
-    .getByRole('button', { name: '编辑器', exact: true })
+    .getByRole('navigation', { name: SETTINGS_NAV })
+    .getByRole('button', { name: EDITOR_TAB })
     .click();
 
   const fontInput = window.locator('input[type=number]').first();

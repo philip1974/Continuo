@@ -1,5 +1,6 @@
 // override hotkey 后,新组合真触发命令(useCommandHotkeys 走 effective).
 import { test, expect } from './fixtures/electron-app';
+import { SETTINGS_NAV } from './helpers/settings';
 
 test('override settings.open 为 mod+shift+y → 按下新组合 → 打开 Settings', async ({
   window,
@@ -36,7 +37,7 @@ test('override settings.open 为 mod+shift+y → 按下新组合 → 打开 Sett
     );
   });
 
-  await expect(window.locator('nav[aria-label="设置分类"]')).toBeVisible({
+  await expect(window.getByRole('navigation', { name: SETTINGS_NAV })).toBeVisible({
     timeout: 10_000,
   });
 });
@@ -76,5 +77,5 @@ test('override 后 → 旧 hotkey ⌘, 不再触发', async ({ window }) => {
 
   // 等待几秒后 nav 仍不可见(旧 hotkey 不再绑定)
   await window.waitForTimeout(500);
-  await expect(window.locator('nav[aria-label="设置分类"]')).toHaveCount(0);
+  await expect(window.getByRole('navigation', { name: SETTINGS_NAV })).toHaveCount(0);
 });

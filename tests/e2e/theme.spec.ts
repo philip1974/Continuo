@@ -1,14 +1,15 @@
 // Theme 切换:Settings → 通用 → general.theme select.
 // 从 dark 切到 light → html.dark 移除;切回 → 加上.
 import { test, expect } from './fixtures/electron-app';
+import { SETTINGS, SETTINGS_NAV } from './helpers/settings';
 
 test('通用 → 主题切到 light → html.dark 移除', async ({ window }) => {
   // 默认 dark:html 上有 .dark
   await expect(window.locator('html')).toHaveClass(/dark/);
 
   // 打开 Settings,留在「通用」tab(默认首项)
-  await window.locator('button[title="设置"]').click();
-  await expect(window.locator('nav[aria-label="设置分类"]')).toBeVisible({
+  await window.getByRole('button', { name: SETTINGS }).click();
+  await expect(window.getByRole('navigation', { name: SETTINGS_NAV })).toBeVisible({
     timeout: 10_000,
   });
 

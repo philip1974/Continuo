@@ -1,9 +1,10 @@
 // Settings nav 反复切换 5+ 次不抛 + 各 tab 主区文案稳定.
 import { test, expect } from './fixtures/electron-app';
+import { EDITOR_TAB, SETTINGS, SETTINGS_NAV } from './helpers/settings';
 
 test('循环 nav tab 切换 → 各 tab 内容均渲染', async ({ window }) => {
-  await window.locator('button[title="设置"]').click();
-  const nav = window.locator('nav[aria-label="设置分类"]');
+  await window.getByRole('button', { name: SETTINGS }).click();
+  const nav = window.getByRole('navigation', { name: SETTINGS_NAV });
   await expect(nav).toBeVisible({ timeout: 10_000 });
 
   const tabs = ['通用', '编辑器', '资源管理器', '快捷键', '插件'];
@@ -28,6 +29,6 @@ test('循环 nav tab 切换 → 各 tab 内容均渲染', async ({ window }) => 
   await expect(window.locator('main')).toContainText('主题');
 
   // 编辑器 tab 文案
-  await nav.getByRole('button', { name: '编辑器', exact: true }).click();
+  await nav.getByRole('button', { name: EDITOR_TAB }).click();
   await expect(window.locator('main')).toContainText('字号');
 });

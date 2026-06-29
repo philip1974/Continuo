@@ -1,11 +1,12 @@
 // 改非主题设置(fontSize)+ 切 light → fontSize 仍是修改后值.
 import { test, expect } from './fixtures/electron-app';
+import { EDITOR_TAB, SETTINGS, SETTINGS_NAV } from './helpers/settings';
 
 test('改 fontSize=18 + 切 light → fontSize 仍 18', async ({ window }) => {
-  await window.locator('button[title="设置"]').click();
-  const nav = window.locator('nav[aria-label="设置分类"]');
+  await window.getByRole('button', { name: SETTINGS }).click();
+  const nav = window.getByRole('navigation', { name: SETTINGS_NAV });
   await expect(nav).toBeVisible({ timeout: 10_000 });
-  await nav.getByRole('button', { name: '编辑器', exact: true }).click();
+  await nav.getByRole('button', { name: EDITOR_TAB }).click();
 
   await window.locator('input[type=number]').first().fill('18');
 
@@ -19,6 +20,6 @@ test('改 fontSize=18 + 切 light → fontSize 仍 18', async ({ window }) => {
   await expect(window.locator('html')).not.toHaveClass(/dark/);
 
   // 回编辑器 tab → fontSize 仍 18
-  await nav.getByRole('button', { name: '编辑器', exact: true }).click();
+  await nav.getByRole('button', { name: EDITOR_TAB }).click();
   await expect(window.locator('input[type=number]').first()).toHaveValue('18');
 });

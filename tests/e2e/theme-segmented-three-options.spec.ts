@@ -1,11 +1,12 @@
 // 通用 tab 主题 SegmentedControl 三选项 + 默认 Dark active.
 import { test, expect } from './fixtures/electron-app';
+import { SETTINGS, SETTINGS_NAV } from './helpers/settings';
 
 test('Settings 通用 → 主题 Light/Dark/System + 默认 Dark active', async ({
   window,
 }) => {
-  await window.locator('button[title="设置"]').click();
-  const nav = window.locator('nav[aria-label="设置分类"]');
+  await window.getByRole('button', { name: SETTINGS }).click();
+  const nav = window.getByRole('navigation', { name: SETTINGS_NAV });
   await expect(nav).toBeVisible({ timeout: 10_000 });
   // 默认就是「通用」 tab
 

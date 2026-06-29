@@ -1,11 +1,12 @@
 // Settings 资源管理器 tab 含 显示隐藏文件 + 缩进宽度 setting.
 import { test, expect } from './fixtures/electron-app';
+import { EXPLORER_TAB, SETTINGS, SETTINGS_NAV } from './helpers/settings';
 
 test('资源管理器 tab 显 showHiddenFiles + indentSize', async ({ window }) => {
-  await window.locator('button[title="设置"]').click();
+  await window.getByRole('button', { name: SETTINGS }).click();
   await window
-    .locator('nav[aria-label="设置分类"]')
-    .getByRole('button', { name: '资源管理器', exact: true })
+    .getByRole('navigation', { name: SETTINGS_NAV })
+    .getByRole('button', { name: EXPLORER_TAB })
     .click();
 
   const main = window.locator('main');

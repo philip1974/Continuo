@@ -1,5 +1,6 @@
 // 加 Terminal 和 Settings 后,选择性关闭一个 → 另两个仍在.
 import { test, expect } from './fixtures/electron-app';
+import { SETTINGS, SETTINGS_NAV } from './helpers/settings';
 
 test('开 Editor + Terminal + Settings → 关 Settings → Editor + Terminal 仍在', async ({
   window,
@@ -29,8 +30,8 @@ test('开 Editor + Terminal + Settings → 关 Settings → Editor + Terminal �
   ).toBeVisible({ timeout: 10_000 });
 
   // 加 Settings
-  await window.locator('button[title="设置"]').click();
-  await expect(window.locator('nav[aria-label="设置分类"]')).toBeVisible({
+  await window.getByRole('button', { name: SETTINGS }).click();
+  await expect(window.getByRole('navigation', { name: SETTINGS_NAV })).toBeVisible({
     timeout: 10_000,
   });
 

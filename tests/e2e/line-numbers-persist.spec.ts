@@ -1,3 +1,4 @@
+import { EDITOR_TAB, SETTINGS, SETTINGS_NAV } from './helpers/settings';
 // lineNumbers UI toggle off → 重启同 ud → CM 含 cm-no-gutters.
 import { _electron as electron, expect, test } from '@playwright/test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -38,10 +39,10 @@ test('toggle lineNumbers off → 重启 → CM 仍 cm-no-gutters', async () => {
     const win1 = await app1.firstWindow();
     await win1.waitForLoadState('domcontentloaded');
 
-    await win1.locator('button[title="设置"]').click();
+    await win1.getByRole('button', { name: SETTINGS }).click();
     await win1
-      .locator('nav[aria-label="设置分类"]')
-      .getByRole('button', { name: '编辑器', exact: true })
+      .getByRole('navigation', { name: SETTINGS_NAV })
+      .getByRole('button', { name: EDITOR_TAB })
       .click();
     const toggle = win1.locator('button[role=switch]').first();
     await expect(toggle).toHaveAttribute('aria-checked', 'true');

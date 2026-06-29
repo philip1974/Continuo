@@ -1,13 +1,14 @@
 // Settings 终端 tab 含字号 + 光标样式 + id chip.
 import { test, expect } from './fixtures/electron-app';
+import { SETTINGS, SETTINGS_NAV, TERMINAL_TAB } from './helpers/settings';
 
 test('终端 tab 显字号(terminal.fontSize)+ 光标样式(terminal.cursorStyle)', async ({
   window,
 }) => {
-  await window.locator('button[title="设置"]').click();
+  await window.getByRole('button', { name: SETTINGS }).click();
   await window
-    .locator('nav[aria-label="设置分类"]')
-    .getByRole('button', { name: '终端', exact: true })
+    .getByRole('navigation', { name: SETTINGS_NAV })
+    .getByRole('button', { name: TERMINAL_TAB })
     .click();
 
   const main = window.locator('main');

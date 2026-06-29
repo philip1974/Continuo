@@ -1,13 +1,19 @@
 // reset 一个 override → localStorage values 中 key 删除.
 import { test, expect } from './fixtures/electron-app';
+import {
+  clickFirstVisibleResetDefault,
+  EDITOR_TAB,
+  SETTINGS,
+  SETTINGS_NAV,
+} from './helpers/settings';
 
 test('改 fontSize=20 → reset → values 不含 editor.fontSize', async ({
   window,
 }) => {
-  await window.locator('button[title="设置"]').click();
+  await window.getByRole('button', { name: SETTINGS }).click();
   await window
-    .locator('nav[aria-label="设置分类"]')
-    .getByRole('button', { name: '编辑器', exact: true })
+    .getByRole('navigation', { name: SETTINGS_NAV })
+    .getByRole('button', { name: EDITOR_TAB })
     .click();
 
   const fontInput = window.locator('input[type=number]').first();
@@ -20,14 +26,7 @@ test('改 fontSize=20 → reset → values 不含 editor.fontSize', async ({
   expect(stored).toContain('"editor.fontSize":20');
 
   // reset
-  await window.evaluate(() => {
-    const btn = Array.from(
-      document.querySelectorAll<HTMLButtonElement>(
-        'button[aria-label="恢复默认"]',
-      ),
-    ).find((b) => !b.className.includes('invisible'));
-    btn?.click();
-  });
+  await clickFirstVisibleResetDefault(window);
   await window.waitForTimeout(200);
 
   stored = await window.evaluate(() =>

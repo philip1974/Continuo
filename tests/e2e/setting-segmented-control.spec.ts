@@ -1,14 +1,15 @@
 // terminal.cursorStyle select 用 SegmentedControl,3 选项:块 / 下划线 / 竖线.
 import { test, expect } from './fixtures/electron-app';
+import { SETTINGS, SETTINGS_NAV, TERMINAL_TAB } from './helpers/settings';
 
 test('terminal.cursorStyle 三选项 + 切换 + 持久化', async ({ window }) => {
-  await window.locator('button[title="设置"]').click();
-  await expect(window.locator('nav[aria-label="设置分类"]')).toBeVisible({
+  await window.getByRole('button', { name: SETTINGS }).click();
+  await expect(window.getByRole('navigation', { name: SETTINGS_NAV })).toBeVisible({
     timeout: 10_000,
   });
   await window
-    .locator('nav[aria-label="设置分类"]')
-    .getByRole('button', { name: '终端', exact: true })
+    .getByRole('navigation', { name: SETTINGS_NAV })
+    .getByRole('button', { name: TERMINAL_TAB })
     .click();
 
   const main = window.locator('main');

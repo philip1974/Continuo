@@ -1,15 +1,23 @@
 // 设置项 reset:改 number setting → reset icon 出现 → 点击恢复 default.
 import { test, expect } from './fixtures/electron-app';
+import {
+  clickFirstVisibleResetDefault,
+  EDITOR_TAB,
+  resetDefaultButtons,
+  SETTINGS,
+  SETTINGS_NAV,
+  visibleResetDefaultCount,
+} from './helpers/settings';
 
 test('字号设置改后 reset 按钮出现 + 点击恢复 default', async ({ window }) => {
-  await window.locator('button[title="设置"]').click();
-  await expect(window.locator('nav[aria-label="设置分类"]')).toBeVisible({
+  await window.getByRole('button', { name: SETTINGS }).click();
+  await expect(window.getByRole('navigation', { name: SETTINGS_NAV })).toBeVisible({
     timeout: 10_000,
   });
   // 切到「编辑器」tab
   await window
-    .locator('nav[aria-label="设置分类"]')
-    .getByRole('button', { name: '编辑器', exact: true })
+    .getByRole('navigation', { name: SETTINGS_NAV })
+    .getByRole('button', { name: EDITOR_TAB })
     .click();
 
   // 找 number input(editor.fontSize 默认 13)
@@ -24,17 +32,10 @@ test('字号设置改后 reset 按钮出现 + 点击恢复 default', async ({ wi
 
   // reset 按钮变可见(原本 invisible class)
   // 同行的 reset IconButton aria-label='恢复默认'
-  const resetBtns = window.locator('button[aria-label="恢复默认"]');
+  const resetBtns = resetDefaultButtons(window);
   // 可能有多个 setting item — 找当前行(input 的兄弟)
   // 简化:遍历找第一个 visible class 不含 invisible 的
-  const visibleResetCount = await window.evaluate(() => {
-    const btns = Array.from(
-      document.querySelectorAll<HTMLButtonElement>(
-        'button[aria-label="恢复默认"]',
-      ),
-    );
-    return btns.filter((b) => !b.className.includes('invisible')).length;
-  });
+  const visibleResetCount = await visibleResetDefaultCount(window);
   expect(visibleResetCount).toBeGreaterThan(0);
 
   // 点同行的 reset
@@ -42,14 +43,7 @@ test('字号设置改后 reset 按钮出现 + 点击恢复 default', async ({ wi
     .filter({ has: window.locator('xpath=.') }) // no-op,Locator 链接示意
     .first();
   // 用 evaluate 找到第一个 not-invisible reset 直接 click
-  await window.evaluate(() => {
-    const btn = Array.from(
-      document.querySelectorAll<HTMLButtonElement>(
-        'button[aria-label="恢复默认"]',
-      ),
-    ).find((b) => !b.className.includes('invisible'));
-    btn?.click();
-  });
+  await clickFirstVisibleResetDefault(window);
 
   // 字号回到 13
   await expect(fontSizeInput).toHaveValue('13');

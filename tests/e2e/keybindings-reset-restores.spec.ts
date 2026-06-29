@@ -1,5 +1,6 @@
 // override hotkey 后 reset → 回到 spec.hotkey.
 import { test, expect } from './fixtures/electron-app';
+import { SETTINGS_NAV } from './helpers/settings';
 
 test('override 后 reset → CommandPalette 显示原 hotkey', async ({
   window,
@@ -51,7 +52,7 @@ test('override 后 reset → CommandPalette 显示原 hotkey', async ({
     );
   });
 
-  await expect(window.locator('nav[aria-label="设置分类"]')).toBeVisible({
+  await expect(window.getByRole('navigation', { name: SETTINGS_NAV })).toBeVisible({
     timeout: 10_000,
   });
 });

@@ -1,28 +1,30 @@
 // Plugin tab 「设置 Tab」samples 含核心 tab ids.
 import { test, expect } from './fixtures/electron-app';
+import {
+  PLUGINS_SETTING_TABS_LABELS,
+  PLUGINS_TAB,
+  pluginContributionRowText,
+  SETTINGS,
+  SETTINGS_NAV,
+} from './helpers/settings';
 
 test('设置 Tab samples 含 core.general/core.editor', async ({ window }) => {
-  await window.locator('button[title="设置"]').click();
+  await window.getByRole('button', { name: SETTINGS }).click();
   await window
-    .locator('nav[aria-label="设置分类"]')
-    .getByRole('button', { name: '插件', exact: true })
+    .getByRole('navigation', { name: SETTINGS_NAV })
+    .getByRole('button', { name: PLUGINS_TAB })
     .click();
 
-  await expect(window.locator('text=设置 Tab').first()).toBeVisible({
+  await expect(
+    window.getByText(new RegExp(PLUGINS_SETTING_TABS_LABELS.join('|'))).first(),
+  ).toBeVisible({
     timeout: 10_000,
   });
 
-  const samplesText = await window.locator('main').evaluate((root) => {
-    const rows = Array.from(root.querySelectorAll('div')).filter((d) =>
-      Array.from(d.children).some(
-        (c) =>
-          c.textContent?.trim() === '设置 Tab' &&
-          c.classList.contains('w-32'),
-      ),
-    );
-    if (rows.length === 0) return '';
-    return rows[0]!.textContent ?? '';
-  });
+  const samplesText = await pluginContributionRowText(
+    window,
+    PLUGINS_SETTING_TABS_LABELS,
+  );
 
   expect(samplesText).toContain('core.general');
   expect(samplesText).toContain('core.editor');

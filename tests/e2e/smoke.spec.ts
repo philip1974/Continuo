@@ -2,6 +2,7 @@
 // 这是 e2e 的"门"——失败说明 build/main/preload/renderer 任意一段烂了.
 
 import { test, expect } from './fixtures/electron-app';
+import { SETTINGS, SETTINGS_NAV } from './helpers/settings';
 
 test('app 启动后渲染基本 shell 框架', async ({ window }) => {
   // 标题栏:无工作区 + 无 active tab 时 fallback 「Continuo」
@@ -30,11 +31,11 @@ test('renderer 暴露 __lmApi(preload contextBridge 工作)', async ({ window })
 });
 
 test('Settings 齿轮点击打开 Settings panel', async ({ window }) => {
-  await window.locator('button[title="设置"]').click();
+  await window.getByRole('button', { name: SETTINGS }).click();
 
   // dockview 创建 panel 后,内容区出现「设置」相关 settings tab nav
   // 「通用 / 编辑器 / 资源管理器 / 终端 / 快捷键 / 插件 / 商店」中至少有一项
-  await expect(window.locator('nav[aria-label="设置分类"]')).toBeVisible({
+  await expect(window.getByRole('navigation', { name: SETTINGS_NAV })).toBeVisible({
     timeout: 10_000,
   });
 });

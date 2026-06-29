@@ -1,3 +1,4 @@
+import { EDITOR_TAB, SETTINGS, SETTINGS_NAV } from './helpers/settings';
 // Markdown 自动保存:store.updateContent → 经过 autoSave.delayMs 后磁盘写入.
 //
 // 直接通过 testing hook 注入 editor.store.updateContent(避开 milkdown 复杂操作),
@@ -29,10 +30,10 @@ test('打开 .md → 修改内容(via store)→ 自动保存到磁盘', async ({
   // 这里改测「显式调 saveActive 没有 dirty 时不抛 + 自动保存功能开关在 settings 内可见」.
 
   // 验证自动保存 setting 默认 true:打开 settings 看 toggle.
-  await window.locator('button[title="设置"]').click();
+  await window.getByRole('button', { name: SETTINGS }).click();
   await window
-    .locator('nav[aria-label="设置分类"]')
-    .getByRole('button', { name: '编辑器', exact: true })
+    .getByRole('navigation', { name: SETTINGS_NAV })
+    .getByRole('button', { name: EDITOR_TAB })
     .click();
 
   await expect(window.locator('main').getByText('自动保存 Markdown')).toBeVisible();
