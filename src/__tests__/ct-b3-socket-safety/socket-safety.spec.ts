@@ -23,6 +23,7 @@ vi.mock('electron', () => ({
 import {
   createStdioSocketServer,
   MAX_STDIO_CLIENTS_GLOBAL_FOR_TEST,
+  shouldPrepareStdioSocketFilesystem,
   type StdioSocketServer,
 } from '../../../electron/main/services/mcp-stdio-server.service';
 import {
@@ -103,6 +104,12 @@ describe('CT-B3 stdio socket safety', { timeout: 30_000 }, () => {
     servers.push(server);
     return server;
   }
+
+  it('Windows named pipe skips Unix socket filesystem preparation', () => {
+    expect(shouldPrepareStdioSocketFilesystem('win32')).toBe(false);
+    expect(shouldPrepareStdioSocketFilesystem('darwin')).toBe(true);
+    expect(shouldPrepareStdioSocketFilesystem('linux')).toBe(true);
+  });
 
   it('creates private parent and socket modes', async () => {
     const { dir, socketPath } = await makeSocketPath();

@@ -6,7 +6,7 @@
 // 优势:Claude Code mcp 配置只存 spawn 命令路径,无 token,无端口,
 // Continuo 重启 token rotate 不影响,一次配置永久使用。
 //
-// Windows 留 TODO(named pipe 路径不同,API 一致)。
+// Windows 走 named pipe(不在文件系统,跳过 unix socket chmod/unlink)。
 //
 // BDD: src/__tests__/agent-terminal-mcp-stdio-framing/(framing 纯函数)
 // HTTP server 行为不复用本主题,留 E2E。
@@ -198,6 +198,12 @@ function modeOct(mode: number): string {
   return `0${(mode & 0o777).toString(8)}`;
 }
 
+export function shouldPrepareStdioSocketFilesystem(
+  platform: NodeJS.Platform,
+): boolean {
+  return platform !== 'win32';
+}
+
 export async function setupSocketDir(socketPath: string): Promise<void> {
   const parentDir = path.dirname(socketPath);
   await mkdir(parentDir, { recursive: true, mode: 0o700 });
@@ -366,9 +372,11 @@ async function handleLine(
 export async function createStdioSocketServer(
   opts: CreateStdioSocketOptions,
 ): Promise<StdioSocketServer> {
-  const isWin = process.platform === 'win32';
+  const shouldPrepareFilesystem = shouldPrepareStdioSocketFilesystem(
+    process.platform,
+  );
 
-  if (!isWin) {
+  if (shouldPrepareFilesystem) {
     await setupSocketDir(opts.socketPath);
   }
 
@@ -510,7 +518,7 @@ export async function createStdioSocketServer(
     });
   });
 
-  if (!isWin) {
+  if (shouldPrepareFilesystem) {
     // 显式 chmod 0600(unix socket 默认 umask 通常 0666 太宽)
     try {
       await chmod(opts.socketPath, 0o600);
@@ -548,7 +556,7 @@ export async function createStdioSocketServer(
       }
       clients.clear();
       await new Promise<void>((resolve) => server.close(() => resolve()));
-      if (!isWin) {
+      if (shouldPrepareFilesystem) {
         try {
           await unlink(opts.socketPath);
         } catch {
