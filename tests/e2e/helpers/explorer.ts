@@ -5,6 +5,8 @@ export const EXPLORER_NEW_FOLDER = /^(新建文件夹|New [Ff]older|새 폴더)$
 export const EXPLORER_REFRESH =
   /^(刷新资源管理器|Refresh|탐색기 새로 고침)$/;
 export const EXPLORER_COLLAPSE_ALL = /^(折叠全部|Collapse all|모두 접기)$/;
+export const EXPLORER_LOADING_OR_EMPTY =
+  /^(读取中或空目录|Loading or empty folder|로딩 중이거나 빈 폴더)$/;
 export const EXPLORER_EXPAND_ALL = /^(展开全部|Expand all|모두 펼치기)$/;
 export const EXPLORER_CLOSE_FOLDER =
   /^(关闭文件夹|Close folder|폴더 닫기)$/;

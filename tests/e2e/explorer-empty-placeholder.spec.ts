@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { EXPLORER_LOADING_OR_EMPTY } from './helpers/explorer';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -35,7 +36,7 @@ test('空 ws → 显「读取中或空目录」', async () => {
     const win = await app.firstWindow();
     await win.waitForLoadState('domcontentloaded');
 
-    await expect(win.locator('text=读取中或空目录')).toBeVisible({
+    await expect(win.getByText(EXPLORER_LOADING_OR_EMPTY)).toBeVisible({
       timeout: 10_000,
     });
 

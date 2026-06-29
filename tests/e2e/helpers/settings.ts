@@ -55,6 +55,8 @@ export const MARKETPLACE_READY =
   /(显示\s*\d+\s*\/\s*共\s*\d+\s*个插件|Showing\s*\d+\s*\/\s*\d+\s*plugins|\d+\s*\/\s*\d+\s*플러그인 표시|暂无插件|No plugins|플러그인 없음|拉取索引失败|Failed to fetch index|인덱스 가져오기 실패)/;
 export const MARKETPLACE_INDEX_OK =
   /(显示\s*\d+\s*\/\s*共\s*\d+\s*个插件|Showing\s*\d+\s*\/\s*\d+\s*plugins|\d+\s*\/\s*\d+\s*플러그인 표시|暂无插件|No plugins|플러그인 없음)/;
+export const MARKETPLACE_POPULAR_TAGS =
+  /^(热门标签|Popular tags|인기 태그)$/;
 export const MARKETPLACE_GIT_URL_INSTALL =
   /^(从 Git URL 安装|Install from Git URL|Git URL에서 설치)$/;
 export const MARKETPLACE_GIT_URL_WARNING =

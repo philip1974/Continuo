@@ -1,5 +1,6 @@
 // 展开 src + 点 header「折叠全部」→ src 折叠 + a.ts 不显.
 import { test, expect } from './fixtures/with-workspace';
+import { EXPLORER_COLLAPSE_ALL } from './helpers/explorer';
 
 test('展开 src → 折叠全部 → a.ts 隐', async ({ window }) => {
   // 展开 src
@@ -11,7 +12,7 @@ test('展开 src → 折叠全部 → a.ts 隐', async ({ window }) => {
   // 点 header 「折叠全部」(hover 让 toolbar 浮现)
   const aside = window.locator('main aside').nth(1);
   await aside.locator('div.group').first().hover();
-  await aside.locator('button[aria-label="折叠全部"]').click();
+  await aside.getByRole('button', { name: EXPLORER_COLLAPSE_ALL }).click();
 
   // a.ts 不再显
   await expect(

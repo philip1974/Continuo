@@ -3,6 +3,7 @@
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
+import { EXPLORER_REFRESH } from './helpers/explorer';
 
 test('点「刷新」 → Explorer 立即反映外部新文件', async ({
   window,
@@ -14,8 +15,7 @@ test('点「刷新」 → Explorer 立即反映外部新文件', async ({
   // hover header 让工具条 group-hover 浮现
   const aside = window.locator('main aside').nth(1);
   await aside.locator('div.group').first().hover();
-  // 「刷新」按钮 aria-label='刷新'
-  const refreshBtn = aside.locator('button[aria-label="刷新"]');
+  const refreshBtn = aside.getByRole('button', { name: EXPLORER_REFRESH });
   await expect(refreshBtn).toBeVisible({ timeout: 5_000 });
   await refreshBtn.click();
 
