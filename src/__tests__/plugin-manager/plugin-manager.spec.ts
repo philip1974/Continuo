@@ -620,12 +620,12 @@ describe('reload(id)', () => {
 
     // 1) 热重载读到半写入 manifest:JSON 合法、id 对(故 reload 能 find 到),但缺 name/version
     // → parseManifest 失败 → 已启用插件被置 'failed'(先 deactivate)。
-    state.dirs[0]!.manifestText = JSON.stringify({ id: 'r' });
+    state.dirs[0] = { ...state.dirs[0]!, manifestText: JSON.stringify({ id: 'r' }) };
     await mgr.reload('r');
     expect(mgr.listAll().find((x) => x.id === 'r')?.status).toBe('failed');
 
     // 2) 文件修好再次 reload → 按用户启用意图重激活,而非因瞬时坏快照推断成 disabled。
-    state.dirs[0]!.manifestText = manifestText('r');
+    state.dirs[0] = { ...state.dirs[0]!, manifestText: manifestText('r') };
     await mgr.reload('r');
     expect(mgr.listAll().find((x) => x.id === 'r')?.status).toBe('enabled');
   });
