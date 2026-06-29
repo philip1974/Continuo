@@ -209,7 +209,12 @@ describe('terminal.await_stop_hook', () => {
     try {
       await broker.start();
       await expect(
-        broker.awaitNext({ windowId: 4, runner: 'codex', cwd: '/repo' }),
+        broker.awaitNext({
+          windowId: 4,
+          runner: 'codex',
+          cwd: '/repo',
+          timeoutMs: 5000,
+        }),
       ).resolves.toMatchObject({
         payload: { runner: 'codex', cliSessionId: 'cli-1' },
         windowId: 4,
@@ -649,9 +654,14 @@ describe('terminal.await_stop_hook', () => {
       { id: 'term-1', windowId: 4, runner: 'cc', cwd: '/repo' },
     ]);
     const longId = 'z'.repeat(5000);
-    const err = await driver
-      .awaitStopHook({ session_id: longId })
-      .catch((e: unknown) => e as Error);
+    const err = await Promise.resolve(
+      driver.awaitStopHook({ session_id: longId }),
+    ).then(
+      () => {
+        throw new Error('expected await_stop_hook to reject');
+      },
+      (e: unknown) => e as Error,
+    );
     expect((err as { code?: string }).code).toBe('TERMINAL_SESSION_NOT_FOUND');
     expect(err.message).toContain('…');
     expect(err.message.length).toBeLessThan(400);
