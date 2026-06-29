@@ -23,6 +23,7 @@ test('Terminal active + Cmd+P → Quick Open modal 显', async ({ window }) => {
   expect(created).toBe(true);
   const terminalTab = window.getByRole('tab', { name: TERMINAL_TAB });
   await expect(terminalTab).toBeVisible({ timeout: 15_000 });
+  await terminalTab.click();
   await expect(terminalTab).toHaveAttribute('aria-selected', 'true', {
     timeout: 15_000,
   });
