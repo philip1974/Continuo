@@ -45,6 +45,7 @@ function build(
     stepIn: vi.fn(async () => ({ continued: true })),
     stepOut: vi.fn(async () => ({ continued: true })),
     stackTrace: vi.fn(async () => ({ frames: [] })),
+    scopes: vi.fn(async () => ({ scopes: [] })),
     variables: vi.fn(async () => ({ variables: [], truncated: false })),
     evaluate: vi.fn(async () => ({ result: '42', truncated: false })),
     disconnect: vi.fn(async () => ({ disconnected: true })),
