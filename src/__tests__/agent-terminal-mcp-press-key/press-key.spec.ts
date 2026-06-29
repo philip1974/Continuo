@@ -142,8 +142,11 @@ describe('makePressKeyTool · 元数据', () => {
 
     try {
       const tool = makePressKeyTool(makeDeps());
+      const properties = tool.jsonSchema.properties as {
+        readonly key: { readonly enum: readonly string[] };
+      };
 
-      expect(tool.jsonSchema.properties.key.enum).toContain('enter');
+      expect(properties.key.enum).toContain('enter');
       expect(keysSpy).not.toHaveBeenCalled();
     } finally {
       keysSpy.mockRestore();
