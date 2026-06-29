@@ -15,6 +15,7 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { OUTPUT_LAYOUT_RESTORED, OUTPUT_READY } from './helpers/output';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -62,7 +63,7 @@ async function openOutputPanel(page: Page): Promise<void> {
     ).__continuoTest;
     t.openOrFocusPanel('output', 'output', 'Output');
   });
-  await expect(page.locator('text=Continuo ready')).toBeVisible({
+  await expect(page.getByText(OUTPUT_READY)).toBeVisible({
     timeout: 10_000,
   });
 }
@@ -183,10 +184,10 @@ test.describe.skip('dock-layout-per-window-seq: v3 persist roundtrip', () => {
     const page2 = await app.firstWindow();
     await page2.waitForLoadState('domcontentloaded');
 
-    await expect(page2.locator('text=Continuo ready')).toBeVisible({
+    await expect(page2.getByText(OUTPUT_READY)).toBeVisible({
       timeout: 15_000,
     });
-    await expect(page2.locator('text=dock layout restored')).toBeVisible();
+    await expect(page2.getByText(OUTPUT_LAYOUT_RESTORED)).toBeVisible();
 
     await app.close();
     app = null;
