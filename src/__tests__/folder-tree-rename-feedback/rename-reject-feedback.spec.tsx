@@ -381,7 +381,7 @@ describe('a11y(A150) — onDropForeign reject 须 notify.error', () => {
     const badItems = new Proxy([] as unknown[], {
       get(t, p) {
         if (p === 'length') throw new Error('items boom');
-        return (t as Record<string | symbol, unknown>)[p];
+        return Reflect.get(t, p);
       },
     });
     onDropForeign!({ items: badItems } as unknown, {
@@ -402,7 +402,7 @@ describe('a11y(A151) — handleDrop 外部文件分支 reject 须 notify.error',
     const badItems = new Proxy([] as unknown[], {
       get(t, p) {
         if (p === 'length') throw new Error('items boom');
-        return (t as Record<string | symbol, unknown>)[p];
+        return Reflect.get(t, p);
       },
     });
     fireEvent.drop(container.firstChild as Element, {
