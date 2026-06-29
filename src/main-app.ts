@@ -62,6 +62,8 @@ declare const window: Window & {
     ) => Promise<readonly PermissionKey[]>;
     /** 命令数量(用于 e2e 验证内置命令注册数). */
     commandCount: () => number;
+    /** 执行已注册命令(用于 e2e 走真实 command fn,不绕业务实现). */
+    executeCommand: (commandId: string) => Promise<boolean>;
     /** 注册命令(测试动态命令出现).返 dispose. */
     registerCommand: (
       id: string,
@@ -227,6 +229,12 @@ export async function init(): Promise<void> {
       requestPermissions: (pluginId, perms) =>
         usePermissionPromptStore.getState().request(pluginId, perms),
       commandCount: () => coApp.commands.getAll().length,
+      executeCommand: async (commandId) => {
+        const command = coApp.commands.get(commandId);
+        if (!command) return false;
+        await command.fn();
+        return true;
+      },
       registerCommand: (id, title, hotkey) => {
         const d = coApp.commands.register({
           id,
