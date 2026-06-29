@@ -21,7 +21,15 @@ export const RESET_DEFAULT_SELECTOR = [
 export const SHOW_LINE_NUMBERS =
   /^(显示行号|Show line numbers|줄 번호 표시)$/;
 export const THEME_SETTING = /^(主题|Theme|테마)$/;
+export const LANGUAGE_SETTING = /^(语言|Language|언어)$/;
 export const FONT_SIZE_SETTING = /^(字号|Font size|글꼴 크기)$/;
+export const SHOW_HIDDEN_FILES_SETTING =
+  /^(显示隐藏文件|Show hidden files|숨김 파일 표시)$/;
+export const INDENT_WIDTH_SETTING = /^(缩进宽度|Indent width|들여쓰기 너비)$/;
+export const CURSOR_STYLE_SETTING = /^(光标样式|Cursor style|커서 스타일)$/;
+export const CURSOR_STYLE_BLOCK = /^(块|Block|블록)$/;
+export const CURSOR_STYLE_UNDERLINE = /^(下划线|Underline|밑줄)$/;
+export const CURSOR_STYLE_BAR = /^(竖线|Bar|바)$/;
 export const LIGHT_THEME = /^(亮色|Light|라이트)$/;
 export const DARK_THEME = /^(暗色|Dark|다크)$/;
 export const SYSTEM_THEME = /^(跟随系统|System|시스템)$/;

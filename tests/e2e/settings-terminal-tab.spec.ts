@@ -1,6 +1,12 @@
 // Settings 终端 tab 含字号 + 光标样式 + id chip.
 import { test, expect } from './fixtures/electron-app';
-import { SETTINGS, SETTINGS_NAV, TERMINAL_TAB } from './helpers/settings';
+import {
+  CURSOR_STYLE_SETTING,
+  FONT_SIZE_SETTING,
+  SETTINGS,
+  SETTINGS_NAV,
+  TERMINAL_TAB,
+} from './helpers/settings';
 
 test('终端 tab 显字号(terminal.fontSize)+ 光标样式(terminal.cursorStyle)', async ({
   window,
@@ -12,8 +18,8 @@ test('终端 tab 显字号(terminal.fontSize)+ 光标样式(terminal.cursorStyle
     .click();
 
   const main = window.locator('main');
-  await expect(main).toContainText('字号');
-  await expect(main).toContainText('光标样式');
+  await expect(window.getByText(FONT_SIZE_SETTING).first()).toBeVisible();
+  await expect(window.getByText(CURSOR_STYLE_SETTING)).toBeVisible();
   await expect(
     main.locator('code').filter({ hasText: 'terminal.fontSize' }),
   ).toBeVisible();

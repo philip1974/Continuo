@@ -1,6 +1,14 @@
 // terminal.cursorStyle select 用 SegmentedControl,3 选项:块 / 下划线 / 竖线.
 import { test, expect } from './fixtures/electron-app';
-import { SETTINGS, SETTINGS_NAV, TERMINAL_TAB } from './helpers/settings';
+import {
+  CURSOR_STYLE_BAR,
+  CURSOR_STYLE_BLOCK,
+  CURSOR_STYLE_SETTING,
+  CURSOR_STYLE_UNDERLINE,
+  SETTINGS,
+  SETTINGS_NAV,
+  TERMINAL_TAB,
+} from './helpers/settings';
 
 test('terminal.cursorStyle 三选项 + 切换 + 持久化', async ({ window }) => {
   await window.getByRole('button', { name: SETTINGS }).click();
@@ -13,20 +21,20 @@ test('terminal.cursorStyle 三选项 + 切换 + 持久化', async ({ window }) =
     .click();
 
   const main = window.locator('main');
-  await expect(main).toContainText('光标样式');
+  await expect(window.getByText(CURSOR_STYLE_SETTING)).toBeVisible();
 
   // 三选项
   const blockBtn = main
     .locator('button')
-    .filter({ hasText: /^块$/ })
+    .filter({ hasText: CURSOR_STYLE_BLOCK })
     .first();
   const underlineBtn = main
     .locator('button')
-    .filter({ hasText: /^下划线$/ })
+    .filter({ hasText: CURSOR_STYLE_UNDERLINE })
     .first();
   const barBtn = main
     .locator('button')
-    .filter({ hasText: /^竖线$/ })
+    .filter({ hasText: CURSOR_STYLE_BAR })
     .first();
 
   // 默认 'block':「块」按钮 active
