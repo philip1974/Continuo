@@ -96,7 +96,7 @@ describe('PermissionPrompt UI', () => {
         'com.x',
       );
       const markerCalls = splitSpy.mock.calls.filter(
-        ([sep]) => sep === ' __PID__ ',
+        ([sep]) => typeof sep === 'string' && sep === ' __PID__ ',
       );
       expect(markerCalls).toHaveLength(0);
     } finally {
