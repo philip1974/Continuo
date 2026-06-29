@@ -3,14 +3,17 @@ import { stat } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
 
+const NEW_FILE = /^(新建文件|New file|새 파일)$/;
+const NEW_FILE_NAME = /^(新建文件名…|New file name…|새 파일 이름…)$/;
+
 test('右键 src → 新建文件 → Esc 取消 → input 消失 + 无文件落盘', async ({
   window,
   workspaceRoot,
 }) => {
   await window.locator('text=src').first().click({ button: 'right' });
-  await window.getByRole('menuitem', { name: '新建文件', exact: true }).click();
+  await window.getByRole('menuitem', { name: NEW_FILE }).click();
 
-  const input = window.locator('input[placeholder^="新建文件名"]');
+  const input = window.getByRole('textbox', { name: NEW_FILE_NAME });
   await expect(input).toBeVisible();
 
   await input.fill('something.ts');
@@ -29,9 +32,9 @@ test('Enter 空白名字 → 视为取消 → 无文件', async ({
   workspaceRoot,
 }) => {
   await window.locator('text=src').first().click({ button: 'right' });
-  await window.getByRole('menuitem', { name: '新建文件', exact: true }).click();
+  await window.getByRole('menuitem', { name: NEW_FILE }).click();
 
-  const input = window.locator('input[placeholder^="新建文件名"]');
+  const input = window.getByRole('textbox', { name: NEW_FILE_NAME });
   await expect(input).toBeVisible();
 
   // 不输入,直接 Enter
@@ -47,9 +50,9 @@ test('Enter 空白名字 → 视为取消 → 无文件', async ({
 
 test('全空格名字 → 视为取消', async ({ window }) => {
   await window.locator('text=src').first().click({ button: 'right' });
-  await window.getByRole('menuitem', { name: '新建文件', exact: true }).click();
+  await window.getByRole('menuitem', { name: NEW_FILE }).click();
 
-  const input = window.locator('input[placeholder^="新建文件名"]');
+  const input = window.getByRole('textbox', { name: NEW_FILE_NAME });
   await input.fill('   ');
   await input.press('Enter');
 
