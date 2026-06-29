@@ -1,20 +1,10 @@
 // Cmd+P + ArrowDown + Enter → 第二项打开.
 import { test, expect } from './fixtures/with-workspace';
+import { openQuickOpen, quickOpenInput } from './helpers/palette';
 
 test('Cmd+P → ArrowDown → Enter → 第二项打开', async ({ window }) => {
-  await window.evaluate(() => {
-    document.dispatchEvent(
-      new KeyboardEvent('keydown', {
-        key: 'p',
-        ctrlKey: true,
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
-  });
-  const input = window.locator(
-    '.wm-modal-content input[placeholder*="搜索文件名"]',
-  );
+  await openQuickOpen(window);
+  const input = quickOpenInput(window);
   await expect(input).toBeVisible();
   await expect(window.locator('.wm-modal-content')).toContainText('a.ts', {
     timeout: 10_000,

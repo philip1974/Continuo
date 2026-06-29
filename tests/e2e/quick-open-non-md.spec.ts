@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { openQuickOpen, quickOpenInput } from './helpers/palette';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -38,19 +39,8 @@ test('walk 列出 .md / .ts / Makefile(无扩展)三种文件', async () => {
     const win = await app.firstWindow();
     await win.waitForLoadState('domcontentloaded');
 
-    await win.evaluate(() => {
-      document.dispatchEvent(
-        new KeyboardEvent('keydown', {
-          key: 'p',
-          ctrlKey: true,
-          bubbles: true,
-          cancelable: true,
-        }),
-      );
-    });
-    const input = win.locator(
-      '.wm-modal-content input[placeholder*="搜索文件名"]',
-    );
+    await openQuickOpen(win);
+    const input = quickOpenInput(win);
     await expect(input).toBeVisible();
 
     await expect(win.locator('.wm-modal-content')).toContainText('doc.md', {

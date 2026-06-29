@@ -1,20 +1,10 @@
 // Quick Open list item 同时显示 file name + 右侧 relPath(浅色).
 import { test, expect } from './fixtures/with-workspace';
+import { openQuickOpen, quickOpenInput } from './helpers/palette';
 
 test('Quick Open list item 含 file name + relPath', async ({ window }) => {
-  await window.evaluate(() => {
-    document.dispatchEvent(
-      new KeyboardEvent('keydown', {
-        key: 'p',
-        ctrlKey: true,
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
-  });
-  const input = window.locator(
-    '.wm-modal-content input[placeholder*="搜索文件名"]',
-  );
+  await openQuickOpen(window);
+  const input = quickOpenInput(window);
   await expect(input).toBeVisible();
   await expect(window.locator('.wm-modal-content')).toContainText('a.ts', {
     timeout: 10_000,
