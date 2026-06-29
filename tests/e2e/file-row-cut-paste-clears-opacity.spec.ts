@@ -1,6 +1,9 @@
 // cut → row opacity-50 → paste → 已 move,原位置 row 消失,ghost 自然清.
 import { test, expect } from './fixtures/with-workspace';
 
+const CUT = /^(剪切|Cut|잘라내기)$/;
+const PASTE = /^(粘贴|Paste|붙여넣기)$/;
+
 test('cut README.md → paste 到 src/ → 原 README.md row 消失', async ({
   window,
 }) => {
@@ -11,7 +14,7 @@ test('cut README.md → paste 到 src/ → 原 README.md row 消失', async ({
 
   // cut
   await readmeRow.first().click({ button: 'right' });
-  await window.getByRole('menuitem', { name: /^剪切$/ }).click();
+  await window.getByRole('menuitem', { name: CUT }).click();
   // ghost 出现
   await expect(async () => {
     const cls = (await readmeRow.first().getAttribute('class')) ?? '';
@@ -21,7 +24,7 @@ test('cut README.md → paste 到 src/ → 原 README.md row 消失', async ({
   // 展开 src + paste
   await window.locator('text=src').first().click();
   await window.locator('text=src').first().click({ button: 'right' });
-  await window.getByRole('menuitem', { name: /^粘贴$/ }).click();
+  await window.getByRole('menuitem', { name: PASTE }).click();
 
   // 原根级 README.md 消失,只 src/README.md 存在
   await expect(async () => {

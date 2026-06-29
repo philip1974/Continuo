@@ -3,6 +3,9 @@ import { stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
 
+const COPY = /^(复制|Copy|복사)$/;
+const PASTE = /^(粘贴|Paste|붙여넣기)$/;
+
 test('copy .gitignore → paste 到 src → 出现 .gitignore copy', async ({
   window,
   workspaceRoot,
@@ -33,11 +36,11 @@ test('copy .gitignore → paste 到 src → 出现 .gitignore copy', async ({
     .filter({ hasText: /^\.gitignore$/ })
     .first()
     .click({ button: 'right' });
-  await window.getByRole('menuitem', { name: /^复制$/ }).click();
+  await window.getByRole('menuitem', { name: COPY }).click();
 
   await window.locator('text=src').first().click();
   await window.locator('text=src').first().click({ button: 'right' });
-  await window.getByRole('menuitem', { name: /^粘贴$/ }).click();
+  await window.getByRole('menuitem', { name: PASTE }).click();
 
   await expect(async () => {
     await stat(path.join(workspaceRoot, 'src/.gitignore'));
@@ -45,7 +48,7 @@ test('copy .gitignore → paste 到 src → 出现 .gitignore copy', async ({
 
   // 再 paste → '.gitignore copy'
   await window.locator('text=src').first().click({ button: 'right' });
-  await window.getByRole('menuitem', { name: /^粘贴$/ }).click();
+  await window.getByRole('menuitem', { name: PASTE }).click();
 
   await expect(async () => {
     await stat(path.join(workspaceRoot, 'src/.gitignore copy'));

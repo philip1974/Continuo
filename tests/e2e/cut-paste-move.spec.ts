@@ -3,18 +3,21 @@ import { stat } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
 
+const CUT = /^(剪切|Cut|잘라내기)$/;
+const PASTE = /^(粘贴|Paste|붙여넣기)$/;
+
 test('右键 README.md 剪切 → 右键 src 粘贴 → src/README.md 出现 + 原 README.md 消失', async ({
   window,
   workspaceRoot,
 }) => {
   // 剪切 README.md
   await window.locator('text=README.md').first().click({ button: 'right' });
-  await window.getByRole('menuitem', { name: /^剪切$/ }).click();
+  await window.getByRole('menuitem', { name: CUT }).click();
 
   // 展开 src + 右键 src → 粘贴(parent=src)
   await window.locator('text=src').first().click();
   await window.locator('text=src').first().click({ button: 'right' });
-  await window.getByRole('menuitem', { name: /^粘贴$/ }).click();
+  await window.getByRole('menuitem', { name: PASTE }).click();
 
   // src/README.md 出现
   await expect(async () => {

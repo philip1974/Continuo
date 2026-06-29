@@ -7,13 +7,16 @@
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
 
+const COPY_PATH = /^(复制路径|Copy Path|경로 복사)$/;
+const COPY_RELATIVE_PATH = /^(复制相对路径|Copy Relative Path|상대 경로 복사)$/;
+
 test('右键 README.md →「复制路径」→ 剪贴板 = 绝对路径', async ({
   window,
   electronApp,
   workspaceRoot,
 }) => {
   await window.locator('text=README.md').first().click({ button: 'right' });
-  const copyItem = window.getByRole('menuitem', { name: /^复制路径/ });
+  const copyItem = window.getByRole('menuitem', { name: COPY_PATH });
   await copyItem.click();
 
   const clip = await electronApp.evaluate(({ clipboard }) =>
@@ -27,7 +30,7 @@ test('右键 README.md →「复制相对路径」→ 剪贴板 = 文件名', as
   electronApp,
 }) => {
   await window.locator('text=README.md').first().click({ button: 'right' });
-  const copyItem = window.getByRole('menuitem', { name: /复制相对路径/ });
+  const copyItem = window.getByRole('menuitem', { name: COPY_RELATIVE_PATH });
   await copyItem.click();
 
   const clip = await electronApp.evaluate(({ clipboard }) =>

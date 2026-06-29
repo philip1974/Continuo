@@ -3,6 +3,9 @@ import { stat } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
 
+const COPY = /^(复制|Copy|복사)$/;
+const PASTE = /^(粘贴|Paste|붙여넣기)$/;
+
 test('copy src + paste 同目录 → src copy 出现 + 含 a.ts/b.ts', async ({
   window,
   workspaceRoot,
@@ -12,7 +15,7 @@ test('copy src + paste 同目录 → src copy 出现 + 含 a.ts/b.ts', async ({
   });
 
   await window.locator('text=src').first().click({ button: 'right' });
-  await window.getByRole('menuitem', { name: /^复制$/ }).click();
+  await window.getByRole('menuitem', { name: COPY }).click();
 
   // paste 到根:右键 FolderTree 滚动区底部空白(target=null,createParent=root)
   const aside = window.locator('main aside').nth(1);
@@ -26,7 +29,7 @@ test('copy src + paste 同目录 → src copy 出现 + 含 a.ts/b.ts', async ({
       y: Math.max(box.height - 30, box.height * 0.85),
     },
   });
-  await window.getByRole('menuitem', { name: /^粘贴$/ }).click();
+  await window.getByRole('menuitem', { name: PASTE }).click();
 
   await expect(async () => {
     const dirOk = await stat(path.join(workspaceRoot, 'src copy'))
