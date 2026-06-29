@@ -573,8 +573,7 @@ describe('边界(E94) — reviews 缓存业务值域校验', () => {
   it('E243 nodes 非数组(畸形 IPC)→ 稳定返回空 Map,不抛', async () => {
     fetchReviewsMock.mockResolvedValue({
       ok: true,
-      // @ts-expect-error 故意传非数组 nodes 模拟畸形 IPC payload
-      data: { available: true, nodes: 'not-an-array' },
+      data: { available: true, nodes: 'not-an-array' } as unknown as FetchReviewsResult,
     });
     const r = await fetchAllReviews();
     expect(r.size).toBe(0); // 不抛,空结果
@@ -590,14 +589,13 @@ describe('边界(E94) — reviews 缓存业务值域校验', () => {
 
     fetchReviewsMock.mockResolvedValueOnce({
       ok: true,
-      // @ts-expect-error 故意传非数组 nodes 模拟畸形 IPC payload
-      data: { available: true, nodes: 'not-an-array' },
+      data: { available: true, nodes: 'not-an-array' } as unknown as FetchReviewsResult,
     });
     await expect(fetchAllReviews(true)).resolves.toBe(empty);
 
     fetchReviewsMock.mockResolvedValueOnce({
       ok: true,
-      data: { available: true, nodes: [null, 'bad'] } as FetchReviewsResult,
+      data: { available: true, nodes: [null, 'bad'] } as unknown as FetchReviewsResult,
     });
     await expect(fetchAllReviews(true)).resolves.toBe(empty);
 
