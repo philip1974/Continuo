@@ -32,7 +32,9 @@ function makeSetup() {
   };
   let n = 0;
   const deps: CreateInvokeRemoteDeps = {
-    send: (_owner, channel, payload) => sent.push({ channel, payload }),
+    send: (_owner, channel, payload) => {
+      sent.push({ channel, payload });
+    },
     setTimer,
     newRequestId: () => `req-${++n}`,
   };
