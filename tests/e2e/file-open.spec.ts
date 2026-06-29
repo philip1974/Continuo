@@ -1,6 +1,9 @@
 // 双击文件 → Editor 打开 tab + 内容显示.
 import { test, expect } from './fixtures/with-workspace';
 
+const LINE_COUNT = /(行|lines|줄)/;
+const QUICK_OPEN_SEARCH = /^(搜索文件|Search files|파일 검색)$/;
+
 test('点击 README.md → Editor 打开 + StatusBar 显示行/词/字符', async ({
   window,
 }) => {
@@ -20,7 +23,7 @@ test('点击 README.md → Editor 打开 + StatusBar 显示行/词/字符', asyn
   // StatusBar 行/词/字符
   const status = window.locator('footer');
   await expect(status).toContainText('README.md');
-  await expect(status).toContainText(/行/);
+  await expect(status).toContainText(LINE_COUNT);
 });
 
 test('Ctrl+P 选 a.ts + Enter 打开', async ({ window, workspaceRoot }) => {
@@ -35,14 +38,12 @@ test('Ctrl+P 选 a.ts + Enter 打开', async ({ window, workspaceRoot }) => {
       }),
     );
   });
-  const input = window.locator(
-    '.wm-modal-content input[placeholder*="搜索文件名"]',
-  );
+  const input = window.getByRole('combobox', { name: QUICK_OPEN_SEARCH });
   await expect(input).toBeVisible();
 
   await input.fill('a.ts');
   // 等列表更新
-  await expect(window.locator('.wm-modal-content')).toContainText('a.ts', {
+  await expect(window.getByRole('listbox')).toContainText('a.ts', {
     timeout: 10_000,
   });
 

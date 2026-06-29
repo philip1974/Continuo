@@ -1,6 +1,8 @@
 // 输入 → wordCount 实时更新.
 import { test, expect } from './fixtures/with-workspace';
 
+const WORD_COUNT = /(\d+)\s*(词|words|단어)/;
+
 test('a.ts 输入 → footer 词数增加', async ({ window }) => {
   await window.locator('text=src').first().click();
   await window.locator('text=a.ts').first().click();
@@ -8,7 +10,7 @@ test('a.ts 输入 → footer 词数增加', async ({ window }) => {
   // 默认 'export const a = 1;\n' → 5 词('export','const','a','=','1;')
   const footer = window.locator('footer');
   const before = await footer.textContent();
-  const matchBefore = before?.match(/(\d+)\s*词/);
+  const matchBefore = before?.match(WORD_COUNT);
   const wordsBefore = matchBefore ? Number(matchBefore[1]) : 0;
   expect(wordsBefore).toBeGreaterThan(0);
 
@@ -19,7 +21,7 @@ test('a.ts 输入 → footer 词数增加', async ({ window }) => {
 
   await expect(async () => {
     const after = await footer.textContent();
-    const matchAfter = after?.match(/(\d+)\s*词/);
+    const matchAfter = after?.match(WORD_COUNT);
     const wordsAfter = matchAfter ? Number(matchAfter[1]) : 0;
     expect(wordsAfter).toBeGreaterThan(wordsBefore);
   }).toPass({ timeout: 5_000 });

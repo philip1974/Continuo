@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const MAIN_ENTRY = path.join(REPO_ROOT, 'out/main/index.js');
+const ZERO_WORDS = /0\s*(词|words|단어)/;
 
 test('empty file → footer 显「0 词」', async () => {
   test.setTimeout(30_000);
@@ -41,7 +42,7 @@ test('empty file → footer 显「0 词」', async () => {
       timeout: 10_000,
     });
 
-    await expect(win.locator('footer')).toContainText(/0\s*词/);
+    await expect(win.locator('footer')).toContainText(ZERO_WORDS);
 
     await app.close();
   } finally {
