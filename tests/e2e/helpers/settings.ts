@@ -20,6 +20,9 @@ export const RESET_DEFAULT_SELECTOR = [
 ].join(', ');
 export const SHOW_LINE_NUMBERS =
   /^(显示行号|Show line numbers|줄 번호 표시)$/;
+export const LIGHT_THEME = /^(亮色|Light|라이트)$/;
+export const AUTO_SAVE_MARKDOWN =
+  /^(自动保存 Markdown|Auto-save Markdown|Markdown 자동 저장)$/;
 export const KEYBINDINGS_TOTAL_SUMMARY =
   /(共\s*\d+\s*个有快捷键的命令|\d+\s*commands with hotkey|단축키가 있는 명령어\s*\d+개)/;
 export const PLUGINS_SETTING_TABS_LABELS = [

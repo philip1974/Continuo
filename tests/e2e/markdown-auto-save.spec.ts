@@ -1,4 +1,10 @@
-import { EDITOR_TAB, SETTINGS, SETTINGS_NAV } from './helpers/settings';
+import {
+  AUTO_SAVE_MARKDOWN,
+  CLOSE_SETTINGS,
+  EDITOR_TAB,
+  SETTINGS,
+  SETTINGS_NAV,
+} from './helpers/settings';
 // Markdown 自动保存:store.updateContent → 经过 autoSave.delayMs 后磁盘写入.
 //
 // 直接通过 testing hook 注入 editor.store.updateContent(避开 milkdown 复杂操作),
@@ -36,7 +42,9 @@ test('打开 .md → 修改内容(via store)→ 自动保存到磁盘', async ({
     .getByRole('button', { name: EDITOR_TAB })
     .click();
 
-  await expect(window.locator('main').getByText('自动保存 Markdown')).toBeVisible();
+  await expect(
+    window.locator('main').getByText(AUTO_SAVE_MARKDOWN),
+  ).toBeVisible();
 
   // 自动保存 toggle = on(boolean default=true).
   // 「编辑器」tab 内 button[role=switch] 顺序:lineNumbers(外观) → autoSave.markdown.enabled(自动保存).
@@ -57,7 +65,7 @@ test('打开 .md → 修改内容(via store)→ 自动保存到磁盘', async ({
 
   // 关 settings + 给个简单 smoke:外部 writeFile + 自动 sync(已被 save-shortcut 测,
   // 这里只验证 useExternalFileSync 起作用)
-  await window.locator('button[aria-label="Close Settings"]').click();
+  await window.getByRole('button', { name: CLOSE_SETTINGS }).click();
   await window.waitForTimeout(300);
 
   const newText = '# Updated by external\n';

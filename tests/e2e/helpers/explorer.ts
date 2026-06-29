@@ -27,6 +27,8 @@ export const EXPLORER_COPY_RELATIVE_PATH =
   /^(复制相对路径|Copy Relative Path|상대 경로 복사)$/;
 export const EXPLORER_MORE_ACTIONS =
   /^(更多操作|More actions|추가 작업)$/;
+export const EXPLORER_OPEN_IN_TERMINAL =
+  /^(在集成终端中打开|Open in Integrated Terminal|통합 터미널에서 열기)$/;
 
 export function explorerSidebar(window: Page): Locator {
   return window.locator('main aside').nth(1);
@@ -36,4 +38,8 @@ export function explorerMoreActionsButton(window: Page): Locator {
   return explorerSidebar(window).getByRole('button', {
     name: EXPLORER_MORE_ACTIONS,
   });
+}
+
+export function dockHeaderMoreActionsButton(window: Page): Locator {
+  return window.getByRole('button', { name: EXPLORER_MORE_ACTIONS }).last();
 }

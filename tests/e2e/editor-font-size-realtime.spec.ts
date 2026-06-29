@@ -1,4 +1,4 @@
-import { EDITOR_TAB, SETTINGS, SETTINGS_NAV } from './helpers/settings';
+import { CLOSE_SETTINGS, EDITOR_TAB, SETTINGS, SETTINGS_NAV } from './helpers/settings';
 // 编辑器字号 setting 改 → CodeMirror 容器 inline style.fontSize 实时同步.
 import { test, expect } from './fixtures/with-workspace';
 
@@ -29,7 +29,7 @@ test('editor.fontSize 改 → CodeMirror 容器 fontSize 同步', async ({
   await window.waitForTimeout(200);
 
   // 关 Settings 回到 Editor
-  await window.locator('button[aria-label="Close Settings"]').click();
+  await window.getByRole('button', { name: CLOSE_SETTINGS }).click();
   await window.waitForTimeout(400);
 
   // CodeEditor 容器 fontSize 同步到 20px(不验证 cm-content 自身,因 CodeMirror

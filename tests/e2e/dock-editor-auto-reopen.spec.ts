@@ -1,12 +1,13 @@
 // 关闭 Editor panel → 单击文件 → editor.activeTabId 变 → DockShell useEffect
 // 自动 addPanel + setActive editor panel.
 import { test, expect } from './fixtures/with-workspace';
+import { DOCK_CLOSE_EDITOR } from './helpers/editor';
 
 test('关 Editor panel → 单击文件 → Editor panel 自动回来', async ({
   window,
 }) => {
   // 关闭 Editor panel(SharedTab close button)
-  const closeBtn = window.locator('button[aria-label="Close Editor"]');
+  const closeBtn = window.getByRole('button', { name: DOCK_CLOSE_EDITOR });
   await expect(closeBtn).toHaveCount(1, { timeout: 10_000 });
   await closeBtn.click();
   // 等动画

@@ -5,6 +5,7 @@
 // HeaderActions 单测已覆盖 click → addPopoutGroup 调用;真实弹窗体验留人工 QA.
 
 import { test, expect } from './fixtures/electron-app';
+import { DOCK_POPOUT } from './helpers/editor';
 
 test.skip('Popout 按钮 → 第二个 window 弹出 + 渲染 PopoutHost', async ({
   electronApp,
@@ -12,9 +13,7 @@ test.skip('Popout 按钮 → 第二个 window 弹出 + 渲染 PopoutHost', async
 }) => {
   // 第一个 window 已存在(主)。点 popout 按钮 — 默认 layout 有 1 个 Editor panel,
   // 它是 active,popout 应可用。
-  const popoutBtn = window.locator(
-    'button[aria-label="Pop out active panel"]',
-  );
+  const popoutBtn = window.getByRole('button', { name: DOCK_POPOUT });
   await expect(popoutBtn).toBeEnabled({ timeout: 10_000 });
 
   await popoutBtn.click();

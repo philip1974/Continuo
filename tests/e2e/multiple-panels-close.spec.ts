@@ -1,32 +1,30 @@
 // 加 Terminal 和 Settings 后,选择性关闭一个 → 另两个仍在.
-import { test, expect } from './fixtures/electron-app';
-import { SETTINGS, SETTINGS_NAV } from './helpers/settings';
+import { test, expect } from './fixtures/with-workspace';
+import {
+  DOCK_CLOSE_EDITOR,
+  DOCK_CLOSE_TERMINAL,
+  TERMINAL_INPUT,
+} from './helpers/editor';
+import { dockHeaderMoreActionsButton } from './helpers/explorer';
+import {
+  CLOSE_SETTINGS,
+  SETTINGS,
+  SETTINGS_NAV,
+  TERMINAL_TAB,
+} from './helpers/settings';
 
 test('开 Editor + Terminal + Settings → 关 Settings → Editor + Terminal 仍在', async ({
   window,
 }) => {
-  // 等 testing hook 挂载
-  await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 5_000 },
-  );
-
   // 加 Terminal
-  await window.evaluate(() => {
-    const t = (
-      window as unknown as {
-        __continuoTest: {
-          openOrFocusPanel: (id: string, c: string, t: string) => void;
-        };
-      }
-    ).__continuoTest;
-    t.openOrFocusPanel('terminal', 'terminal', 'Terminal');
-  });
+  await dockHeaderMoreActionsButton(window).click();
+  await window
+    .getByRole('menu')
+    .last()
+    .getByRole('menuitem', { name: TERMINAL_TAB })
+    .click();
   await expect(
-    window.locator('button[aria-label="新建终端"]'),
+    window.getByRole('textbox', { name: TERMINAL_INPUT }),
   ).toBeVisible({ timeout: 10_000 });
 
   // 加 Settings
@@ -36,18 +34,18 @@ test('开 Editor + Terminal + Settings → 关 Settings → Editor + Terminal �
   });
 
   // 关 Settings
-  await window.locator('button[aria-label="Close Settings"]').click();
+  await window.getByRole('button', { name: CLOSE_SETTINGS }).click();
   await window.waitForTimeout(400);
 
   // Editor SharedTab close + Terminal SharedTab close 仍在
-  await expect(window.locator('button[aria-label="Close Editor"]')).toHaveCount(
+  await expect(window.getByRole('button', { name: DOCK_CLOSE_EDITOR })).toHaveCount(
     1,
   );
   await expect(
-    window.locator('button[aria-label="Close Terminal"]'),
+    window.getByRole('button', { name: DOCK_CLOSE_TERMINAL }),
   ).toHaveCount(1);
   // Settings 没了
   await expect(
-    window.locator('button[aria-label="Close Settings"]'),
+    window.getByRole('button', { name: CLOSE_SETTINGS }),
   ).toHaveCount(0);
 });

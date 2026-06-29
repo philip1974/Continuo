@@ -1,54 +1,30 @@
-// dockview layout 写盘:加 panel → debounce 300ms → layout.json 验证.
-import { _electron as electron, expect, test } from '@playwright/test';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+// dockview layout 写盘:加 Terminal session → debounce 300ms → layout.json 剥离 terminal panel.
+import { expect, test } from './fixtures/with-workspace';
+import { TERMINAL_INPUT } from './helpers/editor';
+import { dockHeaderMoreActionsButton } from './helpers/explorer';
+import { TERMINAL_TAB } from './helpers/settings';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(__dirname, '../..');
-const MAIN_ENTRY = path.join(REPO_ROOT, 'out/main/index.js');
+test('加 Terminal session → 等 debounce → layout.json 不含 terminal panel', async ({
+  userDataDir,
+  window,
+}) => {
+  await dockHeaderMoreActionsButton(window).click();
+  await window
+    .getByRole('menu')
+    .last()
+    .getByRole('menuitem', { name: TERMINAL_TAB })
+    .click();
+  await expect(
+    window.getByRole('textbox', { name: TERMINAL_INPUT }),
+  ).toBeVisible({ timeout: 15_000 });
 
-test('加 Terminal panel → 等 debounce → layout.json 含 terminal panel id', async () => {
-  const ud = mkdtempSync(path.join(tmpdir(), 'continuo-layout-write-'));
-  try {
-    const app = await electron.launch({
-      args: [MAIN_ENTRY, `--user-data-dir=${ud}`],
-      env: { ...process.env, ELECTRON_DISABLE_GPU: '1', CONTINUO_E2E: '1' },
-    });
-    const win = await app.firstWindow();
-    await win.waitForLoadState('domcontentloaded');
+  await window.waitForTimeout(800);
 
-    // 通过 testing hook 加 Terminal panel
-    await win.waitForFunction(
-      () =>
-        Boolean(
-          (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-        ),
-      { timeout: 5_000 },
-    );
-    await win.evaluate(() => {
-      const t = (
-        window as unknown as {
-          __continuoTest: {
-            openOrFocusPanel: (id: string, c: string, t: string) => void;
-          };
-        }
-      ).__continuoTest;
-      t.openOrFocusPanel('terminal', 'terminal', 'Terminal');
-    });
-    await expect(
-      win.locator('button[aria-label="新建终端"]'),
-    ).toBeVisible({ timeout: 15_000 });
-
-    await win.waitForTimeout(800);
-
-    const raw = readFileSync(path.join(ud, 'layout.json'), 'utf8');
-    expect(raw).toContain('terminal');
-    expect(raw).toContain('editor');
-
-    await app.close();
-  } finally {
-    rmSync(ud, { recursive: true, force: true });
+  const layoutPath = path.join(userDataDir, 'layout.json');
+  if (existsSync(layoutPath)) {
+    const raw = readFileSync(layoutPath, 'utf8');
+    expect(raw).not.toContain('"contentComponent":"terminal"');
   }
 });

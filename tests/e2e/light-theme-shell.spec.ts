@@ -1,6 +1,11 @@
 // 切到 light 主题后 shell 关键元素仍正常渲染.
 import { test, expect } from './fixtures/electron-app';
-import { SETTINGS, SETTINGS_NAV } from './helpers/settings';
+import {
+  CLOSE_SETTINGS,
+  LIGHT_THEME,
+  SETTINGS,
+  SETTINGS_NAV,
+} from './helpers/settings';
 
 test('light 主题下:TitleBar / IconSidebar / StatusBar 都可见', async ({
   window,
@@ -15,13 +20,13 @@ test('light 主题下:TitleBar / IconSidebar / StatusBar 都可见', async ({
   });
   await window
     .locator('button, [role=tab]')
-    .filter({ hasText: /^Light$/i })
+    .filter({ hasText: LIGHT_THEME })
     .first()
     .click();
   await expect(window.locator('html')).not.toHaveClass(/dark/);
 
   // 关 settings 后基础元素仍渲染
-  await window.locator('button[aria-label="Close Settings"]').click();
+  await window.getByRole('button', { name: CLOSE_SETTINGS }).click();
   await window.waitForTimeout(300);
 
   await expect(window.locator('header').first()).toBeVisible();

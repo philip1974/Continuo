@@ -3,6 +3,7 @@
 //
 // 这条测验证「关 Editor panel + 重启 → editor.tabs=[] 但 dock 还原 + EmptyState」.
 import { _electron as electron, expect, test } from '@playwright/test';
+import { DOCK_CLOSE_EDITOR } from './helpers/editor';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -23,7 +24,7 @@ test('关 Editor panel → 重启 → EmptyState(layout 记忆 0 panel)', async 
     await win1.waitForLoadState('domcontentloaded');
 
     // 关 Editor
-    await win1.locator('button[aria-label="Close Editor"]').click();
+    await win1.getByRole('button', { name: DOCK_CLOSE_EDITOR }).click();
     await win1.waitForTimeout(400);
     await expect(
       win1.locator('[data-testid="empty-state"]'),

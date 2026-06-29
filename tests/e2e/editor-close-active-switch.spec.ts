@@ -1,5 +1,9 @@
 // 关闭 active tab → editor.store 自动切到下一个 tab(VSCode 同款).
 import { test, expect } from './fixtures/with-workspace';
+import {
+  EDITOR_CLOSE_B_TS,
+  EDITOR_CLOSE_README_MD,
+} from './helpers/editor';
 
 test('打开 README.md + a.ts + b.ts(active)→ 关 b.ts → active 自动切回', async ({
   window,
@@ -12,9 +16,7 @@ test('打开 README.md + a.ts + b.ts(active)→ 关 b.ts → active 自动切回
   await expect(window.locator('header').first()).toContainText('b.ts');
 
   // 关 b.ts(TabNav close button)
-  const closeB = window.locator(
-    'button[aria-label*="Close"][aria-label*="b.ts"]',
-  );
+  const closeB = window.getByRole('button', { name: EDITOR_CLOSE_B_TS });
   await closeB.click();
   await window.waitForTimeout(300);
 
@@ -32,9 +34,9 @@ test('关 README.md(非 active)→ active 不变(仍 b.ts)', async ({ window }) 
   await window.locator('text=b.ts').first().click();
   await expect(window.locator('header').first()).toContainText('b.ts');
 
-  const closeReadme = window.locator(
-    'button[aria-label*="Close"][aria-label*="README.md"]',
-  );
+  const closeReadme = window.getByRole('button', {
+    name: EDITOR_CLOSE_README_MD,
+  });
   await closeReadme.click();
   await window.waitForTimeout(300);
 
