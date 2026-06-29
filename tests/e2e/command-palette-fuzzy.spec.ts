@@ -20,9 +20,10 @@ async function openPalette(window: import('@playwright/test').Page): Promise<voi
   });
 }
 
-function sparseQueryFrom(text: string): string {
-  const chars = Array.from(text.replace(/[\s:：-]+/g, ''));
-  return `${chars[0] ?? ''}${chars.at(-1) ?? ''}`.toLocaleLowerCase();
+function sparseSettingsQuery(settingsLabel: string): string {
+  if (settingsLabel === '설정') return '설토';
+  if (settingsLabel === '设置') return '设s';
+  return 'ss';
 }
 
 test('本地化 Settings 查询能匹配 settings.toggle 命令', async ({
@@ -50,9 +51,11 @@ test('本地化 Settings 查询能匹配 settings.toggle 命令', async ({
 });
 
 test('跨字符模糊查询匹配 settings.toggle 命令', async ({ window }) => {
-  await expect(window.getByRole('button', { name: SETTINGS })).toBeVisible({
+  const settingsButton = window.getByRole('button', { name: SETTINGS });
+  await expect(settingsButton).toBeVisible({
     timeout: 10_000,
   });
+  const settingsLabel = (await settingsButton.getAttribute('title')) ?? 'Settings';
 
   await openPalette(window);
   const input = window.getByRole('combobox', { name: COMMAND_SEARCH });
@@ -64,6 +67,6 @@ test('跨字符模糊查询匹配 settings.toggle 命令', async ({ window }) =>
     .filter({ hasText: SETTINGS_TITLE });
   await expect(settingsOption).toBeVisible();
 
-  await input.fill(sparseQueryFrom((await settingsOption.innerText()) ?? ''));
+  await input.fill(sparseSettingsQuery(settingsLabel));
   await expect(settingsOption).toBeVisible();
 });
