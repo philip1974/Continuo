@@ -10,6 +10,7 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { explorerMoreActionsButton } from './helpers/explorer';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -55,7 +56,7 @@ test('从 ws1 → 通过菜单切到 ws2 → recentRoots = [ws2, ws1]', async ()
     );
     // 通过 evaluate 触发 useWorkspaceStore.getState().setRoot(ws2)
     // 没暴露 store,改用 ⋯ 菜单(尝试):
-    await win.locator('button[aria-label=更多操作]').click();
+    await explorerMoreActionsButton(win).click();
     const ws2Name = path.basename(ws2);
     const menuItem = win
       .getByRole('menu')
@@ -67,9 +68,16 @@ test('从 ws1 → 通过菜单切到 ws2 → recentRoots = [ws2, ws1]', async ()
 
     const raw = readFileSync(path.join(ud, 'explorer.json'), 'utf8');
     const data = JSON.parse(raw) as {
-      workspace: { root: string; recentRoots: string[] };
+      workspace: { root?: string; recentRoots: string[] };
+      windows?: Array<{
+        windowSeq: number;
+        workspace: { root: string | null };
+      }>;
     };
-    expect(data.workspace.root).toBe(ws2);
+    const windowRoot =
+      data.windows?.find((entry) => entry.windowSeq === 0)?.workspace.root ??
+      data.workspace.root;
+    expect(windowRoot).toBe(ws2);
     // recentRoots 第一项是 ws2(LRU 最新在前)
     expect(data.workspace.recentRoots[0]).toBe(ws2);
 

@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { explorerMoreActionsButton } from './helpers/explorer';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -39,7 +40,7 @@ test('ws1 → 切 ws2 → ⋯ 「打开最近」 含 ws1', async () => {
     await win.waitForLoadState('domcontentloaded');
 
     // 切到 ws2
-    await win.locator('button[aria-label=更多操作]').click();
+    await explorerMoreActionsButton(win).click();
     const ws2Name = path.basename(ws2);
     await win
       .getByRole('menu')
@@ -52,7 +53,7 @@ test('ws1 → 切 ws2 → ⋯ 「打开最近」 含 ws1', async () => {
     ).toBeVisible({ timeout: 10_000 });
 
     // 再开 ⋯ → 含 ws1
-    await win.locator('button[aria-label=更多操作]').click();
+    await explorerMoreActionsButton(win).click();
     const ws1Name = path.basename(ws1);
     await expect(
       win

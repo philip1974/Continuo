@@ -5,6 +5,10 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  EXPLORER_OPEN_RECENT,
+  explorerMoreActionsButton,
+} from './helpers/explorer';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -46,11 +50,11 @@ test('recentRoots 中的旧 root → ExplorerHeader ⋯ 「打开最近」列表
     ).toBeVisible({ timeout: 10_000 });
 
     // 点 ⋯ 打开菜单
-    await win.locator('button[aria-label=更多操作]').click();
+    await explorerMoreActionsButton(win).click();
     await expect(win.getByRole('menu')).toBeVisible();
 
     // 「打开最近」分组 + ws2 basename
-    await expect(win.getByText('打开最近')).toBeVisible();
+    await expect(win.getByText(EXPLORER_OPEN_RECENT)).toBeVisible();
     const wsName2 = path.basename(ws2);
     await expect(
       win.getByRole('menuitem', { name: wsName2, exact: false }),

@@ -4,6 +4,10 @@
 // 在 Playwright 的 click 流程中页面不稳定,主进程偶发崩溃。功能本身在手动 QA
 // 下工作;tree 单测覆盖 expandAll 行为。
 import { test, expect } from './fixtures/with-workspace';
+import {
+  EXPLORER_EXPAND_ALL,
+  explorerMoreActionsButton,
+} from './helpers/explorer';
 
 test.skip('「展开全部」 → src/a.ts 出现(无须先点 src)', async ({ window }) => {
   // 默认 src 折叠 → a.ts 不显
@@ -12,10 +16,10 @@ test.skip('「展开全部」 → src/a.ts 出现(无须先点 src)', async ({ w
   ).toHaveCount(0);
 
   // 点 ⋯ 菜单 → 展开全部
-  await window.locator('button[aria-label=更多操作]').click();
+  await explorerMoreActionsButton(window).click();
   await window
     .getByRole('menu')
-    .getByRole('menuitem', { name: /^展开全部$/ })
+    .getByRole('menuitem', { name: EXPLORER_EXPAND_ALL })
     .click();
 
   // src/a.ts 现在可见

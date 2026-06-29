@@ -4,6 +4,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { EDITOR_NO_FILE_OPEN } from './helpers/editor';
+import { explorerMoreActionsButton } from './helpers/explorer';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -39,15 +41,18 @@ test('开 ws1/a.ts → ⋯ 切 ws2 → a.ts tab 关 + EditorWelcome', async () =
     const win = await app.firstWindow();
     await win.waitForLoadState('domcontentloaded');
 
-    // 打开 ws1/src/a.ts(显式点 src 因 expandedPaths hydrate 时序)
-    await win.locator('text=src').first().click();
-    await win.locator('text=a.ts').first().click();
+    const file = win
+      .locator('[role=treeitem]')
+      .filter({ hasText: /^a\.ts$/ })
+      .first();
+    await expect(file).toBeVisible({ timeout: 10_000 });
+    await file.click();
     await expect(win.locator('header').first()).toContainText('a.ts', {
       timeout: 10_000,
     });
 
     // ⋯ 菜单切 ws2
-    await win.locator('button[aria-label=更多操作]').click();
+    await explorerMoreActionsButton(win).click();
     const ws2Name = path.basename(ws2);
     await win
       .getByRole('menu')
@@ -58,7 +63,7 @@ test('开 ws1/a.ts → ⋯ 切 ws2 → a.ts tab 关 + EditorWelcome', async () =
     await expect(win.locator('text=CHANGELOG.md')).toBeVisible({
       timeout: 10_000,
     });
-    await expect(win.getByText('未打开文件').first()).toBeVisible({
+    await expect(win.getByText(EDITOR_NO_FILE_OPEN).first()).toBeVisible({
       timeout: 5_000,
     });
 

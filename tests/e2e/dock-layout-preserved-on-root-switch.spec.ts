@@ -4,6 +4,8 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { explorerMoreActionsButton } from './helpers/explorer';
+import { OUTPUT_READY } from './helpers/output';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -37,6 +39,9 @@ test('打开 Output → 切 root → Output panel 仍在', async () => {
     });
     const win = await app.firstWindow();
     await win.waitForLoadState('domcontentloaded');
+    await expect(explorerMoreActionsButton(win)).toBeVisible({
+      timeout: 10_000,
+    });
 
     // 打开 Output panel
     await win.waitForFunction(
@@ -56,17 +61,17 @@ test('打开 Output → 切 root → Output panel 仍在', async () => {
       ).__continuoTest;
       t.openOrFocusPanel('output', 'output', 'Output');
     });
-    await expect(win.locator('text=Continuo ready')).toBeVisible({
+    await expect(win.getByText(OUTPUT_READY)).toBeVisible({
       timeout: 10_000,
     });
 
     // 切 root
     const wsName2 = path.basename(ws2);
-    await win.locator('button[aria-label=更多操作]').click();
+    await explorerMoreActionsButton(win).click();
     await win.getByRole('menuitem', { name: wsName2, exact: false }).click();
 
     // Output panel 仍在
-    await expect(win.locator('text=Continuo ready')).toBeVisible({
+    await expect(win.getByText(OUTPUT_READY)).toBeVisible({
       timeout: 5_000,
     });
 

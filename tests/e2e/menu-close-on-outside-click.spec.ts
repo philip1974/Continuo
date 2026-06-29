@@ -1,9 +1,10 @@
 // ExplorerHeader ⋯ 菜单 / HeaderActions 「更多操作」菜单 / 各 ContextMenu 的
 // 「点击外部关闭」一致性 smoke.
 import { test, expect } from './fixtures/with-workspace';
+import { explorerMoreActionsButton } from './helpers/explorer';
 
 test('ExplorerHeader ⋯ 菜单 → 点 main 区域 → 菜单关', async ({ window }) => {
-  await window.locator('button[aria-label=更多操作]').click();
+  await explorerMoreActionsButton(window).click();
   const menu = window.getByRole('menu');
   await expect(menu).toBeVisible();
 

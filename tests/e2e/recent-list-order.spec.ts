@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { explorerMoreActionsButton } from './helpers/explorer';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -40,7 +41,7 @@ test('recentRoots [ws1, ws2, ws3] → 菜单 ws2 出现在 ws3 之前', async ()
     const win = await app.firstWindow();
     await win.waitForLoadState('domcontentloaded');
 
-    await win.locator('button[aria-label=更多操作]').click();
+    await explorerMoreActionsButton(win).click();
     const menu = win.getByRole('menu');
     await expect(menu).toBeVisible();
 

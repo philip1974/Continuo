@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { explorerMoreActionsButton } from './helpers/explorer';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -45,7 +46,7 @@ test('点 ⋯ → 打开最近 → ws2 → root 切到 ws2', async () => {
       win.locator('main aside').nth(1).getByText(wsName1).first(),
     ).toBeVisible({ timeout: 10_000 });
 
-    await win.locator('button[aria-label=更多操作]').click();
+    await explorerMoreActionsButton(win).click();
     await expect(win.getByRole('menu')).toBeVisible();
     await win
       .getByRole('menuitem', { name: wsName2, exact: false })

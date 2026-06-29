@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { explorerMoreActionsButton } from './helpers/explorer';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -49,7 +50,7 @@ test.skip('打开 ws1/a.ts → 切到 ws2 → a.ts tab 自动关闭(EditorWelcom
     });
 
     // 通过 ⋯ 菜单 → 「打开最近」 → ws2
-    await win.locator('button[aria-label=更多操作]').click();
+    await explorerMoreActionsButton(win).click();
     const ws2Name = path.basename(ws2);
     await win
       .getByRole('menu')

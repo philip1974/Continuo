@@ -4,12 +4,14 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { explorerMoreActionsButton } from './helpers/explorer';
+import { SETTINGS_NAV } from './helpers/settings';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const MAIN_ENTRY = path.join(REPO_ROOT, 'out/main/index.js');
 
-test('override settings.open=mod+shift+y + 切 ws → 新 hotkey 仍触发', async () => {
+test('override settings.toggle=mod+shift+y + 切 ws → 新 hotkey 仍触发', async () => {
   test.setTimeout(60_000);
   const ud = mkdtempSync(path.join(tmpdir(), 'continuo-hws-'));
   const ws1 = mkdtempSync(path.join(tmpdir(), 'continuo-hws-ws1-'));
@@ -37,6 +39,9 @@ test('override settings.open=mod+shift+y + 切 ws → 新 hotkey 仍触发', asy
     });
     const win = await app.firstWindow();
     await win.waitForLoadState('domcontentloaded');
+    await expect(explorerMoreActionsButton(win)).toBeVisible({
+      timeout: 10_000,
+    });
 
     await win.waitForFunction(
       () =>
@@ -54,11 +59,11 @@ test('override settings.open=mod+shift+y + 切 ws → 新 hotkey 仍触发', asy
           };
         }
       ).__continuoTest;
-      t.setHotkey('settings.open', 'mod+shift+y');
+      t.setHotkey('settings.toggle', 'mod+shift+y');
     });
 
     // 切 ws
-    await win.locator('button[aria-label=更多操作]').click();
+    await explorerMoreActionsButton(win).click();
     const ws2Name = path.basename(ws2);
     await win
       .getByRole('menu')
@@ -71,16 +76,16 @@ test('override settings.open=mod+shift+y + 切 ws → 新 hotkey 仍触发', asy
       document.dispatchEvent(
         new KeyboardEvent('keydown', {
           key: 'y',
-          ctrlKey: true,
+          metaKey: true,
           shiftKey: true,
           bubbles: true,
           cancelable: true,
         }),
       );
     });
-    await expect(win.locator('nav[aria-label="设置分类"]')).toBeVisible({
-      timeout: 5_000,
-    });
+    await expect(
+      win.getByRole('navigation', { name: SETTINGS_NAV }),
+    ).toBeVisible({ timeout: 5_000 });
 
     await app.close();
   } finally {
