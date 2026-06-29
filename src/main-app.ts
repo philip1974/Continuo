@@ -25,6 +25,10 @@ import { PermissionError, type PermissionKey } from './plugins/permissions';
 import { sandboxSweep } from './plugins/sandbox-sweep';
 import { captureLmApi, coApi } from './lib/co-api';
 import { useUpdateStore } from './marketplace/update-store';
+import { useKeybindingsStore } from './plugins/keybindings/keybindings-store';
+import { useSettingsValuesStore } from './plugins/settings/values-store';
+import { openOrFocusPanel, focusPanel } from './shell/dock/dock-api-ref';
+import { useEditorStore } from './stores/editor.store';
 import { useTerminalStore } from './stores/terminal.store';
 import {
   preloadTerminalPanelChunk,
@@ -211,41 +215,29 @@ export async function init(): Promise<void> {
   watchTerminalIntent(useTerminalStore, preloadTerminalPanelChunk);
 
   if (window.__continuoE2E === true) {
-    void Promise.all([
-      import('@/shell/dock/dock-api-ref'),
-      import('@/stores/editor.store'),
-      import('@/plugins/settings/values-store'),
-      import('@/plugins/permissions/promptStore'),
-      import('@/plugins/co-app'),
-      import('@/plugins/keybindings/keybindings-store'),
-    ]).then(([dock, editor, values, perm, app, kb]) => {
-      window.__continuoTest = {
-        openOrFocusPanel: dock.openOrFocusPanel,
-        focusPanel: dock.focusPanel,
-        setEditorContent: (tabId, content) =>
-          editor.useEditorStore.getState().updateContent(tabId, content),
-        getEditorActiveTabId: () =>
-          editor.useEditorStore.getState().activeTabId,
-        setSettingValue: (id, v) =>
-          values.useSettingsValuesStore.getState().setValue(id, v),
-        getSettingValue: (id) =>
-          values.useSettingsValuesStore.getState().values[id],
-        requestPermissions: (pluginId, perms) =>
-          perm.usePermissionPromptStore.getState().request(pluginId, perms),
-        commandCount: () => app.coApp.commands.getAll().length,
-        registerCommand: (id, title, hotkey) => {
-          const d = app.coApp.commands.register({
-            id,
-            title,
-            ...(hotkey ? { hotkey } : {}),
-            fn: () => {},
-          });
-          return () => d.dispose();
-        },
-        setHotkey: (commandId, hotkey) =>
-          kb.useKeybindingsStore.getState().setHotkey(commandId, hotkey),
-      };
-    });
+    window.__continuoTest = {
+      openOrFocusPanel,
+      focusPanel,
+      setEditorContent: (tabId, content) =>
+        useEditorStore.getState().updateContent(tabId, content),
+      getEditorActiveTabId: () => useEditorStore.getState().activeTabId,
+      setSettingValue: (id, v) =>
+        useSettingsValuesStore.getState().setValue(id, v),
+      getSettingValue: (id) => useSettingsValuesStore.getState().values[id],
+      requestPermissions: (pluginId, perms) =>
+        usePermissionPromptStore.getState().request(pluginId, perms),
+      commandCount: () => coApp.commands.getAll().length,
+      registerCommand: (id, title, hotkey) => {
+        const d = coApp.commands.register({
+          id,
+          title,
+          ...(hotkey ? { hotkey } : {}),
+          fn: () => {},
+        });
+        return () => d.dispose();
+      },
+      setHotkey: (commandId, hotkey) =>
+        useKeybindingsStore.getState().setHotkey(commandId, hotkey),
+    };
   }
 }
-
