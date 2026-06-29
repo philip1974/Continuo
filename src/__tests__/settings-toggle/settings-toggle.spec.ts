@@ -32,9 +32,10 @@ interface FakeDockApi {
 function makeFakeApi(opts: {
   panel?: FakePanel | null;
 } = {}): FakeDockApi {
+  const createdPanel = makeFakePanel(false);
   return {
     getPanel: vi.fn(() => opts.panel ?? null),
-    addPanel: vi.fn(),
+    addPanel: vi.fn(() => createdPanel),
   };
 }
 
@@ -97,7 +98,7 @@ describe('toggleSettingsPanel · dock 未就绪', () => {
 // ────────────────────────────────────────────────────────────
 
 describe('toggleSettingsPanel · panel 不存在', () => {
-  it('addPanel({id,component,title}) + setSidebarOpen(false)', () => {
+  it('addPanel({id,component,title}) + setActive() + setSidebarOpen(false)', () => {
     const fake = makeFakeApi({ panel: null });
     setDockApi(fake as never);
     toggleSettingsPanel();
@@ -106,6 +107,7 @@ describe('toggleSettingsPanel · panel 不存在', () => {
       component: 'settings',
       title: 'Settings',
     });
+    expect(fake.addPanel.mock.results[0]!.value.api.setActive).toHaveBeenCalled();
     expect(useLayoutUiStore.getState().sidebarOpen).toBe(false);
   });
 
@@ -164,6 +166,7 @@ describe('toggleSettingsPanel · 连续 toggle', () => {
       getPanel: vi.fn(() => panel),
       addPanel: vi.fn(() => {
         panel = makeFakePanel(true);
+        return panel;
       }),
     };
     setDockApi(fake as never);

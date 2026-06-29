@@ -6,6 +6,7 @@ import {
   openQuickOpen,
   quickOpenInput,
 } from './helpers/palette';
+import { dispatchModKey } from './helpers/hotkeys';
 
 test('Ctrl+P 二次 → toggle 关闭', async ({ window }) => {
   await openQuickOpen(window);
@@ -13,7 +14,7 @@ test('Ctrl+P 二次 → toggle 关闭', async ({ window }) => {
   await expect(input).toBeVisible();
 
   // 再按 Ctrl+P → toggle close
-  await openQuickOpen(window);
+  await dispatchModKey(window, 'p');
   await expect(input).toBeHidden();
 });
 
@@ -22,6 +23,6 @@ test('Ctrl+Shift+P 二次 → 命令面板 toggle 关闭', async ({ window }) =>
   const input = commandPaletteInput(window);
   await expect(input).toBeVisible();
 
-  await openCommandPalette(window);
+  await dispatchModKey(window, 'p', { shift: true });
   await expect(input).toBeHidden();
 });

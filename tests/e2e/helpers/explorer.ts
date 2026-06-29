@@ -113,5 +113,8 @@ export function explorerMoreActionsButton(window: Page): Locator {
 }
 
 export function dockHeaderMoreActionsButton(window: Page): Locator {
-  return window.getByRole('button', { name: EXPLORER_MORE_ACTIONS }).last();
+  return window
+    .locator('.dockview-theme-abyss')
+    .getByRole('button', { name: EXPLORER_MORE_ACTIONS })
+    .last();
 }

@@ -34,9 +34,10 @@ export function toggleSettingsPanel(): void {
     existing.api.setActive();
     return;
   }
-  api.addPanel({
+  const panel = api.addPanel({
     id: SETTINGS_PANEL_ID,
     component: SETTINGS_COMPONENT,
     title: SETTINGS_TITLE,
   });
+  panel.api.setActive();
 }
