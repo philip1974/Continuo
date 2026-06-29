@@ -54,7 +54,11 @@ describe('createSessionCache 原始串长度上限 (E71)', () => {
       KEY,
       JSON.stringify({ fetchedAt: Date.now(), data: [1] }),
     );
-    const validate = vi.fn(isStrArr);
+    let validateCalls = 0;
+    const validate = (data: unknown): data is string[] => {
+      validateCalls += 1;
+      return isStrArr(data);
+    };
     const c = createSessionCache<string[]>({
       key: KEY,
       ttlMs: 60_000,
@@ -64,6 +68,6 @@ describe('createSessionCache 原始串长度上限 (E71)', () => {
     expect(c.getFresh()).toBeNull();
     expect(sessionStorage.getItem(KEY)).toBeNull();
     expect(c.getStale()).toBeNull();
-    expect(validate).toHaveBeenCalledTimes(1);
+    expect(validateCalls).toBe(1);
   });
 });
