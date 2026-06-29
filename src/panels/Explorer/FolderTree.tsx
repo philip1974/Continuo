@@ -35,6 +35,7 @@ import { useTheme } from '@/theme';
 import { useExplorerClipboardStore } from './clipboard-store';
 import { t, useT } from '@/i18n';
 import { localizeErrorByCode } from '@/lib/localize-error';
+import { openOrFocusPanel } from '@/shell/dock/dock-api-ref';
 
 interface CreatingState {
   type: 'file' | 'dir';
@@ -510,8 +511,6 @@ export function FolderTree({ root }: { root: string }) {
               });
               return;
             }
-            // 动态 import dock-api-ref 防早期加载循环
-            const { openOrFocusPanel } = await import('@/shell/dock/dock-api-ref');
             openOrFocusPanel(
               TERMINAL_PANEL_TYPE,
               TERMINAL_PANEL_TYPE,
