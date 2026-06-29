@@ -5,12 +5,13 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { dispatchModKey } from './helpers/hotkeys';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const MAIN_ENTRY = path.join(REPO_ROOT, 'out/main/index.js');
 
-test('override settings.open=mod+shift+y → 关 → 重启 → 新组合仍触发', async () => {
+test('override settings.toggle=mod+shift+y → 关 → 重启 → 新组合仍触发', async () => {
   test.setTimeout(60_000);
   const ud = mkdtempSync(path.join(tmpdir(), 'continuo-kb-persist-'));
   try {
@@ -36,7 +37,7 @@ test('override settings.open=mod+shift+y → 关 → 重启 → 新组合仍触�
           };
         }
       ).__continuoTest;
-      t.setHotkey('settings.open', 'mod+shift+y');
+      t.setHotkey('settings.toggle', 'mod+shift+y');
     });
     await win1.waitForTimeout(200);
     await app1.close();
@@ -61,7 +62,7 @@ test('override settings.open=mod+shift+y → 关 → 重启 → 新组合仍触�
       const raw = localStorage.getItem('continuo.keybindings.overrides');
       return raw ? (JSON.parse(raw) as Record<string, string>) : null;
     });
-    expect(restored?.['settings.open']).toBe('mod+shift+y');
+    expect(restored?.['settings.toggle']).toBe('mod+shift+y');
 
     // 给 plugin 注册一些时间(commands 注册可能异步)
     await win2.waitForTimeout(1_000);
@@ -75,18 +76,7 @@ test('override settings.open=mod+shift+y → 关 → 重启 → 新组合仍触�
     });
     expect(cmdCount).toBeGreaterThan(0);
 
-    // 按新 hotkey
-    await win2.evaluate(() => {
-      document.dispatchEvent(
-        new KeyboardEvent('keydown', {
-          key: 'y',
-          ctrlKey: true,
-          shiftKey: true,
-          bubbles: true,
-          cancelable: true,
-        }),
-      );
-    });
+    await dispatchModKey(win2, 'y', { shift: true });
 
     await expect(win2.getByRole('navigation', { name: SETTINGS_NAV })).toBeVisible({
       timeout: 10_000,

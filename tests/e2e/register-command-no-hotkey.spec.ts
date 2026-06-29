@@ -1,8 +1,9 @@
-// 注册无 hotkey 命令 → 不影响现有 hotkey;Cmd+, 仍触发 settings.open.
+// 注册无 hotkey 命令 → 不影响现有 hotkey;Cmd+, 仍触发 settings.toggle.
 import { test, expect } from './fixtures/electron-app';
-import { SETTINGS_NAV } from './helpers/settings';
+import { dispatchModKey } from './helpers/hotkeys';
+import { SETTINGS, SETTINGS_NAV } from './helpers/settings';
 
-test('register e2e.silent(无 hotkey)→ Cmd+, 仍触发 settings.open', async ({
+test('register e2e.silent(无 hotkey)→ Cmd+, 仍触发 settings.toggle', async ({
   window,
 }) => {
   await window.waitForFunction(
@@ -12,6 +13,9 @@ test('register e2e.silent(无 hotkey)→ Cmd+, 仍触发 settings.open', async (
       ),
     { timeout: 5_000 },
   );
+  await expect(window.getByRole('button', { name: SETTINGS })).toBeVisible({
+    timeout: 10_000,
+  });
 
   await window.evaluate(() => {
     const t = (
@@ -28,17 +32,7 @@ test('register e2e.silent(无 hotkey)→ Cmd+, 仍触发 settings.open', async (
     t.registerCommand('e2e.silent', 'Silent Cmd');
   });
 
-  // Cmd+, 仍触发 settings.open
-  await window.evaluate(() => {
-    document.dispatchEvent(
-      new KeyboardEvent('keydown', {
-        key: ',',
-        ctrlKey: true,
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
-  });
+  await dispatchModKey(window, ',');
   await expect(window.getByRole('navigation', { name: SETTINGS_NAV })).toBeVisible({
     timeout: 5_000,
   });

@@ -1,7 +1,7 @@
 // IconSidebar Explorer 按钮 + 状态栏 hidden hint + 重启持久化.
 //
 // 同样的开关也应该可以通过命令面板 / hotkey 触发?查 commands 注册.
-// SettingsPanelPlugin 注册了 'settings.open',ExplorerSidebar toggle 没有命令.
+// SettingsPanelPlugin 注册了 'settings.toggle',ExplorerSidebar toggle 没有命令.
 // 这里改测:点击 → toggle → 重启状态保留(layoutUi.sidebarOpen).
 import { _electron as electron, expect, test } from '@playwright/test';
 import {

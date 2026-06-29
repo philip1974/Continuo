@@ -1,8 +1,9 @@
 // override hotkey 后,新组合真触发命令(useCommandHotkeys 走 effective).
 import { test, expect } from './fixtures/electron-app';
+import { dispatchModKey } from './helpers/hotkeys';
 import { SETTINGS_NAV } from './helpers/settings';
 
-test('override settings.open 为 mod+shift+y → 按下新组合 → 打开 Settings', async ({
+test('override settings.toggle 为 mod+shift+y → 按下新组合 → 打开 Settings', async ({
   window,
 }) => {
   await window.waitForFunction(
@@ -21,21 +22,10 @@ test('override settings.open 为 mod+shift+y → 按下新组合 → 打开 Sett
         };
       }
     ).__continuoTest;
-    t.setHotkey('settings.open', 'mod+shift+y');
+    t.setHotkey('settings.toggle', 'mod+shift+y');
   });
 
-  // 按 Ctrl+Shift+Y → 触发 settings.open
-  await window.evaluate(() => {
-    document.dispatchEvent(
-      new KeyboardEvent('keydown', {
-        key: 'y',
-        ctrlKey: true,
-        shiftKey: true,
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
-  });
+  await dispatchModKey(window, 'y', { shift: true });
 
   await expect(window.getByRole('navigation', { name: SETTINGS_NAV })).toBeVisible({
     timeout: 10_000,
@@ -60,20 +50,10 @@ test('override 后 → 旧 hotkey ⌘, 不再触发', async ({ window }) => {
         };
       }
     ).__continuoTest;
-    t.setHotkey('settings.open', 'mod+shift+y');
+    t.setHotkey('settings.toggle', 'mod+shift+y');
   });
 
-  // 按 Ctrl+, (旧 hotkey)
-  await window.evaluate(() => {
-    document.dispatchEvent(
-      new KeyboardEvent('keydown', {
-        key: ',',
-        ctrlKey: true,
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
-  });
+  await dispatchModKey(window, ',');
 
   // 等待几秒后 nav 仍不可见(旧 hotkey 不再绑定)
   await window.waitForTimeout(500);

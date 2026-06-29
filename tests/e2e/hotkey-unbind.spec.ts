@@ -1,8 +1,9 @@
 // unbind hotkey(空字符串覆盖)→ 该 hotkey 不再触发命令.
 import { test, expect } from './fixtures/electron-app';
+import { dispatchModKey } from './helpers/hotkeys';
 import { SETTINGS, SETTINGS_NAV } from './helpers/settings';
 
-test('unbind settings.open(空字符串)→ ⌘, 不再触发', async ({
+test('unbind settings.toggle(空字符串)→ ⌘, 不再触发', async ({
   window,
 }) => {
   await window.waitForFunction(
@@ -22,20 +23,10 @@ test('unbind settings.open(空字符串)→ ⌘, 不再触发', async ({
         };
       }
     ).__continuoTest;
-    t.setHotkey('settings.open', '');
+    t.setHotkey('settings.toggle', '');
   });
 
-  // 按 Ctrl+,
-  await window.evaluate(() => {
-    document.dispatchEvent(
-      new KeyboardEvent('keydown', {
-        key: ',',
-        ctrlKey: true,
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
-  });
+  await dispatchModKey(window, ',');
   await window.waitForTimeout(500);
 
   // Settings panel 不应打开
