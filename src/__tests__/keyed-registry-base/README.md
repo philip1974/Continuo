@@ -17,3 +17,5 @@ SettingItem / SettingTab / StatusBar)此前各自逐字复制同一段「注册 
    在 dispose 真正删除后、通知之前调用(CommandRegistry 的 hotkey 计数用)。
 4. `snapshotByPriority(items)`:按 `priority ?? 100` 升序、等优先级保持注册顺序;已有序时不调用 sort。
 5. 家族接线守卫:8 个 registry 都继承 `KeyedRegistry` 且不再自持 `listeners` / 内联 dispose 样板。
+6. `filterKeepingIdentity(items, keep, empty)`(两个 `filterVisible` 共用):全部通过返回入参数组本身;
+   部分滤掉返回保持原序的新数组;全被滤掉返回共享空数组引用;每项只调一次谓词。

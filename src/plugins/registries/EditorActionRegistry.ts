@@ -3,7 +3,11 @@
 
 import type { ReactNode } from 'react';
 import type { Disposable } from '../types';
-import { KeyedRegistry, snapshotByPriority } from './keyed-registry';
+import {
+  KeyedRegistry,
+  filterKeepingIdentity,
+  snapshotByPriority,
+} from './keyed-registry';
 import { isSpecObject } from './spec-guard';
 
 export interface EditorActionContext {
@@ -117,22 +121,9 @@ export function filterVisible(
   actions: readonly EditorActionSpec[],
   ctx: EditorActionContext,
 ): EditorActionSpec[] {
-  let out: EditorActionSpec[] | null = null;
-  let count = 0;
-  for (let i = 0; i < actions.length; i++) {
-    const a = actions[i]!;
-    const visible = isEditorActionVisible(a, ctx);
-    if (!visible) {
-      if (out === null) {
-        out = new Array<EditorActionSpec>(actions.length);
-        for (let j = 0; j < i; j++) out[j] = actions[j]!;
-        count = i;
-      }
-      continue;
-    }
-    if (out !== null) out[count++] = a;
-  }
-  if (out === null) return actions as EditorActionSpec[];
-  out.length = count;
-  return count === 0 ? EMPTY_VISIBLE_EDITOR_ACTIONS : out;
+  return filterKeepingIdentity(
+    actions,
+    (a) => isEditorActionVisible(a, ctx),
+    EMPTY_VISIBLE_EDITOR_ACTIONS,
+  );
 }

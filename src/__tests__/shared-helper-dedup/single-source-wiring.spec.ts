@@ -158,3 +158,24 @@ describe('runSerialPerKey 单一来源(electron/shared/run-serial-per-key.ts)', 
     expect(definers('runSerialPerKey')).toEqual(['electron/shared/run-serial-per-key.ts']);
   });
 });
+
+describe('Explorer「选择 workspace 文件夹」流程单一来源(useSelectWorkspaceFolder)', () => {
+  const read = (rel: string): string => readFileSync(path.join(ROOT, rel), 'utf-8');
+
+  it.each(['src/panels/Explorer/EmptyWorkspace.tsx', 'src/panels/Explorer/ExplorerHeader.tsx'])(
+    '%s 走共享 hook,不再内联 selectDirectory 流程',
+    (rel) => {
+      const src = read(rel);
+      expect(src).toContain('useSelectWorkspaceFolder()');
+      expect(src).not.toContain('coApi.fs.selectDirectory(');
+      expect(src).not.toContain('trySelectDirectoryLock(');
+    },
+  );
+
+  it('共享 hook 保留单飞闸门 + 过期守卫 + finally 释放', () => {
+    const src = read('src/panels/Explorer/hooks/useSelectWorkspaceFolder.ts');
+    expect(src).toContain('trySelectDirectoryLock()');
+    expect(src).toContain('workspaceRootSelectionGuard.begin()');
+    expect(src).toMatch(/finally\s*{\s*releaseSelectDirectoryLock\(\);/);
+  });
+});

@@ -5,6 +5,7 @@ import path from 'node:path';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   KeyedRegistry,
+  filterKeepingIdentity,
   snapshotByPriority,
 } from '../../plugins/registries/keyed-registry';
 import { MAX_REGISTRY_ITEMS } from '../../plugins/registries/registry-capacity';
@@ -158,5 +159,34 @@ describe('家族接线守卫:8 个 Map 型 registry 继承 KeyedRegistry', () =>
     expect(src).toContain('this.registerKeyed(');
     expect(src).not.toContain('private listeners');
     expect(src).not.toContain('let disposed = false');
+  });
+});
+
+describe('filterKeepingIdentity', () => {
+  const EMPTY: number[] = [];
+
+  it('全部通过 → 返回入参数组本身', () => {
+    const items = [1, 2, 3];
+    expect(filterKeepingIdentity(items, () => true, EMPTY)).toBe(items);
+  });
+
+  it('部分滤掉 → 新数组,保持原序', () => {
+    const items = [1, 2, 3, 4, 5];
+    const out = filterKeepingIdentity(items, (n) => n % 2 === 1, EMPTY);
+    expect(out).toEqual([1, 3, 5]);
+    expect(out).not.toBe(items);
+    expect(filterKeepingIdentity(items, (n) => n > 1, EMPTY)).toEqual([2, 3, 4, 5]);
+  });
+
+  it('全被滤掉 → 返回共享空数组引用;空入参原样返回', () => {
+    expect(filterKeepingIdentity([1, 2], () => false, EMPTY)).toBe(EMPTY);
+    const none: number[] = [];
+    expect(filterKeepingIdentity(none, () => false, EMPTY)).toBe(none);
+  });
+
+  it('每项只调一次谓词', () => {
+    const keep = vi.fn((n: number) => n !== 2);
+    filterKeepingIdentity([1, 2, 3], keep, EMPTY);
+    expect(keep).toHaveBeenCalledTimes(3);
   });
 });

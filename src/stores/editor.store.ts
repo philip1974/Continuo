@@ -195,6 +195,81 @@ export function getStateAfterRenamingPath(
   return { tabs: newTabs, activeTabId: nextActive };
 }
 
+interface TabFilterResult {
+  /** 保留下来的 tab(原序);`changed=false` 时为空数组,调用方应直接沿用原 tabs。 */
+  readonly remaining: EditorTab[];
+  /** 是否有 tab 被移除。 */
+  readonly changed: boolean;
+  /** activeTabId 对应的 tab 在 tabs 里。 */
+  readonly activeFound: boolean;
+  /** active tab 被保留。 */
+  readonly activeKept: boolean;
+  /** active 被移除时的接替者:原序后向第一个保留项,否则前向最近的保留项,都没有则 null。 */
+  readonly neighbor: EditorTab | null;
+}
+
+const NO_TABS_REMOVED: TabFilterResult = {
+  remaining: [],
+  changed: false,
+  activeFound: false,
+  activeKept: false,
+  neighbor: null,
+};
+
+/**
+ * 按 keep 过滤 tabs 的单趟核心(切 root 关 tab / 删除路径关 tab 共用):同时追踪 active tab 的
+ * 去留与其相邻保留项,供调用方各自决定新的 activeTabId。无 tab 被移除时不分配数组(返回共享的
+ * NO_TABS_REMOVED);首次遇到被移除项才惰性拷贝前缀。
+ */
+function filterTabsTrackingActive(
+  tabs: readonly EditorTab[],
+  activeTabId: string | null,
+  keep: (tab: EditorTab) => boolean,
+): TabFilterResult {
+  let remaining: EditorTab[] | null = null;
+  let count = 0;
+  let activeFound = false;
+  let activeKept = false;
+  let seenActive = activeTabId === null;
+  let lastKeptBeforeActive: EditorTab | null = null;
+  let firstKeptAfterActive: EditorTab | null = null;
+
+  for (let i = 0; i < tabs.length; i++) {
+    const tab = tabs[i]!;
+    const isActive = tab.id === activeTabId;
+    if (isActive) {
+      activeFound = true;
+      seenActive = true;
+    }
+    if (!keep(tab)) {
+      if (remaining === null) {
+        remaining = new Array<EditorTab>(tabs.length - 1);
+        for (let j = 0; j < count; j++) remaining[j] = tabs[j]!;
+      }
+      continue;
+    }
+    if (remaining !== null) remaining[count] = tab;
+    count += 1;
+    if (isActive) {
+      activeKept = true;
+    } else if (!seenActive) {
+      lastKeptBeforeActive = tab;
+    } else if (firstKeptAfterActive === null) {
+      firstKeptAfterActive = tab;
+    }
+  }
+
+  if (remaining === null) return NO_TABS_REMOVED;
+  remaining.length = count;
+  return {
+    remaining,
+    changed: true,
+    activeFound,
+    activeKept,
+    neighbor: firstKeptAfterActive ?? lastKeptBeforeActive,
+  };
+}
+
 /**
  * 工作区 root 切换后的 tab 状态:
  * - untitled(filePath=null)tab 与 root 无关,始终保留
@@ -216,56 +291,19 @@ export function getStateAfterClosingTabsOutsideRoot(
     return isSameOrInsidePath(root, tab.filePath);
   };
 
-  let remaining: EditorTab[] | null = null;
-  let count = 0;
-  let changed = false;
-  let activeFound = activeTabId === null;
-  let activeKept = false;
-  let seenActive = activeTabId === null;
-  let lastKeptBeforeActive: EditorTab | null = null;
-  let firstKeptAfterActive: EditorTab | null = null;
-
-  for (let i = 0; i < tabs.length; i++) {
-    const tab = tabs[i]!;
-    const isActive = tab.id === activeTabId;
-    if (isActive) {
-      activeFound = true;
-      seenActive = true;
-    }
-    if (keep(tab)) {
-      if (remaining !== null) remaining[count] = tab;
-      count += 1;
-      if (isActive) {
-        activeKept = true;
-      } else if (!seenActive) {
-        lastKeptBeforeActive = tab;
-      } else if (firstKeptAfterActive === null) {
-        firstKeptAfterActive = tab;
-      }
-    } else {
-      if (remaining === null) {
-        remaining = new Array<EditorTab>(tabs.length - 1);
-        for (let j = 0; j < count; j++) remaining[j] = tabs[j]!;
-      }
-      changed = true;
-    }
-  }
-
-  if (!changed) return { tabs, activeTabId };
-  remaining ??= [];
-  remaining.length = count;
-  if (remaining.length === 0) {
+  const r = filterTabsTrackingActive(tabs, activeTabId, keep);
+  if (!r.changed) return { tabs, activeTabId };
+  if (r.remaining.length === 0) {
     return { tabs: EMPTY_EDITOR_TABS, activeTabId: null };
   }
-  if (activeTabId !== null && activeKept) {
-    return { tabs: remaining, activeTabId };
+  if (activeTabId !== null && r.activeKept) {
+    return { tabs: r.remaining, activeTabId };
   }
   // active 被关:取原序后向第一个 remaining,否则前向,否则首个
-  if (activeTabId !== null && activeFound) {
-    const next = firstKeptAfterActive ?? lastKeptBeforeActive;
-    return { tabs: remaining, activeTabId: next?.id ?? null };
+  if (activeTabId !== null && r.activeFound) {
+    return { tabs: r.remaining, activeTabId: r.neighbor?.id ?? null };
   }
-  return { tabs: remaining, activeTabId: remaining[0]!.id };
+  return { tabs: r.remaining, activeTabId: r.remaining[0]!.id };
 }
 
 /**
@@ -291,52 +329,20 @@ export function getStateAfterRemovingPath(
   // EditorPanel 的 dirty 关闭确认,静默丢失内存里的未保存增量(磁盘旧版本进废纸篓
   // 可恢复,但内存增量无处可寻)。参考 VSCode:删除有未保存改动的文件保留 dirty
   // 编辑器。仅 clean tab 自动关闭;dirty tab 留给用户显式保存或经确认丢弃。
-  let remaining: EditorTab[] | null = null;
-  let count = 0;
-  let changed = false;
-  let activeKept = false;
-  let activeRemoved = false;
-  let seenActive = activeTabId === null;
-  let lastKeptBeforeActive: EditorTab | null = null;
-  let firstKeptAfterActive: EditorTab | null = null;
-
-  for (const tab of tabs) {
-    const isActive = tab.id === activeTabId;
-    if (isActive) seenActive = true;
-    const shouldRemove = isMatch(tab.filePath) && !tab.dirty;
-
-    if (shouldRemove) {
-      if (remaining === null) {
-        remaining = new Array<EditorTab>(tabs.length - 1);
-        for (let j = 0; j < count; j++) remaining[j] = tabs[j]!;
-      }
-      changed = true;
-      if (isActive) activeRemoved = true;
-      continue;
-    }
-
-    if (remaining !== null) remaining[count] = tab;
-    count += 1;
-    if (isActive) {
-      activeKept = true;
-    } else if (!seenActive) {
-      lastKeptBeforeActive = tab;
-    } else if (firstKeptAfterActive === null) {
-      firstKeptAfterActive = tab;
-    }
-  }
-
-  if (!changed) return { tabs, activeTabId };
-  remaining ??= [];
-  remaining.length = count;
-  if (remaining.length === 0) {
+  const r = filterTabsTrackingActive(
+    tabs,
+    activeTabId,
+    (tab) => !(isMatch(tab.filePath) && !tab.dirty),
+  );
+  if (!r.changed) return { tabs, activeTabId };
+  if (r.remaining.length === 0) {
     return { tabs: EMPTY_EDITOR_TABS, activeTabId: null };
   }
-  if (activeTabId === null || activeKept || !activeRemoved) {
-    return { tabs: remaining, activeTabId };
+  // active 仍在(或本就不在 tabs 里)→ 不动 activeTabId。
+  if (activeTabId === null || r.activeKept || !r.activeFound) {
+    return { tabs: r.remaining, activeTabId };
   }
-  const next = firstKeptAfterActive ?? lastKeptBeforeActive;
-  return { tabs: remaining, activeTabId: next?.id ?? null };
+  return { tabs: r.remaining, activeTabId: r.neighbor?.id ?? null };
 }
 
 // ── Zustand store ────────────────────────────────────────────
