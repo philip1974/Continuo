@@ -20,6 +20,7 @@ import {
   migrateExplorerFileToV3,
   pruneLRUClosed,
 } from './persistence';
+import { EXPLORER_FILE_NAME } from '../shared/explorer-persistence-schema';
 import { pickWindowsToRestore } from './services/window-restore.service';
 import { pickStartupMode } from './services/startup-mode.service';
 import {
@@ -358,7 +359,7 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
     // 窗口级资源清理(scope / fs watcher / agent 授权)已移到覆盖全窗口的
     // browser-window-created → releaseWindowResources,主窗与 popout 统一处理。
     // 此处只保留主窗专属的 explorer.json 段落持久化(popout 无 windowSeq 段)。
-    const explorerFile = path.join(app.getPath('userData'), 'explorer.json');
+    const explorerFile = path.join(app.getPath('userData'), EXPLORER_FILE_NAME);
     void withExplorerFileMutex(async () => {
       const payload = (await loadExplorer(explorerFile)) ?? defaultExplorerV3();
       const entry = ensureWindowEntry(payload, seq);
@@ -442,7 +443,7 @@ function isDirectorySync(p: string): boolean {
  * seq 的历史持久化段),不给则是空白新窗。菜单 / Dock 菜单 / argv / open-file / 冷启动多目录共用。
  */
 async function openWorkspaceWindow(workspace?: string): Promise<void> {
-  const explorerFile = path.join(app.getPath('userData'), 'explorer.json');
+  const explorerFile = path.join(app.getPath('userData'), EXPLORER_FILE_NAME);
   const windowSeq = await allocateWindowSeq(explorerFile);
   if (workspace === undefined) createMainWindow({ windowSeq });
   else createMainWindow({ windowSeq, workspace, fresh: true });
@@ -929,7 +930,7 @@ app.whenReady().then(async () => {
   setTrustedRendererFile(RENDERER_FILE);
 
   const userData = app.getPath('userData');
-  const explorerFile = path.join(userData, 'explorer.json');
+  const explorerFile = path.join(userData, EXPLORER_FILE_NAME);
   const legacyLayoutFile = path.join(userData, 'layout.json');
   await migrateExplorerFileToV3(explorerFile, legacyLayoutFile);
 

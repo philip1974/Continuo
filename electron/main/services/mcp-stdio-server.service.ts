@@ -57,6 +57,12 @@ export function hasOversizedStdioLine(
   return false;
 }
 
+/** 窗口存在且未销毁(hello 绑定校验与每次调用的 owner 复查共用)。 */
+function isWindowAlive(id: number): boolean {
+  const win = BrowserWindow.fromId(id);
+  return win !== null && !win.isDestroyed();
+}
+
 /** 协议级拒绝:写一条 PARSE_ERROR(连接可能已坏,写失败忽略)后断开。 */
 function rejectAndDestroy(sock: Socket, message: string): void {
   try {
@@ -255,21 +261,14 @@ async function handleLine(
   // before normal MCP traffic. Must be consumed before generic notification
   // discard below.
   if (
-    raw !== null &&
-    typeof raw === 'object' &&
-    !Array.isArray(raw) &&
-    (raw as Record<string, unknown>)['jsonrpc'] === '2.0' &&
-    (raw as Record<string, unknown>)['method'] === '_continuo/hello' &&
-    !('id' in (raw as Record<string, unknown>))
+    isRpcNotification(raw) &&
+    (raw as Record<string, unknown>)['method'] === '_continuo/hello'
   ) {
     const windowId = resolveStdioHelloWindowId(
       (raw as Record<string, unknown>)['params'],
       {
         resolveWindowId,
-        windowExists: (id) => {
-          const win = BrowserWindow.fromId(id);
-          return !!win && !win.isDestroyed();
-        },
+        windowExists: isWindowAlive,
       },
     );
     if (windowId === null) return;
@@ -300,10 +299,7 @@ async function handleLine(
   // 永久损坏(即使别的窗口活着)。resolveStdioCallOwnerWindow 校验绑定窗口存活,
   // 死则返回 null → 走下面的 fallback 到当前活窗。
   const liveOwner = resolveStdioCallOwnerWindow(socketCtx.get(sock), {
-    isWindowAlive: (id) => {
-      const w = BrowserWindow.fromId(id);
-      return w !== null && !w.isDestroyed();
-    },
+    isWindowAlive,
   });
   // 安全 S3:无论绑定窗口还是 fallback,都带本连接的 callerSubject,供 capability 校验。
   const callerSubject = subjectForSocket(sock);

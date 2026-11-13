@@ -307,7 +307,9 @@ function hasCompleteAnsiCsi(slice: string): boolean {
       if ((code >= 48 && code <= 57) || code === 59) {
         continue;
       }
-      return (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+      // 本序列的终结符:是字母 → 完整 CSI;否则从下一个 ESC[ 继续找(等价 regex.test 的「任意位置」)。
+      if ((code >= 65 && code <= 90) || (code >= 97 && code <= 122)) return true;
+      break;
     }
   }
 
@@ -325,7 +327,9 @@ function hasInPlaceAnsiCsi(data: string): boolean {
       if (code >= 48 && code <= 57) {
         continue;
       }
-      return (
+      // 本序列不是原地更新 → 从下一个 ESC[ 继续找(等价 /\x1b\[\d*[ABCDGHK]/.test 的「任意位置」;此前
+      // 在第一个 CSI 处就 return,前面有 SGR 颜色时后面的清行 / 光标移动被漏判)。
+      if (
         code === 65 ||
         code === 66 ||
         code === 67 ||
@@ -333,7 +337,10 @@ function hasInPlaceAnsiCsi(data: string): boolean {
         code === 71 ||
         code === 72 ||
         code === 75
-      );
+      ) {
+        return true;
+      }
+      break;
     }
   }
 

@@ -184,3 +184,6 @@ export type ExplorerWritableWindowEntry = z.infer<
 >;
 export type WindowEntryV3 = z.infer<typeof WindowEntrySchemaV3>;
 export type ExplorerPayloadV3 = z.infer<typeof ExplorerSchemaV3>;
+
+/** userData 下持久化会话(窗口段 / layout / 最近目录)的文件名;main 各处用 path.join(userData, 它)。 */
+export const EXPLORER_FILE_NAME = 'explorer.json';

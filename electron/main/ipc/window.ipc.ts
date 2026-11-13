@@ -18,7 +18,10 @@ import {
 import { ERROR_CODES } from '../../shared/error-codes';
 import { IPC_ERR } from '../../shared/ipc-result';
 import { createMainWindow } from '../index';
-import { allocateWindowSeq } from '../persistence';
+import {
+  allocateWindowSeq,
+} from '../persistence';
+import { EXPLORER_FILE_NAME } from '../../shared/explorer-persistence-schema';
 import {
   clearWindow as clearWindowRoot,
   setWorkspaceRoot,
@@ -63,7 +66,7 @@ async function createWindowHandler(
     }
   }
 
-  const explorerFile = path.join(app.getPath('userData'), 'explorer.json');
+  const explorerFile = path.join(app.getPath('userData'), EXPLORER_FILE_NAME);
   const newWindowSeq = await allocateWindowSeq(explorerFile);
   const win = createMainWindow({
     windowSeq: newWindowSeq,

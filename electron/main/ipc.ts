@@ -12,6 +12,7 @@ import {
   type ExplorerPayloadV3,
   type ExplorerWritablePayload,
 } from './persistence';
+import { EXPLORER_FILE_NAME } from '../shared/explorer-persistence-schema';
 import { defaultIsTrustedFrame, safeHandle, safeHandleWithCtx } from './safe-handle';
 import { atomicWriteJson } from './lib/atomic-write';
 import { withExplorerFileMutex } from './lib/file-mutex';
@@ -138,7 +139,7 @@ function senderWindowSeqOrThrow(event: IpcMainInvokeEvent): number {
 
 export function registerIpc(): { pluginFsHandles: PluginFsIpcHandles } {
   const userData = app.getPath('userData');
-  const explorerFile = path.join(userData, 'explorer.json');
+  const explorerFile = path.join(userData, EXPLORER_FILE_NAME);
   const trusted = defaultIsTrustedFrame;
 
   safeHandleWithCtx(
