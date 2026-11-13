@@ -22,13 +22,14 @@ export const MCP_TOOL_DEBUG_EVALUATE = 'debug.evaluate';
 export const MCP_TOOL_DEBUG_DISCONNECT = 'debug.disconnect';
 export const MCP_TOOL_DEBUG_LIST_SESSIONS = 'debug.list_sessions';
 
-const sessionIdSchema = z.string().min(1).max(DEBUG_SESSION_ID_MAX);
+/** debug session id(MCP 工具入参与 Debug 面板 IPC 入参共用)。 */
+export const sessionIdSchema = z.string().min(1).max(DEBUG_SESSION_ID_MAX);
 const pathSchema = z.string().min(1).max(DEBUG_PATH_MAX);
 const nonNegativeIntSchema = z.number().int().min(0);
 const positiveIntSchema = z.number().int().min(1);
 // js-debug 的 Node 线程 id 是 0(DAP threadId 允许 0)。thread_id 用 nonNegative,
 // 可选:省略时引擎用 threads 请求解析。历史上误设 min(1) 把合法的 0 拒了。
-const threadIdSchema = nonNegativeIntSchema.optional();
+export const threadIdSchema = nonNegativeIntSchema.optional();
 
 const dapVariableSchema = z
   .object({

@@ -56,9 +56,27 @@ vi.mock('dockview-react', () => ({
   },
 }));
 
+interface FlushFixture {
+  layout?: { onFlushRequest?: unknown; sendFlushAck?: unknown };
+}
+function flushFixture(): FlushFixture | undefined {
+  return (window as { electron?: FlushFixture }).electron;
+}
+
 vi.mock('@/lib/co-api', () => ({
   coApi: {
-    layout: { read: h.read, write: h.write },
+    // 关窗 flush 握手走 coApi.layout(preload 暴露的真实入口)。各用例把假 bridge 挂到
+    // window.electron 这个**测试夹具槽位**,由下面的 getter 转给 coApi —— 产品代码只读 coApi。
+    layout: {
+      read: h.read,
+      write: h.write,
+      get onFlushRequest() {
+        return flushFixture()?.layout?.onFlushRequest;
+      },
+      get sendFlushAck() {
+        return flushFixture()?.layout?.sendFlushAck;
+      },
+    },
     terminal: { remove: vi.fn().mockResolvedValue({ ok: true }) },
     system: { windowId: 1 },
   },
@@ -363,5 +381,54 @@ describe('a11y(A131) — Dock 布局恢复失败须反馈', () => {
     // debounce 被 cancel → 300ms 后不应再写盘(迟到 layout 写不覆盖新实例)。
     await new Promise((r) => setTimeout(r, 400));
     expect(h.write).not.toHaveBeenCalled();
+  });
+});
+
+// 回归守卫:DockShell 曾从不存在的 `window.electron` 取 flush bridge(preload 只暴露 __lmApi,经
+// coApi 访问)→ `layout:flush-request` 无人监听,关窗前 layout / explorer / autosave 三路 flush 从不
+// 执行,main 每次关窗干等 10s ack 超时(窗口已先 hide,用户无感)。必须经 coApi.layout 订阅 + ack。
+describe('关窗 flush 握手走 coApi(不读 window.electron)', () => {
+  it('DockShell 源码不再引用 window.electron / FlushBridge', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const src = readFileSync(join(process.cwd(), 'src/shell/dock/DockShell.tsx'), 'utf-8');
+    expect(src).not.toMatch(/\.electron\b/);
+    expect(src).not.toContain('getFlushBridge');
+    expect(src).toContain('coApi.layout.onFlushRequest');
+    expect(src).toContain('coApi.layout.sendFlushAck');
+  });
+
+  it('preload 把 main 的 {windowId} payload 透传给回调', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const src = readFileSync(join(process.cwd(), 'electron/preload/index.ts'), 'utf-8');
+    const block = src.slice(src.indexOf('onFlushRequest:'), src.indexOf('sendFlushAck:'));
+    expect(block).toMatch(/void cb\(payload\)/);
+  });
+
+  it('flush 请求到达 → 三路 flush 后用 payload.windowId ack', async () => {
+    let flushCb: ((p?: { windowId: number }) => Promise<void>) | null = null;
+    const sendFlushAck = vi.fn();
+    (window as { electron?: unknown }).electron = {
+      layout: {
+        onFlushRequest: (cb: (p?: { windowId: number }) => Promise<void>) => {
+          flushCb = cb;
+          return () => {};
+        },
+        sendFlushAck,
+      },
+    };
+    h.read.mockResolvedValue({ ok: true, data: null });
+    render(React.createElement(DockShell));
+    await vi.waitFor(() => expect(flushCb).not.toBeNull());
+
+    await flushCb!({ windowId: 7 });
+    expect(h.flushExplorerPersistence).toHaveBeenCalledTimes(1);
+    expect(h.flushPendingAutoSave).toHaveBeenCalledTimes(1);
+    expect(sendFlushAck).toHaveBeenCalledWith(7);
+
+    // main 未带 payload(旧 preload 形态)→ 回退 coApi.system.windowId。
+    await flushCb!();
+    expect(sendFlushAck).toHaveBeenLastCalledWith(1);
   });
 });

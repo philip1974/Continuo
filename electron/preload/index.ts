@@ -115,10 +115,11 @@ const api = {
     write: (json: unknown): Promise<IpcResult<void>> =>
       ipcRenderer.invoke('layout:write', json),
     onFlushRequest: (
-      cb: () => void | Promise<void>,
+      cb: (payload?: { windowId: number }) => void | Promise<void>,
     ): (() => void) => {
-      const listener = () => {
-        void cb();
+      // main 发 `{ windowId }`;透传给回调(不暴露 IpcRendererEvent)。
+      const listener = (_event: unknown, payload?: { windowId: number }) => {
+        void cb(payload);
       };
       ipcRenderer.on('layout:flush-request', listener);
       return () => ipcRenderer.off('layout:flush-request', listener);

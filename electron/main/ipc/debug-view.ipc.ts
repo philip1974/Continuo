@@ -5,6 +5,7 @@ import {
   safeHandleWithWindow,
 } from '../safe-handle';
 import { ERROR_CODES } from '../../shared/error-codes';
+import { sessionIdSchema, threadIdSchema } from '../../shared/mcp-debug-schemas';
 import {
   DEBUG_VIEW_CHANNELS,
   type DebugGetScopesInput,
@@ -16,10 +17,11 @@ import * as debugSessions from '../services/debug-sessions.service';
 
 const debugSubscribeInputSchema = z.object({}).strict();
 
-const debugGetStackInputSchema = z
+// 导出供回归测试;sessionId / threadId 与 MCP debug 工具共用 shared schema(threadId 含合法的 0)。
+export const debugGetStackInputSchema = z
   .object({
-    sessionId: z.string().min(1).max(256),
-    threadId: z.number().int().positive().optional(),
+    sessionId: sessionIdSchema,
+    threadId: threadIdSchema,
     startFrame: z.number().int().min(0).max(100_000).optional(),
     levels: z.number().int().min(1).max(1_000).optional(),
   })
@@ -27,14 +29,14 @@ const debugGetStackInputSchema = z
 
 const debugGetScopesInputSchema = z
   .object({
-    sessionId: z.string().min(1).max(256),
+    sessionId: sessionIdSchema,
     frameId: z.number().int().nonnegative(),
   })
   .strict();
 
 const debugGetVariablesInputSchema = z
   .object({
-    sessionId: z.string().min(1).max(256),
+    sessionId: sessionIdSchema,
     variablesReference: z.number().int().positive(),
     start: z.number().int().min(0).max(100_000).optional(),
     count: z.number().int().min(1).max(1_000).optional(),
