@@ -195,7 +195,7 @@ export function shouldPrepareStdioSocketFilesystem(
   return platform !== 'win32';
 }
 
-export async function setupSocketDir(socketPath: string): Promise<void> {
+async function setupSocketDir(socketPath: string): Promise<void> {
   const parentDir = path.dirname(socketPath);
   await mkdir(parentDir, { recursive: true, mode: 0o700 });
 

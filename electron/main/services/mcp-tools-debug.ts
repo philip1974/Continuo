@@ -235,7 +235,7 @@ function toLaunchInput(input: DebugLaunchInput): LaunchSessionInput {
   };
 }
 
-export function makeDebugLaunchTool(
+function makeDebugLaunchTool(
   deps: DebugToolsDeps,
 ): DebugTool<DebugLaunchInput, z.infer<typeof debugLaunchOutputSchema>> {
   return {
@@ -260,7 +260,7 @@ export function makeDebugLaunchTool(
   };
 }
 
-export function makeDebugSetBreakpointTool(
+function makeDebugSetBreakpointTool(
   deps: DebugToolsDeps,
 ): DebugTool<
   DebugSetBreakpointInput,
@@ -283,7 +283,7 @@ export function makeDebugSetBreakpointTool(
   };
 }
 
-export function makeDebugWaitForStopTool(
+function makeDebugWaitForStopTool(
   deps: DebugToolsDeps,
 ): DebugTool<DebugWaitForStopInput, z.infer<typeof debugWaitForStopOutputSchema>> {
   return {
@@ -329,7 +329,7 @@ function makeThreadControlTool<
   };
 }
 
-export function makeDebugContinueTool(
+function makeDebugContinueTool(
   deps: DebugToolsDeps,
 ): DebugTool<DebugContinueInput, DebugContinueOutput> {
   return makeThreadControlTool(
@@ -340,7 +340,7 @@ export function makeDebugContinueTool(
   );
 }
 
-export function makeDebugStepOverTool(
+function makeDebugStepOverTool(
   deps: DebugToolsDeps,
 ): DebugTool<DebugStepOverInput, DebugStepOverOutput> {
   return makeThreadControlTool(
@@ -351,7 +351,7 @@ export function makeDebugStepOverTool(
   );
 }
 
-export function makeDebugStepInTool(
+function makeDebugStepInTool(
   deps: DebugToolsDeps,
 ): DebugTool<DebugStepInInput, DebugStepInOutput> {
   return makeThreadControlTool(
@@ -362,7 +362,7 @@ export function makeDebugStepInTool(
   );
 }
 
-export function makeDebugStepOutTool(
+function makeDebugStepOutTool(
   deps: DebugToolsDeps,
 ): DebugTool<DebugStepOutInput, DebugStepOutOutput> {
   return makeThreadControlTool(
@@ -373,7 +373,7 @@ export function makeDebugStepOutTool(
   );
 }
 
-export function makeDebugStackTool(
+function makeDebugStackTool(
   deps: DebugToolsDeps,
 ): DebugTool<DebugStackInput, DebugStackToolOutput> {
   return {
@@ -393,7 +393,7 @@ export function makeDebugStackTool(
   };
 }
 
-export function makeDebugScopesTool(
+function makeDebugScopesTool(
   deps: DebugToolsDeps,
 ): DebugTool<DebugScopesInput, DebugScopesToolOutput> {
   return {
@@ -409,7 +409,7 @@ export function makeDebugScopesTool(
   };
 }
 
-export function makeDebugVariablesTool(
+function makeDebugVariablesTool(
   deps: DebugToolsDeps,
 ): DebugTool<DebugVariablesInput, DebugVariablesToolOutput> {
   return {
@@ -431,7 +431,7 @@ export function makeDebugVariablesTool(
   };
 }
 
-export function makeDebugEvaluateTool(
+function makeDebugEvaluateTool(
   deps: DebugToolsDeps,
 ): DebugTool<DebugEvaluateInput, z.infer<typeof debugEvaluateOutputSchema>> {
   return {
@@ -452,7 +452,7 @@ export function makeDebugEvaluateTool(
   };
 }
 
-export function makeDebugDisconnectTool(
+function makeDebugDisconnectTool(
   deps: DebugToolsDeps,
 ): DebugTool<DebugDisconnectInput, DebugDisconnectOutput> {
   return {
@@ -469,7 +469,7 @@ export function makeDebugDisconnectTool(
   };
 }
 
-export function makeDebugListSessionsTool(
+function makeDebugListSessionsTool(
   deps: DebugToolsDeps,
 ): DebugTool<DebugListSessionsInput, DebugListSessionsToolOutput> {
   return {

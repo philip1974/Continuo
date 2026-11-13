@@ -69,7 +69,8 @@ export interface PluginFsRaw {
     handler: (payload: {
       requestId: string;
       pluginId: string;
-      scopes: readonly { path: string; mode: 'r' | 'rw' }[];
+      /** displayPath:main 归一化后的路径(弹窗展示用);path 仍是插件请求的原始值。 */
+      scopes: readonly { path: string; mode: 'r' | 'rw'; displayPath?: string }[];
     }) => void,
   ): () => void;
   onScopeUpdated(

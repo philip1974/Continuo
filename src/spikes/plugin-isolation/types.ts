@@ -1,10 +1,3 @@
-export const IFRAME_STATES = [
-  'blob-loaded-ok',
-  'frame-blob-blocked',
-  'iframe-throw',
-  'csp-blocks-inline',
-] as const;
-
 export type WorkerVerdict =
   | { ok: true; ms: number; cspContent: string | null }
   | {

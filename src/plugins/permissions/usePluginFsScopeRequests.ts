@@ -7,10 +7,15 @@ import { FS_PATH_MAX } from '../../../electron/shared/fs-limits';
 import { usePermissionPromptStore, type FsScopePromptScope } from './promptStore';
 import { SCOPE_REQUEST_ID_MAX } from '../../../electron/shared/plugin-fs-channels';
 
+/** main 推来的 scope:displayPath 是归一化后的路径(`~` 已展开),旧形态可能不带。 */
+interface RequestedScope extends PathScope {
+  readonly displayPath?: string;
+}
+
 interface ScopeRequestPayload {
   readonly requestId: string;
   readonly pluginId: string;
-  readonly scopes: readonly PathScope[];
+  readonly scopes: readonly RequestedScope[];
 }
 
 // 边界(E169,E168 同族 IPC ingress 纵深防御):plugin-fs:scope-request 驱动 fs 授权弹窗(安全敏感)。
@@ -47,27 +52,20 @@ function isScopeRequestPayload(v: unknown): v is ScopeRequestPayload {
       return false;
     }
     if (sc.mode !== 'r' && sc.mode !== 'rw') return false;
+    if (
+      sc.displayPath !== undefined &&
+      (typeof sc.displayPath !== 'string' ||
+        sc.displayPath.length === 0 ||
+        sc.displayPath.length > FS_PATH_MAX)
+    ) {
+      return false;
+    }
   }
   return true;
 }
 
-function homeForDisplay(): string | null {
-  const maybeProcess = (globalThis as { process?: { env?: Record<string, string> } })
-    .process;
-  return maybeProcess?.env?.['HOME'] ?? maybeProcess?.env?.['USERPROFILE'] ?? null;
-}
-
-export function expandScopePathForDisplay(path: string): string {
-  if (path === '~') return homeForDisplay() ?? path;
-  if (path.startsWith('~/') || path.startsWith('~\\')) {
-    const home = homeForDisplay();
-    return home ? `${home}${path.slice(1)}` : path;
-  }
-  return path;
-}
-
 export function buildFsScopePromptScopes(
-  scopes: readonly PathScope[],
+  scopes: readonly RequestedScope[],
 ): FsScopePromptScope[] {
   if (scopes.length === 0) return EMPTY_FS_SCOPE_PROMPT_SCOPES;
   const out = new Array<FsScopePromptScope>(scopes.length);
@@ -76,7 +74,8 @@ export function buildFsScopePromptScopes(
     out[i] = {
       path: scope.path,
       mode: scope.mode,
-      displayPath: expandScopePathForDisplay(scope.path),
+      // 展示路径由 main 归一化后给出(sandbox renderer 展开不了 `~`);旧形态回退原始 path。
+      displayPath: scope.displayPath ?? scope.path,
     };
   }
   return out;

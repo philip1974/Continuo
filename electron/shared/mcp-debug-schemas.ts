@@ -1,14 +1,14 @@
 import { z } from 'zod';
 
-export const DEBUG_SESSION_ID_MAX = 256;
-export const DEBUG_PATH_MAX = 4096;
-export const DEBUG_EXPRESSION_MAX = 4096;
+const DEBUG_SESSION_ID_MAX = 256;
+const DEBUG_PATH_MAX = 4096;
+const DEBUG_EXPRESSION_MAX = 4096;
 export const DEBUG_VARIABLE_COUNT_MAX = 100;
 /** 单次 stackTrace 取的帧数上限(MCP debug.stack 与 Debug 面板 IPC 共用)。 */
 export const DEBUG_STACK_LEVELS_MAX = 100;
 export const DEBUG_VARIABLE_DEPTH_MAX = 5;
 export const DEBUG_STRING_BYTES_DEFAULT = 65536;
-export const DEBUG_EVALUATE_RESULT_BYTES_MAX = 65536;
+const DEBUG_EVALUATE_RESULT_BYTES_MAX = 65536;
 
 export const MCP_TOOL_DEBUG_LAUNCH = 'debug.launch';
 export const MCP_TOOL_DEBUG_SET_BREAKPOINT = 'debug.set_breakpoint';
@@ -181,7 +181,7 @@ export const debugStackInputSchema = z
   })
   .strict();
 
-export const debugStackOutputSchema = z
+const debugStackOutputSchema = z
   .object({
     frames: z.array(stackFrameSchema).max(100),
     total_frames: nonNegativeIntSchema.optional(),
@@ -195,7 +195,7 @@ export const debugScopesInputSchema = z
   })
   .strict();
 
-export const debugScopesOutputSchema = z
+const debugScopesOutputSchema = z
   .object({
     scopes: z.array(debugScopeSchema).max(50),
   })
@@ -222,7 +222,7 @@ export const debugVariablesInputSchema = z
   })
   .strict();
 
-export const debugVariablesOutputSchema = z
+const debugVariablesOutputSchema = z
   .object({
     variables: z.array(dapVariableSchema).max(DEBUG_VARIABLE_COUNT_MAX),
     truncated: z.boolean(),
@@ -268,7 +268,7 @@ export const debugDisconnectOutputSchema = z
   .strict();
 
 export const debugListSessionsInputSchema = z.object({}).strict();
-export const debugListSessionsOutputSchema = z
+const debugListSessionsOutputSchema = z
   .object({
     sessions: z.array(debugSessionSummarySchema).max(100),
   })
@@ -389,7 +389,7 @@ export const debugLaunchInputJsonSchema = objectSchema(
   },
   ['program'],
 );
-export const debugLaunchOutputJsonSchema = objectSchema(
+const debugLaunchOutputJsonSchema = objectSchema(
   {
     session_id: sessionIdJson,
     state: { type: 'string', enum: ['starting', 'running', 'stopped'] },
@@ -417,7 +417,7 @@ export const debugSetBreakpointInputJsonSchema = objectSchema(
   },
   ['session_id', 'file', 'line'],
 );
-export const debugSetBreakpointOutputJsonSchema = objectSchema(
+const debugSetBreakpointOutputJsonSchema = objectSchema(
   {
     breakpoint_id: stringSchema(),
     verified: boolSchema(),
@@ -434,7 +434,7 @@ export const debugWaitForStopInputJsonSchema = objectSchema(
   },
   ['session_id'],
 );
-export const debugWaitForStopOutputJsonSchema = objectSchema(
+const debugWaitForStopOutputJsonSchema = objectSchema(
   {
     session_id: sessionIdJson,
     stop_seq: intSchema(0),
@@ -457,7 +457,7 @@ export const debugStackInputJsonSchema = objectSchema(
   },
   ['session_id'],
 );
-export const debugStackOutputJsonSchema = objectSchema(
+const debugStackOutputJsonSchema = objectSchema(
   {
     frames: arraySchema(frameJson, 100),
     total_frames: intSchema(0),
@@ -482,7 +482,7 @@ export const debugScopesInputJsonSchema = objectSchema(
   },
   ['session_id', 'frame_id'],
 );
-export const debugScopesOutputJsonSchema = objectSchema(
+const debugScopesOutputJsonSchema = objectSchema(
   {
     scopes: arraySchema(scopeJson, 50),
   },
@@ -499,7 +499,7 @@ export const debugVariablesInputJsonSchema = objectSchema(
   },
   ['session_id', 'variables_reference'],
 );
-export const debugVariablesOutputJsonSchema = objectSchema(
+const debugVariablesOutputJsonSchema = objectSchema(
   {
     variables: arraySchema(variableJson, DEBUG_VARIABLE_COUNT_MAX),
     truncated: boolSchema(),
@@ -517,7 +517,7 @@ export const debugEvaluateInputJsonSchema = objectSchema(
   },
   ['session_id', 'expression'],
 );
-export const debugEvaluateOutputJsonSchema = objectSchema(
+const debugEvaluateOutputJsonSchema = objectSchema(
   {
     result: stringSchema(),
     type: stringSchema(),
@@ -533,14 +533,14 @@ export const debugDisconnectInputJsonSchema = objectSchema(
   },
   ['session_id'],
 );
-export const debugDisconnectOutputJsonSchema = objectSchema(
+const debugDisconnectOutputJsonSchema = objectSchema(
   {
     disconnected: boolSchema(),
   },
   ['disconnected'],
 );
 export const debugListSessionsInputJsonSchema = objectSchema({});
-export const debugListSessionsOutputJsonSchema = objectSchema(
+const debugListSessionsOutputJsonSchema = objectSchema(
   {
     sessions: arraySchema(sessionSummaryJson, 100),
   },

@@ -278,7 +278,7 @@ export function safeHandleWithCtx<I, O>(
  * IPC sender 所在的 BrowserWindow;sender 已无窗口(销毁中 / 非窗口 webContents)→ 抛带 `code` 的错误。
  * terminal / debug-view 两个 IPC 模块此前各持一份,只差错误码。
  */
-export function senderWindowOrThrow(event: IpcMainInvokeEvent, code: string): BrowserWindow {
+function senderWindowOrThrow(event: IpcMainInvokeEvent, code: string): BrowserWindow {
   const win = BrowserWindow.fromWebContents(event.sender);
   if (!win) {
     throw codedError(code, 'no browser window');

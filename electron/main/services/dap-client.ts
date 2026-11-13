@@ -97,7 +97,7 @@ export function encodeDapMessage(message: DapMessage): Buffer {
   return Buffer.concat([header, body]);
 }
 
-export function parseDapContentLength(header: string): number {
+function parseDapContentLength(header: string): number {
   for (const line of header.split('\r\n')) {
     const match = /^Content-Length:\s*(\d+)$/i.exec(line);
     if (match) return Number.parseInt(match[1]!, 10);

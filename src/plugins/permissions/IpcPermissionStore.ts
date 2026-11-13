@@ -147,7 +147,7 @@ export function serializePermissionState(
 }
 
 /** 单条记录序列化:无 pathScopes → 旧数组形态;有 → 新对象形态. */
-export function serializePermissionRecord(
+function serializePermissionRecord(
   record: PermissionRecord,
 ): IpcPermissionRecord {
   if (record.pathScopes === undefined) return record.decisions;

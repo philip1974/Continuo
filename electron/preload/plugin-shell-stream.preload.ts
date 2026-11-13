@@ -7,12 +7,6 @@ import {
   parseShellStreamEvent,
 } from '../shared/plugin-shell-stream-channels';
 
-export interface ShellStreamEvent {
-  streamId: string;
-  kind: 'stdout' | 'stderr' | 'exit';
-  payload: Buffer | { exitCode: number | null; signal: NodeJS.Signals | null };
-}
-
 // 可维护性 M7:单个 stream chunk(stdout/stderr)。迭代器 yield 此类型,**结束值为
 // void**(`{ value: undefined, done: true }`)。此前各结束分支用 `undefined as never`
 // 压过 TS —— 把迭代器结束语义用类型(IteratorResult<ShellChunk, void>)表达后即不需断言。

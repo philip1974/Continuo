@@ -132,7 +132,7 @@ interface CompiledBinding {
 const EMPTY_COMPILED_BINDINGS: readonly CompiledBinding[] = [];
 
 /** 事件目标是否可编辑文本控件(input/textarea/select/contenteditable). */
-export function isEditableTarget(target: EventTarget | null): boolean {
+function isEditableTarget(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null;
   if (!el || typeof el.tagName !== 'string') return false;
   const tag = el.tagName;

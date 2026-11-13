@@ -16,7 +16,7 @@ export interface BoundedRecordLimits {
   readonly label?: string;
 }
 
-export function makeBoundedRecordValidator(
+function makeBoundedRecordValidator(
   limits: BoundedRecordLimits,
 ): (v: unknown, ctx: z.RefinementCtx) => void {
   const { keyMax, maxEntries, valueOk, label = 'record' } = limits;

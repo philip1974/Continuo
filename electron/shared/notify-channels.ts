@@ -24,7 +24,7 @@ export interface NotifyPushPayload {
 // 非外部/插件直接控制),仍补齐与 bridge 既有防御姿态(windowId ingress filter + empty-drop)一致的
 // runtime type guard:非法 payload(null/非对象/非法 level/超长 message·code/畸形 params/非安全
 // windowId)→ drop + warn,不让畸形数据进通知队列或令 bridge 回调抛错。
-export const NOTIFY_LEVELS: readonly NotifyLevel[] = [
+const NOTIFY_LEVELS: readonly NotifyLevel[] = [
   'info',
   'warning',
   'error',
@@ -33,7 +33,7 @@ export const NOTIFY_LEVELS: readonly NotifyLevel[] = [
 export const NOTIFY_MESSAGE_MAX = 4096; // toast 文本上限
 export const NOTIFY_CODE_MAX = 256; // error code 上限
 export const NOTIFY_PARAMS_MAX_KEYS = 64; // 插值参数条数上限
-export const NOTIFY_PARAM_VALUE_MAX = 2048; // 单个 string 参数值上限
+const NOTIFY_PARAM_VALUE_MAX = 2048; // 单个 string 参数值上限
 
 function isValidParams(v: unknown): boolean {
   if (v === undefined) return true;

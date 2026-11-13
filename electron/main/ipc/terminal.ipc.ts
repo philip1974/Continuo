@@ -104,7 +104,7 @@ export const idOnlyInputSchema = z
   .object({ id: z.string().min(1).max(SESSION_ID_MAX) })
   .strict();
 
-export const noInputSchema = z.object({}).strict();
+const noInputSchema = z.object({}).strict();
 
 export type CreateInput = TerminalCreateInput;
 export type WriteInput = z.infer<typeof writeInputSchema>;
@@ -275,7 +275,7 @@ export function makeRemoveHandler(deps?: {
   };
 }
 
-export function makeUpdateCwdHandler(deps?: {
+function makeUpdateCwdHandler(deps?: {
   sessionStore?: typeof terminalSessions;
 }) {
   const sessionStore = deps?.sessionStore ?? terminalSessions;

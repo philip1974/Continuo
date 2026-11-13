@@ -103,21 +103,21 @@ export const createDirInputSchema = z
 
 export const trashInputSchema = z.object({ path: fsPath() }).strict();
 
-export const revealInputSchema = z.object({ path: fsPath() }).strict();
+const revealInputSchema = z.object({ path: fsPath() }).strict();
 
 export const moveInputSchema = z
   .object({ src: fsPath(), dest: fsPath() })
   .strict();
 
-export const copyInputSchema = z
+const copyInputSchema = z
   .object({ src: fsPath(), dest: fsPath() })
   .strict();
 
 // select-directory 显式严格:接受 undefined,拒绝 {} 与其它值
 export const selectDirectoryInputSchema = z.undefined();
 
-export const watchInputSchema = z.object({ path: fsPath() }).strict();
-export const unwatchInputSchema = z.object({ path: fsPath() }).strict();
+const watchInputSchema = z.object({ path: fsPath() }).strict();
+const unwatchInputSchema = z.object({ path: fsPath() }).strict();
 
 // 类型导出(给 preload / renderer 用)
 export type ListDirInput = z.infer<typeof listDirInputSchema>;
@@ -142,13 +142,13 @@ export type UnwatchInput = z.infer<typeof unwatchInputSchema>;
 export const listDirHandler = (input: ListDirInput) => listDir(input.path, input.options);
 export const readFileHandler = (input: ReadFileInput) => readFile(input.path);
 export const writeFileHandler = (input: WriteFileInput) => atomicWriteFile(input.path, input.content);
-export const writeBinaryHandler = (input: WriteBinaryInput) => atomicWriteFile(input.path, input.content);
+const writeBinaryHandler = (input: WriteBinaryInput) => atomicWriteFile(input.path, input.content);
 export const renameHandler = (input: RenameInput) => renameEntry(input.path, input.newName);
 export const removeHandler = (input: RemoveInput) => removeEntry(input.path);
 export const createFileHandler = (input: CreateFileInput) => createFile(input.dir, input.name);
 export const createDirHandler = (input: CreateDirInput) => createDir(input.parent, input.name);
-export const moveHandler = (input: MoveInput) => moveEntry(input.src, input.dest);
-export const copyHandler = (input: CopyInput) => copyEntry(input.src, input.dest);
+const moveHandler = (input: MoveInput) => moveEntry(input.src, input.dest);
+const copyHandler = (input: CopyInput) => copyEntry(input.src, input.dest);
 
 // trash / selectDirectory:工厂注入 deps,真 Electron API 留 E2E
 
@@ -164,7 +164,7 @@ export interface RevealDeps {
   /** 真生产注入 Electron shell.showItemInFolder;测试可注入 spy. */
   showItemInFolder: (path: string) => void;
 }
-export const makeRevealHandler =
+const makeRevealHandler =
   (deps: RevealDeps) =>
   (input: RevealInput): void => {
     // shell.showItemInFolder 是同步 void;path 不存在时静默 noop.

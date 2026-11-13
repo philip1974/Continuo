@@ -263,7 +263,7 @@ export function inferRunner(session: TerminalSessionMetaLike): RunnerKind {
   return 'unknown';
 }
 
-export function inferRunnerFromFilename(
+function inferRunnerFromFilename(
   fileName: string,
 ): 'cc' | 'codex' | null {
   if (fileName.startsWith(HOOK_FILE_PREFIX.cc)) return 'cc';

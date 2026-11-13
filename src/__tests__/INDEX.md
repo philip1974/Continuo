@@ -767,6 +767,11 @@
 
 - [`scope-decision-feedback.spec.ts`](./plugin-fs-scope-bridge/scope-decision-feedback.spec.ts)
 
+## [plugin-fs scope 授权弹窗的显示路径](./plugin-fs-scope-display-path/README.md)
+
+- [`main-sends-display-path.spec.ts`](./plugin-fs-scope-display-path/main-sends-display-path.spec.ts)
+- [`renderer-uses-display-path.spec.ts`](./plugin-fs-scope-display-path/renderer-uses-display-path.spec.ts)
+
 ## [plugin-fs-token-revoke-retry](./plugin-fs-token-revoke-retry/README.md)
 
 - [`token-revoke-retry.spec.ts`](./plugin-fs-token-revoke-retry/token-revoke-retry.spec.ts)

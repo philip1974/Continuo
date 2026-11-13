@@ -107,7 +107,7 @@ interface NotificationsContextValue {
   readonly dismiss: (id: string) => void;
 }
 
-export const NotificationsContext =
+const NotificationsContext =
   createContext<NotificationsContextValue>({
     notifications: EMPTY_NOTIFICATIONS,
     notify: () => {

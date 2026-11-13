@@ -22,8 +22,8 @@ export interface AgentAuthRequestPayload {
 // method/超长 method·agentLabel)→ 解构 null 抛未处理 rejection、超长文本进弹窗状态并经 catalog 插值
 // 放大、缺 requestId 致 respond(undefined) → main pending 等 5min 超时。注册入口 runtime 守卫。
 export const AGENT_AUTH_REQUEST_ID_MAX = 256; // 与 AgentAuthRespondSchema requestId 上限一致(E146)
-export const AGENT_AUTH_METHOD_MAX = 256;
-export const AGENT_AUTH_LABEL_MAX = 512;
+const AGENT_AUTH_METHOD_MAX = 256;
+const AGENT_AUTH_LABEL_MAX = 512;
 
 /** agent-auth:request payload 的 runtime 形态 + 长度守卫(IPC ingress 纵深防御,E171)。 */
 export function isAgentAuthRequestPayload(

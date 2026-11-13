@@ -3,8 +3,8 @@ import { assertOwnerWindowId } from '../lib/assert-owner-window-id';
 export type DebugTeardownState = 'active' | 'tearing_down' | 'done';
 export type DebugRuntimeState = 'starting' | 'running' | 'stopped' | 'terminated';
 
-export const MAX_DEBUG_SESSIONS_GLOBAL = 32;
-export const MAX_DEBUG_SESSIONS_PER_WINDOW = 8;
+const MAX_DEBUG_SESSIONS_GLOBAL = 32;
+const MAX_DEBUG_SESSIONS_PER_WINDOW = 8;
 
 export interface DebugSession {
   readonly id: string;

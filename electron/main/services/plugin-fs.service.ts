@@ -658,10 +658,16 @@ export function registerPluginFsHandlers(
       // try/catch:失败时立即 cancelBySender 清掉本 sender 的 pending(sender 已死),按终态 deny
       // 收口。promise.catch 吞掉 cancel 触发的 reject,避免 unhandled rejection(此处不再 await 它)。
       try {
+        // displayPath:弹窗展示用户实际授予的路径(`~` 已展开、符号链接已解析,与下方 grant 落地同源)。
+        // sandbox renderer 没有 process,自己展开不了 `~`。
         event.sender.send(PLUGIN_FS_CHANNELS.SCOPE_REQUEST, {
           requestId,
           pluginId,
-          scopes,
+          scopes: scopes.map((s, i) => ({
+            path: s.path,
+            mode: s.mode,
+            displayPath: canonicalScopes[i]!.path,
+          })),
         });
       } catch {
         promise.catch(() => undefined);

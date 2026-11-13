@@ -54,7 +54,7 @@ export const RPC_ERROR_CODES = {
 // RESULT_TOO_LARGE 错误而非物化巨响应。
 const MAX_TOOLS_LIST_BYTES = 16 * 1024 * 1024; // tools/list 聚合响应 ≤ 16MiB
 
-export const NO_WINDOW_CTX_MESSAGE = 'missing window context';
+const NO_WINDOW_CTX_MESSAGE = 'missing window context';
 
 // 边界(E78,E73/E75/E76/E77 错误串放大族 + 回显面):JSON-RPC id/method 与 tools/call 的
 // params.name 都是短标识符。此前 parseRpcMessage 只校验 method 非空、id 为 string|number,无长度

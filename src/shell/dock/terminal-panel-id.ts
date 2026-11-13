@@ -3,7 +3,7 @@
 
 import type { IDockviewPanel } from 'dockview-react';
 
-export const TERMINAL_PANEL_ID_PREFIX = 'terminal-';
+const TERMINAL_PANEL_ID_PREFIX = 'terminal-';
 
 export function panelIdFor(sessionId: string): string {
   return `${TERMINAL_PANEL_ID_PREFIX}${sessionId}`;

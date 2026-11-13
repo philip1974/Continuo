@@ -2,7 +2,7 @@ import { app } from 'electron';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 
-export const DEBUG_ADAPTER_RELATIVE_PATH = path.join(
+const DEBUG_ADAPTER_RELATIVE_PATH = path.join(
   'js-debug',
   'src',
   'dapDebugServer.js',
@@ -36,7 +36,7 @@ function packagedAdapterCandidates(): string[] {
   ];
 }
 
-export function getDebugAdapterCandidates(): readonly string[] {
+function getDebugAdapterCandidates(): readonly string[] {
   if (!app.isPackaged) return [sourceTreeAdapterPath()];
   return packagedAdapterCandidates();
 }

@@ -2,7 +2,7 @@
 // 范围:main 端 object-literal `code: 'X'`(MAIN_ERROR_CODES)+ fs/** `fsError('FS_X', ...)` / `mapNodeErrnoCode()` 返回(FS_ERROR_CODES)。
 // 不含:IPC_ERR.*(infra-level, 已是常量见 ipc-result.ts)、plugin user code、third-party error.code。
 
-export const MAIN_ERROR_CODES = {
+const MAIN_ERROR_CODES = {
   AGENT_NOT_AUTHORIZED: 'AGENT_NOT_AUTHORIZED',
   AWAIT_STOP_HOOK_ALREADY_PENDING: 'AWAIT_STOP_HOOK_ALREADY_PENDING',
   BAD_INPUT: 'BAD_INPUT',
