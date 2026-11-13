@@ -40,11 +40,11 @@ import type {
   EditorOpenFailureCode,
 } from './types';
 
-// Keep in sync with package.json "version" field. Bumped to 0.2.12 (2026-06-30)
-// for the release-gate polish pass after the cross-platform hardening audit:
-// 数据安全 + 跨平台正确性 + i18n + a11y + race-condition + 边界/畸形输入硬化).
+// Keep in sync with package.json "version" field. Bumped to 0.2.13 (2026-11-13)
+// for the codebase-cleanup refactor + real-app verification pass (debug multi-connection
+// stops, popout windows, close-flush handshake, not-yet-existing fs scope dirs).
 // Plugins declaring minLMVersion >= 0.2.4 need this.
-const APP_VERSION = '0.2.12';
+const APP_VERSION = '0.2.13';
 
 // Workspace API — minimal v0.1 surface exposing the current renderer
 // window's workspace root (null when no folder open). Plugins use this for
