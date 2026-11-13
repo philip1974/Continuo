@@ -919,6 +919,10 @@
 
 - [`preload-api.spec.ts`](./scaffold/preload-api.spec.ts)
 
+## [尚不存在的 scope 目录:授权落地的路径](./scope-path-missing-dir/README.md)
+
+- [`missing-dir.spec.ts`](./scope-path-missing-dir/missing-dir.spec.ts)
+
 ## [scoped-app(per-plugin CoApp 包装)](./scoped-app/README.md)
 
 - [`sandbox-sweep.spec.ts`](./scoped-app/sandbox-sweep.spec.ts)

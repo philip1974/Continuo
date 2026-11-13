@@ -76,9 +76,9 @@ describe('49 第八 session · canonicalizeScopePath', () => {
   });
 
   it('不存在的目录 ENOENT → 回退到展开值(仍把 `~` 展开,不抛)', async () => {
-    // expandHome 用 homedir() 拼接(realpath 失败时不解析),回退值即 homedir()/<sub>。
+    // 目录不存在:已存在的上级(home)仍被 realpath,其后原样接上(见 scope-path-missing-dir)。
     const out = await canonicalizeScopePath('~/__continuo_nonexistent_dir__');
-    expect(out).toBe(join(homedir(), '__continuo_nonexistent_dir__'));
+    expect(out).toBe(join(realpathSync.native(homedir()), '__continuo_nonexistent_dir__'));
     expect(out).not.toContain('~');
   });
 
@@ -93,7 +93,7 @@ describe('49 第八 session · canonicalizeScopePath', () => {
     try {
       await expect(canonicalizePathScopes(scopes)).resolves.toEqual([
         { path: realpathSync(real), mode: 'r' },
-        { path: missing, mode: 'rw' },
+        { path: join(realpathSync.native(real), 'missing'), mode: 'rw' },
       ]);
       expect(mapSpy).not.toHaveBeenCalled();
     } finally {
