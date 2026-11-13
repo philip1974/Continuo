@@ -4,6 +4,8 @@
 // (路径用 `\`)会产生混合分隔符或前缀失配,导致 tab id / watch 广播 / 相对路径显示
 // 不一致(跨平台审计 P1/P2)。这里统一两个分隔符无关的纯函数。
 
+import { lowerIfNeeded } from '../../electron/shared/lower-if-needed';
+
 /**
  * 拼接目录与名字,沿用目录的「活动分隔符」(最后出现的 `/` 或 `\`;盘符根 `C:` 用 `\`;
  * 都没有则默认 `/`)。先去掉 dir 尾部多余分隔符,避免 `a//b`。
@@ -39,15 +41,17 @@ function isWindowsRuntime(): boolean {
   );
 }
 
-function isPathSeparatorCode(code: number): boolean {
+// 路径字符级 helper 的 renderer 单一来源(Explorer path-utils / Editor editor-path-utils /
+// link-resolve 共用;此前各自逐字复制)。
+export function isPathSeparatorCode(code: number): boolean {
   return code === 47 || code === 92;
 }
 
-function isAsciiAlphaCode(code: number): boolean {
+export function isAsciiAlphaCode(code: number): boolean {
   return (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
 }
 
-function isBareWindowsDrive(value: string): boolean {
+export function isBareWindowsDrive(value: string): boolean {
   return (
     value.length === 2 &&
     isAsciiAlphaCode(value.charCodeAt(0)) &&
@@ -55,7 +59,7 @@ function isBareWindowsDrive(value: string): boolean {
   );
 }
 
-function trimTrailingSeparators(value: string): string {
+export function trimTrailingSeparators(value: string): string {
   let end = value.length;
   while (end > 0 && isPathSeparatorCode(value.charCodeAt(end - 1))) {
     end -= 1;
@@ -69,16 +73,6 @@ function trimLeadingSeparators(value: string): string {
     start += 1;
   }
   return start === 0 ? value : value.slice(start);
-}
-
-function lowerIfNeeded(value: string): string {
-  for (let i = 0; i < value.length; i += 1) {
-    const code = value.charCodeAt(i);
-    if ((code >= 65 && code <= 90) || code > 127) {
-      return value.toLowerCase();
-    }
-  }
-  return value;
 }
 
 /**

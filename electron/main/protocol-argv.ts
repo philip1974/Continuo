@@ -7,6 +7,7 @@
 // (跨平台审计 P2,主仓 index.ts:486 / 861)。
 
 import { MAX_PROTOCOL_URL_LEN } from './protocol-dispatch';
+import { lowerIfNeeded } from '../shared/lower-if-needed';
 
 function startsWithSchemeIgnoreCase(value: string, schemePrefix: string): boolean {
   if (value.length < schemePrefix.length) return false;
@@ -18,16 +19,6 @@ function startsWithSchemeIgnoreCase(value: string, schemePrefix: string): boolea
     if (folded !== b) return false;
   }
   return true;
-}
-
-function lowerIfNeeded(value: string): string {
-  for (let i = 0; i < value.length; i += 1) {
-    const code = value.charCodeAt(i);
-    if ((code >= 65 && code <= 90) || code > 127) {
-      return value.toLowerCase();
-    }
-  }
-  return value;
 }
 
 /** 在 argv 中找第一个 `<protocol>://` 深链;无则 null。protocol 不含冒号(如 'co')。 */

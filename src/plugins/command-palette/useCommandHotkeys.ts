@@ -10,6 +10,7 @@ import { useKeybindingsStore } from '../keybindings/keybindings-store';
 import { tWithFallback } from '@/i18n';
 import { runContributedAction } from '@/lib/run-contributed-action';
 import { detectPlatform, type Platform } from './format-hotkey';
+import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 
 /** 解析后的修饰键 + 主键签名(平台感知). 解析一次,匹配时纯字段比较. */
 interface ComboSignature {
@@ -44,16 +45,6 @@ function segmentEquals(combo: string, start: number, end: number, token: string)
     if (lowerCode !== token.charCodeAt(i)) return false;
   }
   return true;
-}
-
-function lowerIfNeeded(value: string): string {
-  for (let i = 0; i < value.length; i += 1) {
-    const code = value.charCodeAt(i);
-    if ((code >= 65 && code <= 90) || code > 127) {
-      return value.toLowerCase();
-    }
-  }
-  return value;
 }
 
 function lowerTrimmedSegment(combo: string, start: number, end: number): string {

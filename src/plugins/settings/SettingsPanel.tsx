@@ -16,6 +16,7 @@ import type { SettingTabRegistry, SettingTabSpec } from '../registries/SettingTa
 import { SettingItemRow } from './SettingItemRow';
 import { useSettingsStore } from './store';
 import { useT, useLocale, tWithFallback } from '@/i18n';
+import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 
 interface SettingsPanelProps {
   /** 默认用全局 coApp.settingTabs;测试可注入隔离 registry. */
@@ -58,16 +59,6 @@ export interface SearchableSettingItem {
 
 const EMPTY_SEARCHABLE_SETTING_ITEMS: SearchableSettingItem[] = [];
 const EMPTY_MATCHED_SETTING_ITEMS: readonly SettingItemSpec[] = [];
-
-function lowerIfNeeded(value: string): string {
-  for (let i = 0; i < value.length; i += 1) {
-    const code = value.charCodeAt(i);
-    if ((code >= 65 && code <= 90) || code > 127) {
-      return value.toLowerCase();
-    }
-  }
-  return value;
-}
 
 export function buildSettingSearchHaystack(item: SettingItemSpec): string {
   const displayTitle = tWithFallback(item.titleKey, item.title);

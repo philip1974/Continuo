@@ -13,6 +13,7 @@
 // 路径 → kind:'file' 在 IDE 内打开。与 shell.service 白名单同步移除 file:。
 
 import { MAX_EXTERNAL_URL_LEN } from '../../../electron/shared/url-limits';
+import { isAsciiAlphaCode, isPathSeparatorCode } from '@/lib/path-cross';
 
 export type LinkTarget =
   | { kind: 'file'; absPath: string }
@@ -28,14 +29,6 @@ const MAX_EXTERNAL_LINK_LEN = MAX_EXTERNAL_URL_LEN;
 
 // Windows 绝对路径:盘符 `C:\`/`C:/` 或 UNC `\\server`。必须在 ANY_SCHEME 之前甄别,
 // 否则 `C:\foo.md` 会被 ANY_SCHEME 当成 `C:` scheme 拒绝(跨平台审计 P1)。
-function isPathSeparatorCode(code: number): boolean {
-  return code === 47 || code === 92;
-}
-
-function isAsciiAlphaCode(code: number): boolean {
-  return (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
-}
-
 function isAsciiSchemeCharCode(code: number): boolean {
   return (
     isAsciiAlphaCode(code) ||

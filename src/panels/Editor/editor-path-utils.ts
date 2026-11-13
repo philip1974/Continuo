@@ -1,10 +1,8 @@
-function isPathSeparatorCode(code: number): boolean {
-  return code === 47 || code === 92;
-}
-
-function isAsciiAlphaCode(code: number): boolean {
-  return (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
-}
+import {
+  isAsciiAlphaCode,
+  isPathSeparatorCode,
+  trimTrailingSeparators,
+} from '@/lib/path-cross';
 
 function isAsciiCharCaseInsensitive(
   path: string,
@@ -34,14 +32,6 @@ export function isMarkdownPath(path: string): boolean {
     isAsciiCharCaseInsensitive(path, len - 2, 119) &&
     isAsciiCharCaseInsensitive(path, len - 1, 110)
   );
-}
-
-function trimTrailingSeparators(path: string): string {
-  let end = path.length;
-  while (end > 0 && isPathSeparatorCode(path.charCodeAt(end - 1))) {
-    end -= 1;
-  }
-  return end === path.length ? path : path.slice(0, end);
 }
 
 // 跨平台绝对路径判定(renderer 无 node:path,手写)。

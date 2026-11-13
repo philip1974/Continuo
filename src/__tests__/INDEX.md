@@ -942,6 +942,11 @@
 
 - [`values-store.spec.ts`](./settings-values/values-store.spec.ts)
 
+## [shared-helper-dedup(重构:重复 helper 收口为单一来源)](./shared-helper-dedup/README.md)
+
+- [`lower-if-needed.spec.ts`](./shared-helper-dedup/lower-if-needed.spec.ts)
+- [`single-source-wiring.spec.ts`](./shared-helper-dedup/single-source-wiring.spec.ts)
+
 ## [SharedTab(Dockview tab header,带 motion shared layout)](./shared-tab/README.md)
 
 - [`shared-tab.spec.tsx`](./shared-tab/shared-tab.spec.tsx)

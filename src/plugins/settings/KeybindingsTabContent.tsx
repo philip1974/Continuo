@@ -16,6 +16,7 @@ import {
 import { getEffectiveHotkey, useKeybindingsStore } from '@/plugins/keybindings/keybindings-store';
 import { KeybindingCaptureModal } from '@/plugins/keybindings/KeybindingCaptureModal';
 import { useT, useTWithFallback, useLocale } from '@/i18n';
+import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 
 const PLATFORM = detectPlatform();
 const COMMAND_PALETTE_HOTKEY_PARTS = formatHotkeyParts('mod+shift+p', PLATFORM);
@@ -177,16 +178,6 @@ export function groupByCategory(
 function matches(d: DisplayCommand, qLower: string): boolean {
   if (!qLower) return true;
   return d.searchHaystack.includes(qLower);
-}
-
-function lowerIfNeeded(value: string): string {
-  for (let i = 0; i < value.length; i += 1) {
-    const code = value.charCodeAt(i);
-    if ((code >= 65 && code <= 90) || code > 127) {
-      return value.toLowerCase();
-    }
-  }
-  return value;
 }
 
 export function selectVisibleKeybindingCommands(

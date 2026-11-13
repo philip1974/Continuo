@@ -11,6 +11,7 @@ import {
 } from '@/plugins/command-palette/format-hotkey';
 import { isValidHotkeyShape, type CommandSpec } from '@/plugins/registries/CommandRegistry';
 import { useT } from '@/i18n';
+import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 
 const PLATFORM = detectPlatform();
 const EMPTY_CONFLICTS: readonly CommandSpec[] = [];
@@ -18,16 +19,6 @@ const EMPTY_OVERRIDES: Readonly<Record<string, string>> = {};
 
 function appendComboPart(combo: string, part: string): string {
   return combo ? `${combo}+${part}` : part;
-}
-
-function lowerIfNeeded(value: string): string {
-  for (let i = 0; i < value.length; i += 1) {
-    const code = value.charCodeAt(i);
-    if ((code >= 65 && code <= 90) || code > 127) {
-      return value.toLowerCase();
-    }
-  }
-  return value;
 }
 
 interface KeybindingCaptureModalProps {

@@ -12,6 +12,7 @@ import { MAX_PLUGIN_DATA_BYTES } from '../../shared/plugin-data-limits';
 import { assertJsonValue } from '../../shared/assert-json-value';
 import { utf8ByteLength } from '../../shared/utf8-byte-length';
 import { jsonByteLowerBoundExceeds } from '../../shared/json-byte-budget';
+import { isValidPluginId } from '../../shared/plugin-id';
 
 const LOCK_OPTS: lockfile.LockOptions = {
   // Op12.5 spike not executed in this batch; using library defaults/recommendation.
@@ -31,28 +32,11 @@ export interface PluginDataStoreDeps {
 // path join/lockfile/错误链路放大主进程 CPU/内存/日志或触发 ENAMETOOLONG。
 const PLUGIN_ID_MAX = 256;
 
-function hasOnlyPluginIdChars(pluginId: string): boolean {
-  for (let i = 0; i < pluginId.length; i += 1) {
-    const code = pluginId.charCodeAt(i);
-    const ok =
-      (code >= 97 && code <= 122) ||
-      (code >= 48 && code <= 57) ||
-      code === 46 ||
-      code === 95 ||
-      code === 45;
-    if (!ok) return false;
-  }
-  return true;
-}
-
 function assertPluginId(pluginId: unknown): asserts pluginId is string {
   if (
     typeof pluginId !== 'string' ||
-    pluginId.length === 0 ||
     pluginId.length > PLUGIN_ID_MAX ||
-    pluginId === '.' ||
-    pluginId === '..' ||
-    !hasOnlyPluginIdChars(pluginId)
+    !isValidPluginId(pluginId)
   ) {
     // 边界(E177,E148 echo 族):不回显原始(可能超长)id,防错误消息经 IPC/日志放大;附稳定 code。
     throw Object.assign(new Error('invalid plugin id'), {

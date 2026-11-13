@@ -14,6 +14,7 @@
 
 import type { Review } from './reviews-types';
 import { isGitHubLogin, REVIEW_URL_MAX } from './reviews-types';
+import { lowerIfNeeded } from '../../electron/shared/lower-if-needed';
 import { isValidPluginId } from '../plugins/plugin-id'; // 边界(E113/E123):共享单一来源
 import { isHttpUrl } from './url-safety'; // 边界(E143,E109 fresh-fetch 对偶):url/avatarUrl scheme 白名单
 
@@ -182,16 +183,6 @@ function isAsciiWhitespace(code: number): boolean {
     code === 11 ||
     code === 12
   );
-}
-
-function lowerIfNeeded(value: string): string {
-  for (let i = 0; i < value.length; i += 1) {
-    const code = value.charCodeAt(i);
-    if ((code >= 65 && code <= 90) || code > 127) {
-      return value.toLowerCase();
-    }
-  }
-  return value;
 }
 
 function parseHeadingKey(line: string): string | null {

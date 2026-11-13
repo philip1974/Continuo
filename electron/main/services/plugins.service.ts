@@ -12,6 +12,7 @@ import type {
 } from '../../shared/plugins-channels';
 import { ERROR_CODES } from '../../shared/error-codes';
 import { errorMessage } from '../../shared/error-message';
+import { isValidPluginId } from '../../shared/plugin-id';
 import { atomicWriteJson } from '../lib/atomic-write';
 import { createByteCappedBuffer } from '../lib/byte-capped-buffer';
 import { readFileCappedFd } from '../lib/read-fh-capped';
@@ -78,23 +79,7 @@ export function resolvePluginMainPath(
  * 路径穿越(审计 P1)。与 fs `renameEntry` 拒 `.`/`..` 同款防御。
  */
 export function isSafePluginId(id: string): boolean {
-  if (id === '.' || id === '..') return false;
-  return hasOnlyPluginIdChars(id);
-}
-
-function hasOnlyPluginIdChars(id: string): boolean {
-  if (id.length === 0) return false;
-  for (let i = 0; i < id.length; i += 1) {
-    const code = id.charCodeAt(i);
-    const ok =
-      (code >= 97 && code <= 122) ||
-      (code >= 48 && code <= 57) ||
-      code === 46 ||
-      code === 95 ||
-      code === 45;
-    if (!ok) return false;
-  }
-  return true;
+  return isValidPluginId(id);
 }
 
 // 边界(E102):manifest.main 入口名长度上限,对齐 renderer ManifestSchema 的 main.max(512,E74)。

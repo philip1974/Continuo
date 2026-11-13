@@ -8,6 +8,8 @@
 //
 // BDD: src/__tests__/format-hotkey/
 
+import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
+
 export type Platform = 'mac' | 'other';
 
 const MOD_MAP: Record<Platform, Record<string, string>> = {
@@ -61,16 +63,6 @@ const SPECIAL_KEYS: Record<Platform, Record<string, string>> = {
 };
 
 const EMPTY_HOTKEY_PARTS: string[] = [];
-
-function lowerIfNeeded(value: string): string {
-  for (let i = 0; i < value.length; i += 1) {
-    const code = value.charCodeAt(i);
-    if ((code >= 65 && code <= 90) || code > 127) {
-      return value.toLowerCase();
-    }
-  }
-  return value;
-}
 
 function formatPart(part: string, platform: Platform): string {
   const lower = lowerIfNeeded(part);

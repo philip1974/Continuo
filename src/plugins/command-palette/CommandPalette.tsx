@@ -20,6 +20,7 @@ import { formatHotkeyParts, detectPlatform, type Platform } from './format-hotke
 import { useKeybindingsStore } from '../keybindings/keybindings-store';
 import { useTWithFallback, useT, useLocale } from '@/i18n';
 import { runContributedAction } from '@/lib/run-contributed-action';
+import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 
 // module 顶层一次,renderer 生命周期内不会切平台
 const PLATFORM = detectPlatform();
@@ -67,16 +68,6 @@ type TranslateWithFallback = (key: string | undefined, fallback: string) => stri
 const EMPTY_DISPLAY_COMMANDS: DisplayCommand[] = [];
 const EMPTY_RECENT_COMMAND_IDS: string[] = [];
 const EMPTY_HOTKEY_PARTS: readonly string[] = [];
-
-function lowerIfNeeded(value: string): string {
-  for (let i = 0; i < value.length; i += 1) {
-    const code = value.charCodeAt(i);
-    if ((code >= 65 && code <= 90) || code > 127) {
-      return value.toLowerCase();
-    }
-  }
-  return value;
-}
 
 export function buildDisplayCommands(
   allCommands: readonly CommandSpec[],
