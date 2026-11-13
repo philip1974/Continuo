@@ -467,9 +467,14 @@ export function createHookFileBroker(
       // unlink/pending/buffered),避免污染已清空或新一代的 broker 状态。
       if (stopped || myGen !== ingestGen) return;
 
-      if (Date.now() - fileStat.mtimeMs > maxAgeMs) {
+      // 隔离:标 processed(不重试)+ 删文件(不留残留)。过期 / 超大文件共用。
+      const quarantine = (): void => {
         processed.set(fileName, Date.now());
         void unlink(filePath).catch(() => {});
+      };
+
+      if (Date.now() - fileStat.mtimeMs > maxAgeMs) {
+        quarantine();
         return;
       }
 
@@ -480,8 +485,7 @@ export function createHookFileBroker(
         console.warn(
           `[hook-broker] dropping oversize hook file ${fileName} (${fileStat.size} bytes > ${MAX_HOOK_FILE_BYTES})`,
         );
-        processed.set(fileName, Date.now());
-        void unlink(filePath).catch(() => {});
+        quarantine();
         return;
       }
 
@@ -501,8 +505,7 @@ export function createHookFileBroker(
         console.warn(
           `[hook-broker] dropping oversize hook file ${fileName} (${read.size} bytes > ${MAX_HOOK_FILE_BYTES})`,
         );
-        processed.set(fileName, Date.now());
-        void unlink(filePath).catch(() => {});
+        quarantine();
         return;
       }
       const jsonText = read.text as string; // tooLarge=false 时必为 string
@@ -919,7 +922,7 @@ async function mergeCodexConfig(
     if (text.includes(hookEventsDir)) {
       return { installed: false, reason: 'already-installed' };
     }
-    return replaceManagedCodexStopHook(configPath, text, hookEventsDir);
+    return replaceManagedCodexStopHook(configPath, text, hookEventsDir, managedStop);
   }
 
   if (fileExists) {
@@ -928,10 +931,7 @@ async function mergeCodexConfig(
     await mkdir(path.dirname(configPath), { recursive: true });
   }
 
-  const command =
-    `mkdir -p "${hookEventsDir}" && ` +
-    `cat > "\${CONTINUO_HOOK_EVENTS_DIR:-${hookEventsDir}}/` +
-    'codex_${CONTINUO_WINDOW_ID:-unknown}_$(date +%s%N).jsonl"';
+  const command = codexStopHookCommand(hookEventsDir);
   const block =
     '\n# continuo-managed\n' +
     '[[hooks.Stop]]\n' +
@@ -943,28 +943,27 @@ async function mergeCodexConfig(
   return { installed: true };
 }
 
+/** Codex Stop hook 写入 config.toml 的 shell 命令(新建与替换 managed 块共用)。 */
+function codexStopHookCommand(hookEventsDir: string): string {
+  return (
+    `mkdir -p "${hookEventsDir}" && ` +
+    `cat > "\${CONTINUO_HOOK_EVENTS_DIR:-${hookEventsDir}}/` +
+    'codex_${CONTINUO_WINDOW_ID:-unknown}_$(date +%s%N).jsonl"'
+  );
+}
+
+// 替换 managed 块里的 command 字符串。managedStop 由调用方用 findManagedCodexStopCommand 定位:它是
+// 转义感知的(command 经 JSON.stringify 含 \" 转义,朴素引号扫描会在第一个 \" 处截断 → 替换后旧 command
+// 尾巴残留、损坏 .codex/config.toml),且不跨入下一个 [[hooks.Stop]](不误替用户自有 Stop 的 command)。
 async function replaceManagedCodexStopHook(
   configPath: string,
   text: string,
   hookEventsDir: string,
+  managedStop: { readonly quoteStart: number; readonly quoteEnd: number },
 ): Promise<InstallStopHookResult> {
-  const command =
-    `mkdir -p "${hookEventsDir}" && ` +
-    `cat > "\${CONTINUO_HOOK_EVENTS_DIR:-${hookEventsDir}}/` +
-    'codex_${CONTINUO_WINDOW_ID:-unknown}_$(date +%s%N).jsonl"';
-  // 转义感知 quoted-string(见 mergeCodexConfig 注释):command 含 JSON 转义引号 \",
-  // `"[^"]*"` 只匹配到第一个 \" 即截断,替换后旧 command 尾巴残留 → 损坏 .codex/config.toml
-  // (codex P1)。`"(?:\\.|[^"\\])*"` 跨越转义引号完整匹配整个 command 字符串。
-  // 块边界(见 mergeCodexConfig 注释):不跨入下一个 [[hooks.Stop]],
-  // 兼容 marker 在块前/块内两种格式。managed 块缺/坏 command 时不匹配 → 返回 unrecognized
-  // (下方 next===text),绝不误替用户自有 Stop 的 command。
-  const managedStop = findManagedCodexStopCommand(text);
-  if (managedStop === null) {
-    return { installed: false, reason: 'unrecognized-existing-stop-hook' };
-  }
   const next =
     text.slice(0, managedStop.quoteStart) +
-    JSON.stringify(command) +
+    JSON.stringify(codexStopHookCommand(hookEventsDir)) +
     text.slice(managedStop.quoteEnd);
   await copyFile(configPath, `${configPath}.continuo-bak.${Date.now()}`);
   // crash-safe 原子写(同 R6 理由)

@@ -138,7 +138,11 @@ function parseVer(v: string): readonly [number, number, number] | null {
   return [major, minor, patch] as const;
 }
 
-function parseSafeIntSegment(
+/**
+ * 把 v[start,end) 的十进制数字串解析为安全整数;含非数字或超出 Number.MAX_SAFE_INTEGER → null。
+ * manifest 版本比对与 marketplace semver 共用(`\d+` 任意长时 Number() 会得 Infinity / 不安全整数)。
+ */
+export function parseSafeIntSegment(
   v: string,
   start: number,
   end: number,

@@ -41,9 +41,6 @@ export function quickOpenRowClassName(selected: boolean): string {
   return selected ? QUICK_OPEN_ROW_SELECTED_CLASS_NAME : QUICK_OPEN_ROW_IDLE_CLASS_NAME;
 }
 
-// 既有入口保留(实现在共享 picker/use-picker-list)。
-export { isVirtualIndexRendered } from '../picker/use-picker-list';
-
 /**
  * 轻量 shell(打磨 R33,仿 R32 CommandPalette):QuickOpenModal 常驻挂在 App 顶层。
  * 外层只订阅 isOpen/close 渲染 Modal,**仅 isOpen 时才挂载 QuickOpenBody** —— 关闭

@@ -37,9 +37,6 @@ export function commandPaletteRowClassName(selected: boolean): string {
   return selected ? COMMAND_PALETTE_ROW_SELECTED_CLASS_NAME : COMMAND_PALETTE_ROW_IDLE_CLASS_NAME;
 }
 
-// 既有入口保留(实现在共享 picker/use-picker-list)。
-export { isVirtualIndexRendered as isCommandPaletteVirtualIndexRendered } from '../picker/use-picker-list';
-
 /** 渲染中间体:已 localize 的 title/category（topic-19 P1-2）。 */
 export interface DisplayCommand {
   readonly cmd: CommandSpec;

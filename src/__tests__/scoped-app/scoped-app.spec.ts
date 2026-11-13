@@ -93,11 +93,11 @@ function afterEachClear(): void {
   });
 }
 import {
-  areValidShellArgs,
   buildPluginListDirEntries,
   createScopedApp,
   hasGrantedPermissionDecision,
 } from '../../plugins/scoped-app';
+import { areValidShellArgs } from '../../../electron/shared/shell-limits';
 import {
   MAX_WRITE_BYTES,
   FS_PATH_MAX,

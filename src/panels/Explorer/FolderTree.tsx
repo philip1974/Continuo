@@ -21,8 +21,6 @@ import {
   type BatchTransferKind,
 } from './batch-transfer';
 
-// 既有入口保留(测试 / 外部按 FolderTree 导入)。
-export { formatDropFailureLines } from './batch-transfer';
 import { useFsWatcher } from './hooks/useFsWatcher';
 import { useEditorFile } from '@/panels/Editor/useEditorFile';
 import { useEditorStore } from '@/stores/editor.store';

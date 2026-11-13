@@ -26,6 +26,7 @@ import {
 } from '@/design';
 import { coApp } from '@/plugins/co-app';
 import { useRegistry } from '@/plugins/registries/useRegistry';
+import { findEditorFileTabById } from './editor-tab-lookup';
 import {
   filterVisible,
   isEditorActionVisible,
@@ -72,11 +73,7 @@ export function findEditorTabById(
   tabs: readonly EditorTab[],
   id: string | null,
 ): EditorTab | null {
-  if (id === null) return null;
-  for (const tab of tabs) {
-    if (tab.id === id) return tab;
-  }
-  return null;
+  return id === null ? null : findEditorFileTabById(tabs, id);
 }
 
 /** 订阅 editorActions registry,渲染时按 ctx 过滤. */

@@ -27,8 +27,8 @@ vi.mock('@tanstack/react-virtual', () => ({
 import { render, cleanup, act, fireEvent } from '@testing-library/react';
 import {
   CommandPalette,
-  isCommandPaletteVirtualIndexRendered,
 } from '../../plugins/command-palette/CommandPalette';
+import { isVirtualIndexRendered as isCommandPaletteVirtualIndexRendered } from '../../plugins/picker/use-picker-list';
 import { useCommandPaletteStore } from '../../plugins/command-palette/store';
 import { CommandRegistry } from '../../plugins/registries/CommandRegistry';
 

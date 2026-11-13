@@ -42,10 +42,9 @@ const CMD_CATEGORY_MAX = 256;
 const CMD_HOTKEY_MAX = 64;
 // hotkey 形态(宽松):'+'-连接的非空段,段内无空白/'+'(允许 mod+, mod+/ 等标点主键)。挡空段
 // (mod++p)、含空白、超长 —— 不强限字符集以免误伤合法标点快捷键。
-// 边界(E145):导出供 keybindings 捕获侧(eventToCombo)与写端(setHotkey)复用同一形态校验,
+// 边界(E145):isValidHotkeyShape 导出供 keybindings 捕获侧(eventToCombo)与写端(setHotkey)复用同一形态校验,
 // 防捕获/override 写入注册侧会拒绝的畸形 hotkey(空段 / 含空白 / 主键为分隔符 '+')。
-export const HOTKEY_SHAPE_RE = /^[^+\s]+(\+[^+\s]+)*$/;
-
+// 等价正则:/^[^+\s]+(\+[^+\s]+)*$/(下面是其零分配手写版)。
 export function isValidHotkeyShape(hotkey: string): boolean {
   if (hotkey.length === 0) return false;
   let prevWasPlus = true;

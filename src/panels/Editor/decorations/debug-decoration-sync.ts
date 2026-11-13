@@ -1,20 +1,14 @@
 import type { EditorView } from '@codemirror/view';
 import { pathEquals } from '@/lib/path-cross';
 import { useDebugStore, type DebugSessionShadow } from '@/stores/debug.store';
-import { useEditorStore, type EditorTab } from '@/stores/editor.store';
+import { useEditorStore } from '@/stores/editor.store';
 import { isMarkdownPath } from '../editor-path-utils';
 import { setDebugDecorations } from './debug-decorations';
+import { findEditorFileTabById } from '../editor-tab-lookup';
 
 let unsubscribeDebug: (() => void) | null = null;
 let unsubscribeEditor: (() => void) | null = null;
 let refCount = 0;
-
-function findTabById(tabs: readonly EditorTab[], tabId: string): EditorTab | null {
-  for (const tab of tabs) {
-    if (tab.id === tabId) return tab;
-  }
-  return null;
-}
 
 function breakpointLinesForTab(
   sessions: ReadonlyMap<string, DebugSessionShadow>,
@@ -57,7 +51,7 @@ function syncDebugDecorations(): void {
       : debugState.sessions.get(debugState.activeSessionId);
 
   for (const [tabId, view] of editorState.viewRefs) {
-    const tab = findTabById(editorState.tabs, tabId);
+    const tab = findEditorFileTabById(editorState.tabs, tabId);
     if (tab === null || tab.filePath === null || isMarkdownPath(tab.filePath)) {
       clearView(view);
       continue;

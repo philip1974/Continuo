@@ -8,6 +8,13 @@ import type {
   MarketplaceReviewNode,
 } from '../../shared/marketplace-channels';
 import { capJoinedMessagesFrom } from '../lib/format-zod-error';
+import {
+  REVIEW_BODY_MAX,
+  REVIEW_FIELD_MAX,
+  REVIEW_TITLE_MAX,
+  REVIEW_TOTAL_NODES_MAX,
+  REVIEW_URL_MAX,
+} from '../../shared/marketplace-review-limits';
 import { readResponseTextCapped } from '../../shared/read-capped';
 
 const GRAPHQL_URL = 'https://api.github.com/graphql';
@@ -22,11 +29,7 @@ const MAX_PAGES = 50; // safety bound,对齐旧 renderer 实现
 // 传输、renderer split/aggregate/sessionStorage 缓存多次放大致卡顿/OOM。逐字段截断 + 节点总数上限
 // + 响应体 Content-Length 预检(best-effort)。
 const MAX_RESPONSE_BYTES = 8 * 1024 * 1024; // 单页响应体上限(Content-Length 预检)
-const REVIEW_TITLE_MAX = 1024;
-const REVIEW_BODY_MAX = 16384;
-const REVIEW_URL_MAX = 2048;
-const REVIEW_FIELD_MAX = 512; // author.login/avatarUrl/createdAt 等
-const MAX_TOTAL_NODES = 2000; // 累计节点上限(远超任何现实 review 量)
+const MAX_TOTAL_NODES = REVIEW_TOTAL_NODES_MAX; // 累计节点上限(远超任何现实 review 量)
 // 边界(E298):GraphQL pageInfo.endCursor 长度上限。cursor 是不透明短分页 token(GitHub 实际 ~数十字符),
 // 回传进下一页请求 body 的 `after` 变量。无上限则畸形/被篡改响应可塞超大 cursor 撑大出站请求。cursor
 // 不能截断(会损坏分页),超此上限即停止翻页(已收到的页仍可用)。2048 远超任何真实 cursor。

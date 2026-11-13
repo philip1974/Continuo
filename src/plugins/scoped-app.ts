@@ -54,9 +54,6 @@ import {
   shellCommandShapeError,
 } from '../../electron/shared/shell-limits';
 
-// 既有入口保留(实现在 shared/shell-limits,与 main plugin-shell-stream 同源)。
-export { areValidShellArgs } from '../../electron/shared/shell-limits';
-
 const EMPTY_SHELL_ARGS: readonly string[] = [];
 
 function copyShellArgs(args: readonly string[]): readonly string[] {
@@ -680,8 +677,7 @@ function makePermission(
  * 把 coApp 包成 per-plugin CoPluginApp。Plugin constructor 拿到的就是它。
  *
  * - 原有贡献点字段(panels/commands/...)直通 coApp 引用,不重复 new
- * - fs/network/clipboard/permission 是 per-plugin 闭包,持 pluginId
- * - shell 是 placeholder(Phase 3)
+ * - fs/network/clipboard/shell/permission 是 per-plugin 闭包,持 pluginId
  */
 export function createScopedApp(
   coApp: CoApp,

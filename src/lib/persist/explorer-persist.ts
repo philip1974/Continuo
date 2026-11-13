@@ -193,7 +193,7 @@ export function copyPersistPathSet(paths: ReadonlySet<string>): string[] {
 }
 
 export function snapshotFromStores(
-  /** Phase 2A 默认主窗段;Phase 2B 调用方传当前窗口 windowSeq + 已有段合并写回. */
+  /** 上一份快照:只取 nextWindowSeq 作基准,**不**回写其它窗口的段(见下方说明). */
   prevSnap?: ExplorerSnapshot,
   windowSeq: number = PRIMARY_WINDOW_SEQ,
 ): ExplorerSnapshot {
@@ -487,7 +487,8 @@ export async function initExplorerPersistence(
     return;
   }
 
-  // 3. 订阅 + debounce 写。所有窗口都订阅,各写各段(prevSnap 合并保留其它段)。
+  // 3. 订阅 + debounce 写。所有窗口都订阅,各写各段(其它窗口的段由 main 的 explorer:write 在
+  //    file-mutex 内按磁盘最新值保留,本窗不携带,见 snapshotFromStores)。
   let lastSnap: ExplorerSnapshot | null = hydratedSnap;
   // race(R87):单飞写链。debounce 自动写与关窗 flush(activeFlush)可并发提交不同时间点的
   // snapshot;此前各自 snapshotFromStores 后裸 await api.write 无序列化 —— 慢盘/IPC 下旧 snapshot

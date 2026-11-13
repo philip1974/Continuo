@@ -23,9 +23,6 @@ const STREAM_ID_MAX = 256;
 const MAX_ACTIVE_STREAMS_GLOBAL = 128; // 全局并发流上限(远超任何正常插件并发)
 const MAX_ACTIVE_STREAMS_PER_SENDER = 32; // 单 webContents 并发流上限
 
-// 既有入口保留(实现在 shared/shell-limits,与 renderer scoped-app 预检同源)。
-export { areValidShellArgs as areValidPluginShellStreamArgs } from '../../shared/shell-limits';
-
 interface ActiveStream {
   child: ChildProcessByStdio<null, Readable, Readable>;
   timeoutTimer: NodeJS.Timeout | null;

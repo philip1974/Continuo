@@ -12,6 +12,12 @@
 //
 // 我们 split by "### " 收 sections,容错(用户自己写也兼容简单形态)。
 
+import {
+  REVIEW_BODY_MAX,
+  REVIEW_FIELD_MAX,
+  REVIEW_TITLE_MAX,
+  REVIEW_VERSION_MAX,
+} from '../../electron/shared/marketplace-review-limits';
 import type { Review } from './reviews-types';
 import { isGitHubLogin, REVIEW_URL_MAX } from './reviews-types';
 import { lowerIfNeeded } from '../../electron/shared/lower-if-needed';
@@ -37,13 +43,11 @@ interface RawDiscussion {
 // 边界(E57):renderer 防御性长度上限 —— 即便 main 已逐字段截断(E57),parseReview 也自带
 // body/title 上限,挡绕过 main 的 cache-hydrate / 测试 / 未来入口(body.split / section 聚合会被
 // 超长 body 放大)。值与 main REVIEW_BODY_MAX/REVIEW_TITLE_MAX 对齐。
-const MAX_PARSE_BODY = 16384;
-const MAX_PARSE_TITLE = 1024;
+const MAX_PARSE_BODY = REVIEW_BODY_MAX;
+const MAX_PARSE_TITLE = REVIEW_TITLE_MAX;
 // 边界(E253):fresh 解析的字段长度上限,与 cache-read isValidReview 对齐(REVIEW_FIELD_MAX=512
 // handle/createdAt;REVIEW_VERSION_MAX=128 版本)。fresh 路径此前对 createdAt/author.createdAt/版本
 // 只 nullish 合并不校验类型/长度 → 畸形 IPC 可把 object/超长写进 Review,new Date() 变 Invalid/NaN 漏标。
-const REVIEW_FIELD_MAX = 512;
-const REVIEW_VERSION_MAX = 128;
 
 /** 失败返 null(skip 这条 review,不污染聚合). */
 export function parseReview(rawInput: unknown): Review | null {

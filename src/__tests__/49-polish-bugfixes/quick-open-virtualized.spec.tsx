@@ -34,8 +34,8 @@ vi.mock('@tanstack/react-virtual', () => ({
 
 import {
   QuickOpenModal,
-  isVirtualIndexRendered,
 } from '../../plugins/quick-open/QuickOpenModal';
+import { isVirtualIndexRendered } from '../../plugins/picker/use-picker-list';
 import { useQuickOpenStore, type QuickOpenFile } from '../../plugins/quick-open/store';
 import { useWorkspaceStore } from '../../stores/workspace.store';
 
