@@ -15,3 +15,5 @@ parseManifest),`tsconfig.node.json` 被迫逐个白名单 `src/` 文件。已把
 2. `electron/shared/` 不得导入 `electron/main`、`electron/preload` 或 `src/`。
 3. `tsconfig.node.json` 的 `include` 不含任何 `src/` 条目。
 4. `src/plugins/{types,permissions,manifest}` 的既有导出与 shared 定义是**同一对象**(re-export,非副本)。
+5. `electron/main/index.ts`(组合根,带启动副作用)不被 `electron/main` 下任何模块(含测试以外的 ipc / services)
+   导入;需要它的能力(如开窗)由 `registerIpc(deps)` 注入。

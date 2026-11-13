@@ -21,7 +21,7 @@ import { registerFsIpc } from './ipc/fs.ipc';
 import { registerTerminalIpc } from './ipc/terminal.ipc';
 import { registerPluginsIpc } from './ipc/plugins.ipc';
 import { registerShellIpc } from './ipc/shell.ipc';
-import { registerWindowIpc } from './ipc/window.ipc';
+import { registerWindowIpc, type WindowIpcDeps } from './ipc/window.ipc';
 import { registerI18nIpc } from './ipc/i18n.ipc';
 import { registerMarketplaceIpc } from './ipc/marketplace.ipc';
 import {
@@ -137,7 +137,7 @@ function senderWindowSeqOrThrow(event: IpcMainInvokeEvent): number {
   return seq;
 }
 
-export function registerIpc(): { pluginFsHandles: PluginFsIpcHandles } {
+export function registerIpc(deps: WindowIpcDeps): { pluginFsHandles: PluginFsIpcHandles } {
   const userData = app.getPath('userData');
   const explorerFile = path.join(userData, EXPLORER_FILE_NAME);
   const trusted = defaultIsTrustedFrame;
@@ -293,7 +293,7 @@ export function registerIpc(): { pluginFsHandles: PluginFsIpcHandles } {
   registerPluginShellStreamIpc({ ipcMain });
 
   // 多窗口支持(issue #23 Phase 1):window.create
-  registerWindowIpc();
+  registerWindowIpc(deps);
 
   // Agent Terminal MCP — 授权应答通道(P2)。schema 见模块级 AgentAuthRespondSchema(E146)。
   safeHandle(

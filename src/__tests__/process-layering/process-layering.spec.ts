@@ -77,6 +77,16 @@ describe('进程间依赖方向', () => {
   });
 });
 
+describe('组合根不被下游模块反向导入', () => {
+  // electron/main/index.ts 是带大量启动副作用的入口模块。ipc/window.ipc.ts 曾 `import { createMainWindow }
+  // from '../index'`,形成 index → ipc → ipc/window.ipc → index 的循环导入;改为由 registerIpc(deps) 注入。
+  it('electron/main 下除 index.ts 自身外,无模块导入 main/index', () => {
+    expect(
+      offenders('electron/main', (resolved) => resolved === 'electron/main/index'),
+    ).toEqual([]);
+  });
+});
+
 describe('src/plugins 的既有入口是 shared 定义的 re-export(非副本)', () => {
   it('错误类 / 权限枚举 / parseManifest 是同一对象', () => {
     expect(ScopeError).toBe(sharedContract.ScopeError);

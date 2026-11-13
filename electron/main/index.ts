@@ -947,7 +947,7 @@ app.whenReady().then(async () => {
     setDockMenu();
   }
 
-  registerIpc();
+  registerIpc({ createMainWindow });
   // topic 16: 把 rebuildAppMenu 注入 i18n.ipc，setLocale 时菜单整体重建
   setMenuRebuilder(rebuildAppMenu);
   // 在 createMainWindow 之前启 host,确保 renderer autoSpawn 的第一个 PTY

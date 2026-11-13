@@ -17,7 +17,6 @@ import {
 } from '../../shared/window-channels';
 import { ERROR_CODES } from '../../shared/error-codes';
 import { IPC_ERR } from '../../shared/ipc-result';
-import { createMainWindow } from '../index';
 import {
   allocateWindowSeq,
 } from '../persistence';
@@ -42,8 +41,21 @@ const CreateInput = z
   })
   .strict();
 
+/**
+ * 开窗函数由组合根(main/index.ts)注入,不从 '../index' 导入 —— 否则形成
+ * index → ipc → ipc/window.ipc → index 的循环导入(index 是带大量启动副作用的入口模块)。
+ */
+export interface WindowIpcDeps {
+  readonly createMainWindow: (opts: {
+    windowSeq: number;
+    workspace?: string;
+    fresh?: boolean;
+  }) => { readonly id: number };
+}
+
 async function createWindowHandler(
   input: IpcWindowCreateInput,
+  createMainWindow: WindowIpcDeps['createMainWindow'],
 ): Promise<IpcWindowCreateResult> {
   if (input.workspace !== undefined) {
     // 安全 + 健壮性校验:必须 absolute,实际存在的目录。
@@ -88,11 +100,11 @@ const NotifyRootInput = z
   })
   .strict();
 
-export function registerWindowIpc(): void {
+export function registerWindowIpc(deps: WindowIpcDeps): void {
   safeHandle(
     WINDOW_CHANNELS.CREATE,
     CreateInput,
-    createWindowHandler,
+    (input) => createWindowHandler(input, deps.createMainWindow),
     defaultIsTrustedFrame,
   );
   // workspace.root 变化时 renderer 推送 → main 维护 map,供 MCP agent terminal
