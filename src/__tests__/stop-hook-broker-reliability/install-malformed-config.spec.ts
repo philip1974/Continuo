@@ -36,6 +36,17 @@ describe('安装 stop hook · 畸形的用户配置', () => {
     expect(parsed.userKey).toBe('keep-me');
   });
 
+  // null 不携带任何用户数据,按「没写」处理(合并无损),不拒绝。
+  it.each(['{"userKey":1,"hooks":null}', '{"userKey":1,"hooks":{"Stop":null}}'])(
+    '%s → 正常安装',
+    async (text) => {
+      await writeFile(settingsPath, text, 'utf8');
+      const res = await installStopHookForSession(cwd, ccRunner, hookEventsDir);
+      expect(res.installed).toBe(true);
+      expect(JSON.parse(await readFile(settingsPath, 'utf8')).userKey).toBe(1);
+    },
+  );
+
   it.each([
     ['hooks 是数组', '{"hooks":[1,2]}'],
     ['hooks 是标量', '{"hooks":"x"}'],

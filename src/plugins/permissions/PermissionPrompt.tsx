@@ -1,7 +1,7 @@
 // 权限授权 Modal(M-Plugin v3.4)。
 // 订阅 promptStore,无 pending 时不渲染。
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Modal } from '@/design';
 import { usePermissionPromptStore } from './promptStore';
 import type { FsScopePrompt, Pending } from './promptStore';
@@ -79,6 +79,12 @@ function ManifestPromptBody({ pending }: { pending: Pending }) {
   }, [pending]);
   const decisionArmed = (): boolean =>
     handoverAtRef.current === null || Date.now() - handoverAtRef.current >= HANDOVER_GUARD_MS;
+  // 引用必须稳定:Modal 的焦点 / 键盘 effect 依赖 onClose,每次渲染换新引用会让它反复重跑
+  //(勾选一次,焦点就先被还给弹窗外、再跳回弹窗内第一个元素)。只读 ref,无需其它依赖。
+  const handleClose = useCallback(() => {
+    const at = handoverAtRef.current;
+    if (at === null || Date.now() - at >= HANDOVER_GUARD_MS) denyAll();
+  }, [denyAll]);
 
   const toggle = (perm: PermissionKey) => {
     setSelected((s) => {
@@ -93,9 +99,7 @@ function ManifestPromptBody({ pending }: { pending: Pending }) {
     <Modal
       visible
       // Esc(键重复)/ 点遮罩也是「全部拒绝」入口,同样受切换守卫约束。
-      onClose={() => {
-        if (decisionArmed()) denyAll();
-      }}
+      onClose={handleClose}
       aria-labelledby="permission-prompt-title"
     >
       {/* a11y(A13):dialog(A10)须经 aria-labelledby 关联标题,否则 AT 只听到无名 dialog。 */}

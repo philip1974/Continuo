@@ -291,12 +291,20 @@ describe('DebugService fake adapter · launch / 子会话 / 终止 的错误路�
     );
     await parent.triggerStartDebugging({ type: 'pwa-node' });
     await parent.triggerStartDebugging({ type: 'pwa-node' });
-    parent.children[1]!.emit('terminated', {});
+
+    const waiting = service.waitForStop(sessionId, { timeoutMs: 5_000 });
+    parent.children[1]!.emit('terminated', {}); // 在途的等待者也不因此被结算
 
     expect(service.listSessions()[0]?.state).not.toBe('terminated');
-    const waiting = service.waitForStop(sessionId, { timeoutMs: 5_000 });
     parent.children[0]!.emit('stopped', { reason: 'breakpoint', threadId: 1 });
     await expect(waiting).resolves.toMatchObject({ reason: 'breakpoint' });
+
+    // 所有 child 都结束 → 整个会话结束(不必等父 client 的 terminated)
+    parent.children[0]!.emit('exited', {});
+    expect(service.listSessions()[0]?.state).toBe('terminated');
+    await expect(service.waitForStop(sessionId, { afterStopSeq: 1, timeoutMs: 5_000 })).rejects.toThrow(
+      /exited|terminated/,
+    );
   });
 });
 

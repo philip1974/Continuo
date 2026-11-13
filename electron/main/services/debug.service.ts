@@ -161,6 +161,8 @@ interface RuntimeDebugSession {
   currentStop?: WaitForStopOutput;
   /** debuggee 已结束(terminated / exited)时的说明;置位后 wait_for_stop 立即以它 reject。 */
   endedMessage?: string;
+  /** 已发过 terminated / exited 的 child。 */
+  readonly endedChildren: Set<DebugDapClientLike>;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -471,6 +473,7 @@ export class DebugService {
       childClients: [],
       launch: normalizedInput,
       waiters: new Set(),
+      endedChildren: new Set(),
       breakpoints: [],
       initialized: false,
       configurationDone: false,
@@ -948,20 +951,24 @@ export class DebugService {
   }
 
   /**
-   * debuggee 结束(terminated / exited)。结算在途的 wait_for_stop;若事件代表整个会话结束(见下),
+   * debuggee 结束(terminated / exited)。若事件代表整个会话结束(见下),结算在途的 wait_for_stop 并
    * 把会话标成 terminated(迟到的 stopped / continued 不再翻回)—— 之后的 wait_for_stop 立即报已终止(否则干等满 timeout 才报超时),list_sessions
    * 也不再显示 running。adapter 进程仍由 disconnect / 关窗 / 退出时的 teardown 回收。
    */
   private markEnded(sessionId: string, client: DebugDapClientLike, message: string): void {
-    this.rejectWaiters(sessionId, new Error(message));
     const runtime = this.runtimes.get(sessionId);
     if (!runtime) return;
-    // 父 client 的结束 = 整个会话结束。child 的结束只在它是唯一的 child 时才算(常见的单进程调试);
-    // 有多个 child(worker 等)时,某一个先退出不代表会话结束 —— 置位后 wait_for_stop 会永久报已终止。
-    const wholeSessionEnded =
-      client === runtime.parentClient ||
-      (runtime.childClients.length === 1 && runtime.childClients[0] === client);
-    if (!wholeSessionEnded) return;
+    // 父 client 结束 = 整个会话结束。child 结束则记下来,全部 child 都结束才算(单进程调试只有一个 child);
+    // 有多个 child(worker 等)时某一个先退出不代表会话结束 —— 既不结算在途的 wait_for_stop,也不置位
+    //(置位后 wait_for_stop 会永久报已终止)。
+    if (client !== runtime.parentClient) {
+      runtime.endedChildren.add(client);
+      const allChildrenEnded =
+        runtime.childClients.length > 0 &&
+        runtime.childClients.every((child) => runtime.endedChildren.has(child));
+      if (!allChildrenEnded) return;
+    }
+    this.rejectWaiters(sessionId, new Error(message));
     runtime.endedMessage = message;
     debugSessions.update(sessionId, { runtimeState: 'terminated' });
   }

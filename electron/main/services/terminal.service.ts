@@ -344,7 +344,10 @@ function escapeSequenceEnd(data: string, start: number): number {
   if (kind === 0x5b) {
     while (j < len && data.charCodeAt(j) >= 0x30 && data.charCodeAt(j) <= 0x3f) j += 1;
     while (j < len && data.charCodeAt(j) >= 0x20 && data.charCodeAt(j) <= 0x2f) j += 1;
-    return j < len ? j + 1 : len;
+    if (j >= len) return len;
+    // 只消费合法的终结字节;畸形序列(被另一个 ESC、换行、非 ASCII 打断)到此为止,不吃后面的内容。
+    const final = data.charCodeAt(j);
+    return final >= 0x40 && final <= 0x7e ? j + 1 : j;
   }
   if (kind === 0x5d) {
     for (; j < len; j += 1) {
@@ -356,7 +359,9 @@ function escapeSequenceEnd(data: string, start: number): number {
   }
   j = start + 1;
   while (j < len && data.charCodeAt(j) >= 0x20 && data.charCodeAt(j) <= 0x2f) j += 1;
-  return j < len ? j + 1 : len;
+  if (j >= len) return len;
+  const final = data.charCodeAt(j);
+  return final >= 0x30 && final <= 0x7e ? j + 1 : j;
 }
 
 export function safeTruncate(data: string, maxBytes: number): string {

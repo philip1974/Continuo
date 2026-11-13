@@ -870,15 +870,13 @@ async function mergeClaudeCodeSettings(
 
   // `hooks` / `hooks.Stop` 存在但形态不对(数组、标量、非数组的 Stop):不是可合并的配置。当成空值的话,
   // 写回时会覆盖掉用户原来的值 → 同样按 parse-error 拒绝。
-  const rawHooks = existing.hooks;
-  if (
-    rawHooks !== undefined &&
-    (rawHooks === null || typeof rawHooks !== 'object' || Array.isArray(rawHooks))
-  ) {
+  // null 不携带用户数据,与「没写」同等对待(合并无损)。
+  const rawHooks = existing.hooks ?? undefined;
+  if (rawHooks !== undefined && (typeof rawHooks !== 'object' || Array.isArray(rawHooks))) {
     return { installed: false, reason: 'parse-error' };
   }
   const hooks = (rawHooks ?? {}) as Record<string, unknown>;
-  if (hooks.Stop !== undefined && !Array.isArray(hooks.Stop)) {
+  if (hooks.Stop !== undefined && hooks.Stop !== null && !Array.isArray(hooks.Stop)) {
     return { installed: false, reason: 'parse-error' };
   }
   const stopArr = Array.isArray(hooks.Stop) ? [...hooks.Stop] : [];

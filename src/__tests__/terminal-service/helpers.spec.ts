@@ -75,6 +75,22 @@ describe('safeTruncate', () => {
     }
   });
 
+  // 畸形输入:序列没有合法终结字节就被别的内容打断。跳过残片时不能把后面的 ESC / 换行 / 半个代理对吃掉。
+  it.each([
+    ['被新序列打断的 CSI', '\x1b[31', '\x1b[32mZ'],
+    ['CSI 后紧跟换行', '\x1b[31', '\nNEXT'],
+    ['CSI 后紧跟 emoji', '\x1b[', '😀Z'],
+    ['孤立 ESC 后紧跟 emoji', '\x1b', '😀Z'],
+  ])('%s:只跳过残片本身,后续内容完整保留', (_label, broken, rest) => {
+    const data = 'x'.repeat(100) + broken + rest;
+    // 让截断点落在残片内部的每个位置
+    for (let inside = 1; inside <= broken.length; inside += 1) {
+      const keepBytes = Buffer.byteLength(broken.slice(inside) + rest, 'utf8');
+      const r = safeTruncate(data, 4 + keepBytes);
+      expect(r).toBe('\x1b[0m' + rest);
+    }
+  });
+
   it('串尾未终结的序列被切到 ESC 之后 → 不保留残片', () => {
     const data = 'x'.repeat(100) + '\x1b[3';
     expect(safeTruncate(data, 4 + 2)).toBe('\x1b[0m');
