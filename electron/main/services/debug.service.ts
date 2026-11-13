@@ -859,8 +859,12 @@ export class DebugService {
     // 记下发往哪条连接:它的 continued 事件可能先于响应到达并已触发「呈现下一个排队停点」,
     // 此时再不带连接地清一次,会把刚呈现的那个停点错清掉。
     const target = runtime.activeClient;
+    // 同时记下发请求时的停点:响应与随后的 continued / stopped 可能在同一次 read 里到达,事件先于这里的
+    // 续体被处理。那时停点已经换了(单步后的新停点,或接着呈现的排队停点),再清就会把新停点 / 该连接
+    // 刚入队的停点抹掉 —— 只有停点仍是发请求时的那一个才由这里清。
+    const stopAtSend = runtime.currentStop;
     const response = await target.sendRequest(command, { threadId }, this.requestTimeoutMs);
-    this.markContinued(sessionId, target);
+    if (runtime.currentStop === stopAtSend) this.markContinued(sessionId, target);
     const allThreadsContinued = boolField(asRecord(response.body), 'allThreadsContinued');
     return {
       continued: true,

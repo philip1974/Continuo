@@ -32,8 +32,15 @@ class FakeDapClient implements DebugDapClientLike {
   readonly serverPid: number;
   readonly requestLog: Array<{ command: string; args: DapJson }> = [];
   readonly children: FakeDapClient[] = [];
+  readonly timeoutLog: Array<{ command: string; timeoutMs: number | undefined }> = [];
   disconnectRequests = 0;
   disposeCalls = 0;
+  /**
+   * 响应返回之前执行(可在里面 emit 事件 / 挂起)。真实 DapClient 在一次 data 回调里同步处理同一 chunk 的
+   * 全部消息,排在响应后面的事件会先于调用方的 await 续体被处理 —— 用它复现这种时序。设置后不再自动发
+   * continued。
+   */
+  beforeResponse: ((command: string) => void | Promise<void>) | null = null;
   private seq = 1;
   private startDebuggingHandler:
     | ((
@@ -88,12 +95,24 @@ class FakeDapClient implements DebugDapClientLike {
     });
   }
 
-  async sendRequest(command: string, args: DapJson = {}): Promise<DapResponseMessage> {
+  async sendRequest(
+    command: string,
+    args: DapJson = {},
+    timeoutMs?: number,
+  ): Promise<DapResponseMessage> {
     this.requestLog.push({ command, args });
+    this.timeoutLog.push({ command, timeoutMs });
     if (command === 'initialize') {
       queueMicrotask(() => this.emit('initialized', {}));
     }
-    if (command === 'continue' || command === 'next' || command === 'stepIn' || command === 'stepOut') {
+    if (this.beforeResponse) {
+      await this.beforeResponse(command);
+    } else if (
+      command === 'continue' ||
+      command === 'next' ||
+      command === 'stepIn' ||
+      command === 'stepOut'
+    ) {
       queueMicrotask(() => this.emit('continued', { allThreadsContinued: true }));
     }
     if (command === 'disconnect') {
@@ -405,12 +424,56 @@ describe('DebugService fake adapter · launch / 子会话 / 终止 的错误路�
     worker.emit('terminated', {});
 
     expect(service.listSessions()[0]?.state).toBe('running');
-    main.emit('stopped', { reason: 'breakpoint', threadId: 0 });
-    await service.stackTrace(sessionId, {});
+    // main 没有停住过:活动连接必须已经从结束的 worker 换回 main,而不是靠下一次 stopped 顺带切换
+    worker.requestLog.length = 0;
+    await service.stackTrace(sessionId, { threadId: 0 });
     expect(main.requestLog.some((r) => r.command === 'stackTrace')).toBe(true);
+    expect(worker.requestLog).toEqual([]);
   });
 
-  it('设断点:已结束的 child 不再同步;各 child 并行发送(一个不应答不拖住其它)', async () => {
+  // 真实 DapClient 一次 read 里读到「单步的响应 + continued + stopped」时,两个事件先于 resume 的续体处理。
+  it('单步的响应与随后的 stopped 同批到达 → 新停点不被迟到的清理抹掉', async () => {
+    const { service, sessionId, main } = await launchWithWorker();
+    main.emit('stopped', { reason: 'breakpoint', threadId: 0 });
+    const first = await service.waitForStop(sessionId, { afterStopSeq: 0, timeoutMs: 1_000 });
+    main.beforeResponse = (command) => {
+      if (command !== 'next') return;
+      main.emit('continued', { threadId: 0, allThreadsContinued: false });
+      main.emit('stopped', { reason: 'step', threadId: 0 });
+    };
+
+    await service.stepOver(sessionId, {});
+    expect(service.listSessions()[0]?.state).toBe('stopped');
+    await expect(
+      service.waitForStop(sessionId, { afterStopSeq: first.stop_seq, timeoutMs: 1_000 }),
+    ).resolves.toMatchObject({ reason: 'step', thread_id: 0 });
+  });
+
+  it('同上,且另一条连接有排队停点 → 单步后的新停点入队,不被迟到的清理删掉', async () => {
+    const { service, sessionId, main, worker } = await launchWithWorker();
+    main.emit('stopped', { reason: 'breakpoint', threadId: 0 });
+    worker.emit('stopped', { reason: 'breakpoint', threadId: 7 });
+    const first = await service.waitForStop(sessionId, { afterStopSeq: 0, timeoutMs: 1_000 });
+    main.beforeResponse = (command) => {
+      if (command !== 'next') return;
+      main.emit('continued', { threadId: 0, allThreadsContinued: false });
+      main.emit('stopped', { reason: 'step', threadId: 0 });
+    };
+
+    await service.stepOver(sessionId, {});
+    const second = await service.waitForStop(sessionId, {
+      afterStopSeq: first.stop_seq,
+      timeoutMs: 1_000,
+    });
+    expect(second.thread_id).toBe(7);
+
+    await service.continue(sessionId, {});
+    await expect(
+      service.waitForStop(sessionId, { afterStopSeq: second.stop_seq, timeoutMs: 1_000 }),
+    ).resolves.toMatchObject({ reason: 'step', thread_id: 0 });
+  });
+
+  it('设断点:已结束的 child 不再同步', async () => {
     const { service, sessionId, main, worker } = await launchWithWorker();
     worker.emit('terminated', {});
     main.requestLog.length = 0;
@@ -419,6 +482,28 @@ describe('DebugService fake adapter · launch / 子会话 / 终止 的错误路�
     await service.setBreakpoints(sessionId, { file: '/fixture.js', line: 9 });
     expect(main.requestLog.some((r) => r.command === 'setBreakpoints')).toBe(true);
     expect(worker.requestLog.some((r) => r.command === 'setBreakpoints')).toBe(false);
+  });
+
+  it('设断点:各 child 并行发送(一个不应答不拖住其它),且用较短的超时', async () => {
+    const { service, sessionId, main, worker } = await launchWithWorker();
+    worker.requestLog.length = 0;
+    let release!: () => void;
+    const hung = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    main.beforeResponse = (command) => (command === 'setBreakpoints' ? hung : undefined);
+
+    const pending = service.setBreakpoints(sessionId, { file: '/fixture.js', line: 9 });
+    await vi.waitFor(() =>
+      expect(worker.requestLog.some((r) => r.command === 'setBreakpoints')).toBe(true),
+    );
+    release();
+    await pending;
+
+    const timeoutOf = (client: FakeDapClient) =>
+      client.timeoutLog.filter((r) => r.command === 'setBreakpoints').at(-1)?.timeoutMs;
+    expect(timeoutOf(main)).toBe(3_000);
+    expect(timeoutOf(worker)).toBe(3_000);
   });
 
   it('debuggee 已结束(terminated 事件)→ 之后的 wait_for_stop 立即报已终止,不干等到超时;列表状态为 terminated', async () => {
