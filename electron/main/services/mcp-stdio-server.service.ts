@@ -23,6 +23,7 @@ import path from 'node:path';
 import {
   RPC_ERROR_CODES,
   NO_WINDOW_CTX_MESSAGE,
+  isRpcNotification,
   parseRpcMessage,
   formatRpcResult,
   formatRpcError,
@@ -267,14 +268,7 @@ async function handleLine(
   }
 
   // notification(无 id)→ 不响应(202 等价语义,stdio 直接 silent)
-  if (
-    raw !== null &&
-    typeof raw === 'object' &&
-    !Array.isArray(raw) &&
-    (raw as Record<string, unknown>)['jsonrpc'] === '2.0' &&
-    typeof (raw as Record<string, unknown>)['method'] === 'string' &&
-    !('id' in (raw as Record<string, unknown>))
-  ) {
+  if (isRpcNotification(raw)) {
     return;
   }
 

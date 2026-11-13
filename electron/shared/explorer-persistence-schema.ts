@@ -84,8 +84,13 @@ export const ExplorerV1Schema = z
 
 export type ExplorerV1Payload = z.infer<typeof ExplorerV1Schema>;
 
-// ── v2(legacy compat)— 多窗口拆段 ────────────────────────
-const WindowEntrySchema = z
+// ── v2 / v3 共用构件 ─────────────────────────────────────
+// 重构:v2 WindowEntry 与 v3 writable WindowEntry 形状逐字段相同;v2 / v3-writable / v3-full 三个顶层
+// schema 除 version 字面量与 windows 元素外也相同。此前三份各自手写,E14/E15 的上限曾漏改其中一份
+// (「E14 漏改的 v2 多行形式」)→ 收口为单一定义,上限只写一处。
+
+/** renderer 可写的窗口段(v2 WindowEntry 与 v3 writable WindowEntry 同形):strict,不含 main-owned 字段。 */
+const WritableWindowEntrySchema = z
   .object({
     windowSeq: z.number().int().nonnegative(),
     workspace: z
@@ -105,29 +110,37 @@ const WindowEntrySchema = z
   })
   .strict();
 
+/** 顶层除 version / windows 之外的公共字段。 */
+const explorerTopLevelShape = {
+  workspace: z
+    .object({
+      recentRoots: z.array(pathStr()).max(RECENT_ROOTS_MAX), // 边界(E14/E15)
+    })
+    .strict(),
+  pinned: z
+    .object({
+      paths: z.array(pathStr()).max(PINNED_MAX), // 边界(E14/E15)
+    })
+    .strict(),
+  /** 下一个开新窗时分配的 windowSeq;主窗用 0,新窗自增. */
+  nextWindowSeq: z.number().int().nonnegative(),
+  /**
+   * 启动时是否自动恢复非主窗 (windowSeq > 0)。默认 false — 跟 VSCode "只开主窗" 一致。
+   * 显式设 true 才走 #29 multi-window session-restore 行为。
+   */
+  restoreAllWindowsOnLaunch: z.boolean().optional(),
+};
+
+// ── v2(legacy compat)— 多窗口拆段 ────────────────────────
+const WindowEntrySchema = WritableWindowEntrySchema;
+
 /** @deprecated v2 compatibility schema. New callers should use ExplorerSchemaV3 / ExplorerWritableSnapshotSchema. */
 export const ExplorerSchema = z
   .object({
     version: z.literal(2),
-    workspace: z
-      .object({
-        recentRoots: z.array(pathStr()).max(RECENT_ROOTS_MAX), // 边界(E15,E14 漏改的 v2 多行形式)
-      })
-      .strict(),
-    pinned: z
-      .object({
-        paths: z.array(pathStr()).max(PINNED_MAX), // 边界(E15)
-      })
-      .strict(),
-    /** 下一个开新窗时分配的 windowSeq;主窗用 0,新窗自增. */
-    nextWindowSeq: z.number().int().nonnegative(),
+    ...explorerTopLevelShape,
     /** 每窗口持久化段。windowSeq 跨重启稳定,关闭窗口段先保留(LRU 由调用方控制). */
     windows: z.array(WindowEntrySchema).max(WINDOWS_MAX), // 边界(E14)
-    /**
-     * 启动时是否自动恢复非主窗 (windowSeq > 0)。默认 false — 跟 VSCode "只开主窗" 一致。
-     * 显式设 true 才走 #29 multi-window session-restore 行为。
-     */
-    restoreAllWindowsOnLaunch: z.boolean().optional(),
   })
   .strict();
 
@@ -141,21 +154,7 @@ export type WindowEntry = z.infer<typeof WindowEntrySchema>;
 export const MAIN_OWNED_WINDOW_FIELDS = ['layout', 'lastClosedAt'] as const;
 
 /** Writable WindowEntry:strict,排除 main-owned 字段(layout/lastClosedAt). */
-const ExplorerWritableWindowEntrySchema = z
-  .object({
-    windowSeq: z.number().int().nonnegative(),
-    workspace: z.object({ root: pathStr().nullable() }).strict(),
-    explorer: z
-      .object({
-        activePath: pathStr().nullable(), // 边界(E15)
-        expandedPaths: pathArray(), // 边界(E14)
-        sort: ExplorerSortSchema,
-      })
-      .strict(),
-    layoutUi: LayoutUiSchema.optional(),
-    editor: EditorSessionSchema.optional(),
-  })
-  .strict();
+const ExplorerWritableWindowEntrySchema = WritableWindowEntrySchema;
 
 /** Full WindowEntry v3:writable + main-owned. */
 const WindowEntrySchemaV3 = ExplorerWritableWindowEntrySchema.extend({
@@ -167,15 +166,8 @@ const WindowEntrySchemaV3 = ExplorerWritableWindowEntrySchema.extend({
 export const ExplorerWritableSnapshotSchema = z
   .object({
     version: z.literal(3),
-    workspace: z
-      .object({ recentRoots: z.array(pathStr()).max(RECENT_ROOTS_MAX) })
-      .strict(), // 边界(E14)
-    pinned: z
-      .object({ paths: z.array(pathStr()).max(PINNED_MAX) })
-      .strict(), // 边界(E14)
-    nextWindowSeq: z.number().int().nonnegative(),
+    ...explorerTopLevelShape,
     windows: z.array(ExplorerWritableWindowEntrySchema).max(WINDOWS_MAX), // 边界(E14)
-    restoreAllWindowsOnLaunch: z.boolean().optional(),
   })
   .strict();
 
@@ -183,15 +175,8 @@ export const ExplorerWritableSnapshotSchema = z
 export const ExplorerSchemaV3 = z
   .object({
     version: z.literal(3),
-    workspace: z
-      .object({ recentRoots: z.array(pathStr()).max(RECENT_ROOTS_MAX) })
-      .strict(), // 边界(E14)
-    pinned: z
-      .object({ paths: z.array(pathStr()).max(PINNED_MAX) })
-      .strict(), // 边界(E14)
-    nextWindowSeq: z.number().int().nonnegative(),
+    ...explorerTopLevelShape,
     windows: z.array(WindowEntrySchemaV3).max(WINDOWS_MAX), // 边界(E14)
-    restoreAllWindowsOnLaunch: z.boolean().optional(),
   })
   .strict();
 

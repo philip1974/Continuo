@@ -164,6 +164,18 @@ export function pruneLRUClosed(
   payload.windows = kept;
 }
 
+/** renderer 写入的窗口段 + 保留 current 的 main-owned 字段(layout / lastClosedAt;renderer 不能写)。 */
+function withMainOwnedFields(
+  w: ExplorerWritablePayload['windows'][number],
+  cur: WindowEntryV3,
+): WindowEntryV3 {
+  return {
+    ...w,
+    ...(cur.layout !== undefined ? { layout: cur.layout } : {}),
+    ...(cur.lastClosedAt !== undefined ? { lastClosedAt: cur.lastClosedAt } : {}),
+  };
+}
+
 export function mergeWritableIntoFull(
   current: ExplorerPayloadV3 | null,
   writable: ExplorerWritablePayload,
@@ -178,13 +190,7 @@ export function mergeWritableIntoFull(
     let matched = false;
     for (const cur of currentWindows) {
       if (cur.windowSeq === w.windowSeq) {
-        merged[mergedCount++] = {
-          ...w,
-          ...(cur.layout !== undefined ? { layout: cur.layout } : {}),
-          ...(cur.lastClosedAt !== undefined
-            ? { lastClosedAt: cur.lastClosedAt }
-            : {}),
-        };
+        merged[mergedCount++] = withMainOwnedFields(w, cur);
         matched = true;
       } else {
         merged[mergedCount++] = cur;
@@ -206,13 +212,7 @@ export function mergeWritableIntoFull(
     for (const cur of currentWindows) {
       const w = writableBySeq.get(cur.windowSeq);
       if (w) {
-        merged[mergedCount++] = {
-          ...w,
-          ...(cur.layout !== undefined ? { layout: cur.layout } : {}),
-          ...(cur.lastClosedAt !== undefined
-            ? { lastClosedAt: cur.lastClosedAt }
-            : {}),
-        };
+        merged[mergedCount++] = withMainOwnedFields(w, cur);
         writableBySeq.delete(cur.windowSeq);
       } else {
         merged[mergedCount++] = cur;

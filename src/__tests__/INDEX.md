@@ -686,6 +686,10 @@
 
 - [`update-store.spec.ts`](./marketplace-update-store/update-store.spec.ts)
 
+## [mcp-tool-gates(重构:MCP 工具授权 / capability 门控单一来源)](./mcp-tool-gates/README.md)
+
+- [`mcp-tool-gates.spec.ts`](./mcp-tool-gates/mcp-tool-gates.spec.ts)
+
 ## [migration-shell-env](./migration-shell-env/README.md)
 
 - [`host-helper-import.spec.ts`](./migration-shell-env/host-helper-import.spec.ts)

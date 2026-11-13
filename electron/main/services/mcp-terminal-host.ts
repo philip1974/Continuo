@@ -1,5 +1,9 @@
-import { ERROR_CODES } from '../../shared/error-codes';
 import type { AnyMcpTool, McpCallCtx } from './mcp-host.service';
+import {
+  gateWithAuth,
+  gateWithCapability,
+  type EnsureAuthorized,
+} from './mcp-tool-gates';
 import type * as terminalSessions from './terminal-sessions.service';
 import type * as termService from './terminal.service';
 import {
@@ -13,11 +17,7 @@ import {
   type CreateSessionPtyInput,
 } from './mcp-tools-terminal';
 
-/** agent 授权门控:owner 窗口 + 调用 method,返回三态决策. */
-export type EnsureAuthorized = (
-  ownerWindowId: number,
-  method?: string,
-) => Promise<'once' | 'session' | 'denied'>;
+export type { EnsureAuthorized } from './mcp-tool-gates';
 
 export interface MakeTerminalMcpToolsDeps {
   readonly sessionStore: Pick<typeof terminalSessions, 'get' | 'getAll'>;
@@ -56,25 +56,10 @@ export interface MakeTerminalMcpToolsDeps {
  * 只允许一个 pending(第二条并发 ensure 立即 denied),外层再包会与内部门控并发
  * 自我拒绝。
  */
-function gateWithAuth(
-  tool: AnyMcpTool,
-  ensureAuthorized: EnsureAuthorized,
-): AnyMcpTool {
-  const inner = tool.run;
-  return {
-    ...tool,
-    run: async (input: unknown, ctx: McpCallCtx) => {
-      const decision = await ensureAuthorized(ctx.ownerWindowId, tool.name);
-      if (decision === 'denied') {
-        throw Object.assign(
-          new Error('agent terminal not authorized by user'),
-          { code: ERROR_CODES.AGENT_NOT_AUTHORIZED },
-        );
-      }
-      return inner(input, ctx);
-    },
-  };
-}
+const TERMINAL_AUTH_GATE = {
+  methodFor: (tool: AnyMcpTool): string => tool.name,
+  deniedMessage: 'agent terminal not authorized by user',
+} as const;
 
 /**
  * 安全 S3(codex 安全审计·S2 深化):S2 的授权是**窗口级**单布尔(sessionGranted),
@@ -94,44 +79,21 @@ function gateWithAuth(
  * capability(仅窗口级):它只暴露 id/title/cwd 元数据,而 id 本身无法被利用 ——
  * read/inject/kill 已 capability-gated;保留 list 全窗口视图不损失 agent 上下文。
  */
-function gateWithCapability(
-  tool: AnyMcpTool,
-  getSessionOwner: (id: string) => number | null,
-  getSessionController: (id: string) => string | null,
-): AnyMcpTool {
-  const inner = tool.run;
-  return {
-    ...tool,
-    run: async (input: unknown, ctx: McpCallCtx) => {
-      const sid = (input as { session_id?: unknown } | null)?.session_id;
-      if (typeof sid === 'string' && getSessionOwner(sid) === ctx.ownerWindowId) {
-        const controller = getSessionController(sid);
-        const subject = ctx.callerSubject;
-        const allowed =
-          controller != null && subject != null && controller === subject;
-        if (!allowed) {
-          throw Object.assign(
-            new Error('terminal session not owned by caller'),
-            { code: ERROR_CODES.AGENT_NOT_AUTHORIZED },
-          );
-        }
-      }
-      return inner(input, ctx);
-    },
-  };
-}
-
 export function makeTerminalMcpTools(
   deps: MakeTerminalMcpToolsDeps,
 ): readonly AnyMcpTool[] {
   // list_sessions:仅 auth 门控(窗口级)。
   const gate = (tool: AnyMcpTool): AnyMcpTool =>
-    gateWithAuth(tool, deps.ensureAuthorized);
+    gateWithAuth(tool, deps.ensureAuthorized, TERMINAL_AUTH_GATE);
   // 读/写/杀类:auth → capability → inner(auth 在外先跑,再校验会话归属调用方)。
+  // 跨窗 session_id 不在此拦(无 crossWindowError)→ 内部工具抛 TERMINAL_SESSION_NOT_FOUND。
   const gateOwned = (tool: AnyMcpTool): AnyMcpTool =>
-    gateWithAuth(
-      gateWithCapability(tool, deps.getSessionOwner, deps.getSessionController),
-      deps.ensureAuthorized,
+    gate(
+      gateWithCapability(tool, {
+        getSessionOwner: deps.getSessionOwner,
+        getSessionController: deps.getSessionController,
+        notOwnedMessage: 'terminal session not owned by caller',
+      }),
     );
   return [
     gate(

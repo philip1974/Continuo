@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
@@ -115,6 +115,27 @@ import {
 // panelId ≤256 + .strict(),与 AgentAuthRespondSchema 同型)。
 // Agent Terminal MCP 授权应答 schema 见 ./agent-auth-schema(单列以便测试 import,E146)。
 
+/**
+ * 解析 IPC sender 所在窗口的 windowSeq(explorer.json 里窗口段的稳定键)。持久化边界:一个窗口只能
+ * 读写自己 windowSeq 的段 —— layout:read / layout:write / explorer:write 共用(explorer:write 曾漏接,
+ * 导致单窗陈旧写覆盖别窗段,R7 / codex 复审 R11)。
+ */
+function senderWindowSeqOrThrow(event: IpcMainInvokeEvent): number {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win) {
+    throw Object.assign(new Error('no window'), {
+      code: ERROR_CODES.NO_WINDOW,
+    });
+  }
+  const seq = getWindowSeq(win.id);
+  if (seq == null) {
+    throw Object.assign(new Error('no window seq'), {
+      code: ERROR_CODES.NO_WINDOW_SEQ,
+    });
+  }
+  return seq;
+}
+
 export function registerIpc(): { pluginFsHandles: PluginFsIpcHandles } {
   const userData = app.getPath('userData');
   const explorerFile = path.join(userData, 'explorer.json');
@@ -124,18 +145,7 @@ export function registerIpc(): { pluginFsHandles: PluginFsIpcHandles } {
     'layout:read',
     NoInput,
     async (_input, { event }) => {
-      const win = BrowserWindow.fromWebContents(event.sender);
-      if (!win) {
-        throw Object.assign(new Error('no window'), {
-          code: ERROR_CODES.NO_WINDOW,
-        });
-      }
-      const seq = getWindowSeq(win.id);
-      if (seq == null) {
-        throw Object.assign(new Error('no window seq'), {
-          code: ERROR_CODES.NO_WINDOW_SEQ,
-        });
-      }
+      const seq = senderWindowSeqOrThrow(event);
       const payload = await loadExplorer(explorerFile);
       const entry =
         payload === null ? null : findWindowEntryBySeq(payload.windows, seq);
@@ -150,18 +160,7 @@ export function registerIpc(): { pluginFsHandles: PluginFsIpcHandles } {
     'layout:write',
     LayoutSchema,
     async (json, { event }) => {
-      const win = BrowserWindow.fromWebContents(event.sender);
-      if (!win) {
-        throw Object.assign(new Error('no window'), {
-          code: ERROR_CODES.NO_WINDOW,
-        });
-      }
-      const seq = getWindowSeq(win.id);
-      if (seq == null) {
-        throw Object.assign(new Error('no window seq'), {
-          code: ERROR_CODES.NO_WINDOW_SEQ,
-        });
-      }
+      const seq = senderWindowSeqOrThrow(event);
 
       const layout = LayoutSchema.parse(json);
       // 边界(E89,E67 对偶):LayoutSchema 是 .passthrough() 无序列化大小上限。畸形 renderer/
@@ -242,18 +241,7 @@ export function registerIpc(): { pluginFsHandles: PluginFsIpcHandles } {
       // mergeWritableIntoFull 会把别窗段一并写回 → 单窗陈旧写覆盖别窗 root/tabs/
       // 展开态(R7 曾是真 bug)。按 sender 的真实 seq 过滤 foreign 段,丢弃非自己的窗口
       // entry,既保留自己段的写入又杜绝跨窗 clobber。(codex 复审 loop R11)
-      const win = BrowserWindow.fromWebContents(event.sender);
-      if (!win) {
-        throw Object.assign(new Error('no window'), {
-          code: ERROR_CODES.NO_WINDOW,
-        });
-      }
-      const seq = getWindowSeq(win.id);
-      if (seq == null) {
-        throw Object.assign(new Error('no window seq'), {
-          code: ERROR_CODES.NO_WINDOW_SEQ,
-        });
-      }
+      const seq = senderWindowSeqOrThrow(event);
       const ownOnly = filterWritableSnapshotForWindowSeq(writable, seq);
       await withExplorerFileMutex(async () => {
         const current = await loadExplorer(explorerFile);

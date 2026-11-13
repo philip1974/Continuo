@@ -189,6 +189,16 @@ export interface RpcRequest {
 }
 
 /**
+ * JSON-RPC notification:合法 2.0 消息带 method 但**没有 id** → server 不得响应
+ * (如 client init 完成后发的 `notifications/initialized`)。HTTP 回 202,stdio 静默。
+ */
+export function isRpcNotification(raw: unknown): boolean {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return false;
+  const msg = raw as Record<string, unknown>;
+  return msg['jsonrpc'] === '2.0' && typeof msg['method'] === 'string' && !('id' in msg);
+}
+
+/**
  * 解析未信任的输入为 JSON-RPC 2.0 请求。任何不满足必字段 → null。
  *
  * 本 host 比标准更严:
@@ -722,14 +732,7 @@ export async function createMcpHost(
 
     // MCP notification:JSON-RPC 没 id,server 不响应(202 Accepted)。
     // 例如 'notifications/initialized' 客户端 init 完后发的通知。
-    if (
-      raw !== null &&
-      typeof raw === 'object' &&
-      !Array.isArray(raw) &&
-      (raw as Record<string, unknown>)['jsonrpc'] === '2.0' &&
-      typeof (raw as Record<string, unknown>)['method'] === 'string' &&
-      !('id' in (raw as Record<string, unknown>))
-    ) {
+    if (isRpcNotification(raw)) {
       res.statusCode = 202;
       res.end();
       return;
