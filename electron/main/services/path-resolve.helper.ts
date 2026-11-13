@@ -161,7 +161,7 @@ function stripTrailingSep(p: string): string {
  *
  * 去尾分隔符,让 `s.path + sep` 前缀匹配成立(`/ws/dir/` → `/ws/dir`)。scope 目录尚不存在
  * (ENOENT 等)时回退到 home 展开后的路径(至少把 `~` 展开并记录;真去该目录下操作时其自身
- * realpath 仍会失败,语义不变)。
+ * realpath 仍会失败,语义不变),并换成本平台分隔符(见 catch 内注释)。
  */
 export async function canonicalizeScopePath(rawPath: string): Promise<string> {
   let expanded: string;
@@ -177,6 +177,12 @@ export async function canonicalizeScopePath(rawPath: string): Promise<string> {
   try {
     return stripTrailingSep(await fs.realpath(expanded));
   } catch {
-    return stripTrailingSep(expanded);
+    // 目录尚不存在:realpath 给不出本平台分隔符。Windows 上 `~` 展开是 `<home>` + `/dir` 的拼接,插件
+    // 也可能直接写 `C:/proj/out` —— 不换成 `\` 的话,目录之后被创建时 probe(realpath,全反斜杠)与这条
+    // scope 做 `scope + sep` 前缀匹配永远对不上,弹窗显示的也是混合分隔符。只换分隔符,不折叠 `..`。
+    // POSIX 不动:`\` 是合法文件名字符。
+    return stripTrailingSep(
+      platform() === 'win32' ? expanded.replaceAll('/', '\\') : expanded,
+    );
   }
 }

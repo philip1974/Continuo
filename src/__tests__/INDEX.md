@@ -919,6 +919,10 @@
 
 - [`preload-api.spec.ts`](./scaffold/preload-api.spec.ts)
 
+## [尚不存在的 scope 目录:路径分隔符归一化](./scope-path-native-separators/README.md)
+
+- [`native-separators.spec.ts`](./scope-path-native-separators/native-separators.spec.ts)
+
 ## [scoped-app(per-plugin CoApp 包装)](./scoped-app/README.md)
 
 - [`sandbox-sweep.spec.ts`](./scoped-app/sandbox-sweep.spec.ts)
