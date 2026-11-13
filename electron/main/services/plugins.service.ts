@@ -1,7 +1,11 @@
 // 插件目录扫描 + 文件读取(M-Plugin v4.1,主进程端)。
 // 纯函数风格,便于单测;真正的 IPC 注册在 plugins.ipc.ts。
 
+import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
+import { mkdtemp, cp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type {
   IpcPathScope,
@@ -842,11 +846,6 @@ export function writePluginPathScopes(
 }
 
 // ── v4.5 git URL 安装 ──────────────────────────────────
-
-import { spawn } from 'node:child_process';
-import { mkdtemp, cp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { randomUUID } from 'node:crypto';
 
 // 同 id 主进程 mutation 串行化:install / update / uninstall 共用,防同插件目录的并发写互相踩
 // (审计 #5)。race(R107):卸载此前不走此锁 → 一个窗口卸载、另一窗口安装/更新同 id 时,卸载的

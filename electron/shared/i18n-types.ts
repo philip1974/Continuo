@@ -13,9 +13,6 @@ export const LANG_MAP: Record<Locale, string> = {
   ko: 'ko_KR.UTF-8',
 };
 
-/** 匹配 *.UTF-8 / *.utf8 等 UTF-8 locale 写法。 */
-export const UTF8_LANG_RE = /^[A-Za-z_]+\.UTF-?8$/i;
-
 function isAsciiAlphaOrUnderscore(code: number): boolean {
   return (
     code === 95 ||

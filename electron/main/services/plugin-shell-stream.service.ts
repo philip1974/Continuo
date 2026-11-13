@@ -289,8 +289,6 @@ export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
   );
 }
 
-export const DEFAULT_TIMEOUT_MS_FOR_TEST = DEFAULT_TIMEOUT_MS;
-export const MAX_TIMEOUT_MS_FOR_TEST = MAX_TIMEOUT_MS;
 // 边界(E230)测试用:并发流上限常量。
 export const MAX_ACTIVE_STREAMS_GLOBAL_FOR_TEST = MAX_ACTIVE_STREAMS_GLOBAL;
 export const MAX_ACTIVE_STREAMS_PER_SENDER_FOR_TEST = MAX_ACTIVE_STREAMS_PER_SENDER;

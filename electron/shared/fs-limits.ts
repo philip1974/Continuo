@@ -11,7 +11,6 @@ export const FS_PATH_MAX = 8192; // 路径字符串上限(与 fs.ipc fsPath / pl
 // 边界(E63 / E314 renderer 对偶):git blob sha 是插件直传 IPC 入 git cat-file argv。固定 hex 形态 +
 // 长度上限(4-64 hex,git 缩写到完整 SHA-1/SHA-256),挡超长 sha 触发 spawn E2BIG / argv 放大。
 // main(plugin-fs readGitBlob)+ renderer(scoped-app readGitBlob 发 IPC 前预检)单一来源。
-export const GIT_BLOB_SHA_RE = /^[0-9a-fA-F]{4,64}$/;
 /** sha 是否合法 git blob 形态(有效性谓词:非 string → false → 无效 → 调用方拒). */
 export function isValidGitBlobSha(sha: unknown): boolean {
   if (typeof sha !== 'string' || sha.length < 4 || sha.length > 64) {

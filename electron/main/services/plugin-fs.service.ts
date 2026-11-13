@@ -854,6 +854,3 @@ export async function sweepStaleTrashAtStartup(
   // PathScopeRegistry intentionally does not expose all pluginIds yet.
   // Startup sweeping is a v0.1 no-op; atomicReplace sweeps the active parent.
 }
-
-export const TRASH_TTL_MS_FOR_TEST = TRASH_TTL_MS;
-export const TRASH_PREFIX_FOR_TEST = TRASH_PREFIX;
