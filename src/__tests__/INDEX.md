@@ -618,6 +618,10 @@
 
 - [`keybindings-tab-content.spec.tsx`](./keybindings-tab-content/keybindings-tab-content.spec.tsx)
 
+## [keyed-registry-base(重构:Map 型贡献 registry 的共享基类)](./keyed-registry-base/README.md)
+
+- [`keyed-registry.spec.ts`](./keyed-registry-base/keyed-registry.spec.ts)
+
 ## [latest-wins](./latest-wins/README.md)
 
 - [`latest-wins.spec.ts`](./latest-wins/latest-wins.spec.ts)

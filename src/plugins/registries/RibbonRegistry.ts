@@ -3,7 +3,7 @@
 
 import type { ReactNode } from 'react';
 import type { Disposable } from '../types';
-import { assertRegistryCapacity } from './registry-capacity';
+import { KeyedRegistry, snapshotByPriority } from './keyed-registry';
 import { isSpecObject } from './spec-guard';
 
 export interface RibbonActionSpec {
@@ -14,7 +14,6 @@ export interface RibbonActionSpec {
   readonly priority?: number;    // 升序排,默认 100
 }
 
-type Listener = () => void;
 const EMPTY_RIBBON_SNAPSHOT: readonly RibbonActionSpec[] = [];
 
 // 边界(E49,E35/E36/E37/E40/E48 兄弟 registry):register 接受插件 RibbonActionSpec 无运行时校验。
@@ -51,36 +50,16 @@ function validateRibbonActionSpec(spec: RibbonActionSpec): void {
   }
 }
 
-export class RibbonRegistry {
-  private items = new Map<string, RibbonActionSpec>();
-  private listeners = new Set<Listener>();
+export class RibbonRegistry extends KeyedRegistry<RibbonActionSpec> {
   private cachedAll: readonly RibbonActionSpec[] | null = null;
+
+  constructor() {
+    super('ribbon-registry');
+  }
 
   register(spec: RibbonActionSpec): Disposable {
     validateRibbonActionSpec(spec); // 边界(E49):注册前校验长度/priority finite/onClick 为函数
-    // 边界(E236):注册前容量守卫(共享 helper),超限抛、不入表
-    assertRegistryCapacity('ribbon-registry', this.items.size, this.items.has(spec.id));
-    if (this.items.has(spec.id)) {
-      console.warn(
-        `[ribbon-registry] id "${spec.id}" 已注册,后注册赢覆盖前者`,
-      );
-    }
-    this.items.set(spec.id, spec);
-    this.invalidateSnapshotCache();
-    this.notify();
-
-    let disposed = false;
-    return {
-      dispose: () => {
-        if (disposed) return;
-        disposed = true;
-        if (this.items.get(spec.id) === spec) {
-          this.items.delete(spec.id);
-          this.invalidateSnapshotCache();
-          this.notify();
-        }
-      },
-    };
+    return this.registerKeyed(spec.id, spec);
   }
 
   getAll(): readonly RibbonActionSpec[] {
@@ -90,42 +69,11 @@ export class RibbonRegistry {
       return EMPTY_RIBBON_SNAPSHOT;
     }
 
-    const items = new Array<RibbonActionSpec>(this.items.size);
-    let i = 0;
-    let prevPriority = -Infinity;
-    let sorted = true;
-    for (const item of this.items.values()) {
-      const priority = item.priority ?? 100;
-      if (priority < prevPriority) sorted = false;
-      prevPriority = priority;
-      items[i++] = item;
-    }
-    if (items.length > 1 && !sorted) {
-      items.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
-    }
-    this.cachedAll = items;
-    return items;
+    this.cachedAll = snapshotByPriority(this.items);
+    return this.cachedAll;
   }
 
-  /**
-   * race(R52,R51 同族):按 id 取当前 live ribbon action(已 unregister 返 undefined)。NavRailButton
-   * 的 onClick 捕获了 RibbonActionSpec,插件 disable/reload 同步 unregister 后、到 React 重渲移除
-   * 按钮前,旧 DOM handler 仍可触发 → click 时用本方法从 registry 重查再执行,死 action 静默忽略。
-   */
-  get(id: string): RibbonActionSpec | undefined {
-    return this.items.get(id);
-  }
-
-  subscribe(listener: Listener): () => void {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
-  }
-
-  private notify(): void {
-    for (const l of this.listeners) l();
-  }
-
-  private invalidateSnapshotCache(): void {
+  protected invalidateSnapshotCache(): void {
     this.cachedAll = null;
   }
 }

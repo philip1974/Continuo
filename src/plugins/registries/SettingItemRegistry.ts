@@ -6,7 +6,7 @@
 // 内置「通用 / 编辑器」等 tab 自动消费 category 匹配的 items。
 
 import type { Disposable } from '../types';
-import { assertRegistryCapacity } from './registry-capacity';
+import { KeyedRegistry, snapshotByPriority } from './keyed-registry';
 import { isSpecObject } from './spec-guard';
 
 export type SettingItemType = 'boolean' | 'select' | 'number' | 'text';
@@ -268,40 +268,19 @@ function validateSettingItemSpec(spec: SettingItemSpec): void {
   }
 }
 
-type Listener = () => void;
 const EMPTY_SETTING_ITEM_SNAPSHOT: readonly SettingItemSpec[] = [];
 
-export class SettingItemRegistry {
-  private items = new Map<string, SettingItemSpec>();
-  private listeners = new Set<Listener>();
+export class SettingItemRegistry extends KeyedRegistry<SettingItemSpec> {
   private cachedAll: readonly SettingItemSpec[] | null = null;
   private cachedByCategory = new Map<string, readonly SettingItemSpec[]>();
 
+  constructor() {
+    super('setting-item-registry');
+  }
+
   register(spec: SettingItemSpec): Disposable {
     validateSettingItemSpec(spec); // 边界(E36):注册前校验长度/枚举/数值/default 类型
-    // 边界(E236):注册前容量守卫(共享 helper),超限抛、不入表
-    assertRegistryCapacity('setting-item-registry', this.items.size, this.items.has(spec.id));
-    if (this.items.has(spec.id)) {
-      console.warn(
-        `[setting-item-registry] id "${spec.id}" 已注册,后注册赢覆盖前者`,
-      );
-    }
-    this.items.set(spec.id, spec);
-    this.invalidateSnapshotCache();
-    this.notify();
-
-    let disposed = false;
-    return {
-      dispose: () => {
-        if (disposed) return;
-        disposed = true;
-        if (this.items.get(spec.id) === spec) {
-          this.items.delete(spec.id);
-          this.invalidateSnapshotCache();
-          this.notify();
-        }
-      },
-    };
+    return this.registerKeyed(spec.id, spec);
   }
 
   getAll(): readonly SettingItemSpec[] {
@@ -311,31 +290,8 @@ export class SettingItemRegistry {
       return EMPTY_SETTING_ITEM_SNAPSHOT;
     }
 
-    const items = new Array<SettingItemSpec>(this.items.size);
-    let i = 0;
-    let prevPriority = -Infinity;
-    let sorted = true;
-    for (const item of this.items.values()) {
-      const priority = item.priority ?? 100;
-      if (priority < prevPriority) sorted = false;
-      prevPriority = priority;
-      items[i++] = item;
-    }
-    if (items.length > 1 && !sorted) {
-      items.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
-    }
-    this.cachedAll = items;
-    return items;
-  }
-
-  /**
-   * race(R58,R50 同族):按 id 取当前 live setting item(已 unregister 返 undefined)。SettingItemRow
-   * 控件 onChange/reset 按 spec.id 写 settings values;item 在用户操作前被插件 disable/reload
-   * unregister 后旧控件仍可把 override 写到已不存在的 setting id(localStorage 残留 + 同 id 重注册
-   * 意外继承)。写前用本方法复查 setting 仍注册,已移除则跳过写。
-   */
-  get(id: string): SettingItemSpec | undefined {
-    return this.items.get(id);
+    this.cachedAll = snapshotByPriority(this.items);
+    return this.cachedAll;
   }
 
   /** 取某 category 下的所有 items(已排序),供 CategoryTabContent 使用. */
@@ -375,16 +331,7 @@ export class SettingItemRegistry {
     return items;
   }
 
-  subscribe(listener: Listener): () => void {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
-  }
-
-  private notify(): void {
-    for (const l of this.listeners) l();
-  }
-
-  private invalidateSnapshotCache(): void {
+  protected invalidateSnapshotCache(): void {
     this.cachedAll = null;
     this.cachedByCategory.clear();
   }

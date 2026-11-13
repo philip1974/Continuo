@@ -15,7 +15,7 @@
 import type { ReactNode } from 'react';
 import type { FileEntry } from '../../../electron/shared/fs-entry';
 import type { Disposable } from '../types';
-import { assertRegistryCapacity } from './registry-capacity';
+import { KeyedRegistry, snapshotByPriority } from './keyed-registry';
 import { isSpecObject } from './spec-guard';
 
 export interface ExplorerContextMenuItemContext {
@@ -49,7 +49,6 @@ export interface ExplorerContextMenuItemSpec {
   ) => void | Promise<void>;
 }
 
-type Listener = () => void;
 
 // 边界(E48,E35/E36/E37/E40 兄弟 registry):register 接受插件右键菜单 spec 无运行时校验。id/label/
 // group 无长度上限,priority 可 NaN/Infinity,when/fn 也未确认是函数。畸形项进 getAll().sort() +
@@ -107,36 +106,16 @@ function validateContextMenuItemSpec(spec: ExplorerContextMenuItemSpec): void {
   }
 }
 
-export class ExplorerContextMenuRegistry {
-  private items = new Map<string, ExplorerContextMenuItemSpec>();
-  private listeners = new Set<Listener>();
+export class ExplorerContextMenuRegistry extends KeyedRegistry<ExplorerContextMenuItemSpec> {
   private cachedAll: readonly ExplorerContextMenuItemSpec[] | null = null;
+
+  constructor() {
+    super('explorer-context-menu');
+  }
 
   register(spec: ExplorerContextMenuItemSpec): Disposable {
     validateContextMenuItemSpec(spec); // 边界(E48):注册前校验长度/priority finite/when·fn 为函数
-    // 边界(E236):注册前容量守卫(共享 helper),超限抛、不入表
-    assertRegistryCapacity('explorer-context-menu', this.items.size, this.items.has(spec.id));
-    if (this.items.has(spec.id)) {
-      console.warn(
-        `[explorer-context-menu] id "${spec.id}" 已注册,后注册赢覆盖前者`,
-      );
-    }
-    this.items.set(spec.id, spec);
-    this.invalidateSnapshotCache();
-    this.notify();
-
-    let disposed = false;
-    return {
-      dispose: () => {
-        if (disposed) return;
-        disposed = true;
-        if (this.items.get(spec.id) === spec) {
-          this.items.delete(spec.id);
-          this.invalidateSnapshotCache();
-          this.notify();
-        }
-      },
-    };
+    return this.registerKeyed(spec.id, spec);
   }
 
   getAll(): readonly ExplorerContextMenuItemSpec[] {
@@ -146,43 +125,11 @@ export class ExplorerContextMenuRegistry {
       return EMPTY_EXPLORER_CONTEXT_MENU_SNAPSHOT;
     }
 
-    const items = new Array<ExplorerContextMenuItemSpec>(this.items.size);
-    let i = 0;
-    let prevPriority = -Infinity;
-    let sorted = true;
-    for (const item of this.items.values()) {
-      const priority = item.priority ?? 100;
-      if (priority < prevPriority) sorted = false;
-      prevPriority = priority;
-      items[i++] = item;
-    }
-    if (items.length > 1 && !sorted) {
-      items.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
-    }
-    this.cachedAll = items;
-    return items;
+    this.cachedAll = snapshotByPriority(this.items);
+    return this.cachedAll;
   }
 
-  /**
-   * race(R54,R51/R52/R53 同族):按 id 取当前 live 右键菜单项(已 unregister 返 undefined)。
-   * ContextMenu 在打开时把 spec 缓存进 pluginGroups,onSelect 捕获 item.fn;菜单打开期间插件
-   * disable/reload 同步 unregister 后旧菜单仍可触发 → select 时用本方法重查 + 用当前 ctx 复检
-   * when 再执行,死项 / 当前 ctx 下不可见项静默忽略。
-   */
-  get(id: string): ExplorerContextMenuItemSpec | undefined {
-    return this.items.get(id);
-  }
-
-  subscribe(listener: Listener): () => void {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
-  }
-
-  private notify(): void {
-    for (const l of this.listeners) l();
-  }
-
-  private invalidateSnapshotCache(): void {
+  protected invalidateSnapshotCache(): void {
     this.cachedAll = null;
   }
 }

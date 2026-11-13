@@ -3,7 +3,7 @@
 
 import type { ReactNode } from 'react';
 import type { Disposable } from '../types';
-import { assertRegistryCapacity } from './registry-capacity';
+import { KeyedRegistry } from './keyed-registry';
 import { isSpecObject } from './spec-guard';
 
 export interface PanelSpec {
@@ -66,40 +66,18 @@ function validatePanelSpec(spec: PanelSpec): void {
   }
 }
 
-type Listener = () => void;
 const EMPTY_PANEL_SNAPSHOT: readonly PanelSpec[] = [];
 
-export class PanelRegistry {
-  private items = new Map<string, PanelSpec>();
-  private listeners = new Set<Listener>();
+export class PanelRegistry extends KeyedRegistry<PanelSpec> {
   private cachedAll: readonly PanelSpec[] | null = null;
+
+  constructor() {
+    super('panel-registry', 'type');
+  }
 
   register(spec: PanelSpec): Disposable {
     validatePanelSpec(spec); // 边界(E37):注册前校验 type/title/titleKey 长度非空 + factory 为函数
-    // 边界(E236):注册前容量守卫(共享 helper),超限抛、不入表(Panel 以 type 为 key)
-    assertRegistryCapacity('panel-registry', this.items.size, this.items.has(spec.type));
-    if (this.items.has(spec.type)) {
-      console.warn(
-        `[panel-registry] type "${spec.type}" 已注册,后注册赢覆盖前者`,
-      );
-    }
-    this.items.set(spec.type, spec);
-    this.invalidateSnapshotCache();
-    this.notify();
-
-    let disposed = false;
-    return {
-      dispose: () => {
-        if (disposed) return;
-        disposed = true;
-        // 仅当当前注册的还是 spec 本身才删(防被后注册者顶替后误删)
-        if (this.items.get(spec.type) === spec) {
-          this.items.delete(spec.type);
-          this.invalidateSnapshotCache();
-          this.notify();
-        }
-      },
-    };
+    return this.registerKeyed(spec.type, spec);
   }
 
   getAll(): readonly PanelSpec[] {
@@ -116,30 +94,11 @@ export class PanelRegistry {
     return items;
   }
 
-  /**
-   * race(R59,R55-R58 同族):按 type 取当前 live panel spec(已 unregister 返 undefined)。
-   * DockShell 的 components map 从 useRegistry 快照闭包捕获 spec.factory;panel type 被插件
-   * disable/reload unregister 后、到订阅重渲前,dockview 渲染该 component 仍会调旧 factory
-   * 实例化已移除插件代码。component wrapper 改为只捕获 type,渲染时用本方法查 live factory。
-   */
-  get(type: string): PanelSpec | undefined {
-    return this.items.get(type);
-  }
-
   list(): readonly PanelSpec[] {
     return this.getAll();
   }
 
-  subscribe(listener: Listener): () => void {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
-  }
-
-  private notify(): void {
-    for (const l of this.listeners) l();
-  }
-
-  private invalidateSnapshotCache(): void {
+  protected invalidateSnapshotCache(): void {
     this.cachedAll = null;
   }
 }
