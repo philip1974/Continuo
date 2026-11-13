@@ -284,25 +284,41 @@ describe('terminal.await_stop_hook', () => {
     ).toBe(true);
   });
 
-  it('should resolve cc and codex stop hooks, map fields, handle raw, unlink files, cap buffer, and cleanup old entries', async () => {
-    const capDir = await makeDoneDir();
-    for (let i = 0; i < DONE_BUFFER_CAP + 1; i += 1) {
-      await writeFixture(capDir, {
-        runner: 'cc',
-        windowId: 99,
-        cliSessionId: `cli-${i}`,
-        ns: `${i}`,
-        payload: { session_id: `cli-${i}`, cwd: '/other', event: 'stop' },
-      });
+  // 条数上限可注入(默认 500)。此前这段塞在下一个用例里:顺序写 501 个文件再整目录读入,却没有任何
+  // 断言;在慢盘(Windows runner)上把那个用例拖过 5s 超时,超时后用例体仍在写文件,afterEach 的清理
+  // 再报 ENOTEMPTY。用小上限验证同一行为,并真的断言它。
+  it('buffer 条数超上限 → FIFO 淘汰最旧的一条并删除其文件,其余按序投递', async () => {
+    const doneDir = await makeDoneDir();
+    const files: string[] = [];
+    for (let i = 0; i < 4; i += 1) {
+      files.push(
+        await writeFixture(doneDir, {
+          runner: 'cc',
+          windowId: 4,
+          cliSessionId: `cli-${i}`,
+          ns: `${i}`,
+          payload: { session_id: `cli-${i}`, cwd: '/repo', event: 'stop' },
+        }),
+      );
     }
-    const capBroker = createHookFileBroker(capDir, {
-      maxEntries: DONE_BUFFER_CAP,
+    const broker = createHookFileBroker(doneDir, {
+      maxEntries: 3,
       maxAgeMs: DONE_ENTRY_MAX_AGE_MS,
+      cleanupIntervalMs: 60_000,
       watchFactory: noopWatchFactory,
     });
-    await capBroker.start();
-    brokers.push(capBroker);
+    brokers.push(broker);
+    await broker.start();
 
+    await waitForFileRemoved(files[0]!);
+    for (const expected of ['cli-1', 'cli-2', 'cli-3']) {
+      await expect(
+        broker.awaitNext({ windowId: 4, runner: 'cc', cwd: '/repo', timeoutMs: 1_000 }),
+      ).resolves.toMatchObject({ payload: { cliSessionId: expected } });
+    }
+  });
+
+  it('should resolve cc and codex stop hooks, map fields, handle raw, unlink files, and cleanup old entries', async () => {
     const doneDir = await makeDoneDir();
     const stale = await writeFixture(doneDir, {
       runner: 'cc',

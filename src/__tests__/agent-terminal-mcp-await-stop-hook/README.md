@@ -27,7 +27,7 @@
 - 默认 `include_raw=false` 时 output 不含 `raw`。
 - `include_raw=true` 时 output 含 `raw`。
 - 命中文件被 `unlink`。
-- buffer cap 为 500 时触发 FIFO drop。
+- buffer 条数超过上限(默认 500,可注入)时 FIFO drop:最旧的一条被淘汰且其文件被删除,其余按序投递。
 - age 超过 10 分钟时触发 cleanup。
 - Codex variant:
   - fixture JSONL 文件名为 `codex_4_<ns>.jsonl`。
