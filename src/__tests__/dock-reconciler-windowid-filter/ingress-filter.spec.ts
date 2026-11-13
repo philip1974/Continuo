@@ -54,8 +54,6 @@ beforeEach(async () => {
   mocks.unsubscribe.mockReset();
   useTerminalStore.setState({
     sessions: [],
-    activeId: null,
-    customTitles: new Map(),
   });
   const sync = await import('../../shell/dock/TerminalSessionsSync');
   sync._resetTerminalDropWarningsForTest();

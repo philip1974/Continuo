@@ -51,18 +51,15 @@ export function TerminalPanelView(
       };
     }),
   );
-  const customTitle = useTerminalStore((s) => s.customTitles.get(sessionId));
   const derivedTitle = useMemo(
     () =>
       terminalPanelTitle({
         sessionId,
-        customTitle,
         sessionTitle,
         fallbackTitle: props.params.title,
         originHint: sessionOriginHint ?? props.params.originHint,
       }),
     [
-      customTitle,
       props.params.originHint,
       props.params.title,
       sessionOriginHint,

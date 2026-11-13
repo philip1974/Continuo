@@ -39,8 +39,6 @@ beforeEach(() => {
   mocks.onSessionsChanged.mockClear();
   useTerminalStore.setState({
     sessions: [],
-    activeId: null,
-    customTitles: new Map(),
   });
 });
 

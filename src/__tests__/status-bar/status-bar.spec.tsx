@@ -53,7 +53,7 @@ beforeEach(() => {
   useEditorStore.setState({ tabs: [], activeTabId: null });
   useWorkspaceStore.setState({ root: null, recentRoots: [] });
   useLayoutUiStore.setState({ sidebarOpen: true, sidebarWidth: 280 });
-  useTerminalStore.setState({ sessions: [], activeId: null });
+  useTerminalStore.setState({ sessions: [] });
   // 用类型断言覆盖 readonly,测试隔离需要(每 it 用全新 registry)
   (coApp as { statusBar: StatusBarRegistry }).statusBar =
     new StatusBarRegistry();
@@ -213,7 +213,6 @@ describe('StatusBar — agent 计数', () => {
           ownerWindowId: 1,
         },
       ],
-      activeId: 't1',
     });
     const { container } = render(<StatusBar />);
     expect(container.textContent).not.toMatch(/\d+ agent/);
@@ -244,7 +243,6 @@ describe('StatusBar — agent 计数', () => {
           ownerWindowId: 1,
         },
       ],
-      activeId: 't1',
     });
     const { container } = render(<StatusBar />);
     // i18n(I19):agent 计数走 catalog,默认 locale=zh 渲染「1 个 agent」。用 locale-无关
@@ -530,7 +528,6 @@ describe('StatusBar — agent 撤销', () => {
           ownerWindowId: 1,
         },
       ],
-      activeId: 't1',
     });
     useAgentAuthStore.setState({ pending: null, sessionGranted: true });
 
@@ -566,7 +563,6 @@ describe('StatusBar — agent 撤销', () => {
           ownerWindowId: 1,
         },
       ],
-      activeId: 't1',
     });
     useAgentAuthStore.setState({ pending: null, sessionGranted: true });
 
@@ -591,7 +587,6 @@ describe('StatusBar — agent 撤销', () => {
       sessions: [
         { id: 't1', title: 'a', cwd: '/', originHint: 'agent', createdAt: 0, exitCode: null, ownerWindowId: 1 },
       ],
-      activeId: 't1',
     });
     useAgentAuthStore.setState({ pending: null, sessionGranted: true });
 
@@ -617,7 +612,6 @@ describe('StatusBar — agent 撤销', () => {
       sessions: [
         { id: 't1', title: 'a', cwd: '/', originHint: 'agent', createdAt: 0, exitCode: null, ownerWindowId: 1 },
       ],
-      activeId: 't1',
     });
     useAgentAuthStore.setState({ pending: null, sessionGranted: true });
 
@@ -653,7 +647,6 @@ describe('StatusBar — agent 撤销', () => {
       sessions: [
         { id: 't1', title: 'a', cwd: '/', originHint: 'agent', createdAt: 0, exitCode: null, ownerWindowId: 1 },
       ],
-      activeId: 't1',
     });
     useAgentAuthStore.setState({ pending: null, sessionGranted: true });
 

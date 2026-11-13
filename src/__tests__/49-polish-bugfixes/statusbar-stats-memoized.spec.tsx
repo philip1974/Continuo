@@ -69,7 +69,7 @@ beforeEach(() => {
   useEditorStore.setState({ tabs: [], activeTabId: null });
   useWorkspaceStore.setState({ root: null, recentRoots: [] });
   useLayoutUiStore.setState({ sidebarOpen: true, sidebarWidth: 280 });
-  useTerminalStore.setState({ sessions: [], activeId: null });
+  useTerminalStore.setState({ sessions: [] });
   (coApp as { statusBar: StatusBarRegistry }).statusBar = new StatusBarRegistry();
   computeTextStatsSpy.mockClear();
 });
@@ -104,7 +104,6 @@ describe('打磨 R1 — StatusBar 文本统计 memo 化', () => {
             ownerWindowId: 1,
           },
         ],
-        activeId: 't1',
       });
     });
 

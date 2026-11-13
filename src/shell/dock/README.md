@@ -7,7 +7,7 @@ The dock layer wraps [`dockview-react`](https://dockview.dev) and keeps it in sy
 | File | Role |
 |---|---|
 | `DockShell.tsx` | Mounts `<DockviewReact>`, wires `panelComponents` (the React components dockview will instantiate for each `addPanel({ component })`), and exposes its `DockviewApi` through `dock-api-ref.ts`. |
-| `DockReconciler.ts` | `reconcileTerminalPanels(api, { previousSessions, nextSessions, customTitles })` — the 3-phase diff. Plus the React-side `useDockReconciler(api)` hook that subscribes to the terminal store. |
+| `DockReconciler.ts` | `reconcileTerminalPanels(api, { previousSessions, nextSessions })` — the 3-phase diff. Plus the React-side `useDockReconciler(api)` hook that subscribes to the terminal store. |
 | `wrap-panel-close.ts` | Patches every panel's `api.close` to (a) mark it for the EXIT animation via `closing.store`, (b) cancel any in-flight `spawnLeaf` PTY spawns, (c) tell main to remove the PTY, (d) call the original `close` after `EXIT_DURATION_MS`. Idempotent per panel. |
 | `terminal-panel-id.ts` | Stable mapping `panelIdFor(sessionId)` ↔ `sessionIdFromPanel(panel)` and an `isTerminalPanelId` predicate. |
 | `layout.default.ts` | The initial dockview layout used on first launch (when no `explorer.json` per-window layout exists). |
@@ -22,7 +22,7 @@ The dock layer wraps [`dockview-react`](https://dockview.dev) and keeps it in sy
 
 1. **Add panels** for sessions in `next` but not `prev`. Position: right of the last existing terminal panel (or first if none). Pending-focus (set via `setPendingFocus(sessionId)` by user paths like Cmd+T) gets consumed and the new panel auto-activates; otherwise focus snaps back to whichever panel was active *before* the add (so an agent spawning a panel doesn't steal focus from a user). A 5-second TTL prevents stale pending-focus from poisoning the next unrelated session.
 2. **Close panels** for sessions in `prev` but not `next`. Goes through `markPanelCloseSuppressed(panelId) → panel.api.close()` so the close path knows this isn't a user-driven close (no PTY teardown — the session is already gone from the store).
-3. **Rename** panels whose `customTitles` entry changed.
+3. **Retitle** panels whose session title (from main) changed.
 
 That's it. No layout manipulation, no panel reordering — the store is the source of session existence, dockview owns the layout the user dragged into place.
 

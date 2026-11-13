@@ -18,8 +18,6 @@ export { markPanelCloseSuppressed };
 export interface ReconcileInput {
   previousSessions: readonly TerminalSession[];
   nextSessions: readonly TerminalSession[];
-  previousCustomTitles?: ReadonlyMap<string, string>;
-  customTitles?: ReadonlyMap<string, string>;
 }
 
 // pendingFocus 由 user 路径(Cmd+T / + 按钮)在 coApi.terminal.create resolve 后
@@ -79,12 +77,7 @@ export function reconcileTerminalPanels(
   api: DockviewApi,
   input: ReconcileInput,
 ): void {
-  if (
-    input.previousSessions === input.nextSessions &&
-    input.previousCustomTitles === input.customTitles
-  ) {
-    return;
-  }
+  if (input.previousSessions === input.nextSessions) return;
 
   const prevById = sessionsById(input.previousSessions);
   const nextById = sessionsById(input.nextSessions);
@@ -158,7 +151,7 @@ export function reconcileTerminalPanels(
       api.addPanel({
         id: panelId,
         component: TERMINAL_PANEL_TYPE,
-        title: deriveTitle(session, input.customTitles),
+        title: deriveTitle(session),
         params: {
           sessionId: session.id,
           originHint: session.originHint,
@@ -186,7 +179,7 @@ export function reconcileTerminalPanels(
 
   for (const session of input.nextSessions) {
     if (!prevById.has(session.id)) continue;
-    const title = deriveTitle(session, input.customTitles);
+    const title = deriveTitle(session);
     const panel = api.getPanel(panelIdFor(session.id));
     if (!panel) continue;
     if (panel.api.title !== title) {
@@ -212,7 +205,6 @@ export function useDockReconciler(api: DockviewApi | null): void {
     reconcileTerminalPanels(api, {
       previousSessions: [],
       nextSessions: initial.sessions,
-      customTitles: initial.customTitles,
     });
     previousSessionsRef.current = initial.sessions;
   }, [api]);
@@ -220,29 +212,21 @@ export function useDockReconciler(api: DockviewApi | null): void {
   useEffect(() => {
     return useTerminalStore.subscribe((state) => {
       const prev = previousSessionsRef.current;
-      const prevTitles = previousCustomTitlesRef.current;
-      if (state.sessions === prev && state.customTitles === prevTitles) return;
+      if (state.sessions === prev) return;
 
       const dockApi = currentApiRef.current;
       if (dockApi) {
         reconcileTerminalPanels(dockApi, {
           previousSessions: prev,
           nextSessions: state.sessions,
-          previousCustomTitles: prevTitles,
-          customTitles: state.customTitles,
         });
       }
       previousSessionsRef.current = state.sessions;
-      previousCustomTitlesRef.current = state.customTitles;
     });
     // 仅 mount 一次订阅,deps 内部用 ref 读最新值。
      
   }, []);
 }
-
-const previousCustomTitlesRef: { current: ReadonlyMap<string, string> } = {
-  current: new Map(),
-};
 
 export interface HandleTerminalPanelRemovedInput {
   panel: Pick<IDockviewPanel, 'params'> & {
@@ -289,13 +273,9 @@ function findLastTerminalPanelId(api: DockviewApi): string | null {
   return lastId;
 }
 
-function deriveTitle(
-  session: TerminalSession,
-  customTitles?: ReadonlyMap<string, string>,
-): string {
+function deriveTitle(session: TerminalSession): string {
   return terminalPanelTitle({
     sessionId: session.id,
-    customTitle: customTitles?.get(session.id),
     sessionTitle: session.title,
     originHint: session.originHint,
   });

@@ -34,13 +34,13 @@ function makeApi() {
 
 beforeEach(() => {
   __resetReconcilerForTest();
-  useTerminalStore.setState({ sessions: [], customTitles: new Map() });
+  useTerminalStore.setState({ sessions: [] });
 });
 
 describe('race(R26) — dock api 重建后终端须全量重建', () => {
   it('api 变更(新空 dock)+ store sessions 不变 → 现有 session 在新 api 重建', () => {
     const s = makeSession('user-1', { originHint: 'user', createdAt: 1 });
-    useTerminalStore.setState({ sessions: [s], customTitles: new Map() });
+    useTerminalStore.setState({ sessions: [s] });
 
     const api1 = makeApi();
     const { rerender } = renderHook(
@@ -68,7 +68,6 @@ describe('race(R26) — dock api 重建后终端须全量重建', () => {
         makeSession('a', { createdAt: 1 }),
         makeSession('b', { createdAt: 2 }),
       ],
-      customTitles: new Map(),
     });
     const api1 = makeApi();
     const { rerender } = renderHook(

@@ -56,7 +56,7 @@ beforeEach(() => {
   useEditorStore.setState({ tabs: [], activeTabId: null });
   useWorkspaceStore.setState({ root: null, recentRoots: [] });
   useLayoutUiStore.setState({ sidebarOpen: true, sidebarWidth: 280 });
-  useTerminalStore.setState({ sessions: [], activeId: null });
+  useTerminalStore.setState({ sessions: [] });
   (coApp as { statusBar: StatusBarRegistry }).statusBar = new StatusBarRegistry();
 });
 

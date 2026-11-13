@@ -444,9 +444,8 @@ export function FolderTree({ root }: { root: string }) {
         void revealPathOrNotify(path);
       },
       onOpenInTerminal: (dir: string) => {
-        // 新建 terminal session,cwd 设到该目录;sessions_changed 推送会自动
-        // 触发 TerminalPanel 切到新 session(activeId 设)。打开 dockview
-        // terminal panel 让用户立即看到。
+        // 新建 terminal session,cwd 设到该目录;sessions_changed 推送后 DockReconciler 为它建
+        // dockview terminal panel 并聚焦,让用户立即看到。
         // COLORFGBG 让 P10k 等 prompt 框架启动时检测到当前主题亮度
         // —— 已在跑的 PTY 不会因主题切换而重渲。
         void (async () => {

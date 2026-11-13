@@ -1,7 +1,9 @@
 # terminal-store (M-Terminal Step T3 + Agent Terminal MCP P1)
 
 行为契约:**Terminal sessions 在 renderer 端是镜像,真相源在 main**。
-store 只负责接收 main 推的 snapshot + 维护纯 UI 状态(activeId)。
+store 只负责接收 main 推的 snapshot(整体替换)。「哪个终端处于活动状态」由 dockview 的活动 panel 决定,
+store 不记;也没有 renderer 侧的改名(此前的 activeId / setActive / renameSession / customTitles 没有任何
+UI 入口,已删除)。
 所有 mutation(add / remove / setExited)由 main 主动推快照触发,renderer **不**直接改 sessions。
 
 > 配套:[doc/17-agent-terminal-mcp.md](../../../doc/17-agent-terminal-mcp.md) §3, §9
@@ -11,7 +13,7 @@ store 只负责接收 main 推的 snapshot + 维护纯 UI 状态(activeId)。
 
 | 文件 | 职责 |
 |---|---|
-| `src/stores/terminal.store.ts` | sessions(镜像)+ activeId + replaceSnapshot / setActive + nextActiveAfterClose 纯函数 |
+| `src/stores/terminal.store.ts` | sessions(镜像)+ replaceSnapshot + ingress 过滤 / 索引等纯函数 |
 
 ## TerminalSession 模型
 
@@ -40,35 +42,8 @@ INV-2:`ownerWindowId` 创建后不可变。main service 主题锁定 add/getAll/
 
 ### `replaceSnapshot(newSessions)` ← 接收 main 推的快照
 
-核心 — 必须保留旧的"关活跃 → 切下一个/前一个"切换语义,因为 main 不知道
-renderer 现在 active 是哪个,只推完整 sessions 列表。算法:
-
-1. 计算被移除的 ids = `oldSessions \ newSessions`
-2. 对每个被移除的 id,**按 oldSessions 顺序**应用 `nextActiveAfterClose` 累计
-3. 最后 sessions 字段直接用 newSessions 覆盖(顺序以 main 为准)
-
-具体 case:
-- 旧 active 仍在新 snapshot 中 → activeId 不变
-- 旧 active 被移除 → 切下一个(在 oldSessions 顺序里);若被移除的是尾部,切前一个
-- 所有 sessions 移除 → activeId = null
-- 新增 session → activeId 不变(新 session 在末尾,需调用方显式 setActive 切过去)
-- 仅 exitCode 等字段变化 → activeId 不变,sessions 用新对象引用
-
-### `setActive(id)` ← UI 切换 tab
-
-只改 activeId,不验证 id 是否在 sessions 中(允许"先 setActive 再等 snapshot 推"的 race)。
-
-### `nextActiveAfterClose(sessions, activeId, closingId)` 纯函数(保留)
-
-仅供 replaceSnapshot 内部使用,行为不变:
-- 关 head 活跃 → 切下一个
-- 关 mid 活跃 → 切下一个
-- 关 tail 活跃 → 切前一个
-- 关非活跃 → active 不变
-- 关唯一 → activeId null
-- 关不存在 id → 状态不变(返回原 sessions 引用)
-
-仍 export 是为了保持纯函数测试面 + 给将来其它 close 流程复用。
+- 用 main 推来的列表整体替换 `sessions`(顺序以 main 为准;字段变化即新对象)
+- 同一个数组引用、或新旧都为空 → 不通知订阅者
 
 ## 已删除的 actions(行为变更)
 
@@ -77,7 +52,9 @@ renderer 现在 active 是哪个,只推完整 sessions 列表。算法:
 `coApi.terminal.create` / `coApi.terminal.remove` 触发 main 改 → main 推
 `sessions_changed` → renderer 通过 `replaceSnapshot` 应用。
 
-`switchSession(id)` 重命名为 `setActive(id)`(语义未变,改名匹配它真正只动 UI)。
+`activeId` / `setActive` / `renameSession` / `customTitles` / `nextActiveAfterClose` / `applySnapshot`
+也已删除:生产代码里没有任何地方读 activeId 或调用改名,终端页签的活动态与标题由 dockview + main 的
+session 标题决定。
 
 ## 不在本主题验证
 
