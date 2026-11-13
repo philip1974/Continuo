@@ -22,7 +22,8 @@ app 打开外链、还是不可解析(返回 null)。
 
 绝对(`/abs/x.md`)直接用;相对(`./x.md` / `../sib/y.md` / `x.md`)以
 `currentFilePath` 所在目录为基底拼接。`#section` 后部切掉(IDE 不处理
-markdown 内锚点跳转,只到文件)。`../` `./` 标准 normalize。
+markdown 内锚点跳转,只到文件)。路径部分按 URL 规则做 percent-decode(`my%20notes.md` → `my notes.md`、
+`%E4%B8%AD%E6%96%87.md` → `中文.md`);非法的 percent 序列保留原样。`../` `./` 标准 normalize。
 
 ### null — 不可解析 / 不安全
 

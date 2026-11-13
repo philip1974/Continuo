@@ -178,6 +178,8 @@ interface RuntimeDebugSession {
   configurationDone: boolean;
   launched: boolean;
   currentStop?: WaitForStopOutput;
+  /** debuggee 已结束(terminated / exited)时的说明;置位后 wait_for_stop 立即以它 reject。 */
+  endedMessage?: string;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -475,7 +477,14 @@ export class DebugService {
       requestTimeoutMs: this.requestTimeoutMs,
     });
 
-    await parentClient.spawnServer();
+    try {
+      await parentClient.spawnServer();
+    } catch (err) {
+      // 此时还没登记 runtime / session,cleanupAll、killByOwner 都找不到这个 client;不在这里释放,
+      // detached 的 adapter 进程和 socket 文件就成了孤儿(app 退出也不回收)。
+      await parentClient.dispose().catch(() => undefined);
+      throw err;
+    }
     const adapterPid = getClientPid(parentClient);
     const adapterInfo = await this.processOps.processInfo(adapterPid);
     const runtime: RuntimeDebugSession = {
@@ -509,7 +518,13 @@ export class DebugService {
       this.handleStartDebugging(id, request),
     );
 
-    await this.initializeClient(parentClient);
+    try {
+      await this.initializeClient(parentClient);
+    } catch (err) {
+      // session 已登记、adapter 活着,但调用方只会拿到错误、拿不到 session_id → 自己拆掉。
+      await this.teardownSession(id, 'launch-failed').catch(() => undefined);
+      throw err;
+    }
     runtime.initialized = true;
     debugSessions.update(id, { runtimeState: 'running' });
     return { session_id: id, state: 'running' };
@@ -567,6 +582,9 @@ export class DebugService {
     const runtime = this.requireRuntime(sessionId);
     const session = this.requireSession(sessionId);
     const afterStopSeq = input.afterStopSeq ?? 0;
+    if (runtime.endedMessage !== undefined) {
+      return Promise.reject(new Error(runtime.endedMessage));
+    }
     if (
       session.runtimeState === 'stopped' &&
       session.stopSeq > afterStopSeq &&
@@ -730,10 +748,12 @@ export class DebugService {
       maxDepth,
       maxStringBytes,
     );
+    // 本页取满 count 条 = 可能还有更多:truncated 与 next_start 同步(此前 truncated 写死 false)。
+    const hasMore = variables.length >= count;
     return {
       variables,
-      truncated: false,
-      ...(variables.length >= count ? { next_start: start + count } : {}),
+      truncated: hasMore,
+      ...(hasMore ? { next_start: start + count } : {}),
     };
   }
 
@@ -854,6 +874,8 @@ export class DebugService {
   /** DAP initialize 握手:先挂 initialized 事件等待再发请求(事件可能先于响应到达)。 */
   private async initializeClient(client: DebugDapClientLike): Promise<void> {
     const initialized = client.waitForEvent('initialized', this.requestTimeoutMs);
+    // 下面的 initialize 请求先失败时,这个等待之后超时 reject 不能成为未处理的 rejection。
+    initialized.catch(() => undefined);
     await client.sendRequest('initialize', initializeArgs(), this.requestTimeoutMs);
     await initialized;
   }
@@ -904,22 +926,33 @@ export class DebugService {
     const runtime = this.requireRuntime(sessionId);
     const child = runtime.parentClient.createChildSession();
     runtime.childClients.push(child);
-    runtime.activeClient = child;
     debugSessions.update(sessionId, {
       childSessionCount: runtime.childClients.length,
     });
     this.wireClient(sessionId, child);
-    await child.connectToServer();
+    try {
+      await child.connectToServer();
 
-    await this.initializeClient(child);
-    for (const breakpoint of runtime.breakpoints) {
-      await child.sendRequest(
-        'setBreakpoints',
-        setBreakpointsArgs(breakpoint),
-        this.requestTimeoutMs,
-      );
+      await this.initializeClient(child);
+      for (const breakpoint of runtime.breakpoints) {
+        await child.sendRequest(
+          'setBreakpoints',
+          setBreakpointsArgs(breakpoint),
+          this.requestTimeoutMs,
+        );
+      }
+      await child.sendRequest('configurationDone', {}, this.requestTimeoutMs);
+    } catch (err) {
+      // child 没建起来:摘掉它,activeClient 保持原样(父 client 仍可用)。若在连接前就切过去,
+      // 后续 stack / variables / continue 会全部打到一个死 client 上。
+      const index = runtime.childClients.indexOf(child);
+      if (index >= 0) runtime.childClients.splice(index, 1);
+      debugSessions.update(sessionId, { childSessionCount: runtime.childClients.length });
+      await child.dispose().catch(() => undefined);
+      throw err;
     }
-    await child.sendRequest('configurationDone', {}, this.requestTimeoutMs);
+    // 握手完成、即将发 launch 时才切换(stopped 等事件只会在 launch 之后到来)。
+    runtime.activeClient = child;
 
     const args = asRecord(request.arguments);
     const configuration = asRecord(args.configuration as DapJson | undefined);
@@ -941,12 +974,21 @@ export class DebugService {
     });
     client.on('stopped', (event) => this.markStopped(sessionId, event.body));
     client.on('continued', () => this.markContinued(sessionId));
-    client.on('terminated', () =>
-      this.rejectWaiters(sessionId, new Error('debug session terminated')),
-    );
-    client.on('exited', () =>
-      this.rejectWaiters(sessionId, new Error('debug session exited')),
-    );
+    client.on('terminated', () => this.markEnded(sessionId, client, 'debug session terminated'));
+    client.on('exited', () => this.markEnded(sessionId, client, 'debug session exited'));
+  }
+
+  /**
+   * debuggee 结束(terminated / exited)。结算在途的 wait_for_stop;若事件来自父 client 或当前活动的 child,
+   * 把会话标成 terminated —— 之后的 wait_for_stop 立即报已终止(否则干等满 timeout 才报超时),list_sessions
+   * 也不再显示 running。adapter 进程仍由 disconnect / 关窗 / 退出时的 teardown 回收。
+   */
+  private markEnded(sessionId: string, client: DebugDapClientLike, message: string): void {
+    this.rejectWaiters(sessionId, new Error(message));
+    const runtime = this.runtimes.get(sessionId);
+    if (!runtime || (client !== runtime.parentClient && client !== runtime.activeClient)) return;
+    runtime.endedMessage = message;
+    debugSessions.update(sessionId, { runtimeState: 'terminated' });
   }
 
   private markStopped(sessionId: string, bodyJson: DapJson | undefined): void {

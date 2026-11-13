@@ -116,18 +116,11 @@ function getPluginMainName(manifest: unknown): string {
 }
 
 /**
- * 扫描 baseDir/<id>/manifest.json 模式;返回所有合法目录的 manifestText +
- * mainText(默认 main.js 或 manifest.main 指向)+ 可选 stylesText。
- *
- * 子目录读 fail / 缺 manifest / 缺 main 都跳过该目录(不抛),由 renderer 端
- * PluginManager 决定是否报告。
- */
-/**
  * 启动期恢复被**进程崩溃**中断的插件更新(数据安全,codex 复查 P1)。
  *
  * installFromGit 的 overwrite swap 顺序是 `rename(target→backup)` 再 `rename(staging→target)`;
  * in-process try/catch 只回滚可 catch 的 error,但进程在两次 rename **之间**崩溃会留下:
- * `<id>` 目标缺失 + `.<id>.old-<uuid>` backup(被 listPluginDirs 第 82 行跳过)→ 插件静默
+ * `<id>` 目标缺失 + `.<id>.old-<uuid>` backup(以 `.` 开头,被 listPluginDirs 跳过)→ 插件静默
  * 消失,违反「失败时旧版本原样保留,不会丢插件」的注释契约。
  *
  * 在列举/加载插件前扫一遍 baseDir:
@@ -272,6 +265,13 @@ async function readMetadataCapped(filePath: string): Promise<string> {
   return text as string; // tooLarge=false 时 text 必为 string
 }
 
+/**
+ * 扫描 baseDir/<id>/manifest.json 模式;返回所有合法目录的 manifestText +
+ * mainText(默认 main.js 或 manifest.main 指向)+ 可选 stylesText。
+ *
+ * 子目录读 fail / 缺 manifest / 缺 main 都跳过该目录(不抛),由 renderer 端
+ * PluginManager 决定是否报告。
+ */
 export async function listPluginDirs(baseDir: string): Promise<IpcPluginDir[]> {
   // 边界(E82):有界枚举(缺目录 → [] → 返回空列表,等价旧版)。
   const entries = await readPluginDirEntriesCapped(baseDir);
@@ -1030,7 +1030,13 @@ export async function installFromGit(
         : null;
 
       await rm(staging, { recursive: true, force: true }).catch(() => {});
-      await cp(cloneDir, staging, { recursive: true });
+      try {
+        await cp(cloneDir, staging, { recursive: true });
+      } catch (err) {
+        // 复制中途失败(磁盘满等):清掉半截 staging 目录,不留到下次启动的恢复流程。
+        await rm(staging, { recursive: true, force: true }).catch(() => {});
+        throw err;
+      }
 
       try {
         if (backup) await fs.rename(targetDir, backup);

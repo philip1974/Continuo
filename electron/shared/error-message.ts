@@ -12,6 +12,14 @@ export function errorMessage(err: unknown): string {
 }
 
 /**
+ * 把回传给外部(IPC / JSON-RPC)的错误文本限幅:超长时截断并标注省略的字符数。safe-handle 与 MCP host
+ * 两个出口共用(上限各自定义)。
+ */
+export function capErrorText(s: string, max: number): string {
+  return s.length > max ? `${s.slice(0, max)}… (+${s.length - max})` : s;
+}
+
+/**
  * 抛出值(catch 的 unknown)的稳定错误码:IPC reject / main 抛出的 Error 带 `code`;没有则归为
  * `'EXCEPTION'`。renderer 各 catch 分支此前逐处手写 `(err as { code?: string })?.code ?? 'EXCEPTION'`。
  */

@@ -29,6 +29,18 @@ describe('safeTruncate', () => {
     // 实际就是说不会切到 \x1b[31m 中间
   });
 
+  // 截断点落在一个 CSI 序列内部(含恰好落在终结符上)时,保留的尾部不能以半截色码开头,
+  // 且总字节仍不超过 maxBytes(跳过该序列余下部分,而不是回退到 ESC 多带字节)。
+  it.each([9, 10, 11, 12, 13])('截断点落在 CSI 序列内(maxBytes=%i)→ 不留半截色码,总字节 ≤ maxBytes', (max) => {
+    const data = 'x'.repeat(100) + '\x1b[31mfinal';
+    const r = safeTruncate(data, max);
+    expect(r.startsWith('\x1b[0m')).toBe(true);
+    const tail = r.slice('\x1b[0m'.length);
+    expect(Buffer.byteLength(r, 'utf8')).toBeLessThanOrEqual(Math.max(max, 4));
+    // 尾部要么是完整的色码 + 文本,要么是纯文本的后缀;不能是 `[31mfinal` / `1mfinal` / `mfinal` 这类残片
+    expect(['\x1b[31mfinal', 'final', 'inal', 'nal', 'al', 'l', '']).toContain(tail);
+  });
+
   it('ANSI 截断边界检测走字符扫描,不调用 RegExp.test', () => {
     const testSpy = vi.spyOn(RegExp.prototype, 'test');
     try {

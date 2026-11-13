@@ -296,26 +296,6 @@ const resizeChains = new Map<string, Promise<unknown>>();
 const RESET_PREFIX = '\x1b[0m';
 const RESET_PREFIX_BYTES = 4;
 
-function hasCompleteAnsiCsi(slice: string): boolean {
-  for (let i = 0; i < slice.length - 2; i += 1) {
-    if (slice.charCodeAt(i) !== 0x1b || slice.charCodeAt(i + 1) !== 91) {
-      continue;
-    }
-
-    for (let j = i + 2; j < slice.length; j += 1) {
-      const code = slice.charCodeAt(j);
-      if ((code >= 48 && code <= 57) || code === 59) {
-        continue;
-      }
-      // 本序列的终结符:是字母 → 完整 CSI;否则从下一个 ESC[ 继续找(等价 regex.test 的「任意位置」)。
-      if ((code >= 65 && code <= 90) || (code >= 97 && code <= 122)) return true;
-      break;
-    }
-  }
-
-  return false;
-}
-
 function hasInPlaceAnsiCsi(data: string): boolean {
   for (let i = 0; i < data.length - 2; i += 1) {
     if (data.charCodeAt(i) !== 0x1b || data.charCodeAt(i + 1) !== 91) {
@@ -375,16 +355,22 @@ export function safeTruncate(data: string, maxBytes: number): string {
     i -= step;
   }
 
-  // ANSI 边界(同原逻辑):cutPoint 落在不完整 ESC 序列起点则回退到 ESC 前,防半截色码。
+  // ANSI 边界:截断点若落在一个 CSI 序列(ESC [ 参数… 终结符)内部 —— 包括恰好落在终结符上 —— 保留的尾部
+  // 会以半截色码开头(屏幕上多出 `1m` / `m` 之类的残片)。向前找最近的 ESC,若它的序列跨过截断点,就把
+  // 截断点**向后**挪到该序列之后:跳过残片,且不多带字节(向前回退到 ESC 会突破 maxBytes 预算)。
   const searchStart = Math.max(0, cutPoint - 32);
-  for (let i = cutPoint; i >= searchStart; i--) {
-    if (data.charCodeAt(i) === 0x1b) {
-      const slice = data.slice(i, cutPoint + 1);
-      if (!hasCompleteAnsiCsi(slice)) {
-        cutPoint = i;
+  for (let i = cutPoint - 1; i >= searchStart; i--) {
+    if (data.charCodeAt(i) !== 0x1b) continue;
+    if (data.charCodeAt(i + 1) === 91) {
+      let end = i + 2; // 扫过参数字节(数字与 ;),停在终结符(或串尾)
+      while (end < data.length) {
+        const code = data.charCodeAt(end);
+        if ((code >= 48 && code <= 57) || code === 59) end += 1;
+        else break;
       }
-      break;
+      if (end >= cutPoint && end < data.length) cutPoint = end + 1;
     }
+    break;
   }
 
   return RESET_PREFIX + data.slice(cutPoint);
@@ -619,7 +605,8 @@ export function kill(id: string): void {
 /**
  * P4 — SIGKILL 强杀:跳过 grace period,直接 pty.kill('SIGKILL')。
  * 撤销已设的 grace timer(若有),避免重复 kill。
- * onExit 由 PTY 自然触发 → setExited + cleanup 走现有流程。
+ * 先同步做本地清理(cleanupSessionLocal,exitCode 记 -1)再发 SIGKILL:sm.kill 会卸掉 exit 监听,
+ * 等不到 PTY 的自然 onExit。
  */
 export function forceKill(id: string): void {
   const inst = instances.get(id);

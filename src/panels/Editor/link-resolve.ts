@@ -196,8 +196,18 @@ export function resolveLink(
 
   // 切掉 #section,只留路径部分
   const hashIdx = href.indexOf('#');
-  const pathPart = hashIdx >= 0 ? href.slice(0, hashIdx) : href;
-  if (!pathPart) return null;
+  const rawPathPart = hashIdx >= 0 ? href.slice(0, hashIdx) : href;
+  if (!rawPathPart) return null;
+  // markdown 链接是 URL:带空格 / 非 ASCII 的文件名写成 percent-encoding,打开文件前要解码。
+  // 非法序列(字面的 `%`)会让 decodeURIComponent 抛 → 保留原样。
+  let pathPart = rawPathPart;
+  if (rawPathPart.includes('%')) {
+    try {
+      pathPart = decodeURIComponent(rawPathPart);
+    } catch {
+      pathPart = rawPathPart;
+    }
+  }
 
   let absPath: string;
   if (isAbsolutePathLike(pathPart)) {

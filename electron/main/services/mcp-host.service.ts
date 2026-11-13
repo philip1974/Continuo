@@ -1,11 +1,11 @@
 // MCP host(Agent Terminal MCP Phase 1)。
-// 暴露 6 个纯函数契约层(单测覆盖)+ createMcpHost HTTP wiring(留 E2E)。
+// 暴露纯函数契约层(单测覆盖)+ createMcpHost HTTP wiring(留 E2E)。
 //
-// 协议(P1 极简版):
-//   POST /message  JSON-RPC 2.0 单请求/响应,直接通过 HTTP body 同步返回。
-//   GET  /sse      占位 SSE endpoint,P3+ 才真正用于 server-initiated 通知。
+// 协议:
+//   POST /mcp  JSON-RPC 2.0 单请求/响应,直接通过 HTTP body 同步返回。
+//   GET  /mcp  SSE endpoint(server-initiated 通知)。
 //
-// Bearer 鉴权:`Authorization: Bearer <token>`。Token 启动时生成,close 时作废。
+// Bearer 鉴权:`Authorization: Bearer <token>`。Token 按窗口签发,窗口关闭 / 用户撤销授权时作废。
 // 仅监听 127.0.0.1(isLocalhostBindAddr 校验,防误监听 0.0.0.0)。
 //
 // BDD: src/__tests__/agent-terminal-mcp-host/(纯函数层)
@@ -30,7 +30,7 @@ import { jsonByteLowerBoundExceeds } from '../../shared/json-byte-budget';
 import { RESULT_BYTES_MAX } from '../../shared/plugin-mcp-schemas';
 import { PLUGIN_MCP_ERROR_CODES } from '../../shared/plugin-mcp-channels';
 import { equalsAsciiIgnoreCase } from '../../shared/lower-if-needed';
-import { codedError } from '../../shared/error-message';
+import { capErrorText, codedError } from '../../shared/error-message';
 
 // ── 常量 ────────────────────────────────────────────────────────
 
@@ -573,9 +573,6 @@ const MAX_SSE_CLIENTS_PER_TOKEN = 16; // 单 token SSE 连接上限
 // ERR_CODE_MAX 同量级 8192/256)。导出供单测。
 export const MCP_ERR_MESSAGE_MAX = 8192;
 export const MCP_ERR_CODE_MAX = 256;
-function capMcpErrText(s: string, max: number): string {
-  return s.length > max ? `${s.slice(0, max)}… (+${s.length - max})` : s;
-}
 
 /**
  * 边界(E266):把 tool.run 抛出的 err 规整成 JSON-RPC error(code/message/data.code 均经长度截断,
@@ -592,13 +589,13 @@ export function formatToolCallError(err: unknown): {
   ) as { code?: unknown; message?: unknown };
   const out: { code: number; message: string; data?: { code: string } } = {
     code: -32603,
-    message: capMcpErrText(
+    message: capErrorText(
       typeof e.message === 'string' ? e.message : 'internal error',
       MCP_ERR_MESSAGE_MAX,
     ),
   };
   if (typeof e.code === 'string') {
-    out.data = { code: capMcpErrText(e.code, MCP_ERR_CODE_MAX) };
+    out.data = { code: capErrorText(e.code, MCP_ERR_CODE_MAX) };
   }
   return out;
 }

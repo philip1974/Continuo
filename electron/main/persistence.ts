@@ -149,8 +149,7 @@ export function pruneLRUClosed(
     closed.sort((a, b) => (a.lastClosedAt ?? 0) - (b.lastClosedAt ?? 0));
   }
 
-  const toRemove = payload.windows.length - maxClosed;
-  if (toRemove <= 0) return;
+  const toRemove = payload.windows.length - maxClosed; // > 0:函数开头已保证 length > maxClosed
   const removeSet = new Set<number>();
   for (let i = 0; i < Math.min(toRemove, closed.length); i++) {
     removeSet.add(closed[i]!.windowSeq);

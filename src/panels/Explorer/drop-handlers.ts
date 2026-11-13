@@ -23,7 +23,6 @@ export interface DropFsApi {
 export interface DropResult {
   ok: boolean;
   written: string[];
-  skipped: string[];
   failed: { name: string; code: string; message: string }[];
 }
 
@@ -235,7 +234,6 @@ export async function performDrop(
   return {
     ok: failedCount === 0,
     written,
-    skipped: [],
     failed,
   };
 }

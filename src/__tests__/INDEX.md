@@ -1029,6 +1029,11 @@
 
 - [`copy-feedback-timer.spec.tsx`](./statusbar-copy-feedback-timer/copy-feedback-timer.spec.tsx)
 
+## [stop-hook broker:不丢事件、不留孤儿等待者](./stop-hook-broker-reliability/README.md)
+
+- [`broker-reliability.spec.ts`](./stop-hook-broker-reliability/broker-reliability.spec.ts)
+- [`install-malformed-config.spec.ts`](./stop-hook-broker-reliability/install-malformed-config.spec.ts)
+
 ## [tab-icons(SettingTab icon 工厂集合)](./tab-icons/README.md)
 
 - [`tab-icons.spec.tsx`](./tab-icons/tab-icons.spec.tsx)

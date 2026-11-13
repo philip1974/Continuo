@@ -97,10 +97,18 @@ export function encodeDapMessage(message: DapMessage): Buffer {
   return Buffer.concat([header, body]);
 }
 
+/** 单个 DAP 帧 body 的字节上限。对端是本机 js-debug,正常帧远小于此;超限视为畸形流(不为巨帧无界缓冲)。 */
+export const DAP_MAX_FRAME_BYTES = 64 * 1024 * 1024;
+
 function parseDapContentLength(header: string): number {
   for (const line of header.split('\r\n')) {
     const match = /^Content-Length:\s*(\d+)$/i.exec(line);
-    if (match) return Number.parseInt(match[1]!, 10);
+    if (!match) continue;
+    const length = Number.parseInt(match[1]!, 10);
+    if (length > DAP_MAX_FRAME_BYTES) {
+      throw new Error(`DAP frame Content-Length ${length} exceeds ${DAP_MAX_FRAME_BYTES}`);
+    }
+    return length;
   }
   throw new Error(`DAP frame missing Content-Length header: ${header}`);
 }
@@ -130,21 +138,25 @@ export class DapStreamDecoder {
   }
 }
 
+const SERVER_STDERR_MAX_CHARS = 64 * 1024;
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
 }
 
+// 进程内自增序号:只靠 pid + 毫秒时间戳时,同一毫秒的两个并发 launch 会拿到同一路径 —— 后者 spawn 前
+// rm 掉前者的 socket,前者连到后者的 adapter,会话串线。
+let socketPathSeq = 0;
+
 function createSocketPath(): string | null {
   if (process.platform === 'win32') return null;
   const baseDir = os.tmpdir().length < 60 ? os.tmpdir() : '/tmp';
-  const socketPath = path.join(
-    baseDir,
-    `continuo-dap-${process.pid}-${Date.now()}.sock`,
-  );
+  const unique = `${process.pid}-${Date.now()}-${socketPathSeq++}`;
+  const socketPath = path.join(baseDir, `continuo-dap-${unique}.sock`);
   if (socketPath.length > 100) {
-    return path.join('/tmp', `cdap-${process.pid}-${Date.now()}.sock`);
+    return path.join('/tmp', `cdap-${unique}.sock`);
   }
   return socketPath;
 }
@@ -237,6 +249,7 @@ export class DapClient {
   private readonly eventHandlers = new Map<string, Set<DapEventHandler>>();
   private decoder = new DapStreamDecoder();
   private serverStderr = '';
+  private spawnError: Error | null = null;
   private childSessions: DapClient[] = [];
   private startDebuggingHandler: StartDebuggingHandler | null;
   private disposed = false;
@@ -281,7 +294,19 @@ export class DapClient {
     });
     this.server = server;
     server.stderr.on('data', (chunk: Buffer) => {
-      this.serverStderr += chunk.toString('utf8');
+      // 只用于 ready 超时的报错信息:封顶,不随 adapter 生命周期无界累积。
+      if (this.serverStderr.length < SERVER_STDERR_MAX_CHARS) {
+        this.serverStderr = (this.serverStderr + chunk.toString('utf8')).slice(
+          0,
+          SERVER_STDERR_MAX_CHARS,
+        );
+      }
+    });
+    // spawn 失败(ENOENT / EMFILE …)以 'error' 事件上报;ChildProcess 的 'error' 无监听会直接抛成主进程
+    // 未捕获异常。记下来让 waitForReady 立刻失败(不必等满 readyTimeout),并结算在途请求。
+    server.once('error', (err) => {
+      this.spawnError = err;
+      this.rejectAllPending(err);
     });
     server.stdout.on('data', (chunk: Buffer) => {
       this.recordTranscript({
@@ -332,6 +357,9 @@ export class DapClient {
     let lastError: Error | undefined;
 
     while (Date.now() < deadline) {
+      if (this.spawnError) {
+        throw new Error(`DAP server failed to spawn: ${this.spawnError.message}`);
+      }
       try {
         return await this.connectOnce();
       } catch (err) {
@@ -362,7 +390,20 @@ export class DapClient {
 
   attachSocket(socket: Socket): void {
     socket.on('data', (chunk: Buffer) => {
-      for (const message of this.decoder.push(chunk)) {
+      if (socket.destroyed) return;
+      let messages: DapMessage[];
+      try {
+        messages = this.decoder.push(chunk);
+      } catch (err) {
+        // 畸形流(缺 Content-Length / 超限 / body 非 JSON):解码器缓冲不会前进,之后每个 chunk 都会重抛。
+        // 在 data 回调里抛出就是主进程未捕获异常 —— 结算在途请求并断开这条连接。
+        this.rejectAllPending(
+          new Error(`malformed DAP stream: ${err instanceof Error ? err.message : String(err)}`),
+        );
+        socket.destroy();
+        return;
+      }
+      for (const message of messages) {
         this.receiveMessage(message);
       }
     });
@@ -383,16 +424,17 @@ export class DapClient {
     eventName: string,
     timeoutMs = this.requestTimeoutMs,
   ): Promise<DapEventMessage> {
+    let off: () => void = () => {};
     return withTimeout(
-      new Promise((resolve) => {
-        const off = this.on(eventName, (event) => {
+      new Promise<DapEventMessage>((resolve) => {
+        off = this.on(eventName, (event) => {
           off();
           resolve(event);
         });
       }),
       timeoutMs,
       `event ${eventName}`,
-    );
+    ).finally(() => off()); // 超时也摘监听(成功路径已摘过,重复摘无害)
   }
 
   sendRequest(
@@ -401,15 +443,23 @@ export class DapClient {
     timeoutMs = this.requestTimeoutMs,
   ): Promise<DapResponseMessage> {
     const request = this.createRequest(command, args);
-    const response = withTimeout(
+    // 先发后登记:socket 已断时 sendMessage 同步抛。若先建好带超时的 Promise 再抛,那个 Promise 没人接管,
+    // 到点 reject 成 unhandledRejection(main 没有全局兜底)。失败统一以 rejected Promise 返回。
+    try {
+      this.sendMessage(request);
+    } catch (err) {
+      return Promise.reject(err instanceof Error ? err : new Error(String(err)));
+    }
+    return withTimeout(
       new Promise<DapResponseMessage>((resolve, reject) => {
         this.pending.set(request.seq, { resolve, reject });
       }),
       timeoutMs,
       `request ${command}`,
-    );
-    this.sendMessage(request);
-    return response;
+    ).finally(() => {
+      // 超时后不再等这个响应:删掉条目(正常响应 / rejectAllPending 路径已删,重复删无害)。
+      this.pending.delete(request.seq);
+    });
   }
 
   sendRequestNoWait(command: string, args: DapJson = {}): number {

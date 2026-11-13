@@ -353,7 +353,11 @@ function parseFilenameForWindowId(fileName: string): number | null {
 
 export interface HookFileBroker {
   start(): Promise<void>;
-  awaitNext(filter: AwaitFilter): Promise<AwaitNextResult>;
+  /**
+   * 等下一条匹配的 Stop 事件。`signal`(调用方的 MCP 连接)abort 时撤销等待者并 reject:否则调用方断开后
+   * 等待者最长挂 600s,期间同一会话的新调用一直 ALREADY_PENDING,真正到达的事件也被死连接的等待者消费掉。
+   */
+  awaitNext(filter: AwaitFilter, signal?: AbortSignal): Promise<AwaitNextResult>;
   /**
    * 提前结束某窗口的所有 pending await_stop_hook 等待者(窗口关闭时调用)。
    * 否则它们会一直挂到 timeout_sec(最长 600s)才靠自身 timer 自愈(审计 #3)。
@@ -425,6 +429,8 @@ export function createHookFileBroker(
   // 正在 ingest 中的文件名(读+解析期间)。防同一文件的并发 watch 事件重复 ingest;
   // 与 processed 分离,使读/解析失败的文件不被永久标记,允许写入完成后重试。
   const inFlight = new Set<string>();
+  // 处理期间又收到事件的文件名:本次处理结束后补跑一次(见 ingestFile)。
+  const rerunAfterInFlight = new Set<string>();
   const buffered: BufferedEntry[] = [];
   const bufferedNames = new Set<string>();
   let bufferedBytes = 0; // 边界(E150):buffered 当前总字节数(总字节预算淘汰用)
@@ -447,7 +453,13 @@ export function createHookFileBroker(
   }
 
   async function ingestFile(fileName: string): Promise<void> {
-    if (stopped || processed.has(fileName) || inFlight.has(fileName)) return;
+    if (stopped || processed.has(fileName)) return;
+    if (inFlight.has(fileName)) {
+      // 同名文件正在处理:记下「需补跑」。`cat > file` 先建空文件再写内容,写完的 change 事件若恰在第一次
+      // 处理期间到达,直接丢弃的话,第一次读到半截解析失败返回后就再无事件 → 该 hook 事件永久漏掉。
+      rerunAfterInFlight.add(fileName);
+      return;
+    }
 
     const runner = inferRunnerFromFilename(fileName);
     if (runner === null) return;
@@ -566,6 +578,9 @@ export function createHookFileBroker(
       }
     } finally {
       inFlight.delete(fileName);
+      if (rerunAfterInFlight.delete(fileName) && !stopped && myGen === ingestGen) {
+        void ingestFile(fileName);
+      }
     }
   }
 
@@ -665,10 +680,14 @@ export function createHookFileBroker(
 
       cleanupTimer = setInterval(() => void cleanupStale(), cleanupIntervalMs);
     },
-    awaitNext(filter) {
+    awaitNext(filter, signal) {
       return new Promise((resolve, reject) => {
         if (stopped) {
           reject(new Error('broker stopped'));
+          return;
+        }
+        if (signal?.aborted) {
+          reject(new Error('await_stop_hook caller disconnected'));
           return;
         }
 
@@ -705,6 +724,17 @@ export function createHookFileBroker(
           resolve({ status: 'timeout', elapsedMs: Date.now() - startedAt });
         }, filter.timeoutMs);
         pendingByKey.set(key, pending);
+        // 调用方断开 → 撤销本等待者(仅当它仍是该 key 的当前等待者),让出 key。
+        signal?.addEventListener(
+          'abort',
+          () => {
+            if (pendingByKey.get(key) !== pending) return;
+            pendingByKey.delete(key);
+            if (pending.timer !== null) clearTimeout(pending.timer);
+            reject(new Error('await_stop_hook caller disconnected'));
+          },
+          { once: true },
+        );
       });
     },
     cancelByWindow(windowId) {
@@ -745,6 +775,7 @@ export function createHookFileBroker(
       bufferedNames.clear();
       bufferedBytes = 0; // 边界(E150):同步 buffered 字节计数
       processed.clear();
+      rerunAfterInFlight.clear();
     },
   };
 }
@@ -825,9 +856,11 @@ async function mergeClaudeCodeSettings(
     fileExists = true;
     try {
       const parsed = JSON.parse(read.text) as unknown;
-      if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        existing = parsed as Record<string, unknown>;
+      if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        // 顶层不是对象(数组 / 标量):不是可合并的配置。当成空配置会把用户文件整体替换掉。
+        return { installed: false, reason: 'parse-error' };
       }
+      existing = parsed as Record<string, unknown>;
     } catch {
       return { installed: false, reason: 'parse-error' };
     }
@@ -846,6 +879,8 @@ async function mergeClaudeCodeSettings(
     const inner = (entry as { hooks?: unknown[] } | null)?.hooks;
     if (!Array.isArray(inner)) continue;
     for (const hook of inner) {
+      // 用户手改的配置里可能有 null 等非对象项:跳过,不能读 null 的属性。
+      if (hook === null || typeof hook !== 'object') continue;
       const marker = (hook as { _continuo_managed?: unknown })._continuo_managed;
       const command = (hook as { command?: unknown }).command;
       if (
@@ -1012,12 +1047,15 @@ export function createAwaitStopHookTool(
       }
 
       const startedAt = Date.now();
-      const result = await deps.broker.awaitNext({
-        windowId: ctx.ownerWindowId,
-        runner,
-        cwd: meta.cwd,
-        timeoutMs: (input.timeout_sec ?? 60) * 1000,
-      });
+      const result = await deps.broker.awaitNext(
+        {
+          windowId: ctx.ownerWindowId,
+          runner,
+          cwd: meta.cwd,
+          timeoutMs: (input.timeout_sec ?? 60) * 1000,
+        },
+        ctx.signal,
+      );
 
       if (!('payload' in result)) {
         return {

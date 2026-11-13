@@ -12,7 +12,7 @@ import {
 } from './permissions';
 import { createScopedApp } from './scoped-app';
 import type { CoApp, PluginManifest } from './types';
-import { codedError, errorMessage } from '../../electron/shared/error-message';
+import { codedError, errorCodeOf, errorMessage } from '../../electron/shared/error-message';
 import { coApi } from '@/lib/co-api';
 import { runSerialPerKey } from '@/lib/serialize-per-key';
 
@@ -412,7 +412,25 @@ export class PluginManager {
 
   // ── 内部 ────────────────────────────────────────────
 
+  /**
+   * 激活一个插件。任何一步抛错(权限门、注册 plugin-fs token、加载、构造、onload)都落成该插件的
+   * `failed` 状态,绝不冒出本方法:init 逐个激活,冒出去会让后面的插件不进列表;reload 先把状态置为
+   * 'enabled' 再激活,冒出去会留下「enabled 但没有实例」的半激活态(既关不掉也开不了)。
+   */
   private async activateEntry(entry: PluginEntry): Promise<void> {
+    try {
+      await this.activateEntryUnguarded(entry);
+    } catch (err) {
+      console.warn(`[plugin-manager] activate ${entry.id} failed`, err);
+      entry.instance = undefined;
+      entry.status = 'failed';
+      entry.error = { code: errorCodeOf(err) ?? 'EXCEPTION', message: errorMessage(err) };
+      await this.revokePluginFsToken(entry);
+      this.invalidateListCache();
+    }
+  }
+
+  private async activateEntryUnguarded(entry: PluginEntry): Promise<void> {
     // 先清前次的 error / warning,确保最终状态干净反映本次激活
     entry.error = undefined;
     entry.warning = undefined;

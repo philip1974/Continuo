@@ -11,7 +11,7 @@ import {
   MAX_BOUNDED_OBJECT_KEYS,
   MAX_BOUNDED_OBJECT_KEY_LEN,
 } from '../shared/bounded-input';
-import { codedError } from '../shared/error-message';
+import { capErrorText, codedError } from '../shared/error-message';
 
 // 边界(E157,E73 同族):BAD_INPUT 错误经 formatZodErrorCapped 限幅,但 handler 抛出的 Error 的
 // code/message 此前原样回传。任一 handler 把外部错误/超长路径/子进程 stderr 拼进 Error.message,
@@ -19,10 +19,6 @@ import { codedError } from '../shared/error-message';
 // 的 code/message 限幅(两个 processIpcCall* 共用 helper),与 BAD_INPUT 限幅边界对齐。
 export const ERR_CODE_MAX = 256;
 export const ERR_MESSAGE_MAX = 8192;
-
-function capErrText(s: string, max: number): string {
-  return s.length > max ? `${s.slice(0, max)}… (+${s.length - max})` : s;
-}
 
 /** 把 catch 到的 err 规整为限幅后的 IpcResult 错误(code≤ERR_CODE_MAX,message≤ERR_MESSAGE_MAX)。 */
 function toCappedErrorResult(err: unknown): IpcResult<never> {
@@ -34,8 +30,8 @@ function toCappedErrorResult(err: unknown): IpcResult<never> {
   }
   return {
     ok: false,
-    code: capErrText(code, ERR_CODE_MAX),
-    message: capErrText(message, ERR_MESSAGE_MAX),
+    code: capErrorText(code, ERR_CODE_MAX),
+    message: capErrorText(message, ERR_MESSAGE_MAX),
   };
 }
 

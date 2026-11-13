@@ -10,13 +10,14 @@ import path from 'node:path';
 // mutable 控制 mock clone 行为(在测试里改)。
 const ctl = vi.hoisted(() => ({
   fail: false,
+  unreadableFile: false, // clone 里放一个不可读文件 → cp 复制中途失败
   oversize: false, // E27:写 >1MiB 的 manifest.json 模拟畸形/超大 clone
   stderrChunk: '' as string, // E62:fail 时 git 子进程 stderr 输出(模拟超大错误输出)
   manifest: { id: 'p', name: 'P', version: '1.0.0' } as Record<string, string>,
 }));
 
 vi.mock('node:child_process', async () => {
-  const { mkdirSync, writeFileSync } = await import('node:fs');
+  const { chmodSync, mkdirSync, writeFileSync } = await import('node:fs');
   const np = await import('node:path');
   return {
     spawn: (_cmd: string, args: readonly string[]) => {
@@ -49,6 +50,10 @@ vi.mock('node:child_process', async () => {
           : JSON.stringify(ctl.manifest);
         writeFileSync(np.join(cloneDir, 'manifest.json'), manifestJson);
         writeFileSync(np.join(cloneDir, 'main.js'), '// plugin');
+        if (ctl.unreadableFile) {
+          writeFileSync(np.join(cloneDir, 'zz-secret.bin'), 'x');
+          chmodSync(np.join(cloneDir, 'zz-secret.bin'), 0o000);
+        }
         listeners['exit']?.forEach((cb) => cb(0));
       });
       return child;
@@ -238,4 +243,20 @@ describe('topic 49 · installFromGit 原子覆盖 + 回滚', () => {
       code: 'BAD_MANIFEST',
     });
   });
+
+  // cp 在回滚用的 try 之外:复制中途失败时半截的 .<id>.installing-<uuid> 会留在 plugins 目录,
+  // 直到下次启动才被恢复流程清掉。
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+    'cp 复制中途失败 → 不留 staging 目录',
+    async () => {
+      ctl.unreadableFile = true;
+      try {
+        await expect(installFromGit(URL, baseDir)).rejects.toThrow();
+      } finally {
+        ctl.unreadableFile = false;
+      }
+      const leftovers = (await fs.readdir(baseDir)).filter((n) => n.includes('.installing-'));
+      expect(leftovers).toEqual([]);
+    },
+  );
 });

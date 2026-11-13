@@ -206,6 +206,78 @@ afterEach(() => {
   debugSessions._reset();
 });
 
+describe('DebugService fake adapter · launch / 子会话 / 终止 的错误路径', () => {
+  const ctx = { ownerWindowId: 8, controllerToken: 'agent-b' };
+
+  it('adapter 启动失败(spawnServer reject)→ 释放 client,不登记 session', async () => {
+    const parent = new FakeDapClient(1001);
+    parent.spawnServer = async () => {
+      throw new Error('DAP server readiness timed out');
+    };
+    const { service } = makeFakeService(parent);
+
+    await expect(service.launchSession({ program: '/fixture.js', cwd: '/work' }, ctx)).rejects.toThrow(
+      /readiness timed out/,
+    );
+    expect(parent.disposeCalls).toBe(1); // 否则 detached 的 adapter 进程 + socket 文件成孤儿
+    expect(service.listSessions()).toEqual([]);
+  });
+
+  it('登记之后 initialize 失败 → 拆除该 session(调用方拿不到 session_id,无法自己清)', async () => {
+    const parent = new FakeDapClient(1001);
+    const original = parent.sendRequest.bind(parent);
+    parent.sendRequest = async (command, args) => {
+      if (command === 'initialize') throw new Error('initialize timed out');
+      return original(command, args);
+    };
+    const { service, processOps } = makeFakeService(parent);
+
+    await expect(service.launchSession({ program: '/fixture.js', cwd: '/work' }, ctx)).rejects.toThrow(
+      /initialize timed out/,
+    );
+    expect(service.listSessions()).toEqual([]);
+    expect(processOps.terminateProcessGroup).toHaveBeenCalled();
+  });
+
+  it('子会话建立失败 → activeClient 仍是父 client(后续请求不发给死掉的 child)', async () => {
+    const parent = new FakeDapClient(1001);
+    const { service } = makeFakeService(parent);
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      ctx,
+    );
+    const createChild = parent.createChildSession.bind(parent);
+    parent.createChildSession = () => {
+      const child = createChild() as FakeDapClient;
+      child.connectToServer = async () => {
+        throw new Error('connect ECONNREFUSED');
+      };
+      return child;
+    };
+
+    await expect(parent.triggerStartDebugging({ type: 'pwa-node' })).rejects.toThrow(/ECONNREFUSED/);
+    parent.emit('stopped', { reason: 'breakpoint', threadId: 1 });
+    await service.stackTrace(sessionId, {});
+    expect(parent.requestLog.some((r) => r.command === 'stackTrace')).toBe(true);
+    expect(parent.children[0]!.requestLog.some((r) => r.command === 'stackTrace')).toBe(false);
+  });
+
+  it('debuggee 已结束(terminated 事件)→ 之后的 wait_for_stop 立即报已终止,不干等到超时;列表状态为 terminated', async () => {
+    const parent = new FakeDapClient(1001);
+    const { service } = makeFakeService(parent);
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      ctx,
+    );
+    parent.emit('terminated', {});
+
+    const startedAt = Date.now();
+    await expect(service.waitForStop(sessionId, { timeoutMs: 5_000 })).rejects.toThrow(/terminated/);
+    expect(Date.now() - startedAt).toBeLessThan(1_000);
+    expect(service.listSessions()[0]?.state).toBe('terminated');
+  });
+});
+
 describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
   it('cleanupAll / killByOwner / killByController 同 tick 并发只执行一次 teardown, waiter 只 reject 一次', async () => {
     const { service, parent, processOps } = makeFakeService();
