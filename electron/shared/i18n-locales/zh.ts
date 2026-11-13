@@ -265,6 +265,9 @@ export const zh: Record<TranslationKey, string> = {
   'permissions.agent.debug_control': '控制调试会话(断点、单步、查看变量)',
   'permissions.agent.generic': '调用 {method}',
   'permissions.agent.title': 'Agent 请求控制内置终端',
+  'permissions.agent.title_debug': 'Agent 请求控制调试器',
+  'permissions.agent.hint_debug':
+    '授权后，持有 MCP token 的 agent 可以在调试器下启动程序、设置断点、单步执行、读取变量和执行表达式。此授权不包含终端控制，仅本次启动有效。',
   'permissions.agent.respond_failed': '发送授权决定失败,请重试。',
   'permissions.fs_scope.respond_failed': '发送文件访问决定失败,请重试。',
   'permissions.agent.body_prefix': '外部 agent',

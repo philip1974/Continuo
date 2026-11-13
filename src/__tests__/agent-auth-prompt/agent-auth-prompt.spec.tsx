@@ -109,6 +109,18 @@ describe('AgentAuthPrompt — 渲染条件', () => {
     expect(modal!.textContent).not.toContain(method);
   });
 
+  it('debug 请求的弹窗标题与说明讲的是调试,不是终端', () => {
+    installApi({ onRequest: vi.fn(() => () => {}), respond: vi.fn() });
+    render(<AgentAuthPrompt />);
+    act(() => {
+      void useAgentAuthStore.getState().ensure({ method: 'debug.launch' });
+    });
+    const modal = document.querySelector('.wm-modal-content')!;
+    expect(modal.textContent).toContain('Agent 请求控制调试器');
+    expect(modal.textContent).not.toContain('Agent 请求控制内置终端');
+    expect(modal.textContent).toContain('读取变量');
+  });
+
   it('未识别的 method → 「调用 ${method}」', () => {
     installApi({ onRequest: vi.fn(() => () => {}), respond: vi.fn() });
     render(<AgentAuthPrompt />);

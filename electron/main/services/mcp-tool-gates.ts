@@ -27,7 +27,8 @@ export interface AuthGateOptions {
 
 /**
  * 安全 S2:包一层授权门控。用户未授权该窗口 agent 控制时,工具调用先触发授权弹窗;拒绝即抛
- * AGENT_NOT_AUTHORIZED。已建立 session 授权后直接放行(renderer store sessionGranted 短路)。
+ * AGENT_NOT_AUTHORIZED。已建立 session 授权后直接放行(renderer 的 agent-auth store 按域短路:
+ * method 以 `debug.` 开头的看 debug 域,其余看终端域,两个域互不放行)。
  */
 export function gateWithAuth(
   tool: AnyMcpTool,

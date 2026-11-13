@@ -5,7 +5,7 @@
 import { useEffect } from 'react';
 import { Button, Modal } from '@/design';
 import { coApi } from '@/lib/co-api';
-import { useAgentAuthStore } from '@/stores/agent-auth.store';
+import { isDebugAuthMethod, useAgentAuthStore } from '@/stores/agent-auth.store';
 import { notify } from '@/notifications/notify';
 import { useT, t as translate, type TranslationKey } from '@/i18n';
 import { isAgentAuthRequestPayload } from '@shared/agent-auth-channels';
@@ -70,6 +70,8 @@ function AgentAuthPromptBody({
   const grant = useAgentAuthStore((s) => s.grant);
   const deny = useAgentAuthStore((s) => s.deny);
   const t = useT();
+  // debug 域的请求:标题与说明讲调试器能做什么(授权也只记在 debug 域)。
+  const isDebug = isDebugAuthMethod(pending.method);
 
   function methodLabel(method: string): string {
     const k = METHOD_LABEL_KEYS[method];
@@ -81,7 +83,7 @@ function AgentAuthPromptBody({
     <Modal visible onClose={deny} aria-labelledby="agent-auth-title">
       {/* a11y(A13):dialog 关联标题。 */}
       <h2 id="agent-auth-title" className="mb-1 text-sm font-medium text-fg">
-        {t('permissions.agent.title')}
+        {t(isDebug ? 'permissions.agent.title_debug' : 'permissions.agent.title')}
       </h2>
       <p className="mb-3 text-xs text-fg-muted">
         {t('permissions.agent.body_prefix')}
@@ -95,7 +97,7 @@ function AgentAuthPromptBody({
         {t('permissions.agent.body_suffix')}
       </p>
       <p className="mb-4 text-2xs text-fg-dim">
-        {t('permissions.agent.hint')}
+        {t(isDebug ? 'permissions.agent.hint_debug' : 'permissions.agent.hint')}
       </p>
       <div className="flex justify-end gap-2">
         <Button variant="ghost" size="sm" onClick={deny}>

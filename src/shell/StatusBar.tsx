@@ -108,7 +108,9 @@ async function handleRevokeAgentTerminals(count: number): Promise<void> {
   if (count <= 0) return;
   const myGen = ++revokeGen; // race(R92):本次 revoke 代际
   // 本地先撤,UI 即时反馈;main 推 sessions_changed 后 sessions 也清空。
-  const wasGranted = useAgentAuthStore.getState().sessionGranted;
+  // 撤销覆盖终端与 debug 两个域;失败回滚时两个都按撤销前的值恢复。
+  const { sessionGranted: wasGranted, debugSessionGranted: wasDebugGranted } =
+    useAgentAuthStore.getState();
   useAgentAuthStore.getState().revoke();
   // 闭环:revoke IPC(kill PTY + rotate token)可能失败(revokeAndKillAgentSessions 抛错 →
   // safeHandle 返 ok:false / IPC reject)。旧实现 `void` 完全忽略结果 → 失败被静默伪成功:
@@ -123,7 +125,12 @@ async function handleRevokeAgentTerminals(count: number): Promise<void> {
     // race(R92):仅当本次仍是最新 revoke(无更晚的 revoke 覆盖)才回滚/报错。更晚的成功 revoke
     // 已把状态正确置为 revoked,先发的迟到失败不得用旧 wasGranted 把 sessionGranted 翻回 true。
     if (myGen !== revokeGen) return;
-    if (wasGranted) useAgentAuthStore.setState({ sessionGranted: true });
+    if (wasGranted || wasDebugGranted) {
+      useAgentAuthStore.setState({
+        sessionGranted: wasGranted,
+        debugSessionGranted: wasDebugGranted,
+      });
+    }
     notify.error(translate('permissions.revoke_all.failed'), {
       code: errorCodeOf(err),
     });

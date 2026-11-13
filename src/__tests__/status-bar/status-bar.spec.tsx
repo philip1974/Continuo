@@ -604,6 +604,32 @@ describe('StatusBar — agent 撤销', () => {
     errSpy.mockRestore();
   });
 
+  it('撤销同时清终端与 debug 两个域的授权;IPC 失败时两个域都回滚', async () => {
+    const errSpy = vi.spyOn(notify, 'error').mockImplementation(() => {});
+    const revoke = vi.fn().mockResolvedValue({ ok: false, code: 'KILL_FAILED' });
+    installApi({ agentAuth: { revoke } });
+    useTerminalStore.setState({
+      sessions: [
+        { id: 't1', title: 'a', cwd: '/', originHint: 'agent', createdAt: 0, exitCode: null, ownerWindowId: 1 },
+      ],
+    });
+    useAgentAuthStore.setState({ pending: null, sessionGranted: false, debugSessionGranted: true });
+
+    const { container } = render(<StatusBar />);
+    const btn = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((b) => /\d+.*agent/.test(b.textContent ?? ''))!;
+    clickRevoke(btn, true);
+    expect(useAgentAuthStore.getState().debugSessionGranted).toBe(false); // 先本地撤销
+
+    await waitFor(() => {
+      expect(errSpy).toHaveBeenCalled();
+    });
+    expect(useAgentAuthStore.getState().debugSessionGranted).toBe(true);
+    expect(useAgentAuthStore.getState().sessionGranted).toBe(false);
+    errSpy.mockRestore();
+  });
+
   it('R18: revoke IPC reject → 同样回滚 + notify.error', async () => {
     const errSpy = vi.spyOn(notify, 'error').mockImplementation(() => {});
     const revoke = vi.fn().mockRejectedValue(new Error('ipc down'));

@@ -29,7 +29,8 @@ interface PendingAuthRequest {
 
 interface AgentAuthState {
   pending: PendingAuthRequest | null;
-  sessionGranted: boolean;
+  sessionGranted: boolean;        // 终端域
+  debugSessionGranted: boolean;   // debug 域
 
   /** 一站式 API:已授权直接放行,否则弹窗(挂起 Promise). */
   ensure(info: { method: string; agentLabel?: string }): Promise<AuthDecision>;
@@ -47,7 +48,9 @@ interface AgentAuthState {
 
 ### `ensure(info)` — 主入口
 
-- `sessionGranted === true` → **立即** `resolve('session')`,不设 pending
+- 请求所属域已授权 session → **立即** `resolve('session')`,不设 pending。**授权分两个域**:
+  method 以 `debug.` 开头的属 debug 域(看 `debugSessionGranted`),其余属终端域(看 `sessionGranted`)。
+  对终端点「本次启动期间允许」不会放行 debug 工具,反之亦然 —— 每个域第一次调用各弹一次
 - `pending !== null` → **立即** `resolve('denied')`(同一时刻一个,与 plugin permission-prompt 同型;并发的第二条直接拒)
 - 其它 → 设 `pending = { requestId(uuid), method, agentLabel? }`,返回未 resolve 的 Promise
 
@@ -61,7 +64,7 @@ interface AgentAuthState {
 
 - pending → null
 - Promise resolve `'session'`
-- `sessionGranted = true`
+- 当前 pending 请求所属域的标志置 true(终端域 `sessionGranted` / debug 域 `debugSessionGranted`)
 
 ### `deny()`
 

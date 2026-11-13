@@ -265,6 +265,9 @@ export const ko: Record<TranslationKey, string> = {
   'permissions.agent.debug_control': '디버그 세션 제어(중단점, 단계 실행, 변수)',
   'permissions.agent.generic': '{method} 호출',
   'permissions.agent.title': '에이전트가 내장 터미널 제어를 요청합니다',
+  'permissions.agent.title_debug': '에이전트가 디버거 제어를 요청합니다',
+  'permissions.agent.hint_debug':
+    '권한을 부여하면 MCP 토큰을 가진 에이전트가 디버거로 프로그램을 실행하고, 중단점 설정, 단계 실행, 변수 읽기, 식 평가를 할 수 있습니다. 이 권한은 터미널 제어를 포함하지 않으며 이번 실행 동안만 유효합니다.',
   'permissions.agent.respond_failed': '권한 결정 전송에 실패했습니다. 다시 시도하세요.',
   'permissions.fs_scope.respond_failed': '파일 접근 결정 전송에 실패했습니다. 다시 시도하세요.',
   'permissions.agent.body_prefix': '외부 에이전트',

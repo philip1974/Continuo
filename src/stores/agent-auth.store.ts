@@ -27,13 +27,25 @@ interface EnsureInfo {
 
 type AgentAuthState = {
   pending: PendingAuthRequest | null;
+  /** 终端域的「本次启动期间允许」。 */
   sessionGranted: boolean;
+  /** debug 域的「本次启动期间允许」(与终端域互不放行)。 */
+  debugSessionGranted: boolean;
 
   ensure(info: EnsureInfo): Promise<AuthDecision>;
   grant(kind: 'once' | 'session'): void;
   deny(): void;
   revoke(): void;
 };
+
+/**
+ * 授权分两个域:method 以 `debug.` 开头的属 debug 域,其余(终端工具及未知 method)属终端域。
+ * debug 能启动进程、读变量、执行表达式,与终端控制是不同的授权面;共用一个标志位时,用户对终端点了
+ * 「本次启动期间允许」后 debug 工具会被静默放行。
+ */
+export function isDebugAuthMethod(method: string): boolean {
+  return method.startsWith('debug.');
+}
 
 // 内部:挂起 Promise 的 resolver(zustand 状态外存,避免序列化函数)。
 let pendingResolver: ((decision: AuthDecision) => void) | null = null;
@@ -63,10 +75,12 @@ function generateRequestId(): string {
 export const useAgentAuthStore = create<AgentAuthState>((set, get) => ({
   pending: null,
   sessionGranted: false,
+  debugSessionGranted: false,
 
   ensure(info) {
-    // 已 session 授权 → 直接通过,不设 pending(支持并发)
-    if (get().sessionGranted) {
+    // 该请求所属域已 session 授权 → 直接通过,不设 pending(支持并发)
+    const state = get();
+    if (isDebugAuthMethod(info.method) ? state.debugSessionGranted : state.sessionGranted) {
       return Promise.resolve('session' as const);
     }
     // 已有 pending → 第二条立即拒(简化并发,与 plugin permission-prompt 同型)
@@ -101,7 +115,13 @@ export const useAgentAuthStore = create<AgentAuthState>((set, get) => ({
     pendingResolver = null;
     if (!resolver && get().pending === null && kind !== 'session') return;
     if (kind === 'session') {
-      set({ pending: null, sessionGranted: true });
+      // 只给当前请求所属的域记 session 授权。
+      const pending = get().pending;
+      set(
+        pending !== null && isDebugAuthMethod(pending.method)
+          ? { pending: null, debugSessionGranted: true }
+          : { pending: null, sessionGranted: true },
+      );
     } else {
       set({ pending: null });
     }
@@ -118,7 +138,11 @@ export const useAgentAuthStore = create<AgentAuthState>((set, get) => ({
   },
 
   revoke() {
-    set((s) => (s.sessionGranted ? { sessionGranted: false } : s));
+    set((s) =>
+      s.sessionGranted || s.debugSessionGranted
+        ? { sessionGranted: false, debugSessionGranted: false }
+        : s,
+    );
   },
 }));
 
@@ -126,5 +150,9 @@ export const useAgentAuthStore = create<AgentAuthState>((set, get) => ({
 export function _resetAgentAuthForTest(): void {
   clearPendingTimer();
   pendingResolver = null;
-  useAgentAuthStore.setState({ pending: null, sessionGranted: false });
+  useAgentAuthStore.setState({
+    pending: null,
+    sessionGranted: false,
+    debugSessionGranted: false,
+  });
 }
