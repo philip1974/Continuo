@@ -579,7 +579,7 @@ export async function resize(
 
 // race(R12,R4 同族):await Ctrl-C 写入并上抛真实结果。此前 fire-and-forget 恒「成功」→ IPC
 // 在实际中断前返回成功,PTY 检查后退出 / 写入失败时中断静默丢失,用户/agent 以为已中断但
-// 进程可能继续跑。返回 false 让 IPC handler 上抛供 renderer 感知。
+// 进程可能继续跑。返回 false 让调用方(MCP terminal.kill 的 SIGINT 分支)上抛,不回报假成功。
 export async function interrupt(id: string): Promise<boolean> {
   const inst = instances.get(id);
   if (!inst) return false;

@@ -224,8 +224,6 @@ export const ko: Record<TranslationKey, string> = {
   'panels.explorer.create.in_label': '경로: {dir}',
 
   // panels.terminal.*
-  'panels.terminal.aria.start_shell': '셸 시작 중',
-  'panels.terminal.search.title': '터미널에서 찾기',
   'panels.terminal.search.placeholder': '찾기',
   'panels.terminal.search.match_count': '{n} / {total}',
   'panels.terminal.search.no_match': '일치 없음',
@@ -377,7 +375,6 @@ export const ko: Record<TranslationKey, string> = {
   'keybindings.unbound': '바인딩 없음',
   'keybindings.edit_hotkey': '단축키 편집',
   'keybindings.reset_default': '기본값으로 초기화 ({hotkey})',
-  'keybindings.reset_default_aria': '기본값으로 초기화',
   'keybindings.edit_hotkey_for_aria': '{command} 단축키 편집',
   'keybindings.reset_default_for_aria': '{command} 단축키를 기본값으로 초기화',
 

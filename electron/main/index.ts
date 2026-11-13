@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
+import { LAYOUT_CHANNELS, WINDOW_ID_CHANNEL } from '../shared/persistence-channels';
 import type {
   HandlerDetails,
   IpcMainEvent,
@@ -166,7 +167,7 @@ debugService.setEventSink({
 
 registerDebugViewIpc(debugService);
 
-ipcMain.on('window:id', (event: IpcMainEvent) => {
+ipcMain.on(WINDOW_ID_CHANNEL, (event: IpcMainEvent) => {
   // 与 layout:flush-ack / plugin-mcp INVOKE_REPLY 对齐:不受信 frame
   // (被注入的子 frame)拿不到窗口 id。合法 renderer 与 popout 子窗都走
   // file:// / 同源 dev URL → 受信。
@@ -178,7 +179,7 @@ ipcMain.on('window:id', (event: IpcMainEvent) => {
   event.returnValue = win?.id ?? 0;
 });
 
-ipcMain.on('layout:flush-ack', (event: IpcMainEvent, windowId: unknown) => {
+ipcMain.on(LAYOUT_CHANNELS.FLUSH_ACK, (event: IpcMainEvent, windowId: unknown) => {
   if (!defaultIsTrustedFrame(event.senderFrame)) return;
   if (typeof windowId !== 'number') return;
   const senderWin = BrowserWindow.fromWebContents(event.sender);
@@ -209,7 +210,7 @@ function requestWindowFlush(win: BrowserWindow): Promise<void> {
     }
     timer = setTimeout(done, FLUSH_ACK_TIMEOUT_MS);
     try {
-      win.webContents.send('layout:flush-request', { windowId: win.id });
+      win.webContents.send(LAYOUT_CHANNELS.FLUSH_REQUEST, { windowId: win.id });
     } catch {
       done();
     }
@@ -532,7 +533,7 @@ function setDockMenu(): void {
 }
 
 /** 由 i18n.ipc setMenuRebuilder 注册；setLocale 后被调，整体重建 application menu + dock menu。 */
-export function rebuildAppMenu(): void {
+function rebuildAppMenu(): void {
   if (process.env['CONTINUO_E2E'] === '1') return;
   Menu.setApplicationMenu(buildAppMenu(getMainT()));
   setDockMenu();

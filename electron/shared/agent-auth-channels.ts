@@ -21,6 +21,12 @@ export interface AgentAuthRequestPayload {
 // AgentAuthPrompt 此前直接解构 payload({requestId, method, agentLabel}),畸形 push(null/缺 requestId·
 // method/超长 method·agentLabel)→ 解构 null 抛未处理 rejection、超长文本进弹窗状态并经 catalog 插值
 // 放大、缺 requestId 致 respond(undefined) → main pending 等 5min 超时。注册入口 runtime 守卫。
+/**
+ * 授权弹窗无应答超时:main 到点把请求结算为 denied,renderer 同 TTL 关掉已失效的弹窗(两侧必须一致,
+ * 否则弹窗滞留并挡住后续请求)。
+ */
+export const AGENT_AUTH_PROMPT_TIMEOUT_MS = 5 * 60 * 1000;
+
 export const AGENT_AUTH_REQUEST_ID_MAX = 256; // 与 AgentAuthRespondSchema requestId 上限一致(E146)
 const AGENT_AUTH_METHOD_MAX = 256;
 const AGENT_AUTH_LABEL_MAX = 512;

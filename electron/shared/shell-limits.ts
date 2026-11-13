@@ -5,6 +5,9 @@
 //  - renderer:scoped-app.ts makeShell().exec/execStream 在 spread/发 IPC 前预检(E46),挡畸形插件传
 //    巨量 args iterable / 超长 stdin·env 时 renderer 先 [...args] 展开 + structured-clone 的前置放大。
 
+/** 子进程最长存活时间上界:一次性 exec 与流式 execStream 共用(main 两个 service)。 */
+export const SHELL_MAX_TIMEOUT_MS = 30 * 60_000;
+
 export const SHELL_PATH_MAX = 8192; // cmd / cwd
 export const SHELL_ARG_MAX_LEN = 16384; // 单个 arg
 export const SHELL_ARGS_MAX_COUNT = 1024; // arg 数量

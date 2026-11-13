@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
+import { EXPLORER_CHANNELS, LAYOUT_CHANNELS } from '../shared/persistence-channels';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
@@ -137,7 +138,7 @@ export function registerIpc(deps: WindowIpcDeps): { pluginFsHandles: PluginFsIpc
   const trusted = defaultIsTrustedFrame;
 
   safeHandleWithCtx(
-    'layout:read',
+    LAYOUT_CHANNELS.READ,
     NoInput,
     async (_input, { event }) => {
       const seq = senderWindowSeqOrThrow(event);
@@ -152,7 +153,7 @@ export function registerIpc(deps: WindowIpcDeps): { pluginFsHandles: PluginFsIpc
   );
 
   safeHandleWithCtx(
-    'layout:write',
+    LAYOUT_CHANNELS.WRITE,
     LayoutSchema,
     async (json, { event }) => {
       const seq = senderWindowSeqOrThrow(event);
@@ -205,7 +206,7 @@ export function registerIpc(deps: WindowIpcDeps): { pluginFsHandles: PluginFsIpc
 
   // 资源管理器持久化(Step 3 / ADR-012)
   safeHandle(
-    'explorer:read',
+    EXPLORER_CHANNELS.READ,
     NoInput,
     async () => {
       const payload = await loadExplorer(explorerFile);
@@ -220,7 +221,7 @@ export function registerIpc(deps: WindowIpcDeps): { pluginFsHandles: PluginFsIpc
     trusted,
   );
   safeHandleWithCtx(
-    'explorer:write',
+    EXPLORER_CHANNELS.WRITE,
     ExplorerWritableSnapshotSchema,
     async (writable, { event }) => {
       // 持久化边界收口:一个窗口只能写自己 windowSeq 的段(同 layout:read/write 早用

@@ -423,9 +423,9 @@ const PERMISSIONS_FILE = '_permissions.json';
 // 边界(E87,E85/E86 数据完整性族 / E5 时间戳):_permissions.json 读盘按写端 + 业务枚举 canonicalize。
 // permission 必须是 PERMISSION_KEYS 成员(否则 PERM_LABEL_KEYS[perm]=undefined 渲染崩),decidedAt 必须
 // finite(1e400 经 JSON.parse=Infinity 但 typeof 仍 number,同 E5)。每插件 decisions 数 + plugin key 数
-// 封顶(对齐 IPC 写端 DECISIONS_MAX/PLUGINS_MAX,防 RMW 写回绕过写端上限)。
+// 封顶(decisions 对齐 IPC 写端 DECISIONS_MAX,防 RMW 写回绕过写端上限)。
 const MAX_DECISIONS_PER_PLUGIN = PERMISSION_RECORD_LIMITS.DECISIONS_PER_PLUGIN_MAX; // 对齐 plugins.ipc DECISIONS_MAX
-const MAX_PERMISSION_PLUGIN_KEYS = PERMISSION_RECORD_LIMITS.PLUGIN_KEYS_MAX; // 对齐 plugins.ipc PLUGINS_MAX
+const MAX_PERMISSION_PLUGIN_KEYS = PERMISSION_RECORD_LIMITS.PLUGIN_KEYS_MAX;
 
 // 单条 decision / scope 的形态判定取 shared 单一来源(与 renderer 读端、IPC schema 同一规则)。
 const isDecision = isIpcPermissionDecision;

@@ -10,6 +10,7 @@
 // BDD: src/__tests__/agent-terminal-mcp-auth/
 
 import { create } from 'zustand';
+import { AGENT_AUTH_PROMPT_TIMEOUT_MS } from '../../electron/shared/agent-auth-channels';
 
 export type AuthDecision = 'once' | 'session' | 'denied';
 
@@ -41,7 +42,7 @@ let pendingResolver: ((decision: AuthDecision) => void) | null = null;
 // 5min 后把该请求 resolve 为 denied(外部 agent 已收到拒绝),但不通知 renderer。若 renderer 不
 // 同 TTL 清理,授权弹窗(pending/Modal)永久滞留,且 pending!==null 让后续 agent auth 请求被
 // 立即拒,直到用户手动点掉这个已失效的旧弹窗。本地超时到点 → deny + 清 pending(与 main 一致)。
-const PROMPT_TIMEOUT_MS = 5 * 60 * 1000;
+const PROMPT_TIMEOUT_MS = AGENT_AUTH_PROMPT_TIMEOUT_MS;
 let pendingTimer: ReturnType<typeof setTimeout> | null = null;
 function clearPendingTimer(): void {
   if (pendingTimer !== null) {

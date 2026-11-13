@@ -1,4 +1,9 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
+import {
+  EXPLORER_CHANNELS,
+  LAYOUT_CHANNELS,
+  WINDOW_ID_CHANNEL,
+} from '../shared/persistence-channels';
 import { subscribeIpc } from './subscribe-ipc';
 import { createTerminalDataDemux } from './terminal-data-demux';
 import type { IpcResult } from '../shared/ipc-result';
@@ -111,9 +116,9 @@ const api = {
   ping: () => 'pong' as const,
   layout: {
     read: (): Promise<IpcResult<unknown | null>> =>
-      ipcRenderer.invoke('layout:read'),
+      ipcRenderer.invoke(LAYOUT_CHANNELS.READ),
     write: (json: unknown): Promise<IpcResult<void>> =>
-      ipcRenderer.invoke('layout:write', json),
+      ipcRenderer.invoke(LAYOUT_CHANNELS.WRITE, json),
     onFlushRequest: (
       cb: (payload?: { windowId: number }) => void | Promise<void>,
     ): (() => void) => {
@@ -121,21 +126,21 @@ const api = {
       const listener = (_event: unknown, payload?: { windowId: number }) => {
         void cb(payload);
       };
-      return subscribeIpc('layout:flush-request', listener);
+      return subscribeIpc(LAYOUT_CHANNELS.FLUSH_REQUEST, listener);
     },
     sendFlushAck: (windowId: number): void => {
-      ipcRenderer.send('layout:flush-ack', windowId);
+      ipcRenderer.send(LAYOUT_CHANNELS.FLUSH_ACK, windowId);
     },
   },
   system: {
-    windowId: ipcRenderer.sendSync('window:id') as number,
+    windowId: ipcRenderer.sendSync(WINDOW_ID_CHANNEL) as number,
   },
   explorer: {
     // ExplorerPayload 形态由 src/lib/persist/explorer-persist 保证;preload 透传 unknown
     read: (): Promise<IpcResult<unknown | null>> =>
-      ipcRenderer.invoke('explorer:read'),
+      ipcRenderer.invoke(EXPLORER_CHANNELS.READ),
     write: (json: unknown): Promise<IpcResult<void>> =>
-      ipcRenderer.invoke('explorer:write', json),
+      ipcRenderer.invoke(EXPLORER_CHANNELS.WRITE, json),
   },
   fs: {
     listDir: (
@@ -353,7 +358,8 @@ const api = {
       | { ok: true }
       | {
           ok: false;
-          code: 'BAD_INPUT' | 'BAD_ROOT' | 'NO_WINDOW';
+          // main 还可能因不可信 frame 返回 IPC_DENIED
+          code: 'BAD_INPUT' | 'BAD_ROOT' | 'NO_WINDOW' | 'IPC_DENIED';
           message?: string;
         }
     > => ipcRenderer.invoke(WINDOW_CHANNELS.NOTIFY_ROOT, { root }),

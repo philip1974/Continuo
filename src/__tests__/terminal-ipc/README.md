@@ -18,9 +18,6 @@ handler 真行为(node-pty spawn / write / resize)需 PTY 运行时,留 E2E 验�
 | `terminal:create` | `{ shell?, args?, cwd?, env? }` | `{ id }` |
 | `terminal:write` | `{ id, data: string ≤ 2M chars }` | `void` |
 | `terminal:resize` | `{ id, cols 1-1000, rows 1-500 }` | `void` |
-| `terminal:interrupt` | `{ id }` | `void` |
-| `terminal:kill` | `{ id }` | `void` |
-| `terminal:destroy` | `{ id }` | `void`(alias kill) |
 | `terminal:data` | event push | `(id, data)` |
 | `terminal:exit` | event push | `(id, { exitCode, signal })` |
 | `terminal:overflow` / `recovered` | event push | `(id)` |

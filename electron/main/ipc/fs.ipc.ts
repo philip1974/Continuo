@@ -132,8 +132,6 @@ export type TrashInput = z.infer<typeof trashInputSchema>;
 export type RevealInput = z.infer<typeof revealInputSchema>;
 export type MoveInput = z.infer<typeof moveInputSchema>;
 export type CopyInput = z.infer<typeof copyInputSchema>;
-export type WatchInput = z.infer<typeof watchInputSchema>;
-export type UnwatchInput = z.infer<typeof unwatchInputSchema>;
 
 // ────────────────────────────────────────────────────────────
 // handlers — 浅函数,把 schema parse 后的对象映射给 fs 函数

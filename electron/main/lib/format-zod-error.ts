@@ -4,12 +4,7 @@
 // electron/shared/cap-joined-messages.ts,E76 起 renderer 侧也复用)cap:限 issue 条数 + 总长度。
 // safeHandle / safeHandleWithCtx / mcp-host 工具入参校验三处共用 formatZodErrorCapped。
 import type { z } from 'zod';
-import {
-  capJoinedMessages,
-  capJoinedMessagesFrom,
-} from '../../shared/cap-joined-messages';
-
-export { capJoinedMessages, capJoinedMessagesFrom };
+import { capJoinedMessagesFrom } from '../../shared/cap-joined-messages';
 
 /** 把 ZodError 拼成有上限的单行 message(issue 数 + 总长双闸 + 截断标记)。 */
 export function formatZodErrorCapped(error: z.ZodError): string {

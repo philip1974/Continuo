@@ -224,8 +224,6 @@ export const zh: Record<TranslationKey, string> = {
   'panels.explorer.create.in_label': '在: {dir}',
 
   // panels.terminal.*
-  'panels.terminal.aria.start_shell': '启动 shell',
-  'panels.terminal.search.title': '终端内搜索',
   'panels.terminal.search.placeholder': '搜索',
   'panels.terminal.search.match_count': '{n} / {total}',
   'panels.terminal.search.no_match': '无匹配',
@@ -377,7 +375,6 @@ export const zh: Record<TranslationKey, string> = {
   'keybindings.unbound': '未绑定',
   'keybindings.edit_hotkey': '编辑快捷键',
   'keybindings.reset_default': '恢复默认（{hotkey}）',
-  'keybindings.reset_default_aria': '恢复默认',
   'keybindings.edit_hotkey_for_aria': '编辑 {command} 的快捷键',
   'keybindings.reset_default_for_aria': '将 {command} 的快捷键恢复默认',
 

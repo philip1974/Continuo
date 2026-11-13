@@ -234,8 +234,6 @@ export const en = {
   'panels.explorer.create.in_label': 'in: {dir}',
 
   // panels.terminal.* aria + dynamic (4)
-  'panels.terminal.aria.start_shell': 'Starting shell',
-  'panels.terminal.search.title': 'Find in terminal',
   'panels.terminal.search.placeholder': 'Find',
   'panels.terminal.search.match_count': '{n} / {total}',
   'panels.terminal.search.no_match': 'No match',
@@ -394,7 +392,6 @@ export const en = {
   'keybindings.unbound': 'Unbound',
   'keybindings.edit_hotkey': 'Edit hotkey',
   'keybindings.reset_default': 'Reset to default ({hotkey})',
-  'keybindings.reset_default_aria': 'Reset to default',
   // a11y(A76):per-row aria-label includes command name to distinguish rows for SR.
   'keybindings.edit_hotkey_for_aria': 'Edit hotkey for {command}',
   'keybindings.reset_default_for_aria': 'Reset hotkey for {command} to default',

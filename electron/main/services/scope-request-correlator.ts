@@ -22,7 +22,6 @@ export interface CreateRequestResult {
 
 const DEFAULT_TTL_MS = SCOPE_REQUEST_TTL_MS;
 const GC_INTERVAL_MS = 60_000;
-const PING_REFRESH_MS = 300_000;
 // 边界(E227):未决 scope 请求数量上限。单次 request-scope 的 scopes 已限,但插件可连续 spam 大量未决
 // 请求 —— 每个在 pending Map 驻留至 resolve / 5min TTL,且 renderer 弹窗队列随之线性增长 → 内存/弹窗放大。
 // 全局 + per-webContents 双闸,超限由调用方按终态 deny 收口(不入 pending、不弹窗)。
@@ -134,14 +133,6 @@ export class ScopeRequestCorrelator {
     return n;
   }
 
-  /** Renderer keepalive - prompt visible. Resets expiresAt to now + PING_REFRESH_MS. */
-  ping(requestId: string, fromWebContentsId: number): void {
-    const entry = this.pending.get(requestId);
-    if (!entry || entry.resolved) return;
-    if (entry.webContentsId !== fromWebContentsId) return;
-    entry.expiresAt = Date.now() + PING_REFRESH_MS;
-  }
-
   /** Test-only: synchronous GC sweep skipping setInterval. */
   _sweep(): void {
     const now = Date.now();
@@ -171,4 +162,3 @@ export class ScopeRequestCorrelator {
 
 export const DEFAULT_TTL_MS_FOR_TEST = DEFAULT_TTL_MS;
 export const GC_INTERVAL_MS_FOR_TEST = GC_INTERVAL_MS;
-export const PING_REFRESH_MS_FOR_TEST = PING_REFRESH_MS;

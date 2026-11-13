@@ -275,23 +275,13 @@ const debugListSessionsOutputSchema = z
   .strict();
 
 export type DebugLaunchInput = z.infer<typeof debugLaunchInputSchema>;
-export type DebugLaunchOutput = z.infer<typeof debugLaunchOutputSchema>;
 export type DebugSetBreakpointInput = z.infer<
   typeof debugSetBreakpointInputSchema
 >;
-export type DebugSetBreakpointOutput = z.infer<
-  typeof debugSetBreakpointOutputSchema
->;
 export type DebugWaitForStopInput = z.infer<typeof debugWaitForStopInputSchema>;
-export type DebugWaitForStopOutput = z.infer<
-  typeof debugWaitForStopOutputSchema
->;
 export type DebugVariablesInput = z.infer<typeof debugVariablesInputSchema>;
-export type DebugVariablesOutput = z.infer<typeof debugVariablesOutputSchema>;
 export type DebugEvaluateInput = z.infer<typeof debugEvaluateInputSchema>;
-export type DebugEvaluateOutput = z.infer<typeof debugEvaluateOutputSchema>;
 export type DebugScopesInput = z.infer<typeof debugScopesInputSchema>;
-export type DebugScopesOutput = z.infer<typeof debugScopesOutputSchema>;
 
 type JsonSchema = Record<string, unknown>;
 

@@ -45,7 +45,7 @@ type Cache = PermissionState;
 // 校验、decidedAt 仅 typeof number(允许 Infinity/NaN)—— 畸形/未来回归的 IPC payload 在 renderer 首次
 // 授权检查时扫描/分配巨表,并把超长 permission/path 或非有限时间戳缓进 cache,随后 grant/deny 写回。
 // 读端独立有界:数量收集到上限即停 + 字段长度/有限性校验(写端 cap 护不了畸形/旧/篡改数据)。
-const MAX_PERMISSION_PLUGIN_KEYS = PERMISSION_RECORD_LIMITS.PLUGIN_KEYS_MAX; // 对齐 plugins.ipc PLUGINS_MAX
+const MAX_PERMISSION_PLUGIN_KEYS = PERMISSION_RECORD_LIMITS.PLUGIN_KEYS_MAX;
 const MAX_DECISIONS_PER_PLUGIN = PERMISSION_RECORD_LIMITS.DECISIONS_PER_PLUGIN_MAX; // 对齐 plugins.ipc DECISIONS_MAX
 // 边界(E246):pathScopes 上限对齐**绑定** cap = 读盘层 MAX_PERSISTED_SCOPES_PER_PLUGIN(256,
 // PathScopeRegistry 契约),非写端宽松值。E245 误对齐到写端 10_000;真正生效的是读盘 256,统一到此。

@@ -7,7 +7,7 @@ import type {
   FetchReviewsResult,
   MarketplaceReviewNode,
 } from '../../shared/marketplace-channels';
-import { capJoinedMessagesFrom } from '../lib/format-zod-error';
+import { capJoinedMessagesFrom } from '../../shared/cap-joined-messages';
 import {
   REVIEW_BODY_MAX,
   REVIEW_FIELD_MAX,

@@ -25,8 +25,8 @@ import { ScopeRequestCorrelator } from '../../../electron/main/services/scope-re
 import {
   registerPluginFsHandlers,
   MAX_LIST_DIR_ENTRIES,
-  MAX_SCOPE_REQUEST_COUNT,
 } from '../../../electron/main/services/plugin-fs.service';
+import { MAX_SCOPE_REQUEST_COUNT } from '../../../electron/shared/fs-limits';
 import { promises as nodeFsPromises } from 'node:fs';
 import {
   StubIpcMain,

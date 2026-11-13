@@ -1,20 +1,9 @@
 import type { Stats } from 'node:fs';
 import { lstat } from 'node:fs/promises';
-import path from 'node:path';
 import { ERROR_CODES } from '../../../shared/error-codes';
 import type { FsErrorCode } from '../../../shared/error-codes';
 import { isValidLeafName } from '../../../shared/leaf-name';
 import { codedError } from '../../../shared/error-message';
-
-/**
- * 路径规范化:相对 → 绝对,解析 ../ 防遍历。
- *
- * VSCode 风(ADR-006):**不做** home 沙箱、敏感目录黑名单、symlink 解析校验。
- * 信任 OS 文件权限;危险操作的二次确认由 renderer UI 层负责(见 R7)。
- */
-export function normalizePath(input: string): string {
-  return path.resolve(input);
-}
 
 /** 创建带 code 字段的业务异常(= 共享 codedError;fs 域沿用此名)。 */
 export const fsError = codedError;

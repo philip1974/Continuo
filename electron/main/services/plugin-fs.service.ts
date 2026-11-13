@@ -4,7 +4,7 @@ import { promises as fs, type Dirent } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import type { IpcMain, WebContents } from 'electron';
-import { PLUGIN_FS_CHANNELS } from '../../shared/plugin-fs-channels';
+import { PLUGIN_FS_CHANNELS, SCOPE_REQUEST_ID_MAX } from '../../shared/plugin-fs-channels';
 import { createByteCappedBuffer } from '../lib/byte-capped-buffer';
 import { IdentityRegistry } from './identity-registry.service';
 import { PathScopeRegistry } from './path-scope-registry.service';
@@ -18,8 +18,8 @@ import { canonicalizeScopePath } from './path-resolve.helper';
 import { atomicWriteFile } from '../ipc/fs/atomic-write';
 import { readFile as readFileCapped } from '../ipc/fs/read-file';
 import {
+  FS_PATH_MAX,
   MAX_WRITE_BYTES,
-  MAX_SCOPE_REQUEST_COUNT,
   validateScopesShape,
   isValidGitBlobSha,
 } from '../../shared/fs-limits';
@@ -55,10 +55,7 @@ export const MAX_LIST_DIR_ENTRIES = 100_000;
 
 // 边界(E31/E239):plugin-fs:request-scope 的 scopes 是插件直传 IPC payload。数量/路径长度上限 + mode
 // 枚举收口到 shared(fs-limits.validateScopesShape),main 与 renderer scoped-app 共用单一来源。此处
-// re-export MAX_SCOPE_REQUEST_COUNT 维持既有测试 import 路径(实义在 shared)。
-export { MAX_SCOPE_REQUEST_COUNT };
 // 边界(E96):scope-decision 的 requestId 上限(correlator 用的是 UUID,~36 字符,256 留足余量)。
-const MAX_REQUEST_ID_LEN = 256;
 // 边界(E97):注册入口 pluginId 长度上限(对齐 manifest id 上限 E74 NAME_MAX)。
 const MAX_PLUGIN_ID_LEN = PLUGIN_ID_MAX_LEN;
 // 边界(E315,E234 并发 fan-out 同族):单次 request-scope 最多 MAX_SCOPE_REQUEST_COUNT(64)条,路径归一化要
@@ -663,11 +660,13 @@ export function registerPluginFsHandlers(
         event.sender.send(PLUGIN_FS_CHANNELS.SCOPE_REQUEST, {
           requestId,
           pluginId,
-          scopes: scopes.map((s, i) => ({
-            path: s.path,
-            mode: s.mode,
-            displayPath: canonicalScopes[i]!.path,
-          })),
+          scopes: scopes.map((s, i) => {
+            const displayPath = canonicalScopes[i]!.path;
+            // 展开后超长 → 不带(renderer 守卫会把超长 displayPath 判畸形并丢弃整个请求),回退显示原始 path。
+            return displayPath.length <= FS_PATH_MAX
+              ? { path: s.path, mode: s.mode, displayPath }
+              : { path: s.path, mode: s.mode };
+          }),
         });
       } catch {
         promise.catch(() => undefined);
@@ -721,7 +720,7 @@ export function registerPluginFsHandlers(
       if (
         typeof requestId !== 'string' ||
         requestId.length === 0 ||
-        requestId.length > MAX_REQUEST_ID_LEN
+        requestId.length > SCOPE_REQUEST_ID_MAX
       ) {
         throw fsError(ERROR_CODES.BAD_INPUT, 'invalid scope-decision requestId');
       }

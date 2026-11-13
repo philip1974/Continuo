@@ -7,10 +7,10 @@ import type { z } from 'zod';
 // for-in + hasOwnProperty 早停计数到 maxEntries+1 即拒,同轮校验 key 长度 + 每 value。复杂度
 // O(min(N, maxEntries+1)),无 Object.keys/z.record 的额外全量物化。各 record 入口共用,防校验逻辑漂移。
 
-export interface BoundedRecordLimits {
+interface BoundedRecordLimits {
   readonly keyMax: number;
   readonly maxEntries: number;
-  /** 每个 value 是否合法(env=string≤上限;权限表=PermissionRecordSchema.safeParse(v).success)。 */
+  /** 每个 value 是否合法(env = string 且 ≤ 上限)。 */
   readonly valueOk: (val: unknown) => boolean;
   /** 错误消息中的 record 名(默认 'record')。 */
   readonly label?: string;
@@ -29,7 +29,7 @@ function makeBoundedRecordValidator(
     let count = 0;
     // 边界(E201,DEFER —— 经 user 定夺 2026-06-26):codex 提议用 Reflect.ownKeys/descriptor 拒 symbol key
     // 与 non-enumerable own property。**不采纳**,理由:
-    //  (1) 不可达:本校验器全部 3 个消费者(shell.ipc / terminal-create / plugins.ipc)都是 IPC ingress 的
+    //  (1) 不可达:本校验器的消费者(shell.ipc / terminal-create 的 env)都是 IPC ingress 的
     //      zod schema,在 main 校验**经 structured clone 的对象** —— Electron structured clone 不复制 symbol
     //      key、不复制 non-enumerable own property,故这些属性在校验器运行前就已被剥离。
     //  (2) for...in(仅枚举 enumerable string own key)与所有真实消费者(JSON.stringify / structured clone /

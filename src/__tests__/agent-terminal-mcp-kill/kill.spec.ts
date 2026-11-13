@@ -69,18 +69,19 @@ describe('killOutputSchema', () => {
 
 type HasFn = (id: string) => boolean;
 type SignalFn = (id: string) => void;
+type InterruptFn = (id: string) => Promise<boolean>;
 type GetSessionOwnerFn = (id: string) => number | null;
 const ctx = { ownerWindowId: 1 };
 
 const makeDeps = (overrides?: {
   has?: HasFn;
-  interrupt?: SignalFn;
+  interrupt?: InterruptFn;
   kill?: SignalFn;
   forceKill?: SignalFn;
   getSessionOwner?: GetSessionOwnerFn;
 }) => ({
   has: overrides?.has ?? vi.fn<HasFn>(() => true),
-  interrupt: overrides?.interrupt ?? vi.fn<SignalFn>(() => {}),
+  interrupt: overrides?.interrupt ?? vi.fn<InterruptFn>(async () => true),
   kill: overrides?.kill ?? vi.fn<SignalFn>(() => {}),
   forceKill: overrides?.forceKill ?? vi.fn<SignalFn>(() => {}),
   getSessionOwner:
@@ -108,7 +109,7 @@ describe('makeKillTool · 元数据', () => {
 describe('makeKillTool · run', () => {
   it('has=false → 抛 TERMINAL_SESSION_NOT_FOUND', async () => {
     const has = vi.fn<HasFn>(() => false);
-    const interrupt = vi.fn<SignalFn>(() => {});
+    const interrupt = vi.fn<InterruptFn>(async () => true);
     const kill = vi.fn<SignalFn>(() => {});
     const forceKill = vi.fn<SignalFn>(() => {});
     const tool = makeKillTool(makeDeps({ has, interrupt, kill, forceKill }));
@@ -146,6 +147,15 @@ describe('makeKillTool · run', () => {
     expect(deps.interrupt).toHaveBeenCalledWith('term-1');
     expect(deps.kill).not.toHaveBeenCalled();
     expect(deps.forceKill).not.toHaveBeenCalled();
+  });
+
+  // Ctrl-C 实际没送达(has() 之后 PTY 退出 / 写被拒)→ 不能回报成功,与 send_input 写失败同码。
+  it("signal='SIGINT' 且 interrupt 实际失败(→false)→ 抛 TERMINAL_SESSION_NOT_FOUND", async () => {
+    const deps = makeDeps({ interrupt: vi.fn<InterruptFn>(async () => false) });
+    const tool = makeKillTool(deps);
+    await expect(
+      tool.run({ session_id: 'term-1', signal: 'SIGINT' }, ctx),
+    ).rejects.toMatchObject({ code: 'TERMINAL_SESSION_NOT_FOUND' });
   });
 
   it("signal='SIGKILL' → 调 forceKill", async () => {

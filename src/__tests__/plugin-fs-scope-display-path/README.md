@@ -16,6 +16,8 @@
   - 已是绝对路径且无符号链接 → 原样
 - `path` / `mode` 仍是插件请求的原始值(决策回传与关联不变)。
 - `displayPath` 与 `scopes` 按下标一一对应。
+- 归一化结果超过 `FS_PATH_MAX`(原始 path 合法但 `~` 展开后超长)→ 该 scope 不带 `displayPath`,
+  请求照常发出(renderer 回退显示原始 path;否则会被 renderer 的 ingress 守卫整包丢弃)。
 
 ## renderer:弹窗 scope 列表
 

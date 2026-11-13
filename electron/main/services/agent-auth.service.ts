@@ -9,6 +9,7 @@ import * as crypto from 'node:crypto';
 import { BrowserWindow } from 'electron';
 import {
   AGENT_AUTH_CHANNELS,
+  AGENT_AUTH_PROMPT_TIMEOUT_MS,
   type AgentAuthDecision,
   type AgentAuthRequestPayload,
 } from '../../shared/agent-auth-channels';
@@ -19,7 +20,7 @@ import { isPopoutUrl } from '../popout-url';
 import { pickMainWindowPreferNonPopout } from './main-window-picker.service';
 
 // 5 分钟无应答 → 默认拒绝(防 renderer 卡死时 tool Promise 永远悬挂)
-const PROMPT_TIMEOUT_MS = 5 * 60 * 1000;
+const PROMPT_TIMEOUT_MS = AGENT_AUTH_PROMPT_TIMEOUT_MS;
 
 // 边界(E229,E227/E228 pending 数量上限族):未决授权请求数量上限。requestAgentAuth 每次登记一条
 // pending + 起 5min timer + 向 renderer 发 IPC;此前无数量上限 —— 外部 MCP/agent 可并发 spam 大量

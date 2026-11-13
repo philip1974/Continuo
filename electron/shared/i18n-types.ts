@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /** 支持的 locale 字面值,zod schema 与 type 都派生自此. */
-export const LOCALES = ['en', 'zh', 'ko'] as const;
+const LOCALES = ['en', 'zh', 'ko'] as const;
 export type Locale = (typeof LOCALES)[number];
 
 /** 单源 zod schema,main IPC + SettingsSchema 都复用. */

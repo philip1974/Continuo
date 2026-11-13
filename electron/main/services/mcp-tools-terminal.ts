@@ -642,8 +642,8 @@ export function makeReadOutputTool(
 
 export interface KillToolDeps {
   readonly has: (sessionId: string) => boolean;
-  /** SIGINT:写 \x03 给 PTY,不退出. */
-  readonly interrupt: (sessionId: string) => void;
+  /** SIGINT:写 \x03 给 PTY,不退出;false = Ctrl-C 未送达(PTY 已退出 / 写被拒). */
+  readonly interrupt: (sessionId: string) => Promise<boolean>;
   /** SIGTERM:SIGINT + 3s grace + force(termService.kill 现行行为). */
   readonly kill: (sessionId: string) => void;
   /** SIGKILL:直接 pty.kill('SIGKILL'). */
@@ -676,7 +676,11 @@ export function makeKillTool(
     run: async (input: KillInput, ctx: McpCallCtx) => {
       assertLiveSessionInCurrentWindow(deps, input.session_id, ctx.ownerWindowId);
       const sig = input.signal ?? 'SIGTERM';
-      if (sig === 'SIGINT') deps.interrupt(input.session_id);
+      if (sig === 'SIGINT') {
+        // 等真实结果:未送达不回报成功(与 send_input 写失败同码)。
+        const ok = await deps.interrupt(input.session_id);
+        if (!ok) throw ERR_TERMINAL_SESSION_NOT_FOUND(input.session_id);
+      }
       else if (sig === 'SIGKILL') deps.forceKill(input.session_id);
       else deps.kill(input.session_id); // SIGTERM
       return {};

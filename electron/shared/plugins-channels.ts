@@ -37,7 +37,6 @@ export const PLUGINS_CHANNELS = {
 // null payload 在 listener 中抛(未捕获),超长/非字符串 id 会进 plugin-reload-gate pending Set 或触发
 // reload(污染启动期缓冲/错误路径),超长 url 进 protocol-dispatch。纯函数守卫(无 zod,preload 可 import),
 // preload 不合法则 warn+drop 不调 cb。与 fs:dir-changed / agent-auth 的 push 守卫同款纵深防御。
-export { PLUGIN_ID_MAX_LEN }; // plugin id 长度上限(单一来源 permission-record-limits)
 export const PROTOCOL_URL_MAX_LEN = 8192; // co:// URL 长度上限(对齐 path 类上限)
 
 // 边界(E282):git 安装 URL 长度上限。renderer 两个 Git URL 输入(Marketplace / PluginsTab)与 main

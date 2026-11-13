@@ -3,7 +3,7 @@ import { notify } from '@/notifications/notify';
 import { t as translate } from '@/i18n';
 import type { PathScope } from '../types';
 import { isValidPluginId } from '../plugin-id';
-import { FS_PATH_MAX } from '../../../electron/shared/fs-limits';
+import { FS_PATH_MAX, MAX_SCOPE_REQUEST_COUNT } from '../../../electron/shared/fs-limits';
 import { usePermissionPromptStore, type FsScopePromptScope } from './promptStore';
 import { SCOPE_REQUEST_ID_MAX } from '../../../electron/shared/plugin-fs-channels';
 
@@ -22,7 +22,6 @@ interface ScopeRequestPayload {
 // 此前 bridge 直接 `payload.scopes.map(...)` 信任 TS 类型,畸形 payload(null/scopes 非数组/scope 非
 // 对象/超长 path/非法 mode/超长 requestId/非法 pluginId)会让回调抛错(scopes.map / scope.path)或
 // 把脏授权请求写入 prompt store。注册入口 runtime 守卫,非法 drop + warn,不进 prompt store。
-const MAX_SCOPES_PER_REQUEST = 256;
 const EMPTY_FS_SCOPE_PROMPT_SCOPES: FsScopePromptScope[] = [];
 
 function isScopeRequestPayload(v: unknown): v is ScopeRequestPayload {
@@ -38,7 +37,7 @@ function isScopeRequestPayload(v: unknown): v is ScopeRequestPayload {
   if (typeof o.pluginId !== 'string' || !isValidPluginId(o.pluginId)) {
     return false;
   }
-  if (!Array.isArray(o.scopes) || o.scopes.length > MAX_SCOPES_PER_REQUEST) {
+  if (!Array.isArray(o.scopes) || o.scopes.length > MAX_SCOPE_REQUEST_COUNT) {
     return false;
   }
   for (const s of o.scopes) {

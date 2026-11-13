@@ -5,6 +5,7 @@
 import { spawn } from 'node:child_process';
 import { shell } from 'electron';
 import { errorMessage } from '../../shared/error-message';
+import { SHELL_MAX_TIMEOUT_MS } from '../../shared/shell-limits';
 import type {
   IpcShellExecInput,
   IpcShellExecResult,
@@ -17,7 +18,7 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 // 而一次性 exec 此前只有 DEFAULT 没有 MAX —— 插件传 timeoutMs:2e9(~23 天,仍 < 2³¹
 // 不触发 timer 截断)可把不退出的子进程 + stdout/stderr Buffer 钉到那个超时。补齐
 // 同款上界,让两个兄弟入口的安全意图一致(防御未传播到平行入口)。
-const MAX_TIMEOUT_MS = 30 * 60_000; // 30min,与 plugin-shell-stream MAX_TIMEOUT_MS 对齐
+const MAX_TIMEOUT_MS = SHELL_MAX_TIMEOUT_MS; // 30min,与 plugin-shell-stream 同一来源
 const DEFAULT_MAX_OUTPUT_BYTES = 10 * 1024 * 1024; // 10MB
 const MAX_OUTPUT_BYTES_CAP = 100 * 1024 * 1024; // 100MB 硬上限,防超大值钉住内存
 const SIGKILL_GRACE_MS = 500;

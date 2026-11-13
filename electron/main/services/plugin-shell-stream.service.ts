@@ -8,13 +8,13 @@ import { ERROR_CODES } from '../../shared/error-codes';
 // 上限(只 E10 修了 timeoutMs)。同仓 shell.exec(E12)已有 PATH/ARG 上限,但流式 spawn 入口漏了。
 // 畸形插件可经 app.shell.execStream() 传巨量 args/超长 cwd/cmd → IPC structured clone + 主进程内存/CPU
 // 放大,或触发 spawn 的 E2BIG/路径异常。与 shell.exec 对齐(E46:shared 单一来源),spawn 前 fail-closed。
-import { shellCommandShapeError } from '../../shared/shell-limits';
+import { SHELL_MAX_TIMEOUT_MS, shellCommandShapeError } from '../../shared/shell-limits';
 import { killWithGrace } from '../lib/kill-with-grace';
 import { makeWcGoneHook } from '../lib/wc-gone-hook';
 import { codedError } from '../../shared/error-message';
 
 const DEFAULT_TIMEOUT_MS = 5 * 60_000;
-const MAX_TIMEOUT_MS = 30 * 60_000;
+const MAX_TIMEOUT_MS = SHELL_MAX_TIMEOUT_MS;
 const STREAM_ID_MAX = 256;
 
 // 边界(E230,E227/E228/E229 数量上限族):并发 active 流式子进程数量上限。此前 START 只 active.has(streamId)
