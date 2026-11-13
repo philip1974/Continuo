@@ -76,7 +76,7 @@ export async function walkWorkspaceFiles(
     };
   }
   const maxFiles = opts.maxFiles ?? DEFAULT_MAX_FILES;
-  if (maxFiles <= 0) return { ok: true, data: EMPTY_QUICK_OPEN_FILES };
+  if (!(maxFiles > 0)) return { ok: true, data: EMPTY_QUICK_OPEN_FILES };
   const exclude = buildExcludeList(opts.extraExclude);
 
   // perf P2:把 maxFiles 下推到 main 侧 walker,使其收集够 maxFiles 个文件即停止
@@ -94,7 +94,7 @@ export async function walkWorkspaceFiles(
   // 保护 + 平台感知大小写)。跨平台审计 P2(codex):此前手写 `e.path.startsWith(rootPath)`
   // 仍是大小写敏感且无边界 → Windows 上 rootPath 与 FileEntry.path 仅大小写不同 / canonical
   // 形式时 relPath 退化为绝对路径 → Quick Open 路径显示 + 相对片段搜索失真。
-  const capacity = Math.min(maxFiles, r.data.length); // maxFiles <= 0 已在上方早返
+  const capacity = Math.min(maxFiles, r.data.length); // 非正 / NaN 的 maxFiles 已在上方早返
   const files = new Array<QuickOpenFile>(capacity);
   let fileCount = 0;
   for (const e of r.data) {
