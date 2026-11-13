@@ -140,11 +140,19 @@ describe('topic51 Op6 · debug decoration sync', () => {
     stopSync = startDebugDecorationSync();
     expect(view.dom.querySelectorAll('.cm-debug-breakpoint-marker')).toHaveLength(1);
 
+    // 真实时序:store 先通知(此时文档还没换),之后 React effect 才 dispatch 整篇替换,且不再有 store 通知。
+    // 所以重贴必须由 view 自己在文档变化时完成,不能指望之后的 store 通知。
+    useEditorStore.setState((state) => ({ tabs: [...state.tabs] }));
     view.dispatch({
       changes: { from: 0, to: view.state.doc.length, insert: 'ONE\nTWO\nTHREE\nFOUR\n' },
     });
-    useEditorStore.setState((state) => ({ tabs: [...state.tabs] })); // reload 后 store 通知
     expect(view.dom.querySelectorAll('.cm-debug-breakpoint-marker')).toHaveLength(1);
+    // 行号是事实来源:在断点上方插入一行,红点仍在第 2 行(不随文本漂移)
+    view.dispatch({ changes: { from: 0, insert: 'ZERO\n' } });
+    const marker = view.dom.querySelector('.cm-debug-breakpoint-marker')!;
+    const gutterElements = Array.from(marker.closest('.cm-gutter')!.querySelectorAll('.cm-gutterElement'));
+    const withMarker = gutterElements.filter((el) => el.querySelector('.cm-debug-breakpoint-marker'));
+    expect(withMarker).toHaveLength(1);
   });
 
   it('clears exec-line after continued and terminated events remove stopped state', () => {

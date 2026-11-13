@@ -41,6 +41,45 @@ describe('safeTruncate', () => {
     expect(['\x1b[31mfinal', 'final', 'inal', 'nal', 'al', 'l', '']).toContain(tail);
   });
 
+  // 各种转义序列:把序列放在串中间,让截断点扫过序列的每个位置,保留的尾部都不能是序列残片。
+  it.each([
+    ['私有模式 CSI', '\x1b[?2004h'],
+    ['隐藏光标 CSI', '\x1b[?25l'],
+    ['冒号参数 SGR', '\x1b[38:5:196m'],
+    ['带中间字节的 CSI', '\x1b[2 q'],
+    ['OSC(BEL 结尾)', '\x1b]0;my title\x07'],
+    ['OSC(ST 结尾)', '\x1b]0;my title\x1b\\'],
+    ['字符集选择', '\x1b(B'],
+    ['两字符序列', '\x1bc'],
+    ['连续两个 SGR', '\x1b[1m\x1b[31m'],
+  ])('%s:截断点落在序列任意位置都不留残片,总字节 ≤ maxBytes', (_label, seq) => {
+    const tail = 'TAIL';
+    const data = '中'.repeat(40) + seq + tail;
+    for (let keep = 0; keep <= seq.length + tail.length + 3; keep += 1) {
+      const max = 4 + keep;
+      const r = safeTruncate(data, max);
+      expect(Buffer.byteLength(r, 'utf8')).toBeLessThanOrEqual(max);
+      const kept = r.slice('\x1b[0m'.length);
+      // 保留的部分必须是「完整序列…TAIL」的某个后缀,且不从序列中间开始
+      const full = seq + tail;
+      if (kept.length > full.length) {
+        expect(kept.endsWith(full)).toBe(true); // 预算足够,序列整段保留
+        continue;
+      }
+      expect(full.endsWith(kept)).toBe(true);
+      const start = full.length - kept.length;
+      const boundaries = new Set<number>([0, seq.length, full.length]);
+      if (seq === '\x1b[1m\x1b[31m') boundaries.add(4);
+      for (let i = seq.length; i <= full.length; i += 1) boundaries.add(i);
+      expect(boundaries.has(start)).toBe(true);
+    }
+  });
+
+  it('串尾未终结的序列被切到 ESC 之后 → 不保留残片', () => {
+    const data = 'x'.repeat(100) + '\x1b[3';
+    expect(safeTruncate(data, 4 + 2)).toBe('\x1b[0m');
+  });
+
   it('ANSI 截断边界检测走字符扫描,不调用 RegExp.test', () => {
     const testSpy = vi.spyOn(RegExp.prototype, 'test');
     try {

@@ -15,8 +15,6 @@ export const PERMISSION_RECORD_LIMITS = {
   DECISIONS_PER_PLUGIN_MAX: 1000,
   /** 单插件 path scopes 数量(PathScopeRegistry 的内存上限与持久化读/写上限共用此值,E81/E246)。 */
   PATH_SCOPES_PER_PLUGIN_MAX: 256,
-  /** 权限名长度。 */
-  PERMISSION_NAME_MAX: 256,
   /** 单条 scope path 长度。 */
   SCOPE_PATH_MAX: 8192,
 } as const;

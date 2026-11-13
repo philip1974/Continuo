@@ -18,10 +18,18 @@ export function lowerIfNeeded(value: string): string {
  * Unicode case mapping),零分配。用于 Host header、agent label 等协议级短标识符比较。
  */
 export function equalsAsciiIgnoreCase(value: string, expectedLower: string): boolean {
-  if (value.length !== expectedLower.length) return false;
-  for (let i = 0; i < expectedLower.length; i += 1) {
+  return value.length === expectedLower.length && startsWithAsciiIgnoreCase(value, expectedLower);
+}
+
+/**
+ * ASCII 大小写不敏感的前缀判断:`value` 是否以**已小写**的 `prefixLower` 开头(只折叠 A-Z,零分配)。
+ * URL scheme、runner 标记、Windows 保留设备名等协议级前缀比较共用。
+ */
+export function startsWithAsciiIgnoreCase(value: string, prefixLower: string): boolean {
+  if (value.length < prefixLower.length) return false;
+  for (let i = 0; i < prefixLower.length; i += 1) {
     const actual = value.charCodeAt(i);
-    const expected = expectedLower.charCodeAt(i);
+    const expected = prefixLower.charCodeAt(i);
     if (actual === expected) continue;
     const folded = actual >= 65 && actual <= 90 ? actual + 32 : actual;
     if (folded !== expected) return false;

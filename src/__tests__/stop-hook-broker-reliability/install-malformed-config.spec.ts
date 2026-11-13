@@ -37,6 +37,17 @@ describe('安装 stop hook · 畸形的用户配置', () => {
   });
 
   it.each([
+    ['hooks 是数组', '{"hooks":[1,2]}'],
+    ['hooks 是标量', '{"hooks":"x"}'],
+    ['hooks.Stop 不是数组', '{"hooks":{"Stop":{"a":1}}}'],
+  ])('%s → parse-error,文件原样不动(不覆盖用户原值)', async (_label, text) => {
+    await writeFile(settingsPath, text, 'utf8');
+    const res = await installStopHookForSession(cwd, ccRunner, hookEventsDir);
+    expect(res).toMatchObject({ installed: false, reason: 'parse-error' });
+    expect(await readFile(settingsPath, 'utf8')).toBe(text);
+  });
+
+  it.each([
     ['数组', '[1,2,3]'],
     ['标量', '"just a string"'],
     ['null', 'null'],

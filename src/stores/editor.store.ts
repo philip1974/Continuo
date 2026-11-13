@@ -639,7 +639,7 @@ function isMarkdownFilePath(filePath: string | null): boolean {
 // 性能 P4:milkdownUnsafe 派生值的单一计算口径。content / filePath 任一变更时调一次,
 // 结果缓存进 tab.milkdownUnsafe。isMilkdownUnsafe 跑未锚定 wiki-link 正则(O(file)),
 // 故只在 markdown 文件上算(非 markdown 短路为 false,不扫描)。
-export function computeMilkdownUnsafe(
+function computeMilkdownUnsafe(
   filePath: string | null,
   content: string,
 ): boolean {

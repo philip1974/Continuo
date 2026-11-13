@@ -1,38 +1,20 @@
 import { create } from 'zustand';
 import { asRecord } from '../../electron/shared/as-record';
 import { coApi } from '@/lib/co-api';
-import type { DebugViewEvent } from '../../electron/shared/debug-view-channels';
+import type {
+  DebugBreakpoint,
+  DebugScope,
+  DebugStackFrame,
+  DebugVariable,
+  DebugViewEvent,
+} from '../../electron/shared/debug-view-channels';
 
-export interface DebugBreakpoint {
-  readonly file: string;
-  readonly line: number;
-  readonly column?: number;
-  readonly verified: boolean;
-  readonly message?: string;
-}
-
-export interface DebugStackFrame {
-  readonly id: number;
-  readonly name: string;
-  readonly source_path?: string;
-  readonly line: number;
-  readonly column?: number;
-}
-
-export interface DebugScope {
-  readonly name: string;
-  readonly variables_reference: number;
-  readonly expensive: boolean;
-}
-
-export interface DebugVariable {
-  readonly name: string;
-  readonly value: string;
-  readonly type?: string;
-  readonly variables_reference?: number;
-  readonly truncated?: boolean;
-  readonly children?: readonly DebugVariable[];
-}
+export type {
+  DebugBreakpoint,
+  DebugScope,
+  DebugStackFrame,
+  DebugVariable,
+} from '../../electron/shared/debug-view-channels';
 
 export interface DebugStoppedLocation {
   readonly reason: string;

@@ -1,4 +1,8 @@
 import { EventEmitter } from 'node:events';
+import { existsSync } from 'node:fs';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import type { Socket } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -116,6 +120,31 @@ describe('adapter 子进程', () => {
     // 不必等满 readyTimeout
     expect(Date.now() - startedAt).toBeLessThan(2_000);
     await client.dispose();
+  });
+});
+
+describe('child session 的释放', () => {
+  it('dispose child 不删父 adapter 的监听 socket 文件(二者共用同一路径)', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'dap-child-dispose-'));
+    const socketPath = path.join(dir, 'adapter.sock');
+    await writeFile(socketPath, '');
+    try {
+      const parent = new DapClient({ adapterPath: '/nonexistent/adapter.js', socketPath });
+      const child = parent.createChildSession();
+      await child.dispose();
+      expect(existsSync(socketPath)).toBe(true);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('解码器缓冲', () => {
+  it('迟迟不出现帧头结束符 → 缓冲超过头部上限即抛(不无界增长)', () => {
+    const decoder = new DapStreamDecoder();
+    expect(() => {
+      for (let i = 0; i < 40; i += 1) decoder.push(Buffer.alloc(4096, 0x41));
+    }).toThrow(/header/i);
   });
 });
 

@@ -1,3 +1,5 @@
+import { startsWithAsciiIgnoreCase } from './lower-if-needed';
+
 // 单段 leaf 文件名校验(跨进程 + 跨 plugin-fs/Explorer 单一来源)。
 //
 // 边界(E268/E274):leaf 名拼进 FS 路径前须校验。E268 初版只拒空/`.`/`..`/分隔符/控制字符/超长,
@@ -29,10 +31,7 @@ function asciiLower(code: number): number {
 }
 
 function startsWithAsciiWord(name: string, word: string): boolean {
-  if (name.length < word.length) return false;
-  for (let i = 0; i < word.length; i += 1) {
-    if (asciiLower(name.charCodeAt(i)) !== word.charCodeAt(i)) return false;
-  }
+  if (!startsWithAsciiIgnoreCase(name, word)) return false;
   return name.length === word.length || name.charCodeAt(word.length) === 46;
 }
 

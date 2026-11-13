@@ -100,6 +100,9 @@ export function encodeDapMessage(message: DapMessage): Buffer {
 /** 单个 DAP 帧 body 的字节上限。对端是本机 js-debug,正常帧远小于此;超限视为畸形流(不为巨帧无界缓冲)。 */
 export const DAP_MAX_FRAME_BYTES = 64 * 1024 * 1024;
 
+/** 帧头(`Content-Length: N` 等)的字节上限。 */
+const DAP_MAX_HEADER_BYTES = 64 * 1024;
+
 function parseDapContentLength(header: string): number {
   for (const line of header.split('\r\n')) {
     const match = /^Content-Length:\s*(\d+)$/i.exec(line);
@@ -123,7 +126,13 @@ export class DapStreamDecoder {
 
     while (true) {
       const headerEnd = this.buffer.indexOf('\r\n\r\n');
-      if (headerEnd === -1) return messages;
+      if (headerEnd === -1) {
+        // 帧头迟迟不结束 = 畸形流:帧体上限管不到这里,缓冲会无界增长。
+        if (this.buffer.length > DAP_MAX_HEADER_BYTES) {
+          throw new Error(`DAP frame header exceeds ${DAP_MAX_HEADER_BYTES} bytes`);
+        }
+        return messages;
+      }
 
       const header = this.buffer.subarray(0, headerEnd).toString('ascii');
       const contentLength = parseDapContentLength(header);
@@ -293,7 +302,15 @@ export class DapClient {
       env: adapterEnv,
     });
     this.server = server;
-    server.stderr.on('data', (chunk: Buffer) => {
+    // 必须是 spawn 之后的第一件事:fd 耗尽(EMFILE / ENFILE)时返回的 ChildProcess 没有 stdio,先碰
+    // server.stderr 会同步抛 TypeError,'error' 监听就挂不上了。
+    // spawn 失败(ENOENT / EMFILE …)以 'error' 事件上报;ChildProcess 的 'error' 无监听会直接抛成主进程
+    // 未捕获异常。记下来让 waitForReady 立刻失败(不必等满 readyTimeout),并结算在途请求。
+    server.once('error', (err) => {
+      this.spawnError = err;
+      this.rejectAllPending(err);
+    });
+    server.stderr?.on('data', (chunk: Buffer) => {
       // 只用于 ready 超时的报错信息:封顶,不随 adapter 生命周期无界累积。
       if (this.serverStderr.length < SERVER_STDERR_MAX_CHARS) {
         this.serverStderr = (this.serverStderr + chunk.toString('utf8')).slice(
@@ -302,13 +319,7 @@ export class DapClient {
         );
       }
     });
-    // spawn 失败(ENOENT / EMFILE …)以 'error' 事件上报;ChildProcess 的 'error' 无监听会直接抛成主进程
-    // 未捕获异常。记下来让 waitForReady 立刻失败(不必等满 readyTimeout),并结算在途请求。
-    server.once('error', (err) => {
-      this.spawnError = err;
-      this.rejectAllPending(err);
-    });
-    server.stdout.on('data', (chunk: Buffer) => {
+    server.stdout?.on('data', (chunk: Buffer) => {
       this.recordTranscript({
         direction: 'server-stdout',
         text: chunk.toString('utf8'),
@@ -583,9 +594,13 @@ export class DapClient {
     if (this.socket && !this.socket.destroyed) {
       this.socket.destroy();
     }
-    await this.killServer();
-    if (this.socketPath) {
-      await fs.rm(this.socketPath, { force: true });
+    // 只有自己 spawn 过 adapter 的(父)client 才清 adapter 进程与监听 socket 文件。child 与父共用同一个
+    // socketPath:单独释放一个 child(握手失败)时删掉它,仍在运行的 adapter 就再也连不上了。
+    if (this.server) {
+      await this.killServer();
+      if (this.socketPath) {
+        await fs.rm(this.socketPath, { force: true });
+      }
     }
   }
 

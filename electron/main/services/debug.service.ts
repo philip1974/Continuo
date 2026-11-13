@@ -130,28 +130,9 @@ export interface WaitForStopOutput {
   readonly description?: string;
 }
 
-export interface DebugStackFrame {
-  readonly id: number;
-  readonly name: string;
-  readonly source_path?: string;
-  readonly line: number;
-  readonly column?: number;
-}
-
-export interface DebugScope {
-  readonly name: string;
-  readonly variables_reference: number;
-  readonly expensive: boolean;
-}
-
-export interface DebugVariable {
-  readonly name: string;
-  readonly value: string;
-  readonly type?: string;
-  readonly variables_reference?: number;
-  readonly truncated?: boolean;
-  readonly children?: readonly DebugVariable[];
-}
+// 形态定义在 shared(与 renderer 的 debug.store 共用),这里转出供 main 侧既有 import 使用。
+export type { DebugScope, DebugStackFrame, DebugVariable } from '../../shared/debug-view-channels';
+import type { DebugScope, DebugStackFrame, DebugVariable } from '../../shared/debug-view-channels';
 
 interface StopWaiter {
   readonly afterStopSeq: number;
@@ -245,10 +226,6 @@ function setBreakpointsArgs(bp: SetBreakpointInput): DapJson {
 
 function getClientPid(client: DebugDapClientLike): number | undefined {
   return typeof client.serverPid === 'number' ? client.serverPid : undefined;
-}
-
-function getSocketPath(client: DebugDapClientLike): string | undefined {
-  return typeof client.socketPath === 'string' ? client.socketPath : undefined;
 }
 
 function makeSessionId(): string {
@@ -508,9 +485,6 @@ export class DebugService {
       cwd: effectiveCwd,
       ...(input.name !== undefined ? { name: input.name } : {}),
       ...(adapterPid !== undefined ? { adapterPid } : {}),
-      ...(getSocketPath(parentClient) !== undefined
-        ? { socketPath: getSocketPath(parentClient) }
-        : {}),
     });
     if (adapterInfo) debugSessions.update(id, { adapterPgid: adapterInfo.pgid });
     this.wireClient(id, parentClient);
@@ -686,7 +660,6 @@ export class DebugService {
           : {}),
       };
     });
-    if (frames[0]) debugSessions.update(sessionId, { currentFrameId: frames[0].id });
     return {
       frames,
       ...(numberField(body, 'totalFrames') !== undefined
@@ -714,10 +687,6 @@ export class DebugService {
         expensive: boolField(scope, 'expensive') ?? false,
       };
     });
-    debugSessions.addScopeRefs(
-      sessionId,
-      scopes.map((scope) => scope.variables_reference),
-    );
     return { scopes };
   }
 
@@ -979,19 +948,26 @@ export class DebugService {
   }
 
   /**
-   * debuggee 结束(terminated / exited)。结算在途的 wait_for_stop;若事件来自父 client 或当前活动的 child,
-   * 把会话标成 terminated —— 之后的 wait_for_stop 立即报已终止(否则干等满 timeout 才报超时),list_sessions
+   * debuggee 结束(terminated / exited)。结算在途的 wait_for_stop;若事件代表整个会话结束(见下),
+   * 把会话标成 terminated(迟到的 stopped / continued 不再翻回)—— 之后的 wait_for_stop 立即报已终止(否则干等满 timeout 才报超时),list_sessions
    * 也不再显示 running。adapter 进程仍由 disconnect / 关窗 / 退出时的 teardown 回收。
    */
   private markEnded(sessionId: string, client: DebugDapClientLike, message: string): void {
     this.rejectWaiters(sessionId, new Error(message));
     const runtime = this.runtimes.get(sessionId);
-    if (!runtime || (client !== runtime.parentClient && client !== runtime.activeClient)) return;
+    if (!runtime) return;
+    // 父 client 的结束 = 整个会话结束。child 的结束只在它是唯一的 child 时才算(常见的单进程调试);
+    // 有多个 child(worker 等)时,某一个先退出不代表会话结束 —— 置位后 wait_for_stop 会永久报已终止。
+    const wholeSessionEnded =
+      client === runtime.parentClient ||
+      (runtime.childClients.length === 1 && runtime.childClients[0] === client);
+    if (!wholeSessionEnded) return;
     runtime.endedMessage = message;
     debugSessions.update(sessionId, { runtimeState: 'terminated' });
   }
 
   private markStopped(sessionId: string, bodyJson: DapJson | undefined): void {
+    if (this.runtimes.get(sessionId)?.endedMessage !== undefined) return; // 已结束:迟到事件不翻回状态
     const body = asRecord(bodyJson);
     const session = this.requireSession(sessionId);
     const stopSeq = session.stopSeq + 1;
@@ -1043,6 +1019,7 @@ export class DebugService {
   private markContinued(sessionId: string): void {
     const session = this.requireSession(sessionId);
     const runtime = this.requireRuntime(sessionId);
+    if (runtime.endedMessage !== undefined) return; // 已结束:迟到事件 / 迟到的 resume 不翻回状态
     if (session.runtimeState === 'running' && runtime.currentStop === undefined) {
       return;
     }
@@ -1051,8 +1028,6 @@ export class DebugService {
       runtimeState: 'running',
       runSeq: session.runSeq + 1,
       currentThreadId: undefined,
-      currentFrameId: undefined,
-      scopeRefs: [],
       stoppedReason: undefined,
     });
     this.emitSessionEvent(sessionId, {

@@ -33,7 +33,7 @@ import type { McpCallCtx, McpToolDef } from './mcp-host.service';
 import { z } from 'zod';
 import { SESSION_ID_MAX } from '../../shared/session-id-limits';
 import { isEcmaWhitespaceCode } from '../../shared/ecma-whitespace';
-import { equalsAsciiIgnoreCase } from '../../shared/lower-if-needed';
+import { equalsAsciiIgnoreCase, startsWithAsciiIgnoreCase } from '../../shared/lower-if-needed';
 import { codedError } from '../../shared/error-message';
 
 // 边界(E203,mcp-tools-terminal 同族):协议 awaitStopHookInputSchema 的 session_id 仅 min(1) 无上限。
@@ -143,14 +143,7 @@ async function readHookDirCapped(dir: string, max: number): Promise<string[]> {
 }
 
 function startsWithRunnerToken(value: string, tokenLower: 'claude' | 'codex'): boolean {
-  if (value.length < tokenLower.length) return false;
-  for (let i = 0; i < tokenLower.length; i += 1) {
-    const actual = value.charCodeAt(i);
-    const expected = tokenLower.charCodeAt(i);
-    if (actual === expected) continue;
-    const folded = actual >= 65 && actual <= 90 ? actual + 32 : actual;
-    if (folded !== expected) return false;
-  }
+  if (!startsWithAsciiIgnoreCase(value, tokenLower)) return false;
   return (
     value.length === tokenLower.length ||
     isEcmaWhitespaceCode(value.charCodeAt(tokenLower.length))
@@ -578,7 +571,8 @@ export function createHookFileBroker(
       }
     } finally {
       inFlight.delete(fileName);
-      if (rerunAfterInFlight.delete(fileName) && !stopped && myGen === ingestGen) {
+      // 补跑是一次全新的 ingest(自取当前代际),只要 broker 没停就跑。
+      if (rerunAfterInFlight.delete(fileName) && !stopped) {
         void ingestFile(fileName);
       }
     }
@@ -712,29 +706,36 @@ export function createHookFileBroker(
         }
 
         const startedAt = Date.now();
+        // 调用方断开 → 撤销本等待者(仅当它仍是该 key 的当前等待者),让出 key。
+        const onAbort = (): void => {
+          if (pendingByKey.get(key) !== pending) return;
+          pendingByKey.delete(key);
+          if (pending.timer !== null) clearTimeout(pending.timer);
+          reject(new Error('await_stop_hook caller disconnected'));
+        };
+        // 任何结算(命中 / 超时 / 窗口关闭 / stop)都摘掉 abort 监听:stdio 侧的 signal 是每连接一个,
+        // 同一连接反复调用时不摘会一直累积到连接关闭。
+        const detach = (): void => signal?.removeEventListener('abort', onAbort);
         const pending: PendingWaiter = {
           filter,
           key,
-          resolve,
-          reject,
+          resolve: (entry) => {
+            detach();
+            resolve(entry);
+          },
+          reject: (err) => {
+            detach();
+            reject(err);
+          },
           timer: null,
         };
         pending.timer = setTimeout(() => {
           pendingByKey.delete(key);
+          detach();
           resolve({ status: 'timeout', elapsedMs: Date.now() - startedAt });
         }, filter.timeoutMs);
         pendingByKey.set(key, pending);
-        // 调用方断开 → 撤销本等待者(仅当它仍是该 key 的当前等待者),让出 key。
-        signal?.addEventListener(
-          'abort',
-          () => {
-            if (pendingByKey.get(key) !== pending) return;
-            pendingByKey.delete(key);
-            if (pending.timer !== null) clearTimeout(pending.timer);
-            reject(new Error('await_stop_hook caller disconnected'));
-          },
-          { once: true },
-        );
+        signal?.addEventListener('abort', onAbort, { once: true });
       });
     },
     cancelByWindow(windowId) {
@@ -867,12 +868,19 @@ async function mergeClaudeCodeSettings(
   }
   // kind === 'missing' → fileExists 保持 false,新建
 
-  const hooks =
-    existing.hooks !== null &&
-    typeof existing.hooks === 'object' &&
-    !Array.isArray(existing.hooks)
-      ? (existing.hooks as Record<string, unknown>)
-      : {};
+  // `hooks` / `hooks.Stop` 存在但形态不对(数组、标量、非数组的 Stop):不是可合并的配置。当成空值的话,
+  // 写回时会覆盖掉用户原来的值 → 同样按 parse-error 拒绝。
+  const rawHooks = existing.hooks;
+  if (
+    rawHooks !== undefined &&
+    (rawHooks === null || typeof rawHooks !== 'object' || Array.isArray(rawHooks))
+  ) {
+    return { installed: false, reason: 'parse-error' };
+  }
+  const hooks = (rawHooks ?? {}) as Record<string, unknown>;
+  if (hooks.Stop !== undefined && !Array.isArray(hooks.Stop)) {
+    return { installed: false, reason: 'parse-error' };
+  }
   const stopArr = Array.isArray(hooks.Stop) ? [...hooks.Stop] : [];
 
   for (const entry of stopArr) {

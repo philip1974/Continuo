@@ -12,7 +12,11 @@
 // 打开本地文件/UNC,markdown 来源可能不受信)。本地文件仍走无 scheme 的相对/绝对
 // 路径 → kind:'file' 在 IDE 内打开。与 shell.service 白名单同步移除 file:。
 
-import { MAX_EXTERNAL_URL_LEN } from '../../../electron/shared/url-limits';
+import {
+  MAX_EXTERNAL_URL_LEN,
+  startsWithAllowedExternalScheme,
+} from '../../../electron/shared/url-limits';
+import { FS_PATH_MAX } from '../../../electron/shared/fs-limits';
 import { isAsciiAlphaCode, isPathSeparatorCode } from '@/lib/path-cross';
 
 export type LinkTarget =
@@ -23,7 +27,7 @@ export type LinkTarget =
 // 无上限时点击超长链接会:file 分支跑 normalize(indexOf/slice/split O(n) + 数组分配);external 分支
 // 把超长 URL 经 openExternal IPC structured-clone 后才被主进程 schema 拒 → renderer 卡顿/放大。
 // 早返一个宽松硬上限(取两分支较大者 = 文件路径上限),外链分支再按 openExternal 上限细判。
-const MAX_FILE_LINK_LEN = 8192; // 对齐 FS_PATH_MAX(文件链接路径)
+const MAX_FILE_LINK_LEN = FS_PATH_MAX; // 文件链接路径上限
 // 外链上限用共享 MAX_EXTERNAL_URL_LEN(E190 收口:与 windowOpenHandler / shell.openExternal 单一来源)。
 const MAX_EXTERNAL_LINK_LEN = MAX_EXTERNAL_URL_LEN;
 
@@ -47,29 +51,6 @@ function hasAnyScheme(href: string): boolean {
     if (!isAsciiSchemeCharCode(code)) return false;
   }
   return false;
-}
-
-function startsWithAllowedExternalScheme(href: string): boolean {
-  if (
-    href.length >= 5 &&
-    (href.charCodeAt(0) | 32) === 104 &&
-    (href.charCodeAt(1) | 32) === 116 &&
-    (href.charCodeAt(2) | 32) === 116 &&
-    (href.charCodeAt(3) | 32) === 112
-  ) {
-    const next = href.charCodeAt(4);
-    return next === 58 || ((next | 32) === 115 && href.charCodeAt(5) === 58);
-  }
-  return (
-    href.length >= 7 &&
-    (href.charCodeAt(0) | 32) === 109 &&
-    (href.charCodeAt(1) | 32) === 97 &&
-    (href.charCodeAt(2) | 32) === 105 &&
-    (href.charCodeAt(3) | 32) === 108 &&
-    (href.charCodeAt(4) | 32) === 116 &&
-    (href.charCodeAt(5) | 32) === 111 &&
-    href.charCodeAt(6) === 58
-  );
 }
 
 function isWindowsDriveAbsolute(p: string): boolean {

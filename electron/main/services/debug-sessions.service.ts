@@ -19,13 +19,10 @@ export interface DebugSession {
   readonly adapterPgid?: number;
   readonly systemProcessIds: readonly number[];
   readonly childSessionCount: number;
-  readonly socketPath?: string;
   readonly stopSeq: number;
   readonly runSeq: number;
   readonly pausedEpoch: number;
   readonly currentThreadId?: number;
-  readonly currentFrameId?: number;
-  readonly scopeRefs: readonly number[];
   readonly stoppedReason?: string;
   readonly createdAt: number;
 }
@@ -38,7 +35,6 @@ export interface AddDebugSessionInput {
   readonly cwd: string;
   readonly name?: string;
   readonly adapterPid?: number;
-  readonly socketPath?: string;
 }
 
 const sessions = new Map<string, DebugSession>();
@@ -90,11 +86,9 @@ export function add(input: AddDebugSessionInput): DebugSession {
     ...(input.adapterPid !== undefined ? { adapterPid: input.adapterPid } : {}),
     systemProcessIds: [],
     childSessionCount: 0,
-    ...(input.socketPath !== undefined ? { socketPath: input.socketPath } : {}),
     stopSeq: 0,
     runSeq: 0,
     pausedEpoch: 0,
-    scopeRefs: [],
     createdAt: Date.now(),
   };
   sessions.set(input.id, session);
@@ -138,16 +132,6 @@ export function addSystemProcessId(id: string, pid: number): void {
   const cur = sessions.get(id);
   if (!cur || cur.systemProcessIds.includes(pid)) return;
   update(id, { systemProcessIds: [...cur.systemProcessIds, pid] });
-}
-
-export function addScopeRefs(id: string, refs: readonly number[]): void {
-  const cur = sessions.get(id);
-  if (!cur) return;
-  const next = new Set(cur.scopeRefs);
-  for (const ref of refs) {
-    if (Number.isInteger(ref) && ref > 0) next.add(ref);
-  }
-  update(id, { scopeRefs: Array.from(next) });
 }
 
 export function tryMarkTearingDown(id: string): boolean {

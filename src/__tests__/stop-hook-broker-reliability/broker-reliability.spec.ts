@@ -96,6 +96,35 @@ describe('调用方断开', () => {
     await second.catch(() => {});
   });
 
+  it('等待者正常结算(超时 / 窗口关闭)后摘掉 abort 监听(同一连接反复调用不累积)', async () => {
+    vi.useFakeTimers();
+    try {
+      const broker = createHookFileBroker('/fake/hooks-listeners');
+      const controller = new AbortController();
+      const add = vi.spyOn(controller.signal, 'addEventListener');
+      const remove = vi.spyOn(controller.signal, 'removeEventListener');
+
+      const timedOut = broker.awaitNext(
+        { windowId: 7, runner: 'cc', cwd: '/ws', timeoutMs: 1_000 },
+        controller.signal,
+      );
+      await vi.advanceTimersByTimeAsync(1_000);
+      await expect(timedOut).resolves.toMatchObject({ status: 'timeout' });
+
+      const cancelled = broker.awaitNext(
+        { windowId: 7, runner: 'cc', cwd: '/ws', timeoutMs: 600_000 },
+        controller.signal,
+      );
+      broker.cancelByWindow(7);
+      await cancelled.catch(() => {});
+
+      expect(add).toHaveBeenCalledTimes(2);
+      expect(remove).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('传入已 abort 的 signal → 立即 reject,不登记等待者', async () => {
     const broker = createHookFileBroker('/fake/hooks-aborted');
     const controller = new AbortController();

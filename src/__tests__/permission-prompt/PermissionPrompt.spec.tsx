@@ -36,6 +36,11 @@ describe('PermissionPrompt — 排队切换时防连点误授', () => {
       fireEvent.click(grantButton()); // 连点的第二下,落在 B 的按钮上
       expect(usePermissionPromptStore.getState().pending?.pluginId).toBe('plugin.b');
 
+      // Esc(键重复)/ 点遮罩同样走 Modal 的 onClose → denyAll,也要被守卫挡住
+      fireEvent.keyDown(document, { key: 'Escape' });
+      fireEvent.keyDown(document.querySelector('.wm-modal-content')!, { key: 'Escape' });
+      expect(usePermissionPromptStore.getState().pending?.pluginId).toBe('plugin.b');
+
       act(() => void vi.advanceTimersByTime(600));
       fireEvent.click(grantButton()); // 用户看清后再点
       expect(await b).toEqual(['shell']);

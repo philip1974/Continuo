@@ -64,54 +64,50 @@ function createExecLineDecoration(
   ]);
 }
 
-const breakpointMarkersField = StateField.define<RangeSet<GutterMarker>>({
-  create: () => RangeSet.empty,
-  update(markers, transaction) {
-    let next = markers.map(transaction.changes);
+// 两个 field 都把「行号」(store 里的事实来源)和据此算出的装饰一起存。文档一变就按行号重建,而不是让
+// CodeMirror 把旧装饰随文本映射:外部改盘 reload 是整篇替换,映射后装饰全空;在断点上方增删行时,映射会让
+// 红点跟着文本漂移、与 store 的行号脱节。重建发生在同一个事务里,不依赖之后是否还有 store 通知。
+const breakpointMarkersField = StateField.define<{
+  readonly lines: readonly number[];
+  readonly markers: RangeSet<GutterMarker>;
+}>({
+  create: () => ({ lines: [], markers: RangeSet.empty }),
+  update(value, transaction) {
+    let lines = value.lines;
     for (const effect of transaction.effects) {
-      if (effect.is(setBreakpointLinesEffect)) {
-        next = createBreakpointMarkers(transaction.state, effect.value);
-      }
+      if (effect.is(setBreakpointLinesEffect)) lines = effect.value;
     }
-    return next;
+    if (lines === value.lines && !transaction.docChanged) return value;
+    return { lines, markers: createBreakpointMarkers(transaction.state, lines) };
   },
 });
 
-const execLineDecorationField = StateField.define<DecorationSet>({
-  create: () => Decoration.none,
-  update(decorations, transaction) {
-    let next = decorations.map(transaction.changes);
+const execLineDecorationField = StateField.define<{
+  readonly line: number | null;
+  readonly decorations: DecorationSet;
+}>({
+  create: () => ({ line: null, decorations: Decoration.none }),
+  update(value, transaction) {
+    let line = value.line;
+    let changed = false;
     for (const effect of transaction.effects) {
       if (effect.is(setExecLineEffect)) {
-        next = createExecLineDecoration(transaction.state, effect.value);
+        line = effect.value;
+        changed = true;
       }
     }
-    return next;
+    if (!changed && !transaction.docChanged) return value;
+    return { line, decorations: createExecLineDecoration(transaction.state, line) };
   },
-  provide: (field) => EditorView.decorations.from(field),
+  provide: (field) => EditorView.decorations.from(field, (value) => value.decorations),
 });
-
-/**
- * 文档版本:每次文档变化 +1。装饰是按行号贴的,文档一变(尤其外部改盘 reload 的整篇替换,CodeMirror 会把
- * 已有装饰映射成空)原先贴的位置就不可信 —— 同步侧把它计入「已应用」签名,文档变过就按行号重贴。
- */
-const debugDocVersionField = StateField.define<number>({
-  create: () => 0,
-  update: (version, transaction) => (transaction.docChanged ? version + 1 : version),
-});
-
-/** 该 view 的文档版本(未装 debug 装饰扩展的 view 恒为 0)。 */
-export function debugDocVersion(view: EditorView): number {
-  return view.state.field(debugDocVersionField, false) ?? 0;
-}
 
 const debugDecorationsHostExtension: Extension = [
-  debugDocVersionField,
   breakpointMarkersField,
   execLineDecorationField,
   gutter({
     class: 'cm-breakpoint-gutter',
-    markers: (view) => view.state.field(breakpointMarkersField),
+    markers: (view) => view.state.field(breakpointMarkersField).markers,
   }),
   EditorView.baseTheme({
     '.cm-breakpoint-gutter': {

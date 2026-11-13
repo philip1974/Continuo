@@ -275,6 +275,28 @@ describe('DebugService fake adapter · launch / 子会话 / 终止 的错误路�
     await expect(service.waitForStop(sessionId, { timeoutMs: 5_000 })).rejects.toThrow(/terminated/);
     expect(Date.now() - startedAt).toBeLessThan(1_000);
     expect(service.listSessions()[0]?.state).toBe('terminated');
+
+    // 结束后迟到的 stopped / continued 事件不能把状态翻回去
+    parent.emit('continued', { allThreadsContinued: true });
+    parent.emit('stopped', { reason: 'breakpoint', threadId: 1 });
+    expect(service.listSessions()[0]?.state).toBe('terminated');
+  });
+
+  it('多个 child 时,其中一个结束不把整个会话判为已终止(worker 先退出)', async () => {
+    const parent = new FakeDapClient(1001);
+    const { service } = makeFakeService(parent);
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      ctx,
+    );
+    await parent.triggerStartDebugging({ type: 'pwa-node' });
+    await parent.triggerStartDebugging({ type: 'pwa-node' });
+    parent.children[1]!.emit('terminated', {});
+
+    expect(service.listSessions()[0]?.state).not.toBe('terminated');
+    const waiting = service.waitForStop(sessionId, { timeoutMs: 5_000 });
+    parent.children[0]!.emit('stopped', { reason: 'breakpoint', threadId: 1 });
+    await expect(waiting).resolves.toMatchObject({ reason: 'breakpoint' });
   });
 });
 
@@ -810,6 +832,15 @@ describe.skipIf(!adapterExists)('DebugService real adapter', () => {
         ).resolves.toMatchObject({ result: '3', truncated: false });
 
         await service.continue(sessionId, { threadId: stopped.thread_id ?? 1 });
+        // 真 adapter:程序继续后跑完 → wait_for_stop 报已终止(不是干等到超时)
+        const endedAt = Date.now();
+        await expect(
+          service.waitForStop(sessionId, { afterStopSeq: stopped.stop_seq, timeoutMs: 25_000 }),
+        ).rejects.toThrow(/terminated|exited/);
+        expect(Date.now() - endedAt).toBeLessThan(20_000);
+        await expect(
+          service.waitForStop(sessionId, { afterStopSeq: stopped.stop_seq, timeoutMs: 25_000 }),
+        ).rejects.toThrow(/terminated|exited/);
         await expect(service.killByOwner(9, 'test cleanup')).resolves.toEqual([
           sessionId,
         ]);

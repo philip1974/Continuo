@@ -90,7 +90,14 @@ function ManifestPromptBody({ pending }: { pending: Pending }) {
   };
 
   return (
-    <Modal visible onClose={denyAll} aria-labelledby="permission-prompt-title">
+    <Modal
+      visible
+      // Esc(键重复)/ 点遮罩也是「全部拒绝」入口,同样受切换守卫约束。
+      onClose={() => {
+        if (decisionArmed()) denyAll();
+      }}
+      aria-labelledby="permission-prompt-title"
+    >
       {/* a11y(A13):dialog(A10)须经 aria-labelledby 关联标题,否则 AT 只听到无名 dialog。 */}
       <h2 id="permission-prompt-title" className="mb-1 text-sm font-medium text-fg">
         {t('permissions.prompt.title')}

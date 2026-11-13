@@ -327,6 +327,38 @@ function hasInPlaceAnsiCsi(data: string): boolean {
   return false;
 }
 
+/** 截断点向前找 ESC 的窗口(字符数)。覆盖常见的 SGR / 私有模式 / 窗口标题 OSC。 */
+const ESCAPE_LOOKBACK_CHARS = 256;
+
+/**
+ * 从 `start`(一个 ESC 的下标)起的转义序列结束位置(最后一个字符之后的下标)。串尾未终结 → data.length。
+ *  - CSI `ESC [`:参数字节 0x30–0x3F、中间字节 0x20–0x2F、终结符 0x40–0x7E(ECMA-48;含 `?`、`:`、空格等)。
+ *  - OSC `ESC ]`:到 BEL 或 ST(`ESC \\`)。
+ *  - 其它:中间字节 0x20–0x2F 若干 + 一个终结字节(`ESC ( B`、`ESC c` 等)。
+ */
+function escapeSequenceEnd(data: string, start: number): number {
+  const len = data.length;
+  const kind = data.charCodeAt(start + 1);
+  if (Number.isNaN(kind)) return len;
+  let j = start + 2;
+  if (kind === 0x5b) {
+    while (j < len && data.charCodeAt(j) >= 0x30 && data.charCodeAt(j) <= 0x3f) j += 1;
+    while (j < len && data.charCodeAt(j) >= 0x20 && data.charCodeAt(j) <= 0x2f) j += 1;
+    return j < len ? j + 1 : len;
+  }
+  if (kind === 0x5d) {
+    for (; j < len; j += 1) {
+      const code = data.charCodeAt(j);
+      if (code === 0x07) return j + 1;
+      if (code === 0x1b && data.charCodeAt(j + 1) === 0x5c) return j + 2;
+    }
+    return len;
+  }
+  j = start + 1;
+  while (j < len && data.charCodeAt(j) >= 0x20 && data.charCodeAt(j) <= 0x2f) j += 1;
+  return j < len ? j + 1 : len;
+}
+
 export function safeTruncate(data: string, maxBytes: number): string {
   // 边界(E149,E125 同族):按真实 UTF-8 字节判定/截断(旧实现 data.length=UTF-16 code unit →
   // 多字节输出保留远超 maxBytes 字节)。从尾部累积字节,找保留 ≤ maxBytes 字节的最早**字符边界**。
@@ -355,21 +387,14 @@ export function safeTruncate(data: string, maxBytes: number): string {
     i -= step;
   }
 
-  // ANSI 边界:截断点若落在一个 CSI 序列(ESC [ 参数… 终结符)内部 —— 包括恰好落在终结符上 —— 保留的尾部
-  // 会以半截色码开头(屏幕上多出 `1m` / `m` 之类的残片)。向前找最近的 ESC,若它的序列跨过截断点,就把
-  // 截断点**向后**挪到该序列之后:跳过残片,且不多带字节(向前回退到 ESC 会突破 maxBytes 预算)。
-  const searchStart = Math.max(0, cutPoint - 32);
+  // 转义序列边界:截断点若落在一个转义序列内部,保留的尾部会以序列残片开头(屏幕上多出 `25l` / `m` /
+  // `]0;title` 之类的可见字符)。向前找最近的 ESC,若它的序列跨过截断点,就把截断点**向后**挪到该序列
+  // 之后:跳过残片,且不多带字节(向前回退到 ESC 会突破 maxBytes 预算)。
+  const searchStart = Math.max(0, cutPoint - ESCAPE_LOOKBACK_CHARS);
   for (let i = cutPoint - 1; i >= searchStart; i--) {
     if (data.charCodeAt(i) !== 0x1b) continue;
-    if (data.charCodeAt(i + 1) === 91) {
-      let end = i + 2; // 扫过参数字节(数字与 ;),停在终结符(或串尾)
-      while (end < data.length) {
-        const code = data.charCodeAt(end);
-        if ((code >= 48 && code <= 57) || code === 59) end += 1;
-        else break;
-      }
-      if (end >= cutPoint && end < data.length) cutPoint = end + 1;
-    }
+    const end = escapeSequenceEnd(data, i);
+    if (end > cutPoint) cutPoint = end;
     break;
   }
 
