@@ -8,6 +8,7 @@
 // BDD: src/__tests__/plugin-mcp-ipc-bridge/
 
 import { z } from 'zod';
+import { PLUGIN_ID_MAX_LEN } from './permission-record-limits';
 import { assertJsonValue } from './assert-json-value';
 import { utf8BytesExceed } from './utf8-byte-length';
 import { jsonByteLowerBoundExceeds } from './json-byte-budget';
@@ -18,7 +19,7 @@ import type { InvokeReply } from './plugin-mcp-channels';
 // 长度/大小上限。jsonSchema 是任意对象、会被 main 存进 tool registry,之后每次 MCP tools/list 都把
 // 它序列化广播给 HTTP/stdio 客户端 → 恶意/畸形插件注册超大 schema 造成内存/IPC/网络输出膨胀。
 // 给名称/描述/pluginId 加长度上限;jsonSchema 加序列化字节上限(覆盖深度/属性数,序列化失败=非法)。
-const PLUGIN_ID_MAX = 256;
+const PLUGIN_ID_MAX = PLUGIN_ID_MAX_LEN;
 // E53:name/description/jsonSchema 上限导出,供 renderer PluginMcpRegistry 发 IPC 前预检复用同值
 //(main 的 RegisterPayloadSchema 在 structured-clone 进 main 后才校验,renderer 需同等前置防放大)。
 export const TOOL_NAME_MAX = 256;

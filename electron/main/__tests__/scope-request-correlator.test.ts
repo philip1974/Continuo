@@ -5,7 +5,7 @@ import {
   PING_REFRESH_MS_FOR_TEST,
   ScopeRequestCorrelator,
 } from '../services/scope-request-correlator';
-import { ScopeRequestTimeoutError, type PathScope } from '../../../src/plugins/types';
+import { ScopeRequestTimeoutError, type PathScope } from '../../shared/plugin-fs-contract';
 
 const SCOPES: readonly PathScope[] = [{ path: '/tmp', mode: 'rw' }];
 let correlator: ScopeRequestCorrelator | null = null;

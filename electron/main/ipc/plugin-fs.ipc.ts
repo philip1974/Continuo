@@ -12,7 +12,7 @@ import {
   writePluginPathScopes,
 } from '../services/plugins.service';
 import { ScopeRequestCorrelator } from '../services/scope-request-correlator';
-import type { PathScope } from '../../../src/plugins/types';
+import type { PathScope } from '../../shared/plugin-fs-contract';
 
 export interface RegisterPluginFsIpcArgs {
   ipcMain: IpcMain;

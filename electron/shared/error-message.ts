@@ -18,3 +18,11 @@ export function errorMessage(err: unknown): string {
 export function errorCodeOf(err: unknown): string {
   return (err as { code?: string } | null | undefined)?.code ?? 'EXCEPTION';
 }
+
+/**
+ * 构造带稳定 `code` 的业务错误(与读端 errorCodeOf 配对):safeHandle 把 code 透传进 IpcResult,
+ * renderer 再按 code 本地化。新代码统一用它,不再手写 `Object.assign(new Error(msg), { code })`。
+ */
+export function codedError(code: string, message: string): Error & { code: string } {
+  return Object.assign(new Error(message), { code });
+}

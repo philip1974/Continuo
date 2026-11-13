@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import {
   ScopeRequestTimeoutError,
   type PathScope,
-} from '../../../src/plugins/types';
+} from '../../shared/plugin-fs-contract';
 
 interface PendingEntry {
   token: string;

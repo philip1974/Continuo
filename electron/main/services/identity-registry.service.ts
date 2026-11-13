@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { PluginIdentityError } from '../../../src/plugins/types';
+import { PluginIdentityError } from '../../shared/plugin-fs-contract';
 
 type EntryState = 'active' | 'draining';
 

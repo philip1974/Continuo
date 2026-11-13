@@ -2,6 +2,10 @@
 // 纯函数风格,便于单测;真正的 IPC 注册在 plugins.ipc.ts。
 
 import { spawn } from 'node:child_process';
+import {
+  PERMISSION_RECORD_LIMITS,
+  PLUGIN_ID_MAX_LEN,
+} from '../../shared/permission-record-limits';
 import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import { mkdtemp, cp, rm } from 'node:fs/promises';
@@ -22,8 +26,8 @@ import { atomicWriteJson } from '../lib/atomic-write';
 import { createByteCappedBuffer } from '../lib/byte-capped-buffer';
 import { readFileCappedFd } from '../lib/read-fh-capped';
 import { runSerialPerKey } from './serialize-per-key';
-import { PERMISSION_KEYS } from '../../../src/plugins/permissions';
-import { parseManifest } from '../../../src/plugins/manifest';
+import { PERMISSION_KEYS } from '../../shared/permission-keys';
+import { parseManifest } from '../../shared/plugin-manifest';
 
 function isAbsolutePathLike(value: string): boolean {
   return (
@@ -322,7 +326,7 @@ const ENABLED_FILE = '_enabled.json';
 // 超长 id)能通过 array-of-string 校验 → readEnabledIds → new Set → PluginManager.init 放大 CPU/内存,
 // 且 setEnabledId 的 RMW 把这些非法/超量 id 原样写回,绕过写 IPC schema 上限。读盘按写端同一契约
 // canonicalize:仅保留 isSafePluginId 且长度≤PLUGIN_ID_MAX 的 id、去重、数量≤MAX_ENABLED_IDS。
-const PLUGIN_ID_MAX = 256; // 对齐 manifest id 上限(E74 NAME_MAX)
+const PLUGIN_ID_MAX = PLUGIN_ID_MAX_LEN; // 对齐 manifest id 上限(E74 NAME_MAX)
 const MAX_ENABLED_IDS = 4096; // 远超任何现实启用插件数
 
 export async function readEnabledIds(baseDir: string): Promise<string[]> {
@@ -417,8 +421,8 @@ const PERMISSIONS_FILE = '_permissions.json';
 // permission 必须是 PERMISSION_KEYS 成员(否则 PERM_LABEL_KEYS[perm]=undefined 渲染崩),decidedAt 必须
 // finite(1e400 经 JSON.parse=Infinity 但 typeof 仍 number,同 E5)。每插件 decisions 数 + plugin key 数
 // 封顶(对齐 IPC 写端 DECISIONS_MAX/PLUGINS_MAX,防 RMW 写回绕过写端上限)。
-const MAX_DECISIONS_PER_PLUGIN = 1000; // 对齐 plugins.ipc DECISIONS_MAX
-const MAX_PERMISSION_PLUGIN_KEYS = 10_000; // 对齐 plugins.ipc PLUGINS_MAX
+const MAX_DECISIONS_PER_PLUGIN = PERMISSION_RECORD_LIMITS.DECISIONS_PER_PLUGIN_MAX; // 对齐 plugins.ipc DECISIONS_MAX
+const MAX_PERMISSION_PLUGIN_KEYS = PERMISSION_RECORD_LIMITS.PLUGIN_KEYS_MAX; // 对齐 plugins.ipc PLUGINS_MAX
 const PERMISSION_KEY_SET: ReadonlySet<string> = new Set(PERMISSION_KEYS);
 
 function isDecision(x: unknown): x is IpcPermissionDecision {
@@ -711,8 +715,8 @@ const PATH_SCOPES_FILE = '_plugin-path-scopes.json';
 // 手工/旧残留的 1MiB 元数据可塞大量非法 key / 超长 path / 超量 scope 通过既有「value 是数组 +
 // isIpcPathScope」校验,进 readPluginPathScopes→hydrate→mergeScopes 前先构造整表,且
 // writePluginPathScopes 的 RMW 会把其它非法/超量 plugin 条目原样写回(绕过写端契约)。
-const PATH_SCOPE_PATH_MAX = 8192; // 单条 scope path 长度上限(对齐 E31 request-scope path 上限)
-const MAX_PERSISTED_SCOPES_PER_PLUGIN = 256; // 对齐 PathScopeRegistry MAX_SCOPES_PER_PLUGIN(E81)
+const PATH_SCOPE_PATH_MAX = PERMISSION_RECORD_LIMITS.SCOPE_PATH_MAX; // 单条 scope path 长度上限(对齐 E31 request-scope path 上限)
+const MAX_PERSISTED_SCOPES_PER_PLUGIN = PERMISSION_RECORD_LIMITS.PATH_SCOPES_PER_PLUGIN_MAX; // 对齐 PathScopeRegistry MAX_SCOPES_PER_PLUGIN(E81)
 const MAX_PERSISTED_PLUGIN_KEYS = 4096; // 持久化表的 plugin key 数上限
 
 function isIpcPathScope(x: unknown): x is IpcPathScope {

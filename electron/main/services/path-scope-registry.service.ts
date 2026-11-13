@@ -7,7 +7,7 @@ import {
   resolveForWrite,
   resolveNoFollowLeaf,
 } from './path-resolve.helper';
-import { ScopeError, type PathScope } from '../../../src/plugins/types';
+import { ScopeError, type PathScope } from '../../shared/plugin-fs-contract';
 import { FS_PATH_MAX } from '../../shared/fs-limits';
 
 // 'lstat' / 'remove' / 'rename-src' 走「不跟随 leaf 符号链接」解析 —— 作用在链接本身。

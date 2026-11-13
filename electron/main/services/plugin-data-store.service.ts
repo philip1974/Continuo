@@ -1,4 +1,5 @@
 import { promises as fs } from 'node:fs';
+import { PLUGIN_ID_MAX_LEN } from '../../shared/permission-record-limits';
 import { join } from 'node:path';
 import type { IpcMain } from 'electron';
 import lockfile from 'proper-lockfile';
@@ -31,7 +32,7 @@ export interface PluginDataStoreDeps {
 // 边界(E177):pluginId 长度上限(对齐 plugins.service / plugin-mcp-schemas / plugins.ipc 的
 // PLUGIN_ID_MAX=256)。绕过 wrapper 直调 pluginDataRaw.load/save/clear 时,超长合法 id 会进正则扫描/
 // path join/lockfile/错误链路放大主进程 CPU/内存/日志或触发 ENAMETOOLONG。
-const PLUGIN_ID_MAX = 256;
+const PLUGIN_ID_MAX = PLUGIN_ID_MAX_LEN;
 
 function assertPluginId(pluginId: unknown): asserts pluginId is string {
   if (

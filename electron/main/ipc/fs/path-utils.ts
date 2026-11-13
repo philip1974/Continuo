@@ -2,6 +2,7 @@ import path from 'node:path';
 import { ERROR_CODES } from '../../../shared/error-codes';
 import type { FsErrorCode } from '../../../shared/error-codes';
 import { isValidLeafName } from '../../../shared/leaf-name';
+import { codedError } from '../../../shared/error-message';
 
 /**
  * 路径规范化:相对 → 绝对,解析 ../ 防遍历。
@@ -13,10 +14,8 @@ export function normalizePath(input: string): string {
   return path.resolve(input);
 }
 
-/** 创建带 code 字段的业务异常,safeHandle 会透传 code 到 IpcResult。 */
-export function fsError(code: string, message: string): Error & { code: string } {
-  return Object.assign(new Error(message), { code });
-}
+/** 创建带 code 字段的业务异常(= 共享 codedError;fs 域沿用此名)。 */
+export const fsError = codedError;
 
 /** 把 node fs 抛的 errno code 映射到我们的业务 code。 */
 export function mapNodeErrnoCode(err: unknown): FsErrorCode {

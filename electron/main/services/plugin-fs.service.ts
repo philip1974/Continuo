@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { PLUGIN_ID_MAX_LEN } from '../../shared/permission-record-limits';
 import { promises as fs, type Dirent } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
@@ -12,7 +13,7 @@ import {
   ScopeError,
   ScopeRequestTimeoutError,
   type PathScope,
-} from '../../../src/plugins/types';
+} from '../../shared/plugin-fs-contract';
 import { canonicalizeScopePath } from './path-resolve.helper';
 import { atomicWriteFile } from '../ipc/fs/atomic-write';
 import { readFile as readFileCapped } from '../ipc/fs/read-file';
@@ -59,7 +60,7 @@ export { MAX_SCOPE_REQUEST_COUNT };
 // 边界(E96):scope-decision 的 requestId 上限(correlator 用的是 UUID,~36 字符,256 留足余量)。
 const MAX_REQUEST_ID_LEN = 256;
 // 边界(E97):注册入口 pluginId 长度上限(对齐 manifest id 上限 E74 NAME_MAX)。
-const MAX_PLUGIN_ID_LEN = 256;
+const MAX_PLUGIN_ID_LEN = PLUGIN_ID_MAX_LEN;
 // 边界(E315,E234 并发 fan-out 同族):单次 request-scope 最多 256 条,路径归一化要 realpath。
 // 全量 Promise.all 会把 256 个 realpath 同时打进主进程/libuv。固定 worker 池平滑 IO 峰值,
 // 顺序仍由 canonicalizePathScopes 的结果数组按输入下标保持。

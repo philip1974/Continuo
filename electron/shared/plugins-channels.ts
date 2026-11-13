@@ -1,3 +1,6 @@
+import type { PathScope } from './plugin-fs-contract';
+import { PLUGIN_ID_MAX_LEN } from './permission-record-limits';
+
 // 插件系统 IPC 通道(M-Plugin v4.1)。
 // 主进程扫 userData/plugins/<id>/,renderer 拿到 manifest + main.js 文本
 // 通过 Blob URL 动态 import。
@@ -40,7 +43,7 @@ export type PluginsChannel = (typeof PLUGINS_CHANNELS)[keyof typeof PLUGINS_CHAN
 // null payload 在 listener 中抛(未捕获),超长/非字符串 id 会进 plugin-reload-gate pending Set 或触发
 // reload(污染启动期缓冲/错误路径),超长 url 进 protocol-dispatch。纯函数守卫(无 zod,preload 可 import),
 // preload 不合法则 warn+drop 不调 cb。与 fs:dir-changed / agent-auth 的 push 守卫同款纵深防御。
-export const PLUGIN_ID_MAX_LEN = 256; // plugin id 长度上限(对齐 plugin-mcp PLUGIN_ID_MAX)
+export { PLUGIN_ID_MAX_LEN }; // plugin id 长度上限(单一来源 permission-record-limits)
 export const PROTOCOL_URL_MAX_LEN = 8192; // co:// URL 长度上限(对齐 path 类上限)
 
 // 边界(E282):git 安装 URL 长度上限。renderer 两个 Git URL 输入(Marketplace / PluginsTab)与 main
@@ -86,11 +89,8 @@ export interface IpcPermissionDecision {
   readonly decidedAt: number;
 }
 
-/** 路径 scope(plugin-fs 授权)。renderer 端 PathScope 的 IPC/磁盘镜像形态. */
-export interface IpcPathScope {
-  readonly path: string;
-  readonly mode: 'r' | 'rw';
-}
+/** 路径 scope(plugin-fs 授权)的 IPC/磁盘只读形态 —— 与 PathScope 同一契约(单一来源)。 */
+export type IpcPathScope = Readonly<PathScope>;
 
 /**
  * 单个 plugin 的权限磁盘/IPC 记录。两种形态:

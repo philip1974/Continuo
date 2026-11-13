@@ -61,6 +61,7 @@ import type {
   DebugVariable,
   LaunchSessionInput,
 } from './debug.service';
+import { codedError } from '../../shared/error-message';
 
 export type DebugContinueInput = z.infer<typeof debugContinueInputSchema>;
 export type DebugContinueOutput = z.infer<typeof debugContinueOutputSchema>;
@@ -194,10 +195,6 @@ function requireControllerContext(ctx: McpCallCtx): DebugCallerContext {
   };
 }
 
-function codedDebugError(message: string, code: string): Error {
-  return Object.assign(new Error(message), { code });
-}
-
 function normalizeDebugError(
   err: unknown,
   fallback?: { readonly code: string; readonly message: string },
@@ -209,18 +206,12 @@ function normalizeDebugError(
   if (typeof record?.code === 'string') return err;
   const message = typeof record?.message === 'string' ? record.message : '';
   if (/^debug session not found\b/i.test(message)) {
-    return codedDebugError(
-      'debug session not found',
-      ERROR_CODES.DEBUG_SESSION_NOT_FOUND,
-    );
+    return codedError(ERROR_CODES.DEBUG_SESSION_NOT_FOUND, 'debug session not found');
   }
   if (/debug wait_for_stop timed out/i.test(message)) {
-    return codedDebugError(
-      'debug wait_for_stop timed out',
-      ERROR_CODES.DEBUG_WAIT_TIMEOUT,
-    );
+    return codedError(ERROR_CODES.DEBUG_WAIT_TIMEOUT, 'debug wait_for_stop timed out');
   }
-  if (fallback) return codedDebugError(fallback.message, fallback.code);
+  if (fallback) return codedError(fallback.code, fallback.message);
   return err;
 }
 

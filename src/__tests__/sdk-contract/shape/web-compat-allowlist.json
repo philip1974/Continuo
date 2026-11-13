@@ -49,7 +49,7 @@
   },
   {
     "path": "src/plugins/types.ts",
-    "line": 316,
+    "line": 262,
     "pattern": "NodeJS\\.",
     "reason": "Type-only public API currently exposes NodeJS.Signals; tracked as follow-up SDK web-compat debt."
   }

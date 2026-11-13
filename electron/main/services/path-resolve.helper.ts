@@ -1,7 +1,7 @@
 import { promises as fs, type Stats } from 'node:fs';
 import { homedir, platform } from 'node:os';
 import { dirname, isAbsolute, sep } from 'node:path';
-import { ScopeError } from '../../../src/plugins/types';
+import { ScopeError } from '../../shared/plugin-fs-contract';
 import { leafNameRejectReason } from '../../shared/leaf-name';
 
 export interface ResolveReadResult {

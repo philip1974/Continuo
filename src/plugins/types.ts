@@ -9,25 +9,9 @@ export interface Disposable {
 }
 
 /** 插件 manifest.json 解析结果(zod 校验后)。 */
-export interface PluginManifest {
-  /** 唯一 id,反 DNS 命名(com.example.foo)。 */
-  readonly id: string;
-  /** 用户可见名称。 */
-  readonly name: string;
-  /** semver,LM 兼容性比对用。 */
-  readonly version: string;
-  /** 入口 ESM 文件相对路径,默认 'main.js'. */
-  readonly main?: string;
-  readonly description?: string;
-  readonly author?: string;
-  readonly authorUrl?: string;
-  /** LM 应用最小版本(semver),低于则拒载。 */
-  readonly minLMVersion?: string;
-  /** 仅桌面 LM 可加载(暂留,LM 目前只有桌面). */
-  readonly isDesktopOnly?: boolean;
-  /** 声明式权限请求(v3.3),首次启用提示用户授权. */
-  readonly permissions?: readonly import('./permissions').PermissionKey[];
-}
+// manifest 形状与解析(ManifestSchema / parseManifest)在 electron/shared/plugin-manifest.ts(main 扫描 /
+// 安装与 renderer 加载共用)。
+export type { PluginManifest } from '../../electron/shared/plugin-manifest';
 
 /**
  * 插件可访问的 LM 应用门面。
@@ -145,53 +129,15 @@ export interface CoNotificationsApi {
 
 // ── v5 Phase 1:plugin 拿到的扩展 app(per-plugin scoped) ────────────
 
-export interface PathScope {
-  /** Absolute path. `~` allowed (expanded host-side). Glob not supported v0.1. */
-  path: string;
-  /** 'r' = read only, 'rw' = read + write + mkdir + rename + rm. */
-  mode: 'r' | 'rw';
-}
-
-export class ScopeError extends Error {
-  readonly code = 'SCOPE_ERROR' as const;
-  readonly cause?: unknown;
-
-  constructor(
-    message: string,
-    public readonly details?: { target?: string; reason?: string },
-    options?: { cause?: unknown },
-  ) {
-    super(message);
-    this.name = 'ScopeError';
-    this.cause = options?.cause;
-  }
-}
-
-export class PluginIdentityError extends Error {
-  readonly code = 'PLUGIN_IDENTITY_ERROR' as const;
-  readonly cause?: unknown;
-
-  constructor(message: string, options?: { cause?: unknown }) {
-    super(message);
-    this.name = 'PluginIdentityError';
-    this.cause = options?.cause;
-  }
-}
-
-export class ScopeRequestTimeoutError extends Error {
-  readonly code = 'SCOPE_REQUEST_TIMEOUT' as const;
-  readonly cause?: unknown;
-
-  constructor(
-    message: string,
-    public readonly requestId: string,
-    options?: { cause?: unknown },
-  ) {
-    super(message);
-    this.name = 'ScopeRequestTimeoutError';
-    this.cause = options?.cause;
-  }
-}
+// PathScope 与 ScopeError / PluginIdentityError / ScopeRequestTimeoutError 是 main / renderer 共用的
+// 跨进程契约,定义在 electron/shared/plugin-fs-contract.ts(SDK 类型入口仍是本文件)。
+export type { PathScope } from '../../electron/shared/plugin-fs-contract';
+export {
+  ScopeError,
+  PluginIdentityError,
+  ScopeRequestTimeoutError,
+} from '../../electron/shared/plugin-fs-contract';
+import type { PathScope } from '../../electron/shared/plugin-fs-contract';
 
 export interface PluginFsApi {
   /** Returns home path string only; does not grant fs access. */

@@ -5,6 +5,7 @@
 // (插件 / 权限 < 100 项,JSON 全写小成本可接受;不投资增量)。
 
 import { coApi } from '@/lib/co-api';
+import { PERMISSION_RECORD_LIMITS } from '../../../electron/shared/permission-record-limits';
 import { runSerialPerKey } from '@/lib/serialize-per-key';
 import {
   keepGrantedDecisions,
@@ -40,13 +41,13 @@ const PATH_SCOPE_MODES = new Set(['r', 'rw']);
 // 校验、decidedAt 仅 typeof number(允许 Infinity/NaN)—— 畸形/未来回归的 IPC payload 在 renderer 首次
 // 授权检查时扫描/分配巨表,并把超长 permission/path 或非有限时间戳缓进 cache,随后 grant/deny 写回。
 // 读端独立有界:数量收集到上限即停 + 字段长度/有限性校验(写端 cap 护不了畸形/旧/篡改数据)。
-const MAX_PERMISSION_PLUGIN_KEYS = 10_000; // 对齐 plugins.ipc PLUGINS_MAX
-const MAX_DECISIONS_PER_PLUGIN = 1000; // 对齐 plugins.ipc DECISIONS_MAX
+const MAX_PERMISSION_PLUGIN_KEYS = PERMISSION_RECORD_LIMITS.PLUGIN_KEYS_MAX; // 对齐 plugins.ipc PLUGINS_MAX
+const MAX_DECISIONS_PER_PLUGIN = PERMISSION_RECORD_LIMITS.DECISIONS_PER_PLUGIN_MAX; // 对齐 plugins.ipc DECISIONS_MAX
 // 边界(E246):pathScopes 上限对齐**绑定** cap = 读盘层 MAX_PERSISTED_SCOPES_PER_PLUGIN(256,
 // PathScopeRegistry 契约),非写端宽松值。E245 误对齐到写端 10_000;真正生效的是读盘 256,统一到此。
-const MAX_PATH_SCOPES_PER_PLUGIN = 256; // 对齐 plugins.service MAX_PERSISTED_SCOPES_PER_PLUGIN / plugins.ipc PATHSCOPES_MAX
-const PERMISSION_NAME_MAX = 256; // 对齐 plugins.ipc PERMISSION_MAX
-const SCOPE_PATH_MAX = 8192; // 对齐 plugins.ipc PATH_MAX
+const MAX_PATH_SCOPES_PER_PLUGIN = PERMISSION_RECORD_LIMITS.PATH_SCOPES_PER_PLUGIN_MAX; // 对齐 plugins.service MAX_PERSISTED_SCOPES_PER_PLUGIN / plugins.ipc PATHSCOPES_MAX
+const PERMISSION_NAME_MAX = PERMISSION_RECORD_LIMITS.PERMISSION_NAME_MAX; // 对齐 plugins.ipc PERMISSION_MAX
+const SCOPE_PATH_MAX = PERMISSION_RECORD_LIMITS.SCOPE_PATH_MAX; // 对齐 plugins.ipc PATH_MAX
 const EMPTY_PERMISSION_DECISIONS: PermissionDecision[] = [];
 const EMPTY_PATH_SCOPES: PathScope[] = [];
 

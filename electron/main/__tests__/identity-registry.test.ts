@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { PluginIdentityError } from '../../../src/plugins/types';
+import { PluginIdentityError } from '../../shared/plugin-fs-contract';
 import {
   DRAIN_GRACE_MS_FOR_TEST,
   IdentityRegistry,
