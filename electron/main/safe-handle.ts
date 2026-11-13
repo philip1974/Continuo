@@ -284,3 +284,23 @@ export function senderWindowOrThrow(event: IpcMainInvokeEvent, code: string): Br
   }
   return win;
 }
+
+/**
+ * 「需要 sender 所在窗口」的 IPC 外壳:safeHandleWithCtx + senderWindowOrThrow。handler 拿到
+ * (input, win);归属(ownerWindowId)由 main 从 sender 推断,renderer 不自报。
+ * terminal / debug-view 两个 IPC 模块共用。
+ */
+export function safeHandleWithWindow<I>(
+  channel: string,
+  schema: z.ZodType<I>,
+  handler: (input: I, win: BrowserWindow) => unknown | Promise<unknown>,
+  isTrustedFrame: IsTrustedFrame,
+  noWindowCode: string,
+): void {
+  safeHandleWithCtx(
+    channel,
+    schema,
+    (input, { event }) => handler(input, senderWindowOrThrow(event, noWindowCode)),
+    isTrustedFrame,
+  );
+}

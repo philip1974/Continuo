@@ -118,15 +118,16 @@ function toActionFail(err: unknown): ActionFail {
   return { ok: false, code, message: (err as Error)?.message ?? String(err) };
 }
 
-export async function createNewFile(
+// 新建文件 / 目录同构(只差调哪个 fs 方法):IPC reject → 结构化失败;成功 → 刷新父目录。
+async function createEntry(
+  create: (parentDir: string, name: string) => ReturnType<MutateDeps['fs']['createFile']>,
   parentDir: string,
   name: string,
-  deps: MutateDeps,
   tree: TreeMutationApi,
 ): Promise<ActionResult<{ newPath: string }>> {
   let r;
   try {
-    r = await deps.fs.createFile(parentDir, name);
+    r = await create(parentDir, name);
   } catch (err) {
     return toActionFail(err);
   }
@@ -135,19 +136,20 @@ export async function createNewFile(
   return { ok: true, newPath: r.data };
 }
 
-export async function createNewDir(
+export function createNewFile(
   parentDir: string,
   name: string,
   deps: MutateDeps,
   tree: TreeMutationApi,
 ): Promise<ActionResult<{ newPath: string }>> {
-  let r;
-  try {
-    r = await deps.fs.createDir(parentDir, name);
-  } catch (err) {
-    return toActionFail(err);
-  }
-  if (!r.ok) return { ok: false, code: r.code, message: r.message };
-  tree.invalidateChildrenIds(parentDir);
-  return { ok: true, newPath: r.data };
+  return createEntry((d, n) => deps.fs.createFile(d, n), parentDir, name, tree);
+}
+
+export function createNewDir(
+  parentDir: string,
+  name: string,
+  deps: MutateDeps,
+  tree: TreeMutationApi,
+): Promise<ActionResult<{ newPath: string }>> {
+  return createEntry((d, n) => deps.fs.createDir(d, n), parentDir, name, tree);
 }

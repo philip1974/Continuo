@@ -1,4 +1,5 @@
 import { execFile as execFileCb } from 'node:child_process';
+import { asRecord } from '../../shared/as-record';
 import { realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -182,12 +183,6 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
-}
-
-function asRecord(value: DapJson | undefined): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
 }
 
 function asArray(value: unknown): readonly unknown[] {

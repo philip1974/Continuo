@@ -1,7 +1,6 @@
 import {
   type ReactElement,
   useEffect,
-  useLayoutEffect,
   useRef,
   useState,
 } from 'react';
@@ -12,6 +11,7 @@ import { openRecentRootOrNotify } from './open-recent-root';
 import { useSelectWorkspaceFolder } from './hooks/useSelectWorkspaceFolder';
 import { cancelPendingWorkspaceRootSelection } from '@/lib/workspace-root-guard';
 import { useMenuKeyboard } from '@/lib/use-menu-keyboard';
+import { useMenuAnchor } from '@/lib/use-menu-anchor';
 import { basename, recentRootLabelParts } from './path-utils';
 import { useT } from '@/i18n';
 
@@ -82,9 +82,6 @@ export function ExplorerHeader({
   const recentRoots = useWorkspaceStore((s) => s.recentRoots);
   const { busy, selectFolder } = useSelectWorkspaceFolder();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [anchor, setAnchor] = useState<{ top: number; right: number } | null>(
-    null,
-  );
   const triggerRef = useRef<HTMLButtonElement>(null);
   const t = useT();
   // a11y(A18):菜单打开移焦入首项 + Escape 关闭还原焦点 + 方向键漫游(共享 hook)。
@@ -105,24 +102,8 @@ export function ExplorerHeader({
   const collapseAllLabel = t('panels.explorer.btn.collapse_all');
   const moreActionsLabel = t('panels.explorer.btn.more_actions');
 
-  // 计算菜单坐标 — 用 trigger 按钮的 viewport rect。
-  // 监听 resize / scroll 重新算,避免侧边栏滚动 / 窗口缩放后菜单错位。
-  useLayoutEffect(() => {
-    if (!menuOpen) return;
-    const update = () => {
-      const r = triggerRef.current?.getBoundingClientRect();
-      if (r) {
-        setAnchor({ top: r.bottom + 4, right: window.innerWidth - r.right });
-      }
-    };
-    update();
-    window.addEventListener('resize', update);
-    window.addEventListener('scroll', update, true);
-    return () => {
-      window.removeEventListener('resize', update);
-      window.removeEventListener('scroll', update, true);
-    };
-  }, [menuOpen]);
+  // 菜单坐标(trigger 按钮的 viewport rect;resize / scroll 时重算)。
+  const anchor = useMenuAnchor(triggerRef, menuOpen);
 
   // 点 trigger / menu 外:关菜单
   useEffect(() => {

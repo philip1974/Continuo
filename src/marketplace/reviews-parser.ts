@@ -16,6 +16,7 @@ import type { Review } from './reviews-types';
 import { isGitHubLogin, REVIEW_URL_MAX } from './reviews-types';
 import { lowerIfNeeded } from '../../electron/shared/lower-if-needed';
 import { isValidPluginId } from '../plugins/plugin-id'; // 边界(E113/E123):共享单一来源
+import { isSafeRepoPathChar } from './types';
 import { isHttpUrl } from './url-safety'; // 边界(E143,E109 fresh-fetch 对偶):url/avatarUrl scheme 白名单
 
 interface RawDiscussion {
@@ -206,17 +207,6 @@ function parseHeadingKey(line: string): string | null {
   return start < end ? lowerIfNeeded(line.slice(start, end)) : null;
 }
 
-function isPluginIdTitleChar(code: number): boolean {
-  return (
-    (code >= 65 && code <= 90) ||
-    (code >= 97 && code <= 122) ||
-    (code >= 48 && code <= 57) ||
-    code === 46 ||
-    code === 95 ||
-    code === 45
-  );
-}
-
 function extractPluginIdFromTitle(title: string): string | null {
   let start = 0;
   while (start < title.length && isAsciiWhitespace(title.charCodeAt(start))) {
@@ -225,7 +215,7 @@ function extractPluginIdFromTitle(title: string): string | null {
   if (title.charCodeAt(start) !== 91) return null;
   start += 1;
   let end = start;
-  while (end < title.length && isPluginIdTitleChar(title.charCodeAt(end))) {
+  while (end < title.length && isSafeRepoPathChar(title.charCodeAt(end))) {
     end += 1;
   }
   if (end === start || title.charCodeAt(end) !== 93) return null;

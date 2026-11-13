@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { IDockviewHeaderActionsProps } from 'dockview-react';
 import { isPopoutWindow, popoutUrlFor } from '@/lib/popout-mode';
 import { IconButton, MenuItem } from '@/design';
 import { useMenuKeyboard } from '@/lib/use-menu-keyboard';
+import { useMenuAnchor } from '@/lib/use-menu-anchor';
 import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
 import { coApp } from '@/plugins/co-app';
 import { useRegistry } from '@/plugins/registries/useRegistry';
@@ -34,17 +35,11 @@ const MORE_ACTIONS_ICON = (
   </svg>
 );
 
-interface AnchorRect {
-  readonly top: number;
-  readonly right: number;
-}
-
 export function HeaderActions(props: IDockviewHeaderActionsProps) {
   const { containerApi, group, activePanel } = props;
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const [anchor, setAnchor] = useState<AnchorRect | null>(null);
   const tk = useTWithFallback();
   const popoutLabel = t('shell.dock.popout_title');
   const moreActionsLabel = t('panels.explorer.btn.more_actions');
@@ -65,20 +60,7 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
   // 必须 portal 到 document.body:Dockview 祖先有 transform: translate3d(0,0,0)
   // 创建 stacking context,把 z-modal 困在 panel header 子树内,会被相邻
   // panel content 盖住。Portal 出去后 position:fixed 才真按 viewport 定位。
-  useLayoutEffect(() => {
-    if (!open) return;
-    const update = () => {
-      const r = triggerRef.current?.getBoundingClientRect();
-      if (r) setAnchor({ top: r.bottom + 4, right: window.innerWidth - r.right });
-    };
-    update();
-    window.addEventListener('resize', update);
-    window.addEventListener('scroll', update, true);
-    return () => {
-      window.removeEventListener('resize', update);
-      window.removeEventListener('scroll', update, true);
-    };
-  }, [open]);
+  const anchor = useMenuAnchor(triggerRef, open);
 
   useEffect(() => {
     if (!open) return;

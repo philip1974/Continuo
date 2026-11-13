@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { asRecord } from '../../electron/shared/as-record';
 import { coApi } from '@/lib/co-api';
 import type { DebugViewEvent } from '../../electron/shared/debug-view-channels';
 
@@ -93,12 +94,6 @@ function variableCacheKey(
   variablesReference: number,
 ): string {
   return `${sessionId}:${pausedEpoch}:${variablesReference}`;
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
 }
 
 function asFrame(value: unknown): DebugStackFrame | null {

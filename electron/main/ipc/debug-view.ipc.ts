@@ -2,8 +2,7 @@ import type { BrowserWindow } from 'electron';
 import { z } from 'zod';
 import {
   defaultIsTrustedFrame,
-  safeHandleWithCtx,
-  senderWindowOrThrow,
+  safeHandleWithWindow,
 } from '../safe-handle';
 import { ERROR_CODES } from '../../shared/error-codes';
 import {
@@ -67,19 +66,11 @@ function requireStoppedSession(sessionId: string, win: BrowserWindow) {
 export function registerDebugViewIpc(service: DebugService): void {
   const trusted = defaultIsTrustedFrame;
 
-  // 同 terminal.ipc 的 ownerScopedHandle:统一 IPC 外壳 + 从 sender 反查窗口。
   const windowScopedHandle = <I>(
     channel: string,
     schema: z.ZodType<I>,
     handler: (input: I, win: BrowserWindow) => unknown | Promise<unknown>,
-  ): void => {
-    safeHandleWithCtx(
-      channel,
-      schema,
-      (input, { event }) => handler(input, senderWindowOrThrow(event, ERROR_CODES.NO_WINDOW)),
-      trusted,
-    );
-  };
+  ): void => safeHandleWithWindow(channel, schema, handler, trusted, ERROR_CODES.NO_WINDOW);
 
   windowScopedHandle(DEBUG_VIEW_CHANNELS.SUBSCRIBE, debugSubscribeInputSchema, (_input, win) => {
     return {

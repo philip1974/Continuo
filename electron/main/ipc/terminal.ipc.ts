@@ -8,8 +8,7 @@ import * as fs from 'node:fs';
 import { z } from 'zod';
 import {
   defaultIsTrustedFrame,
-  safeHandleWithCtx,
-  senderWindowOrThrow,
+  safeHandleWithWindow,
 } from '../safe-handle';
 import { SESSION_UPDATE_CWD_CHANNEL, TERMINAL_CHANNELS } from '../../shared/terminal-channels';
 import { getDefaultShell, isAllowedShell } from '@continuo-terminal/server-node';
@@ -422,21 +421,14 @@ export function registerTerminalIpc(): void {
   const updateCwdHandler = makeUpdateCwdHandler();
   const windowClosedCleanup = makeWindowClosedCleanup();
 
-  // 所有 terminal IPC 走同一外壳:safeHandleWithCtx(trust → bounded → zod → try/catch)+ 从 sender
-  // 反查 BrowserWindow(ownerWindowId 由 main 推断,renderer 不自报)。
+  // 所有 terminal IPC 走同一外壳(safeHandleWithWindow:trust → bounded → zod → try/catch + 从 sender
+  // 反查 BrowserWindow;ownerWindowId 由 main 推断,renderer 不自报)。
   const ownerScopedHandle = <I>(
     channel: string,
     schema: z.ZodType<I>,
     handler: (input: I, win: BrowserWindow) => unknown | Promise<unknown>,
-  ): void => {
-    safeHandleWithCtx(
-      channel,
-      schema,
-      (input, { event }) =>
-        handler(input, senderWindowOrThrow(event, ERROR_CODES.TERMINAL_NO_WINDOW)),
-      trusted,
-    );
-  };
+  ): void =>
+    safeHandleWithWindow(channel, schema, handler, trusted, ERROR_CODES.TERMINAL_NO_WINDOW);
 
   ownerScopedHandle(TERMINAL_CHANNELS.CREATE, createInputSchema, createHandler);
   // list_sessions:Issue #28 Phase 1。从 sender 推断 ownerWindowId。
