@@ -1,4 +1,4 @@
-import type { AnyMcpTool, McpCallCtx } from './mcp-host.service';
+import type { AnyMcpTool } from './mcp-host.service';
 import {
   gateWithAuth,
   gateWithCapability,
@@ -14,12 +14,14 @@ import {
   makeReadOutputTool,
   makeSendInputTool,
   makeSendTextTool,
-  type CreateSessionPtyInput,
+  type CreateSessionToolDeps,
 } from './mcp-tools-terminal';
 
 export type { EnsureAuthorized } from './mcp-tool-gates';
 
-export interface MakeTerminalMcpToolsDeps {
+// createSession / installStopHook 的签名以 create_session 工具的 deps 为单一来源。
+export interface MakeTerminalMcpToolsDeps
+  extends Pick<CreateSessionToolDeps, 'createSession' | 'installStopHook'> {
   readonly sessionStore: Pick<typeof terminalSessions, 'get' | 'getAll'>;
   readonly service: Pick<
     typeof termService,
@@ -29,14 +31,6 @@ export interface MakeTerminalMcpToolsDeps {
   /** 安全 S3:会话的创建方身份(controllerToken),未由 MCP 创建 → null. */
   readonly getSessionController: (id: string) => string | null;
   readonly ensureAuthorized: EnsureAuthorized;
-  readonly createSession: (
-    input: CreateSessionPtyInput,
-    ctx: McpCallCtx,
-  ) => Promise<{ id: string }>;
-  readonly installStopHook?: (
-    cwd: string | undefined,
-    agentLabel: string,
-  ) => Promise<{ installed: boolean; reason?: string }>;
 }
 
 /**

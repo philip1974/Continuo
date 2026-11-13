@@ -7,7 +7,7 @@ import { usePermissionPromptStore } from './promptStore';
 import type { FsScopePrompt, Pending } from './promptStore';
 import type { PermissionKey } from '../permissions';
 import { useT } from '@/i18n';
-import { PERM_LABEL_KEYS } from './perm-labels';
+import { PermissionOptionRow } from './PermissionOptionRow';
 
 const PLUGIN_ID_MARKER = ' __PID__ ';
 const EMPTY_SELECTED_PERMISSIONS: PermissionKey[] = [];
@@ -98,26 +98,14 @@ function ManifestPromptBody({ pending }: { pending: Pending }) {
         {t('permissions.prompt.note_suffix')}
       </p>
       <ul className="mb-4 space-y-1">
-        {pending.perms.map((perm) => {
-          const meta = PERM_LABEL_KEYS[perm];
-          const checked = selected.has(perm);
-          return (
-            <li key={perm}>
-              <label className="flex cursor-pointer items-start gap-2 rounded p-2 hover:bg-hover">
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onChange={() => toggle(perm)}
-                  className="mt-0.5 accent-accent"
-                />
-                <div className="flex-1 text-xs">
-                  <div className="font-medium text-fg">{t(meta.titleKey)}</div>
-                  <div className="text-fg-dim">{t(meta.descKey)}</div>
-                </div>
-              </label>
-            </li>
-          );
-        })}
+        {pending.perms.map((perm) => (
+          <PermissionOptionRow
+            key={perm}
+            perm={perm}
+            checked={selected.has(perm)}
+            onToggle={toggle}
+          />
+        ))}
       </ul>
       <div className="flex justify-between gap-2">
         <Button

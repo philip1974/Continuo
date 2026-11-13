@@ -109,6 +109,15 @@ function isSortedByDisplayTitle(items: readonly DisplayCommand[]): boolean {
   return true;
 }
 
+/** 按 displayTitle 字母序;已有序时原样返回入参(不拷贝、不排序)。 */
+function sortedByDisplayTitle(items: readonly DisplayCommand[]): DisplayCommand[] {
+  if (isSortedByDisplayTitle(items)) return items as DisplayCommand[];
+  const out = new Array<DisplayCommand>(items.length);
+  for (let i = 0; i < items.length; i++) out[i] = items[i]!;
+  out.sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));
+  return out;
+}
+
 function findRecentCommandIndex(items: readonly DisplayCommand[], recentId: string): number {
   for (let i = 0; i < items.length; i++) {
     if (items[i]!.cmd.id === recentId) return i;
@@ -132,22 +141,13 @@ export function sortByRecent(
   if (items.length === 0) return EMPTY_DISPLAY_COMMANDS;
   if (items.length === 1) return items as DisplayCommand[];
   if (recentIds.length === 0) {
-    if (isSortedByDisplayTitle(items)) return items as DisplayCommand[];
-
-    const out = new Array<DisplayCommand>(items.length);
-    for (let i = 0; i < items.length; i++) out[i] = items[i]!;
-    out.sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));
-    return out;
+    return sortedByDisplayTitle(items);
   }
   if (recentIds.length === 1) {
     const recentId = recentIds[0]!;
     const recentIndex = findRecentCommandIndex(items, recentId);
     if (recentIndex < 0) {
-      if (isSortedByDisplayTitle(items)) return items as DisplayCommand[];
-      const out = new Array<DisplayCommand>(items.length);
-      for (let i = 0; i < items.length; i++) out[i] = items[i]!;
-      out.sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));
-      return out;
+      return sortedByDisplayTitle(items);
     }
     const recent = items[recentIndex]!;
     const others = new Array<DisplayCommand>(items.length - 1);
@@ -191,11 +191,7 @@ export function sortByRecent(
     }
   }
   if (others === null) {
-    if (isSortedByDisplayTitle(items)) return items as DisplayCommand[];
-    const out = new Array<DisplayCommand>(items.length);
-    for (let i = 0; i < items.length; i++) out[i] = items[i]!;
-    out.sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));
-    return out;
+    return sortedByDisplayTitle(items);
   }
   others.length = otherCount;
   if (otherCount > 1 && !isSortedByDisplayTitle(others)) {
