@@ -12,7 +12,7 @@ export const PANEL_MOUNT_INITIAL = { opacity: 0, y: 8, scale: 0.98 };
 export const PANEL_MOUNT_ANIMATE = { opacity: 1, y: 0, scale: 1 };
 export const PANEL_MOUNT_EXIT = { opacity: 0, y: -4, scale: 0.99 };
 
-// SharedTab 拦截 api.close() 后等多久才真 close,要与 PANEL_MOUNT_TRANSITION
+// wrap-panel-close 拦截 api.close() 后等多久才真 close,要与 PANEL_MOUNT_TRANSITION
 // 的 duration(秒)对齐,转毫秒。
 export const EXIT_DURATION_MS = Math.round(PANEL_MOUNT_TRANSITION.duration * 1000);
 

@@ -1,6 +1,6 @@
 // 命令 hotkey 显示格式化(platform-aware).
 //
-// 注册时仍用 `mod+x` 抽象形态(由 useCommandHotkeys.matchesHotkey 解析,
+// 注册时仍用 `mod+x` 抽象形态(由 useCommandHotkeys 的 compileCombo 预编译后匹配,
 // 跨平台同 raw)。本模块只管 UI 显示,把 raw 转成视觉友好的 string。
 //
 // mac:Unicode 紧凑形式 `⌘⇧H` / `⌘,`

@@ -1,8 +1,8 @@
 // M-Editor Step E1:编辑器全局 store。
 // 从 MindAutonAgent 移植 + Jotai → Zustand 重写;沿用 ADR-007 vanilla 模式。
 //
-// 持久化由 Step E5+ 接入(目前内存态,Editor MVP 不接 explorer.json,
-// session 恢复留下里程碑)。
+// 打开的文件 tab 随 explorer.json 的窗口段持久化与恢复(见 lib/persist/explorer-persist 的
+// collectEditorSnapshot / hydrateEditorTabs);内容本身不持久化,恢复时重新读盘。
 
 import { create } from 'zustand';
 import type { EditorView } from '@codemirror/view';

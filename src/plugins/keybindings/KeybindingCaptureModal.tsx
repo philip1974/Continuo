@@ -92,11 +92,10 @@ export function KeybindingCaptureModal({
   ...props
 }: KeybindingCaptureModalProps) {
   if (!visible) return null;
-  return <KeybindingCaptureModalBody visible={visible} {...props} />;
+  return <KeybindingCaptureModalBody {...props} />;
 }
 
 function KeybindingCaptureModalBody({
-  visible,
   commandId,
   commandTitle,
   currentHotkey,
@@ -106,7 +105,7 @@ function KeybindingCaptureModalBody({
   onSave,
   onClose,
   onResetToDefault,
-}: KeybindingCaptureModalProps) {
+}: Omit<KeybindingCaptureModalProps, 'visible'>) {
   const t = useT();
   const tk = useTWithFallback();
   // null = 还没捕获到完整组合(显示 currentHotkey 占位)
@@ -116,7 +115,6 @@ function KeybindingCaptureModalBody({
 
   // Body 只在弹窗可见时挂载(外层 visible=false 直接不渲染)→ 每次打开都是全新 state,无需手动复位。
   useEffect(() => {
-    if (!visible) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         // 让 Modal 自己的 Esc 关闭逻辑接(我们传 onClose 给 Modal)
@@ -156,7 +154,7 @@ function KeybindingCaptureModalBody({
     // capture 阶段拦截,避免 useCommandHotkeys 抢先 dispatch
     document.addEventListener('keydown', handler, true);
     return () => document.removeEventListener('keydown', handler, true);
-  }, [visible]);
+  }, []);
 
   const display = captured ?? currentHotkey ?? '';
   const isUnbind = captured === '';
@@ -176,7 +174,7 @@ function KeybindingCaptureModalBody({
 
   return (
     <Modal
-      visible={visible}
+      visible
       onClose={onClose}
       className="w-[420px] p-5"
       aria-labelledby="keybinding-capture-title"

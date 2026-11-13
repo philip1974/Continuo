@@ -21,7 +21,6 @@ interface IconBarItemConfig {
   node: React.ReactNode;
   onClick: () => void;
   active?: boolean;
-  disabled?: boolean;
 }
 
 const ICON_SIZE = 22;
@@ -92,7 +91,6 @@ export function IconSidebar() {
       // active → 暴露 aria-pressed;undefined 会由 NavRailButton 视作未提供,避免 `?? false`
       // 强转出 aria-pressed="false" 被 AT 误读成切换按钮,且不再为 fallback 分配对象。
       active={item.active}
-      disabled={item.disabled ?? false}
       onClick={item.onClick}
       // a11y(A34):更新角标 aria-label 在独立 span 上,经 aria-describedby 关联到按钮,聚焦时读出。
       describedById={describedById}
