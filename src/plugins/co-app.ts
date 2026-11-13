@@ -154,7 +154,7 @@ const dock: CoDockApi = {
 // notify() → console mirror → Toast DOM 渲染。单条通知不走 MAX_NOTIFICATIONS 队列上限,畸形/恶意
 // 插件可传超大字符串造成 renderer 内存膨胀 + console/DOM 卡顿。入口校验:message 必须非空 string 且
 // 截断到上限,code 非字符串/超长则丢弃(降级为无 code 通知,不渲染垃圾)。
-// 上限与 main→renderer 的 notify push 守卫同源(shared/notify-channels)。
+// 上限与 renderer 的 notify() 同源(shared/notify-channels)。
 
 const notifications: CoNotificationsApi = {
   // 边界(E271,E52 续 / 插件 API 对象形态守卫):opts 为插件直传 —— JS 插件可传 null/undefined/非对象。

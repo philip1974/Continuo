@@ -124,7 +124,11 @@ const api = {
       const listener = (_event: unknown, payload?: { windowId: number }) => {
         void cb(payload);
       };
-      return subscribeIpc(LAYOUT_CHANNELS.FLUSH_REQUEST, listener);
+      const unsubscribe = subscribeIpc(LAYOUT_CHANNELS.FLUSH_REQUEST, listener);
+      // 告诉 main「本窗口现在能应答 flush 请求了」。没上报过的窗口(启动中 / 加载失败)关窗时 main 不发
+      // 请求、不等回执 —— 否则没人回 ack,只能干等满超时。
+      ipcRenderer.send(LAYOUT_CHANNELS.FLUSH_READY);
+      return unsubscribe;
     },
     sendFlushAck: (windowId: number): void => {
       ipcRenderer.send(LAYOUT_CHANNELS.FLUSH_ACK, windowId);

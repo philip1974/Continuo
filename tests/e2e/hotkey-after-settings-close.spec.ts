@@ -21,7 +21,9 @@ test('Settings 开关后 Cmd+Shift+P 仍唤起 CommandPalette', async ({
     document.dispatchEvent(
       new KeyboardEvent('keydown', {
         key: 'p',
-        ctrlKey: true,
+        // 平台主修饰键:mac = Cmd,其它 = Ctrl(mac 上面板热键只认 Cmd)
+        ctrlKey: !navigator.platform.toLowerCase().includes('mac'),
+        metaKey: navigator.platform.toLowerCase().includes('mac'),
         shiftKey: true,
         bubbles: true,
         cancelable: true,

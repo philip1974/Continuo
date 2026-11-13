@@ -179,8 +179,8 @@ export async function recoverInterruptedInstalls(baseDir: string): Promise<void>
   }
 }
 
-// 边界(E24,E18 同族):插件目录扫描读 manifest/main/styles 的文件大小上限。畸形/恶意插件包可放
-// 超大 manifest/main/styles,应用启动或插件列表刷新时主进程整文件读入并经 IPC 传给 renderer →
+// 边界(E24,E18 同族):插件目录扫描读 manifest/main 的文件大小上限。畸形/恶意插件包可放
+// 超大 manifest/main,应用启动或插件列表刷新时主进程整文件读入并经 IPC 传给 renderer →
 // 内存峰值/卡死/崩溃。读前 stat.size,超限跳过(manifest/main 缺失即跳过整插件),
 // 不把超大源码跨 IPC 传输。上限远超任何现实插件(bundled main 数 MB 已罕见)。
 const MANIFEST_MAX_BYTES = 1024 * 1024; // 1 MiB

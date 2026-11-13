@@ -17,7 +17,9 @@ test('settings.toggle 命令显本地化 category 前缀 + title', async ({ wind
     document.dispatchEvent(
       new KeyboardEvent('keydown', {
         key: 'p',
-        ctrlKey: true,
+        // 平台主修饰键:mac = Cmd,其它 = Ctrl(mac 上面板热键只认 Cmd)
+        ctrlKey: !navigator.platform.toLowerCase().includes('mac'),
+        metaKey: navigator.platform.toLowerCase().includes('mac'),
         shiftKey: true,
         bubbles: true,
         cancelable: true,

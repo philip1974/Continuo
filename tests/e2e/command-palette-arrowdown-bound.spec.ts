@@ -15,7 +15,9 @@ test('ArrowDown N 次 → wrap 回 0 / 不越界', async ({ window }) => {
     document.dispatchEvent(
       new KeyboardEvent('keydown', {
         key: 'p',
-        ctrlKey: true,
+        // 平台主修饰键:mac = Cmd,其它 = Ctrl(mac 上面板热键只认 Cmd)
+        ctrlKey: !navigator.platform.toLowerCase().includes('mac'),
+        metaKey: navigator.platform.toLowerCase().includes('mac'),
         shiftKey: true,
         bubbles: true,
         cancelable: true,

@@ -16,8 +16,8 @@ import { z } from 'zod';
 // loadExplorer/hydrate 会接受超大数组,随后批量恢复 tab、展开树、写回快照 → 启动卡顿、IPC/JSON
 // 写入膨胀、内存峰值。下列 cap 远超任何现实工作区(深树展开/多 tab/多最近目录),只挡损坏/滥用;
 // 超限 → safeParse 失败 → loadExplorer 视作损坏快照降级默认(原文件存 .corrupt,不丢已存数据)。
-// 边界(E276):PATH_STR_MAX / PINNED_MAX 导出供 pinned.store 运行时把状态约束在持久化契约内
-// (否则运行时超限 → snapshotFromStores 写出后 ExplorerWritableSnapshotSchema 拒整份 → explorer 持久化全失败)。
+// 边界(E276):运行时状态须守这里的上限,否则 snapshotFromStores 写出后被 ExplorerWritableSnapshotSchema
+// 拒整份 → explorer 持久化全失败。
 export const PATH_STR_MAX = 8192; // 单条路径字符串(远超真实路径)
 export const PATH_ARRAY_MAX = 100_000; // expandedPaths / openFilePaths(大树/多 tab)(E277 运行时同守)
 const RECENT_ROOTS_MAX = 1000; // recentRoots

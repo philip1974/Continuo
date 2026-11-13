@@ -188,6 +188,16 @@ ipcMain.on(LAYOUT_CHANNELS.FLUSH_ACK, (event: IpcMainEvent, windowId: unknown) =
   if (cb) cb();
 });
 
+// renderer 已订阅 flush 请求的窗口(DockShell 挂载后经 preload 上报)。没上报过 = 启动中 / 加载失败:
+// 此时 renderer 没有任何可落盘的状态,也没人会回 ack,requestWindowFlush 直接放行,不发请求、不等超时。
+const flushReadyWindowIds = new Set<number>();
+
+ipcMain.on(LAYOUT_CHANNELS.FLUSH_READY, (event: IpcMainEvent) => {
+  if (!defaultIsTrustedFrame(event.senderFrame)) return;
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win) flushReadyWindowIds.add(win.id);
+});
+
 function requestWindowFlush(win: BrowserWindow): Promise<void> {
   return new Promise((resolve) => {
     let doneCalled = false;
@@ -203,8 +213,8 @@ function requestWindowFlush(win: BrowserWindow): Promise<void> {
       resolve();
     };
     pendingFlushAcks.set(win.id, done);
-    // webContents 已销毁 → renderer 无法 flush/ack,立即放行(不空等满超时)。
-    if (win.webContents.isDestroyed()) {
+    // webContents 已销毁 / renderer 还没就绪 → 无法 flush/ack,立即放行(不空等满超时)。
+    if (win.webContents.isDestroyed() || !flushReadyWindowIds.has(win.id)) {
       done();
       return;
     }
@@ -218,6 +228,7 @@ function requestWindowFlush(win: BrowserWindow): Promise<void> {
 }
 
 function wireWindowCloseFlush(win: BrowserWindow): void {
+  win.on('closed', () => flushReadyWindowIds.delete(win.id));
   let flushed = flushedOnQuit.has(win.id);
   // race(R45):flush 在途守卫。requestWindowFlush 是异步(等 renderer ack / 10s 超时),其间
   // `flushed` 仍为 false;若不挡住,快速重复关窗 / 系统关窗 / app.quit 触发的第二个 close 会再次

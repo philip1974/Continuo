@@ -17,7 +17,7 @@ CommonJS has the legacy advantage that older Node tooling produces it by default
 
 **Plugin entrypoints are ESM.** Loading happens in two steps because plugin code must execute in the renderer realm (where the `CoApp` facade lives), not the main process:
 
-1. **Main process** (`electron/main/services/plugins.service.ts › listPluginDirs`) reads `${pluginDir}/manifest.json` + the file named by `manifest.main` (default `main.js`) + optional `styles.css` from disk and ships the file *contents* over IPC to the renderer.
+1. **Main process** (`electron/main/services/plugins.service.ts › listPluginDirs`) reads `${pluginDir}/manifest.json` + the file named by `manifest.main` (default `main.js`) from disk and ships the file *contents* over IPC to the renderer.
 2. **Renderer** (`src/lib/plugins-host.ts` / `src/plugins/PluginManager.ts › activateEntry`) wraps the main source text in a `Blob` of MIME type `application/javascript`, calls `URL.createObjectURL(blob)` to mint a `blob:` URL, then `await import(/* @vite-ignore */ blobUrl)` to evaluate it. `mod.default` is the `Plugin` subclass; `new PluginClass(scopedApp, manifest)` then `await instance._activate()`.
 
 The actual JS evaluation is `import(url)` — a real ESM dynamic import — just with `url` being a renderer-side `blob:` URL constructed from main-process file reads, not a filesystem path the renderer could read directly.

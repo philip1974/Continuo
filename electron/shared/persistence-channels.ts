@@ -8,6 +8,8 @@ export const LAYOUT_CHANNELS = {
   // 关窗 / 退出握手:main → renderer 请求落盘,renderer → main 回执
   FLUSH_REQUEST: 'layout:flush-request',
   FLUSH_ACK: 'layout:flush-ack',
+  // renderer → main:已订阅 flush 请求(DockShell 挂载完成)。main 只对上报过的窗口发请求并等回执。
+  FLUSH_READY: 'layout:flush-ready',
 } as const;
 
 export const EXPLORER_CHANNELS = {
