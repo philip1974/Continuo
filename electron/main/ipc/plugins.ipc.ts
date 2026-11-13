@@ -1,7 +1,7 @@
 // 插件 IPC(M-Plugin v4.1,主进程端)。
 // 扫 userData/plugins/<id>/,读 manifest + main.js + styles.css 通过 IPC 给 renderer。
 
-import { app, BrowserWindow } from 'electron';
+import { app } from 'electron';
 import path from 'node:path';
 import { z } from 'zod';
 import { defaultIsTrustedFrame, safeHandle } from '../safe-handle';
@@ -20,6 +20,7 @@ import {
   writePermissions,
   writePluginPermissions,
 } from '../services/plugins.service';
+import { broadcastToWindows } from '../lib/broadcast';
 
 // 边界(E16):插件权限 IPC schema 此前对 ids/decisions/pathScopes/plugin id/path/permission 字符串
 // 都无长度或数量上限。畸形 renderer payload 可把 _permissions.json / _path-scopes.json 写成超大对象
@@ -113,14 +114,7 @@ export const UninstallInput = z
  * try/catch,失败只跳过/记录并继续。导出供 R67 回归测试。
  */
 export function broadcastPluginsChanged(id: string): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (win.isDestroyed()) continue;
-    try {
-      win.webContents.send(PLUGINS_CHANNELS.CHANGED, { id });
-    } catch (err) {
-      console.error('[plugins] PLUGINS_CHANGED broadcast failed', err);
-    }
-  }
+  broadcastToWindows(PLUGINS_CHANNELS.CHANGED, () => ({ id }), '[plugins] PLUGINS_CHANGED');
 }
 
 export function registerPluginsIpc(): void {

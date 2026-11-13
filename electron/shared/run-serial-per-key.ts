@@ -26,3 +26,33 @@ export function runSerialPerKey<T>(
   });
   return result;
 }
+
+export interface SerialQueue {
+  /** 接到队尾执行并返回本次任务的真实结果/异常;前一个任务失败不阻断后续。 */
+  run<T>(task: () => Promise<T>): Promise<T>;
+  /** 丢弃对在途任务的排队关系(测试隔离用)。 */
+  reset(): void;
+}
+
+/**
+ * 单条全局串行队列(runSerialPerKey 的无 key 版):同一资源(一个 JSON 文件)的 read-modify-write
+ * 必须整段串行,否则并发写者各读旧快照、整表写回 → lost update。主进程各持久化文件
+ * (_enabled / _permissions / _plugin-path-scopes / settings / explorer.json)此前各手写一条
+ * `let chain = Promise.resolve()` + `chain = run.then(noop, noop)`。
+ */
+export function createSerialQueue(): SerialQueue {
+  let tail: Promise<unknown> = Promise.resolve();
+  return {
+    run<T>(task: () => Promise<T>): Promise<T> {
+      const result = tail.then(task, task);
+      tail = result.then(
+        () => undefined,
+        () => undefined,
+      );
+      return result;
+    },
+    reset(): void {
+      tail = Promise.resolve();
+    },
+  };
+}

@@ -10,18 +10,15 @@ import {
   type Locale,
   type Settings,
 } from '../../shared/i18n-types';
+import { createSerialQueue } from '../../shared/run-serial-per-key';
 
 // 边界(E69):settings.json 读前大小上限。语义只有 {version, locale},正常仅数十字节,
 // 64KiB 已是天文余量;超大必为损坏/恶意,当 corrupt 隔离(见 loadSettings)。
 const MAX_SETTINGS_FILE_BYTES = 64 * 1024;
 
 // settings.service 内部 mutex，独立于 explorer 文件锁。
-let settingsChain: Promise<unknown> = Promise.resolve();
-async function withSettingsMutex<T>(fn: () => Promise<T>): Promise<T> {
-  const result = settingsChain.then(fn, fn);
-  settingsChain = result.catch(() => undefined);
-  return result;
-}
+const settingsQueue = createSerialQueue();
+const withSettingsMutex = settingsQueue.run;
 
 let cached: Settings | null = null;
 let setLocaleGen = 0;
@@ -158,5 +155,5 @@ export function _resetSettingsForTest(): void {
   cached = null;
   setLocaleGen = 0;
   committedLocaleGen = 0;
-  settingsChain = Promise.resolve();
+  settingsQueue.reset();
 }

@@ -9,6 +9,7 @@
 import { BrowserWindow } from 'electron';
 import { NOTIFY_CHANNELS } from '../../shared/notify-channels';
 import type { NotifyPushPayload } from '../../shared/notify-channels';
+import { broadcastToWindows } from '../lib/broadcast';
 
 function logFallback(payload: NotifyPushPayload): void {
   const tag = '[notify-push]';
@@ -54,12 +55,5 @@ export function pushNotification(payload: NotifyPushPayload): void {
     return;
   }
 
-  for (const w of BrowserWindow.getAllWindows()) {
-    if (w.isDestroyed()) continue;
-    try {
-      w.webContents.send(NOTIFY_CHANNELS.PUSH, payload);
-    } catch (err) {
-      console.error('[notify-push] broadcast send failed', err);
-    }
-  }
+  broadcastToWindows(NOTIFY_CHANNELS.PUSH, () => payload, '[notify-push]');
 }

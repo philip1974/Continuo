@@ -18,6 +18,7 @@ import { removeEntry } from './fs/remove';
 import { createDir, createFile } from './fs/create';
 import { copyEntry, moveEntry } from './fs/move-copy';
 import { createWatcherPool } from './fs/watch';
+import { broadcastToWindows } from '../lib/broadcast';
 
 // ────────────────────────────────────────────────────────────
 // schemas — 全部 .strict() 拒绝未知字段(防 IPC 注入)
@@ -260,19 +261,8 @@ const watcherPool = createWatcherPool((rootPath, onChange) => {
 
 // 导出仅供 R66 回归测试(验证单窗口 send 抛错不中断广播);生产仍只经 watcherPool onChange 调用。
 export function broadcastDirChanged(path: string): void {
-  for (const w of BrowserWindow.getAllWindows()) {
-    if (w.webContents.isDestroyed()) continue;
-    // race(R66,R63/R64/R65 同族):isDestroyed() 检查后、send 前窗口可能销毁,send 抛
-    // "Object has been destroyed"。本函数由 fs.watch 回调(onChange)触发,裸抛会:(1)中断
-    // 循环 → 后续窗口漏收 DIR_CHANGED,Explorer/外部文件同步停在旧树/旧内容;(2)在异步事件
-    // 回调里成主进程未捕获异常(噪声/崩溃风险)。每个窗口的 send 独立 try/catch,失败只跳过/
-    // 记录并继续广播其它窗口。镜像 i18n(R64)/protocol(R63)/plugin-fs(R65)。
-    try {
-      w.webContents.send(FS_CHANNELS.DIR_CHANGED, { path });
-    } catch (err) {
-      console.error('[fs] DIR_CHANGED broadcast failed', err);
-    }
-  }
+  // race(R66):由 fs.watch 回调触发;单窗口 send 抛错不中断其余窗口、不成未捕获异常。
+  broadcastToWindows(FS_CHANNELS.DIR_CHANGED, () => ({ path }), '[fs] DIR_CHANGED');
 }
 
 export function registerFsIpc(): void {

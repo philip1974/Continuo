@@ -29,6 +29,7 @@ import { SESSION_ID_MAX } from '../../shared/session-id-limits';
 // 边界(E219,E125/E127/E129 字节 vs code-unit 族):terminal:write data 须按真实 UTF-8 字节限,
 // 非 .max()(UTF-16 code unit)—— CJK/emoji 在 length≤上限时真实字节数倍超,实际写 6-8MB 到 PTY/IPC。
 import { utf8BytesExceed } from '../../shared/utf8-byte-length';
+import { broadcastToWindows } from '../lib/broadcast';
 
 // ── 常量 ─────────────────────────────────────────────────────
 const MAX_WRITE_BYTES = 2_000_000; // ~2MB 真实 UTF-8 字节上限(下游 PTY/IPC 写入按字节,边界语义统一)
@@ -409,17 +410,11 @@ export function makeAttachRejectedHandler(deps?: {
  * 失败只跳过/记录并继续给其它窗口发送。导出供 R68 回归测试。
  */
 export function broadcastSessionsChanged(): void {
-  for (const w of BrowserWindow.getAllWindows()) {
-    if (w.isDestroyed()) continue;
-    try {
-      w.webContents.send(
-        TERMINAL_CHANNELS.SESSIONS_CHANGED,
-        terminalSessions.getAll({ ownerWindowId: w.id }),
-      );
-    } catch (err) {
-      console.error('[terminal] SESSIONS_CHANGED broadcast failed', err);
-    }
-  }
+  broadcastToWindows(
+    TERMINAL_CHANNELS.SESSIONS_CHANGED,
+    (w) => terminalSessions.getAll({ ownerWindowId: w.id }),
+    '[terminal] SESSIONS_CHANGED',
+  );
 }
 
 // ── 注册 ─────────────────────────────────────────────────────

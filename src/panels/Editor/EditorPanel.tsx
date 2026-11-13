@@ -14,7 +14,6 @@ import {
   type EditorMode,
 } from '@/stores/editor.store';
 import { t as translate, useLocale } from '@/i18n';
-import { localizeErrorByCode } from '@/lib/localize-error';
 import {
   basenameForEditorPath,
   isMarkdownPath as isMarkdownPathExact,
@@ -33,9 +32,8 @@ import { resolveLink } from './link-resolve';
 import { startDebugDecorationSync } from './decorations/debug-decoration-sync';
 import { useSettingValue } from '@/plugins/settings/values-store';
 import { coApi } from '@/lib/co-api';
-import { notify } from '@/notifications/notify';
 import type { EditorTab } from '@/stores/editor.store';
-import { notifyThrownError } from '@/notifications/notify-thrown-error';
+import { notifyFailure, notifyThrownError } from '@/notifications/notify-thrown-error';
 
 // i18n(I14):模式切换 label 走 catalog —— 此前硬编码英文 'Edit'/'Source'/'Preview',
 // zh/ko 工具栏显英文且不随 locale 切换。id 稳定,label 在组件内用 useT 生成(响应 locale)。
@@ -112,9 +110,7 @@ export function EditorPanel() {
         openFileByPath(target.absPath)
           .then((r) => {
             if (!r.ok) {
-              notify.error(localizeErrorByCode(r.code, r.message ?? r.code), {
-                code: r.code,
-              });
+              notifyFailure(r);
             }
           })
           .catch((err) => {
@@ -127,7 +123,7 @@ export function EditorPanel() {
           .openExternal(target.url)
           .then((r) => {
             if (!r.ok) {
-              notify.error(localizeErrorByCode(r.code, r.message), { code: r.code });
+              notifyFailure(r);
             }
           })
           .catch((err) => {
@@ -165,7 +161,7 @@ export function EditorPanel() {
       // i18n(I7,codex 复查 P1):UNSAVED_DRAFT / TAB_NOT_FOUND / NO_ACTIVE_TAB / FS_* 都到
       // 这里,r.message 是 main/动作层的 raw(FS_* 英文、UNSAVED_DRAFT 含中文)→ 双向泄漏。
       // 按 code 经 catalog 本地化(单一来源 localizeErrorByCode),未收录 code 回退原 message。
-      notify.error(localizeErrorByCode(r.code, r.message), { code: r.code });
+      notifyFailure(r);
     }
   }, [saveActive]);
 

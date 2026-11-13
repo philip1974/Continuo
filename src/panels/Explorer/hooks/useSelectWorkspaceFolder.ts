@@ -13,14 +13,12 @@
 import { useCallback, useRef, useState } from 'react';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { coApi } from '@/lib/co-api';
-import { notify } from '@/notifications/notify';
-import { localizeErrorByCode } from '@/lib/localize-error';
 import { workspaceRootSelectionGuard } from '@/lib/workspace-root-guard';
 import {
   trySelectDirectoryLock,
   releaseSelectDirectoryLock,
 } from '@/lib/select-directory-single-flight';
-import { notifyThrownError } from '@/notifications/notify-thrown-error';
+import { notifyFailure, notifyThrownError } from '@/notifications/notify-thrown-error';
 
 export interface SelectWorkspaceFolder {
   /** 选择器打开中(控件据此 disabled / aria-busy)。 */
@@ -50,7 +48,7 @@ export function useSelectWorkspaceFolder(): SelectWorkspaceFolder {
         const r = await coApi.fs.selectDirectory();
         if (!isLatest()) return;
         if (r.ok && r.data) setRoot(r.data);
-        else if (!r.ok) notify.error(localizeErrorByCode(r.code, r.message), { code: r.code });
+        else if (!r.ok) notifyFailure(r);
       } catch (err) {
         if (!isLatest()) return;
         notifyThrownError(err);

@@ -17,6 +17,7 @@ import type {
 import { ERROR_CODES } from '../../shared/error-codes';
 import { errorMessage } from '../../shared/error-message';
 import { isValidPluginId } from '../../shared/plugin-id';
+import { createSerialQueue } from '../../shared/run-serial-per-key';
 import { atomicWriteJson } from '../lib/atomic-write';
 import { createByteCappedBuffer } from '../lib/byte-capped-buffer';
 import { readFileCappedFd } from '../lib/read-fh-capped';
@@ -382,8 +383,8 @@ export async function writeEnabledIds(
 // per-PluginManager 实例;每个窗口各有自己的 PluginManager(main-app.ts),两个窗口
 // 同时 enable/disable 不同插件时各读旧集合、整表写回,后写者覆盖先写者 → 某插件启用
 // 状态重启后丢失(跨窗口 lost update)。把 RMW 收口到 main 端单条 Promise 链(镜像
-// permissionsWriteChain / pathScopesWriteChain),renderer 改传 delta(id, enabled)。
-let enabledWriteChain: Promise<unknown> = Promise.resolve();
+// permissionsWriteQueue / pathScopesWriteQueue),renderer 改传 delta(id, enabled)。
+const enabledWriteQueue = createSerialQueue();
 
 /**
  * 启用/禁用单个插件 id(主进程全局串行 delta 写)。
@@ -394,7 +395,7 @@ export function setEnabledId(
   id: string,
   enabled: boolean,
 ): Promise<void> {
-  const run = enabledWriteChain.then(async () => {
+  return enabledWriteQueue.run(async () => {
     const current = await readEnabledIds(baseDir);
     const ids = new Set(current);
     const hasId = ids.has(id);
@@ -407,11 +408,6 @@ export function setEnabledId(
     }
     await writeEnabledIds(baseDir, [...ids]);
   });
-  enabledWriteChain = run.then(
-    () => {},
-    () => {},
-  );
-  return run;
 }
 
 // ── v4.2 权限决策持久化 ─────────────────────────────────
@@ -646,8 +642,8 @@ export async function writePermissions(
 }
 
 // 同文件 read-modify-write 串行化,防多窗口/并发授权互相覆盖(镜像
-// pathScopesWriteChain / installLocks 思路)。
-let permissionsWriteChain: Promise<unknown> = Promise.resolve();
+// pathScopesWriteQueue / installLocks 思路)。
+const permissionsWriteQueue = createSerialQueue();
 
 /**
  * 数据安全:按**单个 plugin** 合并写 `_permissions.json`。此前 renderer 整表写回,
@@ -661,7 +657,7 @@ export function writePluginPermissions(
   id: string,
   record: IpcPermissionRecord,
 ): Promise<void> {
-  const run = permissionsWriteChain.then(async () => {
+  return permissionsWriteQueue.run(async () => {
     if (!isSafePluginId(id)) return;
     // Array.isArray 不收窄 readonly[] union 分支,显式 cast 对象形态.
     const decisionsRaw = Array.isArray(record)
@@ -701,11 +697,6 @@ export function writePluginPermissions(
     }
     await writePermissions(baseDir, all);
   });
-  permissionsWriteChain = run.then(
-    () => {},
-    () => {},
-  );
-  return run;
 }
 
 // ── path-scope 持久化(plugin-fs 授权跨重启保留)──────────────
@@ -801,7 +792,7 @@ export async function readPluginPathScopes(
 }
 
 // 同文件 read-modify-write 串行化,防并发 grant 互相覆盖(镜像 installLocks 思路)。
-let pathScopesWriteChain: Promise<unknown> = Promise.resolve();
+const pathScopesWriteQueue = createSerialQueue();
 
 /**
  * 持久化单个 plugin 的全部已授 path scope(覆盖式)。空数组 → 删除该 id 条目。
@@ -812,7 +803,7 @@ export function writePluginPathScopes(
   id: string,
   scopes: readonly IpcPathScope[],
 ): Promise<void> {
-  const run = pathScopesWriteChain.then(async () => {
+  return pathScopesWriteQueue.run(async () => {
     if (!isSafePluginId(id)) return;
     const all = await readAllPathScopes(baseDir);
     // 边界(E249,E247 兄弟入口):service 层写端按 MAX_PERSISTED_SCOPES_PER_PLUGIN 有界收集,与
@@ -838,11 +829,6 @@ export function writePluginPathScopes(
     // readAllPathScopes 损坏即抛 → 水合降级 [],已授 path scope 丢失。原子写。
     await atomicWriteJson(file, all);
   });
-  pathScopesWriteChain = run.then(
-    () => {},
-    () => {},
-  );
-  return run;
 }
 
 // ── v4.5 git URL 安装 ──────────────────────────────────
@@ -903,17 +889,15 @@ export async function uninstallPlugin(
 
     // 清 _enabled.json 中的 id(防止 reload 复活已删插件)。数据安全(codex P1):必须走
     // setEnabledId 的全局串行链 —— 此前手写 readEnabledIds→filter→writeEnabledIds 绕过
-    // enabledWriteChain,与跨窗口 enable/disable 并发时用旧快照整表写回 → 丢别窗口刚启用
+    // enabledWriteQueue,与跨窗口 enable/disable 并发时用旧快照整表写回 → 丢别窗口刚启用
     // 的插件,或被并发 enable 写回旧 id(重装继承已启用)。delta 写在链内 RMW、仍在删目录前。
     await setEnabledId(baseDir, id, false);
 
-    // 清 _permissions.json 中的 id(避免重装继承旧授权)。readPermissions 损坏降级 {},不抛。
-    const perms = await readPermissions(baseDir);
-    if (id in perms) {
-      const next = { ...perms };
-      delete (next as Record<string, unknown>)[id];
-      await writePermissions(baseDir, next);
-    }
+    // 清 _permissions.json 中的 id(避免重装继承旧授权)。数据安全:与上方 enabled 同理必须走
+    // writePluginPermissions 的全局串行链(空记录 = 链内 RMW 删除该 id 条目,不存在则不触盘)——
+    // 此前手写 readPermissions→delete→writePermissions 整表写绕过 permissionsWriteQueue,与跨窗口
+    // 并发 grant/deny 交错时用旧快照写回 → 抹掉别的插件刚落盘的授权(enabled 修了、这里漏了)。
+    await writePluginPermissions(baseDir, id, []);
 
     // 清 _plugin-path-scopes.json 中的 id(避免重装继承旧 path scope,与上方对称)。
     // writePluginPathScopes 在 scopes 文件损坏时会抛(#12),但损坏文件本就不会被同 id 重装

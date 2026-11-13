@@ -41,7 +41,7 @@ import {
   type TerminalSearchResult,
   type TerminalSearchState,
 } from './terminal-search-state';
-import { notifyThrownError } from '@/notifications/notify-thrown-error';
+import { notifyFailure, notifyThrownError } from '@/notifications/notify-thrown-error';
 import { errorCodeOf } from '../../../electron/shared/error-message';
 
 type CursorStyle = 'block' | 'underline' | 'bar';
@@ -281,7 +281,7 @@ export function useTerminal(termId: string) {
           .openExternal(url)
           .then((r) => {
             if (!r.ok) {
-              notify.error(localizeErrorByCode(r.code, r.message), { code: r.code });
+              notifyFailure(r);
             }
           })
           .catch((err) => {
@@ -415,7 +415,7 @@ export function useTerminal(termId: string) {
         if (teardownDone) return;
         if (!r.ok) {
           clearLoadingOverlay();
-          notify.error(localizeErrorByCode(r.code, r.message), { code: r.code });
+          notifyFailure(r);
           return;
         }
         if (!r.data.data) return;

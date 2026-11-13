@@ -14,6 +14,7 @@ import { mcpRevokers } from './mcp-host.service';
 import { getCurrentLocale } from './settings.service';
 import { withPtyLangEnv } from './pty-lang';
 import { defaultShellArgs } from './shell-args';
+import { runSerialPerKey } from './serialize-per-key';
 import { utf8ByteLength } from '../../shared/utf8-byte-length';
 
 // ── 常量(节流参数,沿用 Mind 决策 #5)──────────────────────────
@@ -280,7 +281,7 @@ const instances = new Map<string, Instance>();
 // 串行,底层 Promise 可能乱序完成 —— 较早的小尺寸若晚于较新的大尺寸完成,会把 PTY 行列数回退
 // 到旧值(UI 已按最新尺寸渲染但 PTY 停在旧 cols/rows → 换行/全屏 TUI/光标错乱)。经此链按调用
 // 顺序串行应用,最新一次自然最后生效(last-wins,不回退)。
-const resizeChains = new Map<string, Promise<void>>();
+const resizeChains = new Map<string, Promise<unknown>>();
 
 // ── 纯函数(可单测,export)─────────────────────────────────────
 
@@ -551,8 +552,8 @@ export async function resize(
   // 误以为该尺寸已同步、后续同尺寸不重试 → xterm DOM 与 PTY 尺寸长期不一致(TUI 错乱)。改为
   // 等本次 resize 在串行链中的真实结果并上抛(true/false)。链尾仍保持 void+吞错供后续串行,
   // 本调用单独返回自己这次的布尔结果。
-  const prev = resizeChains.get(id) ?? Promise.resolve();
-  const task = prev.then(() =>
+  // 串行 + 排空回收走共享 runSerialPerKey(任务自身吞错返回 false,链不会被 reject 打断)。
+  return runSerialPerKey(resizeChains, id, () =>
     getSessionManager()
       .resize({ session_id: id, cols, rows })
       .then(
@@ -566,11 +567,6 @@ export async function resize(
         },
       ),
   );
-  resizeChains.set(
-    id,
-    task.then(() => undefined),
-  );
-  return task;
 }
 
 // race(R12,R4 同族):await Ctrl-C 写入并上抛真实结果。此前 fire-and-forget 恒「成功」→ IPC

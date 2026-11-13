@@ -39,7 +39,7 @@ import { useExplorerClipboardStore } from './clipboard-store';
 import { t, useT } from '@/i18n';
 import { localizeErrorByCode } from '@/lib/localize-error';
 import { openOrFocusPanel } from '@/shell/dock/dock-api-ref';
-import { notifyThrownError } from '@/notifications/notify-thrown-error';
+import { notifyFailure, notifyThrownError } from '@/notifications/notify-thrown-error';
 import { errorCodeOf } from '../../../electron/shared/error-message';
 
 interface CreatingState {
@@ -311,7 +311,7 @@ export function FolderTree({ root }: { root: string }) {
                 { invalidateChildrenIds: refreshParent },
               );
               if (!r.ok) {
-                notify.error(localizeErrorByCode(r.code, r.message), { code: r.code });
+                notifyFailure(r);
                 return;
               }
               // 同步打开的 editor tab 路径(目录 rename 时其下所有 tab 也会前缀 rewrite)
@@ -465,10 +465,7 @@ export function FolderTree({ root }: { root: string }) {
             });
             if (!r.ok) {
               console.warn('[explorer] open in terminal failed', r.code, r.message);
-              notify.error(localizeErrorByCode(r.code, r.message), {
-                code: r.code,
-                mirror: false,
-              });
+              notifyFailure(r, { mirror: false });
               return;
             }
             openOrFocusPanel(
@@ -550,7 +547,7 @@ export function FolderTree({ root }: { root: string }) {
     setCreating(null);
     const action = type === 'dir' ? createNewDir : createNewFile;
     const r = await action(parentDir, name, mutateDeps, treeApi);
-    if (!r.ok) notify.error(localizeErrorByCode(r.code, r.message), { code: r.code });
+    if (!r.ok) notifyFailure(r);
   };
 
   // ── Drop 上传(Step 5d) ───────────────────────────────────────

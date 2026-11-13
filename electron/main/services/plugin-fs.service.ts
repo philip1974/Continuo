@@ -731,7 +731,6 @@ export function registerPluginFsHandlers(
     },
   );
 
-  void sweepStaleTrashAtStartup(pathScopeRegistry);
 }
 
 /**
@@ -845,12 +844,4 @@ export async function sweepStaleTrashInDir(
     }
   }
   return { swept, failed };
-}
-
-/** Iterate registered plugin scopes and sweep stale trash in each. */
-export async function sweepStaleTrashAtStartup(
-  _registry: PathScopeRegistry,
-): Promise<void> {
-  // PathScopeRegistry intentionally does not expose all pluginIds yet.
-  // Startup sweeping is a v0.1 no-op; atomicReplace sweeps the active parent.
 }

@@ -16,3 +16,16 @@ export function notifyThrownError(err: unknown): void {
     code,
   });
 }
+
+/**
+ * `ok:false` 结果(IpcResult / ActionResult 的失败分支)的统一反馈:与 notifyThrownError 配对,
+ * 按 code 本地化后 notify.error 并附 code。`message` 缺省回退 code。
+ * `mirror:false` 仅当调用方已自行写过 console(见 notify.ts 的 mirror 语义)。
+ */
+export function notifyFailure(
+  failure: { readonly code: string; readonly message?: string },
+  opts?: { readonly mirror: false },
+): void {
+  const text = localizeErrorByCode(failure.code, failure.message ?? failure.code);
+  notify.error(text, opts ? { code: failure.code, mirror: false } : { code: failure.code });
+}

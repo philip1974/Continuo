@@ -9,6 +9,7 @@ import {
   trySelectDirectoryLock,
   releaseSelectDirectoryLock,
 } from '@/lib/select-directory-single-flight';
+import { notifyFailure } from '@/notifications/notify-thrown-error';
 
 export default class WindowPlugin extends Plugin {
   onload(): void {
@@ -27,10 +28,7 @@ export default class WindowPlugin extends Plugin {
           // i18n(I9,I6-I8 同族):window.create 返回 WORKSPACE_*/NO_WINDOW_SEQ 等有三语言
           // catalog 的 code,按 code 本地化(zh/ko 不看英文 raw)。WORKSPACE_* 带占位符,
           // helper 的占位符守卫会自动回退 raw message。
-          notify.error(localizeErrorByCode(r.code, r.message), {
-            code: r.code,
-            mirror: false,
-          });
+          notifyFailure(r, { mirror: false });
         }
       },
     });
