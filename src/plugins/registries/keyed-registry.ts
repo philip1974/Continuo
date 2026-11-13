@@ -111,21 +111,28 @@ export abstract class KeyedRegistry<T> {
 /**
  * 按 `priority ?? 100` 升序构造快照(等优先级保持注册顺序:Array.prototype.sort 稳定)。
  * 按 Map size 预分配;遍历时顺带探测是否已有序,有序则跳过 sort(常见:全默认 priority)。
+ * `accept` 给了就先过滤再排序 —— 只为被选中的子集付排序成本(StatusBar 按 side、设置项按 category)。
  */
 export function snapshotByPriority<T extends { readonly priority?: number }>(
   items: ReadonlyMap<string, T>,
+  accept?: (item: T) => boolean,
 ): T[] {
-  const out = new Array<T>(items.size);
-  let i = 0;
+  // 有过滤时到第一个命中项才分配(没有命中项 → 不分配,返回空数组)。
+  let out: T[] | null = accept === undefined ? new Array<T>(items.size) : null;
+  let count = 0;
   let prevPriority = -Infinity;
   let sorted = true;
   for (const item of items.values()) {
+    if (accept !== undefined && !accept(item)) continue;
     const priority = item.priority ?? 100;
     if (priority < prevPriority) sorted = false;
     prevPriority = priority;
-    out[i++] = item;
+    if (out === null) out = new Array<T>(items.size);
+    out[count++] = item;
   }
-  if (out.length > 1 && !sorted) {
+  if (out === null) return [];
+  out.length = count;
+  if (count > 1 && !sorted) {
     out.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
   }
   return out;

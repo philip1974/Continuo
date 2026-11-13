@@ -8,7 +8,15 @@ import {
   filterKeepingIdentity,
   snapshotByPriority,
 } from './keyed-registry';
-import { isSpecObject } from './spec-guard';
+import {
+  SPEC_ID_MAX,
+  SPEC_TITLE_MAX,
+  assertOptionalFinitePriority,
+  assertOptionalSpecFunction,
+  assertSpecFunction,
+  assertSpecObject,
+  assertSpecString,
+} from './spec-guard';
 
 export interface EditorActionContext {
   /** 当前 active tab 文件路径,可能为 null(未保存草稿). */
@@ -37,40 +45,16 @@ export interface EditorActionSpec {
 // label 污染按钮文本/aria-label,NaN priority 让排序比较器失真,非函数 when/fn 在渲染过滤或点击执行
 // 时反复抛错。注册入口校验 id/label 非空限长 + priority finite + when/fn 为函数,非法抛不入(渲染层
 // filterVisible 的单项 when try/catch 隔离保留)。
-const EA_ID_MAX = 256;
-const EA_LABEL_MAX = 512;
 const EMPTY_VISIBLE_EDITOR_ACTIONS: EditorActionSpec[] = [];
 
 function validateEditorActionSpec(spec: EditorActionSpec): void {
-  // 边界(E273,E271 registry 族):先校验 spec 是对象,否则读 spec.id/字段对 null/undefined 抛 TypeError。
-  if (!isSpecObject(spec)) {
-    throw new Error('[editor-action-registry] spec must be an object');
-  }
-  if (typeof spec.id !== 'string' || spec.id.length === 0) {
-    throw new Error('[editor-action-registry] id must be a non-empty string');
-  }
-  if (spec.id.length > EA_ID_MAX) {
-    throw new Error(
-      `[editor-action-registry] id exceeds max length ${EA_ID_MAX}`,
-    );
-  }
-  if (typeof spec.label !== 'string' || spec.label.length === 0) {
-    throw new Error('[editor-action-registry] label must be a non-empty string');
-  }
-  if (spec.label.length > EA_LABEL_MAX) {
-    throw new Error(
-      `[editor-action-registry] label exceeds max length ${EA_LABEL_MAX}`,
-    );
-  }
-  if (spec.priority !== undefined && !Number.isFinite(spec.priority)) {
-    throw new Error('[editor-action-registry] priority must be finite');
-  }
-  if (spec.when !== undefined && typeof spec.when !== 'function') {
-    throw new Error('[editor-action-registry] when must be a function');
-  }
-  if (typeof spec.fn !== 'function') {
-    throw new Error('[editor-action-registry] fn must be a function');
-  }
+  const tag = 'editor-action-registry';
+  assertSpecObject(tag, spec);
+  assertSpecString(tag, 'id', spec.id, SPEC_ID_MAX);
+  assertSpecString(tag, 'label', spec.label, SPEC_TITLE_MAX);
+  assertOptionalFinitePriority(tag, spec.priority);
+  assertOptionalSpecFunction(tag, 'when', spec.when);
+  assertSpecFunction(tag, 'fn', spec.fn);
 }
 
 export class EditorActionRegistry extends KeyedRegistry<EditorActionSpec> {

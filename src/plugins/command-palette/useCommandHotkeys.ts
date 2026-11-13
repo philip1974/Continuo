@@ -12,7 +12,7 @@ import {
 } from '../keybindings/keybindings-store';
 import { tWithFallback } from '@/i18n';
 import { runContributedAction } from '@/lib/run-contributed-action';
-import { detectPlatform, type Platform } from './format-hotkey';
+import { canonicalHotkeyKey, detectPlatform, type Platform } from './format-hotkey';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 
 /** 解析后的修饰键 + 主键签名(平台感知). 解析一次,匹配时纯字段比较. */
@@ -97,7 +97,8 @@ function compileCombo(combo: string, platform: Platform): ComboSignature {
     wantCtrl,
     wantShift,
     wantAlt,
-    key: lowerTrimmedSegment(combo, start, combo.length),
+    // 主键别名(up / esc / return …)归一到 e.key 名,与录制、显示同一套词汇。
+    key: canonicalHotkeyKey(lowerTrimmedSegment(combo, start, combo.length)),
   };
 }
 

@@ -4,7 +4,13 @@
 import type { ReactNode } from 'react';
 import type { Disposable } from '../types';
 import { KeyedRegistry, snapshotByPriority } from './keyed-registry';
-import { isSpecObject } from './spec-guard';
+import {
+  SPEC_ID_MAX,
+  assertOptionalFinitePriority,
+  assertSpecFunction,
+  assertSpecObject,
+  assertSpecString,
+} from './spec-guard';
 
 export interface StatusBarItemSpec {
   readonly id: string;
@@ -21,7 +27,6 @@ const EMPTY_STATUS_BAR_SNAPSHOT: readonly StatusBarItemSpec[] = [];
 // item 进全局排序;非法 side 变成不可见但常驻 Map 的脏条目(getBySide 永不命中),NaN priority 让排序
 // 比较器失真,非函数 render 虽被渲染侧 try/catch 兜住但每次状态栏重渲反复告警/跳过。注册入口校验
 // id 非空限长 + side 枚举 + priority finite + render 为函数,非法抛不入。
-const SB_ID_MAX = 256;
 
 function statusBarPriority(item: StatusBarItemSpec): number {
   return item.priority ?? 100;
@@ -63,25 +68,14 @@ function mergeSortedStatusBarItems(
 }
 
 function validateStatusBarItemSpec(spec: StatusBarItemSpec): void {
-  // 边界(E273,E271 registry 族):先校验 spec 是对象,否则读 spec.id/字段对 null/undefined 抛 TypeError。
-  if (!isSpecObject(spec)) {
-    throw new Error('[statusbar-registry] spec must be an object');
-  }
-  if (typeof spec.id !== 'string' || spec.id.length === 0) {
-    throw new Error('[statusbar-registry] id must be a non-empty string');
-  }
-  if (spec.id.length > SB_ID_MAX) {
-    throw new Error(`[statusbar-registry] id exceeds max length ${SB_ID_MAX}`);
-  }
+  const tag = 'statusbar-registry';
+  assertSpecObject(tag, spec);
+  assertSpecString(tag, 'id', spec.id, SPEC_ID_MAX);
   if (spec.side !== 'left' && spec.side !== 'right') {
     throw new Error("[statusbar-registry] side must be 'left' or 'right'");
   }
-  if (spec.priority !== undefined && !Number.isFinite(spec.priority)) {
-    throw new Error('[statusbar-registry] priority must be finite');
-  }
-  if (typeof spec.render !== 'function') {
-    throw new Error('[statusbar-registry] render must be a function');
-  }
+  assertOptionalFinitePriority(tag, spec.priority);
+  assertSpecFunction(tag, 'render', spec.render);
 }
 
 export class StatusBarRegistry extends KeyedRegistry<StatusBarItemSpec> {
@@ -100,34 +94,8 @@ export class StatusBarRegistry extends KeyedRegistry<StatusBarItemSpec> {
   getBySide(side: 'left' | 'right'): readonly StatusBarItemSpec[] {
     const cached = side === 'left' ? this.cachedLeft : this.cachedRight;
     if (cached !== null) return cached;
-    if (this.items.size === 0) {
-      if (side === 'left') this.cachedLeft = EMPTY_STATUS_BAR_SNAPSHOT;
-      else this.cachedRight = EMPTY_STATUS_BAR_SNAPSHOT;
-      return EMPTY_STATUS_BAR_SNAPSHOT;
-    }
-
-    let items: StatusBarItemSpec[] | null = null;
-    let count = 0;
-    let prevPriority = -Infinity;
-    let sorted = true;
-    for (const item of this.items.values()) {
-      if (item.side === side) {
-        if (items === null) items = new Array<StatusBarItemSpec>(this.items.size);
-        const priority = statusBarPriority(item);
-        if (priority < prevPriority) sorted = false;
-        prevPriority = priority;
-        items[count++] = item;
-      }
-    }
-    if (items === null) {
-      if (side === 'left') this.cachedLeft = EMPTY_STATUS_BAR_SNAPSHOT;
-      else this.cachedRight = EMPTY_STATUS_BAR_SNAPSHOT;
-      return EMPTY_STATUS_BAR_SNAPSHOT;
-    }
-    items.length = count;
-    if (count > 1 && !sorted) {
-      items.sort((a, b) => statusBarPriority(a) - statusBarPriority(b));
-    }
+    const matched = snapshotByPriority(this.items, (item) => item.side === side);
+    const items = matched.length === 0 ? EMPTY_STATUS_BAR_SNAPSHOT : matched;
     if (side === 'left') this.cachedLeft = items;
     else this.cachedRight = items;
     return items;

@@ -4,7 +4,14 @@
 import type { ReactNode } from 'react';
 import type { Disposable } from '../types';
 import { KeyedRegistry } from './keyed-registry';
-import { isSpecObject } from './spec-guard';
+import {
+  SPEC_ID_MAX,
+  SPEC_TITLE_MAX,
+  assertOptionalSpecString,
+  assertSpecFunction,
+  assertSpecObject,
+  assertSpecString,
+} from './spec-guard';
 
 export interface PanelSpec {
   /** Dockview panel component 类型名,跨插件唯一. */
@@ -24,46 +31,14 @@ export interface PanelSpec {
 // 无长度/非空上限,factory 也未确认是函数。畸形插件可注册超长 type 污染 Dockview components map /
 // panel id 路径,超长标题卡住 tab/title 同步;factory 非函数会在 DockShell 渲染 panel 时直接抛 →
 // dock 面板渲染崩溃。注册入口校验长度/非空 + factory 为函数,非法抛可诊断错误、不入 registry。
-const PANEL_TYPE_MAX = 256;
-const PANEL_TITLE_MAX = 512;
-const PANEL_KEY_MAX = 256; // titleKey(i18n key)
 
 function validatePanelSpec(spec: PanelSpec): void {
-  // 边界(E273,E271 registry 族):先校验 spec 是对象,否则读 spec.id/字段对 null/undefined 抛 TypeError。
-  if (!isSpecObject(spec)) {
-    throw new Error('[panel-registry] spec must be an object');
-  }
-  if (typeof spec.type !== 'string' || spec.type.length === 0) {
-    throw new Error('[panel-registry] type must be a non-empty string');
-  }
-  if (spec.type.length > PANEL_TYPE_MAX) {
-    throw new Error(
-      `[panel-registry] type exceeds max length ${PANEL_TYPE_MAX}`,
-    );
-  }
-  if (typeof spec.title !== 'string' || spec.title.length === 0) {
-    throw new Error('[panel-registry] title must be a non-empty string');
-  }
-  if (spec.title.length > PANEL_TITLE_MAX) {
-    throw new Error(
-      `[panel-registry] title exceeds max length ${PANEL_TITLE_MAX}`,
-    );
-  }
-  if (spec.titleKey !== undefined) {
-    // 边界(E153,E37 兄弟):titleKey 为可选 string,但来自未类型化 JS plugin,须先 typeof 守卫
-    // 再做长度上限(否则 titleKey:123 经 `(123).length === undefined > max` 为 false 绕过校验)。
-    if (typeof spec.titleKey !== 'string') {
-      throw new Error('[panel-registry] titleKey must be a string');
-    }
-    if (spec.titleKey.length > PANEL_KEY_MAX) {
-      throw new Error(
-        `[panel-registry] titleKey exceeds max length ${PANEL_KEY_MAX}`,
-      );
-    }
-  }
-  if (typeof spec.factory !== 'function') {
-    throw new Error('[panel-registry] factory must be a function');
-  }
+  const tag = 'panel-registry';
+  assertSpecObject(tag, spec);
+  assertSpecString(tag, 'type', spec.type, SPEC_ID_MAX);
+  assertSpecString(tag, 'title', spec.title, SPEC_TITLE_MAX);
+  assertOptionalSpecString(tag, 'titleKey', spec.titleKey, SPEC_ID_MAX);
+  assertSpecFunction(tag, 'factory', spec.factory);
 }
 
 

@@ -12,6 +12,7 @@ import type {
   SettingItemSpec,
 } from '../registries/SettingItemRegistry';
 import { SettingItemRow } from './SettingItemRow';
+import { groupKeepingOrder } from '@/lib/group-keeping-order';
 
 interface CategoryTabContentProps {
   readonly category: string;
@@ -40,63 +41,12 @@ const EMPTY_BUCKETS: Bucket[] = [];
 /** 按 spec.group 分组,保留 priority 顺序. group 出现顺序由首项决定. */
 export function groupItems(items: readonly SettingItemSpec[]): Bucket[] {
   if (items.length === 0) return EMPTY_BUCKETS;
-  if (items.length === 1) {
-    const spec = items[0]!;
-    return [
-      {
-        group: spec.group,
-        groupKey: spec.groupKey,
-        items,
-      },
-    ];
-  }
-  const first = items[0]!;
-  let allSameGroup = true;
-  for (let i = 1; i < items.length; i++) {
-    if (
-      items[i]!.group !== first.group ||
-      items[i]!.groupKey !== first.groupKey
-    ) {
-      allSameGroup = false;
-      break;
-    }
-  }
-  if (allSameGroup) {
-    return [
-      {
-        group: first.group,
-        groupKey: first.groupKey,
-        items,
-      },
-    ];
-  }
-
-  const map = new Map<
-    string | undefined,
-    { groupKey: string | undefined; items: SettingItemSpec[]; count: number }
-  >();
-  for (const spec of items) {
-    const key = spec.group;
-    let entry = map.get(key);
-    if (!entry) {
-      entry = {
-        groupKey: spec.groupKey,
-        items: new Array<SettingItemSpec>(items.length),
-        count: 0,
-      };
-      map.set(key, entry);
-    }
-    entry.items[entry.count++] = spec;
-  }
-  const buckets = new Array<Bucket>(map.size);
-  let i = 0;
-  for (const [group, entry] of map) {
-    entry.items.length = entry.count;
-    buckets[i++] = {
-      group,
-      groupKey: entry.groupKey,
-      items: entry.items,
-    };
+  // 按 group 分组;groupKey 取该组首项的(同组各项的 groupKey 相同)。
+  const groups = groupKeepingOrder(items, (spec) => spec.group);
+  const buckets = new Array<Bucket>(groups.length);
+  for (let i = 0; i < groups.length; i++) {
+    const { key: group, items: groupItems } = groups[i]!;
+    buckets[i] = { group, groupKey: groupItems[0]!.groupKey, items: groupItems };
   }
   return buckets;
 }

@@ -551,6 +551,10 @@
 
 - [`fs-ipc-bridge.spec.ts`](./fs-ipc-bridge/fs-ipc-bridge.spec.ts)
 
+## [groupKeepingOrder(按 key 分组的共享实现)](./group-keeping-order/README.md)
+
+- [`group-keeping-order.spec.ts`](./group-keeping-order/group-keeping-order.spec.ts)
+
 ## [HeaderActions(Dockview group header 自定义按钮)](./header-actions/README.md)
 
 - [`header-actions.spec.tsx`](./header-actions/header-actions.spec.tsx)
@@ -558,6 +562,10 @@
 ## [hook-broker-field-caps (E150)](./hook-broker-field-caps/README.md)
 
 - [`parse-stop-payload-caps.spec.ts`](./hook-broker-field-caps/parse-stop-payload-caps.spec.ts)
+
+## [快捷键键名词汇:捕获 / 匹配 / 显示 一致](./hotkey-key-vocabulary/README.md)
+
+- [`key-vocabulary.spec.ts`](./hotkey-key-vocabulary/key-vocabulary.spec.ts)
 
 ## [topic 16 i18n en zh ko](./i18n-en-zh-ko/README.md)
 
@@ -1051,6 +1059,10 @@
 
 - [`terminal-key-mapping.spec.ts`](./terminal-key-mapping/terminal-key-mapping.spec.ts)
 
+## [终端延迟初始化使用最新的设置与主题](./terminal-lazy-init-settings/README.md)
+
+- [`lazy-init-settings.spec.ts`](./terminal-lazy-init-settings/lazy-init-settings.spec.ts)
+
 ## [terminal-osc7 - OSC 7 cwd parser migration to @continuo-terminal/react-terminal](./terminal-osc7/README.md)
 
 - [`byte-identical.spec.ts`](./terminal-osc7/byte-identical.spec.ts)
@@ -1145,6 +1157,10 @@
 ## [useFsWatcher(Explorer 展开路径 ↔ fs.watch)](./use-fs-watcher/README.md)
 
 - [`use-fs-watcher.spec.tsx`](./use-fs-watcher/use-fs-watcher.spec.tsx)
+
+## [usePolledSnapshot(定时轮询外部快照)](./use-polled-snapshot/README.md)
+
+- [`use-polled-snapshot.spec.tsx`](./use-polled-snapshot/use-polled-snapshot.spec.tsx)
 
 ## [window-aware-agent-session](./window-aware-agent-session/README.md) `[integration]`
 

@@ -4,7 +4,15 @@
 import type { ReactNode } from 'react';
 import type { Disposable } from '../types';
 import { KeyedRegistry, snapshotByPriority } from './keyed-registry';
-import { isSpecObject } from './spec-guard';
+import {
+  SPEC_ID_MAX,
+  SPEC_TITLE_MAX,
+  assertOptionalFinitePriority,
+  assertOptionalSpecString,
+  assertSpecFunction,
+  assertSpecObject,
+  assertSpecString,
+} from './spec-guard';
 
 export interface SettingTabSpec {
   readonly id: string;
@@ -20,47 +28,15 @@ export interface SettingTabSpec {
 // titleKey 无长度上限,priority 可为 NaN/Infinity,render 也未确认是函数。畸形 tab 一注册即进
 // getAll().sort() + 左侧导航;若成为 active,SettingsPanel 直接调 active.render(),非函数/异常会让
 // 整个 Settings 面板崩溃(P1)。注册入口校验长度 + priority finite + render 为函数,非法抛不入。
-const ST_ID_MAX = 256;
-const ST_TITLE_MAX = 512;
-const ST_KEY_MAX = 256; // titleKey(i18n key)
 
 function validateSettingTabSpec(spec: SettingTabSpec): void {
-  // 边界(E273,E271 registry 族):先校验 spec 是对象,否则读 spec.id/字段对 null/undefined 抛 TypeError。
-  if (!isSpecObject(spec)) {
-    throw new Error('[setting-tab-registry] spec must be an object');
-  }
-  if (typeof spec.id !== 'string' || spec.id.length === 0) {
-    throw new Error('[setting-tab-registry] id must be a non-empty string');
-  }
-  if (spec.id.length > ST_ID_MAX) {
-    throw new Error(`[setting-tab-registry] id exceeds max length ${ST_ID_MAX}`);
-  }
-  if (typeof spec.title !== 'string' || spec.title.length === 0) {
-    throw new Error('[setting-tab-registry] title must be a non-empty string');
-  }
-  if (spec.title.length > ST_TITLE_MAX) {
-    throw new Error(
-      `[setting-tab-registry] title exceeds max length ${ST_TITLE_MAX}`,
-    );
-  }
-  if (spec.titleKey !== undefined) {
-    // 边界(E155,E153/E154 兄弟):可选 titleKey 来自未类型化 JS plugin,先 typeof 再长度
-    // (否则 titleKey:123 经 `(123).length === undefined > max` 为 false 绕过)。
-    if (typeof spec.titleKey !== 'string') {
-      throw new Error('[setting-tab-registry] titleKey must be a string');
-    }
-    if (spec.titleKey.length > ST_KEY_MAX) {
-      throw new Error(
-        `[setting-tab-registry] titleKey exceeds max length ${ST_KEY_MAX}`,
-      );
-    }
-  }
-  if (spec.priority !== undefined && !Number.isFinite(spec.priority)) {
-    throw new Error('[setting-tab-registry] priority must be finite');
-  }
-  if (typeof spec.render !== 'function') {
-    throw new Error('[setting-tab-registry] render must be a function');
-  }
+  const tag = 'setting-tab-registry';
+  assertSpecObject(tag, spec);
+  assertSpecString(tag, 'id', spec.id, SPEC_ID_MAX);
+  assertSpecString(tag, 'title', spec.title, SPEC_TITLE_MAX);
+  assertOptionalSpecString(tag, 'titleKey', spec.titleKey, SPEC_ID_MAX);
+  assertOptionalFinitePriority(tag, spec.priority);
+  assertSpecFunction(tag, 'render', spec.render);
 }
 
 

@@ -24,6 +24,7 @@ import { isHttpUrl } from './url-safety';
 import { useT, t as translate } from '@/i18n';
 import { localizeErrorByCode } from '@/lib/localize-error';
 import { SR_ONLY_STYLE } from '@/lib/sr-only';
+import { usePolledSnapshot } from '@/lib/use-polled-snapshot';
 
 /** 项目维护者(角标用),hard-coded. */
 const MAINTAINERS: ReadonlySet<string> = new Set(['philip1974']);
@@ -93,18 +94,7 @@ export function sameIdSet(
 
 /** 1s 轮询当前已装 plugin id 集合(同 PluginsTabContent 模式). */
 export function useInstalledIds(): ReadonlySet<string> {
-  const [snap, setSnap] = useState<ReadonlySet<string>>(() => readInstalledIds());
-  useEffect(() => {
-    // readIds() 每次都返回新 Set,直接 setSnap 会让 MarketplaceTab 每秒整页
-    // re-render(筛选区 + 卡片列表),即使已装集合没变。函数式更新只在集合实际
-    // 变化时换引用,无变化保持同引用 → React 跳过 re-render。(codex 打磨 R2)
-    const t = setInterval(() => {
-      const next = readInstalledIds();
-      setSnap((prev) => (sameIdSet(prev, next) ? prev : next));
-    }, 1000);
-    return () => clearInterval(t);
-  }, []);
-  return snap;
+  return usePolledSnapshot(readInstalledIds, sameIdSet)[0];
 }
 
 export function readInstalledIds(): ReadonlySet<string> {

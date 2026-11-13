@@ -15,6 +15,7 @@ export type Platform = 'mac' | 'other';
 const MOD_MAP: Record<Platform, Record<string, string>> = {
   mac: {
     mod: '⌘',
+    cmd: '⌘',
     shift: '⇧',
     alt: '⌥',
     option: '⌥',
@@ -22,6 +23,8 @@ const MOD_MAP: Record<Platform, Record<string, string>> = {
   },
   other: {
     mod: 'Ctrl',
+    // 非 mac 上录制 Meta 键得到 'cmd'(见 KeybindingCaptureModal.eventToCombo)
+    cmd: 'Win',
     shift: 'Shift',
     alt: 'Alt',
     option: 'Alt',
@@ -29,38 +32,52 @@ const MOD_MAP: Record<Platform, Record<string, string>> = {
   },
 };
 
+// 按规范名(真实 e.key 小写名)建表;别名经 canonicalHotkeyKey 归一后再查。
 const SPECIAL_KEYS: Record<Platform, Record<string, string>> = {
   mac: {
     enter: '↵',
-    return: '↵',
     escape: '⎋',
-    esc: '⎋',
     space: '␣',
     tab: '⇥',
     backspace: '⌫',
     delete: '⌦',
-    del: '⌦',
-    up: '↑',
-    down: '↓',
-    left: '←',
-    right: '→',
+    arrowup: '↑',
+    arrowdown: '↓',
+    arrowleft: '←',
+    arrowright: '→',
   },
   other: {
     enter: 'Enter',
-    return: 'Enter',
     escape: 'Esc',
-    esc: 'Esc',
     space: 'Space',
     tab: 'Tab',
     backspace: 'Backspace',
     delete: 'Del',
-    del: 'Del',
-    up: '↑',
-    down: '↓',
-    left: '←',
-    right: '→',
+    arrowup: '↑',
+    arrowdown: '↓',
+    arrowleft: '←',
+    arrowright: '→',
   },
 };
+
+/**
+ * 主键别名 → 真实 `e.key` 小写名。录制产出的是 e.key 名(arrowup / escape / enter …),手写的快捷键常用
+ * 别名(up / esc / return …)。匹配(useCommandHotkeys)与显示(formatPart)都先经此归一,三处同一套词汇。
+ */
+const KEY_ALIASES: Readonly<Record<string, string>> = {
+  up: 'arrowup',
+  down: 'arrowdown',
+  left: 'arrowleft',
+  right: 'arrowright',
+  esc: 'escape',
+  return: 'enter',
+  del: 'delete',
+};
+
+/** 把(已小写的)主键别名归一成 e.key 名;非别名原样返回。 */
+export function canonicalHotkeyKey(lowerKey: string): string {
+  return KEY_ALIASES[lowerKey] ?? lowerKey;
+}
 
 const EMPTY_HOTKEY_PARTS: string[] = [];
 
@@ -68,7 +85,7 @@ function formatPart(part: string, platform: Platform): string {
   const lower = lowerIfNeeded(part);
   const mod = MOD_MAP[platform][lower];
   if (mod) return mod;
-  const special = SPECIAL_KEYS[platform][lower];
+  const special = SPECIAL_KEYS[platform][canonicalHotkeyKey(lower)];
   if (special) return special;
   // 普通字母 / 数字 / 符号 → uppercase(F1 / A / , / .)
   return part.toUpperCase();

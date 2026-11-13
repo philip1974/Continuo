@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Button, Input } from '@/design';
 import { clampGitUrl } from '../../../electron/shared/plugins-channels';
+import { usePolledSnapshot } from '@/lib/use-polled-snapshot';
 import { ConfirmDialog } from '@/panels/Explorer/ConfirmDialog';
 import { coApi } from '@/lib/co-api';
 import { useSingleFlight } from '@/lib/use-single-flight';
@@ -260,21 +261,9 @@ function useUserPlugins(): {
   plugins: readonly PluginListItem[];
   refresh: () => void;
 } {
-  const [snap, setSnap] = useState<readonly PluginListItem[]>(() => readUserPluginList());
-  const refresh = () => {
-    // listAll() 每次返回新数组;1s 轮询直接 setSnap 会让整个插件列表每秒
-    // re-render。函数式更新只在列表渲染态实际变化时换引用。(codex 打磨 R2)
-    const next = readUserPluginList();
-    setSnap((prev) => (samePluginList(prev, next) ? prev : next));
-  };
-  useEffect(() => {
-    // 挂载时刷一次(manager 可能在组件 mount 之后才 init 完)
-    refresh();
-    // 1 秒轮询兜底,捕获 manager.init 异步完成的迟到入表
-    const t = setInterval(refresh, 1000);
-    return () => clearInterval(t);
-  }, []);
-  return { plugins: snap, refresh };
+  // 1 秒轮询兜底:捕获 manager.init 异步完成的迟到入表;列表渲染态没变则保持同引用。
+  const [plugins, refresh] = usePolledSnapshot(readUserPluginList, samePluginList);
+  return { plugins, refresh };
 }
 
 function UserPluginsSection() {

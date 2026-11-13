@@ -21,6 +21,7 @@ import {
 import { KeybindingCaptureModal } from '@/plugins/keybindings/KeybindingCaptureModal';
 import { useT, useTWithFallback, useLocale } from '@/i18n';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
+import { groupKeepingOrder } from '@/lib/group-keeping-order';
 
 const PLATFORM = detectPlatform();
 const COMMAND_PALETTE_HOTKEY_PARTS = formatHotkeyParts('mod+shift+p', PLATFORM);
@@ -112,71 +113,29 @@ export function groupByCategory(
   defaultGroup: string,
 ): Bucket[] {
   if (commands.length === 0) return EMPTY_KEYBINDING_BUCKETS;
-  if (commands.length === 1) {
-    const command = commands[0]!;
-    return [
-      {
-        category: command.displayCategory || defaultGroup,
-        items: commands,
-      },
-    ];
-  }
-
-  const firstCategory = commands[0]!.displayCategory || defaultGroup;
-  let allSameCategory = true;
-  for (let i = 1; i < commands.length; i++) {
-    if ((commands[i]!.displayCategory || defaultGroup) !== firstCategory) {
-      allSameCategory = false;
-      break;
+  const groups = groupKeepingOrder(commands, (d) => d.displayCategory || defaultGroup);
+  const buckets = new Array<Bucket>(groups.length);
+  for (let i = 0; i < groups.length; i++) {
+    const group = groups[i]!;
+    let items = group.items;
+    if (items.length > 1 && !isSortedByDisplayTitle(items)) {
+      // owned=false 时 items 就是入参数组,不能原地排 → 拷一份再排。
+      const sortable = group.owned ? (items as DisplayCommand[]) : copyCommands(items);
+      sortable.sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));
+      items = sortable;
     }
-  }
-  if (allSameCategory) {
-    if (!isSortedByDisplayTitle(commands)) {
-      const items = new Array<DisplayCommand>(commands.length);
-      for (let i = 0; i < commands.length; i++) items[i] = commands[i]!;
-      items.sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));
-      return [
-        {
-          category: firstCategory,
-          items,
-        },
-      ];
-    }
-    return [
-      {
-        category: firstCategory,
-        items: commands,
-      },
-    ];
-  }
-
-  const map = new Map<string, { items: DisplayCommand[]; count: number }>();
-  for (const d of commands) {
-    const key = d.displayCategory || defaultGroup;
-    let bucket = map.get(key);
-    if (!bucket) {
-      bucket = { items: new Array<DisplayCommand>(commands.length), count: 0 };
-      map.set(key, bucket);
-    }
-    bucket.items[bucket.count++] = d;
-  }
-  const buckets = new Array<Bucket>(map.size);
-  let i = 0;
-  for (const [category, bucket] of map) {
-    bucket.items.length = bucket.count;
-    const items = bucket.items;
-    if (bucket.count > 1 && !isSortedByDisplayTitle(items)) {
-      items.sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));
-    }
-    buckets[i++] = {
-      category,
-      items,
-    };
+    buckets[i] = { category: group.key, items };
   }
   if (buckets.length > 1 && !areBucketsSortedByCategory(buckets)) {
     buckets.sort((a, b) => a.category.localeCompare(b.category));
   }
   return buckets;
+}
+
+function copyCommands(commands: readonly DisplayCommand[]): DisplayCommand[] {
+  const copy = new Array<DisplayCommand>(commands.length);
+  for (let i = 0; i < commands.length; i++) copy[i] = commands[i]!;
+  return copy;
 }
 
 function matches(d: DisplayCommand, qLower: string): boolean {

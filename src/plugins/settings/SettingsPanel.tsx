@@ -17,6 +17,7 @@ import { SettingItemRow } from './SettingItemRow';
 import { useSettingsStore } from './store';
 import { useT, useLocale, tWithFallback } from '@/i18n';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
+import { groupKeepingOrder } from '@/lib/group-keeping-order';
 
 interface SettingsPanelProps {
   /** 默认用全局 coApp.settingTabs;测试可注入隔离 registry. */
@@ -102,52 +103,14 @@ const EMPTY_SEARCH_BUCKETS: readonly SearchBucket[] = [];
 /** 把搜索结果按 category 分组，label 走 i18n catalog（topic-20）。 */
 export function groupSearchResults(items: readonly SettingItemSpec[]): readonly SearchBucket[] {
   if (items.length === 0) return EMPTY_SEARCH_BUCKETS;
-  if (items.length === 1) {
-    const item = items[0]!;
-    return [
-      {
-        category: item.category,
-        label: tWithFallback(CATEGORY_TITLE_KEYS[item.category], item.category),
-        items,
-      },
-    ];
-  }
-
-  const firstCategory = items[0]!.category;
-  let allSameCategory = true;
-  for (let i = 1; i < items.length; i++) {
-    if (items[i]!.category !== firstCategory) {
-      allSameCategory = false;
-      break;
-    }
-  }
-  if (allSameCategory) {
-    return [
-      {
-        category: firstCategory,
-        label: tWithFallback(CATEGORY_TITLE_KEYS[firstCategory], firstCategory),
-        items,
-      },
-    ];
-  }
-
-  const map = new Map<string, { items: SettingItemSpec[]; count: number }>();
-  for (const spec of items) {
-    let bucket = map.get(spec.category);
-    if (!bucket) {
-      bucket = { items: new Array<SettingItemSpec>(items.length), count: 0 };
-      map.set(spec.category, bucket);
-    }
-    bucket.items[bucket.count++] = spec;
-  }
-  const buckets = new Array<SearchBucket>(map.size);
-  let i = 0;
-  for (const [category, bucket] of map) {
-    bucket.items.length = bucket.count;
-    buckets[i++] = {
+  const groups = groupKeepingOrder(items, (spec) => spec.category);
+  const buckets = new Array<SearchBucket>(groups.length);
+  for (let i = 0; i < groups.length; i++) {
+    const { key: category, items: groupItems } = groups[i]!;
+    buckets[i] = {
       category,
       label: tWithFallback(CATEGORY_TITLE_KEYS[category], category),
-      items: bucket.items,
+      items: groupItems,
     };
   }
   return buckets;

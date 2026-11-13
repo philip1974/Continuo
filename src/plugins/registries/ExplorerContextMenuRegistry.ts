@@ -20,7 +20,16 @@ import {
   filterKeepingIdentity,
   snapshotByPriority,
 } from './keyed-registry';
-import { isSpecObject } from './spec-guard';
+import {
+  SPEC_ID_MAX,
+  SPEC_TITLE_MAX,
+  assertOptionalFinitePriority,
+  assertOptionalSpecFunction,
+  assertOptionalSpecString,
+  assertSpecFunction,
+  assertSpecObject,
+  assertSpecString,
+} from './spec-guard';
 
 export interface ExplorerContextMenuItemContext {
   /** 右键的目标 entry. null = 空白处右键(根目录场景). */
@@ -59,54 +68,19 @@ export interface ExplorerContextMenuItemSpec {
 // 菜单打开时 groupPluginItems() 对超长/异常 group 做 localeCompare/分组渲染;非函数 when/fn 在打开
 // 菜单或点击时抛错,影响右键菜单可用性。注册入口校验长度 + priority finite + when/fn 为函数,非法抛
 // 不入(菜单渲染层仍保留单项 when try/catch 隔离)。
-const CM_ID_MAX = 256;
-const CM_LABEL_MAX = 512;
-const CM_GROUP_MAX = 256;
 const EMPTY_VISIBLE_EXPLORER_CONTEXT_MENU_ITEMS: ExplorerContextMenuItemSpec[] =
   [];
 
 function validateContextMenuItemSpec(spec: ExplorerContextMenuItemSpec): void {
-  // 边界(E273,E271 registry 族):先校验 spec 是对象,否则读 spec.id/字段对 null/undefined 抛 TypeError。
-  if (!isSpecObject(spec)) {
-    throw new Error('[explorer-context-menu] spec must be an object');
-  }
-  if (typeof spec.id !== 'string' || spec.id.length === 0) {
-    throw new Error('[explorer-context-menu] id must be a non-empty string');
-  }
-  if (spec.id.length > CM_ID_MAX) {
-    throw new Error(`[explorer-context-menu] id exceeds max length ${CM_ID_MAX}`);
-  }
-  if (typeof spec.label !== 'string' || spec.label.length === 0) {
-    throw new Error('[explorer-context-menu] label must be a non-empty string');
-  }
-  if (spec.label.length > CM_LABEL_MAX) {
-    throw new Error(
-      `[explorer-context-menu] label exceeds max length ${CM_LABEL_MAX}`,
-    );
-  }
-  if (spec.group !== undefined) {
-    // 边界(E155,E153/E154 兄弟):group 为可选 string,来自未类型化 JS plugin。E48 只对它做
-    // .length 上限缺 typeof(`({}).length === undefined > max` 为 false 绕过)→ group:{}/group:123
-    // 进 registry,菜单打开时 groupPluginItems() 把 group 当 Map key 并在排序里 localeCompare,
-    // 非字符串使整个右键菜单渲染崩溃。长度校验前先 typeof。
-    if (typeof spec.group !== 'string') {
-      throw new Error('[explorer-context-menu] group must be a string');
-    }
-    if (spec.group.length > CM_GROUP_MAX) {
-      throw new Error(
-        `[explorer-context-menu] group exceeds max length ${CM_GROUP_MAX}`,
-      );
-    }
-  }
-  if (spec.priority !== undefined && !Number.isFinite(spec.priority)) {
-    throw new Error('[explorer-context-menu] priority must be finite');
-  }
-  if (spec.when !== undefined && typeof spec.when !== 'function') {
-    throw new Error('[explorer-context-menu] when must be a function');
-  }
-  if (typeof spec.fn !== 'function') {
-    throw new Error('[explorer-context-menu] fn must be a function');
-  }
+  const tag = 'explorer-context-menu';
+  assertSpecObject(tag, spec);
+  assertSpecString(tag, 'id', spec.id, SPEC_ID_MAX);
+  assertSpecString(tag, 'label', spec.label, SPEC_TITLE_MAX);
+  // group 会被 groupPluginItems() 当 Map key 并 localeCompare,非字符串会让整个右键菜单渲染崩溃(E155)。
+  assertOptionalSpecString(tag, 'group', spec.group, SPEC_ID_MAX);
+  assertOptionalFinitePriority(tag, spec.priority);
+  assertOptionalSpecFunction(tag, 'when', spec.when);
+  assertSpecFunction(tag, 'fn', spec.fn);
 }
 
 export class ExplorerContextMenuRegistry extends KeyedRegistry<ExplorerContextMenuItemSpec> {

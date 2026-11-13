@@ -17,7 +17,8 @@ PromptFn 桥接到 store,Promise 形态返回。PluginManager 在 _activate 前�
 ### promptStore.request(pluginId, perms): Promise<PermissionKey[]>
 
 - 设 pending = { pluginId, perms } + 内部存 resolve
-- 同时只能一个 pending(再 request 直接 resolve [] 拒)
+- 同时只显示一个 pending;占用期间再 request → 排队(不结算),前一个 grant/deny 后依次弹出
+  (此前直接 resolve [],被调用方当作「用户全拒」持久化 → 另一个插件的权限被静默永久拒绝)
 - grant(perms) → resolve(perms) + 清 pending
 - denyAll() → resolve([])
 - close 等同 denyAll(用户关 Modal 视为拒绝)

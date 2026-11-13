@@ -51,7 +51,8 @@ describe('CommandRegistry.register 非对象 spec → 稳定错误(非 TypeError
   });
 });
 
-// 家族接线守卫:全 9 个贡献 registry 的 validate*Spec 都必须调用 isSpecObject(防某兄弟漏接/回归)。
+// 家族接线守卫:全 9 个贡献 registry 的 validate*Spec 都必须先校验 spec 是对象(防某兄弟漏接/回归)——
+// 直接调 isSpecObject,或调 spec-guard 的 assertSpecObject(内部即 isSpecObject + 统一错误消息)。
 describe('E273 家族接线守卫:全部贡献 registry validator 调用 isSpecObject', () => {
   const REGISTRIES = [
     'CommandRegistry',
@@ -70,6 +71,12 @@ describe('E273 家族接线守卫:全部贡献 registry validator 调用 isSpecO
   );
   it.each(REGISTRIES)('%s 的 validate*Spec 调用 isSpecObject', (name) => {
     const src = readFileSync(path.join(dir, `${name}.ts`), 'utf-8');
-    expect(src).toContain('isSpecObject(');
+    expect(src).toMatch(/isSpecObject\(|assertSpecObject\(/);
+  });
+
+  it('assertSpecObject 内部走 isSpecObject', () => {
+    const src = readFileSync(path.join(dir, 'spec-guard.ts'), 'utf-8');
+    const body = src.slice(src.indexOf('export function assertSpecObject'));
+    expect(body.slice(0, body.indexOf('\n}'))).toContain('isSpecObject(spec)');
   });
 });
