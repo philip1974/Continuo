@@ -163,6 +163,13 @@ interface RuntimeDebugSession {
   endedMessage?: string;
   /** 已发过 terminated / exited 的 child。 */
   readonly endedChildren: Set<DebugDapClientLike>;
+  /** 当前呈现的停点发生在哪条连接上(currentStop 有值时才有意义)。 */
+  stoppedClient?: DebugDapClientLike;
+  /**
+   * 当前停点尚未恢复时,别的连接上又发生的停点(主线程与 worker 各命中一个断点)。会话一次只呈现一个停点,
+   * 其余在此排队;当前停点恢复后依次呈现 —— 否则后停的会把先停的顶掉,先停的那条连接再也没法被继续。
+   */
+  readonly queuedStops: Array<{ client: DebugDapClientLike; body: DapJson | undefined }>;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -213,6 +220,9 @@ function toEnvObject(
 }
 
 /** 单断点的 DAP setBreakpoints 参数(父 session 设置与子 session 重放共用)。 */
+/** 向已建立的 child session 同步断点时的超时(父连接的响应才是工具的返回值,child 同步是尽力而为)。 */
+const CHILD_BREAKPOINT_SYNC_TIMEOUT_MS = 3_000;
+
 function setBreakpointsArgs(bp: SetBreakpointInput): DapJson {
   return {
     source: { path: bp.file },
@@ -474,6 +484,7 @@ export class DebugService {
       launch: normalizedInput,
       waiters: new Set(),
       endedChildren: new Set(),
+      queuedStops: [],
       breakpoints: [],
       initialized: false,
       configurationDone: false,
@@ -527,11 +538,19 @@ export class DebugService {
     );
     // 已建立的 child session 各自维护断点:只发给父连接的话,程序跑起来之后再设的断点不会生效
     //(child 只在创建时拿到当时的断点)。逐个同步;某个 child 已退出导致失败不影响其它。
-    for (const child of runtime.childClients) {
-      await child
-        .sendRequest('setBreakpoints', setBreakpointsArgs(input), this.requestTimeoutMs)
-        .catch(() => undefined);
-    }
+    // 取快照(发送期间 childClients 可能增减)、跳过已结束的 child、并行发送并用较短的超时:某个 child
+    // 不应答(已退出的 worker 等)不能把整个工具调用拖到 N × requestTimeoutMs。
+    await Promise.allSettled(
+      runtime.childClients
+        .filter((child) => !runtime.endedChildren.has(child))
+        .map((child) =>
+          child.sendRequest(
+            'setBreakpoints',
+            setBreakpointsArgs(input),
+            Math.min(this.requestTimeoutMs, CHILD_BREAKPOINT_SYNC_TIMEOUT_MS),
+          ),
+        ),
+    );
     await this.ensureConfigurationDone(runtime);
     await this.ensureLaunchStarted(runtime);
     const body = asRecord(response.body);
@@ -837,12 +856,11 @@ export class DebugService {
   ): Promise<{ continued: boolean; all_threads_continued?: boolean }> {
     const runtime = this.requireRuntime(sessionId);
     const threadId = await this.resolveThreadId(sessionId, input.threadId);
-    const response = await runtime.activeClient.sendRequest(
-      command,
-      { threadId },
-      this.requestTimeoutMs,
-    );
-    this.markContinued(sessionId);
+    // 记下发往哪条连接:它的 continued 事件可能先于响应到达并已触发「呈现下一个排队停点」,
+    // 此时再不带连接地清一次,会把刚呈现的那个停点错清掉。
+    const target = runtime.activeClient;
+    const response = await target.sendRequest(command, { threadId }, this.requestTimeoutMs);
+    this.markContinued(sessionId, target);
     const allThreadsContinued = boolField(asRecord(response.body), 'allThreadsContinued');
     return {
       continued: true,
@@ -966,7 +984,7 @@ export class DebugService {
       if (pid !== undefined) debugSessions.addSystemProcessId(sessionId, pid);
     });
     client.on('stopped', (event) => this.markStopped(sessionId, event.body, client));
-    client.on('continued', () => this.markContinued(sessionId));
+    client.on('continued', () => this.markContinued(sessionId, client));
     client.on('terminated', () => this.markEnded(sessionId, client, 'debug session terminated'));
     client.on('exited', () => this.markEnded(sessionId, client, 'debug session exited'));
   }
@@ -984,9 +1002,31 @@ export class DebugService {
     //(置位后 wait_for_stop 会永久报已终止)。
     if (client !== runtime.parentClient) {
       runtime.endedChildren.add(client);
-      if (!this.allChildrenEnded(runtime)) return;
+      if (!this.allChildrenEnded(runtime)) {
+        this.dropEndedChildStops(sessionId, runtime, client);
+        return;
+      }
     }
     this.endWholeSession(sessionId, runtime, message);
+  }
+
+  /**
+   * 一个 child 结束了但会话还在:它的停点(排队中的 / 当前呈现的)作废;若它是活动连接,把活动连接换成
+   * 仍存活的 child,免得后续请求打到已结束的连接上。
+   */
+  private dropEndedChildStops(
+    sessionId: string,
+    runtime: RuntimeDebugSession,
+    client: DebugDapClientLike,
+  ): void {
+    const index = runtime.queuedStops.findIndex((entry) => entry.client === client);
+    if (index >= 0) runtime.queuedStops.splice(index, 1);
+    if (runtime.stoppedClient === client) this.markContinued(sessionId, client);
+    if (runtime.activeClient === client) {
+      runtime.activeClient =
+        runtime.childClients.find((child) => !runtime.endedChildren.has(child)) ??
+        runtime.parentClient;
+    }
   }
 
   private allChildrenEnded(runtime: RuntimeDebugSession): boolean {
@@ -1009,8 +1049,23 @@ export class DebugService {
   ): void {
     const stoppedRuntime = this.runtimes.get(sessionId);
     if (stoppedRuntime?.endedMessage !== undefined) return; // 已结束:迟到事件不翻回状态
-    // 停在哪条连接上,后续的 stack / scopes / variables / continue 就发给哪条连接(主线程或某个 worker)。
-    if (stoppedRuntime) stoppedRuntime.activeClient = client;
+    if (stoppedRuntime) {
+      // 当前停点还没恢复、而这次停在另一条连接上 → 排队(同一连接的旧排队项被替换),稍后再呈现。
+      if (
+        stoppedRuntime.currentStop !== undefined &&
+        stoppedRuntime.stoppedClient !== undefined &&
+        stoppedRuntime.stoppedClient !== client
+      ) {
+        const queued = stoppedRuntime.queuedStops;
+        const index = queued.findIndex((entry) => entry.client === client);
+        if (index >= 0) queued.splice(index, 1);
+        queued.push({ client, body: bodyJson });
+        return;
+      }
+      // 停在哪条连接上,后续的 stack / scopes / variables / continue 就发给哪条连接(主线程或某个 worker)。
+      stoppedRuntime.activeClient = client;
+      stoppedRuntime.stoppedClient = client;
+    }
     const body = asRecord(bodyJson);
     const session = this.requireSession(sessionId);
     const stopSeq = session.stopSeq + 1;
@@ -1059,14 +1114,24 @@ export class DebugService {
     }
   }
 
-  private markContinued(sessionId: string): void {
+  /**
+   * 某条连接恢复运行(它发来的 continued 事件、我们对它发的 resume 成功,或它已结束)。
+   * 只有当前停点所在的那条连接恢复才清停点:别的连接的 continued(worker 启动时的内部暂停恢复等)不算。
+   * 清掉之后若还有排队的停点,立刻呈现下一个。
+   */
+  private markContinued(sessionId: string, client: DebugDapClientLike): void {
     const session = this.requireSession(sessionId);
     const runtime = this.requireRuntime(sessionId);
     if (runtime.endedMessage !== undefined) return; // 已结束:迟到事件 / 迟到的 resume 不翻回状态
+    // 该连接已恢复:它若有排队中的停点,作废。
+    const queuedIndex = runtime.queuedStops.findIndex((entry) => entry.client === client);
+    if (queuedIndex >= 0) runtime.queuedStops.splice(queuedIndex, 1);
+    if (runtime.stoppedClient !== undefined && runtime.stoppedClient !== client) return;
     if (session.runtimeState === 'running' && runtime.currentStop === undefined) {
       return;
     }
     runtime.currentStop = undefined;
+    runtime.stoppedClient = undefined;
     debugSessions.update(sessionId, {
       runtimeState: 'running',
       runSeq: session.runSeq + 1,
@@ -1078,6 +1143,8 @@ export class DebugService {
       sessionId,
       runSeq: session.runSeq + 1,
     });
+    const next = runtime.queuedStops.shift();
+    if (next) this.markStopped(sessionId, next.body, next.client);
   }
 
   private emitSessionEvent(sessionId: string, event: DebugViewEvent): void {

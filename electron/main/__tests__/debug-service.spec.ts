@@ -345,6 +345,82 @@ describe('DebugService fake adapter · launch / 子会话 / 终止 的错误路�
     expect(worker.requestLog.some((r) => r.command === 'stackTrace')).toBe(true);
   });
 
+  // 多条连接各自停住(主线程 + worker 各命中一个断点):会话一次只呈现一个停点,其余排队;
+  // 当前停点恢复后下一个停点接着呈现 —— 否则后停的把先停的顶掉,先停的那条连接再也没法被继续,程序挂住。
+  async function launchWithWorker() {
+    const parent = new FakeDapClient(1001);
+    const { service } = makeFakeService(parent);
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      ctx,
+    );
+    await parent.triggerStartDebugging({ type: 'pwa-node' });
+    const main = parent.children[0]!;
+    await main.triggerStartDebugging({ type: 'pwa-node', name: '[worker 1]' });
+    const worker = main.children[0]!;
+    return { service, sessionId, main, worker };
+  }
+
+  it('两条连接先后停住 → 先呈现先停的;继续后接着呈现后停的,请求发给对应连接', async () => {
+    const { service, sessionId, main, worker } = await launchWithWorker();
+    main.emit('stopped', { reason: 'breakpoint', threadId: 0 });
+    worker.emit('stopped', { reason: 'breakpoint', threadId: 7 });
+
+    const first = await service.waitForStop(sessionId, { afterStopSeq: 0, timeoutMs: 1_000 });
+    expect(first.thread_id).toBe(0);
+    await service.stackTrace(sessionId, {});
+    expect(main.requestLog.some((r) => r.command === 'stackTrace')).toBe(true);
+    expect(worker.requestLog.some((r) => r.command === 'stackTrace')).toBe(false);
+
+    await service.continue(sessionId, {});
+    expect(main.requestLog.some((r) => r.command === 'continue')).toBe(true);
+    expect(worker.requestLog.some((r) => r.command === 'continue')).toBe(false);
+
+    const second = await service.waitForStop(sessionId, {
+      afterStopSeq: first.stop_seq,
+      timeoutMs: 1_000,
+    });
+    expect(second.thread_id).toBe(7);
+    await service.stackTrace(sessionId, {});
+    expect(worker.requestLog.some((r) => r.command === 'stackTrace')).toBe(true);
+    await service.continue(sessionId, {});
+    expect(worker.requestLog.some((r) => r.command === 'continue')).toBe(true);
+    expect(service.listSessions()[0]?.state).toBe('running');
+  });
+
+  it('别的连接发来 continued 不清掉当前停点', async () => {
+    const { service, sessionId, main, worker } = await launchWithWorker();
+    main.emit('stopped', { reason: 'breakpoint', threadId: 0 });
+    worker.emit('continued', { threadId: 7, allThreadsContinued: false });
+
+    expect(service.listSessions()[0]?.state).toBe('stopped');
+    await expect(
+      service.waitForStop(sessionId, { afterStopSeq: 0, timeoutMs: 1_000 }),
+    ).resolves.toMatchObject({ thread_id: 0 });
+  });
+
+  it('当前停点所在的连接结束(worker 退出)而其它连接还在 → 停点作废,后续请求回到仍存活的连接', async () => {
+    const { service, sessionId, main, worker } = await launchWithWorker();
+    worker.emit('stopped', { reason: 'breakpoint', threadId: 7 });
+    worker.emit('terminated', {});
+
+    expect(service.listSessions()[0]?.state).toBe('running');
+    main.emit('stopped', { reason: 'breakpoint', threadId: 0 });
+    await service.stackTrace(sessionId, {});
+    expect(main.requestLog.some((r) => r.command === 'stackTrace')).toBe(true);
+  });
+
+  it('设断点:已结束的 child 不再同步;各 child 并行发送(一个不应答不拖住其它)', async () => {
+    const { service, sessionId, main, worker } = await launchWithWorker();
+    worker.emit('terminated', {});
+    main.requestLog.length = 0;
+    worker.requestLog.length = 0;
+
+    await service.setBreakpoints(sessionId, { file: '/fixture.js', line: 9 });
+    expect(main.requestLog.some((r) => r.command === 'setBreakpoints')).toBe(true);
+    expect(worker.requestLog.some((r) => r.command === 'setBreakpoints')).toBe(false);
+  });
+
   it('debuggee 已结束(terminated 事件)→ 之后的 wait_for_stop 立即报已终止,不干等到超时;列表状态为 terminated', async () => {
     const parent = new FakeDapClient(1001);
     const { service } = makeFakeService(parent);
