@@ -6,8 +6,8 @@
 //   query 变 → fuzzyFilter(results) → 渲染列表
 //   Enter → openFileByPath(absPath) + close()
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { usePickerList } from '../picker/use-picker-list';
 import { Button, Input, Modal, Spinner } from '@/design';
 import { notify } from '@/notifications/notify';
 import { useQuickOpenStore, type QuickOpenFile } from './store';
@@ -41,15 +41,8 @@ export function quickOpenRowClassName(selected: boolean): string {
   return selected ? QUICK_OPEN_ROW_SELECTED_CLASS_NAME : QUICK_OPEN_ROW_IDLE_CLASS_NAME;
 }
 
-export function isVirtualIndexRendered(
-  virtualItems: readonly { readonly index: number }[],
-  selectedIndex: number,
-): boolean {
-  for (const item of virtualItems) {
-    if (item.index === selectedIndex) return true;
-  }
-  return false;
-}
+// 既有入口保留(实现在共享 picker/use-picker-list)。
+export { isVirtualIndexRendered } from '../picker/use-picker-list';
 
 /**
  * 轻量 shell(打磨 R33,仿 R32 CommandPalette):QuickOpenModal 常驻挂在 App 顶层。
@@ -174,35 +167,6 @@ function QuickOpenBody() {
   // 虚拟化列表(打磨 R25):filtered 仍是逻辑全集(最多 5000),但只渲染可视行,
   // DOM 节点从最多 5000 降到几十。复用项目已有 @tanstack/react-virtual(同
   // FolderTree)。selectedIndex / Enter 语义不变,键盘移动时 scrollToIndex 跟随。
-  const ROW_H = 28; // li: py-1.5 text-xs ≈ 28px
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const rowVirtualizer = useVirtualizer({
-    count: filtered.length,
-    getScrollElement: () => scrollRef.current,
-    estimateSize: () => ROW_H,
-    overscan: 12,
-  });
-
-  // race(R48):filtered 变短(后台 scan setResults 替换列表 / query 收窄)时把 selectedIndex 钳回
-  // [0,len-1],防 Enter 读 filtered[selectedIndex]=undefined 打开失效 + 高亮/滚动停越界项。须在
-  // 下方 scroll effect 之前生效(声明在前 → 同次提交里先钳后滚)。
-  useEffect(() => {
-    clampSelection(filtered.length);
-  }, [filtered.length, clampSelection]);
-
-  // 键盘改 selectedIndex → 滚到可视区(虚拟化后选中行可能未挂载)。
-  useEffect(() => {
-    if (filtered.length === 0) return;
-    rowVirtualizer.scrollToIndex(selectedIndex);
-  }, [selectedIndex, filtered.length, rowVirtualizer]);
-  // a11y(A112,A111 后续):aria-activedescendant 只能指向 DOM 中真实挂载的 option;虚拟列表里
-  // 选中项可能不在渲染窗口内 → 须校验其在 getVirtualItems() 内,否则引用悬空。
-  const virtualItems = rowVirtualizer.getVirtualItems();
-  const activeOptionRendered = isVirtualIndexRendered(
-    virtualItems,
-    selectedIndex,
-  );
-
   const openFile = useCallback(
     async (file: QuickOpenFile) => {
       close();
@@ -229,19 +193,21 @@ function QuickOpenBody() {
     [close, t],
   );
 
-  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      moveSelection(1, filtered.length);
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      moveSelection(-1, filtered.length);
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      const file = filtered[selectedIndex];
+  // 列表机制(virtualizer / 越界钳制 / 滚动跟随 / 键盘导航 / ARIA)走共享 usePickerList。
+  // filtered 仍是逻辑全集(最多 5000),只渲染可视行。
+  const { scrollRef, virtualItems, comboboxProps, listboxProps, getOptionProps } = usePickerList({
+    idPrefix: 'quick-open',
+    count: filtered.length,
+    selectedIndex,
+    rowHeight: 28, // li: py-1.5 text-xs ≈ 28px
+    overscan: 12,
+    moveSelection,
+    clampSelection,
+    onEnter: (index) => {
+      const file = filtered[index];
       if (file) void openFile(file);
-    }
-  };
+    },
+  });
 
   return (
     <div className="flex flex-col">
@@ -252,27 +218,10 @@ function QuickOpenBody() {
           // a11y(A2,A1 同族):placeholder 含快捷键参数不适合作可访问名;用专用简洁
           // aria-label,给屏幕阅读器稳定的「搜索文件」名称。
           aria-label={inputAriaLabel}
-          // a11y(A15,CommandPalette 同模式):combobox —— 焦点留输入框、上下键移动 listbox
-          // 虚拟选中,须 role=combobox + aria-controls + aria-activedescendant 指向当前 option。
-          role="combobox"
-          // a11y(A100,CommandPalette 同模式):打开即弹层可见 → aria-expanded 恒 true;
-          // 按结果数设 false 会与可见空态矛盾。无结果只移除 aria-activedescendant(下方)。
-          aria-expanded
-          // a11y(A101,A100 后续):listbox 只在有结果时渲染 → 仅有结果时设 aria-controls,避免悬空。
-          aria-controls={filtered.length > 0 ? 'quick-open-listbox' : undefined}
-          // a11y(A111,A101 同族):结果异步变短时 selectedIndex 可能越界 → 须校验下标有效,
-          // 否则 aria-activedescendant 指向不存在的 option id,SR 失去当前项语义。
-          aria-activedescendant={
-            selectedIndex >= 0 &&
-            selectedIndex < filtered.length &&
-            activeOptionRendered
-              ? `quick-open-option-${selectedIndex}`
-              : undefined
-          }
+          {...comboboxProps}
           placeholder={placeholderLabel}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={onKeyDown}
         />
       </div>
       <div ref={scrollRef} className="max-h-[420px] overflow-y-auto py-1">
@@ -313,13 +262,8 @@ function QuickOpenBody() {
         ) : (
           <>
             <ul
-              id="quick-open-listbox"
-              role="listbox"
+              {...listboxProps}
               aria-label={t('quick_open.list_aria')}
-              style={{
-                height: rowVirtualizer.getTotalSize(),
-                position: 'relative',
-              }}
             >
               {virtualItems.map((vRow) => {
                 const idx = vRow.index;
@@ -327,17 +271,7 @@ function QuickOpenBody() {
                 return (
                   <li
                     key={f.absPath}
-                    id={`quick-open-option-${idx}`}
-                    role="option"
-                    aria-selected={idx === selectedIndex}
-                    style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      width: '100%',
-                      height: vRow.size,
-                      transform: `translateY(${vRow.start}px)`,
-                    }}
+                    {...getOptionProps(vRow)}
                     // 键盘 selectedIndex 走 active bg(深色),独立于鼠标 hover
                     className={quickOpenRowClassName(idx === selectedIndex)}
                     onClick={() => void openFile(f)}

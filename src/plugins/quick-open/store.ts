@@ -5,7 +5,7 @@
 // - 加 loading: walk 期间 spinner
 
 import { create } from 'zustand';
-import { clampSearchQuery } from '@/lib/search-query';
+import { createPickerSlice, type PickerSlice } from '../picker/picker-slice';
 
 export interface QuickOpenFile {
   /** 绝对路径(用于 openFileByPath). */
@@ -21,10 +21,9 @@ export interface QuickOpenFile {
   readonly name: string;
 }
 
-interface QuickOpenState {
-  isOpen: boolean;
-  query: string;
-  selectedIndex: number;
+// isOpen / query / selectedIndex 与 open / close / setQuery / moveSelection / clampSelection 来自
+// 共享 picker 切片。close 不清 results / query —— 用户秒级再开还能看到上次的列表。
+interface QuickOpenState extends PickerSlice {
   results: readonly QuickOpenFile[];
   /**
    * race(R2):results 归属的 workspace root。切 workspace 后重开 Quick Open,旧 root 的
@@ -35,17 +34,6 @@ interface QuickOpenState {
   loading: boolean;
   /** walk 失败标志 —— 与"workspace 真为空"区分,避免静默失败伪装成空列表。 */
   scanFailed: boolean;
-  open: () => void;
-  close: () => void;
-  setQuery: (q: string) => void;
-  moveSelection: (delta: number, max: number) => void;
-  /**
-   * race(R48):把 selectedIndex 钳到 [0, len-1](空列表置 0)。后台 scan 完成 setResults 替换
-   * 列表 / query 改变使过滤结果变短时,旧 selectedIndex 可能越界 → Enter 读 filtered[idx]=undefined
-   * 打开失效、高亮/滚动停无效项。组件在 filtered.length 变化时调用。已在范围内则返回原 state,
-   * 不触发 selectedIndex 订阅者重渲染。
-   */
-  clampSelection: (len: number) => void;
   setResults: (files: readonly QuickOpenFile[], root?: string | null) => void;
   setLoading: (b: boolean) => void;
   setScanFailed: (b: boolean) => void;
@@ -73,42 +61,12 @@ function quickOpenResultsEqual(
 }
 
 export const useQuickOpenStore = create<QuickOpenState>((set) => ({
-  isOpen: false,
-  query: '',
-  selectedIndex: 0,
+  ...createPickerSlice(set),
   results: [],
   resultsRoot: null,
   loading: false,
   scanFailed: false,
 
-  open: () =>
-    set((s) =>
-      s.isOpen && s.query === '' && s.selectedIndex === 0
-        ? s
-        : { isOpen: true, query: '', selectedIndex: 0 },
-    ),
-  // 不清 results / query — 用户秒级再开还能看到上次的列表。
-  // 真要 reset 在 walk 完成后才 setResults。
-  close: () => set((s) => (s.isOpen ? { isOpen: false } : s)),
-  // 边界(E279):截断超长 query(防单次 paste 触发 O(results×queryLen) fuzzyFilter 卡死 renderer)。
-  setQuery: (q) =>
-    set((s) => {
-      const query = clampSearchQuery(q);
-      return s.query === query && s.selectedIndex === 0
-        ? s
-        : { query, selectedIndex: 0 };
-    }),
-  moveSelection: (delta, max) =>
-    set((s) => {
-      if (max <= 0) return s.selectedIndex === 0 ? s : { selectedIndex: 0 };
-      const next = (s.selectedIndex + delta + max) % max;
-      return next === s.selectedIndex ? s : { selectedIndex: next };
-    }),
-  clampSelection: (len) =>
-    set((s) => {
-      const clamped = len <= 0 ? 0 : Math.min(s.selectedIndex, len - 1);
-      return clamped === s.selectedIndex ? s : { selectedIndex: clamped };
-    }),
   // root 省略(单参旧调用)→ resultsRoot 置 null;组件扫描时显式传当前 root 绑定归属。
   setResults: (files, root = null) =>
     set((s) =>

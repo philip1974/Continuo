@@ -732,6 +732,10 @@
 - [`PermissionPrompt.spec.tsx`](./permission-prompt/PermissionPrompt.spec.tsx)
 - [`promptStore.spec.ts`](./permission-prompt/promptStore.spec.ts)
 
+## [picker-shared(重构:CommandPalette / QuickOpen 共享的 picker 机制)](./picker-shared/README.md)
+
+- [`picker-shared.spec.tsx`](./picker-shared/picker-shared.spec.tsx)
+
 ## [plugin-base(插件基类与 Disposable 模型)](./plugin-base/README.md)
 
 - [`plugin-base.spec.ts`](./plugin-base/plugin-base.spec.ts)
