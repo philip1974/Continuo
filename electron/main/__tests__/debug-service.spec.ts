@@ -287,6 +287,64 @@ describe('DebugService fake adapter · launch / 子会话 / 终止 的错误路�
     expect(service.listSessions()[0]?.state).toBe('terminated');
   });
 
+  it('程序跑起来之后再设断点 → 也同步给已建立的 child session', async () => {
+    const parent = new FakeDapClient(1001);
+    const { service } = makeFakeService(parent);
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      ctx,
+    );
+    await parent.triggerStartDebugging({ type: 'pwa-node' });
+    const child = parent.children[0]!;
+    child.requestLog.length = 0;
+
+    await service.setBreakpoints(sessionId, { file: '/fixture.js', line: 5 });
+    expect(child.requestLog).toContainEqual(
+      expect.objectContaining({
+        command: 'setBreakpoints',
+        args: expect.objectContaining({ breakpoints: [{ line: 5 }] }),
+      }),
+    );
+  });
+
+  it('嵌套目标(worker)的 startDebugging 来自 child 连接 → 同样建 child session(不回 unsupported)', async () => {
+    const parent = new FakeDapClient(1001);
+    const { service } = makeFakeService(parent);
+    await service.launchSession({ program: '/fixture.js', cwd: '/work' }, ctx);
+    await parent.triggerStartDebugging({ type: 'pwa-node' });
+    const main = parent.children[0]!;
+
+    await main.triggerStartDebugging({ type: 'pwa-node', name: '[worker 1]' });
+    expect(main.children).toHaveLength(1);
+    expect(main.children[0]!.requestLog.map((r) => r.command)).toEqual(
+      expect.arrayContaining(['initialize', 'configurationDone', 'launch']),
+    );
+  });
+
+  it('停在哪条连接上,后续请求就发给哪条连接(worker 停住 → 查 worker 的栈)', async () => {
+    const parent = new FakeDapClient(1001);
+    const { service } = makeFakeService(parent);
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      ctx,
+    );
+    await parent.triggerStartDebugging({ type: 'pwa-node' });
+    const main = parent.children[0]!;
+    await main.triggerStartDebugging({ type: 'pwa-node', name: '[worker 1]' });
+    const worker = main.children[0]!;
+
+    // worker 出现后活动连接仍是主目标
+    main.emit('stopped', { reason: 'breakpoint', threadId: 0 });
+    await service.stackTrace(sessionId, {});
+    expect(main.requestLog.some((r) => r.command === 'stackTrace')).toBe(true);
+    expect(worker.requestLog.some((r) => r.command === 'stackTrace')).toBe(false);
+
+    await service.continue(sessionId, {});
+    worker.emit('stopped', { reason: 'breakpoint', threadId: 1 });
+    await service.stackTrace(sessionId, {});
+    expect(worker.requestLog.some((r) => r.command === 'stackTrace')).toBe(true);
+  });
+
   it('debuggee 已结束(terminated 事件)→ 之后的 wait_for_stop 立即报已终止,不干等到超时;列表状态为 terminated', async () => {
     const parent = new FakeDapClient(1001);
     const { service } = makeFakeService(parent);
@@ -888,5 +946,108 @@ describe.skipIf(!adapterExists)('DebugService real adapter', () => {
       }
     },
     130_000,
+  );
+});
+
+// 真实 js-debug adapter 下的两个场景(此前只能读代码推断,列为「需真机验证」):
+//  - child session 建立之后再设的断点是否生效;
+//  - 带 worker_threads 的程序:worker 先退出不能把整个会话判为终止。
+describe.skipIf(!adapterExists)('DebugService real adapter · 晚设断点与 worker', () => {
+  async function withRealService<T>(
+    files: Record<string, string>,
+    run: (ctx: { service: DebugService; dir: string }) => Promise<T>,
+  ): Promise<T> {
+    const adapterCopy = await prepareCommonJsAdapter();
+    const dir = await mkdtemp(path.join(tmpdir(), 'continuo-debug-real-'));
+    for (const [name, text] of Object.entries(files)) {
+      await writeFile(path.join(dir, name), text);
+    }
+    const service = new DebugService({
+      adapterPath: adapterCopy.adapterPath,
+      requestTimeoutMs: 30_000,
+      workspace: { getWorkspaceRoot: () => dir, realpath: async (p) => p },
+    });
+    try {
+      return await run({ service, dir });
+    } finally {
+      await service.cleanupAll('test finally').catch(() => undefined);
+      await rm(adapterCopy.dir, { recursive: true, force: true });
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+  const ctx = { ownerWindowId: 9, controllerToken: 'agent-real' };
+
+  it(
+    '第一次停住之后再设的断点(此时 child session 已建立)也会命中',
+    async () => {
+      const source = [
+        'function step(n) { return n + 1; }', // 1
+        'let x = 0;', // 2
+        'x = step(x);', // 3 ← 第一个断点
+        'x = step(x);', // 4
+        'x = step(x);', // 5 ← 停住之后才设
+        'console.log(x);', // 6
+        '',
+      ].join('\n');
+      await withRealService({ 'late.js': source }, async ({ service, dir }) => {
+        const file = path.join(dir, 'late.js');
+        const { session_id: sessionId } = await service.launchSession(
+          { program: file, cwd: dir },
+          ctx,
+        );
+        await service.setBreakpoints(sessionId, { file, line: 3 });
+        const first = await service.waitForStop(sessionId, { afterStopSeq: 0, timeoutMs: 40_000 });
+        const firstStack = await service.stackTrace(sessionId, { startFrame: 0, levels: 1 });
+        expect(firstStack.frames[0]?.line).toBe(3);
+
+        await service.setBreakpoints(sessionId, { file, line: 5 });
+        await service.continue(sessionId, {});
+        const second = await service.waitForStop(sessionId, {
+          afterStopSeq: first.stop_seq,
+          timeoutMs: 20_000,
+        });
+        expect(second.stop_seq).toBeGreaterThan(first.stop_seq);
+        const secondStack = await service.stackTrace(sessionId, { startFrame: 0, levels: 1 });
+        expect(secondStack.frames[0]?.line).toBe(5);
+      });
+    },
+    120_000,
+  );
+
+  it(
+    'worker 先退出 → 会话不被判为终止,主线程之后的断点仍然命中;主线程跑完才终止',
+    async () => {
+      const source = [
+        "const { Worker, isMainThread } = require('node:worker_threads');", // 1
+        'if (isMainThread) {', // 2
+        '  const worker = new Worker(__filename);', // 3
+        "  worker.on('exit', () => {", // 4
+        '    setTimeout(() => {', // 5
+        '      const done = 1;', // 6 ← worker 退出之后主线程才执行到
+        "      console.log('main done', done);", // 7
+        '    }, 300);', // 8
+        '  });', // 9
+        '}', // 10
+        '',
+      ].join('\n');
+      await withRealService({ 'worker.js': source }, async ({ service, dir }) => {
+        const file = path.join(dir, 'worker.js');
+        const { session_id: sessionId } = await service.launchSession(
+          { program: file, cwd: dir },
+          ctx,
+        );
+        await service.setBreakpoints(sessionId, { file, line: 6 });
+        const stopped = await service.waitForStop(sessionId, { afterStopSeq: 0, timeoutMs: 40_000 });
+        const stack = await service.stackTrace(sessionId, { startFrame: 0, levels: 1 });
+        expect(stack.frames[0]?.line).toBe(6);
+        expect(service.listSessions()[0]?.state).toBe('stopped');
+
+        await service.continue(sessionId, {});
+        await expect(
+          service.waitForStop(sessionId, { afterStopSeq: stopped.stop_seq, timeoutMs: 25_000 }),
+        ).rejects.toThrow(/terminated|exited/);
+      });
+    },
+    120_000,
   );
 });

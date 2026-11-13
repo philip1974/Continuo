@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
+import { isOwnRendererWindowUrl } from './window-open-policy';
 import { LAYOUT_CHANNELS, WINDOW_ID_CHANNEL } from '../shared/persistence-channels';
 import type {
   HandlerDetails,
@@ -276,24 +277,13 @@ function windowOpenHandler({ url }: HandlerDetails): WindowOpenHandlerResponse {
   ) {
     return { action: 'deny' };
   }
-  let allow = false;
-  try {
-    const target = new URL(url);
-    // 安全 S1:dev 走 renderer origin;prod 只允许指向真实 renderer 入口 index.html
-    // 的 file URL(精确 pathname),不再放行任意 file://(否则恶意 file:// 弹窗会被注入
-    // 全量 preload → 越权 IPC)。
-    if (isDev) {
-      // 边界(E304,E302/E303 同族 dev URL 解析第三入口 / family sweep):此前 new URL(env) 无长度上限
-      //(在 try/catch 内故不崩,但 windowOpenHandler 每次弹窗都解析一次无界 OS env)。复用 parseDevRendererUrl
-      //(限长 MAX_RENDERER_URL_LEN + total),与 createMainWindow(E299)/safe-handle(E303)单一来源同源。
-      const rendererUrl = parseDevRendererUrl(process.env['ELECTRON_RENDERER_URL']);
-      allow = rendererUrl !== null && target.origin === rendererUrl.origin;
-    } else {
-      allow = isTrustedRendererFileUrl(url);
-    }
-  } catch {
-    /* malformed URL → fall through to deny */
-  }
+  // 安全 S1:只允许指向本应用自己的 renderer 入口(dev server 同源 / 受信的 renderer 文件,精确 pathname)。
+  // 判定与主窗加载方式一致,见 window-open-policy。dev URL 经 parseDevRendererUrl(限长 + total,E304)。
+  const allow = isOwnRendererWindowUrl(
+    url,
+    isDev ? parseDevRendererUrl(process.env['ELECTRON_RENDERER_URL']) : null,
+    isTrustedRendererFileUrl,
+  );
 
   if (allow) {
     return {

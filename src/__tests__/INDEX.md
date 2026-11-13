@@ -879,6 +879,7 @@
 ## [popout 契约 (M5)](./popout-contracts/README.md) `[contract]`
 
 - [`popout-mode.spec.ts`](./popout-contracts/popout-mode.spec.ts)
+- [`window-open-policy.spec.ts`](./popout-contracts/window-open-policy.spec.ts)
 
 ## [preload-no-zod(preload sandbox zod 泄漏守卫)](./preload-no-zod/README.md)
 

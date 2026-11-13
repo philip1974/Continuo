@@ -492,7 +492,7 @@ export class DebugService {
     if (adapterInfo) debugSessions.update(id, { adapterPgid: adapterInfo.pgid });
     this.wireClient(id, parentClient);
     parentClient.setStartDebuggingHandler((request) =>
-      this.handleStartDebugging(id, request),
+      this.handleStartDebugging(id, request, parentClient),
     );
 
     try {
@@ -525,6 +525,13 @@ export class DebugService {
       setBreakpointsArgs(input),
       this.requestTimeoutMs,
     );
+    // 已建立的 child session 各自维护断点:只发给父连接的话,程序跑起来之后再设的断点不会生效
+    //(child 只在创建时拿到当时的断点)。逐个同步;某个 child 已退出导致失败不影响其它。
+    for (const child of runtime.childClients) {
+      await child
+        .sendRequest('setBreakpoints', setBreakpointsArgs(input), this.requestTimeoutMs)
+        .catch(() => undefined);
+    }
     await this.ensureConfigurationDone(runtime);
     await this.ensureLaunchStarted(runtime);
     const body = asRecord(response.body);
@@ -891,12 +898,20 @@ export class DebugService {
     };
   }
 
+  /**
+   * js-debug 的反向请求 startDebugging:为一个新的调试目标建 child session。
+   * `requester` 是收到请求的那条连接 —— 主目标的请求来自父连接;worker_threads 等嵌套目标的请求来自
+   * **主目标的 child 连接**,所以 child 也要挂本 handler(否则回 unsupported,worker 一直停在等待调试器
+   * 附加的状态,整个被调试程序卡死)。
+   */
   private async handleStartDebugging(
     sessionId: string,
     request: DapRequestMessage,
+    requester: DebugDapClientLike,
   ): Promise<DapJson> {
     const runtime = this.requireRuntime(sessionId);
-    const child = runtime.parentClient.createChildSession();
+    const child = requester.createChildSession();
+    child.setStartDebuggingHandler((nested) => this.handleStartDebugging(sessionId, nested, child));
     runtime.childClients.push(child);
     debugSessions.update(sessionId, {
       childSessionCount: runtime.childClients.length,
@@ -928,8 +943,9 @@ export class DebugService {
       }
       throw err;
     }
-    // 握手完成、即将发 launch 时才切换(stopped 等事件只会在 launch 之后到来)。
-    runtime.activeClient = child;
+    // 握手完成、即将发 launch 时:第一个 child(主目标)成为活动连接。之后再出现的 child(worker 等)不抢
+    // 活动连接 —— 哪条连接上停住了,markStopped 再把它切成活动连接。
+    if (runtime.activeClient === runtime.parentClient) runtime.activeClient = child;
 
     const args = asRecord(request.arguments);
     const configuration = asRecord(args.configuration as DapJson | undefined);
@@ -949,7 +965,7 @@ export class DebugService {
       const pid = numberField(body, 'systemProcessId');
       if (pid !== undefined) debugSessions.addSystemProcessId(sessionId, pid);
     });
-    client.on('stopped', (event) => this.markStopped(sessionId, event.body));
+    client.on('stopped', (event) => this.markStopped(sessionId, event.body, client));
     client.on('continued', () => this.markContinued(sessionId));
     client.on('terminated', () => this.markEnded(sessionId, client, 'debug session terminated'));
     client.on('exited', () => this.markEnded(sessionId, client, 'debug session exited'));
@@ -986,8 +1002,15 @@ export class DebugService {
     debugSessions.update(sessionId, { runtimeState: 'terminated' });
   }
 
-  private markStopped(sessionId: string, bodyJson: DapJson | undefined): void {
-    if (this.runtimes.get(sessionId)?.endedMessage !== undefined) return; // 已结束:迟到事件不翻回状态
+  private markStopped(
+    sessionId: string,
+    bodyJson: DapJson | undefined,
+    client: DebugDapClientLike,
+  ): void {
+    const stoppedRuntime = this.runtimes.get(sessionId);
+    if (stoppedRuntime?.endedMessage !== undefined) return; // 已结束:迟到事件不翻回状态
+    // 停在哪条连接上,后续的 stack / scopes / variables / continue 就发给哪条连接(主线程或某个 worker)。
+    if (stoppedRuntime) stoppedRuntime.activeClient = client;
     const body = asRecord(bodyJson);
     const session = this.requireSession(sessionId);
     const stopSeq = session.stopSeq + 1;
