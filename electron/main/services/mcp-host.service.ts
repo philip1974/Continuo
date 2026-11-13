@@ -306,6 +306,21 @@ export type RpcResponseObj =
       };
     };
 
+/** dispatchRpc 的结果 → JSON-RPC 响应串(HTTP 与 stdio 两个传输层共用)。 */
+export function formatRpcResponse(
+  id: string | number | null,
+  response: RpcResponseObj,
+): string {
+  return 'result' in response
+    ? formatRpcResult(id, response.result)
+    : formatRpcError(
+        id,
+        response.error.code,
+        response.error.message,
+        response.error.data,
+      );
+}
+
 /**
  * 路由 MCP 标准 method:initialize / tools/list / tools/call。
  * 旧 P1 的"method 即 tool name"形态在标准 dispatcher 下走 default 拒,
@@ -692,6 +707,11 @@ export async function createMcpHost(
     }
   };
 
+  const closeAllSseClients = (): void => {
+    // 先拷贝:closeSseClient 会从 sseClients 删条目。
+    for (const res of [...sseClients.keys()]) closeSseClient(res);
+  };
+
   const handleMessage = async (
     req: IncomingMessage,
     res: ServerResponse,
@@ -766,20 +786,7 @@ export async function createMcpHost(
         signal: aborter.signal,
       });
       if (aborter.signal.aborted) return; // 连接已断 → 不写死连接
-      if ('result' in response) {
-        sendJson(res, 200, formatRpcResult(rpc.id, response.result));
-      } else {
-        sendJson(
-          res,
-          200,
-          formatRpcError(
-            rpc.id,
-            response.error.code,
-            response.error.message,
-            response.error.data,
-          ),
-        );
-      }
+      sendJson(res, 200, formatRpcResponse(rpc.id, response));
     } finally {
       req.off('close', onClose);
       res.off('close', onClose);
@@ -946,26 +953,10 @@ export async function createMcpHost(
     rotateToken(): void {
       windowTokens.clear();
       // 踢断所有现有 SSE 连接(它们持的旧 token 已无效)+ 清各自 keepalive interval。
-      for (const [res, meta] of sseClients) {
-        clearInterval(meta.keepalive);
-        try {
-          res.end();
-        } catch {
-          /* ignore */
-        }
-      }
-      sseClients.clear();
+      closeAllSseClients();
     },
     async close(): Promise<void> {
-      for (const [res, meta] of sseClients) {
-        clearInterval(meta.keepalive);
-        try {
-          res.end();
-        } catch {
-          /* ignore */
-        }
-      }
-      sseClients.clear();
+      closeAllSseClients();
       await new Promise<void>((resolve) => server.close(() => resolve()));
     },
   };

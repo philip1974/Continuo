@@ -6,16 +6,12 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 const h = vi.hoisted(() => ({
   remove: vi.fn(),
   notifyError: vi.fn(),
-  cancelPanelSpawns: vi.fn(),
 }));
 
 vi.mock('@/lib/co-api', () => ({
   coApi: { terminal: { remove: h.remove } },
 }));
 vi.mock('@/notifications/notify', () => ({ notify: { error: h.notifyError } }));
-vi.mock('@/panels/Terminal/spawnLeaf', () => ({
-  cancelPanelSpawns: h.cancelPanelSpawns,
-}));
 
 import {
   wrapPanelClose,
@@ -85,7 +81,6 @@ describe('race(R44) — EXIT 动画窗口内复活面板不删 PTY/session', () 
       vi.advanceTimersByTime(EXIT_DURATION_MS + 10);
 
       expect(h.remove).not.toHaveBeenCalled(); // PTY/session 保留
-      expect(h.cancelPanelSpawns).not.toHaveBeenCalled(); // 不取消在途 spawn
       expect(originalClose).not.toHaveBeenCalled(); // 真 close 被取消
     } finally {
       vi.useRealTimers();
@@ -162,7 +157,6 @@ describe('race(R44) — EXIT 动画窗口内复活面板不删 PTY/session', () 
       vi.advanceTimersByTime(EXIT_DURATION_MS + 10);
 
       expect(h.remove).toHaveBeenCalledWith('s5');
-      expect(h.cancelPanelSpawns).toHaveBeenCalledWith('terminal-s5');
       expect(originalClose).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();

@@ -22,10 +22,9 @@ import { mkdir, unlink, chmod, lstat, stat } from 'node:fs/promises';
 import path from 'node:path';
 import {
   RPC_ERROR_CODES,
-  NO_WINDOW_CTX_MESSAGE,
   isRpcNotification,
   parseRpcMessage,
-  formatRpcResult,
+  formatRpcResponse,
   formatRpcError,
   dispatchRpc,
   type AnyMcpTool,
@@ -34,6 +33,7 @@ import {
 } from './mcp-host.service';
 import { utf8BytesExceed } from '../../shared/utf8-byte-length';
 import { isBlankString } from '../../shared/ecma-whitespace';
+import { createSerialQueue } from '../../shared/run-serial-per-key';
 import { createNdjsonLineDecoder } from '../lib/ndjson-line-decoder';
 import { pickMainWindowPreferNonPopout } from './main-window-picker.service';
 
@@ -55,6 +55,16 @@ export function hasOversizedStdioLine(
     if (utf8BytesExceed(line, maxBytes)) return true;
   }
   return false;
+}
+
+/** 协议级拒绝:写一条 PARSE_ERROR(连接可能已坏,写失败忽略)后断开。 */
+function rejectAndDestroy(sock: Socket, message: string): void {
+  try {
+    sock.write(formatRpcError(null, RPC_ERROR_CODES.PARSE_ERROR, message) + '\n');
+  } catch {
+    /* 连接可能已坏,destroy 兜底 */
+  }
+  sock.destroy();
 }
 
 export function isBlankStdioLine(line: string): boolean {
@@ -130,11 +140,11 @@ const MAX_STDIO_LINE_BYTES = 1_000_000;
 const MAX_STDIO_LINES_PER_CHUNK = 1024;
 
 // 边界(E233,E227-E232 数量上限族):stdio MCP socket server 并发连接数量上限。每条连接保留 Socket +
-// AbortController + 行解码器闭包 + clients/lineChains/aborters/socketCtx/socketSubject 多个 Map/Set 条目,
+// AbortController + 行解码器闭包 + clients/socketCtx/socketSubject 多个 Map/Set 条目,
 // 只在 close 才清。socket 受 chmod 0600 / NT pipe ACL 限本用户,但**本用户任意进程**可反复连接
 // <userData>/mcp.sock 保持空闲 → main 累积 fd / 内存 + broadcast() 对全部连接线性写入 → 资源耗尽 + 通知
 // 广播拖慢。connection 回调入口加全局上限(连接建立时 subject/window 尚未解析,只能全局闸),超限立即写
-// 错误 + sock.destroy(),确保不进入任何 clients/aborters/lineChains 表。
+// 错误 + sock.destroy(),确保不进入 clients 表。
 const MAX_STDIO_CLIENTS_GLOBAL = 64; // 全局 stdio 连接上限(远超任何正常 MCP client 并发)
 
 // 安全 S3:每个 stdio 连接一个稳定 subject(callerSubject)。Claude Code 的 proxy
@@ -311,20 +321,7 @@ async function handleLine(
   const response = await dispatchRpc(rpc, tools, serverInfo, ctx);
   // race(R111):连接已断开(close)→ 不把响应写回死 socket(避免 EPIPE / 写给无调用方的会话)。
   if (sock.destroyed) return;
-  if ('result' in response) {
-    sock.write(formatRpcResult(rpc.id, response.result) + '\n');
-  } else {
-    sock.write(
-      formatRpcError(
-        rpc.id,
-        response.error.code,
-        response.error.code === RPC_ERROR_CODES.NO_WINDOW_CTX
-          ? NO_WINDOW_CTX_MESSAGE
-          : response.error.message,
-        response.error.data,
-      ) + '\n',
-    );
-  }
+  sock.write(formatRpcResponse(rpc.id, response) + '\n');
 }
 
 /**
@@ -349,36 +346,22 @@ export async function createStdioSocketServer(
   }
 
   const clients = new Set<Socket>();
-  // race(R110):每连接一条行处理链。同一 stdio socket 的多行 JSON-RPC 必须**按接收顺序串行**
-  // 执行 —— 并行 fire-and-forget 下有副作用的工具会乱序:terminal.send_text 紧跟
-  // terminal.press_key 时,Enter 可能先于文本写入 PTY,agent 命令输入错乱(响应按 id 匹配只
-  // 修复返回值配对,修不了副作用顺序)。close 时清链防泄漏。
-  const lineChains = new Map<Socket, Promise<void>>();
-  // race(R111):每连接一个 AbortController。socket close 时 abort → 在途 tool call(尤其卡在用户
-  // 授权 await 的 create_session)在产生副作用前复查 ctx.signal,已取消则拒绝,不留无调用方孤儿会话。
-  const aborters = new Map<Socket, AbortController>();
-
   const server: NetServer = createNetServer((sock) => {
-    // 边界(E233):全局连接数上限,超限立即写错误 + destroy,不入 clients/aborters/lineChains。
+    // 边界(E233):全局连接数上限,超限立即写错误 + destroy,不入 clients。
     // 连接建立时 subject/window 未知,只能全局闸(per-subject 在 per-message 才解析)。
     if (clients.size >= MAX_STDIO_CLIENTS_GLOBAL) {
-      try {
-        sock.write(
-          formatRpcError(
-            null,
-            RPC_ERROR_CODES.PARSE_ERROR,
-            'too many connections',
-          ) + '\n',
-        );
-      } catch {
-        /* 连接可能已坏,destroy 兜底 */
-      }
-      sock.destroy();
+      rejectAndDestroy(sock, 'too many connections');
       return;
     }
     clients.add(sock);
+    // race(R111):每连接一个 AbortController。socket close 时 abort → 在途 tool call(尤其卡在用户
+    // 授权 await 的 create_session)在产生副作用前复查 ctx.signal,已取消则拒绝,不留无调用方孤儿会话。
     const aborter = new AbortController();
-    aborters.set(sock, aborter);
+    // race(R110):每连接一条行处理队列。同一 stdio socket 的多行 JSON-RPC 必须**按接收顺序串行**
+    // 执行 —— 并行 fire-and-forget 下有副作用的工具会乱序:terminal.send_text 紧跟
+    // terminal.press_key 时,Enter 可能先于文本写入 PTY(响应按 id 匹配只修复返回值配对,修不了
+    // 副作用顺序)。单行失败/抛错不阻塞后续行。队列随连接闭包回收。
+    const lineQueue = createSerialQueue();
     // 边界(E135,E131/E132 同族):用流式 TextDecoder 行解码器,跨 chunk 多字节字符正确还原
     //(替代 splitLines 的逐 chunk toString() 拆字 bug)。
     const lineDecoder = createNdjsonLineDecoder();
@@ -390,67 +373,29 @@ export async function createStdioSocketServer(
         MAX_STDIO_LINES_PER_CHUNK,
       );
       if (overflow) {
-        try {
-          sock.write(
-            formatRpcError(
-              null,
-              RPC_ERROR_CODES.PARSE_ERROR,
-              'too many lines in one chunk',
-            ) + '\n',
-          );
-        } catch {
-          /* 连接可能已坏,destroy 兜底 */
-        }
-        sock.destroy();
+        rejectAndDestroy(sock, 'too many lines in one chunk');
         return;
       }
       // 边界(E1):残行(未终结的单行)或任一完整行超字节上限 → 畸形/恶意客户端无限累积输入,
-      // main 进程内存增长/OOM。回 parse 错误并断开;lineChain/aborter 由 close 处理统一清理。
+      // main 进程内存增长/OOM。回 parse 错误并断开;aborter 由 close 处理统一清理。
       // 边界(E127,E125 同族):按**真实 UTF-8 字节**判上限(非 .length=UTF-16 code unit),否则
       // CJK/emoji 大行真实字节可数倍超 1MB 仍放行/继续累积,削弱输入背压并让超大 JSON 进 parse。
       if (
         utf8BytesExceed(lineDecoder.buffered, MAX_STDIO_LINE_BYTES) ||
         hasOversizedStdioLine(lines, MAX_STDIO_LINE_BYTES)
       ) {
-        try {
-          sock.write(
-            formatRpcError(
-              null,
-              RPC_ERROR_CODES.PARSE_ERROR,
-              'line exceeds maximum size',
-            ) + '\n',
-          );
-        } catch {
-          /* 连接可能已坏,destroy 兜底 */
-        }
-        sock.destroy();
+        rejectAndDestroy(sock, 'line exceeds maximum size');
         return;
       }
       // race(R110):按接收顺序串到本 socket 的链尾,逐行串行 await。链尾 catch 后继续,单行
       // 失败/抛错不阻塞后续行(每行响应仍按 id 配对发回客户端)。
       // 边界(E214):空白行(NDJSON 忽略,handleLine 本就早返)入链前同步跳过,避免为海量空行挂 promise;
       // 非空行数超 MAX_STDIO_LINES_PER_CHUNK → parse error + 断开(挡 1MB \n\n\n... / 海量极短行放大)。
-      let chained = 0;
+      // 行数上限已由 decoder 的 maxLines 钳定(lines.length ≤ MAX_STDIO_LINES_PER_CHUNK,超限走上面的
+      // overflow 分支),此处不必再计数。
       for (const line of lines) {
         if (isBlankStdioLine(line)) continue; // 空白行:NDJSON 忽略,不入链
-        chained += 1;
-        if (chained > MAX_STDIO_LINES_PER_CHUNK) {
-          try {
-            sock.write(
-              formatRpcError(
-                null,
-                RPC_ERROR_CODES.PARSE_ERROR,
-                'too many lines in one chunk',
-              ) + '\n',
-            );
-          } catch {
-            /* 连接可能已坏,destroy 兜底 */
-          }
-          sock.destroy();
-          return;
-        }
-        const prev = lineChains.get(sock) ?? Promise.resolve();
-        const next = prev.then(() =>
+        void lineQueue.run(() =>
           handleLine(
             line,
             sock,
@@ -462,16 +407,13 @@ export async function createStdioSocketServer(
             console.warn('[mcp-stdio] handleLine threw', err);
           }),
         );
-        lineChains.set(sock, next);
       }
     });
     sock.on('close', () => {
       clients.delete(sock);
       socketCtx.delete(sock);
       socketSubject.delete(sock);
-      lineChains.delete(sock);
       aborter.abort(); // race(R111):取消本连接所有在途 tool call 的副作用
-      aborters.delete(sock);
     });
     sock.on('error', () => {
       /* connection error,close 事件会清理 */

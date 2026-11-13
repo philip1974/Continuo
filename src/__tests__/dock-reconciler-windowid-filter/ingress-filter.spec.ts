@@ -45,11 +45,6 @@ vi.mock('../../panels/Terminal/useTerminal', () => ({
   useTerminal: () => ({ containerRef: { current: null }, isReady: true }),
 }));
 
-vi.mock('../../panels/Terminal/TerminalView', () => ({
-  TerminalView: ({ termId }: { termId: string }) =>
-    React.createElement('div', { 'data-testid': `terminal-view-${termId}` }),
-}));
-
 beforeEach(async () => {
   warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
   mocks.windowId = 1;

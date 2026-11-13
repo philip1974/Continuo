@@ -182,6 +182,7 @@
 
 - [`debug-panel.spec.tsx`](./51-debug-breakpoint-ui/debug-panel.spec.tsx)
 - [`debug-store.spec.ts`](./51-debug-breakpoint-ui/debug-store.spec.ts)
+- [`debug-view-thread-id-zero.spec.ts`](./51-debug-breakpoint-ui/debug-view-thread-id-zero.spec.ts)
 - [`decorations.spec.tsx`](./51-debug-breakpoint-ui/decorations.spec.tsx)
 - [`sync.spec.tsx`](./51-debug-breakpoint-ui/sync.spec.tsx)
 
@@ -988,14 +989,6 @@
 
 - [`parse.spec.ts`](./shell-stream-event-parse/parse.spec.ts)
 
-## [spawn-leaf-cancel-remove-safe](./spawn-leaf-cancel-remove-safe/README.md)
-
-- [`cancel-remove-safe.spec.ts`](./spawn-leaf-cancel-remove-safe/cancel-remove-safe.spec.ts)
-
-## [spawn-leaf-create-reject](./spawn-leaf-create-reject/README.md)
-
-- [`spawn-leaf-create-reject.spec.ts`](./spawn-leaf-create-reject/spawn-leaf-create-reject.spec.ts)
-
 ## [spec-object-guard(E273,E271 registry 族)](./spec-object-guard/README.md)
 
 - [`spec-object-guard.spec.ts`](./spec-object-guard/spec-object-guard.spec.ts)
@@ -1093,10 +1086,6 @@
 ## [terminal-url-click](./terminal-url-click/README.md)
 
 - [`terminal-url-click.spec.ts`](./terminal-url-click/terminal-url-click.spec.ts)
-
-## [TerminalView(单 terminal 容器)](./terminal-view/README.md)
-
-- [`terminal-view.spec.tsx`](./terminal-view/terminal-view.spec.tsx)
 
 ## [terminal-window-isolation (Issue #28 Phase 1)](./terminal-window-isolation/README.md) `[integration]`
 
