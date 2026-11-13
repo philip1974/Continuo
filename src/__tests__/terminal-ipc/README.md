@@ -47,7 +47,7 @@ handler 真行为(node-pty spawn / write / resize)需 PTY 运行时,留 E2E 验�
   - 调 `sessionStore.removeByOwner(ownerWindowId)` 摘 metadata
   - 对返回的每个 id,若 `service.has(id)` 则 `service.kill(id)`
 - terminal 控制类 handler:
-  - `write/resize/interrupt/kill/destroy/remove/attachRejected` 都必须由 sender window 推断 owner
+  - `write/resize/remove/updateCwd/readHistory` 都必须由 sender window 推断 owner
   - 非 owner 操作现有 session 时抛 `TERMINAL_NOT_FOUND`,不写 PTY、不删 metadata
 
 ## 不在本主题验证

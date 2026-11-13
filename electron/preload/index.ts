@@ -7,7 +7,6 @@ import { FS_CHANNELS, isFsDirChangedPayload } from '../shared/fs-channels';
 import { FS_PATH_MAX } from '../shared/fs-limits';
 import { SESSION_UPDATE_CWD_CHANNEL, TERMINAL_CHANNELS } from '../shared/terminal-channels';
 import type { TerminalSessionSnapshot } from '../shared/terminal-session';
-import type { TerminalAttachRejectReason } from '../shared/terminal-attach';
 import type { TerminalCreateInput } from '../shared/terminal-create';
 import {
   PLUGINS_CHANNELS,
@@ -131,14 +130,6 @@ const api = {
   system: {
     windowId: ipcRenderer.sendSync('window:id') as number,
   },
-  popout: {
-    open: (panelId: string): Promise<IpcResult<unknown>> =>
-      ipcRenderer.invoke('popout:open', { panelId }),
-    onClosed: (cb: (panelId: string) => void): (() => void) => {
-      const listener = (_: unknown, panelId: string) => cb(panelId);
-      return subscribeIpc('popout:closed', listener);
-    },
-  },
   explorer: {
     // ExplorerPayload 形态由 src/lib/persist/explorer-persist 保证;preload 透传 unknown
     read: (): Promise<IpcResult<unknown | null>> =>
@@ -209,24 +200,12 @@ const api = {
       rows: number,
     ): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(TERMINAL_CHANNELS.RESIZE, { id, cols, rows }),
-    interrupt: (id: string): Promise<IpcResult<void>> =>
-      ipcRenderer.invoke(TERMINAL_CHANNELS.INTERRUPT, { id }),
-    kill: (id: string): Promise<IpcResult<void>> =>
-      ipcRenderer.invoke(TERMINAL_CHANNELS.KILL, { id }),
-    destroy: (id: string): Promise<IpcResult<void>> =>
-      ipcRenderer.invoke(TERMINAL_CHANNELS.DESTROY, { id }),
     // P1 Agent Terminal MCP:session metadata 真相源在 main
     listSessions: (): Promise<
       IpcResult<{ sessions: ReadonlyArray<PreloadTerminalSession> }>
     > => ipcRenderer.invoke(TERMINAL_CHANNELS.LIST_SESSIONS, {}),
     remove: (id: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(TERMINAL_CHANNELS.REMOVE, { id }),
-    // topic-05: renderer 端 tryAttachExisting 失败时反向通知 main 清理 session。
-    attachRejected: (
-      sessionId: string,
-      reason: TerminalAttachRejectReason, // M23:单一来源,与 main z.enum 共用
-    ): Promise<IpcResult<void>> =>
-      ipcRenderer.invoke(TERMINAL_CHANNELS.ATTACH_REJECTED, { sessionId, reason }),
     updateCwd: (id: string, cwd: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(SESSION_UPDATE_CWD_CHANNEL, { id, cwd }),
     /**
@@ -281,15 +260,11 @@ const api = {
       ipcRenderer.invoke(PLUGINS_CHANNELS.LIST_DIRS),
     readEnabled: (): Promise<IpcResult<readonly string[]>> =>
       ipcRenderer.invoke(PLUGINS_CHANNELS.READ_ENABLED),
-    writeEnabled: (ids: readonly string[]): Promise<IpcResult<void>> =>
-      ipcRenderer.invoke(PLUGINS_CHANNELS.WRITE_ENABLED, { ids }),
     /** 数据安全:按单 plugin 启用/禁用 delta 写,防多窗口整表 RMW 互相覆盖. */
     mutateEnabled: (id: string, enabled: boolean): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(PLUGINS_CHANNELS.MUTATE_ENABLED, { id, enabled }),
     readPermissions: (): Promise<IpcResult<IpcPermissionsMap>> =>
       ipcRenderer.invoke(PLUGINS_CHANNELS.READ_PERMISSIONS),
-    writePermissions: (data: IpcPermissionsMap): Promise<IpcResult<void>> =>
-      ipcRenderer.invoke(PLUGINS_CHANNELS.WRITE_PERMISSIONS, { data }),
     /** 数据安全:按单 plugin 合并写,防多窗口整表写互相覆盖. */
     writePluginPermissions: (
       id: string,

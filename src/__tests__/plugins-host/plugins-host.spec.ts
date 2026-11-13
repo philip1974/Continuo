@@ -12,7 +12,6 @@ import {
 interface FakePluginsApi {
   listDirs: ReturnType<typeof vi.fn>;
   readEnabled: ReturnType<typeof vi.fn>;
-  writeEnabled: ReturnType<typeof vi.fn>;
   mutateEnabled: ReturnType<typeof vi.fn>;
   uninstall: ReturnType<typeof vi.fn>;
 }

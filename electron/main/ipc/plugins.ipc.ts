@@ -9,7 +9,6 @@ import {
 import path from 'node:path';
 import { z } from 'zod';
 import { defaultIsTrustedFrame, safeHandle } from '../safe-handle';
-import { makeBoundedRecordValidator } from '../../shared/validate-env-bounded';
 import { PLUGINS_CHANNELS, GIT_URL_MAX } from '../../shared/plugins-channels';
 import {
   createPluginsWatcher,
@@ -20,8 +19,6 @@ import {
   readPermissions,
   setEnabledId,
   uninstallPlugin,
-  writeEnabledIds,
-  writePermissions,
   writePluginPermissions,
 } from '../services/plugins.service';
 import { broadcastToWindows } from '../lib/broadcast';
@@ -34,19 +31,14 @@ import { PERMISSION_KEYS } from '../../shared/permission-keys';
 const PLUGIN_ID_MAX = PLUGIN_ID_MAX_LEN; // 反 DNS plugin id
 const PATH_MAX = PERMISSION_RECORD_LIMITS.SCOPE_PATH_MAX; // path scope 路径
 const URL_MAX = GIT_URL_MAX; // git url(E282:收口到 shared,与 renderer onChange 截断同源)
-const IDS_MAX = 10_000; // enabled id 数量
 const DECISIONS_MAX = PERMISSION_RECORD_LIMITS.DECISIONS_PER_PLUGIN_MAX; // 单插件 decisions 数量
 // 边界(E246):单插件 path scopes 写端上限须与读盘层 MAX_PERSISTED_SCOPES_PER_PLUGIN(256,对齐
 // PathScopeRegistry MAX_SCOPES_PER_PLUGIN E81)一致 —— 此前写端 10_000 过松,接受 257..10000 条写入
 // 返回成功,但下次 readPermissions() 只保留前 256 条 → 重启/下轮 RMW 静默丢 scope(写读契约错位)。
 // 统一到 256:写端直接拒(BAD_INPUT),把"会被读端丢弃"的写入在入口显式失败,不假成功后静默截断。
 const PATHSCOPES_MAX = PERMISSION_RECORD_LIMITS.PATH_SCOPES_PER_PLUGIN_MAX; // 单插件 path scopes 数量(对齐读盘层 MAX_PERSISTED_SCOPES_PER_PLUGIN)
-const PLUGINS_MAX = PERMISSION_RECORD_LIMITS.PLUGIN_KEYS_MAX; // permission record 条目数
 
 const NoInput = z.undefined();
-export const WriteEnabledInput = z
-  .object({ ids: z.array(z.string().max(PLUGIN_ID_MAX)).max(IDS_MAX) })
-  .strict();
 const MutateEnabledInput = z
   .object({ id: z.string().min(1).max(PLUGIN_ID_MAX), enabled: z.boolean() })
   .strict();
@@ -77,23 +69,6 @@ const PermissionRecordSchema = z.union([
     })
     .strict(),
 ]);
-export const WritePermissionsInput = z
-  .object({
-    // 边界(E187,E185/E186 兄弟):权限表用共享有界早停校验,不用 z.record(...).refine(Object.keys...)
-    // —— 后者 PLUGINS_MAX 上限在 zod 全量遍历所有 plugin 记录 + Object.keys 全量物化之后才生效,巨表在
-    // schema 阶段就 O(N) 卡顿/分配(权限表是持久化数据,防放大应在入口早停)。与 env(E185/E186)单一来源。
-    data: z
-      .custom<Record<string, z.infer<typeof PermissionRecordSchema>>>()
-      .superRefine(
-        makeBoundedRecordValidator({
-          keyMax: PLUGIN_ID_MAX,
-          maxEntries: PLUGINS_MAX,
-          valueOk: (val) => PermissionRecordSchema.safeParse(val).success,
-          label: 'permission record',
-        }),
-      ),
-  })
-  .strict();
 export const WritePluginPermissionsInput = z
   .object({
     id: z.string().min(1).max(PLUGIN_ID_MAX),
@@ -150,15 +125,6 @@ export function registerPluginsIpc(): void {
   );
 
   safeHandle(
-    PLUGINS_CHANNELS.WRITE_ENABLED,
-    WriteEnabledInput,
-    async ({ ids }) => {
-      await writeEnabledIds(pluginsDir, ids);
-    },
-    trusted,
-  );
-
-  safeHandle(
     PLUGINS_CHANNELS.MUTATE_ENABLED,
     MutateEnabledInput,
     async ({ id, enabled }) => {
@@ -171,15 +137,6 @@ export function registerPluginsIpc(): void {
     PLUGINS_CHANNELS.READ_PERMISSIONS,
     NoInput,
     () => readPermissions(pluginsDir),
-    trusted,
-  );
-
-  safeHandle(
-    PLUGINS_CHANNELS.WRITE_PERMISSIONS,
-    WritePermissionsInput,
-    async ({ data }) => {
-      await writePermissions(pluginsDir, data);
-    },
     trusted,
   );
 

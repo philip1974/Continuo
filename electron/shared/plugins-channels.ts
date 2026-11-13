@@ -10,8 +10,6 @@ export const PLUGINS_CHANNELS = {
   LIST_DIRS: 'plugins:list-dirs',
   /** 读取 enabled.json(string[] of plugin ids). */
   READ_ENABLED: 'plugins:read-enabled',
-  /** 写 enabled.json(整表;保留作迁移/兼容). */
-  WRITE_ENABLED: 'plugins:write-enabled',
   /**
    * 按单个 plugin 启用/禁用合并写 _enabled.json(数据安全)。renderer 整表 RMW 在多窗口
    * 下会丢失更新(后写者覆盖先写者),改走 main 端 read-modify-write 单条 delta 串行链。
@@ -19,8 +17,6 @@ export const PLUGINS_CHANNELS = {
   MUTATE_ENABLED: 'plugins:mutate-enabled',
   /** 读 _permissions.json(v4.2). */
   READ_PERMISSIONS: 'plugins:read-permissions',
-  /** 写 _permissions.json(整表;保留作迁移/兼容). */
-  WRITE_PERMISSIONS: 'plugins:write-permissions',
   /**
    * 按单个 plugin 合并写 _permissions.json(数据安全)。renderer 整表写在多窗口
    * 下会用陈旧快照覆盖别窗口的决策,改走 main 端 read-merge-write 单条记录。

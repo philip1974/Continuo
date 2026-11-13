@@ -55,7 +55,6 @@ export const zh: Record<TranslationKey, string> = {
   'errors.NO_DEFAULT_EXPORT': '插件没有 export default',
   'errors.NOT_PLUGIN_CLASS': '插件的 default export 不是 Plugin 子类',
   'errors.PAYLOAD_TOO_LARGE': '负载过大',
-  'errors.POPOUT_NOT_IMPLEMENTED': 'Popout 未实现',
   'errors.RM_FAILED': '删除失败',
   'errors.TERMINAL_CREATE_CANCELLED': '终端创建已取消',
   'errors.TERMINAL_CWD_UNRESOLVED': '终端 cwd 无法解析',

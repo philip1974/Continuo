@@ -34,7 +34,6 @@ import { AGENT_AUTH_CHANNELS } from '../shared/agent-auth-channels';
 import { ERROR_CODES } from '../shared/error-codes';
 import { assertJsonValue } from '../shared/assert-json-value';
 import { AgentAuthRespondSchema } from './agent-auth-schema';
-import { PopoutOpenInput } from './popout-open-schema';
 import { utf8ByteLength } from '../shared/utf8-byte-length';
 import { jsonByteLowerBoundExceeds } from '../shared/json-byte-budget';
 import { findWindowEntryBySeq } from '../shared/window-entry-lookup';
@@ -113,8 +112,6 @@ import {
   sanitizeReadLayout,
 } from './lib/layout-read-guard';
 
-// popout:open 入参 schema 见 ./popout-open-schema(单列以便测试 import,E316;
-// panelId ≤256 + .strict(),与 AgentAuthRespondSchema 同型)。
 // Agent Terminal MCP 授权应答 schema 见 ./agent-auth-schema(单列以便测试 import,E146)。
 
 /**
@@ -240,16 +237,6 @@ export function registerIpc(deps: WindowIpcDeps): { pluginFsHandles: PluginFsIpc
         if (current !== null && isDeepStrictEqual(merged, current)) return;
         await atomicWriteJson(explorerFile, merged);
       });
-    },
-    trusted,
-  );
-
-  // M5 真做 popout 时实现;占位时统一抛业务码,renderer 拿到 IpcFail 即可。
-  safeHandle(
-    'popout:open',
-    PopoutOpenInput,
-    () => {
-      throw codedError(ERROR_CODES.POPOUT_NOT_IMPLEMENTED, 'popout:open not implemented yet (M5)');
     },
     trusted,
   );

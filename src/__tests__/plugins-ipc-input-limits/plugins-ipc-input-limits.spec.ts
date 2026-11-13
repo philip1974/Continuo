@@ -6,8 +6,6 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { describe, it, expect } from 'vitest';
 import {
-  WriteEnabledInput,
-  WritePermissionsInput,
   WritePluginPermissionsInput,
   InstallFromGitInput,
   UninstallInput,
@@ -20,30 +18,16 @@ import {
 describe('plugins IPC input limits (E16)', () => {
   it('正常 payload → ok', () => {
     expect(
-      WriteEnabledInput.safeParse({ ids: ['a.b', 'c.d'] }).success,
-    ).toBe(true);
-    expect(
       WritePluginPermissionsInput.safeParse({
         id: 'a.b',
         record: { decisions: [{ permission: 'fs', granted: true, decidedAt: 1 }] },
       }).success,
     ).toBe(true);
-    expect(
-      WritePermissionsInput.safeParse({ data: { 'a.b': [] } }).success,
-    ).toBe(true);
-  });
-
-  it('enabled ids 数量超 10000 → fail', () => {
-    const ids = Array.from({ length: 10001 }, (_, i) => `p${i}`);
-    expect(WriteEnabledInput.safeParse({ ids }).success).toBe(false);
   });
 
   it('plugin id 超 256 → fail', () => {
     expect(
       UninstallInput.safeParse({ id: 'x'.repeat(257) }).success,
-    ).toBe(false);
-    expect(
-      WriteEnabledInput.safeParse({ ids: ['x'.repeat(257)] }).success,
     ).toBe(false);
   });
 
@@ -90,43 +74,6 @@ describe('plugins IPC input limits (E16)', () => {
         },
       }).success,
     ).toBe(false);
-  });
-
-  it('permission record 条目数超 10000 → fail', () => {
-    const data: Record<string, unknown> = {};
-    for (let i = 0; i < 10001; i++) data[`p${i}`] = [];
-    expect(WritePermissionsInput.safeParse({ data }).success).toBe(false);
-  });
-
-  // 边界(E187,E185/E186 兄弟):data 改共享有界早停校验。补 pluginId key超长 / 非对象 data /
-  // 非法 PermissionRecord value / 合规 data 用例。
-  it('E187 pluginId key 超 256 → fail', () => {
-    const data: Record<string, unknown> = { ['p'.repeat(257)]: [] };
-    expect(WritePermissionsInput.safeParse({ data }).success).toBe(false);
-  });
-  it('E187 data 非对象(数组/字符串)→ fail', () => {
-    expect(WritePermissionsInput.safeParse({ data: [] }).success).toBe(false);
-    expect(WritePermissionsInput.safeParse({ data: 'x' }).success).toBe(false);
-  });
-  it('E187 value 非法 PermissionRecord → fail', () => {
-    expect(
-      WritePermissionsInput.safeParse({ data: { 'a.b': { bogus: 1 } } }).success,
-    ).toBe(false);
-    expect(
-      WritePermissionsInput.safeParse({ data: { 'a.b': 'not-a-record' } })
-        .success,
-    ).toBe(false);
-  });
-  it('E187 合规 data(数组形态 + {decisions} 形态 + 空)→ ok', () => {
-    expect(
-      WritePermissionsInput.safeParse({
-        data: {
-          'a.b': [],
-          'c.d': { decisions: [] },
-        },
-      }).success,
-    ).toBe(true);
-    expect(WritePermissionsInput.safeParse({ data: {} }).success).toBe(true);
   });
 
   it('git url 超 4096 → fail', () => {

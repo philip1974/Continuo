@@ -64,7 +64,6 @@ export const en = {
   'errors.NO_DEFAULT_EXPORT': 'Plugin has no default export',
   'errors.NOT_PLUGIN_CLASS': 'Plugin default export is not a Plugin subclass',
   'errors.PAYLOAD_TOO_LARGE': 'Payload too large',
-  'errors.POPOUT_NOT_IMPLEMENTED': 'Popout not implemented',
   'errors.RM_FAILED': 'Remove failed',
   'errors.TERMINAL_CREATE_CANCELLED': 'Terminal creation was cancelled',
   'errors.TERMINAL_CWD_UNRESOLVED': 'Terminal cwd unresolved',

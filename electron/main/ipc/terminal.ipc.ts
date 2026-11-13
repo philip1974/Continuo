@@ -14,7 +14,6 @@ import { SESSION_UPDATE_CWD_CHANNEL, TERMINAL_CHANNELS } from '../../shared/term
 import { getDefaultShell, isAllowedShell } from '@continuo-terminal/server-node';
 import { shellFamilyForPath } from '../services/shell-args';
 import { ERROR_CODES } from '../../shared/error-codes';
-import { TERMINAL_ATTACH_REJECT_REASONS } from '../../shared/terminal-attach';
 import {
   TerminalCreateInputSchema,
   PATH_MAX,
@@ -107,20 +106,11 @@ export const idOnlyInputSchema = z
 
 export const noInputSchema = z.object({}).strict();
 
-// topic-05: renderer attachRejected 反向通知 schema
-export const attachRejectedInputSchema = z
-  .object({
-    sessionId: z.string().min(1).max(SESSION_ID_MAX),
-    reason: z.enum(TERMINAL_ATTACH_REJECT_REASONS), // M23:单一来源
-  })
-  .strict();
-
 export type CreateInput = TerminalCreateInput;
 export type WriteInput = z.infer<typeof writeInputSchema>;
 export type ResizeInput = z.infer<typeof resizeInputSchema>;
 export type UpdateCwdInput = z.infer<typeof updateCwdInputSchema>;
 export type IdOnlyInput = z.infer<typeof idOnlyInputSchema>;
-export type AttachRejectedInput = z.infer<typeof attachRejectedInputSchema>;
 
 // ── handlers ─────────────────────────────────────────────────
 
@@ -327,57 +317,6 @@ export function makeResizeHandler(deps?: {
   };
 }
 
-export function makeInterruptHandler(deps?: {
-  service?: typeof termService;
-  sessionStore?: typeof terminalSessions;
-}) {
-  const service = deps?.service ?? termService;
-  const sessionStore = deps?.sessionStore ?? terminalSessions;
-  return async (input: IdOnlyInput, win: BrowserWindow): Promise<void> => {
-    assertOwnedSession(sessionStore, input.id, win);
-    if (!service.has(input.id)) throw ERR_NOT_FOUND(input.id);
-    // race(R12,R4 同款):await 真实中断结果;失败(check 后 PTY 退出 / 写拒绝)→ 抛
-    // TERMINAL_WRITE_FAILED,IPC 返 ok:false,renderer 真正感知中断未送达。
-    const ok = await service.interrupt(input.id);
-    if (!ok) throw ERR_WRITE_FAILED(input.id);
-  };
-}
-
-export function makeKillHandler(deps?: {
-  service?: typeof termService;
-  sessionStore?: typeof terminalSessions;
-}) {
-  const service = deps?.service ?? termService;
-  const sessionStore = deps?.sessionStore ?? terminalSessions;
-  return (input: IdOnlyInput, win: BrowserWindow): void => {
-    assertOwnedSession(sessionStore, input.id, win);
-    if (!service.has(input.id)) throw ERR_NOT_FOUND(input.id);
-    service.kill(input.id);
-  };
-}
-
-// topic-05: renderer 反向通知 main 该 agent session attach 失败;main 端
-// remove session metadata + kill PTY。
-// V1 简化:不做 main 端 preflight reservation,失败时 cleanup。
-export function makeAttachRejectedHandler(deps?: {
-  service?: typeof termService;
-  sessionStore?: typeof terminalSessions;
-}) {
-  const service = deps?.service ?? termService;
-  const sessionStore = deps?.sessionStore ?? terminalSessions;
-  return (input: AttachRejectedInput, win: BrowserWindow): void => {
-    assertOwnedSession(sessionStore, input.sessionId, win);
-    console.warn(
-      '[terminal-ipc] attach-rejected:',
-      input.sessionId,
-      'reason=',
-      input.reason,
-    );
-    sessionStore.remove(input.sessionId);
-    if (service.has(input.sessionId)) service.kill(input.sessionId);
-  };
-}
-
 /**
  * sessions_changed 广播:严格 per-owner 路由,把按 ownerWindowId 过滤后的 session 快照
  * 推给每个未销毁窗口。terminalSessions 的 subscriber。
@@ -403,10 +342,7 @@ export function registerTerminalIpc(): void {
   const listSessionsHandler = makeListSessionsHandler();
   const writeHandler = makeWriteHandler();
   const resizeHandler = makeResizeHandler();
-  const interruptHandler = makeInterruptHandler();
-  const killHandler = makeKillHandler();
   const removeHandler = makeRemoveHandler();
-  const attachRejectedHandler = makeAttachRejectedHandler();
   const updateCwdHandler = makeUpdateCwdHandler();
   const windowClosedCleanup = makeWindowClosedCleanup();
 
@@ -426,9 +362,6 @@ export function registerTerminalIpc(): void {
   );
   ownerScopedHandle(TERMINAL_CHANNELS.WRITE, writeInputSchema, writeHandler);
   ownerScopedHandle(TERMINAL_CHANNELS.RESIZE, resizeInputSchema, resizeHandler);
-  ownerScopedHandle(TERMINAL_CHANNELS.INTERRUPT, idOnlyInputSchema, interruptHandler);
-  ownerScopedHandle(TERMINAL_CHANNELS.KILL, idOnlyInputSchema, killHandler);
-  ownerScopedHandle(TERMINAL_CHANNELS.DESTROY, idOnlyInputSchema, killHandler);
   ownerScopedHandle(TERMINAL_CHANNELS.REMOVE, idOnlyInputSchema, removeHandler);
   ownerScopedHandle(
     TERMINAL_CHANNELS.READ_HISTORY,
@@ -437,11 +370,6 @@ export function registerTerminalIpc(): void {
       assertOwnedSession(terminalSessions, input.id, win);
       return termService.getBufferSnapshot(input.id);
     },
-  );
-  ownerScopedHandle(
-    TERMINAL_CHANNELS.ATTACH_REJECTED,
-    attachRejectedInputSchema,
-    attachRejectedHandler,
   );
 
   ownerScopedHandle(SESSION_UPDATE_CWD_CHANNEL, updateCwdInputSchema, updateCwdHandler);
