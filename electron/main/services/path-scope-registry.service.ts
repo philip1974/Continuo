@@ -59,6 +59,14 @@ function isWithinScope(scopePath: string, probe: string): boolean {
 const MAX_SCOPES_PER_PLUGIN = 256;
 const MAX_SCOPES_GLOBAL = 4096;
 
+function withFullPath(r: { parentCanonical: string; leaf: string }): CheckResultWrite {
+  return {
+    parentCanonical: r.parentCanonical,
+    leaf: r.leaf,
+    fullPath: `${r.parentCanonical}${sep}${r.leaf}`,
+  };
+}
+
 export class PathScopeRegistry extends EventEmitter {
   private readonly pluginScopes = new Map<string, PathScope[]>();
   // 边界(E81):全局唯一-path scope 累计数(O(1) 维护,避免每次 merge 遍历全表求和)。
@@ -83,6 +91,22 @@ export class PathScopeRegistry extends EventEmitter {
    * @param target raw target path from plugin
    * @param mode 'r' (read-only ok) or 'rw' (writable scope required)
    */
+  // 重载:'read' 解析为 canonical(跟随链接);其余 opType 一律解析为 parent + leaf(CheckResultWrite)。
+  // 调用方据 opType 直接拿到窄类型,不必再手写 `'fullPath' in r` 守卫。
+  check(
+    token: string,
+    senderId: number,
+    opType: 'read',
+    target: string,
+    mode: ScopeMode,
+  ): Promise<CheckResultRead>;
+  check(
+    token: string,
+    senderId: number,
+    opType: Exclude<ScopeOpType, 'read'>,
+    target: string,
+    mode: ScopeMode,
+  ): Promise<CheckResultWrite>;
   async check(
     token: string,
     senderId: number,
@@ -115,17 +139,11 @@ export class PathScopeRegistry extends EventEmitter {
     ) {
       // 不跟随 leaf 符号链接:作用在链接本身(rm 删链接 / lstat 看链接 / rename 移链接),
       // 而非 realpath 跟随到目标。父目录仍 realpath + leaf 经 validateLeaf,无 scope 逃逸。
-      const r = await resolveNoFollowLeaf(target);
-      const fullPath = `${r.parentCanonical}${sep}${r.leaf}`;
-      resolved = { parentCanonical: r.parentCanonical, leaf: r.leaf, fullPath };
+      resolved = withFullPath(await resolveNoFollowLeaf(target));
     } else if (opType === 'write' || opType === 'mkdir') {
-      const r = await resolveForWrite(target);
-      const fullPath = `${r.parentCanonical}${sep}${r.leaf}`;
-      resolved = { parentCanonical: r.parentCanonical, leaf: r.leaf, fullPath };
+      resolved = withFullPath(await resolveForWrite(target));
     } else if (opType === 'rename-dst') {
-      const r = await resolveForRenameDst(target);
-      const fullPath = `${r.parentCanonical}${sep}${r.leaf}`;
-      resolved = { parentCanonical: r.parentCanonical, leaf: r.leaf, fullPath };
+      resolved = withFullPath(await resolveForRenameDst(target));
     } else {
       throw new ScopeError(`unknown opType: ${opType as string}`, {
         target,

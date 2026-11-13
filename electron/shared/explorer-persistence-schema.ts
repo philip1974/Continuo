@@ -132,7 +132,6 @@ const explorerTopLevelShape = {
 };
 
 // ── v2(legacy compat)— 多窗口拆段 ────────────────────────
-const WindowEntrySchema = WritableWindowEntrySchema;
 
 /** @deprecated v2 compatibility schema. New callers should use ExplorerSchemaV3 / ExplorerWritableSnapshotSchema. */
 export const ExplorerSchema = z
@@ -140,24 +139,21 @@ export const ExplorerSchema = z
     version: z.literal(2),
     ...explorerTopLevelShape,
     /** 每窗口持久化段。windowSeq 跨重启稳定,关闭窗口段先保留(LRU 由调用方控制). */
-    windows: z.array(WindowEntrySchema).max(WINDOWS_MAX), // 边界(E14)
+    windows: z.array(WritableWindowEntrySchema).max(WINDOWS_MAX), // 边界(E14)
   })
   .strict();
 
 export type ExplorerPayloadV2 = z.infer<typeof ExplorerSchema>;
 export type ExplorerPayload = ExplorerPayloadV2 | ExplorerPayloadV3;
-export type WindowEntry = z.infer<typeof WindowEntrySchema>;
+export type WindowEntry = z.infer<typeof WritableWindowEntrySchema>;
 
 // ─── v3 schema ──────────────────────────────────────────
 
 /** main-owned 字段集合:renderer 不能写,merge 时必须 preserve. */
 export const MAIN_OWNED_WINDOW_FIELDS = ['layout', 'lastClosedAt'] as const;
 
-/** Writable WindowEntry:strict,排除 main-owned 字段(layout/lastClosedAt). */
-const ExplorerWritableWindowEntrySchema = WritableWindowEntrySchema;
-
 /** Full WindowEntry v3:writable + main-owned. */
-const WindowEntrySchemaV3 = ExplorerWritableWindowEntrySchema.extend({
+const WindowEntrySchemaV3 = WritableWindowEntrySchema.extend({
   layout: LayoutSchema.optional(),
   lastClosedAt: z.number().int().nonnegative().nullable().optional(),
 }).strict();
@@ -167,7 +163,7 @@ export const ExplorerWritableSnapshotSchema = z
   .object({
     version: z.literal(3),
     ...explorerTopLevelShape,
-    windows: z.array(ExplorerWritableWindowEntrySchema).max(WINDOWS_MAX), // 边界(E14)
+    windows: z.array(WritableWindowEntrySchema).max(WINDOWS_MAX), // 边界(E14)
   })
   .strict();
 
@@ -184,7 +180,7 @@ export type ExplorerWritablePayload = z.infer<
   typeof ExplorerWritableSnapshotSchema
 >;
 export type ExplorerWritableWindowEntry = z.infer<
-  typeof ExplorerWritableWindowEntrySchema
+  typeof WritableWindowEntrySchema
 >;
 export type WindowEntryV3 = z.infer<typeof WindowEntrySchemaV3>;
 export type ExplorerPayloadV3 = z.infer<typeof ExplorerSchemaV3>;

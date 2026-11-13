@@ -7,6 +7,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Input, Spinner } from '@/design';
 import { coApi } from '@/lib/co-api';
+import { useSingleFlight } from '@/lib/use-single-flight';
 import { errorMessage } from '../../electron/shared/error-message';
 import { getUserPluginManager, type PluginListItem } from '@/plugins/PluginManager';
 import { entryToGitUrl, type MarketplaceEntry } from './types';
@@ -512,50 +513,45 @@ function GitUrlInstallSection() {
   const t = useT();
   const [url, setUrl] = useState('');
   const trimmedUrl = useMemo(() => url.trim(), [url]);
-  const [busy, setBusy] = useState(false);
-  // race(R8):同步 in-flight 闸门(同 PluginsTabContent.onInstall)—— disabled={busy} render 滞后,
-  // 同 tick 双击/Enter 会双 installFromGit。
-  const busyRef = useRef(false);
+  // race(R8):同步单飞闸门(useSingleFlight)—— disabled={busy} render 滞后,同 tick 双击/Enter 会双
+  // installFromGit。
+  const { busy, run: runInstall } = useSingleFlight();
   // a11y(A43,A42 同族):结果消息带严重度 → 渲染时按语义选 live region(成功 status/失败 alert)。
   const [msg, setMsg] = useState<{ text: string; isError: boolean } | null>(
     null,
   );
 
-  const onInstall = async () => {
+  const onInstall = (): Promise<void> | void => {
     if (!trimmedUrl) return;
-    if (busyRef.current) return; // race(R8):同步单飞,重入直接挡掉。
-    busyRef.current = true;
-    setBusy(true);
-    setMsg(null);
-    try {
-      const r = await coApi.plugins.installFromGit(trimmedUrl);
-      if (!r.ok) {
-        // i18n(I1 同族,Git URL 安装段兄弟入口):同卡片安装,按 r.code 经 catalog 翻译,
-        // 未知 code 回退原 message,再套本地化外壳,避免 en/ko 看到 main 硬编码中文。
-        setMsg({
-          text: translate('marketplace.install_failed_code', {
-            code: r.code,
-            message: localizeErrorByCode(r.code, r.message),
-          }),
-          isError: true,
-        });
-      } else {
-        setMsg({
-          text: translate('marketplace.install_success', {
-            name: r.data.name,
-            version: r.data.version,
-          }),
-          isError: false,
-        });
-        setUrl('');
+    return runInstall(async () => {
+      setMsg(null);
+      try {
+        const r = await coApi.plugins.installFromGit(trimmedUrl);
+        if (!r.ok) {
+          // i18n(I1 同族,Git URL 安装段兄弟入口):同卡片安装,按 r.code 经 catalog 翻译,
+          // 未知 code 回退原 message,再套本地化外壳,避免 en/ko 看到 main 硬编码中文。
+          setMsg({
+            text: translate('marketplace.install_failed_code', {
+              code: r.code,
+              message: localizeErrorByCode(r.code, r.message),
+            }),
+            isError: true,
+          });
+        } else {
+          setMsg({
+            text: translate('marketplace.install_success', {
+              name: r.data.name,
+              version: r.data.version,
+            }),
+            isError: false,
+          });
+          setUrl('');
+        }
+      } catch (err) {
+        // a11y(A85,A84 同族):同上,不把 ✘ 拼进 alert 文本(severity 由 isError+role=alert 表达)。
+        setMsg({ text: errorMessage(err), isError: true });
       }
-    } catch (err) {
-      // a11y(A85,A84 同族):同上,不把 ✘ 拼进 alert 文本(severity 由 isError+role=alert 表达)。
-      setMsg({ text: errorMessage(err), isError: true });
-    } finally {
-      busyRef.current = false; // race(R8):清同步闸门。
-      setBusy(false);
-    }
+    });
   };
 
   return (

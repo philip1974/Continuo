@@ -167,6 +167,19 @@ function statPayload(s: {
   };
 }
 
+/**
+ * lstat,目标不存在(ENOENT)→ null;其它错误(EACCES / EIO / ELOOP …)照抛 —— 「无法确认目标是否
+ * 存在」不能当作不存在(fail-closed),否则后续 rename / cp 可能静默覆盖实际存在的目标。
+ */
+async function lstatOrNull(target: string): Promise<Awaited<ReturnType<typeof fs.lstat>> | null> {
+  try {
+    return await fs.lstat(target);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+    return null;
+  }
+}
+
 function canonicalPath(r: { canonical: string } | { fullPath: string }): string {
   return 'canonical' in r ? r.canonical : r.fullPath;
 }
@@ -266,7 +279,6 @@ export function registerPluginFsHandlers(
         target,
         'rw',
       );
-      if (!('fullPath' in r)) throw new ScopeError('write resolution failed');
       // 边界(E29,E13 平行入口):content 此前无大小上限直接进 atomicWriteFile。已授权插件可经
       // 单次 IPC 发超大字符串 → 主进程 IPC 内存峰值 + 超大临时文件 + fsync/rename 长时间阻塞。复用
       // 主 fs:write-file 的 MAX_WRITE_BYTES(64MiB,按 content.length 与主入口一致),进 atomicWriteFile
@@ -376,7 +388,6 @@ export function registerPluginFsHandlers(
         target,
         'rw',
       );
-      if (!('fullPath' in r)) throw new ScopeError('mkdir resolution failed');
       await fs.mkdir(r.fullPath, { recursive: opts?.recursive ?? false });
     },
   );
@@ -400,7 +411,6 @@ export function registerPluginFsHandlers(
         'rw',
       );
       const srcPath = canonicalPath(rSrc);
-      if (!('fullPath' in rDst)) throw new ScopeError('rename resolution failed');
       if (dirname(srcPath) !== rDst.parentCanonical) {
         throw new ScopeError('rename: same-parent enforced', { target: dst });
       }
@@ -410,15 +420,9 @@ export function registerPluginFsHandlers(
       // 存在且与源不是同一 inode 时拒,大小写改名到自身(同 inode)放行。显式覆盖走
       // atomicReplaceWithinScope({overwrite:true}),普通 rename 保持非覆盖语义。
       // (codex 复审 loop R2:plugin-fs 平行入口漏了 Explorer 的 FS_EEXIST 守卫)
-      let dstStat: Awaited<ReturnType<typeof fs.lstat>> | null = null;
-      try {
-        dstStat = await fs.lstat(rDst.fullPath);
-      } catch (err) {
-        // 只有 ENOENT(不存在)才正常改名;EACCES/EIO 等「无法确认目标」不能 fail-open
-        // (否则 rename 静默覆盖已有目标,codex P1 同族)→ 抛出中止。
-        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
-        dstStat = null;
-      }
+      // 只有 ENOENT(不存在)才正常改名;EACCES/EIO 等「无法确认目标」不能 fail-open(否则 rename
+      // 静默覆盖已有目标,codex P1 同族)→ lstatOrNull 抛出中止。
+      const dstStat = await lstatOrNull(rDst.fullPath);
       if (dstStat) {
         let srcStat: Awaited<ReturnType<typeof fs.lstat>> | null = null;
         try {
@@ -487,20 +491,13 @@ export function registerPluginFsHandlers(
         dst,
         'rw',
       );
-      if (!('fullPath' in rDst)) throw new ScopeError('copy resolution failed');
       // 拒绝静默覆盖已存在目标:Node fs.cp 默认 force:true,目标存在即覆盖 → 插件普通
       // copy 会丢用户已有文件。与 R2 的 rename 守卫对称(普通 cp 保持非覆盖语义,显式
       // 覆盖走 atomicReplaceWithinScope({overwrite:true}))。(codex 复审 loop R3:cp 是
       // R2 rename 的兄弟方法,同族「防御未传播到平行入口」)
-      let cpDstStat: Awaited<ReturnType<typeof fs.lstat>> | null = null;
-      try {
-        cpDstStat = await fs.lstat(rDst.fullPath);
-      } catch (err) {
-        // 只有 ENOENT 才正常复制;其它 lstat 错误不 fail-open(同 rename 守卫,codex P1
-        // 同族)。cp 自身已 force:false+errorOnExist 兜底,此处提前抛出更清晰一致。
-        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
-        cpDstStat = null; // ENOENT:目标不存在,正常复制
-      }
+      // 只有 ENOENT 才正常复制;其它 lstat 错误不 fail-open(同 rename 守卫)。cp 自身已
+      // force:false+errorOnExist 兜底,此处提前抛出更清晰一致。
+      const cpDstStat = await lstatOrNull(rDst.fullPath);
       if (cpDstStat) {
         throw new ScopeError('copy: destination already exists', {
           target: dst,
@@ -588,9 +585,6 @@ export function registerPluginFsHandlers(
         final,
         'rw',
       );
-      if (!('fullPath' in rStaging) || !('fullPath' in rFinal)) {
-        throw new ScopeError('atomicReplace resolution failed', { target: final });
-      }
       if (rStaging.parentCanonical !== rFinal.parentCanonical) {
         throw new ScopeError('atomicReplace: staging/final must share parent', {
           target: final,

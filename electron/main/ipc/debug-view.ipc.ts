@@ -1,6 +1,10 @@
-import { BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
+import type { BrowserWindow } from 'electron';
 import { z } from 'zod';
-import { defaultIsTrustedFrame, processIpcCall } from '../safe-handle';
+import {
+  defaultIsTrustedFrame,
+  safeHandleWithCtx,
+  senderWindowOrThrow,
+} from '../safe-handle';
 import { ERROR_CODES } from '../../shared/error-codes';
 import {
   DEBUG_VIEW_CHANNELS,
@@ -40,16 +44,6 @@ const debugGetVariablesInputSchema = z
   })
   .strict();
 
-function senderWindowOrThrow(event: IpcMainInvokeEvent): BrowserWindow {
-  const win = BrowserWindow.fromWebContents(event.sender);
-  if (!win) {
-    throw Object.assign(new Error('no browser window'), {
-      code: ERROR_CODES.NO_WINDOW,
-    });
-  }
-  return win;
-}
-
 function requireOwnedDebugSession(sessionId: string, win: BrowserWindow) {
   const session = debugSessions.get(sessionId);
   if (!session || session.ownerWindowId !== win.id) {
@@ -73,87 +67,57 @@ function requireStoppedSession(sessionId: string, win: BrowserWindow) {
 export function registerDebugViewIpc(service: DebugService): void {
   const trusted = defaultIsTrustedFrame;
 
-  ipcMain.handle(
-    DEBUG_VIEW_CHANNELS.SUBSCRIBE,
-    async (event: IpcMainInvokeEvent, raw: unknown) =>
-      processIpcCall(
-        debugSubscribeInputSchema,
-        async () => {
-          const win = senderWindowOrThrow(event);
-          return {
-            sessions: service
-              .listSessions()
-              .filter((session) => session.owner_window_id === win.id),
-          };
-        },
-        raw,
-        event.senderFrame,
-        trusted,
-      ),
-  );
+  // 同 terminal.ipc 的 ownerScopedHandle:统一 IPC 外壳 + 从 sender 反查窗口。
+  const windowScopedHandle = <I>(
+    channel: string,
+    schema: z.ZodType<I>,
+    handler: (input: I, win: BrowserWindow) => unknown | Promise<unknown>,
+  ): void => {
+    safeHandleWithCtx(
+      channel,
+      schema,
+      (input, { event }) => handler(input, senderWindowOrThrow(event, ERROR_CODES.NO_WINDOW)),
+      trusted,
+    );
+  };
 
-  ipcMain.handle(
-    DEBUG_VIEW_CHANNELS.GET_STACK,
-    async (event: IpcMainInvokeEvent, raw: unknown) =>
-      processIpcCall(
-        debugGetStackInputSchema,
-        async (input: DebugGetStackInput) => {
-          const win = senderWindowOrThrow(event);
-          const session = requireStoppedSession(input.sessionId, win);
-          const threadId = input.threadId ?? session.currentThreadId;
-          if (threadId === undefined) {
-            throw Object.assign(
-              new Error(`debug session has no stopped thread: ${input.sessionId}`),
-              { code: ERROR_CODES.BAD_INPUT },
-            );
-          }
-          return service.stackTrace(input.sessionId, {
-            threadId,
-            startFrame: input.startFrame,
-            levels: input.levels,
-          });
-        },
-        raw,
-        event.senderFrame,
-        trusted,
-      ),
-  );
+  windowScopedHandle(DEBUG_VIEW_CHANNELS.SUBSCRIBE, debugSubscribeInputSchema, (_input, win) => {
+    return {
+      sessions: service
+        .listSessions()
+        .filter((session) => session.owner_window_id === win.id),
+    };
+  });
 
-  ipcMain.handle(
-    DEBUG_VIEW_CHANNELS.GET_SCOPES,
-    async (event: IpcMainInvokeEvent, raw: unknown) =>
-      processIpcCall(
-        debugGetScopesInputSchema,
-        async (input: DebugGetScopesInput) => {
-          const win = senderWindowOrThrow(event);
-          requireStoppedSession(input.sessionId, win);
-          return service.scopes(input.sessionId, { frameId: input.frameId });
-        },
-        raw,
-        event.senderFrame,
-        trusted,
-      ),
-  );
+  windowScopedHandle(DEBUG_VIEW_CHANNELS.GET_STACK, debugGetStackInputSchema, (input: DebugGetStackInput, win) => {
+    const session = requireStoppedSession(input.sessionId, win);
+    const threadId = input.threadId ?? session.currentThreadId;
+    if (threadId === undefined) {
+      throw Object.assign(
+        new Error(`debug session has no stopped thread: ${input.sessionId}`),
+        { code: ERROR_CODES.BAD_INPUT },
+      );
+    }
+    return service.stackTrace(input.sessionId, {
+      threadId,
+      startFrame: input.startFrame,
+      levels: input.levels,
+    });
+  });
 
-  ipcMain.handle(
-    DEBUG_VIEW_CHANNELS.GET_VARIABLES,
-    async (event: IpcMainInvokeEvent, raw: unknown) =>
-      processIpcCall(
-        debugGetVariablesInputSchema,
-        async (input: DebugGetVariablesInput) => {
-          const win = senderWindowOrThrow(event);
-          requireStoppedSession(input.sessionId, win);
-          return service.variables(input.sessionId, {
-            variablesReference: input.variablesReference,
-            start: input.start,
-            count: input.count,
-            maxDepth: input.maxDepth,
-            maxStringBytes: input.maxStringBytes,
-          });
-        },
-        raw,
-        event.senderFrame,
-        trusted,
-      ),
-  );
+  windowScopedHandle(DEBUG_VIEW_CHANNELS.GET_SCOPES, debugGetScopesInputSchema, (input: DebugGetScopesInput, win) => {
+    requireStoppedSession(input.sessionId, win);
+    return service.scopes(input.sessionId, { frameId: input.frameId });
+  });
+
+  windowScopedHandle(DEBUG_VIEW_CHANNELS.GET_VARIABLES, debugGetVariablesInputSchema, (input: DebugGetVariablesInput, win) => {
+    requireStoppedSession(input.sessionId, win);
+    return service.variables(input.sessionId, {
+      variablesReference: input.variablesReference,
+      start: input.start,
+      count: input.count,
+      maxDepth: input.maxDepth,
+      maxStringBytes: input.maxStringBytes,
+    });
+  });
 }

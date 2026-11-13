@@ -1,11 +1,12 @@
 // '插件' SettingTab 内容(M-Plugin v3.5)。
 // 自检视图:贡献点统计 + 内置插件清单 + 用户插件占位(等 v4 IPC)。
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button, Input } from '@/design';
 import { clampGitUrl } from '../../../electron/shared/plugins-channels';
 import { ConfirmDialog } from '@/panels/Explorer/ConfirmDialog';
 import { coApi } from '@/lib/co-api';
+import { useSingleFlight } from '@/lib/use-single-flight';
 import { coApp } from '../co-app';
 import { useMultiRegistry } from '../registries/useRegistry';
 import { getUserPluginManager } from '../PluginManager';
@@ -292,12 +293,10 @@ function UserPluginsSection() {
   const mgr = getUserPluginManager();
   const [gitUrl, setGitUrl] = useState('');
   const trimmedGitUrl = useMemo(() => gitUrl.trim(), [gitUrl]);
-  const [installing, setInstalling] = useState(false);
-  // race(R8):同步 in-flight 闸门。disabled={installing} 是 render 后状态,异步滞后 —— 同一事件
-  // 循环内双击/Enter 会在 setInstalling(true) 生效前两次进 onInstall,启动两次 installFromGit
-  // (主进程 install lock 要等 clone+manifest 解析才按 pluginId 串行,期间已双 clone,第二个常
-  // EEXIST 把成功覆盖成失败)。ref 同步占位:进入即标记,重入直接 return。
-  const installingRef = useRef(false);
+  // race(R8):同步单飞闸门(useSingleFlight)。disabled={installing} 是 render 后状态,异步滞后 —— 同一
+  // 事件循环内双击/Enter 会在其生效前两次进 onInstall,启动两次 installFromGit(主进程 install lock 要等
+  // clone+manifest 解析才按 pluginId 串行,期间已双 clone,第二个常 EEXIST 把成功覆盖成失败)。
+  const { busy: installing, run: runInstall } = useSingleFlight();
   // a11y(A42):结果消息带严重度 → 渲染时按语义选 live region(成功 status/polite,失败 alert)。
   const [installMsg, setInstallMsg] = useState<{
     text: string;
@@ -369,49 +368,44 @@ function UserPluginsSection() {
     refresh();
   };
 
-  const onInstall = async () => {
+  const onInstall = (): Promise<void> | void => {
     if (!trimmedGitUrl) return;
-    // race(R8):同步单飞 —— 重入(同 tick 双击/Enter)在 installing state 生效前直接挡掉。
-    if (installingRef.current) return;
-    installingRef.current = true;
-    setInstalling(true);
-    setInstallMsg(null);
-    try {
-      const r = await coApi.plugins.installFromGit(trimmedGitUrl);
-      if (!r.ok) {
-        // i18n(codex 复查 P1):installFromGit 各错误站点的 Error.message 是硬编码中文
-        // (不支持的 git URL / manifest 缺字段 / main 入口非法 / 删除失败…),经 safeHandle
-        // 原样传到 renderer。直接展示 r.message → en/ko 界面看到中文。改用稳定 r.code 经
-        // catalog 翻译(errors.<CODE> 三语言已齐);未纳入 catalog 的 code 才回退原 message。
-        const localized = tf(`errors.${r.code}`, r.message);
+    return runInstall(async () => {
+      setInstallMsg(null);
+      try {
+        const r = await coApi.plugins.installFromGit(trimmedGitUrl);
+        if (!r.ok) {
+          // i18n(codex 复查 P1):installFromGit 各错误站点的 Error.message 是硬编码中文
+          // (不支持的 git URL / manifest 缺字段 / main 入口非法 / 删除失败…),经 safeHandle
+          // 原样传到 renderer。直接展示 r.message → en/ko 界面看到中文。改用稳定 r.code 经
+          // catalog 翻译(errors.<CODE> 三语言已齐);未纳入 catalog 的 code 才回退原 message。
+          const localized = tf(`errors.${r.code}`, r.message);
+          setInstallMsg({
+            text: t('plugins_tab.error.generic', {
+              message: `[${r.code}] ${localized}`,
+            }),
+            isError: true,
+          });
+        } else {
+          setInstallMsg({
+            text: t('plugins_tab.install.success', {
+              name: r.data.name,
+              version: r.data.version,
+            }),
+            isError: false,
+          });
+          setPendingInstall(r.data);
+          setGitUrl('');
+        }
+      } catch (err) {
         setInstallMsg({
           text: t('plugins_tab.error.generic', {
-            message: `[${r.code}] ${localized}`,
+            message: errorMessage(err),
           }),
           isError: true,
         });
-      } else {
-        setInstallMsg({
-          text: t('plugins_tab.install.success', {
-            name: r.data.name,
-            version: r.data.version,
-          }),
-          isError: false,
-        });
-        setPendingInstall(r.data);
-        setGitUrl('');
       }
-    } catch (err) {
-      setInstallMsg({
-        text: t('plugins_tab.error.generic', {
-          message: errorMessage(err),
-        }),
-        isError: true,
-      });
-    } finally {
-      installingRef.current = false;
-      setInstalling(false);
-    }
+    });
   };
 
   // a11y(A47,A46 同族):生命周期操作(reload/disable/enable/retry)失败此前只 console.warn,

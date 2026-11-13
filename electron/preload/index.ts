@@ -4,7 +4,7 @@ import type { IpcResult } from '../shared/ipc-result';
 import type { FileEntry } from '../shared/fs-entry';
 import { FS_CHANNELS, isFsDirChangedPayload } from '../shared/fs-channels';
 import { FS_PATH_MAX } from '../shared/fs-limits';
-import { TERMINAL_CHANNELS } from '../shared/terminal-channels';
+import { SESSION_UPDATE_CWD_CHANNEL, TERMINAL_CHANNELS } from '../shared/terminal-channels';
 import type { TerminalSessionSnapshot } from '../shared/terminal-session';
 import type { TerminalAttachRejectReason } from '../shared/terminal-attach';
 import type { TerminalCreateInput } from '../shared/terminal-create';
@@ -229,7 +229,7 @@ const api = {
     ): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(TERMINAL_CHANNELS.ATTACH_REJECTED, { sessionId, reason }),
     updateCwd: (id: string, cwd: string): Promise<IpcResult<void>> =>
-      ipcRenderer.invoke('session:update-cwd', id, cwd),
+      ipcRenderer.invoke(SESSION_UPDATE_CWD_CHANNEL, { id, cwd }),
     /**
      * 读 main 端 buffer 的全部历史 raw chunks(保留 ANSI)。
      * topic-07:dockview lazy-mount inactive panel 错过初始 PTY 输出,

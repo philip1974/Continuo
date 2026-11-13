@@ -24,7 +24,7 @@ import {
   type EditorTab,
   useEditorStore,
 } from '@/stores/editor.store';
-import { useExplorerStore, type ExplorerSort } from '@/stores/explorer.store';
+import { useExplorerStore } from '@/stores/explorer.store';
 import {
   SIDEBAR_DEFAULT_WIDTH,
   SIDEBAR_MAX_WIDTH,
@@ -47,6 +47,8 @@ import type { IpcResult } from '../fs/types';
 import {
   ExplorerSchema,
   ExplorerSchemaV3,
+  type ExplorerPayloadV3,
+  type WindowEntryV3,
 } from '../../../electron/shared/explorer-persistence-schema';
 
 const DEBOUNCE_MS = 300;
@@ -66,34 +68,21 @@ const EMPTY_PERSIST_PATHS: string[] = [];
  * windowSeq 索引。renderer 只读写 writable subset;layout / lastClosedAt 是
  * main-owned 字段,hydrate 可容忍但 snapshotFromStores 不写。
  */
-export interface ExplorerWindowEntry {
-  readonly windowSeq: number;
-  readonly workspace: { readonly root: string | null };
-  readonly explorer: {
-    readonly activePath: string | null;
-    readonly expandedPaths: ReadonlyArray<string>;
-    readonly sort: ExplorerSort;
-  };
-  readonly layoutUi?: {
-    readonly sidebarOpen: boolean;
-    readonly sidebarWidth: number;
-  };
-  readonly editor?: {
-    readonly openFilePaths: ReadonlyArray<string>;
-    readonly activePath: string | null;
-  };
-  readonly layout?: unknown;
-  readonly lastClosedAt?: number | null;
-}
+type DeepReadonly<T> = T extends (infer U)[]
+  ? ReadonlyArray<DeepReadonly<U>>
+  : T extends object
+    ? { readonly [K in keyof T]: DeepReadonly<T[K]> }
+    : T;
 
-export interface ExplorerSnapshot {
-  readonly version: 2 | 3;
-  readonly workspace: { readonly recentRoots: ReadonlyArray<string> };
-  readonly pinned: { readonly paths: ReadonlyArray<string> };
-  readonly nextWindowSeq: number;
-  readonly windows: ReadonlyArray<ExplorerWindowEntry>;
-  readonly restoreAllWindowsOnLaunch?: boolean;
-}
+// 磁盘契约的类型以共享 zod schema 为单一来源(z.infer),renderer 只取只读视图。
+export type ExplorerWindowEntry = DeepReadonly<WindowEntryV3>;
+
+export type ExplorerSnapshot = DeepReadonly<
+  Omit<ExplorerPayloadV3, 'version' | 'windows'> & {
+    version: 2 | 3;
+    windows: WindowEntryV3[];
+  }
+>;
 
 export interface ExplorerPersistApi {
   read: () => Promise<IpcResult<unknown | null>>;

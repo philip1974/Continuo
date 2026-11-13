@@ -2,12 +2,16 @@
 // 8 invoke 通道 + 5 push event 通道。schemas / handlers 单独 export 给 spec 测;
 // registerTerminalIpc() 真注册 + 订阅 sessions_changed 广播给所有 BrowserWindow。
 
-import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import { z } from 'zod';
-import { defaultIsTrustedFrame, processIpcCall } from '../safe-handle';
-import { TERMINAL_CHANNELS } from '../../shared/terminal-channels';
+import {
+  defaultIsTrustedFrame,
+  safeHandleWithCtx,
+  senderWindowOrThrow,
+} from '../safe-handle';
+import { SESSION_UPDATE_CWD_CHANNEL, TERMINAL_CHANNELS } from '../../shared/terminal-channels';
 import { getDefaultShell, isAllowedShell } from '@continuo-terminal/server-node';
 import { shellFamilyForPath } from '../services/shell-args';
 import { ERROR_CODES } from '../../shared/error-codes';
@@ -33,7 +37,6 @@ import { broadcastToWindows } from '../lib/broadcast';
 
 // ── 常量 ─────────────────────────────────────────────────────
 const MAX_WRITE_BYTES = 2_000_000; // ~2MB 真实 UTF-8 字节上限(下游 PTY/IPC 写入按字节,边界语义统一)
-const UPDATE_CWD_CHANNEL = 'session:update-cwd';
 
 // ── MCP env provider(由 main/index.ts 在 mcp host 启动后注入)──
 // 默认空 → 不注入 MCP 信息;启动 host 后调 setMcpEnvProvider 注册真函数。
@@ -131,16 +134,6 @@ const ERR_WRITE_FAILED = (id: string) =>
   Object.assign(new Error(`terminal write failed: ${id}`), {
     code: ERROR_CODES.TERMINAL_WRITE_FAILED,
   });
-
-function senderWindowOrThrow(event: IpcMainInvokeEvent): BrowserWindow {
-  const win = BrowserWindow.fromWebContents(event.sender);
-  if (!win) {
-    throw Object.assign(new Error('no browser window'), {
-      code: ERROR_CODES.TERMINAL_NO_WINDOW,
-    });
-  }
-  return win;
-}
 
 function assertOwnedSession(
   sessionStore: Pick<typeof terminalSessions, 'get'>,
@@ -309,10 +302,7 @@ export function makeUpdateCwdHandler(deps?: {
 }) {
   const sessionStore = deps?.sessionStore ?? terminalSessions;
   return (input: UpdateCwdInput, win: BrowserWindow): void => {
-    const session = sessionStore.get(input.id);
-    if (!session || session.ownerWindowId !== win.id) {
-      throw ERR_NOT_FOUND(input.id);
-    }
+    assertOwnedSession(sessionStore, input.id, win);
     sessionStore.updateCwd(input.id, input.cwd);
   };
 }
@@ -432,55 +422,27 @@ export function registerTerminalIpc(): void {
   const updateCwdHandler = makeUpdateCwdHandler();
   const windowClosedCleanup = makeWindowClosedCleanup();
 
+  // 所有 terminal IPC 走同一外壳:safeHandleWithCtx(trust → bounded → zod → try/catch)+ 从 sender
+  // 反查 BrowserWindow(ownerWindowId 由 main 推断,renderer 不自报)。
   const ownerScopedHandle = <I>(
     channel: string,
     schema: z.ZodType<I>,
     handler: (input: I, win: BrowserWindow) => unknown | Promise<unknown>,
   ): void => {
-    ipcMain.handle(channel, async (event: IpcMainInvokeEvent, raw: unknown) =>
-      processIpcCall(
-        schema,
-        async (input) => await handler(input, senderWindowOrThrow(event)),
-        raw,
-        event.senderFrame,
-        trusted,
-      ),
+    safeHandleWithCtx(
+      channel,
+      schema,
+      (input, { event }) =>
+        handler(input, senderWindowOrThrow(event, ERROR_CODES.TERMINAL_NO_WINDOW)),
+      trusted,
     );
   };
 
-  // create 需要 win,单独走 processIpcCall 包 closure。
-  ipcMain.handle(
-    TERMINAL_CHANNELS.CREATE,
-    async (event: IpcMainInvokeEvent, raw: unknown) =>
-      processIpcCall(
-        createInputSchema,
-        async (input) => {
-          const win = senderWindowOrThrow(event);
-          return createHandler(input, win);
-        },
-        raw,
-        event.senderFrame,
-        trusted,
-      ),
+  ownerScopedHandle(TERMINAL_CHANNELS.CREATE, createInputSchema, createHandler);
+  // list_sessions:Issue #28 Phase 1。从 sender 推断 ownerWindowId。
+  ownerScopedHandle(TERMINAL_CHANNELS.LIST_SESSIONS, noInputSchema, (_input, win) =>
+    listSessionsHandler({ ownerWindowId: win.id }),
   );
-
-  // list_sessions:Issue #28 Phase 1。从 sender 推断 ownerWindowId,renderer
-  // 不自报。同 create 走 processIpcCall 包 closure。
-  ipcMain.handle(
-    TERMINAL_CHANNELS.LIST_SESSIONS,
-    async (event: IpcMainInvokeEvent, raw: unknown) =>
-      processIpcCall(
-        noInputSchema,
-        async () => {
-          const win = senderWindowOrThrow(event);
-          return listSessionsHandler({ ownerWindowId: win.id });
-        },
-        raw,
-        event.senderFrame,
-        trusted,
-      ),
-  );
-
   ownerScopedHandle(TERMINAL_CHANNELS.WRITE, writeInputSchema, writeHandler);
   ownerScopedHandle(TERMINAL_CHANNELS.RESIZE, resizeInputSchema, resizeHandler);
   ownerScopedHandle(TERMINAL_CHANNELS.INTERRUPT, idOnlyInputSchema, interruptHandler);
@@ -501,25 +463,7 @@ export function registerTerminalIpc(): void {
     attachRejectedHandler,
   );
 
-  ipcMain.handle(
-    UPDATE_CWD_CHANNEL,
-    async (
-      event: IpcMainInvokeEvent,
-      rawOrId: unknown,
-      rawCwd?: unknown,
-    ) =>
-      processIpcCall(
-        updateCwdInputSchema,
-        async (input) => {
-          updateCwdHandler(input, senderWindowOrThrow(event));
-        },
-        typeof rawOrId === 'string'
-          ? { id: rawOrId, cwd: rawCwd }
-          : rawOrId,
-        event.senderFrame,
-        trusted,
-      ),
-  );
+  ownerScopedHandle(SESSION_UPDATE_CWD_CHANNEL, updateCwdInputSchema, updateCwdHandler);
 
   // sessions_changed:严格 per-owner 路由 — 不论 user / agent,可见域只由
   // ownerWindowId 决定,与 listSessionsHandler 一致。
