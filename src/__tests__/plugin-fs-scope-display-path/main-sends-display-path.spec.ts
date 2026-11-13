@@ -63,18 +63,19 @@ describe('plugin-fs:scope-request 推送带 displayPath', () => {
   it('~ 展开为 home;path/mode 保持插件请求的原始值;按下标对应', async () => {
     // 两个都不存在的目录:realpath 失败 → 归一化回退到 home 展开值,结果确定。
     const absolute = '/continuo-no-such-dir-for-display-path/abs';
-    expect(
-      await requestScopes(21, [
-        { path: '~/continuo-no-such-dir-for-display-path', mode: 'r' },
-        { path: absolute, mode: 'rw' },
-      ]),
-    ).toEqual([
+    const sent = (await requestScopes(21, [
+      { path: '~/continuo-no-such-dir-for-display-path', mode: 'r' },
+      { path: absolute, mode: 'rw' },
+    ])) as { path: string; mode: string; displayPath: string }[];
+    // 目录不存在时 main 只做 `~` → home 的拼接,不重写分隔符(Windows 上是 `C:\Users\x/dir`),
+    // 所以按「同一路径」比较而不是逐字符比较。
+    expect(sent.map((s) => ({ ...s, displayPath: path.normalize(s.displayPath) }))).toEqual([
       {
         path: '~/continuo-no-such-dir-for-display-path',
         mode: 'r',
         displayPath: path.join(homedir(), 'continuo-no-such-dir-for-display-path'),
       },
-      { path: absolute, mode: 'rw', displayPath: absolute },
+      { path: absolute, mode: 'rw', displayPath: path.normalize(absolute) },
     ]);
   });
 
