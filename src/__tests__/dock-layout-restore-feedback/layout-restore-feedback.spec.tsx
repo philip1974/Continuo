@@ -206,6 +206,34 @@ describe('a11y(A131) — Dock 布局恢复失败须反馈', () => {
     expect(h.write).toHaveBeenCalledTimes(1);
   });
 
+  // 写盘在途时又发生的布局变更不能被「写成功 → 标干净」吞掉:写的是旧快照。
+  it('layout.write 在途期间的布局变更,在该次写成功后仍会落盘', async () => {
+    h.read.mockResolvedValue({ ok: true, data: null });
+    let releaseFirst: (() => void) | null = null;
+    h.write.mockImplementationOnce(
+      () =>
+        new Promise((r) => {
+          releaseFirst = () => r({ ok: true });
+        }),
+    );
+    h.toJSON.mockReturnValue({ panels: { a: { contentComponent: 'editor' } } });
+    render(React.createElement(DockShell));
+    await vi.waitFor(() => {
+      expect(h.layoutChangeCb.current).not.toBeNull();
+    });
+
+    h.layoutChangeCb.current!();
+    await vi.waitFor(() => expect(h.write).toHaveBeenCalledTimes(1), { timeout: 1500 });
+
+    // 写#1 在途:布局再变一次
+    h.toJSON.mockReturnValue({ panels: { b: { contentComponent: 'editor' } } });
+    h.layoutChangeCb.current!();
+    releaseFirst!();
+
+    await vi.waitFor(() => expect(h.write).toHaveBeenCalledTimes(2), { timeout: 1500 });
+    expect(JSON.stringify(h.write.mock.calls[1]![0])).toContain('"b"');
+  });
+
   it('已自动保存且无 layout 变更时,close flush 跳过 dock 快照重建', async () => {
     let flushCb: ((p?: { windowId: number }) => Promise<void>) | null = null;
     const sendFlushAck = vi.fn();

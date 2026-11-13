@@ -499,25 +499,29 @@ export async function initExplorerPersistence(
   let writeChain: Promise<void> = Promise.resolve();
   let pendingWrite = false;
   let lastWrittenSnapshotPayload: string | null = null;
-  let hasDirtyStoreChanges = true;
+  // store 版本(每次变更 +1)与已落盘版本;相等 = 干净。用版本号而非布尔:写盘 await 期间的变更让版本前进,
+  // 写成功只把**取快照时**的版本记为已落盘,期间的变更仍是脏的(布尔标记会被一并清掉 → 最后一次变更不落盘)。
+  let storeVersion = 0;
+  let savedStoreVersion = -1;
   const writeNow = (): Promise<void> => {
-    if (!hasDirtyStoreChanges && !pendingWrite) return writeChain;
+    if (savedStoreVersion === storeVersion && !pendingWrite) return writeChain;
     pendingWrite = true;
     writeChain = writeChain.then(async () => {
       if (!pendingWrite) return; // 已被链上前一个写覆盖(合并),跳过冗余写
       pendingWrite = false;
       try {
+        const version = storeVersion;
         const snap = snapshotFromStores(lastSnap ?? undefined, windowSeq);
         const serializedSnap = JSON.stringify(snap);
         if (serializedSnap === lastWrittenSnapshotPayload) {
-          hasDirtyStoreChanges = false;
+          savedStoreVersion = version;
           return;
         }
         const w = await api.write(snap);
         if (w.ok) {
           lastSnap = snap;
           lastWrittenSnapshotPayload = serializedSnap;
-          hasDirtyStoreChanges = false;
+          savedStoreVersion = version;
         } else {
           console.warn('[explorer-persist] write failed', w.code, w.message);
         }
@@ -534,7 +538,7 @@ export async function initExplorerPersistence(
   activeFlush = writeNow;
 
   const markDirtyAndPersist = (): void => {
-    hasDirtyStoreChanges = true;
+    storeVersion += 1;
     persist();
   };
 

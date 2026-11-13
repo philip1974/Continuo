@@ -24,7 +24,9 @@ activePanel=null 时 popout 按钮 disabled。点更多 → 切 menu;点 menu �
 - 点击切换 open
 - open=true → role=menu 渲染 PanelRegistry.getAll() 每条
 - 点 menu item → containerApi.addPanel({ id, component, title, position }) + 关菜单
-- panel id 自增计数(同 type 多次点产生不同 id)
+- panel id 自增计数(同 type 多次点产生不同 id);生成的 id 已被现有面板占用(计数器每次启动归零,
+  而持久化布局会恢复旧 id)→ 跳到下一个空闲 id
+- addPanel 抛错 → 菜单仍关闭 + notify.error(`shell.dock.add_panel_failed`)
 
 ### 关闭菜单
 

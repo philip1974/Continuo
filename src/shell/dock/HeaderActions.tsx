@@ -13,7 +13,17 @@ import { notify } from '@/notifications/notify';
 import { useTWithFallback, t } from '@/i18n';
 
 let panelCounter = 0;
-const nextPanelId = (key: string) => `${key}-${++panelCounter}`;
+/**
+ * 下一个未被占用的面板 id。计数器是模块级、每次启动归零,而持久化布局会恢复 `output-1` 这类旧 id;
+ * dockview 对重复 id 直接抛错,所以跳过已存在的。
+ */
+const nextPanelId = (key: string, isTaken: (id: string) => boolean): string => {
+  let id: string;
+  do {
+    id = `${key}-${++panelCounter}`;
+  } while (isTaken(id));
+  return id;
+};
 const POPOUT_ICON = (
   <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
     <path
@@ -89,14 +99,19 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
         setOpen(false);
         return;
       }
-      const id = nextPanelId(key);
-      containerApi.addPanel({
-        id,
-        component: key,
-        title: label,
-        position: { referenceGroup: group },
-        ...(titleKey ? { params: { titleKey } } : {}),
-      });
+      try {
+        containerApi.addPanel({
+          id: nextPanelId(key, (id) => containerApi.getPanel(id) != null),
+          component: key,
+          title: label,
+          position: { referenceGroup: group },
+          ...(titleKey ? { params: { titleKey } } : {}),
+        });
+      } catch (err) {
+        // addPanel 同步抛(id 冲突 / component 不存在等):给可见反馈,且菜单照常关闭。
+        console.warn('[dock] add panel failed', err);
+        notify.error(t('shell.dock.add_panel_failed'));
+      }
       setOpen(false);
     },
     [containerApi, group],

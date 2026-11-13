@@ -38,8 +38,24 @@ function execLineForTab(
   return stopped.line;
 }
 
+// 每个 view 上次应用的装饰签名。同步订阅整个 editor store(敲键也触发),装饰没变就不再派发事务。
+const appliedSignatures = new WeakMap<EditorView, string>();
+
+function applyDecorations(
+  view: EditorView,
+  breakpointLines: readonly number[],
+  execLine: number | null,
+): void {
+  const signature = `${execLine ?? ''}|${breakpointLines.join(',')}`;
+  if (appliedSignatures.get(view) === signature) return;
+  appliedSignatures.set(view, signature);
+  setDebugDecorations(view, { breakpointLines, execLine });
+}
+
+const NO_BREAKPOINT_LINES: readonly number[] = [];
+
 function clearView(view: EditorView): void {
-  setDebugDecorations(view, { breakpointLines: [], execLine: null });
+  applyDecorations(view, NO_BREAKPOINT_LINES, null);
 }
 
 function syncDebugDecorations(): void {
@@ -58,10 +74,11 @@ function syncDebugDecorations(): void {
     }
 
     const filePath = tab.filePath;
-    setDebugDecorations(view, {
-      breakpointLines: breakpointLinesForTab(debugState.sessions, filePath),
-      execLine: execLineForTab(activeSession, filePath),
-    });
+    applyDecorations(
+      view,
+      breakpointLinesForTab(debugState.sessions, filePath),
+      execLineForTab(activeSession, filePath),
+    );
   }
 }
 

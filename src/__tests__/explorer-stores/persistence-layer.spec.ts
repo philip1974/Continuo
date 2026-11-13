@@ -483,6 +483,75 @@ describe('initExplorerPersistence', () => {
     }
   });
 
+  // 写盘在途时发生的变更不能被「写成功 → 标干净」吞掉:写的是旧快照,期间的变更仍是脏的。
+  it('写盘在途期间的 store 变更,在该次写成功后仍会被后续 debounce 落盘', async () => {
+    vi.useFakeTimers();
+    try {
+      const writeCalls: ExplorerSnapshot[] = [];
+      const resolvers: Array<() => void> = [];
+      const api: ExplorerPersistApi = {
+        read: async () => ({ ok: true, data: null }),
+        write: vi.fn((snap: ExplorerSnapshot) => {
+          writeCalls.push(snap);
+          return new Promise<{ ok: true; data: undefined }>((r) => {
+            resolvers.push(() => r({ ok: true, data: undefined }));
+          });
+        }),
+      };
+      await initExplorerPersistence(api);
+
+      useWorkspaceStore.getState().setRoot('/a');
+      await vi.advanceTimersByTimeAsync(400);
+      expect(writeCalls.length).toBe(1); // 写#1(root=/a)在途
+
+      useWorkspaceStore.getState().setRoot('/b'); // 在途期间的变更
+      resolvers[0]!(); // 写#1 成功返回
+      await vi.advanceTimersByTimeAsync(400); // /b 的 debounce 到点
+
+      expect(writeCalls.length).toBe(2);
+      const w0 = writeCalls[1]!.windows.find((w) => w.windowSeq === 0)!;
+      expect(w0.workspace.root).toBe('/b');
+      resolvers[1]!();
+      await vi.advanceTimersByTimeAsync(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('写盘在途期间的 store 变更,写成功后的关窗 flush 仍会落盘', async () => {
+    vi.useFakeTimers();
+    try {
+      const writeCalls: ExplorerSnapshot[] = [];
+      const resolvers: Array<() => void> = [];
+      const api: ExplorerPersistApi = {
+        read: async () => ({ ok: true, data: null }),
+        write: vi.fn((snap: ExplorerSnapshot) => {
+          writeCalls.push(snap);
+          return new Promise<{ ok: true; data: undefined }>((r) => {
+            resolvers.push(() => r({ ok: true, data: undefined }));
+          });
+        }),
+      };
+      await initExplorerPersistence(api);
+
+      useWorkspaceStore.getState().setRoot('/a');
+      await vi.advanceTimersByTimeAsync(400);
+      useWorkspaceStore.getState().setRoot('/b');
+      resolvers[0]!();
+      await vi.advanceTimersByTimeAsync(0); // 写#1 收尾;/b 的 debounce 尚未到点
+
+      const flushP = flushExplorerPersistence();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(writeCalls.length).toBe(2);
+      resolvers[1]!();
+      await flushP;
+      const w0 = writeCalls[1]!.windows.find((w) => w.windowSeq === 0)!;
+      expect(w0.workspace.root).toBe('/b');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   // ──── 多窗口 Phase 2B(issue #23):windowSeq + initialWorkspace ────
   describe('windowSeq + initialWorkspace(多窗口持久化路径)', () => {
     // fullSnapshot 含 windows[0],新窗 windowSeq=1 段不存在

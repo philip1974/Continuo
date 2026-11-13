@@ -743,6 +743,28 @@ describe('PluginsTabContent — Git URL 安装', () => {
     expect(statuses.some((s) => (s.textContent ?? '').includes('已安装 Plugin X'))).toBe(true);
   });
 
+  it('连续安装两个插件 → 两条待重启行都保留(后装的不顶掉先装的)', async () => {
+    const installFromGit = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, data: { id: 'p.a', name: 'Plugin A', version: '1.0.0' } })
+      .mockResolvedValueOnce({ ok: true, data: { id: 'p.b', name: 'Plugin B', version: '2.0.0' } });
+    installPluginsApi(installFromGit);
+    const { container } = render(<PluginsTabContent />);
+    const input = container.querySelector('input') as HTMLInputElement;
+    const installBtn = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+      (b) => b.textContent === '安装',
+    )!;
+
+    fireEvent.change(input, { target: { value: 'https://github.com/me/a.git' } });
+    fireEvent.click(installBtn);
+    await waitFor(() => expect(container.textContent).toContain('p.a'));
+
+    fireEvent.change(input, { target: { value: 'https://github.com/me/b.git' } });
+    fireEvent.click(installBtn);
+    await waitFor(() => expect(container.textContent).toContain('p.b'));
+    expect(container.textContent).toContain('p.a');
+  });
+
   it('Git URL trim 只在输入变化后派生一次,点击安装复用结果', () => {
     const installFromGit = vi.fn().mockReturnValue(new Promise(() => {}));
     installPluginsApi(installFromGit);

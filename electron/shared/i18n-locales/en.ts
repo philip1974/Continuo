@@ -272,6 +272,8 @@ export const en = {
   'permissions.agent.terminal_send_text': 'type text into a terminal',
   'permissions.agent.terminal_press_key': 'press a key in a terminal',
   'permissions.agent.terminal_kill': 'terminate a terminal',
+  'permissions.agent.debug_launch': 'start a debug session',
+  'permissions.agent.debug_control': 'control a debug session (breakpoints, stepping, variables)',
   'permissions.agent.generic': 'call {method}',
   'permissions.agent.title': 'Agent requests built-in terminal access',
   'permissions.agent.respond_failed': 'Failed to send your authorization decision. Please try again.',
@@ -402,6 +404,7 @@ export const en = {
   'shell.iconbar.show_explorer': 'Show Explorer',
   'shell.iconbar.settings': 'Settings',
   'shell.dock.popout_title': 'Pop out to standalone window',
+  'shell.dock.add_panel_failed': 'Failed to add panel',
   'shell.dock.popout_failed': 'Failed to open panel in a new window',
   'shell.tab.exit_zoom': 'Exit zoom',
   // a11y(A105):icon-only tab close button accessible name (was hardcoded English "Close {title}").

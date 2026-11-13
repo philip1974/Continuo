@@ -20,6 +20,9 @@ const METHOD_LABEL_KEYS: Record<string, TranslationKey> = {
   'terminal.send_text': 'permissions.agent.terminal_send_text',
   'terminal.press_key': 'permissions.agent.terminal_press_key',
   'terminal.kill': 'permissions.agent.terminal_kill',
+  // debug 工具(main:mcp-debug-host)—— launch 单列,其余统一 debug.*
+  'debug.launch': 'permissions.agent.debug_launch',
+  'debug.*': 'permissions.agent.debug_control',
 };
 
 export function AgentAuthPrompt() {

@@ -2,7 +2,7 @@
 
 import { EditorState } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createTab, useEditorStore } from '../../stores/editor.store';
 import { resetDebugStoreForTest, useDebugStore } from '../../stores/debug.store';
 import { debugDecorationsExtension } from '../../panels/Editor/decorations/debug-decorations';
@@ -99,6 +99,33 @@ describe('topic51 Op6 · debug decoration sync', () => {
 
     expect(view.dom.querySelectorAll('.cm-debug-breakpoint-marker')).toHaveLength(1);
     expect(view.dom.querySelector('.cm-debug-exec-line')).toBeTruthy();
+  });
+
+  // 同步订阅整个 editor store;敲键(updateContent)也会触发。装饰没变就不该再给 view 派发事务。
+  it('editor store 的无关更新(如内容变化)不重复派发装饰事务', () => {
+    const view = createView('/repo/a.ts', '/repo/a.ts');
+    useDebugStore.setState({
+      activeSessionId: null,
+      sessions: new Map([
+        ['s1', session('s1', { breakpoints: [{ file: '/repo/a.ts', line: 2, verified: true }] })],
+      ]),
+    });
+    stopSync = startDebugDecorationSync();
+    expect(view.dom.querySelectorAll('.cm-debug-breakpoint-marker')).toHaveLength(1);
+
+    const dispatch = vi.spyOn(view, 'dispatch');
+    useEditorStore.setState((state) => ({ tabs: [...state.tabs] })); // 模拟一次敲键后的 tabs 换新
+    useEditorStore.setState({ mode: 'source' });
+    expect(dispatch).not.toHaveBeenCalled();
+
+    // 装饰真的变了 → 仍然派发
+    useDebugStore.setState({
+      sessions: new Map([
+        ['s1', session('s1', { breakpoints: [{ file: '/repo/a.ts', line: 3, verified: true }] })],
+      ]),
+    });
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    dispatch.mockRestore();
   });
 
   it('clears exec-line after continued and terminated events remove stopped state', () => {

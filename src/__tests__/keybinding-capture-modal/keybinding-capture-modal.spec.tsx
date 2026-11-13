@@ -157,6 +157,26 @@ describe('KeybindingCaptureModal — 显示态', () => {
     expect(warnEmoji!.textContent).toContain('⚠️');
   });
 
+  it('冲突列表显示本地化的命令标题(titleKey),不是原始英文 title', () => {
+    const props = defaultProps({
+      commandId: 'cmd.a',
+      allCommands: [
+        {
+          id: 'terminal.new',
+          title: 'New Terminal',
+          titleKey: 'commands.terminal.new.title',
+          hotkey: 'mod+x',
+          fn: vi.fn(),
+        },
+      ] as readonly CommandSpec[],
+    });
+    render(<KeybindingCaptureModal {...props} />);
+    dispatchKey({ key: 'x', ctrlKey: true });
+    const text = document.querySelector('.wm-modal-content')!.textContent ?? '';
+    expect(text).toContain('新建终端');
+    expect(text).not.toContain('New Terminal');
+  });
+
   // a11y(A61,A52 同族):捕获结果框本身须 live region —— 按键由 document capture 处理,焦点不在
   // 框上,内容随按键动态切换;无 live region 时 AT 用户听不到捕获结果。
   it('a11y · 捕获结果框是 role=status,内容随按键更新', () => {

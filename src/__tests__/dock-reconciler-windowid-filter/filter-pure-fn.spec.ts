@@ -16,6 +16,18 @@ describe('dock-reconciler-windowid-filter: filterByOwnerWindow pure fn', () => {
     expect(filterByOwnerWindow(b, 1)).toBe(filtered);
   });
 
+  // shellFamily 决定拖放路径的 shell 引号规则,畸形值不能进 store。
+  it('shellFamily 合法值 / 缺省 → 保留;非法值 → 丢弃该 session', () => {
+    const ok = makeSession('A');
+    const posix = { ...makeSession('B'), shellFamily: 'posix' };
+    const bad = { ...makeSession('C'), shellFamily: 'fish' };
+    const notString = { ...makeSession('D'), shellFamily: 1 };
+    expect(filterByOwnerWindow([ok, posix, bad, notString], 1).map((s) => s.id)).toEqual([
+      'A',
+      'B',
+    ]);
+  });
+
   it('T2 [A:o1] wid=1 -> [A]', () => {
     const a = makeSession('A');
     expect(filterByOwnerWindow([a], 1)).toEqual([a]);

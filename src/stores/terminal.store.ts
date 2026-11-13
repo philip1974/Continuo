@@ -84,6 +84,10 @@ function isTerminalSessionShape(v: unknown): v is TerminalSession {
     (obj.agentLabel === undefined ||
       (typeof obj.agentLabel === 'string' && obj.agentLabel.length <= LABEL_MAX)) &&
     (obj.scoped === undefined || typeof obj.scoped === 'boolean') &&
+    (obj.shellFamily === undefined ||
+      obj.shellFamily === 'posix' ||
+      obj.shellFamily === 'cmd' ||
+      obj.shellFamily === 'powershell') &&
     (obj.workspaceRoot === undefined ||
       (typeof obj.workspaceRoot === 'string' &&
         obj.workspaceRoot.length <= PATH_MAX)) &&

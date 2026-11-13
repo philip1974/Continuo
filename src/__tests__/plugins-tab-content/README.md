@@ -30,7 +30,8 @@
 
 - getUserPluginManager()=null → 视为空
 - listAll()=[] + 无 pendingInstall → 「暂无第三方插件」
-- pendingInstall 存在 → 显示 ⏳ 行 + 待重启提示
+- pendingInstall 存在 → 显示 ⏳ 行 + 待重启提示;连续安装多个 → 每个一行;
+  id 已出现在插件列表(已加载 / 覆盖重装)→ 不再显示待重启行
 - plugin status='enabled' → 显「禁用」按钮
 - plugin status='disabled' → 显「启用」(primary)
 - plugin status='failed' → 显「启用」(primary,重试)

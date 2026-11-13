@@ -30,6 +30,8 @@ const EMPTY_PLUGIN_TAB_STRINGS: string[] = [];
 const EMPTY_PLUGIN_TAB_ITEMS: never[] = [];
 const EMPTY_CONTRIBUTION_SAMPLES: readonly string[] = [];
 const EMPTY_DECLARED_PERMISSIONS: readonly PermissionKey[] = [];
+const NO_PENDING_INSTALLS: ReadonlyMap<string, { id: string; name: string; version: string }> =
+  new Map();
 
 const PLUGINS_TAB_ROW_CLASS_NAME = 'flex items-start gap-4 px-4 py-3 text-xs';
 const PLUGINS_TAB_ROW_BORDER_CLASS_NAME = `${PLUGINS_TAB_ROW_CLASS_NAME} border-t border-line/50`;
@@ -302,11 +304,12 @@ function UserPluginsSection() {
     text: string;
     isError: boolean;
   } | null>(null);
-  const [pendingInstall, setPendingInstall] = useState<{
-    id: string;
-    name: string;
-    version: string;
-  } | null>(null);
+  // 已安装、待重启后才进列表的插件(按 id;连续安装多个时各占一行)。
+  const [pendingInstalls, setPendingInstalls] = useState<
+    ReadonlyMap<string, { id: string; name: string; version: string }>
+  >(NO_PENDING_INSTALLS);
+  // 已进列表的(重启后加载 / 覆盖重装已有 id)不再显示待重启行,避免同一插件两行。
+  const pendingRows = [...pendingInstalls.values()].filter((p) => !hasPluginId(plugins, p.id));
   const [uninstallTarget, setUninstallTarget] = useState<PluginListItem | null>(null);
   const [permEditTarget, setPermEditTarget] = useState<PluginListItem | null>(null);
   const permStore = getUserPermissionStore();
@@ -394,7 +397,7 @@ function UserPluginsSection() {
             }),
             isError: false,
           });
-          setPendingInstall(r.data);
+          setPendingInstalls((prev) => new Map(prev).set(r.data.id, r.data));
           setGitUrl('');
         }
       } catch (err) {
@@ -472,28 +475,28 @@ function UserPluginsSection() {
           </div>
         )}
       </div>
-      {plugins.length === 0 && !pendingInstall ? (
+      {plugins.length === 0 && pendingRows.length === 0 ? (
         <div className="rounded-md border border-dashed border-line bg-panel-soft/40 px-4 py-8 text-center text-xs text-fg-dim">
           {t('plugins_tab.user.no_plugins')}
         </div>
       ) : (
         <div className="rounded-md border border-line bg-panel-soft/40">
-          {pendingInstall && (
-            <div className="flex items-start gap-4 px-4 py-3 text-xs">
+          {pendingRows.map((pending, i) => (
+            <div key={pending.id} className={pluginsTabRowClassName(i > 0)}>
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline gap-2">
-                  <span className="text-sm font-medium text-fg">{pendingInstall.name}</span>
+                  <span className="text-sm font-medium text-fg">{pending.name}</span>
                   <code className="rounded bg-panel-soft/70 px-1.5 py-0.5 text-2xs uppercase tracking-wider text-fg-muted/70">
-                    {pendingInstall.id}
+                    {pending.id}
                   </code>
-                  <span className="text-2xs text-fg-dim">v{pendingInstall.version}</span>
+                  <span className="text-2xs text-fg-dim">v{pending.version}</span>
                 </div>
                 <div className="mt-1 text-fg-muted">{t('plugins_tab.user.pending_hint')}</div>
               </div>
             </div>
-          )}
+          ))}
           {plugins.map((p, i) => (
-            <div key={p.id} className={pluginsTabRowClassName(i > 0 || Boolean(pendingInstall))}>
+            <div key={p.id} className={pluginsTabRowClassName(i > 0 || pendingRows.length > 0)}>
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline gap-2">
                   <span className="text-sm font-medium text-fg">{p.manifest.name}</span>

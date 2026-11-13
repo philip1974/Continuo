@@ -10,7 +10,7 @@ import {
   type Platform,
 } from '@/plugins/command-palette/format-hotkey';
 import { isValidHotkeyShape, type CommandSpec } from '@/plugins/registries/CommandRegistry';
-import { useT } from '@/i18n';
+import { useT, useTWithFallback } from '@/i18n';
 import { resolveEffectiveHotkey } from './keybindings-store';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 
@@ -108,6 +108,7 @@ function KeybindingCaptureModalBody({
   onResetToDefault,
 }: KeybindingCaptureModalProps) {
   const t = useT();
+  const tk = useTWithFallback();
   // null = 还没捕获到完整组合(显示 currentHotkey 占位)
   // ''  = 显式 unbind(用户按了 Backspace)
   // string non-empty = 新组合
@@ -234,7 +235,7 @@ function KeybindingCaptureModalBody({
           <ul className="mt-1 list-inside list-disc space-y-0.5">
             {conflicts.map((c) => (
               <li key={c.id}>
-                {c.title} <code className="text-2xs text-warning/70">{c.id}</code>
+                {tk(c.titleKey, c.title)} <code className="text-2xs text-warning/70">{c.id}</code>
               </li>
             ))}
           </ul>
