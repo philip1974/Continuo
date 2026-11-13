@@ -921,6 +921,11 @@ export class DebugService {
       if (index >= 0) runtime.childClients.splice(index, 1);
       debugSessions.update(sessionId, { childSessionCount: runtime.childClients.length });
       await child.dispose().catch(() => undefined);
+      // 摘除后重新判定:若其余 child 在这次握手期间都已结束,存活的 child 已全部结束 → 整个会话结束
+      //(否则要等父 client 的 terminated 才收敛)。
+      if (runtime.endedMessage === undefined && this.allChildrenEnded(runtime)) {
+        this.endWholeSession(sessionId, runtime, 'debug session terminated');
+      }
       throw err;
     }
     // 握手完成、即将发 launch 时才切换(stopped 等事件只会在 launch 之后到来)。
@@ -963,11 +968,19 @@ export class DebugService {
     //(置位后 wait_for_stop 会永久报已终止)。
     if (client !== runtime.parentClient) {
       runtime.endedChildren.add(client);
-      const allChildrenEnded =
-        runtime.childClients.length > 0 &&
-        runtime.childClients.every((child) => runtime.endedChildren.has(child));
-      if (!allChildrenEnded) return;
+      if (!this.allChildrenEnded(runtime)) return;
     }
+    this.endWholeSession(sessionId, runtime, message);
+  }
+
+  private allChildrenEnded(runtime: RuntimeDebugSession): boolean {
+    return (
+      runtime.childClients.length > 0 &&
+      runtime.childClients.every((child) => runtime.endedChildren.has(child))
+    );
+  }
+
+  private endWholeSession(sessionId: string, runtime: RuntimeDebugSession, message: string): void {
     this.rejectWaiters(sessionId, new Error(message));
     runtime.endedMessage = message;
     debugSessions.update(sessionId, { runtimeState: 'terminated' });

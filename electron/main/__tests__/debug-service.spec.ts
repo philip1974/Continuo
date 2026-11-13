@@ -262,6 +262,31 @@ describe('DebugService fake adapter · launch / 子会话 / 终止 的错误路�
     expect(parent.children[0]!.requestLog.some((r) => r.command === 'stackTrace')).toBe(false);
   });
 
+  it('一个 child 已结束、另一个 child 握手失败被摘除 → 存活的 child 已全部结束,会话随即判为终止', async () => {
+    const parent = new FakeDapClient(1001);
+    const { service } = makeFakeService(parent);
+    await service.launchSession({ program: '/fixture.js', cwd: '/work' }, ctx);
+    await parent.triggerStartDebugging({ type: 'pwa-node' }); // child A
+    const createChild = parent.createChildSession.bind(parent);
+    let failConnect: (err: Error) => void = () => {};
+    parent.createChildSession = () => {
+      const child = createChild() as FakeDapClient;
+      child.connectToServer = () =>
+        new Promise((_resolve, reject) => {
+          failConnect = reject;
+        });
+      return child;
+    };
+    const secondChild = parent.triggerStartDebugging({ type: 'pwa-node' }); // child B 握手中
+    await Promise.resolve();
+    parent.children[0]!.emit('terminated', {}); // A 结束;此时 B 还在,不算整体结束
+    expect(service.listSessions()[0]?.state).not.toBe('terminated');
+
+    failConnect(new Error('connect ECONNREFUSED')); // B 握手失败 → 被摘除
+    await expect(secondChild).rejects.toThrow(/ECONNREFUSED/);
+    expect(service.listSessions()[0]?.state).toBe('terminated');
+  });
+
   it('debuggee 已结束(terminated 事件)→ 之后的 wait_for_stop 立即报已终止,不干等到超时;列表状态为 terminated', async () => {
     const parent = new FakeDapClient(1001);
     const { service } = makeFakeService(parent);
