@@ -9,7 +9,6 @@
 | `manifest.json` | 插件元数据(id / name / version / main / minLMVersion) |
 | `main.js` | ESM 入口,export default class extends Plugin |
 | `README.md` | 本文档 |
-| `styles.css` | 可选,LM 自动注入到 head(本示例未用)|
 
 ## 安装
 

@@ -16,12 +16,14 @@ export function usePickerToggleHotkey(
 ): void {
   const { shift } = opts;
   useEffect(() => {
-    // mac:Cmd(meta)是 mod;非 mac:只认 Ctrl —— 否则 Windows/Linux 的 Super/Win 键
-    // (= metaKey)会误触发面板(跨平台审计 P2)。mac 仍兼容 Ctrl(行为不变)。
+    // 只认平台主修饰键:mac = Cmd(meta),其它 = Ctrl。
+    //  - 非 mac 不认 meta:否则 Windows/Linux 的 Super/Win 键会误触发面板(跨平台审计 P2)。
+    //  - mac 不认 Ctrl:Ctrl+P 是终端 readline 的「上一条历史」等 Control 序列,认了的话焦点在终端时
+    //    shell 收到按键的同时面板也弹出来抢焦点(与 useCommandHotkeys 的 R15 规则一致)。
     const isMac = detectPlatform() === 'mac';
     const handler = (e: KeyboardEvent): void => {
-      const mod = isMac ? e.metaKey || e.ctrlKey : e.ctrlKey;
-      if (mod && e.shiftKey === shift && isPKey(e.key)) {
+      const mod = isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
+      if (mod && !e.altKey && e.shiftKey === shift && isPKey(e.key)) {
         e.preventDefault();
         const { isOpen, open, close } = getState();
         if (isOpen) close();

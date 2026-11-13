@@ -32,7 +32,6 @@ Per-plugin directory contents (Obsidian-compatible shape):
 <id>/
   manifest.json       required (zod-validated)
   main.js             required (ESM entry, default name; overridable via manifest.main)
-  styles.css          optional (auto-injected into renderer <head>)
   data.json           optional (loadData / saveData persistence)
   README.md           optional (rendered in Settings → Plugins)
 ```

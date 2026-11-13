@@ -4,8 +4,6 @@
 //   - 默认 mirror=true:notify 同步把消息写到对应 console 级别(error→console.error /
 //     warning→console.warn / info,success→console.log),保证 debug/CI 无 Toast 也能看见。
 //   - mirror=false **仅当调用方确认已有外部日志**:
-//     * Bridge 从 main push 收消息时,main 端 `pushNotification` helper 内部已 console
-//       兜底(Op9),Bridge 调 `notify(..., { mirror: false })` 避免双写。
 //     * Renderer 内 alert 收编时若原代码已 `console.warn([prefix] ...)` 同义 → 保留
 //       原 console + `notify(..., { mirror: false })`(plan-v4 P1-4 修订:不删 console)。
 //   - 不要在没有外部日志的位置传 mirror:false,否则错误会"静默"。
@@ -15,7 +13,7 @@
 //   mount 顺序里旧 Provider 卸载清新单例)。
 
 import type { NotificationLevel } from './types';
-// 边界(E311):本地 notify 路径与 IPC-push(isNotifyPushPayload)/ SDK(co-app)对称限长,单一来源常量。
+// 边界(E311):本地 notify 路径与 SDK(co-app)对称限长,单一来源常量。
 import {
   NOTIFY_MESSAGE_MAX,
   NOTIFY_CODE_MAX,
@@ -77,10 +75,9 @@ function notifyCore(
   level: NotificationLevel = 'info',
   opts?: NotifyOpts,
 ): void {
-  // 边界(E311):本地 notify 路径此前无长度上限,而 main→renderer notify:push(isNotifyPushPayload)与 SDK
-  // coApp.notifications.show(co-app)均限长。renderer 各处 notify.error(err.message) 的 err.message 可超长
+  // 边界(E311):本地 notify 路径此前无长度上限,而 SDK coApp.notifications.show(co-app)限长。renderer 各处 notify.error(err.message) 的 err.message 可超长
   //(畸形/插件抛超长串)→ 进 console mirror + Toast DOM 放大。本地路径在唯一入口 notifyCore 截断到同一
-  // NOTIFY_MESSAGE_MAX/NOTIFY_CODE_MAX(与 push/SDK 对称),截断(非拒)保留可见反馈。
+  // NOTIFY_MESSAGE_MAX/NOTIFY_CODE_MAX(与 SDK 对称),截断(非拒)保留可见反馈。
   const cappedMessage =
     message.length > NOTIFY_MESSAGE_MAX
       ? message.slice(0, NOTIFY_MESSAGE_MAX)

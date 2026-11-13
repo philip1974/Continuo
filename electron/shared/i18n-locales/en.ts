@@ -309,7 +309,6 @@ export const en = {
   'statusbar.sidebar_hidden': 'Sidebar hidden',
   'statusbar.untitled_file': 'Untitled',
   'statusbar.unsaved_changes': 'Unsaved changes',
-  'statusbar.git_branch_placeholder': 'git branch (placeholder)',
   'statusbar.editor_stats': '{lines} lines · {words} words · {chars} chars',
 
   // errors.* topic-19 (4)

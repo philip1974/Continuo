@@ -181,11 +181,10 @@ export async function recoverInterruptedInstalls(baseDir: string): Promise<void>
 
 // 边界(E24,E18 同族):插件目录扫描读 manifest/main/styles 的文件大小上限。畸形/恶意插件包可放
 // 超大 manifest/main/styles,应用启动或插件列表刷新时主进程整文件读入并经 IPC 传给 renderer →
-// 内存峰值/卡死/崩溃。读前 stat.size,超限跳过(manifest/main 缺失即跳过整插件;styles 缺失=无样式),
-// 不把超大源码/样式跨 IPC 传输。上限远超任何现实插件(bundled main 数 MB 已罕见)。
+// 内存峰值/卡死/崩溃。读前 stat.size,超限跳过(manifest/main 缺失即跳过整插件),
+// 不把超大源码跨 IPC 传输。上限远超任何现实插件(bundled main 数 MB 已罕见)。
 const MANIFEST_MAX_BYTES = 1024 * 1024; // 1 MiB
 const MAIN_MAX_BYTES = 8 * 1024 * 1024; // 8 MiB(bundled 源码)
-const STYLES_MAX_BYTES = 4 * 1024 * 1024; // 4 MiB
 
 export async function readFileCapped(
   filePath: string,
@@ -267,7 +266,8 @@ async function readMetadataCapped(filePath: string): Promise<string> {
 
 /**
  * 扫描 baseDir/<id>/manifest.json 模式;返回所有合法目录的 manifestText +
- * mainText(默认 main.js 或 manifest.main 指向)+ 可选 stylesText。
+ * mainText(默认 main.js 或 manifest.main 指向)。插件目录里的 styles.css 不读取:renderer 从未
+ * 注入过它(样式由插件在 onload 里自行处理)。
  *
  * 子目录读 fail / 缺 manifest / 缺 main 都跳过该目录(不抛),由 renderer 端
  * PluginManager 决定是否报告。
@@ -311,12 +311,7 @@ export async function listPluginDirs(baseDir: string): Promise<IpcPluginDir[]> {
     const mainText = await readFileCapped(mainPath, MAIN_MAX_BYTES);
     if (mainText === null) continue;
 
-    // 边界(E24):styles 超 4MiB(或缺失)→ 当无样式(undefined),不阻断插件。
-    const stylesText =
-      (await readFileCapped(path.join(dir, 'styles.css'), STYLES_MAX_BYTES)) ??
-      undefined;
-
-    out[outCount] = { id, manifestText, mainText, stylesText };
+    out[outCount] = { id, manifestText, mainText };
     outCount += 1;
   }
   out.length = outCount;

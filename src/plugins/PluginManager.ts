@@ -25,8 +25,6 @@ export interface PluginDirInfo {
   readonly manifestText: string;
   /** main.js 模块 URL(主进程 file://...,renderer dynamic import 用). */
   readonly moduleUrl: string;
-  /** styles.css 文本(可选). */
-  readonly stylesText?: string;
 }
 
 export interface ManagerHost {

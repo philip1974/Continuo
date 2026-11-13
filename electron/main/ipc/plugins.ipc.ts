@@ -1,5 +1,5 @@
 // 插件 IPC(M-Plugin v4.1,主进程端)。
-// 扫 userData/plugins/<id>/,读 manifest + main.js + styles.css 通过 IPC 给 renderer。
+// 扫 userData/plugins/<id>/,读 manifest + main.js 通过 IPC 给 renderer。
 
 import { app } from 'electron';
 import {

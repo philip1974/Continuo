@@ -297,7 +297,6 @@ export const ko: Record<TranslationKey, string> = {
   'statusbar.sidebar_hidden': '사이드바 숨김',
   'statusbar.untitled_file': '제목 없음',
   'statusbar.unsaved_changes': '저장되지 않은 변경 사항',
-  'statusbar.git_branch_placeholder': 'git 브랜치 (placeholder)',
   'statusbar.editor_stats': '{lines}줄 · {words}단어 · {chars}자',
 
   // errors.* topic-19

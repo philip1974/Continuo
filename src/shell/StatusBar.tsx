@@ -28,20 +28,6 @@ const EMPTY_STATUS_SPLIT = {
   left: EMPTY_STATUS_ITEMS,
   right: EMPTY_STATUS_ITEMS,
 };
-const GIT_BRANCH_ICON = (
-  <svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true">
-    <path
-      d="M5 3v10M11 3v3a2 2 0 01-2 2H5"
-      stroke="currentColor"
-      strokeWidth="1.4"
-      strokeLinecap="round"
-      fill="none"
-    />
-    <circle cx="5" cy="3" r="1.4" fill="currentColor" />
-    <circle cx="11" cy="3" r="1.4" fill="currentColor" />
-    <circle cx="5" cy="13" r="1.4" fill="currentColor" />
-  </svg>
-);
 
 // 一次订阅取全量(已按 priority 排序),再分侧(打磨 R6)。原先 left/right 各
 // useRegistry 一次 = 两个订阅回调 + 两次 getBySide(Array.from+filter+sort)。
@@ -254,18 +240,9 @@ export function StatusBar() {
     <footer className="flex h-6 shrink-0 items-center justify-between border-t border-line bg-panel px-3 text-2xs text-fg-dim select-none">
       <div className="flex items-center gap-3 min-w-0">
         {root ? (
-          <>
-            <span className="truncate" title={root}>
-              {basenameForChrome(root)}
-            </span>
-            <span
-              className="flex items-center gap-1"
-              title={t('statusbar.git_branch_placeholder')}
-            >
-              {GIT_BRANCH_ICON}
-              main
-            </span>
-          </>
+          <span className="truncate" title={root}>
+            {basenameForChrome(root)}
+          </span>
         ) : (
           <span className="text-fg-dim/60">{t('statusbar.no_workspace')}</span>
         )}
@@ -344,12 +321,8 @@ export function StatusBar() {
                 chars: stats?.chars ?? 0,
               })}
             </span>
-            <span>UTF-8</span>
-            <span>LF</span>
           </>
-        ) : (
-          <span>UTF-8</span>
-        )}
+        ) : null}
       </div>
       {/* 撤销确认走 design Modal(项目约束:对话框不用原生确认框)。 */}
       <ConfirmDialog

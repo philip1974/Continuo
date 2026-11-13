@@ -60,6 +60,8 @@
 
 ### Hotkey ⌘P / Ctrl+P
 
+- mac 只认 ⌘P(Ctrl+P 留给终端的 Control 序列);其它平台只认 Ctrl+P
+
 - 已 open 再按 → close(toggle)
 - 不 open → open + 触发 walk(异步,先显空列表 + loading=true,完了
   setResults + loading=false)

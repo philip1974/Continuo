@@ -45,7 +45,6 @@ import {
   type IpcWindowCreateInput,
   type IpcWindowCreateResult,
 } from '../shared/window-channels';
-import { NOTIFY_CHANNELS } from '../shared/notify-channels';
 import {
   MARKETPLACE_CHANNELS,
   type FetchReviewsResult,
@@ -63,7 +62,6 @@ import {
   type DebugViewEvent,
 } from '../shared/debug-view-channels';
 import type { Locale } from '../shared/i18n-types';
-import type { NotifyPushPayload } from '../shared/notify-channels';
 import { pluginDataRaw } from './plugin-data.preload';
 import { pluginFsRaw } from './plugin-fs.preload';
 import { pluginShellStreamRaw } from './plugin-shell-stream.preload';
@@ -388,17 +386,6 @@ const api = {
     /** 撤销 session 授权 + 终止全部 agent terminal(状态栏按钮触发). */
     revoke: (): Promise<IpcResult<{ killed: number; rotated: boolean }>> =>
       ipcRenderer.invoke(AGENT_AUTH_CHANNELS.REVOKE, {}),
-  },
-  notify: {
-    /**
-     * 订阅主进程 push 通知;返回 unsubscribe 函数。
-     * 调用方:NotifyIpcBridge(src/notifications/NotifyIpcBridge.tsx,Op11 创建)。
-     */
-    onPush(listener: (payload: NotifyPushPayload) => void): () => void {
-      const wrapped = (_evt: unknown, payload: NotifyPushPayload) =>
-        listener(payload);
-      return subscribeIpc(NOTIFY_CHANNELS.PUSH, wrapped);
-    },
   },
   debug: {
     subscribe: (): Promise<IpcResult<unknown>> =>

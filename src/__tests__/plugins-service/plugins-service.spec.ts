@@ -73,10 +73,11 @@ describe('listPluginDirs', () => {
     expect(r[0]!.id).toBe('com.foo');
     expect(r[0]!.manifestText).toContain('"id":"com.foo"');
     expect(r[0]!.mainText).toBe('/* main */');
-    expect(r[0]!.stylesText).toBeUndefined();
+    expect('stylesText' in r[0]!).toBe(false);
   });
 
-  it('含 styles.css → stylesText 透传', async () => {
+  // styles.css 不读取、不跨 IPC 传输(renderer 从未注入过它;此前读了 4MiB 以内的样式却无人消费)。
+  it('目录里有 styles.css → 不出现在结果里,插件照常收', async () => {
     makeDir(
       'com.bar',
       { id: 'com.bar', name: 'Bar', version: '0.1.0' },
@@ -84,10 +85,11 @@ describe('listPluginDirs', () => {
       '.foo{}',
     );
     const r = await listPluginDirs(tmp);
-    expect(r[0]!.stylesText).toBe('.foo{}');
+    expect(r).toHaveLength(1);
+    expect('stylesText' in r[0]!).toBe(false);
   });
 
-  // 边界(E24):manifest/main/styles 超大小上限 → 跳过(不整文件读入 + IPC 传输)。用稀疏 truncate
+  // 边界(E24):manifest/main 超大小上限 → 跳过(不整文件读入 + IPC 传输)。用稀疏 truncate
   // 扩展(不写实际数据);stat.size 在 readFile 之前拦截。
   it('E24 manifest 超 1MiB → 跳过整插件', async () => {
     makeDir('p.bigman', { id: 'p.bigman', name: 'X', version: '0.1.0' });
@@ -99,19 +101,6 @@ describe('listPluginDirs', () => {
     makeDir('p.bigmain', { id: 'p.bigmain', name: 'X', version: '0.1.0' });
     await fsp.truncate(join(tmp, 'p.bigmain', 'main.js'), 8 * 1024 * 1024 + 1);
     expect(await listPluginDirs(tmp)).toEqual([]);
-  });
-
-  it('E24 styles 超 4MiB → 当无样式,插件仍收', async () => {
-    makeDir(
-      'p.bigsty',
-      { id: 'p.bigsty', name: 'X', version: '0.1.0' },
-      '/* main */',
-      'body{}',
-    );
-    await fsp.truncate(join(tmp, 'p.bigsty', 'styles.css'), 4 * 1024 * 1024 + 1);
-    const r = await listPluginDirs(tmp);
-    expect(r).toHaveLength(1);
-    expect(r[0]!.stylesText).toBeUndefined();
   });
 
   it('缺 manifest.json → 跳过', async () => {

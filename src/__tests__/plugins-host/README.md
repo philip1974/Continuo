@@ -18,7 +18,7 @@ dynamic import。IPC 失败统一 console.warn fallback 空数组 / 空 set,**�
 - 调 coApi.plugins.listDirs
 - ok=false → console.warn + 返 []
 - ok=true → 把每条 IpcPluginDir 的 mainText 包成 Blob → URL.createObjectURL,
-  manifestText / stylesText 透传
+  manifestText 透传
 
 ### readEnabledIds
 

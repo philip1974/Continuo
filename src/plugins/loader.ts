@@ -1,8 +1,8 @@
-// ESM 动态加载 + styles.css 注入(M-Plugin v1.3)。
+// ESM 动态加载(M-Plugin v1.3)。
 // 不直接 import 而是接受 importer 注入,方便测试 + 主进程 / renderer 异路径。
 
 import { Plugin } from './Plugin';
-import type { CoPluginApp, Disposable, PluginManifest } from './types';
+import type { CoPluginApp, PluginManifest } from './types';
 import { errorMessage } from '../../electron/shared/error-message';
 
 // 可维护性 M3:动态 import 的 default export 是 Plugin **子类**(可实例化),但
@@ -13,38 +13,6 @@ export type PluginConstructor = new (
   app: CoPluginApp,
   manifest: PluginManifest,
 ) => Plugin;
-
-// ── styles 注入 ────────────────────────────────────────
-
-/**
- * 把插件的 styles.css 文本注入到 <head>,返回 Disposable。
- * 同 scopeId 重复注入会替换旧的(不累积)。
- */
-export function injectStyles(css: string, scopeId: string): Disposable {
-  if (typeof document === 'undefined') {
-    return { dispose: () => {} };
-  }
-  // 同 scopeId 旧 style 先删(plugin id schema 限制 [a-z0-9._-],
-  // 不需要 CSS.escape;直接拼即可,jsdom 也不带 CSS.escape)
-  const existing = document.head.querySelector(
-    `style[data-plugin-id="${scopeId}"]`,
-  );
-  if (existing) existing.remove();
-
-  const style = document.createElement('style');
-  style.setAttribute('data-plugin-id', scopeId);
-  style.textContent = css;
-  document.head.appendChild(style);
-
-  let disposed = false;
-  return {
-    dispose: () => {
-      if (disposed) return;
-      disposed = true;
-      style.remove();
-    },
-  };
-}
 
 // ── module 加载 ────────────────────────────────────────
 

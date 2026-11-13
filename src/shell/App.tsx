@@ -34,7 +34,6 @@ import {
 } from '@/stores/workspace.store';
 import { notifyRootWhenHydrated } from './notify-root-when-hydrated';
 import { NotificationsProvider } from '@/notifications/NotificationsProvider';
-import { NotifyIpcBridge } from '@/notifications/NotifyIpcBridge';
 import { ToastViewport } from '@/notifications/ToastViewport';
 import { LanguageFromSettings } from '@/plugins/settings/LanguageFromSettings';
 import { notifyFailure, notifyThrownError } from '@/notifications/notify-thrown-error';
@@ -179,7 +178,6 @@ export function App() {
       <ThemeBinder />
       <LanguageFromSettings />
       <NotificationsProvider>
-        <NotifyIpcBridge />
         <ToastViewport />
         <MotionConfig reducedMotion="user">
           {isPopoutWindow() ? <PopoutHost /> : <MainApp />}

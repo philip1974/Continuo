@@ -11,14 +11,12 @@ interface RawPluginDirInfo {
   readonly id: string;
   readonly manifestText: string;
   readonly mainText: string;
-  readonly stylesText?: string;
 }
 
 type PluginDirInfo = {
   readonly id: string;
   readonly manifestText: string;
   readonly moduleUrl: string;
-  readonly stylesText?: string;
 };
 
 const EMPTY_PLUGIN_DIR_INFOS: PluginDirInfo[] = [];
@@ -37,7 +35,6 @@ export function buildPluginDirInfos(
       id: dir.id,
       manifestText: dir.manifestText,
       moduleUrl: URL.createObjectURL(blob),
-      stylesText: dir.stylesText,
     };
   }
   return out;

@@ -297,7 +297,6 @@ export const zh: Record<TranslationKey, string> = {
   'statusbar.sidebar_hidden': '侧栏已隐藏',
   'statusbar.untitled_file': '未命名',
   'statusbar.unsaved_changes': '未保存的更改',
-  'statusbar.git_branch_placeholder': 'git 分支（占位）',
   'statusbar.editor_stats': '{lines} 行 · {words} 词 · {chars} 字符',
 
   // errors.* topic-19

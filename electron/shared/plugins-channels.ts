@@ -71,8 +71,6 @@ export interface IpcPluginDir {
   readonly manifestText: string;
   /** main.js 入口文本(renderer Blob URL + dynamic import). */
   readonly mainText: string;
-  /** styles.css 文本(可选). */
-  readonly stylesText?: string;
 }
 
 /** v4.2 权限决策存储的磁盘格式. */

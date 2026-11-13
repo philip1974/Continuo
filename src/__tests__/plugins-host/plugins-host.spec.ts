@@ -51,7 +51,6 @@ describe('createWindowApiHost.listPluginDirs', () => {
         id: 'p1',
         manifestText: '{"id":"p1"}',
         mainText: 'export default {}',
-        stylesText: '.a{}',
       },
     ];
     const mapSpy = vi.spyOn(dirs, 'map');
@@ -62,7 +61,6 @@ describe('createWindowApiHost.listPluginDirs', () => {
           id: 'p1',
           manifestText: '{"id":"p1"}',
           moduleUrl: 'blob:mock-url',
-          stylesText: '.a{}',
         },
       ]);
       expect(mapSpy).not.toHaveBeenCalled();
@@ -86,7 +84,6 @@ describe('createWindowApiHost.listPluginDirs', () => {
             id: 'p1',
             manifestText: '{"id":"p1"}',
             mainText: 'export default {}',
-            stylesText: '.a{}',
           },
         ],
       }),
@@ -99,7 +96,6 @@ describe('createWindowApiHost.listPluginDirs', () => {
     expect(dirs[0]).toMatchObject({
       id: 'p1',
       manifestText: '{"id":"p1"}',
-      stylesText: '.a{}',
       moduleUrl: 'blob:mock-url',
     });
     expect(createObjectURL).toHaveBeenCalledTimes(1);

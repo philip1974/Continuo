@@ -511,7 +511,6 @@
 - [`explorer.spec.ts`](./explorer-stores/explorer.spec.ts)
 - [`persistence-layer.spec.ts`](./explorer-stores/persistence-layer.spec.ts)
 - [`persistence-schema.spec.ts`](./explorer-stores/persistence-schema.spec.ts)
-- [`pinned.spec.ts`](./explorer-stores/pinned.spec.ts)
 - [`workspace.spec.ts`](./explorer-stores/workspace.spec.ts)
 
 ## [explorer-toggle-sidebar(VSCode ⌘B 同款)](./explorer-toggle-sidebar/README.md)
@@ -788,7 +787,7 @@
 
 - [`frame-trust-gate.spec.ts`](./plugin-ipc-frame-trust/frame-trust-gate.spec.ts)
 
-## [plugin-loader(ESM 动态加载 + styles 注入)](./plugin-loader/README.md)
+## [plugin-loader(ESM 动态加载)](./plugin-loader/README.md)
 
 - [`plugin-loader.spec.ts`](./plugin-loader/plugin-loader.spec.ts)
 
@@ -1145,8 +1144,6 @@
 - [`alert-elimination.spec.ts`](./unified-toast-notification/alert-elimination.spec.ts)
 - [`error-codes-enum.spec.ts`](./unified-toast-notification/error-codes-enum.spec.ts)
 - [`notifications-provider.spec.tsx`](./unified-toast-notification/notifications-provider.spec.tsx)
-- [`notify-ipc-bridge.spec.tsx`](./unified-toast-notification/notify-ipc-bridge.spec.tsx)
-- [`notify-main-broadcast.spec.ts`](./unified-toast-notification/notify-main-broadcast.spec.ts)
 - [`notify-public-api.spec.tsx`](./unified-toast-notification/notify-public-api.spec.tsx)
 - [`toast-component-tokens.spec.ts`](./unified-toast-notification/toast-component-tokens.spec.ts)
 - [`toast-dom-render.spec.tsx`](./unified-toast-notification/toast-dom-render.spec.tsx)
