@@ -47,23 +47,15 @@ import {
   NETWORK_HEADER_VALUE_MAX,
 } from '../../electron/shared/network-limits';
 import {
-  SHELL_PATH_MAX,
-  SHELL_ARG_MAX_LEN,
-  SHELL_ARGS_MAX_COUNT,
   SHELL_ENV_KEY_MAX,
   SHELL_ENV_VAL_MAX,
   SHELL_ENV_MAX_ENTRIES,
   SHELL_STDIN_MAX,
+  shellCommandShapeError,
 } from '../../electron/shared/shell-limits';
 
-export function areValidShellArgs(args: readonly unknown[]): boolean {
-  for (const arg of args) {
-    if (typeof arg !== 'string' || arg.length > SHELL_ARG_MAX_LEN) {
-      return false;
-    }
-  }
-  return true;
-}
+// 既有入口保留(实现在 shared/shell-limits,与 main plugin-shell-stream 同源)。
+export { areValidShellArgs } from '../../electron/shared/shell-limits';
 
 const EMPTY_SHELL_ARGS: readonly string[] = [];
 
@@ -86,19 +78,9 @@ function validateShellInput(
   const bad = (msg: string): never => {
     throw Object.assign(new Error(`[shell] ${msg}`), { code: 'BAD_INPUT' });
   };
-  if (typeof cmd !== 'string' || cmd.length === 0 || cmd.length > SHELL_PATH_MAX)
-    bad(`invalid cmd (empty or > ${SHELL_PATH_MAX})`);
-  // 关键:先确认是数组再(由调用方)spread —— 非数组 iterable 的 [...x] 可能无限/超大展开。
-  if (!Array.isArray(args) || args.length > SHELL_ARGS_MAX_COUNT)
-    bad(`invalid args (not array or count > ${SHELL_ARGS_MAX_COUNT})`);
-  const shellArgs = args as readonly unknown[];
-  if (!areValidShellArgs(shellArgs))
-    bad(`invalid arg entry (non-string or > ${SHELL_ARG_MAX_LEN})`);
-  if (
-    opts?.cwd !== undefined &&
-    (typeof opts.cwd !== 'string' || opts.cwd.length > SHELL_PATH_MAX)
-  )
-    bad(`invalid cwd (> ${SHELL_PATH_MAX})`);
+  // cmd / args / cwd 三段与 main 入口共用 shellCommandShapeError(先确认 args 是数组再由调用方 spread)。
+  const shapeError = shellCommandShapeError(cmd, args, opts?.cwd);
+  if (shapeError !== null) bad(shapeError);
   if (
     opts?.input !== undefined &&
     // 边界(E129,E125 同族):stdin 按真实 UTF-8 字节(非 .length=UTF-16 code unit),与主 shell 入口同款。

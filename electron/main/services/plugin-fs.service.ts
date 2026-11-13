@@ -204,7 +204,7 @@ export function registerPluginFsHandlers(
   const { identityRegistry, pathScopeRegistry, correlator } = deps;
 
   ipcMain.handle(
-    'plugin-fs:_register-plugin',
+    PLUGIN_FS_CHANNELS.REGISTER_PLUGIN,
     async (event, pluginId: unknown) => {
       // 边界(E97):pluginId 来自 renderer,裸 register 绕过 manifest id 正则 + E86/E87 持久化
       // canonicalize 前门。超长/非法 id 会经 request-scope/persist/broadcast 携带 → 主进程 Map
@@ -221,7 +221,7 @@ export function registerPluginFsHandlers(
     },
   );
 
-  ipcMain.handle('plugin-fs:_unregister-plugin', async (_event, token: string) => {
+  ipcMain.handle(PLUGIN_FS_CHANNELS.UNREGISTER_PLUGIN, async (_event, token: string) => {
     // 撤 path-scope 必须在 revoke 之前 lookup(revoke 进 drain 但 lookup 仍能查到;
     // 这里先取 pluginId/generation 再撤,语义更清晰)。与 identity token 撤销对称:
     // 否则插件卸载/禁用后授予的 scope 永久驻留,同 id 重装直接继承(审计 #2)。
@@ -239,7 +239,7 @@ export function registerPluginFsHandlers(
   });
 
   ipcMain.handle(
-    'plugin-fs:read-file',
+    PLUGIN_FS_CHANNELS.READ_FILE,
     async (event, token: string, target: string) => {
       const r = await pathScopeRegistry.check(
         token,
@@ -257,7 +257,7 @@ export function registerPluginFsHandlers(
   );
 
   ipcMain.handle(
-    'plugin-fs:write-file',
+    PLUGIN_FS_CHANNELS.WRITE_FILE,
     async (event, token: string, target: string, content: string) => {
       const r = await pathScopeRegistry.check(
         token,
@@ -287,7 +287,7 @@ export function registerPluginFsHandlers(
     },
   );
 
-  ipcMain.handle('plugin-fs:list-dir', async (event, token: string, target: string) => {
+  ipcMain.handle(PLUGIN_FS_CHANNELS.LIST_DIR, async (event, token: string, target: string) => {
     const r = await pathScopeRegistry.check(
       token,
       event.sender.id,
@@ -325,7 +325,7 @@ export function registerPluginFsHandlers(
     return out;
   });
 
-  ipcMain.handle('plugin-fs:stat', async (event, token: string, target: string) => {
+  ipcMain.handle(PLUGIN_FS_CHANNELS.STAT, async (event, token: string, target: string) => {
     const r = await pathScopeRegistry.check(
       token,
       event.sender.id,
@@ -336,7 +336,7 @@ export function registerPluginFsHandlers(
     return statPayload(await fs.stat(canonicalPath(r)));
   });
 
-  ipcMain.handle('plugin-fs:lstat', async (event, token: string, target: string) => {
+  ipcMain.handle(PLUGIN_FS_CHANNELS.LSTAT, async (event, token: string, target: string) => {
     const r = await pathScopeRegistry.check(
       token,
       event.sender.id,
@@ -348,7 +348,7 @@ export function registerPluginFsHandlers(
   });
 
   ipcMain.handle(
-    'plugin-fs:realpath',
+    PLUGIN_FS_CHANNELS.REALPATH,
     async (event, token: string, target: string) => {
       const r = await pathScopeRegistry.check(
         token,
@@ -362,7 +362,7 @@ export function registerPluginFsHandlers(
   );
 
   ipcMain.handle(
-    'plugin-fs:mkdir',
+    PLUGIN_FS_CHANNELS.MKDIR,
     async (
       event,
       token: string,
@@ -382,7 +382,7 @@ export function registerPluginFsHandlers(
   );
 
   ipcMain.handle(
-    'plugin-fs:rename',
+    PLUGIN_FS_CHANNELS.RENAME,
     async (event, token: string, src: string, dst: string) => {
       // 'rename-src' 走不跟随 leaf 解析:移动的是链接本身而非 realpath 跟随后的目标。
       const rSrc = await pathScopeRegistry.check(
@@ -442,7 +442,7 @@ export function registerPluginFsHandlers(
   );
 
   ipcMain.handle(
-    'plugin-fs:rm',
+    PLUGIN_FS_CHANNELS.RM,
     async (
       event,
       token: string,
@@ -465,7 +465,7 @@ export function registerPluginFsHandlers(
   );
 
   ipcMain.handle(
-    'plugin-fs:cp',
+    PLUGIN_FS_CHANNELS.CP,
     async (
       event,
       token: string,
@@ -529,7 +529,7 @@ export function registerPluginFsHandlers(
   );
 
   ipcMain.handle(
-    'plugin-fs:read-git-blob',
+    PLUGIN_FS_CHANNELS.READ_GIT_BLOB,
     async (event, token: string, repoDir: string, sha: string) => {
       // 边界(E63):sha 进 git cat-file argv 前先校验固定 hex 形态 + 长度(挡超长 sha 触发 spawn
       // E2BIG / argv 内存放大;非 hex 也直接拒,绝不进 spawn)。
@@ -566,7 +566,7 @@ export function registerPluginFsHandlers(
   );
 
   ipcMain.handle(
-    'plugin-fs:atomic-replace',
+    PLUGIN_FS_CHANNELS.ATOMIC_REPLACE,
     async (
       event,
       token: string,
@@ -607,7 +607,7 @@ export function registerPluginFsHandlers(
   });
 
   ipcMain.handle(
-    'plugin-fs:request-scope',
+    PLUGIN_FS_CHANNELS.REQUEST_SCOPE,
     async (event, token: string, scopes: readonly PathScope[]) => {
       const { pluginId } = identityRegistry.resolve(token, event.sender.id);
 
@@ -663,7 +663,7 @@ export function registerPluginFsHandlers(
       // try/catch:失败时立即 cancelBySender 清掉本 sender 的 pending(sender 已死),按终态 deny
       // 收口。promise.catch 吞掉 cancel 触发的 reject,避免 unhandled rejection(此处不再 await 它)。
       try {
-        event.sender.send('plugin-fs:scope-request', {
+        event.sender.send(PLUGIN_FS_CHANNELS.SCOPE_REQUEST, {
           requestId,
           pluginId,
           scopes,
@@ -711,7 +711,7 @@ export function registerPluginFsHandlers(
   );
 
   ipcMain.handle(
-    'plugin-fs:scope-decision',
+    PLUGIN_FS_CHANNELS.SCOPE_DECISION,
     async (event, requestId: unknown, decision: unknown): Promise<void> => {
       // 边界(E96):requestId/decision 来自 renderer,裸 handle 无 schema 校验。超长 requestId 会被
       // 塞进 ScopeRequestTimeoutError 经 IPC reject/log/toast 链路放大;非法 decision 命中 pending

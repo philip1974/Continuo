@@ -13,6 +13,7 @@ import { assertJsonValue } from '../../shared/assert-json-value';
 import { utf8ByteLength } from '../../shared/utf8-byte-length';
 import { jsonByteLowerBoundExceeds } from '../../shared/json-byte-budget';
 import { isValidPluginId } from '../../shared/plugin-id';
+import { PLUGIN_DATA_CHANNELS } from '../../shared/plugin-data-channels';
 
 const LOCK_OPTS: lockfile.LockOptions = {
   // Op12.5 spike not executed in this batch; using library defaults/recommendation.
@@ -62,7 +63,7 @@ export function registerPluginDataStoreHandlers(
     return dir;
   }
 
-  ipcMain.handle('plugin-data:load', async (_event, pluginId: string) => {
+  ipcMain.handle(PLUGIN_DATA_CHANNELS.LOAD, async (_event, pluginId: string) => {
     const file = dataFile(pluginId);
     // 边界(E20;E161 stat-before-read TOCTOU 修正):此前 `fs.stat` 判大小 + `fs.readFile` 整文件两次
     // 独立路径解析,stat 与 read 之间文件可被替换/增长绕过 MAX_PLUGIN_DATA_BYTES。改用共享
@@ -105,7 +106,7 @@ export function registerPluginDataStoreHandlers(
   });
 
   ipcMain.handle(
-    'plugin-data:save',
+    PLUGIN_DATA_CHANNELS.SAVE,
     async (_event, pluginId: string, data: Record<string, unknown>) => {
       // 边界(E147):data.json 契约是 plain object({value:...} 包装)。绕过 renderer 的 raw IPC 可传
       // 数组/原语(string/number/boolean)→ 写出畸形 data.json,致 load 端 hasOwnProperty 抛/假丢失。
@@ -191,7 +192,7 @@ export function registerPluginDataStoreHandlers(
     },
   );
 
-  ipcMain.handle('plugin-data:clear', async (_event, pluginId: string) => {
+  ipcMain.handle(PLUGIN_DATA_CHANNELS.CLEAR, async (_event, pluginId: string) => {
     // force:true 已容忍「文件不存在」(ENOENT,已清空视为成功);但**不**吞 EACCES/EBUSY/
     // IO 等真删除失败 —— 旧实现 try/catch 吞掉所有 rm 错误,删除失败仍报成功,调用方以为
     // 数据已清除、重启/下次读取却恢复旧数据(codex 数据安全复查)。真错误传播给调用方。

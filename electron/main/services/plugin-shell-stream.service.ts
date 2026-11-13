@@ -9,11 +9,7 @@ import { ERROR_CODES } from '../../shared/error-codes';
 // 上限(只 E10 修了 timeoutMs)。同仓 shell.exec(E12)已有 PATH/ARG 上限,但流式 spawn 入口漏了。
 // 畸形插件可经 app.shell.execStream() 传巨量 args/超长 cwd/cmd → IPC structured clone + 主进程内存/CPU
 // 放大,或触发 spawn 的 E2BIG/路径异常。与 shell.exec 对齐(E46:shared 单一来源),spawn 前 fail-closed。
-import {
-  SHELL_PATH_MAX as PATH_MAX,
-  SHELL_ARG_MAX_LEN as ARG_MAX_LEN,
-  SHELL_ARGS_MAX_COUNT as ARGS_MAX_COUNT,
-} from '../../shared/shell-limits';
+import { shellCommandShapeError } from '../../shared/shell-limits';
 
 const DEFAULT_TIMEOUT_MS = 5 * 60_000;
 const MAX_TIMEOUT_MS = 30 * 60_000;
@@ -27,16 +23,8 @@ const STREAM_ID_MAX = 256;
 const MAX_ACTIVE_STREAMS_GLOBAL = 128; // 全局并发流上限(远超任何正常插件并发)
 const MAX_ACTIVE_STREAMS_PER_SENDER = 32; // 单 webContents 并发流上限
 
-export function areValidPluginShellStreamArgs(
-  args: readonly unknown[],
-): boolean {
-  for (const arg of args) {
-    if (typeof arg !== 'string' || arg.length > ARG_MAX_LEN) {
-      return false;
-    }
-  }
-  return true;
-}
+// 既有入口保留(实现在 shared/shell-limits,与 renderer scoped-app 预检同源)。
+export { areValidShellArgs as areValidPluginShellStreamArgs } from '../../shared/shell-limits';
 
 interface ActiveStream {
   child: ChildProcessByStdio<null, Readable, Readable>;
@@ -138,21 +126,8 @@ export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
       ) {
         badInput(`invalid streamId (empty or > ${STREAM_ID_MAX})`);
       }
-      if (typeof cmd !== 'string' || cmd.length === 0 || cmd.length > PATH_MAX) {
-        badInput(`invalid cmd (empty or > ${PATH_MAX})`);
-      }
-      if (!Array.isArray(args) || args.length > ARGS_MAX_COUNT) {
-        badInput(`invalid args (not array or count > ${ARGS_MAX_COUNT})`);
-      }
-      if (!areValidPluginShellStreamArgs(args)) {
-        badInput(`invalid arg entry (non-string or > ${ARG_MAX_LEN})`);
-      }
-      if (
-        opts?.cwd !== undefined &&
-        (typeof opts.cwd !== 'string' || opts.cwd.length > PATH_MAX)
-      ) {
-        badInput(`invalid cwd (> ${PATH_MAX})`);
-      }
+      const shapeError = shellCommandShapeError(cmd, args, opts?.cwd);
+      if (shapeError !== null) badInput(shapeError);
 
       // 边界(E10):raw IPC 的 opts.timeoutMs 无运行时 schema。插件传 NaN/负数/0/Infinity/非数字时,
       // 旧 `Math.min(x, MAX)` 会得到 NaN 或负值,`setTimeout(.., timeoutMs)` 退化为**立即触发** →

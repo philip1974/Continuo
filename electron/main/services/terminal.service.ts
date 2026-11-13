@@ -16,6 +16,7 @@ import { withPtyLangEnv } from './pty-lang';
 import { defaultShellArgs } from './shell-args';
 import { runSerialPerKey } from './serialize-per-key';
 import { utf8ByteLength } from '../../shared/utf8-byte-length';
+import { TERMINAL_CHANNELS } from '../../shared/terminal-channels';
 
 // ── 常量(节流参数,沿用 Mind 决策 #5)──────────────────────────
 const OVERFLOW_THRESHOLD_BYTES = 2 * 1024 * 1024; // 2 MB/s 触发 overflow
@@ -32,7 +33,7 @@ function handleChunk(id: string, chunk: string): void {
 
   const flush = () => {
     if (inst.pendingData) {
-      safeSend(id, 'terminal:data', id, inst.pendingData);
+      safeSend(id, TERMINAL_CHANNELS.DATA, id, inst.pendingData);
       inst.pendingData = '';
     }
     inst.flushTimer = null;
@@ -50,7 +51,7 @@ function handleChunk(id: string, chunk: string): void {
     );
     if (!inst.overflowNotified) {
       inst.overflowNotified = true;
-      safeSend(id, 'terminal:overflow', id);
+      safeSend(id, TERMINAL_CHANNELS.OVERFLOW, id);
     }
     if (!inst.flushTimer) {
       inst.flushTimer = setTimeout(flush, FLUSH_DELAY_OVERFLOW_MS);
@@ -60,7 +61,7 @@ function handleChunk(id: string, chunk: string): void {
 
   if (inst.overflowNotified) {
     inst.overflowNotified = false;
-    safeSend(id, 'terminal:overflow-recovered', id);
+    safeSend(id, TERMINAL_CHANNELS.OVERFLOW_RECOVERED, id);
   }
   inst.pendingData += chunk;
 
@@ -217,13 +218,13 @@ function cleanupSessionLocal(id: string, exitCode: number): void {
   // banner) would otherwise be silently dropped. Emit it first so the renderer
   // sees data → exit in order. (审计 #1)
   if (instance.pendingData) {
-    safeSend(id, 'terminal:data', id, instance.pendingData);
+    safeSend(id, TERMINAL_CHANNELS.DATA, id, instance.pendingData);
     instance.pendingData = '';
   }
 
   // 2. Push terminal:exit (only if target still alive — variadic baseline payload)
   // Baseline shape: webContents.send('terminal:exit', id, { exitCode, signal })
-  safeSend(id, 'terminal:exit', id, { exitCode, signal: undefined });
+  safeSend(id, TERMINAL_CHANNELS.EXIT, id, { exitCode, signal: undefined });
 
   // 3. Clear all timers (Adjustment A: throttleInterval was setInterval per Op0 baseline)
   if (instance.killTimer) {
@@ -477,7 +478,7 @@ export async function createTerminal(
     // (handleChunk 收到低于阈值的 chunk 时已会清 overflowNotified,故无重复发送。)
     if (inst.overflowNotified && inst.bytesPerSecond <= OVERFLOW_THRESHOLD_BYTES) {
       inst.overflowNotified = false;
-      safeSend(id, 'terminal:overflow-recovered', id);
+      safeSend(id, TERMINAL_CHANNELS.OVERFLOW_RECOVERED, id);
     }
     inst.bytesPerSecond = 0;
   }, THROTTLE_RESET_INTERVAL_MS);
