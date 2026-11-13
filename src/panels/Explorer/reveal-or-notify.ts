@@ -1,8 +1,6 @@
 import { coApi } from '@/lib/co-api';
-import { notify } from '@/notifications/notify';
-import { localizeErrorByCode } from '@/lib/localize-error';
 import { errorCodeOf } from '../../../electron/shared/error-message';
-import { notifyFailure } from '@/notifications/notify-thrown-error';
+import { notifyFailure, notifyThrownError } from '@/notifications/notify-thrown-error';
 
 /**
  * a11y(A49,A47/A48 同族):在系统文件管理器(Finder/资源管理器)显示路径,失败时给可见 +
@@ -19,8 +17,7 @@ export async function revealPathOrNotify(path: string): Promise<void> {
       notifyFailure(r);
     }
   } catch (err) {
-    const code = errorCodeOf(err);
-    console.warn('[explorer] reveal rejected', code, err);
-    notify.error(localizeErrorByCode(code, (err as Error)?.message ?? code), { code });
+    console.warn('[explorer] reveal rejected', errorCodeOf(err), err);
+    notifyThrownError(err);
   }
 }

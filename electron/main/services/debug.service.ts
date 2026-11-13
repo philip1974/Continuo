@@ -226,10 +226,22 @@ function toEnvObject(
   return out;
 }
 
+/** 单断点的 DAP setBreakpoints 参数(父 session 设置与子 session 重放共用)。 */
+function setBreakpointsArgs(bp: SetBreakpointInput): DapJson {
+  return {
+    source: { path: bp.file },
+    breakpoints: [
+      {
+        line: bp.line,
+        ...(bp.column !== undefined ? { column: bp.column } : {}),
+      },
+    ],
+    sourceModified: false,
+  };
+}
+
 function getClientPid(client: DebugDapClientLike): number | undefined {
-  if (typeof client.serverPid === 'number') return client.serverPid;
-  const maybe = client as unknown as { server?: { pid?: number } };
-  return maybe.server?.pid;
+  return typeof client.serverPid === 'number' ? client.serverPid : undefined;
 }
 
 function getSocketPath(client: DebugDapClientLike): string | undefined {
@@ -505,12 +517,7 @@ export class DebugService {
       this.handleStartDebugging(id, request),
     );
 
-    const initialized = parentClient.waitForEvent(
-      'initialized',
-      this.requestTimeoutMs,
-    );
-    await parentClient.sendRequest('initialize', initializeArgs(), this.requestTimeoutMs);
-    await initialized;
+    await this.initializeClient(parentClient);
     runtime.initialized = true;
     debugSessions.update(id, { runtimeState: 'running' });
     return { session_id: id, state: 'running' };
@@ -531,16 +538,7 @@ export class DebugService {
     runtime.breakpoints.splice(0, runtime.breakpoints.length, input);
     const response = await runtime.parentClient.sendRequest(
       'setBreakpoints',
-      {
-        source: { path: input.file },
-        breakpoints: [
-          {
-            line: input.line,
-            ...(input.column !== undefined ? { column: input.column } : {}),
-          },
-        ],
-        sourceModified: false,
-      },
+      setBreakpointsArgs(input),
       this.requestTimeoutMs,
     );
     await this.ensureConfigurationDone(runtime);
@@ -632,36 +630,19 @@ export class DebugService {
     sessionId: string,
     input: { readonly threadId?: number } = {},
   ): Promise<{ continued: boolean; all_threads_continued?: boolean }> {
-    const runtime = this.requireRuntime(sessionId);
-    const threadId = await this.resolveThreadId(sessionId, input.threadId);
-    const response = await runtime.activeClient.sendRequest(
-      'continue',
-      { threadId },
-      this.requestTimeoutMs,
-    );
-    this.markContinued(sessionId, response.body);
-    const body = asRecord(response.body);
-    return {
-      // 请求成功即已恢复执行。DAP allThreadsContinued 仅表"是否所有线程都续",
-      // js-debug 常返 false(只续单线程),不应让调用方误判没 continue —— 以
-      // 后续 wait_for_stop 拿到下一停点为准。原始值仍放 all_threads_continued。
-      continued: true,
-      ...(boolField(body, 'allThreadsContinued') !== undefined
-        ? { all_threads_continued: boolField(body, 'allThreadsContinued') }
-        : {}),
-    };
+    return this.resume(sessionId, 'continue', input);
   }
 
   async stepOver(sessionId: string, input: { readonly threadId?: number } = {}) {
-    return this.step(sessionId, 'next', input);
+    return this.resume(sessionId, 'next', input);
   }
 
   async stepIn(sessionId: string, input: { readonly threadId?: number } = {}) {
-    return this.step(sessionId, 'stepIn', input);
+    return this.resume(sessionId, 'stepIn', input);
   }
 
   async stepOut(sessionId: string, input: { readonly threadId?: number } = {}) {
-    return this.step(sessionId, 'stepOut', input);
+    return this.resume(sessionId, 'stepOut', input);
   }
 
   async stackTrace(
@@ -852,11 +833,17 @@ export class DebugService {
     return this.teardownMany(debugSessions.byController(controllerToken), reason);
   }
 
-  private async step(
+  /**
+   * continue / next / stepIn / stepOut 的共同实现:解析线程 → 发 DAP 请求 → 标记已恢复执行。
+   * 请求成功即已恢复执行 —— DAP allThreadsContinued 仅表「是否所有线程都续」,js-debug 常返 false(只续
+   * 单线程),不应让调用方误判没恢复;以后续 wait_for_stop 拿到下一停点为准。原始值仍放
+   * all_threads_continued。
+   */
+  private async resume(
     sessionId: string,
-    command: 'next' | 'stepIn' | 'stepOut',
+    command: 'continue' | 'next' | 'stepIn' | 'stepOut',
     input: { readonly threadId?: number },
-  ) {
+  ): Promise<{ continued: boolean; all_threads_continued?: boolean }> {
     const runtime = this.requireRuntime(sessionId);
     const threadId = await this.resolveThreadId(sessionId, input.threadId);
     const response = await runtime.activeClient.sendRequest(
@@ -864,15 +851,19 @@ export class DebugService {
       { threadId },
       this.requestTimeoutMs,
     );
-    this.markContinued(sessionId, response.body);
-    const body = asRecord(response.body);
+    this.markContinued(sessionId);
+    const allThreadsContinued = boolField(asRecord(response.body), 'allThreadsContinued');
     return {
-      // 见 continue():请求成功即已恢复执行,不透传可能误导的 allThreadsContinued。
       continued: true,
-      ...(boolField(body, 'allThreadsContinued') !== undefined
-        ? { all_threads_continued: boolField(body, 'allThreadsContinued') }
-        : {}),
+      ...(allThreadsContinued !== undefined ? { all_threads_continued: allThreadsContinued } : {}),
     };
+  }
+
+  /** DAP initialize 握手:先挂 initialized 事件等待再发请求(事件可能先于响应到达)。 */
+  private async initializeClient(client: DebugDapClientLike): Promise<void> {
+    const initialized = client.waitForEvent('initialized', this.requestTimeoutMs);
+    await client.sendRequest('initialize', initializeArgs(), this.requestTimeoutMs);
+    await initialized;
   }
 
   private async ensureConfigurationDone(runtime: RuntimeDebugSession): Promise<void> {
@@ -928,24 +919,11 @@ export class DebugService {
     this.wireClient(sessionId, child);
     await child.connectToServer();
 
-    const initialized = child.waitForEvent('initialized', this.requestTimeoutMs);
-    await child.sendRequest('initialize', initializeArgs(), this.requestTimeoutMs);
-    await initialized;
+    await this.initializeClient(child);
     for (const breakpoint of runtime.breakpoints) {
       await child.sendRequest(
         'setBreakpoints',
-        {
-          source: { path: breakpoint.file },
-          breakpoints: [
-            {
-              line: breakpoint.line,
-              ...(breakpoint.column !== undefined
-                ? { column: breakpoint.column }
-                : {}),
-            },
-          ],
-          sourceModified: false,
-        },
+        setBreakpointsArgs(breakpoint),
         this.requestTimeoutMs,
       );
     }
@@ -970,7 +948,7 @@ export class DebugService {
       if (pid !== undefined) debugSessions.addSystemProcessId(sessionId, pid);
     });
     client.on('stopped', (event) => this.markStopped(sessionId, event.body));
-    client.on('continued', (event) => this.markContinued(sessionId, event.body));
+    client.on('continued', () => this.markContinued(sessionId));
     client.on('terminated', () =>
       this.rejectWaiters(sessionId, new Error('debug session terminated')),
     );
@@ -1028,7 +1006,7 @@ export class DebugService {
     }
   }
 
-  private markContinued(sessionId: string, _bodyJson: DapJson | undefined): void {
+  private markContinued(sessionId: string): void {
     const session = this.requireSession(sessionId);
     const runtime = this.requireRuntime(sessionId);
     if (session.runtimeState === 'running' && runtime.currentStop === undefined) {

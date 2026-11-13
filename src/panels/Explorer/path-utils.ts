@@ -26,15 +26,8 @@ export function dirname(p: string): string {
   return head || '/';
 }
 
-/**
- * 跨平台 basename:**先去尾部分隔符**再取最后一段。`/a/b/` → `b`、`/a` → `a`。
- * tree-config(root entry name)/ ExplorerHeader(面包屑)用此 trim 语义。
- */
-export function basename(p: string): string {
-  const trimmed = trimTrailingSeparators(p);
-  const idx = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
-  return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
-}
+// 跨平台 basename(先去尾部分隔符再取最后一段)的实现与 Editor 共用,在 @/lib/path-cross。
+export { basename } from '@/lib/path-cross';
 
 /**
  * 跨平台 basename 的**不 trim 尾部分隔符**变体(逐字保留 FolderTree 唯一名 picker 的

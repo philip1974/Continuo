@@ -6,7 +6,10 @@
 import { useEffect, useMemo } from 'react';
 import { useRegistry } from '../registries/useRegistry';
 import type { CommandRegistry, CommandSpec } from '../registries/CommandRegistry';
-import { useKeybindingsStore } from '../keybindings/keybindings-store';
+import {
+  resolveEffectiveHotkey,
+  useKeybindingsStore,
+} from '../keybindings/keybindings-store';
 import { tWithFallback } from '@/i18n';
 import { runContributedAction } from '@/lib/run-contributed-action';
 import { detectPlatform, type Platform } from './format-hotkey';
@@ -147,8 +150,7 @@ export function buildCompiledBindings(
   for (const cmd of commands) {
     const override = overrides[cmd.id];
     if (!cmd.hotkey && override === undefined) continue;
-    const effective =
-      override !== undefined ? (override === '' ? undefined : override) : cmd.hotkey;
+    const effective = resolveEffectiveHotkey(cmd, overrides);
     if (!effective) continue; // 无 hotkey 或显式 unbind
     out ??= new Array<CompiledBinding>(commands.length);
     out[count++] = { sig: compileCombo(effective, platform), cmd };

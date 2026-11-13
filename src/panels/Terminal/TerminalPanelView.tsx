@@ -13,6 +13,7 @@ import { registerTerminalSearch } from './terminal-search-registry';
 import { TerminalSearchBar } from './TerminalSearchBar';
 import { useT } from '@/i18n';
 import type { OriginHint } from '../../../electron/shared/origin-hint';
+import { terminalPanelTitle } from '@/shell/dock/terminal-panel-id';
 
 export interface TerminalPanelViewParams {
   sessionId: string;
@@ -51,22 +52,24 @@ export function TerminalPanelView(
     }),
   );
   const customTitle = useTerminalStore((s) => s.customTitles.get(sessionId));
-  const derivedTitle = useMemo(() => {
-    const base =
-      customTitle ??
-      sessionTitle ??
-      props.params.title ??
-      `Terminal ${(sessionId ?? '').slice(0, 6) || '?'}`;
-    const originHint = sessionOriginHint ?? props.params.originHint;
-    return originHint === 'agent' ? `${base} (agent)` : base;
-  }, [
-    customTitle,
-    props.params.originHint,
-    props.params.title,
-    sessionOriginHint,
-    sessionTitle,
-    sessionId,
-  ]);
+  const derivedTitle = useMemo(
+    () =>
+      terminalPanelTitle({
+        sessionId,
+        customTitle,
+        sessionTitle,
+        fallbackTitle: props.params.title,
+        originHint: sessionOriginHint ?? props.params.originHint,
+      }),
+    [
+      customTitle,
+      props.params.originHint,
+      props.params.title,
+      sessionOriginHint,
+      sessionTitle,
+      sessionId,
+    ],
+  );
 
   useEffect(() => {
     if (props.api.title !== derivedTitle) {
@@ -175,7 +178,7 @@ function TerminalPanelContent({
       {!isReady && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-canvas/70 backdrop-blur-[2px]">
           {/* a11y(A103,A102 同族):启动 overlay 具体文本须 role=status 播报,Spinner aria-hidden
-              抑制泛化 Loading(TerminalView 的兄弟入口,同 overlay 模式)。 */}
+              抑制泛化 Loading。 */}
           <div
             role="status"
             className="flex items-center gap-2 text-xs text-fg-dim"

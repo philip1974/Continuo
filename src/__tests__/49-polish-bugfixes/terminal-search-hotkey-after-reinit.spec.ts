@@ -39,6 +39,17 @@ vi.mock('@xterm/xterm', () => ({
   }),
 }));
 vi.mock('@xterm/addon-fit', () => ({ FitAddon: vi.fn(() => ({ fit: vi.fn() })) }));
+// 搜索 addon 桩:真实 SearchAddon 未 loadAddon 到真 Terminal 时 findNext 会抛,挡住 dispatch 路径。
+vi.mock('@xterm/addon-search', () => ({
+  SearchAddon: vi.fn(() => ({
+    findNext: vi.fn(() => false),
+    findPrevious: vi.fn(() => false),
+    clearDecorations: vi.fn(),
+    clearActiveDecoration: vi.fn(),
+    onDidChangeResults: vi.fn(() => ({ dispose: vi.fn() })),
+    dispose: vi.fn(),
+  })),
+}));
 vi.mock('@xterm/addon-web-links', () => ({ WebLinksAddon: vi.fn(() => ({ dispose: vi.fn() })) }));
 vi.mock('@xterm/addon-webgl', () => ({
   WebglAddon: vi.fn(() => ({ onContextLoss: vi.fn(), dispose: vi.fn() })),
@@ -68,8 +79,11 @@ vi.mock('@/theme', () => ({ useTheme: () => ({ resolved: 'dark' }) }));
 
 import { useTerminal } from '../../panels/Terminal/useTerminal';
 
+let latestSearchApi: ReturnType<typeof useTerminal>['searchApi'] | undefined;
+
 function Host({ termId }: { termId: string }) {
   const { containerRef, searchApi } = useTerminal(termId);
+  latestSearchApi = searchApi;
   return createElement('div', {
     ref: containerRef,
     'data-search-open': String(searchApi.isOpen),
@@ -152,5 +166,28 @@ describe('race(R84) · search hotkey 微任务用 per-init teardownDone 守卫',
 
     const div = container.querySelector('div[data-search-open]');
     expect(div?.getAttribute('data-search-open')).toBe('false');
+  });
+});
+
+// 第二轮审计:xterm 内按搜索热键的分支此前直接 setSearchState(reducer(open)),绕过 dispatchSearchAction
+// —— 不更新 searchStateRef。之后任何一次 dispatch(输入搜索词 / 改选项)都以 ref(仍是「关闭」)为基底
+// 算 next 并整体写回 state → 刚打开的搜索条被关掉。平时被 terminal.search.toggle 命令的并行路径掩盖,
+// 用户改绑该命令后暴露。热键分支必须走同一入口。
+describe('xterm 内搜索热键走 dispatchSearchAction(ref 与 state 同步)', () => {
+  it('热键打开后再输入搜索词 → 搜索条保持打开', async () => {
+    const { container } = render(createElement(Host, { termId: 'term-a' }));
+    const host = container.firstElementChild as HTMLElement;
+    expect(hoisted.keyHandler).toBeDefined();
+
+    await act(async () => {
+      hoisted.keyHandler!(searchHotkeyEvent());
+      await Promise.resolve();
+    });
+    expect(host.getAttribute('data-search-open')).toBe('true');
+
+    await act(async () => {
+      latestSearchApi!.setTerm('needle');
+    });
+    expect(host.getAttribute('data-search-open')).toBe('true');
   });
 });

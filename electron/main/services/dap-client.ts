@@ -124,9 +124,6 @@ export class DapStreamDecoder {
   }
 }
 
-export const encodeMessage = encodeDapMessage;
-export const StreamDecoder = DapStreamDecoder;
-
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
@@ -526,8 +523,9 @@ export class DapClient {
     }
   }
 
-  async kill(): Promise<void> {
-    await this.dispose();
+  /** debug adapter 子进程 pid(未 spawn / child session → undefined)。 */
+  get serverPid(): number | undefined {
+    return this.server?.pid;
   }
 
   private async killServer(): Promise<void> {

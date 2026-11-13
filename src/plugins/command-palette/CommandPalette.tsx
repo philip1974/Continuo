@@ -17,7 +17,10 @@ import { useCommandPaletteStore } from './store';
 import { fuzzyFilter } from './fuzzy';
 import { useRecentCommandsStore, type RecentEntry } from './recent';
 import { formatHotkeyParts, detectPlatform, type Platform } from './format-hotkey';
-import { useKeybindingsStore } from '../keybindings/keybindings-store';
+import {
+  resolveEffectiveHotkey,
+  useKeybindingsStore,
+} from '../keybindings/keybindings-store';
 import { useTWithFallback, useT, useLocale } from '@/i18n';
 import { runContributedAction } from '@/lib/run-contributed-action';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
@@ -72,9 +75,7 @@ export function buildDisplayCommands(
   const out = new Array<DisplayCommand>(allCommands.length);
   for (let i = 0; i < allCommands.length; i++) {
     const cmd = allCommands[i]!;
-    const override = overrides[cmd.id];
-    const effective =
-      override !== undefined ? (override === '' ? undefined : override) : cmd.hotkey;
+    const effective = resolveEffectiveHotkey(cmd, overrides);
     const displayTitle = tk(cmd.titleKey, cmd.title);
     const displayCategory = tk(cmd.categoryKey, cmd.category ?? '');
     const source = displayCategory ? `${displayCategory} ${displayTitle}` : displayTitle;

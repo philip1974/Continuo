@@ -223,6 +223,8 @@ export function useTerminal(termId: string) {
   // sync ref INSIDE the setSearchState updater rather than via
   // useEffect — eliminates same-tick stale-ref window when two
   // dispatches fire before React commits.
+  // xterm key handler(在下方 init effect 内注册)调用搜索入口用;入口本身在更后面声明。
+  const dispatchSearchActionRef = useRef<((action: TerminalSearchAction) => void) | null>(null);
   const searchStateRef = useRef<TerminalSearchState>(
     INITIAL_TERMINAL_SEARCH_STATE,
   );
@@ -339,11 +341,10 @@ export function useTerminal(termId: string) {
           // 后才跑;mountedRef 此刻已被新 mount 置回 true → 旧微任务误把搜索框打开到新实例。
           // teardownDone 是 per-term 的(旧 term cleanup 时置位),旧微任务据此直接丢弃。与本文件
           // 其它异步回调(readHistory/safeWrite/resize)一致。
-          if (!teardownDone) {
-            setSearchState((state) =>
-              terminalSearchReducer(state, { type: 'open' }),
-            );
-          }
+          // 必须走 dispatchSearchAction(唯一入口:同步更新 searchStateRef + state)。此前这里直接
+          // setSearchState(reducer(open)),ref 仍停在「关闭」→ 下一次 dispatch 以 ref 为基底把刚打开的
+          // 搜索条关掉。经 ref 取最新回调:本 effect 先于 dispatchSearchAction 声明。
+          if (!teardownDone) dispatchSearchActionRef.current?.({ type: 'open' });
         });
         return false;
       }
@@ -599,6 +600,7 @@ export function useTerminal(termId: string) {
     searchStateRef.current = next;
     setSearchState(next);
   }, []);
+  dispatchSearchActionRef.current = dispatchSearchAction;
 
   const openSearch = useCallback(() => {
     dispatchSearchAction({ type: 'open' });

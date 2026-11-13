@@ -3,8 +3,6 @@
 
 import { Plugin } from '@/plugins/Plugin';
 import { coApi } from '@/lib/co-api';
-import { notify } from '@/notifications/notify';
-import { localizeErrorByCode } from '@/lib/localize-error';
 import {
   trySelectDirectoryLock,
   releaseSelectDirectoryLock,
@@ -58,9 +56,7 @@ export default class WindowPlugin extends Plugin {
               cr.code,
               cr.message,
             );
-            notify.error(localizeErrorByCode(cr.code, cr.message), {
-              code: cr.code,
-            });
+            notifyFailure(cr);
           }
         } finally {
           releaseSelectDirectoryLock();

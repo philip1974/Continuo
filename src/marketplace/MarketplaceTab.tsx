@@ -210,69 +210,44 @@ export function MarketplaceTab() {
     };
   }, []);
 
-  // useCallback 稳定 handler ref,让 MarketplaceCard memo 不被 inline arrow 撑破。
-  // setInstall 函数式更新,不依赖外部 state → deps 仅 store action。
-  const onInstall = useCallback(async (entry: MarketplaceEntry) => {
-    // race(R8):同步单飞 —— 同 tick 双击在 busy state 生效前直接挡掉重入。
-    if (installBusyRef.current) return;
-    installBusyRef.current = true;
-    setInstall((prev) => ({ ...prev, busy: entry.id }));
-    let msg: string;
-    let success = false;
-    try {
-      const r = await coApi.plugins.installFromGit(entryToGitUrl(entry));
-      success = r.ok;
-      // i18n(codex 复查 P1,I1 同族兄弟):installFromGit 各错误站点 Error.message 是硬编码
-      // 中文,直接展示会让 en/ko 卡片看到中文。改用稳定 r.code 经 catalog(errors.<CODE>)
-      // 翻译,命中用本地化文案、未知 code 回退原 message,再套本地化外壳。
-      msg = r.ok
-        ? translate('marketplace.install_success', { name: r.data.name, version: r.data.version })
-        : translate('marketplace.install_failed_code', {
-            code: r.code,
-            message: localizeErrorByCode(r.code, r.message),
-          });
-    } catch (err) {
-      // a11y(A85,A84 同族):不把装饰性 ✘ 拼进 message 字符串 —— 失败严重度由 isError+role=alert
-      // 表达,符号入文本会被 live region 当内容播报成"cross mark …"噪声。
-      msg = errorMessage(err);
-    }
-    installBusyRef.current = false; // race(R8):清同步闸门(与 busy:null 同步)。
-    setInstall((prev) => {
-      const nextMsgs = new Map(prev.msgs);
-      nextMsgs.set(entry.id, { text: msg, isError: !success });
-      const nextPending = new Set(prev.pending);
-      if (success) nextPending.add(entry.id);
-      return { busy: null, msgs: nextMsgs, pending: nextPending };
-    });
-  }, []);
-
-  const onUpdate = useCallback(
-    async (entry: MarketplaceEntry) => {
-      // 更新 = 原子覆盖安装(overwrite=true)。不再「先卸载后重装」:旧实现一旦
-      // 卸载成功但重装失败(网络/clone 错),插件就从磁盘消失且无回滚(审计 #2)。
-      // installFromGit overwrite 在 main 端做 staging+rename swap,失败保留旧版本;
-      // 且保留 _enabled / _permissions,更新后无需重新授权(语义更贴近"更新")。
-      // race(R8):同步单飞 —— 同 tick 双击 / 与 install 并发在 busy 生效前重入直接挡掉。
-      if (installBusyRef.current) return;
+  // 卡片的「安装」与「更新」是同一流程(同步单飞 → installFromGit → 结果消息 → pending),只差:
+  // overwrite 标志、成功/失败文案 key、以及 catch 分支的文案外壳(install 用裸 message,update 套
+  // update_failed_msg —— 既有差异,保持不变)。返回是否成功,供调用方做后续。
+  // setInstall 函数式更新,不依赖外部 state → 引用稳定,MarketplaceCard memo 不被撑破。
+  const runCardInstall = useCallback(
+    async (entry: MarketplaceEntry, mode: 'install' | 'update'): Promise<boolean> => {
+      // race(R8):同步单飞 —— 同 tick 双击 / install 与 update 并发在 busy state 生效前重入直接挡掉。
+      if (installBusyRef.current) return false;
       installBusyRef.current = true;
       setInstall((prev) => ({ ...prev, busy: entry.id }));
+      const isUpdate = mode === 'update';
       let msg: string;
       let success = false;
       try {
-        const r = await coApi.plugins.installFromGit(entryToGitUrl(entry), true);
+        // 更新 = 原子覆盖安装(overwrite=true)。不再「先卸载后重装」:旧实现一旦卸载成功但重装失败
+        // (网络/clone 错),插件就从磁盘消失且无回滚(审计 #2)。overwrite 在 main 端做 staging+rename
+        // swap,失败保留旧版本;且保留 _enabled / _permissions,更新后无需重新授权。
+        const r = isUpdate
+          ? await coApi.plugins.installFromGit(entryToGitUrl(entry), true)
+          : await coApi.plugins.installFromGit(entryToGitUrl(entry));
         success = r.ok;
-        // i18n(codex 复查 P1,I1 同族):message 经 r.code 走 catalog 翻译再插本地化外壳,
-        // 否则 update_failed_code 的 {message} 会塞进 main 硬编码中文 → en/ko 看到中文。
+        // i18n(codex 复查 P1,I1 同族):installFromGit 各错误站点 Error.message 是硬编码中文,直接展示
+        // 会让 en/ko 看到中文。改用稳定 r.code 经 catalog(errors.<CODE>)翻译,未知 code 回退原
+        // message,再套本地化外壳。
         msg = r.ok
-          ? translate('marketplace.update_success', { name: r.data.name, version: r.data.version })
-          : translate('marketplace.update_failed_code', {
-              code: r.code,
-              message: localizeErrorByCode(r.code, r.message),
-            });
+          ? translate(isUpdate ? 'marketplace.update_success' : 'marketplace.install_success', {
+              name: r.data.name,
+              version: r.data.version,
+            })
+          : translate(
+              isUpdate ? 'marketplace.update_failed_code' : 'marketplace.install_failed_code',
+              { code: r.code, message: localizeErrorByCode(r.code, r.message) },
+            );
       } catch (err) {
-        msg = translate('marketplace.update_failed_msg', {
-          message: errorMessage(err),
-        });
+        // a11y(A85,A84 同族):不把装饰性 ✘ 拼进 message 字符串 —— 失败严重度由 isError+role=alert 表达。
+        msg = isUpdate
+          ? translate('marketplace.update_failed_msg', { message: errorMessage(err) })
+          : errorMessage(err);
       }
       installBusyRef.current = false; // race(R8):清同步闸门(与 busy:null 同步)。
       setInstall((prev) => {
@@ -282,6 +257,21 @@ export function MarketplaceTab() {
         if (success) nextPending.add(entry.id);
         return { busy: null, msgs: nextMsgs, pending: nextPending };
       });
+      return success;
+    },
+    [],
+  );
+
+  const onInstall = useCallback(
+    async (entry: MarketplaceEntry): Promise<void> => {
+      await runCardInstall(entry, 'install');
+    },
+    [runCardInstall],
+  );
+
+  const onUpdate = useCallback(
+    async (entry: MarketplaceEntry) => {
+      const success = await runCardInstall(entry, 'update');
       // 更新成功后:先乐观从 available 摘掉这条让更新按钮即时收起(否则到异步
       // refresh 完成前用户可重复点击触发对已是最新版的二次 overwrite 安装),
       // 再异步刷新 update-store 与磁盘对账。
@@ -305,7 +295,7 @@ export function MarketplaceTab() {
         }
       }
     },
-    [refreshUpdates, dismissUpdate],
+    [runCardInstall, refreshUpdates, dismissUpdate],
   );
 
   // useCallback 让 TagButton memo 不被 inline arrow 撑破。

@@ -162,7 +162,7 @@ export class PluginManager {
    * 每 2s fire-and-forget 触发 + 用户手动操作 → 同 id 并发交错会:旧 activateEntry
    * resume 后用旧 token 覆盖 entry.pluginFsToken,泄漏新 token(永不 _unregisterPlugin)
    * + 留下双激活的僵尸实例 + 重复贡献 panel/command/MCP tool。复用 plugins.service
-   * 的 withInstallLock 同款 Promise 链锁串行化同 id 生命周期操作。
+   * 的 withPluginMutationLock 同款 Promise 链锁(共享 runSerialPerKey)串行化同 id 生命周期操作。
    */
   private readonly lifecycleLocks = new Map<string, Promise<unknown>>();
 

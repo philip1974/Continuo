@@ -428,19 +428,34 @@ app.on('web-contents-created', (_evt, contents) => {
 // 跨平台:Linux/Windows menu 同款 File 项。
 // ─────────────────────────────────────────────────────
 
+/** 路径是已存在的目录(不存在 / 无权限 / 非目录 → false)。argv / open-file / 冷启动目录判定共用。 */
+function isDirectorySync(p: string): boolean {
+  try {
+    return nodeFs.statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 开一个新主窗:分配新的 windowSeq;给了 workspace 则以它为 root 且 fresh(用户显式打开,不沿用该
+ * seq 的历史持久化段),不给则是空白新窗。菜单 / Dock 菜单 / argv / open-file / 冷启动多目录共用。
+ */
+async function openWorkspaceWindow(workspace?: string): Promise<void> {
+  const explorerFile = path.join(app.getPath('userData'), 'explorer.json');
+  const windowSeq = await allocateWindowSeq(explorerFile);
+  if (workspace === undefined) createMainWindow({ windowSeq });
+  else createMainWindow({ windowSeq, workspace, fresh: true });
+}
+
 async function openFolderInNewWindow(): Promise<void> {
   const r = await dialog.showOpenDialog({ properties: ['openDirectory'] });
   if (r.canceled || r.filePaths.length === 0) return;
-  const folder = r.filePaths[0]!;
-  const explorerFile = path.join(app.getPath('userData'), 'explorer.json');
-  const windowSeq = await allocateWindowSeq(explorerFile);
-  createMainWindow({ windowSeq, workspace: folder, fresh: true });
+  await openWorkspaceWindow(r.filePaths[0]!);
 }
 
 async function newWindow(): Promise<void> {
-  const explorerFile = path.join(app.getPath('userData'), 'explorer.json');
-  const windowSeq = await allocateWindowSeq(explorerFile);
-  createMainWindow({ windowSeq });
+  await openWorkspaceWindow();
 }
 
 function buildAppMenu(t: MainT): Menu {
@@ -594,13 +609,7 @@ if (!gotLock) {
     // 此前被忽略 → 在已有实例里按目录打开新窗口(跨平台审计 P2)。
     const folders = pickArgvFolders(
       argv,
-      (p) => {
-        try {
-          return nodeFs.statSync(p).isDirectory();
-        } catch {
-          return false;
-        }
-      },
+      isDirectorySync,
       { skipFirstArg: !!process.defaultApp, skipAll: false },
     );
     for (const folder of folders) void openPathInNewWindow(folder);
@@ -629,13 +638,7 @@ const pendingOpenPaths: string[] = [];
 pendingOpenPaths.push(
   ...pickArgvFolders(
     process.argv,
-    (p) => {
-      try {
-        return nodeFs.statSync(p).isDirectory();
-      } catch {
-        return false;
-      }
-    },
+    isDirectorySync,
     {
       skipFirstArg: !!process.defaultApp,
       skipAll: process.env['CONTINUO_E2E'] === '1',
@@ -663,16 +666,8 @@ async function openPathInNewWindow(absPath: string): Promise<void> {
   }
   openInFlight += 1;
   try {
-    let isDir = false;
-    try {
-      isDir = nodeFs.statSync(absPath).isDirectory();
-    } catch {
-      /* 路径不存在 / 无权限 → 跳过 */
-    }
-    if (!isDir) return;
-    const explorerFile = path.join(app.getPath('userData'), 'explorer.json');
-    const windowSeq = await allocateWindowSeq(explorerFile);
-    createMainWindow({ windowSeq, workspace: absPath, fresh: true });
+    if (!isDirectorySync(absPath)) return; // 路径不存在 / 无权限 / 非目录 → 跳过
+    await openWorkspaceWindow(absPath);
   } finally {
     openInFlight -= 1;
   }
@@ -964,14 +959,7 @@ app.whenReady().then(async () => {
   // 冷启动开窗模式决策(issue #30):有 dock 缓冲目录 → dock 模式,
   // 第一个目录作主窗 workspace,其余各开新窗,**不**恢复历史;
   // 否则 → restore 模式,主窗用持久化 workspace,异步恢复历史 windows[]。
-  const isDir = (p: string): boolean => {
-    try {
-      return nodeFs.statSync(p).isDirectory();
-    } catch {
-      return false;
-    }
-  };
-  const startup = pickStartupMode(pendingOpenPaths.splice(0), isDir);
+  const startup = pickStartupMode(pendingOpenPaths.splice(0), isDirectorySync);
 
   // 主窗由 createMainWindow 创建(有副作用:开窗 + 挂 attachWindowDrain);冷启动协议 URL 经
   // dispatchProtocolUrl 走统一队列消费(R69),不再需要持有主窗引用直发。
@@ -985,9 +973,7 @@ app.whenReady().then(async () => {
     if (startup.dirs.length > 1) {
       void (async () => {
         for (let i = 1; i < startup.dirs.length; i += 1) {
-          const dir = startup.dirs[i]!;
-          const windowSeq = await allocateWindowSeq(explorerFile);
-          createMainWindow({ windowSeq, workspace: dir, fresh: true });
+          await openWorkspaceWindow(startup.dirs[i]!);
         }
       })();
     }
@@ -999,7 +985,7 @@ app.whenReady().then(async () => {
       try {
         const data = await loadExplorer(explorerFile);
         if (!data) return;
-        for (const entry of pickWindowsToRestore(data, isDir)) {
+        for (const entry of pickWindowsToRestore(data, isDirectorySync)) {
           createMainWindow({
             windowSeq: entry.windowSeq,
             workspace: entry.workspace,
@@ -1021,7 +1007,7 @@ app.whenReady().then(async () => {
     // 的 FIFO 队列 + R63 的「send 成功才出队 / 失败保留队首」韧性逻辑。两个漏洞:(1)主窗在 load
     // 前关闭 → did-finish-load 永不触发 → 冷启动深链永久丢失;(2)load 后、send 前窗口销毁 → send
     // 抛 "Object has been destroyed" → 深链丢失 + 在事件回调里成未捕获异常。改为交统一协议路由:
-    // win 经 createMainWindow 已挂 attachWindowDrain(line ~353),dispatchProtocolUrl 入
+    // win 经 createMainWindow 已挂 attachWindowDrain,dispatchProtocolUrl 入
     // pendingProtocolUrls 后由该 drain 在就绪时韧性消费(send 失败保留队首,留给下个窗口)。
     if (url) dispatchProtocolUrl(url);
   }

@@ -11,6 +11,7 @@ import {
 } from '@/plugins/command-palette/format-hotkey';
 import { isValidHotkeyShape, type CommandSpec } from '@/plugins/registries/CommandRegistry';
 import { useT } from '@/i18n';
+import { resolveEffectiveHotkey } from './keybindings-store';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 
 const PLATFORM = detectPlatform();
@@ -64,15 +65,6 @@ export function eventToCombo(e: KeyboardEvent, platform: Platform = PLATFORM): s
   return isValidHotkeyShape(combo) ? combo : null;
 }
 
-function selectEffectiveHotkey(
-  command: CommandSpec,
-  overrides: Readonly<Record<string, string>>,
-): string | undefined {
-  const override = overrides[command.id];
-  if (override !== undefined) return override === '' ? undefined : override;
-  return command.hotkey;
-}
-
 export function selectKeybindingConflicts(
   allCommands: readonly CommandSpec[],
   commandId: string,
@@ -83,7 +75,7 @@ export function selectKeybindingConflicts(
   let conflicts: CommandSpec[] | null = null;
   let conflictCount = 0;
   for (const command of allCommands) {
-    if (command.id === commandId || selectEffectiveHotkey(command, overrides) !== captured) {
+    if (command.id === commandId || resolveEffectiveHotkey(command, overrides) !== captured) {
       continue;
     }
     if (conflicts === null) conflicts = new Array<CommandSpec>(allCommands.length);

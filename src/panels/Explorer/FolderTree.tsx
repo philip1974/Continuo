@@ -295,7 +295,7 @@ export function FolderTree({ root }: { root: string }) {
           const now = Date.now();
           if (now - lastIpcWarnAtRef.current < 3000) return;
           lastIpcWarnAtRef.current = now;
-          notify.error(localizeErrorByCode(code, message), { code });
+          notifyFailure({ code, message });
         },
         onRename: (item: ItemInstance<FileEntry>, newName: string) => {
           // headless-tree onRename 是 sync 签名,我们 fire-and-forget 走 mutate-actions

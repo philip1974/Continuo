@@ -106,3 +106,13 @@ export function isSameOrInsidePath(base: string, filePath: string): boolean {
   if (fp === b) return true;
   return fp.startsWith(`${b}/`) || fp.startsWith(`${b}\\`);
 }
+
+/**
+ * 跨平台 basename:**先去尾部分隔符**再取最后一段(吃 `/` 与 `\\`)。`/a/b/` → `b`、`/a` → `a`。
+ * Explorer(root entry name / 面包屑)与 Editor(tab 标题)共用。
+ */
+export function basename(p: string): string {
+  const trimmed = trimTrailingSeparators(p);
+  const idx = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
+  return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
+}

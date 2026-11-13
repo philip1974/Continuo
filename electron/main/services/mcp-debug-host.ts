@@ -2,6 +2,8 @@ import {
   MCP_TOOL_DEBUG_LAUNCH,
   MCP_TOOL_DEBUG_LIST_SESSIONS,
 } from '../../shared/mcp-debug-schemas';
+import { ERROR_CODES } from '../../shared/error-codes';
+import { codedError } from '../../shared/error-message';
 import type { AnyMcpTool } from './mcp-host.service';
 import {
   gateWithAuth,
@@ -23,8 +25,10 @@ export interface MakeDebugMcpToolsDeps {
   readonly ensureAuthorized: EnsureDebugAuthorized;
 }
 
-function debugSessionNotFound(sessionId: string): Error {
-  return new Error(`debug session not found: ${sessionId}`);
+// 跨窗 session_id 与不存在的 session_id 必须不可区分(同一 code、同一文案、不回显 id)—— 否则调用方能
+// 据错误形态探测别的窗口是否有该会话。与 mcp-tools-debug 对「不存在」的归一化结果一致。
+function debugSessionNotFound(): Error {
+  return codedError(ERROR_CODES.DEBUG_SESSION_NOT_FOUND, 'debug session not found');
 }
 
 /**

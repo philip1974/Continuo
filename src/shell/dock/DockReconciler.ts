@@ -7,7 +7,11 @@ import {
   consumePanelCloseSuppressed,
   markPanelCloseSuppressed,
 } from './wrap-panel-close';
-import { panelIdFor, sessionIdFromPanel } from './terminal-panel-id';
+import {
+  panelIdFor,
+  sessionIdFromPanel,
+  terminalPanelTitle,
+} from './terminal-panel-id';
 
 export { markPanelCloseSuppressed };
 
@@ -289,9 +293,10 @@ function deriveTitle(
   session: TerminalSession,
   customTitles?: ReadonlyMap<string, string>,
 ): string {
-  const base =
-    customTitles?.get(session.id) ??
-    session.title ??
-    `Terminal ${session.id.slice(0, 6)}`;
-  return session.originHint === 'agent' ? `${base} (agent)` : base;
+  return terminalPanelTitle({
+    sessionId: session.id,
+    customTitle: customTitles?.get(session.id),
+    sessionTitle: session.title,
+    originHint: session.originHint,
+  });
 }

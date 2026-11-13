@@ -122,11 +122,21 @@ subscribeStorageKey(STORAGE_KEY, () =>
   }),
 );
 
-/** 取某 command 当前生效的 hotkey(override ?? spec.hotkey),空字符串视为 unbound. */
-export function getEffectiveHotkey(spec: CommandSpec): string | undefined {
-  const override = useKeybindingsStore.getState().overrides[spec.id];
-  if (override !== undefined) {
-    return override === '' ? undefined : override;
-  }
+/**
+ * 「有效快捷键」解析的单一来源(纯函数):有 override 用 override,**空串 = 用户显式解绑**(→ undefined);
+ * 无 override 用命令默认 hotkey。命令面板显示、全局 hotkey 触发、快捷键设置页、冲突检测都必须走这里 ——
+ * 此前 5 处各手写一份,漏改任何一处就是「面板显示的键 ≠ 实际触发的键」。
+ */
+export function resolveEffectiveHotkey(
+  spec: Pick<CommandSpec, 'id' | 'hotkey'>,
+  overrides: Readonly<Record<string, string>>,
+): string | undefined {
+  const override = overrides[spec.id];
+  if (override !== undefined) return override === '' ? undefined : override;
   return spec.hotkey;
+}
+
+/** 取某 command 当前生效的 hotkey(读 store 的当前 overrides)。 */
+export function getEffectiveHotkey(spec: CommandSpec): string | undefined {
+  return resolveEffectiveHotkey(spec, useKeybindingsStore.getState().overrides);
 }

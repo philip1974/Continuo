@@ -1,8 +1,4 @@
-import {
-  isAsciiAlphaCode,
-  isPathSeparatorCode,
-  trimTrailingSeparators,
-} from '@/lib/path-cross';
+import { basename, isAsciiAlphaCode, isPathSeparatorCode } from '@/lib/path-cross';
 
 function isAsciiCharCaseInsensitive(
   path: string,
@@ -58,7 +54,5 @@ export function isAbsolutePath(path: string): boolean {
  * (draft / untitled)各调用方自行处理,故此 helper 只收非空 path。
  */
 export function basenameForEditorPath(path: string): string {
-  const trimmed = trimTrailingSeparators(path);
-  const idx = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
-  return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
+  return basename(path);
 }

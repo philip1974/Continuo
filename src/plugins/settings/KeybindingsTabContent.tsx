@@ -13,7 +13,11 @@ import {
   detectPlatform,
   type Platform,
 } from '@/plugins/command-palette/format-hotkey';
-import { getEffectiveHotkey, useKeybindingsStore } from '@/plugins/keybindings/keybindings-store';
+import {
+  getEffectiveHotkey,
+  resolveEffectiveHotkey,
+  useKeybindingsStore,
+} from '@/plugins/keybindings/keybindings-store';
 import { KeybindingCaptureModal } from '@/plugins/keybindings/KeybindingCaptureModal';
 import { useT, useTWithFallback, useLocale } from '@/i18n';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
@@ -243,9 +247,7 @@ export function buildKeybindingDisplayCommands(
     const isOverridden = cmd.id in overrides;
     if (!cmd.hotkey && !isOverridden) continue;
     if (out === null) out = new Array<DisplayCommand>(allCommands.length);
-    const override = overrides[cmd.id];
-    const effective =
-      override !== undefined ? (override === '' ? undefined : override) : cmd.hotkey;
+    const effective = resolveEffectiveHotkey(cmd, overrides);
     const displayTitle = tk(cmd.titleKey, cmd.title);
     const displayCategory = tk(cmd.categoryKey, cmd.category ?? '');
     out[outCount++] = {
