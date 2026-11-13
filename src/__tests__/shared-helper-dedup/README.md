@@ -9,7 +9,7 @@
 
 1. `lowerIfNeeded`(`electron/shared/lower-if-needed.ts`):结果恒等于 `value.toLowerCase()`;
    输入无 ASCII 大写且无非 ASCII 字符时原样返回同一引用。renderer / main 不得再本地定义同名函数
-   (`file-icon.tsx` 的 ASCII-only 变体与 `marketplace/filter.ts` 的非字符串兜底包装除外,语义不同)。
+   (`marketplace/filter.ts` 的非字符串兜底包装除外;file-icon / CodeEditor 的扩展名小写也走它)。
 2. 路径字符级 helper(`isPathSeparatorCode` / `isAsciiAlphaCode` / `isBareWindowsDrive` /
    `trimTrailingSeparators`):renderer 单一来源 `src/lib/path-cross.ts`;Explorer `path-utils`、
    Editor `editor-path-utils` / `link-resolve` 只导入不复制。

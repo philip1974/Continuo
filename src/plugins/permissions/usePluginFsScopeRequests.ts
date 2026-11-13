@@ -5,6 +5,7 @@ import type { PathScope } from '../types';
 import { isValidPluginId } from '../plugin-id';
 import { FS_PATH_MAX } from '../../../electron/shared/fs-limits';
 import { usePermissionPromptStore, type FsScopePromptScope } from './promptStore';
+import { SCOPE_REQUEST_ID_MAX } from '../../../electron/shared/plugin-fs-channels';
 
 interface ScopeRequestPayload {
   readonly requestId: string;
@@ -16,7 +17,6 @@ interface ScopeRequestPayload {
 // 此前 bridge 直接 `payload.scopes.map(...)` 信任 TS 类型,畸形 payload(null/scopes 非数组/scope 非
 // 对象/超长 path/非法 mode/超长 requestId/非法 pluginId)会让回调抛错(scopes.map / scope.path)或
 // 把脏授权请求写入 prompt store。注册入口 runtime 守卫,非法 drop + warn,不进 prompt store。
-const SCOPE_REQUEST_ID_MAX = 256; // 与 agent-auth/plugin-fs requestId 上限一致
 const MAX_SCOPES_PER_REQUEST = 256;
 const EMPTY_FS_SCOPE_PROMPT_SCOPES: FsScopePromptScope[] = [];
 

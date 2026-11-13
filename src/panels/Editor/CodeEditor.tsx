@@ -23,6 +23,7 @@ import { useSettingValue } from '@/plugins/settings/values-store';
 import { useEditorStore } from '@/stores/editor.store';
 import { useTheme } from '@/theme';
 import { debugDecorationsExtension } from './decorations/debug-decorations';
+import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 
 interface CodeEditorProps {
   tabId: string;
@@ -37,16 +38,7 @@ interface CodeEditorProps {
 export function fileExtensionLower(fileName: string): string | undefined {
   const idx = fileName.lastIndexOf('.');
   if (idx < 0 || idx === fileName.length - 1) return undefined;
-  let hasUpper = false;
-  for (let i = idx + 1; i < fileName.length; i += 1) {
-    const code = fileName.charCodeAt(i);
-    if (code >= 65 && code <= 90) {
-      hasUpper = true;
-      break;
-    }
-  }
-  const ext = fileName.slice(idx + 1);
-  return hasUpper ? ext.toLowerCase() : ext;
+  return lowerIfNeeded(fileName.slice(idx + 1));
 }
 
 const EMPTY_LANGUAGE_EXTENSIONS: Extension[] = [];

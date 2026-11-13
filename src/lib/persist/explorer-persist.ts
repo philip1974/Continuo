@@ -1,6 +1,6 @@
 // 资源管理器持久化层(M-Explorer Step 3 / ADR-012)。
-// 职责:启动时从 IPC 读 explorer.json hydrate 三 store;
-// 三 store 任一变化 → debounce 300ms 写回 IPC。
+// 职责:启动时从 IPC 读 explorer.json hydrate 各 store(workspace / explorer / pinned / layout-ui / editor);
+// 任一变化 → debounce 300ms 写回 IPC。
 //
 // 持久化字段范围(VSCode 风):
 //   ✅ workspace.root / recentRoots
@@ -53,7 +53,7 @@ import {
 
 const DEBOUNCE_MS = 300;
 const VERSION = 3 as const;
-const PRIMARY_WINDOW_SEQ = 0; // 主窗位的 windowSeq;Phase 2B 引入多窗后改成动态值
+const PRIMARY_WINDOW_SEQ = 0; // 主窗位的 windowSeq(其余窗口的 seq 经 extras.windowSeq 传入)
 // 边界(E216):editor 会话恢复的 tab 数硬上限 + 读取并发上限。explorer.json schema 允许至多 100k
 // openFilePaths,畸形/旧快照在启动时 paths.map(readFile)+allSettled 会一次性发起海量并发 IPC/文件读
 // promise(单文件大小 cap 不防并发 fan-out)→ renderer/main 卡顿/资源耗尽。截断到 MAX_RESTORED_TABS
@@ -122,7 +122,7 @@ export interface InitExplorerPersistenceExtras {
 
 /**
  * 取 snap 中归属 windowSeq 的段;无则返 null(主窗 hydrate 用 null 起步)。
- * Phase 2A 主窗永远用 PRIMARY_WINDOW_SEQ,Phase 2B 改成动态值。
+ * 主窗用 PRIMARY_WINDOW_SEQ;其余窗口用启动时注入的 windowSeq。
  */
 function findWindowEntry(
   snap: ExplorerSnapshot,

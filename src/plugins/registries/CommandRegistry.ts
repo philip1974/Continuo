@@ -34,11 +34,11 @@ export interface CommandSpec {
 // 预编译(compileCombo)、日志 warning、UI 渲染都携带大字符串 → renderer 卡顿;异常 hotkey 还会被
 // compileCombo 当有效签名参与全局 keydown 扫描。注册边界统一校验长度 + hotkey 形态,非法拒绝(抛
 // 可诊断错误,由插件加载错误处理捕获)。上限远超任何真实贡献项,只挡滥用。
-const CMD_ID_MAX = 256;
+export const CMD_ID_MAX = 256;
 const CMD_TITLE_MAX = 512;
 const CMD_KEY_MAX = 256; // titleKey / categoryKey(i18n key)
 const CMD_CATEGORY_MAX = 256;
-const CMD_HOTKEY_MAX = 64;
+export const CMD_HOTKEY_MAX = 64;
 // hotkey 形态(宽松):'+'-连接的非空段,段内无空白/'+'(允许 mod+, mod+/ 等标点主键)。挡空段
 // (mod++p)、含空白、超长 —— 不强限字符集以免误伤合法标点快捷键。
 // 边界(E145):isValidHotkeyShape 导出供 keybindings 捕获侧(eventToCombo)与写端(setHotkey)复用同一形态校验,

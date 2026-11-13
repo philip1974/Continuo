@@ -82,7 +82,7 @@ function CrepeEditor({ defaultValue, readonly = false, onChange }: MilkdownEdito
 export function MilkdownEditor(props: MilkdownEditorProps) {
   // Crepe theme 内部很多元素是相对单位(em/rem),容器 font-size 变,
   // ProseMirror 文本会跟着变。如果某些元素用 px 绝对值,可在
-  // src/styles/editor-font.css 里 override(后续若需扩展)
+  // src/styles/milkdown-font-override.css(本文件顶部已导入)里 override
   const fontSize = useSettingValue<number>('editor.fontSize', 13);
 
   // ref 跟踪最新 onLinkClick:外层 click handler 不重建,内部读最新值。

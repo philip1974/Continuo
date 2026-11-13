@@ -25,3 +25,12 @@ export const PLUGIN_FS_CHANNELS = {
   /** main -> renderer event after PathScopeRegistry grant/revoke */
   SCOPE_UPDATED: 'plugin-fs:scope-updated',
 } as const;
+
+/**
+ * scope 授权请求的存活时间。main 的 correlator 到期按超时收口;renderer 的授权弹窗队列须用同一 TTL
+ * 做本地过期(否则过期弹窗滞留、挡住后续请求)。
+ */
+export const SCOPE_REQUEST_TTL_MS = 300_000;
+
+/** scope 授权请求 requestId 长度上限(renderer 入口守卫;与 agent-auth requestId 同量级)。 */
+export const SCOPE_REQUEST_ID_MAX = 256;

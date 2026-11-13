@@ -131,31 +131,5 @@ export function snapshotByPriority<T extends { readonly priority?: number }>(
   return out;
 }
 
-/**
- * 按谓词过滤的零拷贝快路径(EditorAction / ExplorerContextMenu 的 `filterVisible` 共用):
- * 全部通过 → 原样返回入参数组(保持引用,memo 友好);首个被滤掉的项出现时才惰性拷贝前缀;
- * 全被滤掉 → 返回调用方给的共享空数组 `empty`(稳定引用)。
- */
-export function filterKeepingIdentity<T>(
-  items: readonly T[],
-  keep: (item: T) => boolean,
-  empty: T[],
-): T[] {
-  let out: T[] | null = null;
-  let count = 0;
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i]!;
-    if (!keep(item)) {
-      if (out === null) {
-        out = new Array<T>(items.length);
-        for (let j = 0; j < i; j++) out[j] = items[j]!;
-        count = i;
-      }
-      continue;
-    }
-    if (out !== null) out[count++] = item;
-  }
-  if (out === null) return items as T[];
-  out.length = count;
-  return count === 0 ? empty : out;
-}
+// filterVisible 用的零拷贝过滤在 @/lib/filter-keeping-identity(notifications / 权限弹窗队列也用)。
+export { filterKeepingIdentity } from '@/lib/filter-keeping-identity';

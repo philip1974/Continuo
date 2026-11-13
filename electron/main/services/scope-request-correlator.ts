@@ -3,6 +3,7 @@ import {
   ScopeRequestTimeoutError,
   type PathScope,
 } from '../../shared/plugin-fs-contract';
+import { SCOPE_REQUEST_TTL_MS } from '../../shared/plugin-fs-channels';
 
 interface PendingEntry {
   token: string;
@@ -19,7 +20,7 @@ export interface CreateRequestResult {
   promise: Promise<'grant' | 'deny'>;
 }
 
-const DEFAULT_TTL_MS = 300_000;
+const DEFAULT_TTL_MS = SCOPE_REQUEST_TTL_MS;
 const GC_INTERVAL_MS = 60_000;
 const PING_REFRESH_MS = 300_000;
 // 边界(E227):未决 scope 请求数量上限。单次 request-scope 的 scopes 已限,但插件可连续 spam 大量未决

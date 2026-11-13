@@ -166,7 +166,7 @@ function FsScopePromptBody({ scope }: { scope: FsScopePrompt }) {
             className="rounded border border-line bg-panel-soft p-2"
           >
             <div className="font-mono text-fg">
-              {(s as { displayPath?: string }).displayPath ?? s.path}
+              {s.displayPath}
             </div>
             <div className="text-fg-dim">
               {t('permissions.fs_scope.mode_label')}:{' '}

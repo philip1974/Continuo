@@ -112,6 +112,7 @@ import {
   FolderDocuments,
   FolderBuild,
 } from '@react-symbols/icons';
+import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 
 type IconComp = ComponentType<{ width: number; height: number }>;
 
@@ -335,23 +336,6 @@ const SPECIAL_DIR_NAMES: Readonly<Record<string, IconComp>> = {
   '.nuxt': FolderBuild,
 };
 
-function sliceLowerIfNeeded(value: string, start: number): string {
-  let hasUpper = false;
-  for (let i = start; i < value.length; i += 1) {
-    const code = value.charCodeAt(i);
-    if (code >= 65 && code <= 90) {
-      hasUpper = true;
-      break;
-    }
-  }
-  const sliced = value.slice(start);
-  return hasUpper ? sliced.toLowerCase() : sliced;
-}
-
-function lowerIfNeeded(value: string): string {
-  return sliceLowerIfNeeded(value, 0);
-}
-
 /**
  * 根据文件名 / 目录名返回对应图标 component。
  *
@@ -382,7 +366,7 @@ export function getFileIconComponent(
   // 4. ext(取最后一段,case-insensitive)
   const idx = name.lastIndexOf('.');
   if (idx <= 0) return Document; // 无 ext or 隐藏文件(.bashrc 等)
-  const ext = sliceLowerIfNeeded(name, idx + 1);
+  const ext = lowerIfNeeded(name.slice(idx + 1));
   return EXT_MAP[ext] ?? Document;
 }
 

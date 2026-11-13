@@ -99,7 +99,7 @@ function notifyCore(
   _api?.notify(cappedMessage, level, cappedOpts);
 }
 
-type SugarOpts = Omit<NotifyOpts, 'level'>;
+type SugarOpts = NotifyOpts;
 
 interface NotifyPublic {
   (message: string, level?: NotificationLevel, opts?: NotifyOpts): void;

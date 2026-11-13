@@ -10,7 +10,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { usePickerList } from '../picker/use-picker-list';
 import { Button, Input, Modal, Spinner } from '@/design';
 import { notify } from '@/notifications/notify';
-import { useQuickOpenStore, type QuickOpenFile } from './store';
+import { QUICK_OPEN_MAX_FILES, useQuickOpenStore, type QuickOpenFile } from './store';
 import { walkWorkspaceFiles } from './walk-files';
 import { fuzzyFilter } from '../command-palette/fuzzy';
 import {
@@ -279,7 +279,7 @@ function QuickOpenBody() {
                 );
               })}
             </ul>
-            {liveResults.length >= 5000 && filtered.length > 0 && (
+            {liveResults.length >= QUICK_OPEN_MAX_FILES && filtered.length > 0 && (
               // a11y(A65,A56 同族):扫描到 5000 文件截断的提示是动态出现的信息,焦点锁在搜索框
               // 时 SR 用户不会获知结果被截断、搜索范围不完整 → role=status(polite 中性提示)。
               <div role="status" className="px-3 py-1 text-center text-2xs text-fg-dim">

@@ -7,6 +7,7 @@
 
 import { create } from 'zustand';
 import { subscribeStorageKey } from '../storage/local-storage-record';
+import { CMD_ID_MAX } from '../registries/CommandRegistry';
 
 export const RECENT_STORAGE_KEY = 'continuo:command-palette:recent';
 export const MAX_RECENT = 20;
@@ -16,7 +17,7 @@ export const MAX_RECENT = 20;
 // 列表仅 MAX_RECENT 条 × {id≤256, ts},正常仅数 KB,256KiB 留足余量。
 const MAX_RECENT_RAW_LENGTH = 256 * 1024;
 // 边界(E39,E5/E22 持久化读回族):command id 长度上限(与 CommandRegistry id 上限 E35 一致)。
-const RECENT_ID_MAX = 256;
+const RECENT_ID_MAX = CMD_ID_MAX;
 const EMPTY_RECENT_LIST: readonly RecentEntry[] = [];
 
 export interface RecentEntry {

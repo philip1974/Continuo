@@ -7,6 +7,12 @@
 import { create } from 'zustand';
 import { createPickerSlice, type PickerSlice } from '../picker/picker-slice';
 
+/**
+ * Quick Open 单次扫描的文件数上限:walk-files 到顶即截断,QuickOpenModal 据此显示「仅显示前 N 个」提示。
+ * 两处必须同值(此前 Modal 里是字面量 5000)。
+ */
+export const QUICK_OPEN_MAX_FILES = 5000;
+
 export interface QuickOpenFile {
   /** 绝对路径(用于 openFileByPath). */
   readonly absPath: string;

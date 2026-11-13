@@ -13,7 +13,8 @@ import React, {
 import type { ReactNode } from 'react';
 import type { Notification, NotificationLevel } from './types';
 import { __registerHandle } from './notify';
-import type { NotifyApi } from './notify';
+import type { NotifyApi, NotifyOpts } from './notify';
+import { filterKeepingIdentity } from '@/lib/filter-keeping-identity';
 
 // ─── auto-dismiss 配置 ─────────────────────
 const DISMISS_MS: Record<NotificationLevel, number> = {
@@ -57,30 +58,11 @@ function removeNotificationById(
   notifications: readonly Notification[],
   id: string,
 ): readonly Notification[] {
-  let next: Notification[] | null = null;
-  let nextCount = 0;
-  for (let i = 0; i < notifications.length; i++) {
-    const notification = notifications[i]!;
-    if (notification.id === id) {
-      if (next === null) {
-        next = new Array<Notification>(notifications.length - 1);
-        for (let j = 0; j < i; j++) {
-          next[j] = notifications[j]!;
-        }
-        nextCount = i;
-      }
-      continue;
-    }
-    if (next !== null) {
-      next[nextCount] = notification;
-      nextCount += 1;
-    }
-  }
-  if (next !== null) {
-    if (nextCount === 0) return EMPTY_NOTIFICATIONS;
-    next.length = nextCount;
-  }
-  return next ?? notifications;
+  return filterKeepingIdentity<Notification, readonly Notification[]>(
+    notifications,
+    (notification) => notification.id !== id,
+    EMPTY_NOTIFICATIONS,
+  );
 }
 
 function updateNotificationCreatedAt(
@@ -112,10 +94,8 @@ function updateNotificationCreatedAt(
   return next ?? notifications;
 }
 
-export interface NotifyOpts {
-  readonly code?: string;
-  readonly mirror?: boolean; // notify.ts 用;Provider 内部不读
-}
+// NotifyOpts 的定义在 notify.ts(mirror 由它消费,Provider 内部不读);此处保留既有导出名。
+export type { NotifyOpts } from './notify';
 
 interface NotificationsContextValue {
   readonly notifications: readonly Notification[];

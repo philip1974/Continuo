@@ -10,7 +10,12 @@
 // 持久化:localStorage(同 settings values store 的轻量策略)。
 
 import { create } from 'zustand';
-import { isValidHotkeyShape, type CommandSpec } from '../registries/CommandRegistry';
+import {
+  CMD_HOTKEY_MAX,
+  CMD_ID_MAX,
+  isValidHotkeyShape,
+  type CommandSpec,
+} from '../registries/CommandRegistry';
 import {
   readRecord,
   writeRecord,
@@ -24,7 +29,7 @@ const STORAGE_KEY = 'continuo.keybindings.overrides';
 
 // 可维护性 M21:localStorage 对象持久化 + 跨窗同步样板复用 local-storage-record helper。
 // 边界(E22):value 守卫 + 上限。畸形/篡改 overrides 混入非字符串值会让 getEffectiveHotkey →
-// compileCombo(effective).toLowerCase() 崩溃;hotkey 串本就短,限长 256;commandId(key)限长 256;
+// compileCombo(effective).toLowerCase() 崩溃;hotkey 限长 CMD_HOTKEY_MAX(与注册侧同一上限);commandId(key)限长 CMD_ID_MAX;
 // 条目数封顶。非法项丢弃(降级到默认快捷键),不崩。
 // 边界(E240,E145 写端对偶):读端 valueGuard 复用写端(setHotkey)同一 isValidHotkeyShape 形态校验 ——
 // 此前读端只验 string + 长度,但写端/注册端均拒非法形态。篡改/旧版本残留的畸形 localStorage 值(如
@@ -34,9 +39,9 @@ const readStored = (): Record<string, string> =>
   readRecord<string>(STORAGE_KEY, {
     valueGuard: (v): v is string =>
       typeof v === 'string' &&
-      v.length <= 256 &&
+      v.length <= CMD_HOTKEY_MAX &&
       (v === '' || isValidHotkeyShape(v)),
-    maxKeyLength: 256,
+    maxKeyLength: CMD_ID_MAX,
     maxEntries: 10_000,
   });
 const writeStored = (
@@ -62,10 +67,10 @@ export const useKeybindingsStore = create<KeybindingsState>((set, get) => ({
   // override(无跨进程原子性)。**R113 DEFER**(用户决策 2026-06-25):稳健修法=迁主进程串行 delta
   // 写,工作量大且反转既有持久化层决策,暂缓(低频、可重设)。详见 doc/race-condition-audit.md R113。
   setHotkey: (commandId, hotkey) => {
-    // 边界(E145,写端校验):'' = unbind(放行);非空 hotkey 须长度 ≤ 256 且形态合法
+    // 边界(E145,写端校验):'' = unbind(放行);非空 hotkey 须长度 ≤ CMD_HOTKEY_MAX 且形态合法
     //(isValidHotkeyShape,与注册侧/捕获侧同一来源)。畸形 override(含空白/空段/超长)会让
     // getEffectiveHotkey→compileCombo 产出空主键(永不触发)+ UI 显示异常 → 拒写(no-op)。
-    if (hotkey !== '' && (hotkey.length > 256 || !isValidHotkeyShape(hotkey))) {
+    if (hotkey !== '' && (hotkey.length > CMD_HOTKEY_MAX || !isValidHotkeyShape(hotkey))) {
       return;
     }
     const latest = readStored();

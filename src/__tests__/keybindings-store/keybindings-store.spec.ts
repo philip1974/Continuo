@@ -48,7 +48,7 @@ describe('keybindings-store', () => {
     expect(useKeybindingsStore.getState().overrides['settings.open']).toBeUndefined();
     s.setHotkey('settings.open', 'shift++'); // 空段(主键 '+')
     expect(useKeybindingsStore.getState().overrides['settings.open']).toBeUndefined();
-    s.setHotkey('settings.open', 'x'.repeat(257)); // 超长
+    s.setHotkey('settings.open', 'x'.repeat(65)); // 超长(> 注册侧 CMD_HOTKEY_MAX=64,此前 override 侧放到 256)
     expect(useKeybindingsStore.getState().overrides['settings.open']).toBeUndefined();
   });
 

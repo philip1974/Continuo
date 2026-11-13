@@ -35,12 +35,8 @@ describe('lowerIfNeeded', () => {
 });
 
 describe('接线守卫:不得再本地复制 lowerIfNeeded', () => {
-  // 语义不同的两个保留点:file-icon 的 ASCII-only 变体;filter 的非字符串兜底包装(委托 shared)。
-  const ALLOWED = new Set([
-    'electron/shared/lower-if-needed.ts',
-    'src/panels/Explorer/file-icon.tsx',
-    'src/marketplace/filter.ts',
-  ]);
+  // 唯一保留点:marketplace/filter 的非字符串兜底包装(委托 shared)。
+  const ALLOWED = new Set(['electron/shared/lower-if-needed.ts', 'src/marketplace/filter.ts']);
 
   it('src / electron 下无其他同名函数定义', () => {
     const offenders: string[] = [];

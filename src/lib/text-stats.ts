@@ -25,7 +25,7 @@ const EMPTY_TEXT_STATS: TextStats = { lines: 0, words: 0, chars: 0 };
 export function computeTextStats(s: string): TextStats {
   const len = s.length;
   if (len === 0) return EMPTY_TEXT_STATS;
-  let lines = len === 0 ? 0 : 1;
+  let lines = 1; // 非空至少 1 行;尾部 \n 算下一行起点(空行)
   let words = 0;
   let inWord = false;
   for (let i = 0; i < len; i++) {
@@ -41,27 +41,13 @@ export function computeTextStats(s: string): TextStats {
   return { lines, words, chars: len };
 }
 
+// 单项版本(仅测试 / 外部按名使用):委托 computeTextStats,不再各抄一份循环。
 export function lineCount(s: string): number {
-  if (s.length === 0) return 0;
-  let n = 1; // 尾部 \n 算下一行起点(空行);非空至少 1 行
-  for (let i = 0; i < s.length; i++) {
-    if (s.charCodeAt(i) === 0x0a) n++;
-  }
-  return n;
+  return computeTextStats(s).lines;
 }
 
 export function wordCount(s: string): number {
-  let words = 0;
-  let inWord = false;
-  for (let i = 0; i < s.length; i++) {
-    if (isEcmaWhitespaceCode(s.charCodeAt(i))) {
-      inWord = false;
-    } else if (!inWord) {
-      words++;
-      inWord = true;
-    }
-  }
-  return words;
+  return computeTextStats(s).words;
 }
 
 export function charCount(s: string): number {

@@ -61,3 +61,17 @@ export function validateScopesShape(scopes: unknown): string | null {
   }
   return null;
 }
+
+/**
+ * fs:list-dir 未传 exclude 时的默认排除项。跨进程单一来源:main list-dir 用它建默认 Set;renderer
+ * Quick Open 的 walk-files 因 exclude 是**整体替换**语义(传了就不用默认),必须把这份完整带上再追加
+ * 构建产物 —— 此前 walk-files 手抄了一份,main 侧加一项而那边不同步就会多扫。
+ */
+export const LIST_DIR_DEFAULT_EXCLUDE: readonly string[] = [
+  '.git',
+  '.svn',
+  '.hg',
+  'node_modules',
+  '.DS_Store',
+  'Thumbs.db',
+];

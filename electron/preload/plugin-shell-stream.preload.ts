@@ -132,7 +132,7 @@ export const pluginShellStreamRaw: PluginShellStreamRaw = {
           '[plugin-shell-stream] invalid event payload for stream, synthesizing exit',
           rawPayload,
         );
-        synthesizeExit({ exitCode: -1, signal: null });
+        settleExit({ exitCode: -1, signal: null });
         return;
       }
       if (parsed.kind === 'exit') {
@@ -159,10 +159,10 @@ export const pluginShellStreamRaw: PluginShellStreamRaw = {
       }
     };
 
-    // 把 START reject 转成本地合成的 exit。主进程可能在 spawn 任何进程之前就
-    // reject(如 streamId 已占用是同步 throw,或 handler 在 emit 'exit' 之前抛错)
-    // —— 这种情况下永远不会有 'exit' 事件回来,`done` 与 chunk 迭代器会永久挂起,
-    // 插件的 `await done` / `for await (chunks)` 死锁。合成一个终止 exit 让等待者收敛。
+    // 流的唯一收尾:真实 exit、合成 exit(START reject / 畸形事件 / 背压)、消费方提前 return 都走这里。
+    // 合成 exit 的必要性:主进程可能在 spawn 任何进程之前就 reject START(如 streamId 已占用是同步
+    // throw)—— 永远不会有 'exit' 事件回来,`done` 与 chunk 迭代器会永久挂起,插件的 `await done` /
+    // `for await (chunks)` 死锁。
     const settleExit = (
       info: { exitCode: number | null; signal: NodeJS.Signals | null },
     ): void => {
@@ -172,7 +172,6 @@ export const pluginShellStreamRaw: PluginShellStreamRaw = {
       exitResolve?.(exitInfo);
       ipcRenderer.removeListener(PLUGIN_SHELL_STREAM_CHANNELS.EVENT, handler);
     };
-    const synthesizeExit = settleExit;
     /** 让 main 杀掉子进程(best-effort;流可能已结束)。 */
     const requestAbort = (): void => {
       void ipcRenderer
@@ -188,7 +187,7 @@ export const pluginShellStreamRaw: PluginShellStreamRaw = {
     ipcRenderer.on(PLUGIN_SHELL_STREAM_CHANNELS.EVENT, handler);
     void ipcRenderer
       .invoke(PLUGIN_SHELL_STREAM_CHANNELS.START, streamId, cmd, args, opts)
-      .catch(() => synthesizeExit({ exitCode: -1, signal: null }));
+      .catch(() => settleExit({ exitCode: -1, signal: null }));
 
     const chunks: AsyncIterable<ShellChunk> = {
       [Symbol.asyncIterator]() {
