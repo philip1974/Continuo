@@ -11,33 +11,37 @@
 // 本守卫:静态断言三个 drop 调用点都带部分成功刷新契约(防「修复未传播到平行调用点」
 // 这一本仓最高频缺陷类再次发生)。镜像 popout-consumers-use-helper 的静态守卫风格。
 
+//
+// 重构后(explorer-batch-transfer):三个调用点的内联循环已收口到 batch-transfer.ts 的
+// transferEntriesInto,部分成功刷新契约由该主题的**行为测试**保证;本守卫改为断言三个调用点
+// 都走共享实现、且共享实现保留 finally 刷新(调用点不可能再各自漏传播)。
+
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const SRC = readFileSync(
-  join(__dirname, '..', '..', 'panels', 'Explorer', 'FolderTree.tsx'),
-  'utf-8',
-);
+const EXPLORER = join(__dirname, '..', '..', 'panels', 'Explorer');
+const SRC = readFileSync(join(EXPLORER, 'FolderTree.tsx'), 'utf-8');
+const HELPER = readFileSync(join(EXPLORER, 'batch-transfer.ts'), 'utf-8');
 
 describe('topic49 6thS · root-drop 部分成功刷新契约', () => {
-  it('root-drop 分支(拖到空白 root level)带 try/finally + movedAny 刷新', () => {
-    // 定位 root-drop 分支:从其唯一注释到该分支的 return
+  it('root-drop 分支(拖到空白 root level)走共享 transferEntriesInto', () => {
     const marker = 'root level)';
-    const start = SRC.indexOf(marker);
+    const start = SRC.lastIndexOf(marker);
     expect(start).toBeGreaterThan(-1);
-    // 窗口 3200:a11y(A136)给 root-drop 加 catch(err)→notify.error 后 finally 后移,加宽以覆盖。
-    const branch = SRC.slice(start, start + 3200);
-    // 必须出现 movedAny 累积标志 + finally + 在 finally 内 refreshParent(root)
-    expect(branch).toMatch(/let movedAny = false/);
-    expect(branch).toMatch(/}\s*finally\s*{/);
-    expect(branch).toMatch(/refreshParent\(root\)/);
+    const branch = SRC.slice(start, start + 1200);
+    expect(branch).toMatch(/runBatchTransfer\('move', moveable, root,/);
   });
 
-  it('三个文件移动调用点(onDropItems/onPaste/root-drop)都有 finally 刷新', () => {
-    // move_failed 通知出现在三个 drop 循环里;部分成功刷新契约要求每处都有 finally。
-    const finallyBlocks = SRC.match(/}\s*finally\s*{/g) ?? [];
-    // onDropItems + root-drop 两处用 movedAny+finally;onPaste 用 okAny+finally。
-    expect(finallyBlocks.length).toBeGreaterThanOrEqual(3);
+  it('三个文件移动调用点(onDropItems/onPaste/root-drop)都走 runBatchTransfer', () => {
+    const calls = SRC.match(/runBatchTransfer\(/g) ?? [];
+    expect(calls.length).toBeGreaterThanOrEqual(3);
+    expect(SRC).not.toMatch(/coApi\.fs\.move\(/);
+  });
+
+  it('共享实现在 finally 内刷新目标目录 + 源父目录', () => {
+    const fin = HELPER.slice(HELPER.search(/}\s*finally\s*{/));
+    expect(fin).toMatch(/deps\.refreshDir\(destDir\)/);
+    expect(fin).toMatch(/deps\.refreshDir\(sp\)/);
   });
 });

@@ -11,20 +11,24 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const SRC = readFileSync(
-  join(__dirname, '..', '..', 'panels', 'Explorer', 'FolderTree.tsx'),
-  'utf-8',
-);
+const EXPLORER = join(__dirname, '..', '..', 'panels', 'Explorer');
+const SRC = readFileSync(join(EXPLORER, 'FolderTree.tsx'), 'utf-8');
+const HELPER = readFileSync(join(EXPLORER, 'batch-transfer.ts'), 'utf-8');
 
+// 重构后(explorer-batch-transfer):三个 move 入口的内联循环收口到 transferEntriesInto,prune 经其
+// onSourcesGone 回调接入(唯一一处);trash / rename 仍在 FolderTree 直接 prune。
 describe('49 第八 session · clipboard prune 传播到所有源失效入口', () => {
-  it('5 个源失效入口(trash/rename/onDropItems/root-drop/onPaste)都调 prune', () => {
+  it('trash / rename 直接 prune;三个 move 入口经共享 onSourcesGone → prune', () => {
     const pruneCalls = SRC.match(/useExplorerClipboardStore\.getState\(\)\.prune\(/g) ?? [];
-    expect(pruneCalls.length).toBeGreaterThanOrEqual(5);
+    expect(pruneCalls.length).toBeGreaterThanOrEqual(3);
+    expect(SRC).toMatch(
+      /onSourcesGone: \(movedSrcs\) => useExplorerClipboardStore\.getState\(\)\.prune\(movedSrcs\)/,
+    );
   });
 
-  it('三个 move 入口(onDropItems/root-drop/onPaste)都 prune(movedSrcs)', () => {
-    const movedPrunes = SRC.match(/prune\(movedSrcs\)/g) ?? [];
-    expect(movedPrunes.length).toBeGreaterThanOrEqual(3);
+  it('三个 move 入口(onDropItems/root-drop/onPaste)都走 runBatchTransfer', () => {
+    const calls = SRC.match(/runBatchTransfer\(/g) ?? [];
+    expect(calls.length).toBeGreaterThanOrEqual(3);
   });
 
   it('rename 入口 prune([oldPath])、trash 入口 prune(removed)', () => {
@@ -32,10 +36,12 @@ describe('49 第八 session · clipboard prune 传播到所有源失效入口', 
     expect(SRC).toMatch(/prune\(removed\)/);
   });
 
-  it('onPaste cut 不再用 allOk 门控清剪贴板(部分成功也剪已移走项)', () => {
-    // 修复前是 `if (kind === 'cut' && allOk) ...clear()`;修复后无 allOk 门控,改 movedSrcs prune。
-    expect(SRC).not.toMatch(/kind === 'cut' && allOk/);
-    expect(SRC).toMatch(/kind === 'cut' && movedSrcs !== null && movedSrcCount > 0/);
-    expect(SRC).toMatch(/movedSrcs\.length = movedSrcCount/);
+  it('共享实现:部分成功也回报已移走项(无 allOk 门控),在 finally 内', () => {
+    // 修复前是 `if (kind === 'cut' && allOk) ...clear()`;现由 transferEntriesInto 的 finally
+    // 对已移走的 movedSrcs 调 onSourcesGone(行为测试见 explorer-batch-transfer)。
+    expect(SRC).not.toMatch(/allOk/);
+    expect(HELPER).not.toMatch(/allOk/);
+    const fin = HELPER.slice(HELPER.search(/}\s*finally\s*{/));
+    expect(fin).toMatch(/if \(movedSrcs\.length > 0\) deps\.onSourcesGone\(movedSrcs\)/);
   });
 });

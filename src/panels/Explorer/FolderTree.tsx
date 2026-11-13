@@ -14,12 +14,15 @@ import { ExplorerHeader } from './ExplorerHeader';
 import { createTreeConfig } from './tree-config';
 import { DEFAULT_INDENT, FILE_ROW_HEIGHT, FileRow } from './FileRow';
 import { createNewDir, createNewFile, removeItems, renameItem } from './mutate-actions';
+import { resolveDropTarget, type DropTargetEntry } from './drop-handlers';
 import {
-  partitionDropItems,
-  performDrop,
-  resolveDropTarget,
-  type DropTargetEntry,
-} from './drop-handlers';
+  dropForeignFilesInto,
+  transferEntriesInto,
+  type BatchTransferKind,
+} from './batch-transfer';
+
+// 既有入口保留(测试 / 外部按 FolderTree 导入)。
+export { formatDropFailureLines } from './batch-transfer';
 import { useFsWatcher } from './hooks/useFsWatcher';
 import { useEditorFile } from '@/panels/Editor/useEditorFile';
 import { useEditorStore } from '@/stores/editor.store';
@@ -119,22 +122,6 @@ export function buildSelectedPathSet(
 ): ReadonlySet<string> {
   if (!selectedItems || selectedItems.length === 0) return EMPTY_SELECTED_PATHS;
   return new Set(selectedItems);
-}
-
-interface DropFailureLine {
-  readonly name: string;
-  readonly code: string;
-  readonly message: string;
-}
-
-export function formatDropFailureLines(failed: readonly DropFailureLine[]): string {
-  let out = '';
-  for (let i = 0; i < failed.length; i += 1) {
-    const f = failed[i]!;
-    if (i > 0) out += '\n';
-    out += `  ${f.name}: [${f.code}] ${localizeErrorByCode(f.code, f.message)}`;
-  }
-  return out;
 }
 
 /**
@@ -256,6 +243,46 @@ export function FolderTree({ root }: { root: string }) {
     [],
   );
 
+  // 三个批量入口(onDropItems / root-drop / onPaste)共用的移动/复制流程:部分成功刷新、editor tab
+  // 路径同步、剪贴板 prune、失败/异常反馈都在 transferEntriesInto 一处(见 batch-transfer.ts)。
+  // logLabel / failedKey 只区分各入口的日志前缀与失败文案。
+  const runBatchTransfer = useCallback(
+    (
+      kind: BatchTransferKind,
+      srcs: readonly string[],
+      destDir: string,
+      logLabel: string,
+      failedKey: 'errors.folder.move_failed' | 'errors.folder.paste_failed',
+      opts?: { skipSameParent?: boolean },
+    ): Promise<void> =>
+      transferEntriesInto(
+        kind,
+        srcs,
+        destDir,
+        {
+          fs: coApi.fs,
+          makeUniqueDestPicker,
+          refreshDir: refreshParent,
+          onMoved: (src, dest) => useEditorStore.getState().renamePath(src, dest),
+          // 移走的源旧路径已不存在 → 剪除剪贴板里引用它的 cut/copy 项。
+          onSourcesGone: (movedSrcs) => useExplorerClipboardStore.getState().prune(movedSrcs),
+          onItemFailed: (src, code, message) => {
+            console.warn(`[explorer] ${logLabel} failed`, src, code, message);
+            notify.error(t(failedKey, { src, message: localizeErrorByCode(code, message) }), {
+              code,
+              mirror: false,
+            });
+          },
+          onException: (err) => {
+            const code = (err as { code?: string })?.code ?? 'EXCEPTION';
+            notify.error(localizeErrorByCode(code, (err as Error)?.message), { code });
+          },
+        },
+        opts,
+      ),
+    [makeUniqueDestPicker, refreshParent],
+  );
+
   const config = useMemo(
     () =>
       createTreeConfig({
@@ -298,91 +325,24 @@ export function FolderTree({ root }: { root: string }) {
         },
         // 内部多选拖动 → 批量 fs.move,语义同 cut→paste(但不经剪贴板)
         onDropItems: (items, destDir) => {
-          void (async () => {
-            const srcs = selectDraggedItemPaths(items);
-            // 记录已成功移动项涉及的源父目录。即使中途某项失败提前中止,也要在
-            // finally 里刷新这些目录 + destDir,否则已移动文件会在树上凭空消失
-            // (源目录没刷=还显示,目标目录没刷=不显示),而其 editor tab 路径已改 →
-            // 树/tab/磁盘三者不一致。对齐 mutate-actions.removeItems 的部分成功刷新。
-            const touchedSrcParents = new Set<string>();
-            const movedSrcs = new Array<string>(srcs.length);
-            let movedSrcCount = 0;
-            let movedAny = false;
-            try {
-              // a11y(A134,A133 同族):makeUniqueDestPicker(目标名探测)与 move 循环都包进 try —
-              // 此前 picker 在 try 外、move 只处理 !r.ok,IPC reject 直接丢到 unhandled promise,
-              // 拖放移动失败无 toast/live 反馈。catch 统一 notify;finally 仍刷新已移动目录。
-              const pickDest = await makeUniqueDestPicker(destDir);
-              for (const src of srcs) {
-                // 拖到原父目录 → no-op(canDrop 已挡掉拖到自身,父同位置只跳)
-                if (dirname(src) === destDir) continue;
-                const dest = pickDest(basenamePreserveTrailing(src));
-                const r = await coApi.fs.move(src, dest);
-                if (!r.ok) {
-                  console.warn('[explorer] drop move failed', src, r.code, r.message);
-                  notify.error(
-                    t('errors.folder.move_failed', {
-                      src,
-                      message: localizeErrorByCode(r.code, r.message),
-                    }),
-                    { code: r.code, mirror: false },
-                  );
-                  return;
-                }
-                useEditorStore.getState().renamePath(src, dest);
-                touchedSrcParents.add(dirname(src));
-                movedSrcs[movedSrcCount++] = src;
-                movedAny = true;
-              }
-            } catch (err) {
-              const code = (err as { code?: string })?.code ?? 'EXCEPTION';
-              notify.error(localizeErrorByCode(code, (err as Error)?.message), { code });
-            } finally {
-              if (movedAny) {
-                refreshParent(destDir);
-                for (const sp of touchedSrcParents) {
-                  if (sp !== destDir) refreshParent(sp);
-                }
-                // 移走的源旧路径已不存在 → 剪除剪贴板里引用它的 cut/copy 项。
-                movedSrcs.length = movedSrcCount;
-                useExplorerClipboardStore.getState().prune(movedSrcs);
-              }
-            }
-          })();
+          // 拖到原父目录 → no-op(canDrop 已挡掉拖到自身,父同位置只跳)
+          void runBatchTransfer(
+            'move',
+            selectDraggedItemPaths(items),
+            destDir,
+            'drop move',
+            'errors.folder.move_failed',
+            { skipSameParent: true },
+          );
         },
         // 外部 OS 文件 drop 到具体 row → 走与容器 onDrop 同一套 performDrop
         onDropForeign: (dataTransfer, destDir) => {
-          void (async () => {
-            // a11y(A150,A141 同族):row 级外部文件 drop 的 fire-and-forget async 包 try/catch ——
-            // performDrop 已恒返 DropResult(A137),但 partitionDropItems / refreshParent 仍可能抛,
-            // 无 catch 则成 unhandled rejection 且批量错误无 toast/live region 反馈。
-            try {
-              const { files, skippedDirs } = partitionDropItems(dataTransfer.items);
-              if (files.length === 0 && skippedDirs.length === 0) return;
-              const r = await performDrop(files, destDir, coApi.fs);
-              refreshParent(destDir);
-              if (skippedDirs.length > 0) {
-                notify.error(t('errors.folder.skipped_dirs', { count: skippedDirs.length }));
-              }
-              if (!r.ok) {
-                notify.error(
-                  t('errors.folder.batch_failed', { count: r.failed.length }) +
-                    '\n' +
-                    formatDropFailureLines(r.failed),
-                );
-              }
-            } catch (err) {
-              const code = (err as { code?: string })?.code ?? 'EXCEPTION';
-              notify.error(localizeErrorByCode(code, (err as Error)?.message ?? code), {
-                code,
-              });
-            }
-          })();
+          void dropForeignFilesInto(dataTransfer.items, destDir, coApi.fs, refreshParent);
         },
         expandedItems,
         setExpandedItems,
       }),
-    [expandedItems, makeUniqueDestPicker, refreshParent, root, setExpandedItems],
+    [expandedItems, refreshParent, root, runBatchTransfer, setExpandedItems],
   );
   const tree = useTree<FileEntry>(config);
   treeRef.current = tree;
@@ -572,76 +532,19 @@ export function FolderTree({ root }: { root: string }) {
         useExplorerClipboardStore.getState().set('copy', paths);
       },
       onPaste: (destDir: string) => {
-        void (async () => {
-          const { kind, paths } = useExplorerClipboardStore.getState();
-          if (!kind || paths.length === 0) return;
-          // 记录已成功 cut 移动项的源父目录 + 是否有成功项。即使中途失败提前中止,
-          // 也要在 finally 刷新已成功项涉及的目录,否则已移动/复制文件在树上不显示
-          // 而 editor tab 路径已改 → 三者不一致(同 onDropItems 的修复)。
-          const touchedSrcParents = new Set<string>();
-          const movedSrcs = kind === 'cut' ? new Array<string>(paths.length) : null;
-          let movedSrcCount = 0;
-          let okAny = false;
-          try {
-            // a11y(A135,A134/A133 同族):makeUniqueDestPicker(目标名探测)与 move/copy 循环都
-            // 包进 try —— 此前 picker 在 try 外、循环只处理 !r.ok,move/copy/listDir 的 IPC reject
-            // 直接丢到 unhandled promise(void 链),粘贴失败无 toast/live 反馈。catch 统一 notify;
-            // finally 仍剪贴板清理 + 部分成功刷新。
-            const pickDest = await makeUniqueDestPicker(destDir);
-            for (const src of paths) {
-              // 计算 dest:destDir + src basename;若已存在,自动加 ` copy` 后缀
-              const dest = pickDest(basenamePreserveTrailing(src));
-              const r =
-                kind === 'cut' ? await coApi.fs.move(src, dest) : await coApi.fs.copy(src, dest);
-              if (!r.ok) {
-                console.warn(`[explorer] paste(${kind}) failed`, src, r.code, r.message);
-                notify.error(
-                  t('errors.folder.paste_failed', {
-                    src,
-                    message: localizeErrorByCode(r.code, r.message),
-                  }),
-                  { code: r.code, mirror: false },
-                );
-                return;
-              }
-              // cut = move:同步 editor tab 路径(目录则前缀 rewrite 全部子 tab)
-              if (kind === 'cut') {
-                useEditorStore.getState().renamePath(src, dest);
-                touchedSrcParents.add(dirname(src));
-                movedSrcs![movedSrcCount++] = src;
-              }
-              okAny = true;
-            }
-          } catch (err) {
-            const code = (err as { code?: string })?.code ?? 'EXCEPTION';
-            notify.error(localizeErrorByCode(code, (err as Error)?.message), {
-              code,
-            });
-          } finally {
-            // cut 是 move:已成功移走的源旧路径已失效,从剪贴板剪除。全成功 → 剪空(等价
-            // 原 clear());**部分成功 → 只剪走已移走的,保留未移项供重试**。此前只在 allOk
-            // 时 clear,部分成功把已移走的幻影源留在剪贴板(灰显 + 失效 Paste)——与兄弟
-            // onDropItems/root-drop 的 finally prune(movedSrcs) 不对等(第八 session R7 完整性
-            // 批判揪出的同族遗漏入口)。copy 不动源,不剪。
-            if (kind === 'cut' && movedSrcs !== null && movedSrcCount > 0) {
-              movedSrcs.length = movedSrcCount;
-              useExplorerClipboardStore.getState().prune(movedSrcs);
-            }
-            if (okAny) {
-              // 触发树刷新:目标父目录 invalidate
-              treeApi.invalidateChildrenIds(destDir);
-              // cut 时已成功移动项的源父目录也要刷新(文件不在源了)
-              if (kind === 'cut') {
-                for (const sp of touchedSrcParents) {
-                  treeApi.invalidateChildrenIds(sp);
-                }
-              }
-            }
-          }
-        })();
+        const { kind, paths } = useExplorerClipboardStore.getState();
+        if (!kind || paths.length === 0) return;
+        // cut = move(部分成功只从剪贴板剪走已移走的,未移项留供重试);copy 不动源。
+        void runBatchTransfer(
+          kind === 'cut' ? 'move' : 'copy',
+          paths,
+          destDir,
+          `paste(${kind})`,
+          'errors.folder.paste_failed',
+        );
       },
     }),
-    [makeUniqueDestPicker, mutateDeps, root, theme, treeApi, tt],
+    [mutateDeps, root, runBatchTransfer, theme, treeApi, tt],
   );
 
   const submitCreate = async (name: string) => {
@@ -693,54 +596,7 @@ export function FolderTree({ root }: { root: string }) {
       // 已经在 root 下的不动(VSCode 同款)
       const moveable = selectRootDropMoveablePaths(dnd.draggedItems, root);
       if (moveable.length === 0) return;
-      // 与 onDropItems/onPaste 同款部分成功刷新(README P2-BB):中途某项失败提前
-      // 中止时,已成功移动项也要在 finally 刷新源父目录 + root,否则已移走的文件在
-      // 树上凭空消失(源没刷=还显示,root 没刷=不显示)而其 editor tab 路径已改 →
-      // 树/tab/磁盘三者不一致。此前 P2-BB 只修了 onDropItems/onPaste 两个兄弟调用点,
-      // 漏了这个 root-drop 分支(「修复未传播到平行调用点」)。
-      const touchedSrcParents = new Set<string>();
-      const movedSrcs = new Array<string>(moveable.length);
-      let movedSrcCount = 0;
-      let movedAny = false;
-      try {
-        // a11y(A136,A135/A134/A133 同族):root-drop(拖到空白)是 async 事件处理器,React 不
-        // await → 此前 makeUniqueDestPicker(root)在 try 外、循环只处理 !r.ok,move/listDir 的
-        // IPC reject 直接成 unhandled rejection,无 toast/live 反馈。catch 统一 notify;finally
-        // 仍部分成功刷新 + 剪贴板 prune。
-        const pickDest = await makeUniqueDestPicker(root);
-        for (const src of moveable) {
-          const dest = pickDest(basenamePreserveTrailing(src));
-          const r = await coApi.fs.move(src, dest);
-          if (!r.ok) {
-            console.warn('[explorer] root drop move failed', src, r.code, r.message);
-            notify.error(
-              t('errors.folder.move_failed', {
-                src,
-                message: localizeErrorByCode(r.code, r.message),
-              }),
-              { code: r.code, mirror: false },
-            );
-            return;
-          }
-          useEditorStore.getState().renamePath(src, dest);
-          touchedSrcParents.add(dirname(src));
-          movedSrcs[movedSrcCount++] = src;
-          movedAny = true;
-        }
-      } catch (err) {
-        const code = (err as { code?: string })?.code ?? 'EXCEPTION';
-        notify.error(localizeErrorByCode(code, (err as Error)?.message), { code });
-      } finally {
-        if (movedAny) {
-          refreshParent(root);
-          for (const sp of touchedSrcParents) {
-            if (sp !== root) refreshParent(sp);
-          }
-          // 移走的源旧路径已不存在 → 剪除剪贴板里引用它的 cut/copy 项。
-          movedSrcs.length = movedSrcCount;
-          useExplorerClipboardStore.getState().prune(movedSrcs);
-        }
-      }
+      await runBatchTransfer('move', moveable, root, 'root drop move', 'errors.folder.move_failed');
       return;
     }
     e.preventDefault();
@@ -748,28 +604,7 @@ export function FolderTree({ root }: { root: string }) {
     setDragActive(false);
     const target = resolveDropTarget(hoverTarget, root);
     setHoverTarget(null);
-    // a11y(A151,A150 同族):空白/root 区域外部文件 drop。handleDrop 是 async 事件处理器(React
-    // 不 await),partitionDropItems / refreshParent 抛会成 unhandled rejection 且批量错误无反馈。
-    try {
-      const { files, skippedDirs } = partitionDropItems(e.dataTransfer.items);
-      if (files.length === 0 && skippedDirs.length === 0) return;
-      const r = await performDrop(files, target, coApi.fs);
-      refreshParent(target);
-      // 仅在有问题时提示;成功 fs.watch 已自动刷新树
-      if (skippedDirs.length > 0) {
-        notify.error(t('errors.folder.skipped_dirs', { count: skippedDirs.length }));
-      }
-      if (!r.ok) {
-        notify.error(
-          t('errors.folder.batch_failed', { count: r.failed.length }) +
-            '\n' +
-            formatDropFailureLines(r.failed),
-        );
-      }
-    } catch (err) {
-      const code = (err as { code?: string })?.code ?? 'EXCEPTION';
-      notify.error(localizeErrorByCode(code, (err as Error)?.message ?? code), { code });
-    }
+    await dropForeignFilesInto(e.dataTransfer.items, target, coApi.fs, refreshParent);
   };
 
   return (
