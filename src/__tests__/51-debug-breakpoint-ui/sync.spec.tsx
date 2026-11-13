@@ -128,6 +128,25 @@ describe('topic51 Op6 · debug decoration sync', () => {
     dispatch.mockRestore();
   });
 
+  // 外部改盘 reload 会整篇替换文档,CodeMirror 把已有装饰映射成空;签名缓存不能因此认为「没变」而不重贴。
+  it('文档被整体替换后,装饰按行号重新贴回', () => {
+    const view = createView('/repo/a.ts', '/repo/a.ts');
+    useDebugStore.setState({
+      activeSessionId: null,
+      sessions: new Map([
+        ['s1', session('s1', { breakpoints: [{ file: '/repo/a.ts', line: 2, verified: true }] })],
+      ]),
+    });
+    stopSync = startDebugDecorationSync();
+    expect(view.dom.querySelectorAll('.cm-debug-breakpoint-marker')).toHaveLength(1);
+
+    view.dispatch({
+      changes: { from: 0, to: view.state.doc.length, insert: 'ONE\nTWO\nTHREE\nFOUR\n' },
+    });
+    useEditorStore.setState((state) => ({ tabs: [...state.tabs] })); // reload 后 store 通知
+    expect(view.dom.querySelectorAll('.cm-debug-breakpoint-marker')).toHaveLength(1);
+  });
+
   it('clears exec-line after continued and terminated events remove stopped state', () => {
     const view = createView('/repo/a.ts', '/repo/a.ts');
     useDebugStore.setState({

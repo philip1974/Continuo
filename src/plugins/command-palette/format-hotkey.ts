@@ -79,6 +79,17 @@ export function canonicalHotkeyKey(lowerKey: string): string {
   return KEY_ALIASES[lowerKey] ?? lowerKey;
 }
 
+/**
+ * 把整串快捷键的主键段(最后一个 `+` 之后)归一成 e.key 名,用于比较两个快捷键是否是同一个键
+ * (`mod+up` 与录制出的 `mod+arrowup`)。修饰键段原样保留。
+ */
+export function canonicalHotkey(combo: string): string {
+  const plus = combo.lastIndexOf('+');
+  const key = lowerIfNeeded(combo.slice(plus + 1).trim());
+  const canonical = canonicalHotkeyKey(key);
+  return canonical === combo.slice(plus + 1) ? combo : combo.slice(0, plus + 1) + canonical;
+}
+
 const EMPTY_HOTKEY_PARTS: string[] = [];
 
 function formatPart(part: string, platform: Platform): string {

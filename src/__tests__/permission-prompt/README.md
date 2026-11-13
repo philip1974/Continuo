@@ -26,6 +26,7 @@ PromptFn 桥接到 store,Promise 形态返回。PluginManager 在 _activate 前�
 ### PermissionPrompt UI
 
 - Modal,visible = pending !== null
+- 排队切换(A 结算后直接换成 B)时,B 出现后的短时间内「授予 / 全部拒绝」点击被忽略,防止对 A 连点误作用到 B
 - 标题 "插件 <id> 请求权限"
 - 每个 perm 一行 + checkbox
 - "全选" / "全部拒绝" / "确认授权选中" 三个按钮

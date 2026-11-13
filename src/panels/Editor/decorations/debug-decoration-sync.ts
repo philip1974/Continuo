@@ -3,7 +3,7 @@ import { pathEquals } from '@/lib/path-cross';
 import { useDebugStore, type DebugSessionShadow } from '@/stores/debug.store';
 import { useEditorStore } from '@/stores/editor.store';
 import { isMarkdownPath } from '../editor-path-utils';
-import { setDebugDecorations } from './debug-decorations';
+import { debugDocVersion, setDebugDecorations } from './debug-decorations';
 import { findEditorFileTabById } from '../editor-tab-lookup';
 
 let unsubscribeDebug: (() => void) | null = null;
@@ -38,7 +38,8 @@ function execLineForTab(
   return stopped.line;
 }
 
-// 每个 view 上次应用的装饰签名。同步订阅整个 editor store(敲键也触发),装饰没变就不再派发事务。
+// 每个 view 上次应用的装饰签名。同步订阅整个 editor store(任一 tab 敲键都触发),签名没变的 view 不再派发事务
+//(文档本身变了的那个 view 会重贴,其余 view 跳过)。
 const appliedSignatures = new WeakMap<EditorView, string>();
 
 function applyDecorations(
@@ -46,7 +47,8 @@ function applyDecorations(
   breakpointLines: readonly number[],
   execLine: number | null,
 ): void {
-  const signature = `${execLine ?? ''}|${breakpointLines.join(',')}`;
+  // 含文档版本:文档变过(装饰可能已被映射走 / 清空)就必须按行号重贴,不能因行号没变而跳过。
+  const signature = `${debugDocVersion(view)}|${execLine ?? ''}|${breakpointLines.join(',')}`;
   if (appliedSignatures.get(view) === signature) return;
   appliedSignatures.set(view, signature);
   setDebugDecorations(view, { breakpointLines, execLine });

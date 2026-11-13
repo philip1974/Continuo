@@ -18,6 +18,33 @@ beforeEach(() => {
 });
 afterEach(() => cleanup());
 
+// 排队后弹窗会从 A 直接换成 B(按钮位置不变、B 默认全选)。对 A 的「授予」连点两下,第二下不能落到 B 上。
+describe('PermissionPrompt — 排队切换时防连点误授', () => {
+  it('A 结算后立刻出现的 B:短时间内的点击被忽略,之后才生效', async () => {
+    vi.useFakeTimers();
+    try {
+      const a = usePermissionPromptStore.getState().request('plugin.a', ['fs']);
+      const b = usePermissionPromptStore.getState().request('plugin.b', ['shell']);
+      render(<PermissionPrompt />);
+      const grantButton = (): HTMLButtonElement =>
+        Array.from(document.querySelectorAll<HTMLButtonElement>('.wm-modal-content button')).at(-1)!;
+
+      fireEvent.click(grantButton()); // 授予 A
+      expect(await a).toEqual(['fs']);
+      expect(usePermissionPromptStore.getState().pending?.pluginId).toBe('plugin.b');
+
+      fireEvent.click(grantButton()); // 连点的第二下,落在 B 的按钮上
+      expect(usePermissionPromptStore.getState().pending?.pluginId).toBe('plugin.b');
+
+      act(() => void vi.advanceTimersByTime(600));
+      fireEvent.click(grantButton()); // 用户看清后再点
+      expect(await b).toEqual(['shell']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('PermissionPrompt UI', () => {
   it('pluginId 模板 prefix/suffix 使用 memoized parts,不在 JSX IIFE 中重复拆分', () => {
     const src = readFileSync(

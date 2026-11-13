@@ -2,6 +2,8 @@
 import { describe, expect, it } from 'vitest';
 import { matchesHotkey } from '../../plugins/command-palette/useCommandHotkeys';
 import { formatHotkey } from '../../plugins/command-palette/format-hotkey';
+import { selectKeybindingConflicts } from '../../plugins/keybindings/KeybindingCaptureModal';
+import type { CommandSpec } from '../../plugins/registries/CommandRegistry';
 
 function ev(init: Partial<KeyboardEvent>): KeyboardEvent {
   return {
@@ -38,6 +40,30 @@ describe('匹配:主键别名归一到 e.key 名', () => {
 
   it('别名不串键:mod+up 不匹配 ArrowDown', () => {
     expect(matchesHotkey('mod+up', ev({ key: 'ArrowDown', ctrlKey: true }), 'other')).toBe(false);
+  });
+});
+
+describe('冲突检测:别名与 e.key 名视为同一个键', () => {
+  const commands = [
+    { id: 'plugin.up', title: 'Up', hotkey: 'mod+up', fn: () => {} },
+    { id: 'plugin.close', title: 'Close', hotkey: 'mod+esc', fn: () => {} },
+    { id: 'plugin.other', title: 'Other', hotkey: 'mod+k', fn: () => {} },
+  ] as readonly CommandSpec[];
+
+  it('录制出 mod+arrowup 与已注册的 mod+up 冲突', () => {
+    expect(selectKeybindingConflicts(commands, 'me', 'mod+arrowup').map((c) => c.id)).toEqual([
+      'plugin.up',
+    ]);
+  });
+
+  it('录制出 mod+escape 与已注册的 mod+esc 冲突', () => {
+    expect(selectKeybindingConflicts(commands, 'me', 'mod+escape').map((c) => c.id)).toEqual([
+      'plugin.close',
+    ]);
+  });
+
+  it('不同键不误报', () => {
+    expect(selectKeybindingConflicts(commands, 'me', 'mod+arrowdown')).toEqual([]);
   });
 });
 

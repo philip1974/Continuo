@@ -299,6 +299,19 @@ describe('SettingItemRow — number', () => {
     expect(input.value).toBe('24');
   });
 
+  // 没键入过就失焦 / Enter(Tab 经过、点一下再点别处)不能写出 override:否则重置图标亮起,
+  // 且存下一条等于默认值的 override,以后默认值变了该用户也不跟随。
+  it('未键入就失焦或按 Enter → 不写 override', () => {
+    const s = spec({ id: 'terminal.fontSize', type: 'number', default: 13, min: 10, max: 24 });
+    const { container } = render(<SettingItemRow spec={s} />);
+    const input = container.querySelector('input[type=number]') as HTMLInputElement;
+
+    fireEvent.focus(input);
+    fireEvent.blur(input);
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect('terminal.fontSize' in useSettingsValuesStore.getState().values).toBe(false);
+  });
+
   it('清空后失焦 → 不提交,回显原值', () => {
     const s = spec({ id: 'terminal.fontSize', type: 'number', default: 13, min: 10, max: 24 });
     const { container } = render(<SettingItemRow spec={s} />);

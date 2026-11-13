@@ -91,7 +91,22 @@ const execLineDecorationField = StateField.define<DecorationSet>({
   provide: (field) => EditorView.decorations.from(field),
 });
 
+/**
+ * 文档版本:每次文档变化 +1。装饰是按行号贴的,文档一变(尤其外部改盘 reload 的整篇替换,CodeMirror 会把
+ * 已有装饰映射成空)原先贴的位置就不可信 —— 同步侧把它计入「已应用」签名,文档变过就按行号重贴。
+ */
+const debugDocVersionField = StateField.define<number>({
+  create: () => 0,
+  update: (version, transaction) => (transaction.docChanged ? version + 1 : version),
+});
+
+/** 该 view 的文档版本(未装 debug 装饰扩展的 view 恒为 0)。 */
+export function debugDocVersion(view: EditorView): number {
+  return view.state.field(debugDocVersionField, false) ?? 0;
+}
+
 const debugDecorationsHostExtension: Extension = [
+  debugDocVersionField,
   breakpointMarkersField,
   execLineDecorationField,
   gutter({

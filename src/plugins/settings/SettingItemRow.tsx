@@ -61,6 +61,8 @@ function NumberSettingInput({
 }) {
   const [draft, setDraft] = useState<string | null>(null);
   const commitClamped = (raw: string): void => {
+    // 没键入过(无草稿)→ 不提交:否则 Tab 经过 / 点一下就会写出一条等于当前值的 override。
+    if (draft === null) return;
     const n = parseSettingNumber(raw);
     if (n !== null) onCommit(clampSettingNumber(spec, n));
     setDraft(null);

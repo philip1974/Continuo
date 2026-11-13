@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Button, KeyCap, Modal } from '@/design';
 import {
+  canonicalHotkey,
   formatHotkeyParts,
   detectPlatform,
   type Platform,
@@ -72,12 +73,14 @@ export function selectKeybindingConflicts(
   overrides: Readonly<Record<string, string>> = EMPTY_OVERRIDES,
 ): readonly CommandSpec[] {
   if (!captured) return EMPTY_CONFLICTS;
+  // 两侧都归一主键别名(mod+up ≡ mod+arrowup):别名在运行时会触发,不归一就会两条命令抢同一个键而不提示。
+  const capturedCanonical = canonicalHotkey(captured);
   let conflicts: CommandSpec[] | null = null;
   let conflictCount = 0;
   for (const command of allCommands) {
-    if (command.id === commandId || resolveEffectiveHotkey(command, overrides) !== captured) {
-      continue;
-    }
+    if (command.id === commandId) continue;
+    const effective = resolveEffectiveHotkey(command, overrides);
+    if (!effective || canonicalHotkey(effective) !== capturedCanonical) continue;
     if (conflicts === null) conflicts = new Array<CommandSpec>(allCommands.length);
     conflicts[conflictCount] = command;
     conflictCount += 1;
