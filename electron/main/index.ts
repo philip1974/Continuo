@@ -228,7 +228,8 @@ function requestWindowFlush(win: BrowserWindow): Promise<void> {
 }
 
 function wireWindowCloseFlush(win: BrowserWindow): void {
-  win.on('closed', () => flushReadyWindowIds.delete(win.id));
+  const windowId = win.id; // closed 之后窗口已销毁,提前取 id
+  win.on('closed', () => flushReadyWindowIds.delete(windowId));
   let flushed = flushedOnQuit.has(win.id);
   // race(R45):flush 在途守卫。requestWindowFlush 是异步(等 renderer ack / 10s 超时),其间
   // `flushed` 仍为 false;若不挡住,快速重复关窗 / 系统关窗 / app.quit 触发的第二个 close 会再次

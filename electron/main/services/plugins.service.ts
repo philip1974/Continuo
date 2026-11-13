@@ -193,7 +193,7 @@ export async function readFileCapped(
   // 边界(E158,E24 同族 TOCTOU 修正):此前先 `fs.stat(path)` 判 size、再 `fs.readFile(path)` 整文件
   // —— 两次独立按路径解析,检查与读取之间文件可被替换(路径指向新 inode)或增长,绕过大小上限。改用
   // 共享 readFileCappedFd(单 fd open→fstat 同 inode→有界读)。本 helper 对任何错误(含缺失/不可读)
-  // 与超限都返 null(跳过该文件;缺 manifest/main=跳过整插件,缺 styles=无样式)。
+  // 与超限都返 null(跳过该文件;缺 manifest/main=跳过整插件)。
   try {
     const { text, tooLarge } = await readFileCappedFd(filePath, maxBytes);
     if (tooLarge) {

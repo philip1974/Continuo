@@ -65,13 +65,13 @@ function NumberSettingInput({
   const [draftState, setDraftState] = useState<{ text: string; forValue: SettingItemValue } | null>(
     null,
   );
+  // 已作废的草稿在渲染期就清掉(React 允许对本组件的 state 这样做):只把它当「派生为 null」的话,值之后
+  // 若又变回 forValue,旧文本会复活并在失焦时被提交。
+  if (draftState !== null && !Object.is(draftState.forValue, value)) setDraftState(null);
   const draft = draftState !== null && Object.is(draftState.forValue, value) ? draftState.text : null;
   const commitClamped = (raw: string): void => {
     // 没键入过(无有效草稿)→ 不提交:否则 Tab 经过 / 点一下就会写出一条等于当前值的 override。
-    if (draft === null) {
-      if (draftState !== null) setDraftState(null);
-      return;
-    }
+    if (draft === null) return;
     const n = parseSettingNumber(raw);
     if (n !== null) onCommit(clampSettingNumber(spec, n));
     setDraftState(null);

@@ -342,6 +342,20 @@ describe('SettingItemRow — number', () => {
     expect(input.value).toBe('18');
   });
 
+  it('作废的草稿不会在值变回原值时复活', () => {
+    const s = spec({ id: 'terminal.fontSize', type: 'number', default: 13, min: 10, max: 24 });
+    const { container } = render(<SettingItemRow spec={s} />);
+    const input = container.querySelector('input[type=number]') as HTMLInputElement;
+
+    fireEvent.change(input, { target: { value: '99' } }); // 越界草稿,对应的已知值是 13
+    act(() => useSettingsValuesStore.getState().setValue('terminal.fontSize', 18)); // 别处改成 18
+    expect(input.value).toBe('18');
+    act(() => useSettingsValuesStore.getState().reset('terminal.fontSize')); // 又回到 13
+    expect(input.value).toBe('13');
+    fireEvent.blur(input);
+    expect('terminal.fontSize' in useSettingsValuesStore.getState().values).toBe(false);
+  });
+
   it('清空后失焦 → 不提交,回显原值', () => {
     const s = spec({ id: 'terminal.fontSize', type: 'number', default: 13, min: 10, max: 24 });
     const { container } = render(<SettingItemRow spec={s} />);

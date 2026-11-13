@@ -21,7 +21,7 @@ import { z } from 'zod';
 export const PATH_STR_MAX = 8192; // 单条路径字符串(远超真实路径)
 export const PATH_ARRAY_MAX = 100_000; // expandedPaths / openFilePaths(大树/多 tab)(E277 运行时同守)
 const RECENT_ROOTS_MAX = 1000; // recentRoots
-export const PINNED_MAX = 10_000; // pinned.paths
+const PINNED_MAX = 10_000; // pinned.paths
 const WINDOWS_MAX = 10_000; // windows 段数
 const pathStr = (): z.ZodString => z.string().max(PATH_STR_MAX);
 const pathArray = (): z.ZodArray<z.ZodString> =>
