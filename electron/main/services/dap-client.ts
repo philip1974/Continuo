@@ -50,6 +50,12 @@ interface PendingRequest {
   readonly reject: (err: Error) => void;
 }
 
+/**
+ * 内存 transcript(诊断用)保留的最大条目数。此前无上限:每条收发的 DAP 消息(含 variables 等大 payload)
+ * 都留到 session 结束,长调试会话内存单调增长。
+ */
+export const DAP_TRANSCRIPT_MAX_ENTRIES = 1000;
+
 export interface DapTranscriptEntry {
   readonly direction: 'client' | 'server' | 'server-stdout';
   readonly message?: DapMessage;
@@ -278,7 +284,7 @@ export class DapClient {
       this.serverStderr += chunk.toString('utf8');
     });
     server.stdout.on('data', (chunk: Buffer) => {
-      this.transcript.push({
+      this.recordTranscript({
         direction: 'server-stdout',
         text: chunk.toString('utf8'),
       });
@@ -421,17 +427,27 @@ export class DapClient {
     };
   }
 
+  // transcript 只保留最近 DAP_TRANSCRIPT_MAX_ENTRIES 条(父子 session 共享同一数组)。超限时一次裁掉较旧的
+  // 一半(摊还 O(1),避免每条消息都 shift)。
+  private recordTranscript(entry: DapTranscriptEntry): void {
+    const transcript = this.transcript;
+    transcript.push(entry);
+    if (transcript.length > DAP_TRANSCRIPT_MAX_ENTRIES) {
+      transcript.splice(0, transcript.length - DAP_TRANSCRIPT_MAX_ENTRIES / 2);
+    }
+  }
+
   sendMessage(message: DapMessage): void {
     if (!this.socket || this.socket.destroyed) {
       throw new Error('DAP socket is not connected');
     }
-    this.transcript.push({ direction: 'client', message });
+    this.recordTranscript({ direction: 'client', message });
     traceDap(this.traceId, 'send', message);
     this.socket.write(encodeDapMessage(message));
   }
 
   receiveMessage(message: DapMessage): void {
-    this.transcript.push({ direction: 'server', message });
+    this.recordTranscript({ direction: 'server', message });
     traceDap(this.traceId, 'recv', message);
     if (isDapResponse(message)) {
       const pending = this.pending.get(message.request_seq);

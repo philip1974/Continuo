@@ -22,12 +22,12 @@ import { ERROR_CODES } from '../../shared/error-codes';
 import { errorMessage } from '../../shared/error-message';
 import { isValidPluginId } from '../../shared/plugin-id';
 import { createSerialQueue } from '../../shared/run-serial-per-key';
+import { isIpcPathScope, isIpcPermissionDecision } from '../../shared/permission-record';
 import { killWithGrace } from '../lib/kill-with-grace';
 import { atomicWriteJson } from '../lib/atomic-write';
 import { createByteCappedBuffer } from '../lib/byte-capped-buffer';
 import { readFileCappedFd } from '../lib/read-fh-capped';
 import { runSerialPerKey } from './serialize-per-key';
-import { PERMISSION_KEYS } from '../../shared/permission-keys';
 import { parseManifest } from '../../shared/plugin-manifest';
 
 function isAbsolutePathLike(value: string): boolean {
@@ -89,7 +89,9 @@ export function resolvePluginMainPath(
  * 路径穿越(审计 P1)。与 fs `renameEntry` 拒 `.`/`..` 同款防御。
  */
 export function isSafePluginId(id: string): boolean {
-  return isValidPluginId(id);
+  // 长度上限与读端一致:各持久化读端都丢弃超长 id,写端 / 安装 / 卸载若只查字符集,超长合法字符 id 会
+  //「写成功、读回被丢」(且超长 id 拼路径可能 ENAMETOOLONG)。
+  return id.length <= PLUGIN_ID_MAX_LEN && isValidPluginId(id);
 }
 
 // 边界(E102):manifest.main 入口名长度上限,对齐 renderer ManifestSchema 的 main.max(512,E74)。
@@ -424,19 +426,9 @@ const PERMISSIONS_FILE = '_permissions.json';
 // 封顶(对齐 IPC 写端 DECISIONS_MAX/PLUGINS_MAX,防 RMW 写回绕过写端上限)。
 const MAX_DECISIONS_PER_PLUGIN = PERMISSION_RECORD_LIMITS.DECISIONS_PER_PLUGIN_MAX; // 对齐 plugins.ipc DECISIONS_MAX
 const MAX_PERMISSION_PLUGIN_KEYS = PERMISSION_RECORD_LIMITS.PLUGIN_KEYS_MAX; // 对齐 plugins.ipc PLUGINS_MAX
-const PERMISSION_KEY_SET: ReadonlySet<string> = new Set(PERMISSION_KEYS);
 
-function isDecision(x: unknown): x is IpcPermissionDecision {
-  if (!x || typeof x !== 'object') return false;
-  const o = x as Record<string, unknown>;
-  return (
-    typeof o.permission === 'string' &&
-    PERMISSION_KEY_SET.has(o.permission) && // 边界(E87):必须是业务枚举成员
-    typeof o.granted === 'boolean' &&
-    typeof o.decidedAt === 'number' &&
-    Number.isFinite(o.decidedAt) // 边界(E87/E5):非有限时间戳拒
-  );
-}
+// 单条 decision / scope 的形态判定取 shared 单一来源(与 renderer 读端、IPC schema 同一规则)。
+const isDecision = isIpcPermissionDecision;
 
 /**
  * 边界(E207,E206/E197-E199 有界迭代族):"上限内全有效、凑满即停"的有界校验。按序校验数组元素:
@@ -716,19 +708,8 @@ const PATH_SCOPES_FILE = '_plugin-path-scopes.json';
 // 手工/旧残留的 1MiB 元数据可塞大量非法 key / 超长 path / 超量 scope 通过既有「value 是数组 +
 // isIpcPathScope」校验,进 readPluginPathScopes→hydrate→mergeScopes 前先构造整表,且
 // writePluginPathScopes 的 RMW 会把其它非法/超量 plugin 条目原样写回(绕过写端契约)。
-const PATH_SCOPE_PATH_MAX = PERMISSION_RECORD_LIMITS.SCOPE_PATH_MAX; // 单条 scope path 长度上限(对齐 E31 request-scope path 上限)
 const MAX_PERSISTED_SCOPES_PER_PLUGIN = PERMISSION_RECORD_LIMITS.PATH_SCOPES_PER_PLUGIN_MAX; // 对齐 PathScopeRegistry MAX_SCOPES_PER_PLUGIN(E81)
 const MAX_PERSISTED_PLUGIN_KEYS = 4096; // 持久化表的 plugin key 数上限
-
-function isIpcPathScope(x: unknown): x is IpcPathScope {
-  if (!x || typeof x !== 'object') return false;
-  const o = x as Record<string, unknown>;
-  return (
-    typeof o.path === 'string' &&
-    o.path.length <= PATH_SCOPE_PATH_MAX && // 边界(E86):超长 path 拒(防元数据放大)
-    (o.mode === 'r' || o.mode === 'rw')
-  );
-}
 
 async function readAllPathScopes(
   baseDir: string,

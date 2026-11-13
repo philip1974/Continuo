@@ -25,13 +25,13 @@ import {
   writePluginPermissions,
 } from '../services/plugins.service';
 import { broadcastToWindows } from '../lib/broadcast';
+import { PERMISSION_KEYS } from '../../shared/permission-keys';
 
 // 边界(E16):插件权限 IPC schema 此前对 ids/decisions/pathScopes/plugin id/path/permission 字符串
 // 都无长度或数量上限。畸形 renderer payload 可把 _permissions.json / _path-scopes.json 写成超大对象
 // 或超长路径列表 → 主进程 RMW、atomic JSON 写入、启动水合、权限 UI 卡顿。下列 cap 远超任何现实
 // 插件集合,只挡损坏/滥用;超限 → safeHandle zod 校验失败 → BAD_INPUT。
 const PLUGIN_ID_MAX = PLUGIN_ID_MAX_LEN; // 反 DNS plugin id
-const PERMISSION_MAX = PERMISSION_RECORD_LIMITS.PERMISSION_NAME_MAX; // 权限名
 const PATH_MAX = PERMISSION_RECORD_LIMITS.SCOPE_PATH_MAX; // path scope 路径
 const URL_MAX = GIT_URL_MAX; // git url(E282:收口到 shared,与 renderer onChange 截断同源)
 const IDS_MAX = 10_000; // enabled id 数量
@@ -52,7 +52,9 @@ const MutateEnabledInput = z
   .strict();
 const DecisionSchema = z
   .object({
-    permission: z.string().max(PERMISSION_MAX),
+    // 必须是权限枚举成员(与 shared isIpcPermissionDecision 一致;此前只限长度,未知权限名经 IPC 放行后
+    // 被 service 层静默丢弃 —— 写「成功」但读不回)。
+    permission: z.enum(PERMISSION_KEYS),
     granted: z.boolean(),
     // 边界(E92,E87 读端对偶):decidedAt 必须有限非负。z.number() 接受 Infinity/NaN —— 写端
     // 看似 grant/deny 成功,但持久化 JSON.stringify(Infinity)=null,读盘层(E87 isDecision)按
@@ -64,7 +66,7 @@ const DecisionSchema = z
 // 可维护性 M6:与 shared IpcPermissionRecord 同步 —— 接受旧数组形态与新
 // `{ decisions, pathScopes? }` 形态,让 IPC 校验契约与 renderer 序列化契约一致。
 const PathScopeSchema = z
-  .object({ path: z.string().max(PATH_MAX), mode: z.enum(['r', 'rw']) })
+  .object({ path: z.string().min(1).max(PATH_MAX), mode: z.enum(['r', 'rw']) })
   .strict();
 const PermissionRecordSchema = z.union([
   z.array(DecisionSchema).max(DECISIONS_MAX),

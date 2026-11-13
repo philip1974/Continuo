@@ -20,6 +20,7 @@ import type { StatusBarItemSpec } from '@/plugins/registries/StatusBarRegistry';
 import { getCachedClipboard } from '@/plugins/sandbox-sweep';
 import { useT, t as translate } from '@/i18n';
 import { basenameForChrome } from './path-label';
+import { codedError, errorCodeOf } from '../../electron/shared/error-message';
 
 const EMPTY_STATUS_ITEMS: readonly StatusBarItemSpec[] = [];
 const EMPTY_STATUS_SPLIT = {
@@ -133,14 +134,15 @@ async function handleRevokeAgentTerminals(count: number): Promise<void> {
   // 让用户知道并重试。(codex 复审 loop R18)
   try {
     const r = await coApi.agentAuth.revoke();
-    if (!r.ok) throw new Error(r.code ?? 'revoke failed');
+    // 保留稳定 code(此前 new Error(r.code) 把 code 塞进 message,下方 catch 取不到 → toast 不带 code)。
+    if (!r.ok) throw codedError(r.code, r.message ?? 'revoke failed');
   } catch (err) {
     // race(R92):仅当本次仍是最新 revoke(无更晚的 revoke 覆盖)才回滚/报错。更晚的成功 revoke
     // 已把状态正确置为 revoked,先发的迟到失败不得用旧 wasGranted 把 sessionGranted 翻回 true。
     if (myGen !== revokeGen) return;
     if (wasGranted) useAgentAuthStore.setState({ sessionGranted: true });
     notify.error(translate('permissions.revoke_all.failed'), {
-      code: (err as { code?: string })?.code,
+      code: errorCodeOf(err),
     });
   }
 }

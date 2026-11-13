@@ -40,6 +40,7 @@ import {
   validateScopesShape,
 } from '../../electron/shared/fs-limits';
 import { utf8BytesExceed } from '../../electron/shared/utf8-byte-length';
+import { codedError } from '../../electron/shared/error-message';
 import {
   NETWORK_URL_MAX,
   NETWORK_HEADERS_MAX,
@@ -158,7 +159,8 @@ export function buildPluginListDirEntries(
 // 复用 FS_PATH_MAX 在发 IPC 前 reject(空字符串放行,交主进程 check() 处理)。
 function assertPluginFsPath(path: unknown, label = 'path'): asserts path is string {
   if (typeof path !== 'string' || path.length > FS_PATH_MAX) {
-    throw new Error(
+    throw codedError(
+      'BAD_INPUT',
       `plugin fs ${label} invalid or too long (max ${FS_PATH_MAX})`,
     );
   }
@@ -216,11 +218,12 @@ function makeFs(
       // 跳过字节上限,非 string(JS 插件绕 TS 类型传 Uint8Array/对象)直接经 structured-clone 进 IPC。
       // content 契约是 string,非 string 即拒(BAD_INPUT);string 再按字节上限。
       if (typeof content !== 'string') {
-        throw new Error('plugin write content must be a string');
+        throw codedError('BAD_INPUT', 'plugin write content must be a string');
       }
       // 边界(E125):真实 UTF-8 字节(非 .length=UTF-16 code unit),与主 fs 入口同款。
       if (utf8BytesExceed(content, MAX_WRITE_BYTES)) {
-        throw new Error(
+        throw codedError(
+          'BAD_INPUT',
           `plugin write content too large (> ${MAX_WRITE_BYTES} 字节)`,
         );
       }

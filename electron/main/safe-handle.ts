@@ -1,5 +1,5 @@
 import { BrowserWindow, ipcMain } from 'electron';
-import type { IpcMainInvokeEvent, WebFrameMain } from 'electron';
+import type { IpcMain, IpcMainInvokeEvent, WebFrameMain } from 'electron';
 import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
 import type { IpcResult } from '../shared/ipc-result';
@@ -303,4 +303,48 @@ export function safeHandleWithWindow<I>(
     (input, { event }) => handler(input, senderWindowOrThrow(event, noWindowCode)),
     isTrustedFrame,
   );
+}
+
+/**
+ * frame-trust 断言(不经 safeHandle 管线的裸 ipcMain.handle 用):sender frame 不可信(含已销毁的 null)→
+ * 抛带 IPC_ERR.DENIED 的错误。所有写 / 敏感 IPC 只信真实 renderer 入口 frame —— 权限检查多在 renderer 的
+ * scoped-app 包装层,能触达 raw IPC 的不可信 frame(隔离 iframe / 未来子 frame)否则可直接绕过。
+ */
+export function assertTrustedFrame(
+  event: Pick<IpcMainInvokeEvent, 'senderFrame'>,
+  isTrustedFrame: IsTrustedFrame = defaultIsTrustedFrame,
+): void {
+  if (!isTrustedFrame(event.senderFrame)) {
+    throw Object.assign(new Error('sender frame is not trusted'), {
+      code: IPC_ERR.DENIED,
+    });
+  }
+}
+
+/**
+ * 给一组裸 `ipcMain.handle` 统一加 frame-trust 门:返回的对象把 `handle` 注册的每个 handler 包一层
+ * assertTrustedFrame,其它方法原样转发。在**注册点**包一次即可覆盖 service 内全部 handler(单一漏斗,
+ * 不必逐个 handler 手抄检查 —— plugin-data / plugin-fs 的 21 个 handler 此前就是漏了)。
+ */
+export function withTrustedFrameGate(
+  target: IpcMain,
+  isTrustedFrame: IsTrustedFrame = defaultIsTrustedFrame,
+): IpcMain {
+  return new Proxy(target, {
+    get(obj, prop, receiver) {
+      if (prop !== 'handle') {
+        const value: unknown = Reflect.get(obj, prop, receiver);
+        return typeof value === 'function'
+          ? (value as (...a: unknown[]) => unknown).bind(obj)
+          : value;
+      }
+      const gatedHandle: IpcMain['handle'] = (channel, listener) => {
+        obj.handle(channel, (event, ...args) => {
+          assertTrustedFrame(event, isTrustedFrame);
+          return listener(event, ...(args as unknown[]));
+        });
+      };
+      return gatedHandle;
+    },
+  });
 }

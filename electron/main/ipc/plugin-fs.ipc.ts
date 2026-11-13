@@ -13,6 +13,7 @@ import {
 } from '../services/plugins.service';
 import { ScopeRequestCorrelator } from '../services/scope-request-correlator';
 import type { PathScope } from '../../shared/plugin-fs-contract';
+import { withTrustedFrameGate } from '../safe-handle';
 
 export interface RegisterPluginFsIpcArgs {
   ipcMain: IpcMain;
@@ -62,7 +63,8 @@ export function registerPluginFsIpc({
   // path-scope 持久化落在 userData/plugins/_plugin-path-scopes.json,与决策同目录、分文件。
   const pluginsDir = join(app.getPath('userData'), 'plugins');
 
-  registerPluginFsHandlers(ipcMain, {
+  // frame-trust 门(token + sender 校验之外的纵深防御;_register-plugin 本身不带 token)。
+  registerPluginFsHandlers(withTrustedFrameGate(ipcMain), {
     identityRegistry,
     pathScopeRegistry,
     correlator,

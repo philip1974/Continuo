@@ -2,8 +2,7 @@ import { spawn, type ChildProcessByStdio } from 'node:child_process';
 import type { Readable } from 'node:stream';
 import type { IpcMain } from 'electron';
 import { PLUGIN_SHELL_STREAM_CHANNELS } from '../../shared/plugin-shell-stream-channels';
-import { defaultIsTrustedFrame } from '../safe-handle';
-import { IPC_ERR } from '../../shared/ipc-result';
+import { assertTrustedFrame } from '../safe-handle';
 import { ERROR_CODES } from '../../shared/error-codes';
 // 边界(E45,E12 shell.exec 同族):plugin-shell-stream:start 的 cmd/args/cwd/streamId 此前无长度/数量
 // 上限(只 E10 修了 timeoutMs)。同仓 shell.exec(E12)已有 PATH/ARG 上限,但流式 spawn 入口漏了。
@@ -74,11 +73,7 @@ export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
       // scoped-app 包装层检查。不加这道门,能触达 raw IPC 的不可信 frame(ADR-Plugin-5
       // 隔离 iframe / 未来子 frame)即可绕过权限边界触发本机命令执行。与同仓所有写/敏感
       // IPC 的 defaultIsTrustedFrame 纪律一致(codex 复审 loop R8,同 R7 族但 spawn 面更重)。
-      if (!defaultIsTrustedFrame(event.senderFrame)) {
-        throw Object.assign(new Error('sender frame is not trusted'), {
-          code: IPC_ERR.DENIED,
-        });
-      }
+      assertTrustedFrame(event);
       if (active.has(streamId)) {
         throw new Error(`streamId already active: ${streamId}`);
       }
@@ -196,11 +191,7 @@ export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
     PLUGIN_SHELL_STREAM_CHANNELS.ABORT,
     async (event, streamId: string) => {
       // 同 START 的 frame-trust 兜底(R8)。
-      if (!defaultIsTrustedFrame(event.senderFrame)) {
-        throw Object.assign(new Error('sender frame is not trusted'), {
-          code: IPC_ERR.DENIED,
-        });
-      }
+      assertTrustedFrame(event);
       const handle = active.get(streamId);
       if (!handle) return;
       // 归属校验:只有发起该 stream 的 sender 能 abort 它,避免跨 sender 按 streamId

@@ -737,6 +737,10 @@
 - [`PermissionPrompt.spec.tsx`](./permission-prompt/PermissionPrompt.spec.tsx)
 - [`promptStore.spec.ts`](./permission-prompt/promptStore.spec.ts)
 
+## [permission-record-contract(权限记录单条形态的跨进程统一规则)](./permission-record-contract/README.md)
+
+- [`permission-record.spec.ts`](./permission-record-contract/permission-record.spec.ts)
+
 ## [picker-shared(重构:CommandPalette / QuickOpen 共享的 picker 机制)](./picker-shared/README.md)
 
 - [`picker-shared.spec.tsx`](./picker-shared/picker-shared.spec.tsx)
@@ -766,6 +770,10 @@
 ## [plugin-fs-token-revoke-retry](./plugin-fs-token-revoke-retry/README.md)
 
 - [`token-revoke-retry.spec.ts`](./plugin-fs-token-revoke-retry/token-revoke-retry.spec.ts)
+
+## [plugin-ipc-frame-trust(plugin-data / plugin-fs raw IPC 的 frame-trust 门)](./plugin-ipc-frame-trust/README.md)
+
+- [`frame-trust-gate.spec.ts`](./plugin-ipc-frame-trust/frame-trust-gate.spec.ts)
 
 ## [plugin-loader(ESM 动态加载 + styles 注入)](./plugin-loader/README.md)
 

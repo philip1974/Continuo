@@ -8,7 +8,7 @@
 
 import type { FsApi } from '@/lib/fs/api';
 import type { IpcResult } from '@/lib/fs/types';
-import { errorMessage } from '../../../electron/shared/error-message';
+import { errorCodeOf, errorMessage } from '../../../electron/shared/error-message';
 import { createTab, useEditorStore } from '@/stores/editor.store';
 import { runSerialPerKey } from '@/lib/serialize-per-key';
 import {
@@ -32,7 +32,8 @@ export type FileOpResult = IpcResult<void>;
 
 const exception = (err: unknown): FileOpResult => ({
   ok: false,
-  code: 'EXCEPTION',
+  // IPC reject 带的稳定 code 原样保留(无则 EXCEPTION),调用方才能按 code 本地化。
+  code: errorCodeOf(err),
   message: errorMessage(err),
 });
 

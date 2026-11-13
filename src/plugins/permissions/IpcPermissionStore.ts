@@ -19,6 +19,10 @@ import type {
   IpcPermissionRecord,
   IpcPermissionsMap,
 } from '../../../electron/shared/plugins-channels';
+import {
+  isIpcPathScope,
+  isIpcPermissionDecision,
+} from '../../../electron/shared/permission-record';
 
 export interface PermissionRecord {
   readonly decisions: PermissionDecision[];
@@ -33,7 +37,6 @@ export type PermissionState = Record<string, PermissionRecord>;
 
 type Cache = PermissionState;
 
-const PATH_SCOPE_MODES = new Set(['r', 'rw']);
 
 // 边界(E245,E215/E243 读端有界解析族):renderer 读回 READ_PERMISSIONS(IPC/磁盘持久化)的解析上限,
 // 与主进程 plugins.ipc 写端 / plugins.service 读端对齐(值同步)。此前 parsePermissionState 直接
@@ -46,8 +49,6 @@ const MAX_DECISIONS_PER_PLUGIN = PERMISSION_RECORD_LIMITS.DECISIONS_PER_PLUGIN_M
 // 边界(E246):pathScopes 上限对齐**绑定** cap = 读盘层 MAX_PERSISTED_SCOPES_PER_PLUGIN(256,
 // PathScopeRegistry 契约),非写端宽松值。E245 误对齐到写端 10_000;真正生效的是读盘 256,统一到此。
 const MAX_PATH_SCOPES_PER_PLUGIN = PERMISSION_RECORD_LIMITS.PATH_SCOPES_PER_PLUGIN_MAX; // 对齐 plugins.service MAX_PERSISTED_SCOPES_PER_PLUGIN / plugins.ipc PATHSCOPES_MAX
-const PERMISSION_NAME_MAX = PERMISSION_RECORD_LIMITS.PERMISSION_NAME_MAX; // 对齐 plugins.ipc PERMISSION_MAX
-const SCOPE_PATH_MAX = PERMISSION_RECORD_LIMITS.SCOPE_PATH_MAX; // 对齐 plugins.ipc PATH_MAX
 const EMPTY_PERMISSION_DECISIONS: PermissionDecision[] = [];
 const EMPTY_PATH_SCOPES: PathScope[] = [];
 
@@ -55,20 +56,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
+// 单条形态判定取 shared 单一来源(与 main 读盘 / 写盘、IPC schema 同一规则:permission 必须是枚举成员、
+// decidedAt 有限非负、path 非空限长)。此处只负责把合法项重建成干净对象(丢弃额外字段)。
 function parseDecision(value: unknown): PermissionDecision | null {
-  if (!isRecord(value)) return null;
-  if (typeof value.permission !== 'string') return null;
-  if (value.permission.length > PERMISSION_NAME_MAX) return null; // 边界(E245)
-  if (typeof value.granted !== 'boolean') return null;
-  // 边界(E245,E92 写端对偶):decidedAt 须有限非负(typeof number 放行 Infinity/NaN;写端已 .finite()
-  // .nonnegative(),读端对齐丢弃非有限/负时间戳,防脏值随 grant/deny 写回)。
-  if (
-    typeof value.decidedAt !== 'number' ||
-    !Number.isFinite(value.decidedAt) ||
-    value.decidedAt < 0
-  ) {
-    return null;
-  }
+  if (!isIpcPermissionDecision(value)) return null;
   return {
     permission: value.permission as PermissionKey,
     granted: value.granted,
@@ -77,13 +68,8 @@ function parseDecision(value: unknown): PermissionDecision | null {
 }
 
 function parsePathScope(value: unknown): PathScope | null {
-  if (!isRecord(value)) return null;
-  if (typeof value.path !== 'string') return null;
-  if (value.path.length > SCOPE_PATH_MAX) return null; // 边界(E245)
-  if (typeof value.mode !== 'string' || !PATH_SCOPE_MODES.has(value.mode)) {
-    return null;
-  }
-  return { path: value.path, mode: value.mode as PathScope['mode'] };
+  if (!isIpcPathScope(value)) return null;
+  return { path: value.path, mode: value.mode };
 }
 
 function parseDecisionList(value: unknown): PermissionDecision[] {
