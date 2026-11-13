@@ -1,7 +1,7 @@
 import { expect, type Page } from '@playwright/test';
 
 export const SETTINGS = /^(设置|Settings|설정)$/;
-export const CLOSE_SETTINGS = /^(关闭 Settings|Close Settings|Settings 닫기)$/;
+export const CLOSE_SETTINGS = /^(关闭 (Settings|设置)|Close Settings|(Settings|설정) 닫기)$/;
 export const SETTINGS_NAV = /^(设置分类|Setting categories|설정 카테고리)$/;
 export const SEARCH_SETTINGS = /^(搜索设置|Search settings|설정 검색)/;
 export const GENERAL_TAB = /^(通用|General|일반)$/;

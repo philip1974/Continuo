@@ -19,14 +19,14 @@ test('hydrate 后 Explorer 显示 workspace 名 + 文件树', async ({
   await expect(window.locator('text=src').first()).toBeVisible();
 });
 
-test('Status Bar 显示 workspace basename + main 占位', async ({
+test('Status Bar 显示 workspace basename(不显示写死的分支名占位)', async ({
   window,
   workspaceRoot,
 }) => {
   const wsName = path.basename(workspaceRoot);
   const status = window.locator('footer');
   await expect(status).toContainText(wsName);
-  await expect(status).toContainText('main');
+  await expect(status).not.toContainText('main');
 });
 
 test('Ctrl+P Quick Open 列出 workspace 文件', async ({ window }) => {

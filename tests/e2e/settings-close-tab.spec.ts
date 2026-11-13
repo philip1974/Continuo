@@ -2,7 +2,7 @@
 import { test, expect } from './fixtures/electron-app';
 
 const SETTINGS = /^(设置|Settings|설정)$/;
-const CLOSE_SETTINGS = /^(关闭 Settings|Close Settings|Settings 닫기)$/;
+const CLOSE_SETTINGS = /^(关闭 (Settings|设置)|Close Settings|(Settings|설정) 닫기)$/;
 const SETTINGS_NAV = /^(设置分类|Setting categories|설정 카테고리)$/;
 const NO_FILE_OPEN = /^(未打开文件|No file open|열린 파일 없음)$/;
 

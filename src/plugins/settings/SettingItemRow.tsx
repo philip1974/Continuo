@@ -59,13 +59,22 @@ function NumberSettingInput({
   titleId: string;
   onCommit: (n: number) => void;
 }) {
-  const [draft, setDraft] = useState<string | null>(null);
+  // 草稿记下它对应的「已知值」:键入范围内的值会立即提交(已知值 = 提交的数),越界的中间值不提交(已知值 =
+  // 当时的值)。之后 value 若不再等于已知值,说明被别处改了(点了重置、别的窗口改了设置)→ 草稿作废,显示
+  // 新值;否则键入的旧文本会一直遮住它。
+  const [draftState, setDraftState] = useState<{ text: string; forValue: SettingItemValue } | null>(
+    null,
+  );
+  const draft = draftState !== null && Object.is(draftState.forValue, value) ? draftState.text : null;
   const commitClamped = (raw: string): void => {
-    // 没键入过(无草稿)→ 不提交:否则 Tab 经过 / 点一下就会写出一条等于当前值的 override。
-    if (draft === null) return;
+    // 没键入过(无有效草稿)→ 不提交:否则 Tab 经过 / 点一下就会写出一条等于当前值的 override。
+    if (draft === null) {
+      if (draftState !== null) setDraftState(null);
+      return;
+    }
     const n = parseSettingNumber(raw);
     if (n !== null) onCommit(clampSettingNumber(spec, n));
-    setDraft(null);
+    setDraftState(null);
   };
   return (
     <Input
@@ -78,9 +87,10 @@ function NumberSettingInput({
       step={spec.step}
       onChange={(e) => {
         const raw = (e.target as HTMLInputElement).value;
-        setDraft(raw);
         const n = parseSettingNumber(raw);
-        if (n !== null && clampSettingNumber(spec, n) === n) onCommit(n);
+        const inRange = n !== null && clampSettingNumber(spec, n) === n;
+        setDraftState({ text: raw, forValue: inRange ? n : value });
+        if (inRange) onCommit(n);
       }}
       onBlur={(e) => commitClamped((e.target as HTMLInputElement).value)}
       onKeyDown={(e) => {

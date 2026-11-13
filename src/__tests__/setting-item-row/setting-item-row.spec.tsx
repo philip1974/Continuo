@@ -312,6 +312,36 @@ describe('SettingItemRow — number', () => {
     expect('terminal.fontSize' in useSettingsValuesStore.getState().values).toBe(false);
   });
 
+  // 草稿只在「值没被别处改过」时遮住显示:键入后点重置(或别的窗口改了该设置),输入框必须显示新值,
+  // 不能继续显示键入的旧文本(真实应用 e2e 暴露:改成 22 → 点重置 → 输入框仍是 22)。
+  it('键入后值被外部改掉(重置)→ 输入框显示新值,不被草稿遮住', () => {
+    const s = spec({ id: 'terminal.fontSize', type: 'number', default: 13, min: 10, max: 24 });
+    const { container } = render(<SettingItemRow spec={s} />);
+    const input = container.querySelector('input[type=number]') as HTMLInputElement;
+
+    fireEvent.change(input, { target: { value: '22' } });
+    expect(input.value).toBe('22');
+    act(() => {
+      useSettingsValuesStore.getState().reset('terminal.fontSize');
+    });
+    expect(input.value).toBe('13');
+    // 之后失焦也不会把旧草稿重新提交
+    fireEvent.blur(input);
+    expect('terminal.fontSize' in useSettingsValuesStore.getState().values).toBe(false);
+  });
+
+  it('越界草稿期间值被外部改掉 → 同样显示新值', () => {
+    const s = spec({ id: 'terminal.fontSize', type: 'number', default: 13, min: 10, max: 24 });
+    const { container } = render(<SettingItemRow spec={s} />);
+    const input = container.querySelector('input[type=number]') as HTMLInputElement;
+
+    fireEvent.change(input, { target: { value: '99' } });
+    act(() => {
+      useSettingsValuesStore.getState().setValue('terminal.fontSize', 18);
+    });
+    expect(input.value).toBe('18');
+  });
+
   it('清空后失焦 → 不提交,回显原值', () => {
     const s = spec({ id: 'terminal.fontSize', type: 'number', default: 13, min: 10, max: 24 });
     const { container } = render(<SettingItemRow spec={s} />);
