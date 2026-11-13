@@ -20,6 +20,7 @@ import {
   trySelectDirectoryLock,
   releaseSelectDirectoryLock,
 } from '@/lib/select-directory-single-flight';
+import { notifyThrownError } from '@/notifications/notify-thrown-error';
 
 export interface SelectWorkspaceFolder {
   /** 选择器打开中(控件据此 disabled / aria-busy)。 */
@@ -52,8 +53,7 @@ export function useSelectWorkspaceFolder(): SelectWorkspaceFolder {
         else if (!r.ok) notify.error(localizeErrorByCode(r.code, r.message), { code: r.code });
       } catch (err) {
         if (!isLatest()) return;
-        const code = (err as { code?: string })?.code ?? 'EXCEPTION';
-        notify.error(localizeErrorByCode(code, (err as Error)?.message ?? code), { code });
+        notifyThrownError(err);
       } finally {
         releaseSelectDirectoryLock();
         busyRef.current = false;

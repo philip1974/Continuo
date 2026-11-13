@@ -3,7 +3,10 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { describe, it, expect } from 'vitest';
-import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
+import {
+  equalsAsciiIgnoreCase,
+  lowerIfNeeded,
+} from '../../../electron/shared/lower-if-needed';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 
@@ -52,5 +55,26 @@ describe('接线守卫:不得再本地复制 lowerIfNeeded', () => {
   it('marketplace/filter 的包装委托 shared 实现', () => {
     const src = readFileSync(path.join(ROOT, 'src/marketplace/filter.ts'), 'utf-8');
     expect(src).toMatch(/lower-if-needed'/);
+  });
+});
+
+describe('equalsAsciiIgnoreCase', () => {
+  it('只折叠 ASCII 大写,长度不同即不等', () => {
+    expect(equalsAsciiIgnoreCase('LocalHost:8080', 'localhost:8080')).toBe(true);
+    expect(equalsAsciiIgnoreCase('codex', 'codex')).toBe(true);
+    expect(equalsAsciiIgnoreCase('codex ', 'codex')).toBe(false);
+    expect(equalsAsciiIgnoreCase('cod', 'codex')).toBe(false);
+    expect(equalsAsciiIgnoreCase('ÉCOLE', 'école')).toBe(false); // 非 ASCII 不折叠
+    expect(equalsAsciiIgnoreCase('', '')).toBe(true);
+  });
+
+  it('只在 shared 定义(main mcp-host / hook-bridge 导入)', () => {
+    const offenders: string[] = [];
+    for (const file of [...walk(path.join(ROOT, 'src')), ...walk(path.join(ROOT, 'electron'))]) {
+      const rel = path.relative(ROOT, file).split(path.sep).join('/');
+      if (rel === 'electron/shared/lower-if-needed.ts') continue;
+      if (/function equalsAsciiIgnoreCase\b/.test(readFileSync(file, 'utf-8'))) offenders.push(rel);
+    }
+    expect(offenders).toEqual([]);
   });
 });

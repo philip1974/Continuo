@@ -6,6 +6,7 @@ import { notify } from '@/notifications/notify';
 import { t as translate } from '@/i18n';
 import { cancelPanelSpawns } from '@/panels/Terminal/spawnLeaf';
 import { isTerminalPanelId, sessionIdFromPanel } from './terminal-panel-id';
+import { errorCodeOf } from '../../../electron/shared/error-message';
 
 const patched = new WeakSet<IDockviewPanel>();
 const suppressedPanelCloses = new Set<string>();
@@ -105,7 +106,7 @@ function removeTerminalPtysForPanel(panel: IDockviewPanel): void {
     }
   }, (err) => {
     console.warn('[terminal-panel] remove rejected', sessionId, err);
-    const code = (err as { code?: string })?.code ?? 'EXCEPTION';
+    const code = errorCodeOf(err);
     notify.error(translate('errors.terminal.remove_failed', { code }), { code });
   });
 }

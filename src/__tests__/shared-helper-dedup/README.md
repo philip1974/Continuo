@@ -26,3 +26,7 @@
 7. 「弹原生目录选择器 → 切 workspace root」:Explorer 两个入口(EmptyWorkspace「打开文件夹」/
    ExplorerHeader「切换文件夹」)共用 `hooks/useSelectWorkspaceFolder`(单飞闸门 R106 + 过期守卫 R27 +
    失败反馈 A146;行为契约见 `empty-workspace` / `explorer-header` / `workspace-root-selection-guard`)。
+8. catch 分支失败反馈:`errorCodeOf(err)`(`electron/shared/error-message.ts`)取稳定错误码(无 → `'EXCEPTION'`);
+   `notifyThrownError(err)`(`src/notifications/notify-thrown-error.ts`)按 code 本地化后 `notify.error`
+   并附 code,抛出值无 message 时回退 code(不弹空 toast)。renderer 不再手写
+   `(err as { code?: string })?.code ?? 'EXCEPTION'`。

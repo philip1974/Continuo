@@ -4,6 +4,7 @@
 
 import type { FsApi } from '@/lib/fs/api';
 import { dirname } from './path-utils';
+import { errorCodeOf } from '../../../electron/shared/error-message';
 
 export interface MutateDeps {
   fs: Pick<FsApi, 'rename' | 'remove' | 'trash' | 'createFile' | 'createDir'>;
@@ -76,7 +77,7 @@ export async function removeItems(
     try {
       r = useTrash ? await deps.fs.trash(p) : await deps.fs.remove(p);
     } catch (err) {
-      const code = (err as { code?: string })?.code ?? 'EXCEPTION';
+      const code = errorCodeOf(err);
       failures[failureCount++] = {
         path: p,
         code,
@@ -113,7 +114,7 @@ export async function removeItems(
 // unhandled rejection + 不进 !r.ok 分支 → 新建文件/文件夹失败无 toast/live region 反馈。
 // catch 归类成 ActionFail(code 取 err.code ?? 'EXCEPTION'),helper 自此恒返回 ActionResult。
 function toActionFail(err: unknown): ActionFail {
-  const code = (err as { code?: string })?.code ?? 'EXCEPTION';
+  const code = errorCodeOf(err);
   return { ok: false, code, message: (err as Error)?.message ?? String(err) };
 }
 

@@ -29,6 +29,7 @@ import { utf8BytesExceed } from '../../shared/utf8-byte-length';
 import { jsonByteLowerBoundExceeds } from '../../shared/json-byte-budget';
 import { RESULT_BYTES_MAX } from '../../shared/plugin-mcp-schemas';
 import { PLUGIN_MCP_ERROR_CODES } from '../../shared/plugin-mcp-channels';
+import { equalsAsciiIgnoreCase } from '../../shared/lower-if-needed';
 
 // ── 常量 ────────────────────────────────────────────────────────
 
@@ -269,18 +270,6 @@ export function formatRpcError(
 export function isLocalhostBindAddr(addr: string): boolean {
   if (typeof addr !== 'string') return false;
   return LOCALHOST_ADDRS.has(addr);
-}
-
-function equalsAsciiIgnoreCase(value: string, expectedLower: string): boolean {
-  if (value.length !== expectedLower.length) return false;
-  for (let i = 0; i < expectedLower.length; i += 1) {
-    const actual = value.charCodeAt(i);
-    const expected = expectedLower.charCodeAt(i);
-    if (actual === expected) continue;
-    const folded = actual >= 65 && actual <= 90 ? actual + 32 : actual;
-    if (folded !== expected) return false;
-  }
-  return true;
 }
 
 /**

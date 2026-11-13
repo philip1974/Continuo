@@ -39,6 +39,8 @@ import { useExplorerClipboardStore } from './clipboard-store';
 import { t, useT } from '@/i18n';
 import { localizeErrorByCode } from '@/lib/localize-error';
 import { openOrFocusPanel } from '@/shell/dock/dock-api-ref';
+import { notifyThrownError } from '@/notifications/notify-thrown-error';
+import { errorCodeOf } from '../../../electron/shared/error-message';
 
 interface CreatingState {
   type: 'file' | 'dir';
@@ -274,8 +276,7 @@ export function FolderTree({ root }: { root: string }) {
             });
           },
           onException: (err) => {
-            const code = (err as { code?: string })?.code ?? 'EXCEPTION';
-            notify.error(localizeErrorByCode(code, (err as Error)?.message), { code });
+            notifyThrownError(err);
           },
         },
         opts,
@@ -318,8 +319,7 @@ export function FolderTree({ root }: { root: string }) {
               // 改名后旧路径已不存在 → 剪除剪贴板里引用旧路径的 cut/copy 项。
               useExplorerClipboardStore.getState().prune([oldPath]);
             } catch (err) {
-              const code = (err as { code?: string })?.code ?? 'EXCEPTION';
-              notify.error(localizeErrorByCode(code, (err as Error)?.message), { code });
+              notifyThrownError(err);
             }
           })();
         },
@@ -410,7 +410,7 @@ export function FolderTree({ root }: { root: string }) {
           );
         }
       } catch (err) {
-        const code = (err as { code?: string })?.code ?? 'EXCEPTION';
+        const code = errorCodeOf(err);
         console.warn('[explorer] open file rejected:', code, err);
         notify.error(
           `${t('quick_open.open_failed')} ${basenamePreserveTrailing(path)}: ${localizeErrorByCode(code, (err as Error)?.message)}`,
@@ -478,10 +478,7 @@ export function FolderTree({ root }: { root: string }) {
               'panels.terminal.title',
             );
           } catch (err) {
-            const code = (err as { code?: string })?.code ?? 'EXCEPTION';
-            notify.error(localizeErrorByCode(code, (err as Error)?.message), {
-              code,
-            });
+            notifyThrownError(err);
           }
         })();
       },

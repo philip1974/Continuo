@@ -23,6 +23,7 @@ import {
   performDrop,
   type DropFsApi,
 } from './drop-handlers';
+import { notifyThrownError } from '@/notifications/notify-thrown-error';
 
 // 批量 drop 失败明细:每行 `  name: [code] 本地化消息`(notify 多行正文)。
 interface DropFailureLine {
@@ -133,7 +134,6 @@ export async function dropForeignFilesInto(
       );
     }
   } catch (err) {
-    const code = (err as { code?: string })?.code ?? 'EXCEPTION';
-    notify.error(localizeErrorByCode(code, (err as Error)?.message ?? code), { code });
+    notifyThrownError(err);
   }
 }

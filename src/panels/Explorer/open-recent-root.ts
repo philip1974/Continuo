@@ -2,6 +2,7 @@ import { coApi } from '@/lib/co-api';
 import { notify } from '@/notifications/notify';
 import { localizeErrorByCode } from '@/lib/localize-error';
 import { workspaceRootSelectionGuard } from '@/lib/workspace-root-guard';
+import { notifyThrownError } from '@/notifications/notify-thrown-error';
 
 // race(R27,R18/R19 同族收口):改用全窗口共享的 workspaceRootSelectionGuard,使「打开最近」与
 // drop / EmptyWorkspace 打开 / ExplorerHeader 切换 互相失效(全局 last-wins,见 guard 注释)。
@@ -32,7 +33,6 @@ export async function openRecentRootOrNotify(
     setRoot(path);
   } catch (err) {
     if (!isLatest()) return;
-    const code = (err as { code?: string })?.code ?? 'EXCEPTION';
-    notify.error(localizeErrorByCode(code, (err as Error)?.message ?? code), { code });
+    notifyThrownError(err);
   }
 }

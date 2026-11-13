@@ -15,6 +15,7 @@ import { preloadTerminalPanelChunk } from '@/lib/terminal-chunk-warmup';
 import { ERROR_CODES } from '../../../electron/shared/error-codes';
 import { t } from '@/i18n';
 import { setPendingFocus } from './DockReconciler';
+import { errorCodeOf } from '../../../electron/shared/error-message';
 
 /**
  * 新建一个 user terminal,返回新 terminal id(失败返 null)。
@@ -59,7 +60,7 @@ export async function createUserTerminal(): Promise<string | null> {
     setPendingFocus(r.data.id);
     return r.data.id;
   } catch (err) {
-    const code = (err as { code?: string })?.code ?? 'EXCEPTION';
+    const code = errorCodeOf(err);
     // race(R31):用户在 create 期间关掉了刚开的 tab → main 复查 reservation 已取消、kill 了孤儿
     // PTY 并以 TERMINAL_CREATE_CANCELLED 收场。这是用户主动行为,不是失败,静默 no-op 不弹错误。
     if (code === ERROR_CODES.TERMINAL_CREATE_CANCELLED) return null;

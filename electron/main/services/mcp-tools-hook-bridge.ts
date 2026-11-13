@@ -33,6 +33,7 @@ import type { McpCallCtx, McpToolDef } from './mcp-host.service';
 import { z } from 'zod';
 import { SESSION_ID_MAX } from '../../shared/session-id-limits';
 import { isEcmaWhitespaceCode } from '../../shared/ecma-whitespace';
+import { equalsAsciiIgnoreCase } from '../../shared/lower-if-needed';
 
 // 边界(E203,mcp-tools-terminal 同族):协议 awaitStopHookInputSchema 的 session_id 仅 min(1) 无上限。
 // 1MB session_id 校验通过后进 broker / Map / 错误回显路径(回显已截断 E151,但运行期仍处理超长 key)。
@@ -138,18 +139,6 @@ async function readHookDirCapped(dir: string, max: number): Promise<string[]> {
   // 谁先入 buffered(首个匹配胜出)。排序使枚举顺序确定(旧 readdir 顺序本是未定义),消除"谁胜出"
   // 的平台/实现相关性。
   return sortHookDirNames(names);
-}
-
-function equalsAsciiIgnoreCase(value: string, expectedLower: string): boolean {
-  if (value.length !== expectedLower.length) return false;
-  for (let i = 0; i < expectedLower.length; i += 1) {
-    const actual = value.charCodeAt(i);
-    const expected = expectedLower.charCodeAt(i);
-    if (actual === expected) continue;
-    const folded = actual >= 65 && actual <= 90 ? actual + 32 : actual;
-    if (folded !== expected) return false;
-  }
-  return true;
 }
 
 function startsWithRunnerToken(value: string, tokenLower: 'claude' | 'codex'): boolean {

@@ -10,3 +10,11 @@
 export function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
+
+/**
+ * 抛出值(catch 的 unknown)的稳定错误码:IPC reject / main 抛出的 Error 带 `code`;没有则归为
+ * `'EXCEPTION'`。renderer 各 catch 分支此前逐处手写 `(err as { code?: string })?.code ?? 'EXCEPTION'`。
+ */
+export function errorCodeOf(err: unknown): string {
+  return (err as { code?: string } | null | undefined)?.code ?? 'EXCEPTION';
+}

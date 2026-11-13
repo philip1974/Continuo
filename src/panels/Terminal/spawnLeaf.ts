@@ -1,6 +1,7 @@
 import { coApi } from '@/lib/co-api';
 import { notify } from '@/notifications/notify';
 import { t as translate } from '@/i18n';
+import { errorCodeOf } from '../../../electron/shared/error-message';
 
 type SpawnReason = 'hydrate' | 'split' | 'addTab' | 'retry';
 type SpawnLeafDispatchAction = {
@@ -181,7 +182,7 @@ export function createSpawnQueue(
       modulePending.delete(key);
       console.warn('[pane-split] spawn-rejected', req.reason, err);
       if (req.cancelled.current) return;
-      const code = (err as { code?: string })?.code ?? 'EXCEPTION';
+      const code = errorCodeOf(err);
       moduleDispatches.get(panelId)?.({
         type: 'PANE_ACTION',
         tabId: req.tabId,

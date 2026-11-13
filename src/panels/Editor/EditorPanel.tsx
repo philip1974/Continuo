@@ -35,6 +35,7 @@ import { useSettingValue } from '@/plugins/settings/values-store';
 import { coApi } from '@/lib/co-api';
 import { notify } from '@/notifications/notify';
 import type { EditorTab } from '@/stores/editor.store';
+import { notifyThrownError } from '@/notifications/notify-thrown-error';
 
 // i18n(I14):模式切换 label 走 catalog —— 此前硬编码英文 'Edit'/'Source'/'Preview',
 // zh/ko 工具栏显英文且不随 locale 切换。id 稳定,label 在组件内用 useT 生成(响应 locale)。
@@ -117,8 +118,7 @@ export function EditorPanel() {
             }
           })
           .catch((err) => {
-            const code = (err as { code?: string })?.code ?? 'EXCEPTION';
-            notify.error(localizeErrorByCode(code, (err as Error)?.message), { code });
+            notifyThrownError(err);
           });
       } else {
         // a11y(A117,A50/A116 同族):外链打开须检查 IpcResult.ok + catch reject,否则 URL 被
@@ -131,8 +131,7 @@ export function EditorPanel() {
             }
           })
           .catch((err) => {
-            const code = (err as { code?: string })?.code ?? 'EXCEPTION';
-            notify.error(localizeErrorByCode(code, (err as Error)?.message), { code });
+            notifyThrownError(err);
           });
       }
     },

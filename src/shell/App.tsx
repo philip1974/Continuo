@@ -39,6 +39,7 @@ import { NotificationsProvider } from '@/notifications/NotificationsProvider';
 import { NotifyIpcBridge } from '@/notifications/NotifyIpcBridge';
 import { ToastViewport } from '@/notifications/ToastViewport';
 import { LanguageFromSettings } from '@/plugins/settings/LanguageFromSettings';
+import { notifyThrownError } from '@/notifications/notify-thrown-error';
 
 const SPLASH_MIN_MS = 600;
 
@@ -132,10 +133,7 @@ function MainApp() {
           }
         } catch (err) {
           if (!isLatest()) return;
-          const code = (err as { code?: string })?.code ?? 'EXCEPTION';
-          notify.error(localizeErrorByCode(code, (err as Error)?.message ?? code), {
-            code,
-          });
+          notifyThrownError(err);
         }
       })();
     };

@@ -12,3 +12,19 @@ export function lowerIfNeeded(value: string): string {
   }
   return value;
 }
+
+/**
+ * ASCII 大小写不敏感的整串相等:`value` 与**已小写**的 `expectedLower` 比较,只折叠 A-Z(不做
+ * Unicode case mapping),零分配。用于 Host header、agent label 等协议级短标识符比较。
+ */
+export function equalsAsciiIgnoreCase(value: string, expectedLower: string): boolean {
+  if (value.length !== expectedLower.length) return false;
+  for (let i = 0; i < expectedLower.length; i += 1) {
+    const actual = value.charCodeAt(i);
+    const expected = expectedLower.charCodeAt(i);
+    if (actual === expected) continue;
+    const folded = actual >= 65 && actual <= 90 ? actual + 32 : actual;
+    if (folded !== expected) return false;
+  }
+  return true;
+}

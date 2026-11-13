@@ -41,6 +41,8 @@ import {
   type TerminalSearchResult,
   type TerminalSearchState,
 } from './terminal-search-state';
+import { notifyThrownError } from '@/notifications/notify-thrown-error';
+import { errorCodeOf } from '../../../electron/shared/error-message';
 
 type CursorStyle = 'block' | 'underline' | 'bar';
 
@@ -283,8 +285,7 @@ export function useTerminal(termId: string) {
             }
           })
           .catch((err) => {
-            const code = (err as { code?: string })?.code ?? 'EXCEPTION';
-            notify.error(localizeErrorByCode(code, (err as Error)?.message), { code });
+            notifyThrownError(err);
           });
       }),
     );
@@ -424,8 +425,7 @@ export function useTerminal(termId: string) {
       .catch((err) => {
         if (teardownDone) return;
         clearLoadingOverlay();
-        const code = (err as { code?: string })?.code ?? 'EXCEPTION';
-        notify.error(localizeErrorByCode(code, (err as Error)?.message), { code });
+        notifyThrownError(err);
       });
 
     // 用户输入 → IPC write
@@ -449,7 +449,7 @@ export function useTerminal(termId: string) {
         })
         .catch((err) => {
           notifyWriteFail(
-            (err as { code?: string })?.code ?? 'EXCEPTION',
+            errorCodeOf(err),
             (err as Error)?.message,
           );
         });
