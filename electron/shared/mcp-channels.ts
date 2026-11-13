@@ -7,8 +7,6 @@ export const MCP_CHANNELS = {
   GET_STDIO_CONFIG: 'mcp:get-stdio-config',
 } as const;
 
-export type McpChannel = (typeof MCP_CHANNELS)[keyof typeof MCP_CHANNELS];
-
 export interface StdioMcpConfig {
   /** stdio server 是否在运行(macOS/Linux true,Win 当前 false). */
   readonly available: boolean;

@@ -37,8 +37,6 @@ export type DebugViewEvent =
       readonly reason: string;
     };
 
-export type DebugSubscribeInput = Record<string, never>;
-
 export interface DebugGetStackInput {
   readonly sessionId: string;
   readonly threadId?: number;

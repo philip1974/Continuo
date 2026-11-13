@@ -1,6 +1,6 @@
 import { spawn, type ChildProcessByStdio } from 'node:child_process';
 import type { Readable } from 'node:stream';
-import type { IpcMain, WebContents } from 'electron';
+import type { IpcMain } from 'electron';
 import { PLUGIN_SHELL_STREAM_CHANNELS } from '../../shared/plugin-shell-stream-channels';
 import { defaultIsTrustedFrame } from '../safe-handle';
 import { IPC_ERR } from '../../shared/ipc-result';
@@ -10,6 +10,8 @@ import { ERROR_CODES } from '../../shared/error-codes';
 // 畸形插件可经 app.shell.execStream() 传巨量 args/超长 cwd/cmd → IPC structured clone + 主进程内存/CPU
 // 放大,或触发 spawn 的 E2BIG/路径异常。与 shell.exec 对齐(E46:shared 单一来源),spawn 前 fail-closed。
 import { shellCommandShapeError } from '../../shared/shell-limits';
+import { killWithGrace } from '../lib/kill-with-grace';
+import { makeWcGoneHook } from '../lib/wc-gone-hook';
 
 const DEFAULT_TIMEOUT_MS = 5 * 60_000;
 const MAX_TIMEOUT_MS = 30 * 60_000;
@@ -31,32 +33,13 @@ interface ActiveStream {
 
 export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
   const active = new Map<string, ActiveStream>();
-  // 已挂生命周期钩子的 webContents(WeakSet 按对象去重,跨 reload 持久且随 wc 销毁
-  // 自动回收),避免同一 webContents 多次 START 累积监听器。镜像 plugin-mcp.ipc 的
-  // wcAttached —— 用对象身份而非 numeric id,这样 did-start-navigation 的持久监听器
-  // 在反复 reload 时只挂一次。
-  const wcAttached = new WeakSet<WebContents>();
 
   // 单个 stream 的强制清理:清 timer + 从 active 摘除 + SIGTERM,1s 后 SIGKILL 兜底
   // (子进程吞掉 SIGTERM 时不至于挂到 timeout)。killStreamsForSender 与 ABORT 共用。
   const forceKillStream = (streamId: string, handle: ActiveStream): void => {
     if (handle.timeoutTimer) clearTimeout(handle.timeoutTimer);
     active.delete(streamId);
-    const child = handle.child;
-    try {
-      child.kill('SIGTERM');
-    } catch {
-      // ignore
-    }
-    const killTimer = setTimeout(() => {
-      try {
-        child.kill('SIGKILL');
-      } catch {
-        // ignore
-      }
-    }, 1000);
-    const maybeUnref = killTimer as { unref?: () => void };
-    if (typeof maybeUnref.unref === 'function') maybeUnref.unref();
+    killWithGrace(handle.child);
   };
 
   // 窗口/插件 webContents 销毁时,杀掉它名下所有未结束的 stream 子进程,
@@ -67,6 +50,7 @@ export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
       forceKillStream(streamId, handle);
     }
   };
+  const attachWcGoneHook = makeWcGoneHook(killStreamsForSender);
 
   // 边界(E230):某 sender 当前 active 流数。active 已封顶后 O(≤MAX_ACTIVE_STREAMS_GLOBAL)。
   const activeCountForSender = (senderId: number): number => {
@@ -145,25 +129,9 @@ export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
       });
       const senderWc = event.sender;
       const senderId = senderWc.id;
-      if (typeof senderWc.once === 'function' && !wcAttached.has(senderWc)) {
-        wcAttached.add(senderWc);
-        senderWc.once('destroyed', () => killStreamsForSender(senderId));
-        // 审计(第八 session R2):renderer reload(Ctrl+R / HMR full reload /
-        // webContents.reload())时 webContents 不销毁、wcId 不变 → 'destroyed' 不触发;
-        // 且 renderer 侧 for-await iterator 的 return() 不会在 reload 时跑(reload 直接
-        // 撕掉 JS,不触发 generator finalize)→ 不发 ABORT → 子进程 + active 条目 +
-        // timeoutTimer 泄漏到 timeout(5-30min),反复 reload 每次累积一个孤儿子进程。
-        // 镜像 plugin-mcp.ipc attachWcDestroyHookOnce 的 did-start-navigation hook:在新
-        // 文档加载前杀掉该 sender 名下所有在途 stream。仅 main frame 真实(非同文档)导航
-        // 才清,避免 hash/pushState 误清;同 wc 持久监听覆盖反复 reload。
-        if (typeof senderWc.on === 'function') {
-          senderWc.on('did-start-navigation', (details) => {
-            if (details.isMainFrame && !details.isSameDocument) {
-              killStreamsForSender(senderId);
-            }
-          });
-        }
-      }
+      // renderer reload / webContents 销毁时杀掉该 sender 名下所有在途 stream(reload 不会触发 iterator
+      // 的 return() → 不发 ABORT,子进程会泄漏到 timeout)。时机与去重见 lib/wc-gone-hook。
+      attachWcGoneHook(senderWc);
       let settled = false;
 
       const send = (
@@ -216,23 +184,7 @@ export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
 
       const timeoutTimer = setTimeout(() => {
         if (settled) return;
-        try {
-          child.kill('SIGTERM');
-        } catch {
-          // ignore
-        }
-        // SIGKILL 升级 grace timer 必须 unref:否则超时触发后,即便子进程已死,
-        // 这个内层 timer 仍会把 event loop 多撑 1s(关窗/退出时延迟退出)。与
-        // forceKillStream 的 killTimer 同款防御 —— 此前漏 unref(unref 模式未传播)。
-        const killGraceTimer = setTimeout(() => {
-          try {
-            child.kill('SIGKILL');
-          } catch {
-            // ignore
-          }
-        }, 1000);
-        const maybeUnrefKill = killGraceTimer as { unref?: () => void };
-        if (typeof maybeUnrefKill.unref === 'function') maybeUnrefKill.unref();
+        killWithGrace(child);
       }, timeoutMs);
       const maybeUnref = timeoutTimer as { unref?: () => void };
       if (typeof maybeUnref.unref === 'function') maybeUnref.unref();

@@ -26,9 +26,6 @@ export const TERMINAL_CHANNELS = {
   SESSIONS_CHANGED: 'terminal:sessions_changed',
 } as const;
 
-export type TerminalChannel =
-  (typeof TERMINAL_CHANNELS)[keyof typeof TERMINAL_CHANNELS];
-
 /**
  * OSC 7 cwd 上报(renderer → main)。通道名沿用历史值 `session:*`,不在 `terminal:` 前缀族内,故单列
  * (TERMINAL_CHANNELS 有「全部前缀 terminal:」的契约测试)。preload 与 main 共用此常量。

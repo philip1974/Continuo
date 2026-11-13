@@ -61,8 +61,8 @@ export { MAX_SCOPE_REQUEST_COUNT };
 const MAX_REQUEST_ID_LEN = 256;
 // 边界(E97):注册入口 pluginId 长度上限(对齐 manifest id 上限 E74 NAME_MAX)。
 const MAX_PLUGIN_ID_LEN = PLUGIN_ID_MAX_LEN;
-// 边界(E315,E234 并发 fan-out 同族):单次 request-scope 最多 256 条,路径归一化要 realpath。
-// 全量 Promise.all 会把 256 个 realpath 同时打进主进程/libuv。固定 worker 池平滑 IO 峰值,
+// 边界(E315,E234 并发 fan-out 同族):单次 request-scope 最多 MAX_SCOPE_REQUEST_COUNT(64)条,路径归一化要
+// realpath。全量 Promise.all 会把它们同时打进主进程/libuv。固定 worker 池平滑 IO 峰值,
 // 顺序仍由 canonicalizePathScopes 的结果数组按输入下标保持。
 const CANONICALIZE_SCOPE_CONCURRENCY = 16;
 
@@ -282,7 +282,7 @@ export function registerPluginFsHandlers(
       );
       // 边界(E29,E13 平行入口):content 此前无大小上限直接进 atomicWriteFile。已授权插件可经
       // 单次 IPC 发超大字符串 → 主进程 IPC 内存峰值 + 超大临时文件 + fsync/rename 长时间阻塞。复用
-      // 主 fs:write-file 的 MAX_WRITE_BYTES(64MiB,按 content.length 与主入口一致),进 atomicWriteFile
+      // 主 fs:write-file 的 MAX_WRITE_BYTES(64MiB,按真实 UTF-8 字节,与主入口一致),进 atomicWriteFile
       // 前拒绝超限并抛 FS_FILE_TOO_LARGE(与 E28 读侧 twin 同错误码)。是 read-file E28 的写侧对偶。
       // 边界(E125):真实 UTF-8 字节(非 .length=UTF-16 code unit),与主 fs:write-file 同款。
       if (utf8BytesExceed(content, MAX_WRITE_BYTES)) {

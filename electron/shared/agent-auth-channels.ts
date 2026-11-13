@@ -11,9 +11,6 @@ export const AGENT_AUTH_CHANNELS = {
   REVOKE: 'agent-auth:revoke',
 } as const;
 
-export type AgentAuthChannel =
-  (typeof AGENT_AUTH_CHANNELS)[keyof typeof AGENT_AUTH_CHANNELS];
-
 export interface AgentAuthRequestPayload {
   readonly requestId: string;
   readonly method: string;

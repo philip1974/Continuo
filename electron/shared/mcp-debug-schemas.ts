@@ -4,6 +4,8 @@ export const DEBUG_SESSION_ID_MAX = 256;
 export const DEBUG_PATH_MAX = 4096;
 export const DEBUG_EXPRESSION_MAX = 4096;
 export const DEBUG_VARIABLE_COUNT_MAX = 100;
+/** 单次 stackTrace 取的帧数上限(MCP debug.stack 与 Debug 面板 IPC 共用)。 */
+export const DEBUG_STACK_LEVELS_MAX = 100;
 export const DEBUG_VARIABLE_DEPTH_MAX = 5;
 export const DEBUG_STRING_BYTES_DEFAULT = 65536;
 export const DEBUG_EVALUATE_RESULT_BYTES_MAX = 65536;
@@ -175,7 +177,7 @@ export const debugStackInputSchema = z
     // (js-debug 的 stopped 事件可能报 threadId:0,直接透传会撞 min(1)。)
     thread_id: threadIdSchema,
     start_frame: nonNegativeIntSchema.default(0),
-    levels: z.number().int().min(1).max(100).default(20),
+    levels: z.number().int().min(1).max(DEBUG_STACK_LEVELS_MAX).default(20),
   })
   .strict();
 

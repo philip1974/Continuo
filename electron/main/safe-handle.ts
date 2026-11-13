@@ -226,7 +226,7 @@ export function defaultIsTrustedFrame(frame: FrameLike): boolean {
 
   const expected = process.env['ELECTRON_RENDERER_URL'];
   // 边界(E303,E196/E302 同族 / dev URL 解析兄弟入口):expected(ELECTRON_RENDERER_URL)此前无长度上限 ——
-  // frame.url 已限长(line 193),但 expected 每次 IPC 调用都 new URL 解析一次,开发误配/OS 上界超长 env
+  // frame.url 已限长(见上方 MAX_WINDOW_URL_LEN 闸),但 expected 每次 IPC 调用都 new URL 解析一次,开发误配/OS 上界超长 env
   // 会被反复 O(N) 解析。对齐 frame.url 的 MAX_WINDOW_URL_LEN 闸(任何真实 dev URL 远在内),超长 fail-closed。
   if (!expected || expected.length > MAX_WINDOW_URL_LEN) return false;
   const expectedOrigin = getExpectedRendererOrigin(expected);

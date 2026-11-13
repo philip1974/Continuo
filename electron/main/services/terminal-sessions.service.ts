@@ -28,6 +28,7 @@
 // BDD: src/__tests__/terminal-sessions-service/
 
 import { ERROR_CODES } from '../../shared/error-codes';
+import { assertOwnerWindowId } from '../lib/assert-owner-window-id';
 import {
   MAX_TERMINAL_SESSIONS_GLOBAL,
   MAX_TERMINAL_SESSIONS_PER_WINDOW,
@@ -37,7 +38,6 @@ import type { AttachTarget } from '../../shared/terminal-attach';
 import type { TerminalSessionSnapshot } from '../../shared/terminal-session';
 import type { ShellFamily } from '@continuo-terminal/shell-quote';
 
-export type { AttachTarget } from '../../shared/terminal-attach';
 
 // 可维护性 M14:renderer-visible 字段复用 shared TerminalSessionSnapshot 单一来源;
 // 此处只追加 main-内部字段(controllerToken,绝不跨 IPC 给 renderer)。
@@ -69,17 +69,6 @@ export interface AddSessionInput {
 
 export interface GetAllFilter {
   readonly ownerWindowId: number;
-}
-
-export function assertOwnerWindowId(value: unknown): asserts value is number {
-  if (
-    typeof value !== 'number' ||
-    !Number.isFinite(value) ||
-    !Number.isInteger(value) ||
-    value < 0
-  ) {
-    throw new Error(`[terminal-sessions] invalid ownerWindowId: ${String(value)}`);
-  }
 }
 
 export type SessionsSubscriber = (
@@ -151,7 +140,7 @@ function notify(): void {
 // ── public API ─────────────────────────────────────────────────
 
 export function add(input: AddSessionInput): void {
-  assertOwnerWindowId(input.ownerWindowId);
+  assertOwnerWindowId(input.ownerWindowId, 'terminal-sessions');
   if (sessions.has(input.id)) {
     throw Object.assign(
       new Error(`terminal session duplicate: ${input.id}`),

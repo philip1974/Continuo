@@ -22,6 +22,7 @@ import { ERROR_CODES } from '../../shared/error-codes';
 import { errorMessage } from '../../shared/error-message';
 import { isValidPluginId } from '../../shared/plugin-id';
 import { createSerialQueue } from '../../shared/run-serial-per-key';
+import { killWithGrace } from '../lib/kill-with-grace';
 import { atomicWriteJson } from '../lib/atomic-write';
 import { createByteCappedBuffer } from '../lib/byte-capped-buffer';
 import { readFileCappedFd } from '../lib/read-fh-capped';
@@ -1115,23 +1116,7 @@ function runGit(args: readonly string[]): Promise<void> {
     };
     // timeout:防慢速/挂起的远端无限占用(DoS)。SIGTERM → 1s 后 SIGKILL。
     const timer = setTimeout(() => {
-      try {
-        child.kill('SIGTERM');
-      } catch {
-        /* ignore */
-      }
-      // SIGKILL 升级 grace timer 必须 unref:否则 git 超时后这个内层 timer 会把
-      // event loop 多撑 1s,关窗/退出时延迟退出。与 plugin-shell-stream/shell.service
-      // 的 grace timer 同款(此前漏 unref)。
-      const killGraceTimer = setTimeout(() => {
-        try {
-          child.kill('SIGKILL');
-        } catch {
-          /* ignore */
-        }
-      }, 1000);
-      const maybeUnrefKill = killGraceTimer as { unref?: () => void };
-      if (typeof maybeUnrefKill.unref === 'function') maybeUnrefKill.unref();
+      killWithGrace(child);
       finish(() =>
         reject(
           Object.assign(new Error(`git ${args[0]} 超时`), {

@@ -1,5 +1,5 @@
-// topic-15 unified-toast-notification: 全仓业务错误码枚举(45 unique keys)。
-// 范围:main 端 object-literal `code: 'X'`(MAIN_ERROR_CODES, 36 keys)+ fs/** `fsError('FS_X', ...)` / `mapNodeErrnoCode()` 返回(FS_ERROR_CODES, 9 keys)。
+// topic-15 unified-toast-notification: 全仓业务错误码枚举。
+// 范围:main 端 object-literal `code: 'X'`(MAIN_ERROR_CODES)+ fs/** `fsError('FS_X', ...)` / `mapNodeErrnoCode()` 返回(FS_ERROR_CODES)。
 // 不含:IPC_ERR.*(infra-level, 已是常量见 ipc-result.ts)、plugin user code、third-party error.code。
 
 export const MAIN_ERROR_CODES = {

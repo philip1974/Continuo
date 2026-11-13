@@ -163,7 +163,9 @@ export function registerIpc(): { pluginFsHandles: PluginFsIpcHandles } {
     async (json, { event }) => {
       const seq = senderWindowSeqOrThrow(event);
 
-      const layout = LayoutSchema.parse(json);
+      // json 已由 safeHandleWithCtx 用 LayoutSchema 解析过,这里不再二次 parse(passthrough 对象会被
+      // 再拷贝一遍,且发生在下方字节上限检查之前)。
+      const layout = json;
       // 边界(E89,E67 对偶):LayoutSchema 是 .passthrough() 无序列化大小上限。畸形 renderer/
       // dockview 状态可写入超大 layout → explorer.json 撑爆 → 下次 loadExplorer 命中 16MiB
       // 上限(E67)拒读 → 布局/窗口/会话恢复整体失效 + 写路径 fail-closed 卡死。写盘前按序列化
@@ -266,13 +268,13 @@ export function registerIpc(): { pluginFsHandles: PluginFsIpcHandles } {
     trusted,
   );
 
-  // 资源管理器 fs.* 9 通道(Step 2)
+  // 资源管理器 fs.*(Step 2)
   registerFsIpc();
 
-  // 终端 terminal.* 6 invoke + 4 push(Step T2)
+  // 终端 terminal.*(Step T2)
   registerTerminalIpc();
 
-  // 插件系统 plugins.* 3 通道(M-Plugin v4.1)
+  // 插件系统 plugins.*(M-Plugin v4.1)
   registerPluginsIpc();
 
   // plugin app.shell.exec 后端(v5 Phase 4+)

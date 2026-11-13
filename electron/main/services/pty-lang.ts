@@ -1,8 +1,6 @@
 import { LANG_MAP, isUtf8LangName } from '../../shared/i18n-types';
 import type { Locale } from '../../shared/i18n-types';
 
-export { LANG_MAP } from '../../shared/i18n-types';
-
 export function withPtyLangEnv(
   env: Record<string, string | undefined>,
   locale: Locale = 'en',

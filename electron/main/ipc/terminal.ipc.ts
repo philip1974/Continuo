@@ -1,5 +1,5 @@
 // Terminal IPC 接入(M-Terminal Step T2 + Agent Terminal MCP P1)。
-// 8 invoke 通道 + 5 push event 通道。schemas / handlers 单独 export 给 spec 测;
+// invoke 通道 + push event 通道(清单见 shared/terminal-channels)。schemas / handlers 单独 export 给 spec 测;
 // registerTerminalIpc() 真注册 + 订阅 sessions_changed 广播给所有 BrowserWindow。
 
 import { app, BrowserWindow } from 'electron';

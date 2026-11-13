@@ -1040,7 +1040,9 @@ app.on('before-quit', async (event) => {
     if (w.isDestroyed() || flushedOnQuit.has(w.id)) continue;
     // popout 窗口跑的是 PopoutHost,不挂 DockShell,没有 flush 监听 → 永不 ack;对它发请求只会让退出
     // 干等满 FLUSH_ACK_TIMEOUT_MS。只 flush 主窗(wireWindowCloseFlush 也只挂在 createMainWindow)。
-    if (isPopoutUrl(w.webContents.getURL())) continue;
+    // webContents 已销毁(关窗中间态)时 getURL() 会抛 —— 此处已 preventDefault,抛出会让 quitGuard
+    // 永远停在「清理在途」、应用无法退出。已销毁的交给 requestWindowFlush 的立即放行分支。
+    if (!w.webContents.isDestroyed() && isPopoutUrl(w.webContents.getURL())) continue;
     flushes.push(
       requestWindowFlush(w).then(() => {
         flushedOnQuit.add(w.id);

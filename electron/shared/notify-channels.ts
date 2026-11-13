@@ -6,8 +6,6 @@ export const NOTIFY_CHANNELS = {
   PUSH: 'notify:push',
 } as const;
 
-export type NotifyChannel = (typeof NOTIFY_CHANNELS)[keyof typeof NOTIFY_CHANNELS];
-
 export type NotifyLevel = 'info' | 'warning' | 'error' | 'success';
 
 export interface NotifyPushPayload {

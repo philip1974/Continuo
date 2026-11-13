@@ -25,6 +25,3 @@ export const PLUGIN_FS_CHANNELS = {
   /** main -> renderer event after PathScopeRegistry grant/revoke */
   SCOPE_UPDATED: 'plugin-fs:scope-updated',
 } as const;
-
-export type PluginFsChannel =
-  (typeof PLUGIN_FS_CHANNELS)[keyof typeof PLUGIN_FS_CHANNELS];

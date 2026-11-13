@@ -14,7 +14,6 @@ import {
   ipcMain,
   webContents,
   type IpcMainInvokeEvent,
-  type WebContents,
 } from 'electron';
 import { defaultIsTrustedFrame, processIpcCall } from '../safe-handle';
 import { boundedObjectAdmissible } from '../../shared/bounded-input';
@@ -33,6 +32,7 @@ import {
 } from '../services/plugin-mcp-bridge.service';
 import type { McpHost } from '../services/mcp-host.service';
 import type { StdioSocketServer } from '../services/mcp-stdio-server.service';
+import { makeWcGoneHook } from '../lib/wc-gone-hook';
 
 /** MCP 标准 method:tool 集变更通知. */
 const TOOLS_LIST_CHANGED = 'notifications/tools/list_changed';
@@ -173,27 +173,10 @@ export function startPluginMcpIpc(
   return { bridge: localBridge, invokeRemote: localInvoke };
 }
 
-// ── wc destroyed hook(防重复 attach)─────────────────────────
-
-const wcAttached = new WeakSet<WebContents>();
-
-function attachWcDestroyHookOnce(wc: WebContents): void {
-  if (wcAttached.has(wc)) return;
-  wcAttached.add(wc);
-  const wcId = wc.id;
-  wc.once('destroyed', () => {
-    bridge?.handleWebContentsGone(wcId);
-  });
-  // 审计 #4:renderer reload(Ctrl+R / HMR full reload / webContents.reload())
-  // 时 webContents 不销毁、wcId 不变,但 renderer 侧 registry 被清空重建。
-  // 必须在新文档加载前(did-start-navigation 早于脚本执行)摘掉 main 端残留
-  // stub,否则 Agent 仍能在 tools/list 看到旧 tool(调用 reject NO_SUCH_TOOL,
-  // 重注册同名 throw TOOL_NAME_TAKEN)。同 wc 持久监听,覆盖反复 reload;
-  // 仅 main frame 的真实(非同文档)导航才清,避免 hash / pushState 误清。
-  // 清空后 renderer 在新文档里会重新 register,handleWebContentsGone 幂等安全。
-  wc.on('did-start-navigation', (details) => {
-    if (details.isMainFrame && !details.isSameDocument) {
-      bridge?.handleWebContentsGone(wcId);
-    }
-  });
-}
+// ── wc destroyed / reload hook ─────────────────────────────
+// 审计 #4:reload 时须摘掉 main 端残留 stub,否则 Agent 仍能在 tools/list 看到旧 tool(调用 reject
+// NO_SUCH_TOOL,重注册同名 throw TOOL_NAME_TAKEN)。清空后 renderer 在新文档里会重新 register,
+// handleWebContentsGone 幂等安全。时机与去重见 lib/wc-gone-hook。
+const attachWcDestroyHookOnce = makeWcGoneHook((wcId) => {
+  bridge?.handleWebContentsGone(wcId);
+});

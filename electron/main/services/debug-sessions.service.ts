@@ -1,3 +1,5 @@
+import { assertOwnerWindowId } from '../lib/assert-owner-window-id';
+
 export type DebugTeardownState = 'active' | 'tearing_down' | 'done';
 export type DebugRuntimeState = 'starting' | 'running' | 'stopped' | 'terminated';
 
@@ -42,17 +44,6 @@ export interface AddDebugSessionInput {
 const sessions = new Map<string, DebugSession>();
 const EMPTY_DEBUG_SESSIONS: readonly DebugSession[] = [];
 
-function assertOwnerWindowId(value: unknown): asserts value is number {
-  if (
-    typeof value !== 'number' ||
-    !Number.isFinite(value) ||
-    !Number.isInteger(value) ||
-    value < 0
-  ) {
-    throw new Error(`[debug-sessions] invalid ownerWindowId: ${String(value)}`);
-  }
-}
-
 function sessionCountForWindow(ownerWindowId: number): number {
   let count = 0;
   for (const session of sessions.values()) {
@@ -72,7 +63,7 @@ function activeSessionCount(): number {
 }
 
 export function add(input: AddDebugSessionInput): DebugSession {
-  assertOwnerWindowId(input.ownerWindowId);
+  assertOwnerWindowId(input.ownerWindowId, 'debug-sessions');
   if (sessions.has(input.id)) {
     throw new Error(`debug session duplicate: ${input.id}`);
   }

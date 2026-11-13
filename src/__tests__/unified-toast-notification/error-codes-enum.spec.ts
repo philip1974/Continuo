@@ -42,7 +42,7 @@ function read(rel: string): string {
 }
 
 describe('unified-toast-notification: ERROR_CODES enum', () => {
-  it('T9 exposes exactly 45 unique business error code keys', () => {
+  it('T9 exposes the exact set of unique business error code keys', () => {
     expect(Object.keys(ERROR_CODES).sort()).toEqual(
       Array.from(new Set(Object.keys(ERROR_CODES))).sort(),
     );

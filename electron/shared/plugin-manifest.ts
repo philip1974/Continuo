@@ -7,6 +7,7 @@ import { PERMISSION_KEYS, type PermissionKey } from './permission-keys';
 import { capJoinedMessagesFrom } from './cap-joined-messages';
 import { errorMessage } from './error-message';
 import { isValidPluginId } from './plugin-id';
+import { PLUGIN_ID_MAX_LEN, PLUGIN_VERSION_MAX_LEN } from './permission-record-limits';
 
 export interface PluginManifest {
   /** 唯一 id,反 DNS 命名(com.example.foo)。 */
@@ -41,7 +42,7 @@ const MAIN_MAX = 512; // 入口路径名
 const DESC_MAX = 8192;
 const AUTHOR_MAX = 256;
 const URL_MAX = 2048;
-const VERSION_MAX = 128;
+const VERSION_MAX = PLUGIN_VERSION_MAX_LEN;
 
 export const ManifestSchema = z.object({
   // 反 DNS 命名:小写字母 / 数字 / . _ -。边界(E123):此前只用裸正则 /^[a-z0-9._-]+$/,放行
@@ -51,7 +52,7 @@ export const ManifestSchema = z.object({
   id: z
     .string()
     .min(1)
-    .max(NAME_MAX)
+    .max(PLUGIN_ID_MAX_LEN)
     .refine(isValidPluginId, {
       message: 'id 仅允许小写字母数字与 . _ -,且不能为 . 或 ..',
     }),

@@ -9,6 +9,7 @@ import {
 } from './path-resolve.helper';
 import { ScopeError, type PathScope } from '../../shared/plugin-fs-contract';
 import { FS_PATH_MAX } from '../../shared/fs-limits';
+import { PERMISSION_RECORD_LIMITS } from '../../shared/permission-record-limits';
 
 // 'lstat' / 'remove' / 'rename-src' 走「不跟随 leaf 符号链接」解析 —— 作用在链接本身。
 export type ScopeOpType =
@@ -56,7 +57,7 @@ function isWithinScope(scopePath: string, probe: string): boolean {
 // 扫描 scopes、covers() 是 requested×scopes、启动 hydrate/持久化都随授权数线性增长,畸形插件可放大
 // 主进程 CPU/内存与元数据文件。grant/hydrate/mergeScopes 统一在唯一-path 合并处执行 per-plugin +
 // 全局上限,超限 fail-closed(丢弃新增 path,不无界增长;已存在 path 放宽 mode 不增计数)。
-const MAX_SCOPES_PER_PLUGIN = 256;
+const MAX_SCOPES_PER_PLUGIN = PERMISSION_RECORD_LIMITS.PATH_SCOPES_PER_PLUGIN_MAX; // 与持久化读/写端同值
 const MAX_SCOPES_GLOBAL = 4096;
 
 function withFullPath(r: { parentCanonical: string; leaf: string }): CheckResultWrite {
