@@ -6,7 +6,7 @@
 // BDD: src/__tests__/terminal-store/
 
 import { create } from 'zustand';
-import { pathEquals } from '@/lib/path-cross';
+import { isWindowsRuntime, pathEquals } from '@/lib/path-cross';
 import { trimStringToMax } from '@/lib/blank-string';
 import type { ShellFamily } from '@continuo-terminal/shell-quote';
 import type { TerminalSessionSnapshot } from '../../electron/shared/terminal-session';
@@ -240,11 +240,7 @@ export function getShellFamily(sessionId: string): ShellFamily {
   // renderer-safe: `process` is Node-only and undefined in Electron renderer;
   // navigator.platform is filled by Electron + browser convention (mirrors
   // format-hotkey.ts pattern). issue #40 R2 hot-fix.
-  const platform =
-    typeof navigator !== 'undefined' && typeof navigator.platform === 'string'
-      ? navigator.platform
-      : '';
-  return platform.startsWith('Win') ? 'powershell' : 'posix';
+  return isWindowsRuntime() ? 'powershell' : 'posix';
 }
 
 /**

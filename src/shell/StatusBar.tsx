@@ -20,6 +20,7 @@ import type { StatusBarItemSpec } from '@/plugins/registries/StatusBarRegistry';
 import { getCachedClipboard } from '@/plugins/sandbox-sweep';
 import { useT, t as translate } from '@/i18n';
 import { basenameForChrome } from './path-label';
+import { ConfirmDialog } from '@/panels/Explorer/ConfirmDialog';
 import { codedError, errorCodeOf } from '../../electron/shared/error-message';
 
 const EMPTY_STATUS_ITEMS: readonly StatusBarItemSpec[] = [];
@@ -119,10 +120,6 @@ let revokeGen = 0;
 
 async function handleRevokeAgentTerminals(count: number): Promise<void> {
   if (count <= 0) return;
-  const confirmed = window.confirm(
-    translate('permissions.revoke_all.confirm', { count }),
-  );
-  if (!confirmed) return;
   const myGen = ++revokeGen; // race(R92):本次 revoke 代际
   // 本地先撤,UI 即时反馈;main 推 sessions_changed 后 sessions 也清空。
   const wasGranted = useAgentAuthStore.getState().sessionGranted;
@@ -210,6 +207,8 @@ export function StatusBar() {
     [activeContent],
   );
 
+  // 非 null = 撤销确认弹窗打开,值为打开时的 agent 会话数。
+  const [revokeConfirmCount, setRevokeConfirmCount] = useState<number | null>(null);
   const [mcpCopyState, setMcpCopyState] = useState<
     'idle' | 'ok' | 'unavailable' | 'fail'
   >('idle');
@@ -283,6 +282,7 @@ export function StatusBar() {
         {rightItems.map((item) => (
           <span key={item.id}>{liveRenderStatusItem(item)}</span>
         ))}
+        {/* native button:24px 状态栏内的行内文本按钮,design Button 最小高度超出状态栏;颜色走语义 token。 */}
         <button
           type="button"
           onClick={() => void onCopyMcp()}
@@ -301,9 +301,10 @@ export function StatusBar() {
           {mcpCopyState !== 'idle' ? mcpLabel : ''}
         </span>
         {agentSessionCount > 0 && (
+          // native button:同上(24px 状态栏行内文本按钮)。
           <button
             type="button"
-            onClick={() => void handleRevokeAgentTerminals(agentSessionCount)}
+            onClick={() => setRevokeConfirmCount(agentSessionCount)}
             title={agentRevokeTooltip}
             // a11y(A74,A2 同族):按钮可见文本只表「N 个 agent 会话」,撤销动作语义仅在 title
             //(SR 有可见文本时不一定读 title)→ aria-label 用含撤销语义的 revoke_tooltip 作可访问名。
@@ -350,6 +351,23 @@ export function StatusBar() {
           <span>UTF-8</span>
         )}
       </div>
+      {/* 撤销确认走 design Modal(项目约束:对话框不用原生确认框)。 */}
+      <ConfirmDialog
+        open={revokeConfirmCount !== null}
+        title={t('permissions.revoke_all.title')}
+        description={
+          <span className="whitespace-pre-line">
+            {t('permissions.revoke_all.confirm', { count: revokeConfirmCount ?? 0 })}
+          </span>
+        }
+        destructive
+        onCancel={() => setRevokeConfirmCount(null)}
+        onConfirm={() => {
+          const count = revokeConfirmCount ?? 0;
+          setRevokeConfirmCount(null);
+          void handleRevokeAgentTerminals(count);
+        }}
+      />
     </footer>
   );
 }

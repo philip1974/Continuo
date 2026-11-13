@@ -274,6 +274,7 @@ export const zh: Record<TranslationKey, string> = {
   'permissions.agent.deny': '拒绝',
   'permissions.agent.grant_once': '仅本次',
   'permissions.agent.grant_session': '本次启动期间允许',
+  'permissions.revoke_all.title': '撤销 agent 终端授权？',
   'permissions.revoke_all.confirm':
     '将终止 {count} 个 agent terminal 并撤销本次启动期间的授权。\n\n已运行的 agent CLI 持有的 token 将立刻 401；新开 terminal 仍可重新授权。\n\n确定继续？',
   'permissions.revoke_all.failed':

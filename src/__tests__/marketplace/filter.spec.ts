@@ -3,7 +3,6 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   applyFilter,
-  buildMarketplaceSearchHaystack,
   collectAllTags,
   MAX_MARKETPLACE_TAGS,
 } from '../../marketplace/filter';
@@ -46,27 +45,6 @@ describe('applyFilter', () => {
     expect(src).toContain('EMPTY_MARKETPLACE_ENTRY_TAGS');
     expect(src).not.toContain('entry.tags ?? []');
     expect(src).not.toContain('e.tags ?? []');
-  });
-
-  it('显式空 tags 的 lowercase 缓存也复用稳定空数组', () => {
-    const entry = {
-      id: 'com.empty-tags',
-      name: 'empty tags',
-      description: 'tiny',
-      author: 'a',
-      repo: 'a/empty-tags',
-      tags: [],
-    } satisfies MarketplaceEntry;
-
-    expect(buildMarketplaceSearchHaystack(entry)).toBe(
-      'empty tags com.empty-tags tiny',
-    );
-    const src = readFileSync(
-      join(process.cwd(), 'src/marketplace/filter.ts'),
-      'utf-8',
-    );
-    expect(src).toContain('if (tags.length === 0)');
-    expect(src).toContain('cache.tagsLower = EMPTY_MARKETPLACE_ENTRY_TAGS');
   });
 
   it('空 query + 空 tags → 全过', () => {
@@ -219,46 +197,6 @@ describe('applyFilter', () => {
     expect(calls).toEqual({ id: 1, name: 1, description: 1, tag: 1 });
   });
 
-  it('已小写 ASCII entry 字段构建 haystack 不调用 toLowerCase', () => {
-    const lowerSpy = vi.spyOn(String.prototype, 'toLowerCase');
-
-    try {
-      expect(
-        buildMarketplaceSearchHaystack({
-          id: 'com.fast',
-          name: 'fast match',
-          description: 'tiny helper',
-          author: 'a',
-          repo: 'a/fast',
-          tags: ['tools', 'demo'],
-        }),
-      ).toBe('fast match com.fast tiny helper tools demo');
-      expect(
-        lowerSpy.mock.contexts.some((ctx) =>
-          [
-            'com.fast',
-            'fast match',
-            'tiny helper',
-            'tools',
-            'demo',
-          ].includes(String(ctx)),
-        ),
-      ).toBe(false);
-      expect(
-        buildMarketplaceSearchHaystack({
-          id: 'COM.FAST',
-          name: 'Fast Match',
-          description: 'Tiny Helper',
-          author: 'a',
-          repo: 'a/fast',
-          tags: ['Tools'],
-        }),
-      ).toBe('fast match com.fast tiny helper tools');
-    } finally {
-      lowerSpy.mockRestore();
-    }
-  });
-
   it('query 匹配 description', () => {
     const r = applyFilter(ENTRIES, {
       query: 'demo',
@@ -281,29 +219,6 @@ describe('applyFilter', () => {
       selectedTags: new Set(),
     });
     expect(r.map((e) => e.id)).toEqual(['com.baz']);
-  });
-
-  it('搜索 haystack 包含 name/id/description/tags,且不通过数组 join 拼接', () => {
-    const joinSpy = vi.spyOn(Array.prototype, 'join');
-    try {
-      const haystack = buildMarketplaceSearchHaystack({
-        id: 'com.foo',
-        name: 'Foo Plugin',
-        description: 'Productivity plugin',
-        author: 'a',
-        repo: 'a/foo',
-        tags: ['tools', 'demo'],
-      });
-
-      expect(joinSpy).not.toHaveBeenCalled();
-      expect(haystack).toContain('foo plugin');
-      expect(haystack).toContain('com.foo');
-      expect(haystack).toContain('productivity plugin');
-      expect(haystack).toContain('tools');
-      expect(haystack).toContain('demo');
-    } finally {
-      joinSpy.mockRestore();
-    }
   });
 
   it('selectedTags 单选 → entry.tags 含该 tag 才过', () => {

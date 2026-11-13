@@ -52,17 +52,6 @@ export function collectContributionSamples<T, K extends keyof T>(
   return samples;
 }
 
-export function collectStatusBarItems<T>(left: readonly T[], right: readonly T[]): readonly T[] {
-  if (left.length === 0 && right.length === 0) return EMPTY_PLUGIN_TAB_ITEMS;
-  if (left.length === 0) return right;
-  if (right.length === 0) return left;
-  const items = new Array<T>(left.length + right.length);
-  let i = 0;
-  for (; i < left.length; i++) items[i] = left[i]!;
-  for (let j = 0; j < right.length; j++, i++) items[i] = right[j]!;
-  return items;
-}
-
 export function formatContributionSamples(samples: readonly string[]): string {
   if (samples.length === 0) return '—';
   if (samples.length === 1) return samples[0]!;

@@ -214,6 +214,7 @@ export function SettingsPanel({
             <div className="px-4 py-4 text-fg-dim">{t('settings.panel.no_items')}</div>
           ) : (
             tabs.map((tab) => (
+              // native button:设置页左侧导航项(图标 + 文本整行、aria-current),design TabNav 是横向页签形态;颜色走语义 token。
               <button
                 key={tab.id}
                 type="button"

@@ -187,7 +187,7 @@ export async function ensureAuthorized(
     granted.length = grantedCount;
     denied.length = deniedCount;
 
-    if (userGranted.length > 0) await store.grant(pluginId, userGranted);
+    await store.grant(pluginId, userGranted);
     if (denied.length > 0) await store.deny(pluginId, denied);
 
     if (granted.length === 0) {
@@ -225,7 +225,7 @@ export async function ensureAuthorized(
       }
       newDeny.length = newDenyCount;
 
-      if (userGranted.length > 0) await store.grant(pluginId, userGranted);
+      await store.grant(pluginId, userGranted);
       if (newDeny.length > 0) await store.deny(pluginId, newDeny);
 
       for (const p of userGranted) grantedSet.add(p);

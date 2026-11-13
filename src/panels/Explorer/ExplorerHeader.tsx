@@ -193,7 +193,7 @@ export function ExplorerHeader({
             role="menu"
             onKeyDown={onMenuKeyDown}
             style={{ position: 'fixed', top: anchor.top, right: anchor.right }}
-            className="z-modal min-w-[140px] overflow-hidden rounded-md border border-line bg-panel py-1 shadow-lg shadow-black/40"
+            className="z-modal min-w-[140px] overflow-hidden rounded-md border border-line bg-panel py-1 shadow-popover"
           >
             <MenuItem
               disabled={!onExpandAll}

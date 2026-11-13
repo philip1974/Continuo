@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   findEditorFileTabById,
   findEditorFileTabByPath,
+} from '../../panels/Editor/editor-tab-lookup';
+import {
   openFileByPath,
   saveFile,
   type EditorFileDeps,

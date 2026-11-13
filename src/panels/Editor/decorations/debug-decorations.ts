@@ -1,5 +1,4 @@
 import {
-  Compartment,
   RangeSet,
   RangeSetBuilder,
   StateEffect,
@@ -92,8 +91,6 @@ const execLineDecorationField = StateField.define<DecorationSet>({
   provide: (field) => EditorView.decorations.from(field),
 });
 
-const debugDecorationsCompartment = new Compartment();
-
 const debugDecorationsHostExtension: Extension = [
   breakpointMarkersField,
   execLineDecorationField,
@@ -124,7 +121,7 @@ const debugDecorationsHostExtension: Extension = [
 ];
 
 export function debugDecorationsExtension(): Extension {
-  return debugDecorationsCompartment.of(debugDecorationsHostExtension);
+  return debugDecorationsHostExtension;
 }
 
 export function setDebugDecorations(view: EditorView, state: DebugDecorationsState): void {

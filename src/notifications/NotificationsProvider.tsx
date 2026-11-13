@@ -94,9 +94,6 @@ function updateNotificationCreatedAt(
   return next ?? notifications;
 }
 
-// NotifyOpts 的定义在 notify.ts(mirror 由它消费,Provider 内部不读);此处保留既有导出名。
-export type { NotifyOpts } from './notify';
-
 interface NotificationsContextValue {
   readonly notifications: readonly Notification[];
   readonly notify: (
@@ -293,4 +290,3 @@ export function useNotify(): NotificationsContextValue {
   return useContext(NotificationsContext);
 }
 
-export type { NotifyApi } from './notify';

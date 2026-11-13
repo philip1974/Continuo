@@ -16,8 +16,6 @@ import {
   findEditorFileTabByPath,
 } from './editor-tab-lookup';
 
-export { findEditorFileTabById, findEditorFileTabByPath } from './editor-tab-lookup';
-
 // race(R21):同一 tab 的保存串行链。autosave(旧内容)在途时用户编辑 + 手动保存(新内容),若
 // 二者乱序完成,旧内容会最后落盘覆盖新的。按 tabId 串行保证按发起顺序写盘,最后发起者最后落盘。
 const saveChains = new Map<string, Promise<unknown>>();

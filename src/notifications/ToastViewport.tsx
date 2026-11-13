@@ -1,6 +1,5 @@
 // topic-15 unified-toast-notification: 容器层。fixed 右下,vertical stack,slice(-5)。
 
-import React from 'react';
 import type { ReactNode } from 'react';
 import { useNotify } from './NotificationsProvider';
 import { Toast } from './Toast';

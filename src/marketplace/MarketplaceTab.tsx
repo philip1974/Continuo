@@ -409,6 +409,7 @@ export function MarketplaceTab() {
                 onToggle={toggleTag}
               />
             ))}
+            {/* native button:标签行内的 2xs 文本链接,design Button 最小尺寸(sm)也高于标签 chip 行高;颜色走语义 token。 */}
             {selectedTags.size > 0 && (
               <button
                 type="button"
@@ -430,6 +431,7 @@ export function MarketplaceTab() {
             total: state.entries.length,
           })}
         </span>
+        {/* native button:摘要行内的紧凑文本按钮(同上,design Button 尺寸不适用);颜色走语义 token。 */}
         <button
           type="button"
           onClick={() => void refreshReviews(true)}
@@ -613,6 +615,7 @@ const TagButton = memo(function TagButton({
   onToggle,
 }: TagButtonProps) {
   return (
+    // native button:标签 chip 是 aria-pressed 的多选 toggle,design 无对应组件(SegmentedControl 是单选);颜色走语义 token。
     <button
       type="button"
       // a11y(A8):tag filter 是 toggle,active 只改 className → 补 aria-pressed 暴露选中态给 AT。
@@ -876,6 +879,7 @@ function RatingRow({
   return (
     <div className="mt-1 space-y-2">
       <div className="flex items-center gap-1.5 text-2xs text-fg-muted">
+        {/* native button:评分摘要整行作为展开触发器(内含星标 + 文本),非 design Button 的形态;颜色走语义 token。 */}
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
@@ -932,6 +936,7 @@ function RatingRow({
               {t('marketplace.reviews.sort_label')}
             </span>
             {REVIEW_SORTS.map((s) => (
+              // native button:2xs 行内排序切换(aria-pressed),design SegmentedControl 的 sm 尺寸仍大于评论列表行高。
               <button
                 key={s}
                 type="button"
@@ -950,7 +955,7 @@ function RatingRow({
           {sorted.map((r) => (
             <ReviewItem key={r.url} review={r} nowMs={reviewNowMs} />
           ))}
-          {rating.reviews.length > 10 && (
+          {rating.reviews.length > REVIEW_DISPLAY_LIMIT && (
             <div className="pt-1 text-2xs text-fg-dim">
               {t('marketplace.reviews.show_first_10')}
               <a

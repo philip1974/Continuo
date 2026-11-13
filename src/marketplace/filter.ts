@@ -139,14 +139,6 @@ export function applyFilter(
   return count === 0 ? EMPTY_FILTERED_MARKETPLACE_ENTRIES : filtered;
 }
 
-export function buildMarketplaceSearchHaystack(entry: MarketplaceEntry): string {
-  let haystack = `${lowerName(entry)} ${lowerId(entry)} ${lowerDescription(entry)}`;
-  for (const tag of lowerTags(entry)) {
-    haystack += ` ${tag}`;
-  }
-  return haystack;
-}
-
 function matchQuery(entry: MarketplaceEntry, q: string): boolean {
   if (q.length === 0) return true;
   if (lowerName(entry).includes(q)) return true;

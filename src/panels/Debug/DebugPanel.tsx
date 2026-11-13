@@ -185,7 +185,7 @@ function ScopeCard({
 
 function BreakpointsSection({ session }: { readonly session: DebugSessionShadow }) {
   const t = useT();
-  const rows = useMemo(() => session.breakpoints, [session.breakpoints]);
+  const rows = session.breakpoints;
   if (rows.length === 0) {
     return <EmptyCard label={t('panels.debug.empty_breakpoints')} />;
   }

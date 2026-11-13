@@ -2,7 +2,7 @@
 
 行为契约:**左:workspace basename + 占位 git 分支(main) + 「侧栏已隐藏」hint(sidebarOpen=false 时);
 右:active editor 文件名(+dirty ● 圆点) + 行/词/字符/UTF-8/LF;无 active → 仅 UTF-8。
-agent terminal 数量 > 0 → 显示「N agent」按钮(点击 confirm 后 revoke + IPC revoke)。
+agent terminal 数量 > 0 → 显示「N agent」按钮(点击 → design Modal 确认框,确认后 revoke + IPC revoke;不用原生 window.confirm)。
 「复制 MCP 配置」按钮调 coApi.mcp.getStdioConfig + clipboard。
 插件 statusBar items 按 side('left'/'right')分别渲染。**
 

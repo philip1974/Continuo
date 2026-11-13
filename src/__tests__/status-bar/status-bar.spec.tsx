@@ -511,6 +511,19 @@ describe('StatusBar — MCP 复制', () => {
   });
 });
 
+// 撤销走 design Modal 确认框(不再用原生 window.confirm):点状态栏按钮 → 弹窗 → 点确认 / 取消。
+function clickRevoke(btn: HTMLButtonElement, confirm: boolean): void {
+  fireEvent.click(btn);
+  const dialog = document.querySelector('.wm-modal-content')!;
+  expect(dialog).not.toBeNull();
+  const buttons = Array.from(dialog.querySelectorAll<HTMLButtonElement>('button'));
+  const target = confirm
+    ? buttons.find((b) => b.hasAttribute('data-autofocus'))!
+    : buttons.find((b) => !b.hasAttribute('data-autofocus'))!;
+  fireEvent.click(target);
+  expect(document.querySelector('.wm-modal-content')).toBeNull();
+}
+
 describe('StatusBar — agent 撤销', () => {
   it('点 N agent 按钮 + 用户 confirm → revoke + coApi.agentAuth.revoke', async () => {
     const revoke = vi.fn().mockResolvedValue({ ok: true });
@@ -530,19 +543,22 @@ describe('StatusBar — agent 撤销', () => {
       activeId: 't1',
     });
     useAgentAuthStore.setState({ pending: null, sessionGranted: true });
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
 
     const { container } = render(<StatusBar />);
     const btn = Array.from(
       container.querySelectorAll<HTMLButtonElement>('button'),
     ).find((b) => /\d+.*agent/.test(b.textContent ?? ''))!;
-    fireEvent.click(btn);
+    clickRevoke(btn, true);
 
     await waitFor(() => {
       expect(useAgentAuthStore.getState().sessionGranted).toBe(false);
       expect(revoke).toHaveBeenCalled();
     });
-    confirmSpy.mockRestore();
+  });
+
+  it('不调用原生 window.confirm', () => {
+    const src = readFileSync(join(process.cwd(), 'src/shell/StatusBar.tsx'), 'utf-8');
+    expect(src).not.toContain('window.confirm');
   });
 
   it('用户取消 confirm → 不调 revoke', async () => {
@@ -563,18 +579,16 @@ describe('StatusBar — agent 撤销', () => {
       activeId: 't1',
     });
     useAgentAuthStore.setState({ pending: null, sessionGranted: true });
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
 
     const { container } = render(<StatusBar />);
     const btn = Array.from(
       container.querySelectorAll<HTMLButtonElement>('button'),
     ).find((b) => /\d+.*agent/.test(b.textContent ?? ''))!;
-    fireEvent.click(btn);
+    clickRevoke(btn, false);
 
     await Promise.resolve();
     expect(revoke).not.toHaveBeenCalled();
     expect(useAgentAuthStore.getState().sessionGranted).toBe(true);
-    confirmSpy.mockRestore();
   });
 
   // codex 复审 loop R18:revoke IPC 失败不得静默伪成功(否则 UI 显示已撤销但 main 的 agent
@@ -590,20 +604,18 @@ describe('StatusBar — agent 撤销', () => {
       activeId: 't1',
     });
     useAgentAuthStore.setState({ pending: null, sessionGranted: true });
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
 
     const { container } = render(<StatusBar />);
     const btn = Array.from(
       container.querySelectorAll<HTMLButtonElement>('button'),
     ).find((b) => /\d+.*agent/.test(b.textContent ?? ''))!;
-    fireEvent.click(btn);
+    clickRevoke(btn, true);
 
     await waitFor(() => {
       expect(errSpy).toHaveBeenCalled();
     });
     // 关键:撤销实际没成功 → 本地授权态回滚为 true,不谎报已撤销
     expect(useAgentAuthStore.getState().sessionGranted).toBe(true);
-    confirmSpy.mockRestore();
     errSpy.mockRestore();
   });
 
@@ -618,19 +630,17 @@ describe('StatusBar — agent 撤销', () => {
       activeId: 't1',
     });
     useAgentAuthStore.setState({ pending: null, sessionGranted: true });
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
 
     const { container } = render(<StatusBar />);
     const btn = Array.from(
       container.querySelectorAll<HTMLButtonElement>('button'),
     ).find((b) => /\d+.*agent/.test(b.textContent ?? ''))!;
-    fireEvent.click(btn);
+    clickRevoke(btn, true);
 
     await waitFor(() => {
       expect(errSpy).toHaveBeenCalled();
     });
     expect(useAgentAuthStore.getState().sessionGranted).toBe(true);
-    confirmSpy.mockRestore();
     errSpy.mockRestore();
   });
 
@@ -656,7 +666,6 @@ describe('StatusBar — agent 撤销', () => {
       activeId: 't1',
     });
     useAgentAuthStore.setState({ pending: null, sessionGranted: true });
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
 
     const { container } = render(<StatusBar />);
     const btn = Array.from(
@@ -664,9 +673,9 @@ describe('StatusBar — agent 撤销', () => {
     ).find((b) => /\d+.*agent/.test(b.textContent ?? ''))!;
 
     // 第一次 revoke(A):wasGranted=true,sessionGranted→false,IPC#1 在途(deferred,将失败)。
-    fireEvent.click(btn);
+    clickRevoke(btn, true);
     // 第二次 revoke(B):IPC#2 成功(resolve ok)→ 不回滚。
-    fireEvent.click(btn);
+    clickRevoke(btn, true);
     await waitFor(() => {
       expect(revoke).toHaveBeenCalledTimes(2);
     });
@@ -678,7 +687,6 @@ describe('StatusBar — agent 撤销', () => {
 
     // 关键:sessionGranted 保持 false(后发 B 已成功撤销,A 迟到失败未覆盖)。
     expect(useAgentAuthStore.getState().sessionGranted).toBe(false);
-    confirmSpy.mockRestore();
     errSpy.mockRestore();
   });
 });

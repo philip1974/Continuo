@@ -274,6 +274,7 @@ export const ko: Record<TranslationKey, string> = {
   'permissions.agent.deny': '거부',
   'permissions.agent.grant_once': '이번만 허용',
   'permissions.agent.grant_session': '이번 실행 동안 허용',
+  'permissions.revoke_all.title': '에이전트 터미널 권한을 취소할까요?',
   'permissions.revoke_all.confirm':
     '{count}개의 에이전트 터미널을 종료하고 이번 실행 중 부여된 인증을 취소합니다.\n\n실행 중인 에이전트 CLI의 토큰은 즉시 401이 되며, 새 터미널은 다시 인증할 수 있습니다.\n\n계속하시겠습니까?',
   'permissions.revoke_all.failed':

@@ -286,6 +286,7 @@ export const en = {
   'permissions.agent.deny': 'Deny',
   'permissions.agent.grant_once': 'Just this time',
   'permissions.agent.grant_session': 'Allow this launch',
+  'permissions.revoke_all.title': 'Revoke agent terminal access?',
   'permissions.revoke_all.confirm':
     'Will terminate {count} agent terminal(s) and revoke authorization granted during this launch.\n\nRunning agent CLIs holding tokens will 401 immediately; new terminals can re-authorize.\n\nContinue?',
   'permissions.revoke_all.failed':

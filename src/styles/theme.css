@@ -113,6 +113,10 @@
   --color-debug-breakpoint: var(--md-debug-breakpoint);
   --color-debug-exec-line: var(--md-debug-exec-line);
 
+  /* 浮层阴影:shadow-popover(design Modal 同款 --wm-shadow-popover,light/dark 各有取值),
+   * 替代手写弹出菜单上的 shadow-lg shadow-black/40。 */
+  --shadow-popover: var(--wm-shadow-popover);
+
   /* 字号补漏:wm-text-2xs(10px)暴露成 Tailwind utility text-2xs,
    * 消灭组件里散落的 ~44 处 text-[10px] arbitrary value。
    * 其它 wm-text-* 暂不映射:Tailwind 默认 text-xs/sm/base/lg 已满足 73 处使用,

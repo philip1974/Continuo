@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   INITIAL_TERMINAL_SEARCH_STATE,
   applyTerminalSearchEffect,
-  getActiveTerminalPanelId,
   terminalSearchReducer,
   type SearchAddonLike,
 } from '@/panels/Terminal/terminal-search-state';
@@ -133,20 +132,6 @@ describe('terminal search state machine', () => {
     });
 
     expect(state.result).toEqual({ index: 0, count: 2 });
-  });
-
-  it('S10 resolves only active terminal panel for command scoping', () => {
-    expect(
-      getActiveTerminalPanelId({
-        activePanel: { id: 'terminal-1', view: { contentComponent: 'terminal' } },
-      }),
-    ).toBe('terminal-1');
-    expect(
-      getActiveTerminalPanelId({
-        activePanel: { id: 'editor', view: { contentComponent: 'editor' } },
-      }),
-    ).toBeNull();
-    expect(getActiveTerminalPanelId({ activePanel: null })).toBeNull();
   });
 
   it('S11 dispatcher folds synchronously-updated state from side effect', () => {

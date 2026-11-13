@@ -19,7 +19,6 @@ import { setLocale as setI18nLocale } from '@/i18n';
 import {
   PluginsTabContent,
   collectContributionSamples,
-  collectStatusBarItems,
   formatContributionSamples,
   hasPluginId,
   hasPluginVersion,
@@ -154,31 +153,6 @@ describe('PluginsTabContent — 贡献点统计', () => {
     expect(src).toContain('samplesText: formatContributionSamples(samples)');
     expect(src).toContain('{row.samplesText}');
     expect(src).not.toContain("row.samples.join(' · ')");
-  });
-
-  it('状态栏左右贡献预分配合并,不通过数组 spread', () => {
-    const left = [{ id: 'left' }];
-    const right = [{ id: 'right-a' }, { id: 'right-b' }];
-
-    expect(collectStatusBarItems(left, right).map((item) => item.id)).toEqual([
-      'left',
-      'right-a',
-      'right-b',
-    ]);
-    expect(collectStatusBarItems.toString()).not.toContain('...');
-  });
-
-  it('状态栏左右都为空 → 稳定空数组', () => {
-    expect(collectStatusBarItems([], [])).toEqual([]);
-    expect(collectStatusBarItems([], [])).toBe(collectStatusBarItems([], []));
-  });
-
-  it('状态栏仅单侧有贡献 → 复用该侧快照,不分配合并数组', () => {
-    const left = [{ id: 'left' }];
-    const right = [{ id: 'right' }];
-
-    expect(collectStatusBarItems(left, [])).toBe(left);
-    expect(collectStatusBarItems([], right)).toBe(right);
   });
 
   it('插件存在性检查单趟扫描,不调用 plugins.some', () => {

@@ -28,7 +28,7 @@ export interface SettingsState {
   setLocale: (locale: Locale) => Promise<void>;
 }
 
-export const useSettingsStore = create<SettingsState>((set, get) => ({
+export const useSettingsStore = create<SettingsState>(() => ({
   locale: 'en',
   currentGen: 0,
   setLocale: async (locale: Locale) => {
@@ -38,16 +38,22 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       // 失败：保留旧 locale，调用方决定 UI 提示
       throw new Error(`setLocale failed: code=${result.code} message=${result.message}`);
     }
-    const next = result.data;
-    // 仅当本次 gen 不旧时更新（防同窗内乱序）
-    const current = get();
-    if (next.gen < current.currentGen) return;
-    if (next.locale === current.locale && next.gen === current.currentGen) return;
-    set({ locale: next.locale, currentGen: next.gen });
-    setI18nModuleLocale(next.locale);
-    notifyLocaleChange();
+    applyLocaleUpdate(result.data);
   },
 }));
+
+/**
+ * 落地一次 locale 更新(本端 setLocale 的返回值,或 main 的 CHANGED 广播)。按 gen 防乱序:
+ * 比当前旧的丢弃,完全相同的不重复通知。
+ */
+function applyLocaleUpdate(next: { readonly locale: Locale; readonly gen: number }): void {
+  const current = useSettingsStore.getState();
+  if (next.gen < current.currentGen) return;
+  if (next.locale === current.locale && next.gen === current.currentGen) return;
+  useSettingsStore.setState({ locale: next.locale, currentGen: next.gen });
+  setI18nModuleLocale(next.locale);
+  notifyLocaleChange();
+}
 
 /**
  * 启动时挂一次 broadcast listener — 接受 main 推过来的 CHANGED。
@@ -65,12 +71,7 @@ export function subscribeToI18nBroadcast(): void {
       console.warn('[i18n-broadcast] invalid payload, dropped', payload);
       return;
     }
-    const current = useSettingsStore.getState();
-    if (payload.gen < current.currentGen) return;
-    if (payload.locale === current.locale && payload.gen === current.currentGen) return;
-    useSettingsStore.setState({ locale: payload.locale, currentGen: payload.gen });
-    setI18nModuleLocale(payload.locale);
-    notifyLocaleChange();
+    applyLocaleUpdate(payload);
   });
 }
 

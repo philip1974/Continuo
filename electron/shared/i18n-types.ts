@@ -4,6 +4,11 @@ import { z } from 'zod';
 const LOCALES = ['en', 'zh', 'ko'] as const;
 export type Locale = (typeof LOCALES)[number];
 
+/** 纯判定(无 zod,renderer 可直接用)。 */
+export function isLocale(v: unknown): v is Locale {
+  return (LOCALES as readonly unknown[]).includes(v);
+}
+
 /** 单源 zod schema,main IPC + SettingsSchema 都复用. */
 export const LocaleSchema = z.enum(LOCALES);
 

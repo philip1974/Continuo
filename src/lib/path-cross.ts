@@ -30,7 +30,8 @@ export function stripRootPrefix(root: string, p: string): string {
   return trimLeadingSeparators(p.slice(root.length));
 }
 
-function isWindowsRuntime(): boolean {
+/** 当前 renderer 是否跑在 Windows(navigator.platform 以 win 开头,大小写不敏感)。 */
+export function isWindowsRuntime(): boolean {
   if (typeof navigator === 'undefined') return false;
   const platform = navigator.platform ?? '';
   return (
