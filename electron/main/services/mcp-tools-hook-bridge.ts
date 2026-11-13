@@ -32,6 +32,7 @@ import { truncateSessionIdForEcho } from '../lib/session-id-echo';
 import type { McpCallCtx, McpToolDef } from './mcp-host.service';
 import { z } from 'zod';
 import { SESSION_ID_MAX } from '../../shared/session-id-limits';
+import { isEcmaWhitespaceCode } from '../../shared/ecma-whitespace';
 
 // 边界(E203,mcp-tools-terminal 同族):协议 awaitStopHookInputSchema 的 session_id 仅 min(1) 无上限。
 // 1MB session_id 校验通过后进 broker / Map / 错误回显路径(回显已截断 E151,但运行期仍处理超长 key)。
@@ -163,22 +164,6 @@ function startsWithRunnerToken(value: string, tokenLower: 'claude' | 'codex'): b
   return (
     value.length === tokenLower.length ||
     isEcmaWhitespaceCode(value.charCodeAt(tokenLower.length))
-  );
-}
-
-function isEcmaWhitespaceCode(code: number): boolean {
-  return (
-    (code >= 9 && code <= 13) ||
-    code === 32 ||
-    code === 160 ||
-    code === 5760 ||
-    (code >= 8192 && code <= 8202) ||
-    code === 8232 ||
-    code === 8233 ||
-    code === 8239 ||
-    code === 8287 ||
-    code === 12288 ||
-    code === 65279
   );
 }
 

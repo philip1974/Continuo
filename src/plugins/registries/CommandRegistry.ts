@@ -4,6 +4,7 @@
 import type { Disposable } from '../types';
 import { KeyedRegistry } from './keyed-registry';
 import { isSpecObject } from './spec-guard';
+import { isEcmaWhitespaceCode } from '../../../electron/shared/ecma-whitespace';
 
 export interface CommandSpec {
   readonly id: string;
@@ -44,26 +45,6 @@ const CMD_HOTKEY_MAX = 64;
 // 边界(E145):导出供 keybindings 捕获侧(eventToCombo)与写端(setHotkey)复用同一形态校验,
 // 防捕获/override 写入注册侧会拒绝的畸形 hotkey(空段 / 含空白 / 主键为分隔符 '+')。
 export const HOTKEY_SHAPE_RE = /^[^+\s]+(\+[^+\s]+)*$/;
-
-function isEcmaWhitespaceCode(code: number): boolean {
-  return (
-    code === 9 ||
-    code === 10 ||
-    code === 11 ||
-    code === 12 ||
-    code === 13 ||
-    code === 32 ||
-    code === 160 ||
-    code === 5760 ||
-    code === 65279 ||
-    code === 8232 ||
-    code === 8233 ||
-    code === 8239 ||
-    code === 8287 ||
-    code === 12288 ||
-    (code >= 8192 && code <= 8202)
-  );
-}
 
 export function isValidHotkeyShape(hotkey: string): boolean {
   if (hotkey.length === 0) return false;

@@ -5,22 +5,8 @@
 // 全文扫描两遍 + 分配大临时数组(GC 压力)。改为 charCodeAt 单遍、零数组分配,语义
 // 与正则版逐字节等价。StatusBar 走 computeTextStats 一遍同时拿三项(不重复扫)。
 
-// JS 正则 \s 的码点集合(用于与旧 split(/\s+/) 逐字节等价的单词切分)。
-function isWhitespaceCode(c: number): boolean {
-  return (
-    c === 0x20 || // space
-    (c >= 0x09 && c <= 0x0d) || // \t \n \v \f \r
-    c === 0xa0 ||
-    c === 0x1680 ||
-    (c >= 0x2000 && c <= 0x200a) ||
-    c === 0x2028 ||
-    c === 0x2029 ||
-    c === 0x202f ||
-    c === 0x205f ||
-    c === 0x3000 ||
-    c === 0xfeff
-  );
-}
+// 单词切分用 JS 正则 \s 的码点集合(共享 isEcmaWhitespaceCode),与旧 split(/\s+/) 逐字节等价。
+import { isEcmaWhitespaceCode } from '../../electron/shared/ecma-whitespace';
 
 export interface TextStats {
   readonly lines: number;
@@ -45,7 +31,7 @@ export function computeTextStats(s: string): TextStats {
   for (let i = 0; i < len; i++) {
     const c = s.charCodeAt(i);
     if (c === 0x0a) lines++; // \n
-    if (isWhitespaceCode(c)) {
+    if (isEcmaWhitespaceCode(c)) {
       inWord = false;
     } else if (!inWord) {
       words++;
@@ -68,7 +54,7 @@ export function wordCount(s: string): number {
   let words = 0;
   let inWord = false;
   for (let i = 0; i < s.length; i++) {
-    if (isWhitespaceCode(s.charCodeAt(i))) {
+    if (isEcmaWhitespaceCode(s.charCodeAt(i))) {
       inWord = false;
     } else if (!inWord) {
       words++;

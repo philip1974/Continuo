@@ -28,24 +28,6 @@ export function serializePerKey(
   });
 }
 
-// 同 serializePerKey,但**返回本次任务的真实结果/异常**(调用方据此做后续,如安装 swap 的返回值)。
-// 串行语义、链尾吞错、排空回收(R100)全一致。主进程内多处「同 key 串行 + 要结果」的并发锁
-// (withInstallLock 等)此前各写一份 inline 副本,易漏排空回收(R100/R101 根因)→ 收口到此。
-export function runSerialPerKey<T>(
-  chains: Map<string, Promise<unknown>>,
-  key: string,
-  task: () => Promise<T>,
-): Promise<T> {
-  const prev = chains.get(key) ?? Promise.resolve();
-  const result = prev.then(task, task);
-  const settled = result.then(
-    () => undefined,
-    () => undefined,
-  );
-  chains.set(key, settled);
-  // race(R100/R101):链排空且仍是尾部 → 删条目,防 Map 随用过的 key 单调增长(内存泄漏)。
-  void settled.then(() => {
-    if (chains.get(key) === settled) chains.delete(key);
-  });
-  return result;
-}
+// 返回结果的变体 runSerialPerKey(withInstallLock 等「同 key 串行 + 要结果」的并发锁用)与 renderer
+// 共用,实现在 electron/shared/run-serial-per-key.ts。
+export { runSerialPerKey } from '../../shared/run-serial-per-key';

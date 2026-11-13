@@ -32,6 +32,7 @@ import {
   type ServerInfo,
 } from './mcp-host.service';
 import { utf8BytesExceed } from '../../shared/utf8-byte-length';
+import { isBlankString } from '../../shared/ecma-whitespace';
 import { createNdjsonLineDecoder } from '../lib/ndjson-line-decoder';
 import { pickMainWindowPreferNonPopout } from './main-window-picker.service';
 
@@ -55,35 +56,8 @@ export function hasOversizedStdioLine(
   return false;
 }
 
-function isEcmaTrimWhitespaceCode(code: number): boolean {
-  if (code <= 0x20) {
-    return (
-      code === 0x09 ||
-      code === 0x0a ||
-      code === 0x0b ||
-      code === 0x0c ||
-      code === 0x0d ||
-      code === 0x20
-    );
-  }
-  if (code >= 0x2000 && code <= 0x200a) return true;
-  return (
-    code === 0x00a0 ||
-    code === 0x1680 ||
-    code === 0x2028 ||
-    code === 0x2029 ||
-    code === 0x202f ||
-    code === 0x205f ||
-    code === 0x3000 ||
-    code === 0xfeff
-  );
-}
-
 export function isBlankStdioLine(line: string): boolean {
-  for (let i = 0; i < line.length; i += 1) {
-    if (!isEcmaTrimWhitespaceCode(line.charCodeAt(i))) return false;
-  }
-  return true;
+  return isBlankString(line);
 }
 
 export function resolveStdioHelloWindowId(

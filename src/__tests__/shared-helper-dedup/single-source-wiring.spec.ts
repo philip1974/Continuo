@@ -4,6 +4,19 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { describe, it, expect } from 'vitest';
 import { isValidPluginId } from '../../../electron/shared/plugin-id';
+import {
+  isBlankString,
+  isEcmaWhitespaceCode,
+  trimStringToMax,
+} from '../../../electron/shared/ecma-whitespace';
+import {
+  hasTranslateParams,
+  interpolateTemplate,
+} from '../../../electron/shared/i18n-interpolate';
+import { runSerialPerKey } from '../../../electron/shared/run-serial-per-key';
+import { runSerialPerKey as rendererRunSerialPerKey } from '../../lib/serialize-per-key';
+import { runSerialPerKey as mainRunSerialPerKey } from '../../../electron/main/services/serialize-per-key';
+import { isBlankString as rendererIsBlankString } from '../../lib/blank-string';
 import { isValidPluginId as rendererIsValidPluginId } from '../../plugins/plugin-id';
 import {
   isAsciiAlphaCode,
@@ -84,5 +97,64 @@ describe('plugin id 校验单一来源(electron/shared/plugin-id.ts)', () => {
     ]) {
       expect(readFileSync(path.join(ROOT, rel), 'utf-8')).toMatch(/shared\/plugin-id'/);
     }
+  });
+});
+
+describe('ECMA 空白判定单一来源(electron/shared/ecma-whitespace.ts)', () => {
+  it('码点集合恒等于 JS 正则 \\s(全 BMP 扫描)', () => {
+    const re = /\s/;
+    for (let code = 0; code <= 0xffff; code += 1) {
+      if (isEcmaWhitespaceCode(code) !== re.test(String.fromCharCode(code))) {
+        throw new Error(`mismatch at U+${code.toString(16)}`);
+      }
+    }
+  });
+
+  it.each(['isEcmaWhitespaceCode', 'isEcmaTrimWhitespaceCode', 'isWhitespaceCode'])(
+    '%s 无其他本地定义',
+    (fnName) => {
+      const expected = fnName === 'isEcmaWhitespaceCode' ? ['electron/shared/ecma-whitespace.ts'] : [];
+      expect(definers(fnName)).toEqual(expected);
+    },
+  );
+
+  it('isBlankString / trimStringToMax 语义等价 trim', () => {
+    expect(rendererIsBlankString).toBe(isBlankString);
+    for (const v of ['', ' \t\u00a0\u3000', ' a ', '\ufeff', 'x']) {
+      expect(isBlankString(v)).toBe(v.trim() === '');
+    }
+    for (const v of ['  hello world  ', '\u3000ab\n', '   ', 'abc']) {
+      expect(trimStringToMax(v, 4)).toBe(v.trim().slice(0, 4));
+    }
+    expect(trimStringToMax(' a ', 0)).toBe('');
+  });
+});
+
+describe('i18n 插值单一来源(electron/shared/i18n-interpolate.ts)', () => {
+  it('interpolateTemplate 只在 shared 定义', () => {
+    expect(definers('interpolateTemplate')).toEqual(['electron/shared/i18n-interpolate.ts']);
+  });
+
+  it('插值语义', () => {
+    expect(interpolateTemplate('Hi {name}, {n} new', { name: 'A', n: 2 })).toBe('Hi A, 2 new');
+    expect(interpolateTemplate('keep {missing}', { other: 1 })).toBe('keep {missing}');
+    expect(interpolateTemplate('{a}{b}', { a: 'x', b: 'y' })).toBe('xy');
+    expect(interpolateTemplate('{ not } {a-b} {}', { a: 1 })).toBe('{ not } {a-b} {}');
+    const plain = 'no placeholders';
+    expect(interpolateTemplate(plain, { a: 1 })).toBe(plain);
+  });
+
+  it('hasTranslateParams:undefined / 空对象 → false', () => {
+    expect(hasTranslateParams(undefined)).toBe(false);
+    expect(hasTranslateParams({})).toBe(false);
+    expect(hasTranslateParams({ a: 1 })).toBe(true);
+  });
+});
+
+describe('runSerialPerKey 单一来源(electron/shared/run-serial-per-key.ts)', () => {
+  it('renderer / main 入口是同一函数,且只定义一次', () => {
+    expect(rendererRunSerialPerKey).toBe(runSerialPerKey);
+    expect(mainRunSerialPerKey).toBe(runSerialPerKey);
+    expect(definers('runSerialPerKey')).toEqual(['electron/shared/run-serial-per-key.ts']);
   });
 });
