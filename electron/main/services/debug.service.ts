@@ -16,6 +16,7 @@ import * as debugSessions from './debug-sessions.service';
 import { getWorkspaceRoot } from './window-workspace-roots.service';
 import { ERROR_CODES } from '../../shared/error-codes';
 import type { DebugViewEvent } from '../../shared/debug-view-channels';
+import { codedError } from '../../shared/error-message';
 
 const execFile = promisify(execFileCb);
 
@@ -419,10 +420,7 @@ export class DebugService {
   ): Promise<void> {
     const root = this.workspace.getWorkspaceRoot(ownerWindowId);
     if (root === null || root === '') {
-      throw Object.assign(
-        new Error('debug launch requires a workspace root for this window'),
-        { code: ERROR_CODES.DEBUG_PROGRAM_OUTSIDE_WORKSPACE },
-      );
+      throw codedError(ERROR_CODES.DEBUG_PROGRAM_OUTSIDE_WORKSPACE, 'debug launch requires a workspace root for this window');
     }
     let realRoot: string;
     try {
@@ -443,18 +441,12 @@ export class DebugService {
     try {
       realTarget = await this.workspace.realpath(target);
     } catch {
-      throw Object.assign(
-        new Error(`debug ${label} not found or inaccessible: ${target}`),
-        { code: ERROR_CODES.DEBUG_PROGRAM_OUTSIDE_WORKSPACE },
-      );
+      throw codedError(ERROR_CODES.DEBUG_PROGRAM_OUTSIDE_WORKSPACE, `debug ${label} not found or inaccessible: ${target}`);
     }
     const rel = path.relative(realRoot, realTarget);
     const inside = rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
     if (!inside) {
-      throw Object.assign(
-        new Error(`debug ${label} must be inside the workspace: ${target}`),
-        { code: ERROR_CODES.DEBUG_PROGRAM_OUTSIDE_WORKSPACE },
-      );
+      throw codedError(ERROR_CODES.DEBUG_PROGRAM_OUTSIDE_WORKSPACE, `debug ${label} must be inside the workspace: ${target}`);
     }
   }
 

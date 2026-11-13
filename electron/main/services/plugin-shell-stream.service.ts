@@ -11,6 +11,7 @@ import { ERROR_CODES } from '../../shared/error-codes';
 import { shellCommandShapeError } from '../../shared/shell-limits';
 import { killWithGrace } from '../lib/kill-with-grace';
 import { makeWcGoneHook } from '../lib/wc-gone-hook';
+import { codedError } from '../../shared/error-message';
 
 const DEFAULT_TIMEOUT_MS = 5 * 60_000;
 const MAX_TIMEOUT_MS = 30 * 60_000;
@@ -84,16 +85,13 @@ export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
         active.size >= MAX_ACTIVE_STREAMS_GLOBAL ||
         activeCountForSender(event.sender.id) >= MAX_ACTIVE_STREAMS_PER_SENDER
       ) {
-        throw Object.assign(
-          new Error('too many active shell streams'),
-          { code: ERROR_CODES.TOO_MANY_STREAMS },
-        );
+        throw codedError(ERROR_CODES.TOO_MANY_STREAMS, 'too many active shell streams');
       }
 
       // 边界(E45):cmd/args/cwd/streamId 长度/数量校验,与 shell.exec(E12)对齐,spawn 前拒绝畸形
       // 巨量输入(防 IPC/内存放大 + spawn E2BIG)。raw IPC 入口手写校验(同 E10 timeoutMs 风格)。
       const badInput = (msg: string): never => {
-        throw Object.assign(new Error(msg), { code: ERROR_CODES.BAD_INPUT });
+        throw codedError(ERROR_CODES.BAD_INPUT, msg);
       };
       if (
         typeof streamId !== 'string' ||

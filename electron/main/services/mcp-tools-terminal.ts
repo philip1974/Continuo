@@ -43,6 +43,7 @@ import { AttachTargetSchema } from '../../shared/terminal-attach';
 import type { McpCallCtx, McpToolDef } from './mcp-host.service';
 import { z } from 'zod';
 import { SESSION_ID_MAX } from '../../shared/session-id-limits';
+import { codedError } from '../../shared/error-message';
 
 // 边界(E202,无消费的解析放大面):Continuo 的 create_session 工具只消费
 // cwd/name/agentLabel/autorun/target/install_stop_hook/include_raw(见下方 ptyInput 构造),
@@ -297,35 +298,24 @@ export function makeCreateSessionTool(
         (input.autorun !== undefined &&
           utf8BytesExceed(input.autorun, MCP_AUTORUN_MAX))
       ) {
-        throw Object.assign(
-          new Error('create_session input field exceeds size limit'),
-          { code: ERROR_CODES.BAD_INPUT },
-        );
+        throw codedError(ERROR_CODES.BAD_INPUT, 'create_session input field exceeds size limit');
       }
       if (
         input.target !== undefined &&
         !AttachTargetSchema.safeParse(input.target).success
       ) {
-        throw Object.assign(new Error('invalid create_session target'), {
-          code: ERROR_CODES.BAD_INPUT,
-        });
+        throw codedError(ERROR_CODES.BAD_INPUT, 'invalid create_session target');
       }
 
       const decision = await deps.ensureAuthorized(ctx.ownerWindowId);
       if (decision === 'denied') {
-        throw Object.assign(
-          new Error('agent terminal not authorized by user'),
-          { code: ERROR_CODES.AGENT_NOT_AUTHORIZED },
-        );
+        throw codedError(ERROR_CODES.AGENT_NOT_AUTHORIZED, 'agent terminal not authorized by user');
       }
       // race(R111):用户在授权弹窗上停留期间调用方(stdio proxy)可能已断开 → ctx.signal abort。
       // 此时即便用户点了授权,也不创建会话:否则留下无调用方的孤儿 agent terminal(响应写回死
       // socket、autorun 副作用照跑)。在 installStopHook / createSession 等真正副作用前复查。
       if (ctx.signal?.aborted) {
-        throw Object.assign(
-          new Error('caller disconnected before session creation'),
-          { code: ERROR_CODES.AGENT_NOT_AUTHORIZED },
-        );
+        throw codedError(ERROR_CODES.AGENT_NOT_AUTHORIZED, 'caller disconnected before session creation');
       }
       let stopHookInstalled: { installed: boolean } | undefined;
       if (input.install_stop_hook === true && deps.installStopHook) {
@@ -424,10 +414,7 @@ function hexValue(code: number): number {
 // 边界(E148,E151 同族):session_id 回显截断逻辑已收口到共享 helper(session-id-echo.ts),
 // 供本文件与 mcp-tools-hook-bridge.ts 单一来源复用。
 const ERR_TERMINAL_SESSION_NOT_FOUND = (id: string) =>
-  Object.assign(
-    new Error(`terminal session not found: ${truncateSessionIdForEcho(id)}`),
-    { code: ERROR_CODES.TERMINAL_SESSION_NOT_FOUND },
-  );
+  codedError(ERROR_CODES.TERMINAL_SESSION_NOT_FOUND, `terminal session not found: ${truncateSessionIdForEcho(id)}`);
 
 function assertSessionInCurrentWindow(
   sessionId: string,

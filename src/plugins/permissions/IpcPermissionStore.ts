@@ -23,6 +23,7 @@ import {
   isIpcPathScope,
   isIpcPermissionDecision,
 } from '../../../electron/shared/permission-record';
+import { codedError } from '../../../electron/shared/error-message';
 
 export interface PermissionRecord {
   readonly decisions: PermissionDecision[];
@@ -209,10 +210,7 @@ export class IpcPermissionStore implements PermissionStore {
         serializePermissionRecord(written),
       );
       if (!r.ok) {
-        throw Object.assign(
-          new Error(r.message ?? 'clearDenied writePluginPermissions failed'),
-          { code: r.code },
-        );
+        throw codedError(r.code, r.message ?? 'clearDenied writePluginPermissions failed');
       }
       // 仅写成功后提交 cache
       if (removeEntry) delete cache[pluginId];
@@ -234,9 +232,7 @@ export class IpcPermissionStore implements PermissionStore {
           // 未知。绝不缓存空表 —— 否则 grant/deny/clearDenied 基于 {} 做 RMW,用部分 record
           // 覆盖该 plugin 已落盘的 decisions/pathScopes(尤其丢已授 pathScopes)。抛出且不写
           // cache → 调用侧(get/grant/deny/clearDenied)fail-closed,不在未知态写。
-          throw Object.assign(new Error(r.message ?? 'readPermissions failed'), {
-            code: r.code,
-          });
+          throw codedError(r.code, r.message ?? 'readPermissions failed');
         }
         const data: Cache = parsePermissionState(r.data);
         this.cache = data;
@@ -278,10 +274,7 @@ export class IpcPermissionStore implements PermissionStore {
         serializePermissionRecord(next),
       );
       if (!r.ok) {
-        throw Object.assign(
-          new Error(r.message ?? 'writePluginPermissions failed'),
-          { code: r.code },
-        );
+        throw codedError(r.code, r.message ?? 'writePluginPermissions failed');
       }
       cache[pluginId] = next; // 仅写成功后提交 cache
     });

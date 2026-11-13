@@ -25,6 +25,7 @@ import {
   clearWindow as clearWindowRoot,
   setWorkspaceRoot,
 } from '../services/window-workspace-roots.service';
+import { codedError } from '../../shared/error-message';
 
 function summarizePath(p: string): string {
   return p.length > 60 ? p.slice(0, 50) + '...' : p;
@@ -61,25 +62,16 @@ async function createWindowHandler(
     // 安全 + 健壮性校验:必须 absolute,实际存在的目录。
     // 防 renderer 注入相对路径 / 不存在的路径让新窗口启不来。
     if (!path.isAbsolute(input.workspace)) {
-      throw Object.assign(
-        new Error(`workspace must be absolute path: ${input.workspace}`),
-        { code: ERROR_CODES.WORKSPACE_NOT_ABSOLUTE },
-      );
+      throw codedError(ERROR_CODES.WORKSPACE_NOT_ABSOLUTE, `workspace must be absolute path: ${input.workspace}`);
     }
     let stat;
     try {
       stat = fs.statSync(input.workspace);
     } catch {
-      throw Object.assign(
-        new Error(`workspace not found: ${input.workspace}`),
-        { code: ERROR_CODES.WORKSPACE_NOT_FOUND },
-      );
+      throw codedError(ERROR_CODES.WORKSPACE_NOT_FOUND, `workspace not found: ${input.workspace}`);
     }
     if (!stat.isDirectory()) {
-      throw Object.assign(
-        new Error(`workspace not a directory: ${input.workspace}`),
-        { code: ERROR_CODES.WORKSPACE_NOT_DIRECTORY },
-      );
+      throw codedError(ERROR_CODES.WORKSPACE_NOT_DIRECTORY, `workspace not a directory: ${input.workspace}`);
     }
   }
 

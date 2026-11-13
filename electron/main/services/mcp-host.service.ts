@@ -30,6 +30,7 @@ import { jsonByteLowerBoundExceeds } from '../../shared/json-byte-budget';
 import { RESULT_BYTES_MAX } from '../../shared/plugin-mcp-schemas';
 import { PLUGIN_MCP_ERROR_CODES } from '../../shared/plugin-mcp-channels';
 import { equalsAsciiIgnoreCase } from '../../shared/lower-if-needed';
+import { codedError } from '../../shared/error-message';
 
 // ── 常量 ────────────────────────────────────────────────────────
 
@@ -652,7 +653,7 @@ async function readBody(req: IncomingMessage): Promise<string> {
     req.on('data', (chunk: Buffer) => {
       total += chunk.length;
       if (total > MAX_BODY_BYTES) {
-        reject(Object.assign(new Error('body too large'), { code: ERROR_CODES.PAYLOAD_TOO_LARGE }));
+        reject(codedError(ERROR_CODES.PAYLOAD_TOO_LARGE, 'body too large'));
         req.destroy();
         return;
       }
@@ -674,9 +675,7 @@ export async function createMcpHost(
 ): Promise<McpHost> {
   const bindAddr = options.bindAddr ?? '127.0.0.1';
   if (!isLocalhostBindAddr(bindAddr)) {
-    throw Object.assign(new Error(`MCP host bind forbidden: ${bindAddr}`), {
-      code: ERROR_CODES.MCP_HOST_BIND_FORBIDDEN,
-    });
+    throw codedError(ERROR_CODES.MCP_HOST_BIND_FORBIDDEN, `MCP host bind forbidden: ${bindAddr}`);
   }
 
   const tools = new Map<string, AnyMcpTool>();

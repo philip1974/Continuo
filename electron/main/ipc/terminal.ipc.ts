@@ -33,6 +33,7 @@ import { SESSION_ID_MAX } from '../../shared/session-id-limits';
 // 非 .max()(UTF-16 code unit)—— CJK/emoji 在 length≤上限时真实字节数倍超,实际写 6-8MB 到 PTY/IPC。
 import { utf8BytesExceed } from '../../shared/utf8-byte-length';
 import { broadcastToWindows } from '../lib/broadcast';
+import { codedError } from '../../shared/error-message';
 
 // ── 常量 ─────────────────────────────────────────────────────
 const MAX_WRITE_BYTES = 2_000_000; // ~2MB 真实 UTF-8 字节上限(下游 PTY/IPC 写入按字节,边界语义统一)
@@ -124,15 +125,11 @@ export type AttachRejectedInput = z.infer<typeof attachRejectedInputSchema>;
 // ── handlers ─────────────────────────────────────────────────
 
 const ERR_NOT_FOUND = (id: string) =>
-  Object.assign(new Error(`terminal not found: ${id}`), {
-    code: ERROR_CODES.TERMINAL_NOT_FOUND,
-  });
+  codedError(ERROR_CODES.TERMINAL_NOT_FOUND, `terminal not found: ${id}`);
 
 // race(R4):write 实际失败(PTY 在 has() 后退出 / server-node 拒写)→ 上抛,IPC 返 ok:false。
 const ERR_WRITE_FAILED = (id: string) =>
-  Object.assign(new Error(`terminal write failed: ${id}`), {
-    code: ERROR_CODES.TERMINAL_WRITE_FAILED,
-  });
+  codedError(ERROR_CODES.TERMINAL_WRITE_FAILED, `terminal write failed: ${id}`);
 
 function assertOwnedSession(
   sessionStore: Pick<typeof terminalSessions, 'get'>,
@@ -166,9 +163,7 @@ export function makeCreateHandler(deps?: {
   ): Promise<{ id: string; cwd?: string; title?: string }> => {
     const shell = input.shell ?? getDefaultShell();
     if (!isAllowedShell(shell)) {
-      throw Object.assign(new Error(`shell not in allowlist: ${shell}`), {
-        code: ERROR_CODES.TERMINAL_FORBIDDEN_SHELL,
-      });
+      throw codedError(ERROR_CODES.TERMINAL_FORBIDDEN_SHELL, `shell not in allowlist: ${shell}`);
     }
     // cwd 解析优先级:
     //   1. 显式入参 input.cwd(user 路径 Cmd+T / + 按钮已传 workspaceRoot)
@@ -224,9 +219,7 @@ export function makeCreateHandler(deps?: {
     // 保留 metadata 故 get(id) 仍在),立即 kill 刚建的 PTY 并以 CANCELLED 收场,不返回成功。
     if (!sessionStore.get(id)) {
       if (service.has(id)) service.kill(id);
-      throw Object.assign(new Error(`terminal create cancelled: ${id}`), {
-        code: ERROR_CODES.TERMINAL_CREATE_CANCELLED,
-      });
+      throw codedError(ERROR_CODES.TERMINAL_CREATE_CANCELLED, `terminal create cancelled: ${id}`);
     }
     return input.scoped ? { id, cwd, title } : { id };
   };
@@ -234,9 +227,7 @@ export function makeCreateHandler(deps?: {
 
 export function resolveTerminalCwd(cwdHint?: string): string {
   if (!cwdHint) {
-    throw Object.assign(new Error('terminal cwd unresolved (no hint)'), {
-      code: ERROR_CODES.TERMINAL_CWD_UNRESOLVED,
-    });
+    throw codedError(ERROR_CODES.TERMINAL_CWD_UNRESOLVED, 'terminal cwd unresolved (no hint)');
   }
   try {
     if (fs.existsSync(cwdHint) && fs.statSync(cwdHint).isDirectory()) {
@@ -245,9 +236,7 @@ export function resolveTerminalCwd(cwdHint?: string): string {
   } catch {
     // fall through to throw below
   }
-  throw Object.assign(new Error(`terminal cwd invalid: ${cwdHint}`), {
-    code: ERROR_CODES.TERMINAL_CWD_UNRESOLVED,
-  });
+  throw codedError(ERROR_CODES.TERMINAL_CWD_UNRESOLVED, `terminal cwd invalid: ${cwdHint}`);
 }
 
 export function makeListSessionsHandler(deps?: {

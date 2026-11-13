@@ -21,6 +21,7 @@ import {
 } from '../../shared/debug-view-channels';
 import type { DebugService } from '../services/debug.service';
 import * as debugSessions from '../services/debug-sessions.service';
+import { codedError } from '../../shared/error-message';
 
 const debugSubscribeInputSchema = z.object({}).strict();
 
@@ -57,9 +58,7 @@ const debugGetVariablesInputSchema = z
 function requireOwnedDebugSession(sessionId: string, win: BrowserWindow) {
   const session = debugSessions.get(sessionId);
   if (!session || session.ownerWindowId !== win.id) {
-    throw Object.assign(new Error(`debug session not found: ${sessionId}`), {
-      code: ERROR_CODES.DEBUG_SESSION_NOT_FOUND,
-    });
+    throw codedError(ERROR_CODES.DEBUG_SESSION_NOT_FOUND, `debug session not found: ${sessionId}`);
   }
   return session;
 }
@@ -67,9 +66,7 @@ function requireOwnedDebugSession(sessionId: string, win: BrowserWindow) {
 function requireStoppedSession(sessionId: string, win: BrowserWindow) {
   const session = requireOwnedDebugSession(sessionId, win);
   if (session.runtimeState !== 'stopped') {
-    throw Object.assign(new Error(`debug session is not stopped: ${sessionId}`), {
-      code: ERROR_CODES.BAD_INPUT,
-    });
+    throw codedError(ERROR_CODES.BAD_INPUT, `debug session is not stopped: ${sessionId}`);
   }
   return session;
 }
@@ -95,10 +92,7 @@ export function registerDebugViewIpc(service: DebugService): void {
     const session = requireStoppedSession(input.sessionId, win);
     const threadId = input.threadId ?? session.currentThreadId;
     if (threadId === undefined) {
-      throw Object.assign(
-        new Error(`debug session has no stopped thread: ${input.sessionId}`),
-        { code: ERROR_CODES.BAD_INPUT },
-      );
+      throw codedError(ERROR_CODES.BAD_INPUT, `debug session has no stopped thread: ${input.sessionId}`);
     }
     return service.stackTrace(input.sessionId, {
       threadId,

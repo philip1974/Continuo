@@ -74,7 +74,7 @@ function validateShellInput(
   opts?: { cwd?: unknown; env?: unknown; input?: unknown },
 ): void {
   const bad = (msg: string): never => {
-    throw Object.assign(new Error(`[shell] ${msg}`), { code: 'BAD_INPUT' });
+    throw codedError('BAD_INPUT', `[shell] ${msg}`);
   };
   // cmd / args / cwd 三段与 main 入口共用 shellCommandShapeError(先确认 args 是数组再由调用方 spread)。
   const shapeError = shellCommandShapeError(cmd, args, opts?.cwd);
@@ -196,7 +196,7 @@ function makeFs(
       // 不让超量 payload 进 IPC。共享 helper 与主进程同一来源,不漂移。
       const scopesErr = validateScopesShape(scopes);
       if (scopesErr) {
-        throw Object.assign(new Error(scopesErr), { code: 'BAD_INPUT' });
+        throw codedError('BAD_INPUT', scopesErr);
       }
       return coApi.pluginFsRaw.requestScope(
         token ?? missingPluginFsToken(),
@@ -299,10 +299,7 @@ function makeFs(
       // 边界(E314,E63 renderer 对偶 / pre-IPC 预检):sha 发 IPC 前校验 hex 形态 —— 此前只校验 repoDir,
       // 超长/非 hex sha 经 structured-clone 进 main 才被 isValidGitBlobSha 拒(IPC 放大)。共享 isValidGitBlobSha。
       if (!isValidGitBlobSha(sha)) {
-        throw Object.assign(
-          new Error('plugin readGitBlob sha must be 4-64 hex chars'),
-          { code: 'BAD_INPUT' },
-        );
+        throw codedError('BAD_INPUT', 'plugin readGitBlob sha must be 4-64 hex chars');
       }
       return coApi.pluginFsRaw.readGitBlob(
         token ?? missingPluginFsToken(),
@@ -334,7 +331,7 @@ function makeFs(
 // 非 renderer 同步物化;给 body 限大小是上传策略决策,留作单独议题)。超限抛 BAD_INPUT、不调 fetch。
 function validateNetworkInput(url: unknown, init?: unknown): void {
   const bad = (msg: string): never => {
-    throw Object.assign(new Error(`[network] ${msg}`), { code: 'BAD_INPUT' });
+    throw codedError('BAD_INPUT', `[network] ${msg}`);
   };
   if (typeof url !== 'string' || url.length === 0 || url.length > NETWORK_URL_MAX)
     bad(`invalid url (empty or > ${NETWORK_URL_MAX})`);
@@ -413,10 +410,7 @@ function makeShell(
       // 否则冒泡到 runContributedAction 时拿不到 code,BAD_INPUT 等会在 zh/ko toast 显英文
       // raw。带 code → runContributedAction 经 localizeErrorByCode 按 catalog 本地化。
       if (!r.ok) {
-        throw Object.assign(
-          new Error(`[shell.exec] ${r.code}: ${r.message}`),
-          { code: r.code },
-        );
+        throw codedError(r.code, `[shell.exec] ${r.code}: ${r.message}`);
       }
       return r.data;
     },
@@ -527,18 +521,10 @@ function makeClipboard(
       // 边界(E181):发原生 clipboard 前校验类型 + UTF-8 字节上限。畸形/恶意插件传非 string 或超大
       // 字符串 → renderer/系统 clipboard API 卡顿/内存峰值/异常路径。非法抛 BAD_INPUT(同 shell/fs 入口)。
       if (typeof text !== 'string') {
-        throw Object.assign(
-          new Error('[clipboard] writeText: text must be a string'),
-          { code: 'BAD_INPUT' },
-        );
+        throw codedError('BAD_INPUT', '[clipboard] writeText: text must be a string');
       }
       if (utf8BytesExceed(text, CLIPBOARD_TEXT_MAX_BYTES)) {
-        throw Object.assign(
-          new Error(
-            `[clipboard] writeText: text too large (> ${CLIPBOARD_TEXT_MAX_BYTES} 字节)`,
-          ),
-          { code: 'BAD_INPUT' },
-        );
+        throw codedError('BAD_INPUT', `[clipboard] writeText: text too large (> ${CLIPBOARD_TEXT_MAX_BYTES} 字节)`,);
       }
       return getCachedClipboard().writeText(text);
     },

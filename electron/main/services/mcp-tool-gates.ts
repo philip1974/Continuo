@@ -10,6 +10,7 @@
 
 import { ERROR_CODES } from '../../shared/error-codes';
 import type { AnyMcpTool, McpCallCtx } from './mcp-host.service';
+import { codedError } from '../../shared/error-message';
 
 /** agent 授权门控:owner 窗口 + 调用 method,返回三态决策. */
 export type EnsureAuthorized = (
@@ -39,9 +40,7 @@ export function gateWithAuth(
     run: async (input: unknown, ctx: McpCallCtx) => {
       const decision = await ensureAuthorized(ctx.ownerWindowId, opts.methodFor(tool));
       if (decision === 'denied') {
-        throw Object.assign(new Error(opts.deniedMessage), {
-          code: ERROR_CODES.AGENT_NOT_AUTHORIZED,
-        });
+        throw codedError(ERROR_CODES.AGENT_NOT_AUTHORIZED, opts.deniedMessage);
       }
       return inner(input, ctx);
     },
@@ -85,9 +84,7 @@ export function gateWithCapability(
           const allowed =
             controller != null && subject != null && controller === subject;
           if (!allowed) {
-            throw Object.assign(new Error(opts.notOwnedMessage), {
-              code: ERROR_CODES.AGENT_NOT_AUTHORIZED,
-            });
+            throw codedError(ERROR_CODES.AGENT_NOT_AUTHORIZED, opts.notOwnedMessage);
           }
         }
       }

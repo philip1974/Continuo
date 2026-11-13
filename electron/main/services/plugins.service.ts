@@ -19,7 +19,7 @@ import type {
   IpcPluginDir,
 } from '../../shared/plugins-channels';
 import { ERROR_CODES } from '../../shared/error-codes';
-import { errorMessage } from '../../shared/error-message';
+import { codedError, errorMessage } from '../../shared/error-message';
 import { isValidPluginId } from '../../shared/plugin-id';
 import { createSerialQueue } from '../../shared/run-serial-per-key';
 import { isIpcPathScope, isIpcPermissionDecision } from '../../shared/permission-record';
@@ -850,9 +850,7 @@ export async function uninstallPlugin(
   // (recursive+force)= 灾难性数据丢失/路径穿越。install 侧(manifest.id)已用 isSafePluginId,
   // uninstall 此前漏改(helper 未传播到兄弟入口)。
   if (!isSafePluginId(id)) {
-    throw Object.assign(new Error(`非法 plugin id: ${id}`), {
-      code: ERROR_CODES.INVALID_ID,
-    });
+    throw codedError(ERROR_CODES.INVALID_ID, `非法 plugin id: ${id}`);
   }
   // race(R107):卸载全段(access → 元数据清理 → rm)纳入同 id 主进程 mutation 锁,与 installFromGit
   // 的 swap(access → rename 就位)互斥串行。否则跨窗口「卸载 vs 安装/更新同 id」交错:卸载的
@@ -863,9 +861,7 @@ export async function uninstallPlugin(
     try {
       await fs.access(targetDir);
     } catch {
-      throw Object.assign(new Error(`插件未安装: ${id}`), {
-        code: ERROR_CODES.NOT_INSTALLED,
-      });
+      throw codedError(ERROR_CODES.NOT_INSTALLED, `插件未安装: ${id}`);
     }
     // 数据安全(codex P1):先清「会抛的」持久化元数据,**再**删目录(fail-fast)。旧顺序
     // 先删目录后清元数据,若清理抛错(如 writePluginPathScopes 在 scopes 文件损坏时抛 —— 见
@@ -902,9 +898,7 @@ export async function uninstallPlugin(
     try {
       await rm(targetDir, { recursive: true, force: true });
     } catch (err) {
-      throw Object.assign(new Error(`删除失败: ${errorMessage(err)}`), {
-        code: ERROR_CODES.RM_FAILED,
-      });
+      throw codedError(ERROR_CODES.RM_FAILED, `删除失败: ${errorMessage(err)}`);
     }
   });
 }
@@ -947,9 +941,7 @@ export async function installFromGit(
   opts: { overwrite?: boolean } = {},
 ): Promise<InstallFromGitResult> {
   if (!startsWithHttpsScheme(gitUrl)) {
-    throw Object.assign(new Error(`不支持的 git URL: ${gitUrl}`), {
-      code: ERROR_CODES.BAD_URL,
-    });
+    throw codedError(ERROR_CODES.BAD_URL, `不支持的 git URL: ${gitUrl}`);
   }
   const tmpRoot = await mkdtemp(path.join(tmpdir(), 'lm-plugin-install-'));
   try {
@@ -965,10 +957,7 @@ export async function installFromGit(
       MANIFEST_MAX_BYTES,
     );
     if (text === null) {
-      throw Object.assign(
-        new Error('clone 目录缺 manifest.json、不可读或超过大小上限'),
-        { code: ERROR_CODES.BAD_MANIFEST },
-      );
+      throw codedError(ERROR_CODES.BAD_MANIFEST, 'clone 目录缺 manifest.json、不可读或超过大小上限');
     }
     // 边界(E100):安装路径复用 parseManifest(ManifestSchema)—— 与启动扫描 listPluginDirs/
     // parseManifest 同契约(字段长度/semver/permissions 枚举数量/main 长度全校验)。此前仅检查
@@ -977,32 +966,24 @@ export async function installFromGit(
     // 插件列表放大 →「安装成功但重启刷新不可用」。失败统一 BAD_MANIFEST。
     const result = parseManifest(text);
     if (!result.ok) {
-      throw Object.assign(new Error(`manifest 校验失败: ${result.message}`), {
-        code: ERROR_CODES.BAD_MANIFEST,
-      });
+      throw codedError(ERROR_CODES.BAD_MANIFEST, `manifest 校验失败: ${result.message}`);
     }
     const manifest = result.data;
     // 边界:ManifestSchema 的 id 正则 /^[a-z0-9._-]+$/ 允许纯点段(如 '..'),不挡路径穿越;
     // isSafePluginId 额外拒 '.'/'..'(install→rename 覆盖父目录的穿越向量,与 uninstall 对称),必叠加。
     if (!isSafePluginId(manifest.id)) {
-      throw Object.assign(new Error('manifest id 含非法字符或路径穿越'), {
-        code: ERROR_CODES.BAD_MANIFEST,
-      });
+      throw codedError(ERROR_CODES.BAD_MANIFEST, 'manifest id 含非法字符或路径穿越');
     }
 
     const mainName = getPluginMainName(manifest); // M20:共用 getPluginMainName
     const mainPath = resolvePluginMainPath(cloneDir, mainName);
     if (!mainPath) {
-      throw Object.assign(new Error(`main 入口非法: ${mainName}`), {
-        code: ERROR_CODES.BAD_MAIN,
-      });
+      throw codedError(ERROR_CODES.BAD_MAIN, `main 入口非法: ${mainName}`);
     }
     try {
       await fs.access(mainPath);
     } catch {
-      throw Object.assign(new Error(`main 入口不存在: ${mainName}`), {
-        code: ERROR_CODES.BAD_MAIN,
-      });
+      throw codedError(ERROR_CODES.BAD_MAIN, `main 入口不存在: ${mainName}`);
     }
 
     // 验证已通过 → 收窄成 string 常量,带进下面的闭包(let manifest 的窄化跨闭包会丢)。
@@ -1039,9 +1020,7 @@ export async function installFromGit(
         /* ENOENT = not exists, OK */
       }
       if (targetExists && opts.overwrite !== true) {
-        throw Object.assign(new Error(`插件 ${pluginId} 已安装,卸载后再装`), {
-          code: ERROR_CODES.EEXIST,
-        });
+        throw codedError(ERROR_CODES.EEXIST, `插件 ${pluginId} 已安装,卸载后再装`);
       }
 
       const suffix = randomUUID();
@@ -1100,9 +1079,7 @@ function runGit(args: readonly string[]): Promise<void> {
       killWithGrace(child);
       finish(() =>
         reject(
-          Object.assign(new Error(`git ${args[0]} 超时`), {
-            code: ERROR_CODES.GIT_FAILED,
-          }),
+          codedError(ERROR_CODES.GIT_FAILED, `git ${args[0]} 超时`),
         ),
       );
     }, GIT_CLONE_TIMEOUT_MS);
@@ -1112,9 +1089,7 @@ function runGit(args: readonly string[]): Promise<void> {
     child.on('error', (err) =>
       finish(() =>
         reject(
-          Object.assign(new Error(`git spawn 失败: ${err.message}`), {
-            code: ERROR_CODES.GIT_SPAWN_FAILED,
-          }),
+          codedError(ERROR_CODES.GIT_SPAWN_FAILED, `git spawn 失败: ${err.message}`),
         ),
       ),
     );
@@ -1123,12 +1098,7 @@ function runGit(args: readonly string[]): Promise<void> {
       else
         finish(() =>
           reject(
-            Object.assign(
-              new Error(
-                `git ${args[0]} exit ${code}: ${stderrCap.text().trim()}${stderrCap.truncated ? ' …(stderr truncated)' : ''}`,
-              ),
-              { code: ERROR_CODES.GIT_FAILED },
-            ),
+            codedError(ERROR_CODES.GIT_FAILED, `git ${args[0]} exit ${code}: ${stderrCap.text().trim()}${stderrCap.truncated ? ' …(stderr truncated)' : ''}`,),
           ),
         );
     });

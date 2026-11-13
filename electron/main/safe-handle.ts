@@ -11,6 +11,7 @@ import {
   MAX_BOUNDED_OBJECT_KEYS,
   MAX_BOUNDED_OBJECT_KEY_LEN,
 } from '../shared/bounded-input';
+import { codedError } from '../shared/error-message';
 
 // 边界(E157,E73 同族):BAD_INPUT 错误经 formatZodErrorCapped 限幅,但 handler 抛出的 Error 的
 // code/message 此前原样回传。任一 handler 把外部错误/超长路径/子进程 stderr 拼进 Error.message,
@@ -280,7 +281,7 @@ export function safeHandleWithCtx<I, O>(
 export function senderWindowOrThrow(event: IpcMainInvokeEvent, code: string): BrowserWindow {
   const win = BrowserWindow.fromWebContents(event.sender);
   if (!win) {
-    throw Object.assign(new Error('no browser window'), { code });
+    throw codedError(code, 'no browser window');
   }
   return win;
 }
@@ -315,9 +316,7 @@ export function assertTrustedFrame(
   isTrustedFrame: IsTrustedFrame = defaultIsTrustedFrame,
 ): void {
   if (!isTrustedFrame(event.senderFrame)) {
-    throw Object.assign(new Error('sender frame is not trusted'), {
-      code: IPC_ERR.DENIED,
-    });
+    throw codedError(IPC_ERR.DENIED, 'sender frame is not trusted');
   }
 }
 

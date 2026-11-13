@@ -98,6 +98,7 @@ import { MAX_EXTERNAL_URL_LEN } from './../shared/url-limits';
 import { cancelScopeRequestsForWebContents } from './ipc/plugin-fs.ipc';
 import { registerDebugViewIpc } from './ipc/debug-view.ipc';
 import { DEBUG_VIEW_CHANNELS } from '../shared/debug-view-channels';
+import { codedError } from '../shared/error-message';
 
 // 窗口级资源清理器(scope 授权 / fs watcher / agent 授权)。挂在覆盖全窗口的
 // browser-window-created(见下),主窗与 dockview popout 子窗一视同仁 —— popout 不走
@@ -701,9 +702,7 @@ async function createSessionForAgent(
 ): Promise<{ id: string }> {
   const win = BrowserWindow.fromId(ctx.ownerWindowId);
   if (!win || win.isDestroyed()) {
-    throw Object.assign(new Error('no window for terminal create'), {
-      code: ERROR_CODES.TERMINAL_NO_WINDOW,
-    });
+    throw codedError(ERROR_CODES.TERMINAL_NO_WINDOW, 'no window for terminal create');
   }
   // 安全 S3:把新会话归属到发起 create 的 MCP 调用方(ctx.callerSubject)。后续
   // read/send/kill 仅该调用方(同一 token / 同一 stdio 连接)可操作该会话。

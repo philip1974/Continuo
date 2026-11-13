@@ -12,7 +12,7 @@ import {
 } from './permissions';
 import { createScopedApp } from './scoped-app';
 import type { CoApp, PluginManifest } from './types';
-import { errorMessage } from '../../electron/shared/error-message';
+import { codedError, errorMessage } from '../../electron/shared/error-message';
 import { coApi } from '@/lib/co-api';
 import { runSerialPerKey } from '@/lib/serialize-per-key';
 
@@ -379,9 +379,7 @@ export class PluginManager {
     const entry = this.entries.get(id);
     if (!entry) throw new Error(`Plugin ${id} not found`);
     if (!this.host.removePluginDir) {
-      throw Object.assign(new Error(`host 未实现 removePluginDir`), {
-        code: 'NOT_SUPPORTED',
-      });
+      throw codedError('NOT_SUPPORTED', `host 未实现 removePluginDir`);
     }
 
     if (entry.status === 'enabled' && entry.instance) {

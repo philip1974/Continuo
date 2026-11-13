@@ -185,9 +185,7 @@ function inputJsonSchemaFor(name: string): Record<string, unknown> {
 
 function requireControllerContext(ctx: McpCallCtx): DebugCallerContext {
   if (typeof ctx.callerSubject !== 'string' || ctx.callerSubject.length === 0) {
-    throw Object.assign(new Error('debug caller is not authorized'), {
-      code: ERROR_CODES.DEBUG_NOT_AUTHORIZED,
-    });
+    throw codedError(ERROR_CODES.DEBUG_NOT_AUTHORIZED, 'debug caller is not authorized');
   }
   return {
     ownerWindowId: ctx.ownerWindowId,

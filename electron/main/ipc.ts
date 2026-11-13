@@ -44,6 +44,7 @@ import {
 } from './services/agent-auth.service';
 import { MCP_CHANNELS } from '../shared/mcp-channels';
 import { getStdioConfig } from './services/mcp-stdio-config.service';
+import { codedError } from '../shared/error-message';
 
 // layout:read 入参为空(renderer ipcRenderer.invoke 不传第二参 → undefined)
 const NoInput = z.undefined();
@@ -124,15 +125,11 @@ import {
 function senderWindowSeqOrThrow(event: IpcMainInvokeEvent): number {
   const win = BrowserWindow.fromWebContents(event.sender);
   if (!win) {
-    throw Object.assign(new Error('no window'), {
-      code: ERROR_CODES.NO_WINDOW,
-    });
+    throw codedError(ERROR_CODES.NO_WINDOW, 'no window');
   }
   const seq = getWindowSeq(win.id);
   if (seq == null) {
-    throw Object.assign(new Error('no window seq'), {
-      code: ERROR_CODES.NO_WINDOW_SEQ,
-    });
+    throw codedError(ERROR_CODES.NO_WINDOW_SEQ, 'no window seq');
   }
   return seq;
 }
@@ -175,10 +172,7 @@ export function registerIpc(deps: WindowIpcDeps): { pluginFsHandles: PluginFsIpc
       // 完整遍历后才拒。jsonByteLowerBoundExceeds 对任意输入安全(E288)可先跑。(仅「既非 JSON-safe 又超限」
       // 病态 layout 错误码从 BAD_INPUT 变 PAYLOAD_TOO_LARGE —— 两者皆拒写,单-bad 不变。)
       if (jsonByteLowerBoundExceeds(layout, MAX_LAYOUT_BYTES)) {
-        throw Object.assign(
-          new Error(`layout too large (> ${MAX_LAYOUT_BYTES})`),
-          { code: ERROR_CODES.PAYLOAD_TOO_LARGE },
-        );
+        throw codedError(ERROR_CODES.PAYLOAD_TOO_LARGE, `layout too large (> ${MAX_LAYOUT_BYTES})`);
       }
       // 边界(E119,E105/E117 同族):LayoutSchema 是 .passthrough(),layout 可含 Infinity/NaN/
       // undefined(structured-clone 经 IPC 保留)。仅 JSON.stringify 判大小会静默把这些改成 null/
@@ -186,19 +180,13 @@ export function registerIpc(deps: WindowIpcDeps): { pluginFsHandles: PluginFsIpc
       try {
         assertJsonValue(layout);
       } catch {
-        throw Object.assign(
-          new Error('layout contains non-JSON-safe values'),
-          { code: ERROR_CODES.BAD_INPUT },
-        );
+        throw codedError(ERROR_CODES.BAD_INPUT, 'layout contains non-JSON-safe values');
       }
       const serialized = JSON.stringify(layout);
       // 边界(E125):真实 UTF-8 字节(非 .length=UTF-16 code unit),防多字节 layout 绕过上限撑爆 explorer.json。
       const layoutBytes = utf8ByteLength(serialized);
       if (layoutBytes > MAX_LAYOUT_BYTES) {
-        throw Object.assign(
-          new Error(`layout too large (${layoutBytes} > ${MAX_LAYOUT_BYTES})`),
-          { code: ERROR_CODES.PAYLOAD_TOO_LARGE },
-        );
+        throw codedError(ERROR_CODES.PAYLOAD_TOO_LARGE, `layout too large (${layoutBytes} > ${MAX_LAYOUT_BYTES})`);
       }
 
       await withExplorerFileMutex(async () => {
@@ -261,9 +249,7 @@ export function registerIpc(deps: WindowIpcDeps): { pluginFsHandles: PluginFsIpc
     'popout:open',
     PopoutOpenInput,
     () => {
-      throw Object.assign(new Error('popout:open not implemented yet (M5)'), {
-        code: ERROR_CODES.POPOUT_NOT_IMPLEMENTED,
-      });
+      throw codedError(ERROR_CODES.POPOUT_NOT_IMPLEMENTED, 'popout:open not implemented yet (M5)');
     },
     trusted,
   );

@@ -5,6 +5,7 @@
 
 import type { ManagerHost } from '@/plugins/PluginManager';
 import { coApi } from './co-api';
+import { codedError } from '../../electron/shared/error-message';
 
 interface RawPluginDirInfo {
   readonly id: string;
@@ -61,9 +62,7 @@ export function createWindowApiHost(): ManagerHost {
         // 数据安全:读失败必须**传播**(不再降级成空 Set)—— 否则 mutateEnabledIds 的 RMW
         // 会基于空集合写回,抹掉其它已启用插件(codex)。调用方各自决定:init 降级、
         // mutate 中止写。(main readEnabledIds 仅 ENOENT 返回 [],EACCES/EIO 才 fail。)
-        throw Object.assign(new Error(r.message ?? 'readEnabled failed'), {
-          code: r.code,
-        });
+        throw codedError(r.code, r.message ?? 'readEnabled failed');
       }
       return new Set(r.data);
     },
@@ -75,16 +74,14 @@ export function createWindowApiHost(): ManagerHost {
         // 持久化失败必须**传播**(不只 warn):否则 enable/disable 静默 resolve,用户以为
         // 已切换但 _enabled.json 没写成,重启回滚。盘未被改动(写失败=盘不变),重启 init
         // 从盘对账回操作前状态;in-session 内存短暂偏离 → 调用方据此 reject 让失败可见。
-        throw Object.assign(new Error(r.message ?? 'mutateEnabled failed'), {
-          code: r.code,
-        });
+        throw codedError(r.code, r.message ?? 'mutateEnabled failed');
       }
     },
     importModule: (url) => import(/* @vite-ignore */ url),
     removePluginDir: async (id) => {
       const r = await coApi.plugins.uninstall(id);
       if (!r.ok) {
-        throw Object.assign(new Error(r.message), { code: r.code });
+        throw codedError(r.code, r.message);
       }
     },
   };

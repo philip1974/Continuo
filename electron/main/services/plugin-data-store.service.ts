@@ -15,6 +15,7 @@ import { utf8ByteLength } from '../../shared/utf8-byte-length';
 import { jsonByteLowerBoundExceeds } from '../../shared/json-byte-budget';
 import { isValidPluginId } from '../../shared/plugin-id';
 import { PLUGIN_DATA_CHANNELS } from '../../shared/plugin-data-channels';
+import { codedError } from '../../shared/error-message';
 
 const LOCK_OPTS: lockfile.LockOptions = {
   // Op12.5 spike not executed in this batch; using library defaults/recommendation.
@@ -41,9 +42,7 @@ function assertPluginId(pluginId: unknown): asserts pluginId is string {
     !isValidPluginId(pluginId)
   ) {
     // 边界(E177,E148 echo 族):不回显原始(可能超长)id,防错误消息经 IPC/日志放大;附稳定 code。
-    throw Object.assign(new Error('invalid plugin id'), {
-      code: ERROR_CODES.BAD_INPUT,
-    });
+    throw codedError(ERROR_CODES.BAD_INPUT, 'invalid plugin id');
   }
 }
 
@@ -114,19 +113,14 @@ export function registerPluginDataStoreHandlers(
       // null/undefined 归一为 {}(安全空),其余非 plain object 拒写。
       const payload = data ?? {};
       if (typeof payload !== 'object' || Array.isArray(payload)) {
-        throw Object.assign(new Error('plugin data must be a plain object'), {
-          code: ERROR_CODES.BAD_INPUT,
-        });
+        throw codedError(ERROR_CODES.BAD_INPUT, 'plugin data must be a plain object');
       }
       // 边界(E306,E305 reorder 同族 / 校验顺序 fail-fast):先廉价字节下界 fail-fast(早停于上限)再
       // assertJsonValue 全量遍历 —— 超 16MiB 但 shape 合法的 payload 不被 assertJsonValue 完整遍历后才拒。
       // jsonByteLowerBoundExceeds 对任意输入安全(E288)可先跑。(仅「既非 JSON-safe 又超限」的病态输入
       // 错误码从 BAD_INPUT 变 PAYLOAD_TOO_LARGE —— 两者皆拒写,无现实差异。)
       if (jsonByteLowerBoundExceeds(payload, MAX_PLUGIN_DATA_BYTES)) {
-        throw Object.assign(
-          new Error(`plugin data too large (> ${MAX_PLUGIN_DATA_BYTES})`),
-          { code: ERROR_CODES.PAYLOAD_TOO_LARGE },
-        );
+        throw codedError(ERROR_CODES.PAYLOAD_TOO_LARGE, `plugin data too large (> ${MAX_PLUGIN_DATA_BYTES})`);
       }
       // 边界(E103,main 兜底):JSON.stringify 静默改写 NaN/Infinity→null、丢 undefined/function
       //(不抛)→ 静默持久化损坏。assertJsonValue 递归拒非 JSON 安全值(renderer 已预检,此为兜底,
@@ -134,9 +128,7 @@ export function registerPluginDataStoreHandlers(
       try {
         assertJsonValue(payload);
       } catch {
-        throw Object.assign(new Error('plugin data not JSON-safe'), {
-          code: ERROR_CODES.BAD_INPUT,
-        });
+        throw codedError(ERROR_CODES.BAD_INPUT, 'plugin data not JSON-safe');
       }
       // 边界(E20):序列化前校验 + 字节上限。畸形插件保存超大对象会让 JSON.stringify 内存峰值 +
       // 写出超大 data.json(下次 load 再放大)。不可序列化(循环引用)或超限 → 明确拒绝,不写。
@@ -144,19 +136,12 @@ export function registerPluginDataStoreHandlers(
       try {
         serialized = JSON.stringify(payload);
       } catch {
-        throw Object.assign(new Error('plugin data not serializable'), {
-          code: ERROR_CODES.PAYLOAD_TOO_LARGE,
-        });
+        throw codedError(ERROR_CODES.PAYLOAD_TOO_LARGE, 'plugin data not serializable');
       }
       // 边界(E125):真实 UTF-8 字节(非 .length=UTF-16 code unit)。
       const dataBytes = utf8ByteLength(serialized);
       if (dataBytes > MAX_PLUGIN_DATA_BYTES) {
-        throw Object.assign(
-          new Error(
-            `plugin data too large (${dataBytes} > ${MAX_PLUGIN_DATA_BYTES})`,
-          ),
-          { code: ERROR_CODES.PAYLOAD_TOO_LARGE },
-        );
+        throw codedError(ERROR_CODES.PAYLOAD_TOO_LARGE, `plugin data too large (${dataBytes} > ${MAX_PLUGIN_DATA_BYTES})`,);
       }
       await ensureDir(pluginId);
       const file = dataFile(pluginId);

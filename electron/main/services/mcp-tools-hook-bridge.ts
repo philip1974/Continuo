@@ -34,6 +34,7 @@ import { z } from 'zod';
 import { SESSION_ID_MAX } from '../../shared/session-id-limits';
 import { isEcmaWhitespaceCode } from '../../shared/ecma-whitespace';
 import { equalsAsciiIgnoreCase } from '../../shared/lower-if-needed';
+import { codedError } from '../../shared/error-message';
 
 // 边界(E203,mcp-tools-terminal 同族):协议 awaitStopHookInputSchema 的 session_id 仅 min(1) 无上限。
 // 1MB session_id 校验通过后进 broker / Map / 错误回显路径(回显已截断 E151,但运行期仍处理超长 key)。
@@ -675,12 +676,7 @@ export function createHookFileBroker(
         const key = filterKey(filter);
         if (pendingByKey.has(key)) {
           reject(
-            Object.assign(
-              new Error(
-                'await_stop_hook already pending for same (windowId, runner, cwd)',
-              ),
-              { code: ERROR_CODES.AWAIT_STOP_HOOK_ALREADY_PENDING },
-            ),
+            codedError(ERROR_CODES.AWAIT_STOP_HOOK_ALREADY_PENDING, 'await_stop_hook already pending for same (windowId, runner, cwd)',),
           );
           return;
         }
@@ -1008,20 +1004,12 @@ export function createAwaitStopHookTool(
       const echoId = truncateSessionIdForEcho(input.session_id);
       const meta = deps.getSessionMeta(input.session_id, ctx);
       if (meta === null) {
-        throw Object.assign(
-          new Error(`terminal session not found: ${echoId}`),
-          { code: ERROR_CODES.TERMINAL_SESSION_NOT_FOUND },
-        );
+        throw codedError(ERROR_CODES.TERMINAL_SESSION_NOT_FOUND, `terminal session not found: ${echoId}`);
       }
 
       const runner = inferRunner(meta);
       if (runner === 'unknown') {
-        throw Object.assign(
-          new Error(
-            `unknown runner for session ${echoId}; cannot await stop hook`,
-          ),
-          { code: ERROR_CODES.TERMINAL_SESSION_NOT_FOUND },
-        );
+        throw codedError(ERROR_CODES.TERMINAL_SESSION_NOT_FOUND, `unknown runner for session ${echoId}; cannot await stop hook`,);
       }
 
       const startedAt = Date.now();
