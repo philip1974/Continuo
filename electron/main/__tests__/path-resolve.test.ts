@@ -10,7 +10,7 @@ import {
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ScopeError } from '../../../src/plugins/types';
+import { ScopeError } from '../../shared/plugin-fs-contract';
 import {
   _validateLeafForTest,
   resolveForRead,

@@ -20,10 +20,7 @@ import {
   subscribe,
 } from '../../../electron/main/services/terminal-sessions.service';
 import {
-  makeAttachRejectedHandler,
   makeCreateHandler,
-  makeInterruptHandler,
-  makeKillHandler,
   makeListSessionsHandler,
   makeRemoveHandler,
   makeResizeHandler,
@@ -254,15 +251,13 @@ describe('makeWindowClosedCleanup', () => {
 // ────────────────────────────────────────────────────────────
 
 describe('terminal 控制 IPC 按 owner 校验', () => {
-  it('非 owner window 不能 write/resize/interrupt/kill ownerA 的 session', async () => {
+  it('非 owner window 不能 write/resize ownerA 的 session', async () => {
     const service = makeService();
     const create = makeCreate(service, () => 'term-a');
     await create({}, fakeWin(11));
 
     const write = makeWriteHandler({ service: service as never });
     const resize = makeResizeHandler({ service: service as never });
-    const interrupt = makeInterruptHandler({ service: service as never });
-    const kill = makeKillHandler({ service: service as never });
 
     // race(R4):write handler 现 async,owner 校验失败是 reject(非同步 throw)。
     await expect(write({ id: 'term-a', data: 'x' }, fakeWin(22))).rejects.toThrow(
@@ -272,22 +267,13 @@ describe('terminal 控制 IPC 按 owner 校验', () => {
     await expect(
       resize({ id: 'term-a', cols: 80, rows: 24 }, fakeWin(22)),
     ).rejects.toThrow(/terminal not found/);
-    // race(R12):interrupt handler 现 async,owner 校验失败是 reject。
-    await expect(interrupt({ id: 'term-a' }, fakeWin(22))).rejects.toThrow(
-      /terminal not found/,
-    );
-    expect(() => kill({ id: 'term-a' }, fakeWin(22))).toThrow(
-      /terminal not found/,
-    );
 
     expect(service.write).not.toHaveBeenCalled();
     expect(service.resize).not.toHaveBeenCalled();
-    expect(service.interrupt).not.toHaveBeenCalled();
-    expect(service.kill).not.toHaveBeenCalled();
     expect(getAll().map((s) => s.id)).toEqual(['term-a']);
   });
 
-  it('owner window 可以 write/resize/interrupt/kill 自己的 session', async () => {
+  it('owner window 可以 write/resize 自己的 session', async () => {
     const service = makeService();
     const create = makeCreate(service, () => 'term-a');
     await create({}, fakeWin(11));
@@ -300,16 +286,9 @@ describe('terminal 控制 IPC 按 owner 校验', () => {
       { id: 'term-a', cols: 80, rows: 24 },
       fakeWin(11),
     );
-    await makeInterruptHandler({ service: service as never })(
-      { id: 'term-a' },
-      fakeWin(11),
-    );
-    makeKillHandler({ service: service as never })({ id: 'term-a' }, fakeWin(11));
 
     expect(service.write).toHaveBeenCalledWith('term-a', 'x');
     expect(service.resize).toHaveBeenCalledWith('term-a', 80, 24);
-    expect(service.interrupt).toHaveBeenCalledWith('term-a');
-    expect(service.kill).toHaveBeenCalledWith('term-a');
   });
 
   // race(R4):write 真实失败(PTY 在 has() 后退出 / server-node 拒写)→ service.write 返 false →
@@ -329,24 +308,7 @@ describe('terminal 控制 IPC 按 owner 校验', () => {
     expect(service.write).toHaveBeenCalledWith('term-a', 'x');
   });
 
-  // race(R12,R4 同款):interrupt 真实失败(Ctrl-C 写入被拒 / PTY 退出)→ handler 抛
-  // TERMINAL_WRITE_FAILED,renderer 感知中断未送达而非假成功。
-  it('R12 interrupt 实际失败(service.interrupt→false)→ handler 抛 TERMINAL_WRITE_FAILED', async () => {
-    const service = makeService();
-    const create = makeCreate(service, () => 'term-a');
-    await create({}, fakeWin(11));
-    service.interrupt.mockResolvedValueOnce(false);
-
-    await expect(
-      makeInterruptHandler({ service: service as never })(
-        { id: 'term-a' },
-        fakeWin(11),
-      ),
-    ).rejects.toMatchObject({ code: 'TERMINAL_WRITE_FAILED' });
-    expect(service.interrupt).toHaveBeenCalledWith('term-a');
-  });
-
-  it('非 owner window 不能 remove 或 attachRejected ownerA 的 session', async () => {
+  it('非 owner window 不能 remove ownerA 的 session', async () => {
     const service = makeService();
     const create = makeCreate(service, () => 'term-a');
     await create({}, fakeWin(11));
@@ -354,19 +316,10 @@ describe('terminal 控制 IPC 按 owner 校验', () => {
     const remove = makeRemoveHandler({
       service: service as never,
     });
-    const attachRejected = makeAttachRejectedHandler({
-      service: service as never,
-    });
 
     expect(() => remove({ id: 'term-a' }, fakeWin(22))).toThrow(
       /terminal not found/,
     );
-    expect(() =>
-      attachRejected(
-        { sessionId: 'term-a', reason: 'duplicate' },
-        fakeWin(22),
-      ),
-    ).toThrow(/terminal not found/);
 
     expect(service.kill).not.toHaveBeenCalled();
     expect(getAll().map((s) => s.id)).toEqual(['term-a']);

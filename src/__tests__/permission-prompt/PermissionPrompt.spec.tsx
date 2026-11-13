@@ -18,6 +18,62 @@ beforeEach(() => {
 });
 afterEach(() => cleanup());
 
+// 排队后弹窗会从 A 直接换成 B(按钮位置不变、B 默认全选)。对 A 的「授予」连点两下,第二下不能落到 B 上。
+describe('PermissionPrompt — 排队切换时防连点误授', () => {
+  it('A 结算后立刻出现的 B:短时间内的点击被忽略,之后才生效', async () => {
+    vi.useFakeTimers();
+    try {
+      const a = usePermissionPromptStore.getState().request('plugin.a', ['fs']);
+      const b = usePermissionPromptStore.getState().request('plugin.b', ['shell']);
+      render(<PermissionPrompt />);
+      const grantButton = (): HTMLButtonElement =>
+        Array.from(document.querySelectorAll<HTMLButtonElement>('.wm-modal-content button')).at(-1)!;
+
+      fireEvent.click(grantButton()); // 授予 A
+      expect(await a).toEqual(['fs']);
+      expect(usePermissionPromptStore.getState().pending?.pluginId).toBe('plugin.b');
+
+      fireEvent.click(grantButton()); // 连点的第二下,落在 B 的按钮上
+      expect(usePermissionPromptStore.getState().pending?.pluginId).toBe('plugin.b');
+
+      // Esc(键重复)/ 点遮罩同样走 Modal 的 onClose → denyAll,也要被守卫挡住
+      fireEvent.keyDown(document, { key: 'Escape' });
+      fireEvent.keyDown(document.querySelector('.wm-modal-content')!, { key: 'Escape' });
+      expect(usePermissionPromptStore.getState().pending?.pluginId).toBe('plugin.b');
+
+      act(() => void vi.advanceTimersByTime(600));
+      fireEvent.click(grantButton()); // 用户看清后再点
+      expect(await b).toEqual(['shell']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('PermissionPrompt — 勾选不打断焦点', () => {
+  // Modal 的焦点 / 键盘 effect 依赖 onClose 的引用;每次渲染换一个新的 onClose,勾选一次就会把焦点先还给
+  // 弹窗外、再跳回弹窗内第一个元素。
+  it('勾选权限项后焦点仍在该勾选框上', async () => {
+    void usePermissionPromptStore.getState().request('plugin.a', ['fs', 'network', 'shell']);
+    render(<PermissionPrompt />);
+    await act(async () => {
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+    });
+    const boxes = Array.from(
+      document.querySelectorAll<HTMLElement>('.wm-modal-content [role=checkbox], .wm-modal-content input[type=checkbox]'),
+    );
+    expect(boxes.length).toBeGreaterThanOrEqual(3);
+    const target = boxes[2]!;
+    target.focus();
+    fireEvent.click(target);
+    await act(async () => {
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+    });
+    expect(document.activeElement).toBe(target);
+    usePermissionPromptStore.getState().denyAll();
+  });
+});
+
 describe('PermissionPrompt UI', () => {
   it('pluginId 模板 prefix/suffix 使用 memoized parts,不在 JSX IIFE 中重复拆分', () => {
     const src = readFileSync(

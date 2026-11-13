@@ -28,17 +28,15 @@ import {
   MAX_DROP_FILES,
 } from '@/lib/window-drop';
 import { workspaceRootSelectionGuard } from '@/lib/workspace-root-guard';
-import { notify } from '@/notifications/notify';
-import { localizeErrorByCode } from '@/lib/localize-error';
 import {
   useWorkspaceStore,
   waitForWorkspaceHydrated,
 } from '@/stores/workspace.store';
 import { notifyRootWhenHydrated } from './notify-root-when-hydrated';
 import { NotificationsProvider } from '@/notifications/NotificationsProvider';
-import { NotifyIpcBridge } from '@/notifications/NotifyIpcBridge';
 import { ToastViewport } from '@/notifications/ToastViewport';
 import { LanguageFromSettings } from '@/plugins/settings/LanguageFromSettings';
+import { notifyFailure, notifyThrownError } from '@/notifications/notify-thrown-error';
 
 const SPLASH_MIN_MS = 600;
 
@@ -126,16 +124,11 @@ function MainApp() {
           if (!isLatest()) return;
           if (result.kind === 'open') setRoot(result.path);
           else if (result.kind === 'error') {
-            notify.error(localizeErrorByCode(result.code, result.message), {
-              code: result.code,
-            });
+            notifyFailure(result);
           }
         } catch (err) {
           if (!isLatest()) return;
-          const code = (err as { code?: string })?.code ?? 'EXCEPTION';
-          notify.error(localizeErrorByCode(code, (err as Error)?.message ?? code), {
-            code,
-          });
+          notifyThrownError(err);
         }
       })();
     };
@@ -185,7 +178,6 @@ export function App() {
       <ThemeBinder />
       <LanguageFromSettings />
       <NotificationsProvider>
-        <NotifyIpcBridge />
         <ToastViewport />
         <MotionConfig reducedMotion="user">
           {isPopoutWindow() ? <PopoutHost /> : <MainApp />}

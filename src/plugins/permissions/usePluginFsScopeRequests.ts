@@ -3,21 +3,25 @@ import { notify } from '@/notifications/notify';
 import { t as translate } from '@/i18n';
 import type { PathScope } from '../types';
 import { isValidPluginId } from '../plugin-id';
-import { FS_PATH_MAX } from '../../../electron/shared/fs-limits';
+import { FS_PATH_MAX, validateScopesShape } from '../../../electron/shared/fs-limits';
 import { usePermissionPromptStore, type FsScopePromptScope } from './promptStore';
+import { SCOPE_REQUEST_ID_MAX } from '../../../electron/shared/plugin-fs-channels';
+
+/** main 推来的 scope:displayPath 是归一化后的路径(`~` 已展开),旧形态可能不带。 */
+interface RequestedScope extends PathScope {
+  readonly displayPath?: string;
+}
 
 interface ScopeRequestPayload {
   readonly requestId: string;
   readonly pluginId: string;
-  readonly scopes: readonly PathScope[];
+  readonly scopes: readonly RequestedScope[];
 }
 
 // 边界(E169,E168 同族 IPC ingress 纵深防御):plugin-fs:scope-request 驱动 fs 授权弹窗(安全敏感)。
 // 此前 bridge 直接 `payload.scopes.map(...)` 信任 TS 类型,畸形 payload(null/scopes 非数组/scope 非
 // 对象/超长 path/非法 mode/超长 requestId/非法 pluginId)会让回调抛错(scopes.map / scope.path)或
 // 把脏授权请求写入 prompt store。注册入口 runtime 守卫,非法 drop + warn,不进 prompt store。
-const SCOPE_REQUEST_ID_MAX = 256; // 与 agent-auth/plugin-fs requestId 上限一致
-const MAX_SCOPES_PER_REQUEST = 256;
 const EMPTY_FS_SCOPE_PROMPT_SCOPES: FsScopePromptScope[] = [];
 
 function isScopeRequestPayload(v: unknown): v is ScopeRequestPayload {
@@ -33,41 +37,23 @@ function isScopeRequestPayload(v: unknown): v is ScopeRequestPayload {
   if (typeof o.pluginId !== 'string' || !isValidPluginId(o.pluginId)) {
     return false;
   }
-  if (!Array.isArray(o.scopes) || o.scopes.length > MAX_SCOPES_PER_REQUEST) {
-    return false;
-  }
-  for (const s of o.scopes) {
-    if (s === null || typeof s !== 'object') return false;
-    const sc = s as Record<string, unknown>;
+  // 数量 + 每项 path/mode 与 main / scoped-app 同一校验(shared 单一来源);这里只额外校验 displayPath。
+  if (validateScopesShape(o.scopes) !== null) return false;
+  for (const sc of o.scopes as readonly { displayPath?: unknown }[]) {
     if (
-      typeof sc.path !== 'string' ||
-      sc.path.length === 0 ||
-      sc.path.length > FS_PATH_MAX
+      sc.displayPath !== undefined &&
+      (typeof sc.displayPath !== 'string' ||
+        sc.displayPath.length === 0 ||
+        sc.displayPath.length > FS_PATH_MAX)
     ) {
       return false;
     }
-    if (sc.mode !== 'r' && sc.mode !== 'rw') return false;
   }
   return true;
 }
 
-function homeForDisplay(): string | null {
-  const maybeProcess = (globalThis as { process?: { env?: Record<string, string> } })
-    .process;
-  return maybeProcess?.env?.['HOME'] ?? maybeProcess?.env?.['USERPROFILE'] ?? null;
-}
-
-export function expandScopePathForDisplay(path: string): string {
-  if (path === '~') return homeForDisplay() ?? path;
-  if (path.startsWith('~/') || path.startsWith('~\\')) {
-    const home = homeForDisplay();
-    return home ? `${home}${path.slice(1)}` : path;
-  }
-  return path;
-}
-
 export function buildFsScopePromptScopes(
-  scopes: readonly PathScope[],
+  scopes: readonly RequestedScope[],
 ): FsScopePromptScope[] {
   if (scopes.length === 0) return EMPTY_FS_SCOPE_PROMPT_SCOPES;
   const out = new Array<FsScopePromptScope>(scopes.length);
@@ -76,7 +62,8 @@ export function buildFsScopePromptScopes(
     out[i] = {
       path: scope.path,
       mode: scope.mode,
-      displayPath: expandScopePathForDisplay(scope.path),
+      // 展示路径由 main 归一化后给出(sandbox renderer 展开不了 `~`);旧形态回退原始 path。
+      displayPath: scope.displayPath ?? scope.path,
     };
   }
   return out;

@@ -1,13 +1,13 @@
 // Terminal sessions 镜像 store(M-Terminal Step T3 + Agent Terminal MCP P1)。
 // 真相源在 main(electron/main/services/terminal-sessions.service.ts);本 store
-// 接收 sessions_changed 推的 snapshot,只额外维护纯 UI 状态 activeId。
+// 接收 sessions_changed 推的 snapshot。哪个终端处于活动状态由 dockview 的活动 panel 决定,本 store 不记
+//(此前的 activeId / setActive / renameSession / customTitles 没有任何 UI 入口,已删)。
 //
 // 决策 #4(沿用):不持久化(重启 sessions 全部销毁)。
 // BDD: src/__tests__/terminal-store/
 
 import { create } from 'zustand';
-import { pathEquals } from '@/lib/path-cross';
-import { trimStringToMax } from '@/lib/blank-string';
+import { isWindowsRuntime, pathEquals } from '@/lib/path-cross';
 import type { ShellFamily } from '@continuo-terminal/shell-quote';
 import type { TerminalSessionSnapshot } from '../../electron/shared/terminal-session';
 import { LABEL_MAX, PATH_MAX } from '../../electron/shared/terminal-create';
@@ -84,6 +84,10 @@ function isTerminalSessionShape(v: unknown): v is TerminalSession {
     (obj.agentLabel === undefined ||
       (typeof obj.agentLabel === 'string' && obj.agentLabel.length <= LABEL_MAX)) &&
     (obj.scoped === undefined || typeof obj.scoped === 'boolean') &&
+    (obj.shellFamily === undefined ||
+      obj.shellFamily === 'posix' ||
+      obj.shellFamily === 'cmd' ||
+      obj.shellFamily === 'powershell') &&
     (obj.workspaceRoot === undefined ||
       (typeof obj.workspaceRoot === 'string' &&
         obj.workspaceRoot.length <= PATH_MAX)) &&
@@ -236,213 +240,22 @@ export function getShellFamily(sessionId: string): ShellFamily {
   // renderer-safe: `process` is Node-only and undefined in Electron renderer;
   // navigator.platform is filled by Electron + browser convention (mirrors
   // format-hotkey.ts pattern). issue #40 R2 hot-fix.
-  const platform =
-    typeof navigator !== 'undefined' && typeof navigator.platform === 'string'
-      ? navigator.platform
-      : '';
-  return platform.startsWith('Win') ? 'powershell' : 'posix';
-}
-
-/**
- * 关闭 session 后的新状态(纯函数,可单测):
- * - 关不存在的 id → 状态不变(返回原 sessions 引用)
- * - 关非活跃 → sessions 减,active 不变
- * - 关活跃且后面有 → 切下一个
- * - 关活跃且后面没 → 切前一个
- * - 关唯一 → activeId null
- *
- * 仅 replaceSnapshot 内部使用,export 为保持纯函数测试面 + 给将来其它 close
- * 流程复用。
- */
-export function nextActiveAfterClose(
-  sessions: readonly TerminalSession[],
-  activeId: string | null,
-  closingId: string,
-): { sessions: readonly TerminalSession[]; activeId: string | null } {
-  let found = false;
-  let prev: TerminalSession | null = null;
-  let next: TerminalSession | null = null;
-  let remaining: TerminalSession[] | null = null;
-  let count = 0;
-
-  for (const session of sessions) {
-    if (session.id === closingId) {
-      remaining = new Array<TerminalSession>(Math.max(0, sessions.length - 1));
-      count = 0;
-      for (const kept of sessions) {
-        if (kept.id === closingId) break;
-        remaining[count++] = kept;
-      }
-      found = true;
-      continue;
-    }
-    if (found && next === null) next = session;
-    if (remaining !== null) remaining[count++] = session;
-    if (!found) prev = session;
-  }
-
-  if (!found) {
-    return { sessions, activeId };
-  }
-  if (remaining === null) return { sessions, activeId };
-  remaining.length = count;
-  if (remaining.length === 0) {
-    return { sessions: EMPTY_TERMINAL_SESSIONS, activeId: null };
-  }
-  if (closingId !== activeId) return { sessions: remaining, activeId };
-  return { sessions: remaining, activeId: next?.id ?? prev?.id ?? null };
-}
-
-/**
- * 应用 main 推的 snapshot,保留 close 时的"切下一个"语义。
- * 算法:一次构建 newSessions id 集合;旧 active 存活则保留,否则按 oldSessions
- * 顺序找 active 后方第一个幸存项,再找前方第一个幸存项。
- */
-export function applySnapshot(
-  oldSessions: readonly TerminalSession[],
-  oldActiveId: string | null,
-  newSessions: readonly TerminalSession[],
-): { sessions: readonly TerminalSession[]; activeId: string | null } {
-  if (newSessions.length === 0) {
-    return { sessions: newSessions, activeId: null };
-  }
-
-  if (oldActiveId === null) {
-    return { sessions: newSessions, activeId: newSessions[0]!.id };
-  }
-
-  let activeStillExists = false;
-  for (const session of newSessions) {
-    if (session.id === oldActiveId) {
-      activeStillExists = true;
-      break;
-    }
-  }
-  if (activeStillExists) {
-    return { sessions: newSessions, activeId: oldActiveId };
-  }
-
-  const newIds = new Set<string>();
-  for (const s of newSessions) newIds.add(s.id);
-  let activeIndex = -1;
-  for (let i = 0; i < oldSessions.length; i++) {
-    if (oldSessions[i]!.id === oldActiveId) {
-      activeIndex = i;
-      break;
-    }
-  }
-
-  let activeId: string | null = oldActiveId;
-  if (activeIndex >= 0) {
-    activeId = null;
-    for (let i = activeIndex + 1; i < oldSessions.length; i++) {
-      const candidate = oldSessions[i]!;
-      if (newIds.has(candidate.id)) {
-        activeId = candidate.id;
-        break;
-      }
-    }
-    if (activeId === null) {
-      for (let i = activeIndex - 1; i >= 0; i--) {
-        const candidate = oldSessions[i]!;
-        if (newIds.has(candidate.id)) {
-          activeId = candidate.id;
-          break;
-        }
-      }
-    }
-  }
-
-  // 兜底:旧 active 不在旧 snapshot 或无相邻幸存项时,fallback 第一个。
-  if (activeId === null || !newIds.has(activeId)) {
-    activeId = newSessions[0]?.id ?? null;
-  }
-  return { sessions: newSessions, activeId };
+  return isWindowsRuntime() ? 'powershell' : 'posix';
 }
 
 type TerminalState = {
   sessions: readonly TerminalSession[];
-  activeId: string | null;
-  /**
-   * UI 端 title override(issue #19)。Map<sessionId, customTitle>。
-   * 不破坏 main 真相源(TerminalSession.title 保持来自 main),只在显示层覆盖。
-   * 不持久化(沿用 Continuo 决策 #4 — sessions 重启全销毁,override 跟着无)。
-   * snapshot 移除某 id 时,这里也清理避免泄漏。
-   */
-  customTitles: ReadonlyMap<string, string>;
-
-  /** 接收 main 推的 snapshot,保留 close 时的切换语义. */
+  /** 接收 main 推的 snapshot(整体替换;引用未变或都为空时不通知订阅者)。 */
   replaceSnapshot: (sessions: readonly TerminalSession[]) => void;
-  /** UI 切换 active tab(不验证 id 是否存在,允许 create 后立即 setActive). */
-  setActive: (id: string) => void;
-  /**
-   * UI 双击 tab 后改名。空字符串 / 仅空白 → 删除该 id 的 override
-   * (回退到 main 给的 title)。
-   */
-  renameSession: (id: string, title: string) => void;
 };
 
 export const useTerminalStore = create<TerminalState>((set) => ({
   sessions: [],
-  activeId: null,
-  customTitles: new Map(),
 
   replaceSnapshot: (newSessions) =>
     set((s) => {
-      if (
-        newSessions.length === 0 &&
-        s.sessions.length === 0 &&
-        s.activeId === null &&
-        s.customTitles.size === 0
-      ) {
-        return s;
-      }
-      const applied = applySnapshot(s.sessions, s.activeId, newSessions);
-      // 清理 customTitles 中已不在新 snapshot 的 id
-      let titles = s.customTitles;
-      if (titles.size > 0) {
-        const newIds = new Set<string>();
-        for (const x of newSessions) newIds.add(x.id);
-        let changed = false;
-        for (const id of titles.keys()) {
-          if (!newIds.has(id)) {
-            if (!changed) {
-              titles = new Map(titles);
-              changed = true;
-            }
-            (titles as Map<string, string>).delete(id);
-          }
-        }
-      }
-      if (
-        applied.sessions === s.sessions &&
-        applied.activeId === s.activeId &&
-        titles === s.customTitles
-      ) {
-        return s;
-      }
-      return { ...applied, customTitles: titles };
-    }),
-
-  setActive: (id) => set((s) => (s.activeId === id ? s : { activeId: id })),
-
-  renameSession: (id, title) =>
-    set((s) => {
-      // 边界(E238):自定义标题按 LABEL_MAX(512,复用主进程 create/title 同款上限)截断。renameSession 是
-      // renderer-only store 入口,不经主进程 terminal-create schema —— 极长标题否则进 customTitles 被
-      // DockReconciler/Dock tab title 反复渲染,绕过主进程 512 边界致 UI 卡顿/内存膨胀。截断而非拒绝:
-      // 保留用户重命名意图,只钳长度(空串仍走 delete 分支恢复默认标题)。扫描 trim 边界后只切
-      // LABEL_MAX,避免超长标题先物化完整 trimmed 字符串。
-      const trimmed = trimStringToMax(title, LABEL_MAX);
-      const current = s.customTitles.get(id);
-      if (trimmed.length === 0 && current === undefined) return s;
-      if (trimmed.length > 0 && current === trimmed) return s;
-      const next = new Map(s.customTitles);
-      if (trimmed.length === 0) {
-        next.delete(id);
-      } else {
-        next.set(id, trimmed);
-      }
-      return { customTitles: next };
+      if (newSessions === s.sessions) return s;
+      if (newSessions.length === 0 && s.sessions.length === 0) return s;
+      return { sessions: newSessions };
     }),
 }));

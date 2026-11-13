@@ -8,13 +8,13 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   buildSelectedPathSet,
-  formatDropFailureLines,
   joinRelativePaths,
   makeNamePicker,
   selectDraggedItemPaths,
   selectRootDropMoveablePaths,
   selectVisibleTreeItems,
 } from '../../panels/Explorer/FolderTree';
+import { formatDropFailureLines } from '../../panels/Explorer/batch-transfer';
 
 const ROOT = join(__dirname, '..', '..');
 

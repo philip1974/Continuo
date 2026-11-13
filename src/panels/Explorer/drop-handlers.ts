@@ -9,6 +9,7 @@ import { errorMessage } from '../../../electron/shared/error-message';
 import { dirname } from './path-utils';
 import { joinPath } from '@/lib/path-cross';
 import { isValidLeafName, FS_NAME_MAX } from '../../../electron/shared/leaf-name';
+import { MAX_DROP_FILES } from '@/lib/window-drop';
 
 export interface DropTargetEntry {
   path: string;
@@ -22,7 +23,6 @@ export interface DropFsApi {
 export interface DropResult {
   ok: boolean;
   written: string[];
-  skipped: string[];
   failed: { name: string; code: string; message: string }[];
 }
 
@@ -47,7 +47,7 @@ export function resolveDropTarget(
 // MAX_TERMINAL_DROP_FILES / window-drop MAX_DROP_FILES(均 1000)对齐。
 const MAX_DROP_FILE_BYTES = 64 * 1024 * 1024; // 对齐主 fs.writeBinary 的 MAX_WRITE_BYTES(E13)
 const MAX_DROP_TOTAL_BYTES = 512 * 1024 * 1024; // 单次 drop 累计字节上限
-export const MAX_DROP_FILE_COUNT = 1000; // 单次 drop 文件数量上限(限 arrayBuffer/IPC 次数)
+export const MAX_DROP_FILE_COUNT = MAX_DROP_FILES; // 单次 drop 文件数量上限(限 arrayBuffer/IPC 次数)
 // 边界(E115):partition 总扫描上限(覆盖 file/dir/string 各 kind 项),防超大 items 列表
 // 在 partition 循环里大量 webkitGetAsEntry / skippedDirs 膨胀;远大于 file 上限,正常拖放不受影响。
 const MAX_DROP_SCAN_ITEMS = 4000;
@@ -234,7 +234,6 @@ export async function performDrop(
   return {
     ok: failedCount === 0,
     written,
-    skipped: [],
     failed,
   };
 }

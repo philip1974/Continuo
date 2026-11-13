@@ -57,7 +57,8 @@ const MP_TAGS_COUNT_MAX = 64;
 // charset 收敛后 entry.id 即 URL/路径安全。非法 id 整条 entry 丢弃(不缓存)。
 // E113:isValidPluginId 抽到共享 ./plugin-id(reviews 链路同款复用)。
 
-function isSafeRepoPathChar(code: number): boolean {
+/** ASCII 字母数字与 `. _ -`(repo 路径段 / review 标题里的 plugin id 片段共用)。 */
+export function isSafeRepoPathChar(code: number): boolean {
   return (
     (code >= 65 && code <= 90) ||
     (code >= 97 && code <= 122) ||

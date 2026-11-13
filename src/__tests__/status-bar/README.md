@@ -1,8 +1,8 @@
 # StatusBar(底部 24px 状态栏)
 
-行为契约:**左:workspace basename + 占位 git 分支(main) + 「侧栏已隐藏」hint(sidebarOpen=false 时);
-右:active editor 文件名(+dirty ● 圆点) + 行/词/字符/UTF-8/LF;无 active → 仅 UTF-8。
-agent terminal 数量 > 0 → 显示「N agent」按钮(点击 confirm 后 revoke + IPC revoke)。
+行为契约:**左:workspace basename + 「侧栏已隐藏」hint(sidebarOpen=false 时);
+右:active editor 文件名(+dirty ● 圆点) + 行/词/字符;无 active → 不显示文件信息。只显示真实信息,不放写死的占位(分支名 / 编码 / 换行)。
+agent terminal 数量 > 0 → 显示「N agent」按钮(点击 → design Modal 确认框,确认后 revoke + IPC revoke;不用原生 window.confirm)。
 「复制 MCP 配置」按钮调 coApi.mcp.getStdioConfig + clipboard。
 插件 statusBar items 按 side('left'/'right')分别渲染。**
 
@@ -19,15 +19,14 @@ agent terminal 数量 > 0 → 显示「N agent」按钮(点击 confirm 后 revok
 ### 工作区与 sidebar
 
 - root 缺 → 「无工作区」
-- root 有 → basename + 「main」(git 占位)
+- root 有 → basename
 - sidebarOpen=false → 显示「侧栏已隐藏」
 
 ### 右侧文件信息
 
-- activeTab=null → 只显示「UTF-8」
+- activeTab=null → 不显示文件信息
 - activeTab + filePath → basename + dirty ●(active.dirty=true 时)
 - 行/词/字符 来自 text-stats
-- UTF-8 + LF 占位
 
 ### agent 计数
 

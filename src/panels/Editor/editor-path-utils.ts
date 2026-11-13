@@ -1,10 +1,4 @@
-function isPathSeparatorCode(code: number): boolean {
-  return code === 47 || code === 92;
-}
-
-function isAsciiAlphaCode(code: number): boolean {
-  return (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
-}
+import { basename, isAsciiAlphaCode, isPathSeparatorCode } from '@/lib/path-cross';
 
 function isAsciiCharCaseInsensitive(
   path: string,
@@ -36,14 +30,6 @@ export function isMarkdownPath(path: string): boolean {
   );
 }
 
-function trimTrailingSeparators(path: string): string {
-  let end = path.length;
-  while (end > 0 && isPathSeparatorCode(path.charCodeAt(end - 1))) {
-    end -= 1;
-  }
-  return end === path.length ? path : path.slice(0, end);
-}
-
 // 跨平台绝对路径判定(renderer 无 node:path,手写)。
 //   - POSIX:以 `/` 开头
 //   - Windows 盘符:`C:\` 或 `C:/`(冒号后必须紧跟分隔符;`C:relative` 是盘符相对路径,不算绝对)
@@ -68,7 +54,5 @@ export function isAbsolutePath(path: string): boolean {
  * (draft / untitled)各调用方自行处理,故此 helper 只收非空 path。
  */
 export function basenameForEditorPath(path: string): string {
-  const trimmed = trimTrailingSeparators(path);
-  const idx = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
-  return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
+  return basename(path);
 }

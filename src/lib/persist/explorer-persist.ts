@@ -1,6 +1,6 @@
 // 资源管理器持久化层(M-Explorer Step 3 / ADR-012)。
-// 职责:启动时从 IPC 读 explorer.json hydrate 三 store;
-// 三 store 任一变化 → debounce 300ms 写回 IPC。
+// 职责:启动时从 IPC 读 explorer.json hydrate 各 store(workspace / explorer / pinned / layout-ui / editor);
+// 任一变化 → debounce 300ms 写回 IPC。
 //
 // 持久化字段范围(VSCode 风):
 //   ✅ workspace.root / recentRoots
@@ -24,7 +24,7 @@ import {
   type EditorTab,
   useEditorStore,
 } from '@/stores/editor.store';
-import { useExplorerStore, type ExplorerSort } from '@/stores/explorer.store';
+import { useExplorerStore } from '@/stores/explorer.store';
 import {
   SIDEBAR_DEFAULT_WIDTH,
   SIDEBAR_MAX_WIDTH,
@@ -47,11 +47,13 @@ import type { IpcResult } from '../fs/types';
 import {
   ExplorerSchema,
   ExplorerSchemaV3,
+  type ExplorerPayloadV3,
+  type WindowEntryV3,
 } from '../../../electron/shared/explorer-persistence-schema';
 
 const DEBOUNCE_MS = 300;
 const VERSION = 3 as const;
-const PRIMARY_WINDOW_SEQ = 0; // 主窗位的 windowSeq;Phase 2B 引入多窗后改成动态值
+const PRIMARY_WINDOW_SEQ = 0; // 主窗位的 windowSeq(其余窗口的 seq 经 extras.windowSeq 传入)
 // 边界(E216):editor 会话恢复的 tab 数硬上限 + 读取并发上限。explorer.json schema 允许至多 100k
 // openFilePaths,畸形/旧快照在启动时 paths.map(readFile)+allSettled 会一次性发起海量并发 IPC/文件读
 // promise(单文件大小 cap 不防并发 fan-out)→ renderer/main 卡顿/资源耗尽。截断到 MAX_RESTORED_TABS
@@ -66,34 +68,21 @@ const EMPTY_PERSIST_PATHS: string[] = [];
  * windowSeq 索引。renderer 只读写 writable subset;layout / lastClosedAt 是
  * main-owned 字段,hydrate 可容忍但 snapshotFromStores 不写。
  */
-export interface ExplorerWindowEntry {
-  readonly windowSeq: number;
-  readonly workspace: { readonly root: string | null };
-  readonly explorer: {
-    readonly activePath: string | null;
-    readonly expandedPaths: ReadonlyArray<string>;
-    readonly sort: ExplorerSort;
-  };
-  readonly layoutUi?: {
-    readonly sidebarOpen: boolean;
-    readonly sidebarWidth: number;
-  };
-  readonly editor?: {
-    readonly openFilePaths: ReadonlyArray<string>;
-    readonly activePath: string | null;
-  };
-  readonly layout?: unknown;
-  readonly lastClosedAt?: number | null;
-}
+type DeepReadonly<T> = T extends (infer U)[]
+  ? ReadonlyArray<DeepReadonly<U>>
+  : T extends object
+    ? { readonly [K in keyof T]: DeepReadonly<T[K]> }
+    : T;
 
-export interface ExplorerSnapshot {
-  readonly version: 2 | 3;
-  readonly workspace: { readonly recentRoots: ReadonlyArray<string> };
-  readonly pinned: { readonly paths: ReadonlyArray<string> };
-  readonly nextWindowSeq: number;
-  readonly windows: ReadonlyArray<ExplorerWindowEntry>;
-  readonly restoreAllWindowsOnLaunch?: boolean;
-}
+// 磁盘契约的类型以共享 zod schema 为单一来源(z.infer),renderer 只取只读视图。
+export type ExplorerWindowEntry = DeepReadonly<WindowEntryV3>;
+
+export type ExplorerSnapshot = DeepReadonly<
+  Omit<ExplorerPayloadV3, 'version' | 'windows'> & {
+    version: 2 | 3;
+    windows: WindowEntryV3[];
+  }
+>;
 
 export interface ExplorerPersistApi {
   read: () => Promise<IpcResult<unknown | null>>;
@@ -133,7 +122,7 @@ export interface InitExplorerPersistenceExtras {
 
 /**
  * 取 snap 中归属 windowSeq 的段;无则返 null(主窗 hydrate 用 null 起步)。
- * Phase 2A 主窗永远用 PRIMARY_WINDOW_SEQ,Phase 2B 改成动态值。
+ * 主窗用 PRIMARY_WINDOW_SEQ;其余窗口用启动时注入的 windowSeq。
  */
 function findWindowEntry(
   snap: ExplorerSnapshot,
@@ -204,7 +193,7 @@ export function copyPersistPathSet(paths: ReadonlySet<string>): string[] {
 }
 
 export function snapshotFromStores(
-  /** Phase 2A 默认主窗段;Phase 2B 调用方传当前窗口 windowSeq + 已有段合并写回. */
+  /** 上一份快照:只取 nextWindowSeq 作基准,**不**回写其它窗口的段(见下方说明). */
   prevSnap?: ExplorerSnapshot,
   windowSeq: number = PRIMARY_WINDOW_SEQ,
 ): ExplorerSnapshot {
@@ -498,7 +487,8 @@ export async function initExplorerPersistence(
     return;
   }
 
-  // 3. 订阅 + debounce 写。所有窗口都订阅,各写各段(prevSnap 合并保留其它段)。
+  // 3. 订阅 + debounce 写。所有窗口都订阅,各写各段(其它窗口的段由 main 的 explorer:write 在
+  //    file-mutex 内按磁盘最新值保留,本窗不携带,见 snapshotFromStores)。
   let lastSnap: ExplorerSnapshot | null = hydratedSnap;
   // race(R87):单飞写链。debounce 自动写与关窗 flush(activeFlush)可并发提交不同时间点的
   // snapshot;此前各自 snapshotFromStores 后裸 await api.write 无序列化 —— 慢盘/IPC 下旧 snapshot
@@ -509,25 +499,29 @@ export async function initExplorerPersistence(
   let writeChain: Promise<void> = Promise.resolve();
   let pendingWrite = false;
   let lastWrittenSnapshotPayload: string | null = null;
-  let hasDirtyStoreChanges = true;
+  // store 版本(每次变更 +1)与已落盘版本;相等 = 干净。用版本号而非布尔:写盘 await 期间的变更让版本前进,
+  // 写成功只把**取快照时**的版本记为已落盘,期间的变更仍是脏的(布尔标记会被一并清掉 → 最后一次变更不落盘)。
+  let storeVersion = 0;
+  let savedStoreVersion = -1;
   const writeNow = (): Promise<void> => {
-    if (!hasDirtyStoreChanges && !pendingWrite) return writeChain;
+    if (savedStoreVersion === storeVersion && !pendingWrite) return writeChain;
     pendingWrite = true;
     writeChain = writeChain.then(async () => {
       if (!pendingWrite) return; // 已被链上前一个写覆盖(合并),跳过冗余写
       pendingWrite = false;
       try {
+        const version = storeVersion;
         const snap = snapshotFromStores(lastSnap ?? undefined, windowSeq);
         const serializedSnap = JSON.stringify(snap);
         if (serializedSnap === lastWrittenSnapshotPayload) {
-          hasDirtyStoreChanges = false;
+          savedStoreVersion = version;
           return;
         }
         const w = await api.write(snap);
         if (w.ok) {
           lastSnap = snap;
           lastWrittenSnapshotPayload = serializedSnap;
-          hasDirtyStoreChanges = false;
+          savedStoreVersion = version;
         } else {
           console.warn('[explorer-persist] write failed', w.code, w.message);
         }
@@ -544,7 +538,7 @@ export async function initExplorerPersistence(
   activeFlush = writeNow;
 
   const markDirtyAndPersist = (): void => {
-    hasDirtyStoreChanges = true;
+    storeVersion += 1;
     persist();
   };
 

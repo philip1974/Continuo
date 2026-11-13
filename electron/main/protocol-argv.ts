@@ -7,28 +7,7 @@
 // (跨平台审计 P2,主仓 index.ts:486 / 861)。
 
 import { MAX_PROTOCOL_URL_LEN } from './protocol-dispatch';
-
-function startsWithSchemeIgnoreCase(value: string, schemePrefix: string): boolean {
-  if (value.length < schemePrefix.length) return false;
-  for (let i = 0; i < schemePrefix.length; i += 1) {
-    const a = value.charCodeAt(i);
-    const b = schemePrefix.charCodeAt(i);
-    if (a === b) continue;
-    const folded = a >= 65 && a <= 90 ? a + 32 : a;
-    if (folded !== b) return false;
-  }
-  return true;
-}
-
-function lowerIfNeeded(value: string): string {
-  for (let i = 0; i < value.length; i += 1) {
-    const code = value.charCodeAt(i);
-    if ((code >= 65 && code <= 90) || code > 127) {
-      return value.toLowerCase();
-    }
-  }
-  return value;
-}
+import { lowerIfNeeded, startsWithAsciiIgnoreCase } from '../shared/lower-if-needed';
 
 /** 在 argv 中找第一个 `<protocol>://` 深链;无则 null。protocol 不含冒号(如 'co')。 */
 export function extractProtocolUrl(
@@ -44,7 +23,7 @@ export function extractProtocolUrl(
     // 的 8KB 上限生效之前,先触发整串 URL 解析 + toLowerCase 大字符串拷贝 → 放大启动 CPU/内存。
     // 超 MAX_PROTOCOL_URL_LEN 的串即便是合法深链也会被下游 routeProtocolUrl 拒,故直接跳过无损。
     if (a.length > MAX_PROTOCOL_URL_LEN) continue;
-    if (startsWithSchemeIgnoreCase(a, schemePrefix)) return a;
+    if (startsWithAsciiIgnoreCase(a, schemePrefix)) return a;
     try {
       if (lowerIfNeeded(new URL(a).protocol) === scheme) return a;
     } catch {

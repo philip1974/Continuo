@@ -7,7 +7,7 @@
 //   - text    → Input
 //   - reset   → 始终占位的 ↺,override 时可见
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   IconButton,
   Input,
@@ -36,6 +36,71 @@ const SETTING_TOGGLE_KNOB_ON_CLASS_NAME =
   `${SETTING_TOGGLE_KNOB_BASE_CLASS_NAME} translate-x-[18px] bg-fg`;
 const SETTING_TOGGLE_KNOB_OFF_CLASS_NAME =
   `${SETTING_TOGGLE_KNOB_BASE_CLASS_NAME} translate-x-1 bg-fg-muted`;
+/** 把输入框文本解析成可提交的数字;空串 / 非有限数 → null。 */
+function parseSettingNumber(raw: string): number | null {
+  if (raw.trim() === '') return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * number 设置项输入框。键入中的文本先放在本地草稿里:范围内的值即时生效;越界的中间值(把 13 改成 16 时
+ * 先出现的 "1")不钳制回写 —— 否则输入框被改成 min,后续按键拼在后面,永远输不进目标值。失焦 / Enter
+ * 时才按 spec 钳制提交(E6:min/max 属性不阻止键入越界),并丢弃草稿回显实际值。
+ */
+function NumberSettingInput({
+  spec,
+  value,
+  titleId,
+  onCommit,
+}: {
+  spec: SettingItemSpec;
+  value: SettingItemValue;
+  titleId: string;
+  onCommit: (n: number) => void;
+}) {
+  // 草稿记下它对应的「已知值」:键入范围内的值会立即提交(已知值 = 提交的数),越界的中间值不提交(已知值 =
+  // 当时的值)。之后 value 若不再等于已知值,说明被别处改了(点了重置、别的窗口改了设置)→ 草稿作废,显示
+  // 新值;否则键入的旧文本会一直遮住它。
+  const [draftState, setDraftState] = useState<{ text: string; forValue: SettingItemValue } | null>(
+    null,
+  );
+  // 已作废的草稿在渲染期就清掉(React 允许对本组件的 state 这样做):只把它当「派生为 null」的话,值之后
+  // 若又变回 forValue,旧文本会复活并在失焦时被提交。
+  if (draftState !== null && !Object.is(draftState.forValue, value)) setDraftState(null);
+  const draft = draftState !== null && Object.is(draftState.forValue, value) ? draftState.text : null;
+  const commitClamped = (raw: string): void => {
+    // 没键入过(无有效草稿)→ 不提交:否则 Tab 经过 / 点一下就会写出一条等于当前值的 override。
+    if (draft === null) return;
+    const n = parseSettingNumber(raw);
+    if (n !== null) onCommit(clampSettingNumber(spec, n));
+    setDraftState(null);
+  };
+  return (
+    <Input
+      type="number"
+      size="sm"
+      aria-labelledby={titleId}
+      value={draft ?? String(value)}
+      min={spec.min}
+      max={spec.max}
+      step={spec.step}
+      onChange={(e) => {
+        const raw = (e.target as HTMLInputElement).value;
+        const n = parseSettingNumber(raw);
+        const inRange = n !== null && clampSettingNumber(spec, n) === n;
+        setDraftState({ text: raw, forValue: inRange ? n : value });
+        if (inRange) onCommit(n);
+      }}
+      onBlur={(e) => commitClamped((e.target as HTMLInputElement).value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') commitClamped((e.target as HTMLInputElement).value);
+      }}
+      className="w-24 text-right"
+    />
+  );
+}
+
 const EMPTY_SETTING_SELECT_OPTIONS: readonly SegmentedControlOption<string>[] = [];
 const RESET_DEFAULT_ICON = (
   <svg
@@ -156,21 +221,11 @@ export function SettingItemRow({
         )}
         {spec.type === 'number' && (
           <div className="flex items-center gap-1">
-            <Input
-              type="number"
-              size="sm"
-              aria-labelledby={titleId}
-              value={String(value)}
-              min={spec.min}
-              max={spec.max}
-              step={spec.step}
-              onChange={(e) => {
-                const n = Number((e.target as HTMLInputElement).value);
-                if (!Number.isFinite(n)) return;
-                // 边界(E6):min/max 不阻止键入/脚本越界 → 写入前按 spec clamp。
-                setValue(spec.id, clampSettingNumber(spec, n));
-              }}
-              className="w-24 text-right"
+            <NumberSettingInput
+              spec={spec}
+              value={value}
+              titleId={titleId}
+              onCommit={(n) => setValue(spec.id, n)}
             />
             {spec.unit && (
               <span className="select-none rounded bg-panel-soft px-1.5 py-0.5 text-2xs uppercase tracking-wider text-fg-dim">

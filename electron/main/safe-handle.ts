@@ -1,5 +1,5 @@
-import { ipcMain } from 'electron';
-import type { IpcMainInvokeEvent, WebFrameMain } from 'electron';
+import { BrowserWindow, ipcMain } from 'electron';
+import type { IpcMain, IpcMainInvokeEvent, WebFrameMain } from 'electron';
 import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
 import type { IpcResult } from '../shared/ipc-result';
@@ -11,6 +11,7 @@ import {
   MAX_BOUNDED_OBJECT_KEYS,
   MAX_BOUNDED_OBJECT_KEY_LEN,
 } from '../shared/bounded-input';
+import { capErrorText, codedError } from '../shared/error-message';
 
 // 边界(E157,E73 同族):BAD_INPUT 错误经 formatZodErrorCapped 限幅,但 handler 抛出的 Error 的
 // code/message 此前原样回传。任一 handler 把外部错误/超长路径/子进程 stderr 拼进 Error.message,
@@ -18,10 +19,6 @@ import {
 // 的 code/message 限幅(两个 processIpcCall* 共用 helper),与 BAD_INPUT 限幅边界对齐。
 export const ERR_CODE_MAX = 256;
 export const ERR_MESSAGE_MAX = 8192;
-
-function capErrText(s: string, max: number): string {
-  return s.length > max ? `${s.slice(0, max)}… (+${s.length - max})` : s;
-}
 
 /** 把 catch 到的 err 规整为限幅后的 IpcResult 错误(code≤ERR_CODE_MAX,message≤ERR_MESSAGE_MAX)。 */
 function toCappedErrorResult(err: unknown): IpcResult<never> {
@@ -33,8 +30,8 @@ function toCappedErrorResult(err: unknown): IpcResult<never> {
   }
   return {
     ok: false,
-    code: capErrText(code, ERR_CODE_MAX),
-    message: capErrText(message, ERR_MESSAGE_MAX),
+    code: capErrorText(code, ERR_CODE_MAX),
+    message: capErrorText(message, ERR_MESSAGE_MAX),
   };
 }
 
@@ -137,6 +134,49 @@ export type IsTrustedFrame = (frame: FrameLike) => boolean;
 export type SafeHandler<I, O> = (input: I) => Promise<O> | O;
 
 /**
+ * IPC 四步管线的单一实现(processIpcCall / processIpcCallWithCtx 共用;此前两者逐行复制,
+ * E256 / E73 / E157 每次都要改两处):
+ *   1. frame trust —— 不可信 → DENIED
+ *   2. 边界(E256):safeParse 前 bounded 预检(plain object key 数 / 单 key 长度),挡海量未知 key 在
+ *      Zod .strict() 枚举 + unrecognized_keys issue 构造阶段放大
+ *   3. zod parse —— 失败 → BAD_INPUT;边界(E73):错误串经 cap
+ *   4. 调 handler —— 抛错 → 边界(E157)限幅 code/message 后包成 {ok:false}
+ */
+async function runIpcPipeline<I, O>(
+  schema: z.ZodType<I>,
+  rawInput: unknown,
+  senderFrame: FrameLike,
+  isTrustedFrame: IsTrustedFrame,
+  invoke: (input: I) => Promise<O> | O,
+): Promise<IpcResult<O>> {
+  if (!isTrustedFrame(senderFrame)) {
+    return {
+      ok: false,
+      code: IPC_ERR.DENIED,
+      message: 'sender frame is not trusted',
+    };
+  }
+  const bounded = ipcInputBounded(rawInput);
+  if (!bounded.ok) {
+    return { ok: false, code: IPC_ERR.BAD_INPUT, message: bounded.message };
+  }
+  const parsed = schema.safeParse(rawInput);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      code: IPC_ERR.BAD_INPUT,
+      message: formatZodErrorCapped(parsed.error),
+    };
+  }
+  try {
+    const data = await invoke(parsed.data);
+    return { ok: true, data };
+  } catch (err) {
+    return toCappedErrorResult(err);
+  }
+}
+
+/**
  * 纯函数版 IPC 处理:校验 + parse + 调 handler + 包成 IpcResult。
  * 不依赖 ipcMain,可单测。
  */
@@ -147,37 +187,7 @@ export async function processIpcCall<I, O>(
   senderFrame: FrameLike,
   isTrustedFrame: IsTrustedFrame,
 ): Promise<IpcResult<O>> {
-  if (!isTrustedFrame(senderFrame)) {
-    return {
-      ok: false,
-      code: IPC_ERR.DENIED,
-      message: 'sender frame is not trusted',
-    };
-  }
-
-  // 边界(E256):safeParse 前 bounded 预检(plain object key 数 / 单 key 长度),挡海量未知 key
-  // 在 Zod .strict() 枚举 + unrecognized_keys issue 构造阶段放大(E73 错误串 cap 在 parse 后才生效)。
-  const bounded = ipcInputBounded(rawInput);
-  if (!bounded.ok) {
-    return { ok: false, code: IPC_ERR.BAD_INPUT, message: bounded.message };
-  }
-
-  const parsed = schema.safeParse(rawInput);
-  if (!parsed.success) {
-    return {
-      ok: false,
-      code: IPC_ERR.BAD_INPUT,
-      // 边界(E73):错误串经 cap,防 .strict() schema 大量未知 key 产生无界 message。
-      message: formatZodErrorCapped(parsed.error),
-    };
-  }
-
-  try {
-    const data = await handler(parsed.data);
-    return { ok: true, data };
-  } catch (err) {
-    return toCappedErrorResult(err); // 边界(E157):限幅 handler 抛错 code/message
-  }
+  return runIpcPipeline(schema, rawInput, senderFrame, isTrustedFrame, handler);
 }
 
 /**
@@ -213,7 +223,7 @@ export function defaultIsTrustedFrame(frame: FrameLike): boolean {
 
   const expected = process.env['ELECTRON_RENDERER_URL'];
   // 边界(E303,E196/E302 同族 / dev URL 解析兄弟入口):expected(ELECTRON_RENDERER_URL)此前无长度上限 ——
-  // frame.url 已限长(line 193),但 expected 每次 IPC 调用都 new URL 解析一次,开发误配/OS 上界超长 env
+  // frame.url 已限长(见上方 MAX_WINDOW_URL_LEN 闸),但 expected 每次 IPC 调用都 new URL 解析一次,开发误配/OS 上界超长 env
   // 会被反复 O(N) 解析。对齐 frame.url 的 MAX_WINDOW_URL_LEN 闸(任何真实 dev URL 远在内),超长 fail-closed。
   if (!expected || expected.length > MAX_WINDOW_URL_LEN) return false;
   const expectedOrigin = getExpectedRendererOrigin(expected);
@@ -243,24 +253,9 @@ export async function processIpcCallWithCtx<I, O>(
   event: IpcMainInvokeEvent,
   isTrustedFrame: IsTrustedFrame,
 ): Promise<IpcResult<O>> {
-  if (!isTrustedFrame(event.senderFrame)) {
-    return { ok: false, code: IPC_ERR.DENIED, message: 'sender frame is not trusted' };
-  }
-  // 边界(E256):safeParse 前 bounded 预检(同 processIpcCall,ctx-aware 孪生入口一并收口)。
-  const bounded = ipcInputBounded(rawInput);
-  if (!bounded.ok) {
-    return { ok: false, code: IPC_ERR.BAD_INPUT, message: bounded.message };
-  }
-  const parsed = schema.safeParse(rawInput);
-  if (!parsed.success) {
-    return { ok: false, code: IPC_ERR.BAD_INPUT, message: formatZodErrorCapped(parsed.error) }; // 边界(E73):错误串 cap
-  }
-  try {
-    const data = await handler(parsed.data, { event });
-    return { ok: true, data };
-  } catch (err) {
-    return toCappedErrorResult(err); // 边界(E157):限幅 handler 抛错 code/message
-  }
+  return runIpcPipeline(schema, rawInput, event.senderFrame, isTrustedFrame, (input) =>
+    handler(input, { event }),
+  );
 }
 
 /** ipcMain.handle 包装的 ctx-aware 版本. */
@@ -272,5 +267,79 @@ export function safeHandleWithCtx<I, O>(
 ): void {
   ipcMain.handle(channel, async (event: IpcMainInvokeEvent, raw: unknown) => {
     return processIpcCallWithCtx(schema, handler, raw, event, isTrustedFrame);
+  });
+}
+
+/**
+ * IPC sender 所在的 BrowserWindow;sender 已无窗口(销毁中 / 非窗口 webContents)→ 抛带 `code` 的错误。
+ * terminal / debug-view 两个 IPC 模块此前各持一份,只差错误码。
+ */
+function senderWindowOrThrow(event: IpcMainInvokeEvent, code: string): BrowserWindow {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win) {
+    throw codedError(code, 'no browser window');
+  }
+  return win;
+}
+
+/**
+ * 「需要 sender 所在窗口」的 IPC 外壳:safeHandleWithCtx + senderWindowOrThrow。handler 拿到
+ * (input, win);归属(ownerWindowId)由 main 从 sender 推断,renderer 不自报。
+ * terminal / debug-view 两个 IPC 模块共用。
+ */
+export function safeHandleWithWindow<I>(
+  channel: string,
+  schema: z.ZodType<I>,
+  handler: (input: I, win: BrowserWindow) => unknown | Promise<unknown>,
+  isTrustedFrame: IsTrustedFrame,
+  noWindowCode: string,
+): void {
+  safeHandleWithCtx(
+    channel,
+    schema,
+    (input, { event }) => handler(input, senderWindowOrThrow(event, noWindowCode)),
+    isTrustedFrame,
+  );
+}
+
+/**
+ * frame-trust 断言(不经 safeHandle 管线的裸 ipcMain.handle 用):sender frame 不可信(含已销毁的 null)→
+ * 抛带 IPC_ERR.DENIED 的错误。所有写 / 敏感 IPC 只信真实 renderer 入口 frame —— 权限检查多在 renderer 的
+ * scoped-app 包装层,能触达 raw IPC 的不可信 frame(隔离 iframe / 未来子 frame)否则可直接绕过。
+ */
+export function assertTrustedFrame(
+  event: Pick<IpcMainInvokeEvent, 'senderFrame'>,
+  isTrustedFrame: IsTrustedFrame = defaultIsTrustedFrame,
+): void {
+  if (!isTrustedFrame(event.senderFrame)) {
+    throw codedError(IPC_ERR.DENIED, 'sender frame is not trusted');
+  }
+}
+
+/**
+ * 给一组裸 `ipcMain.handle` 统一加 frame-trust 门:返回的对象把 `handle` 注册的每个 handler 包一层
+ * assertTrustedFrame,其它方法原样转发。在**注册点**包一次即可覆盖 service 内全部 handler(单一漏斗,
+ * 不必逐个 handler 手抄检查 —— plugin-data / plugin-fs 的 21 个 handler 此前就是漏了)。
+ */
+export function withTrustedFrameGate(
+  target: IpcMain,
+  isTrustedFrame: IsTrustedFrame = defaultIsTrustedFrame,
+): IpcMain {
+  return new Proxy(target, {
+    get(obj, prop, receiver) {
+      if (prop !== 'handle') {
+        const value: unknown = Reflect.get(obj, prop, receiver);
+        return typeof value === 'function'
+          ? (value as (...a: unknown[]) => unknown).bind(obj)
+          : value;
+      }
+      const gatedHandle: IpcMain['handle'] = (channel, listener) => {
+        obj.handle(channel, (event, ...args) => {
+          assertTrustedFrame(event, isTrustedFrame);
+          return listener(event, ...(args as unknown[]));
+        });
+      };
+      return gatedHandle;
+    },
   });
 }

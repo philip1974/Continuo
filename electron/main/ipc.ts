@@ -1,4 +1,5 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
+import { EXPLORER_CHANNELS, LAYOUT_CHANNELS } from '../shared/persistence-channels';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
@@ -12,6 +13,7 @@ import {
   type ExplorerPayloadV3,
   type ExplorerWritablePayload,
 } from './persistence';
+import { EXPLORER_FILE_NAME } from '../shared/explorer-persistence-schema';
 import { defaultIsTrustedFrame, safeHandle, safeHandleWithCtx } from './safe-handle';
 import { atomicWriteJson } from './lib/atomic-write';
 import { withExplorerFileMutex } from './lib/file-mutex';
@@ -20,7 +22,7 @@ import { registerFsIpc } from './ipc/fs.ipc';
 import { registerTerminalIpc } from './ipc/terminal.ipc';
 import { registerPluginsIpc } from './ipc/plugins.ipc';
 import { registerShellIpc } from './ipc/shell.ipc';
-import { registerWindowIpc } from './ipc/window.ipc';
+import { registerWindowIpc, type WindowIpcDeps } from './ipc/window.ipc';
 import { registerI18nIpc } from './ipc/i18n.ipc';
 import { registerMarketplaceIpc } from './ipc/marketplace.ipc';
 import {
@@ -33,7 +35,6 @@ import { AGENT_AUTH_CHANNELS } from '../shared/agent-auth-channels';
 import { ERROR_CODES } from '../shared/error-codes';
 import { assertJsonValue } from '../shared/assert-json-value';
 import { AgentAuthRespondSchema } from './agent-auth-schema';
-import { PopoutOpenInput } from './popout-open-schema';
 import { utf8ByteLength } from '../shared/utf8-byte-length';
 import { jsonByteLowerBoundExceeds } from '../shared/json-byte-budget';
 import { findWindowEntryBySeq } from '../shared/window-entry-lookup';
@@ -43,6 +44,7 @@ import {
 } from './services/agent-auth.service';
 import { MCP_CHANNELS } from '../shared/mcp-channels';
 import { getStdioConfig } from './services/mcp-stdio-config.service';
+import { codedError } from '../shared/error-message';
 
 // layout:read 入参为空(renderer ipcRenderer.invoke 不传第二参 → undefined)
 const NoInput = z.undefined();
@@ -111,31 +113,35 @@ import {
   sanitizeReadLayout,
 } from './lib/layout-read-guard';
 
-// popout:open 入参 schema 见 ./popout-open-schema(单列以便测试 import,E316;
-// panelId ≤256 + .strict(),与 AgentAuthRespondSchema 同型)。
 // Agent Terminal MCP 授权应答 schema 见 ./agent-auth-schema(单列以便测试 import,E146)。
 
-export function registerIpc(): { pluginFsHandles: PluginFsIpcHandles } {
+/**
+ * 解析 IPC sender 所在窗口的 windowSeq(explorer.json 里窗口段的稳定键)。持久化边界:一个窗口只能
+ * 读写自己 windowSeq 的段 —— layout:read / layout:write / explorer:write 共用(explorer:write 曾漏接,
+ * 导致单窗陈旧写覆盖别窗段,R7 / codex 复审 R11)。
+ */
+function senderWindowSeqOrThrow(event: IpcMainInvokeEvent): number {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win) {
+    throw codedError(ERROR_CODES.NO_WINDOW, 'no window');
+  }
+  const seq = getWindowSeq(win.id);
+  if (seq == null) {
+    throw codedError(ERROR_CODES.NO_WINDOW_SEQ, 'no window seq');
+  }
+  return seq;
+}
+
+export function registerIpc(deps: WindowIpcDeps): { pluginFsHandles: PluginFsIpcHandles } {
   const userData = app.getPath('userData');
-  const explorerFile = path.join(userData, 'explorer.json');
+  const explorerFile = path.join(userData, EXPLORER_FILE_NAME);
   const trusted = defaultIsTrustedFrame;
 
   safeHandleWithCtx(
-    'layout:read',
+    LAYOUT_CHANNELS.READ,
     NoInput,
     async (_input, { event }) => {
-      const win = BrowserWindow.fromWebContents(event.sender);
-      if (!win) {
-        throw Object.assign(new Error('no window'), {
-          code: ERROR_CODES.NO_WINDOW,
-        });
-      }
-      const seq = getWindowSeq(win.id);
-      if (seq == null) {
-        throw Object.assign(new Error('no window seq'), {
-          code: ERROR_CODES.NO_WINDOW_SEQ,
-        });
-      }
+      const seq = senderWindowSeqOrThrow(event);
       const payload = await loadExplorer(explorerFile);
       const entry =
         payload === null ? null : findWindowEntryBySeq(payload.windows, seq);
@@ -147,23 +153,14 @@ export function registerIpc(): { pluginFsHandles: PluginFsIpcHandles } {
   );
 
   safeHandleWithCtx(
-    'layout:write',
+    LAYOUT_CHANNELS.WRITE,
     LayoutSchema,
     async (json, { event }) => {
-      const win = BrowserWindow.fromWebContents(event.sender);
-      if (!win) {
-        throw Object.assign(new Error('no window'), {
-          code: ERROR_CODES.NO_WINDOW,
-        });
-      }
-      const seq = getWindowSeq(win.id);
-      if (seq == null) {
-        throw Object.assign(new Error('no window seq'), {
-          code: ERROR_CODES.NO_WINDOW_SEQ,
-        });
-      }
+      const seq = senderWindowSeqOrThrow(event);
 
-      const layout = LayoutSchema.parse(json);
+      // json 已由 safeHandleWithCtx 用 LayoutSchema 解析过,这里不再二次 parse(passthrough 对象会被
+      // 再拷贝一遍,且发生在下方字节上限检查之前)。
+      const layout = json;
       // 边界(E89,E67 对偶):LayoutSchema 是 .passthrough() 无序列化大小上限。畸形 renderer/
       // dockview 状态可写入超大 layout → explorer.json 撑爆 → 下次 loadExplorer 命中 16MiB
       // 上限(E67)拒读 → 布局/窗口/会话恢复整体失效 + 写路径 fail-closed 卡死。写盘前按序列化
@@ -173,10 +170,7 @@ export function registerIpc(): { pluginFsHandles: PluginFsIpcHandles } {
       // 完整遍历后才拒。jsonByteLowerBoundExceeds 对任意输入安全(E288)可先跑。(仅「既非 JSON-safe 又超限」
       // 病态 layout 错误码从 BAD_INPUT 变 PAYLOAD_TOO_LARGE —— 两者皆拒写,单-bad 不变。)
       if (jsonByteLowerBoundExceeds(layout, MAX_LAYOUT_BYTES)) {
-        throw Object.assign(
-          new Error(`layout too large (> ${MAX_LAYOUT_BYTES})`),
-          { code: ERROR_CODES.PAYLOAD_TOO_LARGE },
-        );
+        throw codedError(ERROR_CODES.PAYLOAD_TOO_LARGE, `layout too large (> ${MAX_LAYOUT_BYTES})`);
       }
       // 边界(E119,E105/E117 同族):LayoutSchema 是 .passthrough(),layout 可含 Infinity/NaN/
       // undefined(structured-clone 经 IPC 保留)。仅 JSON.stringify 判大小会静默把这些改成 null/
@@ -184,19 +178,13 @@ export function registerIpc(): { pluginFsHandles: PluginFsIpcHandles } {
       try {
         assertJsonValue(layout);
       } catch {
-        throw Object.assign(
-          new Error('layout contains non-JSON-safe values'),
-          { code: ERROR_CODES.BAD_INPUT },
-        );
+        throw codedError(ERROR_CODES.BAD_INPUT, 'layout contains non-JSON-safe values');
       }
       const serialized = JSON.stringify(layout);
       // 边界(E125):真实 UTF-8 字节(非 .length=UTF-16 code unit),防多字节 layout 绕过上限撑爆 explorer.json。
       const layoutBytes = utf8ByteLength(serialized);
       if (layoutBytes > MAX_LAYOUT_BYTES) {
-        throw Object.assign(
-          new Error(`layout too large (${layoutBytes} > ${MAX_LAYOUT_BYTES})`),
-          { code: ERROR_CODES.PAYLOAD_TOO_LARGE },
-        );
+        throw codedError(ERROR_CODES.PAYLOAD_TOO_LARGE, `layout too large (${layoutBytes} > ${MAX_LAYOUT_BYTES})`);
       }
 
       await withExplorerFileMutex(async () => {
@@ -218,7 +206,7 @@ export function registerIpc(): { pluginFsHandles: PluginFsIpcHandles } {
 
   // 资源管理器持久化(Step 3 / ADR-012)
   safeHandle(
-    'explorer:read',
+    EXPLORER_CHANNELS.READ,
     NoInput,
     async () => {
       const payload = await loadExplorer(explorerFile);
@@ -233,7 +221,7 @@ export function registerIpc(): { pluginFsHandles: PluginFsIpcHandles } {
     trusted,
   );
   safeHandleWithCtx(
-    'explorer:write',
+    EXPLORER_CHANNELS.WRITE,
     ExplorerWritableSnapshotSchema,
     async (writable, { event }) => {
       // 持久化边界收口:一个窗口只能写自己 windowSeq 的段(同 layout:read/write 早用
@@ -242,18 +230,7 @@ export function registerIpc(): { pluginFsHandles: PluginFsIpcHandles } {
       // mergeWritableIntoFull 会把别窗段一并写回 → 单窗陈旧写覆盖别窗 root/tabs/
       // 展开态(R7 曾是真 bug)。按 sender 的真实 seq 过滤 foreign 段,丢弃非自己的窗口
       // entry,既保留自己段的写入又杜绝跨窗 clobber。(codex 复审 loop R11)
-      const win = BrowserWindow.fromWebContents(event.sender);
-      if (!win) {
-        throw Object.assign(new Error('no window'), {
-          code: ERROR_CODES.NO_WINDOW,
-        });
-      }
-      const seq = getWindowSeq(win.id);
-      if (seq == null) {
-        throw Object.assign(new Error('no window seq'), {
-          code: ERROR_CODES.NO_WINDOW_SEQ,
-        });
-      }
+      const seq = senderWindowSeqOrThrow(event);
       const ownOnly = filterWritableSnapshotForWindowSeq(writable, seq);
       await withExplorerFileMutex(async () => {
         const current = await loadExplorer(explorerFile);
@@ -265,25 +242,13 @@ export function registerIpc(): { pluginFsHandles: PluginFsIpcHandles } {
     trusted,
   );
 
-  // M5 真做 popout 时实现;占位时统一抛业务码,renderer 拿到 IpcFail 即可。
-  safeHandle(
-    'popout:open',
-    PopoutOpenInput,
-    () => {
-      throw Object.assign(new Error('popout:open not implemented yet (M5)'), {
-        code: ERROR_CODES.POPOUT_NOT_IMPLEMENTED,
-      });
-    },
-    trusted,
-  );
-
-  // 资源管理器 fs.* 9 通道(Step 2)
+  // 资源管理器 fs.*(Step 2)
   registerFsIpc();
 
-  // 终端 terminal.* 6 invoke + 4 push(Step T2)
+  // 终端 terminal.*(Step T2)
   registerTerminalIpc();
 
-  // 插件系统 plugins.* 3 通道(M-Plugin v4.1)
+  // 插件系统 plugins.*(M-Plugin v4.1)
   registerPluginsIpc();
 
   // plugin app.shell.exec 后端(v5 Phase 4+)
@@ -302,7 +267,7 @@ export function registerIpc(): { pluginFsHandles: PluginFsIpcHandles } {
   registerPluginShellStreamIpc({ ipcMain });
 
   // 多窗口支持(issue #23 Phase 1):window.create
-  registerWindowIpc();
+  registerWindowIpc(deps);
 
   // Agent Terminal MCP — 授权应答通道(P2)。schema 见模块级 AgentAuthRespondSchema(E146)。
   safeHandle(

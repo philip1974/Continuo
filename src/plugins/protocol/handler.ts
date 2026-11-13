@@ -21,6 +21,7 @@
 // 全部深链命令默认拒绝;未来若需放行某个明确只读/导航类**内置**命令,把其 id 加入。
 
 import type { CoApp } from '../types';
+import { PROTOCOL_URL_MAX_LEN } from '../../../electron/shared/plugins-channels';
 
 /**
  * 安全 S5:允许被外部 co://command 深链唤起的命令 id 白名单(core 独有,插件无法修改)。
@@ -41,7 +42,7 @@ export interface ParsedProtocolUrl {
 // 边界(E55):renderer 防御性上限 —— 即便 main 已 cap(MAX_PROTOCOL_URL_LEN/队列),parseProtocolUrl
 // 也自带长度 + params 数量上限,挡绕过 main 的测试/未来入口(深链解析在 new URL/遍历 query 处会被
 // 超长 URL / 海量 params 放大)。值与 main protocol-dispatch 的 MAX_PROTOCOL_URL_LEN 对齐。
-const MAX_PARSE_URL_LEN = 8192;
+const MAX_PARSE_URL_LEN = PROTOCOL_URL_MAX_LEN; // 与 main / preload 同一常量
 const MAX_PARSE_PARAMS = 256;
 // 边界(E98):字段级长度上限。E55 只限 URL 总长 + params 数量,但 8KB 内仍可塞超长单字段
 // (co://<8k-host>/<8k-target>?<huge-key>=<huge-value>)完整进返回对象 + 日志放大。

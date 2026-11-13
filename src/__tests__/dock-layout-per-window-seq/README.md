@@ -17,6 +17,7 @@ T11 explorer file migration handles empty, v2-only, layout-only, and mixed paths
 T12 renderer v3 persistence sends the correct window-scoped payload;
 T13 `explorer:write` cannot overwrite another window entry;
 T14 window close flush persists the last known layout;
+T14r a window whose renderer has not reported `layout:flush-ready` (still booting / failed to load) closes immediately — no flush request, no 10s ack wait; the report is only accepted from a trusted frame of that window;
 T15 `ensureWindowEntry` creates missing entries without replacing existing data;
 T16 multi-window IPC mocks prove independent layouts;
 T17 persistence writes via temp file plus rename;

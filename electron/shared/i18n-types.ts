@@ -1,8 +1,13 @@
 import { z } from 'zod';
 
 /** 支持的 locale 字面值,zod schema 与 type 都派生自此. */
-export const LOCALES = ['en', 'zh', 'ko'] as const;
+const LOCALES = ['en', 'zh', 'ko'] as const;
 export type Locale = (typeof LOCALES)[number];
+
+/** 纯判定(无 zod,renderer 可直接用)。 */
+export function isLocale(v: unknown): v is Locale {
+  return (LOCALES as readonly unknown[]).includes(v);
+}
 
 /** 单源 zod schema,main IPC + SettingsSchema 都复用. */
 export const LocaleSchema = z.enum(LOCALES);
@@ -12,9 +17,6 @@ export const LANG_MAP: Record<Locale, string> = {
   zh: 'zh_CN.UTF-8',
   ko: 'ko_KR.UTF-8',
 };
-
-/** 匹配 *.UTF-8 / *.utf8 等 UTF-8 locale 写法。 */
-export const UTF8_LANG_RE = /^[A-Za-z_]+\.UTF-?8$/i;
 
 function isAsciiAlphaOrUnderscore(code: number): boolean {
   return (

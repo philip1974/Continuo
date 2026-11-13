@@ -13,9 +13,15 @@ import {
   detectPlatform,
   type Platform,
 } from '@/plugins/command-palette/format-hotkey';
-import { getEffectiveHotkey, useKeybindingsStore } from '@/plugins/keybindings/keybindings-store';
+import {
+  getEffectiveHotkey,
+  resolveEffectiveHotkey,
+  useKeybindingsStore,
+} from '@/plugins/keybindings/keybindings-store';
 import { KeybindingCaptureModal } from '@/plugins/keybindings/KeybindingCaptureModal';
 import { useT, useTWithFallback, useLocale } from '@/i18n';
+import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
+import { groupKeepingOrder } from '@/lib/group-keeping-order';
 
 const PLATFORM = detectPlatform();
 const COMMAND_PALETTE_HOTKEY_PARTS = formatHotkeyParts('mod+shift+p', PLATFORM);
@@ -107,66 +113,18 @@ export function groupByCategory(
   defaultGroup: string,
 ): Bucket[] {
   if (commands.length === 0) return EMPTY_KEYBINDING_BUCKETS;
-  if (commands.length === 1) {
-    const command = commands[0]!;
-    return [
-      {
-        category: command.displayCategory || defaultGroup,
-        items: commands,
-      },
-    ];
-  }
-
-  const firstCategory = commands[0]!.displayCategory || defaultGroup;
-  let allSameCategory = true;
-  for (let i = 1; i < commands.length; i++) {
-    if ((commands[i]!.displayCategory || defaultGroup) !== firstCategory) {
-      allSameCategory = false;
-      break;
+  const groups = groupKeepingOrder(commands, (d) => d.displayCategory || defaultGroup);
+  const buckets = new Array<Bucket>(groups.length);
+  for (let i = 0; i < groups.length; i++) {
+    const group = groups[i]!;
+    let items = group.items;
+    if (items.length > 1 && !isSortedByDisplayTitle(items)) {
+      // owned=false 时 items 就是入参数组,不能原地排 → 拷一份再排。
+      const sortable = group.owned ? (items as DisplayCommand[]) : copyCommands(items);
+      sortable.sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));
+      items = sortable;
     }
-  }
-  if (allSameCategory) {
-    if (!isSortedByDisplayTitle(commands)) {
-      const items = new Array<DisplayCommand>(commands.length);
-      for (let i = 0; i < commands.length; i++) items[i] = commands[i]!;
-      items.sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));
-      return [
-        {
-          category: firstCategory,
-          items,
-        },
-      ];
-    }
-    return [
-      {
-        category: firstCategory,
-        items: commands,
-      },
-    ];
-  }
-
-  const map = new Map<string, { items: DisplayCommand[]; count: number }>();
-  for (const d of commands) {
-    const key = d.displayCategory || defaultGroup;
-    let bucket = map.get(key);
-    if (!bucket) {
-      bucket = { items: new Array<DisplayCommand>(commands.length), count: 0 };
-      map.set(key, bucket);
-    }
-    bucket.items[bucket.count++] = d;
-  }
-  const buckets = new Array<Bucket>(map.size);
-  let i = 0;
-  for (const [category, bucket] of map) {
-    bucket.items.length = bucket.count;
-    const items = bucket.items;
-    if (bucket.count > 1 && !isSortedByDisplayTitle(items)) {
-      items.sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));
-    }
-    buckets[i++] = {
-      category,
-      items,
-    };
+    buckets[i] = { category: group.key, items };
   }
   if (buckets.length > 1 && !areBucketsSortedByCategory(buckets)) {
     buckets.sort((a, b) => a.category.localeCompare(b.category));
@@ -174,19 +132,15 @@ export function groupByCategory(
   return buckets;
 }
 
+function copyCommands(commands: readonly DisplayCommand[]): DisplayCommand[] {
+  const copy = new Array<DisplayCommand>(commands.length);
+  for (let i = 0; i < commands.length; i++) copy[i] = commands[i]!;
+  return copy;
+}
+
 function matches(d: DisplayCommand, qLower: string): boolean {
   if (!qLower) return true;
   return d.searchHaystack.includes(qLower);
-}
-
-function lowerIfNeeded(value: string): string {
-  for (let i = 0; i < value.length; i += 1) {
-    const code = value.charCodeAt(i);
-    if ((code >= 65 && code <= 90) || code > 127) {
-      return value.toLowerCase();
-    }
-  }
-  return value;
 }
 
 export function selectVisibleKeybindingCommands(
@@ -252,9 +206,7 @@ export function buildKeybindingDisplayCommands(
     const isOverridden = cmd.id in overrides;
     if (!cmd.hotkey && !isOverridden) continue;
     if (out === null) out = new Array<DisplayCommand>(allCommands.length);
-    const override = overrides[cmd.id];
-    const effective =
-      override !== undefined ? (override === '' ? undefined : override) : cmd.hotkey;
+    const effective = resolveEffectiveHotkey(cmd, overrides);
     const displayTitle = tk(cmd.titleKey, cmd.title);
     const displayCategory = tk(cmd.categoryKey, cmd.category ?? '');
     out[outCount++] = {

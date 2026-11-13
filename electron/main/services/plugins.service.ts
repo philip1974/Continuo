@@ -1,7 +1,15 @@
 // 插件目录扫描 + 文件读取(M-Plugin v4.1,主进程端)。
 // 纯函数风格,便于单测;真正的 IPC 注册在 plugins.ipc.ts。
 
+import { spawn } from 'node:child_process';
+import {
+  PERMISSION_RECORD_LIMITS,
+  PLUGIN_ID_MAX_LEN,
+} from '../../shared/permission-record-limits';
+import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
+import { mkdtemp, cp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type {
   IpcPathScope,
@@ -11,13 +19,16 @@ import type {
   IpcPluginDir,
 } from '../../shared/plugins-channels';
 import { ERROR_CODES } from '../../shared/error-codes';
-import { errorMessage } from '../../shared/error-message';
+import { codedError, errorMessage } from '../../shared/error-message';
+import { isValidPluginId } from '../../shared/plugin-id';
+import { createSerialQueue } from '../../shared/run-serial-per-key';
+import { isIpcPathScope, isIpcPermissionDecision } from '../../shared/permission-record';
+import { killWithGrace } from '../lib/kill-with-grace';
 import { atomicWriteJson } from '../lib/atomic-write';
 import { createByteCappedBuffer } from '../lib/byte-capped-buffer';
 import { readFileCappedFd } from '../lib/read-fh-capped';
 import { runSerialPerKey } from './serialize-per-key';
-import { PERMISSION_KEYS } from '../../../src/plugins/permissions';
-import { parseManifest } from '../../../src/plugins/manifest';
+import { parseManifest } from '../../shared/plugin-manifest';
 
 function isAbsolutePathLike(value: string): boolean {
   return (
@@ -78,23 +89,9 @@ export function resolvePluginMainPath(
  * 路径穿越(审计 P1)。与 fs `renameEntry` 拒 `.`/`..` 同款防御。
  */
 export function isSafePluginId(id: string): boolean {
-  if (id === '.' || id === '..') return false;
-  return hasOnlyPluginIdChars(id);
-}
-
-function hasOnlyPluginIdChars(id: string): boolean {
-  if (id.length === 0) return false;
-  for (let i = 0; i < id.length; i += 1) {
-    const code = id.charCodeAt(i);
-    const ok =
-      (code >= 97 && code <= 122) ||
-      (code >= 48 && code <= 57) ||
-      code === 46 ||
-      code === 95 ||
-      code === 45;
-    if (!ok) return false;
-  }
-  return true;
+  // 长度上限与读端一致:各持久化读端都丢弃超长 id,写端 / 安装 / 卸载若只查字符集,超长合法字符 id 会
+  //「写成功、读回被丢」(且超长 id 拼路径可能 ENAMETOOLONG)。
+  return id.length <= PLUGIN_ID_MAX_LEN && isValidPluginId(id);
 }
 
 // 边界(E102):manifest.main 入口名长度上限,对齐 renderer ManifestSchema 的 main.max(512,E74)。
@@ -119,18 +116,11 @@ function getPluginMainName(manifest: unknown): string {
 }
 
 /**
- * 扫描 baseDir/<id>/manifest.json 模式;返回所有合法目录的 manifestText +
- * mainText(默认 main.js 或 manifest.main 指向)+ 可选 stylesText。
- *
- * 子目录读 fail / 缺 manifest / 缺 main 都跳过该目录(不抛),由 renderer 端
- * PluginManager 决定是否报告。
- */
-/**
  * 启动期恢复被**进程崩溃**中断的插件更新(数据安全,codex 复查 P1)。
  *
  * installFromGit 的 overwrite swap 顺序是 `rename(target→backup)` 再 `rename(staging→target)`;
  * in-process try/catch 只回滚可 catch 的 error,但进程在两次 rename **之间**崩溃会留下:
- * `<id>` 目标缺失 + `.<id>.old-<uuid>` backup(被 listPluginDirs 第 82 行跳过)→ 插件静默
+ * `<id>` 目标缺失 + `.<id>.old-<uuid>` backup(以 `.` 开头,被 listPluginDirs 跳过)→ 插件静默
  * 消失,违反「失败时旧版本原样保留,不会丢插件」的注释契约。
  *
  * 在列举/加载插件前扫一遍 baseDir:
@@ -189,13 +179,12 @@ export async function recoverInterruptedInstalls(baseDir: string): Promise<void>
   }
 }
 
-// 边界(E24,E18 同族):插件目录扫描读 manifest/main/styles 的文件大小上限。畸形/恶意插件包可放
-// 超大 manifest/main/styles,应用启动或插件列表刷新时主进程整文件读入并经 IPC 传给 renderer →
-// 内存峰值/卡死/崩溃。读前 stat.size,超限跳过(manifest/main 缺失即跳过整插件;styles 缺失=无样式),
-// 不把超大源码/样式跨 IPC 传输。上限远超任何现实插件(bundled main 数 MB 已罕见)。
+// 边界(E24,E18 同族):插件目录扫描读 manifest/main 的文件大小上限。畸形/恶意插件包可放
+// 超大 manifest/main,应用启动或插件列表刷新时主进程整文件读入并经 IPC 传给 renderer →
+// 内存峰值/卡死/崩溃。读前 stat.size,超限跳过(manifest/main 缺失即跳过整插件),
+// 不把超大源码跨 IPC 传输。上限远超任何现实插件(bundled main 数 MB 已罕见)。
 const MANIFEST_MAX_BYTES = 1024 * 1024; // 1 MiB
 const MAIN_MAX_BYTES = 8 * 1024 * 1024; // 8 MiB(bundled 源码)
-const STYLES_MAX_BYTES = 4 * 1024 * 1024; // 4 MiB
 
 export async function readFileCapped(
   filePath: string,
@@ -204,7 +193,7 @@ export async function readFileCapped(
   // 边界(E158,E24 同族 TOCTOU 修正):此前先 `fs.stat(path)` 判 size、再 `fs.readFile(path)` 整文件
   // —— 两次独立按路径解析,检查与读取之间文件可被替换(路径指向新 inode)或增长,绕过大小上限。改用
   // 共享 readFileCappedFd(单 fd open→fstat 同 inode→有界读)。本 helper 对任何错误(含缺失/不可读)
-  // 与超限都返 null(跳过该文件;缺 manifest/main=跳过整插件,缺 styles=无样式)。
+  // 与超限都返 null(跳过该文件;缺 manifest/main=跳过整插件)。
   try {
     const { text, tooLarge } = await readFileCappedFd(filePath, maxBytes);
     if (tooLarge) {
@@ -275,6 +264,14 @@ async function readMetadataCapped(filePath: string): Promise<string> {
   return text as string; // tooLarge=false 时 text 必为 string
 }
 
+/**
+ * 扫描 baseDir/<id>/manifest.json 模式;返回所有合法目录的 manifestText +
+ * mainText(默认 main.js 或 manifest.main 指向)。插件目录里的 styles.css 不读取:renderer 从未
+ * 注入过它(样式由插件在 onload 里自行处理)。
+ *
+ * 子目录读 fail / 缺 manifest / 缺 main 都跳过该目录(不抛),由 renderer 端
+ * PluginManager 决定是否报告。
+ */
 export async function listPluginDirs(baseDir: string): Promise<IpcPluginDir[]> {
   // 边界(E82):有界枚举(缺目录 → [] → 返回空列表,等价旧版)。
   const entries = await readPluginDirEntriesCapped(baseDir);
@@ -314,12 +311,7 @@ export async function listPluginDirs(baseDir: string): Promise<IpcPluginDir[]> {
     const mainText = await readFileCapped(mainPath, MAIN_MAX_BYTES);
     if (mainText === null) continue;
 
-    // 边界(E24):styles 超 4MiB(或缺失)→ 当无样式(undefined),不阻断插件。
-    const stylesText =
-      (await readFileCapped(path.join(dir, 'styles.css'), STYLES_MAX_BYTES)) ??
-      undefined;
-
-    out[outCount] = { id, manifestText, mainText, stylesText };
+    out[outCount] = { id, manifestText, mainText };
     outCount += 1;
   }
   out.length = outCount;
@@ -332,7 +324,7 @@ const ENABLED_FILE = '_enabled.json';
 // 超长 id)能通过 array-of-string 校验 → readEnabledIds → new Set → PluginManager.init 放大 CPU/内存,
 // 且 setEnabledId 的 RMW 把这些非法/超量 id 原样写回,绕过写 IPC schema 上限。读盘按写端同一契约
 // canonicalize:仅保留 isSafePluginId 且长度≤PLUGIN_ID_MAX 的 id、去重、数量≤MAX_ENABLED_IDS。
-const PLUGIN_ID_MAX = 256; // 对齐 manifest id 上限(E74 NAME_MAX)
+const PLUGIN_ID_MAX = PLUGIN_ID_MAX_LEN; // 对齐 manifest id 上限(E74 NAME_MAX)
 const MAX_ENABLED_IDS = 4096; // 远超任何现实启用插件数
 
 export async function readEnabledIds(baseDir: string): Promise<string[]> {
@@ -393,8 +385,8 @@ export async function writeEnabledIds(
 // per-PluginManager 实例;每个窗口各有自己的 PluginManager(main-app.ts),两个窗口
 // 同时 enable/disable 不同插件时各读旧集合、整表写回,后写者覆盖先写者 → 某插件启用
 // 状态重启后丢失(跨窗口 lost update)。把 RMW 收口到 main 端单条 Promise 链(镜像
-// permissionsWriteChain / pathScopesWriteChain),renderer 改传 delta(id, enabled)。
-let enabledWriteChain: Promise<unknown> = Promise.resolve();
+// permissionsWriteQueue / pathScopesWriteQueue),renderer 改传 delta(id, enabled)。
+const enabledWriteQueue = createSerialQueue();
 
 /**
  * 启用/禁用单个插件 id(主进程全局串行 delta 写)。
@@ -405,7 +397,7 @@ export function setEnabledId(
   id: string,
   enabled: boolean,
 ): Promise<void> {
-  const run = enabledWriteChain.then(async () => {
+  return enabledWriteQueue.run(async () => {
     const current = await readEnabledIds(baseDir);
     const ids = new Set(current);
     const hasId = ids.has(id);
@@ -418,11 +410,6 @@ export function setEnabledId(
     }
     await writeEnabledIds(baseDir, [...ids]);
   });
-  enabledWriteChain = run.then(
-    () => {},
-    () => {},
-  );
-  return run;
 }
 
 // ── v4.2 权限决策持久化 ─────────────────────────────────
@@ -431,22 +418,12 @@ const PERMISSIONS_FILE = '_permissions.json';
 // 边界(E87,E85/E86 数据完整性族 / E5 时间戳):_permissions.json 读盘按写端 + 业务枚举 canonicalize。
 // permission 必须是 PERMISSION_KEYS 成员(否则 PERM_LABEL_KEYS[perm]=undefined 渲染崩),decidedAt 必须
 // finite(1e400 经 JSON.parse=Infinity 但 typeof 仍 number,同 E5)。每插件 decisions 数 + plugin key 数
-// 封顶(对齐 IPC 写端 DECISIONS_MAX/PLUGINS_MAX,防 RMW 写回绕过写端上限)。
-const MAX_DECISIONS_PER_PLUGIN = 1000; // 对齐 plugins.ipc DECISIONS_MAX
-const MAX_PERMISSION_PLUGIN_KEYS = 10_000; // 对齐 plugins.ipc PLUGINS_MAX
-const PERMISSION_KEY_SET: ReadonlySet<string> = new Set(PERMISSION_KEYS);
+// 封顶(decisions 对齐 IPC 写端 DECISIONS_MAX,防 RMW 写回绕过写端上限)。
+const MAX_DECISIONS_PER_PLUGIN = PERMISSION_RECORD_LIMITS.DECISIONS_PER_PLUGIN_MAX; // 对齐 plugins.ipc DECISIONS_MAX
+const MAX_PERMISSION_PLUGIN_KEYS = PERMISSION_RECORD_LIMITS.PLUGIN_KEYS_MAX;
 
-function isDecision(x: unknown): x is IpcPermissionDecision {
-  if (!x || typeof x !== 'object') return false;
-  const o = x as Record<string, unknown>;
-  return (
-    typeof o.permission === 'string' &&
-    PERMISSION_KEY_SET.has(o.permission) && // 边界(E87):必须是业务枚举成员
-    typeof o.granted === 'boolean' &&
-    typeof o.decidedAt === 'number' &&
-    Number.isFinite(o.decidedAt) // 边界(E87/E5):非有限时间戳拒
-  );
-}
+// 单条 decision / scope 的形态判定取 shared 单一来源(与 renderer 读端、IPC schema 同一规则)。
+const isDecision = isIpcPermissionDecision;
 
 /**
  * 边界(E207,E206/E197-E199 有界迭代族):"上限内全有效、凑满即停"的有界校验。按序校验数组元素:
@@ -657,8 +634,8 @@ export async function writePermissions(
 }
 
 // 同文件 read-modify-write 串行化,防多窗口/并发授权互相覆盖(镜像
-// pathScopesWriteChain / installLocks 思路)。
-let permissionsWriteChain: Promise<unknown> = Promise.resolve();
+// pathScopesWriteQueue / installLocks 思路)。
+const permissionsWriteQueue = createSerialQueue();
 
 /**
  * 数据安全:按**单个 plugin** 合并写 `_permissions.json`。此前 renderer 整表写回,
@@ -672,7 +649,7 @@ export function writePluginPermissions(
   id: string,
   record: IpcPermissionRecord,
 ): Promise<void> {
-  const run = permissionsWriteChain.then(async () => {
+  return permissionsWriteQueue.run(async () => {
     if (!isSafePluginId(id)) return;
     // Array.isArray 不收窄 readonly[] union 分支,显式 cast 对象形态.
     const decisionsRaw = Array.isArray(record)
@@ -712,11 +689,6 @@ export function writePluginPermissions(
     }
     await writePermissions(baseDir, all);
   });
-  permissionsWriteChain = run.then(
-    () => {},
-    () => {},
-  );
-  return run;
 }
 
 // ── path-scope 持久化(plugin-fs 授权跨重启保留)──────────────
@@ -731,19 +703,8 @@ const PATH_SCOPES_FILE = '_plugin-path-scopes.json';
 // 手工/旧残留的 1MiB 元数据可塞大量非法 key / 超长 path / 超量 scope 通过既有「value 是数组 +
 // isIpcPathScope」校验,进 readPluginPathScopes→hydrate→mergeScopes 前先构造整表,且
 // writePluginPathScopes 的 RMW 会把其它非法/超量 plugin 条目原样写回(绕过写端契约)。
-const PATH_SCOPE_PATH_MAX = 8192; // 单条 scope path 长度上限(对齐 E31 request-scope path 上限)
-const MAX_PERSISTED_SCOPES_PER_PLUGIN = 256; // 对齐 PathScopeRegistry MAX_SCOPES_PER_PLUGIN(E81)
+const MAX_PERSISTED_SCOPES_PER_PLUGIN = PERMISSION_RECORD_LIMITS.PATH_SCOPES_PER_PLUGIN_MAX; // 对齐 PathScopeRegistry MAX_SCOPES_PER_PLUGIN(E81)
 const MAX_PERSISTED_PLUGIN_KEYS = 4096; // 持久化表的 plugin key 数上限
-
-function isIpcPathScope(x: unknown): x is IpcPathScope {
-  if (!x || typeof x !== 'object') return false;
-  const o = x as Record<string, unknown>;
-  return (
-    typeof o.path === 'string' &&
-    o.path.length <= PATH_SCOPE_PATH_MAX && // 边界(E86):超长 path 拒(防元数据放大)
-    (o.mode === 'r' || o.mode === 'rw')
-  );
-}
 
 async function readAllPathScopes(
   baseDir: string,
@@ -812,7 +773,7 @@ export async function readPluginPathScopes(
 }
 
 // 同文件 read-modify-write 串行化,防并发 grant 互相覆盖(镜像 installLocks 思路)。
-let pathScopesWriteChain: Promise<unknown> = Promise.resolve();
+const pathScopesWriteQueue = createSerialQueue();
 
 /**
  * 持久化单个 plugin 的全部已授 path scope(覆盖式)。空数组 → 删除该 id 条目。
@@ -823,7 +784,7 @@ export function writePluginPathScopes(
   id: string,
   scopes: readonly IpcPathScope[],
 ): Promise<void> {
-  const run = pathScopesWriteChain.then(async () => {
+  return pathScopesWriteQueue.run(async () => {
     if (!isSafePluginId(id)) return;
     const all = await readAllPathScopes(baseDir);
     // 边界(E249,E247 兄弟入口):service 层写端按 MAX_PERSISTED_SCOPES_PER_PLUGIN 有界收集,与
@@ -849,19 +810,9 @@ export function writePluginPathScopes(
     // readAllPathScopes 损坏即抛 → 水合降级 [],已授 path scope 丢失。原子写。
     await atomicWriteJson(file, all);
   });
-  pathScopesWriteChain = run.then(
-    () => {},
-    () => {},
-  );
-  return run;
 }
 
 // ── v4.5 git URL 安装 ──────────────────────────────────
-
-import { spawn } from 'node:child_process';
-import { mkdtemp, cp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { randomUUID } from 'node:crypto';
 
 // 同 id 主进程 mutation 串行化:install / update / uninstall 共用,防同插件目录的并发写互相踩
 // (审计 #5)。race(R107):卸载此前不走此锁 → 一个窗口卸载、另一窗口安装/更新同 id 时,卸载的
@@ -894,9 +845,7 @@ export async function uninstallPlugin(
   // (recursive+force)= 灾难性数据丢失/路径穿越。install 侧(manifest.id)已用 isSafePluginId,
   // uninstall 此前漏改(helper 未传播到兄弟入口)。
   if (!isSafePluginId(id)) {
-    throw Object.assign(new Error(`非法 plugin id: ${id}`), {
-      code: ERROR_CODES.INVALID_ID,
-    });
+    throw codedError(ERROR_CODES.INVALID_ID, `非法 plugin id: ${id}`);
   }
   // race(R107):卸载全段(access → 元数据清理 → rm)纳入同 id 主进程 mutation 锁,与 installFromGit
   // 的 swap(access → rename 就位)互斥串行。否则跨窗口「卸载 vs 安装/更新同 id」交错:卸载的
@@ -907,9 +856,7 @@ export async function uninstallPlugin(
     try {
       await fs.access(targetDir);
     } catch {
-      throw Object.assign(new Error(`插件未安装: ${id}`), {
-        code: ERROR_CODES.NOT_INSTALLED,
-      });
+      throw codedError(ERROR_CODES.NOT_INSTALLED, `插件未安装: ${id}`);
     }
     // 数据安全(codex P1):先清「会抛的」持久化元数据,**再**删目录(fail-fast)。旧顺序
     // 先删目录后清元数据,若清理抛错(如 writePluginPathScopes 在 scopes 文件损坏时抛 —— 见
@@ -919,17 +866,15 @@ export async function uninstallPlugin(
 
     // 清 _enabled.json 中的 id(防止 reload 复活已删插件)。数据安全(codex P1):必须走
     // setEnabledId 的全局串行链 —— 此前手写 readEnabledIds→filter→writeEnabledIds 绕过
-    // enabledWriteChain,与跨窗口 enable/disable 并发时用旧快照整表写回 → 丢别窗口刚启用
+    // enabledWriteQueue,与跨窗口 enable/disable 并发时用旧快照整表写回 → 丢别窗口刚启用
     // 的插件,或被并发 enable 写回旧 id(重装继承已启用)。delta 写在链内 RMW、仍在删目录前。
     await setEnabledId(baseDir, id, false);
 
-    // 清 _permissions.json 中的 id(避免重装继承旧授权)。readPermissions 损坏降级 {},不抛。
-    const perms = await readPermissions(baseDir);
-    if (id in perms) {
-      const next = { ...perms };
-      delete (next as Record<string, unknown>)[id];
-      await writePermissions(baseDir, next);
-    }
+    // 清 _permissions.json 中的 id(避免重装继承旧授权)。数据安全:与上方 enabled 同理必须走
+    // writePluginPermissions 的全局串行链(空记录 = 链内 RMW 删除该 id 条目,不存在则不触盘)——
+    // 此前手写 readPermissions→delete→writePermissions 整表写绕过 permissionsWriteQueue,与跨窗口
+    // 并发 grant/deny 交错时用旧快照写回 → 抹掉别的插件刚落盘的授权(enabled 修了、这里漏了)。
+    await writePluginPermissions(baseDir, id, []);
 
     // 清 _plugin-path-scopes.json 中的 id(避免重装继承旧 path scope,与上方对称)。
     // writePluginPathScopes 在 scopes 文件损坏时会抛(#12),但损坏文件本就不会被同 id 重装
@@ -948,9 +893,7 @@ export async function uninstallPlugin(
     try {
       await rm(targetDir, { recursive: true, force: true });
     } catch (err) {
-      throw Object.assign(new Error(`删除失败: ${errorMessage(err)}`), {
-        code: ERROR_CODES.RM_FAILED,
-      });
+      throw codedError(ERROR_CODES.RM_FAILED, `删除失败: ${errorMessage(err)}`);
     }
   });
 }
@@ -993,9 +936,7 @@ export async function installFromGit(
   opts: { overwrite?: boolean } = {},
 ): Promise<InstallFromGitResult> {
   if (!startsWithHttpsScheme(gitUrl)) {
-    throw Object.assign(new Error(`不支持的 git URL: ${gitUrl}`), {
-      code: ERROR_CODES.BAD_URL,
-    });
+    throw codedError(ERROR_CODES.BAD_URL, `不支持的 git URL: ${gitUrl}`);
   }
   const tmpRoot = await mkdtemp(path.join(tmpdir(), 'lm-plugin-install-'));
   try {
@@ -1011,10 +952,7 @@ export async function installFromGit(
       MANIFEST_MAX_BYTES,
     );
     if (text === null) {
-      throw Object.assign(
-        new Error('clone 目录缺 manifest.json、不可读或超过大小上限'),
-        { code: ERROR_CODES.BAD_MANIFEST },
-      );
+      throw codedError(ERROR_CODES.BAD_MANIFEST, 'clone 目录缺 manifest.json、不可读或超过大小上限');
     }
     // 边界(E100):安装路径复用 parseManifest(ManifestSchema)—— 与启动扫描 listPluginDirs/
     // parseManifest 同契约(字段长度/semver/permissions 枚举数量/main 长度全校验)。此前仅检查
@@ -1023,32 +961,24 @@ export async function installFromGit(
     // 插件列表放大 →「安装成功但重启刷新不可用」。失败统一 BAD_MANIFEST。
     const result = parseManifest(text);
     if (!result.ok) {
-      throw Object.assign(new Error(`manifest 校验失败: ${result.message}`), {
-        code: ERROR_CODES.BAD_MANIFEST,
-      });
+      throw codedError(ERROR_CODES.BAD_MANIFEST, `manifest 校验失败: ${result.message}`);
     }
     const manifest = result.data;
     // 边界:ManifestSchema 的 id 正则 /^[a-z0-9._-]+$/ 允许纯点段(如 '..'),不挡路径穿越;
     // isSafePluginId 额外拒 '.'/'..'(install→rename 覆盖父目录的穿越向量,与 uninstall 对称),必叠加。
     if (!isSafePluginId(manifest.id)) {
-      throw Object.assign(new Error('manifest id 含非法字符或路径穿越'), {
-        code: ERROR_CODES.BAD_MANIFEST,
-      });
+      throw codedError(ERROR_CODES.BAD_MANIFEST, 'manifest id 含非法字符或路径穿越');
     }
 
     const mainName = getPluginMainName(manifest); // M20:共用 getPluginMainName
     const mainPath = resolvePluginMainPath(cloneDir, mainName);
     if (!mainPath) {
-      throw Object.assign(new Error(`main 入口非法: ${mainName}`), {
-        code: ERROR_CODES.BAD_MAIN,
-      });
+      throw codedError(ERROR_CODES.BAD_MAIN, `main 入口非法: ${mainName}`);
     }
     try {
       await fs.access(mainPath);
     } catch {
-      throw Object.assign(new Error(`main 入口不存在: ${mainName}`), {
-        code: ERROR_CODES.BAD_MAIN,
-      });
+      throw codedError(ERROR_CODES.BAD_MAIN, `main 入口不存在: ${mainName}`);
     }
 
     // 验证已通过 → 收窄成 string 常量,带进下面的闭包(let manifest 的窄化跨闭包会丢)。
@@ -1085,9 +1015,7 @@ export async function installFromGit(
         /* ENOENT = not exists, OK */
       }
       if (targetExists && opts.overwrite !== true) {
-        throw Object.assign(new Error(`插件 ${pluginId} 已安装,卸载后再装`), {
-          code: ERROR_CODES.EEXIST,
-        });
+        throw codedError(ERROR_CODES.EEXIST, `插件 ${pluginId} 已安装,卸载后再装`);
       }
 
       const suffix = randomUUID();
@@ -1097,7 +1025,13 @@ export async function installFromGit(
         : null;
 
       await rm(staging, { recursive: true, force: true }).catch(() => {});
-      await cp(cloneDir, staging, { recursive: true });
+      try {
+        await cp(cloneDir, staging, { recursive: true });
+      } catch (err) {
+        // 复制中途失败(磁盘满等):清掉半截 staging 目录,不留到下次启动的恢复流程。
+        await rm(staging, { recursive: true, force: true }).catch(() => {});
+        throw err;
+      }
 
       try {
         if (backup) await fs.rename(targetDir, backup);
@@ -1143,28 +1077,10 @@ function runGit(args: readonly string[]): Promise<void> {
     };
     // timeout:防慢速/挂起的远端无限占用(DoS)。SIGTERM → 1s 后 SIGKILL。
     const timer = setTimeout(() => {
-      try {
-        child.kill('SIGTERM');
-      } catch {
-        /* ignore */
-      }
-      // SIGKILL 升级 grace timer 必须 unref:否则 git 超时后这个内层 timer 会把
-      // event loop 多撑 1s,关窗/退出时延迟退出。与 plugin-shell-stream/shell.service
-      // 的 grace timer 同款(此前漏 unref)。
-      const killGraceTimer = setTimeout(() => {
-        try {
-          child.kill('SIGKILL');
-        } catch {
-          /* ignore */
-        }
-      }, 1000);
-      const maybeUnrefKill = killGraceTimer as { unref?: () => void };
-      if (typeof maybeUnrefKill.unref === 'function') maybeUnrefKill.unref();
+      killWithGrace(child);
       finish(() =>
         reject(
-          Object.assign(new Error(`git ${args[0]} 超时`), {
-            code: ERROR_CODES.GIT_FAILED,
-          }),
+          codedError(ERROR_CODES.GIT_FAILED, `git ${args[0]} 超时`),
         ),
       );
     }, GIT_CLONE_TIMEOUT_MS);
@@ -1174,9 +1090,7 @@ function runGit(args: readonly string[]): Promise<void> {
     child.on('error', (err) =>
       finish(() =>
         reject(
-          Object.assign(new Error(`git spawn 失败: ${err.message}`), {
-            code: ERROR_CODES.GIT_SPAWN_FAILED,
-          }),
+          codedError(ERROR_CODES.GIT_SPAWN_FAILED, `git spawn 失败: ${err.message}`),
         ),
       ),
     );
@@ -1185,12 +1099,7 @@ function runGit(args: readonly string[]): Promise<void> {
       else
         finish(() =>
           reject(
-            Object.assign(
-              new Error(
-                `git ${args[0]} exit ${code}: ${stderrCap.text().trim()}${stderrCap.truncated ? ' …(stderr truncated)' : ''}`,
-              ),
-              { code: ERROR_CODES.GIT_FAILED },
-            ),
+            codedError(ERROR_CODES.GIT_FAILED, `git ${args[0]} exit ${code}: ${stderrCap.text().trim()}${stderrCap.truncated ? ' …(stderr truncated)' : ''}`,),
           ),
         );
     });

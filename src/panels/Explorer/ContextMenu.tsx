@@ -12,6 +12,7 @@ import {
 } from '@/plugins/registries/ExplorerContextMenuRegistry';
 import { runContributedAction } from '@/lib/run-contributed-action';
 import { coApp } from '@/plugins/co-app';
+import { groupKeepingOrder } from '@/lib/group-keeping-order';
 
 export interface ContextMenuActions {
   onRename: (path: string) => void;
@@ -116,39 +117,10 @@ export function groupPluginItems(
 ): PluginItemBucket[] {
   const visible = filterVisible(raw, ctx);
   if (visible.length === 0) return EMPTY_PLUGIN_ITEM_BUCKETS;
-  if (visible.length === 1) {
-    const item = visible[0]!;
-    return [{ group: item.group ?? 'plugin', items: visible }];
-  }
-  const firstGroup = visible[0]!.group ?? 'plugin';
-  let allSameGroup = true;
-  for (let i = 1; i < visible.length; i++) {
-    if ((visible[i]!.group ?? 'plugin') !== firstGroup) {
-      allSameGroup = false;
-      break;
-    }
-  }
-  if (allSameGroup) {
-    return [{ group: firstGroup, items: visible }];
-  }
-  const map = new Map<string, { items: ExplorerContextMenuItemSpec[]; count: number }>();
-  for (const item of visible) {
-    const g = item.group ?? 'plugin';
-    let bucket = map.get(g);
-    if (!bucket) {
-      bucket = {
-        items: new Array<ExplorerContextMenuItemSpec>(visible.length),
-        count: 0,
-      };
-      map.set(g, bucket);
-    }
-    bucket.items[bucket.count++] = item;
-  }
-  const buckets = new Array<PluginItemBucket>(map.size);
-  let i = 0;
-  for (const [group, bucket] of map) {
-    bucket.items.length = bucket.count;
-    buckets[i++] = { group, items: bucket.items };
+  const groups = groupKeepingOrder(visible, (item) => item.group ?? 'plugin');
+  const buckets = new Array<PluginItemBucket>(groups.length);
+  for (let i = 0; i < groups.length; i++) {
+    buckets[i] = { group: groups[i]!.key, items: groups[i]!.items };
   }
   if (!arePluginItemBucketsSorted(buckets)) {
     buckets.sort(comparePluginItemBuckets);

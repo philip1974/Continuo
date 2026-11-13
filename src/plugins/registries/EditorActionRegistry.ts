@@ -3,8 +3,20 @@
 
 import type { ReactNode } from 'react';
 import type { Disposable } from '../types';
-import { assertRegistryCapacity } from './registry-capacity';
-import { isSpecObject } from './spec-guard';
+import {
+  KeyedRegistry,
+  filterKeepingIdentity,
+  snapshotByPriority,
+} from './keyed-registry';
+import {
+  SPEC_ID_MAX,
+  SPEC_TITLE_MAX,
+  assertOptionalFinitePriority,
+  assertOptionalSpecFunction,
+  assertSpecFunction,
+  assertSpecObject,
+  assertSpecString,
+} from './spec-guard';
 
 export interface EditorActionContext {
   /** 当前 active tab 文件路径,可能为 null(未保存草稿). */
@@ -27,127 +39,36 @@ export interface EditorActionSpec {
   readonly priority?: number;
 }
 
-type Listener = () => void;
 
 // 边界(E51,E35-E50 兄弟 registry):register 接受插件 EditorActionSpec 无运行时校验。id/label 无长度
 // 上限,priority 可 NaN/Infinity,when/fn 未确认是函数。畸形 action 进 editor header 排序+渲染;超长
 // label 污染按钮文本/aria-label,NaN priority 让排序比较器失真,非函数 when/fn 在渲染过滤或点击执行
 // 时反复抛错。注册入口校验 id/label 非空限长 + priority finite + when/fn 为函数,非法抛不入(渲染层
 // filterVisible 的单项 when try/catch 隔离保留)。
-const EA_ID_MAX = 256;
-const EA_LABEL_MAX = 512;
-const EMPTY_EDITOR_ACTION_SNAPSHOT: readonly EditorActionSpec[] = [];
 const EMPTY_VISIBLE_EDITOR_ACTIONS: EditorActionSpec[] = [];
 
 function validateEditorActionSpec(spec: EditorActionSpec): void {
-  // 边界(E273,E271 registry 族):先校验 spec 是对象,否则读 spec.id/字段对 null/undefined 抛 TypeError。
-  if (!isSpecObject(spec)) {
-    throw new Error('[editor-action-registry] spec must be an object');
-  }
-  if (typeof spec.id !== 'string' || spec.id.length === 0) {
-    throw new Error('[editor-action-registry] id must be a non-empty string');
-  }
-  if (spec.id.length > EA_ID_MAX) {
-    throw new Error(
-      `[editor-action-registry] id exceeds max length ${EA_ID_MAX}`,
-    );
-  }
-  if (typeof spec.label !== 'string' || spec.label.length === 0) {
-    throw new Error('[editor-action-registry] label must be a non-empty string');
-  }
-  if (spec.label.length > EA_LABEL_MAX) {
-    throw new Error(
-      `[editor-action-registry] label exceeds max length ${EA_LABEL_MAX}`,
-    );
-  }
-  if (spec.priority !== undefined && !Number.isFinite(spec.priority)) {
-    throw new Error('[editor-action-registry] priority must be finite');
-  }
-  if (spec.when !== undefined && typeof spec.when !== 'function') {
-    throw new Error('[editor-action-registry] when must be a function');
-  }
-  if (typeof spec.fn !== 'function') {
-    throw new Error('[editor-action-registry] fn must be a function');
-  }
+  const tag = 'editor-action-registry';
+  assertSpecObject(tag, spec);
+  assertSpecString(tag, 'id', spec.id, SPEC_ID_MAX);
+  assertSpecString(tag, 'label', spec.label, SPEC_TITLE_MAX);
+  assertOptionalFinitePriority(tag, spec.priority);
+  assertOptionalSpecFunction(tag, 'when', spec.when);
+  assertSpecFunction(tag, 'fn', spec.fn);
 }
 
-export class EditorActionRegistry {
-  private items = new Map<string, EditorActionSpec>();
-  private listeners = new Set<Listener>();
-  private cachedAll: readonly EditorActionSpec[] | null = null;
+export class EditorActionRegistry extends KeyedRegistry<EditorActionSpec> {
+  constructor() {
+    super('editor-action-registry');
+  }
 
   register(spec: EditorActionSpec): Disposable {
     validateEditorActionSpec(spec); // 边界(E51):注册前校验长度/priority finite/when·fn 为函数
-    // 边界(E236):注册前容量守卫(共享 helper),超限抛、不入表
-    assertRegistryCapacity('editor-action-registry', this.items.size, this.items.has(spec.id));
-    if (this.items.has(spec.id)) {
-      console.warn(
-        `[editor-action-registry] id "${spec.id}" 已注册,后注册赢覆盖前者`,
-      );
-    }
-    this.items.set(spec.id, spec);
-    this.invalidateSnapshotCache();
-    this.notify();
-
-    let disposed = false;
-    return {
-      dispose: () => {
-        if (disposed) return;
-        disposed = true;
-        if (this.items.get(spec.id) === spec) {
-          this.items.delete(spec.id);
-          this.invalidateSnapshotCache();
-          this.notify();
-        }
-      },
-    };
+    return this.registerKeyed(spec.id, spec);
   }
 
-  getAll(): readonly EditorActionSpec[] {
-    if (this.cachedAll !== null) return this.cachedAll;
-    if (this.items.size === 0) {
-      this.cachedAll = EMPTY_EDITOR_ACTION_SNAPSHOT;
-      return EMPTY_EDITOR_ACTION_SNAPSHOT;
-    }
-
-    const items = new Array<EditorActionSpec>(this.items.size);
-    let i = 0;
-    let prevPriority = -Infinity;
-    let sorted = true;
-    for (const item of this.items.values()) {
-      const priority = item.priority ?? 100;
-      if (priority < prevPriority) sorted = false;
-      prevPriority = priority;
-      items[i++] = item;
-    }
-    if (items.length > 1 && !sorted) {
-      items.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
-    }
-    this.cachedAll = items;
-    return items;
-  }
-
-  /**
-   * race(R53,R51/R52 同族):按 id 取当前 live editor action(已 unregister 返 undefined)。
-   * EditorHeader 的按钮 onClick 捕获了 EditorActionSpec,插件 disable/reload 同步 unregister 后、
-   * 到 React 重渲移除按钮前旧 handler 仍可触发 → click 时用本方法从 registry 重查 + 重检 when
-   * 再执行,死 action / 当前 ctx 下不可见的 action 静默忽略。
-   */
-  get(id: string): EditorActionSpec | undefined {
-    return this.items.get(id);
-  }
-
-  subscribe(listener: Listener): () => void {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
-  }
-
-  private notify(): void {
-    for (const l of this.listeners) l();
-  }
-
-  private invalidateSnapshotCache(): void {
-    this.cachedAll = null;
+  protected buildSnapshot(): readonly EditorActionSpec[] {
+    return snapshotByPriority(this.items);
   }
 }
 
@@ -170,22 +91,9 @@ export function filterVisible(
   actions: readonly EditorActionSpec[],
   ctx: EditorActionContext,
 ): EditorActionSpec[] {
-  let out: EditorActionSpec[] | null = null;
-  let count = 0;
-  for (let i = 0; i < actions.length; i++) {
-    const a = actions[i]!;
-    const visible = isEditorActionVisible(a, ctx);
-    if (!visible) {
-      if (out === null) {
-        out = new Array<EditorActionSpec>(actions.length);
-        for (let j = 0; j < i; j++) out[j] = actions[j]!;
-        count = i;
-      }
-      continue;
-    }
-    if (out !== null) out[count++] = a;
-  }
-  if (out === null) return actions as EditorActionSpec[];
-  out.length = count;
-  return count === 0 ? EMPTY_VISIBLE_EDITOR_ACTIONS : out;
+  return filterKeepingIdentity(
+    actions,
+    (a) => isEditorActionVisible(a, ctx),
+    EMPTY_VISIBLE_EDITOR_ACTIONS,
+  );
 }

@@ -8,6 +8,8 @@
 const MAX_JOINED_ITEMS = 20; // 最多展示的条目数(诊断足够)
 const MAX_JOINED_LENGTH = 2048; // 拼接后总长上限(单条也可能很大,二次兜底)
 
+const identity = (s: string): string => s;
+
 /**
  * 把字符串片段拼成有上限的单行 message(条数 + 总长双闸 + 截断标记)。
  * moreLabel 控制超量后缀文案(默认「more」,zod 用「more issues」)。
@@ -16,16 +18,7 @@ export function capJoinedMessages(
   messages: readonly string[],
   moreLabel = 'more',
 ): string {
-  const limit = Math.min(messages.length, MAX_JOINED_ITEMS);
-  const shown = new Array<string>(limit);
-  for (let i = 0; i < limit; i++) shown[i] = messages[i]!;
-  let msg = shown.join('; ');
-  const extra = messages.length - limit;
-  if (extra > 0) msg += `; …(+${extra} ${moreLabel})`;
-  if (msg.length > MAX_JOINED_LENGTH) {
-    msg = `${msg.slice(0, MAX_JOINED_LENGTH)}…(truncated)`;
-  }
-  return msg;
+  return capJoinedMessagesFrom(messages, identity, moreLabel);
 }
 
 /**

@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { FileEntry } from '../../../shared/fs-entry';
 import { ERROR_CODES } from '../../../shared/error-codes';
 import { fsError, mapNodeErrnoCode } from './path-utils';
+import { LIST_DIR_DEFAULT_EXCLUDE } from '../../../shared/fs-limits';
 
 const MAX_DEPTH_HARD_LIMIT = 10;
 
@@ -15,15 +16,7 @@ const MAX_DEPTH_HARD_LIMIT = 10;
 // 边界(E275):导出供 fs.ipc.ts 的 listDir schema 把 maxFiles 上界对齐到此硬上限。
 export const MAX_TOTAL_ENTRIES = 100_000;
 
-const DEFAULT_EXCLUDE: readonly string[] = [
-  '.git',
-  '.svn',
-  '.hg',
-  'node_modules',
-  '.DS_Store',
-  'Thumbs.db',
-];
-const DEFAULT_EXCLUDE_SET: ReadonlySet<string> = new Set(DEFAULT_EXCLUDE);
+const DEFAULT_EXCLUDE_SET: ReadonlySet<string> = new Set(LIST_DIR_DEFAULT_EXCLUDE);
 
 export interface ListDirOptions {
   /** 默认 1(只列当前层)。受 MAX_DEPTH_HARD_LIMIT=10 截断。 */

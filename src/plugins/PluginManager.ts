@@ -12,7 +12,7 @@ import {
 } from './permissions';
 import { createScopedApp } from './scoped-app';
 import type { CoApp, PluginManifest } from './types';
-import { errorMessage } from '../../electron/shared/error-message';
+import { codedError, errorCodeOf, errorMessage } from '../../electron/shared/error-message';
 import { coApi } from '@/lib/co-api';
 import { runSerialPerKey } from '@/lib/serialize-per-key';
 
@@ -25,8 +25,6 @@ export interface PluginDirInfo {
   readonly manifestText: string;
   /** main.js 模块 URL(主进程 file://...,renderer dynamic import 用). */
   readonly moduleUrl: string;
-  /** styles.css 文本(可选). */
-  readonly stylesText?: string;
 }
 
 export interface ManagerHost {
@@ -162,7 +160,7 @@ export class PluginManager {
    * 每 2s fire-and-forget 触发 + 用户手动操作 → 同 id 并发交错会:旧 activateEntry
    * resume 后用旧 token 覆盖 entry.pluginFsToken,泄漏新 token(永不 _unregisterPlugin)
    * + 留下双激活的僵尸实例 + 重复贡献 panel/command/MCP tool。复用 plugins.service
-   * 的 withInstallLock 同款 Promise 链锁串行化同 id 生命周期操作。
+   * 的 withPluginMutationLock 同款 Promise 链锁(共享 runSerialPerKey)串行化同 id 生命周期操作。
    */
   private readonly lifecycleLocks = new Map<string, Promise<unknown>>();
 
@@ -379,9 +377,7 @@ export class PluginManager {
     const entry = this.entries.get(id);
     if (!entry) throw new Error(`Plugin ${id} not found`);
     if (!this.host.removePluginDir) {
-      throw Object.assign(new Error(`host 未实现 removePluginDir`), {
-        code: 'NOT_SUPPORTED',
-      });
+      throw codedError('NOT_SUPPORTED', `host 未实现 removePluginDir`);
     }
 
     if (entry.status === 'enabled' && entry.instance) {
@@ -414,7 +410,25 @@ export class PluginManager {
 
   // ── 内部 ────────────────────────────────────────────
 
+  /**
+   * 激活一个插件。任何一步抛错(权限门、注册 plugin-fs token、加载、构造、onload)都落成该插件的
+   * `failed` 状态,绝不冒出本方法:init 逐个激活,冒出去会让后面的插件不进列表;reload 先把状态置为
+   * 'enabled' 再激活,冒出去会留下「enabled 但没有实例」的半激活态(既关不掉也开不了)。
+   */
   private async activateEntry(entry: PluginEntry): Promise<void> {
+    try {
+      await this.activateEntryUnguarded(entry);
+    } catch (err) {
+      console.warn(`[plugin-manager] activate ${entry.id} failed`, err);
+      entry.instance = undefined;
+      entry.status = 'failed';
+      entry.error = { code: errorCodeOf(err) ?? 'EXCEPTION', message: errorMessage(err) };
+      await this.revokePluginFsToken(entry);
+      this.invalidateListCache();
+    }
+  }
+
+  private async activateEntryUnguarded(entry: PluginEntry): Promise<void> {
     // 先清前次的 error / warning,确保最终状态干净反映本次激活
     entry.error = undefined;
     entry.warning = undefined;

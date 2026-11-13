@@ -1,37 +1,20 @@
 import { create } from 'zustand';
+import { asRecord } from '../../electron/shared/as-record';
 import { coApi } from '@/lib/co-api';
-import type { DebugViewEvent } from '../../electron/shared/debug-view-channels';
+import type {
+  DebugBreakpoint,
+  DebugScope,
+  DebugStackFrame,
+  DebugVariable,
+  DebugViewEvent,
+} from '../../electron/shared/debug-view-channels';
 
-export interface DebugBreakpoint {
-  readonly file: string;
-  readonly line: number;
-  readonly column?: number;
-  readonly verified: boolean;
-  readonly message?: string;
-}
-
-export interface DebugStackFrame {
-  readonly id: number;
-  readonly name: string;
-  readonly source_path?: string;
-  readonly line: number;
-  readonly column?: number;
-}
-
-export interface DebugScope {
-  readonly name: string;
-  readonly variables_reference: number;
-  readonly expensive: boolean;
-}
-
-export interface DebugVariable {
-  readonly name: string;
-  readonly value: string;
-  readonly type?: string;
-  readonly variables_reference?: number;
-  readonly truncated?: boolean;
-  readonly children?: readonly DebugVariable[];
-}
+export type {
+  DebugBreakpoint,
+  DebugScope,
+  DebugStackFrame,
+  DebugVariable,
+} from '../../electron/shared/debug-view-channels';
 
 export interface DebugStoppedLocation {
   readonly reason: string;
@@ -95,12 +78,6 @@ function variableCacheKey(
   return `${sessionId}:${pausedEpoch}:${variablesReference}`;
 }
 
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
 function asFrame(value: unknown): DebugStackFrame | null {
   const raw = asRecord(value);
   if (
@@ -162,7 +139,13 @@ function updateActiveSession(
   return best?.id ?? null;
 }
 
-async function pullStackAndScopes(sessionId: string, threadId?: number): Promise<void> {
+// stopSeq:发起本次拉取的那一停。连续 step 时上一停的 stack/scopes 可能晚到,回写前比对,过期丢弃
+//(否则旧栈帧与旧停靠行会写进新一停,编辑器高亮停在错误的行)。
+async function pullStackAndScopes(
+  sessionId: string,
+  stopSeq: number,
+  threadId?: number,
+): Promise<void> {
   const stack = await coApi.debug.getStack({ sessionId, threadId });
   if (!stack.ok) return;
   const frames = Array.isArray(asRecord(stack.data).frames)
@@ -187,7 +170,7 @@ async function pullStackAndScopes(sessionId: string, threadId?: number): Promise
 
   useDebugStore.setState((state) => {
     const current = state.sessions.get(sessionId);
-    if (!current) return state;
+    if (!current || current.stopped?.stopSeq !== stopSeq) return state;
     const nextSession: DebugSessionShadow = {
       ...current,
       frames,
@@ -254,7 +237,7 @@ export const useDebugStore = create<DebugState>((set, get) => ({
           stoppedOrder: nextOrder,
         };
       });
-      await pullStackAndScopes(event.sessionId, event.threadId);
+      await pullStackAndScopes(event.sessionId, event.stopSeq, event.threadId);
       return;
     }
 
@@ -301,6 +284,7 @@ export const useDebugStore = create<DebugState>((set, get) => ({
 
   loadVariables: async (sessionId, variablesReference) => {
     const session = get().sessions.get(sessionId);
+    const stopSeq = session?.stopped?.stopSeq;
     const pausedEpoch = session?.stopped?.pausedEpoch ?? 0;
     const cacheKey = variableCacheKey(sessionId, pausedEpoch, variablesReference);
     const cached = session?.variablesCache.get(cacheKey);
@@ -320,7 +304,8 @@ export const useDebugStore = create<DebugState>((set, get) => ({
 
     set((state) => {
       const current = state.sessions.get(sessionId);
-      if (!current) return state;
+      // 发起后已进入下一停(或已继续运行)→ 不回写:reference 号跨停复用,旧值会挂到新一停同号下。
+      if (!current || current.stopped?.stopSeq !== stopSeq) return state;
       const variableRefs = new Map(current.variableRefs);
       variableRefs.set(variablesReference, variables);
       const variablesCache = new Map(current.variablesCache);

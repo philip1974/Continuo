@@ -13,7 +13,8 @@ import React, {
 import type { ReactNode } from 'react';
 import type { Notification, NotificationLevel } from './types';
 import { __registerHandle } from './notify';
-import type { NotifyApi } from './notify';
+import type { NotifyApi, NotifyOpts } from './notify';
+import { filterKeepingIdentity } from '@/lib/filter-keeping-identity';
 
 // ─── auto-dismiss 配置 ─────────────────────
 const DISMISS_MS: Record<NotificationLevel, number> = {
@@ -57,30 +58,11 @@ function removeNotificationById(
   notifications: readonly Notification[],
   id: string,
 ): readonly Notification[] {
-  let next: Notification[] | null = null;
-  let nextCount = 0;
-  for (let i = 0; i < notifications.length; i++) {
-    const notification = notifications[i]!;
-    if (notification.id === id) {
-      if (next === null) {
-        next = new Array<Notification>(notifications.length - 1);
-        for (let j = 0; j < i; j++) {
-          next[j] = notifications[j]!;
-        }
-        nextCount = i;
-      }
-      continue;
-    }
-    if (next !== null) {
-      next[nextCount] = notification;
-      nextCount += 1;
-    }
-  }
-  if (next !== null) {
-    if (nextCount === 0) return EMPTY_NOTIFICATIONS;
-    next.length = nextCount;
-  }
-  return next ?? notifications;
+  return filterKeepingIdentity<Notification, readonly Notification[]>(
+    notifications,
+    (notification) => notification.id !== id,
+    EMPTY_NOTIFICATIONS,
+  );
 }
 
 function updateNotificationCreatedAt(
@@ -112,11 +94,6 @@ function updateNotificationCreatedAt(
   return next ?? notifications;
 }
 
-export interface NotifyOpts {
-  readonly code?: string;
-  readonly mirror?: boolean; // notify.ts 用;Provider 内部不读
-}
-
 interface NotificationsContextValue {
   readonly notifications: readonly Notification[];
   readonly notify: (
@@ -127,7 +104,7 @@ interface NotificationsContextValue {
   readonly dismiss: (id: string) => void;
 }
 
-export const NotificationsContext =
+const NotificationsContext =
   createContext<NotificationsContextValue>({
     notifications: EMPTY_NOTIFICATIONS,
     notify: () => {
@@ -313,4 +290,3 @@ export function useNotify(): NotificationsContextValue {
   return useContext(NotificationsContext);
 }
 
-export type { NotifyApi } from './notify';

@@ -7,8 +7,9 @@ import {
   resolveForWrite,
   resolveNoFollowLeaf,
 } from './path-resolve.helper';
-import { ScopeError, type PathScope } from '../../../src/plugins/types';
+import { ScopeError, type PathScope } from '../../shared/plugin-fs-contract';
 import { FS_PATH_MAX } from '../../shared/fs-limits';
+import { PERMISSION_RECORD_LIMITS } from '../../shared/permission-record-limits';
 
 // 'lstat' / 'remove' / 'rename-src' 走「不跟随 leaf 符号链接」解析 —— 作用在链接本身。
 export type ScopeOpType =
@@ -56,8 +57,16 @@ function isWithinScope(scopePath: string, probe: string): boolean {
 // 扫描 scopes、covers() 是 requested×scopes、启动 hydrate/持久化都随授权数线性增长,畸形插件可放大
 // 主进程 CPU/内存与元数据文件。grant/hydrate/mergeScopes 统一在唯一-path 合并处执行 per-plugin +
 // 全局上限,超限 fail-closed(丢弃新增 path,不无界增长;已存在 path 放宽 mode 不增计数)。
-const MAX_SCOPES_PER_PLUGIN = 256;
+const MAX_SCOPES_PER_PLUGIN = PERMISSION_RECORD_LIMITS.PATH_SCOPES_PER_PLUGIN_MAX; // 与持久化读/写端同值
 const MAX_SCOPES_GLOBAL = 4096;
+
+function withFullPath(r: { parentCanonical: string; leaf: string }): CheckResultWrite {
+  return {
+    parentCanonical: r.parentCanonical,
+    leaf: r.leaf,
+    fullPath: `${r.parentCanonical}${sep}${r.leaf}`,
+  };
+}
 
 export class PathScopeRegistry extends EventEmitter {
   private readonly pluginScopes = new Map<string, PathScope[]>();
@@ -83,6 +92,22 @@ export class PathScopeRegistry extends EventEmitter {
    * @param target raw target path from plugin
    * @param mode 'r' (read-only ok) or 'rw' (writable scope required)
    */
+  // 重载:'read' 解析为 canonical(跟随链接);其余 opType 一律解析为 parent + leaf(CheckResultWrite)。
+  // 调用方据 opType 直接拿到窄类型,不必再手写 `'fullPath' in r` 守卫。
+  check(
+    token: string,
+    senderId: number,
+    opType: 'read',
+    target: string,
+    mode: ScopeMode,
+  ): Promise<CheckResultRead>;
+  check(
+    token: string,
+    senderId: number,
+    opType: Exclude<ScopeOpType, 'read'>,
+    target: string,
+    mode: ScopeMode,
+  ): Promise<CheckResultWrite>;
   async check(
     token: string,
     senderId: number,
@@ -115,17 +140,11 @@ export class PathScopeRegistry extends EventEmitter {
     ) {
       // 不跟随 leaf 符号链接:作用在链接本身(rm 删链接 / lstat 看链接 / rename 移链接),
       // 而非 realpath 跟随到目标。父目录仍 realpath + leaf 经 validateLeaf,无 scope 逃逸。
-      const r = await resolveNoFollowLeaf(target);
-      const fullPath = `${r.parentCanonical}${sep}${r.leaf}`;
-      resolved = { parentCanonical: r.parentCanonical, leaf: r.leaf, fullPath };
+      resolved = withFullPath(await resolveNoFollowLeaf(target));
     } else if (opType === 'write' || opType === 'mkdir') {
-      const r = await resolveForWrite(target);
-      const fullPath = `${r.parentCanonical}${sep}${r.leaf}`;
-      resolved = { parentCanonical: r.parentCanonical, leaf: r.leaf, fullPath };
+      resolved = withFullPath(await resolveForWrite(target));
     } else if (opType === 'rename-dst') {
-      const r = await resolveForRenameDst(target);
-      const fullPath = `${r.parentCanonical}${sep}${r.leaf}`;
-      resolved = { parentCanonical: r.parentCanonical, leaf: r.leaf, fullPath };
+      resolved = withFullPath(await resolveForRenameDst(target));
     } else {
       throw new ScopeError(`unknown opType: ${opType as string}`, {
         target,

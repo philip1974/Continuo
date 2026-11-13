@@ -19,6 +19,14 @@
 - 子窗口 reload(刷新)→ 不崩溃。
 - 主窗口关闭 → 所有 popout 子窗口同时关闭(dockview 内部用 beforeunload 钩)。
 
+## 子窗能否打开(window.open 放行)
+
+- 只允许指向本应用自己的 renderer 入口,且判定与主窗的加载方式一致(`electron/main/window-open-policy.ts`):
+  - 有 dev server(未打包且设了 `ELECTRON_RENDERER_URL`)→ 只认同源 URL;
+  - 否则(已打包,或未打包但直接跑构建产物:预览 / e2e)→ 只认受信的 renderer 文件入口(精确 pathname)。
+- 此前只按「是否打包」分支:未打包且没有 dev server 时所有 popout 都被拒,子窗开不出来。
+- 有 popout 窗口时退出应用:不因 popout 窗口不应答关窗 flush 而等满 10s(e2e `quit-with-popout`)。
+
 ## 安全
 
 - 子窗口仍走 `contextIsolation: true` / `sandbox: true` / `nodeIntegration: false`。

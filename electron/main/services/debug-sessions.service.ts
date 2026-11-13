@@ -1,8 +1,10 @@
+import { assertOwnerWindowId } from '../lib/assert-owner-window-id';
+
 export type DebugTeardownState = 'active' | 'tearing_down' | 'done';
 export type DebugRuntimeState = 'starting' | 'running' | 'stopped' | 'terminated';
 
-export const MAX_DEBUG_SESSIONS_GLOBAL = 32;
-export const MAX_DEBUG_SESSIONS_PER_WINDOW = 8;
+const MAX_DEBUG_SESSIONS_GLOBAL = 32;
+const MAX_DEBUG_SESSIONS_PER_WINDOW = 8;
 
 export interface DebugSession {
   readonly id: string;
@@ -17,13 +19,10 @@ export interface DebugSession {
   readonly adapterPgid?: number;
   readonly systemProcessIds: readonly number[];
   readonly childSessionCount: number;
-  readonly socketPath?: string;
   readonly stopSeq: number;
   readonly runSeq: number;
   readonly pausedEpoch: number;
   readonly currentThreadId?: number;
-  readonly currentFrameId?: number;
-  readonly scopeRefs: readonly number[];
   readonly stoppedReason?: string;
   readonly createdAt: number;
 }
@@ -36,22 +35,10 @@ export interface AddDebugSessionInput {
   readonly cwd: string;
   readonly name?: string;
   readonly adapterPid?: number;
-  readonly socketPath?: string;
 }
 
 const sessions = new Map<string, DebugSession>();
 const EMPTY_DEBUG_SESSIONS: readonly DebugSession[] = [];
-
-function assertOwnerWindowId(value: unknown): asserts value is number {
-  if (
-    typeof value !== 'number' ||
-    !Number.isFinite(value) ||
-    !Number.isInteger(value) ||
-    value < 0
-  ) {
-    throw new Error(`[debug-sessions] invalid ownerWindowId: ${String(value)}`);
-  }
-}
 
 function sessionCountForWindow(ownerWindowId: number): number {
   let count = 0;
@@ -72,7 +59,7 @@ function activeSessionCount(): number {
 }
 
 export function add(input: AddDebugSessionInput): DebugSession {
-  assertOwnerWindowId(input.ownerWindowId);
+  assertOwnerWindowId(input.ownerWindowId, 'debug-sessions');
   if (sessions.has(input.id)) {
     throw new Error(`debug session duplicate: ${input.id}`);
   }
@@ -99,11 +86,9 @@ export function add(input: AddDebugSessionInput): DebugSession {
     ...(input.adapterPid !== undefined ? { adapterPid: input.adapterPid } : {}),
     systemProcessIds: [],
     childSessionCount: 0,
-    ...(input.socketPath !== undefined ? { socketPath: input.socketPath } : {}),
     stopSeq: 0,
     runSeq: 0,
     pausedEpoch: 0,
-    scopeRefs: [],
     createdAt: Date.now(),
   };
   sessions.set(input.id, session);
@@ -147,16 +132,6 @@ export function addSystemProcessId(id: string, pid: number): void {
   const cur = sessions.get(id);
   if (!cur || cur.systemProcessIds.includes(pid)) return;
   update(id, { systemProcessIds: [...cur.systemProcessIds, pid] });
-}
-
-export function addScopeRefs(id: string, refs: readonly number[]): void {
-  const cur = sessions.get(id);
-  if (!cur) return;
-  const next = new Set(cur.scopeRefs);
-  for (const ref of refs) {
-    if (Number.isInteger(ref) && ref > 0) next.add(ref);
-  }
-  update(id, { scopeRefs: Array.from(next) });
 }
 
 export function tryMarkTearingDown(id: string): boolean {

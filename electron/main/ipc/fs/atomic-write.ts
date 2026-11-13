@@ -1,6 +1,7 @@
 import { lstat, open, realpath, rename, rm } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { fsError, mapNodeErrnoCode } from './path-utils';
+import { runSerialPerKey } from '../../../shared/run-serial-per-key';
 
 /**
  * 原子写文件(ADR-009,借鉴 Lokus atomic_write_file)。
@@ -36,18 +37,8 @@ import { fsError, mapNodeErrnoCode } from './path-utils';
 const writeChains = new Map<string, Promise<unknown>>();
 
 function withPathLock<T>(filePath: string, fn: () => Promise<T>): Promise<T> {
-  const prev = writeChains.get(filePath) ?? Promise.resolve();
-  const run = prev.then(fn, fn);
-  const settled = run.then(
-    () => {},
-    () => {},
-  );
-  writeChains.set(filePath, settled);
-  // 链排空且仍是尾部 → 删条目,避免 writeChains 随写过的路径单调增长。
-  void settled.then(() => {
-    if (writeChains.get(filePath) === settled) writeChains.delete(filePath);
-  });
-  return run;
+  // 排空回收(链尾仍是自己则删条目)由共享 runSerialPerKey 负责。
+  return runSerialPerKey(writeChains, filePath, fn);
 }
 
 /**

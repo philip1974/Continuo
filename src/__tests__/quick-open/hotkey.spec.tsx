@@ -47,6 +47,21 @@ describe('useQuickOpenHotkey', () => {
     }
   });
 
+  // mac 上 Ctrl+P 是终端 readline 的「上一条历史」等 Control 序列;面板只认 Cmd,否则焦点在终端时
+  // shell 收到按键的同时 Quick Open 也弹出来抢焦点。
+  it('mac:Ctrl+P 不触发(留给终端 / 编辑器)', () => {
+    render(<Probe />);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', ctrlKey: true }));
+    expect(useQuickOpenStore.getState().isOpen).toBe(false);
+  });
+
+  it('非 mac:Ctrl+P 打开', () => {
+    setPlatform('Linux x86_64');
+    render(<Probe />);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', ctrlKey: true }));
+    expect(useQuickOpenStore.getState().isOpen).toBe(true);
+  });
+
   it('Meta+Shift+P 留给 Command Palette,不触发 Quick Open', () => {
     render(<Probe />);
     document.dispatchEvent(

@@ -1,52 +1,14 @@
 import { create } from 'zustand';
-import {
-  PINNED_MAX,
-  PATH_STR_MAX,
-} from '../../electron/shared/explorer-persistence-schema';
 
+// 置顶路径列表:随 explorer.json 的全局段读入 / 写回(见 lib/persist/explorer-persist)。当前没有置顶 / 取消
+// 置顶的 UI 入口,所以这里只是持久化数据的内存落点 —— 没有修改动作(此前的 toggle / clear 无任何调用方,已删)。
 type PinnedState = {
-  /** 顺序保留(Pin 在文件列表置顶时按此顺序). */
+  /** 顺序保留(按持久化文件里的顺序)。 */
   paths: readonly string[];
-  /** 已 pin → 移除;未 pin → 追加到末尾. */
-  toggle: (path: string) => void;
-  clear: () => void;
 };
 
 const EMPTY_PINNED_PATHS: readonly string[] = [];
 
-export function buildToggledPinnedPaths(
-  paths: readonly string[],
-  path: string,
-): readonly string[] {
-  const idx = paths.indexOf(path);
-  if (idx >= 0) {
-    if (paths.length === 1) return EMPTY_PINNED_PATHS;
-    const next = new Array<string>(paths.length - 1);
-    let count = 0;
-    for (let i = 0; i < paths.length; i++) {
-      if (i !== idx) next[count++] = paths[i]!;
-    }
-    return count === 0 ? EMPTY_PINNED_PATHS : next;
-  }
-  // 边界(E276,运行时状态须守持久化契约):pin 追加不得超持久化 schema 上限 —— 超 PINNED_MAX 条或单条
-  // path 超 PATH_STR_MAX 则拒加(no-op)。否则 snapshotFromStores 原样写出 → explorer:write 被
-  // ExplorerWritableSnapshotSchema 拒整份 → workspace/editor/layout 等所有 explorer 持久化持续失败。
-  if (paths.length >= PINNED_MAX || path.length > PATH_STR_MAX) {
-    return paths;
-  }
-  const next = new Array<string>(paths.length + 1);
-  for (let i = 0; i < paths.length; i++) next[i] = paths[i]!;
-  next[paths.length] = path;
-  return next;
-}
-
-export const usePinnedStore = create<PinnedState>((set) => ({
+export const usePinnedStore = create<PinnedState>(() => ({
   paths: EMPTY_PINNED_PATHS,
-  toggle: (path) =>
-    set((s) => {
-      const paths = buildToggledPinnedPaths(s.paths, path);
-      return paths === s.paths ? s : { paths };
-    }),
-  clear: () =>
-    set((s) => (s.paths.length === 0 ? s : { paths: EMPTY_PINNED_PATHS })),
 }));

@@ -7,9 +7,9 @@ import { describe, it, expect } from 'vitest';
 import {
   isPluginsChangedPayload,
   isProtocolUrlPayload,
-  PLUGIN_ID_MAX_LEN,
   PROTOCOL_URL_MAX_LEN,
 } from '../../../electron/shared/plugins-channels';
+import { PLUGIN_ID_MAX_LEN } from '../../../electron/shared/permission-record-limits';
 
 describe('isPluginsChangedPayload (E242)', () => {
   it('合规 { id: 非空 string ≤256 } → true', () => {

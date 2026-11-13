@@ -87,8 +87,14 @@ describe('E236 家族接线守卫:全部 Map 型 registry 调用 assertRegistryC
     path.dirname(fileURLToPath(import.meta.url)),
     '../../plugins/registries',
   );
-  it.each(REGISTRIES)('%s 的 register() 调用 assertRegistryCapacity', (name) => {
+  // 重构后容量守卫收口在 KeyedRegistry.registerKeyed(唯一调用点),各 registry 经它入表。
+  it.each(REGISTRIES)('%s 的 register() 经 registerKeyed 走容量守卫', (name) => {
     const src = readFileSync(path.join(dir, `${name}.ts`), 'utf-8');
+    expect(src).toContain('this.registerKeyed(');
+  });
+
+  it('KeyedRegistry.registerKeyed 调用 assertRegistryCapacity', () => {
+    const src = readFileSync(path.join(dir, 'keyed-registry.ts'), 'utf-8');
     expect(src).toContain('assertRegistryCapacity(');
   });
 });

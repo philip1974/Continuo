@@ -1,12 +1,17 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
+import {
+  EXPLORER_CHANNELS,
+  LAYOUT_CHANNELS,
+  WINDOW_ID_CHANNEL,
+} from '../shared/persistence-channels';
+import { subscribeIpc } from './subscribe-ipc';
 import { createTerminalDataDemux } from './terminal-data-demux';
 import type { IpcResult } from '../shared/ipc-result';
 import type { FileEntry } from '../shared/fs-entry';
 import { FS_CHANNELS, isFsDirChangedPayload } from '../shared/fs-channels';
 import { FS_PATH_MAX } from '../shared/fs-limits';
-import { TERMINAL_CHANNELS } from '../shared/terminal-channels';
+import { SESSION_UPDATE_CWD_CHANNEL, TERMINAL_CHANNELS } from '../shared/terminal-channels';
 import type { TerminalSessionSnapshot } from '../shared/terminal-session';
-import type { TerminalAttachRejectReason } from '../shared/terminal-attach';
 import type { TerminalCreateInput } from '../shared/terminal-create';
 import {
   PLUGINS_CHANNELS,
@@ -40,7 +45,6 @@ import {
   type IpcWindowCreateInput,
   type IpcWindowCreateResult,
 } from '../shared/window-channels';
-import { NOTIFY_CHANNELS } from '../shared/notify-channels';
 import {
   MARKETPLACE_CHANNELS,
   type FetchReviewsResult,
@@ -58,7 +62,6 @@ import {
   type DebugViewEvent,
 } from '../shared/debug-view-channels';
 import type { Locale } from '../shared/i18n-types';
-import type { NotifyPushPayload } from '../shared/notify-channels';
 import { pluginDataRaw } from './plugin-data.preload';
 import { pluginFsRaw } from './plugin-fs.preload';
 import { pluginShellStreamRaw } from './plugin-shell-stream.preload';
@@ -111,40 +114,35 @@ const api = {
   ping: () => 'pong' as const,
   layout: {
     read: (): Promise<IpcResult<unknown | null>> =>
-      ipcRenderer.invoke('layout:read'),
+      ipcRenderer.invoke(LAYOUT_CHANNELS.READ),
     write: (json: unknown): Promise<IpcResult<void>> =>
-      ipcRenderer.invoke('layout:write', json),
+      ipcRenderer.invoke(LAYOUT_CHANNELS.WRITE, json),
     onFlushRequest: (
-      cb: () => void | Promise<void>,
+      cb: (payload?: { windowId: number }) => void | Promise<void>,
     ): (() => void) => {
-      const listener = () => {
-        void cb();
+      // main 发 `{ windowId }`;透传给回调(不暴露 IpcRendererEvent)。
+      const listener = (_event: unknown, payload?: { windowId: number }) => {
+        void cb(payload);
       };
-      ipcRenderer.on('layout:flush-request', listener);
-      return () => ipcRenderer.off('layout:flush-request', listener);
+      const unsubscribe = subscribeIpc(LAYOUT_CHANNELS.FLUSH_REQUEST, listener);
+      // 告诉 main「本窗口现在能应答 flush 请求了」。没上报过的窗口(启动中 / 加载失败)关窗时 main 不发
+      // 请求、不等回执 —— 否则没人回 ack,只能干等满超时。
+      ipcRenderer.send(LAYOUT_CHANNELS.FLUSH_READY);
+      return unsubscribe;
     },
     sendFlushAck: (windowId: number): void => {
-      ipcRenderer.send('layout:flush-ack', windowId);
+      ipcRenderer.send(LAYOUT_CHANNELS.FLUSH_ACK, windowId);
     },
   },
   system: {
-    windowId: ipcRenderer.sendSync('window:id') as number,
-  },
-  popout: {
-    open: (panelId: string): Promise<IpcResult<unknown>> =>
-      ipcRenderer.invoke('popout:open', { panelId }),
-    onClosed: (cb: (panelId: string) => void): (() => void) => {
-      const listener = (_: unknown, panelId: string) => cb(panelId);
-      ipcRenderer.on('popout:closed', listener);
-      return () => ipcRenderer.off('popout:closed', listener);
-    },
+    windowId: ipcRenderer.sendSync(WINDOW_ID_CHANNEL) as number,
   },
   explorer: {
     // ExplorerPayload 形态由 src/lib/persist/explorer-persist 保证;preload 透传 unknown
     read: (): Promise<IpcResult<unknown | null>> =>
-      ipcRenderer.invoke('explorer:read'),
+      ipcRenderer.invoke(EXPLORER_CHANNELS.READ),
     write: (json: unknown): Promise<IpcResult<void>> =>
-      ipcRenderer.invoke('explorer:write', json),
+      ipcRenderer.invoke(EXPLORER_CHANNELS.WRITE, json),
   },
   fs: {
     listDir: (
@@ -193,8 +191,7 @@ const api = {
         }
         cb(payload.path);
       };
-      ipcRenderer.on(FS_CHANNELS.DIR_CHANGED, listener);
-      return () => ipcRenderer.off(FS_CHANNELS.DIR_CHANGED, listener);
+      return subscribeIpc(FS_CHANNELS.DIR_CHANGED, listener);
     },
   },
   terminal: {
@@ -210,26 +207,14 @@ const api = {
       rows: number,
     ): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(TERMINAL_CHANNELS.RESIZE, { id, cols, rows }),
-    interrupt: (id: string): Promise<IpcResult<void>> =>
-      ipcRenderer.invoke(TERMINAL_CHANNELS.INTERRUPT, { id }),
-    kill: (id: string): Promise<IpcResult<void>> =>
-      ipcRenderer.invoke(TERMINAL_CHANNELS.KILL, { id }),
-    destroy: (id: string): Promise<IpcResult<void>> =>
-      ipcRenderer.invoke(TERMINAL_CHANNELS.DESTROY, { id }),
     // P1 Agent Terminal MCP:session metadata 真相源在 main
     listSessions: (): Promise<
       IpcResult<{ sessions: ReadonlyArray<PreloadTerminalSession> }>
     > => ipcRenderer.invoke(TERMINAL_CHANNELS.LIST_SESSIONS, {}),
     remove: (id: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(TERMINAL_CHANNELS.REMOVE, { id }),
-    // topic-05: renderer 端 tryAttachExisting 失败时反向通知 main 清理 session。
-    attachRejected: (
-      sessionId: string,
-      reason: TerminalAttachRejectReason, // M23:单一来源,与 main z.enum 共用
-    ): Promise<IpcResult<void>> =>
-      ipcRenderer.invoke(TERMINAL_CHANNELS.ATTACH_REJECTED, { sessionId, reason }),
     updateCwd: (id: string, cwd: string): Promise<IpcResult<void>> =>
-      ipcRenderer.invoke('session:update-cwd', id, cwd),
+      ipcRenderer.invoke(SESSION_UPDATE_CWD_CHANNEL, { id, cwd }),
     /**
      * 读 main 端 buffer 的全部历史 raw chunks(保留 ANSI)。
      * topic-07:dockview lazy-mount inactive panel 错过初始 PTY 输出,
@@ -247,8 +232,7 @@ const api = {
         _: unknown,
         sessions: ReadonlyArray<PreloadTerminalSession>,
       ) => cb(sessions);
-      ipcRenderer.on(TERMINAL_CHANNELS.SESSIONS_CHANGED, listener);
-      return () => ipcRenderer.off(TERMINAL_CHANNELS.SESSIONS_CHANGED, listener);
+      return subscribeIpc(TERMINAL_CHANNELS.SESSIONS_CHANGED, listener);
     },
     /**
      * 订阅指定 session 的 stdout 字节流;返回 unsubscribe。
@@ -267,18 +251,15 @@ const api = {
         id: string,
         payload: TerminalExitPayload,
       ) => cb(id, payload);
-      ipcRenderer.on(TERMINAL_CHANNELS.EXIT, listener);
-      return () => ipcRenderer.off(TERMINAL_CHANNELS.EXIT, listener);
+      return subscribeIpc(TERMINAL_CHANNELS.EXIT, listener);
     },
     onOverflow: (cb: (id: string) => void): (() => void) => {
       const listener = (_: unknown, id: string) => cb(id);
-      ipcRenderer.on(TERMINAL_CHANNELS.OVERFLOW, listener);
-      return () => ipcRenderer.off(TERMINAL_CHANNELS.OVERFLOW, listener);
+      return subscribeIpc(TERMINAL_CHANNELS.OVERFLOW, listener);
     },
     onOverflowRecovered: (cb: (id: string) => void): (() => void) => {
       const listener = (_: unknown, id: string) => cb(id);
-      ipcRenderer.on(TERMINAL_CHANNELS.OVERFLOW_RECOVERED, listener);
-      return () => ipcRenderer.off(TERMINAL_CHANNELS.OVERFLOW_RECOVERED, listener);
+      return subscribeIpc(TERMINAL_CHANNELS.OVERFLOW_RECOVERED, listener);
     },
   },
   plugins: {
@@ -286,15 +267,11 @@ const api = {
       ipcRenderer.invoke(PLUGINS_CHANNELS.LIST_DIRS),
     readEnabled: (): Promise<IpcResult<readonly string[]>> =>
       ipcRenderer.invoke(PLUGINS_CHANNELS.READ_ENABLED),
-    writeEnabled: (ids: readonly string[]): Promise<IpcResult<void>> =>
-      ipcRenderer.invoke(PLUGINS_CHANNELS.WRITE_ENABLED, { ids }),
     /** 数据安全:按单 plugin 启用/禁用 delta 写,防多窗口整表 RMW 互相覆盖. */
     mutateEnabled: (id: string, enabled: boolean): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(PLUGINS_CHANNELS.MUTATE_ENABLED, { id, enabled }),
     readPermissions: (): Promise<IpcResult<IpcPermissionsMap>> =>
       ipcRenderer.invoke(PLUGINS_CHANNELS.READ_PERMISSIONS),
-    writePermissions: (data: IpcPermissionsMap): Promise<IpcResult<void>> =>
-      ipcRenderer.invoke(PLUGINS_CHANNELS.WRITE_PERMISSIONS, { data }),
     /** 数据安全:按单 plugin 合并写,防多窗口整表写互相覆盖. */
     writePluginPermissions: (
       id: string,
@@ -314,8 +291,7 @@ const api = {
         }
         cb(payload.id);
       };
-      ipcRenderer.on(PLUGINS_CHANNELS.CHANGED, listener);
-      return () => ipcRenderer.off(PLUGINS_CHANNELS.CHANGED, listener);
+      return subscribeIpc(PLUGINS_CHANNELS.CHANGED, listener);
     },
     /** v4.4 订阅 co:// 外部唤起,返 unsubscribe. */
     onProtocolUrl: (cb: (url: string) => void): (() => void) => {
@@ -327,8 +303,7 @@ const api = {
         }
         cb(payload.url);
       };
-      ipcRenderer.on(PLUGINS_CHANNELS.PROTOCOL_URL, listener);
-      return () => ipcRenderer.off(PLUGINS_CHANNELS.PROTOCOL_URL, listener);
+      return subscribeIpc(PLUGINS_CHANNELS.PROTOCOL_URL, listener);
     },
     /**
      * v4.5 从 git URL 安装插件,返回 manifest 元信息.
@@ -385,7 +360,8 @@ const api = {
       | { ok: true }
       | {
           ok: false;
-          code: 'BAD_INPUT' | 'BAD_ROOT' | 'NO_WINDOW';
+          // main 还可能因不可信 frame 返回 IPC_DENIED
+          code: 'BAD_INPUT' | 'BAD_ROOT' | 'NO_WINDOW' | 'IPC_DENIED';
           message?: string;
         }
     > => ipcRenderer.invoke(WINDOW_CHANNELS.NOTIFY_ROOT, { root }),
@@ -403,8 +379,7 @@ const api = {
     ): (() => void) => {
       const listener = (_: unknown, payload: AgentAuthRequestPayload) =>
         cb(payload);
-      ipcRenderer.on(AGENT_AUTH_CHANNELS.REQUEST, listener);
-      return () => ipcRenderer.off(AGENT_AUTH_CHANNELS.REQUEST, listener);
+      return subscribeIpc(AGENT_AUTH_CHANNELS.REQUEST, listener);
     },
     /** 用户决定后回应 main(对应 requestId). */
     respond: (
@@ -416,25 +391,12 @@ const api = {
     revoke: (): Promise<IpcResult<{ killed: number; rotated: boolean }>> =>
       ipcRenderer.invoke(AGENT_AUTH_CHANNELS.REVOKE, {}),
   },
-  notify: {
-    /**
-     * 订阅主进程 push 通知;返回 unsubscribe 函数。
-     * 调用方:NotifyIpcBridge(src/notifications/NotifyIpcBridge.tsx,Op11 创建)。
-     */
-    onPush(listener: (payload: NotifyPushPayload) => void): () => void {
-      const wrapped = (_evt: unknown, payload: NotifyPushPayload) =>
-        listener(payload);
-      ipcRenderer.on(NOTIFY_CHANNELS.PUSH, wrapped);
-      return () => ipcRenderer.removeListener(NOTIFY_CHANNELS.PUSH, wrapped);
-    },
-  },
   debug: {
     subscribe: (): Promise<IpcResult<unknown>> =>
       ipcRenderer.invoke(DEBUG_VIEW_CHANNELS.SUBSCRIBE, {}),
     onEvent: (listener: (payload: DebugViewEvent) => void): (() => void) => {
       const wrapped = (_evt: unknown, payload: DebugViewEvent) => listener(payload);
-      ipcRenderer.on(DEBUG_VIEW_CHANNELS.EVENT, wrapped);
-      return () => ipcRenderer.removeListener(DEBUG_VIEW_CHANNELS.EVENT, wrapped);
+      return subscribeIpc(DEBUG_VIEW_CHANNELS.EVENT, wrapped);
     },
     getStack: (input: DebugGetStackInput): Promise<IpcResult<unknown>> =>
       ipcRenderer.invoke(DEBUG_VIEW_CHANNELS.GET_STACK, input),
@@ -458,8 +420,7 @@ const api = {
     onChange(listener: (payload: I18nChangedPayload) => void): () => void {
       const wrapped = (_evt: unknown, payload: I18nChangedPayload) =>
         listener(payload);
-      ipcRenderer.on(I18N_CHANNELS.CHANGED, wrapped);
-      return () => ipcRenderer.removeListener(I18N_CHANNELS.CHANGED, wrapped);
+      return subscribeIpc(I18N_CHANNELS.CHANGED, wrapped);
     },
   },
   mcp: {
@@ -482,9 +443,7 @@ const api = {
     /** main 反向调 tool.run 时推过来的 invoke 请求(订阅;返 unsubscribe). */
     onInvoke: (cb: (payload: InvokePayload) => void): (() => void) => {
       const listener = (_: unknown, payload: InvokePayload) => cb(payload);
-      ipcRenderer.on(PLUGIN_MCP_CHANNELS.INVOKE, listener);
-      return () =>
-        ipcRenderer.off(PLUGIN_MCP_CHANNELS.INVOKE, listener);
+      return subscribeIpc(PLUGIN_MCP_CHANNELS.INVOKE, listener);
     },
     /** renderer 答 main(单向 send,无 IpcResult). */
     replyInvoke: (reply: InvokeReply): void => {

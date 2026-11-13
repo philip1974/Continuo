@@ -9,7 +9,7 @@ import { useEffect, useState } from 'react';
 import { Button, Modal } from '@/design';
 import type { PermissionKey, PermissionStore } from '../permissions';
 import { useT } from '@/i18n';
-import { PERM_LABEL_KEYS } from './perm-labels';
+import { PermissionOptionRow } from './PermissionOptionRow';
 
 interface PermissionEditorModalProps {
   open: boolean;
@@ -179,30 +179,17 @@ function PermissionEditorModalBody({
         <code className="text-fg">{pluginId}</code>
       </p>
       <ul className="mb-3 space-y-1">
-        {declared.map((perm) => {
-          const meta = PERM_LABEL_KEYS[perm];
-          const state = decisions.get(perm);
-          const checked = state === true;
-          return (
-            <li key={perm}>
-              <label className="flex cursor-pointer items-start gap-2 rounded p-2 hover:bg-hover">
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onChange={() => toggle(perm)}
-                  // race(R23):初始加载完成前禁用,防异步 load 结果覆盖用户提前的勾选。
-                  // race(R35):保存写盘期间禁用,防迟到 onClose 丢弃保存后改动。
-                  disabled={loading || loadFailed || saving}
-                  className="mt-0.5 accent-accent"
-                />
-                <div className="flex-1 text-xs">
-                  <div className="font-medium text-fg">{t(meta.titleKey)}</div>
-                  <div className="text-fg-dim">{t(meta.descKey)}</div>
-                </div>
-              </label>
-            </li>
-          );
-        })}
+        {declared.map((perm) => (
+          <PermissionOptionRow
+            key={perm}
+            perm={perm}
+            checked={decisions.get(perm) === true}
+            onToggle={toggle}
+            // race(R23):初始加载完成前禁用,防异步 load 结果覆盖用户提前的勾选。
+            // race(R35):保存写盘期间禁用,防迟到 onClose 丢弃保存后改动。
+            disabled={loading || loadFailed || saving}
+          />
+        ))}
       </ul>
       <div className="mb-4 rounded border border-line bg-panel-soft/40 px-3 py-2 text-xs text-fg-muted">
         {t('permissions.editor.next_enable_note_prefix')}

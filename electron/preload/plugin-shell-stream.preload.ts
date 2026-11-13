@@ -7,12 +7,6 @@ import {
   parseShellStreamEvent,
 } from '../shared/plugin-shell-stream-channels';
 
-export interface ShellStreamEvent {
-  streamId: string;
-  kind: 'stdout' | 'stderr' | 'exit';
-  payload: Buffer | { exitCode: number | null; signal: NodeJS.Signals | null };
-}
-
 // 可维护性 M7:单个 stream chunk(stdout/stderr)。迭代器 yield 此类型,**结束值为
 // void**(`{ value: undefined, done: true }`)。此前各结束分支用 `undefined as never`
 // 压过 TS —— 把迭代器结束语义用类型(IteratorResult<ShellChunk, void>)表达后即不需断言。
@@ -49,11 +43,48 @@ const MAX_PENDING_NEXT_RESOLVERS = 1024; // 单 stream pending next() 等待者�
 // 边界(E231)测试用。
 export const MAX_PENDING_NEXT_RESOLVERS_FOR_TEST = MAX_PENDING_NEXT_RESOLVERS;
 
+/**
+ * 头指针 FIFO:take(出队)是 O(1)(不用 Array.prototype.shift 的 O(n) 搬移),出队槽位立即置 undefined 释放
+ * 引用,排空时重置底层数组。chunk 缓冲与 pending next() 等待者两条队列共用(此前各手写一份)。
+ */
+function createFifo<T>() {
+  const slots: Array<T | undefined> = [];
+  let head = 0;
+  return {
+    push(item: T): void {
+      slots.push(item);
+    },
+    take(): T | undefined {
+      if (head >= slots.length) return undefined;
+      const item = slots[head];
+      slots[head] = undefined;
+      head += 1;
+      if (head === slots.length) {
+        slots.length = 0;
+        head = 0;
+      }
+      return item;
+    },
+    size(): number {
+      return slots.length - head;
+    },
+    /** 按入队顺序取出全部元素交给 visit,并清空队列。 */
+    drain(visit: (item: T) => void): void {
+      for (let i = head; i < slots.length; i += 1) {
+        const item = slots[i];
+        slots[i] = undefined;
+        if (item !== undefined) visit(item);
+      }
+      slots.length = 0;
+      head = 0;
+    },
+  };
+}
+
 export const pluginShellStreamRaw: PluginShellStreamRaw = {
   execStream(cmd, args, opts) {
     const streamId = globalThis.crypto.randomUUID();
-    const chunkQueue: Array<ShellChunk | undefined> = [];
-    let chunkQueueHead = 0;
+    const chunkQueue = createFifo<ShellChunk>();
     let queuedBytes = 0; // 边界(E61):chunkQueue 中未消费字节数
     // race(R93):FIFO 等待者队列(不是单 resolver)。两个 next() 并发等待时,单 resolver 会被后者
     // 覆盖 → 先发 next() 的 Promise 永久不 resolve,消费方(预取/并发读 stream 的插件/封装库)挂死;
@@ -61,40 +92,9 @@ export const pluginShellStreamRaw: PluginShellStreamRaw = {
     // return 时 resolve 所有 pending 为 done。不变量:chunkQueue 与 chunkResolvers 不会同时非空
     // (next 先查 queue 命中即返,不会再 push resolver)。
     type ChunkResolver = (value: IteratorResult<ShellChunk, void>) => void;
-    const chunkResolvers: Array<ChunkResolver | undefined> = [];
-    let chunkResolverHead = 0;
-    const pendingResolverCount = (): number =>
-      chunkResolvers.length - chunkResolverHead;
-    const dequeueResolver = (): ChunkResolver | undefined => {
-      if (chunkResolverHead >= chunkResolvers.length) return undefined;
-      const waiter = chunkResolvers[chunkResolverHead];
-      chunkResolvers[chunkResolverHead] = undefined;
-      chunkResolverHead += 1;
-      if (chunkResolverHead === chunkResolvers.length) {
-        chunkResolvers.length = 0;
-        chunkResolverHead = 0;
-      }
-      return waiter;
-    };
-    const dequeueChunk = (): ShellChunk | undefined => {
-      if (chunkQueueHead >= chunkQueue.length) return undefined;
-      const chunk = chunkQueue[chunkQueueHead];
-      chunkQueue[chunkQueueHead] = undefined;
-      chunkQueueHead += 1;
-      if (chunkQueueHead === chunkQueue.length) {
-        chunkQueue.length = 0;
-        chunkQueueHead = 0;
-      }
-      return chunk;
-    };
+    const chunkResolvers = createFifo<ChunkResolver>();
     const resolveAllChunksDone = (): void => {
-      for (let i = chunkResolverHead; i < chunkResolvers.length; i += 1) {
-        const resolve = chunkResolvers[i];
-        chunkResolvers[i] = undefined;
-        resolve?.(SHELL_STREAM_DONE);
-      }
-      chunkResolvers.length = 0;
-      chunkResolverHead = 0;
+      chunkResolvers.drain((resolve) => resolve(SHELL_STREAM_DONE));
     };
     let exitInfo: { exitCode: number | null; signal: NodeJS.Signals | null } | null =
       null;
@@ -126,22 +126,20 @@ export const pluginShellStreamRaw: PluginShellStreamRaw = {
           '[plugin-shell-stream] invalid event payload for stream, synthesizing exit',
           rawPayload,
         );
-        synthesizeExit({ exitCode: -1, signal: null });
+        settleExit({ exitCode: -1, signal: null });
         return;
       }
       if (parsed.kind === 'exit') {
-        exitInfo = {
+        // 真实 exit 与合成 exit 走同一收尾(置 exitInfo → 唤醒全部等待者 → resolve done → 摘 listener)。
+        settleExit({
           exitCode: parsed.exitCode,
           signal: parsed.signal as NodeJS.Signals | null,
-        };
-        resolveAllChunksDone(); // race(R93):唤醒所有 pending 等待者为 done
-        exitResolve?.(exitInfo);
-        ipcRenderer.removeListener(PLUGIN_SHELL_STREAM_CHANNELS.EVENT, handler);
+        });
         return;
       }
 
       const item: ShellChunk = { stream: parsed.stream, chunk: parsed.bytes };
-      const waiter = dequeueResolver(); // race(R93):FIFO 唤醒队首
+      const waiter = chunkResolvers.take(); // race(R93):FIFO 唤醒队首
       if (waiter) {
         waiter({ value: item, done: false });
       } else {
@@ -150,39 +148,46 @@ export const pluginShellStreamRaw: PluginShellStreamRaw = {
         // 边界(E61):未消费缓冲超上限 → 背压。ABORT 子进程 + 合成错误 exit(停止接收更多 chunk)。
         // 已缓冲的 chunk 仍可被消费者 drain(next 先查 queue),drain 完得 done。
         if (queuedBytes > MAX_STREAM_QUEUE_BYTES) {
-          ipcRenderer.removeListener(PLUGIN_SHELL_STREAM_CHANNELS.EVENT, handler);
-          void ipcRenderer
-            .invoke(PLUGIN_SHELL_STREAM_CHANNELS.ABORT, streamId)
-            .catch(() => {});
-          synthesizeExit({ exitCode: -1, signal: null });
+          abortWithSyntheticExit();
         }
       }
     };
 
-    // 把 START reject 转成本地合成的 exit。主进程可能在 spawn 任何进程之前就
-    // reject(如 streamId 已占用是同步 throw,或 handler 在 emit 'exit' 之前抛错)
-    // —— 这种情况下永远不会有 'exit' 事件回来,`done` 与 chunk 迭代器会永久挂起,
-    // 插件的 `await done` / `for await (chunks)` 死锁。合成一个终止 exit 让等待者收敛。
-    const synthesizeExit = (
+    // 流的唯一收尾:真实 exit、合成 exit(START reject / 畸形事件 / 背压)、消费方提前 return 都走这里。
+    // 合成 exit 的必要性:主进程可能在 spawn 任何进程之前就 reject START(如 streamId 已占用是同步
+    // throw)—— 永远不会有 'exit' 事件回来,`done` 与 chunk 迭代器会永久挂起,插件的 `await done` /
+    // `for await (chunks)` 死锁。
+    const settleExit = (
       info: { exitCode: number | null; signal: NodeJS.Signals | null },
     ): void => {
-      if (exitInfo) return;
+      if (exitInfo) return; // 只收敛一次(真实 exit / 合成 exit / 提前 return 谁先到算谁)
       exitInfo = info;
       resolveAllChunksDone(); // race(R93):唤醒所有 pending 等待者为 done
       exitResolve?.(exitInfo);
       ipcRenderer.removeListener(PLUGIN_SHELL_STREAM_CHANNELS.EVENT, handler);
     };
+    /** 让 main 杀掉子进程(best-effort;流可能已结束)。 */
+    const requestAbort = (): void => {
+      void ipcRenderer
+        .invoke(PLUGIN_SHELL_STREAM_CHANNELS.ABORT, streamId)
+        .catch(() => {});
+    };
+    /** 背压 / 滥用收敛:ABORT 子进程 + 合成错误 exit(摘 listener,停止接收更多 chunk)。 */
+    const abortWithSyntheticExit = (): void => {
+      requestAbort();
+      settleExit({ exitCode: -1, signal: null });
+    };
 
     ipcRenderer.on(PLUGIN_SHELL_STREAM_CHANNELS.EVENT, handler);
     void ipcRenderer
       .invoke(PLUGIN_SHELL_STREAM_CHANNELS.START, streamId, cmd, args, opts)
-      .catch(() => synthesizeExit({ exitCode: -1, signal: null }));
+      .catch(() => settleExit({ exitCode: -1, signal: null }));
 
     const chunks: AsyncIterable<ShellChunk> = {
       [Symbol.asyncIterator]() {
         return {
           next(): Promise<IteratorResult<ShellChunk, void>> {
-            const c = dequeueChunk();
+            const c = chunkQueue.take();
             if (c) {
               queuedBytes -= c.chunk.length; // 边界(E61):消费即释放缓冲计数
               return Promise.resolve({ value: c, done: false });
@@ -192,15 +197,8 @@ export const pluginShellStreamRaw: PluginShellStreamRaw = {
             }
             // 边界(E231):pending next() 等待者数量上限。超限视为滥用(海量 next() 不 await)→
             // 与 E61 字节背压同构:ABORT 子进程 + 合成错误 exit 收敛全部等待者(含本次),停止接收。
-            if (pendingResolverCount() >= MAX_PENDING_NEXT_RESOLVERS) {
-              ipcRenderer.removeListener(
-                PLUGIN_SHELL_STREAM_CHANNELS.EVENT,
-                handler,
-              );
-              void ipcRenderer
-                .invoke(PLUGIN_SHELL_STREAM_CHANNELS.ABORT, streamId)
-                .catch(() => {});
-              synthesizeExit({ exitCode: -1, signal: null });
+            if (chunkResolvers.size() >= MAX_PENDING_NEXT_RESOLVERS) {
+              abortWithSyntheticExit();
               return Promise.resolve(SHELL_STREAM_DONE);
             }
             return new Promise((resolve) => {
@@ -213,16 +211,8 @@ export const pluginShellStreamRaw: PluginShellStreamRaw = {
           // 会累积多个孤儿进程。见第十四轮 P2-AM。
           return(): Promise<IteratorResult<ShellChunk, void>> {
             if (!exitInfo) {
-              exitInfo = { exitCode: null, signal: null };
-              ipcRenderer.removeListener(
-                PLUGIN_SHELL_STREAM_CHANNELS.EVENT,
-                handler,
-              );
-              void ipcRenderer
-                .invoke(PLUGIN_SHELL_STREAM_CHANNELS.ABORT, streamId)
-                .catch(() => {});
-              exitResolve?.(exitInfo);
-              resolveAllChunksDone(); // race(R93):提前 return 时唤醒所有 pending next() 为 done
+              requestAbort();
+              settleExit({ exitCode: null, signal: null }); // race(R93):同时唤醒所有 pending next()
             }
             return Promise.resolve(SHELL_STREAM_DONE);
           },

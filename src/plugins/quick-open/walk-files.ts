@@ -7,10 +7,11 @@
 
 import type { FileEntry } from '../../../electron/shared/fs-entry';
 import type { IpcResult } from '../../../electron/shared/ipc-result';
-import type { QuickOpenFile } from './store';
+import { QUICK_OPEN_MAX_FILES, type QuickOpenFile } from './store';
 import { stripRootPrefix } from '@/lib/path-cross';
+import { LIST_DIR_DEFAULT_EXCLUDE } from '../../../electron/shared/fs-limits';
 
-const DEFAULT_MAX_FILES = 5000;
+const DEFAULT_MAX_FILES = QUICK_OPEN_MAX_FILES;
 const DEFAULT_MAX_DEPTH = 8;
 const EMPTY_QUICK_OPEN_FILES: readonly QuickOpenFile[] = [];
 
@@ -18,13 +19,8 @@ const EMPTY_QUICK_OPEN_FILES: readonly QuickOpenFile[] = [];
 // 这里追加:常见构建产物 + 缓存目录(VSCode default file.exclude 同思路)。
 // 注意 listDir 的 exclude 是完整替换(传了就不用默认),所以这里要给完整列表。
 const FULL_EXCLUDE: readonly string[] = [
-  // 内置(listDir DEFAULT_EXCLUDE 同款)
-  '.git',
-  '.svn',
-  '.hg',
-  'node_modules',
-  '.DS_Store',
-  'Thumbs.db',
+  // 内置(与 main list-dir 的默认排除同一来源)
+  ...LIST_DIR_DEFAULT_EXCLUDE,
   // 追加:构建产物 + 缓存
   'dist',
   'out',
@@ -80,7 +76,7 @@ export async function walkWorkspaceFiles(
     };
   }
   const maxFiles = opts.maxFiles ?? DEFAULT_MAX_FILES;
-  if (maxFiles <= 0) return { ok: true, data: EMPTY_QUICK_OPEN_FILES };
+  if (!(maxFiles > 0)) return { ok: true, data: EMPTY_QUICK_OPEN_FILES };
   const exclude = buildExcludeList(opts.extraExclude);
 
   // perf P2:把 maxFiles 下推到 main 侧 walker,使其收集够 maxFiles 个文件即停止
@@ -98,8 +94,7 @@ export async function walkWorkspaceFiles(
   // 保护 + 平台感知大小写)。跨平台审计 P2(codex):此前手写 `e.path.startsWith(rootPath)`
   // 仍是大小写敏感且无边界 → Windows 上 rootPath 与 FileEntry.path 仅大小写不同 / canonical
   // 形式时 relPath 退化为绝对路径 → Quick Open 路径显示 + 相对片段搜索失真。
-  const capacity =
-    maxFiles > 0 ? Math.min(maxFiles, r.data.length) : 0;
+  const capacity = Math.min(maxFiles, r.data.length); // 非正 / NaN 的 maxFiles 已在上方早返
   const files = new Array<QuickOpenFile>(capacity);
   let fileCount = 0;
   for (const e of r.data) {

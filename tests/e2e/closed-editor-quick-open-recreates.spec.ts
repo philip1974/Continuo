@@ -20,7 +20,9 @@ test('关 Editor → Cmd+P 选 README.md → Editor 自动重建 + 显 README.md
     document.dispatchEvent(
       new KeyboardEvent('keydown', {
         key: 'p',
-        ctrlKey: true,
+        // 平台主修饰键:mac = Cmd,其它 = Ctrl(mac 上面板热键只认 Cmd)
+        ctrlKey: !navigator.platform.toLowerCase().includes('mac'),
+        metaKey: navigator.platform.toLowerCase().includes('mac'),
         bubbles: true,
         cancelable: true,
       }),

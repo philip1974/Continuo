@@ -271,6 +271,102 @@ describe('SettingItemRow — number', () => {
     expect(container.textContent).toContain('px');
   });
 
+  // 把 13 改成 16:先键入 "1"(< min)。若每次按键都钳制回写,框内变 "10",再键 "6" 得 "106" → 24,
+  // 永远输不进 16。越界的中间值只留在输入框,失焦 / Enter 时才钳制提交。
+  it('键入过程中越界的中间值不被钳制回写;范围内的值即时生效', () => {
+    const s = spec({ id: 'terminal.fontSize', type: 'number', default: 13, min: 10, max: 24 });
+    const { container } = render(<SettingItemRow spec={s} />);
+    const input = container.querySelector('input[type=number]') as HTMLInputElement;
+
+    fireEvent.change(input, { target: { value: '1' } });
+    expect(input.value).toBe('1');
+    expect(useSettingsValuesStore.getState().values['terminal.fontSize']).toBeUndefined();
+
+    fireEvent.change(input, { target: { value: '16' } });
+    expect(input.value).toBe('16');
+    expect(useSettingsValuesStore.getState().values['terminal.fontSize']).toBe(16);
+  });
+
+  it('失焦时越界值钳制到范围并回显', () => {
+    const s = spec({ id: 'terminal.fontSize', type: 'number', default: 13, min: 10, max: 24 });
+    const { container } = render(<SettingItemRow spec={s} />);
+    const input = container.querySelector('input[type=number]') as HTMLInputElement;
+
+    fireEvent.change(input, { target: { value: '99' } });
+    expect(useSettingsValuesStore.getState().values['terminal.fontSize']).toBeUndefined();
+    fireEvent.blur(input);
+    expect(useSettingsValuesStore.getState().values['terminal.fontSize']).toBe(24);
+    expect(input.value).toBe('24');
+  });
+
+  // 没键入过就失焦 / Enter(Tab 经过、点一下再点别处)不能写出 override:否则重置图标亮起,
+  // 且存下一条等于默认值的 override,以后默认值变了该用户也不跟随。
+  it('未键入就失焦或按 Enter → 不写 override', () => {
+    const s = spec({ id: 'terminal.fontSize', type: 'number', default: 13, min: 10, max: 24 });
+    const { container } = render(<SettingItemRow spec={s} />);
+    const input = container.querySelector('input[type=number]') as HTMLInputElement;
+
+    fireEvent.focus(input);
+    fireEvent.blur(input);
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect('terminal.fontSize' in useSettingsValuesStore.getState().values).toBe(false);
+  });
+
+  // 草稿只在「值没被别处改过」时遮住显示:键入后点重置(或别的窗口改了该设置),输入框必须显示新值,
+  // 不能继续显示键入的旧文本(真实应用 e2e 暴露:改成 22 → 点重置 → 输入框仍是 22)。
+  it('键入后值被外部改掉(重置)→ 输入框显示新值,不被草稿遮住', () => {
+    const s = spec({ id: 'terminal.fontSize', type: 'number', default: 13, min: 10, max: 24 });
+    const { container } = render(<SettingItemRow spec={s} />);
+    const input = container.querySelector('input[type=number]') as HTMLInputElement;
+
+    fireEvent.change(input, { target: { value: '22' } });
+    expect(input.value).toBe('22');
+    act(() => {
+      useSettingsValuesStore.getState().reset('terminal.fontSize');
+    });
+    expect(input.value).toBe('13');
+    // 之后失焦也不会把旧草稿重新提交
+    fireEvent.blur(input);
+    expect('terminal.fontSize' in useSettingsValuesStore.getState().values).toBe(false);
+  });
+
+  it('越界草稿期间值被外部改掉 → 同样显示新值', () => {
+    const s = spec({ id: 'terminal.fontSize', type: 'number', default: 13, min: 10, max: 24 });
+    const { container } = render(<SettingItemRow spec={s} />);
+    const input = container.querySelector('input[type=number]') as HTMLInputElement;
+
+    fireEvent.change(input, { target: { value: '99' } });
+    act(() => {
+      useSettingsValuesStore.getState().setValue('terminal.fontSize', 18);
+    });
+    expect(input.value).toBe('18');
+  });
+
+  it('作废的草稿不会在值变回原值时复活', () => {
+    const s = spec({ id: 'terminal.fontSize', type: 'number', default: 13, min: 10, max: 24 });
+    const { container } = render(<SettingItemRow spec={s} />);
+    const input = container.querySelector('input[type=number]') as HTMLInputElement;
+
+    fireEvent.change(input, { target: { value: '99' } }); // 越界草稿,对应的已知值是 13
+    act(() => useSettingsValuesStore.getState().setValue('terminal.fontSize', 18)); // 别处改成 18
+    expect(input.value).toBe('18');
+    act(() => useSettingsValuesStore.getState().reset('terminal.fontSize')); // 又回到 13
+    expect(input.value).toBe('13');
+    fireEvent.blur(input);
+    expect('terminal.fontSize' in useSettingsValuesStore.getState().values).toBe(false);
+  });
+
+  it('清空后失焦 → 不提交,回显原值', () => {
+    const s = spec({ id: 'terminal.fontSize', type: 'number', default: 13, min: 10, max: 24 });
+    const { container } = render(<SettingItemRow spec={s} />);
+    const input = container.querySelector('input[type=number]') as HTMLInputElement;
+
+    fireEvent.change(input, { target: { value: '' } });
+    expect(useSettingsValuesStore.getState().values['terminal.fontSize']).toBeUndefined();
+    fireEvent.blur(input);
+    expect(input.value).toBe('13');
+  });
+
   it('NaN guard:onChange 给非 finite 字符串不抛(jsdom 会先剥非数字字符)', () => {
     const s = spec({ id: 'editor.fontSize', type: 'number', default: 14 });
     const { container } = render(<SettingItemRow spec={s} />);

@@ -7,7 +7,6 @@ import {
   type FsScopePrompt,
 } from '../permissions/promptStore';
 import {
-  expandScopePathForDisplay,
   startPluginFsScopeRequestBridge,
 } from '../permissions/usePluginFsScopeRequests';
 
@@ -77,12 +76,6 @@ describe('permission prompt store fs-scope flow', () => {
     await expect(p1).resolves.toBe('grant');
     await expect(p2).resolves.toBe('grant');
     expect(usePermissionPromptStore.getState().currentFsScope).toBeNull();
-  });
-
-  it('expands tilde for display when HOME is available', () => {
-    vi.stubEnv('HOME', '/Users/tester');
-
-    expect(expandScopePathForDisplay('~/skills')).toBe('/Users/tester/skills');
   });
 
   it('bridge sends scopeDecision without mixing concurrent requests', async () => {

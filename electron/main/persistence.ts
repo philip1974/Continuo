@@ -149,8 +149,7 @@ export function pruneLRUClosed(
     closed.sort((a, b) => (a.lastClosedAt ?? 0) - (b.lastClosedAt ?? 0));
   }
 
-  const toRemove = payload.windows.length - maxClosed;
-  if (toRemove <= 0) return;
+  const toRemove = payload.windows.length - maxClosed; // > 0:函数开头已保证 length > maxClosed
   const removeSet = new Set<number>();
   for (let i = 0; i < Math.min(toRemove, closed.length); i++) {
     removeSet.add(closed[i]!.windowSeq);
@@ -162,6 +161,18 @@ export function pruneLRUClosed(
   }
   kept.length = keptCount;
   payload.windows = kept;
+}
+
+/** renderer 写入的窗口段 + 保留 current 的 main-owned 字段(layout / lastClosedAt;renderer 不能写)。 */
+function withMainOwnedFields(
+  w: ExplorerWritablePayload['windows'][number],
+  cur: WindowEntryV3,
+): WindowEntryV3 {
+  return {
+    ...w,
+    ...(cur.layout !== undefined ? { layout: cur.layout } : {}),
+    ...(cur.lastClosedAt !== undefined ? { lastClosedAt: cur.lastClosedAt } : {}),
+  };
 }
 
 export function mergeWritableIntoFull(
@@ -178,13 +189,7 @@ export function mergeWritableIntoFull(
     let matched = false;
     for (const cur of currentWindows) {
       if (cur.windowSeq === w.windowSeq) {
-        merged[mergedCount++] = {
-          ...w,
-          ...(cur.layout !== undefined ? { layout: cur.layout } : {}),
-          ...(cur.lastClosedAt !== undefined
-            ? { lastClosedAt: cur.lastClosedAt }
-            : {}),
-        };
+        merged[mergedCount++] = withMainOwnedFields(w, cur);
         matched = true;
       } else {
         merged[mergedCount++] = cur;
@@ -206,13 +211,7 @@ export function mergeWritableIntoFull(
     for (const cur of currentWindows) {
       const w = writableBySeq.get(cur.windowSeq);
       if (w) {
-        merged[mergedCount++] = {
-          ...w,
-          ...(cur.layout !== undefined ? { layout: cur.layout } : {}),
-          ...(cur.lastClosedAt !== undefined
-            ? { lastClosedAt: cur.lastClosedAt }
-            : {}),
-        };
+        merged[mergedCount++] = withMainOwnedFields(w, cur);
         writableBySeq.delete(cur.windowSeq);
       } else {
         merged[mergedCount++] = cur;

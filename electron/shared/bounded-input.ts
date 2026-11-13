@@ -13,6 +13,35 @@ export const MAX_BOUNDED_OBJECT_KEY_LEN = 8192;
 
 export type BoundedReason = 'too-many-keys' | 'key-too-long';
 
+const BOUNDED_OK = { ok: true } as const;
+
+/**
+ * 逐个枚举自有可枚举 string key(for...in + hasOwnProperty),边数边查 + 早停:key 数超
+ * MAX_BOUNDED_OBJECT_KEYS / 单 key 超 MAX_BOUNDED_OBJECT_KEY_LEN 立即返回;给了 visitValue 则对每个值
+ * 递归校验。浅层(boundedObjectAdmissible)与深层(boundedValueDeepAdmissible)共用,此前各写一份循环。
+ */
+function scanOwnKeysBounded<R extends string = never>(
+  obj: Record<string, unknown>,
+  visitValue?: (value: unknown) => { ok: true } | { ok: false; reason: R },
+): { ok: true } | { ok: false; reason: BoundedReason | R } {
+  let count = 0;
+  for (const k in obj) {
+    if (!Object.prototype.hasOwnProperty.call(obj, k)) continue;
+    count += 1;
+    if (count > MAX_BOUNDED_OBJECT_KEYS) {
+      return { ok: false, reason: 'too-many-keys' };
+    }
+    if (k.length > MAX_BOUNDED_OBJECT_KEY_LEN) {
+      return { ok: false, reason: 'key-too-long' };
+    }
+    if (visitValue) {
+      const r = visitValue(obj[k]);
+      if (!r.ok) return r;
+    }
+  }
+  return BOUNDED_OK;
+}
+
 /**
  * 边界(E255/E256/E257):plain object 的 bounded 准入判定(纯函数,便于测试)。在 safeParse 前调用。
  * 仅对 plain object 检自有 key 数量与单 key 长度;非 plain object 直接放行({ok:true})。
@@ -33,19 +62,7 @@ export function boundedObjectAdmissible(
   // 边数边查 + 早停(超 MAX_BOUNDED_OBJECT_KEYS 立即返回,不再遍历)。for...in 仅枚举可枚举 string key
   //(与 Object.keys / zod .strict() 枚举语义一致;此 helper 是纯数量/长度闸,无 E140/E200 的 symbol/非枚举
   // 检测需求,故不同于 assert-json-value 必须 Reflect.ownKeys 的 E221 决策)。
-  const obj = rawInput as Record<string, unknown>;
-  let count = 0;
-  for (const k in obj) {
-    if (!Object.prototype.hasOwnProperty.call(obj, k)) continue;
-    count += 1;
-    if (count > MAX_BOUNDED_OBJECT_KEYS) {
-      return { ok: false, reason: 'too-many-keys' };
-    }
-    if (k.length > MAX_BOUNDED_OBJECT_KEY_LEN) {
-      return { ok: false, reason: 'key-too-long' };
-    }
-  }
-  return { ok: true };
+  return scanOwnKeysBounded(rawInput as Record<string, unknown>);
 }
 
 // 边界(E259,E255-E258 深化):顶层 boundedObjectAdmissible 只检 plain object 的**顶层** key —— 嵌套
@@ -85,19 +102,7 @@ export function boundedValueDeepAdmissible(
   }
   // 边界(E300,同 boundedObjectAdmissible):for...in + hasOwnProperty 边数边查 + 早停,不先 Object.keys
   // 全量物化 key 数组(深层海量 key 对象在判数量前先分配巨数组)。
-  const obj = value as Record<string, unknown>;
-  let count = 0;
-  for (const k in obj) {
-    if (!Object.prototype.hasOwnProperty.call(obj, k)) continue;
-    count += 1;
-    if (count > MAX_BOUNDED_OBJECT_KEYS) {
-      return { ok: false, reason: 'too-many-keys' };
-    }
-    if (k.length > MAX_BOUNDED_OBJECT_KEY_LEN) {
-      return { ok: false, reason: 'key-too-long' };
-    }
-    const r = boundedValueDeepAdmissible(obj[k], depth + 1);
-    if (!r.ok) return r;
-  }
-  return { ok: true };
+  return scanOwnKeysBounded(value as Record<string, unknown>, (child) =>
+    boundedValueDeepAdmissible(child, depth + 1),
+  );
 }

@@ -7,6 +7,7 @@ import { t } from '../../i18n';
 import { HeaderActions } from '../../shell/dock/HeaderActions';
 import { coApp } from '../../plugins/co-app';
 import { PanelRegistry } from '../../plugins/registries/PanelRegistry';
+import { notify } from '../../notifications/notify';
 
 const notifyError = vi.fn();
 vi.mock('../../notifications/notify', () => ({
@@ -15,6 +16,7 @@ vi.mock('../../notifications/notify', () => ({
 
 interface FakeApi {
   addPanel: ReturnType<typeof vi.fn>;
+  getPanel: ReturnType<typeof vi.fn>;
   addPopoutGroup: ReturnType<typeof vi.fn>;
 }
 
@@ -31,6 +33,7 @@ function makeProps(over: {
 } = {}): TestProps {
   const containerApi: FakeApi = {
     addPanel: vi.fn(),
+    getPanel: vi.fn(() => undefined),
     // addPopoutGroup 真实返回 Promise<boolean>(A50:调用点 .catch 失败反馈),默认 resolve。
     addPopoutGroup: vi.fn(() => Promise.resolve(true)),
     ...over.containerApi,
@@ -200,6 +203,64 @@ describe('HeaderActions — 更多操作菜单', () => {
 
     // menu 关闭
     expect(document.querySelector('[role=menu]')).toBeNull();
+  });
+
+  // 计数器每次启动归零,而持久化布局会恢复 `output-1` 这类 id;dockview 对重复 id 直接抛错。
+  it('生成的 panel id 已被占用(重启后恢复的面板)→ 跳过,用下一个空闲 id', () => {
+    coApp.panels.register({ type: 'explorer', title: 'Explorer', factory: () => null });
+    const taken = new Set<string>();
+    const props = makeProps({
+      containerApi: { getPanel: vi.fn((id: string) => (taken.has(id) ? { id } : undefined)) },
+    });
+    const { container } = render(
+      <HeaderActions {...(props as unknown as Parameters<typeof HeaderActions>[0])} />,
+    );
+    const more = container.querySelector(
+      `button[aria-label="${t('panels.explorer.btn.more_actions')}"]`,
+    ) as HTMLButtonElement;
+    fireEvent.click(more);
+    fireEvent.click(document.querySelector('[role=menuitem]') as HTMLElement);
+    const first = (props.containerApi.addPanel.mock.calls[0]![0] as { id: string }).id;
+    const n = Number(first.split('-')[1]);
+    // 下两个序号都已被占用
+    taken.add(`explorer-${n + 1}`);
+    taken.add(`explorer-${n + 2}`);
+
+    fireEvent.click(more);
+    fireEvent.click(document.querySelector('[role=menuitem]') as HTMLElement);
+    const second = (props.containerApi.addPanel.mock.calls[1]![0] as { id: string }).id;
+    expect(second).toBe(`explorer-${n + 3}`);
+  });
+
+  it('addPanel 抛错 → 菜单仍关闭 + notify.error(不留 unhandled rejection)', async () => {
+    coApp.panels.register({ type: 'explorer', title: 'Explorer', factory: () => null });
+    const notifyError = vi.spyOn(notify, 'error').mockImplementation(() => 'id');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const props = makeProps({
+        containerApi: {
+          addPanel: vi.fn(() => {
+            throw new Error('panel with id already exists');
+          }),
+        },
+      });
+      const { container } = render(
+        <HeaderActions {...(props as unknown as Parameters<typeof HeaderActions>[0])} />,
+      );
+      fireEvent.click(
+        container.querySelector(
+          `button[aria-label="${t('panels.explorer.btn.more_actions')}"]`,
+        ) as HTMLButtonElement,
+      );
+      fireEvent.click(document.querySelector('[role=menuitem]') as HTMLElement);
+      await vi.waitFor(() => {
+        expect(notifyError).toHaveBeenCalledWith(t('shell.dock.add_panel_failed'));
+      });
+      expect(document.querySelector('[role=menu]')).toBeNull();
+    } finally {
+      notifyError.mockRestore();
+      warn.mockRestore();
+    }
   });
 
   // race(R60,R59 同族):菜单打开期间该 panel type 被插件 unregister(快照仍渲染该项,但 live

@@ -71,18 +71,3 @@ export function makeFakeEvent(
         : (opts.senderFrame ?? { url: 'file:///app/index.html' }),
   };
 }
-
-/**
- * Use this from a spec's top-level `vi.mock('electron', () => ...)` factory.
- * Do not call `vi.mock` inside this helper: Vitest hoists mocks before normal
- * imports, so the mock declaration must stay in the spec file.
- */
-export function mockElectronAppGetPath(homeDir: string): {
-  app: { getPath: ReturnType<typeof vi.fn> };
-} {
-  return {
-    app: {
-      getPath: vi.fn((name: string) => (name === 'home' ? homeDir : '')),
-    },
-  };
-}

@@ -12,9 +12,17 @@
 //
 // 我们 split by "### " 收 sections,容错(用户自己写也兼容简单形态)。
 
+import {
+  REVIEW_BODY_MAX,
+  REVIEW_FIELD_MAX,
+  REVIEW_TITLE_MAX,
+  REVIEW_VERSION_MAX,
+} from '../../electron/shared/marketplace-review-limits';
 import type { Review } from './reviews-types';
 import { isGitHubLogin, REVIEW_URL_MAX } from './reviews-types';
+import { lowerIfNeeded } from '../../electron/shared/lower-if-needed';
 import { isValidPluginId } from '../plugins/plugin-id'; // 边界(E113/E123):共享单一来源
+import { isSafeRepoPathChar } from './types';
 import { isHttpUrl } from './url-safety'; // 边界(E143,E109 fresh-fetch 对偶):url/avatarUrl scheme 白名单
 
 interface RawDiscussion {
@@ -35,13 +43,11 @@ interface RawDiscussion {
 // 边界(E57):renderer 防御性长度上限 —— 即便 main 已逐字段截断(E57),parseReview 也自带
 // body/title 上限,挡绕过 main 的 cache-hydrate / 测试 / 未来入口(body.split / section 聚合会被
 // 超长 body 放大)。值与 main REVIEW_BODY_MAX/REVIEW_TITLE_MAX 对齐。
-const MAX_PARSE_BODY = 16384;
-const MAX_PARSE_TITLE = 1024;
+const MAX_PARSE_BODY = REVIEW_BODY_MAX;
+const MAX_PARSE_TITLE = REVIEW_TITLE_MAX;
 // 边界(E253):fresh 解析的字段长度上限,与 cache-read isValidReview 对齐(REVIEW_FIELD_MAX=512
 // handle/createdAt;REVIEW_VERSION_MAX=128 版本)。fresh 路径此前对 createdAt/author.createdAt/版本
 // 只 nullish 合并不校验类型/长度 → 畸形 IPC 可把 object/超长写进 Review,new Date() 变 Invalid/NaN 漏标。
-const REVIEW_FIELD_MAX = 512;
-const REVIEW_VERSION_MAX = 128;
 
 /** 失败返 null(skip 这条 review,不污染聚合). */
 export function parseReview(rawInput: unknown): Review | null {
@@ -184,16 +190,6 @@ function isAsciiWhitespace(code: number): boolean {
   );
 }
 
-function lowerIfNeeded(value: string): string {
-  for (let i = 0; i < value.length; i += 1) {
-    const code = value.charCodeAt(i);
-    if ((code >= 65 && code <= 90) || code > 127) {
-      return value.toLowerCase();
-    }
-  }
-  return value;
-}
-
 function parseHeadingKey(line: string): string | null {
   if (
     line.length < 5 ||
@@ -215,17 +211,6 @@ function parseHeadingKey(line: string): string | null {
   return start < end ? lowerIfNeeded(line.slice(start, end)) : null;
 }
 
-function isPluginIdTitleChar(code: number): boolean {
-  return (
-    (code >= 65 && code <= 90) ||
-    (code >= 97 && code <= 122) ||
-    (code >= 48 && code <= 57) ||
-    code === 46 ||
-    code === 95 ||
-    code === 45
-  );
-}
-
 function extractPluginIdFromTitle(title: string): string | null {
   let start = 0;
   while (start < title.length && isAsciiWhitespace(title.charCodeAt(start))) {
@@ -234,7 +219,7 @@ function extractPluginIdFromTitle(title: string): string | null {
   if (title.charCodeAt(start) !== 91) return null;
   start += 1;
   let end = start;
-  while (end < title.length && isPluginIdTitleChar(title.charCodeAt(end))) {
+  while (end < title.length && isSafeRepoPathChar(title.charCodeAt(end))) {
     end += 1;
   }
   if (end === start || title.charCodeAt(end) !== 93) return null;

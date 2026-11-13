@@ -30,7 +30,6 @@ import {
   type TerminalSearchState,
 } from '@continuo-terminal/react-terminal';
 import type { ISearchOptions } from '@xterm/addon-search';
-import { TERMINAL_PANEL_TYPE } from './constants';
 
 // legacy literal hex — 后续 token 化 follow-up topic（plan-v4 P1-3 决议留 wrapper 不进 constants.ts）
 // Resolved from Continuo theme tokens: accent-fill #2563eb, accent #b4c5ff.
@@ -57,18 +56,4 @@ export function applyTerminalSearchEffect(
   action: TerminalSearchAction,
 ): void {
   packageApply(addon, state, action, TERMINAL_SEARCH_DECORATIONS);
-}
-
-// dockview-specific active-panel resolver 留本地
-export interface ActivePanelLike {
-  readonly id: string;
-  readonly view: { readonly contentComponent?: string };
-}
-
-export function getActiveTerminalPanelId(api: {
-  readonly activePanel?: ActivePanelLike | null;
-}): string | null {
-  const active = api.activePanel;
-  if (!active || active.view.contentComponent !== TERMINAL_PANEL_TYPE) return null;
-  return active.id;
 }

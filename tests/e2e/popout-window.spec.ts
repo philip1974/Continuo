@@ -1,13 +1,13 @@
 // Dockview popout button → 弹出第二个 Electron window,渲染 PopoutHost.
 //
-// 跳过原因:dockview-react 的 addPopoutGroup 在 Playwright 控制的 Electron
-// 环境下行为不稳定(子窗未创建,可能与 detached layout context 相关).
-// HeaderActions 单测已覆盖 click → addPopoutGroup 调用;真实弹窗体验留人工 QA.
+// 此前一直被 skip,注释写的是「addPopoutGroup 在 Playwright 下不稳定,子窗未创建」。真正的原因是
+// windowOpenHandler 在「未打包且没有 dev server」(e2e / 预览正是这种)时把所有 popout 都拒了
+//(见 electron/main/window-open-policy.ts)。修掉之后子窗能正常弹出,本用例恢复启用。
 
 import { test, expect } from './fixtures/electron-app';
 import { DOCK_POPOUT } from './helpers/editor';
 
-test.skip('Popout 按钮 → 第二个 window 弹出 + 渲染 PopoutHost', async ({
+test('Popout 按钮 → 第二个 window 弹出 + 渲染 PopoutHost', async ({
   electronApp,
   window,
 }) => {

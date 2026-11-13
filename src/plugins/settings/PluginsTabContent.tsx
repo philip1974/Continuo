@@ -1,11 +1,13 @@
 // '插件' SettingTab 内容(M-Plugin v3.5)。
 // 自检视图:贡献点统计 + 内置插件清单 + 用户插件占位(等 v4 IPC)。
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button, Input } from '@/design';
 import { clampGitUrl } from '../../../electron/shared/plugins-channels';
+import { usePolledSnapshot } from '@/lib/use-polled-snapshot';
 import { ConfirmDialog } from '@/panels/Explorer/ConfirmDialog';
 import { coApi } from '@/lib/co-api';
+import { useSingleFlight } from '@/lib/use-single-flight';
 import { coApp } from '../co-app';
 import { useMultiRegistry } from '../registries/useRegistry';
 import { getUserPluginManager } from '../PluginManager';
@@ -29,6 +31,8 @@ const EMPTY_PLUGIN_TAB_STRINGS: string[] = [];
 const EMPTY_PLUGIN_TAB_ITEMS: never[] = [];
 const EMPTY_CONTRIBUTION_SAMPLES: readonly string[] = [];
 const EMPTY_DECLARED_PERMISSIONS: readonly PermissionKey[] = [];
+const NO_PENDING_INSTALLS: ReadonlyMap<string, { id: string; name: string; version: string }> =
+  new Map();
 
 const PLUGINS_TAB_ROW_CLASS_NAME = 'flex items-start gap-4 px-4 py-3 text-xs';
 const PLUGINS_TAB_ROW_BORDER_CLASS_NAME = `${PLUGINS_TAB_ROW_CLASS_NAME} border-t border-line/50`;
@@ -47,17 +51,6 @@ export function collectContributionSamples<T, K extends keyof T>(
     samples[i] = String(items[i]![key]);
   }
   return samples;
-}
-
-export function collectStatusBarItems<T>(left: readonly T[], right: readonly T[]): readonly T[] {
-  if (left.length === 0 && right.length === 0) return EMPTY_PLUGIN_TAB_ITEMS;
-  if (left.length === 0) return right;
-  if (right.length === 0) return left;
-  const items = new Array<T>(left.length + right.length);
-  let i = 0;
-  for (; i < left.length; i++) items[i] = left[i]!;
-  for (let j = 0; j < right.length; j++, i++) items[i] = right[j]!;
-  return items;
 }
 
 export function formatContributionSamples(samples: readonly string[]): string {
@@ -268,21 +261,9 @@ function useUserPlugins(): {
   plugins: readonly PluginListItem[];
   refresh: () => void;
 } {
-  const [snap, setSnap] = useState<readonly PluginListItem[]>(() => readUserPluginList());
-  const refresh = () => {
-    // listAll() 每次返回新数组;1s 轮询直接 setSnap 会让整个插件列表每秒
-    // re-render。函数式更新只在列表渲染态实际变化时换引用。(codex 打磨 R2)
-    const next = readUserPluginList();
-    setSnap((prev) => (samePluginList(prev, next) ? prev : next));
-  };
-  useEffect(() => {
-    // 挂载时刷一次(manager 可能在组件 mount 之后才 init 完)
-    refresh();
-    // 1 秒轮询兜底,捕获 manager.init 异步完成的迟到入表
-    const t = setInterval(refresh, 1000);
-    return () => clearInterval(t);
-  }, []);
-  return { plugins: snap, refresh };
+  // 1 秒轮询兜底:捕获 manager.init 异步完成的迟到入表;列表渲染态没变则保持同引用。
+  const [plugins, refresh] = usePolledSnapshot(readUserPluginList, samePluginList);
+  return { plugins, refresh };
 }
 
 function UserPluginsSection() {
@@ -292,22 +273,21 @@ function UserPluginsSection() {
   const mgr = getUserPluginManager();
   const [gitUrl, setGitUrl] = useState('');
   const trimmedGitUrl = useMemo(() => gitUrl.trim(), [gitUrl]);
-  const [installing, setInstalling] = useState(false);
-  // race(R8):同步 in-flight 闸门。disabled={installing} 是 render 后状态,异步滞后 —— 同一事件
-  // 循环内双击/Enter 会在 setInstalling(true) 生效前两次进 onInstall,启动两次 installFromGit
-  // (主进程 install lock 要等 clone+manifest 解析才按 pluginId 串行,期间已双 clone,第二个常
-  // EEXIST 把成功覆盖成失败)。ref 同步占位:进入即标记,重入直接 return。
-  const installingRef = useRef(false);
+  // race(R8):同步单飞闸门(useSingleFlight)。disabled={installing} 是 render 后状态,异步滞后 —— 同一
+  // 事件循环内双击/Enter 会在其生效前两次进 onInstall,启动两次 installFromGit(主进程 install lock 要等
+  // clone+manifest 解析才按 pluginId 串行,期间已双 clone,第二个常 EEXIST 把成功覆盖成失败)。
+  const { busy: installing, run: runInstall } = useSingleFlight();
   // a11y(A42):结果消息带严重度 → 渲染时按语义选 live region(成功 status/polite,失败 alert)。
   const [installMsg, setInstallMsg] = useState<{
     text: string;
     isError: boolean;
   } | null>(null);
-  const [pendingInstall, setPendingInstall] = useState<{
-    id: string;
-    name: string;
-    version: string;
-  } | null>(null);
+  // 已安装、待重启后才进列表的插件(按 id;连续安装多个时各占一行)。
+  const [pendingInstalls, setPendingInstalls] = useState<
+    ReadonlyMap<string, { id: string; name: string; version: string }>
+  >(NO_PENDING_INSTALLS);
+  // 已进列表的(重启后加载 / 覆盖重装已有 id)不再显示待重启行,避免同一插件两行。
+  const pendingRows = [...pendingInstalls.values()].filter((p) => !hasPluginId(plugins, p.id));
   const [uninstallTarget, setUninstallTarget] = useState<PluginListItem | null>(null);
   const [permEditTarget, setPermEditTarget] = useState<PluginListItem | null>(null);
   const permStore = getUserPermissionStore();
@@ -369,49 +349,44 @@ function UserPluginsSection() {
     refresh();
   };
 
-  const onInstall = async () => {
+  const onInstall = (): Promise<void> | void => {
     if (!trimmedGitUrl) return;
-    // race(R8):同步单飞 —— 重入(同 tick 双击/Enter)在 installing state 生效前直接挡掉。
-    if (installingRef.current) return;
-    installingRef.current = true;
-    setInstalling(true);
-    setInstallMsg(null);
-    try {
-      const r = await coApi.plugins.installFromGit(trimmedGitUrl);
-      if (!r.ok) {
-        // i18n(codex 复查 P1):installFromGit 各错误站点的 Error.message 是硬编码中文
-        // (不支持的 git URL / manifest 缺字段 / main 入口非法 / 删除失败…),经 safeHandle
-        // 原样传到 renderer。直接展示 r.message → en/ko 界面看到中文。改用稳定 r.code 经
-        // catalog 翻译(errors.<CODE> 三语言已齐);未纳入 catalog 的 code 才回退原 message。
-        const localized = tf(`errors.${r.code}`, r.message);
+    return runInstall(async () => {
+      setInstallMsg(null);
+      try {
+        const r = await coApi.plugins.installFromGit(trimmedGitUrl);
+        if (!r.ok) {
+          // i18n(codex 复查 P1):installFromGit 各错误站点的 Error.message 是硬编码中文
+          // (不支持的 git URL / manifest 缺字段 / main 入口非法 / 删除失败…),经 safeHandle
+          // 原样传到 renderer。直接展示 r.message → en/ko 界面看到中文。改用稳定 r.code 经
+          // catalog 翻译(errors.<CODE> 三语言已齐);未纳入 catalog 的 code 才回退原 message。
+          const localized = tf(`errors.${r.code}`, r.message);
+          setInstallMsg({
+            text: t('plugins_tab.error.generic', {
+              message: `[${r.code}] ${localized}`,
+            }),
+            isError: true,
+          });
+        } else {
+          setInstallMsg({
+            text: t('plugins_tab.install.success', {
+              name: r.data.name,
+              version: r.data.version,
+            }),
+            isError: false,
+          });
+          setPendingInstalls((prev) => new Map(prev).set(r.data.id, r.data));
+          setGitUrl('');
+        }
+      } catch (err) {
         setInstallMsg({
           text: t('plugins_tab.error.generic', {
-            message: `[${r.code}] ${localized}`,
+            message: errorMessage(err),
           }),
           isError: true,
         });
-      } else {
-        setInstallMsg({
-          text: t('plugins_tab.install.success', {
-            name: r.data.name,
-            version: r.data.version,
-          }),
-          isError: false,
-        });
-        setPendingInstall(r.data);
-        setGitUrl('');
       }
-    } catch (err) {
-      setInstallMsg({
-        text: t('plugins_tab.error.generic', {
-          message: errorMessage(err),
-        }),
-        isError: true,
-      });
-    } finally {
-      installingRef.current = false;
-      setInstalling(false);
-    }
+    });
   };
 
   // a11y(A47,A46 同族):生命周期操作(reload/disable/enable/retry)失败此前只 console.warn,
@@ -478,28 +453,28 @@ function UserPluginsSection() {
           </div>
         )}
       </div>
-      {plugins.length === 0 && !pendingInstall ? (
+      {plugins.length === 0 && pendingRows.length === 0 ? (
         <div className="rounded-md border border-dashed border-line bg-panel-soft/40 px-4 py-8 text-center text-xs text-fg-dim">
           {t('plugins_tab.user.no_plugins')}
         </div>
       ) : (
         <div className="rounded-md border border-line bg-panel-soft/40">
-          {pendingInstall && (
-            <div className="flex items-start gap-4 px-4 py-3 text-xs">
+          {pendingRows.map((pending, i) => (
+            <div key={pending.id} className={pluginsTabRowClassName(i > 0)}>
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline gap-2">
-                  <span className="text-sm font-medium text-fg">{pendingInstall.name}</span>
+                  <span className="text-sm font-medium text-fg">{pending.name}</span>
                   <code className="rounded bg-panel-soft/70 px-1.5 py-0.5 text-2xs uppercase tracking-wider text-fg-muted/70">
-                    {pendingInstall.id}
+                    {pending.id}
                   </code>
-                  <span className="text-2xs text-fg-dim">v{pendingInstall.version}</span>
+                  <span className="text-2xs text-fg-dim">v{pending.version}</span>
                 </div>
                 <div className="mt-1 text-fg-muted">{t('plugins_tab.user.pending_hint')}</div>
               </div>
             </div>
-          )}
+          ))}
           {plugins.map((p, i) => (
-            <div key={p.id} className={pluginsTabRowClassName(i > 0 || Boolean(pendingInstall))}>
+            <div key={p.id} className={pluginsTabRowClassName(i > 0 || pendingRows.length > 0)}>
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline gap-2">
                   <span className="text-sm font-medium text-fg">{p.manifest.name}</span>

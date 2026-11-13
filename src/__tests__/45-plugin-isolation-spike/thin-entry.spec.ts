@@ -100,6 +100,10 @@ describeIfImplemented('topic 45 thin renderer entry', () => {
   });
 });
 
+// 本文件的用例会真实加载 renderer 入口乃至整个 main-app 依赖图(vi.importActual / 动态 import):空闲机器上
+// 约 1.5s,CPU 被其它任务占满时会超过 vitest 默认的 5s,表现为与改动无关的间歇性超时。给足余量。
+vi.setConfig({ testTimeout: 30_000 });
+
 describe('topic 45 main-app top-level AST contract', () => {
   mainAppAstCase('allows only inert top-level statements in src/main-app.ts', () => {
     const sourceText = readFileSync(mainAppImplementationPath, 'utf8');

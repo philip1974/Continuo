@@ -1,4 +1,3 @@
-import { BrowserWindow } from 'electron';
 import { z } from 'zod';
 import { safeHandle, type IsTrustedFrame } from '../safe-handle';
 import { I18N_CHANNELS, type I18nSetLocaleResult, type I18nChangedPayload } from '../../shared/i18n-channels';
@@ -8,6 +7,7 @@ import {
   setCurrentLocale,
   commitSetLocaleGen,
 } from '../services/settings.service';
+import { broadcastToWindows } from '../lib/broadcast';
 
 const NoInput = z.undefined();
 
@@ -18,21 +18,9 @@ export function setMenuRebuilder(fn: () => void): void {
 }
 
 function broadcastChanged(payload: I18nChangedPayload): void {
-  for (const w of BrowserWindow.getAllWindows()) {
-    if (w.isDestroyed()) continue;
-    // race(R64,R63 同族):isDestroyed() 检查后、send 前窗口可能销毁,send 抛
-    // "Object has been destroyed"。此时 locale 已 setCurrentLocale()+commitSetLocaleGen()
-    // 提交到 disk/main;若异常冒泡出 broadcastChanged → SET_LOCALE handler 返回 ok:false,
-    // 发起 renderer 不更新本地语言(而 disk/main 已是新值)= locale 分裂;且循环中断使该窗口
-    // 之后的窗口收不到 CHANGED 广播,同样停在旧语言。每个窗口的 send 独立 try/catch:一个已死
-    // 窗口只跳过/记录,不影响其它窗口广播与 SET_LOCALE 返回。镜像下方 menuRebuilder 的
-    // try/catch(失败不阻断 locale 同步)。
-    try {
-      w.webContents.send(I18N_CHANNELS.CHANGED, payload);
-    } catch (err) {
-      console.error('[i18n] broadcast send failed', err);
-    }
-  }
+  // race(R64):此时 locale 已提交到 disk/main;广播失败不得让 SET_LOCALE 返回 ok:false(locale 分裂),
+  // 也不得中断其余窗口 —— broadcastToWindows 逐窗口 try/catch。
+  broadcastToWindows(I18N_CHANNELS.CHANGED, () => payload, '[i18n] CHANGED');
 }
 
 export function registerI18nIpc(trusted: IsTrustedFrame): void {

@@ -14,7 +14,9 @@ import { mcpRevokers } from './mcp-host.service';
 import { getCurrentLocale } from './settings.service';
 import { withPtyLangEnv } from './pty-lang';
 import { defaultShellArgs } from './shell-args';
+import { runSerialPerKey } from './serialize-per-key';
 import { utf8ByteLength } from '../../shared/utf8-byte-length';
+import { TERMINAL_CHANNELS } from '../../shared/terminal-channels';
 
 // ── 常量(节流参数,沿用 Mind 决策 #5)──────────────────────────
 const OVERFLOW_THRESHOLD_BYTES = 2 * 1024 * 1024; // 2 MB/s 触发 overflow
@@ -31,7 +33,7 @@ function handleChunk(id: string, chunk: string): void {
 
   const flush = () => {
     if (inst.pendingData) {
-      safeSend(id, 'terminal:data', id, inst.pendingData);
+      safeSend(id, TERMINAL_CHANNELS.DATA, id, inst.pendingData);
       inst.pendingData = '';
     }
     inst.flushTimer = null;
@@ -49,7 +51,7 @@ function handleChunk(id: string, chunk: string): void {
     );
     if (!inst.overflowNotified) {
       inst.overflowNotified = true;
-      safeSend(id, 'terminal:overflow', id);
+      safeSend(id, TERMINAL_CHANNELS.OVERFLOW, id);
     }
     if (!inst.flushTimer) {
       inst.flushTimer = setTimeout(flush, FLUSH_DELAY_OVERFLOW_MS);
@@ -59,7 +61,7 @@ function handleChunk(id: string, chunk: string): void {
 
   if (inst.overflowNotified) {
     inst.overflowNotified = false;
-    safeSend(id, 'terminal:overflow-recovered', id);
+    safeSend(id, TERMINAL_CHANNELS.OVERFLOW_RECOVERED, id);
   }
   inst.pendingData += chunk;
 
@@ -216,13 +218,13 @@ function cleanupSessionLocal(id: string, exitCode: number): void {
   // banner) would otherwise be silently dropped. Emit it first so the renderer
   // sees data → exit in order. (审计 #1)
   if (instance.pendingData) {
-    safeSend(id, 'terminal:data', id, instance.pendingData);
+    safeSend(id, TERMINAL_CHANNELS.DATA, id, instance.pendingData);
     instance.pendingData = '';
   }
 
   // 2. Push terminal:exit (only if target still alive — variadic baseline payload)
   // Baseline shape: webContents.send('terminal:exit', id, { exitCode, signal })
-  safeSend(id, 'terminal:exit', id, { exitCode, signal: undefined });
+  safeSend(id, TERMINAL_CHANNELS.EXIT, id, { exitCode, signal: undefined });
 
   // 3. Clear all timers (Adjustment A: throttleInterval was setInterval per Op0 baseline)
   if (instance.killTimer) {
@@ -280,7 +282,7 @@ const instances = new Map<string, Instance>();
 // 串行,底层 Promise 可能乱序完成 —— 较早的小尺寸若晚于较新的大尺寸完成,会把 PTY 行列数回退
 // 到旧值(UI 已按最新尺寸渲染但 PTY 停在旧 cols/rows → 换行/全屏 TUI/光标错乱)。经此链按调用
 // 顺序串行应用,最新一次自然最后生效(last-wins,不回退)。
-const resizeChains = new Map<string, Promise<void>>();
+const resizeChains = new Map<string, Promise<unknown>>();
 
 // ── 纯函数(可单测,export)─────────────────────────────────────
 
@@ -294,24 +296,6 @@ const resizeChains = new Map<string, Promise<void>>();
 const RESET_PREFIX = '\x1b[0m';
 const RESET_PREFIX_BYTES = 4;
 
-function hasCompleteAnsiCsi(slice: string): boolean {
-  for (let i = 0; i < slice.length - 2; i += 1) {
-    if (slice.charCodeAt(i) !== 0x1b || slice.charCodeAt(i + 1) !== 91) {
-      continue;
-    }
-
-    for (let j = i + 2; j < slice.length; j += 1) {
-      const code = slice.charCodeAt(j);
-      if ((code >= 48 && code <= 57) || code === 59) {
-        continue;
-      }
-      return (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
-    }
-  }
-
-  return false;
-}
-
 function hasInPlaceAnsiCsi(data: string): boolean {
   for (let i = 0; i < data.length - 2; i += 1) {
     if (data.charCodeAt(i) !== 0x1b || data.charCodeAt(i + 1) !== 91) {
@@ -323,7 +307,9 @@ function hasInPlaceAnsiCsi(data: string): boolean {
       if (code >= 48 && code <= 57) {
         continue;
       }
-      return (
+      // 本序列不是原地更新 → 从下一个 ESC[ 继续找(等价 /\x1b\[\d*[ABCDGHK]/.test 的「任意位置」;此前
+      // 在第一个 CSI 处就 return,前面有 SGR 颜色时后面的清行 / 光标移动被漏判)。
+      if (
         code === 65 ||
         code === 66 ||
         code === 67 ||
@@ -331,11 +317,51 @@ function hasInPlaceAnsiCsi(data: string): boolean {
         code === 71 ||
         code === 72 ||
         code === 75
-      );
+      ) {
+        return true;
+      }
+      break;
     }
   }
 
   return false;
+}
+
+/** 截断点向前找 ESC 的窗口(字符数)。覆盖常见的 SGR / 私有模式 / 窗口标题 OSC。 */
+const ESCAPE_LOOKBACK_CHARS = 256;
+
+/**
+ * 从 `start`(一个 ESC 的下标)起的转义序列结束位置(最后一个字符之后的下标)。串尾未终结 → data.length。
+ *  - CSI `ESC [`:参数字节 0x30–0x3F、中间字节 0x20–0x2F、终结符 0x40–0x7E(ECMA-48;含 `?`、`:`、空格等)。
+ *  - OSC `ESC ]`:到 BEL 或 ST(`ESC \\`)。
+ *  - 其它:中间字节 0x20–0x2F 若干 + 一个终结字节(`ESC ( B`、`ESC c` 等)。
+ */
+function escapeSequenceEnd(data: string, start: number): number {
+  const len = data.length;
+  const kind = data.charCodeAt(start + 1);
+  if (Number.isNaN(kind)) return len;
+  let j = start + 2;
+  if (kind === 0x5b) {
+    while (j < len && data.charCodeAt(j) >= 0x30 && data.charCodeAt(j) <= 0x3f) j += 1;
+    while (j < len && data.charCodeAt(j) >= 0x20 && data.charCodeAt(j) <= 0x2f) j += 1;
+    if (j >= len) return len;
+    // 只消费合法的终结字节;畸形序列(被另一个 ESC、换行、非 ASCII 打断)到此为止,不吃后面的内容。
+    const final = data.charCodeAt(j);
+    return final >= 0x40 && final <= 0x7e ? j + 1 : j;
+  }
+  if (kind === 0x5d) {
+    for (; j < len; j += 1) {
+      const code = data.charCodeAt(j);
+      if (code === 0x07) return j + 1;
+      if (code === 0x1b && data.charCodeAt(j + 1) === 0x5c) return j + 2;
+    }
+    return len;
+  }
+  j = start + 1;
+  while (j < len && data.charCodeAt(j) >= 0x20 && data.charCodeAt(j) <= 0x2f) j += 1;
+  if (j >= len) return len;
+  const final = data.charCodeAt(j);
+  return final >= 0x30 && final <= 0x7e ? j + 1 : j;
 }
 
 export function safeTruncate(data: string, maxBytes: number): string {
@@ -366,16 +392,15 @@ export function safeTruncate(data: string, maxBytes: number): string {
     i -= step;
   }
 
-  // ANSI 边界(同原逻辑):cutPoint 落在不完整 ESC 序列起点则回退到 ESC 前,防半截色码。
-  const searchStart = Math.max(0, cutPoint - 32);
-  for (let i = cutPoint; i >= searchStart; i--) {
-    if (data.charCodeAt(i) === 0x1b) {
-      const slice = data.slice(i, cutPoint + 1);
-      if (!hasCompleteAnsiCsi(slice)) {
-        cutPoint = i;
-      }
-      break;
-    }
+  // 转义序列边界:截断点若落在一个转义序列内部,保留的尾部会以序列残片开头(屏幕上多出 `25l` / `m` /
+  // `]0;title` 之类的可见字符)。向前找最近的 ESC,若它的序列跨过截断点,就把截断点**向后**挪到该序列
+  // 之后:跳过残片,且不多带字节(向前回退到 ESC 会突破 maxBytes 预算)。
+  const searchStart = Math.max(0, cutPoint - ESCAPE_LOOKBACK_CHARS);
+  for (let i = cutPoint - 1; i >= searchStart; i--) {
+    if (data.charCodeAt(i) !== 0x1b) continue;
+    const end = escapeSequenceEnd(data, i);
+    if (end > cutPoint) cutPoint = end;
+    break;
   }
 
   return RESET_PREFIX + data.slice(cutPoint);
@@ -476,7 +501,7 @@ export async function createTerminal(
     // (handleChunk 收到低于阈值的 chunk 时已会清 overflowNotified,故无重复发送。)
     if (inst.overflowNotified && inst.bytesPerSecond <= OVERFLOW_THRESHOLD_BYTES) {
       inst.overflowNotified = false;
-      safeSend(id, 'terminal:overflow-recovered', id);
+      safeSend(id, TERMINAL_CHANNELS.OVERFLOW_RECOVERED, id);
     }
     inst.bytesPerSecond = 0;
   }, THROTTLE_RESET_INTERVAL_MS);
@@ -551,8 +576,8 @@ export async function resize(
   // 误以为该尺寸已同步、后续同尺寸不重试 → xterm DOM 与 PTY 尺寸长期不一致(TUI 错乱)。改为
   // 等本次 resize 在串行链中的真实结果并上抛(true/false)。链尾仍保持 void+吞错供后续串行,
   // 本调用单独返回自己这次的布尔结果。
-  const prev = resizeChains.get(id) ?? Promise.resolve();
-  const task = prev.then(() =>
+  // 串行 + 排空回收走共享 runSerialPerKey(任务自身吞错返回 false,链不会被 reject 打断)。
+  return runSerialPerKey(resizeChains, id, () =>
     getSessionManager()
       .resize({ session_id: id, cols, rows })
       .then(
@@ -566,16 +591,11 @@ export async function resize(
         },
       ),
   );
-  resizeChains.set(
-    id,
-    task.then(() => undefined),
-  );
-  return task;
 }
 
 // race(R12,R4 同族):await Ctrl-C 写入并上抛真实结果。此前 fire-and-forget 恒「成功」→ IPC
 // 在实际中断前返回成功,PTY 检查后退出 / 写入失败时中断静默丢失,用户/agent 以为已中断但
-// 进程可能继续跑。返回 false 让 IPC handler 上抛供 renderer 感知。
+// 进程可能继续跑。返回 false 让调用方(MCP terminal.kill 的 SIGINT 分支)上抛,不回报假成功。
 export async function interrupt(id: string): Promise<boolean> {
   const inst = instances.get(id);
   if (!inst) return false;
@@ -615,7 +635,8 @@ export function kill(id: string): void {
 /**
  * P4 — SIGKILL 强杀:跳过 grace period,直接 pty.kill('SIGKILL')。
  * 撤销已设的 grace timer(若有),避免重复 kill。
- * onExit 由 PTY 自然触发 → setExited + cleanup 走现有流程。
+ * 先同步做本地清理(cleanupSessionLocal,exitCode 记 -1)再发 SIGKILL:sm.kill 会卸掉 exit 监听,
+ * 等不到 PTY 的自然 onExit。
  */
 export function forceKill(id: string): void {
   const inst = instances.get(id);

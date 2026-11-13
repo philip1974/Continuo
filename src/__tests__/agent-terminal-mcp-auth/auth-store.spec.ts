@@ -302,3 +302,46 @@ describe('revoke', () => {
     expect(useAgentAuthStore.getState().pending).not.toBeNull();
   });
 });
+
+// 授权分域:终端与 debug 是两个独立的「本次启动期间允许」。此前只有一个标志位 —— 用户对终端点了
+// 「本次启动期间允许」之后,debug 工具(启动进程、读变量、执行表达式)也被静默放行,用户从未见过 debug 授权弹窗。
+describe('授权分域:terminal 与 debug 各自记「本次启动期间允许」', () => {
+  it('对终端授权 session 后,debug 请求仍然弹窗(不被短路)', async () => {
+    const terminal = useAgentAuthStore.getState().ensure({ method: 'terminal.create_session' });
+    useAgentAuthStore.getState().grant('session');
+    await expect(terminal).resolves.toBe('session');
+
+    void useAgentAuthStore.getState().ensure({ method: 'debug.launch' });
+    expect(useAgentAuthStore.getState().pending?.method).toBe('debug.launch');
+    useAgentAuthStore.getState().deny();
+  });
+
+  it('对 debug 授权 session 后:debug 请求直接通过,终端请求仍然弹窗', async () => {
+    const debug = useAgentAuthStore.getState().ensure({ method: 'debug.launch' });
+    useAgentAuthStore.getState().grant('session');
+    await expect(debug).resolves.toBe('session');
+    expect(useAgentAuthStore.getState().debugSessionGranted).toBe(true);
+    expect(useAgentAuthStore.getState().sessionGranted).toBe(false);
+
+    await expect(useAgentAuthStore.getState().ensure({ method: 'debug.*' })).resolves.toBe('session');
+    expect(useAgentAuthStore.getState().pending).toBeNull();
+
+    void useAgentAuthStore.getState().ensure({ method: 'terminal.send_input' });
+    expect(useAgentAuthStore.getState().pending?.method).toBe('terminal.send_input');
+    useAgentAuthStore.getState().deny();
+  });
+
+  it('revoke 同时撤销两个域', () => {
+    useAgentAuthStore.setState({ sessionGranted: true, debugSessionGranted: true });
+    useAgentAuthStore.getState().revoke();
+    expect(useAgentAuthStore.getState().sessionGranted).toBe(false);
+    expect(useAgentAuthStore.getState().debugSessionGranted).toBe(false);
+  });
+
+  it('非 debug 的 method(含未知 method)归终端域', async () => {
+    useAgentAuthStore.setState({ sessionGranted: true });
+    await expect(useAgentAuthStore.getState().ensure({ method: 'something.else' })).resolves.toBe(
+      'session',
+    );
+  });
+});

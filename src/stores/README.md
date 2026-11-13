@@ -19,7 +19,7 @@ All stores currently use `import { create } from 'zustand'` (React-coupled). ADR
 
 ## Why some stores are mirrors and some are local
 
-- **`terminal.store`** is a renderer-side mirror of state owned by the main process. The PTY pool lives in main; the store just shows what main says exists. Renderer never `setSessions` from inside a UI handler — it only flips local UI state (`activeId`). All session create/remove/title-change goes through `coApi.terminal.*` IPC and arrives back as the next `sessions_changed` broadcast.
+- **`terminal.store`** is a renderer-side mirror of state owned by the main process. The PTY pool lives in main; the store just shows what main says exists. Renderer never `setSessions` from inside a UI handler, and keeps no terminal UI state of its own (which terminal is active is dockview's active panel). All session create/remove/title-change goes through `coApi.terminal.*` IPC and arrives back as the next `sessions_changed` broadcast.
 - **`agent-auth.store`** is local for the *decision*, but the *prompt* is triggered from main via reverse-IPC. Decision is intentionally not persisted: every Continuo launch starts with no granted agent.
 - Everything else is renderer-local.
 

@@ -63,6 +63,23 @@ describe('resolveLink — 锚点', () => {
   it('纯锚点 #section → null(IDE 不接管文档内导航)', () => {
     expect(resolveLink('#heading', '/x.md')).toBeNull();
   });
+  // markdown 里带空格 / 非 ASCII 的文件名按 URL 规则写成 percent-encoding;不解码就会去打开字面名为
+  // `my%20notes.md` 的文件。
+  it.each([
+    ['my%20notes.md', '/work/docs/my notes.md'],
+    ['%E4%B8%AD%E6%96%87.md', '/work/docs/中文.md'],
+    ['sub/a%20b.md#sec', '/work/docs/sub/a b.md'],
+  ])('percent-encoded 路径 %s → 解码后的文件路径', (href, absPath) => {
+    expect(resolveLink(href, '/work/docs/index.md')).toEqual({ kind: 'file', absPath });
+  });
+
+  it('非法的 percent 序列(如 100%.md)→ 保留原样,不抛', () => {
+    expect(resolveLink('100%.md', '/work/docs/index.md')).toEqual({
+      kind: 'file',
+      absPath: '/work/docs/100%.md',
+    });
+  });
+
   it('file.md#section → file,锚点切掉', () => {
     expect(resolveLink('./other.md#sec', '/work/x.md')).toEqual({
       kind: 'file',

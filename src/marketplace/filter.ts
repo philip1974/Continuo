@@ -5,6 +5,7 @@
 
 import type { MarketplaceEntry } from './types';
 import { clampSearchQuery } from '@/lib/search-query';
+import { lowerIfNeeded as lowerStringIfNeeded } from '../../electron/shared/lower-if-needed';
 
 export interface FilterOptions {
   /** 大小写不敏感子串匹配,空串 = pass. */
@@ -50,13 +51,7 @@ function lowerIfNeeded(value: unknown): string {
   if (typeof value !== 'string') {
     return (value as { toLowerCase: () => string }).toLowerCase();
   }
-  for (let i = 0; i < value.length; i += 1) {
-    const code = value.charCodeAt(i);
-    if ((code >= 65 && code <= 90) || code > 127) {
-      return value.toLowerCase();
-    }
-  }
-  return value;
+  return lowerStringIfNeeded(value);
 }
 
 function lowerName(entry: MarketplaceEntry): string {
@@ -142,14 +137,6 @@ export function applyFilter(
   if (filtered === null) return entries;
   filtered.length = count;
   return count === 0 ? EMPTY_FILTERED_MARKETPLACE_ENTRIES : filtered;
-}
-
-export function buildMarketplaceSearchHaystack(entry: MarketplaceEntry): string {
-  let haystack = `${lowerName(entry)} ${lowerId(entry)} ${lowerDescription(entry)}`;
-  for (const tag of lowerTags(entry)) {
-    haystack += ` ${tag}`;
-  }
-  return haystack;
 }
 
 function matchQuery(entry: MarketplaceEntry, q: string): boolean {

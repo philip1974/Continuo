@@ -1,11 +1,11 @@
 // MCP host(Agent Terminal MCP Phase 1)。
-// 暴露 6 个纯函数契约层(单测覆盖)+ createMcpHost HTTP wiring(留 E2E)。
+// 暴露纯函数契约层(单测覆盖)+ createMcpHost HTTP wiring(留 E2E)。
 //
-// 协议(P1 极简版):
-//   POST /message  JSON-RPC 2.0 单请求/响应,直接通过 HTTP body 同步返回。
-//   GET  /sse      占位 SSE endpoint,P3+ 才真正用于 server-initiated 通知。
+// 协议:
+//   POST /mcp  JSON-RPC 2.0 单请求/响应,直接通过 HTTP body 同步返回。
+//   GET  /mcp  SSE endpoint(server-initiated 通知)。
 //
-// Bearer 鉴权:`Authorization: Bearer <token>`。Token 启动时生成,close 时作废。
+// Bearer 鉴权:`Authorization: Bearer <token>`。Token 按窗口签发,窗口关闭 / 用户撤销授权时作废。
 // 仅监听 127.0.0.1(isLocalhostBindAddr 校验,防误监听 0.0.0.0)。
 //
 // BDD: src/__tests__/agent-terminal-mcp-host/(纯函数层)
@@ -29,6 +29,8 @@ import { utf8BytesExceed } from '../../shared/utf8-byte-length';
 import { jsonByteLowerBoundExceeds } from '../../shared/json-byte-budget';
 import { RESULT_BYTES_MAX } from '../../shared/plugin-mcp-schemas';
 import { PLUGIN_MCP_ERROR_CODES } from '../../shared/plugin-mcp-channels';
+import { equalsAsciiIgnoreCase } from '../../shared/lower-if-needed';
+import { capErrorText, codedError } from '../../shared/error-message';
 
 // ── 常量 ────────────────────────────────────────────────────────
 
@@ -52,7 +54,7 @@ export const RPC_ERROR_CODES = {
 // RESULT_TOO_LARGE 错误而非物化巨响应。
 const MAX_TOOLS_LIST_BYTES = 16 * 1024 * 1024; // tools/list 聚合响应 ≤ 16MiB
 
-export const NO_WINDOW_CTX_MESSAGE = 'missing window context';
+const NO_WINDOW_CTX_MESSAGE = 'missing window context';
 
 // 边界(E78,E73/E75/E76/E77 错误串放大族 + 回显面):JSON-RPC id/method 与 tools/call 的
 // params.name 都是短标识符。此前 parseRpcMessage 只校验 method 非空、id 为 string|number,无长度
@@ -189,6 +191,16 @@ export interface RpcRequest {
 }
 
 /**
+ * JSON-RPC notification:合法 2.0 消息带 method 但**没有 id** → server 不得响应
+ * (如 client init 完成后发的 `notifications/initialized`)。HTTP 回 202,stdio 静默。
+ */
+export function isRpcNotification(raw: unknown): boolean {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return false;
+  const msg = raw as Record<string, unknown>;
+  return msg['jsonrpc'] === '2.0' && typeof msg['method'] === 'string' && !('id' in msg);
+}
+
+/**
  * 解析未信任的输入为 JSON-RPC 2.0 请求。任何不满足必字段 → null。
  *
  * 本 host 比标准更严:
@@ -261,18 +273,6 @@ export function isLocalhostBindAddr(addr: string): boolean {
   return LOCALHOST_ADDRS.has(addr);
 }
 
-function equalsAsciiIgnoreCase(value: string, expectedLower: string): boolean {
-  if (value.length !== expectedLower.length) return false;
-  for (let i = 0; i < expectedLower.length; i += 1) {
-    const actual = value.charCodeAt(i);
-    const expected = expectedLower.charCodeAt(i);
-    if (actual === expected) continue;
-    const folded = actual >= 65 && actual <= 90 ? actual + 32 : actual;
-    if (folded !== expected) return false;
-  }
-  return true;
-}
-
 /**
  * Host header 必须是本机回环地址 + 当前端口。用于挫败 DNS rebinding
  * (rebinding 后浏览器发来的 Host 是攻击者域名,与回环地址不符)。
@@ -306,6 +306,21 @@ export type RpcResponseObj =
         readonly data?: unknown;
       };
     };
+
+/** dispatchRpc 的结果 → JSON-RPC 响应串(HTTP 与 stdio 两个传输层共用)。 */
+export function formatRpcResponse(
+  id: string | number | null,
+  response: RpcResponseObj,
+): string {
+  return 'result' in response
+    ? formatRpcResult(id, response.result)
+    : formatRpcError(
+        id,
+        response.error.code,
+        response.error.message,
+        response.error.data,
+      );
+}
 
 /**
  * 路由 MCP 标准 method:initialize / tools/list / tools/call。
@@ -558,9 +573,6 @@ const MAX_SSE_CLIENTS_PER_TOKEN = 16; // 单 token SSE 连接上限
 // ERR_CODE_MAX 同量级 8192/256)。导出供单测。
 export const MCP_ERR_MESSAGE_MAX = 8192;
 export const MCP_ERR_CODE_MAX = 256;
-function capMcpErrText(s: string, max: number): string {
-  return s.length > max ? `${s.slice(0, max)}… (+${s.length - max})` : s;
-}
 
 /**
  * 边界(E266):把 tool.run 抛出的 err 规整成 JSON-RPC error(code/message/data.code 均经长度截断,
@@ -577,13 +589,13 @@ export function formatToolCallError(err: unknown): {
   ) as { code?: unknown; message?: unknown };
   const out: { code: number; message: string; data?: { code: string } } = {
     code: -32603,
-    message: capMcpErrText(
+    message: capErrorText(
       typeof e.message === 'string' ? e.message : 'internal error',
       MCP_ERR_MESSAGE_MAX,
     ),
   };
   if (typeof e.code === 'string') {
-    out.data = { code: capMcpErrText(e.code, MCP_ERR_CODE_MAX) };
+    out.data = { code: capErrorText(e.code, MCP_ERR_CODE_MAX) };
   }
   return out;
 }
@@ -638,7 +650,7 @@ async function readBody(req: IncomingMessage): Promise<string> {
     req.on('data', (chunk: Buffer) => {
       total += chunk.length;
       if (total > MAX_BODY_BYTES) {
-        reject(Object.assign(new Error('body too large'), { code: ERROR_CODES.PAYLOAD_TOO_LARGE }));
+        reject(codedError(ERROR_CODES.PAYLOAD_TOO_LARGE, 'body too large'));
         req.destroy();
         return;
       }
@@ -660,9 +672,7 @@ export async function createMcpHost(
 ): Promise<McpHost> {
   const bindAddr = options.bindAddr ?? '127.0.0.1';
   if (!isLocalhostBindAddr(bindAddr)) {
-    throw Object.assign(new Error(`MCP host bind forbidden: ${bindAddr}`), {
-      code: ERROR_CODES.MCP_HOST_BIND_FORBIDDEN,
-    });
+    throw codedError(ERROR_CODES.MCP_HOST_BIND_FORBIDDEN, `MCP host bind forbidden: ${bindAddr}`);
   }
 
   const tools = new Map<string, AnyMcpTool>();
@@ -691,6 +701,11 @@ export async function createMcpHost(
     } catch {
       /* ignore */
     }
+  };
+
+  const closeAllSseClients = (): void => {
+    // 先拷贝:closeSseClient 会从 sseClients 删条目。
+    for (const res of [...sseClients.keys()]) closeSseClient(res);
   };
 
   const handleMessage = async (
@@ -722,14 +737,7 @@ export async function createMcpHost(
 
     // MCP notification:JSON-RPC 没 id,server 不响应(202 Accepted)。
     // 例如 'notifications/initialized' 客户端 init 完后发的通知。
-    if (
-      raw !== null &&
-      typeof raw === 'object' &&
-      !Array.isArray(raw) &&
-      (raw as Record<string, unknown>)['jsonrpc'] === '2.0' &&
-      typeof (raw as Record<string, unknown>)['method'] === 'string' &&
-      !('id' in (raw as Record<string, unknown>))
-    ) {
+    if (isRpcNotification(raw)) {
       res.statusCode = 202;
       res.end();
       return;
@@ -774,20 +782,7 @@ export async function createMcpHost(
         signal: aborter.signal,
       });
       if (aborter.signal.aborted) return; // 连接已断 → 不写死连接
-      if ('result' in response) {
-        sendJson(res, 200, formatRpcResult(rpc.id, response.result));
-      } else {
-        sendJson(
-          res,
-          200,
-          formatRpcError(
-            rpc.id,
-            response.error.code,
-            response.error.message,
-            response.error.data,
-          ),
-        );
-      }
+      sendJson(res, 200, formatRpcResponse(rpc.id, response));
     } finally {
       req.off('close', onClose);
       res.off('close', onClose);
@@ -954,26 +949,10 @@ export async function createMcpHost(
     rotateToken(): void {
       windowTokens.clear();
       // 踢断所有现有 SSE 连接(它们持的旧 token 已无效)+ 清各自 keepalive interval。
-      for (const [res, meta] of sseClients) {
-        clearInterval(meta.keepalive);
-        try {
-          res.end();
-        } catch {
-          /* ignore */
-        }
-      }
-      sseClients.clear();
+      closeAllSseClients();
     },
     async close(): Promise<void> {
-      for (const [res, meta] of sseClients) {
-        clearInterval(meta.keepalive);
-        try {
-          res.end();
-        } catch {
-          /* ignore */
-        }
-      }
-      sseClients.clear();
+      closeAllSseClients();
       await new Promise<void>((resolve) => server.close(() => resolve()));
     },
   };

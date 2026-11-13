@@ -1,17 +1,19 @@
 // Terminal IPC 接入(M-Terminal Step T2 + Agent Terminal MCP P1)。
-// 8 invoke 通道 + 5 push event 通道。schemas / handlers 单独 export 给 spec 测;
+// invoke 通道 + push event 通道(清单见 shared/terminal-channels)。schemas / handlers 单独 export 给 spec 测;
 // registerTerminalIpc() 真注册 + 订阅 sessions_changed 广播给所有 BrowserWindow。
 
-import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import { z } from 'zod';
-import { defaultIsTrustedFrame, processIpcCall } from '../safe-handle';
-import { TERMINAL_CHANNELS } from '../../shared/terminal-channels';
+import {
+  defaultIsTrustedFrame,
+  safeHandleWithWindow,
+} from '../safe-handle';
+import { SESSION_UPDATE_CWD_CHANNEL, TERMINAL_CHANNELS } from '../../shared/terminal-channels';
 import { getDefaultShell, isAllowedShell } from '@continuo-terminal/server-node';
 import { shellFamilyForPath } from '../services/shell-args';
 import { ERROR_CODES } from '../../shared/error-codes';
-import { TERMINAL_ATTACH_REJECT_REASONS } from '../../shared/terminal-attach';
 import {
   TerminalCreateInputSchema,
   PATH_MAX,
@@ -29,10 +31,11 @@ import { SESSION_ID_MAX } from '../../shared/session-id-limits';
 // 边界(E219,E125/E127/E129 字节 vs code-unit 族):terminal:write data 须按真实 UTF-8 字节限,
 // 非 .max()(UTF-16 code unit)—— CJK/emoji 在 length≤上限时真实字节数倍超,实际写 6-8MB 到 PTY/IPC。
 import { utf8BytesExceed } from '../../shared/utf8-byte-length';
+import { broadcastToWindows } from '../lib/broadcast';
+import { codedError } from '../../shared/error-message';
 
 // ── 常量 ─────────────────────────────────────────────────────
 const MAX_WRITE_BYTES = 2_000_000; // ~2MB 真实 UTF-8 字节上限(下游 PTY/IPC 写入按字节,边界语义统一)
-const UPDATE_CWD_CHANNEL = 'session:update-cwd';
 
 // ── MCP env provider(由 main/index.ts 在 mcp host 启动后注入)──
 // 默认空 → 不注入 MCP 信息;启动 host 后调 setMcpEnvProvider 注册真函数。
@@ -101,45 +104,22 @@ export const idOnlyInputSchema = z
   .object({ id: z.string().min(1).max(SESSION_ID_MAX) })
   .strict();
 
-export const noInputSchema = z.object({}).strict();
-
-// topic-05: renderer attachRejected 反向通知 schema
-export const attachRejectedInputSchema = z
-  .object({
-    sessionId: z.string().min(1).max(SESSION_ID_MAX),
-    reason: z.enum(TERMINAL_ATTACH_REJECT_REASONS), // M23:单一来源
-  })
-  .strict();
+const noInputSchema = z.object({}).strict();
 
 export type CreateInput = TerminalCreateInput;
 export type WriteInput = z.infer<typeof writeInputSchema>;
 export type ResizeInput = z.infer<typeof resizeInputSchema>;
 export type UpdateCwdInput = z.infer<typeof updateCwdInputSchema>;
 export type IdOnlyInput = z.infer<typeof idOnlyInputSchema>;
-export type AttachRejectedInput = z.infer<typeof attachRejectedInputSchema>;
 
 // ── handlers ─────────────────────────────────────────────────
 
 const ERR_NOT_FOUND = (id: string) =>
-  Object.assign(new Error(`terminal not found: ${id}`), {
-    code: ERROR_CODES.TERMINAL_NOT_FOUND,
-  });
+  codedError(ERROR_CODES.TERMINAL_NOT_FOUND, `terminal not found: ${id}`);
 
 // race(R4):write 实际失败(PTY 在 has() 后退出 / server-node 拒写)→ 上抛,IPC 返 ok:false。
 const ERR_WRITE_FAILED = (id: string) =>
-  Object.assign(new Error(`terminal write failed: ${id}`), {
-    code: ERROR_CODES.TERMINAL_WRITE_FAILED,
-  });
-
-function senderWindowOrThrow(event: IpcMainInvokeEvent): BrowserWindow {
-  const win = BrowserWindow.fromWebContents(event.sender);
-  if (!win) {
-    throw Object.assign(new Error('no browser window'), {
-      code: ERROR_CODES.TERMINAL_NO_WINDOW,
-    });
-  }
-  return win;
-}
+  codedError(ERROR_CODES.TERMINAL_WRITE_FAILED, `terminal write failed: ${id}`);
 
 function assertOwnedSession(
   sessionStore: Pick<typeof terminalSessions, 'get'>,
@@ -173,9 +153,7 @@ export function makeCreateHandler(deps?: {
   ): Promise<{ id: string; cwd?: string; title?: string }> => {
     const shell = input.shell ?? getDefaultShell();
     if (!isAllowedShell(shell)) {
-      throw Object.assign(new Error(`shell not in allowlist: ${shell}`), {
-        code: ERROR_CODES.TERMINAL_FORBIDDEN_SHELL,
-      });
+      throw codedError(ERROR_CODES.TERMINAL_FORBIDDEN_SHELL, `shell not in allowlist: ${shell}`);
     }
     // cwd 解析优先级:
     //   1. 显式入参 input.cwd(user 路径 Cmd+T / + 按钮已传 workspaceRoot)
@@ -231,9 +209,7 @@ export function makeCreateHandler(deps?: {
     // 保留 metadata 故 get(id) 仍在),立即 kill 刚建的 PTY 并以 CANCELLED 收场,不返回成功。
     if (!sessionStore.get(id)) {
       if (service.has(id)) service.kill(id);
-      throw Object.assign(new Error(`terminal create cancelled: ${id}`), {
-        code: ERROR_CODES.TERMINAL_CREATE_CANCELLED,
-      });
+      throw codedError(ERROR_CODES.TERMINAL_CREATE_CANCELLED, `terminal create cancelled: ${id}`);
     }
     return input.scoped ? { id, cwd, title } : { id };
   };
@@ -241,9 +217,7 @@ export function makeCreateHandler(deps?: {
 
 export function resolveTerminalCwd(cwdHint?: string): string {
   if (!cwdHint) {
-    throw Object.assign(new Error('terminal cwd unresolved (no hint)'), {
-      code: ERROR_CODES.TERMINAL_CWD_UNRESOLVED,
-    });
+    throw codedError(ERROR_CODES.TERMINAL_CWD_UNRESOLVED, 'terminal cwd unresolved (no hint)');
   }
   try {
     if (fs.existsSync(cwdHint) && fs.statSync(cwdHint).isDirectory()) {
@@ -252,9 +226,7 @@ export function resolveTerminalCwd(cwdHint?: string): string {
   } catch {
     // fall through to throw below
   }
-  throw Object.assign(new Error(`terminal cwd invalid: ${cwdHint}`), {
-    code: ERROR_CODES.TERMINAL_CWD_UNRESOLVED,
-  });
+  throw codedError(ERROR_CODES.TERMINAL_CWD_UNRESOLVED, `terminal cwd invalid: ${cwdHint}`);
 }
 
 export function makeListSessionsHandler(deps?: {
@@ -303,15 +275,12 @@ export function makeRemoveHandler(deps?: {
   };
 }
 
-export function makeUpdateCwdHandler(deps?: {
+function makeUpdateCwdHandler(deps?: {
   sessionStore?: typeof terminalSessions;
 }) {
   const sessionStore = deps?.sessionStore ?? terminalSessions;
   return (input: UpdateCwdInput, win: BrowserWindow): void => {
-    const session = sessionStore.get(input.id);
-    if (!session || session.ownerWindowId !== win.id) {
-      throw ERR_NOT_FOUND(input.id);
-    }
+    assertOwnedSession(sessionStore, input.id, win);
     sessionStore.updateCwd(input.id, input.cwd);
   };
 }
@@ -348,57 +317,6 @@ export function makeResizeHandler(deps?: {
   };
 }
 
-export function makeInterruptHandler(deps?: {
-  service?: typeof termService;
-  sessionStore?: typeof terminalSessions;
-}) {
-  const service = deps?.service ?? termService;
-  const sessionStore = deps?.sessionStore ?? terminalSessions;
-  return async (input: IdOnlyInput, win: BrowserWindow): Promise<void> => {
-    assertOwnedSession(sessionStore, input.id, win);
-    if (!service.has(input.id)) throw ERR_NOT_FOUND(input.id);
-    // race(R12,R4 同款):await 真实中断结果;失败(check 后 PTY 退出 / 写拒绝)→ 抛
-    // TERMINAL_WRITE_FAILED,IPC 返 ok:false,renderer 真正感知中断未送达。
-    const ok = await service.interrupt(input.id);
-    if (!ok) throw ERR_WRITE_FAILED(input.id);
-  };
-}
-
-export function makeKillHandler(deps?: {
-  service?: typeof termService;
-  sessionStore?: typeof terminalSessions;
-}) {
-  const service = deps?.service ?? termService;
-  const sessionStore = deps?.sessionStore ?? terminalSessions;
-  return (input: IdOnlyInput, win: BrowserWindow): void => {
-    assertOwnedSession(sessionStore, input.id, win);
-    if (!service.has(input.id)) throw ERR_NOT_FOUND(input.id);
-    service.kill(input.id);
-  };
-}
-
-// topic-05: renderer 反向通知 main 该 agent session attach 失败;main 端
-// remove session metadata + kill PTY。
-// V1 简化:不做 main 端 preflight reservation,失败时 cleanup。
-export function makeAttachRejectedHandler(deps?: {
-  service?: typeof termService;
-  sessionStore?: typeof terminalSessions;
-}) {
-  const service = deps?.service ?? termService;
-  const sessionStore = deps?.sessionStore ?? terminalSessions;
-  return (input: AttachRejectedInput, win: BrowserWindow): void => {
-    assertOwnedSession(sessionStore, input.sessionId, win);
-    console.warn(
-      '[terminal-ipc] attach-rejected:',
-      input.sessionId,
-      'reason=',
-      input.reason,
-    );
-    sessionStore.remove(input.sessionId);
-    if (service.has(input.sessionId)) service.kill(input.sessionId);
-  };
-}
-
 /**
  * sessions_changed 广播:严格 per-owner 路由,把按 ownerWindowId 过滤后的 session 快照
  * 推给每个未销毁窗口。terminalSessions 的 subscriber。
@@ -409,17 +327,11 @@ export function makeAttachRejectedHandler(deps?: {
  * 失败只跳过/记录并继续给其它窗口发送。导出供 R68 回归测试。
  */
 export function broadcastSessionsChanged(): void {
-  for (const w of BrowserWindow.getAllWindows()) {
-    if (w.isDestroyed()) continue;
-    try {
-      w.webContents.send(
-        TERMINAL_CHANNELS.SESSIONS_CHANGED,
-        terminalSessions.getAll({ ownerWindowId: w.id }),
-      );
-    } catch (err) {
-      console.error('[terminal] SESSIONS_CHANGED broadcast failed', err);
-    }
-  }
+  broadcastToWindows(
+    TERMINAL_CHANNELS.SESSIONS_CHANGED,
+    (w) => terminalSessions.getAll({ ownerWindowId: w.id }),
+    '[terminal] SESSIONS_CHANGED',
+  );
 }
 
 // ── 注册 ─────────────────────────────────────────────────────
@@ -430,67 +342,26 @@ export function registerTerminalIpc(): void {
   const listSessionsHandler = makeListSessionsHandler();
   const writeHandler = makeWriteHandler();
   const resizeHandler = makeResizeHandler();
-  const interruptHandler = makeInterruptHandler();
-  const killHandler = makeKillHandler();
   const removeHandler = makeRemoveHandler();
-  const attachRejectedHandler = makeAttachRejectedHandler();
   const updateCwdHandler = makeUpdateCwdHandler();
   const windowClosedCleanup = makeWindowClosedCleanup();
 
+  // 所有 terminal IPC 走同一外壳(safeHandleWithWindow:trust → bounded → zod → try/catch + 从 sender
+  // 反查 BrowserWindow;ownerWindowId 由 main 推断,renderer 不自报)。
   const ownerScopedHandle = <I>(
     channel: string,
     schema: z.ZodType<I>,
     handler: (input: I, win: BrowserWindow) => unknown | Promise<unknown>,
-  ): void => {
-    ipcMain.handle(channel, async (event: IpcMainInvokeEvent, raw: unknown) =>
-      processIpcCall(
-        schema,
-        async (input) => await handler(input, senderWindowOrThrow(event)),
-        raw,
-        event.senderFrame,
-        trusted,
-      ),
-    );
-  };
+  ): void =>
+    safeHandleWithWindow(channel, schema, handler, trusted, ERROR_CODES.TERMINAL_NO_WINDOW);
 
-  // create 需要 win,单独走 processIpcCall 包 closure。
-  ipcMain.handle(
-    TERMINAL_CHANNELS.CREATE,
-    async (event: IpcMainInvokeEvent, raw: unknown) =>
-      processIpcCall(
-        createInputSchema,
-        async (input) => {
-          const win = senderWindowOrThrow(event);
-          return createHandler(input, win);
-        },
-        raw,
-        event.senderFrame,
-        trusted,
-      ),
+  ownerScopedHandle(TERMINAL_CHANNELS.CREATE, createInputSchema, createHandler);
+  // list_sessions:Issue #28 Phase 1。从 sender 推断 ownerWindowId。
+  ownerScopedHandle(TERMINAL_CHANNELS.LIST_SESSIONS, noInputSchema, (_input, win) =>
+    listSessionsHandler({ ownerWindowId: win.id }),
   );
-
-  // list_sessions:Issue #28 Phase 1。从 sender 推断 ownerWindowId,renderer
-  // 不自报。同 create 走 processIpcCall 包 closure。
-  ipcMain.handle(
-    TERMINAL_CHANNELS.LIST_SESSIONS,
-    async (event: IpcMainInvokeEvent, raw: unknown) =>
-      processIpcCall(
-        noInputSchema,
-        async () => {
-          const win = senderWindowOrThrow(event);
-          return listSessionsHandler({ ownerWindowId: win.id });
-        },
-        raw,
-        event.senderFrame,
-        trusted,
-      ),
-  );
-
   ownerScopedHandle(TERMINAL_CHANNELS.WRITE, writeInputSchema, writeHandler);
   ownerScopedHandle(TERMINAL_CHANNELS.RESIZE, resizeInputSchema, resizeHandler);
-  ownerScopedHandle(TERMINAL_CHANNELS.INTERRUPT, idOnlyInputSchema, interruptHandler);
-  ownerScopedHandle(TERMINAL_CHANNELS.KILL, idOnlyInputSchema, killHandler);
-  ownerScopedHandle(TERMINAL_CHANNELS.DESTROY, idOnlyInputSchema, killHandler);
   ownerScopedHandle(TERMINAL_CHANNELS.REMOVE, idOnlyInputSchema, removeHandler);
   ownerScopedHandle(
     TERMINAL_CHANNELS.READ_HISTORY,
@@ -500,31 +371,8 @@ export function registerTerminalIpc(): void {
       return termService.getBufferSnapshot(input.id);
     },
   );
-  ownerScopedHandle(
-    TERMINAL_CHANNELS.ATTACH_REJECTED,
-    attachRejectedInputSchema,
-    attachRejectedHandler,
-  );
 
-  ipcMain.handle(
-    UPDATE_CWD_CHANNEL,
-    async (
-      event: IpcMainInvokeEvent,
-      rawOrId: unknown,
-      rawCwd?: unknown,
-    ) =>
-      processIpcCall(
-        updateCwdInputSchema,
-        async (input) => {
-          updateCwdHandler(input, senderWindowOrThrow(event));
-        },
-        typeof rawOrId === 'string'
-          ? { id: rawOrId, cwd: rawCwd }
-          : rawOrId,
-        event.senderFrame,
-        trusted,
-      ),
-  );
+  ownerScopedHandle(SESSION_UPDATE_CWD_CHANNEL, updateCwdInputSchema, updateCwdHandler);
 
   // sessions_changed:严格 per-owner 路由 — 不论 user / agent,可见域只由
   // ownerWindowId 决定,与 listSessionsHandler 一致。

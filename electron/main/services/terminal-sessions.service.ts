@@ -28,6 +28,7 @@
 // BDD: src/__tests__/terminal-sessions-service/
 
 import { ERROR_CODES } from '../../shared/error-codes';
+import { assertOwnerWindowId } from '../lib/assert-owner-window-id';
 import {
   MAX_TERMINAL_SESSIONS_GLOBAL,
   MAX_TERMINAL_SESSIONS_PER_WINDOW,
@@ -36,8 +37,8 @@ import type { OriginHint } from '../../shared/origin-hint';
 import type { AttachTarget } from '../../shared/terminal-attach';
 import type { TerminalSessionSnapshot } from '../../shared/terminal-session';
 import type { ShellFamily } from '@continuo-terminal/shell-quote';
+import { codedError } from '../../shared/error-message';
 
-export type { AttachTarget } from '../../shared/terminal-attach';
 
 // 可维护性 M14:renderer-visible 字段复用 shared TerminalSessionSnapshot 单一来源;
 // 此处只追加 main-内部字段(controllerToken,绝不跨 IPC 给 renderer)。
@@ -69,17 +70,6 @@ export interface AddSessionInput {
 
 export interface GetAllFilter {
   readonly ownerWindowId: number;
-}
-
-export function assertOwnerWindowId(value: unknown): asserts value is number {
-  if (
-    typeof value !== 'number' ||
-    !Number.isFinite(value) ||
-    !Number.isInteger(value) ||
-    value < 0
-  ) {
-    throw new Error(`[terminal-sessions] invalid ownerWindowId: ${String(value)}`);
-  }
 }
 
 export type SessionsSubscriber = (
@@ -151,33 +141,20 @@ function notify(): void {
 // ── public API ─────────────────────────────────────────────────
 
 export function add(input: AddSessionInput): void {
-  assertOwnerWindowId(input.ownerWindowId);
+  assertOwnerWindowId(input.ownerWindowId, 'terminal-sessions');
   if (sessions.has(input.id)) {
-    throw Object.assign(
-      new Error(`terminal session duplicate: ${input.id}`),
-      { code: ERROR_CODES.TERMINAL_SESSION_DUPLICATE },
-    );
+    throw codedError(ERROR_CODES.TERMINAL_SESSION_DUPLICATE, `terminal session duplicate: ${input.id}`);
   }
   // 边界(E235):全局 + 每窗口会话数量双闸。在 spawn PTY 前的 reservation 处拒绝,超限不入 sessions、
   // 不触发后续 PTY spawn(IPC handler 见到 add 抛错即不调 createTerminal)→ 不漏真实子进程。
   if (sessions.size >= MAX_TERMINAL_SESSIONS_GLOBAL) {
-    throw Object.assign(
-      new Error(
-        `terminal session global limit (${MAX_TERMINAL_SESSIONS_GLOBAL}) reached`,
-      ),
-      { code: ERROR_CODES.TOO_MANY_TERMINALS },
-    );
+    throw codedError(ERROR_CODES.TOO_MANY_TERMINALS, `terminal session global limit (${MAX_TERMINAL_SESSIONS_GLOBAL}) reached`,);
   }
   if (
     sessionCountForWindow(input.ownerWindowId) >=
     MAX_TERMINAL_SESSIONS_PER_WINDOW
   ) {
-    throw Object.assign(
-      new Error(
-        `terminal session per-window limit (${MAX_TERMINAL_SESSIONS_PER_WINDOW}) reached`,
-      ),
-      { code: ERROR_CODES.TOO_MANY_TERMINALS },
-    );
+    throw codedError(ERROR_CODES.TOO_MANY_TERMINALS, `terminal session per-window limit (${MAX_TERMINAL_SESSIONS_PER_WINDOW}) reached`,);
   }
   const session: MainTerminalSession = {
     id: input.id,

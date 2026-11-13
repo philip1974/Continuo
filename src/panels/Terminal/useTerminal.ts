@@ -41,6 +41,8 @@ import {
   type TerminalSearchResult,
   type TerminalSearchState,
 } from './terminal-search-state';
+import { notifyFailure, notifyThrownError } from '@/notifications/notify-thrown-error';
+import { errorCodeOf } from '../../../electron/shared/error-message';
 
 type CursorStyle = 'block' | 'underline' | 'bar';
 
@@ -204,6 +206,10 @@ export function useTerminal(termId: string) {
     'block',
   );
   const { resolved } = useTheme();
+  // 创建 xterm 时读这里的最新值。创建 effect 只依赖 termId,其闭包里的字号 / 光标 / 主题是挂载时的;
+  // 0 尺寸挂载会推迟创建,期间的变化同步 effect 又因 term 尚不存在而跳过 → 不读 ref 就会用旧值创建。
+  const initOptionsRef = useRef({ fontSize, cursorStyle, resolved });
+  initOptionsRef.current = { fontSize, cursorStyle, resolved };
   // term + fit 跨 effect 共享(创建 effect 写 ref,settings effect 读 ref 改 options)
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -221,6 +227,8 @@ export function useTerminal(termId: string) {
   // sync ref INSIDE the setSearchState updater rather than via
   // useEffect — eliminates same-tick stale-ref window when two
   // dispatches fire before React commits.
+  // xterm key handler(在下方 init effect 内注册)调用搜索入口用;入口本身在更后面声明。
+  const dispatchSearchActionRef = useRef<((action: TerminalSearchAction) => void) | null>(null);
   const searchStateRef = useRef<TerminalSearchState>(
     INITIAL_TERMINAL_SEARCH_STATE,
   );
@@ -260,14 +268,15 @@ export function useTerminal(termId: string) {
       // mount 重置回 true,导致第一次 mount 的迟到 readHistory 误判仍挂载、写进
       // 已 dispose 的 term。见第十六轮 P1-AR。
       let teardownDone = false;
+      const initOptions = initOptionsRef.current;
       const term = new Terminal({
       ...TERM_OPTIONS,
       // 用当前 settings + 主题值开局,避免初始一帧的旧值闪烁
-      fontSize,
-      cursorStyle,
-      theme: resolved === 'dark' ? DARK_THEME : LIGHT_THEME,
+      fontSize: initOptions.fontSize,
+      cursorStyle: initOptions.cursorStyle,
+      theme: initOptions.resolved === 'dark' ? DARK_THEME : LIGHT_THEME,
       // light 7 (AAA), dark 1 — 见 LIGHT_THEME 注释 (issue #24)
-      minimumContrastRatio: resolved === 'dark' ? 1 : 7,
+      minimumContrastRatio: initOptions.resolved === 'dark' ? 1 : 7,
     });
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
@@ -279,12 +288,11 @@ export function useTerminal(termId: string) {
           .openExternal(url)
           .then((r) => {
             if (!r.ok) {
-              notify.error(localizeErrorByCode(r.code, r.message), { code: r.code });
+              notifyFailure(r);
             }
           })
           .catch((err) => {
-            const code = (err as { code?: string })?.code ?? 'EXCEPTION';
-            notify.error(localizeErrorByCode(code, (err as Error)?.message), { code });
+            notifyThrownError(err);
           });
       }),
     );
@@ -338,11 +346,10 @@ export function useTerminal(termId: string) {
           // 后才跑;mountedRef 此刻已被新 mount 置回 true → 旧微任务误把搜索框打开到新实例。
           // teardownDone 是 per-term 的(旧 term cleanup 时置位),旧微任务据此直接丢弃。与本文件
           // 其它异步回调(readHistory/safeWrite/resize)一致。
-          if (!teardownDone) {
-            setSearchState((state) =>
-              terminalSearchReducer(state, { type: 'open' }),
-            );
-          }
+          // 必须走 dispatchSearchAction(唯一入口:同步更新 searchStateRef + state)。此前这里直接
+          // setSearchState(reducer(open)),ref 仍停在「关闭」→ 下一次 dispatch 以 ref 为基底把刚打开的
+          // 搜索条关掉。经 ref 取最新回调:本 effect 先于 dispatchSearchAction 声明。
+          if (!teardownDone) dispatchSearchActionRef.current?.({ type: 'open' });
         });
         return false;
       }
@@ -414,7 +421,7 @@ export function useTerminal(termId: string) {
         if (teardownDone) return;
         if (!r.ok) {
           clearLoadingOverlay();
-          notify.error(localizeErrorByCode(r.code, r.message), { code: r.code });
+          notifyFailure(r);
           return;
         }
         if (!r.data.data) return;
@@ -424,8 +431,7 @@ export function useTerminal(termId: string) {
       .catch((err) => {
         if (teardownDone) return;
         clearLoadingOverlay();
-        const code = (err as { code?: string })?.code ?? 'EXCEPTION';
-        notify.error(localizeErrorByCode(code, (err as Error)?.message), { code });
+        notifyThrownError(err);
       });
 
     // 用户输入 → IPC write
@@ -449,7 +455,7 @@ export function useTerminal(termId: string) {
         })
         .catch((err) => {
           notifyWriteFail(
-            (err as { code?: string })?.code ?? 'EXCEPTION',
+            errorCodeOf(err),
             (err as Error)?.message,
           );
         });
@@ -519,7 +525,6 @@ export function useTerminal(termId: string) {
     };
     // 创建只依赖 termId;fontSize/cursorStyle 走下面的 settings effect 动态改。
     // 不放 deps 是有意的(否则改字号会重建 term 丢掉历史输出)。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [termId]);
 
   // settings → 已有 term 实例同步(不重建),改完 fit + resize 让 PTY 跟上新行列数
@@ -599,6 +604,7 @@ export function useTerminal(termId: string) {
     searchStateRef.current = next;
     setSearchState(next);
   }, []);
+  dispatchSearchActionRef.current = dispatchSearchAction;
 
   const openSearch = useCallback(() => {
     dispatchSearchAction({ type: 'open' });

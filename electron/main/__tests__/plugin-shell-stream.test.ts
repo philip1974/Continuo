@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PLUGIN_SHELL_STREAM_CHANNELS } from '../../shared/plugin-shell-stream-channels';
 import {
-  areValidPluginShellStreamArgs,
   registerPluginShellStreamHandlers,
 } from '../services/plugin-shell-stream.service';
+import { areValidShellArgs as areValidPluginShellStreamArgs } from '../../shared/shell-limits';
 
 type Handler = (
   event: { sender: MockWebContents; senderFrame?: { url: string } },

@@ -659,6 +659,40 @@ describe('reload(id)', () => {
     expect(mgr.listAll().find((x) => x.id === 'c')?.status).toBe('enabled');
   });
 
+  // 激活路径上 try 之外的步骤(注册 plugin-fs token、权限门)抛错,此前直接冒出 activateEntry:
+  // init 整体 reject(后面的插件不进列表),当前插件停在 status='enabled' 但没有实例的半激活态
+  //(既关不掉也开不了)。
+  it('某插件激活时 _registerPlugin 抛错 → 该插件落 failed 并带错误;其余插件照常加载', async () => {
+    coApiMocks.pluginFsRaw._registerPlugin
+      .mockRejectedValueOnce(new Error('main IPC unavailable'))
+      .mockResolvedValue({ token: 'test-token', generation: 1 });
+    const state: MockHostState = {
+      dirs: [
+        { id: 'a', manifestText: manifestText('a'), moduleUrl: 'mod://a' },
+        { id: 'b', manifestText: manifestText('b'), moduleUrl: 'mod://b' },
+      ],
+      enabled: new Set(['a', 'b']),
+      modules: new Map([
+        ['mod://a', { default: GoodPlugin }],
+        ['mod://b', { default: GoodPlugin }],
+      ]),
+      enabledWritten: new Set(),
+    };
+    const mgr = new PluginManager(fakeApp, makeHost(state));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await expect(mgr.init()).resolves.toBeUndefined();
+    } finally {
+      warn.mockRestore();
+    }
+
+    const a = mgr.listAll().find((x) => x.id === 'a');
+    expect(a?.status).toBe('failed');
+    expect(a?.error?.message).toContain('main IPC unavailable');
+    expect(mgr.listAll().find((x) => x.id === 'b')?.status).toBe('enabled');
+    expect(GoodPlugin.loaded).toEqual(['b']);
+  });
+
   it('init 激活挂起期间并发 reload 同 id → 串行不泄漏 token(第十一轮:init 也走锁)', async () => {
     // 根因:init() 的激活循环旧实现直接调 activateEntry **不走** withLifecycleLock,
     // 而 activateEntry 在 ensureAuthorized/importModule 处 await(权限弹窗可挂数秒)。

@@ -43,6 +43,7 @@ import { AttachTargetSchema } from '../../shared/terminal-attach';
 import type { McpCallCtx, McpToolDef } from './mcp-host.service';
 import { z } from 'zod';
 import { SESSION_ID_MAX } from '../../shared/session-id-limits';
+import { codedError } from '../../shared/error-message';
 
 // 边界(E202,无消费的解析放大面):Continuo 的 create_session 工具只消费
 // cwd/name/agentLabel/autorun/target/install_stop_hook/include_raw(见下方 ptyInput 构造),
@@ -297,35 +298,24 @@ export function makeCreateSessionTool(
         (input.autorun !== undefined &&
           utf8BytesExceed(input.autorun, MCP_AUTORUN_MAX))
       ) {
-        throw Object.assign(
-          new Error('create_session input field exceeds size limit'),
-          { code: ERROR_CODES.BAD_INPUT },
-        );
+        throw codedError(ERROR_CODES.BAD_INPUT, 'create_session input field exceeds size limit');
       }
       if (
         input.target !== undefined &&
         !AttachTargetSchema.safeParse(input.target).success
       ) {
-        throw Object.assign(new Error('invalid create_session target'), {
-          code: ERROR_CODES.BAD_INPUT,
-        });
+        throw codedError(ERROR_CODES.BAD_INPUT, 'invalid create_session target');
       }
 
       const decision = await deps.ensureAuthorized(ctx.ownerWindowId);
       if (decision === 'denied') {
-        throw Object.assign(
-          new Error('agent terminal not authorized by user'),
-          { code: ERROR_CODES.AGENT_NOT_AUTHORIZED },
-        );
+        throw codedError(ERROR_CODES.AGENT_NOT_AUTHORIZED, 'agent terminal not authorized by user');
       }
       // race(R111):用户在授权弹窗上停留期间调用方(stdio proxy)可能已断开 → ctx.signal abort。
       // 此时即便用户点了授权,也不创建会话:否则留下无调用方的孤儿 agent terminal(响应写回死
       // socket、autorun 副作用照跑)。在 installStopHook / createSession 等真正副作用前复查。
       if (ctx.signal?.aborted) {
-        throw Object.assign(
-          new Error('caller disconnected before session creation'),
-          { code: ERROR_CODES.AGENT_NOT_AUTHORIZED },
-        );
+        throw codedError(ERROR_CODES.AGENT_NOT_AUTHORIZED, 'caller disconnected before session creation');
       }
       let stopHookInstalled: { installed: boolean } | undefined;
       if (input.install_stop_hook === true && deps.installStopHook) {
@@ -424,10 +414,7 @@ function hexValue(code: number): number {
 // 边界(E148,E151 同族):session_id 回显截断逻辑已收口到共享 helper(session-id-echo.ts),
 // 供本文件与 mcp-tools-hook-bridge.ts 单一来源复用。
 const ERR_TERMINAL_SESSION_NOT_FOUND = (id: string) =>
-  Object.assign(
-    new Error(`terminal session not found: ${truncateSessionIdForEcho(id)}`),
-    { code: ERROR_CODES.TERMINAL_SESSION_NOT_FOUND },
-  );
+  codedError(ERROR_CODES.TERMINAL_SESSION_NOT_FOUND, `terminal session not found: ${truncateSessionIdForEcho(id)}`);
 
 function assertSessionInCurrentWindow(
   sessionId: string,
@@ -439,6 +426,29 @@ function assertSessionInCurrentWindow(
     throw ERR_TERMINAL_SESSION_NOT_FOUND(sessionId);
   }
 }
+
+/** 写类工具的共同前导:PTY 仍存活 + 会话属于调用方所在窗口;任一不满足都报同一个 not-found。 */
+function assertLiveSessionInCurrentWindow(
+  deps: {
+    readonly has: (sessionId: string) => boolean;
+    readonly getSessionOwner: (sessionId: string) => number | null;
+  },
+  sessionId: string,
+  ownerWindowId: number,
+): void {
+  if (!deps.has(sessionId)) throw ERR_TERMINAL_SESSION_NOT_FOUND(sessionId);
+  assertSessionInCurrentWindow(sessionId, ownerWindowId, deps.getSessionOwner);
+}
+
+// 各工具公开 jsonSchema 里的 session_id 属性(此前每个工具复制一份)。
+// 边界(E204,E203 advertised 对偶):公开 jsonSchema 同步 inputSchema 的 .max(SESSION_ID_MAX),否则 MCP
+// client / LLM 看到的入约允许超长 session_id、调用时却被运行时 schema 拒 = advertised↔运行时不一致。
+const SESSION_ID_JSON_SCHEMA = {
+  type: 'string',
+  minLength: 1,
+  maxLength: SESSION_ID_MAX,
+  description: 'Target terminal session id from create_session / list_sessions.',
+} as const;
 
 export function makeSendInputTool(
   deps: SendInputToolDeps,
@@ -456,14 +466,7 @@ export function makeSendInputTool(
     jsonSchema: {
       type: 'object',
       properties: {
-        session_id: {
-          type: 'string',
-          minLength: 1,
-          // 边界(E204,E203 advertised 对偶):公开 jsonSchema 同步 inputSchema 的 .max(SESSION_ID_MAX),
-          // 否则 MCP client/LLM 看到的入约允许超长 session_id、调用时却被运行时 schema 拒 = advertised↔运行时不一致。
-          maxLength: SESSION_ID_MAX,
-          description: 'Target terminal session id from create_session / list_sessions.',
-        },
+        session_id: SESSION_ID_JSON_SCHEMA,
         data: {
           type: 'string',
           maxLength: 2_000_000,
@@ -476,14 +479,7 @@ export function makeSendInputTool(
     },
     inputSchema: sendInputBoundedSchema,
     run: async (input: SendInputInput, ctx: McpCallCtx) => {
-      if (!deps.has(input.session_id)) {
-        throw ERR_TERMINAL_SESSION_NOT_FOUND(input.session_id);
-      }
-      assertSessionInCurrentWindow(
-        input.session_id,
-        ctx.ownerWindowId,
-        deps.getSessionOwner,
-      );
+      assertLiveSessionInCurrentWindow(deps, input.session_id, ctx.ownerWindowId);
       // preparePtyData:LF→CR + 字面 escape unescape,容错 LLM 误传 \n
       const ok = await deps.write(input.session_id, preparePtyData(input.data));
       if (!ok) throw ERR_TERMINAL_SESSION_NOT_FOUND(input.session_id);
@@ -508,14 +504,7 @@ export function makeSendTextTool(
     jsonSchema: {
       type: 'object',
       properties: {
-        session_id: {
-          type: 'string',
-          minLength: 1,
-          // 边界(E204,E203 advertised 对偶):公开 jsonSchema 同步 inputSchema 的 .max(SESSION_ID_MAX),
-          // 否则 MCP client/LLM 看到的入约允许超长 session_id、调用时却被运行时 schema 拒 = advertised↔运行时不一致。
-          maxLength: SESSION_ID_MAX,
-          description: 'Target terminal session id.',
-        },
+        session_id: { ...SESSION_ID_JSON_SCHEMA, description: 'Target terminal session id.' },
         text: {
           type: 'string',
           maxLength: 2_000_000,
@@ -528,14 +517,7 @@ export function makeSendTextTool(
     },
     inputSchema: sendTextBoundedSchema,
     run: async (input: SendTextInput, ctx: McpCallCtx) => {
-      if (!deps.has(input.session_id)) {
-        throw ERR_TERMINAL_SESSION_NOT_FOUND(input.session_id);
-      }
-      assertSessionInCurrentWindow(
-        input.session_id,
-        ctx.ownerWindowId,
-        deps.getSessionOwner,
-      );
+      assertLiveSessionInCurrentWindow(deps, input.session_id, ctx.ownerWindowId);
       const ok = await deps.write(input.session_id, input.text);
       if (!ok) throw ERR_TERMINAL_SESSION_NOT_FOUND(input.session_id);
       return {};
@@ -561,14 +543,7 @@ export function makePressKeyTool(
     jsonSchema: {
       type: 'object',
       properties: {
-        session_id: {
-          type: 'string',
-          minLength: 1,
-          // 边界(E204,E203 advertised 对偶):公开 jsonSchema 同步 inputSchema 的 .max(SESSION_ID_MAX),
-          // 否则 MCP client/LLM 看到的入约允许超长 session_id、调用时却被运行时 schema 拒 = advertised↔运行时不一致。
-          maxLength: SESSION_ID_MAX,
-          description: 'Target terminal session id.',
-        },
+        session_id: { ...SESSION_ID_JSON_SCHEMA, description: 'Target terminal session id.' },
         key: {
           type: 'string',
           enum: PRESS_KEY_ENUM,
@@ -581,14 +556,7 @@ export function makePressKeyTool(
     },
     inputSchema: pressKeyBoundedSchema,
     run: async (input: PressKeyInput, ctx: McpCallCtx) => {
-      if (!deps.has(input.session_id)) {
-        throw ERR_TERMINAL_SESSION_NOT_FOUND(input.session_id);
-      }
-      assertSessionInCurrentWindow(
-        input.session_id,
-        ctx.ownerWindowId,
-        deps.getSessionOwner,
-      );
+      assertLiveSessionInCurrentWindow(deps, input.session_id, ctx.ownerWindowId);
       const bytes = KEY_BYTES[input.key];
       const ok = await deps.write(input.session_id, bytes);
       if (!ok) throw ERR_TERMINAL_SESSION_NOT_FOUND(input.session_id);
@@ -622,14 +590,7 @@ export function makeReadOutputTool(
     jsonSchema: {
       type: 'object',
       properties: {
-        session_id: {
-          type: 'string',
-          minLength: 1,
-          // 边界(E204,E203 advertised 对偶):公开 jsonSchema 同步 inputSchema 的 .max(SESSION_ID_MAX),
-          // 否则 MCP client/LLM 看到的入约允许超长 session_id、调用时却被运行时 schema 拒 = advertised↔运行时不一致。
-          maxLength: SESSION_ID_MAX,
-          description: 'Target terminal session id.',
-        },
+        session_id: { ...SESSION_ID_JSON_SCHEMA, description: 'Target terminal session id.' },
         since_seq: {
           type: 'integer',
           minimum: 0,
@@ -681,8 +642,8 @@ export function makeReadOutputTool(
 
 export interface KillToolDeps {
   readonly has: (sessionId: string) => boolean;
-  /** SIGINT:写 \x03 给 PTY,不退出. */
-  readonly interrupt: (sessionId: string) => void;
+  /** SIGINT:写 \x03 给 PTY,不退出;false = Ctrl-C 未送达(PTY 已退出 / 写被拒). */
+  readonly interrupt: (sessionId: string) => Promise<boolean>;
   /** SIGTERM:SIGINT + 3s grace + force(termService.kill 现行行为). */
   readonly kill: (sessionId: string) => void;
   /** SIGKILL:直接 pty.kill('SIGKILL'). */
@@ -701,14 +662,7 @@ export function makeKillTool(
     jsonSchema: {
       type: 'object',
       properties: {
-        session_id: {
-          type: 'string',
-          minLength: 1,
-          // 边界(E204,E203 advertised 对偶):公开 jsonSchema 同步 inputSchema 的 .max(SESSION_ID_MAX),
-          // 否则 MCP client/LLM 看到的入约允许超长 session_id、调用时却被运行时 schema 拒 = advertised↔运行时不一致。
-          maxLength: SESSION_ID_MAX,
-          description: 'Target terminal session id.',
-        },
+        session_id: { ...SESSION_ID_JSON_SCHEMA, description: 'Target terminal session id.' },
         signal: {
           type: 'string',
           enum: ['SIGINT', 'SIGTERM', 'SIGKILL'],
@@ -720,16 +674,13 @@ export function makeKillTool(
     },
     inputSchema: killBoundedSchema,
     run: async (input: KillInput, ctx: McpCallCtx) => {
-      if (!deps.has(input.session_id)) {
-        throw ERR_TERMINAL_SESSION_NOT_FOUND(input.session_id);
-      }
-      assertSessionInCurrentWindow(
-        input.session_id,
-        ctx.ownerWindowId,
-        deps.getSessionOwner,
-      );
+      assertLiveSessionInCurrentWindow(deps, input.session_id, ctx.ownerWindowId);
       const sig = input.signal ?? 'SIGTERM';
-      if (sig === 'SIGINT') deps.interrupt(input.session_id);
+      if (sig === 'SIGINT') {
+        // 等真实结果:未送达不回报成功(与 send_input 写失败同码)。
+        const ok = await deps.interrupt(input.session_id);
+        if (!ok) throw ERR_TERMINAL_SESSION_NOT_FOUND(input.session_id);
+      }
       else if (sig === 'SIGKILL') deps.forceKill(input.session_id);
       else deps.kill(input.session_id); // SIGTERM
       return {};

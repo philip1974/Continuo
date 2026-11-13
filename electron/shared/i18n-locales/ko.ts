@@ -55,7 +55,6 @@ export const ko: Record<TranslationKey, string> = {
   'errors.NO_DEFAULT_EXPORT': '플러그인에 default export가 없습니다',
   'errors.NOT_PLUGIN_CLASS': '플러그인 default export가 Plugin 하위 클래스가 아닙니다',
   'errors.PAYLOAD_TOO_LARGE': '페이로드가 너무 큽니다',
-  'errors.POPOUT_NOT_IMPLEMENTED': '팝아웃이 구현되지 않았습니다',
   'errors.RM_FAILED': '삭제 실패',
   'errors.TERMINAL_CREATE_CANCELLED': '터미널 생성이 취소되었습니다',
   'errors.TERMINAL_CWD_UNRESOLVED': '터미널 cwd를 확인할 수 없습니다',
@@ -225,8 +224,6 @@ export const ko: Record<TranslationKey, string> = {
   'panels.explorer.create.in_label': '경로: {dir}',
 
   // panels.terminal.*
-  'panels.terminal.aria.start_shell': '셸 시작 중',
-  'panels.terminal.search.title': '터미널에서 찾기',
   'panels.terminal.search.placeholder': '찾기',
   'panels.terminal.search.match_count': '{n} / {total}',
   'panels.terminal.search.no_match': '일치 없음',
@@ -264,8 +261,13 @@ export const ko: Record<TranslationKey, string> = {
   'permissions.agent.terminal_send_text': '터미널에 텍스트 입력',
   'permissions.agent.terminal_press_key': '터미널에서 키 누르기',
   'permissions.agent.terminal_kill': '터미널 종료',
+  'permissions.agent.debug_launch': '디버그 세션 시작',
+  'permissions.agent.debug_control': '디버그 세션 제어(중단점, 단계 실행, 변수)',
   'permissions.agent.generic': '{method} 호출',
   'permissions.agent.title': '에이전트가 내장 터미널 제어를 요청합니다',
+  'permissions.agent.title_debug': '에이전트가 디버거 제어를 요청합니다',
+  'permissions.agent.hint_debug':
+    '권한을 부여하면 MCP 토큰을 가진 에이전트가 디버거로 프로그램을 실행하고, 중단점 설정, 단계 실행, 변수 읽기, 식 평가를 할 수 있습니다. 이 권한은 터미널 제어를 포함하지 않으며 이번 실행 동안만 유효합니다.',
   'permissions.agent.respond_failed': '권한 결정 전송에 실패했습니다. 다시 시도하세요.',
   'permissions.fs_scope.respond_failed': '파일 접근 결정 전송에 실패했습니다. 다시 시도하세요.',
   'permissions.agent.body_prefix': '외부 에이전트',
@@ -275,6 +277,7 @@ export const ko: Record<TranslationKey, string> = {
   'permissions.agent.deny': '거부',
   'permissions.agent.grant_once': '이번만 허용',
   'permissions.agent.grant_session': '이번 실행 동안 허용',
+  'permissions.revoke_all.title': '에이전트 터미널 권한을 취소할까요?',
   'permissions.revoke_all.confirm':
     '{count}개의 에이전트 터미널을 종료하고 이번 실행 중 부여된 인증을 취소합니다.\n\n실행 중인 에이전트 CLI의 토큰은 즉시 401이 되며, 새 터미널은 다시 인증할 수 있습니다.\n\n계속하시겠습니까?',
   'permissions.revoke_all.failed':
@@ -297,7 +300,6 @@ export const ko: Record<TranslationKey, string> = {
   'statusbar.sidebar_hidden': '사이드바 숨김',
   'statusbar.untitled_file': '제목 없음',
   'statusbar.unsaved_changes': '저장되지 않은 변경 사항',
-  'statusbar.git_branch_placeholder': 'git 브랜치 (placeholder)',
   'statusbar.editor_stats': '{lines}줄 · {words}단어 · {chars}자',
 
   // errors.* topic-19
@@ -378,7 +380,6 @@ export const ko: Record<TranslationKey, string> = {
   'keybindings.unbound': '바인딩 없음',
   'keybindings.edit_hotkey': '단축키 편집',
   'keybindings.reset_default': '기본값으로 초기화 ({hotkey})',
-  'keybindings.reset_default_aria': '기본값으로 초기화',
   'keybindings.edit_hotkey_for_aria': '{command} 단축키 편집',
   'keybindings.reset_default_for_aria': '{command} 단축키를 기본값으로 초기화',
 
@@ -388,6 +389,7 @@ export const ko: Record<TranslationKey, string> = {
   'shell.iconbar.show_explorer': 'Explorer 표시',
   'shell.iconbar.settings': '설정',
   'shell.dock.popout_title': '독립 창으로 팝아웃',
+  'shell.dock.add_panel_failed': '패널 추가 실패',
   'shell.dock.popout_failed': '새 창에서 패널 열기 실패',
   'shell.tab.exit_zoom': '확대 종료',
   'shell.tab.close': '{title} 닫기',

@@ -7,6 +7,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Input, Spinner } from '@/design';
 import { coApi } from '@/lib/co-api';
+import { useSingleFlight } from '@/lib/use-single-flight';
 import { errorMessage } from '../../electron/shared/error-message';
 import { getUserPluginManager, type PluginListItem } from '@/plugins/PluginManager';
 import { entryToGitUrl, type MarketplaceEntry } from './types';
@@ -23,6 +24,7 @@ import { isHttpUrl } from './url-safety';
 import { useT, t as translate } from '@/i18n';
 import { localizeErrorByCode } from '@/lib/localize-error';
 import { SR_ONLY_STYLE } from '@/lib/sr-only';
+import { usePolledSnapshot } from '@/lib/use-polled-snapshot';
 
 /** 项目维护者(角标用),hard-coded. */
 const MAINTAINERS: ReadonlySet<string> = new Set(['philip1974']);
@@ -92,18 +94,7 @@ export function sameIdSet(
 
 /** 1s 轮询当前已装 plugin id 集合(同 PluginsTabContent 模式). */
 export function useInstalledIds(): ReadonlySet<string> {
-  const [snap, setSnap] = useState<ReadonlySet<string>>(() => readInstalledIds());
-  useEffect(() => {
-    // readIds() 每次都返回新 Set,直接 setSnap 会让 MarketplaceTab 每秒整页
-    // re-render(筛选区 + 卡片列表),即使已装集合没变。函数式更新只在集合实际
-    // 变化时换引用,无变化保持同引用 → React 跳过 re-render。(codex 打磨 R2)
-    const t = setInterval(() => {
-      const next = readInstalledIds();
-      setSnap((prev) => (sameIdSet(prev, next) ? prev : next));
-    }, 1000);
-    return () => clearInterval(t);
-  }, []);
-  return snap;
+  return usePolledSnapshot(readInstalledIds, sameIdSet)[0];
 }
 
 export function readInstalledIds(): ReadonlySet<string> {
@@ -209,69 +200,44 @@ export function MarketplaceTab() {
     };
   }, []);
 
-  // useCallback 稳定 handler ref,让 MarketplaceCard memo 不被 inline arrow 撑破。
-  // setInstall 函数式更新,不依赖外部 state → deps 仅 store action。
-  const onInstall = useCallback(async (entry: MarketplaceEntry) => {
-    // race(R8):同步单飞 —— 同 tick 双击在 busy state 生效前直接挡掉重入。
-    if (installBusyRef.current) return;
-    installBusyRef.current = true;
-    setInstall((prev) => ({ ...prev, busy: entry.id }));
-    let msg: string;
-    let success = false;
-    try {
-      const r = await coApi.plugins.installFromGit(entryToGitUrl(entry));
-      success = r.ok;
-      // i18n(codex 复查 P1,I1 同族兄弟):installFromGit 各错误站点 Error.message 是硬编码
-      // 中文,直接展示会让 en/ko 卡片看到中文。改用稳定 r.code 经 catalog(errors.<CODE>)
-      // 翻译,命中用本地化文案、未知 code 回退原 message,再套本地化外壳。
-      msg = r.ok
-        ? translate('marketplace.install_success', { name: r.data.name, version: r.data.version })
-        : translate('marketplace.install_failed_code', {
-            code: r.code,
-            message: localizeErrorByCode(r.code, r.message),
-          });
-    } catch (err) {
-      // a11y(A85,A84 同族):不把装饰性 ✘ 拼进 message 字符串 —— 失败严重度由 isError+role=alert
-      // 表达,符号入文本会被 live region 当内容播报成"cross mark …"噪声。
-      msg = errorMessage(err);
-    }
-    installBusyRef.current = false; // race(R8):清同步闸门(与 busy:null 同步)。
-    setInstall((prev) => {
-      const nextMsgs = new Map(prev.msgs);
-      nextMsgs.set(entry.id, { text: msg, isError: !success });
-      const nextPending = new Set(prev.pending);
-      if (success) nextPending.add(entry.id);
-      return { busy: null, msgs: nextMsgs, pending: nextPending };
-    });
-  }, []);
-
-  const onUpdate = useCallback(
-    async (entry: MarketplaceEntry) => {
-      // 更新 = 原子覆盖安装(overwrite=true)。不再「先卸载后重装」:旧实现一旦
-      // 卸载成功但重装失败(网络/clone 错),插件就从磁盘消失且无回滚(审计 #2)。
-      // installFromGit overwrite 在 main 端做 staging+rename swap,失败保留旧版本;
-      // 且保留 _enabled / _permissions,更新后无需重新授权(语义更贴近"更新")。
-      // race(R8):同步单飞 —— 同 tick 双击 / 与 install 并发在 busy 生效前重入直接挡掉。
-      if (installBusyRef.current) return;
+  // 卡片的「安装」与「更新」是同一流程(同步单飞 → installFromGit → 结果消息 → pending),只差:
+  // overwrite 标志、成功/失败文案 key、以及 catch 分支的文案外壳(install 用裸 message,update 套
+  // update_failed_msg —— 既有差异,保持不变)。返回是否成功,供调用方做后续。
+  // setInstall 函数式更新,不依赖外部 state → 引用稳定,MarketplaceCard memo 不被撑破。
+  const runCardInstall = useCallback(
+    async (entry: MarketplaceEntry, mode: 'install' | 'update'): Promise<boolean> => {
+      // race(R8):同步单飞 —— 同 tick 双击 / install 与 update 并发在 busy state 生效前重入直接挡掉。
+      if (installBusyRef.current) return false;
       installBusyRef.current = true;
       setInstall((prev) => ({ ...prev, busy: entry.id }));
+      const isUpdate = mode === 'update';
       let msg: string;
       let success = false;
       try {
-        const r = await coApi.plugins.installFromGit(entryToGitUrl(entry), true);
+        // 更新 = 原子覆盖安装(overwrite=true)。不再「先卸载后重装」:旧实现一旦卸载成功但重装失败
+        // (网络/clone 错),插件就从磁盘消失且无回滚(审计 #2)。overwrite 在 main 端做 staging+rename
+        // swap,失败保留旧版本;且保留 _enabled / _permissions,更新后无需重新授权。
+        const r = isUpdate
+          ? await coApi.plugins.installFromGit(entryToGitUrl(entry), true)
+          : await coApi.plugins.installFromGit(entryToGitUrl(entry));
         success = r.ok;
-        // i18n(codex 复查 P1,I1 同族):message 经 r.code 走 catalog 翻译再插本地化外壳,
-        // 否则 update_failed_code 的 {message} 会塞进 main 硬编码中文 → en/ko 看到中文。
+        // i18n(codex 复查 P1,I1 同族):installFromGit 各错误站点 Error.message 是硬编码中文,直接展示
+        // 会让 en/ko 看到中文。改用稳定 r.code 经 catalog(errors.<CODE>)翻译,未知 code 回退原
+        // message,再套本地化外壳。
         msg = r.ok
-          ? translate('marketplace.update_success', { name: r.data.name, version: r.data.version })
-          : translate('marketplace.update_failed_code', {
-              code: r.code,
-              message: localizeErrorByCode(r.code, r.message),
-            });
+          ? translate(isUpdate ? 'marketplace.update_success' : 'marketplace.install_success', {
+              name: r.data.name,
+              version: r.data.version,
+            })
+          : translate(
+              isUpdate ? 'marketplace.update_failed_code' : 'marketplace.install_failed_code',
+              { code: r.code, message: localizeErrorByCode(r.code, r.message) },
+            );
       } catch (err) {
-        msg = translate('marketplace.update_failed_msg', {
-          message: errorMessage(err),
-        });
+        // a11y(A85,A84 同族):不把装饰性 ✘ 拼进 message 字符串 —— 失败严重度由 isError+role=alert 表达。
+        msg = isUpdate
+          ? translate('marketplace.update_failed_msg', { message: errorMessage(err) })
+          : errorMessage(err);
       }
       installBusyRef.current = false; // race(R8):清同步闸门(与 busy:null 同步)。
       setInstall((prev) => {
@@ -281,6 +247,21 @@ export function MarketplaceTab() {
         if (success) nextPending.add(entry.id);
         return { busy: null, msgs: nextMsgs, pending: nextPending };
       });
+      return success;
+    },
+    [],
+  );
+
+  const onInstall = useCallback(
+    async (entry: MarketplaceEntry): Promise<void> => {
+      await runCardInstall(entry, 'install');
+    },
+    [runCardInstall],
+  );
+
+  const onUpdate = useCallback(
+    async (entry: MarketplaceEntry) => {
+      const success = await runCardInstall(entry, 'update');
       // 更新成功后:先乐观从 available 摘掉这条让更新按钮即时收起(否则到异步
       // refresh 完成前用户可重复点击触发对已是最新版的二次 overwrite 安装),
       // 再异步刷新 update-store 与磁盘对账。
@@ -304,7 +285,7 @@ export function MarketplaceTab() {
         }
       }
     },
-    [refreshUpdates, dismissUpdate],
+    [runCardInstall, refreshUpdates, dismissUpdate],
   );
 
   // useCallback 让 TagButton memo 不被 inline arrow 撑破。
@@ -418,6 +399,7 @@ export function MarketplaceTab() {
                 onToggle={toggleTag}
               />
             ))}
+            {/* native button:标签行内的 2xs 文本链接,design Button 最小尺寸(sm)也高于标签 chip 行高;颜色走语义 token。 */}
             {selectedTags.size > 0 && (
               <button
                 type="button"
@@ -439,6 +421,7 @@ export function MarketplaceTab() {
             total: state.entries.length,
           })}
         </span>
+        {/* native button:摘要行内的紧凑文本按钮(同上,design Button 尺寸不适用);颜色走语义 token。 */}
         <button
           type="button"
           onClick={() => void refreshReviews(true)}
@@ -512,50 +495,45 @@ function GitUrlInstallSection() {
   const t = useT();
   const [url, setUrl] = useState('');
   const trimmedUrl = useMemo(() => url.trim(), [url]);
-  const [busy, setBusy] = useState(false);
-  // race(R8):同步 in-flight 闸门(同 PluginsTabContent.onInstall)—— disabled={busy} render 滞后,
-  // 同 tick 双击/Enter 会双 installFromGit。
-  const busyRef = useRef(false);
+  // race(R8):同步单飞闸门(useSingleFlight)—— disabled={busy} render 滞后,同 tick 双击/Enter 会双
+  // installFromGit。
+  const { busy, run: runInstall } = useSingleFlight();
   // a11y(A43,A42 同族):结果消息带严重度 → 渲染时按语义选 live region(成功 status/失败 alert)。
   const [msg, setMsg] = useState<{ text: string; isError: boolean } | null>(
     null,
   );
 
-  const onInstall = async () => {
+  const onInstall = (): Promise<void> | void => {
     if (!trimmedUrl) return;
-    if (busyRef.current) return; // race(R8):同步单飞,重入直接挡掉。
-    busyRef.current = true;
-    setBusy(true);
-    setMsg(null);
-    try {
-      const r = await coApi.plugins.installFromGit(trimmedUrl);
-      if (!r.ok) {
-        // i18n(I1 同族,Git URL 安装段兄弟入口):同卡片安装,按 r.code 经 catalog 翻译,
-        // 未知 code 回退原 message,再套本地化外壳,避免 en/ko 看到 main 硬编码中文。
-        setMsg({
-          text: translate('marketplace.install_failed_code', {
-            code: r.code,
-            message: localizeErrorByCode(r.code, r.message),
-          }),
-          isError: true,
-        });
-      } else {
-        setMsg({
-          text: translate('marketplace.install_success', {
-            name: r.data.name,
-            version: r.data.version,
-          }),
-          isError: false,
-        });
-        setUrl('');
+    return runInstall(async () => {
+      setMsg(null);
+      try {
+        const r = await coApi.plugins.installFromGit(trimmedUrl);
+        if (!r.ok) {
+          // i18n(I1 同族,Git URL 安装段兄弟入口):同卡片安装,按 r.code 经 catalog 翻译,
+          // 未知 code 回退原 message,再套本地化外壳,避免 en/ko 看到 main 硬编码中文。
+          setMsg({
+            text: translate('marketplace.install_failed_code', {
+              code: r.code,
+              message: localizeErrorByCode(r.code, r.message),
+            }),
+            isError: true,
+          });
+        } else {
+          setMsg({
+            text: translate('marketplace.install_success', {
+              name: r.data.name,
+              version: r.data.version,
+            }),
+            isError: false,
+          });
+          setUrl('');
+        }
+      } catch (err) {
+        // a11y(A85,A84 同族):同上,不把 ✘ 拼进 alert 文本(severity 由 isError+role=alert 表达)。
+        setMsg({ text: errorMessage(err), isError: true });
       }
-    } catch (err) {
-      // a11y(A85,A84 同族):同上,不把 ✘ 拼进 alert 文本(severity 由 isError+role=alert 表达)。
-      setMsg({ text: errorMessage(err), isError: true });
-    } finally {
-      busyRef.current = false; // race(R8):清同步闸门。
-      setBusy(false);
-    }
+    });
   };
 
   return (
@@ -627,6 +605,7 @@ const TagButton = memo(function TagButton({
   onToggle,
 }: TagButtonProps) {
   return (
+    // native button:标签 chip 是 aria-pressed 的多选 toggle,design 无对应组件(SegmentedControl 是单选);颜色走语义 token。
     <button
       type="button"
       // a11y(A8):tag filter 是 toggle,active 只改 className → 补 aria-pressed 暴露选中态给 AT。
@@ -890,6 +869,7 @@ function RatingRow({
   return (
     <div className="mt-1 space-y-2">
       <div className="flex items-center gap-1.5 text-2xs text-fg-muted">
+        {/* native button:评分摘要整行作为展开触发器(内含星标 + 文本),非 design Button 的形态;颜色走语义 token。 */}
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
@@ -946,6 +926,7 @@ function RatingRow({
               {t('marketplace.reviews.sort_label')}
             </span>
             {REVIEW_SORTS.map((s) => (
+              // native button:2xs 行内排序切换(aria-pressed),design SegmentedControl 的 sm 尺寸仍大于评论列表行高。
               <button
                 key={s}
                 type="button"
@@ -964,7 +945,7 @@ function RatingRow({
           {sorted.map((r) => (
             <ReviewItem key={r.url} review={r} nowMs={reviewNowMs} />
           ))}
-          {rating.reviews.length > 10 && (
+          {rating.reviews.length > REVIEW_DISPLAY_LIMIT && (
             <div className="pt-1 text-2xs text-fg-dim">
               {t('marketplace.reviews.show_first_10')}
               <a

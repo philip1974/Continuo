@@ -2,8 +2,9 @@
 // 命令面板订阅本 registry 渲染列表;keybinding 解析时按 hotkey 分发。
 
 import type { Disposable } from '../types';
-import { assertRegistryCapacity } from './registry-capacity';
+import { KeyedRegistry } from './keyed-registry';
 import { isSpecObject } from './spec-guard';
+import { isEcmaWhitespaceCode } from '../../../electron/shared/ecma-whitespace';
 
 export interface CommandSpec {
   readonly id: string;
@@ -27,45 +28,22 @@ export interface CommandSpec {
   readonly fn: () => void | Promise<void>;
 }
 
-type Listener = () => void;
-const EMPTY_COMMAND_SNAPSHOT: readonly CommandSpec[] = [];
 
 // 边界(E35):register 接受第三方插件的 id/title/titleKey/hotkey/category/categoryKey 后直接入全局
 // registry,无长度/形态上限。恶意/畸形插件可注册超长标题/分类/热键 → 命令面板排序与搜索、快捷键
 // 预编译(compileCombo)、日志 warning、UI 渲染都携带大字符串 → renderer 卡顿;异常 hotkey 还会被
 // compileCombo 当有效签名参与全局 keydown 扫描。注册边界统一校验长度 + hotkey 形态,非法拒绝(抛
 // 可诊断错误,由插件加载错误处理捕获)。上限远超任何真实贡献项,只挡滥用。
-const CMD_ID_MAX = 256;
+export const CMD_ID_MAX = 256;
 const CMD_TITLE_MAX = 512;
 const CMD_KEY_MAX = 256; // titleKey / categoryKey(i18n key)
 const CMD_CATEGORY_MAX = 256;
-const CMD_HOTKEY_MAX = 64;
+export const CMD_HOTKEY_MAX = 64;
 // hotkey 形态(宽松):'+'-连接的非空段,段内无空白/'+'(允许 mod+, mod+/ 等标点主键)。挡空段
 // (mod++p)、含空白、超长 —— 不强限字符集以免误伤合法标点快捷键。
-// 边界(E145):导出供 keybindings 捕获侧(eventToCombo)与写端(setHotkey)复用同一形态校验,
+// 边界(E145):isValidHotkeyShape 导出供 keybindings 捕获侧(eventToCombo)与写端(setHotkey)复用同一形态校验,
 // 防捕获/override 写入注册侧会拒绝的畸形 hotkey(空段 / 含空白 / 主键为分隔符 '+')。
-export const HOTKEY_SHAPE_RE = /^[^+\s]+(\+[^+\s]+)*$/;
-
-function isEcmaWhitespaceCode(code: number): boolean {
-  return (
-    code === 9 ||
-    code === 10 ||
-    code === 11 ||
-    code === 12 ||
-    code === 13 ||
-    code === 32 ||
-    code === 160 ||
-    code === 5760 ||
-    code === 65279 ||
-    code === 8232 ||
-    code === 8233 ||
-    code === 8239 ||
-    code === 8287 ||
-    code === 12288 ||
-    (code >= 8192 && code <= 8202)
-  );
-}
-
+// 等价正则:/^[^+\s]+(\+[^+\s]+)*$/(下面是其零分配手写版)。
 export function isValidHotkeyShape(hotkey: string): boolean {
   if (hotkey.length === 0) return false;
   let prevWasPlus = true;
@@ -131,81 +109,47 @@ function validateCommandSpec(spec: CommandSpec): void {
   }
 }
 
-export class CommandRegistry {
-  private items = new Map<string, CommandSpec>();
+export class CommandRegistry extends KeyedRegistry<CommandSpec> {
   private hotkeyCounts = new Map<string, number>();
-  private listeners = new Set<Listener>();
-  private cachedAll: readonly CommandSpec[] | null = null;
+
+  constructor() {
+    super('command-registry');
+  }
 
   register(spec: CommandSpec): Disposable {
     validateCommandSpec(spec); // 边界(E35):注册前校验长度 + hotkey 形态
-    // 边界(E236):注册前容量守卫(共享 helper),超限抛、不入表
-    assertRegistryCapacity('command-registry', this.items.size, this.items.has(spec.id));
-    if (this.items.has(spec.id)) {
-      console.warn(
-        `[command-registry] id "${spec.id}" 已注册,后注册赢覆盖前者`,
-      );
-    }
+    return this.registerKeyed(spec.id, spec);
+  }
+
+  // hotkey 占用计数:覆盖告警之后、入表之前维护(容量守卫抛错时不会走到这里,计数不脏)。
+  protected override onBeforeSet(
+    spec: CommandSpec,
+    previous: CommandSpec | undefined,
+  ): void {
     if (spec.hotkey && (this.hotkeyCounts.get(spec.hotkey) ?? 0) > 0) {
       console.warn(
         `[command-registry] hotkey "${spec.hotkey}" 已被另一命令占用,后注册赢`,
       );
     }
-    const previous = this.items.get(spec.id);
     if (previous?.hotkey) this.decrementHotkey(previous.hotkey);
     if (spec.hotkey) this.incrementHotkey(spec.hotkey);
-    this.items.set(spec.id, spec);
-    this.invalidateSnapshotCache();
-    this.notify();
-
-    let disposed = false;
-    return {
-      dispose: () => {
-        if (disposed) return;
-        disposed = true;
-        if (this.items.get(spec.id) === spec) {
-          this.items.delete(spec.id);
-          if (spec.hotkey) this.decrementHotkey(spec.hotkey);
-          this.invalidateSnapshotCache();
-          this.notify();
-        }
-      },
-    };
   }
 
-  getAll(): readonly CommandSpec[] {
-    if (this.cachedAll !== null) return this.cachedAll;
-    if (this.items.size === 0) {
-      this.cachedAll = EMPTY_COMMAND_SNAPSHOT;
-      return EMPTY_COMMAND_SNAPSHOT;
-    }
+  protected override onRemoved(spec: CommandSpec): void {
+    if (spec.hotkey) this.decrementHotkey(spec.hotkey);
+  }
 
+  protected buildSnapshot(): readonly CommandSpec[] {
     const out = new Array<CommandSpec>(this.items.size);
     let i = 0;
     for (const item of this.items.values()) out[i++] = item;
-    this.cachedAll = out;
     return out;
-  }
-
-  /**
-   * race(R51):按 id 取当前 live 命令(已 unregister 返 undefined)。hotkey 绑定表 / 命令面板
-   * 列表项缓存的是旧 CommandSpec 对象,命令被插件 disable/reload 同步 unregister 后、到 React
-   * 重渲替换 handler/快照前仍可能触发 → 触发时用本方法从 registry 重查并执行,死命令静默忽略,
-   * 不再调已卸载插件的 fn。
-   */
-  get(id: string): CommandSpec | undefined {
-    return this.items.get(id);
   }
 
   async execute(id: string): Promise<void> {
     const cmd = this.items.get(id);
     if (!cmd) throw new Error(`Command ${id} not found`);
     await cmd.fn();
-  }
-
-  subscribe(listener: Listener): () => void {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
   }
 
   private incrementHotkey(hotkey: string): void {
@@ -217,13 +161,5 @@ export class CommandRegistry {
     if (count === undefined) return;
     if (count <= 1) this.hotkeyCounts.delete(hotkey);
     else this.hotkeyCounts.set(hotkey, count - 1);
-  }
-
-  private notify(): void {
-    for (const l of this.listeners) l();
-  }
-
-  private invalidateSnapshotCache(): void {
-    this.cachedAll = null;
   }
 }

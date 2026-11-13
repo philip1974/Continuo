@@ -13,7 +13,6 @@ describe('parseStopPayload 字段长度上限 (E150)', () => {
     const big = 'x'.repeat(FIELD_MAX + 5000);
     const p = parseStopPayload(
       'cc',
-      'cc_4_s_1.jsonl',
       JSON.stringify({
         session_id: big,
         turn_id: big,
@@ -32,7 +31,6 @@ describe('parseStopPayload 字段长度上限 (E150)', () => {
     const huge = 'm'.repeat(LAST_MSG_MAX + 100_000);
     const p = parseStopPayload(
       'codex',
-      'codex_4_1.jsonl',
       JSON.stringify({ session_id: 's', last_assistant_message: huge }),
     );
     expect(p).not.toBeNull();
@@ -42,7 +40,6 @@ describe('parseStopPayload 字段长度上限 (E150)', () => {
   it('正常短字段 → 原样保留', () => {
     const p = parseStopPayload(
       'cc',
-      'cc_4_s_1.jsonl',
       JSON.stringify({
         session_id: 'sess-1',
         turn_id: 't-1',

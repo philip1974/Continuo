@@ -20,26 +20,14 @@ import type { StatusBarItemSpec } from '@/plugins/registries/StatusBarRegistry';
 import { getCachedClipboard } from '@/plugins/sandbox-sweep';
 import { useT, t as translate } from '@/i18n';
 import { basenameForChrome } from './path-label';
+import { ConfirmDialog } from '@/panels/Explorer/ConfirmDialog';
+import { codedError, errorCodeOf } from '../../electron/shared/error-message';
 
 const EMPTY_STATUS_ITEMS: readonly StatusBarItemSpec[] = [];
 const EMPTY_STATUS_SPLIT = {
   left: EMPTY_STATUS_ITEMS,
   right: EMPTY_STATUS_ITEMS,
 };
-const GIT_BRANCH_ICON = (
-  <svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true">
-    <path
-      d="M5 3v10M11 3v3a2 2 0 01-2 2H5"
-      stroke="currentColor"
-      strokeWidth="1.4"
-      strokeLinecap="round"
-      fill="none"
-    />
-    <circle cx="5" cy="3" r="1.4" fill="currentColor" />
-    <circle cx="11" cy="3" r="1.4" fill="currentColor" />
-    <circle cx="5" cy="13" r="1.4" fill="currentColor" />
-  </svg>
-);
 
 // 一次订阅取全量(已按 priority 排序),再分侧(打磨 R6)。原先 left/right 各
 // useRegistry 一次 = 两个订阅回调 + 两次 getBySide(Array.from+filter+sort)。
@@ -118,13 +106,11 @@ let revokeGen = 0;
 
 async function handleRevokeAgentTerminals(count: number): Promise<void> {
   if (count <= 0) return;
-  const confirmed = window.confirm(
-    translate('permissions.revoke_all.confirm', { count }),
-  );
-  if (!confirmed) return;
   const myGen = ++revokeGen; // race(R92):本次 revoke 代际
   // 本地先撤,UI 即时反馈;main 推 sessions_changed 后 sessions 也清空。
-  const wasGranted = useAgentAuthStore.getState().sessionGranted;
+  // 撤销覆盖终端与 debug 两个域;失败回滚时两个都按撤销前的值恢复。
+  const { sessionGranted: wasGranted, debugSessionGranted: wasDebugGranted } =
+    useAgentAuthStore.getState();
   useAgentAuthStore.getState().revoke();
   // 闭环:revoke IPC(kill PTY + rotate token)可能失败(revokeAndKillAgentSessions 抛错 →
   // safeHandle 返 ok:false / IPC reject)。旧实现 `void` 完全忽略结果 → 失败被静默伪成功:
@@ -133,14 +119,17 @@ async function handleRevokeAgentTerminals(count: number): Promise<void> {
   // 让用户知道并重试。(codex 复审 loop R18)
   try {
     const r = await coApi.agentAuth.revoke();
-    if (!r.ok) throw new Error(r.code ?? 'revoke failed');
+    // 保留稳定 code(此前 new Error(r.code) 把 code 塞进 message,下方 catch 取不到 → toast 不带 code)。
+    if (!r.ok) throw codedError(r.code, r.message ?? 'revoke failed');
   } catch (err) {
     // race(R92):仅当本次仍是最新 revoke(无更晚的 revoke 覆盖)才回滚/报错。更晚的成功 revoke
     // 已把状态正确置为 revoked,先发的迟到失败不得用旧 wasGranted 把 sessionGranted 翻回 true。
     if (myGen !== revokeGen) return;
+    // 只恢复、不降级:撤销在途期间用户若又新授权了某个域,失败回滚不能把它写回 false。
     if (wasGranted) useAgentAuthStore.setState({ sessionGranted: true });
+    if (wasDebugGranted) useAgentAuthStore.setState({ debugSessionGranted: true });
     notify.error(translate('permissions.revoke_all.failed'), {
-      code: (err as { code?: string })?.code,
+      code: errorCodeOf(err),
     });
   }
 }
@@ -208,6 +197,8 @@ export function StatusBar() {
     [activeContent],
   );
 
+  // 非 null = 撤销确认弹窗打开,值为打开时的 agent 会话数。
+  const [revokeConfirmCount, setRevokeConfirmCount] = useState<number | null>(null);
   const [mcpCopyState, setMcpCopyState] = useState<
     'idle' | 'ok' | 'unavailable' | 'fail'
   >('idle');
@@ -253,18 +244,9 @@ export function StatusBar() {
     <footer className="flex h-6 shrink-0 items-center justify-between border-t border-line bg-panel px-3 text-2xs text-fg-dim select-none">
       <div className="flex items-center gap-3 min-w-0">
         {root ? (
-          <>
-            <span className="truncate" title={root}>
-              {basenameForChrome(root)}
-            </span>
-            <span
-              className="flex items-center gap-1"
-              title={t('statusbar.git_branch_placeholder')}
-            >
-              {GIT_BRANCH_ICON}
-              main
-            </span>
-          </>
+          <span className="truncate" title={root}>
+            {basenameForChrome(root)}
+          </span>
         ) : (
           <span className="text-fg-dim/60">{t('statusbar.no_workspace')}</span>
         )}
@@ -281,6 +263,7 @@ export function StatusBar() {
         {rightItems.map((item) => (
           <span key={item.id}>{liveRenderStatusItem(item)}</span>
         ))}
+        {/* native button:24px 状态栏内的行内文本按钮,design Button 最小高度超出状态栏;颜色走语义 token。 */}
         <button
           type="button"
           onClick={() => void onCopyMcp()}
@@ -299,9 +282,10 @@ export function StatusBar() {
           {mcpCopyState !== 'idle' ? mcpLabel : ''}
         </span>
         {agentSessionCount > 0 && (
+          // native button:同上(24px 状态栏行内文本按钮)。
           <button
             type="button"
-            onClick={() => void handleRevokeAgentTerminals(agentSessionCount)}
+            onClick={() => setRevokeConfirmCount(agentSessionCount)}
             title={agentRevokeTooltip}
             // a11y(A74,A2 同族):按钮可见文本只表「N 个 agent 会话」,撤销动作语义仅在 title
             //(SR 有可见文本时不一定读 title)→ aria-label 用含撤销语义的 revoke_tooltip 作可访问名。
@@ -341,13 +325,26 @@ export function StatusBar() {
                 chars: stats?.chars ?? 0,
               })}
             </span>
-            <span>UTF-8</span>
-            <span>LF</span>
           </>
-        ) : (
-          <span>UTF-8</span>
-        )}
+        ) : null}
       </div>
+      {/* 撤销确认走 design Modal(项目约束:对话框不用原生确认框)。 */}
+      <ConfirmDialog
+        open={revokeConfirmCount !== null}
+        title={t('permissions.revoke_all.title')}
+        description={
+          <span className="whitespace-pre-line">
+            {t('permissions.revoke_all.confirm', { count: revokeConfirmCount ?? 0 })}
+          </span>
+        }
+        destructive
+        onCancel={() => setRevokeConfirmCount(null)}
+        onConfirm={() => {
+          const count = revokeConfirmCount ?? 0;
+          setRevokeConfirmCount(null);
+          void handleRevokeAgentTerminals(count);
+        }}
+      />
     </footer>
   );
 }

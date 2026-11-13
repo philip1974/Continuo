@@ -88,7 +88,7 @@ export function CreateInput({
         value={value}
         // 边界(E290,E279-E282 before-IPC 输入截断族):leaf 名 onChange 截断到 FS_NAME_MAX。
         // 超长 paste 否则整段进受控 React state(巨值 controlled input 反复 re-render)+ Enter 后跨 IPC
-        // 到 main 才被 leafNameRejectReason 拒。>FS_NAME_MAX 的名在任何文件系统都 ENAMETOOLONG 建不出,
+        // 到 main 才失败。>FS_NAME_MAX 的名在任何文件系统都 ENAMETOOLONG 建不出,
         // 截断不丢任何可创建的名。maxLength 作原生兜底(键入/paste 双拦)。
         onChange={(e) => setValue(e.target.value.slice(0, FS_NAME_MAX))}
         maxLength={FS_NAME_MAX}

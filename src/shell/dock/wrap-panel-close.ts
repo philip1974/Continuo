@@ -4,8 +4,8 @@ import { EXIT_DURATION_MS } from '@/shell/motion/tokens';
 import { coApi } from '@/lib/co-api';
 import { notify } from '@/notifications/notify';
 import { t as translate } from '@/i18n';
-import { cancelPanelSpawns } from '@/panels/Terminal/spawnLeaf';
 import { isTerminalPanelId, sessionIdFromPanel } from './terminal-panel-id';
+import { errorCodeOf } from '../../../electron/shared/error-message';
 
 const patched = new WeakSet<IDockviewPanel>();
 const suppressedPanelCloses = new Set<string>();
@@ -89,8 +89,6 @@ export function wrapPanelClose(panel: IDockviewPanel): void {
 
 function removeTerminalPtysForPanel(panel: IDockviewPanel): void {
   if (!isTerminalPanelId(panel.api.id)) return;
-  // 真 close:取消该 panel 还在 in-flight 的 spawn,防 PTY 孤儿
-  cancelPanelSpawns(panel.api.id);
   const sessionId = sessionIdFromPanel(panel);
   if (!sessionId) return;
   // a11y(A128):关闭终端 panel 时 remove 失败此前只 console.warn → panel 已消失但 PTY/session
@@ -105,7 +103,7 @@ function removeTerminalPtysForPanel(panel: IDockviewPanel): void {
     }
   }, (err) => {
     console.warn('[terminal-panel] remove rejected', sessionId, err);
-    const code = (err as { code?: string })?.code ?? 'EXCEPTION';
+    const code = errorCodeOf(err);
     notify.error(translate('errors.terminal.remove_failed', { code }), { code });
   });
 }

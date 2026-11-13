@@ -65,6 +65,14 @@ describe('useCommandPaletteHotkey', () => {
     expect(useCommandPaletteStore.getState().isOpen).toBe(true);
   });
 
+  it('mac:Ctrl+Shift+P 不触发(mac 只认 Cmd)', () => {
+    render(<Probe />);
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'p', ctrlKey: true, shiftKey: true }),
+    );
+    expect(useCommandPaletteStore.getState().isOpen).toBe(false);
+  });
+
   it('非 mac:Meta(Super/Win)+Shift+P 不触发(跨平台审计 P2)', () => {
     setPlatform('Linux x86_64');
     render(<Probe />);

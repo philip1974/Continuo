@@ -1,7 +1,7 @@
 import { promises as fs, type Stats } from 'node:fs';
 import { homedir, platform } from 'node:os';
 import { dirname, isAbsolute, sep } from 'node:path';
-import { ScopeError } from '../../../src/plugins/types';
+import { ScopeError } from '../../shared/plugin-fs-contract';
 import { leafNameRejectReason } from '../../shared/leaf-name';
 
 export interface ResolveReadResult {
@@ -35,8 +35,8 @@ function expandHome(p: string): string {
  */
 function validateLeaf(leaf: string, fullTarget: string): void {
   // 边界(E274):收口到共享 leafNameRejectReason(与 Explorer drop/create/rename 的 isValidLeafName 同一
-  // 规则集,消漂移)。规则不变(POSIX + Windows 危险名);超限上限收紧到 FS_NAME_MAX=255(单组件名上限,
-  // 严于原 260/4096,无安全回归)。
+  // 规则集,消漂移)。规则不变(POSIX + Windows 危险名);长度拒绝阈值是 260(Windows MAX_PATH)——
+  // FS_NAME_MAX=255 只用于 UI 输入截断与列表显示,不是这里的拒绝阈值。
   const reason = leafNameRejectReason(leaf);
   if (reason !== null) {
     throw new ScopeError(`leaf rejected: ${reason}`, {

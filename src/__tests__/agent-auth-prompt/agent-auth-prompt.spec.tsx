@@ -94,6 +94,33 @@ describe('AgentAuthPrompt — 渲染条件', () => {
     expect(modal!.textContent).toContain('Claude Code');
   });
 
+  // main 对 debug 工具发 method='debug.launch' / 'debug.*';此前标签表只有 terminal.*,弹窗显示原始串。
+  it.each([
+    ['debug.launch', '启动调试会话'],
+    ['debug.*', '控制调试会话'],
+  ])('debug method %s → 本地化标签,不显示原始 method', (method, label) => {
+    installApi({ onRequest: vi.fn(() => () => {}), respond: vi.fn() });
+    render(<AgentAuthPrompt />);
+    act(() => {
+      void useAgentAuthStore.getState().ensure({ method });
+    });
+    const modal = document.querySelector('.wm-modal-content');
+    expect(modal!.textContent).toContain(label);
+    expect(modal!.textContent).not.toContain(method);
+  });
+
+  it('debug 请求的弹窗标题与说明讲的是调试,不是终端', () => {
+    installApi({ onRequest: vi.fn(() => () => {}), respond: vi.fn() });
+    render(<AgentAuthPrompt />);
+    act(() => {
+      void useAgentAuthStore.getState().ensure({ method: 'debug.launch' });
+    });
+    const modal = document.querySelector('.wm-modal-content')!;
+    expect(modal.textContent).toContain('Agent 请求控制调试器');
+    expect(modal.textContent).not.toContain('Agent 请求控制内置终端');
+    expect(modal.textContent).toContain('读取变量');
+  });
+
   it('未识别的 method → 「调用 ${method}」', () => {
     installApi({ onRequest: vi.fn(() => () => {}), respond: vi.fn() });
     render(<AgentAuthPrompt />);

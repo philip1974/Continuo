@@ -6,6 +6,8 @@
 import { create } from 'zustand';
 import type { PermissionKey } from '../permissions';
 import type { PathScope } from '../types';
+import { SCOPE_REQUEST_TTL_MS } from '../../../electron/shared/plugin-fs-channels';
+import { filterKeepingIdentity } from '@/lib/filter-keeping-identity';
 
 export interface Pending {
   readonly pluginId: string;
@@ -49,7 +51,7 @@ interface PromptState {
 // main 端 reject pending,不通知 renderer 清 prompt。renderer 若不同 TTL 自清,过期的 fs-scope
 // 弹窗会滞留为 currentFsScope,把后续排队的 scope 请求挡在它后面永不显示(插件侧均超时)。
 // 每个 request 挂同 TTL 本地超时:过期且仍 pending → 按 deny 收口(resolveFsScope 会推进队列)。
-const FS_SCOPE_TTL_MS = 300_000;
+const FS_SCOPE_TTL_MS = SCOPE_REQUEST_TTL_MS;
 const EMPTY_FS_SCOPE_QUEUE: string[] = [];
 const fsScopeTimers = new Map<string, ReturnType<typeof setTimeout>>();
 function clearFsScopeTimer(requestId: string): void {
@@ -74,27 +76,7 @@ export function removeFsScopeQueueId(
   id: string,
 ): string[] {
   if (queue.length === 0) return EMPTY_FS_SCOPE_QUEUE;
-  let next: string[] | null = null;
-  let count = 0;
-  for (let i = 0; i < queue.length; i++) {
-    const queuedId = queue[i]!;
-    if (queuedId === id) {
-      if (next === null) {
-        next = new Array<string>(queue.length - 1);
-        for (let j = 0; j < i; j++) {
-          next[j] = queue[j]!;
-        }
-        count = i;
-      }
-      continue;
-    }
-    if (next !== null) next[count++] = queuedId;
-  }
-  if (next !== null) {
-    if (count === 0) return EMPTY_FS_SCOPE_QUEUE;
-    next.length = count;
-  }
-  return next ?? queue;
+  return filterKeepingIdentity(queue, (queuedId) => queuedId !== id, EMPTY_FS_SCOPE_QUEUE);
 }
 
 export function appendFsScopeQueueId(queue: readonly string[], id: string): string[] {
@@ -104,6 +86,31 @@ export function appendFsScopeQueueId(queue: readonly string[], id: string): stri
   return next;
 }
 
+// 等待弹出的 manifest 权限请求(弹窗一次只显示一个;fs-scope 请求有自己的队列)。
+const manifestPromptQueue: Array<{
+  pluginId: string;
+  perms: readonly PermissionKey[];
+  resolve: (granted: readonly PermissionKey[]) => void;
+}> = [];
+const EMPTY_GRANTED_PERMS: readonly PermissionKey[] = [];
+
+/** 结算当前 manifest 弹窗,并弹出队列里的下一个(若有)。无 pending → no-op。 */
+function settleManifestPrompt(
+  get: () => PromptState,
+  set: (partial: Partial<PromptState>) => void,
+  granted: readonly PermissionKey[],
+): void {
+  const { resolve, pending } = get();
+  if (!resolve && pending === null) return;
+  const next = manifestPromptQueue.shift();
+  set(
+    next
+      ? { pending: { pluginId: next.pluginId, perms: next.perms }, resolve: next.resolve }
+      : { pending: null, resolve: null },
+  );
+  resolve?.(granted);
+}
+
 export const usePermissionPromptStore = create<PromptState>((set, get) => ({
   pending: null,
   resolve: null,
@@ -111,29 +118,20 @@ export const usePermissionPromptStore = create<PromptState>((set, get) => ({
   fsScopeQueue: EMPTY_FS_SCOPE_QUEUE,
   currentFsScope: null,
 
-  request: (pluginId, perms) => {
-    if (get().pending) {
-      // 已有 pending,二次 request 立即拒
-      return Promise.resolve([]);
-    }
-    return new Promise<readonly PermissionKey[]>((resolve) => {
+  request: (pluginId, perms) =>
+    new Promise<readonly PermissionKey[]>((resolve) => {
+      if (get().pending) {
+        // 弹窗被占用 → 排队,不结算。不能返回 []:调用方(ensureAuthorized)把空数组当「用户全拒」
+        // 并持久化,另一个插件的权限会在用户从未见到弹窗的情况下被永久拒绝。
+        manifestPromptQueue.push({ pluginId, perms, resolve });
+        return;
+      }
       set({ pending: { pluginId, perms }, resolve });
-    });
-  },
+    }),
 
-  grant: (perms) => {
-    const { resolve } = get();
-    if (!resolve && get().pending === null) return;
-    set({ pending: null, resolve: null });
-    resolve?.(perms);
-  },
+  grant: (perms) => settleManifestPrompt(get, set, perms),
 
-  denyAll: () => {
-    const { resolve } = get();
-    if (!resolve && get().pending === null) return;
-    set({ pending: null, resolve: null });
-    resolve?.([]);
-  },
+  denyAll: () => settleManifestPrompt(get, set, EMPTY_GRANTED_PERMS),
 
   requestFsScope: (prompt) =>
     new Promise<'grant' | 'deny'>((resolve) => {

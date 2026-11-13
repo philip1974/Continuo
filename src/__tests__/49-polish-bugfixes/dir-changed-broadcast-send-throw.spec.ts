@@ -6,6 +6,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 type FakeWin = {
+  isDestroyed: () => boolean;
   webContents: {
     isDestroyed: () => boolean;
     send: ReturnType<typeof vi.fn>;
@@ -26,7 +27,7 @@ function makeWin(opts: { throwOnSend?: boolean } = {}): FakeWin {
   const send = vi.fn(() => {
     if (opts.throwOnSend) throw new Error('Object has been destroyed');
   });
-  return { webContents: { isDestroyed: () => false, send } };
+  return { isDestroyed: () => false, webContents: { isDestroyed: () => false, send } };
 }
 
 afterEach(() => {

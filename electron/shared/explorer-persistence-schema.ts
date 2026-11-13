@@ -16,12 +16,12 @@ import { z } from 'zod';
 // loadExplorer/hydrate 会接受超大数组,随后批量恢复 tab、展开树、写回快照 → 启动卡顿、IPC/JSON
 // 写入膨胀、内存峰值。下列 cap 远超任何现实工作区(深树展开/多 tab/多最近目录),只挡损坏/滥用;
 // 超限 → safeParse 失败 → loadExplorer 视作损坏快照降级默认(原文件存 .corrupt,不丢已存数据)。
-// 边界(E276):PATH_STR_MAX / PINNED_MAX 导出供 pinned.store 运行时把状态约束在持久化契约内
-// (否则运行时超限 → snapshotFromStores 写出后 ExplorerWritableSnapshotSchema 拒整份 → explorer 持久化全失败)。
+// 边界(E276):运行时状态须守这里的上限,否则 snapshotFromStores 写出后被 ExplorerWritableSnapshotSchema
+// 拒整份 → explorer 持久化全失败。
 export const PATH_STR_MAX = 8192; // 单条路径字符串(远超真实路径)
 export const PATH_ARRAY_MAX = 100_000; // expandedPaths / openFilePaths(大树/多 tab)(E277 运行时同守)
 const RECENT_ROOTS_MAX = 1000; // recentRoots
-export const PINNED_MAX = 10_000; // pinned.paths
+const PINNED_MAX = 10_000; // pinned.paths
 const WINDOWS_MAX = 10_000; // windows 段数
 const pathStr = (): z.ZodString => z.string().max(PATH_STR_MAX);
 const pathArray = (): z.ZodArray<z.ZodString> =>
@@ -84,8 +84,13 @@ export const ExplorerV1Schema = z
 
 export type ExplorerV1Payload = z.infer<typeof ExplorerV1Schema>;
 
-// ── v2(legacy compat)— 多窗口拆段 ────────────────────────
-const WindowEntrySchema = z
+// ── v2 / v3 共用构件 ─────────────────────────────────────
+// 重构:v2 WindowEntry 与 v3 writable WindowEntry 形状逐字段相同;v2 / v3-writable / v3-full 三个顶层
+// schema 除 version 字面量与 windows 元素外也相同。此前三份各自手写,E14/E15 的上限曾漏改其中一份
+// (「E14 漏改的 v2 多行形式」)→ 收口为单一定义,上限只写一处。
+
+/** renderer 可写的窗口段(v2 WindowEntry 与 v3 writable WindowEntry 同形):strict,不含 main-owned 字段。 */
+const WritableWindowEntrySchema = z
   .object({
     windowSeq: z.number().int().nonnegative(),
     workspace: z
@@ -105,60 +110,50 @@ const WindowEntrySchema = z
   })
   .strict();
 
+/** 顶层除 version / windows 之外的公共字段。 */
+const explorerTopLevelShape = {
+  workspace: z
+    .object({
+      recentRoots: z.array(pathStr()).max(RECENT_ROOTS_MAX), // 边界(E14/E15)
+    })
+    .strict(),
+  pinned: z
+    .object({
+      paths: z.array(pathStr()).max(PINNED_MAX), // 边界(E14/E15)
+    })
+    .strict(),
+  /** 下一个开新窗时分配的 windowSeq;主窗用 0,新窗自增. */
+  nextWindowSeq: z.number().int().nonnegative(),
+  /**
+   * 启动时是否自动恢复非主窗 (windowSeq > 0)。默认 false — 跟 VSCode "只开主窗" 一致。
+   * 显式设 true 才走 #29 multi-window session-restore 行为。
+   */
+  restoreAllWindowsOnLaunch: z.boolean().optional(),
+};
+
+// ── v2(legacy compat)— 多窗口拆段 ────────────────────────
+
 /** @deprecated v2 compatibility schema. New callers should use ExplorerSchemaV3 / ExplorerWritableSnapshotSchema. */
 export const ExplorerSchema = z
   .object({
     version: z.literal(2),
-    workspace: z
-      .object({
-        recentRoots: z.array(pathStr()).max(RECENT_ROOTS_MAX), // 边界(E15,E14 漏改的 v2 多行形式)
-      })
-      .strict(),
-    pinned: z
-      .object({
-        paths: z.array(pathStr()).max(PINNED_MAX), // 边界(E15)
-      })
-      .strict(),
-    /** 下一个开新窗时分配的 windowSeq;主窗用 0,新窗自增. */
-    nextWindowSeq: z.number().int().nonnegative(),
+    ...explorerTopLevelShape,
     /** 每窗口持久化段。windowSeq 跨重启稳定,关闭窗口段先保留(LRU 由调用方控制). */
-    windows: z.array(WindowEntrySchema).max(WINDOWS_MAX), // 边界(E14)
-    /**
-     * 启动时是否自动恢复非主窗 (windowSeq > 0)。默认 false — 跟 VSCode "只开主窗" 一致。
-     * 显式设 true 才走 #29 multi-window session-restore 行为。
-     */
-    restoreAllWindowsOnLaunch: z.boolean().optional(),
+    windows: z.array(WritableWindowEntrySchema).max(WINDOWS_MAX), // 边界(E14)
   })
   .strict();
 
 export type ExplorerPayloadV2 = z.infer<typeof ExplorerSchema>;
 export type ExplorerPayload = ExplorerPayloadV2 | ExplorerPayloadV3;
-export type WindowEntry = z.infer<typeof WindowEntrySchema>;
+export type WindowEntry = z.infer<typeof WritableWindowEntrySchema>;
 
 // ─── v3 schema ──────────────────────────────────────────
 
 /** main-owned 字段集合:renderer 不能写,merge 时必须 preserve. */
 export const MAIN_OWNED_WINDOW_FIELDS = ['layout', 'lastClosedAt'] as const;
 
-/** Writable WindowEntry:strict,排除 main-owned 字段(layout/lastClosedAt). */
-const ExplorerWritableWindowEntrySchema = z
-  .object({
-    windowSeq: z.number().int().nonnegative(),
-    workspace: z.object({ root: pathStr().nullable() }).strict(),
-    explorer: z
-      .object({
-        activePath: pathStr().nullable(), // 边界(E15)
-        expandedPaths: pathArray(), // 边界(E14)
-        sort: ExplorerSortSchema,
-      })
-      .strict(),
-    layoutUi: LayoutUiSchema.optional(),
-    editor: EditorSessionSchema.optional(),
-  })
-  .strict();
-
 /** Full WindowEntry v3:writable + main-owned. */
-const WindowEntrySchemaV3 = ExplorerWritableWindowEntrySchema.extend({
+const WindowEntrySchemaV3 = WritableWindowEntrySchema.extend({
   layout: LayoutSchema.optional(),
   lastClosedAt: z.number().int().nonnegative().nullable().optional(),
 }).strict();
@@ -167,15 +162,8 @@ const WindowEntrySchemaV3 = ExplorerWritableWindowEntrySchema.extend({
 export const ExplorerWritableSnapshotSchema = z
   .object({
     version: z.literal(3),
-    workspace: z
-      .object({ recentRoots: z.array(pathStr()).max(RECENT_ROOTS_MAX) })
-      .strict(), // 边界(E14)
-    pinned: z
-      .object({ paths: z.array(pathStr()).max(PINNED_MAX) })
-      .strict(), // 边界(E14)
-    nextWindowSeq: z.number().int().nonnegative(),
-    windows: z.array(ExplorerWritableWindowEntrySchema).max(WINDOWS_MAX), // 边界(E14)
-    restoreAllWindowsOnLaunch: z.boolean().optional(),
+    ...explorerTopLevelShape,
+    windows: z.array(WritableWindowEntrySchema).max(WINDOWS_MAX), // 边界(E14)
   })
   .strict();
 
@@ -183,15 +171,8 @@ export const ExplorerWritableSnapshotSchema = z
 export const ExplorerSchemaV3 = z
   .object({
     version: z.literal(3),
-    workspace: z
-      .object({ recentRoots: z.array(pathStr()).max(RECENT_ROOTS_MAX) })
-      .strict(), // 边界(E14)
-    pinned: z
-      .object({ paths: z.array(pathStr()).max(PINNED_MAX) })
-      .strict(), // 边界(E14)
-    nextWindowSeq: z.number().int().nonnegative(),
+    ...explorerTopLevelShape,
     windows: z.array(WindowEntrySchemaV3).max(WINDOWS_MAX), // 边界(E14)
-    restoreAllWindowsOnLaunch: z.boolean().optional(),
   })
   .strict();
 
@@ -199,7 +180,10 @@ export type ExplorerWritablePayload = z.infer<
   typeof ExplorerWritableSnapshotSchema
 >;
 export type ExplorerWritableWindowEntry = z.infer<
-  typeof ExplorerWritableWindowEntrySchema
+  typeof WritableWindowEntrySchema
 >;
 export type WindowEntryV3 = z.infer<typeof WindowEntrySchemaV3>;
 export type ExplorerPayloadV3 = z.infer<typeof ExplorerSchemaV3>;
+
+/** userData 下持久化会话(窗口段 / layout / 最近目录)的文件名;main 各处用 path.join(userData, 它)。 */
+export const EXPLORER_FILE_NAME = 'explorer.json';

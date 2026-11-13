@@ -8,15 +8,13 @@
 
 import type { FsApi } from '@/lib/fs/api';
 import type { IpcResult } from '@/lib/fs/types';
-import { errorMessage } from '../../../electron/shared/error-message';
+import { errorCodeOf, errorMessage } from '../../../electron/shared/error-message';
 import { createTab, useEditorStore } from '@/stores/editor.store';
 import { runSerialPerKey } from '@/lib/serialize-per-key';
 import {
   findEditorFileTabById,
   findEditorFileTabByPath,
 } from './editor-tab-lookup';
-
-export { findEditorFileTabById, findEditorFileTabByPath } from './editor-tab-lookup';
 
 // race(R21):同一 tab 的保存串行链。autosave(旧内容)在途时用户编辑 + 手动保存(新内容),若
 // 二者乱序完成,旧内容会最后落盘覆盖新的。按 tabId 串行保证按发起顺序写盘,最后发起者最后落盘。
@@ -32,7 +30,8 @@ export type FileOpResult = IpcResult<void>;
 
 const exception = (err: unknown): FileOpResult => ({
   ok: false,
-  code: 'EXCEPTION',
+  // IPC reject 带的稳定 code 原样保留(无则 EXCEPTION),调用方才能按 code 本地化。
+  code: errorCodeOf(err),
   message: errorMessage(err),
 });
 

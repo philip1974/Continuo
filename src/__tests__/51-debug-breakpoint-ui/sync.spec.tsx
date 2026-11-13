@@ -2,7 +2,7 @@
 
 import { EditorState } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createTab, useEditorStore } from '../../stores/editor.store';
 import { resetDebugStoreForTest, useDebugStore } from '../../stores/debug.store';
 import { debugDecorationsExtension } from '../../panels/Editor/decorations/debug-decorations';
@@ -99,6 +99,60 @@ describe('topic51 Op6 · debug decoration sync', () => {
 
     expect(view.dom.querySelectorAll('.cm-debug-breakpoint-marker')).toHaveLength(1);
     expect(view.dom.querySelector('.cm-debug-exec-line')).toBeTruthy();
+  });
+
+  // 同步订阅整个 editor store;敲键(updateContent)也会触发。装饰没变就不该再给 view 派发事务。
+  it('editor store 的无关更新(如内容变化)不重复派发装饰事务', () => {
+    const view = createView('/repo/a.ts', '/repo/a.ts');
+    useDebugStore.setState({
+      activeSessionId: null,
+      sessions: new Map([
+        ['s1', session('s1', { breakpoints: [{ file: '/repo/a.ts', line: 2, verified: true }] })],
+      ]),
+    });
+    stopSync = startDebugDecorationSync();
+    expect(view.dom.querySelectorAll('.cm-debug-breakpoint-marker')).toHaveLength(1);
+
+    const dispatch = vi.spyOn(view, 'dispatch');
+    useEditorStore.setState((state) => ({ tabs: [...state.tabs] })); // 模拟一次敲键后的 tabs 换新
+    useEditorStore.setState({ mode: 'source' });
+    expect(dispatch).not.toHaveBeenCalled();
+
+    // 装饰真的变了 → 仍然派发
+    useDebugStore.setState({
+      sessions: new Map([
+        ['s1', session('s1', { breakpoints: [{ file: '/repo/a.ts', line: 3, verified: true }] })],
+      ]),
+    });
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    dispatch.mockRestore();
+  });
+
+  // 外部改盘 reload 会整篇替换文档,CodeMirror 把已有装饰映射成空;签名缓存不能因此认为「没变」而不重贴。
+  it('文档被整体替换后,装饰按行号重新贴回', () => {
+    const view = createView('/repo/a.ts', '/repo/a.ts');
+    useDebugStore.setState({
+      activeSessionId: null,
+      sessions: new Map([
+        ['s1', session('s1', { breakpoints: [{ file: '/repo/a.ts', line: 2, verified: true }] })],
+      ]),
+    });
+    stopSync = startDebugDecorationSync();
+    expect(view.dom.querySelectorAll('.cm-debug-breakpoint-marker')).toHaveLength(1);
+
+    // 真实时序:store 先通知(此时文档还没换),之后 React effect 才 dispatch 整篇替换,且不再有 store 通知。
+    // 所以重贴必须由 view 自己在文档变化时完成,不能指望之后的 store 通知。
+    useEditorStore.setState((state) => ({ tabs: [...state.tabs] }));
+    view.dispatch({
+      changes: { from: 0, to: view.state.doc.length, insert: 'ONE\nTWO\nTHREE\nFOUR\n' },
+    });
+    expect(view.dom.querySelectorAll('.cm-debug-breakpoint-marker')).toHaveLength(1);
+    // 行号是事实来源:在断点上方插入一行,红点仍在第 2 行(不随文本漂移)
+    view.dispatch({ changes: { from: 0, insert: 'ZERO\n' } });
+    const marker = view.dom.querySelector('.cm-debug-breakpoint-marker')!;
+    const gutterElements = Array.from(marker.closest('.cm-gutter')!.querySelectorAll('.cm-gutterElement'));
+    const withMarker = gutterElements.filter((el) => el.querySelector('.cm-debug-breakpoint-marker'));
+    expect(withMarker).toHaveLength(1);
   });
 
   it('clears exec-line after continued and terminated events remove stopped state', () => {

@@ -64,7 +64,6 @@ export const en = {
   'errors.NO_DEFAULT_EXPORT': 'Plugin has no default export',
   'errors.NOT_PLUGIN_CLASS': 'Plugin default export is not a Plugin subclass',
   'errors.PAYLOAD_TOO_LARGE': 'Payload too large',
-  'errors.POPOUT_NOT_IMPLEMENTED': 'Popout not implemented',
   'errors.RM_FAILED': 'Remove failed',
   'errors.TERMINAL_CREATE_CANCELLED': 'Terminal creation was cancelled',
   'errors.TERMINAL_CWD_UNRESOLVED': 'Terminal cwd unresolved',
@@ -235,8 +234,6 @@ export const en = {
   'panels.explorer.create.in_label': 'in: {dir}',
 
   // panels.terminal.* aria + dynamic (4)
-  'panels.terminal.aria.start_shell': 'Starting shell',
-  'panels.terminal.search.title': 'Find in terminal',
   'panels.terminal.search.placeholder': 'Find',
   'panels.terminal.search.match_count': '{n} / {total}',
   'panels.terminal.search.no_match': 'No match',
@@ -275,8 +272,13 @@ export const en = {
   'permissions.agent.terminal_send_text': 'type text into a terminal',
   'permissions.agent.terminal_press_key': 'press a key in a terminal',
   'permissions.agent.terminal_kill': 'terminate a terminal',
+  'permissions.agent.debug_launch': 'start a debug session',
+  'permissions.agent.debug_control': 'control a debug session (breakpoints, stepping, variables)',
   'permissions.agent.generic': 'call {method}',
   'permissions.agent.title': 'Agent requests built-in terminal access',
+  'permissions.agent.title_debug': 'Agent requests debugger access',
+  'permissions.agent.hint_debug':
+    'Once granted, agents holding the MCP token can launch programs under the debugger, set breakpoints, step, read variables and evaluate expressions. Granting this does not grant terminal access. Valid only for this launch.',
   'permissions.agent.respond_failed': 'Failed to send your authorization decision. Please try again.',
   // a11y(A126):error feedback when relaying the fs-scope grant/deny decision to main fails.
   'permissions.fs_scope.respond_failed': 'Failed to send your file-access decision. Please try again.',
@@ -287,6 +289,7 @@ export const en = {
   'permissions.agent.deny': 'Deny',
   'permissions.agent.grant_once': 'Just this time',
   'permissions.agent.grant_session': 'Allow this launch',
+  'permissions.revoke_all.title': 'Revoke agent terminal access?',
   'permissions.revoke_all.confirm':
     'Will terminate {count} agent terminal(s) and revoke authorization granted during this launch.\n\nRunning agent CLIs holding tokens will 401 immediately; new terminals can re-authorize.\n\nContinue?',
   'permissions.revoke_all.failed':
@@ -309,7 +312,6 @@ export const en = {
   'statusbar.sidebar_hidden': 'Sidebar hidden',
   'statusbar.untitled_file': 'Untitled',
   'statusbar.unsaved_changes': 'Unsaved changes',
-  'statusbar.git_branch_placeholder': 'git branch (placeholder)',
   'statusbar.editor_stats': '{lines} lines · {words} words · {chars} chars',
 
   // errors.* topic-19 (4)
@@ -395,7 +397,6 @@ export const en = {
   'keybindings.unbound': 'Unbound',
   'keybindings.edit_hotkey': 'Edit hotkey',
   'keybindings.reset_default': 'Reset to default ({hotkey})',
-  'keybindings.reset_default_aria': 'Reset to default',
   // a11y(A76):per-row aria-label includes command name to distinguish rows for SR.
   'keybindings.edit_hotkey_for_aria': 'Edit hotkey for {command}',
   'keybindings.reset_default_for_aria': 'Reset hotkey for {command} to default',
@@ -406,6 +407,7 @@ export const en = {
   'shell.iconbar.show_explorer': 'Show Explorer',
   'shell.iconbar.settings': 'Settings',
   'shell.dock.popout_title': 'Pop out to standalone window',
+  'shell.dock.add_panel_failed': 'Failed to add panel',
   'shell.dock.popout_failed': 'Failed to open panel in a new window',
   'shell.tab.exit_zoom': 'Exit zoom',
   // a11y(A105):icon-only tab close button accessible name (was hardcoded English "Close {title}").

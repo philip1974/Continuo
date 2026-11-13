@@ -51,6 +51,18 @@ describe('shutdownCorePlugins', () => {
   });
 });
 
+describe('设置 tab 的 render 在多次调用间保持同一组件类型', () => {
+  // SettingsPanel 在渲染期调 tab.render();若每次返回新的组件类型,父组件一重渲 tab 内容就卸载重挂,
+  // 本地状态(如录制中的快捷键)丢失。
+  it.each(['core.keybindings', 'core.plugins'])('%s', (id) => {
+    bootCorePlugins();
+    const tab = coApp.settingTabs.getAll().find((t) => t.id === id)!;
+    const a = tab.render() as { type: unknown };
+    const b = tab.render() as { type: unknown };
+    expect(a.type).toBe(b.type);
+  });
+});
+
 describe('PluginsTabPlugin(v3.5)', () => {
   it('boot 后注册 core.plugins 设置 tab', () => {
     bootCorePlugins();

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import { snapshotByPriority } from '../../plugins/registries/keyed-registry';
 import {
   SettingItemRegistry,
   clampSettingNumber,
@@ -330,13 +331,16 @@ describe('SettingItemRegistry', () => {
     try {
       expect(r.getByCategory('missing')).toBe(other.getByCategory('missing'));
       expect(sortSpy).not.toHaveBeenCalled();
+      // 过滤 + 排序走共享的 snapshotByPriority;「无命中不分配」由它保证(到第一个命中项才分配)。
       const source = SettingItemRegistry.prototype.getByCategory.toString();
-      expect(source).toContain('let items');
-      expect(source).toContain('items === null');
-      expect(source).not.toContain(
-        'const items = new Array<SettingItemSpec>(this.items.size)',
-      );
-      expect(source).not.toContain('const items = new Array(this.items.size)');
+      expect(source).toContain('snapshotByPriority(');
+      expect(source).not.toContain('new Array');
+      const helper = snapshotByPriority.toString();
+      expect(helper).toContain('out === null');
+      const items = new Map<string, { category: string; priority?: number }>([
+        ['a', { category: 'general' }],
+      ]);
+      expect(snapshotByPriority(items, (item) => item.category === 'missing')).toEqual([]);
     } finally {
       sortSpy.mockRestore();
     }

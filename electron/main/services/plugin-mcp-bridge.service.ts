@@ -18,6 +18,7 @@ import {
   PLUGIN_MCP_ERROR_CODES,
 } from '../../shared/plugin-mcp-channels';
 import type { AnyMcpTool } from './mcp-host.service';
+import { codedError } from '../../shared/error-message';
 
 // ── 类型 ────────────────────────────────────────────────────
 
@@ -149,23 +150,13 @@ export function createInvokeRemote(
       // 边界(E228):在途数量双闸,超限立即 reject,不入 pending、不起 timer、不发 IPC。
       if (pending.size >= MAX_INFLIGHT_INVOKES_GLOBAL) {
         reject(
-          Object.assign(
-            new Error(
-              `plugin mcp in-flight invoke limit (${MAX_INFLIGHT_INVOKES_GLOBAL}) reached`,
-            ),
-            { code: PLUGIN_MCP_ERROR_CODES.TOO_MANY_REQUESTS },
-          ),
+          codedError(PLUGIN_MCP_ERROR_CODES.TOO_MANY_REQUESTS, `plugin mcp in-flight invoke limit (${MAX_INFLIGHT_INVOKES_GLOBAL}) reached`,),
         );
         return;
       }
       if ((inflightPerWc.get(owner.wcId) ?? 0) >= MAX_INFLIGHT_INVOKES_PER_WC) {
         reject(
-          Object.assign(
-            new Error(
-              `plugin mcp per-window in-flight invoke limit (${MAX_INFLIGHT_INVOKES_PER_WC}) reached`,
-            ),
-            { code: PLUGIN_MCP_ERROR_CODES.TOO_MANY_REQUESTS },
-          ),
+          codedError(PLUGIN_MCP_ERROR_CODES.TOO_MANY_REQUESTS, `plugin mcp per-window in-flight invoke limit (${MAX_INFLIGHT_INVOKES_PER_WC}) reached`,),
         );
         return;
       }
@@ -173,10 +164,7 @@ export function createInvokeRemote(
       const timer = setTimer(() => {
         if (!removePending(requestId)) return; // 已 reply / abort
         reject(
-          Object.assign(
-            new Error(`plugin mcp invoke timeout after ${timeoutMs}ms`),
-            { code: PLUGIN_MCP_ERROR_CODES.INVOKE_TIMEOUT },
-          ),
+          codedError(PLUGIN_MCP_ERROR_CODES.INVOKE_TIMEOUT, `plugin mcp invoke timeout after ${timeoutMs}ms`),
         );
       }, timeoutMs);
       pending.set(requestId, { owner, name, resolve, reject, timer });
@@ -201,9 +189,7 @@ export function createInvokeRemote(
       if (delivered === false && removePending(requestId)) {
         timer.cancel();
         reject(
-          Object.assign(new Error('plugin mcp target webContents gone'), {
-            code: PLUGIN_MCP_ERROR_CODES.PLUGIN_GONE,
-          }),
+          codedError(PLUGIN_MCP_ERROR_CODES.PLUGIN_GONE, 'plugin mcp target webContents gone'),
         );
       }
     });
@@ -231,16 +217,14 @@ export function createInvokeRemote(
         typeof r['code'] === 'string' ? r['code'] : 'UNKNOWN';
       const message =
         typeof r['message'] === 'string' ? r['message'] : 'unknown error';
-      entry.reject(Object.assign(new Error(message), { code }));
+      entry.reject(codedError(code, message));
       return;
     }
     // 畸形 reply:ok 既非 true 也非 false(缺失/null/字符串/数字)。此时上面已
     // cancel timer + 删 pending,若直接 return 则该 invoke 永久挂起(连 timeout
     // 兜底都被 cancel 了)。必须显式 reject,否则 agent 的 tools/call 永不返回。
     entry.reject(
-      Object.assign(new Error('malformed plugin mcp reply (missing ok)'), {
-        code: PLUGIN_MCP_ERROR_CODES.INVALID_REPLY,
-      }),
+      codedError(PLUGIN_MCP_ERROR_CODES.INVALID_REPLY, 'malformed plugin mcp reply (missing ok)'),
     );
   };
 
@@ -250,10 +234,7 @@ export function createInvokeRemote(
       removePending(requestId);
       entry.timer.cancel();
       entry.reject(
-        Object.assign(
-          new Error(`plugin webContents ${wcId} gone`),
-          { code: PLUGIN_MCP_ERROR_CODES.PLUGIN_GONE },
-        ),
+        codedError(PLUGIN_MCP_ERROR_CODES.PLUGIN_GONE, `plugin webContents ${wcId} gone`),
       );
     }
   };
@@ -264,9 +245,7 @@ export function createInvokeRemote(
       removePending(requestId);
       entry.timer.cancel();
       entry.reject(
-        Object.assign(new Error(`plugin mcp tool "${name}" unregistered`), {
-          code: PLUGIN_MCP_ERROR_CODES.TOOL_DISPOSED,
-        }),
+        codedError(PLUGIN_MCP_ERROR_CODES.TOOL_DISPOSED, `plugin mcp tool "${name}" unregistered`),
       );
     }
   };
@@ -282,9 +261,7 @@ export function createInvokeRemote(
     if (!entry) return; // stale / 无此 pending
     entry.timer.cancel();
     entry.reject(
-      Object.assign(new Error('invalid plugin mcp reply (failed validation)'), {
-        code: PLUGIN_MCP_ERROR_CODES.INVALID_REPLY,
-      }),
+      codedError(PLUGIN_MCP_ERROR_CODES.INVALID_REPLY, 'invalid plugin mcp reply (failed validation)'),
     );
   };
 
@@ -370,25 +347,14 @@ export function createPluginMcpBridge(
   return {
     handleRegister(wcId, payload) {
       if (entries.has(payload.name)) {
-        throw Object.assign(
-          new Error(`plugin mcp tool name "${payload.name}" already taken`),
-          { code: PLUGIN_MCP_ERROR_CODES.TOOL_NAME_TAKEN },
-        );
+        throw codedError(PLUGIN_MCP_ERROR_CODES.TOOL_NAME_TAKEN, `plugin mcp tool name "${payload.name}" already taken`);
       }
       // 边界(E79):全局 + per-wc 数量上限,超限拒注册(防海量注册撑爆 main + 广播放大)。
       if (entries.size >= MAX_TOOLS_GLOBAL) {
-        throw Object.assign(
-          new Error(`plugin mcp global tool limit (${MAX_TOOLS_GLOBAL}) reached`),
-          { code: PLUGIN_MCP_ERROR_CODES.TOO_MANY_TOOLS },
-        );
+        throw codedError(PLUGIN_MCP_ERROR_CODES.TOO_MANY_TOOLS, `plugin mcp global tool limit (${MAX_TOOLS_GLOBAL}) reached`);
       }
       if ((perWcCount.get(wcId) ?? 0) >= MAX_TOOLS_PER_WC) {
-        throw Object.assign(
-          new Error(
-            `plugin mcp per-window tool limit (${MAX_TOOLS_PER_WC}) reached`,
-          ),
-          { code: PLUGIN_MCP_ERROR_CODES.TOO_MANY_TOOLS },
-        );
+        throw codedError(PLUGIN_MCP_ERROR_CODES.TOO_MANY_TOOLS, `plugin mcp per-window tool limit (${MAX_TOOLS_PER_WC}) reached`,);
       }
       const owner: PluginMcpToolOwner = {
         pluginId: payload.pluginId,

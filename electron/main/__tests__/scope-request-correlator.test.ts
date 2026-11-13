@@ -2,10 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_TTL_MS_FOR_TEST,
   GC_INTERVAL_MS_FOR_TEST,
-  PING_REFRESH_MS_FOR_TEST,
   ScopeRequestCorrelator,
 } from '../services/scope-request-correlator';
-import { ScopeRequestTimeoutError, type PathScope } from '../../../src/plugins/types';
+import { ScopeRequestTimeoutError, type PathScope } from '../../shared/plugin-fs-contract';
 
 const SCOPES: readonly PathScope[] = [{ path: '/tmp', mode: 'rw' }];
 let correlator: ScopeRequestCorrelator | null = null;
@@ -104,32 +103,5 @@ describe('ScopeRequestCorrelator', () => {
 
     await rejected;
     expect(local._peek(requestId)).toBeUndefined();
-  });
-
-  it('T21.g ping resets expiresAt and allows later resolve', async () => {
-    const local = makeCorrelator();
-    const { requestId, promise } = local.createRequest('token-g', SCOPES, 10);
-
-    vi.advanceTimersByTime(200_000);
-    local.ping(requestId, 10);
-    expect(local._peek(requestId)?.expiresAt).toBe(
-      Date.now() + PING_REFRESH_MS_FOR_TEST,
-    );
-
-    vi.advanceTimersByTime(200_000);
-    local.resolve(requestId, 'grant', 10);
-
-    await expect(promise).resolves.toBe('grant');
-  });
-
-  it('T21.h ping from wrong sender is ignored', () => {
-    const local = makeCorrelator();
-    const { requestId } = local.createRequest('token-h', SCOPES, 10);
-    const initialExpiresAt = local._peek(requestId)?.expiresAt;
-
-    vi.advanceTimersByTime(1_000);
-    local.ping(requestId, 11);
-
-    expect(local._peek(requestId)?.expiresAt).toBe(initialExpiresAt);
   });
 });

@@ -8,7 +8,7 @@ import {
   safeHandleWithCtx,
 } from '../safe-handle';
 import { FS_CHANNELS } from '../../shared/fs-channels';
-import { MAX_WRITE_BYTES } from '../../shared/fs-limits';
+import { FS_PATH_MAX, MAX_WRITE_BYTES } from '../../shared/fs-limits';
 import { utf8BytesExceed } from '../../shared/utf8-byte-length';
 import { listDir, MAX_TOTAL_ENTRIES } from './fs/list-dir';
 import { readFile } from './fs/read-file';
@@ -18,6 +18,7 @@ import { removeEntry } from './fs/remove';
 import { createDir, createFile } from './fs/create';
 import { copyEntry, moveEntry } from './fs/move-copy';
 import { createWatcherPool } from './fs/watch';
+import { broadcastToWindows } from '../lib/broadcast';
 
 // ────────────────────────────────────────────────────────────
 // schemas — 全部 .strict() 拒绝未知字段(防 IPC 注入)
@@ -27,16 +28,17 @@ import { createWatcherPool } from './fs/watch';
 // exclude 无长度/数量上限。畸形 renderer/preload 调用可传超长路径或巨大 exclude 列表,在 IPC/zod/
 // exclude 扫描路径消耗内存+CPU(listDir 还对每个目录项 O(N) exclude.includes)。统一加 PATH/NAME
 // 上限 + exclude 数组上限;listDir 内把 exclude 转 Set 避免大目录线性放大(见 fs/list-dir.ts)。
-const FS_PATH_MAX = 8192;
-const FS_NAME_MAX = 1024;
+// FS_PATH_MAX 取 shared 单一来源(preload / plugin-fs 同值)。下面这个是 IPC schema 对「名字类字符串」
+// (新建名 / exclude 项)的宽松长度闸,不是文件系统组件名上限(那是 shared/leaf-name 的 FS_NAME_MAX=255)。
+const FS_IPC_NAME_MAX = 1024;
 const FS_EXCLUDE_MAX = 1000;
 const fsPath = (): z.ZodString => z.string().min(1).max(FS_PATH_MAX);
-const fsName = (): z.ZodString => z.string().min(1).max(FS_NAME_MAX);
+const fsName = (): z.ZodString => z.string().min(1).max(FS_IPC_NAME_MAX);
 
 const ListDirOptionsSchema = z
   .object({
     maxDepth: z.number().int().positive().optional(),
-    exclude: z.array(z.string().max(FS_NAME_MAX)).max(FS_EXCLUDE_MAX).optional(), // 边界(E21)
+    exclude: z.array(z.string().max(FS_IPC_NAME_MAX)).max(FS_EXCLUDE_MAX).optional(), // 边界(E21)
     followSymlinks: z.boolean().optional(),
     // perf P2:文件数上限(深递归早停)。见 fs/list-dir.ts ListDirOptions.maxFiles。
     // 边界(E275):上界对齐到 MAX_TOTAL_ENTRIES 硬上限 + 安全整数 —— 此前只 positive int,畸形 IPC 可传
@@ -101,21 +103,21 @@ export const createDirInputSchema = z
 
 export const trashInputSchema = z.object({ path: fsPath() }).strict();
 
-export const revealInputSchema = z.object({ path: fsPath() }).strict();
+const revealInputSchema = z.object({ path: fsPath() }).strict();
 
 export const moveInputSchema = z
   .object({ src: fsPath(), dest: fsPath() })
   .strict();
 
-export const copyInputSchema = z
+const copyInputSchema = z
   .object({ src: fsPath(), dest: fsPath() })
   .strict();
 
 // select-directory 显式严格:接受 undefined,拒绝 {} 与其它值
 export const selectDirectoryInputSchema = z.undefined();
 
-export const watchInputSchema = z.object({ path: fsPath() }).strict();
-export const unwatchInputSchema = z.object({ path: fsPath() }).strict();
+const watchInputSchema = z.object({ path: fsPath() }).strict();
+const unwatchInputSchema = z.object({ path: fsPath() }).strict();
 
 // 类型导出(给 preload / renderer 用)
 export type ListDirInput = z.infer<typeof listDirInputSchema>;
@@ -130,8 +132,6 @@ export type TrashInput = z.infer<typeof trashInputSchema>;
 export type RevealInput = z.infer<typeof revealInputSchema>;
 export type MoveInput = z.infer<typeof moveInputSchema>;
 export type CopyInput = z.infer<typeof copyInputSchema>;
-export type WatchInput = z.infer<typeof watchInputSchema>;
-export type UnwatchInput = z.infer<typeof unwatchInputSchema>;
 
 // ────────────────────────────────────────────────────────────
 // handlers — 浅函数,把 schema parse 后的对象映射给 fs 函数
@@ -140,13 +140,13 @@ export type UnwatchInput = z.infer<typeof unwatchInputSchema>;
 export const listDirHandler = (input: ListDirInput) => listDir(input.path, input.options);
 export const readFileHandler = (input: ReadFileInput) => readFile(input.path);
 export const writeFileHandler = (input: WriteFileInput) => atomicWriteFile(input.path, input.content);
-export const writeBinaryHandler = (input: WriteBinaryInput) => atomicWriteFile(input.path, input.content);
+const writeBinaryHandler = (input: WriteBinaryInput) => atomicWriteFile(input.path, input.content);
 export const renameHandler = (input: RenameInput) => renameEntry(input.path, input.newName);
 export const removeHandler = (input: RemoveInput) => removeEntry(input.path);
 export const createFileHandler = (input: CreateFileInput) => createFile(input.dir, input.name);
 export const createDirHandler = (input: CreateDirInput) => createDir(input.parent, input.name);
-export const moveHandler = (input: MoveInput) => moveEntry(input.src, input.dest);
-export const copyHandler = (input: CopyInput) => copyEntry(input.src, input.dest);
+const moveHandler = (input: MoveInput) => moveEntry(input.src, input.dest);
+const copyHandler = (input: CopyInput) => copyEntry(input.src, input.dest);
 
 // trash / selectDirectory:工厂注入 deps,真 Electron API 留 E2E
 
@@ -162,7 +162,7 @@ export interface RevealDeps {
   /** 真生产注入 Electron shell.showItemInFolder;测试可注入 spy. */
   showItemInFolder: (path: string) => void;
 }
-export const makeRevealHandler =
+const makeRevealHandler =
   (deps: RevealDeps) =>
   (input: RevealInput): void => {
     // shell.showItemInFolder 是同步 void;path 不存在时静默 noop.
@@ -184,7 +184,7 @@ export const makeSelectDirectoryHandler =
   };
 
 // ────────────────────────────────────────────────────────────
-// registerFsIpc — 拼装 9 条通道,真接 Electron API
+// registerFsIpc — 拼装全部 fs:* 通道,真接 Electron API
 // ────────────────────────────────────────────────────────────
 
 // Watcher pool 全局单例(进程级)。每个 path 一个 fs.watcher,onChange 广播给所有窗口。
@@ -260,19 +260,8 @@ const watcherPool = createWatcherPool((rootPath, onChange) => {
 
 // 导出仅供 R66 回归测试(验证单窗口 send 抛错不中断广播);生产仍只经 watcherPool onChange 调用。
 export function broadcastDirChanged(path: string): void {
-  for (const w of BrowserWindow.getAllWindows()) {
-    if (w.webContents.isDestroyed()) continue;
-    // race(R66,R63/R64/R65 同族):isDestroyed() 检查后、send 前窗口可能销毁,send 抛
-    // "Object has been destroyed"。本函数由 fs.watch 回调(onChange)触发,裸抛会:(1)中断
-    // 循环 → 后续窗口漏收 DIR_CHANGED,Explorer/外部文件同步停在旧树/旧内容;(2)在异步事件
-    // 回调里成主进程未捕获异常(噪声/崩溃风险)。每个窗口的 send 独立 try/catch,失败只跳过/
-    // 记录并继续广播其它窗口。镜像 i18n(R64)/protocol(R63)/plugin-fs(R65)。
-    try {
-      w.webContents.send(FS_CHANNELS.DIR_CHANGED, { path });
-    } catch (err) {
-      console.error('[fs] DIR_CHANGED broadcast failed', err);
-    }
-  }
+  // race(R66):由 fs.watch 回调触发;单窗口 send 抛错不中断其余窗口、不成未捕获异常。
+  broadcastToWindows(FS_CHANNELS.DIR_CHANGED, () => ({ path }), '[fs] DIR_CHANGED');
 }
 
 export function registerFsIpc(): void {

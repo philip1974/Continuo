@@ -10,14 +10,10 @@ import {
 import { useSettingsStore } from '@/stores/settings.store';
 import { notify } from '@/notifications/notify';
 import { t as translate } from '@/i18n';
-import type { Locale } from '@shared/i18n-types';
+import { isLocale, type Locale } from '@shared/i18n-types';
 
 const LANGUAGE_SETTING_ID = 'general.language';
 const LANGUAGE_DEFAULT: Locale = 'en';
-
-function isLocale(v: unknown): v is Locale {
-  return v === 'en' || v === 'zh' || v === 'ko';
-}
 
 export function LanguageFromSettings(): ReactNode {
   const value = useSettingValue<Locale>(LANGUAGE_SETTING_ID, LANGUAGE_DEFAULT);

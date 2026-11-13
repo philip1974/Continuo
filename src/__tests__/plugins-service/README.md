@@ -1,7 +1,7 @@
 # plugins-service(主进程插件目录扫描)
 
 行为契约:**`listPluginDirs(baseDir)` 扫子目录,每个含 `manifest.json` 即收;
-读 manifest.main(默认 'main.js'),读 styles.css 可选**。
+读 manifest.main(默认 'main.js')。styles.css 不读取(renderer 不注入插件样式)**。
 缺 manifest / 缺 main 直接跳过该目录,不抛;baseDir 不存在返空数组。
 
 ## 模块
@@ -19,7 +19,7 @@
 - 非目录 → 忽略
 - 缺 manifest.json → 跳过该项(不抛)
 - 缺 main 入口(默认 `main.js`,可被 manifest.main 覆盖) → 跳过该项
-- styles.css 缺失 → stylesText undefined,其它字段照返
+- 目录里的 styles.css 不读取,结果里没有 stylesText 字段
 - 顺序:readdir 默认顺序
 
 ### readEnabledIds(baseDir) → string[]

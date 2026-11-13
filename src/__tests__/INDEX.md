@@ -182,6 +182,7 @@
 
 - [`debug-panel.spec.tsx`](./51-debug-breakpoint-ui/debug-panel.spec.tsx)
 - [`debug-store.spec.ts`](./51-debug-breakpoint-ui/debug-store.spec.ts)
+- [`debug-view-thread-id-zero.spec.ts`](./51-debug-breakpoint-ui/debug-view-thread-id-zero.spec.ts)
 - [`decorations.spec.tsx`](./51-debug-breakpoint-ui/decorations.spec.tsx)
 - [`sync.spec.tsx`](./51-debug-breakpoint-ui/sync.spec.tsx)
 
@@ -461,6 +462,10 @@
 
 - [`event-bus.spec.ts`](./event-bus/event-bus.spec.ts)
 
+## [explorer-batch-transfer(重构:Explorer 批量移动/复制的单一实现)](./explorer-batch-transfer/README.md)
+
+- [`batch-transfer.spec.ts`](./explorer-batch-transfer/batch-transfer.spec.ts)
+
 ## [explorer-context-menu(资源管理器右键菜单 plugin 贡献点 V1)](./explorer-context-menu/README.md)
 
 - [`explorer-context-menu.spec.ts`](./explorer-context-menu/explorer-context-menu.spec.ts)
@@ -506,7 +511,6 @@
 - [`explorer.spec.ts`](./explorer-stores/explorer.spec.ts)
 - [`persistence-layer.spec.ts`](./explorer-stores/persistence-layer.spec.ts)
 - [`persistence-schema.spec.ts`](./explorer-stores/persistence-schema.spec.ts)
-- [`pinned.spec.ts`](./explorer-stores/pinned.spec.ts)
 - [`workspace.spec.ts`](./explorer-stores/workspace.spec.ts)
 
 ## [explorer-toggle-sidebar(VSCode ⌘B 同款)](./explorer-toggle-sidebar/README.md)
@@ -546,6 +550,10 @@
 
 - [`fs-ipc-bridge.spec.ts`](./fs-ipc-bridge/fs-ipc-bridge.spec.ts)
 
+## [groupKeepingOrder(按 key 分组的共享实现)](./group-keeping-order/README.md)
+
+- [`group-keeping-order.spec.ts`](./group-keeping-order/group-keeping-order.spec.ts)
+
 ## [HeaderActions(Dockview group header 自定义按钮)](./header-actions/README.md)
 
 - [`header-actions.spec.tsx`](./header-actions/header-actions.spec.tsx)
@@ -553,6 +561,10 @@
 ## [hook-broker-field-caps (E150)](./hook-broker-field-caps/README.md)
 
 - [`parse-stop-payload-caps.spec.ts`](./hook-broker-field-caps/parse-stop-payload-caps.spec.ts)
+
+## [快捷键键名词汇:捕获 / 匹配 / 显示 一致](./hotkey-key-vocabulary/README.md)
+
+- [`key-vocabulary.spec.ts`](./hotkey-key-vocabulary/key-vocabulary.spec.ts)
 
 ## [topic 16 i18n en zh ko](./i18n-en-zh-ko/README.md)
 
@@ -618,6 +630,10 @@
 
 - [`keybindings-tab-content.spec.tsx`](./keybindings-tab-content/keybindings-tab-content.spec.tsx)
 
+## [keyed-registry-base(重构:Map 型贡献 registry 的共享基类)](./keyed-registry-base/README.md)
+
+- [`keyed-registry.spec.ts`](./keyed-registry-base/keyed-registry.spec.ts)
+
 ## [latest-wins](./latest-wins/README.md)
 
 - [`latest-wins.spec.ts`](./latest-wins/latest-wins.spec.ts)
@@ -678,6 +694,10 @@
 
 - [`update-store.spec.ts`](./marketplace-update-store/update-store.spec.ts)
 
+## [mcp-tool-gates(重构:MCP 工具授权 / capability 门控单一来源)](./mcp-tool-gates/README.md)
+
+- [`mcp-tool-gates.spec.ts`](./mcp-tool-gates/mcp-tool-gates.spec.ts)
+
 ## [migration-shell-env](./migration-shell-env/README.md)
 
 - [`host-helper-import.spec.ts`](./migration-shell-env/host-helper-import.spec.ts)
@@ -724,6 +744,14 @@
 - [`PermissionPrompt.spec.tsx`](./permission-prompt/PermissionPrompt.spec.tsx)
 - [`promptStore.spec.ts`](./permission-prompt/promptStore.spec.ts)
 
+## [permission-record-contract(权限记录单条形态的跨进程统一规则)](./permission-record-contract/README.md)
+
+- [`permission-record.spec.ts`](./permission-record-contract/permission-record.spec.ts)
+
+## [picker-shared(重构:CommandPalette / QuickOpen 共享的 picker 机制)](./picker-shared/README.md)
+
+- [`picker-shared.spec.tsx`](./picker-shared/picker-shared.spec.tsx)
+
 ## [plugin-base(插件基类与 Disposable 模型)](./plugin-base/README.md)
 
 - [`plugin-base.spec.ts`](./plugin-base/plugin-base.spec.ts)
@@ -746,11 +774,20 @@
 
 - [`scope-decision-feedback.spec.ts`](./plugin-fs-scope-bridge/scope-decision-feedback.spec.ts)
 
+## [plugin-fs scope 授权弹窗的显示路径](./plugin-fs-scope-display-path/README.md)
+
+- [`main-sends-display-path.spec.ts`](./plugin-fs-scope-display-path/main-sends-display-path.spec.ts)
+- [`renderer-uses-display-path.spec.ts`](./plugin-fs-scope-display-path/renderer-uses-display-path.spec.ts)
+
 ## [plugin-fs-token-revoke-retry](./plugin-fs-token-revoke-retry/README.md)
 
 - [`token-revoke-retry.spec.ts`](./plugin-fs-token-revoke-retry/token-revoke-retry.spec.ts)
 
-## [plugin-loader(ESM 动态加载 + styles 注入)](./plugin-loader/README.md)
+## [plugin-ipc-frame-trust(plugin-data / plugin-fs raw IPC 的 frame-trust 门)](./plugin-ipc-frame-trust/README.md)
+
+- [`frame-trust-gate.spec.ts`](./plugin-ipc-frame-trust/frame-trust-gate.spec.ts)
+
+## [plugin-loader(ESM 动态加载)](./plugin-loader/README.md)
 
 - [`plugin-loader.spec.ts`](./plugin-loader/plugin-loader.spec.ts)
 
@@ -842,11 +879,15 @@
 ## [popout 契约 (M5)](./popout-contracts/README.md) `[contract]`
 
 - [`popout-mode.spec.ts`](./popout-contracts/popout-mode.spec.ts)
-- [`popout-open-schema.spec.ts`](./popout-contracts/popout-open-schema.spec.ts)
+- [`window-open-policy.spec.ts`](./popout-contracts/window-open-policy.spec.ts)
 
 ## [preload-no-zod(preload sandbox zod 泄漏守卫)](./preload-no-zod/README.md)
 
 - [`channels-zod-free.spec.ts`](./preload-no-zod/channels-zod-free.spec.ts)
+
+## [process-layering(重构:进程间依赖方向)](./process-layering/README.md)
+
+- [`process-layering.spec.ts`](./process-layering/process-layering.spec.ts)
 
 ## [protocol-url(co:// 路由)](./protocol-url/README.md)
 
@@ -942,6 +983,12 @@
 
 - [`values-store.spec.ts`](./settings-values/values-store.spec.ts)
 
+## [shared-helper-dedup(重构:重复 helper 收口为单一来源)](./shared-helper-dedup/README.md)
+
+- [`lower-if-needed.spec.ts`](./shared-helper-dedup/lower-if-needed.spec.ts)
+- [`notify-thrown-error.spec.ts`](./shared-helper-dedup/notify-thrown-error.spec.ts)
+- [`single-source-wiring.spec.ts`](./shared-helper-dedup/single-source-wiring.spec.ts)
+
 ## [SharedTab(Dockview tab header,带 motion shared layout)](./shared-tab/README.md)
 
 - [`shared-tab.spec.tsx`](./shared-tab/shared-tab.spec.tsx)
@@ -962,14 +1009,6 @@
 
 - [`parse.spec.ts`](./shell-stream-event-parse/parse.spec.ts)
 
-## [spawn-leaf-cancel-remove-safe](./spawn-leaf-cancel-remove-safe/README.md)
-
-- [`cancel-remove-safe.spec.ts`](./spawn-leaf-cancel-remove-safe/cancel-remove-safe.spec.ts)
-
-## [spawn-leaf-create-reject](./spawn-leaf-create-reject/README.md)
-
-- [`spawn-leaf-create-reject.spec.ts`](./spawn-leaf-create-reject/spawn-leaf-create-reject.spec.ts)
-
 ## [spec-object-guard(E273,E271 registry 族)](./spec-object-guard/README.md)
 
 - [`spec-object-guard.spec.ts`](./spec-object-guard/spec-object-guard.spec.ts)
@@ -989,6 +1028,11 @@
 ## [statusbar-copy-feedback-timer](./statusbar-copy-feedback-timer/README.md)
 
 - [`copy-feedback-timer.spec.tsx`](./statusbar-copy-feedback-timer/copy-feedback-timer.spec.tsx)
+
+## [stop-hook broker:不丢事件、不留孤儿等待者](./stop-hook-broker-reliability/README.md)
+
+- [`broker-reliability.spec.ts`](./stop-hook-broker-reliability/broker-reliability.spec.ts)
+- [`install-malformed-config.spec.ts`](./stop-hook-broker-reliability/install-malformed-config.spec.ts)
 
 ## [tab-icons(SettingTab icon 工厂集合)](./tab-icons/README.md)
 
@@ -1019,6 +1063,10 @@
 ## [Terminal 键位映射(`mapTerminalKey`)](./terminal-key-mapping/README.md)
 
 - [`terminal-key-mapping.spec.ts`](./terminal-key-mapping/terminal-key-mapping.spec.ts)
+
+## [终端延迟初始化使用最新的设置与主题](./terminal-lazy-init-settings/README.md)
+
+- [`lazy-init-settings.spec.ts`](./terminal-lazy-init-settings/lazy-init-settings.spec.ts)
 
 ## [terminal-osc7 - OSC 7 cwd parser migration to @continuo-terminal/react-terminal](./terminal-osc7/README.md)
 
@@ -1068,10 +1116,6 @@
 
 - [`terminal-url-click.spec.ts`](./terminal-url-click/terminal-url-click.spec.ts)
 
-## [TerminalView(单 terminal 容器)](./terminal-view/README.md)
-
-- [`terminal-view.spec.tsx`](./terminal-view/terminal-view.spec.tsx)
-
 ## [terminal-window-isolation (Issue #28 Phase 1)](./terminal-window-isolation/README.md) `[integration]`
 
 - [`terminal-window-isolation.spec.ts`](./terminal-window-isolation/terminal-window-isolation.spec.ts)
@@ -1101,8 +1145,6 @@
 - [`alert-elimination.spec.ts`](./unified-toast-notification/alert-elimination.spec.ts)
 - [`error-codes-enum.spec.ts`](./unified-toast-notification/error-codes-enum.spec.ts)
 - [`notifications-provider.spec.tsx`](./unified-toast-notification/notifications-provider.spec.tsx)
-- [`notify-ipc-bridge.spec.tsx`](./unified-toast-notification/notify-ipc-bridge.spec.tsx)
-- [`notify-main-broadcast.spec.ts`](./unified-toast-notification/notify-main-broadcast.spec.ts)
 - [`notify-public-api.spec.tsx`](./unified-toast-notification/notify-public-api.spec.tsx)
 - [`toast-component-tokens.spec.ts`](./unified-toast-notification/toast-component-tokens.spec.ts)
 - [`toast-dom-render.spec.tsx`](./unified-toast-notification/toast-dom-render.spec.tsx)
@@ -1118,6 +1160,10 @@
 ## [useFsWatcher(Explorer 展开路径 ↔ fs.watch)](./use-fs-watcher/README.md)
 
 - [`use-fs-watcher.spec.tsx`](./use-fs-watcher/use-fs-watcher.spec.tsx)
+
+## [usePolledSnapshot(定时轮询外部快照)](./use-polled-snapshot/README.md)
+
+- [`use-polled-snapshot.spec.tsx`](./use-polled-snapshot/use-polled-snapshot.spec.tsx)
 
 ## [window-aware-agent-session](./window-aware-agent-session/README.md) `[integration]`
 

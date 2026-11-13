@@ -43,7 +43,7 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 * 使用 `test-driven-development` skill 辅助 TDD 流程，使用 `brainstorming` skill 辅助 BDD 规范设计。
 
-* **反向 BDD（理解既有/AI 生成代码）也走同一目录与同一索引**：用 `/comprehend` skill 触发，AI 倒推 `src/__tests__/<topic>/`，再用 `pnpm bdd:mindmap <topic>` 把规范投影成思维导图，最后用 `comprehension-validator` agent 校验规范↔实装一致性。
+* **反向 BDD（理解既有/AI 生成代码）也走同一目录与同一索引**：用 `/comprehend` skill 触发，AI 倒推 `src/__tests__/<topic>/`，最后用 `comprehension-validator` agent 校验规范↔实装一致性。
 
 ## 设计系统约束
 

@@ -14,7 +14,6 @@ import type { PermissionKey } from '../../plugins/permissions';
 
 interface FakePerm {
   readPermissions: ReturnType<typeof vi.fn>;
-  writePermissions?: ReturnType<typeof vi.fn>;
   writePluginPermissions?: ReturnType<typeof vi.fn>;
 }
 
@@ -44,10 +43,7 @@ describe('IpcPermissionStore.get', () => {
         'p1': [{ permission: 'fs', granted: true, decidedAt: 100 }],
       },
     });
-    installFakeApi({
-      readPermissions,
-      writePermissions: vi.fn(),
-    });
+    installFakeApi({ readPermissions });
 
     const store = new IpcPermissionStore();
     const a = await store.get('p1');
@@ -126,7 +122,7 @@ describe('IpcPermissionStore.get', () => {
       ok: true,
       data: {},
     });
-    installFakeApi({ readPermissions, writePermissions: vi.fn() });
+    installFakeApi({ readPermissions });
 
     const store = new IpcPermissionStore();
     await Promise.all([store.get('a'), store.get('b'), store.get('c')]);

@@ -6,10 +6,14 @@
 import { useEffect, useMemo } from 'react';
 import { useRegistry } from '../registries/useRegistry';
 import type { CommandRegistry, CommandSpec } from '../registries/CommandRegistry';
-import { useKeybindingsStore } from '../keybindings/keybindings-store';
+import {
+  resolveEffectiveHotkey,
+  useKeybindingsStore,
+} from '../keybindings/keybindings-store';
 import { tWithFallback } from '@/i18n';
 import { runContributedAction } from '@/lib/run-contributed-action';
-import { detectPlatform, type Platform } from './format-hotkey';
+import { canonicalHotkeyKey, detectPlatform, type Platform } from './format-hotkey';
+import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 
 /** 解析后的修饰键 + 主键签名(平台感知). 解析一次,匹配时纯字段比较. */
 interface ComboSignature {
@@ -44,16 +48,6 @@ function segmentEquals(combo: string, start: number, end: number, token: string)
     if (lowerCode !== token.charCodeAt(i)) return false;
   }
   return true;
-}
-
-function lowerIfNeeded(value: string): string {
-  for (let i = 0; i < value.length; i += 1) {
-    const code = value.charCodeAt(i);
-    if ((code >= 65 && code <= 90) || code > 127) {
-      return value.toLowerCase();
-    }
-  }
-  return value;
 }
 
 function lowerTrimmedSegment(combo: string, start: number, end: number): string {
@@ -103,7 +97,8 @@ function compileCombo(combo: string, platform: Platform): ComboSignature {
     wantCtrl,
     wantShift,
     wantAlt,
-    key: lowerTrimmedSegment(combo, start, combo.length),
+    // 主键别名(up / esc / return …)归一到 e.key 名,与录制、显示同一套词汇。
+    key: canonicalHotkeyKey(lowerTrimmedSegment(combo, start, combo.length)),
   };
 }
 
@@ -138,7 +133,7 @@ interface CompiledBinding {
 const EMPTY_COMPILED_BINDINGS: readonly CompiledBinding[] = [];
 
 /** 事件目标是否可编辑文本控件(input/textarea/select/contenteditable). */
-export function isEditableTarget(target: EventTarget | null): boolean {
+function isEditableTarget(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null;
   if (!el || typeof el.tagName !== 'string') return false;
   const tag = el.tagName;
@@ -156,8 +151,7 @@ export function buildCompiledBindings(
   for (const cmd of commands) {
     const override = overrides[cmd.id];
     if (!cmd.hotkey && override === undefined) continue;
-    const effective =
-      override !== undefined ? (override === '' ? undefined : override) : cmd.hotkey;
+    const effective = resolveEffectiveHotkey(cmd, overrides);
     if (!effective) continue; // 无 hotkey 或显式 unbind
     out ??= new Array<CompiledBinding>(commands.length);
     out[count++] = { sig: compileCombo(effective, platform), cmd };

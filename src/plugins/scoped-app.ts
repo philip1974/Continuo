@@ -40,6 +40,7 @@ import {
   validateScopesShape,
 } from '../../electron/shared/fs-limits';
 import { utf8BytesExceed } from '../../electron/shared/utf8-byte-length';
+import { codedError } from '../../electron/shared/error-message';
 import {
   NETWORK_URL_MAX,
   NETWORK_HEADERS_MAX,
@@ -47,23 +48,12 @@ import {
   NETWORK_HEADER_VALUE_MAX,
 } from '../../electron/shared/network-limits';
 import {
-  SHELL_PATH_MAX,
-  SHELL_ARG_MAX_LEN,
-  SHELL_ARGS_MAX_COUNT,
   SHELL_ENV_KEY_MAX,
   SHELL_ENV_VAL_MAX,
   SHELL_ENV_MAX_ENTRIES,
   SHELL_STDIN_MAX,
+  shellCommandShapeError,
 } from '../../electron/shared/shell-limits';
-
-export function areValidShellArgs(args: readonly unknown[]): boolean {
-  for (const arg of args) {
-    if (typeof arg !== 'string' || arg.length > SHELL_ARG_MAX_LEN) {
-      return false;
-    }
-  }
-  return true;
-}
 
 const EMPTY_SHELL_ARGS: readonly string[] = [];
 
@@ -84,21 +74,11 @@ function validateShellInput(
   opts?: { cwd?: unknown; env?: unknown; input?: unknown },
 ): void {
   const bad = (msg: string): never => {
-    throw Object.assign(new Error(`[shell] ${msg}`), { code: 'BAD_INPUT' });
+    throw codedError('BAD_INPUT', `[shell] ${msg}`);
   };
-  if (typeof cmd !== 'string' || cmd.length === 0 || cmd.length > SHELL_PATH_MAX)
-    bad(`invalid cmd (empty or > ${SHELL_PATH_MAX})`);
-  // 关键:先确认是数组再(由调用方)spread —— 非数组 iterable 的 [...x] 可能无限/超大展开。
-  if (!Array.isArray(args) || args.length > SHELL_ARGS_MAX_COUNT)
-    bad(`invalid args (not array or count > ${SHELL_ARGS_MAX_COUNT})`);
-  const shellArgs = args as readonly unknown[];
-  if (!areValidShellArgs(shellArgs))
-    bad(`invalid arg entry (non-string or > ${SHELL_ARG_MAX_LEN})`);
-  if (
-    opts?.cwd !== undefined &&
-    (typeof opts.cwd !== 'string' || opts.cwd.length > SHELL_PATH_MAX)
-  )
-    bad(`invalid cwd (> ${SHELL_PATH_MAX})`);
+  // cmd / args / cwd 三段与 main 入口共用 shellCommandShapeError(先确认 args 是数组再由调用方 spread)。
+  const shapeError = shellCommandShapeError(cmd, args, opts?.cwd);
+  if (shapeError !== null) bad(shapeError);
   if (
     opts?.input !== undefined &&
     // 边界(E129,E125 同族):stdin 按真实 UTF-8 字节(非 .length=UTF-16 code unit),与主 shell 入口同款。
@@ -179,7 +159,8 @@ export function buildPluginListDirEntries(
 // 复用 FS_PATH_MAX 在发 IPC 前 reject(空字符串放行,交主进程 check() 处理)。
 function assertPluginFsPath(path: unknown, label = 'path'): asserts path is string {
   if (typeof path !== 'string' || path.length > FS_PATH_MAX) {
-    throw new Error(
+    throw codedError(
+      'BAD_INPUT',
       `plugin fs ${label} invalid or too long (max ${FS_PATH_MAX})`,
     );
   }
@@ -215,7 +196,7 @@ function makeFs(
       // 不让超量 payload 进 IPC。共享 helper 与主进程同一来源,不漂移。
       const scopesErr = validateScopesShape(scopes);
       if (scopesErr) {
-        throw Object.assign(new Error(scopesErr), { code: 'BAD_INPUT' });
+        throw codedError('BAD_INPUT', scopesErr);
       }
       return coApi.pluginFsRaw.requestScope(
         token ?? missingPluginFsToken(),
@@ -237,11 +218,12 @@ function makeFs(
       // 跳过字节上限,非 string(JS 插件绕 TS 类型传 Uint8Array/对象)直接经 structured-clone 进 IPC。
       // content 契约是 string,非 string 即拒(BAD_INPUT);string 再按字节上限。
       if (typeof content !== 'string') {
-        throw new Error('plugin write content must be a string');
+        throw codedError('BAD_INPUT', 'plugin write content must be a string');
       }
       // 边界(E125):真实 UTF-8 字节(非 .length=UTF-16 code unit),与主 fs 入口同款。
       if (utf8BytesExceed(content, MAX_WRITE_BYTES)) {
-        throw new Error(
+        throw codedError(
+          'BAD_INPUT',
           `plugin write content too large (> ${MAX_WRITE_BYTES} 字节)`,
         );
       }
@@ -315,12 +297,9 @@ function makeFs(
       await ensurePerm(pluginId, 'fs', store);
       assertPluginFsPath(repoDir, 'repoDir'); // 边界(E180)
       // 边界(E314,E63 renderer 对偶 / pre-IPC 预检):sha 发 IPC 前校验 hex 形态 —— 此前只校验 repoDir,
-      // 超长/非 hex sha 经 structured-clone 进 main 才被 GIT_BLOB_SHA_RE 拒(IPC 放大)。共享 isValidGitBlobSha。
+      // 超长/非 hex sha 经 structured-clone 进 main 才被 isValidGitBlobSha 拒(IPC 放大)。共享 isValidGitBlobSha。
       if (!isValidGitBlobSha(sha)) {
-        throw Object.assign(
-          new Error('plugin readGitBlob sha must be 4-64 hex chars'),
-          { code: 'BAD_INPUT' },
-        );
+        throw codedError('BAD_INPUT', 'plugin readGitBlob sha must be 4-64 hex chars');
       }
       return coApi.pluginFsRaw.readGitBlob(
         token ?? missingPluginFsToken(),
@@ -352,7 +331,7 @@ function makeFs(
 // 非 renderer 同步物化;给 body 限大小是上传策略决策,留作单独议题)。超限抛 BAD_INPUT、不调 fetch。
 function validateNetworkInput(url: unknown, init?: unknown): void {
   const bad = (msg: string): never => {
-    throw Object.assign(new Error(`[network] ${msg}`), { code: 'BAD_INPUT' });
+    throw codedError('BAD_INPUT', `[network] ${msg}`);
   };
   if (typeof url !== 'string' || url.length === 0 || url.length > NETWORK_URL_MAX)
     bad(`invalid url (empty or > ${NETWORK_URL_MAX})`);
@@ -431,10 +410,7 @@ function makeShell(
       // 否则冒泡到 runContributedAction 时拿不到 code,BAD_INPUT 等会在 zh/ko toast 显英文
       // raw。带 code → runContributedAction 经 localizeErrorByCode 按 catalog 本地化。
       if (!r.ok) {
-        throw Object.assign(
-          new Error(`[shell.exec] ${r.code}: ${r.message}`),
-          { code: r.code },
-        );
+        throw codedError(r.code, `[shell.exec] ${r.code}: ${r.message}`);
       }
       return r.data;
     },
@@ -545,18 +521,10 @@ function makeClipboard(
       // 边界(E181):发原生 clipboard 前校验类型 + UTF-8 字节上限。畸形/恶意插件传非 string 或超大
       // 字符串 → renderer/系统 clipboard API 卡顿/内存峰值/异常路径。非法抛 BAD_INPUT(同 shell/fs 入口)。
       if (typeof text !== 'string') {
-        throw Object.assign(
-          new Error('[clipboard] writeText: text must be a string'),
-          { code: 'BAD_INPUT' },
-        );
+        throw codedError('BAD_INPUT', '[clipboard] writeText: text must be a string');
       }
       if (utf8BytesExceed(text, CLIPBOARD_TEXT_MAX_BYTES)) {
-        throw Object.assign(
-          new Error(
-            `[clipboard] writeText: text too large (> ${CLIPBOARD_TEXT_MAX_BYTES} 字节)`,
-          ),
-          { code: 'BAD_INPUT' },
-        );
+        throw codedError('BAD_INPUT', `[clipboard] writeText: text too large (> ${CLIPBOARD_TEXT_MAX_BYTES} 字节)`,);
       }
       return getCachedClipboard().writeText(text);
     },
@@ -698,8 +666,7 @@ function makePermission(
  * 把 coApp 包成 per-plugin CoPluginApp。Plugin constructor 拿到的就是它。
  *
  * - 原有贡献点字段(panels/commands/...)直通 coApp 引用,不重复 new
- * - fs/network/clipboard/permission 是 per-plugin 闭包,持 pluginId
- * - shell 是 placeholder(Phase 3)
+ * - fs/network/clipboard/shell/permission 是 per-plugin 闭包,持 pluginId
  */
 export function createScopedApp(
   coApp: CoApp,

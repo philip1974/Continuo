@@ -3,7 +3,7 @@
 
 import type { IDockviewPanel } from 'dockview-react';
 
-export const TERMINAL_PANEL_ID_PREFIX = 'terminal-';
+const TERMINAL_PANEL_ID_PREFIX = 'terminal-';
 
 export function panelIdFor(sessionId: string): string {
   return `${TERMINAL_PANEL_ID_PREFIX}${sessionId}`;
@@ -24,4 +24,22 @@ export function sessionIdFromPanel(panel: PanelLike): string | null {
 
 export function isTerminalPanelId(panelId: string): boolean {
   return panelId.startsWith(TERMINAL_PANEL_ID_PREFIX);
+}
+
+/**
+ * 终端 panel 标题的单一规则(DockReconciler 建 / 改 panel 与 TerminalPanelView 自校正共用;此前各写
+ * 一份):session 标题 > 兜底标题(panel params)> `Terminal <id 前 6 位>`;
+ * agent 发起的会话加 ` (agent)` 后缀。
+ */
+export function terminalPanelTitle(input: {
+  readonly sessionId: string | undefined;
+  readonly sessionTitle?: string;
+  readonly fallbackTitle?: string;
+  readonly originHint?: string;
+}): string {
+  const base =
+    input.sessionTitle ??
+    input.fallbackTitle ??
+    `Terminal ${(input.sessionId ?? '').slice(0, 6) || '?'}`;
+  return input.originHint === 'agent' ? `${base} (agent)` : base;
 }

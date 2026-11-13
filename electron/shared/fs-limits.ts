@@ -11,7 +11,6 @@ export const FS_PATH_MAX = 8192; // 路径字符串上限(与 fs.ipc fsPath / pl
 // 边界(E63 / E314 renderer 对偶):git blob sha 是插件直传 IPC 入 git cat-file argv。固定 hex 形态 +
 // 长度上限(4-64 hex,git 缩写到完整 SHA-1/SHA-256),挡超长 sha 触发 spawn E2BIG / argv 放大。
 // main(plugin-fs readGitBlob)+ renderer(scoped-app readGitBlob 发 IPC 前预检)单一来源。
-export const GIT_BLOB_SHA_RE = /^[0-9a-fA-F]{4,64}$/;
 /** sha 是否合法 git blob 形态(有效性谓词:非 string → false → 无效 → 调用方拒). */
 export function isValidGitBlobSha(sha: unknown): boolean {
   if (typeof sha !== 'string' || sha.length < 4 || sha.length > 64) {
@@ -62,3 +61,17 @@ export function validateScopesShape(scopes: unknown): string | null {
   }
   return null;
 }
+
+/**
+ * fs:list-dir 未传 exclude 时的默认排除项。跨进程单一来源:main list-dir 用它建默认 Set;renderer
+ * Quick Open 的 walk-files 因 exclude 是**整体替换**语义(传了就不用默认),必须把这份完整带上再追加
+ * 构建产物 —— 此前 walk-files 手抄了一份,main 侧加一项而那边不同步就会多扫。
+ */
+export const LIST_DIR_DEFAULT_EXCLUDE: readonly string[] = [
+  '.git',
+  '.svn',
+  '.hg',
+  'node_modules',
+  '.DS_Store',
+  'Thumbs.db',
+];

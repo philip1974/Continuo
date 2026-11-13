@@ -16,7 +16,7 @@ I/O 全部抽象为接口注入(`ManagerHost`),便于 jsdom 单测。
 
 ### 扫描
 
-- `host.listPluginDirs()` 返回 `[{ id, manifestText, moduleUrl, stylesText? }]`
+- `host.listPluginDirs()` 返回 `[{ id, manifestText, moduleUrl }]`
 - 调 `parseManifest`,失败的跳过 + warn
 - 调 `isVersionCompatible`(若 manifest 有 minLMVersion),不兼容跳过 + warn
 

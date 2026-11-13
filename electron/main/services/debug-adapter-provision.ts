@@ -2,7 +2,7 @@ import { app } from 'electron';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 
-export const DEBUG_ADAPTER_RELATIVE_PATH = path.join(
+const DEBUG_ADAPTER_RELATIVE_PATH = path.join(
   'js-debug',
   'src',
   'dapDebugServer.js',
@@ -21,9 +21,8 @@ function sourceTreeAdapterPath(): string {
 function packagedAdapterCandidates(): string[] {
   const resourcesPath = process.resourcesPath;
   const appPath = app.getAppPath();
-  const unpackedAppPath = appPath.endsWith('.asar')
-    ? `${appPath}.unpacked`
-    : `${appPath}.unpacked`;
+  // asar 打包时 asarUnpack 的文件落在 `<app>.asar.unpacked/`。
+  const unpackedAppPath = `${appPath}.unpacked`;
 
   return [
     path.join(resourcesPath, DEBUG_ADAPTER_RELATIVE_PATH),
@@ -37,7 +36,7 @@ function packagedAdapterCandidates(): string[] {
   ];
 }
 
-export function getDebugAdapterCandidates(): readonly string[] {
+function getDebugAdapterCandidates(): readonly string[] {
   if (!app.isPackaged) return [sourceTreeAdapterPath()];
   return packagedAdapterCandidates();
 }

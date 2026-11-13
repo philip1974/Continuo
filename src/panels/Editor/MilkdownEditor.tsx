@@ -82,7 +82,7 @@ function CrepeEditor({ defaultValue, readonly = false, onChange }: MilkdownEdito
 export function MilkdownEditor(props: MilkdownEditorProps) {
   // Crepe theme 内部很多元素是相对单位(em/rem),容器 font-size 变,
   // ProseMirror 文本会跟着变。如果某些元素用 px 绝对值,可在
-  // src/styles/editor-font.css 里 override(后续若需扩展)
+  // src/styles/milkdown-font-override.css(本文件顶部已导入)里 override
   const fontSize = useSettingValue<number>('editor.fontSize', 13);
 
   // ref 跟踪最新 onLinkClick:外层 click handler 不重建,内部读最新值。
@@ -92,17 +92,24 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
   // Cmd/Ctrl+click on <a>:Crepe 渲染 markdown link 为真实 anchor,
   // 我们冒泡到外层捕获。仅修饰键 click 拦截,普通 click 让 ProseMirror
   // 走光标定位(IDE 通用约定:Cmd+click 跳转,普通 click 编辑)。见 issue #25。
+  // 鼠标(Cmd/Ctrl+click)与键盘(Cmd/Ctrl+Enter)两条路径定位到 <a> 后的共同收尾:取 href、吞掉默认
+  // 行为、交给 onLinkClick。
+  const activateLink = useCallback(
+    (a: Element | null, e: React.SyntheticEvent): void => {
+      const href = a?.getAttribute('href');
+      if (!href) return;
+      e.preventDefault();
+      e.stopPropagation();
+      onLinkClickRef.current?.(href);
+    },
+    [],
+  );
+
   const handleClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (!(e.metaKey || e.ctrlKey)) return;
     const target = e.target as HTMLElement | null;
-    const a = target?.closest('a');
-    if (!a) return;
-    const href = a.getAttribute('href');
-    if (!href) return;
-    e.preventDefault();
-    e.stopPropagation();
-    onLinkClickRef.current?.(href);
-  }, []);
+    activateLink(target?.closest('a') ?? null, e);
+  }, [activateLink]);
 
   // a11y(A152):Cmd/Ctrl+click 跳转的键盘等价 —— Cmd/Ctrl+Enter。键盘用户无法用鼠标修饰键
   // 点击链接;用修饰键(非裸 Enter)避免与可编辑 ProseMirror 的换行冲突。链接定位优先 event
@@ -118,13 +125,8 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
         node instanceof HTMLElement ? node : (node?.parentElement ?? null);
       a = el?.closest('a') ?? null;
     }
-    if (!a) return;
-    const href = a.getAttribute('href');
-    if (!href) return;
-    e.preventDefault();
-    e.stopPropagation();
-    onLinkClickRef.current?.(href);
-  }, []);
+    activateLink(a, e);
+  }, [activateLink]);
 
   return (
     <MilkdownProvider>

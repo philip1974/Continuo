@@ -44,7 +44,7 @@ deps:
 ```ts
 {
   has: (id) => boolean;
-  interrupt: (id) => void;     // 包 termService.interrupt(写 \x03)
+  interrupt: (id) => Promise<boolean>; // 包 termService.interrupt(写 \x03);false = 未送达
   kill: (id) => void;          // 包 termService.kill(SIGINT + 3s grace + force)
   forceKill: (id) => void;     // 包 termService.forceKill(直接 SIGKILL)
 }
@@ -55,7 +55,8 @@ deps:
 - `tool.run({session_id, signal?})`:
   1. `has(session_id) === false` → 抛 `TERMINAL_SESSION_NOT_FOUND`
   2. signal 缺省 / `'SIGTERM'` → 调 `kill(id)`
-  3. signal `'SIGINT'` → 调 `interrupt(id)`
+  3. signal `'SIGINT'` → 调 `interrupt(id)` 并等待结果;返回 `false`(Ctrl-C 未送达:检查后 PTY 退出 / 写被拒)
+     → 抛 `TERMINAL_SESSION_NOT_FOUND`(与 send_input 写失败同码),不回报成功
   4. signal `'SIGKILL'` → 调 `forceKill(id)`
   5. 返回 `{}`
 - 不调 ensureAuthorized(与 send_input/read_output 同型,不弹窗)

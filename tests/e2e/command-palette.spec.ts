@@ -2,7 +2,7 @@
 //
 // 用 dispatchEvent 直接派发 keydown,绕过 Electron / OS 层可能的 Cmd/Ctrl+P
 // 拦截(menu / 系统快捷键)。renderer 内 useQuickOpenHotkey + useCommandPaletteHotkey
-// 都检测 metaKey || ctrlKey,只读 e.key,跑测时稳定。
+// 只认平台主修饰键(mac = Cmd,其它 = Ctrl),只读 e.key,跑测时稳定。
 
 import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures/electron-app';
@@ -20,10 +20,13 @@ async function pressShortcut(
 ): Promise<void> {
   await window.evaluate(
     ({ ctrl, shift, key }) => {
+      // `ctrl` 表示「平台主修饰键」:mac = Cmd(meta),其它 = Ctrl(mac 上面板热键只认 Cmd)。
+      const isMac = navigator.platform.toLowerCase().includes('mac');
       document.dispatchEvent(
         new KeyboardEvent('keydown', {
           key,
-          ctrlKey: ctrl ?? false,
+          ctrlKey: (ctrl ?? false) && !isMac,
+          metaKey: (ctrl ?? false) && isMac,
           shiftKey: shift ?? false,
           bubbles: true,
           cancelable: true,

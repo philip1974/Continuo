@@ -38,22 +38,6 @@ import '@/styles/dockview.css';
 // 触发 dockview 重订阅 createComponent。同 panelComponents 对照(useMemo)。
 const tabComponents = { default: SharedTab };
 
-interface FlushBridge {
-  readonly layout?: {
-    readonly onFlushRequest?: (
-      cb: (payload?: { windowId: number }) => Promise<void>,
-    ) => () => void;
-    readonly sendFlushAck?: (windowId: number) => void;
-  };
-  readonly system?: {
-    readonly windowId?: number;
-  };
-}
-
-function getFlushBridge(): FlushBridge | undefined {
-  return (window as Window & { electron?: FlushBridge }).electron;
-}
-
 // 边界(E217,E215 同族):dock layout 的 panel 数量上限。layout:read 有 2MiB 字节上限(E215),但畸形
 // layout 仍可在其内塞大量短 panel key。正常 layout panel 数 = 编辑器 tab + 终端 + 资源管理器等,远低于此。
 const MAX_LAYOUT_PANELS = 256;
@@ -122,7 +106,11 @@ function DockReconcilerMount({ api }: { api: DockviewApi }): null {
 let lastLayoutSaveNotifyAt = 0;
 const LAYOUT_SAVE_NOTIFY_MIN_INTERVAL_MS = 5000;
 let lastSuccessfulLayoutPayload: string | null = null;
-const cleanLayoutApis = new WeakSet<DockviewApi>();
+// 每个 dock api 的布局版本(每次变更 +1)与「已落盘」的版本;二者相等 = 干净,可跳过快照重建。
+// 用版本号而非布尔标记:写盘 await 期间若又发生变更,版本已前进,写成功后只把**写盘前**的版本记为
+// 已落盘 —— 期间的变更仍是脏的,后续 debounce / 关窗 flush 会再写(布尔标记会把它一并标干净而丢失)。
+const layoutVersions = new WeakMap<DockviewApi, number>();
+const savedLayoutVersions = new WeakMap<DockviewApi, number>();
 function notifyLayoutSaveFailedRateLimited(): void {
   const now = Date.now();
   if (now - lastLayoutSaveNotifyAt < LAYOUT_SAVE_NOTIFY_MIN_INTERVAL_MS) return;
@@ -137,7 +125,8 @@ async function writeDockLayoutSnapshot(
   // 重启会丢);关窗 flush 路径传 false(默认)→ 沿用「可见日志 + 抛出由调用方 try/catch」语义。
   notifyOnFail = false,
 ): Promise<void> {
-  if (cleanLayoutApis.has(api)) return;
+  const version = layoutVersions.get(api) ?? 0;
+  if (savedLayoutVersions.get(api) === version) return;
   try {
     // 写盘前剥离终端 panel(彻底修复:持久化 layout 不再携带终端的 sessionId/cwd 等陈旧/敏感
     // 数据;读端 sanitize 仍是兜底防线,处理历史 explorer.json 与竞态)。仅含终端(无非终端
@@ -157,7 +146,7 @@ async function writeDockLayoutSnapshot(
     };
     const serializedPayload = JSON.stringify(payload);
     if (serializedPayload === lastSuccessfulLayoutPayload) {
-      cleanLayoutApis.add(api);
+      savedLayoutVersions.set(api, version);
       return;
     }
 
@@ -168,7 +157,7 @@ async function writeDockLayoutSnapshot(
       return;
     }
     lastSuccessfulLayoutPayload = serializedPayload;
-    cleanLayoutApis.add(api);
+    savedLayoutVersions.set(api, version);
   } catch (err) {
     console.warn(`${warnPrefix} rejected`, err);
     if (notifyOnFail) notifyLayoutSaveFailedRateLimited();
@@ -288,7 +277,7 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       // race(R22):保存各 onDid* 返回的 disposable,卸载/重建时统一 dispose。
       dockDisposablesRef.current.push(
         event.api.onDidLayoutChange(() => {
-          cleanLayoutApis.delete(event.api);
+          layoutVersions.set(event.api, (layoutVersions.get(event.api) ?? 0) + 1);
           persist();
           setEmpty(event.api.totalPanels === 0);
         }),
@@ -344,8 +333,10 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
   useEffect(() => {
     if (!apiReady) return;
     if (!apiRef.current) return;
-    const bridge = getFlushBridge();
-    const off = bridge?.layout?.onFlushRequest?.(async (payload) => {
+    // 关窗 flush 握手:main 发 layout:flush-request → 本回调落盘三路数据 → sendFlushAck → main 才真正
+    // 关窗。必须经 coApi(preload 只暴露 __lmApi;此前读了一个不存在的全局 bridge,整条握手是死的:
+    // flush 从不执行,main 每次关窗干等 ack 超时)。
+    const off = coApi.layout.onFlushRequest?.(async (payload) => {
       // race(R42):在 flush **执行时**读取 apiRef.current,而非 effect 注册时闭包捕获。effect 仅
       // 依赖 apiReady、只注册一次;若 onReady 重入/重建(HMR/StrictMode/dockview rebuild)把
       // apiRef.current 换成新 api,旧闭包会用 stale api 写盘 → 关窗落盘旧 dock 布局,覆盖/丢失当前
@@ -383,10 +374,7 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       // 三条 flush 数据域独立;layout/explorer 如最终共享 explorer.json,main 侧 file mutex
       // 仍负责串行化磁盘合并。renderer 这里并行启动,减少关闭按钮等待首个慢任务串住后续落盘。
       await Promise.all([layoutFlush, explorerFlush, autosaveFlush]);
-      const latest = getFlushBridge();
-      latest?.layout?.sendFlushAck?.(
-        payload?.windowId ?? latest.system?.windowId ?? 0,
-      );
+      coApi.layout.sendFlushAck?.(payload?.windowId ?? coApi.system.windowId);
     });
     return () => {
       off?.();

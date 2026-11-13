@@ -18,13 +18,13 @@ export interface UseTerminalDragDropInput {
 // 字符串 → UI 卡顿/内存峰值。读路径时累计:文件数超 MAX_TERMINAL_DROP_FILES 的项不再 IPC 取路径;
 // 累计写入长度超 MAX_TERMINAL_DROP_CHARS(低于主 2MB 写入上限留 quote 余量)的项不再加入。超限项
 // 计入 skipped 提示,绝不构造/写入超大字符串。
-export const MAX_TERMINAL_DROP_FILES = 1000;
+export const MAX_TERMINAL_DROP_FILES = MAX_DROP_FILES;
 export const MAX_TERMINAL_DROP_CHARS = 1_000_000;
 
 // 边界(E189/E224,E176 同族有界遍历):hasFiles 收口到共享 @/lib/window-drop(与 captureBoundedFiles /
 // hasDirectoryInFirstItems 同处),Terminal 与 App.tsx 全局 drop 共用单一来源。此处 import 供本模块用 +
 // re-export 保持既有 import 路径不变(Terminal 代码 + drag-drop.spec 仍从本模块 import hasFiles)。
-import { captureBoundedFiles, hasFiles } from '@/lib/window-drop';
+import { MAX_DROP_FILES, captureBoundedFiles, hasFiles } from '@/lib/window-drop';
 export { hasFiles };
 
 // 边界(E189):DEV 调试日志的 types 也按上限有界读取(不全量 Array.from),防开发环境复现同类卡顿。

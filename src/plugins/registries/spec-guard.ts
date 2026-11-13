@@ -10,3 +10,53 @@
 export function isSpecObject(spec: unknown): boolean {
   return spec !== null && typeof spec === 'object' && !Array.isArray(spec);
 }
+
+// ── 各 registry 的 validate*Spec 共用的字段断言 ───────────────────────────────────────────────
+// Ribbon / SettingTab / Panel / EditorAction / ExplorerContextMenu / StatusBar 六个 registry 的校验此前逐字同构
+// (只差错误前缀与字段名),长度上限也各写一份。断言与上限收口到这里;错误消息格式 `[tag] field …` 不变。
+
+/** id / type / group / *Key(i18n key)等标识类字符串的长度上限。 */
+export const SPEC_ID_MAX = 256;
+/** title / label 等展示文本的长度上限。 */
+export const SPEC_TITLE_MAX = 512;
+
+export function assertSpecObject(tag: string, spec: unknown): void {
+  if (!isSpecObject(spec)) throw new Error(`[${tag}] spec must be an object`);
+}
+
+/** 必填:非空字符串且不超长。 */
+export function assertSpecString(tag: string, field: string, value: unknown, max: number): void {
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new Error(`[${tag}] ${field} must be a non-empty string`);
+  }
+  if (value.length > max) throw new Error(`[${tag}] ${field} exceeds max length ${max}`);
+}
+
+/**
+ * 可选:给了就必须是字符串且不超长。先 typeof 再比长度 —— spec 来自未类型化 JS 插件,
+ * `(123).length === undefined > max` 为 false,只比长度会放过非字符串(E153/E155)。
+ */
+export function assertOptionalSpecString(
+  tag: string,
+  field: string,
+  value: unknown,
+  max: number,
+): void {
+  if (value === undefined) return;
+  if (typeof value !== 'string') throw new Error(`[${tag}] ${field} must be a string`);
+  if (value.length > max) throw new Error(`[${tag}] ${field} exceeds max length ${max}`);
+}
+
+export function assertOptionalFinitePriority(tag: string, priority: unknown): void {
+  if (priority !== undefined && !Number.isFinite(priority)) {
+    throw new Error(`[${tag}] priority must be finite`);
+  }
+}
+
+export function assertSpecFunction(tag: string, field: string, value: unknown): void {
+  if (typeof value !== 'function') throw new Error(`[${tag}] ${field} must be a function`);
+}
+
+export function assertOptionalSpecFunction(tag: string, field: string, value: unknown): void {
+  if (value !== undefined) assertSpecFunction(tag, field, value);
+}

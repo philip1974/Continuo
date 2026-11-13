@@ -11,12 +11,13 @@
 //
 // BDD: settings-toggle
 
-import { getDockApi } from '@/shell/dock/dock-api-ref';
+import { getDockApi, openOrFocusPanel } from '@/shell/dock/dock-api-ref';
 import { useLayoutUiStore } from '@/stores/layout-ui.store';
 
 const SETTINGS_PANEL_ID = 'settings';
 const SETTINGS_COMPONENT = 'settings';
 const SETTINGS_TITLE = 'Settings';
+const SETTINGS_TITLE_KEY = 'panels.settings.title';
 
 export function toggleSettingsPanel(): void {
   const api = getDockApi();
@@ -30,14 +31,8 @@ export function toggleSettingsPanel(): void {
 
   useLayoutUiStore.getState().setSidebarOpen(false);
 
-  if (existing) {
-    existing.api.setActive();
-    return;
-  }
-  const panel = api.addPanel({
-    id: SETTINGS_PANEL_ID,
-    component: SETTINGS_COMPONENT,
-    title: SETTINGS_TITLE,
-  });
-  panel.api.setActive();
+  // 「存在则聚焦 / 不存在则新建」走共享 openOrFocusPanel:它负责撤销排定中的关闭动画(否则刚聚焦的
+  // Settings 会在 EXIT_DURATION_MS 后消失)并带上 params.titleKey(页签标题随语言切换)。此前这里手抄了
+  // 一份,两样都漏了。
+  openOrFocusPanel(SETTINGS_PANEL_ID, SETTINGS_COMPONENT, SETTINGS_TITLE, SETTINGS_TITLE_KEY);
 }

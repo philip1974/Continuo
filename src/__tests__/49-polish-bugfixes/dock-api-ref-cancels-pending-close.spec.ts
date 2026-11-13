@@ -21,6 +21,7 @@ import {
 import { wrapPanelClose } from '../../shell/dock/wrap-panel-close';
 import { useClosingStore } from '../../stores/closing.store';
 import { EXIT_DURATION_MS } from '../../shell/motion/tokens';
+import { toggleSettingsPanel } from '../../lib/toggle-settings-panel';
 
 interface FakePanel {
   api: { id: string; close: () => void; setActive: ReturnType<typeof vi.fn> };
@@ -87,6 +88,26 @@ describe('49 第八 session · dock-api-ref 聚焦取消 pending close', () => {
 
     focusPanel('output'); // 没先 close
     expect(panel.api.setActive).toHaveBeenCalled();
+    vi.advanceTimersByTime(EXIT_DURATION_MS + 50);
+    expect(realClose).not.toHaveBeenCalled();
+  });
+
+  // 第四轮审计:toggleSettingsPanel 手抄了 openOrFocusPanel 的「存在则聚焦 / 否则 addPanel」,漏了本文件
+  // 守护的 cancelPendingPanelClose —— 第三个漏掉的兄弟入口。Settings 页签非 active 时点 ×,动画窗口内
+  // 按 ⌘, / 点齿轮 → 刚聚焦的 Settings 仍被排定的 close 关掉。
+  it('toggleSettingsPanel 在 EXIT 窗口内聚焦(inactive)Settings → 撤销真 close', () => {
+    const realClose = vi.fn();
+    const panel = makeWrappedPanel('settings', realClose);
+    (panel.api as { isActive?: boolean }).isActive = false;
+    setDockApi(makeApi(new Map([['settings', panel]])));
+
+    panel.api.close();
+    expect(useClosingStore.getState().ids.has('settings')).toBe(true);
+
+    toggleSettingsPanel();
+    expect(panel.api.setActive).toHaveBeenCalledTimes(1);
+    expect(useClosingStore.getState().ids.has('settings')).toBe(false);
+
     vi.advanceTimersByTime(EXIT_DURATION_MS + 50);
     expect(realClose).not.toHaveBeenCalled();
   });

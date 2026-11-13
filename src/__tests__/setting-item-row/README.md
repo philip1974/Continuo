@@ -36,6 +36,9 @@
 
 ### number
 
+- 键入中的文本放本地草稿:范围内的值即时 setValue;越界的中间值不钳制回写(否则无法键入目标值)
+- 失焦 / Enter → 按 min/max 钳制后提交并回显;清空或非数字 → 不提交,回显原值
+
 - Input value = String(value)
 - onChange → 解析,Number.isFinite false 跳过(非法输入不写)
 - finite → setValue(id, n)

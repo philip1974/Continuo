@@ -12,7 +12,11 @@ import { describe, it, expect } from 'vitest';
 // (popout-consumers 风格):断言每个 SIGKILL grace setTimeout 都被捕获成 const 且 unref。
 const ROOT = join(__dirname, '..', '..', '..');
 
-const FILES = [
+// 重构后:plugin-shell-stream(强制清理 + 超时)与 plugins.service(git 超时)的升级样板收口到
+// lib/kill-with-grace.ts,unref 只需在这一处保证;下方另断言三个调用点都走它、不再内联 SIGKILL。
+const FILES = ['electron/main/lib/kill-with-grace.ts'];
+
+const CALLERS = [
   'electron/main/services/plugin-shell-stream.service.ts',
   'electron/main/services/plugins.service.ts',
 ];
@@ -47,6 +51,14 @@ describe('49 · SIGKILL grace timer 必须 unref(防延迟退出)', () => {
       }
       // 文件内存在 unref 调用(捕获后必须 unref)。
       expect(src).toMatch(/\.unref\(\)/);
+    });
+  }
+
+  for (const rel of CALLERS) {
+    it(`${rel}:经 killWithGrace 升级,不再内联 SIGKILL timer`, () => {
+      const src = readFileSync(join(ROOT, rel), 'utf-8');
+      expect(src).toContain('killWithGrace(');
+      expect(src).not.toContain("kill('SIGKILL')");
     });
   }
 });

@@ -1,20 +1,14 @@
 import type { EditorView } from '@codemirror/view';
 import { pathEquals } from '@/lib/path-cross';
 import { useDebugStore, type DebugSessionShadow } from '@/stores/debug.store';
-import { useEditorStore, type EditorTab } from '@/stores/editor.store';
+import { useEditorStore } from '@/stores/editor.store';
 import { isMarkdownPath } from '../editor-path-utils';
 import { setDebugDecorations } from './debug-decorations';
+import { findEditorFileTabById } from '../editor-tab-lookup';
 
 let unsubscribeDebug: (() => void) | null = null;
 let unsubscribeEditor: (() => void) | null = null;
 let refCount = 0;
-
-function findTabById(tabs: readonly EditorTab[], tabId: string): EditorTab | null {
-  for (const tab of tabs) {
-    if (tab.id === tabId) return tab;
-  }
-  return null;
-}
 
 function breakpointLinesForTab(
   sessions: ReadonlyMap<string, DebugSessionShadow>,
@@ -44,8 +38,25 @@ function execLineForTab(
   return stopped.line;
 }
 
+// 每个 view 上次应用的装饰签名。同步订阅整个 editor store(任一 tab 敲键都触发),签名没变就不再派发事务。
+const appliedSignatures = new WeakMap<EditorView, string>();
+
+function applyDecorations(
+  view: EditorView,
+  breakpointLines: readonly number[],
+  execLine: number | null,
+): void {
+  // 只看行号:文档变化时的重贴由 view 侧的 StateField 自己完成(见 debug-decorations)。
+  const signature = `${execLine ?? ''}|${breakpointLines.join(',')}`;
+  if (appliedSignatures.get(view) === signature) return;
+  appliedSignatures.set(view, signature);
+  setDebugDecorations(view, { breakpointLines, execLine });
+}
+
+const NO_BREAKPOINT_LINES: readonly number[] = [];
+
 function clearView(view: EditorView): void {
-  setDebugDecorations(view, { breakpointLines: [], execLine: null });
+  applyDecorations(view, NO_BREAKPOINT_LINES, null);
 }
 
 function syncDebugDecorations(): void {
@@ -57,17 +68,18 @@ function syncDebugDecorations(): void {
       : debugState.sessions.get(debugState.activeSessionId);
 
   for (const [tabId, view] of editorState.viewRefs) {
-    const tab = findTabById(editorState.tabs, tabId);
+    const tab = findEditorFileTabById(editorState.tabs, tabId);
     if (tab === null || tab.filePath === null || isMarkdownPath(tab.filePath)) {
       clearView(view);
       continue;
     }
 
     const filePath = tab.filePath;
-    setDebugDecorations(view, {
-      breakpointLines: breakpointLinesForTab(debugState.sessions, filePath),
-      execLine: execLineForTab(activeSession, filePath),
-    });
+    applyDecorations(
+      view,
+      breakpointLinesForTab(debugState.sessions, filePath),
+      execLineForTab(activeSession, filePath),
+    );
   }
 }
 

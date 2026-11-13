@@ -1,5 +1,4 @@
 import {
-  Compartment,
   RangeSet,
   RangeSetBuilder,
   StateEffect,
@@ -65,41 +64,50 @@ function createExecLineDecoration(
   ]);
 }
 
-const breakpointMarkersField = StateField.define<RangeSet<GutterMarker>>({
-  create: () => RangeSet.empty,
-  update(markers, transaction) {
-    let next = markers.map(transaction.changes);
+// 两个 field 都把「行号」(store 里的事实来源)和据此算出的装饰一起存。文档一变就按行号重建,而不是让
+// CodeMirror 把旧装饰随文本映射:外部改盘 reload 是整篇替换,映射后装饰全空;在断点上方增删行时,映射会让
+// 红点跟着文本漂移、与 store 的行号脱节。重建发生在同一个事务里,不依赖之后是否还有 store 通知。
+const breakpointMarkersField = StateField.define<{
+  readonly lines: readonly number[];
+  readonly markers: RangeSet<GutterMarker>;
+}>({
+  create: () => ({ lines: [], markers: RangeSet.empty }),
+  update(value, transaction) {
+    let lines = value.lines;
     for (const effect of transaction.effects) {
-      if (effect.is(setBreakpointLinesEffect)) {
-        next = createBreakpointMarkers(transaction.state, effect.value);
-      }
+      if (effect.is(setBreakpointLinesEffect)) lines = effect.value;
     }
-    return next;
+    if (lines === value.lines && !transaction.docChanged) return value;
+    return { lines, markers: createBreakpointMarkers(transaction.state, lines) };
   },
 });
 
-const execLineDecorationField = StateField.define<DecorationSet>({
-  create: () => Decoration.none,
-  update(decorations, transaction) {
-    let next = decorations.map(transaction.changes);
+const execLineDecorationField = StateField.define<{
+  readonly line: number | null;
+  readonly decorations: DecorationSet;
+}>({
+  create: () => ({ line: null, decorations: Decoration.none }),
+  update(value, transaction) {
+    let line = value.line;
+    let changed = false;
     for (const effect of transaction.effects) {
       if (effect.is(setExecLineEffect)) {
-        next = createExecLineDecoration(transaction.state, effect.value);
+        line = effect.value;
+        changed = true;
       }
     }
-    return next;
+    if (!changed && !transaction.docChanged) return value;
+    return { line, decorations: createExecLineDecoration(transaction.state, line) };
   },
-  provide: (field) => EditorView.decorations.from(field),
+  provide: (field) => EditorView.decorations.from(field, (value) => value.decorations),
 });
-
-const debugDecorationsCompartment = new Compartment();
 
 const debugDecorationsHostExtension: Extension = [
   breakpointMarkersField,
   execLineDecorationField,
   gutter({
     class: 'cm-breakpoint-gutter',
-    markers: (view) => view.state.field(breakpointMarkersField),
+    markers: (view) => view.state.field(breakpointMarkersField).markers,
   }),
   EditorView.baseTheme({
     '.cm-breakpoint-gutter': {
@@ -124,7 +132,7 @@ const debugDecorationsHostExtension: Extension = [
 ];
 
 export function debugDecorationsExtension(): Extension {
-  return debugDecorationsCompartment.of(debugDecorationsHostExtension);
+  return debugDecorationsHostExtension;
 }
 
 export function setDebugDecorations(view: EditorView, state: DebugDecorationsState): void {

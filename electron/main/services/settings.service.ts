@@ -10,18 +10,15 @@ import {
   type Locale,
   type Settings,
 } from '../../shared/i18n-types';
+import { createSerialQueue } from '../../shared/run-serial-per-key';
 
 // 边界(E69):settings.json 读前大小上限。语义只有 {version, locale},正常仅数十字节,
 // 64KiB 已是天文余量;超大必为损坏/恶意,当 corrupt 隔离(见 loadSettings)。
 const MAX_SETTINGS_FILE_BYTES = 64 * 1024;
 
 // settings.service 内部 mutex，独立于 explorer 文件锁。
-let settingsChain: Promise<unknown> = Promise.resolve();
-async function withSettingsMutex<T>(fn: () => Promise<T>): Promise<T> {
-  const result = settingsChain.then(fn, fn);
-  settingsChain = result.catch(() => undefined);
-  return result;
-}
+const settingsQueue = createSerialQueue();
+const withSettingsMutex = settingsQueue.run;
 
 let cached: Settings | null = null;
 let setLocaleGen = 0;
@@ -48,6 +45,17 @@ function defaultSettings(): Settings {
   return { version: 1, locale: sysLocale };
 }
 
+/** 损坏的 settings.json(超大 / JSON 坏 / schema 不符):改名 .corrupt.<ts> 留证 + 重置默认并写 cache。 */
+async function quarantineCorruptSettings(file: string): Promise<Settings> {
+  try {
+    await fs.rename(file, `${file}.corrupt.${Date.now()}`);
+  } catch {
+    // 忽略:原文件可能无法 rename / 压根没法读
+  }
+  cached = defaultSettings();
+  return cached;
+}
+
 /**
  * 读 settings.json。
  * - 缺文件 → default
@@ -69,13 +77,7 @@ export async function loadSettings(): Promise<Settings> {
     try {
       const r = await readFileCappedFd(file, MAX_SETTINGS_FILE_BYTES);
       if (r.tooLarge) {
-        try {
-          await fs.rename(file, `${file}.corrupt.${Date.now()}`);
-        } catch {
-          // 忽略:原文件可能无法 rename
-        }
-        cached = defaultSettings();
-        return cached;
+        return quarantineCorruptSettings(file);
       }
       raw = r.text as string; // tooLarge=false 时必为 string
     } catch (err) {
@@ -93,13 +95,7 @@ export async function loadSettings(): Promise<Settings> {
       return validated;
     } catch {
       // 文件可读但内容损坏(JSON/schema)→ 备份 .corrupt + 重置默认(既有契约)
-      try {
-        await fs.rename(file, `${file}.corrupt.${Date.now()}`);
-      } catch {
-        // 忽略：原文件可能压根没法读
-      }
-      cached = defaultSettings();
-      return cached;
+      return quarantineCorruptSettings(file);
     }
   });
 }
@@ -158,5 +154,5 @@ export function _resetSettingsForTest(): void {
   cached = null;
   setLocaleGen = 0;
   committedLocaleGen = 0;
-  settingsChain = Promise.resolve();
+  settingsQueue.reset();
 }

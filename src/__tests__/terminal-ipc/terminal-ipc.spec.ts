@@ -30,9 +30,6 @@ describe('TERMINAL_CHANNELS', () => {
     expect(TERMINAL_CHANNELS.CREATE).toBe('terminal:create');
     expect(TERMINAL_CHANNELS.WRITE).toBe('terminal:write');
     expect(TERMINAL_CHANNELS.RESIZE).toBe('terminal:resize');
-    expect(TERMINAL_CHANNELS.INTERRUPT).toBe('terminal:interrupt');
-    expect(TERMINAL_CHANNELS.KILL).toBe('terminal:kill');
-    expect(TERMINAL_CHANNELS.DESTROY).toBe('terminal:destroy');
     expect(TERMINAL_CHANNELS.LIST_SESSIONS).toBe('terminal:list_sessions');
     expect(TERMINAL_CHANNELS.REMOVE).toBe('terminal:remove');
     expect(TERMINAL_CHANNELS.DATA).toBe('terminal:data');

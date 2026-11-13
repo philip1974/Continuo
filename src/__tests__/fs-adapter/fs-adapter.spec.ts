@@ -4,7 +4,6 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { normalizePath } from '../../../electron/main/ipc/fs/path-utils';
 import { listDir, sortDirsFirst } from '../../../electron/main/ipc/fs/list-dir';
 import { readFile } from '../../../electron/main/ipc/fs/read-file';
 import { atomicWriteFile } from '../../../electron/main/ipc/fs/atomic-write';
@@ -32,23 +31,6 @@ const expectErrCode = async (fn: () => Promise<unknown>, code: string) => {
   expect(caught).toBeDefined();
   expect((caught as { code?: string }).code).toBe(code);
 };
-
-describe('path-utils.normalizePath', () => {
-  it('相对路径 → 绝对路径', () => {
-    const r = normalizePath('foo/bar');
-    expect(path.isAbsolute(r)).toBe(true);
-  });
-
-  it('解析 ../', () => {
-    const r = normalizePath('/a/b/../c');
-    expect(r).toBe(path.resolve('/a/c'));
-  });
-
-  it('已绝对路径不变(规范化分隔符)', () => {
-    const r = normalizePath(path.join(dir, 'x'));
-    expect(r).toBe(path.resolve(path.join(dir, 'x')));
-  });
-});
 
 describe('listDir', () => {
   beforeEach(async () => {

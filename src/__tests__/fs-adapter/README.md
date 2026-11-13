@@ -9,7 +9,6 @@
 
 | 文件 | 导出 | 职责 |
 |---|---|---|
-| `electron/main/ipc/fs/path-utils.ts` | `normalizePath` | 绝对化 + 解析 ../,无 home 沙箱 |
 | `electron/main/ipc/fs/list-dir.ts` | `listDir` | 列目录 + 深度限制 + 排除黑名单 + symlink 处理 |
 | `electron/main/ipc/fs/read-file.ts` | `readFile` | utf-8 读 |
 | `electron/main/ipc/fs/atomic-write.ts` | `atomicWriteFile` | temp + fsync + rename + backup cleanup(ADR-009) |
@@ -19,11 +18,6 @@
 | `electron/shared/fs-entry.ts` | `FileEntry` 类型 | 主/渲染共享数据形状 |
 
 ## 关键行为
-
-### path-utils.normalizePath
-- 相对路径 → 绝对路径(基于 `process.cwd()`)
-- 解析 `..` 防遍历(`/a/b/../c` → `/a/c`)
-- **不做** home 沙箱、敏感目录黑名单(VSCode 风,信任 OS 权限)
 
 ### listDir(absPath, opts?)
 - `opts.maxDepth` 默认 1(只列当前层),传 >1 才递归

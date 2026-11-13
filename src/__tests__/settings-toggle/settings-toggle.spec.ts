@@ -98,7 +98,9 @@ describe('toggleSettingsPanel · dock 未就绪', () => {
 // ────────────────────────────────────────────────────────────
 
 describe('toggleSettingsPanel · panel 不存在', () => {
-  it('addPanel({id,component,title}) + setActive() + setSidebarOpen(false)', () => {
+  // 走共享 openOrFocusPanel:addPanel 带 params.titleKey(useDockLocaleSync 只认它 —— 此前缺失,
+  // Settings 页签标题在 zh/ko 下不随语言切换)。dockview 的 addPanel 默认激活新 panel,不需再 setActive。
+  it('addPanel({id,component,title,params:{titleKey}}) + setSidebarOpen(false)', () => {
     const fake = makeFakeApi({ panel: null });
     setDockApi(fake as never);
     toggleSettingsPanel();
@@ -106,8 +108,8 @@ describe('toggleSettingsPanel · panel 不存在', () => {
       id: 'settings',
       component: 'settings',
       title: 'Settings',
+      params: { titleKey: 'panels.settings.title' },
     });
-    expect(fake.addPanel.mock.results[0]!.value.api.setActive).toHaveBeenCalled();
     expect(useLayoutUiStore.getState().sidebarOpen).toBe(false);
   });
 

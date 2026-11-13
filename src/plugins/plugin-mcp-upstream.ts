@@ -11,6 +11,7 @@ import type {
   PluginMcpUpstreamRegisterPayload,
 } from './registries/PluginMcpRegistry';
 import { coApi } from '@/lib/co-api';
+import { codedError } from '../../electron/shared/error-message';
 
 interface PluginMcpPreloadApi {
   registerTool(
@@ -34,13 +35,11 @@ export function createIpcPluginMcpUpstream(): PluginMcpUpstream {
     async register(payload) {
       const api = getPluginMcpApi();
       if (!api) {
-        throw Object.assign(new Error('plugin mcp preload API not available'), {
-          code: 'PRELOAD_NOT_READY',
-        });
+        throw codedError('PRELOAD_NOT_READY', 'plugin mcp preload API not available');
       }
       const r = await api.registerTool(payload);
       if (!r.ok) {
-        throw Object.assign(new Error(r.message), { code: r.code });
+        throw codedError(r.code, r.message);
       }
     },
     async unregister(name) {

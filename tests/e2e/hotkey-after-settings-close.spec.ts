@@ -2,7 +2,7 @@
 import { test, expect } from './fixtures/electron-app';
 
 const SETTINGS = /^(设置|Settings|설정)$/;
-const CLOSE_SETTINGS = /^(关闭 Settings|Close Settings|Settings 닫기)$/;
+const CLOSE_SETTINGS = /^(关闭 (Settings|设置)|Close Settings|(Settings|설정) 닫기)$/;
 const SETTINGS_NAV = /^(设置分类|Setting categories|설정 카테고리)$/;
 const COMMAND_SEARCH = /^(输入命令名…|Type a command…|명령어 입력…)$/;
 
@@ -21,7 +21,9 @@ test('Settings 开关后 Cmd+Shift+P 仍唤起 CommandPalette', async ({
     document.dispatchEvent(
       new KeyboardEvent('keydown', {
         key: 'p',
-        ctrlKey: true,
+        // 平台主修饰键:mac = Cmd,其它 = Ctrl(mac 上面板热键只认 Cmd)
+        ctrlKey: !navigator.platform.toLowerCase().includes('mac'),
+        metaKey: navigator.platform.toLowerCase().includes('mac'),
         shiftKey: true,
         bubbles: true,
         cancelable: true,

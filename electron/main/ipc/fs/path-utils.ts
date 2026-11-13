@@ -1,22 +1,12 @@
-import path from 'node:path';
+import type { Stats } from 'node:fs';
+import { lstat } from 'node:fs/promises';
 import { ERROR_CODES } from '../../../shared/error-codes';
 import type { FsErrorCode } from '../../../shared/error-codes';
 import { isValidLeafName } from '../../../shared/leaf-name';
+import { codedError } from '../../../shared/error-message';
 
-/**
- * 路径规范化:相对 → 绝对,解析 ../ 防遍历。
- *
- * VSCode 风(ADR-006):**不做** home 沙箱、敏感目录黑名单、symlink 解析校验。
- * 信任 OS 文件权限;危险操作的二次确认由 renderer UI 层负责(见 R7)。
- */
-export function normalizePath(input: string): string {
-  return path.resolve(input);
-}
-
-/** 创建带 code 字段的业务异常,safeHandle 会透传 code 到 IpcResult。 */
-export function fsError(code: string, message: string): Error & { code: string } {
-  return Object.assign(new Error(message), { code });
-}
+/** 创建带 code 字段的业务异常(= 共享 codedError;fs 域沿用此名)。 */
+export const fsError = codedError;
 
 /** 把 node fs 抛的 errno code 映射到我们的业务 code。 */
 export function mapNodeErrnoCode(err: unknown): FsErrorCode {
@@ -52,5 +42,17 @@ export function assertValidBasename(name: string): void {
       ERROR_CODES.FS_BAD_NAME,
       `invalid leaf name (len ${typeof name === 'string' ? name.length : 'n/a'})`,
     );
+  }
+}
+
+/**
+ * lstat(不跟随符号链接),失败统一映射为带业务 code 的 fsError(不存在 → FS_NOT_FOUND 等)。
+ * rename / remove / read-file / move / copy 的「先确认源存在」前置共用。
+ */
+export async function lstatOrThrow(targetPath: string): Promise<Stats> {
+  try {
+    return await lstat(targetPath);
+  } catch (err) {
+    throw fsError(mapNodeErrnoCode(err), `lstat failed: ${targetPath}`);
   }
 }

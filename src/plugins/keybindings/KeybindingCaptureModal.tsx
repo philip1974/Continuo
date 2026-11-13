@@ -5,12 +5,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Button, KeyCap, Modal } from '@/design';
 import {
+  canonicalHotkey,
   formatHotkeyParts,
   detectPlatform,
   type Platform,
 } from '@/plugins/command-palette/format-hotkey';
 import { isValidHotkeyShape, type CommandSpec } from '@/plugins/registries/CommandRegistry';
-import { useT } from '@/i18n';
+import { useT, useTWithFallback } from '@/i18n';
+import { resolveEffectiveHotkey } from './keybindings-store';
+import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 
 const PLATFORM = detectPlatform();
 const EMPTY_CONFLICTS: readonly CommandSpec[] = [];
@@ -18,16 +21,6 @@ const EMPTY_OVERRIDES: Readonly<Record<string, string>> = {};
 
 function appendComboPart(combo: string, part: string): string {
   return combo ? `${combo}+${part}` : part;
-}
-
-function lowerIfNeeded(value: string): string {
-  for (let i = 0; i < value.length; i += 1) {
-    const code = value.charCodeAt(i);
-    if ((code >= 65 && code <= 90) || code > 127) {
-      return value.toLowerCase();
-    }
-  }
-  return value;
 }
 
 interface KeybindingCaptureModalProps {
@@ -73,15 +66,6 @@ export function eventToCombo(e: KeyboardEvent, platform: Platform = PLATFORM): s
   return isValidHotkeyShape(combo) ? combo : null;
 }
 
-function selectEffectiveHotkey(
-  command: CommandSpec,
-  overrides: Readonly<Record<string, string>>,
-): string | undefined {
-  const override = overrides[command.id];
-  if (override !== undefined) return override === '' ? undefined : override;
-  return command.hotkey;
-}
-
 export function selectKeybindingConflicts(
   allCommands: readonly CommandSpec[],
   commandId: string,
@@ -89,12 +73,14 @@ export function selectKeybindingConflicts(
   overrides: Readonly<Record<string, string>> = EMPTY_OVERRIDES,
 ): readonly CommandSpec[] {
   if (!captured) return EMPTY_CONFLICTS;
+  // 两侧都归一主键别名(mod+up ≡ mod+arrowup):别名在运行时会触发,不归一就会两条命令抢同一个键而不提示。
+  const capturedCanonical = canonicalHotkey(captured);
   let conflicts: CommandSpec[] | null = null;
   let conflictCount = 0;
   for (const command of allCommands) {
-    if (command.id === commandId || selectEffectiveHotkey(command, overrides) !== captured) {
-      continue;
-    }
+    if (command.id === commandId) continue;
+    const effective = resolveEffectiveHotkey(command, overrides);
+    if (!effective || canonicalHotkey(effective) !== capturedCanonical) continue;
     if (conflicts === null) conflicts = new Array<CommandSpec>(allCommands.length);
     conflicts[conflictCount] = command;
     conflictCount += 1;
@@ -109,11 +95,10 @@ export function KeybindingCaptureModal({
   ...props
 }: KeybindingCaptureModalProps) {
   if (!visible) return null;
-  return <KeybindingCaptureModalBody visible={visible} {...props} />;
+  return <KeybindingCaptureModalBody {...props} />;
 }
 
 function KeybindingCaptureModalBody({
-  visible,
   commandId,
   commandTitle,
   currentHotkey,
@@ -123,20 +108,16 @@ function KeybindingCaptureModalBody({
   onSave,
   onClose,
   onResetToDefault,
-}: KeybindingCaptureModalProps) {
+}: Omit<KeybindingCaptureModalProps, 'visible'>) {
   const t = useT();
+  const tk = useTWithFallback();
   // null = 还没捕获到完整组合(显示 currentHotkey 占位)
   // ''  = 显式 unbind(用户按了 Backspace)
   // string non-empty = 新组合
   const [captured, setCaptured] = useState<string | null>(null);
 
-  // 每次打开都复位,避免旧值留下来
+  // Body 只在弹窗可见时挂载(外层 visible=false 直接不渲染)→ 每次打开都是全新 state,无需手动复位。
   useEffect(() => {
-    if (visible) setCaptured(null);
-  }, [visible]);
-
-  useEffect(() => {
-    if (!visible) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         // 让 Modal 自己的 Esc 关闭逻辑接(我们传 onClose 给 Modal)
@@ -176,7 +157,7 @@ function KeybindingCaptureModalBody({
     // capture 阶段拦截,避免 useCommandHotkeys 抢先 dispatch
     document.addEventListener('keydown', handler, true);
     return () => document.removeEventListener('keydown', handler, true);
-  }, [visible]);
+  }, []);
 
   const display = captured ?? currentHotkey ?? '';
   const isUnbind = captured === '';
@@ -196,7 +177,7 @@ function KeybindingCaptureModalBody({
 
   return (
     <Modal
-      visible={visible}
+      visible
       onClose={onClose}
       className="w-[420px] p-5"
       aria-labelledby="keybinding-capture-title"
@@ -255,7 +236,7 @@ function KeybindingCaptureModalBody({
           <ul className="mt-1 list-inside list-disc space-y-0.5">
             {conflicts.map((c) => (
               <li key={c.id}>
-                {c.title} <code className="text-2xs text-warning/70">{c.id}</code>
+                {tk(c.titleKey, c.title)} <code className="text-2xs text-warning/70">{c.id}</code>
               </li>
             ))}
           </ul>

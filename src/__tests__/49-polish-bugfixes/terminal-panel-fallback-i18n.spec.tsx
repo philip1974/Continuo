@@ -16,7 +16,7 @@ function makeProps(sessionId: string): Parameters<typeof TerminalPanelView>[0] {
 }
 
 beforeEach(() => {
-  useTerminalStore.setState({ sessions: [], activeId: null, customTitles: new Map() });
+  useTerminalStore.setState({ sessions: [] });
 });
 afterEach(() => {
   setLocale('en');

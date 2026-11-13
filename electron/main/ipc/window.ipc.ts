@@ -17,53 +17,65 @@ import {
 } from '../../shared/window-channels';
 import { ERROR_CODES } from '../../shared/error-codes';
 import { IPC_ERR } from '../../shared/ipc-result';
-import { createMainWindow } from '../index';
-import { allocateWindowSeq } from '../persistence';
+import {
+  allocateWindowSeq,
+} from '../persistence';
+import { EXPLORER_FILE_NAME } from '../../shared/explorer-persistence-schema';
 import {
   clearWindow as clearWindowRoot,
   setWorkspaceRoot,
 } from '../services/window-workspace-roots.service';
+import { codedError } from '../../shared/error-message';
 
 function summarizePath(p: string): string {
   return p.length > 60 ? p.slice(0, 50) + '...' : p;
 }
 
+// 边界(E34,E11/E33 同族):workspace root 路径长度上限(CreateInput.workspace 与 notify-root 的 root 共用)。root 经 notify-root
+// 写入 windowId→root map 长期驻留主进程,并作为 MCP/terminal create 未传 cwd 时 agent session 的回退
+// 工作目录;畸形超长 absolute 串会带进后续 resolve/stat 路径 + 错误消息 → 内存 + 同步 fs 检查开销。
+const ROOT_MAX = 2048;
+
 const CreateInput = z
   .object({
-    workspace: z.string().min(1).max(2048).optional(),
+    workspace: z.string().min(1).max(ROOT_MAX).optional(),
   })
   .strict();
 
+/**
+ * 开窗函数由组合根(main/index.ts)注入,不从 '../index' 导入 —— 否则形成
+ * index → ipc → ipc/window.ipc → index 的循环导入(index 是带大量启动副作用的入口模块)。
+ */
+export interface WindowIpcDeps {
+  readonly createMainWindow: (opts: {
+    windowSeq: number;
+    workspace?: string;
+    fresh?: boolean;
+  }) => { readonly id: number };
+}
+
 async function createWindowHandler(
   input: IpcWindowCreateInput,
+  createMainWindow: WindowIpcDeps['createMainWindow'],
 ): Promise<IpcWindowCreateResult> {
   if (input.workspace !== undefined) {
     // 安全 + 健壮性校验:必须 absolute,实际存在的目录。
     // 防 renderer 注入相对路径 / 不存在的路径让新窗口启不来。
     if (!path.isAbsolute(input.workspace)) {
-      throw Object.assign(
-        new Error(`workspace must be absolute path: ${input.workspace}`),
-        { code: ERROR_CODES.WORKSPACE_NOT_ABSOLUTE },
-      );
+      throw codedError(ERROR_CODES.WORKSPACE_NOT_ABSOLUTE, `workspace must be absolute path: ${input.workspace}`);
     }
     let stat;
     try {
       stat = fs.statSync(input.workspace);
     } catch {
-      throw Object.assign(
-        new Error(`workspace not found: ${input.workspace}`),
-        { code: ERROR_CODES.WORKSPACE_NOT_FOUND },
-      );
+      throw codedError(ERROR_CODES.WORKSPACE_NOT_FOUND, `workspace not found: ${input.workspace}`);
     }
     if (!stat.isDirectory()) {
-      throw Object.assign(
-        new Error(`workspace not a directory: ${input.workspace}`),
-        { code: ERROR_CODES.WORKSPACE_NOT_DIRECTORY },
-      );
+      throw codedError(ERROR_CODES.WORKSPACE_NOT_DIRECTORY, `workspace not a directory: ${input.workspace}`);
     }
   }
 
-  const explorerFile = path.join(app.getPath('userData'), 'explorer.json');
+  const explorerFile = path.join(app.getPath('userData'), EXPLORER_FILE_NAME);
   const newWindowSeq = await allocateWindowSeq(explorerFile);
   const win = createMainWindow({
     windowSeq: newWindowSeq,
@@ -74,22 +86,17 @@ async function createWindowHandler(
   return { windowId: win.id };
 }
 
-// 边界(E34,E11/E33 同族):root 与同文件 CreateInput.workspace 对齐 .max(2048)。root 经 notify-root
-// 写入 windowId→root map 长期驻留主进程,并作为 MCP/terminal create 未传 cwd 时 agent session 的回退
-// 工作目录;畸形超长 absolute 串会带进后续 resolve/stat 路径 + 错误消息 → 内存 + 同步 fs 检查开销。
-const ROOT_MAX = 2048;
-
 const NotifyRootInput = z
   .object({
     root: z.string().nullable(),
   })
   .strict();
 
-export function registerWindowIpc(): void {
+export function registerWindowIpc(deps: WindowIpcDeps): void {
   safeHandle(
     WINDOW_CHANNELS.CREATE,
     CreateInput,
-    createWindowHandler,
+    (input) => createWindowHandler(input, deps.createMainWindow),
     defaultIsTrustedFrame,
   );
   // workspace.root 变化时 renderer 推送 → main 维护 map,供 MCP agent terminal

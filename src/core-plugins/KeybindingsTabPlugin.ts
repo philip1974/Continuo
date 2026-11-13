@@ -13,6 +13,9 @@ const KeybindingsTabContent = lazy(() =>
   })),
 );
 
+// 模块级只包一次:render 每次返回同一组件类型(渲染期新建会让 tab 内容随父组件重渲而卸载重挂)。
+const KeybindingsTab = lazyPanel(KeybindingsTabContent);
+
 export default class KeybindingsTabPlugin extends Plugin {
   onload(): void {
     this.addSettingTab({
@@ -22,7 +25,7 @@ export default class KeybindingsTabPlugin extends Plugin {
       // 商店 40 / 插件 50,快捷键 60 排在它们后面
       priority: 60,
       icon: createElement(KeybindingsIcon),
-      render: () => createElement(lazyPanel(KeybindingsTabContent)),
+      render: KeybindingsTab,
     });
   }
 }

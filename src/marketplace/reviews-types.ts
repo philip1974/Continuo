@@ -3,6 +3,13 @@
 // review 数据存 GitHub Discussions(philip1974/continuo-plugins),
 // reviews-fetcher.ts 走 GraphQL 拉 + parse → 这里的形态。
 
+import {
+  REVIEW_BODY_MAX,
+  REVIEW_FIELD_MAX,
+  REVIEW_TOTAL_NODES_MAX,
+  REVIEW_URL_MAX,
+  REVIEW_VERSION_MAX,
+} from '../../electron/shared/marketplace-review-limits';
 import { isHttpUrl } from './url-safety'; // 边界(E109):review url/avatarUrl scheme 白名单(共享)
 import { isValidPluginId } from '../plugins/plugin-id'; // 边界(E113/E123):plugin id 形态契约(共享单一来源)
 
@@ -48,20 +55,17 @@ export interface PluginAggregateRating {
 // 通过 isValidAggregateRecord,Marketplace 打开后直接渲染到 DOM → 面板卡顿/冻结。镜像 main
 // marketplace-reviews.service.ts(E57)的 clampStr 上限 + MAX_TOTAL_NODES,超限当 cache miss
 // (validate 返 false → 重拉,main 侧再 clamp)。renderer 不可 import electron/main,故本地镜像常量。
-const REVIEW_BODY_MAX = 16384; // 对齐 main REVIEW_BODY_MAX
 // E294:导出供 fresh-parse(reviews-parser.parseReview)复用同值 —— 此前 fresh 路径只 isHttpUrl 不限长,
 // 与 cache-read isValidReview(isStrMax REVIEW_URL_MAX)不对偶,超长合法 scheme URL 可绕 fresh 入 cache/DOM。
-export const REVIEW_URL_MAX = 2048; // 对齐 main REVIEW_URL_MAX(url / avatarUrl)
-const REVIEW_FIELD_MAX = 512; // 对齐 main REVIEW_FIELD_MAX(handle / createdAt)
+export { REVIEW_URL_MAX }; // url / avatarUrl(单一来源 shared/marketplace-review-limits)
 const REVIEW_ID_MAX = 256; // pluginId(与 MP_ID_MAX 同量级)
-const REVIEW_VERSION_MAX = 128; // continuoVersion / pluginVersion(与 manifest VERSION_MAX 对齐)
-const MAX_REVIEWS_PER_PLUGIN = 2000; // 对齐 main MAX_TOTAL_NODES(单插件 reviews 上限)
-const MAX_AGGREGATE_KEYS = 2000; // aggregate record 总 plugin 数上限(distinct plugin ≤ 总 node)
+const MAX_REVIEWS_PER_PLUGIN = REVIEW_TOTAL_NODES_MAX; // 对齐 main MAX_TOTAL_NODES(单插件 reviews 上限)
+const MAX_AGGREGATE_KEYS = REVIEW_TOTAL_NODES_MAX; // aggregate record 总 plugin 数上限(distinct plugin ≤ 总 node)
 // 边界(E210):全局累计 reviews 数上限(对齐 main marketplace-reviews.service MAX_TOTAL_NODES)。
 // 此前只限 key 数(MAX_AGGREGATE_KEYS)+ 单插件 reviews 数(MAX_REVIEWS_PER_PLUGIN),二者相乘最坏 400 万
 // reviews —— 篡改 sessionStorage 可造很多 plugin × 各少量 reviews,总数远超 main 累计节点上限,打开
 // Marketplace 时放大校验/Map 构建/渲染。累加每个 aggregate 的 reviews.length,超此上限即 cache miss。
-const MAX_TOTAL_REVIEWS = 2000;
+const MAX_TOTAL_REVIEWS = REVIEW_TOTAL_NODES_MAX;
 
 const isFiniteNumber = (v: unknown): v is number =>
   typeof v === 'number' && Number.isFinite(v);

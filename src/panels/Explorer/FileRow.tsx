@@ -204,7 +204,7 @@ export function FileRow({
           // 编辑框无可访问名。补 aria-label(含文件名),屏幕阅读器知在重命名哪个文件。
           aria-label={t('panels.explorer.rename_input_aria', { name: data.name })}
           // 边界(E290,CreateInput leaf 名截断兄弟):重命名输入原生 maxLength 截断到 FS_NAME_MAX,
-          // 防超长 paste 跨 IPC 到 main 才被 assertValidBasename 拒(>FS_NAME_MAX 名 ENAMETOOLONG 建不出)。
+          // 防超长 paste 跨 IPC 到 main 才失败(>FS_NAME_MAX 的名文件系统 ENAMETOOLONG 建不出)。
           maxLength={FS_NAME_MAX}
           size="xs"
           ref={(el: HTMLInputElement | null) => {

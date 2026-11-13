@@ -19,7 +19,6 @@ import { setLocale as setI18nLocale } from '@/i18n';
 import {
   PluginsTabContent,
   collectContributionSamples,
-  collectStatusBarItems,
   formatContributionSamples,
   hasPluginId,
   hasPluginVersion,
@@ -154,31 +153,6 @@ describe('PluginsTabContent — 贡献点统计', () => {
     expect(src).toContain('samplesText: formatContributionSamples(samples)');
     expect(src).toContain('{row.samplesText}');
     expect(src).not.toContain("row.samples.join(' · ')");
-  });
-
-  it('状态栏左右贡献预分配合并,不通过数组 spread', () => {
-    const left = [{ id: 'left' }];
-    const right = [{ id: 'right-a' }, { id: 'right-b' }];
-
-    expect(collectStatusBarItems(left, right).map((item) => item.id)).toEqual([
-      'left',
-      'right-a',
-      'right-b',
-    ]);
-    expect(collectStatusBarItems.toString()).not.toContain('...');
-  });
-
-  it('状态栏左右都为空 → 稳定空数组', () => {
-    expect(collectStatusBarItems([], [])).toEqual([]);
-    expect(collectStatusBarItems([], [])).toBe(collectStatusBarItems([], []));
-  });
-
-  it('状态栏仅单侧有贡献 → 复用该侧快照,不分配合并数组', () => {
-    const left = [{ id: 'left' }];
-    const right = [{ id: 'right' }];
-
-    expect(collectStatusBarItems(left, [])).toBe(left);
-    expect(collectStatusBarItems([], right)).toBe(right);
   });
 
   it('插件存在性检查单趟扫描,不调用 plugins.some', () => {
@@ -741,6 +715,28 @@ describe('PluginsTabContent — Git URL 安装', () => {
     // A95 起新增 loading 用 role=status(idle 空)→ 同页多个 role=status,用 .some() 按文本定位。
     const statuses = Array.from(container.querySelectorAll('[role=status]'));
     expect(statuses.some((s) => (s.textContent ?? '').includes('已安装 Plugin X'))).toBe(true);
+  });
+
+  it('连续安装两个插件 → 两条待重启行都保留(后装的不顶掉先装的)', async () => {
+    const installFromGit = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, data: { id: 'p.a', name: 'Plugin A', version: '1.0.0' } })
+      .mockResolvedValueOnce({ ok: true, data: { id: 'p.b', name: 'Plugin B', version: '2.0.0' } });
+    installPluginsApi(installFromGit);
+    const { container } = render(<PluginsTabContent />);
+    const input = container.querySelector('input') as HTMLInputElement;
+    const installBtn = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+      (b) => b.textContent === '安装',
+    )!;
+
+    fireEvent.change(input, { target: { value: 'https://github.com/me/a.git' } });
+    fireEvent.click(installBtn);
+    await waitFor(() => expect(container.textContent).toContain('p.a'));
+
+    fireEvent.change(input, { target: { value: 'https://github.com/me/b.git' } });
+    fireEvent.click(installBtn);
+    await waitFor(() => expect(container.textContent).toContain('p.b'));
+    expect(container.textContent).toContain('p.a');
   });
 
   it('Git URL trim 只在输入变化后派生一次,点击安装复用结果', () => {

@@ -9,6 +9,8 @@
 // `1.2.3` 判等 → 用户在 prerelease 上时收不到升稳定版的更新提示(isNewerVersion('1.2.3',
 // '1.2.3-beta') 误返 false)。`1.2.3.4` 四段也被截成 {1,2,3} 误判等。现按真优先级处理。
 
+import { parseSafeIntSegment } from '../../electron/shared/plugin-manifest';
+
 /** a 比 b 新 → true. 数字段比较,缺位补 0;数字相等时按 prerelease 优先级. */
 export function isNewerVersion(a: string, b: string): boolean {
   const pa = parseSemver(a);
@@ -138,21 +140,6 @@ function parseSemver(s: string): ParsedSemver | null {
     patch,
     prerelease: dash < 0 ? null : s.slice(dash + 1),
   };
-}
-
-function parseSafeIntSegment(
-  s: string,
-  start: number,
-  end: number,
-): number | null {
-  let n = 0;
-  for (let i = start; i < end; i += 1) {
-    const code = s.charCodeAt(i);
-    if (code < 48 || code > 57) return null;
-    n = n * 10 + (code - 48);
-    if (!Number.isSafeInteger(n)) return null;
-  }
-  return n;
 }
 
 /** 边界(E7):是否合法 X.Y.Z[-pre](数字段为安全整数)。update-check 用它跳过畸形远端版本。 */

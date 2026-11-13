@@ -1,4 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
+import { isOwnRendererWindowUrl } from './window-open-policy';
+import { LAYOUT_CHANNELS, WINDOW_ID_CHANNEL } from '../shared/persistence-channels';
 import type {
   HandlerDetails,
   IpcMainEvent,
@@ -20,6 +22,7 @@ import {
   migrateExplorerFileToV3,
   pruneLRUClosed,
 } from './persistence';
+import { EXPLORER_FILE_NAME } from '../shared/explorer-persistence-schema';
 import { pickWindowsToRestore } from './services/window-restore.service';
 import { pickStartupMode } from './services/startup-mode.service';
 import {
@@ -97,6 +100,7 @@ import { MAX_EXTERNAL_URL_LEN } from './../shared/url-limits';
 import { cancelScopeRequestsForWebContents } from './ipc/plugin-fs.ipc';
 import { registerDebugViewIpc } from './ipc/debug-view.ipc';
 import { DEBUG_VIEW_CHANNELS } from '../shared/debug-view-channels';
+import { codedError } from '../shared/error-message';
 
 // 窗口级资源清理器(scope 授权 / fs watcher / agent 授权)。挂在覆盖全窗口的
 // browser-window-created(见下),主窗与 dockview popout 子窗一视同仁 —— popout 不走
@@ -164,7 +168,7 @@ debugService.setEventSink({
 
 registerDebugViewIpc(debugService);
 
-ipcMain.on('window:id', (event: IpcMainEvent) => {
+ipcMain.on(WINDOW_ID_CHANNEL, (event: IpcMainEvent) => {
   // 与 layout:flush-ack / plugin-mcp INVOKE_REPLY 对齐:不受信 frame
   // (被注入的子 frame)拿不到窗口 id。合法 renderer 与 popout 子窗都走
   // file:// / 同源 dev URL → 受信。
@@ -176,13 +180,23 @@ ipcMain.on('window:id', (event: IpcMainEvent) => {
   event.returnValue = win?.id ?? 0;
 });
 
-ipcMain.on('layout:flush-ack', (event: IpcMainEvent, windowId: unknown) => {
+ipcMain.on(LAYOUT_CHANNELS.FLUSH_ACK, (event: IpcMainEvent, windowId: unknown) => {
   if (!defaultIsTrustedFrame(event.senderFrame)) return;
   if (typeof windowId !== 'number') return;
   const senderWin = BrowserWindow.fromWebContents(event.sender);
   if (!senderWin || senderWin.id !== windowId) return;
   const cb = pendingFlushAcks.get(windowId);
   if (cb) cb();
+});
+
+// renderer 已订阅 flush 请求的窗口(DockShell 挂载后经 preload 上报)。没上报过 = 启动中 / 加载失败:
+// 此时 renderer 没有任何可落盘的状态,也没人会回 ack,requestWindowFlush 直接放行,不发请求、不等超时。
+const flushReadyWindowIds = new Set<number>();
+
+ipcMain.on(LAYOUT_CHANNELS.FLUSH_READY, (event: IpcMainEvent) => {
+  if (!defaultIsTrustedFrame(event.senderFrame)) return;
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win) flushReadyWindowIds.add(win.id);
 });
 
 function requestWindowFlush(win: BrowserWindow): Promise<void> {
@@ -200,14 +214,14 @@ function requestWindowFlush(win: BrowserWindow): Promise<void> {
       resolve();
     };
     pendingFlushAcks.set(win.id, done);
-    // webContents 已销毁 → renderer 无法 flush/ack,立即放行(不空等满超时)。
-    if (win.webContents.isDestroyed()) {
+    // webContents 已销毁 / renderer 还没就绪 → 无法 flush/ack,立即放行(不空等满超时)。
+    if (win.webContents.isDestroyed() || !flushReadyWindowIds.has(win.id)) {
       done();
       return;
     }
     timer = setTimeout(done, FLUSH_ACK_TIMEOUT_MS);
     try {
-      win.webContents.send('layout:flush-request', { windowId: win.id });
+      win.webContents.send(LAYOUT_CHANNELS.FLUSH_REQUEST, { windowId: win.id });
     } catch {
       done();
     }
@@ -215,6 +229,8 @@ function requestWindowFlush(win: BrowserWindow): Promise<void> {
 }
 
 function wireWindowCloseFlush(win: BrowserWindow): void {
+  const windowId = win.id; // closed 之后窗口已销毁,提前取 id
+  win.on('closed', () => flushReadyWindowIds.delete(windowId));
   let flushed = flushedOnQuit.has(win.id);
   // race(R45):flush 在途守卫。requestWindowFlush 是异步(等 renderer ack / 10s 超时),其间
   // `flushed` 仍为 false;若不挡住,快速重复关窗 / 系统关窗 / app.quit 触发的第二个 close 会再次
@@ -261,24 +277,13 @@ function windowOpenHandler({ url }: HandlerDetails): WindowOpenHandlerResponse {
   ) {
     return { action: 'deny' };
   }
-  let allow = false;
-  try {
-    const target = new URL(url);
-    // 安全 S1:dev 走 renderer origin;prod 只允许指向真实 renderer 入口 index.html
-    // 的 file URL(精确 pathname),不再放行任意 file://(否则恶意 file:// 弹窗会被注入
-    // 全量 preload → 越权 IPC)。
-    if (isDev) {
-      // 边界(E304,E302/E303 同族 dev URL 解析第三入口 / family sweep):此前 new URL(env) 无长度上限
-      //(在 try/catch 内故不崩,但 windowOpenHandler 每次弹窗都解析一次无界 OS env)。复用 parseDevRendererUrl
-      //(限长 MAX_RENDERER_URL_LEN + total),与 createMainWindow(E299)/safe-handle(E303)单一来源同源。
-      const rendererUrl = parseDevRendererUrl(process.env['ELECTRON_RENDERER_URL']);
-      allow = rendererUrl !== null && target.origin === rendererUrl.origin;
-    } else {
-      allow = isTrustedRendererFileUrl(url);
-    }
-  } catch {
-    /* malformed URL → fall through to deny */
-  }
+  // 安全 S1:只允许指向本应用自己的 renderer 入口(dev server 同源 / 受信的 renderer 文件,精确 pathname)。
+  // 判定与主窗加载方式一致,见 window-open-policy。dev URL 经 parseDevRendererUrl(限长 + total,E304)。
+  const allow = isOwnRendererWindowUrl(
+    url,
+    isDev ? parseDevRendererUrl(process.env['ELECTRON_RENDERER_URL']) : null,
+    isTrustedRendererFileUrl,
+  );
 
   if (allow) {
     return {
@@ -358,7 +363,7 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
     // 窗口级资源清理(scope / fs watcher / agent 授权)已移到覆盖全窗口的
     // browser-window-created → releaseWindowResources,主窗与 popout 统一处理。
     // 此处只保留主窗专属的 explorer.json 段落持久化(popout 无 windowSeq 段)。
-    const explorerFile = path.join(app.getPath('userData'), 'explorer.json');
+    const explorerFile = path.join(app.getPath('userData'), EXPLORER_FILE_NAME);
     void withExplorerFileMutex(async () => {
       const payload = (await loadExplorer(explorerFile)) ?? defaultExplorerV3();
       const entry = ensureWindowEntry(payload, seq);
@@ -428,19 +433,34 @@ app.on('web-contents-created', (_evt, contents) => {
 // 跨平台:Linux/Windows menu 同款 File 项。
 // ─────────────────────────────────────────────────────
 
+/** 路径是已存在的目录(不存在 / 无权限 / 非目录 → false)。argv / open-file / 冷启动目录判定共用。 */
+function isDirectorySync(p: string): boolean {
+  try {
+    return nodeFs.statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 开一个新主窗:分配新的 windowSeq;给了 workspace 则以它为 root 且 fresh(用户显式打开,不沿用该
+ * seq 的历史持久化段),不给则是空白新窗。菜单 / Dock 菜单 / argv / open-file / 冷启动多目录共用。
+ */
+async function openWorkspaceWindow(workspace?: string): Promise<void> {
+  const explorerFile = path.join(app.getPath('userData'), EXPLORER_FILE_NAME);
+  const windowSeq = await allocateWindowSeq(explorerFile);
+  if (workspace === undefined) createMainWindow({ windowSeq });
+  else createMainWindow({ windowSeq, workspace, fresh: true });
+}
+
 async function openFolderInNewWindow(): Promise<void> {
   const r = await dialog.showOpenDialog({ properties: ['openDirectory'] });
   if (r.canceled || r.filePaths.length === 0) return;
-  const folder = r.filePaths[0]!;
-  const explorerFile = path.join(app.getPath('userData'), 'explorer.json');
-  const windowSeq = await allocateWindowSeq(explorerFile);
-  createMainWindow({ windowSeq, workspace: folder, fresh: true });
+  await openWorkspaceWindow(r.filePaths[0]!);
 }
 
 async function newWindow(): Promise<void> {
-  const explorerFile = path.join(app.getPath('userData'), 'explorer.json');
-  const windowSeq = await allocateWindowSeq(explorerFile);
-  createMainWindow({ windowSeq });
+  await openWorkspaceWindow();
 }
 
 function buildAppMenu(t: MainT): Menu {
@@ -515,7 +535,7 @@ function setDockMenu(): void {
 }
 
 /** 由 i18n.ipc setMenuRebuilder 注册；setLocale 后被调，整体重建 application menu + dock menu。 */
-export function rebuildAppMenu(): void {
+function rebuildAppMenu(): void {
   if (process.env['CONTINUO_E2E'] === '1') return;
   Menu.setApplicationMenu(buildAppMenu(getMainT()));
   setDockMenu();
@@ -594,13 +614,7 @@ if (!gotLock) {
     // 此前被忽略 → 在已有实例里按目录打开新窗口(跨平台审计 P2)。
     const folders = pickArgvFolders(
       argv,
-      (p) => {
-        try {
-          return nodeFs.statSync(p).isDirectory();
-        } catch {
-          return false;
-        }
-      },
+      isDirectorySync,
       { skipFirstArg: !!process.defaultApp, skipAll: false },
     );
     for (const folder of folders) void openPathInNewWindow(folder);
@@ -629,13 +643,7 @@ const pendingOpenPaths: string[] = [];
 pendingOpenPaths.push(
   ...pickArgvFolders(
     process.argv,
-    (p) => {
-      try {
-        return nodeFs.statSync(p).isDirectory();
-      } catch {
-        return false;
-      }
-    },
+    isDirectorySync,
     {
       skipFirstArg: !!process.defaultApp,
       skipAll: process.env['CONTINUO_E2E'] === '1',
@@ -663,16 +671,8 @@ async function openPathInNewWindow(absPath: string): Promise<void> {
   }
   openInFlight += 1;
   try {
-    let isDir = false;
-    try {
-      isDir = nodeFs.statSync(absPath).isDirectory();
-    } catch {
-      /* 路径不存在 / 无权限 → 跳过 */
-    }
-    if (!isDir) return;
-    const explorerFile = path.join(app.getPath('userData'), 'explorer.json');
-    const windowSeq = await allocateWindowSeq(explorerFile);
-    createMainWindow({ windowSeq, workspace: absPath, fresh: true });
+    if (!isDirectorySync(absPath)) return; // 路径不存在 / 无权限 / 非目录 → 跳过
+    await openWorkspaceWindow(absPath);
   } finally {
     openInFlight -= 1;
   }
@@ -705,9 +705,7 @@ async function createSessionForAgent(
 ): Promise<{ id: string }> {
   const win = BrowserWindow.fromId(ctx.ownerWindowId);
   if (!win || win.isDestroyed()) {
-    throw Object.assign(new Error('no window for terminal create'), {
-      code: ERROR_CODES.TERMINAL_NO_WINDOW,
-    });
+    throw codedError(ERROR_CODES.TERMINAL_NO_WINDOW, 'no window for terminal create');
   }
   // 安全 S3:把新会话归属到发起 create 的 MCP 调用方(ctx.callerSubject)。后续
   // read/send/kill 仅该调用方(同一 token / 同一 stdio 连接)可操作该会话。
@@ -934,7 +932,7 @@ app.whenReady().then(async () => {
   setTrustedRendererFile(RENDERER_FILE);
 
   const userData = app.getPath('userData');
-  const explorerFile = path.join(userData, 'explorer.json');
+  const explorerFile = path.join(userData, EXPLORER_FILE_NAME);
   const legacyLayoutFile = path.join(userData, 'layout.json');
   await migrateExplorerFileToV3(explorerFile, legacyLayoutFile);
 
@@ -951,7 +949,7 @@ app.whenReady().then(async () => {
     setDockMenu();
   }
 
-  registerIpc();
+  registerIpc({ createMainWindow });
   // topic 16: 把 rebuildAppMenu 注入 i18n.ipc，setLocale 时菜单整体重建
   setMenuRebuilder(rebuildAppMenu);
   // 在 createMainWindow 之前启 host,确保 renderer autoSpawn 的第一个 PTY
@@ -964,14 +962,7 @@ app.whenReady().then(async () => {
   // 冷启动开窗模式决策(issue #30):有 dock 缓冲目录 → dock 模式,
   // 第一个目录作主窗 workspace,其余各开新窗,**不**恢复历史;
   // 否则 → restore 模式,主窗用持久化 workspace,异步恢复历史 windows[]。
-  const isDir = (p: string): boolean => {
-    try {
-      return nodeFs.statSync(p).isDirectory();
-    } catch {
-      return false;
-    }
-  };
-  const startup = pickStartupMode(pendingOpenPaths.splice(0), isDir);
+  const startup = pickStartupMode(pendingOpenPaths.splice(0), isDirectorySync);
 
   // 主窗由 createMainWindow 创建(有副作用:开窗 + 挂 attachWindowDrain);冷启动协议 URL 经
   // dispatchProtocolUrl 走统一队列消费(R69),不再需要持有主窗引用直发。
@@ -985,9 +976,7 @@ app.whenReady().then(async () => {
     if (startup.dirs.length > 1) {
       void (async () => {
         for (let i = 1; i < startup.dirs.length; i += 1) {
-          const dir = startup.dirs[i]!;
-          const windowSeq = await allocateWindowSeq(explorerFile);
-          createMainWindow({ windowSeq, workspace: dir, fresh: true });
+          await openWorkspaceWindow(startup.dirs[i]!);
         }
       })();
     }
@@ -999,7 +988,7 @@ app.whenReady().then(async () => {
       try {
         const data = await loadExplorer(explorerFile);
         if (!data) return;
-        for (const entry of pickWindowsToRestore(data, isDir)) {
+        for (const entry of pickWindowsToRestore(data, isDirectorySync)) {
           createMainWindow({
             windowSeq: entry.windowSeq,
             workspace: entry.workspace,
@@ -1021,7 +1010,7 @@ app.whenReady().then(async () => {
     // 的 FIFO 队列 + R63 的「send 成功才出队 / 失败保留队首」韧性逻辑。两个漏洞:(1)主窗在 load
     // 前关闭 → did-finish-load 永不触发 → 冷启动深链永久丢失;(2)load 后、send 前窗口销毁 → send
     // 抛 "Object has been destroyed" → 深链丢失 + 在事件回调里成未捕获异常。改为交统一协议路由:
-    // win 经 createMainWindow 已挂 attachWindowDrain(line ~353),dispatchProtocolUrl 入
+    // win 经 createMainWindow 已挂 attachWindowDrain,dispatchProtocolUrl 入
     // pendingProtocolUrls 后由该 drain 在就绪时韧性消费(send 失败保留队首,留给下个窗口)。
     if (url) dispatchProtocolUrl(url);
   }
@@ -1051,6 +1040,11 @@ app.on('before-quit', async (event) => {
   const flushes: Promise<void>[] = [];
   for (const w of BrowserWindow.getAllWindows()) {
     if (w.isDestroyed() || flushedOnQuit.has(w.id)) continue;
+    // popout 窗口跑的是 PopoutHost,不挂 DockShell,没有 flush 监听 → 永不 ack;对它发请求只会让退出
+    // 干等满 FLUSH_ACK_TIMEOUT_MS。只 flush 主窗(wireWindowCloseFlush 也只挂在 createMainWindow)。
+    // webContents 已销毁(关窗中间态)时 getURL() 会抛 —— 此处已 preventDefault,抛出会让 quitGuard
+    // 永远停在「清理在途」、应用无法退出。已销毁的交给 requestWindowFlush 的立即放行分支。
+    if (!w.webContents.isDestroyed() && isPopoutUrl(w.webContents.getURL())) continue;
     flushes.push(
       requestWindowFlush(w).then(() => {
         flushedOnQuit.add(w.id);

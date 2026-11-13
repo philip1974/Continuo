@@ -32,6 +32,9 @@ import { truncateSessionIdForEcho } from '../lib/session-id-echo';
 import type { McpCallCtx, McpToolDef } from './mcp-host.service';
 import { z } from 'zod';
 import { SESSION_ID_MAX } from '../../shared/session-id-limits';
+import { isEcmaWhitespaceCode } from '../../shared/ecma-whitespace';
+import { equalsAsciiIgnoreCase, startsWithAsciiIgnoreCase } from '../../shared/lower-if-needed';
+import { codedError } from '../../shared/error-message';
 
 // 边界(E203,mcp-tools-terminal 同族):协议 awaitStopHookInputSchema 的 session_id 仅 min(1) 无上限。
 // 1MB session_id 校验通过后进 broker / Map / 错误回显路径(回显已截断 E151,但运行期仍处理超长 key)。
@@ -139,46 +142,11 @@ async function readHookDirCapped(dir: string, max: number): Promise<string[]> {
   return sortHookDirNames(names);
 }
 
-function equalsAsciiIgnoreCase(value: string, expectedLower: string): boolean {
-  if (value.length !== expectedLower.length) return false;
-  for (let i = 0; i < expectedLower.length; i += 1) {
-    const actual = value.charCodeAt(i);
-    const expected = expectedLower.charCodeAt(i);
-    if (actual === expected) continue;
-    const folded = actual >= 65 && actual <= 90 ? actual + 32 : actual;
-    if (folded !== expected) return false;
-  }
-  return true;
-}
-
 function startsWithRunnerToken(value: string, tokenLower: 'claude' | 'codex'): boolean {
-  if (value.length < tokenLower.length) return false;
-  for (let i = 0; i < tokenLower.length; i += 1) {
-    const actual = value.charCodeAt(i);
-    const expected = tokenLower.charCodeAt(i);
-    if (actual === expected) continue;
-    const folded = actual >= 65 && actual <= 90 ? actual + 32 : actual;
-    if (folded !== expected) return false;
-  }
+  if (!startsWithAsciiIgnoreCase(value, tokenLower)) return false;
   return (
     value.length === tokenLower.length ||
     isEcmaWhitespaceCode(value.charCodeAt(tokenLower.length))
-  );
-}
-
-function isEcmaWhitespaceCode(code: number): boolean {
-  return (
-    (code >= 9 && code <= 13) ||
-    code === 32 ||
-    code === 160 ||
-    code === 5760 ||
-    (code >= 8192 && code <= 8202) ||
-    code === 8232 ||
-    code === 8233 ||
-    code === 8239 ||
-    code === 8287 ||
-    code === 12288 ||
-    code === 65279
   );
 }
 
@@ -288,7 +256,7 @@ export function inferRunner(session: TerminalSessionMetaLike): RunnerKind {
   return 'unknown';
 }
 
-export function inferRunnerFromFilename(
+function inferRunnerFromFilename(
   fileName: string,
 ): 'cc' | 'codex' | null {
   if (fileName.startsWith(HOOK_FILE_PREFIX.cc)) return 'cc';
@@ -298,7 +266,6 @@ export function inferRunnerFromFilename(
 
 export function parseStopPayload(
   runner: 'cc' | 'codex',
-  _fileName: string,
   jsonText: string,
 ): NormalizedPayload | null {
   let raw: unknown;
@@ -379,7 +346,11 @@ function parseFilenameForWindowId(fileName: string): number | null {
 
 export interface HookFileBroker {
   start(): Promise<void>;
-  awaitNext(filter: AwaitFilter): Promise<AwaitNextResult>;
+  /**
+   * 等下一条匹配的 Stop 事件。`signal`(调用方的 MCP 连接)abort 时撤销等待者并 reject:否则调用方断开后
+   * 等待者最长挂 600s,期间同一会话的新调用一直 ALREADY_PENDING,真正到达的事件也被死连接的等待者消费掉。
+   */
+  awaitNext(filter: AwaitFilter, signal?: AbortSignal): Promise<AwaitNextResult>;
   /**
    * 提前结束某窗口的所有 pending await_stop_hook 等待者(窗口关闭时调用)。
    * 否则它们会一直挂到 timeout_sec(最长 600s)才靠自身 timer 自愈(审计 #3)。
@@ -451,6 +422,8 @@ export function createHookFileBroker(
   // 正在 ingest 中的文件名(读+解析期间)。防同一文件的并发 watch 事件重复 ingest;
   // 与 processed 分离,使读/解析失败的文件不被永久标记,允许写入完成后重试。
   const inFlight = new Set<string>();
+  // 处理期间又收到事件的文件名:本次处理结束后补跑一次(见 ingestFile)。
+  const rerunAfterInFlight = new Set<string>();
   const buffered: BufferedEntry[] = [];
   const bufferedNames = new Set<string>();
   let bufferedBytes = 0; // 边界(E150):buffered 当前总字节数(总字节预算淘汰用)
@@ -473,7 +446,13 @@ export function createHookFileBroker(
   }
 
   async function ingestFile(fileName: string): Promise<void> {
-    if (stopped || processed.has(fileName) || inFlight.has(fileName)) return;
+    if (stopped || processed.has(fileName)) return;
+    if (inFlight.has(fileName)) {
+      // 同名文件正在处理:记下「需补跑」。`cat > file` 先建空文件再写内容,写完的 change 事件若恰在第一次
+      // 处理期间到达,直接丢弃的话,第一次读到半截解析失败返回后就再无事件 → 该 hook 事件永久漏掉。
+      rerunAfterInFlight.add(fileName);
+      return;
+    }
 
     const runner = inferRunnerFromFilename(fileName);
     if (runner === null) return;
@@ -493,9 +472,14 @@ export function createHookFileBroker(
       // unlink/pending/buffered),避免污染已清空或新一代的 broker 状态。
       if (stopped || myGen !== ingestGen) return;
 
-      if (Date.now() - fileStat.mtimeMs > maxAgeMs) {
+      // 隔离:标 processed(不重试)+ 删文件(不留残留)。过期 / 超大文件共用。
+      const quarantine = (): void => {
         processed.set(fileName, Date.now());
         void unlink(filePath).catch(() => {});
+      };
+
+      if (Date.now() - fileStat.mtimeMs > maxAgeMs) {
+        quarantine();
         return;
       }
 
@@ -506,8 +490,7 @@ export function createHookFileBroker(
         console.warn(
           `[hook-broker] dropping oversize hook file ${fileName} (${fileStat.size} bytes > ${MAX_HOOK_FILE_BYTES})`,
         );
-        processed.set(fileName, Date.now());
-        void unlink(filePath).catch(() => {});
+        quarantine();
         return;
       }
 
@@ -527,13 +510,12 @@ export function createHookFileBroker(
         console.warn(
           `[hook-broker] dropping oversize hook file ${fileName} (${read.size} bytes > ${MAX_HOOK_FILE_BYTES})`,
         );
-        processed.set(fileName, Date.now());
-        void unlink(filePath).catch(() => {});
+        quarantine();
         return;
       }
       const jsonText = read.text as string; // tooLarge=false 时必为 string
 
-      const payload = parseStopPayload(runner, fileName, jsonText);
+      const payload = parseStopPayload(runner, jsonText);
       if (payload === null) {
         // 解析失败:文件可能正被 `cat >` 写入未完成。绝不 unlink(否则真实事件
         // 在内容到达前被删 → 永久丢失),也不标 processed,等写完后的 watch 事件
@@ -589,6 +571,10 @@ export function createHookFileBroker(
       }
     } finally {
       inFlight.delete(fileName);
+      // 补跑是一次全新的 ingest(自取当前代际),只要 broker 没停就跑。
+      if (rerunAfterInFlight.delete(fileName) && !stopped) {
+        void ingestFile(fileName);
+      }
     }
   }
 
@@ -688,22 +674,21 @@ export function createHookFileBroker(
 
       cleanupTimer = setInterval(() => void cleanupStale(), cleanupIntervalMs);
     },
-    awaitNext(filter) {
+    awaitNext(filter, signal) {
       return new Promise((resolve, reject) => {
         if (stopped) {
           reject(new Error('broker stopped'));
+          return;
+        }
+        if (signal?.aborted) {
+          reject(new Error('await_stop_hook caller disconnected'));
           return;
         }
 
         const key = filterKey(filter);
         if (pendingByKey.has(key)) {
           reject(
-            Object.assign(
-              new Error(
-                'await_stop_hook already pending for same (windowId, runner, cwd)',
-              ),
-              { code: ERROR_CODES.AWAIT_STOP_HOOK_ALREADY_PENDING },
-            ),
+            codedError(ERROR_CODES.AWAIT_STOP_HOOK_ALREADY_PENDING, 'await_stop_hook already pending for same (windowId, runner, cwd)',),
           );
           return;
         }
@@ -721,18 +706,36 @@ export function createHookFileBroker(
         }
 
         const startedAt = Date.now();
+        // 调用方断开 → 撤销本等待者(仅当它仍是该 key 的当前等待者),让出 key。
+        const onAbort = (): void => {
+          if (pendingByKey.get(key) !== pending) return;
+          pendingByKey.delete(key);
+          if (pending.timer !== null) clearTimeout(pending.timer);
+          reject(new Error('await_stop_hook caller disconnected'));
+        };
+        // 任何结算(命中 / 超时 / 窗口关闭 / stop)都摘掉 abort 监听:stdio 侧的 signal 是每连接一个,
+        // 同一连接反复调用时不摘会一直累积到连接关闭。
+        const detach = (): void => signal?.removeEventListener('abort', onAbort);
         const pending: PendingWaiter = {
           filter,
           key,
-          resolve,
-          reject,
+          resolve: (entry) => {
+            detach();
+            resolve(entry);
+          },
+          reject: (err) => {
+            detach();
+            reject(err);
+          },
           timer: null,
         };
         pending.timer = setTimeout(() => {
           pendingByKey.delete(key);
+          detach();
           resolve({ status: 'timeout', elapsedMs: Date.now() - startedAt });
         }, filter.timeoutMs);
         pendingByKey.set(key, pending);
+        signal?.addEventListener('abort', onAbort, { once: true });
       });
     },
     cancelByWindow(windowId) {
@@ -773,6 +776,7 @@ export function createHookFileBroker(
       bufferedNames.clear();
       bufferedBytes = 0; // 边界(E150):同步 buffered 字节计数
       processed.clear();
+      rerunAfterInFlight.clear();
     },
   };
 }
@@ -853,27 +857,36 @@ async function mergeClaudeCodeSettings(
     fileExists = true;
     try {
       const parsed = JSON.parse(read.text) as unknown;
-      if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        existing = parsed as Record<string, unknown>;
+      if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        // 顶层不是对象(数组 / 标量):不是可合并的配置。当成空配置会把用户文件整体替换掉。
+        return { installed: false, reason: 'parse-error' };
       }
+      existing = parsed as Record<string, unknown>;
     } catch {
       return { installed: false, reason: 'parse-error' };
     }
   }
   // kind === 'missing' → fileExists 保持 false,新建
 
-  const hooks =
-    existing.hooks !== null &&
-    typeof existing.hooks === 'object' &&
-    !Array.isArray(existing.hooks)
-      ? (existing.hooks as Record<string, unknown>)
-      : {};
+  // `hooks` / `hooks.Stop` 存在但形态不对(数组、标量、非数组的 Stop):不是可合并的配置。当成空值的话,
+  // 写回时会覆盖掉用户原来的值 → 同样按 parse-error 拒绝。
+  // null 不携带用户数据,与「没写」同等对待(合并无损)。
+  const rawHooks = existing.hooks ?? undefined;
+  if (rawHooks !== undefined && (typeof rawHooks !== 'object' || Array.isArray(rawHooks))) {
+    return { installed: false, reason: 'parse-error' };
+  }
+  const hooks = (rawHooks ?? {}) as Record<string, unknown>;
+  if (hooks.Stop !== undefined && hooks.Stop !== null && !Array.isArray(hooks.Stop)) {
+    return { installed: false, reason: 'parse-error' };
+  }
   const stopArr = Array.isArray(hooks.Stop) ? [...hooks.Stop] : [];
 
   for (const entry of stopArr) {
     const inner = (entry as { hooks?: unknown[] } | null)?.hooks;
     if (!Array.isArray(inner)) continue;
     for (const hook of inner) {
+      // 用户手改的配置里可能有 null 等非对象项:跳过,不能读 null 的属性。
+      if (hook === null || typeof hook !== 'object') continue;
       const marker = (hook as { _continuo_managed?: unknown })._continuo_managed;
       const command = (hook as { command?: unknown }).command;
       if (
@@ -945,7 +958,7 @@ async function mergeCodexConfig(
     if (text.includes(hookEventsDir)) {
       return { installed: false, reason: 'already-installed' };
     }
-    return replaceManagedCodexStopHook(configPath, text, hookEventsDir);
+    return replaceManagedCodexStopHook(configPath, text, hookEventsDir, managedStop);
   }
 
   if (fileExists) {
@@ -954,10 +967,7 @@ async function mergeCodexConfig(
     await mkdir(path.dirname(configPath), { recursive: true });
   }
 
-  const command =
-    `mkdir -p "${hookEventsDir}" && ` +
-    `cat > "\${CONTINUO_HOOK_EVENTS_DIR:-${hookEventsDir}}/` +
-    'codex_${CONTINUO_WINDOW_ID:-unknown}_$(date +%s%N).jsonl"';
+  const command = codexStopHookCommand(hookEventsDir);
   const block =
     '\n# continuo-managed\n' +
     '[[hooks.Stop]]\n' +
@@ -969,28 +979,27 @@ async function mergeCodexConfig(
   return { installed: true };
 }
 
+/** Codex Stop hook 写入 config.toml 的 shell 命令(新建与替换 managed 块共用)。 */
+function codexStopHookCommand(hookEventsDir: string): string {
+  return (
+    `mkdir -p "${hookEventsDir}" && ` +
+    `cat > "\${CONTINUO_HOOK_EVENTS_DIR:-${hookEventsDir}}/` +
+    'codex_${CONTINUO_WINDOW_ID:-unknown}_$(date +%s%N).jsonl"'
+  );
+}
+
+// 替换 managed 块里的 command 字符串。managedStop 由调用方用 findManagedCodexStopCommand 定位:它是
+// 转义感知的(command 经 JSON.stringify 含 \" 转义,朴素引号扫描会在第一个 \" 处截断 → 替换后旧 command
+// 尾巴残留、损坏 .codex/config.toml),且不跨入下一个 [[hooks.Stop]](不误替用户自有 Stop 的 command)。
 async function replaceManagedCodexStopHook(
   configPath: string,
   text: string,
   hookEventsDir: string,
+  managedStop: { readonly quoteStart: number; readonly quoteEnd: number },
 ): Promise<InstallStopHookResult> {
-  const command =
-    `mkdir -p "${hookEventsDir}" && ` +
-    `cat > "\${CONTINUO_HOOK_EVENTS_DIR:-${hookEventsDir}}/` +
-    'codex_${CONTINUO_WINDOW_ID:-unknown}_$(date +%s%N).jsonl"';
-  // 转义感知 quoted-string(见 mergeCodexConfig 注释):command 含 JSON 转义引号 \",
-  // `"[^"]*"` 只匹配到第一个 \" 即截断,替换后旧 command 尾巴残留 → 损坏 .codex/config.toml
-  // (codex P1)。`"(?:\\.|[^"\\])*"` 跨越转义引号完整匹配整个 command 字符串。
-  // 块边界(见 mergeCodexConfig 注释):不跨入下一个 [[hooks.Stop]],
-  // 兼容 marker 在块前/块内两种格式。managed 块缺/坏 command 时不匹配 → 返回 unrecognized
-  // (下方 next===text),绝不误替用户自有 Stop 的 command。
-  const managedStop = findManagedCodexStopCommand(text);
-  if (managedStop === null) {
-    return { installed: false, reason: 'unrecognized-existing-stop-hook' };
-  }
   const next =
     text.slice(0, managedStop.quoteStart) +
-    JSON.stringify(command) +
+    JSON.stringify(codexStopHookCommand(hookEventsDir)) +
     text.slice(managedStop.quoteEnd);
   await copyFile(configPath, `${configPath}.continuo-bak.${Date.now()}`);
   // crash-safe 原子写(同 R6 理由)
@@ -1035,29 +1044,24 @@ export function createAwaitStopHookTool(
       const echoId = truncateSessionIdForEcho(input.session_id);
       const meta = deps.getSessionMeta(input.session_id, ctx);
       if (meta === null) {
-        throw Object.assign(
-          new Error(`terminal session not found: ${echoId}`),
-          { code: ERROR_CODES.TERMINAL_SESSION_NOT_FOUND },
-        );
+        throw codedError(ERROR_CODES.TERMINAL_SESSION_NOT_FOUND, `terminal session not found: ${echoId}`);
       }
 
       const runner = inferRunner(meta);
       if (runner === 'unknown') {
-        throw Object.assign(
-          new Error(
-            `unknown runner for session ${echoId}; cannot await stop hook`,
-          ),
-          { code: ERROR_CODES.TERMINAL_SESSION_NOT_FOUND },
-        );
+        throw codedError(ERROR_CODES.TERMINAL_SESSION_NOT_FOUND, `unknown runner for session ${echoId}; cannot await stop hook`,);
       }
 
       const startedAt = Date.now();
-      const result = await deps.broker.awaitNext({
-        windowId: ctx.ownerWindowId,
-        runner,
-        cwd: meta.cwd,
-        timeoutMs: (input.timeout_sec ?? 60) * 1000,
-      });
+      const result = await deps.broker.awaitNext(
+        {
+          windowId: ctx.ownerWindowId,
+          runner,
+          cwd: meta.cwd,
+          timeoutMs: (input.timeout_sec ?? 60) * 1000,
+        },
+        ctx.signal,
+      );
 
       if (!('payload' in result)) {
         return {

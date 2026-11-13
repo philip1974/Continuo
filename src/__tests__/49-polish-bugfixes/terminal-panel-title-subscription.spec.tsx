@@ -65,8 +65,6 @@ function makeProps(sessionId: string): Parameters<typeof TerminalPanelView>[0] {
 beforeEach(() => {
   useTerminalStore.setState({
     sessions: [sess('t1', { title: 'My Term' }), sess('t2')],
-    activeId: 't1',
-    customTitles: new Map(),
   });
 });
 afterEach(() => cleanup());

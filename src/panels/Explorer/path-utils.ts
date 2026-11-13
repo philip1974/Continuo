@@ -4,29 +4,7 @@
 // FolderTree / drop-handlers / mutate-actions 曾各自手写同一段 dirname,路径边界
 // 规则一改要同步四处易漂移 → 收敛到此单一来源。
 
-function isPathSeparatorCode(code: number): boolean {
-  return code === 47 || code === 92;
-}
-
-function isAsciiAlphaCode(code: number): boolean {
-  return (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
-}
-
-function isBareWindowsDrive(value: string): boolean {
-  return (
-    value.length === 2 &&
-    isAsciiAlphaCode(value.charCodeAt(0)) &&
-    value.charCodeAt(1) === 58
-  );
-}
-
-function trimTrailingSeparators(path: string): string {
-  let end = path.length;
-  while (end > 0 && isPathSeparatorCode(path.charCodeAt(end - 1))) {
-    end -= 1;
-  }
-  return end === path.length ? path : path.slice(0, end);
-}
+import { isBareWindowsDrive, trimTrailingSeparators } from '@/lib/path-cross';
 
 /**
  * 跨平台 dirname:吃 `/` 与 `\`。先去尾部分隔符,取最后一个分隔符位置;
@@ -48,15 +26,8 @@ export function dirname(p: string): string {
   return head || '/';
 }
 
-/**
- * 跨平台 basename:**先去尾部分隔符**再取最后一段。`/a/b/` → `b`、`/a` → `a`。
- * tree-config(root entry name)/ ExplorerHeader(面包屑)用此 trim 语义。
- */
-export function basename(p: string): string {
-  const trimmed = trimTrailingSeparators(p);
-  const idx = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
-  return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
-}
+// 跨平台 basename(先去尾部分隔符再取最后一段)的实现与 Editor 共用,在 @/lib/path-cross。
+export { basename } from '@/lib/path-cross';
 
 /**
  * 跨平台 basename 的**不 trim 尾部分隔符**变体(逐字保留 FolderTree 唯一名 picker 的

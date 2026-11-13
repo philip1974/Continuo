@@ -120,6 +120,63 @@ describe('topic51 Op4 · debug.store renderer shadow', () => {
     expect(debugApi.getVariables).toHaveBeenCalledTimes(2);
   });
 
+  // 连续 step(stopped → continued → stopped)时,上一停在途的请求晚到,不能写进新一停。
+  it('上一停迟到的 stack 不覆盖新一停的栈帧与停靠行', async () => {
+    startDebugStoreSync();
+    const emit = debugApi.events[0]!;
+    const frame = (line: number) => ({
+      ok: true as const,
+      data: { frames: [{ id: line, name: `at-${line}`, source_path: '/repo/a.ts', line, column: 1 }] },
+    });
+    let releaseOld: (() => void) | null = null;
+    debugApi.getStack.mockImplementationOnce(
+      () => new Promise((r) => { releaseOld = () => r(frame(14)); }),
+    );
+    debugApi.getStack.mockImplementationOnce(async () => frame(99));
+
+    emit({ type: 'stopped', sessionId: 's1', stopSeq: 1, reason: 'step' });
+    emit({ type: 'continued', sessionId: 's1', runSeq: 2 });
+    emit({ type: 'stopped', sessionId: 's1', stopSeq: 2, reason: 'step' });
+    await flushAsync();
+    await flushAsync();
+    expect(useDebugStore.getState().sessions.get('s1')?.stopped?.line).toBe(99);
+
+    releaseOld!();
+    await flushAsync();
+    await flushAsync();
+    const session = useDebugStore.getState().sessions.get('s1');
+    expect(session?.stopped?.line).toBe(99);
+    expect(session?.frames[0]?.name).toBe('at-99');
+  });
+
+  it('上一停迟到的 variables 不写到新一停同号 reference 下', async () => {
+    startDebugStoreSync();
+    const emit = debugApi.events[0]!;
+    emit({ type: 'stopped', sessionId: 's1', stopSeq: 1, reason: 'step' });
+    await flushAsync();
+
+    let releaseOld: (() => void) | null = null;
+    debugApi.getVariables.mockImplementationOnce(
+      () =>
+        new Promise((r) => {
+          releaseOld = () =>
+            r({
+              ok: true as const,
+              data: { variables: [{ name: 'old', value: '1', variables_reference: 0 }], truncated: false },
+            });
+        }),
+    );
+    const pending = useDebugStore.getState().loadVariables('s1', 44);
+
+    emit({ type: 'continued', sessionId: 's1', runSeq: 2 });
+    emit({ type: 'stopped', sessionId: 's1', stopSeq: 2, reason: 'step' });
+    await flushAsync();
+    releaseOld!();
+    await pending;
+
+    expect(useDebugStore.getState().sessions.get('s1')?.variableRefs.get(44)).toBeUndefined();
+  });
+
   it('terminated removes the session shadow and falls back to another stopped session', async () => {
     startDebugStoreSync();
     const emit = debugApi.events[0]!;

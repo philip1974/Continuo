@@ -41,7 +41,7 @@ beforeEach(() => {
   _resetLmApiForTest();
   useWorkspaceStore.setState({ root: '/work', recentRoots: [] });
   useLayoutUiStore.setState({ sidebarOpen: true, sidebarWidth: 280 });
-  useTerminalStore.setState({ sessions: [], activeId: null });
+  useTerminalStore.setState({ sessions: [] });
   useEditorStore.setState({
     tabs: [mkTab('/a.md', 'aaa'), mkTab('/b.md', 'bbb')],
     activeTabId: '/a.md',

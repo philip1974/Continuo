@@ -106,7 +106,7 @@ beforeEach(() => {
   _reset();
   vi.clearAllMocks();
   electronMock.senderToWindow.set(sender, fakeWindow);
-  registerWindowIpc();
+  registerWindowIpc({ createMainWindow: vi.fn() });
 });
 
 describe('window-workspace-roots-map: NotifyRoot validation', () => {

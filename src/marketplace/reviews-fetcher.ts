@@ -10,6 +10,7 @@
 //
 // 缓存:1h sessionStorage 同 marketplace index 模式。
 
+import { REVIEW_TOTAL_NODES_MAX } from '../../electron/shared/marketplace-review-limits';
 import { coApi } from '../lib/co-api';
 import { parseReview } from './reviews-parser';
 import {
@@ -21,7 +22,7 @@ import { createSessionCache } from './session-cache';
 
 // 边界(E243):renderer 侧 review nodes 数量上限(对齐 main marketplace-reviews.service MAX_TOTAL_NODES=2000)。
 // 读端独立截断,防畸形/超大 IPC payload 绕过 main 上限。导出供测试。
-export const MAX_REVIEW_NODES = 2000;
+export const MAX_REVIEW_NODES = REVIEW_TOTAL_NODES_MAX;
 
 // 可维护性 M19:1h sessionStorage 缓存样板复用 createSessionCache(与 index fetcher 共用)。
 // 缓存的是聚合后的 byPid(plugin id → PluginAggregateRating)Record。

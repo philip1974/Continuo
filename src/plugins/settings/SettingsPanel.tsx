@@ -16,6 +16,8 @@ import type { SettingTabRegistry, SettingTabSpec } from '../registries/SettingTa
 import { SettingItemRow } from './SettingItemRow';
 import { useSettingsStore } from './store';
 import { useT, useLocale, tWithFallback } from '@/i18n';
+import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
+import { groupKeepingOrder } from '@/lib/group-keeping-order';
 
 interface SettingsPanelProps {
   /** 默认用全局 coApp.settingTabs;测试可注入隔离 registry. */
@@ -59,16 +61,6 @@ export interface SearchableSettingItem {
 const EMPTY_SEARCHABLE_SETTING_ITEMS: SearchableSettingItem[] = [];
 const EMPTY_MATCHED_SETTING_ITEMS: readonly SettingItemSpec[] = [];
 
-function lowerIfNeeded(value: string): string {
-  for (let i = 0; i < value.length; i += 1) {
-    const code = value.charCodeAt(i);
-    if ((code >= 65 && code <= 90) || code > 127) {
-      return value.toLowerCase();
-    }
-  }
-  return value;
-}
-
 export function buildSettingSearchHaystack(item: SettingItemSpec): string {
   const displayTitle = tWithFallback(item.titleKey, item.title);
   const displayDescription = tWithFallback(item.descriptionKey, item.description ?? '');
@@ -111,52 +103,14 @@ const EMPTY_SEARCH_BUCKETS: readonly SearchBucket[] = [];
 /** 把搜索结果按 category 分组，label 走 i18n catalog（topic-20）。 */
 export function groupSearchResults(items: readonly SettingItemSpec[]): readonly SearchBucket[] {
   if (items.length === 0) return EMPTY_SEARCH_BUCKETS;
-  if (items.length === 1) {
-    const item = items[0]!;
-    return [
-      {
-        category: item.category,
-        label: tWithFallback(CATEGORY_TITLE_KEYS[item.category], item.category),
-        items,
-      },
-    ];
-  }
-
-  const firstCategory = items[0]!.category;
-  let allSameCategory = true;
-  for (let i = 1; i < items.length; i++) {
-    if (items[i]!.category !== firstCategory) {
-      allSameCategory = false;
-      break;
-    }
-  }
-  if (allSameCategory) {
-    return [
-      {
-        category: firstCategory,
-        label: tWithFallback(CATEGORY_TITLE_KEYS[firstCategory], firstCategory),
-        items,
-      },
-    ];
-  }
-
-  const map = new Map<string, { items: SettingItemSpec[]; count: number }>();
-  for (const spec of items) {
-    let bucket = map.get(spec.category);
-    if (!bucket) {
-      bucket = { items: new Array<SettingItemSpec>(items.length), count: 0 };
-      map.set(spec.category, bucket);
-    }
-    bucket.items[bucket.count++] = spec;
-  }
-  const buckets = new Array<SearchBucket>(map.size);
-  let i = 0;
-  for (const [category, bucket] of map) {
-    bucket.items.length = bucket.count;
-    buckets[i++] = {
+  const groups = groupKeepingOrder(items, (spec) => spec.category);
+  const buckets = new Array<SearchBucket>(groups.length);
+  for (let i = 0; i < groups.length; i++) {
+    const { key: category, items: groupItems } = groups[i]!;
+    buckets[i] = {
       category,
       label: tWithFallback(CATEGORY_TITLE_KEYS[category], category),
-      items: bucket.items,
+      items: groupItems,
     };
   }
   return buckets;
@@ -223,6 +177,7 @@ export function SettingsPanel({
             <div className="px-4 py-4 text-fg-dim">{t('settings.panel.no_items')}</div>
           ) : (
             tabs.map((tab) => (
+              // native button:设置页左侧导航项(图标 + 文本整行、aria-current),design TabNav 是横向页签形态;颜色走语义 token。
               <button
                 key={tab.id}
                 type="button"

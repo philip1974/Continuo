@@ -1,3 +1,6 @@
+import type { PathScope } from './plugin-fs-contract';
+import { PLUGIN_ID_MAX_LEN } from './permission-record-limits';
+
 // 插件系统 IPC 通道(M-Plugin v4.1)。
 // 主进程扫 userData/plugins/<id>/,renderer 拿到 manifest + main.js 文本
 // 通过 Blob URL 动态 import。
@@ -7,8 +10,6 @@ export const PLUGINS_CHANNELS = {
   LIST_DIRS: 'plugins:list-dirs',
   /** 读取 enabled.json(string[] of plugin ids). */
   READ_ENABLED: 'plugins:read-enabled',
-  /** 写 enabled.json(整表;保留作迁移/兼容). */
-  WRITE_ENABLED: 'plugins:write-enabled',
   /**
    * 按单个 plugin 启用/禁用合并写 _enabled.json(数据安全)。renderer 整表 RMW 在多窗口
    * 下会丢失更新(后写者覆盖先写者),改走 main 端 read-modify-write 单条 delta 串行链。
@@ -16,8 +17,6 @@ export const PLUGINS_CHANNELS = {
   MUTATE_ENABLED: 'plugins:mutate-enabled',
   /** 读 _permissions.json(v4.2). */
   READ_PERMISSIONS: 'plugins:read-permissions',
-  /** 写 _permissions.json(整表;保留作迁移/兼容). */
-  WRITE_PERMISSIONS: 'plugins:write-permissions',
   /**
    * 按单个 plugin 合并写 _permissions.json(数据安全)。renderer 整表写在多窗口
    * 下会用陈旧快照覆盖别窗口的决策,改走 main 端 read-merge-write 单条记录。
@@ -33,14 +32,11 @@ export const PLUGINS_CHANNELS = {
   UNINSTALL: 'plugins:uninstall',
 } as const;
 
-export type PluginsChannel = (typeof PLUGINS_CHANNELS)[keyof typeof PLUGINS_CHANNELS];
-
 // 边界(E242,E168-E175 IPC push ingress 守卫族):main→renderer push 事件的 payload runtime 守卫。
 // preload 的 onChanged / onProtocolUrl 此前直接 `payload.id` / `payload.url` 解包,信任 main 发来的形态:
 // null payload 在 listener 中抛(未捕获),超长/非字符串 id 会进 plugin-reload-gate pending Set 或触发
 // reload(污染启动期缓冲/错误路径),超长 url 进 protocol-dispatch。纯函数守卫(无 zod,preload 可 import),
 // preload 不合法则 warn+drop 不调 cb。与 fs:dir-changed / agent-auth 的 push 守卫同款纵深防御。
-export const PLUGIN_ID_MAX_LEN = 256; // plugin id 长度上限(对齐 plugin-mcp PLUGIN_ID_MAX)
 export const PROTOCOL_URL_MAX_LEN = 8192; // co:// URL 长度上限(对齐 path 类上限)
 
 // 边界(E282):git 安装 URL 长度上限。renderer 两个 Git URL 输入(Marketplace / PluginsTab)与 main
@@ -75,8 +71,6 @@ export interface IpcPluginDir {
   readonly manifestText: string;
   /** main.js 入口文本(renderer Blob URL + dynamic import). */
   readonly mainText: string;
-  /** styles.css 文本(可选). */
-  readonly stylesText?: string;
 }
 
 /** v4.2 权限决策存储的磁盘格式. */
@@ -86,11 +80,8 @@ export interface IpcPermissionDecision {
   readonly decidedAt: number;
 }
 
-/** 路径 scope(plugin-fs 授权)。renderer 端 PathScope 的 IPC/磁盘镜像形态. */
-export interface IpcPathScope {
-  readonly path: string;
-  readonly mode: 'r' | 'rw';
-}
+/** 路径 scope(plugin-fs 授权)的 IPC/磁盘只读形态 —— 与 PathScope 同一契约(单一来源)。 */
+export type IpcPathScope = Readonly<PathScope>;
 
 /**
  * 单个 plugin 的权限磁盘/IPC 记录。两种形态:

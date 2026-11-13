@@ -3,7 +3,6 @@
 // 不引第三方;color/token 全走 var(--md-error/warning/info/success) + currentColor,
 // 不出现裸 hex / Tailwind 默认色(token-only Safeguard)。
 
-import React from 'react';
 import type { ReactNode } from 'react';
 import type { Notification } from './types';
 import './Toast.css';
@@ -35,6 +34,7 @@ export function Toast({
         <span className="toast__message">{message}</span>
         {code !== undefined ? <span className="toast__code">[{code}]</span> : null}
       </div>
+      {/* native button:样式由 toast.css 的 .toast__dismiss 定义(token-only),toast 暂留本目录未并入 design。 */}
       <button
         type="button"
         className="toast__dismiss"

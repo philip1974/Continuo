@@ -2,9 +2,11 @@
 // 用 child_process.spawn 收 stdout/stderr 到 buffer,超时 SIGTERM,输出
 // 上限 cap 避免 OOM。返回完整 ExecResult,plugin 等 process exit 后拿。
 
+import { startsWithAllowedExternalScheme } from '../../shared/url-limits';
 import { spawn } from 'node:child_process';
 import { shell } from 'electron';
 import { errorMessage } from '../../shared/error-message';
+import { SHELL_MAX_TIMEOUT_MS } from '../../shared/shell-limits';
 import type {
   IpcShellExecInput,
   IpcShellExecResult,
@@ -17,7 +19,7 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 // 而一次性 exec 此前只有 DEFAULT 没有 MAX —— 插件传 timeoutMs:2e9(~23 天,仍 < 2³¹
 // 不触发 timer 截断)可把不退出的子进程 + stdout/stderr Buffer 钉到那个超时。补齐
 // 同款上界,让两个兄弟入口的安全意图一致(防御未传播到平行入口)。
-const MAX_TIMEOUT_MS = 30 * 60_000; // 30min,与 plugin-shell-stream MAX_TIMEOUT_MS 对齐
+const MAX_TIMEOUT_MS = SHELL_MAX_TIMEOUT_MS; // 30min,与 plugin-shell-stream 同一来源
 const DEFAULT_MAX_OUTPUT_BYTES = 10 * 1024 * 1024; // 10MB
 const MAX_OUTPUT_BYTES_CAP = 100 * 1024 * 1024; // 100MB 硬上限,防超大值钉住内存
 const SIGKILL_GRACE_MS = 500;
@@ -196,35 +198,7 @@ export function execShell(input: IpcShellExecInput): Promise<IpcShellExecResult>
 // (如 javascript:、custom://)拒绝,防止恶意 markdown 通过 [text](javascript:...)
 // 在主机执行任意代码 / 触发 protocol handler。Electron 文档同款建议。
 //
-// 安全 S6(codex 安全审计):**移除 file:**。openExternal 的输入含**远程不受信**数据
-// (marketplace 远程 index 的 authorUrl / 评论 url、markdown file: 链接、terminal 输出
-// 链接),放行 file: → 攻击者填 `file:///Applications/...`、`file:///etc/...` 或
-// Windows `file://attacker/share`(UNC,触发外连 + 凭据泄漏),用户点链接即由 OS 打开
-// 本地文件/应用。本地文件导航走 IDE 内编辑器(无 scheme 的相对/绝对路径,见
-// link-resolve.ts 的 kind:'file' 分支),不需要也不应经 OS openExternal。
-function startsWithAllowedExternalScheme(url: string): boolean {
-  if (
-    url.length >= 5 &&
-    (url.charCodeAt(0) | 32) === 104 &&
-    (url.charCodeAt(1) | 32) === 116 &&
-    (url.charCodeAt(2) | 32) === 116 &&
-    (url.charCodeAt(3) | 32) === 112
-  ) {
-    const next = url.charCodeAt(4);
-    return next === 58 || (next | 32) === 115 && url.charCodeAt(5) === 58;
-  }
-  return (
-    url.length >= 7 &&
-    (url.charCodeAt(0) | 32) === 109 &&
-    (url.charCodeAt(1) | 32) === 97 &&
-    (url.charCodeAt(2) | 32) === 105 &&
-    (url.charCodeAt(3) | 32) === 108 &&
-    (url.charCodeAt(4) | 32) === 116 &&
-    (url.charCodeAt(5) | 32) === 111 &&
-    url.charCodeAt(6) === 58
-  );
-}
-
+// scheme 白名单(不含 file:,安全 S6)见 shared/url-limits.startsWithAllowedExternalScheme(与 renderer 共用)。
 /**
  * 是否允许把该 URL 交给系统打开。所有调用 `shell.openExternal` 的入口都必须先过
  * 这个白名单 —— 包括 `windowOpenHandler` 的 deny 分支(`target="_blank"` 锚点点击,

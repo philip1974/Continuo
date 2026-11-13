@@ -7,9 +7,8 @@
 // 重名处理(本层不自动改名,EEXIST 直返 FS_EEXIST)。
 
 import { cp, lstat, rename, rm } from 'node:fs/promises';
-import path from 'node:path';
 import { ERROR_CODES } from '../../../shared/error-codes';
-import { fsError, mapNodeErrnoCode } from './path-utils';
+import { fsError, lstatOrThrow, mapNodeErrnoCode } from './path-utils';
 
 /**
  * 移动 entry(rename 跨目录;同盘 atomic,跨盘走 cp+rm fallback)。
@@ -24,11 +23,7 @@ export async function moveEntry(
   destPath: string,
 ): Promise<void> {
   // 校验源存在
-  try {
-    await lstat(srcPath);
-  } catch (err) {
-    throw fsError(mapNodeErrnoCode(err), `lstat failed: ${srcPath}`);
-  }
+  await lstatOrThrow(srcPath);
   // 拒绝 dest 已存在(避免静默覆盖)
   let destExists = false;
   try {
@@ -86,11 +81,7 @@ export async function copyEntry(
   srcPath: string,
   destPath: string,
 ): Promise<void> {
-  try {
-    await lstat(srcPath);
-  } catch (err) {
-    throw fsError(mapNodeErrnoCode(err), `lstat failed: ${srcPath}`);
-  }
+  await lstatOrThrow(srcPath);
   try {
     // force:false 必须显式传 —— fs.cp 默认 force:true 会击穿 errorOnExist(实测:
     // errorOnExist 仅在 force:false 时生效)。copyEntry 无 pre-check,完全依赖此选项防
@@ -103,37 +94,4 @@ export async function copyEntry(
   } catch (err) {
     throw fsError(mapNodeErrnoCode(err), `cp failed: ${srcPath} → ${destPath}`);
   }
-}
-
-/**
- * 帮手:基于 srcPath 的 basename + parentDir 拼 destPath,处理重名:
- * 若 dest 已存在,自动加 ` copy` / ` copy 2` / ... 后缀(VSCode/Finder 同款),
- * 直到找到不存在的路径。给上层粘贴处理重名用。
- *
- * 上限尝试 100 次防极端情况下死循环。
- */
-export async function resolveUniqueDest(
-  parentDir: string,
-  basename: string,
-): Promise<string> {
-  const dot = basename.lastIndexOf('.');
-  // 隐藏文件 .xxx 或无扩展 → 整体当 stem
-  const stem = dot > 0 ? basename.slice(0, dot) : basename;
-  const ext = dot > 0 ? basename.slice(dot) : '';
-
-  for (let i = 0; i < 100; i++) {
-    const candidate =
-      i === 0
-        ? path.join(parentDir, basename)
-        : i === 1
-          ? path.join(parentDir, `${stem} copy${ext}`)
-          : path.join(parentDir, `${stem} copy ${i}${ext}`);
-    try {
-      await lstat(candidate);
-      // 存在,继续找下一个
-    } catch {
-      return candidate;
-    }
-  }
-  throw fsError(ERROR_CODES.FS_IO, `cannot find unique dest under ${parentDir} (100 tries)`);
 }

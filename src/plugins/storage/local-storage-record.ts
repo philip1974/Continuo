@@ -168,3 +168,31 @@ export function subscribeStorageKey(key: string, onChange: () => void): () => vo
   window.addEventListener('storage', handler);
   return () => window.removeEventListener('storage', handler);
 }
+
+/** 两个 record 的自有可枚举键集合相同且各值 Object.is 相等(store 无变化时返回原 state 用)。 */
+export function recordsShallowEqual<V>(
+  a: Record<string, V>,
+  b: Record<string, V>,
+): boolean {
+  if (a === b) return true;
+  let aCount = 0;
+  let bCount = 0;
+  for (const key in a) {
+    if (!Object.prototype.hasOwnProperty.call(a, key)) continue;
+    aCount += 1;
+    if (!Object.is(a[key], b[key])) return false;
+  }
+  for (const key in b) {
+    if (!Object.prototype.hasOwnProperty.call(b, key)) continue;
+    bCount += 1;
+  }
+  return aCount === bCount;
+}
+
+/** record 没有任何自有可枚举键。 */
+export function recordIsEmpty(record: Record<string, unknown>): boolean {
+  for (const key in record) {
+    if (Object.prototype.hasOwnProperty.call(record, key)) return false;
+  }
+  return true;
+}

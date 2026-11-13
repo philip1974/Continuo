@@ -1,3 +1,5 @@
+import { startsWithAsciiIgnoreCase } from './lower-if-needed';
+
 // 单段 leaf 文件名校验(跨进程 + 跨 plugin-fs/Explorer 单一来源)。
 //
 // 边界(E268/E274):leaf 名拼进 FS 路径前须校验。E268 初版只拒空/`.`/`..`/分隔符/控制字符/超长,
@@ -10,11 +12,10 @@
 // (其 ScopeError reason 是既有契约,path-resolve 测试断言)。
 
 // failed 列表/显示截断用的单组件名上限(常见文件系统组件名 255 上限)。注:校验用的长度上限见下方
-// MAX_PATH_WIN/POSIX(与原 validateLeaf 一致,严于 255 的拒绝阈值由长度 tier 给出)。
+// MAX_PATH_WIN(260,与原 validateLeaf 一致;255 只用于 UI 截断/显示,不是拒绝阈值)。
 export const FS_NAME_MAX = 255;
 
 const MAX_PATH_WIN = 260; // Windows MAX_PATH
-const MAX_PATH_POSIX = 4096;
 
 function hasNtfs83AliasMarker(name: string): boolean {
   for (let i = 0; i < name.length - 1; i += 1) {
@@ -30,10 +31,7 @@ function asciiLower(code: number): number {
 }
 
 function startsWithAsciiWord(name: string, word: string): boolean {
-  if (name.length < word.length) return false;
-  for (let i = 0; i < word.length; i += 1) {
-    if (asciiLower(name.charCodeAt(i)) !== word.charCodeAt(i)) return false;
-  }
+  if (!startsWithAsciiIgnoreCase(name, word)) return false;
   return name.length === word.length || name.charCodeAt(word.length) === 46;
 }
 
@@ -63,7 +61,7 @@ function isWindowsReservedDeviceName(name: string): boolean {
 /**
  * 返回 leaf 不合法的原因(null = 合法)。规则顺序与文案与原 plugin-fs validateLeaf 逐字一致(单一来源)。
  * 拒:非 string / 空 / `.`·`..` / 分隔符 / NTFS 8.3 短名 / 含 `~` / 含 `..` / 控制字符(0x00-0x1F) /
- * 超 260(Win)/4096(POSIX) / 含 `:`(Windows ADS) / Windows 保留设备名 / 尾随点或空格 / 非 NFC。
+ * 超 260(Windows MAX_PATH) / 含 `:`(Windows ADS) / Windows 保留设备名 / 尾随点或空格 / 非 NFC。
  */
 export function leafNameRejectReason(name: unknown): string | null {
   if (typeof name !== 'string') return 'leaf is not a string';
@@ -81,7 +79,6 @@ export function leafNameRejectReason(name: unknown): string | null {
   if (name.length > MAX_PATH_WIN) {
     return 'leaf exceeds 260 chars (Windows MAX_PATH)';
   }
-  if (name.length > MAX_PATH_POSIX) return 'leaf exceeds 4096 chars (POSIX)';
   if (name.includes(':')) return 'leaf contains : (Windows ADS hazard)';
   if (isWindowsReservedDeviceName(name)) return 'leaf is Windows reserved device name';
   if (name.endsWith('.') || name.endsWith(' ')) {

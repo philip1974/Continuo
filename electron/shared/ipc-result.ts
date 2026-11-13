@@ -14,7 +14,7 @@ export interface IpcFail {
 
 export type IpcResult<T> = IpcOk<T> | IpcFail;
 
-// 基础设施层错误码。业务通道(fs / popout / layout)可定义自己的 code 字符串,
+// 基础设施层错误码。业务通道(fs / layout)可定义自己的 code 字符串,
 // safeHandle 会原样透传。
 export const IPC_ERR = {
   DENIED: 'IPC_DENIED', // safeHandle senderFrame 校验失败

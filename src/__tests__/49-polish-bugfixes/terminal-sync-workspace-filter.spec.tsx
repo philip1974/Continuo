@@ -62,7 +62,7 @@ beforeEach(() => {
   mocks.listSessions.mockResolvedValue({ ok: true, data: { sessions: [] } });
   mocks.unsubscribe.mockReset();
   mocks.onSessionsChanged.mockClear();
-  useTerminalStore.setState({ sessions: [], activeId: null, customTitles: new Map() });
+  useTerminalStore.setState({ sessions: [] });
   useWorkspaceStore.setState({ root: null });
 });
 

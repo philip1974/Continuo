@@ -61,6 +61,7 @@ import type {
   DebugVariable,
   LaunchSessionInput,
 } from './debug.service';
+import { codedError } from '../../shared/error-message';
 
 export type DebugContinueInput = z.infer<typeof debugContinueInputSchema>;
 export type DebugContinueOutput = z.infer<typeof debugContinueOutputSchema>;
@@ -184,18 +185,12 @@ function inputJsonSchemaFor(name: string): Record<string, unknown> {
 
 function requireControllerContext(ctx: McpCallCtx): DebugCallerContext {
   if (typeof ctx.callerSubject !== 'string' || ctx.callerSubject.length === 0) {
-    throw Object.assign(new Error('debug caller is not authorized'), {
-      code: ERROR_CODES.DEBUG_NOT_AUTHORIZED,
-    });
+    throw codedError(ERROR_CODES.DEBUG_NOT_AUTHORIZED, 'debug caller is not authorized');
   }
   return {
     ownerWindowId: ctx.ownerWindowId,
     controllerToken: ctx.callerSubject,
   };
-}
-
-function codedDebugError(message: string, code: string): Error {
-  return Object.assign(new Error(message), { code });
 }
 
 function normalizeDebugError(
@@ -209,18 +204,12 @@ function normalizeDebugError(
   if (typeof record?.code === 'string') return err;
   const message = typeof record?.message === 'string' ? record.message : '';
   if (/^debug session not found\b/i.test(message)) {
-    return codedDebugError(
-      'debug session not found',
-      ERROR_CODES.DEBUG_SESSION_NOT_FOUND,
-    );
+    return codedError(ERROR_CODES.DEBUG_SESSION_NOT_FOUND, 'debug session not found');
   }
   if (/debug wait_for_stop timed out/i.test(message)) {
-    return codedDebugError(
-      'debug wait_for_stop timed out',
-      ERROR_CODES.DEBUG_WAIT_TIMEOUT,
-    );
+    return codedError(ERROR_CODES.DEBUG_WAIT_TIMEOUT, 'debug wait_for_stop timed out');
   }
-  if (fallback) return codedDebugError(fallback.message, fallback.code);
+  if (fallback) return codedError(fallback.code, fallback.message);
   return err;
 }
 
@@ -246,7 +235,7 @@ function toLaunchInput(input: DebugLaunchInput): LaunchSessionInput {
   };
 }
 
-export function makeDebugLaunchTool(
+function makeDebugLaunchTool(
   deps: DebugToolsDeps,
 ): DebugTool<DebugLaunchInput, z.infer<typeof debugLaunchOutputSchema>> {
   return {
@@ -271,7 +260,7 @@ export function makeDebugLaunchTool(
   };
 }
 
-export function makeDebugSetBreakpointTool(
+function makeDebugSetBreakpointTool(
   deps: DebugToolsDeps,
 ): DebugTool<
   DebugSetBreakpointInput,
@@ -294,7 +283,7 @@ export function makeDebugSetBreakpointTool(
   };
 }
 
-export function makeDebugWaitForStopTool(
+function makeDebugWaitForStopTool(
   deps: DebugToolsDeps,
 ): DebugTool<DebugWaitForStopInput, z.infer<typeof debugWaitForStopOutputSchema>> {
   return {
@@ -315,75 +304,76 @@ export function makeDebugWaitForStopTool(
   };
 }
 
-export function makeDebugContinueTool(
+// continue / step-over / step-in / step-out 四个线程控制工具同构(只差 name / 描述 / schema / service
+// 方法),收口为一个工厂;各 makeDebugXxxTool 保留为具名薄壳。
+function makeThreadControlTool<
+  I extends { session_id: string; thread_id?: number },
+  O,
+>(
+  name: string,
+  description: string,
+  inputSchema: DebugTool<I, O>['inputSchema'],
+  control: (sessionId: string, opts: { threadId?: number }) => Promise<O>,
+): DebugTool<I, O> {
+  return {
+    name,
+    description,
+    jsonSchema: inputJsonSchemaFor(name),
+    inputSchema,
+    run: (input) =>
+      runDebugTool(() =>
+        control(input.session_id, {
+          ...(input.thread_id !== undefined ? { threadId: input.thread_id } : {}),
+        }),
+      ),
+  };
+}
+
+function makeDebugContinueTool(
   deps: DebugToolsDeps,
 ): DebugTool<DebugContinueInput, DebugContinueOutput> {
-  return {
-    name: MCP_TOOL_DEBUG_CONTINUE,
-    description: 'Continue a stopped debug session owned by this MCP caller.',
-    jsonSchema: inputJsonSchemaFor(MCP_TOOL_DEBUG_CONTINUE),
-    inputSchema: debugContinueInputSchema,
-    run: (input) =>
-      runDebugTool(() =>
-        deps.service.continue(input.session_id, {
-          ...(input.thread_id !== undefined ? { threadId: input.thread_id } : {}),
-        }),
-      ),
-  };
+  return makeThreadControlTool(
+    MCP_TOOL_DEBUG_CONTINUE,
+    'Continue a stopped debug session owned by this MCP caller.',
+    debugContinueInputSchema,
+    (id, opts) => deps.service.continue(id, opts),
+  );
 }
 
-export function makeDebugStepOverTool(
+function makeDebugStepOverTool(
   deps: DebugToolsDeps,
 ): DebugTool<DebugStepOverInput, DebugStepOverOutput> {
-  return {
-    name: MCP_TOOL_DEBUG_STEP_OVER,
-    description: 'Step over in a stopped debug session owned by this MCP caller.',
-    jsonSchema: inputJsonSchemaFor(MCP_TOOL_DEBUG_STEP_OVER),
-    inputSchema: debugStepOverInputSchema,
-    run: (input) =>
-      runDebugTool(() =>
-        deps.service.stepOver(input.session_id, {
-          ...(input.thread_id !== undefined ? { threadId: input.thread_id } : {}),
-        }),
-      ),
-  };
+  return makeThreadControlTool(
+    MCP_TOOL_DEBUG_STEP_OVER,
+    'Step over in a stopped debug session owned by this MCP caller.',
+    debugStepOverInputSchema,
+    (id, opts) => deps.service.stepOver(id, opts),
+  );
 }
 
-export function makeDebugStepInTool(
+function makeDebugStepInTool(
   deps: DebugToolsDeps,
 ): DebugTool<DebugStepInInput, DebugStepInOutput> {
-  return {
-    name: MCP_TOOL_DEBUG_STEP_IN,
-    description: 'Step into in a stopped debug session owned by this MCP caller.',
-    jsonSchema: inputJsonSchemaFor(MCP_TOOL_DEBUG_STEP_IN),
-    inputSchema: debugStepInInputSchema,
-    run: (input) =>
-      runDebugTool(() =>
-        deps.service.stepIn(input.session_id, {
-          ...(input.thread_id !== undefined ? { threadId: input.thread_id } : {}),
-        }),
-      ),
-  };
+  return makeThreadControlTool(
+    MCP_TOOL_DEBUG_STEP_IN,
+    'Step into in a stopped debug session owned by this MCP caller.',
+    debugStepInInputSchema,
+    (id, opts) => deps.service.stepIn(id, opts),
+  );
 }
 
-export function makeDebugStepOutTool(
+function makeDebugStepOutTool(
   deps: DebugToolsDeps,
 ): DebugTool<DebugStepOutInput, DebugStepOutOutput> {
-  return {
-    name: MCP_TOOL_DEBUG_STEP_OUT,
-    description: 'Step out in a stopped debug session owned by this MCP caller.',
-    jsonSchema: inputJsonSchemaFor(MCP_TOOL_DEBUG_STEP_OUT),
-    inputSchema: debugStepOutInputSchema,
-    run: (input) =>
-      runDebugTool(() =>
-        deps.service.stepOut(input.session_id, {
-          ...(input.thread_id !== undefined ? { threadId: input.thread_id } : {}),
-        }),
-      ),
-  };
+  return makeThreadControlTool(
+    MCP_TOOL_DEBUG_STEP_OUT,
+    'Step out in a stopped debug session owned by this MCP caller.',
+    debugStepOutInputSchema,
+    (id, opts) => deps.service.stepOut(id, opts),
+  );
 }
 
-export function makeDebugStackTool(
+function makeDebugStackTool(
   deps: DebugToolsDeps,
 ): DebugTool<DebugStackInput, DebugStackToolOutput> {
   return {
@@ -403,7 +393,7 @@ export function makeDebugStackTool(
   };
 }
 
-export function makeDebugScopesTool(
+function makeDebugScopesTool(
   deps: DebugToolsDeps,
 ): DebugTool<DebugScopesInput, DebugScopesToolOutput> {
   return {
@@ -419,7 +409,7 @@ export function makeDebugScopesTool(
   };
 }
 
-export function makeDebugVariablesTool(
+function makeDebugVariablesTool(
   deps: DebugToolsDeps,
 ): DebugTool<DebugVariablesInput, DebugVariablesToolOutput> {
   return {
@@ -441,7 +431,7 @@ export function makeDebugVariablesTool(
   };
 }
 
-export function makeDebugEvaluateTool(
+function makeDebugEvaluateTool(
   deps: DebugToolsDeps,
 ): DebugTool<DebugEvaluateInput, z.infer<typeof debugEvaluateOutputSchema>> {
   return {
@@ -462,7 +452,7 @@ export function makeDebugEvaluateTool(
   };
 }
 
-export function makeDebugDisconnectTool(
+function makeDebugDisconnectTool(
   deps: DebugToolsDeps,
 ): DebugTool<DebugDisconnectInput, DebugDisconnectOutput> {
   return {
@@ -479,7 +469,7 @@ export function makeDebugDisconnectTool(
   };
 }
 
-export function makeDebugListSessionsTool(
+function makeDebugListSessionsTool(
   deps: DebugToolsDeps,
 ): DebugTool<DebugListSessionsInput, DebugListSessionsToolOutput> {
   return {

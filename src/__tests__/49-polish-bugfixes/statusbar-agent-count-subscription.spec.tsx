@@ -40,7 +40,6 @@ beforeEach(() => {
   useEditorStore.setState({ tabs: [], activeTabId: null });
   useTerminalStore.setState({
     sessions: [sess('a1', 'agent'), sess('u1', 'user')],
-    activeId: 'a1',
   });
   (coApp as { statusBar: StatusBarRegistry }).statusBar = new StatusBarRegistry();
 });

@@ -2,6 +2,7 @@
 // scoped-app.ts wraps these with token closure so plugin code never sees token.
 
 import { ipcRenderer, type IpcRendererEvent } from 'electron';
+import { subscribeIpc } from './subscribe-ipc';
 import { PLUGIN_FS_CHANNELS } from '../shared/plugin-fs-channels';
 
 export interface PluginFsRawStat {
@@ -68,7 +69,8 @@ export interface PluginFsRaw {
     handler: (payload: {
       requestId: string;
       pluginId: string;
-      scopes: readonly { path: string; mode: 'r' | 'rw' }[];
+      /** displayPath:main 归一化后的路径(弹窗展示用);path 仍是插件请求的原始值。 */
+      scopes: readonly { path: string; mode: 'r' | 'rw'; displayPath?: string }[];
     }) => void,
   ): () => void;
   onScopeUpdated(
@@ -130,15 +132,13 @@ export const pluginFsRaw: PluginFsRaw = {
       _event: IpcRendererEvent,
       payload: Parameters<typeof handler>[0],
     ) => handler(payload);
-    ipcRenderer.on(PLUGIN_FS_CHANNELS.SCOPE_REQUEST, wrap);
-    return () => ipcRenderer.removeListener(PLUGIN_FS_CHANNELS.SCOPE_REQUEST, wrap);
+    return subscribeIpc(PLUGIN_FS_CHANNELS.SCOPE_REQUEST, wrap);
   },
   onScopeUpdated: (handler) => {
     const wrap = (
       _event: IpcRendererEvent,
       payload: Parameters<typeof handler>[0],
     ) => handler(payload);
-    ipcRenderer.on(PLUGIN_FS_CHANNELS.SCOPE_UPDATED, wrap);
-    return () => ipcRenderer.removeListener(PLUGIN_FS_CHANNELS.SCOPE_UPDATED, wrap);
+    return subscribeIpc(PLUGIN_FS_CHANNELS.SCOPE_UPDATED, wrap);
   },
 };

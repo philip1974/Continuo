@@ -1,6 +1,6 @@
 // 命令 hotkey 显示格式化(platform-aware).
 //
-// 注册时仍用 `mod+x` 抽象形态(由 useCommandHotkeys.matchesHotkey 解析,
+// 注册时仍用 `mod+x` 抽象形态(由 useCommandHotkeys 的 compileCombo 预编译后匹配,
 // 跨平台同 raw)。本模块只管 UI 显示,把 raw 转成视觉友好的 string。
 //
 // mac:Unicode 紧凑形式 `⌘⇧H` / `⌘,`
@@ -8,11 +8,14 @@
 //
 // BDD: src/__tests__/format-hotkey/
 
+import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
+
 export type Platform = 'mac' | 'other';
 
 const MOD_MAP: Record<Platform, Record<string, string>> = {
   mac: {
     mod: '⌘',
+    cmd: '⌘',
     shift: '⇧',
     alt: '⌥',
     option: '⌥',
@@ -20,6 +23,8 @@ const MOD_MAP: Record<Platform, Record<string, string>> = {
   },
   other: {
     mod: 'Ctrl',
+    // 非 mac 上录制 Meta 键得到 'cmd'(见 KeybindingCaptureModal.eventToCombo)
+    cmd: 'Win',
     shift: 'Shift',
     alt: 'Alt',
     option: 'Alt',
@@ -27,59 +32,89 @@ const MOD_MAP: Record<Platform, Record<string, string>> = {
   },
 };
 
+// 按规范名(真实 e.key 小写名)建表;别名经 canonicalHotkeyKey 归一后再查。
 const SPECIAL_KEYS: Record<Platform, Record<string, string>> = {
   mac: {
     enter: '↵',
-    return: '↵',
     escape: '⎋',
-    esc: '⎋',
     space: '␣',
     tab: '⇥',
     backspace: '⌫',
     delete: '⌦',
-    del: '⌦',
-    up: '↑',
-    down: '↓',
-    left: '←',
-    right: '→',
+    arrowup: '↑',
+    arrowdown: '↓',
+    arrowleft: '←',
+    arrowright: '→',
   },
   other: {
     enter: 'Enter',
-    return: 'Enter',
     escape: 'Esc',
-    esc: 'Esc',
     space: 'Space',
     tab: 'Tab',
     backspace: 'Backspace',
     delete: 'Del',
-    del: 'Del',
-    up: '↑',
-    down: '↓',
-    left: '←',
-    right: '→',
+    arrowup: '↑',
+    arrowdown: '↓',
+    arrowleft: '←',
+    arrowright: '→',
   },
 };
 
-const EMPTY_HOTKEY_PARTS: string[] = [];
+/**
+ * 主键别名 → 真实 `e.key` 小写名。录制产出的是 e.key 名(arrowup / escape / enter …),手写的快捷键常用
+ * 别名(up / esc / return …)。匹配(useCommandHotkeys)与显示(formatPart)都先经此归一,三处同一套词汇。
+ */
+const KEY_ALIASES: Readonly<Record<string, string>> = {
+  up: 'arrowup',
+  down: 'arrowdown',
+  left: 'arrowleft',
+  right: 'arrowright',
+  esc: 'escape',
+  return: 'enter',
+  del: 'delete',
+};
 
-function lowerIfNeeded(value: string): string {
-  for (let i = 0; i < value.length; i += 1) {
-    const code = value.charCodeAt(i);
-    if ((code >= 65 && code <= 90) || code > 127) {
-      return value.toLowerCase();
-    }
-  }
-  return value;
+/** 把(已小写的)主键别名归一成 e.key 名;非别名原样返回。 */
+export function canonicalHotkeyKey(lowerKey: string): string {
+  return KEY_ALIASES[lowerKey] ?? lowerKey;
 }
+
+/**
+ * 把整串快捷键的主键段(最后一个 `+` 之后)归一成 e.key 名,用于比较两个快捷键是否是同一个键
+ * (`mod+up` 与录制出的 `mod+arrowup`)。修饰键段原样保留。
+ */
+export function canonicalHotkey(combo: string): string {
+  const plus = combo.lastIndexOf('+');
+  const key = lowerIfNeeded(combo.slice(plus + 1).trim());
+  const canonical = canonicalHotkeyKey(key);
+  return canonical === combo.slice(plus + 1) ? combo : combo.slice(0, plus + 1) + canonical;
+}
+
+const EMPTY_HOTKEY_PARTS: string[] = [];
 
 function formatPart(part: string, platform: Platform): string {
   const lower = lowerIfNeeded(part);
   const mod = MOD_MAP[platform][lower];
   if (mod) return mod;
-  const special = SPECIAL_KEYS[platform][lower];
+  const special = SPECIAL_KEYS[platform][canonicalHotkeyKey(lower)];
   if (special) return special;
   // 普通字母 / 数字 / 符号 → uppercase(F1 / A / , / .)
   return part.toUpperCase();
+}
+
+/** 按 `+` 切分 raw,对每个**非空**段回调其 [start, end) 下标(不分配子串;空段如 `a++b` 跳过)。 */
+function forEachHotkeySegment(
+  raw: string,
+  visit: (start: number, end: number) => void,
+): void {
+  let start = 0;
+  for (;;) {
+    const plus = raw.indexOf('+', start);
+    const end = plus < 0 ? raw.length : plus;
+    if (end > start) visit(start, end);
+    if (plus < 0) return;
+    start = plus + 1;
+  }
 }
 
 function visitFormattedHotkeyParts(
@@ -88,16 +123,9 @@ function visitFormattedHotkeyParts(
   visit: (part: string) => void,
 ): void {
   if (!raw) return;
-  let start = 0;
-  for (;;) {
-    const plus = raw.indexOf('+', start);
-    const end = plus < 0 ? raw.length : plus;
-    if (end > start) {
-      visit(formatPart(raw.slice(start, end), platform));
-    }
-    if (plus < 0) return;
-    start = plus + 1;
-  }
+  forEachHotkeySegment(raw, (start, end) => {
+    visit(formatPart(raw.slice(start, end), platform));
+  });
 }
 
 /**
@@ -112,29 +140,18 @@ export function formatHotkeyParts(
   platform: Platform,
 ): string[] {
   if (!raw) return EMPTY_HOTKEY_PARTS;
+  // 两趟:先数段数再按确切长度预分配(每次按键渲染都会走,避免数组扩容)。两趟共用同一个切分器。
   let count = 0;
-  let start = 0;
-  for (;;) {
-    const plus = raw.indexOf('+', start);
-    const end = plus < 0 ? raw.length : plus;
-    if (end > start) count += 1;
-    if (plus < 0) break;
-    start = plus + 1;
-  }
+  forEachHotkeySegment(raw, () => {
+    count += 1;
+  });
   if (count === 0) return EMPTY_HOTKEY_PARTS;
   const parts = new Array<string>(count);
   let index = 0;
-  start = 0;
-  for (;;) {
-    const plus = raw.indexOf('+', start);
-    const end = plus < 0 ? raw.length : plus;
-    if (end > start) {
-      parts[index] = formatPart(raw.slice(start, end), platform);
-      index += 1;
-    }
-    if (plus < 0) break;
-    start = plus + 1;
-  }
+  forEachHotkeySegment(raw, (start, end) => {
+    parts[index] = formatPart(raw.slice(start, end), platform);
+    index += 1;
+  });
   return parts;
 }
 

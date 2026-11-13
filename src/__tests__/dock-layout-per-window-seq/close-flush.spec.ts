@@ -203,8 +203,21 @@ let dir: string;
 
 type MockWin = InstanceType<typeof electronMock.MockBrowserWindow>;
 
-function createMockMainWindow(windowSeq: number): MockWin {
-  return createMainWindow({ windowSeq }) as unknown as MockWin;
+/** 模拟 renderer 挂载完成后经 preload 上报「已订阅 flush 请求」。 */
+function markFlushReady(win: MockWin): void {
+  const handler = electronMock.ipcHandlers.get('layout:flush-ready')?.[0];
+  if (!handler) throw new Error('missing layout:flush-ready handler');
+  handler({
+    sender: win.webContents,
+    senderFrame: { url: 'file:///renderer/index.html' },
+  });
+}
+
+/** 默认建一个 renderer 已就绪的主窗(绝大多数用例关心的是握手本身)。 */
+function createMockMainWindow(windowSeq: number, opts: { ready?: boolean } = {}): MockWin {
+  const win = createMainWindow({ windowSeq }) as unknown as MockWin;
+  if (opts.ready !== false) markFlushReady(win);
+  return win;
 }
 
 beforeEach(async () => {
@@ -246,6 +259,34 @@ async function waitForLastClosedAt(seq: number): Promise<void> {
       .toEqual(expect.any(Number));
   });
 }
+
+// renderer 还没订阅 flush 请求(启动中 / 加载失败)时没有任何东西可落盘,也没人会回 ack。
+// 此前照样发请求并干等满 10s 超时(窗口已隐藏,但进程多挂 10s;e2e 里「启动即关」的用例因此每个多花 10s)。
+describe('renderer 未就绪时关窗', () => {
+  it('不发 flush 请求、不等超时,直接关闭', async () => {
+    vi.useFakeTimers();
+    const win = createMockMainWindow(7, { ready: false });
+
+    win.close();
+    await tick();
+
+    expect(win.webContents.send).not.toHaveBeenCalledWith('layout:flush-request', expect.anything());
+    expect(win.destroyed).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('就绪上报来自不受信 frame 或别的窗口 → 不算就绪', async () => {
+    vi.useFakeTimers();
+    const win = createMockMainWindow(8, { ready: false });
+    const handler = electronMock.ipcHandlers.get('layout:flush-ready')![0]!;
+    handler({ sender: win.webContents, senderFrame: { url: 'https://evil.example/x' } });
+
+    win.close();
+    await tick();
+    expect(win.webContents.send).not.toHaveBeenCalledWith('layout:flush-request', expect.anything());
+    expect(win.destroyed).toBe(true);
+  });
+});
 
 describe('window close layout flush', () => {
   it('T14a: close prevents default, sends flush request, and waits for ack', async () => {

@@ -1,7 +1,7 @@
 # IpcPermissionStore(磁盘 backed 权限存储)
 
 行为契约:**`IpcPermissionStore` 替代 `InMemoryPermissionStore`,把 grant/deny 决策写到
-`userData/plugins/_permissions.json`(经 coApi.plugins.writePermissions IPC)。
+`userData/plugins/_permissions.json`(经 coApi.plugins.writePluginPermissions IPC,按单插件合并写)。
 首次访问触发 readPermissions 拉远端到 in-memory cache;cache 之后 get 不走 IPC,
 但每次 grant/deny/clearDenied 都把整个 cache 写盘。**
 

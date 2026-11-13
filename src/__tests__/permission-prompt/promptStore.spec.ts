@@ -164,18 +164,26 @@ describe('usePermissionPromptStore', () => {
     }
   });
 
-  it('同时只能一个 pending,二次 request → 立即 resolve([])', async () => {
-    const first = usePermissionPromptStore
-      .getState()
-      .request('p1', ['fs']);
-    const second = usePermissionPromptStore
-      .getState()
-      .request('p2', ['shell']);
-    expect(await second).toEqual([]); // 立刻拒
-    // 第一个还在 pending(不被覆盖)
+  // 此前二次 request 立即 resolve([]);调用方 ensureAuthorized 把空数组当「用户全拒」持久化 →
+  // 插件 A 的弹窗开着时插件 B 的权限被静默永久拒绝,用户从未见过 B 的弹窗。改为排队。
+  it('同时只显示一个弹窗;弹窗占用时的 request 排队,前一个决定后依次弹出', async () => {
+    const first = usePermissionPromptStore.getState().request('p1', ['fs']);
+    const second = usePermissionPromptStore.getState().request('p2', ['shell']);
+    let secondSettled = false;
+    void second.then(() => {
+      secondSettled = true;
+    });
+    await Promise.resolve();
+    expect(secondSettled).toBe(false); // 不被当成「用户拒绝」提前结算
     expect(usePermissionPromptStore.getState().pending?.pluginId).toBe('p1');
+
     usePermissionPromptStore.getState().grant(['fs']);
     expect(await first).toEqual(['fs']);
+    // 轮到 p2
+    expect(usePermissionPromptStore.getState().pending).toEqual({ pluginId: 'p2', perms: ['shell'] });
+    usePermissionPromptStore.getState().denyAll();
+    expect(await second).toEqual([]);
+    expect(usePermissionPromptStore.getState().pending).toBeNull();
   });
 
   it('处理非队首 fs-scope 请求时复用当前弹窗引用', async () => {

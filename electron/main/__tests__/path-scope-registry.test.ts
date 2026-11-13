@@ -14,7 +14,7 @@ import {
   PluginIdentityError,
   ScopeError,
   type PathScope,
-} from '../../../src/plugins/types';
+} from '../../shared/plugin-fs-contract';
 import { IdentityRegistry } from '../services/identity-registry.service';
 import {
   PathScopeRegistry,

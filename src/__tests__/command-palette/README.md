@@ -43,6 +43,7 @@
 ### ⌘P hotkey
 
 - `useCommandPaletteHotkey()` 在 document 上监听 `keydown`
-- `(e.metaKey || e.ctrlKey) && e.key === 'p'` 时 open + preventDefault
+- 平台主修饰键 + Shift + P 时 open + preventDefault:mac 只认 Cmd(Ctrl 留给终端 / 编辑器的
+  Control 序列),其它平台只认 Ctrl
 - 已 open 时再按 ⌘P → close
 - 卸载组件 → 清监听

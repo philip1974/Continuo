@@ -269,8 +269,6 @@ beforeEach(() => {
   notifications = [];
   useTerminalStore.setState({
     sessions: [makeSession()],
-    activeId: 'term-1',
-    customTitles: new Map(),
   });
 });
 
@@ -280,8 +278,6 @@ afterEach(() => {
   notifications = [];
   useTerminalStore.setState({
     sessions: [],
-    activeId: null,
-    customTitles: new Map(),
   });
 });
 
@@ -502,8 +498,6 @@ describe('terminal-drag-drop BDD', () => {
   it('S8 PowerShell session uses single quotes and never double quotes', async () => {
     useTerminalStore.setState({
       sessions: [makeSession('term-1', 'powershell')],
-      activeId: 'term-1',
-      customTitles: new Map(),
     });
     const { dropZone } = renderHost();
     const f = file("o'reilly.txt");
@@ -539,8 +533,6 @@ describe('terminal-drag-drop BDD', () => {
   it("S10 two panels only write the owner session whose bbox contains the drop", async () => {
     useTerminalStore.setState({
       sessions: [makeSession('term-a'), makeSession('term-b')],
-      activeId: 'term-a',
-      customTitles: new Map(),
     });
     const view = render(
       <NotificationsProvider>

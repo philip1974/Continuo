@@ -55,7 +55,6 @@ Each lives in `electron/shared/*-channels.ts` and is registered by `electron/mai
 | `MCP_CHANNELS` | `mcp-channels.ts` | MCP host lifecycle (used by `mcp-stdio-server.service.ts`) |
 | `PLUGINS_CHANNELS` | `plugins-channels.ts` / `plugins.ipc.ts` | Plugin manager: list / install / enable / disable / permissions |
 | `PLUGIN_MCP_CHANNELS` | `plugin-mcp-channels.ts` | Renderer plugin ↔ main MCP host bridge (plugin registers tool, agent invokes it) |
-| `NOTIFY_CHANNELS` | `notify-channels.ts` / `notify.ipc.ts` | Main → renderer push (toasts etc.) |
 | `AGENT_AUTH_CHANNELS` | `agent-auth-channels.ts` | Reverse IPC: main asks renderer to authorize an agent MCP request |
 
 ## Services worth knowing

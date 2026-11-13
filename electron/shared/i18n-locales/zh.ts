@@ -55,7 +55,6 @@ export const zh: Record<TranslationKey, string> = {
   'errors.NO_DEFAULT_EXPORT': '插件没有 export default',
   'errors.NOT_PLUGIN_CLASS': '插件的 default export 不是 Plugin 子类',
   'errors.PAYLOAD_TOO_LARGE': '负载过大',
-  'errors.POPOUT_NOT_IMPLEMENTED': 'Popout 未实现',
   'errors.RM_FAILED': '删除失败',
   'errors.TERMINAL_CREATE_CANCELLED': '终端创建已取消',
   'errors.TERMINAL_CWD_UNRESOLVED': '终端 cwd 无法解析',
@@ -225,8 +224,6 @@ export const zh: Record<TranslationKey, string> = {
   'panels.explorer.create.in_label': '在: {dir}',
 
   // panels.terminal.*
-  'panels.terminal.aria.start_shell': '启动 shell',
-  'panels.terminal.search.title': '终端内搜索',
   'panels.terminal.search.placeholder': '搜索',
   'panels.terminal.search.match_count': '{n} / {total}',
   'panels.terminal.search.no_match': '无匹配',
@@ -264,8 +261,13 @@ export const zh: Record<TranslationKey, string> = {
   'permissions.agent.terminal_send_text': '向某个终端输入文本',
   'permissions.agent.terminal_press_key': '在某个终端按键',
   'permissions.agent.terminal_kill': '终止某个终端',
+  'permissions.agent.debug_launch': '启动调试会话',
+  'permissions.agent.debug_control': '控制调试会话(断点、单步、查看变量)',
   'permissions.agent.generic': '调用 {method}',
   'permissions.agent.title': 'Agent 请求控制内置终端',
+  'permissions.agent.title_debug': 'Agent 请求控制调试器',
+  'permissions.agent.hint_debug':
+    '授权后，持有 MCP token 的 agent 可以在调试器下启动程序、设置断点、单步执行、读取变量和执行表达式。此授权不包含终端控制，仅本次启动有效。',
   'permissions.agent.respond_failed': '发送授权决定失败,请重试。',
   'permissions.fs_scope.respond_failed': '发送文件访问决定失败,请重试。',
   'permissions.agent.body_prefix': '外部 agent',
@@ -275,6 +277,7 @@ export const zh: Record<TranslationKey, string> = {
   'permissions.agent.deny': '拒绝',
   'permissions.agent.grant_once': '仅本次',
   'permissions.agent.grant_session': '本次启动期间允许',
+  'permissions.revoke_all.title': '撤销 agent 终端授权？',
   'permissions.revoke_all.confirm':
     '将终止 {count} 个 agent terminal 并撤销本次启动期间的授权。\n\n已运行的 agent CLI 持有的 token 将立刻 401；新开 terminal 仍可重新授权。\n\n确定继续？',
   'permissions.revoke_all.failed':
@@ -297,7 +300,6 @@ export const zh: Record<TranslationKey, string> = {
   'statusbar.sidebar_hidden': '侧栏已隐藏',
   'statusbar.untitled_file': '未命名',
   'statusbar.unsaved_changes': '未保存的更改',
-  'statusbar.git_branch_placeholder': 'git 分支（占位）',
   'statusbar.editor_stats': '{lines} 行 · {words} 词 · {chars} 字符',
 
   // errors.* topic-19
@@ -378,7 +380,6 @@ export const zh: Record<TranslationKey, string> = {
   'keybindings.unbound': '未绑定',
   'keybindings.edit_hotkey': '编辑快捷键',
   'keybindings.reset_default': '恢复默认（{hotkey}）',
-  'keybindings.reset_default_aria': '恢复默认',
   'keybindings.edit_hotkey_for_aria': '编辑 {command} 的快捷键',
   'keybindings.reset_default_for_aria': '将 {command} 的快捷键恢复默认',
 
@@ -388,6 +389,7 @@ export const zh: Record<TranslationKey, string> = {
   'shell.iconbar.show_explorer': '显示 Explorer',
   'shell.iconbar.settings': '设置',
   'shell.dock.popout_title': '弹出到独立窗口',
+  'shell.dock.add_panel_failed': '添加面板失败',
   'shell.dock.popout_failed': '在新窗口打开面板失败',
   'shell.tab.exit_zoom': '退出缩放',
   'shell.tab.close': '关闭 {title}',

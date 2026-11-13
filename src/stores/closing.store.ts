@@ -2,7 +2,7 @@ import { create } from 'zustand';
 
 // dockview 没有 onWillRemovePanel,无法让 dockview 等动画完再卸载;
 // 折中:把"用户已请求关闭、但还没真正调 api.close"的 panel id 放这,
-// PanelMount 据此切到 EXIT 动画,SharedTab 的 setTimeout 才真 close。
+// PanelMount 据此切到 EXIT 动画,wrap-panel-close 排定的 setTimeout 才真 close。
 type ClosingState = {
   ids: ReadonlySet<string>;
   mark: (id: string) => void;

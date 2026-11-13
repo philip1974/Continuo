@@ -1,13 +1,13 @@
 // 权限授权 Modal(M-Plugin v3.4)。
 // 订阅 promptStore,无 pending 时不渲染。
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Modal } from '@/design';
 import { usePermissionPromptStore } from './promptStore';
 import type { FsScopePrompt, Pending } from './promptStore';
 import type { PermissionKey } from '../permissions';
 import { useT } from '@/i18n';
-import { PERM_LABEL_KEYS } from './perm-labels';
+import { PermissionOptionRow } from './PermissionOptionRow';
 
 const PLUGIN_ID_MARKER = ' __PID__ ';
 const EMPTY_SELECTED_PERMISSIONS: PermissionKey[] = [];
@@ -42,6 +42,9 @@ export function copySelectedPermissions(
  * fs-scope 弹窗各自拆成 body 子组件,仅在对应请求存在时挂载 —— 空闲态不再 useT、
  * 不订阅 grant/deny actions、不初始化 selected state/effect。manifest 优先。
  */
+/** 排队切换到下一个请求后,忽略「授予 / 全部拒绝」点击的时长(覆盖一次双击的间隔)。 */
+const HANDOVER_GUARD_MS = 500;
+
 export function PermissionPrompt() {
   const pending = usePermissionPromptStore((s) => s.pending);
   const currentFsScope = usePermissionPromptStore((s) => s.currentFsScope);
@@ -66,10 +69,22 @@ function ManifestPromptBody({ pending }: { pending: Pending }) {
   const [selected, setSelected] = useState<Set<PermissionKey>>(
     () => new Set(pending.perms),
   );
-  // pending 直接 A→B 覆盖(不经 null,body 不 remount)时也重置勾选为新请求的默认全选。
+  // pending 直接 A→B 覆盖(排队的下一个请求;不经 null,body 不 remount)时也重置勾选为新请求的默认全选,
+  // 并记下切换时刻:B 的按钮与 A 的在同一位置且默认全选,对 A 连点的第二下不能落到 B 上。
+  const firstPendingRef = useRef(pending);
+  const handoverAtRef = useRef<number | null>(null);
   useEffect(() => {
     setSelected(new Set(pending.perms));
+    if (pending !== firstPendingRef.current) handoverAtRef.current = Date.now();
   }, [pending]);
+  const decisionArmed = (): boolean =>
+    handoverAtRef.current === null || Date.now() - handoverAtRef.current >= HANDOVER_GUARD_MS;
+  // 引用必须稳定:Modal 的焦点 / 键盘 effect 依赖 onClose,每次渲染换新引用会让它反复重跑
+  //(勾选一次,焦点就先被还给弹窗外、再跳回弹窗内第一个元素)。只读 ref,无需其它依赖。
+  const handleClose = useCallback(() => {
+    const at = handoverAtRef.current;
+    if (at === null || Date.now() - at >= HANDOVER_GUARD_MS) denyAll();
+  }, [denyAll]);
 
   const toggle = (perm: PermissionKey) => {
     setSelected((s) => {
@@ -81,7 +96,12 @@ function ManifestPromptBody({ pending }: { pending: Pending }) {
   };
 
   return (
-    <Modal visible onClose={denyAll} aria-labelledby="permission-prompt-title">
+    <Modal
+      visible
+      // Esc(键重复)/ 点遮罩也是「全部拒绝」入口,同样受切换守卫约束。
+      onClose={handleClose}
+      aria-labelledby="permission-prompt-title"
+    >
       {/* a11y(A13):dialog(A10)须经 aria-labelledby 关联标题,否则 AT 只听到无名 dialog。 */}
       <h2 id="permission-prompt-title" className="mb-1 text-sm font-medium text-fg">
         {t('permissions.prompt.title')}
@@ -98,26 +118,14 @@ function ManifestPromptBody({ pending }: { pending: Pending }) {
         {t('permissions.prompt.note_suffix')}
       </p>
       <ul className="mb-4 space-y-1">
-        {pending.perms.map((perm) => {
-          const meta = PERM_LABEL_KEYS[perm];
-          const checked = selected.has(perm);
-          return (
-            <li key={perm}>
-              <label className="flex cursor-pointer items-start gap-2 rounded p-2 hover:bg-hover">
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onChange={() => toggle(perm)}
-                  className="mt-0.5 accent-accent"
-                />
-                <div className="flex-1 text-xs">
-                  <div className="font-medium text-fg">{t(meta.titleKey)}</div>
-                  <div className="text-fg-dim">{t(meta.descKey)}</div>
-                </div>
-              </label>
-            </li>
-          );
-        })}
+        {pending.perms.map((perm) => (
+          <PermissionOptionRow
+            key={perm}
+            perm={perm}
+            checked={selected.has(perm)}
+            onToggle={toggle}
+          />
+        ))}
       </ul>
       <div className="flex justify-between gap-2">
         <Button
@@ -128,13 +136,21 @@ function ManifestPromptBody({ pending }: { pending: Pending }) {
           {t('permissions.prompt.select_all')}
         </Button>
         <div className="flex gap-2">
-          <Button variant="ghost" size="sm" onClick={denyAll}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              if (decisionArmed()) denyAll();
+            }}
+          >
             {t('permissions.prompt.deny_all')}
           </Button>
           <Button
             variant="primary"
             size="sm"
-            onClick={() => grant(copySelectedPermissions(selected))}
+            onClick={() => {
+              if (decisionArmed()) grant(copySelectedPermissions(selected));
+            }}
           >
             {t('permissions.prompt.grant_selected', { count: selected.size })}
           </Button>
@@ -178,7 +194,7 @@ function FsScopePromptBody({ scope }: { scope: FsScopePrompt }) {
             className="rounded border border-line bg-panel-soft p-2"
           >
             <div className="font-mono text-fg">
-              {(s as { displayPath?: string }).displayPath ?? s.path}
+              {s.displayPath}
             </div>
             <div className="text-fg-dim">
               {t('permissions.fs_scope.mode_label')}:{' '}

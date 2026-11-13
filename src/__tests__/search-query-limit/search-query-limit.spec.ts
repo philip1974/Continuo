@@ -48,8 +48,9 @@ describe('E279 store setQuery 截断超长 query', () => {
 describe('E279/E280 家族接线守卫:全部搜索输入调用 clampSearchQuery', () => {
   const dir = path.dirname(fileURLToPath(import.meta.url));
   it.each([
-    '../../plugins/quick-open/store.ts',
-    '../../plugins/command-palette/store.ts',
+    // quick-open / command-palette 两个 store 的 setQuery 已收口到共享 picker 切片(截断行为见上方
+    // 两条 store 行为测试)。
+    '../../plugins/picker/picker-slice.ts',
     '../../panels/Terminal/TerminalSearchBar.tsx',
     '../../plugins/settings/SettingsPanel.tsx',
     '../../plugins/settings/KeybindingsTabContent.tsx',

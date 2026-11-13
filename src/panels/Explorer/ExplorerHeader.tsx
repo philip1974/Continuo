@@ -1,26 +1,17 @@
 import {
   type ReactElement,
   useEffect,
-  useLayoutEffect,
   useRef,
   useState,
 } from 'react';
 import { createPortal } from 'react-dom';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { IconButton, MenuItem } from '@/design';
-import { coApi } from '@/lib/co-api';
-import { notify } from '@/notifications/notify';
-import { localizeErrorByCode } from '@/lib/localize-error';
 import { openRecentRootOrNotify } from './open-recent-root';
-import {
-  workspaceRootSelectionGuard,
-  cancelPendingWorkspaceRootSelection,
-} from '@/lib/workspace-root-guard';
-import {
-  trySelectDirectoryLock,
-  releaseSelectDirectoryLock,
-} from '@/lib/select-directory-single-flight';
+import { useSelectWorkspaceFolder } from './hooks/useSelectWorkspaceFolder';
+import { cancelPendingWorkspaceRootSelection } from '@/lib/workspace-root-guard';
 import { useMenuKeyboard } from '@/lib/use-menu-keyboard';
+import { useMenuAnchor } from '@/lib/use-menu-anchor';
 import { basename, recentRootLabelParts } from './path-utils';
 import { useT } from '@/i18n';
 
@@ -89,11 +80,8 @@ export function ExplorerHeader({
 }: ExplorerHeaderProps) {
   const setRoot = useWorkspaceStore((s) => s.setRoot);
   const recentRoots = useWorkspaceStore((s) => s.recentRoots);
-  const [busy, setBusy] = useState(false);
+  const { busy, selectFolder } = useSelectWorkspaceFolder();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [anchor, setAnchor] = useState<{ top: number; right: number } | null>(
-    null,
-  );
   const triggerRef = useRef<HTMLButtonElement>(null);
   const t = useT();
   // a11y(A18):菜单打开移焦入首项 + Escape 关闭还原焦点 + 方向键漫游(共享 hook)。
@@ -114,24 +102,8 @@ export function ExplorerHeader({
   const collapseAllLabel = t('panels.explorer.btn.collapse_all');
   const moreActionsLabel = t('panels.explorer.btn.more_actions');
 
-  // 计算菜单坐标 — 用 trigger 按钮的 viewport rect。
-  // 监听 resize / scroll 重新算,避免侧边栏滚动 / 窗口缩放后菜单错位。
-  useLayoutEffect(() => {
-    if (!menuOpen) return;
-    const update = () => {
-      const r = triggerRef.current?.getBoundingClientRect();
-      if (r) {
-        setAnchor({ top: r.bottom + 4, right: window.innerWidth - r.right });
-      }
-    };
-    update();
-    window.addEventListener('resize', update);
-    window.addEventListener('scroll', update, true);
-    return () => {
-      window.removeEventListener('resize', update);
-      window.removeEventListener('scroll', update, true);
-    };
-  }, [menuOpen]);
+  // 菜单坐标(trigger 按钮的 viewport rect;resize / scroll 时重算)。
+  const anchor = useMenuAnchor(triggerRef, menuOpen);
 
   // 点 trigger / menu 外:关菜单
   useEffect(() => {
@@ -146,31 +118,8 @@ export function ExplorerHeader({
     return () => document.removeEventListener('pointerdown', onDocPointer);
   }, [menuOpen, menuNode]);
 
-  const switchFolder = async () => {
-    if (busy) return;
-    // race(R106,R8 同族):busy 异步,同 tick 重复触发会并发弹原生选择器。同步单飞闸门先挡。
-    if (!trySelectDirectoryLock()) return;
-    closeAndRestore(); // a11y(A30):关菜单并还原焦点到触发按钮(再开原生目录对话框)
-    setBusy(true);
-    // race(R27):全窗口共享守卫,与 drop / 打开最近 / EmptyWorkspace 打开 互相失效。
-    const isLatest = workspaceRootSelectionGuard.begin();
-    try {
-      const r = await coApi.fs.selectDirectory();
-      if (!isLatest()) return;
-      // a11y(A146,A141 同族):取消(ok+无 data)是正常 no-op;但 !r.ok / reject 此前静默 →
-      // 切换文件夹失败时菜单关闭、busy 退出却无 toast/live region 反馈,用户不知为何没切。
-      if (r.ok && r.data) setRoot(r.data);
-      else if (!r.ok)
-        notify.error(localizeErrorByCode(r.code, r.message), { code: r.code });
-    } catch (err) {
-      if (!isLatest()) return;
-      const code = (err as { code?: string })?.code ?? 'EXCEPTION';
-      notify.error(localizeErrorByCode(code, (err as Error)?.message ?? code), { code });
-    } finally {
-      releaseSelectDirectoryLock();
-      setBusy(false);
-    }
-  };
+  // a11y(A30):拿到单飞锁后先关菜单并还原焦点到触发按钮,再开原生目录对话框。
+  const switchFolder = (): void => void selectFolder(closeAndRestore);
 
   return (
     <div className="group flex h-9 shrink-0 items-center gap-0.5 border-b border-line bg-panel-soft/50 px-3 text-xs">
@@ -244,7 +193,7 @@ export function ExplorerHeader({
             role="menu"
             onKeyDown={onMenuKeyDown}
             style={{ position: 'fixed', top: anchor.top, right: anchor.right }}
-            className="z-modal min-w-[140px] overflow-hidden rounded-md border border-line bg-panel py-1 shadow-lg shadow-black/40"
+            className="z-modal min-w-[140px] overflow-hidden rounded-md border border-line bg-panel py-1 shadow-popover"
           >
             <MenuItem
               disabled={!onExpandAll}

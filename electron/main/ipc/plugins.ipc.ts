@@ -1,11 +1,14 @@
 // 插件 IPC(M-Plugin v4.1,主进程端)。
-// 扫 userData/plugins/<id>/,读 manifest + main.js + styles.css 通过 IPC 给 renderer。
+// 扫 userData/plugins/<id>/,读 manifest + main.js 通过 IPC 给 renderer。
 
-import { app, BrowserWindow } from 'electron';
+import { app } from 'electron';
+import {
+  PERMISSION_RECORD_LIMITS,
+  PLUGIN_ID_MAX_LEN,
+} from '../../shared/permission-record-limits';
 import path from 'node:path';
 import { z } from 'zod';
 import { defaultIsTrustedFrame, safeHandle } from '../safe-handle';
-import { makeBoundedRecordValidator } from '../../shared/validate-env-bounded';
 import { PLUGINS_CHANNELS, GIT_URL_MAX } from '../../shared/plugins-channels';
 import {
   createPluginsWatcher,
@@ -16,38 +19,34 @@ import {
   readPermissions,
   setEnabledId,
   uninstallPlugin,
-  writeEnabledIds,
-  writePermissions,
   writePluginPermissions,
 } from '../services/plugins.service';
+import { broadcastToWindows } from '../lib/broadcast';
+import { PERMISSION_KEYS } from '../../shared/permission-keys';
 
 // 边界(E16):插件权限 IPC schema 此前对 ids/decisions/pathScopes/plugin id/path/permission 字符串
 // 都无长度或数量上限。畸形 renderer payload 可把 _permissions.json / _path-scopes.json 写成超大对象
 // 或超长路径列表 → 主进程 RMW、atomic JSON 写入、启动水合、权限 UI 卡顿。下列 cap 远超任何现实
 // 插件集合,只挡损坏/滥用;超限 → safeHandle zod 校验失败 → BAD_INPUT。
-const PLUGIN_ID_MAX = 256; // 反 DNS plugin id
-const PERMISSION_MAX = 256; // 权限名
-const PATH_MAX = 8192; // path scope 路径
+const PLUGIN_ID_MAX = PLUGIN_ID_MAX_LEN; // 反 DNS plugin id
+const PATH_MAX = PERMISSION_RECORD_LIMITS.SCOPE_PATH_MAX; // path scope 路径
 const URL_MAX = GIT_URL_MAX; // git url(E282:收口到 shared,与 renderer onChange 截断同源)
-const IDS_MAX = 10_000; // enabled id 数量
-const DECISIONS_MAX = 1000; // 单插件 decisions 数量
+const DECISIONS_MAX = PERMISSION_RECORD_LIMITS.DECISIONS_PER_PLUGIN_MAX; // 单插件 decisions 数量
 // 边界(E246):单插件 path scopes 写端上限须与读盘层 MAX_PERSISTED_SCOPES_PER_PLUGIN(256,对齐
 // PathScopeRegistry MAX_SCOPES_PER_PLUGIN E81)一致 —— 此前写端 10_000 过松,接受 257..10000 条写入
 // 返回成功,但下次 readPermissions() 只保留前 256 条 → 重启/下轮 RMW 静默丢 scope(写读契约错位)。
 // 统一到 256:写端直接拒(BAD_INPUT),把"会被读端丢弃"的写入在入口显式失败,不假成功后静默截断。
-const PATHSCOPES_MAX = 256; // 单插件 path scopes 数量(对齐读盘层 MAX_PERSISTED_SCOPES_PER_PLUGIN)
-const PLUGINS_MAX = 10_000; // permission record 条目数
+const PATHSCOPES_MAX = PERMISSION_RECORD_LIMITS.PATH_SCOPES_PER_PLUGIN_MAX; // 单插件 path scopes 数量(对齐读盘层 MAX_PERSISTED_SCOPES_PER_PLUGIN)
 
 const NoInput = z.undefined();
-export const WriteEnabledInput = z
-  .object({ ids: z.array(z.string().max(PLUGIN_ID_MAX)).max(IDS_MAX) })
-  .strict();
 const MutateEnabledInput = z
   .object({ id: z.string().min(1).max(PLUGIN_ID_MAX), enabled: z.boolean() })
   .strict();
 const DecisionSchema = z
   .object({
-    permission: z.string().max(PERMISSION_MAX),
+    // 必须是权限枚举成员(与 shared isIpcPermissionDecision 一致;此前只限长度,未知权限名经 IPC 放行后
+    // 被 service 层静默丢弃 —— 写「成功」但读不回)。
+    permission: z.enum(PERMISSION_KEYS),
     granted: z.boolean(),
     // 边界(E92,E87 读端对偶):decidedAt 必须有限非负。z.number() 接受 Infinity/NaN —— 写端
     // 看似 grant/deny 成功,但持久化 JSON.stringify(Infinity)=null,读盘层(E87 isDecision)按
@@ -59,7 +58,7 @@ const DecisionSchema = z
 // 可维护性 M6:与 shared IpcPermissionRecord 同步 —— 接受旧数组形态与新
 // `{ decisions, pathScopes? }` 形态,让 IPC 校验契约与 renderer 序列化契约一致。
 const PathScopeSchema = z
-  .object({ path: z.string().max(PATH_MAX), mode: z.enum(['r', 'rw']) })
+  .object({ path: z.string().min(1).max(PATH_MAX), mode: z.enum(['r', 'rw']) })
   .strict();
 const PermissionRecordSchema = z.union([
   z.array(DecisionSchema).max(DECISIONS_MAX),
@@ -70,23 +69,6 @@ const PermissionRecordSchema = z.union([
     })
     .strict(),
 ]);
-export const WritePermissionsInput = z
-  .object({
-    // 边界(E187,E185/E186 兄弟):权限表用共享有界早停校验,不用 z.record(...).refine(Object.keys...)
-    // —— 后者 PLUGINS_MAX 上限在 zod 全量遍历所有 plugin 记录 + Object.keys 全量物化之后才生效,巨表在
-    // schema 阶段就 O(N) 卡顿/分配(权限表是持久化数据,防放大应在入口早停)。与 env(E185/E186)单一来源。
-    data: z
-      .custom<Record<string, z.infer<typeof PermissionRecordSchema>>>()
-      .superRefine(
-        makeBoundedRecordValidator({
-          keyMax: PLUGIN_ID_MAX,
-          maxEntries: PLUGINS_MAX,
-          valueOk: (val) => PermissionRecordSchema.safeParse(val).success,
-          label: 'permission record',
-        }),
-      ),
-  })
-  .strict();
 export const WritePluginPermissionsInput = z
   .object({
     id: z.string().min(1).max(PLUGIN_ID_MAX),
@@ -113,14 +95,7 @@ export const UninstallInput = z
  * try/catch,失败只跳过/记录并继续。导出供 R67 回归测试。
  */
 export function broadcastPluginsChanged(id: string): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (win.isDestroyed()) continue;
-    try {
-      win.webContents.send(PLUGINS_CHANNELS.CHANGED, { id });
-    } catch (err) {
-      console.error('[plugins] PLUGINS_CHANGED broadcast failed', err);
-    }
-  }
+  broadcastToWindows(PLUGINS_CHANNELS.CHANGED, () => ({ id }), '[plugins] PLUGINS_CHANGED');
 }
 
 export function registerPluginsIpc(): void {
@@ -150,15 +125,6 @@ export function registerPluginsIpc(): void {
   );
 
   safeHandle(
-    PLUGINS_CHANNELS.WRITE_ENABLED,
-    WriteEnabledInput,
-    async ({ ids }) => {
-      await writeEnabledIds(pluginsDir, ids);
-    },
-    trusted,
-  );
-
-  safeHandle(
     PLUGINS_CHANNELS.MUTATE_ENABLED,
     MutateEnabledInput,
     async ({ id, enabled }) => {
@@ -171,15 +137,6 @@ export function registerPluginsIpc(): void {
     PLUGINS_CHANNELS.READ_PERMISSIONS,
     NoInput,
     () => readPermissions(pluginsDir),
-    trusted,
-  );
-
-  safeHandle(
-    PLUGINS_CHANNELS.WRITE_PERMISSIONS,
-    WritePermissionsInput,
-    async ({ data }) => {
-      await writePermissions(pluginsDir, data);
-    },
     trusted,
   );
 

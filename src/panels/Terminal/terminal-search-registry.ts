@@ -6,8 +6,7 @@
 //
 // topic 25: 改用 `@continuo-terminal/react-terminal` 的 createCallbackRegistry
 // factory（Symbol token stale-safe disposer）；module-scope 实例化保留进程级
-// single command bus 行为；API 不一致形态（{dispose} 对象 + unregister 独立函数）
-// 保留历史（避免改 consumer）。
+// single command bus 行为；注销只经 register 返回的 {dispose}。
 
 import { createCallbackRegistry } from '@continuo-terminal/react-terminal';
 
@@ -26,12 +25,4 @@ export function openTerminalSearch(panelId: string): boolean {
   if (!openFn) return false;
   openFn();
   return true;
-}
-
-export function unregisterTerminalSearch(panelId: string): void {
-  searchRegistry.unregister(panelId);
-}
-
-export function __resetTerminalSearchRegistryForTest(): void {
-  searchRegistry.clear();
 }

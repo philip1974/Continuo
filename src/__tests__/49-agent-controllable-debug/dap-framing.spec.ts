@@ -37,10 +37,10 @@ describe('49 · DAP Content-Length framing', () => {
       encoded.subarray(45),
     ];
 
-    expect(decoder.push(chunks[0])).toEqual([]);
-    expect(decoder.push(chunks[1])).toEqual([]);
-    expect(decoder.push(chunks[2])).toEqual([]);
-    expect(decoder.push(chunks[3])).toEqual([message]);
+    expect(decoder.push(chunks[0]!)).toEqual([]);
+    expect(decoder.push(chunks[1]!)).toEqual([]);
+    expect(decoder.push(chunks[2]!)).toEqual([]);
+    expect(decoder.push(chunks[3]!)).toEqual([message]);
   });
 
   it('decodes multiple messages delivered in one chunk', () => {

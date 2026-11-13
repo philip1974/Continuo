@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { IDockviewHeaderActionsProps } from 'dockview-react';
 import { isPopoutWindow, popoutUrlFor } from '@/lib/popout-mode';
 import { IconButton, MenuItem } from '@/design';
 import { useMenuKeyboard } from '@/lib/use-menu-keyboard';
+import { useMenuAnchor } from '@/lib/use-menu-anchor';
 import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
 import { coApp } from '@/plugins/co-app';
 import { useRegistry } from '@/plugins/registries/useRegistry';
@@ -12,7 +13,17 @@ import { notify } from '@/notifications/notify';
 import { useTWithFallback, t } from '@/i18n';
 
 let panelCounter = 0;
-const nextPanelId = (key: string) => `${key}-${++panelCounter}`;
+/**
+ * 下一个未被占用的面板 id。计数器是模块级、每次启动归零,而持久化布局会恢复 `output-1` 这类旧 id;
+ * dockview 对重复 id 直接抛错,所以跳过已存在的。
+ */
+const nextPanelId = (key: string, isTaken: (id: string) => boolean): string => {
+  let id: string;
+  do {
+    id = `${key}-${++panelCounter}`;
+  } while (isTaken(id));
+  return id;
+};
 const POPOUT_ICON = (
   <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
     <path
@@ -34,17 +45,11 @@ const MORE_ACTIONS_ICON = (
   </svg>
 );
 
-interface AnchorRect {
-  readonly top: number;
-  readonly right: number;
-}
-
 export function HeaderActions(props: IDockviewHeaderActionsProps) {
   const { containerApi, group, activePanel } = props;
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const [anchor, setAnchor] = useState<AnchorRect | null>(null);
   const tk = useTWithFallback();
   const popoutLabel = t('shell.dock.popout_title');
   const moreActionsLabel = t('panels.explorer.btn.more_actions');
@@ -65,20 +70,7 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
   // 必须 portal 到 document.body:Dockview 祖先有 transform: translate3d(0,0,0)
   // 创建 stacking context,把 z-modal 困在 panel header 子树内,会被相邻
   // panel content 盖住。Portal 出去后 position:fixed 才真按 viewport 定位。
-  useLayoutEffect(() => {
-    if (!open) return;
-    const update = () => {
-      const r = triggerRef.current?.getBoundingClientRect();
-      if (r) setAnchor({ top: r.bottom + 4, right: window.innerWidth - r.right });
-    };
-    update();
-    window.addEventListener('resize', update);
-    window.addEventListener('scroll', update, true);
-    return () => {
-      window.removeEventListener('resize', update);
-      window.removeEventListener('scroll', update, true);
-    };
-  }, [open]);
+  const anchor = useMenuAnchor(triggerRef, open);
 
   useEffect(() => {
     if (!open) return;
@@ -107,14 +99,19 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
         setOpen(false);
         return;
       }
-      const id = nextPanelId(key);
-      containerApi.addPanel({
-        id,
-        component: key,
-        title: label,
-        position: { referenceGroup: group },
-        ...(titleKey ? { params: { titleKey } } : {}),
-      });
+      try {
+        containerApi.addPanel({
+          id: nextPanelId(key, (id) => containerApi.getPanel(id) != null),
+          component: key,
+          title: label,
+          position: { referenceGroup: group },
+          ...(titleKey ? { params: { titleKey } } : {}),
+        });
+      } catch (err) {
+        // addPanel 同步抛(id 冲突 / component 不存在等):给可见反馈,且菜单照常关闭。
+        console.warn('[dock] add panel failed', err);
+        notify.error(t('shell.dock.add_panel_failed'));
+      }
       setOpen(false);
     },
     [containerApi, group],
@@ -176,7 +173,7 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
             role="menu"
             onKeyDown={onMenuKeyDown}
             style={{ position: 'fixed', top: anchor.top, right: anchor.right }}
-            className="z-modal min-w-[140px] overflow-hidden rounded-md border border-line bg-panel py-1 shadow-lg shadow-black/40"
+            className="z-modal min-w-[140px] overflow-hidden rounded-md border border-line bg-panel py-1 shadow-popover"
           >
             {panelChoices.map((c) => {
               const label = tk(c.titleKey, c.title);

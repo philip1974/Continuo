@@ -16,6 +16,8 @@ import {
   readRecord,
   writeRecord,
   subscribeStorageKey,
+  recordIsEmpty,
+  recordsShallowEqual,
   type WriteRecordResult,
 } from '../storage/local-storage-record';
 import { coApp } from '../co-app';
@@ -46,32 +48,6 @@ const readStored = (): Record<string, SettingItemValue> =>
 const writeStored = (
   values: Record<string, SettingItemValue>,
 ): WriteRecordResult => writeRecord(STORAGE_KEY, values);
-
-function recordsShallowEqual(
-  a: Record<string, SettingItemValue>,
-  b: Record<string, SettingItemValue>,
-): boolean {
-  if (a === b) return true;
-  let aCount = 0;
-  let bCount = 0;
-  for (const key in a) {
-    if (!Object.prototype.hasOwnProperty.call(a, key)) continue;
-    aCount += 1;
-    if (!Object.is(a[key], b[key])) return false;
-  }
-  for (const key in b) {
-    if (!Object.prototype.hasOwnProperty.call(b, key)) continue;
-    bCount += 1;
-  }
-  return aCount === bCount;
-}
-
-function recordIsEmpty(record: Record<string, SettingItemValue>): boolean {
-  for (const key in record) {
-    if (Object.prototype.hasOwnProperty.call(record, key)) return false;
-  }
-  return true;
-}
 
 export interface SettingsValueState {
   /** partial overrides(未写过的 key 走 spec.default). */
