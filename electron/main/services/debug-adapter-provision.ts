@@ -21,9 +21,8 @@ function sourceTreeAdapterPath(): string {
 function packagedAdapterCandidates(): string[] {
   const resourcesPath = process.resourcesPath;
   const appPath = app.getAppPath();
-  const unpackedAppPath = appPath.endsWith('.asar')
-    ? `${appPath}.unpacked`
-    : `${appPath}.unpacked`;
+  // asar 打包时 asarUnpack 的文件落在 `<app>.asar.unpacked/`。
+  const unpackedAppPath = `${appPath}.unpacked`;
 
   return [
     path.join(resourcesPath, DEBUG_ADAPTER_RELATIVE_PATH),

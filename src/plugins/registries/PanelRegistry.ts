@@ -66,11 +66,8 @@ function validatePanelSpec(spec: PanelSpec): void {
   }
 }
 
-const EMPTY_PANEL_SNAPSHOT: readonly PanelSpec[] = [];
 
 export class PanelRegistry extends KeyedRegistry<PanelSpec> {
-  private cachedAll: readonly PanelSpec[] | null = null;
-
   constructor() {
     super('panel-registry', 'type');
   }
@@ -80,25 +77,14 @@ export class PanelRegistry extends KeyedRegistry<PanelSpec> {
     return this.registerKeyed(spec.type, spec);
   }
 
-  getAll(): readonly PanelSpec[] {
-    if (this.cachedAll !== null) return this.cachedAll;
-    if (this.items.size === 0) {
-      this.cachedAll = EMPTY_PANEL_SNAPSHOT;
-      return EMPTY_PANEL_SNAPSHOT;
-    }
-
-    const items = new Array<PanelSpec>(this.items.size);
+  protected buildSnapshot(): readonly PanelSpec[] {
+    const out = new Array<PanelSpec>(this.items.size);
     let i = 0;
-    for (const item of this.items.values()) items[i++] = item;
-    this.cachedAll = items;
-    return items;
+    for (const item of this.items.values()) out[i++] = item;
+    return out;
   }
 
   list(): readonly PanelSpec[] {
     return this.getAll();
-  }
-
-  protected invalidateSnapshotCache(): void {
-    this.cachedAll = null;
   }
 }

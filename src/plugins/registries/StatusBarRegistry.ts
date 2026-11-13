@@ -85,7 +85,6 @@ function validateStatusBarItemSpec(spec: StatusBarItemSpec): void {
 }
 
 export class StatusBarRegistry extends KeyedRegistry<StatusBarItemSpec> {
-  private cachedAll: readonly StatusBarItemSpec[] | null = null;
   private cachedLeft: readonly StatusBarItemSpec[] | null = null;
   private cachedRight: readonly StatusBarItemSpec[] | null = null;
 
@@ -134,37 +133,23 @@ export class StatusBarRegistry extends KeyedRegistry<StatusBarItemSpec> {
     return items;
   }
 
-  getAll(): readonly StatusBarItemSpec[] {
-    if (this.cachedAll !== null) return this.cachedAll;
-    if (this.items.size === 0) {
-      this.cachedAll = EMPTY_STATUS_BAR_SNAPSHOT;
-      return EMPTY_STATUS_BAR_SNAPSHOT;
-    }
+  protected buildSnapshot(): readonly StatusBarItemSpec[] {
+    // 两侧快照都已算过 → 归并(等优先级跨侧时无法保证注册序,返回 null 退回全量排序)。
     if (this.cachedLeft !== null && this.cachedRight !== null) {
-      const merged = mergeSortedStatusBarItems(
-        this.cachedLeft,
-        this.cachedRight,
-      );
-      if (merged !== null) {
-        this.cachedAll = merged;
-        return this.cachedAll;
-      }
+      const merged = mergeSortedStatusBarItems(this.cachedLeft, this.cachedRight);
+      if (merged !== null) return merged;
     }
+    // 全部条目都在同一侧 → 该侧快照即全量。
     if (this.cachedLeft !== null && this.cachedLeft.length === this.items.size) {
-      this.cachedAll = this.cachedLeft;
-      return this.cachedAll;
+      return this.cachedLeft;
     }
     if (this.cachedRight !== null && this.cachedRight.length === this.items.size) {
-      this.cachedAll = this.cachedRight;
-      return this.cachedAll;
+      return this.cachedRight;
     }
-
-    this.cachedAll = snapshotByPriority(this.items);
-    return this.cachedAll;
+    return snapshotByPriority(this.items);
   }
 
-  protected invalidateSnapshotCache(): void {
-    this.cachedAll = null;
+  protected override onSnapshotInvalidated(): void {
     this.cachedLeft = null;
     this.cachedRight = null;
   }

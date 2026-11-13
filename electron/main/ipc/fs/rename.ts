@@ -1,7 +1,7 @@
 import { lstat, rename } from 'node:fs/promises';
 import path from 'node:path';
 import { ERROR_CODES } from '../../../shared/error-codes';
-import { assertValidBasename, fsError, mapNodeErrnoCode } from './path-utils';
+import { assertValidBasename, fsError, lstatOrThrow, mapNodeErrnoCode } from './path-utils';
 
 /**
  * 同目录改 basename。返回新的绝对路径。
@@ -18,12 +18,7 @@ export async function renameEntry(
   assertValidBasename(newName);
 
   // 先校验源存在(避免 rename 抛出难以解读的 errno)
-  let srcSt;
-  try {
-    srcSt = await lstat(oldPath);
-  } catch (err) {
-    throw fsError(mapNodeErrnoCode(err), `lstat failed: ${oldPath}`);
-  }
+  const srcSt = await lstatOrThrow(oldPath);
 
   const newPath = path.join(path.dirname(oldPath), newName);
 

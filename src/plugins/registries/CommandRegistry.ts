@@ -28,7 +28,6 @@ export interface CommandSpec {
   readonly fn: () => void | Promise<void>;
 }
 
-const EMPTY_COMMAND_SNAPSHOT: readonly CommandSpec[] = [];
 
 // 边界(E35):register 接受第三方插件的 id/title/titleKey/hotkey/category/categoryKey 后直接入全局
 // registry,无长度/形态上限。恶意/畸形插件可注册超长标题/分类/热键 → 命令面板排序与搜索、快捷键
@@ -112,7 +111,6 @@ function validateCommandSpec(spec: CommandSpec): void {
 
 export class CommandRegistry extends KeyedRegistry<CommandSpec> {
   private hotkeyCounts = new Map<string, number>();
-  private cachedAll: readonly CommandSpec[] | null = null;
 
   constructor() {
     super('command-registry');
@@ -141,17 +139,10 @@ export class CommandRegistry extends KeyedRegistry<CommandSpec> {
     if (spec.hotkey) this.decrementHotkey(spec.hotkey);
   }
 
-  getAll(): readonly CommandSpec[] {
-    if (this.cachedAll !== null) return this.cachedAll;
-    if (this.items.size === 0) {
-      this.cachedAll = EMPTY_COMMAND_SNAPSHOT;
-      return EMPTY_COMMAND_SNAPSHOT;
-    }
-
+  protected buildSnapshot(): readonly CommandSpec[] {
     const out = new Array<CommandSpec>(this.items.size);
     let i = 0;
     for (const item of this.items.values()) out[i++] = item;
-    this.cachedAll = out;
     return out;
   }
 
@@ -170,9 +161,5 @@ export class CommandRegistry extends KeyedRegistry<CommandSpec> {
     if (count === undefined) return;
     if (count <= 1) this.hotkeyCounts.delete(hotkey);
     else this.hotkeyCounts.set(hotkey, count - 1);
-  }
-
-  protected invalidateSnapshotCache(): void {
-    this.cachedAll = null;
   }
 }

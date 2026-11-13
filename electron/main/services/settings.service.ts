@@ -45,6 +45,17 @@ function defaultSettings(): Settings {
   return { version: 1, locale: sysLocale };
 }
 
+/** 损坏的 settings.json(超大 / JSON 坏 / schema 不符):改名 .corrupt.<ts> 留证 + 重置默认并写 cache。 */
+async function quarantineCorruptSettings(file: string): Promise<Settings> {
+  try {
+    await fs.rename(file, `${file}.corrupt.${Date.now()}`);
+  } catch {
+    // 忽略:原文件可能无法 rename / 压根没法读
+  }
+  cached = defaultSettings();
+  return cached;
+}
+
 /**
  * 读 settings.json。
  * - 缺文件 → default
@@ -66,13 +77,7 @@ export async function loadSettings(): Promise<Settings> {
     try {
       const r = await readFileCappedFd(file, MAX_SETTINGS_FILE_BYTES);
       if (r.tooLarge) {
-        try {
-          await fs.rename(file, `${file}.corrupt.${Date.now()}`);
-        } catch {
-          // 忽略:原文件可能无法 rename
-        }
-        cached = defaultSettings();
-        return cached;
+        return quarantineCorruptSettings(file);
       }
       raw = r.text as string; // tooLarge=false 时必为 string
     } catch (err) {
@@ -90,13 +95,7 @@ export async function loadSettings(): Promise<Settings> {
       return validated;
     } catch {
       // 文件可读但内容损坏(JSON/schema)→ 备份 .corrupt + 重置默认(既有契约)
-      try {
-        await fs.rename(file, `${file}.corrupt.${Date.now()}`);
-      } catch {
-        // 忽略：原文件可能压根没法读
-      }
-      cached = defaultSettings();
-      return cached;
+      return quarantineCorruptSettings(file);
     }
   });
 }

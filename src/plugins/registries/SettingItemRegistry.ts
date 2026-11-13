@@ -271,7 +271,6 @@ function validateSettingItemSpec(spec: SettingItemSpec): void {
 const EMPTY_SETTING_ITEM_SNAPSHOT: readonly SettingItemSpec[] = [];
 
 export class SettingItemRegistry extends KeyedRegistry<SettingItemSpec> {
-  private cachedAll: readonly SettingItemSpec[] | null = null;
   private cachedByCategory = new Map<string, readonly SettingItemSpec[]>();
 
   constructor() {
@@ -283,15 +282,8 @@ export class SettingItemRegistry extends KeyedRegistry<SettingItemSpec> {
     return this.registerKeyed(spec.id, spec);
   }
 
-  getAll(): readonly SettingItemSpec[] {
-    if (this.cachedAll !== null) return this.cachedAll;
-    if (this.items.size === 0) {
-      this.cachedAll = EMPTY_SETTING_ITEM_SNAPSHOT;
-      return EMPTY_SETTING_ITEM_SNAPSHOT;
-    }
-
-    this.cachedAll = snapshotByPriority(this.items);
-    return this.cachedAll;
+  protected buildSnapshot(): readonly SettingItemSpec[] {
+    return snapshotByPriority(this.items);
   }
 
   /** 取某 category 下的所有 items(已排序),供 CategoryTabContent 使用. */
@@ -331,8 +323,7 @@ export class SettingItemRegistry extends KeyedRegistry<SettingItemSpec> {
     return items;
   }
 
-  protected invalidateSnapshotCache(): void {
-    this.cachedAll = null;
+  protected override onSnapshotInvalidated(): void {
     this.cachedByCategory.clear();
   }
 }

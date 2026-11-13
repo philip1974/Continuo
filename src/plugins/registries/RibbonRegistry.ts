@@ -14,7 +14,6 @@ export interface RibbonActionSpec {
   readonly priority?: number;    // 升序排,默认 100
 }
 
-const EMPTY_RIBBON_SNAPSHOT: readonly RibbonActionSpec[] = [];
 
 // 边界(E49,E35/E36/E37/E40/E48 兄弟 registry):register 接受插件 RibbonActionSpec 无运行时校验。
 // id/title 无长度上限,priority 可 NaN/Infinity,onClick 也未确认是函数。畸形项一注册即进 Activity
@@ -51,8 +50,6 @@ function validateRibbonActionSpec(spec: RibbonActionSpec): void {
 }
 
 export class RibbonRegistry extends KeyedRegistry<RibbonActionSpec> {
-  private cachedAll: readonly RibbonActionSpec[] | null = null;
-
   constructor() {
     super('ribbon-registry');
   }
@@ -62,18 +59,7 @@ export class RibbonRegistry extends KeyedRegistry<RibbonActionSpec> {
     return this.registerKeyed(spec.id, spec);
   }
 
-  getAll(): readonly RibbonActionSpec[] {
-    if (this.cachedAll !== null) return this.cachedAll;
-    if (this.items.size === 0) {
-      this.cachedAll = EMPTY_RIBBON_SNAPSHOT;
-      return EMPTY_RIBBON_SNAPSHOT;
-    }
-
-    this.cachedAll = snapshotByPriority(this.items);
-    return this.cachedAll;
-  }
-
-  protected invalidateSnapshotCache(): void {
-    this.cachedAll = null;
+  protected buildSnapshot(): readonly RibbonActionSpec[] {
+    return snapshotByPriority(this.items);
   }
 }

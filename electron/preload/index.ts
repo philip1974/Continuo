@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
+import { subscribeIpc } from './subscribe-ipc';
 import { createTerminalDataDemux } from './terminal-data-demux';
 import type { IpcResult } from '../shared/ipc-result';
 import type { FileEntry } from '../shared/fs-entry';
@@ -121,8 +122,7 @@ const api = {
       const listener = (_event: unknown, payload?: { windowId: number }) => {
         void cb(payload);
       };
-      ipcRenderer.on('layout:flush-request', listener);
-      return () => ipcRenderer.off('layout:flush-request', listener);
+      return subscribeIpc('layout:flush-request', listener);
     },
     sendFlushAck: (windowId: number): void => {
       ipcRenderer.send('layout:flush-ack', windowId);
@@ -136,8 +136,7 @@ const api = {
       ipcRenderer.invoke('popout:open', { panelId }),
     onClosed: (cb: (panelId: string) => void): (() => void) => {
       const listener = (_: unknown, panelId: string) => cb(panelId);
-      ipcRenderer.on('popout:closed', listener);
-      return () => ipcRenderer.off('popout:closed', listener);
+      return subscribeIpc('popout:closed', listener);
     },
   },
   explorer: {
@@ -194,8 +193,7 @@ const api = {
         }
         cb(payload.path);
       };
-      ipcRenderer.on(FS_CHANNELS.DIR_CHANGED, listener);
-      return () => ipcRenderer.off(FS_CHANNELS.DIR_CHANGED, listener);
+      return subscribeIpc(FS_CHANNELS.DIR_CHANGED, listener);
     },
   },
   terminal: {
@@ -248,8 +246,7 @@ const api = {
         _: unknown,
         sessions: ReadonlyArray<PreloadTerminalSession>,
       ) => cb(sessions);
-      ipcRenderer.on(TERMINAL_CHANNELS.SESSIONS_CHANGED, listener);
-      return () => ipcRenderer.off(TERMINAL_CHANNELS.SESSIONS_CHANGED, listener);
+      return subscribeIpc(TERMINAL_CHANNELS.SESSIONS_CHANGED, listener);
     },
     /**
      * 订阅指定 session 的 stdout 字节流;返回 unsubscribe。
@@ -268,18 +265,15 @@ const api = {
         id: string,
         payload: TerminalExitPayload,
       ) => cb(id, payload);
-      ipcRenderer.on(TERMINAL_CHANNELS.EXIT, listener);
-      return () => ipcRenderer.off(TERMINAL_CHANNELS.EXIT, listener);
+      return subscribeIpc(TERMINAL_CHANNELS.EXIT, listener);
     },
     onOverflow: (cb: (id: string) => void): (() => void) => {
       const listener = (_: unknown, id: string) => cb(id);
-      ipcRenderer.on(TERMINAL_CHANNELS.OVERFLOW, listener);
-      return () => ipcRenderer.off(TERMINAL_CHANNELS.OVERFLOW, listener);
+      return subscribeIpc(TERMINAL_CHANNELS.OVERFLOW, listener);
     },
     onOverflowRecovered: (cb: (id: string) => void): (() => void) => {
       const listener = (_: unknown, id: string) => cb(id);
-      ipcRenderer.on(TERMINAL_CHANNELS.OVERFLOW_RECOVERED, listener);
-      return () => ipcRenderer.off(TERMINAL_CHANNELS.OVERFLOW_RECOVERED, listener);
+      return subscribeIpc(TERMINAL_CHANNELS.OVERFLOW_RECOVERED, listener);
     },
   },
   plugins: {
@@ -315,8 +309,7 @@ const api = {
         }
         cb(payload.id);
       };
-      ipcRenderer.on(PLUGINS_CHANNELS.CHANGED, listener);
-      return () => ipcRenderer.off(PLUGINS_CHANNELS.CHANGED, listener);
+      return subscribeIpc(PLUGINS_CHANNELS.CHANGED, listener);
     },
     /** v4.4 订阅 co:// 外部唤起,返 unsubscribe. */
     onProtocolUrl: (cb: (url: string) => void): (() => void) => {
@@ -328,8 +321,7 @@ const api = {
         }
         cb(payload.url);
       };
-      ipcRenderer.on(PLUGINS_CHANNELS.PROTOCOL_URL, listener);
-      return () => ipcRenderer.off(PLUGINS_CHANNELS.PROTOCOL_URL, listener);
+      return subscribeIpc(PLUGINS_CHANNELS.PROTOCOL_URL, listener);
     },
     /**
      * v4.5 从 git URL 安装插件,返回 manifest 元信息.
@@ -404,8 +396,7 @@ const api = {
     ): (() => void) => {
       const listener = (_: unknown, payload: AgentAuthRequestPayload) =>
         cb(payload);
-      ipcRenderer.on(AGENT_AUTH_CHANNELS.REQUEST, listener);
-      return () => ipcRenderer.off(AGENT_AUTH_CHANNELS.REQUEST, listener);
+      return subscribeIpc(AGENT_AUTH_CHANNELS.REQUEST, listener);
     },
     /** 用户决定后回应 main(对应 requestId). */
     respond: (
@@ -425,8 +416,7 @@ const api = {
     onPush(listener: (payload: NotifyPushPayload) => void): () => void {
       const wrapped = (_evt: unknown, payload: NotifyPushPayload) =>
         listener(payload);
-      ipcRenderer.on(NOTIFY_CHANNELS.PUSH, wrapped);
-      return () => ipcRenderer.removeListener(NOTIFY_CHANNELS.PUSH, wrapped);
+      return subscribeIpc(NOTIFY_CHANNELS.PUSH, wrapped);
     },
   },
   debug: {
@@ -434,8 +424,7 @@ const api = {
       ipcRenderer.invoke(DEBUG_VIEW_CHANNELS.SUBSCRIBE, {}),
     onEvent: (listener: (payload: DebugViewEvent) => void): (() => void) => {
       const wrapped = (_evt: unknown, payload: DebugViewEvent) => listener(payload);
-      ipcRenderer.on(DEBUG_VIEW_CHANNELS.EVENT, wrapped);
-      return () => ipcRenderer.removeListener(DEBUG_VIEW_CHANNELS.EVENT, wrapped);
+      return subscribeIpc(DEBUG_VIEW_CHANNELS.EVENT, wrapped);
     },
     getStack: (input: DebugGetStackInput): Promise<IpcResult<unknown>> =>
       ipcRenderer.invoke(DEBUG_VIEW_CHANNELS.GET_STACK, input),
@@ -459,8 +448,7 @@ const api = {
     onChange(listener: (payload: I18nChangedPayload) => void): () => void {
       const wrapped = (_evt: unknown, payload: I18nChangedPayload) =>
         listener(payload);
-      ipcRenderer.on(I18N_CHANNELS.CHANGED, wrapped);
-      return () => ipcRenderer.removeListener(I18N_CHANNELS.CHANGED, wrapped);
+      return subscribeIpc(I18N_CHANNELS.CHANGED, wrapped);
     },
   },
   mcp: {
@@ -483,9 +471,7 @@ const api = {
     /** main 反向调 tool.run 时推过来的 invoke 请求(订阅;返 unsubscribe). */
     onInvoke: (cb: (payload: InvokePayload) => void): (() => void) => {
       const listener = (_: unknown, payload: InvokePayload) => cb(payload);
-      ipcRenderer.on(PLUGIN_MCP_CHANNELS.INVOKE, listener);
-      return () =>
-        ipcRenderer.off(PLUGIN_MCP_CHANNELS.INVOKE, listener);
+      return subscribeIpc(PLUGIN_MCP_CHANNELS.INVOKE, listener);
     },
     /** renderer 答 main(单向 send,无 IpcResult). */
     replyInvoke: (reply: InvokeReply): void => {

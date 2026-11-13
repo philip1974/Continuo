@@ -1,7 +1,6 @@
-import { lstat } from 'node:fs/promises';
 import { ERROR_CODES } from '../../../shared/error-codes';
 import { readFileCappedFd } from '../../lib/read-fh-capped';
-import { fsError, mapNodeErrnoCode } from './path-utils';
+import { fsError, lstatOrThrow, mapNodeErrnoCode } from './path-utils';
 
 // 边界(E18,E13 读侧对偶):readFile 整文件读入内存(fspReadFile utf-8)+ 经 IPC 发送。无上限时
 // 打开超大文件或恢复多个超大 tab 会一次性分配巨大字符串 → 主进程/IPC 卡死或崩溃。读前用
@@ -11,12 +10,7 @@ import { fsError, mapNodeErrnoCode } from './path-utils';
 const MAX_READ_BYTES = 64 * 1024 * 1024;
 
 export async function readFile(filePath: string): Promise<string> {
-  let st;
-  try {
-    st = await lstat(filePath);
-  } catch (err) {
-    throw fsError(mapNodeErrnoCode(err), `lstat failed: ${filePath}`);
-  }
+  const st = await lstatOrThrow(filePath);
   if (st.isDirectory()) {
     throw fsError(ERROR_CODES.FS_NOT_FILE, `not a file: ${filePath}`);
   }

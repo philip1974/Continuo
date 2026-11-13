@@ -1,3 +1,5 @@
+import type { Stats } from 'node:fs';
+import { lstat } from 'node:fs/promises';
 import path from 'node:path';
 import { ERROR_CODES } from '../../../shared/error-codes';
 import type { FsErrorCode } from '../../../shared/error-codes';
@@ -51,5 +53,17 @@ export function assertValidBasename(name: string): void {
       ERROR_CODES.FS_BAD_NAME,
       `invalid leaf name (len ${typeof name === 'string' ? name.length : 'n/a'})`,
     );
+  }
+}
+
+/**
+ * lstat(不跟随符号链接),失败统一映射为带业务 code 的 fsError(不存在 → FS_NOT_FOUND 等)。
+ * rename / remove / read-file / move / copy 的「先确认源存在」前置共用。
+ */
+export async function lstatOrThrow(targetPath: string): Promise<Stats> {
+  try {
+    return await lstat(targetPath);
+  } catch (err) {
+    throw fsError(mapNodeErrnoCode(err), `lstat failed: ${targetPath}`);
   }
 }

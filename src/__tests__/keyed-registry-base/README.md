@@ -19,3 +19,5 @@ SettingItem / SettingTab / StatusBar)此前各自逐字复制同一段「注册 
 5. 家族接线守卫:8 个 registry 都继承 `KeyedRegistry` 且不再自持 `listeners` / 内联 dispose 样板。
 6. `filterKeepingIdentity(items, keep, empty)`(两个 `filterVisible` 共用):全部通过返回入参数组本身;
    部分滤掉返回保持原序的新数组;全被滤掉返回共享空数组引用;每项只调一次谓词。
+7. `getAll()` 由基类实现并缓存:两次变更之间返回同一引用、只调一次子类 `buildSnapshot()`;空表返回共享空数组
+   且不调 `buildSnapshot()`;子类的派生缓存(按 side / category)在 `onSnapshotInvalidated()` 里清。

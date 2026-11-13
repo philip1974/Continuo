@@ -8,7 +8,7 @@
 
 import { cp, lstat, rename, rm } from 'node:fs/promises';
 import { ERROR_CODES } from '../../../shared/error-codes';
-import { fsError, mapNodeErrnoCode } from './path-utils';
+import { fsError, lstatOrThrow, mapNodeErrnoCode } from './path-utils';
 
 /**
  * 移动 entry(rename 跨目录;同盘 atomic,跨盘走 cp+rm fallback)。
@@ -23,11 +23,7 @@ export async function moveEntry(
   destPath: string,
 ): Promise<void> {
   // 校验源存在
-  try {
-    await lstat(srcPath);
-  } catch (err) {
-    throw fsError(mapNodeErrnoCode(err), `lstat failed: ${srcPath}`);
-  }
+  await lstatOrThrow(srcPath);
   // 拒绝 dest 已存在(避免静默覆盖)
   let destExists = false;
   try {
@@ -85,11 +81,7 @@ export async function copyEntry(
   srcPath: string,
   destPath: string,
 ): Promise<void> {
-  try {
-    await lstat(srcPath);
-  } catch (err) {
-    throw fsError(mapNodeErrnoCode(err), `lstat failed: ${srcPath}`);
-  }
+  await lstatOrThrow(srcPath);
   try {
     // force:false 必须显式传 —— fs.cp 默认 force:true 会击穿 errorOnExist(实测:
     // errorOnExist 仅在 force:false 时生效)。copyEntry 无 pre-check,完全依赖此选项防

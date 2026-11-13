@@ -8,7 +8,7 @@ import {
   safeHandleWithCtx,
 } from '../safe-handle';
 import { FS_CHANNELS } from '../../shared/fs-channels';
-import { MAX_WRITE_BYTES } from '../../shared/fs-limits';
+import { FS_PATH_MAX, MAX_WRITE_BYTES } from '../../shared/fs-limits';
 import { utf8BytesExceed } from '../../shared/utf8-byte-length';
 import { listDir, MAX_TOTAL_ENTRIES } from './fs/list-dir';
 import { readFile } from './fs/read-file';
@@ -28,16 +28,17 @@ import { broadcastToWindows } from '../lib/broadcast';
 // exclude 无长度/数量上限。畸形 renderer/preload 调用可传超长路径或巨大 exclude 列表,在 IPC/zod/
 // exclude 扫描路径消耗内存+CPU(listDir 还对每个目录项 O(N) exclude.includes)。统一加 PATH/NAME
 // 上限 + exclude 数组上限;listDir 内把 exclude 转 Set 避免大目录线性放大(见 fs/list-dir.ts)。
-const FS_PATH_MAX = 8192;
-const FS_NAME_MAX = 1024;
+// FS_PATH_MAX 取 shared 单一来源(preload / plugin-fs 同值)。下面这个是 IPC schema 对「名字类字符串」
+// (新建名 / exclude 项)的宽松长度闸,不是文件系统组件名上限(那是 shared/leaf-name 的 FS_NAME_MAX=255)。
+const FS_IPC_NAME_MAX = 1024;
 const FS_EXCLUDE_MAX = 1000;
 const fsPath = (): z.ZodString => z.string().min(1).max(FS_PATH_MAX);
-const fsName = (): z.ZodString => z.string().min(1).max(FS_NAME_MAX);
+const fsName = (): z.ZodString => z.string().min(1).max(FS_IPC_NAME_MAX);
 
 const ListDirOptionsSchema = z
   .object({
     maxDepth: z.number().int().positive().optional(),
-    exclude: z.array(z.string().max(FS_NAME_MAX)).max(FS_EXCLUDE_MAX).optional(), // 边界(E21)
+    exclude: z.array(z.string().max(FS_IPC_NAME_MAX)).max(FS_EXCLUDE_MAX).optional(), // 边界(E21)
     followSymlinks: z.boolean().optional(),
     // perf P2:文件数上限(深递归早停)。见 fs/list-dir.ts ListDirOptions.maxFiles。
     // 边界(E275):上界对齐到 MAX_TOTAL_ENTRIES 硬上限 + 安全整数 —— 此前只 positive int,畸形 IPC 可传
@@ -185,7 +186,7 @@ export const makeSelectDirectoryHandler =
   };
 
 // ────────────────────────────────────────────────────────────
-// registerFsIpc — 拼装 9 条通道,真接 Electron API
+// registerFsIpc — 拼装全部 fs:* 通道,真接 Electron API
 // ────────────────────────────────────────────────────────────
 
 // Watcher pool 全局单例(进程级)。每个 path 一个 fs.watcher,onChange 广播给所有窗口。

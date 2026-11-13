@@ -19,6 +19,7 @@ interface Spec {
 class TestRegistry extends KeyedRegistry<Spec> {
   readonly events: string[] = [];
   invalidations = 0;
+  builds = 0;
 
   constructor() {
     super('test-registry');
@@ -32,7 +33,12 @@ class TestRegistry extends KeyedRegistry<Spec> {
     return this.items.size;
   }
 
-  protected invalidateSnapshotCache(): void {
+  protected buildSnapshot(): readonly Spec[] {
+    this.builds += 1;
+    return snapshotByPriority(this.items);
+  }
+
+  protected override onSnapshotInvalidated(): void {
     this.invalidations += 1;
     this.events.push('invalidate');
   }
@@ -113,6 +119,33 @@ describe('KeyedRegistry.registerKeyed', () => {
     off();
     reg.register({ id: 'a' });
     expect(listener).not.toHaveBeenCalled();
+  });
+});
+
+describe('KeyedRegistry.getAll(基类持有的全量快照缓存)', () => {
+  it('两次变更之间返回同一引用,只构造一次;变更后失效重建', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const reg = new TestRegistry();
+    reg.register({ id: 'a', priority: 2 });
+    const d = reg.register({ id: 'b', priority: 1 });
+    const first = reg.getAll();
+    expect(first.map((x) => x.id)).toEqual(['b', 'a']);
+    expect(reg.getAll()).toBe(first);
+    expect(reg.builds).toBe(1);
+
+    d.dispose();
+    const second = reg.getAll();
+    expect(second).not.toBe(first);
+    expect(second.map((x) => x.id)).toEqual(['a']);
+    expect(reg.builds).toBe(2);
+  });
+
+  it('空表返回共享空数组(跨实例同一引用),不调 buildSnapshot', () => {
+    const a = new TestRegistry();
+    const b = new TestRegistry();
+    expect(a.getAll()).toEqual([]);
+    expect(a.getAll()).toBe(b.getAll());
+    expect(a.builds).toBe(0);
   });
 });
 

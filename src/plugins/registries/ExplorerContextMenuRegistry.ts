@@ -62,7 +62,6 @@ export interface ExplorerContextMenuItemSpec {
 const CM_ID_MAX = 256;
 const CM_LABEL_MAX = 512;
 const CM_GROUP_MAX = 256;
-const EMPTY_EXPLORER_CONTEXT_MENU_SNAPSHOT: readonly ExplorerContextMenuItemSpec[] = [];
 const EMPTY_VISIBLE_EXPLORER_CONTEXT_MENU_ITEMS: ExplorerContextMenuItemSpec[] =
   [];
 
@@ -111,8 +110,6 @@ function validateContextMenuItemSpec(spec: ExplorerContextMenuItemSpec): void {
 }
 
 export class ExplorerContextMenuRegistry extends KeyedRegistry<ExplorerContextMenuItemSpec> {
-  private cachedAll: readonly ExplorerContextMenuItemSpec[] | null = null;
-
   constructor() {
     super('explorer-context-menu');
   }
@@ -122,19 +119,8 @@ export class ExplorerContextMenuRegistry extends KeyedRegistry<ExplorerContextMe
     return this.registerKeyed(spec.id, spec);
   }
 
-  getAll(): readonly ExplorerContextMenuItemSpec[] {
-    if (this.cachedAll !== null) return this.cachedAll;
-    if (this.items.size === 0) {
-      this.cachedAll = EMPTY_EXPLORER_CONTEXT_MENU_SNAPSHOT;
-      return EMPTY_EXPLORER_CONTEXT_MENU_SNAPSHOT;
-    }
-
-    this.cachedAll = snapshotByPriority(this.items);
-    return this.cachedAll;
-  }
-
-  protected invalidateSnapshotCache(): void {
-    this.cachedAll = null;
+  protected buildSnapshot(): readonly ExplorerContextMenuItemSpec[] {
+    return snapshotByPriority(this.items);
   }
 }
 

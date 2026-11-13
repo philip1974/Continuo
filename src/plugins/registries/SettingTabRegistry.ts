@@ -63,11 +63,8 @@ function validateSettingTabSpec(spec: SettingTabSpec): void {
   }
 }
 
-const EMPTY_SETTING_TAB_SNAPSHOT: readonly SettingTabSpec[] = [];
 
 export class SettingTabRegistry extends KeyedRegistry<SettingTabSpec> {
-  private cachedAll: readonly SettingTabSpec[] | null = null;
-
   constructor() {
     super('setting-tab-registry');
   }
@@ -77,18 +74,7 @@ export class SettingTabRegistry extends KeyedRegistry<SettingTabSpec> {
     return this.registerKeyed(spec.id, spec);
   }
 
-  getAll(): readonly SettingTabSpec[] {
-    if (this.cachedAll !== null) return this.cachedAll;
-    if (this.items.size === 0) {
-      this.cachedAll = EMPTY_SETTING_TAB_SNAPSHOT;
-      return EMPTY_SETTING_TAB_SNAPSHOT;
-    }
-
-    this.cachedAll = snapshotByPriority(this.items);
-    return this.cachedAll;
-  }
-
-  protected invalidateSnapshotCache(): void {
-    this.cachedAll = null;
+  protected buildSnapshot(): readonly SettingTabSpec[] {
+    return snapshotByPriority(this.items);
   }
 }

@@ -31,9 +31,14 @@ function summarizePath(p: string): string {
   return p.length > 60 ? p.slice(0, 50) + '...' : p;
 }
 
+// 边界(E34,E11/E33 同族):workspace root 路径长度上限(CreateInput.workspace 与 notify-root 的 root 共用)。root 经 notify-root
+// 写入 windowId→root map 长期驻留主进程,并作为 MCP/terminal create 未传 cwd 时 agent session 的回退
+// 工作目录;畸形超长 absolute 串会带进后续 resolve/stat 路径 + 错误消息 → 内存 + 同步 fs 检查开销。
+const ROOT_MAX = 2048;
+
 const CreateInput = z
   .object({
-    workspace: z.string().min(1).max(2048).optional(),
+    workspace: z.string().min(1).max(ROOT_MAX).optional(),
   })
   .strict();
 
@@ -76,11 +81,6 @@ async function createWindowHandler(
   });
   return { windowId: win.id };
 }
-
-// 边界(E34,E11/E33 同族):root 与同文件 CreateInput.workspace 对齐 .max(2048)。root 经 notify-root
-// 写入 windowId→root map 长期驻留主进程,并作为 MCP/terminal create 未传 cwd 时 agent session 的回退
-// 工作目录;畸形超长 absolute 串会带进后续 resolve/stat 路径 + 错误消息 → 内存 + 同步 fs 检查开销。
-const ROOT_MAX = 2048;
 
 const NotifyRootInput = z
   .object({

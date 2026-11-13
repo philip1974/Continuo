@@ -1,3 +1,5 @@
+import { PROTOCOL_URL_MAX_LEN } from '../shared/plugins-channels';
+
 // race(R39/R40):co:// 深链分发到 renderer 的「先就绪后发送 + FIFO 缓冲」路由(main 侧)。
 //
 // R39:此前 dispatchProtocolUrl 只在「一个窗口都没有」时缓冲,否则无脑 webContents.send 给所有
@@ -74,7 +76,7 @@ export interface RouteProtocolUrlDeps {
 // 边界(E55):co:// 深链是外部输入(恶意网页/命令行可触发)。单 URL 长度上限 + pending 队列条数
 // 上限。co:// 深链短(co://command/<id>?...),8KB 远超真实;无就绪窗口期间 pending 是短暂缓冲,
 // >100 条连发 = 滥用。超限丢弃 + 短日志(不抛,不阻塞合法深链)。
-export const MAX_PROTOCOL_URL_LEN = 8192;
+export const MAX_PROTOCOL_URL_LEN = PROTOCOL_URL_MAX_LEN;
 export const MAX_PENDING_PROTOCOL_URLS = 100;
 
 export function routeProtocolUrl(url: string, deps: RouteProtocolUrlDeps): void {

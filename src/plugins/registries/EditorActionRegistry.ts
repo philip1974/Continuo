@@ -39,7 +39,6 @@ export interface EditorActionSpec {
 // filterVisible 的单项 when try/catch 隔离保留)。
 const EA_ID_MAX = 256;
 const EA_LABEL_MAX = 512;
-const EMPTY_EDITOR_ACTION_SNAPSHOT: readonly EditorActionSpec[] = [];
 const EMPTY_VISIBLE_EDITOR_ACTIONS: EditorActionSpec[] = [];
 
 function validateEditorActionSpec(spec: EditorActionSpec): void {
@@ -75,8 +74,6 @@ function validateEditorActionSpec(spec: EditorActionSpec): void {
 }
 
 export class EditorActionRegistry extends KeyedRegistry<EditorActionSpec> {
-  private cachedAll: readonly EditorActionSpec[] | null = null;
-
   constructor() {
     super('editor-action-registry');
   }
@@ -86,19 +83,8 @@ export class EditorActionRegistry extends KeyedRegistry<EditorActionSpec> {
     return this.registerKeyed(spec.id, spec);
   }
 
-  getAll(): readonly EditorActionSpec[] {
-    if (this.cachedAll !== null) return this.cachedAll;
-    if (this.items.size === 0) {
-      this.cachedAll = EMPTY_EDITOR_ACTION_SNAPSHOT;
-      return EMPTY_EDITOR_ACTION_SNAPSHOT;
-    }
-
-    this.cachedAll = snapshotByPriority(this.items);
-    return this.cachedAll;
-  }
-
-  protected invalidateSnapshotCache(): void {
-    this.cachedAll = null;
+  protected buildSnapshot(): readonly EditorActionSpec[] {
+    return snapshotByPriority(this.items);
   }
 }
 

@@ -1038,6 +1038,9 @@ app.on('before-quit', async (event) => {
   const flushes: Promise<void>[] = [];
   for (const w of BrowserWindow.getAllWindows()) {
     if (w.isDestroyed() || flushedOnQuit.has(w.id)) continue;
+    // popout 窗口跑的是 PopoutHost,不挂 DockShell,没有 flush 监听 → 永不 ack;对它发请求只会让退出
+    // 干等满 FLUSH_ACK_TIMEOUT_MS。只 flush 主窗(wireWindowCloseFlush 也只挂在 createMainWindow)。
+    if (isPopoutUrl(w.webContents.getURL())) continue;
     flushes.push(
       requestWindowFlush(w).then(() => {
         flushedOnQuit.add(w.id);
