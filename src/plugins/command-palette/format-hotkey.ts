@@ -74,22 +74,30 @@ function formatPart(part: string, platform: Platform): string {
   return part.toUpperCase();
 }
 
+/** 按 `+` 切分 raw,对每个**非空**段回调其 [start, end) 下标(不分配子串;空段如 `a++b` 跳过)。 */
+function forEachHotkeySegment(
+  raw: string,
+  visit: (start: number, end: number) => void,
+): void {
+  let start = 0;
+  for (;;) {
+    const plus = raw.indexOf('+', start);
+    const end = plus < 0 ? raw.length : plus;
+    if (end > start) visit(start, end);
+    if (plus < 0) return;
+    start = plus + 1;
+  }
+}
+
 function visitFormattedHotkeyParts(
   raw: string,
   platform: Platform,
   visit: (part: string) => void,
 ): void {
   if (!raw) return;
-  let start = 0;
-  for (;;) {
-    const plus = raw.indexOf('+', start);
-    const end = plus < 0 ? raw.length : plus;
-    if (end > start) {
-      visit(formatPart(raw.slice(start, end), platform));
-    }
-    if (plus < 0) return;
-    start = plus + 1;
-  }
+  forEachHotkeySegment(raw, (start, end) => {
+    visit(formatPart(raw.slice(start, end), platform));
+  });
 }
 
 /**
@@ -104,29 +112,18 @@ export function formatHotkeyParts(
   platform: Platform,
 ): string[] {
   if (!raw) return EMPTY_HOTKEY_PARTS;
+  // 两趟:先数段数再按确切长度预分配(每次按键渲染都会走,避免数组扩容)。两趟共用同一个切分器。
   let count = 0;
-  let start = 0;
-  for (;;) {
-    const plus = raw.indexOf('+', start);
-    const end = plus < 0 ? raw.length : plus;
-    if (end > start) count += 1;
-    if (plus < 0) break;
-    start = plus + 1;
-  }
+  forEachHotkeySegment(raw, () => {
+    count += 1;
+  });
   if (count === 0) return EMPTY_HOTKEY_PARTS;
   const parts = new Array<string>(count);
   let index = 0;
-  start = 0;
-  for (;;) {
-    const plus = raw.indexOf('+', start);
-    const end = plus < 0 ? raw.length : plus;
-    if (end > start) {
-      parts[index] = formatPart(raw.slice(start, end), platform);
-      index += 1;
-    }
-    if (plus < 0) break;
-    start = plus + 1;
-  }
+  forEachHotkeySegment(raw, (start, end) => {
+    parts[index] = formatPart(raw.slice(start, end), platform);
+    index += 1;
+  });
   return parts;
 }
 

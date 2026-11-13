@@ -273,7 +273,6 @@ export function inferRunnerFromFilename(
 
 export function parseStopPayload(
   runner: 'cc' | 'codex',
-  _fileName: string,
   jsonText: string,
 ): NormalizedPayload | null {
   let raw: unknown;
@@ -511,7 +510,7 @@ export function createHookFileBroker(
       }
       const jsonText = read.text as string; // tooLarge=false 时必为 string
 
-      const payload = parseStopPayload(runner, fileName, jsonText);
+      const payload = parseStopPayload(runner, jsonText);
       if (payload === null) {
         // 解析失败:文件可能正被 `cat >` 写入未完成。绝不 unlink(否则真实事件
         // 在内容到达前被删 → 永久丢失),也不标 processed,等写完后的 watch 事件

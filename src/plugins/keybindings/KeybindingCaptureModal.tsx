@@ -113,11 +113,7 @@ function KeybindingCaptureModalBody({
   // string non-empty = 新组合
   const [captured, setCaptured] = useState<string | null>(null);
 
-  // 每次打开都复位,避免旧值留下来
-  useEffect(() => {
-    if (visible) setCaptured(null);
-  }, [visible]);
-
+  // Body 只在弹窗可见时挂载(外层 visible=false 直接不渲染)→ 每次打开都是全新 state,无需手动复位。
   useEffect(() => {
     if (!visible) return;
     const handler = (e: KeyboardEvent) => {
