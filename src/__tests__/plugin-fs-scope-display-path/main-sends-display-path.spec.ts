@@ -1,5 +1,6 @@
 // BDD:main 推送 plugin-fs:scope-request 时,每个 scope 带归一化后的 displayPath。
 // 见同目录 README。
+import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -67,15 +68,18 @@ describe('plugin-fs:scope-request 推送带 displayPath', () => {
       { path: '~/continuo-no-such-dir-for-display-path', mode: 'r' },
       { path: absolute, mode: 'rw' },
     ])) as { path: string; mode: string; displayPath: string }[];
-    // 目录不存在时 main 只做 `~` → home 的拼接,不重写分隔符(Windows 上是 `C:\Users\x/dir`),
-    // 所以按「同一路径」比较而不是逐字符比较。
-    expect(sent.map((s) => ({ ...s, displayPath: path.normalize(s.displayPath) }))).toEqual([
+    // 目录不存在:已存在的上级(home / 根)被 realpath,其后原样接上(见 scope-path-missing-dir)。
+    expect(sent).toEqual([
       {
         path: '~/continuo-no-such-dir-for-display-path',
         mode: 'r',
-        displayPath: path.join(homedir(), 'continuo-no-such-dir-for-display-path'),
+        displayPath: path.join(
+          realpathSync.native(homedir()),
+          'continuo-no-such-dir-for-display-path',
+        ),
       },
-      { path: absolute, mode: 'rw', displayPath: path.normalize(absolute) },
+      // Windows 上 `/x` 是「当前盘符下的绝对路径」,根被解析成 `D:\`。
+      { path: absolute, mode: 'rw', displayPath: path.resolve(absolute) },
     ]);
   });
 

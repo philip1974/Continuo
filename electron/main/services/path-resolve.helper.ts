@@ -1,6 +1,6 @@
 import { promises as fs, type Stats } from 'node:fs';
 import { homedir, platform } from 'node:os';
-import { dirname, isAbsolute, sep } from 'node:path';
+import { basename, dirname, isAbsolute, sep } from 'node:path';
 import { ScopeError } from '../../shared/plugin-fs-contract';
 import { leafNameRejectReason } from '../../shared/leaf-name';
 
@@ -161,7 +161,7 @@ function stripTrailingSep(p: string): string {
  *
  * 去尾分隔符,让 `s.path + sep` 前缀匹配成立(`/ws/dir/` → `/ws/dir`)。scope 目录尚不存在
  * (ENOENT 等)时回退到 home 展开后的路径(至少把 `~` 展开并记录;真去该目录下操作时其自身
- * realpath 仍会失败,语义不变),并换成本平台分隔符(见 catch 内注释)。
+ * realpath 仍会失败,语义不变),其中已存在的上级目录仍做 realpath、并换成本平台分隔符(见 catch 内注释)。
  */
 export async function canonicalizeScopePath(rawPath: string): Promise<string> {
   let expanded: string;
@@ -177,12 +177,35 @@ export async function canonicalizeScopePath(rawPath: string): Promise<string> {
   try {
     return stripTrailingSep(await fs.realpath(expanded));
   } catch {
-    // 目录尚不存在:realpath 给不出本平台分隔符。Windows 上 `~` 展开是 `<home>` + `/dir` 的拼接,插件
-    // 也可能直接写 `C:/proj/out` —— 不换成 `\` 的话,目录之后被创建时 probe(realpath,全反斜杠)与这条
-    // scope 做 `scope + sep` 前缀匹配永远对不上,弹窗显示的也是混合分隔符。只换分隔符,不折叠 `..`。
-    // POSIX 不动:`\` 是合法文件名字符。
-    return stripTrailingSep(
-      platform() === 'win32' ? expanded.replaceAll('/', '\\') : expanded,
-    );
+    // 目录尚不存在。直接回退到 expanded 的话,它与校验侧的 probe(realpath)不在同一空间,目录之后被
+    // 创建时 `scope + sep` 前缀匹配永远对不上:
+    //   - 已存在的上级含符号链接(macOS /tmp、/var)或 Windows 8.3 短名 → 先解析最近的已存在上级;
+    //   - Windows 上 `~` 展开是 `<home>` + `/dir` 的拼接,插件也可能直接写 `C:/proj/out` → 换成 `\`
+    //     (POSIX 不动:`\` 是合法文件名字符)。
+    const resolved = stripTrailingSep(await realpathExistingAncestor(expanded));
+    return platform() === 'win32' ? resolved.replaceAll('/', '\\') : resolved;
+  }
+}
+
+/**
+ * realpath 最近的已存在上级目录,其后尚不存在的各级原样接上(只拼接,不折叠 `..` —— 含 `..` 的 scope
+ * 与以前一样匹配不上任何目标,不会变成别的目录)。相对路径、没有任何上级能解析时原样返回。
+ */
+async function realpathExistingAncestor(expanded: string): Promise<string> {
+  if (!isAbsolute(expanded)) return expanded;
+  const missing: string[] = [];
+  let current = stripTrailingSep(expanded);
+  for (;;) {
+    const parent = dirname(current);
+    if (parent === current) return expanded;
+    missing.unshift(basename(current));
+    current = parent;
+    let base: string;
+    try {
+      base = await fs.realpath(current);
+    } catch {
+      continue;
+    }
+    return (base.endsWith(sep) ? base : base + sep) + missing.join(sep);
   }
 }
