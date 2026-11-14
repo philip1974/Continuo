@@ -252,6 +252,14 @@ export const zh: Record<TranslationKey, string> = {
   'panels.editor.milkdownUnsafe.modalTitle': '用 Edit 模式打开不安全 Markdown?',
   'panels.editor.milkdownUnsafe.modalBody': '此文件包含 Milkdown 可能改写的 frontmatter 或 wiki-link。Source 模式会按字节保留文件内容。',
   'panels.editor.milkdownUnsafe.switchAnyway': '仍然切换',
+  'panels.editor.codeBlock.copy': '复制',
+  'panels.editor.codeBlock.searchLanguage': '搜索语言',
+  'panels.editor.codeBlock.noResult': '无匹配结果',
+  'panels.editor.codeBlock.previewLabel': '预览',
+  'panels.editor.codeBlock.previewLoading': '加载中…',
+  'panels.editor.codeBlock.previewEdit': '编辑',
+  'panels.editor.codeBlock.previewHide': '隐藏',
+  'panels.editor.mermaid.renderError': 'Mermaid 图表渲染失败',
 
   // permissions.*
   'permissions.agent.terminal_create_session': '新建一个 terminal',

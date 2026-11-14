@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
-import { isOwnRendererWindowUrl } from './window-open-policy';
+import { installNavigationGuard, isOwnRendererWindowUrl } from './window-open-policy';
 import { LAYOUT_CHANNELS, WINDOW_ID_CHANNEL } from '../shared/persistence-channels';
 import type {
   HandlerDetails,
@@ -266,6 +266,15 @@ function wireWindowCloseFlush(win: BrowserWindow): void {
 // dockview popout 走 window.open(url),url 默认是当前 renderer URL。
 // 同源 → allow + 注入我们的 preload + 安全 webPreferences。
 // 外站 → 转交系统浏览器,deny 弹窗。
+// 判定与主窗加载方式一致,见 window-open-policy。dev URL 经 parseDevRendererUrl(限长 + total,E304)。
+function isOwnRendererUrl(url: string): boolean {
+  return isOwnRendererWindowUrl(
+    url,
+    isDev ? parseDevRendererUrl(process.env['ELECTRON_RENDERER_URL']) : null,
+    isTrustedRendererFileUrl,
+  );
+}
+
 function windowOpenHandler({ url }: HandlerDetails): WindowOpenHandlerResponse {
   // 边界(E190,E179/E152 同族外链长度):window.open url 的类型/长度前置闸,先于 new URL 解析与
   // shell.openExternal。否则超长 url 让主进程先做大字符串 URL 解析,并可能把巨大 URL 交给系统协议
@@ -278,12 +287,7 @@ function windowOpenHandler({ url }: HandlerDetails): WindowOpenHandlerResponse {
     return { action: 'deny' };
   }
   // 安全 S1:只允许指向本应用自己的 renderer 入口(dev server 同源 / 受信的 renderer 文件,精确 pathname)。
-  // 判定与主窗加载方式一致,见 window-open-policy。dev URL 经 parseDevRendererUrl(限长 + total,E304)。
-  const allow = isOwnRendererWindowUrl(
-    url,
-    isDev ? parseDevRendererUrl(process.env['ELECTRON_RENDERER_URL']) : null,
-    isTrustedRendererFileUrl,
-  );
+  const allow = isOwnRendererUrl(url);
 
   if (allow) {
     return {
@@ -307,10 +311,17 @@ function windowOpenHandler({ url }: HandlerDetails): WindowOpenHandlerResponse {
   // (含 marketplace 不受信的 authorUrl / 评论 url)。必须复用 shell.service 的
   // scheme 白名单,否则 `smb://`、自定义协议等非 http(s) URL 会绕过白名单经 OS
   // 协议处理器打开,成为投放面。非白名单 scheme 直接静默 deny。
+  openExternalIfAllowed(url);
+  return { action: 'deny' };
+}
+
+// 页面内容触发的「离开应用」(window.open 被拒 / 主框架导航被拦)统一出口:过长度上限 + scheme
+// 白名单后交给系统打开,其余静默丢弃。
+function openExternalIfAllowed(url: string): void {
+  if (typeof url !== 'string' || url.length === 0 || url.length > MAX_EXTERNAL_URL_LEN) return;
   if (isAllowedExternalUrl(url)) {
     shell.openExternal(url);
   }
-  return { action: 'deny' };
 }
 
 interface CreateMainWindowOpts {
@@ -425,6 +436,7 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
 app.on('web-contents-created', (_evt, contents) => {
   contents.setWindowOpenHandler(windowOpenHandler);
   installSpikeGate(contents, app.isPackaged); // [topic 45 spike gate 第一道] will-navigate + will-frame-navigate
+  installNavigationGuard(contents, isOwnRendererUrl, openExternalIfAllowed);
 });
 
 // ─────────────────────────────────────────────────────

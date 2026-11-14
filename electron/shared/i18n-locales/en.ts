@@ -263,6 +263,14 @@ export const en = {
   'panels.editor.milkdownUnsafe.modalTitle': 'Open unsafe Markdown in Edit mode?',
   'panels.editor.milkdownUnsafe.modalBody': 'This file contains frontmatter or wiki-links that Milkdown may rewrite. Source mode preserves the file byte-for-byte.',
   'panels.editor.milkdownUnsafe.switchAnyway': 'Switch anyway',
+  'panels.editor.codeBlock.copy': 'Copy',
+  'panels.editor.codeBlock.searchLanguage': 'Search language',
+  'panels.editor.codeBlock.noResult': 'No result',
+  'panels.editor.codeBlock.previewLabel': 'Preview',
+  'panels.editor.codeBlock.previewLoading': 'Loading…',
+  'panels.editor.codeBlock.previewEdit': 'Edit',
+  'panels.editor.codeBlock.previewHide': 'Hide',
+  'panels.editor.mermaid.renderError': 'Failed to render Mermaid diagram',
 
   // permissions.* (3)
   'permissions.agent.terminal_create_session': 'open a new terminal',

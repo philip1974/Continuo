@@ -3,6 +3,7 @@
 //
 // mode 路由(决策 #1/#3/#4):
 //   activeTab 是 .md → mode=edit:Milkdown;source:CodeEditor markdown;preview:Milkdown readonly
+//     (含 frontmatter / wiki-link 的 .md:edit 须先确认,否则落到 source;preview 照常)
 //   activeTab 非 .md → 直接 CodeEditor(mode 不显示)
 //   activeTab 为 null → Welcome
 
@@ -24,6 +25,7 @@ import { CodeEditor } from './CodeEditor';
 import { EditorHeader, type TabChrome } from './EditorHeader';
 import { EditorWelcome } from './EditorWelcome';
 import { MilkdownEditor } from './MilkdownEditor';
+import { toPreviewMarkdown } from './milkdown-roundtrip-safety';
 import { findEditorFileTabById } from './editor-tab-lookup';
 import { useAutoSave, isAutoSaveEnabled } from './useAutoSave';
 import { useEditorFile } from './useEditorFile';
@@ -88,6 +90,7 @@ export function EditorPanel() {
   const setMode = useEditorStore((s) => s.setMode);
   const updateContent = useEditorStore((s) => s.updateContent);
   const closeTab = useEditorStore((s) => s.closeTab);
+  const acceptUnsafeEdit = useEditorStore((s) => s.acceptUnsafeEdit);
   const effective = getEffectiveMode(activeTab);
   // perf P5:复用派生缓存(isTabMilkdownUnsafe 内部 cache-or-compute),不再在 render
   // 里对全文重跑 isMilkdownUnsafe —— 否则每按键 = updateContent 1 次 + 此处 1 次。
@@ -184,18 +187,22 @@ export function EditorPanel() {
   const [unsafeEditConfirmOpen, setUnsafeEditConfirmOpen] = useState(false);
   const requestModeChange = useCallback(
     (next: EditorMode) => {
-      if (next === 'edit' && unsafeMarkdown) {
+      if (next === 'edit' && unsafeMarkdown && !activeTab?.unsafeEditAccepted) {
         setUnsafeEditConfirmOpen(true);
         return;
       }
       setMode(next);
     },
-    [setMode, unsafeMarkdown],
+    [setMode, unsafeMarkdown, activeTab?.unsafeEditAccepted],
   );
+  const activeTabId = activeTab?.id ?? null;
+  // 确认框针对打开它时的 tab;active tab 换了(如 SDK openFile)就作废,免得确认到别的文件上
+  useEffect(() => setUnsafeEditConfirmOpen(false), [activeTabId]);
   const confirmUnsafeEdit = useCallback(() => {
+    if (activeTabId !== null) acceptUnsafeEdit(activeTabId);
     setMode('edit');
     setUnsafeEditConfirmOpen(false);
-  }, [setMode]);
+  }, [acceptUnsafeEdit, activeTabId, setMode]);
 
   // 判定主体渲染(根据 activeTab 类型 + mode)
   let body: React.ReactNode;
@@ -220,7 +227,12 @@ export function EditorPanel() {
           // Milkdown remount 拿新内容,避免基于陈旧内容编辑后保存覆盖外部改动。
           // 用户输入/保存不动 epoch,故不会每次按键 remount。
           key={`${activeTab.id}-${effective}-${activeTab.reloadEpoch ?? 0}`}
-          defaultValue={activeTab.content}
+          // preview 只读不回写,frontmatter 换成 yaml 代码块展示(否则被解析成横线+标题)
+          defaultValue={
+            effective === 'preview'
+              ? toPreviewMarkdown(activeTab.content)
+              : activeTab.content
+          }
           readonly={effective === 'preview'}
           onChange={(md) => updateContent(activeTab.id, md)}
           onLinkClick={handleLinkClick}

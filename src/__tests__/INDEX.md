@@ -432,9 +432,15 @@
 - [`use-editor-file.spec.tsx`](./editor-hooks-react/use-editor-file.spec.tsx)
 - [`use-external-file-sync.spec.tsx`](./editor-hooks-react/use-external-file-sync.spec.tsx)
 
+## [editor-mermaid-preview](./editor-mermaid-preview/README.md)
+
+- [`mermaid-preview.spec.ts`](./editor-mermaid-preview/mermaid-preview.spec.ts)
+- [`milkdown-code-block-config.spec.tsx`](./editor-mermaid-preview/milkdown-code-block-config.spec.tsx)
+
 ## [editor-milkdown-roundtrip-safety](./editor-milkdown-roundtrip-safety/README.md)
 
 - [`editor-panel-unsafe.spec.tsx`](./editor-milkdown-roundtrip-safety/editor-panel-unsafe.spec.tsx)
+- [`effective-mode.spec.ts`](./editor-milkdown-roundtrip-safety/effective-mode.spec.ts)
 - [`milkdown-preview.spec.tsx`](./editor-milkdown-roundtrip-safety/milkdown-preview.spec.tsx)
 - [`milkdown-roundtrip-safety.spec.ts`](./editor-milkdown-roundtrip-safety/milkdown-roundtrip-safety.spec.ts)
 
@@ -668,6 +674,7 @@
 
 ## [Markdown 链接解析(`resolveLink`)](./markdown-link-resolve/README.md)
 
+- [`link-click-no-navigation.spec.tsx`](./markdown-link-resolve/link-click-no-navigation.spec.tsx)
 - [`markdown-link-resolve.spec.ts`](./markdown-link-resolve/markdown-link-resolve.spec.ts)
 
 ## [marketplace(插件商店浏览 Phase 1)](./marketplace/README.md)

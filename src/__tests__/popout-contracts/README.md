@@ -27,6 +27,10 @@
 - 此前只按「是否打包」分支:未打包且没有 dev server 时所有 popout 都被拒,子窗开不出来。
 - 有 popout 窗口时退出应用:不因 popout 窗口不应答关窗 flush 而等满 10s(e2e `quit-with-popout`)。
 
+## 窗口不被页面内容带离应用
+
+- 任何窗口的主框架导航(点击链接、`location` 赋值)只允许回到本应用自己的 renderer 入口;指向外部网页 / 其它文件的导航被拦下(`installNavigationGuard`)。被拦下的 URL 按与 `window.open` 拒绝分支相同的外链白名单(http / https / mailto,限长)转交系统打开,其余静默丢弃;DevTools 自身的导航不受影响。
+
 ## 安全
 
 - 子窗口仍走 `contextIsolation: true` / `sandbox: true` / `nodeIntegration: false`。

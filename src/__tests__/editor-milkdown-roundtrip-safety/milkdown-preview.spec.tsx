@@ -5,14 +5,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MilkdownEditor } from '../../panels/Editor/MilkdownEditor';
 
 const milkdownHarness = vi.hoisted(() => ({
-  markdownUpdated: null as null | ((_ctx: unknown, markdown: string) => void),
+  markdownUpdated: null as
+    | null
+    | ((_ctx: unknown, markdown: string, prevMarkdown: string) => void),
   setReadonly: vi.fn(),
   reset() {
     this.markdownUpdated = null;
     this.setReadonly.mockClear();
   },
-  emit(markdown: string) {
-    this.markdownUpdated?.({}, markdown);
+  emit(markdown: string, prevMarkdown: string) {
+    this.markdownUpdated?.({}, markdown, prevMarkdown);
   },
 }));
 
@@ -34,7 +36,7 @@ vi.mock('@milkdown/crepe', () => ({
     on: (
       register: (listener: {
         markdownUpdated: (
-          cb: (_ctx: unknown, markdown: string) => void,
+          cb: (_ctx: unknown, markdown: string, prevMarkdown: string) => void,
         ) => void;
       }) => void,
     ) => {
@@ -74,10 +76,34 @@ describe('MilkdownEditor preview emissions', () => {
     const onChange = vi.fn();
     render(<MilkdownEditor defaultValue="# Title" readonly onChange={onChange} />);
 
-    milkdownHarness.emit('# serialized mount');
-    milkdownHarness.emit('# serialized later');
+    milkdownHarness.emit('# serialized mount', '# Title');
+    milkdownHarness.emit('# serialized later', '# serialized mount');
 
     expect(milkdownHarness.setReadonly).toHaveBeenCalledWith(true);
     expect(onChange).not.toHaveBeenCalled();
+  });
+});
+
+describe('MilkdownEditor edit emissions', () => {
+  it('forwards the very first real edit', () => {
+    const onChange = vi.fn();
+    render(<MilkdownEditor defaultValue={'# Title\n'} onChange={onChange} />);
+
+    milkdownHarness.emit('# Titlex\n', '# Title\n');
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith('# Titlex\n');
+  });
+
+  it('ignores the mount-time trailing-paragraph normalization, then forwards edits', () => {
+    const onChange = vi.fn();
+    const doc = '# Title\n\n```mermaid\ngraph TD\n```\n';
+    render(<MilkdownEditor defaultValue={doc} onChange={onChange} />);
+
+    milkdownHarness.emit(`${doc}\n`, doc);
+    expect(onChange).not.toHaveBeenCalled();
+
+    milkdownHarness.emit(`# Titlex\n\n\`\`\`mermaid\ngraph TD\n\`\`\`\n\n`, `${doc}\n`);
+    expect(onChange).toHaveBeenCalledTimes(1);
   });
 });

@@ -53,3 +53,21 @@
 .milkdown .ProseMirror pre {
   font-size: 0.875em; /* 14 / 16(crepe 用 87.5%) */
 }
+
+/* ```mermaid 代码块的图预览(mermaid-preview.ts 产出,落在 Crepe 的 .preview 容器里)。
+ * 图居中、超宽时横向滚动;错误提示用语义色,保留换行。 */
+.milkdown .milkdown-code-block .preview .continuo-mermaid {
+  display: flex;
+  justify-content: center;
+  overflow-x: auto;
+}
+.milkdown .milkdown-code-block .preview .continuo-mermaid svg {
+  height: auto;
+  max-width: 100%;
+}
+.milkdown .milkdown-code-block .preview .continuo-mermaid-error {
+  margin: 0;
+  text-align: left;
+  white-space: pre-wrap;
+  color: var(--md-error);
+}

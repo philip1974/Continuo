@@ -252,6 +252,14 @@ export const ko: Record<TranslationKey, string> = {
   'panels.editor.milkdownUnsafe.modalTitle': '안전하지 않은 Markdown을 Edit 모드로 여시겠습니까?',
   'panels.editor.milkdownUnsafe.modalBody': '이 파일에는 Milkdown이 다시 쓸 수 있는 frontmatter 또는 wiki-link가 있습니다. Source 모드는 파일 내용을 바이트 단위로 보존합니다.',
   'panels.editor.milkdownUnsafe.switchAnyway': '그래도 전환',
+  'panels.editor.codeBlock.copy': '복사',
+  'panels.editor.codeBlock.searchLanguage': '언어 검색',
+  'panels.editor.codeBlock.noResult': '결과 없음',
+  'panels.editor.codeBlock.previewLabel': '미리보기',
+  'panels.editor.codeBlock.previewLoading': '로딩 중…',
+  'panels.editor.codeBlock.previewEdit': '편집',
+  'panels.editor.codeBlock.previewHide': '숨기기',
+  'panels.editor.mermaid.renderError': 'Mermaid 다이어그램 렌더링 실패',
 
   // permissions.*
   'permissions.agent.terminal_create_session': '새 터미널 열기',

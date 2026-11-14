@@ -44,6 +44,11 @@ export interface EditorTab {
    * optional:缺省时 getEffectiveMode 回退到现场计算(行为等价,不破坏旧构造)。
    */
   readonly milkdownUnsafe?: boolean;
+  /**
+   * 用户已对本 tab 确认「仍然切换」:milkdownUnsafe 的内容也允许进 Milkdown Edit。
+   * 只由 acceptUnsafeEdit 置 true;按 tab 记,不影响其它 unsafe tab。runtime only。
+   */
+  readonly unsafeEditAccepted?: boolean;
 }
 
 const EMPTY_EDITOR_TABS: EditorTab[] = [];
@@ -397,6 +402,8 @@ type EditorState = {
   /** 另存为后:把 tab 的 filePath 与 id 同步改为 newPath. */
   setFilePath: (id: string, newPath: string) => void;
   setMode: (mode: EditorMode) => void;
+  /** unsafe markdown 的「仍然切换」确认:允许该 tab 在 Edit 模式下用 Milkdown. */
+  acceptUnsafeEdit: (id: string) => void;
   registerView: (tabId: string, view: EditorView) => void;
   unregisterView: (tabId: string, expectedView: EditorView) => void;
   waitForViewRef: (
@@ -585,6 +592,17 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
 
   setMode: (mode) => set((s) => (s.mode === mode ? s : { mode })),
 
+  acceptUnsafeEdit: (id) =>
+    set((s) => {
+      const idx = findEditorTabIndexById(s.tabs, id);
+      if (idx < 0) return s;
+      const cur = s.tabs[idx]!;
+      if (cur.unsafeEditAccepted) return s;
+      const tabs = replaceTabAt(s.tabs, idx, { ...cur, unsafeEditAccepted: true });
+      // effectiveMode 变 → bump 让 EditorHeader action 区更新(同 milkdownUnsafe 翻转)
+      return { tabs, chromeVersion: s.chromeVersion + 1 };
+    }),
+
   registerView: (tabId, view) =>
     set((s) => {
       if (s.viewRefs.get(tabId) === view) return s;
@@ -654,7 +672,10 @@ export function isTabMilkdownUnsafe(tab: EditorTab | null): boolean {
   return tab.milkdownUnsafe ?? computeMilkdownUnsafe(tab.filePath, tab.content);
 }
 
+// unsafe markdown 只挡**会写回**的 Milkdown Edit:Preview 只读、不产生 serializer
+// 回写,照常放行;Edit 须用户对该 tab 确认过(acceptUnsafeEdit)才放行,否则落到 Source。
 export function getEffectiveMode(tab: EditorTab | null): EditorMode {
   const requestedMode = useEditorStore.getState().mode;
-  return isTabMilkdownUnsafe(tab) ? 'source' : requestedMode;
+  if (requestedMode !== 'edit' || !isTabMilkdownUnsafe(tab)) return requestedMode;
+  return tab?.unsafeEditAccepted ? 'edit' : 'source';
 }
