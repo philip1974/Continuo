@@ -2,11 +2,11 @@
 // chunk(每 chunk 都在单 chunk 行数上限内)此前可无限堆积排队行 → main 内存无界增长。
 // 超限时错误必须真正送达客户端:此前 write(error) 后立即 destroy(),对端可能因 RST 丢掉错误行
 // → 改为 end(error) 半关闭 + 兜底超时 destroy。这里从真实客户端读取,断言收到完整 PARSE_ERROR。
-import { connect, type Socket } from 'node:net';
+import { connect, Socket } from 'node:net';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // tools/call 需要 owner 窗口:无 hello → fallback 到 getAllWindows 的第一个非 popout 窗口。
 vi.mock('electron', () => ({
@@ -137,6 +137,33 @@ describe.skipIf(isWin)('规则 3 · 拒绝后不再写响应 / 不再处理排�
   const call = (id: number, name: string): string =>
     JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name } }) + '\n';
 
+  // 等服务端真正进入拒绝态(以 PARSE_ERROR 调用 end 半关闭)。固定 sleep 在高负载下不够:1.1MB 残行尚未
+  // 读完时服务端还没拒绝,此时 broadcast 正常写出是合法行为,断言会误报。
+  // 等服务端真正进入拒绝态(以 PARSE_ERROR 调用 end 半关闭)。固定 sleep 在高负载下不够:1.1MB 残行尚未
+  // 读完时服务端还没拒绝,此时 broadcast 正常写出是合法行为,断言会误报。
+  const endedChunks: string[] = [];
+  const originalEnd = Socket.prototype.end;
+  Socket.prototype.end = function (this: Socket, ...args: unknown[]) {
+    if (typeof args[0] === 'string') endedChunks.push(args[0]);
+    return (originalEnd as (...a: unknown[]) => Socket).apply(this, args);
+  } as typeof Socket.prototype.end;
+  afterAll(() => {
+    Socket.prototype.end = originalEnd;
+  });
+  beforeEach(() => {
+    endedChunks.length = 0;
+  });
+  async function waitForReject(message: string): Promise<void> {
+    await vi.waitFor(
+      () => {
+        if (!endedChunks.some((c) => c.includes(message))) {
+          throw new Error('server has not rejected yet');
+        }
+      },
+      { timeout: 10_000, interval: 10 },
+    );
+  }
+
   async function start(tools: AnyMcpTool[]): Promise<Socket> {
     const dir = await mkdtemp(join(tmpdir(), 'continuo-stdio-rej-'));
     dirs.push(dir);
@@ -170,7 +197,7 @@ describe.skipIf(isWin)('规则 3 · 拒绝后不再写响应 / 不再处理排�
     await new Promise((r) => setTimeout(r, 100));
     // 超单行字节上限的残行 → 拒绝(end(PARSE_ERROR) + abort 在途 waiter)。
     client.write('z'.repeat(1_100_000));
-    await new Promise((r) => setTimeout(r, 200));
+    await waitForReject('line exceeds maximum size');
 
     let received = '';
     client.setEncoding('utf8');
@@ -228,7 +255,7 @@ describe.skipIf(isWin)('规则 3 · 拒绝后不再写响应 / 不再处理排�
     client.write(buf);
     await new Promise((r) => setTimeout(r, 100));
     client.write('z'.repeat(1_100_000)); // 超单行字节上限 → 拒绝(end(PARSE_ERROR))
-    await new Promise((r) => setTimeout(r, 200));
+    await waitForReject('line exceeds maximum size');
     server!.broadcast('notifications/tools/list_changed');
 
     let received = '';
