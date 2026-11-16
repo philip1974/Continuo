@@ -331,6 +331,26 @@ function randomTcpPort(): number {
   return 20_000 + Math.floor(Math.random() * 30_000);
 }
 
+/** 随机端口被占(adapter 就绪前退出)时,换端口重新 spawn 的总尝试次数。 */
+const TCP_SPAWN_ATTEMPTS = 3;
+
+/** js-debug dapDebugServer.js 在端口上 listen 成功后打到 stdout 的就绪行前缀。 */
+const ADAPTER_LISTENING_MARK = 'Debug server listening at';
+
+/** 单次 spawn 的 adapter 状态(重试时换一份,旧进程的迟到事件不会污染新一次)。 */
+interface AdapterRunState {
+  /** 已退出时的原因描述(code / signal)。 */
+  exited: string | null;
+  /** stdio 关闭(退出后 stderr 已读完)。 */
+  closed: Promise<void>;
+  /** stdout 已出现就绪行:端口确由本 adapter 监听。 */
+  listening: boolean;
+  /** 找就绪行用的 stdout 开头(封顶)。 */
+  stdoutHead: string;
+}
+
+class AdapterExitedEarlyError extends Error {}
+
 function withTimeout<T>(
   promise: Promise<T>,
   ms: number,
@@ -404,7 +424,6 @@ export class DapClient {
   readonly readyTimeoutMs: number;
   readonly requestTimeoutMs: number;
   readonly connectIntervalMs: number;
-  readonly tcpPort: number;
   readonly transcript: DapTranscriptEntry[];
 
   private server: ChildProcessByStdio<null, Readable, Readable> | null = null;
@@ -430,6 +449,10 @@ export class DapClient {
   /** 本 client 建的私有 socket 目录(只有它负责删除;child 共用父的路径,不持有)。 */
   private socketDir: string | null = null;
   private socketPathValue: string | null;
+  private tcpPortValue: number;
+  /** 端口是自己随机取的(未显式指定):冲突时才允许换端口重试。 */
+  private readonly autoTcpPort: boolean;
+  private adapterRun: AdapterRunState | null = null;
 
   constructor(options: DapClientOptions = {}) {
     this.adapterPath = options.adapterPath ?? defaultAdapterPath;
@@ -439,7 +462,8 @@ export class DapClient {
     this.connectIntervalMs = options.connectIntervalMs ?? 100;
     this.autoSocketPath = options.socketPath === undefined && process.platform !== 'win32';
     this.socketPathValue = options.socketPath ?? null;
-    this.tcpPort = options.tcpPort ?? randomTcpPort();
+    this.autoTcpPort = options.tcpPort === undefined;
+    this.tcpPortValue = options.tcpPort ?? randomTcpPort();
     this.transcript = options.transcript ?? [];
     this.startDebuggingHandler = options.startDebuggingHandler ?? null;
     this.traceId = options.traceId ?? nextDapTraceId();
@@ -456,14 +480,33 @@ export class DapClient {
       this.socketDir = dir;
       this.socketPathValue = path.join(dir, SOCKET_FILE_NAME);
     }
-    const endpoint = this.socketPath ?? String(this.tcpPort);
-    if (!endpoint) {
-      throw new Error('no DAP endpoint configured');
-    }
     if (this.socketPath) {
       await fs.rm(this.socketPath, { force: true });
     }
 
+    // TCP 随机端口可能与另一会话的 adapter 撞上:本 adapter 因 EADDRINUSE 在就绪前退出 → 换端口重 spawn。
+    // socket 路径是私有目录内的唯一路径,不会冲突,只试一次。
+    const attempts = !this.socketPath && this.autoTcpPort ? TCP_SPAWN_ATTEMPTS : 1;
+    let socket: Socket;
+    for (let attempt = 1; ; attempt += 1) {
+      this.spawnAdapter();
+      try {
+        socket = await this.waitForReady();
+        break;
+      } catch (err) {
+        if (!(err instanceof AdapterExitedEarlyError) || attempt >= attempts || this.disposed) {
+          throw err;
+        }
+        this.tcpPortValue = randomTcpPort();
+      }
+    }
+    this.socket = socket;
+    this.attachSocket(socket);
+    return this;
+  }
+
+  private spawnAdapter(): void {
+    const endpoint = this.socketPath ?? String(this.tcpPort);
     // nodePath 默认 process.execPath。在打包/dev 的 Electron 里 process.execPath 是
     // Electron 二进制,必须设 ELECTRON_RUN_AS_NODE=1 让它以纯 Node 跑 dapDebugServer.js;
     // 否则 Electron 会把脚本当成 app 入口加载 → "Dynamic require of fs is not supported"。
@@ -493,6 +536,19 @@ export class DapClient {
       this.spawnError = err;
       this.rejectAllPending(err);
     });
+    // 每次 spawn 一份状态:重试后旧进程的迟到事件不影响新一次的判定。
+    this.serverStderr = '';
+    let markClosed: () => void = () => {};
+    const run: AdapterRunState = {
+      exited: null,
+      closed: new Promise<void>((resolve) => {
+        markClosed = resolve;
+      }),
+      listening: false,
+      stdoutHead: '',
+    };
+    this.adapterRun = run;
+    server.once('close', markClosed);
     server.stderr?.on('data', (chunk: Buffer) => {
       // 只用于 ready 超时的报错信息:封顶,不随 adapter 生命周期无界累积。
       if (this.serverStderr.length < SERVER_STDERR_MAX_CHARS) {
@@ -503,20 +559,22 @@ export class DapClient {
       }
     });
     server.stdout?.on('data', (chunk: Buffer) => {
+      const text = chunk.toString('utf8');
+      if (!run.listening) {
+        run.stdoutHead = (run.stdoutHead + text).slice(-SERVER_STDERR_MAX_CHARS);
+        run.listening = run.stdoutHead.includes(ADAPTER_LISTENING_MARK);
+      }
       this.recordTranscript({
         direction: 'server-stdout',
-        text: chunk.toString('utf8'),
+        text,
       });
     });
     server.once('exit', (code, signal) => {
+      run.exited = `code=${code} signal=${signal}`;
       this.rejectAllPending(
         new Error(`DAP server exited code=${code} signal=${signal}`),
       );
     });
-
-    this.socket = await this.waitForReady();
-    this.attachSocket(this.socket);
-    return this;
   }
 
   async connectToServer(): Promise<this> {
@@ -550,23 +608,48 @@ export class DapClient {
   async waitForReady(): Promise<Socket> {
     const deadline = Date.now() + this.readyTimeoutMs;
     let lastError: Error | undefined;
+    const run = this.adapterRun;
 
     while (Date.now() < deadline) {
       if (this.spawnError) {
         throw new Error(`DAP server failed to spawn: ${this.spawnError.message}`);
       }
+      // 本 adapter 已退出:端口上若还有监听者那也是别人(如撞端口的另一会话的 adapter),不能连。
+      if (run?.exited) throw await this.exitedEarlyError(run);
+      // TCP:端口可能被别的进程占着,能连上不代表是本 adapter → 等它在 stdout 报告 listen 成功再连。
+      // socket 路径在私有目录内唯一,连得上即是本 adapter。
+      if (run && !this.socketPath && !run.listening) {
+        await sleep(this.connectIntervalMs);
+        continue;
+      }
+      let socket: Socket;
       try {
-        return await this.connectOnce();
+        socket = await this.connectOnce();
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
         await sleep(this.connectIntervalMs);
+        continue;
       }
+      // 连接期间本 adapter 退出了:连上的不是它。
+      if (run?.exited) {
+        socket.destroy();
+        throw await this.exitedEarlyError(run);
+      }
+      return socket;
     }
 
     const detail = lastError ? ` last error: ${lastError.message}` : '';
     throw new Error(
       `DAP server readiness timed out after ${this.readyTimeoutMs}ms.${detail}\n` +
         `server stderr:\n${this.serverStderr}`,
+    );
+  }
+
+  private async exitedEarlyError(run: AdapterRunState): Promise<AdapterExitedEarlyError> {
+    // 'exit' 可能早于 stderr 读完:等 stdio 关闭(有界)再取 stderr 进报错。
+    await Promise.race([run.closed, sleep(1_000)]);
+    return new AdapterExitedEarlyError(
+      `DAP server exited before ready (${run.exited}).\nserver stderr:\n${this.serverStderr}`,
     );
   }
 
@@ -846,6 +929,11 @@ export class DapClient {
    */
   get socketPath(): string | null {
     return this.socketPathValue;
+  }
+
+  /** TCP 模式(Windows)adapter 监听的端口;随机端口冲突重试后会变。 */
+  get tcpPort(): number {
+    return this.tcpPortValue;
   }
 
   /** debug adapter 子进程 pid(未 spawn / child session → undefined)。 */
