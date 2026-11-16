@@ -39,6 +39,7 @@ import { localizeErrorByCode } from '@/lib/localize-error';
 import { openOrFocusPanel } from '@/shell/dock/dock-api-ref';
 import { notifyFailure, notifyThrownError } from '@/notifications/notify-thrown-error';
 import { errorCodeOf } from '../../../electron/shared/error-message';
+import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 
 interface CreatingState {
   type: 'file' | 'dir';
@@ -127,24 +128,30 @@ export function buildSelectedPathSet(
 /**
  * 纯唯一名 picker:给定 destDir 与已存在 basename 集合,返回一个 pick(name) 函数。
  * 候选序:basename / `${stem} copy${ext}` / `${stem} copy 2${ext}` / ...(上限 100,
- * 兜底加时间戳)。**每次 pick 把选中的候选名加进 existing**,故同一批次内多个同名项
+ * 兜底加时间戳)。**每次 pick 把选中的候选名加进判重集合**,故同一批次内多个同名项
  * 不会都选到同一个 ` copy` 名(批量重名碰撞 → 第二个 move 覆盖第一个的潜在数据丢失)。
  * 抽成模块级纯函数以便单测;makeUniqueDestPicker 先 listDir 一次再委托它。
+ * 判重按大小写折叠 + NFC:macOS 默认 / Windows 盘大小写不敏感,已有 Readme.md 时选原名 README.md
+ * 会被 main 报 FS_EEXIST 中止整批(大小写敏感的 Linux 上多一个 ` copy` 后缀是可接受的保守行为)。
+ * 返回的实际文件名保持原大小写。
  */
 export function makeNamePicker(destDir: string, existing: Set<string>): (name: string) => string {
+  const fold = (n: string): string => lowerIfNeeded(n.normalize('NFC'));
+  const taken = new Set<string>();
+  for (const n of existing) taken.add(fold(n));
   return (name: string): string => {
     const dot = name.lastIndexOf('.');
     const stem = dot > 0 ? name.slice(0, dot) : name;
     const ext = dot > 0 ? name.slice(dot) : '';
     for (let i = 0; i < 100; i++) {
       const candidate = i === 0 ? name : i === 1 ? `${stem} copy${ext}` : `${stem} copy ${i}${ext}`;
-      if (!existing.has(candidate)) {
-        existing.add(candidate); // 预留,防同批后续项再撞同名
+      if (!taken.has(fold(candidate))) {
+        taken.add(fold(candidate)); // 预留,防同批后续项再撞同名
         return joinPath(destDir, candidate);
       }
     }
     const fallback = `${stem}-${Date.now()}${ext}`;
-    existing.add(fallback);
+    taken.add(fold(fallback));
     return joinPath(destDir, fallback);
   };
 }
@@ -584,10 +591,18 @@ export function FolderTree({ root }: { root: string }) {
       const dnd = tree.getState().dnd;
       if (!dnd?.draggedItems || dnd.draggedItems.length === 0) return;
       e.preventDefault();
-      // 已经在 root 下的不动(VSCode 同款)
-      const moveable = selectRootDropMoveablePaths(dnd.draggedItems, root);
-      if (moveable.length === 0) return;
-      await runBatchTransfer('move', moveable, root, 'root drop move', 'errors.folder.move_failed');
+      // 已经在 root 下的不动(VSCode 同款)。selectRootDropMoveablePaths 只用于「全在 root 下」早退;
+      // 实际交给漏斗的是全部拖动路径 + skipSameParent —— 漏斗先剔后代再跳过同父项。若交预筛结果,
+      // 多选 root 下的 A 与 A/B 时 A 被预先剔掉,只剩 A/B 被移到 root,层级被拆散。
+      if (selectRootDropMoveablePaths(dnd.draggedItems, root).length === 0) return;
+      await runBatchTransfer(
+        'move',
+        selectDraggedItemPaths(dnd.draggedItems),
+        root,
+        'root drop move',
+        'errors.folder.move_failed',
+        { skipSameParent: true },
+      );
       return;
     }
     e.preventDefault();

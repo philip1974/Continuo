@@ -9,7 +9,7 @@
 // 修:rename 前 lstat(dst);存在且与源不是同一 inode → 抛 ScopeError(reason:'EEXIST'),
 // 不执行 rename;同 inode(大小写改名到自身)放行。
 
-import { mkdtemp, rm, realpath, writeFile, readFile } from 'node:fs/promises';
+import { link, mkdtemp, readdir, rm, realpath, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -78,6 +78,20 @@ describe('topic49 codex-loop R2 · plugin-fs rename 非覆盖', () => {
     // b 内容必须保留,a 必须还在(rename 没执行)
     expect(await readFile(b, 'utf8')).toBe('B-content-keep');
     expect(await readFile(a, 'utf8')).toBe('A-content');
+  });
+
+  it('rename 到同 inode 的另一硬链接 → 抛 EEXIST(不误判成大小写改名到自身)', async () => {
+    // 同 inode 只在两名字仅差大小写/Unicode 规范化时才放行;硬链接 a.md/b.md 同 inode 但名字不同,
+    // POSIX rename 对其是 no-op 却返回成功 → 插件以为改名了。
+    const a = join(tmpCanonical, 'a.md');
+    const b = join(tmpCanonical, 'b.md');
+    await writeFile(a, 'A-content');
+    await link(a, b);
+
+    await expect(
+      ipc.invokeWithEvent(event, PLUGIN_FS_CHANNELS.RENAME, token, a, b),
+    ).rejects.toBeInstanceOf(ScopeError);
+    expect((await readdir(tmpCanonical)).sort()).toEqual(['a.md', 'b.md']);
   });
 
   it('rename 到不存在的目标 → 正常改名', async () => {
