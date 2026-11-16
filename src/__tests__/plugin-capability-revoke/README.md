@@ -143,3 +143,8 @@ app → 重载随后建全新 scoped app 并激活,新实例继续持有 shell /
   激活(不弹窗、不写盘);未知 id 忽略;reload-gate 接线与 init 前缓冲。
 - `mcp-permission-revoke.spec.ts`:撤销后调用被拒;变更通知后注销工具(stub 移除)、调用 NO_SUCH_TOOL;仍授权保留;
   直接 `app.mcp.register` 不保存 Disposable → 停用 / 热重载 / onload 抛错后工具注销,再启用同名注册成功。
+
+## 调用方 signal 合并不残留监听(终审 P1)
+
+- `network.fetch` 用 `AbortSignal.any([调用方 signal, 本实例 controller])`:停用照常中止在途请求、成功后调用方
+  abort 仍能中止响应体读取;源 signal 对合并 signal 只持弱引用,插件长期复用同一 signal 轮询不再堆积 abort 监听。

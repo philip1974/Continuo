@@ -193,6 +193,29 @@ describe('scoped app:revoke() 后有外部副作用的能力一律拒绝,不发 
     expect(signals[1]!.aborted).toBe(false);
   });
 
+  // 终审 P1:插件用同一个长期存活的调用方 signal 周期性请求(轮询)→ 每次成功的请求都不得在它上面残留
+  // abort 监听(否则监听器与内部 controller 随请求次数无界堆积,停用也清不掉)。
+  it('network.fetch:同一调用方 signal 多次成功请求 → 不在调用方 signal 上残留 abort 监听', async () => {
+    h.fetch.mockImplementation(async () => new Response('x'));
+    const ctl = createScopedAppController(createTestCoApp(), ID, null, 'tok');
+    const caller = new AbortController();
+    let live = 0;
+    const add = caller.signal.addEventListener.bind(caller.signal);
+    const remove = caller.signal.removeEventListener.bind(caller.signal);
+    caller.signal.addEventListener = ((...args: Parameters<AbortSignal['addEventListener']>) => {
+      if (args[0] === 'abort') live++;
+      add(...args);
+    }) as AbortSignal['addEventListener'];
+    caller.signal.removeEventListener = ((...args: Parameters<AbortSignal['removeEventListener']>) => {
+      if (args[0] === 'abort') live--;
+      remove(...args);
+    }) as AbortSignal['removeEventListener'];
+    for (let i = 0; i < 20; i++) {
+      await ctl.app.network.fetch('https://example.com/poll', { signal: caller.signal });
+    }
+    expect(live).toBe(0);
+  });
+
   it('未吊销时照常转发', async () => {
     const ctl = createScopedAppController(createTestCoApp(), ID, null, 'tok');
     await ctl.app.shell.exec('/bin/echo', ['hi']);

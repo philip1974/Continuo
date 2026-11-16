@@ -423,22 +423,17 @@ function makeNetwork(
       await ensurePerm(pluginId, 'network', store, life);
       validateNetworkInput(url, init); // 边界(E264):发 raw fetch 前校验 URL/headers
       // 停用即中止(终审):每次请求挂本实例的 AbortController,revoke() 时 abort 全部在途请求。
-      // 调用方自带 signal 时手动联动(不依赖 AbortSignal.any,跨 realm 的 signal 也适用)。
+      // 调用方自带 signal 时用 AbortSignal.any 合并:成功后响应体仍在读取,调用方 abort 须能照常中止(同原生
+      // fetch 语义);且源 signal 对合并 signal 只持弱引用,长期复用同一调用方 signal 轮询不会堆积监听(终审)。
       const ctl = new AbortController();
       const callerSignal = init?.signal ?? undefined;
-      const onCallerAbort = (): void => ctl.abort(callerSignal?.reason);
-      if (callerSignal?.aborted) onCallerAbort();
-      else callerSignal?.addEventListener('abort', onCallerAbort, { once: true });
+      const signal = callerSignal ? AbortSignal.any([callerSignal, ctl.signal]) : ctl.signal;
       life.inflightFetches.add(ctl);
       try {
         // 用 module 顶部 cached raw fetch,sandboxSweep 后全局 fetch
         // 已涂掉但本闭包仍能调
-        return await getCachedFetch()(url, { ...init, signal: ctl.signal });
-      } catch (err) {
-        callerSignal?.removeEventListener('abort', onCallerAbort);
-        throw err;
+        return await getCachedFetch()(url, { ...init, signal });
       } finally {
-        // 成功时保留调用方联动:响应体仍在读取,调用方 abort 须能照常中止(同原生 fetch 语义)。
         life.inflightFetches.delete(ctl);
       }
     },
