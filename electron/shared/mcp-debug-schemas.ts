@@ -72,22 +72,27 @@ const debugSessionSummarySchema = z
   .strict();
 
 /**
- * launch 的 env 禁止的变量名(大小写不敏感比较,覆盖 Windows):它们让 Node / 动态链接器在目标程序之前加载
- * 额外代码(NODE_OPTIONS=--require=/tmp/x.js 等),绕过 program / cwd 的工作区闸。
+ * launch 的 env 禁止的变量(大小写不敏感比较,覆盖 Windows):它们让 Node / 动态链接器 / OpenSSL / glibc 在目标程序之前
+ * 加载额外代码(NODE_OPTIONS=--require=/tmp/x.js、DYLD_INSERT_LIBRARIES、OPENSSL_CONF 指向的 engine/provider、
+ * GCONV_PATH 下的 .so 等),绕过 program / cwd 的工作区闸。动态链接器与 OpenSSL 的变量族会随版本增加,按前缀整族拒绝,
+ * 不逐个列名(逐个列名曾漏 DYLD_VERSIONED_* / OPENSSL_CONF 等)。
  */
+export const DEBUG_LAUNCH_FORBIDDEN_ENV_PREFIXES = ['DYLD_', 'LD_', 'OPENSSL_'] as const;
 export const DEBUG_LAUNCH_FORBIDDEN_ENV = [
   'NODE_OPTIONS',
   'NODE_PATH',
   'NODE_REPL_EXTERNAL_MODULE',
-  'LD_PRELOAD',
-  'LD_LIBRARY_PATH',
-  'LD_AUDIT',
-  'DYLD_INSERT_LIBRARIES',
-  'DYLD_LIBRARY_PATH',
-  'DYLD_FALLBACK_LIBRARY_PATH',
-  'DYLD_FRAMEWORK_PATH',
-  'DYLD_FALLBACK_FRAMEWORK_PATH',
+  'GCONV_PATH',
 ] as const;
+
+/** env 变量名是否命中禁用规则(前缀 + 精确名,大小写不敏感)。 */
+export function isDebugLaunchEnvForbidden(name: string): boolean {
+  const upper = name.toUpperCase();
+  return (
+    (DEBUG_LAUNCH_FORBIDDEN_ENV as readonly string[]).includes(upper) ||
+    DEBUG_LAUNCH_FORBIDDEN_ENV_PREFIXES.some((prefix) => upper.startsWith(prefix))
+  );
+}
 
 const debugEnvEntrySchema = z
   .object({
@@ -401,7 +406,7 @@ export const debugLaunchInputJsonSchema = objectSchema(
     env: {
       ...arraySchema(envEntryJson, 128),
       description:
-        `Extra environment variables. Variables that make Node or the dynamic linker load extra code are rejected (case-insensitive): ${DEBUG_LAUNCH_FORBIDDEN_ENV.join(', ')}. The Node.js runtime is resolved by Continuo, not from env PATH.`,
+        `Extra environment variables. Variables that make Node, the dynamic linker or OpenSSL load extra code are rejected (case-insensitive): any name starting with ${DEBUG_LAUNCH_FORBIDDEN_ENV_PREFIXES.map((p) => `${p}*`).join(', ')}, plus ${DEBUG_LAUNCH_FORBIDDEN_ENV.join(', ')}. Ordinary variables such as NODE_ENV are passed through. The Node.js runtime is resolved by Continuo, not from env PATH.`,
     },
     stop_on_entry: boolSchema(),
     name: stringSchema(128),

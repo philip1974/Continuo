@@ -99,8 +99,10 @@ describe('50 · debug_* schemas', () => {
     const env = (tool.inputJsonSchema as { properties: Record<string, Record<string, unknown>> })
       .properties.env!;
     expect(env.description).toMatch(/NODE_OPTIONS/);
-    expect(env.description).toMatch(/LD_PRELOAD/);
-    expect(env.description).toMatch(/DYLD_INSERT_LIBRARIES/);
+    expect(env.description).toMatch(/LD_\*/);
+    expect(env.description).toMatch(/DYLD_\*/);
+    expect(env.description).toMatch(/OPENSSL_\*/);
+    expect(env.description).toMatch(/GCONV_PATH/);
   });
 
   it('strict 拒未知字段,breakpoint 预留条件字段当前显式拒绝', () => {

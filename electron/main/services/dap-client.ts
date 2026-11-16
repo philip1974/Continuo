@@ -145,8 +145,15 @@ export function encodeDapMessage(message: DapMessage): Buffer {
   return Buffer.concat([header, body]);
 }
 
-/** 单个 DAP 帧 body 的字节上限。对端是本机 js-debug,正常帧远小于此;超限视为畸形流(不为巨帧无界缓冲)。 */
-export const DAP_MAX_FRAME_BYTES = 64 * 1024 * 1024;
+/**
+ * 单个 DAP 帧 body 的字节上限。对端是本机 js-debug,正常响应远小于此;evaluate 结果服务层也只返回 64KiB,
+ * 更大的帧收进来只会白占内存(evaluate('x'.repeat(16777216)) 曾把 RSS 冲到 ~1.1GiB)。超限帧不缓冲、边收边丢:
+ * 能从帧体前缀认出是响应时合成失败响应只 reject 对应请求,否则(事件等)静默丢弃 —— 不断开整条会话。
+ */
+export const DAP_MAX_FRAME_BYTES = 8 * 1024 * 1024;
+
+/** 超限帧保留用于识别 request_seq / command 的帧体前缀字节数(js-debug 响应的这两个字段在最前面)。 */
+const DAP_OVERSIZED_PREFIX_BYTES = 1024;
 
 /** 帧头(`Content-Length: N` 等)的字节上限。 */
 const DAP_MAX_HEADER_BYTES = 64 * 1024;
@@ -155,11 +162,7 @@ function parseDapContentLength(header: string): number {
   for (const line of header.split('\r\n')) {
     const match = /^Content-Length:\s*(\d+)$/i.exec(line);
     if (!match) continue;
-    const length = Number.parseInt(match[1]!, 10);
-    if (length > DAP_MAX_FRAME_BYTES) {
-      throw new Error(`DAP frame Content-Length ${length} exceeds ${DAP_MAX_FRAME_BYTES}`);
-    }
-    return length;
+    return Number.parseInt(match[1]!, 10);
   }
   throw new Error(`DAP frame missing Content-Length header: ${header}`);
 }
@@ -180,34 +183,115 @@ function parseDapMessageBody(body: string): DapMessage {
   return parsed as DapMessage;
 }
 
+/** 超限帧被丢弃时:前缀能认出是响应 → 合成失败响应(只 reject 对应请求);认不出 → undefined(静默丢弃)。 */
+function oversizedFrameResponse(prefix: string, length: number): DapResponseMessage | undefined {
+  if (!/"type"\s*:\s*"response"/.test(prefix)) return undefined;
+  const requestSeq = /"request_seq"\s*:\s*(\d+)/.exec(prefix);
+  if (!requestSeq) return undefined;
+  const command = /"command"\s*:\s*"([^"\\]{1,64})"/.exec(prefix);
+  return {
+    seq: 0,
+    type: 'response',
+    request_seq: Number.parseInt(requestSeq[1]!, 10),
+    ...(command ? { command: command[1]! } : {}),
+    success: false,
+    message: `DAP response of ${length} bytes exceeds ${DAP_MAX_FRAME_BYTES} bytes; dropped`,
+  };
+}
+
+/**
+ * 收包按 chunk 数组累积,只在凑够帧头声明的整帧时一次性拼接(找帧头只拼有界前缀):旧实现每个 chunk 都
+ * Buffer.concat 整个缓冲,大帧分成 n 块收就是 O(n²) 复制。
+ */
 export class DapStreamDecoder {
-  private buffer = Buffer.alloc(0);
+  private chunks: Buffer[] = [];
+  private buffered = 0;
+  /** 已解析帧头、等待帧体的字节数;null = 正在找帧头。 */
+  private bodyLength: number | null = null;
+  /** 正在丢弃的超限帧:先收前缀用于识别,其余字节边收边丢。 */
+  private oversized: { length: number; remaining: number; prefix: Buffer | null } | null = null;
 
   push(chunk: Buffer | Uint8Array | string): DapMessage[] {
     const input = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    this.buffer = Buffer.concat([this.buffer, input]);
+    if (input.length > 0) {
+      this.chunks.push(input);
+      this.buffered += input.length;
+    }
     const messages: DapMessage[] = [];
 
     while (true) {
-      const headerEnd = this.buffer.indexOf('\r\n\r\n');
-      if (headerEnd === -1) {
-        // 帧头迟迟不结束 = 畸形流:帧体上限管不到这里,缓冲会无界增长。
-        if (this.buffer.length > DAP_MAX_HEADER_BYTES) {
-          throw new Error(`DAP frame header exceeds ${DAP_MAX_HEADER_BYTES} bytes`);
+      if (this.oversized) {
+        const over = this.oversized;
+        if (over.prefix === null) {
+          const prefixLength = Math.min(DAP_OVERSIZED_PREFIX_BYTES, over.remaining);
+          if (this.buffered < prefixLength) return messages;
+          over.prefix = this.take(prefixLength);
+          over.remaining -= prefixLength;
         }
-        return messages;
+        over.remaining -= this.drop(over.remaining);
+        if (over.remaining > 0) return messages;
+        const response = oversizedFrameResponse(over.prefix.toString('utf8'), over.length);
+        if (response) messages.push(response);
+        this.oversized = null;
+        continue;
       }
 
-      const header = this.buffer.subarray(0, headerEnd).toString('ascii');
-      const contentLength = parseDapContentLength(header);
-      const bodyStart = headerEnd + 4;
-      const frameEnd = bodyStart + contentLength;
-      if (this.buffer.length < frameEnd) return messages;
+      if (this.bodyLength === null) {
+        const head = this.peek(Math.min(this.buffered, DAP_MAX_HEADER_BYTES + 4));
+        const headerEnd = head.indexOf('\r\n\r\n');
+        if (headerEnd === -1) {
+          // 帧头迟迟不结束 = 畸形流:帧体上限管不到这里,缓冲会无界增长。
+          if (this.buffered > DAP_MAX_HEADER_BYTES) {
+            throw new Error(`DAP frame header exceeds ${DAP_MAX_HEADER_BYTES} bytes`);
+          }
+          return messages;
+        }
+        const contentLength = parseDapContentLength(head.subarray(0, headerEnd).toString('ascii'));
+        this.drop(headerEnd + 4);
+        if (contentLength > DAP_MAX_FRAME_BYTES) {
+          this.oversized = { length: contentLength, remaining: contentLength, prefix: null };
+          continue;
+        }
+        this.bodyLength = contentLength;
+      }
 
-      const body = this.buffer.subarray(bodyStart, frameEnd).toString('utf8');
+      if (this.buffered < this.bodyLength) return messages;
+      const body = this.take(this.bodyLength).toString('utf8');
+      this.bodyLength = null;
       messages.push(parseDapMessageBody(body));
-      this.buffer = this.buffer.subarray(frameEnd);
     }
+  }
+
+  /** 前 n 字节(不消费);n 不超过已缓冲字节数。 */
+  private peek(n: number): Buffer {
+    const first = this.chunks[0];
+    if (first && first.length >= n) return first.subarray(0, n);
+    return Buffer.concat(this.chunks, n);
+  }
+
+  /** 取出并消费前 n 字节;n 不超过已缓冲字节数。 */
+  private take(n: number): Buffer {
+    const out = this.peek(n);
+    this.drop(n);
+    return out;
+  }
+
+  /** 丢弃至多 n 字节,返回实际丢弃数。 */
+  private drop(n: number): number {
+    let dropped = 0;
+    while (dropped < n && this.chunks.length > 0) {
+      const first = this.chunks[0]!;
+      const need = n - dropped;
+      if (first.length <= need) {
+        this.chunks.shift();
+        dropped += first.length;
+      } else {
+        this.chunks[0] = first.subarray(need);
+        dropped += need;
+      }
+    }
+    this.buffered -= dropped;
+    return dropped;
   }
 }
 
@@ -485,7 +569,7 @@ export class DapClient {
       try {
         messages = this.decoder.push(chunk);
       } catch (err) {
-        // 畸形流(缺 Content-Length / 超限 / body 非 JSON):解码器缓冲不会前进,之后每个 chunk 都会重抛。
+        // 畸形流(缺 Content-Length / 帧头超限 / body 非 JSON):解码器缓冲不会前进,之后每个 chunk 都会重抛。
         // 在 data 回调里抛出就是主进程未捕获异常 —— 结算在途请求并断开这条连接。
         this.rejectAllPending(
           new Error(`malformed DAP stream: ${err instanceof Error ? err.message : String(err)}`),

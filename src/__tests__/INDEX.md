@@ -188,6 +188,7 @@
 - [`debug-schemas.spec.ts`](./50-agent-debug-engine-mvp/debug-schemas.spec.ts)
 - [`mcp-debug-host.spec.ts`](./50-agent-debug-engine-mvp/mcp-debug-host.spec.ts)
 - [`stdio-caller-closed.spec.ts`](./50-agent-debug-engine-mvp/stdio-caller-closed.spec.ts)
+- [`terminal-token-revoke-kills-debug.spec.ts`](./50-agent-debug-engine-mvp/terminal-token-revoke-kills-debug.spec.ts)
 
 ## [topic-51 debug breakpoint UI](./51-debug-breakpoint-ui/README.md)
 
