@@ -2,7 +2,7 @@
 
 import { execFile as execFileCb } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { copyFile, cp, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { copyFile, cp, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -1621,6 +1621,109 @@ describe('DebugService fake adapter · 会话上限 / 程序起跑时机 / 按 s
       breakpoints: [{ line: 10 }],
     });
   });
+
+  // js-debug 按 Node 实际加载的真实路径匹配脚本:软链拼写(macOS /var → /private/var)设的断点在脚本加载后回
+  // Unbound。发给 adapter 的 path 与分组键基于 realpath;推给 renderer 的仍是调用方拼写(编辑器 tab 路径来自
+  // 用户选的 workspace root,未必是真实路径)。
+  it('断点 file 为软链拼写 → 发给 adapter 的是 realpath,推给 renderer 的仍是原拼写;两种拼写同组', async () => {
+    const workspace: DebugWorkspaceGuard = {
+      getWorkspaceRoot: () => '/',
+      realpath: async (p) => p.replace(/^\/link\//, '/real/'),
+    };
+    const { service, parent } = makeFakeService(new FakeDapClient(1001), workspace);
+    const events: DebugViewEvent[] = [];
+    service.setEventSink({ emit: (_owner, event) => events.push(event) });
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/real/fixture.js', cwd: '/real' },
+      ctx,
+    );
+    await service.setBreakpoints(sessionId, { file: '/link/a.js', line: 3 });
+    expect(setBreakpointRequests(parent).at(-1)).toMatchObject({ source: { path: '/real/a.js' } });
+    expect(events.at(-1)).toMatchObject({
+      type: 'breakpoints-changed',
+      file: '/link/a.js',
+      breakpoints: [{ file: '/link/a.js', line: 3 }],
+    });
+    await service.setBreakpoints(sessionId, { file: '/real/a.js', line: 5 });
+    expect(setBreakpointRequests(parent).at(-1)).toMatchObject({
+      source: { path: '/real/a.js' },
+      breakpoints: [{ line: 3 }, { line: 5 }],
+    });
+  });
+
+  it('断点 file realpath 失败(文件不存在等)→ 沿用原路径,不报错', async () => {
+    const workspace: DebugWorkspaceGuard = {
+      getWorkspaceRoot: () => '/',
+      // launch 的 workspace 闸也走 realpath:只让断点文件失败。
+      realpath: async (p) => {
+        if (p.startsWith('/missing/')) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+        return p;
+      },
+    };
+    const { service, parent } = makeFakeService(new FakeDapClient(1001), workspace);
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      ctx,
+    );
+    await expect(service.setBreakpoints(sessionId, { file: '/missing/a.js', line: 3 })).resolves.toMatchObject({
+      verified: true,
+    });
+    expect(setBreakpointRequests(parent).at(-1)).toMatchObject({ source: { path: '/missing/a.js' } });
+  });
+
+  // 同一行改 column 是新的断点定义:不得继承旧定义在各连接上的回报 / id —— 否则 child 同步失败(被 allSettled
+  // 吞掉)时聚合仍用旧 child 的 verified:true。完全相同的重设才继承(见「运行后对同一 source 重设」)。
+  it('同一行 column 变化 → 不沿用旧定义的回报;child 同步失败时如实回落到父连接的回报', async () => {
+    const { service, parent } = makeFakeService();
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      ctx,
+    );
+    await service.setBreakpoints(sessionId, { file: '/a.js', line: 3 });
+    await parent.triggerStartDebugging({ type: 'pwa-node' });
+    const child = parent.children[0]!;
+    child.beforeResponse = (command) => {
+      if (command === 'setBreakpoints') throw new Error('child gone');
+    };
+    parent.unverifiedLines.add(3);
+    expect(await service.setBreakpoints(sessionId, { file: '/a.js', line: 3, column: 5 })).toEqual({
+      verified: false,
+      line: 3,
+      message: 'pending',
+    });
+  });
+
+  // 真实 DapClient 在同一 data 回调里同步处理同一 chunk 的全部消息:先 resolve setBreakpoints 响应、再分发紧随
+  // 其后的 breakpoint changed 事件,此时 await 续体还没登记新 id → 事件按 id 查不到。须暂存、登记 id 后补上。
+  it('setBreakpoints 响应与 breakpoint changed 同 chunk 到达(事件先于续体)→ 事件不丢,登记 id 后生效', async () => {
+    const { service, parent } = makeFakeService();
+    const events: DebugViewEvent[] = [];
+    service.setEventSink({ emit: (_owner, event) => events.push(event) });
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      ctx,
+    );
+    parent.unverifiedLines.add(3);
+    const original = parent.sendRequest.bind(parent);
+    parent.sendRequest = async (command, args, timeoutMs) => {
+      const response = await original(command, args, timeoutMs);
+      if (command === 'setBreakpoints') {
+        const id = parent.lastBreakpointIds[0]!;
+        parent.emit('breakpoint', { reason: 'changed', breakpoint: { id, verified: true, line: 4 } });
+      }
+      return response;
+    };
+    expect(await service.setBreakpoints(sessionId, { file: '/a.js', line: 3 })).toEqual({
+      verified: true,
+      line: 4,
+    });
+    expect(events.at(-1)).toEqual({
+      type: 'breakpoints-changed',
+      sessionId,
+      file: '/a.js',
+      breakpoints: [{ file: '/a.js', line: 4, verified: true }],
+    });
+  });
 });
 
 const root = process.cwd();
@@ -1901,16 +2004,17 @@ describe.skipIf(!adapterExists)('DebugService real adapter · 晚设断点与 wo
     run: (ctx: { service: DebugService; dir: string }) => Promise<T>,
   ): Promise<T> {
     const adapterCopy = await prepareCommonJsAdapter();
-    // 取真实路径:macOS 的 tmpdir 在 /var(→ /private/var 的软链)下,js-debug 按 Node 加载的真实路径匹配
-    // 已加载脚本,用软链路径设的断点在脚本加载后回 Unbound。
-    const dir = await realpath(await mkdtemp(path.join(tmpdir(), 'continuo-debug-real-')));
+    // 刻意**不**取真实路径:macOS 的 tmpdir 在 /var(→ /private/var 的软链)下,用户选的 workspace / 编辑器 tab
+    // 路径同样可能是软链拼写。js-debug 按 Node 加载的真实路径匹配已加载脚本,DebugService 须自己 realpath 断点
+    // file 再发给 adapter(否则运行后再设的断点回 Unbound)。
+    const dir = await mkdtemp(path.join(tmpdir(), 'continuo-debug-real-'));
     for (const [name, text] of Object.entries(files)) {
       await writeFile(path.join(dir, name), text);
     }
     const service = new DebugService({
       adapterPath: adapterCopy.adapterPath,
       requestTimeoutMs: 30_000,
-      workspace: { getWorkspaceRoot: () => dir, realpath: async (p) => p },
+      workspace: { getWorkspaceRoot: () => dir, realpath: (p) => realpath(p) },
     });
     try {
       return await run({ service, dir });
@@ -1993,6 +2097,62 @@ describe.skipIf(!adapterExists)('DebugService real adapter · 晚设断点与 wo
         const secondStack = await service.stackTrace(sessionId, { startFrame: 0, levels: 1 });
         expect(secondStack.frames[0]?.line).toBe(5);
       });
+    },
+    120_000,
+  );
+
+  // 真实 js-debug 按 Node 加载的真实路径匹配已加载脚本:脚本加载后(child 已建立)用软链拼写设的断点须先 realpath
+  // 再发给 adapter,否则回 Unbound、永不命中。另建一层显式软链(Linux 的 tmpdir 不是软链),program / cwd / 断点
+  // 都用软链拼写(用户选的 workspace root 即软链时就是这样)。
+  it(
+    '经软链路径在运行后设断点 → verified 且命中;推给 renderer 的 file 保持软链拼写',
+    async () => {
+      const adapterCopy = await prepareCommonJsAdapter();
+      const realDir = await mkdtemp(path.join(tmpdir(), 'continuo-debug-symlink-'));
+      const linkDir = `${realDir}-link`;
+      await symlink(realDir, linkDir, 'dir');
+      const source = [
+        'function step(n) { return n + 1; }', // 1
+        'let x = 0;', // 2
+        'x = step(x);', // 3 ← 起跑前设
+        'x = step(x);', // 4
+        'x = step(x);', // 5 ← 停住之后才设
+        'console.log(x);', // 6
+        '',
+      ].join('\n');
+      await writeFile(path.join(realDir, 'linked.js'), source);
+      const service = new DebugService({
+        adapterPath: adapterCopy.adapterPath,
+        requestTimeoutMs: 30_000,
+        workspace: { getWorkspaceRoot: () => linkDir, realpath: (p) => realpath(p) },
+      });
+      const events: DebugViewEvent[] = [];
+      service.setEventSink({ emit: (_owner, event) => events.push(event) });
+      try {
+        const file = path.join(linkDir, 'linked.js');
+        const { session_id: sessionId } = await service.launchSession({ program: file, cwd: linkDir }, ctx);
+        await service.setBreakpoints(sessionId, { file, line: 3 });
+        const first = await service.waitForStop(sessionId, { afterStopSeq: 0, timeoutMs: 40_000 });
+        expect(await service.setBreakpoints(sessionId, { file, line: 5 })).toMatchObject({
+          verified: true,
+          line: 5,
+        });
+        expect(events.filter((e) => e.type === 'breakpoints-changed').at(-1)).toMatchObject({
+          file,
+          breakpoints: [
+            { file, line: 3, verified: true },
+            { file, line: 5, verified: true },
+          ],
+        });
+        await service.continue(sessionId, {});
+        await service.waitForStop(sessionId, { afterStopSeq: first.stop_seq, timeoutMs: 20_000 });
+        expect((await service.stackTrace(sessionId, { startFrame: 0, levels: 1 })).frames[0]?.line).toBe(5);
+      } finally {
+        await service.cleanupAll('test finally').catch(() => undefined);
+        await rm(adapterCopy.dir, { recursive: true, force: true });
+        await rm(linkDir, { force: true });
+        await rm(realDir, { recursive: true, force: true });
+      }
     },
     120_000,
   );
