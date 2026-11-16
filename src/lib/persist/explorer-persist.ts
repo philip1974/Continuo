@@ -347,18 +347,21 @@ export async function hydrateEditorTabs(
       : currentRoot === null || !pathEquals(currentRoot, expectedRoot);
   if (rootChanged) return;
   const store = useEditorStore.getState();
+  // 会话恢复不是用户意图:requestFocus:false 不递增 editorFocusPulse —— 布局已先恢复时,DockShell
+  // 不据此 setActive(editor) 抢走 fromJSON 恢复出的活动面板(只确保 editor 面板存在)。
+  const restoreOpts = { requestFocus: false } as const;
   for (let i = 0; i < paths.length; i++) {
     const s = settled[i];
     if (!s || s.status !== 'fulfilled') continue; // reject → 当失败跳过(不抛)
     const r = s.value;
     if (!r || !r.ok) continue;
-    store.openTab(createTab(paths[i]!, r.data));
+    store.openTab(createTab(paths[i]!, r.data), restoreOpts);
   }
   // 重读最新 store(openTab 改了状态)
   const next = useEditorStore.getState();
   const desired = entry.editor.activePath;
   if (desired && hasEditorTabWithId(next.tabs, desired)) {
-    next.switchTab(desired);
+    next.switchTab(desired, restoreOpts);
   }
 }
 

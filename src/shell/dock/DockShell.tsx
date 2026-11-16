@@ -474,9 +474,10 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
     coApi.layout.reportDirtyState?.(state);
   }, [editorChromeVersion, mdAutoSaveEnabled, autoSaveFailureVersion]);
 
-  // Editor 自动激活:Explorer 单击文件 / hydrate 恢复 session → editor.store
-  // activeTabId 变 → 自动 setActive 'editor' panel(VSCode 行为)。
+  // Editor 自动激活:Explorer 单击文件 → editor.store activeTabId / editorFocusPulse 变
+  // → 自动 setActive 'editor' panel(VSCode 行为)。
   // 若 panel 不存在(用户拖关了 / 启动时 layout 没含),自动 addPanel 加回。
+  // hydrate 恢复 session(可能晚于布局恢复)以 requestFocus:false 打开,不递增 pulse → 只确保面板存在,不激活。
   //
   // deps 必含 layoutRestored(而非 apiReady):让布局恢复完成晚于 activeTabId hydrate 的场景也能补建;
   // 恢复前 addPanel 的 editor 会被 fromJSON 的 clear() 删掉。

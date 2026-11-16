@@ -312,6 +312,26 @@ describe('editorFocusPulse', () => {
     useEditorStore.getState().switchTab('/b');
     expect(useEditorStore.getState().editorFocusPulse).toBe(4);
   });
+
+  // 持久化会话恢复(hydrateEditorTabs)不是「请求 editor 激活」:不递增 pulse,DockShell 不据此抢活动面板。
+  it('openTab(tab, { requestFocus: false }) → 打开并设 active,但 pulse 不变', () => {
+    useEditorStore.setState({ editorFocusPulse: 2 });
+    useEditorStore.getState().openTab(makeTab({ id: '/a' }), { requestFocus: false });
+    expect(useEditorStore.getState().activeTabId).toBe('/a');
+    expect(useEditorStore.getState().tabs).toHaveLength(1);
+    expect(useEditorStore.getState().editorFocusPulse).toBe(2);
+  });
+
+  it('switchTab(id, { requestFocus: false }) → 切换 active,但 pulse 不变', () => {
+    useEditorStore.setState({
+      tabs: [makeTab({ id: '/a' }), makeTab({ id: '/b' })],
+      activeTabId: '/a',
+      editorFocusPulse: 3,
+    });
+    useEditorStore.getState().switchTab('/b', { requestFocus: false });
+    expect(useEditorStore.getState().activeTabId).toBe('/b');
+    expect(useEditorStore.getState().editorFocusPulse).toBe(3);
+  });
 });
 
 // ────────────────────────────────────────────────────────────

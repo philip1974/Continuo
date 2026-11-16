@@ -9,7 +9,8 @@ import { act, cleanup, render } from '@testing-library/react';
 import { useTerminalStore } from '@/stores/terminal.store';
 import { __resetReconcilerForTest, setPendingFocus } from '@/shell/dock/DockReconciler';
 import { openOrFocusPanel } from '@/shell/dock/dock-api-ref';
-import { useEditorStore } from '@/stores/editor.store';
+import { createTab, useEditorStore } from '@/stores/editor.store';
+import { useWorkspaceStore } from '@/stores/workspace.store';
 import { makeSession } from '../dock-reconciler-windowid-filter/fixtures';
 
 interface FakePanel {
@@ -144,7 +145,7 @@ function deferRead(): (v: unknown) => void {
 
 afterEach(() => {
   cleanup();
-  useEditorStore.setState({ activeTabId: null });
+  useEditorStore.setState({ tabs: [], activeTabId: null });
 });
 
 beforeEach(() => {
@@ -348,6 +349,83 @@ describe('布局恢复后 editor 自动激活不抢活动面板', () => {
     expect(h.api!.activePanel?.id).toBe('settings');
     act(() => {
       useEditorStore.getState().switchTab('tab-1');
+    });
+    expect(h.api!.activePanel?.id).toBe('editor');
+  });
+});
+
+// 冷启动:layout.read() 先完成(Dock 已按 fromJSON 恢复),hydrateEditorTabs(读文件较慢)稍后才把持久化 editor
+// tab 经 openTab / switchTab 恢复。会话恢复不是用户意图:不得 setActive 抢走 Dock 恢复出的活动面板;
+// 恢复全部完成后的真实用户 openTab / switchTab 才激活 editor。
+describe('editor 会话恢复晚于布局恢复', () => {
+  async function restoreEditorSession(): Promise<void> {
+    const { hydrateEditorTabs } = await vi.importActual<
+      typeof import('@/lib/persist/explorer-persist')
+    >('@/lib/persist/explorer-persist');
+    useWorkspaceStore.setState({ root: '/proj' });
+    await act(async () => {
+      await hydrateEditorTabs(
+        {
+          version: 2,
+          workspace: { recentRoots: [] },
+          pinned: { paths: [] },
+          nextWindowSeq: 1,
+          windows: [
+            {
+              windowSeq: 0,
+              workspace: { root: '/proj' },
+              explorer: { activePath: null, expandedPaths: [], sort: { by: 'name', reverse: false } },
+              editor: { openFilePaths: ['/proj/a.md', '/proj/b.md'], activePath: '/proj/a.md' },
+            },
+          ],
+        },
+        { readFile: async () => ({ ok: true as const, data: 'content' }) },
+        0,
+      );
+    });
+  }
+
+  async function renderRestoredDock(layout: unknown): Promise<void> {
+    h.read.mockResolvedValue({ ok: true, data: layout });
+    render(React.createElement(DockShell));
+    await vi.waitFor(() =>
+      expect(h.api?.panels.map((p) => p.id)).toContain('terminal-s1'),
+    );
+    expect(h.api!.activePanel?.id).toBe('settings');
+  }
+
+  it('Dock 先恢复、editor tab 稍后恢复 → 活动面板仍是 settings,editor 面板存在', async () => {
+    await renderRestoredDock(layoutWithSettingsActive);
+    await restoreEditorSession();
+    expect(useEditorStore.getState().activeTabId).toBe('/proj/a.md');
+    expect(h.api!.panels.map((p) => p.id)).toContain('editor');
+    expect(h.api!.activePanel?.id).toBe('settings');
+  });
+
+  it('editor 面板不在持久布局 → 稍后的会话恢复补建 editor,但激活还给 settings', async () => {
+    await renderRestoredDock({
+      ...persistedLayout,
+      panels: { settings: { id: 'settings', contentComponent: 'settings' } },
+    });
+    await restoreEditorSession();
+    expect(h.api!.panels.map((p) => p.id)).toContain('editor');
+    expect(h.api!.activePanel?.id).toBe('settings');
+  });
+
+  it('恢复全部完成后用户 openTab → 激活 editor', async () => {
+    await renderRestoredDock(layoutWithSettingsActive);
+    await restoreEditorSession();
+    act(() => {
+      useEditorStore.getState().openTab(createTab('/proj/c.md', 'content'));
+    });
+    expect(h.api!.activePanel?.id).toBe('editor');
+  });
+
+  it('恢复全部完成后用户 switchTab → 激活 editor', async () => {
+    await renderRestoredDock(layoutWithSettingsActive);
+    await restoreEditorSession();
+    act(() => {
+      useEditorStore.getState().switchTab('/proj/b.md');
     });
     expect(h.api!.activePanel?.id).toBe('editor');
   });

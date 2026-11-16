@@ -347,6 +347,19 @@ export function getStateAfterRemovingPath(
 
 // ── Zustand store ────────────────────────────────────────────
 
+/**
+ * openTab / switchTab 选项。`requestFocus: false` = 不是「请求 editor 在 dock 内激活」
+ * (持久化会话恢复 hydrateEditorTabs):不递增 editorFocusPulse,DockShell 不据此抢走
+ * Dock 恢复出的活动面板。缺省 true(用户打开 / 切换文件,#22 语义不变)。
+ */
+export interface EditorFocusOpts {
+  readonly requestFocus?: boolean;
+}
+
+function nextFocusPulse(pulse: number, opts: EditorFocusOpts | undefined): number {
+  return opts?.requestFocus === false ? pulse : pulse + 1;
+}
+
 type EditorState = {
   tabs: EditorTab[];
   activeTabId: string | null;
@@ -371,8 +384,8 @@ type EditorState = {
   /** runtime only, not persisted - CodeMirror EditorView refs per tab */
   viewRefs: Map<string, EditorView>;
 
-  /** 已存在则切换 active,新加则推入. */
-  openTab: (tab: EditorTab) => void;
+  /** 已存在则切换 active,新加则推入. `requestFocus: false`(持久化会话恢复)不递增 editorFocusPulse. */
+  openTab: (tab: EditorTab, opts?: EditorFocusOpts) => void;
   closeTab: (id: string) => void;
   /** 文件/目录被删除时调用:精确匹配或前缀匹配的 tab 统一关闭. */
   removePath: (path: string) => void;
@@ -382,7 +395,7 @@ type EditorState = {
   reloadFromDisk: (tabId: string, content: string) => void;
   /** 工作区切换时调用:关闭 root 外的 file tabs;untitled 始终保留. */
   closeTabsOutsideRoot: (root: string | null) => void;
-  switchTab: (id: string) => void;
+  switchTab: (id: string, opts?: EditorFocusOpts) => void;
   /** 编辑器 onChange 时调用;dirty 自动比对. */
   updateContent: (id: string, content: string) => void;
   /**
@@ -431,9 +444,9 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
   chromeVersion: 0,
   viewRefs: new Map(),
 
-  openTab: (tab) =>
+  openTab: (tab, opts) =>
     set((s) => {
-      const pulse = s.editorFocusPulse + 1;
+      const pulse = nextFocusPulse(s.editorFocusPulse, opts);
       const existingIndex = findEditorTabIndexById(s.tabs, tab.id);
       if (existingIndex >= 0) return { activeTabId: tab.id, editorFocusPulse: pulse };
       // 边界(E278,E276/E277 同族 / 运行时状态守持久化契约):file tab 经 snapshotFromStores 序列化成
@@ -511,10 +524,10 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
         : { tabs };
     }),
 
-  switchTab: (id) =>
+  switchTab: (id, opts) =>
     set((s) => ({
       activeTabId: id,
-      editorFocusPulse: s.editorFocusPulse + 1,
+      editorFocusPulse: nextFocusPulse(s.editorFocusPulse, opts),
     })),
 
   updateContent: (id, content) =>
