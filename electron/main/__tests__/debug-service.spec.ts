@@ -35,6 +35,12 @@ vi.mock('node:os', async (importOriginal) => {
   return { ...actual, platform: () => platformMock.value ?? actual.platform() };
 });
 
+// 观察默认 processOps 在 Windows 上是否走共享的进程树强杀(默认透传真实实现)。
+vi.mock('../lib/kill-with-grace', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../lib/kill-with-grace')>();
+  return { ...actual, processTreeKillable: vi.fn(actual.processTreeKillable) };
+});
+
 class FakeDapClient implements DebugDapClientLike {
   readonly socketPath = `fake-${Math.random().toString(16).slice(2)}.sock`;
   readonly tcpPort = 0;
@@ -669,6 +675,44 @@ describe('DebugService fake adapter · launch / 子会话 / 终止 的错误路�
 });
 
 describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
+  // Windows 没有进程组可枚举:只直杀 adapter 与已记录的 debuggee pid,未记录的后代(debuggee 再 spawn
+  // 的子进程等)会存活。默认 processOps 须对这些 pid 走 taskkill /T /F 整树强杀(复用 kill-with-grace)。
+  it('Windows:默认 processOps 的 teardown 对 adapter 与 debuggee pid 走进程树强杀', async () => {
+    platformMock.value = 'win32';
+    const killGrace = await import('../lib/kill-with-grace');
+    const treeKill = vi.mocked(killGrace.processTreeKillable);
+    const killedPids: Array<{ pid: number | undefined; signal: unknown }> = [];
+    treeKill.mockImplementation((target) => ({
+      kill: (signal) => {
+        killedPids.push({ pid: target.pid, signal });
+        return true;
+      },
+    }));
+    try {
+      // 取不存在的 pid:强杀被替换后,teardown 的存活探测立即判定已退出。
+      const parent = new FakeDapClient(3_999_901);
+      const service = new DebugService({ createDapClient: () => parent, workspace: PERMISSIVE_WORKSPACE });
+      await service.launchSession(
+        { program: 'C:\\repo\\fixture.js', cwd: 'C:\\repo' },
+        { ownerWindowId: 41, controllerToken: 'agent-win' },
+      );
+      parent.emit('process', { systemProcessId: 3_999_902 });
+
+      await service.killByOwner(41, 'window-closed');
+
+      expect(killedPids).toEqual(
+        expect.arrayContaining([
+          { pid: 3_999_901, signal: 'SIGTERM' },
+          { pid: 3_999_902, signal: 'SIGTERM' },
+        ]),
+      );
+    } finally {
+      treeKill.mockReset();
+      const actual = await vi.importActual<typeof import('../lib/kill-with-grace')>('../lib/kill-with-grace');
+      treeKill.mockImplementation(actual.processTreeKillable);
+    }
+  });
+
   it('cleanupAll / killByOwner / killByController 同 tick 并发只执行一次 teardown, waiter 只 reject 一次', async () => {
     const { service, parent, processOps } = makeFakeService();
     const { session_id: sessionId } = await service.launchSession(
@@ -911,6 +955,72 @@ describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
     expect(launch['program']).toBe('/repo/real/app.js');
     expect(launch['cwd']).toBe('/repo/real');
     await service.killByOwner(25, 'test');
+  });
+
+  // 只钉住 launch 用真实路径不够:校验后、起跑前把该真实路径文件改名,原位换成指向工作区外的软链,
+  // Node 起跑时重新解析 → 发 launch 前必须复验。
+  it('安全:起跑前真实路径被换成指向工作区外的软链 → 不发 launch,以既有错误码报告并拆除会话', async () => {
+    const parent = new FakeDapClient(1001);
+    const links = new Map<string, string>();
+    const { service, processOps } = makeFakeService(parent, {
+      getWorkspaceRoot: () => '/repo',
+      realpath: async (p) => links.get(p) ?? p,
+    });
+    const { session_id } = await service.launchSession(
+      { program: '/repo/real/app.js', cwd: '/repo' },
+      { ownerWindowId: 26, controllerToken: 'agent-sec7' },
+    );
+    links.set('/repo/real/app.js', '/etc/evil.js');
+
+    await expect(service.waitForStop(session_id, { timeoutMs: 5_000 })).rejects.toMatchObject({
+      code: 'DEBUG_PROGRAM_OUTSIDE_WORKSPACE',
+    });
+    expect(parent.requestLog.some((r) => r.command === 'launch')).toBe(false);
+    await vi.waitFor(() => expect(service.listSessions()).toEqual([]));
+    expect(processOps.terminateProcessGroup).toHaveBeenCalled();
+  });
+
+  it('安全:continue 触发起跑时同样复验(cwd 被换到工作区外 → 拒绝起跑)', async () => {
+    const parent = new FakeDapClient(1001);
+    const links = new Map<string, string>();
+    const { service } = makeFakeService(parent, {
+      getWorkspaceRoot: () => '/repo',
+      realpath: async (p) => links.get(p) ?? p,
+    });
+    const { session_id } = await service.launchSession(
+      { program: '/repo/app.js', cwd: '/repo/sub' },
+      { ownerWindowId: 27, controllerToken: 'agent-sec8' },
+    );
+    links.set('/repo/sub', '/etc');
+
+    await expect(service.continue(session_id, {})).rejects.toMatchObject({
+      code: 'DEBUG_PROGRAM_OUTSIDE_WORKSPACE',
+    });
+    expect(parent.requestLog.some((r) => r.command === 'launch')).toBe(false);
+    await vi.waitFor(() => expect(service.listSessions()).toEqual([]));
+  });
+
+  // 真正起 Node 的是 child 连接上的 launch(js-debug 的 startDebugging),父 launch 之后仍有窗口。
+  it('安全:startDebugging 建 child 时复验,路径已出工作区 → child 不发 launch,拆除会话', async () => {
+    const parent = new FakeDapClient(1001);
+    const links = new Map<string, string>();
+    const { service } = makeFakeService(parent, {
+      getWorkspaceRoot: () => '/repo',
+      realpath: async (p) => links.get(p) ?? p,
+    });
+    const { session_id } = await service.launchSession(
+      { program: '/repo/app.js', cwd: '/repo' },
+      { ownerWindowId: 28, controllerToken: 'agent-sec9' },
+    );
+    void service.waitForStop(session_id, { timeoutMs: 5_000 }).catch(() => undefined);
+    await vi.waitFor(() => expect(parent.requestLog.some((r) => r.command === 'launch')).toBe(true));
+    links.set('/repo/app.js', '/etc/evil.js');
+
+    await expect(parent.triggerStartDebugging({ type: 'pwa-node' })).rejects.toMatchObject({
+      code: 'DEBUG_PROGRAM_OUTSIDE_WORKSPACE',
+    });
+    expect(parent.children[0]!.requestLog.some((r) => r.command === 'launch')).toBe(false);
+    await vi.waitFor(() => expect(service.listSessions()).toEqual([]));
   });
 
   it('安全:cwd 省略 → 默认 workspace root(不回退 main 进程 cwd)', async () => {

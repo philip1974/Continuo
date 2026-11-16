@@ -182,3 +182,72 @@ describe('socket 路径', () => {
     expect(a.socketPath).not.toBe(b.socketPath);
   });
 });
+
+describe('反向请求的回复', () => {
+  // child 初始化期间 socket 被 dispose:handler 之后成功 / 失败,回复都写不出去。此前 sendMessage 同步抛,
+  // 而调用处 void 丢弃了 Promise → 主进程 unhandledRejection。
+  for (const outcome of ['resolve', 'reject'] as const) {
+    it(`startDebugging handler 在 dispose 之后才 ${outcome} → 静默放弃回复,无未处理 rejection`, async () => {
+      process.on('unhandledRejection', onUnhandled);
+      let settle!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        settle = resolve;
+      });
+      const client = new DapClient({
+        adapterPath: '/nonexistent/adapter.js',
+        startDebuggingHandler: async () => {
+          await gate;
+          if (outcome === 'reject') throw new Error('child handshake failed');
+          return {};
+        },
+      });
+      const socket = connected(client);
+      client.receiveMessage({ seq: 5, type: 'request', command: 'startDebugging', arguments: {} });
+      await client.dispose();
+      settle();
+
+      await new Promise((r) => setTimeout(r, 20));
+      expect(unhandled).toEqual([]);
+      expect(socket.written).toHaveLength(0);
+    });
+  }
+
+  it('socket 已关闭时收到不支持的反向请求 → 不抛、无未处理 rejection', async () => {
+    process.on('unhandledRejection', onUnhandled);
+    const client = new DapClient({ adapterPath: '/nonexistent/adapter.js' });
+    const socket = connected(client);
+    socket.destroyed = true;
+    expect(() =>
+      client.receiveMessage({ seq: 6, type: 'request', command: 'runInTerminal', arguments: {} }),
+    ).not.toThrow();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(unhandled).toEqual([]);
+  });
+});
+
+describe('TCP 端点(Windows)', () => {
+  // dapDebugServer.js 的参数是 `[port|socket path] [host=localhost]`;不传 host 时 localhost 可能解析成 ::1,
+  // 而客户端固定连 127.0.0.1 → readiness 超时。spawn 时必须显式传 127.0.0.1。
+  it('无 socket 路径时 spawn adapter 的参数含 host 127.0.0.1(与客户端连接地址一致)', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'dap-tcp-host-'));
+    const adapterPath = path.join(dir, 'echo-argv.cjs');
+    await writeFile(adapterPath, 'process.stderr.write(JSON.stringify(process.argv.slice(2)));\n');
+    try {
+      const client = new DapClient({
+        adapterPath,
+        socketPath: null,
+        tcpPort: 45_678,
+        readyTimeoutMs: 500,
+        connectIntervalMs: 20,
+      });
+      const err = await client.spawnServer().then(
+        () => null,
+        (e: unknown) => e as Error,
+      );
+      await client.dispose();
+      expect(err?.message).toContain('["45678","127.0.0.1"]');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});

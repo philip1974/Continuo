@@ -234,6 +234,9 @@ function createSocketPath(): string | null {
   return socketPath;
 }
 
+/** TCP 模式下 adapter 监听与客户端连接共用的地址(两端必须一致)。 */
+const DAP_TCP_HOST = '127.0.0.1';
+
 function randomTcpPort(): number {
   return 20_000 + Math.floor(Math.random() * 30_000);
 }
@@ -364,7 +367,12 @@ export class DapClient {
       ELECTRON_RUN_AS_NODE: '1',
     };
     delete adapterEnv.CONTINUO_MCP_TOKEN;
-    const server = spawn(this.nodePath, [this.adapterPath, endpoint], {
+    // TCP(Windows):dapDebugServer.js 的第二个参数是 host,默认 localhost 可能解析成 ::1,
+    // 而 connectOnce 固定连 127.0.0.1 → 显式传同一地址。socket 路径模式不需要 host。
+    const adapterArgs = this.socketPath
+      ? [this.adapterPath, endpoint]
+      : [this.adapterPath, endpoint, DAP_TCP_HOST];
+    const server = spawn(this.nodePath, adapterArgs, {
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: process.platform !== 'win32',
       env: adapterEnv,
@@ -459,7 +467,7 @@ export class DapClient {
     return new Promise((resolve, reject) => {
       const socket = this.socketPath
         ? net.connect(this.socketPath)
-        : net.connect({ port: this.tcpPort, host: '127.0.0.1' });
+        : net.connect({ port: this.tcpPort, host: DAP_TCP_HOST });
       socket.once('connect', () => resolve(socket));
       socket.once('error', (err) => {
         socket.destroy();
@@ -615,7 +623,21 @@ export class DapClient {
     }
 
     if (isDapRequest(message)) {
-      void this.respondToReverseRequest(message);
+      // 兜底:回复内部已吞掉写失败,这里再接一层,保证 Promise 必定结算、不成为 unhandledRejection。
+      this.respondToReverseRequest(message).catch(() => undefined);
+    }
+  }
+
+  /**
+   * 写反向请求的回复。handler 可能跨越 dispose(child 初始化期间 socket 被关):此时回复已无人接收,
+   * 静默放弃;写本身抛错同样吞掉(sendMessage 在 socket 断开时同步抛)。
+   */
+  private sendReverseResponse(message: DapMessage): void {
+    if (this.disposed || !this.socket || this.socket.destroyed) return;
+    try {
+      this.sendMessage(message);
+    } catch {
+      // socket 在写入前后断开:回复无人接收
     }
   }
 
@@ -623,7 +645,7 @@ export class DapClient {
     if (message.command === 'startDebugging' && this.startDebuggingHandler) {
       try {
         const body = await this.startDebuggingHandler(message, this);
-        this.sendMessage({
+        this.sendReverseResponse({
           seq: this.seq++,
           type: 'response',
           request_seq: message.seq ?? 0,
@@ -633,7 +655,7 @@ export class DapClient {
         });
       } catch (err) {
         const messageText = err instanceof Error ? err.message : String(err);
-        this.sendMessage({
+        this.sendReverseResponse({
           seq: this.seq++,
           type: 'response',
           request_seq: message.seq ?? 0,
@@ -646,7 +668,7 @@ export class DapClient {
     }
 
     const unsupported = message.command !== 'runInTerminal';
-    this.sendMessage({
+    this.sendReverseResponse({
       seq: this.seq++,
       type: 'response',
       request_seq: message.seq ?? 0,

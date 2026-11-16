@@ -139,7 +139,9 @@ describe.skipIf(!adapterExists)('Debug adapter smoke', () => {
     const adapterCopy = await prepareCommonJsAdapter();
     const endpoint = endpointForTest();
     let stderr = '';
-    const server = spawn(process.execPath, [adapterCopy.adapterPath, endpoint], {
+    // TCP 端点(Windows)显式传 host:默认 localhost 可能监听 ::1,与上面连 127.0.0.1 不一致。
+    const hostArgs = /^\d+$/.test(endpoint) ? ['127.0.0.1'] : [];
+    const server = spawn(process.execPath, [adapterCopy.adapterPath, endpoint, ...hostArgs], {
       // In packaged Electron this same adapter path is launched with ELECTRON_RUN_AS_NODE=1.
       // The dev smoke uses plain Node with the env present because process.execPath is Node in Vitest.
       env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },

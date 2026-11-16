@@ -20,6 +20,7 @@ import type { DebugViewEvent } from '../../shared/debug-view-channels';
 import { codedError } from '../../shared/error-message';
 import { runSerialPerKey } from './serialize-per-key';
 import { lowerIfNeeded } from '../../shared/lower-if-needed';
+import { processTreeKillable } from '../lib/kill-with-grace';
 
 const execFile = promisify(execFileCb);
 
@@ -473,7 +474,7 @@ function variablesCancelledError(): Error {
 }
 
 async function defaultProcessInfo(pid: number | undefined): Promise<ProcessInfo | null> {
-  if (!pid || process.platform === 'win32') return null;
+  if (!pid || platform() === 'win32') return null;
   try {
     const { stdout } = await execFile('ps', [
       '-o',
@@ -497,7 +498,7 @@ async function defaultProcessInfo(pid: number | undefined): Promise<ProcessInfo 
 async function defaultPidsInProcessGroup(
   pgid: number,
 ): Promise<readonly ProcessGroupEntry[]> {
-  if (!pgid || process.platform === 'win32') return [];
+  if (!pgid || platform() === 'win32') return [];
   try {
     const { stdout } = await execFile('ps', ['-axo', 'pid=,pgid=,command=']);
     return stdout
@@ -548,16 +549,29 @@ async function defaultTerminateProcessGroup(
   watchedPids: readonly number[],
 ): Promise<readonly number[]> {
   if (!pgid) return [];
-  if (process.platform === 'win32') {
-    // Windows tree kill is deferred to the platform follow-up; direct pids are the only local fallback here.
-    for (const pid of watchedPids) {
-      try {
-        process.kill(pid, 'SIGKILL');
-      } catch {
-        // ignore process-exit races
-      }
+  if (platform() === 'win32') {
+    // Windows 没有进程组可枚举:对 adapter 与已记录的 debuggee pid 各做 taskkill /T /F 整树强杀
+    //(复用 kill-with-grace),未记录的后代随树一起回收。仍存活的再直杀兜底。
+    const trees = watchedPids.map((pid) =>
+      processTreeKillable({
+        pid,
+        kill: (signal) => {
+          try {
+            process.kill(pid, signal);
+            return true;
+          } catch {
+            return false; // 已退出
+          }
+        },
+      }),
+    );
+    for (const tree of trees) tree.kill('SIGTERM');
+    let alive = await waitForDead(watchedPids, 1_500);
+    if (alive.length > 0) {
+      for (const pid of alive) trees[watchedPids.indexOf(pid)]?.kill('SIGKILL');
+      alive = await waitForDead(alive, 3_000);
     }
-    return waitForDead(watchedPids, 3_000);
+    return alive;
   }
 
   try {
@@ -1360,11 +1374,34 @@ export class DebugService {
       runtime.configurationDone = true;
     }
     if (runtime.launched) return;
+    await this.reverifyLaunchInsideWorkspace(runtime);
     runtime.parentClient.sendRequestNoWait('launch', this.launchArguments(runtime));
     runtime.launched = true;
     // 已结束 / 拆除中的会话不翻回 running(configurationDone 期间可能已 teardown)。
     if (runtime.endedMessage === undefined && debugSessions.get(runtime.id)?.runtimeState === 'starting') {
       debugSessions.update(runtime.id, { runtimeState: 'running', runSeq: 1 });
+    }
+  }
+
+  /**
+   * 起跑前复验 workspace 闸:launch 虽用校验时的真实路径,但校验与起跑之间可把该文件改名、原位换成指向
+   * 工作区外的软链(Node 起跑时重新解析)。发 launch(父连接与 child 连接)前再走一次 realpath + inside;
+   * 不通过则拒绝起跑:以该错误结算在途 wait_for_stop 并拆除会话。
+   */
+  private async reverifyLaunchInsideWorkspace(runtime: RuntimeDebugSession): Promise<void> {
+    const session = debugSessions.get(runtime.id);
+    if (!session) throw new Error(`debug session not found: ${runtime.id}`);
+    try {
+      await this.assertLaunchInsideWorkspace(
+        session.ownerWindowId,
+        runtime.launch.program,
+        runtime.launch.cwd ?? process.cwd(),
+      );
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      this.rejectWaiters(runtime.id, error);
+      void this.teardownSession(runtime.id, 'launch-outside-workspace').catch(() => undefined);
+      throw error;
     }
   }
 
@@ -1442,6 +1479,9 @@ export class DebugService {
       }
       throw err;
     }
+    // 真正起 Node 的是这条 child 连接上的 launch:父 launch 之后路径仍可能被换,发之前再复验
+    //(放在下面的「已结束」判定之前:复验是异步边界,判定须在其后)。
+    await this.reverifyLaunchInsideWorkspace(runtime);
     // 握手期间已结束并被回收(markEnded):不再把它设为活动连接、也不再对它发 launch。
     if (!runtime.childClients.includes(child)) return {};
     // 握手完成、即将发 launch 时:第一个 child(主目标)成为活动连接。之后再出现的 child(worker 等)不抢
