@@ -41,6 +41,7 @@ import type { OriginHint } from '../../shared/origin-hint';
 import { PATH_MAX, LABEL_MAX } from '../../shared/terminal-create';
 import { AttachTargetSchema } from '../../shared/terminal-attach';
 import type { McpCallCtx, McpToolDef } from './mcp-host.service';
+import { trackAgentTerminalCreate } from './agent-terminal-inflight';
 import { z } from 'zod';
 import { SESSION_ID_MAX } from '../../shared/session-id-limits';
 import { codedError } from '../../shared/error-message';
@@ -309,55 +310,71 @@ export function makeCreateSessionTool(
         throw codedError(ERROR_CODES.BAD_INPUT, 'invalid create_session target');
       }
 
-      const decision = await deps.ensureAuthorized(ctx.ownerWindowId);
-      if (decision === 'denied') {
-        throw codedError(ERROR_CODES.AGENT_NOT_AUTHORIZED, 'agent terminal not authorized by user');
+      // 撤销授权 / 终端 token 吊销只回收已登记会话 → 在途创建按调用方登记,吊销时取消(见
+      // agent-terminal-inflight)。取消信号并入 ctx.signal:下方各复查点与 createSession 内的
+      // autorun 判断一并覆盖「调用方断开」与「被吊销」。
+      const tracked = trackAgentTerminalCreate(ctx.callerSubject);
+      const signal = ctx.signal ? AbortSignal.any([ctx.signal, tracked.signal]) : tracked.signal;
+      try {
+        return await runCreate(input, { ...ctx, signal });
+      } finally {
+        tracked.done();
       }
-      // race(R111):用户在授权弹窗上停留期间调用方(stdio proxy)可能已断开 → ctx.signal abort。
-      // 此时即便用户点了授权,也不创建会话:否则留下无调用方的孤儿 agent terminal(响应写回死
-      // socket、autorun 副作用照跑)。在 installStopHook / createSession 等真正副作用前复查。
-      if (ctx.signal?.aborted) {
-        throw codedError(ERROR_CODES.AGENT_NOT_AUTHORIZED, 'caller disconnected before session creation');
-      }
-      let stopHookInstalled: { installed: boolean } | undefined;
-      if (input.install_stop_hook === true && deps.installStopHook) {
-        try {
-          stopHookInstalled = await deps.installStopHook(
-            input.cwd,
-            input.agentLabel ?? 'agent',
-          );
-        } catch {
-          stopHookInstalled = { installed: false };
-        }
-        // race(R111 同族):installStopHook 是又一个异步边界,期间调用方可能断开 → 复查后再建会话。
-        if (ctx.signal?.aborted) {
-          throw codedError(ERROR_CODES.AGENT_NOT_AUTHORIZED, 'caller disconnected before session creation');
-        }
-      }
-      const ptyInput: CreateSessionPtyInput = {
-        originHint: 'agent',
-        agentLabel: input.agentLabel ?? 'agent',
-        ...(input.cwd !== undefined ? { cwd: input.cwd } : {}),
-        ...(input.name !== undefined ? { name: input.name } : {}),
-        ...(input.autorun !== undefined ? { autorun: input.autorun } : {}),
-        // topic-05: target hint 默认 'active'(无 hint 即 active panel)
-        attachTarget: input.target ?? { kind: 'active' },
-      };
-      const r = await deps.createSession(ptyInput, ctx);
-      // race(R111 同族):createSession(异步 spawn)期间调用方断开 → 新会话无人持有。回收 PTY +
-      // metadata 并以取消错误结束,不留孤儿 agent terminal(index.ts 侧只跳过 autorun 不够)。
-      if (ctx.signal?.aborted) {
-        deps.discardSession?.(r.id);
-        throw codedError(ERROR_CODES.TERMINAL_CREATE_CANCELLED, 'caller disconnected during session creation');
-      }
-      return {
-        session_id: r.id,
-        ...(input.install_stop_hook === true
-          ? { stop_hook_installed: stopHookInstalled?.installed ?? false }
-          : {}),
-      };
     },
   };
+
+  async function runCreate(
+    input: CreateSessionBoundedInput,
+    ctx: McpCallCtx & { readonly signal: AbortSignal },
+  ): Promise<CreateSessionOutput> {
+    const decision = await deps.ensureAuthorized(ctx.ownerWindowId);
+    if (decision === 'denied') {
+      throw codedError(ERROR_CODES.AGENT_NOT_AUTHORIZED, 'agent terminal not authorized by user');
+    }
+    // race(R111):用户在授权弹窗上停留期间调用方(stdio proxy)可能已断开 → ctx.signal abort。
+    // 此时即便用户点了授权,也不创建会话:否则留下无调用方的孤儿 agent terminal(响应写回死
+    // socket、autorun 副作用照跑)。在 installStopHook / createSession 等真正副作用前复查。
+    if (ctx.signal.aborted) {
+      throw codedError(ERROR_CODES.AGENT_NOT_AUTHORIZED, 'caller disconnected or revoked before session creation');
+    }
+    let stopHookInstalled: { installed: boolean } | undefined;
+    if (input.install_stop_hook === true && deps.installStopHook) {
+      try {
+        stopHookInstalled = await deps.installStopHook(
+          input.cwd,
+          input.agentLabel ?? 'agent',
+        );
+      } catch {
+        stopHookInstalled = { installed: false };
+      }
+      // race(R111 同族):installStopHook 是又一个异步边界,期间调用方可能断开 → 复查后再建会话。
+      if (ctx.signal.aborted) {
+        throw codedError(ERROR_CODES.AGENT_NOT_AUTHORIZED, 'caller disconnected or revoked before session creation');
+      }
+    }
+    const ptyInput: CreateSessionPtyInput = {
+      originHint: 'agent',
+      agentLabel: input.agentLabel ?? 'agent',
+      ...(input.cwd !== undefined ? { cwd: input.cwd } : {}),
+      ...(input.name !== undefined ? { name: input.name } : {}),
+      ...(input.autorun !== undefined ? { autorun: input.autorun } : {}),
+      // topic-05: target hint 默认 'active'(无 hint 即 active panel)
+      attachTarget: input.target ?? { kind: 'active' },
+    };
+    const r = await deps.createSession(ptyInput, ctx);
+    // race(R111 同族):createSession(异步 spawn)期间调用方断开 → 新会话无人持有。回收 PTY +
+    // metadata 并以取消错误结束,不留孤儿 agent terminal(index.ts 侧只跳过 autorun 不够)。
+    if (ctx.signal.aborted) {
+      deps.discardSession?.(r.id);
+      throw codedError(ERROR_CODES.TERMINAL_CREATE_CANCELLED, 'caller disconnected or revoked during session creation');
+    }
+    return {
+      session_id: r.id,
+      ...(input.install_stop_hook === true
+        ? { stop_hook_installed: stopHookInstalled?.installed ?? false }
+        : {}),
+    };
+  }
 }
 
 // ── send_input(P3)─────────────────────────────────────────────

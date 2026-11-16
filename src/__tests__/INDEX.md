@@ -229,6 +229,7 @@
 ## [agent-terminal-mcp-create-session (Agent Terminal MCP Phase 2 + P3 autorun)](./agent-terminal-mcp-create-session/README.md)
 
 - [`create-session.spec.ts`](./agent-terminal-mcp-create-session/create-session.spec.ts)
+- [`revoke-cancels-inflight.spec.ts`](./agent-terminal-mcp-create-session/revoke-cancels-inflight.spec.ts)
 
 ## [agent-terminal-mcp-dispatcher (Agent Terminal MCP Phase 4+)](./agent-terminal-mcp-dispatcher/README.md)
 
@@ -734,6 +735,7 @@
 - [`abort-after-auth.spec.ts`](./mcp-startup-audit/abort-after-auth.spec.ts)
 - [`await-stop-hook-gates.spec.ts`](./mcp-startup-audit/await-stop-hook-gates.spec.ts)
 - [`protocol-fifo-order.spec.ts`](./mcp-startup-audit/protocol-fifo-order.spec.ts)
+- [`sse-backpressure.spec.ts`](./mcp-startup-audit/sse-backpressure.spec.ts)
 - [`startup-check-budget.spec.ts`](./mcp-startup-audit/startup-check-budget.spec.ts)
 - [`stdio-queue-cap.spec.ts`](./mcp-startup-audit/stdio-queue-cap.spec.ts)
 

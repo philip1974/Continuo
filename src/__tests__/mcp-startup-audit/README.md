@@ -45,3 +45,9 @@
 - 排队上限只计未完成的请求,响应写进 socket 写缓冲即扣减;客户端只发不读时输出会无界堆积。
 - 每连接未读输出(`writableLength`)超过 `MAX_STDIO_UNREAD_OUTPUT_BYTES`(16MB)即断开该连接(对端不读,
   错误帧也送不达)。正常客户端边写边读,不受影响。
+
+## HTTP MCP SSE 输出背压(终审 P1,`sse-backpressure.spec.ts`)
+
+- `broadcast`(插件注册/注销的 `tools/list_changed` 等)与 keepalive 写 SSE 后检查 `writableLength`,超过
+  `MAX_SSE_UNREAD_OUTPUT_BYTES`(16MB,与 stdio 同量级)即销毁该连接并移出订阅集合;正常客户端照常收到后续通知。
+- HTTP 普通响应(POST /mcp)单次结果受 `RESULT_BYTES_MAX` 限制、一请求一响应,不另加背压。

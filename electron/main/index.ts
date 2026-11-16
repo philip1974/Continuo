@@ -58,6 +58,7 @@ import {
   type StdioSocketServer,
 } from './services/mcp-stdio-server.service';
 import { makeTerminalMcpTools } from './services/mcp-terminal-host';
+import { cancelAgentTerminalCreates } from './services/agent-terminal-inflight';
 import type { CreateSessionPtyInput } from './services/mcp-tools-terminal';
 import * as terminalSessions from './services/terminal-sessions.service';
 import * as termService from './services/terminal.service';
@@ -936,7 +937,8 @@ async function createSessionForAgent(
   if (input.autorun && !ctx.signal?.aborted) {
     const cmd = input.autorun;
     setTimeout(() => {
-      if (termService.has(r.id)) {
+      // 延迟期间被撤销 / 调用方断开:会话已由 create_session 回收,不再键入。
+      if (!ctx.signal?.aborted && termService.has(r.id)) {
         // autorun 是尽力而为(prompt 就绪近似),写入结果无 UI 反馈通道 → fire-and-forget。
         // write 现返 Promise(R4),内部已 catch 不 reject,void 显式忽略避免 floating-promise。
         void termService.write(r.id, `${cmd}\n`);
@@ -1036,6 +1038,8 @@ async function startMcpHost(): Promise<void> {
       // 会话再无人能 disconnect → 同步回收(与 stdio 断连路径一致),否则名额被占满、adapter 常驻。
       byToken: (token) => {
         mcpHost!.revokeToken(token);
+        // 该 token 的在途 create_session 同样失去调用方(同 stdio 断连 abort ctx.signal):取消,不留孤儿会话。
+        cancelAgentTerminalCreates(token);
         void debugService.killByController(token, 'terminal-exit').catch((err) => {
           console.warn('[debug] killByController failed on terminal token revoke', err);
         });

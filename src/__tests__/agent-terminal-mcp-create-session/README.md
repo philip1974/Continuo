@@ -86,6 +86,15 @@ input → createSession 调用参数:
 | `autorun` 缺省 | 不传 |
 | 永远 | `originHint: 'agent'`(不允许 agent tool 创建 user 类型) |
 
+### 撤销授权覆盖在途创建(`revoke-cancels-inflight.spec.ts`)
+
+授权已通过、PTY 尚未登记(installStopHook / spawn 期间)的创建按调用方身份(`ctx.callerSubject`)登记在途:
+
+- 撤销授权(`revokeAndKillAgentSessions`)取消**全部**调用方的在途创建;终端专属 token 吊销(`byToken`)只取消该 token 的
+- installStopHook 期间被取消 → 不建 PTY,抛 `AGENT_NOT_AUTHORIZED`
+- spawn 期间被取消 → 交给 createSession 的取消信号已触发(autorun 不执行),回收 PTY + metadata,抛 `TERMINAL_CREATE_CANCELLED`
+- 未被取消的其它调用方照常完成;创建结束即注销,之后的取消不影响新创建
+
 ## 不在本主题验证
 
 - IPC 反向通道(ensureAuthorized 真接 renderer 弹窗) — 留 E2E

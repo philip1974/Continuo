@@ -21,6 +21,7 @@ import { pickMainWindowPreferNonPopout } from './main-window-picker.service';
 import { ERROR_CODES } from '../../shared/error-codes';
 import { codedError } from '../../shared/error-message';
 import { broadcastToWindows } from '../lib/broadcast';
+import { cancelAgentTerminalCreates } from './agent-terminal-inflight';
 
 // 5 分钟无应答 → 默认拒绝(防 renderer 卡死时 tool Promise 永远悬挂)
 const PROMPT_TIMEOUT_MS = AGENT_AUTH_PROMPT_TIMEOUT_MS;
@@ -250,6 +251,8 @@ export function revokeAndKillAgentSessions(): RevokeResult {
     mcpHostRef.rotateToken();
     rotated = true;
   }
+  // 在途 create_session(授权已过、PTY 尚未登记)不在下方快照里:取消后由创建流程自行回收、不跑 autorun。
+  cancelAgentTerminalCreates();
   let killed = 0;
   const controllerTokens = new Set<string>();
   if (controllerTeardown) {

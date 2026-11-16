@@ -559,6 +559,12 @@ const DEFAULT_SERVER_INFO: ServerInfo = {
 
 const MAX_BODY_BYTES = 1_000_000; // 1MB,防 body bomb
 const SSE_KEEPALIVE_MS = 25_000;   // SSE 心跳,防中间件 idle 断
+/**
+ * 每个 SSE 连接未被客户端读走的输出上限(写缓冲 writableLength)。同 stdio 的 MAX_STDIO_UNREAD_OUTPUT_BYTES:
+ * 客户端只连不读时,broadcast / keepalive 在写缓冲里无界堆积,可把主进程撑到 OOM。超限即销毁该连接
+ *(对端不读,end 的结束帧也送不达,缓冲不会释放)。正常客户端边收边读,缓冲远小于此。
+ */
+export const MAX_SSE_UNREAD_OUTPUT_BYTES = 16_000_000;
 
 // 边界(E232,E227-E231 数量上限族):MCP HTTP host SSE 长连接数量上限。每个 GET /mcp 成功后保留一个
 // ServerResponse + keepalive setInterval + sseClients Map 条目,只在 close/revoke 才清。持合法 bearer
@@ -707,6 +713,17 @@ export async function createMcpHost(
     }
   };
 
+  // 写 SSE 帧并检查背压:未读输出超过 MAX_SSE_UNREAD_OUTPUT_BYTES → 销毁连接并移出订阅集合。
+  const writeSse = (res: ServerResponse, data: string): void => {
+    res.write(data);
+    if (res.writableLength > MAX_SSE_UNREAD_OUTPUT_BYTES) {
+      const meta = sseClients.get(res);
+      if (meta) clearInterval(meta.keepalive);
+      sseClients.delete(res);
+      res.destroy();
+    }
+  };
+
   const closeAllSseClients = (): void => {
     // 先拷贝:closeSseClient 会从 sseClients 删条目。
     for (const res of [...sseClients.keys()]) closeSseClient(res);
@@ -819,7 +836,7 @@ export async function createMcpHost(
     res.write(`event: ready\ndata: {"protocol":"continuo-mcp/0.1"}\n\n`);
     const keepalive = setInterval(() => {
       try {
-        res.write(`: keepalive\n\n`);
+        writeSse(res, `: keepalive\n\n`);
       } catch {
         /* connection 已断,close 事件会清理 */
       }
@@ -948,7 +965,7 @@ export async function createMcpHost(
       const line = `data: ${JSON.stringify(payload)}\n\n`;
       for (const c of sseClients.keys()) {
         try {
-          c.write(line);
+          writeSse(c, line);
         } catch {
           closeSseClient(c);
         }

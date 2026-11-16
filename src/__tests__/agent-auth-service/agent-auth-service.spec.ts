@@ -21,6 +21,7 @@ import {
 import { pickMainWindowPreferNonPopout } from '../../../electron/main/services/main-window-picker.service';
 import type { McpHost } from '../../../electron/main/services/mcp-host.service';
 import type { MainTerminalSession } from '../../../electron/main/services/terminal-sessions.service';
+import { trackAgentTerminalCreate } from '../../../electron/main/services/agent-terminal-inflight';
 
 type FakeWindow = {
   id: number;
@@ -682,6 +683,20 @@ describe('agent-auth-service: revokeAndKillAgentSessions', () => {
     expect(rotateToken).toHaveBeenCalledTimes(1);
     expect(terminalSessionsMock.remove).toHaveBeenCalledWith('a');
     expect(terminalServiceMock.forceKill).not.toHaveBeenCalled();
+  });
+
+  // 撤销只杀已登记会话;授权已过、PTY 尚未登记的在途 create_session 也须取消(不论调用方)。
+  it('revoke 取消所有调用方的在途 agent 终端创建', () => {
+    const a = trackAgentTerminalCreate('tok-a');
+    const b = trackAgentTerminalCreate('stdio-b');
+    try {
+      revokeAndKillAgentSessions();
+      expect(a.signal.aborted).toBe(true);
+      expect(b.signal.aborted).toBe(true);
+    } finally {
+      a.done();
+      b.done();
+    }
   });
 });
 
