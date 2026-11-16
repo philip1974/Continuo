@@ -405,6 +405,50 @@ describe('useFsWatcher · watch-lost 退避重装', () => {
     }
   });
 
+  it('退避期间展开别的目录 → 普通 diff 抢先重装失效 path,成功时同样恢复刷新并分发「重新可观察」', async () => {
+    const restored: string[] = [];
+    const off = onWatchRestored((p) => restored.push(p));
+    try {
+      const { hook, lost, onChange, aCalls } = setup(new Set(['/a']));
+      await flush();
+      lost('/a');
+      expect(onChange).toHaveBeenCalledTimes(1);
+      hook.rerender({ paths: new Set(['/a', '/b']) }); // diff 把 /a 列为 added → 普通 installWatch
+      await flush();
+      expect(aCalls()).toBe(2);
+      expect(onChange).toHaveBeenCalledTimes(2);
+      expect(onChange).toHaveBeenLastCalledWith('/a');
+      expect(restored).toEqual(['/a']);
+      vi.advanceTimersByTime(600_000); // 原定时器发现已重装 → 退出,不重复分发
+      await flush();
+      expect(aCalls()).toBe(2);
+      expect(restored).toEqual(['/a']);
+    } finally {
+      off();
+    }
+  });
+
+  it('失效后折叠再展开同一 path → 重新安装成功时恢复刷新并分发「重新可观察」(仅一次)', async () => {
+    const restored: string[] = [];
+    const off = onWatchRestored((p) => restored.push(p));
+    try {
+      const { hook, lost, onChange } = setup(new Set(['/a']));
+      await flush();
+      lost('/a');
+      hook.rerender({ paths: new Set<string>() });
+      hook.rerender({ paths: new Set(['/a']) });
+      await flush();
+      expect(onChange).toHaveBeenCalledTimes(2);
+      expect(restored).toEqual(['/a']);
+      hook.rerender({ paths: new Set<string>() });
+      hook.rerender({ paths: new Set(['/a']) });
+      await flush();
+      expect(restored).toEqual(['/a']); // 已恢复,再次正常安装不分发
+    } finally {
+      off();
+    }
+  });
+
   it('首次安装成功不分发「重新可观察」', async () => {
     const restored: string[] = [];
     const off = onWatchRestored((p) => restored.push(p));

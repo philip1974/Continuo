@@ -8,14 +8,14 @@
 // 父目录未展开的文件收不到通知(用户需手动刷新);95% 场景下打开文件
 // 之前 Explorer 已展开/reveal 过该路径。
 // watcher 因 error 被驱逐后由 Explorer 重装成功时,断线期间的变化不会有 dir-changed;
-// 订阅本地 watch-restored(src/lib/fs-watch-restored.ts),按一次 dir-changed 处理。
+// 订阅本地 watch-restored(src/lib/fs-watch-restored.ts),重读该目录子树内的 clean tab。
 
 import { useEffect } from 'react';
 import { coApi } from '@/lib/co-api';
 import { onWatchRestored } from '@/lib/fs-watch-restored';
 import { useEditorStore, type EditorTab } from '@/stores/editor.store';
 import { dirname } from '@/panels/Explorer/path-utils';
-import { pathEquals } from '@/lib/path-cross';
+import { isSameOrInsidePath, pathEquals } from '@/lib/path-cross';
 import { findEditorFileTabById } from './editor-tab-lookup';
 // 跨平台(codex 复查 P1):此前本地 dirname 是 Explorer path-utils dirname 的有问题副本 ——
 // 对 `C:\a.md` 返回 drive-relative `C:`(应盘根 `C:\`,同 X2)、对 POSIX 根 `/a.md` 返回 ''
@@ -86,12 +86,14 @@ export function useExternalFileSync(): void {
       );
     };
 
-    const onDirChanged = (changedDir: string): void => {
+    // match:dir-changed 精确匹配直接父目录;watch-restored 覆盖整棵子树(macOS/Win 的 watcher 递归,
+    // 断线期间子目录里的变化同样丢失)。子树读取仍走下方 inFlight/pending 合并。
+    const reloadMatching = (match: (filePath: string) => boolean): void => {
       const tabs = useEditorStore.getState().tabs;
       for (const tab of tabs) {
         if (tab.filePath === null) continue;
         if (tab.dirty) continue; // 保留用户改动,不覆盖
-        if (!pathEquals(dirname(tab.filePath), changedDir)) continue;
+        if (!match(tab.filePath)) continue;
         if (inFlight.has(tab.filePath)) {
           pending.add(tab.filePath); // 合并:在途读完成后尾随一次
         } else {
@@ -99,8 +101,12 @@ export function useExternalFileSync(): void {
         }
       }
     };
-    const unsub = coApi.fs.onDirChanged(onDirChanged);
-    const unsubRestored = onWatchRestored(onDirChanged);
+    const unsub = coApi.fs.onDirChanged((changedDir) =>
+      reloadMatching((fp) => pathEquals(dirname(fp), changedDir)),
+    );
+    const unsubRestored = onWatchRestored((dir) =>
+      reloadMatching((fp) => isSameOrInsidePath(dir, fp)),
+    );
     return () => {
       cancelled = true; // race(R79):失效在途 readFile 的迟到 settle
       unsub();

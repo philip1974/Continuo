@@ -314,6 +314,22 @@ describe('CommandRegistry', () => {
     warn.mockRestore();
   });
 
+  it('同 id 重复注册(插件 reload)且 hotkey 不变 → 不误报 hotkey 冲突;不同 id 冲突仍告警', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const r = new CommandRegistry('other');
+      r.register({ id: 'a', title: 'A', hotkey: 'mod+s', fn: () => {} });
+      r.register({ id: 'a', title: 'A2', hotkey: 'mod+s', fn: () => {} });
+      const hotkeyWarns = () =>
+        warn.mock.calls.filter((c) => String(c[0]).includes('hotkey')).length;
+      expect(hotkeyWarns()).toBe(0);
+      r.register({ id: 'b', title: 'B', hotkey: 'mod+s', fn: () => {} });
+      expect(hotkeyWarns()).toBe(1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it('hotkey 冲突按运行时等价(canonical)比较:修饰键顺序 / mod 别名 / 主键别名不同也告警', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {

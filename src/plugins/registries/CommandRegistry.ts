@@ -140,6 +140,8 @@ export class CommandRegistry extends KeyedRegistry<CommandSpec> {
     spec: CommandSpec,
     previous: CommandSpec | undefined,
   ): void {
+    // 先扣减被替换命令(同 id 重注册,如插件 reload)的占用:否则同 id 覆盖被误报为与自身冲突。
+    if (previous?.hotkey) this.decrementHotkey(previous.hotkey);
     if (
       spec.hotkey &&
       (this.hotkeyCounts.get(canonicalHotkey(spec.hotkey, this.platform)) ?? 0) > 0
@@ -149,7 +151,6 @@ export class CommandRegistry extends KeyedRegistry<CommandSpec> {
         `[command-registry] hotkey "${spec.hotkey}" 已被另一命令占用,先注册者生效,后注册者被遮蔽`,
       );
     }
-    if (previous?.hotkey) this.decrementHotkey(previous.hotkey);
     if (spec.hotkey) this.incrementHotkey(spec.hotkey);
   }
 

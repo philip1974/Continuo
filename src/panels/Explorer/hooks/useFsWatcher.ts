@@ -8,11 +8,6 @@ const DEBOUNCE_MS = 100;
 const LOST_RETRY_BASE_MS = 2000;
 const LOST_RETRY_MAX_MS = 60_000;
 
-interface ReinstallHooks {
-  onOk: () => void;
-  onFail: () => void;
-}
-
 function bumpGen(watchGen: Map<string, number>, p: string): number {
   const g = (watchGen.get(p) ?? 0) + 1;
   watchGen.set(p, g);
@@ -50,11 +45,15 @@ export function useFsWatcher(
   const lostCountRef = useRef<Map<string, number>>(new Map());
   // watch-lost:每 path 待重装定时器;折叠 / 卸载时取消。
   const lostTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  // watch-lost:经历过失效、尚未恢复的 path。任何 installWatch 对其的首次成功(退避定时器,或退避期间
+  // 展开别的目录 / 折叠重开令普通 diff 抢先重装)都补刷新 + emitWatchRestored 并清标记;否则抢先重装
+  // 成功后定时器见已安装即退出,断线期间的变化永不可见。
+  const pendingRestoreRef = useRef<Set<string>>(new Set());
 
   // 安装一个 path 的 watch(diff effect 与 watch-lost 重装共用);只读 ref,引用稳定。
-  // reinstall:watch-lost 重装专用回调 —— 成功(仍需要该 watch)→ onOk;仍是最新代际的失败(已撤销
-  // 记账)→ onFail 续排退避重试。卸载后两者都不调。
-  const installWatch = useCallback((p: string, reinstall?: ReinstallHooks): void => {
+  // 成功(仍需要该 watch)且 path 待恢复 → 补刷新 + 本地分发「重新可观察」。
+  // onFail:watch-lost 重装专用 —— 仍是最新代际的失败(已撤销记账)→ 续排退避重试。卸载后不调。
+  const installWatch = useCallback((p: string, onFail?: () => void): void => {
     const installed = prevPathsRef.current;
     const watchGen = watchGenRef.current;
     // race(R14):watchDir 是异步 IPC。此前 effect 立即把 prevPathsRef 设为 next,等于在 main
@@ -78,8 +77,9 @@ export function useFsWatcher(
           // (现有 watch/unwatch 记账已平衡)。
           if (cancelledRef.current || !installed.has(p)) {
             void coApi.fs.unwatchDir(p);
-          } else if (watchGen.get(p) === myGen) {
-            reinstall?.onOk();
+          } else if (watchGen.get(p) === myGen && pendingRestoreRef.current.delete(p)) {
+            onChangeRef.current(p);
+            emitWatchRestored(p);
           }
           return;
         }
@@ -88,7 +88,7 @@ export function useFsWatcher(
       }
       if (watchGen.get(p) !== myGen) return;
       installed.delete(p);
-      if (!cancelledRef.current) reinstall?.onFail();
+      if (!cancelledRef.current) onFail?.();
     })();
   }, []);
 
@@ -145,14 +145,8 @@ export function useFsWatcher(
           () => {
             timers.delete(p);
             if (!expandedRef.current.has(p) || prevPathsRef.current.has(p)) return;
-            installWatch(p, {
-              onOk: () => {
-                onChangeRef.current(p);
-                emitWatchRestored(p);
-              },
-              onFail: () => {
-                if (expandedRef.current.has(p)) schedule(p);
-              },
+            installWatch(p, () => {
+              if (expandedRef.current.has(p)) schedule(p);
             });
           },
           Math.min(LOST_RETRY_BASE_MS * 2 ** n, LOST_RETRY_MAX_MS),
@@ -164,6 +158,7 @@ export function useFsWatcher(
       if (!installed.has(p)) return;
       installed.delete(p);
       bumpGen(watchGenRef.current, p);
+      pendingRestoreRef.current.add(p);
       onChangeRef.current(p);
       schedule(p);
     });
