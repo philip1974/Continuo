@@ -3,9 +3,15 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   countDirtyForClose,
+  remainingAfterFlush,
   saveDirtyTabsForClose,
 } from '../../shell/dock/dirty-close';
-import { setAutoSaveFailed } from '../../panels/Editor/autosave-failures';
+import {
+  getAutoSaveRecordEpoch,
+  isAutoSaveFailed,
+  setAutoSaveFailed,
+} from '../../panels/Editor/autosave-failures';
+import { createTab, useEditorStore } from '../../stores/editor.store';
 
 const tab = (filePath: string | null, dirty: boolean, id = filePath ?? 'untitled-1') => ({
   id,
@@ -96,5 +102,78 @@ describe('saveDirtyTabsForClose:「保存」分支保存所有有路径的脏 ta
       () => [tab('/a.ts', true), tab('/b.ts', false)],
     );
     expect(r).toEqual({ failed: 1, diskChanged: 0 });
+  });
+});
+
+// 统一规则:全部 flush(含 markdown autosave flush)完成后最终脏检查。autosave 已 flush 过,仍脏的 .md 也算;
+// untitled 计入 —— 但本轮选了「保存」时用户已被告知 untitled 会被丢弃,不因它们中止。
+describe('remainingAfterFlush:flush 后仍未保存的改动', () => {
+  it('全部干净 → null', () => {
+    expect(remainingAfterFlush([tab('/a.ts', false), tab('/b.md', false)], false)).toBeNull();
+  });
+
+  it('仍脏的 .md(autosave flush 失败)与代码文件都计入,不看 autosave 设置', () => {
+    expect(remainingAfterFlush([tab('/a.md', true), tab('/b.ts', true)], false)).toEqual({
+      dirty: 2,
+      untitled: 0,
+    });
+  });
+
+  it('未弹框(非保存)时 untitled 草稿计入', () => {
+    expect(remainingAfterFlush([tab(null, true)], false)).toEqual({ dirty: 1, untitled: 1 });
+  });
+
+  it('「保存」分支只剩 untitled → null(用户已确认丢弃);有路径的仍脏 → 计数含 untitled', () => {
+    expect(remainingAfterFlush([tab(null, true)], true)).toBeNull();
+    expect(remainingAfterFlush([tab(null, true), tab('/a.ts', true)], true)).toEqual({
+      dirty: 2,
+      untitled: 1,
+    });
+  });
+});
+
+// 复审(f):失败记录按 tab id(= 文件路径)存。不随 tab 关闭 / 删除 / 重命名清理 → 重开同路径继承旧失败态、
+// 集合只增不减。tab 从 editor store 消失即清除;旧 tab 的迟到 autosave 结果(带开始时的 epoch)不写入新实例。
+describe('autosave 失败记录随 tab 生命周期清理', () => {
+  const open = (p: string) => useEditorStore.getState().openTab(createTab(p, 'x'));
+  afterEach(() => useEditorStore.setState({ tabs: [], activeTabId: null }));
+
+  it('closeTab → 清除该 tab 的失败记录', () => {
+    open('/w/a.md');
+    setAutoSaveFailed('/w/a.md', true);
+    useEditorStore.getState().closeTab('/w/a.md');
+    expect(isAutoSaveFailed('/w/a.md')).toBe(false);
+  });
+
+  it('removePath(文件被删)/ renamePath(旧 id 消失)→ 清除', () => {
+    open('/w/b.md');
+    open('/w/c.md');
+    setAutoSaveFailed('/w/b.md', true);
+    setAutoSaveFailed('/w/c.md', true);
+    useEditorStore.getState().removePath('/w/b.md');
+    useEditorStore.getState().renamePath('/w/c.md', '/w/d.md');
+    expect(isAutoSaveFailed('/w/b.md')).toBe(false);
+    expect(isAutoSaveFailed('/w/c.md')).toBe(false);
+  });
+
+  it('仍打开的 tab 记录保留', () => {
+    open('/w/e.md');
+    open('/w/f.md');
+    setAutoSaveFailed('/w/e.md', true);
+    useEditorStore.getState().closeTab('/w/f.md');
+    expect(isAutoSaveFailed('/w/e.md')).toBe(true);
+    setAutoSaveFailed('/w/e.md', false);
+  });
+
+  it('关闭后重开同路径:旧实例的迟到失败结果不写入新实例', () => {
+    open('/w/g.md');
+    const epoch = getAutoSaveRecordEpoch(); // 旧实例 autosave 开始时取
+    useEditorStore.getState().closeTab('/w/g.md');
+    open('/w/g.md');
+    setAutoSaveFailed('/w/g.md', true, epoch); // 旧保存迟到失败
+    expect(isAutoSaveFailed('/w/g.md')).toBe(false);
+    // 新实例自己的结果照常记录
+    setAutoSaveFailed('/w/g.md', true, getAutoSaveRecordEpoch());
+    expect(isAutoSaveFailed('/w/g.md')).toBe(true);
   });
 });

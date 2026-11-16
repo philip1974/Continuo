@@ -418,7 +418,11 @@ export async function allocateWindowSeq(explorerFile: string): Promise<number> {
     let seq = Math.max(Number.isSafeInteger(next) ? next : 0, maxSeg + 1, 1);
     if (!Number.isSafeInteger(seq + 1)) {
       seq = Number.isSafeInteger(next + 1) && next >= 1 ? next : 1;
-      while (used.has(seq)) seq += 1;
+      // 复审:从计数起一路被占用到上界时 `seq += 1` 会越过 MAX_SAFE_INTEGER → 下一值(及写回的
+      // nextWindowSeq = seq + 1)不安全时回绕到 1 继续找空位(used 有限,必有空位)。
+      while (used.has(seq) || !Number.isSafeInteger(seq + 1)) {
+        seq = Number.isSafeInteger(seq + 2) ? seq + 1 : 1;
+      }
     }
     payload.nextWindowSeq = seq + 1;
     await atomicWriteJson(explorerFile, payload);

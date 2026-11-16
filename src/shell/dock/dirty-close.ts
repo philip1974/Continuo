@@ -3,6 +3,7 @@
 // - countDirtyForClose:DockShell 在 tab 脏态变化时据此上报 main(layout:dirty-state),
 //   main 关窗前按计数决定是否弹「保存 / 不保存 / 取消」。
 // - saveDirtyTabsForClose:用户选「保存」时,flush 握手里先保存所有有路径的脏 tab。
+// - remainingAfterFlush:flush 握手全部落盘后、ACK 前的最终脏检查(统一规则,见 DockShell onFlushRequest)。
 
 import type { EditorTab } from '@/stores/editor.store';
 import { isAutoSaveEnabled } from '@/panels/Editor/useAutoSave';
@@ -33,6 +34,22 @@ export function countDirtyForClose(
     if (tab.filePath === null) untitled += 1;
   }
   return { dirty, untitled };
+}
+
+/**
+ * 最终脏检查(统一规则):关窗 flush 全部完成(批量保存 / layout / explorer / markdown autosave flush)后仍未
+ * 保存的改动。「是否允许关闭」此前只取决于弹框前的脏计数,flush 期间 / 确认期间新产生的脏状态没人再查
+ * (防抖内 autosave 首次失败、保存后慢 flush 期间继续输入、多窗退出时别窗确认期间本窗变脏)。
+ * autosave 已 flush 过,仍脏的 .md 也计入(不看 autosave 设置);untitled 计入,但本轮选了「保存」时
+ * 用户已被告知 untitled 会被丢弃,只剩 untitled 不算。无 → null;有 → 全部脏 tab 计数(main 据此记账)。
+ */
+export function remainingAfterFlush(
+  tabs: readonly TabLike[],
+  save: boolean,
+): DirtyCloseState | null {
+  const state = countDirtyForClose(tabs, false);
+  const blocking = save ? state.dirty - state.untitled : state.dirty;
+  return blocking > 0 ? state : null;
 }
 
 export interface SaveForCloseResult {

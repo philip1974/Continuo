@@ -108,7 +108,12 @@ function ensureTerminalDataListener(): void {
   terminalDataListenerInstalled = true;
 }
 
-type FlushRequestPayload = { windowId: number; save?: boolean; requestId?: number };
+type FlushRequestPayload = {
+  windowId: number;
+  save?: boolean;
+  discard?: boolean;
+  requestId?: number;
+};
 
 // 所有跨 IPC 的方法都返回 IpcResult<T>(详见 ADR-010),
 // renderer 拿到后按 ok 分流,不再 throw。
@@ -122,8 +127,8 @@ const api = {
     onFlushRequest: (
       cb: (payload?: FlushRequestPayload) => void | Promise<void>,
     ): (() => void) => {
-      // main 发 `{ windowId, requestId, save? }`(save:用户在脏文件确认框选了「保存」;requestId 须在回执里
-      // 原样带回,main 只接受匹配在途请求的回执);透传给回调(不暴露 IpcRendererEvent)。
+      // main 发 `{ windowId, requestId, save?, discard? }`(save / discard:用户在脏文件确认框选了「保存」/
+      // 「不保存」;requestId 须在回执里原样带回,main 只接受匹配在途请求的回执);透传给回调(不暴露 IpcRendererEvent)。
       const listener = (_event: unknown, payload?: FlushRequestPayload) => {
         void cb(payload);
       };
@@ -135,7 +140,12 @@ const api = {
     },
     sendFlushAck: (
       windowId: number,
-      result?: { saveFailed?: boolean; requestId?: number },
+      // remaining:全部 flush 后仍有未保存改动(未选「不保存」时)的计数,main 据此中止关闭 / 退出。
+      result?: {
+        saveFailed?: boolean;
+        requestId?: number;
+        remaining?: { dirty: number; untitled: number };
+      },
     ): void => {
       ipcRenderer.send(LAYOUT_CHANNELS.FLUSH_ACK, windowId, result);
     },

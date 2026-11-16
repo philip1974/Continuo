@@ -34,7 +34,7 @@ import {
 } from '@/panels/Editor/autosave-failures';
 import { useEditorFile } from '@/panels/Editor/useEditorFile';
 import { useSettingValue } from '@/plugins/settings/values-store';
-import { countDirtyForClose, saveDirtyTabsForClose } from './dirty-close';
+import { countDirtyForClose, remainingAfterFlush, saveDirtyTabsForClose } from './dirty-close';
 import { coApi } from '@/lib/co-api';
 import { notify } from '@/notifications/notify';
 import { t as translate } from '@/i18n';
@@ -409,13 +409,22 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       // 三条 flush 数据域独立;layout/explorer 如最终共享 explorer.json,main 侧 file mutex
       // 仍负责串行化磁盘合并。renderer 这里并行启动,减少关闭按钮等待首个慢任务串住后续落盘。
       await Promise.all([layoutFlush, explorerFlush, autosaveFlush]);
+      // 统一规则:全部 flush 完成后、ACK 前最终脏检查。本轮未选「不保存」且仍有未保存改动(防抖内 autosave
+      // 失败 / flush 期间继续输入 / 确认期间变脏)→ 回执 remaining,main 中止关闭 / 退出并按此记账。
+      const remaining = payload?.discard
+        ? null
+        : remainingAfterFlush(useEditorStore.getState().tabs, payload?.save === true);
+      // main 已按回执记账:同步去重基准,之后脏态变化与之不同即重新上报。
+      if (remaining) lastDirtyReportRef.current = `${remaining.dirty}/${remaining.untitled}`;
       const windowId = payload?.windowId ?? coApi.system.windowId;
       // requestId 原样带回:main 只接受与在途请求匹配的回执(关窗与 Cmd+Q 交叉时不串号)。
       const requestId = payload?.requestId;
       const tag = typeof requestId === 'number' ? { requestId } : {};
-      if (payload?.save) coApi.layout.sendFlushAck?.(windowId, { saveFailed, ...tag });
-      else if (typeof requestId === 'number') coApi.layout.sendFlushAck?.(windowId, tag);
-      else coApi.layout.sendFlushAck?.(windowId);
+      const extra = remaining ? { remaining } : {};
+      if (payload?.save) coApi.layout.sendFlushAck?.(windowId, { saveFailed, ...extra, ...tag });
+      else if (remaining || typeof requestId === 'number') {
+        coApi.layout.sendFlushAck?.(windowId, { ...extra, ...tag });
+      } else coApi.layout.sendFlushAck?.(windowId);
     });
     return () => {
       off?.();

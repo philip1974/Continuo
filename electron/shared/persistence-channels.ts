@@ -11,7 +11,8 @@ export const LAYOUT_CHANNELS = {
   // renderer → main:已订阅 flush 请求(DockShell 挂载完成)。main 只对上报过的窗口发请求并等回执。
   FLUSH_READY: 'layout:flush-ready',
   // renderer → main:本窗口关窗会丢的脏 tab 计数 `{ dirty, untitled }`(变化时上报)。main 据此在关窗 /
-  // 退出前弹「是否保存」确认;选保存时 FLUSH_REQUEST 带 `save: true`,FLUSH_ACK 第二参带 `{ saveFailed }`。
+  // 退出前弹「是否保存」确认;选保存时 FLUSH_REQUEST 带 `save: true`(不保存带 `discard: true`),FLUSH_ACK
+  // 第二参带 `{ saveFailed, remaining? }`(remaining:全部 flush 后仍有未保存改动,main 中止关闭)。
   DIRTY_STATE: 'layout:dirty-state',
 } as const;
 
