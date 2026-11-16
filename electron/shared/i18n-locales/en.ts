@@ -300,7 +300,7 @@ export const en = {
   'permissions.agent.title': 'Agent requests built-in terminal access',
   'permissions.agent.title_debug': 'Agent requests debugger access',
   'permissions.agent.hint_debug':
-    'Once granted, agents holding the MCP token can launch programs under the debugger, set breakpoints, step, read variables and evaluate expressions. Granting this does not grant terminal access. Valid only for this launch.',
+    'Once granted, agents holding the MCP token can launch workspace programs under the debugger, set breakpoints, step, read variables and evaluate expressions. Evaluating expressions is equivalent to running arbitrary code with your user permissions (including system commands), so only grant this to agents you trust. Valid only for this launch.',
   'permissions.agent.respond_failed': 'Failed to send your authorization decision. Please try again.',
   // a11y(A126):error feedback when relaying the fs-scope grant/deny decision to main fails.
   'permissions.fs_scope.respond_failed': 'Failed to send your file-access decision. Please try again.',

@@ -185,6 +185,7 @@
 ## [50 · Agent Debug Engine MVP](./50-agent-debug-engine-mvp/README.md)
 
 - [`dap-framing.spec.ts`](./50-agent-debug-engine-mvp/dap-framing.spec.ts)
+- [`debug-auth-hint-code-exec.spec.ts`](./50-agent-debug-engine-mvp/debug-auth-hint-code-exec.spec.ts)
 - [`debug-schemas.spec.ts`](./50-agent-debug-engine-mvp/debug-schemas.spec.ts)
 - [`mcp-debug-host.spec.ts`](./50-agent-debug-engine-mvp/mcp-debug-host.spec.ts)
 - [`revoke-covers-inflight-launch.spec.ts`](./50-agent-debug-engine-mvp/revoke-covers-inflight-launch.spec.ts)

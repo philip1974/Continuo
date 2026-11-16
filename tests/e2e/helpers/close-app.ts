@@ -29,5 +29,12 @@ export function captureMainProcessLog(app: ElectronApplication, outputDir: strin
   const proc = app.process();
   proc.stdout?.on('data', (chunk: Buffer) => out.write(chunk));
   proc.stderr?.on('data', (chunk: Buffer) => out.write(chunk));
-  proc.once('exit', () => out.end());
+  // exit 与 close 分开记:有 exit 无 close = 进程已退出但 stdio 管道被残留子孙进程持有(Playwright 等 close)。
+  proc.once('exit', (code, signal) => {
+    out.write(`[fixture] process exit code=${code} signal=${signal} @${Date.now()}\n`);
+  });
+  proc.once('close', () => {
+    out.write(`[fixture] process close @${Date.now()}\n`);
+    out.end();
+  });
 }
