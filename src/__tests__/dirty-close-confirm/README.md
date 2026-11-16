@@ -128,3 +128,8 @@ markdown autosave flush)完成后、回执之前,检查此刻仍 dirty 的 tab(�
 | `dockshell-save-on-close.spec.tsx` | DockShell 脏态上报 + flush「保存」分支回执 + 最终脏检查回执 `remaining` |
 | `../49-polish-bugfixes/quit-cleanup-guard-reentry.spec.ts` | 守卫 `cancel()` 复位 |
 | `../49-polish-bugfixes/autosave-resolved-failure.spec.tsx` | `useAutoSave` 持有 / 失败 / 重新 schedule / 重命名 / 卸载 |
+
+## 长路径文件的脏态 id(终审 P1)
+
+- 脏态 id 为 `${tabId}#${dirtyGen}`,tabId 本身可达 `PATH_STR_MAX`(Windows 长路径);main 端单条上限为
+  `PATH_STR_MAX + 32`,给代际后缀留余量。否则合法打开的长路径文件整份上报被拒 → 关窗不弹确认、静默丢修改。

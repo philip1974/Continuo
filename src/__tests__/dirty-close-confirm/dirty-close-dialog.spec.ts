@@ -10,6 +10,7 @@ import {
   parseFlushAck,
 } from '../../../electron/main/dirty-close-confirm';
 import { en } from '../../../electron/shared/i18n-locales/en';
+import { PATH_STR_MAX } from '../../../electron/shared/explorer-persistence-schema';
 import { interpolateTemplate } from '../../../electron/shared/i18n-interpolate';
 
 const t = (key: string, params?: Record<string, string | number>) => {
@@ -32,6 +33,15 @@ describe('parseDirtyState:renderer 上报的脏态只接受合法计数与 id �
     expect(parseDirtyState(ds([]))).toEqual(ds([]));
   });
 
+  // 终审 P1:id 是 `${path}#${dirtyGen}`,路径本身可达 PATH_STR_MAX(Windows 长路径);单条上限须给代际后缀留余量,
+  // 否则合法打开的长路径文件整份脏态上报被拒 → 关窗不弹确认、静默丢失修改。
+  it('路径长度恰为 PATH_STR_MAX 的文件,带代际后缀的 id 仍被接受', () => {
+    const longPath = 'C:\\' + 'a'.repeat(PATH_STR_MAX - 3);
+    expect(longPath.length).toBe(PATH_STR_MAX);
+    const s = ds([`${longPath}#123456789`]);
+    expect(parseDirtyState(s)).toEqual(s);
+  });
+
   it.each([
     null,
     undefined,
@@ -42,7 +52,7 @@ describe('parseDirtyState:renderer 上报的脏态只接受合法计数与 id �
     { dirty: 2, untitled: 0, ids: ['/a.ts', '/a.ts'], untitledIds: [] }, // 重复 id
     { dirty: 1, untitled: 0, ids: [''], untitledIds: [] },
     { dirty: 1, untitled: 0, ids: [1], untitledIds: [] },
-    { dirty: 1, untitled: 0, ids: ['x'.repeat(8193)], untitledIds: [] }, // 单条超上限
+    { dirty: 1, untitled: 0, ids: ['x'.repeat(PATH_STR_MAX + 33)], untitledIds: [] }, // 单条超上限(路径上限 + 代际后缀余量)
     { dirty: 1, untitled: 0, ids: 'x', untitledIds: [] },
   ])('非法输入 #%# → null', (raw) => {
     expect(parseDirtyState(raw)).toBeNull();

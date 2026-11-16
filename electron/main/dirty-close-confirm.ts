@@ -28,10 +28,13 @@ export interface DirtyState {
 }
 
 // 边界:id 列表上限对齐 openFilePaths(PATH_ARRAY_MAX)、单条对齐 PATH_STR_MAX,防畸形 / 篡改上报。
+// id 形如 `${tabId}#${dirtyGen}`:tabId 本身可达 PATH_STR_MAX(Windows 长路径),单条上限给代际后缀留余量,
+// 否则合法打开的长路径文件整份上报被拒 → 关窗不弹确认、静默丢修改。
+const DIRTY_ID_MAX = PATH_STR_MAX + 32;
 function parseIds(v: unknown): string[] | null {
   if (!Array.isArray(v) || v.length > PATH_ARRAY_MAX) return null;
   for (const id of v) {
-    if (typeof id !== 'string' || id.length === 0 || id.length > PATH_STR_MAX) return null;
+    if (typeof id !== 'string' || id.length === 0 || id.length > DIRTY_ID_MAX) return null;
   }
   return new Set(v).size === v.length ? (v as string[]) : null;
 }

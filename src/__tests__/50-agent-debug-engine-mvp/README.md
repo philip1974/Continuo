@@ -36,3 +36,9 @@
 - `revoke-covers-inflight-launch.spec.ts`: 撤销 agent 授权时枚举的调用方含在途 launch 的接线(源码钉)。
 
 DebugService 的真实 adapter 生命周期、wait/continue/teardown 幂等行为由 `electron/main/__tests__/debug-service.spec.ts` 覆盖，避免在 BDD 层重复慢路径。
+
+## 打包前获取 js-debug adapter(终审 P1)
+
+- adapter 不入 git;`build:pack`(所有 `build:app*` 都经由它)先执行 `scripts/fetch-debug-adapter.mjs`
+  下载并校验固定版本 sha256,已存在则直接跳过。否则干净检出本地打包会产出调试功能不可用的安装包
+  (electron-builder 对缺失的 extraResources 只警告)。规范:`build-fetches-debug-adapter.spec.ts`。

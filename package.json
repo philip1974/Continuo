@@ -27,7 +27,7 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
-    "build:pack": "cross-env BUILD_TARGET=pack electron-vite build",
+    "build:pack": "node scripts/fetch-debug-adapter.mjs && cross-env BUILD_TARGET=pack electron-vite build",
     "build:app": "pnpm build:pack && electron-builder",
     "build:app:mac": "pnpm build:pack && electron-builder --mac",
     "build:app:win": "pnpm build:pack && electron-builder --win",
