@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { EDITOR_UNSAVED_CHANGES_SELECTOR } from './helpers/editor';
 import { explorerMoreActionsButton } from './helpers/explorer';
+import { closeDiscardingUnsaved } from './helpers/close-app';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -68,7 +69,7 @@ test('dirty ws1/a.ts + 切 ws2 → dirty tab 保留', async () => {
     await expect(win.locator(EDITOR_UNSAVED_CHANGES_SELECTOR)).toBeVisible();
     await expect(win.locator('header').first()).toContainText('a.ts');
 
-    await app.close();
+    await closeDiscardingUnsaved(app);
   } finally {
     rmSync(ws1, { recursive: true, force: true });
     rmSync(ws2, { recursive: true, force: true });

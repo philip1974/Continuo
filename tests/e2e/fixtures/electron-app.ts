@@ -14,6 +14,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { closeDiscardingUnsaved } from '../helpers/close-app';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -53,7 +54,7 @@ export const test = base.extend<Fixtures>({
       },
     });
     await use(app);
-    await app.close();
+    await closeDiscardingUnsaved(app);
   },
 
   window: async ({ electronApp }, use) => {
