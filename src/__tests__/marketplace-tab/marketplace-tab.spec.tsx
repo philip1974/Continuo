@@ -854,9 +854,11 @@ describe('MarketplaceTab — 安装按钮', () => {
     expect(installBtn).toBeDefined();
     fireEvent.click(installBtn);
     await waitFor(() => {
-      expect(installFromGit).toHaveBeenCalledWith(
-        'https://github.com/me/a.git',
-      );
+      // 与更新检查同源:clone entry.branch + main 侧校验 manifest.id == entry.id。
+      expect(installFromGit).toHaveBeenCalledWith('https://github.com/me/a.git', false, {
+        expectedId: 'a',
+        branch: 'main',
+      });
     });
     await waitFor(() => {
       expect(container.textContent).toContain('已安装 A v1.0.0');
@@ -996,7 +998,11 @@ describe('MarketplaceTab — 更新按钮', () => {
     expect(updateBtn).toBeDefined();
     fireEvent.click(updateBtn!);
     await waitFor(() => {
-      expect(installFromGit).toHaveBeenCalledWith(expect.any(String), true);
+      expect(installFromGit).toHaveBeenCalledWith(
+        expect.any(String),
+        true,
+        expect.objectContaining({ expectedId: expect.any(String), branch: 'main' }),
+      );
     });
     // 关键:更新路径不再卸载,避免重装失败丢插件
     expect(uninstall).not.toHaveBeenCalled();

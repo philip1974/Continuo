@@ -34,6 +34,9 @@
   旧实现卸载成功但重装失败会丢插件(审计 #2),且原子覆盖保留 `_enabled`/`_permissions`。
 - 根因 #5: 旧实现 `access(targetDir)` 后 `cp`,并发同 id 互相覆盖、`cp` 中途失败留半个
   目录 → 永久 `EEXIST`。
+- main 入口须是普通文件(目录 → `BAD_MAIN`,不落地);`branch` 选项 → `--branch=<b>`
+  (非法/前导 `-` → `BAD_INPUT`,不启动子进程);`expectedId` ≠ manifest.id → `PLUGIN_ID_MISMATCH`。
+  marketplace 卡片安装/更新经 `entryInstallOptions(entry)` 传 `{ expectedId, branch }`。
 
 ## P2 批次(资源/边界/体验)
 

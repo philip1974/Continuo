@@ -23,6 +23,7 @@ import {
 } from '../services/plugins.service';
 import { broadcastToWindows } from '../lib/broadcast';
 import { PERMISSION_KEYS } from '../../shared/permission-keys';
+import { GIT_BRANCH_MAX, isValidGitBranch } from '../../shared/git-branch';
 
 // 边界(E16):插件权限 IPC schema 此前对 ids/decisions/pathScopes/plugin id/path/permission 字符串
 // 都无长度或数量上限。畸形 renderer payload 可把 _permissions.json / _path-scopes.json 写成超大对象
@@ -79,6 +80,9 @@ export const InstallFromGitInput = z
   .object({
     url: z.string().min(1).max(URL_MAX),
     overwrite: z.boolean().optional(),
+    // marketplace entry.branch / entry.id(可选,缺省行为不变);形态校验同 service 层契约。
+    branch: z.string().max(GIT_BRANCH_MAX).refine(isValidGitBranch).optional(),
+    expectedId: z.string().min(1).max(PLUGIN_ID_MAX).optional(),
   })
   .strict();
 export const UninstallInput = z
@@ -157,7 +161,8 @@ export function registerPluginsIpc(): void {
   safeHandle(
     PLUGINS_CHANNELS.INSTALL_FROM_GIT,
     InstallFromGitInput,
-    ({ url, overwrite }) => installFromGit(url, pluginsDir, { overwrite }),
+    ({ url, overwrite, branch, expectedId }) =>
+      installFromGit(url, pluginsDir, { overwrite, branch, expectedId }),
     trusted,
   );
 

@@ -308,14 +308,21 @@ const api = {
     /**
      * v4.5 从 git URL 安装插件,返回 manifest 元信息.
      * overwrite=true:原子覆盖已装版本(用于「更新」,无需先卸载,失败保留旧版本)。
+     * opts.branch:clone 指定分支;opts.expectedId:manifest.id 须等于它(marketplace entry 用)。
      */
     installFromGit: (
       url: string,
       overwrite?: boolean,
+      opts?: { branch?: string; expectedId?: string },
     ): Promise<
       IpcResult<{ id: string; name: string; version: string }>
     > =>
-      ipcRenderer.invoke(PLUGINS_CHANNELS.INSTALL_FROM_GIT, { url, overwrite }),
+      ipcRenderer.invoke(PLUGINS_CHANNELS.INSTALL_FROM_GIT, {
+        url,
+        overwrite,
+        branch: opts?.branch,
+        expectedId: opts?.expectedId,
+      }),
     /** v4.6 卸载插件:rm -rf plugins/<id>/ + 清 _enabled / _permissions. */
     uninstall: (id: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(PLUGINS_CHANNELS.UNINSTALL, { id }),

@@ -19,6 +19,8 @@ I/O 全部抽象为接口注入(`ManagerHost`),便于 jsdom 单测。
 - `host.listPluginDirs()` 返回 `[{ id, manifestText, moduleUrl }]`
 - 调 `parseManifest`,失败的跳过 + warn
 - 调 `isVersionCompatible`(若 manifest 有 minLMVersion),不兼容跳过 + warn
+- 多个目录声明同一 `manifest.id` → 只保留一个(目录名 == id 优先,否则目录名字典序第一个),其余跳过 + warn;
+  `reload` 的 `findPluginDirByManifestId` 用同一规则(防双激活留孤儿实例)
 
 ### 启用过滤
 
@@ -39,6 +41,7 @@ I/O 全部抽象为接口注入(`ManagerHost`),便于 jsdom 单测。
 ### uninstall 单插件(v4.6)
 
 - `uninstall(id)`:若 enabled 先 disable,再调 `host.removePluginDir(id)`(主进程 rm -rf + 清 _permissions),最后从 entries map 删
+- 删目录前重试回收停用时保留的 plugin-fs token;仍失败 → 抛 `PLUGIN_FS_TOKEN_REVOKE_FAILED`,不删目录、保留 entry(可重试)
 - 不存在的 id → 抛 `not found`
 - host 未实现 `removePluginDir` → 抛 `NOT_SUPPORTED`(向后兼容,jsdom 测试无需 mock 文件系统)
 

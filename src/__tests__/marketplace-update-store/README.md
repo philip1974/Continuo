@@ -26,6 +26,10 @@
 - 用 `Promise.allSettled`,失败的 entry 进 `remoteVersions` map 时跳过
 - 该 entry 在 available 中也跳(因为没 remoteV)
 
+### 远端 manifest.id ≠ entry.id
+
+- 跳过该 entry(warn),不写 `remoteVersions`、不计入 available(防更新检查错配)
+
 ### 本地未装 manifest 中的某 plugin
 
 - 不计入 available(只对 installed 检查)

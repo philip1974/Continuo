@@ -21,6 +21,7 @@ import type {
 import { ERROR_CODES } from '../../shared/error-codes';
 import { codedError, errorMessage } from '../../shared/error-message';
 import { isValidPluginId } from '../../shared/plugin-id';
+import { isValidGitBranch } from '../../shared/git-branch';
 import { createSerialQueue } from '../../shared/run-serial-per-key';
 import { isIpcPathScope, isIpcPermissionDecision } from '../../shared/permission-record';
 import { killWithGrace } from '../lib/kill-with-grace';
@@ -926,6 +927,21 @@ const GIT_CLONE_TIMEOUT_MS = 60_000;
 // 会误伤合法克隆;只 bound 内存。失败 message 只带截断摘要 + 标记。
 const MAX_GIT_STDERR_BYTES = 64 * 1024;
 
+export interface InstallFromGitOptions {
+  /** true:原子覆盖已装版本(更新)。 */
+  readonly overwrite?: boolean;
+  /**
+   * clone 指定分支(marketplace entry.branch)。版本检查读的是该分支的 manifest,clone 须同源,
+   * 否则装到默认分支代码(可能降级)却报成功。缺省 = 远端默认分支(行为不变)。
+   */
+  readonly branch?: string;
+  /**
+   * 期望的 manifest.id(marketplace entry.id)。不一致 → PLUGIN_ID_MISMATCH 不落地:防 index 条目
+   * 指向另一身份的仓库(装成别的 id / 覆盖别的插件 / 更新检查错配)。校验放 main 侧防 renderer 绕过。
+   */
+  readonly expectedId?: string;
+}
+
 /**
  * 从 git URL clone 到临时目录,验 manifest.json,把整个目录复制到
  * baseDir/<manifest.id>/。已存在 → 抛 EEXIST 让调用方提示用户。
@@ -933,15 +949,23 @@ const MAX_GIT_STDERR_BYTES = 64 * 1024;
 export async function installFromGit(
   gitUrl: string,
   baseDir: string,
-  opts: { overwrite?: boolean } = {},
+  opts: InstallFromGitOptions = {},
 ): Promise<InstallFromGitResult> {
   if (!startsWithHttpsScheme(gitUrl)) {
     throw codedError(ERROR_CODES.BAD_URL, `不支持的 git URL: ${gitUrl}`);
   }
+  // branch 进 git argv:形态校验(拒前导 '-' 选项注入 / 空白 / 点段),并用 `--branch=<b>` 单参数
+  // 形式,值不会被解析成独立选项。
+  if (opts.branch !== undefined && !isValidGitBranch(opts.branch)) {
+    throw codedError(ERROR_CODES.BAD_INPUT, `非法 branch: ${opts.branch.slice(0, 256)}`);
+  }
   const tmpRoot = await mkdtemp(path.join(tmpdir(), 'lm-plugin-install-'));
   try {
     const cloneDir = path.join(tmpRoot, 'clone');
-    await runGit(['clone', '--depth', '1', gitUrl, cloneDir]);
+    const cloneArgs = ['clone', '--depth', '1'];
+    if (opts.branch !== undefined) cloneArgs.push(`--branch=${opts.branch}`);
+    cloneArgs.push(gitUrl, cloneDir);
+    await runGit(cloneArgs);
 
     // 边界(E27,E24 兄弟):安装路径读 clone 的 manifest.json 也走 readFileCapped(同
     // MANIFEST_MAX_BYTES),与 listPluginDirs 启动扫描一致。clone 来自外部 git 仓库,manifest
@@ -969,16 +993,27 @@ export async function installFromGit(
     if (!isSafePluginId(manifest.id)) {
       throw codedError(ERROR_CODES.BAD_MANIFEST, 'manifest id 含非法字符或路径穿越');
     }
+    if (opts.expectedId !== undefined && manifest.id !== opts.expectedId) {
+      throw codedError(
+        ERROR_CODES.PLUGIN_ID_MISMATCH,
+        `manifest id ${manifest.id} 与期望 ${opts.expectedId} 不一致`,
+      );
+    }
 
     const mainName = getPluginMainName(manifest); // M20:共用 getPluginMainName
     const mainPath = resolvePluginMainPath(cloneDir, mainName);
     if (!mainPath) {
       throw codedError(ERROR_CODES.BAD_MAIN, `main 入口非法: ${mainName}`);
     }
+    // 须是普通文件:fs.access 对目录也成功 → 报安装成功,但下次扫描读 main 失败静默跳过。
+    let mainIsFile = false;
     try {
-      await fs.access(mainPath);
+      mainIsFile = (await fs.stat(mainPath)).isFile();
     } catch {
-      throw codedError(ERROR_CODES.BAD_MAIN, `main 入口不存在: ${mainName}`);
+      /* 不存在/不可读 → 下方 BAD_MAIN */
+    }
+    if (!mainIsFile) {
+      throw codedError(ERROR_CODES.BAD_MAIN, `main 入口不存在或不是文件: ${mainName}`);
     }
 
     // 验证已通过 → 收窄成 string 常量,带进下面的闭包(let manifest 的窄化跨闭包会丢)。

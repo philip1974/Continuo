@@ -10,7 +10,7 @@ import { coApi } from '@/lib/co-api';
 import { useSingleFlight } from '@/lib/use-single-flight';
 import { errorMessage } from '../../electron/shared/error-message';
 import { getUserPluginManager, type PluginListItem } from '@/plugins/PluginManager';
-import { entryToGitUrl, type MarketplaceEntry } from './types';
+import { entryInstallOptions, entryToGitUrl, type MarketplaceEntry } from './types';
 import { fetchMarketplaceIndex } from './fetcher';
 import { applyFilter, collectAllTags } from './filter';
 import { clampSearchQuery } from '@/lib/search-query';
@@ -217,9 +217,12 @@ export function MarketplaceTab() {
         // 更新 = 原子覆盖安装(overwrite=true)。不再「先卸载后重装」:旧实现一旦卸载成功但重装失败
         // (网络/clone 错),插件就从磁盘消失且无回滚(审计 #2)。overwrite 在 main 端做 staging+rename
         // swap,失败保留旧版本;且保留 _enabled / _permissions,更新后无需重新授权。
-        const r = isUpdate
-          ? await coApi.plugins.installFromGit(entryToGitUrl(entry), true)
-          : await coApi.plugins.installFromGit(entryToGitUrl(entry));
+        // entryInstallOptions:clone entry.branch(与更新检查读的 manifest 同源)+ main 校验 manifest.id。
+        const r = await coApi.plugins.installFromGit(
+          entryToGitUrl(entry),
+          isUpdate,
+          entryInstallOptions(entry),
+        );
         success = r.ok;
         // i18n(codex 复查 P1,I1 同族):installFromGit 各错误站点 Error.message 是硬编码中文,直接展示
         // 会让 en/ko 看到中文。改用稳定 r.code 经 catalog(errors.<CODE>)翻译,未知 code 回退原
