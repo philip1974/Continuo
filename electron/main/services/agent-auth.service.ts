@@ -20,6 +20,7 @@ import { isPopoutUrl } from '../popout-url';
 import { pickMainWindowPreferNonPopout } from './main-window-picker.service';
 import { ERROR_CODES } from '../../shared/error-codes';
 import { codedError } from '../../shared/error-message';
+import { broadcastToWindows } from '../lib/broadcast';
 
 // 5 分钟无应答 → 默认拒绝(防 renderer 卡死时 tool Promise 永远悬挂)
 const PROMPT_TIMEOUT_MS = AGENT_AUTH_PROMPT_TIMEOUT_MS;
@@ -263,5 +264,8 @@ export function revokeAndKillAgentSessions(): RevokeResult {
       controllerTeardown.killByController(token, 'revoked');
     }
   }
+  // 跨窗口撤销:「本次启动期间允许」记在各窗口 renderer 的 store,只有发起窗口会本地重置。不通知其它窗口
+  // → 它们仍 sessionGranted=true、残留弹窗不清,之后的请求被静默放行。广播给所有窗口统一重置。
+  broadcastToWindows(AGENT_AUTH_CHANNELS.REVOKED, () => ({}), '[agent-auth] REVOKED');
   return { killed, rotated };
 }

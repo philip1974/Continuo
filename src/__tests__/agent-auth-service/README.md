@@ -29,3 +29,7 @@ The spec uses local-only `vi.hoisted` mocks for Electron windows, terminal sessi
 
 T7b `answerAgentAuthRequest`(ipc respond 入口)对已不在等待的 `requestId`(撤销 / 超时 / 窗口关闭已结算并删除)抛 `AGENT_AUTH_REQUEST_NOT_PENDING`(renderer 收到 ok:false,据此不记 session 授权);
 T7c 对仍在等待的 `requestId` 正常结算、不抛。
+
+T16 撤销(`revokeAndKillAgentSessions`)完成后向所有存活窗口广播 `AGENT_AUTH_CHANNELS.REVOKED`(payload `{}`):
+「本次启动期间允许」记在各窗口 renderer 的 store,只重置发起窗口会让其它窗口在撤销后仍静默放行请求;
+各 renderer 收到后执行与本地撤销相同的重置(见 `agent-auth-prompt` / `agent-terminal-mcp-auth`)。

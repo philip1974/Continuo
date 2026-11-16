@@ -27,3 +27,6 @@
 - api 未就绪 → 静默
 - 找到现存 panel → setActive,不再 addPanel
 - 没找到 → addPanel({ id, component, title })
+- `setDockApi(api, { layoutPending: true })`(DockShell onReady,布局尚未恢复)→ 调用排队,不立即 addPanel;
+  `markDockLayoutRestored(api)` 后按序执行。过期 api 的 mark 无效,换 api / set null 丢弃旧队列
+  (恢复前 addPanel 的面板会被 fromJSON 的 `clear()` 删掉且不再补建)

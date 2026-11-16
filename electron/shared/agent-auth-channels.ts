@@ -9,6 +9,8 @@ export const AGENT_AUTH_CHANNELS = {
   RESPOND: 'agent-auth:respond',
   /** renderer → main invoke:撤销 session 授权 + 终止全部 agent terminal. */
   REVOKE: 'agent-auth:revoke',
+  /** main → renderer push(广播所有窗口):撤销已生效,各窗口重置本地授权态 + 取消残留弹窗. */
+  REVOKED: 'agent-auth:revoked',
 } as const;
 
 export interface AgentAuthRequestPayload {

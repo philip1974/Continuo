@@ -13,6 +13,11 @@ import { create } from 'zustand';
 import { AGENT_AUTH_PROMPT_TIMEOUT_MS } from '../../electron/shared/agent-auth-channels';
 
 export type AuthDecision = 'once' | 'session' | 'denied';
+/**
+ * ensure 的结果:用户决定,或 'cancelled' —— main 已撤销并结算了该请求(本地仅取消弹窗),
+ * 应答方不得再向 main respond(main 已无该 pending,会返回 NOT_PENDING)。
+ */
+export type EnsureOutcome = AuthDecision | 'cancelled';
 
 export interface PendingAuthRequest {
   readonly requestId: string;
@@ -32,7 +37,7 @@ type AgentAuthState = {
   /** debug 域的「本次启动期间允许」(与终端域互不放行)。 */
   debugSessionGranted: boolean;
 
-  ensure(info: EnsureInfo): Promise<AuthDecision>;
+  ensure(info: EnsureInfo): Promise<EnsureOutcome>;
   /** 'session' 只结算当前请求;域授权须待 main 确认后经 confirmSessionGrant 生效。 */
   grant(kind: 'once' | 'session'): void;
   /**
@@ -42,6 +47,11 @@ type AgentAuthState = {
   confirmSessionGrant(method: string, epoch: number): void;
   deny(): void;
   revoke(): void;
+  /**
+   * main 已撤销(本窗口撤销 IPC 成功 / 其它窗口撤销的 REVOKED 广播):与 revoke() 同样重置
+   * (epoch+1、清两个域的 session 授权),并把残留弹窗以 'cancelled' 结算(main 已按 denied 结算并删除)。
+   */
+  applyMainRevoked(): void;
 };
 
 /**
@@ -60,7 +70,7 @@ export function getAgentAuthEpoch(): number {
 }
 
 // 内部:挂起 Promise 的 resolver(zustand 状态外存,避免序列化函数)。
-let pendingResolver: ((decision: AuthDecision) => void) | null = null;
+let pendingResolver: ((outcome: EnsureOutcome) => void) | null = null;
 
 // race(R88):与 main 端 agent-auth.service PROMPT_TIMEOUT_MS 对齐的 renderer 本地超时。main 在
 // 5min 后把该请求 resolve 为 denied(外部 agent 已收到拒绝),但不通知 renderer。若 renderer 不
@@ -105,7 +115,7 @@ export const useAgentAuthStore = create<AgentAuthState>((set, get) => ({
       ...(info.agentLabel !== undefined ? { agentLabel: info.agentLabel } : {}),
     };
     set({ pending: req });
-    return new Promise<AuthDecision>((resolve) => {
+    return new Promise<EnsureOutcome>((resolve) => {
       pendingResolver = resolve;
       // race(R88):同 TTL 本地超时。过期且仍是本请求 → deny + 清 pending(main 已 denied),
       // 避免失效弹窗滞留 + 阻塞后续请求。grant/deny/reset 都会 clearPendingTimer 防误触。
@@ -158,6 +168,15 @@ export const useAgentAuthStore = create<AgentAuthState>((set, get) => ({
         ? { sessionGranted: false, debugSessionGranted: false }
         : s,
     );
+  },
+
+  applyMainRevoked() {
+    get().revoke();
+    clearPendingTimer();
+    const resolver = pendingResolver;
+    pendingResolver = null;
+    if (get().pending !== null) set({ pending: null });
+    resolver?.('cancelled');
   },
 }));
 

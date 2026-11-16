@@ -20,6 +20,7 @@
 
 ```ts
 type AuthDecision = 'once' | 'session' | 'denied';
+type EnsureOutcome = AuthDecision | 'cancelled'; // 'cancelled':main 已撤销并结算
 
 interface PendingAuthRequest {
   readonly requestId: string;
@@ -33,7 +34,7 @@ interface AgentAuthState {
   debugSessionGranted: boolean;   // debug 域
 
   /** 一站式 API:已授权直接放行,否则弹窗(挂起 Promise). */
-  ensure(info: { method: string; agentLabel?: string }): Promise<AuthDecision>;
+  ensure(info: { method: string; agentLabel?: string }): Promise<EnsureOutcome>;
 
   /** UI 用户操作. */
   grant(kind: 'once' | 'session'): void;
@@ -41,6 +42,8 @@ interface AgentAuthState {
 
   /** 撤销 session 授权(状态栏"终止全部"触发). */
   revoke(): void;
+  /** main 已撤销(本窗口 IPC 成功 / 跨窗口广播):revoke + 取消残留弹窗. */
+  applyMainRevoked(): void;
 }
 ```
 
@@ -81,7 +84,13 @@ interface AgentAuthState {
 ### `revoke()`
 
 - `sessionGranted = false`,撤销代际 epoch +1
-- pending 不变(store 层;状态栏撤销在 main 确认成功后另行 `deny()` 清掉旧弹窗,见 status-bar)
+- pending 不变(store 层;状态栏撤销在 main 确认成功后另行 `applyMainRevoked()` 清掉旧弹窗,见 status-bar)
+
+### `applyMainRevoked()`
+
+- main 已撤销时调:本窗口撤销 IPC 成功(status-bar),或收到其它窗口撤销的 `agent-auth:revoked` 广播(AgentAuthPrompt)
+- 与 `revoke()` 同样重置(两个域 session 授权清空、epoch +1 → 在途的 session 确认迟到不复活)
+- 残留 pending → 清空,挂起的 ensure resolve `'cancelled'`(main 已结算该请求,应答方不得再 respond)
 
 ### 边界
 

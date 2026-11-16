@@ -47,6 +47,9 @@ export function AgentAuthPrompt() {
         method,
         ...(agentLabel !== undefined ? { agentLabel } : {}),
       });
+      // main 已撤销并结算了该请求(本地仅取消弹窗)→ 不再 respond:main 已无该 pending,会返回
+      // NOT_PENDING 并弹出误导性的「授权响应失败」。
+      if (decision === 'cancelled') return;
       const epoch = getAgentAuthEpoch();
       // a11y(A58,A50 同族):respond 返回 IpcResult 且可 reject。此前 void 丢弃 → IPC 应答失败时
       // 弹窗已关、main pending 等 5 分钟才默认拒绝,用户/AT 不知决定未生效。失败给可见+可播报反馈。
@@ -65,6 +68,14 @@ export function AgentAuthPrompt() {
         console.warn('[agent-auth] respond threw', err);
         notify.error(translate('permissions.agent.respond_failed'));
       }
+    });
+  }, []);
+
+  // 跨窗口撤销:任一窗口撤销成功后 main 广播 REVOKED → 本窗口同样重置授权态并取消残留弹窗,
+  // 否则本窗口的「本次启动期间允许」仍生效,撤销后的请求被静默放行。
+  useEffect(() => {
+    return coApi.agentAuth.onRevoked(() => {
+      useAgentAuthStore.getState().applyMainRevoked();
     });
   }, []);
 
