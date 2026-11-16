@@ -1,4 +1,4 @@
-import { lstat, open, realpath, rename, rm } from 'node:fs/promises';
+import { lstat, open, realpath, rename, rm, stat } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { fsError, mapNodeErrnoCode } from './path-utils';
 import { runSerialPerKey } from '../../../shared/run-serial-per-key';
@@ -79,6 +79,24 @@ export async function atomicWriteFile(
   return withPathLock(realPath, () => atomicWriteFileInner(realPath, content));
 }
 
+/**
+ * 数据安全(独立审计):tmp 由 `open('wx')` 以 0666&umask 新建,rename 覆盖后原文件的 POSIX 权限位被
+ * 重置(`chmod 755 run.sh` 保存后丢执行位,0600 私密文件变 0644)。覆盖已有普通文件时返回其
+ * `mode & 0o777` 供 tmp 继承 —— 同 VSCode / 多数编辑器只保留 rwx 位,不传播 setuid/setgid/sticky
+ *(编辑后的内容不应继承特权位)。新建(ENOENT)/ 非普通文件 / Windows(mode 仅映射只读位,语义有限)
+ * → undefined,行为不变。其它 stat 错误抛出:无法确认原权限时不静默放宽(如 0600 → 0644)。
+ */
+async function existingFileMode(filePath: string): Promise<number | undefined> {
+  if (process.platform === 'win32') return undefined;
+  try {
+    const st = await stat(filePath);
+    return st.isFile() ? st.mode & 0o777 : undefined;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    throw fsError(mapNodeErrnoCode(err), `atomic write stat failed: ${filePath}`);
+  }
+}
+
 async function atomicWriteFileInner(
   filePath: string,
   content: string | Uint8Array,
@@ -88,6 +106,7 @@ async function atomicWriteFileInner(
   // 随后 rename 连内容带文件一起销毁 → 数据丢失(codex P1)。隐藏 + 应用标记的 sibling
   // 实务上不可能是用户文件。仍是固定名(per-path 串行 + crash 残留自愈,见上方注释)。
   const tmpPath = join(dirname(filePath), `.${basename(filePath)}.continuo.tmp`);
+  const keepMode = await existingFileMode(filePath);
 
   // ① 写 tmp + fsync。open 'wx' 排他:绝不盲目截断已存在文件。EEXIST 只可能是本应用上次
   // crash(open→rename 窗口被杀)残留的同名标记 tmp(用户不会创建此名)→ 安全删除后重试
@@ -101,6 +120,9 @@ async function atomicWriteFileInner(
       await rm(tmpPath, { force: true }).catch(() => {});
       fd = await open(tmpPath, 'wx'); // 重试;再 EEXIST(跨进程竞态)则抛
     }
+    // 覆盖已有文件:tmp 继承原权限位(fchmod 不受 umask 影响),否则 rename 后 0755 脚本丢执行位、
+    // 0600 私密文件被放宽成 0644。
+    if (keepMode !== undefined) await fd.chmod(keepMode);
     if (typeof content === 'string') {
       await fd.writeFile(content, 'utf-8');
     } else {

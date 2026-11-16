@@ -17,7 +17,7 @@ import { renameEntry } from './fs/rename';
 import { removeEntry } from './fs/remove';
 import { createDir, createFile } from './fs/create';
 import { copyEntry, moveEntry } from './fs/move-copy';
-import { createWatcherPool } from './fs/watch';
+import { createWatcherPool, type WatcherCreator } from './fs/watch';
 import { broadcastToWindows } from '../lib/broadcast';
 
 // ────────────────────────────────────────────────────────────
@@ -138,7 +138,9 @@ export type CopyInput = z.infer<typeof copyInputSchema>;
 // ────────────────────────────────────────────────────────────
 
 export const listDirHandler = (input: ListDirInput) => listDir(input.path, input.options);
-export const readFileHandler = (input: ReadFileInput) => readFile(input.path);
+// fs:read-file 是编辑器打开 / 外部同步 / 会话恢复 / 保存前比对的文本读取入口 → requireUtf8:非法 UTF-8
+// 拒绝(FS_NOT_UTF8),防 U+FFFD 替换后保存写回损坏原文件(独立审计)。插件 fs readFile 不经此处。
+export const readFileHandler = (input: ReadFileInput) => readFile(input.path, { requireUtf8: true });
 export const writeFileHandler = (input: WriteFileInput) => atomicWriteFile(input.path, input.content);
 const writeBinaryHandler = (input: WriteBinaryInput) => atomicWriteFile(input.path, input.content);
 export const renameHandler = (input: RenameInput) => renameEntry(input.path, input.newName);
@@ -242,7 +244,10 @@ function normalizeRelativeSubdir(value: string, endExclusive: number): string {
   return out;
 }
 
-const watcherPool = createWatcherPool((rootPath, onChange) => {
+// 生产 creator(导出仅供回归测试)。健壮性(独立审计):FSWatcher 在网络盘 / 可移动卷断开、目录失效时
+// 异步 emit('error'),EventEmitter 无 error 监听即抛 → 主进程未捕获异常崩溃。注册监听:warn + 上报池
+// 关闭并移出该 watcher(WatcherPool evictDead)。
+export const createFsWatcher: WatcherCreator = (rootPath, onChange, onError) => {
   const watcher = fs.watch(
     rootPath,
     { persistent: false, recursive: RECURSIVE_SUPPORTED },
@@ -255,8 +260,14 @@ const watcherPool = createWatcherPool((rootPath, onChange) => {
       onChange(resolveWatchChangedPath(rootPath, String(filename)));
     },
   );
+  watcher.on('error', (err) => {
+    console.warn('[fs] watcher error, closing:', rootPath, err);
+    onError(err);
+  });
   return { close: () => watcher.close() };
-});
+};
+
+const watcherPool = createWatcherPool(createFsWatcher);
 
 // 导出仅供 R66 回归测试(验证单窗口 send 抛错不中断广播);生产仍只经 watcherPool onChange 调用。
 export function broadcastDirChanged(path: string): void {

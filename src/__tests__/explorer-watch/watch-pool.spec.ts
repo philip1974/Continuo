@@ -21,7 +21,8 @@ describe('createWatcherPool', () => {
     const pool = createWatcherPool(creator);
     pool.watch('/a', vi.fn());
     expect(creator).toHaveBeenCalledTimes(1);
-    expect(creator).toHaveBeenCalledWith('/a', expect.any(Function));
+    // 第三参 onError:watcher 异步失效时上报池移除(见 49-polish-bugfixes/watch-error-evict)
+    expect(creator).toHaveBeenCalledWith('/a', expect.any(Function), expect.any(Function));
   });
 
   it('重复 watch 同 path 共享 watcher(creator 不再调)', () => {

@@ -16,6 +16,16 @@ export interface CappedFdRead {
   readonly tooLarge: boolean;
   /** 实际读取/探测到的字节数(tooLarge 诊断用)。 */
   readonly size: number;
+  /** requireUtf8 时内容含非法 UTF-8 字节(text 为 null)。 */
+  readonly notUtf8?: boolean;
+}
+
+export interface CappedFdReadOptions {
+  /**
+   * 严格 UTF-8:非法字节不替换成 U+FFFD,而是返回 `{ notUtf8:true, text:null }`。供编辑器文本读取入口
+   * 使用(宽松解码后保存会把非法字节写成 EF BF BD 损坏原文件)。BOM 照旧原样保留(ignoreBOM)。
+   */
+  readonly requireUtf8?: boolean;
 }
 
 /**
@@ -25,6 +35,7 @@ export interface CappedFdRead {
 export async function readFileCappedFd(
   filePath: string,
   maxBytes: number,
+  opts: CappedFdReadOptions = {},
 ): Promise<CappedFdRead> {
   const fh = await fs.open(filePath, 'r'); // open 错误(ENOENT/EACCES 等)透传给调用方
   try {
@@ -42,7 +53,16 @@ export async function readFileCappedFd(
     if (total > maxBytes) {
       return { text: null, tooLarge: true, size: total };
     }
-    return { text: buf.subarray(0, total).toString('utf-8'), tooLarge: false, size: total };
+    const bytes = buf.subarray(0, total);
+    if (opts.requireUtf8) {
+      try {
+        const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
+        return { text, tooLarge: false, size: total };
+      } catch {
+        return { text: null, tooLarge: false, size: total, notUtf8: true };
+      }
+    }
+    return { text: bytes.toString('utf-8'), tooLarge: false, size: total };
   } finally {
     await fh.close().catch(() => {});
   }

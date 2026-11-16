@@ -57,6 +57,8 @@ export const FS_ERROR_CODES = {
   FS_NOT_FOUND: 'FS_NOT_FOUND',
   // 边界(E18):readFile 目标超大小上限(防整文件读入内存 + IPC 发送卡死/崩溃)。
   FS_FILE_TOO_LARGE: 'FS_FILE_TOO_LARGE',
+  // 数据安全:编辑器文本读取入口遇非法 UTF-8(GBK / 二进制等)拒绝打开,防 U+FFFD 替换后保存损坏原文件。
+  FS_NOT_UTF8: 'FS_NOT_UTF8',
   // 边界(E30):目录条目数超硬上限(防超大目录一次性构造数组 + IPC 全量返回卡死)。
   FS_DIR_TOO_LARGE: 'FS_DIR_TOO_LARGE',
 } as const;

@@ -36,6 +36,7 @@
 - [`agent-auth-cancel-by-window.spec.ts`](./49-polish-bugfixes/agent-auth-cancel-by-window.spec.ts)
 - [`atomic-write-concurrent-same-path.spec.ts`](./49-polish-bugfixes/atomic-write-concurrent-same-path.spec.ts)
 - [`atomic-write-no-backup-window.spec.ts`](./49-polish-bugfixes/atomic-write-no-backup-window.spec.ts)
+- [`atomic-write-preserve-mode.spec.ts`](./49-polish-bugfixes/atomic-write-preserve-mode.spec.ts)
 - [`atomic-write-symlink-resolve-fail-closed.spec.ts`](./49-polish-bugfixes/atomic-write-symlink-resolve-fail-closed.spec.ts)
 - [`atomic-write-symlink-target.spec.ts`](./49-polish-bugfixes/atomic-write-symlink-target.spec.ts)
 - [`autosave-failure-notified-once.spec.ts`](./49-polish-bugfixes/autosave-failure-notified-once.spec.ts)
@@ -117,6 +118,7 @@
 - [`quick-open-scan-failed-distinct.spec.tsx`](./49-polish-bugfixes/quick-open-scan-failed-distinct.spec.tsx)
 - [`quick-open-virtualized.spec.tsx`](./49-polish-bugfixes/quick-open-virtualized.spec.tsx)
 - [`quit-cleanup-guard-reentry.spec.ts`](./49-polish-bugfixes/quit-cleanup-guard-reentry.spec.ts)
+- [`read-file-non-utf8.spec.ts`](./49-polish-bugfixes/read-file-non-utf8.spec.ts)
 - [`read-git-blob-bounds.spec.ts`](./49-polish-bugfixes/read-git-blob-bounds.spec.ts)
 - [`rename-move-lstat-fail-closed.spec.ts`](./49-polish-bugfixes/rename-move-lstat-fail-closed.spec.ts)
 - [`rename-no-silent-overwrite.spec.ts`](./49-polish-bugfixes/rename-no-silent-overwrite.spec.ts)
@@ -171,6 +173,7 @@
 - [`uninstall-dismisses-available-update.spec.tsx`](./49-polish-bugfixes/uninstall-dismisses-available-update.spec.tsx)
 - [`uninstall-id-traversal.spec.ts`](./49-polish-bugfixes/uninstall-id-traversal.spec.ts)
 - [`update-store-dismiss-optimistic.spec.ts`](./49-polish-bugfixes/update-store-dismiss-optimistic.spec.ts)
+- [`watch-error-evict.spec.ts`](./49-polish-bugfixes/watch-error-evict.spec.ts)
 - [`watch-pool-evict-after-create.spec.ts`](./49-polish-bugfixes/watch-pool-evict-after-create.spec.ts)
 - [`watch-unwatch-owner-ownership.spec.ts`](./49-polish-bugfixes/watch-unwatch-owner-ownership.spec.ts)
 

@@ -1114,3 +1114,20 @@ helper + 必挂 browser-window-created),把「单一来源」固化进测试防�
   'en' → main 侧文案与 renderer 分裂。
 - 修复:另存 `unknownStateFallback` 仅供 getCurrentLocale 兜底;saveSettings 的 no-op 比较仍只认
   cached(已知已存状态),未知态不会让同值保存被跳过。
+
+## 独立审计(文件读写数据安全 / watcher 健壮性)
+
+### 原子保存保留 POSIX 权限位 — `atomic-write-preserve-mode.spec.ts`
+- `atomicWriteFile` 覆盖已有普通文件时,临时文件在 rename 前 `fchmod` 为原文件 `mode & 0o777`
+  (不受 umask 影响);0755 脚本保存后仍可执行,0600 私密文件不被放宽。不保留 setuid/setgid/sticky。
+- 新建文件行为不变(0666 & ~umask);Windows 跳过(mode 语义有限)。
+- 覆盖 fs:writeFile / fs:writeBinary / 插件 fs writeFile(都经 `ipc/fs/atomic-write`)。
+
+### fs.watch 异步 error 不崩溃主进程 — `watch-error-evict.spec.ts`
+- 生产 creator 注册 FSWatcher `'error'` 监听(console.warn),经 `WatcherCreator` 第三参 `onError`
+  上报池:关闭并移出该 watcher、清 owner 记账;迟到的 error 不误杀同 path 重建的新 watcher。
+
+### 非 UTF-8 文件不进入可保存的文本编辑器 — `read-file-non-utf8.spec.ts`
+- 编辑器文本读取入口 `fs:read-file` 以 `requireUtf8` 读取:非法 UTF-8 → `FS_NOT_UTF8`(en/zh/ko 文案),
+  打开走既有失败提示,防 U+FFFD 替换后保存写回 EF BF BD 损坏原文件。UTF-8 BOM 原样保留不变。
+- 插件 fs readFile 契约不变(宽松解码)。

@@ -82,6 +82,7 @@ export const zh: Record<TranslationKey, string> = {
   'errors.FS_NOT_DIRECTORY': '不是目录',
   'errors.FS_NOT_FILE': '不是文件',
   'errors.FS_FILE_TOO_LARGE': '文件过大,无法打开',
+  'errors.FS_NOT_UTF8': '文件是二进制或非 UTF-8 编码,无法在文本编辑器中打开',
   'errors.FS_DIR_TOO_LARGE': '目录条目过多',
   'errors.FS_NOT_FOUND': '找不到文件：{path}',
 

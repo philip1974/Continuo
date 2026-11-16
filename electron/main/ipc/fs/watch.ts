@@ -19,9 +19,14 @@ export interface Watcher {
  * - recursive watcher(macOS/Win):changedPath = 根 path 拼上 callback 给的相对子路径
  *   的目录部分,便于上层精确广播,renderer 才能 invalidate 正确节点(见 issue #20)
  */
+/**
+ * onError(err):creator 底层 watcher 异步失效(网络盘 / 可移动卷断开、目录失效 → FSWatcher
+ * 'error')时调用,池据此关闭并移出该 watcher(见 evictDead)。
+ */
 export type WatcherCreator = (
   path: string,
   onChange: (changedPath: string) => void,
+  onError: (err: unknown) => void,
 ) => Watcher;
 
 export interface WatcherPool {
@@ -89,6 +94,22 @@ export function createWatcherPool(creator: WatcherCreator): WatcherPool {
     if (idx >= 0) order.splice(idx, 1);
   }
 
+  // 健壮性(独立审计):watcher 异步失效 → 关闭并移出池 + 清 owner 记账(同 LRU 驱逐清理)。
+  // 之后 renderer 的 unwatch 对该 path 自然 no-op;再次展开会重建。
+  function evictDead(path: string, w: Watcher): void {
+    const entry = watchers.get(path);
+    if (!entry || entry.watcher !== w) return;
+    watchers.delete(path);
+    const idx = order.indexOf(path);
+    if (idx >= 0) order.splice(idx, 1);
+    purgeOwnerAccounting(path);
+    try {
+      w.close();
+    } catch {
+      // 已失效的 watcher close 抛错无需处理
+    }
+  }
+
   return {
     watch(path, onChange, ownerId) {
       const entry = watchers.get(path);
@@ -105,7 +126,8 @@ export function createWatcherPool(creator: WatcherCreator): WatcherPool {
       // 已经 close 掉一个与抛错路径毫不相干的健康活跃 watcher 却没建成新的 →
       // 该目录静默永久失去 fs 事件。改为分配成功才回收,保证 creator 抛错时池
       // 状态零变更(错误原样抛给 WATCH handler)。
-      const w = creator(path, onChange);
+      // 失效回调只认**本次**创建的 watcher:迟到的 error 不能误杀同 path 之后重建的新 watcher。
+      const w: Watcher = creator(path, onChange, () => evictDead(path, w));
 
       // 满了 → LRU 踢
       if (watchers.size >= MAX_WATCHERS) {
