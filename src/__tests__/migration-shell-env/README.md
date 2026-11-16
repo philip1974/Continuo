@@ -2,11 +2,21 @@
 
 ## spawn 参数约定(`integration-args-contract.spec.ts`)
 
-- `prepareShellIntegrationEnv` 返回 `{ env, args, cleanup }`;Continuo 只使用 env / cleanup,
-  **暂不采用 bash 的 `args`**(`['--rcfile', <生成的 rc>, '-i']`):那是非 login 启动,不读
-  `/etc/profile`(macOS `path_helper` 在此),且 rcfile 无条件依次 source `~/.bash_profile` /
-  `~/.profile` / `~/.bashrc` → 重复执行、偏离原 `-l -i` 语义。代价是 bash 暂无 OSC7 cwd hook,
-  待 helper 模拟 login 启动文件选择后再启用(跨仓 follow-up 见 `doc/follow-ups.md`)。
+- `prepareShellIntegrationEnv` 返回 `{ env, args, cleanup }`;Continuo **从不采用 bash 的 `args`**
+  (`['--rcfile', <生成的 rc>, '-i']`):那是非 login 启动,不读 `/etc/profile`(macOS `path_helper`
+  在此),且 rcfile 无条件依次 source `~/.bash_profile` / `~/.profile` / `~/.bashrc` → 重复执行、
+  偏离原 `-l -i` 语义。
+- **bash / fish 整体不调用 helper,用原始 env**:helper 的 bash env 注入 `BASH_ENV` / `ENV=<rc>` →
+  终端里每个非交互 `bash -c` / bash 脚本重复 source 启动文件并把 OSC7 打到 stdout;fish env 改写
+  `XDG_CONFIG_HOME` → 子程序找错配置目录。代价是 bash / fish 暂无 OSC7 cwd hook,待 helper 修好后
+  再启用(跨仓 follow-up 见 `doc/follow-ups.md`)。
 - bash 且用户未传 args → `['-l', '-i']`。
 - 用户显式传 args → 用户 args 优先。
 - zsh / fish → 仍走 `defaultShellArgs`(`-l -i`)。
+
+## spawn env 约定(`integration-args-contract.spec.ts`)
+
+- bash → spawn env 不含 helper 注入的 `BASH_ENV` / `ENV` / `_TERMINAL_USER_*`,也不含任何
+  `continuo-shell-*` 临时路径。
+- fish → spawn env 的 `XDG_CONFIG_HOME` 与宿主进程一致(不被改写为临时目录)。
+- 真实子进程(无 `/bin/bash` 时 skipIf):用该 env 跑 `/bin/bash -c 'printf OK'`,stdout 恰为 `OK`。

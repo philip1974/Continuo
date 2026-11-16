@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { makeTerminalMcpTools } from '../../../electron/main/services/mcp-terminal-host';
 import { createAwaitStopHookTool } from '../../../electron/main/services/mcp-tools-hook-bridge';
+import * as terminalSessions from '../../../electron/main/services/terminal-sessions.service';
 import type { AnyMcpTool, McpCallCtx } from '../../../electron/main/services/mcp-host.service';
 
 const WIN = 3;
@@ -38,7 +39,11 @@ function build(
   }) as unknown as AnyMcpTool;
   const ensureAuthorized = vi.fn(async () => decision);
   const tools = makeTerminalMcpTools({
-    sessionStore: { get: () => undefined, getAll: () => [] } as never,
+    // 复查要求会话仍 live(exitCode === null);record 中存在即视为 live。
+    sessionStore: {
+      get: (id: string) => (sessions[id] ? { exitCode: null } : undefined),
+      getAll: () => [],
+    } as never,
     service: {} as never,
     getSessionOwner: (id) => sessions[id]?.owner ?? null,
     getSessionController: (id) => sessions[id]?.controller ?? null,
@@ -145,6 +150,47 @@ describe('规则 1 · await_stop_hook 授权 + capability', () => {
     sessions['mine'] = { owner: WIN, controller: OTHER };
     release();
     await expect(pending).rejects.toMatchObject({ code: 'AGENT_NOT_AUTHORIZED' });
+  });
+
+  // PTY 退出 → 真实状态机 live → exited-retained(setExited,metadata 保留、owner/controller 不变):
+  // 仅比对 owner/controller 会漏判,复查须同时要求会话仍 live。
+  it('等待期间 PTY 退出(exited-retained)→ 不返回 Stop hook 数据', async () => {
+    terminalSessions._reset();
+    terminalSessions.add({
+      id: 'live1',
+      title: 't',
+      cwd: '/w',
+      originHint: 'agent',
+      agentLabel: 'codex',
+      ownerWindowId: WIN,
+      controllerToken: ME,
+    });
+    let release!: () => void;
+    const awaitNext = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve({ elapsedMs: 1 });
+        }),
+    );
+    const tools = makeTerminalMcpTools({
+      sessionStore: terminalSessions,
+      service: {} as never,
+      getSessionOwner: (id) => terminalSessions.get(id)?.ownerWindowId ?? null,
+      getSessionController: (id) => terminalSessions.getController(id),
+      ensureAuthorized: async () => 'session',
+      createSession: vi.fn(async () => ({ id: 'x' })),
+      awaitStopHookTool: createAwaitStopHookTool({
+        broker: { awaitNext } as never,
+        getSessionMeta: (id) => terminalSessions.get(id) ?? null,
+      }) as unknown as AnyMcpTool,
+    });
+    const tool = tools.find((t) => t.name === 'terminal.await_stop_hook')!;
+    const pending = tool.run(input('live1'), ctxMe);
+    await vi.waitFor(() => expect(awaitNext).toHaveBeenCalled());
+    terminalSessions.setExited('live1', 0);
+    release();
+    await expect(pending).rejects.toMatchObject({ code: 'AGENT_NOT_AUTHORIZED' });
+    terminalSessions._reset();
   });
 
   it('接线守卫:index.ts 不在 makeTerminalMcpTools 之外单独 push await_stop_hook', () => {

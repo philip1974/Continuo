@@ -39,6 +39,10 @@ export function gateWithAuth(
   return {
     ...tool,
     run: async (input: unknown, ctx: McpCallCtx) => {
+      // 调用方已断开 / 连接已拒绝 → 不弹授权窗(无人等待该结果)。
+      if (ctx.signal?.aborted) {
+        throw codedError(ERROR_CODES.AGENT_NOT_AUTHORIZED, 'caller disconnected before authorization');
+      }
       const decision = await ensureAuthorized(ctx.ownerWindowId, opts.methodFor(tool));
       if (decision === 'denied') {
         throw codedError(ERROR_CODES.AGENT_NOT_AUTHORIZED, opts.deniedMessage);

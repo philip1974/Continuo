@@ -26,6 +26,19 @@ describe('规则 2 · gateWithAuth 授权返回后复查 abort', () => {
     expect(run).not.toHaveBeenCalled();
   });
 
+  it('进入门控时已断开 → 不调用 ensureAuthorized(不弹授权窗),AGENT_NOT_AUTHORIZED', async () => {
+    const aborter = new AbortController();
+    aborter.abort();
+    const run = vi.fn(async () => ({ ok: true }));
+    const ensureAuthorized = vi.fn(async () => 'session' as const);
+    const tool = { name: 't', description: '', jsonSchema: {}, run } as unknown as AnyMcpTool;
+    const gated = gateWithAuth(tool, ensureAuthorized, AUTH);
+    const ctx: McpCallCtx = { ownerWindowId: 1, callerSubject: 's', signal: aborter.signal };
+    await expect(gated.run({}, ctx)).rejects.toMatchObject({ code: 'AGENT_NOT_AUTHORIZED' });
+    expect(ensureAuthorized).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
+  });
+
   it('未断开 → 照常放行', async () => {
     const run = vi.fn(async () => ({ ok: true }));
     const tool = { name: 't', description: '', jsonSchema: {}, run } as unknown as AnyMcpTool;

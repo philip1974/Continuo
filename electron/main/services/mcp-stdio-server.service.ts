@@ -264,15 +264,15 @@ async function handleLine(
   resolveWindowId: (token: string) => number | null,
   signal: AbortSignal,
 ): Promise<void> {
-  if (isBlankStdioLine(line)) return;
+  // 连接已 abort(拒绝 / 断开):abort 前已链入队列的行直接丢弃,不再 dispatch(否则逐条走到
+  // gateWithAuth → 大量迟到授权弹窗)。
+  if (signal.aborted || isBlankStdioLine(line)) return;
 
   let raw: unknown;
   try {
     raw = JSON.parse(line);
   } catch {
-    sock.write(
-      formatRpcError(null, RPC_ERROR_CODES.PARSE_ERROR, 'parse error') + '\n',
-    );
+    writeLine(sock, formatRpcError(null, RPC_ERROR_CODES.PARSE_ERROR, 'parse error'));
     return;
   }
 
@@ -302,13 +302,7 @@ async function handleLine(
 
   const rpc = parseRpcMessage(raw);
   if (!rpc) {
-    sock.write(
-      formatRpcError(
-        null,
-        RPC_ERROR_CODES.PARSE_ERROR,
-        'invalid JSON-RPC 2.0',
-      ) + '\n',
-    );
+    writeLine(sock, formatRpcError(null, RPC_ERROR_CODES.PARSE_ERROR, 'invalid JSON-RPC 2.0'));
     return;
   }
 
@@ -334,9 +328,17 @@ async function handleLine(
     if (fallback) ctx = { ownerWindowId: fallback.id, callerSubject, signal };
   }
   const response = await dispatchRpc(rpc, tools, serverInfo, ctx);
-  // race(R111):连接已断开(close)→ 不把响应写回死 socket(避免 EPIPE / 写给无调用方的会话)。
-  if (sock.destroyed) return;
-  sock.write(formatRpcResponse(rpc.id, response) + '\n');
+  // race(R111):连接已断开 / 已拒绝 → writeLine 丢弃响应(避免 EPIPE / write-after-end)。
+  writeLine(sock, formatRpcResponse(rpc.id, response));
+}
+
+/**
+ * 写一行响应。已 end(拒绝半关闭中)或已 destroy 则丢弃:end 后再 write 会触发
+ * ERR_STREAM_WRITE_AFTER_END 并销毁 socket,截断尚未 flush 的 PARSE_ERROR。
+ */
+function writeLine(sock: Socket, data: string): void {
+  if (sock.writableEnded || sock.destroyed) return;
+  sock.write(data + '\n');
 }
 
 /**

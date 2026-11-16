@@ -152,16 +152,19 @@ export function makeTerminalMcpTools(
   ];
   if (deps.awaitStopHookTool) {
     // 安全:await_stop_hook 可 block 数分钟,入口 capability 只在开始时校验一次。等待期间用户
-    // 「撤销全部授权 / 终止 agent terminal」(删会话 metadata)或会话被杀 → 返回前复查会话仍属本
-    // 调用方,否则不交出 transcript_path / last_assistant_message。
+    // 「撤销全部授权 / 终止 agent terminal」(删会话 metadata)或会话被杀 / PTY 退出 → 返回前复查会话
+    // 仍 live 且属本调用方,否则不交出 transcript_path / last_assistant_message。
     const inner = deps.awaitStopHookTool;
     const recheckOnReturn: AnyMcpTool = {
       ...inner,
       run: async (input: unknown, ctx) => {
         const result: unknown = await inner.run(input, ctx);
         const sid = (input as { session_id?: unknown } | null)?.session_id;
+        // 还须仍 live:PTY 已退出时 metadata 处于 exited-retained(exitCode !== null),owner /
+        // controller 均不变,只比对它们会漏判。
         const stillOwned =
           typeof sid === 'string' &&
+          deps.sessionStore.get(sid)?.exitCode === null &&
           deps.getSessionOwner(sid) === ctx.ownerWindowId &&
           ctx.callerSubject != null &&
           deps.getSessionController(sid) === ctx.callerSubject;

@@ -13,7 +13,7 @@ import * as terminalSessions from './terminal-sessions.service';
 import { mcpRevokers } from './mcp-host.service';
 import { getCurrentLocale } from './settings.service';
 import { withPtyLangEnv } from './pty-lang';
-import { defaultShellArgs } from './shell-args';
+import { defaultShellArgs, skipsShellIntegration } from './shell-args';
 import { runSerialPerKey } from './serialize-per-key';
 import { utf8ByteLength } from '../../shared/utf8-byte-length';
 import { TERMINAL_CHANNELS } from '../../shared/terminal-channels';
@@ -452,10 +452,11 @@ export async function createTerminal(
     ReturnType<typeof prepareShellIntegrationEnv>
   >['cleanup'];
   try {
-    ({ env: shellEnv, cleanup: shellCleanup } = await prepareShellIntegrationEnv(
-      shell,
-      baseEnvWithLang,
-    ));
+    // bash / fish 不调用 helper(其 env 污染子进程,见 skipsShellIntegration);zsh 在 helper 内本就
+    // 是 no-op。代价:bash / fish 暂无 OSC7 cwd 跟踪。
+    ({ env: shellEnv, cleanup: shellCleanup } = skipsShellIntegration(shell)
+      ? { env: baseEnvWithLang, cleanup: async () => {} }
+      : await prepareShellIntegrationEnv(shell, baseEnvWithLang));
   } catch (err) {
     // prepareShellIntegrationEnv 在 PHASE 1 try 之外,失败(写 shell integration 脚本时
     // 磁盘满 / 权限 / ENOENT)会绕过下面的 sm.create rollback。此刻 mcpToken 已在 ipc 层
@@ -482,7 +483,7 @@ export async function createTerminal(
   // /bin/sh(dash)/ 未知 shell 也未必支持 → defaultShellArgs 仅对 zsh/bash/fish 追加。
   // 刻意不采用 helper 返回的 bash args(['--rcfile', <rc>, '-i']):那是非 login 启动,不读
   // /etc/profile(macOS path_helper 在此),且 rcfile 无条件依次 source .bash_profile/.profile/
-  // .bashrc → 重复执行、偏离 `-l -i` 语义。代价是 bash 暂无 OSC7 cwd hook;待兄弟仓库 helper
+  // .bashrc → 重复执行、偏离 `-l -i` 语义(且 bash 现已整体不调用 helper,见上)。待兄弟仓库 helper
   // 仿 VSCode shellIntegration-bash 模拟 login 启动文件选择后再启用(doc/follow-ups.md)。
   const finalArgs = args.length === 0 ? defaultShellArgs(shell) : args;
   const inst: Instance = {
