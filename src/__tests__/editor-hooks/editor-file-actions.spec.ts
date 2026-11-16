@@ -23,7 +23,11 @@ const fail = (code: string, message = code): IpcResult<never> => ({
 
 const makeDeps = (overrides: Partial<EditorFileDeps['fs']> = {}): EditorFileDeps => ({
   fs: {
-    readFile: vi.fn(async () => ok('')),
+    // 默认磁盘 = 已打开 tab 的 originalContent(未被外部修改),saveFile 的冲突检测不触发;
+    // 未打开的路径读到 ''。外部修改冲突见 49-polish-bugfixes/save-external-change-conflict。
+    readFile: vi.fn(async (p: string) =>
+      ok(findEditorFileTabByPath(useEditorStore.getState().tabs, p)?.originalContent ?? ''),
+    ),
     writeFile: vi.fn(async () => ok(undefined as void)),
     ...overrides,
   },
@@ -368,7 +372,8 @@ describe('saveFile', () => {
 
     // 第一次保存(write1 挂起)
     const p1 = saveFile('/x/a', deps);
-    await Promise.resolve();
+    // 写盘前有一次冲突检测读盘(P2-BL),等 write1 真正启动再改内容。
+    await vi.waitFor(() => expect(order).toEqual(['start:A']));
     // 第二次保存:内容已变 B。串行下 write2 不得在 write1 完成前启动。
     useEditorStore.setState((s) => ({
       tabs: s.tabs.map((t) => (t.id === '/x/a' ? { ...t, content: 'B' } : t)),

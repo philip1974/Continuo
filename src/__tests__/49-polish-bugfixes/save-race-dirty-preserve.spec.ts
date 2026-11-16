@@ -29,7 +29,7 @@ describe('49 · saveFile 写盘 await 期间并发编辑不丢 dirty', () => {
       return ok(undefined as void);
     });
     const deps: EditorFileDeps = {
-      fs: { readFile: vi.fn(async () => ok('')), writeFile },
+      fs: { readFile: vi.fn(async () => ok('S1')), writeFile },
       store: useEditorStore,
     };
 
@@ -50,7 +50,7 @@ describe('49 · saveFile 写盘 await 期间并发编辑不丢 dirty', () => {
 
     const deps: EditorFileDeps = {
       fs: {
-        readFile: vi.fn(async () => ok('')),
+        readFile: vi.fn(async () => ok('hello')),
         writeFile: vi.fn(async () => ok(undefined as void)),
       },
       store: useEditorStore,

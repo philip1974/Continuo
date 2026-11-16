@@ -40,7 +40,10 @@ export function makeAutoSaveScheduler(
   const runSave = (): Promise<void> => {
     const p = Promise.resolve()
       .then(() => saveFile())
-      .then(() => {
+      .then((r) => {
+        // 打磨 P2-BK:普通磁盘错误(EACCES/ENOSPC)是 resolve 的 {ok:false} 而非 reject,
+        // 必须同样走失败路径(抛出结果本身,onError 可按其 code 本地化)。
+        if ((r as { ok?: unknown } | null | undefined)?.ok === false) throw r;
         lastFailed = false;
         return undefined;
       })

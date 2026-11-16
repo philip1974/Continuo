@@ -397,22 +397,21 @@ export async function saveExplorer(
 export async function allocateWindowSeq(explorerFile: string): Promise<number> {
   return await withExplorerFileMutex(async () => {
     const payload = (await loadExplorer(explorerFile)) ?? defaultExplorerV3();
-    let seq = payload.nextWindowSeq;
     // 边界(E4):nextWindowSeq 损坏为不安全整数(>= Number.MAX_SAFE_INTEGER)时 `seq + 1` 因浮点
     // 精度不变 → 计数器卡死,每个新窗口拿到同一 windowSeq → 多窗共享同一持久化段、互相覆盖
-    // workspace/layout/editor 状态。schema 只校验 int().nonnegative(),不挡上界。此处自愈:不安全则
-    // 重算为 max(现有段 windowSeq, 0) + 1(主窗占 0、新窗 ≥1 且大于所有现存安全段 → 不冲突),
-    // 不丢任何持久化段(优于 schema .safe() 整文件失效丢全部段)。
-    if (!Number.isSafeInteger(seq)) {
-      let maxSeg = 0;
-      for (let i = 0; i < payload.windows.length; i += 1) {
-        const windowSeq = payload.windows[i]!.windowSeq;
-        if (Number.isSafeInteger(windowSeq) && windowSeq > maxSeg) {
-          maxSeg = windowSeq;
-        }
+    // workspace/layout/editor 状态。schema 只校验 int().nonnegative(),不挡上界。
+    // 打磨 P2-BM(E4 兄弟):安全但 ≤ 现存最大 windowSeq 的计数(回退/手改)同样会分配重复 seq。
+    // 统一自愈:seq = max(安全的 nextWindowSeq, 现存最大安全段 + 1, 1)(主窗占 0、新窗 ≥1 且
+    // 大于所有现存安全段 → 不冲突),不丢任何持久化段(优于 schema .safe() 整文件失效丢全部段)。
+    let maxSeg = 0;
+    for (let i = 0; i < payload.windows.length; i += 1) {
+      const windowSeq = payload.windows[i]!.windowSeq;
+      if (Number.isSafeInteger(windowSeq) && windowSeq > maxSeg) {
+        maxSeg = windowSeq;
       }
-      seq = maxSeg + 1;
     }
+    const next = payload.nextWindowSeq;
+    const seq = Math.max(Number.isSafeInteger(next) ? next : 0, maxSeg + 1, 1);
     payload.nextWindowSeq = seq + 1;
     await atomicWriteJson(explorerFile, payload);
     return seq;
