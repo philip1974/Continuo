@@ -13,7 +13,12 @@ const h = vi.hoisted(() => ({
   notifyError: vi.fn(),
   flushCb: {
     current: null as
-      | ((p?: { windowId: number; save?: boolean; requestId?: number }) => Promise<void>)
+      | ((p?: {
+          windowId: number;
+          save?: boolean;
+          discard?: boolean;
+          requestId?: number;
+        }) => Promise<void>)
       | null,
   },
 }));
@@ -48,7 +53,12 @@ vi.mock('@/lib/co-api', () => ({
       read: vi.fn().mockResolvedValue({ ok: true, data: null }),
       write: vi.fn().mockResolvedValue({ ok: true }),
       onFlushRequest: (
-        cb: (p?: { windowId: number; save?: boolean; requestId?: number }) => Promise<void>,
+        cb: (p?: {
+          windowId: number;
+          save?: boolean;
+          discard?: boolean;
+          requestId?: number;
+        }) => Promise<void>,
       ) => {
         h.flushCb.current = cb;
         return () => {};
@@ -74,6 +84,8 @@ vi.mock('@/panels/Editor/autosave-flush-registry', () => ({
 import { DockShell } from '@/shell/dock/DockShell';
 import { createTab, useEditorStore } from '@/stores/editor.store';
 import { setAutoSaveFailed } from '@/panels/Editor/autosave-failures';
+import { flushPendingAutoSave } from '@/panels/Editor/autosave-flush-registry';
+import { flushExplorerPersistence } from '@/lib/persist/explorer-persist';
 import { t } from '@/i18n';
 
 beforeEach(() => {
@@ -158,18 +170,30 @@ describe('flush 握手的「保存」分支', () => {
     });
 
     expect(h.notifyError).toHaveBeenCalledTimes(1);
-    expect(h.sendFlushAck).toHaveBeenCalledWith(1, { saveFailed: true });
+    expect(h.sendFlushAck).toHaveBeenCalledWith(1, {
+      saveFailed: true,
+      remaining: { dirty: 1, untitled: 0 },
+    });
   });
 
-  it('不带 save → 不保存,回执形态不变', async () => {
+  it('「不保存」(discard:true)→ 不保存、不做最终脏检查,回执形态不变', async () => {
     await mountShell();
     openDirty('/w/a.ts');
 
     await act(async () => {
-      await h.flushCb.current!({ windowId: 1 });
+      await h.flushCb.current!({ windowId: 1, discard: true });
     });
 
     expect(h.writeFile).not.toHaveBeenCalled();
+    expect(h.sendFlushAck).toHaveBeenCalledWith(1);
+  });
+
+  it('不带 save、无脏 tab → 回执形态不变', async () => {
+    await mountShell();
+
+    await act(async () => {
+      await h.flushCb.current!({ windowId: 1 });
+    });
     expect(h.sendFlushAck).toHaveBeenCalledWith(1);
   });
 
@@ -183,7 +207,7 @@ describe('flush 握手的「保存」分支', () => {
     expect(h.sendFlushAck).toHaveBeenLastCalledWith(1, { saveFailed: false, requestId: 7 });
 
     await act(async () => {
-      await h.flushCb.current!({ windowId: 1, requestId: 8 });
+      await h.flushCb.current!({ windowId: 1, discard: true, requestId: 8 });
     });
     expect(h.sendFlushAck).toHaveBeenLastCalledWith(1, { requestId: 8 });
   });
@@ -201,7 +225,10 @@ describe('flush 握手的「保存」分支', () => {
     });
 
     expect(h.notifyError).toHaveBeenCalledTimes(1);
-    expect(h.sendFlushAck).toHaveBeenCalledWith(1, { saveFailed: true });
+    expect(h.sendFlushAck).toHaveBeenCalledWith(1, {
+      saveFailed: true,
+      remaining: { dirty: 1, untitled: 0 },
+    });
   });
 
   it('磁盘已被外部修改(EDITOR_DISK_CHANGED)→ 提示里明确说明冲突,回执 saveFailed:true', async () => {
@@ -216,6 +243,75 @@ describe('flush 握手的「保存」分支', () => {
     expect(h.writeFile).not.toHaveBeenCalled();
     const text = String(h.notifyError.mock.calls[0]?.[0]);
     expect(text).toContain(t('dialog.unsaved_close.disk_changed_note', { count: 1 }));
-    expect(h.sendFlushAck).toHaveBeenCalledWith(1, { saveFailed: true });
+    expect(h.sendFlushAck).toHaveBeenCalledWith(1, {
+      saveFailed: true,
+      remaining: { dirty: 1, untitled: 0 },
+    });
+  });
+});
+
+// 统一规则:所有 flush 完成后、ACK 前做最终脏检查;本轮未选「不保存」且仍有未保存改动 → 回执 remaining,
+// main 中止关闭 / 退出(用户再次关闭时会因脏计数看到确认框)。
+describe('flush 握手的最终脏检查', () => {
+  it('(a) 防抖内关窗(未弹框),autosave flush 首次失败 → 脏 .md 仍脏 → 回执 remaining', async () => {
+    await mountShell();
+    openDirty('/w/a.md');
+    // 防抖内:计数排除 .md,main 无脏记账、不弹框,发来的是不带 save / discard 的 flush。
+    // flush 时 autosave 写盘失败(ENOSPC / 磁盘冲突):tab 保持 dirty。
+    vi.mocked(flushPendingAutoSave).mockImplementationOnce(async () => {
+      setAutoSaveFailed('/w/a.md', true);
+    });
+
+    await act(async () => {
+      await h.flushCb.current!({ windowId: 1, requestId: 9 });
+    });
+    expect(h.sendFlushAck).toHaveBeenLastCalledWith(1, {
+      remaining: { dirty: 1, untitled: 0 },
+      requestId: 9,
+    });
+  });
+
+  it('(b) 选「保存」,批量保存成功后 layout/explorer flush 较慢期间继续输入 → 回执 remaining', async () => {
+    await mountShell();
+    openDirty('/w/a.ts');
+    vi.mocked(flushExplorerPersistence).mockImplementationOnce(async () => {
+      useEditorStore.getState().updateContent('/w/a.ts', 'typed during flush');
+    });
+
+    await act(async () => {
+      await h.flushCb.current!({ windowId: 1, save: true, requestId: 10 });
+    });
+    expect(h.writeFile).toHaveBeenCalledWith('/w/a.ts', 'new');
+    expect(h.sendFlushAck).toHaveBeenLastCalledWith(1, {
+      saveFailed: false,
+      remaining: { dirty: 1, untitled: 0 },
+      requestId: 10,
+    });
+  });
+
+  it('(c) 多窗退出:本窗初始干净(非保存 flush),确认期间改了代码文件 → 回执 remaining', async () => {
+    await mountShell();
+    openDirty('/w/b.ts');
+
+    await act(async () => {
+      await h.flushCb.current!({ windowId: 1, requestId: 11 });
+    });
+    expect(h.sendFlushAck).toHaveBeenLastCalledWith(1, {
+      remaining: { dirty: 1, untitled: 0 },
+      requestId: 11,
+    });
+  });
+
+  it('autosave flush 成功落盘 → 不带 remaining(正常关闭)', async () => {
+    await mountShell();
+    openDirty('/w/a.md');
+    vi.mocked(flushPendingAutoSave).mockImplementationOnce(async () => {
+      useEditorStore.getState().markSaved('/w/a.md');
+    });
+
+    await act(async () => {
+      await h.flushCb.current!({ windowId: 1, requestId: 12 });
+    });
+    expect(h.sendFlushAck).toHaveBeenLastCalledWith(1, { requestId: 12 });
   });
 });

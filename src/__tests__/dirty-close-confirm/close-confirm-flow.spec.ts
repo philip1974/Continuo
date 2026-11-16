@@ -351,7 +351,7 @@ describe('关窗:有脏文件时先确认', () => {
     expect(electronMock.showMessageBox).toHaveBeenCalledTimes(1);
   });
 
-  it('不保存 → hide + flush(不带 save),ack 后关闭', async () => {
+  it('不保存 → hide + flush(带 discard:true,renderer 跳过最终脏检查),ack 后关闭', async () => {
     const win = createReadyWindow(7);
     reportDirty(win, { dirty: 1, untitled: 0 });
     electronMock.showMessageBox.mockResolvedValueOnce({ response: 1 });
@@ -359,7 +359,9 @@ describe('关窗:有脏文件时先确认', () => {
     win.close();
     await settle();
     expect(win.hide).toHaveBeenCalledTimes(1);
-    expect(flushRequests(win)).toEqual([{ windowId: win.id, requestId: expect.any(Number) }]);
+    expect(flushRequests(win)).toEqual([
+      { windowId: win.id, discard: true, requestId: expect.any(Number) },
+    ]);
 
     ack(win);
     await settle();
@@ -473,6 +475,40 @@ describe('flush 回执按 requestId 匹配', () => {
   });
 });
 
+// 统一规则:renderer 全部 flush 完成后做最终脏检查,仍有未保存改动(且本轮未选「不保存」)→ 回执 remaining。
+// main 收到即中止关闭、窗口重新显示,并用 remaining 记账 → 再次关闭会弹确认。
+describe('关窗:flush 后最终脏检查仍有未保存改动 → 中止关闭', () => {
+  it('(a) 无确认框的关窗,flush 回执 remaining → 不关闭、重新显示;再次关闭弹确认', async () => {
+    const win = createReadyWindow(40);
+    // 脏 .md 在防抖内:renderer 计数排除 → main 无脏记账、不弹框。
+    win.close();
+    expect(electronMock.showMessageBox).not.toHaveBeenCalled();
+    ack(win, { requestId: requestIdOf(win, 0), remaining: { dirty: 1, untitled: 0 } });
+    await settle();
+    expect(win.destroyed).toBe(false);
+    expect(win.show).toHaveBeenCalledTimes(1);
+
+    electronMock.showMessageBox.mockResolvedValueOnce({ response: 2 });
+    win.close();
+    await settle();
+    expect(electronMock.showMessageBox).toHaveBeenCalledTimes(1);
+    expect(win.destroyed).toBe(false);
+  });
+
+  it('选「保存」且保存成功,但回执 remaining(flush 期间继续输入)→ 不关闭', async () => {
+    const win = createReadyWindow(41);
+    reportDirty(win, { dirty: 1, untitled: 0 });
+    electronMock.showMessageBox.mockResolvedValueOnce({ response: 0 });
+
+    win.close();
+    await settle();
+    ack(win, { saveFailed: false, requestId: requestIdOf(win, 0), remaining: { dirty: 1, untitled: 0 } });
+    await settle();
+    expect(win.destroyed).toBe(false);
+    expect(win.show).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('退出应用(before-quit):对每个有脏文件的主窗确认', () => {
   function beforeQuit(): { event: { preventDefault: ReturnType<typeof vi.fn> }; done: unknown } {
     const handler = electronMock.appHandlers.get('before-quit')?.[0];
@@ -541,7 +577,7 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
     const { done } = beforeQuit();
     await settle();
     expect(flushRequests(win)).toEqual([
-      { windowId: win.id, requestId: expect.any(Number) },
+      { windowId: win.id, discard: true, requestId: expect.any(Number) },
       { windowId: win.id, save: true, requestId: expect.any(Number) },
     ]);
     const closeReq = requestIdOf(win, 0);
@@ -551,10 +587,24 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
     ack(win, { requestId: closeReq });
     await settle();
     expect(app.quit).not.toHaveBeenCalled(); // 退出仍在等「保存」的回执
+    // 复审(d):旧「不保存」关闭流程已被退出流程接管 → 其 ack 到达后不得 win.close() 销毁窗口
+    // (否则「保存」尚未完成窗口就没了)。
+    expect(win.destroyed).toBe(false);
 
     ack(win, { saveFailed: true, requestId: quitReq });
     await done;
     expect(app.quit).not.toHaveBeenCalled();
+    expect(win.destroyed).toBe(false);
+    expect(win.show).toHaveBeenCalled();
+
+    // 被接管的旧流程已复位:用户再次关闭会重新确认,不卡在「flush 在途」。
+    electronMock.showMessageBox.mockResolvedValueOnce({ response: 1 });
+    win.close();
+    await settle();
+    expect(electronMock.showMessageBox).toHaveBeenCalledTimes(3);
+    ack(win, { requestId: requestIdOf(win, 2) });
+    await settle();
+    expect(win.destroyed).toBe(true);
   });
 
   it('「保存」的 flush 被跳过(renderer 未就绪)→ 中止退出、显示该窗口', async () => {
@@ -566,6 +616,56 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
     expect(a.show).toHaveBeenCalled();
     expect(app.quit).not.toHaveBeenCalled();
     a.destroyed = true;
+  });
+
+  it('(b) Cmd+Q 选「保存」,保存成功但慢 flush 期间继续输入(回执 remaining)→ 中止退出、守卫复位', async () => {
+    const a = createReadyWindow(42);
+    reportDirty(a, { dirty: 1, untitled: 0 });
+    electronMock.showMessageBox.mockResolvedValueOnce({ response: 0 });
+
+    const { done } = beforeQuit();
+    await settle();
+    ack(a, { saveFailed: false, requestId: requestIdOf(a, 0), remaining: { dirty: 1, untitled: 0 } });
+    await done;
+    expect(app.quit).not.toHaveBeenCalled();
+    expect(a.show).toHaveBeenCalled();
+
+    electronMock.showMessageBox.mockResolvedValueOnce({ response: 2 });
+    await beforeQuit().done;
+    expect(electronMock.showMessageBox).toHaveBeenCalledTimes(2);
+    a.destroyed = true;
+  });
+
+  it('(c) 多窗退出:B 确认期间干净的 A 变脏 → A 的非保存 flush 回执 remaining → 中止退出', async () => {
+    const a = createReadyWindow(43);
+    const b = createReadyWindow(44);
+    reportDirty(b, { dirty: 1, untitled: 0 });
+    let answerB: (v: { response: number }) => void = () => undefined;
+    electronMock.showMessageBox.mockReturnValueOnce(
+      new Promise((r) => {
+        answerB = r;
+      }),
+    );
+
+    const { done } = beforeQuit();
+    await settle();
+    expect(electronMock.showMessageBox).toHaveBeenCalledTimes(1); // A 干净不弹框,只问 B
+    answerB({ response: 1 }); // B:不保存
+    await settle();
+    expect(flushRequests(a)).toEqual([{ windowId: a.id, requestId: expect.any(Number) }]);
+    ack(a, { requestId: requestIdOf(a, 0), remaining: { dirty: 1, untitled: 0 } });
+    ack(b, { requestId: requestIdOf(b, 0) });
+    await done;
+    expect(app.quit).not.toHaveBeenCalled();
+    expect(a.show).toHaveBeenCalled();
+
+    // 守卫复位 + A 已记账:再次 Cmd+Q 会对 A 弹确认
+    electronMock.showMessageBox.mockResolvedValueOnce({ response: 2 });
+    await beforeQuit().done;
+    expect(electronMock.showMessageBox).toHaveBeenCalledTimes(2);
+    expect(electronMock.showMessageBox.mock.calls[1]?.[0]).toBe(a);
+    a.destroyed = true;
+    b.destroyed = true;
   });
 
   it('逐窗确认后按各自选择 flush,全部完成再退出', async () => {
@@ -582,7 +682,9 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
     await settle();
     expect(electronMock.showMessageBox).toHaveBeenCalledTimes(2);
     expect(flushRequests(a)).toEqual([{ windowId: a.id, save: true, requestId: expect.any(Number) }]);
-    expect(flushRequests(b)).toEqual([{ windowId: b.id, requestId: expect.any(Number) }]);
+    expect(flushRequests(b)).toEqual([
+      { windowId: b.id, discard: true, requestId: expect.any(Number) },
+    ]);
     expect(flushRequests(clean)).toEqual([{ windowId: clean.id, requestId: expect.any(Number) }]);
 
     ack(a, { saveFailed: false });

@@ -87,11 +87,18 @@ export async function askDirtyClose(
 /**
  * 解析 flush 回执的结果参数(旧格式无该参数 → 未失败)。requestId 为安全正整数才采纳,否则 null
  * (旧回执 / 畸形值,由调用方按「该窗口唯一在途请求」兼容处理)。
+ * remaining:renderer 在全部 flush 完成后做最终脏检查,仍有未保存改动(且本轮未选「不保存」)时带回计数;
+ * 合法且 dirty>0 才采纳,否则 null。main 据此中止关闭 / 退出并记账(下次关闭弹确认)。
  */
-export function parseFlushAck(raw: unknown): { saveFailed: boolean; requestId: number | null } {
+export function parseFlushAck(raw: unknown): {
+  saveFailed: boolean;
+  requestId: number | null;
+  remaining: DirtyState | null;
+} {
   const obj = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {};
   const saveFailed = obj['saveFailed'] === true;
   const id = obj['requestId'];
   const requestId = typeof id === 'number' && Number.isSafeInteger(id) && id > 0 ? id : null;
-  return { saveFailed, requestId };
+  const state = parseDirtyState(obj['remaining']);
+  return { saveFailed, requestId, remaining: needsDirtyConfirm(state ?? undefined) ? state : null };
 }

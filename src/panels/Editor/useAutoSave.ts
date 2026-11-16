@@ -14,7 +14,7 @@ import {
   registerAutoSaveFlush,
   trackInFlightAutoSave,
 } from './autosave-flush-registry';
-import { setAutoSaveFailed } from './autosave-failures';
+import { getAutoSaveRecordEpoch, setAutoSaveFailed } from './autosave-failures';
 import { notify } from '@/notifications/notify';
 import { t } from '@/i18n';
 import { localizeErrorByCode } from '@/lib/localize-error';
@@ -59,18 +59,25 @@ export function useAutoSave(
       tabId !== null
         ? makeAutoSaveScheduler(
             // 记录本 tab 最近一次 autosave 是否失败(resolve {ok:false} 或 reject),关窗计数据此
-            // 把失败态的脏 .md 计入确认(见 autosave-failures.ts)。
-            () =>
-              saveTab(tabId).then(
+            // 把失败态的脏 .md 计入确认(见 autosave-failures.ts)。开始时取 epoch:其间 tab 关闭 / 重开
+            // 则迟到结果被丢弃,不写入同 id 新实例。
+            () => {
+              const epoch = getAutoSaveRecordEpoch();
+              return saveTab(tabId).then(
                 (r) => {
-                  setAutoSaveFailed(tabId, (r as { ok?: unknown } | null | undefined)?.ok === false);
+                  setAutoSaveFailed(
+                    tabId,
+                    (r as { ok?: unknown } | null | undefined)?.ok === false,
+                    epoch,
+                  );
                   return r;
                 },
                 (err: unknown) => {
-                  setAutoSaveFailed(tabId, true);
+                  setAutoSaveFailed(tabId, true, epoch);
                   throw err;
                 },
-              ),
+              );
+            },
             delayMs,
             // 自动保存失败时弹一次 warn toast(去重在 scheduler 内,连续失败不刷屏)。
             // 数据不丢(dirty 保持),仅补反馈 —— 否则后台静默失败用户无从知晓为何脏点不消。

@@ -87,17 +87,38 @@ describe('askDirtyClose:把对话框响应映射为用户选择', () => {
 
 describe('parseFlushAck:renderer flush 回执', () => {
   it('旧格式(无结果)/ 正常 → saveFailed=false,requestId=null', () => {
-    expect(parseFlushAck(undefined)).toEqual({ saveFailed: false, requestId: null });
-    expect(parseFlushAck({ saveFailed: false })).toEqual({ saveFailed: false, requestId: null });
-    expect(parseFlushAck('junk')).toEqual({ saveFailed: false, requestId: null });
+    const none = { saveFailed: false, requestId: null, remaining: null };
+    expect(parseFlushAck(undefined)).toEqual(none);
+    expect(parseFlushAck({ saveFailed: false })).toEqual(none);
+    expect(parseFlushAck('junk')).toEqual(none);
   });
   it('saveFailed=true 原样透出', () => {
-    expect(parseFlushAck({ saveFailed: true })).toEqual({ saveFailed: true, requestId: null });
+    expect(parseFlushAck({ saveFailed: true })).toEqual({
+      saveFailed: true,
+      requestId: null,
+      remaining: null,
+    });
   });
   it('requestId:安全正整数才采纳,畸形值 → null', () => {
-    expect(parseFlushAck({ requestId: 7 })).toEqual({ saveFailed: false, requestId: 7 });
+    expect(parseFlushAck({ requestId: 7 })).toEqual({
+      saveFailed: false,
+      requestId: 7,
+      remaining: null,
+    });
     for (const bad of [0, -1, 1.5, Number.NaN, 2 ** 53, '7']) {
       expect(parseFlushAck({ requestId: bad }).requestId).toBeNull();
+    }
+  });
+
+  // 统一规则:renderer 全部 flush 完成后最终脏检查,仍有未保存改动 → 回执 remaining(计数,main 据此中止并
+  // 记账,下次关闭会弹确认)。畸形 / 计数为 0 → null(不中止)。
+  it('remaining:合法且 dirty>0 才采纳,畸形 / 0 → null', () => {
+    expect(parseFlushAck({ remaining: { dirty: 2, untitled: 1 } }).remaining).toEqual({
+      dirty: 2,
+      untitled: 1,
+    });
+    for (const bad of [{ dirty: 0, untitled: 0 }, { dirty: 1, untitled: 2 }, { dirty: -1 }, 'x', 1]) {
+      expect(parseFlushAck({ remaining: bad }).remaining).toBeNull();
     }
   });
 });

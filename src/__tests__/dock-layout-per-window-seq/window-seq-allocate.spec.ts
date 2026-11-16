@@ -144,6 +144,29 @@ describe('allocateWindowSeq atomic concurrent allocation', () => {
     expect(Number.isSafeInteger((await loadExplorer(file))?.nextWindowSeq ?? NaN)).toBe(true);
   });
 
+  // 复审:退化扫描 `while (used.has(seq)) seq += 1` 从安全的计数起找,若其后一直到 MAX_SAFE_INTEGER 都被占用,
+  // 会越过安全上界返回不安全 seq(+ 写回不安全 nextWindowSeq)。扫到下一值不安全须回绕到 1 继续找空位。
+  it('退化扫描从计数起一路被占用到 MAX_SAFE_INTEGER → 回绕到 1 找空位,写回安全计数', async () => {
+    const payload = defaultExplorerV3();
+    const max = Number.MAX_SAFE_INTEGER;
+    (payload as { nextWindowSeq: number }).nextWindowSeq = max - 2;
+    const tpl = payload.windows[0]!;
+    payload.windows = [
+      { ...tpl, windowSeq: 0 },
+      { ...tpl, windowSeq: 1 },
+      { ...tpl, windowSeq: max - 2 },
+      { ...tpl, windowSeq: max - 1 },
+      { ...tpl, windowSeq: max },
+    ];
+    await atomicWriteJson(file, payload);
+
+    const a = await allocateWindowSeq(file);
+    const b = await allocateWindowSeq(file);
+    expect(a).toBe(2);
+    expect(b).toBe(3);
+    expect(Number.isSafeInteger((await loadExplorer(file))?.nextWindowSeq ?? NaN)).toBe(true);
+  });
+
   it('E4 自愈求 max windowSeq 使用单趟循环,不通过 reduce callback', () => {
     expect(allocateWindowSeq.toString()).not.toContain('.reduce(');
   });
