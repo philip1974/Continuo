@@ -589,7 +589,9 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
       });
       const tabs = replaceTabAt(s.tabs, idx, next);
       // perf P12:markSaved 改 dirty(脏标→已存)即 chrome 变;dirty 未变则不 bump。
-      return next.dirty !== cur.dirty
+      // 例外:保存期间继续输入 → 仍脏但换了新变脏代际,也要 bump —— 关窗脏确认的上报 effect 只订阅
+      // chromeVersion,不 bump 则新代际不上报,main 仍按旧代际放行退出,丢失这段输入(终审 P1)。
+      return next.dirty !== cur.dirty || next.dirtyGen !== cur.dirtyGen
         ? { tabs, chromeVersion: s.chromeVersion + 1 }
         : { tabs };
     }),

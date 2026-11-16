@@ -1451,4 +1451,20 @@ describe('perf P12 — chromeVersion bump 契约', () => {
     useEditorStore.getState().switchTab('/a.md');
     expect(ver()).toBe(1);
   });
+
+  // 关窗脏确认的上报 effect 只订阅 chromeVersion:保存期间继续输入 → markSaved 推进基线但仍脏,
+  // dirty 未翻转却换了新变脏代际,必须 bump,否则新代际不上报、main 仍按旧代际放行退出(终审 P1)。
+  it('markSaved 推进基线但仍脏(保存期间继续输入)→ 新 dirtyGen 且 bump', () => {
+    useEditorStore.setState({ tabs: [], activeTabId: null, chromeVersion: 0 });
+    useEditorStore.getState().openTab(createTab('/a.ts', 'orig'));
+    useEditorStore.getState().updateContent('/a.ts', 'saving'); // 开始保存的内容
+    useEditorStore.getState().updateContent('/a.ts', 'saving+typed'); // 写盘期间继续输入
+    const genBefore = useEditorStore.getState().tabs[0]!.dirtyGen;
+    const verBefore = ver();
+    useEditorStore.getState().markSaved('/a.ts', 'saving');
+    const tab = useEditorStore.getState().tabs[0]!;
+    expect(tab.dirty).toBe(true);
+    expect(tab.dirtyGen).not.toBe(genBefore);
+    expect(ver()).toBe(verBefore + 1);
+  });
 });

@@ -82,6 +82,8 @@ markdown autosave flush)完成后、回执之前,检查此刻仍 dirty 的 tab(�
   基线但 tab 仍脏(保存期间继续输入)时赋新值,持续输入不变 —— 「不保存」后保存再编辑同一文件、关闭重开同一路径再编辑、
   保存期间的新增量都是新身份,不在已接受范围内(复审:只比 tab id / 按 tab 实例计数会放行退出丢新改动)。main 解析时校验计数与 id
   列表一致、`untitledIds ⊆ ids`、无重复,id 列表上限 `PATH_ARRAY_MAX`、单条上限 `PATH_STR_MAX`,不合法整体忽略。
+- 代际变化即重新上报:上报 effect 只订阅 `chromeVersion`,保存期间继续输入时 dirty 不翻转但代际换新,`markSaved`
+  也递增 `chromeVersion`,否则新代际不上报、main 仍按旧代际放行退出(终审 P1)。
 - 不计入:Markdown 自动保存开启时,**活动** tab(持有 autosave scheduler)且其最近一次 autosave 未失败的脏 `.md`
   (关窗 flush 经 `flushPendingAutoSave` 落盘);关闭该设置则计入。
 - **非活动**的脏 `.md` 一律计入:切走时 `useAutoSave` 已 flush,仍脏即失败或在途;关窗 flush 只持有活动 tab 的

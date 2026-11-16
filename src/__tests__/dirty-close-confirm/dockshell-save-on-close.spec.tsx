@@ -2,8 +2,8 @@
 // 关窗 / 退出时脏文件确认:DockShell 上报脏态 + flush 握手里的「保存」分支。
 // dockview / co-api mock 骨架参照 dock-layout-restore-feedback/layout-restore-feedback.spec.tsx。见同目录 README.md。
 import React from 'react';
-import { describe, expect, it, beforeEach, vi } from 'vitest';
-import { act, render } from '@testing-library/react';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
+import { act, cleanup, render } from '@testing-library/react';
 
 const h = vi.hoisted(() => ({
   writeFile: vi.fn(),
@@ -103,6 +103,9 @@ beforeEach(() => {
   useEditorStore.setState({ tabs: [], activeTabId: null });
 });
 
+// globals:false 下 testing-library 不自动 cleanup:上一用例挂着的 DockShell 会在下一用例 beforeEach 清空 tabs 时补报。
+afterEach(() => cleanup());
+
 /** 期望的脏态上报 / remaining / 回执 state(计数由 id 列表推出;id = `${tabId}#${变脏代际}`)。 */
 function ds(ids: string[], untitledIds: string[] = []) {
   return { dirty: ids.length, untitled: untitledIds.length, ids, untitledIds };
@@ -137,6 +140,27 @@ describe('DockShell 向 main 上报关窗会丢的脏 tab 计数', () => {
     act(() => useEditorStore.getState().markSaved('/w/a.ts'));
     await vi.waitFor(() =>
       expect(h.reportDirtyState).toHaveBeenLastCalledWith(ds([])),
+    );
+  });
+
+  // 保存期间继续输入:markSaved 推进基线后 tab 仍脏但换了新变脏代际 → 必须带新身份重新上报,
+  // 否则 main 的最终检查仍把旧代际视为已获准丢弃而退出,丢失保存期间的输入(终审 P1)。
+  it('保存期间继续输入 → markSaved 后以新变脏代际重新上报', async () => {
+    await mountShell();
+    openDirty('/w/a.ts');
+    const oldId = g('/w/a.ts');
+    await vi.waitFor(() =>
+      expect(h.reportDirtyState).toHaveBeenLastCalledWith(ds([oldId])),
+    );
+
+    act(() => {
+      useEditorStore.getState().updateContent('/w/a.ts', 'new+typed');
+      useEditorStore.getState().markSaved('/w/a.ts', 'new');
+    });
+    const newId = g('/w/a.ts');
+    expect(newId).not.toBe(oldId);
+    await vi.waitFor(() =>
+      expect(h.reportDirtyState).toHaveBeenLastCalledWith(ds([newId])),
     );
   });
 
