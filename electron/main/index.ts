@@ -265,13 +265,24 @@ function confirmDirtyClose(
  * A 不会再被 renderer 最终检查覆盖。用 main 持续接收的脏态上报判断是否超出本轮用户已接受的范围(按 id 身份,
  * 当前脏 id 须是已接受集合的子集;复审:只比数量会被同数量替换绕过):
  * 未弹框 → 不接受任何脏;「保存」→ 只接受确认框告知的 untitled;「不保存」→ 接受确认时的脏 tab。
+ * pendingAutoSave(未计入 dirty 的活动 .md)同样按身份检查(见函数内)。
  */
-function exceedsAccepted(current: DirtyState | undefined, mode: FlushMode, accepted?: DirtyState): boolean {
-  if (!needsDirtyConfirm(current)) return false;
+function exceedsAccepted(
+  current: DirtyState | undefined,
+  mode: FlushMode,
+  accepted?: DirtyState,
+  flushedPending?: readonly string[],
+): boolean {
+  if (current === undefined) return false;
   const ok = new Set(
     mode === 'save' ? accepted?.untitledIds : mode === 'discard' ? accepted?.ids : undefined,
   );
-  return current.ids.some((id) => !ok.has(id));
+  if (current.ids.some((id) => !ok.has(id))) return true;
+  // 终审 P1:ACK 之后在活动 .md 输入,防抖触发前该 tab 只进 pendingAutoSave(dirty 仍 0),本轮 flush 已结束、
+  // 不会再落盘 → 同样超出接受范围。放过:已接受集合内的 id(「不保存」确认的脏 .md 改归 pendingAutoSave)与
+  // flush 请求前已上报的 id(已随本轮 flush 落盘;仅不带 state 的旧回执会让其残留在记账里)。
+  const flushed = new Set(flushedPending);
+  return (current.pendingAutoSave ?? []).some((id) => !ok.has(id) && !flushed.has(id));
 }
 
 /**
@@ -1282,6 +1293,9 @@ app.on('before-quit', async (event) => {
     modes.set(w.id, choice === 'save' ? 'save' : 'discard');
     accepted.set(w.id, confirm.state);
   }
+  // flush 请求前各窗已上报的 pendingAutoSave(随本轮 flush 落盘;全局最终检查不当作 ACK 之后的新输入)。
+  const flushedPending = new Map<number, readonly string[] | undefined>();
+  for (const w of targets) flushedPending.set(w.id, dirtyStates.get(w.id)?.pendingAutoSave);
   const outcomes = await Promise.all(
     targets.map((w) => requestWindowFlush(w, modes.get(w.id) ?? 'none', accepted.get(w.id))),
   );
@@ -1298,7 +1312,12 @@ app.on('before-quit', async (event) => {
   const changed = targets.filter(
     (w) =>
       !w.isDestroyed() &&
-      exceedsAccepted(dirtyStates.get(w.id), modes.get(w.id) ?? 'none', accepted.get(w.id)),
+      exceedsAccepted(
+        dirtyStates.get(w.id),
+        modes.get(w.id) ?? 'none',
+        accepted.get(w.id),
+        flushedPending.get(w.id),
+      ),
   );
   if (changed.length > 0) {
     abortQuit(changed);

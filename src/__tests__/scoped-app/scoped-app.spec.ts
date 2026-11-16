@@ -142,13 +142,16 @@ describe('createScopedApp 基础结构', () => {
     expect(typeof scoped.permission.check).toBe('function');
   });
 
-  it('贡献点 registry 透传引用(两个 plugin 看到同一个 commands)', () => {
+  // 终审 P1:贡献点 registry 改为 per-plugin 包装(随吊销拒绝 + 注销,见 plugin-capability-revoke),
+  // 底层仍是同一个 coApp 单例:两个 plugin 注册的命令互相可见。
+  it('贡献点 registry 共享底层单例(两个 plugin 看到同一份 commands)', () => {
     const coApp = makeLmApp();
     const a = createScopedApp(coApp, 'p.a', null);
     const b = createScopedApp(coApp, 'p.b', null);
-    expect(a.commands).toBe(coApp.commands);
-    expect(b.commands).toBe(coApp.commands);
-    expect(a.commands).toBe(b.commands);
+    expect(a.commands).not.toBe(b.commands);
+    a.commands.register({ id: 'a.cmd', title: 'A', fn: () => {} });
+    expect(b.commands.get('a.cmd')).toBe(coApp.commands.get('a.cmd'));
+    expect(coApp.commands.get('a.cmd')).toBeDefined();
   });
 
   it('fs / clipboard / permission 是 per-plugin 闭包(不同引用)', () => {

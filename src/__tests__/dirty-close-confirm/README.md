@@ -82,6 +82,10 @@ markdown autosave flush)完成后、回执之前,检查此刻仍 dirty 的 tab(�
   告知的 untitled id;「不保存」→ 确认时的全部脏 id)。只比数量会被同数量替换绕过(「不保存」后存了 X、改了 Y;
   untitled 换成新草稿)。超出(如 A 已回执后、等待 B 保存期间在 A 里继续编辑)→ 中止退出、显示该窗口、守卫复位。
   各窗记账以回执携带的 `state` 为准,之后的脏态上报继续更新。
+- 全局最终检查同样按身份检查 `pendingAutoSave`(终审 P1):A 已回执后在 A 的活动 `.md` 输入,防抖触发前该 tab 只进
+  `pendingAutoSave`(`dirty` 仍 0),本轮 flush 已结束不会再落盘 → 不在已接受集合内即超出,中止退出。放过:已接受集合内
+  的 id(「不保存」确认的脏 `.md` 改归 `pendingAutoSave`),以及 flush 请求前已上报的 id(已随本轮 flush 落盘;现行
+  renderer 回执总带 `state`、不含 `pendingAutoSave`,只有不带 `state` 的旧回执会让其残留在记账里)。
 - 最终检查通过后、进入不可逆清理前**隐藏全部窗口**(含 popout)形成退出屏障:清理(debug teardown 可能数秒)期间
   窗口已入 flushedOnQuit,继续编辑会丢失、关窗也绕过确认。最终检查失败(中止)路径不隐藏。
 - 不可逆清理:先同步拒绝所有未决 agent 授权(`cancelAllAgentAuth`),再 await terminal / debug / 插件 shell 子进程
@@ -115,7 +119,7 @@ markdown autosave flush)完成后、回执之前,检查此刻仍 dirty 的 tab(�
 | 文件 | 覆盖 |
 |---|---|
 | `dirty-close-dialog.spec.ts` | main 纯函数:上报解析 / 是否弹框 / 按钮与文案 / 选择映射 / 回执解析 |
-| `close-confirm-flow.spec.ts` | main 端到端握手(electron 全 mock):关窗各分支 + before-quit 取消 / 保存失败 / 回执 remaining 中止 / pendingAutoSave + 超时中止 / 关闭流程代际 / 成功退出 |
+| `close-confirm-flow.spec.ts` | main 端到端握手(electron 全 mock):关窗各分支 + before-quit 取消 / 保存失败 / 回执 remaining 中止 / pendingAutoSave + 超时中止 / ACK 后新增 pendingAutoSave 中止 / 关闭流程代际 / 成功退出 |
 | `renderer-dirty-close.spec.ts` | renderer 纯函数:计数口径(活动 / 非活动 / 失败 / 旧实例)/ 批量保存失败计数 / 最终脏检查(untitled 按 id 放行) |
 | `dockshell-save-on-close.spec.tsx` | DockShell 脏态上报 + flush「保存」分支回执 + 最终脏检查回执 `remaining` |
 | `../49-polish-bugfixes/quit-cleanup-guard-reentry.spec.ts` | 守卫 `cancel()` 复位 |

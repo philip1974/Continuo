@@ -912,6 +912,54 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
     b.destroyed = true;
   });
 
+  // 终审 P1:A 已 ACK、等待 B 保存期间在 A 的活动 .md 输入 —— 防抖未触发前该 tab 只进 pendingAutoSave(dirty 仍 0)。
+  // 此前全局最终检查只看 dirty>0 → 放行退出,A 的新输入丢失。ACK 之后出现、不在本轮已接受集合中的
+  // pendingAutoSave 同样视为超出接受范围。
+  it('多窗退出:A 已 ACK 后、等待 B 保存期间 A 的活动 .md 新输入(仅 pendingAutoSave)→ 中止退出', async () => {
+    const a = createReadyWindow(57);
+    const b = createReadyWindow(58);
+    reportDirty(b, ds(['/w/b.ts']));
+    electronMock.showMessageBox.mockResolvedValueOnce({ response: 0 }); // B:保存
+
+    const { done } = beforeQuit();
+    await settle();
+    ack(a, { requestId: requestIdOf(a, 0), state: ds([]) });
+    await settle();
+    reportDirty(a, { ...ds([]), pendingAutoSave: ['/w/a.md#2'] });
+    ack(b, { saveFailed: false, requestId: requestIdOf(b, 0), state: ds([]) });
+    await done;
+    expect(app.quit).not.toHaveBeenCalled();
+    expect(termService.cleanupAll).not.toHaveBeenCalled();
+    expect(a.show).toHaveBeenCalled();
+    expect(b.show).not.toHaveBeenCalled();
+    a.destroyed = true;
+    b.destroyed = true;
+  });
+
+  // 兼容不带最终脏态的旧回执:ACK 不更新记账,flush 请求前已上报的 pendingAutoSave 留在 dirtyStates。
+  // 这些 id 已随本轮 flush 落盘(回执无 remaining),不能误判为「ACK 之后的新输入」。
+  // (用 B 的超出范围让退出中止,只断言 A 未被判为超出 —— 守卫保持可用于后续用例。)
+  it('多窗退出:flush 前已上报、本轮 flush 已处理的 pendingAutoSave(旧回执不带 state)→ 不误判该窗口', async () => {
+    const a = createReadyWindow(59);
+    const b = createReadyWindow(60);
+    reportDirty(a, { ...ds([]), pendingAutoSave: ['/w/a.md#1'] });
+    reportDirty(b, ds(['/w/b.ts']));
+    electronMock.showMessageBox.mockResolvedValueOnce({ response: 0 }); // B:保存
+
+    const { done } = beforeQuit();
+    await settle();
+    ack(a, { requestId: requestIdOf(a, 0) }); // 旧回执:无 state
+    await settle();
+    reportDirty(b, ds(['/w/b.ts', '/w/new.ts'])); // B 等待期间新增脏 tab → 超出
+    ack(b, { saveFailed: false, requestId: requestIdOf(b, 0) });
+    await done;
+    expect(app.quit).not.toHaveBeenCalled();
+    expect(b.show).toHaveBeenCalled();
+    expect(a.show).not.toHaveBeenCalled();
+    a.destroyed = true;
+    b.destroyed = true;
+  });
+
   // 复审:「保存」时 renderer 只能放过确认框告知用户的 untitled(按 id;此前按数量,同数量替换被放过)。
   it('「保存」的 flush 请求带上确认框告知的 untitled id', async () => {
     const a = createReadyWindow(49);

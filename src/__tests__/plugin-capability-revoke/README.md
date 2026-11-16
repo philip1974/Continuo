@@ -25,6 +25,7 @@
   | `clipboard.readText / writeText` | `PermissionError('clipboard')`(读剪贴板是用户隐私,停用后的代码无正当用途) |
   | `mcp.register`;已注册工具的每次调用 | `PermissionError('mcp-tools')` |
   | `notifications.show` / `dock.openPanel` | 抛 `code: 'PERMISSION_DENIED'`(无对应权限项的 UI 副作用) |
+  | 贡献点注册 / 订阅:`panels / commands / statusBar / ribbon / settingTabs / settingItems / explorerDecorators / editorActions / explorerContextMenu` 的 `register`、`subscribe`;`events.on` | 抛 `code: 'PERMISSION_DENIED'`,不入共享注册表 |
   | `editor.openFile` | 返回 `{ ok: false, code: 'PERMISSION_DENIED' }`(其契约返回结果对象不抛) |
 
   | 不阻断 | 理由 |
@@ -32,8 +33,13 @@
   | `fs` 读:`readFile / listDir / stat / lstat / realpath / readGitBlob / userHome` | 无外部副作用,`onunload` 收尾可能要读;停用随即回收 plugin-fs token,之后 main 侧拒绝 |
   | `dataStore.read / write` | 插件自有数据,`onunload` 常用 `saveData` 落盘状态 |
   | `permission.check / granted` | 只读查询 |
-  | 贡献点注册(`panels / commands / ...`) | 经 `Plugin` 代理注册的在实例 disposed 后立即 dispose(既有契约) |
+  | 贡献点 / 事件的只读与执行成员:各注册表 `getAll / get / list / getBySide / getByCategory`、`commands.execute`、`events.emit / off / clear` | 不新增贡献;`onunload` 收尾可能要发事件 |
+  | `version` / `workspace.getRoot` | 只读 |
 
+- 贡献点回收:scoped app 对外暴露的注册表 / `events` 是 per-plugin 包装(底层仍是共享单例)。吊销**前**经
+  scoped app 注册的贡献与订阅(无论是否经 `Plugin.register` 收集)由控制面记录,`revoke()` 时统一注销 ——
+  插件绕过 `Plugin.register` 直接 `app.commands.register(...)` 的命令,停用后同样从注册表移除、快捷键失效。
+  返回的句柄幂等;插件先自行 dispose 的不再重复注销,也不会误删他人后注册的同 id 贡献。
 - 带权限门的能力在授权读取 `await` 前后各查一次吊销状态:授权读取期间被吊销,返回后也不放行。
 - main 侧 `killPluginShellProcesses` 兜底仍在(回收已登记的进程);本条是在源头拒绝新请求。
 
@@ -63,6 +69,9 @@
 
 - `deactivate-revoke.spec.ts`:revoke 后各能力拒绝且不发 IPC、不阻断项照常;授权等待期间被吊销;PluginManager
   停用后延迟回调 / onunload 超时后继续执行 / onunload 内同步调用 / 激活失败后的延迟回调均被拒。
+- `contribution-revoke.spec.ts`:吊销前直接注册的各注册表贡献 / `events.on` / `subscribe` 在 revoke 时注销;吊销后
+  register / on / subscribe 抛 `PERMISSION_DENIED`;只读成员照常;PluginManager 停用后延迟回调注册命令被拒、
+  停用前直接注册的命令被移除。
 - `enabled-main-broadcast.spec.ts`:main 广播(成功才广播、跳过已销毁窗口)与 payload 守卫。
 - `enabled-renderer-sync.spec.ts`:A 禁用 → B 停用、命令注销、不写盘、热重载不复活;发起窗口幂等;A 启用 → B
   激活(不弹窗、不写盘);未知 id 忽略;reload-gate 接线与 init 前缓冲。

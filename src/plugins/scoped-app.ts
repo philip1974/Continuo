@@ -12,6 +12,8 @@
 // 能力(shell / network / fs 写与 requestScope / clipboard / mcp 注册与调用 / notifications / dock / editor.openFile)
 // 在 renderer 源头拒绝、不发 IPC —— 延迟回调或超时后仍在跑的 onunload 不能再起进程 / 发请求。
 // 不阻断:fs 读、dataStore(插件自有数据,onunload 常用 saveData)、permission 查询、userHome。
+// 贡献点注册表 / events:吊销后 register / on / subscribe 拒绝,吊销前经 scoped app 直接注册的贡献与订阅在
+// revoke() 时统一注销(见 trackContributions)。
 // 见 src/__tests__/plugin-capability-revoke/。
 
 import type {
@@ -725,6 +727,55 @@ function makeNotifications(
   };
 }
 
+/** 注册 / 订阅类方法名:返回 Disposable(register / on)或退订函数(subscribe)。 */
+const CONTRIBUTION_METHODS: ReadonlySet<PropertyKey> = new Set(['register', 'on', 'subscribe']);
+
+/**
+ * 终审 P1(停用后仍可经原始注册表注册):共享注册表 / 事件总线包一层 Proxy ——
+ * - register / on / subscribe:已吊销 → 抛 PERMISSION_DENIED、不入表;否则照常注册,并把退订句柄记入 owned,
+ *   revoke() 时统一注销(插件绕过 Plugin.register 直接注册的贡献,停用时同样被清理)。返回的句柄幂等,
+ *   先被插件 / Plugin 自行 dispose 则从 owned 移除。
+ * - 其余成员(getAll / get / execute / emit / off ...)只读或不新增贡献,绑定原实例直通。
+ */
+function trackContributions<T extends object>(
+  pluginId: string,
+  name: string,
+  target: T,
+  life: ScopedLifecycle,
+  owned: Set<() => void>,
+): T {
+  // 按原函数缓存包装(引用稳定;原实例上的方法被替换,如测试 spy,则重新包装)。
+  const methods = new WeakMap<object, unknown>();
+  return new Proxy(target, {
+    get(t, prop) {
+      const value: unknown = Reflect.get(t, prop, t);
+      if (typeof value !== 'function') return value;
+      let method = methods.get(value);
+      if (method === undefined) {
+        const fn = value as (...args: unknown[]) => unknown;
+        method = !CONTRIBUTION_METHODS.has(prop)
+          ? fn.bind(t)
+          : (...args: unknown[]) => {
+              assertLiveUi(pluginId, `${name}.${String(prop)}`, life);
+              const handle = fn.apply(t, args) as Disposable | (() => void);
+              let released = false;
+              const release = (): void => {
+                if (released) return;
+                released = true;
+                owned.delete(release);
+                if (typeof handle === 'function') handle();
+                else handle.dispose();
+              };
+              owned.add(release);
+              return typeof handle === 'function' ? release : { dispose: release };
+            };
+        methods.set(value, method);
+      }
+      return method;
+    },
+  });
+}
+
 const EMPTY_GRANTED_PERMISSIONS: PermissionKey[] = [];
 
 function makePermission(
@@ -774,8 +825,8 @@ function restrictToDeclared(
 export interface ScopedAppController {
   readonly app: CoPluginApp;
   /**
-   * 吊销(幂等,不可恢复):之后有外部副作用的能力一律拒绝、不发 IPC(见文件头)。插件实例离开运行态时
-   * 先于 onunload 调用。
+   * 吊销(幂等,不可恢复):之后有外部副作用的能力一律拒绝、不发 IPC(见文件头);本实例经 scoped app
+   * 注册的贡献点与事件订阅一并注销。插件实例离开运行态时先于 onunload 调用。
    */
   revoke(): void;
   /** 授权变更后重查 mcp-tools:已无授权 → 注销本实例经 app.mcp 注册的全部工具. */
@@ -785,7 +836,7 @@ export interface ScopedAppController {
 /**
  * 把 coApp 包成 per-plugin CoPluginApp。Plugin constructor 拿到的就是它。
  *
- * - 原有贡献点字段(panels/commands/...)直通 coApp 引用,不重复 new
+ * - 原有贡献点字段(panels/commands/...)包 trackContributions(随吊销拒绝 + 注销),底层仍是 coApp 单例
  * - fs/network/clipboard/shell/permission 是 per-plugin 闭包,持 pluginId
  */
 export function createScopedAppController(
@@ -800,13 +851,27 @@ export function createScopedAppController(
   // permission.check/granted 自动走同一语义;未传(core plugin / 测试)保持旧行为。
   const store = rawStore && declared ? restrictToDeclared(rawStore, declared) : rawStore;
   const life: ScopedLifecycle = { revoked: false };
-  // Omit coApp.mcp/editor raw singletons → 替换为 per-plugin scope wrappers,
-  // 其它字段直通。
+  // 本实例经共享注册表 / 事件总线登记的贡献与订阅(revoke 时统一注销)。
+  const owned = new Set<() => void>();
+  const track = <T extends object>(name: string, target: T): T =>
+    trackContributions(pluginId, name, target, life, owned);
+  // Omit coApp.mcp/editor raw singletons → 替换为 per-plugin scope wrappers;贡献点注册表 / events 逐个
+  // 包 trackContributions;其余(version / workspace,只读)直通。
   const { mcp: registry, editor, dock, notifications, dataStore, ...rest } =
     coApp;
   const mcp = makeMcp(pluginId, store, registry, life);
   const app: CoPluginApp = {
     ...rest,
+    panels: track('panels', coApp.panels),
+    commands: track('commands', coApp.commands),
+    statusBar: track('statusBar', coApp.statusBar),
+    ribbon: track('ribbon', coApp.ribbon),
+    events: track('events', coApp.events),
+    settingTabs: track('settingTabs', coApp.settingTabs),
+    settingItems: track('settingItems', coApp.settingItems),
+    explorerDecorators: track('explorerDecorators', coApp.explorerDecorators),
+    editorActions: track('editorActions', coApp.editorActions),
+    explorerContextMenu: track('explorerContextMenu', coApp.explorerContextMenu),
     dataStore: makeDataStore(pluginId, dataStore),
     editor: makeEditor(pluginId, store, editor, life, token),
     dock: makeDock(pluginId, dock, life),
@@ -822,6 +887,14 @@ export function createScopedAppController(
     app,
     revoke: () => {
       life.revoked = true;
+      // 单个注销抛错不传染(同 Plugin 的 LIFO 清理)。
+      for (const release of [...owned]) {
+        try {
+          release();
+        } catch (err) {
+          console.warn(`[scoped-app] ${pluginId} revoke: dispose contribution failed`, err);
+        }
+      }
     },
     recheckMcpPermission: mcp.recheck,
   };
