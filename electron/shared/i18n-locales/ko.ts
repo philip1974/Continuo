@@ -55,6 +55,8 @@ export const ko: Record<TranslationKey, string> = {
   'errors.NO_DEFAULT_EXPORT': '플러그인에 default export가 없습니다',
   'errors.NOT_PLUGIN_CLASS': '플러그인 default export가 Plugin 하위 클래스가 아닙니다',
   'errors.PAYLOAD_TOO_LARGE': '페이로드가 너무 큽니다',
+  'errors.PLUGIN_FS_TOKEN_REVOKE_FAILED': '플러그인 파일 접근 토큰 회수에 실패하여 제거를 중단했습니다. 다시 시도하세요.',
+  'errors.PLUGIN_ID_MISMATCH': '저장소의 플러그인 id가 마켓플레이스 항목과 일치하지 않습니다',
   'errors.RM_FAILED': '삭제 실패',
   'errors.TERMINAL_CREATE_CANCELLED': '터미널 생성이 취소되었습니다',
   'errors.TERMINAL_CWD_UNRESOLVED': '터미널 cwd를 확인할 수 없습니다',

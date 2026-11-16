@@ -166,6 +166,14 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
       for (let i = 0; i < relevant.length; i++) {
         const r = results[i];
         if (r && r.status === 'fulfilled') {
+          // 远端 manifest.id ≠ entry.id:entry 指向另一身份的仓库,其版本不能当作任何已装插件的
+          // 更新(否则错配,且「更新」会去覆盖安装别的仓库;main 侧 expectedId 也会拒)。跳过。
+          if (r.value.id !== relevant[i]!.id) {
+            console.warn(
+              `[update-store] skip ${relevant[i]!.id}: remote manifest id ${r.value.id} mismatch`,
+            );
+            continue;
+          }
           remoteVersions.set(r.value.id, r.value.version);
         }
       }

@@ -14,6 +14,8 @@ const ctl = vi.hoisted(() => ({
   oversize: false, // E27:写 >1MiB 的 manifest.json 模拟畸形/超大 clone
   stderrChunk: '' as string, // E62:fail 时 git 子进程 stderr 输出(模拟超大错误输出)
   manifest: { id: 'p', name: 'P', version: '1.0.0' } as Record<string, string>,
+  mainAsDir: false, // main 入口是目录而非文件
+  lastArgs: [] as readonly string[], // 最近一次 git 调用的 argv
 }));
 
 vi.mock('node:child_process', async () => {
@@ -21,7 +23,8 @@ vi.mock('node:child_process', async () => {
   const np = await import('node:path');
   return {
     spawn: (_cmd: string, args: readonly string[]) => {
-      const cloneDir = args[4] as string;
+      ctl.lastArgs = args;
+      const cloneDir = args[args.length - 1] as string;
       const listeners: Record<string, ((arg?: unknown) => void)[]> = {};
       const stderrListeners: Record<string, ((arg?: unknown) => void)[]> = {};
       const child = {
@@ -49,7 +52,8 @@ vi.mock('node:child_process', async () => {
           ? JSON.stringify({ ...ctl.manifest, pad: 'x'.repeat(1024 * 1024 + 1024) })
           : JSON.stringify(ctl.manifest);
         writeFileSync(np.join(cloneDir, 'manifest.json'), manifestJson);
-        writeFileSync(np.join(cloneDir, 'main.js'), '// plugin');
+        if (ctl.mainAsDir) mkdirSync(np.join(cloneDir, 'main.js'));
+        else writeFileSync(np.join(cloneDir, 'main.js'), '// plugin');
         if (ctl.unreadableFile) {
           writeFileSync(np.join(cloneDir, 'zz-secret.bin'), 'x');
           chmodSync(np.join(cloneDir, 'zz-secret.bin'), 0o000);
@@ -77,6 +81,8 @@ describe('topic 49 · installFromGit 原子覆盖 + 回滚', () => {
     ctl.fail = false;
     ctl.oversize = false;
     ctl.stderrChunk = '';
+    ctl.mainAsDir = false;
+    ctl.lastArgs = [];
     ctl.manifest = { id: 'p', name: 'P', version: '1.0.0' };
   });
   afterEach(async () => {
@@ -259,4 +265,49 @@ describe('topic 49 · installFromGit 原子覆盖 + 回滚', () => {
       expect(leftovers).toEqual([]);
     },
   );
+
+  // main 入口是目录:fs.access 对目录也成功 → 旧实现报安装成功,但下次扫描读 main 失败静默跳过。
+  it('main 入口是目录 → BAD_MAIN,不落地、无残留', async () => {
+    ctl.mainAsDir = true;
+    await expect(installFromGit(URL, baseDir)).rejects.toMatchObject({ code: 'BAD_MAIN' });
+    const entries = await fs.readdir(baseDir).catch(() => [] as string[]);
+    expect(entries).not.toContain('p');
+    expect(entries.filter((e) => e.startsWith('.'))).toEqual([]);
+  });
+
+  // marketplace entry 配了 branch:版本检查读的是该 branch 的 manifest,clone 也须用同一 branch,
+  // 否则装到默认分支代码(可能降级)却报成功。
+  it('传 branch → clone 显式 --branch=<b>,且位于 URL 之前', async () => {
+    await installFromGit(URL, baseDir, { branch: 'release/v2' });
+    expect(ctl.lastArgs).toContain('--branch=release/v2');
+    expect(ctl.lastArgs.indexOf('--branch=release/v2')).toBeLessThan(ctl.lastArgs.indexOf(URL));
+  });
+
+  it('不传 branch → argv 不含 --branch(行为不变)', async () => {
+    await installFromGit(URL, baseDir);
+    expect(ctl.lastArgs.some((a) => a.startsWith('--branch'))).toBe(false);
+  });
+
+  it.each(['-upload-pack=evil', '--foo', 'a/../b', '', 'a b'])(
+    '非法 branch %j → BAD_INPUT,不启动子进程',
+    async (branch) => {
+      await expect(installFromGit(URL, baseDir, { branch })).rejects.toMatchObject({
+        code: 'BAD_INPUT',
+      });
+      expect(ctl.lastArgs).toEqual([]);
+    },
+  );
+
+  // marketplace 安装:远端 manifest.id 须等于 index entry.id,否则以另一身份落地 + 更新检查错配。
+  it('expectedId 与 manifest.id 不一致 → PLUGIN_ID_MISMATCH,不落地', async () => {
+    await expect(
+      installFromGit(URL, baseDir, { expectedId: 'other' }),
+    ).rejects.toMatchObject({ code: 'PLUGIN_ID_MISMATCH' });
+    expect(await fs.readdir(baseDir).catch(() => [] as string[])).not.toContain('p');
+  });
+
+  it('expectedId 一致 → 正常安装', async () => {
+    const r = await installFromGit(URL, baseDir, { expectedId: 'p' });
+    expect(r.id).toBe('p');
+  });
 });

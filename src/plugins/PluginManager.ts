@@ -132,19 +132,33 @@ export function removeActivationOrderId(order: string[], id: string): string[] {
   return next;
 }
 
+/**
+ * 多个目录声明同一 manifest.id 时的确定性取舍(init 与 reload 共用,保证选中同一目录):
+ * 目录名 == id 的优先(与安装器落地 plugins/<id>/、卸载按 id 删目录一致),否则按目录名字典序
+ * 取第一个。返回 candidate 是否应取代 current。
+ */
+function preferPluginDir(candidate: PluginDirInfo, current: PluginDirInfo, id: string): boolean {
+  const candidateExact = candidate.id === id;
+  if (candidateExact !== (current.id === id)) return candidateExact;
+  return candidate.id < current.id;
+}
+
 export function findPluginDirByManifestId(
   dirs: readonly PluginDirInfo[],
   id: string,
 ): PluginDirInfo | null {
+  let found: PluginDirInfo | null = null;
   for (const dir of dirs) {
     try {
       const manifest = JSON.parse(dir.manifestText) as { id?: unknown };
-      if (manifest.id === id) return dir;
+      if (manifest.id === id && (found === null || preferPluginDir(dir, found, id))) {
+        found = dir;
+      }
     } catch {
       // 半写入/损坏 manifest:reload 继续找其它目录,保持旧行为。
     }
   }
-  return null;
+  return found;
 }
 
 // ── PluginManager ──────────────────────────────────────
@@ -193,6 +207,7 @@ export class PluginManager {
       enabledIds = new Set();
     }
 
+    const candidates: { dir: PluginDirInfo; manifest: PluginManifest }[] = [];
     for (const dir of dirs) {
       const parsed = parseManifest(dir.manifestText);
       if (!parsed.ok) {
@@ -210,6 +225,24 @@ export class PluginManager {
       ) {
         console.warn(
           `[plugin-manager] skip ${manifest.id}: minLMVersion ${manifest.minLMVersion} > app ${this.app.version}`,
+        );
+        continue;
+      }
+      candidates.push({ dir, manifest });
+    }
+
+    // 重复 manifest.id:只保留一个目录(preferPluginDir,与 reload 同规则)。否则两个都激活,
+    // 后一个 entries.set 覆盖前一个却不停用它 → 孤儿实例(disable/uninstall/shutdown 都够不着)。
+    const chosen = new Map<string, PluginDirInfo>();
+    for (const { dir, manifest } of candidates) {
+      const current = chosen.get(manifest.id);
+      if (!current || preferPluginDir(dir, current, manifest.id)) chosen.set(manifest.id, dir);
+    }
+
+    for (const { dir, manifest } of candidates) {
+      if (chosen.get(manifest.id) !== dir) {
+        console.warn(
+          `[plugin-manager] skip ${dir.id}: duplicate manifest id ${manifest.id} (using ${chosen.get(manifest.id)?.id})`,
         );
         continue;
       }
@@ -383,6 +416,16 @@ export class PluginManager {
     if (entry.status === 'enabled' && entry.instance) {
       // 注意:走 disableLocked(非 public disable),否则在已持有的同 id 锁上重入死锁
       await this.disableLocked(id);
+    }
+    // 停用时 _unregisterPlugin 失败会把 token 留在 entry 上待重试(见 revokePluginFsToken)。
+    // 卸载会删 entry,丢掉这最后一个引用 → 主进程 token 仍 active、path scope 未撤销。故删目录
+    // 前再重试回收;仍失败 → 卸载失败(不删目录、保留 entry),用户可重试。
+    await this.revokePluginFsToken(entry);
+    if (entry.pluginFsToken) {
+      throw codedError(
+        'PLUGIN_FS_TOKEN_REVOKE_FAILED',
+        `plugin-fs token 回收失败,未卸载: ${id}`,
+      );
     }
     await this.host.removePluginDir(id);
     this.entries.delete(id);

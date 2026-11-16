@@ -21,6 +21,7 @@ import {
   selectValidMarketplaceEntries,
 } from '../../marketplace/fetcher';
 import {
+  entryInstallOptions,
   entryToGitUrl,
   entryToManifestUrl,
   isValidMarketplaceEntry,
@@ -90,6 +91,29 @@ describe('entryToGitUrl', () => {
     expect(entryToGitUrl(SAMPLE_ENTRY)).toBe(
       'https://github.com/me/foo-plugin.git',
     );
+  });
+});
+
+// 安装/更新须与版本检查同源:clone entry.branch(配置了才传),并让 main 校验 manifest.id == entry.id。
+describe('entryInstallOptions', () => {
+  it('带 branch → { expectedId, branch }', () => {
+    expect(entryInstallOptions({ ...SAMPLE_ENTRY, branch: 'dev' })).toEqual({
+      expectedId: 'com.example.foo',
+      branch: 'dev',
+    });
+  });
+
+  it('缺 branch → 只带 expectedId(clone 远端默认分支,行为不变)', () => {
+    const { branch: _b, ...withoutBranch } = SAMPLE_ENTRY;
+    expect(entryInstallOptions(withoutBranch)).toEqual({ expectedId: 'com.example.foo' });
+  });
+});
+
+// branch 进 main 端 git argv:前导 '-' 会被当选项(argv 注入),index 校验直接丢弃该 entry。
+describe('isValidMarketplaceEntry · branch 前导 -', () => {
+  it('branch 以 - 开头 → 非法', () => {
+    expect(isValidMarketplaceEntry({ ...SAMPLE_ENTRY, branch: '-upload-pack=x' })).toBe(false);
+    expect(isValidMarketplaceEntry({ ...SAMPLE_ENTRY, branch: 'release/v2' })).toBe(true);
   });
 });
 

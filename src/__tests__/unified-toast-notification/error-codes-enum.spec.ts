@@ -54,7 +54,8 @@ describe('unified-toast-notification: ERROR_CODES enum', () => {
     // 边界(E235):+TOO_MANY_TERMINALS(39→40),终端会话(真实 PTY)超全局/每窗口数量上限拦截。
     // topic-50:+5 DEBUG_* 业务错误码(40→45),agent MCP debug 工具错误稳定本地化。
     // 删 popout:open 占位 IPC:−POPOUT_NOT_IMPLEMENTED(46→45)。
-    expect(Object.keys(ERROR_CODES)).toHaveLength(45);
+    // 插件安装:+PLUGIN_ID_MISMATCH(45→46),clone 的 manifest.id 与 marketplace entry.id 不一致。
+    expect(Object.keys(ERROR_CODES)).toHaveLength(46);
     expect(ERROR_CODES.TERMINAL_CWD_UNRESOLVED).toBe(
       'TERMINAL_CWD_UNRESOLVED',
     );

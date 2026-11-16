@@ -50,7 +50,7 @@ The index intentionally does **not** carry `version` — each plugin's own `mani
 ## Install flow
 
 1. User picks an entry → click *Install*.
-2. Renderer asks main (via `PLUGINS_CHANNELS.INSTALL_FROM_GIT`) to `git clone https://github.com/<entry.repo>.git` into `${userData}/plugins/<entry.id>/`.
+2. Renderer asks main (via `PLUGINS_CHANNELS.INSTALL_FROM_GIT`) to `git clone https://github.com/<entry.repo>.git` (with `--branch=<entry.branch>` when set, same source as the update check) into `${userData}/plugins/<entry.id>/`; main rejects with `PLUGIN_ID_MISMATCH` if the cloned `manifest.id` ≠ `entry.id`.
 3. Main parses the manifest, runs `ensureAuthorized` for declared permissions (prompt → user grants/denies subset).
 4. Plugin gets imported as ESM (see `ADR-Plugin-2-esm-not-cjs.md`), `_activate()` runs, contribution-point disposables collect.
 

@@ -88,6 +88,29 @@ describe('useUpdateStore.refresh', () => {
     expect(s.available).toHaveLength(0); // 畸形远端版本不误判有更新
   });
 
+  // 远端 manifest.id ≠ index entry.id:entry 指向另一身份的仓库,其版本不能算作 entry.id(或
+  // manifest.id)的更新 —— 否则更新检查错配(甚至触发对别的插件的覆盖安装)。跳过该项。
+  it('远端 manifest.id 与 entry.id 不一致 → 跳过,不收录任何一方的更新', async () => {
+    fetchIndex.mockResolvedValue([entry('b'), entry('a')]); // 错配项在后:旧实现会用它覆盖 b 的远端版本
+    fetchManifest.mockImplementation(async (e: MarketplaceEntry) => {
+      if (e.id === 'a') return manifest('b', '9.0.0'); // a 的仓库自称 b
+      return manifest('b', '0.1.0');
+    });
+    getMgr.mockReturnValue(
+      fakeMgr([
+        { id: 'a', version: '0.1.0' },
+        { id: 'b', version: '0.1.0' },
+      ]),
+    );
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await useUpdateStore.getState().refresh();
+    const s = useUpdateStore.getState();
+    expect(s.available).toHaveLength(0);
+    expect(s.remoteVersions.has('a')).toBe(false);
+    expect(s.remoteVersions.get('b')).toBe('0.1.0');
+  });
+
   it('正路径:remote > local → available 收录;remote = local → 不收', async () => {
     fetchIndex.mockResolvedValue([entry('a'), entry('b')]);
     fetchManifest.mockImplementation(async (e: MarketplaceEntry) => {

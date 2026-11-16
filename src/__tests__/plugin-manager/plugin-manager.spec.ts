@@ -1128,3 +1128,52 @@ describe('权限门 ensureAuthorized 集成', () => {
     expect(GoodPlugin.loaded).toEqual(['a']);
   });
 });
+
+// ── 重复 manifest id ──────────────────────────────────
+
+describe('init · 重复 manifest id 只激活一个(确定性)', () => {
+  // 两个目录声明同一 manifest.id 时,旧实现两个都激活,第二个 entries.set 覆盖第一个却不停用
+  // 它 → 孤儿实例(disable/uninstall/shutdown 都够不着)。修:只保留一个 —— 目录名 == id 的
+  // 优先,否则按目录名字典序取第一个;其余跳过并 warn。
+  function dupState(dirIds: string[]): MockHostState {
+    return {
+      dirs: dirIds.map((d) => ({
+        id: d,
+        manifestText: manifestText('dup'),
+        moduleUrl: `mod://${d}`,
+      })),
+      enabled: new Set(['dup']),
+      modules: new Map(dirIds.map((d) => [`mod://${d}`, { default: GoodPlugin }])),
+      enabledWritten: new Set(),
+    };
+  }
+
+  it('目录名 == id 的优先(无论扫描顺序),只激活一次;disable 后无残留实例', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const state = dupState(['dup-copy', 'dup']);
+    const mgr = new PluginManager(fakeApp, makeHost(state));
+    await mgr.init();
+
+    expect(GoodPlugin.instances).toHaveLength(1);
+    expect(mgr.listAll()).toHaveLength(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('dup-copy'));
+
+    await mgr.disable('dup');
+    expect(GoodPlugin.unloaded).toEqual(['dup']);
+    expect(coApiMocks.pluginFsRaw._registerPlugin).toHaveBeenCalledTimes(1);
+    expect(findPluginDirByManifestId(state.dirs, 'dup')?.id).toBe('dup');
+    warn.mockRestore();
+  });
+
+  it('都不等于 id → 按目录名字典序取第一个(扫描顺序无关)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const state = dupState(['zz', 'aa']);
+    const mgr = new PluginManager(fakeApp, makeHost(state));
+    await mgr.init();
+    expect(GoodPlugin.instances).toHaveLength(1);
+    // reload 选目录与 init 同一规则
+    expect(findPluginDirByManifestId(state.dirs, 'dup')?.id).toBe('aa');
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('zz'));
+    warn.mockRestore();
+  });
+});

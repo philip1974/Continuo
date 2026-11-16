@@ -58,12 +58,16 @@ function makeHost(
   };
 }
 
-function makeMgr() {
+function makeMgr(removePluginDir?: ManagerHost['removePluginDir']) {
   const dirs: PluginDirInfo[] = [
     { id: 'p', manifestText: manifestText('p'), moduleUrl: 'mod://p' },
   ];
   const modules = new Map<string, unknown>([['mod://p', { default: OkPlugin }]]);
-  return new PluginManager(fakeApp, makeHost(modules, dirs, new Set(['p'])));
+  const host = makeHost(modules, dirs, new Set(['p']));
+  return new PluginManager(
+    fakeApp,
+    removePluginDir ? { ...host, removePluginDir } : host,
+  );
 }
 
 beforeEach(() => {
@@ -118,5 +122,48 @@ describe('race(R29) · plugin-fs token 回收失败不半提交 + 可重试', ()
 
     expect(coApiMocks.pluginFsRaw._unregisterPlugin).not.toHaveBeenCalled();
     expect(mgr.listAll().find((x) => x.id === 'p')?.status).toBe('enabled');
+  });
+});
+
+// 卸载路径同样须回收保留的 token:此前 uninstallLocked 对已 disabled(含回收失败保留 token)的
+// 插件直接删目录 + entries.delete(id) → token 引用丢失,主进程 IdentityRegistry 里仍 active、
+// path scope 未撤销 = 不可回收的 capability 泄漏。修:卸载前对残留 token 重试回收;仍失败 →
+// 卸载失败(不删目录、保留 entry),可再次重试。
+describe('uninstall · 回收保留的 plugin-fs token', () => {
+  it('disable 回收失败保留 token → uninstall 先重试回收 tok1 再删目录', async () => {
+    const removePluginDir = vi.fn(async () => {});
+    const mgr = makeMgr(removePluginDir);
+    await mgr.init(); // 注册 tok1
+    coApiMocks.pluginFsRaw._unregisterPlugin.mockRejectedValueOnce(new Error('ipc down'));
+    await mgr.disable('p'); // tok1 回收失败 → 保留
+
+    coApiMocks.pluginFsRaw._unregisterPlugin.mockClear();
+    await mgr.uninstall('p');
+
+    expect(coApiMocks.pluginFsRaw._unregisterPlugin).toHaveBeenCalledWith('tok1');
+    expect(removePluginDir).toHaveBeenCalledWith('p');
+    expect(mgr.listAll().find((x) => x.id === 'p')).toBeUndefined();
+  });
+
+  it('uninstall 时重试回收仍失败 → 卸载失败(不删目录、保留 entry),之后可重试成功', async () => {
+    const removePluginDir = vi.fn(async () => {});
+    const mgr = makeMgr(removePluginDir);
+    await mgr.init();
+    coApiMocks.pluginFsRaw._unregisterPlugin.mockRejectedValueOnce(new Error('ipc down'));
+    await mgr.disable('p');
+
+    coApiMocks.pluginFsRaw._unregisterPlugin.mockRejectedValueOnce(new Error('ipc down'));
+    await expect(mgr.uninstall('p')).rejects.toMatchObject({
+      code: 'PLUGIN_FS_TOKEN_REVOKE_FAILED',
+    });
+    expect(removePluginDir).not.toHaveBeenCalled();
+    expect(mgr.listAll().find((x) => x.id === 'p')?.status).toBe('disabled');
+
+    // 重试:这次回收成功 → 卸载完成。
+    coApiMocks.pluginFsRaw._unregisterPlugin.mockClear();
+    await mgr.uninstall('p');
+    expect(coApiMocks.pluginFsRaw._unregisterPlugin).toHaveBeenCalledWith('tok1');
+    expect(removePluginDir).toHaveBeenCalledWith('p');
+    expect(mgr.listAll().find((x) => x.id === 'p')).toBeUndefined();
   });
 });

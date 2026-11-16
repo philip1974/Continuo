@@ -6,6 +6,11 @@
 
 import { isHttpUrl } from './url-safety'; // 边界(E108):authorUrl scheme 白名单(共享)
 import { isValidPluginId } from '../plugins/plugin-id'; // 边界(E110/E113/E123):plugin id 形态契约(共享单一来源)
+import {
+  isSafeRepoPathChar,
+  isSafeRepoPathSegment,
+  isValidGitBranch,
+} from '../../electron/shared/git-branch';
 
 export interface MarketplaceEntry {
   /** 反 DNS 唯一 id,与 plugin manifest.id 一致. */
@@ -40,7 +45,6 @@ const MP_AUTHOR_MAX = 256;
 const MP_DESC_MAX = 4096;
 const MP_URL_MAX = 2048;
 const MP_REPO_MAX = 512;
-const MP_BRANCH_MAX = 256;
 const MP_TAG_MAX = 128;
 const MP_TAGS_COUNT_MAX = 64;
 // 边界(E107,E104 同类 URL path-segment 漏洞):repo 须两段 owner/name,每段 [A-Za-z0-9._-] 且
@@ -57,30 +61,9 @@ const MP_TAGS_COUNT_MAX = 64;
 // charset 收敛后 entry.id 即 URL/路径安全。非法 id 整条 entry 丢弃(不缓存)。
 // E113:isValidPluginId 抽到共享 ./plugin-id(reviews 链路同款复用)。
 
-/** ASCII 字母数字与 `. _ -`(repo 路径段 / review 标题里的 plugin id 片段共用)。 */
-export function isSafeRepoPathChar(code: number): boolean {
-  return (
-    (code >= 65 && code <= 90) ||
-    (code >= 97 && code <= 122) ||
-    (code >= 48 && code <= 57) ||
-    code === 46 ||
-    code === 95 ||
-    code === 45
-  );
-}
-
-function isSafeRepoPathSegment(v: string, start: number, end: number): boolean {
-  if (start >= end) return false;
-  if (
-    v.charCodeAt(start) === 46 &&
-    (end - start === 1 || (end - start === 2 && v.charCodeAt(start + 1) === 46))
-  )
-    return false;
-  for (let i = start; i < end; i += 1) {
-    if (!isSafeRepoPathChar(v.charCodeAt(i))) return false;
-  }
-  return true;
-}
+// E107/E104 段级字符契约与 branch 校验收口到 electron/shared/git-branch(main installFromGit
+// 的 `git clone --branch` 同源复用);isSafeRepoPathChar 原样再导出给 reviews-parser。
+export { isSafeRepoPathChar };
 
 function isValidRepo(r: string): boolean {
   const slash = r.indexOf('/');
@@ -99,17 +82,7 @@ function isValidRepo(r: string): boolean {
 // 路径,旧正则放行 "../../other/repo/main" 会逃出 owner/repo/<branch>/manifest.json 结构 → 拉错
 // manifest / 错误更新提示 / 安装元数据错位。逐段校验:非空、无前导/尾随 /、无连续 //、每段
 // 仅 [A-Za-z0-9._-] 且非 '.'/'..'(charset 已排除控制字符且 URL-safe,无需额外 encode)。
-function isValidBranch(b: string): boolean {
-  if (b.length === 0 || b.length > MP_BRANCH_MAX) return false;
-  let start = 0;
-  for (;;) {
-    const slash = b.indexOf('/', start);
-    const end = slash < 0 ? b.length : slash;
-    if (!isSafeRepoPathSegment(b, start, end)) return false;
-    if (slash < 0) return true;
-    start = slash + 1;
-  }
-}
+// 另拒前导 '-'(branch 会进 main 端 git argv)。实现见 electron/shared/git-branch。
 
 export function isValidMarketplaceEntry(v: unknown): v is MarketplaceEntry {
   if (typeof v !== 'object' || v === null) return false;
@@ -153,7 +126,7 @@ export function isValidMarketplaceEntry(v: unknown): v is MarketplaceEntry {
     return false;
   if (
     e.branch !== undefined &&
-    (typeof e.branch !== 'string' || !isValidBranch(e.branch)) // 边界(E104):段级校验
+    (typeof e.branch !== 'string' || !isValidGitBranch(e.branch)) // 边界(E104):段级校验
   )
     return false;
   if (e.verified !== undefined && typeof e.verified !== 'boolean') return false;
@@ -171,6 +144,19 @@ export function isValidMarketplaceEntry(v: unknown): v is MarketplaceEntry {
 /** 把 entry.repo 拼成 git clone URL,供 installFromGit 用. */
 export function entryToGitUrl(entry: MarketplaceEntry): string {
   return `https://github.com/${entry.repo}.git`;
+}
+
+/**
+ * installFromGit 的 entry 级选项:与更新检查同源 —— 配置了 branch 就 clone 该分支(否则装到默认
+ * 分支代码,可能降级却报成功);expectedId 交给 main 校验 manifest.id == entry.id(防以另一身份落地)。
+ * 缺 branch → 不传(clone 远端默认分支,行为不变)。
+ */
+export function entryInstallOptions(
+  entry: MarketplaceEntry,
+): { expectedId: string; branch?: string } {
+  return entry.branch === undefined
+    ? { expectedId: entry.id }
+    : { expectedId: entry.id, branch: entry.branch };
 }
 
 /** 把 entry.repo + branch 拼成 raw manifest URL. */
