@@ -150,6 +150,12 @@ function launchRejectedQuittingError(): Error {
 export const DEBUG_LAUNCH_SETTLE_WAIT_MS = 5_000;
 
 /**
+ * teardown 等待各连接应答 disconnect 的**总**上限。父连接与全部 child 并行发出 disconnect、共用这一上限:
+ * 正常 adapter 毫秒级应答;失联时不再按连接数(无上限)叠加等待拖住退出,超时即进入进程组 / 进程树终止。
+ */
+export const DEBUG_TEARDOWN_DISCONNECT_TIMEOUT_MS = 2_000;
+
+/**
  * 一次在途 debug.launch(会话尚未交给调用方)。launchSession 入口**同步**登记、结束时注销,所以吊销 / 关窗 / 退出
  * 取消「当时登记的在途 launch」就等于只取消在它之前启动的 launch(吊销代际语义):之后新发起的 launch 不受影响,
  * 不需要记永久的吊销表。
@@ -2168,24 +2174,31 @@ export class DebugService {
 
     let firstError: Error | null = null;
     const clients = [runtime.parentClient, ...runtime.childClients];
-    for (const client of clients) {
-      try {
-        await client.sendRequest(
-          'disconnect',
-          { terminateDebuggee: true, restart: false },
-          2_000,
-        );
-      } catch (err) {
-        // DAP adapters often stop replying while the debuggee is already exiting.
-        // Lifecycle cleanup is judged by the process-group/tree kill below.
-        void err;
-      }
-    }
+    // DAP adapters often stop replying while the debuggee is already exiting.
+    // Lifecycle cleanup is judged by the process-group/tree kill below.
+    let disconnectTimer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      Promise.allSettled(
+        clients.map((client) =>
+          client.sendRequest(
+            'disconnect',
+            { terminateDebuggee: true, restart: false },
+            DEBUG_TEARDOWN_DISCONNECT_TIMEOUT_MS,
+          ),
+        ),
+      ),
+      new Promise<void>((resolve) => {
+        disconnectTimer = setTimeout(resolve, DEBUG_TEARDOWN_DISCONNECT_TIMEOUT_MS);
+      }),
+    ]);
+    clearTimeout(disconnectTimer);
 
     try {
       // 不依据已知失效的 pid 杀进程:adapter 已退出则不再对其 pid 发信号;已结束的 debuggee 其 pid 已在
-      // 结束时移出 systemProcessIds(上面 disconnect 期间结束的也已移出,故这里重读)。两者都没有 → 只释放 client。
-      // POSIX 按 adapter 的进程组杀:组内尚有记录在案的 debuggee 时组仍存在,pgid 不会被复用。
+      // 结束时移出 systemProcessIds(上面 disconnect 期间结束的也已移出,故这里重读)。
+      // POSIX 按 adapter 的进程组杀:只要保存了 adapterPgid 就枚举该组 —— 组内仍有成员即组仍存在,进程组存在期间
+      // pgid 不会被重新分配(未复用),对组内成员终止(会话结束、adapter 退出后残留的同组子进程也回收);组空则跳过。
+      // Windows 不保存 pgid、无组可枚举:adapter 已退出且无记录在案的 debuggee → 只释放 client。
       // 残留风险:debuggee 未经 DAP 通知就退出、且其 pid 在会话存活期间被复用的极窄窗口(Windows taskkill /T)。
       const current = debugSessions.get(sessionId) ?? session;
       const adapterAlive = runtime.parentClient.serverExited !== true;
@@ -2195,9 +2208,12 @@ export class DebugService {
           ? null
           : await this.processOps.processInfo(current.adapterPid);
       const pgid = current.adapterPgid ?? adapterInfo?.pgid ?? current.adapterPid;
-      if (pgid && (adapterAlive || current.systemProcessIds.length > 0)) {
+      const savedPgid = current.adapterPgid !== undefined;
+      if (pgid && (adapterAlive || current.systemProcessIds.length > 0 || savedPgid)) {
         debugSessions.update(sessionId, { adapterPgid: pgid });
         const groupBefore = await this.processOps.pidsInProcessGroup(pgid);
+        const shouldTerminate =
+          adapterAlive || current.systemProcessIds.length > 0 || groupBefore.length > 0;
         const watchedPids = Array.from(
           new Set(
             [
@@ -2207,11 +2223,9 @@ export class DebugService {
             ].filter((pid): pid is number => typeof pid === 'number' && pid > 0),
           ),
         );
-        const alive = await this.processOps.terminateProcessGroup(
-          pgid,
-          watchedPids,
-          reason,
-        );
+        const alive = shouldTerminate
+          ? await this.processOps.terminateProcessGroup(pgid, watchedPids, reason)
+          : [];
         if (alive.length > 0) {
           throw new Error(`debug teardown left alive pids: ${alive.join(',')}`);
         }

@@ -20,7 +20,7 @@
   | 阻断 | 吊销后的结果 |
   | --- | --- |
   | `shell.exec` / `shell.execStream` | `PermissionError('shell')`;execStream 的 `done` 与 `chunks` 均 reject,不 spawn |
-  | `network.fetch` | `PermissionError('network')` |
+  | `network.fetch` | `PermissionError('network')`;吊销时 abort 全部在途请求(每次请求挂实例的 AbortController,调用方自带 `signal` 仍联动生效) |
   | `fs` 写 / 扩权:`writeFile / mkdir / rename / rm / cp / atomicReplaceWithinScope / requestScope` | `PermissionError('fs')` |
   | `clipboard.readText / writeText` | `PermissionError('clipboard')`(读剪贴板是用户隐私,停用后的代码无正当用途) |
   | `mcp.register`;已注册工具的每次调用 | `PermissionError('mcp-tools')`;吊销前经 `app.mcp.register` 注册的工具在 `revoke()` 时全部注销(见下) |
