@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   DockviewReact,
   type DockviewApi,
@@ -28,6 +28,10 @@ import { useEditorStore } from '@/stores/editor.store';
 import { debounce } from '@/lib/debounce';
 import { flushExplorerPersistence } from '@/lib/persist/explorer-persist';
 import { flushPendingAutoSave } from '@/panels/Editor/autosave-flush-registry';
+import {
+  getAutoSaveFailureVersion,
+  subscribeAutoSaveFailures,
+} from '@/panels/Editor/autosave-failures';
 import { useEditorFile } from '@/panels/Editor/useEditorFile';
 import { useSettingValue } from '@/plugins/settings/values-store';
 import { countDirtyForClose, saveDirtyTabsForClose } from './dirty-close';
@@ -345,10 +349,19 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       // ADR-015),任一失败 → toast + 回执 saveFailed,main 中止关窗 / 退出并重新显示窗口。
       let saveFailed = false;
       if (payload?.save) {
-        const failed = await saveDirtyTabsForClose(useEditorStore.getState().tabs, saveTab);
+        const { failed, diskChanged } = await saveDirtyTabsForClose(
+          useEditorStore.getState().tabs,
+          saveTab,
+          () => useEditorStore.getState().tabs,
+        );
         if (failed > 0) {
           saveFailed = true;
-          notify.error(translate('dialog.unsaved_close.save_failed', { count: failed }));
+          let message = translate('dialog.unsaved_close.save_failed', { count: failed });
+          // 磁盘冲突单独说明(关窗流程不弹覆盖框,引导用户 Cmd+S 解决或选「不保存」)。
+          if (diskChanged > 0) {
+            message += ` ${translate('dialog.unsaved_close.disk_changed_note', { count: diskChanged })}`;
+          }
+          notify.error(message);
         }
       }
       // race(R42):在 flush **执行时**读取 apiRef.current,而非 effect 注册时闭包捕获。effect 仅
@@ -389,7 +402,11 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       // 仍负责串行化磁盘合并。renderer 这里并行启动,减少关闭按钮等待首个慢任务串住后续落盘。
       await Promise.all([layoutFlush, explorerFlush, autosaveFlush]);
       const windowId = payload?.windowId ?? coApi.system.windowId;
-      if (payload?.save) coApi.layout.sendFlushAck?.(windowId, { saveFailed });
+      // requestId 原样带回:main 只接受与在途请求匹配的回执(关窗与 Cmd+Q 交叉时不串号)。
+      const requestId = payload?.requestId;
+      const tag = typeof requestId === 'number' ? { requestId } : {};
+      if (payload?.save) coApi.layout.sendFlushAck?.(windowId, { saveFailed, ...tag });
+      else if (typeof requestId === 'number') coApi.layout.sendFlushAck?.(windowId, tag);
       else coApi.layout.sendFlushAck?.(windowId);
     });
     return () => {
@@ -401,6 +418,11 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
   // 关窗会丢的脏 tab 计数,main 关窗 / 退出前据此弹「保存 / 不保存 / 取消」。计数不变不重发;
   // 初值 0/0 = main 的默认(未上报),挂载时无脏 tab 不发。
   const editorChromeVersion = useEditorStore((s) => s.chromeVersion);
+  // autosave 失败态变化(失败的脏 .md 需计入确认)也要重新上报。
+  const autoSaveFailureVersion = useSyncExternalStore(
+    subscribeAutoSaveFailures,
+    getAutoSaveFailureVersion,
+  );
   const mdAutoSaveEnabled = useSettingValue<boolean>('autoSave.markdown.enabled', true);
   const lastDirtyReportRef = useRef('0/0');
   useEffect(() => {
@@ -409,7 +431,7 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
     if (key === lastDirtyReportRef.current) return;
     lastDirtyReportRef.current = key;
     coApi.layout.reportDirtyState?.(state);
-  }, [editorChromeVersion, mdAutoSaveEnabled]);
+  }, [editorChromeVersion, mdAutoSaveEnabled, autoSaveFailureVersion]);
 
   // Editor 自动激活:Explorer 单击文件 / hydrate 恢复 session → editor.store
   // activeTabId 变 → 自动 setActive 'editor' panel(VSCode 行为)。

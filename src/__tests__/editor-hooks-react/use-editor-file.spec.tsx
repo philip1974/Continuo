@@ -43,7 +43,8 @@ describe('useEditorFile', () => {
   it('saveActive 有 active tab → 调 writeFile + markSaved', async () => {
     const writeFile = vi.fn(async () => ({ ok: true, data: undefined }));
     installFsApi({
-      readFile: vi.fn(),
+      // 保存前读盘比较:磁盘内容 = originalContent(未被外部修改)。
+      readFile: vi.fn(async () => ({ ok: true, data: 'old' })),
       writeFile,
     });
     useEditorStore.setState({

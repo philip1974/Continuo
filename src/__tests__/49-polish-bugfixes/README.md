@@ -1098,12 +1098,16 @@ helper + 必挂 browser-window-created),把「单一来源」固化进测试防�
 - `useExternalFileSync` 对 dirty tab 跳过 reload,保存又不比较磁盘 → 外部版本被无声抹掉。
 - 修复(参考 VSCode「文件已在磁盘上更改」):`saveFile` 写盘前读盘,≠ `tab.originalContent` →
   返回 `EDITOR_DISK_CHANGED` 不写。显式保存(Cmd+S)弹 `ConfirmDialog` 确认后以 `{force:true}`
-  覆盖;autosave 不覆盖、走 P2-BK 失败通知。读盘失败/reject(文件被删等)→ 视为无冲突,允许重建。
-  markSaved 并发键入语义不变(读盘后重取 tab 再快照)。
+  覆盖;autosave 不覆盖、走 P2-BK 失败通知。markSaved 并发键入语义不变(读盘后重取 tab 再快照)。
+- 复审修订:只有明确「不存在」(`FS_NOT_FOUND`,main readFile 对 ENOENT 的映射;resolve 或 reject 带该 code)
+  才照常写(允许重建);其它读错误(FS_DENIED / FS_IO / bridge reject)无法确认磁盘状态 → 中止保存、
+  保留 dirty、返回该错误(autosave 走失败通知,Cmd+S 走既有失败提示)。
 
 ### P2-BM allocateWindowSeq 安全但落后的计数分配重复 seq — `dock-layout-per-window-seq/window-seq-allocate.spec.ts`
 - nextWindowSeq 为安全整数但 ≤ 现存最大 windowSeq 时原样分配 → 与现存段重复(E4 只处理不安全整数)。
 - 修复:与 E4 合并为一处 `seq = max(安全 nextWindowSeq, 现存最大安全段 + 1, 1)`。
+- 复审修订:现存段 = `MAX_SAFE_INTEGER`(或计数本身到顶)时 `seq + 1` 不安全 → 退化为最小未被占用的
+  正整数(计数仍安全时从计数起找,已分配未落盘的 seq 也算占用),结果与 nextWindowSeq 均为安全整数。
 
 ### P2-BN settings 读失败时 getCurrentLocale 与 loadSettings 不一致 — `i18n-en-zh-ko/settings-service.spec.ts`
 - EACCES/EIO 时 loadSettings 返回系统语言默认但不写 cached;getCurrentLocale 因 cached 空返回硬编码

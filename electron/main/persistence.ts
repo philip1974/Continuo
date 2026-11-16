@@ -403,15 +403,23 @@ export async function allocateWindowSeq(explorerFile: string): Promise<number> {
     // 打磨 P2-BM(E4 兄弟):安全但 ≤ 现存最大 windowSeq 的计数(回退/手改)同样会分配重复 seq。
     // 统一自愈:seq = max(安全的 nextWindowSeq, 现存最大安全段 + 1, 1)(主窗占 0、新窗 ≥1 且
     // 大于所有现存安全段 → 不冲突),不丢任何持久化段(优于 schema .safe() 整文件失效丢全部段)。
+    // 复审:现存段 = MAX_SAFE_INTEGER 时 maxSeg + 1 不安全(精度丢失)→ 每次分配同一值,重新卡死重复。
+    // 候选值 + 1 须仍是安全整数(nextWindowSeq 也得安全);否则退化为最小未被占用的正整数。
+    // 「占用」含已分配但段尚未落盘的 seq:计数仍安全时从它起找(< 它的都分配过),否则从 1 起。
     let maxSeg = 0;
+    const used = new Set<number>();
     for (let i = 0; i < payload.windows.length; i += 1) {
       const windowSeq = payload.windows[i]!.windowSeq;
-      if (Number.isSafeInteger(windowSeq) && windowSeq > maxSeg) {
-        maxSeg = windowSeq;
-      }
+      if (!Number.isSafeInteger(windowSeq)) continue;
+      used.add(windowSeq);
+      if (windowSeq > maxSeg) maxSeg = windowSeq;
     }
     const next = payload.nextWindowSeq;
-    const seq = Math.max(Number.isSafeInteger(next) ? next : 0, maxSeg + 1, 1);
+    let seq = Math.max(Number.isSafeInteger(next) ? next : 0, maxSeg + 1, 1);
+    if (!Number.isSafeInteger(seq + 1)) {
+      seq = Number.isSafeInteger(next + 1) && next >= 1 ? next : 1;
+      while (used.has(seq)) seq += 1;
+    }
     payload.nextWindowSeq = seq + 1;
     await atomicWriteJson(explorerFile, payload);
     return seq;

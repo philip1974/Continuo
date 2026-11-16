@@ -145,7 +145,13 @@ if (resolvedUserDataPath !== null) {
 const LRU_MAX_CLOSED = Infinity;
 // flush 结果:'ok' 已 ack / 'save-failed' renderer 报保存失败 / 'timeout' 超时兜底 / 'skipped' 无法 flush 直接放行。
 type FlushOutcome = 'ok' | 'save-failed' | 'timeout' | 'skipped';
-const pendingFlushAcks = new Map<number, (outcome: FlushOutcome) => void>();
+// 在途 flush 请求,按 requestId 记账(复审:此前按 windowId,单窗关闭与 Cmd+Q 交叉时两次请求互相覆盖,
+// 旧请求的 ack 结算新请求 →「不保存」的 ack 被当「保存」成功,保存未完成就退出)。
+const pendingFlushAcks = new Map<
+  number,
+  { readonly windowId: number; readonly done: (outcome: FlushOutcome) => void }
+>();
+let nextFlushRequestId = 1;
 const flushedOnQuit = new Set<number>();
 // 关窗 flush 的 ack 等待上限。数据安全(codex 复查 P1):renderer 的 flush-ack 在 DockShell
 // 依次 await layout/explorer/autosave 落盘后才发;此超时是**防挂死兜底**(renderer 崩溃/死循环
@@ -197,8 +203,14 @@ ipcMain.on(
     if (typeof windowId !== 'number') return;
     const senderWin = BrowserWindow.fromWebContents(event.sender);
     if (!senderWin || senderWin.id !== windowId) return;
-    const cb = pendingFlushAcks.get(windowId);
-    if (cb) cb(parseFlushAck(result).saveFailed ? 'save-failed' : 'ok');
+    const ack = parseFlushAck(result);
+    let entry = ack.requestId === null ? undefined : pendingFlushAcks.get(ack.requestId);
+    if (ack.requestId === null) {
+      // 兼容不带 requestId 的旧回执:仅当该窗口恰有一个在途请求(无歧义)时接受。
+      const mine = [...pendingFlushAcks.values()].filter((e) => e.windowId === windowId);
+      if (mine.length === 1) entry = mine[0];
+    }
+    if (entry && entry.windowId === windowId) entry.done(ack.saveFailed ? 'save-failed' : 'ok');
   },
 );
 
@@ -224,9 +236,12 @@ function confirmDirtyClose(win: BrowserWindow): Promise<DirtyCloseChoice> | null
   return askDirtyClose(state, getMainT(), (opts) => dialog.showMessageBox(win, opts));
 }
 
-/** 选「保存」时 flush 未确认成功(renderer 报失败 / 超时无回执)→ 不能关窗,否则丢改动。 */
+/**
+ * 选「保存」时 flush 未确认成功(renderer 报失败 / 超时无回执 / 请求被跳过)→ 不能关窗,否则丢改动。
+ * skipped(renderer 未就绪 / send 抛错)意味着保存根本没执行(复审:此前当成功关闭)。
+ */
 function isSaveUnconfirmed(outcome: FlushOutcome): boolean {
-  return outcome === 'save-failed' || outcome === 'timeout';
+  return outcome !== 'ok';
 }
 
 // renderer 已订阅 flush 请求的窗口(DockShell 挂载后经 preload 上报)。没上报过 = 启动中 / 加载失败:
@@ -242,6 +257,7 @@ ipcMain.on(LAYOUT_CHANNELS.FLUSH_READY, (event: IpcMainEvent) => {
 /** save=true:renderer 先保存所有有路径的脏 tab 再 flush(用户在脏文件确认框选了「保存」)。 */
 function requestWindowFlush(win: BrowserWindow, save = false): Promise<FlushOutcome> {
   return new Promise((resolve) => {
+    const requestId = nextFlushRequestId++;
     let doneCalled = false;
     let timer: NodeJS.Timeout | null = null;
     const done = (outcome: FlushOutcome) => {
@@ -251,10 +267,10 @@ function requestWindowFlush(win: BrowserWindow, save = false): Promise<FlushOutc
         clearTimeout(timer);
         timer = null;
       }
-      pendingFlushAcks.delete(win.id);
+      pendingFlushAcks.delete(requestId);
       resolve(outcome);
     };
-    pendingFlushAcks.set(win.id, done);
+    pendingFlushAcks.set(requestId, { windowId: win.id, done });
     // webContents 已销毁 / renderer 还没就绪 → 无法 flush/ack,立即放行(不空等满超时)。
     if (win.webContents.isDestroyed() || !flushReadyWindowIds.has(win.id)) {
       done('skipped');
@@ -262,10 +278,10 @@ function requestWindowFlush(win: BrowserWindow, save = false): Promise<FlushOutc
     }
     timer = setTimeout(() => done('timeout'), FLUSH_ACK_TIMEOUT_MS);
     try {
-      // 不保存时 payload 保持旧形态 `{ windowId }`。
+      // requestId:renderer 回执原样带回,只结算对应请求。
       win.webContents.send(
         LAYOUT_CHANNELS.FLUSH_REQUEST,
-        save ? { windowId: win.id, save: true } : { windowId: win.id },
+        save ? { windowId: win.id, save: true, requestId } : { windowId: win.id, requestId },
       );
     } catch {
       done('skipped');

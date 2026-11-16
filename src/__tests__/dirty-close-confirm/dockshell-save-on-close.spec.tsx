@@ -7,10 +7,15 @@ import { act, render } from '@testing-library/react';
 
 const h = vi.hoisted(() => ({
   writeFile: vi.fn(),
+  readFile: vi.fn(),
   reportDirtyState: vi.fn(),
   sendFlushAck: vi.fn(),
   notifyError: vi.fn(),
-  flushCb: { current: null as ((p?: { windowId: number; save?: boolean }) => Promise<void>) | null },
+  flushCb: {
+    current: null as
+      | ((p?: { windowId: number; save?: boolean; requestId?: number }) => Promise<void>)
+      | null,
+  },
 }));
 
 vi.mock('dockview-react', () => ({
@@ -42,14 +47,16 @@ vi.mock('@/lib/co-api', () => ({
     layout: {
       read: vi.fn().mockResolvedValue({ ok: true, data: null }),
       write: vi.fn().mockResolvedValue({ ok: true }),
-      onFlushRequest: (cb: (p?: { windowId: number; save?: boolean }) => Promise<void>) => {
+      onFlushRequest: (
+        cb: (p?: { windowId: number; save?: boolean; requestId?: number }) => Promise<void>,
+      ) => {
         h.flushCb.current = cb;
         return () => {};
       },
       sendFlushAck: h.sendFlushAck,
       reportDirtyState: h.reportDirtyState,
     },
-    fs: { readFile: vi.fn(), writeFile: h.writeFile },
+    fs: { readFile: h.readFile, writeFile: h.writeFile },
     terminal: { remove: vi.fn().mockResolvedValue({ ok: true }) },
     system: { windowId: 1 },
   },
@@ -66,10 +73,15 @@ vi.mock('@/panels/Editor/autosave-flush-registry', () => ({
 
 import { DockShell } from '@/shell/dock/DockShell';
 import { createTab, useEditorStore } from '@/stores/editor.store';
+import { setAutoSaveFailed } from '@/panels/Editor/autosave-failures';
+import { t } from '@/i18n';
 
 beforeEach(() => {
   h.writeFile.mockReset();
   h.writeFile.mockResolvedValue({ ok: true, data: undefined });
+  // 保存前读盘比较:默认磁盘内容 = 打开时内容(未被外部修改)。
+  h.readFile.mockReset();
+  h.readFile.mockResolvedValue({ ok: true, data: 'old' });
   h.reportDirtyState.mockReset();
   h.sendFlushAck.mockReset();
   h.notifyError.mockReset();
@@ -100,6 +112,22 @@ describe('DockShell 向 main 上报关窗会丢的脏 tab 计数', () => {
     );
 
     act(() => useEditorStore.getState().markSaved('/w/a.ts'));
+    await vi.waitFor(() =>
+      expect(h.reportDirtyState).toHaveBeenLastCalledWith({ dirty: 0, untitled: 0 }),
+    );
+  });
+
+  it('脏 .md 默认不计;其 autosave 失败 → 重新上报计入;恢复成功 → 再排除', async () => {
+    await mountShell();
+    openDirty('/w/a.md');
+    expect(h.reportDirtyState).not.toHaveBeenCalled();
+
+    act(() => setAutoSaveFailed('/w/a.md', true));
+    await vi.waitFor(() =>
+      expect(h.reportDirtyState).toHaveBeenLastCalledWith({ dirty: 1, untitled: 0 }),
+    );
+
+    act(() => setAutoSaveFailed('/w/a.md', false));
     await vi.waitFor(() =>
       expect(h.reportDirtyState).toHaveBeenLastCalledWith({ dirty: 0, untitled: 0 }),
     );
@@ -143,5 +171,51 @@ describe('flush 握手的「保存」分支', () => {
 
     expect(h.writeFile).not.toHaveBeenCalled();
     expect(h.sendFlushAck).toHaveBeenCalledWith(1);
+  });
+
+  it('请求带 requestId → 回执原样带回(main 据此丢弃过期请求的 ack)', async () => {
+    await mountShell();
+    openDirty('/w/a.ts');
+
+    await act(async () => {
+      await h.flushCb.current!({ windowId: 1, save: true, requestId: 7 });
+    });
+    expect(h.sendFlushAck).toHaveBeenLastCalledWith(1, { saveFailed: false, requestId: 7 });
+
+    await act(async () => {
+      await h.flushCb.current!({ windowId: 1, requestId: 8 });
+    });
+    expect(h.sendFlushAck).toHaveBeenLastCalledWith(1, { requestId: 8 });
+  });
+
+  it('保存期间继续输入(保存返回 ok 但 tab 仍脏)→ 回执 saveFailed:true', async () => {
+    await mountShell();
+    openDirty('/w/a.ts');
+    h.writeFile.mockImplementation(async () => {
+      useEditorStore.getState().updateContent('/w/a.ts', 'newer');
+      return { ok: true, data: undefined };
+    });
+
+    await act(async () => {
+      await h.flushCb.current!({ windowId: 1, save: true });
+    });
+
+    expect(h.notifyError).toHaveBeenCalledTimes(1);
+    expect(h.sendFlushAck).toHaveBeenCalledWith(1, { saveFailed: true });
+  });
+
+  it('磁盘已被外部修改(EDITOR_DISK_CHANGED)→ 提示里明确说明冲突,回执 saveFailed:true', async () => {
+    await mountShell();
+    openDirty('/w/a.ts');
+    h.readFile.mockResolvedValue({ ok: true, data: 'theirs' });
+
+    await act(async () => {
+      await h.flushCb.current!({ windowId: 1, save: true });
+    });
+
+    expect(h.writeFile).not.toHaveBeenCalled();
+    const text = String(h.notifyError.mock.calls[0]?.[0]);
+    expect(text).toContain(t('dialog.unsaved_close.disk_changed_note', { count: 1 }));
+    expect(h.sendFlushAck).toHaveBeenCalledWith(1, { saveFailed: true });
   });
 });

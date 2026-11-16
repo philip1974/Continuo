@@ -86,12 +86,18 @@ describe('askDirtyClose:把对话框响应映射为用户选择', () => {
 });
 
 describe('parseFlushAck:renderer flush 回执', () => {
-  it('旧格式(无结果)/ 正常 → saveFailed=false', () => {
-    expect(parseFlushAck(undefined)).toEqual({ saveFailed: false });
-    expect(parseFlushAck({ saveFailed: false })).toEqual({ saveFailed: false });
-    expect(parseFlushAck('junk')).toEqual({ saveFailed: false });
+  it('旧格式(无结果)/ 正常 → saveFailed=false,requestId=null', () => {
+    expect(parseFlushAck(undefined)).toEqual({ saveFailed: false, requestId: null });
+    expect(parseFlushAck({ saveFailed: false })).toEqual({ saveFailed: false, requestId: null });
+    expect(parseFlushAck('junk')).toEqual({ saveFailed: false, requestId: null });
   });
   it('saveFailed=true 原样透出', () => {
-    expect(parseFlushAck({ saveFailed: true })).toEqual({ saveFailed: true });
+    expect(parseFlushAck({ saveFailed: true })).toEqual({ saveFailed: true, requestId: null });
+  });
+  it('requestId:安全正整数才采纳,畸形值 → null', () => {
+    expect(parseFlushAck({ requestId: 7 })).toEqual({ saveFailed: false, requestId: 7 });
+    for (const bad of [0, -1, 1.5, Number.NaN, 2 ** 53, '7']) {
+      expect(parseFlushAck({ requestId: bad }).requestId).toBeNull();
+    }
   });
 });

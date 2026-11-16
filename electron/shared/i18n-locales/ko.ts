@@ -166,6 +166,8 @@ export const ko: Record<TranslationKey, string> = {
     '제목 없는 초안 {count}개는 저장할 수 없으며(다른 이름으로 저장 미지원) 삭제됩니다.',
   'dialog.unsaved_close.dont_save': '저장 안 함',
   'dialog.unsaved_close.save_failed': '{count}개 파일을 저장하지 못해 창을 닫지 않았습니다.',
+  'dialog.unsaved_close.disk_changed_note':
+    '그중 {count}개 파일은 디스크에서 다른 프로그램이 수정하여 덮어쓰지 않았습니다. 편집기에서 Cmd/Ctrl+S로 충돌을 해결하거나 \'저장 안 함\'을 선택하세요.',
   'dock.empty.message': '모든 패널이 닫혀 있습니다.',
   'dock.empty.restore': '기본 레이아웃 복원',
   'panels.explorer.loading_or_empty': '로딩 중이거나 빈 폴더',
