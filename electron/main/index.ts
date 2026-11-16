@@ -885,6 +885,8 @@ app.on('open-file', (event, filePath) => {
 // P4+ C 方案:同时启 stdio server(unix socket),Claude Code 走 stdio 配置一次永久使用。
 let mcpHost: McpHost | null = null;
 let mcpStdio: StdioSocketServer | null = null;
+// Stop hook broker 的停止函数(MCP host 启动成功后赋值),由 before-quit 不可逆清理阶段调用。
+let stopHookBroker: (() => Promise<void>) | null = null;
 
 // MCP tool 共享的 PTY create 入口:复用 IPC 端的 makeCreateHandler 工厂,
 // 包一层 lazy mainWindow 查询(tool 调用时窗口必在,但 host 启动时还没创建)。
@@ -1024,14 +1026,17 @@ async function startMcpHost(): Promise<void> {
         });
       },
     });
-    app.once('before-quit', async () => {
-      if (!brokerStarted) return;
-      try {
-        await broker.stop();
-      } catch {
-        // ignore shutdown races
-      }
-    });
+    // 只在主 before-quit 的不可逆清理阶段停止(见 stopHookBroker):此前另挂一次性的退出监听,
+    // 在退出一开始就停,用户取消退出后 broker 不会重启,await_stop_hook 直到重启应用都不可用。
+    if (brokerStarted) {
+      stopHookBroker = async () => {
+        try {
+          await broker.stop();
+        } catch {
+          // ignore shutdown races
+        }
+      };
+    }
 	 
     console.log(`[mcp-host] listening on ${mcpHost.url}`);
   } catch (err) {
@@ -1327,7 +1332,7 @@ app.on('before-quit', async (event) => {
   // 完成前退出:SSE/keepalive/socket 清理与退出竞态,mcp.sock 残留到下次启动兜底清理,退出/测试
   // 路径也无法可靠等待资源释放。纳入与 cleanupAll 同一段 awaited 清理,等齐再退出。allSettled:
   // 单个 close 失败/reject 不阻断另一个,也不阻断退出。
-  await Promise.allSettled([mcpHost?.close(), mcpStdio?.close()]);
+  await Promise.allSettled([mcpHost?.close(), mcpStdio?.close(), stopHookBroker?.()]);
   quitGuard.markFinished();
   app.quit();
 });

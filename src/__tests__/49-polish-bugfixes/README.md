@@ -1174,3 +1174,9 @@ helper + 必挂 browser-window-created),把「单一来源」固化进测试防�
 - before-quit 在关闭 MCP 前同步 `cancelAllAgentAuth()`(见 `agent-auth-service` T17):未决授权全部 denied,不发 IPC。
 - 根因:窗口已隐藏无人应答弹窗,`server.close()` 等现存连接自行结束 → 请求挂满 5min 授权定时器 → 应用不可见且无法退出。
   stdio server 的 close 本就先 destroy 现存连接,无需改。
+
+### 取消退出不再停用 Stop hook broker — `hook-broker-stop-on-irreversible-quit.spec.ts`
+- 旧实现在 MCP host 启动处另挂一次性 before-quit 监听,退出一开始就 `broker.stop()`;用户在未保存确认框取消
+  (或保存失败中止退出)后 broker 不重启,`terminal.await_stop_hook` 直到重启应用都报 broker stopped。
+- 修复:停止函数存为 `stopHookBroker`,只在主 before-quit 的不可逆清理阶段(全局最终检查通过、
+  `cancelAllAgentAuth` 之后)与 MCP host / stdio 关闭一起执行。

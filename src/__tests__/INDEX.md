@@ -70,6 +70,7 @@
 - [`fuzzy-filter-query-lowercase.spec.ts`](./49-polish-bugfixes/fuzzy-filter-query-lowercase.spec.ts)
 - [`hook-broker-ingest-stop-race.spec.ts`](./49-polish-bugfixes/hook-broker-ingest-stop-race.spec.ts)
 - [`hook-broker-start-stop-timer-race.spec.ts`](./49-polish-bugfixes/hook-broker-start-stop-timer-race.spec.ts)
+- [`hook-broker-stop-on-irreversible-quit.spec.ts`](./49-polish-bugfixes/hook-broker-stop-on-irreversible-quit.spec.ts)
 - [`hotkey-command-error-surfaced.spec.tsx`](./49-polish-bugfixes/hotkey-command-error-surfaced.spec.tsx)
 - [`hotkey-platform-aware-mod.spec.ts`](./49-polish-bugfixes/hotkey-platform-aware-mod.spec.ts)
 - [`install-atomic-overwrite.spec.ts`](./49-polish-bugfixes/install-atomic-overwrite.spec.ts)
