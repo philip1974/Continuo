@@ -71,6 +71,24 @@ const debugSessionSummarySchema = z
   })
   .strict();
 
+/**
+ * launch 的 env 禁止的变量名(大小写不敏感比较,覆盖 Windows):它们让 Node / 动态链接器在目标程序之前加载
+ * 额外代码(NODE_OPTIONS=--require=/tmp/x.js 等),绕过 program / cwd 的工作区闸。
+ */
+export const DEBUG_LAUNCH_FORBIDDEN_ENV = [
+  'NODE_OPTIONS',
+  'NODE_PATH',
+  'NODE_REPL_EXTERNAL_MODULE',
+  'LD_PRELOAD',
+  'LD_LIBRARY_PATH',
+  'LD_AUDIT',
+  'DYLD_INSERT_LIBRARIES',
+  'DYLD_LIBRARY_PATH',
+  'DYLD_FALLBACK_LIBRARY_PATH',
+  'DYLD_FRAMEWORK_PATH',
+  'DYLD_FALLBACK_FRAMEWORK_PATH',
+] as const;
+
 const debugEnvEntrySchema = z
   .object({
     name: z.string().min(1).max(256),
@@ -380,7 +398,11 @@ export const debugLaunchInputJsonSchema = objectSchema(
     program: pathJson,
     cwd: pathJson,
     args: arraySchema(stringSchema(4096), 128),
-    env: arraySchema(envEntryJson, 128),
+    env: {
+      ...arraySchema(envEntryJson, 128),
+      description:
+        `Extra environment variables. Variables that make Node or the dynamic linker load extra code are rejected (case-insensitive): ${DEBUG_LAUNCH_FORBIDDEN_ENV.join(', ')}.`,
+    },
     stop_on_entry: boolSchema(),
     name: stringSchema(128),
   },

@@ -94,6 +94,15 @@ describe('50 · debug_* schemas', () => {
     expect(properties.terminate_debuggee).toMatchObject({ type: 'boolean', const: true });
   });
 
+  it('launch 的 env 在 advertised schema 中说明拒绝会加载额外代码的变量', () => {
+    const tool = DEBUG_TOOL_SCHEMAS.find((entry) => entry.name === 'debug.launch')!;
+    const env = (tool.inputJsonSchema as { properties: Record<string, Record<string, unknown>> })
+      .properties.env!;
+    expect(env.description).toMatch(/NODE_OPTIONS/);
+    expect(env.description).toMatch(/LD_PRELOAD/);
+    expect(env.description).toMatch(/DYLD_INSERT_LIBRARIES/);
+  });
+
   it('strict 拒未知字段,breakpoint 预留条件字段当前显式拒绝', () => {
     expect(
       debugSetBreakpointInputSchema.safeParse({

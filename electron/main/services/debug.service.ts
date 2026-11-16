@@ -16,6 +16,7 @@ import { resolveDebugAdapterPath } from './debug-adapter-provision';
 import * as debugSessions from './debug-sessions.service';
 import { getWorkspaceRoot } from './window-workspace-roots.service';
 import { ERROR_CODES } from '../../shared/error-codes';
+import { DEBUG_LAUNCH_FORBIDDEN_ENV } from '../../shared/mcp-debug-schemas';
 import type { DebugViewEvent } from '../../shared/debug-view-channels';
 import { codedError } from '../../shared/error-message';
 import { runSerialPerKey } from './serialize-per-key';
@@ -273,6 +274,25 @@ function toEnvObject(
   const out: Record<string, string> = {};
   for (const entry of env) out[entry.name] = entry.value;
   return out;
+}
+
+const FORBIDDEN_ENV_NAMES = new Set<string>(DEBUG_LAUNCH_FORBIDDEN_ENV);
+
+/**
+ * 安全闸:env 不得含让 Node / 动态链接器加载额外代码的变量(按大写比较,Windows 的变量名大小写不敏感)。
+ * 否则 NODE_OPTIONS=--require=/tmp/x.js 等在目标程序之前执行工作区外脚本,绕过 program / cwd 的工作区闸。
+ */
+function assertLaunchEnvAllowed(
+  env: readonly { readonly name: string; readonly value: string }[] | undefined,
+): void {
+  for (const entry of env ?? []) {
+    if (FORBIDDEN_ENV_NAMES.has(entry.name.toUpperCase())) {
+      throw codedError(
+        ERROR_CODES.DEBUG_PROGRAM_OUTSIDE_WORKSPACE,
+        `debug launch env must not set ${entry.name}: it loads code outside the workspace`,
+      );
+    }
+  }
 }
 
 /**
@@ -683,8 +703,9 @@ export class DebugService {
     input: LaunchSessionInput,
     ctx: DebugCallerContext,
   ): Promise<{ session_id: string; state: 'starting' | 'running' | 'stopped' }> {
-    // 安全闸:先验 program/cwd 落在 workspace 内,再花成本 spawn adapter。
+    // 安全闸:先验 env 与 program/cwd 落在 workspace 内,再花成本 spawn adapter。
     // cwd 省略时默认 workspace root(不再回退 main 进程 cwd)。
+    assertLaunchEnvAllowed(input.env);
     const root = this.workspace.getWorkspaceRoot(ctx.ownerWindowId);
     const effectiveCwd = input.cwd ?? root ?? process.cwd();
     const verified = await this.assertLaunchInsideWorkspace(
@@ -694,6 +715,14 @@ export class DebugService {
     );
     // launch 固定用校验时的真实路径(见 assertLaunchInsideWorkspace);会话记录仍展示调用方拼写。
     const normalizedInput: LaunchSessionInput = { ...input, program: verified.program, cwd: verified.cwd };
+    // 名额被自然结束(terminated)的会话占满时回收最旧的:它们的 adapter 不会自己退出,否则一直占着名额。
+    for (
+      let victim = debugSessions.oldestTerminatedForCapacity(ctx.ownerWindowId);
+      victim !== undefined;
+      victim = debugSessions.oldestTerminatedForCapacity(ctx.ownerWindowId)
+    ) {
+      await this.teardownSession(victim.id, 'reclaim-terminated').catch(() => undefined);
+    }
     // 会话数已满就别 spawn adapter(否则 add 抛错时 adapter 进程 / socket 已经起来了)。
     debugSessions.assertCapacity(ctx.ownerWindowId);
     // workspace 校验是异步边界,期间调用方可能已断开 → spawn 前复查。
