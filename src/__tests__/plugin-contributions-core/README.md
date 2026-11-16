@@ -31,6 +31,7 @@
 
 - `CommandSpec`:`{ id, title, hotkey?, fn }`
 - hotkey 冲突(不同 id 同组合):**先注册者生效,后注册者被遮蔽**(与 useCommandHotkeys 按插入序先命中者执行一致;两条命令都保留在 getAll),warn 一次;按 `canonicalHotkey(combo, platform)` 比较(修饰键顺序 / `mod`↔`cmd`(mac)或 `ctrl`(其它)/ 主键别名 `return`↔`enter` 运行时等价即算冲突),platform 与运行时同源 `detectPlatform()`
+- 同 id 重复注册(插件 reload)先扣减被替换命令的 hotkey 占用再判冲突 → hotkey 不变不误报冲突
 - hotkey 含未知修饰符(主键前的段不在 mod/cmd/ctrl/shift/alt/option)→ register 抛 invalid hotkey
 
 ### StatusBarRegistry 特有

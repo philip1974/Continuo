@@ -31,7 +31,7 @@
 ### useExternalFileSync
 
 - 注册 onDirChanged 订阅;hook unmount 时返 unsub
-- 同时订阅本地 watch-restored(Explorer 重装失效 watcher 成功)→ 按同一 dir-changed 逻辑重读该目录 clean tab;unmount 退订
+- 同时订阅本地 watch-restored(Explorer 重装失效 watcher 成功)→ 重读该目录**子树内**的 clean tab(macOS/Win watcher 递归,断线期间子目录变化同样丢失;普通 dir-changed 仍精确匹配直接父目录);unmount 退订
 - changedDir 命中 tab.filePath 父目录 + 非 dirty + 读盘 ok → reloadFromDisk
 - dirty tab 跳过
 - changedDir ≠ dirname → 跳过

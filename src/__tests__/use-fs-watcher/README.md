@@ -31,6 +31,8 @@
 - 重装失败(卷仍不可用:watchDir ok:false / reject)→ 继续按同一退避续排重试,直到成功或折叠/卸载
 - 重装成功 → 再调一次 onChange(path) 并本地分发 `emitWatchRestored(path)`(`src/lib/fs-watch-restored.ts`),
   补断线期间的变化;首次正常安装不分发
+- 「失效未恢复」标记按 path 记录:退避期间普通 diff 抢先重装(展开别的目录 / 折叠重开同一 path)成功同样补刷新 +
+  分发并清标记(原定时器见已安装即退出);每次失效只分发一次
 - 延迟期间折叠 → 不重装;卷持续断开不会形成高频重试
 - 折叠(path 不再在 expandedPaths)即清零 lostCount 并取消待重装定时器,不论是否在账本中(lost 已移出账本);
   折叠—重开后的下一次失效从 2s 重新退避

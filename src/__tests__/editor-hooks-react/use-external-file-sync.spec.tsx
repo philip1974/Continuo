@@ -230,4 +230,32 @@ describe('useExternalFileSync', () => {
     emitWatchRestored('/proj'); // 卸载后退订
     expect(readFile).toHaveBeenCalledTimes(1);
   });
+  it('watch-restored 覆盖该目录子树(递归 watcher 断线期间子目录变化也丢失)→ 深层 clean tab 也重读', async () => {
+    const readFile = vi.fn(async (p: string) => ({ ok: true, data: `new ${p}` }));
+    installFsApi({ onDirChanged: () => () => {}, readFile });
+    const tab = (p: string) => ({ id: p, filePath: p, content: 'old', originalContent: 'old', dirty: false });
+    useEditorStore.setState({
+      tabs: [tab('/proj/a.md'), tab('/proj/sub/deep/b.md'), tab('/project2/c.md'), tab('/other/d.md')],
+      activeTabId: '/proj/a.md',
+    });
+    renderHook(() => useExternalFileSync());
+    emitWatchRestored('/proj');
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(readFile.mock.calls.map((c) => c[0]).sort()).toEqual(['/proj/a.md', '/proj/sub/deep/b.md']);
+  });
+
+  it('普通 dir-changed 仍只命中直接父目录(不扩到子树)', async () => {
+    let dirCb: ((dir: string) => void) | null = null;
+    const readFile = vi.fn(async () => ({ ok: true, data: 'x' }));
+    installFsApi({ onDirChanged: (cb) => { dirCb = cb; return () => {}; }, readFile });
+    useEditorStore.setState({
+      tabs: [{ id: '/proj/sub/b.md', filePath: '/proj/sub/b.md', content: 'old', originalContent: 'old', dirty: false }],
+      activeTabId: '/proj/sub/b.md',
+    });
+    renderHook(() => useExternalFileSync());
+    dirCb!('/proj');
+    await Promise.resolve();
+    expect(readFile).not.toHaveBeenCalled();
+  });
 });
