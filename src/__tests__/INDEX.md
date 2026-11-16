@@ -187,6 +187,7 @@
 - [`dap-framing.spec.ts`](./50-agent-debug-engine-mvp/dap-framing.spec.ts)
 - [`debug-schemas.spec.ts`](./50-agent-debug-engine-mvp/debug-schemas.spec.ts)
 - [`mcp-debug-host.spec.ts`](./50-agent-debug-engine-mvp/mcp-debug-host.spec.ts)
+- [`revoke-covers-inflight-launch.spec.ts`](./50-agent-debug-engine-mvp/revoke-covers-inflight-launch.spec.ts)
 - [`stdio-caller-closed.spec.ts`](./50-agent-debug-engine-mvp/stdio-caller-closed.spec.ts)
 - [`terminal-token-revoke-kills-debug.spec.ts`](./50-agent-debug-engine-mvp/terminal-token-revoke-kills-debug.spec.ts)
 

@@ -1392,6 +1392,104 @@ describe('DebugService fake adapter · 会话上限 / 程序起跑时机 / 按 s
     await service.killByOwner(ctx.ownerWindowId, 'test');
   });
 
+  // 终审 P1:killByController 只查已登记的会话;在途 launch(adapter 启动 / initialize 中)此时查不到,
+  // token 轮换也不 abort 已在执行的请求 → 随后照常登记,留下绑定已吊销 token 的 starting 会话,新 token
+  // 无权 disconnect、容量回收也不收(只收 terminated),名额被占满。吊销须覆盖在途 launch。
+  it('spawn 期间 killByController 吊销该调用方 → launch 以未授权结束、不登记会话、释放 adapter', async () => {
+    const parent = new FakeDapClient(1001);
+    const { service } = makeFakeService(parent);
+    parent.spawnServer = async function (this: FakeDapClient) {
+      await service.killByController(ctx.controllerToken, 'revoked');
+      return this;
+    };
+
+    await expect(service.launchSession({ program: '/fixture.js', cwd: '/work' }, ctx)).rejects.toMatchObject({
+      code: 'AGENT_NOT_AUTHORIZED',
+    });
+    expect(parent.disposeCalls).toBe(1);
+    expect(runtimeCount(service)).toBe(0);
+    expect(debugSessions.byController(ctx.controllerToken)).toHaveLength(0);
+  });
+
+  it('initialize 期间 killByController 吊销该调用方 → launch 以未授权结束、会话数为 0、adapter 被 dispose', async () => {
+    const parent = new FakeDapClient(1001);
+    const original = parent.sendRequest.bind(parent);
+    let releaseInitialize: (() => void) | undefined;
+    parent.sendRequest = async (command, args, timeoutMs) => {
+      if (command === 'initialize') {
+        await new Promise<void>((resolve) => {
+          releaseInitialize = resolve;
+        });
+      }
+      return original(command, args, timeoutMs);
+    };
+    const { service } = makeFakeService(parent);
+
+    const settled = service
+      .launchSession({ program: '/fixture.js', cwd: '/work' }, ctx)
+      .catch((err: unknown) => err);
+    await vi.waitFor(() => expect(releaseInitialize).toBeTypeOf('function'));
+    await service.killByController(ctx.controllerToken, 'revoked');
+    releaseInitialize?.();
+
+    await expect(settled).resolves.toMatchObject({ code: 'AGENT_NOT_AUTHORIZED' });
+    expect(service.listSessions()).toEqual([]);
+    expect(runtimeCount(service)).toBe(0);
+    expect(parent.disposeCalls).toBe(1);
+  });
+
+  it('吊销只影响被吊销的调用方:其它 token 的并发 launch 照常成功', async () => {
+    let pid = 5000;
+    let spawned = 0;
+    const { processOps } = makeFakeService();
+    const service: DebugService = new DebugService({
+      createDapClient: () => {
+        const client = new FakeDapClient((pid += 1));
+        const isFirst = (spawned += 1) === 1;
+        client.spawnServer = async function (this: FakeDapClient) {
+          // 第一个(被吊销方)的 spawn 期间吊销它;第二个 launch 此时也在途。
+          if (isFirst) await service.killByController('stdio:revoked', 'revoked');
+          return this;
+        };
+        return client;
+      },
+      processOps,
+      workspace: PERMISSIVE_WORKSPACE,
+    });
+    const revoked = { ownerWindowId: ctx.ownerWindowId, controllerToken: 'stdio:revoked' };
+    const other = { ownerWindowId: ctx.ownerWindowId, controllerToken: 'stdio:other' };
+
+    const [a, b] = await Promise.allSettled([
+      service.launchSession({ program: '/fixture.js', cwd: '/work' }, revoked),
+      service.launchSession({ program: '/fixture.js', cwd: '/work' }, other),
+    ]);
+
+    expect(a).toMatchObject({ status: 'rejected', reason: { code: 'AGENT_NOT_AUTHORIZED' } });
+    expect(b.status).toBe('fulfilled');
+    expect(debugSessions.byController('stdio:revoked')).toHaveLength(0);
+    expect(debugSessions.byController('stdio:other')).toHaveLength(1);
+    await service.killByOwner(ctx.ownerWindowId, 'test');
+  });
+
+  // 「撤销 agent 授权」按 listControllerTokens 枚举要回收的调用方;只列已登记会话的话,在途 launch 的 token
+  // 根本不会被 killByController。
+  it('listControllerTokens 包含在途 launch 的调用方(尚未登记会话)', async () => {
+    const parent = new FakeDapClient(1001);
+    const { service } = makeFakeService(parent);
+    let seen: readonly string[] = [];
+    parent.spawnServer = async function (this: FakeDapClient) {
+      seen = service.listControllerTokens();
+      return this;
+    };
+
+    await service.launchSession({ program: '/fixture.js', cwd: '/work' }, ctx);
+
+    expect(seen).toEqual([ctx.controllerToken]);
+    expect(service.listControllerTokens()).toEqual([ctx.controllerToken]);
+    await service.killByController(ctx.controllerToken, 'test');
+    expect(service.listControllerTokens()).toEqual([]);
+  });
+
   // 程序自然退出只把会话标成 terminated(保留给 list_sessions / wait_for_stop 看),父 adapter 不会自己退出;
   // 若仍计入名额,连续调试 8 个自然结束的程序后第 9 次 launch 永久报上限。名额满时回收最旧的 terminated 会话。
   it('名额被自然结束的会话占满 → 回收最旧的 terminated 会话(拆 adapter),新 launch 成功', async () => {

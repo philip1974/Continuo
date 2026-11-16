@@ -123,10 +123,16 @@ export interface DebugCallerContext {
   readonly signal?: AbortSignal;
 }
 
-/** 调用方(stdio proxy)在 launch 期间断开:不留下绑定死 subject 的会话(新连接过不了 capability 闸,无法清理)。 */
+/**
+ * 调用方(stdio proxy)在 launch 期间断开 / 身份被吊销:不留下绑定死 subject 的会话(新连接过不了 capability 闸,
+ * 无法清理)。
+ */
 function launchCancelledError(): Error {
-  return codedError(ERROR_CODES.AGENT_NOT_AUTHORIZED, 'caller disconnected during debug launch');
+  return codedError(ERROR_CODES.AGENT_NOT_AUTHORIZED, 'caller disconnected or revoked during debug launch');
 }
+
+/** 记录已吊销调用方身份的上限(见 DebugService.revokedControllers)。 */
+const REVOKED_CONTROLLERS_MAX = 1024;
 
 export interface SetBreakpointInput {
   readonly file: string;
@@ -732,6 +738,14 @@ export class DebugService {
   private readonly teardownInFlight = new Map<string, Promise<void>>();
   /** 按 session + source 串行 setBreakpoints(读集合→下发→回滚/推快照整段不交错)。 */
   private readonly breakpointChains = new Map<string, Promise<unknown>>();
+  /**
+   * 已被 killByController 吊销的调用方身份。在途 launch(会话尚未登记,killByController 查不到)登记前 /
+   * initialize 后据此自行拆除,不留下绑定已吊销身份的会话。controller token / stdio subject 不复用,只记最近
+   * REVOKED_CONTROLLERS_MAX 个(Set 保插入序,超出淘汰最旧;在途 launch 只持续数秒,够用)。
+   */
+  private readonly revokedControllers = new Set<string>();
+  /** 在途 launch 的调用方身份计数:撤销授权按 listControllerTokens 枚举,须含尚未登记会话的调用方。 */
+  private readonly launchingControllers = new Map<string, number>();
   private eventSink: DebugEventSink | null;
 
   constructor(options: DebugServiceOptions = {}) {
@@ -804,6 +818,26 @@ export class DebugService {
     input: LaunchSessionInput,
     ctx: DebugCallerContext,
   ): Promise<{ session_id: string; state: 'starting' | 'running' | 'stopped' }> {
+    const token = ctx.controllerToken;
+    this.launchingControllers.set(token, (this.launchingControllers.get(token) ?? 0) + 1);
+    try {
+      return await this.launchSessionInner(input, ctx);
+    } finally {
+      const left = (this.launchingControllers.get(token) ?? 1) - 1;
+      if (left > 0) this.launchingControllers.set(token, left);
+      else this.launchingControllers.delete(token);
+    }
+  }
+
+  /** 调用方已断开,或其身份已被 killByController 吊销(撤销授权 / 终端退出 / stdio 断连)。 */
+  private launchCancelled(ctx: DebugCallerContext): boolean {
+    return ctx.signal?.aborted === true || this.revokedControllers.has(ctx.controllerToken);
+  }
+
+  private async launchSessionInner(
+    input: LaunchSessionInput,
+    ctx: DebugCallerContext,
+  ): Promise<{ session_id: string; state: 'starting' | 'running' | 'stopped' }> {
     // 安全闸:先验 env 与 program/cwd 落在 workspace 内,再花成本 spawn adapter。
     // cwd 省略时默认 workspace root(不再回退 main 进程 cwd)。
     assertLaunchEnvAllowed(input.env);
@@ -828,8 +862,8 @@ export class DebugService {
     }
     // 会话数已满就别 spawn adapter(否则 add 抛错时 adapter 进程 / socket 已经起来了)。
     debugSessions.assertCapacity(ctx.ownerWindowId);
-    // workspace 校验是异步边界,期间调用方可能已断开 → spawn 前复查。
-    if (ctx.signal?.aborted) throw launchCancelledError();
+    // workspace 校验是异步边界,期间调用方可能已断开 / 被吊销 → spawn 前复查。
+    if (this.launchCancelled(ctx)) throw launchCancelledError();
 
     const id = makeSessionId();
     const parentClient = this.createDapClient({
@@ -847,8 +881,8 @@ export class DebugService {
     }
     const adapterPid = getClientPid(parentClient);
     const adapterInfo = await this.processOps.processInfo(adapterPid);
-    // spawn 期间调用方断开:还没登记,就地释放 adapter。
-    if (ctx.signal?.aborted) {
+    // spawn 期间调用方断开 / 被吊销:还没登记(killByController 查不到),就地释放 adapter。
+    if (this.launchCancelled(ctx)) {
       await parentClient.dispose().catch(() => undefined);
       throw launchCancelledError();
     }
@@ -903,11 +937,12 @@ export class DebugService {
     } catch (err) {
       // session 已登记、adapter 活着,但调用方只会拿到错误、拿不到 session_id → 自己拆掉。
       await this.teardownSession(id, 'launch-failed').catch(() => undefined);
-      throw ctx.signal?.aborted ? launchCancelledError() : err;
+      throw this.launchCancelled(ctx) ? launchCancelledError() : err;
     } finally {
       ctx.signal?.removeEventListener('abort', onAbort);
     }
-    if (ctx.signal?.aborted) {
+    // initialize 期间被吊销:killByController 已拆掉登记的会话,这里不能再把 session_id 交给调用方。
+    if (this.launchCancelled(ctx)) {
       await this.teardownSession(id, 'caller-disconnected').catch(() => undefined);
       throw launchCancelledError();
     }
@@ -1438,7 +1473,24 @@ export class DebugService {
     controllerToken: string,
     reason = 'killByController',
   ): Promise<readonly string[]> {
+    // 先记吊销再拆:该身份的在途 launch 尚未登记,这里查不到,由 launchSession 据此自行拆除。
+    this.revokedControllers.delete(controllerToken);
+    this.revokedControllers.add(controllerToken);
+    if (this.revokedControllers.size > REVOKED_CONTROLLERS_MAX) {
+      const oldest = this.revokedControllers.values().next().value;
+      if (oldest !== undefined) this.revokedControllers.delete(oldest);
+    }
     return this.teardownMany(debugSessions.byController(controllerToken), reason);
+  }
+
+  /** 持有 debug 会话或有在途 launch 的调用方身份(撤销授权据此逐个 killByController)。 */
+  listControllerTokens(): readonly string[] {
+    return Array.from(
+      new Set([
+        ...debugSessions.list().map((session) => session.controllerToken),
+        ...this.launchingControllers.keys(),
+      ]),
+    );
   }
 
   /**

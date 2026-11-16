@@ -1034,10 +1034,8 @@ async function startMcpHost(): Promise<void> {
       },
     });
     setAgentAuthControllerTeardown({
-      listControllerTokens: () =>
-        Array.from(
-          new Set(debugSessions.list().map((session) => session.controllerToken)),
-        ),
+      // 含在途 launch 的调用方:会话尚未登记,只列已登记会话的话撤销时漏掉它们(见 DebugService.listControllerTokens)。
+      listControllerTokens: () => debugService.listControllerTokens(),
       killByController: (controllerToken, reason) => {
         void debugService.killByController(controllerToken, reason).catch((err) => {
           console.warn('[debug] killByController failed during revoke', err);
