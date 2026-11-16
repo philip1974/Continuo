@@ -75,6 +75,22 @@ export function assertCapacity(ownerWindowId: number): void {
   }
 }
 
+/**
+ * 名额已满时可回收的会话:最旧的已自然结束(runtimeState=terminated)、尚未拆除的会话。只在它能腾出所缺的名额时
+ * 返回(本窗口满 → 只选本窗口的);未满或没有可回收者返回 undefined。
+ */
+export function oldestTerminatedForCapacity(ownerWindowId: number): DebugSession | undefined {
+  const windowFull = sessionCountForWindow(ownerWindowId) >= MAX_DEBUG_SESSIONS_PER_WINDOW;
+  if (!windowFull && activeSessionCount() < MAX_DEBUG_SESSIONS_GLOBAL) return undefined;
+  let victim: DebugSession | undefined;
+  for (const session of sessions.values()) {
+    if (session.state !== 'active' || session.runtimeState !== 'terminated') continue;
+    if (windowFull && session.ownerWindowId !== ownerWindowId) continue;
+    if (victim === undefined || session.createdAt < victim.createdAt) victim = session;
+  }
+  return victim;
+}
+
 export function add(input: AddDebugSessionInput): DebugSession {
   assertOwnerWindowId(input.ownerWindowId, 'debug-sessions');
   if (sessions.has(input.id)) {

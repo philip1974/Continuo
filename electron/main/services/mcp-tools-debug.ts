@@ -242,7 +242,8 @@ function makeDebugLaunchTool(
     name: MCP_TOOL_DEBUG_LAUNCH,
     description:
       'Launch a Node.js debug session through Continuo. First call asks the user to authorize debug control for this agent. ' +
-      'The created debug session is scoped to the current window and this MCP caller only.',
+      'The created debug session is scoped to the current window and this MCP caller only. ' +
+      'program and cwd must be inside the workspace; env must not set variables that load extra code (NODE_OPTIONS, NODE_PATH, LD_PRELOAD, DYLD_INSERT_LIBRARIES, etc.).',
     jsonSchema: debugLaunchInputJsonSchema,
     inputSchema: debugLaunchInputSchema,
     run: (input, ctx) =>

@@ -1119,6 +1119,52 @@ describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
     expect(debugSessions.get(session_id)?.cwd).toBe('/repo');
   });
 
+  // program/cwd 锁在工作区内,但 env 原样交给 Node:NODE_OPTIONS=--require=/tmp/x.js 等会在目标程序前
+  // 加载工作区外代码 → 这类变量(大小写不敏感,覆盖 Windows)一律拒绝,且不 spawn adapter。
+  it.each([
+    'NODE_OPTIONS',
+    'NODE_PATH',
+    'NODE_REPL_EXTERNAL_MODULE',
+    'LD_PRELOAD',
+    'LD_LIBRARY_PATH',
+    'DYLD_INSERT_LIBRARIES',
+    'DYLD_LIBRARY_PATH',
+    'node_options',
+    'Ld_Preload',
+  ])('安全:env 含会加载额外代码的变量 %s → 拒绝且不 spawn adapter', async (name) => {
+    const parent = new FakeDapClient(1001);
+    const spawn = vi.spyOn(parent, 'spawnServer');
+    const { service } = makeFakeService(parent, {
+      getWorkspaceRoot: () => '/repo',
+      realpath: async (p) => p,
+    });
+    await expect(
+      service.launchSession(
+        { program: '/repo/app.js', cwd: '/repo', env: [{ name, value: '--require=/tmp/payload.js' }] },
+        { ownerWindowId: 29, controllerToken: 'agent-sec10' },
+      ),
+    ).rejects.toMatchObject({ code: 'DEBUG_PROGRAM_OUTSIDE_WORKSPACE', message: expect.stringContaining(name) });
+    expect(spawn).not.toHaveBeenCalled();
+    expect(service.listSessions()).toEqual([]);
+  });
+
+  it('普通 env 照常传给 launch', async () => {
+    const parent = new FakeDapClient(1001);
+    const { service } = makeFakeService(parent, {
+      getWorkspaceRoot: () => '/repo',
+      realpath: async (p) => p,
+    });
+    const { session_id } = await service.launchSession(
+      { program: '/repo/app.js', cwd: '/repo', env: [{ name: 'FOO', value: 'bar' }, { name: 'NODE_ENV', value: 'test' }] },
+      { ownerWindowId: 30, controllerToken: 'agent-sec11' },
+    );
+    void service.waitForStop(session_id, { timeoutMs: 5_000 }).catch(() => undefined);
+    await vi.waitFor(() => expect(parent.requestLog.some((r) => r.command === 'launch')).toBe(true));
+    const launch = parent.requestLog.find((r) => r.command === 'launch')!.args as Record<string, unknown>;
+    expect(launch['env']).toEqual({ FOO: 'bar', NODE_ENV: 'test' });
+    await service.killByOwner(30, 'test');
+  });
+
   it('向注入式 event sink 发状态事件,terminated 在 remove session 前发出', async () => {
     const { service, parent } = makeFakeService();
     const events: Array<{
@@ -1255,6 +1301,65 @@ describe('DebugService fake adapter · 会话上限 / 程序起跑时机 / 按 s
     expect(debugSessions.get(kept.session_id)).toBeDefined();
     await expect(service.launchSession({ program: '/fixture.js', cwd: '/work' }, alive)).resolves.toBeDefined();
     await service.killByOwner(ctx.ownerWindowId, 'test');
+  });
+
+  // 程序自然退出只把会话标成 terminated(保留给 list_sessions / wait_for_stop 看),父 adapter 不会自己退出;
+  // 若仍计入名额,连续调试 8 个自然结束的程序后第 9 次 launch 永久报上限。名额满时回收最旧的 terminated 会话。
+  it('名额被自然结束的会话占满 → 回收最旧的 terminated 会话(拆 adapter),新 launch 成功', async () => {
+    let pid = 4000;
+    const clients: FakeDapClient[] = [];
+    const { processOps } = makeFakeService();
+    const service = new DebugService({
+      createDapClient: () => {
+        const client = new FakeDapClient((pid += 1));
+        clients.push(client);
+        return client;
+      },
+      processOps,
+      workspace: PERMISSIVE_WORKSPACE,
+    });
+    const ids: string[] = [];
+    for (let i = 0; i < 8; i += 1) {
+      const { session_id } = await service.launchSession({ program: '/fixture.js', cwd: '/work' }, ctx);
+      ids.push(session_id);
+      clients[i]!.emit('terminated', {});
+    }
+    // terminated 会话仍可见,wait_for_stop 仍按既有语义立即报已终止
+    expect(service.listSessions().map((s) => s.state)).toEqual(Array(8).fill('terminated'));
+    await expect(service.waitForStop(ids[1]!, { timeoutMs: 5_000 })).rejects.toThrow(/terminated/);
+
+    const ninth = await service.launchSession({ program: '/fixture.js', cwd: '/work' }, ctx);
+
+    expect(ninth.state).toBe('starting');
+    expect(clients[0]!.disposeCalls).toBe(1);
+    expect(debugSessions.get(ids[0]!)).toBeUndefined();
+    expect(clients.slice(1, 8).every((client) => client.disposeCalls === 0)).toBe(true);
+    await expect(service.waitForStop(ids[1]!, { timeoutMs: 5_000 })).rejects.toThrow(/terminated/);
+    await service.killByOwner(ctx.ownerWindowId, 'test');
+  });
+
+  it('名额满且没有 terminated 会话 → 仍报上限,不回收运行中的会话', async () => {
+    let pid = 5000;
+    const clients: FakeDapClient[] = [];
+    const { processOps } = makeFakeService();
+    const service = new DebugService({
+      createDapClient: () => {
+        const client = new FakeDapClient((pid += 1));
+        clients.push(client);
+        return client;
+      },
+      processOps,
+      workspace: PERMISSIVE_WORKSPACE,
+    });
+    for (let i = 0; i < 8; i += 1) await service.launchSession({ program: '/fixture.js', cwd: '/work' }, ctx);
+    // 别的窗口的 terminated 会话不能顶替本窗口的名额
+    await service.launchSession({ program: '/fixture.js', cwd: '/work' }, { ...ctx, ownerWindowId: 41 });
+    clients[8]!.emit('terminated', {});
+
+    await expect(service.launchSession({ program: '/fixture.js', cwd: '/work' }, ctx)).rejects.toThrow(/limit/);
+    expect(clients.every((client) => client.disposeCalls === 0)).toBe(true);
+    expect(service.listSessions()).toHaveLength(9);
+    await service.cleanupAll('test');
   });
 
   it('launch 后未起跑:返回 starting,不发 configurationDone / launch', async () => {
