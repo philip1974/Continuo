@@ -67,6 +67,13 @@ class FakeDapClient implements DebugDapClientLike {
   /** 下一个分配的断点 id(按连接各自编号)。 */
   nextBreakpointId = 1;
   private seq = 1;
+  /**
+   * beforeResponse 挂起中的在途请求的 reject。dispose 时以 socket closed 结算 —— 同真实 DapClient:关 socket
+   * 后 rejectAllPending,响应尚未到达的请求全部失败。
+   */
+  private readonly inFlightRejects = new Set<(err: Error) => void>();
+  /** 等在途请求清空后再 dispose 的回调(disposeWhenIdle)。 */
+  private readonly idleWaiters: Array<() => void> = [];
   private startDebuggingHandler:
     | ((
         request: DapRequestMessage,
@@ -131,7 +138,26 @@ class FakeDapClient implements DebugDapClientLike {
       queueMicrotask(() => this.emit('initialized', {}));
     }
     if (this.beforeResponse) {
-      await this.beforeResponse(command);
+      const hook = this.beforeResponse;
+      try {
+        await new Promise<void>((resolve, reject) => {
+          this.inFlightRejects.add(reject);
+          Promise.resolve(hook(command)).then(
+            () => {
+              this.inFlightRejects.delete(reject);
+              resolve();
+            },
+            (err: unknown) => {
+              this.inFlightRejects.delete(reject);
+              reject(err);
+            },
+          );
+        });
+      } finally {
+        if (this.inFlightRejects.size === 0) {
+          for (const resume of this.idleWaiters.splice(0)) resume();
+        }
+      }
     } else if (
       command === 'continue' ||
       command === 'next' ||
@@ -160,6 +186,14 @@ class FakeDapClient implements DebugDapClientLike {
 
   async dispose(): Promise<void> {
     this.disposeCalls += 1;
+    const inFlight = [...this.inFlightRejects];
+    this.inFlightRejects.clear();
+    for (const reject of inFlight) reject(new Error('DAP socket closed'));
+  }
+
+  disposeWhenIdle(): Promise<void> {
+    if (this.inFlightRejects.size === 0) return this.dispose();
+    return new Promise<void>((resolve) => this.idleWaiters.push(resolve)).then(() => this.dispose());
   }
 
   async triggerStartDebugging(configuration: DapJson): Promise<void> {
@@ -551,6 +585,56 @@ describe('DebugService fake adapter · launch / 子会话 / 终止 的错误路�
     await service.stackTrace(sessionId, { threadId: 0 });
     expect(main.requestLog.some((r) => r.command === 'stackTrace')).toBe(true);
     expect(worker.requestLog).toEqual([]);
+  });
+
+  // 真实 js-debug:被调试程序跑完时,continue 的响应可能排在同一连接的 continued / terminated 事件之后、落在
+  // 下一个 chunk。结束的 child 若当即 dispose(关 socket),这个在途请求就以「DAP socket closed」失败。
+  it('唯一的 child 结束时 continue 的响应尚未到达 → continue 照常返回,连接在响应之后才回收;会话判为结束', async () => {
+    const parent = new FakeDapClient(1001);
+    const { service } = makeFakeService(parent);
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      ctx,
+    );
+    await parent.triggerStartDebugging({ type: 'pwa-node' });
+    const main = parent.children[0]!;
+    main.emit('stopped', { reason: 'breakpoint', threadId: 0 });
+    const stopped = await service.waitForStop(sessionId, { afterStopSeq: 0, timeoutMs: 1_000 });
+    let disposedBeforeResponse: number | undefined;
+    main.beforeResponse = async (command) => {
+      if (command !== 'continue') return;
+      main.emit('continued', { threadId: 0, allThreadsContinued: false });
+      main.emit('terminated', {});
+      await new Promise((resolve) => setTimeout(resolve, 0)); // 响应在下一个 chunk
+      disposedBeforeResponse = main.disposeCalls;
+    };
+
+    await expect(service.continue(sessionId, {})).resolves.toMatchObject({ continued: true });
+    expect(disposedBeforeResponse).toBe(0);
+    await vi.waitFor(() => expect(main.disposeCalls).toBe(1)); // 在途请求结算之后照样回收
+    await expect(
+      service.waitForStop(sessionId, { afterStopSeq: stopped.stop_seq, timeoutMs: 1_000 }),
+    ).rejects.toThrow(/terminated/);
+  });
+
+  it('worker 结束时发给它的请求尚未应答 → 请求照常返回,之后 worker 才被回收;主线程连接不受影响', async () => {
+    const { service, sessionId, main, worker } = await launchWithWorker();
+    worker.emit('stopped', { reason: 'breakpoint', threadId: 7 });
+    await service.waitForStop(sessionId, { afterStopSeq: 0, timeoutMs: 1_000 });
+    worker.beforeResponse = async (command) => {
+      if (command !== 'stackTrace') return;
+      worker.emit('terminated', {});
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    };
+
+    await expect(service.stackTrace(sessionId, { threadId: 7 })).resolves.toMatchObject({
+      frames: [expect.objectContaining({ line: 14 })],
+    });
+    await vi.waitFor(() => expect(worker.disposeCalls).toBe(1));
+    expect(main.disposeCalls).toBe(0);
+    expect(service.listSessions()[0]?.state).toBe('running');
+    await service.stackTrace(sessionId, { threadId: 0 });
+    expect(main.requestLog.some((r) => r.command === 'stackTrace')).toBe(true);
   });
 
   // 真实 DapClient 一次 read 里读到「单步的响应 + continued + stopped」时,两个事件先于 resume 的续体处理。

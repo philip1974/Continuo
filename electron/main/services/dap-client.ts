@@ -333,6 +333,8 @@ export class DapClient {
   private parentSession: DapClient | null = null;
   private startDebuggingHandler: StartDebuggingHandler | null;
   private disposed = false;
+  /** disposeWhenIdle 的等待者:在途请求全部结算(响应 / 失败 / 超时)时唤醒。 */
+  private idleWaiters: Array<() => void> = [];
   private readonly traceId: string;
 
   constructor(options: DapClientOptions = {}) {
@@ -547,6 +549,9 @@ export class DapClient {
     ).finally(() => {
       // 超时后不再等这个响应:删掉条目(正常响应 / rejectAllPending 路径已删,重复删无害)。
       this.pending.delete(request.seq);
+      if (this.pending.size === 0) {
+        for (const resume of this.idleWaiters.splice(0)) resume();
+      }
     });
   }
 
@@ -686,6 +691,16 @@ export class DapClient {
       reject(err);
     }
     this.pending.clear();
+  }
+
+  /**
+   * 等在途请求全部结算后再 dispose(无在途请求时立即 dispose)。用于回收已结束(terminated / exited)的
+   * child:js-debug 可能在 terminated 之后才回在途请求(如 continue)的响应,当即关 socket 会让它以
+   * 「DAP socket closed」失败。每个请求都有自己的超时,等待有界。
+   */
+  disposeWhenIdle(): Promise<void> {
+    if (this.pending.size === 0) return this.dispose();
+    return new Promise<void>((resolve) => this.idleWaiters.push(resolve)).then(() => this.dispose());
   }
 
   async dispose(): Promise<void> {
