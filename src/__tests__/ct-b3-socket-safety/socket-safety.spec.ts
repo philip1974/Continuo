@@ -38,6 +38,10 @@ import type {
   ServerInfo,
 } from '../../../electron/main/services/mcp-host.service';
 
+// 协议级拒绝以 end(PARSE_ERROR) 半关闭、等对端读完后关闭(服务端 1s 兜底 destroy),比旧的立即 destroy
+// 多一个往返;vi.waitFor 默认 1s 在高负载下不够,放宽等待上限(只影响失败时多等,不改变断言)。
+const REJECT_CLOSE_WAIT = { timeout: 5_000 } as const;
+
 const serverInfo: ServerInfo = {
   name: 'ct-b3-test',
   version: '0',
@@ -424,7 +428,7 @@ describe('CT-B3 stdio socket safety', { timeout: 30_000 }, () => {
       expect(resp).toHaveProperty('error');
     }
     // 无论是先回错误还是直接断开,工具都不得执行,且连接最终关闭。
-    await vi.waitFor(() => expect(socket.destroyed).toBe(true));
+    await vi.waitFor(() => expect(socket.destroyed).toBe(true), REJECT_CLOSE_WAIT);
     expect(toolRan).toBe(false);
   });
 
@@ -458,9 +462,9 @@ describe('CT-B3 stdio socket safety', { timeout: 30_000 }, () => {
 
     await Promise.race([
       done,
-      vi.waitFor(() => expect(socket.destroyed).toBe(true)),
+      vi.waitFor(() => expect(socket.destroyed).toBe(true), REJECT_CLOSE_WAIT),
     ]);
-    await vi.waitFor(() => expect(socket.destroyed).toBe(true));
+    await vi.waitFor(() => expect(socket.destroyed).toBe(true), REJECT_CLOSE_WAIT);
     expect(toolRan).toBe(false);
   });
 
@@ -494,9 +498,9 @@ describe('CT-B3 stdio socket safety', { timeout: 30_000 }, () => {
 
     await Promise.race([
       done,
-      vi.waitFor(() => expect(socket.destroyed).toBe(true)),
+      vi.waitFor(() => expect(socket.destroyed).toBe(true), REJECT_CLOSE_WAIT),
     ]);
-    await vi.waitFor(() => expect(socket.destroyed).toBe(true));
+    await vi.waitFor(() => expect(socket.destroyed).toBe(true), REJECT_CLOSE_WAIT);
     expect(toolRan).toBe(false);
   });
 
@@ -546,9 +550,9 @@ describe('CT-B3 stdio socket safety', { timeout: 30_000 }, () => {
 
     await Promise.race([
       done,
-      vi.waitFor(() => expect(socket.destroyed).toBe(true)),
+      vi.waitFor(() => expect(socket.destroyed).toBe(true), REJECT_CLOSE_WAIT),
     ]);
-    await vi.waitFor(() => expect(socket.destroyed).toBe(true));
+    await vi.waitFor(() => expect(socket.destroyed).toBe(true), REJECT_CLOSE_WAIT);
   });
 
   // 边界(E233,E227-E232 数量上限族):全局连接数上限。本用户任意进程可反复连 mcp.sock 保持空闲 →
