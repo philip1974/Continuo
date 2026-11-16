@@ -11,7 +11,7 @@ import {
   transferEntriesInto,
   type BatchTransferDeps,
 } from '../../panels/Explorer/batch-transfer';
-import { removeItems } from '../../panels/Explorer/mutate-actions';
+import { removeItems, trashItemsAndCleanup } from '../../panels/Explorer/mutate-actions';
 import { outermostPaths } from '../../panels/Explorer/path-utils';
 
 type Result = { ok: true; data: undefined } | { ok: false; code: string; message: string };
@@ -103,16 +103,42 @@ describe('removeItems — 嵌套选择', () => {
   });
 });
 
-describe('接线:onTrash 只对实际删除的路径做清理', () => {
-  it('editor tab 关闭 / 剪贴板 prune 遍历 result.removed,而非原始选择', () => {
-    const src = readFileSync(
-      join(__dirname, '..', '..', 'panels', 'Explorer', 'FolderTree.tsx'),
-      'utf-8',
+// FolderTree onTrash 走 trashItemsAndCleanup:删除 + editor tab 关闭 + 剪贴板 prune 一处完成。
+describe('onTrash 删除后只对实际删除的路径做清理', () => {
+  it('trash [A, A/B, x] 且删 A 失败 → removePath 与 prune 都只收到 result.removed', async () => {
+    const trash = vi.fn(async (p: string): Promise<Result> =>
+      p === '/r/A' ? { ok: false, code: 'FS_DENIED', message: 'no perm' } : OK,
     );
-    const start = src.indexOf('onTrash:');
-    const body = src.slice(start, src.indexOf('onCut:', start));
-    expect(body).toMatch(/for \(const p of result\.removed\)/);
-    expect(body).not.toMatch(/for \(const p of paths\)/);
+    const fs = { trash, remove: vi.fn(), rename: vi.fn(), createFile: vi.fn(), createDir: vi.fn() };
+    const cleanup = { removePath: vi.fn(), prune: vi.fn() };
+    const r = await trashItemsAndCleanup(
+      ['/r/A', '/r/A/B', '/r/x'],
+      { fs } as never,
+      { invalidateChildrenIds: vi.fn() },
+      cleanup,
+    );
+    expect(r.removed).toEqual(['/r/x']);
+    expect(cleanup.removePath.mock.calls).toEqual([['/r/x']]);
+    expect(cleanup.prune.mock.calls).toEqual([[['/r/x']]]);
+  });
+
+  it('全部失败 → 不关 tab、不 prune', async () => {
+    const trash = vi.fn(async (): Promise<Result> => ({
+      ok: false,
+      code: 'FS_DENIED',
+      message: 'no perm',
+    }));
+    const fs = { trash, remove: vi.fn(), rename: vi.fn(), createFile: vi.fn(), createDir: vi.fn() };
+    const cleanup = { removePath: vi.fn(), prune: vi.fn() };
+    const r = await trashItemsAndCleanup(
+      ['/r/A', '/r/A/B'],
+      { fs } as never,
+      { invalidateChildrenIds: vi.fn() },
+      cleanup,
+    );
+    expect(r.ok).toBe(false);
+    expect(cleanup.removePath).not.toHaveBeenCalled();
+    expect(cleanup.prune).not.toHaveBeenCalled();
   });
 });
 

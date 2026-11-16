@@ -117,6 +117,30 @@ export async function removeItems(
 // create file / dir
 // ────────────────────────────────────────────────────────────
 
+/** 删除完成后的清理出口(Explorer onTrash 注入 editor store / 剪贴板 store)。 */
+export interface RemoveCleanup {
+  /** 关闭该路径的 editor tab(目录则关其下所有 tab)。 */
+  removePath(path: string): void;
+  /** 从剪贴板剪除已删除的源(避免幻影 cut 灰显 + 失效 Paste)。 */
+  prune(paths: string[]): void;
+}
+
+/**
+ * 移到回收站 + 清理。只清理实际删掉的路径(result.removed),不遍历原始选择:多选 A 与 A/B 时 A/B
+ * 被折叠,删 A 失败则 A/B 也没删,但它不在 failures 里,按「原始选择 − failures」会被误当成功。
+ */
+export async function trashItemsAndCleanup(
+  paths: ReadonlyArray<string>,
+  deps: MutateDeps,
+  tree: TreeMutationApi,
+  cleanup: RemoveCleanup,
+): Promise<RemoveResult> {
+  const result = await removeItems(paths, { trash: true }, deps, tree);
+  for (const p of result.removed) cleanup.removePath(p);
+  if (result.removed.length > 0) cleanup.prune(result.removed);
+  return result;
+}
+
 // a11y(A139,A138/A137 同族):createFile/createDir 的 IPC reject(抛错而非返回 {ok:false})
 // 此前未捕获 → helper 整体 reject;而调用点 submitCreate 是 fire-and-forget async,reject 即
 // unhandled rejection + 不进 !r.ok 分支 → 新建文件/文件夹失败无 toast/live region 反馈。

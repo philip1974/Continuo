@@ -17,6 +17,7 @@ import { getWorkspaceRoot } from './window-workspace-roots.service';
 import { ERROR_CODES } from '../../shared/error-codes';
 import type { DebugViewEvent } from '../../shared/debug-view-channels';
 import { codedError } from '../../shared/error-message';
+import { runSerialPerKey } from './serialize-per-key';
 
 const execFile = promisify(execFileCb);
 
@@ -400,6 +401,8 @@ export class DebugService {
   private readonly workspace: DebugWorkspaceGuard;
   private readonly runtimes = new Map<string, RuntimeDebugSession>();
   private readonly teardownInFlight = new Map<string, Promise<void>>();
+  /** 按 session + source 串行 setBreakpoints(读集合→下发→回滚/推快照整段不交错)。 */
+  private readonly breakpointChains = new Map<string, Promise<unknown>>();
   private eventSink: DebugEventSink | null;
 
   constructor(options: DebugServiceOptions = {}) {
@@ -555,6 +558,19 @@ export class DebugService {
     sessionId: string,
     input: SetBreakpointInput,
   ): Promise<{ verified: boolean; line?: number; message?: string }> {
+    this.requireRuntime(sessionId);
+    // 同 session 同 source 串行:并发时 B 捕获的完整集合会含在途的 A,A 失败回滚时 B 已把 A 设进 adapter;
+    // 成功响应乱序时旧快照事件还会覆盖新断点。串行化后集合与快照天然有序。
+    return runSerialPerKey(this.breakpointChains, `${sessionId}\0${input.file}`, () =>
+      this.setBreakpointsSerial(sessionId, input),
+    );
+  }
+
+  private async setBreakpointsSerial(
+    sessionId: string,
+    input: SetBreakpointInput,
+  ): Promise<{ verified: boolean; line?: number; message?: string }> {
+    // 排队期间 session 可能已拆除。
     const runtime = this.requireRuntime(sessionId);
     // 追加到该 source 的断点集合(同 file+line 替换,不重复);此前整表替换成 [input],同文件第二个断点
     // 会把第一个从 adapter 里删掉。
@@ -588,6 +604,25 @@ export class DebugService {
         if (previous) runtime.breakpoints[index] = previous;
         else runtime.breakpoints.splice(index, 1);
       }
+      // 超时不代表 adapter 没应用(可能只是响应迟到):尽力把回滚后的完整集合补发给父连接与存活的 child,
+      // 短超时、失败忽略,原错误照常抛给调用方。
+      const rolledBack = setBreakpointsArgs(
+        input.file,
+        runtime.breakpoints.filter((bp) => bp.file === input.file),
+      );
+      const liveClients = [
+        runtime.parentClient,
+        ...runtime.childClients.filter((child) => !runtime.endedChildren.has(child)),
+      ];
+      await Promise.allSettled(
+        liveClients.map((client) =>
+          client.sendRequest(
+            'setBreakpoints',
+            rolledBack,
+            Math.min(this.requestTimeoutMs, CHILD_BREAKPOINT_SYNC_TIMEOUT_MS),
+          ),
+        ),
+      );
       throw err;
     }
     // 已建立的 child session 各自维护断点:只发给父连接的话,程序跑起来之后再设的断点不会生效
@@ -619,23 +654,31 @@ export class DebugService {
         : {}),
     };
     // 推该 source 的完整集合(adapter 校正后的行号),renderer 整组替换:只推本次那一个时,同一逻辑
-    // 断点被再次校正到别的行会留下旧红点。
+    // 断点被再次校正到别的行会留下旧红点。多个请求被校正到同一行时按校正后的 file:line 去重(保留首个),
+    // 否则面板 key 重复、编辑器重复装饰 —— 去重只在这里做(单一来源)。
     const responseBreakpoints = asArray(body.breakpoints);
+    const seenLines = new Set<number>();
+    const snapshot = sourceBreakpoints.flatMap((bp, i) => {
+      const reported = asRecord(responseBreakpoints[i] as DapJson | undefined);
+      const line = numberField(reported, 'line') ?? bp.line;
+      if (seenLines.has(line)) return [];
+      seenLines.add(line);
+      const message = stringField(reported, 'message');
+      return [
+        {
+          file: bp.file,
+          line,
+          ...(bp.column !== undefined ? { column: bp.column } : {}),
+          verified: boolField(reported, 'verified') ?? true,
+          ...(message !== undefined ? { message } : {}),
+        },
+      ];
+    });
     this.emitSessionEvent(sessionId, {
       type: 'breakpoints-changed',
       sessionId,
       file: input.file,
-      breakpoints: sourceBreakpoints.map((bp, i) => {
-        const reported = asRecord(responseBreakpoints[i] as DapJson | undefined);
-        const message = stringField(reported, 'message');
-        return {
-          file: bp.file,
-          line: numberField(reported, 'line') ?? bp.line,
-          ...(bp.column !== undefined ? { column: bp.column } : {}),
-          verified: boolField(reported, 'verified') ?? true,
-          ...(message !== undefined ? { message } : {}),
-        };
-      }),
+      breakpoints: snapshot,
     });
     return result;
   }

@@ -13,7 +13,7 @@ import { DropOverlay } from './DropOverlay';
 import { ExplorerHeader } from './ExplorerHeader';
 import { createTreeConfig } from './tree-config';
 import { DEFAULT_INDENT, FILE_ROW_HEIGHT, FileRow } from './FileRow';
-import { createNewDir, createNewFile, removeItems, renameItem } from './mutate-actions';
+import { createNewDir, createNewFile, renameItem, trashItemsAndCleanup } from './mutate-actions';
 import { resolveDropTarget, type DropTargetEntry } from './drop-handlers';
 import {
   dropForeignFilesInto,
@@ -488,19 +488,13 @@ export function FolderTree({ root }: { root: string }) {
           // 走规范的 mutate-actions.removeItems(遍历全部项、收集所有失败、刷新所有
           // 成功项父目录),而非内联首失早退 —— 旧实现一旦某项 trash 失败就 return,
           // 静默跳过其余选中项(多选删除时后续项既不删也不报错)。removeItems 是
-          // 纯 fs+tree helper(已测,且本为唯一生产 trash 路径却从未被调用),editor
-          // tab 关闭(removePath)仍由本处对成功项补做。见第七 session R6 完整性批判。
-          const result = await removeItems(paths, { trash: true }, mutateDeps, treeApi);
-          // 只清理实际删掉的路径(result.removed),不遍历原始选择:多选 A 与 A/B 时 A/B 被折叠,
-          // 删 A 失败则 A/B 也没删,但它不在 failures 里,按「原始选择 − failures」会被误当成功。
-          for (const p of result.removed) {
-            // 文件删除 → 关闭对应 editor tab(目录则关其下所有 tab)。
-            useEditorStore.getState().removePath(p);
-          }
-          // 删除的源若在剪贴板里(cut/copy 后又删),剪除避免幻影 cut 灰显 + 失效 Paste。
-          if (result.removed.length > 0) {
-            useExplorerClipboardStore.getState().prune(result.removed);
-          }
+          // 纯 fs+tree helper(已测,且本为唯一生产 trash 路径却从未被调用)。见第七 session
+          // R6 完整性批判。editor tab 关闭与剪贴板 prune 只对 result.removed 做,在
+          // trashItemsAndCleanup 一处完成(已测)。
+          const result = await trashItemsAndCleanup(paths, mutateDeps, treeApi, {
+            removePath: (p) => useEditorStore.getState().removePath(p),
+            prune: (removed) => useExplorerClipboardStore.getState().prune(removed),
+          });
           if (!result.ok) {
             for (const f of result.failures) {
               console.warn('[explorer] trash failed', f.path, f.code, f.message);
