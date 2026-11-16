@@ -67,7 +67,8 @@ describe('topic51 Op4 · debug.store renderer shadow', () => {
     debugApi.events[0]!({
       type: 'breakpoints-changed',
       sessionId: 's1',
-      breakpoint: { file: '/repo/a.ts', line: 14, verified: true },
+      file: '/repo/a.ts',
+      breakpoints: [{ file: '/repo/a.ts', line: 14, verified: true }],
     });
 
     const session = useDebugStore.getState().sessions.get('s1');
@@ -85,20 +86,38 @@ describe('topic51 Op4 · debug.store renderer shadow', () => {
     expect(debugApi.subscribe).toHaveBeenCalledTimes(1);
   });
 
-  // DAP setBreakpoints 是「该 source 的完整集合」,main 每次只推本次新设的那个;renderer 必须增量合并,
-  // 否则同文件第二个断点会把第一个的红点抹掉。
-  it('breakpoints-changed 增量合并:同 file+line 替换,其它保留', () => {
+  // main 每次推该 source 的完整集合(adapter 校正后的行号):renderer 整组替换该 file 的记录、其它文件保留。
+  // 按 file+校正后行号增量合并时,同一逻辑断点第二次被校正到不同行会留下旧红点。
+  it('breakpoints-changed 按 source 整组替换:其它文件保留,重新校正的行不留旧红点', () => {
     startDebugStoreSync();
     const emit = debugApi.events[0]!;
-    emit({ type: 'breakpoints-changed', sessionId: 's1', breakpoint: { file: '/repo/a.ts', line: 3, verified: false } });
-    emit({ type: 'breakpoints-changed', sessionId: 's1', breakpoint: { file: '/repo/a.ts', line: 7, verified: true } });
-    emit({ type: 'breakpoints-changed', sessionId: 's1', breakpoint: { file: '/repo/b.ts', line: 3, verified: true } });
-    emit({ type: 'breakpoints-changed', sessionId: 's1', breakpoint: { file: '/repo/a.ts', line: 3, verified: true } });
+    emit({
+      type: 'breakpoints-changed',
+      sessionId: 's1',
+      file: '/repo/a.ts',
+      breakpoints: [{ file: '/repo/a.ts', line: 4, verified: true }],
+    });
+    emit({
+      type: 'breakpoints-changed',
+      sessionId: 's1',
+      file: '/repo/b.ts',
+      breakpoints: [{ file: '/repo/b.ts', line: 3, verified: true }],
+    });
+    // 同一逻辑断点(请求第 3 行)这次被校正到第 5 行,并新增第 7 行。
+    emit({
+      type: 'breakpoints-changed',
+      sessionId: 's1',
+      file: '/repo/a.ts',
+      breakpoints: [
+        { file: '/repo/a.ts', line: 5, verified: true },
+        { file: '/repo/a.ts', line: 7, verified: false },
+      ],
+    });
 
     expect(useDebugStore.getState().sessions.get('s1')?.breakpoints).toEqual([
-      { file: '/repo/a.ts', line: 3, verified: true },
-      { file: '/repo/a.ts', line: 7, verified: true },
       { file: '/repo/b.ts', line: 3, verified: true },
+      { file: '/repo/a.ts', line: 5, verified: true },
+      { file: '/repo/a.ts', line: 7, verified: false },
     ]);
   });
 

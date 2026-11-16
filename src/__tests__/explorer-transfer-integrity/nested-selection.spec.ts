@@ -83,8 +83,36 @@ describe('removeItems — 嵌套选择', () => {
     const r = await removeItems(['/r/A', '/r/A/B'], { trash: true }, { fs } as never, {
       invalidateChildrenIds: vi.fn(),
     });
-    expect(r).toEqual({ ok: true });
+    expect(r).toEqual({ ok: true, removed: ['/r/A'] });
     expect(trash.mock.calls).toEqual([['/r/A']]);
+  });
+
+  // 删 A 失败时,被折叠的 A/B 也没删掉:调用方若遍历原始选择、按「不在 failures 里 = 成功」判定,
+  // 会把 A/B 当成功 → 关其 editor tab + 剪除剪贴板。removed 只列实际删掉的路径,调用方据此清理。
+  it('trash [A, A/B, x] 且删 A 失败 → removed 不含 A 与被折叠的 A/B', async () => {
+    const trash = vi.fn(async (p: string): Promise<Result> =>
+      p === '/r/A' ? { ok: false, code: 'FS_DENIED', message: 'no perm' } : OK,
+    );
+    const fs = { trash, remove: vi.fn(), rename: vi.fn(), createFile: vi.fn(), createDir: vi.fn() };
+    const r = await removeItems(['/r/A', '/r/A/B', '/r/x'], { trash: true }, { fs } as never, {
+      invalidateChildrenIds: vi.fn(),
+    });
+    expect(r.ok).toBe(false);
+    expect(r.removed).toEqual(['/r/x']);
+    if (!r.ok) expect(r.failures.map((f) => f.path)).toEqual(['/r/A']);
+  });
+});
+
+describe('接线:onTrash 只对实际删除的路径做清理', () => {
+  it('editor tab 关闭 / 剪贴板 prune 遍历 result.removed,而非原始选择', () => {
+    const src = readFileSync(
+      join(__dirname, '..', '..', 'panels', 'Explorer', 'FolderTree.tsx'),
+      'utf-8',
+    );
+    const start = src.indexOf('onTrash:');
+    const body = src.slice(start, src.indexOf('onCut:', start));
+    expect(body).toMatch(/for \(const p of result\.removed\)/);
+    expect(body).not.toMatch(/for \(const p of paths\)/);
   });
 });
 

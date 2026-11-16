@@ -36,8 +36,9 @@
 - 默认 `opts.trash = true` → 调 `fs.trash(p)`;`trash: false` → 调 `fs.remove(p)`
 - 多路径循环调用,各自结果聚合到 `failures` 数组
 - 成功路径的父目录去重后批量 invalidate;失败路径的父不刷
-- 全成功 → `{ ok: true }`;有失败 → `{ ok: false, failures: [{path, code, message}] }`
-- paths 空数组 → 直接返回 `{ ok: true }`,不调任何 IPC,不刷
+- 全成功 → `{ ok: true, removed }`;有失败 → `{ ok: false, failures: [{path, code, message}], removed }`
+- `removed` 只列实际删掉的(最外层)路径;调用方的成功后清理(关 editor tab、剪贴板 prune)只基于它
+- paths 空数组 → 直接返回 `{ ok: true, removed: [] }`,不调任何 IPC,不刷
 
 ### createNewFile(parent, name, deps, tree) / createNewDir(parent, name, deps, tree)
 - 调 `fs.createFile(parent, name)` / `fs.createDir(parent, name)`

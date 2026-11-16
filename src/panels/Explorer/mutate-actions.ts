@@ -31,9 +31,12 @@ export interface RemoveFailure {
   code: string;
   message: string;
 }
+// removed:实际删掉的(最外层)路径。调用方的成功后清理(关 editor tab、剪贴板 prune)只能基于它:
+// 被 outermostPaths 折叠的后代不单独出现在 failures 里,按「原始选择 − failures」判成功会把失败祖先
+// 下的后代误当已删除。
 export type RemoveResult =
-  | { ok: true }
-  | { ok: false; failures: RemoveFailure[] };
+  | { ok: true; removed: string[] }
+  | { ok: false; failures: RemoveFailure[]; removed: string[] };
 
 // ────────────────────────────────────────────────────────────
 // rename
@@ -61,15 +64,17 @@ export async function removeItems(
   deps: MutateDeps,
   tree: TreeMutationApi,
 ): Promise<RemoveResult> {
-  if (paths.length === 0) return { ok: true };
+  if (paths.length === 0) return { ok: true, removed: [] };
 
   const useTrash = opts.trash ?? true;
   const failures = new Array<RemoveFailure>(paths.length);
   let failureCount = 0;
   const successParents = new Set<string>();
+  const removed: string[] = [];
 
   // 父目录与其子项同批(多选 A 与 A/B)→ 只删最外层:删 A 已连带 A/B,再删 A/B 必报
-  // FS_NOT_FOUND(同 batch-transfer 的嵌套选择族)。被剔的后代不计入 failures,调用方按成功处理。
+  // FS_NOT_FOUND(同 batch-transfer 的嵌套选择族)。被剔的后代不计入 failures,也不进 removed
+  //(其祖先删成功则随祖先清理,删失败则后代同样没删)。
   for (const p of outermostPaths(paths)) {
     // a11y(A137 同族):trash/remove 的 IPC reject(抛错而非返回 {ok:false})此前未捕获 →
     // removeItems 整体 reject;而调用点(Explorer onTrash)是 fire-and-forget async 不被
@@ -95,6 +100,7 @@ export async function removeItems(
       };
     } else {
       successParents.add(dirname(p));
+      removed.push(p);
     }
   }
 
@@ -102,9 +108,9 @@ export async function removeItems(
     tree.invalidateChildrenIds(parent);
   }
 
-  if (failureCount === 0) return { ok: true };
+  if (failureCount === 0) return { ok: true, removed };
   failures.length = failureCount;
-  return { ok: false, failures };
+  return { ok: false, failures, removed };
 }
 
 // ────────────────────────────────────────────────────────────

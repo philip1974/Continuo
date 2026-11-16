@@ -200,16 +200,12 @@ export const useDebugStore = create<DebugState>((set, get) => ({
     if (event.type === 'breakpoints-changed') {
       set((state) => {
         const current = getOrCreateSession(state.sessions, event.sessionId);
-        // main 每次只推本次新设的那一个断点:增量合并(同 file+line 替换),否则同文件第二个断点会把
-        // 第一个的红点抹掉。
-        const incoming = event.breakpoint;
-        const index = current.breakpoints.findIndex(
-          (bp) => bp.file === incoming.file && bp.line === incoming.line,
-        );
-        const breakpoints =
-          index >= 0
-            ? current.breakpoints.map((bp, i) => (i === index ? incoming : bp))
-            : [...current.breakpoints, incoming];
+        // main 推的是该 source 的完整集合(adapter 校正后的行号):整组替换该文件的记录、其它文件保留。
+        // 按 file+行号增量合并时,同一逻辑断点被重新校正到别的行会留下旧红点。文件分组与 main 一致(===)。
+        const breakpoints = [
+          ...current.breakpoints.filter((bp) => bp.file !== event.file),
+          ...event.breakpoints,
+        ];
         const nextSession: DebugSessionShadow = {
           ...current,
           breakpoints,

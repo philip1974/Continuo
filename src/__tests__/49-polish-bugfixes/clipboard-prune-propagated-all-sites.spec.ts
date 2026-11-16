@@ -31,9 +31,9 @@ describe('49 第八 session · clipboard prune 传播到所有源失效入口', 
     expect(calls.length).toBeGreaterThanOrEqual(3);
   });
 
-  it('rename 入口 prune([oldPath])、trash 入口 prune(removed)', () => {
+  it('rename 入口 prune([oldPath])、trash 入口 prune(result.removed)', () => {
     expect(SRC).toMatch(/prune\(\[oldPath\]\)/);
-    expect(SRC).toMatch(/prune\(removed\)/);
+    expect(SRC).toMatch(/prune\(result\.removed\)/);
   });
 
   it('共享实现:部分成功也回报已移走项(无 allOk 门控),在 finally 内', () => {

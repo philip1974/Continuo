@@ -41,6 +41,8 @@ class FakeDapClient implements DebugDapClientLike {
    * continued。
    */
   beforeResponse: ((command: string) => void | Promise<void>) | null = null;
+  /** setBreakpoints 响应里的行号校正(模拟 adapter 把断点挪到最近的可执行行)。 */
+  adjustBreakpointLine: (line: number) => number = (line) => line;
   private seq = 1;
   private startDebuggingHandler:
     | ((
@@ -165,7 +167,9 @@ class FakeDapClient implements DebugDapClientLike {
     if (command === 'setBreakpoints') {
       // 按请求逐个回显(DAP:响应的 breakpoints 与请求一一对应)。
       const requested = (args as { breakpoints?: Array<{ line: number }> }).breakpoints ?? [];
-      return { breakpoints: requested.map((bp) => ({ verified: true, line: bp.line })) };
+      return {
+        breakpoints: requested.map((bp) => ({ verified: true, line: this.adjustBreakpointLine(bp.line) })),
+      };
     }
     if (command === 'threads') {
       return { threads: [{ id: 1, name: 'main' }] };
@@ -828,7 +832,8 @@ describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
     expect(events[0]!.event).toMatchObject({
       type: 'breakpoints-changed',
       sessionId,
-      breakpoint: { file: '/fixture.ts', line: 14, verified: true },
+      file: '/fixture.ts',
+      breakpoints: [{ file: '/fixture.ts', line: 14, verified: true }],
     });
     expect(events[1]!.event).toMatchObject({
       type: 'stopped',
@@ -1015,6 +1020,81 @@ describe('DebugService fake adapter · 会话上限 / 程序起跑时机 / 按 s
     expect(requests[1]).toMatchObject({ source: { path: '/b.js' }, breakpoints: [{ line: 5 }] });
     expect(requests.at(-1)).toMatchObject({ source: { path: '/a.js' }, breakpoints: [{ line: 3 }] });
     expect(again).toMatchObject({ line: 3 });
+  });
+
+  // adapter 拒绝 / 超时:调用方拿到的是失败,该断点不得留在 runtime 集合里 —— 否则之后同文件再设断点
+  // (发完整集合)或 child 建立时重放,会悄悄下发调用方以为没设上的断点。
+  it('setBreakpoints 请求失败 → 回滚本次新增,后续完整集合 / child 重放不含它', async () => {
+    const { service, parent } = makeFakeService();
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      ctx,
+    );
+    await service.setBreakpoints(sessionId, { file: '/a.js', line: 3 });
+    parent.beforeResponse = (command) =>
+      command === 'setBreakpoints' ? Promise.reject(new Error('adapter rejected')) : undefined;
+    await expect(service.setBreakpoints(sessionId, { file: '/a.js', line: 7 })).rejects.toThrow(
+      'adapter rejected',
+    );
+    parent.beforeResponse = null;
+
+    await service.setBreakpoints(sessionId, { file: '/a.js', line: 9 });
+    expect(setBreakpointRequests(parent).at(-1)).toMatchObject({
+      source: { path: '/a.js' },
+      breakpoints: [{ line: 3 }, { line: 9 }],
+    });
+    await parent.triggerStartDebugging({ type: 'pwa-node' });
+    expect(setBreakpointRequests(parent.children[0]!)).toEqual([
+      expect.objectContaining({ source: { path: '/a.js' }, breakpoints: [{ line: 3 }, { line: 9 }] }),
+    ]);
+  });
+
+  it('setBreakpoints 替换已有同行断点失败 → 恢复旧记录(不删掉原断点)', async () => {
+    const { service, parent } = makeFakeService();
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      ctx,
+    );
+    await service.setBreakpoints(sessionId, { file: '/a.js', line: 3 });
+    parent.beforeResponse = (command) =>
+      command === 'setBreakpoints' ? Promise.reject(new Error('timeout')) : undefined;
+    await expect(
+      service.setBreakpoints(sessionId, { file: '/a.js', line: 3, column: 5 }),
+    ).rejects.toThrow('timeout');
+    parent.beforeResponse = null;
+
+    await service.setBreakpoints(sessionId, { file: '/a.js', line: 8 });
+    expect(setBreakpointRequests(parent).at(-1)).toMatchObject({
+      breakpoints: [{ line: 3 }, { line: 8 }],
+    });
+    expect(
+      (setBreakpointRequests(parent).at(-1)!.breakpoints[0] as { column?: number }).column,
+    ).toBeUndefined();
+  });
+
+  // 断点事件携带该 source 的完整集合(adapter 校正后的行),renderer 整组替换:同一逻辑断点第二次被校正到
+  // 不同行时不留旧红点。
+  it('breakpoints-changed 携带该 source 完整集合(校正后行号)', async () => {
+    const { service, parent } = makeFakeService();
+    const events: DebugViewEvent[] = [];
+    service.setEventSink({ emit: (_owner, event) => events.push(event) });
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      ctx,
+    );
+    await service.setBreakpoints(sessionId, { file: '/a.js', line: 3 });
+    parent.adjustBreakpointLine = (line) => (line === 3 ? 4 : line);
+    await service.setBreakpoints(sessionId, { file: '/a.js', line: 7 });
+
+    expect(events.at(-1)).toEqual({
+      type: 'breakpoints-changed',
+      sessionId,
+      file: '/a.js',
+      breakpoints: [
+        { file: '/a.js', line: 4, verified: true },
+        { file: '/a.js', line: 7, verified: true },
+      ],
+    });
   });
 
   it('child session 建立时重放全部 source 的完整断点集合', async () => {

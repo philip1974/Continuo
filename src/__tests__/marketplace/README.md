@@ -23,8 +23,13 @@ entryToGitUrl / entryToManifestUrl 把 entry.repo + branch 拼成可用 URL。**
 
 ### entryToManifestUrl(entry)
 
-- `https://raw.githubusercontent.com/${entry.repo}/${branch ?? 'main'}/manifest.json`
+- `https://raw.githubusercontent.com/${entry.repo}/${branch ?? 'HEAD'}/manifest.json`(缺 branch → `HEAD` = 远端默认分支,与安装 clone 默认分支一致)
 - 用于 Phase 3 拉远程 manifest 取 version
+
+### branch 校验(isValidMarketplaceEntry / main installFromGit 共用 `isValidGitBranch`)
+
+- 段级:非空、无前导/尾随 `/`、无 `//`、每段仅 `[A-Za-z0-9._-]`、不以 `-` 开头(argv 注入)
+- 另按 `git check-ref-format` 拒:任意位置 `..`、组件以 `.` 开头或以 `.lock` 结尾、整体以 `.` 结尾(否则 clone 必败)
 
 ### fetchMarketplaceIndex(forceRefresh = false)
 

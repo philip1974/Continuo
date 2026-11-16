@@ -115,7 +115,7 @@ describe('removeItems', () => {
       { fs },
       tree,
     );
-    expect(r).toEqual({ ok: true });
+    expect(r).toEqual({ ok: true, removed: ['/x/a', '/x/b', '/y/c'] });
     // /x 出现两次但只 invalidate 一次
     const calls = (tree.invalidateChildrenIds as ReturnType<typeof vi.fn>).mock.calls.map(
       (c) => c[0],
@@ -138,6 +138,7 @@ describe('removeItems', () => {
         { path: '/b/y', code: 'FS_DENIED', message: 'no perm' },
       ]);
     }
+    expect(r.removed).toEqual(['/a/x', '/c/z']);
     const invalidatedParents = (
       tree.invalidateChildrenIds as ReturnType<typeof vi.fn>
     ).mock.calls.map((c) => c[0]);
@@ -149,7 +150,7 @@ describe('removeItems', () => {
     const fs = makeFs();
     const tree = makeTree();
     const r = await removeItems([], {}, { fs }, tree);
-    expect(r).toEqual({ ok: true });
+    expect(r).toEqual({ ok: true, removed: [] });
     expect(fs.trash).not.toHaveBeenCalled();
     expect(fs.remove).not.toHaveBeenCalled();
     expect(tree.invalidateChildrenIds).not.toHaveBeenCalled();

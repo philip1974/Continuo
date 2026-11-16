@@ -167,3 +167,34 @@ describe('uninstall · 回收保留的 plugin-fs token', () => {
     expect(mgr.listAll().find((x) => x.id === 'p')).toBeUndefined();
   });
 });
+
+// 再启用时重试回收残留 token 仍失败:此前照常注册新 token 并覆盖 entry.pluginFsToken → 旧 token
+// 在主进程仍 active、path scope 未撤销,且本地永久失去引用。修:中止本次激活(不加载插件、不注册
+// 新 token、不进 enabled、报 PLUGIN_FS_TOKEN_REVOKE_FAILED),残留 token 保留,下次启用再重试。
+describe('enable · 残留 token 重试回收仍失败 → 中止激活', () => {
+  it('不注册新 token、状态 failed + 错误码,残留 tok1 保留;之后回收成功即可正常启用', async () => {
+    const mgr = makeMgr();
+    await mgr.init(); // 注册 tok1
+    coApiMocks.pluginFsRaw._unregisterPlugin.mockRejectedValueOnce(new Error('ipc down'));
+    await mgr.disable('p'); // tok1 回收失败 → 保留
+
+    coApiMocks.pluginFsRaw._registerPlugin.mockClear();
+    coApiMocks.pluginFsRaw._unregisterPlugin.mockReset();
+    coApiMocks.pluginFsRaw._unregisterPlugin.mockRejectedValue(new Error('ipc down'));
+    await mgr.enable('p');
+
+    expect(coApiMocks.pluginFsRaw._registerPlugin).not.toHaveBeenCalled();
+    const row = mgr.listAll().find((x) => x.id === 'p');
+    expect(row?.status).toBe('failed');
+    expect(row?.error?.code).toBe('PLUGIN_FS_TOKEN_REVOKE_FAILED');
+
+    // 恢复后重试:先用保留的 tok1 回收,再注册新 token、正常启用。
+    coApiMocks.pluginFsRaw._unregisterPlugin.mockReset();
+    coApiMocks.pluginFsRaw._unregisterPlugin.mockResolvedValue(undefined);
+    coApiMocks.pluginFsRaw._registerPlugin.mockResolvedValueOnce({ token: 'tok2', generation: 2 });
+    await mgr.enable('p');
+    expect(coApiMocks.pluginFsRaw._unregisterPlugin).toHaveBeenCalledWith('tok1');
+    expect(coApiMocks.pluginFsRaw._registerPlugin).toHaveBeenCalledWith('p');
+    expect(mgr.listAll().find((x) => x.id === 'p')?.status).toBe('enabled');
+  });
+});

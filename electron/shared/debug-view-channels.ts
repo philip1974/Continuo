@@ -44,7 +44,9 @@ export type DebugViewEvent =
   | {
       readonly type: 'breakpoints-changed';
       readonly sessionId: string;
-      readonly breakpoint: DebugBreakpoint;
+      /** 该 source 的完整断点集合(adapter 校正后的行号),renderer 用它整组替换 file 的记录。 */
+      readonly file: string;
+      readonly breakpoints: readonly DebugBreakpoint[];
     }
   | {
       readonly type: 'stopped';
