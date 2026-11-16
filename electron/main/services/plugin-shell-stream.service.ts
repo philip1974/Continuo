@@ -1,5 +1,4 @@
-import { spawn, type ChildProcessByStdio } from 'node:child_process';
-import type { Readable } from 'node:stream';
+import { spawn } from 'node:child_process';
 import type { IpcMain } from 'electron';
 import { PLUGIN_SHELL_STREAM_CHANNELS } from '../../shared/plugin-shell-stream-channels';
 import { assertTrustedFrame } from '../safe-handle';
@@ -9,7 +8,7 @@ import { ERROR_CODES } from '../../shared/error-codes';
 // 畸形插件可经 app.shell.execStream() 传巨量 args/超长 cwd/cmd → IPC structured clone + 主进程内存/CPU
 // 放大,或触发 spawn 的 E2BIG/路径异常。与 shell.exec 对齐(E46:shared 单一来源),spawn 前 fail-closed。
 import { SHELL_MAX_TIMEOUT_MS, shellCommandShapeError } from '../../shared/shell-limits';
-import { killWithGrace } from '../lib/kill-with-grace';
+import { killWithGrace, processTreeKillable, TREE_KILL_DETACHED } from '../lib/kill-with-grace';
 import { makeWcGoneHook } from '../lib/wc-gone-hook';
 import { codedError } from '../../shared/error-message';
 
@@ -25,8 +24,12 @@ const STREAM_ID_MAX = 256;
 const MAX_ACTIVE_STREAMS_GLOBAL = 128; // 全局并发流上限(远超任何正常插件并发)
 const MAX_ACTIVE_STREAMS_PER_SENDER = 32; // 单 webContents 并发流上限
 
+// 终止进程树后仍等不到 close(后代逃出进程组仍持有管道)时,最多再等这么久即强制 finalize。
+const FORCE_FINALIZE_MS = 3000;
+
 interface ActiveStream {
-  child: ChildProcessByStdio<null, Readable, Readable>;
+  /** 终止整棵进程树(SIGTERM → 1s → SIGKILL)+ 超时未 close 强制 finalize。 */
+  terminate: () => void;
   timeoutTimer: NodeJS.Timeout | null;
   senderId: number;
 }
@@ -34,12 +37,12 @@ interface ActiveStream {
 export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
   const active = new Map<string, ActiveStream>();
 
-  // 单个 stream 的强制清理:清 timer + 从 active 摘除 + SIGTERM,1s 后 SIGKILL 兜底
+  // 单个 stream 的强制清理:清 timer + 从 active 摘除 + 终止进程树
   // (子进程吞掉 SIGTERM 时不至于挂到 timeout)。killStreamsForSender 与 ABORT 共用。
   const forceKillStream = (streamId: string, handle: ActiveStream): void => {
     if (handle.timeoutTimer) clearTimeout(handle.timeoutTimer);
     active.delete(streamId);
-    killWithGrace(handle.child);
+    handle.terminate();
   };
 
   // 窗口/插件 webContents 销毁时,杀掉它名下所有未结束的 stream 子进程,
@@ -119,6 +122,8 @@ export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
       const child = spawn(cmd, args, {
         cwd: opts?.cwd,
         stdio: ['ignore', 'pipe', 'pipe'],
+        // 新进程组(POSIX),终止时整组发信号,后台后代不成孤儿(见 processTreeKillable)。
+        detached: TREE_KILL_DETACHED,
       });
       const senderWc = event.sender;
       const senderId = senderWc.id;
@@ -175,13 +180,26 @@ export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
         finalize(-1, null);
       });
 
+      // 终止整棵进程树;若仍迟迟不 close(后代逃出进程组仍持管道),销毁 stdio 并强制 finalize,
+      // 不让 done / active 槽位无限挂住。
+      const terminate = (): void => {
+        if (settled) return;
+        killWithGrace(processTreeKillable(child));
+        const forceTimer = setTimeout(() => {
+          child.stdout.destroy();
+          child.stderr.destroy();
+          finalize(child.exitCode, child.signalCode);
+        }, FORCE_FINALIZE_MS);
+        forceTimer.unref?.();
+      };
+
       const timeoutTimer = setTimeout(() => {
         if (settled) return;
-        killWithGrace(child);
+        terminate();
       }, timeoutMs);
       const maybeUnref = timeoutTimer as { unref?: () => void };
       if (typeof maybeUnref.unref === 'function') maybeUnref.unref();
-      active.set(streamId, { child, timeoutTimer, senderId });
+      active.set(streamId, { terminate, timeoutTimer, senderId });
     },
   );
 

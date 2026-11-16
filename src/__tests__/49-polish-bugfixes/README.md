@@ -1114,3 +1114,11 @@ helper + 必挂 browser-window-created),把「单一来源」固化进测试防�
   'en' → main 侧文案与 renderer 分裂。
 - 修复:另存 `unknownStateFallback` 仅供 getCurrentLocale 兜底;saveSettings 的 no-op 比较仍只认
   cached(已知已存状态),未知态不会让同值保存被跳过。
+
+### P2-BO shell 终止杀整棵进程树 — `shell-process-tree-kill.spec.ts`
+- 流式 shell 的 ABORT / 超时、一次性 execShell 的超时:后台后代(`sh -c 'sleep 600 & wait'`)随之被杀(ESRCH),
+  exit / Promise 及时结算。
+- 后代自建进程组逃出整组信号仍持 stdout/stderr 管道 → 终止后最多再等 3s,销毁 stdio 强制结算,不无限挂住。
+- 根因: 旧实现只杀直接子进程,孤儿后代持管道 → close 不来,done 与 active 槽位挂住。
+- 修复:POSIX spawn `detached: true` 建新进程组,终止对 `-pid` 发信号(沿用 killWithGrace 的 SIGTERM → 宽限 →
+  SIGKILL);Windows 走 `taskkill /pid <pid> /T /F`(`lib/kill-with-grace.ts` 的 `processTreeKillable`)。

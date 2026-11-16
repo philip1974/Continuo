@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process';
 import { shell } from 'electron';
 import { errorMessage } from '../../shared/error-message';
 import { SHELL_MAX_TIMEOUT_MS } from '../../shared/shell-limits';
+import { processTreeKillable, TREE_KILL_DETACHED } from '../lib/kill-with-grace';
 import type {
   IpcShellExecInput,
   IpcShellExecResult,
@@ -23,6 +24,8 @@ const MAX_TIMEOUT_MS = SHELL_MAX_TIMEOUT_MS; // 30min,与 plugin-shell-stream �
 const DEFAULT_MAX_OUTPUT_BYTES = 10 * 1024 * 1024; // 10MB
 const MAX_OUTPUT_BYTES_CAP = 100 * 1024 * 1024; // 100MB 硬上限,防超大值钉住内存
 const SIGKILL_GRACE_MS = 500;
+// 超时终止进程树后仍等不到 close 时,最多再等这么久即强制结算。
+const FORCE_SETTLE_MS = 3000;
 
 // 边界(E248,E10/E122 clamp 非有限值族):helper 自身完整归一化,不依赖 IPC zod 前门。execShell 与这两个
 // helper 都是导出 service 入口(单测/SDK 集成/未来内部调用直接用,绕过 schema)。旧实现仅 Math.min(input,
@@ -71,6 +74,8 @@ export function execShell(input: IpcShellExecInput): Promise<IpcShellExecResult>
         cwd: input.cwd,
         env,
         stdio: ['pipe', 'pipe', 'pipe'],
+        // 新进程组(POSIX),超时整组终止,后台后代不成孤儿持管道(见 processTreeKillable)。
+        detached: TREE_KILL_DETACHED,
       });
     } catch (err) {
       // spawn 同步抛(cmd 不可执行等)
@@ -147,26 +152,41 @@ export function execShell(input: IpcShellExecInput): Promise<IpcShellExecResult>
     // 且让 event loop 多活一截。fire 时 `!exited` 为假只是 no-op,但资源未闭环。
     // unref 兜底:即使漏清也不阻止进程退出。见第十四轮 P2-AP。
     let killTimer: NodeJS.Timeout | null = null;
+    let forceTimer: NodeJS.Timeout | null = null;
     const clearTimers = (): void => {
       clearTimeout(timer);
       if (killTimer) {
         clearTimeout(killTimer);
         killTimer = null;
       }
+      if (forceTimer) {
+        clearTimeout(forceTimer);
+        forceTimer = null;
+      }
     };
+    // 超时终止整棵进程树(只杀直接子进程时后台后代持管道 → close 不来 → Promise 挂住)。
+    const tree = processTreeKillable(child);
     const timer = setTimeout(() => {
       timedOut = true;
       try {
-        child.kill('SIGTERM');
+        tree.kill('SIGTERM');
       } catch { /* */ }
       // grace period 后还没退 → SIGKILL
       killTimer = setTimeout(() => {
         killTimer = null;
         try {
-          if (!exited) child.kill('SIGKILL');
+          if (!exited) tree.kill('SIGKILL');
         } catch { /* */ }
       }, SIGKILL_GRACE_MS);
       killTimer.unref?.();
+      // 仍等不到 close(后代逃出进程组仍持管道)→ 销毁 stdio 强制结算,不无限等待。
+      forceTimer = setTimeout(() => {
+        forceTimer = null;
+        child.stdout?.destroy();
+        child.stderr?.destroy();
+        settle(child.exitCode, child.signalCode);
+      }, FORCE_SETTLE_MS);
+      forceTimer.unref?.();
     }, timeoutMs);
 
     child.on('error', (err) => {
@@ -182,7 +202,7 @@ export function execShell(input: IpcShellExecInput): Promise<IpcShellExecResult>
       });
     });
 
-    child.on('close', (code, signal) => {
+    function settle(code: number | null, signal: NodeJS.Signals | null): void {
       exited = true;
       clearTimers();
       resolve({
@@ -193,7 +213,8 @@ export function execShell(input: IpcShellExecInput): Promise<IpcShellExecResult>
         timedOut,
         truncated,
       });
-    });
+    }
+    child.on('close', settle);
   });
 }
 

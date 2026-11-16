@@ -529,6 +529,7 @@ export interface McpHost {
   revokeWindowTokens(windowId: number): void;
   resolveWindowId(token: string): number | null;
   verifyAndResolveCtx(authHeader: string | undefined): McpCallCtx | null;
+  /** 名字已存在 → 抛错(不覆盖)。 */
   registerTool(tool: AnyMcpTool): void;
   /** registerTool 反操作。unknown name 静默 noop. */
   removeTool(name: string): void;
@@ -927,6 +928,10 @@ export async function createMcpHost(
     tools,
     serverInfo,
     registerTool(tool: AnyMcpTool): void {
+      // 安全(防御纵深):已存在的名字一律拒绝,不静默覆盖(内置 tool 被覆盖即被截获)。
+      if (tools.has(tool.name)) {
+        throw new Error(`mcp tool name "${tool.name}" already registered`);
+      }
       tools.set(tool.name, tool);
     },
     removeTool(name: string): void {

@@ -346,7 +346,9 @@ export function createPluginMcpBridge(
 
   return {
     handleRegister(wcId, payload) {
-      if (entries.has(payload.name)) {
+      // 安全:除桥自身 entries 外,还须查宿主现有 tool(含 terminal.* / debug.* 等内置)。否则插件同名注册
+      // 会覆盖内置 tool 截获外部 agent 调用,注销时 removeTool 又把该名字删掉 → 内置永久 NO_SUCH_TOOL。
+      if (entries.has(payload.name) || host.tools.has(payload.name)) {
         throw codedError(PLUGIN_MCP_ERROR_CODES.TOOL_NAME_TAKEN, `plugin mcp tool name "${payload.name}" already taken`);
       }
       // 边界(E79):全局 + per-wc 数量上限,超限拒注册(防海量注册撑爆 main + 广播放大)。

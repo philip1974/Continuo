@@ -72,6 +72,9 @@ export function createPluginMcpBridge(deps: CreatePluginMcpBridgeDeps): PluginMc
 - payload.name 在内部表中**已存在**(任何 wc owner)→ 抛 `PluginMcpError`
   with code `TOOL_NAME_TAKEN`,**不**调 host.registerTool 第二次
 - 错误向上传给 IPC 回 renderer(由实装决定怎么发回 — 本 spec 只断"抛")
+- 与宿主 `host.tools` 已有 tool(含 terminal.* / debug.* 等内置)重名同样抛 `TOOL_NAME_TAKEN`:不覆盖
+  内置 tool,随后的注销 / wc 销毁也不会删掉它(否则核心工具被插件截获或永久 NO_SUCH_TOOL)
+- 防御纵深:`McpHost.registerTool` 本身对已存在的名字抛错,不静默覆盖
 - 内部表不变,不影响原 owner
 
 ### handleUnregister · 正常路径
