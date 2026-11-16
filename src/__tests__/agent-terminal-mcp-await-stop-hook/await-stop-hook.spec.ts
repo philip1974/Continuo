@@ -569,8 +569,9 @@ describe('terminal.await_stop_hook', () => {
       status: 'timeout',
       cli_session_id: null,
     });
-    // 隔离文件最终被 unlink 删除(标 processed,不重试)。
-    await expect(readFile(oversizePath, 'utf8')).rejects.toThrow();
+    // 隔离文件最终被 unlink 删除(标 processed,不重试)。unlink 异步完成,全量并发负载下可能晚于上面的超时 →
+    // 轮询等它落地,而非单次读取。
+    await vi.waitFor(() => expect(readFile(oversizePath, 'utf8')).rejects.toThrow(), { timeout: 5_000 });
   });
 
   // 边界(E150,E26/E83 数量上限族):buffered 数组按"条数"上限(maxEntries=500)钳制,但每条可
