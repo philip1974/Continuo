@@ -17,7 +17,7 @@ const h = vi.hoisted(() => ({
           windowId: number;
           save?: boolean;
           discard?: boolean;
-          untitled?: number;
+          untitledIds?: string[];
           requestId?: number;
         }) => Promise<void>)
       | null,
@@ -58,7 +58,7 @@ vi.mock('@/lib/co-api', () => ({
           windowId: number;
           save?: boolean;
           discard?: boolean;
-          untitled?: number;
+          untitledIds?: string[];
           requestId?: number;
         }) => Promise<void>,
       ) => {
@@ -85,7 +85,7 @@ vi.mock('@/panels/Editor/autosave-flush-registry', () => ({
 
 import { DockShell } from '@/shell/dock/DockShell';
 import { createTab, useEditorStore } from '@/stores/editor.store';
-import { setAutoSaveFailed } from '@/panels/Editor/autosave-failures';
+import { claimAutoSave, releaseAutoSave, setAutoSaveFailed } from '@/panels/Editor/autosave-failures';
 import { flushPendingAutoSave } from '@/panels/Editor/autosave-flush-registry';
 import { flushExplorerPersistence } from '@/lib/persist/explorer-persist';
 import { t } from '@/i18n';
@@ -102,6 +102,11 @@ beforeEach(() => {
   h.flushCb.current = null;
   useEditorStore.setState({ tabs: [], activeTabId: null });
 });
+
+/** 期望的脏态上报 / remaining(计数由 id 列表推出)。 */
+function ds(ids: string[], untitledIds: string[] = []) {
+  return { dirty: ids.length, untitled: untitledIds.length, ids, untitledIds };
+}
 
 function openDirty(path: string): void {
   act(() => {
@@ -122,28 +127,50 @@ describe('DockShell 向 main 上报关窗会丢的脏 tab 计数', () => {
 
     openDirty('/w/a.ts');
     await vi.waitFor(() =>
-      expect(h.reportDirtyState).toHaveBeenLastCalledWith({ dirty: 1, untitled: 0 }),
+      expect(h.reportDirtyState).toHaveBeenLastCalledWith(ds(['/w/a.ts'])),
     );
 
     act(() => useEditorStore.getState().markSaved('/w/a.ts'));
     await vi.waitFor(() =>
-      expect(h.reportDirtyState).toHaveBeenLastCalledWith({ dirty: 0, untitled: 0 }),
+      expect(h.reportDirtyState).toHaveBeenLastCalledWith(ds([])),
     );
   });
 
-  it('脏 .md 默认不计;其 autosave 失败 → 重新上报计入;恢复成功 → 再排除', async () => {
+  // 只有活动 tab(持有 autosave scheduler)的脏 .md 豁免;失败 → 计入;恢复 → 再豁免。
+  it('活动 tab 的脏 .md 不计;其 autosave 失败 → 重新上报计入;恢复成功 → 再排除', async () => {
+    const owner = {};
+    act(() => claimAutoSave('/w/a.md', owner));
     await mountShell();
     openDirty('/w/a.md');
     expect(h.reportDirtyState).not.toHaveBeenCalled();
 
-    act(() => setAutoSaveFailed('/w/a.md', true));
+    act(() => setAutoSaveFailed(owner, true));
     await vi.waitFor(() =>
-      expect(h.reportDirtyState).toHaveBeenLastCalledWith({ dirty: 1, untitled: 0 }),
+      expect(h.reportDirtyState).toHaveBeenLastCalledWith(ds(['/w/a.md'])),
     );
 
-    act(() => setAutoSaveFailed('/w/a.md', false));
+    act(() => setAutoSaveFailed(owner, false));
+    await vi.waitFor(() => expect(h.reportDirtyState).toHaveBeenLastCalledWith(ds([])));
+    act(() => releaseAutoSave(owner));
+  });
+
+  // 复审:非活动 tab 切走时已 flush,仍脏即失败或在途,关窗 flush 不会重试 → 计入(含重命名后的非活动 tab)。
+  it('非活动 tab 的脏 .md 计入;持有者切换时重新上报', async () => {
+    const owner = {};
+    act(() => claimAutoSave('/w/a.md', owner));
+    await mountShell();
+    openDirty('/w/b.md');
+    openDirty('/w/a.md');
     await vi.waitFor(() =>
-      expect(h.reportDirtyState).toHaveBeenLastCalledWith({ dirty: 0, untitled: 0 }),
+      expect(h.reportDirtyState).toHaveBeenLastCalledWith(ds(['/w/b.md'])),
+    );
+    act(() => useEditorStore.getState().renamePath('/w/b.md', '/w/c.md'));
+    await vi.waitFor(() =>
+      expect(h.reportDirtyState).toHaveBeenLastCalledWith(ds(['/w/c.md'])),
+    );
+    act(() => releaseAutoSave(owner));
+    await vi.waitFor(() =>
+      expect(h.reportDirtyState).toHaveBeenLastCalledWith(ds(['/w/c.md', '/w/a.md'])),
     );
   });
 });
@@ -174,7 +201,7 @@ describe('flush 握手的「保存」分支', () => {
     expect(h.notifyError).toHaveBeenCalledTimes(1);
     expect(h.sendFlushAck).toHaveBeenCalledWith(1, {
       saveFailed: true,
-      remaining: { dirty: 1, untitled: 0 },
+      remaining: ds(['/w/a.ts']),
     });
   });
 
@@ -229,7 +256,7 @@ describe('flush 握手的「保存」分支', () => {
     expect(h.notifyError).toHaveBeenCalledTimes(1);
     expect(h.sendFlushAck).toHaveBeenCalledWith(1, {
       saveFailed: true,
-      remaining: { dirty: 1, untitled: 0 },
+      remaining: ds(['/w/a.ts']),
     });
   });
 
@@ -247,7 +274,7 @@ describe('flush 握手的「保存」分支', () => {
     expect(text).toContain(t('dialog.unsaved_close.disk_changed_note', { count: 1 }));
     expect(h.sendFlushAck).toHaveBeenCalledWith(1, {
       saveFailed: true,
-      remaining: { dirty: 1, untitled: 0 },
+      remaining: ds(['/w/a.ts']),
     });
   });
 });
@@ -260,15 +287,13 @@ describe('flush 握手的最终脏检查', () => {
     openDirty('/w/a.md');
     // 防抖内:计数排除 .md,main 无脏记账、不弹框,发来的是不带 save / discard 的 flush。
     // flush 时 autosave 写盘失败(ENOSPC / 磁盘冲突):tab 保持 dirty。
-    vi.mocked(flushPendingAutoSave).mockImplementationOnce(async () => {
-      setAutoSaveFailed('/w/a.md', true);
-    });
+    vi.mocked(flushPendingAutoSave).mockImplementationOnce(async () => {});
 
     await act(async () => {
       await h.flushCb.current!({ windowId: 1, requestId: 9 });
     });
     expect(h.sendFlushAck).toHaveBeenLastCalledWith(1, {
-      remaining: { dirty: 1, untitled: 0 },
+      remaining: ds(['/w/a.md']),
       requestId: 9,
     });
   });
@@ -286,7 +311,7 @@ describe('flush 握手的最终脏检查', () => {
     expect(h.writeFile).toHaveBeenCalledWith('/w/a.ts', 'new');
     expect(h.sendFlushAck).toHaveBeenLastCalledWith(1, {
       saveFailed: false,
-      remaining: { dirty: 1, untitled: 0 },
+      remaining: ds(['/w/a.ts']),
       requestId: 10,
     });
   });
@@ -299,7 +324,7 @@ describe('flush 握手的最终脏检查', () => {
       await h.flushCb.current!({ windowId: 1, requestId: 11 });
     });
     expect(h.sendFlushAck).toHaveBeenLastCalledWith(1, {
-      remaining: { dirty: 1, untitled: 0 },
+      remaining: ds(['/w/b.ts']),
       requestId: 11,
     });
   });
@@ -318,32 +343,34 @@ describe('flush 握手的最终脏检查', () => {
   });
 });
 
-// 复审:「保存」只放过确认框告知的 untitled 数(main 随请求带 untitled);确认后新建的 untitled 超出 → remaining。
+// 复审:「保存」只放过确认框告知的 untitled id(main 随请求带 untitledIds);此前按数量放过,确认后新建 /
+// 同数量替换的 untitled 草稿被静默丢弃。
 describe('flush「保存」分支的 untitled 放行范围', () => {
-  function openDirtyUntitled(): void {
+  function openDirtyUntitled(): string {
+    const t = createTab(null, '');
     act(() => {
-      const t = createTab(null, '');
       useEditorStore.getState().openTab(t);
       useEditorStore.getState().updateContent(t.id, 'draft');
     });
+    return t.id;
   }
 
-  it('untitled 不超过请求里的数 → 不带 remaining;超出 → 回执 remaining', async () => {
+  it('untitled 都在告知的 id 里 → 不带 remaining;有不在其中的(同数量替换)→ 回执 remaining', async () => {
     await mountShell();
-    openDirtyUntitled();
-    openDirtyUntitled();
+    const u1 = openDirtyUntitled();
+    const u2 = openDirtyUntitled();
 
     await act(async () => {
-      await h.flushCb.current!({ windowId: 1, save: true, untitled: 2, requestId: 13 });
+      await h.flushCb.current!({ windowId: 1, save: true, untitledIds: [u1, u2], requestId: 13 });
     });
     expect(h.sendFlushAck).toHaveBeenLastCalledWith(1, { saveFailed: false, requestId: 13 });
 
     await act(async () => {
-      await h.flushCb.current!({ windowId: 1, save: true, untitled: 1, requestId: 14 });
+      await h.flushCb.current!({ windowId: 1, save: true, untitledIds: [u1, 'untitled-gone'], requestId: 14 });
     });
     expect(h.sendFlushAck).toHaveBeenLastCalledWith(1, {
       saveFailed: false,
-      remaining: { dirty: 2, untitled: 2 },
+      remaining: ds([u1, u2], [u1, u2]),
       requestId: 14,
     });
   });
@@ -356,7 +383,7 @@ describe('flush 回执前同步上报当前脏态', () => {
     await mountShell();
     openDirty('/w/a.ts');
     await vi.waitFor(() =>
-      expect(h.reportDirtyState).toHaveBeenLastCalledWith({ dirty: 1, untitled: 0 }),
+      expect(h.reportDirtyState).toHaveBeenLastCalledWith(ds(['/w/a.ts'])),
     );
     h.reportDirtyState.mockClear();
     vi.mocked(flushExplorerPersistence).mockImplementationOnce(async () => {
@@ -366,7 +393,7 @@ describe('flush 回执前同步上报当前脏态', () => {
     await act(async () => {
       await h.flushCb.current!({ windowId: 1, requestId: 15 });
     });
-    expect(h.reportDirtyState).toHaveBeenCalledWith({ dirty: 0, untitled: 0 });
+    expect(h.reportDirtyState).toHaveBeenCalledWith(ds([]));
     expect(h.reportDirtyState.mock.invocationCallOrder[0]!).toBeLessThan(
       h.sendFlushAck.mock.invocationCallOrder[0]!,
     );

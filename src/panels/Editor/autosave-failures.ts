@@ -1,87 +1,53 @@
-// 关窗脏文件确认(dirty-close-confirm)复审:按 tab 记录「最近一次 autosave 失败」。
+// 关窗脏文件确认(dirty-close-confirm):活动 tab 的 autosave 能否由关窗 flush 落盘。
 //
-// 关窗计数默认排除脏 .md(关窗 flush 经 flushPendingAutoSave 落盘)。但 autosave 失败
-// (ENOSPC/EACCES/EDITOR_DISK_CHANGED)后 tab 仍脏、scheduler 已无 pending timer,flush 不会重试
-// → 排除它就会无确认丢失。useAutoSave 每次保存结束写入此表,countDirtyForClose 据此把失败态的
-// 脏 .md 计入;DockShell 订阅版本号,失败态变化时重新上报计数。
-
+// 关窗计数只豁免「活动 tab(持有 autosave scheduler)」的脏 .md:其 scheduler 有 pending / 在途保存,
+// 关窗 flush 经 flushPendingAutoSave 落盘。非活动 tab 切走时 useAutoSave 已 flush,仍脏即失败或在途,
+// 关窗 flush 不会重试 → 一律计入(复审:此前按 tab 记失败记录,重命名非活动失败 tab 后记录被清 → 无确认丢失)。
+// 活动 tab 的 autosave 失败(ENOSPC/EACCES/EDITOR_DISK_CHANGED)后无 pending timer,flush 不会重试 → 同样计入。
 //
-// 复审(f):记录按 tab id(= 文件路径)存,tab 从 editor store 消失(关闭 / 删除 / 重命名)即清除 —— 否则
-// 重开同路径继承旧失败态、集合只增不减。旧 tab 的迟到 autosave 结果不得写入同 id 新实例:每个 tab 实例出现时
-// 分配代际、消失时删除,保存开始时取本 tab 代际、结束时带回,不一致则丢弃(复审:此前用全局 epoch,关闭 /
-// 重命名任意兄弟 tab 都会丢弃本 tab 的在途结果)。
-// 复审:tab 变干净(显式保存 / 冲突覆盖等任何成功落盘)即清除其记录,且干净 tab 的迟到失败不记录 —— 否则
-// 下次编辑就被当作「autosave 失败」误触发关窗确认。
+// 状态绑定 scheduler 实例(useAutoSave 按 tabId 建):切 tab / 重命名 / 关闭重开都会换实例,新实例从「未失败」
+// 开始,且 tab 仍脏时立即重新 schedule(关窗 flush 会重试);旧实例的迟到结果因实例不匹配被丢弃。
+// 再次 schedule(继续编辑 / 显式保存后再编辑)即清除失败态 —— 有 pending,flush 会落盘。
+// DockShell 订阅版本号,状态变化时重新上报。
 
-import { useEditorStore, type EditorTab } from '@/stores/editor.store';
-
-const failedTabIds = new Set<string>();
+let owner: { readonly tabId: string; readonly token: object } | null = null;
+let failed = false;
 const listeners = new Set<() => void>();
 let version = 0;
-// 打开中的 tab id → 实例代际(全局单调递增分配,未打开 = 0)。
-const tabGens = new Map<string, number>();
-let nextGen = 1;
 
 function notify(): void {
   version += 1;
   for (const cb of listeners) cb();
 }
 
-function isCleanTab(tabId: string): boolean {
-  return useEditorStore.getState().tabs.some((t) => t.id === tabId && !t.dirty);
-}
-
-/**
- * 记录本 tab 最近一次 autosave 结果。epoch:保存开始时 getAutoSaveRecordEpoch(tabId) 的值;其间本 tab 消失
- * (可能关闭后重开)则丢弃这次结果。tab 已干净时不记失败。
- */
-export function setAutoSaveFailed(tabId: string, failed: boolean, epoch?: number): void {
-  if (epoch !== undefined && epoch !== (tabGens.get(tabId) ?? 0)) return;
-  if (failedTabIds.has(tabId) === failed) return;
-  if (failed && isCleanTab(tabId)) return;
-  if (failed) failedTabIds.add(tabId);
-  else failedTabIds.delete(tabId);
+/** useAutoSave:token(scheduler 实例)成为活动 tab 的 autosave 持有者。 */
+export function claimAutoSave(tabId: string, token: object): void {
+  owner = { tabId, token };
+  failed = false;
   notify();
 }
 
-export function getAutoSaveRecordEpoch(tabId: string): number {
-  return tabGens.get(tabId) ?? 0;
+/** useAutoSave:token 不再持有(切走 / 卸载)。非当前持有者 → no-op。 */
+export function releaseAutoSave(token: object): void {
+  if (owner?.token !== token) return;
+  owner = null;
+  failed = false;
+  notify();
 }
 
-function syncTabGens(tabs: readonly EditorTab[]): boolean {
-  const ids = new Set(tabs.map((t) => t.id));
-  for (const id of [...tabGens.keys()]) if (!ids.has(id)) tabGens.delete(id);
-  for (const id of ids) if (!tabGens.has(id)) tabGens.set(id, nextGen++);
-  let changed = false;
-  for (const id of failedTabIds) {
-    if (!ids.has(id)) {
-      failedTabIds.delete(id);
-      changed = true;
-    }
-  }
-  return changed;
+/** 记录持有者最近一次 autosave 结果(或 schedule 后清除失败态)。非当前持有者(旧实例迟到结果)→ 丢弃。 */
+export function setAutoSaveFailed(token: object, value: boolean): void {
+  if (owner?.token !== token || failed === value) return;
+  failed = value;
+  notify();
 }
 
-syncTabGens(useEditorStore.getState().tabs);
-useEditorStore.subscribe((state, prev) => {
-  if (state.tabs === prev.tabs) return;
-  // 纯内容更新(按键):chromeVersion 不变且 tab 数不变 → 无增删改名、无 dirty 翻转,跳过(避免每次按键 O(n))。
-  if (state.chromeVersion === prev.chromeVersion && state.tabs.length === prev.tabs.length) return;
-  let changed = syncTabGens(state.tabs);
-  for (const id of failedTabIds) {
-    if (isCleanTab(id)) {
-      failedTabIds.delete(id);
-      changed = true;
-    }
-  }
-  if (changed) notify();
-});
-
-export function isAutoSaveFailed(tabId: string): boolean {
-  return failedTabIds.has(tabId);
+/** 该 tab 的脏改动会被关窗 flush 落盘(活动 autosave 持有者且最近一次未失败)。 */
+export function willAutoSaveOnClose(tabId: string): boolean {
+  return owner !== null && owner.tabId === tabId && !failed;
 }
 
-/** useSyncExternalStore 用:失败态变化时通知。 */
+/** useSyncExternalStore 用:状态变化时通知。 */
 export function subscribeAutoSaveFailures(cb: () => void): () => void {
   listeners.add(cb);
   return () => {

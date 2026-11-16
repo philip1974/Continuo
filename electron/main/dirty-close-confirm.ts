@@ -2,31 +2,46 @@
 //
 // 代码文件不 autosave(ADR-015),此前关窗 / Cmd+Q 直接 flush 后关闭,脏 tab 静默丢失。
 // 参考 VSCode:关闭含未保存改动的窗口弹「是否保存 N 个文件的更改?」保存 / 不保存 / 取消。
-// renderer 在脏态变化时经 layout:dirty-state 上报计数(main 按窗口存),关窗时据此决定是否弹框;
+// renderer 在脏态变化时经 layout:dirty-state 上报计数与脏 tab id(main 按窗口存),关窗时据此决定是否弹框;
 // 选「保存」时 flush 请求带 save:true,renderer 先保存再 flush,回执里带 saveFailed。
 
 import type { MainT } from './i18n';
+import { PATH_ARRAY_MAX, PATH_STR_MAX } from '../shared/explorer-persistence-schema';
 
 export interface DirtyState {
   /** 关窗会丢的脏 tab 数(含 untitled)。 */
   readonly dirty: number;
   /** 其中 untitled 草稿数(无路径,MVP 不支持另存为,「保存」时跳过)。 */
   readonly untitled: number;
+  /**
+   * 脏 tab 的 id(file tab = 路径;untitled = 其 id)。退出前全局最终检查与「保存」的 untitled 放行按身份比较
+   * (复审:只比数量时,「不保存」后存了 X 又改了 Y / untitled 同数量替换都会被放行而丢改动)。
+   */
+  readonly ids: readonly string[];
+  /** 其中 untitled 的 id(⊆ ids)。 */
+  readonly untitledIds: readonly string[];
 }
 
-// 边界:计数上限(远超真实 tab 数),防畸形 / 篡改上报。
-const DIRTY_COUNT_MAX = 100_000;
-
-function isCount(v: unknown): v is number {
-  return typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= DIRTY_COUNT_MAX;
+// 边界:id 列表上限对齐 openFilePaths(PATH_ARRAY_MAX)、单条对齐 PATH_STR_MAX,防畸形 / 篡改上报。
+function parseIds(v: unknown): string[] | null {
+  if (!Array.isArray(v) || v.length > PATH_ARRAY_MAX) return null;
+  for (const id of v) {
+    if (typeof id !== 'string' || id.length === 0 || id.length > PATH_STR_MAX) return null;
+  }
+  return new Set(v).size === v.length ? (v as string[]) : null;
 }
 
-/** 解析 renderer 上报;任何不合法输入 → null(调用方忽略该上报)。 */
+/** 解析 renderer 上报;任何不合法输入(含计数与 id 列表不一致)→ null(调用方忽略该上报)。 */
 export function parseDirtyState(raw: unknown): DirtyState | null {
   if (typeof raw !== 'object' || raw === null) return null;
-  const { dirty, untitled } = raw as Record<string, unknown>;
-  if (!isCount(dirty) || !isCount(untitled) || untitled > dirty) return null;
-  return { dirty, untitled };
+  const obj = raw as Record<string, unknown>;
+  const ids = parseIds(obj['ids']);
+  const untitledIds = parseIds(obj['untitledIds']);
+  if (!ids || !untitledIds) return null;
+  if (obj['dirty'] !== ids.length || obj['untitled'] !== untitledIds.length) return null;
+  const all = new Set(ids);
+  if (!untitledIds.every((id) => all.has(id))) return null;
+  return { dirty: ids.length, untitled: untitledIds.length, ids, untitledIds };
 }
 
 export function needsDirtyConfirm(state: DirtyState | undefined): state is DirtyState {

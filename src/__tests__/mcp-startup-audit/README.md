@@ -23,7 +23,7 @@
    以 `end(PARSE_ERROR)` 半关闭(不立即 destroy,避免 RST 丢错误行),兜底超时 destroy;
    客户端收到完整 JSON-RPC 错误行后连接关闭。进入拒绝状态后:因 abort 返回的在途调用**不再写响应**
    (end 后 write 会 `ERR_STREAM_WRITE_AFTER_END` 销毁 socket、截断未 flush 的 PARSE_ERROR);
-   已链入队列的后续行直接丢弃,不 dispatch、不进授权门控。
+   已链入队列的后续行直接丢弃,不 dispatch、不进授权门控;`broadcast` 通知同样跳过已 end / destroy 的连接。
 4. **启动候选检查预算**:`pickArgvFolders` / `pickWindowsToRestore` 除「命中数」上限外,
    另设「候选检查次数」预算:每次 `isExistingDir`(同步 stat)都计数,无论候选是否存在,
    耗尽即停止。

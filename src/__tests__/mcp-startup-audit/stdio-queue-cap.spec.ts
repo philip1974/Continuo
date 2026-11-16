@@ -214,4 +214,38 @@ describe.skipIf(isWin)('规则 3 · 拒绝后不再写响应 / 不再处理排�
     expect(ensureAuthorized).not.toHaveBeenCalled();
     expect(plainRun).not.toHaveBeenCalled();
   });
+
+  // 拒绝半关闭期间的 broadcast 同样不得写入(此前 broadcast 直接 c.write(),未跳过 writableEnded /
+  // destroyed 的连接 → ERR_STREAM_WRITE_AFTER_END 销毁 socket,截断未 flush 的 PARSE_ERROR)。
+  it('半关闭期间 broadcast → PARSE_ERROR 仍完整送达,其后无通知行', async () => {
+    const big = echo('big', async () => ({ text: 'y'.repeat(32 * 1024) }));
+    const client = await start([big]);
+    // 客户端暂不读取:让大响应积压在服务端写缓冲,PARSE_ERROR 排在其后尚未 flush。
+    client.pause();
+    const closed = new Promise<void>((resolve) => client.once('close', () => resolve()));
+    let buf = '';
+    for (let i = 0; i < 40; i++) buf += call(i, 'big');
+    client.write(buf);
+    await new Promise((r) => setTimeout(r, 100));
+    client.write('z'.repeat(1_100_000)); // 超单行字节上限 → 拒绝(end(PARSE_ERROR))
+    await new Promise((r) => setTimeout(r, 200));
+    server!.broadcast('notifications/tools/list_changed');
+
+    let received = '';
+    client.setEncoding('utf8');
+    client.on('data', (d: string) => (received += d));
+    client.resume();
+    await closed;
+
+    const msgs = received
+      .split('\n')
+      .filter((l) => l.length > 0)
+      .map((l) => JSON.parse(l) as { id?: unknown; method?: string });
+    expect(received.endsWith('\n')).toBe(true);
+    expect(msgs.at(-1)).toMatchObject({
+      id: null,
+      error: { code: -32700, message: 'line exceeds maximum size' },
+    });
+    expect(msgs.some((m) => m.method === 'notifications/tools/list_changed')).toBe(false);
+  });
 });

@@ -431,15 +431,17 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       await Promise.all([layoutFlush, explorerFlush, autosaveFlush]);
       // 统一规则:全部 flush 完成后、ACK 前最终脏检查。本轮未选「不保存」且仍有未保存改动(防抖内 autosave
       // 失败 / flush 期间继续输入 / 确认期间变脏)→ 回执 remaining,main 中止关闭 / 退出并按此记账。
-      // 「保存」只放过确认框告知用户的 untitled 数(main 随请求带 untitled);确认后新建的 untitled 超出即计入。
-      const untitled = payload?.save ? payload.untitled : undefined;
-      const allowedUntitled =
-        typeof untitled === 'number' && Number.isSafeInteger(untitled) && untitled > 0 ? untitled : 0;
+      // 「保存」只放过确认框告知用户的 untitled id(main 随请求带 untitledIds);确认后新建 / 同数量替换的
+      // untitled 不在其中即计入。
+      const untitledIds = payload?.save ? payload.untitledIds : undefined;
+      const allowedUntitledIds = new Set(
+        Array.isArray(untitledIds) ? untitledIds.filter((id) => typeof id === 'string') : [],
+      );
       const remaining = payload?.discard
         ? null
-        : remainingAfterFlush(useEditorStore.getState().tabs, allowedUntitled);
+        : remainingAfterFlush(useEditorStore.getState().tabs, allowedUntitledIds);
       // main 已按回执记账:同步去重基准,之后脏态变化与之不同即重新上报。
-      if (remaining) lastDirtyReportRef.current = `${remaining.dirty}/${remaining.untitled}`;
+      if (remaining) lastDirtyReportRef.current = JSON.stringify(remaining);
       const windowId = payload?.windowId ?? coApi.system.windowId;
       // requestId 原样带回:main 只接受与在途请求匹配的回执(关窗与 Cmd+Q 交叉时不串号)。
       const requestId = payload?.requestId;
@@ -456,19 +458,19 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
   }, [apiReady, saveTab]);
 
   // 关窗脏文件确认:脏态变化(chromeVersion 覆盖 dirty 翻转 / tab 增删改名)时向 main 上报
-  // 关窗会丢的脏 tab 计数,main 关窗 / 退出前据此弹「保存 / 不保存 / 取消」。计数不变不重发;
+  // 关窗会丢的脏 tab 计数与 id,main 关窗 / 退出前据此弹「保存 / 不保存 / 取消」。计数与 id 不变不重发;
   // 初值 0/0 = main 的默认(未上报),挂载时无脏 tab 不发。
   const editorChromeVersion = useEditorStore((s) => s.chromeVersion);
-  // autosave 失败态变化(失败的脏 .md 需计入确认)也要重新上报。
+  // 活动 tab 的 autosave 持有者 / 失败态变化(失败或非活动的脏 .md 需计入确认)也要重新上报。
   const autoSaveFailureVersion = useSyncExternalStore(
     subscribeAutoSaveFailures,
     getAutoSaveFailureVersion,
   );
   const mdAutoSaveEnabled = useSettingValue<boolean>('autoSave.markdown.enabled', true);
-  const lastDirtyReportRef = useRef('0/0');
+  const lastDirtyReportRef = useRef(JSON.stringify(countDirtyForClose([], false)));
   useEffect(() => {
     const state = countDirtyForClose(useEditorStore.getState().tabs, mdAutoSaveEnabled);
-    const key = `${state.dirty}/${state.untitled}`;
+    const key = JSON.stringify(state);
     if (key === lastDirtyReportRef.current) return;
     lastDirtyReportRef.current = key;
     coApi.layout.reportDirtyState?.(state);

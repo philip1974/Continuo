@@ -111,12 +111,20 @@ function ensureTerminalDataListener(): void {
   terminalDataListenerInstalled = true;
 }
 
+// 关窗脏态上报(计数 + 脏 tab id,id 供 main 按身份比较已接受范围)。
+type DirtyReport = {
+  dirty: number;
+  untitled: number;
+  ids: readonly string[];
+  untitledIds: readonly string[];
+};
+
 type FlushRequestPayload = {
   windowId: number;
   save?: boolean;
   discard?: boolean;
-  /** save 时:确认框告知用户会丢弃的 untitled 数(renderer 只放过不超过该数的 untitled)。 */
-  untitled?: number;
+  /** save 时:确认框告知用户会丢弃的 untitled id(renderer 只放过这些 id)。 */
+  untitledIds?: string[];
   requestId?: number;
 };
 
@@ -132,7 +140,7 @@ const api = {
     onFlushRequest: (
       cb: (payload?: FlushRequestPayload) => void | Promise<void>,
     ): (() => void) => {
-      // main 发 `{ windowId, requestId, save?, discard?, untitled? }`(save / discard:用户在脏文件确认框选了「保存」/
+      // main 发 `{ windowId, requestId, save?, discard?, untitledIds? }`(save / discard:用户在脏文件确认框选了「保存」/
       // 「不保存」;requestId 须在回执里原样带回,main 只接受匹配在途请求的回执);透传给回调(不暴露 IpcRendererEvent)。
       const listener = (_event: unknown, payload?: FlushRequestPayload) => {
         void cb(payload);
@@ -149,13 +157,13 @@ const api = {
       result?: {
         saveFailed?: boolean;
         requestId?: number;
-        remaining?: { dirty: number; untitled: number };
+        remaining?: DirtyReport;
       },
     ): void => {
       ipcRenderer.send(LAYOUT_CHANNELS.FLUSH_ACK, windowId, result);
     },
-    /** 上报本窗口关窗会丢的脏 tab 计数(main 关窗 / 退出前据此弹保存确认)。 */
-    reportDirtyState: (state: { dirty: number; untitled: number }): void => {
+    /** 上报本窗口关窗会丢的脏 tab 计数与 id(main 关窗 / 退出前据此弹保存确认、按身份做最终检查)。 */
+    reportDirtyState: (state: DirtyReport): void => {
       ipcRenderer.send(LAYOUT_CHANNELS.DIRTY_STATE, state);
     },
   },
