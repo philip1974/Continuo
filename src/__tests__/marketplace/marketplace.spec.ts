@@ -315,6 +315,15 @@ describe('isValidMarketplaceEntry bounds (E25)', () => {
     }
   });
 
+  // check-ref-format --branch HEAD 非零:显式 branch "HEAD" 会让 clone --branch=HEAD 必败。按 git 语义
+  // 只拒字面(区分大小写)整体为 HEAD;head / 含 HEAD 段的多段名合法。缺省 branch 仍由 URL 内部用 HEAD。
+  it('显式 branch 为 HEAD → false;大小写变体与多段名仍合法', () => {
+    expect(isValidMarketplaceEntry({ ...base, branch: 'HEAD' })).toBe(false);
+    for (const branch of ['head', 'Head', 'foo/HEAD', 'HEADS']) {
+      expect(isValidMarketplaceEntry({ ...base, branch }), branch).toBe(true);
+    }
+  });
+
   it('tags 数量超 64 或单个超长 → false', () => {
     expect(
       isValidMarketplaceEntry({

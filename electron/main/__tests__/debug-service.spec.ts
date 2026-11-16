@@ -1117,6 +1117,125 @@ describe('DebugService fake adapter · 会话上限 / 程序起跑时机 / 按 s
       ]),
     );
   });
+
+  /** 让 client 的前 N 次 setBreakpoints 响应挂起,由测试逐个放行 / 拒绝。 */
+  function holdSetBreakpoints(client: FakeDapClient) {
+    const held: Array<{ resolve: () => void; reject: (err: Error) => void }> = [];
+    client.beforeResponse = (command) => {
+      if (command !== 'setBreakpoints') return undefined;
+      return new Promise<void>((resolve, reject) => held.push({ resolve, reject }));
+    };
+    return held;
+  }
+
+  // 同 session 同 source 的并发设置必须串行:否则 B 捕获的完整集合含未完成的 A,A 失败回滚时 B 已把 A
+  // 设进 adapter。
+  it('同 source 并发 setBreakpoints 串行:前一个失败回滚后,后一个下发的集合不含它', async () => {
+    const { service, parent } = makeFakeService();
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      ctx,
+    );
+    await service.setBreakpoints(sessionId, { file: '/a.js', line: 3 });
+    const held = holdSetBreakpoints(parent);
+    const a = service.setBreakpoints(sessionId, { file: '/a.js', line: 7 });
+    const b = service.setBreakpoints(sessionId, { file: '/a.js', line: 9 });
+    await vi.waitFor(() => expect(held.length).toBeGreaterThanOrEqual(1));
+    // A 在途时 B 还没发。
+    expect(setBreakpointRequests(parent)).toHaveLength(2);
+    parent.beforeResponse = null;
+    held[0]!.reject(new Error('adapter rejected'));
+    await expect(a).rejects.toThrow('adapter rejected');
+    await b;
+    expect(setBreakpointRequests(parent).at(-1)).toMatchObject({
+      source: { path: '/a.js' },
+      breakpoints: [{ line: 3 }, { line: 9 }],
+    });
+  });
+
+  it('同 source 并发 setBreakpoints:响应乱序也不会让旧快照事件覆盖新断点', async () => {
+    const { service, parent } = makeFakeService();
+    const events: DebugViewEvent[] = [];
+    service.setEventSink({ emit: (_owner, event) => events.push(event) });
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      ctx,
+    );
+    const held = holdSetBreakpoints(parent);
+    const a = service.setBreakpoints(sessionId, { file: '/a.js', line: 3 });
+    const b = service.setBreakpoints(sessionId, { file: '/a.js', line: 7 });
+    await vi.waitFor(() => expect(held.length).toBeGreaterThanOrEqual(1));
+    // 未串行时 B 此时也已在途,先放行 B 再放行 A 即构成乱序。
+    held.at(-1)!.resolve();
+    held[0]!.resolve();
+    await vi.waitFor(() => expect(held).toHaveLength(2));
+    held[1]!.resolve();
+    await Promise.all([a, b]);
+    const last = events.filter((e) => e.type === 'breakpoints-changed').at(-1);
+    expect(last).toMatchObject({
+      file: '/a.js',
+      breakpoints: [
+        { file: '/a.js', line: 3 },
+        { file: '/a.js', line: 7 },
+      ],
+    });
+  });
+
+  // 超时 ≠ adapter 没应用:失败回滚后要把回滚后的完整集合补发给父连接与存活的 child,尽力而为。
+  it('setBreakpoints 失败回滚后向父连接与存活 child 补发回滚后的集合;补发失败不改变原错误', async () => {
+    const { service, parent } = makeFakeService();
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      ctx,
+    );
+    await parent.triggerStartDebugging({ type: 'pwa-node' });
+    const child = parent.children[0]!;
+    await service.setBreakpoints(sessionId, { file: '/a.js', line: 3 });
+    let calls = 0;
+    parent.beforeResponse = (command) => {
+      if (command !== 'setBreakpoints') return undefined;
+      calls += 1;
+      // 首发超时;补发也失败(连接已坏)→ 忽略。
+      return Promise.reject(new Error(calls === 1 ? 'timeout' : 'resync failed'));
+    };
+    await expect(service.setBreakpoints(sessionId, { file: '/a.js', line: 7 })).rejects.toThrow(
+      'timeout',
+    );
+    const parentRequests = setBreakpointRequests(parent);
+    expect(parentRequests.at(-2)).toMatchObject({ breakpoints: [{ line: 3 }, { line: 7 }] });
+    expect(parentRequests.at(-1)).toMatchObject({
+      source: { path: '/a.js' },
+      breakpoints: [{ line: 3 }],
+    });
+    expect(setBreakpointRequests(child).at(-1)).toMatchObject({
+      source: { path: '/a.js' },
+      breakpoints: [{ line: 3 }],
+    });
+    expect(
+      parent.timeoutLog.filter((r) => r.command === 'setBreakpoints').at(-1)?.timeoutMs,
+    ).toBeLessThanOrEqual(3_000);
+  });
+
+  // adapter 把多个请求校正到同一行:快照按校正后的位置去重(保留首个),renderer 不出现重复 file:line。
+  it('breakpoints-changed 快照按校正后的位置去重', async () => {
+    const { service, parent } = makeFakeService();
+    const events: DebugViewEvent[] = [];
+    service.setEventSink({ emit: (_owner, event) => events.push(event) });
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      ctx,
+    );
+    parent.adjustBreakpointLine = (line) => (line === 3 || line === 4 ? 5 : line);
+    await service.setBreakpoints(sessionId, { file: '/a.js', line: 3 });
+    const second = await service.setBreakpoints(sessionId, { file: '/a.js', line: 4 });
+    expect(second).toMatchObject({ line: 5 });
+    expect(events.at(-1)).toEqual({
+      type: 'breakpoints-changed',
+      sessionId,
+      file: '/a.js',
+      breakpoints: [{ file: '/a.js', line: 5, verified: true }],
+    });
+  });
 });
 
 const root = process.cwd();

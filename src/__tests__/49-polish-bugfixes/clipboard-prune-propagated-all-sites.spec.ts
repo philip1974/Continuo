@@ -16,7 +16,7 @@ const SRC = readFileSync(join(EXPLORER, 'FolderTree.tsx'), 'utf-8');
 const HELPER = readFileSync(join(EXPLORER, 'batch-transfer.ts'), 'utf-8');
 
 // 重构后(explorer-batch-transfer):三个 move 入口的内联循环收口到 transferEntriesInto,prune 经其
-// onSourcesGone 回调接入(唯一一处);trash / rename 仍在 FolderTree 直接 prune。
+// onSourcesGone 回调接入(唯一一处);rename 仍在 FolderTree 直接 prune,trash 经注入 trashItemsAndCleanup 的 prune 出口。
 describe('49 第八 session · clipboard prune 传播到所有源失效入口', () => {
   it('trash / rename 直接 prune;三个 move 入口经共享 onSourcesGone → prune', () => {
     const pruneCalls = SRC.match(/useExplorerClipboardStore\.getState\(\)\.prune\(/g) ?? [];
@@ -31,9 +31,13 @@ describe('49 第八 session · clipboard prune 传播到所有源失效入口', 
     expect(calls.length).toBeGreaterThanOrEqual(3);
   });
 
-  it('rename 入口 prune([oldPath])、trash 入口 prune(result.removed)', () => {
+  // trash 只 prune result.removed 由 trashItemsAndCleanup 保证(行为测试见
+  // explorer-transfer-integrity/nested-selection.spec),FolderTree 只注入 prune 出口。
+  it('rename 入口 prune([oldPath])、trash 入口把 prune 注入 trashItemsAndCleanup', () => {
     expect(SRC).toMatch(/prune\(\[oldPath\]\)/);
-    expect(SRC).toMatch(/prune\(result\.removed\)/);
+    expect(SRC).toMatch(
+      /prune: \(removed\) => useExplorerClipboardStore\.getState\(\)\.prune\(removed\)/,
+    );
   });
 
   it('共享实现:部分成功也回报已移走项(无 allOk 门控),在 finally 内', () => {

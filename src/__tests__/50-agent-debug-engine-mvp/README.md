@@ -15,7 +15,7 @@
 
 - `debug.disconnect` 始终终止 Continuo launch 的 debuggee(teardown 按 adapter 进程组整组回收);`terminate_debuggee` 只接受 `true` 或省略,`false` 在 schema 层显式拒绝(不再静默忽略),zod 与手写 JSON schema(`const: true`)一致。
 - 程序起跑时机: `debug.launch` 完成 DAP initialize 后返回 `state: "starting"`,此时程序尚未运行;`configurationDone` + `launch` 推迟到第一个要求程序运行的调用(`wait_for_stop` / `continue` / `step_*`)且只发一次,`set_breakpoint` 本身不让程序起跑 —— 起跑前设的多个断点都在程序运行之前就位。没设断点直接 `wait_for_stop`(如 `stop_on_entry`)也能起跑;尚无停点时 `continue` 即「让程序跑起来」。
-- 断点按 source 维护完整集合(DAP `setBreakpoints` 语义): 同一文件的新断点与已有断点一起发送(同 file+line 去重),不覆盖;child session 建立时按 source 重放全部断点;返回值是本次新设断点的结果。
+- 断点按 source 维护完整集合(DAP `setBreakpoints` 语义): 同一文件的新断点与已有断点一起发送(同 file+line 去重),不覆盖;child session 建立时按 source 重放全部断点;返回值是本次新设断点的结果。同 session 同 source 的设置串行执行(集合与 `breakpoints-changed` 快照按调用顺序);请求失败 / 超时回滚本地记录后,尽力向父连接与存活 child 补发回滚后的完整集合(短超时、失败忽略,原错误照抛);快照按 adapter 校正后的 file:line 去重(保留首个)。
 - 会话数上限在 spawn adapter 之前检查;spawn 期间被并发 launch 占满名额时释放已 spawn 的 adapter,不残留 runtime。
 - DAP 入站帧必须是顶层带字符串 `type` 的 JSON 对象;`null` / 数组 / 标量等按畸形帧处理(结算在途请求并断开连接),不抛成主进程未捕获异常。
 

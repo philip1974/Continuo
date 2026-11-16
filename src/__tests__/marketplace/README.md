@@ -30,6 +30,7 @@ entryToGitUrl / entryToManifestUrl 把 entry.repo + branch 拼成可用 URL。**
 
 - 段级:非空、无前导/尾随 `/`、无 `//`、每段仅 `[A-Za-z0-9._-]`、不以 `-` 开头(argv 注入)
 - 另按 `git check-ref-format` 拒:任意位置 `..`、组件以 `.` 开头或以 `.lock` 结尾、整体以 `.` 结尾(否则 clone 必败)
+- 显式 `HEAD` 拒(`git check-ref-format --branch HEAD` 非零;按字面区分大小写,`head`/`foo/HEAD` 合法);缺省 branch 时 URL 内部用 `HEAD`、clone 不传 `--branch`
 
 ### fetchMarketplaceIndex(forceRefresh = false)
 

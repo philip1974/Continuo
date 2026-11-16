@@ -39,6 +39,9 @@ export function isSafeRepoPathSegment(v: string, start: number, end: number): bo
 export function isValidGitBranch(b: string): boolean {
   if (b.length === 0 || b.length > GIT_BRANCH_MAX) return false;
   if (b.charCodeAt(0) === 45) return false; // 前导 '-':argv 注入
+  // `git check-ref-format --branch HEAD` 非零(clone --branch=HEAD 必败);git 按字面区分大小写,只拒整体
+  // 为 HEAD。缺省 branch 时 manifest URL 内部用 HEAD、clone 不传 --branch,不经过这里。
+  if (b === 'HEAD') return false;
   if (b.includes('..') || b.endsWith('.')) return false;
   let start = 0;
   for (;;) {
