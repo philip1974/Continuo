@@ -238,7 +238,8 @@ ipcMain.on(LAYOUT_CHANNELS.DIRTY_STATE, (event: IpcMainEvent, raw: unknown) => {
 });
 
 function recordDirtyState(win: BrowserWindow, state: DirtyState): void {
-  if (state.dirty > 0) dirtyStates.set(win.id, state);
+  // 只有 pendingAutoSave(依赖关窗 flush 落盘的 .md)也要记:flush 超时时据此中止关闭(终审 P1)。
+  if (state.dirty > 0 || state.pendingAutoSave) dirtyStates.set(win.id, state);
   else dirtyStates.delete(win.id);
   // macOS:关闭按钮显示「有未保存改动」圆点(其它平台无此 API)。
   if (process.platform === 'darwin') win.setDocumentEdited(state.dirty > 0);
@@ -277,12 +278,16 @@ function exceedsAccepted(current: DirtyState | undefined, mode: FlushMode, accep
  * 本轮 flush 后是否必须中止关闭 / 退出(否则丢改动):
  * - 「保存」:未确认成功(renderer 报失败 / 仍有未保存改动 / 超时无回执 / 请求被跳过)。skipped(renderer
  *   未就绪 / send 抛错)意味着保存根本没执行(复审:此前当成功关闭)。
- * - 未弹框:renderer 最终脏检查报告仍有未保存改动(统一规则,见 DockShell onFlushRequest)。
+ * - 未弹框:renderer 最终脏检查报告仍有未保存改动(统一规则,见 DockShell onFlushRequest);或超时无回执且该窗口
+ *   最近上报的 pendingAutoSave 非空(终审 P1:未计入确认的活动 .md 靠 flush 落盘,读盘挂起的网络卷上 flush 超时
+ *   放行会丢编辑)。pendingAutoSave 为空时超时照常放行 —— renderer 卡死 / 崩溃永不回执时窗口仍能关。
  * - 「不保存」:用户已明确放弃,照常关闭。
  */
-function shouldAbortClose(mode: FlushMode, outcome: FlushOutcome): boolean {
+function shouldAbortClose(mode: FlushMode, outcome: FlushOutcome, windowId: number): boolean {
   if (mode === 'save') return outcome !== 'ok';
-  return mode === 'none' && outcome === 'still-dirty';
+  if (mode !== 'none') return false;
+  if (outcome === 'still-dirty') return true;
+  return outcome === 'timeout' && dirtyStates.get(windowId)?.pendingAutoSave !== undefined;
 }
 
 // 复审(d):每窗关闭流程代际。单窗关闭流程启动时取号;before-quit 接管窗口时再递增 → 旧流程(如在途的
@@ -403,7 +408,7 @@ function wireWindowCloseFlush(win: BrowserWindow): void {
       const outcome = await requestWindowFlush(win, mode, accepted);
       if (superseded()) return;
       finish();
-      if (shouldAbortClose(mode, outcome)) {
+      if (shouldAbortClose(mode, outcome, windowId)) {
         // 保存失败 / 未确认 / 仍有未保存改动 → 中止关闭,窗口重新显示(保存失败 renderer 已 toast)。
         release();
         return;
@@ -1251,7 +1256,7 @@ app.on('before-quit', async (event) => {
   // 任一窗口需中止(「保存」未确认成功 / 最终脏检查仍有未保存改动,如 B 确认期间 A 变脏)→ 中止退出并显示
   // 该窗口。此时不记 flushedOnQuit:退出没发生,之后关这些窗口仍要走确认 + flush。
   const failed = targets.filter((w, i) =>
-    shouldAbortClose(modes.get(w.id) ?? 'none', outcomes[i] ?? 'timeout'),
+    shouldAbortClose(modes.get(w.id) ?? 'none', outcomes[i] ?? 'timeout', w.id),
   );
   if (failed.length > 0) {
     abortQuit(failed);

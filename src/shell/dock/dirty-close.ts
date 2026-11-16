@@ -21,6 +21,11 @@ export interface DirtyCloseState {
   readonly ids: readonly string[];
   /** 其中 untitled 的 id(⊆ ids)。 */
   readonly untitledIds: readonly string[];
+  /**
+   * 未计入的活动 tab 脏 .md 身份(依赖关窗 flush 落盘;非空才带)。main 据此在未弹框关闭的 flush 超时时中止关闭
+   * (终审 P1:读盘挂起的网络卷上 flush 超时会丢编辑)。
+   */
+  readonly pendingAutoSave?: readonly string[];
 }
 
 /**
@@ -35,15 +40,24 @@ export function countDirtyForClose(
 ): DirtyCloseState {
   const ids: string[] = [];
   const untitledIds: string[] = [];
+  const pendingAutoSave: string[] = [];
   for (const tab of tabs) {
     if (!tab.dirty) continue;
-    if (mdAutoSaveEnabled && isAutoSaveEnabled(tab.filePath) && willAutoSaveOnClose(tab.id))
-      continue;
     const id = `${tab.id}#${tab.dirtyGen ?? 0}`;
+    if (mdAutoSaveEnabled && isAutoSaveEnabled(tab.filePath) && willAutoSaveOnClose(tab.id)) {
+      pendingAutoSave.push(id);
+      continue;
+    }
     ids.push(id);
     if (tab.filePath === null) untitledIds.push(id);
   }
-  return { dirty: ids.length, untitled: untitledIds.length, ids, untitledIds };
+  return {
+    dirty: ids.length,
+    untitled: untitledIds.length,
+    ids,
+    untitledIds,
+    ...(pendingAutoSave.length > 0 ? { pendingAutoSave } : {}),
+  };
 }
 
 /**

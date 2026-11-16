@@ -165,12 +165,18 @@ describe('DockShell 向 main 上报关窗会丢的脏 tab 计数', () => {
   });
 
   // 只有活动 tab(持有 autosave scheduler)的脏 .md 豁免;失败 → 计入;恢复 → 再豁免。
-  it('活动 tab 的脏 .md 不计;其 autosave 失败 → 重新上报计入;恢复成功 → 再排除', async () => {
+  // 终审 P1:豁免的 .md 仍随上报带 pendingAutoSave(依赖关窗 flush 才能落盘),main 据此在 flush 超时时中止关闭。
+  it('活动 tab 的脏 .md 不计但上报为 pendingAutoSave;其 autosave 失败 → 计入;恢复成功 → 再排除', async () => {
     const owner = {};
     act(() => claimAutoSave('/w/a.md', owner));
     await mountShell();
     openDirty('/w/a.md');
-    expect(h.reportDirtyState).not.toHaveBeenCalled();
+    await vi.waitFor(() =>
+      expect(h.reportDirtyState).toHaveBeenLastCalledWith({
+        ...ds([]),
+        pendingAutoSave: [g('/w/a.md')],
+      }),
+    );
 
     act(() => setAutoSaveFailed(owner, true));
     await vi.waitFor(() =>
@@ -178,6 +184,14 @@ describe('DockShell 向 main 上报关窗会丢的脏 tab 计数', () => {
     );
 
     act(() => setAutoSaveFailed(owner, false));
+    await vi.waitFor(() =>
+      expect(h.reportDirtyState).toHaveBeenLastCalledWith({
+        ...ds([]),
+        pendingAutoSave: [g('/w/a.md')],
+      }),
+    );
+    // autosave 落盘后 tab 变干净 → pendingAutoSave 清空并重新上报
+    act(() => useEditorStore.getState().markSaved('/w/a.md'));
     await vi.waitFor(() => expect(h.reportDirtyState).toHaveBeenLastCalledWith(ds([])));
     act(() => releaseAutoSave(owner));
   });
@@ -190,11 +204,17 @@ describe('DockShell 向 main 上报关窗会丢的脏 tab 计数', () => {
     openDirty('/w/b.md');
     openDirty('/w/a.md');
     await vi.waitFor(() =>
-      expect(h.reportDirtyState).toHaveBeenLastCalledWith(ds([g('/w/b.md')])),
+      expect(h.reportDirtyState).toHaveBeenLastCalledWith({
+        ...ds([g('/w/b.md')]),
+        pendingAutoSave: [g('/w/a.md')],
+      }),
     );
     act(() => useEditorStore.getState().renamePath('/w/b.md', '/w/c.md'));
     await vi.waitFor(() =>
-      expect(h.reportDirtyState).toHaveBeenLastCalledWith(ds([g('/w/c.md')])),
+      expect(h.reportDirtyState).toHaveBeenLastCalledWith({
+        ...ds([g('/w/c.md')]),
+        pendingAutoSave: [g('/w/a.md')],
+      }),
     );
     act(() => releaseAutoSave(owner));
     await vi.waitFor(() =>

@@ -48,6 +48,22 @@ describe('parseDirtyState:renderer 上报的脏态只接受合法计数与 id �
     expect(parseDirtyState(raw)).toBeNull();
   });
 
+  // 终审 P1:依赖关窗 flush 才能落盘的脏 .md(被计数排除的活动 tab)单独上报,main 据此决定 flush 超时是否放行关闭。
+  it('pendingAutoSave:非空合法列表原样带回;缺省 / 空列表不带该字段', () => {
+    const s = { ...ds([]), pendingAutoSave: ['/a.md#3'] };
+    expect(parseDirtyState(s)).toEqual(s);
+    expect(parseDirtyState({ ...ds(['/a.ts']), pendingAutoSave: [] })).toEqual(ds(['/a.ts']));
+  });
+
+  it.each([
+    { ...ds([]), pendingAutoSave: 'x' },
+    { ...ds([]), pendingAutoSave: [''] },
+    { ...ds([]), pendingAutoSave: ['/a.md#1', '/a.md#1'] },
+    { ...ds([]), pendingAutoSave: [1] },
+  ])('pendingAutoSave 非法 #%# → null', (raw) => {
+    expect(parseDirtyState(raw)).toBeNull();
+  });
+
   it('id 列表超上限 → null', () => {
     const ids = Array.from({ length: 100_001 }, (_, i) => `/f${i}`);
     expect(parseDirtyState(ds(ids))).toBeNull();

@@ -20,6 +20,11 @@ export interface DirtyState {
   readonly ids: readonly string[];
   /** 其中 untitled 的 id(⊆ ids)。 */
   readonly untitledIds: readonly string[];
+  /**
+   * 未计入 ids、依赖关窗 flush 才能落盘的脏 .md(autosave 开启的活动 tab;非空才有)。终审 P1:读盘挂起的网络卷上
+   * flush 可能超时,未弹框的关闭此时不能放行(否则丢编辑);为空时超时照常放行(renderer 卡死也能关窗)。
+   */
+  readonly pendingAutoSave?: readonly string[];
 }
 
 // 边界:id 列表上限对齐 openFilePaths(PATH_ARRAY_MAX)、单条对齐 PATH_STR_MAX,防畸形 / 篡改上报。
@@ -41,7 +46,15 @@ export function parseDirtyState(raw: unknown): DirtyState | null {
   if (obj['dirty'] !== ids.length || obj['untitled'] !== untitledIds.length) return null;
   const all = new Set(ids);
   if (!untitledIds.every((id) => all.has(id))) return null;
-  return { dirty: ids.length, untitled: untitledIds.length, ids, untitledIds };
+  const pending = obj['pendingAutoSave'] === undefined ? [] : parseIds(obj['pendingAutoSave']);
+  if (!pending) return null;
+  return {
+    dirty: ids.length,
+    untitled: untitledIds.length,
+    ids,
+    untitledIds,
+    ...(pending.length > 0 ? { pendingAutoSave: pending } : {}),
+  };
 }
 
 export function needsDirtyConfirm(state: DirtyState | undefined): state is DirtyState {

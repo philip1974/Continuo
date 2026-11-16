@@ -46,6 +46,14 @@ markdown autosave flush)完成后、回执之前,检查此刻仍 dirty 的 tab(�
   输入;多窗退出时 B 的确认框打开期间在干净的 A 里改代码(A 收到非保存 flush)。
 - 选「不保存」→ 照常关闭(行为不变)。
 
+### 未弹框关闭的 flush 超时(终审 P1)
+
+- 计数排除的活动 tab 脏 `.md`(见「计数口径」)随脏态上报另带 `pendingAutoSave`(身份同 `ids`,非空才带;上报去重
+  与受信校验沿用)。它们只能靠关窗 flush 落盘。
+- 未弹框的关闭(单窗关闭 / before-quit)flush **超时**且该窗口最近上报的 `pendingAutoSave` 非空 → 中止关闭 / 退出、
+  窗口重新显示(与 `remaining` 同路径)。覆盖:读盘挂起超过 10s 的网络卷(SMB / SSHFS / FUSE)上 autosave 防抖期内关窗。
+- `pendingAutoSave` 为空 → 超时仍照常放行:renderer 卡死 / 崩溃永不回执时窗口必须能关(超时兜底的本意)。
+
 ### 关闭流程代际
 
 - 每窗关闭流程带代际。before-quit 接管窗口时递增;在途的旧单窗关闭流程(如「不保存」)完成时发现已被取代 →
@@ -103,7 +111,7 @@ markdown autosave flush)完成后、回执之前,检查此刻仍 dirty 的 tab(�
 | 文件 | 覆盖 |
 |---|---|
 | `dirty-close-dialog.spec.ts` | main 纯函数:上报解析 / 是否弹框 / 按钮与文案 / 选择映射 / 回执解析 |
-| `close-confirm-flow.spec.ts` | main 端到端握手(electron 全 mock):关窗各分支 + before-quit 取消 / 保存失败 / 回执 remaining 中止 / 关闭流程代际 / 成功退出 |
+| `close-confirm-flow.spec.ts` | main 端到端握手(electron 全 mock):关窗各分支 + before-quit 取消 / 保存失败 / 回执 remaining 中止 / pendingAutoSave + 超时中止 / 关闭流程代际 / 成功退出 |
 | `renderer-dirty-close.spec.ts` | renderer 纯函数:计数口径(活动 / 非活动 / 失败 / 旧实例)/ 批量保存失败计数 / 最终脏检查(untitled 按 id 放行) |
 | `dockshell-save-on-close.spec.tsx` | DockShell 脏态上报 + flush「保存」分支回执 + 最终脏检查回执 `remaining` |
 | `../49-polish-bugfixes/quit-cleanup-guard-reentry.spec.ts` | 守卫 `cancel()` 复位 |

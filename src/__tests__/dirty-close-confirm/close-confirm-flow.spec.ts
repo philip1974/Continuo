@@ -530,6 +530,46 @@ describe('关窗:flush 后最终脏检查仍有未保存改动 → 中止关闭'
   });
 });
 
+// 终审 P1:活动 tab 的脏 .md 在 autosave 开启时不计入确认(交给关窗 flush 落盘),renderer 另报 pendingAutoSave。
+// 读盘挂起的网络卷(SMB/SSHFS/FUSE)上 flush 超过 FLUSH_ACK_TIMEOUT_MS → 未弹框的关闭不能因超时放行(会丢编辑)。
+// 但 pendingAutoSave 为空时超时仍照常放行:renderer 卡死 / 崩溃永不回执时窗口必须能关。
+describe('关窗:未弹框的 flush 超时,按 pendingAutoSave 决定是否放行', () => {
+  it('pendingAutoSave 非空 + 超时 → 不关闭、重新显示;守卫已释放,可再次关闭', async () => {
+    vi.useFakeTimers();
+    const win = createReadyWindow(60);
+    reportDirty(win, { ...ds([]), pendingAutoSave: ['/w/a.md#1'] });
+
+    win.close();
+    expect(electronMock.showMessageBox).not.toHaveBeenCalled();
+    expect(win.hide).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(FLUSH_ACK_TIMEOUT_MS);
+    await settle();
+    expect(win.destroyed).toBe(false);
+    expect(win.show).toHaveBeenCalledTimes(1);
+
+    win.close();
+    expect(flushRequests(win)).toHaveLength(2);
+    ack(win, { requestId: requestIdOf(win, 1), state: ds([]) });
+    await settle();
+    expect(win.destroyed).toBe(true);
+  });
+
+  it('pendingAutoSave 为空(从未上报 / 已清空)+ 超时 → 照常关闭', async () => {
+    vi.useFakeTimers();
+    const never = createReadyWindow(61);
+    const cleared = createReadyWindow(62);
+    reportDirty(cleared, { ...ds([]), pendingAutoSave: ['/w/a.md#1'] });
+    reportDirty(cleared, ds([]));
+
+    never.close();
+    cleared.close();
+    await vi.advanceTimersByTimeAsync(FLUSH_ACK_TIMEOUT_MS);
+    await settle();
+    expect(never.destroyed).toBe(true);
+    expect(cleared.destroyed).toBe(true);
+  });
+});
+
 describe('退出应用(before-quit):对每个有脏文件的主窗确认', () => {
   function beforeQuit(): { event: { preventDefault: ReturnType<typeof vi.fn> }; done: unknown } {
     const handler = electronMock.appHandlers.get('before-quit')?.[0];
@@ -866,6 +906,38 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
     expect(win.destroyed).toBe(false);
     expect(win.show).toHaveBeenCalledTimes(1);
     win.destroyed = true;
+  });
+
+  // 终审 P1:before-quit 同类路径。未弹框窗口 pendingAutoSave 非空且 flush 超时 → 中止退出、显示该窗口;
+  // 同轮另一个 pendingAutoSave 为空的超时窗口不阻止(只显示需中止的窗口)。
+  it('未弹框窗口 pendingAutoSave 非空 + flush 超时 → 中止退出(不清理 PTY)、显示该窗口、守卫复位', async () => {
+    vi.useFakeTimers();
+    const a = createReadyWindow(63);
+    const b = createReadyWindow(64);
+    reportDirty(a, { ...ds([]), pendingAutoSave: ['/w/a.md#1'] });
+
+    const { done } = beforeQuit();
+    await settle();
+    expect(electronMock.showMessageBox).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(FLUSH_ACK_TIMEOUT_MS);
+    await done;
+    expect(app.quit).not.toHaveBeenCalled();
+    expect(termService.cleanupAll).not.toHaveBeenCalled();
+    expect(a.show).toHaveBeenCalled();
+    expect(b.show).not.toHaveBeenCalled();
+
+    // 守卫复位:再次 Cmd+Q 重新发 flush(不卡在「清理在途」)
+    vi.useRealTimers();
+    const second = beforeQuit();
+    await settle();
+    expect(flushRequests(a)).toHaveLength(2);
+    ack(a, { requestId: requestIdOf(a, 1), state: ds([]) });
+    ack(b, { requestId: requestIdOf(b, 1), saveFailed: true });
+    reportDirty(a, ds(['/w/x.ts'])); // 让第二轮全局最终检查中止,保持守卫可用于后续用例
+    await second.done;
+    expect(app.quit).not.toHaveBeenCalled();
+    a.destroyed = true;
+    b.destroyed = true;
   });
 
   it('逐窗确认后按各自选择 flush,全部完成再退出', async () => {

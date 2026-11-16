@@ -52,6 +52,21 @@ describe('countDirtyForClose:只统计关窗会丢的脏 tab', () => {
     expect(countDirtyForClose([tab('/a.md', true)], true).dirty).toBe(0);
   });
 
+  // 终审 P1:被排除的脏 .md 单独上报为 pendingAutoSave(身份同 ids)。main 据此判断:flush 超时(网络卷读盘挂起等)
+  // 时这些改动尚未落盘,不能放行关闭;没有此类 .md 时不带该字段(超时照常放行,renderer 卡死也能关窗)。
+  it('被排除的活动 tab 脏 .md 进入 pendingAutoSave;无此类 tab 时不带该字段', () => {
+    claimAutoSave('/a.md', owner);
+    expect(countDirtyForClose([tab('/a.md', true, '/a.md', 3), tab('/b.ts', true)], true)).toEqual({
+      dirty: 1,
+      untitled: 0,
+      ids: ['/b.ts#0'],
+      untitledIds: [],
+      pendingAutoSave: ['/a.md#3'],
+    });
+    expect(countDirtyForClose([tab('/a.md', true)], false)).not.toHaveProperty('pendingAutoSave');
+    expect(countDirtyForClose([tab('/a.md', false)], true)).not.toHaveProperty('pendingAutoSave');
+  });
+
   // 复审:非活动 tab 切走时 useAutoSave 已 flush,仍脏即失败或在途;关窗 flush 只持有活动 tab 的 scheduler,
   // 不会重试它 → 一律计入(此前按「失败记录」排除,重命名非活动失败 tab 后记录被清 → 无确认丢失)。
   it('非活动 tab 的脏 .md 一律计入(含被重命名的非活动 tab)', () => {

@@ -117,6 +117,8 @@ type DirtyReport = {
   untitled: number;
   ids: readonly string[];
   untitledIds: readonly string[];
+  /** 未计入、依赖关窗 flush 落盘的脏 .md(非空才带;flush 超时时 main 据此中止关闭)。 */
+  pendingAutoSave?: readonly string[];
 };
 
 type FlushRequestPayload = {
