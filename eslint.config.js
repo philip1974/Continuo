@@ -18,6 +18,7 @@ export default tseslint.config(
       'scripts/debug-spike/.adapter',
       'scripts/debug-spike/.out',
       'node_modules',
+      '.claude',
       'coverage',
       'test-results',
       'playwright-report',

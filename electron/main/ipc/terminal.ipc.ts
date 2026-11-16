@@ -33,6 +33,7 @@ import { SESSION_ID_MAX } from '../../shared/session-id-limits';
 import { utf8BytesExceed } from '../../shared/utf8-byte-length';
 import { broadcastToWindows } from '../lib/broadcast';
 import { codedError } from '../../shared/error-message';
+import type { TerminalSessionSnapshot } from '../../shared/terminal-session';
 
 // ── 常量 ─────────────────────────────────────────────────────
 const MAX_WRITE_BYTES = 2_000_000; // ~2MB 真实 UTF-8 字节上限(下游 PTY/IPC 写入按字节,边界语义统一)
@@ -229,14 +230,32 @@ export function resolveTerminalCwd(cwdHint?: string): string {
   throw codedError(ERROR_CODES.TERMINAL_CWD_UNRESOLVED, `terminal cwd invalid: ${cwdHint}`);
 }
 
+/**
+ * 安全:发往 renderer 的会话快照剥掉 main 内部字段 controllerToken(HTTP 传输下即窗口 bearer
+ * token,renderer / 共享 realm 插件拿到即可冒充该 agent 调 MCP host)。list_sessions 与
+ * sessions_changed 都经此投影。见 src/__tests__/terminal-controller-token-redaction。
+ */
+export function toRendererSessions(
+  sessions: readonly terminalSessions.MainTerminalSession[],
+): readonly TerminalSessionSnapshot[] {
+  if (!sessions.some((s) => s.controllerToken !== undefined)) return sessions;
+  return sessions.map((s) => {
+    if (s.controllerToken === undefined) return s;
+    const { controllerToken: _controllerToken, ...rest } = s;
+    return rest;
+  });
+}
+
 export function makeListSessionsHandler(deps?: {
   sessionStore?: typeof terminalSessions;
 }) {
   const sessionStore = deps?.sessionStore ?? terminalSessions;
   return (input: { ownerWindowId: number }): {
-    sessions: readonly terminalSessions.MainTerminalSession[];
+    sessions: readonly TerminalSessionSnapshot[];
   } => ({
-    sessions: sessionStore.getAll({ ownerWindowId: input.ownerWindowId }),
+    sessions: toRendererSessions(
+      sessionStore.getAll({ ownerWindowId: input.ownerWindowId }),
+    ),
   });
 }
 
@@ -329,7 +348,7 @@ export function makeResizeHandler(deps?: {
 export function broadcastSessionsChanged(): void {
   broadcastToWindows(
     TERMINAL_CHANNELS.SESSIONS_CHANGED,
-    (w) => terminalSessions.getAll({ ownerWindowId: w.id }),
+    (w) => toRendererSessions(terminalSessions.getAll({ ownerWindowId: w.id })),
     '[terminal] SESSIONS_CHANGED',
   );
 }

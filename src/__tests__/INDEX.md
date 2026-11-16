@@ -1046,6 +1046,10 @@
 
 - [`buffer-capacity.spec.ts`](./terminal-buffer-capacity/buffer-capacity.spec.ts)
 
+## [terminal-controller-token-redaction](./terminal-controller-token-redaction/README.md)
+
+- [`controller-token-redaction.spec.ts`](./terminal-controller-token-redaction/controller-token-redaction.spec.ts)
+
 ## [terminal-create-cancel-orphan](./terminal-create-cancel-orphan/README.md)
 
 - [`create-cancel-orphan.spec.ts`](./terminal-create-cancel-orphan/create-cancel-orphan.spec.ts)
