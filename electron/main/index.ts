@@ -214,12 +214,11 @@ ipcMain.on(
       if (mine.length === 1) entry = mine[0];
     }
     if (!entry || entry.windowId !== windowId) return;
-    if (ack.remaining) {
-      // flush 后仍有未保存改动(防抖内 autosave 失败 / flush 期间继续输入 / 确认期间别窗变脏):按回执记账,
-      // 中止本次关闭后用户再次关闭会因脏计数看到确认框。
-      dirtyStates.set(windowId, ack.remaining);
-      if (process.platform === 'darwin') senderWin.setDocumentEdited(true);
-    }
+    // 按回执携带的最终脏态记账(始终携带,含空集合;旧回执只有 remaining)。remaining:flush 后仍有未保存改动
+    // (防抖内 autosave 失败 / flush 期间继续输入 / 确认期间别窗变脏),中止本次关闭后再次关闭会看到确认框;
+    // 空集合:「保存」后已干净,退出前全局最终检查不再拿旧脏集合误中止(复审)。
+    const finalState = ack.state ?? ack.remaining;
+    if (finalState) recordDirtyState(senderWin, finalState);
     entry.done(ack.saveFailed ? 'save-failed' : ack.remaining ? 'still-dirty' : 'ok');
   },
 );
@@ -233,11 +232,15 @@ ipcMain.on(LAYOUT_CHANNELS.DIRTY_STATE, (event: IpcMainEvent, raw: unknown) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   const state = parseDirtyState(raw);
   if (!win || !state) return;
+  recordDirtyState(win, state);
+});
+
+function recordDirtyState(win: BrowserWindow, state: DirtyState): void {
   if (state.dirty > 0) dirtyStates.set(win.id, state);
   else dirtyStates.delete(win.id);
   // macOS:关闭按钮显示「有未保存改动」圆点(其它平台无此 API)。
   if (process.platform === 'darwin') win.setDocumentEdited(state.dirty > 0);
-});
+}
 
 /**
  * 有脏 tab 的窗口弹确认框(挂在该窗口上);无脏 tab → null(不弹框)。state:确认框告知用户的脏 tab
@@ -1263,6 +1266,15 @@ app.on('before-quit', async (event) => {
     return;
   }
   for (const w of targets) flushedOnQuit.add(w.id);
+  // 退出屏障(复审):已入 flushedOnQuit,之后的编辑不会再被 flush / 确认;不可逆清理(debug teardown 可能数秒)
+  // 期间窗口仍可编辑 → 改动丢失,用户关窗也绕过确认。进入清理前隐藏全部窗口(popout 一并)。
+  for (const w of BrowserWindow.getAllWindows()) {
+    try {
+      if (!w.isDestroyed()) w.hide();
+    } catch {
+      // 关窗竞态下 hide 失败不阻断退出清理。
+    }
+  }
   // force-kill 所有 PTY,防 agent 长任务子进程被孤儿化/zombie。无论是否有窗口要 flush
   // 都必须跑(关最后一个窗口触发的 quit 路径 wins 已空,旧 every() 守卫会跳过它)。
   // 在 app.quit() 前 await:window 'closed' 清理走 3s grace timer,进程退出不触发 SIGKILL。

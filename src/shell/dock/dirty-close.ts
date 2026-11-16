@@ -9,12 +9,15 @@ import type { EditorTab } from '@/stores/editor.store';
 import { isAutoSaveEnabled } from '@/panels/Editor/useAutoSave';
 import { willAutoSaveOnClose } from '@/panels/Editor/autosave-failures';
 
-type TabLike = Pick<EditorTab, 'id' | 'filePath' | 'dirty'>;
+type TabLike = Pick<EditorTab, 'id' | 'filePath' | 'dirty' | 'dirtyGen'>;
 
 export interface DirtyCloseState {
   readonly dirty: number;
   readonly untitled: number;
-  /** 脏 tab 的 id(file tab = 路径;untitled = 其 id)。main 按身份比较「本轮已接受」的范围(复审:只比数量会被同数量替换绕过)。 */
+  /**
+   * 脏 tab 的身份 `${tabId}#${变脏代际}`(tabId:file tab = 路径;untitled = 其 id)。main 按身份比较「本轮已接受」
+   * 的范围(复审:只比数量会被同数量替换绕过;只比 tab id 会被「保存后再编辑同一文件」绕过)。
+   */
   readonly ids: readonly string[];
   /** 其中 untitled 的 id(⊆ ids)。 */
   readonly untitledIds: readonly string[];
@@ -36,8 +39,9 @@ export function countDirtyForClose(
     if (!tab.dirty) continue;
     if (mdAutoSaveEnabled && isAutoSaveEnabled(tab.filePath) && willAutoSaveOnClose(tab.id))
       continue;
-    ids.push(tab.id);
-    if (tab.filePath === null) untitledIds.push(tab.id);
+    const id = `${tab.id}#${tab.dirtyGen ?? 0}`;
+    ids.push(id);
+    if (tab.filePath === null) untitledIds.push(id);
   }
   return { dirty: ids.length, untitled: untitledIds.length, ids, untitledIds };
 }

@@ -437,20 +437,23 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       const allowedUntitledIds = new Set(
         Array.isArray(untitledIds) ? untitledIds.filter((id) => typeof id === 'string') : [],
       );
-      const remaining = payload?.discard
-        ? null
-        : remainingAfterFlush(useEditorStore.getState().tabs, allowedUntitledIds);
+      const tabs = useEditorStore.getState().tabs;
+      const remaining = payload?.discard ? null : remainingAfterFlush(tabs, allowedUntitledIds);
+      // 回执始终携带 flush 后的最终脏态(含空集合),main 以其记账(复审:「保存」后 tab 变干净,但干净状态
+      // 此前要等之后的 effect 上报,main 可能先用旧脏集合做退出前全局最终检查而误中止退出)。
+      // autosave 已 flush 过,仍脏的 .md 也计入(同 remainingAfterFlush)。
+      const state = countDirtyForClose(tabs, false);
       // main 已按回执记账:同步去重基准,之后脏态变化与之不同即重新上报。
-      if (remaining) lastDirtyReportRef.current = JSON.stringify(remaining);
+      lastDirtyReportRef.current = JSON.stringify(state);
       const windowId = payload?.windowId ?? coApi.system.windowId;
       // requestId 原样带回:main 只接受与在途请求匹配的回执(关窗与 Cmd+Q 交叉时不串号)。
       const requestId = payload?.requestId;
-      const tag = typeof requestId === 'number' ? { requestId } : {};
-      const extra = remaining ? { remaining } : {};
-      if (payload?.save) coApi.layout.sendFlushAck?.(windowId, { saveFailed, ...extra, ...tag });
-      else if (remaining || typeof requestId === 'number') {
-        coApi.layout.sendFlushAck?.(windowId, { ...extra, ...tag });
-      } else coApi.layout.sendFlushAck?.(windowId);
+      coApi.layout.sendFlushAck?.(windowId, {
+        ...(payload?.save ? { saveFailed } : {}),
+        state,
+        ...(remaining ? { remaining } : {}),
+        ...(typeof requestId === 'number' ? { requestId } : {}),
+      });
     });
     return () => {
       off?.();

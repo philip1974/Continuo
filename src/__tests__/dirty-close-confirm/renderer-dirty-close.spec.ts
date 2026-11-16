@@ -6,16 +6,23 @@ import {
   remainingAfterFlush,
   saveDirtyTabsForClose,
 } from '../../shell/dock/dirty-close';
+import { createTab, useEditorStore } from '../../stores/editor.store';
 import {
   claimAutoSave,
   releaseAutoSave,
   setAutoSaveFailed,
 } from '../../panels/Editor/autosave-failures';
 
-const tab = (filePath: string | null, dirty: boolean, id = filePath ?? 'untitled-1') => ({
+const tab = (
+  filePath: string | null,
+  dirty: boolean,
+  id = filePath ?? 'untitled-1',
+  dirtyGen?: number,
+) => ({
   id,
   filePath,
   dirty,
+  ...(dirtyGen === undefined ? {} : { dirtyGen }),
 });
 
 describe('countDirtyForClose:只统计关窗会丢的脏 tab', () => {
@@ -37,7 +44,7 @@ describe('countDirtyForClose:只统计关窗会丢的脏 tab', () => {
         [tab('/a.ts', true), tab('/b.json', true), tab(null, true), tab('/c.ts', false)],
         true,
       ),
-    ).toEqual({ dirty: 3, untitled: 1, ids: ['/a.ts', '/b.json', 'untitled-1'], untitledIds: ['untitled-1'] });
+    ).toEqual({ dirty: 3, untitled: 1, ids: ['/a.ts#0', '/b.json#0', 'untitled-1#0'], untitledIds: ['untitled-1#0'] });
   });
 
   it('Markdown 自动保存开启时,活动 tab(持有 autosave scheduler)的脏 .md 不计入(关窗 flush 会落盘)', () => {
@@ -51,7 +58,7 @@ describe('countDirtyForClose:只统计关窗会丢的脏 tab', () => {
     claimAutoSave('/a.md', owner);
     expect(
       countDirtyForClose([tab('/a.md', true), tab('/b.md', true), tab('/renamed.md', true)], true),
-    ).toMatchObject({ dirty: 2, ids: ['/b.md', '/renamed.md'] });
+    ).toMatchObject({ dirty: 2, ids: ['/b.md#0', '/renamed.md#0'] });
   });
 
   it('无活动 autosave scheduler(编辑器未挂载)→ 脏 .md 计入', () => {
@@ -148,7 +155,7 @@ describe('remainingAfterFlush:flush 后仍未保存的改动', () => {
     expect(remainingAfterFlush([tab('/a.md', true), tab('/b.ts', true)], none)).toEqual({
       dirty: 2,
       untitled: 0,
-      ids: ['/a.md', '/b.ts'],
+      ids: ['/a.md#0', '/b.ts#0'],
       untitledIds: [],
     });
   });
@@ -158,7 +165,7 @@ describe('remainingAfterFlush:flush 后仍未保存的改动', () => {
   });
 
   it('「保存」分支只剩已告知的 untitled → null;有路径的仍脏 → 计数含 untitled', () => {
-    const told = new Set(['untitled-1']);
+    const told = new Set(['untitled-1#0']);
     expect(remainingAfterFlush([tab(null, true)], told)).toBeNull();
     expect(remainingAfterFlush([tab(null, true), tab('/a.ts', true)], told)).toMatchObject({
       dirty: 2,
@@ -168,17 +175,47 @@ describe('remainingAfterFlush:flush 后仍未保存的改动', () => {
 
   // 复审:此前按数量放过 → 确认后才新建的 untitled 草稿(同数量替换)被静默丢弃。只放过确认框告知的 id。
   it('「保存」分支 untitled 不在告知的 id 集合里(新建 / 同数量替换)→ 计入 remaining', () => {
-    const told = new Set(['untitled-1']);
+    const told = new Set(['untitled-1#0']);
     expect(
       remainingAfterFlush([tab(null, true, 'untitled-1'), tab(null, true, 'untitled-2')], told),
     ).toMatchObject({ dirty: 2, untitled: 2 });
     expect(remainingAfterFlush([tab(null, true, 'untitled-2')], told)).toMatchObject({
       dirty: 1,
-      ids: ['untitled-2'],
+      ids: ['untitled-2#0'],
     });
   });
 
   it('告知集合只放过 untitled:同 id 的有路径 tab 不被放过', () => {
-    expect(remainingAfterFlush([tab('/a.ts', true)], new Set(['/a.ts']))).toMatchObject({ dirty: 1 });
+    expect(remainingAfterFlush([tab('/a.ts', true)], new Set(['/a.ts#0']))).toMatchObject({ dirty: 1 });
+  });
+});
+
+// 复审:main 按上报的脏 id 做「本轮已接受范围」的子集比较。只用 tab id 时,「不保存」后保存 /x.ts 再编辑同一文件
+// → 脏 id 仍是 /x.ts → 放行退出丢新改动。上报身份带「变脏代际」:tab 每次 clean→dirty 跃迁递增。
+describe('脏 tab 身份带变脏代际', () => {
+  it('上报 id 形如 `${tabId}#${gen}`(无代际按 0)', () => {
+    expect(
+      countDirtyForClose([tab('/a.ts', true, '/a.ts', 2), tab(null, true, 'untitled-1', 1)], true),
+    ).toEqual({ dirty: 2, untitled: 1, ids: ['/a.ts#2', 'untitled-1#1'], untitledIds: ['untitled-1#1'] });
+  });
+
+  it('editor store:clean→dirty 跃迁递增代际;持续输入不变;保存后再编辑同一文件 → 新代际', () => {
+    useEditorStore.setState({ tabs: [], activeTabId: null });
+    const s = useEditorStore.getState();
+    s.openTab(createTab('/w/x.ts', 'old'));
+    const ids = () => countDirtyForClose(useEditorStore.getState().tabs, false).ids;
+    expect(ids()).toEqual([]);
+    s.updateContent('/w/x.ts', 'new');
+    expect(ids()).toEqual(['/w/x.ts#1']);
+    s.updateContent('/w/x.ts', 'newer');
+    expect(ids()).toEqual(['/w/x.ts#1']);
+    s.markSaved('/w/x.ts');
+    expect(ids()).toEqual([]);
+    s.updateContent('/w/x.ts', 'edited again');
+    expect(ids()).toEqual(['/w/x.ts#2']);
+    // 保存期间继续输入(markSaved 保留 dirty):仍是同一次变脏,不递增
+    s.markSaved('/w/x.ts', 'old');
+    expect(ids()).toEqual(['/w/x.ts#2']);
+    useEditorStore.setState({ tabs: [], activeTabId: null });
   });
 });

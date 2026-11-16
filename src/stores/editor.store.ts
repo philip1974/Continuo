@@ -44,6 +44,17 @@ export interface EditorTab {
    * optional:缺省时 getEffectiveMode 回退到现场计算(行为等价,不破坏旧构造)。
    */
   readonly milkdownUnsafe?: boolean;
+  /**
+   * 变脏代际:每次 clean→dirty 跃迁递增(持续输入 / 保存期间继续输入保留 dirty 不递增)。关窗脏确认按
+   * `${id}#${dirtyGen}` 上报身份 —— 「不保存」后保存再编辑同一文件是新的改动,不在已接受范围内(复审)。
+   * optional:缺省按 0。
+   */
+  readonly dirtyGen?: number;
+}
+
+/** clean→dirty 跃迁时递增变脏代际(见 EditorTab.dirtyGen);否则不改。 */
+function withDirtyGen(cur: EditorTab, next: EditorTab): EditorTab {
+  return next.dirty && !cur.dirty ? { ...next, dirtyGen: (cur.dirtyGen ?? 0) + 1 } : next;
 }
 
 const EMPTY_EDITOR_TABS: EditorTab[] = [];
@@ -536,12 +547,12 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
       if (idx < 0) return s;
       const cur = s.tabs[idx]!;
       if (cur.content === content) return s;
-      const next: EditorTab = {
+      const next = withDirtyGen(cur, {
         ...cur,
         content,
         dirty: content !== cur.originalContent,
         milkdownUnsafe: computeMilkdownUnsafe(cur.filePath, content), // perf P4
-      };
+      });
       const tabs = replaceTabAt(s.tabs, idx, next);
       // perf P12/P14:dirty 翻转 或 milkdownUnsafe 翻转(影响 EditorHeader action 区的
       // effectiveMode)才 bump;持续在已脏 tab 输入(dirty 恒 true、unsafe 不变)不 bump
@@ -563,11 +574,11 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
       const onDisk = savedContent ?? cur.content;
       const dirty = cur.content !== onDisk;
       if (cur.originalContent === onDisk && cur.dirty === dirty) return s;
-      const next: EditorTab = {
+      const next = withDirtyGen(cur, {
         ...cur,
         originalContent: onDisk,
         dirty,
-      };
+      });
       const tabs = replaceTabAt(s.tabs, idx, next);
       // perf P12:markSaved 改 dirty(脏标→已存)即 chrome 变;dirty 未变则不 bump。
       return next.dirty !== cur.dirty

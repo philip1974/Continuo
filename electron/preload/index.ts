@@ -154,10 +154,12 @@ const api = {
     sendFlushAck: (
       windowId: number,
       // remaining:全部 flush 后仍有未保存改动(未选「不保存」时)的计数,main 据此中止关闭 / 退出。
+      // state:flush 后的最终脏态(始终携带,含空集合),main 以其更新脏态记账。
       result?: {
         saveFailed?: boolean;
         requestId?: number;
         remaining?: DirtyReport;
+        state?: DirtyReport;
       },
     ): void => {
       ipcRenderer.send(LAYOUT_CHANNELS.FLUSH_ACK, windowId, result);
