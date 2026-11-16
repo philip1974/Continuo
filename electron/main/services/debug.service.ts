@@ -591,7 +591,14 @@ export class DebugService {
     // 追加到该 source 的断点集合(同 file+line 替换,不重复);此前整表替换成 [input],同文件第二个断点
     // 会把第一个从 adapter 里删掉。
     const source = sourceKey(input.file);
-    if (!runtime.sourcePaths.has(source)) runtime.sourcePaths.set(source, input.file);
+    // Windows 记录的拼写统一成反斜杠:编辑器 tab 路径来自原生对话框 / listDir(反斜杠),renderer 按路径匹配
+    // tab 放红点;首次以 `C:/repo/a.js` 设断点时沿用原拼写会匹配不上,gutter 不显示。
+    if (!runtime.sourcePaths.has(source)) {
+      runtime.sourcePaths.set(
+        source,
+        platform() === 'win32' ? path.win32.normalize(input.file) : input.file,
+      );
+    }
     const sourcePath = runtime.sourcePaths.get(source) ?? input.file;
     const existing = runtime.breakpoints.findIndex(
       (bp) => bp.source === source && bp.line === input.line,
@@ -663,16 +670,22 @@ export class DebugService {
     // 设断点本身不让程序起跑:起跑推迟到 wait_for_stop / continue / step(ensureProgramStarted),
     // 这样起跑前连设的多个断点都能在程序运行之前就位。
     const body = asRecord(response.body);
-    const breakpoint = asRecord(asArray(body.breakpoints)[resultIndex] as DapJson | undefined);
-    const result = {
-      verified: boolField(breakpoint, 'verified') ?? true,
-      ...(numberField(breakpoint, 'line') !== undefined
-        ? { line: numberField(breakpoint, 'line') }
-        : {}),
-      ...(stringField(breakpoint, 'message') !== undefined
-        ? { message: stringField(breakpoint, 'message') }
-        : {}),
-    };
+    const ownItem = asArray(body.breakpoints)[resultIndex] as DapJson | undefined;
+    // adapter 未回报本次那项(对未变化的集合可能返回空 / 短数组)→ 沿用该记录上次的回报,与下方快照同源;
+    // 否则返回值伪报 {verified:true} 并丢掉校正行与 message。
+    const lastReported = ownItem === undefined ? sourceBreakpoints[resultIndex]?.reported : undefined;
+    const breakpoint = asRecord(ownItem);
+    const result = lastReported
+      ? { ...lastReported }
+      : {
+          verified: boolField(breakpoint, 'verified') ?? true,
+          ...(numberField(breakpoint, 'line') !== undefined
+            ? { line: numberField(breakpoint, 'line') }
+            : {}),
+          ...(stringField(breakpoint, 'message') !== undefined
+            ? { message: stringField(breakpoint, 'message') }
+            : {}),
+        };
     // 推该 source 的完整集合(adapter 校正后的行号),renderer 整组替换:只推本次那一个时,同一逻辑
     // 断点被再次校正到别的行会留下旧红点。多个请求被校正到同一行时按校正后的 file:line 去重(保留首个),
     // 否则面板 key 重复、编辑器重复装饰 —— 去重只在这里做(单一来源)。adapter 对未变化的集合可能返回

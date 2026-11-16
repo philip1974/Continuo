@@ -52,6 +52,8 @@ class FakeDapClient implements DebugDapClientLike {
   adjustBreakpointLine: (line: number) => number = (line) => line;
   /** 置位时 setBreakpoints 响应的 breakpoints 为空数组(模拟 adapter 对未变化的集合不逐项回报)。 */
   emptyBreakpointsResponse = false;
+  /** 这些请求行回报 verified:false + message(模拟 adapter 暂不能绑定的断点)。 */
+  unverifiedLines = new Set<number>();
   private seq = 1;
   private startDebuggingHandler:
     | ((
@@ -178,7 +180,12 @@ class FakeDapClient implements DebugDapClientLike {
       const requested = (args as { breakpoints?: Array<{ line: number }> }).breakpoints ?? [];
       if (this.emptyBreakpointsResponse) return { breakpoints: [] };
       return {
-        breakpoints: requested.map((bp) => ({ verified: true, line: this.adjustBreakpointLine(bp.line) })),
+        breakpoints: requested.map((bp): DapJson => {
+          const line = this.adjustBreakpointLine(bp.line);
+          return this.unverifiedLines.has(bp.line)
+            ? { verified: false, line, message: 'pending' }
+            : { verified: true, line };
+        }),
       };
     }
     if (command === 'threads') {
@@ -1275,6 +1282,43 @@ describe('DebugService fake adapter · 会话上限 / 程序起跑时机 / 按 s
         { file: '/a.js', line: 5 },
         { file: '/a.js', line: 9 },
       ],
+    });
+  });
+
+  // 工具返回值与快照同源:缺项时也沿用上次回报,而不是伪报 {verified:true} 并丢掉校正行 / message。
+  it('adapter 未回报本次那项 → 返回值沿用上次的校正行、verified 与 message', async () => {
+    const { service, parent } = makeFakeService();
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      ctx,
+    );
+    parent.adjustBreakpointLine = (line) => (line === 3 ? 5 : line);
+    parent.unverifiedLines.add(3);
+    const first = await service.setBreakpoints(sessionId, { file: '/a.js', line: 3 });
+    expect(first).toEqual({ verified: false, line: 5, message: 'pending' });
+    parent.emptyBreakpointsResponse = true;
+    const again = await service.setBreakpoints(sessionId, { file: '/a.js', line: 3 });
+    expect(again).toEqual({ verified: false, line: 5, message: 'pending' });
+  });
+
+  // Windows:编辑器 tab 路径来自原生对话框 / listDir(反斜杠)。首次以正斜杠拼写设断点时,发给 adapter 与
+  // 推给 renderer 的路径须归一成反斜杠,否则 renderer 按路径匹配 tab 失败、gutter 不显示红点。
+  it('Windows:首次拼写为正斜杠 → 发送与推送的路径归一为反斜杠', async () => {
+    platformMock.value = 'win32';
+    const { service, parent } = makeFakeService();
+    const events: DebugViewEvent[] = [];
+    service.setEventSink({ emit: (_owner, event) => events.push(event) });
+    const { session_id: sessionId } = await service.launchSession(
+      { program: 'C:\\repo\\fixture.js', cwd: 'C:\\repo' },
+      ctx,
+    );
+    await service.setBreakpoints(sessionId, { file: 'C:/repo/a.js', line: 3 });
+    expect(setBreakpointRequests(parent).at(-1)).toMatchObject({
+      source: { path: 'C:\\repo\\a.js' },
+    });
+    expect(events.at(-1)).toMatchObject({
+      file: 'C:\\repo\\a.js',
+      breakpoints: [{ file: 'C:\\repo\\a.js', line: 3 }],
     });
   });
 
