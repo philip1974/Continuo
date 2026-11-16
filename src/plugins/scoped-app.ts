@@ -7,10 +7,17 @@
 // Phase 3:fs/network/clipboard 各方法接入 permission.check,未授抛
 // PermissionError,plugin 须 try/catch 优雅降级。
 // store=null(向后兼容/测试)时跳过检查直接转发,permission.check 一律 true。
+//
+// 终审 P1(停用即吊销):PluginManager 在插件实例离开运行态时先 revoke() 再调 onunload。吊销后有外部副作用的
+// 能力(shell / network / fs 写与 requestScope / clipboard / mcp 注册与调用 / notifications / dock / editor.openFile)
+// 在 renderer 源头拒绝、不发 IPC —— 延迟回调或超时后仍在跑的 onunload 不能再起进程 / 发请求。
+// 不阻断:fs 读、dataStore(插件自有数据,onunload 常用 saveData)、permission 查询、userHome。
+// 见 src/__tests__/plugin-capability-revoke/。
 
 import type {
   CoApp,
   CoDockApi,
+  Disposable,
   CoEditorApi,
   CoNotificationsApi,
   CoPluginApp,
@@ -116,16 +123,43 @@ export function hasGrantedPermissionDecision(
   return false;
 }
 
-/** 检查 plugin 是否拿到 perm 授权;未授抛 PermissionError. store=null 跳过检查. */
+/** scoped app 的吊销状态(per-instance,由 createScopedAppController 持有). */
+interface ScopedLifecycle {
+  revoked: boolean;
+}
+
+function revokedMessage(pluginId: string, capability: string): string {
+  return `plugin ${pluginId} has been deactivated; '${capability}' revoked`;
+}
+
+/** 已吊销 → 抛 PermissionError(权限门控能力)。 */
+function assertLive(pluginId: string, perm: PermissionKey, life: ScopedLifecycle): void {
+  if (life.revoked) throw new PermissionError(perm, revokedMessage(pluginId, perm));
+}
+
+/** 已吊销 → 抛 PERMISSION_DENIED(无权限项的 UI 副作用能力:notifications / dock)。 */
+function assertLiveUi(pluginId: string, capability: string, life: ScopedLifecycle): void {
+  if (life.revoked) throw codedError('PERMISSION_DENIED', revokedMessage(pluginId, capability));
+}
+
+/**
+ * 检查 plugin 是否拿到 perm 授权;未授抛 PermissionError. store=null 跳过授权检查.
+ * 传入 life 时 await 前后各查一次吊销状态:授权读取(可能挂在 IPC)期间被吊销,返回后也不放行 ——
+ * 调用方在本函数返回后同步发 IPC,即「吊销之后不再发出任何副作用请求」。
+ */
 async function ensurePerm(
   pluginId: string,
   perm: PermissionKey,
   store: PermissionStore | null,
+  life?: ScopedLifecycle,
 ): Promise<void> {
-  if (!store) return;
-  const decisions = await store.get(pluginId);
-  const granted = hasGrantedPermissionDecision(decisions, perm);
-  if (!granted) throw new PermissionError(perm);
+  if (life) assertLive(pluginId, perm, life);
+  if (store) {
+    const decisions = await store.get(pluginId);
+    const granted = hasGrantedPermissionDecision(decisions, perm);
+    if (!granted) throw new PermissionError(perm);
+  }
+  if (life) assertLive(pluginId, perm, life);
 }
 
 function missingPluginFsToken(): never {
@@ -185,11 +219,13 @@ function pickBoolOpts<K extends string>(
 function makeFs(
   pluginId: string,
   store: PermissionStore | null,
+  life: ScopedLifecycle,
   token?: string,
 ): PluginFsApi {
+  // 吊销只拦写类 / 扩权类(有外部副作用);读类不拦(onunload 收尾可读,停用随即回收 fs token)。
   return {
     requestScope: async (scopes) => {
-      await ensurePerm(pluginId, 'fs', store);
+      await ensurePerm(pluginId, 'fs', store, life);
       // 边界(E239,E44/E180 pre-IPC 预检族):发 IPC 前用共享 helper 校验 scopes(数量 ≤64 + 每项
       // path/mode)。主进程 plugin-fs:request-scope 也校验,但畸形插件传超大数组/超长路径时,
       // renderer→preload→main 的 structured clone 已先序列化大对象(IPC 放大),主进程才拒绝。前置 reject
@@ -209,7 +245,7 @@ function makeFs(
       return coApi.pluginFsRaw.readFile(token ?? missingPluginFsToken(), path);
     },
     writeFile: async (path, content) => {
-      await ensurePerm(pluginId, 'fs', store);
+      await ensurePerm(pluginId, 'fs', store, life);
       // 边界(E44,E29 renderer 侧对偶 / E41-E43 同族):发 IPC 前预检 content/path 大小。畸形插件传
       // 超大字符串时,主进程 plugin-fs:write-file 虽有 64MiB 上限(E29),但 ipcRenderer.invoke 的
       // structured clone 已先在 renderer/preload 序列化大对象 → 内存峰值/卡顿。复用 main/renderer 共享
@@ -259,7 +295,7 @@ function makeFs(
       return coApi.pluginFsRaw.realpath(token ?? missingPluginFsToken(), path);
     },
     mkdir: async (path, opts) => {
-      await ensurePerm(pluginId, 'fs', store);
+      await ensurePerm(pluginId, 'fs', store, life);
       assertPluginFsPath(path); // 边界(E180)
       return coApi.pluginFsRaw.mkdir(
         token ?? missingPluginFsToken(),
@@ -268,13 +304,13 @@ function makeFs(
       );
     },
     rename: async (src, dst) => {
-      await ensurePerm(pluginId, 'fs', store);
+      await ensurePerm(pluginId, 'fs', store, life);
       assertPluginFsPath(src, 'src'); // 边界(E180)
       assertPluginFsPath(dst, 'dst');
       return coApi.pluginFsRaw.rename(token ?? missingPluginFsToken(), src, dst);
     },
     rm: async (path, opts) => {
-      await ensurePerm(pluginId, 'fs', store);
+      await ensurePerm(pluginId, 'fs', store, life);
       assertPluginFsPath(path); // 边界(E180)
       return coApi.pluginFsRaw.rm(
         token ?? missingPluginFsToken(),
@@ -283,7 +319,7 @@ function makeFs(
       );
     },
     cp: async (src, dst, opts) => {
-      await ensurePerm(pluginId, 'fs', store);
+      await ensurePerm(pluginId, 'fs', store, life);
       assertPluginFsPath(src, 'src'); // 边界(E180)
       assertPluginFsPath(dst, 'dst');
       return coApi.pluginFsRaw.cp(
@@ -308,7 +344,7 @@ function makeFs(
       );
     },
     atomicReplaceWithinScope: async (staging, final, opts) => {
-      await ensurePerm(pluginId, 'fs', store);
+      await ensurePerm(pluginId, 'fs', store, life);
       assertPluginFsPath(staging, 'staging'); // 边界(E180)
       assertPluginFsPath(final, 'final');
       return coApi.pluginFsRaw.atomicReplaceWithinScope(
@@ -373,10 +409,11 @@ function validateNetworkInput(url: unknown, init?: unknown): void {
 function makeNetwork(
   pluginId: string,
   store: PermissionStore | null,
+  life: ScopedLifecycle,
 ): PluginNetworkApi {
   return {
     async fetch(url, init) {
-      await ensurePerm(pluginId, 'network', store);
+      await ensurePerm(pluginId, 'network', store, life);
       validateNetworkInput(url, init); // 边界(E264):发 raw fetch 前校验 URL/headers
       // 用 module 顶部 cached raw fetch,sandboxSweep 后全局 fetch
       // 已涂掉但本闭包仍能调
@@ -392,10 +429,11 @@ type ShellChunk = { stream: 'stdout' | 'stderr'; chunk: Uint8Array };
 function makeShell(
   pluginId: string,
   store: PermissionStore | null,
+  life: ScopedLifecycle,
 ): PluginShellApi {
   return {
     async exec(cmd, args, opts) {
-      await ensurePerm(pluginId, 'shell', store);
+      await ensurePerm(pluginId, 'shell', store, life);
       validateShellInput(cmd, args, opts); // 边界(E46):spread/发 IPC 前预检
       const r = await coApi.shell.exec({
         cmd,
@@ -444,7 +482,7 @@ function makeShell(
         if (raw) return raw;
         if (!startPromise) {
           startPromise = (async () => {
-            await ensurePerm(pluginId, 'shell', store);
+            await ensurePerm(pluginId, 'shell', store, life);
             // race(R94):权限等待期间已被消费者取消 → 不 spawn,返回合成终止 stream。
             if (cancelled) return cancelledStream;
             // 边界(E46):发 IPC(structured-clone args/opts)前预检,超限抛 BAD_INPUT(经
@@ -513,14 +551,16 @@ const CLIPBOARD_TEXT_MAX_BYTES = 16 * 1024 * 1024;
 function makeClipboard(
   pluginId: string,
   store: PermissionStore | null,
+  life: ScopedLifecycle,
 ): PluginClipboardApi {
+  // 吊销后读写都拦:读剪贴板是用户隐私数据,停用后的代码没有正当用途。
   return {
     async readText() {
-      await ensurePerm(pluginId, 'clipboard', store);
+      await ensurePerm(pluginId, 'clipboard', store, life);
       return getCachedClipboard().readText();
     },
     async writeText(text) {
-      await ensurePerm(pluginId, 'clipboard', store);
+      await ensurePerm(pluginId, 'clipboard', store, life);
       // 边界(E181):发原生 clipboard 前校验类型 + UTF-8 字节上限。畸形/恶意插件传非 string 或超大
       // 字符串 → renderer/系统 clipboard API 卡顿/内存峰值/异常路径。非法抛 BAD_INPUT(同 shell/fs 入口)。
       if (typeof text !== 'string') {
@@ -534,27 +574,67 @@ function makeClipboard(
   };
 }
 
+/**
+ * 终审 P1(撤销 mcp-tools 后已注册工具仍可调用):权限不只在 register 时查 ——
+ * - 兜底:把 authorize 交给 registry,每次调用分发到 run 前重查(吊销 / 撤销授权 → PERMISSION_DENIED);
+ * - 列表准确:记录本实例注册的工具,recheck() 发现已无 mcp-tools 授权时全部注销(走原 Disposable,
+ *   main 侧 stub 同步移除;之后插件停用再 dispose 是幂等 no-op)。
+ */
 function makeMcp(
   pluginId: string,
   store: PermissionStore | null,
   registry: CoApp['mcp'],
-): PluginMcpApi {
-  return {
+  life: ScopedLifecycle,
+): { api: PluginMcpApi; recheck: () => Promise<void> } {
+  const tools = new Set<Disposable>();
+  const authorize = (): Promise<void> => ensurePerm(pluginId, 'mcp-tools', store, life);
+  const api: PluginMcpApi = {
     async register<I, O>(spec: PluginMcpToolSpec<I, O>) {
-      await ensurePerm(pluginId, 'mcp-tools', store);
-      return registry.register(spec, pluginId);
+      await authorize();
+      const inner = await registry.register(spec, pluginId, authorize);
+      const tracked: Disposable = {
+        dispose: () => {
+          tools.delete(tracked);
+          inner.dispose();
+        },
+      };
+      // 注册 IPC 在途期间被吊销 → 立即撤回,不留下停用实例的工具。
+      if (life.revoked) {
+        tracked.dispose();
+        assertLive(pluginId, 'mcp-tools', life);
+      }
+      tools.add(tracked);
+      return tracked;
     },
   };
+  const recheck = async (): Promise<void> => {
+    if (tools.size === 0) return;
+    try {
+      await ensurePerm(pluginId, 'mcp-tools', store);
+    } catch (err) {
+      if (!(err instanceof PermissionError)) throw err;
+      for (const t of [...tools]) t.dispose();
+    }
+  };
+  return { api, recheck };
 }
 
 function makeEditor(
   pluginId: string,
   store: PermissionStore | null,
   rawEditor: CoEditorApi,
+  life: ScopedLifecycle,
   token?: string,
 ): CoEditorApi {
+  const revokedResult = {
+    ok: false,
+    code: 'PERMISSION_DENIED',
+    message: revokedMessage(pluginId, 'editor.openFile'),
+  } as const;
   return {
     async openFile(path, opts) {
+      // 终审 P1:吊销后不再打开编辑器(UI 副作用);契约返回结果对象(非抛)。
+      if (life.revoked) return revokedResult;
       try {
         await ensurePerm(pluginId, 'fs', store);
       } catch (err) {
@@ -600,6 +680,8 @@ function makeEditor(
         }
       }
 
+      // 授权 / scope 检查 await 期间被吊销 → 同样不打开。
+      if (life.revoked) return revokedResult;
       return rawEditor.openFile(path, opts);
     },
   };
@@ -621,19 +703,23 @@ function makeDataStore(
   };
 }
 
-function makeDock(rawDock: CoDockApi): CoDockApi {
+function makeDock(pluginId: string, rawDock: CoDockApi, life: ScopedLifecycle): CoDockApi {
   return {
     openPanel(panelId) {
+      assertLiveUi(pluginId, 'dock.openPanel', life);
       rawDock.openPanel(panelId);
     },
   };
 }
 
 function makeNotifications(
+  pluginId: string,
   rawNotifications: CoNotificationsApi,
+  life: ScopedLifecycle,
 ): CoNotificationsApi {
   return {
     show(opts) {
+      assertLiveUi(pluginId, 'notifications.show', life);
       rawNotifications.show(opts);
     },
   };
@@ -683,11 +769,65 @@ function restrictToDeclared(
 }
 
 /**
+ * per-instance scoped app 及其控制面(PluginManager 持有,插件拿不到)。
+ */
+export interface ScopedAppController {
+  readonly app: CoPluginApp;
+  /**
+   * 吊销(幂等,不可恢复):之后有外部副作用的能力一律拒绝、不发 IPC(见文件头)。插件实例离开运行态时
+   * 先于 onunload 调用。
+   */
+  revoke(): void;
+  /** 授权变更后重查 mcp-tools:已无授权 → 注销本实例经 app.mcp 注册的全部工具. */
+  recheckMcpPermission(): Promise<void>;
+}
+
+/**
  * 把 coApp 包成 per-plugin CoPluginApp。Plugin constructor 拿到的就是它。
  *
  * - 原有贡献点字段(panels/commands/...)直通 coApp 引用,不重复 new
  * - fs/network/clipboard/shell/permission 是 per-plugin 闭包,持 pluginId
  */
+export function createScopedAppController(
+  coApp: CoApp,
+  pluginId: string,
+  rawStore: PermissionStore | null,
+  token?: string,
+  declared?: readonly PermissionKey[],
+): ScopedAppController {
+  // 有效权限 = 当前 manifest 声明 ∩ 用户已授权:插件升级删掉某权限声明后,持久化里的
+  // 旧授权不得继续生效。传入 declared 时把 store.get 视图裁到声明集合,所有 ensurePerm /
+  // permission.check/granted 自动走同一语义;未传(core plugin / 测试)保持旧行为。
+  const store = rawStore && declared ? restrictToDeclared(rawStore, declared) : rawStore;
+  const life: ScopedLifecycle = { revoked: false };
+  // Omit coApp.mcp/editor raw singletons → 替换为 per-plugin scope wrappers,
+  // 其它字段直通。
+  const { mcp: registry, editor, dock, notifications, dataStore, ...rest } =
+    coApp;
+  const mcp = makeMcp(pluginId, store, registry, life);
+  const app: CoPluginApp = {
+    ...rest,
+    dataStore: makeDataStore(pluginId, dataStore),
+    editor: makeEditor(pluginId, store, editor, life, token),
+    dock: makeDock(pluginId, dock, life),
+    notifications: makeNotifications(pluginId, notifications, life),
+    fs: makeFs(pluginId, store, life, token),
+    network: makeNetwork(pluginId, store, life),
+    shell: makeShell(pluginId, store, life),
+    clipboard: makeClipboard(pluginId, store, life),
+    permission: makePermission(pluginId, store),
+    mcp: mcp.api,
+  };
+  return {
+    app,
+    revoke: () => {
+      life.revoked = true;
+    },
+    recheckMcpPermission: mcp.recheck,
+  };
+}
+
+/** 不需要控制面的调用方(core plugin / 测试)用:只返回 scoped app。 */
 export function createScopedApp(
   coApp: CoApp,
   pluginId: string,
@@ -695,25 +835,5 @@ export function createScopedApp(
   token?: string,
   declared?: readonly PermissionKey[],
 ): CoPluginApp {
-  // 有效权限 = 当前 manifest 声明 ∩ 用户已授权:插件升级删掉某权限声明后,持久化里的
-  // 旧授权不得继续生效。传入 declared 时把 store.get 视图裁到声明集合,所有 ensurePerm /
-  // permission.check/granted 自动走同一语义;未传(core plugin / 测试)保持旧行为。
-  const store = rawStore && declared ? restrictToDeclared(rawStore, declared) : rawStore;
-  // Omit coApp.mcp/editor raw singletons → 替换为 per-plugin scope wrappers,
-  // 其它字段直通。
-  const { mcp: registry, editor, dock, notifications, dataStore, ...rest } =
-    coApp;
-  return {
-    ...rest,
-    dataStore: makeDataStore(pluginId, dataStore),
-    editor: makeEditor(pluginId, store, editor, token),
-    dock: makeDock(dock),
-    notifications: makeNotifications(notifications),
-    fs: makeFs(pluginId, store, token),
-    network: makeNetwork(pluginId, store),
-    shell: makeShell(pluginId, store),
-    clipboard: makeClipboard(pluginId, store),
-    permission: makePermission(pluginId, store),
-    mcp: makeMcp(pluginId, store, registry),
-  };
+  return createScopedAppController(coApp, pluginId, rawStore, token, declared).app;
 }

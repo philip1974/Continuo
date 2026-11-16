@@ -151,10 +151,14 @@ export class PluginMcpRegistry {
    *
    * 成功 → resolve Disposable;Disposable.dispose 调 upstream.unregister 一次,
    * 多次 dispose 幂等。
+   *
+   * authorize(可选,终审 P1):每次调用分发到 run 前先 await;reject(如插件已停用 / mcp-tools 授权已撤销)
+   * 即拒绝本次调用、不执行 run。权限不能只在注册时查一次。
    */
   async register<I, O>(
     spec: PluginMcpToolSpec<I, O>,
     pluginId: string,
+    authorize?: () => Promise<void>,
   ): Promise<Disposable> {
     validateToolSpec(spec); // 边界(E53):发 IPC/写本地 entry 前预检 name/description/jsonSchema/run/inputSchema
     if (this.entries.has(spec.name)) {
@@ -182,6 +186,7 @@ export class PluginMcpRegistry {
     // invoke 闭包捕获强类型 spec:inputSchema.safeParse 得到的 parsed.data 即 I,
     // spec.run(parsed.data) 在此处受 TS 检查。
     const invoke = async (input: unknown): Promise<unknown> => {
+      if (authorize) await authorize();
       // 边界(E259,E255-E258 深化 / schema-阶段放大):main 侧 E255 只预检 arguments **顶层** key,
       // 但 plugin 自定义 inputSchema 可为**嵌套** `.strict()` object —— `{a:{<<海量 key>>}}` 顶层 1 key
       // 绕过 main 顶层闸,在此处 safeParse 递归枚举内层 key 触发 Zod issue 构造放大(renderer CPU/内存

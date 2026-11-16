@@ -46,6 +46,11 @@ export const PLUGINS_CHANNELS = {
    * 广播给所有窗口(含发起者),各自停用实例 / 注销贡献点 / 失效权限缓存(幂等,不触盘)。
    */
   UNINSTALLED: 'plugins:uninstalled',
+  /**
+   * main → renderer push:插件 `{ id, enabled }` 的启用状态已写入 _enabled.json(终审 P1)。每个窗口各有一个
+   * PluginManager,启用 / 禁用成功后广播给所有窗口(含发起者),各自同步实例(幂等,不触盘)。
+   */
+  ENABLED_CHANGED: 'plugins:enabled-changed',
 } as const;
 
 // 边界(E242,E168-E175 IPC push ingress 守卫族):main→renderer push 事件的 payload runtime 守卫。
@@ -70,6 +75,11 @@ export function isPluginsChangedPayload(p: unknown): p is { id: string } {
   if (p === null || typeof p !== 'object') return false;
   const id = (p as { id?: unknown }).id;
   return typeof id === 'string' && id.length > 0 && id.length <= PLUGIN_ID_MAX_LEN;
+}
+
+/** plugins:enabled-changed push payload 守卫 —— 同 isPluginsChangedPayload 的 id 约束 + boolean enabled. */
+export function isPluginEnabledChangedPayload(p: unknown): p is { id: string; enabled: boolean } {
+  return isPluginsChangedPayload(p) && typeof (p as { enabled?: unknown }).enabled === 'boolean';
 }
 
 /** 边界(E242):plugins:protocol-url push payload 守卫 —— 非空 string url 且 ≤ PROTOCOL_URL_MAX_LEN. */

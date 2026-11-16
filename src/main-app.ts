@@ -146,8 +146,6 @@ export async function init(): Promise<void> {
   // promptFn 桥到 design Modal(用户首次启用插件时弹授权)。
   const userPermissionStore = new IpcPermissionStore();
   setUserPermissionStore(userPermissionStore);
-  // 终审 P1:任一窗口(含本窗口)变更插件授权成功 → main 广播,本窗口失效授权缓存,下次读重新加载。
-  coApi.plugins.onPermissionsChanged((id) => userPermissionStore.invalidate(id));
   const userPluginManager = new PluginManager(coApp, {
     ...createWindowApiHost(),
     permissionStore: userPermissionStore,
@@ -155,6 +153,14 @@ export async function init(): Promise<void> {
       usePermissionPromptStore.getState().request(pid, perms),
   });
   setUserPluginManager(userPluginManager);
+  // 终审 P1:任一窗口(含本窗口)变更插件授权成功 → main 广播,本窗口失效授权缓存(下次读重新加载),
+  // 再重查该插件 mcp-tools 授权:已撤销 → 注销其 MCP 工具(调用期逐次重查是兜底)。
+  coApi.plugins.onPermissionsChanged((id) => {
+    userPermissionStore.invalidate(id);
+    void userPluginManager
+      .handlePermissionsChanged(id)
+      .catch((err) => console.warn('[main] plugin permissions-changed recheck failed', err));
+  });
 
   // M-Plugin v4.3.1:主进程 mtime watch 推 changed → 自动 reload。
   // race(R16):init() 与 onChanged 订阅经 reload-gate 解耦 —— init 仍在扫描时到达的变更先
@@ -166,6 +172,9 @@ export async function init(): Promise<void> {
     // 终审 P1:任一窗口卸载成功 → main 广播,本窗口撤销该插件实例 / 贡献点 / 权限缓存(幂等、不触盘)。
     onUninstalled: (cb) => coApi.plugins.onUninstalled(cb),
     uninstalled: (id) => userPluginManager.handleUninstalled(id),
+    // 终审 P1:任一窗口启用 / 禁用成功 → main 广播,本窗口同步实例启停(幂等、不触盘)。
+    onEnabledChanged: (cb) => coApi.plugins.onEnabledChanged(cb),
+    enabledChanged: (id, enabled) => userPluginManager.handleEnabledChanged(id, enabled),
     onError: (where, err) =>
       console.warn(`[main] user plugin manager ${where} failed`, err),
   });

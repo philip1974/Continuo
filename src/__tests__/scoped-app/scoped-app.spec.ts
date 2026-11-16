@@ -938,7 +938,7 @@ describe('授后转发 — fs / shell / clipboard / mcp / network 行为', () =>
     expect(coApiMocks.shellExec).toHaveBeenCalled();
   });
 
-  it('mcp.register 授后调 registry.register(spec, pluginId)', async () => {
+  it('mcp.register 授后调 registry.register(spec, pluginId, authorize)', async () => {
     const store = new InMemoryPermissionStore();
     await store.grant('p', ['mcp-tools']);
     const coApp = makeLmApp();
@@ -953,7 +953,8 @@ describe('授后转发 — fs / shell / clipboard / mcp / network 行为', () =>
       run: async () => ({}),
     };
     await scoped.mcp.register(spec as never);
-    expect(regSpy).toHaveBeenCalledWith(spec, 'p');
+    // 第三参为每次调用前的授权重查(plugin-capability-revoke)
+    expect(regSpy).toHaveBeenCalledWith(spec, 'p', expect.any(Function));
   });
 
   it('未授 mcp-tools → register 抛 PermissionError', async () => {
