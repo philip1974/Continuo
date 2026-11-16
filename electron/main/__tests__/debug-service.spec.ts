@@ -1750,6 +1750,50 @@ describe('DebugService fake adapter · 会话上限 / 程序起跑时机 / 按 s
     });
   });
 
+  // 反方向:先 realpath 成功按真实路径分组,之后目标文件被删 realpath 失败。不得按调用方拼写新建 fallback 组 ——
+  // 否则 adapter 只收到新那行,renderer 同显示路径的单项快照整组替换隐藏旧行。
+  it('realpath 先成功后失败 → 沿用已关联的真实路径组,下发完整集合,快照只有一组', async () => {
+    let exists = true;
+    const workspace: DebugWorkspaceGuard = {
+      getWorkspaceRoot: () => '/',
+      realpath: async (p) => {
+        if (p.startsWith('/link/')) {
+          if (!exists) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+          return p.replace(/^\/link\//, '/real/');
+        }
+        return p;
+      },
+    };
+    const { service, parent } = makeFakeService(new FakeDapClient(1001), workspace);
+    const events: DebugViewEvent[] = [];
+    service.setEventSink({ emit: (_owner, event) => events.push(event) });
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/real/fixture.js', cwd: '/real' },
+      ctx,
+    );
+    await service.setBreakpoints(sessionId, { file: '/link/a.js', line: 3 });
+    exists = false;
+    await service.setBreakpoints(sessionId, { file: '/link/a.js', line: 5 });
+    expect(setBreakpointRequests(parent).at(-1)).toMatchObject({
+      source: { path: '/real/a.js' },
+      breakpoints: [{ line: 3 }, { line: 5 }],
+    });
+    expect(events.filter((e) => e.type === 'breakpoints-changed').at(-1)).toMatchObject({
+      file: '/link/a.js',
+      breakpoints: [
+        { file: '/link/a.js', line: 3 },
+        { file: '/link/a.js', line: 5 },
+      ],
+    });
+    await parent.triggerStartDebugging({ type: 'pwa-node' });
+    const childRequests = setBreakpointRequests(parent.children[0]!);
+    expect(childRequests).toHaveLength(1);
+    expect(childRequests[0]).toMatchObject({
+      source: { path: '/real/a.js' },
+      breakpoints: [{ line: 3 }, { line: 5 }],
+    });
+  });
+
   // 同一行改 column 是新的断点定义:不得继承旧定义在各连接上的回报 / id —— 否则 child 同步失败(被 allSettled
   // 吞掉)时聚合仍用旧 child 的 verified:true。完全相同的重设才继承(见「运行后对同一 source 重设」)。
   it('同一行 column 变化 → 不沿用旧定义的回报;child 同步失败时如实回落到父连接的回报', async () => {

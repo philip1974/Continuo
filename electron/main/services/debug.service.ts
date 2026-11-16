@@ -186,6 +186,11 @@ interface RuntimeDebugSession {
    */
   readonly adapterPaths: Map<string, string>;
   /**
+   * 调用方拼写的分组键 → 该拼写最近一次 realpath 成功时的分组键。目标文件之后被删、realpath 失败时沿用它,
+   * 不按调用方拼写另起 fallback 组(否则只下发新那行,renderer 同显示路径的快照整组替换隐藏旧行)。
+   */
+  readonly resolvedSources: Map<string, string>;
+  /**
    * 各连接上按 id 查不到记录的 breakpoint changed 事件(id → 最新的 breakpoint 体)。DapClient 在同一 chunk 里
    * 先 resolve setBreakpoints 响应、再同步分发紧随其后的事件,await 续体登记新 id 之前事件就到了;登记 id 后补上。
    * 有上限(超出丢最旧的)。
@@ -657,6 +662,7 @@ export class DebugService {
       breakpoints: [],
       sourcePaths: new Map(),
       adapterPaths: new Map(),
+      resolvedSources: new Map(),
       pendingBreakpointChanges: new Map(),
       initialized: false,
       configurationDone: false,
@@ -736,8 +742,15 @@ export class DebugService {
     const runtime = this.requireRuntime(sessionId);
     // 追加到该 source 的断点集合(同 file+line 替换,不重复);此前整表替换成 [input],同文件第二个断点
     // 会把第一个从 adapter 里删掉。
-    const source = sourceKey(realFile);
-    if (resolved) mergeFallbackSource(runtime, sourceKey(input.file), source);
+    const spellingKey = sourceKey(input.file);
+    // realpath 失败但该拼写此前解析过:沿用已关联的真实路径组(文件被删后再设断点)。
+    const source = resolved
+      ? sourceKey(realFile)
+      : (runtime.resolvedSources.get(spellingKey) ?? spellingKey);
+    if (resolved) {
+      mergeFallbackSource(runtime, spellingKey, source);
+      runtime.resolvedSources.set(spellingKey, source);
+    }
     // 记录的拼写 normalize(Windows 统一成反斜杠):编辑器 tab 路径来自原生对话框 / listDir(反斜杠、无 `..`),
     // renderer 按路径匹配 tab 放红点;首次以 `C:/repo/a.js` 设断点时沿用原拼写会匹配不上,gutter 不显示。
     if (!runtime.sourcePaths.has(source)) {
