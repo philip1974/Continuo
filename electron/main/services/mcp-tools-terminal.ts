@@ -327,6 +327,10 @@ export function makeCreateSessionTool(
         } catch {
           stopHookInstalled = { installed: false };
         }
+        // race(R111 同族):installStopHook 是又一个异步边界,期间调用方可能断开 → 复查后再建会话。
+        if (ctx.signal?.aborted) {
+          throw codedError(ERROR_CODES.AGENT_NOT_AUTHORIZED, 'caller disconnected before session creation');
+        }
       }
       const ptyInput: CreateSessionPtyInput = {
         originHint: 'agent',

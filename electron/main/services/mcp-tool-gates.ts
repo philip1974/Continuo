@@ -43,6 +43,11 @@ export function gateWithAuth(
       if (decision === 'denied') {
         throw codedError(ERROR_CODES.AGENT_NOT_AUTHORIZED, opts.deniedMessage);
       }
+      // race(R111 同族):用户在授权弹窗上停留期间调用方可能已断开(ctx.signal abort)。即便随后点了
+      // 授权也不执行内部工具(send/kill 等副作用不该作用于无调用方的请求),错误与 create_session 同款。
+      if (ctx.signal?.aborted) {
+        throw codedError(ERROR_CODES.AGENT_NOT_AUTHORIZED, 'caller disconnected after authorization');
+      }
       return inner(input, ctx);
     },
   };

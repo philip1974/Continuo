@@ -710,6 +710,14 @@
 
 - [`update-store.spec.ts`](./marketplace-update-store/update-store.spec.ts)
 
+## [mcp-startup-audit(main 侧 MCP / 启动路径审计修复)](./mcp-startup-audit/README.md)
+
+- [`abort-after-auth.spec.ts`](./mcp-startup-audit/abort-after-auth.spec.ts)
+- [`await-stop-hook-gates.spec.ts`](./mcp-startup-audit/await-stop-hook-gates.spec.ts)
+- [`protocol-fifo-order.spec.ts`](./mcp-startup-audit/protocol-fifo-order.spec.ts)
+- [`startup-check-budget.spec.ts`](./mcp-startup-audit/startup-check-budget.spec.ts)
+- [`stdio-queue-cap.spec.ts`](./mcp-startup-audit/stdio-queue-cap.spec.ts)
+
 ## [mcp-tool-gates(重构:MCP 工具授权 / capability 门控单一来源)](./mcp-tool-gates/README.md)
 
 - [`mcp-tool-gates.spec.ts`](./mcp-tool-gates/mcp-tool-gates.spec.ts)
