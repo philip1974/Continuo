@@ -1183,3 +1183,14 @@ helper + 必挂 browser-window-created),把「单一来源」固化进测试防�
   (或保存失败中止退出)后 broker 不重启,`terminal.await_stop_hook` 直到重启应用都报 broker stopped。
 - 修复:停止函数存为 `stopHookBroker`,只在主 before-quit 的不可逆清理阶段(全局最终检查通过、
   `cancelAllAgentAuth` 之后)与 MCP host / stdio 关闭一起执行。
+
+### 终端退出闸:清理开始后拒绝新建 PTY — `terminal-quit-shutdown-gate.spec.ts`
+- 根因(终审 P1):before-quit 的 `termService.cleanupAll()` 只杀调用瞬间的 instances 快照;清理期间(debug teardown
+  数秒、MCP host 关闭前)agent 经 `terminal.create_session` 新建的 PTY 不在快照内,窗口关闭只走 3s grace,主进程退出后
+  升级定时器不执行 → 忽略 SIGINT/SIGHUP 的长期命令成为孤儿。
+- 修复(与 shell exec / stream / debug launch 同一闸):`cleanupAll` 开始即置 shuttingDown;此后 `createTerminal`
+  在入口、shell integration 准备之后(spawn 前)两处以 `TERMINAL_CREATE_CANCELLED` 拒绝并撤销已签发的 mcpToken;
+  spawn 在途时清理开始 → spawn 完成后立即 SIGKILL 并以同码失败;结束前再扫一遍登记表强杀漏网会话。
+  `resetTerminalShutdownForTest()` 供测试复位。
+- renderer 用户路径(Cmd+T / Dock「新建终端」)对 `{ok:false, TERMINAL_CREATE_CANCELLED}` 静默(窗口已隐藏),
+  见 `create-user-terminal`。

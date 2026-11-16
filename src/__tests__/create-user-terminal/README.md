@@ -14,6 +14,7 @@ HeaderActions 注释也明写「同 TerminalPlugin.terminal.new」=平行实现�
 - 读 `useWorkspaceStore.getState().root`:有值 → `create({ originHint:'user', cwd, workspaceRoot })`;
   null → `create({ originHint:'user' })`(不带 cwd/workspaceRoot)
 - 失败 → `notify.error`(CWD_UNRESOLVED 给 workspace 引导,否则带 code)+ 返回 `null`,不 focus
+- `TERMINAL_CREATE_CANCELLED`(用户关 tab 取消 / 退出闸拒绝)→ 无论 `{ok:false}` 还是 reject 都静默返回 `null`,不 notify
 - 成功有 id → `setPendingFocus(id)` + 返回 id;成功无 id → 返回 `null`,不 focus
 
 > 端到端:命令面板路径见 `49-polish-bugfixes/terminal-new-waits-hydration`,

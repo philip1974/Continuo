@@ -49,6 +49,8 @@ export async function createUserTerminal(): Promise<string | null> {
       ...(workspaceRoot !== undefined ? { cwd: workspaceRoot, workspaceRoot } : {}),
     });
     if (!r.ok) {
+      // 退出闸(终审 P1):退出清理开始后 main 以 CANCELLED 拒绝新建;窗口已隐藏,静默即可(同下方 catch)。
+      if (r.code === ERROR_CODES.TERMINAL_CREATE_CANCELLED) return null;
       const msg =
         r.code === ERROR_CODES.TERMINAL_CWD_UNRESOLVED
           ? t('errors.terminal.cwd_unresolved')

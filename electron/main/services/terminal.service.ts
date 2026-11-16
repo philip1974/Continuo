@@ -17,6 +17,8 @@ import { defaultShellArgs, skipsShellIntegration } from './shell-args';
 import { runSerialPerKey } from './serialize-per-key';
 import { utf8ByteLength } from '../../shared/utf8-byte-length';
 import { TERMINAL_CHANNELS } from '../../shared/terminal-channels';
+import { ERROR_CODES } from '../../shared/error-codes';
+import { codedError } from '../../shared/error-message';
 
 // ── 常量(节流参数,沿用 Mind 决策 #5)──────────────────────────
 const OVERFLOW_THRESHOLD_BYTES = 2 * 1024 * 1024; // 2 MB/s 触发 overflow
@@ -124,6 +126,30 @@ function safeSend(id: string, channel: string, ...args: unknown[]): void {
     target.send(channel, ...args);
   } catch (err) {
     warnOnce(`safeSend:${id}`, `send to destroyed target failed: ${String(err)}`);
+  }
+}
+
+// 终审 P1:退出清理(cleanupAll)已开始。只杀调用瞬间的快照时,清理期间(debug teardown 数秒、MCP host 关闭前)
+// agent 经 terminal.create_session 新建的 PTY 不在快照内,窗口关闭只走 3s grace,主进程退出后升级定时器不执行 →
+// 忽略 SIGINT/SIGHUP 的长期命令成为孤儿;故此后 createTerminal 一律拒绝(与 shell exec / debug launch 同一闸)。
+let shuttingDown = false;
+
+/** 测试用:复位退出闸(模块级状态)。 */
+export function resetTerminalShutdownForTest(): void {
+  shuttingDown = false;
+}
+
+// 复用 TERMINAL_CREATE_CANCELLED:renderer 用户路径对它静默(退出时窗口已隐藏,无需报错),MCP 侧照常上抛。
+function createRejectedQuittingError(): Error {
+  return codedError(ERROR_CODES.TERMINAL_CREATE_CANCELLED, 'terminal create rejected: app is quitting');
+}
+
+function revokeTokenQuietly(mcpToken: string | undefined): void {
+  if (!mcpToken) return;
+  try {
+    mcpRevokers().byToken(mcpToken);
+  } catch {
+    // ignore rollback cleanup errors
   }
 }
 
@@ -426,6 +452,11 @@ export async function createTerminal(
   env?: Record<string, string>,
   meta?: { mcpToken?: string },
 ): Promise<void> {
+  if (shuttingDown) {
+    // ipc 层已签发 mcpToken,未分配其它资源 → 撤销防孤儿 token。
+    revokeTokenQuietly(meta?.mcpToken);
+    throw createRejectedQuittingError();
+  }
   if (instances.has(id)) {
     throw new Error(`Terminal id "${id}" already exists`);
   }
@@ -462,14 +493,16 @@ export async function createTerminal(
     // 磁盘满 / 权限 / ENOENT)会绕过下面的 sm.create rollback。此刻 mcpToken 已在 ipc 层
     // 签发(注入 windowTokens),但尚未分配其它资源 → 撤销它防孤儿 token 泄漏 + map 增长。
     // 见第十九轮 P2-AW。
-    if (meta?.mcpToken) {
-      try {
-        mcpRevokers().byToken(meta.mcpToken);
-      } catch {
-        // ignore rollback cleanup errors
-      }
-    }
+    revokeTokenQuietly(meta?.mcpToken);
     throw err;
+  }
+  // 退出闸:shell integration 准备是异步边界,期间 cleanupAll 可能已开始 → spawn 前复查。
+  if (shuttingDown) {
+    revokeTokenQuietly(meta?.mcpToken);
+    void shellCleanup().catch(() => {
+      // ignore rollback cleanup errors
+    });
+    throw createRejectedQuittingError();
   }
   const hookEventsDir = path.join(app.getPath('userData'), 'hook-events');
   const envWithHookEvents = {
@@ -546,6 +579,15 @@ export async function createTerminal(
       // ignore rollback cleanup errors
     }
     throw err;
+  }
+  // 退出闸:spawn 在途时 cleanupAll 开始 —— 它对尚未建立的 session 发的 SIGKILL 落空,本地状态也已拆除;
+  // PTY 此刻才真正建立,不强杀即成孤儿。cleanupSessionLocal 幂等(已被拆除则 no-op)。
+  if (shuttingDown) {
+    cleanupSessionLocal(id, -1);
+    await getSessionManager()
+      .kill({ session_id: id, signal: 'SIGKILL' })
+      .catch(() => undefined); // 进程正在退出,忽略 kill race。
+    throw createRejectedQuittingError();
   }
 }
 
@@ -663,8 +705,15 @@ export function forceKill(id: string): void {
  * 必须用 forceKill(立即 SIGKILL)而非 kill():后者把 SIGKILL 放进 3s grace timer,
  * 进程退出时 timer 永不 fire → 只发了 Ctrl+C 杀不掉忽略 SIGINT 的进程(审计 P1)。
  * 返回 await 所有 SIGKILL 完成的 promise,供 before-quit 在 app.quit() 前等待。
+ * 开始即置退出闸,结束前再扫一遍登记表,强杀清理期间漏网登记的 PTY。
  */
 export async function cleanupAll(): Promise<void> {
+  shuttingDown = true;
+  await forceKillAllRegistered();
+  await forceKillAllRegistered();
+}
+
+async function forceKillAllRegistered(): Promise<void> {
   if (instances.size === 0) return; // 没开过终端就别 lazy-init SessionManager
   const sm = getSessionManager();
   const kills = new Array<Promise<void>>(instances.size);

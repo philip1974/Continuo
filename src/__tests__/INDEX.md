@@ -165,6 +165,7 @@
 - [`terminal-new-waits-hydration.spec.ts`](./49-polish-bugfixes/terminal-new-waits-hydration.spec.ts)
 - [`terminal-panel-fallback-i18n.spec.tsx`](./49-polish-bugfixes/terminal-panel-fallback-i18n.spec.tsx)
 - [`terminal-panel-title-subscription.spec.tsx`](./49-polish-bugfixes/terminal-panel-title-subscription.spec.tsx)
+- [`terminal-quit-shutdown-gate.spec.ts`](./49-polish-bugfixes/terminal-quit-shutdown-gate.spec.ts)
 - [`terminal-readhistory-after-unmount.spec.ts`](./49-polish-bugfixes/terminal-readhistory-after-unmount.spec.ts)
 - [`terminal-search-hotkey-after-reinit.spec.ts`](./49-polish-bugfixes/terminal-search-hotkey-after-reinit.spec.ts)
 - [`terminal-sessions-title-counter-cleanup.spec.ts`](./49-polish-bugfixes/terminal-sessions-title-counter-cleanup.spec.ts)

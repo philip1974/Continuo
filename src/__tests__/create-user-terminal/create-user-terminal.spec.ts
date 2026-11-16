@@ -99,6 +99,18 @@ describe('createUserTerminal — 共用创建流程', () => {
     );
   });
 
+  // 终审 P1:退出清理开始后 main 以 TERMINAL_CREATE_CANCELLED 拒绝新建(退出闸)。IPC 以 {ok:false} 返回该码;
+  // 窗口已隐藏,这不是用户可处理的失败 → 与 reject 路径一致静默,不弹错误。
+  it('{ok:false, TERMINAL_CREATE_CANCELLED}(退出闸拒绝)→ 静默返 null,不 notify', async () => {
+    mocks.create.mockResolvedValue({ ok: false, code: 'TERMINAL_CREATE_CANCELLED' });
+
+    const id = await createUserTerminal();
+
+    expect(id).toBeNull();
+    expect(mocks.notifyError).not.toHaveBeenCalled();
+    expect(mocks.setPendingFocus).not.toHaveBeenCalled();
+  });
+
   // a11y(A116,A50/A115 同族):coApi.terminal.create promise reject(IPC 异常)须被捕获,
   // notify.error + 返 null,不让异常经调用点 void 蒸发(用户点新建终端无反馈)。
   it('create promise reject(IPC 异常)→ notify.error + 返 null,不 focus', async () => {
