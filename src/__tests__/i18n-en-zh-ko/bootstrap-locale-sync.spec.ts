@@ -186,9 +186,13 @@ describe('renderer bootstrap locale sync — P0-2', () => {
   it('main.tsx async IIFE 完成后 locale 同步到 settings.store 与 translate 模块', async () => {
     await import('@/main');
 
-    await vi.waitFor(() => {
-      expect(mocks.bootCorePlugins).toHaveBeenCalledTimes(1);
-    });
+    // 动态 import 整个 main(含 main-app 懒加载链),高负载全量运行时 vi.waitFor 默认 1s 偶发不够。
+    await vi.waitFor(
+      () => {
+        expect(mocks.bootCorePlugins).toHaveBeenCalledTimes(1);
+      },
+      { timeout: 5_000 },
+    );
 
     expect(mocks.captureLmApi).toHaveBeenCalledTimes(1);
     expect(mocks.i18nGetLocale).toHaveBeenCalledTimes(1);

@@ -233,7 +233,8 @@ afterEach(async () => {
   vi.useRealTimers();
   vi.clearAllMocks();
   resetWindowSeq();
-  await fs.rm(dir, { recursive: true, force: true });
+  // 在途的异步写盘可能与清理并发 → ENOTEMPTY;maxRetries 让 fs.rm 对这类暂时性错误重试。
+  await fs.rm(dir, { recursive: true, force: true, maxRetries: 5 });
 });
 
 function ack(win: InstanceType<typeof electronMock.MockBrowserWindow>): void {
