@@ -4,7 +4,12 @@
 // FolderTree / drop-handlers / mutate-actions 曾各自手写同一段 dirname,路径边界
 // 规则一改要同步四处易漂移 → 收敛到此单一来源。
 
-import { isBareWindowsDrive, trimTrailingSeparators } from '@/lib/path-cross';
+import {
+  isBareWindowsDrive,
+  isSameOrInsidePath,
+  pathEquals,
+  trimTrailingSeparators,
+} from '@/lib/path-cross';
 
 /**
  * 跨平台 dirname:吃 `/` 与 `\`。先去尾部分隔符,取最后一个分隔符位置;
@@ -24,6 +29,30 @@ export function dirname(p: string): string {
   // 同等(根下直接项的父=根)。codex 跨平台复查 P2。
   if (isBareWindowsDrive(head)) return `${head}\\`;
   return head || '/';
+}
+
+/**
+ * 批量操作只处理最外层路径:剔除「祖先也在批次里」的后代项,重复路径只留首个,其余保持输入顺序。
+ * 多选 A 与 A/B 时,复制会把 B 随 A 复制一次后再单独复制一次;移动先移 A 后 A/B 已不存在而中途
+ * 报错(或先移 A/B 拆散层级);删除同理。祖先判断走 isSameOrInsidePath(分隔符无关 + 平台感知
+ * 大小写)。O(n²),批次规模为用户手动多选,可接受。
+ */
+export function outermostPaths(paths: readonly string[]): string[] {
+  const out = new Array<string>(paths.length);
+  let count = 0;
+  for (let i = 0; i < paths.length; i++) {
+    const p = paths[i]!;
+    let covered = false;
+    for (let j = 0; j < paths.length && !covered; j++) {
+      if (j === i) continue;
+      const q = paths[j]!;
+      // 严格祖先 → 剔;同一路径(重复项)→ 只保留首个
+      if (isSameOrInsidePath(q, p)) covered = !pathEquals(q, p) || j < i;
+    }
+    if (!covered) out[count++] = p;
+  }
+  out.length = count;
+  return out;
 }
 
 // 跨平台 basename(先去尾部分隔符再取最后一段)的实现与 Editor 共用,在 @/lib/path-cross。

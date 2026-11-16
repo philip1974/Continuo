@@ -15,7 +15,8 @@ import { fsError, lstatOrThrow, mapNodeErrnoCode } from './path-utils';
  *
  * - srcPath 不存在 → FS_NOT_FOUND
  * - destPath 已存在 → FS_EEXIST(调用方决定是否覆盖 / 改名)
- * - 跨盘 EXDEV → 自动 cp recursive + rm,但**非 atomic**(中途断电可能
+ * - 跨盘 EXDEV → 自动 cp recursive + rm;cp 成功但 rm 失败 → 抛 rm 的映射 code(目标已复制、
+ *   源未完全删除),但**非 atomic**(中途断电可能
  *   只完成一半 — 注释提醒,生产单盘场景几乎无问题)
  */
 export async function moveEntry(
@@ -65,9 +66,13 @@ export async function moveEntry(
   try {
     await rm(srcPath, { recursive: true, force: true });
   } catch (err) {
-    // cp 成功但 rm 失败:dest 已就位,src 残留 — 只 warn,不抛(避免数据丢失)
-     
-    console.warn('[fs:move] cross-device cp succeeded but rm failed', err);
+    // cp 成功但 rm 失败:dest 已就位,src 残留(递归 rm 可能已删掉一部分)。不能宣告移动成功 ——
+    // 否则 renderer 改 editor tab 路径 / 剪除剪贴板,而源仍在。映射 rm 的 errno 抛出;dest 不回滚
+    // (src 可能已部分删除,dest 是唯一完整副本)。
+    throw fsError(
+      mapNodeErrnoCode(err),
+      `cross-device move: destination copied but source could not be fully removed: ${srcPath} → ${destPath}`,
+    );
   }
 }
 

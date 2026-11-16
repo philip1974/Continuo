@@ -1,5 +1,6 @@
 import type { Stats } from 'node:fs';
 import { lstat } from 'node:fs/promises';
+import path from 'node:path';
 import { ERROR_CODES } from '../../../shared/error-codes';
 import type { FsErrorCode } from '../../../shared/error-codes';
 import { isValidLeafName } from '../../../shared/leaf-name';
@@ -43,6 +44,17 @@ export function assertValidBasename(name: string): void {
       `invalid leaf name (len ${typeof name === 'string' ? name.length : 'n/a'})`,
     );
   }
+}
+
+/**
+ * 两路径 basename 是否只差大小写 / Unicode 规范化(大小写不敏感盘上 File.txt→file.txt、NFD↔NFC)。
+ * rename 的「同 inode 即改名到自身」放行须再满足此条件:同 inode 的不同硬链接(a.txt / b.txt)
+ * 名字不同,POSIX rename 对其是 no-op 却返回成功 → 必须按目标已存在拒绝。调用方均已保证同父目录,
+ * 故只比 basename。
+ */
+export function isCaseOrNormalizationOnlyRename(srcPath: string, destPath: string): boolean {
+  const fold = (p: string): string => path.basename(p).normalize('NFC').toLowerCase();
+  return fold(srcPath) === fold(destPath);
 }
 
 /**

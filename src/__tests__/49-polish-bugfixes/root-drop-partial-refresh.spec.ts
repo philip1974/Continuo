@@ -30,7 +30,8 @@ describe('topic49 6thS · root-drop 部分成功刷新契约', () => {
     const start = SRC.lastIndexOf(marker);
     expect(start).toBeGreaterThan(-1);
     const branch = SRC.slice(start, start + 1200);
-    expect(branch).toMatch(/runBatchTransfer\('move', moveable, root,/);
+    // 嵌套选择修复(explorer-transfer-integrity)后交给漏斗的是全部拖动路径 + skipSameParent。
+    expect(branch).toMatch(/runBatchTransfer\(\s*'move',\s*selectDraggedItemPaths\(dnd\.draggedItems\),\s*root,/);
   });
 
   it('三个文件移动调用点(onDropItems/onPaste/root-drop)都走 runBatchTransfer', () => {

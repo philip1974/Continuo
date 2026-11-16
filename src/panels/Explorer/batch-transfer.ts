@@ -4,7 +4,11 @@
 // (root-drop)、粘贴(onPaste,cut=move / copy)。此前三处各自内联同一段循环 + try/catch/finally,
 // 每个修复都要逐处传播且反复漏一处:P2-BB(部分成功刷新漏 root-drop)、R7(剪贴板 prune 漏 onPaste)、
 // A134/A135/A136(IPC reject 无反馈逐个补)。收口后契约只有一处:
+//   - 只处理最外层路径(outermostPaths:父目录与其子项同批时剔除子项,否则重复复制子树 / 移动拆散
+//     层级或中途 FS_NOT_FOUND)。
 //   - 目标名整批只探测一次;逐项顺序执行,某项失败即中止其余项。
+//   - 某项失败也刷新目标目录(move 另刷新其源父目录):失败可能已部分写入(跨盘 move 已复制但源
+//     未删净、递归 cp 中途失败),不刷新则已落盘的内容在树上不可见。
 //   - 无论中途失败 / 抛异常,已成功项涉及的目录都刷新 —— 否则已移走的文件在树上凭空消失
 //     (源没刷=还显示,目标没刷=不显示)而其 editor tab 路径已改 → 树/tab/磁盘三者不一致。
 //   - move 已移走的源旧路径回报给调用方(剪贴板 prune:避免幻影 cut 灰显 + 失效 Paste)。
@@ -17,7 +21,7 @@ import type { FsApi } from '@/lib/fs/api';
 import { notify } from '@/notifications/notify';
 import { t } from '@/i18n';
 import { localizeErrorByCode } from '@/lib/localize-error';
-import { basenamePreserveTrailing, dirname } from './path-utils';
+import { basenamePreserveTrailing, dirname, outermostPaths } from './path-utils';
 import {
   partitionDropItems,
   performDrop,
@@ -74,15 +78,19 @@ export async function transferEntriesInto(
 ): Promise<void> {
   const touchedSrcParents = new Set<string>();
   const movedSrcs: string[] = [];
-  let okAny = false;
+  let refreshDest = false;
   try {
     const pickDest = await deps.makeUniqueDestPicker(destDir);
-    for (const src of srcs) {
+    // 先剔后代再判同父跳过:祖先因已在目标目录被跳过时,其后代也不该被单独移出来。
+    for (const src of outermostPaths(srcs)) {
       if (opts.skipSameParent && dirname(src) === destDir) continue;
       // dest = destDir + src basename;已存在则自动加 ` copy` 后缀(picker 负责)。
       const dest = pickDest(basenamePreserveTrailing(src));
       const r = kind === 'move' ? await deps.fs.move(src, dest) : await deps.fs.copy(src, dest);
       if (!r.ok) {
+        // 失败项可能已部分落盘 → 照样刷新目标 / 源父目录,但不算移走(不 onMoved / onSourcesGone)。
+        refreshDest = true;
+        if (kind === 'move') touchedSrcParents.add(dirname(src));
         deps.onItemFailed(src, r.code, r.message);
         return;
       }
@@ -91,18 +99,16 @@ export async function transferEntriesInto(
         touchedSrcParents.add(dirname(src));
         movedSrcs.push(src);
       }
-      okAny = true;
+      refreshDest = true;
     }
   } catch (err) {
     deps.onException(err);
   } finally {
     // move 的源旧路径已失效 → 回报(部分成功也只报已移走的,未移项留给调用方重试)。
     if (movedSrcs.length > 0) deps.onSourcesGone(movedSrcs);
-    if (okAny) {
-      deps.refreshDir(destDir);
-      for (const sp of touchedSrcParents) {
-        if (sp !== destDir) deps.refreshDir(sp);
-      }
+    if (refreshDest) deps.refreshDir(destDir);
+    for (const sp of touchedSrcParents) {
+      if (sp !== destDir) deps.refreshDir(sp);
     }
   }
 }

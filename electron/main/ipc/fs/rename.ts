@@ -1,14 +1,21 @@
 import { lstat, rename } from 'node:fs/promises';
 import path from 'node:path';
 import { ERROR_CODES } from '../../../shared/error-codes';
-import { assertValidBasename, fsError, lstatOrThrow, mapNodeErrnoCode } from './path-utils';
+import {
+  assertValidBasename,
+  fsError,
+  isCaseOrNormalizationOnlyRename,
+  lstatOrThrow,
+  mapNodeErrnoCode,
+} from './path-utils';
 
 /**
  * 同目录改 basename。返回新的绝对路径。
  *
  * - newName 必须是单段 basename(无 / \ . ..),否则 FS_BAD_NAME
  * - 源不存在 → FS_NOT_FOUND
- * - 目标已存在且与源不是同一个 inode → FS_EEXIST(防静默覆盖,与 moveEntry 对齐)
+ * - 目标已存在 → FS_EEXIST(防静默覆盖,与 moveEntry 对齐);唯一例外是同 inode 且名字只差
+ *   大小写 / Unicode 规范化(大小写不敏感盘上改名到自身)
  * - 跨目录 / 跨盘移动留给未来 fs:move,本函数只做改名
  */
 export async function renameEntry(
@@ -24,11 +31,14 @@ export async function renameEntry(
 
   // 拒绝静默覆盖已存在的目标。POSIX rename(2) 会原子覆盖既有文件/空目录 →
   // 不加这层防御,Explorer 把 A 改成已存在的 B 的名字会永久丢失 B。
-  // 仅当目标是与源不同的 inode 时才拒;大小写不敏感盘上 File.txt→file.txt 等
-  // "改名到自身"(同 inode)仍放行。
+  // 大小写不敏感盘上 File.txt→file.txt 等"改名到自身"(同 inode)仍放行;但同 inode 的不同
+  // 硬链接(a.txt→b.txt)名字不同,POSIX rename 对其是 no-op 却返回成功 → 仍按已存在拒绝。
   try {
     const dstSt = await lstat(newPath);
-    const sameEntry = dstSt.ino === srcSt.ino && dstSt.dev === srcSt.dev;
+    const sameEntry =
+      dstSt.ino === srcSt.ino &&
+      dstSt.dev === srcSt.dev &&
+      isCaseOrNormalizationOnlyRename(oldPath, newPath);
     if (!sameEntry) {
       throw fsError(ERROR_CODES.FS_EEXIST, `destination already exists: ${newPath}`);
     }

@@ -24,7 +24,7 @@ import {
   isValidGitBlobSha,
 } from '../../shared/fs-limits';
 import { utf8BytesExceed } from '../../shared/utf8-byte-length';
-import { fsError } from '../ipc/fs/path-utils';
+import { fsError, isCaseOrNormalizationOnlyRename } from '../ipc/fs/path-utils';
 import { ERROR_CODES } from '../../shared/error-codes';
 import { isSafePluginId } from './plugins.service';
 
@@ -415,7 +415,8 @@ export function registerPluginFsHandlers(
       // 拒绝静默覆盖已存在目标:POSIX rename(2) 原子覆盖既有文件 → 不防御则插件在
       // 授权目录内把 a 改成已存在 b 的名字会永久丢失 b 的内容。镜像 Explorer
       // renameEntry(electron/main/ipc/fs/rename.ts)早有的 inode 比较守卫 —— 仅当目标
-      // 存在且与源不是同一 inode 时拒,大小写改名到自身(同 inode)放行。显式覆盖走
+      // 存在且与源不是同一 inode 时拒,大小写改名到自身(同 inode 且名字只差大小写/规范化)放行;
+      // 同 inode 的不同硬链接仍拒(POSIX rename 对其是 no-op 却返回成功)。显式覆盖走
       // atomicReplaceWithinScope({overwrite:true}),普通 rename 保持非覆盖语义。
       // (codex 复审 loop R2:plugin-fs 平行入口漏了 Explorer 的 FS_EEXIST 守卫)
       // 只有 ENOENT(不存在)才正常改名;EACCES/EIO 等「无法确认目标」不能 fail-open(否则 rename
@@ -431,7 +432,8 @@ export function registerPluginFsHandlers(
         const sameEntry =
           srcStat != null &&
           dstStat.ino === srcStat.ino &&
-          dstStat.dev === srcStat.dev;
+          dstStat.dev === srcStat.dev &&
+          isCaseOrNormalizationOnlyRename(srcPath, rDst.fullPath);
         if (!sameEntry) {
           throw new ScopeError('rename: destination already exists', {
             target: dst,

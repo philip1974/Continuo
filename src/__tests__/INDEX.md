@@ -517,6 +517,13 @@
 
 - [`explorer-toggle-sidebar.spec.ts`](./explorer-toggle-sidebar/explorer-toggle-sidebar.spec.ts)
 
+## [explorer-transfer-integrity(Explorer 批量移动/复制/删除/改名的完整性)](./explorer-transfer-integrity/README.md)
+
+- [`dest-picker-case-insensitive.spec.ts`](./explorer-transfer-integrity/dest-picker-case-insensitive.spec.ts)
+- [`move-exdev-rm-fail.spec.ts`](./explorer-transfer-integrity/move-exdev-rm-fail.spec.ts)
+- [`nested-selection.spec.ts`](./explorer-transfer-integrity/nested-selection.spec.ts)
+- [`rename-hardlink-eexist.spec.ts`](./explorer-transfer-integrity/rename-hardlink-eexist.spec.ts)
+
 ## [explorer-tree (M-Explorer Step 4)](./explorer-tree/README.md)
 
 - [`tree-config.spec.ts`](./explorer-tree/tree-config.spec.ts)

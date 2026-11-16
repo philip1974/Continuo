@@ -63,14 +63,15 @@ describe('transferEntriesInto — move', () => {
 
     expect(spies.fs.move).toHaveBeenCalledTimes(2); // 第三项不再尝试
     expect(spies.onItemFailed).toHaveBeenCalledWith('/b/y.txt', 'EACCES', 'EACCES msg');
-    expect(spies.refreshDir.mock.calls.map((c) => c[0]).sort()).toEqual(['/a', '/dest']);
+    // 失败项 /b/y.txt 的源父目录也刷新(可能已部分落盘),但不回报为已移走
+    expect(spies.refreshDir.mock.calls.map((c) => c[0]).sort()).toEqual(['/a', '/b', '/dest']);
     expect(spies.onSourcesGone).toHaveBeenCalledWith(['/a/x.txt']);
   });
 
-  it('首项即失败:不刷新、不回报', async () => {
+  it('首项即失败:不回报已移走;仍刷新目标与该项源父目录(失败可能已部分落盘)', async () => {
     const { deps, spies } = makeDeps({ move: async () => fail('EPERM') });
     await transferEntriesInto('move', ['/a/x.txt'], '/dest', deps);
-    expect(spies.refreshDir).not.toHaveBeenCalled();
+    expect(spies.refreshDir.mock.calls.map((c) => c[0]).sort()).toEqual(['/a', '/dest']);
     expect(spies.onSourcesGone).not.toHaveBeenCalled();
   });
 

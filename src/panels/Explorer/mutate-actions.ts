@@ -3,7 +3,7 @@
 // 所有失败结构化返回(从 IpcResult 透传 code/message),组件层弹 toast/inline 错误。
 
 import type { FsApi } from '@/lib/fs/api';
-import { dirname } from './path-utils';
+import { dirname, outermostPaths } from './path-utils';
 import { errorCodeOf } from '../../../electron/shared/error-message';
 
 export interface MutateDeps {
@@ -68,7 +68,9 @@ export async function removeItems(
   let failureCount = 0;
   const successParents = new Set<string>();
 
-  for (const p of paths) {
+  // 父目录与其子项同批(多选 A 与 A/B)→ 只删最外层:删 A 已连带 A/B,再删 A/B 必报
+  // FS_NOT_FOUND(同 batch-transfer 的嵌套选择族)。被剔的后代不计入 failures,调用方按成功处理。
+  for (const p of outermostPaths(paths)) {
     // a11y(A137 同族):trash/remove 的 IPC reject(抛错而非返回 {ok:false})此前未捕获 →
     // removeItems 整体 reject;而调用点(Explorer onTrash)是 fire-and-forget async 不被
     // await → unhandled rejection + 该项不计入 failures → 批量删除错误反馈漏报。归类到
