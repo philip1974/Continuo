@@ -155,6 +155,44 @@ describe('scoped app:revoke() 后有外部副作用的能力一律拒绝,不发 
     noIpc();
   });
 
+  it('network.fetch 在途时 revoke → 中止在途请求(底层 fetch 的 signal 被 abort)', async () => {
+    const signals: AbortSignal[] = [];
+    h.fetch.mockImplementation(
+      (_url: string, init?: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          const signal = init?.signal as AbortSignal | undefined;
+          if (signal) signals.push(signal);
+          signal?.addEventListener('abort', () => reject(signal.reason));
+        }),
+    );
+    const ctl = createScopedAppController(createTestCoApp(), ID, null, 'tok');
+    const p1 = ctl.app.network.fetch('https://example.com/a');
+    const p2 = ctl.app.network.fetch('https://example.com/b');
+    await vi.waitFor(() => expect(signals).toHaveLength(2));
+    expect(signals.every((s) => !s.aborted)).toBe(true);
+    ctl.revoke();
+    expect(signals.every((s) => s.aborted)).toBe(true);
+    await expect(p1).rejects.toBeDefined();
+    await expect(p2).rejects.toBeDefined();
+  });
+
+  it('network.fetch:调用方传入的 signal 仍生效;请求结束后 revoke 不再触及已完成请求', async () => {
+    const signals: AbortSignal[] = [];
+    h.fetch.mockImplementation(async (_url: string, init?: RequestInit) => {
+      signals.push(init?.signal as AbortSignal);
+      return new Response('x');
+    });
+    const ctl = createScopedAppController(createTestCoApp(), ID, null, 'tok');
+    const caller = new AbortController();
+    await ctl.app.network.fetch('https://example.com', { signal: caller.signal });
+    caller.abort();
+    expect(signals[0]!.aborted).toBe(true);
+
+    await ctl.app.network.fetch('https://example.com/done');
+    ctl.revoke();
+    expect(signals[1]!.aborted).toBe(false);
+  });
+
   it('未吊销时照常转发', async () => {
     const ctl = createScopedAppController(createTestCoApp(), ID, null, 'tok');
     await ctl.app.shell.exec('/bin/echo', ['hi']);

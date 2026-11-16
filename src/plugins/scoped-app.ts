@@ -131,6 +131,8 @@ export function hasGrantedPermissionDecision(
 /** scoped app 的吊销状态(per-instance,由 createScopedAppController 持有). */
 interface ScopedLifecycle {
   revoked: boolean;
+  /** 在途 network.fetch 的中止器(revoke 时全部 abort,请求结束即移除). */
+  inflightFetches: Set<AbortController>;
 }
 
 function revokedMessage(pluginId: string, capability: string): string {
@@ -420,9 +422,25 @@ function makeNetwork(
     async fetch(url, init) {
       await ensurePerm(pluginId, 'network', store, life);
       validateNetworkInput(url, init); // 边界(E264):发 raw fetch 前校验 URL/headers
-      // 用 module 顶部 cached raw fetch,sandboxSweep 后全局 fetch
-      // 已涂掉但本闭包仍能调
-      return getCachedFetch()(url, init);
+      // 停用即中止(终审):每次请求挂本实例的 AbortController,revoke() 时 abort 全部在途请求。
+      // 调用方自带 signal 时手动联动(不依赖 AbortSignal.any,跨 realm 的 signal 也适用)。
+      const ctl = new AbortController();
+      const callerSignal = init?.signal ?? undefined;
+      const onCallerAbort = (): void => ctl.abort(callerSignal?.reason);
+      if (callerSignal?.aborted) onCallerAbort();
+      else callerSignal?.addEventListener('abort', onCallerAbort, { once: true });
+      life.inflightFetches.add(ctl);
+      try {
+        // 用 module 顶部 cached raw fetch,sandboxSweep 后全局 fetch
+        // 已涂掉但本闭包仍能调
+        return await getCachedFetch()(url, { ...init, signal: ctl.signal });
+      } catch (err) {
+        callerSignal?.removeEventListener('abort', onCallerAbort);
+        throw err;
+      } finally {
+        // 成功时保留调用方联动:响应体仍在读取,调用方 abort 须能照常中止(同原生 fetch 语义)。
+        life.inflightFetches.delete(ctl);
+      }
     },
   };
 }
@@ -934,7 +952,7 @@ export function createScopedAppController(
   // 旧授权不得继续生效。传入 declared 时把 store.get 视图裁到声明集合,所有 ensurePerm /
   // permission.check/granted 自动走同一语义;未传(core plugin / 测试)保持旧行为。
   const store = rawStore && declared ? restrictToDeclared(rawStore, declared) : rawStore;
-  const life: ScopedLifecycle = { revoked: false };
+  const life: ScopedLifecycle = { revoked: false, inflightFetches: new Set() };
   // 本实例经共享注册表 / 事件总线登记的贡献与订阅(revoke 时统一注销)。
   const owned = new Set<() => void>();
   const track = <T extends object>(name: string, target: T): T =>
@@ -971,6 +989,9 @@ export function createScopedAppController(
     app,
     revoke: () => {
       life.revoked = true;
+      // 中止在途 network.fetch(发起前的吊销检查拦不住已发出的请求)。
+      for (const ctl of [...life.inflightFetches]) ctl.abort();
+      life.inflightFetches.clear();
       // 单个注销抛错不传染(同 Plugin 的 LIFO 清理)。
       for (const release of [...owned]) {
         try {

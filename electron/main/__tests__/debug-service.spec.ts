@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   DEBUG_LAUNCH_SETTLE_WAIT_MS,
+  DEBUG_TEARDOWN_DISCONNECT_TIMEOUT_MS,
   DEBUG_VARIABLES_EXPAND_MAX_BYTES,
   DEBUG_VARIABLES_EXPAND_MAX_NODES,
   DEBUG_VARIABLES_EXPAND_MAX_REQUESTS,
@@ -872,8 +873,8 @@ describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
       expect(debugSessions.get(sessionId)?.systemProcessIds).toEqual([]);
     });
 
-    it('adapter 已退出且无存活 debuggee → 清理不对 adapter pid / pgid 发信号(也不再按旧 pid 查进程信息)', async () => {
-      const processOps = makePidOps();
+    it('adapter 已退出、无记录在案的 debuggee、其进程组已空 → 不调用终止(也不再按旧 pid 查进程信息)', async () => {
+      const processOps = makePidOps([]);
       const { service, parent } = await launchWithChildren(processOps);
       parent.emit('terminated', {});
       parent.serverExited = true;
@@ -881,10 +882,26 @@ describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
 
       await service.killByOwner(61, 'window-closed');
       expect(processOps.terminateProcessGroup).not.toHaveBeenCalled();
-      expect(processOps.pidsInProcessGroup).not.toHaveBeenCalled();
       expect(processOps.processInfo).not.toHaveBeenCalled();
       expect(parent.disposeCalls).toBe(1); // adapter 资源(socket 等)仍释放
       expect(service.listSessions()).toEqual([]);
+    });
+
+    // 终审(上一轮回归):程序起了未脱离进程组的长期子进程后正常退出 → terminated 清空 systemProcessIds →
+    // adapter 随后异常退出。此时已保存的 adapterPgid 所在组仍有成员 → 组存在即 pgid 未被复用,须按组终止。
+    it('POSIX:会话已结束、adapter 已退出、已保存 pgid 的进程组仍有成员 → 对该组执行终止(不含 adapter pid)', async () => {
+      const processOps = makePidOps([5003]);
+      const { service, parent, sessionId } = await launchWithChildren(processOps);
+      parent.emit('terminated', {});
+      expect(debugSessions.get(sessionId)?.systemProcessIds).toEqual([]);
+      parent.serverExited = true;
+
+      await service.killByOwner(61, 'window-closed');
+      expect(processOps.pidsInProcessGroup).toHaveBeenCalledWith(1001);
+      expect(processOps.terminateProcessGroup).toHaveBeenCalledTimes(1);
+      const [pgid, watched] = vi.mocked(processOps.terminateProcessGroup).mock.calls[0]!;
+      expect(pgid).toBe(1001);
+      expect(watched).toEqual([5003]);
     });
 
     it('adapter 已退出但仍有记录在案的 debuggee → 只回收 debuggee,watchedPids 不含 adapter pid', async () => {
@@ -964,6 +981,39 @@ describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
         treeKill.mockImplementation(actual.processTreeKillable);
       }
     });
+  });
+
+  // 终审:teardown 对父连接与每个 child 依次 await disconnect(各 2s),子会话无上限 → adapter 失联时退出挂起数十秒。
+  it('teardown:多个 child 都不应答 disconnect → 并行发出,总耗时约等于一个超时而非 N 倍', async () => {
+    const { service, parent, processOps } = makeFakeService();
+    await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      { ownerWindowId: 64, controllerToken: 'agent-hang' },
+    );
+    for (let i = 0; i < 5; i += 1) await parent.triggerStartDebugging({ type: 'pwa-node' });
+    const hang = (command: string): Promise<void> | void =>
+      command === 'disconnect' ? new Promise<void>(() => undefined) : undefined;
+    for (const client of [parent, ...parent.children]) client.beforeResponse = hang;
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      let done = false;
+      const teardown = service.killByOwner(64, 'window-closed').then(() => {
+        done = true;
+      });
+      await vi.advanceTimersByTimeAsync(DEBUG_TEARDOWN_DISCONNECT_TIMEOUT_MS - 1);
+      expect(done).toBe(false);
+      // 全部连接在同一时刻已发出 disconnect(并行,不是等前一个超时)。
+      for (const client of [parent, ...parent.children]) {
+        expect(client.requestLog.some((r) => r.command === 'disconnect')).toBe(true);
+      }
+      await vi.advanceTimersByTimeAsync(1);
+      await teardown;
+      expect(done).toBe(true);
+      expect(processOps.terminateProcessGroup).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('cleanupAll / killByOwner / killByController 同 tick 并发只执行一次 teardown, waiter 只 reject 一次', async () => {
