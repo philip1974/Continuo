@@ -17,6 +17,7 @@ const h = vi.hoisted(() => ({
           windowId: number;
           save?: boolean;
           discard?: boolean;
+          untitled?: number;
           requestId?: number;
         }) => Promise<void>)
       | null,
@@ -57,6 +58,7 @@ vi.mock('@/lib/co-api', () => ({
           windowId: number;
           save?: boolean;
           discard?: boolean;
+          untitled?: number;
           requestId?: number;
         }) => Promise<void>,
       ) => {
@@ -313,5 +315,60 @@ describe('flush 握手的最终脏检查', () => {
       await h.flushCb.current!({ windowId: 1, requestId: 12 });
     });
     expect(h.sendFlushAck).toHaveBeenLastCalledWith(1, { requestId: 12 });
+  });
+});
+
+// 复审:「保存」只放过确认框告知的 untitled 数(main 随请求带 untitled);确认后新建的 untitled 超出 → remaining。
+describe('flush「保存」分支的 untitled 放行范围', () => {
+  function openDirtyUntitled(): void {
+    act(() => {
+      const t = createTab(null, '');
+      useEditorStore.getState().openTab(t);
+      useEditorStore.getState().updateContent(t.id, 'draft');
+    });
+  }
+
+  it('untitled 不超过请求里的数 → 不带 remaining;超出 → 回执 remaining', async () => {
+    await mountShell();
+    openDirtyUntitled();
+    openDirtyUntitled();
+
+    await act(async () => {
+      await h.flushCb.current!({ windowId: 1, save: true, untitled: 2, requestId: 13 });
+    });
+    expect(h.sendFlushAck).toHaveBeenLastCalledWith(1, { saveFailed: false, requestId: 13 });
+
+    await act(async () => {
+      await h.flushCb.current!({ windowId: 1, save: true, untitled: 1, requestId: 14 });
+    });
+    expect(h.sendFlushAck).toHaveBeenLastCalledWith(1, {
+      saveFailed: false,
+      remaining: { dirty: 2, untitled: 2 },
+      requestId: 14,
+    });
+  });
+});
+
+// 复审:main 在退出前用持续接收的脏态上报做全局最终检查 → 回执前必须先把 flush 后的脏态同步上报
+// (同一 IPC 通道、先于回执到达),否则 main 可能拿保存前的旧计数误判中止退出。
+describe('flush 回执前同步上报当前脏态', () => {
+  it('flush 期间 tab 变干净 → 先上报 0/0,再发回执(不依赖 React effect 的调度时机)', async () => {
+    await mountShell();
+    openDirty('/w/a.ts');
+    await vi.waitFor(() =>
+      expect(h.reportDirtyState).toHaveBeenLastCalledWith({ dirty: 1, untitled: 0 }),
+    );
+    h.reportDirtyState.mockClear();
+    vi.mocked(flushExplorerPersistence).mockImplementationOnce(async () => {
+      useEditorStore.getState().markSaved('/w/a.ts');
+    });
+
+    await act(async () => {
+      await h.flushCb.current!({ windowId: 1, requestId: 15 });
+    });
+    expect(h.reportDirtyState).toHaveBeenCalledWith({ dirty: 0, untitled: 0 });
+    expect(h.reportDirtyState.mock.invocationCallOrder[0]!).toBeLessThan(
+      h.sendFlushAck.mock.invocationCallOrder[0]!,
+    );
   });
 });

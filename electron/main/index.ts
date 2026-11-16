@@ -239,11 +239,31 @@ ipcMain.on(LAYOUT_CHANNELS.DIRTY_STATE, (event: IpcMainEvent, raw: unknown) => {
   if (process.platform === 'darwin') win.setDocumentEdited(state.dirty > 0);
 });
 
-/** 有脏 tab 的窗口弹确认框(挂在该窗口上);无脏 tab → null(不弹框)。 */
-function confirmDirtyClose(win: BrowserWindow): Promise<DirtyCloseChoice> | null {
+/**
+ * 有脏 tab 的窗口弹确认框(挂在该窗口上);无脏 tab → null(不弹框)。state:确认框告知用户的脏数
+ * (「保存」时 renderer 只放过其中的 untitled;退出前全局最终检查据此判断是否超出用户已接受的范围)。
+ */
+function confirmDirtyClose(
+  win: BrowserWindow,
+): { readonly state: DirtyState; readonly choice: Promise<DirtyCloseChoice> } | null {
   const state = dirtyStates.get(win.id);
   if (!needsDirtyConfirm(state)) return null;
-  return askDirtyClose(state, getMainT(), (opts) => dialog.showMessageBox(win, opts));
+  return {
+    state,
+    choice: askDirtyClose(state, getMainT(), (opts) => dialog.showMessageBox(win, opts)),
+  };
+}
+
+/**
+ * 退出前全局最终检查(复审):多窗 Cmd+Q 时 A 已 flush+ACK、等待别窗保存 / 确认期间,用户仍可在 A 里继续编辑,
+ * A 不会再被 renderer 最终检查覆盖。用 main 持续接收的脏态上报判断是否超出本轮用户已接受的范围:
+ * 未弹框 → 不接受任何脏;「保存」→ 只接受确认框告知的 untitled;「不保存」→ 接受确认时的脏数。
+ */
+function exceedsAccepted(current: DirtyState | undefined, mode: FlushMode, accepted?: DirtyState): boolean {
+  if (!needsDirtyConfirm(current)) return false;
+  if (mode === 'save') return current.dirty - Math.min(current.untitled, accepted?.untitled ?? 0) > 0;
+  if (mode === 'discard') return current.dirty > (accepted?.dirty ?? 0);
+  return true;
 }
 
 /**
@@ -261,6 +281,9 @@ function shouldAbortClose(mode: FlushMode, outcome: FlushOutcome): boolean {
 // 复审(d):每窗关闭流程代际。单窗关闭流程启动时取号;before-quit 接管窗口时再递增 → 旧流程(如在途的
 // 「不保存」关闭)完成时发现已被取代,不再 `flushed = true; win.close()`(否则在退出的「保存」完成前销毁窗口)。
 const closeFlowGen = new Map<number, number>();
+// 在途单窗关闭流程的复位函数(显示窗口 + 释放关窗守卫)。before-quit 接管时取走,退出中止时立即调用 ——
+// 否则被接管窗口仍隐藏、守卫仍在途,要等旧 ACK / 10s 超时才恢复(复审)。
+const closeFlowReleases = new Map<number, () => void>();
 
 function bumpCloseFlowGen(windowId: number): number {
   const gen = (closeFlowGen.get(windowId) ?? 0) + 1;
@@ -282,7 +305,11 @@ ipcMain.on(LAYOUT_CHANNELS.FLUSH_READY, (event: IpcMainEvent) => {
  * mode='save':renderer 先保存所有有路径的脏 tab 再 flush(用户在脏文件确认框选了「保存」)。
  * mode='discard':请求带 discard:true,renderer 跳过最终脏检查(用户已选「不保存」)。
  */
-function requestWindowFlush(win: BrowserWindow, mode: FlushMode = 'none'): Promise<FlushOutcome> {
+function requestWindowFlush(
+  win: BrowserWindow,
+  mode: FlushMode = 'none',
+  accepted?: DirtyState,
+): Promise<FlushOutcome> {
   return new Promise((resolve) => {
     const requestId = nextFlushRequestId++;
     let doneCalled = false;
@@ -306,7 +333,14 @@ function requestWindowFlush(win: BrowserWindow, mode: FlushMode = 'none'): Promi
     timer = setTimeout(() => done('timeout'), FLUSH_ACK_TIMEOUT_MS);
     try {
       // requestId:renderer 回执原样带回,只结算对应请求。
-      const flag = mode === 'save' ? { save: true } : mode === 'discard' ? { discard: true } : {};
+      // untitled:「保存」时确认框告知会丢弃的 untitled 数,renderer 只放过不超过该数的 untitled。
+      const untitled = accepted?.untitled ?? 0;
+      const flag =
+        mode === 'save'
+          ? { save: true, ...(untitled > 0 ? { untitled } : {}) }
+          : mode === 'discard'
+            ? { discard: true }
+            : {};
       win.webContents.send(LAYOUT_CHANNELS.FLUSH_REQUEST, { windowId: win.id, ...flag, requestId });
     } catch {
       done('skipped');
@@ -320,6 +354,7 @@ function wireWindowCloseFlush(win: BrowserWindow): void {
     flushReadyWindowIds.delete(windowId);
     dirtyStates.delete(windowId);
     closeFlowGen.delete(windowId);
+    closeFlowReleases.delete(windowId);
   });
   let flushed = flushedOnQuit.has(win.id);
   // race(R45):flush 在途守卫。requestWindowFlush 是异步(等 renderer ack / 10s 超时),其间
@@ -339,15 +374,18 @@ function wireWindowCloseFlush(win: BrowserWindow): void {
     if (flushing) return;
     flushing = true;
     const gen = bumpCloseFlowGen(windowId);
-    // 复审(d):本流程已被 before-quit 接管 → 复位守卫并显示窗口(退出继续则由退出关窗;退出中止则用户可再关),
-    // 不置 flushed、不 close。
-    const superseded = (): boolean => {
-      if (closeFlowGen.get(windowId) === gen) return false;
+    const release = (): void => {
       flushing = false;
       if (!win.isDestroyed()) win.show();
-      return true;
     };
-    const flushAndClose = async (mode: FlushMode) => {
+    closeFlowReleases.set(windowId, release);
+    const finish = (): void => {
+      if (closeFlowReleases.get(windowId) === release) closeFlowReleases.delete(windowId);
+    };
+    // 复审(d):本流程已被 before-quit 接管 → 无副作用返回,不置 flushed、不 close(退出继续则由退出关窗;
+    // 退出中止则退出流程已调用 release 显示窗口并释放守卫 —— 此处再复位会破坏用户之后发起的新关闭流程)。
+    const superseded = (): boolean => closeFlowGen.get(windowId) !== gen;
+    const flushAndClose = async (mode: FlushMode, accepted?: DirtyState) => {
       // UX:数据安全 flush 仍在后台完成,但关闭按钮点击后先隐藏窗口,
       // 避免用户看到 10s 兜底窗口内的"无反应"状态。
       try {
@@ -355,12 +393,12 @@ function wireWindowCloseFlush(win: BrowserWindow): void {
       } catch {
         // close 竞态下 hide 失败不影响 flush / close 兜底。
       }
-      const outcome = await requestWindowFlush(win, mode);
+      const outcome = await requestWindowFlush(win, mode, accepted);
       if (superseded()) return;
+      finish();
       if (shouldAbortClose(mode, outcome)) {
         // 保存失败 / 未确认 / 仍有未保存改动 → 中止关闭,窗口重新显示(保存失败 renderer 已 toast)。
-        flushing = false;
-        if (!win.isDestroyed()) win.show();
+        release();
         return;
       }
       flushed = true;
@@ -374,13 +412,14 @@ function wireWindowCloseFlush(win: BrowserWindow): void {
       return;
     }
     void (async () => {
-      const choice = await confirm;
+      const choice = await confirm.choice;
       if (win.isDestroyed() || superseded()) return;
       if (choice === 'cancel') {
+        finish();
         flushing = false;
         return;
       }
-      await flushAndClose(choice === 'save' ? 'save' : 'discard');
+      await flushAndClose(choice === 'save' ? 'save' : 'discard', confirm.state);
     })();
   });
 }
@@ -1161,6 +1200,13 @@ app.on('before-quit', async (event) => {
   // action === 'run':首次 quit,跑清理。
   event.preventDefault();
   const targets: BrowserWindow[] = [];
+  // 本轮接管的在途单窗关闭流程的复位函数;退出中止时立即调用(显示窗口 + 释放关窗守卫)。
+  const takenOver: Array<() => void> = [];
+  const abortQuit = (show: readonly BrowserWindow[]): void => {
+    for (const release of takenOver) release();
+    for (const w of show) if (!w.isDestroyed()) w.show();
+    quitGuard.cancel(); // 复位:下次 Cmd+Q 重新确认,不卡在「在途」
+  };
   for (const w of BrowserWindow.getAllWindows()) {
     if (w.isDestroyed() || flushedOnQuit.has(w.id)) continue;
     // popout 窗口跑的是 PopoutHost,不挂 DockShell,没有 flush 监听 → 永不 ack;对它发请求只会让退出
@@ -1171,22 +1217,29 @@ app.on('before-quit', async (event) => {
     targets.push(w);
     // 复审(d):退出接管该窗口 —— 其在途的单窗关闭流程完成时不再 close(由退出统一处理)。
     bumpCloseFlowGen(w.id);
+    const release = closeFlowReleases.get(w.id);
+    if (release) {
+      closeFlowReleases.delete(w.id);
+      takenOver.push(release);
+    }
   }
   // 脏文件确认:逐窗(一次一个框)问「保存 / 不保存 / 取消」,任一取消 → 中止整个退出。
   // 无脏窗口时不进任何 await,flush 与之前一样同步发出。
   const modes = new Map<number, FlushMode>();
+  const accepted = new Map<number, DirtyState>();
   for (const w of targets) {
     const confirm = confirmDirtyClose(w);
     if (!confirm) continue;
-    const choice = await confirm;
+    const choice = await confirm.choice;
     if (choice === 'cancel') {
-      quitGuard.cancel(); // 复位:下次 Cmd+Q 重新确认,不卡在「在途」
+      abortQuit([]);
       return;
     }
     modes.set(w.id, choice === 'save' ? 'save' : 'discard');
+    accepted.set(w.id, confirm.state);
   }
   const outcomes = await Promise.all(
-    targets.map((w) => requestWindowFlush(w, modes.get(w.id) ?? 'none')),
+    targets.map((w) => requestWindowFlush(w, modes.get(w.id) ?? 'none', accepted.get(w.id))),
   );
   // 任一窗口需中止(「保存」未确认成功 / 最终脏检查仍有未保存改动,如 B 确认期间 A 变脏)→ 中止退出并显示
   // 该窗口。此时不记 flushedOnQuit:退出没发生,之后关这些窗口仍要走确认 + flush。
@@ -1194,8 +1247,17 @@ app.on('before-quit', async (event) => {
     shouldAbortClose(modes.get(w.id) ?? 'none', outcomes[i] ?? 'timeout'),
   );
   if (failed.length > 0) {
-    for (const w of failed) if (!w.isDestroyed()) w.show();
-    quitGuard.cancel();
+    abortQuit(failed);
+    return;
+  }
+  // 全局最终检查:必须在破坏性清理(cleanupAll 杀 PTY)之前。超出本轮已接受范围的窗口 → 中止退出。
+  const changed = targets.filter(
+    (w) =>
+      !w.isDestroyed() &&
+      exceedsAccepted(dirtyStates.get(w.id), modes.get(w.id) ?? 'none', accepted.get(w.id)),
+  );
+  if (changed.length > 0) {
+    abortQuit(changed);
     return;
   }
   for (const w of targets) flushedOnQuit.add(w.id);

@@ -36,7 +36,8 @@
 
 「是否允许关闭」不再只取决于弹框前的脏计数。renderer 在 flush 握手里**全部** flush(批量保存、layout、explorer、
 markdown autosave flush)完成后、回执之前,检查此刻仍 dirty 的 tab(有路径的都算,autosave 已 flush 过,仍脏的
-`.md` 也算;untitled 计入,但本轮选「保存」时只剩 untitled 不算 —— 用户已被告知会丢弃)。本轮**未**选「不保存」
+`.md` 也算;untitled 计入,但本轮选「保存」时只放过不超过确认框告知数的 untitled —— main 随 flush 请求带
+`untitled`,确认后新建、超出该数的 untitled 草稿仍计入)。本轮**未**选「不保存」
 且仍有 → 回执带 `remaining: { dirty, untitled }`:
 
 - main 中止本次关闭 / 退出,窗口重新显示,`quitGuard` 复位(与保存失败路径一致),并按 `remaining` 记账 →
@@ -48,7 +49,9 @@ markdown autosave flush)完成后、回执之前,检查此刻仍 dirty 的 tab(�
 ### 关闭流程代际
 
 - 每窗关闭流程带代际。before-quit 接管窗口时递增;在途的旧单窗关闭流程(如「不保存」)完成时发现已被取代 →
-  不置 flushed、不 `win.close()`(否则在退出的「保存」完成前销毁窗口),复位守卫并重新显示窗口。
+  不置 flushed、不 `win.close()`(否则在退出的「保存」完成前销毁窗口),无副作用返回。
+- 退出中止(任一取消 / 保存失败 / remaining / 全局最终检查)→ **立即**显示被本轮接管的隐藏窗口并释放其关窗守卫,
+  不等旧回执或 10s 超时;旧流程迟到完成时不再 show / 复位(不干扰用户之后发起的新关闭流程)。
 
 ### flush 请求 / 回执配对
 
@@ -60,6 +63,10 @@ markdown autosave flush)完成后、回执之前,检查此刻仍 dirty 的 tab(�
 
 - 逐个有脏文件的主窗确认(一次一个框);任一**取消** → 中止整个退出,不 flush,守卫复位,再次 Cmd+Q 正常重新确认。
 - 按各窗选择 flush;任一「保存」失败或回执 `remaining` → 中止退出、显示该窗口、守卫复位(不记 flushedOnQuit,之后关窗仍走确认)。
+- 全局最终检查:全部 flush 完成后、破坏性清理(`cleanupAll` 杀 PTY / debug)之前,按 main 持续接收的脏态上报判断
+  各主窗是否超出本轮已接受范围(未弹框 → 不接受任何脏;「保存」→ 只接受确认框告知的 untitled;「不保存」→ 接受确认
+  时的脏数)。超出(如 A 已回执后、等待 B 保存期间在 A 里继续编辑)→ 中止退出、显示该窗口、守卫复位。
+  renderer 脏态上报经同一 IPC 通道、先于回执到达(zustand 同步更新触发上报)。
 - popout 窗口不参与(与既有 flush 逻辑一致)。
 
 ### 计数口径(renderer)
@@ -68,8 +75,9 @@ markdown autosave flush)完成后、回执之前,检查此刻仍 dirty 的 tab(�
 - 不计入:Markdown 自动保存开启时的脏 `.md`(关窗 flush 经 `flushPendingAutoSave` 落盘);关闭该设置则计入。
 - 例外:最近一次 autosave 失败(ENOSPC / EACCES / EDITOR_DISK_CHANGED)的脏 `.md` 计入 —— 失败后无 pending
   timer,flush 不会重试。失败态按 tab 记录(`src/panels/Editor/autosave-failures.ts`),变化时重新上报;再次成功后恢复排除。
-  tab 从 editor store 消失(关闭 / 删除 / 重命名)即清除其记录;保存开始时取 epoch,其间有 tab 消失则丢弃迟到结果
-  (不写入同路径重开的新实例)。
+  tab 从 editor store 消失(关闭 / 删除 / 重命名)即清除其记录;每个 tab 实例有独立代际,保存开始时取本 tab 代际,
+  其间本 tab 消失则丢弃迟到结果(不写入同路径重开的新实例;兄弟 tab 关闭 / 重命名不影响)。tab 变干净(显式保存 /
+  冲突覆盖等任何成功落盘)即清除记录,干净 tab 的迟到失败不记录。
 - 「保存」分支保存所有有路径的脏 tab(含 `.md`,无害);全部完成后复查,仍脏(保存期间继续输入)同样视为失败。
 - 保存失败提示里,因磁盘已被外部修改(EDITOR_DISK_CHANGED)而未写的文件单独说明(引导 Cmd+S 解决冲突
   或选「不保存」;关窗流程不弹覆盖框),文案 `dialog.unsaved_close.disk_changed_note`。
