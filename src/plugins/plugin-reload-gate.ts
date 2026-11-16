@@ -15,6 +15,11 @@ export interface PluginReloadGateDeps {
   readonly onUninstalled?: (cb: (id: string) => void) => void;
   /** 本窗口撤销已卸载插件(PluginManager.handleUninstalled)。 */
   readonly uninstalled?: (id: string) => Promise<void>;
+  /**
+   * 卸载广播的同步部分(PluginManager.markUninstalled,终审 P1):广播一到**立即**调用,不受 init 缓冲影响 ——
+   * init 的激活可能正挂在该插件的授权弹窗上,须先取消弹窗、阻止加载插件代码;uninstalled 仍按缓冲规则排队。
+   */
+  readonly markUninstalled?: (id: string) => void;
   /** 订阅 main 广播的「插件启用状态已变更」(终审 P1:跨窗口启停);与 enabledChanged 成对提供。 */
   readonly onEnabledChanged?: (cb: (id: string, enabled: boolean) => void) => void;
   /** 本窗口同步启用状态(PluginManager.handleEnabledChanged)。 */
@@ -73,6 +78,11 @@ export function wirePluginReloadGate(deps: PluginReloadGateDeps): void {
   });
 
   deps.onUninstalled?.((id) => {
+    try {
+      deps.markUninstalled?.(id);
+    } catch (err) {
+      deps.onError?.('uninstalled', err);
+    }
     if (!ready) {
       pendingUninstalled.add(id);
       return;

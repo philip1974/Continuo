@@ -50,6 +50,11 @@ export interface ManagerHost {
    * (终审 P1:否则停用/卸载后长任务继续跑到超时)。
    */
   killPluginShellProcesses?(id: string): Promise<void>;
+  /**
+   * 取消该插件待决的授权弹窗(可选,终审 P1):插件已被别的窗口卸载时调用,对应 promptFn 以 reason reject
+   * (不得 resolve([]) —— 那会被当作「用户全拒」写盘)。
+   */
+  cancelPermissionPrompt?(id: string, reason: Error): void;
 }
 
 // ── PluginEntry / Status ───────────────────────────────
@@ -171,6 +176,10 @@ export function findPluginDirByManifestId(
   return found;
 }
 
+function uninstalledError(id: string): Error {
+  return codedError('NOT_INSTALLED', `plugin ${id} has been uninstalled`);
+}
+
 // ── PluginManager ──────────────────────────────────────
 
 export class PluginManager {
@@ -187,6 +196,12 @@ export class PluginManager {
    * 的 withPluginMutationLock 同款 Promise 链锁(共享 runSerialPerKey)串行化同 id 生命周期操作。
    */
   private readonly lifecycleLocks = new Map<string, Promise<unknown>>();
+  /**
+   * 已被卸载(收到 plugins:uninstalled 广播)的 id(终审 P1):广播到达时立即写入,不等生命周期锁。在途激活
+   * (挂在授权弹窗 / 授权写入上)在执行插件代码前检查并中止。本窗口不会再出现同 id 的 entry(新安装须重载窗口),
+   * 故不清除。
+   */
+  private readonly uninstalledIds = new Set<string>();
 
   constructor(
     private readonly app: CoApp,
@@ -488,8 +503,9 @@ export class PluginManager {
    * 清 _enabled / _permissions)。幂等:发起卸载的窗口自身也会收到广播,entry 已不在 → 只清权限缓存。
    */
   async handleUninstalled(id: string): Promise<void> {
-    // 先立即失效授权(等锁期间实例仍在,但已拿不到权限);锁内拆除后再清一次(防锁内在途激活写回)。
-    this.host.permissionStore?.forget?.(id);
+    // 先立即标记 + 取消弹窗 + 失效授权(等锁期间实例仍在,但已拿不到权限);锁内拆除后再清一次授权缓存
+    //(防锁内在途激活写回)。
+    this.markUninstalled(id);
     return this.withLifecycleLock(id, async () => {
       const entry = this.entries.get(id);
       if (entry) {
@@ -504,6 +520,22 @@ export class PluginManager {
       }
       this.host.permissionStore?.forget?.(id);
     });
+  }
+
+  /**
+   * 卸载广播到达时的同步部分(终审 P1,不等生命周期锁;reload-gate 在 init 完成前也立即调用):标记已卸载、
+   * 取消该插件待决的授权弹窗(在途激活以 NOT_INSTALLED 失败、不写授权)、失效授权缓存。幂等。
+   * 锁内拆除仍由 handleUninstalled 排队执行。
+   */
+  markUninstalled(id: string): void {
+    this.uninstalledIds.add(id);
+    this.host.cancelPermissionPrompt?.(id, uninstalledError(id));
+    this.host.permissionStore?.forget?.(id);
+  }
+
+  /** 已被卸载 → 抛 NOT_INSTALLED(在途激活在执行插件代码前调用)。 */
+  private assertNotUninstalled(id: string): void {
+    if (this.uninstalledIds.has(id)) throw uninstalledError(id);
   }
 
   /** 列出所有已发现插件状态. */
@@ -563,6 +595,8 @@ export class PluginManager {
         `plugin-fs token 回收失败,未激活: ${entry.id}`,
       );
     }
+    // 已被卸载(广播已到、锁内拆除尚未执行)→ 不再为它弹授权窗。
+    this.assertNotUninstalled(entry.id);
 
     // v3.4 权限门:manifest 声明了 permissions 且 host 配了 store + prompt
     // 才阻塞;否则放行(向后兼容)。
@@ -609,6 +643,8 @@ export class PluginManager {
       }
     }
 
+    // 终审 P1:授权弹窗 / 授权写入 await 期间插件可能已被别的窗口卸载 → 不加载(import 即执行插件顶层代码)。
+    this.assertNotUninstalled(entry.id);
     const loaded = await loadPluginModule({
       moduleUrl: entry.dirInfo.moduleUrl,
       manifest: entry.manifest,
@@ -628,6 +664,7 @@ export class PluginManager {
     // (信任边界 runtime subclass 校验集中在 loader),此处直接 new,无需 as any。
     // v5 Phase 1:plugin 拿到的是 per-plugin scoped app(持 pluginId 给
     // permission.check;fs/network 等命名空间预留 Phase 3 启用 gating)
+    this.assertNotUninstalled(entry.id); // import await 期间被卸载 → 不构造实例
     const { token: pluginFsToken } =
       await coApi.pluginFsRaw._registerPlugin(entry.id);
     entry.pluginFsToken = pluginFsToken;

@@ -23,9 +23,12 @@
   | `network.fetch` | `PermissionError('network')` |
   | `fs` 写 / 扩权:`writeFile / mkdir / rename / rm / cp / atomicReplaceWithinScope / requestScope` | `PermissionError('fs')` |
   | `clipboard.readText / writeText` | `PermissionError('clipboard')`(读剪贴板是用户隐私,停用后的代码无正当用途) |
-  | `mcp.register`;已注册工具的每次调用 | `PermissionError('mcp-tools')` |
+  | `mcp.register`;已注册工具的每次调用 | `PermissionError('mcp-tools')`;吊销前经 `app.mcp.register` 注册的工具在 `revoke()` 时全部注销(见下) |
   | `notifications.show` / `dock.openPanel` | 抛 `code: 'PERMISSION_DENIED'`(无对应权限项的 UI 副作用) |
   | 贡献点注册 / 订阅:`panels / commands / statusBar / ribbon / settingTabs / settingItems / explorerDecorators / editorActions / explorerContextMenu` 的 `register`、`subscribe`;`events.on` | 抛 `code: 'PERMISSION_DENIED'`,不入共享注册表 |
+  | `commands.execute` | 返回 reject 的 Promise(`code: 'PERMISSION_DENIED'`),命令不执行 —— 宿主命令(`window.new` / `terminal.new` 等)会创建不归插件、回收清不掉的窗口 / 终端 |
+  | `events.emit` / `events.clear` | 抛 `code: 'PERMISSION_DENIED'` —— emit 触发他人监听的副作用;clear 清掉他人订阅 |
+  | 注册表 / 总线上其余未列入「不阻断」的成员 | 同上抛 `PERMISSION_DENIED`(白名单放行,新增方法默认阻断) |
   | `editor.openFile` | 返回 `{ ok: false, code: 'PERMISSION_DENIED' }`(其契约返回结果对象不抛) |
 
   | 不阻断 | 理由 |
@@ -33,13 +36,17 @@
   | `fs` 读:`readFile / listDir / stat / lstat / realpath / readGitBlob / userHome` | 无外部副作用,`onunload` 收尾可能要读;停用随即回收 plugin-fs token,之后 main 侧拒绝 |
   | `dataStore.read / write` | 插件自有数据,`onunload` 常用 `saveData` 落盘状态 |
   | `permission.check / granted` | 只读查询 |
-  | 贡献点 / 事件的只读与执行成员:各注册表 `getAll / get / list / getBySide / getByCategory`、`commands.execute`、`events.emit / off / clear` | 不新增贡献;`onunload` 收尾可能要发事件 |
+  | 贡献点只读查询:各注册表 `getAll / get / list / getBySide / getByCategory` | 只读 |
+  | `events.off` | 只能移除调用方持有 listener 引用的订阅,即插件自身的订阅;收尾退订无副作用 |
   | `version` / `workspace.getRoot` | 只读 |
 
 - 贡献点回收:scoped app 对外暴露的注册表 / `events` 是 per-plugin 包装(底层仍是共享单例)。吊销**前**经
   scoped app 注册的贡献与订阅(无论是否经 `Plugin.register` 收集)由控制面记录,`revoke()` 时统一注销 ——
   插件绕过 `Plugin.register` 直接 `app.commands.register(...)` 的命令,停用后同样从注册表移除、快捷键失效。
   返回的句柄幂等;插件先自行 dispose 的不再重复注销,也不会误删他人后注册的同 id 贡献。
+- MCP 工具回收:`revoke()` 经原 Disposable 注销本实例经 `app.mcp.register` 注册的全部工具(main 侧 stub 同步
+  移除)—— 插件不保存返回的 Disposable(不经 `registerMcpTool` 收集)时,停用 / 热重载 / `onload` 抛错后工具不残留,
+  再次启用注册同名工具不会命中 `TOOL_NAME_TAKEN`。
 - 带权限门的能力在授权读取 `await` 前后各查一次吊销状态:授权读取期间被吊销,返回后也不放行。
 - main 侧 `killPluginShellProcesses` 兜底仍在(回收已登记的进程);本条是在源头拒绝新请求。
 
@@ -70,9 +77,10 @@
 - `deactivate-revoke.spec.ts`:revoke 后各能力拒绝且不发 IPC、不阻断项照常;授权等待期间被吊销;PluginManager
   停用后延迟回调 / onunload 超时后继续执行 / onunload 内同步调用 / 激活失败后的延迟回调均被拒。
 - `contribution-revoke.spec.ts`:吊销前直接注册的各注册表贡献 / `events.on` / `subscribe` 在 revoke 时注销;吊销后
-  register / on / subscribe 抛 `PERMISSION_DENIED`;只读成员照常;PluginManager 停用后延迟回调注册命令被拒、
-  停用前直接注册的命令被移除。
+  register / on / subscribe / emit / clear 抛 `PERMISSION_DENIED`、execute reject;只读成员与 `events.off` 照常;
+  PluginManager 停用后延迟回调注册 / 执行命令被拒、停用前直接注册的命令被移除。
 - `enabled-main-broadcast.spec.ts`:main 广播(成功才广播、跳过已销毁窗口)与 payload 守卫。
 - `enabled-renderer-sync.spec.ts`:A 禁用 → B 停用、命令注销、不写盘、热重载不复活;发起窗口幂等;A 启用 → B
   激活(不弹窗、不写盘);未知 id 忽略;reload-gate 接线与 init 前缓冲。
-- `mcp-permission-revoke.spec.ts`:撤销后调用被拒;变更通知后注销工具(stub 移除)、调用 NO_SUCH_TOOL;仍授权保留。
+- `mcp-permission-revoke.spec.ts`:撤销后调用被拒;变更通知后注销工具(stub 移除)、调用 NO_SUCH_TOOL;仍授权保留;
+  直接 `app.mcp.register` 不保存 Disposable → 停用 / 热重载 / onload 抛错后工具注销,再启用同名注册成功。

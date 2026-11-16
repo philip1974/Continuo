@@ -915,6 +915,7 @@
 ## [plugin-uninstall-broadcast(跨窗口卸载撤销插件实例与授权)](./plugin-uninstall-broadcast/README.md)
 
 - [`main-broadcast.spec.ts`](./plugin-uninstall-broadcast/main-broadcast.spec.ts)
+- [`pending-prompt-cancel.spec.ts`](./plugin-uninstall-broadcast/pending-prompt-cancel.spec.ts)
 - [`renderer-teardown.spec.ts`](./plugin-uninstall-broadcast/renderer-teardown.spec.ts)
 
 ## [plugins-host(renderer 端 ManagerHost)](./plugins-host/README.md)
