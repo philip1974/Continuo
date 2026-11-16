@@ -49,11 +49,14 @@ export function useFsWatcher(
   // 展开别的目录 / 折叠重开令普通 diff 抢先重装)都补刷新 + emitWatchRestored 并清标记;否则抢先重装
   // 成功后定时器见已安装即退出,断线期间的变化永不可见。
   const pendingRestoreRef = useRef<Set<string>>(new Set());
+  // watch-lost:按退避续排该 path 的重装(由 watch-lost effect 赋值;installWatch 失败续排用)。
+  const scheduleLostRetryRef = useRef<(p: string) => void>(() => {});
 
   // 安装一个 path 的 watch(diff effect 与 watch-lost 重装共用);只读 ref,引用稳定。
   // 成功(仍需要该 watch)且 path 待恢复 → 补刷新 + 本地分发「重新可观察」。
-  // onFail:watch-lost 重装专用 —— 仍是最新代际的失败(已撤销记账)→ 续排退避重试。卸载后不调。
-  const installWatch = useCallback((p: string, onFail?: () => void): void => {
+  // 失败(仍是最新代际,已撤销记账)且 path 失效未恢复、仍展开、未卸载 → 续排退避重试。不区分调用方:
+  // 退避期间折叠(定时器已清)再重新展开时,普通 diff 的安装失败同样须续排,否则卷恢复后永不重试。
+  const installWatch = useCallback((p: string): void => {
     const installed = prevPathsRef.current;
     const watchGen = watchGenRef.current;
     // race(R14):watchDir 是异步 IPC。此前 effect 立即把 prevPathsRef 设为 next,等于在 main
@@ -88,7 +91,9 @@ export function useFsWatcher(
       }
       if (watchGen.get(p) !== myGen) return;
       installed.delete(p);
-      if (!cancelledRef.current) onFail?.();
+      if (!cancelledRef.current && pendingRestoreRef.current.has(p) && expandedRef.current.has(p)) {
+        scheduleLostRetryRef.current(p);
+      }
     })();
   }, []);
 
@@ -145,14 +150,13 @@ export function useFsWatcher(
           () => {
             timers.delete(p);
             if (!expandedRef.current.has(p) || prevPathsRef.current.has(p)) return;
-            installWatch(p, () => {
-              if (expandedRef.current.has(p)) schedule(p);
-            });
+            installWatch(p);
           },
           Math.min(LOST_RETRY_BASE_MS * 2 ** n, LOST_RETRY_MAX_MS),
         ),
       );
     };
+    scheduleLostRetryRef.current = schedule;
     const unsub = coApi.fs.onWatchLost((p) => {
       const installed = prevPathsRef.current;
       if (!installed.has(p)) return;

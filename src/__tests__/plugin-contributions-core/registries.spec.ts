@@ -299,16 +299,19 @@ describe('CommandRegistry', () => {
     await expect(r.execute('nope')).rejects.toThrow(/not found/i);
   });
 
-  it('hotkey 冲突 → warn(文案与分发一致:先注册者生效,后注册者被遮蔽)', () => {
+  it('hotkey 冲突 → warn 陈述事实(冲突的命令 + 只有其一响应),不断言谁生效', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const r = new CommandRegistry();
     r.register({ id: 'a', title: 'A', hotkey: 'mod+s', fn: () => {} });
     r.register({ id: 'b', title: 'B', hotkey: 'mod+s', fn: () => {} });
     expect(warn).toHaveBeenCalled();
-    // useCommandHotkeys 按插入序先命中者执行(use-command-hotkeys 锁定「第一条赢」),告警不得声称后注册赢
+    // 分发按 Map 迭代序先命中者执行;同 id 替换时 Map.set 保留原插入位置,迭代序≠注册时间先后,
+    // 故告警只陈述冲突事实,不得声称先/后注册者生效
     const msg = String(warn.mock.calls[0]?.[0]);
-    expect(msg).toContain('先注册者生效');
-    expect(msg).not.toContain('后注册赢');
+    expect(msg).toContain('mod+s');
+    expect(msg).toContain('"b"');
+    expect(msg).toContain('只有其中一个会响应');
+    expect(msg).not.toMatch(/先注册者生效|后注册者被遮蔽|后注册赢/);
     // 两个 command 都还在(只是 hotkey 冲突,getAll 不去重)
     expect(r.getAll()).toHaveLength(2);
     warn.mockRestore();

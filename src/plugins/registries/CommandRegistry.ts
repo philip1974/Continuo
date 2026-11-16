@@ -146,9 +146,10 @@ export class CommandRegistry extends KeyedRegistry<CommandSpec> {
       spec.hotkey &&
       (this.hotkeyCounts.get(canonicalHotkey(spec.hotkey, this.platform)) ?? 0) > 0
     ) {
-      // 与 useCommandHotkeys 分发一致:按插入序先命中者执行,后注册者被遮蔽(非 KeyedRegistry 同 id 的后注册赢)。
+      // 只陈述冲突事实,不断言谁生效:useCommandHotkeys 按 Map 迭代序先命中者执行,而同 id 替换时
+      // Map.set 保留原插入位置,迭代序未必等于注册时间先后。
       console.warn(
-        `[command-registry] hotkey "${spec.hotkey}" 已被另一命令占用,先注册者生效,后注册者被遮蔽`,
+        `[command-registry] hotkey "${spec.hotkey}"(命令 "${spec.id}")与已注册的其他命令冲突,只有其中一个会响应`,
       );
     }
     if (spec.hotkey) this.incrementHotkey(spec.hotkey);

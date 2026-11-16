@@ -476,6 +476,50 @@ describe('useFsWatcher · watch-lost 退避重装', () => {
     expect(aCalls()).toBe(3); // 未沿用旧退避(否则需 4s)
   });
 
+  it('失效 → 退避期间折叠 → 卷仍不可用时重新展开且首次安装失败 → 按退避继续重试直到成功', async () => {
+    const restored: string[] = [];
+    const off = onWatchRestored((p) => restored.push(p));
+    try {
+      const { hook, lost, aCalls, watchDir } = setup(new Set(['/a']));
+      await flush();
+      lost('/a');
+      hook.rerender({ paths: new Set<string>() }); // 折叠:清定时器 + 退避清零
+      watchDir
+        .mockResolvedValueOnce({ ok: false })
+        .mockRejectedValueOnce(new Error('ENOENT'))
+        .mockResolvedValue({ ok: true });
+      hook.rerender({ paths: new Set(['/a']) }); // 重新展开 → 普通 diff 安装,失败
+      await flush();
+      expect(aCalls()).toBe(2);
+      vi.advanceTimersByTime(2000); // 折叠已清零退避 → 从 2s 起
+      await flush();
+      expect(aCalls()).toBe(3); // 续排重试(reject)
+      vi.advanceTimersByTime(3999);
+      await flush();
+      expect(aCalls()).toBe(3);
+      vi.advanceTimersByTime(1);
+      await flush();
+      expect(aCalls()).toBe(4); // 退避翻倍后成功
+      expect(restored).toEqual(['/a']);
+      vi.advanceTimersByTime(600_000);
+      await flush();
+      expect(aCalls()).toBe(4);
+    } finally {
+      off();
+    }
+  });
+
+  it('从未失效的 path 首次安装失败 → 不自动退避重试(仅等下一次 diff)', async () => {
+    const { hook, aCalls, watchDir } = setup(new Set<string>());
+    watchDir.mockResolvedValue({ ok: false });
+    hook.rerender({ paths: new Set(['/a']) });
+    await flush();
+    expect(aCalls()).toBe(1);
+    vi.advanceTimersByTime(600_000);
+    await flush();
+    expect(aCalls()).toBe(1);
+  });
+
   it('卸载 → 退订 watch-lost 且取消待重试', async () => {
     const { hook, lost, aCalls, lostUnsub } = setup(new Set(['/a']));
     await flush();
