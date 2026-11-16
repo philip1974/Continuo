@@ -153,6 +153,7 @@ export interface DebugToolService {
       readonly count?: number;
       readonly maxDepth?: number;
       readonly maxStringBytes?: number;
+      readonly signal?: AbortSignal;
     },
   ): Promise<DebugVariablesToolOutput>;
   evaluate(
@@ -417,7 +418,7 @@ function makeDebugVariablesTool(
       'Read variables from a stopped debug session owned by this MCP caller.',
     jsonSchema: debugVariablesInputJsonSchema,
     inputSchema: debugVariablesInputSchema,
-    run: (input) =>
+    run: (input, ctx) =>
       runDebugTool(() =>
         deps.service.variables(input.session_id, {
           variablesReference: input.variables_reference,
@@ -425,6 +426,8 @@ function makeDebugVariablesTool(
           count: input.count,
           maxDepth: input.max_depth,
           maxStringBytes: input.max_string_bytes,
+          // 断连时深度展开即停(结果已无人接收)。
+          ...(ctx.signal !== undefined ? { signal: ctx.signal } : {}),
         }),
       ),
   };

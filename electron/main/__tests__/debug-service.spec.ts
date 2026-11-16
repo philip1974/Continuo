@@ -9,6 +9,8 @@ import { promisify } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  DEBUG_VARIABLES_EXPAND_MAX_NODES,
+  DEBUG_VARIABLES_EXPAND_MAX_REQUESTS,
   DebugService,
   type DebugDapClientLike,
   type DebugProcessOps,
@@ -1927,6 +1929,145 @@ describe('DebugService fake adapter · 会话上限 / 程序起跑时机 / 按 s
       file: '/a.js',
       breakpoints: [{ file: '/a.js', line: 4, verified: true }],
     });
+  });
+});
+
+describe('DebugService fake adapter · 资源上限(结束的 child 回收 / variables 展开预算)', () => {
+  const ctx = { ownerWindowId: 21, controllerToken: 'agent-cap' };
+
+  interface RuntimeView {
+    readonly childClients: readonly unknown[];
+    readonly breakpoints: ReadonlyArray<{
+      readonly reportedBy: ReadonlyMap<unknown, unknown>;
+      readonly ids: ReadonlyMap<unknown, unknown>;
+    }>;
+    readonly pendingBreakpointChanges: ReadonlyMap<unknown, unknown>;
+  }
+  // 内部状态无对外读口:内存是否随 worker 数增长只能看 runtime 本身。
+  const runtimeOf = (service: DebugService, sessionId: string): RuntimeView =>
+    (service as unknown as { runtimes: Map<string, RuntimeView> }).runtimes.get(sessionId)!;
+
+  it('主线程存活、反复创建并结束 worker → 结束的 child 被移除并 dispose,按连接的断点记录不随次数增长;teardown 不再对它们发 disconnect', async () => {
+    const { service, parent } = makeFakeService();
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      ctx,
+    );
+    await service.setBreakpoints(sessionId, { file: '/a.js', line: 3 });
+    await parent.triggerStartDebugging({ type: 'pwa-node' });
+    const main = parent.children[0]!;
+
+    const rounds = 30;
+    for (let i = 0; i < rounds; i += 1) {
+      await main.triggerStartDebugging({ type: 'pwa-node', name: `[worker ${i}]` });
+      const worker = main.children[i]!;
+      // 按 id 查不到记录的 changed 事件会暂存在该连接名下。
+      worker.emit('breakpoint', { reason: 'changed', breakpoint: { id: 999, verified: true } });
+      worker.emit(i % 2 === 0 ? 'terminated' : 'exited', {});
+      worker.emit('exited', {}); // terminated 之后的 exited:重复结束无副作用
+    }
+
+    const runtime = runtimeOf(service, sessionId);
+    expect(runtime.childClients).toEqual([main]);
+    expect(debugSessions.get(sessionId)?.childSessionCount).toBe(1);
+    for (const bp of runtime.breakpoints) {
+      expect(bp.reportedBy.size).toBe(2); // 父连接 + main
+      expect(bp.ids.size).toBe(2);
+    }
+    for (const worker of main.children) {
+      expect(runtime.pendingBreakpointChanges.has(worker)).toBe(false);
+      expect(worker.disposeCalls).toBe(1);
+    }
+    expect(service.listSessions()[0]?.state).not.toBe('terminated');
+
+    await service.disconnect(sessionId);
+    expect(main.children.every((worker) => worker.disconnectRequests === 0)).toBe(true);
+    expect(main.disconnectRequests).toBe(1);
+  });
+
+  /** 每个 variables 请求都回满 count 个可展开成员(每个成员一个新的 variablesReference)。 */
+  function wideVariablesAdapter(
+    parent: FakeDapClient,
+    onRequest?: () => void,
+  ): { requests: () => number } {
+    let requests = 0;
+    let nextRef = 1_000;
+    const original = parent.sendRequest.bind(parent);
+    parent.sendRequest = async (command, args, timeoutMs) => {
+      if (command !== 'variables') return original(command, args, timeoutMs);
+      requests += 1;
+      onRequest?.();
+      const count = (args as { count: number }).count;
+      return {
+        seq: requests,
+        type: 'response',
+        request_seq: requests,
+        success: true,
+        command,
+        body: {
+          variables: Array.from({ length: count }, (_, i): DapJson => ({
+            name: `m${i}`,
+            value: 'Object',
+            variablesReference: nextRef++,
+          })),
+        },
+      };
+    };
+    return { requests: () => requests };
+  }
+
+  function countNodes(variables: readonly DebugVariable[]): number {
+    return variables.reduce((sum, variable) => sum + 1 + countNodes(variable.children ?? []), 0);
+  }
+
+  it('debug.variables 深度展开有总预算:每层 100 个可展开成员时请求数与节点数封顶,并标 truncated', async () => {
+    const { service, parent } = makeFakeService();
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      ctx,
+    );
+    parent.emit('stopped', { reason: 'breakpoint', threadId: 1 });
+    const adapter = wideVariablesAdapter(parent);
+
+    const result = await service.variables(sessionId, {
+      variablesReference: 44,
+      count: 100,
+      maxDepth: 5,
+    });
+
+    expect(adapter.requests()).toBeLessThanOrEqual(DEBUG_VARIABLES_EXPAND_MAX_REQUESTS);
+    expect(countNodes(result.variables)).toBeLessThanOrEqual(DEBUG_VARIABLES_EXPAND_MAX_NODES);
+    expect(result.truncated).toBe(true);
+    // 顶层一页照常完整返回,预算内的节点照常展开;未展开的保留 variables_reference 并标 truncated。
+    expect(result.variables).toHaveLength(100);
+    expect(result.variables[0]!.children).toHaveLength(100);
+    const unexpanded = result.variables.at(-1)!;
+    expect(unexpanded.children).toBeUndefined();
+    expect(unexpanded.variables_reference).toBeGreaterThan(0);
+    expect(unexpanded.truncated).toBe(true);
+  });
+
+  it('debug.variables 展开中调用方断连(signal abort)→ 停止继续请求,以取消错误结束', async () => {
+    const { service, parent } = makeFakeService();
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      ctx,
+    );
+    parent.emit('stopped', { reason: 'breakpoint', threadId: 1 });
+    const aborter = new AbortController();
+    const adapter = wideVariablesAdapter(parent, () => {
+      if (adapter.requests() === 3) aborter.abort();
+    });
+
+    await expect(
+      service.variables(sessionId, {
+        variablesReference: 44,
+        count: 10,
+        maxDepth: 5,
+        signal: aborter.signal,
+      }),
+    ).rejects.toMatchObject({ code: 'AGENT_NOT_AUTHORIZED' });
+    expect(adapter.requests()).toBe(3);
   });
 });
 
