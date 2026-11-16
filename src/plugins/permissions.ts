@@ -34,6 +34,11 @@ export interface PermissionStore {
   deny(pluginId: string, perms: readonly PermissionKey[]): Promise<void>;
   /** 移除该插件所有 granted=false 的决策(允许用户改主意,重启 prompt). */
   clearDenied(pluginId: string): Promise<void>;
+  /**
+   * 插件已卸载(main 已清盘上记录):丢弃该插件的内存决策缓存,之后查询不再放行(终审 P1:跨窗口卸载)。
+   * 可选:无缓存的实现无需提供。
+   */
+  forget?(pluginId: string): void;
 }
 
 const EMPTY_PERMISSION_DECISIONS: PermissionDecision[] = [];
@@ -107,6 +112,10 @@ export class InMemoryPermissionStore implements PermissionStore {
 
   async deny(pluginId: string, perms: readonly PermissionKey[]): Promise<void> {
     this.upsert(pluginId, perms, false);
+  }
+
+  forget(pluginId: string): void {
+    this.map.delete(pluginId);
   }
 
   async clearDenied(pluginId: string): Promise<void> {

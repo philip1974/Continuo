@@ -127,6 +127,8 @@ type FlushRequestPayload = {
   discard?: boolean;
   /** save 时:确认框告知用户会丢弃的 untitled id(renderer 只放过这些 id)。 */
   untitledIds?: string[];
+  /** discard 时:确认时未列入框的待 autosave .md 身份(flush 后仍脏 → renderer 回执 remaining)。 */
+  pendingAutoSave?: string[];
   requestId?: number;
 };
 
@@ -342,6 +344,18 @@ const api = {
         cb(payload.id);
       };
       return subscribeIpc(PLUGINS_CHANNELS.CHANGED, listener);
+    },
+    /** 订阅「插件已卸载」广播(任一窗口卸载成功后 main 推给所有窗口),返 unsubscribe. */
+    onUninstalled: (cb: (id: string) => void): (() => void) => {
+      // 同 onChanged:payload 形态 `{ id }`,复用同一守卫(畸形 warn+drop)。
+      const listener = (_: unknown, payload: unknown) => {
+        if (!isPluginsChangedPayload(payload)) {
+          console.warn('[plugins] dropped malformed plugins:uninstalled payload', payload);
+          return;
+        }
+        cb(payload.id);
+      };
+      return subscribeIpc(PLUGINS_CHANNELS.UNINSTALLED, listener);
     },
     /** v4.4 订阅 co:// 外部唤起,返 unsubscribe. */
     onProtocolUrl: (cb: (url: string) => void): (() => void) => {

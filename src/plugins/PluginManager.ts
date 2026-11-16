@@ -432,6 +432,30 @@ export class PluginManager {
     this.invalidateListCache();
   }
 
+  /**
+   * 别的窗口(或本窗口)卸载了插件(main 广播 plugins:uninstalled,终审 P1):对本窗口执行与本地卸载相同的
+   * 停用 / 注销贡献点 / 回收 plugin-fs token / 移除 entry,并失效权限缓存;**不触盘**(main 已删目录、
+   * 清 _enabled / _permissions)。幂等:发起卸载的窗口自身也会收到广播,entry 已不在 → 只清权限缓存。
+   */
+  async handleUninstalled(id: string): Promise<void> {
+    // 先立即失效授权(等锁期间实例仍在,但已拿不到权限);锁内拆除后再清一次(防锁内在途激活写回)。
+    this.host.permissionStore?.forget?.(id);
+    return this.withLifecycleLock(id, async () => {
+      const entry = this.entries.get(id);
+      if (entry) {
+        if (entry.instance) {
+          await this.deactivateEntry(entry, `uninstalled ${id}`);
+          this.activationOrder = removeActivationOrderId(this.activationOrder, id);
+        }
+        // 已停用但残留未回收的 token 再试一次;仍失败只记录(目录已删,不能像本地卸载那样中止)。
+        await this.revokePluginFsToken(entry);
+        this.entries.delete(id);
+        this.invalidateListCache();
+      }
+      this.host.permissionStore?.forget?.(id);
+    });
+  }
+
   /** 列出所有已发现插件状态. */
   listAll(): readonly PluginListItem[] {
     if (this.cachedList !== null) return this.cachedList;

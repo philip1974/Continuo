@@ -18,6 +18,7 @@ const h = vi.hoisted(() => ({
           save?: boolean;
           discard?: boolean;
           untitledIds?: string[];
+          pendingAutoSave?: string[];
           requestId?: number;
         }) => Promise<void>)
       | null,
@@ -59,6 +60,7 @@ vi.mock('@/lib/co-api', () => ({
           save?: boolean;
           discard?: boolean;
           untitledIds?: string[];
+          pendingAutoSave?: string[];
           requestId?: number;
         }) => Promise<void>,
       ) => {
@@ -264,6 +266,41 @@ describe('flush 握手的「保存」分支', () => {
 
     expect(h.writeFile).not.toHaveBeenCalled();
     expect(h.sendFlushAck).toHaveBeenCalledWith(1, { state: ds([g('/w/a.ts')]) });
+  });
+
+  // 终审 P1:「不保存」只针对确认框列出的文件。确认时未列入框的待 autosave .md(main 随请求带 pendingAutoSave)
+  // 在 flush 中保存失败 → 回执 remaining,main 中止关闭;框里列出的文件仍按「不保存」丢弃。
+  it('「不保存」+ 待 autosave 的 .md flush 保存失败 → 回执 remaining', async () => {
+    await mountShell();
+    openDirty('/w/a.ts');
+    openDirty('/w/a.md');
+    const mdId = g('/w/a.md');
+    vi.mocked(flushPendingAutoSave).mockImplementationOnce(async () => {});
+
+    await act(async () => {
+      await h.flushCb.current!({ windowId: 1, discard: true, pendingAutoSave: [mdId], requestId: 13 });
+    });
+    const state = useEditorStore.getState().tabs.map((x) => g(x.id));
+    expect(h.sendFlushAck).toHaveBeenLastCalledWith(1, {
+      state: ds(state),
+      remaining: ds(state),
+      requestId: 13,
+    });
+  });
+
+  it('「不保存」+ 待 autosave 的 .md flush 保存成功 → 不带 remaining(框里的代码文件照常丢弃)', async () => {
+    await mountShell();
+    openDirty('/w/a.ts');
+    openDirty('/w/a.md');
+    const mdId = g('/w/a.md');
+    vi.mocked(flushPendingAutoSave).mockImplementationOnce(async () => {
+      useEditorStore.getState().markSaved('/w/a.md');
+    });
+
+    await act(async () => {
+      await h.flushCb.current!({ windowId: 1, discard: true, pendingAutoSave: [mdId], requestId: 14 });
+    });
+    expect(h.sendFlushAck).toHaveBeenLastCalledWith(1, { state: ds([g('/w/a.ts')]), requestId: 14 });
   });
 
   it('不带 save、无脏 tab → 回执带空的最终脏态', async () => {

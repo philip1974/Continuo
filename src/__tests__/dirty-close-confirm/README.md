@@ -44,7 +44,9 @@ markdown autosave flush)完成后、回执之前,检查此刻仍 dirty 的 tab(�
   用户再次关闭时看到确认框。
 - 覆盖:编辑 `.md` 后 2s 防抖内关窗、flush 中 autosave 首次失败;「保存」后慢 layout / explorer flush 期间继续
   输入;多窗退出时 B 的确认框打开期间在干净的 A 里改代码(A 收到非保存 flush)。
-- 选「不保存」→ 照常关闭(行为不变)。
+- 选「不保存」→ 框里列出的文件照常丢弃;但确认时**未列入框**的待 autosave `.md`(main 随 flush 请求带
+  `pendingAutoSave`)flush 后仍脏(首次保存失败)→ 回执 `remaining`,main 同样中止关闭 / 退出并按此记账(终审 P1:
+  用户未被告知会丢)。按 tabId 匹配,忽略变脏代际。
 
 ### 未弹框关闭的 flush 超时(终审 P1)
 

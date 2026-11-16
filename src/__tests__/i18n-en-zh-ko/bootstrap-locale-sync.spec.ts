@@ -140,6 +140,7 @@ vi.mock('@/lib/co-api', () => ({
     },
     plugins: {
       onChanged: mocks.pluginsOnChanged,
+      onUninstalled: vi.fn(),
       onProtocolUrl: mocks.pluginsOnProtocolUrl,
     },
     explorer: {

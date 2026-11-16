@@ -34,7 +34,12 @@ import {
 } from '@/panels/Editor/autosave-failures';
 import { useEditorFile } from '@/panels/Editor/useEditorFile';
 import { useSettingValue } from '@/plugins/settings/values-store';
-import { countDirtyForClose, remainingAfterFlush, saveDirtyTabsForClose } from './dirty-close';
+import {
+  countDirtyForClose,
+  remainingAfterDiscard,
+  remainingAfterFlush,
+  saveDirtyTabsForClose,
+} from './dirty-close';
 import { coApi } from '@/lib/co-api';
 import { notify } from '@/notifications/notify';
 import { t as translate } from '@/i18n';
@@ -438,7 +443,16 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
         Array.isArray(untitledIds) ? untitledIds.filter((id) => typeof id === 'string') : [],
       );
       const tabs = useEditorStore.getState().tabs;
-      const remaining = payload?.discard ? null : remainingAfterFlush(tabs, allowedUntitledIds);
+      // 「不保存」:框里列出的文件照常丢弃,但确认时未列入框的待 autosave .md(pendingAutoSave)仍脏 → remaining。
+      const pendingAutoSave = payload?.discard ? payload.pendingAutoSave : undefined;
+      const remaining = payload?.discard
+        ? remainingAfterDiscard(
+            tabs,
+            Array.isArray(pendingAutoSave)
+              ? pendingAutoSave.filter((id): id is string => typeof id === 'string')
+              : [],
+          )
+        : remainingAfterFlush(tabs, allowedUntitledIds);
       // 回执始终携带 flush 后的最终脏态(含空集合),main 以其记账(复审:「保存」后 tab 变干净,但干净状态
       // 此前要等之后的 effect 上报,main 可能先用旧脏集合做退出前全局最终检查而误中止退出)。
       // autosave 已 flush 过,仍脏的 .md 也计入(同 remainingAfterFlush)。

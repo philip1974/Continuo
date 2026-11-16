@@ -571,6 +571,44 @@ describe('关窗:未弹框的 flush 超时,按 pendingAutoSave 决定是否放�
     expect(win.show).toHaveBeenCalled();
   });
 
+  // 终审 P1:「不保存」时待 autosave 的 .md 在 flush 中首次保存失败 → renderer 回执 remaining,main 同样中止。
+  it('选「不保存」:flush 请求带确认时的 pendingAutoSave;回执 remaining(.md 保存失败)→ 不关闭、重新显示', async () => {
+    const win = createReadyWindow(64);
+    reportDirty(win, { ...ds(['/w/x.ts#1']), pendingAutoSave: ['/w/a.md#1'] });
+    electronMock.showMessageBox.mockResolvedValueOnce({ response: 1 });
+
+    win.close();
+    await settle();
+    expect(flushRequests(win)).toEqual([
+      {
+        windowId: win.id,
+        discard: true,
+        pendingAutoSave: ['/w/a.md#1'],
+        requestId: expect.any(Number),
+      },
+    ]);
+    ack(win, {
+      requestId: requestIdOf(win, 0),
+      state: ds(['/w/a.md#1', '/w/x.ts#1']),
+      remaining: ds(['/w/a.md#1', '/w/x.ts#1']),
+    });
+    await settle();
+    expect(win.destroyed).toBe(false);
+    expect(win.show).toHaveBeenCalledTimes(1);
+  });
+
+  it('选「不保存」+ pendingAutoSave 的 .md 保存成功(回执无 remaining)→ 照常关闭', async () => {
+    const win = createReadyWindow(65);
+    reportDirty(win, { ...ds(['/w/x.ts#1']), pendingAutoSave: ['/w/a.md#1'] });
+    electronMock.showMessageBox.mockResolvedValueOnce({ response: 1 });
+
+    win.close();
+    await settle();
+    ack(win, { requestId: requestIdOf(win, 0), state: ds(['/w/x.ts#1']) });
+    await settle();
+    expect(win.destroyed).toBe(true);
+  });
+
   it('pendingAutoSave 为空(从未上报 / 已清空)+ 超时 → 照常关闭', async () => {
     vi.useFakeTimers();
     const never = createReadyWindow(61);

@@ -102,6 +102,14 @@ export function broadcastPluginsChanged(id: string): void {
   broadcastToWindows(PLUGINS_CHANNELS.CHANGED, () => ({ id }), '[plugins] PLUGINS_CHANGED');
 }
 
+/**
+ * 卸载成功后向所有窗口广播(终审 P1):每个窗口各自持有插件实例与内存授权缓存,只在发起窗口本地撤销会让
+ * 其它窗口里的已卸载插件继续运行、继续调用 shell/network/clipboard。watcher 只发现 main.js 变化,发现不了删除。
+ */
+export function broadcastPluginUninstalled(id: string): void {
+  broadcastToWindows(PLUGINS_CHANNELS.UNINSTALLED, () => ({ id }), '[plugins] PLUGINS_UNINSTALLED');
+}
+
 export function registerPluginsIpc(): void {
   const userData = app.getPath('userData');
   const pluginsDir = path.join(userData, 'plugins');
@@ -172,6 +180,8 @@ export function registerPluginsIpc(): void {
     UninstallInput,
     async ({ id }) => {
       await uninstallPlugin(pluginsDir, id);
+      // 仅成功后广播(失败时插件仍在盘上,各窗口照常运行)。
+      broadcastPluginUninstalled(id);
     },
     trusted,
   );
