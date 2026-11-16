@@ -554,6 +554,23 @@ describe('关窗:未弹框的 flush 超时,按 pendingAutoSave 决定是否放�
     expect(win.destroyed).toBe(true);
   });
 
+  // 「不保存」只针对确认框列出的文件;活动 tab 的待 autosave .md 不在列表里(用户未被告知会丢),
+  // flush 超时同样不能放行。
+  it('选「不保存」+ pendingAutoSave 非空 + 超时 → 不关闭、重新显示', async () => {
+    vi.useFakeTimers();
+    const win = createReadyWindow(63);
+    reportDirty(win, { ...ds(['/w/x.ts#1']), pendingAutoSave: ['/w/a.md#1'] });
+    electronMock.showMessageBox.mockResolvedValueOnce({ response: 1 });
+
+    win.close();
+    await settle();
+    expect(electronMock.showMessageBox).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(FLUSH_ACK_TIMEOUT_MS);
+    await settle();
+    expect(win.destroyed).toBe(false);
+    expect(win.show).toHaveBeenCalled();
+  });
+
   it('pendingAutoSave 为空(从未上报 / 已清空)+ 超时 → 照常关闭', async () => {
     vi.useFakeTimers();
     const never = createReadyWindow(61);

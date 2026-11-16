@@ -52,6 +52,8 @@ markdown autosave flush)完成后、回执之前,检查此刻仍 dirty 的 tab(�
   与受信校验沿用)。它们只能靠关窗 flush 落盘。
 - 未弹框的关闭(单窗关闭 / before-quit)flush **超时**且该窗口最近上报的 `pendingAutoSave` 非空 → 中止关闭 / 退出、
   窗口重新显示(与 `remaining` 同路径)。覆盖:读盘挂起超过 10s 的网络卷(SMB / SSHFS / FUSE)上 autosave 防抖期内关窗。
+- 用户在确认框选「不保存」时同样适用:「不保存」只针对框里列出的文件,待 autosave 的 `.md` 不在列表中,其 flush 超时
+  且 `pendingAutoSave` 非空 → 中止关闭 / 退出(代价:renderer 卡死且恰有待落盘 `.md` 时窗口关不掉,可强制退出)。
 - `pendingAutoSave` 为空 → 超时仍照常放行:renderer 卡死 / 崩溃永不回执时窗口必须能关(超时兜底的本意)。
 
 ### 关闭流程代际

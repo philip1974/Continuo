@@ -285,9 +285,13 @@ function exceedsAccepted(current: DirtyState | undefined, mode: FlushMode, accep
  */
 function shouldAbortClose(mode: FlushMode, outcome: FlushOutcome, windowId: number): boolean {
   if (mode === 'save') return outcome !== 'ok';
-  if (mode !== 'none') return false;
+  // 「不保存」只针对确认框列出的文件;待 autosave 的 .md 不在列表里(用户未被告知会丢),其 flush 超时同样
+  // 中止。代价:renderer 卡死且恰有待落盘 .md 时窗口关不掉(可强制退出),数据安全优先。
+  const pendingAutoSaveTimedOut =
+    outcome === 'timeout' && dirtyStates.get(windowId)?.pendingAutoSave !== undefined;
+  if (mode === 'discard') return pendingAutoSaveTimedOut;
   if (outcome === 'still-dirty') return true;
-  return outcome === 'timeout' && dirtyStates.get(windowId)?.pendingAutoSave !== undefined;
+  return pendingAutoSaveTimedOut;
 }
 
 // 复审(d):每窗关闭流程代际。单窗关闭流程启动时取号;before-quit 接管窗口时再递增 → 旧流程(如在途的
