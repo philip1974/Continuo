@@ -37,6 +37,8 @@ export interface DebugDapClientLike {
   readonly serverPid?: number;
   /** adapter 子进程已退出(其 pid 可能已被复用,清理不再对它发信号)。 */
   readonly serverExited?: boolean;
+  /** adapter 子进程退出时回调(已退出则尽快回调)。 */
+  onServerExit?(listener: () => void): void;
   spawnServer(): Promise<this>;
   connectToServer(): Promise<this>;
   createChildSession(options?: unknown): DebugDapClientLike;
@@ -227,6 +229,8 @@ interface BreakpointRecord {
 
 interface RuntimeDebugSession {
   readonly id: string;
+  /** adapter 退出那一刻对其进程组的处理(teardown 等它结束,之后不再凭旧 pgid 动手)。 */
+  adapterExitReap?: Promise<void>;
   readonly parentClient: DebugDapClientLike;
   activeClient: DebugDapClientLike;
   readonly childClients: DebugDapClientLike[];
@@ -991,6 +995,9 @@ export class DebugService {
     }
     this.runtimes.set(id, runtime);
     if (adapterInfo) debugSessions.update(id, { adapterPgid: adapterInfo.pgid });
+    parentClient.onServerExit?.(() => {
+      runtime.adapterExitReap = this.reapAdapterGroupOnExit(id);
+    });
     this.wireClient(id, parentClient);
     parentClient.setStartDebuggingHandler((request) =>
       this.handleStartDebugging(id, request, parentClient),
@@ -2196,10 +2203,11 @@ export class DebugService {
     try {
       // 不依据已知失效的 pid 杀进程:adapter 已退出则不再对其 pid 发信号;已结束的 debuggee 其 pid 已在
       // 结束时移出 systemProcessIds(上面 disconnect 期间结束的也已移出,故这里重读)。
-      // POSIX 按 adapter 的进程组杀:只要保存了 adapterPgid 就枚举该组 —— 组内仍有成员即组仍存在,进程组存在期间
-      // pgid 不会被重新分配(未复用),对组内成员终止(会话结束、adapter 退出后残留的同组子进程也回收);组空则跳过。
+      // POSIX 按 adapter 的进程组杀,仅限 adapter 仍存活(组必在、pgid 未复用);adapter 已退出时组已在退出那一刻
+      // 处理(reapAdapterGroupOnExit),之后 pgid 可能已被复用,不再凭它枚举 / 发信号。
       // Windows 不保存 pgid、无组可枚举:adapter 已退出且无记录在案的 debuggee → 只释放 client。
       // 残留风险:debuggee 未经 DAP 通知就退出、且其 pid 在会话存活期间被复用的极窄窗口(Windows taskkill /T)。
+      await runtime.adapterExitReap;
       const current = debugSessions.get(sessionId) ?? session;
       const adapterAlive = runtime.parentClient.serverExited !== true;
       const liveAdapterPid = adapterAlive ? current.adapterPid : undefined;
@@ -2208,8 +2216,8 @@ export class DebugService {
           ? null
           : await this.processOps.processInfo(current.adapterPid);
       const pgid = current.adapterPgid ?? adapterInfo?.pgid ?? current.adapterPid;
-      const savedPgid = current.adapterPgid !== undefined;
-      if (pgid && (adapterAlive || current.systemProcessIds.length > 0 || savedPgid)) {
+      const windowsDebuggees = platform() === 'win32' && current.systemProcessIds.length > 0;
+      if (pgid && (adapterAlive || windowsDebuggees)) {
         debugSessions.update(sessionId, { adapterPgid: pgid });
         const groupBefore = await this.processOps.pidsInProcessGroup(pgid);
         const shouldTerminate =
@@ -2240,6 +2248,28 @@ export class DebugService {
       firstError ??= err instanceof Error ? err : new Error(String(err));
     }
     if (firstError) throw firstError;
+  }
+
+  /**
+   * adapter 退出那一刻(POSIX)按其进程组回收残留的同组子孙:进程组只要还有成员就不会被复用,此刻组内存活的
+   * 成员必是 adapter 派生、未脱离组的进程;组空则什么也不做。之后 pgid 可被系统复用给无关进程组,teardown
+   * 不再凭它枚举 / 发信号。残留窗口:exit 事件到达与枚举之间(毫秒级)组恰好清空且 pgid 被复用。
+   * Windows 不保存 pgid,不经此路径。
+   */
+  private async reapAdapterGroupOnExit(sessionId: string): Promise<void> {
+    const pgid = debugSessions.get(sessionId)?.adapterPgid;
+    if (pgid === undefined) return;
+    try {
+      const members = await this.processOps.pidsInProcessGroup(pgid);
+      if (members.length === 0) return;
+      await this.processOps.terminateProcessGroup(
+        pgid,
+        members.map((entry) => entry.pid),
+        'debug adapter exited',
+      );
+    } catch {
+      // 尽力而为:回收失败不影响会话后续的 teardown(teardown 不再凭旧 pgid 动手)
+    }
   }
 
   private requireRuntime(sessionId: string): RuntimeDebugSession {

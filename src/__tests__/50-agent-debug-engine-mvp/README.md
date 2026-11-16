@@ -42,3 +42,11 @@ DebugService 的真实 adapter 生命周期、wait/continue/teardown 幂等行�
 - adapter 不入 git;`build:pack`(所有 `build:app*` 都经由它)先执行 `scripts/fetch-debug-adapter.mjs`
   下载并校验固定版本 sha256,已存在则直接跳过。否则干净检出本地打包会产出调试功能不可用的安装包
   (electron-builder 对缺失的 extraResources 只警告)。规范:`build-fetches-debug-adapter.spec.ts`。
+
+## adapter 退出那一刻回收其进程组(终审 P1)
+
+- POSIX:adapter 子进程退出时(`DapClient.onServerExit`)立即枚举其进程组并终止组内残留成员 —— 组只要还有成员
+  就不会被复用,此刻存活的成员必是 adapter 派生、未脱离组的进程。
+- 之后会话可保留很久,原组清空后 pgid 可被系统复用给无关进程组:teardown 在 adapter 已退出时**不再**凭旧 pgid
+  枚举或发信号(Windows 仍只对记录在案、未结束的 debuggee 做 taskkill)。
+- 残留窗口:exit 事件到达与枚举之间(毫秒级)组恰好清空且 pgid 被复用。

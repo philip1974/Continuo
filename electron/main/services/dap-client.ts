@@ -941,6 +941,14 @@ export class DapClient {
     return this.server?.pid;
   }
 
+  /** adapter 子进程退出时回调(已退出则下一微任务回调;未 spawn 不回调)。 */
+  onServerExit(listener: () => void): void {
+    const server = this.server;
+    if (!server) return;
+    if (this.serverExited) queueMicrotask(listener);
+    else server.once('exit', () => listener());
+  }
+
   /** adapter 子进程已退出(未 spawn → false)。退出后其 pid 可能被复用,调用方不能再对它发信号。 */
   get serverExited(): boolean {
     return (

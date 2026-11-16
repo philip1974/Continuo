@@ -402,6 +402,23 @@ describe.skipIf(process.platform === 'win32')('socket 路径(POSIX 私有目录)
     }
   });
 
+  // debug.service 在 adapter 退出那一刻回收其进程组(之后 pgid 可能被复用)。
+  it('onServerExit:adapter 子进程退出时回调;已退出后再注册也会回调', async () => {
+    const fixture = await listeningAdapter();
+    const client = new DapClient({ adapterPath: fixture.adapterPath, connectIntervalMs: 20 });
+    try {
+      await client.spawnServer();
+      const first = new Promise<void>((resolve) => client.onServerExit(resolve));
+      process.kill(client.serverPid!, 'SIGKILL'); // 本测试自己 spawn 的 adapter 子进程
+      await first;
+      expect(client.serverExited).toBe(true);
+      await new Promise<void>((resolve) => client.onServerExit(resolve));
+    } finally {
+      await client.dispose();
+      await rm(fixture.dir, { recursive: true, force: true });
+    }
+  });
+
   it('adapter 启动失败 → dispose 同样删除私有目录', async () => {
     const client = new DapClient({
       adapterPath: '/nonexistent/adapter.js',

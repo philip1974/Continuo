@@ -57,6 +57,15 @@ class FakeDapClient implements DebugDapClientLike {
   readonly serverPid: number;
   /** adapter 子进程已退出(模拟真实 DapClient 的 serverExited)。 */
   serverExited = false;
+  private readonly serverExitListeners: Array<() => void> = [];
+  onServerExit(listener: () => void): void {
+    this.serverExitListeners.push(listener);
+  }
+  /** 模拟 adapter 子进程退出:置 serverExited 并触发 onServerExit 回调。 */
+  simulateServerExit(): void {
+    this.serverExited = true;
+    for (const listener of this.serverExitListeners.splice(0)) listener();
+  }
   readonly requestLog: Array<{ command: string; args: DapJson }> = [];
   readonly children: FakeDapClient[] = [];
   readonly timeoutLog: Array<{ command: string; timeoutMs: number | undefined }> = [];
@@ -887,35 +896,40 @@ describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
       expect(service.listSessions()).toEqual([]);
     });
 
-    // 终审(上一轮回归):程序起了未脱离进程组的长期子进程后正常退出 → terminated 清空 systemProcessIds →
-    // adapter 随后异常退出。此时已保存的 adapterPgid 所在组仍有成员 → 组存在即 pgid 未被复用,须按组终止。
-    it('POSIX:会话已结束、adapter 已退出、已保存 pgid 的进程组仍有成员 → 对该组执行终止(不含 adapter pid)', async () => {
+    // 终审:程序起了未脱离进程组的长期子进程后正常退出 → terminated 清空 systemProcessIds → adapter 随后异常退出。
+    // 进程组只要还有成员就不会被复用:adapter 退出那一刻组内存活的成员必是我们的 → 当场按组终止。
+    it('POSIX:adapter 退出时其进程组仍有成员 → 当场对该组执行终止(不含 adapter pid)', async () => {
       const processOps = makePidOps([5003]);
-      const { service, parent, sessionId } = await launchWithChildren(processOps);
+      const { parent, sessionId } = await launchWithChildren(processOps);
       parent.emit('terminated', {});
       expect(debugSessions.get(sessionId)?.systemProcessIds).toEqual([]);
-      parent.serverExited = true;
 
-      await service.killByOwner(61, 'window-closed');
+      parent.simulateServerExit();
+      await vi.waitFor(() => expect(processOps.terminateProcessGroup).toHaveBeenCalledTimes(1));
       expect(processOps.pidsInProcessGroup).toHaveBeenCalledWith(1001);
-      expect(processOps.terminateProcessGroup).toHaveBeenCalledTimes(1);
       const [pgid, watched] = vi.mocked(processOps.terminateProcessGroup).mock.calls[0]!;
       expect(pgid).toBe(1001);
       expect(watched).toEqual([5003]);
     });
 
-    it('adapter 已退出但仍有记录在案的 debuggee → 只回收 debuggee,watchedPids 不含 adapter pid', async () => {
-      const processOps = makePidOps([5002]);
-      const { service, parent, childA } = await launchWithChildren(processOps);
-      childA.emit('terminated', {});
-      parent.serverExited = true;
+    // 终审:adapter 退出后会话可保留很久,原组成员全部退出后 pgid 可被系统复用给无关进程组 → teardown 不能再凭
+    // 旧数值 pgid 枚举 / 发信号(组的处理已在 adapter 退出那一刻完成)。
+    it('POSIX:adapter 退出并已当场处理进程组后,teardown 即使旧 pgid 下有成员(已被复用)也不枚举、不发信号', async () => {
+      const processOps = makePidOps([]);
+      const { service, parent } = await launchWithChildren(processOps);
+      parent.simulateServerExit();
+      await vi.waitFor(() => expect(processOps.pidsInProcessGroup).toHaveBeenCalledTimes(1));
+      // 之后 pgid 1001 被无关进程组复用
+      vi.mocked(processOps.pidsInProcessGroup).mockImplementation(async () => [
+        { pid: 7777, pgid: 1001, command: 'unrelated' },
+      ]);
+      vi.mocked(processOps.pidsInProcessGroup).mockClear();
 
       await service.killByOwner(61, 'window-closed');
-      expect(processOps.terminateProcessGroup).toHaveBeenCalledTimes(1);
-      const watched = vi.mocked(processOps.terminateProcessGroup).mock.calls[0]![1];
-      expect(watched).not.toContain(1001);
-      expect(watched).not.toContain(5001);
-      expect(watched).toContain(5002);
+      expect(processOps.pidsInProcessGroup).not.toHaveBeenCalled();
+      expect(processOps.terminateProcessGroup).not.toHaveBeenCalled();
+      expect(parent.disposeCalls).toBe(1);
+      expect(service.listSessions()).toEqual([]);
     });
 
     it('Windows 默认 processOps:会话已结束、adapter 已退出 → 不对任何历史 pid 做 taskkill', async () => {
