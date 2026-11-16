@@ -1,0 +1,489 @@
+// 关窗 / 退出时脏文件确认:main 侧端到端握手(electron 全 mock,驱动 createMainWindow 与
+// before-quit)。mock 骨架照抄 dock-layout-per-window-seq/close-flush.spec.ts。见同目录 README.md。
+//
+// 注意:quitGuard / flushedOnQuit 是 main 模块级单例,本文件内 before-quit 用例按
+// 「取消 → 保存失败 → 成功退出」顺序排列,成功退出后守卫进入 finished,必须放在最后。
+
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import fs from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+
+import { _reset as resetWindowSeq } from '../../../electron/main/services/window-seq.service';
+
+type Listener = (...args: unknown[]) => void;
+
+const electronMock = vi.hoisted(() => {
+  const ipcHandlers = new Map<string, Listener[]>();
+  const appHandlers = new Map<string, Listener[]>();
+  const webContentsToWindow = new WeakMap<object, MockBrowserWindow>();
+  const windows: MockBrowserWindow[] = [];
+  let nextId = 1;
+  let userData = '';
+
+  class MockBrowserWindow {
+    readonly id = nextId++;
+    readonly listeners = new Map<string, Listener[]>();
+    destroyed = false;
+    readonly webContents = {
+      send: vi.fn(),
+      setWindowOpenHandler: vi.fn(),
+      once: vi.fn(),
+      on: vi.fn(),
+      getURL: vi.fn(() => ''),
+      isDestroyed: vi.fn(() => this.destroyed),
+    };
+    readonly close = vi.fn(() => {
+      const event = {
+        defaultPrevented: false,
+        preventDefault() {
+          this.defaultPrevented = true;
+        },
+      };
+      this.emit('close', event);
+      if (!event.defaultPrevented) {
+        this.destroyed = true;
+        this.emit('closed');
+      }
+    });
+    readonly loadURL = vi.fn();
+    readonly loadFile = vi.fn();
+    readonly setMenu = vi.fn();
+    readonly hide = vi.fn();
+    readonly show = vi.fn();
+    readonly setDocumentEdited = vi.fn();
+    readonly isDestroyed = vi.fn(() => this.destroyed);
+    readonly isMinimized = vi.fn(() => false);
+    readonly restore = vi.fn();
+    readonly focus = vi.fn();
+
+    constructor() {
+      windows.push(this);
+      webContentsToWindow.set(this.webContents, this);
+    }
+
+    on(event: string, listener: Listener): this {
+      const listeners = this.listeners.get(event) ?? [];
+      listeners.push(listener);
+      this.listeners.set(event, listeners);
+      return this;
+    }
+
+    emit(event: string, ...args: unknown[]): void {
+      for (const listener of this.listeners.get(event) ?? []) {
+        listener(...args);
+      }
+    }
+  }
+
+  return {
+    get userData() {
+      return userData;
+    },
+    set userData(value: string) {
+      userData = value;
+    },
+    ipcHandlers,
+    appHandlers,
+    windows,
+    MockBrowserWindow,
+    showMessageBox: vi.fn(async (_win: unknown, _opts: unknown) => ({ response: 2 })),
+    reset() {
+      windows.length = 0;
+      userData = '';
+    },
+    fromWebContents(sender: object) {
+      return webContentsToWindow.get(sender) ?? null;
+    },
+  };
+});
+
+vi.mock('electron', () => ({
+  app: {
+    isPackaged: true,
+    name: 'Continuo',
+    dock: undefined,
+    getPath: vi.fn((name: string) =>
+      name === 'userData' ? electronMock.userData : tmpdir(),
+    ),
+    commandLine: {
+      getSwitchValue: vi.fn(() => ''),
+    },
+    setPath: vi.fn(),
+    requestSingleInstanceLock: vi.fn(() => true),
+    quit: vi.fn(),
+    on: vi.fn((event: string, listener: Listener) => {
+      const listeners = electronMock.appHandlers.get(event) ?? [];
+      listeners.push(listener);
+      electronMock.appHandlers.set(event, listeners);
+    }),
+    isReady: vi.fn(() => true),
+    whenReady: vi.fn(() => new Promise(() => undefined)),
+    setAsDefaultProtocolClient: vi.fn(),
+  },
+  BrowserWindow: Object.assign(electronMock.MockBrowserWindow, {
+    fromWebContents: vi.fn((sender: object) =>
+      electronMock.fromWebContents(sender),
+    ),
+    getAllWindows: vi.fn(() => electronMock.windows),
+    fromId: vi.fn((id: number) =>
+      electronMock.windows.find((w) => w.id === id) ?? null,
+    ),
+  }),
+  dialog: {
+    showOpenDialog: vi.fn(),
+    showMessageBox: electronMock.showMessageBox,
+  },
+  ipcMain: {
+    on: vi.fn((channel: string, listener: Listener) => {
+      const listeners = electronMock.ipcHandlers.get(channel) ?? [];
+      listeners.push(listener);
+      electronMock.ipcHandlers.set(channel, listeners);
+    }),
+    off: vi.fn(),
+    handle: vi.fn(),
+  },
+  Menu: {
+    buildFromTemplate: vi.fn((template: unknown) => template),
+    setApplicationMenu: vi.fn(),
+  },
+  shell: { openExternal: vi.fn() },
+}));
+
+vi.mock('../../../electron/main/ipc', () => ({ registerIpc: vi.fn() }));
+vi.mock('../../../electron/main/services/window-restore.service', () => ({
+  pickWindowsToRestore: vi.fn(() => []),
+}));
+vi.mock('../../../electron/main/services/startup-mode.service', () => ({
+  pickStartupMode: vi.fn(() => ({ mode: 'restore' })),
+}));
+vi.mock('../../../electron/main/services/mcp-host.service', () => ({
+  createMcpHost: vi.fn(),
+  setMcpRevokers: vi.fn(),
+}));
+vi.mock('../../../electron/main/services/mcp-stdio-server.service', () => ({
+  createStdioSocketServer: vi.fn(),
+}));
+vi.mock('../../../electron/main/services/mcp-tools-terminal', () => ({
+  makeListSessionsTool: vi.fn(),
+  makeCreateSessionTool: vi.fn(),
+  makeSendInputTool: vi.fn(),
+  makeSendTextTool: vi.fn(),
+  makePressKeyTool: vi.fn(),
+  makeReadOutputTool: vi.fn(),
+  makeKillTool: vi.fn(),
+}));
+vi.mock('../../../electron/main/services/terminal-sessions.service', () => ({
+  get: vi.fn(),
+  getAll: vi.fn(() => []),
+}));
+vi.mock('../../../electron/main/services/terminal.service', () => ({
+  has: vi.fn(() => false),
+  write: vi.fn(),
+  interrupt: vi.fn(),
+  kill: vi.fn(),
+  forceKill: vi.fn(),
+  cleanupAll: vi.fn(async () => undefined),
+  readOutput: vi.fn(),
+}));
+vi.mock('../../../electron/main/ipc/terminal.ipc', () => ({
+  makeCreateHandler: vi.fn(() => vi.fn()),
+  setMcpEnvProvider: vi.fn(),
+}));
+vi.mock('../../../electron/main/services/agent-auth.service', () => ({
+  requestAgentAuth: vi.fn(),
+  setMcpHostRef: vi.fn(),
+  cancelAgentAuthByWindow: vi.fn(),
+}));
+vi.mock('../../../electron/main/services/mcp-stdio-config.service', () => ({
+  setStdioConfig: vi.fn(),
+}));
+vi.mock('../../../electron/main/ipc/plugin-mcp.ipc', () => ({
+  startPluginMcpIpc: vi.fn(),
+}));
+
+const { app } = await import('electron');
+const { createMainWindow, FLUSH_ACK_TIMEOUT_MS } = await import(
+  '../../../electron/main/index'
+);
+
+type MockWin = InstanceType<typeof electronMock.MockBrowserWindow>;
+
+const TRUSTED = { url: 'file:///renderer/index.html' };
+
+function handlerOf(channel: string): Listener {
+  const h = electronMock.ipcHandlers.get(channel)?.[0];
+  if (!h) throw new Error(`missing ${channel} handler`);
+  return h;
+}
+
+function createReadyWindow(windowSeq: number): MockWin {
+  const win = createMainWindow({ windowSeq }) as unknown as MockWin;
+  handlerOf('layout:flush-ready')({ sender: win.webContents, senderFrame: TRUSTED });
+  return win;
+}
+
+function reportDirty(
+  win: MockWin,
+  state: unknown,
+  opts: { frame?: { url: string }; sender?: MockWin } = {},
+): void {
+  handlerOf('layout:dirty-state')(
+    { sender: (opts.sender ?? win).webContents, senderFrame: opts.frame ?? TRUSTED },
+    state,
+  );
+}
+
+function ack(win: MockWin, result?: unknown): void {
+  handlerOf('layout:flush-ack')({ sender: win.webContents, senderFrame: TRUSTED }, win.id, result);
+}
+
+function flushRequests(win: MockWin): unknown[] {
+  return win.webContents.send.mock.calls
+    .filter((c) => c[0] === 'layout:flush-request')
+    .map((c) => c[1]);
+}
+
+/** 让 dialog / flush 的 promise 链跑完。 */
+async function settle(): Promise<void> {
+  for (let i = 0; i < 10; i += 1) await Promise.resolve();
+}
+
+let dir: string;
+
+beforeEach(async () => {
+  vi.useRealTimers();
+  electronMock.reset();
+  resetWindowSeq();
+  electronMock.showMessageBox.mockReset();
+  dir = await fs.mkdtemp(path.join(tmpdir(), 'continuo-dirty-close-'));
+  electronMock.userData = dir;
+});
+
+afterEach(async () => {
+  vi.useRealTimers();
+  vi.clearAllMocks();
+  resetWindowSeq();
+  // closed 后的 lastClosedAt 异步写盘可能仍在落地:等一下并让 rm 对 ENOTEMPTY 重试,避免与删目录竞态。
+  await new Promise((r) => setTimeout(r, 20));
+  await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 });
+});
+
+describe('关窗:无脏文件时行为不变', () => {
+  it('从未上报脏态 / 脏数回到 0 → 不弹框,立即 hide 并发 flush(不带 save)', async () => {
+    const win = createReadyWindow(1);
+    reportDirty(win, { dirty: 2, untitled: 0 });
+    reportDirty(win, { dirty: 0, untitled: 0 });
+
+    win.close();
+
+    expect(electronMock.showMessageBox).not.toHaveBeenCalled();
+    expect(win.hide).toHaveBeenCalledTimes(1);
+    expect(flushRequests(win)).toEqual([{ windowId: win.id }]);
+    ack(win);
+    await settle();
+    expect(win.destroyed).toBe(true);
+  });
+
+  it('不受信 frame / 别的窗口发来的脏态上报被忽略', async () => {
+    const win = createReadyWindow(2);
+    const other = createReadyWindow(3);
+    reportDirty(win, { dirty: 1, untitled: 0 }, { frame: { url: 'https://evil.example/' } });
+    reportDirty(win, { dirty: 1, untitled: 0 }, { sender: other });
+
+    win.close();
+    expect(electronMock.showMessageBox).not.toHaveBeenCalled();
+    ack(win);
+    await settle();
+    expect(win.destroyed).toBe(true);
+  });
+});
+
+describe('关窗:有脏文件时先确认', () => {
+  it('弹框挂在该窗口上;回答前不 hide、不 flush', async () => {
+    const win = createReadyWindow(4);
+    reportDirty(win, { dirty: 2, untitled: 0 });
+    electronMock.showMessageBox.mockReturnValueOnce(new Promise(() => undefined));
+
+    win.close();
+    await settle();
+
+    expect(electronMock.showMessageBox).toHaveBeenCalledTimes(1);
+    expect(electronMock.showMessageBox.mock.calls[0]?.[0]).toBe(win);
+    expect(win.hide).not.toHaveBeenCalled();
+    expect(flushRequests(win)).toEqual([]);
+    expect(win.destroyed).toBe(false);
+  });
+
+  it('取消 → 窗口保持打开;再次关闭会再次确认', async () => {
+    const win = createReadyWindow(5);
+    reportDirty(win, { dirty: 1, untitled: 0 });
+    electronMock.showMessageBox.mockResolvedValueOnce({ response: 2 });
+
+    win.close();
+    await settle();
+    expect(win.hide).not.toHaveBeenCalled();
+    expect(flushRequests(win)).toEqual([]);
+    expect(win.destroyed).toBe(false);
+
+    electronMock.showMessageBox.mockResolvedValueOnce({ response: 2 });
+    win.close();
+    await settle();
+    expect(electronMock.showMessageBox).toHaveBeenCalledTimes(2);
+    expect(win.destroyed).toBe(false);
+  });
+
+  it('确认框打开期间重复关闭不叠加第二个确认框', async () => {
+    const win = createReadyWindow(6);
+    reportDirty(win, { dirty: 1, untitled: 0 });
+    electronMock.showMessageBox.mockReturnValueOnce(new Promise(() => undefined));
+
+    win.close();
+    win.close();
+    await settle();
+    expect(electronMock.showMessageBox).toHaveBeenCalledTimes(1);
+  });
+
+  it('不保存 → hide + flush(不带 save),ack 后关闭', async () => {
+    const win = createReadyWindow(7);
+    reportDirty(win, { dirty: 1, untitled: 0 });
+    electronMock.showMessageBox.mockResolvedValueOnce({ response: 1 });
+
+    win.close();
+    await settle();
+    expect(win.hide).toHaveBeenCalledTimes(1);
+    expect(flushRequests(win)).toEqual([{ windowId: win.id }]);
+
+    ack(win);
+    await settle();
+    expect(win.destroyed).toBe(true);
+  });
+
+  it('保存且成功 → flush(save:true),ack 后关闭', async () => {
+    const win = createReadyWindow(8);
+    reportDirty(win, { dirty: 1, untitled: 0 });
+    electronMock.showMessageBox.mockResolvedValueOnce({ response: 0 });
+
+    win.close();
+    await settle();
+    expect(flushRequests(win)).toEqual([{ windowId: win.id, save: true }]);
+
+    ack(win, { saveFailed: false });
+    await settle();
+    expect(win.destroyed).toBe(true);
+  });
+
+  it('保存失败 → 中止关闭、窗口重新显示;之后可再次关闭', async () => {
+    const win = createReadyWindow(9);
+    reportDirty(win, { dirty: 1, untitled: 0 });
+    electronMock.showMessageBox.mockResolvedValueOnce({ response: 0 });
+
+    win.close();
+    await settle();
+    ack(win, { saveFailed: true });
+    await settle();
+    expect(win.destroyed).toBe(false);
+    expect(win.show).toHaveBeenCalledTimes(1);
+
+    // 用户改选「不保存」→ 正常关闭
+    electronMock.showMessageBox.mockResolvedValueOnce({ response: 1 });
+    win.close();
+    await settle();
+    ack(win);
+    await settle();
+    expect(win.destroyed).toBe(true);
+  });
+
+  it('保存后 renderer 迟迟不回执(超时)→ 视为保存未确认,不关闭', async () => {
+    vi.useFakeTimers();
+    const win = createReadyWindow(10);
+    reportDirty(win, { dirty: 1, untitled: 0 });
+    electronMock.showMessageBox.mockResolvedValueOnce({ response: 0 });
+
+    win.close();
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(FLUSH_ACK_TIMEOUT_MS);
+    await settle();
+    expect(win.destroyed).toBe(false);
+    expect(win.show).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('退出应用(before-quit):对每个有脏文件的主窗确认', () => {
+  function beforeQuit(): { event: { preventDefault: ReturnType<typeof vi.fn> }; done: unknown } {
+    const handler = electronMock.appHandlers.get('before-quit')?.[0];
+    if (!handler) throw new Error('missing before-quit handler');
+    const event = { preventDefault: vi.fn() };
+    const done = handler(event);
+    return { event, done };
+  }
+
+  it('任一窗口取消 → 中止整个退出,不 flush;再次 Cmd+Q 能再次确认', async () => {
+    const a = createReadyWindow(20);
+    const b = createReadyWindow(21);
+    reportDirty(a, { dirty: 1, untitled: 0 });
+    reportDirty(b, { dirty: 1, untitled: 0 });
+    electronMock.showMessageBox.mockResolvedValueOnce({ response: 2 });
+
+    const { event, done } = beforeQuit();
+    await done;
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(electronMock.showMessageBox).toHaveBeenCalledTimes(1); // a 取消后不再问 b
+    expect(flushRequests(a)).toEqual([]);
+    expect(flushRequests(b)).toEqual([]);
+    expect(app.quit).not.toHaveBeenCalled();
+
+    // 守卫已复位:再次退出重新走确认(而非卡在「清理在途」直接 block)
+    electronMock.showMessageBox.mockResolvedValueOnce({ response: 2 });
+    const second = beforeQuit();
+    await second.done;
+    expect(electronMock.showMessageBox).toHaveBeenCalledTimes(2);
+    expect(app.quit).not.toHaveBeenCalled();
+    a.destroyed = true;
+    b.destroyed = true;
+  });
+
+  it('保存失败 → 中止退出、显示该窗口;守卫复位', async () => {
+    const a = createReadyWindow(22);
+    reportDirty(a, { dirty: 1, untitled: 0 });
+    electronMock.showMessageBox.mockResolvedValueOnce({ response: 0 });
+
+    const { done } = beforeQuit();
+    await settle();
+    expect(flushRequests(a)).toEqual([{ windowId: a.id, save: true }]);
+    ack(a, { saveFailed: true });
+    await done;
+    expect(a.show).toHaveBeenCalled();
+    expect(app.quit).not.toHaveBeenCalled();
+
+    // 守卫复位:再次退出会再次确认
+    electronMock.showMessageBox.mockResolvedValueOnce({ response: 2 });
+    await beforeQuit().done;
+    expect(electronMock.showMessageBox).toHaveBeenCalledTimes(2);
+    a.destroyed = true;
+  });
+
+  it('逐窗确认后按各自选择 flush,全部完成再退出', async () => {
+    const a = createReadyWindow(23);
+    const b = createReadyWindow(24);
+    const clean = createReadyWindow(25);
+    reportDirty(a, { dirty: 1, untitled: 0 });
+    reportDirty(b, { dirty: 2, untitled: 1 });
+    electronMock.showMessageBox
+      .mockResolvedValueOnce({ response: 0 }) // a 保存
+      .mockResolvedValueOnce({ response: 1 }); // b 不保存
+
+    const { done } = beforeQuit();
+    await settle();
+    expect(electronMock.showMessageBox).toHaveBeenCalledTimes(2);
+    expect(flushRequests(a)).toEqual([{ windowId: a.id, save: true }]);
+    expect(flushRequests(b)).toEqual([{ windowId: b.id }]);
+    expect(flushRequests(clean)).toEqual([{ windowId: clean.id }]);
+
+    ack(a, { saveFailed: false });
+    ack(b);
+    ack(clean);
+    await done;
+    expect(app.quit).toHaveBeenCalledTimes(1);
+  });
+});

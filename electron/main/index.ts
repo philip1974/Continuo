@@ -94,6 +94,14 @@ import {
 } from './spike-gate';
 import { buildCommonWebPreferences } from './continuo-meta-args';
 import { isPopoutUrl } from './popout-url';
+import {
+  askDirtyClose,
+  needsDirtyConfirm,
+  parseDirtyState,
+  parseFlushAck,
+  type DirtyCloseChoice,
+  type DirtyState,
+} from './dirty-close-confirm';
 import { releaseFsWatchersForWindow } from './ipc/fs.ipc';
 import { isAllowedExternalUrl } from './services/shell.service';
 import { MAX_EXTERNAL_URL_LEN } from './../shared/url-limits';
@@ -135,7 +143,9 @@ if (resolvedUserDataPath !== null) {
 }
 
 const LRU_MAX_CLOSED = Infinity;
-const pendingFlushAcks = new Map<number, () => void>();
+// flush 结果:'ok' 已 ack / 'save-failed' renderer 报保存失败 / 'timeout' 超时兜底 / 'skipped' 无法 flush 直接放行。
+type FlushOutcome = 'ok' | 'save-failed' | 'timeout' | 'skipped';
+const pendingFlushAcks = new Map<number, (outcome: FlushOutcome) => void>();
 const flushedOnQuit = new Set<number>();
 // 关窗 flush 的 ack 等待上限。数据安全(codex 复查 P1):renderer 的 flush-ack 在 DockShell
 // 依次 await layout/explorer/autosave 落盘后才发;此超时是**防挂死兜底**(renderer 崩溃/死循环
@@ -180,14 +190,44 @@ ipcMain.on(WINDOW_ID_CHANNEL, (event: IpcMainEvent) => {
   event.returnValue = win?.id ?? 0;
 });
 
-ipcMain.on(LAYOUT_CHANNELS.FLUSH_ACK, (event: IpcMainEvent, windowId: unknown) => {
+ipcMain.on(
+  LAYOUT_CHANNELS.FLUSH_ACK,
+  (event: IpcMainEvent, windowId: unknown, result?: unknown) => {
+    if (!defaultIsTrustedFrame(event.senderFrame)) return;
+    if (typeof windowId !== 'number') return;
+    const senderWin = BrowserWindow.fromWebContents(event.sender);
+    if (!senderWin || senderWin.id !== windowId) return;
+    const cb = pendingFlushAcks.get(windowId);
+    if (cb) cb(parseFlushAck(result).saveFailed ? 'save-failed' : 'ok');
+  },
+);
+
+// 各主窗关窗会丢的脏 tab 计数(renderer 在脏态变化时上报,见 dirty-close-confirm.ts)。
+// 受信校验与 FLUSH_ACK 同款:不受信 frame / 解析失败的上报忽略;按 sender 所在窗口记账(不信任 payload 里的 id)。
+const dirtyStates = new Map<number, DirtyState>();
+
+ipcMain.on(LAYOUT_CHANNELS.DIRTY_STATE, (event: IpcMainEvent, raw: unknown) => {
   if (!defaultIsTrustedFrame(event.senderFrame)) return;
-  if (typeof windowId !== 'number') return;
-  const senderWin = BrowserWindow.fromWebContents(event.sender);
-  if (!senderWin || senderWin.id !== windowId) return;
-  const cb = pendingFlushAcks.get(windowId);
-  if (cb) cb();
+  const win = BrowserWindow.fromWebContents(event.sender);
+  const state = parseDirtyState(raw);
+  if (!win || !state) return;
+  if (state.dirty > 0) dirtyStates.set(win.id, state);
+  else dirtyStates.delete(win.id);
+  // macOS:关闭按钮显示「有未保存改动」圆点(其它平台无此 API)。
+  if (process.platform === 'darwin') win.setDocumentEdited(state.dirty > 0);
 });
+
+/** 有脏 tab 的窗口弹确认框(挂在该窗口上);无脏 tab → null(不弹框)。 */
+function confirmDirtyClose(win: BrowserWindow): Promise<DirtyCloseChoice> | null {
+  const state = dirtyStates.get(win.id);
+  if (!needsDirtyConfirm(state)) return null;
+  return askDirtyClose(state, getMainT(), (opts) => dialog.showMessageBox(win, opts));
+}
+
+/** 选「保存」时 flush 未确认成功(renderer 报失败 / 超时无回执)→ 不能关窗,否则丢改动。 */
+function isSaveUnconfirmed(outcome: FlushOutcome): boolean {
+  return outcome === 'save-failed' || outcome === 'timeout';
+}
 
 // renderer 已订阅 flush 请求的窗口(DockShell 挂载后经 preload 上报)。没上报过 = 启动中 / 加载失败:
 // 此时 renderer 没有任何可落盘的状态,也没人会回 ack,requestWindowFlush 直接放行,不发请求、不等超时。
@@ -199,11 +239,12 @@ ipcMain.on(LAYOUT_CHANNELS.FLUSH_READY, (event: IpcMainEvent) => {
   if (win) flushReadyWindowIds.add(win.id);
 });
 
-function requestWindowFlush(win: BrowserWindow): Promise<void> {
+/** save=true:renderer 先保存所有有路径的脏 tab 再 flush(用户在脏文件确认框选了「保存」)。 */
+function requestWindowFlush(win: BrowserWindow, save = false): Promise<FlushOutcome> {
   return new Promise((resolve) => {
     let doneCalled = false;
     let timer: NodeJS.Timeout | null = null;
-    const done = () => {
+    const done = (outcome: FlushOutcome) => {
       if (doneCalled) return;
       doneCalled = true;
       if (timer) {
@@ -211,26 +252,33 @@ function requestWindowFlush(win: BrowserWindow): Promise<void> {
         timer = null;
       }
       pendingFlushAcks.delete(win.id);
-      resolve();
+      resolve(outcome);
     };
     pendingFlushAcks.set(win.id, done);
     // webContents 已销毁 / renderer 还没就绪 → 无法 flush/ack,立即放行(不空等满超时)。
     if (win.webContents.isDestroyed() || !flushReadyWindowIds.has(win.id)) {
-      done();
+      done('skipped');
       return;
     }
-    timer = setTimeout(done, FLUSH_ACK_TIMEOUT_MS);
+    timer = setTimeout(() => done('timeout'), FLUSH_ACK_TIMEOUT_MS);
     try {
-      win.webContents.send(LAYOUT_CHANNELS.FLUSH_REQUEST, { windowId: win.id });
+      // 不保存时 payload 保持旧形态 `{ windowId }`。
+      win.webContents.send(
+        LAYOUT_CHANNELS.FLUSH_REQUEST,
+        save ? { windowId: win.id, save: true } : { windowId: win.id },
+      );
     } catch {
-      done();
+      done('skipped');
     }
   });
 }
 
 function wireWindowCloseFlush(win: BrowserWindow): void {
   const windowId = win.id; // closed 之后窗口已销毁,提前取 id
-  win.on('closed', () => flushReadyWindowIds.delete(windowId));
+  win.on('closed', () => {
+    flushReadyWindowIds.delete(windowId);
+    dirtyStates.delete(windowId);
+  });
   let flushed = flushedOnQuit.has(win.id);
   // race(R45):flush 在途守卫。requestWindowFlush 是异步(等 renderer ack / 10s 超时),其间
   // `flushed` 仍为 false;若不挡住,快速重复关窗 / 系统关窗 / app.quit 触发的第二个 close 会再次
@@ -245,20 +293,41 @@ function wireWindowCloseFlush(win: BrowserWindow): void {
     if (flushed || flushedOnQuit.has(win.id)) return;
     event.preventDefault();
     // race(R45):已有 flush 在途 → 只阻止本次关闭,不再发第二个 flush(避免覆盖 pending ack)。
+    // 脏文件确认框打开期间同样置 flushing,重复关闭不叠第二个确认框。
     if (flushing) return;
-    // UX:数据安全 flush 仍在后台完成,但关闭按钮点击后先隐藏窗口,
-    // 避免用户看到 10s 兜底窗口内的"无反应"状态。
-    try {
-      if (!win.isDestroyed()) win.hide();
-    } catch {
-      // close 竞态下 hide 失败不影响 flush / close 兜底。
-    }
     flushing = true;
-    void (async () => {
-      await requestWindowFlush(win);
+    const flushAndClose = async (save: boolean) => {
+      // UX:数据安全 flush 仍在后台完成,但关闭按钮点击后先隐藏窗口,
+      // 避免用户看到 10s 兜底窗口内的"无反应"状态。
+      try {
+        if (!win.isDestroyed()) win.hide();
+      } catch {
+        // close 竞态下 hide 失败不影响 flush / close 兜底。
+      }
+      const outcome = await requestWindowFlush(win, save);
+      if (save && isSaveUnconfirmed(outcome)) {
+        // 保存失败 / 未确认 → 中止关闭,窗口重新显示(renderer 已 toast 失败原因)。
+        flushing = false;
+        if (!win.isDestroyed()) win.show();
+        return;
+      }
       flushed = true;
       flushedOnQuit.add(win.id);
       win.close();
+    };
+    const confirm = confirmDirtyClose(win);
+    // 无脏 tab:与之前完全一致(同步 hide + 发 flush,不弹框)。
+    if (!confirm) {
+      void flushAndClose(false);
+      return;
+    }
+    void (async () => {
+      const choice = await confirm;
+      if (choice === 'cancel' || win.isDestroyed()) {
+        flushing = false;
+        return;
+      }
+      await flushAndClose(choice === 'save');
     })();
   });
 }
@@ -1037,7 +1106,7 @@ app.on('before-quit', async (event) => {
   }
   // action === 'run':首次 quit,跑清理。
   event.preventDefault();
-  const flushes: Promise<void>[] = [];
+  const targets: BrowserWindow[] = [];
   for (const w of BrowserWindow.getAllWindows()) {
     if (w.isDestroyed() || flushedOnQuit.has(w.id)) continue;
     // popout 窗口跑的是 PopoutHost,不挂 DockShell,没有 flush 监听 → 永不 ack;对它发请求只会让退出
@@ -1045,13 +1114,35 @@ app.on('before-quit', async (event) => {
     // webContents 已销毁(关窗中间态)时 getURL() 会抛 —— 此处已 preventDefault,抛出会让 quitGuard
     // 永远停在「清理在途」、应用无法退出。已销毁的交给 requestWindowFlush 的立即放行分支。
     if (!w.webContents.isDestroyed() && isPopoutUrl(w.webContents.getURL())) continue;
-    flushes.push(
-      requestWindowFlush(w).then(() => {
-        flushedOnQuit.add(w.id);
-      }),
-    );
+    targets.push(w);
   }
-  await Promise.all(flushes);
+  // 脏文件确认:逐窗(一次一个框)问「保存 / 不保存 / 取消」,任一取消 → 中止整个退出。
+  // 无脏窗口时不进任何 await,flush 与之前一样同步发出。
+  const saveIds = new Set<number>();
+  for (const w of targets) {
+    const confirm = confirmDirtyClose(w);
+    if (!confirm) continue;
+    const choice = await confirm;
+    if (choice === 'cancel') {
+      quitGuard.cancel(); // 复位:下次 Cmd+Q 重新确认,不卡在「在途」
+      return;
+    }
+    if (choice === 'save') saveIds.add(w.id);
+  }
+  const outcomes = await Promise.all(
+    targets.map((w) => requestWindowFlush(w, saveIds.has(w.id))),
+  );
+  // 任一「保存」未确认成功 → 中止退出并显示该窗口(renderer 已 toast)。此时不记 flushedOnQuit:
+  // 退出没发生,之后关这些窗口仍要走确认 + flush。
+  const failed = targets.filter(
+    (w, i) => saveIds.has(w.id) && isSaveUnconfirmed(outcomes[i] ?? 'timeout'),
+  );
+  if (failed.length > 0) {
+    for (const w of failed) if (!w.isDestroyed()) w.show();
+    quitGuard.cancel();
+    return;
+  }
+  for (const w of targets) flushedOnQuit.add(w.id);
   // force-kill 所有 PTY,防 agent 长任务子进程被孤儿化/zombie。无论是否有窗口要 flush
   // 都必须跑(关最后一个窗口触发的 quit 路径 wins 已空,旧 every() 守卫会跳过它)。
   // 在 app.quit() 前 await:window 'closed' 清理走 3s grace timer,进程退出不触发 SIGKILL。

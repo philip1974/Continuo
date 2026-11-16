@@ -156,6 +156,12 @@ export const zh: Record<TranslationKey, string> = {
   'editor.welcome.hint_prefix': '在 Explorer 单击文件打开 ·',
   'editor.welcome.save': '保存',
   'editor.autosave_failed': '自动保存失败',
+
+  'dialog.unsaved_close.message': '是否要保存对 {count} 个文件的更改?',
+  'dialog.unsaved_close.detail': '如果不保存,你的更改将丢失。',
+  'dialog.unsaved_close.untitled_note': '{count} 个未命名草稿无法保存(暂不支持另存为),将被丢弃。',
+  'dialog.unsaved_close.dont_save': '不保存',
+  'dialog.unsaved_close.save_failed': '{count} 个文件保存失败,窗口未关闭。',
   'dock.empty.message': '所有面板都关掉了。',
   'dock.empty.restore': '恢复默认布局',
   'panels.explorer.loading_or_empty': '读取中或空目录',

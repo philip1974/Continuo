@@ -118,10 +118,10 @@ const api = {
     write: (json: unknown): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(LAYOUT_CHANNELS.WRITE, json),
     onFlushRequest: (
-      cb: (payload?: { windowId: number }) => void | Promise<void>,
+      cb: (payload?: { windowId: number; save?: boolean }) => void | Promise<void>,
     ): (() => void) => {
-      // main 发 `{ windowId }`;透传给回调(不暴露 IpcRendererEvent)。
-      const listener = (_event: unknown, payload?: { windowId: number }) => {
+      // main 发 `{ windowId, save? }`(save:用户在脏文件确认框选了「保存」);透传给回调(不暴露 IpcRendererEvent)。
+      const listener = (_event: unknown, payload?: { windowId: number; save?: boolean }) => {
         void cb(payload);
       };
       const unsubscribe = subscribeIpc(LAYOUT_CHANNELS.FLUSH_REQUEST, listener);
@@ -130,8 +130,12 @@ const api = {
       ipcRenderer.send(LAYOUT_CHANNELS.FLUSH_READY);
       return unsubscribe;
     },
-    sendFlushAck: (windowId: number): void => {
-      ipcRenderer.send(LAYOUT_CHANNELS.FLUSH_ACK, windowId);
+    sendFlushAck: (windowId: number, result?: { saveFailed: boolean }): void => {
+      ipcRenderer.send(LAYOUT_CHANNELS.FLUSH_ACK, windowId, result);
+    },
+    /** 上报本窗口关窗会丢的脏 tab 计数(main 关窗 / 退出前据此弹保存确认)。 */
+    reportDirtyState: (state: { dirty: number; untitled: number }): void => {
+      ipcRenderer.send(LAYOUT_CHANNELS.DIRTY_STATE, state);
     },
   },
   system: {

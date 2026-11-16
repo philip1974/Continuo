@@ -28,6 +28,9 @@ import { useEditorStore } from '@/stores/editor.store';
 import { debounce } from '@/lib/debounce';
 import { flushExplorerPersistence } from '@/lib/persist/explorer-persist';
 import { flushPendingAutoSave } from '@/panels/Editor/autosave-flush-registry';
+import { useEditorFile } from '@/panels/Editor/useEditorFile';
+import { useSettingValue } from '@/plugins/settings/values-store';
+import { countDirtyForClose, saveDirtyTabsForClose } from './dirty-close';
 import { coApi } from '@/lib/co-api';
 import { notify } from '@/notifications/notify';
 import { t as translate } from '@/i18n';
@@ -195,6 +198,7 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
   const [apiReady, setApiReady] = useState(false);
   const [empty, setEmpty] = useState(false);
   const panelComponents = usePanelComponents();
+  const { saveTab } = useEditorFile();
 
   const onReady = useCallback(
     async (event: DockviewReadyEvent) => {
@@ -337,6 +341,16 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
     // 关窗。必须经 coApi(preload 只暴露 __lmApi;此前读了一个不存在的全局 bridge,整条握手是死的:
     // flush 从不执行,main 每次关窗干等 ack 超时)。
     const off = coApi.layout.onFlushRequest?.(async (payload) => {
+      // 用户在 main 的脏文件确认框选了「保存」→ 先保存所有有路径的脏 tab(代码文件不 autosave,
+      // ADR-015),任一失败 → toast + 回执 saveFailed,main 中止关窗 / 退出并重新显示窗口。
+      let saveFailed = false;
+      if (payload?.save) {
+        const failed = await saveDirtyTabsForClose(useEditorStore.getState().tabs, saveTab);
+        if (failed > 0) {
+          saveFailed = true;
+          notify.error(translate('dialog.unsaved_close.save_failed', { count: failed }));
+        }
+      }
       // race(R42):在 flush **执行时**读取 apiRef.current,而非 effect 注册时闭包捕获。effect 仅
       // 依赖 apiReady、只注册一次;若 onReady 重入/重建(HMR/StrictMode/dockview rebuild)把
       // apiRef.current 换成新 api,旧闭包会用 stale api 写盘 → 关窗落盘旧 dock 布局,覆盖/丢失当前
@@ -374,12 +388,28 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       // 三条 flush 数据域独立;layout/explorer 如最终共享 explorer.json,main 侧 file mutex
       // 仍负责串行化磁盘合并。renderer 这里并行启动,减少关闭按钮等待首个慢任务串住后续落盘。
       await Promise.all([layoutFlush, explorerFlush, autosaveFlush]);
-      coApi.layout.sendFlushAck?.(payload?.windowId ?? coApi.system.windowId);
+      const windowId = payload?.windowId ?? coApi.system.windowId;
+      if (payload?.save) coApi.layout.sendFlushAck?.(windowId, { saveFailed });
+      else coApi.layout.sendFlushAck?.(windowId);
     });
     return () => {
       off?.();
     };
-  }, [apiReady]);
+  }, [apiReady, saveTab]);
+
+  // 关窗脏文件确认:脏态变化(chromeVersion 覆盖 dirty 翻转 / tab 增删改名)时向 main 上报
+  // 关窗会丢的脏 tab 计数,main 关窗 / 退出前据此弹「保存 / 不保存 / 取消」。计数不变不重发;
+  // 初值 0/0 = main 的默认(未上报),挂载时无脏 tab 不发。
+  const editorChromeVersion = useEditorStore((s) => s.chromeVersion);
+  const mdAutoSaveEnabled = useSettingValue<boolean>('autoSave.markdown.enabled', true);
+  const lastDirtyReportRef = useRef('0/0');
+  useEffect(() => {
+    const state = countDirtyForClose(useEditorStore.getState().tabs, mdAutoSaveEnabled);
+    const key = `${state.dirty}/${state.untitled}`;
+    if (key === lastDirtyReportRef.current) return;
+    lastDirtyReportRef.current = key;
+    coApi.layout.reportDirtyState?.(state);
+  }, [editorChromeVersion, mdAutoSaveEnabled]);
 
   // Editor 自动激活:Explorer 单击文件 / hydrate 恢复 session → editor.store
   // activeTabId 变 → 自动 setActive 'editor' panel(VSCode 行为)。
