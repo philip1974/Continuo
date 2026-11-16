@@ -32,6 +32,7 @@ const makeFs = (overrides: Partial<FsApi> = {}): FsApi => ({
   watchDir: vi.fn(async () => ok(undefined as void)),
   unwatchDir: vi.fn(async () => ok(undefined as void)),
   onDirChanged: vi.fn(() => () => {}),
+  onWatchLost: vi.fn(() => () => {}),
   writeBinary: vi.fn(async () => ok(undefined as void)),
   ...overrides,
 });
