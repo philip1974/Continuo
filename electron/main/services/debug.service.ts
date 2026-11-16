@@ -154,10 +154,13 @@ interface RuntimeDebugSession {
   readonly childClients: DebugDapClientLike[];
   readonly launch: LaunchSessionInput;
   readonly waiters: Set<StopWaiter>;
+  /** 全部已设断点(同 file+line 去重);setBreakpoints 按 file 取出该 source 的完整集合发送。 */
   readonly breakpoints: BreakpointRecord[];
   initialized: boolean;
   configurationDone: boolean;
   launched: boolean;
+  /** configurationDone + launch 的在途 / 已完成 Promise(并发的 wait_for_stop / continue 只起跑一次)。 */
+  programStart?: Promise<void>;
   currentStop?: WaitForStopOutput;
   /** debuggee 已结束(terminated / exited)时的说明;置位后 wait_for_stop 立即以它 reject。 */
   endedMessage?: string;
@@ -219,21 +222,35 @@ function toEnvObject(
   return out;
 }
 
-/** 单断点的 DAP setBreakpoints 参数(父 session 设置与子 session 重放共用)。 */
 /** 向已建立的 child session 同步断点时的超时(父连接的响应才是工具的返回值,child 同步是尽力而为)。 */
 const CHILD_BREAKPOINT_SYNC_TIMEOUT_MS = 3_000;
 
-function setBreakpointsArgs(bp: SetBreakpointInput): DapJson {
+/**
+ * 一个 source 的 DAP setBreakpoints 参数(父 session 设置与子 session 重放共用)。DAP 语义:请求里的
+ * breakpoints 是**该 source 的完整断点集合**,adapter 会清掉不在其中的旧断点 —— 所以必须带上该文件的全部断点。
+ */
+function setBreakpointsArgs(file: string, records: readonly BreakpointRecord[]): DapJson {
   return {
-    source: { path: bp.file },
-    breakpoints: [
-      {
-        line: bp.line,
-        ...(bp.column !== undefined ? { column: bp.column } : {}),
-      },
-    ],
+    source: { path: file },
+    breakpoints: records.map((bp) => ({
+      line: bp.line,
+      ...(bp.column !== undefined ? { column: bp.column } : {}),
+    })),
     sourceModified: false,
   };
+}
+
+/** 按 source 分组(保持首次出现顺序),供 child session 逐 source 重放。 */
+function breakpointsBySource(
+  records: readonly BreakpointRecord[],
+): ReadonlyMap<string, readonly BreakpointRecord[]> {
+  const out = new Map<string, BreakpointRecord[]>();
+  for (const record of records) {
+    const list = out.get(record.file);
+    if (list) list.push(record);
+    else out.set(record.file, [record]);
+  }
+  return out;
 }
 
 function getClientPid(client: DebugDapClientLike): number | undefined {
@@ -459,6 +476,8 @@ export class DebugService {
       effectiveCwd,
     );
     const normalizedInput: LaunchSessionInput = { ...input, cwd: effectiveCwd };
+    // 会话数已满就别 spawn adapter(否则 add 抛错时 adapter 进程 / socket 已经起来了)。
+    debugSessions.assertCapacity(ctx.ownerWindowId);
 
     const id = makeSessionId();
     const parentClient = this.createDapClient({
@@ -490,16 +509,22 @@ export class DebugService {
       configurationDone: false,
       launched: false,
     };
+    try {
+      debugSessions.add({
+        id,
+        ownerWindowId: ctx.ownerWindowId,
+        controllerToken: ctx.controllerToken,
+        program: input.program,
+        cwd: effectiveCwd,
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(adapterPid !== undefined ? { adapterPid } : {}),
+      });
+    } catch (err) {
+      // spawn 期间别的 launch 占满了名额:session 没登记上,teardown 找不到它 → 就地释放 adapter。
+      await parentClient.dispose().catch(() => undefined);
+      throw err;
+    }
     this.runtimes.set(id, runtime);
-    debugSessions.add({
-      id,
-      ownerWindowId: ctx.ownerWindowId,
-      controllerToken: ctx.controllerToken,
-      program: input.program,
-      cwd: effectiveCwd,
-      ...(input.name !== undefined ? { name: input.name } : {}),
-      ...(adapterPid !== undefined ? { adapterPid } : {}),
-    });
     if (adapterInfo) debugSessions.update(id, { adapterPgid: adapterInfo.pgid });
     this.wireClient(id, parentClient);
     parentClient.setStartDebuggingHandler((request) =>
@@ -514,8 +539,9 @@ export class DebugService {
       throw err;
     }
     runtime.initialized = true;
-    debugSessions.update(id, { runtimeState: 'running' });
-    return { session_id: id, state: 'running' };
+    // 程序此时还没起跑(configurationDone + launch 推迟到第一个「要求程序运行」的调用,见 ensureProgramStarted),
+    // 如实报 starting。
+    return { session_id: id, state: 'starting' };
   }
 
   private resolveAdapterPathLazy(): string {
@@ -530,10 +556,25 @@ export class DebugService {
     input: SetBreakpointInput,
   ): Promise<{ verified: boolean; line?: number; message?: string }> {
     const runtime = this.requireRuntime(sessionId);
-    runtime.breakpoints.splice(0, runtime.breakpoints.length, input);
+    // 追加到该 source 的断点集合(同 file+line 替换,不重复);此前整表替换成 [input],同文件第二个断点
+    // 会把第一个从 adapter 里删掉。
+    const record: BreakpointRecord = {
+      file: input.file,
+      line: input.line,
+      ...(input.column !== undefined ? { column: input.column } : {}),
+    };
+    const existing = runtime.breakpoints.findIndex(
+      (bp) => bp.file === input.file && bp.line === input.line,
+    );
+    if (existing >= 0) runtime.breakpoints[existing] = record;
+    else runtime.breakpoints.push(record);
+    const sourceBreakpoints = runtime.breakpoints.filter((bp) => bp.file === input.file);
+    // 响应的 breakpoints 与请求逐一对应:本次新设的那个在集合里的位置。
+    const resultIndex = sourceBreakpoints.indexOf(record);
+    const args = setBreakpointsArgs(input.file, sourceBreakpoints);
     const response = await runtime.parentClient.sendRequest(
       'setBreakpoints',
-      setBreakpointsArgs(input),
+      args,
       this.requestTimeoutMs,
     );
     // 已建立的 child session 各自维护断点:只发给父连接的话,程序跑起来之后再设的断点不会生效
@@ -546,15 +587,15 @@ export class DebugService {
         .map((child) =>
           child.sendRequest(
             'setBreakpoints',
-            setBreakpointsArgs(input),
+            args,
             Math.min(this.requestTimeoutMs, CHILD_BREAKPOINT_SYNC_TIMEOUT_MS),
           ),
         ),
     );
-    await this.ensureConfigurationDone(runtime);
-    await this.ensureLaunchStarted(runtime);
+    // 设断点本身不让程序起跑:起跑推迟到 wait_for_stop / continue / step(ensureProgramStarted),
+    // 这样起跑前连设的多个断点都能在程序运行之前就位。
     const body = asRecord(response.body);
-    const breakpoint = asRecord(asArray(body.breakpoints)[0] as DapJson | undefined);
+    const breakpoint = asRecord(asArray(body.breakpoints)[resultIndex] as DapJson | undefined);
     const result = {
       verified: boolField(breakpoint, 'verified') ?? true,
       ...(numberField(breakpoint, 'line') !== undefined
@@ -608,6 +649,13 @@ export class DebugService {
         }, timeoutMs),
       };
       runtime.waiters.add(waiter);
+      // 等停点 = 要求程序在跑:没设断点就直接 wait_for_stop(如 stop_on_entry)时,程序此前从未起跑,会干等到
+      // 超时。先同步登记 waiter 再起跑:登记之后的 teardown 照常结算它。起跑失败则摘掉 waiter 并以该错误 reject。
+      this.ensureProgramStarted(runtime).catch((err: unknown) => {
+        if (!runtime.waiters.delete(waiter)) return;
+        clearTimeout(waiter.timer);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      });
     });
   }
 
@@ -796,14 +844,10 @@ export class DebugService {
     };
   }
 
-  async disconnect(
-    sessionId: string,
-    input: { readonly terminateDebuggee?: boolean } = {},
-  ): Promise<{ disconnected: boolean }> {
-    await this.teardownSession(
-      sessionId,
-      input.terminateDebuggee === false ? 'disconnect' : 'disconnect terminate',
-    );
+  // 始终终止 debuggee(teardown 按进程组整组回收)。MCP 入口 schema 只接受 terminate_debuggee=true,
+  // 这里不再接受「不终止」的选项,免得某个调用方以为能只断开而被静默终止。
+  async disconnect(sessionId: string): Promise<{ disconnected: boolean }> {
+    await this.teardownSession(sessionId, 'disconnect terminate');
     return { disconnected: true };
   }
 
@@ -855,6 +899,12 @@ export class DebugService {
     input: { readonly threadId?: number },
   ): Promise<{ continued: boolean; all_threads_continued?: boolean }> {
     const runtime = this.requireRuntime(sessionId);
+    if (!runtime.launched) {
+      // 程序还没起跑(launch 后未设断点就 continue / step):这一步就是「让它跑起来」。没有停住的线程可发
+      // continue / step,起跑即返回;是否停住仍以随后的 wait_for_stop 为准。
+      await this.ensureProgramStarted(runtime);
+      if (runtime.currentStop === undefined) return { continued: true };
+    }
     const threadId = await this.resolveThreadId(sessionId, input.threadId);
     // 记下发往哪条连接:它的 continued 事件可能先于响应到达并已触发「呈现下一个排队停点」,
     // 此时再不带连接地清一次,会把刚呈现的那个停点错清掉。
@@ -881,21 +931,36 @@ export class DebugService {
     await initialized;
   }
 
-  private async ensureConfigurationDone(runtime: RuntimeDebugSession): Promise<void> {
-    if (runtime.configurationDone) return;
-    await runtime.parentClient.sendRequest(
-      'configurationDone',
-      {},
-      this.requestTimeoutMs,
-    );
-    runtime.configurationDone = true;
+  /**
+   * 让程序起跑:configurationDone → launch,只做一次(并发调用共用同一个在途 Promise)。
+   * 刻意推迟到第一个「要求程序运行」的调用(wait_for_stop / continue / step),而不是 debug.launch 时就起跑:
+   * agent 的标准流程是 launch → set_breakpoint(可多个)→ wait_for_stop,断点要在程序运行之前就位。
+   * 失败时清掉在途 Promise,下次调用可重试。
+   */
+  private ensureProgramStarted(runtime: RuntimeDebugSession): Promise<void> {
+    runtime.programStart ??= this.startProgram(runtime).catch((err: unknown) => {
+      runtime.programStart = undefined;
+      throw err;
+    });
+    return runtime.programStart;
   }
 
-  private async ensureLaunchStarted(runtime: RuntimeDebugSession): Promise<void> {
+  private async startProgram(runtime: RuntimeDebugSession): Promise<void> {
+    if (!runtime.configurationDone) {
+      await runtime.parentClient.sendRequest(
+        'configurationDone',
+        {},
+        this.requestTimeoutMs,
+      );
+      runtime.configurationDone = true;
+    }
     if (runtime.launched) return;
     runtime.parentClient.sendRequestNoWait('launch', this.launchArguments(runtime));
     runtime.launched = true;
-    debugSessions.update(runtime.id, { runtimeState: 'running', runSeq: 1 });
+    // 已结束 / 拆除中的会话不翻回 running(configurationDone 期间可能已 teardown)。
+    if (runtime.endedMessage === undefined && debugSessions.get(runtime.id)?.runtimeState === 'starting') {
+      debugSessions.update(runtime.id, { runtimeState: 'running', runSeq: 1 });
+    }
   }
 
   private launchArguments(runtime: RuntimeDebugSession): DapJson {
@@ -943,10 +1008,11 @@ export class DebugService {
       await child.connectToServer();
 
       await this.initializeClient(child);
-      for (const breakpoint of runtime.breakpoints) {
+      // 每个 source 发一次完整集合(逐个断点发会让后一个覆盖前一个)。
+      for (const [file, records] of breakpointsBySource(runtime.breakpoints)) {
         await child.sendRequest(
           'setBreakpoints',
-          setBreakpointsArgs(breakpoint),
+          setBreakpointsArgs(file, records),
           this.requestTimeoutMs,
         );
       }

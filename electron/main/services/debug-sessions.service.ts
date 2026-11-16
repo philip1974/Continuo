@@ -58,21 +58,29 @@ function activeSessionCount(): number {
   return count;
 }
 
-export function add(input: AddDebugSessionInput): DebugSession {
-  assertOwnerWindowId(input.ownerWindowId, 'debug-sessions');
-  if (sessions.has(input.id)) {
-    throw new Error(`debug session duplicate: ${input.id}`);
-  }
+/**
+ * 会话数上限检查。launch 在 spawn adapter **之前**先调一次(满了就不花成本起进程);add 里再查一次兜住
+ * spawn 期间并发 launch 占满名额的竞态(那时由调用方释放已 spawn 的 adapter)。
+ */
+export function assertCapacity(ownerWindowId: number): void {
   if (activeSessionCount() >= MAX_DEBUG_SESSIONS_GLOBAL) {
     throw new Error(
       `debug session global limit (${MAX_DEBUG_SESSIONS_GLOBAL}) reached`,
     );
   }
-  if (sessionCountForWindow(input.ownerWindowId) >= MAX_DEBUG_SESSIONS_PER_WINDOW) {
+  if (sessionCountForWindow(ownerWindowId) >= MAX_DEBUG_SESSIONS_PER_WINDOW) {
     throw new Error(
       `debug session per-window limit (${MAX_DEBUG_SESSIONS_PER_WINDOW}) reached`,
     );
   }
+}
+
+export function add(input: AddDebugSessionInput): DebugSession {
+  assertOwnerWindowId(input.ownerWindowId, 'debug-sessions');
+  if (sessions.has(input.id)) {
+    throw new Error(`debug session duplicate: ${input.id}`);
+  }
+  assertCapacity(input.ownerWindowId);
 
   const session: DebugSession = {
     id: input.id,

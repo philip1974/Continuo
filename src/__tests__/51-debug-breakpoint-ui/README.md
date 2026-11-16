@@ -8,4 +8,5 @@
 - Markdown/Milkdown tab 不显示 debug 装饰,避免编辑/预览模式混入 CodeMirror 断点 UI。
 - `continued`、`terminated`、session 消失、tab 关闭或关窗时必须清理旧 exec-line 与断点,防止陈旧装饰。
 - Debug panel 使用 `@/design` 组件与 renderer i18n catalog,不写硬编码可见文案。
-
+- `breakpoints-changed` 事件只携带本次新设的断点,`debug.store` 增量合并(同 file+line 替换,其它保留),同文件多个断点同时显示。
+- Debug 事件同步(`startDebugStoreSync`)在 renderer 启动入口(`main-app` 的 `init()`,首次渲染前)开始,不依赖 Debug 面板挂载;重复调用幂等(StrictMode 双挂载、面板再次调用均只订阅一次)。main 按 owner window 只把事件发给本窗口。

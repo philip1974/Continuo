@@ -124,7 +124,7 @@ class FakeDapClient implements DebugDapClientLike {
       request_seq: this.seq,
       success: true,
       command,
-      body: this.responseBody(command),
+      body: this.responseBody(command, args),
     };
   }
 
@@ -161,7 +161,12 @@ class FakeDapClient implements DebugDapClientLike {
     }
   }
 
-  private responseBody(command: string): DapJson {
+  private responseBody(command: string, args: DapJson): DapJson {
+    if (command === 'setBreakpoints') {
+      // 按请求逐个回显(DAP:响应的 breakpoints 与请求一一对应)。
+      const requested = (args as { breakpoints?: Array<{ line: number }> }).breakpoints ?? [];
+      return { breakpoints: requested.map((bp) => ({ verified: true, line: bp.line })) };
+    }
     if (command === 'threads') {
       return { threads: [{ id: 1, name: 'main' }] };
     }
@@ -610,7 +615,7 @@ describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
       continued: true,
     });
     const waiter = service.waitForStop(sessionId, { afterStopSeq: 1, timeoutMs: 30_000 });
-    await service.disconnect(sessionId, { terminateDebuggee: true });
+    await service.disconnect(sessionId);
     await expect(waiter).rejects.toThrow(/disconnected/i);
   });
 
@@ -805,7 +810,11 @@ describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
     );
 
     await service.setBreakpoints(sessionId, { file: '/fixture.ts', line: 14 });
+    // 程序在第一个 wait_for_stop 时才起跑(launch 后 runSeq=1),之后才可能停住
+    const waiting = service.waitForStop(sessionId, { timeoutMs: 5_000 });
+    await vi.waitFor(() => expect(parent.requestLog.some((r) => r.command === 'launch')).toBe(true));
     parent.emit('stopped', { reason: 'breakpoint', threadId: 3 });
+    await waiting;
     await service.continue(sessionId, { threadId: 3 });
     await service.killByOwner(11, 'window-closed');
 
@@ -838,6 +847,195 @@ describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
       sessionVisibleAtEmit: true,
     });
     expect(debugSessions.get(sessionId)).toBeUndefined();
+  });
+});
+
+// 审计修复(codex):会话上限、未设断点时程序不启动、同文件多断点。
+describe('DebugService fake adapter · 会话上限 / 程序起跑时机 / 按 source 的断点集合', () => {
+  const ctx = { ownerWindowId: 40, controllerToken: 'agent-audit' };
+
+  function fillWindow(ownerWindowId: number, count: number, prefix = 'pre'): void {
+    for (let i = 0; i < count; i += 1) {
+      debugSessions.add({
+        id: `${prefix}-${ownerWindowId}-${i}`,
+        ownerWindowId,
+        controllerToken: 'other',
+        program: '/p.js',
+        cwd: '/',
+      });
+    }
+  }
+
+  function runtimeCount(service: DebugService): number {
+    return (service as unknown as { runtimes: Map<string, unknown> }).runtimes.size;
+  }
+
+  it('窗口会话数已达上限 → 拒绝且不 spawn adapter', async () => {
+    fillWindow(ctx.ownerWindowId, 8);
+    const parent = new FakeDapClient(1001);
+    const spawn = vi.spyOn(parent, 'spawnServer');
+    const { service } = makeFakeService(parent);
+
+    await expect(service.launchSession({ program: '/fixture.js', cwd: '/work' }, ctx)).rejects.toThrow(
+      /limit/,
+    );
+    expect(spawn).not.toHaveBeenCalled();
+    expect(runtimeCount(service)).toBe(0);
+  });
+
+  it('spawn 期间并发 launch 占满上限 → 登记失败时释放 adapter,不残留 runtime', async () => {
+    fillWindow(ctx.ownerWindowId, 7);
+    const parent = new FakeDapClient(1001);
+    parent.spawnServer = async function (this: FakeDapClient) {
+      fillWindow(ctx.ownerWindowId, 1, 'racer');
+      return this;
+    };
+    const { service } = makeFakeService(parent);
+
+    await expect(service.launchSession({ program: '/fixture.js', cwd: '/work' }, ctx)).rejects.toThrow(
+      /limit/,
+    );
+    expect(parent.disposeCalls).toBe(1);
+    expect(runtimeCount(service)).toBe(0);
+  });
+
+  it('launch 后未起跑:返回 starting,不发 configurationDone / launch', async () => {
+    const { service, parent } = makeFakeService();
+    const launched = await service.launchSession({ program: '/fixture.js', cwd: '/work' }, ctx);
+
+    expect(launched.state).toBe('starting');
+    expect(service.listSessions()[0]?.state).toBe('starting');
+    const commands = parent.requestLog.map((r) => r.command);
+    expect(commands).not.toContain('configurationDone');
+    expect(commands).not.toContain('launch');
+  });
+
+  it('不设断点直接 wait_for_stop → 先 configurationDone 再 launch,程序真正起跑', async () => {
+    const { service, parent } = makeFakeService();
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work', stopOnEntry: true },
+      ctx,
+    );
+
+    const waiting = service.waitForStop(sessionId, { timeoutMs: 5_000 });
+    await vi.waitFor(() => expect(parent.requestLog.some((r) => r.command === 'launch')).toBe(true));
+    const commands = parent.requestLog.map((r) => r.command);
+    expect(commands.indexOf('configurationDone')).toBeGreaterThanOrEqual(0);
+    expect(commands.indexOf('configurationDone')).toBeLessThan(commands.indexOf('launch'));
+    expect(service.listSessions()[0]?.state).toBe('running');
+
+    parent.emit('stopped', { reason: 'entry', threadId: 0 });
+    await expect(waiting).resolves.toMatchObject({ reason: 'entry' });
+  });
+
+  it('尚无停点时 continue → 让程序起跑并返回 continued,不发 continue / threads', async () => {
+    const { service, parent } = makeFakeService();
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      ctx,
+    );
+
+    await expect(service.continue(sessionId, {})).resolves.toMatchObject({ continued: true });
+    const commands = parent.requestLog.map((r) => r.command);
+    expect(commands).toContain('launch');
+    expect(commands).not.toContain('continue');
+    expect(commands).not.toContain('threads');
+  });
+
+  it('并发 wait_for_stop 与 continue 只起跑一次', async () => {
+    const { service, parent } = makeFakeService();
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      ctx,
+    );
+
+    const waiting = service.waitForStop(sessionId, { timeoutMs: 5_000 });
+    waiting.catch(() => undefined);
+    await service.continue(sessionId, {});
+    await vi.waitFor(() => expect(parent.requestLog.some((r) => r.command === 'launch')).toBe(true));
+    expect(parent.requestLog.filter((r) => r.command === 'configurationDone')).toHaveLength(1);
+    expect(parent.requestLog.filter((r) => r.command === 'launch')).toHaveLength(1);
+    await service.disconnect(sessionId);
+  });
+
+  it('起跑前连设多个断点 → 全部在 launch 之前发出(设断点本身不让程序起跑)', async () => {
+    const { service, parent } = makeFakeService();
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      ctx,
+    );
+
+    await service.setBreakpoints(sessionId, { file: '/a.js', line: 3 });
+    await service.setBreakpoints(sessionId, { file: '/a.js', line: 7 });
+    expect(parent.requestLog.some((r) => r.command === 'launch')).toBe(false);
+
+    const waiting = service.waitForStop(sessionId, { timeoutMs: 5_000 });
+    waiting.catch(() => undefined);
+    await vi.waitFor(() => expect(parent.requestLog.some((r) => r.command === 'launch')).toBe(true));
+    const commands = parent.requestLog.map((r) => r.command);
+    expect(commands.lastIndexOf('setBreakpoints')).toBeLessThan(commands.indexOf('launch'));
+    await service.disconnect(sessionId);
+  });
+
+  function setBreakpointRequests(client: FakeDapClient) {
+    return client.requestLog
+      .filter((r) => r.command === 'setBreakpoints')
+      .map((r) => r.args as { source: { path: string }; breakpoints: Array<{ line: number }> });
+  }
+
+  it('同一文件第二个断点 → 发该 source 的完整集合(不覆盖第一个),返回本次新设的那个', async () => {
+    const { service, parent } = makeFakeService();
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      ctx,
+    );
+
+    await service.setBreakpoints(sessionId, { file: '/a.js', line: 3 });
+    const second = await service.setBreakpoints(sessionId, { file: '/a.js', line: 7 });
+
+    expect(setBreakpointRequests(parent).at(-1)).toMatchObject({
+      source: { path: '/a.js' },
+      breakpoints: [{ line: 3 }, { line: 7 }],
+    });
+    expect(second).toMatchObject({ verified: true, line: 7 });
+  });
+
+  it('同 file+line 去重;不同文件各自一组', async () => {
+    const { service, parent } = makeFakeService();
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      ctx,
+    );
+
+    await service.setBreakpoints(sessionId, { file: '/a.js', line: 3 });
+    await service.setBreakpoints(sessionId, { file: '/b.js', line: 5 });
+    const again = await service.setBreakpoints(sessionId, { file: '/a.js', line: 3 });
+
+    const requests = setBreakpointRequests(parent);
+    expect(requests[1]).toMatchObject({ source: { path: '/b.js' }, breakpoints: [{ line: 5 }] });
+    expect(requests.at(-1)).toMatchObject({ source: { path: '/a.js' }, breakpoints: [{ line: 3 }] });
+    expect(again).toMatchObject({ line: 3 });
+  });
+
+  it('child session 建立时重放全部 source 的完整断点集合', async () => {
+    const { service, parent } = makeFakeService();
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      ctx,
+    );
+    await service.setBreakpoints(sessionId, { file: '/a.js', line: 3 });
+    await service.setBreakpoints(sessionId, { file: '/a.js', line: 7 });
+    await service.setBreakpoints(sessionId, { file: '/b.js', line: 5 });
+
+    await parent.triggerStartDebugging({ type: 'pwa-node' });
+    const childRequests = setBreakpointRequests(parent.children[0]!);
+    expect(childRequests).toHaveLength(2);
+    expect(childRequests).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ source: { path: '/a.js' }, breakpoints: [{ line: 3 }, { line: 7 }] }),
+        expect.objectContaining({ source: { path: '/b.js' }, breakpoints: [{ line: 5 }] }),
+      ]),
+    );
   });
 });
 
@@ -1170,6 +1368,51 @@ describe.skipIf(!adapterExists)('DebugService real adapter · 晚设断点与 wo
         expect(second.stop_seq).toBeGreaterThan(first.stop_seq);
         const secondStack = await service.stackTrace(sessionId, { startFrame: 0, levels: 1 });
         expect(secondStack.frames[0]?.line).toBe(5);
+      });
+    },
+    120_000,
+  );
+
+  it(
+    '同一文件起跑前设两个断点 → 两个都命中(第二个不覆盖第一个)',
+    async () => {
+      const source = [
+        'function step(n) { return n + 1; }', // 1
+        'let x = 0;', // 2
+        'x = step(x);', // 3 ← 断点 A
+        'x = step(x);', // 4
+        'x = step(x);', // 5 ← 断点 B(同文件)
+        'console.log(x);', // 6
+        '',
+      ].join('\n');
+      await withRealService({ 'two.js': source }, async ({ service, dir }) => {
+        const file = path.join(dir, 'two.js');
+        const { session_id: sessionId } = await service.launchSession({ program: file, cwd: dir }, ctx);
+        await service.setBreakpoints(sessionId, { file, line: 3 });
+        await service.setBreakpoints(sessionId, { file, line: 5 });
+        const first = await service.waitForStop(sessionId, { afterStopSeq: 0, timeoutMs: 40_000 });
+        expect((await service.stackTrace(sessionId, { startFrame: 0, levels: 1 })).frames[0]?.line).toBe(3);
+
+        await service.continue(sessionId, {});
+        await service.waitForStop(sessionId, { afterStopSeq: first.stop_seq, timeoutMs: 20_000 });
+        expect((await service.stackTrace(sessionId, { startFrame: 0, levels: 1 })).frames[0]?.line).toBe(5);
+      });
+    },
+    120_000,
+  );
+
+  it(
+    '不设断点:launch 报 starting;stop_on_entry 下直接 wait_for_stop 能让程序起跑并停住',
+    async () => {
+      await withRealService({ 'entry.js': 'const a = 1;\nconsole.log(a);\n' }, async ({ service, dir }) => {
+        const file = path.join(dir, 'entry.js');
+        const launched = await service.launchSession(
+          { program: file, cwd: dir, stopOnEntry: true },
+          ctx,
+        );
+        expect(launched.state).toBe('starting');
+        const stopped = await service.waitForStop(launched.session_id, { afterStopSeq: 0, timeoutMs: 40_000 });
+        expect(stopped.stop_seq).toBeGreaterThan(0);
       });
     },
     120_000,

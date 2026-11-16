@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   DEBUG_TOOL_SCHEMAS,
+  debugDisconnectInputSchema,
   debugEvaluateInputSchema,
   debugSetBreakpointInputSchema,
   debugVariablesInputSchema,
@@ -69,6 +70,28 @@ describe('50 · debug_* schemas', () => {
         expression: 'x'.repeat(4097),
       }).success,
     ).toBe(false);
+  });
+
+  // 会话都由 Continuo launch,teardown 按进程组整组回收;「只断开、让 debuggee 继续跑」会留下 Continuo
+  // 管不到的孤儿。此前 false 被静默忽略(仍终止),现在入口显式拒绝,zod 与手写 JSON schema 一致。
+  it('disconnect 只接受 terminate_debuggee=true(或省略),false 显式拒绝', () => {
+    expect(
+      debugDisconnectInputSchema.parse({ session_id: 'debug-1' }).terminate_debuggee,
+    ).toBe(true);
+    expect(
+      debugDisconnectInputSchema.safeParse({ session_id: 'debug-1', terminate_debuggee: true }).success,
+    ).toBe(true);
+    const rejected = debugDisconnectInputSchema.safeParse({
+      session_id: 'debug-1',
+      terminate_debuggee: false,
+    });
+    expect(rejected.success).toBe(false);
+    expect(rejected.error?.issues[0]?.message).toMatch(/always terminates/i);
+
+    const tool = DEBUG_TOOL_SCHEMAS.find((entry) => entry.name === 'debug.disconnect')!;
+    const properties = (tool.inputJsonSchema as { properties: Record<string, Record<string, unknown>> })
+      .properties;
+    expect(properties.terminate_debuggee).toMatchObject({ type: 'boolean', const: true });
   });
 
   it('strict 拒未知字段,breakpoint 预留条件字段当前显式拒绝', () => {

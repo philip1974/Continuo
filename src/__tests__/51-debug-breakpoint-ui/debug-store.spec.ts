@@ -77,6 +77,31 @@ describe('topic51 Op4 · debug.store renderer shadow', () => {
     ]);
   });
 
+  // 启动入口与 DebugPanel(StrictMode 双挂载)都会调用:重复调用不重复订阅。
+  it('startDebugStoreSync 幂等:多次调用只订阅一次', () => {
+    startDebugStoreSync();
+    startDebugStoreSync();
+    expect(debugApi.onEvent).toHaveBeenCalledTimes(1);
+    expect(debugApi.subscribe).toHaveBeenCalledTimes(1);
+  });
+
+  // DAP setBreakpoints 是「该 source 的完整集合」,main 每次只推本次新设的那个;renderer 必须增量合并,
+  // 否则同文件第二个断点会把第一个的红点抹掉。
+  it('breakpoints-changed 增量合并:同 file+line 替换,其它保留', () => {
+    startDebugStoreSync();
+    const emit = debugApi.events[0]!;
+    emit({ type: 'breakpoints-changed', sessionId: 's1', breakpoint: { file: '/repo/a.ts', line: 3, verified: false } });
+    emit({ type: 'breakpoints-changed', sessionId: 's1', breakpoint: { file: '/repo/a.ts', line: 7, verified: true } });
+    emit({ type: 'breakpoints-changed', sessionId: 's1', breakpoint: { file: '/repo/b.ts', line: 3, verified: true } });
+    emit({ type: 'breakpoints-changed', sessionId: 's1', breakpoint: { file: '/repo/a.ts', line: 3, verified: true } });
+
+    expect(useDebugStore.getState().sessions.get('s1')?.breakpoints).toEqual([
+      { file: '/repo/a.ts', line: 3, verified: true },
+      { file: '/repo/a.ts', line: 7, verified: true },
+      { file: '/repo/b.ts', line: 3, verified: true },
+    ]);
+  });
+
   it('on stopped pulls stack/scopes and makes the most recent stopped session active', async () => {
     startDebugStoreSync();
 

@@ -100,6 +100,30 @@ describe('入站数据', () => {
     expect(() => socket.emit('data', Buffer.from('more'))).not.toThrow();
   });
 
+  // 合法 framing 但 JSON 顶层不是 DAP 消息对象:此前被接受并强转,receiveMessage 读 null.type 抛 TypeError,
+  // 而派发不在 try/catch 内 → 主进程未捕获异常。
+  it.each([
+    ['null', 'null'],
+    ['数组', '[1,2]'],
+    ['字符串', '"hello"'],
+    ['数字', '42'],
+    ['type 非字符串', '{"seq":1,"type":7}'],
+  ])('顶层为%s → 解码器按畸形帧抛错', (_label, body) => {
+    const decoder = new DapStreamDecoder();
+    const frame = Buffer.from(`Content-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`, 'utf8');
+    expect(() => decoder.push(frame)).toThrow(/DAP message/i);
+  });
+
+  it('顶层为 null 的帧 → 不抛到 data 回调之外;结算在途请求并断开连接', async () => {
+    const client = new DapClient({ adapterPath: '/nonexistent/adapter.js' });
+    const socket = connected(client);
+    const pending = client.sendRequest('threads', {}, 5_000);
+
+    expect(() => socket.emit('data', Buffer.from('Content-Length: 4\r\n\r\nnull'))).not.toThrow();
+    await expect(pending).rejects.toThrow(/malformed/i);
+    expect(socket.destroyed).toBe(true);
+  });
+
   it('正常帧照常解码', () => {
     const decoder = new DapStreamDecoder();
     const frame = encodeDapMessage({ seq: 1, type: 'event', event: 'output' });

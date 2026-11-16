@@ -254,10 +254,17 @@ export const debugEvaluateOutputSchema = z
   })
   .strict();
 
+// 会话都由 Continuo launch,teardown 按 adapter 进程组整组回收;「只断开、让 debuggee 继续跑」会留下
+// Continuo 管不到的孤儿进程,不支持。false 显式拒绝(此前被静默忽略、照样终止)。手写 JSON schema 同步用 const:true。
+const DEBUG_DISCONNECT_TERMINATE_ONLY_MESSAGE =
+  'terminate_debuggee=false is not supported: Continuo always terminates the launched debuggee on disconnect';
+
 export const debugDisconnectInputSchema = z
   .object({
     session_id: sessionIdSchema,
-    terminate_debuggee: z.boolean().default(true),
+    terminate_debuggee: z
+      .literal(true, { errorMap: () => ({ message: DEBUG_DISCONNECT_TERMINATE_ONLY_MESSAGE }) })
+      .default(true),
   })
   .strict();
 
@@ -519,7 +526,12 @@ const debugEvaluateOutputJsonSchema = objectSchema(
 export const debugDisconnectInputJsonSchema = objectSchema(
   {
     session_id: sessionIdJson,
-    terminate_debuggee: boolSchema(),
+    terminate_debuggee: {
+      ...boolSchema(),
+      const: true,
+      description:
+        'Optional; only true is accepted. Disconnect always terminates the launched debuggee (and its process group).',
+    },
   },
   ['session_id'],
 );
