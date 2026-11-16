@@ -187,6 +187,7 @@ vi.mock('../../../electron/main/services/agent-auth.service', () => ({
   requestAgentAuth: vi.fn(),
   setMcpHostRef: vi.fn(),
   cancelAgentAuthByWindow: vi.fn(),
+  cancelAllAgentAuth: vi.fn(),
 }));
 vi.mock('../../../electron/main/services/mcp-stdio-config.service', () => ({
   setStdioConfig: vi.fn(),

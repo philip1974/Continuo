@@ -668,6 +668,9 @@ function sendJson(res: ServerResponse, status: number, json: string): void {
   res.end(json);
 }
 
+// close() 等待 server 关闭回调的上限(断开现存连接后通常立即完成;兜底不让退出被拖住)。
+const MCP_HOST_CLOSE_TIMEOUT_MS = 2000;
+
 export async function createMcpHost(
   options: McpHostOptions = {},
 ): Promise<McpHost> {
@@ -958,7 +961,18 @@ export async function createMcpHost(
     },
     async close(): Promise<void> {
       closeAllSseClients();
-      await new Promise<void>((resolve) => server.close(() => resolve()));
+      // server.close() 只停止接新连接,回调要等现存连接自行结束;挂在授权 await 上的在途 POST
+      // (keep-alive 客户端不应答弹窗)会把它拖到 5min 授权超时 → 退出被挂住。主动断开所有现存连接
+      // (在途请求经 req/res 'close' abort,客户端收到连接断开),并为整个关闭设上限。
+      const closed = new Promise<void>((resolve) => server.close(() => resolve()));
+      server.closeAllConnections();
+      let timer: NodeJS.Timeout | undefined;
+      const capped = new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, MCP_HOST_CLOSE_TIMEOUT_MS);
+        timer.unref?.();
+      });
+      await Promise.race([closed, capped]);
+      clearTimeout(timer);
     },
   };
   return host;

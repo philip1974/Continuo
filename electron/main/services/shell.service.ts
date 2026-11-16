@@ -7,7 +7,12 @@ import { spawn } from 'node:child_process';
 import { shell } from 'electron';
 import { errorMessage } from '../../shared/error-message';
 import { SHELL_MAX_TIMEOUT_MS } from '../../shared/shell-limits';
-import { processTreeKillable, TREE_KILL_DETACHED } from '../lib/kill-with-grace';
+import type { ChildProcess } from 'node:child_process';
+import {
+  killProcessTreesNow,
+  processTreeKillable,
+  TREE_KILL_DETACHED,
+} from '../lib/kill-with-grace';
 import type {
   IpcShellExecInput,
   IpcShellExecResult,
@@ -54,6 +59,14 @@ export const EXEC_LIMITS_FOR_TEST = {
   MAX_OUTPUT_BYTES_CAP,
 } as const;
 
+// 在途(尚未 close)的 exec 子进程,供退出清理。子进程是 detached 进程组,不随 IDE 退出而终止。
+const inFlight = new Set<ChildProcess>();
+
+/** 退出清理(before-quit awaited):立即强杀所有在途 exec 的进程树并等待 close(有上限)。 */
+export function cleanupAllShellExecs(): Promise<void> {
+  return killProcessTreesNow(inFlight);
+}
+
 /** 跑一个进程到 exit,buffered 输出 + 超时 + 大小上限. */
 export function execShell(input: IpcShellExecInput): Promise<IpcShellExecResult> {
   return new Promise((resolve) => {
@@ -89,6 +102,10 @@ export function execShell(input: IpcShellExecInput): Promise<IpcShellExecResult>
       });
       return;
     }
+    const proc = child;
+    inFlight.add(proc);
+    proc.once('close', () => inFlight.delete(proc));
+    proc.once('error', () => inFlight.delete(proc));
 
     // 按**字节**累加并封顶,最后一次性解码 —— 旧实现用 `string.length`(UTF-16
     // code unit)当字节比较,且对每个 data chunk 单独 toString,多字节 UTF-8 序列

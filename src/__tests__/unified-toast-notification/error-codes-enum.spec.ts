@@ -57,7 +57,8 @@ describe('unified-toast-notification: ERROR_CODES enum', () => {
     // 插件安装:+PLUGIN_ID_MISMATCH(45→46),clone 的 manifest.id 与 marketplace entry.id 不一致。
     // agent 授权:+AGENT_AUTH_REQUEST_NOT_PENDING(46→47),应答已撤销/超时的旧请求返回失败。
     // 数据安全:+FS_NOT_UTF8(47→48),编辑器文本读取入口拒绝非法 UTF-8,防保存损坏原文件。
-    expect(Object.keys(ERROR_CODES)).toHaveLength(48);
+    // 插件卸载:+PATH_SCOPE_CLEANUP_FAILED(48→49),path scope 授权清理失败时中止卸载(不删目录)。
+    expect(Object.keys(ERROR_CODES)).toHaveLength(49);
     expect(ERROR_CODES.TERMINAL_CWD_UNRESOLVED).toBe(
       'TERMINAL_CWD_UNRESOLVED',
     );

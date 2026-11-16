@@ -64,6 +64,7 @@ import * as termService from './services/terminal.service';
 import { makeCreateHandler, setMcpEnvProvider, setStopHookCanceller } from './ipc/terminal.ipc';
 import {
   cancelAgentAuthByWindow,
+  cancelAllAgentAuth,
   requestAgentAuth,
   setAgentAuthControllerTeardown,
   setMcpHostRef,
@@ -103,7 +104,8 @@ import {
   type DirtyState,
 } from './dirty-close-confirm';
 import { releaseFsWatchersForWindow } from './ipc/fs.ipc';
-import { isAllowedExternalUrl } from './services/shell.service';
+import { cleanupAllShellExecs, isAllowedExternalUrl } from './services/shell.service';
+import { cleanupAllShellStreams } from './services/plugin-shell-stream.service';
 import { MAX_EXTERNAL_URL_LEN } from './../shared/url-limits';
 import { cancelScopeRequestsForWebContents } from './ipc/plugin-fs.ipc';
 import { registerDebugViewIpc } from './ipc/debug-view.ipc';
@@ -1278,9 +1280,15 @@ app.on('before-quit', async (event) => {
   // force-kill 所有 PTY,防 agent 长任务子进程被孤儿化/zombie。无论是否有窗口要 flush
   // 都必须跑(关最后一个窗口触发的 quit 路径 wins 已空,旧 every() 守卫会跳过它)。
   // 在 app.quit() 前 await:window 'closed' 清理走 3s grace timer,进程退出不触发 SIGKILL。
+  // 窗口已隐藏、无人应答授权弹窗:同步拒绝所有未决 agent 授权,挂在授权上的 MCP 工具调用随即结算,
+  // 不把下面的 mcpHost close 拖到 5min 授权超时(close 自身也会断开现存连接并设上限)。
+  cancelAllAgentAuth();
+  // 插件 shell 子进程(一次性 exec / 流式)是 detached 进程组,不随 IDE 退出终止;立即强杀整树并等待。
   await Promise.allSettled([
     termService.cleanupAll(),
     debugService.cleanupAll('before-quit'),
+    cleanupAllShellExecs(),
+    cleanupAllShellStreams(),
   ]);
   // race(R83):此前 mcpHost/mcpStdio close 是 void fire-and-forget,随后立即 markFinished() +
   // app.quit() → 进程可能在 HTTP/SSE server 关闭、unix socket server close + mcp.sock unlink

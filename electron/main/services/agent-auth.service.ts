@@ -170,6 +170,19 @@ export function cancelAgentAuthByWindow(windowId: number): number {
   return count;
 }
 
+/**
+ * 退出清理:把所有窗口的 pending 授权请求立即结算为 denied。before-quit 时窗口已隐藏、无人应答弹窗,
+ * 挂在授权上的 MCP 工具调用否则等满 5min 定时器,拖住 mcpHost.close() → 应用不可见且无法退出。
+ * 不发 IPC、不走 revokeAndKillAgentSessions:这不是「撤销」,不应重置 renderer 的会话授权或轮换 token。
+ * 返回取消数。
+ */
+export function cancelAllAgentAuth(): number {
+  const entries = [...pending.values()];
+  pending.clear();
+  for (const entry of entries) entry.settle('denied');
+  return entries.length;
+}
+
 export interface AgentAuthControllerTeardown {
   readonly listControllerTokens: () => readonly string[];
   readonly killByController: (controllerToken: string, reason: string) => void;

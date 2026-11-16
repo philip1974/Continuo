@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import type { IpcMain } from 'electron';
 import { PLUGIN_SHELL_STREAM_CHANNELS } from '../../shared/plugin-shell-stream-channels';
 import { assertTrustedFrame } from '../safe-handle';
@@ -8,7 +8,12 @@ import { ERROR_CODES } from '../../shared/error-codes';
 // 畸形插件可经 app.shell.execStream() 传巨量 args/超长 cwd/cmd → IPC structured clone + 主进程内存/CPU
 // 放大,或触发 spawn 的 E2BIG/路径异常。与 shell.exec 对齐(E46:shared 单一来源),spawn 前 fail-closed。
 import { SHELL_MAX_TIMEOUT_MS, shellCommandShapeError } from '../../shared/shell-limits';
-import { killWithGrace, processTreeKillable, TREE_KILL_DETACHED } from '../lib/kill-with-grace';
+import {
+  killProcessTreesNow,
+  killWithGrace,
+  processTreeKillable,
+  TREE_KILL_DETACHED,
+} from '../lib/kill-with-grace';
 import { makeWcGoneHook } from '../lib/wc-gone-hook';
 import { codedError } from '../../shared/error-message';
 
@@ -26,6 +31,15 @@ const MAX_ACTIVE_STREAMS_PER_SENDER = 32; // 单 webContents 并发流上限
 
 // 终止进程树后仍等不到 close(后代逃出进程组仍持有管道)时,最多再等这么久即强制 finalize。
 const FORCE_FINALIZE_MS = 3000;
+
+// 在途(尚未 close)的流式子进程,跨所有 register 实例,供退出清理。子进程是 detached 进程组:
+// 窗口销毁路径的 SIGTERM + 定时 SIGKILL 不被等待,IDE 退出后命令会继续运行。
+const inFlight = new Set<ChildProcess>();
+
+/** 退出清理(before-quit awaited):立即强杀所有在途 stream 的进程树并等待 close(有上限)。 */
+export function cleanupAllShellStreams(): Promise<void> {
+  return killProcessTreesNow(inFlight);
+}
 
 interface ActiveStream {
   /** 终止整棵进程树(SIGTERM → 1s → SIGKILL)+ 超时未 close 强制 finalize。 */
@@ -125,6 +139,9 @@ export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
         // 新进程组(POSIX),终止时整组发信号,后台后代不成孤儿(见 processTreeKillable)。
         detached: TREE_KILL_DETACHED,
       });
+      inFlight.add(child);
+      child.once('close', () => inFlight.delete(child));
+      child.once('error', () => inFlight.delete(child));
       const senderWc = event.sender;
       const senderId = senderWc.id;
       // renderer reload / webContents 销毁时杀掉该 sender 名下所有在途 stream(reload 不会触发 iterator

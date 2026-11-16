@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   _resetPendingForTest,
   answerAgentAuthRequest,
+  cancelAllAgentAuth,
   requestAgentAuth,
   resolveAgentAuthRequest,
   revokeAndKillAgentSessions,
@@ -681,5 +682,28 @@ describe('agent-auth-service: revokeAndKillAgentSessions', () => {
     expect(rotateToken).toHaveBeenCalledTimes(1);
     expect(terminalSessionsMock.remove).toHaveBeenCalledWith('a');
     expect(terminalServiceMock.forceKill).not.toHaveBeenCalled();
+  });
+});
+
+// 退出清理:before-quit 时窗口已隐藏,用户无法再应答授权弹窗;挂在授权上的 HTTP/stdio 工具调用若等
+// 5 分钟定时器,mcpHost.close() 会被拖住 → 应用不可见且无法退出。cancelAllAgentAuth 同步把所有未决
+// 请求结算为 denied(跨窗口),不发任何 IPC(不是「撤销」语义,不重置 renderer 的会话授权)。
+describe('agent-auth-service: cancelAllAgentAuth(退出清理)', () => {
+  it('T17: 所有窗口的未决请求立即 denied,返回取消数,不发 IPC', async () => {
+    const a = makeWin(1);
+    const b = makeWin(2);
+    electronMock.windows = [a, b];
+    const p1 = requestAgentAuth({ method: 'tools/call', ownerWindowId: 1 });
+    const p2 = requestAgentAuth({ method: 'tools/call', ownerWindowId: 2 });
+    a.webContents.send.mockClear();
+    b.webContents.send.mockClear();
+
+    expect(cancelAllAgentAuth()).toBe(2);
+    await expect(p1).resolves.toBe('denied');
+    await expect(p2).resolves.toBe('denied');
+    expect(a.webContents.send).not.toHaveBeenCalled();
+    expect(b.webContents.send).not.toHaveBeenCalled();
+    // 已结算:再次调用无可取消项
+    expect(cancelAllAgentAuth()).toBe(0);
   });
 });
