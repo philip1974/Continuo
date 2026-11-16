@@ -612,6 +612,9 @@ export class PluginManager {
       entry.status = 'failed';
       entry.error = { code: 'EXCEPTION', message: errorMessage(err) };
       await this.revokePluginFsToken(entry);
+      // 终审 P1:构造函数 / onload 抛错前可能已 exec / execStream 启动 shell 进程;失败实例不进
+      // activationOrder,之后禁用 / 卸载 / shutdown 都走不到 deactivateEntry → 此处同样终止。
+      await this.killPluginShellProcesses(entry.id, `activate ${entry.id}`);
       this.invalidateListCache();
       return;
     }
@@ -640,12 +643,17 @@ export class PluginManager {
       entry.instance = undefined;
       await this.revokePluginFsToken(entry);
       // 终审 P1:disable / uninstall / 远端卸载 / reload / shutdown 都经此处 —— 终止该插件在本窗口的
-      // shell 进程(exec + 流式)。放在 _deactivate 之后:插件 onunload 可先自行收尾。失败只记录,不阻断停用。
-      try {
-        await this.host.killPluginShellProcesses?.(entry.id);
-      } catch (err) {
-        console.warn(`[plugin-manager] ${label} kill shell processes failed`, err);
-      }
+      // shell 进程(exec + 流式)。放在 _deactivate 之后:插件 onunload 可先自行收尾(_deactivate 对 onunload
+      // 有等待上限,挂起的钩子不会阻塞这里的能力回收)。失败只记录,不阻断停用。
+      await this.killPluginShellProcesses(entry.id, label);
+    }
+  }
+
+  private async killPluginShellProcesses(id: string, label: string): Promise<void> {
+    try {
+      await this.host.killPluginShellProcesses?.(id);
+    } catch (err) {
+      console.warn(`[plugin-manager] ${label} kill shell processes failed`, err);
     }
   }
 

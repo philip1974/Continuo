@@ -1154,6 +1154,12 @@ helper + 必挂 browser-window-created),把「单一来源」固化进测试防�
   此前只等 terminal/debug/MCP;exec 无退出清理,stream 只在 webContents 销毁后 SIGTERM + 未被等待的定时 SIGKILL,
   detached 进程组在 IDE 退出后继续运行。
 
+### Windows 进程树终止先等 taskkill 结束 — `windows-tree-kill-order.spec.ts`
+- Windows 上 `processTreeKillable` 的 SIGTERM 启动 `taskkill /pid <pid> /T /F`;随后的 SIGKILL(根进程直杀兜底)
+  **排在 taskkill 结束(exit / error)之后**,最多等 `TASKKILL_WAIT_MS`(1s)后照常直杀。未发过 SIGTERM 的 SIGKILL 直接直杀;
+  taskkill 启动失败(error)立即直杀根进程。POSIX 行为不变。
+- 根因:`killProcessTreesNow` 紧接 SIGTERM 同步 SIGKILL 直杀根进程,taskkill 稍后执行时根 PID 已不存在,无法遍历子进程树。
+
 ### 卸载时 path scope 清理失败中止卸载 — `uninstall-scope-cleanup-fail-closed.spec.ts`
 - `uninstallPlugin` 清 `_plugin-path-scopes.json` 失败(原子写 ENOSPC、读盘 IO 错误)→ 抛 `PATH_SCOPE_CLEANUP_FAILED`
   (en/zh/ko 文案),**不删目录**、旧 scope 原样在盘;磁盘恢复后重试 → 卸载完成、scope 已清。

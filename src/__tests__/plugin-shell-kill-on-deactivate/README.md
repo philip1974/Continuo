@@ -19,9 +19,13 @@
 - `createScopedApp` 的 `shell.exec` / `shell.execStream` 请求自动带上本插件 id。
 - `PluginManager` 在插件实例离开运行态时(disable / uninstall / 远端卸载 `handleUninstalled` / reload /
   shutdown,统一在 `deactivateEntry`)调用 `host.killPluginShellProcesses(id)`;失败只记录,不阻断停用。
+- 插件 `onunload` 挂起(永不返回)不阻塞停用:`Plugin._deactivate` 最多等 `PLUGIN_UNLOAD_TIMEOUT_MS`(5s),
+  超时 warn 后继续 —— FS token 回收、shell 进程终止、禁用落盘照常执行。
+- 激活失败(构造函数 / onload 抛错,可能已 exec / execStream 启动进程)同样调用 `host.killPluginShellProcesses(id)`
+  (失败实例不进 activationOrder,之后的禁用 / 卸载 / shutdown 都清不到)。
 - `createWindowApiHost().killPluginShellProcesses` → `coApi.shell.killPluginProcesses(id)`,`ok:false` 抛。
 
 ## 规范文件
 
 - `main-kill.spec.ts`:真实子进程(仅 POSIX);exec 与流式两条路径;只终止匹配 (窗口, 插件) 的进程;不受信 frame 拒绝。
-- `renderer-deactivate.spec.ts`:PluginManager 各停用路径调用终止;scoped app 带 pluginId;host 接线。
+- `renderer-deactivate.spec.ts`:PluginManager 各停用路径调用终止(含 onunload 挂起超时、激活失败);scoped app 带 pluginId;host 接线。

@@ -18,6 +18,13 @@ import type { PluginMcpToolSpec } from './registries/PluginMcpRegistry';
 
 export type { Disposable } from './types';
 
+/**
+ * onunload 等待上限。插件 onunload 挂起(永不 resolve)时,停用方(PluginManager.deactivateEntry)
+ * 不能被它永久阻塞 —— 其后的 FS token 回收、shell 进程终止与禁用落盘都不依赖插件钩子是否返回。
+ * 5s 足够正常的业务收尾(落盘 / 关连接),又不至于让禁用 / 卸载 / 退出明显卡住。
+ */
+export const PLUGIN_UNLOAD_TIMEOUT_MS = 5000;
+
 export abstract class Plugin {
   /** v5 Phase 1:per-plugin scoped app(含 fs/network/clipboard/permission). */
   readonly app: CoPluginApp;
@@ -166,12 +173,29 @@ export abstract class Plugin {
     }
   }
 
-  /** 内部:LM 内核调用。幂等;LIFO 反序 dispose;单 dispose 抛错不传染。 */
+  /**
+   * 内部:LM 内核调用。幂等;LIFO 反序 dispose;单 dispose 抛错不传染。
+   * onunload 超过 PLUGIN_UNLOAD_TIMEOUT_MS 未返回 → warn 后放弃等待(钩子本身无法取消,任其后台结束)。
+   */
   async _deactivate(): Promise<void> {
     if (this.disposed) return;
     this.disposed = true;
     this.disposeCollected();
-    if (this.onunload) await this.onunload();
+    if (!this.onunload) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timedOut = new Promise<'timeout'>((resolve) => {
+      timer = setTimeout(() => resolve('timeout'), PLUGIN_UNLOAD_TIMEOUT_MS);
+    });
+    try {
+      const r = await Promise.race([Promise.resolve(this.onunload()), timedOut]);
+      if (r === 'timeout') {
+        console.warn(
+          `[plugin:${this.manifest.id}] onunload did not settle within ${PLUGIN_UNLOAD_TIMEOUT_MS}ms, continuing deactivation`,
+        );
+      }
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   /** LIFO 清掉已收集的 disposables;单个抛错不传染。_activate 失败 / _deactivate 复用. */

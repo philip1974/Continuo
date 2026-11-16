@@ -7,20 +7,21 @@ const h = vi.hoisted(() => ({
   shellExec: vi.fn(),
   execStream: vi.fn(),
   killPluginProcesses: vi.fn(),
+  unregisterPlugin: vi.fn(),
 }));
 
 vi.mock('@/lib/co-api', () => ({
   coApi: {
     pluginFsRaw: {
       _registerPlugin: async () => ({ token: 'tok', generation: 1 }),
-      _unregisterPlugin: async () => undefined,
+      _unregisterPlugin: h.unregisterPlugin,
     },
     shell: { exec: h.shellExec, killPluginProcesses: h.killPluginProcesses },
     pluginShellStreamRaw: { execStream: h.execStream },
   },
 }));
 
-import { Plugin } from '../../plugins/Plugin';
+import { Plugin, PLUGIN_UNLOAD_TIMEOUT_MS } from '../../plugins/Plugin';
 import { PluginManager, type ManagerHost } from '../../plugins/PluginManager';
 import { createScopedApp } from '../../plugins/scoped-app';
 import { createTestCoApp } from '../../plugins/test-utils';
@@ -32,8 +33,13 @@ class NoopPlugin extends Plugin {
   onload() {}
 }
 
-function makeManager(): { mgr: PluginManager; kill: ReturnType<typeof vi.fn> } {
+function makeManager(PluginClass: typeof Plugin = NoopPlugin): {
+  mgr: PluginManager;
+  kill: ReturnType<typeof vi.fn>;
+  mutate: ReturnType<typeof vi.fn>;
+} {
   const kill = vi.fn().mockResolvedValue(undefined);
+  const mutate = vi.fn();
   let dirs = [
     {
       id: ID,
@@ -44,14 +50,14 @@ function makeManager(): { mgr: PluginManager; kill: ReturnType<typeof vi.fn> } {
   const host: ManagerHost = {
     listPluginDirs: () => dirs,
     readEnabledIds: () => new Set([ID]),
-    mutateEnabledId: () => {},
-    importModule: async () => ({ default: NoopPlugin }),
+    mutateEnabledId: mutate,
+    importModule: async () => ({ default: PluginClass }),
     removePluginDir: async () => {
       dirs = [];
     },
     killPluginShellProcesses: kill,
   };
-  return { mgr: new PluginManager(createTestCoApp('1.0.0'), host), kill };
+  return { mgr: new PluginManager(createTestCoApp('1.0.0'), host), kill, mutate };
 }
 
 beforeEach(() => {
@@ -64,6 +70,7 @@ beforeEach(() => {
     done: Promise.resolve({ exitCode: 0, signal: null }),
   });
   h.killPluginProcesses.mockReset().mockResolvedValue({ ok: true, data: undefined });
+  h.unregisterPlugin.mockReset().mockResolvedValue(undefined);
 });
 
 describe('PluginManager:插件离开运行态时终止其 shell 进程', () => {
@@ -103,6 +110,67 @@ describe('PluginManager:插件离开运行态时终止其 shell 进程', () => {
     await mgr.init();
     await expect(mgr.disable(ID)).resolves.toBeUndefined();
     expect(mgr.listAll()[0]!.status).toBe('disabled');
+    warn.mockRestore();
+  });
+
+  it('onunload 永不返回 → 超时后仍回收 FS token、终止 shell 进程、禁用落盘', async () => {
+    class HangingUnload extends Plugin {
+      onload() {}
+      onunload() {
+        return new Promise<void>(() => {});
+      }
+    }
+    const { mgr, kill, mutate } = makeManager(HangingUnload);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.useFakeTimers();
+    try {
+      await mgr.init();
+      const p = mgr.disable(ID);
+      await vi.advanceTimersByTimeAsync(PLUGIN_UNLOAD_TIMEOUT_MS - 1);
+      // 超时前:仍在等插件自行收尾
+      expect(kill).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      await p;
+      expect(h.unregisterPlugin).toHaveBeenCalledWith('tok');
+      expect(kill).toHaveBeenCalledWith(ID);
+      expect(mutate).toHaveBeenCalledWith(ID, false);
+      expect(mgr.listAll()[0]!.status).toBe('disabled');
+      expect(warn).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+      warn.mockRestore();
+    }
+  });
+
+  it('激活失败(onload 已启动 execStream 后抛错)→ 同样请求终止该插件的 shell 进程', async () => {
+    class FailAfterSpawn extends Plugin {
+      onload() {
+        void this.app.shell.execStream('/bin/sleep', ['600']).done.catch(() => {});
+        throw new Error('boom');
+      }
+    }
+    const { mgr, kill } = makeManager(FailAfterSpawn);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await mgr.init();
+    expect(mgr.listAll()[0]!.status).toBe('failed');
+    expect(kill).toHaveBeenCalledWith(ID);
+    expect(h.unregisterPlugin).toHaveBeenCalledWith('tok');
+    warn.mockRestore();
+  });
+
+  it('激活失败(构造函数抛错)→ 同样请求终止该插件的 shell 进程', async () => {
+    class ThrowInCtor extends Plugin {
+      constructor(...args: ConstructorParameters<typeof NoopPlugin>) {
+        super(...args);
+        throw new Error('ctor boom');
+      }
+      onload() {}
+    }
+    const { mgr, kill } = makeManager(ThrowInCtor);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await mgr.init();
+    expect(mgr.listAll()[0]!.status).toBe('failed');
+    expect(kill).toHaveBeenCalledWith(ID);
     warn.mockRestore();
   });
 });

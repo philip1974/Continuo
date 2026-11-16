@@ -179,6 +179,7 @@
 - [`watch-error-evict.spec.ts`](./49-polish-bugfixes/watch-error-evict.spec.ts)
 - [`watch-pool-evict-after-create.spec.ts`](./49-polish-bugfixes/watch-pool-evict-after-create.spec.ts)
 - [`watch-unwatch-owner-ownership.spec.ts`](./49-polish-bugfixes/watch-unwatch-owner-ownership.spec.ts)
+- [`windows-tree-kill-order.spec.ts`](./49-polish-bugfixes/windows-tree-kill-order.spec.ts)
 
 ## [50 · Agent Debug Engine MVP](./50-agent-debug-engine-mvp/README.md)
 
