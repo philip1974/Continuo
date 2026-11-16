@@ -274,6 +274,32 @@ function sourceKey(file: string): string {
   return platform() === 'win32' ? lowerIfNeeded(normalized) : normalized;
 }
 
+/**
+ * 文件尚不存在时 realpath 失败,断点按调用方拼写分组(fallback 组);文件创建后同拼写 realpath 成功按真实路径
+ * 分组。两组推给 renderer 的 file 相同,不合并的话后一次只下发自己那组,renderer 整组替换隐藏前一组。
+ * 把 fallback 组并入真实路径组(同一行以真实路径组的为准,与「同 file+line 去重」一致),映射随之迁移。
+ */
+function mergeFallbackSource(
+  runtime: RuntimeDebugSession,
+  fallback: string,
+  source: string,
+): void {
+  if (fallback === source) return;
+  const lines = new Set(runtime.breakpoints.filter((bp) => bp.source === source).map((bp) => bp.line));
+  for (let i = runtime.breakpoints.length - 1; i >= 0; i -= 1) {
+    const bp = runtime.breakpoints[i]!;
+    if (bp.source !== fallback) continue;
+    if (lines.has(bp.line)) runtime.breakpoints.splice(i, 1);
+    else runtime.breakpoints[i] = { ...bp, source };
+  }
+  const sourcePath = runtime.sourcePaths.get(fallback);
+  if (sourcePath !== undefined && !runtime.sourcePaths.has(source)) {
+    runtime.sourcePaths.set(source, sourcePath);
+  }
+  runtime.sourcePaths.delete(fallback);
+  runtime.adapterPaths.delete(fallback);
+}
+
 /** 每条连接暂存的未匹配 breakpoint changed 事件上限(超出丢最旧的)。 */
 const MAX_PENDING_BREAKPOINT_CHANGES = 64;
 
@@ -683,26 +709,35 @@ export class DebugService {
     input: SetBreakpointInput,
   ): Promise<{ verified: boolean; line?: number; message?: string }> {
     this.requireRuntime(sessionId);
-    // js-debug 按 Node 实际加载的真实路径匹配脚本:发给 adapter 的 path 与分组键基于 realpath(软链拼写与真实
-    // 拼写归为同一 source)。文件不存在 / realpath 失败时沿用原路径,不报错。
-    const realFile = await this.workspace.realpath(input.file).catch(() => input.file);
-    // 同 session 同 source 串行:并发时 B 捕获的完整集合会含在途的 A,A 失败回滚时 B 已把 A 设进 adapter;
+    // 同 session 串行:并发时 B 捕获的完整集合会含在途的 A,A 失败回滚时 B 已把 A 设进 adapter;
     // 成功响应乱序时旧快照事件还会覆盖新断点。串行化后集合与快照天然有序。
-    return runSerialPerKey(this.breakpointChains, `${sessionId}\0${sourceKey(realFile)}`, () =>
-      this.setBreakpointsSerial(sessionId, input, realFile),
+    // 按 session 而非 session+source:分组键依赖 realpath,入队前不能有 await —— 否则同一真实文件经不同拼写
+    // 并发设置时,realpath 慢的旧调用在新调用之后入队,旧定义覆盖新定义。同 session 的断点设置很少并发,代价可忽略。
+    return runSerialPerKey(this.breakpointChains, sessionId, () =>
+      this.setBreakpointsSerial(sessionId, input),
     );
   }
 
   private async setBreakpointsSerial(
     sessionId: string,
     input: SetBreakpointInput,
-    realFile: string,
   ): Promise<{ verified: boolean; line?: number; message?: string }> {
-    // 排队期间 session 可能已拆除。
+    // js-debug 按 Node 实际加载的真实路径匹配脚本:发给 adapter 的 path 与分组键基于 realpath(软链拼写与真实
+    // 拼写归为同一 source)。文件不存在 / realpath 失败时沿用原路径,不报错。
+    let realFile = input.file;
+    let resolved = false;
+    try {
+      realFile = await this.workspace.realpath(input.file);
+      resolved = true;
+    } catch {
+      // 沿用原路径。
+    }
+    // 排队 / realpath 期间 session 可能已拆除。
     const runtime = this.requireRuntime(sessionId);
     // 追加到该 source 的断点集合(同 file+line 替换,不重复);此前整表替换成 [input],同文件第二个断点
     // 会把第一个从 adapter 里删掉。
     const source = sourceKey(realFile);
+    if (resolved) mergeFallbackSource(runtime, sourceKey(input.file), source);
     // 记录的拼写 normalize(Windows 统一成反斜杠):编辑器 tab 路径来自原生对话框 / listDir(反斜杠、无 `..`),
     // renderer 按路径匹配 tab 放红点;首次以 `C:/repo/a.js` 设断点时沿用原拼写会匹配不上,gutter 不显示。
     if (!runtime.sourcePaths.has(source)) {

@@ -1671,6 +1671,85 @@ describe('DebugService fake adapter · 会话上限 / 程序起跑时机 / 按 s
     expect(setBreakpointRequests(parent).at(-1)).toMatchObject({ source: { path: '/missing/a.js' } });
   });
 
+  // realpath 须在串行队列内:在队列外 await 时,同一真实文件经不同拼写并发设断点,realpath 慢的旧调用会在
+  // 快的新调用之后入队,旧定义覆盖新定义。
+  it('同一真实文件不同拼写并发设断点:realpath 慢的旧调用不会覆盖后调用的定义', async () => {
+    let releaseSlow!: () => void;
+    const slowGate = new Promise<void>((resolve) => {
+      releaseSlow = resolve;
+    });
+    const workspace: DebugWorkspaceGuard = {
+      getWorkspaceRoot: () => '/',
+      realpath: async (p) => {
+        if (p.startsWith('/link/')) {
+          await slowGate;
+          return p.replace(/^\/link\//, '/real/');
+        }
+        return p;
+      },
+    };
+    const { service, parent } = makeFakeService(new FakeDapClient(1001), workspace);
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/real/fixture.js', cwd: '/real' },
+      ctx,
+    );
+    const older = service.setBreakpoints(sessionId, { file: '/link/a.js', line: 3, column: 1 });
+    const newer = service.setBreakpoints(sessionId, { file: '/real/a.js', line: 3, column: 7 });
+    // 让快的那次有机会先跑完(未串行 realpath 时它此时已下发)。
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    releaseSlow();
+    await Promise.all([older, newer]);
+    expect(setBreakpointRequests(parent).at(-1)).toMatchObject({
+      source: { path: '/real/a.js' },
+      breakpoints: [{ line: 3, column: 7 }],
+    });
+  });
+
+  // 文件尚不存在时 realpath 失败按调用方拼写分组;文件创建后同拼写再设断点 realpath 成功按真实路径分组。
+  // 两组推给 renderer 的 file 相同,不合并的话第二次只下发自己那组、renderer 整组替换隐藏前一组。
+  it('realpath 先失败后成功 → fallback 组并入真实路径组,下发完整集合,快照只有一组', async () => {
+    let exists = false;
+    const workspace: DebugWorkspaceGuard = {
+      getWorkspaceRoot: () => '/',
+      realpath: async (p) => {
+        if (p.startsWith('/link/')) {
+          if (!exists) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+          return p.replace(/^\/link\//, '/real/');
+        }
+        return p;
+      },
+    };
+    const { service, parent } = makeFakeService(new FakeDapClient(1001), workspace);
+    const events: DebugViewEvent[] = [];
+    service.setEventSink({ emit: (_owner, event) => events.push(event) });
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/real/fixture.js', cwd: '/real' },
+      ctx,
+    );
+    await service.setBreakpoints(sessionId, { file: '/link/a.js', line: 3 });
+    exists = true;
+    await service.setBreakpoints(sessionId, { file: '/link/a.js', line: 5 });
+    expect(setBreakpointRequests(parent).at(-1)).toMatchObject({
+      source: { path: '/real/a.js' },
+      breakpoints: [{ line: 3 }, { line: 5 }],
+    });
+    expect(events.filter((e) => e.type === 'breakpoints-changed').at(-1)).toMatchObject({
+      file: '/link/a.js',
+      breakpoints: [
+        { file: '/link/a.js', line: 3 },
+        { file: '/link/a.js', line: 5 },
+      ],
+    });
+    // 只剩一组:child 建立时按 source 重放,只应发一次(真实路径)完整集合。
+    await parent.triggerStartDebugging({ type: 'pwa-node' });
+    const childRequests = setBreakpointRequests(parent.children[0]!);
+    expect(childRequests).toHaveLength(1);
+    expect(childRequests[0]).toMatchObject({
+      source: { path: '/real/a.js' },
+      breakpoints: [{ line: 3 }, { line: 5 }],
+    });
+  });
+
   // 同一行改 column 是新的断点定义:不得继承旧定义在各连接上的回报 / id —— 否则 child 同步失败(被 allSettled
   // 吞掉)时聚合仍用旧 child 的 verified:true。完全相同的重设才继承(见「运行后对同一 source 重设」)。
   it('同一行 column 变化 → 不沿用旧定义的回报;child 同步失败时如实回落到父连接的回报', async () => {
