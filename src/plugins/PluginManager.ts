@@ -10,7 +10,7 @@ import {
   type PermissionStore,
   type PromptFn,
 } from './permissions';
-import { createScopedApp } from './scoped-app';
+import { createScopedAppController, type ScopedAppController } from './scoped-app';
 import type { CoApp, PluginManifest } from './types';
 import { codedError, errorCodeOf, errorMessage } from '../../electron/shared/error-message';
 import { coApi } from '@/lib/co-api';
@@ -70,6 +70,11 @@ interface PluginEntry {
    */
   enabledIntent: boolean;
   instance?: Plugin;
+  /**
+   * 当前实例的 scoped app 控制面(终审 P1):离开运行态时先 revoke() 再调 onunload;授权变更时
+   * recheckMcpPermission()。与 instance 同生命周期。
+   */
+  scoped?: ScopedAppController;
   pluginFsToken?: string;
   /** i18n(I4):存结构化 code+message,不存拼好的可见串. */
   error?: PluginError;
@@ -321,7 +326,13 @@ export class PluginManager {
     if (!entry) throw new Error(`Plugin ${id} not found`);
     if (entry.status !== 'enabled' || !entry.instance) return;
 
-    await this.deactivateEntry(entry, `disable ${id}`);
+    await this.markDisabled(entry, `disable ${id}`);
+    await this.host.mutateEnabledId(id, false);
+  }
+
+  /** 停用实例(若有)并落到 disabled + 清启用意图;不写盘(本地禁用与远端禁用广播共用). */
+  private async markDisabled(entry: PluginEntry, label: string): Promise<void> {
+    if (entry.instance) await this.deactivateEntry(entry, label);
     entry.status = 'disabled';
     // partial-grant warning(及 error)只对 enabled+active 插件有意义。disable 后
     // 必须清,否则 PluginsTab 行无条件渲染 p.warning(无 status 门控)→ 已禁用的
@@ -331,9 +342,43 @@ export class PluginManager {
     entry.warning = undefined;
     entry.enabledIntent = false; // race(R77):用户禁用 → 清持久启用意图(reload 不再重激活)
     this.invalidateListCache();
-    this.activationOrder = removeActivationOrderId(this.activationOrder, id);
+    this.activationOrder = removeActivationOrderId(this.activationOrder, entry.id);
+  }
 
-    await this.host.mutateEnabledId(id, false);
+  /**
+   * 别的窗口(或本窗口)启用 / 禁用了插件(main 在 _enabled.json 写入成功后广播 plugins:enabled-changed,
+   * 终审 P1):本窗口同步到同一启用状态,**不写盘**。幂等:发起窗口自身也会收到广播,状态已一致 → 无操作。
+   * - enabled=false:与本地禁用相同的停用(吊销 scoped app / 注销贡献点 / 回收 token / 终止 shell 进程)。
+   * - enabled=true:与本地启用相同的激活(权限门按已授权放行;不清拒绝项 —— 那是发起窗口用户的重试意图)。
+   * 本窗口不认识的 id(此窗口启动后才安装)→ 忽略,沿用「重载窗口后生效」。
+   */
+  async handleEnabledChanged(id: string, enabled: boolean): Promise<void> {
+    return this.withLifecycleLock(id, async () => {
+      const entry = this.entries.get(id);
+      if (!entry) return;
+      if (!enabled) {
+        if (entry.status === 'disabled' && !entry.instance && !entry.enabledIntent) return;
+        await this.markDisabled(entry, `disabled elsewhere ${id}`);
+        return;
+      }
+      if (entry.status === 'enabled') {
+        entry.enabledIntent = true;
+        return;
+      }
+      await this.activateEntry(entry);
+      // activateEntry 是 mutating 方法,TS 不知道 status 已变;重新从 map 取(同 enableLocked)。
+      const after = this.entries.get(id);
+      if (after?.status === 'enabled') after.enabledIntent = true;
+    });
+  }
+
+  /**
+   * 插件授权记录变更(main 广播 plugins:permissions-changed,终审 P1;调用方已先失效权限缓存):
+   * 重查当前实例的 mcp-tools 授权,已撤销 → 注销其全部 MCP 工具(main 侧 stub 同步移除)。
+   * 调用期的逐次重查是兜底,这里保证工具列表准确。未激活 / 未知 id → 无操作。
+   */
+  async handlePermissionsChanged(id: string): Promise<void> {
+    await this.entries.get(id)?.scoped?.recheckMcpPermission();
   }
 
   /**
@@ -586,7 +631,7 @@ export class PluginManager {
     const { token: pluginFsToken } =
       await coApi.pluginFsRaw._registerPlugin(entry.id);
     entry.pluginFsToken = pluginFsToken;
-    const scopedApp = createScopedApp(
+    const scoped = createScopedAppController(
       this.app,
       entry.id,
       this.host.permissionStore ?? null,
@@ -602,13 +647,15 @@ export class PluginManager {
     // (codex 复审 loop R1)。
     let instance: Plugin;
     try {
-      instance = new loaded.PluginClass(scopedApp, entry.manifest);
+      instance = new loaded.PluginClass(scoped.app, entry.manifest);
       await instance._activate();
     } catch (err) {
       console.warn(
         `[plugin-manager] activate ${entry.id} failed`,
         err,
       );
+      // 终审 P1:失败实例已排程的延迟回调不能再使用能力 —— 先吊销 scoped app。
+      scoped.revoke();
       entry.status = 'failed';
       entry.error = { code: 'EXCEPTION', message: errorMessage(err) };
       await this.revokePluginFsToken(entry);
@@ -620,6 +667,7 @@ export class PluginManager {
     }
 
     entry.instance = instance;
+    entry.scoped = scoped;
     entry.status = 'enabled';
     this.invalidateListCache();
     // entry.error / warning 已在方法开头清(成功路径不再重复 reset 错误,
@@ -635,6 +683,11 @@ export class PluginManager {
     entry: PluginEntry,
     label: string,
   ): Promise<void> {
+    // 终审 P1:先吊销 scoped app,再调 onunload —— 延迟回调、超时后仍在跑的 onunload 调用有外部副作用的
+    // 能力(shell / network / fs 写等)在 renderer 源头被拒,停用后不再起新进程(killPluginShellProcesses
+    // 只能回收已登记的进程)。onunload 收尾仍可用 fs 读 / dataStore(见 scoped-app 文件头)。
+    entry.scoped?.revoke();
+    entry.scoped = undefined;
     try {
       await entry.instance?._deactivate();
     } catch (err) {

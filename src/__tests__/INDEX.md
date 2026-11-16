@@ -795,6 +795,13 @@
 
 - [`plugin-base.spec.ts`](./plugin-base/plugin-base.spec.ts)
 
+## [plugin-capability-revoke(插件能力回收:停用即吊销、跨窗口启停、撤销 mcp-tools)](./plugin-capability-revoke/README.md)
+
+- [`deactivate-revoke.spec.ts`](./plugin-capability-revoke/deactivate-revoke.spec.ts)
+- [`enabled-main-broadcast.spec.ts`](./plugin-capability-revoke/enabled-main-broadcast.spec.ts)
+- [`enabled-renderer-sync.spec.ts`](./plugin-capability-revoke/enabled-renderer-sync.spec.ts)
+- [`mcp-permission-revoke.spec.ts`](./plugin-capability-revoke/mcp-permission-revoke.spec.ts)
+
 ## [plugin-contributions-core(3 个核心贡献点)](./plugin-contributions-core/README.md)
 
 - [`plugin-integration.spec.ts`](./plugin-contributions-core/plugin-integration.spec.ts)

@@ -16,6 +16,7 @@ import type { TerminalCreateInput } from '../shared/terminal-create';
 import {
   PLUGINS_CHANNELS,
   isPluginsChangedPayload,
+  isPluginEnabledChangedPayload,
   isProtocolUrlPayload,
   type IpcPermissionMutation,
   type IpcPermissionsMap,
@@ -372,6 +373,17 @@ const api = {
         cb(payload.id);
       };
       return subscribeIpc(PLUGINS_CHANNELS.UNINSTALLED, listener);
+    },
+    /** 订阅「插件启用状态已变更」广播(任一窗口启用 / 禁用成功后 main 推给所有窗口),返 unsubscribe. */
+    onEnabledChanged: (cb: (id: string, enabled: boolean) => void): (() => void) => {
+      const listener = (_: unknown, payload: unknown) => {
+        if (!isPluginEnabledChangedPayload(payload)) {
+          console.warn('[plugins] dropped malformed plugins:enabled-changed payload', payload);
+          return;
+        }
+        cb(payload.id, payload.enabled);
+      };
+      return subscribeIpc(PLUGINS_CHANNELS.ENABLED_CHANGED, listener);
     },
     /** v4.4 订阅 co:// 外部唤起,返 unsubscribe. */
     onProtocolUrl: (cb: (url: string) => void): (() => void) => {

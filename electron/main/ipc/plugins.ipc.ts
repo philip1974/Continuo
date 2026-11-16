@@ -95,6 +95,18 @@ export function broadcastPluginPermissionsChanged(id: string): void {
   );
 }
 
+/**
+ * 启用状态写入成功后向所有窗口广播(终审 P1):每个窗口各自持有插件实例,窗口 A 禁用只在 A 本地停用,
+ * 其它窗口的实例会继续运行、继续使用能力。
+ */
+export function broadcastPluginEnabledChanged(id: string, enabled: boolean): void {
+  broadcastToWindows(
+    PLUGINS_CHANNELS.ENABLED_CHANGED,
+    () => ({ id, enabled }),
+    '[plugins] PLUGINS_ENABLED_CHANGED',
+  );
+}
+
 export function registerPluginsIpc(): void {
   const userData = app.getPath('userData');
   const pluginsDir = path.join(userData, 'plugins');
@@ -126,6 +138,8 @@ export function registerPluginsIpc(): void {
     MutateEnabledInput,
     async ({ id, enabled }) => {
       await setEnabledId(pluginsDir, id, enabled);
+      // 仅成功后广播(含发起窗口):各窗口同步实例启停(终审 P1)。
+      broadcastPluginEnabledChanged(id, enabled);
     },
     trusted,
   );
