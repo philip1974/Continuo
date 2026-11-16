@@ -11,21 +11,33 @@ export interface PluginReloadGateDeps {
   readonly reload: (id: string) => Promise<void>;
   /** 订阅 main 推送的插件文件变化;同步注册(必须先于任何 init 工作完成)。 */
   readonly onChanged: (cb: (id: string) => void) => void;
-  readonly onError?: (where: 'init' | 'reload', err: unknown) => void;
+  /** 订阅 main 广播的「插件已卸载」(终审 P1:跨窗口卸载);与 uninstalled 成对提供。 */
+  readonly onUninstalled?: (cb: (id: string) => void) => void;
+  /** 本窗口撤销已卸载插件(PluginManager.handleUninstalled)。 */
+  readonly uninstalled?: (id: string) => Promise<void>;
+  readonly onError?: (where: 'init' | 'reload' | 'uninstalled', err: unknown) => void;
 }
 
 export function wirePluginReloadGate(deps: PluginReloadGateDeps): void {
   const pending = new Set<string>();
+  // init 完成前到达的卸载广播同样缓冲:init 可能已用卸载前的目录快照激活该插件,完成后再撤销。
+  const pendingUninstalled = new Set<string>();
   let ready = false;
 
   const doReload = (id: string): void => {
     void deps.reload(id).catch((err) => deps.onError?.('reload', err));
   };
 
+  const doUninstalled = (id: string): void => {
+    void deps.uninstalled?.(id).catch((err) => deps.onError?.('uninstalled', err));
+  };
+
   const flush = (): void => {
     ready = true;
     for (const id of pending) doReload(id);
     pending.clear();
+    for (const id of pendingUninstalled) doUninstalled(id);
+    pendingUninstalled.clear();
   };
 
   // init 失败也要 flush + 标 ready:否则缓冲的变更永远不重放、后续变更永久被 buffer。
@@ -41,5 +53,13 @@ export function wirePluginReloadGate(deps: PluginReloadGateDeps): void {
       return;
     }
     doReload(id);
+  });
+
+  deps.onUninstalled?.((id) => {
+    if (!ready) {
+      pendingUninstalled.add(id);
+      return;
+    }
+    doUninstalled(id);
   });
 }

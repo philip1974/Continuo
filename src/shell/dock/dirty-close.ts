@@ -78,6 +78,25 @@ export function remainingAfterFlush(
   return state.dirty - allowed > 0 ? state : null;
 }
 
+/**
+ * 「不保存」分支的最终检查(终审 P1):用户只同意丢弃确认框列出的文件;确认时未列入框的待 autosave .md
+ * (main 随 flush 请求带来的 pendingAutoSave 身份)flush 后仍脏(保存失败)→ 不能静默丢弃。按 tabId 匹配
+ * (忽略变脏代际:flush 失败后的再次变脏同样未被告知)。无 → null;有 → 全部脏 tab(main 据此记账,再次关闭时进确认框)。
+ */
+export function remainingAfterDiscard(
+  tabs: readonly TabLike[],
+  pendingAutoSaveIds: readonly string[],
+): DirtyCloseState | null {
+  const pendingTabIds = new Set(
+    pendingAutoSaveIds.map((id) => {
+      const sep = id.lastIndexOf('#');
+      return sep < 0 ? id : id.slice(0, sep);
+    }),
+  );
+  if (!tabs.some((tab) => tab.dirty && pendingTabIds.has(tab.id))) return null;
+  return countDirtyForClose(tabs, false);
+}
+
 export interface SaveForCloseResult {
   /** 未保存成功的 tab 数(ok:false / 抛异常 / 保存完成后仍脏)。 */
   readonly failed: number;

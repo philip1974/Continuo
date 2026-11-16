@@ -35,6 +35,11 @@ export const PLUGINS_CHANNELS = {
   INSTALL_FROM_GIT: 'plugins:install-from-git',
   /** 卸载插件:rm -rf plugins/<id>/ + 清 _enabled / _permissions(v4.6). */
   UNINSTALL: 'plugins:uninstall',
+  /**
+   * main → renderer push:插件 `{ id }` 已卸载(终审 P1)。每个窗口各有一个 PluginManager,卸载成功后
+   * 广播给所有窗口(含发起者),各自停用实例 / 注销贡献点 / 失效权限缓存(幂等,不触盘)。
+   */
+  UNINSTALLED: 'plugins:uninstalled',
 } as const;
 
 // 边界(E242,E168-E175 IPC push ingress 守卫族):main→renderer push 事件的 payload runtime 守卫。

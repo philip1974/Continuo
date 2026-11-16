@@ -3,6 +3,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   countDirtyForClose,
+  remainingAfterDiscard,
   remainingAfterFlush,
   saveDirtyTabsForClose,
 } from '../../shell/dock/dirty-close';
@@ -154,6 +155,20 @@ describe('saveDirtyTabsForClose:「保存」分支保存所有有路径的脏 ta
       () => [tab('/a.ts', true), tab('/b.ts', false)],
     );
     expect(r).toEqual({ failed: 1, diskChanged: 0 });
+  });
+});
+
+// 终审 P1:「不保存」只丢弃确认框列出的文件;确认时未列入的待 autosave .md(pendingAutoSave)flush 后仍脏 → 不能丢。
+describe('remainingAfterDiscard:「不保存」后仍脏的待 autosave .md', () => {
+  it('pendingAutoSave 的 tab 已干净 → null(框里的代码文件仍脏也不计)', () => {
+    expect(remainingAfterDiscard([tab('/a.md', false), tab('/b.ts', true)], ['/a.md#3'])).toBeNull();
+    expect(remainingAfterDiscard([tab('/b.ts', true)], [])).toBeNull();
+  });
+
+  it('pendingAutoSave 的 tab 仍脏(含再次变脏、代际不同)→ 全部脏 tab', () => {
+    expect(
+      remainingAfterDiscard([tab('/a.md', true, '/a.md', 5), tab('/b.ts', true)], ['/a.md#3']),
+    ).toEqual({ dirty: 2, untitled: 0, ids: ['/a.md#5', '/b.ts#0'], untitledIds: [] });
   });
 });
 

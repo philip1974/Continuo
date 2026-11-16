@@ -281,7 +281,7 @@ function exceedsAccepted(current: DirtyState | undefined, mode: FlushMode, accep
  * - 未弹框:renderer 最终脏检查报告仍有未保存改动(统一规则,见 DockShell onFlushRequest);或超时无回执且该窗口
  *   最近上报的 pendingAutoSave 非空(终审 P1:未计入确认的活动 .md 靠 flush 落盘,读盘挂起的网络卷上 flush 超时
  *   放行会丢编辑)。pendingAutoSave 为空时超时照常放行 —— renderer 卡死 / 崩溃永不回执时窗口仍能关。
- * - 「不保存」:用户已明确放弃,照常关闭。
+ * - 「不保存」:用户已明确放弃框里列出的文件;只有未列入框的待 autosave .md 仍脏(remaining)/ flush 超时才中止。
  */
 function shouldAbortClose(mode: FlushMode, outcome: FlushOutcome, windowId: number): boolean {
   if (mode === 'save') return outcome !== 'ok';
@@ -289,7 +289,8 @@ function shouldAbortClose(mode: FlushMode, outcome: FlushOutcome, windowId: numb
   // 中止。代价:renderer 卡死且恰有待落盘 .md 时窗口关不掉(可强制退出),数据安全优先。
   const pendingAutoSaveTimedOut =
     outcome === 'timeout' && dirtyStates.get(windowId)?.pendingAutoSave !== undefined;
-  if (mode === 'discard') return pendingAutoSaveTimedOut;
+  // 待 autosave 的 .md flush 后仍脏(首次保存失败)→ renderer 回执 remaining(终审 P1),同样中止。
+  if (mode === 'discard') return outcome === 'still-dirty' || pendingAutoSaveTimedOut;
   if (outcome === 'still-dirty') return true;
   return pendingAutoSaveTimedOut;
 }
@@ -319,7 +320,8 @@ ipcMain.on(LAYOUT_CHANNELS.FLUSH_READY, (event: IpcMainEvent) => {
 
 /**
  * mode='save':renderer 先保存所有有路径的脏 tab 再 flush(用户在脏文件确认框选了「保存」)。
- * mode='discard':请求带 discard:true,renderer 跳过最终脏检查(用户已选「不保存」)。
+ * mode='discard':请求带 discard:true(用户已选「不保存」),renderer 只检查确认时未列入框的待 autosave .md
+ * (随请求带 pendingAutoSave)是否仍脏。
  */
 function requestWindowFlush(
   win: BrowserWindow,
@@ -355,7 +357,11 @@ function requestWindowFlush(
         mode === 'save'
           ? { save: true, ...(untitledIds.length > 0 ? { untitledIds: [...untitledIds] } : {}) }
           : mode === 'discard'
-            ? { discard: true }
+            ? {
+                discard: true,
+                // 确认时未列入框的待 autosave .md:renderer flush 后仍脏(保存失败)→ 回执 remaining,中止关闭。
+                ...(accepted?.pendingAutoSave ? { pendingAutoSave: [...accepted.pendingAutoSave] } : {}),
+              }
             : {};
       win.webContents.send(LAYOUT_CHANNELS.FLUSH_REQUEST, { windowId: win.id, ...flag, requestId });
     } catch {

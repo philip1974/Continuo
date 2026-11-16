@@ -162,6 +162,8 @@ export class IpcPermissionStore implements PermissionStore {
   // 覆盖,不合并 decisions)→ 后完成者抹掉先完成者的决策(lost update,如 grant(['fs']) 与
   // deny(['shell']) 并发)。把整段 RMW 经此链串行,后一个变更读到前一个已提交的 cache。
   private chains = new Map<string, Promise<unknown>>();
+  // 加载在途时被 forget 的插件:读到的可能是卸载前的快照,落 cache 前剔除(见 forget)。
+  private forgetOnLoad = new Set<string>();
 
   // race(R101):串行 + 排空回收收口到共享 runSerialPerKey(原 inline 副本漏删 key → chains 随
   // 变更过权限的不同 pluginId 单调增长内存泄漏)。语义不变:前次失败不阻断后续(链尾吞错)。
@@ -218,6 +220,15 @@ export class IpcPermissionStore implements PermissionStore {
     });
   }
 
+  /**
+   * 插件已卸载(终审 P1:跨窗口卸载广播):丢弃该插件的内存决策,之后 get 返回空 → scoped app 的权限检查
+   * 不再放行。main 卸载时已清 _permissions.json,这里不写盘。加载在途 → 加载结果落 cache 前同样剔除。
+   */
+  forget(pluginId: string): void {
+    if (this.cache) delete this.cache[pluginId];
+    if (this.loadingPromise) this.forgetOnLoad.add(pluginId);
+  }
+
   // ── 内部 ──────────────────────────────────────────
 
   private async ensureLoaded(): Promise<Cache> {
@@ -235,6 +246,7 @@ export class IpcPermissionStore implements PermissionStore {
           throw codedError(r.code, r.message ?? 'readPermissions failed');
         }
         const data: Cache = parsePermissionState(r.data);
+        for (const id of this.forgetOnLoad) delete data[id];
         this.cache = data;
         return data;
       } finally {
@@ -243,6 +255,7 @@ export class IpcPermissionStore implements PermissionStore {
         // 否则该 rejected promise 被永久缓存,后续 get/grant/deny/clearDenied 复用它无法
         // 重试,本窗口权限态永久卡死直到刷新。finally 清空 → 下次调用重新发起读、可恢复。
         this.loadingPromise = null;
+        this.forgetOnLoad.clear();
       }
     })();
     return this.loadingPromise;

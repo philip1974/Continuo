@@ -161,6 +161,9 @@ export async function init(): Promise<void> {
     init: () => userPluginManager.init(),
     reload: (id) => userPluginManager.reload(id),
     onChanged: (cb) => coApi.plugins.onChanged(cb),
+    // 终审 P1:任一窗口卸载成功 → main 广播,本窗口撤销该插件实例 / 贡献点 / 权限缓存(幂等、不触盘)。
+    onUninstalled: (cb) => coApi.plugins.onUninstalled(cb),
+    uninstalled: (id) => userPluginManager.handleUninstalled(id),
     onError: (where, err) =>
       console.warn(`[main] user plugin manager ${where} failed`, err),
   });
