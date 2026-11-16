@@ -161,6 +161,48 @@ describe('child session 的释放', () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  // 结束的 child(terminated)由服务层回收:js-debug 可能在 terminated 之后才回在途请求的响应,先关 socket
+  // 会让这些请求以「DAP socket closed」失败。
+  it('disposeWhenIdle:有在途请求时等其响应到达后才关 socket;无在途请求时立即释放', async () => {
+    const client = new DapClient({ adapterPath: '/nonexistent/adapter.js' });
+    const socket = connected(client);
+    const request = client.sendRequest('continue', {}, 1_000);
+
+    const disposed = client.disposeWhenIdle();
+    await new Promise((r) => setTimeout(r, 10));
+    expect(socket.destroyed).toBe(false);
+
+    socket.emit(
+      'data',
+      encodeDapMessage({
+        seq: 9,
+        type: 'response',
+        request_seq: 1,
+        command: 'continue',
+        success: true,
+        body: {},
+      }),
+    );
+    await expect(request).resolves.toMatchObject({ command: 'continue' });
+    await disposed;
+    expect(socket.destroyed).toBe(true);
+
+    const idle = new DapClient({ adapterPath: '/nonexistent/adapter.js' });
+    const idleSocket = connected(idle);
+    await idle.disposeWhenIdle();
+    expect(idleSocket.destroyed).toBe(true);
+  });
+
+  it('disposeWhenIdle:在途请求超时同样结算 → 随后释放(不因对端不应答而一直保留)', async () => {
+    const client = new DapClient({ adapterPath: '/nonexistent/adapter.js' });
+    const socket = connected(client);
+    const request = client.sendRequest('continue', {}, 20);
+    const disposed = client.disposeWhenIdle();
+    await expect(request).rejects.toThrow(/timed out/);
+    await disposed;
+    expect(socket.destroyed).toBe(true);
+  });
 });
 
 describe('解码器缓冲', () => {

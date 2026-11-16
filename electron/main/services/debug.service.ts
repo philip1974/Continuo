@@ -48,6 +48,8 @@ export interface DebugDapClientLike {
   ): Promise<DapResponseMessage>;
   sendRequestNoWait(command: string, args?: DapJson): number;
   dispose(): Promise<void>;
+  /** 在途请求全部结算后再 dispose(回收已结束的 child:其在途请求的响应可能排在 terminated 之后)。 */
+  disposeWhenIdle(): Promise<void>;
 }
 
 export interface ProcessInfo {
@@ -1546,7 +1548,9 @@ export class DebugService {
         runtime.breakpoints.filter((bp) => bp.reportedBy.has(client)).map((bp) => bp.source),
       );
       forgetClient(runtime, client);
-      void client.dispose().catch(() => undefined);
+      // 不当即关连接:js-debug 可能在 terminated 之后才回这条连接上在途请求(continue / stackTrace 等)的
+      // 响应,当即 dispose 会让它们以「DAP socket closed」失败。等在途请求结算(各有超时,有界)再回收。
+      void client.disposeWhenIdle().catch(() => undefined);
       if (!this.allChildrenEnded(runtime)) {
         this.dropEndedChildStops(sessionId, runtime, client);
         // 它的回报不再参与聚合:红点回落到其余连接的回报。
