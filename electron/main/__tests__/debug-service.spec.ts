@@ -1145,6 +1145,10 @@ describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
     'Ld_Preload',
     'openssl_conf',
     'dyld_versioned_library_path',
+    // 名字含 `=`:POSIX 按第一个 `=` 切分,`NODE_OPTIONS=--import` 实际生成 NODE_OPTIONS 变量,绕过精确名比较。
+    'NODE_OPTIONS=--import',
+    'SAFE=NODE_OPTIONS',
+    'NODE_ENV\0NODE_OPTIONS',
   ])('安全:env 含会加载额外代码的变量 %s → 拒绝且不 spawn adapter', async (name) => {
     const parent = new FakeDapClient(1001);
     const spawn = vi.spyOn(parent, 'spawnServer');

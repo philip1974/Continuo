@@ -87,6 +87,9 @@ export const DEBUG_LAUNCH_FORBIDDEN_ENV = [
 
 /** env 变量名是否命中禁用规则(前缀 + 精确名,大小写不敏感)。 */
 export function isDebugLaunchEnvForbidden(name: string): boolean {
+  // 合法变量名不含 `=` / NUL:POSIX 按第一个 `=` 切分,`NODE_OPTIONS=--import` 会生成 NODE_OPTIONS 变量,
+  // 绕过下面的精确名 / 前缀比较。一律视为禁用。
+  if (name.includes('=') || name.includes('\0')) return true;
   const upper = name.toUpperCase();
   return (
     (DEBUG_LAUNCH_FORBIDDEN_ENV as readonly string[]).includes(upper) ||
