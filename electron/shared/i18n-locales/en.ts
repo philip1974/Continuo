@@ -66,7 +66,7 @@ export const en = {
   'errors.NOT_PLUGIN_CLASS': 'Plugin default export is not a Plugin subclass',
   'errors.PAYLOAD_TOO_LARGE': 'Payload too large',
   'errors.PLUGIN_FS_TOKEN_REVOKE_FAILED':
-    'Could not revoke the plugin file-access token; uninstall aborted. Try again.',
+    'Could not revoke the plugin file-access token; the operation was aborted. Try again.',
   'errors.PLUGIN_ID_MISMATCH': 'Plugin id in the repository does not match the marketplace entry',
   'errors.RM_FAILED': 'Remove failed',
   'errors.TERMINAL_CREATE_CANCELLED': 'Terminal creation was cancelled',

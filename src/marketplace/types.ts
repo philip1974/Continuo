@@ -159,8 +159,12 @@ export function entryInstallOptions(
     : { expectedId: entry.id, branch: entry.branch };
 }
 
-/** 把 entry.repo + branch 拼成 raw manifest URL. */
+/**
+ * 把 entry.repo + branch 拼成 raw manifest URL。缺 branch → `HEAD`(raw.githubusercontent.com 解析为
+ * 仓库默认分支),与 entryInstallOptions 缺 branch 时 clone 远端默认分支一致;此前固定 `main`,默认
+ * 分支不是 main 的仓库会「检查读 main、安装装默认分支」。
+ */
 export function entryToManifestUrl(entry: MarketplaceEntry): string {
-  const branch = entry.branch ?? 'main';
+  const branch = entry.branch ?? 'HEAD';
   return `https://raw.githubusercontent.com/${entry.repo}/${branch}/manifest.json`;
 }

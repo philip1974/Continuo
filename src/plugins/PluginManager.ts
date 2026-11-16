@@ -477,6 +477,19 @@ export class PluginManager {
     entry.warning = undefined;
     this.invalidateListCache();
 
+    // race(R29):若上次停用时 _unregisterPlugin 失败,entry.pluginFsToken 会被保留(见
+    // revokePluginFsToken)。注册新 token 前先重试回收残留的旧 token,否则后面的赋值会用新
+    // token 覆盖旧 token 引用 → 旧 token 在主进程仍 active 且永久失去引用。仍失败 → 中止本次
+    // 激活(抛错由 activateEntry 落成 failed,残留 token 保留待下次重试);放在权限门 / 加载
+    // 之前,中止时插件代码不会执行。生命周期锁串行化同 id 操作,此处无并发 deactivate 竞争。
+    await this.revokePluginFsToken(entry);
+    if (entry.pluginFsToken) {
+      throw codedError(
+        'PLUGIN_FS_TOKEN_REVOKE_FAILED',
+        `plugin-fs token 回收失败,未激活: ${entry.id}`,
+      );
+    }
+
     // v3.4 权限门:manifest 声明了 permissions 且 host 配了 store + prompt
     // 才阻塞;否则放行(向后兼容)。
     // 安全:权限门必须在 loadPluginModule(import())之前 —— 插件 bundle 顶层
@@ -541,12 +554,6 @@ export class PluginManager {
     // (信任边界 runtime subclass 校验集中在 loader),此处直接 new,无需 as any。
     // v5 Phase 1:plugin 拿到的是 per-plugin scoped app(持 pluginId 给
     // permission.check;fs/network 等命名空间预留 Phase 3 启用 gating)
-    // race(R29):若上次停用时 _unregisterPlugin 失败,entry.pluginFsToken 会被保留(见
-    // revokePluginFsToken)。注册新 token 前先尝试回收残留的旧 token,否则下一行的赋值会用新
-    // token 覆盖旧 token 引用 → 旧 token 永久泄漏。生命周期锁串行化同 id 操作,此处无并发
-    // deactivate 竞争(见 lifecycleLocks 注释)。revoke best-effort 不抛;若仍失败,旧 token
-    // 保留但会被新 token 覆盖(仅在 main IPC 持续不可用时发生,届时 token 记账本就无解)。
-    await this.revokePluginFsToken(entry);
     const { token: pluginFsToken } =
       await coApi.pluginFsRaw._registerPlugin(entry.id);
     entry.pluginFsToken = pluginFsToken;

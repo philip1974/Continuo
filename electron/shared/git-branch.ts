@@ -33,14 +33,19 @@ export function isSafeRepoPathSegment(v: string, start: number, end: number): bo
   return true;
 }
 
+// 另按 `git check-ref-format` 拒 refname 禁止形态(否则入市场后 clone 必败):任意位置的 `..`、
+// 组件以 `.` 开头或以 `.lock` 结尾、整体以 `.` 结尾。`@{`/`@`/空白/控制字符等已被 charset 排除,
+// 前导/尾随 `/` 与 `//` 由段级校验拒。
 export function isValidGitBranch(b: string): boolean {
   if (b.length === 0 || b.length > GIT_BRANCH_MAX) return false;
   if (b.charCodeAt(0) === 45) return false; // 前导 '-':argv 注入
+  if (b.includes('..') || b.endsWith('.')) return false;
   let start = 0;
   for (;;) {
     const slash = b.indexOf('/', start);
     const end = slash < 0 ? b.length : slash;
     if (!isSafeRepoPathSegment(b, start, end)) return false;
+    if (b.charCodeAt(start) === 46 || b.slice(start, end).endsWith('.lock')) return false;
     if (slash < 0) return true;
     start = slash + 1;
   }

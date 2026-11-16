@@ -37,6 +37,7 @@ I/O 全部抽象为接口注入(`ManagerHost`),便于 jsdom 单测。
 
 - `enable(id)`:若已 active 直接返回 ok;否则 load → new → activate,写入 enabled.json
 - `disable(id)`:若不 active 直接返回 ok;否则 `_deactivate` + 移除 enabled.json
+- 激活前先重试回收停用时保留的 plugin-fs token;仍失败 → 中止激活(不加载插件、不注册新 token),状态 `failed`、错误码 `PLUGIN_FS_TOKEN_REVOKE_FAILED`,残留 token 保留待下次重试
 
 ### uninstall 单插件(v4.6)
 

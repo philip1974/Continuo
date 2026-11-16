@@ -566,17 +566,30 @@ export class DebugService {
     const existing = runtime.breakpoints.findIndex(
       (bp) => bp.file === input.file && bp.line === input.line,
     );
+    const previous = existing >= 0 ? runtime.breakpoints[existing] : undefined;
     if (existing >= 0) runtime.breakpoints[existing] = record;
     else runtime.breakpoints.push(record);
     const sourceBreakpoints = runtime.breakpoints.filter((bp) => bp.file === input.file);
     // 响应的 breakpoints 与请求逐一对应:本次新设的那个在集合里的位置。
     const resultIndex = sourceBreakpoints.indexOf(record);
     const args = setBreakpointsArgs(input.file, sourceBreakpoints);
-    const response = await runtime.parentClient.sendRequest(
-      'setBreakpoints',
-      args,
-      this.requestTimeoutMs,
-    );
+    let response: DapResponseMessage;
+    try {
+      response = await runtime.parentClient.sendRequest(
+        'setBreakpoints',
+        args,
+        this.requestTimeoutMs,
+      );
+    } catch (err) {
+      // adapter 拒绝 / 超时:调用方拿到失败,本次记录不得留在集合里 —— 否则之后同文件再设断点(发完整
+      // 集合)或 child 建立时重放会悄悄下发它。按对象身份回滚(等待期间别的调用可能增删了其它记录)。
+      const index = runtime.breakpoints.indexOf(record);
+      if (index >= 0) {
+        if (previous) runtime.breakpoints[index] = previous;
+        else runtime.breakpoints.splice(index, 1);
+      }
+      throw err;
+    }
     // 已建立的 child session 各自维护断点:只发给父连接的话,程序跑起来之后再设的断点不会生效
     //(child 只在创建时拿到当时的断点)。逐个同步;某个 child 已退出导致失败不影响其它。
     // 取快照(发送期间 childClients 可能增减)、跳过已结束的 child、并行发送并用较短的超时:某个 child
@@ -605,16 +618,24 @@ export class DebugService {
         ? { message: stringField(breakpoint, 'message') }
         : {}),
     };
+    // 推该 source 的完整集合(adapter 校正后的行号),renderer 整组替换:只推本次那一个时,同一逻辑
+    // 断点被再次校正到别的行会留下旧红点。
+    const responseBreakpoints = asArray(body.breakpoints);
     this.emitSessionEvent(sessionId, {
       type: 'breakpoints-changed',
       sessionId,
-      breakpoint: {
-        file: input.file,
-        line: result.line ?? input.line,
-        ...(input.column !== undefined ? { column: input.column } : {}),
-        verified: result.verified,
-        ...(result.message !== undefined ? { message: result.message } : {}),
-      },
+      file: input.file,
+      breakpoints: sourceBreakpoints.map((bp, i) => {
+        const reported = asRecord(responseBreakpoints[i] as DapJson | undefined);
+        const message = stringField(reported, 'message');
+        return {
+          file: bp.file,
+          line: numberField(reported, 'line') ?? bp.line,
+          ...(bp.column !== undefined ? { column: bp.column } : {}),
+          verified: boolField(reported, 'verified') ?? true,
+          ...(message !== undefined ? { message } : {}),
+        };
+      }),
     });
     return result;
   }

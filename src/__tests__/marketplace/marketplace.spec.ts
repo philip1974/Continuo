@@ -124,11 +124,15 @@ describe('entryToManifestUrl', () => {
     );
   });
 
-  it('缺 branch → 默认 main', () => {
+  // 缺 branch 时安装 clone 远端默认分支(entryInstallOptions 不传 branch);版本检查须读同一分支。
+  // 此前固定读 main → 默认分支不是 main 的仓库,检查与安装不一致。raw.githubusercontent.com 的
+  // HEAD 解析为仓库默认分支。
+  it('缺 branch → HEAD(远端默认分支,与安装一致)', () => {
     const { branch: _b, ...withoutBranch } = SAMPLE_ENTRY;
     expect(entryToManifestUrl(withoutBranch)).toBe(
-      'https://raw.githubusercontent.com/me/foo-plugin/main/manifest.json',
+      'https://raw.githubusercontent.com/me/foo-plugin/HEAD/manifest.json',
     );
+    expect(entryInstallOptions(withoutBranch)).not.toHaveProperty('branch');
   });
 });
 
@@ -286,6 +290,29 @@ describe('isValidMarketplaceEntry bounds (E25)', () => {
     expect(
       isValidMarketplaceEntry({ ...base, branch: 'feature/foo-bar' }),
     ).toBe(true);
+  });
+
+  // branch 按 `git check-ref-format` 规则拒绝 Git refname 禁止形态:否则入市场后 clone 必败
+  //(`@`/`{` 等字符已被 charset 排除;前导/尾随 /、// 由段级校验拒)。
+  it('branch 为 Git refname 禁止形态 → false', () => {
+    for (const branch of [
+      'release..v2', // 任意位置的 ..
+      'a.lock', // 组件以 .lock 结尾
+      'feature/a.lock',
+      'a.lock/b',
+      'main.', // 以 . 结尾
+      'a/b.',
+      '.hidden', // 组件以 . 开头
+      'a/.b',
+      'a@{1}', // @{(charset 已排除)
+      '@',
+    ]) {
+      expect(isValidMarketplaceEntry({ ...base, branch }), branch).toBe(false);
+    }
+    // 近似但合法的形态仍通过
+    for (const branch of ['v1.2.3', 'a.lockx', 'lock', 'a.b/c.d', 'x-.y']) {
+      expect(isValidMarketplaceEntry({ ...base, branch }), branch).toBe(true);
+    }
   });
 
   it('tags 数量超 64 或单个超长 → false', () => {
