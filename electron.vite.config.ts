@@ -2,6 +2,7 @@ import { resolve } from 'node:path';
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
+import { xtermWebglAtlasVersionPlugin } from './scripts/vite-xterm-webgl-atlas-version';
 
 // BUILD_TARGET=pack 时输出到 out-pack/,让 `pnpm build:app` 与 `pnpm dev` 可以并行
 // 跑(dev 持续写 out/,builder 读 out-pack/,互不踩盘)。
@@ -40,7 +41,9 @@ export default defineConfig({
   },
   renderer: {
     root: '.',
-    plugins: [react(), tailwindcss()],
+    plugins: [react(), tailwindcss(), xtermWebglAtlasVersionPlugin()],
+    // dev 预打包会绕过 transform,addon-webgl 是无依赖的单文件 ESM,直接走源文件即可。
+    optimizeDeps: { exclude: ['@xterm/addon-webgl'] },
     resolve: {
       alias: {
         '@': resolve(__dirname, 'src'),

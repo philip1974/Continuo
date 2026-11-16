@@ -1120,6 +1120,10 @@
 
 - [`terminal-url-click.spec.ts`](./terminal-url-click/terminal-url-click.spec.ts)
 
+## [terminal-webgl-atlas-page-version](./terminal-webgl-atlas-page-version/README.md)
+
+- [`atlas-page-version.spec.ts`](./terminal-webgl-atlas-page-version/atlas-page-version.spec.ts)
+
 ## [terminal-window-isolation (Issue #28 Phase 1)](./terminal-window-isolation/README.md) `[integration]`
 
 - [`terminal-window-isolation.spec.ts`](./terminal-window-isolation/terminal-window-isolation.spec.ts)
