@@ -45,7 +45,10 @@ export default class WindowPlugin extends Plugin {
         try {
           const dr = await coApi.fs.selectDirectory();
           if (!dr.ok) {
+            // 与 Explorer「打开文件夹」(useSelectWorkspaceFolder)一致:失败给可见 toast,不只 console;
+            // 用户取消是 ok:true + data=null(下方静默分支)。
             console.warn('[window.openFolderInNew] selectDirectory failed', dr);
+            notifyFailure(dr, { mirror: false });
             return;
           }
           if (dr.data === null) return; // 用户取消

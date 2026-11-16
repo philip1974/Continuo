@@ -83,6 +83,12 @@ export interface CoPluginApp extends CoApp { /* ...原有, */ readonly mcp: Plug
 - 两个 plugin 的 scoped app 的 `mcp` 是不同对象(各自闭包持自己的 pluginId)
 - 但底下指向同一 PluginMcpRegistry 实例(单 renderer 一份)
 
+### 有效权限 = 当前 manifest 声明 ∩ 已授权
+
+- PluginManager 把当前 `manifest.permissions` 传入 createScopedApp
+- 持久化里已 grant、但当前 manifest 不再声明的权限(插件升级删声明)→ ensurePerm 抛
+  `PermissionError`,`permission.check` 返回 false,`permission.granted()` 不列出
+
 ## 不在本主题验证
 
 - 权限决策持久化(由 `plugin-permissions` topic 持有)

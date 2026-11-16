@@ -7,6 +7,7 @@ import {
   PermissionEditorModal,
   splitPermissionDecisionsForSave,
 } from '../../plugins/permissions/PermissionEditorModal';
+import { InMemoryPermissionStore } from '../../plugins/permissions';
 import type {
   PermissionDecision,
   PermissionKey,
@@ -533,5 +534,80 @@ describe('race(R35) — 保存写盘期间门控', () => {
     expect(grant).toHaveBeenCalledTimes(1);
     resolveGrant();
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+  });
+});
+
+describe('PermissionEditorModal — 保存原子性(部分写失败不落混合态)', () => {
+  // 真实 InMemory store 作持久化基线,按需注入一次性失败。
+  async function setup(opts: { failDeny?: boolean; failGrantOnce?: boolean }) {
+    const real = new InMemoryPermissionStore();
+    await real.grant('p1', ['shell']); // 原状态:shell 已授,fs 未决
+    let grantFailed = false;
+    const store: PermissionStore = {
+      get: (id) => real.get(id),
+      grant: async (id, perms) => {
+        if (opts.failGrantOnce && !grantFailed) {
+          grantFailed = true;
+          throw new Error('disk full');
+        }
+        return real.grant(id, perms);
+      },
+      deny: async (id, perms) => {
+        if (opts.failDeny) throw new Error('disk full');
+        return real.deny(id, perms);
+      },
+      clearDenied: (id) => real.clearDenied(id),
+    };
+    const onClose = vi.fn();
+    render(
+      <PermissionEditorModal
+        open={true}
+        pluginId="p1"
+        declared={['fs', 'shell']}
+        store={store}
+        onClose={onClose}
+      />,
+    );
+    const cbs = () =>
+      Array.from(
+        document.querySelectorAll<HTMLInputElement>(
+          '.wm-modal-content input[type=checkbox]',
+        ),
+      );
+    await waitFor(() => {
+      expect(cbs().length).toBe(2);
+      expect(cbs()[1]!.checked).toBe(true);
+      expect(cbs()[1]!.disabled).toBe(false);
+    });
+    fireEvent.click(cbs()[0]!); // fs: null → true(grant)
+    fireEvent.click(cbs()[1]!); // shell: true → false(deny)
+    fireEvent.click(
+      Array.from(
+        document.querySelectorAll<HTMLButtonElement>('.wm-modal-content button'),
+      ).find((b) => b.textContent === '保存')!,
+    );
+    await waitFor(() => {
+      expect(document.querySelector('[role=alert]')).not.toBeNull();
+    });
+    expect(onClose).not.toHaveBeenCalled();
+    return real;
+  }
+
+  function grantedOf(list: readonly PermissionDecision[]) {
+    return list.filter((d) => d.granted).map((d) => d.permission).sort();
+  }
+
+  it('grant 可成功、deny 写失败 → 不留下 grant,持久化 = 原状态', async () => {
+    const real = await setup({ failDeny: true });
+    const after = await real.get('p1');
+    expect(grantedOf(after)).toEqual(['shell']);
+    expect(after.find((d) => d.permission === 'fs')).toBeUndefined();
+  });
+
+  it('deny 成功、grant 写失败 → 回滚已成功的 deny,持久化 = 原状态', async () => {
+    const real = await setup({ failGrantOnce: true });
+    const after = await real.get('p1');
+    expect(grantedOf(after)).toEqual(['shell']);
+    expect(after.find((d) => d.permission === 'fs')).toBeUndefined();
   });
 });

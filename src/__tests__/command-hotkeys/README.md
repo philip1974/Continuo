@@ -16,6 +16,8 @@
 - `'mod+shift+h'` ↔ `{ metaKey/ctrlKey, shiftKey, key='h' }`
 - mod 同时接 cmd / ctrl 别名
 - 多余修饰键(如 alt)按下时不匹配
+- 未知修饰符(如 `hyper+x`)→ 不可匹配(不降级成裸 `x`);注册 / 用户 override 写读 / 捕获三处
+  经 isValidHotkeyShape 修饰键白名单(mod/cmd/ctrl/shift/alt/option,大小写不敏感)同样拒绝
 - key 大小写不敏感
 
 ### useCommandHotkeys(commands)

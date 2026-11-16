@@ -52,6 +52,11 @@ describe('keybindings-store', () => {
     expect(useKeybindingsStore.getState().overrides['settings.open']).toBeUndefined();
   });
 
+  it('setHotkey 含未知修饰符(hyper+x)→ no-op,不写', () => {
+    useKeybindingsStore.getState().setHotkey('settings.open', 'hyper+x');
+    expect(useKeybindingsStore.getState().overrides['settings.open']).toBeUndefined();
+  });
+
   it('E145 setHotkey 合法形态 → 写入;空串 unbind → 写入', () => {
     const s = useKeybindingsStore.getState();
     s.setHotkey('settings.open', 'mod+k');

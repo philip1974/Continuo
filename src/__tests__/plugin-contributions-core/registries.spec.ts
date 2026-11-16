@@ -402,6 +402,17 @@ describe('CommandRegistry', () => {
       ).toThrow(/invalid hotkey/i);
     });
 
+    it('未知修饰符(hyper/meta 等)→ 抛,不降级成裸主键;已知修饰符大小写不敏感', () => {
+      const r = new CommandRegistry();
+      expect(() =>
+        r.register({ id: 'x', title: 'T', hotkey: 'hyper+x', fn: () => {} }),
+      ).toThrow(/invalid hotkey/i);
+      expect(isValidHotkeyShape('meta+shift+x')).toBe(false);
+      expect(isValidHotkeyShape('Mod+Shift+Option+Alt+Ctrl+Cmd+x')).toBe(true);
+      // 主键段不受修饰符白名单约束
+      expect(isValidHotkeyShape('hyper')).toBe(true);
+    });
+
     it('hotkey 形态校验走字符扫描,不调用 RegExp.test', () => {
       const r = new CommandRegistry();
       const testSpy = vi.spyOn(RegExp.prototype, 'test');

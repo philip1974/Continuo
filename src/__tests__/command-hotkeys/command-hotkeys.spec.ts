@@ -30,6 +30,11 @@ function ev(opts: {
 }
 
 describe('matchesHotkey', () => {
+  it('未知修饰符(hyper+x)→ 不可匹配,不降级成裸 x', () => {
+    expect(matchesHotkey('hyper+x', ev({ key: 'x' }))).toBe(false);
+    expect(matchesHotkey('mod+hyper+x', ev({ key: 'x', metaKey: true }))).toBe(false);
+  });
+
   it('mod+shift+h 匹配 metaKey + shift + h', () => {
     expect(
       matchesHotkey('mod+shift+h', ev({ key: 'h', metaKey: true, shiftKey: true })),

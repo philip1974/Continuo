@@ -6,6 +6,7 @@ import {
   formatHotkey,
   formatHotkeyParts,
   detectPlatform,
+  canonicalHotkey,
 } from '../../plugins/command-palette/format-hotkey';
 
 // ────────────────────────────────────────────────────────────
@@ -195,6 +196,25 @@ describe('formatHotkeyParts', () => {
     expect(parts.join('')).toBe(formatHotkey('mod+shift+h', 'mac'));
     const partsOther = formatHotkeyParts('mod+shift+h', 'other');
     expect(partsOther.join('+')).toBe(formatHotkey('mod+shift+h', 'other'));
+  });
+});
+
+describe('canonicalHotkey · 冲突比较归一', () => {
+  it('修饰键顺序无关、去重、大小写不敏感,主键别名归一', () => {
+    expect(canonicalHotkey('shift+mod+enter', 'mac')).toBe(
+      canonicalHotkey('mod+shift+return', 'mac'),
+    );
+    expect(canonicalHotkey('Shift+shift+Mod+X', 'other')).toBe(
+      canonicalHotkey('mod+shift+x', 'other'),
+    );
+  });
+
+  it('修饰键别名按运行时语义归一:option≡alt;mod 在 mac≡cmd、其它平台≡ctrl', () => {
+    expect(canonicalHotkey('option+x', 'mac')).toBe(canonicalHotkey('alt+x', 'mac'));
+    expect(canonicalHotkey('mod+x', 'mac')).toBe(canonicalHotkey('cmd+x', 'mac'));
+    expect(canonicalHotkey('mod+x', 'mac')).not.toBe(canonicalHotkey('ctrl+x', 'mac'));
+    expect(canonicalHotkey('mod+x', 'other')).toBe(canonicalHotkey('ctrl+x', 'other'));
+    expect(canonicalHotkey('mod+x', 'other')).not.toBe(canonicalHotkey('cmd+x', 'other'));
   });
 });
 

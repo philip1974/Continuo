@@ -31,6 +31,7 @@
 
 - `CommandSpec`:`{ id, title, hotkey?, fn }`
 - hotkey 冲突:后注册赢同样适用,但只 warn 一次
+- hotkey 含未知修饰符(主键前的段不在 mod/cmd/ctrl/shift/alt/option)→ register 抛 invalid hotkey
 
 ### StatusBarRegistry 特有
 
