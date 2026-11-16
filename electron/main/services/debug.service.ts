@@ -144,13 +144,23 @@ interface StopWaiter {
   readonly timer: NodeJS.Timeout;
 }
 
+interface BreakpointReport {
+  readonly line: number;
+  readonly verified: boolean;
+  readonly message?: string;
+}
+
 interface BreakpointRecord {
   /** source 分组键(sourceKey):同一 source 的不同拼写归为一组。 */
   readonly source: string;
   readonly line: number;
   readonly column?: number;
-  /** adapter 上次对它的回报(校正后的行等)。adapter 对未变化的集合可能不逐项回报,缺项时沿用。 */
-  reported?: { readonly line: number; readonly verified: boolean; readonly message?: string };
+  /**
+   * adapter 在各连接上对它的最近回报(校正后的行等),按连接分别记:js-debug 的绑定结果只在 child 上(child 的
+   * 响应 / changed 事件 / 命中),父连接一直回 provisional / Unbound。对外状态由 aggregateReport 聚合。
+   * adapter 对未变化的集合可能不逐项回报,缺项时沿用该连接上次的回报。
+   */
+  readonly reportedBy: Map<DebugDapClientLike, BreakpointReport>;
   /**
    * adapter 在各连接上给它分配的 id(js-debug 按连接各自编号、每次 setBreakpoints 重新编号),
    * 供 `breakpoint` 事件按「连接 + id」回找记录。
@@ -252,7 +262,7 @@ function sourceKey(file: string): string {
   return platform() === 'win32' ? lowerIfNeeded(normalized) : normalized;
 }
 
-/** 向已建立的 child session 同步断点时的超时(父连接的响应才是工具的返回值,child 同步是尽力而为)。 */
+/** 向已建立的 child session 同步断点时的超时(child 同步是尽力而为:不应答的 child 只是不贡献回报)。 */
 const CHILD_BREAKPOINT_SYNC_TIMEOUT_MS = 3_000;
 
 /**
@@ -270,17 +280,49 @@ function setBreakpointsArgs(file: string, records: readonly BreakpointRecord[]):
   };
 }
 
-/** 记下 setBreakpoints 响应各项在该连接上的 id(响应与请求的 records 逐一对应;缺项 / 无 id 保留旧值)。 */
-function rememberBreakpointIds(
+/**
+ * 记下 setBreakpoints 响应各项在该连接上的 id 与回报(响应与请求的 records 逐一对应;缺项保留该连接上次的
+ * 回报,无 id 保留旧 id)。
+ */
+function rememberBreakpointReports(
   client: DebugDapClientLike,
   records: readonly BreakpointRecord[],
   response: DapResponseMessage,
 ): void {
   asArray(asRecord(response.body).breakpoints).forEach((item, i) => {
-    const id = numberField(asRecord(item as DapJson), 'id');
     const record = records[i];
-    if (id !== undefined && record) record.ids.set(client, id);
+    if (!record) return;
+    const reported = asRecord(item as DapJson);
+    const id = numberField(reported, 'id');
+    if (id !== undefined) record.ids.set(client, id);
+    const message = stringField(reported, 'message');
+    record.reportedBy.set(client, {
+      line: numberField(reported, 'line') ?? record.line,
+      verified: boolField(reported, 'verified') ?? true,
+      ...(message !== undefined ? { message } : {}),
+    });
   });
+}
+
+/**
+ * 断点对外的状态:任一存活连接 verified 即 verified(child 优先,取首个 —— 代码实际跑在 child 上),
+ * 行取那条连接的校正行;都未 verified 时取父连接的回报,父连接没有则取首个存活 child 的。
+ * 已结束的 child(及握手失败被摘除的)不参与。
+ */
+function aggregateReport(
+  runtime: RuntimeDebugSession,
+  record: BreakpointRecord,
+): BreakpointReport | undefined {
+  const liveChildren = runtime.childClients.filter((child) => !runtime.endedChildren.has(child));
+  const reports = [...liveChildren, runtime.parentClient].flatMap((client) => {
+    const report = record.reportedBy.get(client);
+    return report ? [report] : [];
+  });
+  return (
+    reports.find((report) => report.verified) ??
+    record.reportedBy.get(runtime.parentClient) ??
+    reports[0]
+  );
 }
 
 /** 按 source 分组(保持首次出现顺序),供 child session 逐 source 重放。 */
@@ -632,14 +674,12 @@ export class DebugService {
       source,
       line: input.line,
       ...(input.column !== undefined ? { column: input.column } : {}),
-      ...(previous?.reported ? { reported: previous.reported } : {}),
+      reportedBy: new Map(previous?.reportedBy),
       ids: new Map(previous?.ids),
     };
     if (existing >= 0) runtime.breakpoints[existing] = record;
     else runtime.breakpoints.push(record);
     const sourceBreakpoints = runtime.breakpoints.filter((bp) => bp.source === source);
-    // 响应的 breakpoints 与请求逐一对应:本次新设的那个在集合里的位置。
-    const resultIndex = sourceBreakpoints.indexOf(record);
     const args = setBreakpointsArgs(sourcePath, sourceBreakpoints);
     let response: DapResponseMessage;
     try {
@@ -666,7 +706,7 @@ export class DebugService {
       ];
       await Promise.allSettled(
         liveClients.map(async (client) =>
-          rememberBreakpointIds(
+          rememberBreakpointReports(
             client,
             rolledBackRecords,
             await client.sendRequest(
@@ -679,7 +719,7 @@ export class DebugService {
       );
       throw err;
     }
-    rememberBreakpointIds(runtime.parentClient, sourceBreakpoints, response);
+    rememberBreakpointReports(runtime.parentClient, sourceBreakpoints, response);
     // 已建立的 child session 各自维护断点:只发给父连接的话,程序跑起来之后再设的断点不会生效
     //(child 只在创建时拿到当时的断点)。逐个同步;某个 child 已退出导致失败不影响其它。
     // 取快照(发送期间 childClients 可能增减)、跳过已结束的 child、并行发送并用较短的超时:某个 child
@@ -688,7 +728,7 @@ export class DebugService {
       runtime.childClients
         .filter((child) => !runtime.endedChildren.has(child))
         .map(async (child) =>
-          rememberBreakpointIds(
+          rememberBreakpointReports(
             child,
             sourceBreakpoints,
             await child.sendRequest(
@@ -701,40 +741,10 @@ export class DebugService {
     );
     // 设断点本身不让程序起跑:起跑推迟到 wait_for_stop / continue / step(ensureProgramStarted),
     // 这样起跑前连设的多个断点都能在程序运行之前就位。
-    const body = asRecord(response.body);
-    const ownItem = asArray(body.breakpoints)[resultIndex] as DapJson | undefined;
-    // adapter 未回报本次那项(对未变化的集合可能返回空 / 短数组)→ 沿用该记录上次的回报,与下方快照同源;
-    // 否则返回值伪报 {verified:true} 并丢掉校正行与 message。
-    const lastReported = ownItem === undefined ? sourceBreakpoints[resultIndex]?.reported : undefined;
-    const breakpoint = asRecord(ownItem);
-    const result = lastReported
-      ? { ...lastReported }
-      : {
-          verified: boolField(breakpoint, 'verified') ?? true,
-          ...(numberField(breakpoint, 'line') !== undefined
-            ? { line: numberField(breakpoint, 'line') }
-            : {}),
-          ...(stringField(breakpoint, 'message') !== undefined
-            ? { message: stringField(breakpoint, 'message') }
-            : {}),
-        };
-    // adapter 对未变化的集合可能返回空 / 短数组:缺项沿用该记录上次的回报(否则红点从校正行跳回请求行、
-    // 去重失效),都没有才用请求行。
-    const responseBreakpoints = asArray(body.breakpoints);
-    sourceBreakpoints.forEach((bp, i) => {
-      const item = responseBreakpoints[i];
-      if (item !== undefined) {
-        const reported = asRecord(item as DapJson);
-        const message = stringField(reported, 'message');
-        bp.reported = {
-          line: numberField(reported, 'line') ?? bp.line,
-          verified: boolField(reported, 'verified') ?? true,
-          ...(message !== undefined ? { message } : {}),
-        };
-      }
-    });
+    // 返回值与快照同源(按连接聚合):父连接回 pending / Unbound 而 child 已绑定时报 verified;adapter 未回报
+    // 本次那项时沿用各连接上次的回报,都没有才报 {verified:true}。
     this.emitBreakpointSnapshot(sessionId, runtime, source);
-    return result;
+    return { ...(aggregateReport(runtime, record) ?? { verified: true }) };
   }
 
   /**
@@ -752,7 +762,10 @@ export class DebugService {
     const snapshot = runtime.breakpoints
       .filter((bp) => bp.source === source)
       .flatMap((bp) => {
-        const { line, verified, message } = bp.reported ?? { line: bp.line, verified: true };
+        const { line, verified, message } = aggregateReport(runtime, bp) ?? {
+          line: bp.line,
+          verified: true,
+        };
         if (seenLines.has(line)) return [];
         seenLines.add(line);
         return [
@@ -793,12 +806,49 @@ export class DebugService {
     const record = runtime.breakpoints.find((bp) => bp.ids.get(client) === id);
     if (!record) return;
     const message = stringField(breakpoint, 'message');
-    record.reported = {
-      line: numberField(breakpoint, 'line') ?? record.reported?.line ?? record.line,
-      verified: boolField(breakpoint, 'verified') ?? record.reported?.verified ?? true,
+    const last = record.reportedBy.get(client);
+    record.reportedBy.set(client, {
+      line: numberField(breakpoint, 'line') ?? last?.line ?? record.line,
+      verified: boolField(breakpoint, 'verified') ?? last?.verified ?? true,
       ...(message !== undefined ? { message } : {}),
-    };
+    });
     this.emitBreakpointSnapshot(sessionId, runtime, record.source);
+  }
+
+  /**
+   * stopped 的 hitBreakpointIds:命中即该断点在这条连接上已绑定。js-debug 对纯 JS 起跑前设的断点,父连接与
+   * child 重放都回 provisional 且不发 changed 事件,命中是唯一的绑定信号 —— 不记的话红点一直 pending。
+   * 按「连接 + id」找记录,行沿用该连接上次回报的校正行。
+   */
+  private markHitBreakpointsVerified(
+    sessionId: string,
+    runtime: RuntimeDebugSession,
+    client: DebugDapClientLike,
+    bodyJson: DapJson | undefined,
+  ): void {
+    const sources = new Set<string>();
+    for (const id of asArray(asRecord(bodyJson).hitBreakpointIds)) {
+      const record = runtime.breakpoints.find((bp) => bp.ids.get(client) === id);
+      if (!record || record.reportedBy.get(client)?.verified) continue;
+      record.reportedBy.set(client, {
+        line: record.reportedBy.get(client)?.line ?? record.line,
+        verified: true,
+      });
+      sources.add(record.source);
+    }
+    for (const source of sources) this.emitBreakpointSnapshot(sessionId, runtime, source);
+  }
+
+  /** 重推该连接回报过的各 source 的快照(它的回报加入或退出聚合时)。 */
+  private emitSnapshotsReportedBy(
+    sessionId: string,
+    runtime: RuntimeDebugSession,
+    client: DebugDapClientLike,
+  ): void {
+    const sources = new Set(
+      runtime.breakpoints.filter((bp) => bp.reportedBy.has(client)).map((bp) => bp.source),
+    );
+    for (const source of sources) this.emitBreakpointSnapshot(sessionId, runtime, source);
   }
 
   waitForStop(
@@ -1192,7 +1242,7 @@ export class DebugService {
       await this.initializeClient(child);
       // 每个 source 发一次完整集合(逐个断点发会让后一个覆盖前一个)。
       for (const [source, records] of breakpointsBySource(runtime.breakpoints)) {
-        rememberBreakpointIds(
+        rememberBreakpointReports(
           child,
           records,
           await child.sendRequest(
@@ -1220,6 +1270,8 @@ export class DebugService {
     // 握手完成、即将发 launch 时:第一个 child(主目标)成为活动连接。之后再出现的 child(worker 等)不抢
     // 活动连接 —— 哪条连接上停住了,markStopped 再把它切成活动连接。
     if (runtime.activeClient === runtime.parentClient) runtime.activeClient = child;
+    // 重放响应写入了 child 的回报(可能与父连接不同),聚合结果随之变化。
+    this.emitSnapshotsReportedBy(sessionId, runtime, child);
 
     const args = asRecord(request.arguments);
     const configuration = asRecord(args.configuration as DapJson | undefined);
@@ -1261,6 +1313,8 @@ export class DebugService {
       runtime.endedChildren.add(client);
       if (!this.allChildrenEnded(runtime)) {
         this.dropEndedChildStops(sessionId, runtime, client);
+        // 它的回报不再参与聚合:红点回落到其余连接的回报。
+        this.emitSnapshotsReportedBy(sessionId, runtime, client);
         return;
       }
     }
@@ -1307,6 +1361,8 @@ export class DebugService {
     const stoppedRuntime = this.runtimes.get(sessionId);
     if (stoppedRuntime?.endedMessage !== undefined) return; // 已结束:迟到事件不翻回状态
     if (stoppedRuntime) {
+      // 排队与否都先记下命中:绑定是既成事实。
+      this.markHitBreakpointsVerified(sessionId, stoppedRuntime, client, bodyJson);
       // 当前停点还没恢复、而这次停在另一条连接上 → 排队(同一连接的旧排队项被替换),稍后再呈现。
       if (
         stoppedRuntime.currentStop !== undefined &&

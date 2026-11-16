@@ -2,7 +2,7 @@
 
 import { execFile as execFileCb } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { copyFile, cp, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { copyFile, cp, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -56,7 +56,8 @@ class FakeDapClient implements DebugDapClientLike {
   unverifiedLines = new Set<number>();
   /** 最近一次 setBreakpoints 响应各项的 id(真实 js-debug:每次响应重新编号,且按连接各自编号)。 */
   lastBreakpointIds: number[] = [];
-  private nextBreakpointId = 1;
+  /** 下一个分配的断点 id(按连接各自编号)。 */
+  nextBreakpointId = 1;
   private seq = 1;
   private startDebuggingHandler:
     | ((
@@ -1431,6 +1432,138 @@ describe('DebugService fake adapter · 会话上限 / 程序起跑时机 / 按 s
     });
   });
 
+  // 真实 js-debug(纯 JS、无 source map):父连接回 pending,绑定结果只在 child 自己的 setBreakpoints 响应里,
+  // 且不发 changed 事件。回报须按连接分别记录、聚合:任一存活连接 verified 即 verified。
+  it('父连接回 pending、child 回 verified → 快照与返回值为 verified(child 重放后也推快照)', async () => {
+    const { service, parent } = makeFakeService();
+    const events: DebugViewEvent[] = [];
+    service.setEventSink({ emit: (_owner, event) => events.push(event) });
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      ctx,
+    );
+    parent.unverifiedLines.add(3);
+    parent.unverifiedLines.add(7);
+    parent.adjustBreakpointLine = (line) => line + 100; // 父连接未绑定时的行不可信
+    expect(await service.setBreakpoints(sessionId, { file: '/a.js', line: 3 })).toEqual({
+      verified: false,
+      line: 103,
+      message: 'pending',
+    });
+    // child 建立时重放:child 绑定成功 → 推快照,红点不再停在 pending。
+    await parent.triggerStartDebugging({ type: 'pwa-node' });
+    const child = parent.children[0]!;
+    child.adjustBreakpointLine = (line) => (line === 3 ? 4 : line);
+    expect(events.at(-1)).toEqual({
+      type: 'breakpoints-changed',
+      sessionId,
+      file: '/a.js',
+      breakpoints: [{ file: '/a.js', line: 3, verified: true }],
+    });
+    // 程序运行后新设断点:父 pending、child verified → 返回值取 child 的回报。
+    expect(await service.setBreakpoints(sessionId, { file: '/a.js', line: 7 })).toEqual({
+      verified: true,
+      line: 7,
+    });
+    expect(events.at(-1)).toEqual({
+      type: 'breakpoints-changed',
+      sessionId,
+      file: '/a.js',
+      breakpoints: [
+        { file: '/a.js', line: 4, verified: true },
+        { file: '/a.js', line: 7, verified: true },
+      ],
+    });
+  });
+
+  it('运行后对同一 source 重设:父连接回 Unbound 不覆盖 child 上已 verified 的状态', async () => {
+    const { service, parent } = makeFakeService();
+    const events: DebugViewEvent[] = [];
+    service.setEventSink({ emit: (_owner, event) => events.push(event) });
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      ctx,
+    );
+    await service.setBreakpoints(sessionId, { file: '/a.js', line: 3 });
+    await parent.triggerStartDebugging({ type: 'pwa-node' });
+    parent.unverifiedLines.add(3);
+    expect(await service.setBreakpoints(sessionId, { file: '/a.js', line: 3 })).toEqual({
+      verified: true,
+      line: 3,
+    });
+    expect(events.at(-1)).toMatchObject({
+      breakpoints: [{ file: '/a.js', line: 3, verified: true }],
+    });
+  });
+
+  it('verified 的 child 结束 → 它的回报不再参与聚合,快照与返回值回落到父连接的回报', async () => {
+    const { service, parent } = makeFakeService();
+    const events: DebugViewEvent[] = [];
+    service.setEventSink({ emit: (_owner, event) => events.push(event) });
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      ctx,
+    );
+    parent.unverifiedLines.add(3);
+    await service.setBreakpoints(sessionId, { file: '/a.js', line: 3 });
+    await parent.triggerStartDebugging({ type: 'pwa-node' });
+    await parent.triggerStartDebugging({ type: 'pwa-node' });
+    const [main, worker] = parent.children as [FakeDapClient, FakeDapClient];
+    worker.unverifiedLines.add(3);
+    expect(await service.setBreakpoints(sessionId, { file: '/a.js', line: 3 })).toMatchObject({
+      verified: true,
+    });
+    main.emit('terminated', {}); // worker 仍在:会话未结束
+    expect(events.at(-1)).toEqual({
+      type: 'breakpoints-changed',
+      sessionId,
+      file: '/a.js',
+      breakpoints: [{ file: '/a.js', line: 3, verified: false, message: 'pending' }],
+    });
+    expect(await service.setBreakpoints(sessionId, { file: '/a.js', line: 3 })).toEqual({
+      verified: false,
+      line: 3,
+      message: 'pending',
+    });
+  });
+
+  // 真实 js-debug(纯 JS、起跑前设的断点):父连接与 child 重放都回 provisional,也不发 changed 事件,
+  // 唯一的绑定信号是 stopped 的 hitBreakpointIds。命中即在该连接上已绑定。
+  it('stopped 的 hitBreakpointIds → 该连接上对应断点记为 verified 并推快照(按该连接的 id)', async () => {
+    const { service, parent } = makeFakeService();
+    const events: DebugViewEvent[] = [];
+    service.setEventSink({ emit: (_owner, event) => events.push(event) });
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      ctx,
+    );
+    await parent.triggerStartDebugging({ type: 'pwa-node' });
+    const child = parent.children[0]!;
+    parent.nextBreakpointId = 10; // 两条连接编号错开,检验按「连接 + id」找记录
+    parent.unverifiedLines.add(3).add(7);
+    child.unverifiedLines.add(3).add(7);
+    await service.setBreakpoints(sessionId, { file: '/a.js', line: 3 });
+    await service.setBreakpoints(sessionId, { file: '/a.js', line: 7 });
+    expect(parent.lastBreakpointIds).toEqual([11, 12]);
+    expect(child.lastBreakpointIds).toEqual([2, 3]);
+    // 父连接上没有 id 2(那是 child 的编号):忽略。
+    parent.emit('stopped', { reason: 'entry', threadId: 0, hitBreakpointIds: [2] });
+    expect(events.filter((e) => e.type === 'breakpoints-changed').at(-1)).toMatchObject({
+      breakpoints: [{ line: 3, verified: false }, { line: 7, verified: false }],
+    });
+    // child 的 id 2 = 第 3 行。
+    child.emit('stopped', { reason: 'entry', threadId: 0, hitBreakpointIds: [2] });
+    expect(events.filter((e) => e.type === 'breakpoints-changed').at(-1)).toEqual({
+      type: 'breakpoints-changed',
+      sessionId,
+      file: '/a.js',
+      breakpoints: [
+        { file: '/a.js', line: 3, verified: true },
+        { file: '/a.js', line: 7, verified: false, message: 'pending' },
+      ],
+    });
+  });
+
   it('Windows:`..` / `.` / 重复分隔符的拼写合并为同一 source', async () => {
     platformMock.value = 'win32';
     const { service, parent } = makeFakeService();
@@ -1768,7 +1901,9 @@ describe.skipIf(!adapterExists)('DebugService real adapter · 晚设断点与 wo
     run: (ctx: { service: DebugService; dir: string }) => Promise<T>,
   ): Promise<T> {
     const adapterCopy = await prepareCommonJsAdapter();
-    const dir = await mkdtemp(path.join(tmpdir(), 'continuo-debug-real-'));
+    // 取真实路径:macOS 的 tmpdir 在 /var(→ /private/var 的软链)下,js-debug 按 Node 加载的真实路径匹配
+    // 已加载脚本,用软链路径设的断点在脚本加载后回 Unbound。
+    const dir = await realpath(await mkdtemp(path.join(tmpdir(), 'continuo-debug-real-')));
     for (const [name, text] of Object.entries(files)) {
       await writeFile(path.join(dir, name), text);
     }
@@ -1885,6 +2020,49 @@ describe.skipIf(!adapterExists)('DebugService real adapter · 晚设断点与 wo
         await service.continue(sessionId, {});
         await service.waitForStop(sessionId, { afterStopSeq: first.stop_seq, timeoutMs: 20_000 });
         expect((await service.stackTrace(sessionId, { startFrame: 0, levels: 1 })).frames[0]?.line).toBe(5);
+      });
+    },
+    120_000,
+  );
+
+  // 真实 js-debug(纯 JS、无 source map):起跑前的断点父连接与 child 重放都回 provisional,停住前没有 changed
+  // 事件(命中是唯一的绑定信号);停住后对同一 source 重设,父连接回 Unbound、child 回 verified。快照与返回值
+  // 都须按连接聚合为 verified。
+  it(
+    '纯 JS:停住后快照为 verified;运行后重设同一 source 父连接回 Unbound 也仍为 verified',
+    async () => {
+      const source = [
+        'function step(n) { return n + 1; }', // 1
+        'let x = 0;', // 2
+        'x = step(x);', // 3 ← 断点 A
+        'x = step(x);', // 4
+        'x = step(x);', // 5 ← 断点 B
+        'console.log(x);', // 6
+        '',
+      ].join('\n');
+      await withRealService({ 'plain.js': source }, async ({ service, dir }) => {
+        const file = path.join(dir, 'plain.js');
+        const events: DebugViewEvent[] = [];
+        service.setEventSink({ emit: (_owner, event) => events.push(event) });
+        const { session_id: sessionId } = await service.launchSession({ program: file, cwd: dir }, ctx);
+        await service.setBreakpoints(sessionId, { file, line: 3 });
+        await service.waitForStop(sessionId, { afterStopSeq: 0, timeoutMs: 40_000 });
+        expect(events.filter((e) => e.type === 'breakpoints-changed').at(-1)).toMatchObject({
+          file,
+          breakpoints: [{ file, line: 3, verified: true }],
+        });
+
+        expect(await service.setBreakpoints(sessionId, { file, line: 5 })).toMatchObject({
+          verified: true,
+          line: 5,
+        });
+        expect(events.filter((e) => e.type === 'breakpoints-changed').at(-1)).toMatchObject({
+          file,
+          breakpoints: [
+            { file, line: 3, verified: true },
+            { file, line: 5, verified: true },
+          ],
+        });
       });
     },
     120_000,
