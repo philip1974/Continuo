@@ -6,8 +6,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { PLUGIN_SHELL_STREAM_CHANNELS } from '../../../electron/shared/plugin-shell-stream-channels';
-import { registerPluginShellStreamHandlers } from '../../../electron/main/services/plugin-shell-stream.service';
-import { execShell } from '../../../electron/main/services/shell.service';
+import {
+  cleanupAllShellStreams,
+  registerPluginShellStreamHandlers,
+} from '../../../electron/main/services/plugin-shell-stream.service';
+import { cleanupAllShellExecs, execShell } from '../../../electron/main/services/shell.service';
 import { StubIpcMain, makeFakeEvent, type StubIpcEvent } from '../sdk-contract/integration/make-stub-ipc';
 
 // 进程组 / `sh` 语义仅 POSIX;Windows 走 taskkill /T(无 sh 可用,不在此验证)。
@@ -176,6 +179,35 @@ describe.skipIf(!HAS_SH)('49 · shell 终止杀整棵进程树(后代不成孤�
     await readPid(file);
     const r = await pending;
     expect(r.timedOut).toBe(true);
+  }, 10000);
+
+  // 退出清理:before-quit 此前只 await terminal/debug/MCP 清理;一次性 exec 无退出清理,流式只在 webContents
+  // 销毁后走 SIGTERM + 未被等待的定时 SIGKILL;子进程是 detached 进程组 → IDE 退出后命令继续运行。
+  // cleanupAll 对所有在途进程树立即 SIGKILL 并等待 close(有上限),纳入 before-quit 的 awaited 清理。
+  it('execShell 在途 → cleanupAllShellExecs 立即杀整棵进程树(含忽略 SIGTERM 的后代),Promise 结算', async () => {
+    const file = pidFile();
+    const pending = execShell({ cmd: '/bin/sh', args: termIgnorer(file), timeoutMs: 600_000 });
+    const pid = await readPid(file);
+    await cleanupAllShellExecs();
+    await expectDead(pid); // 已 SIGKILL;留给 launchd/init 回收孤儿僵尸的余量
+    const r = await pending;
+    expect(r.timedOut).toBe(false);
+    await expect(cleanupAllShellExecs()).resolves.toBeUndefined(); // 无在途 → 立即返回
+  }, 10000);
+
+  it('stream 在途 → cleanupAllShellStreams 立即杀整棵进程树(含忽略 SIGTERM 的后代),exit 到达', async () => {
+    const { ipc, event } = harness();
+    const file = pidFile();
+    await ipc.invokeWithEvent(event, PLUGIN_SHELL_STREAM_CHANNELS.START, 'quit-tree', '/bin/sh', termIgnorer(file), {
+      timeoutMs: 600_000,
+    });
+    const pid = await readPid(file);
+    await cleanupAllShellStreams();
+    await expectDead(pid); // 已 SIGKILL;留给 launchd/init 回收孤儿僵尸的余量
+    await waitUntil(
+      () => events(event).find((e) => e.streamId === 'quit-tree' && e.kind === 'exit'),
+      'exit after cleanup',
+    );
   }, 10000);
 
   it('execShell 超时 → 后台后代被杀,Promise 及时 resolve(timedOut)', async () => {

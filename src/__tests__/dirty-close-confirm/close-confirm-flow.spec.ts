@@ -194,6 +194,7 @@ vi.mock('../../../electron/main/services/agent-auth.service', () => ({
   requestAgentAuth: vi.fn(),
   setMcpHostRef: vi.fn(),
   cancelAgentAuthByWindow: vi.fn(),
+  cancelAllAgentAuth: vi.fn(),
 }));
 vi.mock('../../../electron/main/services/mcp-stdio-config.service', () => ({
   setStdioConfig: vi.fn(),
@@ -201,9 +202,23 @@ vi.mock('../../../electron/main/services/mcp-stdio-config.service', () => ({
 vi.mock('../../../electron/main/ipc/plugin-mcp.ipc', () => ({
   startPluginMcpIpc: vi.fn(),
 }));
+// 退出清理接线:插件 shell 子进程(exec / stream)的 cleanupAll 须纳入 before-quit 的 awaited 清理。
+vi.mock('../../../electron/main/services/shell.service', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../electron/main/services/shell.service')>()),
+  cleanupAllShellExecs: vi.fn(async () => undefined),
+}));
+vi.mock('../../../electron/main/services/plugin-shell-stream.service', async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import('../../../electron/main/services/plugin-shell-stream.service')
+  >()),
+  cleanupAllShellStreams: vi.fn(async () => undefined),
+}));
 
 const { app } = await import('electron');
 const termService = await import('../../../electron/main/services/terminal.service');
+const shellService = await import('../../../electron/main/services/shell.service');
+const shellStream = await import('../../../electron/main/services/plugin-shell-stream.service');
+const agentAuth = await import('../../../electron/main/services/agent-auth.service');
 const { createMainWindow, FLUSH_ACK_TIMEOUT_MS } = await import(
   '../../../electron/main/index'
 );
@@ -880,11 +895,23 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
     ack(a, { saveFailed: false, state: ds([]) });
     // 全局最终检查:a 保存后干净;b「不保存」仍是确认时的脏数(在接受范围内)→ 照常退出。
     reportDirty(b, ds(['/w/a.ts', 'untitled-1'], ['untitled-1']));
+    // 插件 shell 子进程清理在途时不得退出(须被 await,否则 detached 进程组在 IDE 退出后继续运行)。
+    let releaseShell: () => void = () => {};
+    vi.mocked(shellService.cleanupAllShellExecs).mockImplementationOnce(
+      () => new Promise<void>((r) => (releaseShell = r)),
+    );
     ack(b);
     ack(clean);
+    await settle();
+    expect(shellService.cleanupAllShellExecs).toHaveBeenCalledTimes(1);
+    expect(shellStream.cleanupAllShellStreams).toHaveBeenCalledTimes(1);
+    expect(app.quit).not.toHaveBeenCalled();
+    releaseShell();
     await done;
     expect(termService.cleanupAll).toHaveBeenCalledTimes(1);
     expect(app.quit).toHaveBeenCalledTimes(1);
+    // 窗口已隐藏、无人应答授权弹窗:未决 agent 授权在关闭 MCP host 前同步拒绝,不拖到 5min 超时。
+    expect(agentAuth.cancelAllAgentAuth).toHaveBeenCalledTimes(1);
     // 复审:全局最终检查通过后、不可逆清理(cleanupAll 可能数秒)前隐藏全部窗口(含 popout)形成退出屏障 ——
     // 否则清理期间窗口仍可编辑,且已入 flushedOnQuit,之后的编辑丢失、用户关窗也绕过确认。
     for (const w of [a, b, clean, popout]) {

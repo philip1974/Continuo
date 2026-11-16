@@ -56,6 +56,7 @@ export const zh: Record<TranslationKey, string> = {
   'errors.EDITOR_DISK_CHANGED': '文件已在磁盘上被修改，未覆盖（按 Cmd/Ctrl+S 选择是否覆盖）',
   'errors.NO_DEFAULT_EXPORT': '插件没有 export default',
   'errors.NOT_PLUGIN_CLASS': '插件的 default export 不是 Plugin 子类',
+  'errors.PATH_SCOPE_CLEANUP_FAILED': '插件目录访问授权清理失败,已中止卸载,请重试',
   'errors.PAYLOAD_TOO_LARGE': '负载过大',
   'errors.PLUGIN_FS_TOKEN_REVOKE_FAILED': '插件文件访问凭据回收失败,操作已中止,请重试',
   'errors.PLUGIN_ID_MISMATCH': '仓库中的插件 id 与市场条目不一致',

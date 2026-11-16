@@ -72,6 +72,8 @@ markdown autosave flush)完成后、回执之前,检查此刻仍 dirty 的 tab(�
   各窗记账以回执携带的 `state` 为准,之后的脏态上报继续更新。
 - 最终检查通过后、进入不可逆清理前**隐藏全部窗口**(含 popout)形成退出屏障:清理(debug teardown 可能数秒)期间
   窗口已入 flushedOnQuit,继续编辑会丢失、关窗也绕过确认。最终检查失败(中止)路径不隐藏。
+- 不可逆清理:先同步拒绝所有未决 agent 授权(`cancelAllAgentAuth`),再 await terminal / debug / 插件 shell 子进程
+  (`cleanupAllShellExecs` / `cleanupAllShellStreams`)清理,随后 await MCP host / stdio 关闭,全部完成才 `app.quit()`。
 - popout 窗口不参与(与既有 flush 逻辑一致)。
 
 ### 计数口径(renderer)

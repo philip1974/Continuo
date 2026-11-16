@@ -707,6 +707,13 @@ const PATH_SCOPES_FILE = '_plugin-path-scopes.json';
 const MAX_PERSISTED_SCOPES_PER_PLUGIN = PERMISSION_RECORD_LIMITS.PATH_SCOPES_PER_PLUGIN_MAX; // 对齐 PathScopeRegistry MAX_SCOPES_PER_PLUGIN(E81)
 const MAX_PERSISTED_PLUGIN_KEYS = 4096; // 持久化表的 plugin key 数上限
 
+/**
+ * scopes 文件 JSON 解析失败(已存 .corrupt 快照)。与 IO 错误区分:损坏文件的读端恒降级 [],
+ * 不会被同 id 重装继承,卸载清理遇到它可放行;IO 错误(EACCES/EMFILE 等)可能是暂时的,
+ * 之后读回旧 scope → 卸载必须中止。
+ */
+class PathScopesCorruptError extends Error {}
+
 async function readAllPathScopes(
   baseDir: string,
 ): Promise<Record<string, IpcPathScope[]>> {
@@ -727,7 +734,7 @@ async function readAllPathScopes(
     json = JSON.parse(text);
   } catch {
     await fs.writeFile(`${file}.corrupt`, text, { flag: 'wx' }).catch(() => {});
-    throw new Error(`path-scopes file corrupt: ${file}`);
+    throw new PathScopesCorruptError(`path-scopes file corrupt: ${file}`);
   }
   if (!json || typeof json !== 'object' || Array.isArray(json)) return {};
   const out: Record<string, IpcPathScope[]> = {};
@@ -878,16 +885,20 @@ export async function uninstallPlugin(
     await writePluginPermissions(baseDir, id, []);
 
     // 清 _plugin-path-scopes.json 中的 id(避免重装继承旧 path scope,与上方对称)。
-    // writePluginPathScopes 在 scopes 文件损坏时会抛(#12),但损坏文件本就不会被同 id 重装
-    // 继承(readPluginPathScopes 损坏降级 []),故此处 best-effort:清理失败不阻断卸载
-    // (.corrupt 快照已由 readAllPathScopes 留存),避免一个损坏文件永久卡住所有卸载。
+    // 仅「文件已损坏」放行:损坏文件本就不会被同 id 重装继承(readPluginPathScopes 损坏降级 []),
+    // 避免一个损坏文件永久卡住所有卸载(.corrupt 快照已由 readAllPathScopes 留存)。其余失败
+    //(原子写 ENOSPC、读盘 IO 错误)fail-closed:旧 scope 仍在盘上,若照删目录,同 id 重装会水合
+    // 旧 scope → covers() 静默授权、不弹窗 → 新代码继承旧目录读写授权。故删目录前中止,可整体重试。
     try {
       await writePluginPathScopes(baseDir, id, []);
     } catch (err) {
-      console.warn(
-        `[uninstall] path-scope cleanup failed (corrupt scopes file?): ${id}`,
-        err,
-      );
+      if (!(err instanceof PathScopesCorruptError)) {
+        throw codedError(
+          ERROR_CODES.PATH_SCOPE_CLEANUP_FAILED,
+          `path scope 授权清理失败,未卸载: ${id}: ${errorMessage(err)}`,
+        );
+      }
+      console.warn(`[uninstall] path-scope cleanup skipped (corrupt scopes file): ${id}`, err);
     }
 
     // 元数据已清,最后删目录。失败 → RM_FAILED,可整体重试(上面清理幂等)。

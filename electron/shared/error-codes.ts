@@ -26,6 +26,8 @@ const MAIN_ERROR_CODES = {
   NO_WINDOW: 'NO_WINDOW',
   NO_WINDOW_SEQ: 'NO_WINDOW_SEQ',
   NOT_INSTALLED: 'NOT_INSTALLED',
+  // 卸载插件:path scope 授权记录清理失败,中止卸载(不删目录,可重试)。
+  PATH_SCOPE_CLEANUP_FAILED: 'PATH_SCOPE_CLEANUP_FAILED',
   PAYLOAD_TOO_LARGE: 'PAYLOAD_TOO_LARGE',
   // 插件安装:clone 到的 manifest.id 与 marketplace entry.id(expectedId)不一致。
   PLUGIN_ID_MISMATCH: 'PLUGIN_ID_MISMATCH',

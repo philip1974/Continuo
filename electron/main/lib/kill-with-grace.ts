@@ -47,6 +47,50 @@ export function processTreeKillable(child: TreeKillTarget): Killable {
   };
 }
 
+interface TreeKillChild extends TreeKillTarget {
+  readonly stdout?: { destroy(): void } | null;
+  readonly stderr?: { destroy(): void } | null;
+  once(event: 'close', listener: () => void): unknown;
+}
+
+/**
+ * 退出清理:对所有在途子进程的进程树立即强杀(不给宽限),并等待各自 close,整体最多 capMs。
+ * SIGTERM 在 Windows 即 `taskkill /T /F`(整树强杀),POSIX 下紧随的整组 SIGKILL 才是实际生效的一击。
+ * 到上限仍未 close(后代逃出进程组仍持管道)→ 销毁 stdio 促成 close,不让退出被拖住。
+ * 调用方传入的必须是尚未 close 的子进程(close 时自行从集合摘除)。
+ */
+export async function killProcessTreesNow(
+  children: Iterable<TreeKillChild>,
+  capMs = 2000,
+): Promise<void> {
+  const list = [...children];
+  if (list.length === 0) return;
+  const closed = list.map((child) => {
+    const done = new Promise<void>((resolve) => child.once('close', () => resolve()));
+    const tree = processTreeKillable(child);
+    for (const sig of ['SIGTERM', 'SIGKILL'] as const) {
+      try {
+        tree.kill(sig);
+      } catch {
+        // 已退出
+      }
+    }
+    return done;
+  });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const capped = new Promise<'timeout'>((resolve) => {
+    timer = setTimeout(() => resolve('timeout'), capMs);
+  });
+  const r = await Promise.race([Promise.all(closed), capped]);
+  clearTimeout(timer);
+  if (r === 'timeout') {
+    for (const child of list) {
+      child.stdout?.destroy();
+      child.stderr?.destroy();
+    }
+  }
+}
+
 export function killWithGrace(child: Killable, graceMs = 1000): void {
   try {
     child.kill('SIGTERM');

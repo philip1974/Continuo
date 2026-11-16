@@ -1148,3 +1148,23 @@ helper + 必挂 browser-window-created),把「单一来源」固化进测试防�
 - 根因: 旧实现只杀直接子进程,孤儿后代持管道 → close 不来,done 与 active 槽位挂住。
 - 修复:POSIX spawn `detached: true` 建新进程组,终止对 `-pid` 发信号(沿用 killWithGrace 的 SIGTERM → 宽限 →
   SIGKILL);Windows 走 `taskkill /pid <pid> /T /F`(`lib/kill-with-grace.ts` 的 `processTreeKillable`)。
+- 退出清理:`cleanupAllShellExecs()` / `cleanupAllShellStreams()` 对所有在途进程树立即强杀(不给宽限,`killProcessTreesNow`)
+  并等待 close(上限 2s,到点销毁 stdio),纳入 before-quit 与 `termService.cleanupAll` 同一段 awaited 清理(接线见
+  `dirty-close-confirm/close-confirm-flow.spec.ts`)。同组内忽略 SIGTERM 的后代随之被杀(ESRCH)。根因:before-quit
+  此前只等 terminal/debug/MCP;exec 无退出清理,stream 只在 webContents 销毁后 SIGTERM + 未被等待的定时 SIGKILL,
+  detached 进程组在 IDE 退出后继续运行。
+
+### 卸载时 path scope 清理失败中止卸载 — `uninstall-scope-cleanup-fail-closed.spec.ts`
+- `uninstallPlugin` 清 `_plugin-path-scopes.json` 失败(原子写 ENOSPC、读盘 IO 错误)→ 抛 `PATH_SCOPE_CLEANUP_FAILED`
+  (en/zh/ko 文案),**不删目录**、旧 scope 原样在盘;磁盘恢复后重试 → 卸载完成、scope 已清。
+- 仅 scopes 文件已损坏(JSON 解析失败,读端恒降级 [] 不会被继承)仍放行卸载(既有契约,`plugins-path-scopes.test.ts`)。
+- 根因:旧实现把任何清理失败当 best-effort 吞掉再删目录 → 同 manifest id 重装时冷启动水合旧 scope,`covers()` 静默
+  授权不弹窗,新代码继承旧目录读写授权。顺序:renderer 先回收 plugin-fs token(失败 `PLUGIN_FS_TOKEN_REVOKE_FAILED`
+  中止),再调 main 卸载;main 先清 enabled / permissions / path scope,全部成功后才删目录。
+
+### 退出时在途 HTTP MCP 请求不拖住 mcpHost.close() — `mcp-host-close-inflight.spec.ts`
+- `close()` 停止接新连接后立即 `closeAllConnections()` 断开现存连接(挂在授权 await 上的在途 POST 被断开,服务端
+  `ctx.signal` abort),整个关闭上限 2s。
+- before-quit 在关闭 MCP 前同步 `cancelAllAgentAuth()`(见 `agent-auth-service` T17):未决授权全部 denied,不发 IPC。
+- 根因:窗口已隐藏无人应答弹窗,`server.close()` 等现存连接自行结束 → 请求挂满 5min 授权定时器 → 应用不可见且无法退出。
+  stdio server 的 close 本就先 destroy 现存连接,无需改。

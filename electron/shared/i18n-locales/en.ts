@@ -65,6 +65,8 @@ export const en = {
   'errors.EDITOR_DISK_CHANGED': 'The file was changed on disk; not overwritten (press Cmd/Ctrl+S to choose)',
   'errors.NO_DEFAULT_EXPORT': 'Plugin has no default export',
   'errors.NOT_PLUGIN_CLASS': 'Plugin default export is not a Plugin subclass',
+  'errors.PATH_SCOPE_CLEANUP_FAILED':
+    'Could not clear the plugin folder-access grants; uninstall was aborted. Try again.',
   'errors.PAYLOAD_TOO_LARGE': 'Payload too large',
   'errors.PLUGIN_FS_TOKEN_REVOKE_FAILED':
     'Could not revoke the plugin file-access token; the operation was aborted. Try again.',
