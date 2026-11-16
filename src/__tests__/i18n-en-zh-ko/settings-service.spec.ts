@@ -140,6 +140,27 @@ describe('settings.service (settings.json) — P2-1 表驱动', () => {
     });
   });
 
+  // 打磨 P2-BN:EACCES 路径不写 cache,getCurrentLocale 此前因 cached 空返回硬编码 'en',与
+  // loadSettings 返回的系统语言默认(zh)不一致 → main 菜单/对话框与 renderer 语言分裂。进程内
+  // fallback 须与 loadSettings 返回值一致,但仍不当作「已存状态」:同值 saveSettings 照常写盘。
+  it('EACCES 后 getCurrentLocale 与 loadSettings 返回值一致,且 saveSettings 同值不被 no-op', async () => {
+    const service = await importPending<
+      SettingsServiceModule & { readonly getCurrentLocale: () => Locale }
+    >('../../../electron/main/services/settings.service');
+    const spy = vi
+      .spyOn(nodeFsPromises, 'open')
+      .mockRejectedValueOnce(Object.assign(new Error('EACCES'), { code: 'EACCES' }));
+    const loaded = await service.loadSettings();
+    spy.mockRestore();
+    expect(loaded.locale).toBe('zh');
+    expect(service.getCurrentLocale()).toBe('zh');
+
+    // fallback 不是「已存状态」:用户显式选同值 zh 仍须落盘(否则 settings.json 永不写入)
+    await service.saveSettings({ version: 1, locale: 'zh' });
+    const raw = await fs.readFile(path.join(currentTmpDir, 'settings.json'), 'utf-8');
+    expect(JSON.parse(raw)).toEqual({ version: 1, locale: 'zh' });
+  });
+
   // 边界(E69,E18/E26/E66/E67/E68 stat-before-read 族;E164 TOCTOU 修正):settings.json 读经单 fd
   // fstat 硬拦(64KiB)。超大 = 损坏/恶意 → 当 corrupt 隔离(rename .corrupt + 默认),不整块读入。
   // 用真实超大文件(>64KiB,合法 JSON)→ 证明按 size 拦(若无 cap 会读到该 locale),覆盖单 fd fstat。

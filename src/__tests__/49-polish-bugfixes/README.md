@@ -1082,3 +1082,28 @@ session**(popout/init 锁/run-contributed-action 三度),收敛手段=对该 hel
 正是「同类资源在仓内已有正确的全窗口挂法(terminal),拿它当对照标尺去查别的资源是否漏挂」
 —— 正交标尺比通读更快定位族缺口;(3) 修复同时把逻辑抽成可注入工厂 + 静态守卫(index.ts 必引
 helper + 必挂 browser-window-created),把「单一来源」固化进测试防回退。
+
+## 第十一 session(codex 独立审计:保存反馈 / 外部修改冲突 / seq / locale 兜底)
+
+### P2-BK autosave 把 resolve 的 `{ok:false}` 当成功 — `autosave-resolved-failure.spec.tsx`
+- `saveFile` 对普通磁盘错误(EACCES/ENOSPC,main safeHandle 返回 `{ok:false}`)是 resolve;
+  `makeAutoSaveScheduler.runSave` 只在 reject 时走失败路径 → onError 不触发、无提示。
+- 修复:结果 `ok===false` 视同失败(抛出结果本身,去重语义不变);`useAutoSave` 通知按 code 经
+  `localizeErrorByCode` 本地化(与 Cmd+S 的 `notifyFailure` 同路径),不露 raw message。
+
+### P2-BL dirty tab 外部修改后保存静默覆盖 — `save-external-change-conflict.spec.ts`
+- `useExternalFileSync` 对 dirty tab 跳过 reload,保存又不比较磁盘 → 外部版本被无声抹掉。
+- 修复(参考 VSCode「文件已在磁盘上更改」):`saveFile` 写盘前读盘,≠ `tab.originalContent` →
+  返回 `EDITOR_DISK_CHANGED` 不写。显式保存(Cmd+S)弹 `ConfirmDialog` 确认后以 `{force:true}`
+  覆盖;autosave 不覆盖、走 P2-BK 失败通知。读盘失败/reject(文件被删等)→ 视为无冲突,允许重建。
+  markSaved 并发键入语义不变(读盘后重取 tab 再快照)。
+
+### P2-BM allocateWindowSeq 安全但落后的计数分配重复 seq — `dock-layout-per-window-seq/window-seq-allocate.spec.ts`
+- nextWindowSeq 为安全整数但 ≤ 现存最大 windowSeq 时原样分配 → 与现存段重复(E4 只处理不安全整数)。
+- 修复:与 E4 合并为一处 `seq = max(安全 nextWindowSeq, 现存最大安全段 + 1, 1)`。
+
+### P2-BN settings 读失败时 getCurrentLocale 与 loadSettings 不一致 — `i18n-en-zh-ko/settings-service.spec.ts`
+- EACCES/EIO 时 loadSettings 返回系统语言默认但不写 cached;getCurrentLocale 因 cached 空返回硬编码
+  'en' → main 侧文案与 renderer 分裂。
+- 修复:另存 `unknownStateFallback` 仅供 getCurrentLocale 兜底;saveSettings 的 no-op 比较仍只认
+  cached(已知已存状态),未知态不会让同值保存被跳过。

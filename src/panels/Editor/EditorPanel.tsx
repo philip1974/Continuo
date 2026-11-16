@@ -154,16 +154,40 @@ export function EditorPanel() {
 
   useEffect(() => startDebugDecorationSync(), []);
 
+  // 打磨 P2-BL:显式保存遇磁盘被外部改过(EDITOR_DISK_CHANGED)→ 确认覆盖,不静默写。
+  // 轻量 TabChrome 子集(确认框只需 filePath,覆盖只需 id),同 closeCandidate。
+  const [overwriteCandidate, setOverwriteCandidate] = useState<Pick<
+    TabChrome,
+    'id' | 'filePath'
+  > | null>(null);
+
   // 显式保存(Cmd+S 或 toolbar)
   const handleSave = useCallback(async () => {
+    const { activeTabId, tabs } = useEditorStore.getState();
+    const target = activeTabId === null ? null : findEditorFileTabById(tabs, activeTabId);
     const r = await saveActive();
     if (!r.ok) {
+      if (r.code === 'EDITOR_DISK_CHANGED' && target) {
+        setOverwriteCandidate({ id: target.id, filePath: target.filePath });
+        return;
+      }
       // i18n(I7,codex 复查 P1):UNSAVED_DRAFT / TAB_NOT_FOUND / NO_ACTIVE_TAB / FS_* 都到
       // 这里,r.message 是 main/动作层的 raw(FS_* 英文、UNSAVED_DRAFT 含中文)→ 双向泄漏。
       // 按 code 经 catalog 本地化(单一来源 localizeErrorByCode),未收录 code 回退原 message。
       notifyFailure(r);
     }
   }, [saveActive]);
+  const confirmOverwrite = useCallback(async () => {
+    const candidate = overwriteCandidate;
+    setOverwriteCandidate(null);
+    if (!candidate) return;
+    try {
+      const r = await saveTab(candidate.id, { force: true });
+      if (!r.ok) notifyFailure(r);
+    } catch (err) {
+      notifyThrownError(err);
+    }
+  }, [overwriteCandidate, saveTab]);
 
   // 关闭脏 tab 二次确认。closeCandidate 用轻量 TabChrome(打磨 R23:不持完整
   // EditorTab/content,确认框只需 filePath,关闭只需 id)。
@@ -293,6 +317,24 @@ export function EditorPanel() {
         destructive
         onConfirm={confirmDiscard}
         onCancel={() => setCloseCandidate(null)}
+      />
+      <ConfirmDialog
+        open={overwriteCandidate !== null}
+        title={translate('panels.editor.disk_changed_title')}
+        description={
+          overwriteCandidate ? (
+            <>
+              <code className="text-fg">
+                {basename(overwriteCandidate.filePath)}
+              </code>{' '}
+              {translate('panels.editor.disk_changed_body')}
+            </>
+          ) : null
+        }
+        confirmLabel={translate('panels.editor.disk_changed_confirm')}
+        destructive
+        onConfirm={() => void confirmOverwrite()}
+        onCancel={() => setOverwriteCandidate(null)}
       />
       <ConfirmDialog
         open={unsafeEditConfirmOpen}

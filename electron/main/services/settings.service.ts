@@ -21,6 +21,10 @@ const settingsQueue = createSerialQueue();
 const withSettingsMutex = settingsQueue.run;
 
 let cached: Settings | null = null;
+// 打磨 P2-BN:EACCES/EIO「当前态未知」时 loadSettings 返回的默认值。只供 getCurrentLocale 进程内
+// 兜底(与 loadSettings 返回值一致),**不**参与 saveSettings 的 no-op 比较(那只认 cached =
+// 已知的已存状态),故不会把未知态当作已存状态而跳过/覆盖写盘。
+let unknownStateFallback: Settings | null = null;
 let setLocaleGen = 0;
 // race(R36):已成功提交(写盘成功)的最大 gen。setLocaleGen 是「已发起 gen」(在 await 前递增,
 // 仅用于排序),用它判广播会把「请求已发起」和「请求已成功提交」混淆 —— 后发起者递增 gen 后即便
@@ -86,7 +90,8 @@ export async function loadSettings(): Promise<Settings> {
         return cached;
       }
       // EACCES/EIO 等「当前态未知」:返回默认但**不写 cache**,下次重试。
-      return defaultSettings();
+      unknownStateFallback = defaultSettings();
+      return unknownStateFallback;
     }
     try {
       const parsed = JSON.parse(raw);
@@ -119,6 +124,8 @@ export async function saveSettings(next: Settings): Promise<void> {
 /** 同步读 in-memory cache 当前 locale（先调过 loadSettings 后可用）。 */
 export function getCurrentLocale(): Locale {
   if (cached) return cached.locale;
+  // 读失败未缓存时与 loadSettings 返回的默认一致(P2-BN)。
+  if (unknownStateFallback) return unknownStateFallback.locale;
   // 未 hydrate 时 fallback default — 调用方应在 app.whenReady 后先 loadSettings
   return DEFAULT_SETTINGS.locale;
 }
@@ -152,6 +159,7 @@ export function commitSetLocaleGen(gen: number): boolean {
 /** Test helper — 重置 cache 与 gen 计数；spec setup/teardown 用。 */
 export function _resetSettingsForTest(): void {
   cached = null;
+  unknownStateFallback = null;
   setLocaleGen = 0;
   committedLocaleGen = 0;
   settingsQueue.reset();

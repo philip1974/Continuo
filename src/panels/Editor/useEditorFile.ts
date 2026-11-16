@@ -10,15 +10,16 @@ import {
   saveFile as saveFileImpl,
   type EditorFileDeps,
   type FileOpResult,
+  type SaveFileOptions,
 } from './editor-file-actions';
 
 export interface EditorFileApi {
   /** Explorer 单击文件触发. 返 IpcResult,UI 决定如何提示. */
   openFileByPath: (path: string) => Promise<FileOpResult>;
-  /** Cmd+S 触发. activeTab 没有 path → 返 UNSAVED_DRAFT. */
+  /** Cmd+S 触发. activeTab 没有 path → 返 UNSAVED_DRAFT;磁盘被外部改过 → EDITOR_DISK_CHANGED. */
   saveActive: () => Promise<FileOpResult>;
-  /** 按 tabId 保存(自动保存用,不依赖当前 active tab). */
-  saveTab: (tabId: string) => Promise<FileOpResult>;
+  /** 按 tabId 保存(自动保存 / 确认覆盖用,不依赖当前 active tab). */
+  saveTab: (tabId: string, opts?: SaveFileOptions) => Promise<FileOpResult>;
 }
 
 export function useEditorFile(): EditorFileApi {
@@ -39,7 +40,7 @@ export function useEditorFile(): EditorFileApi {
         }
         return saveFileImpl(id, deps);
       },
-      saveTab: (tabId) => saveFileImpl(tabId, deps),
+      saveTab: (tabId, opts) => saveFileImpl(tabId, deps, opts),
     };
   }, []);
 }

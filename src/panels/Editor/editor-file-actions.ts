@@ -80,21 +80,59 @@ export async function openFileByPath(
  * Cmd+S 触发。已存在 filePath 才能保存;无 path → UNSAVED_DRAFT(MVP 不支持另存为)。
  * 成功后 store.markSaved。
  */
+export interface SaveFileOptions {
+  /** 用户已确认覆盖外部修改(EDITOR_DISK_CHANGED 后的「仍然覆盖」)→ 跳过磁盘比较。 */
+  readonly force?: boolean;
+}
+
 export async function saveFile(
   tabId: string,
   deps: EditorFileDeps,
+  opts?: SaveFileOptions,
 ): Promise<FileOpResult> {
   // race(R21):同 tab 的保存按发起顺序串行写盘 —— 防 autosave 旧内容晚于手动保存新内容落盘而
   // 覆盖。每次进链时重读 tab.content(在 task 内取快照),保证串行后写的是当时最新内容。
-  return runSerialPerKey(saveChains, tabId, () => saveFileNow(tabId, deps));
+  return runSerialPerKey(saveChains, tabId, () => saveFileNow(tabId, deps, opts));
+}
+
+/**
+ * 打磨 P2-BL:磁盘自上次加载/保存后是否被外部改过(参考 VSCode「文件已在磁盘上更改」)。
+ * dirty tab 不随外部修改 reload(useExternalFileSync 跳过),不比较就写会静默抹掉外部版本。
+ * 读失败(文件被删 / 无权限 / reject)→ 视为无冲突:允许重建,写盘自身的错误照常上报。
+ */
+async function diskChangedSince(
+  fs: EditorFileDeps['fs'],
+  filePath: string,
+  originalContent: string,
+): Promise<boolean> {
+  try {
+    const r = await fs.readFile(filePath);
+    return r.ok && r.data !== originalContent;
+  } catch {
+    return false;
+  }
 }
 
 async function saveFileNow(
   tabId: string,
   deps: EditorFileDeps,
+  opts?: SaveFileOptions,
 ): Promise<FileOpResult> {
   const { fs, store } = deps;
-  const tab = findEditorFileTabById(store.getState().tabs, tabId);
+  let tab = findEditorFileTabById(store.getState().tabs, tabId);
+  if (
+    opts?.force !== true &&
+    tab?.filePath &&
+    (await diskChangedSince(fs, tab.filePath, tab.originalContent))
+  ) {
+    return {
+      ok: false,
+      code: 'EDITOR_DISK_CHANGED',
+      message: `file changed on disk since last load/save: ${tab.filePath}`,
+    };
+  }
+  // 读盘 await 期间 tab 可能被关闭/继续编辑 → 重取,写盘快照用最新内容。
+  tab = findEditorFileTabById(store.getState().tabs, tabId);
   if (!tab) {
     return {
       ok: false,

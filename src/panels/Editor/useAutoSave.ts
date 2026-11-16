@@ -16,6 +16,8 @@ import {
 } from './autosave-flush-registry';
 import { notify } from '@/notifications/notify';
 import { t } from '@/i18n';
+import { localizeErrorByCode } from '@/lib/localize-error';
+import { errorCodeOf } from '../../../electron/shared/error-message';
 
 const DEFAULT_DELAY_MS = 2000;
 
@@ -60,11 +62,19 @@ export function useAutoSave(
             // 自动保存失败时弹一次 warn toast(去重在 scheduler 内,连续失败不刷屏)。
             // 数据不丢(dirty 保持),仅补反馈 —— 否则后台静默失败用户无从知晓为何脏点不消。
             // scheduler 已 console.warn,故 mirror:false 防双写。见第二十一轮 P1-AZ。
-            (err) =>
+            // 打磨 P2-BK:err 可能是 resolve 的 {ok:false,code,message} 失败结果 → 与 Cmd+S 失败
+            // 同走 localizeErrorByCode(按 code 本地化,未收录回退原 message)。
+            (err) => {
+              const message =
+                (err as { message?: unknown } | null | undefined)?.message;
               notify.warn(
-                `${t('editor.autosave_failed')}: ${err instanceof Error ? err.message : String(err)}`,
+                `${t('editor.autosave_failed')}: ${localizeErrorByCode(
+                  errorCodeOf(err),
+                  typeof message === 'string' ? message : String(err),
+                )}`,
                 { mirror: false },
-              ),
+              );
+            },
           )
         : null,
     [saveTab, tabId, delayMs],

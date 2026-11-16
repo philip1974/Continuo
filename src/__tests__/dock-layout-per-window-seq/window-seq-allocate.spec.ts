@@ -86,6 +86,31 @@ describe('allocateWindowSeq atomic concurrent allocation', () => {
     expect((await loadExplorer(file))?.nextWindowSeq).toBe(8);
   });
 
+  // 打磨 P2-BM(E4 兄弟):nextWindowSeq 是安全整数但 ≤ 现存最大 windowSeq(计数回退/手改/旧版本写盘)
+  // 时,此前原样分配 → 与现存段重复,两窗共享同一持久化段互相覆盖。seq 须 > 所有现存安全段。
+  it('P2-BM: 安全但落后的 nextWindowSeq(≤ 现存最大段)→ 分配 max 段 + 1,不重复', async () => {
+    const payload = defaultExplorerV3();
+    (payload as { nextWindowSeq: number }).nextWindowSeq = 2;
+    const tpl = payload.windows[0]!;
+    payload.windows = [
+      { ...tpl, windowSeq: 0 },
+      { ...tpl, windowSeq: 5 },
+    ];
+    await atomicWriteJson(file, payload);
+
+    expect(await allocateWindowSeq(file)).toBe(6);
+    expect(await allocateWindowSeq(file)).toBe(7);
+    expect((await loadExplorer(file))?.nextWindowSeq).toBe(8);
+  });
+
+  it('P2-BM: nextWindowSeq=0(下限)→ 至少分配 1(主窗占 0)', async () => {
+    const payload = defaultExplorerV3();
+    (payload as { nextWindowSeq: number }).nextWindowSeq = 0;
+    payload.windows = [];
+    await atomicWriteJson(file, payload);
+    expect(await allocateWindowSeq(file)).toBe(1);
+  });
+
   it('E4 自愈求 max windowSeq 使用单趟循环,不通过 reduce callback', () => {
     expect(allocateWindowSeq.toString()).not.toContain('.reduce(');
   });
