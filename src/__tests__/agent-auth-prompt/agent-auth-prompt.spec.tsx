@@ -207,9 +207,12 @@ describe('AgentAuthPrompt — 订阅 onRequest', () => {
   // 「本次启动期间允许」只有在 main 确认该 requestId 仍在等待(respond ok)后才生效:main 已撤销/超时
   // 删除的旧请求 → respond 失败 → 不得把 sessionGranted 置 true(否则之后的请求被静默放行)。
   it.each([
-    ['ok=false', async () => ({ ok: false, code: 'AGENT_AUTH_REQUEST_NOT_PENDING', message: 'x' })],
-    ['reject', async () => Promise.reject(new Error('ipc down'))],
-  ])('respond %s → 「本次启动期间允许」不改变未来授权状态', async (_label, impl) => {
+    ['ok=false', async () => ({ ok: false, code: 'IPC_FAIL', message: 'x' }), true],
+    // NOT_PENDING = 请求已失效(main 已超时/撤销结算;main 与 renderer 计时起点相差 IPC 延迟仍有窗口)→
+    // 只 warn,不弹误导性的「授权响应失败」toast。
+    ['NOT_PENDING', async () => ({ ok: false, code: 'AGENT_AUTH_REQUEST_NOT_PENDING', message: 'x' }), false],
+    ['reject', async () => Promise.reject(new Error('ipc down')), true],
+  ])('respond %s → 「本次启动期间允许」不改变未来授权状态', async (_label, impl, toasts) => {
     notifyError.mockReset();
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     let cb: ((p: { requestId: string; method: string }) => void) | null = null;
@@ -230,7 +233,8 @@ describe('AgentAuthPrompt — 订阅 onRequest', () => {
     await waitFor(() => {
       expect(respond).toHaveBeenCalledWith('stale-1', 'session');
     });
-    await waitFor(() => expect(notifyError).toHaveBeenCalled());
+    await waitFor(() => expect(console.warn).toHaveBeenCalled());
+    expect(notifyError).toHaveBeenCalledTimes(toasts ? 1 : 0);
     expect(useAgentAuthStore.getState().sessionGranted).toBe(false);
   });
 

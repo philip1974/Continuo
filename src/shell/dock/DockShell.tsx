@@ -101,8 +101,14 @@ function usePanelComponents(): Record<string, React.FC<IDockviewPanelProps>> {
   }, [snapshot]);
 }
 
-function DockReconcilerMount({ api }: { api: DockviewApi }): null {
-  useDockReconciler(api);
+function DockReconcilerMount({
+  api,
+  restoreStartedAt,
+}: {
+  api: DockviewApi;
+  restoreStartedAt: number;
+}): null {
+  useDockReconciler(api, restoreStartedAt);
   useDockLocaleSync(api);
   return null;
 }
@@ -199,7 +205,12 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
     layoutPersistRef.current?.cancel();
     layoutPersistRef.current = null;
   }, []);
-  const [dockApi, setReconcilerApi] = useState<DockviewApi | null>(null);
+  // restoreStartedAt:本 api 布局恢复开始时刻。Reconciler 首次 hydrate 只抑制此前已存在的 session 的兜底聚焦,
+  // 恢复期间新建的 user terminal(Cmd+T)照常聚焦。
+  const [reconcilerTarget, setReconcilerTarget] = useState<{
+    api: DockviewApi;
+    restoreStartedAt: number;
+  } | null>(null);
   // apiReady 是 state(不是 ref):驱动下面 editor 自动激活 useEffect 的依赖,
   // 修复"hydrate 在 onReady 之前完成 → activeTabId 变化触发 effect 时
   // apiRef.current 仍 null → 错过添加 panel"的时序竞态。
@@ -214,6 +225,7 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
   const onReady = useCallback(
     async (event: DockviewReadyEvent) => {
       apiRef.current = event.api;
+      const restoreStartedAt = Date.now();
       // race:Reconciler 的 api 推迟到布局恢复(fromJSON / 默认布局)完成后才设置(见下方)。
       // 若此处即挂载,await layout.read() 期间 Reconciler 建出的终端 panel 会被随后的 fromJSON
       //(dockview 内部先 clear())清掉,而 Reconciler 视为已同步不再补加 → 终端从 UI 消失。
@@ -266,7 +278,7 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       }
       if (!restored) applyDefaultLayout(event.api);
       // 布局已定型 → 挂载 Reconciler:新 api 视作空 dock,按 live sessions 全量建终端 panel(R26)。
-      setReconcilerApi(event.api);
+      setReconcilerTarget({ api: event.api, restoreStartedAt });
       // 放行恢复前排队的 openOrFocusPanel + editor 自动激活。
       markDockLayoutRestored(event.api);
       setLayoutRestored(true);
@@ -468,20 +480,36 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
   // 否则用户切到 terminal 后再点资源管理器同一文档,terminal 不会让位。见 #22。
   const editorActiveTabId = useEditorStore((s) => s.activeTabId);
   const editorFocusPulse = useEditorStore((s) => s.editorFocusPulse);
+  // 布局恢复完成时刻的 editorFocusPulse 基线。恢复后首次运行的 activeTabId 来自持久化 hydrate,不是用户意图:
+  // 只确保 editor 面板存在,不 setActive(否则覆盖 fromJSON 恢复的活动面板 / 恢复期间排队打开的面板);
+  // pulse 相对基线变化(用户打开 / 切换文件)才激活。layoutRestored 回落(onReady 重入)时重置。
+  const restoredFocusPulseRef = useRef<number | null>(null);
   useEffect(() => {
+    if (!layoutRestored) {
+      restoredFocusPulseRef.current = null;
+      return;
+    }
+    restoredFocusPulseRef.current ??= editorFocusPulse;
     if (!editorActiveTabId) return;
-    if (!layoutRestored) return;
     const api = apiRef.current;
     if (!api) return;
+    const userIntent = editorFocusPulse !== restoredFocusPulseRef.current;
     let editorPanel = api.getPanel('editor');
     if (!editorPanel) {
+      const previousActivePanelId = api.activePanel?.api.id ?? null;
       editorPanel = api.addPanel({
         id: 'editor',
         component: 'editor',
         title: 'Editor',
         params: { titleKey: 'panels.editor.title' },
       });
+      // addPanel 默认激活新面板;非用户意图 → 激活还给原活动面板(同 Reconciler 不抢焦点的做法)。
+      if (!userIntent) {
+        if (previousActivePanelId) api.getPanel(previousActivePanelId)?.api.setActive();
+        return;
+      }
     } else {
+      if (!userIntent) return;
       // panel 仍存在但可能正处于关闭 EXIT 动画窗口内(用户刚关 editor 面板随即
       // 又点开文件)。撤销它排定中的真 close + 清 closing 标记,否则刚激活的
       // 面板会在 EXIT_DURATION_MS 后随排定的 close 一起消失(刚打开的文件没了)。
@@ -492,7 +520,12 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
 
   return (
     <div className="relative h-full w-full">
-      {dockApi && <DockReconcilerMount api={dockApi} />}
+      {reconcilerTarget && (
+        <DockReconcilerMount
+          api={reconcilerTarget.api}
+          restoreStartedAt={reconcilerTarget.restoreStartedAt}
+        />
+      )}
       <DockviewReact
         components={panelComponents}
         tabComponents={tabComponents}

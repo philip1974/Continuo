@@ -52,6 +52,11 @@
 * `existing.api.isActive=false` → `existing.api.setActive()`
 * `setSidebarOpen(false)`(让出空间)
 
+### 布局待恢复(DockShell onReady await layout.read 期间)
+
+* toggle 排队(`runWhenDockLayoutReady`),恢复完成后按**实际**面板状态判断:恢复出 active Settings → 关闭
+* 恢复前连按两次 → 恢复后开再关,相互抵消
+
 ## 不在本主题验证
 
 * SettingsPanel 内部 UI — `settings-panel` 持有

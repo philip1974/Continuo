@@ -509,6 +509,10 @@
 - [`open-recent-root.spec.ts`](./explorer-mutate/open-recent-root.spec.ts)
 - [`reveal-or-notify.spec.ts`](./explorer-mutate/reveal-or-notify.spec.ts)
 
+## [explorer-open-in-terminal — Explorer 右键「在终端中打开」](./explorer-open-in-terminal/README.md)
+
+- [`open-in-terminal.spec.tsx`](./explorer-open-in-terminal/open-in-terminal.spec.tsx)
+
 ## [explorer-path-utils(Explorer 跨平台路径 helper)](./explorer-path-utils/README.md)
 
 - [`path-utils.spec.ts`](./explorer-path-utils/path-utils.spec.ts)

@@ -6,12 +6,15 @@
 //   - panel 存在且 active(用户正看着 Settings)→ 关闭(再次按 ⌘, 收回)
 //   - panel 存在但 inactive(被其他 tab 遮住)→ 聚焦它 + 收起侧栏
 //   - dock 未就绪 → 静默忽略(开机时序保护)
+//   - 布局待恢复 → 排队,恢复完成后按届时的实际面板状态判断(恢复出的 active Settings 会被关闭,
+//     恢复前连按两次相互抵消)
 //
 // 关闭 Settings 不自动恢复 sidebar — 尊重用户在 Settings 打开期间手动展开。
 //
 // BDD: settings-toggle
 
-import { getDockApi, openOrFocusPanel } from '@/shell/dock/dock-api-ref';
+import { openOrFocusPanel, runWhenDockLayoutReady } from '@/shell/dock/dock-api-ref';
+import type { DockviewApi } from 'dockview-react';
 import { useLayoutUiStore } from '@/stores/layout-ui.store';
 
 const SETTINGS_PANEL_ID = 'settings';
@@ -20,9 +23,10 @@ const SETTINGS_TITLE = 'Settings';
 const SETTINGS_TITLE_KEY = 'panels.settings.title';
 
 export function toggleSettingsPanel(): void {
-  const api = getDockApi();
-  if (!api) return;
+  runWhenDockLayoutReady(toggleSettingsPanelNow);
+}
 
+function toggleSettingsPanelNow(api: DockviewApi): void {
   const existing = api.getPanel(SETTINGS_PANEL_ID);
   if (existing && existing.api.isActive) {
     existing.api.close();

@@ -1,10 +1,17 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+
+const h = vi.hoisted(() => ({ notifyThrownError: vi.fn() }));
+vi.mock('../../notifications/notify-thrown-error', () => ({
+  notifyThrownError: h.notifyThrownError,
+}));
+
 import {
   setDockApi,
   getDockApi,
   focusPanel,
   openOrFocusPanel,
   markDockLayoutRestored,
+  runWhenDockLayoutReady,
 } from '../../shell/dock/dock-api-ref';
 
 interface FakePanel {
@@ -25,6 +32,7 @@ function fakeApi(panels: Record<string, FakePanel> = {}): FakeApi {
 
 beforeEach(() => {
   setDockApi(null);
+  h.notifyThrownError.mockReset();
 });
 
 describe('dock-api-ref — set/get', () => {
@@ -115,7 +123,7 @@ describe('openOrFocusPanel — 布局恢复前排队', () => {
     expect(api.addPanel).toHaveBeenCalledTimes(3);
   });
 
-  it('过期 api 的 markDockLayoutRestored 无效;setDockApi 换 api 丢弃旧队列', () => {
+  it('过期 api 的 markDockLayoutRestored 无效;onReady 重入(新 api 仍 layoutPending)→ 旧队列按序迁移给新 api', () => {
     const oldApi = fakeApi();
     setDockApi(oldApi as never, { layoutPending: true });
     openOrFocusPanel('a', 'a', 'A');
@@ -128,7 +136,65 @@ describe('openOrFocusPanel — 布局恢复前排队', () => {
 
     markDockLayoutRestored(newApi as never);
     expect(oldApi.addPanel).not.toHaveBeenCalled();
-    expect(newApi.addPanel).toHaveBeenCalledTimes(1);
-    expect(newApi.addPanel).toHaveBeenCalledWith({ id: 'b', component: 'b', title: 'B' });
+    expect(newApi.addPanel.mock.calls.map((c) => (c[0] as { id: string }).id)).toEqual(['a', 'b']);
+  });
+
+  it('set null(卸载)→ 丢弃队列', () => {
+    const oldApi = fakeApi();
+    setDockApi(oldApi as never, { layoutPending: true });
+    openOrFocusPanel('a', 'a', 'A');
+    setDockApi(null);
+
+    const newApi = fakeApi();
+    setDockApi(newApi as never, { layoutPending: true });
+    markDockLayoutRestored(newApi as never);
+    expect(newApi.addPanel).not.toHaveBeenCalled();
+  });
+});
+
+// 排队项是执行时求值的回调:调用方(如 Settings toggle)须按恢复后的实际面板状态决定行为。
+describe('runWhenDockLayoutReady', () => {
+  it('布局已就绪 → 立即以当前 api 执行;dock 未就绪 → 静默', () => {
+    const fn = vi.fn();
+    runWhenDockLayoutReady(fn);
+    expect(fn).not.toHaveBeenCalled();
+
+    const api = fakeApi();
+    setDockApi(api as never);
+    runWhenDockLayoutReady(fn);
+    expect(fn).toHaveBeenCalledWith(api);
+  });
+
+  it('layoutPending → 恢复完成后才执行,且与 openOrFocusPanel 保持同一顺序', () => {
+    const api = fakeApi();
+    setDockApi(api as never, { layoutPending: true });
+    const order: string[] = [];
+    runWhenDockLayoutReady(() => order.push('fn1'));
+    openOrFocusPanel('a', 'a', 'A');
+    api.addPanel.mockImplementation(() => order.push('add-a'));
+    runWhenDockLayoutReady((a) => {
+      expect(a).toBe(api);
+      order.push('fn2');
+    });
+    expect(order).toEqual([]);
+
+    markDockLayoutRestored(api as never);
+    expect(order).toEqual(['fn1', 'add-a', 'fn2']);
+  });
+
+  it('重放抛错 → 统一可见通知(notifyThrownError),其余排队项照常执行', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const api = fakeApi();
+    setDockApi(api as never, { layoutPending: true });
+    const boom = new Error('boom');
+    runWhenDockLayoutReady(() => {
+      throw boom;
+    });
+    const after = vi.fn();
+    runWhenDockLayoutReady(after);
+
+    markDockLayoutRestored(api as never);
+    expect(h.notifyThrownError).toHaveBeenCalledWith(boom);
+    expect(after).toHaveBeenCalledTimes(1);
   });
 });

@@ -13,7 +13,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { bootCorePlugins, shutdownCorePlugins } from '../../core-plugins';
 import { coApp } from '../../plugins/co-app';
 import { useLayoutUiStore } from '../../stores/layout-ui.store';
-import { setDockApi } from '../../shell/dock/dock-api-ref';
+import { markDockLayoutRestored, setDockApi } from '../../shell/dock/dock-api-ref';
 import { toggleSettingsPanel } from '../../lib/toggle-settings-panel';
 
 interface FakePanelApi {
@@ -180,5 +180,42 @@ describe('toggleSettingsPanel · 连续 toggle', () => {
 
     toggleSettingsPanel(); // 存在且 active → 关闭
     expect((panel as unknown as FakePanel).api.close).toHaveBeenCalled();
+  });
+});
+
+// 布局待恢复(DockShell onReady await layout.read 期间)按下 ⌘,:toggle 须在恢复完成后按**实际**面板状态
+// 判断,而非排队前按「面板不存在」预先决定为打开。
+describe('toggleSettingsPanel · 布局待恢复', () => {
+  it('恢复出 active Settings → 排队的 toggle 执行时关闭它', () => {
+    let panel: FakePanel | null = null;
+    const fake = { getPanel: vi.fn(() => panel), addPanel: vi.fn() };
+    setDockApi(fake as never, { layoutPending: true });
+
+    toggleSettingsPanel();
+    expect(fake.addPanel).not.toHaveBeenCalled();
+
+    panel = makeFakePanel(true); // fromJSON 恢复出活动的 Settings
+    markDockLayoutRestored(fake as never);
+    expect(panel.api.close).toHaveBeenCalledTimes(1);
+    expect(fake.addPanel).not.toHaveBeenCalled();
+    expect(useLayoutUiStore.getState().sidebarOpen).toBe(true);
+  });
+
+  it('恢复前连按两次 → 恢复后相互抵消(开后再关)', () => {
+    let panel: FakePanel | null = null;
+    const fake = {
+      getPanel: vi.fn(() => panel),
+      addPanel: vi.fn(() => {
+        panel = makeFakePanel(true);
+        return panel;
+      }),
+    };
+    setDockApi(fake as never, { layoutPending: true });
+
+    toggleSettingsPanel();
+    toggleSettingsPanel();
+    markDockLayoutRestored(fake as never);
+    expect(fake.addPanel).toHaveBeenCalledTimes(1);
+    expect((panel as unknown as FakePanel).api.close).toHaveBeenCalledTimes(1);
   });
 });
