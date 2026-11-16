@@ -7,6 +7,7 @@ import {
 } from '../../lib/co-api';
 import { useExternalFileSync } from '../../panels/Editor/useExternalFileSync';
 import { useEditorStore } from '../../stores/editor.store';
+import { emitWatchRestored } from '../../lib/fs-watch-restored';
 
 interface FsApi {
   onDirChanged: (cb: (dir: string) => void) => () => void;
@@ -208,5 +209,25 @@ describe('useExternalFileSync', () => {
     dirCb!('/');
     await Promise.resolve();
     expect(readFile).not.toHaveBeenCalled();
+  });
+
+  it('目录 watcher 失效后重新可观察(本地 watch-restored)→ 同 dir-changed 重读其中 clean tab', async () => {
+    const readFile = vi.fn(async () => ({ ok: true, data: 'changed while lost' }));
+    installFsApi({ onDirChanged: () => () => {}, readFile });
+    useEditorStore.setState({
+      tabs: [
+        { id: '/proj/a.md', filePath: '/proj/a.md', content: 'old', originalContent: 'old', dirty: false },
+      ],
+      activeTabId: '/proj/a.md',
+    });
+    const hook = renderHook(() => useExternalFileSync());
+    emitWatchRestored('/proj');
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(readFile).toHaveBeenCalledWith('/proj/a.md');
+    expect(useEditorStore.getState().tabs[0]?.content).toBe('changed while lost');
+    hook.unmount();
+    emitWatchRestored('/proj'); // 卸载后退订
+    expect(readFile).toHaveBeenCalledTimes(1);
   });
 });

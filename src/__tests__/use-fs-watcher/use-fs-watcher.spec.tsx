@@ -6,6 +6,7 @@ import {
   captureLmApi,
 } from '../../lib/co-api';
 import { useFsWatcher } from '../../panels/Explorer/hooks/useFsWatcher';
+import { onWatchRestored } from '../../lib/fs-watch-restored';
 
 interface FakeFs {
   watchDir: ReturnType<typeof vi.fn>;
@@ -345,6 +346,90 @@ describe('useFsWatcher · watch-lost 退避重装', () => {
     for (let i = 1; i < delays.length; i++) expect(delays[i]!).toBeGreaterThanOrEqual(delays[i - 1]!);
     expect(delays.at(-1)!).toBeGreaterThan(delays[0]! * 4);
     expect(delays.at(-1)!).toBeLessThanOrEqual(60_000);
+  });
+
+  it('重装时卷仍不可用(ok:false / reject)→ 继续按退避重试直到成功', async () => {
+    const { lost, aCalls, watchDir } = setup(new Set(['/a']));
+    await flush();
+    watchDir
+      .mockResolvedValueOnce({ ok: false })
+      .mockRejectedValueOnce(new Error('ENOENT'))
+      .mockResolvedValue({ ok: true });
+    lost('/a');
+    vi.advanceTimersByTime(2000); // 首次重装(失败 ok:false)
+    await flush();
+    expect(aCalls()).toBe(2);
+    vi.advanceTimersByTime(3999);
+    await flush();
+    expect(aCalls()).toBe(2); // 退避翻倍到 4s
+    vi.advanceTimersByTime(1);
+    await flush();
+    expect(aCalls()).toBe(3); // 第二次重装(reject)
+    vi.advanceTimersByTime(8000);
+    await flush();
+    expect(aCalls()).toBe(4); // 第三次重装成功
+    vi.advanceTimersByTime(600_000);
+    await flush();
+    expect(aCalls()).toBe(4); // 成功后不再重试
+  });
+
+  it('重试中折叠 → 停止重试', async () => {
+    const { hook, lost, aCalls, watchDir } = setup(new Set(['/a']));
+    await flush();
+    watchDir.mockResolvedValue({ ok: false });
+    lost('/a');
+    vi.advanceTimersByTime(2000);
+    await flush();
+    expect(aCalls()).toBe(2);
+    hook.rerender({ paths: new Set<string>() });
+    vi.advanceTimersByTime(600_000);
+    await flush();
+    expect(aCalls()).toBe(2);
+  });
+
+  it('重装成功 → 再刷新一次该目录并本地分发「重新可观察」(补断线期间的变化)', async () => {
+    const restored: string[] = [];
+    const off = onWatchRestored((p) => restored.push(p));
+    try {
+      const { lost, onChange } = setup(new Set(['/a']));
+      await flush();
+      lost('/a');
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expect(restored).toEqual([]);
+      vi.advanceTimersByTime(2000);
+      await flush();
+      expect(onChange).toHaveBeenCalledTimes(2);
+      expect(restored).toEqual(['/a']);
+    } finally {
+      off();
+    }
+  });
+
+  it('首次安装成功不分发「重新可观察」', async () => {
+    const restored: string[] = [];
+    const off = onWatchRestored((p) => restored.push(p));
+    try {
+      const { onChange } = setup(new Set(['/a']));
+      await flush();
+      expect(restored).toEqual([]);
+      expect(onChange).not.toHaveBeenCalled();
+    } finally {
+      off();
+    }
+  });
+
+  it('失效后折叠再展开 → 下一次失效的退避从 2s 重新开始', async () => {
+    const { hook, lost, aCalls } = setup(new Set(['/a']));
+    await flush();
+    lost('/a'); // lostCount=1,/a 已移出账本
+    hook.rerender({ paths: new Set<string>() });
+    hook.rerender({ paths: new Set(['/a']) });
+    await flush();
+    expect(aCalls()).toBe(2); // 重新展开 → 正常安装
+    lost('/a');
+    vi.advanceTimersByTime(2000);
+    await flush();
+    expect(aCalls()).toBe(3); // 未沿用旧退避(否则需 4s)
   });
 
   it('卸载 → 退订 watch-lost 且取消待重试', async () => {

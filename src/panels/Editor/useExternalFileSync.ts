@@ -7,9 +7,12 @@
 // 注意:本 hook 不主动 watchDir,完全复用 Explorer 已 watch 的目录列表。
 // 父目录未展开的文件收不到通知(用户需手动刷新);95% 场景下打开文件
 // 之前 Explorer 已展开/reveal 过该路径。
+// watcher 因 error 被驱逐后由 Explorer 重装成功时,断线期间的变化不会有 dir-changed;
+// 订阅本地 watch-restored(src/lib/fs-watch-restored.ts),按一次 dir-changed 处理。
 
 import { useEffect } from 'react';
 import { coApi } from '@/lib/co-api';
+import { onWatchRestored } from '@/lib/fs-watch-restored';
 import { useEditorStore, type EditorTab } from '@/stores/editor.store';
 import { dirname } from '@/panels/Explorer/path-utils';
 import { pathEquals } from '@/lib/path-cross';
@@ -83,7 +86,7 @@ export function useExternalFileSync(): void {
       );
     };
 
-    const unsub = coApi.fs.onDirChanged((changedDir) => {
+    const onDirChanged = (changedDir: string): void => {
       const tabs = useEditorStore.getState().tabs;
       for (const tab of tabs) {
         if (tab.filePath === null) continue;
@@ -95,10 +98,13 @@ export function useExternalFileSync(): void {
           readAndApply(tab.filePath, tab.id);
         }
       }
-    });
+    };
+    const unsub = coApi.fs.onDirChanged(onDirChanged);
+    const unsubRestored = onWatchRestored(onDirChanged);
     return () => {
       cancelled = true; // race(R79):失效在途 readFile 的迟到 settle
       unsub();
+      unsubRestored();
     };
   }, []);
 }

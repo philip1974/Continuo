@@ -144,8 +144,9 @@ export class CommandRegistry extends KeyedRegistry<CommandSpec> {
       spec.hotkey &&
       (this.hotkeyCounts.get(canonicalHotkey(spec.hotkey, this.platform)) ?? 0) > 0
     ) {
+      // 与 useCommandHotkeys 分发一致:按插入序先命中者执行,后注册者被遮蔽(非 KeyedRegistry 同 id 的后注册赢)。
       console.warn(
-        `[command-registry] hotkey "${spec.hotkey}" 已被另一命令占用,后注册赢`,
+        `[command-registry] hotkey "${spec.hotkey}" 已被另一命令占用,先注册者生效,后注册者被遮蔽`,
       );
     }
     if (previous?.hotkey) this.decrementHotkey(previous.hotkey);

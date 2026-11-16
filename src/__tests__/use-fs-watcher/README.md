@@ -28,7 +28,12 @@
 
 - 仅对账本中已安装的 path 生效:移出账本、作废在途尝试,立即调一次 onChange(path) 刷新该目录
 - 退避延迟后(首次 2s,同一 path 连续失效逐次翻倍,上限 60s;折叠即复位)若仍展开且未被重装 → 重新 watchDir
+- 重装失败(卷仍不可用:watchDir ok:false / reject)→ 继续按同一退避续排重试,直到成功或折叠/卸载
+- 重装成功 → 再调一次 onChange(path) 并本地分发 `emitWatchRestored(path)`(`src/lib/fs-watch-restored.ts`),
+  补断线期间的变化;首次正常安装不分发
 - 延迟期间折叠 → 不重装;卷持续断开不会形成高频重试
+- 折叠(path 不再在 expandedPaths)即清零 lostCount 并取消待重装定时器,不论是否在账本中(lost 已移出账本);
+  折叠—重开后的下一次失效从 2s 重新退避
 
 ### 卸载
 
