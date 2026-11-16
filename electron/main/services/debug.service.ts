@@ -35,6 +35,8 @@ export interface DebugDapClientLike {
   readonly socketPath?: string | null;
   readonly tcpPort?: number;
   readonly serverPid?: number;
+  /** adapter 子进程已退出(其 pid 可能已被复用,清理不再对它发信号)。 */
+  readonly serverExited?: boolean;
   spawnServer(): Promise<this>;
   connectToServer(): Promise<this>;
   createChildSession(options?: unknown): DebugDapClientLike;
@@ -247,6 +249,8 @@ interface RuntimeDebugSession {
    * 有上限(超出丢最旧的)。
    */
   readonly pendingBreakpointChanges: Map<DebugDapClientLike, Map<number, Record<string, unknown>>>;
+  /** 各连接 process 事件回报的 debuggee pid:该连接结束时据此移出 systemProcessIds。 */
+  readonly processIdsByClient: Map<DebugDapClientLike, number[]>;
   initialized: boolean;
   configurationDone: boolean;
   launched: boolean;
@@ -716,7 +720,8 @@ async function defaultTerminateProcessGroup(
   if (!pgid) return [];
   if (platform() === 'win32') {
     // Windows 没有进程组可枚举:对 adapter 与已记录的 debuggee pid 各做 taskkill /T /F 整树强杀
-    //(复用 kill-with-grace),未记录的后代随树一起回收。仍存活的再直杀兜底。
+    //(复用 kill-with-grace),未记录的后代随树一起回收。仍存活的再直杀兜底。watchedPids 不含已知结束的
+    // 进程(调用方已剔除已退出的 adapter 与已结束的 debuggee):整树强杀复用了其 pid 的无关进程代价太大。
     const trees = watchedPids.map((pid) =>
       processTreeKillable({
         pid,
@@ -958,6 +963,7 @@ export class DebugService {
       adapterPaths: new Map(),
       resolvedSources: new Map(),
       pendingBreakpointChanges: new Map(),
+      processIdsByClient: new Map(),
       initialized: false,
       configurationDone: false,
       launched: false,
@@ -1823,7 +1829,14 @@ export class DebugService {
     client.on('process', (event) => {
       const body = asRecord(event.body);
       const pid = numberField(body, 'systemProcessId');
-      if (pid !== undefined) debugSessions.addSystemProcessId(sessionId, pid);
+      const runtime = this.runtimes.get(sessionId);
+      // 已结束的会话 / 已回收的连接上迟到的 process 事件不再登记:其进程已结束,pid 随时可能被复用。
+      if (pid === undefined || !runtime || runtime.endedMessage !== undefined) return;
+      if (!this.isLiveClient(sessionId, client)) return;
+      const pids = runtime.processIdsByClient.get(client) ?? [];
+      if (!pids.includes(pid)) pids.push(pid);
+      runtime.processIdsByClient.set(client, pids);
+      debugSessions.addSystemProcessId(sessionId, pid);
     });
     // 已回收的 child(同一 chunk 里排在 terminated 之后的事件)不再改停点 / 断点记录,免得重新引用它。
     client.on('stopped', (event) => {
@@ -1858,6 +1871,9 @@ export class DebugService {
       runtime.childClients.splice(index, 1);
       runtime.childEnded = true;
       debugSessions.update(sessionId, { childSessionCount: runtime.childClients.length });
+      // 它的 debuggee 已结束:pid 移出记录,之后的清理不再按这个(可能被复用的)pid 杀进程。
+      debugSessions.removeSystemProcessIds(sessionId, runtime.processIdsByClient.get(client) ?? []);
+      runtime.processIdsByClient.delete(client);
       // 清记录前先取它回报过的 source(快照要重推)。
       const reportedSources = new Set(
         runtime.breakpoints.filter((bp) => bp.reportedBy.has(client)).map((bp) => bp.source),
@@ -1909,7 +1925,10 @@ export class DebugService {
   private endWholeSession(sessionId: string, runtime: RuntimeDebugSession, message: string): void {
     this.rejectWaiters(sessionId, new Error(message));
     runtime.endedMessage = message;
-    debugSessions.update(sessionId, { runtimeState: 'terminated' });
+    // 整个会话结束:debuggee 都已结束,清空 pid 记录(terminated 会话可能保留到名额满才回收,其间 pid 会被复用);
+    // 此后清理只需回收 adapter。
+    runtime.processIdsByClient.clear();
+    debugSessions.update(sessionId, { runtimeState: 'terminated', systemProcessIds: [] });
   }
 
   private markStopped(
@@ -2164,19 +2183,26 @@ export class DebugService {
     }
 
     try {
+      // 不依据已知失效的 pid 杀进程:adapter 已退出则不再对其 pid 发信号;已结束的 debuggee 其 pid 已在
+      // 结束时移出 systemProcessIds(上面 disconnect 期间结束的也已移出,故这里重读)。两者都没有 → 只释放 client。
+      // POSIX 按 adapter 的进程组杀:组内尚有记录在案的 debuggee 时组仍存在,pgid 不会被复用。
+      // 残留风险:debuggee 未经 DAP 通知就退出、且其 pid 在会话存活期间被复用的极窄窗口(Windows taskkill /T)。
+      const current = debugSessions.get(sessionId) ?? session;
+      const adapterAlive = runtime.parentClient.serverExited !== true;
+      const liveAdapterPid = adapterAlive ? current.adapterPid : undefined;
       const adapterInfo =
-        session.adapterPgid !== undefined
+        current.adapterPgid !== undefined || !adapterAlive
           ? null
-          : await this.processOps.processInfo(session.adapterPid);
-      const pgid = session.adapterPgid ?? adapterInfo?.pgid ?? session.adapterPid;
-      if (pgid) {
+          : await this.processOps.processInfo(current.adapterPid);
+      const pgid = current.adapterPgid ?? adapterInfo?.pgid ?? current.adapterPid;
+      if (pgid && (adapterAlive || current.systemProcessIds.length > 0)) {
         debugSessions.update(sessionId, { adapterPgid: pgid });
         const groupBefore = await this.processOps.pidsInProcessGroup(pgid);
         const watchedPids = Array.from(
           new Set(
             [
-              session.adapterPid,
-              ...session.systemProcessIds,
+              liveAdapterPid,
+              ...current.systemProcessIds,
               ...groupBefore.map((entry) => entry.pid),
             ].filter((pid): pid is number => typeof pid === 'number' && pid > 0),
           ),

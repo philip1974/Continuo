@@ -54,6 +54,8 @@ class FakeDapClient implements DebugDapClientLike {
   readonly socketPath = `fake-${Math.random().toString(16).slice(2)}.sock`;
   readonly tcpPort = 0;
   readonly serverPid: number;
+  /** adapter 子进程已退出(模拟真实 DapClient 的 serverExited)。 */
+  serverExited = false;
   readonly requestLog: Array<{ command: string; args: DapJson }> = [];
   readonly children: FakeDapClient[] = [];
   readonly timeoutLog: Array<{ command: string; timeoutMs: number | undefined }> = [];
@@ -804,6 +806,164 @@ describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
       const actual = await vi.importActual<typeof import('../lib/kill-with-grace')>('../lib/kill-with-grace');
       treeKill.mockImplementation(actual.processTreeKillable);
     }
+  });
+
+  // 终审 P1:debuggee / adapter 自然结束后会话仍保留(terminated 会话等名额满才回收),其间 PID 可被无关进程复用。
+  // 清理不能依据已知失效的历史 PID 杀进程(Windows taskkill /T /F 会连带杀掉复用者的整棵进程树)。
+  describe('清理不对已结束进程的历史 PID 发信号', () => {
+    function makePidOps(groupPids: readonly number[] = [1001]) {
+      const processOps: DebugProcessOps = {
+        processInfo: vi.fn(async () => ({ pid: 1001, ppid: process.pid, pgid: 1001, command: 'fake-adapter' })),
+        pidsInProcessGroup: vi.fn(async () =>
+          groupPids.map((pid) => ({ pid, pgid: 1001, command: 'fake' })),
+        ),
+        terminateProcessGroup: vi.fn(async () => []),
+      };
+      return processOps;
+    }
+
+    async function launchWithChildren(processOps: DebugProcessOps) {
+      const parent = new FakeDapClient(1001);
+      const service = new DebugService({
+        createDapClient: () => parent,
+        processOps,
+        workspace: PERMISSIVE_WORKSPACE,
+      });
+      const { session_id: sessionId } = await service.launchSession(
+        { program: '/fixture.js', cwd: '/work' },
+        { ownerWindowId: 61, controllerToken: 'agent-pid' },
+      );
+      await parent.triggerStartDebugging({ type: 'pwa-node' }); // child A
+      await parent.triggerStartDebugging({ type: 'pwa-node' }); // child B
+      const [childA, childB] = parent.children as [FakeDapClient, FakeDapClient];
+      childA.emit('process', { systemProcessId: 5001 });
+      childB.emit('process', { systemProcessId: 5002 });
+      return { service, parent, sessionId, childA, childB };
+    }
+
+    it('某个 child 结束(exited / terminated)→ 它回报的 debuggee pid 移出 systemProcessIds,其余保留', async () => {
+      const { sessionId, childA } = await launchWithChildren(makePidOps());
+      expect(debugSessions.get(sessionId)?.systemProcessIds).toEqual([5001, 5002]);
+
+      childA.emit('exited', { exitCode: 0 });
+      expect(debugSessions.get(sessionId)?.systemProcessIds).toEqual([5002]);
+    });
+
+    it('整个会话结束 → systemProcessIds 清空;之后的清理不把旧 debuggee pid 交给 terminateProcessGroup', async () => {
+      const processOps = makePidOps();
+      const { service, parent, sessionId } = await launchWithChildren(processOps);
+
+      parent.emit('terminated', {});
+      expect(debugSessions.get(sessionId)?.systemProcessIds).toEqual([]);
+
+      await service.killByOwner(61, 'window-closed');
+      expect(processOps.terminateProcessGroup).toHaveBeenCalledTimes(1);
+      const watched = vi.mocked(processOps.terminateProcessGroup).mock.calls[0]![1];
+      expect(watched).not.toContain(5001);
+      expect(watched).not.toContain(5002);
+      expect(watched).toContain(1001); // adapter 仍存活:照常回收
+    });
+
+    it('会话结束后迟到的 process 事件不再登记 pid', async () => {
+      const { parent, sessionId, childB } = await launchWithChildren(makePidOps());
+      parent.emit('terminated', {});
+      childB.emit('process', { systemProcessId: 5003 });
+      parent.emit('process', { systemProcessId: 5004 });
+      expect(debugSessions.get(sessionId)?.systemProcessIds).toEqual([]);
+    });
+
+    it('adapter 已退出且无存活 debuggee → 清理不对 adapter pid / pgid 发信号(也不再按旧 pid 查进程信息)', async () => {
+      const processOps = makePidOps();
+      const { service, parent } = await launchWithChildren(processOps);
+      parent.emit('terminated', {});
+      parent.serverExited = true;
+      vi.mocked(processOps.processInfo).mockClear();
+
+      await service.killByOwner(61, 'window-closed');
+      expect(processOps.terminateProcessGroup).not.toHaveBeenCalled();
+      expect(processOps.pidsInProcessGroup).not.toHaveBeenCalled();
+      expect(processOps.processInfo).not.toHaveBeenCalled();
+      expect(parent.disposeCalls).toBe(1); // adapter 资源(socket 等)仍释放
+      expect(service.listSessions()).toEqual([]);
+    });
+
+    it('adapter 已退出但仍有记录在案的 debuggee → 只回收 debuggee,watchedPids 不含 adapter pid', async () => {
+      const processOps = makePidOps([5002]);
+      const { service, parent, childA } = await launchWithChildren(processOps);
+      childA.emit('terminated', {});
+      parent.serverExited = true;
+
+      await service.killByOwner(61, 'window-closed');
+      expect(processOps.terminateProcessGroup).toHaveBeenCalledTimes(1);
+      const watched = vi.mocked(processOps.terminateProcessGroup).mock.calls[0]![1];
+      expect(watched).not.toContain(1001);
+      expect(watched).not.toContain(5001);
+      expect(watched).toContain(5002);
+    });
+
+    it('Windows 默认 processOps:会话已结束、adapter 已退出 → 不对任何历史 pid 做 taskkill', async () => {
+      platformMock.value = 'win32';
+      const killGrace = await import('../lib/kill-with-grace');
+      const treeKill = vi.mocked(killGrace.processTreeKillable);
+      const killedPids: Array<number | undefined> = [];
+      treeKill.mockImplementation((target) => ({
+        kill: () => {
+          killedPids.push(target.pid);
+          return true;
+        },
+      }));
+      try {
+        const parent = new FakeDapClient(3_999_911);
+        const service = new DebugService({ createDapClient: () => parent, workspace: PERMISSIVE_WORKSPACE });
+        await service.launchSession(
+          { program: 'C:\\repo\\fixture.js', cwd: 'C:\\repo' },
+          { ownerWindowId: 62, controllerToken: 'agent-win-ended' },
+        );
+        parent.emit('process', { systemProcessId: 3_999_912 });
+        parent.emit('terminated', {});
+        parent.serverExited = true;
+
+        await service.killByOwner(62, 'window-closed');
+        expect(killedPids).toEqual([]);
+        expect(parent.disposeCalls).toBe(1);
+      } finally {
+        treeKill.mockReset();
+        const actual = await vi.importActual<typeof import('../lib/kill-with-grace')>('../lib/kill-with-grace');
+        treeKill.mockImplementation(actual.processTreeKillable);
+      }
+    });
+
+    it('Windows 默认 processOps:debuggee 已结束、adapter 存活 → 只对 adapter 做 taskkill', async () => {
+      platformMock.value = 'win32';
+      const killGrace = await import('../lib/kill-with-grace');
+      const treeKill = vi.mocked(killGrace.processTreeKillable);
+      const killedPids: Array<number | undefined> = [];
+      treeKill.mockImplementation((target) => ({
+        kill: () => {
+          killedPids.push(target.pid);
+          return true;
+        },
+      }));
+      try {
+        const parent = new FakeDapClient(3_999_921);
+        const service = new DebugService({ createDapClient: () => parent, workspace: PERMISSIVE_WORKSPACE });
+        await service.launchSession(
+          { program: 'C:\\repo\\fixture.js', cwd: 'C:\\repo' },
+          { ownerWindowId: 63, controllerToken: 'agent-win-child' },
+        );
+        await parent.triggerStartDebugging({ type: 'pwa-node' });
+        parent.children[0]!.emit('process', { systemProcessId: 3_999_922 });
+        parent.children[0]!.emit('exited', { exitCode: 0 });
+
+        await service.killByOwner(63, 'window-closed');
+        expect(killedPids).toContain(3_999_921);
+        expect(killedPids).not.toContain(3_999_922);
+      } finally {
+        treeKill.mockReset();
+        const actual = await vi.importActual<typeof import('../lib/kill-with-grace')>('../lib/kill-with-grace');
+        treeKill.mockImplementation(actual.processTreeKillable);
+      }
+    });
   });
 
   it('cleanupAll / killByOwner / killByController 同 tick 并发只执行一次 teardown, waiter 只 reject 一次', async () => {

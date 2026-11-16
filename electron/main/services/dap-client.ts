@@ -941,6 +941,14 @@ export class DapClient {
     return this.server?.pid;
   }
 
+  /** adapter 子进程已退出(未 spawn → false)。退出后其 pid 可能被复用,调用方不能再对它发信号。 */
+  get serverExited(): boolean {
+    return (
+      this.server !== null &&
+      (this.server.exitCode !== null || this.server.signalCode !== null)
+    );
+  }
+
   private async killServer(): Promise<void> {
     if (
       !this.server ||

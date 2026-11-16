@@ -377,6 +377,31 @@ describe.skipIf(process.platform === 'win32')('socket 路径(POSIX 私有目录)
     }
   });
 
+  // 清理据此判断:adapter 已退出后其 pid 可能被无关进程复用,不能再对它发信号。
+  it('serverExited:adapter 运行中为 false,子进程退出后为 true', async () => {
+    const fixture = await listeningAdapter();
+    const client = new DapClient({ adapterPath: fixture.adapterPath, connectIntervalMs: 20 });
+    try {
+      expect(client.serverExited).toBe(false); // 未 spawn
+      await client.spawnServer();
+      expect(client.serverExited).toBe(false);
+      const exited = new Promise<void>((resolve) => {
+        const timer = setInterval(() => {
+          if (client.serverExited) {
+            clearInterval(timer);
+            resolve();
+          }
+        }, 10);
+      });
+      process.kill(client.serverPid!, 'SIGKILL'); // 本测试自己 spawn 的 adapter 子进程
+      await exited;
+      expect(client.serverExited).toBe(true);
+    } finally {
+      await client.dispose();
+      await rm(fixture.dir, { recursive: true, force: true });
+    }
+  });
+
   it('adapter 启动失败 → dispose 同样删除私有目录', async () => {
     const client = new DapClient({
       adapterPath: '/nonexistent/adapter.js',

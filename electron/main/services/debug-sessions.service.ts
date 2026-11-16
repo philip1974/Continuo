@@ -196,6 +196,17 @@ export function addSystemProcessId(id: string, pid: number): void {
   update(id, { systemProcessIds: [...cur.systemProcessIds, pid] });
 }
 
+/**
+ * debuggee 进程已结束:移出记录。会话(含 terminated)可能保留很久,其间 PID 会被无关进程复用,
+ * 清理时不能再按它杀进程(Windows taskkill /T /F 会连带杀掉复用者的整棵进程树)。
+ */
+export function removeSystemProcessIds(id: string, pids: readonly number[]): void {
+  const cur = sessions.get(id);
+  if (!cur || pids.length === 0) return;
+  const next = cur.systemProcessIds.filter((pid) => !pids.includes(pid));
+  if (next.length !== cur.systemProcessIds.length) update(id, { systemProcessIds: next });
+}
+
 export function tryMarkTearingDown(id: string): boolean {
   const cur = sessions.get(id);
   if (!cur || cur.state !== 'active') return false;
