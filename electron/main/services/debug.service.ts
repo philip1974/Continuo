@@ -112,6 +112,13 @@ export interface LaunchSessionInput {
 export interface DebugCallerContext {
   readonly ownerWindowId: number;
   readonly controllerToken: string;
+  /** 调用方连接的 abort signal(MCP ctx.signal):launch 期间断开 → 回收已建的 adapter / session。 */
+  readonly signal?: AbortSignal;
+}
+
+/** 调用方(stdio proxy)在 launch 期间断开:不留下绑定死 subject 的会话(新连接过不了 capability 闸,无法清理)。 */
+function launchCancelledError(): Error {
+  return codedError(ERROR_CODES.AGENT_NOT_AUTHORIZED, 'caller disconnected during debug launch');
 }
 
 export interface SetBreakpointInput {
@@ -633,6 +640,8 @@ export class DebugService {
     const normalizedInput: LaunchSessionInput = { ...input, cwd: effectiveCwd };
     // 会话数已满就别 spawn adapter(否则 add 抛错时 adapter 进程 / socket 已经起来了)。
     debugSessions.assertCapacity(ctx.ownerWindowId);
+    // workspace 校验是异步边界,期间调用方可能已断开 → spawn 前复查。
+    if (ctx.signal?.aborted) throw launchCancelledError();
 
     const id = makeSessionId();
     const parentClient = this.createDapClient({
@@ -650,6 +659,11 @@ export class DebugService {
     }
     const adapterPid = getClientPid(parentClient);
     const adapterInfo = await this.processOps.processInfo(adapterPid);
+    // spawn 期间调用方断开:还没登记,就地释放 adapter。
+    if (ctx.signal?.aborted) {
+      await parentClient.dispose().catch(() => undefined);
+      throw launchCancelledError();
+    }
     const runtime: RuntimeDebugSession = {
       id,
       parentClient,
@@ -690,12 +704,23 @@ export class DebugService {
       this.handleStartDebugging(id, request, parentClient),
     );
 
+    // initialize 期间调用方断开 → 立即拆除(不等 adapter 应答 / 请求超时才放出名额)。
+    const onAbort = (): void => {
+      void this.teardownSession(id, 'caller-disconnected').catch(() => undefined);
+    };
+    ctx.signal?.addEventListener('abort', onAbort, { once: true });
     try {
       await this.initializeClient(parentClient);
     } catch (err) {
       // session 已登记、adapter 活着,但调用方只会拿到错误、拿不到 session_id → 自己拆掉。
       await this.teardownSession(id, 'launch-failed').catch(() => undefined);
-      throw err;
+      throw ctx.signal?.aborted ? launchCancelledError() : err;
+    } finally {
+      ctx.signal?.removeEventListener('abort', onAbort);
+    }
+    if (ctx.signal?.aborted) {
+      await this.teardownSession(id, 'caller-disconnected').catch(() => undefined);
+      throw launchCancelledError();
     }
     runtime.initialized = true;
     // 程序此时还没起跑(configurationDone + launch 推迟到第一个「要求程序运行」的调用,见 ensureProgramStarted),

@@ -291,6 +291,87 @@ describe('DebugService fake adapter · launch / 子会话 / 终止 的错误路�
     expect(processOps.terminateProcessGroup).toHaveBeenCalled();
   });
 
+  it('调用方在 spawn 之前已断开(signal 已 abort)→ 不 spawn adapter,以取消错误结束', async () => {
+    const parent = new FakeDapClient(1001);
+    const spawn = vi.spyOn(parent, 'spawnServer');
+    const { service } = makeFakeService(parent);
+    const aborter = new AbortController();
+    aborter.abort();
+
+    await expect(
+      service.launchSession({ program: '/fixture.js', cwd: '/work' }, { ...ctx, signal: aborter.signal }),
+    ).rejects.toMatchObject({ code: 'AGENT_NOT_AUTHORIZED' });
+    expect(spawn).not.toHaveBeenCalled();
+    expect(service.listSessions()).toEqual([]);
+  });
+
+  it('调用方在 spawn 期间断开 → 释放 adapter、不登记 session,以取消错误结束', async () => {
+    const parent = new FakeDapClient(1001);
+    const aborter = new AbortController();
+    parent.spawnServer = async function (this: FakeDapClient) {
+      aborter.abort();
+      return this;
+    };
+    const { service } = makeFakeService(parent);
+
+    await expect(
+      service.launchSession({ program: '/fixture.js', cwd: '/work' }, { ...ctx, signal: aborter.signal }),
+    ).rejects.toMatchObject({ code: 'AGENT_NOT_AUTHORIZED' });
+    expect(parent.disposeCalls).toBe(1);
+    expect(service.listSessions()).toEqual([]);
+  });
+
+  it('调用方在 initialize 期间断开 → 立即拆除已登记的 session 并 dispose client,以取消错误结束', async () => {
+    const parent = new FakeDapClient(1001);
+    const aborter = new AbortController();
+    const original = parent.sendRequest.bind(parent);
+    let releaseInitialize!: () => void;
+    parent.sendRequest = async (command, args, timeoutMs) => {
+      if (command === 'initialize') {
+        // adapter 迟迟不应答 initialize:断连必须即时回收,不能等到请求超时。
+        await new Promise<void>((resolve) => {
+          releaseInitialize = resolve;
+        });
+      }
+      return original(command, args, timeoutMs);
+    };
+    const { service, processOps } = makeFakeService(parent);
+
+    const launched = service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      { ...ctx, signal: aborter.signal },
+    );
+    const settled = launched.catch((err: unknown) => err);
+    await vi.waitFor(() => expect(service.listSessions()).toHaveLength(1));
+
+    aborter.abort();
+    await vi.waitFor(() => expect(service.listSessions()).toEqual([]));
+    expect(parent.disposeCalls).toBe(1);
+    expect(processOps.terminateProcessGroup).toHaveBeenCalled();
+
+    releaseInitialize();
+    await expect(settled).resolves.toMatchObject({ code: 'AGENT_NOT_AUTHORIZED' });
+    expect(service.listSessions()).toEqual([]);
+  });
+
+  it('initialize 完成后才发现调用方已断开 → 拆除 session,不返回 session_id', async () => {
+    const parent = new FakeDapClient(1001);
+    const aborter = new AbortController();
+    const original = parent.sendRequest.bind(parent);
+    parent.sendRequest = async (command, args, timeoutMs) => {
+      const res = await original(command, args, timeoutMs);
+      if (command === 'initialize') aborter.abort();
+      return res;
+    };
+    const { service } = makeFakeService(parent);
+
+    await expect(
+      service.launchSession({ program: '/fixture.js', cwd: '/work' }, { ...ctx, signal: aborter.signal }),
+    ).rejects.toMatchObject({ code: 'AGENT_NOT_AUTHORIZED' });
+    expect(service.listSessions()).toEqual([]);
+    expect(parent.disposeCalls).toBe(1);
+  });
+
   it('子会话建立失败 → activeClient 仍是父 client(后续请求不发给死掉的 child)', async () => {
     const parent = new FakeDapClient(1001);
     const { service } = makeFakeService(parent);

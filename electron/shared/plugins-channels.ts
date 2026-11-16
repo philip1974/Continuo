@@ -26,6 +26,11 @@ export const PLUGINS_CHANNELS = {
   CHANGED: 'plugins:changed',
   /** main → renderer push:外部 co:// URL 唤起(v4.4). */
   PROTOCOL_URL: 'plugins:protocol-url',
+  /**
+   * renderer → main:本窗口已挂 PROTOCOL_URL 监听(onProtocolUrl 调用时上报)。main 只向上报过的窗口
+   * 投递 / 排空 co:// 队列 —— did-finish-load 时 renderer 可能还没挂监听(冷启动深链被丢)。
+   */
+  PROTOCOL_READY: 'plugins:protocol-ready',
   /** 从 git URL clone + 安装到 plugins 目录(v4.5). */
   INSTALL_FROM_GIT: 'plugins:install-from-git',
   /** 卸载插件:rm -rf plugins/<id>/ + 清 _enabled / _permissions(v4.6). */

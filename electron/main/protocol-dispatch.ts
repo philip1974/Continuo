@@ -10,11 +10,14 @@ import { PROTOCOL_URL_MAX_LEN } from '../shared/plugins-channels';
 // R40:缓冲此前是单槽 string|null,无就绪窗口期间连续到达的多个 co:// 会互相覆盖(last-write-wins)
 // → 先到的深链永久丢失。改为 FIFO 队列(string[]):无就绪窗口时 append,窗口就绪后一次性 drain
 // 整个队列并清空,保 FIFO 不丢并发深链。
+//
+// 冷启动握手:R39 以 did-finish-load(!isLoading())判就绪仍会丢 —— renderer 动态 import main-app、
+// 再 await locale IPC 之后才调 onProtocolUrl 挂监听,文档 load 完成时监听往往还没挂上。改为「renderer
+// 经 preload 上报协议监听就绪(PROTOCOL_READY)」才算就绪:路由按调用方给的 isReady 判定,未就绪窗口
+// 只排队,就绪上报时由 drainOnProtocolReady 排空。
 
 export interface ProtoWindowContents {
-  isLoading(): boolean;
   send(channel: string, payload: unknown): void;
-  once(event: 'did-finish-load', cb: () => void): void;
 }
 
 export interface ProtoWindow {
@@ -33,7 +36,7 @@ export function drainPendingProtocolUrls(
   // ("Object has been destroyed")则该 URL 已出队且不会重投 → co:// 深链永久丢失;且抛错
   // 会中断 while 循环,使后续 pending 也停发。改为成功投递才出队;send 抛错时保留队首 URL 在
   // pending(留给下一个就绪/新建窗口 drain),并停止向这个已死 wc 继续投递(不再抛给调用方,
-  // 否则 did-finish-load 回调里抛错变 Electron 未捕获异常)。send-fail-abort 同族(见 R62)。
+  // 否则就绪 IPC 回调里抛错变 Electron 未捕获异常)。send-fail-abort 同族(见 R62)。
   let sent = 0;
   while (sent < pending.length) {
     const url = pending[sent]!;
@@ -49,21 +52,17 @@ export function drainPendingProtocolUrls(
 }
 
 /**
- * race(R41):给一个新建窗口挂一次性 did-finish-load drain —— 窗口就绪后排空协议队列。
- * 每个 createMainWindow 都调用,使「应用无窗口时入队的 co://」由下一个创建的任意窗口消费,
- * 而非只挂在 bootstrap 窗口上。drain 幂等(队列空即 no-op),多窗口/与 routeProtocolUrl 的
- * loading-窗口 drain 重叠也安全。窗口已销毁则不发。
+ * 窗口上报协议监听就绪(PROTOCOL_READY)时排空队列 —— 无就绪窗口期间入队的 co:// 由「下一个就绪的
+ * 任意窗口」消费(R41)。drain 幂等(队列空即 no-op),多窗口先后就绪也不重复投递。窗口已销毁则不发。
  */
-export function attachWindowDrain(
+export function drainOnProtocolReady(
   win: ProtoWindow,
   channel: string,
   pending: string[],
 ): void {
-  win.webContents.once('did-finish-load', () => {
-    if (!win.isDestroyed()) {
-      drainPendingProtocolUrls(win.webContents, channel, pending);
-    }
-  });
+  if (!win.isDestroyed()) {
+    drainPendingProtocolUrls(win.webContents, channel, pending);
+  }
 }
 
 export interface RouteProtocolUrlDeps {
@@ -71,6 +70,8 @@ export interface RouteProtocolUrlDeps {
   channel: string;
   /** 共享的 FIFO 缓冲队列(就地 mutate)。 */
   pending: string[];
+  /** 该窗口的 renderer 是否已上报协议监听就绪(PROTOCOL_READY)。 */
+  isReady: (w: ProtoWindow) => boolean;
 }
 
 // 边界(E55):co:// 深链是外部输入(恶意网页/命令行可触发)。单 URL 长度上限 + pending 队列条数
@@ -89,18 +90,11 @@ export function routeProtocolUrl(url: string, deps: RouteProtocolUrlDeps): void 
     return;
   }
   let ready: ProtoWindow[] | null = null;
-  let loading: ProtoWindow[] | null = null;
   let readyCount = 0;
-  let loadingCount = 0;
   for (const w of deps.windows) {
-    if (w.isDestroyed()) continue;
-    if (w.webContents.isLoading()) {
-      if (loading === null) loading = new Array<ProtoWindow>(deps.windows.length);
-      loading[loadingCount++] = w;
-    } else {
-      if (ready === null) ready = new Array<ProtoWindow>(deps.windows.length);
-      ready[readyCount++] = w;
-    }
+    if (w.isDestroyed() || !deps.isReady(w)) continue;
+    if (ready === null) ready = new Array<ProtoWindow>(deps.windows.length);
+    ready[readyCount++] = w;
   }
   if (readyCount === 0) {
     // 边界(E55):pending 队列条数上限 —— 窗口加载期间连发大量深链不得无界占用 main 内存。
@@ -110,15 +104,9 @@ export function routeProtocolUrl(url: string, deps: RouteProtocolUrlDeps): void 
       );
       return;
     }
-    // 无就绪窗口:FIFO 入队(不覆盖先到的),并给当前所有 loading 窗口挂一次性 did-finish-load
-    // drain。第一个就绪的窗口排空整个队列;其余 drain 见空队列即 no-op(避免重复投递)。
+    // 无就绪窗口:FIFO 入队(不覆盖先到的)。第一个上报就绪的窗口经 drainOnProtocolReady 排空整个
+    // 队列;其余窗口就绪时见空队列即 no-op(避免重复投递)。
     pending.push(url);
-    for (let i = 0; i < loadingCount; i++) {
-      const w = loading![i]!;
-      w.webContents.once('did-finish-load', () => {
-        if (!w.isDestroyed()) drainPendingProtocolUrls(w.webContents, channel, pending);
-      });
-    }
     return;
   }
   // 有就绪窗口:先把队列里残留(若有)按 FIFO 排空到一个就绪窗口,再投本次 url(保留既有
