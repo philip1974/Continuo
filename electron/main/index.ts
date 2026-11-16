@@ -1259,6 +1259,16 @@ app.on('before-quit', async (event) => {
   }
   // action === 'run':首次 quit,跑清理。
   event.preventDefault();
+  // e2e 诊断:逐阶段记录退出耗时(teardown 超时时定位卡在哪一步);仅 CONTINUO_E2E 下输出。
+  const quitStart = Date.now();
+  const quitTrace = (stage: string): void => {
+    if (process.env['CONTINUO_E2E'] === '1') {
+      console.log(`[quit-trace] ${stage} +${Date.now() - quitStart}ms`);
+    }
+  };
+  const traced = <T,>(stage: string, p: Promise<T> | undefined): Promise<T | undefined> =>
+    Promise.resolve(p).finally(() => quitTrace(`${stage} done`));
+  quitTrace('start');
   const targets: BrowserWindow[] = [];
   // 本轮接管的在途单窗关闭流程的复位函数;退出中止时立即调用(显示窗口 + 释放关窗守卫)。
   const takenOver: Array<() => void> = [];
@@ -1311,9 +1321,11 @@ app.on('before-quit', async (event) => {
   // flush 请求前各窗已上报的 pendingAutoSave(随本轮 flush 落盘;全局最终检查不当作 ACK 之后的新输入)。
   const flushedPending = new Map<number, readonly string[] | undefined>();
   for (const w of targets) flushedPending.set(w.id, dirtyStates.get(w.id)?.pendingAutoSave);
+  quitTrace(`confirmed (${targets.length} windows)`);
   const outcomes = await Promise.all(
     targets.map((w) => requestWindowFlush(w, modes.get(w.id) ?? 'none', accepted.get(w.id))),
   );
+  quitTrace(`flushed: ${outcomes.join(',')}`);
   // 任一窗口需中止(「保存」未确认成功 / 最终脏检查仍有未保存改动,如 B 确认期间 A 变脏)→ 中止退出并显示
   // 该窗口。此时不记 flushedOnQuit:退出没发生,之后关这些窗口仍要走确认 + flush。
   const failed = targets.filter((w, i) =>
@@ -1354,19 +1366,25 @@ app.on('before-quit', async (event) => {
   // 窗口已隐藏、无人应答授权弹窗:同步拒绝所有未决 agent 授权,挂在授权上的 MCP 工具调用随即结算,
   // 不把下面的 mcpHost close 拖到 5min 授权超时(close 自身也会断开现存连接并设上限)。
   cancelAllAgentAuth();
+  quitTrace('cleanup begin');
   // 插件 shell 子进程(一次性 exec / 流式)是 detached 进程组,不随 IDE 退出终止;立即强杀整树并等待。
   await Promise.allSettled([
-    termService.cleanupAll(),
-    debugService.cleanupAll('before-quit'),
-    cleanupAllShellExecs(),
-    cleanupAllShellStreams(),
+    traced('terminal', termService.cleanupAll()),
+    traced('debug', debugService.cleanupAll('before-quit')),
+    traced('shell-exec', cleanupAllShellExecs()),
+    traced('shell-stream', cleanupAllShellStreams()),
   ]);
   // race(R83):此前 mcpHost/mcpStdio close 是 void fire-and-forget,随后立即 markFinished() +
   // app.quit() → 进程可能在 HTTP/SSE server 关闭、unix socket server close + mcp.sock unlink
   // 完成前退出:SSE/keepalive/socket 清理与退出竞态,mcp.sock 残留到下次启动兜底清理,退出/测试
   // 路径也无法可靠等待资源释放。纳入与 cleanupAll 同一段 awaited 清理,等齐再退出。allSettled:
   // 单个 close 失败/reject 不阻断另一个,也不阻断退出。
-  await Promise.allSettled([mcpHost?.close(), mcpStdio?.close(), stopHookBroker?.()]);
+  await Promise.allSettled([
+    traced('mcp-host', mcpHost?.close()),
+    traced('mcp-stdio', mcpStdio?.close()),
+    traced('hook-broker', stopHookBroker?.()),
+  ]);
+  quitTrace('quit');
   quitGuard.markFinished();
   app.quit();
 });

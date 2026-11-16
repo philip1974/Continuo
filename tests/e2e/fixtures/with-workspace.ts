@@ -11,7 +11,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { closeDiscardingUnsaved } from '../helpers/close-app';
+import { captureMainProcessLog, closeDiscardingUnsaved } from '../helpers/close-app';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -54,7 +54,7 @@ export const test = base.extend<Fixtures>({
     }
   },
 
-  electronApp: async ({ userDataDir, workspaceRoot }, use) => {
+  electronApp: async ({ userDataDir, workspaceRoot }, use, testInfo) => {
     // 写入 explorer.json,让 hydrate 自动设 root
     const explorerJson = {
       version: 1,
@@ -82,6 +82,7 @@ export const test = base.extend<Fixtures>({
         CONTINUO_E2E: '1',
       },
     });
+    captureMainProcessLog(app, testInfo.outputDir);
     await use(app);
     await closeDiscardingUnsaved(app);
   },
