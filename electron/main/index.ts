@@ -1086,6 +1086,14 @@ async function startMcpStdioServer(): Promise<void> {
       tools: mcpHost.tools,
       serverInfo: mcpHost.serverInfo,
       resolveWindowId: (token) => mcpHost!.resolveWindowId(token),
+      // stdio 连接断开 → 其 subject 永久失效:回收它创建的 debug 会话(否则无人能 disconnect,
+      // 名额被占满、adapter 常驻)。终端会话对用户可见、可手动关,不在此回收。HTTP subject 是窗口级
+      // token,随窗口关闭 / 撤销回收(killByOwner / revokeAndKillAgentSessions),不按连接回收。
+      onCallerClosed: (subject) => {
+        void debugService.killByController(subject, 'caller-disconnected').catch((err) => {
+          console.warn('[debug] killByController failed on stdio close', err);
+        });
+      },
     });
     const cliPath = resolveStdioCliPath();
     const claudeAddCommand = buildClaudeAddCommand(cliPath);

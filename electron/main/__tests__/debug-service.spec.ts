@@ -885,6 +885,32 @@ describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
     ).rejects.toMatchObject({ code: 'DEBUG_PROGRAM_OUTSIDE_WORKSPACE' });
   });
 
+  // 起跑推迟到 wait_for_stop:校验后、起跑前把工作区内软链改指工作区外,launch 不得跟着新目标走。
+  it('安全:launch 参数用校验时的 realpath(program/cwd),校验后软链改指工作区外不生效', async () => {
+    const parent = new FakeDapClient(1001);
+    const links = new Map([
+      ['/repo/link.js', '/repo/real/app.js'],
+      ['/repo/cwd-link', '/repo/real'],
+    ]);
+    const { service } = makeFakeService(parent, {
+      getWorkspaceRoot: () => '/repo',
+      realpath: async (p) => links.get(p) ?? p,
+    });
+    const { session_id } = await service.launchSession(
+      { program: '/repo/link.js', cwd: '/repo/cwd-link' },
+      { ownerWindowId: 25, controllerToken: 'agent-sec6' },
+    );
+    links.set('/repo/link.js', '/etc/evil.js');
+    links.set('/repo/cwd-link', '/etc');
+
+    void service.waitForStop(session_id, { timeoutMs: 5_000 }).catch(() => undefined);
+    await vi.waitFor(() => expect(parent.requestLog.some((r) => r.command === 'launch')).toBe(true));
+    const launch = parent.requestLog.find((r) => r.command === 'launch')!.args as Record<string, unknown>;
+    expect(launch['program']).toBe('/repo/real/app.js');
+    expect(launch['cwd']).toBe('/repo/real');
+    await service.killByOwner(25, 'test');
+  });
+
   it('安全:cwd 省略 → 默认 workspace root(不回退 main 进程 cwd)', async () => {
     const { service } = makeFakeService(new FakeDapClient(1001), {
       getWorkspaceRoot: () => '/repo',
@@ -1007,6 +1033,32 @@ describe('DebugService fake adapter · 会话上限 / 程序起跑时机 / 按 s
     );
     expect(parent.disposeCalls).toBe(1);
     expect(runtimeCount(service)).toBe(0);
+  });
+
+  // stdio 连接断开后其 subject 失效(main 经 onCallerClosed → killByController 回收):名额释放,
+  // 别的调用方的会话不受影响。
+  it('killByController 回收失效调用方的全部会话 → 窗口名额释放,其它调用方会话保留', async () => {
+    let pid = 3000;
+    const { processOps } = makeFakeService();
+    const service = new DebugService({
+      createDapClient: () => new FakeDapClient((pid += 1)),
+      processOps,
+      workspace: PERMISSIVE_WORKSPACE,
+    });
+    const dead = { ownerWindowId: ctx.ownerWindowId, controllerToken: 'stdio:dead' };
+    const alive = { ownerWindowId: ctx.ownerWindowId, controllerToken: 'stdio:alive' };
+    for (let i = 0; i < 6; i += 1) await service.launchSession({ program: '/fixture.js', cwd: '/work' }, dead);
+    const kept = await service.launchSession({ program: '/fixture.js', cwd: '/work' }, alive);
+    await service.launchSession({ program: '/fixture.js', cwd: '/work' }, alive);
+    await expect(service.launchSession({ program: '/fixture.js', cwd: '/work' }, alive)).rejects.toThrow(/limit/);
+
+    const killed = await service.killByController('stdio:dead', 'caller-disconnected');
+
+    expect(killed).toHaveLength(6);
+    expect(debugSessions.byController('stdio:dead')).toHaveLength(0);
+    expect(debugSessions.get(kept.session_id)).toBeDefined();
+    await expect(service.launchSession({ program: '/fixture.js', cwd: '/work' }, alive)).resolves.toBeDefined();
+    await service.killByOwner(ctx.ownerWindowId, 'test');
   });
 
   it('launch 后未起跑:返回 starting,不发 configurationDone / launch', async () => {

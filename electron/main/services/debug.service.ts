@@ -583,11 +583,13 @@ export class DebugService {
 
   // 安全闸:program/cwd 必须落在 owner window 的 workspace 内(realpath 后比较,防
   // symlink 逃逸与 `..` 穿越)。无 workspace 记录 → fail-closed 拒绝。
+  // 返回校验通过的真实路径:起跑推迟到 wait_for_stop / continue,launch 必须用它们 —— 若沿用原拼写,
+  // 校验后把工作区内软链改指工作区外即可绕过本闸(TOCTOU)。
   private async assertLaunchInsideWorkspace(
     ownerWindowId: number,
     program: string,
     cwd: string,
-  ): Promise<void> {
+  ): Promise<{ program: string; cwd: string }> {
     const root = this.workspace.getWorkspaceRoot(ownerWindowId);
     if (root === null || root === '') {
       throw codedError(ERROR_CODES.DEBUG_PROGRAM_OUTSIDE_WORKSPACE, 'debug launch requires a workspace root for this window');
@@ -598,15 +600,17 @@ export class DebugService {
     } catch {
       realRoot = root;
     }
-    await this.assertPathInside(realRoot, program, 'program');
-    await this.assertPathInside(realRoot, cwd, 'cwd');
+    return {
+      program: await this.assertPathInside(realRoot, program, 'program'),
+      cwd: await this.assertPathInside(realRoot, cwd, 'cwd'),
+    };
   }
 
   private async assertPathInside(
     realRoot: string,
     target: string,
     label: 'program' | 'cwd',
-  ): Promise<void> {
+  ): Promise<string> {
     let realTarget: string;
     try {
       realTarget = await this.workspace.realpath(target);
@@ -618,6 +622,7 @@ export class DebugService {
     if (!inside) {
       throw codedError(ERROR_CODES.DEBUG_PROGRAM_OUTSIDE_WORKSPACE, `debug ${label} must be inside the workspace: ${target}`);
     }
+    return realTarget;
   }
 
   setEventSink(eventSink: DebugEventSink | null): void {
@@ -632,12 +637,13 @@ export class DebugService {
     // cwd 省略时默认 workspace root(不再回退 main 进程 cwd)。
     const root = this.workspace.getWorkspaceRoot(ctx.ownerWindowId);
     const effectiveCwd = input.cwd ?? root ?? process.cwd();
-    await this.assertLaunchInsideWorkspace(
+    const verified = await this.assertLaunchInsideWorkspace(
       ctx.ownerWindowId,
       input.program,
       effectiveCwd,
     );
-    const normalizedInput: LaunchSessionInput = { ...input, cwd: effectiveCwd };
+    // launch 固定用校验时的真实路径(见 assertLaunchInsideWorkspace);会话记录仍展示调用方拼写。
+    const normalizedInput: LaunchSessionInput = { ...input, program: verified.program, cwd: verified.cwd };
     // 会话数已满就别 spawn adapter(否则 add 抛错时 adapter 进程 / socket 已经起来了)。
     debugSessions.assertCapacity(ctx.ownerWindowId);
     // workspace 校验是异步边界,期间调用方可能已断开 → spawn 前复查。

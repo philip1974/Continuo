@@ -202,6 +202,11 @@ export interface CreateStdioSocketOptions {
   tools: ReadonlyMap<string, AnyMcpTool>;
   serverInfo: ServerInfo;
   resolveWindowId: (token: string) => number | null;
+  /**
+   * 连接关闭且该连接发起过调用(已分配 callerSubject)时回调:subject 随连接失效,新连接拿不到它,
+   * 归属它的资源(debug 会话)再无人能清理 —— 由 main 据此回收。
+   */
+  onCallerClosed?: (callerSubject: string) => void;
 }
 
 function modeOct(mode: number): string {
@@ -454,8 +459,16 @@ export async function createStdioSocketServer(
     sock.on('close', () => {
       clients.delete(sock);
       socketCtx.delete(sock);
+      const subject = socketSubject.get(sock);
       socketSubject.delete(sock);
       aborter.abort(); // race(R111):取消本连接所有在途 tool call 的副作用
+      if (subject !== undefined) {
+        try {
+          opts.onCallerClosed?.(subject);
+        } catch (err) {
+          console.warn('[mcp-stdio] onCallerClosed threw', err);
+        }
+      }
     });
     sock.on('error', () => {
       /* connection error,close 事件会清理 */

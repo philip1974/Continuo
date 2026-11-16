@@ -185,6 +185,7 @@
 - [`dap-framing.spec.ts`](./50-agent-debug-engine-mvp/dap-framing.spec.ts)
 - [`debug-schemas.spec.ts`](./50-agent-debug-engine-mvp/debug-schemas.spec.ts)
 - [`mcp-debug-host.spec.ts`](./50-agent-debug-engine-mvp/mcp-debug-host.spec.ts)
+- [`stdio-caller-closed.spec.ts`](./50-agent-debug-engine-mvp/stdio-caller-closed.spec.ts)
 
 ## [topic-51 debug breakpoint UI](./51-debug-breakpoint-ui/README.md)
 
