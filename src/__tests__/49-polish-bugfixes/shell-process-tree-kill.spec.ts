@@ -21,6 +21,8 @@ interface StreamEvent {
 
 const dirs: string[] = [];
 const pids: number[] = [];
+// 按测试自己记录的 pid 清理。「逃逸后代」用例依赖这里:主动脱离原进程组的后代整组信号够不着(已知边界,
+// 见下),不手动清理会泄漏到测试进程之外;这不是掩盖缺陷,那两条用例本就不断言后代被杀。
 afterEach(() => {
   for (const pid of pids.splice(0)) {
     try {
@@ -116,13 +118,45 @@ describe.skipIf(!HAS_SH)('49 · shell 终止杀整棵进程树(后代不成孤�
     await expectDead(pid);
   }, 10000);
 
-  // 后代自建进程组逃出整组信号、仍持 stdout/stderr 管道 → close 永不来;须强制 finalize 不无限等。
+  // 后代忽略 SIGTERM 且不持管道(stdio 重定向 /dev/null):整组 SIGTERM 后直接子进程 sh 先退出 → close 立刻到达。
+  // 结算不得取消宽限期后的整组 SIGKILL,否则同组内这个后代存活成孤儿。
+  const termIgnorer = (file: string): string[] => [
+    '-c',
+    `sh -c "trap '' TERM; while :; do sleep 1; done" </dev/null >/dev/null 2>&1 & echo $! > '${file}'; wait`,
+  ];
+
+  it('execShell 超时且直接子进程先退出 → 同组内忽略 SIGTERM 的后代仍在宽限期后被 SIGKILL', async () => {
+    const file = pidFile();
+    const pending = execShell({ cmd: '/bin/sh', args: termIgnorer(file), timeoutMs: 300 });
+    const pid = await readPid(file);
+    const r = await pending;
+    expect(r.timedOut).toBe(true);
+    await expectDead(pid);
+  }, 10000);
+
+  it('stream 超时且直接子进程先退出 → 同组内忽略 SIGTERM 的后代仍在宽限期后被 SIGKILL', async () => {
+    const { ipc, event } = harness();
+    const file = pidFile();
+    await ipc.invokeWithEvent(event, PLUGIN_SHELL_STREAM_CHANNELS.START, 'term-ignorer', '/bin/sh', termIgnorer(file), {
+      timeoutMs: 300,
+    });
+    const pid = await readPid(file);
+    await waitUntil(
+      () => events(event).find((e) => e.streamId === 'term-ignorer' && e.kind === 'exit'),
+      'exit after timeout',
+    );
+    await expectDead(pid);
+  }, 10000);
+
+  // 已知边界(与 VSCode tasks 一致,不修):后代主动 setsid / `detached` 脱离原进程组后,整组信号够不着它。
+  // 它仍持 stdout/stderr 管道 → close 永不来。以下两条只断言「终止后及时强制结算、不无限挂住」,
+  // **不断言**该后代被杀(它确实存活,由 afterEach 按 pid 清理)。
   const escaper = (file: string): string[] => [
     '-e',
     `const c=require('child_process').spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:true,stdio:['ignore','inherit','inherit']});require('fs').writeFileSync(${JSON.stringify(file)},String(c.pid));setInterval(()=>{},1000)`,
   ];
 
-  it('stream 超时且后代逃出进程组持管道 → 仍强制结算 exit(不无限挂住)', async () => {
+  it('stream 超时且后代脱离进程组持管道 → 及时强制结算 exit、不挂住(不断言后代被杀:已知边界)', async () => {
     const { ipc, event } = harness();
     const file = pidFile();
     await ipc.invokeWithEvent(event, PLUGIN_SHELL_STREAM_CHANNELS.START, 'escape-tree', process.execPath, escaper(file), {
@@ -136,7 +170,7 @@ describe.skipIf(!HAS_SH)('49 · shell 终止杀整棵进程树(后代不成孤�
     );
   }, 10000);
 
-  it('execShell 超时且后代逃出进程组持管道 → 仍强制 resolve', async () => {
+  it('execShell 超时且后代脱离进程组持管道 → 及时强制 resolve、不挂住(不断言后代被杀:已知边界)', async () => {
     const file = pidFile();
     const pending = execShell({ cmd: process.execPath, args: escaper(file), timeoutMs: 300 });
     await readPid(file);

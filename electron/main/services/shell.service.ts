@@ -142,23 +142,15 @@ export function execShell(input: IpcShellExecInput): Promise<IpcShellExecResult>
       }
     }
 
-    // exited 标记进程是否真正退出('close'/'error' 触发)。SIGKILL 升级必须以此判定,
-    // 不能用 `child.killed` —— 后者在 `kill('SIGTERM')` 成功**发出信号**后即为 true
-    // (Node 语义:killed = 信号已发送,非进程已退出),会让 `if (!child.killed)` 恒假、
-    // SIGKILL 分支永不执行,吞掉 SIGTERM 的子进程永远不被强杀(审计 P1)。
-    let exited = false;
-    // 内层 SIGKILL grace timer 必须存句柄并在 close/error 清掉:否则进程在 grace 期内
-    // 正常退出(常态)后,这个 timer 仍挂 SIGKILL_GRACE_MS,闭包持 child 引用阻止 GC、
-    // 且让 event loop 多活一截。fire 时 `!exited` 为假只是 no-op,但资源未闭环。
-    // unref 兜底:即使漏清也不阻止进程退出。见第十四轮 P2-AP。
-    let killTimer: NodeJS.Timeout | null = null;
+    // 注:SIGKILL 升级不得以 `child.killed` 判定 —— 它在 `kill('SIGTERM')` 成功**发出信号**后即为 true
+    // (Node 语义:killed = 信号已发送,非进程已退出),曾让 SIGKILL 分支永不执行(审计 P1)。
+    // 超时后宽限期的整组 SIGKILL 不随结算取消:整组 SIGTERM 后直接子进程先退出 → close → settle,
+    // 若此时清掉它,同组内忽略 SIGTERM 且不持管道的后代会存活成孤儿。故一经发起进程树终止,宽限期满
+    // 无论直接子进程是否已退出都对整组 SIGKILL(组已不存在 ESRCH 由 processTreeKillable 吞掉)。
+    // timer 仅在超时后才挂、最多 SIGKILL_GRACE_MS 且 unref,不阻止进程退出(P2-AP 的资源顾虑有界)。
     let forceTimer: NodeJS.Timeout | null = null;
     const clearTimers = (): void => {
       clearTimeout(timer);
-      if (killTimer) {
-        clearTimeout(killTimer);
-        killTimer = null;
-      }
       if (forceTimer) {
         clearTimeout(forceTimer);
         forceTimer = null;
@@ -171,11 +163,10 @@ export function execShell(input: IpcShellExecInput): Promise<IpcShellExecResult>
       try {
         tree.kill('SIGTERM');
       } catch { /* */ }
-      // grace period 后还没退 → SIGKILL
-      killTimer = setTimeout(() => {
-        killTimer = null;
+      // grace period 后整组 SIGKILL(不看直接子进程是否已退出,见上 clearTimers 注释)
+      const killTimer = setTimeout(() => {
         try {
-          if (!exited) tree.kill('SIGKILL');
+          tree.kill('SIGKILL');
         } catch { /* */ }
       }, SIGKILL_GRACE_MS);
       killTimer.unref?.();
@@ -190,7 +181,6 @@ export function execShell(input: IpcShellExecInput): Promise<IpcShellExecResult>
     }, timeoutMs);
 
     child.on('error', (err) => {
-      exited = true;
       clearTimers();
       resolve({
         stdout: decode(stdoutChunks),
@@ -203,7 +193,6 @@ export function execShell(input: IpcShellExecInput): Promise<IpcShellExecResult>
     });
 
     function settle(code: number | null, signal: NodeJS.Signals | null): void {
-      exited = true;
       clearTimers();
       resolve({
         stdout: decode(stdoutChunks),

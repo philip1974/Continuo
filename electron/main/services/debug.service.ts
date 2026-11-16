@@ -177,8 +177,20 @@ interface RuntimeDebugSession {
   readonly waiters: Set<StopWaiter>;
   /** 全部已设断点(同 file+line 去重);setBreakpoints 按 file 取出该 source 的完整集合发送。 */
   readonly breakpoints: BreakpointRecord[];
-  /** source 分组键 → 该 source 首次记录的拼写(发给 adapter、推给 renderer 都用它,同一 source 恒定)。 */
+  /** source 分组键 → 该 source 首次记录的调用方拼写(推给 renderer 用它,同一 source 恒定)。 */
   readonly sourcePaths: Map<string, string>;
+  /**
+   * source 分组键 → 发给 adapter 的拼写(realpath 后 normalize)。js-debug 按 Node 实际加载的真实路径匹配脚本,
+   * 软链拼写(macOS /var → /private/var)的断点加载后回 Unbound;renderer 仍用 sourcePaths(编辑器 tab 路径
+   * 来自用户选的 workspace root,未必是真实路径)。
+   */
+  readonly adapterPaths: Map<string, string>;
+  /**
+   * 各连接上按 id 查不到记录的 breakpoint changed 事件(id → 最新的 breakpoint 体)。DapClient 在同一 chunk 里
+   * 先 resolve setBreakpoints 响应、再同步分发紧随其后的事件,await 续体登记新 id 之前事件就到了;登记 id 后补上。
+   * 有上限(超出丢最旧的)。
+   */
+  readonly pendingBreakpointChanges: Map<DebugDapClientLike, Map<number, Record<string, unknown>>>;
   initialized: boolean;
   configurationDone: boolean;
   launched: boolean;
@@ -262,6 +274,9 @@ function sourceKey(file: string): string {
   return platform() === 'win32' ? lowerIfNeeded(normalized) : normalized;
 }
 
+/** 每条连接暂存的未匹配 breakpoint changed 事件上限(超出丢最旧的)。 */
+const MAX_PENDING_BREAKPOINT_CHANGES = 64;
+
 /** 向已建立的 child session 同步断点时的超时(child 同步是尽力而为:不应答的 child 只是不贡献回报)。 */
 const CHILD_BREAKPOINT_SYNC_TIMEOUT_MS = 3_000;
 
@@ -280,15 +295,32 @@ function setBreakpointsArgs(file: string, records: readonly BreakpointRecord[]):
   };
 }
 
+/** breakpoint changed 事件体(DAP Breakpoint)写入该连接的回报;缺字段沿用该连接上次的回报。 */
+function applyBreakpointChange(
+  record: BreakpointRecord,
+  client: DebugDapClientLike,
+  breakpoint: Record<string, unknown>,
+): void {
+  const message = stringField(breakpoint, 'message');
+  const last = record.reportedBy.get(client);
+  record.reportedBy.set(client, {
+    line: numberField(breakpoint, 'line') ?? last?.line ?? record.line,
+    verified: boolField(breakpoint, 'verified') ?? last?.verified ?? true,
+    ...(message !== undefined ? { message } : {}),
+  });
+}
+
 /**
  * 记下 setBreakpoints 响应各项在该连接上的 id 与回报(响应与请求的 records 逐一对应;缺项保留该连接上次的
- * 回报,无 id 保留旧 id)。
+ * 回报,无 id 保留旧 id)。登记 id 后补上该连接上先到的同 id changed 事件(见 pendingBreakpointChanges)。
  */
 function rememberBreakpointReports(
+  runtime: RuntimeDebugSession,
   client: DebugDapClientLike,
   records: readonly BreakpointRecord[],
   response: DapResponseMessage,
 ): void {
+  const pending = runtime.pendingBreakpointChanges.get(client);
   asArray(asRecord(response.body).breakpoints).forEach((item, i) => {
     const record = records[i];
     if (!record) return;
@@ -301,6 +333,11 @@ function rememberBreakpointReports(
       verified: boolField(reported, 'verified') ?? true,
       ...(message !== undefined ? { message } : {}),
     });
+    const early = id !== undefined ? pending?.get(id) : undefined;
+    if (early && id !== undefined) {
+      pending?.delete(id);
+      applyBreakpointChange(record, client, early);
+    }
   });
 }
 
@@ -593,6 +630,8 @@ export class DebugService {
       queuedStops: [],
       breakpoints: [],
       sourcePaths: new Map(),
+      adapterPaths: new Map(),
+      pendingBreakpointChanges: new Map(),
       initialized: false,
       configurationDone: false,
       launched: false,
@@ -644,43 +683,53 @@ export class DebugService {
     input: SetBreakpointInput,
   ): Promise<{ verified: boolean; line?: number; message?: string }> {
     this.requireRuntime(sessionId);
+    // js-debug 按 Node 实际加载的真实路径匹配脚本:发给 adapter 的 path 与分组键基于 realpath(软链拼写与真实
+    // 拼写归为同一 source)。文件不存在 / realpath 失败时沿用原路径,不报错。
+    const realFile = await this.workspace.realpath(input.file).catch(() => input.file);
     // 同 session 同 source 串行:并发时 B 捕获的完整集合会含在途的 A,A 失败回滚时 B 已把 A 设进 adapter;
     // 成功响应乱序时旧快照事件还会覆盖新断点。串行化后集合与快照天然有序。
-    return runSerialPerKey(this.breakpointChains, `${sessionId}\0${sourceKey(input.file)}`, () =>
-      this.setBreakpointsSerial(sessionId, input),
+    return runSerialPerKey(this.breakpointChains, `${sessionId}\0${sourceKey(realFile)}`, () =>
+      this.setBreakpointsSerial(sessionId, input, realFile),
     );
   }
 
   private async setBreakpointsSerial(
     sessionId: string,
     input: SetBreakpointInput,
+    realFile: string,
   ): Promise<{ verified: boolean; line?: number; message?: string }> {
     // 排队期间 session 可能已拆除。
     const runtime = this.requireRuntime(sessionId);
     // 追加到该 source 的断点集合(同 file+line 替换,不重复);此前整表替换成 [input],同文件第二个断点
     // 会把第一个从 adapter 里删掉。
-    const source = sourceKey(input.file);
+    const source = sourceKey(realFile);
     // 记录的拼写 normalize(Windows 统一成反斜杠):编辑器 tab 路径来自原生对话框 / listDir(反斜杠、无 `..`),
     // renderer 按路径匹配 tab 放红点;首次以 `C:/repo/a.js` 设断点时沿用原拼写会匹配不上,gutter 不显示。
     if (!runtime.sourcePaths.has(source)) {
       runtime.sourcePaths.set(source, normalizeSourcePath(input.file));
     }
-    const sourcePath = runtime.sourcePaths.get(source) ?? input.file;
+    if (!runtime.adapterPaths.has(source)) {
+      runtime.adapterPaths.set(source, normalizeSourcePath(realFile));
+    }
+    const adapterPath = runtime.adapterPaths.get(source) ?? realFile;
     const existing = runtime.breakpoints.findIndex(
       (bp) => bp.source === source && bp.line === input.line,
     );
     const previous = existing >= 0 ? runtime.breakpoints[existing] : undefined;
+    // 只有完全相同的重设才继承旧记录在各连接上的回报 / id;同一行改了 column 是新的断点定义,继承的话某条
+    // 连接同步失败(被 allSettled 吞掉)时聚合仍用旧定义在它上面的 verified。
+    const inherited = previous?.column === input.column ? previous : undefined;
     const record: BreakpointRecord = {
       source,
       line: input.line,
       ...(input.column !== undefined ? { column: input.column } : {}),
-      reportedBy: new Map(previous?.reportedBy),
-      ids: new Map(previous?.ids),
+      reportedBy: new Map(inherited?.reportedBy),
+      ids: new Map(inherited?.ids),
     };
     if (existing >= 0) runtime.breakpoints[existing] = record;
     else runtime.breakpoints.push(record);
     const sourceBreakpoints = runtime.breakpoints.filter((bp) => bp.source === source);
-    const args = setBreakpointsArgs(sourcePath, sourceBreakpoints);
+    const args = setBreakpointsArgs(adapterPath, sourceBreakpoints);
     let response: DapResponseMessage;
     try {
       response = await runtime.parentClient.sendRequest(
@@ -699,7 +748,7 @@ export class DebugService {
       // 超时不代表 adapter 没应用(可能只是响应迟到):尽力把回滚后的完整集合补发给父连接与存活的 child,
       // 短超时、失败忽略,原错误照常抛给调用方。
       const rolledBackRecords = runtime.breakpoints.filter((bp) => bp.source === source);
-      const rolledBack = setBreakpointsArgs(sourcePath, rolledBackRecords);
+      const rolledBack = setBreakpointsArgs(adapterPath, rolledBackRecords);
       const liveClients = [
         runtime.parentClient,
         ...runtime.childClients.filter((child) => !runtime.endedChildren.has(child)),
@@ -707,6 +756,7 @@ export class DebugService {
       await Promise.allSettled(
         liveClients.map(async (client) =>
           rememberBreakpointReports(
+            runtime,
             client,
             rolledBackRecords,
             await client.sendRequest(
@@ -719,7 +769,7 @@ export class DebugService {
       );
       throw err;
     }
-    rememberBreakpointReports(runtime.parentClient, sourceBreakpoints, response);
+    rememberBreakpointReports(runtime, runtime.parentClient, sourceBreakpoints, response);
     // 已建立的 child session 各自维护断点:只发给父连接的话,程序跑起来之后再设的断点不会生效
     //(child 只在创建时拿到当时的断点)。逐个同步;某个 child 已退出导致失败不影响其它。
     // 取快照(发送期间 childClients 可能增减)、跳过已结束的 child、并行发送并用较短的超时:某个 child
@@ -729,6 +779,7 @@ export class DebugService {
         .filter((child) => !runtime.endedChildren.has(child))
         .map(async (child) =>
           rememberBreakpointReports(
+            runtime,
             child,
             sourceBreakpoints,
             await child.sendRequest(
@@ -804,14 +855,20 @@ export class DebugService {
     const id = numberField(breakpoint, 'id');
     if (id === undefined) return;
     const record = runtime.breakpoints.find((bp) => bp.ids.get(client) === id);
-    if (!record) return;
-    const message = stringField(breakpoint, 'message');
-    const last = record.reportedBy.get(client);
-    record.reportedBy.set(client, {
-      line: numberField(breakpoint, 'line') ?? last?.line ?? record.line,
-      verified: boolField(breakpoint, 'verified') ?? last?.verified ?? true,
-      ...(message !== undefined ? { message } : {}),
-    });
+    if (!record) {
+      // 可能是 setBreakpoints 响应与它同 chunk 到达、续体还没登记新 id:暂存(同 id 覆盖保留最新),
+      // rememberBreakpointReports 登记后补上。
+      const pending = runtime.pendingBreakpointChanges.get(client) ?? new Map();
+      pending.delete(id);
+      pending.set(id, breakpoint);
+      if (pending.size > MAX_PENDING_BREAKPOINT_CHANGES) {
+        const oldest = pending.keys().next().value;
+        if (oldest !== undefined) pending.delete(oldest);
+      }
+      runtime.pendingBreakpointChanges.set(client, pending);
+      return;
+    }
+    applyBreakpointChange(record, client, breakpoint);
     this.emitBreakpointSnapshot(sessionId, runtime, record.source);
   }
 
@@ -1243,11 +1300,12 @@ export class DebugService {
       // 每个 source 发一次完整集合(逐个断点发会让后一个覆盖前一个)。
       for (const [source, records] of breakpointsBySource(runtime.breakpoints)) {
         rememberBreakpointReports(
+          runtime,
           child,
           records,
           await child.sendRequest(
             'setBreakpoints',
-            setBreakpointsArgs(runtime.sourcePaths.get(source) ?? source, records),
+            setBreakpointsArgs(runtime.adapterPaths.get(source) ?? source, records),
             this.requestTimeoutMs,
           ),
         );

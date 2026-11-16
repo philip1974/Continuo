@@ -1135,7 +1135,12 @@ helper + 必挂 browser-window-created),把「单一来源」固化进测试防�
 ### P2-BO shell 终止杀整棵进程树 — `shell-process-tree-kill.spec.ts`
 - 流式 shell 的 ABORT / 超时、一次性 execShell 的超时:后台后代(`sh -c 'sleep 600 & wait'`)随之被杀(ESRCH),
   exit / Promise 及时结算。
-- 后代自建进程组逃出整组信号仍持 stdout/stderr 管道 → 终止后最多再等 3s,销毁 stdio 强制结算,不无限挂住。
+- 整组 SIGTERM 后直接子进程先退出(close 先到)时,宽限期满仍对整组 SIGKILL:同组内忽略 SIGTERM、stdio 不持管道的
+  后代(`trap '' TERM`,重定向 /dev/null)最终被杀(ESRCH)。结算(resolve)照常,但不取消这一步 —— 旧 execShell 在
+  settle 时清掉 SIGKILL timer 致该后代存活;流式路径的 killWithGrace timer 本就不随 close 取消。
+- **已知边界(不修,与 VSCode tasks 一致)**:后代主动 setsid / `detached` 脱离原进程组后,整组信号够不着它。它仍持
+  stdout/stderr 管道时,终止后最多再等 3s 销毁 stdio 强制结算 —— 用例只断言「及时结算、不挂住」,**不断言**该后代被杀;
+  afterEach 按记录的 pid 手动清理它只为防测试泄漏进程,不是掩盖缺陷。
 - 根因: 旧实现只杀直接子进程,孤儿后代持管道 → close 不来,done 与 active 槽位挂住。
 - 修复:POSIX spawn `detached: true` 建新进程组,终止对 `-pid` 发信号(沿用 killWithGrace 的 SIGTERM → 宽限 →
   SIGKILL);Windows 走 `taskkill /pid <pid> /T /F`(`lib/kill-with-grace.ts` 的 `processTreeKillable`)。
