@@ -64,8 +64,10 @@ function lowerTrimmedSegment(combo: string, start: number, end: number): string 
  * 旧实现把三者塌缩成 `metaKey || ctrlKey` 当 hasMod → mac 上 Ctrl+F/Ctrl+T/Ctrl+B 误匹配
  * mod+f/t/b,把终端/编辑器的 Control 序列被全局命令劫持。分离 meta/ctrl 按平台精确匹配。
  * (codex 复审 loop R15)
+ *
+ * 未知修饰符(如 'hyper+x')→ 返回 null(不可匹配),不再静默忽略降级成裸 'x' 全局劫持。
  */
-function compileCombo(combo: string, platform: Platform): ComboSignature {
+function compileCombo(combo: string, platform: Platform): ComboSignature | null {
   const isMac = platform === 'mac';
   let wantMeta = false;
   let wantCtrl = false;
@@ -89,6 +91,8 @@ function compileCombo(combo: string, platform: Platform): ComboSignature {
       segmentEquals(combo, start, plus, 'option')
     ) {
       wantAlt = true;
+    } else {
+      return null;
     }
     start = plus + 1;
   }
@@ -122,7 +126,8 @@ export function matchesHotkey(
   e: KeyboardEvent,
   platform: Platform = detectPlatform(),
 ): boolean {
-  return signatureMatches(compileCombo(combo, platform), e);
+  const sig = compileCombo(combo, platform);
+  return sig !== null && signatureMatches(sig, e);
 }
 
 interface CompiledBinding {
@@ -153,8 +158,10 @@ export function buildCompiledBindings(
     if (!cmd.hotkey && override === undefined) continue;
     const effective = resolveEffectiveHotkey(cmd, overrides);
     if (!effective) continue; // 无 hotkey 或显式 unbind
+    const sig = compileCombo(effective, platform);
+    if (!sig) continue; // 未知修饰符 → 不可匹配,不入表
     out ??= new Array<CompiledBinding>(commands.length);
-    out[count++] = { sig: compileCombo(effective, platform), cmd };
+    out[count++] = { sig, cmd };
   }
   if (!out) return EMPTY_COMPILED_BINDINGS;
   out.length = count;

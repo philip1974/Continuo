@@ -17,6 +17,7 @@ import {
 import { useLocale, useT } from '@/i18n';
 import {
   clampSettingNumber,
+  coerceSettingValue,
   SI_TEXT_VALUE_MAX,
   type SettingItemSpec,
   type SettingItemValue,
@@ -162,7 +163,9 @@ export function SettingItemRow({
   const reset = (id: string): void => {
     if (isStillRegistered(id)) resetRaw(id);
   };
-  const value = stored ?? spec.default;
+  // 与消费者(useSettingValue/getSettingValue)同一 coerceSettingValue 规整:越界 number clamp、非法
+  // select 回退 default —— 否则设置页显示篡改/旧版 localStorage 原始脏值,与实际生效值不一致。
+  const value = coerceSettingValue(spec, stored ?? spec.default);
   // values 中存在 override → 显示 reset;undefined 表示走 default,无需 reset
   const isOverridden = stored !== undefined;
   // a11y(A21,A4 同族):把设置标题与控件建立可访问关联 —— 标题给稳定 id,number/text/select

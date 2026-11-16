@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { bootCorePlugins, shutdownCorePlugins } from '../../core-plugins';
 import { coApp } from '../../plugins/co-app';
+import { _resetLmApiForTest, captureLmApi } from '../../lib/co-api';
+import { notify } from '../../notifications/notify';
+import { __resetSelectDirectoryLockForTest } from '../../lib/select-directory-single-flight';
 
 beforeEach(async () => {
   // 确保起始干净
@@ -75,5 +78,58 @@ describe('PluginsTabPlugin(v3.5)', () => {
     await shutdownCorePlugins();
     const tabs = coApp.settingTabs.getAll().map((t) => t.id);
     expect(tabs).not.toContain('core.plugins');
+  });
+});
+
+// 与 Explorer「打开文件夹」(useSelectWorkspaceFolder)一致:selectDirectory 返回 {ok:false} → 失败 toast;
+// 用户取消({ok:true,data:null})仍静默。
+describe('WindowPlugin · 在新窗口打开文件夹', () => {
+  function install(selectResult: unknown) {
+    const create = vi.fn().mockResolvedValue({ ok: true, data: undefined });
+    Object.defineProperty(window, 'api', {
+      value: {
+        fs: { selectDirectory: vi.fn().mockResolvedValue(selectResult) },
+        window: { create },
+      },
+      writable: true,
+      configurable: true,
+    });
+    captureLmApi();
+    return create;
+  }
+
+  beforeEach(() => {
+    _resetLmApiForTest();
+    __resetSelectDirectoryLockForTest();
+  });
+
+  afterEach(() => {
+    delete (window as { api?: unknown }).api;
+    _resetLmApiForTest();
+    vi.restoreAllMocks();
+  });
+
+  async function run() {
+    bootCorePlugins();
+    const cmd = coApp.commands.getAll().find((c) => c.id === 'window.openFolderInNew')!;
+    await cmd.fn();
+  }
+
+  it('selectDirectory {ok:false} → notify.error 附 code,不建窗', async () => {
+    const errSpy = vi.spyOn(notify, 'error').mockImplementation(() => undefined as never);
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const create = install({ ok: false, code: 'EXCEPTION', message: 'dialog failed' });
+    await run();
+    expect(errSpy).toHaveBeenCalledTimes(1);
+    expect(errSpy.mock.calls[0]![1]).toMatchObject({ code: 'EXCEPTION' });
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('用户取消(data=null)→ 静默,不 toast 不建窗', async () => {
+    const errSpy = vi.spyOn(notify, 'error').mockImplementation(() => undefined as never);
+    const create = install({ ok: true, data: null });
+    await run();
+    expect(errSpy).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
   });
 });

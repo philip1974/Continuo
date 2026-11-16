@@ -5,6 +5,8 @@ import type { Disposable } from '../types';
 import { KeyedRegistry } from './keyed-registry';
 import { isSpecObject } from './spec-guard';
 import { isEcmaWhitespaceCode } from '../../../electron/shared/ecma-whitespace';
+import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
+import { isKnownHotkeyModifier } from '../command-palette/format-hotkey';
 
 export interface CommandSpec {
   readonly id: string;
@@ -44,14 +46,19 @@ export const CMD_HOTKEY_MAX = 64;
 // 边界(E145):isValidHotkeyShape 导出供 keybindings 捕获侧(eventToCombo)与写端(setHotkey)复用同一形态校验,
 // 防捕获/override 写入注册侧会拒绝的畸形 hotkey(空段 / 含空白 / 主键为分隔符 '+')。
 // 等价正则:/^[^+\s]+(\+[^+\s]+)*$/(下面是其零分配手写版)。
+// 另:主键之前的每段必须是运行时认识的修饰键(isKnownHotkeyModifier,大小写不敏感)——未知修饰符
+// (hyper+x)会被 compileCombo 忽略降级成裸 x,注册 / override 写读 / 捕获三处同此拒绝。
 export function isValidHotkeyShape(hotkey: string): boolean {
   if (hotkey.length === 0) return false;
   let prevWasPlus = true;
+  let segStart = 0;
   for (let i = 0; i < hotkey.length; i += 1) {
     const code = hotkey.charCodeAt(i);
     if (code === 43) {
       if (prevWasPlus || i === hotkey.length - 1) return false;
+      if (!isKnownHotkeyModifier(lowerIfNeeded(hotkey.slice(segStart, i)))) return false;
       prevWasPlus = true;
+      segStart = i + 1;
       continue;
     }
     if (isEcmaWhitespaceCode(code)) return false;

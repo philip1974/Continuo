@@ -217,3 +217,36 @@ describe('CoPluginApp.mcp · per-plugin 闭包', () => {
     })();
   });
 });
+
+// ────────────────────────────────────────────────────────────
+// 有效权限 = 当前 manifest 声明 ∩ 用户已授权
+// (插件升级删掉某权限声明后,旧持久化授权不得继续生效)
+// ────────────────────────────────────────────────────────────
+
+describe('有效权限 = manifest 声明 ∩ 已授权', () => {
+  it('已 grant mcp-tools 但当前 manifest 未声明 → register 抛 PermissionError', async () => {
+    const store = new InMemoryPermissionStore();
+    await store.grant('p', ['mcp-tools', 'clipboard']);
+    const scoped = createScopedApp(makeApp(), 'p', store, undefined, ['clipboard']);
+    const err = await scoped.mcp.register(makeSpec('t')).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(PermissionError);
+    expect((err as PermissionError).permission).toBe('mcp-tools');
+  });
+
+  it('permission.check / granted 只报告仍在声明里的已授权项', async () => {
+    const store = new InMemoryPermissionStore();
+    await store.grant('p', ['mcp-tools', 'clipboard']);
+    const scoped = createScopedApp(makeApp(), 'p', store, undefined, ['clipboard']);
+    expect(await scoped.permission.check('mcp-tools')).toBe(false);
+    expect(await scoped.permission.check('clipboard')).toBe(true);
+    expect(await scoped.permission.granted()).toEqual(['clipboard']);
+  });
+
+  it('声明且已授 → 正常透传', async () => {
+    const store = new InMemoryPermissionStore();
+    await store.grant('p', ['mcp-tools']);
+    const scoped = createScopedApp(makeApp(), 'p', store, undefined, ['mcp-tools']);
+    const d = await scoped.mcp.register(makeSpec('ok'));
+    expect(typeof d.dispose).toBe('function');
+  });
+});

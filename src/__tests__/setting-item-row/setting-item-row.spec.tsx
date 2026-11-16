@@ -252,6 +252,34 @@ describe('SettingItemRow — select', () => {
   });
 });
 
+// 设置行显示与消费者(useSettingValue/getSettingValue)同一 coerceSettingValue 规整后的有效值,
+// 不显示篡改/旧版 localStorage 里的原始脏值。
+describe('SettingItemRow — 显示规整后的有效值', () => {
+  it('number 越界存储值 → 显示 clamp 后的值', () => {
+    useSettingsValuesStore.setState({ values: { 'terminal.fontSize': 999 } });
+    const s = spec({ id: 'terminal.fontSize', type: 'number', default: 13, min: 10, max: 24 });
+    const { container } = render(<SettingItemRow spec={s} />);
+    const input = container.querySelector('input[type=number]') as HTMLInputElement;
+    expect(input.value).toBe('24');
+  });
+
+  it('select 非法存储值 → 显示回退的 default', () => {
+    useSettingsValuesStore.setState({ values: { 'general.theme': 'bogus' } });
+    const s = spec({
+      id: 'general.theme',
+      type: 'select',
+      default: 'dark',
+      enum: [
+        { value: 'dark', label: 'Dark' },
+        { value: 'light', label: 'Light' },
+      ],
+    });
+    const { container } = render(<SettingItemRow spec={s} />);
+    const checked = container.querySelector('[role=radio][aria-checked=true]');
+    expect(checked?.textContent).toBe('Dark');
+  });
+});
+
 describe('SettingItemRow — number', () => {
   it('合法数字 → setValue', () => {
     const s = spec({

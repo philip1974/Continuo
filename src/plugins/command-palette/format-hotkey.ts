@@ -80,14 +80,58 @@ export function canonicalHotkeyKey(lowerKey: string): string {
 }
 
 /**
- * 把整串快捷键的主键段(最后一个 `+` 之后)归一成 e.key 名,用于比较两个快捷键是否是同一个键
- * (`mod+up` 与录制出的 `mod+arrowup`)。修饰键段原样保留。
+ * 运行时(useCommandHotkeys.compileCombo)认识的修饰键词汇(小写)。注册 / override 写读 / 捕获校验
+ * 共用:未知修饰符(如 hyper)直接拒绝,否则 compileCombo 会把它静默忽略、降级成裸主键触发。
  */
-export function canonicalHotkey(combo: string): string {
-  const plus = combo.lastIndexOf('+');
-  const key = lowerIfNeeded(combo.slice(plus + 1).trim());
-  const canonical = canonicalHotkeyKey(key);
-  return canonical === combo.slice(plus + 1) ? combo : combo.slice(0, plus + 1) + canonical;
+const HOTKEY_MODIFIERS: ReadonlySet<string> = new Set([
+  'mod',
+  'cmd',
+  'ctrl',
+  'shift',
+  'alt',
+  'option',
+]);
+
+/** (已小写的)修饰键段是否在运行时词汇内。 */
+export function isKnownHotkeyModifier(lowerModifier: string): boolean {
+  return HOTKEY_MODIFIERS.has(lowerModifier);
+}
+
+/**
+ * 把整串快捷键归一成「运行时语义」签名,用于比较两个快捷键是否会被同一次按键触发:
+ * - 主键别名归一(`mod+up` ≡ 录制出的 `mod+arrowup`)
+ * - 修饰键去重、大小写不敏感、按固定顺序输出(`shift+mod+enter` ≡ `mod+shift+enter`)
+ * - 修饰键别名按 compileCombo 同一映射:option≡alt;mod 在 mac≡cmd(metaKey)、其它平台≡ctrl
+ * 含未知修饰符的串运行时不可匹配,原样返回(只与完全相同的串相等)。
+ */
+export function canonicalHotkey(
+  combo: string,
+  platform: Platform = detectPlatform(),
+): string {
+  let meta = false;
+  let ctrl = false;
+  let alt = false;
+  let shift = false;
+  let start = 0;
+  for (;;) {
+    const plus = combo.indexOf('+', start);
+    if (plus < 0) break;
+    const mod = lowerIfNeeded(combo.slice(start, plus).trim());
+    if (mod === 'cmd' || (mod === 'mod' && platform === 'mac')) meta = true;
+    else if (mod === 'ctrl' || mod === 'mod') ctrl = true;
+    else if (mod === 'alt' || mod === 'option') alt = true;
+    else if (mod === 'shift') shift = true;
+    else return combo;
+    start = plus + 1;
+  }
+  const key = canonicalHotkeyKey(lowerIfNeeded(combo.slice(start).trim()));
+  return (
+    (meta ? 'meta+' : '') +
+    (ctrl ? 'ctrl+' : '') +
+    (alt ? 'alt+' : '') +
+    (shift ? 'shift+' : '') +
+    key
+  );
 }
 
 const EMPTY_HOTKEY_PARTS: string[] = [];

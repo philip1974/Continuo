@@ -31,3 +31,8 @@
 - 每个内置插件 manifest.id = `core.<name>`,version `1.0.0`
 - onload 调 `this.registerPanel({ type, title, factory })`
 - factory 返回 React element(`createElement(Editor)` 等)
+
+### WindowPlugin · 在新窗口打开文件夹
+
+- selectDirectory 返回 `{ok:false}` → notifyFailure 失败 toast(与 Explorer 打开文件夹一致),不建窗
+- 用户取消(`{ok:true,data:null}`)→ 静默

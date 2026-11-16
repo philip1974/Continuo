@@ -38,6 +38,8 @@ Backspace=unbind('');其它键 → 完整组合。Esc 由 Modal 自身处理 onC
 ### 冲突检测
 
 - captured 非空时 → 扫 allCommands 中 effective hotkey 等于 captured 且 id≠commandId
+- 比较前两侧都经 canonicalHotkey 归一到运行时语义:修饰键顺序无关、去重、option≡alt、
+  mod 按平台映射(mac≡cmd / 其它≡ctrl)、主键别名归一 → `shift+mod+enter` 与 `mod+shift+enter` 判冲突
 - 显示「⚠️ 此组合已绑定到其它命令」
 
 ### 保存

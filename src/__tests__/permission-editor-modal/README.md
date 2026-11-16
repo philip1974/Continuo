@@ -37,6 +37,9 @@ granted=false 项 store.deny,然后 onClose。当前已 enabled 实例不强制 
 - granted=false 一组 → store.deny
 - 两组都为空 → 不调任何 IPC,直接 onClose
 - 调完 onClose
+- 写入顺序:先 deny 后 grant(中途失败只会少授不会多授);deny 写失败 → 不再 grant,
+  持久化保持原状态;deny 成功而 grant 写失败 → 把已 deny 的原 granted 项重新 grant
+  (尽力回滚),Modal 保持打开并显示失败提示
 
 ### 取消
 

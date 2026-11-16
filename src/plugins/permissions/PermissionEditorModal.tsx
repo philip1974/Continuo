@@ -5,9 +5,13 @@
 // 提示"下次启用生效"。当前 enabled 实例不会被强制 disable(避免插件
 // 状态丢失);用户要立即生效手动 [禁用] → [启用]。
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button, Modal } from '@/design';
-import type { PermissionKey, PermissionStore } from '../permissions';
+import type {
+  PermissionDecision,
+  PermissionKey,
+  PermissionStore,
+} from '../permissions';
 import { useT } from '@/i18n';
 import { PermissionOptionRow } from './PermissionOptionRow';
 
@@ -61,6 +65,28 @@ export function splitPermissionDecisionsForSave(
   };
 }
 
+/**
+ * 回滚已成功的 deny:原为 granted 的项重新 grant;原为 denied 的无需动;原未决的项 store 无
+ * 单键删除 API,保持 denied(fail-closed,下次启用不弹窗但仍不授权)。回滚失败只记录不再抛。
+ */
+async function restoreDenied(
+  store: PermissionStore,
+  pluginId: string,
+  prior: readonly PermissionDecision[],
+  denied: readonly PermissionKey[],
+): Promise<void> {
+  const deniedSet = new Set(denied);
+  const regrant = prior
+    .filter((d) => d.granted && deniedSet.has(d.permission))
+    .map((d) => d.permission);
+  if (regrant.length === 0) return;
+  try {
+    await store.grant(pluginId, regrant);
+  } catch (err) {
+    console.error('[PermissionEditorModal] rollback failed', err);
+  }
+}
+
 export function PermissionEditorModal({
   open,
   pluginId,
@@ -103,6 +129,8 @@ function PermissionEditorModalBody({
   // 保存会按旧快照关闭弹窗、新改动既没写入也无提示;双击 Save 还会重复排队同一批写入。saving=true
   // 时禁用 checkbox + Save(并防 save 重入),完成/失败后清除。
   const [saving, setSaving] = useState(false);
+  // 保存回滚基线:加载时的已存决策(保存中途失败时按原值尽力恢复已成功的写)。
+  const priorRef = useRef<readonly PermissionDecision[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -112,6 +140,7 @@ function PermissionEditorModalBody({
       .get(pluginId)
       .then((list) => {
         if (cancelled) return;
+        priorRef.current = list;
         const m = new Map<PermissionKey, boolean | null>();
         for (const p of declared) m.set(p, null);
         for (const d of list) m.set(d.permission, d.granted);
@@ -152,10 +181,18 @@ function PermissionEditorModalBody({
     setSaveFailed(false);
     const { toGrant, toDeny } = splitPermissionDecisionsForSave(decisions);
     setSaving(true);
+    // 数据安全:store 无批量写,grant/deny 是两次独立写盘。先 deny 后 grant —— 中途失败最多
+    // 少授、不会多授(fail-closed);grant 失败时再把已成功 deny 的项按原值恢复(尽力而为),
+    // 避免落成用户从未选择过的混合状态。
+    let denied = false;
     try {
+      if (toDeny.length > 0) {
+        await store.deny(pluginId, toDeny);
+        denied = true;
+      }
       if (toGrant.length > 0) await store.grant(pluginId, toGrant);
-      if (toDeny.length > 0) await store.deny(pluginId, toDeny);
     } catch (err) {
+      if (denied) await restoreDenied(store, pluginId, priorRef.current, toDeny);
       // 数据安全:写盘失败时 store 抛(不再静默) → **不 onClose**(不假装已保存),
       // 保持 Modal 打开让用户重试;store 已保证 cache 未被半提交污染(写成功才提交)。
       // a11y(A46):同时给用户可见 + AT 可播报的失败反馈,不只 console.error。

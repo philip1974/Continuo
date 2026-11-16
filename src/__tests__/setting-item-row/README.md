@@ -23,6 +23,8 @@
 - title + id chip(<code> 元素)同行
 - description 存在 → 第二行
 - 类型对应控件渲染
+- 显示值 = coerceSettingValue(spec, stored ?? default),与消费者同一规整:越界 number 显示 clamp 值、
+  非法 select 显示 default(不显示原始脏值)
 
 ### boolean
 

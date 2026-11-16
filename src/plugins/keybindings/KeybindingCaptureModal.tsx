@@ -73,14 +73,15 @@ export function selectKeybindingConflicts(
   overrides: Readonly<Record<string, string>> = EMPTY_OVERRIDES,
 ): readonly CommandSpec[] {
   if (!captured) return EMPTY_CONFLICTS;
-  // 两侧都归一主键别名(mod+up ≡ mod+arrowup):别名在运行时会触发,不归一就会两条命令抢同一个键而不提示。
-  const capturedCanonical = canonicalHotkey(captured);
+  // 两侧都归一到运行时语义(主键别名 mod+up ≡ mod+arrowup;修饰键顺序/别名 shift+mod+enter ≡
+  // mod+shift+enter):运行时会触发同一次按键,不归一就会两条命令抢同一个键而不提示。
+  const capturedCanonical = canonicalHotkey(captured, PLATFORM);
   let conflicts: CommandSpec[] | null = null;
   let conflictCount = 0;
   for (const command of allCommands) {
     if (command.id === commandId) continue;
     const effective = resolveEffectiveHotkey(command, overrides);
-    if (!effective || canonicalHotkey(effective) !== capturedCanonical) continue;
+    if (!effective || canonicalHotkey(effective, PLATFORM) !== capturedCanonical) continue;
     if (conflicts === null) conflicts = new Array<CommandSpec>(allCommands.length);
     conflicts[conflictCount] = command;
     conflictCount += 1;

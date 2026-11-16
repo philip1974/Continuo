@@ -404,6 +404,26 @@ describe('KeybindingCaptureModal — 冲突检测', () => {
     expect(getEffSpy).not.toHaveBeenCalled();
   });
 
+  it('修饰键顺序 / 别名不同但运行时同一组合 → 判为冲突', () => {
+    const all: CommandSpec[] = [
+      { id: 'cmd.a', title: 'A', hotkey: 'mod+old', fn: () => {} },
+      { id: 'cmd.b', title: 'B', hotkey: 'shift+mod+enter', fn: () => {} },
+      { id: 'cmd.c', title: 'C', hotkey: 'option+y', fn: () => {} },
+      { id: 'cmd.d', title: 'D', hotkey: 'shift+alt+z', fn: () => {} },
+    ];
+    expect(
+      selectKeybindingConflicts(all, 'cmd.a', 'mod+shift+enter').map((c) => c.id),
+    ).toEqual(['cmd.b']);
+    expect(selectKeybindingConflicts(all, 'cmd.a', 'alt+y').map((c) => c.id)).toEqual([
+      'cmd.c',
+    ]);
+    expect(selectKeybindingConflicts(all, 'cmd.a', 'alt+shift+z').map((c) => c.id)).toEqual([
+      'cmd.d',
+    ]);
+    // 不同组合不误报
+    expect(selectKeybindingConflicts(all, 'cmd.a', 'mod+enter')).toEqual([]);
+  });
+
   it('其它命令的 effective hotkey 与 captured 相同 → 显示警告', () => {
     const all: CommandSpec[] = [
       { id: 'cmd.a', title: 'A', hotkey: 'mod+old', fn: () => {} },

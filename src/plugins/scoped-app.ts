@@ -662,6 +662,23 @@ function makePermission(
   };
 }
 
+/** 只读视图:get 仅返回 declared 内的决策;scoped-app 只经 get 读授权。 */
+function restrictToDeclared(
+  store: PermissionStore,
+  declared: readonly PermissionKey[],
+): PermissionStore {
+  const allowed = new Set(declared);
+  return {
+    async get(pluginId) {
+      const decisions = await store.get(pluginId);
+      return decisions.filter((d) => allowed.has(d.permission));
+    },
+    grant: (pluginId, perms) => store.grant(pluginId, perms),
+    deny: (pluginId, perms) => store.deny(pluginId, perms),
+    clearDenied: (pluginId) => store.clearDenied(pluginId),
+  };
+}
+
 /**
  * 把 coApp 包成 per-plugin CoPluginApp。Plugin constructor 拿到的就是它。
  *
@@ -671,9 +688,14 @@ function makePermission(
 export function createScopedApp(
   coApp: CoApp,
   pluginId: string,
-  store: PermissionStore | null,
+  rawStore: PermissionStore | null,
   token?: string,
+  declared?: readonly PermissionKey[],
 ): CoPluginApp {
+  // 有效权限 = 当前 manifest 声明 ∩ 用户已授权:插件升级删掉某权限声明后,持久化里的
+  // 旧授权不得继续生效。传入 declared 时把 store.get 视图裁到声明集合,所有 ensurePerm /
+  // permission.check/granted 自动走同一语义;未传(core plugin / 测试)保持旧行为。
+  const store = rawStore && declared ? restrictToDeclared(rawStore, declared) : rawStore;
   // Omit coApp.mcp/editor raw singletons → 替换为 per-plugin scope wrappers,
   // 其它字段直通。
   const { mcp: registry, editor, dock, notifications, dataStore, ...rest } =

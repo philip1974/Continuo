@@ -562,6 +562,8 @@ export class PluginManager {
       entry.id,
       this.host.permissionStore ?? null,
       pluginFsToken,
+      // 有效权限 = 当前 manifest 声明 ∩ 已授权(升级删声明后旧授权失效)
+      entry.manifest.permissions ?? EMPTY_PLUGIN_PERMISSIONS,
     );
     // 构造器必须和 _activate 同在 try/catch 内:token 已在上面注册并设 active,
     // 若 `new PluginClass()` 同步抛错(插件构造函数 throw)而它在 try 之外,就会跳出
