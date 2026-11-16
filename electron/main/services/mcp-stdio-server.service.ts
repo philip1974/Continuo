@@ -144,6 +144,12 @@ const MAX_STDIO_LINE_BYTES = 1_000_000;
 // promise + 持有 line 字符串 → CPU/内存放大。空白行(NDJSON 约定忽略,handleLine 本就早返)入链前同步跳过;
 // 非空行数超此预算 → parse error + 断开。1024 远超任何正常批量(MCP client 通常一行一请求)。
 const MAX_STDIO_LINES_PER_CHUNK = 1024;
+// 边界(R110 串行队列的总深度):MAX_STDIO_LINES_PER_CHUNK 只限单 chunk。首请求阻塞(如 create_session
+// 卡在授权弹窗)时,客户端持续发小 chunk 可在本连接队列里无限堆积待处理行(每行持有 ≤1MB 字符串 +
+// promise)→ main 内存无界增长。每连接排队中(含在途)的非空行数 / 累计 UTF-8 字节超上限 → 与 E1/E214
+// 同款 parse error + 断开(fail-closed)。正常 MCP client 一行一请求,远达不到。
+export const MAX_STDIO_PENDING_LINES = 1024;
+export const MAX_STDIO_PENDING_BYTES = 16_000_000;
 
 // 边界(E233,E227-E232 数量上限族):stdio MCP socket server 并发连接数量上限。每条连接保留 Socket +
 // AbortController + 行解码器闭包 + clients/socketCtx/socketSubject 多个 Map/Set 条目,
@@ -358,6 +364,9 @@ export async function createStdioSocketServer(
     // terminal.press_key 时,Enter 可能先于文本写入 PTY(响应按 id 匹配只修复返回值配对,修不了
     // 副作用顺序)。单行失败/抛错不阻塞后续行。队列随连接闭包回收。
     const lineQueue = createSerialQueue();
+    // 本连接排队中(含在途)的行数 / 字节,任务结束(成功或失败)时扣减。
+    let pendingLines = 0;
+    let pendingBytes = 0;
     // 边界(E135,E131/E132 同族):用流式 TextDecoder 行解码器,跨 chunk 多字节字符正确还原
     //(替代 splitLines 的逐 chunk toString() 拆字 bug)。
     const lineDecoder = createNdjsonLineDecoder();
@@ -391,6 +400,16 @@ export async function createStdioSocketServer(
       // overflow 分支),此处不必再计数。
       for (const line of lines) {
         if (isBlankStdioLine(line)) continue; // 空白行:NDJSON 忽略,不入链
+        const bytes = Buffer.byteLength(line, 'utf8');
+        if (
+          pendingLines >= MAX_STDIO_PENDING_LINES ||
+          pendingBytes + bytes > MAX_STDIO_PENDING_BYTES
+        ) {
+          rejectAndDestroy(sock, 'too many pending requests');
+          return;
+        }
+        pendingLines += 1;
+        pendingBytes += bytes;
         void lineQueue.run(() =>
           handleLine(
             line,
@@ -399,9 +418,14 @@ export async function createStdioSocketServer(
             opts.serverInfo,
             opts.resolveWindowId,
             aborter.signal,
-          ).catch((err) => {
-            console.warn('[mcp-stdio] handleLine threw', err);
-          }),
+          )
+            .catch((err) => {
+              console.warn('[mcp-stdio] handleLine threw', err);
+            })
+            .finally(() => {
+              pendingLines -= 1;
+              pendingBytes -= bytes;
+            }),
         );
       }
     });

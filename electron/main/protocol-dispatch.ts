@@ -123,7 +123,17 @@ export function routeProtocolUrl(url: string, deps: RouteProtocolUrlDeps): void 
   }
   // 有就绪窗口:先把队列里残留(若有)按 FIFO 排空到一个就绪窗口,再投本次 url(保留既有
   // 「广播到所有就绪窗口」语义)。
-  drainPendingProtocolUrls(ready![0]!.webContents, channel, pending);
+  // race(R63 同族):drain 只尝试 ready[0] 时,它在 send 前销毁 → 旧 URL 滞留而新 URL 照常广播
+  // → 乱序。依次尝试各就绪窗口直到排空;仍有残留(全部就绪窗口都投不出去)→ 新 URL 入队尾,
+  // 不抢在旧 URL 之前投递,留给后续就绪窗口按 FIFO 一并消费。
+  for (let i = 0; i < readyCount && pending.length > 0; i++) {
+    drainPendingProtocolUrls(ready![i]!.webContents, channel, pending);
+  }
+  if (pending.length > 0) {
+    // 边界(E55):同样受队列上限约束。
+    if (pending.length < MAX_PENDING_PROTOCOL_URLS) pending.push(url);
+    return;
+  }
   // race(R63 同族):逐窗口 try/catch。某个就绪窗口在 ready 过滤后、send 前销毁时 send 会抛,
   // 不捕获则中断循环 → 其余就绪窗口漏投本次 url。每个独立 try/catch 使一个已死窗口不拖累其它。
   let delivered = false;

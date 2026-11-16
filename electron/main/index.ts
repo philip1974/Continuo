@@ -787,7 +787,8 @@ async function createSessionForAgent(
   );
   // P3 autorun:spawn 后 delay 200ms(Win 600)等 shell prompt 出现,然后键入命令。
   // 不严格保证 prompt 已就绪 — 平台差异大,简单 timer 是最务实的近似。
-  if (input.autorun) {
+  // race(R111 同族):ptyCreateHandler 是异步边界,期间调用方已断开 → 不再键入 autorun 命令。
+  if (input.autorun && !ctx.signal?.aborted) {
     const cmd = input.autorun;
     setTimeout(() => {
       if (termService.has(r.id)) {
@@ -844,6 +845,20 @@ async function startMcpHost(): Promise<void> {
           }),
         createSession: createSessionForAgent,
         installStopHook,
+        // 安全:await_stop_hook 与 read_output 同走 auth + per-session capability 门控
+        //(会返回 transcript_path / last_assistant_message,不得被同窗口他方消费)。
+        awaitStopHookTool: brokerStarted
+          ? createAwaitStopHookTool({
+              broker,
+              getSessionMeta: (sessionId, ctx) => {
+                const session = terminalSessions.get(sessionId);
+                if (!session || session.ownerWindowId !== ctx.ownerWindowId) {
+                  return null;
+                }
+                return session;
+              },
+            })
+          : undefined,
       }),
       ...makeDebugMcpTools({
         service: debugService,
@@ -857,20 +872,6 @@ async function startMcpHost(): Promise<void> {
           }),
       }),
     ];
-    if (brokerStarted) {
-      initialTools.push(
-        createAwaitStopHookTool({
-          broker,
-          getSessionMeta: (sessionId, ctx) => {
-            const session = terminalSessions.get(sessionId);
-            if (!session || session.ownerWindowId !== ctx.ownerWindowId) {
-              return null;
-            }
-            return session;
-          },
-        }),
-      );
-    }
     mcpHost = await createMcpHost({
       initialTools,
     });

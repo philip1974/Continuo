@@ -31,6 +31,9 @@ const EMPTY_RESTORE_ENTRIES: RestoreEntry[] = [];
 // stat + 批量开窗,阻塞主进程甚至拖垮桌面会话。启动恢复单独加现实上限(≠ 持久化 schema 的 10000):
 // 最多恢复 MAX_RESTORE_WINDOWS 个非主窗,且超长 workspace 路径先跳过(不 stat)。
 export const MAX_RESTORE_WINDOWS = 16;
+// 边界(MAX_RESTORE_WINDOWS 只数「命中」):海量指向不存在目录的段永远凑不满命中数,仍会逐段同步
+// stat。另设候选检查预算:每次 isExistingDir 都计数(无论命中与否),耗尽即停止。
+export const MAX_RESTORE_CHECKS = 64;
 
 export function pickWindowsToRestore(
   data: ExplorerPayload,
@@ -40,6 +43,7 @@ export function pickWindowsToRestore(
   if (data.restoreAllWindowsOnLaunch !== true) return EMPTY_RESTORE_ENTRIES;
   let out: RestoreEntry[] | null = null;
   let count = 0;
+  let checks = 0;
   // 边界(E84):防御性按 windowSeq 去重 —— 即便 explorer.json 含重复 windowSeq 段(load 端
   // canonicalize 已主防),也不为同一 seq 开多窗(多窗共享同段会互相覆盖会话)。
   let seenSeq: Set<number> | null = null;
@@ -55,6 +59,8 @@ export function pickWindowsToRestore(
     const ws = entry.workspace.root;
     if (ws === null) continue;
     if (!isWithinStartupPathLimit(ws)) continue; // 边界(E60):超长路径先跳过,绝不 stat
+    if (checks >= MAX_RESTORE_CHECKS) break; // 候选检查预算耗尽:停止同步 stat
+    checks += 1;
     if (!isExistingDir(ws)) continue;
     if (out === null) out = new Array<RestoreEntry>(MAX_RESTORE_WINDOWS);
     if (seenSeq === null) seenSeq = new Set<number>();

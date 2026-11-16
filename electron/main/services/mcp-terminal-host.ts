@@ -31,6 +31,11 @@ export interface MakeTerminalMcpToolsDeps
   /** 安全 S3:会话的创建方身份(controllerToken),未由 MCP 创建 → null. */
   readonly getSessionController: (id: string) => string | null;
   readonly ensureAuthorized: EnsureAuthorized;
+  /**
+   * terminal.await_stop_hook(broker 启动失败时省略,不注册)。与 read_output 同等走 auth →
+   * capability 门控:它会返回 transcript_path / last_assistant_message,不得被同窗口他方消费。
+   */
+  readonly awaitStopHookTool?: AnyMcpTool;
 }
 
 /**
@@ -89,7 +94,7 @@ export function makeTerminalMcpTools(
         notOwnedMessage: 'terminal session not owned by caller',
       }),
     );
-  return [
+  const tools: AnyMcpTool[] = [
     gate(
       makeListSessionsTool({
         getSessions: (ctx) =>
@@ -138,4 +143,6 @@ export function makeTerminalMcpTools(
       }),
     ),
   ];
+  if (deps.awaitStopHookTool) tools.push(gateOwned(deps.awaitStopHookTool));
+  return tools;
 }
