@@ -726,6 +726,7 @@
 ## [migration-shell-env](./migration-shell-env/README.md)
 
 - [`host-helper-import.spec.ts`](./migration-shell-env/host-helper-import.spec.ts)
+- [`integration-args-contract.spec.ts`](./migration-shell-env/integration-args-contract.spec.ts)
 
 ## [migration-step1-pty-handover](./migration-step1-pty-handover/README.md)
 
@@ -1125,6 +1126,7 @@
 ## [terminal-search](./terminal-search/README.md)
 
 - [`byte-identical.spec.ts`](./terminal-search/byte-identical.spec.ts)
+- [`invalid-regex.spec.ts`](./terminal-search/invalid-regex.spec.ts)
 - [`keymap.spec.ts`](./terminal-search/keymap.spec.ts)
 - [`search-bar.spec.tsx`](./terminal-search/search-bar.spec.tsx)
 - [`state-machine.spec.ts`](./terminal-search/state-machine.spec.ts)

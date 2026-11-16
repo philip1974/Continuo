@@ -7,7 +7,7 @@
 - `error-codes-message-catalog.spec.ts`: 从 `ERROR_CODES` 枚举生成三语 `errors.*` catalog 全覆盖断言。
 - `main-menu-rebuild.spec.ts`: main 进程语言切换后重建应用菜单,且不触碰 popout 菜单策略。
 - `popout-locale-broadcast.spec.ts`: 多窗口语言变更广播到其他窗口。
-- `pty-lang-env.spec.ts`: PTY 创建时保留合法用户 `LANG`,修正缺失或不支持的 locale。
+- `pty-lang-env.spec.ts`: PTY 创建时保留合法用户 locale,修正缺失或不支持的 locale;按有效 locale(`LC_ALL` > `LC_CTYPE` > `LANG`)判断是否 UTF-8。
 - `settings-service.spec.ts`: `settings.json` load/save、corrupt 备份与系统 locale 映射。
 - `bootstrap-locale-sync.spec.ts`: renderer 启动先等待 main locale,再 boot core plugins。
 - `design-layer-no-keys.spec.ts`: `src/design` 共享层不直接依赖 i18n。

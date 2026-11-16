@@ -16,6 +16,7 @@ BDD coverage for issue #38: integrated terminal search with xterm search addon w
 - S8 `isSearchHotkey` recognizes exact platform `mod+f` only.
 - S9 Late `onDidChangeResults` events after unmount are ignored.
 - S10 Search command scopes to the active terminal panel and does not open hidden or non-terminal panels.
+- S11 正则模式下非法正则(`[` / `(` / `\`)不抛错:调用侧预校验,不交给 SearchAddon,清高亮并把结果置为「无匹配」,搜索条照常可用;改回合法正则后照常搜索(`invalid-regex.spec.ts`)。
 
 ## Manual smoke test checklist
 

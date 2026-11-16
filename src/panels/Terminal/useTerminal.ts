@@ -598,8 +598,11 @@ export function useTerminal(termId: string) {
     // setSearchState(next) would overwrite the result handler's update
     // with stale {-1, 0} (matches highlight but counter shows 0).
     const prev = searchStateRef.current;
-    applyTerminalSearchEffect(searchAddonRef.current, prev, action);
-    const afterEffect = searchStateRef.current;
+    const searched = applyTerminalSearchEffect(searchAddonRef.current, prev, action);
+    // 非法正则未交给 addon(见 applyTerminalSearchEffect)→ 表现为「无匹配」,搜索条显示 no_match。
+    const afterEffect = searched
+      ? searchStateRef.current
+      : { ...searchStateRef.current, result: INITIAL_TERMINAL_SEARCH_STATE.result };
     const next = terminalSearchReducer(afterEffect, action);
     searchStateRef.current = next;
     setSearchState(next);

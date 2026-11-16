@@ -64,6 +64,14 @@ describe('execShell — 正常路径', () => {
     expect(r.exitCode).toBe(0);
     expect(r.timedOut).toBe(false);
   }, 5000);
+
+  it('未提供 input → stdin 立即关闭,读 stdin 的命令(cat)拿到 EOF 正常退出而非等到超时', async () => {
+    // 一次性非交互 API:旧实现只在有 input 时 end stdin,cat / python - 会一直阻塞到超时。
+    const r = await execShell({ cmd: 'cat', args: [], timeoutMs: 3000 });
+    expect(r.timedOut).toBe(false);
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toBe('');
+  }, 5000);
 });
 
 describe('execShell — 超时', () => {

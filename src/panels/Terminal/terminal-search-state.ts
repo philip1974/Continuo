@@ -49,11 +49,49 @@ export function toSearchAddonOptions(options: TerminalSearchOptions): ISearchOpt
   return packageToOpts(options, TERMINAL_SEARCH_DECORATIONS) satisfies ISearchOptions;
 }
 
+/** 本次 action 会以 regex 模式搜索、且搜索词不是合法正则 → true。 */
+function searchesInvalidRegex(
+  state: TerminalSearchState,
+  action: TerminalSearchAction,
+): boolean {
+  let term: string;
+  let options: TerminalSearchOptions;
+  if (action.type === 'setTerm') {
+    term = action.term;
+    options = state.options;
+  } else if (action.type === 'setOptions') {
+    term = state.term;
+    options = action.options;
+  } else if (action.type === 'next' || action.type === 'prev') {
+    term = state.term;
+    options = state.options;
+  } else {
+    return false;
+  }
+  if (!options.regex || term.length === 0) return false;
+  try {
+    // 与 xterm SearchEngine 同款构造(flags 不影响语法合法性)
+    new RegExp(term);
+    return false;
+  } catch {
+    return true;
+  }
+}
+
 // 本地 3 参 API，内部注入 DECORATIONS；与包同名 4 参版本通过 `as packageApply` 别名隔离
+// 返回 false = 搜索词是非法正则、未交给 addon:xterm SearchEngine 内直接 RegExp(term) 无 try/catch,
+// 非法正则(`[` / `(` / `\`)会抛 SyntaxError 穿透事件处理器,且 addon 记下的搜索选项会让其
+// 输出触发的防抖重搜在 setTimeout 里再抛。这里预校验并清高亮(连带清 addon 缓存词),
+// 调用方据此把结果置为「无匹配」。
 export function applyTerminalSearchEffect(
   addon: SearchAddonLike | null,
   state: TerminalSearchState,
   action: TerminalSearchAction,
-): void {
+): boolean {
+  if (searchesInvalidRegex(state, action)) {
+    addon?.clearDecorations();
+    return false;
+  }
   packageApply(addon, state, action, TERMINAL_SEARCH_DECORATIONS);
+  return true;
 }
