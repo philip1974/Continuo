@@ -9,8 +9,14 @@ import { PLUGIN_SHELL_STREAM_CHANNELS } from '../../../electron/shared/plugin-sh
 import {
   cleanupAllShellStreams,
   registerPluginShellStreamHandlers,
+  resetShellStreamShutdownForTest,
 } from '../../../electron/main/services/plugin-shell-stream.service';
-import { cleanupAllShellExecs, execShell } from '../../../electron/main/services/shell.service';
+import {
+  cleanupAllShellExecs,
+  execShell,
+  resetShellExecShutdownForTest,
+} from '../../../electron/main/services/shell.service';
+import { ERROR_CODES } from '../../../electron/shared/error-codes';
 import { StubIpcMain, makeFakeEvent, type StubIpcEvent } from '../sdk-contract/integration/make-stub-ipc';
 
 // 进程组 / `sh` 语义仅 POSIX;Windows 走 taskkill /T(无 sh 可用,不在此验证)。
@@ -35,6 +41,9 @@ afterEach(() => {
     }
   }
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
+  // cleanupAll 置的退出闸是模块级状态,用例之间复位。
+  resetShellExecShutdownForTest();
+  resetShellStreamShutdownForTest();
 });
 
 function pidFile(): string {
@@ -208,6 +217,63 @@ describe.skipIf(!HAS_SH)('49 · shell 终止杀整棵进程树(后代不成孤�
       () => events(event).find((e) => e.streamId === 'quit-tree' && e.kind === 'exit'),
       'exit after cleanup',
     );
+  }, 10000);
+
+  // 终审 P1:cleanupAll 只杀调用瞬间的快照。插件收到 exit 后立即重启任务,新进程在最终 app.quit 前启动、不在
+  // 快照内,detached 进程组在 IDE 退出后存活。cleanupAll 开始即置退出闸:此后 exec / START 立即拒绝且不 spawn。
+  // 被拒的命令若真的 spawn 了会把自己的 pid 写进文件;断言文件始终不出现。
+  const marker = (file: string): string[] => ['-c', `echo $$ > '${file}'; sleep 600`];
+  async function expectNeverSpawned(file: string): Promise<void> {
+    await new Promise((r) => setTimeout(r, 300));
+    if (existsSync(file)) pids.push(Number(readFileSync(file, 'utf-8').trim()));
+    expect(existsSync(file)).toBe(false);
+  }
+
+  it('cleanupAllShellExecs 进行中(在途 exec 结算时重启)与之后 → execShell 拒绝且不 spawn', async () => {
+    const file = pidFile();
+    const pending = execShell({ cmd: '/bin/sh', args: termIgnorer(file), timeoutMs: 600_000 });
+    await readPid(file);
+    const restartFile = pidFile();
+    // 在途 exec 被清理强杀后结算 —— 此刻清理尚未结束,插件立即重启任务。
+    const restarted = pending.then(() =>
+      execShell({ cmd: '/bin/sh', args: marker(restartFile), timeoutMs: 600_000 }),
+    );
+    const cleanup = cleanupAllShellExecs();
+    await expect(restarted).rejects.toMatchObject({ code: ERROR_CODES.AGENT_NOT_AUTHORIZED });
+    await cleanup;
+    const afterFile = pidFile();
+    await expect(
+      execShell({ cmd: '/bin/sh', args: marker(afterFile), timeoutMs: 600_000 }),
+    ).rejects.toMatchObject({ code: ERROR_CODES.AGENT_NOT_AUTHORIZED });
+    await expectNeverSpawned(restartFile);
+    await expectNeverSpawned(afterFile);
+  }, 10000);
+
+  it('cleanupAllShellStreams 进行中(收到 exit 事件即重启)与之后 → START 拒绝且不 spawn', async () => {
+    const { ipc, event } = harness();
+    const file = pidFile();
+    const restartFile = pidFile();
+    let restarted: Promise<unknown> | undefined;
+    event.sender.send.mockImplementation((_channel: string, ev: StreamEvent) => {
+      if (ev.streamId === 'quit-restart' && ev.kind === 'exit' && !restarted) {
+        restarted = ipc.invokeWithEvent(event, PLUGIN_SHELL_STREAM_CHANNELS.START, 'quit-restart-2', '/bin/sh', marker(restartFile), {
+          timeoutMs: 600_000,
+        });
+      }
+    });
+    await ipc.invokeWithEvent(event, PLUGIN_SHELL_STREAM_CHANNELS.START, 'quit-restart', '/bin/sh', termIgnorer(file), {
+      timeoutMs: 600_000,
+    });
+    await readPid(file);
+    await cleanupAllShellStreams();
+    expect(restarted).toBeDefined();
+    await expect(restarted).rejects.toMatchObject({ code: ERROR_CODES.AGENT_NOT_AUTHORIZED });
+    const afterFile = pidFile();
+    await expect(
+      ipc.invokeWithEvent(event, PLUGIN_SHELL_STREAM_CHANNELS.START, 'quit-after', '/bin/sh', marker(afterFile)),
+    ).rejects.toMatchObject({ code: ERROR_CODES.AGENT_NOT_AUTHORIZED });
+    await expectNeverSpawned(restartFile);
+    await expectNeverSpawned(afterFile);
   }, 10000);
 
   it('execShell 超时 → 后台后代被杀,Promise 及时 resolve(timedOut)', async () => {

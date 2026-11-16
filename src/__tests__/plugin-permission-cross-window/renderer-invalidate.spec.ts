@@ -13,6 +13,9 @@ const h = vi.hoisted(() => ({
   listeners: [] as ((id: string) => void)[],
   reads: 0,
   now: 100,
+  // 每次 readPermissions 取完快照后调用(模拟读取在途期间到达的失效广播)。
+  onRead: null as (() => void) | null,
+  shellExec: null as unknown as ReturnType<typeof vi.fn>,
 }));
 
 vi.mock('@/lib/co-api', () => ({
@@ -20,7 +23,10 @@ vi.mock('@/lib/co-api', () => ({
     plugins: {
       readPermissions: async () => {
         h.reads += 1;
-        return { ok: true, data: structuredClone(h.disk) };
+        const data = structuredClone(h.disk);
+        await Promise.resolve();
+        h.onRead?.();
+        return { ok: true, data };
       },
       mutatePluginPermissions: async (id: string, mutation: Mutation) => {
         const cur = h.disk[id] ?? [];
@@ -38,6 +44,9 @@ vi.mock('@/lib/co-api', () => ({
         for (const l of h.listeners) l(id); // main 广播 plugins:permissions-changed
         return { ok: true, data: next.length === 0 ? null : structuredClone(next) };
       },
+    },
+    shell: {
+      exec: (...args: unknown[]) => h.shellExec(...args),
     },
   },
 }));
@@ -64,6 +73,11 @@ beforeEach(() => {
   };
   h.listeners = [];
   h.reads = 0;
+  h.onRead = null;
+  h.shellExec = vi.fn(async () => ({
+    ok: true,
+    data: { stdout: '', stderr: '', exitCode: 0, signal: null, timedOut: false, truncated: false },
+  }));
 });
 
 describe('renderer:权限变更广播后各窗口重新加载授权', () => {
@@ -111,13 +125,38 @@ describe('renderer:权限变更广播后各窗口重新加载授权', () => {
     expect(await b.check('shell')).toBe(false); // 采用 main 返回的合并记录
   });
 
-  it('invalidate 发生在加载途中 → 该次加载结果不落缓存,下次读重新加载', async () => {
+  // 终审 P1:失效期间在途的读取拿到的是撤销前快照。此前只是不落缓存,却仍交给等待者 → ensurePerm 放行一次。
+  it('invalidate 发生在加载途中 → 等待者拿到按当前代际重新读取的结果,并落缓存', async () => {
     const store = new IpcPermissionStore();
     const pending = store.get(ID); // 发起加载(读到的是变更前的快照)
-    store.invalidate(ID);
-    await pending;
     h.disk[ID] = [{ permission: 'shell', granted: false, decidedAt: 9 }];
+    store.invalidate(ID);
+    expect(await pending).toEqual([{ permission: 'shell', granted: false, decidedAt: 9 }]);
+    expect(h.reads).toBe(2);
     expect(await store.get(ID)).toEqual([{ permission: 'shell', granted: false, decidedAt: 9 }]);
     expect(h.reads).toBe(2);
+  });
+
+  it('授权读取在途时 shell 被撤销 → shell.exec 拒绝、不发 IPC', async () => {
+    const b = makeWindow();
+    const app = createScopedApp(createTestCoApp(), ID, b.store, 'tok', ['shell']);
+    h.onRead = () => {
+      h.onRead = null;
+      // 读取已取到「shell 已授」快照、尚未返回时,别的窗口撤销 shell 并广播。
+      h.disk[ID] = [{ permission: 'shell', granted: false, decidedAt: 9 }];
+      for (const l of h.listeners) l(ID);
+    };
+    await expect(app.shell.exec('/bin/echo', ['x'])).rejects.toMatchObject({ name: 'PermissionError' });
+    expect(h.shellExec).not.toHaveBeenCalled();
+  });
+
+  it('每次读取都被失效(代际始终不稳定)→ 重试有上限,读取失败,shell.exec 拒绝、不发 IPC', async () => {
+    const b = makeWindow();
+    const app = createScopedApp(createTestCoApp(), ID, b.store, 'tok', ['shell']);
+    h.onRead = () => b.store.invalidate(ID);
+    await expect(app.shell.exec('/bin/echo', ['x'])).rejects.toThrow();
+    expect(h.shellExec).not.toHaveBeenCalled();
+    expect(h.reads).toBeGreaterThan(1);
+    expect(h.reads).toBeLessThanOrEqual(5);
   });
 });

@@ -50,6 +50,8 @@ const MAX_DECISIONS_PER_PLUGIN = PERMISSION_RECORD_LIMITS.DECISIONS_PER_PLUGIN_M
 // PathScopeRegistry 契约),非写端宽松值。E245 误对齐到写端 10_000;真正生效的是读盘 256,统一到此。
 const MAX_PATH_SCOPES_PER_PLUGIN = PERMISSION_RECORD_LIMITS.PATH_SCOPES_PER_PLUGIN_MAX; // 对齐 plugins.service MAX_PERSISTED_SCOPES_PER_PLUGIN / plugins.ipc PATHSCOPES_MAX
 const EMPTY_PERMISSION_DECISIONS: PermissionDecision[] = [];
+// 读取期间被失效时按当前代际重读的总次数上限(终审 P1,见 ensureLoaded)。
+const MAX_READ_ATTEMPTS = 3;
 const EMPTY_PATH_SCOPES: PathScope[] = [];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -228,29 +230,44 @@ export class IpcPermissionStore implements PermissionStore {
     if (this.loadingPromise && this.loadingGeneration === this.generation) {
       return this.loadingPromise;
     }
-    const generation = this.generation;
+    let generation = this.generation;
     this.loadingGeneration = generation;
+    // 本次加载仍是登记中的那个(未被更新代数的加载接手);只有登记者在结束时清 loadingPromise。
+    let registered = true;
     this.loadingPromise = (async () => {
       try {
-        const r = await coApi.plugins.readPermissions();
-        if (!r.ok) {
-          // 数据安全(codex 复查 P1,main #20 的 renderer 对偶):读权限失败(EACCES/EIO
-          // 经 main safeHandle → ok:false;ENOENT 首次启动仍是 ok:true 的 {})= 当前权限态
-          // 未知。绝不缓存空表 —— 抛出且不写 cache → 调用侧(get/grant/deny/clearDenied)
-          // fail-closed,不在未知态写。
-          throw codedError(r.code, r.message ?? 'readPermissions failed');
+        for (let attempt = 1; ; attempt += 1) {
+          const r = await coApi.plugins.readPermissions();
+          if (!r.ok) {
+            // 数据安全(codex 复查 P1,main #20 的 renderer 对偶):读权限失败(EACCES/EIO
+            // 经 main safeHandle → ok:false;ENOENT 首次启动仍是 ok:true 的 {})= 当前权限态
+            // 未知。绝不缓存空表 —— 抛出且不写 cache → 调用侧(get/grant/deny/clearDenied)
+            // fail-closed,不在未知态写。
+            throw codedError(r.code, r.message ?? 'readPermissions failed');
+          }
+          // 终审 P1:加载期间收到失效广播 → 读到的可能是撤销前快照,不落 cache 也不交给等待者(否则 ensurePerm
+          // 放行一次),按当前代际重新读取;代际始终不稳定时有上限,超限视为读取失败(调用侧 fail-closed)。
+          if (generation !== this.generation) {
+            if (attempt >= MAX_READ_ATTEMPTS) {
+              throw new Error('readPermissions: permissions kept changing during read');
+            }
+            // 仍是登记中的加载(无更新代数的加载接手)→ 随之换代,后来的调用方复用本次重读。
+            registered &&= this.loadingGeneration === generation;
+            generation = this.generation;
+            if (registered) this.loadingGeneration = generation;
+            continue;
+          }
+          const data: Cache = parsePermissionState(r.data);
+          for (const id of this.forgetOnLoad) delete data[id];
+          this.cache = data;
+          return data;
         }
-        const data: Cache = parsePermissionState(r.data);
-        for (const id of this.forgetOnLoad) delete data[id];
-        // 加载期间收到失效广播 → 结果只交给已在等待的调用方,不落 cache(下次读重新加载)。
-        if (generation === this.generation) this.cache = data;
-        return data;
       } finally {
         // 数据安全(codex 复查 P2):loadingPromise 必须在**所有**结局清除 —— 不只 ok:false
         // /成功,还包括 readPermissions() 的 promise 自身 reject(桥/进程/通道瞬时异常)。
         // 否则该 rejected promise 被永久缓存,后续调用复用它无法重试,本窗口权限态永久卡死。
         // 只清自己:失效后可能已有更新代数的加载在途(同一代数至多一个加载)。
-        if (this.loadingGeneration === generation) {
+        if (registered && this.loadingGeneration === generation) {
           this.loadingPromise = null;
           this.forgetOnLoad.clear();
         }

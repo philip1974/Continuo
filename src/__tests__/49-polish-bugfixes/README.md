@@ -1153,6 +1153,9 @@ helper + 必挂 browser-window-created),把「单一来源」固化进测试防�
   `dirty-close-confirm/close-confirm-flow.spec.ts`)。同组内忽略 SIGTERM 的后代随之被杀(ESRCH)。根因:before-quit
   此前只等 terminal/debug/MCP;exec 无退出清理,stream 只在 webContents 销毁后 SIGTERM + 未被等待的定时 SIGKILL,
   detached 进程组在 IDE 退出后继续运行。
+- 退出闸(终审 P1):cleanupAll 开始即置 shuttingDown,此后 `execShell` / stream START 以 `AGENT_NOT_AUTHORIZED`
+  立即拒绝且不 spawn(与 debug launch 同一闸);结束前再扫登记表强杀清理期间漏网的进程。根因:清理只杀调用瞬间的
+  快照,插件收到结算 / exit 后立即重启的任务不在快照内,窗口销毁路径的定时 SIGKILL 在主进程退出后不会执行。
 
 ### Windows 进程树终止先等 taskkill 结束 — `windows-tree-kill-order.spec.ts`
 - Windows 上 `processTreeKillable` 的 SIGTERM 启动 `taskkill /pid <pid> /T /F`;随后的 SIGKILL(根进程直杀兜底)
