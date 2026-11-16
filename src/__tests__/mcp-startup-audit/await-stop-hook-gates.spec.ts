@@ -101,6 +101,52 @@ describe('规则 1 · await_stop_hook 授权 + capability', () => {
     expect(awaitNext).not.toHaveBeenCalled();
   });
 
+  // 撤销授权(revokeAndKillAgentSessions 删 agent 会话 metadata)/ 会话被杀发生在等待期间:
+  // 在途 waiter 不得再把 transcript_path / last_assistant_message 交给调用方。
+  it('等待期间会话被撤销(metadata 删除)→ 不返回 Stop hook 数据', async () => {
+    const sessions: Record<string, Sess> = { mine: { owner: WIN, controller: ME } };
+    const { tool, awaitNext } = build(sessions);
+    let release!: () => void;
+    awaitNext.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = () =>
+            resolve({
+              payload: {
+                cliSessionId: 'cli',
+                turnId: 't',
+                cwd: '/w',
+                transcriptPath: '/secret/transcript.jsonl',
+                lastAssistantMessage: 'secret',
+                raw: {},
+              },
+            });
+        }),
+    );
+    const pending = tool!.run(input('mine'), ctxMe);
+    await vi.waitFor(() => expect(awaitNext).toHaveBeenCalled());
+    delete sessions['mine']; // 用户「终止全部 agent terminal」
+    release();
+    await expect(pending).rejects.toMatchObject({ code: 'AGENT_NOT_AUTHORIZED' });
+  });
+
+  it('等待期间 controller 变更 → 不返回 Stop hook 数据', async () => {
+    const sessions: Record<string, Sess> = { mine: { owner: WIN, controller: ME } };
+    const { tool, awaitNext } = build(sessions);
+    let release!: () => void;
+    awaitNext.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve({ elapsedMs: 1 } as never); // 超时结果
+        }),
+    );
+    const pending = tool!.run(input('mine'), ctxMe);
+    await vi.waitFor(() => expect(awaitNext).toHaveBeenCalled());
+    sessions['mine'] = { owner: WIN, controller: OTHER };
+    release();
+    await expect(pending).rejects.toMatchObject({ code: 'AGENT_NOT_AUTHORIZED' });
+  });
+
   it('接线守卫:index.ts 不在 makeTerminalMcpTools 之外单独 push await_stop_hook', () => {
     const src = readFileSync(
       join(__dirname, '..', '..', '..', 'electron', 'main', 'index.ts'),

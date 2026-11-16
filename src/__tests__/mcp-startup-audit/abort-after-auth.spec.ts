@@ -3,6 +3,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { gateWithAuth } from '../../../electron/main/services/mcp-tool-gates';
 import { makeCreateSessionTool } from '../../../electron/main/services/mcp-tools-terminal';
+import { makeTerminalMcpTools } from '../../../electron/main/services/mcp-terminal-host';
 import type { AnyMcpTool, McpCallCtx } from '../../../electron/main/services/mcp-host.service';
 
 const AUTH = { methodFor: (t: AnyMcpTool) => t.name, deniedMessage: 'denied' };
@@ -55,5 +56,29 @@ describe('规则 2 · create_session installStopHook 返回后复查 abort', () 
       tool.run({ install_stop_hook: true, agentLabel: 'codex' } as never, ctx),
     ).rejects.toMatchObject({ code: 'AGENT_NOT_AUTHORIZED' });
     expect(createSession).not.toHaveBeenCalled();
+  });
+});
+
+describe('规则 2 · create_session 在 PTY 创建期间断开 → 回收会话', () => {
+  it('createSession 完成时调用方已断开 → kill PTY + 删 metadata,以取消错误结束', async () => {
+    const aborter = new AbortController();
+    const remove = vi.fn();
+    const forceKill = vi.fn();
+    const tools = makeTerminalMcpTools({
+      sessionStore: { get: () => undefined, getAll: () => [], remove } as never,
+      service: { has: () => true, forceKill } as never,
+      getSessionOwner: () => 1,
+      getSessionController: () => 's',
+      ensureAuthorized: async () => 'session',
+      createSession: async () => {
+        aborter.abort(); // spawn 进行中连接断开
+        return { id: 'orphan' };
+      },
+    });
+    const tool = tools.find((t) => t.name === 'terminal.create_session')!;
+    const ctx: McpCallCtx = { ownerWindowId: 1, callerSubject: 's', signal: aborter.signal };
+    await expect(tool.run({}, ctx)).rejects.toMatchObject({ code: 'TERMINAL_CREATE_CANCELLED' });
+    expect(remove).toHaveBeenCalledWith('orphan');
+    expect(forceKill).toHaveBeenCalledWith('orphan');
   });
 });

@@ -50,6 +50,7 @@ vi.mock('@/lib/co-api', () => ({
       write: vi.fn().mockResolvedValue({ ok: true }),
     },
     shell: { openExternal: vi.fn() },
+    system: { windowId: 1, hostname: 'my-mac.local' },
   },
 }));
 vi.mock('@/plugins/settings/values-store', () => ({ useSettingValue: <T,>(_k: string, fb: T) => fb }));
@@ -59,7 +60,7 @@ vi.mock('@/stores/layout-ui.store', () => ({
 }));
 vi.mock('@/theme', () => ({ useTheme: () => ({ resolved: 'dark' }) }));
 
-import { useTerminal } from '../../panels/Terminal/useTerminal';
+import { osc7AcceptedHosts, useTerminal } from '../../panels/Terminal/useTerminal';
 import { coApi } from '@/lib/co-api';
 import { WebglAddon } from '@xterm/addon-webgl';
 
@@ -115,7 +116,8 @@ describe('terminal-osc7 wiring (T13)', () => {
     expect(firstCall[0]).toMatchObject({
       parser: expect.objectContaining({ registerOscHandler: expect.any(Function) }),
     });
-    expect(firstCall[2]).toBeUndefined();
+    // shell 集成(bash/fish)与 oh-my-zsh 等发 `file://<真实 hostname>$PWD` → 本机 hostname 必须被接受
+    expect(firstCall[2]).toEqual({ acceptedHosts: ['', 'localhost', 'my-mac.local'] });
   });
 
   it('T13b: captured onCwd routes to coApi.terminal.updateCwd with termId', () => {
@@ -133,6 +135,24 @@ describe('terminal-osc7 wiring (T13)', () => {
     unmount();
 
     expect(hoisted.disposeMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('terminal-osc7 · acceptedHosts', () => {
+  it('T13d: hostname 不可得(null / undefined)→ 仅接受空 host / localhost', () => {
+    expect(osc7AcceptedHosts(null)).toEqual(['', 'localhost']);
+    expect(osc7AcceptedHosts(undefined)).toEqual(['', 'localhost']);
+    expect(osc7AcceptedHosts('box')).toEqual(['', 'localhost', 'box']);
+  });
+
+  it('T13e: 真实 parser 下,发本机 hostname 的 payload 被接受、他机 hostname 仍被拒', async () => {
+    const { parseOsc7Cwd } = await vi.importActual<
+      typeof import('@continuo-terminal/react-terminal')
+    >('@continuo-terminal/react-terminal');
+    const opts = { acceptedHosts: osc7AcceptedHosts('my-mac.local') };
+    expect(parseOsc7Cwd('file://my-mac.local/Users/me/proj', opts)).toBe('/Users/me/proj');
+    expect(parseOsc7Cwd('file:///Users/me', opts)).toBe('/Users/me');
+    expect(parseOsc7Cwd('file://other-host/Users/me', opts)).toBeNull();
   });
 });
 

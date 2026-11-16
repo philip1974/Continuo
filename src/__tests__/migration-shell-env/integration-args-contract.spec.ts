@@ -1,9 +1,8 @@
-// prepareShellIntegrationEnv 的调用方约定:spawn 时必须**同时**使用返回的 env 与 args。
-// bash 的 args 是 ['--rcfile', <生成的 rc>, '-i'] —— 交互式 bash 忽略 BASH_ENV,只靠 env
-// 永远装不上 OSC7 cwd hook。旧实现只解构 env/cleanup,bash 仍用默认 ['-l','-i'] 启动
-// (login bash 也不读 --rcfile 之外的注入)→ cwd 跟踪对 bash 静默失效。
+// prepareShellIntegrationEnv 返回的 bash args(['--rcfile', <生成的 rc>, '-i'])是**非 login** 启动:
+// 不读 /etc/profile(macOS path_helper 在此),且 rcfile 无条件依次 source .bash_profile/.profile/.bashrc
+// → 重复执行、偏离原 `-l -i` 语义。故 Continuo 暂不采用 helper 的 bash args(待 helper 模拟 login
+// 启动文件选择后再启用,见 doc/follow-ups.md):bash 仍 `-l -i`,用户 args 优先,zsh/fish 不变。
 // 这里用真实 helper(不 mock),只 mock SessionManager 捕获最终 spawn 参数。
-import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeWindow } from '../migration-step1-pty-handover/fixtures';
 
@@ -40,24 +39,17 @@ function spawnedArgs(): string[] {
   return (call?.[0] as { args: string[] }).args;
 }
 
-describe('shell integration args 约定', () => {
+describe('shell spawn args 约定(bash 不采用 helper args)', () => {
   beforeEach(() => {
     service.__resetForTest();
     setMcpRevokers({ byToken: vi.fn(), byWindow: vi.fn() });
     sessionManagerMock.create.mockReset().mockResolvedValue({ session_id: 'created' });
   });
 
-  it('bash 且用户未传 args → 用 helper 的 --rcfile 参数启动,rcfile 含 OSC7 hook', async () => {
+  it('bash 且用户未传 args → 仍以 login+interactive(-l -i)启动,不用 helper 的 --rcfile', async () => {
     await service.createTerminal('b1', makeWindow(1), '/bin/bash', [], '/tmp');
 
-    const args = spawnedArgs();
-    expect(args[0]).toBe('--rcfile');
-    expect(args).toContain('-i');
-    expect(args).not.toContain('-l');
-    // rcfile 真实存在,装 OSC7 hook 并回 source 用户 rc(.bash_profile/.bashrc)
-    const rc = readFileSync(args[1]!, 'utf8');
-    expect(rc).toContain('_continuo_osc7');
-    expect(rc).toContain('.bash_profile');
+    expect(spawnedArgs()).toEqual(['-l', '-i']);
     service.forceKill('b1');
   });
 
@@ -68,10 +60,13 @@ describe('shell integration args 约定', () => {
     service.forceKill('b2');
   });
 
-  it('zsh(helper args 为空)→ 仍用默认 login+interactive', async () => {
+  it('zsh / fish → 仍用默认 login+interactive', async () => {
     await service.createTerminal('z1', makeWindow(3), '/bin/zsh', [], '/tmp');
-
     expect(spawnedArgs()).toEqual(['-l', '-i']);
     service.forceKill('z1');
+
+    await service.createTerminal('f1', makeWindow(4), '/opt/homebrew/bin/fish', [], '/tmp');
+    expect(spawnedArgs()).toEqual(['-l', '-i']);
+    service.forceKill('f1');
   });
 });

@@ -2,9 +2,11 @@
 
 ## spawn 参数约定(`integration-args-contract.spec.ts`)
 
-- `prepareShellIntegrationEnv` 返回 `{ env, args, cleanup }`,调用方必须同时使用 env 与 args。
-- bash 且用户未传 args → 以 helper 的 `['--rcfile', <生成的 rc>, '-i']` 启动(不再用 `-l -i`:
-  login bash 不读 `--rcfile`,交互式 bash 又忽略 `BASH_ENV`,否则 OSC7 cwd hook 永不安装);
-  生成的 rcfile 回 source `~/.bash_profile` / `~/.profile` / `~/.bashrc` 补齐 login 语义。
+- `prepareShellIntegrationEnv` 返回 `{ env, args, cleanup }`;Continuo 只使用 env / cleanup,
+  **暂不采用 bash 的 `args`**(`['--rcfile', <生成的 rc>, '-i']`):那是非 login 启动,不读
+  `/etc/profile`(macOS `path_helper` 在此),且 rcfile 无条件依次 source `~/.bash_profile` /
+  `~/.profile` / `~/.bashrc` → 重复执行、偏离原 `-l -i` 语义。代价是 bash 暂无 OSC7 cwd hook,
+  待 helper 模拟 login 启动文件选择后再启用(跨仓 follow-up 见 `doc/follow-ups.md`)。
+- bash 且用户未传 args → `['-l', '-i']`。
 - 用户显式传 args → 用户 args 优先。
-- helper 返回空 args(zsh / fish / 其它)→ 仍走 `defaultShellArgs`(zsh/bash/fish 为 `-l -i`)。
+- zsh / fish → 仍走 `defaultShellArgs`(`-l -i`)。

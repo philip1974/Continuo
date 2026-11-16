@@ -65,7 +65,10 @@ import type { Locale } from '../shared/i18n-types';
 import { pluginDataRaw } from './plugin-data.preload';
 import { pluginFsRaw } from './plugin-fs.preload';
 import { pluginShellStreamRaw } from './plugin-shell-stream.preload';
-import { parseContinuoPackagedFromArgv } from './continuo-meta-parse';
+import {
+  parseContinuoHostnameFromArgv,
+  parseContinuoPackagedFromArgv,
+} from './continuo-meta-parse';
 
 // 可维护性 M24:terminal create 入参复用 shared TerminalCreateInput(= main zod schema
 // z.infer),单一来源避免 main/preload 漂移(此前手写 interface 漏了 attachTarget)。
@@ -146,6 +149,8 @@ const api = {
   },
   system: {
     windowId: ipcRenderer.sendSync(WINDOW_ID_CHANNEL) as number,
+    /** 本机 hostname(main 经 additionalArguments 注入;OSC7 acceptedHosts 用)。 */
+    hostname: parseContinuoHostnameFromArgv(process.argv),
   },
   explorer: {
     // ExplorerPayload 形态由 src/lib/persist/explorer-persist 保证;preload 透传 unknown

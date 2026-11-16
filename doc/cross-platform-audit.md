@@ -105,7 +105,7 @@ main 创建终端时按真实 shell 路径算引号族(`shellFamilyForPath`,shel
 9. `electron/main/index.ts:739` — Windows dev/prod named pipe 命名隔离(main 重命名 + proxy 连接重试)。
 10. `shell.service.ts` / `plugin-shell-stream.service.ts` — Windows `.cmd/.bat` 启动:PATHEXT 检测 + 仅 .cmd/.bat 走 `cmd.exe /d /s /c` + 每个 arg Windows quoting(共享 launcher;**不可用裸 shell:true,会破坏参数原子性 + 注入**)。
 11. `electron-builder.yml` — Windows `co://` 协议注册:NSIS target 不消费顶层 `protocols`(electron-builder 26.8.1 只读 fileAssociations),需 NSIS custom include 脚本在 install 写 `HKCU\Software\Classes\co` / uninstall 清除(或改 AppX)。
-12. **(既有,非本次 diff 引入)** `ContinuoTerminal integration.ts` BASH/FISH OSC7 snippet 发 `file://$HOSTNAME/...`,而 `parseOsc7Cwd` 默认只收空 host/localhost → HOSTNAME 非空时 cwd 跟踪被丢(影响所有 bash/fish,非仅 git-bash)。修法:snippet 改发 `file://localhost$PWD` 或空 host `file://$PWD`,或 consumer 传 acceptedHosts;需 real-PTY 测试(当前 skip)验证 + 更新 byte-pinned snippet 测试。codex 在 diff 复查中由 #7(启用 git-bash 集成)顺带发现。
+12. **(既有,非本次 diff 引入)** `ContinuoTerminal integration.ts` BASH/FISH OSC7 snippet 发 `file://$HOSTNAME/...`,而 `parseOsc7Cwd` 默认只收空 host/localhost → HOSTNAME 非空时 cwd 跟踪被丢(影响所有 bash/fish,非仅 git-bash)。修法:snippet 改发 `file://localhost$PWD` 或空 host `file://$PWD`,或 consumer 传 acceptedHosts;需 real-PTY 测试(当前 skip)验证 + 更新 byte-pinned snippet 测试。codex 在 diff 复查中由 #7(启用 git-bash 集成)顺带发现。**consumer 侧已修**:renderer 传 `acceptedHosts: ['', 'localhost', <本机 hostname>]`(`src/__tests__/terminal-osc7/`)。
 
 ---
 

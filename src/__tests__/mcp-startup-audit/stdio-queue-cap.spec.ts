@@ -1,6 +1,8 @@
 // 规则 3:stdio 每连接串行队列有总深度上限。首请求阻塞(如卡在授权弹窗)时,客户端持续发小
 // chunk(每 chunk 都在单 chunk 行数上限内)此前可无限堆积排队行 → main 内存无界增长。
-import { connect, Socket } from 'node:net';
+// 超限时错误必须真正送达客户端:此前 write(error) 后立即 destroy(),对端可能因 RST 丢掉错误行
+// → 改为 end(error) 半关闭 + 兜底超时 destroy。这里从真实客户端读取,断言收到完整 PARSE_ERROR。
+import { connect, type Socket } from 'node:net';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -65,16 +67,9 @@ describe.skipIf(isWin)('规则 3 · stdio 每连接排队上限', () => {
       client.once('connect', resolve);
       client.once('error', reject);
     });
-    // 服务端断开时对端可能因未读数据收到 RST 而丢掉错误行 → 在进程内截获服务端 socket 的写入。
-    const written: string[] = [];
-    const origWrite = Socket.prototype.write;
-    const spy = vi.spyOn(Socket.prototype, 'write').mockImplementation(function (
-      this: Socket,
-      ...args: Parameters<Socket['write']>
-    ) {
-      if (typeof args[0] === 'string') written.push(args[0]);
-      return origWrite.apply(this, args);
-    });
+    let received = '';
+    client.setEncoding('utf8');
+    client.on('data', (d: string) => (received += d));
     const closed = new Promise<void>((resolve) => client.once('close', () => resolve()));
     client.on('error', () => {});
 
@@ -101,10 +96,19 @@ describe.skipIf(isWin)('规则 3 · stdio 每连接排队上限', () => {
       closed.then(() => 'closed' as const),
       new Promise<'open'>((r) => setTimeout(() => r('open'), 2000)),
     ]);
-    spy.mockRestore();
     expect(outcome).toBe('closed');
-    expect(written.some((w) => w.includes('too many pending requests'))).toBe(true);
-    // 不是被单 chunk 行数 / 单行字节上限误伤
-    expect(written.some((w) => w.includes('too many lines in one chunk'))).toBe(false);
+    // 客户端收到完整(以换行结束、可解析)的 JSON-RPC PARSE_ERROR,随后连接关闭
+    const errors = received
+      .split('\n')
+      .filter((l) => l.length > 0)
+      .map((l) => JSON.parse(l) as { id: unknown; error?: { code: number; message: string } })
+      .filter((m) => m.error !== undefined);
+    expect(received.endsWith('\n')).toBe(true);
+    expect(errors).toEqual([
+      expect.objectContaining({
+        id: null,
+        error: expect.objectContaining({ code: -32700, message: 'too many pending requests' }),
+      }),
+    ]);
   });
 });

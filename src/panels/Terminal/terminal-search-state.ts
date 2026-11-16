@@ -82,14 +82,17 @@ function searchesInvalidRegex(
 // 返回 false = 搜索词是非法正则、未交给 addon:xterm SearchEngine 内直接 RegExp(term) 无 try/catch,
 // 非法正则(`[` / `(` / `\`)会抛 SyntaxError 穿透事件处理器,且 addon 记下的搜索选项会让其
 // 输出触发的防抖重搜在 setTimeout 里再抛。这里预校验并清高亮(连带清 addon 缓存词),
-// 调用方据此把结果置为「无匹配」。
+// 调用方据此把结果置为「无匹配」。clearDecorations 不清 xterm selection(之前合法搜索 findNext
+// 选中的匹配仍高亮选中)→ 传入 term 时一并 clearSelection。
 export function applyTerminalSearchEffect(
   addon: SearchAddonLike | null,
   state: TerminalSearchState,
   action: TerminalSearchAction,
+  term?: { clearSelection(): void } | null,
 ): boolean {
   if (searchesInvalidRegex(state, action)) {
     addon?.clearDecorations();
+    term?.clearSelection();
     return false;
   }
   packageApply(addon, state, action, TERMINAL_SEARCH_DECORATIONS);

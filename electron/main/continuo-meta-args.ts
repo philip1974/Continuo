@@ -1,13 +1,22 @@
+import { hostname as osHostname } from 'node:os';
 import type { WebPreferences } from 'electron';
 
 interface BuildCommonWebPreferencesInput {
   readonly preload?: string;
   readonly isPackaged?: boolean;
+  /** 本机 hostname(省略 → os.hostname())。 */
+  readonly hostname?: string;
 }
 
 // topic 48: main-side pure helper for webPreferences.additionalArguments.
 export function buildContinuoPackagedArg(isPackaged: boolean): string {
   return `--continuo-packaged=${isPackaged}`;
+}
+
+// OSC7:shell 集成(bash/fish)与 oh-my-zsh 等发 `file://<真实 hostname>$PWD`,renderer 的 OSC7
+// parser 须接受本机 hostname;sandbox renderer 拿不到 os.hostname → 经 additionalArguments 注入。
+export function buildContinuoHostnameArg(hostname: string): string {
+  return `--continuo-hostname=${hostname}`;
 }
 
 export function buildCommonWebPreferences(
@@ -23,6 +32,7 @@ export function buildCommonWebPreferences(
     backgroundThrottling: false,
     additionalArguments: [
       buildContinuoPackagedArg(input.isPackaged ?? false),
+      buildContinuoHostnameArg(input.hostname ?? osHostname()),
     ],
   };
 

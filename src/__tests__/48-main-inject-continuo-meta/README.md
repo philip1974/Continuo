@@ -24,3 +24,5 @@ Observable behavior:
   creates through the shared preferences factory.
 - preload exposes a synchronous `window.__continuoMeta.appIsPackaged` value.
 - renderer consumers keep using the existing optional read path.
+- 同一通道注入本机 hostname:`--continuo-hostname=<os.hostname()>`,preload 解析(缺失 / 空 → `null`)
+  并暴露为 `coApi.system.hostname`,供终端 OSC7 parser 的 `acceptedHosts` 使用。

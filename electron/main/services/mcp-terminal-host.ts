@@ -1,3 +1,5 @@
+import { ERROR_CODES } from '../../shared/error-codes';
+import { codedError } from '../../shared/error-message';
 import type { AnyMcpTool } from './mcp-host.service';
 import {
   gateWithAuth,
@@ -22,7 +24,7 @@ export type { EnsureAuthorized } from './mcp-tool-gates';
 // createSession / installStopHook 的签名以 create_session 工具的 deps 为单一来源。
 export interface MakeTerminalMcpToolsDeps
   extends Pick<CreateSessionToolDeps, 'createSession' | 'installStopHook'> {
-  readonly sessionStore: Pick<typeof terminalSessions, 'get' | 'getAll'>;
+  readonly sessionStore: Pick<typeof terminalSessions, 'get' | 'getAll' | 'remove'>;
   readonly service: Pick<
     typeof termService,
     'has' | 'write' | 'interrupt' | 'kill' | 'forceKill' | 'readOutput'
@@ -105,6 +107,11 @@ export function makeTerminalMcpTools(
       ensureAuthorized: deps.ensureAuthorized,
       createSession: deps.createSession,
       installStopHook: deps.installStopHook,
+      // 同 revokeAndKillAgentSessions:先删 metadata 再 forceKill(无调用方的会话不留 3s grace)。
+      discardSession: (id) => {
+        deps.sessionStore.remove(id);
+        if (deps.service.has(id)) deps.service.forceKill(id);
+      },
     }),
     gateOwned(
       makeSendInputTool({
@@ -143,6 +150,31 @@ export function makeTerminalMcpTools(
       }),
     ),
   ];
-  if (deps.awaitStopHookTool) tools.push(gateOwned(deps.awaitStopHookTool));
+  if (deps.awaitStopHookTool) {
+    // 安全:await_stop_hook 可 block 数分钟,入口 capability 只在开始时校验一次。等待期间用户
+    // 「撤销全部授权 / 终止 agent terminal」(删会话 metadata)或会话被杀 → 返回前复查会话仍属本
+    // 调用方,否则不交出 transcript_path / last_assistant_message。
+    const inner = deps.awaitStopHookTool;
+    const recheckOnReturn: AnyMcpTool = {
+      ...inner,
+      run: async (input: unknown, ctx) => {
+        const result: unknown = await inner.run(input, ctx);
+        const sid = (input as { session_id?: unknown } | null)?.session_id;
+        const stillOwned =
+          typeof sid === 'string' &&
+          deps.getSessionOwner(sid) === ctx.ownerWindowId &&
+          ctx.callerSubject != null &&
+          deps.getSessionController(sid) === ctx.callerSubject;
+        if (!stillOwned) {
+          throw codedError(
+            ERROR_CODES.AGENT_NOT_AUTHORIZED,
+            'terminal session revoked while awaiting stop hook',
+          );
+        }
+        return result;
+      },
+    };
+    tools.push(gateOwned(recheckOnReturn));
+  }
   return tools;
 }
