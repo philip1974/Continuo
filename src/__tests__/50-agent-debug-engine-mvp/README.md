@@ -10,6 +10,8 @@
 - 跨窗口 debug session 对当前调用方表现为 not found，不暴露 capability 细节。
 - DebugService 的 plain Error 在 MCP 工具边界归一化为稳定 debug 错误码，避免向 MCP client 回显超长 session id、program 或 adapter path。
 - `variables` / `evaluate` 保持分页、深度、字节预算与默认值边界。
+- `variables` 深度展开有整次总预算(节点数与 DAP 请求数):用尽即停,未展开的节点保留 `variables_reference` 并标 `truncated`,顶层 `truncated: true`;调用方断连(`ctx.signal`)时停止继续展开。
+- 资源上限:结束的 child session(worker 退出等)当即回收(移出、dispose、清掉各断点记录里该连接的条目并重推受影响 source 的快照),teardown 不再对它发 disconnect;DAP transcript 单条按字节截断为摘要并有总字节预算(最旧优先淘汰)。
 - KC#1: MVP 暂不暴露 renderer/editor context 的断点映射能力，降级为 main-context DAP 调试；源码映射与编辑器联动留给后续批次。
 - 安全(program-workspace 锁): `debug.launch` 的 `program`/`cwd` 来自 agent，必须落在 owner window 的 workspace root 内(realpath 规范化后比较，防 symlink 逃逸与 `..` 穿越)；窗口无 workspace 记录则 fail-closed 拒绝；`cwd` 省略时默认 workspace root，不回退 main 进程 cwd。校验通过的真实路径(program/cwd 的 realpath)即为之后 launch 使用的路径 —— 起跑推迟到 `wait_for_stop` 等调用，期间把软链改指工作区外不生效。该契约由 `electron/main/__tests__/debug-service.spec.ts` 覆盖。
 

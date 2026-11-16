@@ -211,8 +211,11 @@ interface RuntimeDebugSession {
   currentStop?: WaitForStopOutput;
   /** debuggee 已结束(terminated / exited)时的说明;置位后 wait_for_stop 立即以它 reject。 */
   endedMessage?: string;
-  /** 已发过 terminated / exited 的 child。 */
-  readonly endedChildren: Set<DebugDapClientLike>;
+  /**
+   * 是否有 child 发过 terminated / exited。结束的 child 当即从 childClients 移除并 dispose(主线程长期存活、
+   * 反复创建 worker 的程序不能让历史连接无界累积),childClients 只剩存活 / 握手中的连接。
+   */
+  childEnded: boolean;
   /** 当前呈现的停点发生在哪条连接上(currentStop 有值时才有意义)。 */
   stoppedClient?: DebugDapClientLike;
   /**
@@ -388,8 +391,7 @@ function aggregateReport(
   runtime: RuntimeDebugSession,
   record: BreakpointRecord,
 ): BreakpointReport | undefined {
-  const liveChildren = runtime.childClients.filter((child) => !runtime.endedChildren.has(child));
-  const reports = [...liveChildren, runtime.parentClient].flatMap((client) => {
+  const reports = [...runtime.childClients, runtime.parentClient].flatMap((client) => {
     const report = record.reportedBy.get(client);
     return report ? [report] : [];
   });
@@ -398,6 +400,15 @@ function aggregateReport(
     record.reportedBy.get(runtime.parentClient) ??
     reports[0]
   );
+}
+
+/** 清掉各断点记录与暂存事件里该连接的条目(child 结束 / 握手失败被回收时,不再留着对它的引用)。 */
+function forgetClient(runtime: RuntimeDebugSession, client: DebugDapClientLike): void {
+  for (const bp of runtime.breakpoints) {
+    bp.reportedBy.delete(client);
+    bp.ids.delete(client);
+  }
+  runtime.pendingBreakpointChanges.delete(client);
 }
 
 /** 按 source 分组(保持首次出现顺序),供 child session 逐 source 重放。 */
@@ -436,6 +447,29 @@ function truncateUtf8(value: string, maxBytes: number): { value: string; truncat
     end += char.length;
   }
   return { value: value.slice(0, end), truncated: true };
+}
+
+/**
+ * 一次 debug.variables 深度展开的总节点预算。每层逐个成员递归请求,count=100、max_depth=5 时最坏 100^5 级
+ * 请求 / 节点,把主进程与 adapter 一起拖垮;2000 个节点足够 agent 看清一个停点的局部结构,更深的按
+ * variables_reference 单独再取。
+ */
+export const DEBUG_VARIABLES_EXPAND_MAX_NODES = 2_000;
+
+/** 一次 debug.variables 深度展开的总 DAP 请求预算(count 很小时节点预算管不住请求数)。 */
+export const DEBUG_VARIABLES_EXPAND_MAX_REQUESTS = 200;
+
+interface VariablesBudget {
+  nodes: number;
+  requests: number;
+  /** 有节点因预算未展开。 */
+  exhausted: boolean;
+  readonly signal?: AbortSignal;
+}
+
+/** 调用方在 debug.variables 展开期间断开:结果已无人接收,停止继续请求。 */
+function variablesCancelledError(): Error {
+  return codedError(ERROR_CODES.AGENT_NOT_AUTHORIZED, 'caller disconnected during debug variables');
 }
 
 async function defaultProcessInfo(pid: number | undefined): Promise<ProcessInfo | null> {
@@ -677,7 +711,7 @@ export class DebugService {
       childClients: [],
       launch: normalizedInput,
       waiters: new Set(),
-      endedChildren: new Set(),
+      childEnded: false,
       queuedStops: [],
       breakpoints: [],
       sourcePaths: new Map(),
@@ -828,46 +862,39 @@ export class DebugService {
       // 短超时、失败忽略,原错误照常抛给调用方。
       const rolledBackRecords = runtime.breakpoints.filter((bp) => bp.source === source);
       const rolledBack = setBreakpointsArgs(adapterPath, rolledBackRecords);
-      const liveClients = [
-        runtime.parentClient,
-        ...runtime.childClients.filter((child) => !runtime.endedChildren.has(child)),
-      ];
+      const liveClients = [runtime.parentClient, ...runtime.childClients];
       await Promise.allSettled(
-        liveClients.map(async (client) =>
-          rememberBreakpointReports(
-            runtime,
-            client,
-            rolledBackRecords,
-            await client.sendRequest(
-              'setBreakpoints',
-              rolledBack,
-              Math.min(this.requestTimeoutMs, CHILD_BREAKPOINT_SYNC_TIMEOUT_MS),
-            ),
-          ),
-        ),
+        liveClients.map(async (client) => {
+          const rollbackResponse = await client.sendRequest(
+            'setBreakpoints',
+            rolledBack,
+            Math.min(this.requestTimeoutMs, CHILD_BREAKPOINT_SYNC_TIMEOUT_MS),
+          );
+          // 等待期间结束并被回收的 child 不再记回报。
+          if (client === runtime.parentClient || runtime.childClients.includes(client)) {
+            rememberBreakpointReports(runtime, client, rolledBackRecords, rollbackResponse);
+          }
+        }),
       );
       throw err;
     }
     rememberBreakpointReports(runtime, runtime.parentClient, sourceBreakpoints, response);
     // 已建立的 child session 各自维护断点:只发给父连接的话,程序跑起来之后再设的断点不会生效
     //(child 只在创建时拿到当时的断点)。逐个同步;某个 child 已退出导致失败不影响其它。
-    // 取快照(发送期间 childClients 可能增减)、跳过已结束的 child、并行发送并用较短的超时:某个 child
+    // 取快照(发送期间 childClients 可能增减;已结束的 child 已从中移除)、并行发送并用较短的超时:某个 child
     // 不应答(已退出的 worker 等)不能把整个工具调用拖到 N × requestTimeoutMs。
     await Promise.allSettled(
-      runtime.childClients
-        .filter((child) => !runtime.endedChildren.has(child))
-        .map(async (child) =>
-          rememberBreakpointReports(
-            runtime,
-            child,
-            sourceBreakpoints,
-            await child.sendRequest(
-              'setBreakpoints',
-              args,
-              Math.min(this.requestTimeoutMs, CHILD_BREAKPOINT_SYNC_TIMEOUT_MS),
-            ),
-          ),
-        ),
+      runtime.childClients.map(async (child) => {
+        const response = await child.sendRequest(
+          'setBreakpoints',
+          args,
+          Math.min(this.requestTimeoutMs, CHILD_BREAKPOINT_SYNC_TIMEOUT_MS),
+        );
+        // 等待期间结束并被回收的 child:不再为它记回报(否则又留下对已回收连接的引用)。
+        if (runtime.childClients.includes(child)) {
+          rememberBreakpointReports(runtime, child, sourceBreakpoints, response);
+        }
+      }),
     );
     // 设断点本身不让程序起跑:起跑推迟到 wait_for_stop / continue / step(ensureProgramStarted),
     // 这样起跑前连设的多个断点都能在程序运行之前就位。
@@ -1143,6 +1170,8 @@ export class DebugService {
       readonly count?: number;
       readonly maxDepth?: number;
       readonly maxStringBytes?: number;
+      /** 调用方连接的 abort signal(MCP ctx.signal):断连后停止继续展开。 */
+      readonly signal?: AbortSignal;
     },
   ): Promise<{
     readonly variables: readonly DebugVariable[];
@@ -1154,6 +1183,12 @@ export class DebugService {
     const count = input.count ?? 100;
     const maxDepth = input.maxDepth ?? 1;
     const maxStringBytes = input.maxStringBytes ?? 65536;
+    const budget: VariablesBudget = {
+      nodes: DEBUG_VARIABLES_EXPAND_MAX_NODES,
+      requests: DEBUG_VARIABLES_EXPAND_MAX_REQUESTS,
+      exhausted: false,
+      ...(input.signal !== undefined ? { signal: input.signal } : {}),
+    };
     const variables = await this.readVariables(
       runtime,
       input.variablesReference,
@@ -1161,12 +1196,14 @@ export class DebugService {
       count,
       maxDepth,
       maxStringBytes,
+      budget,
     );
     // 本页取满 count 条 = 可能还有更多:truncated 与 next_start 同步(此前 truncated 写死 false)。
+    // 展开预算用尽(有节点未展开,各自标了 truncated)同样报 truncated。
     const hasMore = variables.length >= count;
     return {
       variables,
-      truncated: hasMore,
+      truncated: hasMore || budget.exhausted,
       ...(hasMore ? { next_start: start + count } : {}),
     };
   }
@@ -1395,6 +1432,7 @@ export class DebugService {
       // 后续 stack / variables / continue 会全部打到一个死 client 上。
       const index = runtime.childClients.indexOf(child);
       if (index >= 0) runtime.childClients.splice(index, 1);
+      forgetClient(runtime, child);
       debugSessions.update(sessionId, { childSessionCount: runtime.childClients.length });
       await child.dispose().catch(() => undefined);
       // 摘除后重新判定:若其余 child 在这次握手期间都已结束,存活的 child 已全部结束 → 整个会话结束
@@ -1404,6 +1442,8 @@ export class DebugService {
       }
       throw err;
     }
+    // 握手期间已结束并被回收(markEnded):不再把它设为活动连接、也不再对它发 launch。
+    if (!runtime.childClients.includes(child)) return {};
     // 握手完成、即将发 launch 时:第一个 child(主目标)成为活动连接。之后再出现的 child(worker 等)不抢
     // 活动连接 —— 哪条连接上停住了,markStopped 再把它切成活动连接。
     if (runtime.activeClient === runtime.parentClient) runtime.activeClient = child;
@@ -1428,9 +1468,16 @@ export class DebugService {
       const pid = numberField(body, 'systemProcessId');
       if (pid !== undefined) debugSessions.addSystemProcessId(sessionId, pid);
     });
-    client.on('stopped', (event) => this.markStopped(sessionId, event.body, client));
+    // 已回收的 child(同一 chunk 里排在 terminated 之后的事件)不再改停点 / 断点记录,免得重新引用它。
+    client.on('stopped', (event) => {
+      if (this.isLiveClient(sessionId, client)) this.markStopped(sessionId, event.body, client);
+    });
     client.on('continued', () => this.markContinued(sessionId, client));
-    client.on('breakpoint', (event) => this.handleBreakpointEvent(sessionId, client, event.body));
+    client.on('breakpoint', (event) => {
+      if (this.isLiveClient(sessionId, client)) {
+        this.handleBreakpointEvent(sessionId, client, event.body);
+      }
+    });
     client.on('terminated', () => this.markEnded(sessionId, client, 'debug session terminated'));
     client.on('exited', () => this.markEnded(sessionId, client, 'debug session exited'));
   }
@@ -1447,11 +1494,23 @@ export class DebugService {
     // 有多个 child(worker 等)时某一个先退出不代表会话结束 —— 既不结算在途的 wait_for_stop,也不置位
     //(置位后 wait_for_stop 会永久报已终止)。
     if (client !== runtime.parentClient) {
-      runtime.endedChildren.add(client);
+      // 结束的 child 当即回收:移出 childClients、清掉各断点记录里它的条目、dispose。同一 child 的第二个结束
+      // 事件(terminated 之后的 exited)或握手失败已摘除的 child 找不到 → 已处理过。
+      const index = runtime.childClients.indexOf(client);
+      if (index < 0) return;
+      runtime.childClients.splice(index, 1);
+      runtime.childEnded = true;
+      debugSessions.update(sessionId, { childSessionCount: runtime.childClients.length });
+      // 清记录前先取它回报过的 source(快照要重推)。
+      const reportedSources = new Set(
+        runtime.breakpoints.filter((bp) => bp.reportedBy.has(client)).map((bp) => bp.source),
+      );
+      forgetClient(runtime, client);
+      void client.dispose().catch(() => undefined);
       if (!this.allChildrenEnded(runtime)) {
         this.dropEndedChildStops(sessionId, runtime, client);
         // 它的回报不再参与聚合:红点回落到其余连接的回报。
-        this.emitSnapshotsReportedBy(sessionId, runtime, client);
+        for (const source of reportedSources) this.emitBreakpointSnapshot(sessionId, runtime, source);
         return;
       }
     }
@@ -1471,17 +1530,21 @@ export class DebugService {
     if (index >= 0) runtime.queuedStops.splice(index, 1);
     if (runtime.stoppedClient === client) this.markContinued(sessionId, client);
     if (runtime.activeClient === client) {
-      runtime.activeClient =
-        runtime.childClients.find((child) => !runtime.endedChildren.has(child)) ??
-        runtime.parentClient;
+      runtime.activeClient = runtime.childClients[0] ?? runtime.parentClient;
     }
   }
 
-  private allChildrenEnded(runtime: RuntimeDebugSession): boolean {
+  private isLiveClient(sessionId: string, client: DebugDapClientLike): boolean {
+    const runtime = this.runtimes.get(sessionId);
     return (
-      runtime.childClients.length > 0 &&
-      runtime.childClients.every((child) => runtime.endedChildren.has(child))
+      runtime !== undefined &&
+      (client === runtime.parentClient || runtime.childClients.includes(client))
     );
+  }
+
+  /** 有 child 结束过且已没有存活 / 握手中的 child(结束的 child 已从 childClients 移除)。 */
+  private allChildrenEnded(runtime: RuntimeDebugSession): boolean {
+    return runtime.childEnded && runtime.childClients.length === 0;
   }
 
   private endWholeSession(sessionId: string, runtime: RuntimeDebugSession, message: string): void {
@@ -1622,7 +1685,10 @@ export class DebugService {
     count: number,
     maxDepth: number,
     maxStringBytes: number,
+    budget: VariablesBudget,
   ): Promise<readonly DebugVariable[]> {
+    if (budget.signal?.aborted) throw variablesCancelledError();
+    budget.requests -= 1;
     const response = await runtime.activeClient.sendRequest(
       'variables',
       {
@@ -1634,21 +1700,33 @@ export class DebugService {
     );
     const body = asRecord(response.body);
     const variables: DebugVariable[] = [];
-    for (const raw of asArray(body.variables)) {
+    // adapter 多回的项不收(节点预算按 count 预留)。
+    const items = asArray(body.variables).slice(0, count);
+    budget.nodes -= items.length;
+    for (const raw of items) {
       const variable = asRecord(raw as DapJson);
       const rawValue = stringField(variable, 'value') ?? '';
       const truncated = truncateUtf8(rawValue, maxStringBytes);
       const childRef = numberField(variable, 'variablesReference') ?? 0;
       let children: readonly DebugVariable[] | undefined;
+      let unexpanded = false;
       if (maxDepth > 1 && childRef > 0) {
-        children = await this.readVariables(
-          runtime,
-          childRef,
-          0,
-          count,
-          maxDepth - 1,
-          maxStringBytes,
-        );
+        // 预算还够一整页 count 才展开(子列表不会被预算截成半页);不够则保留 variables_reference 供调用方
+        // 单独再取,并标 truncated。
+        if (budget.requests > 0 && budget.nodes >= count) {
+          children = await this.readVariables(
+            runtime,
+            childRef,
+            0,
+            count,
+            maxDepth - 1,
+            maxStringBytes,
+            budget,
+          );
+        } else {
+          budget.exhausted = true;
+          unexpanded = true;
+        }
       }
       variables.push({
         name: stringField(variable, 'name') ?? '',
@@ -1657,7 +1735,7 @@ export class DebugService {
           ? { type: stringField(variable, 'type') }
           : {}),
         ...(childRef > 0 ? { variables_reference: childRef } : {}),
-        ...(truncated.truncated ? { truncated: true } : {}),
+        ...(truncated.truncated || unexpanded ? { truncated: true } : {}),
         ...(children !== undefined ? { children } : {}),
       });
     }

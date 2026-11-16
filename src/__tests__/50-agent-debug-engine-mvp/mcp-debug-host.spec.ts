@@ -6,6 +6,7 @@ import {
   MCP_TOOL_DEBUG_LAUNCH,
   MCP_TOOL_DEBUG_SET_BREAKPOINT,
   MCP_TOOL_DEBUG_STACK,
+  MCP_TOOL_DEBUG_VARIABLES,
   MCP_TOOL_DEBUG_WAIT_FOR_STOP,
 } from '../../../electron/shared/mcp-debug-schemas';
 import type {
@@ -103,6 +104,27 @@ describe('50 · agent debug MCP host', () => {
       { program: '/repo/app.js', stopOnEntry: false },
       { ownerWindowId: WIN, controllerToken: ME, signal: aborter.signal },
     );
+  });
+
+  it('debug.variables 把调用方连接的 abort signal 传给 DebugService(断连时停止深度展开)', async () => {
+    const { tools, service } = build({
+      'debug-owned': { owner: WIN, controller: ME },
+    });
+    const aborter = new AbortController();
+
+    await findTool(tools, MCP_TOOL_DEBUG_VARIABLES).run(
+      { session_id: 'debug-owned', variables_reference: 44, start: 0, count: 10, max_depth: 2, max_string_bytes: 100 } as never,
+      { ...ctx, signal: aborter.signal },
+    );
+
+    expect(service.variables).toHaveBeenCalledWith('debug-owned', {
+      variablesReference: 44,
+      start: 0,
+      count: 10,
+      maxDepth: 2,
+      maxStringBytes: 100,
+      signal: aborter.signal,
+    });
   });
 
   it('非 launch debug 工具走 debug.* 授权标签', async () => {

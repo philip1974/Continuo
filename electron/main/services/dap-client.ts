@@ -56,10 +56,58 @@ interface PendingRequest {
  */
 export const DAP_TRANSCRIPT_MAX_ENTRIES = 1000;
 
+/**
+ * 单条 transcript 的字节上限(按序列化后的 UTF-8 计)。只按条数封顶时单帧可达 DAP_MAX_FRAME_BYTES(64MiB),
+ * 反复 evaluate 大字符串会留住 GB 级数据;服务层返回值本就截断到 64KiB,诊断只需定位字段,超限只存摘要。
+ */
+export const DAP_TRANSCRIPT_ENTRY_MAX_BYTES = 8 * 1024;
+
+/** 一份 transcript(父子 session 共享)的总字节预算,超出淘汰最旧的条目。 */
+export const DAP_TRANSCRIPT_MAX_BYTES = 1024 * 1024;
+
 export interface DapTranscriptEntry {
   readonly direction: 'client' | 'server' | 'server-stdout';
   readonly message?: DapMessage;
   readonly text?: string;
+}
+
+/** 各份 transcript 当前占用的字节数(数组由父子 session 共享,计数随数组走)。 */
+const transcriptBytes = new WeakMap<DapTranscriptEntry[], number>();
+/** 每条 transcript 入账时的字节数(淘汰时扣回)。 */
+const transcriptEntryBytes = new WeakMap<DapTranscriptEntry, number>();
+
+/** 超过单条上限的消息只留定位字段(seq / type / command / event / request_seq / success)与原始大小。 */
+function transcriptSummary(message: DapMessage, originalBytes: number): DapMessage {
+  const summary: Record<string, DapJson> = { transcriptTruncated: true, originalBytes };
+  for (const key of ['seq', 'type', 'command', 'event', 'request_seq', 'success'] as const) {
+    const value = message[key];
+    if (value !== undefined) summary[key] = value;
+  }
+  return summary as DapMessage;
+}
+
+/** 按单条字节上限截断(必要时换成摘要),返回入账的条目及其字节数。 */
+function boundTranscriptEntry(entry: DapTranscriptEntry): {
+  entry: DapTranscriptEntry;
+  bytes: number;
+} {
+  if (entry.message !== undefined) {
+    const bytes = Buffer.byteLength(JSON.stringify(entry.message), 'utf8');
+    if (bytes <= DAP_TRANSCRIPT_ENTRY_MAX_BYTES) return { entry, bytes };
+    const message = transcriptSummary(entry.message, bytes);
+    return {
+      entry: { direction: entry.direction, message },
+      bytes: Buffer.byteLength(JSON.stringify(message), 'utf8'),
+    };
+  }
+  const text = Buffer.from(entry.text ?? '', 'utf8');
+  if (text.length <= DAP_TRANSCRIPT_ENTRY_MAX_BYTES) return { entry, bytes: text.length };
+  // 按字节截断(截在多字节字符中间时末尾解码为 U+FFFD,字节数以截后实际值入账)。
+  const bounded = text.subarray(0, DAP_TRANSCRIPT_ENTRY_MAX_BYTES).toString('utf8');
+  return {
+    entry: { direction: entry.direction, text: bounded },
+    bytes: Buffer.byteLength(bounded, 'utf8'),
+  };
 }
 
 export type DapEventHandler = (event: DapEventMessage) => void;
@@ -276,6 +324,10 @@ export class DapClient {
   private serverStderr = '';
   private spawnError: Error | null = null;
   private childSessions: DapClient[] = [];
+  /** 子会话 traceId 序号(列表会随 child 单独 dispose 缩短,不能用长度编号)。 */
+  private childSessionSeq = 0;
+  /** 创建本 child 的 client:单独 dispose 时从它的 childSessions 摘除,否则反复建 / 结束 worker 时无界累积。 */
+  private parentSession: DapClient | null = null;
   private startDebuggingHandler: StartDebuggingHandler | null;
   private disposed = false;
   private readonly traceId: string;
@@ -368,9 +420,10 @@ export class DapClient {
       socketPath: this.socketPath,
       tcpPort: this.tcpPort,
       transcript: this.transcript,
-      traceId: `${this.traceId}>child${this.childSessions.length}`,
+      traceId: `${this.traceId}>child${this.childSessionSeq++}`,
       ...options,
     });
+    child.parentSession = this;
     this.childSessions.push(child);
     return child;
   }
@@ -504,14 +557,28 @@ export class DapClient {
     };
   }
 
-  // transcript 只保留最近 DAP_TRANSCRIPT_MAX_ENTRIES 条(父子 session 共享同一数组)。超限时一次裁掉较旧的
-  // 一半(摊还 O(1),避免每条消息都 shift)。
-  private recordTranscript(entry: DapTranscriptEntry): void {
+  // transcript 只保留最近 DAP_TRANSCRIPT_MAX_ENTRIES 条、总计不超过 DAP_TRANSCRIPT_MAX_BYTES(父子 session
+  // 共享同一数组与同一预算),单条按 DAP_TRANSCRIPT_ENTRY_MAX_BYTES 截断。超限时一次裁到条数与字节都不超过
+  // 上限的一半(摊还 O(1),避免每条消息都 shift)。
+  private recordTranscript(raw: DapTranscriptEntry): void {
     const transcript = this.transcript;
+    const { entry, bytes } = boundTranscriptEntry(raw);
     transcript.push(entry);
-    if (transcript.length > DAP_TRANSCRIPT_MAX_ENTRIES) {
-      transcript.splice(0, transcript.length - DAP_TRANSCRIPT_MAX_ENTRIES / 2);
+    transcriptEntryBytes.set(entry, bytes);
+    let total = (transcriptBytes.get(transcript) ?? 0) + bytes;
+    if (transcript.length > DAP_TRANSCRIPT_MAX_ENTRIES || total > DAP_TRANSCRIPT_MAX_BYTES) {
+      let drop = 0;
+      while (
+        drop < transcript.length - 1 &&
+        (transcript.length - drop > DAP_TRANSCRIPT_MAX_ENTRIES / 2 ||
+          total > DAP_TRANSCRIPT_MAX_BYTES / 2)
+      ) {
+        total -= transcriptEntryBytes.get(transcript[drop]!) ?? 0;
+        drop += 1;
+      }
+      transcript.splice(0, drop);
     }
+    transcriptBytes.set(transcript, total);
   }
 
   sendMessage(message: DapMessage): void {
@@ -602,9 +669,16 @@ export class DapClient {
   async dispose(): Promise<void> {
     if (this.disposed) return;
     this.disposed = true;
+    if (this.parentSession) {
+      const siblings = this.parentSession.childSessions;
+      const index = siblings.indexOf(this);
+      if (index >= 0) siblings.splice(index, 1);
+      this.parentSession = null;
+    }
 
+    // 取快照:child 的 dispose 会同步把自己从本列表摘除。
     await Promise.all(
-      this.childSessions.map((child) => child.dispose().catch(() => undefined)),
+      [...this.childSessions].map((child) => child.dispose().catch(() => undefined)),
     );
     this.childSessions = [];
     if (this.socket && !this.socket.destroyed) {
