@@ -7,7 +7,7 @@ import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render } from '@testing-library/react';
 import { useTerminalStore } from '@/stores/terminal.store';
-import { __resetReconcilerForTest } from '@/shell/dock/DockReconciler';
+import { __resetReconcilerForTest, setPendingFocus } from '@/shell/dock/DockReconciler';
 import { openOrFocusPanel } from '@/shell/dock/dock-api-ref';
 import { useEditorStore } from '@/stores/editor.store';
 import { makeSession } from '../dock-reconciler-windowid-filter/fixtures';
@@ -223,6 +223,30 @@ describe('布局恢复后挂载 Reconciler 不抢活动面板', () => {
     });
     expect(h.api!.activePanel?.id).toBe('terminal-s2');
   });
+
+  // 恢复期间 Cmd+T:sessions-changed 先于 terminal.create reply 到达 → 新 session 在 Reconciler 挂载前已进
+  // store,setPendingFocus 在挂载(首次 hydrate reconcile)之后才执行、无人消费。hydrate 只应抑制恢复开始前
+  // 已存在的 session,恢复期间新建的 user terminal 照常走 originHint 兜底聚焦。
+  it('恢复期间新建的 user terminal(pendingFocus 晚到)→ 恢复后仍聚焦它', async () => {
+    const resolveRead = deferRead();
+    render(React.createElement(DockShell));
+    await vi.waitFor(() => expect(h.api).not.toBeNull());
+
+    act(() => {
+      useTerminalStore.setState({
+        sessions: [
+          ...useTerminalStore.getState().sessions,
+          makeSession('s2', { originHint: 'user', createdAt: Date.now() }),
+        ],
+      });
+    });
+    resolveRead({ ok: true, data: layoutWithSettingsActive });
+    await vi.waitFor(() =>
+      expect(h.api!.panels.map((p) => p.id)).toContain('terminal-s2'),
+    );
+    setPendingFocus('s2'); // create reply 晚到:此时已无 reconcile 可消费它
+    expect(h.api!.activePanel?.id).toBe('terminal-s2');
+  });
 });
 
 // layout.read() 慢时 dock api 已暴露:恢复前 addPanel 的面板会被 fromJSON 的 clear() 删掉且不再补建。
@@ -270,5 +294,61 @@ describe('布局恢复前的 addPanel 入口延后到恢复完成', () => {
     deferRead();
     render(React.createElement(DockShell));
     await vi.waitFor(() => expect(h.onFlushRequest).toHaveBeenCalledTimes(1));
+  });
+});
+
+// 布局恢复完成后 editor 自动激活 effect 的首次运行不是用户意图(activeTabId 来自持久化 hydrate):只确保 editor
+// 面板存在,不得 setActive 覆盖 fromJSON 恢复的活动面板或恢复期间排队打开的面板;之后 editorFocusPulse 变化
+//(用户打开 / 切换文件)才激活 editor。
+describe('布局恢复后 editor 自动激活不抢活动面板', () => {
+  it('持久化 activeTabId 非空 → 恢复后活动面板仍是 fromJSON 恢复的 settings', async () => {
+    const resolveRead = deferRead();
+    render(React.createElement(DockShell));
+    await vi.waitFor(() => expect(h.api).not.toBeNull());
+    act(() => {
+      useEditorStore.setState({ activeTabId: 'tab-1' });
+    });
+    resolveRead({ ok: true, data: layoutWithSettingsActive });
+    await vi.waitFor(() =>
+      expect(h.api!.panels.map((p) => p.id)).toContain('terminal-s1'),
+    );
+    expect(h.api!.activePanel?.id).toBe('settings');
+  });
+
+  it('editor 面板缺失 → 补建但不抢激活;恢复期间排队打开的面板保持活动', async () => {
+    const resolveRead = deferRead();
+    render(React.createElement(DockShell));
+    await vi.waitFor(() => expect(h.api).not.toBeNull());
+    act(() => {
+      useEditorStore.setState({ activeTabId: 'tab-1' });
+    });
+    openOrFocusPanel('plugin-x', 'plugin-x', 'Plugin X');
+    resolveRead({
+      ok: true,
+      data: {
+        ...persistedLayout,
+        panels: { settings: { id: 'settings', contentComponent: 'settings' } },
+      },
+    });
+    await vi.waitFor(() => {
+      const ids = h.api!.panels.map((p) => p.id);
+      expect(ids).toContain('editor');
+      expect(ids).toContain('plugin-x');
+    });
+    expect(h.api!.activePanel?.id).toBe('plugin-x');
+  });
+
+  it('恢复后 editorFocusPulse 变化(用户切换文件)→ 激活 editor', async () => {
+    useEditorStore.setState({ activeTabId: 'tab-1' });
+    h.read.mockResolvedValue({ ok: true, data: layoutWithSettingsActive });
+    render(React.createElement(DockShell));
+    await vi.waitFor(() =>
+      expect(h.api?.panels.map((p) => p.id)).toContain('terminal-s1'),
+    );
+    expect(h.api!.activePanel?.id).toBe('settings');
+    act(() => {
+      useEditorStore.getState().switchTab('tab-1');
+    });
+    expect(h.api!.activePanel?.id).toBe('editor');
   });
 });

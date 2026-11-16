@@ -24,6 +24,12 @@ export interface ReconcileInput {
    * pendingFocus(用户明确意图)仍聚焦;它们照常登记进 everAddedSessionIds。
    */
   hydrate?: boolean;
+  /**
+   * 仅配合 hydrate:恢复开始时刻(ms,与 session.createdAt 同为墙钟)。给出时 hydrate 只抑制
+   * createdAt 早于它的存量 session;恢复期间新建的(如布局恢复中按 Cmd+T,其 setPendingFocus 晚于
+   * 首次 reconcile 才执行、无人消费)照常走 originHint 兜底聚焦。缺省 = 抑制全部 added。
+   */
+  hydrateBefore?: number;
 }
 
 // pendingFocus 由 user 路径(Cmd+T / + 按钮)在 coApi.terminal.create resolve 后
@@ -143,9 +149,12 @@ export function reconcileTerminalPanels(
       const isLatestUserSession =
         session.originHint === 'user' &&
         session.createdAt === latestUserCreatedAt;
+      const isHydrated =
+        input.hydrate === true &&
+        (input.hydrateBefore === undefined || session.createdAt < input.hydrateBefore);
       const shouldFocus =
         consumePendingFocus(session.id) ||
-        (input.hydrate !== true &&
+        (!isHydrated &&
           session.originHint === 'user' &&
           isFirstAppearance &&
           isLatestUserSession);
@@ -195,7 +204,14 @@ export function reconcileTerminalPanels(
   }
 }
 
-export function useDockReconciler(api: DockviewApi | null): void {
+/**
+ * @param hydrateBefore 本 api 布局恢复开始时刻(见 ReconcileInput.hydrateBefore);缺省 = 首次 reconcile
+ *   的存量 session 全部按 hydrate 处理。
+ */
+export function useDockReconciler(
+  api: DockviewApi | null,
+  hydrateBefore?: number,
+): void {
   const previousSessionsRef = useRef<readonly TerminalSession[]>([]);
   const currentApiRef = useRef(api);
   currentApiRef.current = api;
@@ -213,9 +229,11 @@ export function useDockReconciler(api: DockviewApi | null): void {
       previousSessions: [],
       nextSessions: initial.sessions,
       hydrate: true,
+      ...(hydrateBefore !== undefined ? { hydrateBefore } : {}),
     });
     previousSessionsRef.current = initial.sessions;
-  }, [api]);
+    // hydrateBefore 与 api 由 DockShell 在同一次 setState 中设定,随 api 一起变化。
+  }, [api, hydrateBefore]);
 
   useEffect(() => {
     return useTerminalStore.subscribe((state) => {

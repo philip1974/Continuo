@@ -13,6 +13,7 @@ import {
 import { notify } from '@/notifications/notify';
 import { useT, t as translate, type TranslationKey } from '@/i18n';
 import { isAgentAuthRequestPayload } from '@shared/agent-auth-channels';
+import { ERROR_CODES } from '@shared/error-codes';
 
 // method → i18n key 表（P2-1）；未知 method 走 generic('{method}') fallback
 const METHOD_LABEL_KEYS: Record<string, TranslationKey> = {
@@ -62,7 +63,11 @@ export function AgentAuthPrompt() {
         }
         if (!r.ok) {
           console.warn('[agent-auth] respond failed', r.code, r.message);
-          notify.error(translate('permissions.agent.respond_failed'));
+          // race:main 与本地弹窗计时起点相差 IPC 延迟 —— 本地尚未超时而 main 已结算 → NOT_PENDING =
+          // 请求已失效(已按拒绝收场),不是应答失败,不弹误导性 toast。其它失败码照旧提示。
+          if (r.code !== ERROR_CODES.AGENT_AUTH_REQUEST_NOT_PENDING) {
+            notify.error(translate('permissions.agent.respond_failed'));
+          }
         }
       } catch (err) {
         console.warn('[agent-auth] respond threw', err);

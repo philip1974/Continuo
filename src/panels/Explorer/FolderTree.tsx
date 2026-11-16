@@ -6,7 +6,6 @@ import { useTree } from '@headless-tree/react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { ItemInstance, SetStateFn, TreeInstance } from '@headless-tree/core';
 import type { FileEntry } from '@/lib/fs/types';
-import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
 import { ContextMenu, type ContextMenuActions } from './ContextMenu';
 import { CreateInput } from './CreateInput';
 import { DropOverlay } from './DropOverlay';
@@ -36,7 +35,7 @@ import { useTheme } from '@/theme';
 import { useExplorerClipboardStore } from './clipboard-store';
 import { t, useT } from '@/i18n';
 import { localizeErrorByCode } from '@/lib/localize-error';
-import { openOrFocusPanel } from '@/shell/dock/dock-api-ref';
+import { setPendingFocus } from '@/shell/dock/DockReconciler';
 import { notifyFailure, notifyThrownError } from '@/notifications/notify-thrown-error';
 import { errorCodeOf } from '../../../electron/shared/error-message';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
@@ -472,12 +471,10 @@ export function FolderTree({ root }: { root: string }) {
               notifyFailure(r, { mirror: false });
               return;
             }
-            openOrFocusPanel(
-              TERMINAL_PANEL_TYPE,
-              TERMINAL_PANEL_TYPE,
-              'Terminal',
-              'panels.terminal.title',
-            );
+            // 终端面板是 per-session id(terminal-<id>),只由 DockReconciler 建;此前调通用
+            // openOrFocusPanel('terminal') 会 addPanel 出无 sessionId 的坏面板(随即自动关闭)。
+            // 与 Cmd+T(createUserTerminal)相同,用 setPendingFocus 请求 Reconciler 聚焦新面板。
+            if (r.data?.id) setPendingFocus(r.data.id);
           } catch (err) {
             notifyThrownError(err);
           }

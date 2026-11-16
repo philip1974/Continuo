@@ -11,7 +11,12 @@
   才挂载 → 恢复完成时现有终端 session 仍各有 panel,不被 fromJSON 清掉;之后新增的 session 照常建 panel。
 - **恢复后挂载不抢焦点**(`restore-after-fromjson.spec.tsx`):Reconciler 挂载后的首次 reconcile 是 hydrate
   (`hydrate: true`)—— 存量 user terminal 全量重建时不走 originHint 兜底聚焦,活动面板保持 fromJSON 恢复的那个
-  (仅显式 pendingFocus 仍聚焦);之后真正新建的 user terminal 照旧聚焦。
+  (仅显式 pendingFocus 仍聚焦);之后真正新建的 user terminal 照旧聚焦。hydrate 只抑制 `createdAt` 早于本 api
+  布局恢复开始时刻(`hydrateBefore`)的存量 session:恢复期间新建的 user terminal(Cmd+T,其 setPendingFocus
+  晚于首次 reconcile 才执行)照常走 originHint 兜底聚焦。
+- **恢复后 editor 自动激活不抢活动面板**(`restore-after-fromjson.spec.tsx`):恢复完成后 editor 激活 effect 的
+  首次运行(持久化 activeTabId 非空)只确保 editor 面板存在(缺失则补建并把激活还给原活动面板),不覆盖 fromJSON
+  恢复的活动面板 / 恢复期间排队打开的面板;`editorFocusPulse` 相对恢复时刻变化(用户打开 / 切换文件)才激活 editor。
 - **恢复前的 addPanel 入口延后**(`restore-after-fromjson.spec.tsx`):`layout.read()` 较慢时 dock api 已暴露,
   恢复前 `openOrFocusPanel()` 排队、editor 自动激活等待「布局已恢复」,恢复完成后才 addPanel(不被 fromJSON 的
   `clear()` 删掉);关窗 flush 握手仍在 apiReady 时注册(时序不变)。
