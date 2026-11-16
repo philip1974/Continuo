@@ -13,13 +13,14 @@ beforeEach(() => {
 });
 
 // race(R88):main 端 5min timeout 把请求 resolve 为 denied 但不通知 renderer。renderer 端同 TTL
-// 本地超时:过期 → deny + 清 pending,避免失效弹窗滞留 + 阻塞后续 agent auth 请求。
+// 本地超时:过期 → 清 pending,避免失效弹窗滞留 + 阻塞后续 agent auth 请求。结算为 'cancelled'
+// (main 已按 denied 结算并删除该请求;再 respond 只会拿到 NOT_PENDING 并弹误导性失败 toast)。
 describe('race(R88) · pending 同 TTL 本地超时自清', () => {
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  it('5min 无应答 → ensure resolve denied + pending 清空 + 后续请求不被阻塞', async () => {
+  it('5min 无应答 → ensure resolve cancelled + pending 清空 + 后续请求不被阻塞', async () => {
     vi.useFakeTimers();
     const p = useAgentAuthStore
       .getState()
@@ -28,7 +29,7 @@ describe('race(R88) · pending 同 TTL 本地超时自清', () => {
 
     await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
 
-    await expect(p).resolves.toBe('denied');
+    await expect(p).resolves.toBe('cancelled');
     expect(useAgentAuthStore.getState().pending).toBeNull();
 
     // 旧弹窗已自清 → 新请求能重新挂起(不再因 pending!==null 立即拒)。

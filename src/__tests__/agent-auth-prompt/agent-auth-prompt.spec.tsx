@@ -367,6 +367,25 @@ describe('AgentAuthPrompt — main 已撤销', () => {
     };
   }
 
+  it('弹窗本地超时(与 main 同 TTL,main 已结算删除)→ 不 respond、不弹失败 toast', async () => {
+    vi.useFakeTimers();
+    try {
+      const { respond, fireRequest } = setupWithRequest();
+      act(() => {
+        void fireRequest('rq-timeout');
+      });
+      expect(useAgentAuthStore.getState().pending?.requestId).toBeDefined();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+      });
+      expect(useAgentAuthStore.getState().pending).toBeNull();
+      expect(respond).not.toHaveBeenCalled();
+      expect(notifyError).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('撤销成功后取消本地弹窗(applyMainRevoked)→ 不再向 main respond、不弹失败 toast', async () => {
     const { respond, fireRequest } = setupWithRequest();
     act(() => {

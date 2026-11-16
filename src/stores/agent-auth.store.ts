@@ -117,8 +117,9 @@ export const useAgentAuthStore = create<AgentAuthState>((set, get) => ({
     set({ pending: req });
     return new Promise<EnsureOutcome>((resolve) => {
       pendingResolver = resolve;
-      // race(R88):同 TTL 本地超时。过期且仍是本请求 → deny + 清 pending(main 已 denied),
-      // 避免失效弹窗滞留 + 阻塞后续请求。grant/deny/reset 都会 clearPendingTimer 防误触。
+      // race(R88):同 TTL 本地超时。过期且仍是本请求 → 清 pending(main 已 denied 并删除该请求),
+      // 避免失效弹窗滞留 + 阻塞后续请求。结算为 'cancelled':调用方不再 respond(否则 main 返回
+      // NOT_PENDING → 误导性「授权响应失败」toast)。grant/deny/reset 都会 clearPendingTimer 防误触。
       clearPendingTimer();
       pendingTimer = setTimeout(() => {
         pendingTimer = null;
@@ -126,7 +127,7 @@ export const useAgentAuthStore = create<AgentAuthState>((set, get) => ({
         const r = pendingResolver;
         pendingResolver = null;
         set({ pending: null });
-        r?.('denied');
+        r?.('cancelled');
       }, PROMPT_TIMEOUT_MS);
     });
   },
