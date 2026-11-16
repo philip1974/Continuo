@@ -30,6 +30,11 @@ export interface PluginReloadGateDeps {
    * enabledChanged 仍按缓冲规则排队。卸载的同步部分由 markUninstalled 负责。
    */
   readonly revokeImmediately?: (id: string) => void;
+  /**
+   * 启用广播的同步部分(PluginManager.markEnabled,终审 P1):enabled=true 一到立即调用,清除 revokeImmediately 为
+   * 尚无 entry 的插件记下的「已禁用」标记(否则 init 仍按该标记跳过激活)。enabledChanged 仍按缓冲规则排队。
+   */
+  readonly markEnabled?: (id: string) => void;
   readonly onError?: (
     where: 'init' | 'reload' | 'uninstalled' | 'enabled-changed',
     err: unknown,
@@ -100,6 +105,12 @@ export function wirePluginReloadGate(deps: PluginReloadGateDeps): void {
     if (!enabled) {
       try {
         deps.revokeImmediately?.(id);
+      } catch (err) {
+        deps.onError?.('enabled-changed', err);
+      }
+    } else {
+      try {
+        deps.markEnabled?.(id);
       } catch (err) {
         deps.onError?.('enabled-changed', err);
       }

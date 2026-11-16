@@ -182,6 +182,8 @@ export async function init(): Promise<void> {
     enabledChanged: (id, enabled) => userPluginManager.handleEnabledChanged(id, enabled),
     // 禁用广播一到立即吊销 + 中止挂起的激活(不等 init / 生命周期锁)。
     revokeImmediately: (id) => userPluginManager.revokeImmediately(id),
+    // 启用广播一到立即清除 init 期间记下的「已禁用」标记。
+    markEnabled: (id) => userPluginManager.markEnabled(id),
     onError: (where, err) =>
       console.warn(`[main] user plugin manager ${where} failed`, err),
   });

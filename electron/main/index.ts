@@ -1262,9 +1262,11 @@ app.on('before-quit', async (event) => {
   const targets: BrowserWindow[] = [];
   // 本轮接管的在途单窗关闭流程的复位函数;退出中止时立即调用(显示窗口 + 释放关窗守卫)。
   const takenOver: Array<() => void> = [];
+  // 已回答确认框(保存 / 不保存)而被隐藏的窗口;退出中止时恢复显示。
+  const answered: BrowserWindow[] = [];
   const abortQuit = (show: readonly BrowserWindow[]): void => {
     for (const release of takenOver) release();
-    for (const w of show) if (!w.isDestroyed()) w.show();
+    for (const w of [...answered, ...show]) if (!w.isDestroyed()) w.show();
     quitGuard.cancel(); // 复位:下次 Cmd+Q 重新确认,不卡在「在途」
   };
   for (const w of BrowserWindow.getAllWindows()) {
@@ -1297,6 +1299,14 @@ app.on('before-quit', async (event) => {
     }
     modes.set(w.id, choice === 'save' ? 'save' : 'discard');
     accepted.set(w.id, confirm.state);
+    // 终审 P1(冻结):回答后立即隐藏该窗口直到退出完成 —— 否则别窗确认框打开期间用户回到本窗继续编辑同一已脏
+    // 文件,脏 id 身份不变,全局最终检查视为已接受 → 新增内容静默丢失。退出中止时 abortQuit 恢复显示。
+    answered.push(w);
+    try {
+      if (!w.isDestroyed()) w.hide();
+    } catch {
+      // 关窗竞态下 hide 失败不阻断退出确认。
+    }
   }
   // flush 请求前各窗已上报的 pendingAutoSave(随本轮 flush 落盘;全局最终检查不当作 ACK 之后的新输入)。
   const flushedPending = new Map<number, readonly string[] | undefined>();

@@ -16,6 +16,10 @@
 - 一次性 `shell:exec` 在途子进程并发上限(终审 P1,E230 同族):与流式同款全局 128 + 单 sender 32 双闸,spawn 前
   拒绝(`TOO_MANY_STREAMS`,不 spawn、不起 timer);close / error 释放名额(只释放一次)。
   规范:`electron/main/__tests__/shell-exec-active-cap.test.ts`。
+- 一次性 `shell:exec` 随所属窗口回收(终审 P1):IPC 入口为发送方 webContents 挂与流式同款的 wc-gone 钩子
+  (`destroyed` + main frame 非同文档导航,即关窗 / 整页重载;in-page 导航不算),触发时 `killProcessTreesNow` 终止该
+  sender 名下全部 exec 进程树,close 后释放名额;其它 sender 不受影响。
+  规范:`electron/main/__tests__/shell-exec-wc-gone.test.ts`。
 
 ### renderer
 

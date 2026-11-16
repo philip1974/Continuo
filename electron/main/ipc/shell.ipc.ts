@@ -3,7 +3,7 @@
 import { z } from 'zod';
 import { defaultIsTrustedFrame, safeHandle, safeHandleWithCtx } from '../safe-handle';
 import { SHELL_CHANNELS } from '../../shared/shell-channels';
-import { execShell, openExternalUrl } from '../services/shell.service';
+import { attachShellExecWcGoneHook, execShell, openExternalUrl } from '../services/shell.service';
 import { killPluginShellProcesses } from '../lib/plugin-shell-owners';
 import { PLUGIN_ID_MAX_LEN } from '../../shared/permission-record-limits';
 // 边界(E12,E11 同族):shell.exec 的 cmd/args/cwd/env/input 此前无长度/数量上限。stdout/stderr
@@ -72,7 +72,11 @@ export function registerShellIpc(): void {
   safeHandleWithCtx(
     SHELL_CHANNELS.EXEC,
     ExecInput,
-    (input, { event }) => execShell(input, event.sender.id),
+    (input, { event }) => {
+      // 窗口关闭 / 整页重载时回收该 sender 的 exec(终审 P1)。
+      attachShellExecWcGoneHook(event.sender);
+      return execShell(input, event.sender.id);
+    },
     defaultIsTrustedFrame,
   );
   // 终审 P1:插件停用/卸载 → 终止发送方窗口内该插件的全部 shell 进程(exec + 流式);

@@ -213,6 +213,12 @@ export class PluginManager {
    * 故不清除。
    */
   private readonly uninstalledIds = new Set<string>();
+  /**
+   * 尚无 entry 时收到禁用的 id(终审 P1):init 读完启用快照后、该插件写入 entries 前(前一个插件挂在授权弹窗上)
+   * 到达的禁用广播只被 reload-gate 缓冲 → init 仍按旧快照激活。init 建 entry 时消费该标记、按禁用建 entry;
+   * 收到 enabled=true 广播(markEnabled)清除。
+   */
+  private readonly disabledBeforeEntryIds = new Set<string>();
   /** init 进行中(终审 P1):期间到达的广播被 reload-gate 缓冲到 init 完成,锁内停用不会及时执行。 */
   private initializing = false;
 
@@ -294,7 +300,9 @@ export class PluginManager {
         continue;
       }
 
-      const intended = enabledIds.has(manifest.id);
+      // 快照之后已收到禁用广播(见 disabledBeforeEntryIds)→ 不按旧快照激活,以 disabled 建 entry。
+      const disabledSinceSnapshot = this.disabledBeforeEntryIds.delete(manifest.id);
+      const intended = enabledIds.has(manifest.id) && !disabledSinceSnapshot;
       const entry: PluginEntry = {
         id: manifest.id,
         manifest,
@@ -568,7 +576,12 @@ export class PluginManager {
    */
   revokeImmediately(id: string): void {
     const entry = this.entries.get(id);
-    if (!entry) return;
+    if (!entry) {
+      // init 尚未建该 entry:记下,init 建 entry 时按禁用处理。init 之后本窗口不会再出现新 id 的 entry
+      //(新安装须重载窗口),无需记录。
+      if (this.initializing) this.disabledBeforeEntryIds.add(id);
+      return;
+    }
     if (entry.activating) entry.revokeRequested = true;
     entry.scoped?.revoke();
     entry.abortActivation?.();
@@ -577,6 +590,11 @@ export class PluginManager {
     if (entry.activating || this.initializing) {
       void this.killPluginShellProcesses(id, `revoke ${id}`);
     }
+  }
+
+  /** 启用广播的同步部分(终审 P1):清除 revokeImmediately 为尚无 entry 的 id 记下的禁用标记。幂等。 */
+  markEnabled(id: string): void {
+    this.disabledBeforeEntryIds.delete(id);
   }
 
   /** 激活进行中被要求吊销 → 抛中止(在执行插件代码前调用)。 */
@@ -629,6 +647,7 @@ export class PluginManager {
       this.invalidateListCache();
     } finally {
       entry.activating = false;
+      entry.abortActivation = undefined;
       // 被禁用 / 卸载中止的激活落到 disabled(非失败);启用意图由排队的停用清除 / 落盘。
       if (entry.revokeRequested && !entry.instance) {
         entry.status = 'disabled';
@@ -710,11 +729,23 @@ export class PluginManager {
     // 终审 P1:授权弹窗 / 授权写入 await 期间插件可能已被别的窗口卸载 → 不加载(import 即执行插件顶层代码)。
     this.assertNotUninstalled(entry.id);
     this.assertNotRevokeRequested(entry);
-    const loaded = await loadPluginModule({
-      moduleUrl: entry.dirInfo.moduleUrl,
-      manifest: entry.manifest,
-      importer: (url) => this.host.importModule(url),
+    // 终审 P1(onload 挂起 / 模块顶层 await 挂起):中止句柄在开始 import **之前**就挂到 entry —— 模块顶层 await 永不
+    // 结束时,revokeImmediately 可中止等待,激活按禁用收尾、释放生命周期锁。import 本身无法取消:迟到完成的结果无人
+    // 等待即被丢弃(不构造实例)。不设固定超时。句柄由 activateEntry 的 finally 清除。
+    let abortActivation!: (err: Error) => void;
+    const aborted = new Promise<never>((_, reject) => {
+      abortActivation = reject;
     });
+    aborted.catch(() => {});
+    entry.abortActivation = () => abortActivation(activationAbortedError(entry.id));
+    const loaded = await Promise.race([
+      loadPluginModule({
+        moduleUrl: entry.dirInfo.moduleUrl,
+        manifest: entry.manifest,
+        importer: (url) => this.host.importModule(url),
+      }),
+      aborted,
+    ]);
     if (!loaded.ok) {
       console.warn(
         `[plugin-manager] load ${entry.id} failed: ${loaded.code} ${loaded.message}`,
@@ -748,15 +779,9 @@ export class PluginManager {
     // instance=undefined 的半激活态。后续 disableLocked 的 `!entry.instance` 守卫
     // 又会早退、不走 deactivateEntry → 泄漏的 plugin-fs capability token 永不回收
     // (codex 复审 loop R1)。
-    // 终审 P1(onload 挂起):控制面在执行插件代码(构造 / onload)**之前**挂到 entry,并备好中止 —— 激活挂起期间
-    // 收到禁用 / 卸载,revokeImmediately 可立即吊销并中止等待(否则 entry.scoped 要等 onload 返回才写入)。
+    // 终审 P1(onload 挂起):控制面在执行插件代码(构造 / onload)**之前**挂到 entry(中止句柄已在 import 前备好)——
+    // 激活挂起期间收到禁用 / 卸载,revokeImmediately 可立即吊销并中止等待(否则 entry.scoped 要等 onload 返回才写入)。
     entry.scoped = scoped;
-    let abortActivation!: (err: Error) => void;
-    const aborted = new Promise<never>((_, reject) => {
-      abortActivation = reject;
-    });
-    aborted.catch(() => {});
-    entry.abortActivation = () => abortActivation(activationAbortedError(entry.id));
     let instance: Plugin;
     try {
       // _registerPlugin await 期间被要求吊销 → 不构造实例。
@@ -779,8 +804,6 @@ export class PluginManager {
       await this.killPluginShellProcesses(entry.id, `activate ${entry.id}`);
       this.invalidateListCache();
       return;
-    } finally {
-      entry.abortActivation = undefined;
     }
 
     entry.instance = instance;

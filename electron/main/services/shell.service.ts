@@ -15,6 +15,7 @@ import {
   TREE_KILL_DETACHED,
 } from '../lib/kill-with-grace';
 import { trackPluginShellProcess } from '../lib/plugin-shell-owners';
+import { makeWcGoneHook } from '../lib/wc-gone-hook';
 import type {
   IpcShellExecInput,
   IpcShellExecResult,
@@ -61,8 +62,9 @@ export const EXEC_LIMITS_FOR_TEST = {
   MAX_OUTPUT_BYTES_CAP,
 } as const;
 
-// 在途(尚未 close)的 exec 子进程,供退出清理。子进程是 detached 进程组,不随 IDE 退出而终止。
-const inFlight = new Set<ChildProcess>();
+// 在途(尚未 close)的 exec 子进程 → 发起方 senderId(内部调用为 undefined),供退出清理与按 sender 回收。
+// 子进程是 detached 进程组,不随 IDE 退出而终止。
+const inFlight = new Map<ChildProcess, number | undefined>();
 
 // 终审 P1(E230 同族,数量上限):在途 exec 子进程并发上限。插件循环调用 exec 不 await → 此前无限 spawn,耗尽
 // PID / FD。与 plugin-shell-stream 同款全局 + 单 sender 双闸,spawn 前 fail-fast 拒绝(不 spawn、不起 timer)。
@@ -76,8 +78,23 @@ export const MAX_ACTIVE_EXECS_PER_SENDER_FOR_TEST = MAX_ACTIVE_EXECS_PER_SENDER;
 
 /** 退出清理(before-quit awaited):立即强杀所有在途 exec 的进程树并等待 close(有上限)。 */
 export function cleanupAllShellExecs(): Promise<void> {
-  return killProcessTreesNow(inFlight);
+  return killProcessTreesNow(inFlight.keys());
 }
+
+/** 立即终止 senderId 名下全部在途 exec 的进程树;close 后照常结算 Promise 并释放名额。 */
+export function killShellExecsForSender(senderId: number): Promise<void> {
+  const matched: ChildProcess[] = [];
+  for (const [child, owner] of inFlight) {
+    if (owner === senderId) matched.push(child);
+  }
+  return killProcessTreesNow(matched);
+}
+
+// 终审 P1:窗口关闭 / 整页重载后回收该 sender 的 exec(此前 detached 进程跑到超时并占着名额)。
+// 与流式 shell 同一钩子(destroyed + main frame 非同文档导航),IPC 入口每次 exec 前挂(按 webContents 去重)。
+export const attachShellExecWcGoneHook = makeWcGoneHook((senderId) => {
+  void killShellExecsForSender(senderId);
+});
 
 /**
  * 跑一个进程到 exit,buffered 输出 + 超时 + 大小上限.
@@ -131,7 +148,7 @@ export function execShell(
       return;
     }
     const proc = child;
-    inFlight.add(proc);
+    inFlight.set(proc, senderId);
     if (senderId !== undefined) {
       inFlightBySender.set(senderId, (inFlightBySender.get(senderId) ?? 0) + 1);
     }

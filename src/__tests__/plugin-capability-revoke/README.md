@@ -68,6 +68,16 @@
 - 激活进行中(授权弹窗 / import / token 注册 await 期间)被要求吊销 → 不加载 / 不构造实例。
 - 本地禁用:有启用意图但无实例(激活被中止)仍停用并落盘 `enabled=false`(否则下次启动复活)。
 
+### 1c. 激活早期的禁用 / 卸载(`PluginManager` / `plugin-reload-gate.ts`)
+
+- init 期间尚无 entry 的插件收到禁用(终审 P1):init 读完启用快照后逐个激活,前一个插件挂在授权弹窗上时,后面的插件
+  尚未写入 entries;其禁用广播此前只被 reload-gate 缓冲 → init 仍按旧快照 import 并激活。`revokeImmediately` 对尚无
+  entry 的 id(仅 init 期间)记「已禁用」标记;init 建 entry 时消费该标记,按 `disabled` 建 entry、不 import / 不构造。
+  reload-gate 收到 `enabled=true` 广播时立即调用 `markEnabled(id)` 清除标记(之后按快照照常激活)。
+- 模块顶层 await 永不结束(终审 P1):中止句柄在开始 import **之前**就挂到 entry,import 与中止 `Promise.race`。禁用 /
+  卸载 → 管理器停止等待 import,激活按禁用收尾、释放生命周期锁,排队的停用 / 卸载照常完成(落盘 `enabled=false`)。
+  import 无法真正取消:迟到完成的结果被丢弃,不构造实例。不设固定超时。
+
 ### 2. 跨窗口启停(`electron/main/ipc/plugins.ipc.ts` / preload / `PluginManager.handleEnabledChanged`)
 
 - `plugins:mutate-enabled` 写入 `_enabled.json` 成功后,经 `broadcastToWindows` 向所有窗口(含发起者)推
@@ -101,6 +111,9 @@
   原对象不变、引用稳定;PluginManager 停用后缓存的 `terminal.new` fn 被拒、终端未创建。
 - `activation-hang-revoke.spec.ts`:onload 挂起期间别窗禁用 / 卸载广播(init 未完成)与本地禁用 → 立即吊销(shell.exec
   被拒、不发 IPC)、立即终止进程,随后状态落 disabled / entry 移除;init 挂起时本地禁用落盘 `enabled=false`。
+- `activation-early-revoke.spec.ts`:init 中前一个插件挂在授权弹窗上时收到插件 B 的禁用广播 → B 不 import、落
+  disabled;随后的 enabled=true 广播清除标记;import 挂起时本地禁用 / 别窗禁用 / 本地卸载均完成、锁释放,import 迟到
+  完成不构造实例。
 - `enabled-main-broadcast.spec.ts`:main 广播(成功才广播、跳过已销毁窗口)与 payload 守卫。
 - `enabled-renderer-sync.spec.ts`:A 禁用 → B 停用、命令注销、不写盘、热重载不复活;发起窗口幂等;A 启用 → B
   激活(不弹窗、不写盘);未知 id 忽略;reload-gate 接线与 init 前缓冲。

@@ -800,6 +800,7 @@
 
 ## [plugin-capability-revoke(插件能力回收:停用即吊销、跨窗口启停、撤销 mcp-tools)](./plugin-capability-revoke/README.md)
 
+- [`activation-early-revoke.spec.ts`](./plugin-capability-revoke/activation-early-revoke.spec.ts)
 - [`activation-hang-revoke.spec.ts`](./plugin-capability-revoke/activation-hang-revoke.spec.ts)
 - [`contribution-revoke.spec.ts`](./plugin-capability-revoke/contribution-revoke.spec.ts)
 - [`deactivate-revoke.spec.ts`](./plugin-capability-revoke/deactivate-revoke.spec.ts)

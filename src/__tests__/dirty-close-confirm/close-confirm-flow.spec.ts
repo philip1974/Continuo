@@ -659,6 +659,34 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
     b.destroyed = true;
   });
 
+  // 终审 P1:A 选「不保存」后 B 的确认框仍打开时,用户回到 A 继续编辑同一已脏文件 —— 身份不变(dirtyGen 只在
+  // clean→dirty 递增)被全局最终检查视为已接受 → 新增内容静默丢失。冻结方案:回答确认框后立即隐藏该窗口直到退出完成;
+  // 退出中止时恢复显示。
+  it('多窗退出:A 回答「不保存」后立即隐藏;B 取消 → 退出中止,A 重新显示', async () => {
+    const a = createReadyWindow(27);
+    const b = createReadyWindow(28);
+    reportDirty(a, ds(['/w/a.ts']));
+    reportDirty(b, ds(['/w/b.ts']));
+    let answerB!: (r: { response: number }) => void;
+    electronMock.showMessageBox
+      .mockResolvedValueOnce({ response: 1 }) // A:不保存
+      .mockImplementationOnce(() => new Promise((r) => (answerB = r))); // B:挂起
+
+    const { done } = beforeQuit();
+    await settle();
+    expect(electronMock.showMessageBox).toHaveBeenCalledTimes(2); // B 的确认框已打开
+    expect(a.hide).toHaveBeenCalled();
+    expect(b.hide).not.toHaveBeenCalled();
+    expect(a.show).not.toHaveBeenCalled();
+
+    answerB({ response: 2 }); // B:取消
+    await done;
+    expect(a.show).toHaveBeenCalled();
+    expect(app.quit).not.toHaveBeenCalled();
+    a.destroyed = true;
+    b.destroyed = true;
+  });
+
   it('保存失败 → 中止退出、显示该窗口;守卫复位', async () => {
     const a = createReadyWindow(22);
     reportDirty(a, ds(['/w/a.ts']));
@@ -803,9 +831,9 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
     expect(app.quit).not.toHaveBeenCalled();
     expect(termService.cleanupAll).not.toHaveBeenCalled();
     expect(a.show).toHaveBeenCalled();
-    // 最终检查失败(中止)路径不进退出屏障:不隐藏任何窗口
+    // 最终检查失败(中止)路径不进退出屏障:未回答确认框的 A 不被隐藏;B 回答「保存」后被冻结隐藏,中止时恢复显示
     expect(a.hide).not.toHaveBeenCalled();
-    expect(b.hide).not.toHaveBeenCalled();
+    expect(b.show).toHaveBeenCalled();
 
     // 守卫复位:再次 Cmd+Q 会对 A 弹确认
     electronMock.showMessageBox.mockResolvedValueOnce({ response: 2 });
@@ -931,7 +959,8 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
     expect(app.quit).not.toHaveBeenCalled();
     expect(termService.cleanupAll).not.toHaveBeenCalled();
     expect(a.show).toHaveBeenCalled();
-    expect(b.show).not.toHaveBeenCalled();
+    // B 未被判为超出范围:只因回答确认框后被冻结隐藏而恢复显示一次(被判超出会再显示一次)
+    expect(b.show).toHaveBeenCalledTimes(1);
     a.destroyed = true;
     b.destroyed = true;
   });

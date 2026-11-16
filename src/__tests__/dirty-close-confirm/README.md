@@ -76,6 +76,9 @@ markdown autosave flush)完成后、回执之前,检查此刻仍 dirty 的 tab(�
 ### 退出应用(before-quit)
 
 - 逐个有脏文件的主窗确认(一次一个框);任一**取消** → 中止整个退出,不 flush,守卫复位,再次 Cmd+Q 正常重新确认。
+- 冻结(终审 P1):某窗回答确认框(保存 / 不保存)后**立即隐藏**,直到退出完成 —— 否则别窗确认框打开期间回到该窗
+  继续编辑同一已脏文件,脏 id 身份不变,全局最终检查视为已接受 → 新增内容静默丢失。退出中止(任一路径)时恢复显示。
+  单窗关闭流程不受影响(回答后本就 hide + 关闭)。
 - 按各窗选择 flush;任一「保存」失败或回执 `remaining` → 中止退出、显示该窗口、守卫复位(不记 flushedOnQuit,之后关窗仍走确认)。
 - 全局最终检查:全部 flush 完成后、破坏性清理(`cleanupAll` 杀 PTY / debug)之前,按 main 持续接收的脏态上报判断
   各主窗是否超出本轮已接受范围 —— **按 id 身份**:当前脏 id 须是已接受集合的子集(未弹框 → 空集;「保存」→ 确认框
@@ -87,7 +90,8 @@ markdown autosave flush)完成后、回执之前,检查此刻仍 dirty 的 tab(�
   的 id(「不保存」确认的脏 `.md` 改归 `pendingAutoSave`),以及 flush 请求前已上报的 id(已随本轮 flush 落盘;现行
   renderer 回执总带 `state`、不含 `pendingAutoSave`,只有不带 `state` 的旧回执会让其残留在记账里)。
 - 最终检查通过后、进入不可逆清理前**隐藏全部窗口**(含 popout)形成退出屏障:清理(debug teardown 可能数秒)期间
-  窗口已入 flushedOnQuit,继续编辑会丢失、关窗也绕过确认。最终检查失败(中止)路径不隐藏。
+  窗口已入 flushedOnQuit,继续编辑会丢失、关窗也绕过确认。最终检查失败(中止)路径不隐藏(已回答确认框而被冻结隐藏的
+  窗口恢复显示)。
 - 不可逆清理:先同步拒绝所有未决 agent 授权(`cancelAllAgentAuth`),再 await terminal / debug / 插件 shell 子进程
   (`cleanupAllShellExecs` / `cleanupAllShellStreams`)清理,随后 await MCP host / stdio 关闭,全部完成才 `app.quit()`。
 - popout 窗口不参与(与既有 flush 逻辑一致)。
