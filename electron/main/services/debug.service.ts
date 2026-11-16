@@ -124,15 +124,34 @@ export interface DebugCallerContext {
 }
 
 /**
- * 调用方(stdio proxy)在 launch 期间断开 / 身份被吊销:不留下绑定死 subject 的会话(新连接过不了 capability 闸,
- * 无法清理)。
+ * 在途 launch 被取消(调用方断开 / 身份被吊销 / 窗口关闭 / 应用退出):不留下绑定死 subject 或已销毁窗口的会话
+ *(新连接过不了 capability 闸,无法清理)。
  */
 function launchCancelledError(): Error {
-  return codedError(ERROR_CODES.AGENT_NOT_AUTHORIZED, 'caller disconnected or revoked during debug launch');
+  return codedError(ERROR_CODES.AGENT_NOT_AUTHORIZED, 'debug launch cancelled (caller disconnected, revoked, window closed or app quitting)');
 }
 
-/** 记录已吊销调用方身份的上限(见 DebugService.revokedControllers)。 */
-const REVOKED_CONTROLLERS_MAX = 1024;
+/**
+ * cleanupAll(应用退出)等待在途 launch 结算的上限。正常 spawn + initialize 在 1s 内;adapter 卡住时不无限拖住
+ * 退出(DapClient 自身 ready 超时 15s、请求超时 20s,超出本上限的那次 launch 结算后仍会自行释放 adapter)。
+ */
+export const DEBUG_LAUNCH_SETTLE_WAIT_MS = 5_000;
+
+/**
+ * 一次在途 debug.launch(会话尚未交给调用方)。launchSession 入口**同步**登记、结束时注销,所以吊销 / 关窗 / 退出
+ * 取消「当时登记的在途 launch」就等于只取消在它之前启动的 launch(吊销代际语义):之后新发起的 launch 不受影响,
+ * 不需要记永久的吊销表。
+ */
+interface InFlightLaunch {
+  readonly ownerWindowId: number;
+  readonly controllerToken: string;
+  /** 取消本次 launch:aborted 即取消标志,launch 在各检查点退出并释放已 spawn 的 adapter / 已登记的会话。 */
+  readonly abort: AbortController;
+  /** spawn 前预占的名额:登记会话时由 add 消耗,失败 / 取消时在 launchSession 结束时释放。 */
+  reservation?: debugSessions.CapacityReservation;
+  /** launch 结算(成功或失败,不 reject):cleanupAll 据此等待。 */
+  settled?: Promise<unknown>;
+}
 
 export interface SetBreakpointInput {
   readonly file: string;
@@ -587,9 +606,18 @@ export const DEBUG_VARIABLES_EXPAND_MAX_NODES = 2_000;
 /** 一次 debug.variables 深度展开的总 DAP 请求预算(count 很小时节点预算管不住请求数)。 */
 export const DEBUG_VARIABLES_EXPAND_MAX_REQUESTS = 200;
 
+/**
+ * 一次 debug.variables 返回内容的总字节预算(名称 + 值 + 类型的 UTF-8 字节,近似)。节点 / 请求预算管不住字节:
+ * 2000 节点 × 64KiB 字符串 ≈ 124MB 驻留主进程,而 MCP 结果 10MiB 上限(RESULT_BYTES_MAX)要等展开完成序列化后
+ * 才检查。取 4MiB:远低于 10MiB,给 JSON 转义 / 字段名 / 嵌套结构留足余量,结果不会因超限整个被拒。
+ */
+export const DEBUG_VARIABLES_EXPAND_MAX_BYTES = 4 * 1024 * 1024;
+
 interface VariablesBudget {
   nodes: number;
   requests: number;
+  /** 剩余可返回的内容字节(见 DEBUG_VARIABLES_EXPAND_MAX_BYTES)。 */
+  bytes: number;
   /** 有节点因预算未展开。 */
   exhausted: boolean;
   readonly signal?: AbortSignal;
@@ -739,13 +767,10 @@ export class DebugService {
   /** 按 session + source 串行 setBreakpoints(读集合→下发→回滚/推快照整段不交错)。 */
   private readonly breakpointChains = new Map<string, Promise<unknown>>();
   /**
-   * 已被 killByController 吊销的调用方身份。在途 launch(会话尚未登记,killByController 查不到)登记前 /
-   * initialize 后据此自行拆除,不留下绑定已吊销身份的会话。controller token / stdio subject 不复用,只记最近
-   * REVOKED_CONTROLLERS_MAX 个(Set 保插入序,超出淘汰最旧;在途 launch 只持续数秒,够用)。
+   * 在途 launch 登记表。killByController / killByOwner / cleanupAll 只查得到已登记会话,据此取消尚未登记的;
+   * 撤销授权按 listControllerTokens 枚举调用方,也须含这里的。
    */
-  private readonly revokedControllers = new Set<string>();
-  /** 在途 launch 的调用方身份计数:撤销授权按 listControllerTokens 枚举,须含尚未登记会话的调用方。 */
-  private readonly launchingControllers = new Map<string, number>();
+  private readonly launches = new Set<InFlightLaunch>();
   private eventSink: DebugEventSink | null;
 
   constructor(options: DebugServiceOptions = {}) {
@@ -818,26 +843,44 @@ export class DebugService {
     input: LaunchSessionInput,
     ctx: DebugCallerContext,
   ): Promise<{ session_id: string; state: 'starting' | 'running' | 'stopped' }> {
-    const token = ctx.controllerToken;
-    this.launchingControllers.set(token, (this.launchingControllers.get(token) ?? 0) + 1);
+    // 必须在第一个 await 之前登记(见 InFlightLaunch)。调用方断开并入同一个取消信号。
+    const launch: InFlightLaunch = {
+      ownerWindowId: ctx.ownerWindowId,
+      controllerToken: ctx.controllerToken,
+      abort: new AbortController(),
+    };
+    const onCallerAbort = (): void => launch.abort.abort();
+    if (ctx.signal?.aborted) launch.abort.abort();
+    else ctx.signal?.addEventListener('abort', onCallerAbort, { once: true });
+    this.launches.add(launch);
+    const task = this.launchSessionInner(input, ctx, launch);
+    launch.settled = task.catch(() => undefined);
     try {
-      return await this.launchSessionInner(input, ctx);
+      return await task;
     } finally {
-      const left = (this.launchingControllers.get(token) ?? 1) - 1;
-      if (left > 0) this.launchingControllers.set(token, left);
-      else this.launchingControllers.delete(token);
+      ctx.signal?.removeEventListener('abort', onCallerAbort);
+      launch.reservation?.release();
+      this.launches.delete(launch);
     }
   }
 
-  /** 调用方已断开,或其身份已被 killByController 吊销(撤销授权 / 终端退出 / stdio 断连)。 */
-  private launchCancelled(ctx: DebugCallerContext): boolean {
-    return ctx.signal?.aborted === true || this.revokedControllers.has(ctx.controllerToken);
+  /** 取消符合条件的在途 launch,返回它们的结算 promise。 */
+  private cancelLaunches(match: (launch: InFlightLaunch) => boolean): Promise<unknown>[] {
+    const settled: Promise<unknown>[] = [];
+    for (const launch of this.launches) {
+      if (!match(launch)) continue;
+      launch.abort.abort();
+      if (launch.settled) settled.push(launch.settled);
+    }
+    return settled;
   }
 
   private async launchSessionInner(
     input: LaunchSessionInput,
     ctx: DebugCallerContext,
+    launch: InFlightLaunch,
   ): Promise<{ session_id: string; state: 'starting' | 'running' | 'stopped' }> {
+    const cancelled = launch.abort.signal;
     // 安全闸:先验 env 与 program/cwd 落在 workspace 内,再花成本 spawn adapter。
     // cwd 省略时默认 workspace root(不再回退 main 进程 cwd)。
     assertLaunchEnvAllowed(input.env);
@@ -860,10 +903,11 @@ export class DebugService {
     ) {
       await this.teardownSession(victim.id, 'reclaim-terminated').catch(() => undefined);
     }
-    // 会话数已满就别 spawn adapter(否则 add 抛错时 adapter 进程 / socket 已经起来了)。
-    debugSessions.assertCapacity(ctx.ownerWindowId);
-    // workspace 校验是异步边界,期间调用方可能已断开 / 被吊销 → spawn 前复查。
-    if (this.launchCancelled(ctx)) throw launchCancelledError();
+    // workspace 校验是异步边界,期间可能已被取消 → spawn 前复查。
+    if (cancelled.aborted) throw launchCancelledError();
+    // spawn 前同步预占名额(与上面回收后的检查之间无 await):满了就别 spawn adapter;并发 launch 各占一份,
+    // 同时 spawn 中的 adapter 不超过上限。
+    launch.reservation = debugSessions.reserve(ctx.ownerWindowId);
 
     const id = makeSessionId();
     const parentClient = this.createDapClient({
@@ -881,8 +925,8 @@ export class DebugService {
     }
     const adapterPid = getClientPid(parentClient);
     const adapterInfo = await this.processOps.processInfo(adapterPid);
-    // spawn 期间调用方断开 / 被吊销:还没登记(killByController 查不到),就地释放 adapter。
-    if (this.launchCancelled(ctx)) {
+    // spawn 期间被取消(断开 / 吊销 / 关窗 / 退出):还没登记,teardown 查不到,就地释放 adapter。
+    if (cancelled.aborted) {
       await parentClient.dispose().catch(() => undefined);
       throw launchCancelledError();
     }
@@ -914,9 +958,9 @@ export class DebugService {
         cwd: effectiveCwd,
         ...(input.name !== undefined ? { name: input.name } : {}),
         ...(adapterPid !== undefined ? { adapterPid } : {}),
-      });
+      }, launch.reservation);
     } catch (err) {
-      // spawn 期间别的 launch 占满了名额:session 没登记上,teardown 找不到它 → 就地释放 adapter。
+      // 登记失败:session 没登记上,teardown 找不到它 → 就地释放 adapter。
       await parentClient.dispose().catch(() => undefined);
       throw err;
     }
@@ -927,22 +971,22 @@ export class DebugService {
       this.handleStartDebugging(id, request, parentClient),
     );
 
-    // initialize 期间调用方断开 → 立即拆除(不等 adapter 应答 / 请求超时才放出名额)。
+    // initialize 期间被取消 → 立即拆除(不等 adapter 应答 / 请求超时才放出名额)。
     const onAbort = (): void => {
       void this.teardownSession(id, 'caller-disconnected').catch(() => undefined);
     };
-    ctx.signal?.addEventListener('abort', onAbort, { once: true });
+    cancelled.addEventListener('abort', onAbort, { once: true });
     try {
       await this.initializeClient(parentClient);
     } catch (err) {
       // session 已登记、adapter 活着,但调用方只会拿到错误、拿不到 session_id → 自己拆掉。
       await this.teardownSession(id, 'launch-failed').catch(() => undefined);
-      throw this.launchCancelled(ctx) ? launchCancelledError() : err;
+      throw cancelled.aborted ? launchCancelledError() : err;
     } finally {
-      ctx.signal?.removeEventListener('abort', onAbort);
+      cancelled.removeEventListener('abort', onAbort);
     }
-    // initialize 期间被吊销:killByController 已拆掉登记的会话,这里不能再把 session_id 交给调用方。
-    if (this.launchCancelled(ctx)) {
+    // initialize 期间被取消:会话已被拆(或正在拆),这里不能再把 session_id 交给调用方。
+    if (cancelled.aborted) {
       await this.teardownSession(id, 'caller-disconnected').catch(() => undefined);
       throw launchCancelledError();
     }
@@ -1370,10 +1414,11 @@ export class DebugService {
     const budget: VariablesBudget = {
       nodes: DEBUG_VARIABLES_EXPAND_MAX_NODES,
       requests: DEBUG_VARIABLES_EXPAND_MAX_REQUESTS,
+      bytes: DEBUG_VARIABLES_EXPAND_MAX_BYTES,
       exhausted: false,
       ...(input.signal !== undefined ? { signal: input.signal } : {}),
     };
-    const variables = await this.readVariables(
+    const { variables, cut } = await this.readVariables(
       runtime,
       input.variablesReference,
       start,
@@ -1381,14 +1426,16 @@ export class DebugService {
       maxDepth,
       maxStringBytes,
       budget,
+      true,
     );
     // 本页取满 count 条 = 可能还有更多:truncated 与 next_start 同步(此前 truncated 写死 false)。
+    // 本页被字节预算截断同样还有更多,next_start 接在已返回的最后一项之后。
     // 展开预算用尽(有节点未展开,各自标了 truncated)同样报 truncated。
-    const hasMore = variables.length >= count;
+    const hasMore = cut || variables.length >= count;
     return {
       variables,
       truncated: hasMore || budget.exhausted,
-      ...(hasMore ? { next_start: start + count } : {}),
+      ...(hasMore ? { next_start: start + variables.length } : {}),
     };
   }
 
@@ -1458,28 +1505,43 @@ export class DebugService {
     }));
   }
 
+  /**
+   * 应用退出:取消全部在途 launch(各自在检查点释放已 spawn 的 adapter)并拆除已登记会话;等在途 launch 结算,
+   * 最多 DEBUG_LAUNCH_SETTLE_WAIT_MS —— 否则退出时 detached 的 adapter 遗留。
+   */
   async cleanupAll(reason = 'cleanupAll'): Promise<readonly string[]> {
-    return this.teardownMany(debugSessions.list(), reason);
+    const pending = this.cancelLaunches(() => true);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const [ids] = await Promise.all([
+      this.teardownMany(debugSessions.list(), reason),
+      Promise.race([
+        Promise.all(pending),
+        new Promise<void>((resolve) => {
+          timer = setTimeout(resolve, DEBUG_LAUNCH_SETTLE_WAIT_MS);
+        }),
+      ]).finally(() => clearTimeout(timer)),
+    ]);
+    return ids;
   }
 
+  /** 窗口关闭:取消该窗口的在途 launch(否则随后登记到已销毁的窗口成为孤儿),拆除其已登记会话。 */
   async killByOwner(
     ownerWindowId: number,
     reason = 'killByOwner',
   ): Promise<readonly string[]> {
+    this.cancelLaunches((launch) => launch.ownerWindowId === ownerWindowId);
     return this.teardownMany(debugSessions.byOwner(ownerWindowId), reason);
   }
 
+  /**
+   * 吊销调用方身份:取消该身份**此刻**在途的 launch(尚未登记,这里查不到会话)并拆除其已登记会话。吊销之后
+   * 同一身份新发起的 launch 不受影响(stdio subject 固定,用户重新授权后须能照常 launch)。
+   */
   async killByController(
     controllerToken: string,
     reason = 'killByController',
   ): Promise<readonly string[]> {
-    // 先记吊销再拆:该身份的在途 launch 尚未登记,这里查不到,由 launchSession 据此自行拆除。
-    this.revokedControllers.delete(controllerToken);
-    this.revokedControllers.add(controllerToken);
-    if (this.revokedControllers.size > REVOKED_CONTROLLERS_MAX) {
-      const oldest = this.revokedControllers.values().next().value;
-      if (oldest !== undefined) this.revokedControllers.delete(oldest);
-    }
+    this.cancelLaunches((launch) => launch.controllerToken === controllerToken);
     return this.teardownMany(debugSessions.byController(controllerToken), reason);
   }
 
@@ -1488,7 +1550,7 @@ export class DebugService {
     return Array.from(
       new Set([
         ...debugSessions.list().map((session) => session.controllerToken),
-        ...this.launchingControllers.keys(),
+        ...Array.from(this.launches, (launch) => launch.controllerToken),
       ]),
     );
   }
@@ -1917,7 +1979,8 @@ export class DebugService {
     maxDepth: number,
     maxStringBytes: number,
     budget: VariablesBudget,
-  ): Promise<readonly DebugVariable[]> {
+    topLevel = false,
+  ): Promise<{ readonly variables: readonly DebugVariable[]; readonly cut: boolean }> {
     if (budget.signal?.aborted) throw variablesCancelledError();
     budget.requests -= 1;
     const response = await runtime.activeClient.sendRequest(
@@ -1936,16 +1999,25 @@ export class DebugService {
     budget.nodes -= items.length;
     for (const raw of items) {
       const variable = asRecord(raw as DapJson);
+      const name = stringField(variable, 'name') ?? '';
+      const type = stringField(variable, 'type');
       const rawValue = stringField(variable, 'value') ?? '';
       const truncated = truncateUtf8(rawValue, maxStringBytes);
+      // 字节预算不够放下这一项:本页到此为止(cut)。顶层首项例外,保证分页总能前进。
+      const itemBytes = utf8Bytes(name) + utf8Bytes(truncated.value) + utf8Bytes(type ?? '');
+      if (itemBytes > budget.bytes && !(topLevel && variables.length === 0)) {
+        budget.exhausted = true;
+        return { variables, cut: true };
+      }
+      budget.bytes -= itemBytes;
       const childRef = numberField(variable, 'variablesReference') ?? 0;
       let children: readonly DebugVariable[] | undefined;
       let unexpanded = false;
       if (maxDepth > 1 && childRef > 0) {
-        // 预算还够一整页 count 才展开(子列表不会被预算截成半页);不够则保留 variables_reference 供调用方
-        // 单独再取,并标 truncated。
-        if (budget.requests > 0 && budget.nodes >= count) {
-          children = await this.readVariables(
+        // 预算还够一整页 count 才展开(子列表不会被节点预算截成半页);不够则保留 variables_reference 供调用方
+        // 单独再取,并标 truncated。子列表被字节预算截断时同样标 truncated。
+        if (budget.requests > 0 && budget.nodes >= count && budget.bytes > 0) {
+          const expanded = await this.readVariables(
             runtime,
             childRef,
             0,
@@ -1954,23 +2026,23 @@ export class DebugService {
             maxStringBytes,
             budget,
           );
+          children = expanded.variables;
+          unexpanded = expanded.cut;
         } else {
           budget.exhausted = true;
           unexpanded = true;
         }
       }
       variables.push({
-        name: stringField(variable, 'name') ?? '',
+        name,
         value: truncated.value,
-        ...(stringField(variable, 'type') !== undefined
-          ? { type: stringField(variable, 'type') }
-          : {}),
+        ...(type !== undefined ? { type } : {}),
         ...(childRef > 0 ? { variables_reference: childRef } : {}),
         ...(truncated.truncated || unexpanded ? { truncated: true } : {}),
         ...(children !== undefined ? { children } : {}),
       });
     }
-    return variables;
+    return { variables, cut: false };
   }
 
   private async teardownMany(
