@@ -10,6 +10,7 @@ import { usePinnedStore } from '../../stores/pinned.store';
 import { useEditorStore } from '../../stores/editor.store';
 import { workspaceRootSelectionGuard } from '../../lib/workspace-root-guard';
 import {
+  flushExplorerPersistence,
   initExplorerPersistence,
   type ExplorerPersistApi,
   type ExplorerSnapshot,
@@ -70,8 +71,44 @@ describe('race(R38) · hydrate 不覆盖 read 期间的用户 root 选择', () =
     await p;
 
     expect(useWorkspaceStore.getState().root).toBe('/userPicked'); // 未被 '/old' 覆盖
-    // 也不应把旧 snapshot 的 expanded/recent 灌进来(整段 hydrate 跳过)。
+    // 也不应把旧 snapshot 的窗口段(expanded/layout/editor)灌进来。
     expect(useExplorerStore.getState().expandedPaths.has('/old')).toBe(false);
+  });
+
+  it('read 期间用户选了新 workspace → 快照里无关的全局段(pinned/recentRoots)仍保留,不被默认值覆盖写盘', async () => {
+    let resolveRead: (r: { ok: true; data: ExplorerSnapshot }) => void = () => {};
+    const write = vi.fn(async (_snap: ExplorerSnapshot) => ({ ok: true as const, data: undefined }));
+    const api: ExplorerPersistApi = {
+      read: vi.fn(
+        () =>
+          new Promise<{ ok: true; data: ExplorerSnapshot }>((res) => {
+            resolveRead = res;
+          }),
+      ),
+      write,
+    };
+    const p = initExplorerPersistence(api, { windowSeq: 0 });
+    workspaceRootSelectionGuard.begin();
+    useWorkspaceStore.getState().setRoot('/userPicked');
+
+    const snap: ExplorerSnapshot = {
+      ...snapWithRoot('/old'),
+      workspace: { recentRoots: ['/old', '/older'] },
+      pinned: { paths: ['/old/a.ts', '/b.ts'] },
+    };
+    resolveRead({ ok: true, data: snap });
+    await p;
+
+    expect(useWorkspaceStore.getState().root).toBe('/userPicked');
+    // 用户选择排最前,快照中的历史 recent 保留在后
+    expect(useWorkspaceStore.getState().recentRoots).toEqual(['/userPicked', '/old', '/older']);
+    expect(usePinnedStore.getState().paths).toEqual(['/old/a.ts', '/b.ts']);
+
+    // 随后的写盘携带的全局段 = 合并后的值(main 合并以 writable 顶层为准,默认值会覆盖磁盘)
+    await flushExplorerPersistence();
+    const written = write.mock.calls.at(-1)?.[0];
+    expect(written?.workspace.recentRoots).toEqual(['/userPicked', '/old', '/older']);
+    expect(written?.pinned.paths).toEqual(['/old/a.ts', '/b.ts']);
   });
 
   it('控制组:read 期间无用户选择 → 正常 hydrate 旧 snapshot root', async () => {

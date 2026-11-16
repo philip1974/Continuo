@@ -64,7 +64,13 @@ interface AgentAuthState {
 
 - pending → null
 - Promise resolve `'session'`
-- 当前 pending 请求所属域的标志置 true(终端域 `sessionGranted` / debug 域 `debugSessionGranted`)
+- **不**立即置域标志:该请求在 main 可能已被撤销 / 超时删除(旧弹窗仍显示),立即置 true 会让之后的请求被静默放行
+
+### `confirmSessionGrant(method, epoch)`
+
+- 应答方(AgentAuthPrompt)在 main 确认该 requestId 仍在等待(respond ok)后调
+- method 所属域的标志置 true(终端域 `sessionGranted` / debug 域 `debugSessionGranted`)
+- `epoch` ≠ 当前 `getAgentAuthEpoch()`(期间发生过 `revoke()`)→ 忽略,不复活已撤销授权
 
 ### `deny()`
 
@@ -74,8 +80,8 @@ interface AgentAuthState {
 
 ### `revoke()`
 
-- `sessionGranted = false`
-- pending 不变(若正在弹窗,用户仍可决定)
+- `sessionGranted = false`,撤销代际 epoch +1
+- pending 不变(store 层;状态栏撤销在 main 确认成功后另行 `deny()` 清掉旧弹窗,见 status-bar)
 
 ### 边界
 

@@ -3,6 +3,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
+  getAgentAuthEpoch,
   useAgentAuthStore,
   _resetAgentAuthForTest,
 } from '../../stores/agent-auth.store';
@@ -175,7 +176,9 @@ describe("grant('once')", () => {
 });
 
 describe("grant('session')", () => {
-  it("Promise resolve 'session' + 清 pending + sessionGranted=true", async () => {
+  // 安全:grant('session') 只结算当前请求,不立即记域授权 —— 该请求在 main 可能已被撤销 / 超时删除。
+  // 域授权须待 main 确认(respond ok)后由应答方调 confirmSessionGrant。
+  it("Promise resolve 'session' + 清 pending,但 sessionGranted 仍为 false(待 main 确认)", async () => {
     const p = useAgentAuthStore
       .getState()
       .ensure({ method: 'terminal.create_session' });
@@ -183,19 +186,35 @@ describe("grant('session')", () => {
     expect(await p).toBe('session');
     const s = useAgentAuthStore.getState();
     expect(s.pending).toBeNull();
-    expect(s.sessionGranted).toBe(true);
+    expect(s.sessionGranted).toBe(false);
   });
 
-  it("session 后续 ensure 直接 'session'", async () => {
+  it("confirmSessionGrant 后,后续 ensure 直接 'session'", async () => {
     const p = useAgentAuthStore
       .getState()
       .ensure({ method: 'terminal.create_session' });
     useAgentAuthStore.getState().grant('session');
     await p;
+    useAgentAuthStore
+      .getState()
+      .confirmSessionGrant('terminal.create_session', getAgentAuthEpoch());
+    expect(useAgentAuthStore.getState().sessionGranted).toBe(true);
     const next = await useAgentAuthStore
       .getState()
       .ensure({ method: 'terminal.create_session' });
     expect(next).toBe('session');
+  });
+
+  it('确认前发生 revoke → 迟到的 confirmSessionGrant 被忽略(不复活已撤销授权)', async () => {
+    const p = useAgentAuthStore
+      .getState()
+      .ensure({ method: 'terminal.create_session' });
+    useAgentAuthStore.getState().grant('session');
+    await p;
+    const epoch = getAgentAuthEpoch();
+    useAgentAuthStore.getState().revoke();
+    useAgentAuthStore.getState().confirmSessionGrant('terminal.create_session', epoch);
+    expect(useAgentAuthStore.getState().sessionGranted).toBe(false);
   });
 });
 
@@ -320,6 +339,7 @@ describe('授权分域:terminal 与 debug 各自记「本次启动期间允许�
     const debug = useAgentAuthStore.getState().ensure({ method: 'debug.launch' });
     useAgentAuthStore.getState().grant('session');
     await expect(debug).resolves.toBe('session');
+    useAgentAuthStore.getState().confirmSessionGrant('debug.launch', getAgentAuthEpoch());
     expect(useAgentAuthStore.getState().debugSessionGranted).toBe(true);
     expect(useAgentAuthStore.getState().sessionGranted).toBe(false);
 

@@ -32,6 +32,7 @@ export const en = {
   'settings.general.language.save_failed': 'Failed to change language',
 
   // errors.MAIN_* (27)
+  'errors.AGENT_AUTH_REQUEST_NOT_PENDING': 'Authorization request is no longer pending',
   'errors.AGENT_NOT_AUTHORIZED': 'Agent not authorized',
   'errors.AWAIT_STOP_HOOK_ALREADY_PENDING':
     'Another await_stop_hook is already pending for this session.',

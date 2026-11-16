@@ -72,7 +72,7 @@ vi.mock('../../../electron/main/ipc/window.ipc', () => ({
   registerWindowIpc: vi.fn(),
 }));
 vi.mock('../../../electron/main/services/agent-auth.service', () => ({
-  resolveAgentAuthRequest: vi.fn(),
+  answerAgentAuthRequest: vi.fn(),
   revokeAndKillAgentSessions: vi.fn(),
 }));
 vi.mock('../../../electron/main/services/mcp-stdio-config.service', () => ({

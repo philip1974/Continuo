@@ -17,8 +17,8 @@ dynamic import。IPC 失败统一 console.warn fallback 空数组 / 空 set,**�
 
 - 调 coApi.plugins.listDirs
 - ok=false → console.warn + 返 []
-- ok=true → 把每条 IpcPluginDir 的 mainText 包成 Blob → URL.createObjectURL,
-  manifestText 透传
+- ok=true → 每条 IpcPluginDir 的 `moduleUrl` **惰性**生成:首次读取时才把 mainText 包成 Blob →
+  URL.createObjectURL(只生成一次);未被读取的(reload 时非目标插件)不生成。manifestText 透传
 
 ### readEnabledIds
 
@@ -37,4 +37,6 @@ dynamic import。IPC 失败统一 console.warn fallback 空数组 / 空 set,**�
 
 ### importModule(url)
 
-- 透传到 dynamic `import(url)`(测试不便覆盖)
+- 透传到 dynamic `import(url)`
+- import 结束(成功或失败)后对 `blob:` URL 调 URL.revokeObjectURL(已求值模块留在 module map,同 URL
+  再 import 命中缓存);非 blob URL 不 revoke

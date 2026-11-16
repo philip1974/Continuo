@@ -160,11 +160,11 @@ describe('AgentAuthPrompt — 按钮', () => {
     expect(useAgentAuthStore.getState().sessionGranted).toBe(false);
   });
 
-  it('点「本次启动期间允许」→ grant("session") + sessionGranted=true', async () => {
+  it('点「本次启动期间允许」→ grant("session")(域授权待 main 确认,见下方 respond 用例)', async () => {
     const p = setup();
     fireEvent.click(getButtons()['本次启动期间允许']!);
     await expect(p).resolves.toBe('session');
-    expect(useAgentAuthStore.getState().sessionGranted).toBe(true);
+    expect(useAgentAuthStore.getState().sessionGranted).toBe(false);
   });
 });
 
@@ -201,6 +201,57 @@ describe('AgentAuthPrompt — 订阅 onRequest', () => {
 
     unmount();
     expect(unsub).toHaveBeenCalledTimes(1);
+  });
+
+  // 「本次启动期间允许」只有在 main 确认该 requestId 仍在等待(respond ok)后才生效:main 已撤销/超时
+  // 删除的旧请求 → respond 失败 → 不得把 sessionGranted 置 true(否则之后的请求被静默放行)。
+  it.each([
+    ['ok=false', async () => ({ ok: false, code: 'AGENT_AUTH_REQUEST_NOT_PENDING', message: 'x' })],
+    ['reject', async () => Promise.reject(new Error('ipc down'))],
+  ])('respond %s → 「本次启动期间允许」不改变未来授权状态', async (_label, impl) => {
+    notifyError.mockReset();
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    let cb: ((p: { requestId: string; method: string }) => void) | null = null;
+    const onRequest = vi.fn((fn: (p: never) => void) => {
+      cb = fn as never;
+      return vi.fn();
+    });
+    const respond = vi.fn(impl);
+    installApi({ onRequest, respond });
+    render(<AgentAuthPrompt />);
+    act(() => {
+      cb!({ requestId: 'stale-1', method: 'terminal.create_session' });
+    });
+    await waitFor(() => {
+      expect(document.querySelector('.wm-modal-content')).not.toBeNull();
+    });
+    fireEvent.click(getButtons()['本次启动期间允许']!);
+    await waitFor(() => {
+      expect(respond).toHaveBeenCalledWith('stale-1', 'session');
+    });
+    await waitFor(() => expect(notifyError).toHaveBeenCalled());
+    expect(useAgentAuthStore.getState().sessionGranted).toBe(false);
+  });
+
+  it('respond ok → 「本次启动期间允许」生效(后续请求直接通过)', async () => {
+    let cb: ((p: { requestId: string; method: string }) => void) | null = null;
+    const onRequest = vi.fn((fn: (p: never) => void) => {
+      cb = fn as never;
+      return vi.fn();
+    });
+    const respond = vi.fn(async () => ({ ok: true }));
+    installApi({ onRequest, respond });
+    render(<AgentAuthPrompt />);
+    act(() => {
+      cb!({ requestId: 'rq-1', method: 'terminal.create_session' });
+    });
+    await waitFor(() => {
+      expect(document.querySelector('.wm-modal-content')).not.toBeNull();
+    });
+    fireEvent.click(getButtons()['本次启动期间允许']!);
+    await waitFor(() => {
+      expect(useAgentAuthStore.getState().sessionGranted).toBe(true);
+    });
   });
 
   // a11y(A58,A50 同族):respond 失败(ok=false / reject)此前 void 丢弃 → 用户/AT 不知决定未生效。

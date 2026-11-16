@@ -4,6 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   _resetPendingForTest,
+  answerAgentAuthRequest,
   requestAgentAuth,
   resolveAgentAuthRequest,
   revokeAndKillAgentSessions,
@@ -486,6 +487,30 @@ describe('agent-auth-service: pending lifecycle', () => {
     resolveAgentAuthRequest(payload.requestId, 'session');
 
     await expect(pending).resolves.toBe('session');
+  });
+
+  // T7b:renderer 应答入口(ipc respond)对 main 已不存在的 requestId(已撤销 / 超时 / 窗口关闭结算)
+  // 须返回失败(抛 AGENT_AUTH_REQUEST_NOT_PENDING),renderer 据此不把「本次启动期间允许」记为生效。
+  it('T7b: answerAgentAuthRequest 对已不存在的 request id 抛 AGENT_AUTH_REQUEST_NOT_PENDING', async () => {
+    const win = makeWin(1);
+    electronMock.windows = [win];
+    const pending = requestAgentAuth({ method: 'terminal.create_session' });
+    const payload = firstAuthPayload(win);
+
+    revokeAndKillAgentSessions(); // 撤销结算并删除 pending
+    await expect(pending).resolves.toBe('denied');
+    expect(() => answerAgentAuthRequest(payload.requestId, 'session')).toThrow(
+      expect.objectContaining({ code: 'AGENT_AUTH_REQUEST_NOT_PENDING' }),
+    );
+  });
+
+  it('T7c: answerAgentAuthRequest 对仍在等待的 request id 正常结算', async () => {
+    const win = makeWin(1);
+    electronMock.windows = [win];
+    const pending = requestAgentAuth({ method: 'terminal.create_session' });
+    const payload = firstAuthPayload(win);
+    expect(() => answerAgentAuthRequest(payload.requestId, 'once')).not.toThrow();
+    await expect(pending).resolves.toBe('once');
   });
 
   it('T8: resolving the same request twice only uses the first decision', async () => {

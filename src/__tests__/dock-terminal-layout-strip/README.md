@@ -35,6 +35,9 @@ dockview 反序列化(`gridview._deserializeNode`)按**深度自动分配 orient
 - `floatingGroups` / `popoutGroups` 同样过滤 views,丢弃变空的组。
 - `tabGroups`(罕见)同步剔除终端 `panelIds`,丢弃变空的 tabGroup。
 - 整棵树无非终端 panel,或缺 `grid` 无法安全处理 → 返回 `null`(上层静默走默认布局,**不报错**)。
+- 写端(`writeDockLayoutSnapshot`)strip 返 `null` 时**不**回落原始快照(含终端 sessionId/cwd),而是写空布局
+  `{version:1}`;读端 `sanitizePersistedDockLayout` 对既无 `grid` 也无 `panels` 的空布局返 `null` → 默认布局。
+  终端绝不进持久化。
 - 上层 `onReady`:`sanitize` 返回有效 layout → `fromJSON` 恢复、**不弹** error toast;
   只有真正的 `fromJSON` 抛错(结构损坏)或 `layout.read` reject/`!ok` 才报错(见
   [`dock-layout-restore-feedback`](../dock-layout-restore-feedback/README.md))。

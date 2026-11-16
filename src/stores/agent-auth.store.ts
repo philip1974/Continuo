@@ -33,7 +33,13 @@ type AgentAuthState = {
   debugSessionGranted: boolean;
 
   ensure(info: EnsureInfo): Promise<AuthDecision>;
+  /** 'session' 只结算当前请求;域授权须待 main 确认后经 confirmSessionGrant 生效。 */
   grant(kind: 'once' | 'session'): void;
+  /**
+   * main 确认 'session' 应答已生效(respond ok)后调:给 method 所属域记「本次启动期间允许」。
+   * epoch 须为结算时 getAgentAuthEpoch() 的值;期间发生过 revoke → 忽略(不复活已撤销授权)。
+   */
+  confirmSessionGrant(method: string, epoch: number): void;
   deny(): void;
   revoke(): void;
 };
@@ -45,6 +51,12 @@ type AgentAuthState = {
  */
 export function isDebugAuthMethod(method: string): boolean {
   return method.startsWith('debug.');
+}
+
+// 撤销代际:每次 revoke +1。'session' 应答在 IPC 往返期间若被 revoke,迟到的确认不得把授权记回。
+let authEpoch = 0;
+export function getAgentAuthEpoch(): number {
+  return authEpoch;
 }
 
 // 内部:挂起 Promise 的 resolver(zustand 状态外存,避免序列化函数)。
@@ -113,19 +125,21 @@ export const useAgentAuthStore = create<AgentAuthState>((set, get) => ({
     clearPendingTimer();
     const resolver = pendingResolver;
     pendingResolver = null;
-    if (!resolver && get().pending === null && kind !== 'session') return;
-    if (kind === 'session') {
-      // 只给当前请求所属的域记 session 授权。
-      const pending = get().pending;
-      set(
-        pending !== null && isDebugAuthMethod(pending.method)
-          ? { pending: null, debugSessionGranted: true }
-          : { pending: null, sessionGranted: true },
-      );
-    } else {
-      set({ pending: null });
-    }
+    if (!resolver && get().pending === null) return;
+    // 安全:'session' 此处**不**记域授权。该请求在 main 可能已被撤销 / 超时删除(旧弹窗仍显示),
+    // 若此刻置 sessionGranted,之后的请求会被静默放行。由应答方在 main 确认后调 confirmSessionGrant。
+    set({ pending: null });
     resolver?.(kind);
+  },
+
+  confirmSessionGrant(method, epoch) {
+    if (epoch !== authEpoch) return;
+    // 只给该请求所属的域记 session 授权。
+    if (isDebugAuthMethod(method)) {
+      if (!get().debugSessionGranted) set({ debugSessionGranted: true });
+    } else if (!get().sessionGranted) {
+      set({ sessionGranted: true });
+    }
   },
 
   deny() {
@@ -138,6 +152,7 @@ export const useAgentAuthStore = create<AgentAuthState>((set, get) => ({
   },
 
   revoke() {
+    authEpoch += 1;
     set((s) =>
       s.sessionGranted || s.debugSessionGranted
         ? { sessionGranted: false, debugSessionGranted: false }

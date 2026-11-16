@@ -18,6 +18,8 @@ import * as termService from './terminal.service';
 import type { McpHost } from './mcp-host.service';
 import { isPopoutUrl } from '../popout-url';
 import { pickMainWindowPreferNonPopout } from './main-window-picker.service';
+import { ERROR_CODES } from '../../shared/error-codes';
+import { codedError } from '../../shared/error-message';
 
 // 5 分钟无应答 → 默认拒绝(防 renderer 卡死时 tool Promise 永远悬挂)
 const PROMPT_TIMEOUT_MS = AGENT_AUTH_PROMPT_TIMEOUT_MS;
@@ -119,17 +121,34 @@ export async function requestAgentAuth(
 }
 
 /**
- * IPC handler 回调:renderer 应答时调,解析 pending Promise。
- * 不存在的 requestId(已超时 / 重复)→ no-op。
+ * 解析 pending Promise。不存在的 requestId(已超时 / 重复 / 已撤销)→ no-op,返回 false。
  */
 export function resolveAgentAuthRequest(
   requestId: string,
   decision: AgentAuthDecision,
-): void {
+): boolean {
   const r = pending.get(requestId);
-  if (!r) return;
+  if (!r) return false;
   pending.delete(requestId);
   r.settle(decision);
+  return true;
+}
+
+/**
+ * IPC handler 回调:renderer 应答时调。requestId 已不在等待(撤销 / 超时 / 窗口关闭已结算并删除)→
+ * 抛 AGENT_AUTH_REQUEST_NOT_PENDING(renderer 收到 ok:false),renderer 据此不把该次「本次启动期间
+ * 允许」记为生效 —— 否则对已撤销的旧弹窗点允许会让之后的请求被静默授予。
+ */
+export function answerAgentAuthRequest(
+  requestId: string,
+  decision: AgentAuthDecision,
+): void {
+  if (!resolveAgentAuthRequest(requestId, decision)) {
+    throw codedError(
+      ERROR_CODES.AGENT_AUTH_REQUEST_NOT_PENDING,
+      'agent auth request is no longer pending',
+    );
+  }
 }
 
 /**

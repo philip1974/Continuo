@@ -3,6 +3,8 @@
 // 不含:IPC_ERR.*(infra-level, 已是常量见 ipc-result.ts)、plugin user code、third-party error.code。
 
 const MAIN_ERROR_CODES = {
+  // renderer 应答的 agent 授权请求已不在等待(撤销 / 超时 / 窗口关闭已结算)。
+  AGENT_AUTH_REQUEST_NOT_PENDING: 'AGENT_AUTH_REQUEST_NOT_PENDING',
   AGENT_NOT_AUTHORIZED: 'AGENT_NOT_AUTHORIZED',
   AWAIT_STOP_HOOK_ALREADY_PENDING: 'AWAIT_STOP_HOOK_ALREADY_PENDING',
   BAD_INPUT: 'BAD_INPUT',

@@ -27,17 +27,29 @@ export function buildPluginDirInfos(
   if (dirs.length === 0) return EMPTY_PLUGIN_DIR_INFOS;
   const out = new Array<PluginDirInfo>(dirs.length);
   for (let i = 0; i < dirs.length; i++) {
-    const dir = dirs[i]!;
-    const blob = new Blob([dir.mainText], {
-      type: 'application/javascript',
-    });
-    out[i] = {
-      id: dir.id,
-      manifestText: dir.manifestText,
-      moduleUrl: URL.createObjectURL(blob),
-    };
+    out[i] = lazyPluginDirInfo(dirs[i]!);
   }
   return out;
+}
+
+/**
+ * moduleUrl 惰性生成:只在真正读取(激活该插件时 import)才 createObjectURL,且只生成一次。
+ * 每次 listPluginDirs(init / 每次 reload)都为全部插件构造 dir info,而 reload 只用目标插件那条;
+ * 此前为每条都 createObjectURL 且从不 revoke → 反复 reload 单调泄漏 Blob URL。未读的 info 随 GC 回收。
+ * (getter 须直接定义在返回对象上 —— 对象展开会立即求值 getter。)
+ */
+function lazyPluginDirInfo(dir: RawPluginDirInfo): PluginDirInfo {
+  let url: string | null = null;
+  return {
+    id: dir.id,
+    manifestText: dir.manifestText,
+    get moduleUrl(): string {
+      url ??= URL.createObjectURL(
+        new Blob([dir.mainText], { type: 'application/javascript' }),
+      );
+      return url;
+    },
+  };
 }
 
 export function createWindowApiHost(): ManagerHost {
@@ -48,9 +60,7 @@ export function createWindowApiHost(): ManagerHost {
         console.warn('[plugins-host] listDirs failed', r.code, r.message);
         return EMPTY_PLUGIN_DIR_INFOS;
       }
-      // 用 Blob URL 让 dynamic import 能拿到外部文件内容。
-      // 注意:URL.revokeObjectURL 不在此调,等 plugin _deactivate 后由
-      // 浏览器 GC(主流程是 LM 整个生命周期持有 plugin instance)。
+      // 用 Blob URL 让 dynamic import 能拿到外部文件内容(惰性生成,import 完成后即 revoke,见 importModule)。
       return buildPluginDirInfos(r.data);
     },
     readEnabledIds: async () => {
@@ -74,7 +84,15 @@ export function createWindowApiHost(): ManagerHost {
         throw codedError(r.code, r.message ?? 'mutateEnabled failed');
       }
     },
-    importModule: (url) => import(/* @vite-ignore */ url),
+    importModule: async (url) => {
+      try {
+        return await import(/* @vite-ignore */ url);
+      } finally {
+        // import 结束(成功或失败)即 revoke:已求值模块留在 module map(按 URL 缓存),同 URL 再
+        // import(禁用后重新启用)命中缓存、不再 fetch,不依赖 blob 存活;失败的 URL 也不会再被用到。
+        if (url.startsWith('blob:')) URL.revokeObjectURL(url);
+      }
+    },
     removePluginDir: async (id) => {
       const r = await coApi.plugins.uninstall(id);
       if (!r.ok) {
