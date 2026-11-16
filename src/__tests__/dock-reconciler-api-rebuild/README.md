@@ -17,6 +17,9 @@
 - **恢复后 editor 自动激活不抢活动面板**(`restore-after-fromjson.spec.tsx`):恢复完成后 editor 激活 effect 的
   首次运行(持久化 activeTabId 非空)只确保 editor 面板存在(缺失则补建并把激活还给原活动面板),不覆盖 fromJSON
   恢复的活动面板 / 恢复期间排队打开的面板;`editorFocusPulse` 相对恢复时刻变化(用户打开 / 切换文件)才激活 editor。
+  editor 会话恢复(`hydrateEditorTabs`,读文件较慢)晚于布局恢复时同样不抢:恢复以 `requestFocus: false` 打开 /
+  切换 tab,不递增 `editorFocusPulse` → 活动面板仍是 Dock 恢复出的那个(editor 面板缺失则补建);恢复全部完成后
+  用户 openTab / switchTab 才激活 editor。
 - **恢复前的 addPanel 入口延后**(`restore-after-fromjson.spec.tsx`):`layout.read()` 较慢时 dock api 已暴露,
   恢复前 `openOrFocusPanel()` 排队、editor 自动激活等待「布局已恢复」,恢复完成后才 addPanel(不被 fromJSON 的
   `clear()` 删掉);关窗 flush 握手仍在 apiReady 时注册(时序不变)。

@@ -38,6 +38,10 @@ interface EditorTab {
 ### `switchTab(id)`
 - 切 activeTabId(无论 id 是否存在,UI 派生 activeTab 时 fallback)
 
+### `editorFocusPulse`(issue #22)
+- openTab / switchTab 每次 +1(同 id 也 +1),DockShell 据此激活 editor 面板
+- `{ requestFocus: false }`(持久化会话恢复)→ 照常打开 / 切换,但 pulse 不变
+
 ### `updateContent(id, content)`(编辑器 onChange 时调用)
 - tab.content = content
 - dirty = (content !== originalContent)

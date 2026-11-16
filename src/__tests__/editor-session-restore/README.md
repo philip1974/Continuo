@@ -46,6 +46,7 @@ editor?: {
 - 全部失败 → tabs 仍为空,activeTabId 不变
 - activePath 在已恢复 tabs 内 → `switchTab(activePath)`
 - activePath 不在已恢复 tabs 内(被跳过)→ 不调 switchTab(让 store 自然行为)
+- 恢复用的 openTab / switchTab 均带 `{ requestFocus: false }`:不递增 editorFocusPulse,不抢 Dock 活动面板
 
 ### initExplorerPersistence(api, extras) · 集成
 
