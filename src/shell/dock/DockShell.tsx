@@ -487,20 +487,23 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
   // 否则用户切到 terminal 后再点资源管理器同一文档,terminal 不会让位。见 #22。
   const editorActiveTabId = useEditorStore((s) => s.activeTabId);
   const editorFocusPulse = useEditorStore((s) => s.editorFocusPulse);
-  // 布局恢复完成时刻的 editorFocusPulse 基线。恢复后首次运行的 activeTabId 来自持久化 hydrate,不是用户意图:
-  // 只确保 editor 面板存在,不 setActive(否则覆盖 fromJSON 恢复的活动面板 / 恢复期间排队打开的面板);
-  // pulse 相对基线变化(用户打开 / 切换文件)才激活。layoutRestored 回落(onReady 重入)时重置。
-  const restoredFocusPulseRef = useRef<number | null>(null);
+  // 已处理到的 editorFocusPulse 基线:布局恢复完成时取当时的 pulse,此后每消费一次用户意图(setActive editor)
+  // 就推进到当前 pulse。恢复后首次运行的 activeTabId 来自持久化 hydrate,不是用户意图:只确保 editor 面板存在,
+  // 不 setActive(否则覆盖 fromJSON 恢复的活动面板 / 恢复期间排队打开的面板);pulse 自上次处理以来有变化
+  //(用户打开 / 切换文件)才激活。不推进的话:用户在 hydrate 前开过文件(pulse 0→1)又切回别的面板,随后
+  // hydrate 以 requestFocus:false 改 activeTabId 时 1 !== 0 会被再次判成意图、抢走活动面板。
+  // layoutRestored 回落(onReady 重入)时重置。
+  const handledFocusPulseRef = useRef<number | null>(null);
   useEffect(() => {
     if (!layoutRestored) {
-      restoredFocusPulseRef.current = null;
+      handledFocusPulseRef.current = null;
       return;
     }
-    restoredFocusPulseRef.current ??= editorFocusPulse;
+    handledFocusPulseRef.current ??= editorFocusPulse;
     if (!editorActiveTabId) return;
     const api = apiRef.current;
     if (!api) return;
-    const userIntent = editorFocusPulse !== restoredFocusPulseRef.current;
+    const userIntent = editorFocusPulse !== handledFocusPulseRef.current;
     let editorPanel = api.getPanel('editor');
     if (!editorPanel) {
       const previousActivePanelId = api.activePanel?.api.id ?? null;
@@ -523,6 +526,7 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       cancelPendingPanelClose('editor');
     }
     editorPanel.api.setActive();
+    handledFocusPulseRef.current = editorFocusPulse;
   }, [editorActiveTabId, editorFocusPulse, layoutRestored]);
 
   return (
