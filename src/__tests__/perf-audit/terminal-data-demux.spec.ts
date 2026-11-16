@@ -13,11 +13,11 @@ describe('perf-audit P1 · createTerminalDataDemux', () => {
     demux.add('sess-a', a);
     demux.add('sess-b', b);
 
-    const invoked = demux.dispatch('sess-a', 'chunk-a');
+    const invoked = demux.dispatch('sess-a', 'chunk-a', 0);
 
     expect(invoked).toBe(1); // 只 1 个回调,不是 N 个
     expect(a).toHaveBeenCalledOnce();
-    expect(a).toHaveBeenCalledWith('chunk-a');
+    expect(a).toHaveBeenCalledWith('chunk-a', 0);
     expect(b).not.toHaveBeenCalled(); // 别 session 的 handler 零开销
   });
 
@@ -33,9 +33,9 @@ describe('perf-audit P1 · createTerminalDataDemux', () => {
     const h2 = vi.fn();
     demux.add('s', h1);
     demux.add('s', h2);
-    expect(demux.dispatch('s', 'd')).toBe(2);
-    expect(h1).toHaveBeenCalledWith('d');
-    expect(h2).toHaveBeenCalledWith('d');
+    expect(demux.dispatch('s', 'd', 7)).toBe(2);
+    expect(h1).toHaveBeenCalledWith('d', 7);
+    expect(h2).toHaveBeenCalledWith('d', 7);
   });
 
   it('unsubscribe 后不再收到,且空 id 从 Map 清除(无泄漏)', () => {

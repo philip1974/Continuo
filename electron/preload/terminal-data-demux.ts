@@ -10,7 +10,8 @@
 // 路由到 Map<id, Set<handler>>。每个 chunk 的 renderer 回调开销从 O(N) 降到
 // O(该 id 的 handler 数)≈ O(1)。本模块是纯逻辑(不碰 ipcRenderer),便于单测。
 
-export type TerminalDataHandler = (data: string) => void;
+/** offset:本批首字符的累计偏移(主进程坐标,与 readHistory 的 endOffset 对齐)。 */
+export type TerminalDataHandler = (data: string, offset?: number) => void;
 
 export interface TerminalDataDemux {
   /** 为某 sessionId 注册 handler,返回 unsubscribe。 */
@@ -19,7 +20,7 @@ export interface TerminalDataDemux {
    * 把一个 chunk 分发给注册在该 id 上的 handler。返回实际被调用的 handler 数
    * —— 关键不变量:只调 id 匹配的,绝不 fan-out 到别的 session 的 handler。
    */
-  dispatch(id: string, data: string): number;
+  dispatch(id: string, data: string, offset?: number): number;
   /** 当前被追踪的 sessionId 数(测试/自省用)。 */
   idCount(): number;
 }
@@ -41,13 +42,13 @@ export function createTerminalDataDemux(): TerminalDataDemux {
         if (s.size === 0) handlers.delete(id);
       };
     },
-    dispatch(id, data) {
+    dispatch(id, data, offset) {
       const set = handlers.get(id);
       if (!set) return 0;
       // 快照迭代:某 handler 在分发中 unsubscribe(如首 chunk 即拆面板)不影响本轮。
       let n = 0;
       for (const h of [...set]) {
-        h(data);
+        h(data, offset);
         n++;
       }
       return n;

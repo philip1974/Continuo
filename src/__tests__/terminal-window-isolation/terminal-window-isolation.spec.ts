@@ -65,7 +65,6 @@ function makeService() {
     }),
     cleanupAll: vi.fn(),
     safeTruncate: vi.fn(),
-    isInPlaceUpdate: vi.fn(),
   };
 }
 

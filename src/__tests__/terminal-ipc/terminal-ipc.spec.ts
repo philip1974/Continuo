@@ -291,7 +291,6 @@ describe('makeCreateHandler', () => {
     kill: vi.fn(),
     cleanupAll: vi.fn(),
     safeTruncate: vi.fn(),
-    isInPlaceUpdate: vi.fn(),
   });
   // race(R31):makeCreateHandler 在 createTerminal resolve 后 get(id) 复查 reservation 是否被
   // 取消(关 tab)。mock 须模型真实 store:add 后 get 返回该 session(否则恒 undefined 会被
@@ -554,7 +553,6 @@ describe('makeRemoveHandler', () => {
       kill: vi.fn(),
       cleanupAll: vi.fn(),
       safeTruncate: vi.fn(),
-      isInPlaceUpdate: vi.fn(),
     };
     const sessionStore = {
       add: vi.fn(),
@@ -588,7 +586,6 @@ describe('makeRemoveHandler', () => {
       kill: vi.fn(),
       cleanupAll: vi.fn(),
       safeTruncate: vi.fn(),
-      isInPlaceUpdate: vi.fn(),
     };
     const sessionStore = {
       add: vi.fn(),
@@ -622,7 +619,6 @@ describe('makeRemoveHandler', () => {
       kill: vi.fn(),
       cleanupAll: vi.fn(),
       safeTruncate: vi.fn(),
-      isInPlaceUpdate: vi.fn(),
     };
     const sessionStore = {
       add: vi.fn(),

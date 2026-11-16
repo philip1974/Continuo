@@ -100,13 +100,13 @@ describe('migration step1 PTY handover · multi-window routing', () => {
     sessionManagerMock.options?.onData?.('a', 'chunk-a');
     vi.advanceTimersByTime(32);
 
-    expect(winA.webContents.send).toHaveBeenCalledWith('terminal:data', 'a', 'chunk-a');
+    expect(winA.webContents.send).toHaveBeenCalledWith('terminal:data', 'a', 'chunk-a', 0);
     expect(winB.webContents.send).not.toHaveBeenCalled();
 
     sessionManagerMock.options?.onData?.('b', 'chunk-b');
     vi.advanceTimersByTime(32);
 
-    expect(winB.webContents.send).toHaveBeenCalledWith('terminal:data', 'b', 'chunk-b');
+    expect(winB.webContents.send).toHaveBeenCalledWith('terminal:data', 'b', 'chunk-b', 0);
     expect(winA.webContents.send).toHaveBeenCalledTimes(1);
   });
 
@@ -130,7 +130,7 @@ describe('migration step1 PTY handover · multi-window routing', () => {
     // 因此下一个 chunk 能重新 setTimeout 调度并送达(若 flushTimer 未清,则永久卡死收不到)。
     sessionManagerMock.options?.onData?.('a', 'chunk-2');
     vi.advanceTimersByTime(32);
-    expect(win.webContents.send).toHaveBeenCalledWith('terminal:data', 'a', 'chunk-2');
+    expect(win.webContents.send).toHaveBeenCalledWith('terminal:data', 'a', 'chunk-2', 7);
   });
 
   // race(R96):service.resize 此前 fire-and-forget 恒 true,PTY resize 失败只 warn → renderer 无从

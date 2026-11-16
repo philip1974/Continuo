@@ -114,13 +114,20 @@ describe('migration step2 buffer merge · buffer lifecycle', () => {
     await service.createTerminal('live-kill', win, '/bin/zsh', [], '/tmp');
     addSession('live-kill', 1);
 
-    expect(service.getBufferSnapshot('live-kill')).toEqual({
+    expect(service.getBufferSnapshot('live-kill')).toMatchObject({
       data: 'live:live-kill',
       truncated: false,
     });
 
     service.forceKill('live-kill');
 
+    // tab 仍在(exited-retained)→ 主进程保留退出前快照供回放(见 terminal-exited-history);
+    // metadata 删除(关 tab)后才释放。
+    expect(service.getBufferSnapshot('live-kill')).toMatchObject({
+      data: 'live:live-kill',
+      truncated: false,
+    });
+    terminalSessions.remove('live-kill');
     expect(service.getBufferSnapshot('live-kill')).toEqual({
       data: '',
       truncated: false,

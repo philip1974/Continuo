@@ -1055,6 +1055,16 @@
 - [`drag-drop.spec.tsx`](./terminal-drag-drop/drag-drop.spec.tsx)
 - [`shell-quote.spec.ts`](./terminal-drag-drop/shell-quote.spec.ts)
 
+## [terminal-exited-history](./terminal-exited-history/README.md)
+
+- [`exited-history.spec.ts`](./terminal-exited-history/exited-history.spec.ts)
+- [`renderer-empty-exited.spec.ts`](./terminal-exited-history/renderer-empty-exited.spec.ts)
+
+## [terminal-history-replay-dedup](./terminal-history-replay-dedup/README.md)
+
+- [`main-offsets.spec.ts`](./terminal-history-replay-dedup/main-offsets.spec.ts)
+- [`renderer-dedup.spec.ts`](./terminal-history-replay-dedup/renderer-dedup.spec.ts)
+
 ## [terminal-input-write-feedback](./terminal-input-write-feedback/README.md)
 
 - [`input-write-reject.spec.ts`](./terminal-input-write-feedback/input-write-reject.spec.ts)
@@ -1077,6 +1087,10 @@
 - [`byte-identical.spec.ts`](./terminal-osc7/byte-identical.spec.ts)
 - [`use-terminal-wiring.spec.ts`](./terminal-osc7/use-terminal-wiring.spec.ts)
 
+## [terminal-output-latency](./terminal-output-latency/README.md)
+
+- [`output-latency.spec.ts`](./terminal-output-latency/output-latency.spec.ts)
+
 ## [terminal-panel-as-dockview-panel](./terminal-panel-as-dockview-panel/README.md)
 
 - [`core-contract.spec.ts`](./terminal-panel-as-dockview-panel/core-contract.spec.ts)
@@ -1092,6 +1106,10 @@
 ## [terminal-readhistory-failure-feedback](./terminal-readhistory-failure-feedback/README.md)
 
 - [`readhistory-failure-clears-loading.spec.ts`](./terminal-readhistory-failure-feedback/readhistory-failure-clears-loading.spec.ts)
+
+## [terminal-resize-debounce](./terminal-resize-debounce/README.md)
+
+- [`resize-debounce.spec.ts`](./terminal-resize-debounce/resize-debounce.spec.ts)
 
 ## [terminal-search](./terminal-search/README.md)
 

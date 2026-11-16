@@ -101,8 +101,8 @@ function ensureTerminalDataListener(): void {
   if (terminalDataListenerInstalled) return;
   ipcRenderer.on(
     TERMINAL_CHANNELS.DATA,
-    (_: unknown, id: string, data: string) => {
-      terminalDataDemux.dispatch(id, data);
+    (_: unknown, id: string, data: string, offset?: number) => {
+      terminalDataDemux.dispatch(id, data, offset);
     },
   );
   terminalDataListenerInstalled = true;
@@ -222,7 +222,9 @@ const api = {
      */
     readHistory: (
       id: string,
-    ): Promise<IpcResult<{ data: string; truncated: boolean }>> =>
+    ): Promise<
+      IpcResult<{ data: string; truncated: boolean; endOffset?: number; startOffset?: number }>
+    > =>
       ipcRenderer.invoke(TERMINAL_CHANNELS.READ_HISTORY, { id }),
     /** 订阅 main 推的 snapshot;返回 unsubscribe. */
     onSessionsChanged: (
@@ -239,7 +241,7 @@ const api = {
      * 性能 P1:整窗共享单个 'terminal:data' listener,按 id 路由到本 cb(O(1)/chunk),
      * cb 只收已过滤的 data(旧版收 (id,data) 让调用方自己 `if(id!==termId)return`)。
      */
-    onData: (id: string, cb: (data: string) => void): (() => void) => {
+    onData: (id: string, cb: (data: string, offset?: number) => void): (() => void) => {
       ensureTerminalDataListener();
       return terminalDataDemux.add(id, cb);
     },

@@ -9,7 +9,7 @@ handler 真行为(node-pty spawn / write / resize)需 PTY 运行时,留 E2E 验�
 | 已被覆盖的不再测 | 在哪 |
 |---|---|
 | safeHandle 通用语义(senderFrame / IpcResult / code 透传) | `ipc-safe-handle` |
-| safeTruncate / isInPlaceUpdate 节流纯函数 | `terminal-service` |
+| safeTruncate 截断纯函数 | `terminal-service` |
 
 ## 通道清单
 

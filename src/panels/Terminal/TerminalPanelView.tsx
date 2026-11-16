@@ -100,7 +100,7 @@ function TerminalPanelContent({
   sessionId: string;
 }) {
   const t = useT();
-  const { containerRef, isReady, fit, focus, searchApi } =
+  const { containerRef, isReady, fit, requestFit, focus, searchApi } =
     useTerminal(sessionId);
   const { ref: dropZoneRef } = useTerminalDragDrop({ sessionId, focus, api });
 
@@ -142,7 +142,8 @@ function TerminalPanelContent({
         if (!searchOpenRef.current) focus();
       }
     });
-    const dimensionsDisposable = api.onDidDimensionsChange(tryFit);
+    // 尺寸连续变化(分栏拖拽)走防抖入口;激活 / 显隐走立即 fit。
+    const dimensionsDisposable = api.onDidDimensionsChange(requestFit);
     const visibilityDisposable = api.onDidVisibilityChange((event) => {
       if (event.isVisible) tryFit();
     });
@@ -153,7 +154,7 @@ function TerminalPanelContent({
       dimensionsDisposable.dispose();
       visibilityDisposable.dispose();
     };
-  }, [api, fit, focus]);
+  }, [api, fit, requestFit, focus]);
 
   return (
     <div
