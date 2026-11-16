@@ -41,14 +41,16 @@ export function countDirtyForClose(
  * 保存的改动。「是否允许关闭」此前只取决于弹框前的脏计数,flush 期间 / 确认期间新产生的脏状态没人再查
  * (防抖内 autosave 首次失败、保存后慢 flush 期间继续输入、多窗退出时别窗确认期间本窗变脏)。
  * autosave 已 flush 过,仍脏的 .md 也计入(不看 autosave 设置);untitled 计入,但本轮选了「保存」时
- * 用户已被告知 untitled 会被丢弃,只剩 untitled 不算。无 → null;有 → 全部脏 tab 计数(main 据此记账)。
+ * 用户已被告知确认框里的 untitled 会被丢弃 —— 只放过不超过该数(allowedUntitled,main 随 flush 请求带来)的
+ * untitled;确认后才新建的 untitled 草稿超出该数即计入(复审:此前无条件放过,会被静默丢弃)。
+ * 无 → null;有 → 全部脏 tab 计数(main 据此记账)。
  */
 export function remainingAfterFlush(
   tabs: readonly TabLike[],
-  save: boolean,
+  allowedUntitled: number,
 ): DirtyCloseState | null {
   const state = countDirtyForClose(tabs, false);
-  const blocking = save ? state.dirty - state.untitled : state.dirty;
+  const blocking = state.dirty - Math.min(state.untitled, allowedUntitled);
   return blocking > 0 ? state : null;
 }
 

@@ -62,7 +62,7 @@ export function useAutoSave(
             // 把失败态的脏 .md 计入确认(见 autosave-failures.ts)。开始时取 epoch:其间 tab 关闭 / 重开
             // 则迟到结果被丢弃,不写入同 id 新实例。
             () => {
-              const epoch = getAutoSaveRecordEpoch();
+              const epoch = getAutoSaveRecordEpoch(tabId);
               return saveTab(tabId).then(
                 (r) => {
                   setAutoSaveFailed(

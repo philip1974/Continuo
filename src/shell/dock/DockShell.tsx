@@ -431,9 +431,13 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       await Promise.all([layoutFlush, explorerFlush, autosaveFlush]);
       // 统一规则:全部 flush 完成后、ACK 前最终脏检查。本轮未选「不保存」且仍有未保存改动(防抖内 autosave
       // 失败 / flush 期间继续输入 / 确认期间变脏)→ 回执 remaining,main 中止关闭 / 退出并按此记账。
+      // 「保存」只放过确认框告知用户的 untitled 数(main 随请求带 untitled);确认后新建的 untitled 超出即计入。
+      const untitled = payload?.save ? payload.untitled : undefined;
+      const allowedUntitled =
+        typeof untitled === 'number' && Number.isSafeInteger(untitled) && untitled > 0 ? untitled : 0;
       const remaining = payload?.discard
         ? null
-        : remainingAfterFlush(useEditorStore.getState().tabs, payload?.save === true);
+        : remainingAfterFlush(useEditorStore.getState().tabs, allowedUntitled);
       // main 已按回执记账:同步去重基准,之后脏态变化与之不同即重新上报。
       if (remaining) lastDirtyReportRef.current = `${remaining.dirty}/${remaining.untitled}`;
       const windowId = payload?.windowId ?? coApi.system.windowId;

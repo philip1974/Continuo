@@ -203,6 +203,7 @@ vi.mock('../../../electron/main/ipc/plugin-mcp.ipc', () => ({
 }));
 
 const { app } = await import('electron');
+const termService = await import('../../../electron/main/services/terminal.service');
 const { createMainWindow, FLUSH_ACK_TIMEOUT_MS } = await import(
   '../../../electron/main/index'
 );
@@ -668,6 +669,102 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
     b.destroyed = true;
   });
 
+  // 复审:多窗 Cmd+Q 时 A 已 flush+ACK、等待 B 保存期间,用户在仍可操作的 A 里继续编辑 → A 不再被检查,
+  // app.quit() 丢改动。所有窗口 flush 完成后、破坏性清理(cleanupAll 杀 PTY)前,按 main 持续接收的脏态上报
+  // 做全局最终检查:超出本轮用户已接受的范围 → 中止退出、显示该窗口、守卫复位。
+  it('多窗退出:A 已 ACK 后、等待 B 保存期间 A 变脏 → 中止退出(不清理 PTY)', async () => {
+    const a = createReadyWindow(45);
+    const b = createReadyWindow(46);
+    reportDirty(b, { dirty: 1, untitled: 0 });
+    electronMock.showMessageBox.mockResolvedValueOnce({ response: 0 }); // B:保存
+
+    const { done } = beforeQuit();
+    await settle();
+    ack(a, { requestId: requestIdOf(a, 0) }); // A 干净,flush 完成
+    await settle();
+    reportDirty(a, { dirty: 1, untitled: 0 }); // A 在等待 B 期间被编辑
+    ack(b, { saveFailed: false, requestId: requestIdOf(b, 0) });
+    await done;
+    expect(app.quit).not.toHaveBeenCalled();
+    expect(termService.cleanupAll).not.toHaveBeenCalled();
+    expect(a.show).toHaveBeenCalled();
+
+    // 守卫复位:再次 Cmd+Q 会对 A 弹确认
+    electronMock.showMessageBox.mockResolvedValueOnce({ response: 2 });
+    await beforeQuit().done;
+    expect(electronMock.showMessageBox.mock.calls[1]?.[0]).toBe(a);
+    a.destroyed = true;
+    b.destroyed = true;
+  });
+
+  it('多窗退出:「不保存」的窗口在等待期间新增脏 tab(超出确认时的数)→ 中止退出', async () => {
+    const a = createReadyWindow(47);
+    const b = createReadyWindow(48);
+    reportDirty(a, { dirty: 1, untitled: 0 });
+    reportDirty(b, { dirty: 1, untitled: 0 });
+    electronMock.showMessageBox
+      .mockResolvedValueOnce({ response: 1 }) // A:不保存
+      .mockResolvedValueOnce({ response: 0 }); // B:保存
+
+    const { done } = beforeQuit();
+    await settle();
+    ack(a, { requestId: requestIdOf(a, 0) });
+    await settle();
+    reportDirty(a, { dirty: 2, untitled: 0 });
+    ack(b, { saveFailed: false, requestId: requestIdOf(b, 0) });
+    await done;
+    expect(app.quit).not.toHaveBeenCalled();
+    expect(a.show).toHaveBeenCalled();
+    a.destroyed = true;
+    b.destroyed = true;
+  });
+
+  // 复审:「保存」时 renderer 只能放过确认框告知用户的 untitled 数(此前无条件放过全部 untitled)。
+  it('「保存」的 flush 请求带上确认框告知的 untitled 数', async () => {
+    const a = createReadyWindow(49);
+    reportDirty(a, { dirty: 3, untitled: 2 });
+    electronMock.showMessageBox.mockResolvedValueOnce({ response: 0 });
+
+    const { done } = beforeQuit();
+    await settle();
+    expect(flushRequests(a)).toEqual([
+      { windowId: a.id, save: true, untitled: 2, requestId: expect.any(Number) },
+    ]);
+    ack(a, { saveFailed: true, requestId: requestIdOf(a, 0) });
+    await done;
+    a.destroyed = true;
+  });
+
+  // 复审:退出被取消时,被本轮接管的旧单窗关闭流程所在窗口此前仍隐藏、守卫仍在途,要等旧 ACK / 10s 超时才恢复。
+  it('退出中止 → 立即恢复被接管的隐藏窗口并释放其关窗守卫;旧流程迟到 ACK 无副作用', async () => {
+    const win = createReadyWindow(50);
+    reportDirty(win, { dirty: 1, untitled: 0 });
+    electronMock.showMessageBox
+      .mockResolvedValueOnce({ response: 1 }) // 关窗:不保存(hide + flush 在途)
+      .mockResolvedValueOnce({ response: 2 }); // 退出:取消
+
+    win.close();
+    await settle();
+    expect(win.hide).toHaveBeenCalledTimes(1);
+    const closeReq = requestIdOf(win, 0);
+    await beforeQuit().done;
+    expect(app.quit).not.toHaveBeenCalled();
+    expect(win.show).toHaveBeenCalledTimes(1); // 不等旧 ACK
+
+    // 守卫已释放:再次关闭重新确认(不卡在「flush 在途」)
+    electronMock.showMessageBox.mockReturnValueOnce(new Promise(() => undefined));
+    win.close();
+    await settle();
+    expect(electronMock.showMessageBox).toHaveBeenCalledTimes(3);
+
+    // 旧流程的迟到 ACK:被取代,不关窗、不再 show
+    ack(win, { requestId: closeReq });
+    await settle();
+    expect(win.destroyed).toBe(false);
+    expect(win.show).toHaveBeenCalledTimes(1);
+    win.destroyed = true;
+  });
+
   it('逐窗确认后按各自选择 flush,全部完成再退出', async () => {
     const a = createReadyWindow(23);
     const b = createReadyWindow(24);
@@ -688,9 +785,13 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
     expect(flushRequests(clean)).toEqual([{ windowId: clean.id, requestId: expect.any(Number) }]);
 
     ack(a, { saveFailed: false });
+    // 全局最终检查:a 保存后干净;b「不保存」仍是确认时的脏数(在接受范围内)→ 照常退出。
+    reportDirty(a, { dirty: 0, untitled: 0 });
+    reportDirty(b, { dirty: 2, untitled: 1 });
     ack(b);
     ack(clean);
     await done;
+    expect(termService.cleanupAll).toHaveBeenCalledTimes(1);
     expect(app.quit).toHaveBeenCalledTimes(1);
   });
 });
