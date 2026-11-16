@@ -9,10 +9,11 @@ import { createWatcherPool, type WatcherCreator } from '../../../electron/main/i
 
 const mocks = vi.hoisted(() => ({
   watchers: [] as Array<EventEmitter & { close: () => void }>,
+  windows: new Map<number, { isDestroyed: () => boolean; webContents: { send: ReturnType<typeof vi.fn> } }>(),
 }));
 
 vi.mock('electron', () => ({
-  BrowserWindow: { getAllWindows: () => [] },
+  BrowserWindow: { getAllWindows: () => [], fromId: (id: number) => mocks.windows.get(id) ?? null },
   dialog: {},
   shell: {},
 }));
@@ -29,6 +30,7 @@ vi.mock('node:fs', async (importOriginal) => {
 
 afterEach(() => {
   mocks.watchers = [];
+  mocks.windows.clear();
   vi.restoreAllMocks();
 });
 
@@ -71,6 +73,52 @@ describe('WatcherPool:creator 上报 watcher 失效 → 关闭并移出池', () 
 
     expect(pool.has('/d')).toBe(true);
     expect(closes[1]).not.toHaveBeenCalled();
+  });
+});
+
+// 驱逐后 renderer 仍以为已安装 → 不再 watchDir,该展开目录永久不刷新。池驱逐时把持有者窗口报给 onLost,
+// fs.ipc 据此向这些窗口推 fs:watch-lost,renderer 移出账本并退避重装。
+describe('WatcherPool:失效驱逐上报持有者窗口(onLost)', () => {
+  it('onError → onLost(path, 持有该 path 的窗口 id);LRU / 正常 unwatch 不上报', () => {
+    const reports = new Map<string, (err: unknown) => void>();
+    const onLost = vi.fn();
+    const pool = createWatcherPool((p, _onChange, onError) => {
+      reports.set(p, onError);
+      return { close: vi.fn() };
+    }, onLost);
+    pool.watch('/vol/dir', vi.fn(), 1);
+    pool.watch('/vol/dir', vi.fn(), 2);
+    pool.watch('/other', vi.fn(), 3);
+    pool.unwatch('/other', 3);
+    expect(onLost).not.toHaveBeenCalled();
+
+    reports.get('/vol/dir')!(new Error('EIO'));
+    expect(onLost).toHaveBeenCalledTimes(1);
+    expect(onLost).toHaveBeenCalledWith('/vol/dir', [1, 2]);
+
+    // 迟到的重复 error 不重复上报
+    reports.get('/vol/dir')!(new Error('EIO again'));
+    expect(onLost).toHaveBeenCalledTimes(1);
+  });
+
+  it('notifyWatchLost 只推给持有者窗口(跳过已销毁 / 不存在),send 抛错不中断', async () => {
+    const { notifyWatchLost } = await import('../../../electron/main/ipc/fs.ipc');
+    const { FS_CHANNELS } = await import('../../../electron/shared/fs-channels');
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const w1 = { isDestroyed: () => false, webContents: { send: vi.fn(() => { throw new Error('destroyed'); }) } };
+    const w2 = { isDestroyed: () => false, webContents: { send: vi.fn() } };
+    const w3 = { isDestroyed: () => true, webContents: { send: vi.fn() } };
+    const w4 = { isDestroyed: () => false, webContents: { send: vi.fn() } };
+    mocks.windows.set(1, w1);
+    mocks.windows.set(2, w2);
+    mocks.windows.set(3, w3);
+    mocks.windows.set(4, w4);
+
+    expect(() => notifyWatchLost('/vol/dir', [1, 2, 3, 99])).not.toThrow();
+    expect(w2.webContents.send).toHaveBeenCalledWith(FS_CHANNELS.WATCH_LOST, { path: '/vol/dir' });
+    expect(w3.webContents.send).not.toHaveBeenCalled();
+    expect(w4.webContents.send).not.toHaveBeenCalled();
+    expect(error).toHaveBeenCalled();
   });
 });
 

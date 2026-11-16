@@ -199,23 +199,47 @@ describe('脏 tab 身份带变脏代际', () => {
     ).toEqual({ dirty: 2, untitled: 1, ids: ['/a.ts#2', 'untitled-1#1'], untitledIds: ['untitled-1#1'] });
   });
 
-  it('editor store:clean→dirty 跃迁递增代际;持续输入不变;保存后再编辑同一文件 → 新代际', () => {
+  it('editor store:clean→dirty 跃迁取新代际;持续输入不变;保存后再编辑同一文件 → 新代际', () => {
     useEditorStore.setState({ tabs: [], activeTabId: null });
     const s = useEditorStore.getState();
     s.openTab(createTab('/w/x.ts', 'old'));
     const ids = () => countDirtyForClose(useEditorStore.getState().tabs, false).ids;
     expect(ids()).toEqual([]);
     s.updateContent('/w/x.ts', 'new');
-    expect(ids()).toEqual(['/w/x.ts#1']);
+    const first = ids();
+    expect(first).toHaveLength(1);
     s.updateContent('/w/x.ts', 'newer');
-    expect(ids()).toEqual(['/w/x.ts#1']);
+    expect(ids()).toEqual(first);
     s.markSaved('/w/x.ts');
     expect(ids()).toEqual([]);
     s.updateContent('/w/x.ts', 'edited again');
-    expect(ids()).toEqual(['/w/x.ts#2']);
-    // 保存期间继续输入(markSaved 保留 dirty):仍是同一次变脏,不递增
+    const second = ids();
+    expect(second).toHaveLength(1);
+    expect(second).not.toEqual(first);
+    // 保存期间继续输入(markSaved 推进已落盘基线但保留 dirty):基线之后的增量是新改动 → 新代际
     s.markSaved('/w/x.ts', 'old');
-    expect(ids()).toEqual(['/w/x.ts#2']);
+    const third = ids();
+    expect(third).toHaveLength(1);
+    expect(third).not.toEqual(second);
+    expect(third).not.toEqual(first);
+    useEditorStore.setState({ tabs: [], activeTabId: null });
+  });
+
+  it('editor store:关闭后重开同一路径再编辑 → 新身份(代际进程内唯一,不随 tab 实例重算)', () => {
+    useEditorStore.setState({ tabs: [], activeTabId: null });
+    const s = useEditorStore.getState();
+    const ids = () => countDirtyForClose(useEditorStore.getState().tabs, false).ids;
+    s.openTab(createTab('/w/y.ts', 'old'));
+    s.updateContent('/w/y.ts', 'new');
+    const before = ids();
+    expect(before).toHaveLength(1);
+    s.closeTab('/w/y.ts');
+    s.openTab(createTab('/w/y.ts', 'old'));
+    expect(ids()).toEqual([]);
+    s.updateContent('/w/y.ts', 'new');
+    const after = ids();
+    expect(after).toHaveLength(1);
+    expect(after).not.toEqual(before);
     useEditorStore.setState({ tabs: [], activeTabId: null });
   });
 });

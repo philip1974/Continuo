@@ -22,6 +22,8 @@ export const FS_CHANNELS = {
   UNWATCH: 'fs:unwatch',
   /** main → renderer event(非 invoke),webContents.send(path) 通知目录变更 */
   DIR_CHANGED: 'fs:dir-changed',
+  /** main → renderer event:watcher 异步失效被驱逐,payload 同 DIR_CHANGED({ path }),只推给持有者窗口 */
+  WATCH_LOST: 'fs:watch-lost',
 } as const;
 
 export type FsChannel = (typeof FS_CHANNELS)[keyof typeof FS_CHANNELS];

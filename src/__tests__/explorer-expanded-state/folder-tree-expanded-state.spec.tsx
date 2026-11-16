@@ -32,6 +32,7 @@ vi.mock('@/lib/co-api', () => ({
       watchDir: vi.fn(async () => ({ ok: true })),
       unwatchDir: vi.fn(async () => ({ ok: true })),
       onDirChanged: vi.fn(() => vi.fn()),
+      onWatchLost: vi.fn(() => vi.fn()),
     },
     terminal: {
       create: vi.fn(),

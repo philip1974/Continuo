@@ -47,7 +47,14 @@ export interface WatcherPool {
   closeAll: () => void;
 }
 
-export function createWatcherPool(creator: WatcherCreator): WatcherPool {
+/**
+ * onLost(path, ownerIds):watcher 异步失效被驱逐(evictDead)时调用,ownerIds = 驱逐前持有该 path 的窗口。
+ * 持有者 renderer 仍以为已安装,须被告知才会重装(LRU 驱逐 / 正常 unwatch 不调用)。
+ */
+export function createWatcherPool(
+  creator: WatcherCreator,
+  onLost?: (path: string, ownerIds: number[]) => void,
+): WatcherPool {
   const watchers = new Map<string, { watcher: Watcher; refCount: number }>();
   const order: string[] = []; // LRU,head 是最早
   // windowId → (path → 该窗口对此 path 的引用次数)。关窗时按此批量 decrement。
@@ -95,19 +102,22 @@ export function createWatcherPool(creator: WatcherCreator): WatcherPool {
   }
 
   // 健壮性(独立审计):watcher 异步失效 → 关闭并移出池 + 清 owner 记账(同 LRU 驱逐清理)。
-  // 之后 renderer 的 unwatch 对该 path 自然 no-op;再次展开会重建。
+  // 之后 renderer 的 unwatch 对该 path 自然 no-op;清账前记下持有者经 onLost 通知其 renderer 重装。
   function evictDead(path: string, w: Watcher): void {
     const entry = watchers.get(path);
     if (!entry || entry.watcher !== w) return;
     watchers.delete(path);
     const idx = order.indexOf(path);
     if (idx >= 0) order.splice(idx, 1);
+    const ownerIds: number[] = [];
+    for (const [ownerId, m] of ownerPaths) if (m.has(path)) ownerIds.push(ownerId);
     purgeOwnerAccounting(path);
     try {
       w.close();
     } catch {
       // 已失效的 watcher close 抛错无需处理
     }
+    onLost?.(path, ownerIds);
   }
 
   return {

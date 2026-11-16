@@ -230,6 +230,17 @@ const api = {
       };
       return subscribeIpc(FS_CHANNELS.DIR_CHANGED, listener);
     },
+    /** 订阅本窗口持有的 watcher 失效被驱逐事件(payload 守卫同 onDirChanged);返回 unsubscribe. */
+    onWatchLost: (cb: (path: string) => void): (() => void) => {
+      const listener = (_: unknown, payload: unknown): void => {
+        if (!isFsDirChangedPayload(payload, FS_PATH_MAX)) {
+          console.warn('[fs] invalid watch-lost payload, dropped', payload);
+          return;
+        }
+        cb(payload.path);
+      };
+      return subscribeIpc(FS_CHANNELS.WATCH_LOST, listener);
+    },
   },
   terminal: {
     create: (

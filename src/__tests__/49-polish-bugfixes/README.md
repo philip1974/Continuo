@@ -1126,6 +1126,9 @@ helper + 必挂 browser-window-created),把「单一来源」固化进测试防�
 ### fs.watch 异步 error 不崩溃主进程 — `watch-error-evict.spec.ts`
 - 生产 creator 注册 FSWatcher `'error'` 监听(console.warn),经 `WatcherCreator` 第三参 `onError`
   上报池:关闭并移出该 watcher、清 owner 记账;迟到的 error 不误杀同 path 重建的新 watcher。
+- 驱逐时池经 `createWatcherPool` 第二参 `onLost(path, ownerIds)` 报出驱逐前的持有者窗口(LRU / 正常 unwatch 不报,
+  迟到的重复 error 不重复报);`notifyWatchLost` 只向这些窗口推 `fs:watch-lost`(`{ path }`),跳过已销毁 / 不存在
+  窗口,单窗 send 抛错不中断。renderer 侧重装见 `use-fs-watcher/`。
 
 ### 非 UTF-8 文件不进入可保存的文本编辑器 — `read-file-non-utf8.spec.ts`
 - 编辑器文本读取入口 `fs:read-file` 以 `requireUtf8` 读取:非法 UTF-8 → `FS_NOT_UTF8`(en/zh/ko 文案),

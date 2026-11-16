@@ -78,8 +78,9 @@ markdown autosave flush)完成后、回执之前,检查此刻仍 dirty 的 tab(�
 
 - 计入:脏的代码文件 tab;untitled 草稿计入并单独计数(无路径,MVP 不支持另存为,「保存」时跳过,文案说明会被丢弃)。
 - 上报附带脏 tab 的身份列表 `${tabId}#${变脏代际}`(tabId:file tab = 路径,untitled = 其 id;`ids` / `untitledIds`)。
-  变脏代际(`EditorTab.dirtyGen`)在每次 clean→dirty 跃迁时递增,持续输入 / 保存期间继续输入不递增 ——
-  「不保存」后保存再编辑同一文件是新身份,不在已接受范围内(复审:只比 tab id 会放行退出丢新改动)。main 解析时校验计数与 id
+  变脏代际(`EditorTab.dirtyGen`)取自进程内全局单调计数器(永不复用),在 clean→dirty 跃迁、以及保存推进了已落盘
+  基线但 tab 仍脏(保存期间继续输入)时赋新值,持续输入不变 —— 「不保存」后保存再编辑同一文件、关闭重开同一路径再编辑、
+  保存期间的新增量都是新身份,不在已接受范围内(复审:只比 tab id / 按 tab 实例计数会放行退出丢新改动)。main 解析时校验计数与 id
   列表一致、`untitledIds ⊆ ids`、无重复,id 列表上限 `PATH_ARRAY_MAX`、单条上限 `PATH_STR_MAX`,不合法整体忽略。
 - 不计入:Markdown 自动保存开启时,**活动** tab(持有 autosave scheduler)且其最近一次 autosave 未失败的脏 `.md`
   (关窗 flush 经 `flushPendingAutoSave` 落盘);关闭该设置则计入。

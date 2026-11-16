@@ -6,7 +6,12 @@ import { KeyedRegistry } from './keyed-registry';
 import { isSpecObject } from './spec-guard';
 import { isEcmaWhitespaceCode } from '../../../electron/shared/ecma-whitespace';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
-import { isKnownHotkeyModifier } from '../command-palette/format-hotkey';
+import {
+  canonicalHotkey,
+  detectPlatform,
+  isKnownHotkeyModifier,
+  type Platform,
+} from '../command-palette/format-hotkey';
 
 export interface CommandSpec {
   readonly id: string;
@@ -117,9 +122,11 @@ function validateCommandSpec(spec: CommandSpec): void {
 }
 
 export class CommandRegistry extends KeyedRegistry<CommandSpec> {
+  // 以 canonicalHotkey 为键:`mod+shift+enter` 与 mac 上的 `shift+cmd+return` 运行时等价,须算作同一占用。
   private hotkeyCounts = new Map<string, number>();
 
-  constructor() {
+  // platform 与运行时匹配 / KeybindingCaptureModal 同源(detectPlatform);参数仅供测试注入。
+  constructor(private readonly platform: Platform = detectPlatform()) {
     super('command-registry');
   }
 
@@ -133,7 +140,10 @@ export class CommandRegistry extends KeyedRegistry<CommandSpec> {
     spec: CommandSpec,
     previous: CommandSpec | undefined,
   ): void {
-    if (spec.hotkey && (this.hotkeyCounts.get(spec.hotkey) ?? 0) > 0) {
+    if (
+      spec.hotkey &&
+      (this.hotkeyCounts.get(canonicalHotkey(spec.hotkey, this.platform)) ?? 0) > 0
+    ) {
       console.warn(
         `[command-registry] hotkey "${spec.hotkey}" 已被另一命令占用,后注册赢`,
       );
@@ -159,11 +169,13 @@ export class CommandRegistry extends KeyedRegistry<CommandSpec> {
     await cmd.fn();
   }
 
-  private incrementHotkey(hotkey: string): void {
+  private incrementHotkey(raw: string): void {
+    const hotkey = canonicalHotkey(raw, this.platform);
     this.hotkeyCounts.set(hotkey, (this.hotkeyCounts.get(hotkey) ?? 0) + 1);
   }
 
-  private decrementHotkey(hotkey: string): void {
+  private decrementHotkey(raw: string): void {
+    const hotkey = canonicalHotkey(raw, this.platform);
     const count = this.hotkeyCounts.get(hotkey);
     if (count === undefined) return;
     if (count <= 1) this.hotkeyCounts.delete(hotkey);

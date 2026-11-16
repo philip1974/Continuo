@@ -11,11 +11,12 @@ interface FakeFs {
   watchDir: ReturnType<typeof vi.fn>;
   unwatchDir: ReturnType<typeof vi.fn>;
   onDirChanged: (cb: (path: string) => void) => () => void;
+  onWatchLost?: (cb: (path: string) => void) => () => void;
 }
 
 function installFs(fs: FakeFs): void {
   Object.defineProperty(window, 'api', {
-    value: { fs },
+    value: { fs: { onWatchLost: () => () => {}, ...fs } },
     writable: true,
     configurable: true,
   });
@@ -266,5 +267,93 @@ describe('useFsWatcher · R14 失败不记账可重试', () => {
     await Promise.resolve();
 
     expect(watchDir.mock.calls.filter((c) => c[0] === '/a').length).toBe(1);
+  });
+});
+
+// main 因 FSWatcher error 驱逐失效 watcher 后推 fs:watch-lost:renderer 移出账本、刷新该目录,
+// 退避延迟后若仍展开则重装;卷持续断开(反复失效)时延迟指数增长,不形成高频重试。
+describe('useFsWatcher · watch-lost 退避重装', () => {
+  async function flush(): Promise<void> {
+    await Promise.resolve();
+    await Promise.resolve();
+  }
+
+  function setup(initial: Set<string>) {
+    let lostCb: ((p: string) => void) | null = null;
+    const watchDir = vi.fn().mockResolvedValue({ ok: true });
+    const unwatchDir = vi.fn().mockResolvedValue({ ok: true });
+    const lostUnsub = vi.fn();
+    installFs({
+      watchDir,
+      unwatchDir,
+      onDirChanged: () => () => {},
+      onWatchLost: (cb) => {
+        lostCb = cb;
+        return lostUnsub;
+      },
+    });
+    const onChange = vi.fn();
+    const hook = renderHook(
+      ({ paths }: { paths: ReadonlySet<string> }) => useFsWatcher(paths, onChange),
+      { initialProps: { paths: initial } },
+    );
+    const lost = (p: string): void => lostCb!(p);
+    const aCalls = (): number => watchDir.mock.calls.filter((c) => c[0] === '/a').length;
+    return { hook, lost, watchDir, unwatchDir, onChange, aCalls, lostUnsub };
+  }
+
+  it('失效 → 立即刷新该目录;延迟后仍展开 → 重新 watchDir', async () => {
+    const { lost, onChange, aCalls } = setup(new Set(['/a']));
+    await flush();
+    expect(aCalls()).toBe(1);
+
+    lost('/a');
+    expect(onChange).toHaveBeenCalledWith('/a');
+    vi.advanceTimersByTime(1000);
+    expect(aCalls()).toBe(1); // 不立即重试
+    vi.advanceTimersByTime(5000);
+    expect(aCalls()).toBe(2);
+  });
+
+  it('延迟期间已折叠 → 不重装;非已安装 path 的 lost 忽略', async () => {
+    const { hook, lost, onChange, aCalls, watchDir } = setup(new Set(['/a']));
+    await flush();
+    lost('/zzz');
+    expect(onChange).not.toHaveBeenCalled();
+    lost('/a');
+    hook.rerender({ paths: new Set<string>() });
+    vi.advanceTimersByTime(120_000);
+    expect(aCalls()).toBe(1);
+    expect(watchDir.mock.calls.some((c) => c[0] === '/zzz')).toBe(false);
+  });
+
+  it('反复失效 → 重试延迟指数退避且有上限', async () => {
+    const { lost, aCalls } = setup(new Set(['/a']));
+    await flush();
+    const delays: number[] = [];
+    for (let i = 0; i < 8; i++) {
+      lost('/a');
+      const before = aCalls();
+      let waited = 0;
+      while (aCalls() === before && waited < 600_000) {
+        vi.advanceTimersByTime(500);
+        waited += 500;
+      }
+      await flush();
+      delays.push(waited);
+    }
+    for (let i = 1; i < delays.length; i++) expect(delays[i]!).toBeGreaterThanOrEqual(delays[i - 1]!);
+    expect(delays.at(-1)!).toBeGreaterThan(delays[0]! * 4);
+    expect(delays.at(-1)!).toBeLessThanOrEqual(60_000);
+  });
+
+  it('卸载 → 退订 watch-lost 且取消待重试', async () => {
+    const { hook, lost, aCalls, lostUnsub } = setup(new Set(['/a']));
+    await flush();
+    lost('/a');
+    hook.unmount();
+    expect(lostUnsub).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(120_000);
+    expect(aCalls()).toBe(1);
   });
 });

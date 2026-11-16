@@ -267,7 +267,21 @@ export const createFsWatcher: WatcherCreator = (rootPath, onChange, onError) => 
   return { close: () => watcher.close() };
 };
 
-const watcherPool = createWatcherPool(createFsWatcher);
+// 导出仅供回归测试。watcher 失效被驱逐后持有者 renderer 仍以为已安装 → 推 WATCH_LOST 让其重装;
+// 单窗口 send 抛错不中断其余窗口(同 broadcastToWindows)。
+export function notifyWatchLost(path: string, ownerIds: readonly number[]): void {
+  for (const id of ownerIds) {
+    const win = BrowserWindow.fromId(id);
+    if (!win || win.isDestroyed()) continue;
+    try {
+      win.webContents.send(FS_CHANNELS.WATCH_LOST, { path });
+    } catch (err) {
+      console.error('[fs] WATCH_LOST send failed', err);
+    }
+  }
+}
+
+const watcherPool = createWatcherPool(createFsWatcher, notifyWatchLost);
 
 // 导出仅供 R66 回归测试(验证单窗口 send 抛错不中断广播);生产仍只经 watcherPool onChange 调用。
 export function broadcastDirChanged(path: string): void {

@@ -310,6 +310,31 @@ describe('CommandRegistry', () => {
     warn.mockRestore();
   });
 
+  it('hotkey 冲突按运行时等价(canonical)比较:修饰键顺序 / mod 别名 / 主键别名不同也告警', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const mac = new CommandRegistry('mac');
+      const da = mac.register({ id: 'a', title: 'A', hotkey: 'mod+shift+enter', fn: () => {} });
+      const db = mac.register({ id: 'b', title: 'B', hotkey: 'shift+cmd+return', fn: () => {} });
+      expect(warn).toHaveBeenCalledTimes(1);
+      // mac 上 ctrl 与 mod(⌘)不等价 → 不告警
+      mac.register({ id: 'c', title: 'C', hotkey: 'ctrl+shift+enter', fn: () => {} });
+      expect(warn).toHaveBeenCalledTimes(1);
+      // 注销按同一 canonical 键减计数:a/b 都注销后再注册等价组合不再告警
+      da.dispose();
+      db.dispose();
+      mac.register({ id: 'd', title: 'D', hotkey: 'Shift+Mod+Enter', fn: () => {} });
+      expect(warn).toHaveBeenCalledTimes(1);
+
+      const other = new CommandRegistry('other');
+      other.register({ id: 'a', title: 'A', hotkey: 'mod+shift+enter', fn: () => {} });
+      other.register({ id: 'b', title: 'B', hotkey: 'shift+ctrl+return', fn: () => {} });
+      expect(warn).toHaveBeenCalledTimes(2);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it('hotkey 冲突检测使用索引,注册时不扫描 items.values()', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const valuesSpy = vi.spyOn(Map.prototype, 'values');

@@ -45,16 +45,24 @@ export interface EditorTab {
    */
   readonly milkdownUnsafe?: boolean;
   /**
-   * 变脏代际:每次 clean→dirty 跃迁递增(持续输入 / 保存期间继续输入保留 dirty 不递增)。关窗脏确认按
-   * `${id}#${dirtyGen}` 上报身份 —— 「不保存」后保存再编辑同一文件是新的改动,不在已接受范围内(复审)。
+   * 变脏代际:取自模块级全局单调计数器(进程内唯一、永不复用),在 clean→dirty 跃迁、以及 markSaved 推进了
+   * 已落盘基线但 tab 仍脏(保存期间继续输入)时赋新值;持续输入不变。关窗脏确认按 `${id}#${dirtyGen}` 上报身份
+   * —— 「不保存」后保存再编辑、关闭重开同一路径再编辑、保存期间的新增量都是新改动,不在已接受范围内(复审)。
    * optional:缺省按 0。
    */
   readonly dirtyGen?: number;
 }
 
-/** clean→dirty 跃迁时递增变脏代际(见 EditorTab.dirtyGen);否则不改。 */
+// 变脏代际的全局单调计数器:按 tab 实例计数会在关闭重开同一路径后从 1 重算,与已接受的旧身份撞号(复审)。
+let dirtyGenCounter = 0;
+
+/**
+ * 需要新身份时赋新变脏代际(见 EditorTab.dirtyGen):clean→dirty 跃迁,或已落盘基线推进后仍脏;否则不改。
+ */
 function withDirtyGen(cur: EditorTab, next: EditorTab): EditorTab {
-  return next.dirty && !cur.dirty ? { ...next, dirtyGen: (cur.dirtyGen ?? 0) + 1 } : next;
+  const fresh =
+    next.dirty && (!cur.dirty || next.originalContent !== cur.originalContent);
+  return fresh ? { ...next, dirtyGen: ++dirtyGenCounter } : next;
 }
 
 const EMPTY_EDITOR_TABS: EditorTab[] = [];

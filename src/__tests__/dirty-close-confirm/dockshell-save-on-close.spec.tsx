@@ -108,8 +108,9 @@ function ds(ids: string[], untitledIds: string[] = []) {
   return { dirty: ids.length, untitled: untitledIds.length, ids, untitledIds };
 }
 
-/** 变脏一次的 tab 的上报身份。 */
-const g = (id: string): string => `${id}#1`;
+/** tab 当前的上报身份(变脏代际取自全局单调计数器,只能从 store 读出)。 */
+const g = (id: string): string =>
+  `${id}#${useEditorStore.getState().tabs.find((x) => x.id === id)?.dirtyGen ?? 0}`;
 
 function openDirty(path: string): void {
   act(() => {
@@ -130,7 +131,7 @@ describe('DockShell 向 main 上报关窗会丢的脏 tab 计数', () => {
 
     openDirty('/w/a.ts');
     await vi.waitFor(() =>
-      expect(h.reportDirtyState).toHaveBeenLastCalledWith(ds(['/w/a.ts#1'])),
+      expect(h.reportDirtyState).toHaveBeenLastCalledWith(ds([g('/w/a.ts')])),
     );
 
     act(() => useEditorStore.getState().markSaved('/w/a.ts'));
@@ -149,7 +150,7 @@ describe('DockShell 向 main 上报关窗会丢的脏 tab 计数', () => {
 
     act(() => setAutoSaveFailed(owner, true));
     await vi.waitFor(() =>
-      expect(h.reportDirtyState).toHaveBeenLastCalledWith(ds(['/w/a.md#1'])),
+      expect(h.reportDirtyState).toHaveBeenLastCalledWith(ds([g('/w/a.md')])),
     );
 
     act(() => setAutoSaveFailed(owner, false));
@@ -165,15 +166,15 @@ describe('DockShell 向 main 上报关窗会丢的脏 tab 计数', () => {
     openDirty('/w/b.md');
     openDirty('/w/a.md');
     await vi.waitFor(() =>
-      expect(h.reportDirtyState).toHaveBeenLastCalledWith(ds(['/w/b.md#1'])),
+      expect(h.reportDirtyState).toHaveBeenLastCalledWith(ds([g('/w/b.md')])),
     );
     act(() => useEditorStore.getState().renamePath('/w/b.md', '/w/c.md'));
     await vi.waitFor(() =>
-      expect(h.reportDirtyState).toHaveBeenLastCalledWith(ds(['/w/c.md#1'])),
+      expect(h.reportDirtyState).toHaveBeenLastCalledWith(ds([g('/w/c.md')])),
     );
     act(() => releaseAutoSave(owner));
     await vi.waitFor(() =>
-      expect(h.reportDirtyState).toHaveBeenLastCalledWith(ds(['/w/c.md#1', '/w/a.md#1'])),
+      expect(h.reportDirtyState).toHaveBeenLastCalledWith(ds([g('/w/c.md'), g('/w/a.md')])),
     );
   });
 });
@@ -204,8 +205,8 @@ describe('flush 握手的「保存」分支', () => {
     expect(h.notifyError).toHaveBeenCalledTimes(1);
     expect(h.sendFlushAck).toHaveBeenCalledWith(1, {
       saveFailed: true,
-      state: ds(['/w/a.ts#1']),
-      remaining: ds(['/w/a.ts#1']),
+      state: ds([g('/w/a.ts')]),
+      remaining: ds([g('/w/a.ts')]),
     });
   });
 
@@ -218,7 +219,7 @@ describe('flush 握手的「保存」分支', () => {
     });
 
     expect(h.writeFile).not.toHaveBeenCalled();
-    expect(h.sendFlushAck).toHaveBeenCalledWith(1, { state: ds(['/w/a.ts#1']) });
+    expect(h.sendFlushAck).toHaveBeenCalledWith(1, { state: ds([g('/w/a.ts')]) });
   });
 
   it('不带 save、无脏 tab → 回执带空的最终脏态', async () => {
@@ -264,8 +265,8 @@ describe('flush 握手的「保存」分支', () => {
     expect(h.notifyError).toHaveBeenCalledTimes(1);
     expect(h.sendFlushAck).toHaveBeenCalledWith(1, {
       saveFailed: true,
-      state: ds(['/w/a.ts#1']),
-      remaining: ds(['/w/a.ts#1']),
+      state: ds([g('/w/a.ts')]),
+      remaining: ds([g('/w/a.ts')]),
     });
   });
 
@@ -283,8 +284,8 @@ describe('flush 握手的「保存」分支', () => {
     expect(text).toContain(t('dialog.unsaved_close.disk_changed_note', { count: 1 }));
     expect(h.sendFlushAck).toHaveBeenCalledWith(1, {
       saveFailed: true,
-      state: ds(['/w/a.ts#1']),
-      remaining: ds(['/w/a.ts#1']),
+      state: ds([g('/w/a.ts')]),
+      remaining: ds([g('/w/a.ts')]),
     });
   });
 });
@@ -303,8 +304,8 @@ describe('flush 握手的最终脏检查', () => {
       await h.flushCb.current!({ windowId: 1, requestId: 9 });
     });
     expect(h.sendFlushAck).toHaveBeenLastCalledWith(1, {
-      state: ds(['/w/a.md#1']),
-      remaining: ds(['/w/a.md#1']),
+      state: ds([g('/w/a.md')]),
+      remaining: ds([g('/w/a.md')]),
       requestId: 9,
     });
   });
@@ -323,8 +324,8 @@ describe('flush 握手的最终脏检查', () => {
     expect(h.sendFlushAck).toHaveBeenLastCalledWith(1, {
       saveFailed: false,
       // 保存后变干净、flush 期间再输入 → 第二次变脏
-      state: ds(['/w/a.ts#2']),
-      remaining: ds(['/w/a.ts#2']),
+      state: ds([g('/w/a.ts')]),
+      remaining: ds([g('/w/a.ts')]),
       requestId: 10,
     });
   });
@@ -337,8 +338,8 @@ describe('flush 握手的最终脏检查', () => {
       await h.flushCb.current!({ windowId: 1, requestId: 11 });
     });
     expect(h.sendFlushAck).toHaveBeenLastCalledWith(1, {
-      state: ds(['/w/b.ts#1']),
-      remaining: ds(['/w/b.ts#1']),
+      state: ds([g('/w/b.ts')]),
+      remaining: ds([g('/w/b.ts')]),
       requestId: 11,
     });
   });
@@ -403,7 +404,7 @@ describe('flush 回执携带最终脏态', () => {
     await mountShell();
     openDirty('/w/a.ts');
     await vi.waitFor(() =>
-      expect(h.reportDirtyState).toHaveBeenLastCalledWith(ds(['/w/a.ts#1'])),
+      expect(h.reportDirtyState).toHaveBeenLastCalledWith(ds([g('/w/a.ts')])),
     );
     h.reportDirtyState.mockClear();
 
