@@ -169,6 +169,14 @@ export const en = {
   'editor.welcome.hint_prefix': 'Click a file in Explorer ·',
   'editor.welcome.save': 'Save',
   'editor.autosave_failed': 'Auto-save failed',
+
+  // 关窗 / 退出时的未保存确认(main dialog.showMessageBox)+ 保存失败提示(renderer toast)
+  'dialog.unsaved_close.message': 'Do you want to save the changes you made to {count} file(s)?',
+  'dialog.unsaved_close.detail': "Your changes will be lost if you don't save them.",
+  'dialog.unsaved_close.untitled_note':
+    '{count} untitled draft(s) cannot be saved (Save As is not supported yet) and will be discarded.',
+  'dialog.unsaved_close.dont_save': "Don't Save",
+  'dialog.unsaved_close.save_failed': 'Failed to save {count} file(s). The window was not closed.',
   'dock.empty.message': 'All panels are closed.',
   'dock.empty.restore': 'Restore default layout',
   'panels.explorer.loading_or_empty': 'Loading or empty folder',

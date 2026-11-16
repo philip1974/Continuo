@@ -159,6 +159,13 @@ export const ko: Record<TranslationKey, string> = {
   'editor.welcome.hint_prefix': '탐색기에서 파일을 클릭하여 열기 ·',
   'editor.welcome.save': '저장',
   'editor.autosave_failed': '자동 저장 실패',
+
+  'dialog.unsaved_close.message': '{count}개 파일의 변경 내용을 저장하시겠습니까?',
+  'dialog.unsaved_close.detail': '저장하지 않으면 변경 내용이 손실됩니다.',
+  'dialog.unsaved_close.untitled_note':
+    '제목 없는 초안 {count}개는 저장할 수 없으며(다른 이름으로 저장 미지원) 삭제됩니다.',
+  'dialog.unsaved_close.dont_save': '저장 안 함',
+  'dialog.unsaved_close.save_failed': '{count}개 파일을 저장하지 못해 창을 닫지 않았습니다.',
   'dock.empty.message': '모든 패널이 닫혀 있습니다.',
   'dock.empty.restore': '기본 레이아웃 복원',
   'panels.explorer.loading_or_empty': '로딩 중이거나 빈 폴더',

@@ -11,6 +11,9 @@
 //   - 首次(未 started)        → 'run'   :preventDefault + 跑清理,完成后 markFinished()+app.quit()
 //   - 清理在途(started,未 finished)→ 'block' :preventDefault 拦截,等在途清理跑完由内部 quit 放行
 //   - 清理已完成(finished)      → 'allow' :放行(这正是内部 app.quit() 的重入)
+//
+// 退出可被用户中止(脏文件确认点「取消」/ 「保存」失败):cancel() 把 started 复位,
+// 下次 Cmd+Q 重新 'run'(否则守卫卡在「在途」,之后所有 quit 都被 block,应用再也退不出)。
 
 export type QuitCleanupAction = 'run' | 'block' | 'allow';
 
@@ -19,6 +22,8 @@ export interface QuitCleanupGuard {
   onBeforeQuit: () => QuitCleanupAction;
   /** 清理全部完成、即将调用内部 app.quit() 之前调用 —— 让随后的重入放行。 */
   markFinished: () => void;
+  /** 本次退出被中止(清理尚未开始收尾):复位为未开始,下次 before-quit 重新 'run'。finished 后无效。 */
+  cancel: () => void;
 }
 
 export function makeQuitCleanupGuard(): QuitCleanupGuard {
@@ -33,6 +38,9 @@ export function makeQuitCleanupGuard(): QuitCleanupGuard {
     },
     markFinished() {
       finished = true;
+    },
+    cancel() {
+      if (!finished) started = false;
     },
   };
 }

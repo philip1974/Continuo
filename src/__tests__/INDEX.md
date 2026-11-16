@@ -367,6 +367,13 @@
 
 - [`tabs.spec.tsx`](./design-system-tabs/tabs.spec.tsx)
 
+## [dirty-close-confirm](./dirty-close-confirm/README.md)
+
+- [`close-confirm-flow.spec.ts`](./dirty-close-confirm/close-confirm-flow.spec.ts)
+- [`dirty-close-dialog.spec.ts`](./dirty-close-confirm/dirty-close-dialog.spec.ts)
+- [`dockshell-save-on-close.spec.tsx`](./dirty-close-confirm/dockshell-save-on-close.spec.tsx)
+- [`renderer-dirty-close.spec.ts`](./dirty-close-confirm/renderer-dirty-close.spec.ts)
+
 ## [dock-api-ref(DockviewApi 单例 + focus/openOrFocus)](./dock-api-ref/README.md) `[contract]`
 
 - [`dock-api-ref.spec.ts`](./dock-api-ref/dock-api-ref.spec.ts)

@@ -34,6 +34,23 @@ describe('topic49 codexF1 · before-quit 重入守卫', () => {
     expect(g.onBeforeQuit()).toBe('allow');
   });
 
+  it('退出被用户取消(脏文件确认点了取消 / 保存失败)→ cancel 复位,再次 quit 重新 run', () => {
+    const g = makeQuitCleanupGuard();
+    expect(g.onBeforeQuit()).toBe('run');
+    g.cancel();
+    // 不能卡在「清理在途」:下次 Cmd+Q 必须重新走确认 + 清理。
+    expect(g.onBeforeQuit()).toBe('run');
+    expect(g.onBeforeQuit()).toBe('block');
+  });
+
+  it('清理已完成后 cancel 无效(不回退已放行的退出)', () => {
+    const g = makeQuitCleanupGuard();
+    g.onBeforeQuit();
+    g.markFinished();
+    g.cancel();
+    expect(g.onBeforeQuit()).toBe('allow');
+  });
+
   it('完整时序:run → (在途)block → finished → allow', () => {
     const g = makeQuitCleanupGuard();
     const trail: string[] = [];
