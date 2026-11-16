@@ -381,9 +381,16 @@ function requestWindowFlush(
   });
 }
 
+// e2e 诊断:退出链路(app.quit 之后的窗口 close / closed、will-quit、quit)逐事件打点,定位偶发的退出不结束;
+// 仅 CONTINUO_E2E 下输出。
+function e2eQuitTrace(message: string): void {
+  if (process.env['CONTINUO_E2E'] === '1') console.log(`[quit-trace] ${message} @${Date.now()}`);
+}
+
 function wireWindowCloseFlush(win: BrowserWindow): void {
   const windowId = win.id; // closed 之后窗口已销毁,提前取 id
   win.on('closed', () => {
+    e2eQuitTrace(`win ${windowId} closed`);
     flushReadyWindowIds.delete(windowId);
     dirtyStates.delete(windowId);
     closeFlowGen.delete(windowId);
@@ -396,6 +403,7 @@ function wireWindowCloseFlush(win: BrowserWindow): void {
   // 旧 promise 干等满超时才放行,且 flush 完成后可能重复 win.close()。
   let flushing = false;
   win.on('close', (event) => {
+    e2eQuitTrace(`win ${windowId} close flushed=${flushed || flushedOnQuit.has(windowId)} flushing=${flushing}`);
     // flushedOnQuit 也要查:`before-quit` 路径可能已经 flush 过本窗并写入
     // flushedOnQuit,但本闭包的局部 `flushed` 不会被它更新 —— 只看局部量会让
     // app.quit() 触发 close 时对同一窗口重复 flush(多一次 IPC 往返 + preventDefault
@@ -1245,8 +1253,14 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
+  e2eQuitTrace('window-all-closed');
   if (process.platform !== 'darwin') app.quit();
 });
+app.on('will-quit', (event) => {
+  // 放在其它 will-quit 监听之后检查是否被阻止(仅诊断,不改变行为)。
+  setImmediate(() => e2eQuitTrace(`will-quit prevented=${event.defaultPrevented}`));
+});
+app.on('quit', () => e2eQuitTrace('quit'));
 
 app.on('before-quit', async (event) => {
   const action = quitGuard.onBeforeQuit();
