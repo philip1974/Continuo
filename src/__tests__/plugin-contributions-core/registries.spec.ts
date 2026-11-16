@@ -310,7 +310,8 @@ describe('CommandRegistry', () => {
     const msg = String(warn.mock.calls[0]?.[0]);
     expect(msg).toContain('mod+s');
     expect(msg).toContain('"b"');
-    expect(msg).toContain('只有其中一个会响应');
+    expect(msg).toContain('默认快捷键');
+    expect(msg).toContain('未被用户覆盖时只有其中一个会响应');
     expect(msg).not.toMatch(/先注册者生效|后注册者被遮蔽|后注册赢/);
     // 两个 command 都还在(只是 hotkey 冲突,getAll 不去重)
     expect(r.getAll()).toHaveLength(2);

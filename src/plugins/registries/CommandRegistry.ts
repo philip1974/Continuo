@@ -147,9 +147,10 @@ export class CommandRegistry extends KeyedRegistry<CommandSpec> {
       (this.hotkeyCounts.get(canonicalHotkey(spec.hotkey, this.platform)) ?? 0) > 0
     ) {
       // 只陈述冲突事实,不断言谁生效:useCommandHotkeys 按 Map 迭代序先命中者执行,而同 id 替换时
-      // Map.set 保留原插入位置,迭代序未必等于注册时间先后。
+      // Map.set 保留原插入位置,迭代序未必等于注册时间先后。这里比较的是默认快捷键;用户在快捷键
+      // 设置里覆盖其中一个后冲突即解除,故文案限定"未被用户覆盖时"。
       console.warn(
-        `[command-registry] hotkey "${spec.hotkey}"(命令 "${spec.id}")与已注册的其他命令冲突,只有其中一个会响应`,
+        `[command-registry] 默认快捷键(hotkey) "${spec.hotkey}"(命令 "${spec.id}")与已注册的其他命令冲突,未被用户覆盖时只有其中一个会响应`,
       );
     }
     if (spec.hotkey) this.incrementHotkey(spec.hotkey);

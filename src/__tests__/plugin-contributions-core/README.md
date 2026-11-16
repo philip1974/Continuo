@@ -30,7 +30,7 @@
 ### CommandRegistry 特有
 
 - `CommandSpec`:`{ id, title, hotkey?, fn }`
-- hotkey 冲突(不同 id 同组合):warn 一次,文案只陈述事实(「hotkey K(命令 X)与已注册的其他命令冲突,只有其中一个会响应」),**不断言谁生效**(useCommandHotkeys 按 Map 迭代序先命中者执行,同 id 替换时 Map.set 保留原插入位置,迭代序未必等于注册先后);两条命令都保留在 getAll;按 `canonicalHotkey(combo, platform)` 比较(修饰键顺序 / `mod`↔`cmd`(mac)或 `ctrl`(其它)/ 主键别名 `return`↔`enter` 运行时等价即算冲突),platform 与运行时同源 `detectPlatform()`
+- hotkey 冲突(不同 id 同组合):warn 一次,文案只陈述事实(「默认快捷键 K(命令 X)与已注册的其他命令冲突,未被用户覆盖时只有其中一个会响应」;用户 override 后冲突即解除),**不断言谁生效**(useCommandHotkeys 按 Map 迭代序先命中者执行,同 id 替换时 Map.set 保留原插入位置,迭代序未必等于注册先后);两条命令都保留在 getAll;按 `canonicalHotkey(combo, platform)` 比较(修饰键顺序 / `mod`↔`cmd`(mac)或 `ctrl`(其它)/ 主键别名 `return`↔`enter` 运行时等价即算冲突),platform 与运行时同源 `detectPlatform()`
 - 同 id 重复注册(插件 reload)先扣减被替换命令的 hotkey 占用再判冲突 → hotkey 不变不误报冲突
 - hotkey 含未知修饰符(主键前的段不在 mod/cmd/ctrl/shift/alt/option)→ register 抛 invalid hotkey
 
