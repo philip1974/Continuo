@@ -1,12 +1,13 @@
 import { create } from 'zustand';
 import { asRecord } from '../../electron/shared/as-record';
 import { coApi } from '@/lib/co-api';
-import type {
-  DebugBreakpoint,
-  DebugScope,
-  DebugStackFrame,
-  DebugVariable,
-  DebugViewEvent,
+import {
+  DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX,
+  type DebugBreakpoint,
+  type DebugScope,
+  type DebugStackFrame,
+  type DebugVariable,
+  type DebugViewEvent,
 } from '../../electron/shared/debug-view-channels';
 
 export type {
@@ -50,6 +51,8 @@ type DebugState = {
 
 const EMPTY_DEBUG_SESSIONS = new Map<string, DebugSessionShadow>();
 let unsubscribeDebugEvents: (() => void) | null = null;
+/** 同步代际:resetDebugStoreForTest 之后迟到的 subscribe 快照不写回。 */
+let debugSyncGeneration = 0;
 
 function emptySession(id: string): DebugSessionShadow {
   return {
@@ -126,6 +129,59 @@ function asVariable(value: unknown): DebugVariable | null {
       : {}),
     ...(typeof raw.truncated === 'boolean' ? { truncated: raw.truncated } : {}),
   };
+}
+
+function asBreakpoint(value: unknown): DebugBreakpoint | null {
+  const raw = asRecord(value);
+  if (
+    typeof raw.file !== 'string' ||
+    typeof raw.line !== 'number' ||
+    typeof raw.verified !== 'boolean'
+  ) {
+    return null;
+  }
+  return {
+    file: raw.file,
+    line: raw.line,
+    ...(typeof raw.column === 'number' ? { column: raw.column } : {}),
+    verified: raw.verified,
+    ...(typeof raw.message === 'string' ? { message: raw.message } : {}),
+  };
+}
+
+interface SessionSnapshot {
+  readonly id: string;
+  readonly stop?: { readonly stopSeq: number; readonly reason: string; readonly threadId?: number };
+  /** 按 source 分组(file → 该 source 的完整集合),总数已按上限截断。 */
+  readonly breakpointsBySource: ReadonlyMap<string, readonly DebugBreakpoint[]>;
+}
+
+// subscribe 快照来自 IPC:逐字段校验(同 asFrame 等),断点总数按 main 同一上限截断。
+function asSessionSnapshot(value: unknown): SessionSnapshot | null {
+  const raw = asRecord(value);
+  if (typeof raw.session_id !== 'string') return null;
+  const stopRaw = asRecord(raw.stop);
+  const stop =
+    typeof stopRaw.stopSeq === 'number' && typeof stopRaw.reason === 'string'
+      ? {
+          stopSeq: stopRaw.stopSeq,
+          reason: stopRaw.reason,
+          ...(typeof stopRaw.threadId === 'number' ? { threadId: stopRaw.threadId } : {}),
+        }
+      : undefined;
+  const breakpointsBySource = new Map<string, readonly DebugBreakpoint[]>();
+  let budget = DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX;
+  for (const group of Array.isArray(raw.breakpointsBySource) ? raw.breakpointsBySource : []) {
+    const groupRaw = asRecord(group);
+    if (typeof groupRaw.file !== 'string' || !Array.isArray(groupRaw.breakpoints)) continue;
+    const breakpoints = (groupRaw.breakpoints as readonly unknown[])
+      .map(asBreakpoint)
+      .filter((bp): bp is DebugBreakpoint => bp !== null)
+      .slice(0, Math.max(budget, 0));
+    budget -= breakpoints.length;
+    breakpointsBySource.set(groupRaw.file, breakpoints);
+  }
+  return { id: raw.session_id, ...(stop ? { stop } : {}), breakpointsBySource };
 }
 
 function updateActiveSession(
@@ -335,18 +391,92 @@ export const useDebugStore = create<DebugState>((set, get) => ({
     }),
 }));
 
+/**
+ * 用 subscribe 快照初始化 store(renderer 重载后 store 为空、main 只推增量事件)。先订阅事件、后取快照:
+ * 快照送达前已收到事件的会话(touched),事件比快照新 —— 不改其停点,只补它尚无记录的 source 的断点;
+ * 已不在 store 里的(已结束 / 已继续的未知会话)不复活。
+ */
+function hydrateFromSnapshot(data: unknown, touched: ReadonlySet<string>): void {
+  const snapshots = (Array.isArray(asRecord(data).sessions) ? (asRecord(data).sessions as readonly unknown[]) : [])
+    .map(asSessionSnapshot)
+    .filter((snapshot): snapshot is SessionSnapshot => snapshot !== null);
+  const pulls: Array<{ id: string; stopSeq: number; threadId?: number }> = [];
+  useDebugStore.setState((state) => {
+    const sessions = new Map(state.sessions);
+    let stoppedOrder = state.stoppedOrder;
+    for (const snapshot of snapshots) {
+      const current = sessions.get(snapshot.id);
+      if (touched.has(snapshot.id)) {
+        if (!current) continue;
+        const known = new Set(current.breakpoints.map((bp) => bp.file));
+        const missing = [...snapshot.breakpointsBySource]
+          .filter(([file]) => !known.has(file))
+          .flatMap(([, breakpoints]) => breakpoints);
+        if (missing.length > 0) {
+          sessions.set(snapshot.id, { ...current, breakpoints: [...current.breakpoints, ...missing] });
+        }
+        continue;
+      }
+      const base = emptySession(snapshot.id);
+      const breakpoints = [...snapshot.breakpointsBySource.values()].flat();
+      if (!snapshot.stop) {
+        sessions.set(snapshot.id, { ...base, breakpoints });
+        continue;
+      }
+      stoppedOrder += 1;
+      sessions.set(snapshot.id, {
+        ...base,
+        breakpoints,
+        stopped: {
+          reason: snapshot.stop.reason,
+          stopSeq: snapshot.stop.stopSeq,
+          pausedEpoch: snapshot.stop.stopSeq,
+          ...(snapshot.stop.threadId !== undefined ? { threadId: snapshot.stop.threadId } : {}),
+        },
+        lastStoppedOrder: stoppedOrder,
+      });
+      pulls.push({
+        id: snapshot.id,
+        stopSeq: snapshot.stop.stopSeq,
+        ...(snapshot.stop.threadId !== undefined ? { threadId: snapshot.stop.threadId } : {}),
+      });
+    }
+    return {
+      sessions,
+      stoppedOrder,
+      activeSessionId: state.activeSessionId ?? updateActiveSession(sessions),
+    };
+  });
+  for (const pull of pulls) void pullStackAndScopes(pull.id, pull.stopSeq, pull.threadId);
+}
+
 // 幂等(模块级单例):renderer 启动入口(main-app init)尽早调用一次,DebugPanel 挂载时再调也无副作用。
 // 不能只靠面板挂载:main 只推增量事件,面板没开时到达的停点 / 断点会永久丢失。
+// renderer 重载(Cmd+R)后 store 为空:subscribe 返回本窗口会话的快照(停点 + 断点),据此恢复。
 export function startDebugStoreSync(): void {
   if (unsubscribeDebugEvents) return;
+  const generation = ++debugSyncGeneration;
+  const touched = new Set<string>();
+  let snapshotApplied = false;
   unsubscribeDebugEvents = coApi.debug.onEvent((event) => {
+    if (!snapshotApplied) touched.add(event.sessionId);
     void useDebugStore.getState().ingestEvent(event);
   });
-  void coApi.debug.subscribe();
+  void coApi.debug.subscribe().then(
+    (result) => {
+      snapshotApplied = true;
+      if (!result.ok || generation !== debugSyncGeneration) return;
+      hydrateFromSnapshot(result.data, touched);
+    },
+    () => {
+      snapshotApplied = true;
+    },
+  );
 }
 
 export function resetDebugStoreForTest(): void {
   unsubscribeDebugEvents?.();
   unsubscribeDebugEvents = null;
+  debugSyncGeneration += 1;
   useDebugStore.getState().reset();
 }

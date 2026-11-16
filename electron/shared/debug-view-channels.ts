@@ -67,6 +67,36 @@ export type DebugViewEvent =
       readonly reason: string;
     };
 
+/**
+ * subscribe 快照里每个会话的断点总数上限(IPC payload 封顶;main 截断、renderer 校验时同样截断)。
+ * 断点逐个由 agent / 用户设,正常远小于此。
+ */
+export const DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX = 1000;
+
+/**
+ * subscribe 返回的会话快照:renderer 重载(Cmd+R)后 store 为空、main 只推增量事件,据此恢复停点与断点,
+ * 之后的事件照常增量。stop / breakpointsBySource 与 stopped / breakpoints-changed 事件同形。
+ */
+export interface DebugViewSessionSnapshot {
+  readonly session_id: string;
+  readonly state: string;
+  readonly name?: string;
+  readonly stopped_reason?: string;
+  readonly owner_window_id: number;
+  /** 当前停点(会话停住时才有)。 */
+  readonly stop?: {
+    readonly stopSeq: number;
+    readonly reason: string;
+    readonly threadId?: number;
+    readonly description?: string;
+  };
+  /** 按 source 的完整断点集合(同 breakpoints-changed 事件的 file / breakpoints)。 */
+  readonly breakpointsBySource: readonly {
+    readonly file: string;
+    readonly breakpoints: readonly DebugBreakpoint[];
+  }[];
+}
+
 export interface DebugGetStackInput {
   readonly sessionId: string;
   readonly threadId?: number;

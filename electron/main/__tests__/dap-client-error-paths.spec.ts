@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -321,14 +321,74 @@ describe('解码器缓冲', () => {
   });
 });
 
-describe('socket 路径', () => {
-  it('同一毫秒构造的两个 client 路径不同(并发 launch 不串线)', () => {
-    if (process.platform === 'win32') return;
-    vi.useFakeTimers();
-    vi.setSystemTime(1_700_000_000_000);
-    const a = new DapClient({ adapterPath: '/nonexistent/adapter.js' });
-    const b = new DapClient({ adapterPath: '/nonexistent/adapter.js' });
-    expect(a.socketPath).not.toBe(b.socketPath);
+// 终审:socket 曾直接放在 os.tmpdir()(路径过长 / Linux 上回退到全局共享的 /tmp),本机其它用户能否连上
+// 只取决于 umask。现放进 mkdtemp 建的私有目录(0700)。同一用户的其它进程不在威胁模型内。
+describe.skipIf(process.platform === 'win32')('socket 路径(POSIX 私有目录)', () => {
+  async function listeningAdapter(): Promise<{ dir: string; adapterPath: string }> {
+    const dir = await mkdtemp(path.join(tmpdir(), 'dap-listen-'));
+    const adapterPath = path.join(dir, 'listen.cjs');
+    // 在 argv 给的 socket 路径上监听,让 spawnServer 能连上。
+    await writeFile(
+      adapterPath,
+      "require('node:net').createServer((s) => s.on('error', () => {})).listen(process.argv[2]);\n",
+    );
+    return { dir, adapterPath };
+  }
+
+  it('socket 位于 0700 私有目录中(不受 umask 影响);dispose 后 socket 与目录都被删除', async () => {
+    const fixture = await listeningAdapter();
+    const previousUmask = process.umask(0o000);
+    const client = new DapClient({
+      adapterPath: fixture.adapterPath,
+      readyTimeoutMs: 5_000,
+      connectIntervalMs: 20,
+    });
+    try {
+      await client.spawnServer();
+      process.umask(previousUmask);
+      const socketPath = client.socketPath!;
+      const dir = path.dirname(socketPath);
+      expect(statSync(dir).mode & 0o777).toBe(0o700);
+      expect(statSync(dir).uid).toBe(process.getuid!());
+      expect(statSync(socketPath).isSocket()).toBe(true);
+      // unix socket 路径上限(macOS 104 / Linux 108 字节,含结尾 NUL)。
+      expect(Buffer.byteLength(socketPath)).toBeLessThan(104);
+
+      await client.dispose();
+      expect(existsSync(socketPath)).toBe(false);
+      expect(existsSync(dir)).toBe(false);
+    } finally {
+      process.umask(previousUmask);
+      await client.dispose();
+      await rm(fixture.dir, { recursive: true, force: true });
+    }
+  });
+
+  it('并发的两个 client 各用各的私有目录(并发 launch 不串线)', async () => {
+    const fixture = await listeningAdapter();
+    const a = new DapClient({ adapterPath: fixture.adapterPath, connectIntervalMs: 20 });
+    const b = new DapClient({ adapterPath: fixture.adapterPath, connectIntervalMs: 20 });
+    try {
+      await Promise.all([a.spawnServer(), b.spawnServer()]);
+      expect(path.dirname(a.socketPath!)).not.toBe(path.dirname(b.socketPath!));
+    } finally {
+      await Promise.all([a.dispose(), b.dispose()]);
+      await rm(fixture.dir, { recursive: true, force: true });
+    }
+  });
+
+  it('adapter 启动失败 → dispose 同样删除私有目录', async () => {
+    const client = new DapClient({
+      adapterPath: '/nonexistent/adapter.js',
+      nodePath: '/nonexistent/continuo-test-node',
+      readyTimeoutMs: 1_000,
+      connectIntervalMs: 10,
+    });
+    await expect(client.spawnServer()).rejects.toThrow();
+    const dir = path.dirname(client.socketPath!);
+    expect(existsSync(dir)).toBe(true);
+    await client.dispose();
+    expect(existsSync(dir)).toBe(false);
   });
 });
 

@@ -303,19 +303,25 @@ function sleep(ms: number): Promise<void> {
   });
 }
 
-// 进程内自增序号:只靠 pid + 毫秒时间戳时,同一毫秒的两个并发 launch 会拿到同一路径 —— 后者 spawn 前
-// rm 掉前者的 socket,前者连到后者的 adapter,会话串线。
-let socketPathSeq = 0;
+// unix socket 路径上限 macOS 104 / Linux 108 字节(含结尾 NUL),留余量。
+const SOCKET_PATH_MAX_BYTES = 100;
+const SOCKET_DIR_PREFIX = 'cdap-';
+const SOCKET_FILE_NAME = 'dap.sock';
 
-function createSocketPath(): string | null {
-  if (process.platform === 'win32') return null;
-  const baseDir = os.tmpdir().length < 60 ? os.tmpdir() : '/tmp';
-  const unique = `${process.pid}-${Date.now()}-${socketPathSeq++}`;
-  const socketPath = path.join(baseDir, `continuo-dap-${unique}.sock`);
-  if (socketPath.length > 100) {
-    return path.join('/tmp', `cdap-${unique}.sock`);
-  }
-  return socketPath;
+/**
+ * POSIX:在 os.tmpdir()(过长时回退 /tmp)下用 mkdtemp 建私有目录(0700),socket 放其中 —— 直接放 tmpdir /
+ * 全局共享的 /tmp 时,本机其它用户能否连上 adapter 只取决于 umask。mkdtemp 的随机名同时保证并发 launch 各用
+ * 各的路径(不串线)。同一用户的其它进程不在威胁模型内(它们本可直接以该用户身份执行代码),不做鉴权。
+ */
+async function createPrivateSocketDir(): Promise<string> {
+  // mkdtemp 追加 6 个随机字符。
+  const fits = (base: string): boolean =>
+    Buffer.byteLength(path.join(base, `${SOCKET_DIR_PREFIX}XXXXXX`, SOCKET_FILE_NAME)) <= SOCKET_PATH_MAX_BYTES;
+  const baseDir = fits(os.tmpdir()) ? os.tmpdir() : '/tmp';
+  const dir = await fs.mkdtemp(path.join(baseDir, SOCKET_DIR_PREFIX));
+  // mkdtemp 本身以 0700 创建,但仍受 umask 影响(umask 只会更严);显式 chmod 钉死权限。
+  await fs.chmod(dir, 0o700);
+  return dir;
 }
 
 /** TCP 模式下 adapter 监听与客户端连接共用的地址(两端必须一致)。 */
@@ -398,7 +404,6 @@ export class DapClient {
   readonly readyTimeoutMs: number;
   readonly requestTimeoutMs: number;
   readonly connectIntervalMs: number;
-  readonly socketPath: string | null;
   readonly tcpPort: number;
   readonly transcript: DapTranscriptEntry[];
 
@@ -420,6 +425,11 @@ export class DapClient {
   /** disposeWhenIdle 的等待者:在途请求全部结算(响应 / 失败 / 超时)时唤醒。 */
   private idleWaiters: Array<() => void> = [];
   private readonly traceId: string;
+  /** 未显式给 socketPath 时,spawnServer 在 POSIX 上自建私有目录(dispose 时连同 socket 删除)。 */
+  private readonly autoSocketPath: boolean;
+  /** 本 client 建的私有 socket 目录(只有它负责删除;child 共用父的路径,不持有)。 */
+  private socketDir: string | null = null;
+  private socketPathValue: string | null;
 
   constructor(options: DapClientOptions = {}) {
     this.adapterPath = options.adapterPath ?? defaultAdapterPath;
@@ -427,8 +437,8 @@ export class DapClient {
     this.readyTimeoutMs = options.readyTimeoutMs ?? 15_000;
     this.requestTimeoutMs = options.requestTimeoutMs ?? 20_000;
     this.connectIntervalMs = options.connectIntervalMs ?? 100;
-    this.socketPath =
-      options.socketPath === undefined ? createSocketPath() : options.socketPath;
+    this.autoSocketPath = options.socketPath === undefined && process.platform !== 'win32';
+    this.socketPathValue = options.socketPath ?? null;
     this.tcpPort = options.tcpPort ?? randomTcpPort();
     this.transcript = options.transcript ?? [];
     this.startDebuggingHandler = options.startDebuggingHandler ?? null;
@@ -436,6 +446,16 @@ export class DapClient {
   }
 
   async spawnServer(): Promise<this> {
+    if (this.autoSocketPath && this.socketDir === null) {
+      const dir = await createPrivateSocketDir();
+      // 建目录期间已被 dispose:dispose 看不到它,就地删掉,不再 spawn。
+      if (this.disposed) {
+        await fs.rm(dir, { recursive: true, force: true });
+        throw new Error('DAP client disposed');
+      }
+      this.socketDir = dir;
+      this.socketPathValue = path.join(dir, SOCKET_FILE_NAME);
+    }
     const endpoint = this.socketPath ?? String(this.tcpPort);
     if (!endpoint) {
       throw new Error('no DAP endpoint configured');
@@ -455,6 +475,7 @@ export class DapClient {
     delete adapterEnv.CONTINUO_MCP_TOKEN;
     // TCP(Windows):dapDebugServer.js 的第二个参数是 host,默认 localhost 可能解析成 ::1,
     // 而 connectOnce 固定连 127.0.0.1 → 显式传同一地址。socket 路径模式不需要 host。
+    // 127.0.0.1 端口本机其它用户也能连:改命名管道 + 收紧 ACL 见 doc/follow-ups.md「Windows 上 DAP 端点改用命名管道」。
     const adapterArgs = this.socketPath
       ? [this.adapterPath, endpoint]
       : [this.adapterPath, endpoint, DAP_TCP_HOST];
@@ -813,6 +834,18 @@ export class DapClient {
         await fs.rm(this.socketPath, { force: true });
       }
     }
+    if (this.socketDir) {
+      await fs.rm(this.socketDir, { recursive: true, force: true });
+      this.socketDir = null;
+    }
+  }
+
+  /**
+   * adapter 监听的 unix socket 路径。POSIX 默认在 spawnServer 时于私有目录内新建(此前为 null);
+   * Windows 为 null(用 TCP)。
+   */
+  get socketPath(): string | null {
+    return this.socketPathValue;
   }
 
   /** debug adapter 子进程 pid(未 spawn / child session → undefined)。 */

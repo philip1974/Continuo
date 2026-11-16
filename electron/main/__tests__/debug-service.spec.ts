@@ -28,7 +28,10 @@ import type {
   DapRequestMessage,
   DapResponseMessage,
 } from '../services/dap-client';
-import type { DebugViewEvent } from '../../shared/debug-view-channels';
+import {
+  DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX,
+  type DebugViewEvent,
+} from '../../shared/debug-view-channels';
 import { ERROR_CODES } from '../../shared/error-codes';
 import { codedError } from '../../shared/error-message';
 
@@ -1317,6 +1320,98 @@ describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
     });
     expect(debugSessions.get(sessionId)).toBeUndefined();
   });
+
+  // 终审:renderer 重载(Cmd+R)后 store 清空,main 只推增量事件 → 订阅快照须足以恢复停点与断点。
+  it('viewSnapshot:按窗口返回会话状态、当前停点与按 source 的断点快照(校正后行号)', async () => {
+    let pid = 7000;
+    const clients: FakeDapClient[] = [];
+    const { processOps } = makeFakeService();
+    const service = new DebugService({
+      createDapClient: () => {
+        const client = new FakeDapClient((pid += 1));
+        clients.push(client);
+        return client;
+      },
+      processOps,
+      workspace: PERMISSIVE_WORKSPACE,
+    });
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work', name: 'app' },
+      { ownerWindowId: 21, controllerToken: 'agent-snap' },
+    );
+    const { session_id: otherId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      { ownerWindowId: 22, controllerToken: 'agent-snap' },
+    );
+    const parent = clients[0]!;
+    parent.adjustBreakpointLine = (line) => (line === 3 ? 4 : line);
+    await service.setBreakpoints(sessionId, { file: '/a.js', line: 3 });
+    await service.setBreakpoints(sessionId, { file: '/a.js', line: 9 });
+    await service.setBreakpoints(sessionId, { file: '/b.js', line: 2 });
+    await service.setBreakpoints(otherId, { file: '/c.js', line: 1 });
+    const waiting = service.waitForStop(sessionId, { timeoutMs: 5_000 });
+    await vi.waitFor(() => expect(parent.requestLog.some((r) => r.command === 'launch')).toBe(true));
+    parent.emit('stopped', { reason: 'breakpoint', threadId: 0, description: 'Paused on breakpoint' });
+    await waiting;
+
+    expect(service.viewSnapshot(21)).toEqual([
+      {
+        session_id: sessionId,
+        state: 'stopped',
+        name: 'app',
+        stopped_reason: 'breakpoint',
+        owner_window_id: 21,
+        stop: { stopSeq: 1, reason: 'breakpoint', threadId: 0, description: 'Paused on breakpoint' },
+        breakpointsBySource: [
+          {
+            file: '/a.js',
+            breakpoints: [
+              { file: '/a.js', line: 4, verified: true },
+              { file: '/a.js', line: 9, verified: true },
+            ],
+          },
+          { file: '/b.js', breakpoints: [{ file: '/b.js', line: 2, verified: true }] },
+        ],
+      },
+    ]);
+    // 另一窗口只看到自己的会话;未停住的会话没有 stop。
+    expect(service.viewSnapshot(22)).toEqual([
+      expect.objectContaining({
+        session_id: otherId,
+        owner_window_id: 22,
+        breakpointsBySource: [{ file: '/c.js', breakpoints: [{ file: '/c.js', line: 1, verified: true }] }],
+      }),
+    ]);
+    expect(service.viewSnapshot(22)[0]).not.toHaveProperty('stop');
+
+    // 继续运行后快照不再带停点。
+    await service.continue(sessionId, { threadId: 0 });
+    expect(service.viewSnapshot(21)[0]).not.toHaveProperty('stop');
+    await service.cleanupAll('test');
+  });
+
+  it('viewSnapshot:每个会话的断点总数有上限(IPC payload 封顶)', async () => {
+    const { service } = makeFakeService();
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      { ownerWindowId: 23, controllerToken: 'agent-snap' },
+    );
+    const runtime = (service as unknown as {
+      runtimes: Map<string, { breakpoints: unknown[] }>;
+    }).runtimes.get(sessionId)!;
+    for (let i = 0; i < DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX + 50; i += 1) {
+      runtime.breakpoints.push({
+        source: i % 2 === 0 ? '/a.js' : '/b.js',
+        line: i + 1,
+        reportedBy: new Map(),
+        ids: new Map(),
+      });
+    }
+    const [snapshot] = service.viewSnapshot(23);
+    const total = snapshot!.breakpointsBySource.reduce((n, group) => n + group.breakpoints.length, 0);
+    expect(total).toBe(DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX);
+    await service.cleanupAll('test');
+  });
 });
 
 // 审计修复(codex):会话上限、未设断点时程序不启动、同文件多断点。
@@ -1709,6 +1804,77 @@ describe('DebugService fake adapter · 会话上限 / 程序起跑时机 / 按 s
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  // 终审:cleanupAll 只取消调用瞬间已登记的 launch,之后新发起的 launch 照常 spawn,退出时遗留 detached adapter。
+  it('cleanupAll 进行中发起 launch → 立即以退出错误拒绝,不 spawn adapter', async () => {
+    const parent = new FakeDapClient(1001);
+    let releaseSpawn: (() => void) | undefined;
+    parent.spawnServer = async function (this: FakeDapClient) {
+      await new Promise<void>((resolve) => {
+        releaseSpawn = resolve;
+      });
+      return this;
+    };
+    let created = 0;
+    const { processOps } = makeFakeService();
+    const service = new DebugService({
+      createDapClient: () => {
+        created += 1;
+        return parent;
+      },
+      processOps,
+      workspace: PERMISSIVE_WORKSPACE,
+    });
+    const first = service
+      .launchSession({ program: '/fixture.js', cwd: '/work' }, ctx)
+      .catch((err: unknown) => err);
+    await vi.waitFor(() => expect(releaseSpawn).toBeTypeOf('function'));
+
+    const cleanup = service.cleanupAll('before-quit');
+    const late = await service
+      .launchSession({ program: '/fixture.js', cwd: '/work' }, ctx)
+      .catch((err: unknown) => err);
+    expect(late).toMatchObject({ code: 'AGENT_NOT_AUTHORIZED' });
+    expect((late as Error).message).toMatch(/quitting/);
+    expect(created).toBe(1);
+
+    releaseSpawn?.();
+    await cleanup;
+    await expect(first).resolves.toMatchObject({ code: 'AGENT_NOT_AUTHORIZED' });
+    // 退出清理结束之后同样拒绝(应用正在退出,不再接新会话)。
+    await expect(
+      service.launchSession({ program: '/fixture.js', cwd: '/work' }, ctx),
+    ).rejects.toMatchObject({ code: 'AGENT_NOT_AUTHORIZED' });
+    expect(created).toBe(1);
+    expect(service.listSessions()).toEqual([]);
+  });
+
+  it('cleanupAll 结束前复查登记表:清理期间登记进来的会话同样被拆除', async () => {
+    const parent = new FakeDapClient(1001);
+    let releaseTeardown: (() => void) | undefined;
+    // 第一个会话的 disconnect 挂起,拖住 cleanupAll;期间直接登记一个会话(模拟漏网的登记)。
+    parent.beforeResponse = (command) =>
+      command === 'disconnect'
+        ? new Promise<void>((resolve) => {
+            releaseTeardown = resolve;
+          })
+        : undefined;
+    const { service: svc } = makeFakeService(parent);
+    await svc.launchSession({ program: '/fixture.js', cwd: '/work' }, ctx);
+    const cleanup = svc.cleanupAll('before-quit');
+    await vi.waitFor(() => expect(releaseTeardown).toBeTypeOf('function'));
+    debugSessions.add({
+      id: 'straggler',
+      ownerWindowId: ctx.ownerWindowId,
+      controllerToken: 'x',
+      program: '/p.js',
+      cwd: '/',
+    });
+    releaseTeardown?.();
+    const ids = await cleanup;
+    expect(ids).toContain('straggler');
+    expect(debugSessions.list().filter((s) => s.state !== 'done')).toEqual([]);
   });
 
   // 终审 P1(上一轮修复引入的回归):吊销记入永久集合后,stdio 连接的 callerSubject 固定不变,用户重新授权后

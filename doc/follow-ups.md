@@ -22,3 +22,11 @@
     `~/.profile` 中**第一个存在**的一个;非 login 模式 `~/.bashrc`。
   - fish 集成**不得**改写 `XDG_CONFIG_HOME`(改用 `fish --init-command` 或 conf.d 之外的方式注入)。
   - helper 修好后 Continuo 再对 bash / fish 启用(删 `skipsShellIntegration` 分支),并更新上述 BDD 规范。
+
+## Windows 上 DAP 端点改用命名管道并收紧 ACL
+
+- **现状**(`electron/main/services/dap-client.ts`):POSIX 上 js-debug `dapDebugServer` 监听私有目录(0700)
+  里的 unix socket;Windows 上监听 TCP `127.0.0.1` 随机端口 —— 本机其它用户也能连上,向 adapter 发 DAP
+  请求(launch / evaluate 即以 Continuo 用户身份执行代码)。
+- **待办**:Windows 上 DAP 端点改用命名管道(`\\.\pipe\...`)并收紧 ACL(仅当前用户),消除本机跨用户连接。
+  需先验证 js-debug `dapDebugServer` 对 `\\.\pipe\` 路径的支持(其参数为 `[port|socket path] [host]`)。

@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { DebugViewEvent } from '../../../electron/shared/debug-view-channels';
+import {
+  DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX,
+  type DebugViewEvent,
+} from '../../../electron/shared/debug-view-channels';
 
 const debugApi = vi.hoisted(() => ({
   events: [] as Array<(event: DebugViewEvent) => void>,
@@ -252,5 +255,121 @@ describe('topic51 Op4 · debug.store renderer shadow', () => {
     await useDebugStore.getState().loadVariables('s1', 44);
 
     expect(debugApi.getVariables).toHaveBeenCalledTimes(2);
+  });
+
+  // 终审:renderer 重载(Cmd+R)后 store 为空,main 只推增量事件 → 用 subscribe 快照恢复停点与断点。
+  describe('subscribe 快照 hydrate(renderer 重载后恢复)', () => {
+    const snapshot = {
+      sessions: [
+        {
+          session_id: 's1',
+          state: 'stopped',
+          owner_window_id: 1,
+          stopped_reason: 'breakpoint',
+          stop: { stopSeq: 3, reason: 'breakpoint', threadId: 0 },
+          breakpointsBySource: [
+            { file: '/repo/a.ts', breakpoints: [{ file: '/repo/a.ts', line: 14, verified: true }] },
+            { file: '/repo/b.ts', breakpoints: [{ file: '/repo/b.ts', line: 2, verified: false, message: 'pending' }] },
+          ],
+        },
+        {
+          session_id: 's2',
+          state: 'running',
+          owner_window_id: 1,
+          breakpointsBySource: [],
+        },
+      ],
+    };
+
+    it('快照里的停点、断点进 store,并拉取该停点的栈帧 / 作用域', async () => {
+      debugApi.subscribe.mockResolvedValueOnce({ ok: true, data: snapshot } as never);
+      startDebugStoreSync();
+
+      await vi.waitFor(() =>
+        expect(useDebugStore.getState().sessions.get('s1')?.frames).toHaveLength(1),
+      );
+      const state = useDebugStore.getState();
+      const s1 = state.sessions.get('s1');
+      expect(s1?.breakpoints).toEqual([
+        { file: '/repo/a.ts', line: 14, verified: true },
+        { file: '/repo/b.ts', line: 2, verified: false, message: 'pending' },
+      ]);
+      expect(s1?.stopped).toMatchObject({ reason: 'breakpoint', stopSeq: 3, threadId: 0, file: '/repo/a.ts', line: 14 });
+      expect(s1?.scopes).toEqual([{ name: 'Local', variables_reference: 44, expensive: false }]);
+      expect(state.activeSessionId).toBe('s1');
+      expect(state.sessions.get('s2')?.stopped).toBeUndefined();
+      expect(debugApi.getStack).toHaveBeenCalledWith({ sessionId: 's1', threadId: 0 });
+
+      // 之后的事件照常增量。
+      debugApi.events[0]!({ type: 'continued', sessionId: 's1', runSeq: 4 });
+      expect(useDebugStore.getState().sessions.get('s1')?.stopped).toBeUndefined();
+    });
+
+    it('快照到达前已收到的事件更新:不被快照覆盖,也不复活已结束的会话', async () => {
+      let resolveSubscribe!: (value: unknown) => void;
+      debugApi.subscribe.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveSubscribe = resolve;
+        }) as never,
+      );
+      startDebugStoreSync();
+      const emit = debugApi.events[0]!;
+      // 快照计算之后、送达之前:a.ts 断点被改、s1 已继续、s2 已结束。
+      emit({
+        type: 'breakpoints-changed',
+        sessionId: 's1',
+        file: '/repo/a.ts',
+        breakpoints: [{ file: '/repo/a.ts', line: 20, verified: true }],
+      });
+      emit({ type: 'continued', sessionId: 's1', runSeq: 4 });
+      emit({ type: 'terminated', sessionId: 's2', reason: 'exit' });
+      resolveSubscribe({ ok: true, data: snapshot });
+      await flushAsync();
+      await flushAsync();
+
+      const state = useDebugStore.getState();
+      expect(state.sessions.get('s1')?.breakpoints).toEqual([
+        { file: '/repo/a.ts', line: 20, verified: true },
+        { file: '/repo/b.ts', line: 2, verified: false, message: 'pending' },
+      ]);
+      expect(state.sessions.get('s1')?.stopped).toBeUndefined();
+      expect(state.sessions.has('s2')).toBe(false);
+      expect(debugApi.getStack).not.toHaveBeenCalled();
+    });
+
+    it('快照形态校验:畸形条目丢弃,断点数按上限截断', async () => {
+      const many = Array.from({ length: DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX + 10 }, (_, i) => ({
+        file: '/repo/a.ts',
+        line: i + 1,
+        verified: true,
+      }));
+      debugApi.subscribe.mockResolvedValueOnce({
+        ok: true,
+        data: {
+          sessions: [
+            null,
+            { session_id: 42 },
+            {
+              session_id: 's3',
+              state: 'running',
+              owner_window_id: 1,
+              stop: { stopSeq: 'x', reason: 'breakpoint' },
+              breakpointsBySource: [
+                { file: '/repo/a.ts', breakpoints: [...many, { file: '/repo/a.ts', line: 'bad' }] },
+                { file: 7, breakpoints: [] },
+              ],
+            },
+          ],
+        },
+      } as never);
+      startDebugStoreSync();
+      await flushAsync();
+      await flushAsync();
+
+      const state = useDebugStore.getState();
+      expect([...state.sessions.keys()]).toEqual(['s3']);
+      expect(state.sessions.get('s3')?.stopped).toBeUndefined();
+      expect(state.sessions.get('s3')?.breakpoints).toHaveLength(DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX);
+    });
   });
 });

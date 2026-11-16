@@ -18,7 +18,12 @@ import * as debugSessions from './debug-sessions.service';
 import { getWorkspaceRoot } from './window-workspace-roots.service';
 import { ERROR_CODES } from '../../shared/error-codes';
 import { isDebugLaunchEnvForbidden } from '../../shared/mcp-debug-schemas';
-import type { DebugViewEvent } from '../../shared/debug-view-channels';
+import {
+  DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX,
+  type DebugBreakpoint,
+  type DebugViewEvent,
+  type DebugViewSessionSnapshot,
+} from '../../shared/debug-view-channels';
 import { codedError } from '../../shared/error-message';
 import { runSerialPerKey } from './serialize-per-key';
 import { lowerIfNeeded } from '../../shared/lower-if-needed';
@@ -129,6 +134,11 @@ export interface DebugCallerContext {
  */
 function launchCancelledError(): Error {
   return codedError(ERROR_CODES.AGENT_NOT_AUTHORIZED, 'debug launch cancelled (caller disconnected, revoked, window closed or app quitting)');
+}
+
+/** 退出清理(cleanupAll)开始之后发起的 launch:与在途 launch 被退出取消同一错误码。 */
+function launchRejectedQuittingError(): Error {
+  return codedError(ERROR_CODES.AGENT_NOT_AUTHORIZED, 'debug launch rejected: app is quitting');
 }
 
 /**
@@ -771,6 +781,8 @@ export class DebugService {
    * 撤销授权按 listControllerTokens 枚举调用方,也须含这里的。
    */
   private readonly launches = new Set<InFlightLaunch>();
+  /** cleanupAll(应用退出)已开始:此后 launch 一律拒绝 —— 只取消当时在途的 launch 时,之后新发起的照常 spawn。 */
+  private shuttingDown = false;
   private eventSink: DebugEventSink | null;
 
   constructor(options: DebugServiceOptions = {}) {
@@ -843,6 +855,7 @@ export class DebugService {
     input: LaunchSessionInput,
     ctx: DebugCallerContext,
   ): Promise<{ session_id: string; state: 'starting' | 'running' | 'stopped' }> {
+    if (this.shuttingDown) throw launchRejectedQuittingError();
     // 必须在第一个 await 之前登记(见 InFlightLaunch)。调用方断开并入同一个取消信号。
     const launch: InFlightLaunch = {
       ownerWindowId: ctx.ownerWindowId,
@@ -1142,6 +1155,20 @@ export class DebugService {
     runtime: RuntimeDebugSession,
     source: string,
   ): void {
+    const { file, breakpoints } = this.breakpointSnapshot(runtime, source);
+    this.emitSessionEvent(sessionId, {
+      type: 'breakpoints-changed',
+      sessionId,
+      file,
+      breakpoints,
+    });
+  }
+
+  /** 该 source 的完整断点集合(推送给 renderer 的形态);事件与 subscribe 快照共用。 */
+  private breakpointSnapshot(
+    runtime: RuntimeDebugSession,
+    source: string,
+  ): { file: string; breakpoints: DebugBreakpoint[] } {
     const sourcePath = runtime.sourcePaths.get(source) ?? source;
     const seenLines = new Set<number>();
     const snapshot = runtime.breakpoints
@@ -1163,12 +1190,7 @@ export class DebugService {
           },
         ];
       });
-    this.emitSessionEvent(sessionId, {
-      type: 'breakpoints-changed',
-      sessionId,
-      file: sourcePath,
-      breakpoints: snapshot,
-    });
+    return { file: sourcePath, breakpoints: snapshot };
   }
 
   /**
@@ -1506,10 +1528,53 @@ export class DebugService {
   }
 
   /**
+   * renderer 订阅时的快照(只含该窗口、尚未拆除的会话):状态、当前停点、按 source 的断点集合。renderer 重载后
+   * store 为空,只靠增量事件恢复不了停点与断点。每个会话的断点总数封顶 DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX。
+   */
+  viewSnapshot(ownerWindowId: number): DebugViewSessionSnapshot[] {
+    return debugSessions
+      .byOwner(ownerWindowId)
+      .filter((session) => session.state === 'active')
+      .map((session) => {
+        const runtime = this.runtimes.get(session.id);
+        const stop = session.runtimeState === 'stopped' ? runtime?.currentStop : undefined;
+        const groups: DebugViewSessionSnapshot['breakpointsBySource'][number][] = [];
+        let budget = DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX;
+        for (const source of runtime ? breakpointsBySource(runtime.breakpoints).keys() : []) {
+          if (budget <= 0 || !runtime) break;
+          const group = this.breakpointSnapshot(runtime, source);
+          const breakpoints = group.breakpoints.slice(0, budget);
+          budget -= breakpoints.length;
+          groups.push({ file: group.file, breakpoints });
+        }
+        return {
+          session_id: session.id,
+          state: session.runtimeState,
+          ...(session.name !== undefined ? { name: session.name } : {}),
+          ...(session.stoppedReason !== undefined ? { stopped_reason: session.stoppedReason } : {}),
+          owner_window_id: session.ownerWindowId,
+          ...(stop
+            ? {
+                stop: {
+                  stopSeq: stop.stop_seq,
+                  reason: stop.reason,
+                  ...(stop.thread_id !== undefined ? { threadId: stop.thread_id } : {}),
+                  ...(stop.description !== undefined ? { description: stop.description } : {}),
+                },
+              }
+            : {}),
+          breakpointsBySource: groups,
+        };
+      });
+  }
+
+  /**
    * 应用退出:取消全部在途 launch(各自在检查点释放已 spawn 的 adapter)并拆除已登记会话;等在途 launch 结算,
-   * 最多 DEBUG_LAUNCH_SETTLE_WAIT_MS —— 否则退出时 detached 的 adapter 遗留。
+   * 最多 DEBUG_LAUNCH_SETTLE_WAIT_MS —— 否则退出时 detached 的 adapter 遗留。开始即置 shuttingDown(此后 launch
+   * 一律拒绝),结束前再查一遍登记表,拆除清理期间漏网登记的会话。
    */
   async cleanupAll(reason = 'cleanupAll'): Promise<readonly string[]> {
+    this.shuttingDown = true;
     const pending = this.cancelLaunches(() => true);
     let timer: ReturnType<typeof setTimeout> | undefined;
     const [ids] = await Promise.all([
@@ -1521,7 +1586,8 @@ export class DebugService {
         }),
       ]).finally(() => clearTimeout(timer)),
     ]);
-    return ids;
+    const stragglers = debugSessions.list().filter((session) => session.state === 'active');
+    return [...ids, ...(await this.teardownMany(stragglers, reason))];
   }
 
   /** 窗口关闭:取消该窗口的在途 launch(否则随后登记到已销毁的窗口成为孤儿),拆除其已登记会话。 */
