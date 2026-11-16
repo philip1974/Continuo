@@ -26,7 +26,9 @@
 
 - 拒绝 → store.deny()
 - 仅本次 → store.grant('once')
-- 本次启动期间允许 → store.grant('session')
+- 本次启动期间允许 → store.grant('session');respond ok 后才 `confirmSessionGrant`(域授权生效)
+- respond 失败(ok:false,如 main 已撤销/超时删除该请求 → `AGENT_AUTH_REQUEST_NOT_PENDING`,或 reject)
+  → notify.error,且**不**改变未来授权状态
 
 ### method 标签
 

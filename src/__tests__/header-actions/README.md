@@ -17,6 +17,7 @@ activePanel=null 时 popout 按钮 disabled。点更多 → 切 menu;点 menu �
 
 - activePanel=null → disabled
 - activePanel 有 → 点击调 containerApi.addPopoutGroup(activePanel, { popoutUrl })
+- addPopoutGroup reject **或** resolve false(弹窗被拦截)→ notify.error(`shell.dock.popout_failed`)
 
 ### 更多操作菜单
 

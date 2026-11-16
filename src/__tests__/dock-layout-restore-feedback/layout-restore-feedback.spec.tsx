@@ -206,6 +206,48 @@ describe('a11y(A131) — Dock 布局恢复失败须反馈', () => {
     expect(h.write).toHaveBeenCalledTimes(1);
   });
 
+  // 仅含终端的布局:strip 返 null 时绝不能回落原始快照(含终端 sessionId/cwd)写盘;改写无 grid 的
+  // 空布局 `{version:1}`,恢复端视作「无可恢复布局」→ 静默走默认布局(与此前读端剥离后的行为一致)。
+  it('仅含终端 panel 的布局 → 写盘为空布局,不含终端数据', async () => {
+    h.read.mockResolvedValue({ ok: true, data: null });
+    h.write.mockResolvedValue({ ok: true });
+    h.toJSON.mockReturnValue({
+      grid: {
+        root: {
+          type: 'branch',
+          data: [{ type: 'leaf', data: { views: ['terminal-s1'], id: '1' }, size: 800 }],
+          size: 800,
+        },
+        width: 1400,
+        height: 800,
+        orientation: 'HORIZONTAL',
+      },
+      panels: {
+        'terminal-s1': {
+          contentComponent: 'terminal',
+          params: { sessionId: 's1', cwd: '/secret/project' },
+        },
+      },
+    } as never);
+    render(React.createElement(DockShell));
+    await vi.waitFor(() => expect(h.layoutChangeCb.current).not.toBeNull());
+    h.layoutChangeCb.current!();
+    await vi.waitFor(() => expect(h.write).toHaveBeenCalledTimes(1), { timeout: 1500 });
+    const written = JSON.stringify(h.write.mock.calls[0]![0]);
+    expect(written).not.toContain('terminal');
+    expect(written).not.toContain('/secret/project');
+    expect(h.write.mock.calls[0]![0]).toEqual({ version: 1 });
+  });
+
+  it('恢复端读到空布局 {version:1} → 静默走默认布局(不 fromJSON、不报错)', async () => {
+    const { sanitizePersistedDockLayout } = await import('@/shell/dock/DockShell');
+    expect(sanitizePersistedDockLayout({ version: 1 })).toBeNull();
+    h.read.mockResolvedValue({ ok: true, data: { version: 1 } });
+    render(React.createElement(DockShell));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(h.notifyError).not.toHaveBeenCalled();
+  });
+
   // 写盘在途时又发生的布局变更不能被「写成功 → 标干净」吞掉:写的是旧快照。
   it('layout.write 在途期间的布局变更,在该次写成功后仍会落盘', async () => {
     h.read.mockResolvedValue({ ok: true, data: null });
@@ -372,7 +414,7 @@ describe('a11y(A131) — Dock 布局恢复失败须反馈', () => {
     );
     const view = render(React.createElement(DockShell));
     // onReady 已 fire 并 park 在 await layout.read():此刻 onReady 自己的 4 个 onDid* 还没注册。
-    // baseline 只含 DockReconcilerMount(setReconcilerApi 同步触发挂载)注册的 listener。
+    // baseline 不含 onReady 的 listener(DockReconcilerMount 也推迟到布局恢复后才挂载)。
     const baseline = h.regCount.value;
 
     view.unmount(); // 卸载 → apiRef.current=null 失效迟到 onReady

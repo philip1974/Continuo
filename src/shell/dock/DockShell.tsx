@@ -52,6 +52,9 @@ export function sanitizePersistedDockLayout(
   const layout = json as SerializedDockview & {
     panels?: Record<string, { contentComponent?: string }>;
   };
+  // 既无 grid 也无 panels = 空布局(写端对「仅含终端」布局写的 {version:1})→ 无可恢复布局,静默走默认;
+  // 交给 fromJSON 只会抛错并误报「恢复失败」。
+  if (!('grid' in layout) && !('panels' in layout)) return null;
   const panels = layout.panels;
   if (!panels || typeof panels !== 'object') return layout;
   // 边界(E217,E197/E199 有界迭代族):单次 for...in 边数边扫,不先 Object.keys 把畸形 layout 的所有
@@ -133,9 +136,10 @@ async function writeDockLayoutSnapshot(
   try {
     // 写盘前剥离终端 panel(彻底修复:持久化 layout 不再携带终端的 sessionId/cwd 等陈旧/敏感
     // 数据;读端 sanitize 仍是兜底防线,处理历史 explorer.json 与竞态)。仅含终端(无非终端
-    // panel)→ strip 返 null,此时回落原始快照,由读端再行剥离为默认。
+    // panel)→ strip 返 null,此时写无 grid 的空布局(payload = {version:1}),终端绝不进持久化;
+    // 读端 sanitize 对无 grid 布局返 null → 静默走默认布局(与此前读端剥离后的恢复行为一致)。
     const raw = api.toJSON();
-    const cleaned = (stripTerminalPanelsFromLayout(raw) ?? raw) as unknown;
+    const cleaned = (stripTerminalPanelsFromLayout(raw) ?? {}) as unknown;
     // dockview toJSON 在某些瞬时状态会产出非有限 size 等非 JSON-safe 值,写端 assertJsonValue(E119)
     // 会整份拒写(BAD_INPUT)→ 布局永远无法落盘。写盘前清洗成 JSON-safe(剔除非有限数/undefined,
     // 语义同 JSON.stringify),让其余布局正常持久化;dockview 恢复时按窗口尺寸重算 size。
@@ -203,7 +207,9 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
   const onReady = useCallback(
     async (event: DockviewReadyEvent) => {
       apiRef.current = event.api;
-      setReconcilerApi(event.api);
+      // race:Reconciler 的 api 推迟到布局恢复(fromJSON / 默认布局)完成后才设置(见下方)。
+      // 若此处即挂载,await layout.read() 期间 Reconciler 建出的终端 panel 会被随后的 fromJSON
+      //(dockview 内部先 clear())清掉,而 Reconciler 视为已同步不再补加 → 终端从 UI 消失。
       setApiReady(true);
       setDockApi(event.api); // 暴露给 IconSidebar 等 Dockview 之外的组件
       // a11y(A131,A130 同族):layout.read() reject 此前会中断整个 onReady(连默认布局都不应用)。
@@ -250,6 +256,8 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
         }
       }
       if (!restored) applyDefaultLayout(event.api);
+      // 布局已定型 → 挂载 Reconciler:新 api 视作空 dock,按 live sessions 全量建终端 panel(R26)。
+      setReconcilerApi(event.api);
       if (restoreFailed) {
         notify.error(translate('errors.dock.layout_restore_failed'));
       }

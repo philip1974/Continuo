@@ -55,7 +55,8 @@ describe('unified-toast-notification: ERROR_CODES enum', () => {
     // topic-50:+5 DEBUG_* 业务错误码(40→45),agent MCP debug 工具错误稳定本地化。
     // 删 popout:open 占位 IPC:−POPOUT_NOT_IMPLEMENTED(46→45)。
     // 插件安装:+PLUGIN_ID_MISMATCH(45→46),clone 的 manifest.id 与 marketplace entry.id 不一致。
-    expect(Object.keys(ERROR_CODES)).toHaveLength(46);
+    // agent 授权:+AGENT_AUTH_REQUEST_NOT_PENDING(46→47),应答已撤销/超时的旧请求返回失败。
+    expect(Object.keys(ERROR_CODES)).toHaveLength(47);
     expect(ERROR_CODES.TERMINAL_CWD_UNRESOLVED).toBe(
       'TERMINAL_CWD_UNRESOLVED',
     );

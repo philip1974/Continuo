@@ -121,6 +121,45 @@ describe('HeaderActions — popout', () => {
   });
 });
 
+describe('HeaderActions — popout 被拦截', () => {
+  // dockview 在弹窗被拦截(window.open 返 null / 窗口立即被关)时 addPopoutGroup resolve false 而非 reject;
+  // false 须与 reject 一样走 popout_failed 反馈。
+  it('addPopoutGroup resolve false → notify.error(popout_failed)', async () => {
+    notifyError.mockReset();
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const props = makeProps({
+      activePanel: { id: 'p1' },
+      containerApi: { addPopoutGroup: vi.fn(() => Promise.resolve(false)) },
+    });
+    const { container } = render(
+      <HeaderActions {...(props as unknown as Parameters<typeof HeaderActions>[0])} />,
+    );
+    fireEvent.click(
+      container.querySelector(
+        `button[aria-label="${t('shell.dock.popout_title')}"]`,
+      ) as HTMLButtonElement,
+    );
+    await waitFor(() => {
+      expect(notifyError).toHaveBeenCalledWith(t('shell.dock.popout_failed'));
+    });
+  });
+
+  it('addPopoutGroup resolve true → 不报错', async () => {
+    notifyError.mockReset();
+    const props = makeProps({ activePanel: { id: 'p1' } });
+    const { container } = render(
+      <HeaderActions {...(props as unknown as Parameters<typeof HeaderActions>[0])} />,
+    );
+    fireEvent.click(
+      container.querySelector(
+        `button[aria-label="${t('shell.dock.popout_title')}"]`,
+      ) as HTMLButtonElement,
+    );
+    await new Promise((r) => setTimeout(r, 0));
+    expect(notifyError).not.toHaveBeenCalled();
+  });
+});
+
 describe('HeaderActions — 更多操作菜单', () => {
   it('默认 open=false → 不渲染 menu', () => {
     const props = makeProps();

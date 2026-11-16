@@ -399,9 +399,10 @@
 
 - [`layout-restore-feedback.spec.tsx`](./dock-layout-restore-feedback/layout-restore-feedback.spec.tsx)
 
-## [dock-reconciler-api-rebuild](./dock-reconciler-api-rebuild/README.md)
+## [dock-reconciler-api-rebuild — dock api 变化 / 布局恢复后终端 panel 全量重建](./dock-reconciler-api-rebuild/README.md)
 
 - [`api-rebuild.spec.tsx`](./dock-reconciler-api-rebuild/api-rebuild.spec.tsx)
+- [`restore-after-fromjson.spec.tsx`](./dock-reconciler-api-rebuild/restore-after-fromjson.spec.tsx)
 
 ## [dock-reconciler-windowid-filter](./dock-reconciler-windowid-filter/README.md)
 

@@ -39,7 +39,7 @@ import { utf8ByteLength } from '../shared/utf8-byte-length';
 import { jsonByteLowerBoundExceeds } from '../shared/json-byte-budget';
 import { findWindowEntryBySeq } from '../shared/window-entry-lookup';
 import {
-  resolveAgentAuthRequest,
+  answerAgentAuthRequest,
   revokeAndKillAgentSessions,
 } from './services/agent-auth.service';
 import { MCP_CHANNELS } from '../shared/mcp-channels';
@@ -273,8 +273,9 @@ export function registerIpc(deps: WindowIpcDeps): { pluginFsHandles: PluginFsIpc
   safeHandle(
     AGENT_AUTH_CHANNELS.RESPOND,
     AgentAuthRespondSchema,
+    // 已不在等待的 requestId(撤销 / 超时已结算)→ 抛错返回 ok:false,renderer 据此不记 session 授权。
     ({ requestId, decision }) => {
-      resolveAgentAuthRequest(requestId, decision);
+      answerAgentAuthRequest(requestId, decision);
     },
     trusted,
   );

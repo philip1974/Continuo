@@ -33,6 +33,7 @@ import {
 } from '@/stores/layout-ui.store';
 import { usePinnedStore } from '@/stores/pinned.store';
 import {
+  buildRecentRoots,
   normalizeWorkspaceRoot,
   useWorkspaceStore,
 } from '@/stores/workspace.store';
@@ -433,6 +434,12 @@ export async function initExplorerPersistence(
         console.warn(
           '[explorer-persist] user selected workspace during hydrate — skip stale restore',
         );
+        // 数据安全:窗口段跳过,但快照里与 root 选择无关的全局段(pinned / recentRoots)仍须 hydrate。
+        // main 合并以 writable 顶层为准(...writable),若保留 store 默认值,随后的写会把磁盘上的
+        // 全局 pinned / recentRoots 覆盖为空 / 仅含用户刚选的 root。
+        if (r.data && isExplorerSnapshot(r.data)) {
+          hydrateGlobalSegmentsKeepingUserRoot(r.data);
+        }
       } else if (r.data && isExplorerSnapshot(r.data)) {
         hydratedSnap = r.data;
         const myEntry = findWindowEntry(r.data, windowSeq);
@@ -552,6 +559,21 @@ export async function initExplorerPersistence(
     ],
     markDirtyAndPersist,
   );
+}
+
+/**
+ * 启动 hydrate 被用户 root 选择抢先时(R38)只恢复全局段:pinned 取快照值(当前无运行时修改入口);
+ * recentRoots = 用户启动期间选过的 root(store 中,保持其 LRU 顺序)在前 + 快照历史在后。
+ */
+function hydrateGlobalSegmentsKeepingUserRoot(snap: ExplorerSnapshot): void {
+  const userRecent = useWorkspaceStore.getState().recentRoots;
+  let recentRoots = collectNormalizedWorkspaceRoots(snap.workspace.recentRoots);
+  for (let i = userRecent.length - 1; i >= 0; i--) {
+    const p = normalizeWorkspaceRoot(userRecent[i]);
+    if (p !== null) recentRoots = buildRecentRoots(recentRoots, p);
+  }
+  useWorkspaceStore.setState({ recentRoots });
+  usePinnedStore.setState({ paths: copyPersistPaths(snap.pinned.paths) });
 }
 
 /**

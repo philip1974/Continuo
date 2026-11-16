@@ -121,14 +121,18 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
     if (!activePanel) return;
     // a11y(A50,A46-A49 同族):addPopoutGroup 返回 Promise<boolean>,此前直接 void 丢弃异常 →
     // 弹出失败时按钮无响应、无 toast/live 反馈。catch 后 notify.error 给可见+可播报反馈。
+    // 弹窗被拦截(window.open 返 null / 窗口立即被关)时 dockview resolve false 而非 reject → 同样反馈。
+    const onFailed = (err: unknown): void => {
+      console.warn('[dock] popout failed', err);
+      notify.error(t('shell.dock.popout_failed'));
+    };
     void containerApi
       .addPopoutGroup(activePanel, {
         popoutUrl: popoutUrlFor(window.location.href),
       })
-      .catch((err) => {
-        console.warn('[dock] popout failed', err);
-        notify.error(t('shell.dock.popout_failed'));
-      });
+      .then((opened) => {
+        if (opened === false) onFailed('addPopoutGroup resolved false');
+      }, onFailed);
   }, [activePanel, containerApi]);
   const isPopout = isPopoutWindow();
 

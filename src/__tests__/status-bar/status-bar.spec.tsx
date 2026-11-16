@@ -543,6 +543,45 @@ describe('StatusBar — agent 撤销', () => {
     });
   });
 
+  // 撤销全部 vs 旧 pending 竞态:main revoke 会把所有 pending 授权结算为 denied 并删除。renderer 若仍
+  // 显示旧弹窗,用户点「本次启动期间允许」会把 sessionGranted 置 true → 之后的请求被静默放行。
+  // revoke 成功 → 清掉 renderer 的 pending 提示(按拒绝结算)。
+  it('revoke 成功 → 清掉 renderer 的 pending 授权提示', async () => {
+    const revoke = vi.fn().mockResolvedValue({ ok: true });
+    installApi({ agentAuth: { revoke } });
+    useTerminalStore.setState({
+      sessions: [
+        {
+          id: 't1',
+          title: 'codex',
+          cwd: '/',
+          originHint: 'agent',
+          createdAt: 0,
+          exitCode: null,
+          ownerWindowId: 1,
+        },
+      ],
+    });
+    useAgentAuthStore.setState({ pending: null, sessionGranted: true });
+    const decision = useAgentAuthStore
+      .getState()
+      .ensure({ method: 'debug.launch' }); // debug 域未授权 → 弹出 pending
+    expect(useAgentAuthStore.getState().pending).not.toBeNull();
+
+    const { container } = render(<StatusBar />);
+    const btn = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((b) => /\d+.*agent/.test(b.textContent ?? ''))!;
+    clickRevoke(btn, true);
+
+    await waitFor(() => {
+      expect(revoke).toHaveBeenCalled();
+      expect(useAgentAuthStore.getState().pending).toBeNull();
+    });
+    await expect(decision).resolves.toBe('denied');
+    expect(useAgentAuthStore.getState().debugSessionGranted).toBe(false);
+  });
+
   it('不调用原生 window.confirm', () => {
     const src = readFileSync(join(process.cwd(), 'src/shell/StatusBar.tsx'), 'utf-8');
     expect(src).not.toContain('window.confirm');

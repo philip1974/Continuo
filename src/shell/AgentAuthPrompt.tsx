@@ -5,7 +5,11 @@
 import { useEffect } from 'react';
 import { Button, Modal } from '@/design';
 import { coApi } from '@/lib/co-api';
-import { isDebugAuthMethod, useAgentAuthStore } from '@/stores/agent-auth.store';
+import {
+  getAgentAuthEpoch,
+  isDebugAuthMethod,
+  useAgentAuthStore,
+} from '@/stores/agent-auth.store';
 import { notify } from '@/notifications/notify';
 import { useT, t as translate, type TranslationKey } from '@/i18n';
 import { isAgentAuthRequestPayload } from '@shared/agent-auth-channels';
@@ -43,10 +47,16 @@ export function AgentAuthPrompt() {
         method,
         ...(agentLabel !== undefined ? { agentLabel } : {}),
       });
+      const epoch = getAgentAuthEpoch();
       // a11y(A58,A50 同族):respond 返回 IpcResult 且可 reject。此前 void 丢弃 → IPC 应答失败时
       // 弹窗已关、main pending 等 5 分钟才默认拒绝,用户/AT 不知决定未生效。失败给可见+可播报反馈。
       try {
         const r = await coApi.agentAuth.respond(requestId, decision);
+        // 安全:「本次启动期间允许」仅在 main 确认该请求仍在等待(ok)后生效;main 已撤销/超时删除
+        // 的旧请求 → ok:false(AGENT_AUTH_REQUEST_NOT_PENDING),不改变未来授权状态。
+        if (r.ok && decision === 'session') {
+          useAgentAuthStore.getState().confirmSessionGrant(method, epoch);
+        }
         if (!r.ok) {
           console.warn('[agent-auth] respond failed', r.code, r.message);
           notify.error(translate('permissions.agent.respond_failed'));

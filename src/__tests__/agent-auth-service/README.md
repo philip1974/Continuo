@@ -26,3 +26,6 @@ T14 `setMcpHostRef` is covered indirectly by T11 and T13;
 T15 `INDEX.md` contains `agent-auth-service` after `pnpm bdd:index`.
 
 The spec uses local-only `vi.hoisted` mocks for Electron windows, terminal session metadata, terminal service, and terminal buffer. It uses fake timers with `advanceTimersByTimeAsync` for the five-minute timeout contract. Helpers such as `makeSession`, `makeMcpHost`, and `makeWin` are intentionally local to the spec and are not exported or shared with other topics.
+
+T7b `answerAgentAuthRequest`(ipc respond 入口)对已不在等待的 `requestId`(撤销 / 超时 / 窗口关闭已结算并删除)抛 `AGENT_AUTH_REQUEST_NOT_PENDING`(renderer 收到 ok:false,据此不记 session 授权);
+T7c 对仍在等待的 `requestId` 正常结算、不抛。

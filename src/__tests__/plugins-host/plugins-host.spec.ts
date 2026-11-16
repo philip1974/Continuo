@@ -44,6 +44,39 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+// Blob URL 泄漏:每次 listPluginDirs(init / 每次 reload)此前为**所有**插件 createObjectURL 且从不
+// revoke → 反复 reload 单调泄漏。契约:URL 仅在真正读取 moduleUrl(激活该插件时)才生成;
+// import 完成(成功或失败)后 revoke —— 已求值模块留在 module map,同 URL 再 import 命中缓存,不依赖 blob 存活。
+describe('Blob URL 生命周期', () => {
+  it('listPluginDirs 不为未使用的插件生成 Blob URL;只读到的那个才生成(一次)', () => {
+    const infos = buildPluginDirInfos([
+      { id: 'a', manifestText: '{}', mainText: 'export default 1' },
+      { id: 'b', manifestText: '{}', mainText: 'export default 2' },
+      { id: 'c', manifestText: '{}', mainText: 'export default 3' },
+    ]);
+    expect(createObjectURL).not.toHaveBeenCalled();
+    expect(infos[1]!.moduleUrl).toBe('blob:mock-url');
+    expect(infos[1]!.moduleUrl).toBe('blob:mock-url');
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+  });
+
+  it('importModule 结束后 revoke 该 blob URL(失败也 revoke);非 blob URL 不 revoke', async () => {
+    const revokeObjectURL = vi.fn();
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      value: revokeObjectURL,
+      writable: true,
+      configurable: true,
+    });
+    const host = createWindowApiHost();
+    await expect(host.importModule('blob:nonexistent-plugin')).rejects.toBeDefined();
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:nonexistent-plugin');
+
+    revokeObjectURL.mockClear();
+    await expect(host.importModule('/nonexistent-plugin.js')).rejects.toBeDefined();
+    expect(revokeObjectURL).not.toHaveBeenCalled();
+  });
+});
+
 describe('createWindowApiHost.listPluginDirs', () => {
   it('PluginDirInfo 构造单趟扫描,不调用 dirs.map', () => {
     const dirs = [

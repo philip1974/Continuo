@@ -24,6 +24,7 @@ export const ko: Record<TranslationKey, string> = {
   'settings.general.language.save_failed': '언어 변경 실패',
 
   // errors.MAIN_*
+  'errors.AGENT_AUTH_REQUEST_NOT_PENDING': '승인 요청이 더 이상 유효하지 않습니다',
   'errors.AGENT_NOT_AUTHORIZED': '에이전트가 승인되지 않았습니다',
   'errors.AWAIT_STOP_HOOK_ALREADY_PENDING':
     '이 세션에는 이미 대기 중인 await_stop_hook 요청이 있습니다.',

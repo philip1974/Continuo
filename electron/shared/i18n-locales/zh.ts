@@ -24,6 +24,7 @@ export const zh: Record<TranslationKey, string> = {
   'settings.general.language.save_failed': '切换语言失败',
 
   // errors.MAIN_*
+  'errors.AGENT_AUTH_REQUEST_NOT_PENDING': '授权请求已失效',
   'errors.AGENT_NOT_AUTHORIZED': 'Agent 未授权',
   'errors.AWAIT_STOP_HOOK_ALREADY_PENDING':
     '该会话已有待处理的 await_stop_hook 请求。',
