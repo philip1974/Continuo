@@ -54,6 +54,9 @@ class FakeDapClient implements DebugDapClientLike {
   emptyBreakpointsResponse = false;
   /** 这些请求行回报 verified:false + message(模拟 adapter 暂不能绑定的断点)。 */
   unverifiedLines = new Set<number>();
+  /** 最近一次 setBreakpoints 响应各项的 id(真实 js-debug:每次响应重新编号,且按连接各自编号)。 */
+  lastBreakpointIds: number[] = [];
+  private nextBreakpointId = 1;
   private seq = 1;
   private startDebuggingHandler:
     | ((
@@ -179,12 +182,14 @@ class FakeDapClient implements DebugDapClientLike {
       // 按请求逐个回显(DAP:响应的 breakpoints 与请求一一对应)。
       const requested = (args as { breakpoints?: Array<{ line: number }> }).breakpoints ?? [];
       if (this.emptyBreakpointsResponse) return { breakpoints: [] };
+      this.lastBreakpointIds = requested.map(() => this.nextBreakpointId++);
       return {
-        breakpoints: requested.map((bp): DapJson => {
+        breakpoints: requested.map((bp, i): DapJson => {
           const line = this.adjustBreakpointLine(bp.line);
+          const id = this.lastBreakpointIds[i]!;
           return this.unverifiedLines.has(bp.line)
-            ? { verified: false, line, message: 'pending' }
-            : { verified: true, line };
+            ? { id, verified: false, line, message: 'pending' }
+            : { id, verified: true, line };
         }),
       };
     }
@@ -1355,6 +1360,112 @@ describe('DebugService fake adapter · 会话上限 / 程序起跑时机 / 按 s
     ]);
   });
 
+  // 分组键与记录拼写同一规则(normalize):含 `..` / `.` / 重复分隔符的拼写是同一真实文件,必须合并为
+  // 一个集合,否则第二次整组替换会删掉第一个断点。
+  // adapter 之后用 `breakpoint` 事件(reason:changed)把 pending 断点更新为 verified / 校正行:须按 id 更新
+  // 记录并推快照,否则之后对未变化集合的空响应 fallback 返回过期的 pending,renderer 红点也不更新。
+  it('breakpoint changed 事件 → 更新记录并推快照;之后空响应重设返回最新状态', async () => {
+    const { service, parent } = makeFakeService();
+    const events: DebugViewEvent[] = [];
+    service.setEventSink({ emit: (_owner, event) => events.push(event) });
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      ctx,
+    );
+    parent.unverifiedLines.add(3);
+    expect(await service.setBreakpoints(sessionId, { file: '/a.js', line: 3 })).toEqual({
+      verified: false,
+      line: 3,
+      message: 'pending',
+    });
+    const id = parent.lastBreakpointIds[0]!;
+    parent.emit('breakpoint', { reason: 'changed', breakpoint: { id, verified: true, line: 4 } });
+    const changed = {
+      type: 'breakpoints-changed',
+      sessionId,
+      file: '/a.js',
+      breakpoints: [{ file: '/a.js', line: 4, verified: true }],
+    };
+    expect(events.at(-1)).toEqual(changed);
+
+    parent.emptyBreakpointsResponse = true;
+    expect(await service.setBreakpoints(sessionId, { file: '/a.js', line: 3 })).toEqual({
+      verified: true,
+      line: 4,
+    });
+    expect(events.at(-1)).toEqual(changed);
+  });
+
+  // 真实 js-debug:id 按连接各自编号(父连接 [2,3] 与 child 重放 [1,2] 指同一组断点),changed 事件来自 child。
+  // 必须按「哪条连接 + id」找记录,不能跨连接串号。
+  it('child 连接的 breakpoint changed 事件按该连接的 id 更新(不与父连接的 id 串号);new / removed / 未知 id 忽略', async () => {
+    const { service, parent } = makeFakeService();
+    const events: DebugViewEvent[] = [];
+    service.setEventSink({ emit: (_owner, event) => events.push(event) });
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      ctx,
+    );
+    await service.setBreakpoints(sessionId, { file: '/a.js', line: 3 });
+    await service.setBreakpoints(sessionId, { file: '/a.js', line: 7 });
+    expect(parent.lastBreakpointIds).toEqual([2, 3]);
+    await parent.triggerStartDebugging({ type: 'pwa-node' });
+    const child = parent.children[0]!;
+    expect(child.lastBreakpointIds).toEqual([1, 2]);
+    const before = events.length;
+    child.emit('breakpoint', { reason: 'new', breakpoint: { id: 2, verified: true, line: 99 } });
+    child.emit('breakpoint', { reason: 'removed', breakpoint: { id: 2, verified: true, line: 99 } });
+    child.emit('breakpoint', { reason: 'changed', breakpoint: { id: 42, verified: true, line: 99 } });
+    expect(events.length).toBe(before);
+
+    // child 的 id 2 = 第 7 行(父连接的 id 2 是第 3 行)。
+    child.emit('breakpoint', { reason: 'changed', breakpoint: { id: 2, verified: true, line: 9 } });
+    expect(events.at(-1)).toEqual({
+      type: 'breakpoints-changed',
+      sessionId,
+      file: '/a.js',
+      breakpoints: [
+        { file: '/a.js', line: 3, verified: true },
+        { file: '/a.js', line: 9, verified: true },
+      ],
+    });
+  });
+
+  it('Windows:`..` / `.` / 重复分隔符的拼写合并为同一 source', async () => {
+    platformMock.value = 'win32';
+    const { service, parent } = makeFakeService();
+    const { session_id: sessionId } = await service.launchSession(
+      { program: 'C:\\repo\\fixture.js', cwd: 'C:\\repo' },
+      ctx,
+    );
+    await service.setBreakpoints(sessionId, { file: 'C:\\repo\\a.js', line: 3 });
+    await service.setBreakpoints(sessionId, { file: 'C:\\repo\\sub\\..\\a.js', line: 5 });
+    await service.setBreakpoints(sessionId, { file: 'C:\\repo\\.\\a.js', line: 7 });
+    await service.setBreakpoints(sessionId, { file: 'c:/repo//a.js', line: 9 });
+    expect(setBreakpointRequests(parent).at(-1)).toEqual({
+      source: { path: 'C:\\repo\\a.js' },
+      breakpoints: [{ line: 3 }, { line: 5 }, { line: 7 }, { line: 9 }],
+      sourceModified: false,
+    });
+  });
+
+  it('非 Windows:`..` / `.` / 重复分隔符的拼写合并为同一 source(发送规范化路径)', async () => {
+    platformMock.value = 'darwin';
+    const { service, parent } = makeFakeService();
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/repo/fixture.js', cwd: '/repo' },
+      ctx,
+    );
+    await service.setBreakpoints(sessionId, { file: '/repo/sub/../a.js', line: 3 });
+    await service.setBreakpoints(sessionId, { file: '/repo/./a.js', line: 5 });
+    await service.setBreakpoints(sessionId, { file: '/repo//a.js', line: 7 });
+    expect(setBreakpointRequests(parent).at(-1)).toEqual({
+      source: { path: '/repo/a.js' },
+      breakpoints: [{ line: 3 }, { line: 5 }, { line: 7 }],
+      sourceModified: false,
+    });
+  });
+
   it('Windows:另一种拼写设断点失败 → 回滚补发保留首个断点 [10]', async () => {
     platformMock.value = 'win32';
     const { service, parent } = makeFakeService();
@@ -1675,6 +1786,44 @@ describe.skipIf(!adapterExists)('DebugService real adapter · 晚设断点与 wo
     }
   }
   const ctx = { ownerWindowId: 9, controllerToken: 'agent-real' };
+
+  // 真实 js-debug(TS + source map):起跑前的断点先回 provisional(verified:false),child 连接绑定后用
+  // breakpoint changed 事件更新为 verified(并可能校正行)。快照须跟上,否则红点一直是 pending。
+  it(
+    '起跑前的 provisional 断点 → child 的 breakpoint changed 事件把快照更新为 verified',
+    async () => {
+      const adapterCopy = await prepareCommonJsAdapter();
+      const service = new DebugService({
+        adapterPath: adapterCopy.adapterPath,
+        requestTimeoutMs: 30_000,
+        workspace: { getWorkspaceRoot: () => spikeDir, realpath: async (p) => p },
+      });
+      const events: DebugViewEvent[] = [];
+      service.setEventSink({ emit: (_owner, event) => events.push(event) });
+      try {
+        const { session_id: sessionId } = await service.launchSession(
+          { program, cwd: spikeDir },
+          ctx,
+        );
+        await service.setBreakpoints(sessionId, { file: breakpointFile, line: 14 });
+        const first = await service.setBreakpoints(sessionId, { file: breakpointFile, line: 16 });
+        expect(first.verified).toBe(false);
+        await service.waitForStop(sessionId, { afterStopSeq: 0, timeoutMs: 40_000 });
+        const last = events.filter((e) => e.type === 'breakpoints-changed').at(-1);
+        expect(last).toMatchObject({
+          file: breakpointFile,
+          breakpoints: [
+            { file: breakpointFile, line: 14, verified: true },
+            expect.objectContaining({ file: breakpointFile, verified: true }),
+          ],
+        });
+      } finally {
+        await service.cleanupAll('test finally').catch(() => undefined);
+        await rm(adapterCopy.dir, { recursive: true, force: true });
+      }
+    },
+    120_000,
+  );
 
   it(
     '第一次停住之后再设的断点(此时 child session 已建立)也会命中',

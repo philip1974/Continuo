@@ -421,6 +421,35 @@ describe('editor 会话恢复晚于布局恢复', () => {
     expect(h.api!.activePanel?.id).toBe('editor');
   });
 
+  // 交错时序:Dock 恢复后、editor 会话恢复前,用户先打开文件(pulse 递增,editor 激活)再切回 settings;
+  // 随后会话恢复以 requestFocus:false 改 activeTabId(pulse 不变)。已被消费的那次用户意图不得被再次当成意图。
+  it('会话恢复前用户打开文件后切回 settings → 稍后的会话恢复不抢走 settings;再次点击同一文件仍激活 editor(#22)', async () => {
+    await renderRestoredDock(layoutWithSettingsActive);
+    act(() => {
+      useEditorStore.getState().openTab(createTab('/proj/c.md', 'content'));
+    });
+    expect(h.api!.activePanel?.id).toBe('editor');
+    act(() => {
+      h.api!.panels.find((p) => p.id === 'settings')!.api.setActive();
+    });
+    await restoreEditorSession();
+    expect(useEditorStore.getState().activeTabId).toBe('/proj/a.md');
+    expect(h.api!.activePanel?.id).toBe('settings');
+
+    // 同一文件再次点击(activeTabId 不变,只递增 pulse)→ 照常激活 editor。
+    act(() => {
+      useEditorStore.getState().switchTab('/proj/a.md');
+    });
+    expect(h.api!.activePanel?.id).toBe('editor');
+    act(() => {
+      h.api!.panels.find((p) => p.id === 'settings')!.api.setActive();
+    });
+    act(() => {
+      useEditorStore.getState().switchTab('/proj/a.md');
+    });
+    expect(h.api!.activePanel?.id).toBe('editor');
+  });
+
   it('恢复全部完成后用户 switchTab → 激活 editor', async () => {
     await renderRestoredDock(layoutWithSettingsActive);
     await restoreEditorSession();
