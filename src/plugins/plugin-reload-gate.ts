@@ -24,6 +24,12 @@ export interface PluginReloadGateDeps {
   readonly onEnabledChanged?: (cb: (id: string, enabled: boolean) => void) => void;
   /** 本窗口同步启用状态(PluginManager.handleEnabledChanged)。 */
   readonly enabledChanged?: (id: string, enabled: boolean) => Promise<void>;
+  /**
+   * 禁用广播的同步部分(PluginManager.revokeImmediately,终审 P1:onload 挂起绕过禁用):enabled=false 一到**立即**
+   * 调用,不受 init 缓冲影响 —— 激活可能正挂在 onload 上(init 永不完成 / 锁永不释放),须先吊销能力并中止等待;
+   * enabledChanged 仍按缓冲规则排队。卸载的同步部分由 markUninstalled 负责。
+   */
+  readonly revokeImmediately?: (id: string) => void;
   readonly onError?: (
     where: 'init' | 'reload' | 'uninstalled' | 'enabled-changed',
     err: unknown,
@@ -91,6 +97,13 @@ export function wirePluginReloadGate(deps: PluginReloadGateDeps): void {
   });
 
   deps.onEnabledChanged?.((id, enabled) => {
+    if (!enabled) {
+      try {
+        deps.revokeImmediately?.(id);
+      } catch (err) {
+        deps.onError?.('enabled-changed', err);
+      }
+    }
     if (!ready) {
       pendingEnabled.delete(id); // 重新插入 → 按最后到达顺序重放
       pendingEnabled.set(id, enabled);

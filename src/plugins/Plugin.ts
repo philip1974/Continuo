@@ -157,15 +157,24 @@ export abstract class Plugin {
    * 被 LIFO 清理(防泄漏到 panel / command / mcp 等 registry),disposed
    * 标 true,**不调 onunload**(plugin 没完成初始化,业务卸载钩子无意义,
    * plugin 作者一般也不会写"半初始化态"的 onunload)。然后原错抛上去。
+   * abort(可选):reject 时视同 onload 抛错(PluginManager 在激活挂起期间被禁用 / 卸载时中止)。
    */
-  async _activate(): Promise<void> {
+  async _activate(abort?: Promise<never>): Promise<void> {
     if (this.disposed) {
       throw new Error(
         `Plugin ${this.manifest.id} already deactivated, cannot reuse`,
       );
     }
     try {
-      await this.onload();
+      if (abort) {
+        // 终审 P1(onload 挂起):abort reject(激活期间被禁用 / 卸载)→ 不再等 onload,按 onload 抛错同样收尾;
+        // 迟到的 onload 结果吞掉(防 unhandled rejection),其后的 register 因 disposed 立即 dispose。
+        const loading = Promise.resolve(this.onload());
+        loading.catch(() => {});
+        await Promise.race([loading, abort]);
+      } else {
+        await this.onload();
+      }
     } catch (err) {
       this.disposed = true;
       this.disposeCollected();

@@ -80,6 +80,13 @@ interface PluginEntry {
    * recheckMcpPermission()。与 instance 同生命周期。
    */
   scoped?: ScopedAppController;
+  /**
+   * 激活进行中(终审 P1:onload 挂起):revokeImmediately 据此记下中止请求;abortActivation 在插件代码开始执行
+   * (构造 / onload)后可用,调用即不再等 onload、激活按「被禁用」收尾、释放生命周期锁。
+   */
+  activating?: boolean;
+  revokeRequested?: boolean;
+  abortActivation?: () => void;
   pluginFsToken?: string;
   /** i18n(I4):存结构化 code+message,不存拼好的可见串. */
   error?: PluginError;
@@ -176,6 +183,10 @@ export function findPluginDirByManifestId(
   return found;
 }
 
+function activationAbortedError(id: string): Error {
+  return codedError('ACTIVATION_ABORTED', `plugin ${id} activation aborted (disabled / uninstalled)`);
+}
+
 function uninstalledError(id: string): Error {
   return codedError('NOT_INSTALLED', `plugin ${id} has been uninstalled`);
 }
@@ -202,6 +213,8 @@ export class PluginManager {
    * 故不清除。
    */
   private readonly uninstalledIds = new Set<string>();
+  /** init 进行中(终审 P1):期间到达的广播被 reload-gate 缓冲到 init 完成,锁内停用不会及时执行。 */
+  private initializing = false;
 
   constructor(
     private readonly app: CoApp,
@@ -217,6 +230,15 @@ export class PluginManager {
 
   /** 扫描全部目录 + 解析 manifest + 激活 enabled. */
   async init(): Promise<void> {
+    this.initializing = true;
+    try {
+      await this.initUnlocked();
+    } finally {
+      this.initializing = false;
+    }
+  }
+
+  private async initUnlocked(): Promise<void> {
     const dirs = await this.host.listPluginDirs();
     // 读 _enabled.json 失败(IO 错误)→ 本次不激活任何插件(降级),但**不**写回:init
     // 不触发任何 enabled 写,故不会抹盘。避免启动因一次读错误崩溃。enable/disable 的写路径
@@ -333,13 +355,17 @@ export class PluginManager {
 
   /** 禁用单个插件(若已 disabled 幂等). per-id 串行. */
   async disable(id: string): Promise<void> {
+    // 终审 P1:锁外立即吊销(激活挂在 onload 上时锁可能永不释放),锁内停用照旧排队。
+    this.revokeImmediately(id);
     return this.withLifecycleLock(id, () => this.disableLocked(id));
   }
 
   private async disableLocked(id: string): Promise<void> {
     const entry = this.entries.get(id);
     if (!entry) throw new Error(`Plugin ${id} not found`);
-    if (entry.status !== 'enabled' || !entry.instance) return;
+    // 未运行且无启用意图 → 幂等。有启用意图但无实例(激活被本次禁用中止 / 激活失败)仍须停用并落盘,
+    // 否则 _enabled.json 仍记启用,下次启动复活。
+    if (!entry.instance && !entry.enabledIntent) return;
 
     await this.markDisabled(entry, `disable ${id}`);
     await this.host.mutateEnabledId(id, false);
@@ -468,6 +494,7 @@ export class PluginManager {
    * 避免对同 id 重入锁自死锁。
    */
   async uninstall(id: string): Promise<void> {
+    this.revokeImmediately(id); // 终审 P1:同 disable,锁外立即吊销
     return this.withLifecycleLock(id, () => this.uninstallLocked(id));
   }
 
@@ -478,7 +505,7 @@ export class PluginManager {
       throw codedError('NOT_SUPPORTED', `host 未实现 removePluginDir`);
     }
 
-    if (entry.status === 'enabled' && entry.instance) {
+    if (entry.instance || entry.enabledIntent) {
       // 注意:走 disableLocked(非 public disable),否则在已持有的同 id 锁上重入死锁
       await this.disableLocked(id);
     }
@@ -529,8 +556,32 @@ export class PluginManager {
    */
   markUninstalled(id: string): void {
     this.uninstalledIds.add(id);
+    this.revokeImmediately(id);
     this.host.cancelPermissionPrompt?.(id, uninstalledError(id));
     this.host.permissionStore?.forget?.(id);
+  }
+
+  /**
+   * 禁用 / 卸载的同步部分(终审 P1:onload 挂起绕过禁用 / 卸载):不等生命周期锁、不等 init,立即吊销该插件当前
+   * scoped app(激活中的实例在执行插件代码前就已挂上)、中止挂起的激活等待(锁随之释放),必要时立即终止其 shell 进程。
+   * 锁内停用 / 卸载照旧排队执行。本地 disable / uninstall、远端禁用(reload-gate)与 markUninstalled 共用。幂等。
+   */
+  revokeImmediately(id: string): void {
+    const entry = this.entries.get(id);
+    if (!entry) return;
+    if (entry.activating) entry.revokeRequested = true;
+    entry.scoped?.revoke();
+    entry.abortActivation?.();
+    // 正常运行的实例:锁空闲,锁内停用很快执行 —— 进程终止留在 onunload 之后(让插件先自行收尾)。
+    // 激活挂起 / init 未完成(广播被缓冲)时锁内停用无法及时执行 → 此处立即终止。
+    if (entry.activating || this.initializing) {
+      void this.killPluginShellProcesses(id, `revoke ${id}`);
+    }
+  }
+
+  /** 激活进行中被要求吊销 → 抛中止(在执行插件代码前调用)。 */
+  private assertNotRevokeRequested(entry: PluginEntry): void {
+    if (entry.revokeRequested) throw activationAbortedError(entry.id);
   }
 
   /** 已被卸载 → 抛 NOT_INSTALLED(在途激活在执行插件代码前调用)。 */
@@ -565,6 +616,8 @@ export class PluginManager {
    * 'enabled' 再激活,冒出去会留下「enabled 但没有实例」的半激活态(既关不掉也开不了)。
    */
   private async activateEntry(entry: PluginEntry): Promise<void> {
+    entry.activating = true;
+    entry.revokeRequested = false;
     try {
       await this.activateEntryUnguarded(entry);
     } catch (err) {
@@ -574,6 +627,16 @@ export class PluginManager {
       entry.error = { code: errorCodeOf(err) ?? 'EXCEPTION', message: errorMessage(err) };
       await this.revokePluginFsToken(entry);
       this.invalidateListCache();
+    } finally {
+      entry.activating = false;
+      // 被禁用 / 卸载中止的激活落到 disabled(非失败);启用意图由排队的停用清除 / 落盘。
+      if (entry.revokeRequested && !entry.instance) {
+        entry.status = 'disabled';
+        entry.error = undefined;
+        entry.warning = undefined;
+        this.invalidateListCache();
+      }
+      entry.revokeRequested = false;
     }
   }
 
@@ -597,6 +660,7 @@ export class PluginManager {
     }
     // 已被卸载(广播已到、锁内拆除尚未执行)→ 不再为它弹授权窗。
     this.assertNotUninstalled(entry.id);
+    this.assertNotRevokeRequested(entry);
 
     // v3.4 权限门:manifest 声明了 permissions 且 host 配了 store + prompt
     // 才阻塞;否则放行(向后兼容)。
@@ -645,6 +709,7 @@ export class PluginManager {
 
     // 终审 P1:授权弹窗 / 授权写入 await 期间插件可能已被别的窗口卸载 → 不加载(import 即执行插件顶层代码)。
     this.assertNotUninstalled(entry.id);
+    this.assertNotRevokeRequested(entry);
     const loaded = await loadPluginModule({
       moduleUrl: entry.dirInfo.moduleUrl,
       manifest: entry.manifest,
@@ -665,6 +730,7 @@ export class PluginManager {
     // v5 Phase 1:plugin 拿到的是 per-plugin scoped app(持 pluginId 给
     // permission.check;fs/network 等命名空间预留 Phase 3 启用 gating)
     this.assertNotUninstalled(entry.id); // import await 期间被卸载 → 不构造实例
+    this.assertNotRevokeRequested(entry);
     const { token: pluginFsToken } =
       await coApi.pluginFsRaw._registerPlugin(entry.id);
     entry.pluginFsToken = pluginFsToken;
@@ -682,10 +748,21 @@ export class PluginManager {
     // instance=undefined 的半激活态。后续 disableLocked 的 `!entry.instance` 守卫
     // 又会早退、不走 deactivateEntry → 泄漏的 plugin-fs capability token 永不回收
     // (codex 复审 loop R1)。
+    // 终审 P1(onload 挂起):控制面在执行插件代码(构造 / onload)**之前**挂到 entry,并备好中止 —— 激活挂起期间
+    // 收到禁用 / 卸载,revokeImmediately 可立即吊销并中止等待(否则 entry.scoped 要等 onload 返回才写入)。
+    entry.scoped = scoped;
+    let abortActivation!: (err: Error) => void;
+    const aborted = new Promise<never>((_, reject) => {
+      abortActivation = reject;
+    });
+    aborted.catch(() => {});
+    entry.abortActivation = () => abortActivation(activationAbortedError(entry.id));
     let instance: Plugin;
     try {
+      // _registerPlugin await 期间被要求吊销 → 不构造实例。
+      this.assertNotRevokeRequested(entry);
       instance = new loaded.PluginClass(scoped.app, entry.manifest);
-      await instance._activate();
+      await instance._activate(aborted);
     } catch (err) {
       console.warn(
         `[plugin-manager] activate ${entry.id} failed`,
@@ -693,18 +770,20 @@ export class PluginManager {
       );
       // 终审 P1:失败实例已排程的延迟回调不能再使用能力 —— 先吊销 scoped app。
       scoped.revoke();
+      entry.scoped = undefined;
       entry.status = 'failed';
-      entry.error = { code: 'EXCEPTION', message: errorMessage(err) };
+      entry.error = { code: errorCodeOf(err) ?? 'EXCEPTION', message: errorMessage(err) };
       await this.revokePluginFsToken(entry);
       // 终审 P1:构造函数 / onload 抛错前可能已 exec / execStream 启动 shell 进程;失败实例不进
       // activationOrder,之后禁用 / 卸载 / shutdown 都走不到 deactivateEntry → 此处同样终止。
       await this.killPluginShellProcesses(entry.id, `activate ${entry.id}`);
       this.invalidateListCache();
       return;
+    } finally {
+      entry.abortActivation = undefined;
     }
 
     entry.instance = instance;
-    entry.scoped = scoped;
     entry.status = 'enabled';
     this.invalidateListCache();
     // entry.error / warning 已在方法开头清(成功路径不再重复 reset 错误,
