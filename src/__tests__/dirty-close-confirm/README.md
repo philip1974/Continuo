@@ -8,11 +8,11 @@
 | 文件 | 职责 |
 |---|---|
 | `electron/main/dirty-close-confirm.ts` | 纯函数:解析 renderer 脏态上报、构造确认框(文案走 i18n catalog)、映射用户选择、解析 flush 回执 |
-| `electron/main/index.ts` | `layout:dirty-state` 按窗口记账(受信 frame + sender 窗口);`wireWindowCloseFlush` / `before-quit` 在 flush 前确认;macOS `setDocumentEdited` |
+| `electron/main/index.ts` | `layout:dirty-state` 按窗口记账(计数 + 脏 tab id;受信 frame + sender 窗口);`wireWindowCloseFlush` / `before-quit` 在 flush 前确认;macOS `setDocumentEdited` |
 | `electron/main/quit-cleanup-guard.ts` | `cancel()`:退出被中止后复位守卫,下次 Cmd+Q 重新确认 |
 | `electron/preload/index.ts` | `layout.reportDirtyState` / `sendFlushAck(windowId, { saveFailed })` / flush 请求 payload `save` |
 | `src/shell/dock/dirty-close.ts` | renderer 纯函数:关窗会丢的脏 tab 计数、「保存」分支批量保存 |
-| `src/panels/Editor/autosave-failures.ts` | 按 tab 记录 autosave 失败态(`useAutoSave` 写入,计数与 DockShell 订阅) |
+| `src/panels/Editor/autosave-failures.ts` | 活动 tab 的 autosave 持有者(scheduler 实例)及其最近一次是否失败(`useAutoSave` 写入,计数与 DockShell 订阅) |
 | `src/shell/dock/DockShell.tsx` | 脏态变化时上报;flush 请求带 `save` 时先保存,失败 toast 并回执 `saveFailed` |
 | `electron/shared/i18n-locales/{en,zh,ko}.ts` | `dialog.unsaved_close.*` |
 
@@ -36,9 +36,9 @@
 
 「是否允许关闭」不再只取决于弹框前的脏计数。renderer 在 flush 握手里**全部** flush(批量保存、layout、explorer、
 markdown autosave flush)完成后、回执之前,检查此刻仍 dirty 的 tab(有路径的都算,autosave 已 flush 过,仍脏的
-`.md` 也算;untitled 计入,但本轮选「保存」时只放过不超过确认框告知数的 untitled —— main 随 flush 请求带
-`untitled`,确认后新建、超出该数的 untitled 草稿仍计入)。本轮**未**选「不保存」
-且仍有 → 回执带 `remaining: { dirty, untitled }`:
+`.md` 也算;untitled 计入,但本轮选「保存」时只放过确认框告知的 untitled **id** —— main 随 flush 请求带
+`untitledIds`,确认后新建 / 同数量替换的 untitled 草稿不在其中即计入)。本轮**未**选「不保存」
+且仍有 → 回执带 `remaining: { dirty, untitled, ids, untitledIds }`:
 
 - main 中止本次关闭 / 退出,窗口重新显示,`quitGuard` 复位(与保存失败路径一致),并按 `remaining` 记账 →
   用户再次关闭时看到确认框。
@@ -64,20 +64,25 @@ markdown autosave flush)完成后、回执之前,检查此刻仍 dirty 的 tab(�
 - 逐个有脏文件的主窗确认(一次一个框);任一**取消** → 中止整个退出,不 flush,守卫复位,再次 Cmd+Q 正常重新确认。
 - 按各窗选择 flush;任一「保存」失败或回执 `remaining` → 中止退出、显示该窗口、守卫复位(不记 flushedOnQuit,之后关窗仍走确认)。
 - 全局最终检查:全部 flush 完成后、破坏性清理(`cleanupAll` 杀 PTY / debug)之前,按 main 持续接收的脏态上报判断
-  各主窗是否超出本轮已接受范围(未弹框 → 不接受任何脏;「保存」→ 只接受确认框告知的 untitled;「不保存」→ 接受确认
-  时的脏数)。超出(如 A 已回执后、等待 B 保存期间在 A 里继续编辑)→ 中止退出、显示该窗口、守卫复位。
+  各主窗是否超出本轮已接受范围 —— **按 id 身份**:当前脏 id 须是已接受集合的子集(未弹框 → 空集;「保存」→ 确认框
+  告知的 untitled id;「不保存」→ 确认时的全部脏 id)。只比数量会被同数量替换绕过(「不保存」后存了 X、改了 Y;
+  untitled 换成新草稿)。超出(如 A 已回执后、等待 B 保存期间在 A 里继续编辑)→ 中止退出、显示该窗口、守卫复位。
   renderer 脏态上报经同一 IPC 通道、先于回执到达(zustand 同步更新触发上报)。
 - popout 窗口不参与(与既有 flush 逻辑一致)。
 
 ### 计数口径(renderer)
 
 - 计入:脏的代码文件 tab;untitled 草稿计入并单独计数(无路径,MVP 不支持另存为,「保存」时跳过,文案说明会被丢弃)。
-- 不计入:Markdown 自动保存开启时的脏 `.md`(关窗 flush 经 `flushPendingAutoSave` 落盘);关闭该设置则计入。
-- 例外:最近一次 autosave 失败(ENOSPC / EACCES / EDITOR_DISK_CHANGED)的脏 `.md` 计入 —— 失败后无 pending
-  timer,flush 不会重试。失败态按 tab 记录(`src/panels/Editor/autosave-failures.ts`),变化时重新上报;再次成功后恢复排除。
-  tab 从 editor store 消失(关闭 / 删除 / 重命名)即清除其记录;每个 tab 实例有独立代际,保存开始时取本 tab 代际,
-  其间本 tab 消失则丢弃迟到结果(不写入同路径重开的新实例;兄弟 tab 关闭 / 重命名不影响)。tab 变干净(显式保存 /
-  冲突覆盖等任何成功落盘)即清除记录,干净 tab 的迟到失败不记录。
+- 上报附带脏 tab 的 id 列表(file tab = 路径,untitled = 其 id;`ids` / `untitledIds`)。main 解析时校验计数与 id
+  列表一致、`untitledIds ⊆ ids`、无重复,id 列表上限 `PATH_ARRAY_MAX`、单条上限 `PATH_STR_MAX`,不合法整体忽略。
+- 不计入:Markdown 自动保存开启时,**活动** tab(持有 autosave scheduler)且其最近一次 autosave 未失败的脏 `.md`
+  (关窗 flush 经 `flushPendingAutoSave` 落盘);关闭该设置则计入。
+- **非活动**的脏 `.md` 一律计入:切走时 `useAutoSave` 已 flush,仍脏即失败或在途;关窗 flush 只持有活动 tab 的
+  scheduler,不会重试它(复审:此前按 tab 记失败记录,重命名非活动失败 tab 后记录被清 → 无确认丢失)。
+- 活动 tab 最近一次 autosave 失败(ENOSPC / EACCES / EDITOR_DISK_CHANGED)→ 计入:失败后无 pending timer,flush
+  不会重试。状态绑定 scheduler 实例(`src/panels/Editor/autosave-failures.ts`):切 tab / 重命名 / 关闭重开都换实例,
+  新实例从「未失败」开始且 tab 仍脏时立即重新 schedule(关窗 flush 会重试);旧实例迟到结果丢弃;再次 schedule
+  (继续编辑 / 显式保存后再编辑)即清除失败态。编辑器未挂载(无持有者)→ 计入。变化时重新上报。
 - 「保存」分支保存所有有路径的脏 tab(含 `.md`,无害);全部完成后复查,仍脏(保存期间继续输入)同样视为失败。
 - 保存失败提示里,因磁盘已被外部修改(EDITOR_DISK_CHANGED)而未写的文件单独说明(引导 Cmd+S 解决冲突
   或选「不保存」;关窗流程不弹覆盖框),文案 `dialog.unsaved_close.disk_changed_note`。
@@ -88,6 +93,7 @@ markdown autosave flush)完成后、回执之前,检查此刻仍 dirty 的 tab(�
 |---|---|
 | `dirty-close-dialog.spec.ts` | main 纯函数:上报解析 / 是否弹框 / 按钮与文案 / 选择映射 / 回执解析 |
 | `close-confirm-flow.spec.ts` | main 端到端握手(electron 全 mock):关窗各分支 + before-quit 取消 / 保存失败 / 回执 remaining 中止 / 关闭流程代际 / 成功退出 |
-| `renderer-dirty-close.spec.ts` | renderer 纯函数:计数口径 / 批量保存失败计数 / 最终脏检查 / autosave 失败记录生命周期 |
+| `renderer-dirty-close.spec.ts` | renderer 纯函数:计数口径(活动 / 非活动 / 失败 / 旧实例)/ 批量保存失败计数 / 最终脏检查(untitled 按 id 放行) |
 | `dockshell-save-on-close.spec.tsx` | DockShell 脏态上报 + flush「保存」分支回执 + 最终脏检查回执 `remaining` |
 | `../49-polish-bugfixes/quit-cleanup-guard-reentry.spec.ts` | 守卫 `cancel()` 复位 |
+| `../49-polish-bugfixes/autosave-resolved-failure.spec.tsx` | `useAutoSave` 持有 / 失败 / 重新 schedule / 重命名 / 卸载 |

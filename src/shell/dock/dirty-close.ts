@@ -7,33 +7,39 @@
 
 import type { EditorTab } from '@/stores/editor.store';
 import { isAutoSaveEnabled } from '@/panels/Editor/useAutoSave';
-import { isAutoSaveFailed } from '@/panels/Editor/autosave-failures';
+import { willAutoSaveOnClose } from '@/panels/Editor/autosave-failures';
 
 type TabLike = Pick<EditorTab, 'id' | 'filePath' | 'dirty'>;
 
 export interface DirtyCloseState {
   readonly dirty: number;
   readonly untitled: number;
+  /** 脏 tab 的 id(file tab = 路径;untitled = 其 id)。main 按身份比较「本轮已接受」的范围(复审:只比数量会被同数量替换绕过)。 */
+  readonly ids: readonly string[];
+  /** 其中 untitled 的 id(⊆ ids)。 */
+  readonly untitledIds: readonly string[];
 }
 
 /**
- * 关窗会丢的脏 tab 数。Markdown 自动保存开启时脏 .md 不计入:关窗 flush 会经
- * flushPendingAutoSave 落盘(ADR-015:只有代码文件不 autosave)。例外:最近一次 autosave 失败的
- * 脏 .md 计入 —— 失败后无 pending timer,flush 不会重试(复审)。untitled 草稿计入并单独计数。
+ * 关窗会丢的脏 tab。Markdown 自动保存开启时,只有**活动** tab(持有 autosave scheduler、最近一次未失败)的
+ * 脏 .md 不计入:关窗 flush 经 flushPendingAutoSave 落盘(ADR-015:只有代码文件不 autosave)。非活动的脏 .md
+ * 一律计入 —— 切走时已 flush,仍脏即失败或在途,关窗 flush 不会重试(见 autosave-failures.ts)。
+ * untitled 草稿计入并单独计数。
  */
 export function countDirtyForClose(
   tabs: readonly TabLike[],
   mdAutoSaveEnabled: boolean,
 ): DirtyCloseState {
-  let dirty = 0;
-  let untitled = 0;
+  const ids: string[] = [];
+  const untitledIds: string[] = [];
   for (const tab of tabs) {
     if (!tab.dirty) continue;
-    if (mdAutoSaveEnabled && isAutoSaveEnabled(tab.filePath) && !isAutoSaveFailed(tab.id)) continue;
-    dirty += 1;
-    if (tab.filePath === null) untitled += 1;
+    if (mdAutoSaveEnabled && isAutoSaveEnabled(tab.filePath) && willAutoSaveOnClose(tab.id))
+      continue;
+    ids.push(tab.id);
+    if (tab.filePath === null) untitledIds.push(tab.id);
   }
-  return { dirty, untitled };
+  return { dirty: ids.length, untitled: untitledIds.length, ids, untitledIds };
 }
 
 /**
@@ -41,17 +47,17 @@ export function countDirtyForClose(
  * 保存的改动。「是否允许关闭」此前只取决于弹框前的脏计数,flush 期间 / 确认期间新产生的脏状态没人再查
  * (防抖内 autosave 首次失败、保存后慢 flush 期间继续输入、多窗退出时别窗确认期间本窗变脏)。
  * autosave 已 flush 过,仍脏的 .md 也计入(不看 autosave 设置);untitled 计入,但本轮选了「保存」时
- * 用户已被告知确认框里的 untitled 会被丢弃 —— 只放过不超过该数(allowedUntitled,main 随 flush 请求带来)的
- * untitled;确认后才新建的 untitled 草稿超出该数即计入(复审:此前无条件放过,会被静默丢弃)。
- * 无 → null;有 → 全部脏 tab 计数(main 据此记账)。
+ * 用户已被告知确认框里的 untitled 会被丢弃 —— 只放过确认框告知的 untitled id(allowedUntitledIds,main 随
+ * flush 请求带来);确认后才新建的 untitled 草稿即计入(复审:此前按数量放过,同数量替换会被静默丢弃)。
+ * 无 → null;有 → 全部脏 tab(main 据此记账)。
  */
 export function remainingAfterFlush(
   tabs: readonly TabLike[],
-  allowedUntitled: number,
+  allowedUntitledIds: ReadonlySet<string>,
 ): DirtyCloseState | null {
   const state = countDirtyForClose(tabs, false);
-  const blocking = state.dirty - Math.min(state.untitled, allowedUntitled);
-  return blocking > 0 ? state : null;
+  const allowed = state.untitledIds.filter((id) => allowedUntitledIds.has(id)).length;
+  return state.dirty - allowed > 0 ? state : null;
 }
 
 export interface SaveForCloseResult {

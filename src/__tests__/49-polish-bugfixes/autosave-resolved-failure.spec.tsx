@@ -9,7 +9,7 @@ import { useAutoSave } from '@/panels/Editor/useAutoSave';
 import { useEditorStore } from '@/stores/editor.store';
 import { notify } from '@/notifications/notify';
 import { t } from '@/i18n';
-import { isAutoSaveFailed, setAutoSaveFailed } from '@/panels/Editor/autosave-failures';
+import { willAutoSaveOnClose } from '@/panels/Editor/autosave-failures';
 
 const fail = { ok: false as const, code: 'FS_DENIED', message: 'writeFile failed: /a.md' };
 
@@ -87,22 +87,57 @@ describe('useAutoSave — {ok:false} 失败经 code 本地化提示', () => {
     expect(text).not.toContain('writeFile failed');
   });
 
-  // 复审(dirty-close-confirm):失败态按 tab 记录,关窗计数据此把失败的脏 .md 计入确认;成功后清除。
-  it('{ok:false} → 记为该 tab 的 autosave 失败态;之后成功 → 清除', async () => {
+  // 复审(dirty-close-confirm):活动 tab 的 autosave 失败后无 pending,关窗 flush 不会重试 → 关窗计数不再豁免它;
+  // 继续编辑(重新 schedule)即恢复豁免,之后成功仍豁免。
+  it('{ok:false} → 活动 tab 不再「关窗会落盘」;继续编辑重新 schedule → 恢复;成功后保持', async () => {
     vi.spyOn(notify, 'warn').mockImplementation(() => undefined as never);
-    setAutoSaveFailed('/a.md', false);
     let result: unknown = fail;
     render(<Probe saveTab={async () => result} />);
+    expect(willAutoSaveOnClose('/a.md')).toBe(true);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(80);
     });
-    expect(isAutoSaveFailed('/a.md')).toBe(true);
+    expect(willAutoSaveOnClose('/a.md')).toBe(false);
 
     result = { ok: true, data: undefined };
     act(() => useEditorStore.getState().updateContent('/a.md', 'edited2'));
+    expect(willAutoSaveOnClose('/a.md')).toBe(true);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(80);
     });
-    expect(isAutoSaveFailed('/a.md')).toBe(false);
+    expect(willAutoSaveOnClose('/a.md')).toBe(true);
+  });
+
+  // 显式保存(变干净)后再编辑:重新 schedule 即清除失败态,不误触发关窗确认。
+  it('失败后显式保存再编辑 → 恢复「关窗会落盘」', async () => {
+    vi.spyOn(notify, 'warn').mockImplementation(() => undefined as never);
+    render(<Probe saveTab={async () => fail} />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(80);
+    });
+    expect(willAutoSaveOnClose('/a.md')).toBe(false);
+    act(() => useEditorStore.getState().markSaved('/a.md'));
+    act(() => useEditorStore.getState().updateContent('/a.md', 'again'));
+    expect(willAutoSaveOnClose('/a.md')).toBe(true);
+  });
+
+  // 活动 tab 被重命名:scheduler 随 tabId 重建并重新 schedule,关窗 flush 会重试 → 新 id 豁免、旧 id 不再持有。
+  it('失败后重命名活动 tab → 新 id「关窗会落盘」,旧实例迟到结果不影响', async () => {
+    vi.spyOn(notify, 'warn').mockImplementation(() => undefined as never);
+    render(<Probe saveTab={async () => fail} />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(80);
+    });
+    expect(willAutoSaveOnClose('/a.md')).toBe(false);
+    act(() => useEditorStore.getState().renamePath('/a.md', '/b.md'));
+    expect(willAutoSaveOnClose('/a.md')).toBe(false);
+    expect(willAutoSaveOnClose('/b.md')).toBe(true);
+  });
+
+  it('卸载(编辑器关闭)→ 不再持有', () => {
+    const { unmount } = render(<Probe saveTab={async () => ({ ok: true })} />);
+    expect(willAutoSaveOnClose('/a.md')).toBe(true);
+    unmount();
+    expect(willAutoSaveOnClose('/a.md')).toBe(false);
   });
 });

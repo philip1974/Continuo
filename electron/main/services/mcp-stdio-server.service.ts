@@ -484,10 +484,11 @@ export async function createStdioSocketServer(
     broadcast(method: string, params?: Record<string, unknown>): void {
       const payload: Record<string, unknown> = { jsonrpc: '2.0', method };
       if (params !== undefined) payload.params = params;
-      const line = JSON.stringify(payload) + '\n';
+      const line = JSON.stringify(payload);
       for (const c of clients) {
         try {
-          c.write(line);
+          // 与响应同走 writeLine:跳过拒绝半关闭中 / 已销毁的连接(否则 write-after-end 截断 PARSE_ERROR)。
+          writeLine(c, line);
         } catch {
           clients.delete(c);
         }

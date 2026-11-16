@@ -7,14 +7,14 @@
 import { useEffect, useMemo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useEditorStore } from '@/stores/editor.store';
-import { makeAutoSaveScheduler } from './auto-save';
+import { makeAutoSaveScheduler, type AutoSaveScheduler } from './auto-save';
 import { isMarkdownPath } from './editor-path-utils';
 import { findEditorFileTabById } from './editor-tab-lookup';
 import {
   registerAutoSaveFlush,
   trackInFlightAutoSave,
 } from './autosave-flush-registry';
-import { getAutoSaveRecordEpoch, setAutoSaveFailed } from './autosave-failures';
+import { claimAutoSave, releaseAutoSave, setAutoSaveFailed } from './autosave-failures';
 import { notify } from '@/notifications/notify';
 import { t } from '@/i18n';
 import { localizeErrorByCode } from '@/lib/localize-error';
@@ -54,51 +54,41 @@ export function useAutoSave(
 
   // 每个 tab 一个 scheduler(身份含 tabId)。保存绑定到调度时捕获的 tabId,
   // 而非"当前 active tab" —— 切走后 active 已变,绑定 active 会保存错的 tab。
-  const scheduler = useMemo(
-    () =>
-      tabId !== null
-        ? makeAutoSaveScheduler(
-            // 记录本 tab 最近一次 autosave 是否失败(resolve {ok:false} 或 reject),关窗计数据此
-            // 把失败态的脏 .md 计入确认(见 autosave-failures.ts)。开始时取 epoch:其间 tab 关闭 / 重开
-            // 则迟到结果被丢弃,不写入同 id 新实例。
-            () => {
-              const epoch = getAutoSaveRecordEpoch(tabId);
-              return saveTab(tabId).then(
-                (r) => {
-                  setAutoSaveFailed(
-                    tabId,
-                    (r as { ok?: unknown } | null | undefined)?.ok === false,
-                    epoch,
-                  );
-                  return r;
-                },
-                (err: unknown) => {
-                  setAutoSaveFailed(tabId, true, epoch);
-                  throw err;
-                },
-              );
-            },
-            delayMs,
-            // 自动保存失败时弹一次 warn toast(去重在 scheduler 内,连续失败不刷屏)。
-            // 数据不丢(dirty 保持),仅补反馈 —— 否则后台静默失败用户无从知晓为何脏点不消。
-            // scheduler 已 console.warn,故 mirror:false 防双写。见第二十一轮 P1-AZ。
-            // 打磨 P2-BK:err 可能是 resolve 的 {ok:false,code,message} 失败结果 → 与 Cmd+S 失败
-            // 同走 localizeErrorByCode(按 code 本地化,未收录回退原 message)。
-            (err) => {
-              const message =
-                (err as { message?: unknown } | null | undefined)?.message;
-              notify.warn(
-                `${t('editor.autosave_failed')}: ${localizeErrorByCode(
-                  errorCodeOf(err),
-                  typeof message === 'string' ? message : String(err),
-                )}`,
-                { mirror: false },
-              );
-            },
-          )
-        : null,
-    [saveTab, tabId, delayMs],
-  );
+  const scheduler = useMemo(() => {
+    if (tabId === null) return null;
+    const created: AutoSaveScheduler = makeAutoSaveScheduler(
+      // 记录本 scheduler 最近一次 autosave 是否失败(resolve {ok:false} 或 reject),关窗计数据此不再豁免
+      // 失败态的活动 tab(见 autosave-failures.ts)。按 scheduler 实例记录:换实例后旧实例的迟到结果被丢弃。
+      () =>
+        saveTab(tabId).then(
+          (r) => {
+            setAutoSaveFailed(created, (r as { ok?: unknown } | null | undefined)?.ok === false);
+            return r;
+          },
+          (err: unknown) => {
+            setAutoSaveFailed(created, true);
+            throw err;
+          },
+        ),
+      delayMs,
+      // 自动保存失败时弹一次 warn toast(去重在 scheduler 内,连续失败不刷屏)。
+      // 数据不丢(dirty 保持),仅补反馈 —— 否则后台静默失败用户无从知晓为何脏点不消。
+      // scheduler 已 console.warn,故 mirror:false 防双写。见第二十一轮 P1-AZ。
+      // 打磨 P2-BK:err 可能是 resolve 的 {ok:false,code,message} 失败结果 → 与 Cmd+S 失败
+      // 同走 localizeErrorByCode(按 code 本地化,未收录回退原 message)。
+      (err) => {
+        const message = (err as { message?: unknown } | null | undefined)?.message;
+        notify.warn(
+          `${t('editor.autosave_failed')}: ${localizeErrorByCode(
+            errorCodeOf(err),
+            typeof message === 'string' ? message : String(err),
+          )}`,
+          { mirror: false },
+        );
+      },
+    );
+    return created;
+  }, [saveTab, tabId, delayMs]);
 
   // 内容/脏态变化 → 防抖排队。注意:这里**不**在 cleanup 取消,否则每次按键
   // (activeTab 变)都会取消再排队,且切 tab 会丢掉 pending。切走该 tab 的落盘交给
@@ -113,6 +103,8 @@ export function useAutoSave(
     }
     if (active.id === null || !active.filePath || !active.dirty) return;
     scheduler.schedule();
+    // 有 pending:关窗 flush 会落盘,清除失败态(失败后继续编辑 / 显式保存后再编辑)。
+    setAutoSaveFailed(scheduler, false);
   }, [enabled, active, scheduler]);
 
   // 切走该 tab(scheduler 身份随 tabId 变)或组件卸载 → flush pending,
@@ -120,19 +112,22 @@ export function useAutoSave(
   // 同时把当前 scheduler 的 flush 句柄注册进 registry,供关窗/退出的 flush 握手
   // (DockShell onFlushRequest)在 ack 前同步落盘 pending autosave(P1-AE)。
   useEffect(() => {
-    if (!scheduler) {
+    if (!scheduler || tabId === null) {
       registerAutoSaveFlush(null);
       return;
     }
     registerAutoSaveFlush(() => scheduler.flush());
+    // 本 scheduler 成为活动 tab 的 autosave 持有者(关窗计数据此豁免其脏 .md,见 autosave-failures.ts)。
+    claimAutoSave(tabId, scheduler);
     return () => {
       registerAutoSaveFlush(null);
+      releaseAutoSave(scheduler);
       // 切走该 tab:fire-and-forget 触发落盘,但登记进在途集合 —— 紧接着关窗时
       // flush 握手会 await 它,否则旧 tab 这次写盘 IPC 仍在飞就被退出截断(P1-AE 的
       // 兄弟缺口,codex 复审 F2)。
       trackInFlightAutoSave(scheduler.flush());
     };
-  }, [scheduler]);
+  }, [scheduler, tabId]);
 }
 
 /**
