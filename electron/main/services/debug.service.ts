@@ -1,6 +1,7 @@
 import { execFile as execFileCb } from 'node:child_process';
 import { asRecord } from '../../shared/as-record';
-import { realpath } from 'node:fs/promises';
+import { constants as fsConstants } from 'node:fs';
+import { access, realpath, stat } from 'node:fs/promises';
 import { platform } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -102,6 +103,8 @@ export interface DebugServiceOptions {
   readonly processOps?: DebugProcessOps;
   readonly eventSink?: DebugEventSink;
   readonly workspace?: DebugWorkspaceGuard;
+  /** 被调试程序的 node 绝对路径(注入式以便单测;默认按 main 进程自身 PATH 解析并缓存)。 */
+  readonly resolveNodeRuntime?: () => Promise<string>;
 }
 
 export interface LaunchSessionInput {
@@ -185,6 +188,8 @@ interface RuntimeDebugSession {
   activeClient: DebugDapClientLike;
   readonly childClients: DebugDapClientLike[];
   readonly launch: LaunchSessionInput;
+  /** 被调试程序的 node 绝对路径(launch 时由 main 解析;父 / child 的 launch 都固定用它)。 */
+  readonly runtimeExecutable: string;
   readonly waiters: Set<StopWaiter>;
   /** 全部已设断点(同 file+line 去重);setBreakpoints 按 file 取出该 source 的完整集合发送。 */
   readonly breakpoints: BreakpointRecord[];
@@ -274,6 +279,39 @@ function toEnvObject(
   const out: Record<string, string> = {};
   for (const entry of env) out[entry.name] = entry.value;
   return out;
+}
+
+/**
+ * 在 PATH(main 进程自身的,**不含** agent 传入的 launch env)中查找 node,返回 realpath 后的绝对路径。
+ * 安全:launch 不指定 runtimeExecutable 时 js-debug 按 launch.env 的 PATH 找 `node` 并先执行 `node --version`,
+ * agent 传 PATH=/tmp/payload 即可在工作区外执行任意代码。runtimeExecutable 固定为这里解析出的路径后,
+ * env 里的 PATH 只影响被调试程序自身,不再影响用哪个 node。空项与相对路径项跳过(相对项按 cwd 解析,不可信)。
+ */
+export async function findNodeRuntimeOnPath(pathValue: string | undefined): Promise<string> {
+  const exe = platform() === 'win32' ? 'node.exe' : 'node';
+  for (const dir of (pathValue ?? '').split(path.delimiter)) {
+    if (dir === '' || !path.isAbsolute(dir)) continue;
+    try {
+      const real = await realpath(path.join(dir, exe));
+      if (!(await stat(real)).isFile()) continue;
+      await access(real, fsConstants.X_OK);
+      return real;
+    } catch {
+      // 该目录下没有可执行的 node:看下一项
+    }
+  }
+  throw codedError(ERROR_CODES.DEBUG_NODE_RUNTIME_NOT_FOUND, `debug launch: ${exe} not found on Continuo's PATH`);
+}
+
+/** 默认解析结果缓存(只缓存成功;失败不缓存,用户装好 node 后可直接重试)。 */
+let cachedNodeRuntime: Promise<string> | null = null;
+
+function defaultResolveNodeRuntime(): Promise<string> {
+  cachedNodeRuntime ??= findNodeRuntimeOnPath(process.env.PATH).catch((err: unknown) => {
+    cachedNodeRuntime = null;
+    throw err;
+  });
+  return cachedNodeRuntime;
 }
 
 const FORBIDDEN_ENV_NAMES = new Set<string>(DEBUG_LAUNCH_FORBIDDEN_ENV);
@@ -628,6 +666,7 @@ export class DebugService {
   }) => DebugDapClientLike;
   private readonly processOps: DebugProcessOps;
   private readonly workspace: DebugWorkspaceGuard;
+  private readonly resolveNodeRuntime: () => Promise<string>;
   private readonly runtimes = new Map<string, RuntimeDebugSession>();
   private readonly teardownInFlight = new Map<string, Promise<void>>();
   /** 按 session + source 串行 setBreakpoints(读集合→下发→回滚/推快照整段不交错)。 */
@@ -648,6 +687,7 @@ export class DebugService {
         }));
     this.processOps = options.processOps ?? DEFAULT_PROCESS_OPS;
     this.workspace = options.workspace ?? DEFAULT_WORKSPACE_GUARD;
+    this.resolveNodeRuntime = options.resolveNodeRuntime ?? defaultResolveNodeRuntime;
     this.eventSink = options.eventSink ?? null;
   }
 
@@ -713,6 +753,8 @@ export class DebugService {
       input.program,
       effectiveCwd,
     );
+    // 被调试程序用哪个 node 由 main 解析(不受 env 影响);解析不到就拒绝,不 spawn adapter。
+    const runtimeExecutable = await this.resolveNodeRuntime();
     // launch 固定用校验时的真实路径(见 assertLaunchInsideWorkspace);会话记录仍展示调用方拼写。
     const normalizedInput: LaunchSessionInput = { ...input, program: verified.program, cwd: verified.cwd };
     // 名额被自然结束(terminated)的会话占满时回收最旧的:它们的 adapter 不会自己退出,否则一直占着名额。
@@ -755,6 +797,7 @@ export class DebugService {
       activeClient: parentClient,
       childClients: [],
       launch: normalizedInput,
+      runtimeExecutable,
       waiters: new Set(),
       childEnded: false,
       queuedStops: [],
@@ -1445,6 +1488,8 @@ export class DebugService {
       name: launch.name ?? 'Continuo debug session',
       program: launch.program,
       cwd,
+      // 固定 node:否则 js-debug 按 env 的 PATH 解析 `node`(见 findNodeRuntimeOnPath)。
+      runtimeExecutable: runtime.runtimeExecutable,
       args: [...(launch.args ?? [])],
       ...(toEnvObject(launch.env) !== undefined ? { env: toEnvObject(launch.env) } : {}),
       console: 'internalConsole',
