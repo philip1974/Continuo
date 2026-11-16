@@ -39,3 +39,4 @@
 ### stdin
 
 - input 字符串非 undefined → write + end
+- 未提供 input → 立即 end stdin(一次性非交互 API;cat / python - 读到 EOF 正常退出,不等到超时)

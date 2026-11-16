@@ -448,11 +448,16 @@ export async function createTerminal(
     getCurrentLocale(),
   );
   let shellEnv: Awaited<ReturnType<typeof prepareShellIntegrationEnv>>['env'];
+  let shellIntegrationArgs: string[];
   let shellCleanup: Awaited<
     ReturnType<typeof prepareShellIntegrationEnv>
   >['cleanup'];
   try {
-    ({ env: shellEnv, cleanup: shellCleanup } = await prepareShellIntegrationEnv(
+    ({
+      env: shellEnv,
+      args: shellIntegrationArgs,
+      cleanup: shellCleanup,
+    } = await prepareShellIntegrationEnv(
       shell,
       baseEnvWithLang,
     ));
@@ -480,7 +485,16 @@ export async function createTerminal(
   // 用户传 args 优先,只在用户没传时加默认 flag。
   // 跨平台:`-l -i` 是 POSIX 交互 shell 语义,Windows powershell/cmd 不识别会启动失败,
   // /bin/sh(dash)/ 未知 shell 也未必支持 → defaultShellArgs 仅对 zsh/bash/fish 追加。
-  const finalArgs = args.length === 0 ? defaultShellArgs(shell) : args;
+  // helper 约定:调用方必须同时用返回的 env 与 args。bash 返回 ['--rcfile', <rc>, '-i']
+  // (交互式 bash 忽略 BASH_ENV,login bash 又不读 --rcfile)→ 必须用它替代 `-l -i`,
+  // 否则 OSC7 cwd hook 永不安装。login 语义由 rcfile 回 source ~/.bash_profile / ~/.profile /
+  // ~/.bashrc 补齐。zsh/fish/其它 helper 返回空 args → 仍走 defaultShellArgs。
+  const finalArgs =
+    args.length > 0
+      ? args
+      : shellIntegrationArgs.length > 0
+        ? shellIntegrationArgs
+        : defaultShellArgs(shell);
   const inst: Instance = {
     pendingData: '',
     flushTimer: null,

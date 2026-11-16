@@ -117,7 +117,10 @@ export function execShell(input: IpcShellExecInput): Promise<IpcShellExecResult>
     child.stdout?.on('data', (c: Buffer) => append('stdout', c));
     child.stderr?.on('data', (c: Buffer) => append('stderr', c));
 
-    if (input.input !== undefined && child.stdin) {
+    // 一次性非交互 API:无论有无 input 都要 end stdin。旧实现只在有 input 时 end,
+    // 无 input 时管道一直开着 → cat / python - 等读 stdin 的命令永远等不到 EOF,
+    // 卡到超时被 SIGTERM。
+    if (child.stdin) {
       // 子进程不读 stdin / 写入前就退出时,向已关闭的管道写会在 stdin 流上发
       // 'error'(EPIPE)。stdin 是独立 emitter,'error' 无监听者会上抛为
       // uncaughtException;electron/main 没有任何 uncaughtException 兜底 →
@@ -127,7 +130,7 @@ export function execShell(input: IpcShellExecInput): Promise<IpcShellExecResult>
         /* EPIPE / 管道已关闭:子进程不读 stdin,忽略,exit/close 会照常 resolve */
       });
       try {
-        child.stdin.write(input.input);
+        if (input.input !== undefined) child.stdin.write(input.input);
         child.stdin.end();
       } catch {
         /* 已关闭的 stdin 同步抛错:同样忽略,交给 close/error 收尾 */

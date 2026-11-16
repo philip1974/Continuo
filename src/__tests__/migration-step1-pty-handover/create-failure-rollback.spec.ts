@@ -20,6 +20,7 @@ const shellMock = vi.hoisted(() => ({
   cleanup: vi.fn(async () => {}),
   prepareShellIntegrationEnv: vi.fn(async (_shell: string, env: Record<string, string | undefined>) => ({
     env,
+    args: [],
     cleanup: shellMock.cleanup,
   })),
 }));
