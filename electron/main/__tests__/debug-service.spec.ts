@@ -26,6 +26,13 @@ import type { DebugViewEvent } from '../../shared/debug-view-channels';
 
 const execFile = promisify(execFileCb);
 
+// 模拟 Windows 平台(debug.service 经 node:os 的 platform() 判平台)。
+const platformMock = vi.hoisted(() => ({ value: null as NodeJS.Platform | null }));
+vi.mock('node:os', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:os')>();
+  return { ...actual, platform: () => platformMock.value ?? actual.platform() };
+});
+
 class FakeDapClient implements DebugDapClientLike {
   readonly socketPath = `fake-${Math.random().toString(16).slice(2)}.sock`;
   readonly tcpPort = 0;
@@ -43,6 +50,8 @@ class FakeDapClient implements DebugDapClientLike {
   beforeResponse: ((command: string) => void | Promise<void>) | null = null;
   /** setBreakpoints 响应里的行号校正(模拟 adapter 把断点挪到最近的可执行行)。 */
   adjustBreakpointLine: (line: number) => number = (line) => line;
+  /** 置位时 setBreakpoints 响应的 breakpoints 为空数组(模拟 adapter 对未变化的集合不逐项回报)。 */
+  emptyBreakpointsResponse = false;
   private seq = 1;
   private startDebuggingHandler:
     | ((
@@ -167,6 +176,7 @@ class FakeDapClient implements DebugDapClientLike {
     if (command === 'setBreakpoints') {
       // 按请求逐个回显(DAP:响应的 breakpoints 与请求一一对应)。
       const requested = (args as { breakpoints?: Array<{ line: number }> }).breakpoints ?? [];
+      if (this.emptyBreakpointsResponse) return { breakpoints: [] };
       return {
         breakpoints: requested.map((bp) => ({ verified: true, line: this.adjustBreakpointLine(bp.line) })),
       };
@@ -231,6 +241,7 @@ function makeFakeService(
 }
 
 afterEach(() => {
+  platformMock.value = null;
   debugSessions._reset();
 });
 
@@ -1234,6 +1245,92 @@ describe('DebugService fake adapter · 会话上限 / 程序起跑时机 / 按 s
       sessionId,
       file: '/a.js',
       breakpoints: [{ file: '/a.js', line: 5, verified: true }],
+    });
+  });
+
+  // adapter 对未变化的完整集合可能返回空 / 短 breakpoints:缺项沿用该记录上次的校正结果,不回退到请求行。
+  it('adapter 未回报某项 → 快照沿用上次校正行(去重照常)', async () => {
+    const { service, parent } = makeFakeService();
+    const events: DebugViewEvent[] = [];
+    service.setEventSink({ emit: (_owner, event) => events.push(event) });
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      ctx,
+    );
+    parent.adjustBreakpointLine = (line) => (line === 3 || line === 4 ? 5 : line);
+    await service.setBreakpoints(sessionId, { file: '/a.js', line: 3 });
+    await service.setBreakpoints(sessionId, { file: '/a.js', line: 4 });
+    parent.emptyBreakpointsResponse = true;
+    await service.setBreakpoints(sessionId, { file: '/a.js', line: 3 });
+    expect(events.at(-1)).toEqual({
+      type: 'breakpoints-changed',
+      sessionId,
+      file: '/a.js',
+      breakpoints: [{ file: '/a.js', line: 5, verified: true }],
+    });
+    // 从未得到回报的新记录才用请求行。
+    await service.setBreakpoints(sessionId, { file: '/a.js', line: 9 });
+    expect(events.at(-1)).toMatchObject({
+      breakpoints: [
+        { file: '/a.js', line: 5 },
+        { file: '/a.js', line: 9 },
+      ],
+    });
+  });
+
+  // Windows 路径大小写不敏感、`/` 与 `\` 等价:js-debug 视为同一 source,这里也必须合并成一个完整集合,
+  // 否则第二次整组替换会删掉第一个断点。
+  it('Windows:同一 source 的不同拼写合并为一个集合,沿用首次拼写', async () => {
+    platformMock.value = 'win32';
+    const { service, parent } = makeFakeService();
+    const events: DebugViewEvent[] = [];
+    service.setEventSink({ emit: (_owner, event) => events.push(event) });
+    const { session_id: sessionId } = await service.launchSession(
+      { program: 'C:\\repo\\fixture.js', cwd: 'C:\\repo' },
+      ctx,
+    );
+    await service.setBreakpoints(sessionId, { file: 'C:\\repo\\a.js', line: 3 });
+    await service.setBreakpoints(sessionId, { file: 'c:/repo/a.js', line: 7 });
+    expect(setBreakpointRequests(parent).at(-1)).toMatchObject({
+      source: { path: 'C:\\repo\\a.js' },
+      breakpoints: [{ line: 3 }, { line: 7 }],
+    });
+    expect(events.at(-1)).toMatchObject({
+      file: 'C:\\repo\\a.js',
+      breakpoints: [
+        { file: 'C:\\repo\\a.js', line: 3 },
+        { file: 'C:\\repo\\a.js', line: 7 },
+      ],
+    });
+    await parent.triggerStartDebugging({ type: 'pwa-node' });
+    expect(setBreakpointRequests(parent.children[0]!)).toEqual([
+      expect.objectContaining({
+        source: { path: 'C:\\repo\\a.js' },
+        breakpoints: [{ line: 3 }, { line: 7 }],
+      }),
+    ]);
+  });
+
+  it('Windows:另一种拼写设断点失败 → 回滚补发保留首个断点 [10]', async () => {
+    platformMock.value = 'win32';
+    const { service, parent } = makeFakeService();
+    const { session_id: sessionId } = await service.launchSession(
+      { program: 'C:\\repo\\fixture.js', cwd: 'C:\\repo' },
+      ctx,
+    );
+    await service.setBreakpoints(sessionId, { file: 'C:\\repo\\a.js', line: 10 });
+    let calls = 0;
+    parent.beforeResponse = (command) => {
+      if (command !== 'setBreakpoints') return undefined;
+      calls += 1;
+      return calls === 1 ? Promise.reject(new Error('timeout')) : undefined;
+    };
+    await expect(
+      service.setBreakpoints(sessionId, { file: 'c:/repo/a.js', line: 20 }),
+    ).rejects.toThrow('timeout');
+    expect(setBreakpointRequests(parent).at(-1)).toMatchObject({
+      source: { path: 'C:\\repo\\a.js' },
+      breakpoints: [{ line: 10 }],
     });
   });
 });
