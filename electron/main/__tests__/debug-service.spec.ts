@@ -2,7 +2,7 @@
 
 import { execFile as execFileCb } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { copyFile, cp, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { chmod, copyFile, cp, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -12,6 +12,7 @@ import {
   DEBUG_VARIABLES_EXPAND_MAX_NODES,
   DEBUG_VARIABLES_EXPAND_MAX_REQUESTS,
   DebugService,
+  findNodeRuntimeOnPath,
   type DebugDapClientLike,
   type DebugProcessOps,
   type DebugVariable,
@@ -25,6 +26,8 @@ import type {
   DapResponseMessage,
 } from '../services/dap-client';
 import type { DebugViewEvent } from '../../shared/debug-view-channels';
+import { ERROR_CODES } from '../../shared/error-codes';
+import { codedError } from '../../shared/error-message';
 
 const execFile = promisify(execFileCb);
 
@@ -1144,6 +1147,53 @@ describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
         { ownerWindowId: 29, controllerToken: 'agent-sec10' },
       ),
     ).rejects.toMatchObject({ code: 'DEBUG_PROGRAM_OUTSIDE_WORKSPACE', message: expect.stringContaining(name) });
+    expect(spawn).not.toHaveBeenCalled();
+    expect(service.listSessions()).toEqual([]);
+  });
+
+  // 根因闸:launch 不指定 runtimeExecutable 时 js-debug 按 launch.env 的 PATH 找 `node`(先跑 `node --version`
+  // 再用它起程序)→ env PATH=/tmp/payload 即执行工作区外代码。runtimeExecutable 固定为 main 进程在可信环境
+  // 解析出的绝对路径,父 / child 的 launch 都用它,agent 的 env(含 PATH)与 startDebugging 配置都改不了它。
+  it('安全:launch 的 runtimeExecutable 固定为 main 解析的绝对 node 路径,env PATH 不影响', async () => {
+    const parent = new FakeDapClient(1001);
+    const resolveNodeRuntime = vi.fn(async () => '/opt/trusted/bin/node');
+    const service = new DebugService({
+      createDapClient: () => parent,
+      workspace: { getWorkspaceRoot: () => '/repo', realpath: async (p) => p },
+      resolveNodeRuntime,
+    });
+    const { session_id } = await service.launchSession(
+      { program: '/repo/app.js', cwd: '/repo', env: [{ name: 'PATH', value: '/tmp/payload' }] },
+      { ownerWindowId: 31, controllerToken: 'agent-sec12' },
+    );
+    void service.waitForStop(session_id, { timeoutMs: 5_000 }).catch(() => undefined);
+    await vi.waitFor(() => expect(parent.requestLog.some((r) => r.command === 'launch')).toBe(true));
+    const launch = parent.requestLog.find((r) => r.command === 'launch')!.args as Record<string, unknown>;
+    expect(launch['runtimeExecutable']).toBe('/opt/trusted/bin/node');
+    expect(launch['env']).toEqual({ PATH: '/tmp/payload' });
+
+    await parent.triggerStartDebugging({ type: 'pwa-node', runtimeExecutable: '/tmp/payload/node' });
+    const childLaunch = parent.children[0]!.requestLog.find((r) => r.command === 'launch')!.args as Record<
+      string,
+      unknown
+    >;
+    expect(childLaunch['runtimeExecutable']).toBe('/opt/trusted/bin/node');
+    await service.killByOwner(31, 'test');
+  });
+
+  it('安全:解析不到 node → launch 报 DEBUG_NODE_RUNTIME_NOT_FOUND 且不 spawn adapter', async () => {
+    const parent = new FakeDapClient(1001);
+    const spawn = vi.spyOn(parent, 'spawnServer');
+    const service = new DebugService({
+      createDapClient: () => parent,
+      workspace: { getWorkspaceRoot: () => '/repo', realpath: async (p) => p },
+      resolveNodeRuntime: async () => {
+        throw codedError(ERROR_CODES.DEBUG_NODE_RUNTIME_NOT_FOUND, 'node not found');
+      },
+    });
+    await expect(
+      service.launchSession({ program: '/repo/app.js', cwd: '/repo' }, { ownerWindowId: 32, controllerToken: 'agent-sec13' }),
+    ).rejects.toMatchObject({ code: 'DEBUG_NODE_RUNTIME_NOT_FOUND' });
     expect(spawn).not.toHaveBeenCalled();
     expect(service.listSessions()).toEqual([]);
   });
@@ -2977,4 +3027,77 @@ describe.skipIf(!adapterExists)('DebugService real adapter · 晚设断点与 wo
     },
     120_000,
   );
+
+  // 真实 js-debug:未固定 runtimeExecutable 时它按 launch.env 的 PATH 找 node,先执行 `<PATH>/node --version`。
+  // 伪 node 被执行就写下标记文件;固定后程序照常在断点停住,且伪 node 从未被执行。
+  it.skipIf(process.platform === 'win32')(
+    '安全:env PATH 指向伪 node → 不被执行,程序仍由 main 解析的 node 运行',
+    async () => {
+      await withRealService({ 'app.js': 'const a = 1;\nconsole.log(a);\n' }, async ({ service, dir }) => {
+        const payloadDir = path.join(dir, 'payload');
+        const marker = path.join(dir, 'payload-ran');
+        await mkdir(payloadDir);
+        await writeFile(path.join(payloadDir, 'node'), `#!/bin/sh\ntouch ${JSON.stringify(marker)}\necho v99.0.0\n`);
+        await chmod(path.join(payloadDir, 'node'), 0o755);
+        const file = path.join(dir, 'app.js');
+        const { session_id: sessionId } = await service.launchSession(
+          { program: file, cwd: dir, env: [{ name: 'PATH', value: payloadDir }] },
+          ctx,
+        );
+        await service.setBreakpoints(sessionId, { file, line: 2 });
+        await service.waitForStop(sessionId, { afterStopSeq: 0, timeoutMs: 40_000 });
+        const stack = await service.stackTrace(sessionId, { startFrame: 0, levels: 1 });
+        expect(stack.frames[0]?.line).toBe(2);
+        expect(existsSync(marker)).toBe(false);
+      });
+    },
+    120_000,
+  );
+});
+
+// 默认的 node 解析:只按 main 进程自身 PATH(不含 agent 传入的 env)逐项查找,取 realpath 得绝对路径。
+describe('findNodeRuntimeOnPath · 被调试程序的 node 由 main 在可信环境中解析', () => {
+  const exe = process.platform === 'win32' ? 'node.exe' : 'node';
+  let dir: string | null = null;
+
+  afterEach(async () => {
+    if (dir) await rm(dir, { recursive: true, force: true });
+    dir = null;
+  });
+
+  async function makeFakeNode(): Promise<{ binDir: string; linkDir: string; real: string }> {
+    dir = await realpath(await mkdtemp(path.join(tmpdir(), 'continuo-node-rt-')));
+    const binDir = path.join(dir, 'bin');
+    const linkDir = path.join(dir, 'link');
+    await mkdir(binDir);
+    await mkdir(linkDir);
+    const real = path.join(binDir, exe);
+    await writeFile(real, '#!/bin/sh\n');
+    await chmod(real, 0o755);
+    await symlink(real, path.join(linkDir, exe));
+    return { binDir, linkDir, real };
+  }
+
+  it('按 PATH 顺序取首个命中,返回 realpath 后的绝对路径', async () => {
+    const { linkDir, real } = await makeFakeNode();
+    const missing = path.join(dir!, 'missing');
+    await expect(findNodeRuntimeOnPath([missing, linkDir].join(path.delimiter))).resolves.toBe(real);
+  });
+
+  it('跳过空项与相对路径项(相对项按 main 进程 cwd 解析,不可信)', async () => {
+    const { binDir } = await makeFakeNode();
+    await expect(
+      findNodeRuntimeOnPath(['', path.relative(process.cwd(), binDir)].join(path.delimiter)),
+    ).rejects.toMatchObject({ code: 'DEBUG_NODE_RUNTIME_NOT_FOUND' });
+  });
+
+  it('PATH 中没有 node → DEBUG_NODE_RUNTIME_NOT_FOUND', async () => {
+    dir = await mkdtemp(path.join(tmpdir(), 'continuo-node-rt-'));
+    await expect(findNodeRuntimeOnPath(dir)).rejects.toMatchObject({
+      code: 'DEBUG_NODE_RUNTIME_NOT_FOUND',
+    });
+    await expect(findNodeRuntimeOnPath(undefined)).rejects.toMatchObject({
+      code: 'DEBUG_NODE_RUNTIME_NOT_FOUND',
+    });
+  });
 });

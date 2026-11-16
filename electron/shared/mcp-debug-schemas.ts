@@ -401,7 +401,7 @@ export const debugLaunchInputJsonSchema = objectSchema(
     env: {
       ...arraySchema(envEntryJson, 128),
       description:
-        `Extra environment variables. Variables that make Node or the dynamic linker load extra code are rejected (case-insensitive): ${DEBUG_LAUNCH_FORBIDDEN_ENV.join(', ')}.`,
+        `Extra environment variables. Variables that make Node or the dynamic linker load extra code are rejected (case-insensitive): ${DEBUG_LAUNCH_FORBIDDEN_ENV.join(', ')}. The Node.js runtime is resolved by Continuo, not from env PATH.`,
     },
     stop_on_entry: boolSchema(),
     name: stringSchema(128),

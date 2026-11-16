@@ -43,6 +43,7 @@ export const en = {
   'errors.BAD_URL': 'Bad URL',
   'errors.DEBUG_ADAPTER_LAUNCH_FAILED': 'Failed to launch debug adapter',
   'errors.DEBUG_NOT_AUTHORIZED': 'Debug control not authorized',
+  'errors.DEBUG_NODE_RUNTIME_NOT_FOUND': 'Node.js runtime not found for debugging (Continuo looks up node on its own PATH)',
   'errors.DEBUG_PROGRAM_OUTSIDE_WORKSPACE':
     'Debug target must be inside the workspace',
   'errors.DEBUG_RESULT_TOO_LARGE': 'Debug result too large',
