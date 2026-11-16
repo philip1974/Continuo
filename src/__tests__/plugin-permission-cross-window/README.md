@@ -25,8 +25,9 @@
 ### renderer
 
 - `IpcPermissionStore.grant/deny/clearDenied` 改发增量变更,用 main 返回的合并结果更新缓存。
-- `IpcPermissionStore.invalidate(id)`:丢弃缓存,下次读重新从 main 加载;加载在途时其结果不再落缓存
-  (读到的可能是变更前的快照)。
+- `IpcPermissionStore.invalidate(id)`:丢弃缓存,下次读重新从 main 加载。加载在途时其结果既不落缓存、也不交给
+  等待者(读到的可能是撤销前快照,`ensurePerm` 会放行一次),按当前代际重新读取;最多读 3 次仍不稳定 →
+  视为读取失败,`ensurePerm` 拒绝(终审 P1)。
 - 启动接线:`coApi.plugins.onPermissionsChanged(id => store.invalidate(id))`(preload 复用 `{ id }` payload 守卫)。
 
 ## 规范文件
@@ -34,4 +35,5 @@
 - `main-merge.spec.ts`:真实临时目录;陈旧窗口的增量保存不覆盖别窗的撤销;clear-denied 语义;保留 pathScopes;已卸载插件拒绝写入。
 - `main-broadcast.spec.ts`:IPC 成功后广播、失败不广播、返回合并记录、输入 schema 上限。
 - `renderer-invalidate.spec.ts`:两个 store 模拟窗口 A / B;A 撤销后 B 的 `permission.check` 变 false;
-  B 保存其它权限不会把 A 的撤销覆盖回来;加载在途被失效。
+  B 保存其它权限不会把 A 的撤销覆盖回来;加载在途被失效 → 等待者拿到重读结果;读取在途时撤销 shell →
+  `shell.exec` 拒绝、不发 IPC;代际始终不稳定 → 重试有上限后拒绝。

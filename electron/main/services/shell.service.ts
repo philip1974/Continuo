@@ -76,9 +76,24 @@ const inFlightBySender = new Map<number, number>();
 export const MAX_ACTIVE_EXECS_GLOBAL_FOR_TEST = MAX_ACTIVE_EXECS_GLOBAL;
 export const MAX_ACTIVE_EXECS_PER_SENDER_FOR_TEST = MAX_ACTIVE_EXECS_PER_SENDER;
 
-/** 退出清理(before-quit awaited):立即强杀所有在途 exec 的进程树并等待 close(有上限)。 */
-export function cleanupAllShellExecs(): Promise<void> {
-  return killProcessTreesNow(inFlight.keys());
+// 终审 P1:退出清理(cleanupAllShellExecs)已开始。只杀调用瞬间的快照时,插件收到结算后立即重启的任务在最终
+// app.quit 前启动、不在快照内,detached 进程组在 IDE 退出后存活;故此后 exec 一律拒绝(与 debug launch 同一闸)。
+let shuttingDown = false;
+
+/** 测试用:复位退出闸(模块级状态)。 */
+export function resetShellExecShutdownForTest(): void {
+  shuttingDown = false;
+}
+
+/**
+ * 退出清理(before-quit awaited):立即强杀所有在途 exec 的进程树并等待 close(有上限)。开始即置退出闸,
+ * 结束前再查一遍登记表,强杀清理期间漏网登记的进程。
+ */
+export async function cleanupAllShellExecs(): Promise<void> {
+  shuttingDown = true;
+  const snapshot = new Set(inFlight.keys());
+  await killProcessTreesNow(snapshot);
+  await killProcessTreesNow([...inFlight.keys()].filter((child) => !snapshot.has(child)));
 }
 
 /** 立即终止 senderId 名下全部在途 exec 的进程树;close 后照常结算 Promise 并释放名额。 */
@@ -105,6 +120,11 @@ export function execShell(
   input: IpcShellExecInput,
   senderId?: number,
 ): Promise<IpcShellExecResult> {
+  if (shuttingDown) {
+    return Promise.reject(
+      codedError(ERROR_CODES.AGENT_NOT_AUTHORIZED, 'shell exec rejected: app is quitting'),
+    );
+  }
   if (
     inFlight.size >= MAX_ACTIVE_EXECS_GLOBAL ||
     (senderId !== undefined &&

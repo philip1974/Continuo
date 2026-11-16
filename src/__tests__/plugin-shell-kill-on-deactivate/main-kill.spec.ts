@@ -22,10 +22,14 @@ vi.mock('electron', () => ({
 import { SHELL_CHANNELS } from '../../../electron/shared/shell-channels';
 import { PLUGIN_SHELL_STREAM_CHANNELS } from '../../../electron/shared/plugin-shell-stream-channels';
 import { registerShellIpc } from '../../../electron/main/ipc/shell.ipc';
-import { cleanupAllShellExecs } from '../../../electron/main/services/shell.service';
+import {
+  cleanupAllShellExecs,
+  resetShellExecShutdownForTest,
+} from '../../../electron/main/services/shell.service';
 import {
   cleanupAllShellStreams,
   registerPluginShellStreamHandlers,
+  resetShellStreamShutdownForTest,
 } from '../../../electron/main/services/plugin-shell-stream.service';
 import { StubIpcMain, makeFakeEvent, type StubIpcEvent } from '../sdk-contract/integration/make-stub-ipc';
 
@@ -45,6 +49,9 @@ afterEach(async () => {
   }
   await cleanupAllShellExecs();
   await cleanupAllShellStreams();
+  // 在途清理会置退出闸(模块级),复位以免后续用例的 exec / START 被拒。
+  resetShellExecShutdownForTest();
+  resetShellStreamShutdownForTest();
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
 });
 

@@ -38,9 +38,24 @@ const FORCE_FINALIZE_MS = 3000;
 // 窗口销毁路径的 SIGTERM + 定时 SIGKILL 不被等待,IDE 退出后命令会继续运行。
 const inFlight = new Set<ChildProcess>();
 
-/** 退出清理(before-quit awaited):立即强杀所有在途 stream 的进程树并等待 close(有上限)。 */
-export function cleanupAllShellStreams(): Promise<void> {
-  return killProcessTreesNow(inFlight);
+// 终审 P1:退出清理已开始,此后 START 一律拒绝(同 shell.service 的 exec 退出闸:插件收到 exit 即重启的
+// stream 不在清理快照内,detached 进程组在 IDE 退出后存活)。
+let shuttingDown = false;
+
+/** 测试用:复位退出闸(模块级状态)。 */
+export function resetShellStreamShutdownForTest(): void {
+  shuttingDown = false;
+}
+
+/**
+ * 退出清理(before-quit awaited):立即强杀所有在途 stream 的进程树并等待 close(有上限)。开始即置退出闸,
+ * 结束前再查一遍登记表,强杀清理期间漏网登记的进程。
+ */
+export async function cleanupAllShellStreams(): Promise<void> {
+  shuttingDown = true;
+  const snapshot = new Set(inFlight);
+  await killProcessTreesNow(snapshot);
+  await killProcessTreesNow([...inFlight].filter((child) => !snapshot.has(child)));
 }
 
 interface ActiveStream {
@@ -94,6 +109,9 @@ export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
       // 隔离 iframe / 未来子 frame)即可绕过权限边界触发本机命令执行。与同仓所有写/敏感
       // IPC 的 defaultIsTrustedFrame 纪律一致(codex 复审 loop R8,同 R7 族但 spawn 面更重)。
       assertTrustedFrame(event);
+      if (shuttingDown) {
+        throw codedError(ERROR_CODES.AGENT_NOT_AUTHORIZED, 'shell stream rejected: app is quitting');
+      }
       if (active.has(streamId)) {
         throw new Error(`streamId already active: ${streamId}`);
       }
