@@ -108,6 +108,9 @@ beforeEach(() => {
   delete (window as { electron?: unknown }).electron;
 });
 
+// flush 回执始终携带最终脏态(无脏 tab → 空集合),见 dirty-close-confirm/README.md。
+const CLEAN_ACK = { state: { dirty: 0, untitled: 0, ids: [], untitledIds: [] } };
+
 describe('a11y(A131) — Dock 布局恢复失败须反馈', () => {
   it('layout.read reject → notify.error(且不中断 onReady)', async () => {
     h.read.mockRejectedValue(new Error('ipc down'));
@@ -314,7 +317,7 @@ describe('a11y(A131) — Dock 布局恢复失败须反馈', () => {
 
     expect(h.toJSON).not.toHaveBeenCalled();
     expect(h.write).not.toHaveBeenCalled();
-    expect(sendFlushAck).toHaveBeenCalledWith(1);
+    expect(sendFlushAck).toHaveBeenCalledWith(1, CLEAN_ACK);
   });
 
   it('close flush 并行启动 layout / explorer / autosave,但三者完成后才 ack', async () => {
@@ -375,7 +378,7 @@ describe('a11y(A131) — Dock 布局恢复失败须反馈', () => {
 
     resolveAutoSave();
     await flushPromise;
-    expect(sendFlushAck).toHaveBeenCalledWith(1);
+    expect(sendFlushAck).toHaveBeenCalledWith(1, CLEAN_ACK);
   });
 
   // race(R42):关窗 layout:flush 回调必须在**执行时**读 apiRef.current,而非 effect 注册时闭包
@@ -495,10 +498,10 @@ describe('关窗 flush 握手走 coApi(不读 window.electron)', () => {
     await flushCb!({ windowId: 7 });
     expect(h.flushExplorerPersistence).toHaveBeenCalledTimes(1);
     expect(h.flushPendingAutoSave).toHaveBeenCalledTimes(1);
-    expect(sendFlushAck).toHaveBeenCalledWith(7);
+    expect(sendFlushAck).toHaveBeenCalledWith(7, CLEAN_ACK);
 
     // main 未带 payload(旧 preload 形态)→ 回退 coApi.system.windowId。
     await flushCb!();
-    expect(sendFlushAck).toHaveBeenLastCalledWith(1);
+    expect(sendFlushAck).toHaveBeenLastCalledWith(1, CLEAN_ACK);
   });
 });

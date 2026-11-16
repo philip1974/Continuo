@@ -58,6 +58,8 @@ markdown autosave flush)完成后、回执之前,检查此刻仍 dirty 的 tab(�
 - 每个 flush 请求带唯一 `requestId`,renderer 回执原样带回;main 按 requestId 结算,且仍校验受信 frame 与
   sender 窗口。单窗关闭与 Cmd+Q 交叉时两次请求互不覆盖,旧请求的回执不会结算新请求。
 - 兼容不带 requestId 的旧回执:仅当该窗口恰有一个在途请求时接受。
+- 回执**始终**携带 flush 后的最终脏态 `state`(含空集合;autosave 已 flush,仍脏的 `.md` 也计入),main 以其更新
+  脏态记账。「保存」后 tab 变干净,不必等之后的 effect 上报 —— 否则 main 可能拿旧脏集合做全局最终检查而误中止退出。
 
 ### 退出应用(before-quit)
 
@@ -67,13 +69,17 @@ markdown autosave flush)完成后、回执之前,检查此刻仍 dirty 的 tab(�
   各主窗是否超出本轮已接受范围 —— **按 id 身份**:当前脏 id 须是已接受集合的子集(未弹框 → 空集;「保存」→ 确认框
   告知的 untitled id;「不保存」→ 确认时的全部脏 id)。只比数量会被同数量替换绕过(「不保存」后存了 X、改了 Y;
   untitled 换成新草稿)。超出(如 A 已回执后、等待 B 保存期间在 A 里继续编辑)→ 中止退出、显示该窗口、守卫复位。
-  renderer 脏态上报经同一 IPC 通道、先于回执到达(zustand 同步更新触发上报)。
+  各窗记账以回执携带的 `state` 为准,之后的脏态上报继续更新。
+- 最终检查通过后、进入不可逆清理前**隐藏全部窗口**(含 popout)形成退出屏障:清理(debug teardown 可能数秒)期间
+  窗口已入 flushedOnQuit,继续编辑会丢失、关窗也绕过确认。最终检查失败(中止)路径不隐藏。
 - popout 窗口不参与(与既有 flush 逻辑一致)。
 
 ### 计数口径(renderer)
 
 - 计入:脏的代码文件 tab;untitled 草稿计入并单独计数(无路径,MVP 不支持另存为,「保存」时跳过,文案说明会被丢弃)。
-- 上报附带脏 tab 的 id 列表(file tab = 路径,untitled = 其 id;`ids` / `untitledIds`)。main 解析时校验计数与 id
+- 上报附带脏 tab 的身份列表 `${tabId}#${变脏代际}`(tabId:file tab = 路径,untitled = 其 id;`ids` / `untitledIds`)。
+  变脏代际(`EditorTab.dirtyGen`)在每次 clean→dirty 跃迁时递增,持续输入 / 保存期间继续输入不递增 ——
+  「不保存」后保存再编辑同一文件是新身份,不在已接受范围内(复审:只比 tab id 会放行退出丢新改动)。main 解析时校验计数与 id
   列表一致、`untitledIds ⊆ ids`、无重复,id 列表上限 `PATH_ARRAY_MAX`、单条上限 `PATH_STR_MAX`,不合法整体忽略。
 - 不计入:Markdown 自动保存开启时,**活动** tab(持有 autosave scheduler)且其最近一次 autosave 未失败的脏 `.md`
   (关窗 flush 经 `flushPendingAutoSave` 落盘);关闭该设置则计入。

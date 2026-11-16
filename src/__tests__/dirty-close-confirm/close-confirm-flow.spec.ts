@@ -693,6 +693,9 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
     expect(app.quit).not.toHaveBeenCalled();
     expect(termService.cleanupAll).not.toHaveBeenCalled();
     expect(a.show).toHaveBeenCalled();
+    // 最终检查失败(中止)路径不进退出屏障:不隐藏任何窗口
+    expect(a.hide).not.toHaveBeenCalled();
+    expect(b.hide).not.toHaveBeenCalled();
 
     // 守卫复位:再次 Cmd+Q 会对 A 弹确认
     electronMock.showMessageBox.mockResolvedValueOnce({ response: 2 });
@@ -773,6 +776,32 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
     b.destroyed = true;
   });
 
+  // 复审:「不保存」按 id 接受;等待期间用户保存 /x.ts 再编辑同一文件 → 只比 tab id 时仍是 /x.ts → 放行退出丢新改动。
+  // renderer 上报的身份带「变脏代际」(clean→dirty 跃迁递增,形如 `${tabId}#${gen}`),再次变脏即新身份。
+  it('多窗退出:「不保存」的窗口等待期间保存后再编辑同一文件(变脏代际递增)→ 中止退出', async () => {
+    const a = createReadyWindow(55);
+    const b = createReadyWindow(56);
+    reportDirty(a, ds(['/w/x.ts#1']));
+    reportDirty(b, ds(['/w/b.ts#1']));
+    electronMock.showMessageBox
+      .mockResolvedValueOnce({ response: 1 }) // A:不保存
+      .mockResolvedValueOnce({ response: 0 }); // B:保存
+
+    const { done } = beforeQuit();
+    await settle();
+    ack(a, { requestId: requestIdOf(a, 0), state: ds(['/w/x.ts#1']) });
+    await settle();
+    reportDirty(a, ds([])); // 保存 /x.ts
+    reportDirty(a, ds(['/w/x.ts#2'])); // 再编辑同一文件
+    ack(b, { saveFailed: false, requestId: requestIdOf(b, 0), state: ds([]) });
+    await done;
+    expect(app.quit).not.toHaveBeenCalled();
+    expect(termService.cleanupAll).not.toHaveBeenCalled();
+    expect(a.show).toHaveBeenCalled();
+    a.destroyed = true;
+    b.destroyed = true;
+  });
+
   // 复审:「保存」时 renderer 只能放过确认框告知用户的 untitled(按 id;此前按数量,同数量替换被放过)。
   it('「保存」的 flush 请求带上确认框告知的 untitled id', async () => {
     const a = createReadyWindow(49);
@@ -828,6 +857,8 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
     const a = createReadyWindow(23);
     const b = createReadyWindow(24);
     const clean = createReadyWindow(25);
+    const popout = new electronMock.MockBrowserWindow();
+    popout.webContents.getURL.mockReturnValue('file:///renderer/index.html?popout=1');
     reportDirty(a, ds(['/w/a.ts']));
     reportDirty(b, ds(['/w/a.ts', 'untitled-1'], ['untitled-1']));
     electronMock.showMessageBox
@@ -843,14 +874,24 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
     ]);
     expect(flushRequests(clean)).toEqual([{ windowId: clean.id, requestId: expect.any(Number) }]);
 
-    ack(a, { saveFailed: false });
+    // 复审:选「保存」后 tab 变干净,干净状态此前要等 renderer 之后的 useEffect 上报;main 可能先用旧脏集合做
+    // 全局最终检查而误中止退出。回执始终携带 flush 后的最终脏态(含空集合),main 以其更新记账 ——
+    // 这里 a 不再另发脏态上报,只靠回执。
+    ack(a, { saveFailed: false, state: ds([]) });
     // 全局最终检查:a 保存后干净;b「不保存」仍是确认时的脏数(在接受范围内)→ 照常退出。
-    reportDirty(a, ds([]));
     reportDirty(b, ds(['/w/a.ts', 'untitled-1'], ['untitled-1']));
     ack(b);
     ack(clean);
     await done;
     expect(termService.cleanupAll).toHaveBeenCalledTimes(1);
     expect(app.quit).toHaveBeenCalledTimes(1);
+    // 复审:全局最终检查通过后、不可逆清理(cleanupAll 可能数秒)前隐藏全部窗口(含 popout)形成退出屏障 ——
+    // 否则清理期间窗口仍可编辑,且已入 flushedOnQuit,之后的编辑丢失、用户关窗也绕过确认。
+    for (const w of [a, b, clean, popout]) {
+      expect(w.hide).toHaveBeenCalled();
+      expect(w.hide.mock.invocationCallOrder[0]!).toBeLessThan(
+        vi.mocked(termService.cleanupAll).mock.invocationCallOrder[0]!,
+      );
+    }
   });
 });

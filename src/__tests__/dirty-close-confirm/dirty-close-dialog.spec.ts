@@ -103,7 +103,7 @@ describe('askDirtyClose:把对话框响应映射为用户选择', () => {
 
 describe('parseFlushAck:renderer flush 回执', () => {
   it('旧格式(无结果)/ 正常 → saveFailed=false,requestId=null', () => {
-    const none = { saveFailed: false, requestId: null, remaining: null };
+    const none = { saveFailed: false, requestId: null, remaining: null, state: null };
     expect(parseFlushAck(undefined)).toEqual(none);
     expect(parseFlushAck({ saveFailed: false })).toEqual(none);
     expect(parseFlushAck('junk')).toEqual(none);
@@ -113,6 +113,7 @@ describe('parseFlushAck:renderer flush 回执', () => {
       saveFailed: true,
       requestId: null,
       remaining: null,
+      state: null,
     });
   });
   it('requestId:安全正整数才采纳,畸形值 → null', () => {
@@ -120,6 +121,7 @@ describe('parseFlushAck:renderer flush 回执', () => {
       saveFailed: false,
       requestId: 7,
       remaining: null,
+      state: null,
     });
     for (const bad of [0, -1, 1.5, Number.NaN, 2 ** 53, '7']) {
       expect(parseFlushAck({ requestId: bad }).requestId).toBeNull();
@@ -133,6 +135,16 @@ describe('parseFlushAck:renderer flush 回执', () => {
     expect(parseFlushAck({ remaining: s }).remaining).toEqual(s);
     for (const bad of [ds([]), { dirty: 1, untitled: 0 }, { dirty: -1 }, 'x', 1]) {
       expect(parseFlushAck({ remaining: bad }).remaining).toBeNull();
+    }
+  });
+
+  // 复审:回执始终携带 flush 后的最终脏态(含空集合),main 以其记账,不等之后的脏态上报。
+  it('state:合法即采纳(含空集合),畸形 / 缺省 → null', () => {
+    expect(parseFlushAck({ state: ds([]) }).state).toEqual(ds([]));
+    const s = ds(['/a.ts#2']);
+    expect(parseFlushAck({ state: s }).state).toEqual(s);
+    for (const bad of [{ dirty: 1, untitled: 0 }, 'x', 1, undefined]) {
+      expect(parseFlushAck({ state: bad }).state).toBeNull();
     }
   });
 });

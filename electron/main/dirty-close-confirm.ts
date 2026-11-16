@@ -104,16 +104,24 @@ export async function askDirtyClose(
  * (旧回执 / 畸形值,由调用方按「该窗口唯一在途请求」兼容处理)。
  * remaining:renderer 在全部 flush 完成后做最终脏检查,仍有未保存改动(且本轮未选「不保存」)时带回计数;
  * 合法且 dirty>0 才采纳,否则 null。main 据此中止关闭 / 退出并记账(下次关闭弹确认)。
+ * state:flush 后的最终脏态(renderer 始终携带,含空集合);合法即采纳(旧回执 / 畸形 → null),main 以其更新
+ * 脏态记账 —— 不等之后的脏态上报,退出前全局最终检查用的就是回执时的状态(复审)。
  */
 export function parseFlushAck(raw: unknown): {
   saveFailed: boolean;
   requestId: number | null;
   remaining: DirtyState | null;
+  state: DirtyState | null;
 } {
   const obj = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {};
   const saveFailed = obj['saveFailed'] === true;
   const id = obj['requestId'];
   const requestId = typeof id === 'number' && Number.isSafeInteger(id) && id > 0 ? id : null;
-  const state = parseDirtyState(obj['remaining']);
-  return { saveFailed, requestId, remaining: needsDirtyConfirm(state ?? undefined) ? state : null };
+  const remaining = parseDirtyState(obj['remaining']);
+  return {
+    saveFailed,
+    requestId,
+    remaining: needsDirtyConfirm(remaining ?? undefined) ? remaining : null,
+    state: parseDirtyState(obj['state']),
+  };
 }
