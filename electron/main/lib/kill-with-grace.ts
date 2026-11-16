@@ -4,8 +4,47 @@
 // grace timer 必须 unref:否则触发后即便子进程已死,这个内层 timer 仍会把 event loop 多撑 graceMs,
 // 关窗 / 退出时延迟退出(第七 session R3:unref 曾逐个兄弟 timer 补)。kill 抛错(进程已退出等)忽略。
 
+import { spawn } from 'node:child_process';
+
 interface Killable {
   kill(signal?: NodeJS.Signals | number): boolean;
+}
+
+// 进程树终止:spawn 须配 `detached: TREE_KILL_DETACHED`(POSIX 下子进程成为新进程组组长,pgid = pid)。
+// 只杀直接子进程时,`sh -c 'sleep 600 & wait'` 的后台后代成孤儿继续跑并持有 stdout/stderr 管道 →
+// close 迟迟不来,上层 done / Promise 挂住。POSIX 对 `-pid` 发信号覆盖整个进程组;Windows 用
+// `taskkill /T /F` 杀进程树(Windows 上 detached 会另开控制台,故不设)。pid 缺失 / 组已不存在时回退直杀。
+// 返回 Killable,直接交给 killWithGrace(SIGTERM → 宽限 → SIGKILL 语义不变)。
+export const TREE_KILL_DETACHED = process.platform !== 'win32';
+
+interface TreeKillTarget extends Killable {
+  readonly pid?: number | undefined;
+}
+
+export function processTreeKillable(child: TreeKillTarget): Killable {
+  return {
+    kill(signal) {
+      const pid = child.pid;
+      if (pid === undefined || pid <= 0) return child.kill(signal);
+      if (process.platform === 'win32') {
+        // taskkill /F 本身即强杀,宽限后的 SIGKILL 只需直杀兜底。
+        if (signal === 'SIGKILL') return child.kill(signal);
+        try {
+          const tk = spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
+          tk.on('error', () => child.kill(signal));
+          return true;
+        } catch {
+          return child.kill(signal);
+        }
+      }
+      try {
+        process.kill(-pid, signal);
+        return true;
+      } catch {
+        return child.kill(signal);
+      }
+    },
+  };
 }
 
 export function killWithGrace(child: Killable, graceMs = 1000): void {

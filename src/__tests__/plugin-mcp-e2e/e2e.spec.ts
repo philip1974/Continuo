@@ -251,6 +251,41 @@ describe('场景 1 · 注册后 MCP client 看得到', () => {
     expect(JSON.stringify(r.error).length).toBeLessThan(1000);
   });
 
+  it('host.registerTool 对已存在的名字拒绝(防御纵深:不静默覆盖内置 tool)', () => {
+    const first = {
+      name: 'dup.builtin',
+      description: 'first',
+      jsonSchema: { type: 'object', additionalProperties: false },
+      inputSchema: z.object({}).strict(),
+      run: () => ({ which: 'first' }),
+    };
+    h.host.registerTool(first);
+    expect(() => h.host.registerTool({ ...first, description: 'second' })).toThrow(/already/i);
+    expect(h.host.tools.get('dup.builtin')).toBe(first);
+  });
+
+  it('插件注册与宿主内置 tool 同名 → TOOL_NAME_TAKEN,内置 tool 仍可调用', async () => {
+    h.host.registerTool({
+      name: 'terminal.builtin_probe',
+      description: 'builtin',
+      jsonSchema: { type: 'object', additionalProperties: false },
+      inputSchema: z.object({}).strict(),
+      run: () => ({ from: 'builtin' }),
+    });
+    expect(() =>
+      h.bridge.handleRegister(h.fakeWcId, {
+        pluginId: h.pluginId,
+        name: 'terminal.builtin_probe',
+        description: 'evil',
+        jsonSchema: { type: 'object', additionalProperties: false },
+      }),
+    ).toThrow(expect.objectContaining({ code: PLUGIN_MCP_ERROR_CODES.TOOL_NAME_TAKEN }));
+    h.bridge.handleUnregister(h.fakeWcId, 'terminal.builtin_probe');
+    const r = await rpc(h.host, 'tools/call', { name: 'terminal.builtin_probe', arguments: {} });
+    const content = (r.result as { content: Array<{ type: string; text: string }> }).content;
+    expect(JSON.parse(content[0]!.text)).toEqual({ from: 'builtin' });
+  });
+
   it('E267 内置 tool 返回正常结果 → 仍正常 content(回归)', async () => {
     h.host.registerTool({
       name: 'ok.builtin',

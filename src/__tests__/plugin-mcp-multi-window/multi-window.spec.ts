@@ -221,6 +221,48 @@ describe('handleRegister · 同名冲突', () => {
   });
 });
 
+describe('handleRegister · 与宿主内置 tool 重名', () => {
+  // 安全:host.tools 已含内置 tool(terminal.* / debug.* 等,非桥登记)。插件注册同名必须拒绝,
+  // 否则 Map.set 覆盖 → 外部 agent 的核心工具被插件截获;插件注销时 removeTool 又把该名字删掉 →
+  // 内置工具永久 NO_SUCH_TOOL。
+  function builtin(name: string): AnyMcpTool {
+    return { name, description: 'builtin', jsonSchema: {}, run: () => ({ builtin: true }) } as unknown as AnyMcpTool;
+  }
+
+  it('预置内置 tool 后插件注册同名 → 抛 TOOL_NAME_TAKEN,内置 tool 不被覆盖', () => {
+    const { bridge, host } = makeBridge();
+    const orig = builtin('terminal.list_sessions');
+    host.tools.set(orig.name, orig);
+    const err = (() => {
+      try {
+        bridge.handleRegister(11, regPayload('terminal.list_sessions'));
+        return null;
+      } catch (e) {
+        return e;
+      }
+    })();
+    expect((err as { code?: string } | null)?.code).toBe(PLUGIN_MCP_ERROR_CODES.TOOL_NAME_TAKEN);
+    expect(host.registerCalls).toHaveLength(0);
+    expect(host.tools.get('terminal.list_sessions')).toBe(orig);
+    expect(bridge.listRegistered()).toEqual([]);
+  });
+
+  it('被拒后插件注销 / wc 销毁 → 不删内置 tool', () => {
+    const { bridge, host } = makeBridge();
+    const orig = builtin('debug.launch');
+    host.tools.set(orig.name, orig);
+    try {
+      bridge.handleRegister(11, regPayload('debug.launch'));
+    } catch {
+      /* ignore */
+    }
+    bridge.handleUnregister(11, 'debug.launch');
+    bridge.handleWebContentsGone(11);
+    expect(host.removeCalls).toEqual([]);
+    expect(host.tools.get('debug.launch')).toBe(orig);
+  });
+});
+
 // ────────────────────────────────────────────────────────────
 // handleUnregister
 // ────────────────────────────────────────────────────────────

@@ -141,6 +141,7 @@
 - [`settings-search-localized.spec.tsx`](./49-polish-bugfixes/settings-search-localized.spec.tsx)
 - [`shell-exec-cjk-bytes.spec.ts`](./49-polish-bugfixes/shell-exec-cjk-bytes.spec.ts)
 - [`shell-exec-timeout-clamp.spec.ts`](./49-polish-bugfixes/shell-exec-timeout-clamp.spec.ts)
+- [`shell-process-tree-kill.spec.ts`](./49-polish-bugfixes/shell-process-tree-kill.spec.ts)
 - [`shell-stream-abort.spec.ts`](./49-polish-bugfixes/shell-stream-abort.spec.ts)
 - [`shell-stream-concurrent-next.spec.ts`](./49-polish-bugfixes/shell-stream-concurrent-next.spec.ts)
 - [`shell-stream-frame-trust.spec.ts`](./49-polish-bugfixes/shell-stream-frame-trust.spec.ts)
