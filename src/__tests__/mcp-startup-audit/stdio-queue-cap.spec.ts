@@ -21,6 +21,7 @@ vi.mock('electron', () => ({
 import {
   createStdioSocketServer,
   MAX_STDIO_PENDING_LINES,
+  MAX_STDIO_UNREAD_OUTPUT_BYTES,
   type StdioSocketServer,
 } from '../../../electron/main/services/mcp-stdio-server.service';
 import type { AnyMcpTool, ServerInfo } from '../../../electron/main/services/mcp-host.service';
@@ -275,4 +276,33 @@ describe.skipIf(isWin)('规则 3 · 拒绝后不再写响应 / 不再处理排�
     });
     expect(msgs.some((m) => m.method === 'notifications/tools/list_changed')).toBe(false);
   });
+  // 终审 P1:输出缺少背压。客户端只发不读时,响应在 socket 写缓冲里无界堆积(排队上限只计未完成的请求,
+  // 响应写进缓冲即扣减),主进程可被撑到 OOM。未读输出超过上限 → 断开该连接。
+  it('客户端不读响应、未读输出超过上限 → 断开连接(不无界堆积)', async () => {
+    const big = echo('big', async () => ({ text: 'y'.repeat(64 * 1024) }));
+    const client = await start([big]);
+    client.pause(); // 只发不读
+    const closed = new Promise<void>((resolve) => client.once('close', () => resolve()));
+    const total = Math.ceil((MAX_STDIO_UNREAD_OUTPUT_BYTES * 2) / (64 * 1024));
+    for (let sent = 0; sent < total; sent += 100) {
+      let buf = '';
+      for (let i = sent; i < Math.min(sent + 100, total); i++) buf += call(i, 'big');
+      if (client.destroyed) break;
+      client.write(buf);
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    // 暂停中的 socket 要把积压数据读完才会 emit close:恢复读取后,被服务端断开的连接读完即 close;
+    // 未断开(无背压上限)则全部响应读完后连接仍开着,close 不会到来。
+    let state: 'open' | 'closed' = 'open';
+    void closed.then(() => {
+      state = 'closed';
+    });
+    client.resume();
+    await vi.waitFor(
+      () => {
+        if (state !== 'closed') throw new Error('connection still open');
+      },
+      { timeout: 10_000, interval: 50 },
+    );
+  }, 30_000);
 });

@@ -163,6 +163,12 @@ const MAX_STDIO_LINES_PER_CHUNK = 1024;
 // 同款 parse error + 断开(fail-closed)。正常 MCP client 一行一请求,远达不到。
 export const MAX_STDIO_PENDING_LINES = 1024;
 export const MAX_STDIO_PENDING_BYTES = 16_000_000;
+/**
+ * 每连接未被客户端读走的输出上限(socket 写缓冲 writableLength)。排队上限只计未完成的请求,响应一旦写进
+ * 写缓冲就扣减;客户端只发不读时,输出在缓冲里无界堆积,可把主进程撑到 OOM。超限即断开该连接 —— 对端既然
+ * 不读,写错误帧也送不达。正常客户端边写边读,缓冲远小于此。
+ */
+export const MAX_STDIO_UNREAD_OUTPUT_BYTES = 16_000_000;
 
 // 边界(E233,E227-E232 数量上限族):stdio MCP socket server 并发连接数量上限。每条连接保留 Socket +
 // AbortController + 行解码器闭包 + clients/socketCtx/socketSubject 多个 Map/Set 条目,
@@ -344,6 +350,7 @@ async function handleLine(
 function writeLine(sock: Socket, data: string): void {
   if (sock.writableEnded || sock.destroyed) return;
   sock.write(data + '\n');
+  if (sock.writableLength > MAX_STDIO_UNREAD_OUTPUT_BYTES) sock.destroy();
 }
 
 /**

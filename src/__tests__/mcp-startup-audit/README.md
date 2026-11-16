@@ -39,3 +39,9 @@
 | `stdio-queue-cap.spec.ts` | 3 |
 | `startup-check-budget.spec.ts` | 4 |
 | `protocol-fifo-order.spec.ts` | 5 |
+
+## stdio 输出背压(终审 P1)
+
+- 排队上限只计未完成的请求,响应写进 socket 写缓冲即扣减;客户端只发不读时输出会无界堆积。
+- 每连接未读输出(`writableLength`)超过 `MAX_STDIO_UNREAD_OUTPUT_BYTES`(16MB)即断开该连接(对端不读,
+  错误帧也送不达)。正常客户端边写边读,不受影响。
