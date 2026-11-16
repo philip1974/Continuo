@@ -104,8 +104,7 @@ export function countAgentSessions(sessions: readonly TerminalSession[]): number
 // 的状态 → renderer 误以为仍授权,后续 agent auth 被无提示放行,与 main 已撤销/旋转的真实态不符。
 let revokeGen = 0;
 
-async function handleRevokeAgentTerminals(count: number): Promise<void> {
-  if (count <= 0) return;
+async function handleRevokeAgentTerminals(): Promise<void> {
   const myGen = ++revokeGen; // race(R92):本次 revoke 代际
   // 本地先撤,UI 即时反馈;main 推 sessions_changed 后 sessions 也清空。
   // 撤销覆盖终端与 debug 两个域;失败回滚时两个都按撤销前的值恢复。
@@ -163,6 +162,10 @@ export function StatusBar() {
   const agentSessionCount = useTerminalStore(
     (s) => countAgentSessions(s.sessions),
   );
+  // 终审 P1:只授予了调试域(外部 MCP 客户端 debug.launch)而没有 agent terminal 时也必须能撤销 ——
+  // 调试授权等同任意代码执行,此前入口只看 agent 会话数,debug-only 授权只能退出应用才能撤销。
+  const anyAgentGrant = useAgentAuthStore((s) => s.sessionGranted || s.debugSessionGranted);
+  const showAgentRevoke = agentSessionCount > 0 || anyAgentGrant;
 
   // 只订阅 active tab 的派生 primitive(打磨 R24 + 合并优化 R46)。非 active tab 的
   // content / originalContent / reloadEpoch 变化不触发状态栏重渲;active 内容变化
@@ -242,7 +245,7 @@ export function StatusBar() {
   const agentRevokeTooltip =
     agentSessionCount > 0
       ? t('statusbar.mcp.revoke_tooltip', { count: agentSessionCount })
-      : '';
+      : t('statusbar.agent_revoke_grant_tooltip');
 
   return (
     <footer className="flex h-6 shrink-0 items-center justify-between border-t border-line bg-panel px-3 text-2xs text-fg-dim select-none">
@@ -285,10 +288,11 @@ export function StatusBar() {
         <span style={SR_ONLY_STYLE} role="status">
           {mcpCopyState !== 'idle' ? mcpLabel : ''}
         </span>
-        {agentSessionCount > 0 && (
+        {showAgentRevoke && (
           // native button:同上(24px 状态栏行内文本按钮)。
           <button
             type="button"
+            data-agent-revoke
             onClick={() => setRevokeConfirmCount(agentSessionCount)}
             title={agentRevokeTooltip}
             // a11y(A74,A2 同族):按钮可见文本只表「N 个 agent 会话」,撤销动作语义仅在 title
@@ -298,7 +302,9 @@ export function StatusBar() {
           >
             <span aria-hidden>●</span>
             {/* i18n(I19):agent 计数走 catalog,zh/ko 不再显英文 'N agent' */}
-            {t('statusbar.agent_sessions', { count: agentSessionCount })}
+            {agentSessionCount > 0
+              ? t('statusbar.agent_sessions', { count: agentSessionCount })
+              : t('statusbar.agent_authorized')}
           </button>
         )}
         {hasActiveTab ? (
@@ -338,15 +344,16 @@ export function StatusBar() {
         title={t('permissions.revoke_all.title')}
         description={
           <span className="whitespace-pre-line">
-            {t('permissions.revoke_all.confirm', { count: revokeConfirmCount ?? 0 })}
+            {(revokeConfirmCount ?? 0) > 0
+              ? t('permissions.revoke_all.confirm', { count: revokeConfirmCount ?? 0 })
+              : t('permissions.revoke_all.confirm_grant_only')}
           </span>
         }
         destructive
         onCancel={() => setRevokeConfirmCount(null)}
         onConfirm={() => {
-          const count = revokeConfirmCount ?? 0;
           setRevokeConfirmCount(null);
-          void handleRevokeAgentTerminals(count);
+          void handleRevokeAgentTerminals();
         }}
       />
     </footer>

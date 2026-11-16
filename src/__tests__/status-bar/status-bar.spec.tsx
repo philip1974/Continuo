@@ -513,6 +513,37 @@ function clickRevoke(btn: HTMLButtonElement, confirm: boolean): void {
 }
 
 describe('StatusBar — agent 撤销', () => {
+  // 终审 P1:只授予了调试域(外部 MCP 客户端 debug.launch → 本次启动期间允许)而没有 agent terminal 时,
+  // 撤销按钮此前不渲染、处理函数也拒绝 count<=0 → 调试授权(等同任意代码执行)只能退出应用才能撤销。
+  it.each([
+    ['debug', { sessionGranted: false, debugSessionGranted: true }],
+    ['terminal', { sessionGranted: true, debugSessionGranted: false }],
+  ])('无 agent 会话但已授予 %s 域 → 仍显示撤销入口,确认后撤销', async (_name, granted) => {
+    const revoke = vi.fn().mockResolvedValue({ ok: true });
+    installApi({ agentAuth: { revoke } });
+    useTerminalStore.setState({ sessions: [] });
+    useAgentAuthStore.setState({ pending: null, ...granted });
+
+    const { container } = render(<StatusBar />);
+    const btn = container.querySelector<HTMLButtonElement>('[data-agent-revoke]');
+    expect(btn).not.toBeNull();
+    clickRevoke(btn!, true);
+
+    await waitFor(() => {
+      expect(revoke).toHaveBeenCalled();
+      expect(useAgentAuthStore.getState().sessionGranted).toBe(false);
+      expect(useAgentAuthStore.getState().debugSessionGranted).toBe(false);
+    });
+  });
+
+  it('既无 agent 会话也无任何授权 → 不显示撤销入口', () => {
+    installApi({});
+    useTerminalStore.setState({ sessions: [] });
+    useAgentAuthStore.setState({ pending: null, sessionGranted: false, debugSessionGranted: false });
+    const { container } = render(<StatusBar />);
+    expect(container.querySelector('[data-agent-revoke]')).toBeNull();
+  });
+
   it('点 N agent 按钮 + 用户 confirm → revoke + coApi.agentAuth.revoke', async () => {
     const revoke = vi.fn().mockResolvedValue({ ok: true });
     installApi({ agentAuth: { revoke } });

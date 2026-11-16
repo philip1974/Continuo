@@ -312,6 +312,8 @@ export const en = {
   'permissions.agent.grant_once': 'Just this time',
   'permissions.agent.grant_session': 'Allow this launch',
   'permissions.revoke_all.title': 'Revoke agent terminal access?',
+  'permissions.revoke_all.confirm_grant_only':
+    'Will revoke the terminal and debugger authorization granted to agents during this launch, and end their debug sessions.\n\nRunning agent CLIs holding tokens will 401 immediately; they can re-authorize later.\n\nContinue?',
   'permissions.revoke_all.confirm':
     'Will terminate {count} agent terminal(s) and revoke authorization granted during this launch.\n\nRunning agent CLIs holding tokens will 401 immediately; new terminals can re-authorize.\n\nContinue?',
   'permissions.revoke_all.failed':
@@ -330,6 +332,8 @@ export const en = {
     "Copy 'claude mcp add' command to clipboard. Run it in any shell to configure Claude Code (stdio transport, one-time setup).",
   'statusbar.mcp.revoke_tooltip': 'Terminate all {count} agent terminal(s) and revoke authorization',
   'statusbar.agent_sessions': '{count} agent',
+  'statusbar.agent_authorized': 'Agent authorized',
+  'statusbar.agent_revoke_grant_tooltip': 'Revoke terminal and debugger authorization granted to agents',
   'statusbar.no_workspace': 'No workspace',
   'statusbar.sidebar_hidden': 'Sidebar hidden',
   'statusbar.untitled_file': 'Untitled',

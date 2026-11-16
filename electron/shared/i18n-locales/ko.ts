@@ -297,6 +297,8 @@ export const ko: Record<TranslationKey, string> = {
   'permissions.agent.grant_once': '이번만 허용',
   'permissions.agent.grant_session': '이번 실행 동안 허용',
   'permissions.revoke_all.title': '에이전트 터미널 권한을 취소할까요?',
+  'permissions.revoke_all.confirm_grant_only':
+    '이번 실행 중 에이전트에 부여된 터미널 및 디버거 인증을 취소하고 디버그 세션을 종료합니다.\n\n실행 중인 에이전트 CLI의 토큰은 즉시 401이 되며, 이후 다시 인증할 수 있습니다.\n\n계속하시겠습니까?',
   'permissions.revoke_all.confirm':
     '{count}개의 에이전트 터미널을 종료하고 이번 실행 중 부여된 인증을 취소합니다.\n\n실행 중인 에이전트 CLI의 토큰은 즉시 401이 되며, 새 터미널은 다시 인증할 수 있습니다.\n\n계속하시겠습니까?',
   'permissions.revoke_all.failed':
@@ -315,6 +317,8 @@ export const ko: Record<TranslationKey, string> = {
     "'claude mcp add' 명령을 클립보드에 복사합니다. 모든 셸에서 실행하여 Claude Code를 설정할 수 있습니다 (stdio transport, 한 번 설정).",
   'statusbar.mcp.revoke_tooltip': '전체 {count}개의 에이전트 터미널을 종료하고 인증을 취소합니다',
   'statusbar.agent_sessions': 'agent {count}개',
+  'statusbar.agent_authorized': '에이전트 인증됨',
+  'statusbar.agent_revoke_grant_tooltip': '에이전트에 부여된 터미널 및 디버거 인증을 취소합니다',
   'statusbar.no_workspace': '작업 공간 없음',
   'statusbar.sidebar_hidden': '사이드바 숨김',
   'statusbar.untitled_file': '제목 없음',

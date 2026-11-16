@@ -42,3 +42,11 @@ agent terminal 数量 > 0 → 显示「N agent」按钮(点击 → design Modal 
 - 点按钮 → coApi.mcp.getStdioConfig + writeText
 - ok → 文案变「已复制」1.5s 后回归
 - ok=false 或 unavailable → 文案变「MCP 不可用」/「复制失败」
+
+## 无 agent 会话时的授权撤销入口(终审 P1)
+
+- 只授予了调试域(外部 MCP 客户端 `debug.launch` → 本次启动期间允许)或终端域,但当前没有 agent terminal 时,
+  状态栏仍显示撤销入口(文本「Agent 已授权」,带 `data-agent-revoke`),确认后撤销两个域的授权
+  (调试授权等同任意代码执行,不能只能靠退出应用撤销)。
+- 既无 agent 会话也无任何授权时不显示入口。
+- 无会话时确认框用 `permissions.revoke_all.confirm_grant_only` 文案(不提「终止 N 个 terminal」)。
