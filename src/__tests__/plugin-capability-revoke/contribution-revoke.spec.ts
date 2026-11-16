@@ -84,14 +84,44 @@ describe('scoped app:注册表 / 事件订阅随吊销回收', () => {
     expect(() => ctl.app.commands.subscribe(fn)).toThrow(DENIED);
   });
 
-  it('只读 / 查询成员不受影响:吊销后 getAll / get / execute / emit 照常', async () => {
+  it('只读查询成员与 events.off 不受影响:吊销后 getAll / get / off 照常', () => {
+    const coApp = createTestCoApp();
+    coApp.commands.register({ id: 'core', title: 'Core', fn });
+    const ctl = createScopedAppController(coApp, ID, null);
+    const listener = vi.fn();
+    ctl.app.events.on('x', listener);
+    ctl.revoke();
+    expect(ctl.app.commands.get('core')).toBeDefined();
+    expect(ctl.app.commands.getAll()).toHaveLength(1);
+    expect(() => ctl.app.events.off('x', listener)).not.toThrow();
+  });
+
+  it('吊销后 commands.execute reject、events.emit / clear 抛 PERMISSION_DENIED,共享注册表 / 总线无副作用', async () => {
+    const coApp = createTestCoApp();
+    const run = vi.fn();
+    coApp.commands.register({ id: 'window.new', title: 'New Window', fn: run });
+    const other = vi.fn();
+    coApp.events.on('x', other);
+    const ctl = createScopedAppController(coApp, ID, null);
+    ctl.revoke();
+    await expect(ctl.app.commands.execute('window.new')).rejects.toMatchObject({
+      code: 'PERMISSION_DENIED',
+    });
+    expect(run).not.toHaveBeenCalled();
+    expect(() => ctl.app.events.emit('x', 1)).toThrow(DENIED);
+    expect(other).not.toHaveBeenCalled();
+    expect(() => ctl.app.events.clear('x')).toThrow(DENIED);
+    expect(() => ctl.app.events.clear()).toThrow(DENIED);
+    // 他人的订阅未被清掉
+    coApp.events.emit('x', 2);
+    expect(other).toHaveBeenCalledWith(2);
+  });
+
+  it('吊销前 commands.execute / events.emit 照常', async () => {
     const coApp = createTestCoApp();
     const run = vi.fn();
     coApp.commands.register({ id: 'core', title: 'Core', fn: run });
     const ctl = createScopedAppController(coApp, ID, null);
-    ctl.revoke();
-    expect(ctl.app.commands.get('core')).toBeDefined();
-    expect(ctl.app.commands.getAll()).toHaveLength(1);
     await ctl.app.commands.execute('core');
     expect(run).toHaveBeenCalledTimes(1);
     expect(() => ctl.app.events.emit('x', 1)).not.toThrow();
@@ -139,6 +169,22 @@ describe('PluginManager:停用后经原始注册表的注册被拒 / 被清理',
     await mgr.disable(ID);
     expect(() => later()).toThrow(DENIED);
     expect(coApp.commands.get('late')).toBeUndefined();
+  });
+
+  it('停用后延迟回调 app.commands.execute(如 window.new)→ reject,命令不执行', async () => {
+    let later!: () => Promise<void>;
+    const openWindow = vi.fn();
+    class Deferred extends Plugin {
+      onload() {
+        later = () => this.app.commands.execute('window.new');
+      }
+    }
+    const { mgr, coApp } = makeManager(Deferred);
+    coApp.commands.register({ id: 'window.new', title: 'New Window', fn: openWindow });
+    await mgr.init();
+    await mgr.disable(ID);
+    await expect(later()).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
+    expect(openWindow).not.toHaveBeenCalled();
   });
 
   it('停用前绕过 Plugin.register 直接经 app.commands.register 注册的命令,停用后被移除', async () => {

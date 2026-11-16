@@ -151,6 +151,9 @@ export async function init(): Promise<void> {
     permissionStore: userPermissionStore,
     promptFn: (pid, perms) =>
       usePermissionPromptStore.getState().request(pid, perms),
+    // 终审 P1:插件被别的窗口卸载 → 取消其待决授权弹窗(不写决策)。
+    cancelPermissionPrompt: (pid, reason) =>
+      usePermissionPromptStore.getState().cancel(pid, reason),
   });
   setUserPluginManager(userPluginManager);
   // 终审 P1:任一窗口(含本窗口)变更插件授权成功 → main 广播,本窗口失效授权缓存(下次读重新加载),
@@ -172,6 +175,8 @@ export async function init(): Promise<void> {
     // 终审 P1:任一窗口卸载成功 → main 广播,本窗口撤销该插件实例 / 贡献点 / 权限缓存(幂等、不触盘)。
     onUninstalled: (cb) => coApi.plugins.onUninstalled(cb),
     uninstalled: (id) => userPluginManager.handleUninstalled(id),
+    // 广播一到立即标记已卸载 + 取消授权弹窗(不等 init / 生命周期锁)。
+    markUninstalled: (id) => userPluginManager.markUninstalled(id),
     // 终审 P1:任一窗口启用 / 禁用成功 → main 广播,本窗口同步实例启停(幂等、不触盘)。
     onEnabledChanged: (cb) => coApi.plugins.onEnabledChanged(cb),
     enabledChanged: (id, enabled) => userPluginManager.handleEnabledChanged(id, enabled),

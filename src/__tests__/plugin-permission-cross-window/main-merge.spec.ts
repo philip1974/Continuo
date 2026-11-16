@@ -1,5 +1,5 @@
 // 插件授权按权限项增量合并(终审 P1:陈旧窗口保存不得覆盖别窗的撤销)。见同目录 README.md。
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -13,6 +13,7 @@ let baseDir: string;
 
 beforeEach(async () => {
   baseDir = await mkdtemp(path.join(os.tmpdir(), 'continuo-perm-merge-'));
+  await mkdir(path.join(baseDir, ID)); // 插件已安装
 });
 afterEach(async () => {
   await rm(baseDir, { recursive: true, force: true });
@@ -110,7 +111,7 @@ describe('main:mutatePluginPermissions 按权限项合并当前落盘记录', ()
     expect(await readPermissions(baseDir)).toEqual({});
   });
 
-  it('不存在的插件 clear-denied → null,不创建条目', async () => {
+  it('无授权记录的插件 clear-denied → null,不创建条目', async () => {
     await expect(
       mutatePluginPermissions(baseDir, ID, { kind: 'clear-denied' }),
     ).resolves.toBeNull();
@@ -127,6 +128,21 @@ describe('main:mutatePluginPermissions 按权限项合并当前落盘记录', ()
       fs: true,
       shell: false,
       network: true,
+    });
+  });
+
+  // 终审 P1:窗口 B 的旧授权弹窗在插件被 A 卸载后点「授权」→ 不得写回已卸载插件的授权(同 id 重装会继承)。
+  it('插件目录不存在(已卸载)→ 拒绝写入 NOT_INSTALLED,_permissions.json 不变', async () => {
+    await rm(path.join(baseDir, ID), { recursive: true, force: true });
+    await seed({ 'com.other': [{ permission: 'shell', granted: true, decidedAt: 1 }] });
+    await expect(
+      mutatePluginPermissions(baseDir, ID, { kind: 'set', perms: ['shell'], granted: true }),
+    ).rejects.toMatchObject({ code: 'NOT_INSTALLED' });
+    await expect(
+      mutatePluginPermissions(baseDir, ID, { kind: 'clear-denied' }),
+    ).rejects.toMatchObject({ code: 'NOT_INSTALLED' });
+    expect(await readPermissions(baseDir)).toEqual({
+      'com.other': [{ permission: 'shell', granted: true, decidedAt: 1 }],
     });
   });
 });

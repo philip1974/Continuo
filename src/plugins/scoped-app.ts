@@ -13,7 +13,9 @@
 // 在 renderer 源头拒绝、不发 IPC —— 延迟回调或超时后仍在跑的 onunload 不能再起进程 / 发请求。
 // 不阻断:fs 读、dataStore(插件自有数据,onunload 常用 saveData)、permission 查询、userHome。
 // 贡献点注册表 / events:吊销后 register / on / subscribe 拒绝,吊销前经 scoped app 直接注册的贡献与订阅在
-// revoke() 时统一注销(见 trackContributions)。
+// revoke() 时统一注销(见 trackContributions);commands.execute / events.emit / events.clear 有外部副作用
+//(执行宿主命令可开窗口 / 终端,emit 触发他人监听,clear 清他人订阅),同样拒绝;只放行只读查询与 events.off。
+// 经 app.mcp.register 注册的工具同样在 revoke() 时注销(插件未保存 Disposable 也不残留)。
 // 见 src/__tests__/plugin-capability-revoke/。
 
 import type {
@@ -587,7 +589,7 @@ function makeMcp(
   store: PermissionStore | null,
   registry: CoApp['mcp'],
   life: ScopedLifecycle,
-): { api: PluginMcpApi; recheck: () => Promise<void> } {
+): { api: PluginMcpApi; recheck: () => Promise<void>; disposeAll: () => void } {
   const tools = new Set<Disposable>();
   const authorize = (): Promise<void> => ensurePerm(pluginId, 'mcp-tools', store, life);
   const api: PluginMcpApi = {
@@ -609,16 +611,26 @@ function makeMcp(
       return tracked;
     },
   };
+  // 经原 Disposable 注销本实例全部工具(main stub 同步移除);单个抛错不传染。
+  const disposeAll = (): void => {
+    for (const t of [...tools]) {
+      try {
+        t.dispose();
+      } catch (err) {
+        console.warn(`[scoped-app] ${pluginId} dispose mcp tool failed`, err);
+      }
+    }
+  };
   const recheck = async (): Promise<void> => {
     if (tools.size === 0) return;
     try {
       await ensurePerm(pluginId, 'mcp-tools', store);
     } catch (err) {
       if (!(err instanceof PermissionError)) throw err;
-      for (const t of [...tools]) t.dispose();
+      disposeAll();
     }
   };
-  return { api, recheck };
+  return { api, recheck, disposeAll };
 }
 
 function makeEditor(
@@ -729,13 +741,29 @@ function makeNotifications(
 
 /** 注册 / 订阅类方法名:返回 Disposable(register / on)或退订函数(subscribe)。 */
 const CONTRIBUTION_METHODS: ReadonlySet<PropertyKey> = new Set(['register', 'on', 'subscribe']);
+/**
+ * 吊销后仍放行的成员:只读查询 + events.off(只能移除调用方持有引用的 listener,即自身订阅)。
+ * 白名单 —— 其余成员(commands.execute / events.emit / events.clear 及未来新增方法)吊销后一律拒绝。
+ */
+const PASSTHROUGH_METHODS: ReadonlySet<PropertyKey> = new Set([
+  'get',
+  'getAll',
+  'list',
+  'getBySide',
+  'getByCategory',
+  'off',
+]);
+/** 返回 Promise 的成员:吊销后以 reject 拒绝(契约是异步),其余同步抛。 */
+const ASYNC_METHODS: ReadonlySet<PropertyKey> = new Set(['execute']);
 
 /**
  * 终审 P1(停用后仍可经原始注册表注册):共享注册表 / 事件总线包一层 Proxy ——
  * - register / on / subscribe:已吊销 → 抛 PERMISSION_DENIED、不入表;否则照常注册,并把退订句柄记入 owned,
  *   revoke() 时统一注销(插件绕过 Plugin.register 直接注册的贡献,停用时同样被清理)。返回的句柄幂等,
  *   先被插件 / Plugin 自行 dispose 则从 owned 移除。
- * - 其余成员(getAll / get / execute / emit / off ...)只读或不新增贡献,绑定原实例直通。
+ * - 只读查询与 events.off(PASSTHROUGH_METHODS):绑定原实例直通。
+ * - 其余成员(commands.execute / events.emit / events.clear ...)有外部副作用:已吊销 → 拒绝
+ *   (execute 返回 reject 的 Promise,其余同步抛 PERMISSION_DENIED),未吊销照常直通。
  */
 function trackContributions<T extends object>(
   pluginId: string,
@@ -753,22 +781,35 @@ function trackContributions<T extends object>(
       let method = methods.get(value);
       if (method === undefined) {
         const fn = value as (...args: unknown[]) => unknown;
-        method = !CONTRIBUTION_METHODS.has(prop)
-          ? fn.bind(t)
-          : (...args: unknown[]) => {
-              assertLiveUi(pluginId, `${name}.${String(prop)}`, life);
-              const handle = fn.apply(t, args) as Disposable | (() => void);
-              let released = false;
-              const release = (): void => {
-                if (released) return;
-                released = true;
-                owned.delete(release);
-                if (typeof handle === 'function') handle();
-                else handle.dispose();
-              };
-              owned.add(release);
-              return typeof handle === 'function' ? release : { dispose: release };
+        const capability = `${name}.${String(prop)}`;
+        if (PASSTHROUGH_METHODS.has(prop)) {
+          method = fn.bind(t);
+        } else if (!CONTRIBUTION_METHODS.has(prop)) {
+          method = (...args: unknown[]) => {
+            if (life.revoked && ASYNC_METHODS.has(prop)) {
+              return Promise.reject(
+                codedError('PERMISSION_DENIED', revokedMessage(pluginId, capability)),
+              );
+            }
+            assertLiveUi(pluginId, capability, life);
+            return fn.apply(t, args);
+          };
+        } else {
+          method = (...args: unknown[]) => {
+            assertLiveUi(pluginId, capability, life);
+            const handle = fn.apply(t, args) as Disposable | (() => void);
+            let released = false;
+            const release = (): void => {
+              if (released) return;
+              released = true;
+              owned.delete(release);
+              if (typeof handle === 'function') handle();
+              else handle.dispose();
             };
+            owned.add(release);
+            return typeof handle === 'function' ? release : { dispose: release };
+          };
+        }
         methods.set(value, method);
       }
       return method;
@@ -826,7 +867,7 @@ export interface ScopedAppController {
   readonly app: CoPluginApp;
   /**
    * 吊销(幂等,不可恢复):之后有外部副作用的能力一律拒绝、不发 IPC(见文件头);本实例经 scoped app
-   * 注册的贡献点与事件订阅一并注销。插件实例离开运行态时先于 onunload 调用。
+   * 注册的贡献点、事件订阅与 MCP 工具一并注销。插件实例离开运行态时先于 onunload 调用。
    */
   revoke(): void;
   /** 授权变更后重查 mcp-tools:已无授权 → 注销本实例经 app.mcp 注册的全部工具. */
@@ -895,6 +936,8 @@ export function createScopedAppController(
           console.warn(`[scoped-app] ${pluginId} revoke: dispose contribution failed`, err);
         }
       }
+      // 插件不保存 app.mcp.register 返回的 Disposable 时,工具与 main stub 会残留 → 再启用同名注册 TOOL_NAME_TAKEN。
+      mcp.disposeAll();
     },
     recheckMcpPermission: mcp.recheck,
   };
