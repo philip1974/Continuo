@@ -187,6 +187,8 @@ function requireControllerContext(ctx: McpCallCtx): DebugCallerContext {
   return {
     ownerWindowId: ctx.ownerWindowId,
     controllerToken: ctx.callerSubject,
+    // 断连时 launchSession 据此回收在途的 adapter / session(否则会话绑定死 subject、占满窗口名额)。
+    ...(ctx.signal !== undefined ? { signal: ctx.signal } : {}),
   };
 }
 

@@ -934,6 +934,10 @@
 
 - [`wire-protocol-url.spec.ts`](./protocol-url-listener-before-load/wire-protocol-url.spec.ts)
 
+## [protocol-url-ready-handshake](./protocol-url-ready-handshake/README.md)
+
+- [`ready-handshake.spec.ts`](./protocol-url-ready-handshake/ready-handshake.spec.ts)
+
 ## [quick-open(⌘P 文件模糊搜索)](./quick-open/README.md)
 
 - [`hotkey.spec.tsx`](./quick-open/hotkey.spec.tsx)

@@ -33,7 +33,7 @@ import {
 import { extractProtocolUrl } from './protocol-argv';
 import {
   routeProtocolUrl,
-  attachWindowDrain,
+  drainOnProtocolReady,
 } from './protocol-dispatch';
 import {
   clearWindow,
@@ -511,10 +511,21 @@ interface CreateMainWindowOpts {
   readonly fresh?: boolean;
 }
 
-// race(R40/R41):co:// 深链 FIFO 缓冲队列。无就绪窗口期间到达的深链全部入队;每个新窗口
-// (createMainWindow)did-finish-load 后都尝试排空,确保「应用无窗口时收到的深链」由下一个创建的
+// race(R40/R41):co:// 深链 FIFO 缓冲队列。无就绪窗口期间到达的深链全部入队;每个窗口
+// 上报协议监听就绪(PROTOCOL_READY)后都尝试排空,确保「应用无窗口时收到的深链」由下一个创建的
 // 窗口消费,而非只挂在 bootstrap 窗口上(声明在 createMainWindow 之前,供其闭包引用)。
 const pendingProtocolUrls: string[] = [];
+// 已上报协议监听就绪(PROTOCOL_READY)的窗口 webContents。did-finish-load 不算就绪:renderer 要等
+// 动态 import main-app + locale IPC 之后才挂 onProtocolUrl 监听。主 frame 重新导航(reload)后作废。
+const protocolReadyContents = new WeakSet<object>();
+
+ipcMain.on(PLUGINS_CHANNELS.PROTOCOL_READY, (event: IpcMainEvent) => {
+  if (!defaultIsTrustedFrame(event.senderFrame)) return;
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win || win.isDestroyed() || win.webContents !== event.sender) return;
+  protocolReadyContents.add(win.webContents);
+  drainOnProtocolReady(win, PLUGINS_CHANNELS.PROTOCOL_URL, pendingProtocolUrls);
+});
 
 export function createMainWindow(opts: CreateMainWindowOpts) {
   const win = new BrowserWindow({
@@ -589,10 +600,9 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
     win.loadFile(RENDERER_FILE, { query: queryParts });
   }
 
-  // race(R41):每个新窗口就绪后都尝试排空协议队列 —— 无就绪窗口期入队的 co:// 由「下一个就绪的
-  // 任意窗口」消费。此前 drain 只挂在 bootstrap 窗口上,后续 newWindow / openPathInNewWindow /
-  // macOS activate 创建的窗口不 drain → 应用无窗口时收到的深链永久挂队列。见 attachWindowDrain。
-  attachWindowDrain(win, PLUGINS_CHANNELS.PROTOCOL_URL, pendingProtocolUrls);
+  // race(R41):每个新窗口上报协议监听就绪(PROTOCOL_READY)后都排空协议队列 —— 无就绪窗口期入队的
+  // co:// 由「下一个就绪的任意窗口」消费。reload 后旧文档的监听随之失效 → 就绪作废,等新文档重新上报。
+  win.webContents.on('did-navigate', () => protocolReadyContents.delete(win.webContents));
 
   return win;
 }
@@ -759,13 +769,13 @@ app.on('browser-window-created', (_evt, win) => {
 const PROTOCOL = 'co';
 
 function dispatchProtocolUrl(url: string): void {
-  // race(R39):只投给已就绪(renderer did-finish-load 完成、preload onProtocolUrl 已挂)的窗口;
-  // 无就绪窗口时入队 + 给 loading 窗口挂一次性 did-finish-load drain(冷启动「无窗口」仍入队,
-  // 由 createMainWindow 的 drain 兜底)。见 routeProtocolUrl。
+  // race(R39):只投给已就绪(renderer 经 preload 上报 PROTOCOL_READY、onProtocolUrl 已挂)的窗口;
+  // 无就绪窗口时入队,由之后第一个上报就绪的窗口排空。见 routeProtocolUrl。
   routeProtocolUrl(url, {
     windows: BrowserWindow.getAllWindows(),
     channel: PLUGINS_CHANNELS.PROTOCOL_URL,
     pending: pendingProtocolUrls,
+    isReady: (w) => protocolReadyContents.has(w.webContents),
   });
 }
 
@@ -1142,7 +1152,7 @@ app.whenReady().then(async () => {
   // 否则 → restore 模式,主窗用持久化 workspace,异步恢复历史 windows[]。
   const startup = pickStartupMode(pendingOpenPaths.splice(0), isDirectorySync);
 
-  // 主窗由 createMainWindow 创建(有副作用:开窗 + 挂 attachWindowDrain);冷启动协议 URL 经
+  // 主窗由 createMainWindow 创建(有副作用:开窗 + 挂就绪作废监听);冷启动协议 URL 经
   // dispatchProtocolUrl 走统一队列消费(R69),不再需要持有主窗引用直发。
   if (startup.mode === 'dock') {
     // 第一个 dir 作主窗 workspace,覆盖持久化的 windows[0].workspace.root
@@ -1178,9 +1188,8 @@ app.whenReady().then(async () => {
     })();
   }
 
-  // 冷启 + open-url 顺序处理:可能在 mainwindow 未就绪前已收 url。race(R41):协议队列 drain 已
-  // 统一移入 createMainWindow(每个新窗口 did-finish-load 都排空),bootstrap 窗口同样经
-  // createMainWindow 创建,故此处不再单独挂 drain(避免只覆盖 bootstrap 窗口)。
+  // 冷启 + open-url 顺序处理:可能在 mainwindow 未就绪前已收 url。race(R41):协议队列 drain 统一
+  // 由 PROTOCOL_READY 处理器负责(任一窗口上报就绪即排空),此处不单独挂 drain。
 
   if (!process.defaultApp) {
     const url = extractProtocolUrl(process.argv, PROTOCOL);
@@ -1188,8 +1197,8 @@ app.whenReady().then(async () => {
     // 的 FIFO 队列 + R63 的「send 成功才出队 / 失败保留队首」韧性逻辑。两个漏洞:(1)主窗在 load
     // 前关闭 → did-finish-load 永不触发 → 冷启动深链永久丢失;(2)load 后、send 前窗口销毁 → send
     // 抛 "Object has been destroyed" → 深链丢失 + 在事件回调里成未捕获异常。改为交统一协议路由:
-    // win 经 createMainWindow 已挂 attachWindowDrain,dispatchProtocolUrl 入
-    // pendingProtocolUrls 后由该 drain 在就绪时韧性消费(send 失败保留队首,留给下个窗口)。
+    // dispatchProtocolUrl 入 pendingProtocolUrls 后,由窗口上报 PROTOCOL_READY 时的 drain 韧性消费
+    // (send 失败保留队首,留给下个窗口)。
     if (url) dispatchProtocolUrl(url);
   }
 

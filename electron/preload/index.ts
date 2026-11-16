@@ -353,7 +353,10 @@ const api = {
         }
         cb(payload.url);
       };
-      return subscribeIpc(PLUGINS_CHANNELS.PROTOCOL_URL, listener);
+      const unsubscribe = subscribeIpc(PLUGINS_CHANNELS.PROTOCOL_URL, listener);
+      // 监听已挂上 → 告诉 main「本窗口能接收 co:// 了」,main 才排空冷启动期间缓冲的深链(同 FLUSH_READY)。
+      ipcRenderer.send(PLUGINS_CHANNELS.PROTOCOL_READY);
+      return unsubscribe;
     },
     /**
      * v4.5 从 git URL 安装插件,返回 manifest 元信息.

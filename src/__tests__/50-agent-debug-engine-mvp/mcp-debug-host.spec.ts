@@ -90,6 +90,21 @@ describe('50 · agent debug MCP host', () => {
     );
   });
 
+  it('debug.launch 把调用方连接的 abort signal 传给 DebugService(断连时由其回收在途会话)', async () => {
+    const { tools, service } = build({});
+    const aborter = new AbortController();
+
+    await findTool(tools, MCP_TOOL_DEBUG_LAUNCH).run(
+      { program: '/repo/app.js', stop_on_entry: false } as never,
+      { ...ctx, signal: aborter.signal },
+    );
+
+    expect(service.launchSession).toHaveBeenCalledWith(
+      { program: '/repo/app.js', stopOnEntry: false },
+      { ownerWindowId: WIN, controllerToken: ME, signal: aborter.signal },
+    );
+  });
+
   it('非 launch debug 工具走 debug.* 授权标签', async () => {
     const { tools, ensureAuthorized } = build({
       'debug-owned': { owner: WIN, controller: ME },

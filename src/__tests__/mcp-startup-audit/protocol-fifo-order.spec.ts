@@ -10,7 +10,7 @@ function win(dead = false) {
   });
   const w: ProtoWindow = {
     isDestroyed: () => false,
-    webContents: { isLoading: () => false, send, once: () => {} },
+    webContents: { send },
   };
   return { w, send };
 }
@@ -20,7 +20,7 @@ describe('规则 5 · co:// FIFO 不乱序', () => {
     const a = win(true);
     const b = win();
     const pending = ['co://old/1', 'co://old/2'];
-    routeProtocolUrl('co://new', { windows: [a.w, b.w], channel: CH, pending });
+    routeProtocolUrl('co://new', { windows: [a.w, b.w], channel: CH, pending, isReady: () => true });
     expect(b.send.mock.calls.map((c) => c[1])).toEqual([
       { url: 'co://old/1' },
       { url: 'co://old/2' },
@@ -33,7 +33,7 @@ describe('规则 5 · co:// FIFO 不乱序', () => {
     const a = win(true);
     const b = win(true);
     const pending = ['co://old/1'];
-    routeProtocolUrl('co://new', { windows: [a.w, b.w], channel: CH, pending });
+    routeProtocolUrl('co://new', { windows: [a.w, b.w], channel: CH, pending, isReady: () => true });
     expect(pending).toEqual(['co://old/1', 'co://new']);
     const delivered = [...a.send.mock.calls, ...b.send.mock.calls].map(
       (c) => (c[1] as { url: string }).url,
