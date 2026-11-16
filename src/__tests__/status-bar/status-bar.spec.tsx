@@ -545,7 +545,8 @@ describe('StatusBar — agent 撤销', () => {
 
   // 撤销全部 vs 旧 pending 竞态:main revoke 会把所有 pending 授权结算为 denied 并删除。renderer 若仍
   // 显示旧弹窗,用户点「本次启动期间允许」会把 sessionGranted 置 true → 之后的请求被静默放行。
-  // revoke 成功 → 清掉 renderer 的 pending 提示(按拒绝结算)。
+  // revoke 成功 → 清掉 renderer 的 pending 提示。main 已结算该请求,取消结果为 'cancelled'(应答方据此
+  // 不再向 main respond,避免 NOT_PENDING 误报「授权响应失败」)。
   it('revoke 成功 → 清掉 renderer 的 pending 授权提示', async () => {
     const revoke = vi.fn().mockResolvedValue({ ok: true });
     installApi({ agentAuth: { revoke } });
@@ -578,7 +579,7 @@ describe('StatusBar — agent 撤销', () => {
       expect(revoke).toHaveBeenCalled();
       expect(useAgentAuthStore.getState().pending).toBeNull();
     });
-    await expect(decision).resolves.toBe('denied');
+    await expect(decision).resolves.toBe('cancelled');
     expect(useAgentAuthStore.getState().debugSessionGranted).toBe(false);
   });
 

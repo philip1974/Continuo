@@ -39,4 +39,12 @@
 
 - 挂载时注册 coApi.agentAuth.onRequest
 - 收到 payload → ensure → respond
+- ensure 结果为 `'cancelled'`(main 已撤销并结算该请求,本地只是取消弹窗)→ **不** respond、不弹失败 toast
+  (否则 main 返回 `AGENT_AUTH_REQUEST_NOT_PENDING` → 误导性「授权响应失败」)
+- 卸载时 unsub
+
+### 订阅 onRevoked(跨窗口撤销)
+
+- 挂载时注册 coApi.agentAuth.onRevoked;任一窗口撤销成功后 main 广播 `agent-auth:revoked`
+- 收到 → `store.applyMainRevoked()`:清两个域的 session 授权、epoch+1、取消残留弹窗(不 respond)
 - 卸载时 unsub

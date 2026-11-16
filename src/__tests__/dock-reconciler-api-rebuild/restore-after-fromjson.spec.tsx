@@ -4,10 +4,12 @@
 // 认为已同步不再补加 → 终端从 UI 消失。契约:布局恢复(fromJSON / 默认布局)完成后,终端 panel
 // 仍按 live session 全量存在。
 import React from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, render } from '@testing-library/react';
 import { useTerminalStore } from '@/stores/terminal.store';
 import { __resetReconcilerForTest } from '@/shell/dock/DockReconciler';
+import { openOrFocusPanel } from '@/shell/dock/dock-api-ref';
+import { useEditorStore } from '@/stores/editor.store';
 import { makeSession } from '../dock-reconciler-windowid-filter/fixtures';
 
 interface FakePanel {
@@ -24,7 +26,8 @@ interface FakePanel {
 
 const h = vi.hoisted(() => ({
   read: vi.fn(),
-  api: null as null | { panels: FakePanel[] },
+  onFlushRequest: vi.fn(() => () => {}),
+  api: null as null | { panels: FakePanel[]; activePanel: FakePanel | undefined },
 }));
 
 const noopDisposable = () => ({ dispose: () => {} });
@@ -87,7 +90,11 @@ vi.mock('dockview-react', () => ({
 
 vi.mock('@/lib/co-api', () => ({
   coApi: {
-    layout: { read: h.read, write: vi.fn().mockResolvedValue({ ok: true }) },
+    layout: {
+      read: h.read,
+      write: vi.fn().mockResolvedValue({ ok: true }),
+      onFlushRequest: h.onFlushRequest,
+    },
     terminal: { remove: vi.fn().mockResolvedValue({ ok: true }) },
     system: { windowId: 1 },
   },
@@ -116,9 +123,34 @@ const persistedLayout = {
   panels: { editor: { id: 'editor', contentComponent: 'editor' } },
 };
 
+// 活动面板为 settings 的持久布局(fake fromJSON 按 key 顺序重建,最后一个即活动面板)。
+const layoutWithSettingsActive = {
+  ...persistedLayout,
+  panels: {
+    editor: { id: 'editor', contentComponent: 'editor' },
+    settings: { id: 'settings', contentComponent: 'settings' },
+  },
+};
+
+function deferRead(): (v: unknown) => void {
+  let resolveRead: (v: unknown) => void = () => {};
+  h.read.mockReturnValue(
+    new Promise((r) => {
+      resolveRead = r;
+    }),
+  );
+  return (v) => resolveRead(v);
+}
+
+afterEach(() => {
+  cleanup();
+  useEditorStore.setState({ activeTabId: null });
+});
+
 beforeEach(() => {
   __resetReconcilerForTest();
   h.read.mockReset();
+  h.onFlushRequest.mockClear();
   h.api = null;
   useTerminalStore.setState({
     sessions: [makeSession('s1', { originHint: 'user', createdAt: 1 })],
@@ -157,5 +189,86 @@ describe('布局异步恢复后终端 panel 不丢失', () => {
       ],
     });
     expect(h.api!.panels.map((p) => p.id)).toContain('terminal-s2');
+  });
+});
+
+// 恢复后才挂载 Reconciler:首次 reconcile 全量重建存量终端时,它们不是「刚创建」,不得 setActive 抢走
+// fromJSON 恢复出的活动面板;之后真正新建的 user terminal 照旧聚焦。
+describe('布局恢复后挂载 Reconciler 不抢活动面板', () => {
+  it('存量 user terminal 重建后,活动面板仍是 fromJSON 恢复的那个', async () => {
+    const resolveRead = deferRead();
+    render(React.createElement(DockShell));
+    await vi.waitFor(() => expect(h.api).not.toBeNull());
+
+    resolveRead({ ok: true, data: layoutWithSettingsActive });
+    await vi.waitFor(() =>
+      expect(h.api!.panels.map((p) => p.id)).toContain('terminal-s1'),
+    );
+    expect(h.api!.activePanel?.id).toBe('settings');
+  });
+
+  it('恢复完成后新建的 user terminal 照旧聚焦', async () => {
+    h.read.mockResolvedValue({ ok: true, data: layoutWithSettingsActive });
+    render(React.createElement(DockShell));
+    await vi.waitFor(() =>
+      expect(h.api?.panels.map((p) => p.id)).toContain('terminal-s1'),
+    );
+    act(() => {
+      useTerminalStore.setState({
+        sessions: [
+          ...useTerminalStore.getState().sessions,
+          makeSession('s2', { originHint: 'user', createdAt: 2 }),
+        ],
+      });
+    });
+    expect(h.api!.activePanel?.id).toBe('terminal-s2');
+  });
+});
+
+// layout.read() 慢时 dock api 已暴露:恢复前 addPanel 的面板会被 fromJSON 的 clear() 删掉且不再补建。
+// 契约:会 addPanel 的入口在布局恢复完成后才生效(排队 / 延后),关窗 flush 握手仍在 apiReady 时注册。
+describe('布局恢复前的 addPanel 入口延后到恢复完成', () => {
+  it('恢复前 openOrFocusPanel → 恢复后该面板存在', async () => {
+    const resolveRead = deferRead();
+    render(React.createElement(DockShell));
+    await vi.waitFor(() => expect(h.api).not.toBeNull());
+
+    openOrFocusPanel('plugin-x', 'plugin-x', 'Plugin X');
+    resolveRead({ ok: true, data: persistedLayout });
+
+    await vi.waitFor(() => {
+      const ids = h.api!.panels.map((p) => p.id);
+      expect(ids).toContain('editor');
+      expect(ids).toContain('plugin-x');
+    });
+  });
+
+  it('恢复前 editor 激活(activeTabId 变化)→ 恢复后 editor 面板存在', async () => {
+    const resolveRead = deferRead();
+    render(React.createElement(DockShell));
+    await vi.waitFor(() => expect(h.api).not.toBeNull());
+
+    act(() => {
+      useEditorStore.setState({ activeTabId: 'tab-1' });
+    });
+    resolveRead({
+      ok: true,
+      data: {
+        ...persistedLayout,
+        panels: { settings: { id: 'settings', contentComponent: 'settings' } },
+      },
+    });
+
+    await vi.waitFor(() => {
+      const ids = h.api!.panels.map((p) => p.id);
+      expect(ids).toContain('settings');
+      expect(ids).toContain('editor');
+    });
+  });
+
+  it('关窗 flush 握手在布局恢复前就已注册(时序不变)', async () => {
+    deferRead();
+    render(React.createElement(DockShell));
+    await vi.waitFor(() => expect(h.onFlushRequest).toHaveBeenCalledTimes(1));
   });
 });

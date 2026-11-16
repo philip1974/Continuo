@@ -9,3 +9,9 @@
 - **异步布局恢复**(`restore-after-fromjson.spec.tsx`):`DockShell` onReady 在 `await layout.read()`
   之后才 `fromJSON`(dockview 内部先 `clear()`)。Reconciler 推迟到布局恢复(fromJSON / 默认布局)完成后
   才挂载 → 恢复完成时现有终端 session 仍各有 panel,不被 fromJSON 清掉;之后新增的 session 照常建 panel。
+- **恢复后挂载不抢焦点**(`restore-after-fromjson.spec.tsx`):Reconciler 挂载后的首次 reconcile 是 hydrate
+  (`hydrate: true`)—— 存量 user terminal 全量重建时不走 originHint 兜底聚焦,活动面板保持 fromJSON 恢复的那个
+  (仅显式 pendingFocus 仍聚焦);之后真正新建的 user terminal 照旧聚焦。
+- **恢复前的 addPanel 入口延后**(`restore-after-fromjson.spec.tsx`):`layout.read()` 较慢时 dock api 已暴露,
+  恢复前 `openOrFocusPanel()` 排队、editor 自动激活等待「布局已恢复」,恢复完成后才 addPanel(不被 fromJSON 的
+  `clear()` 删掉);关窗 flush 握手仍在 apiReady 时注册(时序不变)。

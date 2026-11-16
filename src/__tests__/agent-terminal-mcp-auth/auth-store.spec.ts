@@ -322,6 +322,36 @@ describe('revoke', () => {
   });
 });
 
+// main 已撤销(本窗口撤销成功 / 其它窗口撤销的 REVOKED 广播):main 已旋转 token 并把全部 pending 结算为
+// denied 删除。renderer 须与本地 revoke 同样重置(epoch+1、清两个域的 session 授权),并取消残留弹窗;
+// 取消结果是 'cancelled'(main 已结算,应答方不得再向 main respond,否则收到 NOT_PENDING 误报失败)。
+describe('applyMainRevoked', () => {
+  it('清两个域的 session 授权 + epoch+1', () => {
+    useAgentAuthStore.setState({ sessionGranted: true, debugSessionGranted: true });
+    const before = getAgentAuthEpoch();
+    useAgentAuthStore.getState().applyMainRevoked();
+    const s = useAgentAuthStore.getState();
+    expect(s.sessionGranted).toBe(false);
+    expect(s.debugSessionGranted).toBe(false);
+    expect(getAgentAuthEpoch()).toBe(before + 1);
+  });
+
+  it("残留 pending → 清空,挂起的 ensure resolve 'cancelled'", async () => {
+    const p = useAgentAuthStore.getState().ensure({ method: 'terminal.create_session' });
+    expect(useAgentAuthStore.getState().pending).not.toBeNull();
+    useAgentAuthStore.getState().applyMainRevoked();
+    expect(useAgentAuthStore.getState().pending).toBeNull();
+    await expect(p).resolves.toBe('cancelled');
+  });
+
+  it('撤销前在途的 session 应答迟到确认 → 不复活授权', () => {
+    const epoch = getAgentAuthEpoch();
+    useAgentAuthStore.getState().applyMainRevoked();
+    useAgentAuthStore.getState().confirmSessionGrant('terminal.create_session', epoch);
+    expect(useAgentAuthStore.getState().sessionGranted).toBe(false);
+  });
+});
+
 // 授权分域:终端与 debug 是两个独立的「本次启动期间允许」。此前只有一个标志位 —— 用户对终端点了
 // 「本次启动期间允许」之后,debug 工具(启动进程、读变量、执行表达式)也被静默放行,用户从未见过 debug 授权弹窗。
 describe('授权分域:terminal 与 debug 各自记「本次启动期间允许」', () => {

@@ -121,9 +121,10 @@ async function handleRevokeAgentTerminals(count: number): Promise<void> {
     const r = await coApi.agentAuth.revoke();
     // 保留稳定 code(此前 new Error(r.code) 把 code 塞进 message,下方 catch 取不到 → toast 不带 code)。
     if (!r.ok) throw codedError(r.code, r.message ?? 'revoke failed');
-    // main 撤销时已把全部 pending 授权结算为 denied 并删除 → renderer 仍显示的旧弹窗已失效,按拒绝
-    // 清掉(否则用户对它点「本次启动期间允许」会把已撤销的授权记回)。
-    useAgentAuthStore.getState().deny();
+    // main 撤销时已把全部 pending 授权结算为 denied 并删除 → renderer 仍显示的旧弹窗已失效,取消掉
+    // (否则用户对它点「本次启动期间允许」会把已撤销的授权记回)。以 'cancelled' 结算:main 已无该
+    // pending,应答方不再 respond(否则 NOT_PENDING 误报失败)。main 的 REVOKED 广播也会到达本窗口,幂等。
+    useAgentAuthStore.getState().applyMainRevoked();
   } catch (err) {
     // race(R92):仅当本次仍是最新 revoke(无更晚的 revoke 覆盖)才回滚/报错。更晚的成功 revoke
     // 已把状态正确置为 revoked,先发的迟到失败不得用旧 wasGranted 把 sessionGranted 翻回 true。

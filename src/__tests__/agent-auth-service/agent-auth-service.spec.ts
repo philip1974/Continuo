@@ -578,6 +578,23 @@ describe('agent-auth-service: revokeAndKillAgentSessions', () => {
     await expect(pendingAuth).resolves.toBe('denied');
   });
 
+  // 跨窗口撤销:撤销是全局的(token 旋转 / pending 全清),但「本次启动期间允许」记在各窗口 renderer
+  // 的 store 里。只有发起撤销的窗口会重置 → 其它窗口仍 sessionGranted=true,之后的请求被静默放行。
+  // 契约:撤销后向所有窗口广播 REVOKED,各 renderer 据此重置授权态。
+  it('T16: revoke 向所有存活窗口广播 REVOKED', () => {
+    const w1 = makeWin(1);
+    const w2 = makeWin(2);
+    const dead = makeWin(3, { destroyed: true });
+    electronMock.windows = [w1, w2, dead];
+
+    revokeAndKillAgentSessions();
+
+    for (const w of [w1, w2]) {
+      expect(w.webContents.send).toHaveBeenCalledWith(AGENT_AUTH_CHANNELS.REVOKED, {});
+    }
+    expect(dead.webContents.send).not.toHaveBeenCalled();
+  });
+
   it('T11: rotates token and force-kills only agent sessions', () => {
     // 撤销是安全动作:用 forceKill(立即 SIGKILL)而非 kill(3s grace)。
     const rotateToken = vi.fn();

@@ -13,7 +13,7 @@ import { PanelMount } from '@/shell/motion/PanelMount';
 import { applyDefaultLayout } from './layout.default';
 import { HeaderActions } from './HeaderActions';
 import { EmptyState } from './EmptyState';
-import { setDockApi } from './dock-api-ref';
+import { markDockLayoutRestored, setDockApi } from './dock-api-ref';
 import { focusTerminalPanel } from '@/panels/Terminal/terminal-focus-registry';
 import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
 import { stripTerminalPanelsFromLayout } from './strip-terminal-layout';
@@ -204,6 +204,9 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
   // 修复"hydrate 在 onReady 之前完成 → activeTabId 变化触发 effect 时
   // apiRef.current 仍 null → 错过添加 panel"的时序竞态。
   const [apiReady, setApiReady] = useState(false);
+  // 布局(fromJSON / 默认布局)已恢复。会 addPanel 的 editor 自动激活依赖它而非 apiReady:恢复前加的面板
+  // 会被 fromJSON 的 clear() 删掉且不再补建。关窗 flush 握手仍依赖 apiReady(时序不变)。
+  const [layoutRestored, setLayoutRestored] = useState(false);
   const [empty, setEmpty] = useState(false);
   const panelComponents = usePanelComponents();
   const { saveTab } = useEditorFile();
@@ -215,7 +218,9 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       // 若此处即挂载,await layout.read() 期间 Reconciler 建出的终端 panel 会被随后的 fromJSON
       //(dockview 内部先 clear())清掉,而 Reconciler 视为已同步不再补加 → 终端从 UI 消失。
       setApiReady(true);
-      setDockApi(event.api); // 暴露给 IconSidebar 等 Dockview 之外的组件
+      setLayoutRestored(false);
+      // 暴露给 IconSidebar 等 Dockview 之外的组件;布局恢复前 openOrFocusPanel 排队(见 dock-api-ref)。
+      setDockApi(event.api, { layoutPending: true });
       // a11y(A131,A130 同族):layout.read() reject 此前会中断整个 onReady(连默认布局都不应用)。
       // try/catch 兜底;read 失败(reject/!ok)或 fromJSON 失败 → notify.error(用户/SR 知布局被
       // 重置而非静默);首次无持久布局(ok+null data)不算失败,默认布局静默应用。
@@ -262,6 +267,9 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       if (!restored) applyDefaultLayout(event.api);
       // 布局已定型 → 挂载 Reconciler:新 api 视作空 dock,按 live sessions 全量建终端 panel(R26)。
       setReconcilerApi(event.api);
+      // 放行恢复前排队的 openOrFocusPanel + editor 自动激活。
+      markDockLayoutRestored(event.api);
+      setLayoutRestored(true);
       if (restoreFailed) {
         notify.error(translate('errors.dock.layout_restore_failed'));
       }
@@ -445,14 +453,15 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
   // activeTabId 变 → 自动 setActive 'editor' panel(VSCode 行为)。
   // 若 panel 不存在(用户拖关了 / 启动时 layout 没含),自动 addPanel 加回。
   //
-  // deps 必含 apiReady:让 onReady 完成晚于 activeTabId hydrate 的场景也能补建。
+  // deps 必含 layoutRestored(而非 apiReady):让布局恢复完成晚于 activeTabId hydrate 的场景也能补建;
+  // 恢复前 addPanel 的 editor 会被 fromJSON 的 clear() 删掉。
   // deps 必含 editorFocusPulse:同 id 重新点击(activeTabId 不变)也要触发,
   // 否则用户切到 terminal 后再点资源管理器同一文档,terminal 不会让位。见 #22。
   const editorActiveTabId = useEditorStore((s) => s.activeTabId);
   const editorFocusPulse = useEditorStore((s) => s.editorFocusPulse);
   useEffect(() => {
     if (!editorActiveTabId) return;
-    if (!apiReady) return;
+    if (!layoutRestored) return;
     const api = apiRef.current;
     if (!api) return;
     let editorPanel = api.getPanel('editor');
@@ -470,7 +479,7 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       cancelPendingPanelClose('editor');
     }
     editorPanel.api.setActive();
-  }, [editorActiveTabId, editorFocusPulse, apiReady]);
+  }, [editorActiveTabId, editorFocusPulse, layoutRestored]);
 
   return (
     <div className="relative h-full w-full">

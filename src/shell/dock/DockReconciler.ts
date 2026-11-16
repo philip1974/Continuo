@@ -18,6 +18,12 @@ export { markPanelCloseSuppressed };
 export interface ReconcileInput {
   previousSessions: readonly TerminalSession[];
   nextSessions: readonly TerminalSession[];
+  /**
+   * 新 dock api 首次全量重建(布局恢复后挂载 / api 重建):added 都是存量 session,不是「刚创建」。
+   * 不走 originHint==='user' 兜底聚焦(否则 setActive 抢走 fromJSON 恢复的活动面板),仅显式
+   * pendingFocus(用户明确意图)仍聚焦;它们照常登记进 everAddedSessionIds。
+   */
+  hydrate?: boolean;
 }
 
 // pendingFocus 由 user 路径(Cmd+T / + 按钮)在 coApi.terminal.create resolve 后
@@ -139,7 +145,8 @@ export function reconcileTerminalPanels(
         session.createdAt === latestUserCreatedAt;
       const shouldFocus =
         consumePendingFocus(session.id) ||
-        (session.originHint === 'user' &&
+        (input.hydrate !== true &&
+          session.originHint === 'user' &&
           isFirstAppearance &&
           isLatestUserSession);
       // dockview addPanel 的 `inactive: true` 让新 group 容器在 xterm 渲染
@@ -205,6 +212,7 @@ export function useDockReconciler(api: DockviewApi | null): void {
     reconcileTerminalPanels(api, {
       previousSessions: [],
       nextSessions: initial.sessions,
+      hydrate: true,
     });
     previousSessionsRef.current = initial.sessions;
   }, [api]);

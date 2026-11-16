@@ -21,11 +21,12 @@ vi.mock('../../notifications/notify', () => ({
 interface FakeAuthApi {
   onRequest: ReturnType<typeof vi.fn>;
   respond: ReturnType<typeof vi.fn>;
+  onRevoked?: ReturnType<typeof vi.fn>;
 }
 
 function installApi(auth: FakeAuthApi): void {
   Object.defineProperty(window, 'api', {
-    value: { agentAuth: auth },
+    value: { agentAuth: { onRevoked: vi.fn(() => () => {}), ...auth } },
     writable: true,
     configurable: true,
   });
@@ -331,5 +332,100 @@ describe('AgentAuthPrompt — 订阅 onRequest', () => {
     await waitFor(() => {
       expect(document.querySelector('.wm-modal-content')).not.toBeNull();
     });
+  });
+});
+
+// 撤销导致的本地取消:main 撤销时已把全部 pending 结算为 denied 并删除。renderer 取消残留弹窗后若仍
+// respond(requestId,'denied'),main 返回 AGENT_AUTH_REQUEST_NOT_PENDING → 误导性「授权响应失败」toast。
+// 跨窗口:其它窗口发起的撤销经 REVOKED 广播到达,本窗口须同样重置授权态并取消弹窗。
+describe('AgentAuthPrompt — main 已撤销', () => {
+  function setupWithRequest() {
+    notifyError.mockReset();
+    let cb: ((p: { requestId: string; method: string }) => void) | null = null;
+    let revokedCb: (() => void) | null = null;
+    const onRequest = vi.fn((fn: (p: never) => void) => {
+      cb = fn as never;
+      return vi.fn();
+    });
+    const onRevoked = vi.fn((fn: () => void) => {
+      revokedCb = fn;
+      return vi.fn();
+    });
+    const respond = vi.fn(async () => ({
+      ok: false,
+      code: 'AGENT_AUTH_REQUEST_NOT_PENDING',
+      message: 'x',
+    }));
+    installApi({ onRequest, respond, onRevoked });
+    const view = render(<AgentAuthPrompt />);
+    return {
+      view,
+      onRevoked,
+      respond,
+      fireRequest: (id: string, method = 'terminal.create_session') => cb!({ requestId: id, method }),
+      fireRevoked: () => revokedCb!(),
+    };
+  }
+
+  it('撤销成功后取消本地弹窗(applyMainRevoked)→ 不再向 main respond、不弹失败 toast', async () => {
+    const { respond, fireRequest } = setupWithRequest();
+    act(() => {
+      void fireRequest('rq-r1');
+    });
+    await waitFor(() => {
+      expect(document.querySelector('.wm-modal-content')).not.toBeNull();
+    });
+    act(() => {
+      useAgentAuthStore.getState().applyMainRevoked();
+    });
+    await waitFor(() => {
+      expect(document.querySelector('.wm-modal-content')).toBeNull();
+    });
+    // 让 ensure 的 await 链走完
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(respond).not.toHaveBeenCalled();
+    expect(notifyError).not.toHaveBeenCalled();
+  });
+
+  it('收到 REVOKED 广播 → 清 session 授权 + 取消弹窗,且不 respond', async () => {
+    const { respond, fireRequest, fireRevoked, onRevoked } = setupWithRequest();
+    expect(onRevoked).toHaveBeenCalledTimes(1);
+    useAgentAuthStore.setState({ sessionGranted: true });
+    // debug 域未授权 → 弹窗(经 onRequest 进入,验证取消后不 respond)
+    act(() => {
+      void fireRequest('rq-debug', 'debug.launch');
+    });
+    await waitFor(() => {
+      expect(document.querySelector('.wm-modal-content')).not.toBeNull();
+    });
+
+    act(() => {
+      fireRevoked();
+    });
+
+    expect(useAgentAuthStore.getState().sessionGranted).toBe(false);
+    expect(useAgentAuthStore.getState().debugSessionGranted).toBe(false);
+    await waitFor(() => {
+      expect(document.querySelector('.wm-modal-content')).toBeNull();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(respond).not.toHaveBeenCalled();
+    expect(notifyError).not.toHaveBeenCalled();
+  });
+
+  it('卸载 → 退订 REVOKED', () => {
+    const unsub = vi.fn();
+    installApi({
+      onRequest: vi.fn(() => () => {}),
+      respond: vi.fn(),
+      onRevoked: vi.fn(() => unsub),
+    });
+    const { unmount } = render(<AgentAuthPrompt />);
+    unmount();
+    expect(unsub).toHaveBeenCalledTimes(1);
   });
 });
