@@ -36,7 +36,7 @@
   | `fs` 读:`readFile / listDir / stat / lstat / realpath / readGitBlob / userHome` | 无外部副作用,`onunload` 收尾可能要读;停用随即回收 plugin-fs token,之后 main 侧拒绝 |
   | `dataStore.read / write` | 插件自有数据,`onunload` 常用 `saveData` 落盘状态 |
   | `permission.check / granted` | 只读查询 |
-  | 贡献点只读查询:各注册表 `getAll / get / list / getBySide / getByCategory` | 只读 |
+  | 贡献点只读查询:各注册表 `getAll / get / list / getBySide / getByCategory` | 只读;但结果是浅拷贝,其中的回调(`fn / when / render / factory / onClick`、装饰器函数)包吊销检查 —— 吊销后调用抛 `PERMISSION_DENIED`(见下) |
   | `events.off` | 只能移除调用方持有 listener 引用的订阅,即插件自身的订阅;收尾退订无副作用 |
   | `version` / `workspace.getRoot` | 只读 |
 
@@ -47,8 +47,26 @@
 - MCP 工具回收:`revoke()` 经原 Disposable 注销本实例经 `app.mcp.register` 注册的全部工具(main 侧 stub 同步
   移除)—— 插件不保存返回的 Disposable(不经 `registerMcpTool` 收集)时,停用 / 热重载 / `onload` 抛错后工具不残留,
   再次启用注册同名工具不会命中 `TOOL_NAME_TAKEN`。
+- 查询结果中的回调(终审 P1):插件缓存 `app.commands.get('terminal.new')!.fn` 后停用再调用,会绕过 `execute` 的吊销检查。
+  scoped app 对外的查询结果是浅拷贝(共享注册表原对象不改),函数字段换成带吊销检查的包装:未吊销透明调用原函数,吊销后
+  抛 `PERMISSION_DENIED`、原函数不执行。包装按原引用缓存,同一快照返回同一结果(引用稳定)。
 - 带权限门的能力在授权读取 `await` 前后各查一次吊销状态:授权读取期间被吊销,返回后也不放行。
 - main 侧 `killPluginShellProcesses` 兜底仍在(回收已登记的进程);本条是在源头拒绝新请求。
+
+### 1b. onload 挂起不得绕过禁用 / 卸载(`PluginManager` / `Plugin._activate` / `plugin-reload-gate.ts`)
+
+插件在 `onload` 起定时器 / shell 后 await 永不结束的 Promise → 激活一直持有生命周期锁、init 一直不完成;禁用 / 卸载
+排在锁后或被 reload-gate 缓冲,且 `entry.scoped` 要等 `onload` 返回才写入,无法提前吊销。
+
+- 激活在执行插件代码(构造 / `onload`)**之前**就把 scoped 控制面挂到 entry,并备好中止。
+- `PluginManager.revokeImmediately(id)`(同步、锁外、幂等):吊销当前 scoped app、中止挂起的激活等待(`_activate`
+  不再等 `onload`,按 `onload` 抛错同样收尾,迟到结果吞掉),激活落到 `disabled`(非 failed)、锁随之释放,排队的锁内
+  停用 / 卸载照常执行。激活挂起或 init 未完成时立即 `killPluginShellProcesses(id)`;正常运行的实例锁空闲,进程终止
+  仍在 `onunload` 之后(让插件先自行收尾)。
+- 调用点:本地 `disable` / `uninstall`(进锁前);`markUninstalled`(卸载广播,含 init 前);reload-gate 收到
+  `enabled=false` 广播时立即调用(不受 init 缓冲影响),`enabledChanged` 仍按缓冲规则排队。
+- 激活进行中(授权弹窗 / import / token 注册 await 期间)被要求吊销 → 不加载 / 不构造实例。
+- 本地禁用:有启用意图但无实例(激活被中止)仍停用并落盘 `enabled=false`(否则下次启动复活)。
 
 ### 2. 跨窗口启停(`electron/main/ipc/plugins.ipc.ts` / preload / `PluginManager.handleEnabledChanged`)
 
@@ -79,6 +97,10 @@
 - `contribution-revoke.spec.ts`:吊销前直接注册的各注册表贡献 / `events.on` / `subscribe` 在 revoke 时注销;吊销后
   register / on / subscribe / emit / clear 抛 `PERMISSION_DENIED`、execute reject;只读成员与 `events.off` 照常;
   PluginManager 停用后延迟回调注册 / 执行命令被拒、停用前直接注册的命令被移除。
+- `query-callback-revoke.spec.ts`:get / getAll / list / getBySide 等返回的回调吊销前透明、吊销后拒绝;各注册表覆盖;
+  原对象不变、引用稳定;PluginManager 停用后缓存的 `terminal.new` fn 被拒、终端未创建。
+- `activation-hang-revoke.spec.ts`:onload 挂起期间别窗禁用 / 卸载广播(init 未完成)与本地禁用 → 立即吊销(shell.exec
+  被拒、不发 IPC)、立即终止进程,随后状态落 disabled / entry 移除;init 挂起时本地禁用落盘 `enabled=false`。
 - `enabled-main-broadcast.spec.ts`:main 广播(成功才广播、跳过已销毁窗口)与 payload 守卫。
 - `enabled-renderer-sync.spec.ts`:A 禁用 → B 停用、命令注销、不写盘、热重载不复活;发起窗口幂等;A 启用 → B
   激活(不弹窗、不写盘);未知 id 忽略;reload-gate 接线与 init 前缓冲。

@@ -16,6 +16,7 @@
 // revoke() 时统一注销(见 trackContributions);commands.execute / events.emit / events.clear 有外部副作用
 //(执行宿主命令可开窗口 / 终端,emit 触发他人监听,clear 清他人订阅),同样拒绝;只放行只读查询与 events.off。
 // 经 app.mcp.register 注册的工具同样在 revoke() 时注销(插件未保存 Disposable 也不残留)。
+// 只读查询结果是浅拷贝,其中回调包吊销检查(缓存 commands.get(..).fn 停用后调用同样被拒)。
 // 见 src/__tests__/plugin-capability-revoke/。
 
 import type {
@@ -761,7 +762,7 @@ const ASYNC_METHODS: ReadonlySet<PropertyKey> = new Set(['execute']);
  * - register / on / subscribe:已吊销 → 抛 PERMISSION_DENIED、不入表;否则照常注册,并把退订句柄记入 owned,
  *   revoke() 时统一注销(插件绕过 Plugin.register 直接注册的贡献,停用时同样被清理)。返回的句柄幂等,
  *   先被插件 / Plugin 自行 dispose 则从 owned 移除。
- * - 只读查询与 events.off(PASSTHROUGH_METHODS):绑定原实例直通。
+ * - 只读查询与 events.off(PASSTHROUGH_METHODS):直通,但结果中的回调包吊销检查(见 guardResult)。
  * - 其余成员(commands.execute / events.emit / events.clear ...)有外部副作用:已吊销 → 拒绝
  *   (execute 返回 reject 的 Promise,其余同步抛 PERMISSION_DENIED),未吊销照常直通。
  */
@@ -774,6 +775,48 @@ function trackContributions<T extends object>(
 ): T {
   // 按原函数缓存包装(引用稳定;原实例上的方法被替换,如测试 spy,则重新包装)。
   const methods = new WeakMap<object, unknown>();
+  // 终审 P1(缓存查询结果里的回调绕过吊销):查询结果(spec / spec 数组 / 回调数组)按原引用缓存其包装 ——
+  // 共享注册表的原对象不改,返回浅拷贝,函数字段换成带吊销检查的 Proxy(未吊销透明转发,吊销后抛 PERMISSION_DENIED)。
+  // 按原引用缓存保证同一快照返回同一包装(useRegistry / memo 依赖引用稳定)。
+  const guarded = new WeakMap<object, unknown>();
+  const guardFn = (f: object, capability: string): unknown =>
+    new Proxy(f, {
+      apply(target, thisArg, args) {
+        assertLiveUi(pluginId, capability, life);
+        return Reflect.apply(target as (...a: unknown[]) => unknown, thisArg, args);
+      },
+      construct(target, args, newTarget) {
+        assertLiveUi(pluginId, capability, life);
+        return Reflect.construct(target as new (...a: unknown[]) => object, args, newTarget);
+      },
+    });
+  const guardItem = (item: unknown): unknown => {
+    if (typeof item !== 'object' && typeof item !== 'function') return item;
+    if (item === null) return item;
+    const hit = guarded.get(item);
+    if (hit !== undefined) return hit;
+    let out: unknown;
+    if (typeof item === 'function') {
+      out = guardFn(item, `${name}.callback`);
+    } else {
+      const copy: Record<string, unknown> = { ...(item as Record<string, unknown>) };
+      for (const key of Object.keys(copy)) {
+        const v = copy[key];
+        if (typeof v === 'function') copy[key] = guardFn(v, `${name}.${key}`);
+      }
+      out = copy;
+    }
+    guarded.set(item, out);
+    return out;
+  };
+  const guardResult = (result: unknown): unknown => {
+    if (!Array.isArray(result)) return guardItem(result);
+    const hit = guarded.get(result);
+    if (hit !== undefined) return hit;
+    const out = result.map(guardItem);
+    guarded.set(result, out);
+    return out;
+  };
   return new Proxy(target, {
     get(t, prop) {
       const value: unknown = Reflect.get(t, prop, t);
@@ -783,7 +826,7 @@ function trackContributions<T extends object>(
         const fn = value as (...args: unknown[]) => unknown;
         const capability = `${name}.${String(prop)}`;
         if (PASSTHROUGH_METHODS.has(prop)) {
-          method = fn.bind(t);
+          method = (...args: unknown[]) => guardResult(fn.apply(t, args));
         } else if (!CONTRIBUTION_METHODS.has(prop)) {
           method = (...args: unknown[]) => {
             if (life.revoked && ASYNC_METHODS.has(prop)) {

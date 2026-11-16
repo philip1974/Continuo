@@ -180,6 +180,8 @@ export async function init(): Promise<void> {
     // 终审 P1:任一窗口启用 / 禁用成功 → main 广播,本窗口同步实例启停(幂等、不触盘)。
     onEnabledChanged: (cb) => coApi.plugins.onEnabledChanged(cb),
     enabledChanged: (id, enabled) => userPluginManager.handleEnabledChanged(id, enabled),
+    // 禁用广播一到立即吊销 + 中止挂起的激活(不等 init / 生命周期锁)。
+    revokeImmediately: (id) => userPluginManager.revokeImmediately(id),
     onError: (where, err) =>
       console.warn(`[main] user plugin manager ${where} failed`, err),
   });

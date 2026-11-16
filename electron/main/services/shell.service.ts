@@ -5,7 +5,8 @@
 import { startsWithAllowedExternalScheme } from '../../shared/url-limits';
 import { spawn } from 'node:child_process';
 import { shell } from 'electron';
-import { errorMessage } from '../../shared/error-message';
+import { codedError, errorMessage } from '../../shared/error-message';
+import { ERROR_CODES } from '../../shared/error-codes';
 import { SHELL_MAX_TIMEOUT_MS } from '../../shared/shell-limits';
 import type { ChildProcess } from 'node:child_process';
 import {
@@ -63,6 +64,16 @@ export const EXEC_LIMITS_FOR_TEST = {
 // 在途(尚未 close)的 exec 子进程,供退出清理。子进程是 detached 进程组,不随 IDE 退出而终止。
 const inFlight = new Set<ChildProcess>();
 
+// 终审 P1(E230 同族,数量上限):在途 exec 子进程并发上限。插件循环调用 exec 不 await → 此前无限 spawn,耗尽
+// PID / FD。与 plugin-shell-stream 同款全局 + 单 sender 双闸,spawn 前 fail-fast 拒绝(不 spawn、不起 timer)。
+const MAX_ACTIVE_EXECS_GLOBAL = 128;
+const MAX_ACTIVE_EXECS_PER_SENDER = 32;
+/** senderId → 在途 exec 数(无 senderId 的内部调用只计全局)。 */
+const inFlightBySender = new Map<number, number>();
+
+export const MAX_ACTIVE_EXECS_GLOBAL_FOR_TEST = MAX_ACTIVE_EXECS_GLOBAL;
+export const MAX_ACTIVE_EXECS_PER_SENDER_FOR_TEST = MAX_ACTIVE_EXECS_PER_SENDER;
+
 /** 退出清理(before-quit awaited):立即强杀所有在途 exec 的进程树并等待 close(有上限)。 */
 export function cleanupAllShellExecs(): Promise<void> {
   return killProcessTreesNow(inFlight);
@@ -77,6 +88,15 @@ export function execShell(
   input: IpcShellExecInput,
   senderId?: number,
 ): Promise<IpcShellExecResult> {
+  if (
+    inFlight.size >= MAX_ACTIVE_EXECS_GLOBAL ||
+    (senderId !== undefined &&
+      (inFlightBySender.get(senderId) ?? 0) >= MAX_ACTIVE_EXECS_PER_SENDER)
+  ) {
+    return Promise.reject(
+      codedError(ERROR_CODES.TOO_MANY_STREAMS, 'too many active shell execs'),
+    );
+  }
   return new Promise((resolve) => {
     const timeoutMs = clampExecTimeoutMs(input.timeoutMs);
     const maxBytes = clampExecMaxBytes(input.maxOutputBytes);
@@ -112,8 +132,22 @@ export function execShell(
     }
     const proc = child;
     inFlight.add(proc);
-    proc.once('close', () => inFlight.delete(proc));
-    proc.once('error', () => inFlight.delete(proc));
+    if (senderId !== undefined) {
+      inFlightBySender.set(senderId, (inFlightBySender.get(senderId) ?? 0) + 1);
+    }
+    // close / error 可能先后都到:只释放一次名额。
+    let released = false;
+    const release = (): void => {
+      if (released) return;
+      released = true;
+      inFlight.delete(proc);
+      if (senderId === undefined) return;
+      const n = (inFlightBySender.get(senderId) ?? 1) - 1;
+      if (n > 0) inFlightBySender.set(senderId, n);
+      else inFlightBySender.delete(senderId);
+    };
+    proc.once('close', release);
+    proc.once('error', release);
     if (senderId !== undefined) trackPluginShellProcess(proc, senderId, input.pluginId);
 
     // 按**字节**累加并封顶,最后一次性解码 —— 旧实现用 `string.length`(UTF-16

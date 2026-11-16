@@ -150,7 +150,8 @@ describe('createScopedApp 基础结构', () => {
     const b = createScopedApp(coApp, 'p.b', null);
     expect(a.commands).not.toBe(b.commands);
     a.commands.register({ id: 'a.cmd', title: 'A', fn: () => {} });
-    expect(b.commands.get('a.cmd')).toBe(coApp.commands.get('a.cmd'));
+    // 查询结果是浅拷贝(回调包吊销检查,见 plugin-capability-revoke/query-callback-revoke),内容同底层单例
+    expect(b.commands.get('a.cmd')).toMatchObject({ id: 'a.cmd', title: 'A' });
     expect(coApp.commands.get('a.cmd')).toBeDefined();
   });
 
