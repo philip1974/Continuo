@@ -809,6 +809,7 @@
 - [`enabled-renderer-sync.spec.ts`](./plugin-capability-revoke/enabled-renderer-sync.spec.ts)
 - [`mcp-permission-revoke.spec.ts`](./plugin-capability-revoke/mcp-permission-revoke.spec.ts)
 - [`query-callback-revoke.spec.ts`](./plugin-capability-revoke/query-callback-revoke.spec.ts)
+- [`reload-deactivation-intent.spec.ts`](./plugin-capability-revoke/reload-deactivation-intent.spec.ts)
 
 ## [plugin-contributions-core(3 个核心贡献点)](./plugin-contributions-core/README.md)
 

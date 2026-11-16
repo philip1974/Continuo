@@ -115,4 +115,36 @@ describe('wirePluginReloadGate (R16)', () => {
     await Promise.resolve();
     expect(onError).toHaveBeenCalledWith('reload', expect.any(Error));
   });
+
+  // 终审 P1:卸载后待处理的 reload 无意义(目录已删、entry 将被移除)→ 丢弃。禁用不丢弃:reload 在锁内按停用意图
+  // 只刷新元数据(插件源码快照)、不激活,之后显式启用才用到最新源码。
+  it('init 完成前:卸载丢弃该插件待处理的 reload,其它插件照常 reload', async () => {
+    const initD = deferred();
+    const reload = vi.fn().mockResolvedValue(undefined);
+    const uninstalled = vi.fn().mockResolvedValue(undefined);
+    let changedCb!: (id: string) => void;
+    let uninstalledCb!: (id: string) => void;
+
+    wirePluginReloadGate({
+      init: () => initD.promise,
+      reload,
+      onChanged: (cb) => {
+        changedCb = cb;
+      },
+      onUninstalled: (cb) => {
+        uninstalledCb = cb;
+      },
+      uninstalled,
+    });
+
+    changedCb('gone');
+    changedCb('kept');
+    uninstalledCb('gone');
+    initD.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(reload.mock.calls.map((c) => c[0])).toEqual(['kept']);
+    expect(uninstalled).toHaveBeenCalledWith('gone');
+  });
 });

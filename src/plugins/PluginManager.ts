@@ -81,11 +81,10 @@ interface PluginEntry {
    */
   scoped?: ScopedAppController;
   /**
-   * 激活进行中(终审 P1:onload 挂起):revokeImmediately 据此记下中止请求;abortActivation 在插件代码开始执行
-   * (构造 / onload)后可用,调用即不再等 onload、激活按「被禁用」收尾、释放生命周期锁。
+   * 激活进行中(终审 P1:onload 挂起):revokeImmediately 据此决定是否立即终止 shell 进程;abortActivation 在开始
+   * import 前挂上,调用即不再等 import / onload、激活按「被禁用」收尾、释放生命周期锁。
    */
   activating?: boolean;
-  revokeRequested?: boolean;
   abortActivation?: () => void;
   pluginFsToken?: string;
   /** i18n(I4):存结构化 code+message,不存拼好的可见串. */
@@ -208,17 +207,19 @@ export class PluginManager {
    */
   private readonly lifecycleLocks = new Map<string, Promise<unknown>>();
   /**
-   * 已被卸载(收到 plugins:uninstalled 广播)的 id(终审 P1):广播到达时立即写入,不等生命周期锁。在途激活
-   * (挂在授权弹窗 / 授权写入上)在执行插件代码前检查并中止。本窗口不会再出现同 id 的 entry(新安装须重载窗口),
-   * 故不清除。
+   * per-id「停用意图」(终审 P1:热重载绕过禁用 / 卸载)—— 统一取代此前三套标记(已卸载 id 集合、激活中的
+   * revokeRequested、init 期间尚无 entry 的禁用标记)。
+   * - 写入:禁用 / 卸载**请求到达时同步**写入(本地 disable / uninstall 进锁前;禁用 / 卸载广播经 reload-gate 立即调用
+   *   revokeImmediately / markUninstalled),不依赖 entry 是否存在、是否 activating,不等生命周期锁 / init。
+   * - 检查:所有激活路径(init、enable、热重载、enabled=true 广播)在 activateEntryUnguarded 中、导入模块 / 构造实例之前
+   *   检查,存在 → 不激活,按禁用收尾(落 disabled;启用意图由排队的锁内停用清除并落盘)。init 与 reload 先查,存在
+   *   则直接不激活。激活不会清除它。
+   * - 清除:只有显式启用 —— 本地 enable() 调用时、enabled=true 广播到达时(markEnabled)同步清除。'uninstalled'
+   *   (目录已删)不被启用清除;本地卸载失败(entry 仍在)时降为 'disabled',用户可重新启用。
+   * 否则:旧实例 onunload 挂起期间的禁用只吊销旧 scoped app,重载随后建全新 scoped app 并激活;init 期间排队的 reload
+   * 先于缓冲的禁用执行,按旧启用意图重新激活。
    */
-  private readonly uninstalledIds = new Set<string>();
-  /**
-   * 尚无 entry 时收到禁用的 id(终审 P1):init 读完启用快照后、该插件写入 entries 前(前一个插件挂在授权弹窗上)
-   * 到达的禁用广播只被 reload-gate 缓冲 → init 仍按旧快照激活。init 建 entry 时消费该标记、按禁用建 entry;
-   * 收到 enabled=true 广播(markEnabled)清除。
-   */
-  private readonly disabledBeforeEntryIds = new Set<string>();
+  private readonly deactivationIntents = new Map<string, 'disabled' | 'uninstalled'>();
   /** init 进行中(终审 P1):期间到达的广播被 reload-gate 缓冲到 init 完成,锁内停用不会及时执行。 */
   private initializing = false;
 
@@ -300,9 +301,8 @@ export class PluginManager {
         continue;
       }
 
-      // 快照之后已收到禁用广播(见 disabledBeforeEntryIds)→ 不按旧快照激活,以 disabled 建 entry。
-      const disabledSinceSnapshot = this.disabledBeforeEntryIds.delete(manifest.id);
-      const intended = enabledIds.has(manifest.id) && !disabledSinceSnapshot;
+      // 快照之后已收到禁用 / 卸载(见 deactivationIntents)→ 不按旧快照激活,以 disabled 建 entry。
+      const intended = enabledIds.has(manifest.id) && !this.deactivationIntents.has(manifest.id);
       const entry: PluginEntry = {
         id: manifest.id,
         manifest,
@@ -337,6 +337,9 @@ export class PluginManager {
 
   /** 启用单个插件(若已 active 幂等). per-id 串行. */
   async enable(id: string): Promise<void> {
+    // 显式启用:同步清除停用意图(须在进锁前 —— 若在锁内清,排在本次启用之后的禁用请求会被抹掉,
+    // 其吊销早于新激活发生、中止不到新实例)。
+    this.clearDisabledIntent(id);
     return this.withLifecycleLock(id, () => this.enableLocked(id));
   }
 
@@ -460,8 +463,9 @@ export class PluginManager {
     // race(R77):据「用户启用意图」而非瞬时 status 判是否重激活。否则连续热重载中先读到
     // 坏 manifest 把已启用插件置 'failed',文件修好再 reload 时 status 已非 'enabled' →
     // 被推断成 disabled 不激活 → 持久启用的插件因一次坏快照在会话内停用,直到手动启用/重启。
-    const wasEnabled = entry.enabledIntent;
-    if (wasEnabled && entry.instance) {
+    // 终审 P1:已请求禁用 / 卸载(停用意图)→ 只拆旧实例、刷新元数据,不再激活 —— 排队的禁用 / 卸载随后落地。
+    const wasEnabled = entry.enabledIntent && !this.deactivationIntents.has(id);
+    if (entry.instance) {
       await this.deactivateEntry(entry, `reload ${id}`);
       this.activationOrder = removeActivationOrderId(this.activationOrder, id);
     }
@@ -502,8 +506,18 @@ export class PluginManager {
    * 避免对同 id 重入锁自死锁。
    */
   async uninstall(id: string): Promise<void> {
-    this.revokeImmediately(id); // 终审 P1:同 disable,锁外立即吊销
-    return this.withLifecycleLock(id, () => this.uninstallLocked(id));
+    this.requestDeactivation(id, 'uninstalled'); // 终审 P1:同 disable,锁外立即记意图 + 吊销
+    return this.withLifecycleLock(id, async () => {
+      try {
+        await this.uninstallLocked(id);
+      } catch (err) {
+        // 卸载失败、entry 仍在(目录未删)→ 降为禁用意图,用户可显式重新启用。
+        if (this.entries.has(id) && this.deactivationIntents.get(id) === 'uninstalled') {
+          this.deactivationIntents.set(id, 'disabled');
+        }
+        throw err;
+      }
+    });
   }
 
   private async uninstallLocked(id: string): Promise<void> {
@@ -563,8 +577,7 @@ export class PluginManager {
    * 锁内拆除仍由 handleUninstalled 排队执行。
    */
   markUninstalled(id: string): void {
-    this.uninstalledIds.add(id);
-    this.revokeImmediately(id);
+    this.requestDeactivation(id, 'uninstalled');
     this.host.cancelPermissionPrompt?.(id, uninstalledError(id));
     this.host.permissionStore?.forget?.(id);
   }
@@ -575,14 +588,17 @@ export class PluginManager {
    * 锁内停用 / 卸载照旧排队执行。本地 disable / uninstall、远端禁用(reload-gate)与 markUninstalled 共用。幂等。
    */
   revokeImmediately(id: string): void {
-    const entry = this.entries.get(id);
-    if (!entry) {
-      // init 尚未建该 entry:记下,init 建 entry 时按禁用处理。init 之后本窗口不会再出现新 id 的 entry
-      //(新安装须重载窗口),无需记录。
-      if (this.initializing) this.disabledBeforeEntryIds.add(id);
-      return;
+    this.requestDeactivation(id, 'disabled');
+  }
+
+  /** 记录停用意图(见 deactivationIntents;'uninstalled' 不被 'disabled' 覆盖)并立即吊销。 */
+  private requestDeactivation(id: string, kind: 'disabled' | 'uninstalled'): void {
+    if (kind === 'uninstalled' || !this.deactivationIntents.has(id)) {
+      this.deactivationIntents.set(id, kind);
     }
-    if (entry.activating) entry.revokeRequested = true;
+    // 尚无 entry(init 未建到它):意图已记下,init 建 entry 时按禁用处理。
+    const entry = this.entries.get(id);
+    if (!entry) return;
     entry.scoped?.revoke();
     entry.abortActivation?.();
     // 正常运行的实例:锁空闲,锁内停用很快执行 —— 进程终止留在 onunload 之后(让插件先自行收尾)。
@@ -592,19 +608,21 @@ export class PluginManager {
     }
   }
 
-  /** 启用广播的同步部分(终审 P1):清除 revokeImmediately 为尚无 entry 的 id 记下的禁用标记。幂等。 */
+  /** 启用广播的同步部分(终审 P1):显式启用 → 清除停用意图(见 deactivationIntents)。幂等。 */
   markEnabled(id: string): void {
-    this.disabledBeforeEntryIds.delete(id);
+    this.clearDisabledIntent(id);
   }
 
-  /** 激活进行中被要求吊销 → 抛中止(在执行插件代码前调用)。 */
-  private assertNotRevokeRequested(entry: PluginEntry): void {
-    if (entry.revokeRequested) throw activationAbortedError(entry.id);
+  /** 显式启用清除停用意图;已卸载('uninstalled')不清。 */
+  private clearDisabledIntent(id: string): void {
+    if (this.deactivationIntents.get(id) === 'disabled') this.deactivationIntents.delete(id);
   }
 
-  /** 已被卸载 → 抛 NOT_INSTALLED(在途激活在执行插件代码前调用)。 */
-  private assertNotUninstalled(id: string): void {
-    if (this.uninstalledIds.has(id)) throw uninstalledError(id);
+  /** 存在停用意图 → 抛(已卸载 NOT_INSTALLED / 已禁用 ACTIVATION_ABORTED)。在导入模块 / 构造实例前调用。 */
+  private assertNoDeactivationIntent(id: string): void {
+    const intent = this.deactivationIntents.get(id);
+    if (intent === 'uninstalled') throw uninstalledError(id);
+    if (intent === 'disabled') throw activationAbortedError(id);
   }
 
   /** 列出所有已发现插件状态. */
@@ -635,7 +653,6 @@ export class PluginManager {
    */
   private async activateEntry(entry: PluginEntry): Promise<void> {
     entry.activating = true;
-    entry.revokeRequested = false;
     try {
       await this.activateEntryUnguarded(entry);
     } catch (err) {
@@ -649,17 +666,18 @@ export class PluginManager {
       entry.activating = false;
       entry.abortActivation = undefined;
       // 被禁用 / 卸载中止的激活落到 disabled(非失败);启用意图由排队的停用清除 / 落盘。
-      if (entry.revokeRequested && !entry.instance) {
+      if (this.deactivationIntents.has(entry.id) && !entry.instance) {
         entry.status = 'disabled';
         entry.error = undefined;
         entry.warning = undefined;
         this.invalidateListCache();
       }
-      entry.revokeRequested = false;
     }
   }
 
   private async activateEntryUnguarded(entry: PluginEntry): Promise<void> {
+    // 终审 P1:已请求禁用 / 卸载 → 任何激活路径都不激活(见 deactivationIntents)。
+    this.assertNoDeactivationIntent(entry.id);
     // 先清前次的 error / warning,确保最终状态干净反映本次激活
     entry.error = undefined;
     entry.warning = undefined;
@@ -677,9 +695,8 @@ export class PluginManager {
         `plugin-fs token 回收失败,未激活: ${entry.id}`,
       );
     }
-    // 已被卸载(广播已到、锁内拆除尚未执行)→ 不再为它弹授权窗。
-    this.assertNotUninstalled(entry.id);
-    this.assertNotRevokeRequested(entry);
+    // 已被禁用 / 卸载(请求已到、锁内拆除尚未执行)→ 不再为它弹授权窗。
+    this.assertNoDeactivationIntent(entry.id);
 
     // v3.4 权限门:manifest 声明了 permissions 且 host 配了 store + prompt
     // 才阻塞;否则放行(向后兼容)。
@@ -727,8 +744,7 @@ export class PluginManager {
     }
 
     // 终审 P1:授权弹窗 / 授权写入 await 期间插件可能已被别的窗口卸载 → 不加载(import 即执行插件顶层代码)。
-    this.assertNotUninstalled(entry.id);
-    this.assertNotRevokeRequested(entry);
+    this.assertNoDeactivationIntent(entry.id);
     // 终审 P1(onload 挂起 / 模块顶层 await 挂起):中止句柄在开始 import **之前**就挂到 entry —— 模块顶层 await 永不
     // 结束时,revokeImmediately 可中止等待,激活按禁用收尾、释放生命周期锁。import 本身无法取消:迟到完成的结果无人
     // 等待即被丢弃(不构造实例)。不设固定超时。句柄由 activateEntry 的 finally 清除。
@@ -760,8 +776,7 @@ export class PluginManager {
     // (信任边界 runtime subclass 校验集中在 loader),此处直接 new,无需 as any。
     // v5 Phase 1:plugin 拿到的是 per-plugin scoped app(持 pluginId 给
     // permission.check;fs/network 等命名空间预留 Phase 3 启用 gating)
-    this.assertNotUninstalled(entry.id); // import await 期间被卸载 → 不构造实例
-    this.assertNotRevokeRequested(entry);
+    this.assertNoDeactivationIntent(entry.id); // import await 期间被禁用 / 卸载 → 不构造实例
     const { token: pluginFsToken } =
       await coApi.pluginFsRaw._registerPlugin(entry.id);
     entry.pluginFsToken = pluginFsToken;
@@ -785,7 +800,7 @@ export class PluginManager {
     let instance: Plugin;
     try {
       // _registerPlugin await 期间被要求吊销 → 不构造实例。
-      this.assertNotRevokeRequested(entry);
+      this.assertNoDeactivationIntent(entry.id);
       instance = new loaded.PluginClass(scoped.app, entry.manifest);
       await instance._activate(aborted);
     } catch (err) {

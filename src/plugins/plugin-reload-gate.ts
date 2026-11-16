@@ -31,8 +31,8 @@ export interface PluginReloadGateDeps {
    */
   readonly revokeImmediately?: (id: string) => void;
   /**
-   * 启用广播的同步部分(PluginManager.markEnabled,终审 P1):enabled=true 一到立即调用,清除 revokeImmediately 为
-   * 尚无 entry 的插件记下的「已禁用」标记(否则 init 仍按该标记跳过激活)。enabledChanged 仍按缓冲规则排队。
+   * 启用广播的同步部分(PluginManager.markEnabled,终审 P1):enabled=true 一到立即调用,清除禁用时记下的停用意图
+   *(否则 init / 热重载 / 锁内启用仍按该意图跳过激活)。enabledChanged 仍按缓冲规则排队。
    */
   readonly markEnabled?: (id: string) => void;
   readonly onError?: (
@@ -95,6 +95,9 @@ export function wirePluginReloadGate(deps: PluginReloadGateDeps): void {
       deps.onError?.('uninstalled', err);
     }
     if (!ready) {
+      // 终审 P1:已卸载 → 丢弃该插件待处理的 reload(目录已删、entry 将移除)。禁用不丢弃:reload 在锁内按停用意图
+      // 只刷新源码 / manifest 快照、不激活(否则之后显式启用会用到旧快照)。
+      pending.delete(id);
       pendingUninstalled.add(id);
       return;
     }
