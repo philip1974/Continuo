@@ -10,7 +10,7 @@
 - 跨窗口 debug session 对当前调用方表现为 not found，不暴露 capability 细节。
 - DebugService 的 plain Error 在 MCP 工具边界归一化为稳定 debug 错误码，避免向 MCP client 回显超长 session id、program 或 adapter path。
 - `variables` / `evaluate` 保持分页、深度、字节预算与默认值边界。
-- `variables` 深度展开有整次总预算(节点数与 DAP 请求数):用尽即停,未展开的节点保留 `variables_reference` 并标 `truncated`,顶层 `truncated: true`;调用方断连(`ctx.signal`)时停止继续展开。
+- `variables` 深度展开有整次总预算(节点数、DAP 请求数,以及返回内容字节 4MiB —— 名称 + 值 + 类型的 UTF-8 字节,低于 MCP 10MiB 结果上限):用尽即停;字节预算截断顶层这一页时 `next_start` 接在已返回的最后一项之后(顶层至少返回一项),未展开的节点保留 `variables_reference` 并标 `truncated`,顶层 `truncated: true`;调用方断连(`ctx.signal`)时停止继续展开。
 - 资源上限:结束的 child session(worker 退出等)当即回收(移出、清掉各断点记录里该连接的条目并重推受影响 source 的快照;连接等其在途请求结算后再 dispose —— js-debug 可能在 terminated 之后才回 continue 等请求的响应,当即关连接会让调用方收到「DAP socket closed」),teardown 不再对它发 disconnect;DAP transcript 单条按字节截断为摘要并有总字节预算(最旧优先淘汰)。
 - KC#1: MVP 暂不暴露 renderer/editor context 的断点映射能力，降级为 main-context DAP 调试；源码映射与编辑器联动留给后续批次。
 - 安全(program-workspace 锁): `debug.launch` 的 `program`/`cwd` 来自 agent，必须落在 owner window 的 workspace root 内(realpath 规范化后比较，防 symlink 逃逸与 `..` 穿越)；窗口无 workspace 记录则 fail-closed 拒绝；`cwd` 省略时默认 workspace root，不回退 main 进程 cwd。校验通过的真实路径(program/cwd 的 realpath)即为之后 launch 使用的路径 —— 起跑推迟到 `wait_for_stop` 等调用，期间把软链改指工作区外不生效。该契约由 `electron/main/__tests__/debug-service.spec.ts` 覆盖。
@@ -19,8 +19,8 @@
 - `debug.disconnect` 始终终止 Continuo launch 的 debuggee(teardown 按 adapter 进程组整组回收);`terminate_debuggee` 只接受 `true` 或省略,`false` 在 schema 层显式拒绝(不再静默忽略),zod 与手写 JSON schema(`const: true`)一致。
 - 程序起跑时机: `debug.launch` 完成 DAP initialize 后返回 `state: "starting"`,此时程序尚未运行;`configurationDone` + `launch` 推迟到第一个要求程序运行的调用(`wait_for_stop` / `continue` / `step_*`)且只发一次,`set_breakpoint` 本身不让程序起跑 —— 起跑前设的多个断点都在程序运行之前就位。没设断点直接 `wait_for_stop`(如 `stop_on_entry`)也能起跑;尚无停点时 `continue` 即「让程序跑起来」。
 - 断点按 source 维护完整集合(DAP `setBreakpoints` 语义): 同一文件的新断点与已有断点一起发送(同 file+line 去重),不覆盖;child session 建立时按 source 重放全部断点;返回值是本次新设断点的结果。同 session 同 source 的设置串行执行(集合与 `breakpoints-changed` 快照按调用顺序);请求失败 / 超时回滚本地记录后,尽力向父连接与存活 child 补发回滚后的完整集合(短超时、失败忽略,原错误照抛);快照按 adapter 校正后的 file:line 去重(保留首个),adapter 未逐项回报(空 / 短数组)时沿用该断点上次的校正结果。source 按平台归一分组(Windows 大小写不敏感、`/` 与 `\` 等价),发给 adapter 与推给 renderer 的路径用该 source 首次记录的拼写。
-- 会话归属回收: stdio 连接断开后其 callerSubject 永久失效，该连接创建的 debug 会话立即回收(释放名额、结束 adapter)，其它连接的会话不受影响;HTTP 调用方的 subject 是窗口级 token，随窗口关闭 / 授权撤销回收;终端专属 token(终端内 agent 经 HTTP MCP 调用)随终端退出吊销时，同步回收该 token 创建的 debug 会话(`terminal-exit`)。以上回收(撤销授权 / 终端退出 / stdio 断连)同样覆盖**在途** `debug.launch`(adapter 启动 / initialize 中、会话尚未登记):被吊销调用方的在途 launch 不登记会话、不返回 session_id,释放已起的 adapter 并以 `AGENT_NOT_AUTHORIZED` 结束;撤销授权枚举的调用方包含有在途 launch 的调用方;其它调用方的 launch 不受影响。
-- 会话数上限在 spawn adapter 之前检查;spawn 期间被并发 launch 占满名额时释放已 spawn 的 adapter,不残留 runtime。
+- 会话归属回收: stdio 连接断开后其 callerSubject 永久失效，该连接创建的 debug 会话立即回收(释放名额、结束 adapter)，其它连接的会话不受影响;HTTP 调用方的 subject 是窗口级 token，随窗口关闭 / 授权撤销回收;终端专属 token(终端内 agent 经 HTTP MCP 调用)随终端退出吊销时，同步回收该 token 创建的 debug 会话(`terminal-exit`)。以上回收(撤销授权 / 终端退出 / stdio 断连)同样覆盖**在途** `debug.launch`(adapter 启动 / initialize 中、会话尚未登记):被吊销调用方的在途 launch 不登记会话、不返回 session_id,释放已起的 adapter 并以 `AGENT_NOT_AUTHORIZED` 结束;撤销授权枚举的调用方包含有在途 launch 的调用方;其它调用方的 launch 不受影响。吊销只取消吊销**当时**在途的 launch:吊销之后同一调用方(如 stdio 连接 subject 不变、用户重新授权)新发起的 launch 照常进行。窗口关闭(`killByOwner`)同样取消该窗口的在途 launch;应用退出(`cleanupAll`)取消全部在途 launch 并等待其结算(上限 5s),不遗留 detached adapter。
+- 会话数上限(每窗 8 / 全局 32)在 spawn adapter 之前检查:在途 launch 在 spawn 前同步预占名额并计入上限,登记会话时转为正式名额,失败 / 取消时释放;并发 launch 同时 spawn 中的 adapter 不超过上限,超额请求在 spawn 前即被拒。名额被已自然结束的会话占满时先回收最旧的 terminated 会话再预占。
 - DAP 入站帧必须是顶层带字符串 `type` 的 JSON 对象;`null` / 数组 / 标量等按畸形帧处理(结算在途请求并断开连接),不抛成主进程未捕获异常。
 - DAP 入站单帧上限 8MiB:收包按 chunk 累积、凑够整帧才一次性拼接(无 O(n²) 复制);超限帧不缓冲、边收边丢 —— 能认出是响应时只让对应请求失败(如超大 `evaluate` 结果),事件等静默丢弃,连接与会话不断开。
 

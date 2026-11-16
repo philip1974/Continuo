@@ -40,8 +40,15 @@ export interface AddDebugSessionInput {
 const sessions = new Map<string, DebugSession>();
 const EMPTY_DEBUG_SESSIONS: readonly DebugSession[] = [];
 
+/**
+ * 在途 launch 预占的名额(窗口 id → 份数)。launch 在 spawn adapter 之前同步预占,登记时由 add 消耗,失败 / 取消时
+ * 释放:并发 launch 不会都在 spawn 前看到空余名额而同时拉起大量 adapter。
+ */
+const reservations = new Map<number, number>();
+let reservedTotal = 0;
+
 function sessionCountForWindow(ownerWindowId: number): number {
-  let count = 0;
+  let count = reservations.get(ownerWindowId) ?? 0;
   for (const session of sessions.values()) {
     if (session.ownerWindowId === ownerWindowId && session.state !== 'done') {
       count += 1;
@@ -51,17 +58,14 @@ function sessionCountForWindow(ownerWindowId: number): number {
 }
 
 function activeSessionCount(): number {
-  let count = 0;
+  let count = reservedTotal;
   for (const session of sessions.values()) {
     if (session.state !== 'done') count += 1;
   }
   return count;
 }
 
-/**
- * 会话数上限检查。launch 在 spawn adapter **之前**先调一次(满了就不花成本起进程);add 里再查一次兜住
- * spawn 期间并发 launch 占满名额的竞态(那时由调用方释放已 spawn 的 adapter)。
- */
+/** 会话数上限检查:已登记会话与在途 launch 的预占都计入。 */
 export function assertCapacity(ownerWindowId: number): void {
   if (activeSessionCount() >= MAX_DEBUG_SESSIONS_GLOBAL) {
     throw new Error(
@@ -91,12 +95,46 @@ export function oldestTerminatedForCapacity(ownerWindowId: number): DebugSession
   return victim;
 }
 
-export function add(input: AddDebugSessionInput): DebugSession {
+export interface CapacityReservation {
+  readonly ownerWindowId: number;
+  /** 释放预占(幂等;已被 add 消耗时为 no-op)。 */
+  release(): void;
+}
+
+/**
+ * 为在途 launch 预占一个名额:同步检查并计入(无 await 间隙),满了抛上限错误。launch 在 spawn adapter 之前调,
+ * 登记时交给 add 消耗,失败 / 取消时 release。
+ */
+export function reserve(ownerWindowId: number): CapacityReservation {
+  assertCapacity(ownerWindowId);
+  reservations.set(ownerWindowId, (reservations.get(ownerWindowId) ?? 0) + 1);
+  reservedTotal += 1;
+  let released = false;
+  return {
+    ownerWindowId,
+    release() {
+      if (released) return;
+      released = true;
+      const held = reservations.get(ownerWindowId);
+      if (held === undefined) return; // 已被 _reset 清空
+      reservedTotal -= 1;
+      const left = held - 1;
+      if (left > 0) reservations.set(ownerWindowId, left);
+      else reservations.delete(ownerWindowId);
+    },
+  };
+}
+
+/**
+ * 登记会话。带同窗口的预占时消耗它(释放预占与登记同步完成,名额由预占保证,不再查上限);否则按上限检查。
+ */
+export function add(input: AddDebugSessionInput, reservation?: CapacityReservation): DebugSession {
   assertOwnerWindowId(input.ownerWindowId, 'debug-sessions');
   if (sessions.has(input.id)) {
     throw new Error(`debug session duplicate: ${input.id}`);
   }
-  assertCapacity(input.ownerWindowId);
+  if (reservation?.ownerWindowId === input.ownerWindowId) reservation.release();
+  else assertCapacity(input.ownerWindowId);
 
   const session: DebugSession = {
     id: input.id,
@@ -177,4 +215,6 @@ export function remove(id: string): void {
 
 export function _reset(): void {
   sessions.clear();
+  reservations.clear();
+  reservedTotal = 0;
 }

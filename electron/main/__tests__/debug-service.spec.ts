@@ -9,6 +9,8 @@ import { promisify } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  DEBUG_LAUNCH_SETTLE_WAIT_MS,
+  DEBUG_VARIABLES_EXPAND_MAX_BYTES,
   DEBUG_VARIABLES_EXPAND_MAX_NODES,
   DEBUG_VARIABLES_EXPAND_MAX_REQUESTS,
   DebugService,
@@ -1490,6 +1492,310 @@ describe('DebugService fake adapter · 会话上限 / 程序起跑时机 / 按 s
     expect(service.listControllerTokens()).toEqual([]);
   });
 
+  /** spawnServer 挂在闸门上的多 client 服务:观察同时在 spawn 中的 adapter 数。 */
+  function makeGatedService() {
+    let pid = 6000;
+    let releaseGate!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseGate = resolve;
+    });
+    const clients: FakeDapClient[] = [];
+    let spawning = 0;
+    let maxSpawning = 0;
+    const { processOps } = makeFakeService();
+    const service = new DebugService({
+      createDapClient: () => {
+        const client = new FakeDapClient((pid += 1));
+        clients.push(client);
+        client.spawnServer = async function (this: FakeDapClient) {
+          spawning += 1;
+          maxSpawning = Math.max(maxSpawning, spawning);
+          try {
+            await gate;
+          } finally {
+            spawning -= 1;
+          }
+          return this;
+        };
+        return client;
+      },
+      processOps,
+      workspace: PERMISSIVE_WORKSPACE,
+    });
+    return { service, clients, releaseGate, maxSpawning: () => maxSpawning };
+  }
+
+  // 终审 P1:容量检查只数已登记会话;并发 launch 都在 spawn 前看到空余名额,同时拉起大量 adapter。
+  // 在途 launch 须在 spawn 前原子预占名额,超额请求在 spawn 前即被拒。
+  it('并发 launch 预占窗口名额:同时 spawn 中的 adapter 不超过每窗上限,超额请求在 spawn 前被拒', async () => {
+    const { service, clients, releaseGate, maxSpawning } = makeGatedService();
+    const launches = Array.from({ length: 12 }, () =>
+      service.launchSession({ program: '/fixture.js', cwd: '/work' }, ctx).then(
+        () => 'ok' as const,
+        (err: unknown) => err,
+      ),
+    );
+
+    await vi.waitFor(() => expect(clients).toHaveLength(8));
+    // 超额的 4 个在 spawn 前即被拒(此时 8 个仍挂在 spawn 中)。
+    const early = await Promise.race([
+      Promise.all(launches.slice(8)),
+      new Promise((resolve) => setTimeout(() => resolve('timeout'), 1_000)),
+    ]);
+    expect(early).not.toBe('timeout');
+    for (const err of early as unknown[]) expect(String(err)).toMatch(/per-window limit/);
+    releaseGate();
+
+    expect((await Promise.all(launches)).filter((r) => r === 'ok')).toHaveLength(8);
+    expect(clients).toHaveLength(8);
+    expect(maxSpawning()).toBe(8);
+    expect(debugSessions.byOwner(ctx.ownerWindowId)).toHaveLength(8);
+    await service.killByOwner(ctx.ownerWindowId, 'test');
+  });
+
+  it('并发 launch 预占全局名额:跨窗口同时 spawn 中的 adapter 不超过全局上限', async () => {
+    const { service, clients, releaseGate, maxSpawning } = makeGatedService();
+    const launches: Promise<unknown>[] = [];
+    for (let w = 0; w < 5; w += 1) {
+      for (let i = 0; i < 7; i += 1) {
+        launches.push(
+          service
+            .launchSession({ program: '/fixture.js', cwd: '/work' }, { ...ctx, ownerWindowId: 100 + w })
+            .then(() => 'ok' as const, (err: unknown) => err),
+        );
+      }
+    }
+
+    await vi.waitFor(() => expect(clients).toHaveLength(32));
+    releaseGate();
+    const results = await Promise.all(launches);
+
+    expect(results.filter((r) => r === 'ok')).toHaveLength(32);
+    for (const r of results.filter((r) => r !== 'ok')) expect(String(r)).toMatch(/global limit/);
+    expect(clients).toHaveLength(32);
+    expect(maxSpawning()).toBe(32);
+    await service.cleanupAll('test');
+  });
+
+  it('launch 失败(spawn 报错)释放预占的名额', async () => {
+    const parent = new FakeDapClient(1001);
+    let fail = true;
+    parent.spawnServer = async function (this: FakeDapClient) {
+      if (fail) throw new Error('spawn boom');
+      return this;
+    };
+    const { service } = makeFakeService(parent);
+    fillWindow(ctx.ownerWindowId, 7);
+
+    await expect(service.launchSession({ program: '/fixture.js', cwd: '/work' }, ctx)).rejects.toThrow(/spawn boom/);
+    fail = false;
+    await expect(service.launchSession({ program: '/fixture.js', cwd: '/work' }, ctx)).resolves.toBeDefined();
+    await service.killByOwner(ctx.ownerWindowId, 'test');
+  });
+
+  // 终审 P1:killByOwner / cleanupAll 只遍历已登记会话;在途 launch 之后照常登记到已销毁的窗口成为孤儿。
+  it('spawn 期间 killByOwner → 该窗口在途 launch 以取消结束、不登记会话、adapter 被 dispose;其它窗口不受影响', async () => {
+    let pid = 7000;
+    const clients: FakeDapClient[] = [];
+    const { processOps } = makeFakeService();
+    const service: DebugService = new DebugService({
+      createDapClient: () => {
+        const client = new FakeDapClient((pid += 1));
+        const isFirst = clients.push(client) === 1;
+        client.spawnServer = async function (this: FakeDapClient) {
+          if (isFirst) await service.killByOwner(ctx.ownerWindowId, 'window-closed');
+          return this;
+        };
+        return client;
+      },
+      processOps,
+      workspace: PERMISSIVE_WORKSPACE,
+    });
+
+    const [a, b] = await Promise.allSettled([
+      service.launchSession({ program: '/fixture.js', cwd: '/work' }, ctx),
+      service.launchSession({ program: '/fixture.js', cwd: '/work' }, { ...ctx, ownerWindowId: 41 }),
+    ]);
+
+    expect(a).toMatchObject({ status: 'rejected', reason: { code: 'AGENT_NOT_AUTHORIZED' } });
+    expect(b.status).toBe('fulfilled');
+    expect(clients[0]!.disposeCalls).toBe(1);
+    expect(clients[1]!.disposeCalls).toBe(0);
+    expect(debugSessions.byOwner(ctx.ownerWindowId)).toHaveLength(0);
+    expect(debugSessions.byOwner(41)).toHaveLength(1);
+    await service.cleanupAll('test');
+  });
+
+  it('initialize 期间 killByOwner → launch 以取消结束、会话已拆、adapter 被 dispose', async () => {
+    const parent = new FakeDapClient(1001);
+    const original = parent.sendRequest.bind(parent);
+    let releaseInitialize: (() => void) | undefined;
+    parent.sendRequest = async (command, args, timeoutMs) => {
+      if (command === 'initialize') {
+        await new Promise<void>((resolve) => {
+          releaseInitialize = resolve;
+        });
+      }
+      return original(command, args, timeoutMs);
+    };
+    const { service } = makeFakeService(parent);
+
+    const settled = service
+      .launchSession({ program: '/fixture.js', cwd: '/work' }, ctx)
+      .catch((err: unknown) => err);
+    await vi.waitFor(() => expect(releaseInitialize).toBeTypeOf('function'));
+    await service.killByOwner(ctx.ownerWindowId, 'window-closed');
+    releaseInitialize?.();
+
+    await expect(settled).resolves.toMatchObject({ code: 'AGENT_NOT_AUTHORIZED' });
+    expect(service.listSessions()).toEqual([]);
+    expect(runtimeCount(service)).toBe(0);
+    expect(parent.disposeCalls).toBe(1);
+  });
+
+  it('spawn 期间 cleanupAll → 取消在途 launch,等它结算(adapter 已 dispose)后才返回', async () => {
+    const parent = new FakeDapClient(1001);
+    let releaseSpawn: (() => void) | undefined;
+    parent.spawnServer = async function (this: FakeDapClient) {
+      await new Promise<void>((resolve) => {
+        releaseSpawn = resolve;
+      });
+      return this;
+    };
+    const { service } = makeFakeService(parent);
+    const settled = service
+      .launchSession({ program: '/fixture.js', cwd: '/work' }, ctx)
+      .catch((err: unknown) => err);
+    await vi.waitFor(() => expect(releaseSpawn).toBeTypeOf('function'));
+
+    let cleanupDone = false;
+    const cleanup = service.cleanupAll('before-quit').then(() => {
+      cleanupDone = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(cleanupDone).toBe(false);
+    releaseSpawn?.();
+    await cleanup;
+
+    expect(parent.disposeCalls).toBe(1);
+    await expect(settled).resolves.toMatchObject({ code: 'AGENT_NOT_AUTHORIZED' });
+    expect(service.listSessions()).toEqual([]);
+    expect(runtimeCount(service)).toBe(0);
+  });
+
+  it('cleanupAll 等待在途 launch 有上限:spawn 一直不返回也按时结束', async () => {
+    const parent = new FakeDapClient(1001);
+    let spawnStarted = false;
+    parent.spawnServer = async function (this: FakeDapClient) {
+      spawnStarted = true;
+      await new Promise<never>(() => undefined);
+      return this;
+    };
+    const { service } = makeFakeService(parent);
+    void service.launchSession({ program: '/fixture.js', cwd: '/work' }, ctx).catch(() => undefined);
+    await vi.waitFor(() => expect(spawnStarted).toBe(true));
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      let cleanupDone = false;
+      const cleanup = service.cleanupAll('before-quit').then(() => {
+        cleanupDone = true;
+      });
+      await vi.advanceTimersByTimeAsync(DEBUG_LAUNCH_SETTLE_WAIT_MS - 1);
+      expect(cleanupDone).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await cleanup;
+      expect(cleanupDone).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // 终审 P1(上一轮修复引入的回归):吊销记入永久集合后,stdio 连接的 callerSubject 固定不变,用户重新授权后
+  // 同一连接的 launch 仍报 AGENT_NOT_AUTHORIZED。吊销只取消当时在途的 launch。
+  it('吊销后同一调用方重新授权再 launch → 正常成功', async () => {
+    let pid = 8000;
+    const { processOps } = makeFakeService();
+    const service = new DebugService({
+      createDapClient: () => new FakeDapClient((pid += 1)),
+      processOps,
+      workspace: PERMISSIVE_WORKSPACE,
+    });
+    await service.launchSession({ program: '/fixture.js', cwd: '/work' }, ctx);
+    await service.killByController(ctx.controllerToken, 'revoked');
+
+    await expect(service.launchSession({ program: '/fixture.js', cwd: '/work' }, ctx)).resolves.toMatchObject({
+      state: 'starting',
+    });
+    expect(debugSessions.byController(ctx.controllerToken)).toHaveLength(1);
+    await service.killByOwner(ctx.ownerWindowId, 'test');
+  });
+
+  it('吊销只取消当时在途的 launch:吊销之后新发起的同一调用方 launch 照常成功', async () => {
+    let pid = 9000;
+    let releaseFirst: (() => void) | undefined;
+    const clients: FakeDapClient[] = [];
+    const { processOps } = makeFakeService();
+    const service = new DebugService({
+      createDapClient: () => {
+        const client = new FakeDapClient((pid += 1));
+        if (clients.push(client) === 1) {
+          client.spawnServer = async function (this: FakeDapClient) {
+            await new Promise<void>((resolve) => {
+              releaseFirst = resolve;
+            });
+            return this;
+          };
+        }
+        return client;
+      },
+      processOps,
+      workspace: PERMISSIVE_WORKSPACE,
+    });
+
+    const first = service
+      .launchSession({ program: '/fixture.js', cwd: '/work' }, ctx)
+      .catch((err: unknown) => err);
+    await vi.waitFor(() => expect(releaseFirst).toBeTypeOf('function'));
+    await service.killByController(ctx.controllerToken, 'revoked');
+    const second = await service.launchSession({ program: '/fixture.js', cwd: '/work' }, ctx);
+    releaseFirst?.();
+
+    await expect(first).resolves.toMatchObject({ code: 'AGENT_NOT_AUTHORIZED' });
+    expect(clients[0]!.disposeCalls).toBe(1);
+    expect(debugSessions.byController(ctx.controllerToken).map((s) => s.id)).toEqual([second.session_id]);
+    await service.killByOwner(ctx.ownerWindowId, 'test');
+  });
+
+  it('名额被 terminated 会话占满时并发两个 launch → 回收两个最旧的,两个都成功', async () => {
+    let pid = 9500;
+    const clients: FakeDapClient[] = [];
+    const { processOps } = makeFakeService();
+    const service = new DebugService({
+      createDapClient: () => {
+        const client = new FakeDapClient((pid += 1));
+        clients.push(client);
+        return client;
+      },
+      processOps,
+      workspace: PERMISSIVE_WORKSPACE,
+    });
+    for (let i = 0; i < 8; i += 1) {
+      await service.launchSession({ program: '/fixture.js', cwd: '/work' }, ctx);
+      clients[i]!.emit('terminated', {});
+    }
+
+    const results = await Promise.allSettled([
+      service.launchSession({ program: '/fixture.js', cwd: '/work' }, ctx),
+      service.launchSession({ program: '/fixture.js', cwd: '/work' }, ctx),
+    ]);
+
+    expect(results.map((r) => r.status)).toEqual(['fulfilled', 'fulfilled']);
+    expect(clients.filter((c) => c.disposeCalls === 1)).toHaveLength(2);
+    expect(debugSessions.byOwner(ctx.ownerWindowId)).toHaveLength(8);
+    await service.killByOwner(ctx.ownerWindowId, 'test');
+  });
+
   // 程序自然退出只把会话标成 terminated(保留给 list_sessions / wait_for_stop 看),父 adapter 不会自己退出;
   // 若仍计入名额,连续调试 8 个自然结束的程序后第 9 次 launch 永久报上限。名额满时回收最旧的 terminated 会话。
   it('名额被自然结束的会话占满 → 回收最旧的 terminated 会话(拆 adapter),新 launch 成功', async () => {
@@ -2527,6 +2833,7 @@ describe('DebugService fake adapter · 资源上限(结束的 child 回收 / var
   function wideVariablesAdapter(
     parent: FakeDapClient,
     onRequest?: () => void,
+    value = 'Object',
   ): { requests: () => number } {
     let requests = 0;
     let nextRef = 1_000;
@@ -2545,7 +2852,7 @@ describe('DebugService fake adapter · 资源上限(结束的 child 回收 / var
         body: {
           variables: Array.from({ length: count }, (_, i): DapJson => ({
             name: `m${i}`,
-            value: 'Object',
+            value,
             variablesReference: nextRef++,
           })),
         },
@@ -2583,6 +2890,42 @@ describe('DebugService fake adapter · 资源上限(结束的 child 回收 / var
     expect(unexpanded.children).toBeUndefined();
     expect(unexpanded.variables_reference).toBeGreaterThan(0);
     expect(unexpanded.truncated).toBe(true);
+  });
+
+  // 终审 P1:节点 / 请求预算管不住字节 —— 2000 节点 × 64KiB 字符串 ≈ 124MB 驻留主进程,MCP 结果上限在
+  // 展开完成后才检查。展开中累计返回内容字节,达到预算即停止并标 truncated。
+  it('debug.variables 展开有总字节预算:大字符串成员时返回内容不超过预算,标 truncated,next_start 指向未返回的第一项', async () => {
+    const { service, parent } = makeFakeService();
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      ctx,
+    );
+    parent.emit('stopped', { reason: 'breakpoint', threadId: 1 });
+    wideVariablesAdapter(parent, undefined, 'x'.repeat(65536));
+
+    const result = await service.variables(sessionId, {
+      variablesReference: 44,
+      count: 100,
+      maxDepth: 3,
+      maxStringBytes: 65536,
+    });
+
+    const bytesOf = (variables: readonly DebugVariable[]): number =>
+      variables.reduce(
+        (sum, v) =>
+          sum +
+          Buffer.byteLength(v.name) +
+          Buffer.byteLength(v.value) +
+          Buffer.byteLength(v.type ?? '') +
+          bytesOf(v.children ?? []),
+        0,
+      );
+    expect(bytesOf(result.variables)).toBeLessThanOrEqual(DEBUG_VARIABLES_EXPAND_MAX_BYTES);
+    expect(result.truncated).toBe(true);
+    // 顶层这一页被字节预算截断:next_start 接在已返回的最后一项之后,调用方可续取。
+    expect(result.variables.length).toBeGreaterThan(0);
+    expect(result.variables.length).toBeLessThan(100);
+    expect(result.next_start).toBe(result.variables.length);
   });
 
   it('debug.variables 展开中调用方断连(signal abort)→ 停止继续请求,以取消错误结束', async () => {
