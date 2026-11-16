@@ -45,6 +45,11 @@ export interface ManagerHost {
   promptFn?: PromptFn;
   /** v4.6 卸载:rm -rf plugins/<id>/(可选,缺省 → uninstall 抛 NOT_SUPPORTED). */
   removePluginDir?(id: string): Promise<void>;
+  /**
+   * 终止本窗口内该插件启动的全部 shell 进程(可选,缺省 → 不终止)。插件实例离开运行态时调用
+   * (终审 P1:否则停用/卸载后长任务继续跑到超时)。
+   */
+  killPluginShellProcesses?(id: string): Promise<void>;
 }
 
 // ── PluginEntry / Status ───────────────────────────────
@@ -634,6 +639,13 @@ export class PluginManager {
     } finally {
       entry.instance = undefined;
       await this.revokePluginFsToken(entry);
+      // 终审 P1:disable / uninstall / 远端卸载 / reload / shutdown 都经此处 —— 终止该插件在本窗口的
+      // shell 进程(exec + 流式)。放在 _deactivate 之后:插件 onunload 可先自行收尾。失败只记录,不阻断停用。
+      try {
+        await this.host.killPluginShellProcesses?.(entry.id);
+      } catch (err) {
+        console.warn(`[plugin-manager] ${label} kill shell processes failed`, err);
+      }
     }
   }
 

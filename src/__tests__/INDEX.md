@@ -878,6 +878,12 @@
 
 - [`plugin-mcp-upstream.spec.ts`](./plugin-mcp-upstream/plugin-mcp-upstream.spec.ts)
 
+## [plugin-permission-cross-window(插件授权跨窗口一致)](./plugin-permission-cross-window/README.md)
+
+- [`main-broadcast.spec.ts`](./plugin-permission-cross-window/main-broadcast.spec.ts)
+- [`main-merge.spec.ts`](./plugin-permission-cross-window/main-merge.spec.ts)
+- [`renderer-invalidate.spec.ts`](./plugin-permission-cross-window/renderer-invalidate.spec.ts)
+
 ## [plugin-permissions(声明式权限 + 授权门)](./plugin-permissions/README.md)
 
 - [`plugin-permissions.spec.ts`](./plugin-permissions/plugin-permissions.spec.ts)
@@ -885,6 +891,11 @@
 ## [plugin-reload-gate](./plugin-reload-gate/README.md)
 
 - [`plugin-reload-gate.spec.ts`](./plugin-reload-gate/plugin-reload-gate.spec.ts)
+
+## [plugin-shell-kill-on-deactivate(停用/卸载插件终止其 shell 进程)](./plugin-shell-kill-on-deactivate/README.md)
+
+- [`main-kill.spec.ts`](./plugin-shell-kill-on-deactivate/main-kill.spec.ts)
+- [`renderer-deactivate.spec.ts`](./plugin-shell-kill-on-deactivate/renderer-deactivate.spec.ts)
 
 ## [plugin-shell-stream-backpressure (E61)](./plugin-shell-stream-backpressure/README.md)
 

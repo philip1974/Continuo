@@ -405,6 +405,8 @@ function makeShell(
         timeoutMs: opts?.timeoutMs,
         input: opts?.input,
         maxOutputBytes: opts?.maxOutputBytes,
+        // 终审 P1:main 按 (窗口, 插件) 登记进程,插件停用/卸载时终止(不作授权依据)。
+        pluginId,
       });
       // i18n(I13,让 I11 的 by-code 本地化对 shell.exec 生效):保留 r.code 到 Error.code,
       // 否则冒泡到 runContributedAction 时拿不到 code,BAD_INPUT 等会在 zh/ko toast 显英文
@@ -451,10 +453,11 @@ function makeShell(
             // 边界(E313,E46/E312 同族 / 不转发 raw 外部对象):opts 是插件提供对象,JS 插件可绕 TS 类型
             // 塞额外/超大字段;此前整 opts 直接进 IPC structured-clone(放大)。只取契约声明字段
             //({timeoutMs, cwd}),丢弃未知额外字段后再发 IPC(validateShellInput 已先校验 cwd/env/input)。
+            // 终审 P1:带上插件 id,main 据此在插件停用/卸载时终止该流(不作授权依据)。
             const safeOpts =
               opts === undefined
-                ? undefined
-                : { cwd: opts.cwd, timeoutMs: opts.timeoutMs };
+                ? { pluginId }
+                : { cwd: opts.cwd, timeoutMs: opts.timeoutMs, pluginId };
             raw = coApi.pluginShellStreamRaw.execStream(cmd, args, safeOpts);
             return raw;
           })();

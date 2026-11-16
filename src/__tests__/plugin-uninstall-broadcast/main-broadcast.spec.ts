@@ -29,7 +29,7 @@ vi.mock('../../../electron/main/services/plugins.service', () => ({
   readPermissions: async () => ({}),
   setEnabledId: async () => undefined,
   uninstallPlugin: (...args: unknown[]) => h.uninstallPlugin.current!(...args),
-  writePluginPermissions: async () => undefined,
+  mutatePluginPermissions: async () => null,
 }));
 
 import { registerPluginsIpc } from '../../../electron/main/ipc/plugins.ipc';

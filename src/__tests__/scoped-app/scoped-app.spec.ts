@@ -676,6 +676,7 @@ describe('授后转发 — fs / shell / clipboard / mcp / network 行为', () =>
     await scoped.fs.mkdir('/d', {
       recursive: true,
       evil: 'x'.repeat(100),
+      pluginId: 'other.plugin',
     } as unknown as { recursive?: boolean });
     // neutralize 敏感:旧码传整 opts → call[2] 含 evil。
     expect(coApiMocks.pluginFsRaw.mkdir.mock.calls[0]?.[2]).toEqual({
@@ -889,7 +890,7 @@ describe('授后转发 — fs / shell / clipboard / mcp / network 行为', () =>
 
   // 边界(E313,E46/E312 同族 / 不转发 raw 外部对象):execStream 只转发契约字段 {timeoutMs, cwd},
   // 丢弃 JS 插件绕类型塞的额外字段,不让整 opts 进 IPC structured-clone。
-  it('E313 execStream opts 只转发 {cwd,timeoutMs},丢弃额外字段', async () => {
+  it('E313 execStream opts 只转发 {cwd,timeoutMs}(+ scoped 填入的 pluginId),丢弃额外字段', async () => {
     const store = new InMemoryPermissionStore();
     await store.grant('p', ['shell']);
     const scoped = createScopedApp(makeLmApp(), 'p', store);
@@ -897,6 +898,7 @@ describe('授后转发 — fs / shell / clipboard / mcp / network 行为', () =>
       cwd: '/w',
       timeoutMs: 5000,
       evil: 'x'.repeat(100),
+      pluginId: 'other.plugin',
       env: { A: 'b' },
     } as unknown as { timeoutMs?: number; cwd?: string };
     const r = scoped.shell.execStream('echo', ['hi'], optsWithExtras);
@@ -907,7 +909,8 @@ describe('授后转发 — fs / shell / clipboard / mcp / network 行为', () =>
       | undefined;
     const passedOpts = firstCall?.[2];
     // neutralize 敏感:旧码传整 opts → passedOpts 含 evil/env。
-    expect(passedOpts).toEqual({ cwd: '/w', timeoutMs: 5000 });
+    // 插件自带的 pluginId 被 scoped 的真实 id 覆盖(不能冒充同窗口其它插件)。
+    expect(passedOpts).toEqual({ cwd: '/w', timeoutMs: 5000, pluginId: 'p' });
   });
 
   it('E198 上限内 env(超长 key / 非字符串 value)仍正确校验(回归)', async () => {

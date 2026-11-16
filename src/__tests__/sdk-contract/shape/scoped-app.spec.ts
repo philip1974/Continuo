@@ -164,6 +164,7 @@ describe('sdk-contract shape: ScopedApp permission and token contract', () => {
       timeoutMs: undefined,
       input: undefined,
       maxOutputBytes: undefined,
+      pluginId: 'plugin.a',
     });
   });
 

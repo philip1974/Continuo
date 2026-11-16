@@ -1,5 +1,6 @@
 import type { PathScope } from './plugin-fs-contract';
 import { PLUGIN_ID_MAX_LEN } from './permission-record-limits';
+import type { PermissionKey } from './permission-keys';
 
 // 插件系统 IPC 通道(M-Plugin v4.1)。
 // 主进程扫 userData/plugins/<id>/,renderer 拿到 manifest + main.js 文本
@@ -18,10 +19,15 @@ export const PLUGINS_CHANNELS = {
   /** 读 _permissions.json(v4.2). */
   READ_PERMISSIONS: 'plugins:read-permissions',
   /**
-   * 按单个 plugin 合并写 _permissions.json(数据安全)。renderer 整表写在多窗口
-   * 下会用陈旧快照覆盖别窗口的决策,改走 main 端 read-merge-write 单条记录。
+   * 按权限项增量变更单个 plugin 的 _permissions.json 记录(终审 P1)。此前 renderer 发整条记录覆盖写,
+   * 陈旧窗口保存其它权限时会把别窗的撤销写回;改为只发变更项,main 在串行写链内合并当前落盘记录。
    */
-  WRITE_PLUGIN_PERMISSIONS: 'plugins:write-plugin-permissions',
+  MUTATE_PLUGIN_PERMISSIONS: 'plugins:mutate-plugin-permissions',
+  /**
+   * main → renderer push:插件 `{ id }` 的授权记录已变更(终审 P1)。各窗口失效权限缓存,下次读重新加载,
+   * 避免 A 窗口撤销后 B 窗口仍按陈旧缓存放行。
+   */
+  PERMISSIONS_CHANGED: 'plugins:permissions-changed',
   /** main → renderer push:某 plugin main.js mtime 变化(v4.3.1). */
   CHANGED: 'plugins:changed',
   /** main → renderer push:外部 co:// URL 唤起(v4.4). */
@@ -108,3 +114,15 @@ export type IpcPermissionRecord =
     };
 
 export type IpcPermissionsMap = Readonly<Record<string, IpcPermissionRecord>>;
+
+/**
+ * 单个 plugin 的授权增量变更(终审 P1):`set` 只替换所列权限项的决策(decidedAt 由 main 取当前时间);
+ * `clear-denied` 去掉所有拒绝项。其它权限项与 pathScopes 以 main 当前落盘记录为准原样保留。
+ */
+export type IpcPermissionMutation =
+  | {
+      readonly kind: 'set';
+      readonly perms: readonly PermissionKey[];
+      readonly granted: boolean;
+    }
+  | { readonly kind: 'clear-denied' };

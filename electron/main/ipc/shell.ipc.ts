@@ -1,9 +1,11 @@
 // Shell IPC 注册(plugin app.shell.exec 后端 + LM UI 跳转外链)。
 
 import { z } from 'zod';
-import { defaultIsTrustedFrame, safeHandle } from '../safe-handle';
+import { defaultIsTrustedFrame, safeHandle, safeHandleWithCtx } from '../safe-handle';
 import { SHELL_CHANNELS } from '../../shared/shell-channels';
 import { execShell, openExternalUrl } from '../services/shell.service';
+import { killPluginShellProcesses } from '../lib/plugin-shell-owners';
+import { PLUGIN_ID_MAX_LEN } from '../../shared/permission-record-limits';
 // 边界(E12,E11 同族):shell.exec 的 cmd/args/cwd/env/input 此前无长度/数量上限。stdout/stderr
 // 已 cap,但调用方仍可传超大 stdin / 超大 env / 巨量 args;main 先接收并持有这些大对象,再写入
 // stdin / 传给 spawn → IPC/内存卡顿、spawn E2BIG/失败、插件调用长时间异常。E46:常量移到
@@ -49,7 +51,13 @@ export const ExecInput = z
       })
       .optional(),
     maxOutputBytes: z.number().int().positive().optional(),
+    // 终审 P1:发起插件 id(scoped app 填入),只用于本窗口内按插件终止进程,不作授权依据。
+    pluginId: z.string().min(1).max(PLUGIN_ID_MAX_LEN).optional(),
   })
+  .strict();
+
+const KillPluginProcessesInput = z
+  .object({ pluginId: z.string().min(1).max(PLUGIN_ID_MAX_LEN) })
   .strict();
 
 const OpenExternalInput = z
@@ -60,7 +68,21 @@ const OpenExternalInput = z
   .strict();
 
 export function registerShellIpc(): void {
-  safeHandle(SHELL_CHANNELS.EXEC, ExecInput, execShell, defaultIsTrustedFrame);
+  // 归属登记用 main 侧的发送方 webContents id(非 renderer 自报)。
+  safeHandleWithCtx(
+    SHELL_CHANNELS.EXEC,
+    ExecInput,
+    (input, { event }) => execShell(input, event.sender.id),
+    defaultIsTrustedFrame,
+  );
+  // 终审 P1:插件停用/卸载 → 终止发送方窗口内该插件的全部 shell 进程(exec + 流式);
+  // 范围限定在发送方 webContents 自己的进程,不能终止别的窗口的。
+  safeHandleWithCtx(
+    SHELL_CHANNELS.KILL_PLUGIN_PROCESSES,
+    KillPluginProcessesInput,
+    ({ pluginId }, { event }) => killPluginShellProcesses(event.sender.id, pluginId),
+    defaultIsTrustedFrame,
+  );
   safeHandle(
     SHELL_CHANNELS.OPEN_EXTERNAL,
     OpenExternalInput,

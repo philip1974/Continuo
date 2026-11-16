@@ -20,7 +20,8 @@ export interface PluginShellStreamRaw {
   execStream(
     cmd: string,
     args: string[],
-    opts?: { timeoutMs?: number; cwd?: string },
+    // pluginId:scoped app 填入,main 据此在插件停用/卸载时按 (窗口, 插件) 终止(不作授权依据)。
+    opts?: { timeoutMs?: number; cwd?: string; pluginId?: string },
   ): {
     chunks: AsyncIterable<ShellChunk>;
     done: Promise<{ exitCode: number | null; signal: NodeJS.Signals | null }>;

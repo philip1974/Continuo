@@ -13,6 +13,7 @@ import {
   processTreeKillable,
   TREE_KILL_DETACHED,
 } from '../lib/kill-with-grace';
+import { trackPluginShellProcess } from '../lib/plugin-shell-owners';
 import type {
   IpcShellExecInput,
   IpcShellExecResult,
@@ -67,8 +68,15 @@ export function cleanupAllShellExecs(): Promise<void> {
   return killProcessTreesNow(inFlight);
 }
 
-/** 跑一个进程到 exit,buffered 输出 + 超时 + 大小上限. */
-export function execShell(input: IpcShellExecInput): Promise<IpcShellExecResult> {
+/**
+ * 跑一个进程到 exit,buffered 输出 + 超时 + 大小上限.
+ * @param senderId 发起请求的 webContents id(IPC 入口传入):与 input.pluginId 一起登记进程归属,
+ *   插件停用/卸载时按 (窗口, 插件) 终止(终审 P1)。
+ */
+export function execShell(
+  input: IpcShellExecInput,
+  senderId?: number,
+): Promise<IpcShellExecResult> {
   return new Promise((resolve) => {
     const timeoutMs = clampExecTimeoutMs(input.timeoutMs);
     const maxBytes = clampExecMaxBytes(input.maxOutputBytes);
@@ -106,6 +114,7 @@ export function execShell(input: IpcShellExecInput): Promise<IpcShellExecResult>
     inFlight.add(proc);
     proc.once('close', () => inFlight.delete(proc));
     proc.once('error', () => inFlight.delete(proc));
+    if (senderId !== undefined) trackPluginShellProcess(proc, senderId, input.pluginId);
 
     // 按**字节**累加并封顶,最后一次性解码 —— 旧实现用 `string.length`(UTF-16
     // code unit)当字节比较,且对每个 data chunk 单独 toString,多字节 UTF-8 序列

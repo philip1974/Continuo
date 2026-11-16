@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { describe, it, expect } from 'vitest';
 import {
-  WritePluginPermissionsInput,
+  MutatePluginPermissionsInput,
   InstallFromGitInput,
   UninstallInput,
 } from '../../../electron/main/ipc/plugins.ipc';
@@ -18,9 +18,9 @@ import {
 describe('plugins IPC input limits (E16)', () => {
   it('正常 payload → ok', () => {
     expect(
-      WritePluginPermissionsInput.safeParse({
+      MutatePluginPermissionsInput.safeParse({
         id: 'a.b',
-        record: { decisions: [{ permission: 'fs', granted: true, decidedAt: 1 }] },
+        mutation: { kind: 'set', perms: ['fs'], granted: true },
       }).success,
     ).toBe(true);
   });
@@ -31,47 +31,11 @@ describe('plugins IPC input limits (E16)', () => {
     ).toBe(false);
   });
 
-  it('decisions 数量超 1000 → fail', () => {
-    const decisions = Array.from({ length: 1001 }, () => ({
-      permission: 'fs',
-      granted: true,
-      decidedAt: 1,
-    }));
+  it('授权变更 perms 数量超过权限枚举大小 → fail', () => {
     expect(
-      WritePluginPermissionsInput.safeParse({ id: 'a.b', record: { decisions } })
-        .success,
-    ).toBe(false);
-  });
-
-  // 边界(E246):pathScopes 写端上限统一到 256(对齐读盘层 MAX_PERSISTED_SCOPES_PER_PLUGIN),
-  // 此前 10_000 过松 → 写 257..10000 成功但读端只留前 256 静默丢。写端拒 >256,与读端对称。
-  const makeScopes = (n: number) =>
-    Array.from({ length: n }, (_, i) => ({ path: `/p/${i}`, mode: 'r' as const }));
-  it('E246 pathScopes 数量 257(超 256)→ fail(写读契约对称,不静默丢)', () => {
-    expect(
-      WritePluginPermissionsInput.safeParse({
+      MutatePluginPermissionsInput.safeParse({
         id: 'a.b',
-        record: { decisions: [], pathScopes: makeScopes(257) },
-      }).success,
-    ).toBe(false);
-  });
-  it('E246 pathScopes 数量 256(恰上限)→ pass', () => {
-    expect(
-      WritePluginPermissionsInput.safeParse({
-        id: 'a.b',
-        record: { decisions: [], pathScopes: makeScopes(256) },
-      }).success,
-    ).toBe(true);
-  });
-
-  it('path scope 路径超 8192 → fail', () => {
-    expect(
-      WritePluginPermissionsInput.safeParse({
-        id: 'a.b',
-        record: {
-          decisions: [],
-          pathScopes: [{ path: '/' + 'x'.repeat(8192), mode: 'r' }],
-        },
+        mutation: { kind: 'set', perms: Array.from({ length: 100 }, () => 'fs'), granted: true },
       }).success,
     ).toBe(false);
   });
@@ -117,38 +81,19 @@ describe('plugins IPC input limits (E16)', () => {
     });
   });
 
-  // 边界(E92,E87 读端对偶):decidedAt 必须有限非负。z.number() 接受 Infinity,但 JSON.stringify
-  // 写成 null + 读盘层(E87)按有限数丢弃 → 写成功但重启静默丢(写读契约不对称)。
-  it('E92 decidedAt = Infinity → fail(与读端有限校验对称)', () => {
+  // 边界(E92 演进):授权记录不再经 IPC 整条写入,decidedAt 由 main 取当前时间,renderer 不能再传。
+  it('授权变更不接受 renderer 自带 decidedAt / 整条 record', () => {
     expect(
-      WritePluginPermissionsInput.safeParse({
+      MutatePluginPermissionsInput.safeParse({
         id: 'a.b',
-        record: {
-          decisions: [{ permission: 'fs', granted: true, decidedAt: Infinity }],
-        },
+        mutation: { kind: 'set', perms: ['fs'], granted: true, decidedAt: Infinity },
       }).success,
     ).toBe(false);
-  });
-
-  it('E92 decidedAt 负数 → fail', () => {
     expect(
-      WritePluginPermissionsInput.safeParse({
+      MutatePluginPermissionsInput.safeParse({
         id: 'a.b',
-        record: {
-          decisions: [{ permission: 'fs', granted: true, decidedAt: -1 }],
-        },
+        record: { decisions: [{ permission: 'fs', granted: true, decidedAt: 1 }] },
       }).success,
     ).toBe(false);
-  });
-
-  it('E92 decidedAt 有限非负 → ok', () => {
-    expect(
-      WritePluginPermissionsInput.safeParse({
-        id: 'a.b',
-        record: {
-          decisions: [{ permission: 'fs', granted: true, decidedAt: 123 }],
-        },
-      }).success,
-    ).toBe(true);
   });
 });

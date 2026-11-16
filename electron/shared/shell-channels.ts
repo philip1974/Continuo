@@ -5,7 +5,16 @@ export const SHELL_CHANNELS = {
   EXEC: 'shell:exec',
   /** 用系统默认 app 打开 URL(http/https/mailto/file 之一,白名单 scheme). */
   OPEN_EXTERNAL: 'shell:openExternal',
+  /**
+   * 终止发送方窗口内某插件启动的全部 shell 进程(exec + 流式)。插件停用 / 卸载时由 PluginManager 调用
+   * (终审 P1:此前进程只按 webContents 归属,插件停用后长任务继续跑到超时)。
+   */
+  KILL_PLUGIN_PROCESSES: 'shell:kill-plugin-processes',
 } as const;
+
+export interface IpcShellKillPluginProcessesInput {
+  readonly pluginId: string;
+}
 
 export interface IpcShellOpenExternalInput {
   readonly url: string;
@@ -19,6 +28,8 @@ export interface IpcShellExecInput {
   readonly timeoutMs?: number;
   readonly input?: string;
   readonly maxOutputBytes?: number;
+  /** 发起的插件 id(scoped app 填入):只用于本窗口内按插件终止,不作授权依据。 */
+  readonly pluginId?: string;
 }
 
 export interface IpcShellExecResult {

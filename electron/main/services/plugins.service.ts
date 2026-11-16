@@ -14,6 +14,7 @@ import path from 'node:path';
 import type {
   IpcPathScope,
   IpcPermissionDecision,
+  IpcPermissionMutation,
   IpcPermissionRecord,
   IpcPermissionsMap,
   IpcPluginDir,
@@ -689,6 +690,61 @@ export function writePluginPermissions(
         scopes === undefined ? decisions : { decisions, pathScopes: scopes };
     }
     await writePermissions(baseDir, all);
+  });
+}
+
+/**
+ * 终审 P1:按**权限项**增量变更单个 plugin 的授权记录。此前 renderer 基于本窗口缓存算出整条记录发来覆盖写,
+ * 别的窗口已撤销的权限会被陈旧窗口的下一次保存写回。改为在同一串行写链内读当前落盘记录、只替换/清除
+ * mutation 涉及的项,其它决策与 pathScopes 原样保留。返回合并后的记录(条目被删 → null),供 renderer 作缓存。
+ */
+export function mutatePluginPermissions(
+  baseDir: string,
+  id: string,
+  mutation: IpcPermissionMutation,
+): Promise<IpcPermissionRecord | null> {
+  return permissionsWriteQueue.run(async () => {
+    if (!isSafePluginId(id)) return null;
+    const all = { ...(await readPermissions(baseDir)) };
+    const existing = all[id];
+    const decisions: readonly IpcPermissionDecision[] =
+      existing === undefined
+        ? []
+        : Array.isArray(existing)
+          ? existing
+          : (existing as { decisions: readonly IpcPermissionDecision[] }).decisions;
+    const scopes =
+      existing === undefined || Array.isArray(existing)
+        ? undefined
+        : (existing as { pathScopes?: readonly IpcPathScope[] }).pathScopes;
+
+    let next: IpcPermissionDecision[];
+    if (mutation.kind === 'set') {
+      const replaced = new Set<string>(mutation.perms);
+      const decidedAt = Date.now();
+      next = decisions.filter((d) => !replaced.has(d.permission));
+      for (const permission of replaced) {
+        next.push({ permission, granted: mutation.granted, decidedAt });
+      }
+      // 与写端同一上限(超出的旧项丢弃,保证读回一致)。
+      if (next.length > MAX_DECISIONS_PER_PLUGIN) next = next.slice(-MAX_DECISIONS_PER_PLUGIN);
+    } else {
+      next = decisions.filter((d) => d.granted);
+    }
+
+    if (next.length === 0 && (scopes === undefined || scopes.length === 0)) {
+      if (existing === undefined) return null; // 无变化,不为删空条目而触盘
+      delete all[id];
+      await writePermissions(baseDir, all);
+      return null;
+    }
+    const record: IpcPermissionRecord =
+      scopes === undefined ? next : { decisions: next, pathScopes: scopes };
+    if (!permissionRecordEqual(existing, next, scopes)) {
+      all[id] = record;
+      await writePermissions(baseDir, all);
+    }
+    return record;
   });
 }
 
