@@ -26,6 +26,18 @@ export function defaultShellArgs(shell: string): string[] {
 }
 
 /**
+ * 是否跳过兄弟仓库 helper(prepareShellIntegrationEnv)的 shell integration。
+ * bash:helper 注入 BASH_ENV/ENV=<生成的 rc> → 终端里每个非交互 `bash -c` / bash 脚本都重复
+ * source 用户启动文件并把 OSC7 打到 stdout(污染脚本输出与 `$(...)` 捕获);
+ * fish:helper 改写 XDG_CONFIG_HOME 为临时目录 → 子程序找错配置目录,用户 conf.d 也不再加载。
+ * 弊大于利,待 helper 修好后再启用(doc/follow-ups.md)。
+ */
+export function skipsShellIntegration(shell: string): boolean {
+  const base = shellBaseName(shell);
+  return base === 'bash' || base === 'fish';
+}
+
+/**
  * 由 shell 二进制路径推断引号族(用于终端拖拽文件时按 shell 正确引用路径)。
  * main 在创建会话时算好并写进 snapshot,renderer 不再按 navigator.platform 盲猜
  * (盲猜把 Windows 的 cmd.exe 当 PowerShell quoting → 引用错误,跨平台审计 P2)。
