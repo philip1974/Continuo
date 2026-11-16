@@ -164,10 +164,7 @@ export interface DebugToolService {
       readonly maxResultBytes?: number;
     },
   ): Promise<z.infer<typeof debugEvaluateOutputSchema>>;
-  disconnect(
-    sessionId: string,
-    input?: { readonly terminateDebuggee?: boolean },
-  ): Promise<DebugDisconnectOutput>;
+  disconnect(sessionId: string): Promise<DebugDisconnectOutput>;
   listSessions(): readonly DebugSessionSummary[];
 }
 
@@ -457,15 +454,13 @@ function makeDebugDisconnectTool(
 ): DebugTool<DebugDisconnectInput, DebugDisconnectOutput> {
   return {
     name: MCP_TOOL_DEBUG_DISCONNECT,
-    description: 'Disconnect and tear down a debug session owned by this MCP caller.',
+    description:
+      'Disconnect and tear down a debug session owned by this MCP caller. ' +
+      'Always terminates the launched debuggee; detaching while leaving it running is not supported.',
     jsonSchema: debugDisconnectInputJsonSchema,
     inputSchema: debugDisconnectInputSchema,
     run: (input) =>
-      runDebugTool(() =>
-        deps.service.disconnect(input.session_id, {
-          terminateDebuggee: input.terminate_debuggee,
-        }),
-      ),
+      runDebugTool(() => deps.service.disconnect(input.session_id)),
   };
 }
 

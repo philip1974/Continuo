@@ -182,6 +182,7 @@
 
 - [`debug-panel.spec.tsx`](./51-debug-breakpoint-ui/debug-panel.spec.tsx)
 - [`debug-store.spec.ts`](./51-debug-breakpoint-ui/debug-store.spec.ts)
+- [`debug-sync-boot.spec.ts`](./51-debug-breakpoint-ui/debug-sync-boot.spec.ts)
 - [`debug-view-thread-id-zero.spec.ts`](./51-debug-breakpoint-ui/debug-view-thread-id-zero.spec.ts)
 - [`decorations.spec.tsx`](./51-debug-breakpoint-ui/decorations.spec.tsx)
 - [`sync.spec.tsx`](./51-debug-breakpoint-ui/sync.spec.tsx)

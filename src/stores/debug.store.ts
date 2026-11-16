@@ -200,9 +200,19 @@ export const useDebugStore = create<DebugState>((set, get) => ({
     if (event.type === 'breakpoints-changed') {
       set((state) => {
         const current = getOrCreateSession(state.sessions, event.sessionId);
+        // main 每次只推本次新设的那一个断点:增量合并(同 file+line 替换),否则同文件第二个断点会把
+        // 第一个的红点抹掉。
+        const incoming = event.breakpoint;
+        const index = current.breakpoints.findIndex(
+          (bp) => bp.file === incoming.file && bp.line === incoming.line,
+        );
+        const breakpoints =
+          index >= 0
+            ? current.breakpoints.map((bp, i) => (i === index ? incoming : bp))
+            : [...current.breakpoints, incoming];
         const nextSession: DebugSessionShadow = {
           ...current,
-          breakpoints: [event.breakpoint],
+          breakpoints,
         };
         const sessions = new Map(state.sessions);
         sessions.set(event.sessionId, nextSession);
@@ -329,6 +339,8 @@ export const useDebugStore = create<DebugState>((set, get) => ({
     }),
 }));
 
+// 幂等(模块级单例):renderer 启动入口(main-app init)尽早调用一次,DebugPanel 挂载时再调也无副作用。
+// 不能只靠面板挂载:main 只推增量事件,面板没开时到达的停点 / 断点会永久丢失。
 export function startDebugStoreSync(): void {
   if (unsubscribeDebugEvents) return;
   unsubscribeDebugEvents = coApi.debug.onEvent((event) => {

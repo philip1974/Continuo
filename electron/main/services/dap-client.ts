@@ -116,6 +116,22 @@ function parseDapContentLength(header: string): number {
   throw new Error(`DAP frame missing Content-Length header: ${header}`);
 }
 
+// 合法 framing 但顶层不是 `{ type: string, ... }`(null / 数组 / 字符串 / 数字)也算畸形帧:此前原样强转,
+// 派发时读 null.type 抛 TypeError,而派发不在 try/catch 内 → 主进程未捕获异常。在解码阶段抛错,
+// 走与「缺 Content-Length / 非 JSON」相同的路径(结算在途请求并断开连接)。
+function parseDapMessageBody(body: string): DapMessage {
+  const parsed: unknown = JSON.parse(body);
+  if (
+    parsed === null ||
+    typeof parsed !== 'object' ||
+    Array.isArray(parsed) ||
+    typeof (parsed as { type?: unknown }).type !== 'string'
+  ) {
+    throw new Error('DAP message must be a JSON object with a string type');
+  }
+  return parsed as DapMessage;
+}
+
 export class DapStreamDecoder {
   private buffer = Buffer.alloc(0);
 
@@ -141,7 +157,7 @@ export class DapStreamDecoder {
       if (this.buffer.length < frameEnd) return messages;
 
       const body = this.buffer.subarray(bodyStart, frameEnd).toString('utf8');
-      messages.push(JSON.parse(body) as DapMessage);
+      messages.push(parseDapMessageBody(body));
       this.buffer = this.buffer.subarray(frameEnd);
     }
   }

@@ -30,6 +30,7 @@ import { useSettingsValuesStore } from './plugins/settings/values-store';
 import { openOrFocusPanel, focusPanel } from './shell/dock/dock-api-ref';
 import { useEditorStore } from './stores/editor.store';
 import { useTerminalStore } from './stores/terminal.store';
+import { startDebugStoreSync } from './stores/debug.store';
 import {
   preloadTerminalPanelChunk,
   watchTerminalIntent,
@@ -126,6 +127,11 @@ export async function init(): Promise<void> {
   // 单 renderer 生命周期级,可接受)。
   startPluginMcpInvokeBridge(getPluginMcpRegistry());
   startPluginFsScopeRequestBridge();
+
+  // Debug 视图事件同步(断点红点 / 停靠行 / Debug 面板的数据源)必须随 renderer 启动,不能等懒加载的
+  // DebugPanel 挂载:默认布局没有 Debug 面板,agent 命中断点时事件无人接收,事后打开面板也恢复不了
+  //(main 只推增量事件)。main 按 ownerWindowId 只发给本窗口;模块级幂等,不受 StrictMode 双挂载影响。
+  startDebugStoreSync();
 
   // M-Plugin v5 Phase 4:plugin import 之前清掉 globalThis.fetch +
   // navigator.clipboard,plugin 直接调 raw API 抛 TypeError。

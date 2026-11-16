@@ -163,6 +163,11 @@ vi.mock('@/marketplace/update-store', () => ({
   },
 }));
 
+// init() 启动 debug 事件同步(订阅 coApi.debug);本用例只关心 locale,与其它启动桥一样桩掉。
+vi.mock('@/stores/debug.store', () => ({
+  startDebugStoreSync: vi.fn(),
+}));
+
 vi.mock('@/marketplace/reviews-store', () => ({
   useReviewsStore: {
     getState: () => ({ refresh: mocks.reviewsRefresh }),
