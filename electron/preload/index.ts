@@ -17,6 +17,7 @@ import {
   PLUGINS_CHANNELS,
   isPluginsChangedPayload,
   isProtocolUrlPayload,
+  type IpcPermissionMutation,
   type IpcPermissionsMap,
   type IpcPermissionRecord,
   type IpcPluginDir,
@@ -324,15 +325,30 @@ const api = {
       ipcRenderer.invoke(PLUGINS_CHANNELS.MUTATE_ENABLED, { id, enabled }),
     readPermissions: (): Promise<IpcResult<IpcPermissionsMap>> =>
       ipcRenderer.invoke(PLUGINS_CHANNELS.READ_PERMISSIONS),
-    /** 数据安全:按单 plugin 合并写,防多窗口整表写互相覆盖. */
-    writePluginPermissions: (
+    /**
+     * 终审 P1:按权限项增量变更单 plugin 授权(main 合并当前落盘记录),返回合并后的记录(条目删除 → null)。
+     * 不再发整条记录覆盖写,陈旧窗口保存不会把别窗的撤销写回。
+     */
+    mutatePluginPermissions: (
       id: string,
-      record: IpcPermissionRecord,
-    ): Promise<IpcResult<void>> =>
-      ipcRenderer.invoke(PLUGINS_CHANNELS.WRITE_PLUGIN_PERMISSIONS, {
+      mutation: IpcPermissionMutation,
+    ): Promise<IpcResult<IpcPermissionRecord | null>> =>
+      ipcRenderer.invoke(PLUGINS_CHANNELS.MUTATE_PLUGIN_PERMISSIONS, {
         id,
-        record,
+        mutation,
       }),
+    /** 订阅「插件授权已变更」广播(任一窗口变更成功后 main 推给所有窗口),返 unsubscribe. */
+    onPermissionsChanged: (cb: (id: string) => void): (() => void) => {
+      // 同 onChanged:payload 形态 `{ id }`,复用同一守卫(畸形 warn+drop)。
+      const listener = (_: unknown, payload: unknown) => {
+        if (!isPluginsChangedPayload(payload)) {
+          console.warn('[plugins] dropped malformed plugins:permissions-changed payload', payload);
+          return;
+        }
+        cb(payload.id);
+      };
+      return subscribeIpc(PLUGINS_CHANNELS.PERMISSIONS_CHANGED, listener);
+    },
     /** v4.3.1 订阅 plugin 文件 mtime 变化,返 unsubscribe. */
     onChanged: (cb: (id: string) => void): (() => void) => {
       // 边界(E242):runtime 守卫 push payload,畸形(null/非字符串/超长 id)warn+drop 不调 cb。
@@ -404,6 +420,9 @@ const api = {
      */
     openExternal: (url: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(SHELL_CHANNELS.OPEN_EXTERNAL, { url }),
+    /** 终止本窗口内某插件启动的全部 shell 进程(插件停用/卸载时 PluginManager 调用). */
+    killPluginProcesses: (pluginId: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(SHELL_CHANNELS.KILL_PLUGIN_PROCESSES, { pluginId }),
   },
   marketplace: {
     /**

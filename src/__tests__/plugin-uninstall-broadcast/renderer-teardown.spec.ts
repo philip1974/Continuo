@@ -17,10 +17,9 @@ vi.mock('@/lib/co-api', () => ({
     pluginFsRaw: h.pluginFsRaw,
     plugins: {
       readPermissions: async () => ({ ok: true, data: structuredClone(h.disk) }),
-      writePluginPermissions: async (id: string, record: unknown) => {
-        if (Array.isArray(record) && record.length === 0) delete h.disk[id];
-        else h.disk[id] = record;
-        return { ok: true, data: undefined };
+      // 本规范的授权已在盘上(promptFn 不会被触发),变更 IPC 不应被调用;调用即失败暴露。
+      mutatePluginPermissions: async () => {
+        throw new Error('unexpected mutatePluginPermissions');
       },
     },
   },

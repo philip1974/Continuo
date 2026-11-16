@@ -2,10 +2,7 @@
 // 扫 userData/plugins/<id>/,读 manifest + main.js 通过 IPC 给 renderer。
 
 import { app } from 'electron';
-import {
-  PERMISSION_RECORD_LIMITS,
-  PLUGIN_ID_MAX_LEN,
-} from '../../shared/permission-record-limits';
+import { PLUGIN_ID_MAX_LEN } from '../../shared/permission-record-limits';
 import path from 'node:path';
 import { z } from 'zod';
 import { defaultIsTrustedFrame, safeHandle } from '../safe-handle';
@@ -17,63 +14,39 @@ import {
   recoverInterruptedInstalls,
   readEnabledIds,
   readPermissions,
+  mutatePluginPermissions,
   setEnabledId,
   uninstallPlugin,
-  writePluginPermissions,
 } from '../services/plugins.service';
 import { broadcastToWindows } from '../lib/broadcast';
 import { PERMISSION_KEYS } from '../../shared/permission-keys';
 import { GIT_BRANCH_MAX, isValidGitBranch } from '../../shared/git-branch';
 
-// 边界(E16):插件权限 IPC schema 此前对 ids/decisions/pathScopes/plugin id/path/permission 字符串
-// 都无长度或数量上限。畸形 renderer payload 可把 _permissions.json / _path-scopes.json 写成超大对象
-// 或超长路径列表 → 主进程 RMW、atomic JSON 写入、启动水合、权限 UI 卡顿。下列 cap 远超任何现实
-// 插件集合,只挡损坏/滥用;超限 → safeHandle zod 校验失败 → BAD_INPUT。
+// 边界(E16):插件 IPC schema 的长度上限,远超任何现实插件集合,只挡损坏/滥用;超限 → safeHandle zod
+// 校验失败 → BAD_INPUT。(授权记录不再整条经 IPC 写入,decisions/pathScopes 的数量上限由 service 读写端负责。)
 const PLUGIN_ID_MAX = PLUGIN_ID_MAX_LEN; // 反 DNS plugin id
-const PATH_MAX = PERMISSION_RECORD_LIMITS.SCOPE_PATH_MAX; // path scope 路径
 const URL_MAX = GIT_URL_MAX; // git url(E282:收口到 shared,与 renderer onChange 截断同源)
-const DECISIONS_MAX = PERMISSION_RECORD_LIMITS.DECISIONS_PER_PLUGIN_MAX; // 单插件 decisions 数量
-// 边界(E246):单插件 path scopes 写端上限须与读盘层 MAX_PERSISTED_SCOPES_PER_PLUGIN(256,对齐
-// PathScopeRegistry MAX_SCOPES_PER_PLUGIN E81)一致 —— 此前写端 10_000 过松,接受 257..10000 条写入
-// 返回成功,但下次 readPermissions() 只保留前 256 条 → 重启/下轮 RMW 静默丢 scope(写读契约错位)。
-// 统一到 256:写端直接拒(BAD_INPUT),把"会被读端丢弃"的写入在入口显式失败,不假成功后静默截断。
-const PATHSCOPES_MAX = PERMISSION_RECORD_LIMITS.PATH_SCOPES_PER_PLUGIN_MAX; // 单插件 path scopes 数量(对齐读盘层 MAX_PERSISTED_SCOPES_PER_PLUGIN)
 
 const NoInput = z.undefined();
 const MutateEnabledInput = z
   .object({ id: z.string().min(1).max(PLUGIN_ID_MAX), enabled: z.boolean() })
   .strict();
-const DecisionSchema = z
-  .object({
-    // 必须是权限枚举成员(与 shared isIpcPermissionDecision 一致;此前只限长度,未知权限名经 IPC 放行后
-    // 被 service 层静默丢弃 —— 写「成功」但读不回)。
-    permission: z.enum(PERMISSION_KEYS),
-    granted: z.boolean(),
-    // 边界(E92,E87 读端对偶):decidedAt 必须有限非负。z.number() 接受 Infinity/NaN —— 写端
-    // 看似 grant/deny 成功,但持久化 JSON.stringify(Infinity)=null,读盘层(E87 isDecision)按
-    // 有限数校验丢弃该 decision → 重启后权限记录静默丢失(写读契约不对称)。.finite() 与读端
-    // Number.isFinite 对齐,.nonnegative() 钳住时间戳语义(更严的前门)。
-    decidedAt: z.number().finite().nonnegative(),
-  })
-  .strict();
-// 可维护性 M6:与 shared IpcPermissionRecord 同步 —— 接受旧数组形态与新
-// `{ decisions, pathScopes? }` 形态,让 IPC 校验契约与 renderer 序列化契约一致。
-const PathScopeSchema = z
-  .object({ path: z.string().min(1).max(PATH_MAX), mode: z.enum(['r', 'rw']) })
-  .strict();
-const PermissionRecordSchema = z.union([
-  z.array(DecisionSchema).max(DECISIONS_MAX),
+// 终审 P1:renderer 只发授权增量(按权限项),不再发整条记录覆盖写 —— 陈旧窗口的整条记录会把别窗的撤销
+// 写回。decidedAt 由 main 取当前时间;perms 必须是权限枚举成员,数量不超过枚举大小。
+const PermissionMutationSchema = z.discriminatedUnion('kind', [
   z
     .object({
-      decisions: z.array(DecisionSchema).max(DECISIONS_MAX),
-      pathScopes: z.array(PathScopeSchema).max(PATHSCOPES_MAX).optional(),
+      kind: z.literal('set'),
+      perms: z.array(z.enum(PERMISSION_KEYS)).min(1).max(PERMISSION_KEYS.length),
+      granted: z.boolean(),
     })
     .strict(),
+  z.object({ kind: z.literal('clear-denied') }).strict(),
 ]);
-export const WritePluginPermissionsInput = z
+export const MutatePluginPermissionsInput = z
   .object({
     id: z.string().min(1).max(PLUGIN_ID_MAX),
-    record: PermissionRecordSchema,
+    mutation: PermissionMutationSchema,
   })
   .strict();
 export const InstallFromGitInput = z
@@ -108,6 +81,18 @@ export function broadcastPluginsChanged(id: string): void {
  */
 export function broadcastPluginUninstalled(id: string): void {
   broadcastToWindows(PLUGINS_CHANNELS.UNINSTALLED, () => ({ id }), '[plugins] PLUGINS_UNINSTALLED');
+}
+
+/**
+ * 授权记录变更成功后向所有窗口广播(终审 P1):每个窗口各有内存授权缓存,A 撤销后 B 若不失效缓存,
+ * 禁用再启用 / permission.check 仍按陈旧授权放行。
+ */
+export function broadcastPluginPermissionsChanged(id: string): void {
+  broadcastToWindows(
+    PLUGINS_CHANNELS.PERMISSIONS_CHANGED,
+    () => ({ id }),
+    '[plugins] PLUGINS_PERMISSIONS_CHANGED',
+  );
 }
 
 export function registerPluginsIpc(): void {
@@ -153,10 +138,13 @@ export function registerPluginsIpc(): void {
   );
 
   safeHandle(
-    PLUGINS_CHANNELS.WRITE_PLUGIN_PERMISSIONS,
-    WritePluginPermissionsInput,
-    async ({ id, record }) => {
-      await writePluginPermissions(pluginsDir, id, record);
+    PLUGINS_CHANNELS.MUTATE_PLUGIN_PERMISSIONS,
+    MutatePluginPermissionsInput,
+    async ({ id, mutation }) => {
+      const record = await mutatePluginPermissions(pluginsDir, id, mutation);
+      // 仅成功后广播(含发起窗口):各窗口失效权限缓存,下次读重新加载(终审 P1)。
+      broadcastPluginPermissionsChanged(id);
+      return record;
     },
     trusted,
   );

@@ -73,7 +73,7 @@ describe('接线守卫', () => {
 
   it('IPC schema 用同一枚举与非空下限', () => {
     const ipc = read('electron/main/ipc/plugins.ipc.ts');
-    expect(ipc).toContain('permission: z.enum(PERMISSION_KEYS)');
-    expect(ipc).toContain('path: z.string().min(1).max(PATH_MAX)');
+    // 终审 P1:授权不再整条经 IPC 写入,增量变更的权限项仍用同一枚举 + 非空下限。
+    expect(ipc).toContain('perms: z.array(z.enum(PERMISSION_KEYS)).min(1)');
   });
 });

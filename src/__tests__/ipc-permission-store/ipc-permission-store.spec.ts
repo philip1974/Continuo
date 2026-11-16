@@ -10,11 +10,10 @@ import {
   serializePermissionState,
   type PermissionState,
 } from '../../plugins/permissions/IpcPermissionStore';
-import type { PermissionKey } from '../../plugins/permissions';
 
 interface FakePerm {
   readPermissions: ReturnType<typeof vi.fn>;
-  writePluginPermissions?: ReturnType<typeof vi.fn>;
+  mutatePluginPermissions?: ReturnType<typeof vi.fn>;
 }
 
 function installFakeApi(perm: FakePerm): void {
@@ -63,17 +62,17 @@ describe('IpcPermissionStore.get', () => {
   // 基于 {} 做 RMW,用部分 record 覆盖该 plugin 已落盘的 decisions/pathScopes。ensureLoaded
   // 抛 → 调用侧 fail-closed 不在未知态写。(ENOENT 首次启动是 ok:true 的 {},不受影响。)
   it('IPC ok=false(IO 错误)→ get 抛 + grant 不写盘(不在未知态覆盖已落盘记录)', async () => {
-    const writePluginPermissions = vi.fn().mockResolvedValue({ ok: true });
+    const mutatePluginPermissions = vi.fn().mockResolvedValue({ ok: true });
     installFakeApi({
       readPermissions: vi
         .fn()
         .mockResolvedValue({ ok: false, code: 'EIO', message: 'x' }),
-      writePluginPermissions,
+      mutatePluginPermissions,
     });
     const store = new IpcPermissionStore();
     await expect(store.get('p1')).rejects.toMatchObject({ code: 'EIO' });
     await expect(store.grant('p1', ['fs'])).rejects.toThrow();
-    expect(writePluginPermissions).not.toHaveBeenCalled(); // 未知态绝不写盘
+    expect(mutatePluginPermissions).not.toHaveBeenCalled(); // 未知态绝不写盘
   });
 
   // 数据安全(codex 复查 P2,#37 的窄缺口):readPermissions() 的 promise 自身 reject(桥/
@@ -89,7 +88,7 @@ describe('IpcPermissionStore.get', () => {
         ok: true,
         data: { p1: [{ permission: 'fs', granted: true, decidedAt: 2 }] },
       });
-    installFakeApi({ readPermissions, writePluginPermissions: vi.fn() });
+    installFakeApi({ readPermissions, mutatePluginPermissions: vi.fn() });
     const store = new IpcPermissionStore();
     await expect(store.get('p1')).rejects.toThrow(); // 桥异常 → 抛
     // loadingPromise 未卡死 → 重试读到真实数据
@@ -107,7 +106,7 @@ describe('IpcPermissionStore.get', () => {
         ok: true,
         data: { p1: [{ permission: 'fs', granted: true, decidedAt: 1 }] },
       });
-    installFakeApi({ readPermissions, writePluginPermissions: vi.fn() });
+    installFakeApi({ readPermissions, mutatePluginPermissions: vi.fn() });
     const store = new IpcPermissionStore();
     await expect(store.get('p1')).rejects.toThrow();
     // 失败态未污染 cache/loadingPromise → 重试读到真实数据
@@ -130,53 +129,69 @@ describe('IpcPermissionStore.get', () => {
   });
 });
 
+// 终审 P1:grant/deny/clearDenied 只发增量变更(mutatePluginPermissions),main 合并当前落盘记录并返回
+// 合并结果。fakeMain 模拟 main:按权限项合并 disk 上的记录并返回合并后的记录(删除 → null)。
+type FakeDecision = { permission: string; granted: boolean; decidedAt: number };
+type FakeMutation =
+  | { kind: 'set'; perms: readonly string[]; granted: boolean }
+  | { kind: 'clear-denied' };
+
+function fakeMain(disk: Record<string, FakeDecision[]>) {
+  let now = 1000;
+  const mutatePluginPermissions = vi.fn(async (id: string, m: FakeMutation) => {
+    const cur = disk[id] ?? [];
+    let next: FakeDecision[];
+    if (m.kind === 'set') {
+      next = cur.filter((d) => !m.perms.includes(d.permission));
+      for (const p of m.perms) next.push({ permission: p, granted: m.granted, decidedAt: (now += 1) });
+    } else {
+      next = cur.filter((d) => d.granted);
+    }
+    if (next.length === 0) delete disk[id];
+    else disk[id] = next;
+    return { ok: true, data: next.length === 0 ? null : structuredClone(next) };
+  });
+  const readPermissions = vi.fn(async () => ({ ok: true, data: structuredClone(disk) }));
+  return { readPermissions, mutatePluginPermissions };
+}
+
 describe('IpcPermissionStore.grant / deny', () => {
   it('grant / deny 空 perms 为 no-op,不读不写 IPC', async () => {
-    const readPermissions = vi.fn().mockResolvedValue({ ok: true, data: {} });
-    const writePluginPermissions = vi.fn().mockResolvedValue({ ok: true });
-    installFakeApi({ readPermissions, writePluginPermissions });
+    const api = fakeMain({});
+    installFakeApi(api);
 
     const store = new IpcPermissionStore();
     await store.grant('p1', []);
     await store.deny('p1', []);
 
-    expect(readPermissions).not.toHaveBeenCalled();
-    expect(writePluginPermissions).not.toHaveBeenCalled();
+    expect(api.readPermissions).not.toHaveBeenCalled();
+    expect(api.mutatePluginPermissions).not.toHaveBeenCalled();
   });
 
-  // 数据安全:store 改走 writePluginPermissions(单 plugin 合并写),
-  // 不再整表写回(整表写在多窗口下会用陈旧快照覆盖别窗口的决策)。
-  it('grant 新 perm → 单 plugin 写盘 + cache 反映;反向决策被替换', async () => {
-    const writePluginPermissions = vi.fn().mockResolvedValue({ ok: true });
-    installFakeApi({
-      readPermissions: vi.fn().mockResolvedValue({
-        ok: true,
-        data: {
-          'p1': [{ permission: 'fs', granted: false, decidedAt: 1 }],
-        },
-      }),
-      writePluginPermissions,
+  it('grant → 只发增量 { set, perms, granted:true }(不发整条记录);cache 采用 main 合并结果', async () => {
+    const api = fakeMain({
+      p1: [
+        { permission: 'fs', granted: false, decidedAt: 1 },
+        { permission: 'shell', granted: true, decidedAt: 1 },
+      ],
     });
+    installFakeApi(api);
 
     const store = new IpcPermissionStore();
     await store.grant('p1', ['fs', 'network']);
 
-    expect(writePluginPermissions).toHaveBeenCalledTimes(1);
-    const [id, record] = writePluginPermissions.mock.calls[0]! as [
-      string,
-      { permission: string; granted: boolean }[],
-    ];
-    expect(id).toBe('p1');
-    expect(record.find((d) => d.permission === 'fs')!.granted).toBe(true);
-    expect(record.find((d) => d.permission === 'network')!.granted).toBe(true);
-    expect(record).toHaveLength(2);
+    expect(api.mutatePluginPermissions).toHaveBeenCalledTimes(1);
+    expect(api.mutatePluginPermissions).toHaveBeenCalledWith('p1', {
+      kind: 'set',
+      perms: ['fs', 'network'],
+      granted: true,
+    });
+    const byPerm = new Map((await store.get('p1')).map((d) => [d.permission, d.granted]));
+    expect(byPerm).toEqual(new Map([['shell', true], ['fs', true], ['network', true]]));
   });
 
   it('多次 grant 同 perm → cache 不堆叠重复项', async () => {
-    installFakeApi({
-      readPermissions: vi.fn().mockResolvedValue({ ok: true, data: {} }),
-      writePluginPermissions: vi.fn().mockResolvedValue({ ok: true }),
-    });
+    installFakeApi(fakeMain({}));
 
     const store = new IpcPermissionStore();
     await store.grant('p1', ['fs']);
@@ -187,82 +202,31 @@ describe('IpcPermissionStore.grant / deny', () => {
     expect(list[0]?.granted).toBe(true);
   });
 
-  it('deny 写 granted=false', async () => {
-    const writePluginPermissions = vi.fn().mockResolvedValue({ ok: true });
-    installFakeApi({
-      readPermissions: vi.fn().mockResolvedValue({ ok: true, data: {} }),
-      writePluginPermissions,
-    });
+  it('deny → { set, granted:false }', async () => {
+    const api = fakeMain({});
+    installFakeApi(api);
 
     const store = new IpcPermissionStore();
     await store.deny('p1', ['fs']);
-    const [id, record] = writePluginPermissions.mock.calls[0]! as [
-      string,
-      { permission: string; granted: boolean }[],
-    ];
-    expect(id).toBe('p1');
-    expect(record).toEqual([
+    expect(api.mutatePluginPermissions).toHaveBeenCalledWith('p1', {
+      kind: 'set',
+      perms: ['fs'],
+      granted: false,
+    });
+    expect(await store.get('p1')).toEqual([
       expect.objectContaining({ permission: 'fs', granted: false }),
     ]);
   });
 
-  it('批量覆盖权限 → 不对传入 perms 逐条 includes 扫描旧决策', async () => {
-    const writePluginPermissions = vi.fn().mockResolvedValue({ ok: true });
-    installFakeApi({
-      readPermissions: vi.fn().mockResolvedValue({
-        ok: true,
-        data: {
-          p1: [
-            { permission: 'fs', granted: false, decidedAt: 1 },
-            { permission: 'network', granted: true, decidedAt: 2 },
-            { permission: 'shell', granted: true, decidedAt: 3 },
-            { permission: 'clipboard', granted: true, decidedAt: 4 },
-          ],
-        },
-      }),
-      writePluginPermissions,
-    });
-    const perms: readonly PermissionKey[] = ['fs', 'network'];
-    const includesSpy = vi.spyOn(Array.prototype, 'includes');
-    const filterSpy = vi.spyOn(Array.prototype, 'filter');
-
-    try {
-      const store = new IpcPermissionStore();
-      await store.deny('p1', perms);
-      const filterCallsDuringDeny = filterSpy.mock.calls.length;
-      let callsOnInputPerms = 0;
-      for (const ctx of includesSpy.mock.contexts) {
-        if (ctx === perms) callsOnInputPerms++;
-      }
-      const [, record] = writePluginPermissions.mock.calls[0]! as [
-        string,
-        { permission: string; granted: boolean }[],
-      ];
-
-      expect(callsOnInputPerms).toBe(0);
-      expect(filterCallsDuringDeny).toBe(0);
-      expect(record).toMatchObject([
-        { permission: 'shell', granted: true },
-        { permission: 'clipboard', granted: true },
-        { permission: 'fs', granted: false },
-        { permission: 'network', granted: false },
-      ]);
-    } finally {
-      includesSpy.mockRestore();
-      filterSpy.mockRestore();
-    }
-  });
-
   // 数据安全(codex 复查 P1):写盘失败时 grant/deny 必须抛(不再只 warn)且 cache **不被
-  // 半提交** —— 先写盘、成功后才提交 cache。否则写失败时 cache 进入未落盘半提交态,下次
-  // 成功写会把这次失败的变更一起持久化、覆盖磁盘原有决策,且调用方误以为已保存。
-  it('writePluginPermissions ok=false → grant 抛 + cache 不被半提交(get 仍见原决策)', async () => {
+  // 半提交** —— 先写盘、成功后才提交 cache。
+  it('mutatePluginPermissions ok=false → grant 抛 + cache 不被半提交(get 仍见原决策)', async () => {
     installFakeApi({
       readPermissions: vi.fn().mockResolvedValue({
         ok: true,
         data: { p1: [{ permission: 'network', granted: true, decidedAt: 1 }] },
       }),
-      writePluginPermissions: vi.fn().mockResolvedValue({
+      mutatePluginPermissions: vi.fn().mockResolvedValue({
         ok: false,
         code: 'EIO',
         message: 'disk',
@@ -273,7 +237,6 @@ describe('IpcPermissionStore.grant / deny', () => {
     await expect(store.grant('p1', ['fs'])).rejects.toMatchObject({
       code: 'EIO',
     });
-    // cache 未被半提交:仍只见写盘前的 network 决策,没有失败的 fs(否则下次成功写会带上它)
     expect(await store.get('p1')).toEqual([
       { permission: 'network', granted: true, decidedAt: 1 },
     ]);
@@ -281,108 +244,70 @@ describe('IpcPermissionStore.grant / deny', () => {
 });
 
 describe('IpcPermissionStore.clearDenied', () => {
-  it('删 granted=false 项,保留 granted=true(单 plugin 写)', async () => {
-    const writePluginPermissions = vi.fn().mockResolvedValue({ ok: true });
-    installFakeApi({
-      readPermissions: vi.fn().mockResolvedValue({
-        ok: true,
-        data: {
-          'p1': [
-            { permission: 'fs', granted: true, decidedAt: 1 },
-            { permission: 'network', granted: false, decidedAt: 2 },
-          ],
-        },
-      }),
-      writePluginPermissions,
+  it('有拒绝项 → 发 { clear-denied };cache 采用 main 合并结果(保留已授项)', async () => {
+    const api = fakeMain({
+      p1: [
+        { permission: 'fs', granted: true, decidedAt: 1 },
+        { permission: 'network', granted: false, decidedAt: 2 },
+      ],
     });
+    installFakeApi(api);
 
     const store = new IpcPermissionStore();
-    const filterSpy = vi.spyOn(Array.prototype, 'filter');
     await store.clearDenied('p1');
-    const filterCallsDuringClear = filterSpy.mock.calls.length;
-    filterSpy.mockRestore();
 
-    const [id, record] = writePluginPermissions.mock.calls[0]! as [
-      string,
-      { permission: string; granted: boolean }[],
-    ];
-    expect(id).toBe('p1');
-    expect(filterCallsDuringClear).toBe(0);
-    expect(record).toEqual([
-      expect.objectContaining({ permission: 'fs', granted: true }),
+    expect(api.mutatePluginPermissions).toHaveBeenCalledWith('p1', { kind: 'clear-denied' });
+    expect(await store.get('p1')).toEqual([
+      { permission: 'fs', granted: true, decidedAt: 1 },
     ]);
   });
 
-  it('全是 denied → 写空记录(main 据此删 entry)', async () => {
-    const writePluginPermissions = vi.fn().mockResolvedValue({ ok: true });
-    installFakeApi({
-      readPermissions: vi.fn().mockResolvedValue({
-        ok: true,
-        data: {
-          'p1': [
-            { permission: 'fs', granted: false, decidedAt: 1 },
-            { permission: 'network', granted: false, decidedAt: 2 },
-          ],
-        },
-      }),
-      writePluginPermissions,
+  it('全是 denied → main 删条目(返回 null)→ cache 也删', async () => {
+    const api = fakeMain({
+      p1: [
+        { permission: 'fs', granted: false, decidedAt: 1 },
+        { permission: 'network', granted: false, decidedAt: 2 },
+      ],
     });
+    installFakeApi(api);
 
     const store = new IpcPermissionStore();
     await store.clearDenied('p1');
-
-    const [id, record] = writePluginPermissions.mock.calls[0]! as [
-      string,
-      unknown[],
-    ];
-    expect(id).toBe('p1');
-    expect(record).toEqual([]); // 空记录 → 删除 entry
+    expect(await store.get('p1')).toEqual([]);
   });
 
   it('没有 denied 项时 clearDenied 为 no-op,不写 IPC', async () => {
-    const writePluginPermissions = vi.fn().mockResolvedValue({ ok: true });
-    installFakeApi({
-      readPermissions: vi.fn().mockResolvedValue({
-        ok: true,
-        data: {
-          p1: [
-            { permission: 'fs', granted: true, decidedAt: 1 },
-            { permission: 'network', granted: true, decidedAt: 2 },
-          ],
-        },
-      }),
-      writePluginPermissions,
+    const api = fakeMain({
+      p1: [
+        { permission: 'fs', granted: true, decidedAt: 1 },
+        { permission: 'network', granted: true, decidedAt: 2 },
+      ],
     });
+    installFakeApi(api);
 
     const store = new IpcPermissionStore();
     await store.clearDenied('p1');
 
-    expect(writePluginPermissions).not.toHaveBeenCalled();
+    expect(api.mutatePluginPermissions).not.toHaveBeenCalled();
   });
 
   it('pluginId 不存在 → noop,不 IPC', async () => {
-    const writePluginPermissions = vi.fn().mockResolvedValue({ ok: true });
-    installFakeApi({
-      readPermissions: vi.fn().mockResolvedValue({ ok: true, data: {} }),
-      writePluginPermissions,
-    });
+    const api = fakeMain({});
+    installFakeApi(api);
 
     const store = new IpcPermissionStore();
     await store.clearDenied('absent');
-    expect(writePluginPermissions).not.toHaveBeenCalled();
+    expect(api.mutatePluginPermissions).not.toHaveBeenCalled();
   });
 });
 
-// race(R15):同一 renderer 内 grant/deny/clearDenied 并发须 per-plugin 串行,避免各从同一
-// cache 快照算整条 record 覆盖写而 lost update(main 按 plugin 整条覆盖、不合并 decisions)。
+// race(R15):同一 renderer 内 grant/deny/clearDenied 并发须 per-plugin 串行,后一个变更的缓存提交不被
+// 前一个迟到的提交覆盖。
 describe('IpcPermissionStore · R15 并发变更串行化', () => {
   it('并发 grant(fs) + deny(shell) 同 plugin → 两决策都保留(无 lost update)', async () => {
-    const readPermissions = vi.fn().mockResolvedValue({ ok: true, data: {} });
-    const writePluginPermissions = vi.fn().mockResolvedValue({ ok: true });
-    installFakeApi({ readPermissions, writePluginPermissions });
+    installFakeApi(fakeMain({}));
 
     const store = new IpcPermissionStore();
-    // 并发触发(不在中间 await)
     await Promise.all([
       store.grant('p1', ['fs']),
       store.deny('p1', ['shell']),
@@ -390,15 +315,13 @@ describe('IpcPermissionStore · R15 并发变更串行化', () => {
 
     const decisions = await store.get('p1');
     const byPerm = new Map(decisions.map((d) => [d.permission, d.granted]));
-    expect(byPerm.get('fs')).toBe(true); // grant 未被 deny 覆盖
-    expect(byPerm.get('shell')).toBe(false); // deny 未被 grant 覆盖
+    expect(byPerm.get('fs')).toBe(true);
+    expect(byPerm.get('shell')).toBe(false);
     expect(decisions).toHaveLength(2);
   });
 
-  it('并发多次 grant 不同权限 → 全部累积(串行 RMW 读到前一个已提交 cache)', async () => {
-    const readPermissions = vi.fn().mockResolvedValue({ ok: true, data: {} });
-    const writePluginPermissions = vi.fn().mockResolvedValue({ ok: true });
-    installFakeApi({ readPermissions, writePluginPermissions });
+  it('并发多次 grant 不同权限 → 全部累积', async () => {
+    installFakeApi(fakeMain({}));
 
     const store = new IpcPermissionStore();
     await Promise.all([
@@ -414,16 +337,14 @@ describe('IpcPermissionStore · R15 并发变更串行化', () => {
   // race(R101):RMW 串行链(runExclusive→runSerialPerKey)排空后必须删除 chains 条目,否则
   // Map 随变更过权限的不同 pluginId 单调增长 = 内存泄漏。
   it('变更链排空后回收 chains 条目(不随 pluginId 单调增长)', async () => {
-    const readPermissions = vi.fn().mockResolvedValue({ ok: true, data: {} });
-    const writePluginPermissions = vi.fn().mockResolvedValue({ ok: true });
-    installFakeApi({ readPermissions, writePluginPermissions });
+    installFakeApi(fakeMain({}));
 
     const store = new IpcPermissionStore();
     const chains = (store as unknown as { chains: Map<string, unknown> }).chains;
     await store.grant('p1', ['fs']);
     await store.grant('p2', ['network']);
     await Promise.resolve(); // cleanup 微任务
-    expect(chains.size).toBe(0); // 两 pluginId 链排空后全回收
+    expect(chains.size).toBe(0);
   });
 });
 

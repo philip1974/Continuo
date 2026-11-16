@@ -99,5 +99,11 @@ export function createWindowApiHost(): ManagerHost {
         throw codedError(r.code, r.message);
       }
     },
+    killPluginShellProcesses: async (id) => {
+      const r = await coApi.shell.killPluginProcesses(id);
+      if (!r.ok) {
+        throw codedError(r.code, r.message);
+      }
+    },
   };
 }

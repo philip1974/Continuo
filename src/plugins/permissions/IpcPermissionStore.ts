@@ -1,21 +1,20 @@
 // IPC-backed PermissionStore(M-Plugin v4.2)。
 // 替换 InMemoryPermissionStore,把决策写到 userData/plugins/_permissions.json。
 //
-// 内部 in-memory cache,首次 get 触发 IPC read 拉取;每次 grant/deny 写整盘
-// (插件 / 权限 < 100 项,JSON 全写小成本可接受;不投资增量)。
+// 内部 in-memory cache,首次 get 触发 IPC read 拉取;grant/deny/clearDenied 只发增量变更,
+// main 合并当前落盘记录后返回合并结果(终审 P1);main 广播授权变更 → invalidate 整表重载。
 
 import { coApi } from '@/lib/co-api';
 import { PERMISSION_RECORD_LIMITS } from '../../../electron/shared/permission-record-limits';
 import { runSerialPerKey } from '@/lib/serialize-per-key';
-import {
-  keepGrantedDecisions,
-  replacePermissionDecisions,
-  type PermissionDecision,
-  type PermissionKey,
-  type PermissionStore,
+import type {
+  PermissionDecision,
+  PermissionKey,
+  PermissionStore,
 } from '../permissions';
 import type { PathScope } from '../types';
 import type {
+  IpcPermissionMutation,
   IpcPermissionRecord,
   IpcPermissionsMap,
 } from '../../../electron/shared/plugins-channels';
@@ -157,10 +156,11 @@ function serializePermissionRecord(
 export class IpcPermissionStore implements PermissionStore {
   private cache: Cache | null = null;
   private loadingPromise: Promise<Cache> | null = null;
-  // race(R15):per-plugin 变更串行链。grant/deny/clearDenied 是 read-cache→compute→write→commit
-  // 的 RMW;同 plugin 两个并发变更若各从同一 cache 快照算整条 record 覆盖写(main 按 plugin 整条
-  // 覆盖,不合并 decisions)→ 后完成者抹掉先完成者的决策(lost update,如 grant(['fs']) 与
-  // deny(['shell']) 并发)。把整段 RMW 经此链串行,后一个变更读到前一个已提交的 cache。
+  // 终审 P1:失效代数。invalidate 递增;加载开始时的代数与完成时不一致 → 结果不落 cache(可能是变更前快照)。
+  private generation = 0;
+  private loadingGeneration = -1;
+  // race(R15):per-plugin 变更串行链。同 plugin 并发 grant/deny/clearDenied 经此链串行,
+  // 后一个变更的缓存提交不会被前一个迟到的提交覆盖。
   private chains = new Map<string, Promise<unknown>>();
   // 加载在途时被 forget 的插件:读到的可能是卸载前的快照,落 cache 前剔除(见 forget)。
   private forgetOnLoad = new Set<string>();
@@ -181,7 +181,7 @@ export class IpcPermissionStore implements PermissionStore {
     perms: readonly PermissionKey[],
   ): Promise<void> {
     if (perms.length === 0) return;
-    await this.upsert(pluginId, perms, true);
+    await this.mutate(pluginId, { kind: 'set', perms, granted: true });
   }
 
   async deny(
@@ -189,35 +189,16 @@ export class IpcPermissionStore implements PermissionStore {
     perms: readonly PermissionKey[],
   ): Promise<void> {
     if (perms.length === 0) return;
-    await this.upsert(pluginId, perms, false);
+    await this.mutate(pluginId, { kind: 'set', perms, granted: false });
   }
 
   async clearDenied(pluginId: string): Promise<void> {
-    // race(R15):与 grant/deny 共用 per-plugin 链串行,避免并发 RMW 互相覆盖整条 record。
-    return this.runExclusive(pluginId, async () => {
-      const cache = await this.ensureLoaded();
-      const record = cache[pluginId];
-      if (!record) return;
-      const kept = keepGrantedDecisions(record.decisions);
-      if (kept === record.decisions) return;
-      const removeEntry = kept.length === 0 && record.pathScopes === undefined;
-      // 空记录 → main 删除该 id 条目;否则保留 pathScopes,只去掉 denied decisions。
-      const written: PermissionRecord = removeEntry
-        ? { decisions: [] }
-        : { ...record, decisions: kept };
-      // 数据安全(codex 复查 P1,同 upsert):先写盘、成功后才改 cache,写失败抛(不只 warn)。
-      // 否则写失败时 cache 进入半提交态 → 下次成功写持久化这次失败的清理、覆盖磁盘原决策。
-      const r = await coApi.plugins.writePluginPermissions(
-        pluginId,
-        serializePermissionRecord(written),
-      );
-      if (!r.ok) {
-        throw codedError(r.code, r.message ?? 'clearDenied writePluginPermissions failed');
-      }
-      // 仅写成功后提交 cache
-      if (removeEntry) delete cache[pluginId];
-      else cache[pluginId] = written;
-    });
+    // 本窗口缓存里没有拒绝项 → 不发 IPC(启用重试的常见路径)。别窗的变更经 plugins:permissions-changed
+    // 广播失效本缓存;真正的清理由 main 按当前落盘记录执行。
+    const cache = await this.ensureLoaded();
+    const record = cache[pluginId];
+    if (!record || !record.decisions.some((d) => !d.granted)) return;
+    await this.mutate(pluginId, { kind: 'clear-denied' });
   }
 
   /**
@@ -229,67 +210,80 @@ export class IpcPermissionStore implements PermissionStore {
     if (this.loadingPromise) this.forgetOnLoad.add(pluginId);
   }
 
+  /**
+   * 插件授权已变更(终审 P1:main 广播 plugins:permissions-changed,含本窗口发起的变更):丢弃缓存,
+   * 下次读重新从 main 加载。否则 A 窗口撤销后,B 窗口禁用再启用 / permission.check 仍按陈旧缓存放行。
+   * 整表重载而非按 id 局部刷新:权限表很小,且只有 readPermissions 一份读契约。
+   */
+  invalidate(_pluginId: string): void {
+    this.generation += 1;
+    this.cache = null;
+  }
+
   // ── 内部 ──────────────────────────────────────────
 
   private async ensureLoaded(): Promise<Cache> {
     if (this.cache) return this.cache;
-    if (this.loadingPromise) return this.loadingPromise;
+    // 在途加载若发起于最近一次 invalidate 之前,结果可能是变更前快照 → 不复用,重新发起。
+    if (this.loadingPromise && this.loadingGeneration === this.generation) {
+      return this.loadingPromise;
+    }
+    const generation = this.generation;
+    this.loadingGeneration = generation;
     this.loadingPromise = (async () => {
       try {
         const r = await coApi.plugins.readPermissions();
         if (!r.ok) {
           // 数据安全(codex 复查 P1,main #20 的 renderer 对偶):读权限失败(EACCES/EIO
           // 经 main safeHandle → ok:false;ENOENT 首次启动仍是 ok:true 的 {})= 当前权限态
-          // 未知。绝不缓存空表 —— 否则 grant/deny/clearDenied 基于 {} 做 RMW,用部分 record
-          // 覆盖该 plugin 已落盘的 decisions/pathScopes(尤其丢已授 pathScopes)。抛出且不写
-          // cache → 调用侧(get/grant/deny/clearDenied)fail-closed,不在未知态写。
+          // 未知。绝不缓存空表 —— 抛出且不写 cache → 调用侧(get/grant/deny/clearDenied)
+          // fail-closed,不在未知态写。
           throw codedError(r.code, r.message ?? 'readPermissions failed');
         }
         const data: Cache = parsePermissionState(r.data);
         for (const id of this.forgetOnLoad) delete data[id];
-        this.cache = data;
+        // 加载期间收到失效广播 → 结果只交给已在等待的调用方,不落 cache(下次读重新加载)。
+        if (generation === this.generation) this.cache = data;
         return data;
       } finally {
         // 数据安全(codex 复查 P2):loadingPromise 必须在**所有**结局清除 —— 不只 ok:false
         // /成功,还包括 readPermissions() 的 promise 自身 reject(桥/进程/通道瞬时异常)。
-        // 否则该 rejected promise 被永久缓存,后续 get/grant/deny/clearDenied 复用它无法
-        // 重试,本窗口权限态永久卡死直到刷新。finally 清空 → 下次调用重新发起读、可恢复。
-        this.loadingPromise = null;
-        this.forgetOnLoad.clear();
+        // 否则该 rejected promise 被永久缓存,后续调用复用它无法重试,本窗口权限态永久卡死。
+        // 只清自己:失效后可能已有更新代数的加载在途(同一代数至多一个加载)。
+        if (this.loadingGeneration === generation) {
+          this.loadingPromise = null;
+          this.forgetOnLoad.clear();
+        }
       }
     })();
     return this.loadingPromise;
   }
 
-  private async upsert(
+  /**
+   * 终审 P1:只把本次变更的权限项发给 main,由 main 在串行写链内合并当前落盘记录(不再发整条记录覆盖写 ——
+   * 陈旧缓存算出的整条记录会把别窗的撤销写回)。以 main 返回的合并结果更新本插件缓存。
+   */
+  private mutate(
     pluginId: string,
-    perms: readonly PermissionKey[],
-    granted: boolean,
+    mutation: IpcPermissionMutation,
   ): Promise<void> {
-    // race(R15):整段 RMW 经 per-plugin 链串行,后一个变更读到前一个已提交的 cache。
     return this.runExclusive(pluginId, async () => {
-      const cache = await this.ensureLoaded();
-      const existing = cache[pluginId];
-      const existingDecisions = existing?.decisions ?? EMPTY_PERMISSION_DECISIONS;
-      const updated = replacePermissionDecisions(
-        existingDecisions,
-        perms,
-        granted,
-        Date.now(),
-      );
-      const next: PermissionRecord = { ...existing, decisions: updated };
-      // 数据安全(codex 复查 P1):**先写盘,确认成功后才提交 cache** —— 不在写确认前乐观改
-      // cache,且写失败必须抛(不再只 warn)。否则磁盘写失败时 cache 进入未落盘半提交态:
-      // (a) 调用方误以为已保存;(b) 下次成功写会基于半提交 cache 生成 record,把这次失败的
-      // 变更一起持久化、覆盖磁盘原有决策,重启前后权限态不一致。按单 plugin 合并写。
-      const r = await coApi.plugins.writePluginPermissions(
-        pluginId,
-        serializePermissionRecord(next),
-      );
+      // 读失败(未知态)→ 抛,不写(fail-closed,既有契约)。
+      await this.ensureLoaded();
+      const r = await coApi.plugins.mutatePluginPermissions(pluginId, mutation);
+      // 数据安全(codex 复查 P1):写失败必须抛(不只 warn),且不改 cache(写确认后才提交)。
       if (!r.ok) {
-        throw codedError(r.code, r.message ?? 'writePluginPermissions failed');
+        throw codedError(r.code, r.message ?? 'mutatePluginPermissions failed');
       }
-      cache[pluginId] = next; // 仅写成功后提交 cache
+      // 期间已被 invalidate(cache=null)→ 下次读从 main 重新加载,无需提交。
+      const cache = this.cache;
+      if (!cache) return;
+      const merged =
+        r.data === null
+          ? undefined
+          : parsePermissionState({ [pluginId]: r.data })[pluginId];
+      if (merged) cache[pluginId] = merged;
+      else delete cache[pluginId];
     });
   }
 }

@@ -15,6 +15,8 @@ import {
   TREE_KILL_DETACHED,
 } from '../lib/kill-with-grace';
 import { makeWcGoneHook } from '../lib/wc-gone-hook';
+import { trackPluginShellProcess } from '../lib/plugin-shell-owners';
+import { PLUGIN_ID_MAX_LEN } from '../../shared/permission-record-limits';
 import { codedError } from '../../shared/error-message';
 
 const DEFAULT_TIMEOUT_MS = 5 * 60_000;
@@ -85,7 +87,7 @@ export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
       streamId: string,
       cmd: string,
       args: string[],
-      opts?: { timeoutMs?: number; cwd?: string },
+      opts?: { timeoutMs?: number; cwd?: string; pluginId?: string },
     ) => {
       // frame-trust 兜底:START 在 main 端直接 spawn,而 'shell' 权限只在 renderer 的
       // scoped-app 包装层检查。不加这道门,能触达 raw IPC 的不可信 frame(ADR-Plugin-5
@@ -119,6 +121,14 @@ export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
       }
       const shapeError = shellCommandShapeError(cmd, args, opts?.cwd);
       if (shapeError !== null) badInput(shapeError);
+      // 终审 P1:发起插件 id(scoped app 填入),只用于本窗口内按插件终止,不作授权依据。
+      const pluginId = opts?.pluginId;
+      if (
+        pluginId !== undefined &&
+        (typeof pluginId !== 'string' || pluginId.length === 0 || pluginId.length > PLUGIN_ID_MAX_LEN)
+      ) {
+        badInput(`invalid pluginId (empty or > ${PLUGIN_ID_MAX_LEN})`);
+      }
 
       // 边界(E10):raw IPC 的 opts.timeoutMs 无运行时 schema。插件传 NaN/负数/0/Infinity/非数字时,
       // 旧 `Math.min(x, MAX)` 会得到 NaN 或负值,`setTimeout(.., timeoutMs)` 退化为**立即触发** →
@@ -144,6 +154,7 @@ export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
       child.once('error', () => inFlight.delete(child));
       const senderWc = event.sender;
       const senderId = senderWc.id;
+      trackPluginShellProcess(child, senderId, pluginId);
       // renderer reload / webContents 销毁时杀掉该 sender 名下所有在途 stream(reload 不会触发 iterator
       // 的 return() → 不发 ABORT,子进程会泄漏到 timeout)。时机与去重见 lib/wc-gone-hook。
       attachWcGoneHook(senderWc);

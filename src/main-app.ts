@@ -146,6 +146,8 @@ export async function init(): Promise<void> {
   // promptFn 桥到 design Modal(用户首次启用插件时弹授权)。
   const userPermissionStore = new IpcPermissionStore();
   setUserPermissionStore(userPermissionStore);
+  // 终审 P1:任一窗口(含本窗口)变更插件授权成功 → main 广播,本窗口失效授权缓存,下次读重新加载。
+  coApi.plugins.onPermissionsChanged((id) => userPermissionStore.invalidate(id));
   const userPluginManager = new PluginManager(coApp, {
     ...createWindowApiHost(),
     permissionStore: userPermissionStore,
