@@ -130,6 +130,15 @@ const LIGHT_THEME: ITheme = {
   brightWhite: '#57606a',
 };
 
+/**
+ * OSC7 cwd 接受的 host:空 / localhost + 本机 hostname。shell 集成(bash/fish)与 oh-my-zsh 等发
+ * `file://<真实 hostname>$PWD`,parser 默认只收空 host / localhost → 这些 cwd 更新会被静默丢弃。
+ * hostname 与 shell 同源(gethostname),按原样精确匹配;他机 hostname(ssh 远端)仍拒。
+ */
+export function osc7AcceptedHosts(hostname: string | null | undefined): string[] {
+  return hostname ? ['', 'localhost', hostname] : ['', 'localhost'];
+}
+
 export function fitAndResize(
   term: Terminal,
   fitAddon: FitAddon,
@@ -365,6 +374,8 @@ export function useTerminal(termId: string) {
     const osc7Disposable = registerOsc7Cwd(
       term,
       (cwd) => { void coApi.terminal.updateCwd(termId, cwd); },
+      // 测试桩常不带 system → 可选链。
+      { acceptedHosts: osc7AcceptedHosts(coApi.system?.hostname) },
     );
 
     // 首屏 fit + 通知主进程初始尺寸。
@@ -598,7 +609,12 @@ export function useTerminal(termId: string) {
     // setSearchState(next) would overwrite the result handler's update
     // with stale {-1, 0} (matches highlight but counter shows 0).
     const prev = searchStateRef.current;
-    const searched = applyTerminalSearchEffect(searchAddonRef.current, prev, action);
+    const searched = applyTerminalSearchEffect(
+      searchAddonRef.current,
+      prev,
+      action,
+      termRef.current,
+    );
     // 非法正则未交给 addon(见 applyTerminalSearchEffect)→ 表现为「无匹配」,搜索条显示 no_match。
     const afterEffect = searched
       ? searchStateRef.current

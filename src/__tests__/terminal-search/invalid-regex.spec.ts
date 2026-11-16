@@ -18,6 +18,7 @@ const hoisted = vi.hoisted(() => ({
         clearDecorations: ReturnType<typeof vi.fn>;
       }
     | undefined,
+  clearSelection: vi.fn(),
 }));
 
 vi.mock('@continuo-terminal/react-terminal', async (importActual) => {
@@ -39,6 +40,7 @@ vi.mock('@xterm/xterm', () => ({
       attachCustomKeyEventHandler: vi.fn(),
       onData: vi.fn(() => ({ dispose: vi.fn() })),
       parser: { registerOscHandler: vi.fn(() => ({ dispose: vi.fn() })) },
+      clearSelection: hoisted.clearSelection,
       dispose: vi.fn(),
     });
   }),
@@ -145,6 +147,7 @@ describe('S11 正则模式非法正则 → 无匹配,搜索框继续可用', () 
     addon.findNext.mockClear();
     addon.findPrevious.mockClear();
     addon.clearDecorations.mockClear();
+    hoisted.clearSelection.mockClear();
 
     for (const bad of ['[', '(', '\\']) {
       expect(() => act(() => api!.setTerm(bad))).not.toThrow();
@@ -159,6 +162,8 @@ describe('S11 正则模式非法正则 → 无匹配,搜索框继续可用', () 
     expect(addon.findNext).not.toHaveBeenCalled();
     expect(addon.findPrevious).not.toHaveBeenCalled();
     expect(addon.clearDecorations).toHaveBeenCalled();
+    // 之前合法搜索 findNext 选中的匹配(xterm selection)也要清,否则仍高亮选中
+    expect(hoisted.clearSelection).toHaveBeenCalled();
 
     // 改回合法正则 → 照常搜索
     act(() => api!.setTerm('fo+'));

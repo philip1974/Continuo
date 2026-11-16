@@ -63,14 +63,27 @@ function isWindowAlive(id: number): boolean {
   return win !== null && !win.isDestroyed();
 }
 
-/** 协议级拒绝:写一条 PARSE_ERROR(连接可能已坏,写失败忽略)后断开。 */
+// 协议级拒绝后等待错误行送达 / 对端关闭的上限,超时强制 destroy(对端不读不关也不挂住连接)。
+const REJECT_FLUSH_TIMEOUT_MS = 1_000;
+
+/**
+ * 协议级拒绝:以 end(PARSE_ERROR) 半关闭后断开。不能 write 后立即 destroy():接收缓冲还有未读
+ * 数据时 destroy 会让内核发 RST,对端可能连同已发出的错误行一起丢掉。end 发 FIN,对端读完错误行
+ * 后关闭 → close;resume 继续读并丢弃后续输入(否则读不到对端 FIN);兜底超时 destroy。
+ */
 function rejectAndDestroy(sock: Socket, message: string): void {
+  if (sock.writableEnded || sock.destroyed) return;
+  // 连接上限分支尚未挂 error 监听;半关闭期间对端 RST 等错误不得冒成未捕获异常。
+  sock.on('error', () => {});
+  const timer = setTimeout(() => sock.destroy(), REJECT_FLUSH_TIMEOUT_MS);
+  timer.unref();
+  sock.once('close', () => clearTimeout(timer));
   try {
-    sock.write(formatRpcError(null, RPC_ERROR_CODES.PARSE_ERROR, message) + '\n');
+    sock.end(formatRpcError(null, RPC_ERROR_CODES.PARSE_ERROR, message) + '\n');
   } catch {
-    /* 连接可能已坏,destroy 兜底 */
+    sock.destroy(); // 连接已坏
   }
-  sock.destroy();
+  sock.resume();
 }
 
 export function isBlankStdioLine(line: string): boolean {
@@ -370,7 +383,14 @@ export async function createStdioSocketServer(
     // 边界(E135,E131/E132 同族):用流式 TextDecoder 行解码器,跨 chunk 多字节字符正确还原
     //(替代 splitLines 的逐 chunk toString() 拆字 bug)。
     const lineDecoder = createNdjsonLineDecoder();
+    // 拒绝 = 取消在途 tool call(close 要等对端关闭才触发,不能等它再 abort)+ end 后断开。
+    const reject = (message: string): void => {
+      aborter.abort();
+      rejectAndDestroy(sock, message);
+    };
     sock.on('data', (chunk: Buffer) => {
+      // 已拒绝(end 半关闭中):后续输入一律丢弃,不再解析 / 排队。
+      if (sock.writableEnded) return;
       // 边界(E218,E214 下推):行数上限下推到 decoder —— maxLines 钳定本次产出的完整行数,达到即
       // overflow(decoder 不 split 全量物化)。overflow → 与 E214 too-many 同款 parse error + 断开。
       const { lines, overflow } = lineDecoder.push(
@@ -378,7 +398,7 @@ export async function createStdioSocketServer(
         MAX_STDIO_LINES_PER_CHUNK,
       );
       if (overflow) {
-        rejectAndDestroy(sock, 'too many lines in one chunk');
+        reject('too many lines in one chunk');
         return;
       }
       // 边界(E1):残行(未终结的单行)或任一完整行超字节上限 → 畸形/恶意客户端无限累积输入,
@@ -389,7 +409,7 @@ export async function createStdioSocketServer(
         utf8BytesExceed(lineDecoder.buffered, MAX_STDIO_LINE_BYTES) ||
         hasOversizedStdioLine(lines, MAX_STDIO_LINE_BYTES)
       ) {
-        rejectAndDestroy(sock, 'line exceeds maximum size');
+        reject('line exceeds maximum size');
         return;
       }
       // race(R110):按接收顺序串到本 socket 的链尾,逐行串行 await。链尾 catch 后继续,单行
@@ -405,7 +425,7 @@ export async function createStdioSocketServer(
           pendingLines >= MAX_STDIO_PENDING_LINES ||
           pendingBytes + bytes > MAX_STDIO_PENDING_BYTES
         ) {
-          rejectAndDestroy(sock, 'too many pending requests');
+          reject('too many pending requests');
           return;
         }
         pendingLines += 1;

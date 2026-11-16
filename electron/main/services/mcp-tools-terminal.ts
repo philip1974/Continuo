@@ -237,6 +237,8 @@ export interface CreateSessionToolDeps {
     cwd: string | undefined,
     agentLabel: string,
   ) => Promise<{ installed: boolean; reason?: string }>;
+  /** 回收刚建好的会话(kill PTY + 删 metadata);创建期间调用方断开时调用。 */
+  readonly discardSession?: (sessionId: string) => void;
 }
 
 export function makeCreateSessionTool(
@@ -342,6 +344,12 @@ export function makeCreateSessionTool(
         attachTarget: input.target ?? { kind: 'active' },
       };
       const r = await deps.createSession(ptyInput, ctx);
+      // race(R111 同族):createSession(异步 spawn)期间调用方断开 → 新会话无人持有。回收 PTY +
+      // metadata 并以取消错误结束,不留孤儿 agent terminal(index.ts 侧只跳过 autorun 不够)。
+      if (ctx.signal?.aborted) {
+        deps.discardSession?.(r.id);
+        throw codedError(ERROR_CODES.TERMINAL_CREATE_CANCELLED, 'caller disconnected during session creation');
+      }
       return {
         session_id: r.id,
         ...(input.install_stop_hook === true

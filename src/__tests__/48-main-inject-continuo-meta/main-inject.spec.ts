@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildCommonWebPreferences,
   buildContinuoPackagedArg,
+  buildContinuoHostnameArg,
 } from '../../../electron/main/continuo-meta-args';
 
 describe('topic 48 main packaged metadata injection', () => {
@@ -17,6 +18,23 @@ describe('topic 48 main packaged metadata injection', () => {
     expect(
       buildCommonWebPreferences().additionalArguments?.some((arg) =>
         arg.startsWith('--continuo-packaged='),
+      ),
+    ).toBe(true);
+  });
+
+  // OSC7:shell 发 `file://<真实 hostname>$PWD`,renderer(sandbox)拿不到 os.hostname,
+  // 经同一 additionalArguments 通道注入。
+  it('serializes the machine hostname as a renderer argument', () => {
+    expect(buildContinuoHostnameArg('my-mac.local')).toBe('--continuo-hostname=my-mac.local');
+  });
+
+  it('adds the hostname argument (explicit or os.hostname()) to common webPreferences', () => {
+    expect(
+      buildCommonWebPreferences({ hostname: 'box' }).additionalArguments,
+    ).toContain('--continuo-hostname=box');
+    expect(
+      buildCommonWebPreferences().additionalArguments?.some((arg) =>
+        arg.startsWith('--continuo-hostname='),
       ),
     ).toBe(true);
   });
