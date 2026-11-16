@@ -9,6 +9,7 @@ import { useAutoSave } from '@/panels/Editor/useAutoSave';
 import { useEditorStore } from '@/stores/editor.store';
 import { notify } from '@/notifications/notify';
 import { t } from '@/i18n';
+import { isAutoSaveFailed, setAutoSaveFailed } from '@/panels/Editor/autosave-failures';
 
 const fail = { ok: false as const, code: 'FS_DENIED', message: 'writeFile failed: /a.md' };
 
@@ -84,5 +85,24 @@ describe('useAutoSave — {ok:false} 失败经 code 本地化提示', () => {
     const text = String(warn.mock.calls[0]?.[0]);
     expect(text).toContain(t('errors.FS_DENIED'));
     expect(text).not.toContain('writeFile failed');
+  });
+
+  // 复审(dirty-close-confirm):失败态按 tab 记录,关窗计数据此把失败的脏 .md 计入确认;成功后清除。
+  it('{ok:false} → 记为该 tab 的 autosave 失败态;之后成功 → 清除', async () => {
+    vi.spyOn(notify, 'warn').mockImplementation(() => undefined as never);
+    setAutoSaveFailed('/a.md', false);
+    let result: unknown = fail;
+    render(<Probe saveTab={async () => result} />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(80);
+    });
+    expect(isAutoSaveFailed('/a.md')).toBe(true);
+
+    result = { ok: true, data: undefined };
+    act(() => useEditorStore.getState().updateContent('/a.md', 'edited2'));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(80);
+    });
+    expect(isAutoSaveFailed('/a.md')).toBe(false);
   });
 });

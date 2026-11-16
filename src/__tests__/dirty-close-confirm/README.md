@@ -12,6 +12,7 @@
 | `electron/main/quit-cleanup-guard.ts` | `cancel()`:退出被中止后复位守卫,下次 Cmd+Q 重新确认 |
 | `electron/preload/index.ts` | `layout.reportDirtyState` / `sendFlushAck(windowId, { saveFailed })` / flush 请求 payload `save` |
 | `src/shell/dock/dirty-close.ts` | renderer 纯函数:关窗会丢的脏 tab 计数、「保存」分支批量保存 |
+| `src/panels/Editor/autosave-failures.ts` | 按 tab 记录 autosave 失败态(`useAutoSave` 写入,计数与 DockShell 订阅) |
 | `src/shell/dock/DockShell.tsx` | 脏态变化时上报;flush 请求带 `save` 时先保存,失败 toast 并回执 `saveFailed` |
 | `electron/shared/i18n-locales/{en,zh,ko}.ts` | `dialog.unsaved_close.*` |
 
@@ -28,7 +29,14 @@
 - **取消** → 窗口保持打开;再次关闭会再次确认。
 - **不保存** → 照旧 hide + flush 后关闭。
 - **保存** → flush 请求带 `save: true`,renderer 先保存所有有路径的脏 tab 再 flush;
-  回执 `saveFailed: true` 或超时无回执 → 中止关闭、窗口重新显示(renderer 已 toast)。
+  回执 `saveFailed: true`、超时无回执或请求被跳过(renderer 未就绪 / send 抛错)→ 中止关闭、窗口重新显示
+  (renderer 已 toast)。「不保存」时跳过仍照常关闭。
+
+### flush 请求 / 回执配对
+
+- 每个 flush 请求带唯一 `requestId`,renderer 回执原样带回;main 按 requestId 结算,且仍校验受信 frame 与
+  sender 窗口。单窗关闭与 Cmd+Q 交叉时两次请求互不覆盖,旧请求的回执不会结算新请求。
+- 兼容不带 requestId 的旧回执:仅当该窗口恰有一个在途请求时接受。
 
 ### 退出应用(before-quit)
 
@@ -40,7 +48,11 @@
 
 - 计入:脏的代码文件 tab;untitled 草稿计入并单独计数(无路径,MVP 不支持另存为,「保存」时跳过,文案说明会被丢弃)。
 - 不计入:Markdown 自动保存开启时的脏 `.md`(关窗 flush 经 `flushPendingAutoSave` 落盘);关闭该设置则计入。
-- 「保存」分支保存所有有路径的脏 tab(含 `.md`,无害)。
+- 例外:最近一次 autosave 失败(ENOSPC / EACCES / EDITOR_DISK_CHANGED)的脏 `.md` 计入 —— 失败后无 pending
+  timer,flush 不会重试。失败态按 tab 记录(`src/panels/Editor/autosave-failures.ts`),变化时重新上报;再次成功后恢复排除。
+- 「保存」分支保存所有有路径的脏 tab(含 `.md`,无害);全部完成后复查,仍脏(保存期间继续输入)同样视为失败。
+- 保存失败提示里,因磁盘已被外部修改(EDITOR_DISK_CHANGED)而未写的文件单独说明(引导 Cmd+S 解决冲突
+  或选「不保存」;关窗流程不弹覆盖框),文案 `dialog.unsaved_close.disk_changed_note`。
 
 ## 规范文件
 

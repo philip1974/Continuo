@@ -166,6 +166,7 @@ export const zh: Record<TranslationKey, string> = {
   'dialog.unsaved_close.untitled_note': '{count} 个未命名草稿无法保存(暂不支持另存为),将被丢弃。',
   'dialog.unsaved_close.dont_save': '不保存',
   'dialog.unsaved_close.save_failed': '{count} 个文件保存失败,窗口未关闭。',
+  'dialog.unsaved_close.disk_changed_note': '其中 {count} 个文件已在磁盘上被其它程序修改,未覆盖。请在编辑器中按 Cmd/Ctrl+S 解决冲突,或选择「不保存」。',
   'dock.empty.message': '所有面板都关掉了。',
   'dock.empty.restore': '恢复默认布局',
   'panels.explorer.loading_or_empty': '读取中或空目录',

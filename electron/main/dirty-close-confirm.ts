@@ -84,9 +84,14 @@ export async function askDirtyClose(
   return 'cancel';
 }
 
-/** 解析 flush 回执的结果参数(旧格式无该参数 → 未失败)。 */
-export function parseFlushAck(raw: unknown): { saveFailed: boolean } {
-  const saveFailed =
-    typeof raw === 'object' && raw !== null && (raw as Record<string, unknown>)['saveFailed'] === true;
-  return { saveFailed };
+/**
+ * 解析 flush 回执的结果参数(旧格式无该参数 → 未失败)。requestId 为安全正整数才采纳,否则 null
+ * (旧回执 / 畸形值,由调用方按「该窗口唯一在途请求」兼容处理)。
+ */
+export function parseFlushAck(raw: unknown): { saveFailed: boolean; requestId: number | null } {
+  const obj = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {};
+  const saveFailed = obj['saveFailed'] === true;
+  const id = obj['requestId'];
+  const requestId = typeof id === 'number' && Number.isSafeInteger(id) && id > 0 ? id : null;
+  return { saveFailed, requestId };
 }

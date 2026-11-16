@@ -178,6 +178,8 @@ export const en = {
     '{count} untitled draft(s) cannot be saved (Save As is not supported yet) and will be discarded.',
   'dialog.unsaved_close.dont_save': "Don't Save",
   'dialog.unsaved_close.save_failed': 'Failed to save {count} file(s). The window was not closed.',
+  'dialog.unsaved_close.disk_changed_note':
+    '{count} file(s) were changed on disk by another program and were not overwritten. Press Cmd/Ctrl+S in the editor to resolve the conflict, or choose "Don\'t Save".',
   'dock.empty.message': 'All panels are closed.',
   'dock.empty.restore': 'Restore default layout',
   'panels.explorer.loading_or_empty': 'Loading or empty folder',

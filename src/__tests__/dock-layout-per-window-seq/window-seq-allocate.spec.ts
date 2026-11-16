@@ -111,6 +111,39 @@ describe('allocateWindowSeq atomic concurrent allocation', () => {
     expect(await allocateWindowSeq(file)).toBe(1);
   });
 
+  // 复审:现存段 windowSeq = MAX_SAFE_INTEGER 时 maxSeg+1 不安全(+1 后精度丢失)→ 每次分配同一不安全值,
+  // 重新卡死重复。结果须是安全整数且不与现存段冲突;不安全时退化为最小未被占用的正整数(≥1)。
+  it('现存段 windowSeq=MAX_SAFE_INTEGER → 退化为最小未占用正整数,连续分配不重复', async () => {
+    const payload = defaultExplorerV3();
+    (payload as { nextWindowSeq: number }).nextWindowSeq = 2;
+    const tpl = payload.windows[0]!;
+    payload.windows = [
+      { ...tpl, windowSeq: 0 },
+      { ...tpl, windowSeq: 1 },
+      { ...tpl, windowSeq: Number.MAX_SAFE_INTEGER },
+    ];
+    await atomicWriteJson(file, payload);
+
+    const a = await allocateWindowSeq(file);
+    const b = await allocateWindowSeq(file);
+    for (const seq of [a, b]) {
+      expect(Number.isSafeInteger(seq)).toBe(true);
+      expect([0, 1, Number.MAX_SAFE_INTEGER]).not.toContain(seq);
+    }
+    expect(a).toBe(2);
+    expect(b).not.toBe(a);
+    expect(Number.isSafeInteger((await loadExplorer(file))?.nextWindowSeq ?? NaN)).toBe(true);
+  });
+
+  it('nextWindowSeq=MAX_SAFE_INTEGER(seq+1 不安全)→ 同样退化为最小未占用正整数', async () => {
+    const payload = defaultExplorerV3();
+    (payload as { nextWindowSeq: number }).nextWindowSeq = Number.MAX_SAFE_INTEGER;
+    await atomicWriteJson(file, payload);
+
+    expect(await allocateWindowSeq(file)).toBe(1);
+    expect(Number.isSafeInteger((await loadExplorer(file))?.nextWindowSeq ?? NaN)).toBe(true);
+  });
+
   it('E4 自愈求 max windowSeq 使用单趟循环,不通过 reduce callback', () => {
     expect(allocateWindowSeq.toString()).not.toContain('.reduce(');
   });

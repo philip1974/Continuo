@@ -9,6 +9,7 @@
 import type { FsApi } from '@/lib/fs/api';
 import type { IpcResult } from '@/lib/fs/types';
 import { errorCodeOf, errorMessage } from '../../../electron/shared/error-message';
+import { ERROR_CODES } from '../../../electron/shared/error-codes';
 import { createTab, useEditorStore } from '@/stores/editor.store';
 import { runSerialPerKey } from '@/lib/serialize-per-key';
 import {
@@ -96,21 +97,32 @@ export async function saveFile(
 }
 
 /**
- * 打磨 P2-BL:磁盘自上次加载/保存后是否被外部改过(参考 VSCode「文件已在磁盘上更改」)。
+ * 打磨 P2-BL:保存前检查磁盘自上次加载/保存后是否被外部改过(参考 VSCode「文件已在磁盘上更改」)。
  * dirty tab 不随外部修改 reload(useExternalFileSync 跳过),不比较就写会静默抹掉外部版本。
- * 读失败(文件被删 / 无权限 / reject)→ 视为无冲突:允许重建,写盘自身的错误照常上报。
+ * 返回 null = 可以写;否则返回应中止保存的结果。只有明确「不存在」(FS_NOT_FOUND,main readFile 对
+ * ENOENT 的映射)才允许直接写(重建);其它读错误(无权限 / IO / bridge reject)无法确认磁盘状态,
+ * 照写可能抹掉外部版本 → 中止并原样返回该错误(复审)。
  */
-async function diskChangedSince(
+async function checkDiskBeforeSave(
   fs: EditorFileDeps['fs'],
   filePath: string,
   originalContent: string,
-): Promise<boolean> {
+): Promise<FileOpResult | null> {
+  let r: IpcResult<string>;
   try {
-    const r = await fs.readFile(filePath);
-    return r.ok && r.data !== originalContent;
-  } catch {
-    return false;
+    r = await fs.readFile(filePath);
+    if (!r.ok && r.code === ERROR_CODES.FS_NOT_FOUND) return null;
+  } catch (err) {
+    // reject 或畸形结果(读 .ok 抛错):带 FS_NOT_FOUND 的 reject 同样视为不存在,其它中止。
+    return errorCodeOf(err) === ERROR_CODES.FS_NOT_FOUND ? null : exception(err);
   }
+  if (!r.ok) return r;
+  if (r.data === originalContent) return null;
+  return {
+    ok: false,
+    code: 'EDITOR_DISK_CHANGED',
+    message: `file changed on disk since last load/save: ${filePath}`,
+  };
 }
 
 async function saveFileNow(
@@ -120,16 +132,9 @@ async function saveFileNow(
 ): Promise<FileOpResult> {
   const { fs, store } = deps;
   let tab = findEditorFileTabById(store.getState().tabs, tabId);
-  if (
-    opts?.force !== true &&
-    tab?.filePath &&
-    (await diskChangedSince(fs, tab.filePath, tab.originalContent))
-  ) {
-    return {
-      ok: false,
-      code: 'EDITOR_DISK_CHANGED',
-      message: `file changed on disk since last load/save: ${tab.filePath}`,
-    };
+  if (opts?.force !== true && tab?.filePath) {
+    const blocked = await checkDiskBeforeSave(fs, tab.filePath, tab.originalContent);
+    if (blocked) return blocked;
   }
   // 读盘 await 期间 tab 可能被关闭/继续编辑 → 重取,写盘快照用最新内容。
   tab = findEditorFileTabById(store.getState().tabs, tabId);

@@ -296,6 +296,7 @@ describe('window close layout flush', () => {
 
     expect(win.webContents.send).toHaveBeenCalledWith('layout:flush-request', {
       windowId: win.id,
+      requestId: expect.any(Number),
     });
     expect(win.hide).toHaveBeenCalledTimes(1);
     expect(win.destroyed).toBe(false);
@@ -468,9 +469,11 @@ describe('window close layout flush', () => {
       expect(filterSpy).not.toHaveBeenCalled();
       expect(a.webContents.send).toHaveBeenCalledWith('layout:flush-request', {
         windowId: a.id,
+        requestId: expect.any(Number),
       });
       expect(b.webContents.send).toHaveBeenCalledWith('layout:flush-request', {
         windowId: b.id,
+        requestId: expect.any(Number),
       });
       expect(dead.webContents.send).not.toHaveBeenCalledWith(
         'layout:flush-request',

@@ -244,6 +244,13 @@ function flushRequests(win: MockWin): unknown[] {
     .map((c) => c[1]);
 }
 
+/** 第 index 个 flush 请求的 requestId(main 要求回执原样带回)。 */
+function requestIdOf(win: MockWin, index: number): number {
+  const req = flushRequests(win)[index] as { requestId?: unknown } | undefined;
+  if (typeof req?.requestId !== 'number') throw new Error(`missing requestId #${index}`);
+  return req.requestId;
+}
+
 /** 让 dialog / flush 的 promise 链跑完。 */
 async function settle(): Promise<void> {
   for (let i = 0; i < 10; i += 1) await Promise.resolve();
@@ -279,7 +286,7 @@ describe('关窗:无脏文件时行为不变', () => {
 
     expect(electronMock.showMessageBox).not.toHaveBeenCalled();
     expect(win.hide).toHaveBeenCalledTimes(1);
-    expect(flushRequests(win)).toEqual([{ windowId: win.id }]);
+    expect(flushRequests(win)).toEqual([{ windowId: win.id, requestId: expect.any(Number) }]);
     ack(win);
     await settle();
     expect(win.destroyed).toBe(true);
@@ -352,7 +359,7 @@ describe('关窗:有脏文件时先确认', () => {
     win.close();
     await settle();
     expect(win.hide).toHaveBeenCalledTimes(1);
-    expect(flushRequests(win)).toEqual([{ windowId: win.id }]);
+    expect(flushRequests(win)).toEqual([{ windowId: win.id, requestId: expect.any(Number) }]);
 
     ack(win);
     await settle();
@@ -366,7 +373,7 @@ describe('关窗:有脏文件时先确认', () => {
 
     win.close();
     await settle();
-    expect(flushRequests(win)).toEqual([{ windowId: win.id, save: true }]);
+    expect(flushRequests(win)).toEqual([{ windowId: win.id, save: true, requestId: expect.any(Number) }]);
 
     ack(win, { saveFailed: false });
     await settle();
@@ -406,6 +413,63 @@ describe('关窗:有脏文件时先确认', () => {
     await settle();
     expect(win.destroyed).toBe(false);
     expect(win.show).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('关窗「保存」:flush 被跳过也视为保存未确认', () => {
+  // 复审:save:true 的 flush 若 skipped(renderer 未就绪 / send 抛错)此前被当成功关闭 → 未保存就关窗。
+  it('renderer 未上报 flush-ready → 不关闭,窗口重新显示', async () => {
+    const win = createMainWindow({ windowSeq: 30 }) as unknown as MockWin;
+    reportDirty(win, { dirty: 1, untitled: 0 });
+    electronMock.showMessageBox.mockResolvedValueOnce({ response: 0 });
+
+    win.close();
+    await settle();
+    expect(win.destroyed).toBe(false);
+    expect(win.show).toHaveBeenCalledTimes(1);
+  });
+
+  it('发送 flush 请求抛错 → 不关闭,窗口重新显示', async () => {
+    const win = createReadyWindow(31);
+    reportDirty(win, { dirty: 1, untitled: 0 });
+    electronMock.showMessageBox.mockResolvedValueOnce({ response: 0 });
+    win.webContents.send.mockImplementation(() => {
+      throw new Error('render frame disposed');
+    });
+
+    win.close();
+    await settle();
+    expect(win.destroyed).toBe(false);
+    expect(win.show).toHaveBeenCalledTimes(1);
+  });
+
+  it('「不保存」时 skipped 仍照常关闭(行为不变)', async () => {
+    const win = createMainWindow({ windowSeq: 32 }) as unknown as MockWin;
+    reportDirty(win, { dirty: 1, untitled: 0 });
+    electronMock.showMessageBox.mockResolvedValueOnce({ response: 1 });
+
+    win.close();
+    await settle();
+    expect(win.destroyed).toBe(true);
+  });
+});
+
+describe('flush 回执按 requestId 匹配', () => {
+  it('requestId 不匹配的回执被忽略;匹配的才结算', async () => {
+    const win = createReadyWindow(33);
+    reportDirty(win, { dirty: 1, untitled: 0 });
+    electronMock.showMessageBox.mockResolvedValueOnce({ response: 0 });
+
+    win.close();
+    await settle();
+    const id = requestIdOf(win, 0);
+    ack(win, { saveFailed: false, requestId: id + 1000 });
+    await settle();
+    expect(win.destroyed).toBe(false);
+
+    ack(win, { saveFailed: false, requestId: id });
+    await settle();
+    expect(win.destroyed).toBe(true);
   });
 });
 
@@ -450,7 +514,7 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
 
     const { done } = beforeQuit();
     await settle();
-    expect(flushRequests(a)).toEqual([{ windowId: a.id, save: true }]);
+    expect(flushRequests(a)).toEqual([{ windowId: a.id, save: true, requestId: expect.any(Number) }]);
     ack(a, { saveFailed: true });
     await done;
     expect(a.show).toHaveBeenCalled();
@@ -460,6 +524,47 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
     electronMock.showMessageBox.mockResolvedValueOnce({ response: 2 });
     await beforeQuit().done;
     expect(electronMock.showMessageBox).toHaveBeenCalledTimes(2);
+    a.destroyed = true;
+  });
+
+  // 复审:单窗关闭(不保存)与 Cmd+Q(保存)交叉 → 两次 flush 同一 windowId。此前 pending ack 按窗口覆盖,
+  // 关窗请求的 ack 唤醒退出请求(「不保存」的 ack 被当「保存」成功)→ 保存未完成就退出。
+  it('关窗 flush 在途时 Cmd+Q:旧请求的回执不结算新请求', async () => {
+    const win = createReadyWindow(26);
+    reportDirty(win, { dirty: 1, untitled: 0 });
+    electronMock.showMessageBox
+      .mockResolvedValueOnce({ response: 1 }) // 关窗:不保存
+      .mockResolvedValueOnce({ response: 0 }); // 退出:保存
+
+    win.close();
+    await settle();
+    const { done } = beforeQuit();
+    await settle();
+    expect(flushRequests(win)).toEqual([
+      { windowId: win.id, requestId: expect.any(Number) },
+      { windowId: win.id, save: true, requestId: expect.any(Number) },
+    ]);
+    const closeReq = requestIdOf(win, 0);
+    const quitReq = requestIdOf(win, 1);
+    expect(quitReq).not.toBe(closeReq);
+
+    ack(win, { requestId: closeReq });
+    await settle();
+    expect(app.quit).not.toHaveBeenCalled(); // 退出仍在等「保存」的回执
+
+    ack(win, { saveFailed: true, requestId: quitReq });
+    await done;
+    expect(app.quit).not.toHaveBeenCalled();
+  });
+
+  it('「保存」的 flush 被跳过(renderer 未就绪)→ 中止退出、显示该窗口', async () => {
+    const a = createMainWindow({ windowSeq: 27 }) as unknown as MockWin;
+    reportDirty(a, { dirty: 1, untitled: 0 });
+    electronMock.showMessageBox.mockResolvedValueOnce({ response: 0 });
+
+    await beforeQuit().done;
+    expect(a.show).toHaveBeenCalled();
+    expect(app.quit).not.toHaveBeenCalled();
     a.destroyed = true;
   });
 
@@ -476,9 +581,9 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
     const { done } = beforeQuit();
     await settle();
     expect(electronMock.showMessageBox).toHaveBeenCalledTimes(2);
-    expect(flushRequests(a)).toEqual([{ windowId: a.id, save: true }]);
-    expect(flushRequests(b)).toEqual([{ windowId: b.id }]);
-    expect(flushRequests(clean)).toEqual([{ windowId: clean.id }]);
+    expect(flushRequests(a)).toEqual([{ windowId: a.id, save: true, requestId: expect.any(Number) }]);
+    expect(flushRequests(b)).toEqual([{ windowId: b.id, requestId: expect.any(Number) }]);
+    expect(flushRequests(clean)).toEqual([{ windowId: clean.id, requestId: expect.any(Number) }]);
 
     ack(a, { saveFailed: false });
     ack(b);
