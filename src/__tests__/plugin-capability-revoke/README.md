@@ -71,12 +71,33 @@
 ### 1c. 激活早期的禁用 / 卸载(`PluginManager` / `plugin-reload-gate.ts`)
 
 - init 期间尚无 entry 的插件收到禁用(终审 P1):init 读完启用快照后逐个激活,前一个插件挂在授权弹窗上时,后面的插件
-  尚未写入 entries;其禁用广播此前只被 reload-gate 缓冲 → init 仍按旧快照 import 并激活。`revokeImmediately` 对尚无
-  entry 的 id(仅 init 期间)记「已禁用」标记;init 建 entry 时消费该标记,按 `disabled` 建 entry、不 import / 不构造。
-  reload-gate 收到 `enabled=true` 广播时立即调用 `markEnabled(id)` 清除标记(之后按快照照常激活)。
+  尚未写入 entries;其禁用广播此前只被 reload-gate 缓冲 → init 仍按旧快照 import 并激活。`revokeImmediately` 记下
+  停用意图(见 1d,不要求 entry 已存在);init 建 entry 时据此按 `disabled` 建 entry、不 import / 不构造。
+  reload-gate 收到 `enabled=true` 广播时立即调用 `markEnabled(id)` 清除意图(之后按快照照常激活)。
 - 模块顶层 await 永不结束(终审 P1):中止句柄在开始 import **之前**就挂到 entry,import 与中止 `Promise.race`。禁用 /
   卸载 → 管理器停止等待 import,激活按禁用收尾、释放生命周期锁,排队的停用 / 卸载照常完成(落盘 `enabled=false`)。
   import 无法真正取消:迟到完成的结果被丢弃,不构造实例。不设固定超时。
+
+### 1d. 停用意图:热重载不得绕过禁用 / 卸载(`PluginManager.deactivationIntents` / `plugin-reload-gate.ts`)
+
+终审 P1:旧实例 `onunload` 挂起期间(热重载正在拆旧实例)点禁用 / 卸载,此前只在 `activating` 时记中止、只吊销旧 scoped
+app → 重载随后建全新 scoped app 并激活,新实例继续持有 shell / 网络 / fs 写能力(新实例 `onload` 挂起时禁用 / 卸载永远
+排不上)。init 期间排队的 reload 先于缓冲的禁用执行,按旧启用意图重新激活。
+
+- per-id **停用意图**(`'disabled' | 'uninstalled'`)是唯一机制,取代此前三套标记(已卸载 id 集合 / 激活中的
+  `revokeRequested` / init 期间尚无 entry 的禁用标记)。
+- 写入:禁用 / 卸载**请求到达时同步**写入 —— 本地 `disable` / `uninstall` 进锁前;禁用广播(`revokeImmediately`)、卸载广播
+  (`markUninstalled`)经 reload-gate 立即调用。不依赖 entry 是否存在 / 是否激活中,不等生命周期锁 / init。
+  `'uninstalled'` 不被 `'disabled'` 覆盖。
+- 检查:所有激活路径(init、本地启用、热重载、`enabled=true` 广播)在导入模块 / 构造实例**之前**检查(激活开头及每个
+  await 之后);存在 → 不激活,落 `disabled`(卸载为 `NOT_INSTALLED`);热重载只拆旧实例、刷新源码 / manifest 快照。
+  排队的禁用 / 卸载随后照常完成并落盘。激活**不**清除意图。
+- 清除:只有显式启用 —— 本地 `enable(id)` 调用时(进锁前,同步)、`enabled=true` 广播到达时(`markEnabled`)。
+  `'uninstalled'` 不被启用清除;本地卸载失败(entry 仍在)时降为 `'disabled'`,用户可重新启用。
+- reload-gate:init 完成前收到卸载 → 丢弃该插件待处理的 reload。收到禁用**不丢弃**:reload 按意图不激活,只刷新快照
+  (插件源码以 Blob 快照保存,丢弃会让之后的显式启用加载旧源码)。
+- 已知取舍:本地禁用后立即本地启用,若本窗口自身的 `enabled=false` 广播晚于启用点击到达,会重新记下意图 → 这次启用
+  按禁用收尾(偏安全方向;再次启用即可)。
 
 ### 2. 跨窗口启停(`electron/main/ipc/plugins.ipc.ts` / preload / `PluginManager.handleEnabledChanged`)
 
@@ -114,6 +135,9 @@
 - `activation-early-revoke.spec.ts`:init 中前一个插件挂在授权弹窗上时收到插件 B 的禁用广播 → B 不 import、落
   disabled;随后的 enabled=true 广播清除标记;import 挂起时本地禁用 / 别窗禁用 / 本地卸载均完成、锁释放,import 迟到
   完成不构造实例。
+- `reload-deactivation-intent.spec.ts`:热重载拆旧实例(`onunload` 挂起)期间本地禁用 / 别窗禁用 / 本地卸载 → 不构造新
+  实例、`shell.exec` 被拒、禁用落盘 / 卸载删目录;init 期间文件变化排队 reload 后别窗禁用 / 卸载 → 不重新激活;显式启用
+  (本地 / `enabled=true` 广播)后正常激活。
 - `enabled-main-broadcast.spec.ts`:main 广播(成功才广播、跳过已销毁窗口)与 payload 守卫。
 - `enabled-renderer-sync.spec.ts`:A 禁用 → B 停用、命令注销、不写盘、热重载不复活;发起窗口幂等;A 启用 → B
   激活(不弹窗、不写盘);未知 id 忽略;reload-gate 接线与 init 前缓冲。
