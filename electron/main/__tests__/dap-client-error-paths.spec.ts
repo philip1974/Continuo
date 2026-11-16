@@ -81,11 +81,118 @@ describe('waitForEvent', () => {
 });
 
 describe('入站数据', () => {
-  it('Content-Length 超过上限 → 解码器抛错(不为巨帧无界缓冲)', () => {
+  // 终审 P1:debug.evaluate('x'.repeat(16777216)) 的响应帧约 16MiB,旧解码器每个 chunk 都 Buffer.concat 整个缓冲
+  // (O(n²) 复制)且要等收完整帧才由服务层截断,RSS 冲到 ~1.1GiB。单帧上限降到 8MiB;超限帧不缓冲、边收边丢,
+  // 能从帧体前缀认出是响应时合成一个失败响应,只 reject 对应请求 —— 不走畸形流路径断开整条会话。
+  it('单帧上限为 8MiB', () => {
+    expect(DAP_MAX_FRAME_BYTES).toBe(8 * 1024 * 1024);
+  });
+
+  function oversizedFrame(prefix: string): Buffer {
+    const bodyLength = DAP_MAX_FRAME_BYTES + 1;
+    const body = Buffer.alloc(bodyLength, 0x78);
+    body.write(prefix, 0, 'utf8');
+    return Buffer.concat([Buffer.from(`Content-Length: ${bodyLength}\r\n\r\n`, 'ascii'), body]);
+  }
+
+  function feedInChunks(decoder: DapStreamDecoder, data: Buffer, size: number): unknown[] {
+    const out: unknown[] = [];
+    for (let i = 0; i < data.length; i += size) out.push(...decoder.push(data.subarray(i, i + size)));
+    return out;
+  }
+
+  it('超限响应帧 → 不抛错,丢弃帧体并合成失败响应(只针对其 request_seq);后续帧照常解码', () => {
     const decoder = new DapStreamDecoder();
-    expect(() =>
-      decoder.push(Buffer.from(`Content-Length: ${DAP_MAX_FRAME_BYTES + 1}\r\n\r\n`, 'ascii')),
-    ).toThrow(/exceeds/);
+    const data = Buffer.concat([
+      oversizedFrame('{"seq":8,"type":"response","request_seq":5,"command":"evaluate","success":true,"body":{"result":"'),
+      encodeDapMessage({ seq: 9, type: 'event', event: 'output' }),
+    ]);
+    expect(feedInChunks(decoder, data, 64 * 1024)).toEqual([
+      expect.objectContaining({
+        type: 'response',
+        request_seq: 5,
+        command: 'evaluate',
+        success: false,
+        message: expect.stringMatching(/exceeds/),
+      }),
+      expect.objectContaining({ seq: 9, type: 'event', event: 'output' }),
+    ]);
+  });
+
+  it('超限事件帧(认不出 request_seq)→ 静默丢弃,后续帧照常解码', () => {
+    const decoder = new DapStreamDecoder();
+    const data = Buffer.concat([
+      oversizedFrame('{"seq":10,"type":"event","event":"output","body":{"output":"'),
+      encodeDapMessage({ seq: 11, type: 'event', event: 'stopped' }),
+    ]);
+    expect(feedInChunks(decoder, data, 64 * 1024)).toEqual([
+      expect.objectContaining({ seq: 11, event: 'stopped' }),
+    ]);
+  });
+
+  function copiedBytes(concat: { mock: { results: Array<{ value: unknown }> } }, from = 0): number {
+    return concat.mock.results.slice(from).reduce((sum, r) => sum + (r.value as Buffer).length, 0);
+  }
+
+  it('超限帧不缓冲整帧:边收边丢,复制量与帧长无关', () => {
+    const decoder = new DapStreamDecoder();
+    const data = oversizedFrame('{"seq":10,"type":"event","event":"output","body":{"output":"');
+    const concat = vi.spyOn(Buffer, 'concat');
+    try {
+      feedInChunks(decoder, data, 64 * 1024);
+      expect(copiedBytes(concat)).toBeLessThan(1024 * 1024);
+    } finally {
+      concat.mockRestore();
+    }
+  });
+
+  it('分块收大帧:拼接复制量随帧长线性(凑够整帧才一次性拼接),不是每 chunk 复制累计数据', () => {
+    const decoder = new DapStreamDecoder();
+    const frame = encodeDapMessage({
+      seq: 1,
+      type: 'event',
+      event: 'output',
+      body: { output: 'y'.repeat(4 * 1024 * 1024) },
+    });
+    const concat = vi.spyOn(Buffer, 'concat');
+    try {
+      const messages = feedInChunks(decoder, frame, 4 * 1024);
+      expect(messages).toHaveLength(1);
+      expect(copiedBytes(concat)).toBeLessThan(2 * frame.length);
+    } finally {
+      concat.mockRestore();
+    }
+  });
+
+  it('超限响应 → DapClient 只 reject 对应请求,连接与其它在途请求不受影响', async () => {
+    const client = new DapClient({ adapterPath: '/nonexistent/adapter.js' });
+    const socket = connected(client);
+    const evaluate = client.sendRequest('evaluate', {}, 5_000);
+    const threads = client.sendRequest('threads', {}, 5_000);
+    const [evalSeq, threadsSeq] = socket.written.map((chunk) => {
+      const text = chunk.toString('utf8');
+      return (JSON.parse(text.slice(text.indexOf('\r\n\r\n') + 4)) as { seq: number }).seq;
+    });
+
+    const big = oversizedFrame(
+      `{"seq":20,"type":"response","request_seq":${evalSeq},"command":"evaluate","success":true,"body":{"result":"`,
+    );
+    for (let i = 0; i < big.length; i += 1024 * 1024) socket.emit('data', big.subarray(i, i + 1024 * 1024));
+    await expect(evaluate).rejects.toThrow(/exceeds/);
+    expect(socket.destroyed).toBe(false);
+
+    socket.emit(
+      'data',
+      encodeDapMessage({
+        seq: 21,
+        type: 'response',
+        request_seq: threadsSeq!,
+        command: 'threads',
+        success: true,
+        body: { threads: [] },
+      }),
+    );
+    await expect(threads).resolves.toMatchObject({ request_seq: threadsSeq, success: true });
   });
 
   it('畸形帧 → 不抛到 socket 的 data 回调之外;结算在途请求并断开连接', async () => {

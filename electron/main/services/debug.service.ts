@@ -17,7 +17,7 @@ import { resolveDebugAdapterPath } from './debug-adapter-provision';
 import * as debugSessions from './debug-sessions.service';
 import { getWorkspaceRoot } from './window-workspace-roots.service';
 import { ERROR_CODES } from '../../shared/error-codes';
-import { DEBUG_LAUNCH_FORBIDDEN_ENV } from '../../shared/mcp-debug-schemas';
+import { isDebugLaunchEnvForbidden } from '../../shared/mcp-debug-schemas';
 import type { DebugViewEvent } from '../../shared/debug-view-channels';
 import { codedError } from '../../shared/error-message';
 import { runSerialPerKey } from './serialize-per-key';
@@ -303,28 +303,89 @@ export async function findNodeRuntimeOnPath(pathValue: string | undefined): Prom
   throw codedError(ERROR_CODES.DEBUG_NODE_RUNTIME_NOT_FOUND, `debug launch: ${exe} not found on Continuo's PATH`);
 }
 
-/** 默认解析结果缓存(只缓存成功;失败不缓存,用户装好 node 后可直接重试)。 */
-let cachedNodeRuntime: Promise<string> | null = null;
+/** 执行用户登录 shell 并返回 stdout(注入点:单测不真的 spawn 用户 shell)。 */
+export type LoginShellExec = (shell: string, args: readonly string[], timeoutMs: number) => Promise<string>;
 
-function defaultResolveNodeRuntime(): Promise<string> {
-  cachedNodeRuntime ??= findNodeRuntimeOnPath(process.env.PATH).catch((err: unknown) => {
-    cachedNodeRuntime = null;
-    throw err;
-  });
-  return cachedNodeRuntime;
-}
+/** 登录 shell 取 PATH 的耗时上限(rc 文件可能很慢;超时视为取不到)。 */
+const LOGIN_SHELL_TIMEOUT_MS = 10_000;
+/** 包裹 `$PATH` 输出的标记:rc 文件可能打印 banner 等,只取两个标记之间的内容。 */
+const LOGIN_SHELL_PATH_MARKER = '__CONTINUO_LOGIN_PATH_b7e3f1__';
 
-const FORBIDDEN_ENV_NAMES = new Set<string>(DEBUG_LAUNCH_FORBIDDEN_ENV);
+const defaultExecLoginShell: LoginShellExec = async (shell, args, timeoutMs) => {
+  const { stdout } = await execFile(shell, [...args], { timeout: timeoutMs, maxBuffer: 1024 * 1024 });
+  return stdout;
+};
 
 /**
- * 安全闸:env 不得含让 Node / 动态链接器加载额外代码的变量(按大写比较,Windows 的变量名大小写不敏感)。
+ * 用户登录 shell 的 PATH(参照 VSCode resolveShellEnv / fix-path):macOS 从 Finder 启动的应用只继承
+ * /usr/bin:/bin:/usr/sbin:/sbin,Homebrew / nvm 的 node 不在其中。这仍是 Continuo 可信环境(用户自己的
+ * 登录 shell 与 main 进程 env),与 agent 传入的 launch env 无关。取不到返回 undefined。
+ */
+async function readLoginShellPath(
+  env: NodeJS.ProcessEnv,
+  execLoginShell: LoginShellExec,
+): Promise<string | undefined> {
+  const shell = env.SHELL || (platform() === 'darwin' ? '/bin/zsh' : '/bin/bash');
+  const marker = LOGIN_SHELL_PATH_MARKER;
+  try {
+    const stdout = await execLoginShell(
+      shell,
+      ['-ilc', `printf '%s%s%s' '${marker}' "$PATH" '${marker}'`],
+      LOGIN_SHELL_TIMEOUT_MS,
+    );
+    const start = stdout.indexOf(marker);
+    const end = stdout.indexOf(marker, start + marker.length);
+    if (start === -1 || end === -1) return undefined;
+    return stdout.slice(start + marker.length, end);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 被调试程序的 node 解析器:先查 main 进程自身 PATH;找不到时(非 Windows)执行一次用户登录 shell 取 PATH,
+ * 按同样规则查找。只缓存成功;失败不缓存,用户装好 node 后可直接重试。登录 shell 有成本,只在首次且 main PATH
+ * 找不到时执行。
+ */
+export function createNodeRuntimeResolver(deps: {
+  readonly env: NodeJS.ProcessEnv;
+  readonly execLoginShell: LoginShellExec;
+}): () => Promise<string> {
+  let cached: Promise<string> | null = null;
+  const resolveOnce = async (): Promise<string> => {
+    try {
+      return await findNodeRuntimeOnPath(deps.env.PATH);
+    } catch (err) {
+      if (platform() === 'win32') throw err;
+      const loginPath = await readLoginShellPath(deps.env, deps.execLoginShell);
+      if (loginPath === undefined) throw err;
+      return findNodeRuntimeOnPath(loginPath);
+    }
+  };
+  return () => {
+    cached ??= resolveOnce().catch((err: unknown) => {
+      cached = null;
+      throw err;
+    });
+    return cached;
+  };
+}
+
+const defaultResolveNodeRuntime = createNodeRuntimeResolver({
+  env: process.env,
+  execLoginShell: defaultExecLoginShell,
+});
+
+/**
+ * 安全闸:env 不得含让 Node / 动态链接器 / OpenSSL 加载额外代码的变量(规则见 isDebugLaunchEnvForbidden,
+ * 大小写不敏感,Windows 的变量名大小写不敏感)。
  * 否则 NODE_OPTIONS=--require=/tmp/x.js 等在目标程序之前执行工作区外脚本,绕过 program / cwd 的工作区闸。
  */
 function assertLaunchEnvAllowed(
   env: readonly { readonly name: string; readonly value: string }[] | undefined,
 ): void {
   for (const entry of env ?? []) {
-    if (FORBIDDEN_ENV_NAMES.has(entry.name.toUpperCase())) {
+    if (isDebugLaunchEnvForbidden(entry.name)) {
       throw codedError(
         ERROR_CODES.DEBUG_PROGRAM_OUTSIDE_WORKSPACE,
         `debug launch env must not set ${entry.name}: it loads code outside the workspace`,

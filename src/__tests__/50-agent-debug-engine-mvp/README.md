@@ -14,14 +14,15 @@
 - 资源上限:结束的 child session(worker 退出等)当即回收(移出、清掉各断点记录里该连接的条目并重推受影响 source 的快照;连接等其在途请求结算后再 dispose —— js-debug 可能在 terminated 之后才回 continue 等请求的响应,当即关连接会让调用方收到「DAP socket closed」),teardown 不再对它发 disconnect;DAP transcript 单条按字节截断为摘要并有总字节预算(最旧优先淘汰)。
 - KC#1: MVP 暂不暴露 renderer/editor context 的断点映射能力，降级为 main-context DAP 调试；源码映射与编辑器联动留给后续批次。
 - 安全(program-workspace 锁): `debug.launch` 的 `program`/`cwd` 来自 agent，必须落在 owner window 的 workspace root 内(realpath 规范化后比较，防 symlink 逃逸与 `..` 穿越)；窗口无 workspace 记录则 fail-closed 拒绝；`cwd` 省略时默认 workspace root，不回退 main 进程 cwd。校验通过的真实路径(program/cwd 的 realpath)即为之后 launch 使用的路径 —— 起跑推迟到 `wait_for_stop` 等调用，期间把软链改指工作区外不生效。该契约由 `electron/main/__tests__/debug-service.spec.ts` 覆盖。
-- 安全(运行时 node 由 Continuo 解析): 被调试程序用哪个 node 由 main 进程按自身 PATH(启动时的环境，**不含** agent 传入的 `env`)查找并 realpath 成绝对路径，作为 `runtimeExecutable` 固定写进父 / child 的 launch 参数 —— agent 的 `env`(含 `PATH`)只影响被调试程序自身，不影响用哪个 node(否则 js-debug 按 env 的 PATH 先执行 `<PATH>/node --version`，即工作区外任意代码执行)。找不到 node 时 launch 以 `DEBUG_NODE_RUNTIME_NOT_FOUND` 失败且不 spawn adapter。`env` 另有禁用清单(`NODE_OPTIONS` / `LD_PRELOAD` 等加载额外代码的变量)作纵深防御。
+- 安全(运行时 node 由 Continuo 解析): 被调试程序用哪个 node 由 main 进程按自身 PATH(启动时的环境，**不含** agent 传入的 `env`)查找并 realpath 成绝对路径(main PATH 找不到时，非 Windows 上执行一次用户登录 shell `$SHELL -ilc` 取其 PATH 再按同样规则查找 —— 覆盖 macOS 从 Finder 启动时 PATH 不含 Homebrew / nvm;仍是 Continuo 可信环境，成功结果缓存、失败不缓存)，作为 `runtimeExecutable` 固定写进父 / child 的 launch 参数 —— agent 的 `env`(含 `PATH`)只影响被调试程序自身，不影响用哪个 node(否则 js-debug 按 env 的 PATH 先执行 `<PATH>/node --version`，即工作区外任意代码执行)。找不到 node 时 launch 以 `DEBUG_NODE_RUNTIME_NOT_FOUND` 失败且不 spawn adapter。`env` 另有禁用规则作纵深防御(大小写不敏感):以 `DYLD_` / `LD_` / `OPENSSL_` 开头的变量整族拒绝，外加精确名 `NODE_OPTIONS` / `NODE_PATH` / `NODE_REPL_EXTERNAL_MODULE` / `GCONV_PATH`;`NODE_ENV` 等普通变量照常放行。
 
 - `debug.disconnect` 始终终止 Continuo launch 的 debuggee(teardown 按 adapter 进程组整组回收);`terminate_debuggee` 只接受 `true` 或省略,`false` 在 schema 层显式拒绝(不再静默忽略),zod 与手写 JSON schema(`const: true`)一致。
 - 程序起跑时机: `debug.launch` 完成 DAP initialize 后返回 `state: "starting"`,此时程序尚未运行;`configurationDone` + `launch` 推迟到第一个要求程序运行的调用(`wait_for_stop` / `continue` / `step_*`)且只发一次,`set_breakpoint` 本身不让程序起跑 —— 起跑前设的多个断点都在程序运行之前就位。没设断点直接 `wait_for_stop`(如 `stop_on_entry`)也能起跑;尚无停点时 `continue` 即「让程序跑起来」。
 - 断点按 source 维护完整集合(DAP `setBreakpoints` 语义): 同一文件的新断点与已有断点一起发送(同 file+line 去重),不覆盖;child session 建立时按 source 重放全部断点;返回值是本次新设断点的结果。同 session 同 source 的设置串行执行(集合与 `breakpoints-changed` 快照按调用顺序);请求失败 / 超时回滚本地记录后,尽力向父连接与存活 child 补发回滚后的完整集合(短超时、失败忽略,原错误照抛);快照按 adapter 校正后的 file:line 去重(保留首个),adapter 未逐项回报(空 / 短数组)时沿用该断点上次的校正结果。source 按平台归一分组(Windows 大小写不敏感、`/` 与 `\` 等价),发给 adapter 与推给 renderer 的路径用该 source 首次记录的拼写。
-- 会话归属回收: stdio 连接断开后其 callerSubject 永久失效，该连接创建的 debug 会话立即回收(释放名额、结束 adapter)，其它连接的会话不受影响;HTTP 调用方的 subject 是窗口级 token，随窗口关闭 / 授权撤销回收。
+- 会话归属回收: stdio 连接断开后其 callerSubject 永久失效，该连接创建的 debug 会话立即回收(释放名额、结束 adapter)，其它连接的会话不受影响;HTTP 调用方的 subject 是窗口级 token，随窗口关闭 / 授权撤销回收;终端专属 token(终端内 agent 经 HTTP MCP 调用)随终端退出吊销时，同步回收该 token 创建的 debug 会话(`terminal-exit`)。
 - 会话数上限在 spawn adapter 之前检查;spawn 期间被并发 launch 占满名额时释放已 spawn 的 adapter,不残留 runtime。
 - DAP 入站帧必须是顶层带字符串 `type` 的 JSON 对象;`null` / 数组 / 标量等按畸形帧处理(结算在途请求并断开连接),不抛成主进程未捕获异常。
+- DAP 入站单帧上限 8MiB:收包按 chunk 累积、凑够整帧才一次性拼接(无 O(n²) 复制);超限帧不缓冲、边收边丢 —— 能认出是响应时只让对应请求失败(如超大 `evaluate` 结果),事件等静默丢弃,连接与会话不断开。
 
 ## 规范文件
 
@@ -29,5 +30,6 @@
 - `debug-schemas.spec.ts`: `debug.*` MCP schema 的 strict/bounds/defaults 契约。
 - `mcp-debug-host.spec.ts`: MCP 授权、capability、错误归一化契约。
 - `stdio-caller-closed.spec.ts`: stdio 连接断开时通知调用方失效(onCallerClosed)的契约。
+- `terminal-token-revoke-kills-debug.spec.ts`: 终端专属 token 吊销时回收其 debug 会话的接线(源码钉)。
 
 DebugService 的真实 adapter 生命周期、wait/continue/teardown 幂等行为由 `electron/main/__tests__/debug-service.spec.ts` 覆盖，避免在 BDD 层重复慢路径。

@@ -1024,7 +1024,14 @@ async function startMcpHost(): Promise<void> {
     setMcpHostRef(mcpHost);
     setMcpRevokers({
       byWindow: (windowId) => mcpHost!.revokeWindowTokens(windowId),
-      byToken: (token) => mcpHost!.revokeToken(token),
+      // byToken 只用于终端专属 token(终端退出 / 创建回滚):token 失效后其经 HTTP MCP 创建的 debug
+      // 会话再无人能 disconnect → 同步回收(与 stdio 断连路径一致),否则名额被占满、adapter 常驻。
+      byToken: (token) => {
+        mcpHost!.revokeToken(token);
+        void debugService.killByController(token, 'terminal-exit').catch((err) => {
+          console.warn('[debug] killByController failed on terminal token revoke', err);
+        });
+      },
     });
     setAgentAuthControllerTeardown({
       listControllerTokens: () =>

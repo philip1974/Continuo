@@ -12,6 +12,7 @@ import {
   DEBUG_VARIABLES_EXPAND_MAX_NODES,
   DEBUG_VARIABLES_EXPAND_MAX_REQUESTS,
   DebugService,
+  createNodeRuntimeResolver,
   findNodeRuntimeOnPath,
   type DebugDapClientLike,
   type DebugProcessOps,
@@ -1132,8 +1133,18 @@ describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
     'LD_LIBRARY_PATH',
     'DYLD_INSERT_LIBRARIES',
     'DYLD_LIBRARY_PATH',
+    // 前缀规则:DYLD_* / LD_* / OPENSSL_* 整族拒绝,不再逐个列名(DYLD_VERSIONED_* / OPENSSL_CONF 等曾漏)
+    'DYLD_VERSIONED_LIBRARY_PATH',
+    'DYLD_VERSIONED_FRAMEWORK_PATH',
+    'OPENSSL_CONF',
+    'OPENSSL_CONF_INCLUDE',
+    'OPENSSL_MODULES',
+    'OPENSSL_ENGINES',
+    'GCONV_PATH',
     'node_options',
     'Ld_Preload',
+    'openssl_conf',
+    'dyld_versioned_library_path',
   ])('安全:env 含会加载额外代码的变量 %s → 拒绝且不 spawn adapter', async (name) => {
     const parent = new FakeDapClient(1001);
     const spawn = vi.spyOn(parent, 'spawnServer');
@@ -1149,6 +1160,30 @@ describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
     ).rejects.toMatchObject({ code: 'DEBUG_PROGRAM_OUTSIDE_WORKSPACE', message: expect.stringContaining(name) });
     expect(spawn).not.toHaveBeenCalled();
     expect(service.listSessions()).toEqual([]);
+  });
+
+  // 前缀规则不能误伤普通业务变量:NODE_ENV、名字里只是"含"LD_/DYLD_ 而非以其开头的变量照常放行。
+  it('env 普通业务变量(NODE_ENV 等)不受禁用规则影响,原样传给 launch', async () => {
+    const parent = new FakeDapClient(1001);
+    const { service } = makeFakeService(parent, {
+      getWorkspaceRoot: () => '/repo',
+      realpath: async (p) => p,
+    });
+    const env = [
+      { name: 'NODE_ENV', value: 'test' },
+      { name: 'MY_LD_FLAGS', value: '1' },
+      { name: 'OLD_PATH', value: '/x' },
+      { name: 'OPENSSL', value: '1' },
+    ];
+    const { session_id } = await service.launchSession(
+      { program: '/repo/app.js', cwd: '/repo', env },
+      { ownerWindowId: 330, controllerToken: 'agent-sec-env-ok' },
+    );
+    void service.waitForStop(session_id, { timeoutMs: 5_000 }).catch(() => undefined);
+    await vi.waitFor(() => expect(parent.requestLog.some((r) => r.command === 'launch')).toBe(true));
+    const launch = parent.requestLog.find((r) => r.command === 'launch')!.args as Record<string, unknown>;
+    expect(launch['env']).toEqual({ NODE_ENV: 'test', MY_LD_FLAGS: '1', OLD_PATH: '/x', OPENSSL: '1' });
+    await service.killByOwner(330, 'test');
   });
 
   // 根因闸:launch 不指定 runtimeExecutable 时 js-debug 按 launch.env 的 PATH 找 `node`(先跑 `node --version`
@@ -3099,5 +3134,95 @@ describe('findNodeRuntimeOnPath · 被调试程序的 node 由 main 在可信环
     await expect(findNodeRuntimeOnPath(undefined)).rejects.toMatchObject({
       code: 'DEBUG_NODE_RUNTIME_NOT_FOUND',
     });
+  });
+});
+
+// 终审 P1:macOS 从 Finder 启动的打包版,GUI PATH 只有 /usr/bin:/bin:/usr/sbin:/sbin,装在 Homebrew / nvm 下的
+// node 永远找不到 → 固定 DEBUG_NODE_RUNTIME_NOT_FOUND。main PATH 找不到时(非 Windows)执行一次用户登录 shell
+// 取 PATH(仍是 Continuo 可信环境,不受 agent env 影响),按同样规则查找。执行器注入,测试不真的 spawn 用户 shell。
+describe('createNodeRuntimeResolver · main PATH 找不到时回退用户登录 shell 的 PATH', () => {
+  const exe = process.platform === 'win32' ? 'node.exe' : 'node';
+  let dir: string | null = null;
+
+  afterEach(async () => {
+    platformMock.value = null;
+    if (dir) await rm(dir, { recursive: true, force: true });
+    dir = null;
+  });
+
+  async function makeNodeDir(): Promise<{ binDir: string; real: string }> {
+    dir = await realpath(await mkdtemp(path.join(tmpdir(), 'continuo-node-login-')));
+    const binDir = path.join(dir, 'bin');
+    await mkdir(binDir);
+    const real = path.join(binDir, exe);
+    await writeFile(real, '#!/bin/sh\n');
+    await chmod(real, 0o755);
+    return { binDir, real };
+  }
+
+  /** 登录 shell 执行器桩:按命令里的包裹标记回显 PATH(取值可变),前后夹杂 rc 文件的输出。 */
+  function shellReturning(loginPath: () => string) {
+    return vi.fn(async (_shell: string, args: readonly string[], _timeoutMs: number) => {
+      const marker = /'([A-Za-z0-9_]+)'/.exec(args[args.length - 1]!)![1]!;
+      return `Last login: today\nwelcome banner\n${marker}${loginPath()}${marker}\ntrailing rc noise\n`;
+    });
+  }
+
+  it('main PATH 命中 → 直接返回,不执行登录 shell', async () => {
+    const { binDir, real } = await makeNodeDir();
+    const execLoginShell = shellReturning(() => '/nowhere');
+    const resolve = createNodeRuntimeResolver({ env: { PATH: binDir, SHELL: '/bin/zsh' }, execLoginShell });
+    await expect(resolve()).resolves.toBe(real);
+    expect(execLoginShell).not.toHaveBeenCalled();
+  });
+
+  it('main PATH 找不到 → 以 $SHELL -ilc 取登录 PATH(只取标记之间,忽略 rc 输出),上限 10s,在其中查找', async () => {
+    const { binDir, real } = await makeNodeDir();
+    const execLoginShell = shellReturning(() => ['/usr/bin', binDir].join(path.delimiter));
+    const resolve = createNodeRuntimeResolver({
+      env: { PATH: '/nowhere', SHELL: '/opt/homebrew/bin/fish' },
+      execLoginShell,
+    });
+    await expect(resolve()).resolves.toBe(real);
+    expect(execLoginShell).toHaveBeenCalledTimes(1);
+    const [shell, args, timeoutMs] = execLoginShell.mock.calls[0]!;
+    expect(shell).toBe('/opt/homebrew/bin/fish');
+    expect(args[0]).toBe('-ilc');
+    expect(timeoutMs).toBe(10_000);
+  });
+
+  it('SHELL 未设置 → 回退 /bin/zsh(macOS)或 /bin/bash', async () => {
+    const execLoginShell = shellReturning(() => '/nowhere');
+    const resolve = createNodeRuntimeResolver({ env: { PATH: '/nowhere' }, execLoginShell });
+    await expect(resolve()).rejects.toMatchObject({ code: 'DEBUG_NODE_RUNTIME_NOT_FOUND' });
+    expect(execLoginShell.mock.calls[0]![0]).toBe(process.platform === 'darwin' ? '/bin/zsh' : '/bin/bash');
+  });
+
+  it.each([
+    ['执行失败 / 超时', async () => Promise.reject(new Error('timed out'))],
+    ['输出没有标记', async () => '/usr/local/bin\n'],
+  ])('登录 shell %s → DEBUG_NODE_RUNTIME_NOT_FOUND', async (_label, execLoginShell) => {
+    const resolve = createNodeRuntimeResolver({ env: { PATH: '/nowhere', SHELL: '/bin/zsh' }, execLoginShell });
+    await expect(resolve()).rejects.toMatchObject({ code: 'DEBUG_NODE_RUNTIME_NOT_FOUND' });
+  });
+
+  it('Windows 不执行登录 shell', async () => {
+    platformMock.value = 'win32';
+    const execLoginShell = shellReturning(() => '/nowhere');
+    const resolve = createNodeRuntimeResolver({ env: { PATH: '/nowhere', SHELL: '/bin/zsh' }, execLoginShell });
+    await expect(resolve()).rejects.toMatchObject({ code: 'DEBUG_NODE_RUNTIME_NOT_FOUND' });
+    expect(execLoginShell).not.toHaveBeenCalled();
+  });
+
+  it('成功结果缓存(之后不再执行登录 shell);失败不缓存,下次重试', async () => {
+    const { binDir, real } = await makeNodeDir();
+    let loginPath = '/still-nowhere';
+    const execLoginShell = shellReturning(() => loginPath);
+    const resolve = createNodeRuntimeResolver({ env: { PATH: '/nowhere', SHELL: '/bin/zsh' }, execLoginShell });
+    await expect(resolve()).rejects.toMatchObject({ code: 'DEBUG_NODE_RUNTIME_NOT_FOUND' });
+    loginPath = binDir;
+    await expect(resolve()).resolves.toBe(real);
+    await expect(resolve()).resolves.toBe(real);
+    expect(execLoginShell).toHaveBeenCalledTimes(2);
   });
 });
