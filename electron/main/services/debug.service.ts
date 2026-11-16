@@ -1,6 +1,7 @@
 import { execFile as execFileCb } from 'node:child_process';
 import { asRecord } from '../../shared/as-record';
 import { realpath } from 'node:fs/promises';
+import { platform } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 
@@ -18,6 +19,7 @@ import { ERROR_CODES } from '../../shared/error-codes';
 import type { DebugViewEvent } from '../../shared/debug-view-channels';
 import { codedError } from '../../shared/error-message';
 import { runSerialPerKey } from './serialize-per-key';
+import { lowerIfNeeded } from '../../shared/lower-if-needed';
 
 const execFile = promisify(execFileCb);
 
@@ -143,9 +145,12 @@ interface StopWaiter {
 }
 
 interface BreakpointRecord {
-  readonly file: string;
+  /** source 分组键(sourceKey):同一 source 的不同拼写归为一组。 */
+  readonly source: string;
   readonly line: number;
   readonly column?: number;
+  /** adapter 上次对它的回报(校正后的行等)。adapter 对未变化的集合可能不逐项回报,缺项时沿用。 */
+  reported?: { readonly line: number; readonly verified: boolean; readonly message?: string };
 }
 
 interface RuntimeDebugSession {
@@ -157,6 +162,8 @@ interface RuntimeDebugSession {
   readonly waiters: Set<StopWaiter>;
   /** 全部已设断点(同 file+line 去重);setBreakpoints 按 file 取出该 source 的完整集合发送。 */
   readonly breakpoints: BreakpointRecord[];
+  /** source 分组键 → 该 source 首次记录的拼写(发给 adapter、推给 renderer 都用它,同一 source 恒定)。 */
+  readonly sourcePaths: Map<string, string>;
   initialized: boolean;
   configurationDone: boolean;
   launched: boolean;
@@ -223,6 +230,14 @@ function toEnvObject(
   return out;
 }
 
+/**
+ * source 分组键。Windows 路径大小写不敏感、`/` 与 `\` 等价(js-debug 视为同一 source):不归一的话
+ * `C:\repo\a.js` 与 `c:/repo/a.js` 成了两个集合,后一次整组替换会删掉前一个的断点。其它平台原样。
+ */
+function sourceKey(file: string): string {
+  return platform() === 'win32' ? lowerIfNeeded(file.replaceAll('/', '\\')) : file;
+}
+
 /** 向已建立的 child session 同步断点时的超时(父连接的响应才是工具的返回值,child 同步是尽力而为)。 */
 const CHILD_BREAKPOINT_SYNC_TIMEOUT_MS = 3_000;
 
@@ -247,9 +262,9 @@ function breakpointsBySource(
 ): ReadonlyMap<string, readonly BreakpointRecord[]> {
   const out = new Map<string, BreakpointRecord[]>();
   for (const record of records) {
-    const list = out.get(record.file);
+    const list = out.get(record.source);
     if (list) list.push(record);
-    else out.set(record.file, [record]);
+    else out.set(record.source, [record]);
   }
   return out;
 }
@@ -508,6 +523,7 @@ export class DebugService {
       endedChildren: new Set(),
       queuedStops: [],
       breakpoints: [],
+      sourcePaths: new Map(),
       initialized: false,
       configurationDone: false,
       launched: false,
@@ -561,7 +577,7 @@ export class DebugService {
     this.requireRuntime(sessionId);
     // 同 session 同 source 串行:并发时 B 捕获的完整集合会含在途的 A,A 失败回滚时 B 已把 A 设进 adapter;
     // 成功响应乱序时旧快照事件还会覆盖新断点。串行化后集合与快照天然有序。
-    return runSerialPerKey(this.breakpointChains, `${sessionId}\0${input.file}`, () =>
+    return runSerialPerKey(this.breakpointChains, `${sessionId}\0${sourceKey(input.file)}`, () =>
       this.setBreakpointsSerial(sessionId, input),
     );
   }
@@ -574,21 +590,25 @@ export class DebugService {
     const runtime = this.requireRuntime(sessionId);
     // 追加到该 source 的断点集合(同 file+line 替换,不重复);此前整表替换成 [input],同文件第二个断点
     // 会把第一个从 adapter 里删掉。
-    const record: BreakpointRecord = {
-      file: input.file,
-      line: input.line,
-      ...(input.column !== undefined ? { column: input.column } : {}),
-    };
+    const source = sourceKey(input.file);
+    if (!runtime.sourcePaths.has(source)) runtime.sourcePaths.set(source, input.file);
+    const sourcePath = runtime.sourcePaths.get(source) ?? input.file;
     const existing = runtime.breakpoints.findIndex(
-      (bp) => bp.file === input.file && bp.line === input.line,
+      (bp) => bp.source === source && bp.line === input.line,
     );
     const previous = existing >= 0 ? runtime.breakpoints[existing] : undefined;
+    const record: BreakpointRecord = {
+      source,
+      line: input.line,
+      ...(input.column !== undefined ? { column: input.column } : {}),
+      ...(previous?.reported ? { reported: previous.reported } : {}),
+    };
     if (existing >= 0) runtime.breakpoints[existing] = record;
     else runtime.breakpoints.push(record);
-    const sourceBreakpoints = runtime.breakpoints.filter((bp) => bp.file === input.file);
+    const sourceBreakpoints = runtime.breakpoints.filter((bp) => bp.source === source);
     // 响应的 breakpoints 与请求逐一对应:本次新设的那个在集合里的位置。
     const resultIndex = sourceBreakpoints.indexOf(record);
-    const args = setBreakpointsArgs(input.file, sourceBreakpoints);
+    const args = setBreakpointsArgs(sourcePath, sourceBreakpoints);
     let response: DapResponseMessage;
     try {
       response = await runtime.parentClient.sendRequest(
@@ -607,8 +627,8 @@ export class DebugService {
       // 超时不代表 adapter 没应用(可能只是响应迟到):尽力把回滚后的完整集合补发给父连接与存活的 child,
       // 短超时、失败忽略,原错误照常抛给调用方。
       const rolledBack = setBreakpointsArgs(
-        input.file,
-        runtime.breakpoints.filter((bp) => bp.file === input.file),
+        sourcePath,
+        runtime.breakpoints.filter((bp) => bp.source === source),
       );
       const liveClients = [
         runtime.parentClient,
@@ -655,21 +675,30 @@ export class DebugService {
     };
     // 推该 source 的完整集合(adapter 校正后的行号),renderer 整组替换:只推本次那一个时,同一逻辑
     // 断点被再次校正到别的行会留下旧红点。多个请求被校正到同一行时按校正后的 file:line 去重(保留首个),
-    // 否则面板 key 重复、编辑器重复装饰 —— 去重只在这里做(单一来源)。
+    // 否则面板 key 重复、编辑器重复装饰 —— 去重只在这里做(单一来源)。adapter 对未变化的集合可能返回
+    // 空 / 短数组:缺项沿用该记录上次的回报(否则红点从校正行跳回请求行、去重失效),都没有才用请求行。
     const responseBreakpoints = asArray(body.breakpoints);
     const seenLines = new Set<number>();
     const snapshot = sourceBreakpoints.flatMap((bp, i) => {
-      const reported = asRecord(responseBreakpoints[i] as DapJson | undefined);
-      const line = numberField(reported, 'line') ?? bp.line;
+      const item = responseBreakpoints[i];
+      if (item !== undefined) {
+        const reported = asRecord(item as DapJson);
+        const message = stringField(reported, 'message');
+        bp.reported = {
+          line: numberField(reported, 'line') ?? bp.line,
+          verified: boolField(reported, 'verified') ?? true,
+          ...(message !== undefined ? { message } : {}),
+        };
+      }
+      const { line, verified, message } = bp.reported ?? { line: bp.line, verified: true };
       if (seenLines.has(line)) return [];
       seenLines.add(line);
-      const message = stringField(reported, 'message');
       return [
         {
-          file: bp.file,
+          file: sourcePath,
           line,
           ...(bp.column !== undefined ? { column: bp.column } : {}),
-          verified: boolField(reported, 'verified') ?? true,
+          verified,
           ...(message !== undefined ? { message } : {}),
         },
       ];
@@ -677,7 +706,7 @@ export class DebugService {
     this.emitSessionEvent(sessionId, {
       type: 'breakpoints-changed',
       sessionId,
-      file: input.file,
+      file: sourcePath,
       breakpoints: snapshot,
     });
     return result;
@@ -1073,10 +1102,10 @@ export class DebugService {
 
       await this.initializeClient(child);
       // 每个 source 发一次完整集合(逐个断点发会让后一个覆盖前一个)。
-      for (const [file, records] of breakpointsBySource(runtime.breakpoints)) {
+      for (const [source, records] of breakpointsBySource(runtime.breakpoints)) {
         await child.sendRequest(
           'setBreakpoints',
-          setBreakpointsArgs(file, records),
+          setBreakpointsArgs(runtime.sourcePaths.get(source) ?? source, records),
           this.requestTimeoutMs,
         );
       }
