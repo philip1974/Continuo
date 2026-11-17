@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { coApi } from '@/lib/co-api';
 import { emitWatchRestored } from '@/lib/fs-watch-restored';
+import { isSameOrInsidePath } from '@/lib/path-cross';
 import { diffSets, makeDebouncePerPath } from '../fs-watch-helpers';
 
 const DEBOUNCE_MS = 100;
@@ -23,10 +24,15 @@ function bumpGen(watchGen: Map<string, number>, p: string): number {
  * 参数 onChange 通常 = (path) => tree.getItemInstance(path)?.invalidateChildrenIds()
  *
  * Hook 卸载时全 unwatch + 取消 debouncer 避免泄漏。
+ *
+ * root(可选):本 Explorer 的工作区根。fs:dir-changed 是全窗口广播(其它窗口工作区的目录变化
+ * 同样送达),传入后 root 外路径在进入 debouncer 前丢弃 —— 它们不可能对应本树节点,却会让
+ * onChange 走 invalidation→listDir 白做 IPC + 读盘(性能审计 #2)。不影响其它 onDirChanged 订阅者。
  */
 export function useFsWatcher(
   expandedPaths: ReadonlySet<string>,
   onChange: (path: string) => void,
+  root?: string,
 ): void {
   const prevPathsRef = useRef<Set<string>>(new Set());
   // race(R37):每个 path 的 watch 尝试代际。watchDir 失败撤销记账(R14)若无代际校验:旧 expand /a
@@ -38,6 +44,9 @@ export function useFsWatcher(
   const cancelledRef = useRef(false);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+  // 读最新 root 而不重订阅(重订阅会 cancel debouncer 丢掉在途刷新)。
+  const rootRef = useRef(root);
+  rootRef.current = root;
   // watch-lost 延迟重装时判断「仍展开」用最新 expandedPaths。
   const expandedRef = useRef(expandedPaths);
   expandedRef.current = expandedPaths;
@@ -127,7 +136,11 @@ export function useFsWatcher(
       (path) => onChangeRef.current(path),
       DEBOUNCE_MS,
     );
-    const unsub = coApi.fs.onDirChanged((path) => debounced(path));
+    const unsub = coApi.fs.onDirChanged((path) => {
+      const r = rootRef.current;
+      if (r !== undefined && !isSameOrInsidePath(r, path)) return;
+      debounced(path);
+    });
     return () => {
       unsub();
       debounced.cancel();

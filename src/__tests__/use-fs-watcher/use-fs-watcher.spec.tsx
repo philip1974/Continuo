@@ -105,6 +105,30 @@ describe('useFsWatcher', () => {
     expect(onChange).toHaveBeenCalledWith('/a');
   });
 
+  // 性能:dir-changed 是全窗口广播,别的窗口工作区的目录变化也会送达;传入 root 后
+  // root 外路径在进入 debouncer 前丢弃,不再触发本 Explorer 无效 invalidation→listDir。
+  it('传入 root → 只对 root 自身及其内部路径回调 onChange,root 外事件丢弃', () => {
+    let dirCb: ((p: string) => void) | null = null;
+    installFs({
+      watchDir: vi.fn().mockResolvedValue({ ok: true }),
+      unwatchDir: vi.fn().mockResolvedValue({ ok: true }),
+      onDirChanged: (cb) => {
+        dirCb = cb;
+        return () => {};
+      },
+    });
+
+    const onChange = vi.fn();
+    renderHook(() => useFsWatcher(new Set(), onChange, '/ws'));
+
+    dirCb!('/ws');
+    dirCb!('/ws/src');
+    dirCb!('/other/src');
+    dirCb!('/wsx'); // 前缀相同但不在 root 内(路径边界)
+    vi.advanceTimersByTime(100);
+    expect(onChange.mock.calls.map((c) => c[0]).sort()).toEqual(['/ws', '/ws/src']);
+  });
+
   it('卸载 → 当前 expandedPaths 全 unwatchDir + onDirChanged unsub', () => {
     const unwatchDir = vi.fn().mockResolvedValue({ ok: true });
     const unsubFn = vi.fn();
