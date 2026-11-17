@@ -248,6 +248,36 @@ describe('FolderTree · 比较期间的并发', () => {
     expect(ids()).toEqual(['/work/a', '/work/new.md']);
   });
 
+  it('乱序完成:最早发起的 A 最慢、B 先完成后再发起 C → 最终应用 C(A 迟到被丢弃,C 不被误判为已取代)', async () => {
+    const { delta } = await mountLoaded();
+    const resolveA = deferNextList('/work');
+    act(() => hoisted.cb!('/work'));
+    await waitFor(() => expect(delta('/work')).toBe(1));
+    const resolveB = deferNextList('/work');
+    act(() => hoisted.cb!('/work'));
+    await waitFor(() => expect(delta('/work')).toBe(2));
+    // B(此时最新)先完成 → 应用
+    await resolveB([
+      { path: '/work/a', name: 'a', isDirectory: true },
+      { path: '/work/b.md', name: 'b.md', isDirectory: false },
+    ]);
+    await waitFor(() => expect(ids()).toEqual(['/work/a', '/work/b.md']));
+    const resolveC = deferNextList('/work');
+    act(() => hoisted.cb!('/work'));
+    await waitFor(() => expect(delta('/work')).toBe(3));
+    // A(最旧快照)迟到 → 必须丢弃
+    await resolveA([{ path: '/work/stale.md', name: 'stale.md', isDirectory: false }]);
+    await settle();
+    expect(ids()).toEqual(['/work/a', '/work/b.md']);
+    // C(最新)完成 → 必须应用
+    await resolveC([
+      { path: '/work/a', name: 'a', isDirectory: true },
+      { path: '/work/c.md', name: 'c.md', isDirectory: false },
+    ]);
+    await settle();
+    expect(ids()).toEqual(['/work/a', '/work/c.md']);
+  });
+
   it('比较期间折叠该目录 → 缓存照样更新,重新展开直接显示新子项(不再 listDir)', async () => {
     const { delta } = await mountLoaded(['/work/a']);
     const resolve = deferNextList('/work/a');

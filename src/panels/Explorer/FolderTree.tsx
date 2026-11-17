@@ -294,8 +294,10 @@ export function FolderTree({ root }: { root: string }) {
   const treeExpandedItems = expandBatchRef.current.latest ?? expandedItems;
 
   // 每目录刷新代际:同目录并发刷新只应用最后发起的那次 listDir(迟到的旧结果不覆盖新结果);
-  // 卸载时清空 → 在途结果全部作废。
+  // 卸载时清空 → 在途结果全部作废。编号取组件级单调序号(不按目录从 1 重新计数):完成后会删掉该目录
+  // 的登记,若按 `旧值 + 1` 取号,删号后新发起的刷新会与仍在途的更早请求撞号 → 旧快照被应用、新结果被丢。
   const refreshGenRef = useRef<Map<string, number>>(new Map());
+  const refreshSeqRef = useRef(0);
   useEffect(() => {
     const gens = refreshGenRef.current;
     return () => gens.clear();
@@ -316,7 +318,7 @@ export function FolderTree({ root }: { root: string }) {
     // 什么都不做;不同则直接用这次结果写缓存并 rebuild 一次(同 asyncDataLoader 的 loadChildrenIds,
     // 不二次 listDir)。listDir 失败 / 缓存已失效 → 走原 invalidate 路径(原语义)。
     const gens = refreshGenRef.current;
-    const gen = (gens.get(parentPath) ?? 0) + 1;
+    const gen = ++refreshSeqRef.current;
     gens.set(parentPath, gen);
     void (async () => {
       let entries: readonly FileEntry[] | null = null;
