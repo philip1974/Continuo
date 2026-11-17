@@ -544,6 +544,8 @@
 
 ## [explorer-path-utils(Explorer 跨平台路径 helper)](./explorer-path-utils/README.md)
 
+- [`containment-complexity.spec.ts`](./explorer-path-utils/containment-complexity.spec.ts)
+- [`containment-equivalence.spec.ts`](./explorer-path-utils/containment-equivalence.spec.ts)
 - [`path-utils.spec.ts`](./explorer-path-utils/path-utils.spec.ts)
 
 ## [ExplorerSidebar(VSCode 风固定侧边栏)](./explorer-sidebar/README.md)

@@ -5,9 +5,10 @@
 // 规则一改要同步四处易漂移 → 收敛到此单一来源。
 
 import {
+  containmentFold,
+  containmentKey,
   isBareWindowsDrive,
-  isSameOrInsidePath,
-  pathEquals,
+  someContainmentCandidate,
   trimTrailingSeparators,
 } from '@/lib/path-cross';
 
@@ -34,22 +35,46 @@ export function dirname(p: string): string {
 /**
  * 批量操作只处理最外层路径:剔除「祖先也在批次里」的后代项,重复路径只留首个,其余保持输入顺序。
  * 多选 A 与 A/B 时,复制会把 B 随 A 复制一次后再单独复制一次;移动先移 A 后 A/B 已不存在而中途
- * 报错(或先移 A/B 拆散层级);删除同理。祖先判断走 isSameOrInsidePath(分隔符无关 + 平台感知
- * 大小写)。O(n²),批次规模为用户手动多选,可接受。
+ * 报错(或先移 A/B 拆散层级);删除同理。祖先判断与 isSameOrInsidePath(分隔符无关 + 平台感知
+ * 大小写)精确等价,重复判定与 pathEquals 一致。
+ *
+ * perf:原为两两 isSameOrInsidePath 的 O(N²)(全选数千项时千万级比较)。改为按比较键分桶,每个
+ * 路径只查其 O(depth) 个候选祖先键:原判据「存在 j≠i,q_j 覆盖 p_i 且(非 pathEquals 或 j<i)」
+ * 在单桶内化为「桶最小下标 < i,或桶内存在与 p_i 不 pathEquals 的项」(pathEquals 是等价关系,
+ * 按其键计数)。等价性见 explorer-path-utils/containment-equivalence.spec.ts。
  */
 export function outermostPaths(paths: readonly string[]): string[] {
+  const fold = containmentFold();
+  // pathEquals 的等价键:Windows 运行时大小写折叠,否则原串(不 trim,与 pathEquals 一致)。
+  const eqKey = fold;
+  type Bucket = { minIndex: number; total: number; byEq: Map<string, number> };
+  const buckets = new Map<string, Bucket>();
+  for (let j = 0; j < paths.length; j++) {
+    const q = paths[j]!;
+    const key = containmentKey(q, fold);
+    let bucket = buckets.get(key);
+    if (!bucket) {
+      bucket = { minIndex: j, total: 0, byEq: new Map() };
+      buckets.set(key, bucket);
+    }
+    bucket.total += 1;
+    const e = eqKey(q);
+    bucket.byEq.set(e, (bucket.byEq.get(e) ?? 0) + 1);
+  }
   const out = new Array<string>(paths.length);
   let count = 0;
   for (let i = 0; i < paths.length; i++) {
     const p = paths[i]!;
-    let covered = false;
-    for (let j = 0; j < paths.length && !covered; j++) {
-      if (j === i) continue;
-      const q = paths[j]!;
-      // 严格祖先 → 剔;同一路径(重复项)→ 只保留首个
-      if (isSameOrInsidePath(q, p)) covered = !pathEquals(q, p) || j < i;
-    }
-    if (!covered) out[count++] = p;
+    const e = eqKey(p);
+    const coveredBy = (key: string): boolean => {
+      const bucket = buckets.get(key);
+      if (!bucket) return false;
+      if (bucket.minIndex < i) return true;
+      return bucket.total - (bucket.byEq.get(e) ?? 0) > 0;
+    };
+    // 键 '' (纯分隔符根 / 空串)覆盖一切路径
+    if (coveredBy('') || someContainmentCandidate(fold(p), coveredBy)) continue;
+    out[count++] = p;
   }
   out.length = count;
   return out;
