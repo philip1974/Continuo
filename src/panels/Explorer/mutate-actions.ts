@@ -5,6 +5,10 @@
 import type { FsApi } from '@/lib/fs/api';
 import { dirname, outermostPaths } from './path-utils';
 import { errorCodeOf } from '../../../electron/shared/error-message';
+import { allSettledWithConcurrency } from '@/lib/map-with-concurrency';
+
+// 批量删除的最大在途 IPC 数(trash 走 shell.trashItem,过高并发对回收站/磁盘无益)。
+const REMOVE_CONCURRENCY = 4;
 
 export interface MutateDeps {
   fs: Pick<FsApi, 'rename' | 'remove' | 'trash' | 'createFile' | 'createDir'>;
@@ -75,15 +79,21 @@ export async function removeItems(
   // 父目录与其子项同批(多选 A 与 A/B)→ 只删最外层:删 A 已连带 A/B,再删 A/B 必报
   // FS_NOT_FOUND(同 batch-transfer 的嵌套选择族)。被剔的后代不计入 failures,也不进 removed
   //(其祖先删成功则随祖先清理,删失败则后代同样没删)。
-  for (const p of outermostPaths(paths)) {
+  // perf:此前逐项 await(N 次串行 IPC 往返 + 串行 shell.trashItem)。outermostPaths 已保证互不
+  // 包含(同一实体不会被两项同时删),改为有界并发;结果按下标记录,汇总/刷新顺序与串行一致。
+  const targets = outermostPaths(paths);
+  const outcomes = await allSettledWithConcurrency(targets, REMOVE_CONCURRENCY, (p) =>
+    useTrash ? deps.fs.trash(p) : deps.fs.remove(p),
+  );
+  for (let i = 0; i < targets.length; i++) {
+    const p = targets[i]!;
+    const outcome = outcomes[i]!;
     // a11y(A137 同族):trash/remove 的 IPC reject(抛错而非返回 {ok:false})此前未捕获 →
     // removeItems 整体 reject;而调用点(Explorer onTrash)是 fire-and-forget async 不被
     // await → unhandled rejection + 该项不计入 failures → 批量删除错误反馈漏报。归类到
     // failures(镜像 !r.ok 分支),removeItems 自此恒返回 RemoveResult 不 reject。
-    let r;
-    try {
-      r = useTrash ? await deps.fs.trash(p) : await deps.fs.remove(p);
-    } catch (err) {
+    if (outcome.status === 'rejected') {
+      const err = outcome.reason;
       const code = errorCodeOf(err);
       failures[failureCount++] = {
         path: p,
@@ -92,6 +102,7 @@ export async function removeItems(
       };
       continue;
     }
+    const r = outcome.value;
     if (!r.ok) {
       failures[failureCount++] = {
         path: p,
