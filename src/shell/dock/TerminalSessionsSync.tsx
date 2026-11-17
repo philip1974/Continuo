@@ -57,11 +57,31 @@ export function TerminalSessionsSync(): null {
     // 后旧项目 terminal 隐藏、切回旧根又重现(PTY 在 main 仍活,这里只是视图过滤)。(R12)
     let rawOwned: readonly TerminalSession[] = [];
 
+    // 按 owner 过滤 IPC 快照。ambiguousDrop:本轮有项因 wrong-owner 以外的原因被丢弃(shape-invalid /
+    // missing-owner / not-object / over-capacity)—— 被丢的可能正是本窗口仍存活的 session,过滤结果里缺失
+    // 不能当作真删除。wrong-owner 是他窗口 session,确定不属于本窗口,不算。
+    const filterOwned = (
+      sessions: readonly unknown[],
+    ): { owned: readonly TerminalSession[]; ambiguousDrop: boolean } => {
+      let ambiguousDrop = false;
+      const owned = filterByOwnerWindow(sessions, winId, {
+        onDrop: (sessionId, reason) => {
+          if (reason !== 'wrong-owner') ambiguousDrop = true;
+          warnOnDrop(sessionId, reason);
+        },
+      });
+      return { owned, ambiguousDrop };
+    };
+
     // rawOwned 每次被权威快照替换后调用:剪掉 reconciler 首次出现记录里已真正消失的 session
     // (基于 workspace 过滤前的 rawOwned,workspace 隐藏的仍保留,见 pruneReconcilerSeenSessions)。
-    const setRawOwned = (next: readonly TerminalSession[]): void => {
-      rawOwned = next;
-      pruneReconcilerSeenSessions(next);
+    // 本轮有歧义丢弃时跳过剪除:否则该 session 下次以有效形态重现会被当首次出现而 setActive 抢焦。
+    const setRawOwned = ({
+      owned,
+      ambiguousDrop,
+    }: ReturnType<typeof filterOwned>): void => {
+      rawOwned = owned;
+      if (!ambiguousDrop) pruneReconcilerSeenSessions(owned);
     };
 
     const applyWorkspaceFilter = (): void => {
@@ -82,11 +102,7 @@ export function TerminalSessionsSync(): null {
           useTerminalStore.getState().markHydrated(); // 初始拉取已失败,不再让 Splash 等它
           return;
         }
-        setRawOwned(
-          filterByOwnerWindow(r.data.sessions, winId, {
-            onDrop: warnOnDrop,
-          }),
-        );
+        setRawOwned(filterOwned(r.data.sessions));
         applyWorkspaceFilter();
       })
       .catch(() => {
@@ -110,7 +126,7 @@ export function TerminalSessionsSync(): null {
         return;
       }
       sawPush = true;
-      setRawOwned(filterByOwnerWindow(snapshot, winId, { onDrop: warnOnDrop }));
+      setRawOwned(filterOwned(snapshot));
       applyWorkspaceFilter();
     });
 
