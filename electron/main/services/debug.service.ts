@@ -1786,19 +1786,22 @@ export class DebugService {
       await child.connectToServer();
 
       await this.initializeClient(child);
-      // 每个 source 发一次完整集合(逐个断点发会让后一个覆盖前一个)。
-      for (const [source, records] of breakpointsBySource(runtime.breakpoints)) {
-        rememberBreakpointReports(
-          runtime,
-          child,
-          records,
-          await child.sendRequest(
+      // 每个 source 发一次完整集合(逐个断点发会让后一个覆盖前一个)。不同 source 并发发出:子目标在
+      // configurationDone 之前一直停住,串行会让每个 child 付 K 次往返。全部成功后再按 source 原顺序登记
+      // 回报;任一失败进 catch 回滚(forgetClient 清掉该 child 的全部回报,与串行时一致)。
+      const groups = [...breakpointsBySource(runtime.breakpoints)];
+      const responses = await Promise.all(
+        groups.map(([source, records]) =>
+          child.sendRequest(
             'setBreakpoints',
             setBreakpointsArgs(runtime.adapterPaths.get(source) ?? source, records),
             this.requestTimeoutMs,
           ),
-        );
-      }
+        ),
+      );
+      groups.forEach(([, records], i) => {
+        rememberBreakpointReports(runtime, child, records, responses[i]!);
+      });
       await child.sendRequest('configurationDone', {}, this.requestTimeoutMs);
     } catch (err) {
       // child 没建起来:摘掉它,activeClient 保持原样(父 client 仍可用)。若在连接前就切过去,
