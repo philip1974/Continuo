@@ -43,6 +43,7 @@ export const RESTORE_CHECK_CONCURRENCY = 8;
 export async function pickWindowsToRestore(
   data: ExplorerPayload,
   isExistingDir: (path: string) => Promise<boolean> | boolean,
+  isCancelled: () => boolean = () => false,
 ): Promise<RestoreEntry[]> {
   // 默认只开主窗;显式 true 才恢复其他 window (session-restore opt-in)
   if (data.restoreAllWindowsOnLaunch !== true) return EMPTY_RESTORE_ENTRIES;
@@ -86,6 +87,9 @@ export async function pickWindowsToRestore(
     if (batch.length === 0) break;
     checks += batch.length;
     const hits = await Promise.all(batch.map((c) => isExistingDir(c.ws)));
+    // 性能:每批返回后复核取消 —— 退出 / 全部关窗后不再发后续批次 stat(慢盘上在途 stat 占 libuv
+    // 线程池,会拖慢退出时 explorer.json 落盘)。取消后上层不建任何窗,直接返回空即可。
+    if (isCancelled()) return EMPTY_RESTORE_ENTRIES;
     for (let k = 0; k < batch.length; k += 1) {
       if (!hits[k]) continue;
       const c = batch[k]!;
@@ -115,7 +119,7 @@ export async function restoreStartupWindows(
 ): Promise<void> {
   const data = await load();
   if (!data || isCancelled()) return;
-  for (const entry of await pickWindowsToRestore(data, isExistingDir)) {
+  for (const entry of await pickWindowsToRestore(data, isExistingDir, isCancelled)) {
     if (isCancelled()) return;
     createWindow(entry);
   }

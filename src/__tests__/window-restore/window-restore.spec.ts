@@ -338,6 +338,30 @@ describe('restoreStartupWindows · 启动恢复可取消(退出 / 全部关窗�
     expect(create).not.toHaveBeenCalled();
   });
 
+  it('首批目录判定在途时取消 → 不再发后续批次 stat(不占 libuv 线程池拖慢退出落盘)', async () => {
+    const many = snap(
+      Array.from({ length: 30 }, (_, i) =>
+        win({ windowSeq: i + 1, workspace: { root: `/p${i + 1}` } }),
+      ),
+    );
+    const settles: Array<() => void> = [];
+    // 第 1 批挂起(模拟慢盘);若实现仍发后续批次,它们立即返回(让测试以断言失败而非超时)
+    const isDir = vi.fn(async () => {
+      if (cancelled) return true;
+      return new Promise<boolean>((r) => { settles.push(() => r(true)); });
+    });
+    let cancelled = false;
+    const create = vi.fn();
+    const p = restoreStartupWindows(async () => many, isDir, create, () => cancelled);
+    for (let k = 0; k < 10 && isDir.mock.calls.length === 0; k += 1) await Promise.resolve();
+    expect(isDir).toHaveBeenCalledTimes(RESTORE_CHECK_CONCURRENCY); // 第 1 批在途
+    cancelled = true;
+    for (const settle of settles.splice(0)) settle();
+    await p;
+    expect(isDir).toHaveBeenCalledTimes(RESTORE_CHECK_CONCURRENCY); // 未发第 2 批
+    expect(create).not.toHaveBeenCalled();
+  });
+
   it('读 explorer.json 在途时取消 → 不判定目录、不建窗', async () => {
     let cancelled = false;
     const isDir = vi.fn(allDirs);
