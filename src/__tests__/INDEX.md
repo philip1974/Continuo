@@ -1156,6 +1156,10 @@
 
 - [`buffer-capacity.spec.ts`](./terminal-buffer-capacity/buffer-capacity.spec.ts)
 
+## [terminal-bundled-font(终端内置 Nerd Font 以 WOFF2 加载)](./terminal-bundled-font/README.md)
+
+- [`fonts-css.spec.ts`](./terminal-bundled-font/fonts-css.spec.ts)
+
 ## [terminal-controller-token-redaction](./terminal-controller-token-redaction/README.md)
 
 - [`controller-token-redaction.spec.ts`](./terminal-controller-token-redaction/controller-token-redaction.spec.ts)
