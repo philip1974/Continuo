@@ -20,8 +20,7 @@ import {
   ensureWindowEntry,
   loadExplorer,
   MAX_PERSISTED_WINDOW_SEGMENTS,
-  migrateExplorerFileToV3,
-  pruneExplorerFileWindows,
+  prepareExplorerFileForBoot,
   pruneLRUClosed,
 } from './persistence';
 import { EXPLORER_FILE_NAME } from '../shared/explorer-persistence-schema';
@@ -1230,14 +1229,14 @@ app.whenReady().then(async () => {
   const userData = app.getPath('userData');
   const explorerFile = path.join(userData, EXPLORER_FILE_NAME);
   const legacyLayoutFile = path.join(userData, 'layout.json');
-  await migrateExplorerFileToV3(explorerFile, legacyLayoutFile);
-  // 既有超长 explorer.json(LRU 上限曾为 Infinity)启动时收敛一次;失败只告警,不阻断启动。
-  await pruneExplorerFileWindows(explorerFile, LRU_MAX_CLOSED, lruProtectedSeqs()).catch((err) =>
-    console.warn('[boot] explorer window segment prune skipped', err),
-  );
-
-  // topic 16 i18n: 必须先 hydrate settings.json，buildAppMenu 才能拿到正确 locale 的 label
-  await loadSettings();
+  // explorer.json v3 迁移 + 既有超长文件(LRU 上限曾为 Infinity)段数收敛:同一次锁内共用一次加载;
+  // 收敛失败只告警,不阻断启动。
+  // topic 16 i18n: 必须先 hydrate settings.json，buildAppMenu 才能拿到正确 locale 的 label。
+  // 性能:两者读写不同文件、互无依赖 → 并行(loadSettings 永不抛)。
+  await Promise.all([
+    prepareExplorerFileForBoot(explorerFile, legacyLayoutFile, LRU_MAX_CLOSED, lruProtectedSeqs()),
+    loadSettings(),
+  ]);
 
   // E2E 跑 Playwright 时,Electron 默认菜单的 CmdOrCtrl+P 绑定 Print 会先吞
   // ⌘P,导致 Quick Open 收不到 keydown。e2e 显式禁用菜单(只影响测试模式)。

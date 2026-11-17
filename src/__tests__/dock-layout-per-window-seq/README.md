@@ -13,7 +13,7 @@ T7 LRU metadata is bounded and deterministic: `windows[]` is capped at `MAX_PERS
 T8 window sequence service exposes allocate/read/write helpers;
 T9 `layout:read` resolves the sender window context;
 T10 `layout:write` writes only the sender window layout;
-T11 explorer file migration handles empty, v2-only, layout-only, and mixed paths;
+T11 explorer file migration handles empty, v2-only, layout-only, and mixed paths; at boot migration and the segment-cap prune share one load under one file-mutex hold (`prepareExplorerFileForBoot`): a regular v3 boot reads explorer.json exactly once and writes nothing;
 T12 renderer v3 persistence sends the correct window-scoped payload;
 T13 `explorer:write` cannot overwrite another window entry;
 T14 window close flush persists the last known layout;
