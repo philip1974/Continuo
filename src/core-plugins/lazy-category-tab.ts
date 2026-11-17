@@ -5,8 +5,16 @@ import { lazy } from 'react';
 import type { ReactNode } from 'react';
 import { lazyPanel } from '@/lib/lazy-panel';
 
+/**
+ * CategoryTabContent chunk 的唯一 import 入口。SettingsPanelPlugin 的 lazy 工厂复用它与设置外壳并行预取
+ * (同一 specifier → 同一模块实例,模块缓存去重)。
+ */
+export function loadCategoryTabContent() {
+  return import('@/plugins/settings/CategoryTabContent');
+}
+
 const CategoryTabContent = lazy(() =>
-  import('@/plugins/settings/CategoryTabContent').then((m) => ({
+  loadCategoryTabContent().then((m) => ({
     default: m.CategoryTabContent,
   })),
 );

@@ -349,6 +349,7 @@
 ## [core-plugins(内置插件:editor / terminal / output)](./core-plugins/README.md)
 
 - [`core-plugins.spec.ts`](./core-plugins/core-plugins.spec.ts)
+- [`settings-chunk-parallel.spec.tsx`](./core-plugins/settings-chunk-parallel.spec.tsx)
 
 ## [CreateInput(Explorer 新建文件 / 文件夹 sticky bar)](./create-input/README.md)
 

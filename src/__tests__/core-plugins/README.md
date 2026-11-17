@@ -43,3 +43,6 @@
   共用 `src/core-plugins/lazy-category-tab.ts` 一个 lazy chunk,Plugins tab 内容独立 chunk;模式同 Keybindings
   (`lazy()` + 模块级 `lazyPanel`,Suspense fallback=null,首次打开 tab 一帧空白后显示内容)。
 - 各 tab 的 `render()` 多次调用返回同一组件类型。
+- 设置首开不走两级 chunk 瀑布:SettingsPanel 外壳的 lazy 工厂同时发起 CategoryTabContent 加载(复用
+  `lazy-category-tab` 的 `loadCategoryTabContent`,同一模块实例);注册期不加载;分类预取不阻塞外壳、失败不影响
+  外壳加载(`settings-chunk-parallel.spec.tsx`)。
