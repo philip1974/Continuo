@@ -136,3 +136,27 @@ export function waitForWorkspaceHydrated(): Promise<void> {
     }
   });
 }
+
+/**
+ * 等待 workspace root 已按持久化恢复(rootRestored || hydrated;hydrated ⇒ rootRestored)。
+ * 性能(冷启动关键路径):只依赖 root 的消费方(新建终端 cwd / 向 main 推 window→root 映射)等它即可,
+ * 不必像 waitForWorkspaceHydrated 那样再等编辑器 tab 并发读盘(最多 256 tab)。markRootRestored 在
+ * initExplorerPersistence 读成功/失败/无文件时都会调,故此 Promise 总会 settle。
+ */
+export function waitForWorkspaceRootRestored(): Promise<void> {
+  const ready = (s: WorkspaceState) => s.rootRestored || s.hydrated;
+  if (ready(useWorkspaceStore.getState())) return Promise.resolve();
+  return new Promise((resolve) => {
+    const unsub = useWorkspaceStore.subscribe((s) => {
+      if (ready(s)) {
+        unsub();
+        resolve();
+      }
+    });
+    // 订阅后再查一次,弥合 getState 与 subscribe 之间的瞬时翻转(同 waitForWorkspaceHydrated)。
+    if (ready(useWorkspaceStore.getState())) {
+      unsub();
+      resolve();
+    }
+  });
+}
