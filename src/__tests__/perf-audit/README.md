@@ -139,3 +139,43 @@
 **修复**:`fuzzy.ts` 抽 `fuzzyScoreBothLower`(q 与 t 均已 lower)+ `fuzzyFilter` 加可选 `getStrLower`(返回预 lower 的 target)。`QuickOpenFile` 加 `relPathLower` 字段(walk-files scan 时算一次),QuickOpenModal 传 `getStrLower=(f)=>f.relPathLower`。query 仍每批 lower 一次,打分/排序逐字节一致(`relPath.toLowerCase()` 与 `target.toLowerCase()` 同操作)。每按键 O(候选总长) lowercasing → 0(scan 时一次)。
 
 **契约不变量**(`command-palette/fuzzy.spec.ts` perf P16:对多种混合大小写 query/target,有无 getStrLower 结果排序完全相同)。
+
+## E1 — co-app 跳行处动态 import scrollToLine(CodeMirror 不进 main-app 启动包)
+
+**位置**:`src/plugins/co-app.ts` `editor.openFile`。
+
+**问题**:co-app 在 main-app 启动路径上,静态 import `scrollToLine`(运行时依赖 `@codemirror/view`)把整套 CodeMirror 拖进启动包,破坏 Editor 懒加载边界。
+
+**修复**:拿到 view 后才 `await import('@/panels/Editor/scrollToLine')`(此时 Editor chunk 必已加载)。openFile 本就 async,返回值/时序契约不变。
+
+**契约不变量**(`editor-lazy-boundary.spec.ts`:co-app 不静态 import scrollToLine / `@codemirror/*`;`sdk-editor-namespace/*` 行号跳转契约不变)。
+
+## E2 — EditorPanel 内两套编辑引擎各自 lazy
+
+**位置**:`src/panels/Editor/EditorPanel.tsx`。
+
+**问题**:EditorPanel 静态 import CodeEditor(CodeMirror + 语言包)与 MilkdownEditor(Crepe/ProseMirror/katex),Editor chunk 同时含两套引擎;Welcome / 只开代码文件也要下载解析 Milkdown。
+
+**修复**:两引擎各 `React.lazy`,body 外包 `<Suspense key={engine} fallback={null}>`(engine = welcome/code/milkdown)—— 切换引擎时边界整体重挂,旧编辑器完整卸载,与原 key 重挂语义一致。viewRefs 仍由 CodeEditor 挂载 effect 注册,`waitForViewRef` 不变。语言包按扩展名动态加载**未做**(pickLanguage 同步导出且被测试,改异步需 Compartment 重配,收益/风险不匹配)。
+
+**契约不变量**(`editor-engine-lazy.spec.tsx`:Welcome 不加载引擎;代码文件只加载 CodeEditor;Markdown edit 再加载 Milkdown;引擎已加载后切换同步渲染)。
+
+## E3 — EditorHeader memo
+
+**位置**:`src/panels/Editor/EditorHeader.tsx`。
+
+**问题**:EditorPanel 每按键重渲,非 memo 的 EditorHeader 被连带调用,每键重建全部 TabNavItem 与闭包(O(tab 数))。
+
+**修复**:`memo` 包裹。唯一 prop `onCloseRequest` 为父级稳定 useCallback,所需 store 状态全走自身窄订阅。
+
+**契约不变量**(`editor-header-memo.spec.tsx`:父级重渲 props 不变 → 不重渲;自身订阅的 chrome 变化 → 仍更新)。
+
+## E4 — debug 装饰同步按相关切片门控
+
+**位置**:`src/panels/Editor/decorations/debug-decoration-sync.ts`。
+
+**问题**:宽订阅 editor store + debug store,每按键 / 变量加载都对每个 view 线性找 tab + 扫全部断点做路径比较(O(T²+T·B)),签名缓存只省掉最后的 dispatch。
+
+**修复**:订阅回调比较前后状态 —— editor 侧仅 `viewRefs` / `chromeVersion`(tab 增删/改名/改路径都经 action bump),debug 侧仅 `activeSessionId` 或某 session 的 `breakpoints` / `stopped` 引用变化时同步。正文变化后的装饰由 StateField 在 `docChanged` 时按行号重建,不依赖 store 通知。
+
+**契约不变量**(`debug-decoration-sync-gating.spec.tsx`:按键 / 无关 debug 更新零扫描;停点移动、断点变更、新开 view、改路径、关闭 tab 仍同步;`51-debug-breakpoint-ui/sync.spec.tsx` 全部保持)。

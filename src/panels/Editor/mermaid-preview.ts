@@ -153,17 +153,31 @@ export function registerMermaidRoot(root: ParentNode): () => void {
   };
 }
 
-function codeBlockDoc(block: Element): string | null {
+function codeBlockView(block: Element): EditorView | null {
   const editorDom = block.querySelector<HTMLElement>('.cm-editor');
-  const view = editorDom ? EditorView.findFromDOM(editorDom) : null;
+  return editorDom ? EditorView.findFromDOM(editorDom) : null;
+}
+
+function codeBlockDoc(block: Element): string | null {
+  const view = codeBlockView(block);
   return view ? view.state.doc.toString() : null;
+}
+
+// perf E6:每次按键都要对已登记编辑器的全部代码块反查一遍(防抖之前)。先比长度(Text.length O(1)),
+// 不等直接排除,只有长度相同的块才 toString() 逐字比较 —— 不再每键复制所有代码块全文。
+// 判定结果与「codeBlockDoc(block) === content」逐字节等价。
+function codeBlockMatches(block: Element, content: string): boolean {
+  const view = codeBlockView(block);
+  if (!view) return false;
+  const doc = view.state.doc;
+  return doc.length === content.length && doc.toString() === content;
 }
 
 function findCodeBlock(content: string): Element | null {
   let found: Element | null = null;
   for (const root of roots) {
     for (const block of root.querySelectorAll('.milkdown-code-block')) {
-      if (codeBlockDoc(block) !== content) continue;
+      if (!codeBlockMatches(block, content)) continue;
       if (found) return null;
       found = block;
     }
@@ -215,7 +229,7 @@ export function renderMermaidPreview(
   const timer = setTimeout(() => {
     pendingEdits.delete(block);
     // 停手期间块又变了(被清空等,且没能反查到它来取消)→ 这一版作废
-    if (codeBlockDoc(block) === content) render();
+    if (codeBlockMatches(block, content)) render();
   }, TYPING_SETTLE_MS);
   pendingEdits.set(block, { timer, code: content });
   return undefined;

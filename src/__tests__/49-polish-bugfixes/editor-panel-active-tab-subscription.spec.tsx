@@ -33,6 +33,14 @@ vi.mock('../../lib/co-api', () => ({
 }));
 vi.mock('../../notifications/notify', () => ({ notify: { error: vi.fn() } }));
 
+// perf E2:EditorPanel 内编辑引擎 lazy 加载 → render 后须等引擎模块解析、Suspense 重试完成再断言。
+async function flushLazyEditors() {
+  await act(async () => {
+    await import('../../panels/Editor/CodeEditor');
+    await import('../../panels/Editor/MilkdownEditor');
+  });
+}
+
 function txt(id: string, content: string, originalContent = content) {
   return {
     id,
@@ -82,13 +90,14 @@ describe('打磨 R27 — EditorPanel 只订阅 active tab', () => {
     expect(src).not.toContain('{activeTab && isMarkdownPath(activeTab.filePath) && (');
   });
 
-  it('非 active tab content 变化(dirty 不变)→ EditorPanel 不重渲', () => {
+  it('非 active tab content 变化(dirty 不变)→ EditorPanel 不重渲', async () => {
     const onRender = vi.fn();
     render(
       <Profiler id="ep" onRender={onRender}>
         <EditorPanel />
       </Profiler>,
     );
+    await flushLazyEditors();
     const base = onRender.mock.calls.length;
     expect(base).toBeGreaterThan(0);
 
@@ -100,8 +109,9 @@ describe('打磨 R27 — EditorPanel 只订阅 active tab', () => {
     expect(onRender.mock.calls.length).toBe(base); // 无新 commit
   });
 
-  it('active tab content 变化 → 重渲 + 主体更新', () => {
+  it('active tab content 变化 → 重渲 + 主体更新', async () => {
     const { getByTestId } = render(<EditorPanel />);
+    await flushLazyEditors();
     expect(getByTestId('code-editor').textContent).toBe('aaa');
 
     act(() => {

@@ -791,6 +791,10 @@
 ## [perf-audit(性能优化审计 · 与 codex 协作)](./perf-audit/README.md)
 
 - [`code-editor-echo-skip.spec.tsx`](./perf-audit/code-editor-echo-skip.spec.tsx)
+- [`debug-decoration-sync-gating.spec.tsx`](./perf-audit/debug-decoration-sync-gating.spec.tsx)
+- [`editor-engine-lazy.spec.tsx`](./perf-audit/editor-engine-lazy.spec.tsx)
+- [`editor-header-memo.spec.tsx`](./perf-audit/editor-header-memo.spec.tsx)
+- [`editor-lazy-boundary.spec.ts`](./perf-audit/editor-lazy-boundary.spec.ts)
 - [`terminal-data-demux.spec.ts`](./perf-audit/terminal-data-demux.spec.ts)
 - [`terminal-resize-gating.spec.ts`](./perf-audit/terminal-resize-gating.spec.ts)
 
