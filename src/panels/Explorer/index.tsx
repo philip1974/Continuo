@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { EmptyWorkspace } from './EmptyWorkspace';
 import { FolderTree } from './FolderTree';
@@ -10,8 +11,12 @@ import { FolderTree } from './FolderTree';
 // key={root}:headless-tree 的 useTree 内部状态不响应 config.rootItemId 变,
 // 切换文件夹(string A → string B)时若沿用同一 FolderTree React 实例,
 // tree 状态卡在旧 root。强制 key 让 root 一变就 unmount/remount。
-export function Explorer() {
+//
+// perf:memo —— Explorer 无 props、自身只订阅 root。父级 ExplorerSidebar 订阅 sidebarWidth,
+// 拖宽度时每个 mousemove 都重渲父级;不 memo 则级联重渲 FolderTree(useTree setConfig、
+// virtualizer、全部可见 FileRow 与每行 Radix ContextMenu)。
+export const Explorer = memo(function Explorer() {
   const root = useWorkspaceStore((s) => s.root);
   if (!root) return <EmptyWorkspace />;
   return <FolderTree key={root} root={root} />;
-}
+});

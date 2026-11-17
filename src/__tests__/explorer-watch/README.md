@@ -96,3 +96,10 @@ macOS/Win 根目录 recursive watcher 对任意深度变更都上报其所在目
 未做:刷新后清理已消失子项的 `itemData` / 被删子目录的 `childrenIds`。焦点 / 选中等状态可能仍引用
 被删 id,`getFocusedItem` 对其返回现建实例,而本树未配 `createLoadingItemData` → 清掉 itemData 后
 `isItemFolder` 读 `null.isDirectory` 抛错;保留缓存是这些陈旧引用安全的前提。
+
+## 侧栏隐藏期间延后刷新(perf,`folder-tree-hidden-defer.spec.tsx`)
+
+- ExplorerSidebar 关闭时文件树保活(隐藏),watcher 不卸载;`ExplorerVisibleContext=false` 期间
+  dir-changed 不 invalidate/listDir,只记脏目录(从未加载子项的非 root 目录直接忽略)
+- 再次显示时对每个脏目录各刷新一次;显隐本身不触发 unwatchDir / listDir
+- 隐藏前的滚动位置在再次显示时恢复

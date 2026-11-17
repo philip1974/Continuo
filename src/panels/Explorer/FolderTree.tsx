@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { hasFiles } from '@/lib/window-drop'; // 边界(E225):共享早停 hasFiles
 import { basenamePreserveTrailing, dirname } from './path-utils';
 import { joinPath, stripRootPrefix, isSameOrInsidePath } from '@/lib/path-cross';
@@ -16,7 +16,7 @@ import { CreateInput } from './CreateInput';
 import { DropOverlay } from './DropOverlay';
 import { ExplorerHeader } from './ExplorerHeader';
 import { createTreeConfig } from './tree-config';
-import { DEFAULT_INDENT, FILE_ROW_HEIGHT, FileRow } from './FileRow';
+import { DEFAULT_INDENT, FILE_ROW_HEIGHT, FileRow, readFileRowState } from './FileRow';
 import { createNewDir, createNewFile, renameItem, trashItemsAndCleanup } from './mutate-actions';
 import { resolveDropTarget, type DropTargetEntry } from './drop-handlers';
 import {
@@ -26,6 +26,7 @@ import {
 } from './batch-transfer';
 
 import { useFsWatcher } from './hooks/useFsWatcher';
+import { ExplorerVisibleContext } from './visibility';
 import { useEditorFile } from '@/panels/Editor/useEditorFile';
 import { useEditorStore } from '@/stores/editor.store';
 import { useExplorerStore } from '@/stores/explorer.store';
@@ -59,6 +60,21 @@ const EMPTY_PATH_LIST: string[] = [];
 // (`c:\repo`)仅大小写不同时被判 out-of-root → 树恢复展开错乱/旧展开项滞留。
 function isWithinRoot(path: string, root: string): boolean {
   return isSameOrInsidePath(root, path);
+}
+
+/**
+ * perf:子项从未加载过的非 root 目录无缓存可失效。macOS/Win 根目录 recursive watcher 对任意深度变更
+ * 都上报其所在目录(含 .git / node_modules 等树上不显示的目录);headless-tree 的 getItemInstance 对
+ * 未知 id 现建临时实例,invalidateChildrenIds 仍会 listDir + 写缓存 + rebuildTree。未加载目录日后展开
+ * 时自会按需加载;加载中的目录 invalidate 本就只复用在途加载。已加载(含已折叠但仍缓存)的目录与 root
+ * 需要刷新。
+ */
+function isUnloadedNonRootDir(t: TreeInstance<FileEntry> | null, path: string): boolean {
+  return (
+    t !== null &&
+    path !== t.getConfig().rootItemId &&
+    t.getDataRef<AsyncDataLoaderDataRef>().current.childrenIds?.[path] === undefined
+  );
 }
 
 export function joinRelativePaths(root: string, paths: readonly string[]): string {
@@ -267,18 +283,8 @@ export function FolderTree({ root }: { root: string }) {
 
   const refreshParent = useCallback((parentPath: string) => {
     const t = treeRef.current;
-    // perf:子项从未加载过的非 root 目录无缓存可失效,跳过。macOS/Win 根目录 recursive watcher 对任意
-    // 深度变更都上报其所在目录(含 .git / node_modules 等树上不显示的目录);headless-tree 的
-    // getItemInstance 对未知 id 现建临时实例,invalidateChildrenIds 仍会 listDir + 写缓存 +
-    // rebuildTree。未加载目录日后展开时自会按需加载;加载中的目录 invalidate 本就只复用在途加载。
-    // 已加载(含已折叠但仍缓存)的目录照旧失效;root 永远刷新。
-    if (
-      t &&
-      parentPath !== t.getConfig().rootItemId &&
-      t.getDataRef<AsyncDataLoaderDataRef>().current.childrenIds?.[parentPath] === undefined
-    ) {
-      return;
-    }
+    // perf:子项从未加载过的非 root 目录跳过(见 isUnloadedNonRootDir);root 永远刷新。
+    if (isUnloadedNonRootDir(t, parentPath)) return;
     try {
       const parentItem = t?.getItemInstance(parentPath);
       parentItem?.invalidateChildrenIds();
@@ -440,15 +446,41 @@ export function FolderTree({ root }: { root: string }) {
   // listDir 之后、批末之前的变化永久漏掉。选派生而非批末补偿 invalidation:后者要对所有新目录
   // 再 listDir 一遍(IO 翻倍),且补偿前的窗口仍不可观察。批外两者同一引用,行为不变。
   const expandedPaths = useMemo(() => new Set(treeExpandedItems), [treeExpandedItems]);
+  // perf(侧栏保活):ExplorerSidebar 关闭时文件树保持挂载但隐藏,watcher 仍在(树不陈旧)。隐藏期间
+  // 用户看不见,dir-changed 不立即 invalidate→listDir,只记脏目录(未加载的目录照 refreshParent 规则
+  // 直接忽略),再次显示时批量刷新。集合按路径去重,上限即已加载目录数。
+  const visible = useContext(ExplorerVisibleContext);
+  const dirtyWhileHiddenRef = useRef<Set<string>>(new Set());
   useFsWatcher(
     expandedPaths,
     (changedPath) => {
+      if (!visible) {
+        if (!isUnloadedNonRootDir(treeRef.current, changedPath)) {
+          dirtyWhileHiddenRef.current.add(changedPath);
+        }
+        return;
+      }
       refreshParent(changedPath);
     },
     root,
   );
+  useEffect(() => {
+    if (!visible) return;
+    const dirty = dirtyWhileHiddenRef.current;
+    if (dirty.size === 0) return;
+    dirtyWhileHiddenRef.current = new Set();
+    for (const p of dirty) refreshParent(p);
+  }, [visible, refreshParent]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  // 侧栏保活:隐藏(display:none)期间滚动容器没有布局盒,浏览器可能把 scrollTop 归零;记下可见时
+  // 最后的滚动位置,再次显示时(绘制前)恢复。
+  const lastScrollTopRef = useRef(0);
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!visible || !el) return;
+    if (el.scrollTop !== lastScrollTopRef.current) el.scrollTop = lastScrollTopRef.current;
+  }, [visible]);
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => scrollRef.current,
@@ -715,7 +747,13 @@ export function FolderTree({ root }: { root: string }) {
         hasClipboard={hasClipboard}
         pluginItems={pluginMenuItems}
       >
-        <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto bg-canvas">
+        <div
+          ref={scrollRef}
+          className="min-h-0 flex-1 overflow-auto bg-canvas"
+          onScroll={(e) => {
+            if (visible) lastScrollTopRef.current = e.currentTarget.scrollTop;
+          }}
+        >
           {items.length === 0 ? (
             <div className="p-4 text-xs text-fg-dim">{tt('panels.explorer.loading_or_empty')}</div>
           ) : (
@@ -736,13 +774,8 @@ export function FolderTree({ root }: { root: string }) {
                   <FileRow
                     key={item.getId()}
                     item={item}
-                    style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      width: '100%',
-                      transform: `translateY(${vRow.start}px)`,
-                    }}
+                    {...readFileRowState(item, tree)}
+                    start={vRow.start}
                     selectedPaths={selectedPaths}
                     rootPath={root}
                     contextActions={contextActions}
