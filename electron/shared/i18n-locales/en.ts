@@ -282,6 +282,8 @@ export const en = {
   'panels.editor.disk_changed_body': 'was modified outside the editor since it was opened or last saved. Saving will overwrite those changes.',
   'panels.editor.disk_changed_confirm': 'Overwrite',
   'panels.editor.milkdownUnsafe.banner': 'Opened in Source mode to preserve frontmatter and wiki-links.',
+  'panels.editor.engine_load_failed': 'The editor failed to load.',
+  'panels.editor.engine_load_retry': 'Retry',
   'panels.editor.milkdownUnsafe.modalTitle': 'Open unsafe Markdown in Edit mode?',
   'panels.editor.milkdownUnsafe.modalBody': 'This file contains frontmatter or wiki-links that Milkdown may rewrite. Source mode preserves the file byte-for-byte.',
   'panels.editor.milkdownUnsafe.switchAnyway': 'Switch anyway',

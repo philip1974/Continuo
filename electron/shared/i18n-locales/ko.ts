@@ -268,6 +268,8 @@ export const ko: Record<TranslationKey, string> = {
   'panels.editor.disk_changed_body': '파일이 열리거나 마지막으로 저장된 후 외부에서 수정되었습니다. 저장하면 해당 변경 사항을 덮어씁니다.',
   'panels.editor.disk_changed_confirm': '덮어쓰기',
   'panels.editor.milkdownUnsafe.banner': 'frontmatter와 wiki-link를 보존하기 위해 Source 모드로 열었습니다.',
+  'panels.editor.engine_load_failed': '편집기를 불러오지 못했습니다.',
+  'panels.editor.engine_load_retry': '다시 시도',
   'panels.editor.milkdownUnsafe.modalTitle': '안전하지 않은 Markdown을 Edit 모드로 여시겠습니까?',
   'panels.editor.milkdownUnsafe.modalBody': '이 파일에는 Milkdown이 다시 쓸 수 있는 frontmatter 또는 wiki-link가 있습니다. Source 모드는 파일 내용을 바이트 단위로 보존합니다.',
   'panels.editor.milkdownUnsafe.switchAnyway': '그래도 전환',

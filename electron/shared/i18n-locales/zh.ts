@@ -266,6 +266,8 @@ export const zh: Record<TranslationKey, string> = {
   'panels.editor.disk_changed_body': '自打开或上次保存后已被外部修改。继续保存将覆盖这些修改。',
   'panels.editor.disk_changed_confirm': '覆盖',
   'panels.editor.milkdownUnsafe.banner': '已用 Source 模式打开,以保留 frontmatter 和 wiki-link。',
+  'panels.editor.engine_load_failed': '编辑器加载失败。',
+  'panels.editor.engine_load_retry': '重试',
   'panels.editor.milkdownUnsafe.modalTitle': '用 Edit 模式打开不安全 Markdown?',
   'panels.editor.milkdownUnsafe.modalBody': '此文件包含 Milkdown 可能改写的 frontmatter 或 wiki-link。Source 模式会按字节保留文件内容。',
   'panels.editor.milkdownUnsafe.switchAnyway': '仍然切换',

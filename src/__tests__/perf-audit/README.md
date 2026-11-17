@@ -158,7 +158,9 @@
 
 **修复**:两引擎各 `React.lazy`,body 外包 `<Suspense key={engine} fallback={null}>`(engine = welcome/code/milkdown)—— 切换引擎时边界整体重挂,旧编辑器完整卸载,与原 key 重挂语义一致。viewRefs 仍由 CodeEditor 挂载 effect 注册,`waitForViewRef` 不变。语言包按扩展名动态加载**未做**(pickLanguage 同步导出且被测试,改异步需 Compartment 重配,收益/风险不匹配)。
 
-**契约不变量**(`editor-engine-lazy.spec.tsx`:Welcome 不加载引擎;代码文件只加载 CodeEditor;Markdown edit 再加载 Milkdown;引擎已加载后切换同步渲染)。
+复审修正:import 工厂抽到 `editor-engine-loaders.ts`(成功 promise 共享、失败不缓存),EditorPlugin / EditorPanel / co-app 预加载共用;引擎 Suspense 外包局部 `EditorEngineErrorBoundary`,chunk 加载失败只在引擎区显示错误 + 重试(i18n),重试新建该引擎的 lazy 实例并换 key 重挂边界。
+
+**契约不变量**(`editor-engine-lazy.spec.tsx`:Welcome 不加载引擎;代码文件只加载 CodeEditor;Markdown edit 再加载 Milkdown;引擎已加载后切换同步渲染;加载器共享 promise、失败可重试。`editor-engine-error-boundary.spec.tsx`:加载失败面板不崩、显示错误与重试,重试后加载成功)。
 
 ## E3 — EditorHeader memo
 

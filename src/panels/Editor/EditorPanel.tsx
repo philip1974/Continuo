@@ -24,6 +24,7 @@ import { SegmentedControl, type SegmentedControlOption } from '@/design';
 import { EditorHeader, type TabChrome } from './EditorHeader';
 import { EditorWelcome } from './EditorWelcome';
 import { createLazyCodeEditor, createLazyMilkdownEditor } from './editor-engine-loaders';
+import { EditorEngineErrorBoundary } from './EditorEngineErrorBoundary';
 import { toPreviewMarkdown } from './milkdown-roundtrip-safety';
 import { findEditorFileTabById } from './editor-tab-lookup';
 import { useAutoSave, isAutoSaveEnabled } from './useAutoSave';
@@ -45,8 +46,16 @@ const MODE_IDS: readonly EditorMode[] = ['edit', 'source', 'preview'];
 // Milkdown,Markdown edit/preview 不加载 CodeEditor。body 外的 <Suspense key={engine}> 让
 // 切换引擎时整个边界重挂(旧编辑器完整卸载,新编辑器首挂才可能 suspend),与原先 key 重挂语义一致。
 // import 工厂取自共享加载器:co-app 的 openFile({line}) 预加载与这里共用同一 promise。
-const CodeEditor = createLazyCodeEditor();
-const MilkdownEditor = createLazyMilkdownEditor();
+// 模块级实例:引擎已加载后再挂载同步渲染、不闪 fallback。chunk 加载失败由 EditorEngineErrorBoundary
+// 接住;重试时替换失败引擎的实例(React.lazy 永久缓存 rejection),后续挂载也用新实例。
+type LazyEngines = {
+  code: ReturnType<typeof createLazyCodeEditor>;
+  milkdown: ReturnType<typeof createLazyMilkdownEditor>;
+};
+let lazyEngines: LazyEngines = {
+  code: createLazyCodeEditor(),
+  milkdown: createLazyMilkdownEditor(),
+};
 
 function isMarkdownPath(p: string | null): boolean {
   // 可维护性 M13:非空判定共用 editor-path-utils.isMarkdownPath;此处只保留「草稿(null)默认
@@ -98,6 +107,19 @@ export function EditorPanel() {
   const updateContent = useEditorStore((s) => s.updateContent);
   const closeTab = useEditorStore((s) => s.closeTab);
   const acceptUnsafeEdit = useEditorStore((s) => s.acceptUnsafeEdit);
+  // 引擎 lazy 实例 + 重试代数:重试新建失败引擎的 lazy 实例,并换 key 重挂错误边界。
+  const [engines, setEngines] = useState(() => lazyEngines);
+  const [engineRetry, setEngineRetry] = useState(0);
+  const { code: CodeEditor, milkdown: MilkdownEditor } = engines;
+  const retryEngine = useCallback((which: 'welcome' | 'code' | 'milkdown') => {
+    if (which === 'code') {
+      lazyEngines = { ...lazyEngines, code: createLazyCodeEditor() };
+    } else if (which === 'milkdown') {
+      lazyEngines = { ...lazyEngines, milkdown: createLazyMilkdownEditor() };
+    }
+    setEngines(lazyEngines);
+    setEngineRetry((n) => n + 1);
+  }, []);
   const effective = getEffectiveMode(activeTab);
   // perf P5:复用派生缓存(isTabMilkdownUnsafe 内部 cache-or-compute),不再在 render
   // 里对全文重跑 isMilkdownUnsafe —— 否则每按键 = updateContent 1 次 + 此处 1 次。
@@ -323,10 +345,14 @@ export function EditorPanel() {
         </div>
       )}
       <div className="min-h-0 flex-1">
-        {/* perf E2:引擎 chunk 首次加载期间 fallback 为空(同 lazyPanel 外层),加载完即挂载。 */}
-        <Suspense key={engine} fallback={null}>
-          {body}
-        </Suspense>
+        {/* perf E2:引擎 chunk 首次加载期间 fallback 为空(同 lazyPanel 外层),加载完即挂载。
+            key 含 engine:切换引擎时边界整体重挂;含重试代数:重试后清掉错误态重新加载。 */}
+        <EditorEngineErrorBoundary
+          key={`${engine}:${engineRetry}`}
+          onRetry={() => retryEngine(engine)}
+        >
+          <Suspense fallback={null}>{body}</Suspense>
+        </EditorEngineErrorBoundary>
       </div>
 
       <ConfirmDialog
