@@ -4,7 +4,7 @@
 // 决策(ADR-015):Markdown 自动保存,代码必须显式 Cmd+S。
 // enabled 由 EditorPanel 根据当前 tab 文件类型决定(.md/.markdown → true)。
 
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useEditorStore } from '@/stores/editor.store';
 import { makeAutoSaveScheduler, type AutoSaveScheduler } from './auto-save';
@@ -51,6 +51,12 @@ export function useAutoSave(
     }),
   );
   const tabId = active.id;
+  // 关窗 flush 用:schedule effect 最近一次看到的内容与 enabled。关窗握手先同步回写编辑器里尚未上抛的
+  // 输入(editor-writeback-registry)再 flush,中间没有 React 重渲 → 下面的 schedule effect 来不及排队,
+  // 原本干净的 tab 的这段内容不在 scheduler 里。flush 时发现 store 内容 ≠ effect 看过的 → 先补排队。
+  const seenContentRef = useRef<string | undefined>(undefined);
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
 
   // 每个 tab 一个 scheduler(身份含 tabId)。保存绑定到调度时捕获的 tabId,
   // 而非"当前 active tab" —— 切走后 active 已变,绑定 active 会保存错的 tab。
@@ -94,6 +100,7 @@ export function useAutoSave(
   // (activeTab 变)都会取消再排队,且切 tab 会丢掉 pending。切走该 tab 的落盘交给
   // 下面按 scheduler 身份(=tabId)触发的 flush effect。
   useEffect(() => {
+    seenContentRef.current = active.content;
     if (!scheduler) return;
     // 运行中关掉 autosave 设置 → 取消已排队的保存(禁用应阻止已排队写入)。
     // 这是针对当前 tab 的 scheduler;切 tab 的落盘仍由 flush effect 处理。
@@ -116,7 +123,18 @@ export function useAutoSave(
       registerAutoSaveFlush(null);
       return;
     }
-    registerAutoSaveFlush(() => scheduler.flush());
+    registerAutoSaveFlush(() => {
+      const tab = findEditorFileTabById(useEditorStore.getState().tabs, tabId);
+      if (
+        enabledRef.current &&
+        tab?.filePath &&
+        tab.dirty &&
+        tab.content !== seenContentRef.current
+      ) {
+        scheduler.schedule();
+      }
+      return scheduler.flush();
+    });
     // 本 scheduler 成为活动 tab 的 autosave 持有者(关窗计数据此豁免其脏 .md,见 autosave-failures.ts)。
     claimAutoSave(tabId, scheduler);
     return () => {

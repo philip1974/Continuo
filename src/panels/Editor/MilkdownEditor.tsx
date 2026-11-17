@@ -21,6 +21,7 @@ import {
   registerMermaidRoot,
   renderMermaidPreview,
 } from './mermaid-preview';
+import { registerEditorWriteBack } from './editor-writeback-registry';
 
 interface MilkdownEditorProps {
   defaultValue: string;
@@ -31,11 +32,30 @@ interface MilkdownEditorProps {
    * 上层(EditorPanel)用 resolveLink 决定打开内部文件还是外链。见 issue #25。
    */
   onLinkClick?: (href: string) => void;
+  /**
+   * 同步回写:markdownUpdated 有 200ms 防抖且销毁不 flush。关窗 flush 握手(flushEditorWriteBacks)
+   * 与卸载(切 tab / 切 mode / 重挂载)时,若编辑器里有尚未上抛的编辑,同步取全文回调。
+   * `base` = 最近一次上抛(或挂载时)的内容,供上层判断 store 是否已被别处改过。缺省走 onChange。
+   */
+  onWriteBack?: (markdown: string, base: string) => void;
 }
 
-function CrepeEditor({ defaultValue, readonly = false, onChange }: MilkdownEditorProps) {
+interface WriteBackHandle {
+  writeBack: () => void;
+  dispose: () => void;
+}
+
+function CrepeEditor({
+  defaultValue,
+  readonly = false,
+  onChange,
+  onWriteBack,
+}: MilkdownEditorProps) {
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+  const onWriteBackRef = useRef(onWriteBack);
+  onWriteBackRef.current = onWriteBack;
+  const writeBackRef = useRef<WriteBackHandle | null>(null);
 
   // 注:useEditor 的 callback 在 mount 时执行,defaultValue 只在挂载时生效。
   // 切 tab 时通过 EditorPanel 上的 key={activeTabId} 强制 remount,
@@ -77,14 +97,53 @@ function CrepeEditor({ defaultValue, readonly = false, onChange }: MilkdownEdito
 
     if (readonly) crepe.setReadonly(true);
 
+    // 同步回写状态(每个 Crepe 实例独立):lastSerialized = 编辑器最近一次已处理的序列化结果
+    // (挂载时 / 每次防抖 emit),据此判断有无尚未上抛的编辑;lastEmitted = 最近上抛给 store 的
+    // 内容(初值 = 挂载内容)。disposed 后迟到的防抖 emit 不再上抛 —— 卸载时已同步回写,
+    // 迟到 emit 可能覆盖之后的新编辑(切到 Source 继续输入)或外部重载。
+    let lastSerialized: string | null = null;
+    let lastEmitted = defaultValue;
+    let disposed = false;
+    writeBackRef.current = {
+      writeBack: () => {
+        if (readonly || disposed || lastSerialized === null) return;
+        let markdown: string;
+        try {
+          markdown = crepe.getMarkdown();
+        } catch {
+          return; // 编辑器未就绪 / 已拆除:无可回写内容
+        }
+        // 与 markdownUpdated 同口径:只差尾部空白不算编辑(挂载期补的尾随空段落,issue #44)。
+        if (markdown.trimEnd() === lastSerialized.trimEnd()) return;
+        lastSerialized = markdown;
+        const base = lastEmitted;
+        lastEmitted = markdown;
+        if (onWriteBackRef.current) onWriteBackRef.current(markdown, base);
+        else onChangeRef.current?.(markdown);
+      },
+      dispose: () => {
+        disposed = true;
+      },
+    };
+
     crepe.on((listener) => {
+      listener.mounted(() => {
+        try {
+          lastSerialized = crepe.getMarkdown();
+        } catch {
+          /* 保持 null:不回写 */
+        }
+      });
       listener.markdownUpdated((_ctx, markdown, prevMarkdown) => {
+        if (disposed) return;
+        lastSerialized = markdown;
         if (readonly) return;
         // 挂载期 Milkdown 会给以代码块 / 表格结尾的文档补一个尾随空段落,序列化结果只多出
         // 尾部空白 —— 不是用户编辑,不上抛(否则打开即变脏、自动保存改写文件,issue #44)。
         // 不能用「吞掉第一次 emit」判断:以段落结尾的文档挂载期没有这次 emit,会吞掉用户的
         // 第一次真实编辑。
         if (markdown.trimEnd() === prevMarkdown.trimEnd()) return;
+        lastEmitted = markdown;
         onChangeRef.current?.(markdown);
       });
     });
@@ -94,6 +153,18 @@ function CrepeEditor({ defaultValue, readonly = false, onChange }: MilkdownEdito
   }, []);
 
   useEditor(editorCallback);
+
+  // 关窗握手经注册表同步回写;卸载(切 tab / 切 mode / 重挂载)时也同步回写一次再停用。
+  // 父组件的卸载清理先于子组件 <Milkdown/> 里的 editor.destroy(),此时仍可取全文。
+  useEffect(() => {
+    const unregister = registerEditorWriteBack(() => writeBackRef.current?.writeBack());
+    return () => {
+      unregister();
+      const handle = writeBackRef.current;
+      handle?.writeBack();
+      handle?.dispose();
+    };
+  }, []);
 
   return <Milkdown />;
 }

@@ -35,12 +35,14 @@ vi.mock('@milkdown/crepe', () => ({
     setReadonly: milkdownHarness.setReadonly,
     on: (
       register: (listener: {
+        mounted: (cb: (_ctx: unknown) => void) => void;
         markdownUpdated: (
           cb: (_ctx: unknown, markdown: string, prevMarkdown: string) => void,
         ) => void;
       }) => void,
     ) => {
       register({
+        mounted: () => {},
         markdownUpdated: (cb) => {
           milkdownHarness.markdownUpdated = cb;
         },

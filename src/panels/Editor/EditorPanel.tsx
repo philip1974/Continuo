@@ -27,6 +27,7 @@ import { createLazyCodeEditor, createLazyMilkdownEditor } from './editor-engine-
 import { EditorEngineErrorBoundary } from './EditorEngineErrorBoundary';
 import { toPreviewMarkdown } from './milkdown-roundtrip-safety';
 import { findEditorFileTabById } from './editor-tab-lookup';
+import { applyEditorWriteBack } from './editor-writeback-registry';
 import { useAutoSave, isAutoSaveEnabled } from './useAutoSave';
 import { useEditorFile } from './useEditorFile';
 import { resolveLink } from './link-resolve';
@@ -290,6 +291,9 @@ export function EditorPanel() {
           }
           readonly={effective === 'preview'}
           onChange={(md) => updateContent(activeTab.id, md)}
+          onWriteBack={(md, base) =>
+            applyEditorWriteBack(useEditorStore, activeTab.id, md, base)
+          }
           onLinkClick={handleLinkClick}
         />
       );

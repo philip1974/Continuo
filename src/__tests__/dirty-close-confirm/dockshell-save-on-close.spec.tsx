@@ -90,6 +90,10 @@ import { createTab, useEditorStore } from '@/stores/editor.store';
 import { claimAutoSave, releaseAutoSave, setAutoSaveFailed } from '@/panels/Editor/autosave-failures';
 import { flushPendingAutoSave } from '@/panels/Editor/autosave-flush-registry';
 import { flushExplorerPersistence } from '@/lib/persist/explorer-persist';
+import {
+  applyEditorWriteBack,
+  registerEditorWriteBack,
+} from '@/panels/Editor/editor-writeback-registry';
 import { t } from '@/i18n';
 
 beforeEach(() => {
@@ -237,6 +241,29 @@ describe('flush 握手的「保存」分支', () => {
     expect(h.writeFile).toHaveBeenCalledWith('/w/a.ts', 'new');
     expect(h.sendFlushAck).toHaveBeenCalledWith(1, { saveFailed: false, state: ds([]) });
     expect(useEditorStore.getState().tabs[0]?.dirty).toBe(false);
+  });
+
+  // Milkdown 200ms 防抖内的输入尚未进 store:握手须先同步回写编辑器内容,再保存 / flush autosave。
+  it('先同步回写编辑器里未上抛的输入,再保存 / flush autosave', async () => {
+    await mountShell();
+    act(() => useEditorStore.getState().openTab(createTab('/w/a.ts', 'old')));
+    const unregister = registerEditorWriteBack(() =>
+      applyEditorWriteBack(useEditorStore, '/w/a.ts', 'typed', 'old'),
+    );
+    let contentAtAutoSaveFlush: string | undefined;
+    vi.mocked(flushPendingAutoSave).mockImplementationOnce(async () => {
+      contentAtAutoSaveFlush = useEditorStore.getState().tabs[0]?.content;
+    });
+    try {
+      await act(async () => {
+        await h.flushCb.current!({ windowId: 1, save: true });
+      });
+    } finally {
+      unregister();
+    }
+
+    expect(h.writeFile).toHaveBeenCalledWith('/w/a.ts', 'typed');
+    expect(contentAtAutoSaveFlush).toBe('typed');
   });
 
   it('保存失败 → toast + 回执 saveFailed:true', async () => {
