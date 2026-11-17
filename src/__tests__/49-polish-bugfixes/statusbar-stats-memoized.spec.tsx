@@ -189,4 +189,31 @@ describe('StatusBar 文本统计延后到低优先级渲染(useDeferredValue)', 
     // (统计留在父级里 useDeferredValue 时为 3:延后渲染重跑整条状态栏与所有插件 render)。
     expect(pluginRender.mock.calls.length - base).toBeLessThanOrEqual(2);
   });
+
+  it('切换 tab 时统计在首次提交即为新文件的值(只对同一 tab 内的编辑延后),不闪上一个文件的值', () => {
+    installApi();
+    const other = 'x y z';
+    useEditorStore.setState({
+      tabs: [
+        { id: '/big.txt', filePath: '/big.txt', content: BIG, originalContent: BIG, dirty: false },
+        { id: '/o.txt', filePath: '/o.txt', content: other, originalContent: other, dirty: false },
+      ],
+      activeTabId: '/big.txt',
+    });
+    const commits: string[] = [];
+    const footerText = () => screen.queryByRole('contentinfo')?.textContent ?? '';
+    render(
+      <Profiler id="sb" onRender={() => commits.push(footerText())}>
+        <StatusBar />
+      </Profiler>,
+    );
+    expect(footerText()).toContain(String(BIG.length));
+    commits.length = 0;
+    act(() => {
+      useEditorStore.setState({ activeTabId: '/o.txt' });
+    });
+    expect(commits.length).toBeGreaterThan(0);
+    for (const c of commits) expect(c).not.toContain(String(BIG.length));
+    expect(footerText()).toContain(String(other.length));
+  });
 });

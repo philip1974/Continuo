@@ -159,12 +159,21 @@ async function handleCopyMcpConfig(): Promise<'ok' | 'unavailable' | 'fail'> {
  * 统计在随后可中断的低优先级渲染里更新(允许延后一帧,最终值不变)。独立 memo 子组件:延后渲染只重跑本组件,
  * 父级 StatusBar(含插件 status item 的 render())每键仍只渲染一次。
  */
-const EditorStats = memo(function EditorStats({ content }: { content: string | undefined }) {
+const EditorStats = memo(function EditorStats({
+  tabId,
+  content,
+}: {
+  tabId: string | null;
+  content: string | undefined;
+}) {
   const t = useT();
+  const deferredTabId = useDeferredValue(tabId);
   const deferredContent = useDeferredValue(content);
+  // 只对同一 tab 内的编辑延后;切换 tab 时延后值仍属上一个文件 → 直接用当前内容,不闪旧文件统计。
+  const statsContent = deferredTabId === tabId ? deferredContent : content;
   const stats = useMemo(
-    () => (deferredContent === undefined ? null : computeTextStats(deferredContent)),
-    [deferredContent],
+    () => (statsContent === undefined ? null : computeTextStats(statsContent)),
+    [statsContent],
   );
   return (
     <span>
@@ -196,7 +205,7 @@ export function StatusBar() {
   // 仍更新统计(配合 R1 的统计 memo)。R24 用 4 个 selector 各 some/find;R46 合并为
   // 单次 find 返回**扁平 primitive 对象**,useShallow 逐字段 Object.is 比较——content
   // 只是 string ref(不像 EditorHeader 用 JSON 签名,这里避免序列化大文档正文)。
-  const { hasActiveTab, activeFilePath, activeDirty, activeContent } =
+  const { hasActiveTab, activeTabId, activeFilePath, activeDirty, activeContent } =
     useEditorStore(
       useShallow((s) => {
         const found =
@@ -205,6 +214,7 @@ export function StatusBar() {
             : findEditorFileTabById(s.tabs, s.activeTabId);
         return {
           hasActiveTab: found !== null,
+          activeTabId: found?.id ?? null,
           activeFilePath: found?.filePath ?? null,
           activeDirty: found?.dirty ?? false,
           activeContent: found?.content,
@@ -341,7 +351,7 @@ export function StatusBar() {
                 </>
               )}
             </span>
-            <EditorStats content={activeContent} />
+            <EditorStats tabId={activeTabId} content={activeContent} />
           </>
         ) : null}
       </div>
