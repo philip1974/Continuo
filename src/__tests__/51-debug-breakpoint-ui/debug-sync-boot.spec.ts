@@ -12,7 +12,8 @@ describe('topic51 · debug store 同步在 renderer 启动时开始', () => {
   it('main-app 的 init() 在首次渲染前调用 startDebugStoreSync()', () => {
     expect(source).toMatch(/import\s*\{[^}]*\bstartDebugStoreSync\b[^}]*\}\s*from\s*'[^']*stores\/debug\.store'/);
     const call = source.indexOf('startDebugStoreSync();');
-    const render = source.indexOf('createRoot(container).render(');
+    // 主窗口路径的首次渲染(popout 子窗口在更早处 renderApp 后提前返回,不跑 debug 同步)。
+    const render = source.lastIndexOf('renderApp(container);');
     expect(call).toBeGreaterThan(source.indexOf('export async function init'));
     expect(call).toBeLessThan(render);
   });
