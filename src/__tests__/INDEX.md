@@ -519,6 +519,7 @@
 
 ## [explorer-expanded-state](./explorer-expanded-state/README.md)
 
+- [`folder-tree-expand-all-batch.spec.tsx`](./explorer-expanded-state/folder-tree-expand-all-batch.spec.tsx)
 - [`folder-tree-expanded-state.spec.tsx`](./explorer-expanded-state/folder-tree-expanded-state.spec.tsx)
 
 ## [ExplorerHeader(FolderTree 顶部 Header)](./explorer-header/README.md)

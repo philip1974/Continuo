@@ -8,7 +8,9 @@
 - root 始终作为 headless-tree 的 expanded item 注入,否则根 children 不会加载。
 - 不属于当前 root 的持久化 path 不注入当前树。
 - headless-tree 的 `setExpandedItems` 会写回 `useExplorerStore.expandedPaths`,供窗口持久化层保存。
+- 「全部展开」期间库逐目录 expand 的回写合并为批次末尾一次写 store(避免 O(D²));批量期树的受控 state 用库最新值,不被 store 旧值覆盖;最终展开集合与逐步回写一致,out-of-root 段保留。
 
 ## 覆盖
 
 - `folder-tree-expanded-state.spec.tsx`:mock `useTree` 捕获配置,验证 `state.expandedItems` 与 `setExpandedItems` 接线。
+- `folder-tree-expand-all-batch.spec.tsx`:真 headless-tree 驱动「全部展开」,验证批末单次写 store 与最终集合。
