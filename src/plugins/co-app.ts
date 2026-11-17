@@ -25,7 +25,6 @@ import {
   isAbsolutePath,
   isMarkdownPath,
 } from '@/panels/Editor/editor-path-utils';
-import { scrollToLine } from '@/panels/Editor/scrollToLine';
 import { getEffectiveMode, useEditorStore } from '@/stores/editor.store';
 import { errorMessage } from '../../electron/shared/error-message';
 import { openOrFocusPanel } from '@/shell/dock/dock-api-ref';
@@ -130,6 +129,10 @@ const editor: CoEditorApi = {
       return { ok: true, lineApplied: false, reason: 'tab-not-mounted' };
     }
 
+    // perf E1:scrollToLine 运行时依赖 @codemirror/view。co-app 在 main-app 启动路径上,静态
+    // import 会把整套 CodeMirror 拖进启动包、破坏 Editor 懒加载边界。此处 view 已存在 → Editor
+    // chunk(含 CodeMirror)必已加载,动态 import 只是取已加载模块,openFile 本就 async,语义不变。
+    const { scrollToLine } = await import('@/panels/Editor/scrollToLine');
     const outcome = scrollToLine(view, opts.line);
     if (outcome === 'out-of-range') {
       return {
