@@ -1429,6 +1429,9 @@ function preferPluginDirName(candidate: string, current: string, id: string): bo
   return candidate < current;
 }
 
+/** watcher 缺失记录(tombstone)保留的连续扫描轮数(生产 2s 一轮 ≈ 10s 内重建仍判定变化)。 */
+const MISSING_RECORD_MAX_SCANS = 5;
+
 /**
  * 跨平台 plugin 文件改动监听:不用 fs.watch(macOS 不支持 recursive 默认,
  * Linux/Windows 行为不一致),改为 stat mtime 轮询。
@@ -1443,7 +1446,11 @@ export function createPluginsWatcher(
   // 为键而不区分目录,多个目录轮流写同一键 → 每轮都判定变化并广播,形成永久热重载风暴。
   // manifestHash:权威目录 manifest 内容哈希(同 LIST_DIRS 令牌)。manifest 内容变化也算变化 —— 激活时令牌
   // 不一致的插件会激活失败,须由此广播让 renderer 重新加载(此前只看 main mtime,只改 manifest 不广播)。
-  const mtimes = new Map<string, { dir: string; mtime: number; manifestHash: string }>();
+  // missing:连续未被选中(目录 / manifest / main 暂不可见)的轮数,超过 MISSING_RECORD_MAX_SCANS 删除记录。
+  const mtimes = new Map<
+    string,
+    { dir: string; mtime: number; manifestHash: string; missing: number }
+  >();
   let firstRun = true;
   let cancelled = false;
   // race(R5):tick 异步扫描(readdir+stat+readFile)慢于 interval 时,setInterval 会并发触发多个
@@ -1564,15 +1571,21 @@ export function createPluginsWatcher(
       }
     }
     // 清理陈旧键:记录所属目录现在(manifest 可解析)声明的是别的 id → 该记录不再代表任何目录。
-    // 目录暂时消失 / manifest 缺失或损坏 / main 暂不可 stat 时保留记录:重建后 main 已变仍要触发热重载
-    //(rm -rf 后重新部署、编辑器 unlink+write 保存),与旧版同口径。
+    // 目录暂时消失 / manifest 缺失或损坏 / main 暂不可 stat 时保留记录(tombstone):重建后 main 已变仍要触发
+    // 热重载(rm -rf 后重新部署、编辑器 unlink+write 保存),与旧版同口径。但只保留有限轮次:此前永久删除的
+    // 目录记录无界保留,且本循环每轮遍历全部记录 → 内存与每 2s 的主进程开销随进程内见过的 id 数单调增长。
     // 本轮之前被记录过的目录:某 id 首次出现在其中 = 该目录改声明了新 id(更新换了 id),也算变化。
     const knownDirs = new Set<string>();
     for (const [pluginId, prev] of mtimes) {
       knownDirs.add(prev.dir);
       if (chosen.has(pluginId)) continue;
       const info = manifestCache.get(prev.dir)?.info;
-      if (info && info.pluginId !== pluginId) mtimes.delete(pluginId);
+      if (info && info.pluginId !== pluginId) {
+        mtimes.delete(pluginId);
+        continue;
+      }
+      prev.missing += 1;
+      if (prev.missing > MISSING_RECORD_MAX_SCANS) mtimes.delete(pluginId);
     }
     for (const [pluginId, { name, mtime, manifestHash }] of chosen) {
       const prev = mtimes.get(pluginId);
@@ -1581,7 +1594,7 @@ export function createPluginsWatcher(
       // mtimes 不推进 → 同一变更每个 tick 反复触发/反复失败(广播一直打不出去)。改为变更检测
       // 一旦确认即记录 mtime,通知(onChange)成败不影响 mtime 推进:坏窗口由 onChange 内部
       // per-window try/catch 兜底(R67-A),不再回灌脏状态。
-      mtimes.set(pluginId, { dir: name, mtime, manifestHash });
+      mtimes.set(pluginId, { dir: name, mtime, manifestHash, missing: 0 });
       // 权威目录切换(新增同名目录 / 原权威目录消失)也算变化:readPluginDirByManifestId 此刻会选到另一目录。
       const changed =
         prev === undefined

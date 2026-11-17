@@ -401,6 +401,34 @@ describe('createPluginsWatcher', () => {
     expect(fn.mock.calls).toEqual([['h.new'], ['h.old'], ['h.old']]); // h.new 记录已清理,不再被报告
   });
 
+  // 缺失记录(目录 / manifest / main 暂时不可见)保留有限轮次的 tombstone:短暂 unlink→重建仍 fire;
+  // 连续缺失超过上限轮次后删除记录(此前无界保留,且每轮遍历全部记录 → 随历史 id 数单调增长)。
+  it('目录永久删除:连续缺失超过 5 轮后记录被清理,之后同名重建视为首次出现不 fire', async () => {
+    makeDir('t', { id: 't', name: 'T', version: '0.1.0' });
+    const fn = vi.fn();
+    const w = createPluginsWatcher(tmp, fn);
+    await w.tick();
+    rmSync(join(tmp, 't'), { recursive: true, force: true });
+    for (let i = 0; i < 6; i += 1) await w.tick();
+    makeDir('t', { id: 't', name: 'T', version: '0.1.0' });
+    touch('t', 'main.js', Date.now() + 5000);
+    await w.tick();
+    expect(fn).not.toHaveBeenCalled();
+  });
+
+  it('目录缺失 5 轮内重建(main 已变)→ 仍 fire', async () => {
+    makeDir('u', { id: 'u', name: 'U', version: '0.1.0' });
+    const fn = vi.fn();
+    const w = createPluginsWatcher(tmp, fn);
+    await w.tick();
+    rmSync(join(tmp, 'u'), { recursive: true, force: true });
+    for (let i = 0; i < 5; i += 1) await w.tick();
+    makeDir('u', { id: 'u', name: 'U', version: '0.1.0' });
+    touch('u', 'main.js', Date.now() + 5000);
+    await w.tick();
+    expect(fn.mock.calls).toEqual([['u']]);
+  });
+
   it('start(intervalMs) 返 dispose,disposed 后 tick 不再 fire', async () => {
     makeDir('a', { id: 'a', name: 'A', version: '0.1.0' });
     const fn = vi.fn();
