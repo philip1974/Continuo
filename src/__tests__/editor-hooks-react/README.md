@@ -31,8 +31,9 @@
 ### useExternalFileSync
 
 - 注册 onDirChanged 订阅;hook unmount 时返 unsub
-- 同时订阅本地 watch-restored(Explorer 重装失效 watcher 成功)→ 重读该目录**子树内**的 clean tab(macOS/Win watcher 递归,断线期间子目录变化同样丢失;普通 dir-changed 仍精确匹配直接父目录);unmount 退订
+- 同时订阅本地 watch-restored(Explorer 重装失效 watcher 成功)→ 重读该目录**子树内**的 clean tab(macOS/Win watcher 递归,断线期间子目录变化同样丢失;普通 dir-changed 仍精确匹配直接父目录);子树重读有界并发(峰值在途 ≤ 32,同 hydrateEditorTabs),排队项发起时若该 path 已在途则并入尾随一次,不并发重复读;unmount 退订
 - changedDir 命中 tab.filePath 父目录 + 非 dirty + 读盘 ok → reloadFromDisk
 - dirty tab 跳过
 - changedDir ≠ dirname → 跳过
+- dir-changed 携带变更文件名集合 → 只重读文件名在集合内的 clean tab(rename 旧名/新名命中任一即可;文件名比较大小写 + NFC 宽松,宁多读不漏读);无集合(平台不给 filename / 缓冲溢出 / 超上限)→ 退化为按目录匹配
 - readFile ok=false → 跳过(不抛)

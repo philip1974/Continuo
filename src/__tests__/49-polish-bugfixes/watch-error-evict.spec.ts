@@ -136,3 +136,25 @@ describe('fs.ipc 生产 creator:FSWatcher emit error 不崩溃主进程', () => 
     expect(onError).toHaveBeenCalledTimes(1);
   });
 });
+
+// 性能:生产 creator 把 fs.watch 回调的 filename 末段名随 changedPath 一并上抛(缺 filename → undefined),
+// 合并器据此按目录聚合文件名,renderer 只重读命中的 clean tab。
+describe('fs.ipc 生产 creator:上抛变更文件名', () => {
+  it('有 filename → onChange(变更目录, 末段名);无 filename → onChange(根, undefined)', async () => {
+    const fs = await import('node:fs');
+    const nodePath = await import('node:path');
+    const { createFsWatcher } = await import('../../../electron/main/ipc/fs.ipc');
+    const onChange = vi.fn();
+    createFsWatcher('/r', onChange, vi.fn());
+    const calls = (fs.watch as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    const cb = calls.at(-1)![2] as (ev: string, filename: string | null) => void;
+    cb('change', 'sub/a.md');
+    cb('rename', 'b.md');
+    cb('rename', null);
+    expect(onChange.mock.calls.map((c) => [c[0], c[1]])).toEqual([
+      [nodePath.join('/r', 'sub'), 'a.md'],
+      ['/r', 'b.md'],
+      ['/r', undefined],
+    ]);
+  });
+});

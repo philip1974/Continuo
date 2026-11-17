@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import path from 'node:path';
-import { resolveWatchChangedPath } from '../ipc/fs.ipc';
+import { resolveWatchChangedFileName, resolveWatchChangedPath } from '../ipc/fs.ipc';
 
 describe('resolveWatchChangedPath — watcher 变更目录路径(平台原生分隔符)', () => {
   it('POSIX:根文件 → 根;子目录文件 → 子目录(/)', () => {
@@ -31,5 +31,18 @@ describe('resolveWatchChangedPath — watcher 变更目录路径(平台原生分
     } finally {
       replaceSpy.mockRestore();
     }
+  });
+});
+
+describe('resolveWatchChangedFileName — watcher 回调 filename 的末段名(供 renderer 只重读命中 tab)', () => {
+  it('根文件 / 子目录文件(/ 与 \\ 分隔)→ 末段名', () => {
+    expect(resolveWatchChangedFileName('a.ts')).toBe('a.ts');
+    expect(resolveWatchChangedFileName('sub/dir/a.ts')).toBe('a.ts');
+    expect(resolveWatchChangedFileName('sub\\dir\\a.ts')).toBe('a.ts');
+  });
+
+  it('末段为空(尾部分隔符 / 空串)→ undefined(视为未知文件,退化为目录级)', () => {
+    expect(resolveWatchChangedFileName('sub/')).toBeUndefined();
+    expect(resolveWatchChangedFileName('')).toBeUndefined();
   });
 });

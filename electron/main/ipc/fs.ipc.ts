@@ -7,7 +7,7 @@ import {
   safeHandle,
   safeHandleWithCtx,
 } from '../safe-handle';
-import { FS_CHANNELS } from '../../shared/fs-channels';
+import { FS_CHANNELS, type FsDirChangedPayload } from '../../shared/fs-channels';
 import { FS_PATH_MAX, MAX_WRITE_BYTES } from '../../shared/fs-limits';
 import { utf8BytesExceed } from '../../shared/utf8-byte-length';
 import { listDir, MAX_TOTAL_ENTRIES } from './fs/list-dir';
@@ -221,6 +221,16 @@ export function resolveWatchChangedPath(
   return subdir ? pathMod.join(rootPath, subdir) : rootPath;
 }
 
+/**
+ * watcher 回调 filename 的末段名(变更项在 changedPath 目录内的名字,分隔符 `/` `\` 都认)。
+ * 末段为空 → undefined(视为未知文件,下游退化为目录级)。
+ */
+export function resolveWatchChangedFileName(filename: string): string | undefined {
+  const rel = String(filename);
+  const name = rel.slice(lastRelativePathSeparatorIndex(rel) + 1);
+  return name === '' ? undefined : name;
+}
+
 function lastRelativePathSeparatorIndex(value: string): number {
   for (let i = value.length - 1; i >= 0; i -= 1) {
     const code = value.charCodeAt(i);
@@ -255,11 +265,14 @@ export const createFsWatcher: WatcherCreator = (rootPath, onChange, onError) => 
     { persistent: false, recursive: RECURSIVE_SUPPORTED },
     (_eventType, filename) => {
       if (!filename) {
-        // 罕见:某些 macOS 旧版 / 平台不传 filename,退回根目录广播
+        // 罕见:某些 macOS 旧版 / 平台不传 filename(含 Windows 缓冲溢出),退回根目录广播,
+        // 不带文件名 → 下游按目录级处理
         onChange(rootPath);
         return;
       }
-      onChange(resolveWatchChangedPath(rootPath, String(filename)));
+      // 带上变更项名字(rename 的旧名/新名各回调一次),renderer 外部同步只重读命中的 clean tab
+      const rel = String(filename);
+      onChange(resolveWatchChangedPath(rootPath, rel), resolveWatchChangedFileName(rel));
     },
   );
   watcher.on('error', (err) => {
@@ -286,9 +299,11 @@ export function notifyWatchLost(path: string, ownerIds: readonly number[]): void
 const watcherPool = createWatcherPool(createFsWatcher, notifyWatchLost);
 
 // 导出仅供 R66 回归测试(验证单窗口 send 抛错不中断广播);生产仍只经 watcherPool onChange 调用。
-export function broadcastDirChanged(path: string): void {
+export function broadcastDirChanged(path: string, files?: readonly string[]): void {
   // race(R66):由 fs.watch 回调触发;单窗口 send 抛错不中断其余窗口、不成未捕获异常。
-  broadcastToWindows(FS_CHANNELS.DIR_CHANGED, () => ({ path }), '[fs] DIR_CHANGED');
+  // files 未知时不带该字段(payload 与旧版逐字一致)。
+  const payload: FsDirChangedPayload = files ? { path, files } : { path };
+  broadcastToWindows(FS_CHANNELS.DIR_CHANGED, () => payload, '[fs] DIR_CHANGED');
 }
 
 // 生产 watch 回调入口:同 tick 内同一 changedPath(多个 recursive 祖先 watcher 重复报告)只广播一次

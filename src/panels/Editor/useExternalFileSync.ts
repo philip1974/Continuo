@@ -15,8 +15,18 @@ import { coApi } from '@/lib/co-api';
 import { onWatchRestored } from '@/lib/fs-watch-restored';
 import { useEditorStore, type EditorTab } from '@/stores/editor.store';
 import { dirname } from '@/panels/Explorer/path-utils';
-import { isSameOrInsidePath, pathEquals } from '@/lib/path-cross';
+import { basename, isSameOrInsidePath, pathEquals } from '@/lib/path-cross';
+import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
+import { allSettledWithConcurrency } from '@/lib/map-with-concurrency';
 import { findEditorFileTabById } from './editor-tab-lookup';
+
+/** watch-restored 子树重读的最大同时在途 readFile 数(与 hydrateEditorTabs RESTORE_READ_CONCURRENCY 同口径). */
+const RESTORED_RELOAD_CONCURRENCY = 32;
+
+/** dir-changed 文件名匹配键:大小写 + Unicode NFC 折叠(宁多读不漏读,见下方订阅处注释). */
+function foldFileName(name: string): string {
+  return lowerIfNeeded(name.normalize('NFC'));
+}
 // 跨平台(codex 复查 P1):此前本地 dirname 是 Explorer path-utils dirname 的有问题副本 ——
 // 对 `C:\a.md` 返回 drive-relative `C:`(应盘根 `C:\`,同 X2)、对 POSIX 根 `/a.md` 返回 ''
 // (应 `/`),且下方比较为字节级 → Windows 盘根/大小写不同目录、甚至 mac 根 workspace 的
@@ -76,37 +86,68 @@ export function useExternalFileSync(): void {
       if (superseded) readAndApply(path, tabId);
     };
 
-    const readAndApply = (path: string, tabId: string): void => {
+    // 返回本次读取 settle 完成的 promise(供 watch-restored 有界并发计在途;尾随重读不计入)。
+    const readAndApply = (path: string, tabId: string): Promise<void> => {
       // race(R97):捕获发起读取时的 tab 实例引用,供 settle 复查(防 close+reopen 同路径迟到覆盖)。
       const tabRef = findEditorFileTabById(useEditorStore.getState().tabs, tabId);
       inFlight.add(path);
-      void coApi.fs.readFile(path).then(
+      return coApi.fs.readFile(path).then(
         (r) => settle(path, tabId, tabRef, r),
         () => settle(path, tabId, tabRef, null), // reject → 不落地,但仍清 inFlight/尾随重读
       );
     };
 
-    // match:dir-changed 精确匹配直接父目录;watch-restored 覆盖整棵子树(macOS/Win 的 watcher 递归,
-    // 断线期间子目录里的变化同样丢失)。子树读取仍走下方 inFlight/pending 合并。
-    const reloadMatching = (match: (filePath: string) => boolean): void => {
-      const tabs = useEditorStore.getState().tabs;
-      for (const tab of tabs) {
+    // 单个 tab 的重读入口:在途则合并为尾随一次,否则立即读。
+    const requestReload = (path: string, tabId: string): Promise<void> | undefined => {
+      if (inFlight.has(path)) {
+        pending.add(path); // 合并:在途读完成后尾随一次
+        return undefined;
+      }
+      return readAndApply(path, tabId);
+    };
+
+    const matchingCleanTabs = (match: (filePath: string) => boolean): EditorTab[] => {
+      const out: EditorTab[] = [];
+      for (const tab of useEditorStore.getState().tabs) {
         if (tab.filePath === null) continue;
         if (tab.dirty) continue; // 保留用户改动,不覆盖
-        if (!match(tab.filePath)) continue;
-        if (inFlight.has(tab.filePath)) {
-          pending.add(tab.filePath); // 合并:在途读完成后尾随一次
-        } else {
-          readAndApply(tab.filePath, tab.id);
-        }
+        if (match(tab.filePath)) out.push(tab);
       }
+      return out;
     };
-    const unsub = coApi.fs.onDirChanged((changedDir) =>
-      reloadMatching((fp) => pathEquals(dirname(fp), changedDir)),
-    );
-    const unsubRestored = onWatchRestored((dir) =>
-      reloadMatching((fp) => isSameOrInsidePath(dir, fp)),
-    );
+
+    // dir-changed:精确匹配直接父目录(+ 可选文件名集合),命中数通常很小,直接逐个发起。
+    const reloadMatching = (match: (filePath: string) => boolean): void => {
+      for (const tab of matchingCleanTabs(match)) void requestReload(tab.filePath!, tab.id);
+    };
+
+    // watch-restored:覆盖整棵子树(macOS/Win 的 watcher 递归,断线期间子目录里的变化同样丢失)。
+    // 内存:此前对子树内全部 clean tab 同时发起整文件 readFile(256 tab × 大文件 → main 峰值内存 GB 级),
+    // 改为有界并发(同 hydrateEditorTabs 的 RESTORE_READ_CONCURRENCY)。排队项在真正发起时再复查
+    // (effect 已卸载 / tab 已关或变 dirty → 跳过;该 path 已被 dir-changed 读取在途 → 并入 pending
+    // 尾随一次),保持每 path 读严格串行。
+    const reloadSubtree = (dir: string): void => {
+      const targets = matchingCleanTabs((fp) => isSameOrInsidePath(dir, fp));
+      void allSettledWithConcurrency(targets, RESTORED_RELOAD_CONCURRENCY, async (t) => {
+        if (cancelled) return;
+        const live = findEditorFileTabById(useEditorStore.getState().tabs, t.id);
+        if (live === null || live.dirty || live.filePath !== t.filePath) return;
+        await requestReload(t.filePath!, t.id);
+      });
+    };
+    // 性能:main 带上变更文件名集合时只重读命中的 clean tab(此前每次 dir-changed 都把该目录下所有
+    // clean tab 整文件读回,Markdown 2s 自动保存 / 根目录持续写日志时几乎不停读盘);无集合(平台不给
+    // filename / 缓冲溢出 / 超上限)→ 退化为按目录匹配。目录仍按 pathEquals(dirname) 判定;文件名比较
+    // 故意更宽松(大小写 + Unicode NFC 折叠):误命中只多读一次(= 旧行为),漏命中会让 clean tab 停旧内容。
+    const unsub = coApi.fs.onDirChanged((changedDir, files) => {
+      const names = files ? new Set(files.map(foldFileName)) : null;
+      reloadMatching(
+        (fp) =>
+          pathEquals(dirname(fp), changedDir) &&
+          (names === null || names.has(foldFileName(basename(fp)))),
+      );
+    });
+    const unsubRestored = onWatchRestored(reloadSubtree);
     return () => {
       cancelled = true; // race(R79):失效在途 readFile 的迟到 settle
       unsub();

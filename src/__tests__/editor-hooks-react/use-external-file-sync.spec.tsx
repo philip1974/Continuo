@@ -10,7 +10,7 @@ import { useEditorStore } from '../../stores/editor.store';
 import { emitWatchRestored } from '../../lib/fs-watch-restored';
 
 interface FsApi {
-  onDirChanged: (cb: (dir: string) => void) => () => void;
+  onDirChanged: (cb: (dir: string, files?: readonly string[]) => void) => () => void;
   readFile: ReturnType<typeof vi.fn>;
 }
 
@@ -257,5 +257,151 @@ describe('useExternalFileSync', () => {
     dirCb!('/proj');
     await Promise.resolve();
     expect(readFile).not.toHaveBeenCalled();
+  });
+
+  // 性能:dir-changed 携带变更文件名集合时只重读命中的 clean tab(Markdown 2s 自动保存 / 根目录持续写
+  // 日志时不再把同目录所有 clean tab 全量读回);无集合 / 超限时退化为按目录匹配(行为不变)。
+  describe('dir-changed 携带变更文件名', () => {
+    const tab = (p: string) => ({ id: p, filePath: p, content: 'old', originalContent: 'old', dirty: false });
+    function setup() {
+      let dirCb: ((dir: string, files?: readonly string[]) => void) | null = null;
+      const readFile = vi.fn(async (p: string) => ({ ok: true, data: `new ${p}` }));
+      installFsApi({ onDirChanged: (cb) => { dirCb = cb; return () => {}; }, readFile });
+      useEditorStore.setState({
+        tabs: [tab('/proj/a.md'), tab('/proj/b.md'), tab('/proj/c.md'), tab('/proj/sub/a.md')],
+        activeTabId: '/proj/a.md',
+      });
+      renderHook(() => useExternalFileSync());
+      return { emit: (dir: string, files?: readonly string[]) => dirCb!(dir, files), readFile };
+    }
+
+    it('有文件集合 → 只重读路径在集合内的 clean tab', async () => {
+      const { emit, readFile } = setup();
+      emit('/proj', ['b.md', 'log.txt']);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(readFile.mock.calls.map((c) => c[0])).toEqual(['/proj/b.md']);
+      expect(useEditorStore.getState().tabs.map((t) => t.content)).toEqual([
+        'old',
+        'new /proj/b.md',
+        'old',
+        'old',
+      ]);
+    });
+
+    it('rename 事件分别报旧名 / 新名 → 命中任一即重读', async () => {
+      const { emit, readFile } = setup();
+      emit('/proj', ['a.md.tmp', 'a.md']); // 原子写:临时文件 rename 成目标
+      await Promise.resolve();
+      expect(readFile.mock.calls.map((c) => c[0])).toEqual(['/proj/a.md']);
+    });
+
+    it('无文件集合(缺 filename / 超限退化)→ 按目录匹配重读该目录全部 clean tab', async () => {
+      const { emit, readFile } = setup();
+      emit('/proj', undefined);
+      await Promise.resolve();
+      expect(readFile.mock.calls.map((c) => c[0]).sort()).toEqual([
+        '/proj/a.md',
+        '/proj/b.md',
+        '/proj/c.md',
+      ]);
+    });
+
+    it('文件名比较宽松(大小写 / Unicode NFC-NFD 差异仍命中,宁多读不漏读)', async () => {
+      let dirCb: ((dir: string, files?: readonly string[]) => void) | null = null;
+      const readFile = vi.fn(async (_p: string) => ({ ok: true, data: 'x' }));
+      installFsApi({ onDirChanged: (cb) => { dirCb = cb; return () => {}; }, readFile });
+      const nfc = '/proj/café.md';
+      useEditorStore.setState({ tabs: [tab('/proj/README.md'), tab(nfc)], activeTabId: nfc });
+      renderHook(() => useExternalFileSync());
+      dirCb!('/proj', ['readme.md', 'café.md']);
+      await Promise.resolve();
+      expect(readFile.mock.calls.map((c) => c[0])).toEqual(['/proj/README.md', nfc]);
+    });
+
+    it('不同目录的同名文件不命中(目录仍按 pathEquals(dirname) 精确匹配)', async () => {
+      const { emit, readFile } = setup();
+      emit('/proj/sub', ['b.md']);
+      await Promise.resolve();
+      expect(readFile).not.toHaveBeenCalled();
+    });
+  });
+
+  // 内存:watch-restored 对子树内所有 clean tab 重读,此前同时发起全部 readFile(256 tab × 大文件 →
+  // main 峰值内存 GB 级)。改为有界并发(上限 32,同 hydrateEditorTabs RESTORE_READ_CONCURRENCY)。
+  it('watch-restored 子树重读峰值在途 ≤ 32,全部 tab 最终都被重读', async () => {
+    let inflight = 0;
+    let peak = 0;
+    const resolvers: Array<() => void> = [];
+    const readFile = vi.fn(
+      (p: string) =>
+        new Promise<{ ok: true; data: string }>((resolve) => {
+          inflight += 1;
+          peak = Math.max(peak, inflight);
+          resolvers.push(() => {
+            inflight -= 1;
+            resolve({ ok: true, data: `new ${p}` });
+          });
+        }),
+    );
+    installFsApi({ onDirChanged: () => () => {}, readFile });
+    const paths = Array.from({ length: 100 }, (_, i) => `/proj/f${i}.md`);
+    useEditorStore.setState({
+      tabs: paths.map((p) => ({ id: p, filePath: p, content: 'old', originalContent: 'old', dirty: false })),
+      activeTabId: paths[0]!,
+    });
+    renderHook(() => useExternalFileSync());
+    emitWatchRestored('/proj');
+    for (let round = 0; round < 20; round++) {
+      for (const r of resolvers.splice(0)) r();
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+    }
+    expect(peak).toBeGreaterThan(1);
+    expect(peak).toBeLessThanOrEqual(32);
+    expect(readFile.mock.calls.map((c) => c[0]).sort()).toEqual([...paths].sort());
+    expect(useEditorStore.getState().tabs.every((t) => t.content === `new ${t.filePath}`)).toBe(true);
+  });
+
+  it('watch-restored 排队期间该 path 已被 dir-changed 读取在途 → 不并发重复读(合并为尾随一次)', async () => {
+    let dirCb: ((dir: string, files?: readonly string[]) => void) | null = null;
+    const resolvers: Array<() => void> = [];
+    let heldF39: (() => void) | null = null; // dir-changed 发起的 f39 读一直挂着,直到排队项都已派发
+    const inflightByPath = new Map<string, number>();
+    let maxPerPath = 0;
+    const readFile = vi.fn(
+      (p: string) =>
+        new Promise<{ ok: true; data: string }>((resolve) => {
+          const n = (inflightByPath.get(p) ?? 0) + 1;
+          inflightByPath.set(p, n);
+          maxPerPath = Math.max(maxPerPath, n);
+          const done = () => {
+            inflightByPath.set(p, (inflightByPath.get(p) ?? 1) - 1);
+            resolve({ ok: true, data: `new ${p}` });
+          };
+          if (p === '/proj/f39.md' && heldF39 === null) heldF39 = done;
+          else resolvers.push(done);
+        }),
+    );
+    installFsApi({ onDirChanged: (cb) => { dirCb = cb; return () => {}; }, readFile });
+    const paths = Array.from({ length: 40 }, (_, i) => `/proj/f${i}.md`);
+    useEditorStore.setState({
+      tabs: paths.map((p) => ({ id: p, filePath: p, content: 'old', originalContent: 'old', dirty: false })),
+      activeTabId: paths[0]!,
+    });
+    renderHook(() => useExternalFileSync());
+    emitWatchRestored('/proj'); // 前 32 个立即读,f32..f39 排队
+    dirCb!('/proj', ['f39.md']); // 排队中的 path 被 dir-changed 先读
+    for (let round = 0; round < 20; round++) {
+      for (const r of resolvers.splice(0)) r();
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+    }
+    expect(maxPerPath).toBe(1); // 排队到 f39 时它仍在途 → 不得并发第二个读
+    (heldF39 as (() => void) | null)?.();
+    for (let round = 0; round < 5; round++) {
+      for (const r of resolvers.splice(0)) r(); // 尾随重读
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+    }
+    expect(readFile.mock.calls.filter((c) => c[0] === '/proj/f39.md')).toHaveLength(2);
+    expect(useEditorStore.getState().tabs.every((t) => t.content === `new ${t.filePath}`)).toBe(true);
   });
 });

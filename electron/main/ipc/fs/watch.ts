@@ -7,6 +7,8 @@
 // - 同 path 重复 watch 共享 watcher,按引用计数释放(creator 只调一次)
 // - cb 是 renderer 端注入的"通知函数",pool 内部不知道 IPC
 
+import { DIR_CHANGED_FILES_MAX } from '../../../shared/fs-channels';
+
 export const MAX_WATCHERS = 64;
 
 export interface Watcher {
@@ -23,9 +25,12 @@ export interface Watcher {
  * onError(err):creator 底层 watcher 异步失效(网络盘 / 可移动卷断开、目录失效 → FSWatcher
  * 'error')时调用,池据此关闭并移出该 watcher(见 evictDead)。
  */
+/** fileName:变更项名字(watch 回调 filename 末段);undefined = 未知是哪个文件(目录级). */
+export type WatchChangeListener = (changedPath: string, fileName?: string) => void;
+
 export type WatcherCreator = (
   path: string,
-  onChange: (changedPath: string) => void,
+  onChange: WatchChangeListener,
   onError: (err: unknown) => void,
 ) => Watcher;
 
@@ -36,7 +41,7 @@ export interface WatcherPool {
    */
   watch: (
     path: string,
-    onChange: (changedPath: string) => void,
+    onChange: WatchChangeListener,
     ownerId?: number,
   ) => void;
   unwatch: (path: string, ownerId?: number) => void;
@@ -206,24 +211,41 @@ export function createWatcherPool(
  * watcher 根拼相对子目录,结果与哪个祖先报告无关)→ 原先逐个广播 = O(展开祖先数 × 窗口数) 次 IPC。
  * 这些回调在同一轮事件循环内派发,合并到 schedule(默认 setImmediate)后每个路径只 emit 一次;不同
  * 路径按首次出现顺序各 emit 一次。renderer 侧本就按路径 100ms debounce / in-flight 合并,语义不变。
+ *
+ * 性能:同时按目录收集变更文件名(去重),emit(path, files) 让 renderer 外部同步只重读命中的 clean tab。
+ * 同目录同 tick 内任一回调缺 fileName(平台不给 filename / Windows 缓冲溢出)或文件名数超 maxFiles →
+ * 该目录此次 files=undefined(未知文件,订阅者退化为目录级);一旦未知不会被之后的文件名恢复成集合。
  */
 export function createSameTickPathCoalescer(
-  emit: (path: string) => void,
+  emit: (path: string, files?: readonly string[]) => void,
   schedule: (flush: () => void) => void = (flush) => {
     setImmediate(flush);
   },
-): (path: string) => void {
-  let pending: Set<string> | null = null;
+  maxFiles: number = DIR_CHANGED_FILES_MAX,
+): WatchChangeListener {
+  // value:该目录本 tick 的文件名集合;null = 未知文件(目录级)
+  let pending: Map<string, Set<string> | null> | null = null;
   const flush = (): void => {
     const paths = pending;
     pending = null;
-    if (paths) for (const p of paths) emit(p);
+    if (paths) for (const [p, files] of paths) emit(p, files ? [...files] : undefined);
   };
-  return (path) => {
+  return (path, fileName) => {
     if (pending === null) {
-      pending = new Set();
+      pending = new Map();
       schedule(flush);
     }
-    pending.add(path);
+    if (!pending.has(path)) {
+      pending.set(path, fileName === undefined ? null : new Set([fileName]));
+      return;
+    }
+    const files = pending.get(path);
+    if (!files) return; // 已是未知文件
+    if (fileName === undefined) {
+      pending.set(path, null);
+      return;
+    }
+    files.add(fileName);
+    if (files.size > maxFiles) pending.set(path, null);
   };
 }
