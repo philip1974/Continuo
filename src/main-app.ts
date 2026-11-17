@@ -15,6 +15,7 @@ import { startPluginMcpInvokeBridge } from './plugins/plugin-mcp-invoke-bridge';
 import { Plugin } from './plugins/Plugin';
 import { PluginManager, setUserPluginManager } from './plugins/PluginManager';
 import { wirePluginReloadGate } from './plugins/plugin-reload-gate';
+import { initPluginsThenCheckUpdates } from './marketplace/startup-update-check';
 import { wireProtocolUrl } from './plugins/protocol/wire-protocol-url';
 import { createWindowApiHost } from './lib/plugins-host';
 import { IpcPermissionStore } from './plugins/permissions/IpcPermissionStore';
@@ -169,7 +170,13 @@ export async function init(): Promise<void> {
   // race(R16):init() 与 onChanged 订阅经 reload-gate 解耦 —— init 仍在扫描时到达的变更先
   // 缓冲(去重),init 完成(成功/失败)后逐个 reload,避免窗口期变更被「Plugin not found」丢弃。
   wirePluginReloadGate({
-    init: () => userPluginManager.init(),
+    // Marketplace Phase 3:启动时静默拉一次更新清单(IconSidebar 角标用),排在 init 之后 —— refresh 按
+    // listAll() 裁剪,init 前为空会直接落空。fire-and-forget,不阻塞 UI 渲染;失败 console.warn 不抛。
+    init: () =>
+      initPluginsThenCheckUpdates(
+        () => userPluginManager.init(),
+        () => useUpdateStore.getState().refresh(),
+      ),
     reload: (id) => userPluginManager.reload(id),
     onChanged: (cb) => coApi.plugins.onChanged(cb),
     // 终审 P1:任一窗口卸载成功 → main 广播,本窗口撤销该插件实例 / 贡献点 / 权限缓存(幂等、不触盘)。
@@ -224,10 +231,6 @@ export async function init(): Promise<void> {
       ...(initialFresh ? { fresh: true } : {}),
     },
   );
-
-  // Marketplace Phase 3:启动时静默拉一次更新清单(IconSidebar 角标用)。
-  // fire-and-forget,不阻塞 UI 渲染。失败 console.warn 不抛。
-  void useUpdateStore.getState().refresh();
 
   // 注:reviews(卡片 ★)不再启动预拉(打磨 R53)。该数据只在 MarketplaceTab 可见
   // 时用,不像 update 清单驱动 IconSidebar 角标。改为 MarketplaceTab 首次挂载时拉,

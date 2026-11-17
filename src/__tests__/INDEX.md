@@ -754,6 +754,7 @@
 
 ## [marketplace update-store(Phase 3 — 更新检查)](./marketplace-update-store/README.md)
 
+- [`startup-check-after-init.spec.ts`](./marketplace-update-store/startup-check-after-init.spec.ts)
 - [`update-store.spec.ts`](./marketplace-update-store/update-store.spec.ts)
 
 ## [mcp-startup-audit(main 侧 MCP / 启动路径审计修复)](./mcp-startup-audit/README.md)
