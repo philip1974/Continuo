@@ -3,6 +3,7 @@ import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { xtermWebglAtlasVersionPlugin } from './scripts/vite-xterm-webgl-atlas-version';
+import { mainModuleSideEffects } from './scripts/main-bundle-side-effects';
 
 // BUILD_TARGET=pack 时输出到 out-pack/,让 `pnpm build:app` 与 `pnpm dev` 可以并行
 // 跑(dev 持续写 out/,builder 读 out-pack/,互不踩盘)。
@@ -20,7 +21,12 @@ export default defineConfig({
     ],
     build: {
       outDir: `${OUT_ROOT}/main`,
-      rollupOptions: { input: resolve(__dirname, 'electron/main/index.ts') },
+      rollupOptions: {
+        input: resolve(__dirname, 'electron/main/index.ts'),
+        // 性能:server-node 包根经 server.ts(顶层 bin 守卫=副作用)静态拖入完整 MCP SDK;声明其无副作用,
+        // main 未用即摇掉(启动包少 ~430KB)。见 scripts/main-bundle-side-effects.ts。
+        treeshake: { moduleSideEffects: mainModuleSideEffects },
+      },
     },
   },
   preload: {
