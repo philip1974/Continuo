@@ -140,10 +140,11 @@ describe('FolderTree · 拖放结束不触发滚动', () => {
       fireEvent.click(row(container, '/work/f00.ts')!);
     });
     act(() => {
-      fireEvent.dragStart(row(container, '/work/f00.ts')!);
+      fireEvent.dragStart(row(container, '/work/f00.ts')!, { dataTransfer: { types: [] } });
     });
     await act(async () => {
-      fireEvent.drop(row(container, '/work/f05.ts')!);
+      // 内部拖动:真实浏览器 drop 事件总带 dataTransfer(无 Files 类型)
+      fireEvent.drop(row(container, '/work/f05.ts')!, { dataTransfer: { types: [] } });
     });
     await flushTimers();
     expect(h.scrollToIndex).not.toHaveBeenCalled();
