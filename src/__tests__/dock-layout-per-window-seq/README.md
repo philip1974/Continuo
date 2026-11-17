@@ -9,7 +9,7 @@ T3 legacy layout payload migrates into the v3 layout section;
 T4 migration is idempotent;
 T5 corrupt or missing optional layout data falls back without losing roots;
 T6 unknown fields survive read/write roundtrips;
-T7 LRU metadata is bounded and deterministic;
+T7 LRU metadata is bounded and deterministic: `windows[]` is capped at `MAX_PERSISTED_WINDOW_SEGMENTS` (64) by dropping the oldest closed segments on window close and once at boot; active windows and the main-window segment (seq 0) are never dropped (T20c);
 T8 window sequence service exposes allocate/read/write helpers;
 T9 `layout:read` resolves the sender window context;
 T10 `layout:write` writes only the sender window layout;

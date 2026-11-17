@@ -3,7 +3,12 @@ import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { loadExplorer } from '../../../electron/main/persistence';
+import {
+  defaultExplorerV3,
+  loadExplorer,
+  MAX_PERSISTED_WINDOW_SEGMENTS,
+  saveExplorer,
+} from '../../../electron/main/persistence';
 import {
   _reset as resetWindowSeq,
   clearWindow,
@@ -452,6 +457,39 @@ describe('window close layout flush', () => {
     });
 
     expect(getActiveSeqs().has(10)).toBe(false);
+  });
+
+  it('T20c: 关窗时窗口段超过上限 → 摘最旧 closed 段;活跃窗、主窗段(seq 0)与刚关的窗口保留', async () => {
+    const sortDefault = { by: 'name' as const, reverse: false };
+    const payload = defaultExplorerV3();
+    payload.windows = [
+      { ...payload.windows[0]!, lastClosedAt: 1 },
+      ...Array.from({ length: 120 }, (_, i) => ({
+        windowSeq: i + 100,
+        workspace: { root: `/w${i}` },
+        explorer: { activePath: null, expandedPaths: [], sort: sortDefault },
+        lastClosedAt: 1000 + i,
+      })),
+    ];
+    await saveExplorer(path.join(dir, 'explorer.json'), payload);
+    const active = createMockMainWindow(100); // 段最旧但窗口活跃
+    const closing = createMockMainWindow(300);
+
+    closing.close();
+    ack(closing);
+    await vi.waitFor(async () => {
+      const after = await loadExplorer(path.join(dir, 'explorer.json'));
+      expect(after?.windows).toHaveLength(MAX_PERSISTED_WINDOW_SEGMENTS);
+    });
+    const seqs = (await loadExplorer(path.join(dir, 'explorer.json')))!.windows.map(
+      (w) => w.windowSeq,
+    );
+    expect(seqs).toContain(0);
+    expect(seqs).toContain(100);
+    expect(seqs).toContain(300);
+    expect(seqs).toContain(219); // 最新的 closed 段
+    expect(seqs).not.toContain(101); // 最旧的非活跃 closed 段
+    expect(active.destroyed).toBe(false);
   });
 
   it('before-quit 扫描窗口不对 getAllWindows 结果 filter 出中间数组,且仍 flush 存活窗口', async () => {

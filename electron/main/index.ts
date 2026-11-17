@@ -19,7 +19,9 @@ import {
   defaultExplorerV3,
   ensureWindowEntry,
   loadExplorer,
+  MAX_PERSISTED_WINDOW_SEGMENTS,
   migrateExplorerFileToV3,
+  pruneExplorerFileWindows,
   pruneLRUClosed,
 } from './persistence';
 import { EXPLORER_FILE_NAME } from '../shared/explorer-persistence-schema';
@@ -145,7 +147,16 @@ if (resolvedUserDataPath !== null) {
   app.setPath('userData', resolvedUserDataPath);
 }
 
-const LRU_MAX_CLOSED = Infinity;
+const LRU_MAX_CLOSED = MAX_PERSISTED_WINDOW_SEGMENTS;
+/**
+ * LRU 不可摘的段:活跃窗 + 主窗段 seq 0。冷启动主窗固定复用 seq 0 的段恢复 workspace,
+ * 即使它很早就被关掉,也不能当成过期历史摘掉。
+ */
+function lruProtectedSeqs(): ReadonlySet<number> {
+  const seqs = new Set(getActiveSeqs());
+  seqs.add(0);
+  return seqs;
+}
 // flush 结果:'ok' 已 ack / 'save-failed' renderer 报保存失败 / 'still-dirty' flush 后最终脏检查仍有未保存改动 /
 // 'timeout' 超时兜底 / 'skipped' 无法 flush 直接放行。
 type FlushOutcome = 'ok' | 'save-failed' | 'still-dirty' | 'timeout' | 'skipped';
@@ -593,7 +604,7 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
       const payload = (await loadExplorer(explorerFile)) ?? defaultExplorerV3();
       const entry = ensureWindowEntry(payload, seq);
       entry.lastClosedAt = Date.now();
-      pruneLRUClosed(payload, LRU_MAX_CLOSED, getActiveSeqs());
+      pruneLRUClosed(payload, LRU_MAX_CLOSED, lruProtectedSeqs());
       await atomicWriteJson(explorerFile, payload);
     });
   });
@@ -1182,6 +1193,10 @@ app.whenReady().then(async () => {
   const explorerFile = path.join(userData, EXPLORER_FILE_NAME);
   const legacyLayoutFile = path.join(userData, 'layout.json');
   await migrateExplorerFileToV3(explorerFile, legacyLayoutFile);
+  // 既有超长 explorer.json(LRU 上限曾为 Infinity)启动时收敛一次;失败只告警,不阻断启动。
+  await pruneExplorerFileWindows(explorerFile, LRU_MAX_CLOSED, lruProtectedSeqs()).catch((err) =>
+    console.warn('[boot] explorer window segment prune skipped', err),
+  );
 
   // topic 16 i18n: 必须先 hydrate settings.json，buildAppMenu 才能拿到正确 locale 的 label
   await loadSettings();

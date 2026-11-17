@@ -14,6 +14,8 @@ import {
   mergeWritableIntoFull,
   migrateV1ToV2,
   migrateV2ToV3,
+  MAX_PERSISTED_WINDOW_SEGMENTS,
+  pruneExplorerFileWindows,
   pruneLRUClosed,
   saveExplorer,
   type ExplorerPayload,
@@ -226,6 +228,71 @@ describe('explorer.json v3 persistence schema and merge semantics', () => {
     expect(payload.windows.map((w) => w.windowSeq).sort()).toEqual([1]);
     pruneLRUClosed(payload, Infinity, new Set());
     expect(payload.windows.map((w) => w.windowSeq)).toEqual([1]);
+  });
+
+  // perf:LRU 上限此前为 Infinity,关闭窗口段永不淘汰(真机 102 段 / 211KB),每次 layout/explorer 写都
+  // 全量处理。上限改为有限值,并在启动时对既有超长文件收敛一次。
+  describe('窗口段数上限与启动收敛', () => {
+    const closedWindow = (seq: number, closedAt: number | undefined) => ({
+      windowSeq: seq,
+      workspace: { root: `/w${seq}` },
+      explorer: { activePath: null, expandedPaths: [], sort },
+      ...(closedAt === undefined ? {} : { lastClosedAt: closedAt }),
+    });
+
+    it('上限是有限值,且不小于启动恢复的候选检查预算', async () => {
+      const { MAX_RESTORE_CHECKS } = await import(
+        '../../../electron/main/services/window-restore.service'
+      );
+      expect(Number.isFinite(MAX_PERSISTED_WINDOW_SEGMENTS)).toBe(true);
+      expect(MAX_PERSISTED_WINDOW_SEGMENTS).toBeGreaterThanOrEqual(MAX_RESTORE_CHECKS);
+    });
+
+    it('超长文件收敛到上限:摘最旧 closed 段,保护段与较新段保留,其余字段与 nextWindowSeq 不变', async () => {
+      const payload = defaultExplorerV3();
+      payload.nextWindowSeq = 500;
+      payload.windows = [
+        { ...payload.windows[0]!, lastClosedAt: 1 }, // 主窗段最旧,但受保护
+        ...Array.from({ length: 99 }, (_, i) => closedWindow(i + 1, 1000 + i)),
+        closedWindow(400, undefined), // 无 lastClosedAt 视为最旧
+      ];
+      await saveExplorer(file, payload);
+
+      await pruneExplorerFileWindows(file, 64, new Set([0]));
+
+      const after = (await loadExplorer(file))!;
+      expect(after.windows).toHaveLength(64);
+      const seqs = after.windows.map((w) => w.windowSeq);
+      expect(seqs[0]).toBe(0);
+      expect(seqs).not.toContain(400);
+      expect(seqs).not.toContain(1);
+      expect(seqs).toContain(99);
+      // 保留段维持原数组顺序
+      expect(seqs).toEqual([...seqs].sort((a, b) => a - b));
+      expect(after.nextWindowSeq).toBe(500);
+      expect(after.workspace).toEqual(payload.workspace);
+    });
+
+    it('未超限时不写盘', async () => {
+      const payload = defaultExplorerV3();
+      payload.windows.push(closedWindow(1, 10));
+      await saveExplorer(file, payload);
+      const before = await fs.readFile(file, 'utf-8');
+      const statBefore = await fs.stat(file);
+
+      await pruneExplorerFileWindows(file, 64, new Set([0]));
+
+      expect(await fs.readFile(file, 'utf-8')).toBe(before);
+      expect((await fs.stat(file)).ino).toBe(statBefore.ino);
+    });
+
+    it('文件缺失或损坏时不写、不抛', async () => {
+      await pruneExplorerFileWindows(file, 64, new Set([0]));
+      await expect(fs.access(file)).rejects.toThrow();
+      await fs.writeFile(file, '{ not json', 'utf-8');
+      await pruneExplorerFileWindows(file, 64, new Set([0]));
+      expect(await fs.readFile(file, 'utf-8')).toBe('{ not json');
+    });
   });
 
   it('pruneLRUClosed 全部窗口仍 active 时不预分配 closed 数组', () => {

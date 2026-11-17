@@ -118,6 +118,14 @@ export function ensureWindowEntry(
   return entry;
 }
 
+/**
+ * explorer.json windows[] 的段数上限(LRU:超出时摘最旧的 closed 段,活跃窗永不摘)。
+ * 此前为 Infinity(topic-08 预留「先观察后裁剪」),真机已累积到 100+ 段,每次 layout/explorer 写都
+ * 全量 parse+校验+stringify。取 64 = 启动恢复的候选检查预算 MAX_RESTORE_CHECKS:恢复最多看前 64 个
+ * 候选段,更多的历史段本就不会被恢复。nextWindowSeq 是独立单调计数器,摘段不会让 seq 被复用。
+ */
+export const MAX_PERSISTED_WINDOW_SEGMENTS = 64;
+
 export function pruneLRUClosed(
   payload: ExplorerPayloadV3,
   maxClosed: number,
@@ -392,6 +400,25 @@ export async function saveExplorer(
   }
 
   ExplorerSchemaV3.parse(payload);
+}
+
+/**
+ * 启动收敛:既有 explorer.json 段数超限时裁到上限(未超限 / 文件缺失 / 损坏 / 不可读 → 不写)。
+ * 运行期只在关窗时裁剪,不做这一步的话超长文件要等到第一次关窗才收敛,期间每次写仍全量处理。
+ */
+export async function pruneExplorerFileWindows(
+  explorerFile: string,
+  maxSegments: number,
+  activeSeqs: ReadonlySet<number>,
+): Promise<void> {
+  await withExplorerFileMutex(async () => {
+    const payload = await loadExplorer(explorerFile);
+    if (payload === null || payload.windows.length <= maxSegments) return;
+    const before = payload.windows.length;
+    pruneLRUClosed(payload, maxSegments, activeSeqs);
+    if (payload.windows.length === before) return;
+    await atomicWriteJson(explorerFile, payload);
+  });
 }
 
 export async function allocateWindowSeq(explorerFile: string): Promise<number> {
