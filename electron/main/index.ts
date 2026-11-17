@@ -697,6 +697,15 @@ function isDirectorySync(p: string): boolean {
   }
 }
 
+/** isDirectorySync 的异步版:启动窗口恢复用,慢挂载 / 断开网络盘不阻塞 main(性能审计 #7)。 */
+async function isDirectory(p: string): Promise<boolean> {
+  try {
+    return (await nodeFs.promises.stat(p)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 /**
  * 开一个新主窗:分配新的 windowSeq;给了 workspace 则以它为 root 且 fresh(用户显式打开,不沿用该
  * seq 的历史持久化段),不给则是空白新窗。菜单 / Dock 菜单 / argv / open-file / 冷启动多目录共用。
@@ -1269,7 +1278,7 @@ app.whenReady().then(async () => {
       try {
         const data = await loadExplorer(explorerFile);
         if (!data) return;
-        for (const entry of pickWindowsToRestore(data, isDirectorySync)) {
+        for (const entry of await pickWindowsToRestore(data, isDirectory)) {
           createMainWindow({
             windowSeq: entry.windowSeq,
             workspace: entry.workspace,

@@ -67,3 +67,15 @@ Explorer 自动反映,不需手动刷新。
 - ipcMain 事件跨进程到达 renderer(留 E2E)
 - React hook 集成行为(useFsWatcher 是薄壳,逻辑都在 helpers,留 E2E)
 - 多窗口 / popout 场景下 watcher 与 webContents 关联(留 popout 里程碑)
+
+## 同 tick 同路径合并广播(性能审计 #1)
+
+macOS/Win 每个展开目录各有一个 recursive watcher,一次变更会被根及每个已展开祖先的 watcher
+各回调一次,且 `resolveWatchChangedPath` 算出的 changedPath 与报告的祖先无关(都是同一个绝对目录)。
+生产回调经 `queueDirChangedBroadcast`(`createSameTickPathCoalescer`)入队:同一 tick 内同一路径
+只向每个窗口发一次 `fs:dir-changed`,不同路径按首次出现顺序各发一次,延迟一个 `setImmediate`。
+
+未采用「祖先已 recursive 覆盖则不建子 watcher」:watcher 回调无 filename(Win
+ReadDirectoryChangesW 缓冲溢出 / 旧 macOS)时只广播 watcher 根路径 —— 子目录不再有自己的 watcher
+就收不到自身路径的刷新,invalidation 行为不一致;另需在祖先 unwatch / LRU 驱逐 / error 驱逐时
+级联重建或 watch-lost 通知被覆盖的子路径,风险大于收益。

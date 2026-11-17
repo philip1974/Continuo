@@ -199,3 +199,31 @@ export function createWatcherPool(
     },
   };
 }
+
+/**
+ * 同 tick 同路径合并(性能审计 #1)。macOS/Win 上每个展开目录各有一个 recursive watcher,一次变更会被
+ * 根及每个已展开祖先的 watcher 各回调一次,且算出**同一个** changedPath(resolveWatchChangedPath 按
+ * watcher 根拼相对子目录,结果与哪个祖先报告无关)→ 原先逐个广播 = O(展开祖先数 × 窗口数) 次 IPC。
+ * 这些回调在同一轮事件循环内派发,合并到 schedule(默认 setImmediate)后每个路径只 emit 一次;不同
+ * 路径按首次出现顺序各 emit 一次。renderer 侧本就按路径 100ms debounce / in-flight 合并,语义不变。
+ */
+export function createSameTickPathCoalescer(
+  emit: (path: string) => void,
+  schedule: (flush: () => void) => void = (flush) => {
+    setImmediate(flush);
+  },
+): (path: string) => void {
+  let pending: Set<string> | null = null;
+  const flush = (): void => {
+    const paths = pending;
+    pending = null;
+    if (paths) for (const p of paths) emit(p);
+  };
+  return (path) => {
+    if (pending === null) {
+      pending = new Set();
+      schedule(flush);
+    }
+    pending.add(path);
+  };
+}

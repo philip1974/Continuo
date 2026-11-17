@@ -417,9 +417,13 @@ export function FolderTree({ root }: { root: string }) {
   // ── fs.watch 增量更新(Step 6) ───────────────────────────────────
   // 跟随 headless-tree 受控展开集合,同步到 main 进程 watcher。
   const expandedPaths = useMemo(() => new Set(expandedItems), [expandedItems]);
-  useFsWatcher(expandedPaths, (changedPath) => {
-    refreshParent(changedPath);
-  });
+  useFsWatcher(
+    expandedPaths,
+    (changedPath) => {
+      refreshParent(changedPath);
+    },
+    root,
+  );
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
