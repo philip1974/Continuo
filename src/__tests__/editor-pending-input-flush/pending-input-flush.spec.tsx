@@ -21,6 +21,7 @@ vi.mock('../../panels/Editor/MilkdownEditor', async () => {
     '../../panels/Editor/editor-writeback-registry'
   );
   type Props = {
+    tabId: string;
     defaultValue: string;
     readonly?: boolean;
     onWriteBack?: (md: string, base: string) => void;
@@ -32,7 +33,7 @@ vi.mock('../../panels/Editor/MilkdownEditor', async () => {
       const baseRef = ReactMod.useRef(props.defaultValue);
       ReactMod.useEffect(
         () =>
-          register(() => {
+          register(propsRef.current.tabId, () => {
             if (propsRef.current.readonly || harness.pending === null) return;
             const md = harness.pending;
             harness.pending = null;
@@ -132,9 +133,11 @@ describe('EditorPanel:决定前先回写未上抛输入', () => {
 describe('editor store:按 dirty / id 决定的动作先回写未上抛输入', () => {
   // 回写句柄的闭包绑定挂载时的 tab id(同 EditorPanel 传给 Milkdown 的 onWriteBack)
   let off: (() => void) | null = null;
+  const calls: string[] = [];
   function pendingInput(md: string, tabId = PATH, base = 'hello'): void {
     harness.pending = md;
-    off = registerEditorWriteBack(() => {
+    off = registerEditorWriteBack(tabId, () => {
+      calls.push(tabId);
       if (harness.pending === null) return;
       const v = harness.pending;
       harness.pending = null;
@@ -144,6 +147,7 @@ describe('editor store:按 dirty / id 决定的动作先回写未上抛输入', 
   afterEach(() => {
     off?.();
     off = null;
+    calls.length = 0;
   });
 
   it('外部改盘 reloadFromDisk → 未上抛输入不被磁盘内容覆盖,tab 变脏保留', () => {
@@ -199,5 +203,75 @@ describe('editor store:按 dirty / id 决定的动作先回写未上抛输入', 
     expect(useEditorStore.getState().tabs[0]?.content).toBe('hello');
     useEditorStore.getState().setMode('preview');
     expect(useEditorStore.getState().tabs[0]?.content).toBe('hello typed');
+  });
+
+  // perf(c2745dae 回归):回写会把正在编辑的大文档整篇序列化(约 70ms)并提前上抛。只回写受影响的
+  // tab —— 终端 agent 改了另一个打开中的干净文件、改名 / 删除不相关路径,都不应打断正在输入的 tab。
+  describe('只回写受影响的 tab', () => {
+    const OTHER = '/w/other.md';
+    beforeEach(() => {
+      useEditorStore.setState({
+        tabs: [createTab(PATH, 'hello'), createTab(OTHER, 'x')],
+        activeTabId: PATH,
+      });
+    });
+
+    it('重载别的 tab(reloadFromDisk)→ 不回写正在编辑的 tab,其未上抛输入留在编辑器', () => {
+      pendingInput('hello typed');
+      useEditorStore.getState().reloadFromDisk(OTHER, 'x2');
+      expect(calls).toEqual([]);
+      expect(harness.pending).toBe('hello typed');
+      const [a, b] = useEditorStore.getState().tabs;
+      expect(a?.content).toBe('hello');
+      expect(b?.content).toBe('x2');
+    });
+
+    it('改名 / 移动不相关路径(renamePath / setFilePath)→ 不回写', () => {
+      pendingInput('hello typed');
+      useEditorStore.getState().renamePath(OTHER, '/w/other2.md');
+      useEditorStore.getState().setFilePath('/w/other2.md', '/w/other3.md');
+      expect(calls).toEqual([]);
+      expect(useEditorStore.getState().tabs[1]?.id).toBe('/w/other3.md');
+    });
+
+    it('删除不相关路径(removePath / removePaths)→ 不回写', () => {
+      pendingInput('hello typed');
+      useEditorStore.getState().removePaths(['/w/nope.md']);
+      useEditorStore.getState().removePath(OTHER);
+      expect(calls).toEqual([]);
+      expect(useEditorStore.getState().tabs.map((t) => t.id)).toEqual([PATH]);
+    });
+
+    it('切 root 不关闭正在编辑的 tab(closeTabsOutsideRoot)→ 不回写', () => {
+      pendingInput('hello typed');
+      useEditorStore.getState().closeTabsOutsideRoot('/w');
+      expect(calls).toEqual([]);
+    });
+
+    it('改名其父目录 → 按旧 id 回写该 tab', () => {
+      pendingInput('hello typed');
+      useEditorStore.getState().renamePath('/w', '/v');
+      expect(calls).toEqual([PATH]);
+      expect(useEditorStore.getState().tabs[0]).toMatchObject({
+        id: '/v/a.md',
+        content: 'hello typed',
+      });
+    });
+  });
+});
+
+describe('EditorPanel:重载别的 tab 不打断正在编辑的 Milkdown', () => {
+  it('外部改了另一个打开中的干净 tab → 活动 Milkdown 不回写,其输入不被提前上抛', async () => {
+    useEditorStore.setState({
+      tabs: [createTab(PATH, 'hello'), createTab('/w/other.md', 'x')],
+      activeTabId: PATH,
+    });
+    await renderPanel();
+    harness.pending = 'hello typed';
+
+    act(() => useEditorStore.getState().reloadFromDisk('/w/other.md', 'x2'));
+
+    expect(harness.pending).toBe('hello typed');
+    expect(useEditorStore.getState().tabs[0]?.content).toBe('hello');
   });
 });

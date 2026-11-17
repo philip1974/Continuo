@@ -191,6 +191,23 @@ export function getStateAfterClosingTab(
 }
 
 /**
+ * 只回写某个 tab 变更(关闭 / 换 id)会影响到的 tab:按 pre-flush 的 tabs 跑一遍纯函数 `change`,
+ * 结果里不再出现的旧 id 即受影响者。无受影响 tab 时不调用回写。
+ */
+function flushWriteBacksForAffectedTabs(
+  tabs: EditorTab[],
+  change: (tabs: EditorTab[], activeTabId: string | null) => CloseTabResult,
+): void {
+  const next = change(tabs, null).tabs;
+  if (next === tabs) return;
+  const kept = new Set<string>();
+  for (const t of next) kept.add(t.id);
+  const affected: string[] = [];
+  for (const t of tabs) if (!kept.has(t.id)) affected.push(t.id);
+  if (affected.length > 0) flushEditorWriteBacks(affected);
+}
+
+/**
  * 文件 / 目录被重命名 / 移动后的 tab 状态:
  * - 精确匹配 filePath === oldPath → 改 id+filePath 为 newPath
  * - 子文件(`oldPath/` 或 `oldPath\\` 前缀)→ 前缀 rewrite
@@ -590,8 +607,13 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
       applyTabStateChange(s, getStateAfterClosingTab(s.tabs, s.activeTabId, id)),
     ),
 
+  // 先按 pre-flush 状态算出受影响(将被关闭 / 换 id)的 tab,只回写它们 —— 回写会把正在编辑的大文档
+  // 整篇序列化并提前上抛,不相关的删除 / 改名 / 切 root 不应打断输入。回写只改 content / dirty,
+  // 不改 id 与路径匹配;回写后变脏的 tab 按既有规则保留。
   removePath: (path)=> {
-    flushEditorWriteBacks();
+    flushWriteBacksForAffectedTabs(get().tabs, (tabs, active) =>
+      getStateAfterRemovingPath(tabs, active, path),
+    );
     set((s) =>
       applyTabStateChange(
         s,
@@ -601,7 +623,9 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
   },
 
   removePaths: (paths)=> {
-    flushEditorWriteBacks();
+    flushWriteBacksForAffectedTabs(get().tabs, (tabs, active) =>
+      getStateAfterRemovingPaths(tabs, active, paths),
+    );
     set((s) =>
       applyTabStateChange(
         s,
@@ -611,7 +635,10 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
   },
 
   renamePath: (oldPath, newPath)=> {
-    flushEditorWriteBacks();
+    // 换 tab id 前按旧 id 回写:卸载回写的闭包仍持旧 id,换完就找不到 tab 而丢弃
+    flushWriteBacksForAffectedTabs(get().tabs, (tabs, active) =>
+      getStateAfterRenamingPath(tabs, active, oldPath, newPath),
+    );
     set((s) =>
       applyTabStateChange(
         s,
@@ -621,7 +648,9 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
   },
 
   closeTabsOutsideRoot: (root)=> {
-    flushEditorWriteBacks();
+    flushWriteBacksForAffectedTabs(get().tabs, (tabs, active) =>
+      getStateAfterClosingTabsOutsideRoot(tabs, active, root),
+    );
     set((s) =>
       applyTabStateChange(
         s,
@@ -631,7 +660,9 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
   },
 
   reloadFromDisk: (tabId, content, realPath) => {
-    flushEditorWriteBacks(); // 未上抛输入先进 store → tab 变脏 → 下面按 dirty 跳过,不被磁盘覆盖
+    // 只回写被重载的 tab:未上抛输入先进 store → tab 变脏 → 下面按 dirty 跳过,不被磁盘覆盖。
+    // 别的 tab 被外部改动不打断正在输入的 tab(回写会整篇序列化)。
+    flushEditorWriteBacks([tabId]);
     set((s) => {
       const idx = findEditorTabIndexById(s.tabs, tabId);
       if (idx < 0) return s;
@@ -722,7 +753,7 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
     }),
 
   setFilePath: (id, newPath) => {
-    flushEditorWriteBacks(); // 换 tab id 前按旧 id 回写(见 removePath 处说明)
+    flushEditorWriteBacks([id]); // 换 tab id 前按旧 id 回写(见 renamePath 处说明)
     set((s) => {
       const idx = findEditorTabIndexById(s.tabs, id);
       if (idx < 0) return s;
@@ -746,7 +777,8 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
 
   setMode: (mode) => {
     if (get().mode === mode) return;
-    flushEditorWriteBacks(); // 新模式视图按 store 内容挂载:先回写(见 removePath 处说明)
+    // 新模式视图按 store 内容挂载:先回写。mode 是全局的,所有已挂载编辑器都随之重挂载 → 全量。
+    flushEditorWriteBacks();
     set({ mode });
   },
 

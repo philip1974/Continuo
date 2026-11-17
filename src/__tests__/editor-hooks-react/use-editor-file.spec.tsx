@@ -48,7 +48,7 @@ describe('useEditorFile', () => {
       tabs: [{ id: '/x.md', filePath: '/x.md', content: 'new', originalContent: 'old', dirty: true }],
       activeTabId: '/x.md',
     });
-    const unregister = registerEditorWriteBack(() => {
+    const unregister = registerEditorWriteBack('/x.md', () => {
       useEditorStore.getState().updateContent('/x.md', 'newest');
     });
     try {

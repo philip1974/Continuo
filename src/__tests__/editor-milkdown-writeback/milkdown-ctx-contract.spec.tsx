@@ -69,7 +69,7 @@ afterEach(() => {
 
 describe('Milkdown 内部契约(真实 Crepe)', () => {
   it('slice 名可取视图与序列化器,序列化结果与 getMarkdown 一致;选区事务不换文档,输入换文档', async () => {
-    render(<MilkdownEditor defaultValue={'# Title\n\nbody\n'} />);
+    render(<MilkdownEditor tabId="/t.md" defaultValue={'# Title\n\nbody\n'} />);
     const crepe = await waitMounted();
     const view = viewOf(crepe);
     const serialize = crepe.editor.ctx.get<(doc: object) => string, 'serializer'>('serializer');
@@ -87,7 +87,7 @@ describe('Milkdown 内部契约(真实 Crepe)', () => {
   it('输入后防抖未到即卸载 → 卸载回写拿到含新输入的全文', async () => {
     const onWriteBack = vi.fn();
     const { unmount } = render(
-      <MilkdownEditor defaultValue={'# Title\n\nbody\n'} onWriteBack={onWriteBack} />,
+      <MilkdownEditor tabId="/t.md" defaultValue={'# Title\n\nbody\n'} onWriteBack={onWriteBack} />,
     );
     const crepe = await waitMounted();
     const view = viewOf(crepe);
@@ -101,7 +101,7 @@ describe('Milkdown 内部契约(真实 Crepe)', () => {
 
   it('真实 plugin-listener updated:小文档输入后约 200ms 上抛全文', async () => {
     const onChange = vi.fn();
-    render(<MilkdownEditor defaultValue={'# Title\n\nbody\n'} onChange={onChange} />);
+    render(<MilkdownEditor tabId="/t.md" defaultValue={'# Title\n\nbody\n'} onChange={onChange} />);
     const crepe = await waitMounted();
     const view = viewOf(crepe);
     view.dispatch(view.state.tr.insertText('X', 3));

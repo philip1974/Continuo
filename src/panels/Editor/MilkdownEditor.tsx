@@ -24,6 +24,11 @@ import {
 import { registerEditorWriteBack } from './editor-writeback-registry';
 
 interface MilkdownEditorProps {
+  /**
+   * 所属 tab id,用于按 tab 登记同步回写(只回写受影响的 tab)。挂载时取定:EditorPanel 的 key
+   * 含 tab id,id 变化(改名)即重挂载。
+   */
+  tabId: string;
   defaultValue: string;
   readonly?: boolean;
   onChange?: (markdown: string) => void;
@@ -76,6 +81,7 @@ interface WriteBackHandle {
 }
 
 function CrepeEditor({
+  tabId,
   defaultValue,
   readonly = false,
   onChange,
@@ -262,13 +268,15 @@ function CrepeEditor({
   // 关窗握手经注册表同步回写;卸载(切 tab / 切 mode / 重挂载)时也同步回写一次再停用。
   // 父组件的卸载清理先于子组件 <Milkdown/> 里的 editor.destroy(),此时仍可取全文。
   useEffect(() => {
-    const unregister = registerEditorWriteBack(() => writeBackRef.current?.writeBack());
+    const unregister = registerEditorWriteBack(tabId, () => writeBackRef.current?.writeBack());
     return () => {
       unregister();
       const handle = writeBackRef.current;
       handle?.writeBack();
       handle?.dispose();
     };
+    // tabId 挂载时取定(见 props 注释);依赖它重跑会在清理里提前回写并 dispose 编辑器。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return <Milkdown />;

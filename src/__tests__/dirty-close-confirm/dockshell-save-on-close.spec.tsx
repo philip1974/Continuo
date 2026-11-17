@@ -247,7 +247,7 @@ describe('flush 握手的「保存」分支', () => {
   it('先同步回写编辑器里未上抛的输入,再保存 / flush autosave', async () => {
     await mountShell();
     act(() => useEditorStore.getState().openTab(createTab('/w/a.ts', 'old')));
-    const unregister = registerEditorWriteBack(() =>
+    const unregister = registerEditorWriteBack('/w/a.ts', () =>
       applyEditorWriteBack(useEditorStore, '/w/a.ts', 'typed', 'old'),
     );
     let contentAtAutoSaveFlush: string | undefined;

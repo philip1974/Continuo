@@ -232,7 +232,7 @@ export function EditorPanel() {
       // tab.dirty 是 TabChrome 快照,store 可能落后编辑器(Milkdown 自适应防抖,大文档最长约 2s):
       // 先同步回写未上抛的输入,再按 store 最新 dirty 判定。否则「干净」tab 直接关闭,
       // 随后卸载回写找不到 tab → 这段输入丢失。
-      flushEditorWriteBacks();
+      flushEditorWriteBacks([tab.id]);
       const live = findEditorFileTabById(useEditorStore.getState().tabs, tab.id);
       if (!live) return;
       if (live.dirty) setCloseCandidate({ id: live.id, filePath: live.filePath, dirty: true });
@@ -293,6 +293,7 @@ export function EditorPanel() {
           // Milkdown remount 拿新内容,避免基于陈旧内容编辑后保存覆盖外部改动。
           // 用户输入/保存不动 epoch,故不会每次按键 remount。
           key={`${activeTab.id}-${effective}-${activeTab.reloadEpoch ?? 0}`}
+          tabId={activeTab.id}
           // preview 只读不回写,frontmatter 换成 yaml 代码块展示(否则被解析成横线+标题)
           defaultValue={
             effective === 'preview'
