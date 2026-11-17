@@ -330,6 +330,12 @@ export async function hydrateEditorTabs(
   // 本函数「不抛、单文件失败静默跳过」契约 → initExplorerPersistence catch 后 0 tab,
   // 下次变化把 editor.openFilePaths 写成空数组 → 丢掉本可恢复的整个编辑会话。allSettled
   // 把 reject 当作该文件失败逐项跳过,保留其它成功恢复的 tab。
+  // r4 复审 #1:Splash 在 root 恢复后即放行(rootRestored),下方读盘期间用户可能已打开/切换 tab。
+  // 记录用户意图基线:用户 openTab/switchTab 递增 editorFocusPulse(恢复自身用 requestFocus:false 不递增),
+  // 关 tab 改 activeTabId。读完后据此判断是否保留用户当前活动 tab。
+  const before = useEditorStore.getState();
+  const baselinePulse = before.editorFocusPulse;
+  const baselineActive = before.activeTabId;
   // 边界(E216):固定 worker 池并发读,峰值并发钳到 RESTORE_READ_CONCURRENCY(不一次性 fan-out 全部 readFile)。
   const settled = await allSettledWithConcurrency(
     paths,
@@ -347,9 +353,16 @@ export async function hydrateEditorTabs(
       : currentRoot === null || !pathEquals(currentRoot, expectedRoot);
   if (rootChanged) return;
   const store = useEditorStore.getState();
+  // 用户在读盘期间已打开/切换 tab 且当前有活动 tab → 恢复 tab 仍按顺序补入(不丢会话),
+  // 但不激活、不 switchTab(desired),保留用户的活动 tab。用户未操作时行为与原先一致。
+  const keepUserActive =
+    store.activeTabId !== null &&
+    (store.editorFocusPulse !== baselinePulse || store.activeTabId !== baselineActive);
   // 会话恢复不是用户意图:requestFocus:false 不递增 editorFocusPulse —— 布局已先恢复时,DockShell
   // 不据此 setActive(editor) 抢走 fromJSON 恢复出的活动面板(只确保 editor 面板存在)。
-  const restoreOpts = { requestFocus: false } as const;
+  const restoreOpts = keepUserActive
+    ? ({ requestFocus: false, activate: false } as const)
+    : ({ requestFocus: false } as const);
   for (let i = 0; i < paths.length; i++) {
     const s = settled[i];
     if (!s || s.status !== 'fulfilled') continue; // reject → 当失败跳过(不抛)
@@ -360,7 +373,7 @@ export async function hydrateEditorTabs(
   // 重读最新 store(openTab 改了状态)
   const next = useEditorStore.getState();
   const desired = entry.editor.activePath;
-  if (desired && hasEditorTabWithId(next.tabs, desired)) {
+  if (!keepUserActive && desired && hasEditorTabWithId(next.tabs, desired)) {
     next.switchTab(desired, restoreOpts);
   }
 }

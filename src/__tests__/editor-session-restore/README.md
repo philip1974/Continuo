@@ -47,6 +47,7 @@ editor?: {
 - activePath 在已恢复 tabs 内 → `switchTab(activePath)`
 - activePath 不在已恢复 tabs 内(被跳过)→ 不调 switchTab(让 store 自然行为)
 - 恢复用的 openTab / switchTab 均带 `{ requestFocus: false }`:不递增 editorFocusPulse,不抢 Dock 活动面板
+- 读盘在途时用户已打开/切换 tab(editorFocusPulse 或 activeTabId 相对恢复开始时变了)且当前有活动 tab → 恢复 tab 仍按顺序追加(`openTab(..., { activate: false })`),**不**切回 activePath,保留用户活动 tab;恢复 tab 照常进入持久化 openFilePaths
 
 ### initExplorerPersistence(api, extras) · 集成
 

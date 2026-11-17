@@ -384,6 +384,63 @@ describe('initExplorerPersistence + editor', () => {
     expect(useEditorStore.getState().tabs).toEqual([]);
   });
 
+  // r4 复审 #1:Splash 在 root 恢复后即放行,编辑器 tab 读盘仍在途;用户此时打开的文件必须仍是活动 tab
+  // (恢复的 tab 照常按顺序加入,不丢会话),不能被迟到的 restore 的 openTab/switchTab 抢回上次会话文件。
+  it('读盘在途时用户 openTab 新文件 → 恢复完成后活动 tab 仍是用户文件,恢复 tab 都在且进持久化', async () => {
+    const snap = snapV2({
+      workspaceRoot: '/w',
+      recentRoots: ['/w'],
+      editor: { openFilePaths: ['/w/a.md', '/w/b.md'], activePath: '/w/a.md' },
+    });
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const fs: EditorSessionFsApi = {
+      readFile: vi.fn(async (p: string) => {
+        await gate;
+        return { ok: true as const, data: `content:${p}` };
+      }),
+    };
+    const done = initExplorerPersistence(makeApi(snap), { fs });
+    await vi.waitFor(() => expect(fs.readFile).toHaveBeenCalled());
+    // Splash 已放行,用户打开别的文件
+    useEditorStore.getState().openTab(createTab('/w/user.md', 'mine'));
+    release();
+    await done;
+    const st = useEditorStore.getState();
+    expect(st.activeTabId).toBe('/w/user.md');
+    expect(st.tabs.map((t) => t.id)).toEqual(['/w/user.md', '/w/a.md', '/w/b.md']);
+    const persisted = snapshotFromStores(undefined, 0).windows[0]!.editor;
+    expect(persisted).toEqual({
+      openFilePaths: ['/w/user.md', '/w/a.md', '/w/b.md'],
+      activePath: '/w/user.md',
+    });
+  });
+
+  it('读盘在途时用户切到已有 tab(switchTab)→ 恢复完成后不切回 snapshot 的 activePath', async () => {
+    useEditorStore.getState().openTab(createTab('/w/u1.md', 'x'));
+    useEditorStore.getState().openTab(createTab('/w/u2.md', 'y'));
+    useWorkspaceStore.setState({ root: '/w' });
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const fs: EditorSessionFsApi = {
+      readFile: vi.fn(async () => {
+        await gate;
+        return { ok: true as const, data: 'c' };
+      }),
+    };
+    const snap = snapV2({
+      workspaceRoot: '/w',
+      editor: { openFilePaths: ['/w/a.md'], activePath: '/w/a.md' },
+    });
+    const p = hydrateEditorTabs(snap, fs, 0);
+    useEditorStore.getState().switchTab('/w/u1.md');
+    release();
+    await p;
+    const st = useEditorStore.getState();
+    expect(st.activeTabId).toBe('/w/u1.md');
+    expect(st.tabs.map((t) => t.id)).toEqual(['/w/u1.md', '/w/u2.md', '/w/a.md']);
+  });
+
   it('snap windows[0] 无 editor 字段 → 不调 fs.readFile', async () => {
     const snap = snapV2({});
     const fs = makeFs({});
@@ -391,3 +448,4 @@ describe('initExplorerPersistence + editor', () => {
     expect(fs.readFile).not.toHaveBeenCalled();
   });
 });
+

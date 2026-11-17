@@ -378,6 +378,11 @@ export function getStateAfterRemovingPath(
  */
 export interface EditorFocusOpts {
   readonly requestFocus?: boolean;
+  /**
+   * 仅 openTab:`false` = 只插入不激活(当前已有活动 tab 时保持 activeTabId 不变;无活动 tab 时仍激活新 tab)。
+   * 供迟到的会话恢复在用户已打开/切换 tab 后补入恢复 tab 而不抢回活动 tab。缺省 true。
+   */
+  readonly activate?: boolean;
 }
 
 function nextFocusPulse(pulse: number, opts: EditorFocusOpts | undefined): number {
@@ -473,8 +478,11 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
   openTab: (tab, opts) =>
     set((s) => {
       const pulse = nextFocusPulse(s.editorFocusPulse, opts);
+      const keepActive = opts?.activate === false && s.activeTabId !== null;
       const existingIndex = findEditorTabIndexById(s.tabs, tab.id);
-      if (existingIndex >= 0) return { activeTabId: tab.id, editorFocusPulse: pulse };
+      if (existingIndex >= 0) {
+        return keepActive ? s : { activeTabId: tab.id, editorFocusPulse: pulse };
+      }
       // 边界(E278,E276/E277 同族 / 运行时状态守持久化契约):file tab 经 snapshotFromStores 序列化成
       // editor.openFilePaths(持久化 PATH_ARRAY_MAX=100000 cap + 单条 PATH_STR_MAX)。插件经 SDK openFile
       // 循环开海量文件 → tabs 超量 → openFilePaths 超上限 → explorer:write 拒整份 → 全 explorer 持久化失败。
@@ -487,7 +495,7 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
       }
       return {
         tabs: appendEditorTab(s.tabs, tab),
-        activeTabId: tab.id,
+        activeTabId: keepActive ? s.activeTabId : tab.id,
         editorFocusPulse: pulse,
         chromeVersion: s.chromeVersion + 1, // perf P12:新增 tab → chrome 变
       };
