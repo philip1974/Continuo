@@ -11,7 +11,7 @@ import { z } from 'zod';
 import { PLUGIN_ID_MAX_LEN } from './permission-record-limits';
 import { assertJsonValue } from './assert-json-value';
 import { utf8BytesExceed } from './utf8-byte-length';
-import { jsonByteLowerBoundExceeds, jsonStringLengthLowerBoundExceeds } from './json-byte-budget';
+import { jsonStringLengthLowerBoundExceeds } from './json-byte-budget';
 import { boundedValueDeepAdmissible } from './bounded-input';
 import type { InvokeReply } from './plugin-mcp-channels';
 
@@ -55,7 +55,8 @@ export const RegisterPayloadSchema = z
       // 字节可远超 64KiB,否则 assertJsonValue 先完整遍历(≤65536 元素)才被字节 cap 拒。jsonByteLowerBoundExceeds
       // 对任意输入安全(E288)可先于 assertJsonValue 跑。(仅「既非 JSON-safe 又超字节」病态 schema 的 issue
       // 文案从「非 JSON 安全值」变「序列化超过 N 字节」—— 两者皆 reject,单-bad 不变。)
-      if (jsonByteLowerBoundExceeds(s, SCHEMA_BYTES_MAX)) {
+      // .length 下界即可(其后 E128 有真实 UTF-8 字节精确终裁)。
+      if (jsonStringLengthLowerBoundExceeds(s, SCHEMA_BYTES_MAX)) {
         ctx.addIssue({
           code: 'custom',
           message: `jsonSchema 序列化超过 ${SCHEMA_BYTES_MAX} 字节`,

@@ -5,7 +5,7 @@
 // (layout:read)共用此常量 —— ipc.ts 顶层有 app 副作用不可测试导入,故守卫逻辑抽到本可导入模块。
 import { assertJsonValue } from '../../shared/assert-json-value';
 import { utf8ByteLength } from '../../shared/utf8-byte-length';
-import { jsonByteLowerBoundExceeds } from '../../shared/json-byte-budget';
+import { jsonStringLengthLowerBoundExceeds } from '../../shared/json-byte-budget';
 
 export const MAX_LAYOUT_BYTES = 2 * 1024 * 1024;
 
@@ -23,7 +23,8 @@ export function sanitizeReadLayout(layout: unknown): unknown {
   if (layout === null || layout === undefined) return null;
   // 边界(E286,字节预算 fail-fast):字节下界 > 上限 ⇒ 必超限,在 JSON.stringify 物化巨字符串之前返 null
   //(超大但合法的 disk layout 直接走默认布局,不先 stringify 放大内存)。下界 ≤ 上限才走精确字节裁决。
-  if (jsonByteLowerBoundExceeds(layout, MAX_LAYOUT_BYTES)) return null;
+  // .length 是 UTF-8 字节的合法下界,其后有精确 utf8ByteLength 终裁,不必逐字符计 UTF-8。
+  if (jsonStringLengthLowerBoundExceeds(layout, MAX_LAYOUT_BYTES)) return null;
   const serialized = JSON.stringify(layout); // disk JSON 必可 stringify
   if (serialized === undefined) return null; // 极端:layout 不可序列化(理论上 disk 数据不会)
   if (utf8ByteLength(serialized) > MAX_LAYOUT_BYTES) return null;

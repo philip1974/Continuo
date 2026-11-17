@@ -106,3 +106,14 @@ describe('layout:write 预检(ipc.ts 顶层有 app 副作用不可导入,源码�
     expect(block.slice(0, 2500)).toMatch(/utf8ByteLength\(serialized\)[\s\S]*> MAX_LAYOUT_BYTES/);
   });
 });
+
+// 同族收口:读端 layout 守卫与插件 MCP schema 预检也有精确 UTF-8 终裁,预检同样只需 .length 下界。
+describe('同族预检:layout 读端守卫 / 插件 MCP jsonSchema', () => {
+  it('sanitizeReadLayout 与 jsonSchema refine 用 .length 下界预检,不再逐字符计 UTF-8', () => {
+    const guard = readFileSync(path.resolve(__dirname, '../lib/layout-read-guard.ts'), 'utf8');
+    expect(guard).toMatch(/jsonStringLengthLowerBoundExceeds\(layout, MAX_LAYOUT_BYTES\)/);
+    expect(guard).not.toMatch(/jsonByteLowerBoundExceeds\(/);
+    const schemas = readFileSync(path.resolve(__dirname, '../../shared/plugin-mcp-schemas.ts'), 'utf8');
+    expect(schemas).not.toMatch(/jsonByteLowerBoundExceeds\(/);
+  });
+});
