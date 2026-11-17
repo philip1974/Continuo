@@ -171,4 +171,22 @@ describe('StatusBar 文本统计延后到低优先级渲染(useDeferredValue)', 
     expect(footerText()).toContain(String(next.length));
     expect(computeTextStatsSpy.mock.calls.filter((c) => c[0] === next)).toHaveLength(1);
   });
+
+  it('延后统计只重渲统计子组件:内容变化时父级(含插件 status item render)仍只渲染一次', () => {
+    installApi();
+    openTab(BIG);
+    const pluginRender = vi.fn(() => 'plugin-item');
+    coApp.statusBar.register({ id: 'p', side: 'left', render: pluginRender });
+    render(<StatusBar />);
+    const base = pluginRender.mock.calls.length;
+
+    act(() => {
+      openTab(BIG + '\nnew tail line');
+    });
+
+    expect(screen.getByRole('contentinfo').textContent).toContain(String((BIG + '\nnew tail line').length));
+    // 同步统计(不延后)时本测试的 setState 触发 2 次父级渲染;延后统计不得再额外重渲父级
+    // (统计留在父级里 useDeferredValue 时为 3:延后渲染重跑整条状态栏与所有插件 render)。
+    expect(pluginRender.mock.calls.length - base).toBeLessThanOrEqual(2);
+  });
 });
