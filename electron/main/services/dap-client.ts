@@ -86,13 +86,20 @@ function transcriptSummary(message: DapMessage, originalBytes: number): DapMessa
   return summary as DapMessage;
 }
 
-/** 按单条字节上限截断(必要时换成摘要),返回入账的条目及其字节数。 */
-function boundTranscriptEntry(entry: DapTranscriptEntry): {
+/**
+ * 按单条字节上限截断(必要时换成摘要),返回入账的条目及其字节数。
+ * messageBytes:调用方已知的消息序列化字节数(入站 = 帧头 Content-Length,出站 = 成帧用的那次序列化),
+ * 给出时不再为计量 JSON.stringify 一遍 —— 大响应(最大 8MiB)再序列化只为发现超限后丢弃,白占主线程。
+ */
+function boundTranscriptEntry(
+  entry: DapTranscriptEntry,
+  messageBytes?: number,
+): {
   entry: DapTranscriptEntry;
   bytes: number;
 } {
   if (entry.message !== undefined) {
-    const bytes = Buffer.byteLength(JSON.stringify(entry.message), 'utf8');
+    const bytes = messageBytes ?? Buffer.byteLength(JSON.stringify(entry.message), 'utf8');
     if (bytes <= DAP_TRANSCRIPT_ENTRY_MAX_BYTES) return { entry, bytes };
     const message = transcriptSummary(entry.message, bytes);
     return {
@@ -140,9 +147,18 @@ export const defaultAdapterPath = path.join(
 );
 
 export function encodeDapMessage(message: DapMessage): Buffer {
-  const body = Buffer.from(JSON.stringify(message), 'utf8');
+  return frameDapBody(Buffer.from(JSON.stringify(message), 'utf8'));
+}
+
+function frameDapBody(body: Buffer): Buffer {
   const header = Buffer.from(`Content-Length: ${body.length}\r\n\r\n`, 'ascii');
   return Buffer.concat([header, body]);
+}
+
+/** 解码出的一帧:bodyBytes 为帧体线上字节数(Content-Length);合成的超限失败响应没有对应帧体,为 undefined。 */
+export interface DapDecodedFrame {
+  readonly message: DapMessage;
+  readonly bodyBytes?: number;
 }
 
 /**
@@ -212,12 +228,16 @@ export class DapStreamDecoder {
   private oversized: { length: number; remaining: number; prefix: Buffer | null } | null = null;
 
   push(chunk: Buffer | Uint8Array | string): DapMessage[] {
+    return this.pushFrames(chunk).map((frame) => frame.message);
+  }
+
+  pushFrames(chunk: Buffer | Uint8Array | string): DapDecodedFrame[] {
     const input = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     if (input.length > 0) {
       this.chunks.push(input);
       this.buffered += input.length;
     }
-    const messages: DapMessage[] = [];
+    const messages: DapDecodedFrame[] = [];
 
     while (true) {
       if (this.oversized) {
@@ -231,7 +251,7 @@ export class DapStreamDecoder {
         over.remaining -= this.drop(over.remaining);
         if (over.remaining > 0) return messages;
         const response = oversizedFrameResponse(over.prefix.toString('utf8'), over.length);
-        if (response) messages.push(response);
+        if (response) messages.push({ message: response });
         this.oversized = null;
         continue;
       }
@@ -256,9 +276,10 @@ export class DapStreamDecoder {
       }
 
       if (this.buffered < this.bodyLength) return messages;
-      const body = this.take(this.bodyLength).toString('utf8');
+      const bodyBytes = this.bodyLength;
+      const body = this.take(bodyBytes).toString('utf8');
       this.bodyLength = null;
-      messages.push(parseDapMessageBody(body));
+      messages.push({ message: parseDapMessageBody(body), bodyBytes });
     }
   }
 
@@ -669,9 +690,9 @@ export class DapClient {
   attachSocket(socket: Socket): void {
     socket.on('data', (chunk: Buffer) => {
       if (socket.destroyed) return;
-      let messages: DapMessage[];
+      let frames: DapDecodedFrame[];
       try {
-        messages = this.decoder.push(chunk);
+        frames = this.decoder.pushFrames(chunk);
       } catch (err) {
         // 畸形流(缺 Content-Length / 帧头超限 / body 非 JSON):解码器缓冲不会前进,之后每个 chunk 都会重抛。
         // 在 data 回调里抛出就是主进程未捕获异常 —— 结算在途请求并断开这条连接。
@@ -681,8 +702,8 @@ export class DapClient {
         socket.destroy();
         return;
       }
-      for (const message of messages) {
-        this.receiveMessage(message);
+      for (const frame of frames) {
+        this.receiveMessage(frame.message, frame.bodyBytes);
       }
     });
     socket.on('error', (err) => this.rejectAllPending(err));
@@ -761,9 +782,9 @@ export class DapClient {
   // transcript 只保留最近 DAP_TRANSCRIPT_MAX_ENTRIES 条、总计不超过 DAP_TRANSCRIPT_MAX_BYTES(父子 session
   // 共享同一数组与同一预算),单条按 DAP_TRANSCRIPT_ENTRY_MAX_BYTES 截断。超限时一次裁到条数与字节都不超过
   // 上限的一半(摊还 O(1),避免每条消息都 shift)。
-  private recordTranscript(raw: DapTranscriptEntry): void {
+  private recordTranscript(raw: DapTranscriptEntry, messageBytes?: number): void {
     const transcript = this.transcript;
-    const { entry, bytes } = boundTranscriptEntry(raw);
+    const { entry, bytes } = boundTranscriptEntry(raw, messageBytes);
     transcript.push(entry);
     transcriptEntryBytes.set(entry, bytes);
     let total = (transcriptBytes.get(transcript) ?? 0) + bytes;
@@ -786,13 +807,16 @@ export class DapClient {
     if (!this.socket || this.socket.destroyed) {
       throw new Error('DAP socket is not connected');
     }
-    this.recordTranscript({ direction: 'client', message });
+    // 只序列化一次:同一份 body 既用于 transcript 计量也用于成帧。
+    const body = Buffer.from(JSON.stringify(message), 'utf8');
+    this.recordTranscript({ direction: 'client', message }, body.length);
     traceDap(this.traceId, 'send', message);
-    this.socket.write(encodeDapMessage(message));
+    this.socket.write(frameDapBody(body));
   }
 
-  receiveMessage(message: DapMessage): void {
-    this.recordTranscript({ direction: 'server', message });
+  /** wireBytes:该消息帧体的线上字节数(来自 decoder);未知时(合成响应 / 直接调用)transcript 自行计量。 */
+  receiveMessage(message: DapMessage, wireBytes?: number): void {
+    this.recordTranscript({ direction: 'server', message }, wireBytes);
     traceDap(this.traceId, 'recv', message);
     if (isDapResponse(message)) {
       const pending = this.pending.get(message.request_seq);
