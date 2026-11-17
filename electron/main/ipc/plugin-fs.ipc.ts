@@ -86,8 +86,11 @@ export function registerPluginFsIpc({
       pluginId: string;
       scopes: readonly { path: string; mode: 'r' | 'rw' }[];
     }) => {
-      for (const wc of webContents.getAllWebContents()) {
-        if (wc.isDestroyed()) continue;
+      // perf:只发给持有该插件 token 的 webContents(此前遍历 getAllWebContents(),连其它窗口与
+      // devtools 都收到该插件的完整授权路径列表)。
+      for (const wcId of identityRegistry.webContentsIdsFor(payload.pluginId)) {
+        const wc = webContents.fromId(wcId);
+        if (!wc || wc.isDestroyed()) continue;
         // race(R65,R63/R64 同族):isDestroyed() 检查后、send 前 wc 可能销毁,send 抛
         // "Object has been destroyed"。本回调是 pathScopeRegistry 的 EventEmitter listener,
         // grant()/revokeAll() 会同步 emit('scope-updated') 触发它;若 send 抛错冒泡出 listener
