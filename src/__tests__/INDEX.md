@@ -1186,6 +1186,7 @@
 - [`dock-layout-prefetch.spec.tsx`](./startup-critical-path/dock-layout-prefetch.spec.tsx)
 - [`init-ipc-prefetch.spec.ts`](./startup-critical-path/init-ipc-prefetch.spec.ts)
 - [`notify-root-gate.spec.tsx`](./startup-critical-path/notify-root-gate.spec.tsx)
+- [`plugin-source-prefetch.spec.ts`](./startup-critical-path/plugin-source-prefetch.spec.ts)
 - [`terminal-root-gate.spec.ts`](./startup-critical-path/terminal-root-gate.spec.ts)
 
 ## [startup-mode (Issue #30 修复)](./startup-mode/README.md)

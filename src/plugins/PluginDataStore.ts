@@ -6,8 +6,8 @@ import { coApi } from '@/lib/co-api';
 import { runSerialPerKey } from '@/lib/serialize-per-key';
 import { MAX_PLUGIN_DATA_BYTES } from '../../electron/shared/plugin-data-limits';
 import { assertJsonValue } from '../../electron/shared/assert-json-value';
-import { utf8ByteLength } from '../../electron/shared/utf8-byte-length';
-import { jsonByteLowerBoundExceeds } from '../../electron/shared/json-byte-budget';
+import { utf8ByteLength, utf8BytesExceed } from '../../electron/shared/utf8-byte-length';
+import { jsonStringLengthLowerBoundExceeds } from '../../electron/shared/json-byte-budget';
 
 // 边界(E43,E41/E42 同族 — renderer 在主进程 cap 前先构造大对象):write() 必须先 JSON.stringify
 // 校验可序列化,但畸形/恶意插件传超大对象时该 stringify 已在 renderer 产生巨大字符串,且会跨 IPC
@@ -16,19 +16,22 @@ import { jsonByteLowerBoundExceeds } from '../../electron/shared/json-byte-budge
 function serializeWithinLimit(data: unknown): string {
   // 边界(E306,E305 reorder 同族 / 校验顺序 fail-fast):先廉价字节下界 fail-fast(早停于上限)再
   // assertJsonValue 全量遍历 —— 否则超 16MiB 但 shape 合法(≤assertJsonValue 1M/10万/256 上限)的 data
-  // 会被 assertJsonValue 完整遍历后才被字节 cap 拒。jsonByteLowerBoundExceeds 对任意输入安全(E288),可先跑。
-  if (jsonByteLowerBoundExceeds(data, MAX_PLUGIN_DATA_BYTES)) {
+  // 会被 assertJsonValue 完整遍历后才被字节 cap 拒。下界预检对任意输入安全(E288),可先跑。
+  // perf(与 main 侧 SAVE 同族):renderer 无 Buffer,UTF-8 下界是逐字符 JS 全量计数;改用 .length 下界(每串
+  // O(1))。其后有 stringify + 精确 UTF-8 终裁,.length ≤ UTF-8 字节仍是合法下界,接受/拒绝判定不变
+  //(多字节超限只是从预检挪到终裁拒)。
+  if (jsonStringLengthLowerBoundExceeds(data, MAX_PLUGIN_DATA_BYTES)) {
     throw new Error(`plugin data too large (> ${MAX_PLUGIN_DATA_BYTES})`);
   }
   // 边界(E103):JSON.stringify 会静默改写 NaN/Infinity→null、丢 undefined/function(不抛),
   // 不是「可序列化」校验。assertJsonValue 递归拒非 JSON 安全值(避免静默持久化损坏),再 stringify。
   assertJsonValue(data);
   const serialized = JSON.stringify(data);
-  // 边界(E125):真实 UTF-8 字节(非 .length=UTF-16 code unit),与主进程 store 同款。
-  const dataBytes = utf8ByteLength(serialized);
-  if (dataBytes > MAX_PLUGIN_DATA_BYTES) {
+  // 边界(E125):真实 UTF-8 字节(非 .length=UTF-16 code unit),与主进程 store 同款。perf:utf8BytesExceed
+  // 按 .length 区间短路(.length×3 ≤ 上限直接放行),精确字节数只在超限时为错误消息计算一次。
+  if (utf8BytesExceed(serialized, MAX_PLUGIN_DATA_BYTES)) {
     throw new Error(
-      `plugin data too large (${dataBytes} > ${MAX_PLUGIN_DATA_BYTES})`,
+      `plugin data too large (${utf8ByteLength(serialized)} > ${MAX_PLUGIN_DATA_BYTES})`,
     );
   }
   return serialized;
