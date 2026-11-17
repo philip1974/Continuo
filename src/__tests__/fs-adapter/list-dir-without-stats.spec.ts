@@ -138,4 +138,86 @@ describe('listDir withStats:false', () => {
     expect(structural(without)).toEqual(structural(withStats));
     expect(without.filter((i) => !i.isDirectory && !i.isSymlink)).toHaveLength(1);
   });
+
+  // Windows:libuv fs__readdir 对**任何** FILE_ATTRIBUTE_REPARSE_POINT 都报 DT_LINK(先于目录判断),
+  // 而 lstat 只把 SYMLINK/LX_SYMLINK/junction/APPEXECLINK 视为链接 —— OneDrive 按需文件/Dedup 等
+  // 其它 reparse tag 的目录/文件 lstat 是普通目录/文件。dirent 报 symlink 时须回退 lstat,口径同 withStats:true。
+  describe('win32:dirent 报 symlink 而 lstat 报普通目录/文件(非链接 reparse point)', () => {
+    const realPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    afterEach(() => {
+      Object.defineProperty(process, 'platform', realPlatform);
+    });
+
+    // 把真实目录 sub、真实文件 a.txt 的 dirent 伪装成 symlink(模拟 Windows libuv 对 reparse point 的报法)
+    const mockReparseDirents = async (): Promise<void> => {
+      const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+      opendirMock.mockImplementation(async (p, o) => {
+        const real = await actual.opendir(p, o);
+        return {
+          async *[Symbol.asyncIterator]() {
+            for await (const d of real) {
+              const reparse = d.name === 'sub' || d.name === 'a.txt';
+              yield {
+                name: d.name,
+                isFile: () => (reparse ? false : d.isFile()),
+                isDirectory: () => (reparse ? false : d.isDirectory()),
+                isSymbolicLink: () => (reparse ? true : d.isSymbolicLink()),
+              };
+            }
+          },
+        } as unknown as Awaited<ReturnType<typeof actual.opendir>>;
+      });
+    };
+    afterEach(() => {
+      opendirMock.mockImplementation(
+        async (...args: Parameters<typeof fsp.opendir>) =>
+          (await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')).opendir(
+            ...args,
+          ),
+      );
+    });
+
+    it('win32:回退 lstat,目录按目录递归、文件按文件计入 maxFiles,与 withStats:true 一致', async () => {
+      await mockReparseDirents();
+      Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+      const without = await listDir(dir, { maxDepth: 2, withStats: false });
+      expect(without.find((i) => i.name === 'sub')).toEqual({
+        path: path.join(dir, 'sub'),
+        name: 'sub',
+        isDirectory: true,
+      });
+      expect(without.find((i) => i.name === 'a.txt')).toEqual({
+        path: path.join(dir, 'a.txt'),
+        name: 'a.txt',
+        isDirectory: false,
+      });
+      expect(without.some((i) => i.path === path.join(dir, 'sub', 'inner.txt'))).toBe(true);
+      const withStats = await listDir(dir, { maxDepth: 2, withStats: true });
+      expect(structural(without)).toEqual(structural(withStats));
+      // a.txt 计入 maxFiles:maxFiles=1 时与 withStats:true 结果一致
+      const capped = await listDir(dir, { maxDepth: 2, maxFiles: 1, withStats: false });
+      const cappedWith = await listDir(dir, { maxDepth: 2, maxFiles: 1, withStats: true });
+      expect(structural(capped)).toEqual(structural(cappedWith));
+    });
+
+    it('win32:真符号链接经 lstat 仍判为链接(不递归)', async () => {
+      Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+      const without = await listDir(dir, { maxDepth: 2, withStats: false });
+      expect(without.find((i) => i.name === 'link-dir')).toMatchObject({
+        isDirectory: false,
+        isSymlink: true,
+      });
+      const lstatted = lstatMock.mock.calls.map((c) => String(c[0]));
+      expect(lstatted).toContain(path.join(dir, 'link-dir'));
+      expect(lstatted).not.toContain(path.join(dir, 'b.txt')); // 普通项仍走快速路径
+    });
+
+    it('非 win32:dirent 类型直接采信(快速路径不变,不 lstat)', async () => {
+      await mockReparseDirents();
+      Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+      const without = await listDir(dir, { maxDepth: 2, withStats: false });
+      expect(lstatMock).not.toHaveBeenCalled();
+      expect(without.find((i) => i.name === 'sub')).toMatchObject({ isSymlink: true });
+    });
+  });
 });

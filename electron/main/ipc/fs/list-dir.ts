@@ -40,7 +40,8 @@ export interface ListDirOptions {
   /**
    * 性能(Quick Open ⌘P):默认 true。为 false 时不返回 size/mtime/ctime,类型直接取自 opendir 的
    * dirent(isFile/isDirectory/isSymbolicLink),普通文件/目录/符号链接不再逐项 lstat;仅 dirent 类型
-   * 未知(三者皆 false,如部分文件系统返回 DT_UNKNOWN)回退 lstat。followSymlinks 解析链接目标仍走 stat。
+   * 未知(三者皆 false,如部分文件系统返回 DT_UNKNOWN)及 win32 上 dirent 报 symlink(libuv 把所有
+   * reparse point 报成链接,见 resolveEntry)回退 lstat。followSymlinks 解析链接目标仍走 stat。
    * maxFiles 计数口径与 withStats:true 一致(dirent.isFile() ≡ lstat().isFile())。
    * 差异仅一处:readdir 与 lstat 之间被删的项,withStats:true 跳过,false 仍列出(本就是竞态快照)。
    */
@@ -143,7 +144,16 @@ async function resolveEntry(
   let isSymlink: boolean;
   let isDirectory: boolean;
   let isFile: boolean;
-  if (!withStats && (d.isFile() || d.isDirectory() || d.isSymbolicLink())) {
+  // Windows:libuv fs__readdir 对**任何** FILE_ATTRIBUTE_REPARSE_POINT 都报 DT_LINK(先于目录判断),
+  // 而 lstat 只把 SYMLINK/LX_SYMLINK/junction/APPEXECLINK 视为链接;OneDrive 按需文件、Dedup 等其它
+  // reparse tag 在 lstat 下是普通文件/目录。故 win32 上 dirent 报 symlink 的项不可采信,回退 lstat
+  //(与 withStats:true 口径一致:目录照常递归、文件计入 maxFiles)。其它平台 DT_LNK ≡ lstat 链接。
+  if (
+    !withStats &&
+    (d.isFile() ||
+      d.isDirectory() ||
+      (d.isSymbolicLink() && process.platform !== 'win32'))
+  ) {
     isSymlink = d.isSymbolicLink();
     isDirectory = d.isDirectory();
     isFile = d.isFile();
