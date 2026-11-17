@@ -757,6 +757,15 @@ export function FolderTree({ root }: { root: string }) {
       setHoverTarget(null);
     }
   };
+  // OS 文件 drop 一律在捕获阶段复位拖拽态:落在具体行上时 headless-tree 行 onDrop 先 stopPropagation,
+  // 下面冒泡阶段的 handleDrop 收不到;浏览器 drop 后也不再派发 dragleave → 不在此复位则 DropOverlay
+  // 残留、dragDepth 不归零(下次拖离不消失)。handleDrop 用的 hoverTarget 取自本次渲染闭包,不受影响。
+  const handleDropCapture = (e: React.DragEvent) => {
+    if (!hasFiles(e.dataTransfer)) return;
+    dragDepthRef.current = 0;
+    setDragActive(false);
+    setHoverTarget(null);
+  };
   const handleDrop = async (e: React.DragEvent) => {
     // 内部 drag drop 到空白(root level)— headless-tree row onDrop 接不到 root row
     if (!hasFiles(e.dataTransfer)) {
@@ -778,10 +787,8 @@ export function FolderTree({ root }: { root: string }) {
       return;
     }
     e.preventDefault();
-    dragDepthRef.current = 0;
-    setDragActive(false);
+    // 拖拽态已在 handleDropCapture 复位
     const target = resolveDropTarget(hoverTarget, root);
-    setHoverTarget(null);
     await dropForeignFilesInto(e.dataTransfer.items, target, coApi.fs, refreshParent);
   };
 
@@ -791,6 +798,7 @@ export function FolderTree({ root }: { root: string }) {
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
+      onDropCapture={handleDropCapture}
       onDrop={handleDrop}
     >
       <ExplorerHeader
