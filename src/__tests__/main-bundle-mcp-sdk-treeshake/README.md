@@ -18,9 +18,12 @@ main 只用 `@continuo-terminal/server-node` 的 `SessionManager` / `getDefaultS
 - main 构建 `rollupOptions.treeshake.moduleSideEffects = mainModuleSideEffects`(`scripts/main-bundle-side-effects.ts`):
   server-node 的 `src/server.ts`、`@modelcontextprotocol/sdk`、`@hono/node-server`、`zod-to-json-schema` 视为无副作用
   —— 没有导出被用到即整模块摇掉;一旦被用到仍完整保留(含副作用),语义不变。其余模块保持默认。
-- bin 守卫在打包进 Electron 后本就永远不成立(argv[1] 不会是 chunk 文件),去掉它不改变运行时行为。
+- bin 守卫在 server.ts 落在独立 chunk 时不成立(argv[1] 不会是 chunk 文件);但若 server.ts 被打进单一
+  `out/main/index.js`,e2e(argv[1]=out/main/index.js)下守卫会成立,在 main 里启动 stdio MCP server —— 故须摇掉。
 - 前提守卫:`electron/` 源码不直接导入上述 SDK 模块,也不从 server-node 导入 MCP server 导出
-  (`createTerminalMcpServer` / `main` / `startHttpTransport` / `startLocalSocketTransport`);新增这类导入时规范失败,提醒复核。
+  (`createTerminalMcpServer` / `main` / `startHttpTransport` / `startLocalSocketTransport`);覆盖 `import {…} from`、
+  `export {…} from`、同文件多条导入,`import * as` / `export * from` / 动态 `import()` 一律视为引用。新增这类导入时规范失败,提醒复核。
+- 产物守卫:`out/main` 存在时,其中所有 `.js` 不得含 `@modelcontextprotocol` 或 `StdioServerTransport`;未构建则跳过该条。
 
 ## 产物对比(`npx electron-vite build`)
 
