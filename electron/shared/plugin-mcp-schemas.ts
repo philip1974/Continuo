@@ -11,7 +11,7 @@ import { z } from 'zod';
 import { PLUGIN_ID_MAX_LEN } from './permission-record-limits';
 import { assertJsonValue } from './assert-json-value';
 import { utf8BytesExceed } from './utf8-byte-length';
-import { jsonByteLowerBoundExceeds } from './json-byte-budget';
+import { jsonByteLowerBoundExceeds, jsonStringLengthLowerBoundExceeds } from './json-byte-budget';
 import { boundedValueDeepAdmissible } from './bounded-input';
 import type { InvokeReply } from './plugin-mcp-channels';
 
@@ -134,7 +134,9 @@ export function isInvokeResultAdmissible(r: unknown): boolean {
     // assertJsonValue 前运行。**行为保持**(超限两序皆 false;非 JSON-safe 仍由其后 assertJsonValue 拒)——
     // 不用 codex 建议的 boundedValueDeepAdmissible(那会把 accept set 收紧:深度 256→64 / 数组 1M→65536,
     // 误拒当前合法的深/大 result),reorder 既 fail-fast 又不改判定。
-    if (jsonByteLowerBoundExceeds(r, RESULT_BYTES_MAX)) return false;
+    // perf:预检用 .length 下界(每串 O(1),不逐字符计 UTF-8):其后有 stringify + 精确 UTF-8 字节终裁,
+    // .length ≤ UTF-8 字节仍是合法下界,判定不变(多字节超限只是从预检挪到精确终裁拒)。
+    if (jsonStringLengthLowerBoundExceeds(r, RESULT_BYTES_MAX)) return false;
     // 边界(E286):字节下界 ≤ 上限后,assertJsonValue 拒非 JSON 安全值 + 形态早停,再精确字节 cap(转义后
     // 真实字节可能 > 下界)。
     assertJsonValue(r);
