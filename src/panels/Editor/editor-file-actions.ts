@@ -190,8 +190,9 @@ async function saveFileNow(
   }
   if (!r.ok) return r;
 
-  // 性能:记录写入内容的 { mtimeMs, size },外部同步据此识别本次保存的 dir-changed 回声(免整文件重读)。
-  recordSavedDiskStat(tab.filePath, r.data, savedContent);
-  store.getState().markSaved(tabId, savedContent);
+  // 性能:记录写入内容的 { mtimeMs, size } + 保存代际(同写到 tab.savedGen),外部同步据此识别本次保存的
+  // dir-changed 回声(免整文件重读)。
+  const savedGen = recordSavedDiskStat(tab.filePath, r.data);
+  store.getState().markSaved(tabId, savedContent, savedGen);
   return { ok: true, data: undefined };
 }

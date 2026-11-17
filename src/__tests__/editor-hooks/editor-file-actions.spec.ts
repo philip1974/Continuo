@@ -286,8 +286,9 @@ describe('saveFile', () => {
     expect(tab?.originalContent).toBe('new content');
   });
 
-  // 性能(保存回声识别):写成功带回的 { mtimeMs, size } 按 tab 路径记录(连同写入内容);未知则清旧记录。
-  it('成功且 writeFile 带回 stat → 按 tab 路径记录保存 stat + 写入内容;未带 → 清除旧记录', async () => {
+  // 性能(保存回声识别):写成功带回的 { mtimeMs, size } 按 tab 路径记录,并与 tab 上的运行时保存代际 savedGen
+  // 绑定(记录不持有写入内容,避免大文件内容常驻 renderer);未知则清旧记录。
+  it('成功且 writeFile 带回 stat → 按 tab 路径记录 stat + 保存代际(不存内容),tab.savedGen 同值;未带 → 清除旧记录', async () => {
     _resetSavedDiskStatsForTest();
     const dirtyTab = (content: string) => ({
       id: '/x/a.md',
@@ -302,11 +303,94 @@ describe('saveFile', () => {
       .mockResolvedValueOnce(ok({ mtimeMs: 42.5, size: 2 }))
       .mockResolvedValueOnce(ok(undefined));
     await saveFile('/x/a.md', makeDeps({ writeFile }));
-    expect(getSavedDiskStat('/x/a.md')).toEqual({ mtimeMs: 42.5, size: 2, content: 'v1' });
+    const rec = getSavedDiskStat('/x/a.md');
+    expect(rec).toMatchObject({ mtimeMs: 42.5, size: 2 });
+    expect(rec).not.toHaveProperty('content');
+    expect(typeof rec?.gen).toBe('number');
+    expect(useEditorStore.getState().tabs[0]?.savedGen).toBe(rec?.gen);
 
     useEditorStore.setState({ tabs: [dirtyTab('v2')], activeTabId: '/x/a.md', mode: 'edit' });
     await saveFile('/x/a.md', makeDeps({ writeFile }));
     expect(getSavedDiskStat('/x/a.md')).toBeUndefined();
+  });
+
+  it('同一 tab 两次保存 → 代际递增,tab.savedGen 跟随最新记录', async () => {
+    _resetSavedDiskStatsForTest();
+    useEditorStore.setState({
+      tabs: [{ id: '/x/a.md', filePath: '/x/a.md', content: 'v1', originalContent: 'old', dirty: true }],
+      activeTabId: '/x/a.md',
+      mode: 'edit',
+    });
+    const writeFile = vi.fn(async () => ok({ mtimeMs: 1, size: 2 }));
+    await saveFile('/x/a.md', makeDeps({ writeFile }));
+    const g1 = getSavedDiskStat('/x/a.md')?.gen;
+    useEditorStore.getState().updateContent('/x/a.md', 'v2');
+    await saveFile('/x/a.md', makeDeps({ writeFile }));
+    const g2 = getSavedDiskStat('/x/a.md')?.gen;
+    expect(g2).not.toBe(g1);
+    expect(useEditorStore.getState().tabs[0]?.savedGen).toBe(g2);
+  });
+
+  // 不长期持有:tab 关闭 / 删除 / 改名后,对应保存记录随 chromeVersion 变化被清理。
+  describe('保存记录随 tab 生命周期清理', () => {
+    const saveOne = async (path: string): Promise<void> => {
+      useEditorStore.setState({
+        tabs: [
+          ...useEditorStore.getState().tabs,
+          { id: path, filePath: path, content: 'v1', originalContent: 'old', dirty: true },
+        ],
+        activeTabId: path,
+        mode: 'edit',
+      });
+      await saveFile(path, makeDeps({ writeFile: vi.fn(async () => ok({ mtimeMs: 1, size: 2 })) }));
+      expect(getSavedDiskStat(path)).toBeDefined();
+    };
+    beforeEach(() => _resetSavedDiskStatsForTest());
+
+    it('closeTab → 记录清理', async () => {
+      await saveOne('/x/a.md');
+      await saveOne('/x/b.md');
+      useEditorStore.getState().closeTab('/x/a.md');
+      expect(getSavedDiskStat('/x/a.md')).toBeUndefined();
+      expect(getSavedDiskStat('/x/b.md')).toBeDefined();
+    });
+
+    it('removePaths → 记录清理', async () => {
+      await saveOne('/x/a.md');
+      useEditorStore.getState().removePaths(['/x/a.md']);
+      expect(getSavedDiskStat('/x/a.md')).toBeUndefined();
+    });
+
+    it('renamePath → 旧路径记录清理', async () => {
+      await saveOne('/x/a.md');
+      useEditorStore.getState().renamePath('/x/a.md', '/x/c.md');
+      expect(getSavedDiskStat('/x/a.md')).toBeUndefined();
+      expect(getSavedDiskStat('/x/c.md')).toBeUndefined();
+    });
+
+    it('外部 reload 换了内容(savedGen 失效)→ 下次 chrome 变化时记录清理', async () => {
+      await saveOne('/x/a.md');
+      useEditorStore.getState().reloadFromDisk('/x/a.md', 'external');
+      expect(useEditorStore.getState().tabs[0]?.savedGen).toBeUndefined();
+      await saveOne('/x/b.md');
+      expect(getSavedDiskStat('/x/a.md')).toBeUndefined();
+      expect(getSavedDiskStat('/x/b.md')).toBeDefined();
+    });
+
+    it('写盘期间 tab 被关闭 → 不留下孤儿记录(下次 chrome 变化时清理)', async () => {
+      useEditorStore.setState({
+        tabs: [{ id: '/x/a.md', filePath: '/x/a.md', content: 'v1', originalContent: 'old', dirty: true }],
+        activeTabId: '/x/a.md',
+        mode: 'edit',
+      });
+      const writeFile = vi.fn(async () => {
+        useEditorStore.getState().closeTab('/x/a.md');
+        return ok({ mtimeMs: 1, size: 2 });
+      });
+      await saveFile('/x/a.md', makeDeps({ writeFile }));
+      await saveOne('/x/b.md');
+      expect(getSavedDiskStat('/x/a.md')).toBeUndefined();
+    });
   });
 
   it('tab 不存在 → ok:false code=TAB_NOT_FOUND', async () => {

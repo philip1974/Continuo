@@ -526,7 +526,8 @@ describe('useExternalFileSync · 保存回声识别', () => {
       ],
       activeTabId: '/proj/a.md',
     });
-    recordSavedDiskStat('/proj/a.md', SAVED, 'saved');
+    const gen = recordSavedDiskStat('/proj/a.md', SAVED);
+    useEditorStore.getState().markSaved('/proj/a.md', 'saved', gen);
     renderHook(() => useExternalFileSync());
     return { fire: () => dirCb!('/proj', ['.a.md.continuo.tmp', 'a.md']), readFile };
   }
@@ -581,6 +582,19 @@ describe('useExternalFileSync · 保存回声识别', () => {
     await flush();
     expect(b.readFile).toHaveBeenCalledTimes(1);
     expect(useEditorStore.getState().tabs[0]?.content).toBe('disk2');
+  });
+
+  it('保存代际不匹配(关闭后重开同路径的新 tab 无 savedGen)→ 不发 stat,直接读', async () => {
+    const stat = vi.fn(async () => ({ ok: true, data: { ...SAVED } }));
+    const { fire, readFile } = setupEcho(stat, 'reopened');
+    useEditorStore.setState({
+      tabs: [{ id: '/proj/a.md', filePath: '/proj/a.md', content: 'saved', originalContent: 'saved', dirty: false }],
+      activeTabId: '/proj/a.md',
+    });
+    fire();
+    await flush();
+    expect(stat).not.toHaveBeenCalled();
+    expect(readFile).toHaveBeenCalledTimes(1);
   });
 
   it('记录不再对应 tab 当前基线(其后被外部 reload 换过内容)→ 不发 stat,直接读', async () => {

@@ -33,7 +33,7 @@ const RESTORED_RELOAD_CONCURRENCY = 32;
  */
 function ownSaveEchoCheck(path: string, tab: EditorTab | null): Promise<boolean> | null {
   const rec = getSavedDiskStat(path);
-  if (!rec || !tab || tab.originalContent !== rec.content) return null;
+  if (!rec || !tab || tab.savedGen !== rec.gen) return null;
   return (async () => {
     try {
       const st = await coApi.fs.stat(path);
