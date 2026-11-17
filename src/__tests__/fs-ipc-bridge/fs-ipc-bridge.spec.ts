@@ -83,6 +83,14 @@ describe('listDirInputSchema', () => {
       }).success,
     ).toBe(true);
   });
+  it('接受 options.withStats 布尔;非布尔 → fail', () => {
+    expect(
+      listDirInputSchema.safeParse({ path: '/tmp', options: { withStats: false } }).success,
+    ).toBe(true);
+    expect(
+      listDirInputSchema.safeParse({ path: '/tmp', options: { withStats: 'no' } }).success,
+    ).toBe(false);
+  });
   it('缺 path → fail', () => {
     expect(listDirInputSchema.safeParse({}).success).toBe(false);
   });

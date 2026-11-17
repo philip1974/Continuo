@@ -46,6 +46,7 @@ export type ListDirFn = (
     maxDepth?: number;
     exclude?: readonly string[];
     maxFiles?: number;
+    withStats?: boolean;
   },
 ) => Promise<IpcResult<readonly FileEntry[]>>;
 
@@ -86,6 +87,8 @@ export async function walkWorkspaceFiles(
     maxDepth: DEFAULT_MAX_DEPTH,
     exclude,
     maxFiles,
+    // 性能:只用 path/name/isDirectory,不要 size/mtime/ctime → main 免逐项 lstat。
+    withStats: false,
   });
   if (!r.ok) return r;
   if (r.data.length === 0) return { ok: true, data: EMPTY_QUICK_OPEN_FILES };

@@ -44,6 +44,8 @@ const ListDirOptionsSchema = z
     // 边界(E275):上界对齐到 MAX_TOTAL_ENTRIES 硬上限 + 安全整数 —— 此前只 positive int,畸形 IPC 可传
     // 1e308(仍过 z.int())绕过调用方早停,迫使主进程遍历/排序/回传近 10 万条放大。超上限直接 BAD_INPUT。
     maxFiles: z.number().int().positive().max(MAX_TOTAL_ENTRIES).optional(),
+    // 性能:false 时不 lstat、不回传 size/mtime/ctime(Quick Open 用)。见 ListDirOptions.withStats。
+    withStats: z.boolean().optional(),
   })
   .strict();
 
