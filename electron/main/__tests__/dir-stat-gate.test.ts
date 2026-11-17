@@ -169,6 +169,41 @@ describe('statDirGated · 离队者在主闸 / 溢出闸之间回流', () => {
   });
 });
 
+describe('statDirGated · 离队者同时在两闸登记(先空出者立即交接)', () => {
+  it('主闸卡死、溢出闸的慢 stat 返回的那一刻,离队的健康判定立即接手名额(不再等下一个 2s 周期)', async () => {
+    vi.useFakeTimers();
+    try {
+      statMock.mockReset();
+      const slow: Array<() => void> = [];
+      statMock.mockImplementation((p: string) => {
+        if (p.startsWith('/slow/')) return new Promise((r) => slow.push(() => r({ p })));
+        if (p.startsWith('/dead/')) return new Promise(() => {});
+        return Promise.resolve({ p });
+      });
+      vi.resetModules();
+      const fresh = await import('../lib/dir-stat-gate');
+      void fresh.statDirGated('/dead/1').catch(() => {});
+      void fresh.statDirGated('/dead/2').catch(() => {});
+      void fresh.statDirGated('/slow/x');
+      await vi.advanceTimersByTimeAsync(fresh.DIR_STAT_MAX_WAIT_MS + 10); // slow/x 离队占住溢出闸
+      let healthyDone = false;
+      void fresh.statDirGated('/local/ok').then(() => {
+        healthyDone = true;
+      });
+      // 健康判定离队后在两闸之间等待若干周期,停在任意相位
+      await vi.advanceTimersByTimeAsync(fresh.DIR_STAT_MAX_WAIT_MS * 2 + 500);
+      expect(healthyDone).toBe(false);
+      slow.splice(0).forEach((r) => r()); // 溢出闸空出
+      await vi.advanceTimersByTimeAsync(0);
+      expect(healthyDone).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      statMock.mockReset();
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('statDirGated · 目录判定 stat 全局并发闸', () => {
   it('容量为 2(libuv 默认 4 线程,至少留一半给保存 / listDir / 持久化)', () => {
     expect(DIR_STAT_CONCURRENCY).toBe(2);
