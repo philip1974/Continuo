@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
 import { installNavigationGuard, isOwnRendererWindowUrl } from './window-open-policy';
+import { setReloadUrlPredicate } from './lib/wc-gone-hook';
 import { LAYOUT_CHANNELS, WINDOW_ID_CHANNEL } from '../shared/persistence-channels';
 import type {
   HandlerDetails,
@@ -503,6 +504,9 @@ function isOwnRendererUrl(url: string): boolean {
     isTrustedRendererFileUrl,
   );
 }
+
+// wc-gone 资源回收只把目标为本应用入口的导航视为 reload(被导航守卫拦下的外链不算,见 wc-gone-hook)。
+setReloadUrlPredicate(isOwnRendererUrl);
 
 function windowOpenHandler({ url }: HandlerDetails): WindowOpenHandlerResponse {
   // 边界(E190,E179/E152 同族外链长度):window.open url 的类型/长度前置闸,先于 new URL 解析与

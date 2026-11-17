@@ -1353,6 +1353,10 @@
 
 - [`use-polled-snapshot.spec.tsx`](./use-polled-snapshot/use-polled-snapshot.spec.tsx)
 
+## [wc-gone-hook · 何时回收 webContents 名下的 main 侧资源](./wc-gone-hook/README.md)
+
+- [`wc-gone-hook-navigation.spec.ts`](./wc-gone-hook/wc-gone-hook-navigation.spec.ts)
+
 ## [window-aware-agent-session](./window-aware-agent-session/README.md) `[integration]`
 
 - [`cross-window-isolation.spec.ts`](./window-aware-agent-session/cross-window-isolation.spec.ts)
