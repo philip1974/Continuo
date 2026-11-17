@@ -17,7 +17,7 @@ import { renameEntry } from './fs/rename';
 import { removeEntry } from './fs/remove';
 import { createDir, createFile } from './fs/create';
 import { copyEntry, moveEntry } from './fs/move-copy';
-import { createWatcherPool, type WatcherCreator } from './fs/watch';
+import { createSameTickPathCoalescer, createWatcherPool, type WatcherCreator } from './fs/watch';
 import { broadcastToWindows } from '../lib/broadcast';
 
 // ────────────────────────────────────────────────────────────
@@ -289,6 +289,10 @@ export function broadcastDirChanged(path: string): void {
   broadcastToWindows(FS_CHANNELS.DIR_CHANGED, () => ({ path }), '[fs] DIR_CHANGED');
 }
 
+// 生产 watch 回调入口:同 tick 内同一 changedPath(多个 recursive 祖先 watcher 重复报告)只广播一次
+// (性能审计 #1,见 createSameTickPathCoalescer)。导出仅供回归测试。
+export const queueDirChangedBroadcast = createSameTickPathCoalescer(broadcastDirChanged);
+
 export function registerFsIpc(): void {
   const trusted = defaultIsTrustedFrame;
 
@@ -349,7 +353,7 @@ export function registerFsIpc(): void {
       // recursive 子目录,见 issue #20)。
       watcherPool.watch(
         input.path,
-        (changedPath) => broadcastDirChanged(changedPath),
+        queueDirChangedBroadcast,
         ownerId,
       );
     },

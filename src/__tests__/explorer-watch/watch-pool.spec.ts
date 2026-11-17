@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   MAX_WATCHERS,
   createWatcherPool,
+  createSameTickPathCoalescer,
   type WatcherCreator,
 } from '../../../electron/main/ipc/fs/watch';
 
@@ -292,5 +293,49 @@ describe('createWatcherPool', () => {
     pool.watch('/new', vi.fn()); // 触发驱逐,应踢 /p1(现存最早),不是 /p0
     expect(pool.has('/p0')).toBe(true);
     expect(pool.has('/p1')).toBe(false);
+  });
+});
+
+// 性能(审计 #1):macOS/Win 上每个展开目录各有一个 recursive watcher,同一次变更被根及每个展开
+// 祖先的 watcher 各报一次、算出同一个 changedPath → 原先逐个广播 = O(展开祖先数 × 窗口数) 次 IPC。
+// 同一 tick 内同一路径只广播一次;不同路径按首次出现顺序各广播一次。
+describe('createSameTickPathCoalescer', () => {
+  function manualSchedule() {
+    const queued: Array<() => void> = [];
+    return {
+      schedule: (fn: () => void) => {
+        queued.push(fn);
+      },
+      run: () => {
+        for (const fn of queued.splice(0)) fn();
+      },
+      size: () => queued.length,
+    };
+  }
+
+  it('同 tick 内重复路径只 emit 一次,不同路径按首次出现顺序各 emit 一次', () => {
+    const emit = vi.fn();
+    const s = manualSchedule();
+    const push = createSameTickPathCoalescer(emit, s.schedule);
+    push('/r/a/b');
+    push('/r/a/b');
+    push('/r/x');
+    push('/r/a/b');
+    expect(emit).not.toHaveBeenCalled();
+    expect(s.size()).toBe(1); // 一个 tick 只排一次 flush
+    s.run();
+    expect(emit.mock.calls.map((c) => c[0])).toEqual(['/r/a/b', '/r/x']);
+  });
+
+  it('flush 之后的新事件进入下一 tick,同一路径再次 emit', () => {
+    const emit = vi.fn();
+    const s = manualSchedule();
+    const push = createSameTickPathCoalescer(emit, s.schedule);
+    push('/r/a');
+    s.run();
+    push('/r/a');
+    expect(s.size()).toBe(1);
+    s.run();
+    expect(emit.mock.calls.map((c) => c[0])).toEqual(['/r/a', '/r/a']);
   });
 });
