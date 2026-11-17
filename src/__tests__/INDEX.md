@@ -278,6 +278,7 @@
 ## [动画落点契约 (M3)](./animation-contracts/README.md) `[contract]`
 
 - [`contracts.spec.ts`](./animation-contracts/contracts.spec.ts)
+- [`lazy-motion.spec.tsx`](./animation-contracts/lazy-motion.spec.tsx)
 
 ## [assert-json-value-sparse (E183)](./assert-json-value-sparse/README.md)
 
@@ -825,11 +826,13 @@
 
 - [`code-editor-echo-skip.spec.tsx`](./perf-audit/code-editor-echo-skip.spec.tsx)
 - [`debug-decoration-sync-gating.spec.tsx`](./perf-audit/debug-decoration-sync-gating.spec.tsx)
+- [`debug-decoration-sync-lazy.spec.tsx`](./perf-audit/debug-decoration-sync-lazy.spec.tsx)
 - [`editor-engine-error-boundary.spec.tsx`](./perf-audit/editor-engine-error-boundary.spec.tsx)
 - [`editor-engine-lazy.spec.tsx`](./perf-audit/editor-engine-lazy.spec.tsx)
 - [`editor-engine-prewarm.spec.tsx`](./perf-audit/editor-engine-prewarm.spec.tsx)
 - [`editor-header-memo.spec.tsx`](./perf-audit/editor-header-memo.spec.tsx)
 - [`editor-lazy-boundary.spec.ts`](./perf-audit/editor-lazy-boundary.spec.ts)
+- [`milkdown-katex-stub.spec.ts`](./perf-audit/milkdown-katex-stub.spec.ts)
 - [`renderer-minify.spec.ts`](./perf-audit/renderer-minify.spec.ts)
 - [`terminal-data-demux.spec.ts`](./perf-audit/terminal-data-demux.spec.ts)
 - [`terminal-resize-gating.spec.ts`](./perf-audit/terminal-resize-gating.spec.ts)

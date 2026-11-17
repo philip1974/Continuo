@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { MotionConfig } from 'motion/react';
+import { LazyMotion, MotionConfig } from 'motion/react';
 import { ThemeProvider } from '@/theme';
 import { useThemeBinding } from '@/theme/binding';
 import { DockShell } from './dock/DockShell';
@@ -172,6 +172,13 @@ function ThemeBinder() {
   return null;
 }
 
+// 首屏包体积:组件统一用轻量 m.*,完整特性集 domMax(动画 / 手势 / 拖拽 / layout,~115KB)异步加载,
+// 不进 main-app 静态图。layoutId(SharedTab 标题 / 指示条飞行)需要 layout 特性,故用 domMax 而非
+// domAnimation。strict:残留 motion.* 会在渲染时直接报错。特性加载完成前 m.* 按 initial 渲染,
+// 动画晚一帧开始。模块求值即开始加载(不等首次 commit 后 LazyMotion 的 effect),与首屏渲染并行。
+const motionFeatures = import('./motion-features').then((mod) => mod.domMax);
+const loadMotionFeatures = () => motionFeatures;
+
 export function App() {
   return (
     <ThemeProvider>
@@ -179,9 +186,11 @@ export function App() {
       <LanguageFromSettings />
       <NotificationsProvider>
         <ToastViewport />
-        <MotionConfig reducedMotion="user">
-          {isPopoutWindow() ? <PopoutHost /> : <MainApp />}
-        </MotionConfig>
+        <LazyMotion features={loadMotionFeatures} strict>
+          <MotionConfig reducedMotion="user">
+            {isPopoutWindow() ? <PopoutHost /> : <MainApp />}
+          </MotionConfig>
+        </LazyMotion>
       </NotificationsProvider>
     </ThemeProvider>
   );

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { HTMLAttributes, KeyboardEvent, PointerEvent } from 'react';
-import { motion } from 'motion/react';
+import { m } from 'motion/react';
 import type {
   DockviewApi,
   DockviewPanelApi,
@@ -261,13 +261,13 @@ export function SharedTab(props: IDockviewPanelHeaderProps & TabHtmlExtras) {
       {/* 落点 ③:active tab 标题挂 layoutId,跨 group 拖动后让标题"飞"过去。
           只对 active 加,避免 inactive tab 的 portal 测量噪声(R2)。 */}
       {active ? (
-        <motion.span
+        <m.span
           layoutId={panelTitleLayoutId(api.id)}
           className="select-none"
           transition={TAB_TITLE_SPRING}
         >
           {title}
-        </motion.span>
+        </m.span>
       ) : (
         <span className="select-none">{title}</span>
       )}
@@ -304,7 +304,7 @@ export function SharedTab(props: IDockviewPanelHeaderProps & TabHtmlExtras) {
       {active && (
         // 顶部 accent line(VSCode workbench tab 风格)。放底部会与下一行
         // EditorHeader 的 TabNav active underline 视觉撞,形成"双下划线"。
-        <motion.span
+        <m.span
           layoutId={tabIndicatorLayoutId(groupId)}
           className="pointer-events-none absolute inset-x-0 top-0 h-[2px] bg-accent"
           transition={TAB_INDICATOR_SPRING}
