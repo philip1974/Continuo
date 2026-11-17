@@ -190,7 +190,22 @@ export function FolderTree({ root }: { root: string }) {
   // 创建,故经 ref 持有;找不到下标(目标被过滤)则不滚。
   const virtualizerRef = useRef<Virtualizer<HTMLDivElement, Element> | null>(null);
   const renderedItemsRef = useRef<readonly ItemInstance<FileEntry>[]>([]);
+  // 拖放结束不滚:headless-tree 行 onDrop 在 config.onDrop / onDropForeignDragObject 之后
+  // draggedItems[0].setFocused() + updateDomFocus(),后者在 setTimeout 里调 scrollToItem(无焦点回退首项)
+  // → 长列表拖到下方目录 / 从 Finder 拖入后列表跳回源行或首项。drop 回调里置一次性标志,scrollToItem
+  // 读到即清除并跳过。库未调用(如容器级 root drop 不 updateDomFocus)时标志不能残留到下次键盘导航:
+  // 嵌套两层 setTimeout 清除 —— 外层排在库 updateDomFocus 的 setTimeout(drop 回调之后的微任务里才排)
+  // 之前,内层排在其后,故库那一次总能读到标志,之后必定清掉。
+  const suppressDropScrollRef = useRef(false);
+  const suppressNextDropScroll = useCallback(() => {
+    suppressDropScrollRef.current = true;
+    setTimeout(() => setTimeout(() => (suppressDropScrollRef.current = false)));
+  }, []);
   const scrollToItem = useCallback((item: ItemInstance<FileEntry>) => {
+    if (suppressDropScrollRef.current) {
+      suppressDropScrollRef.current = false;
+      return;
+    }
     const id = item.getId();
     const index = renderedItemsRef.current.findIndex((it) => it.getId() === id);
     if (index >= 0) virtualizerRef.current?.scrollToIndex(index, { align: 'auto' });
@@ -447,6 +462,7 @@ export function FolderTree({ root }: { root: string }) {
         },
         // 内部多选拖动 → 批量 fs.move,语义同 cut→paste(但不经剪贴板)
         onDropItems: (items, destDir) => {
+          suppressNextDropScroll();
           // 拖到原父目录 → no-op(canDrop 已挡掉拖到自身,父同位置只跳)
           void runBatchTransfer(
             'move',
@@ -459,13 +475,22 @@ export function FolderTree({ root }: { root: string }) {
         },
         // 外部 OS 文件 drop 到具体 row → 走与容器 onDrop 同一套 performDrop
         onDropForeign: (dataTransfer, destDir) => {
+          suppressNextDropScroll();
           void dropForeignFilesInto(dataTransfer.items, destDir, coApi.fs, refreshParent);
         },
         expandedItems: treeExpandedItems,
         setExpandedItems,
         scrollToItem,
       }),
-    [treeExpandedItems, refreshParent, root, runBatchTransfer, setExpandedItems, scrollToItem],
+    [
+      treeExpandedItems,
+      refreshParent,
+      root,
+      runBatchTransfer,
+      setExpandedItems,
+      scrollToItem,
+      suppressNextDropScroll,
+    ],
   );
   const tree = useTree<FileEntry>(config);
   treeRef.current = tree;

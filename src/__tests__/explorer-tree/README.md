@@ -45,6 +45,9 @@ React 组件渲染 / 虚拟滚动 / 真键盘交互留 Step 7 smoke E2E。
   超时把焦点打回首项;FolderTree 将其接到 `virtualizer.scrollToIndex(下标, { align: 'auto' })`
 - 下标取**实际渲染的 items**(`selectVisibleTreeItems` 过滤隐藏文件后)中的位置,不是 `getItemMeta().index`
 - 长列表按 End → 滚到末项且 DOM 焦点落在末项;显示隐藏文件时下标包含隐藏项
+- 拖放结束不滚动:库在行 drop(内部移动 / OS 文件拖入)后 `setFocused` + `updateDomFocus` 会调
+  `scrollToItem`(无焦点时回退首项)→ 该次跳过,列表不跳回源行或首项;库未调用时一次性标志随即清除,
+  之后键盘导航照常滚动
 
 ## 不在本主题验证
 

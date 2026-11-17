@@ -124,3 +124,70 @@ describe('FolderTree · scrollToItem 接 virtualizer', () => {
     await waitFor(() => expect(document.activeElement).toBe(row(container, last)));
   });
 });
+
+// 拖放结束:headless-tree 行 onDrop 在 onDrop / onDropForeignDragObject 之后 draggedItems[0].setFocused()
+// + updateDomFocus()(setTimeout 内调 scrollToItem;无焦点时回退首项)。若照单滚动,长列表拖到下方目录 /
+// 从 Finder 拖入后列表会跳回源行或首项。契约:drop 引起的那一次 scrollToItem 不滚;之后键盘导航照常滚。
+const filesDT = () => ({ types: ['Files'], items: [], files: [] });
+const flushTimers = () => act(() => new Promise<void>((r) => setTimeout(r, 30)));
+
+describe('FolderTree · 拖放结束不触发滚动', () => {
+  it('内部拖动 drop 到另一行 → 不 scrollToIndex;之后按 End 仍 scrollToIndex', async () => {
+    h.showHidden = false;
+    const { container } = render(<FolderTree root="/work" />);
+    await waitFor(() => expect(row(container, '/work/f00.ts')).not.toBeNull());
+    act(() => {
+      fireEvent.click(row(container, '/work/f00.ts')!);
+    });
+    act(() => {
+      fireEvent.dragStart(row(container, '/work/f00.ts')!);
+    });
+    await act(async () => {
+      fireEvent.drop(row(container, '/work/f05.ts')!);
+    });
+    await flushTimers();
+    expect(h.scrollToIndex).not.toHaveBeenCalled();
+
+    act(() => {
+      fireEvent.keyDown(row(container, '/work/f00.ts')!, { key: 'End', code: 'End' });
+    });
+    await waitFor(() => expect(h.scrollToIndex).toHaveBeenCalledWith(59, { align: 'auto' }));
+  });
+
+  it('OS 文件 drop 到某行(无焦点回退首项)→ 不 scrollToIndex;之后键盘导航仍滚动', async () => {
+    // 显示隐藏文件:回退的首项 .h0 在渲染列表中(否则下标找不到本就不滚,测不出)
+    h.showHidden = true;
+    const { container } = render(<FolderTree root="/work" />);
+    await waitFor(() => expect(row(container, '/work/f00.ts')).not.toBeNull());
+    await act(async () => {
+      fireEvent.drop(row(container, '/work/f03.ts')!, { dataTransfer: filesDT() });
+    });
+    await flushTimers();
+    expect(h.scrollToIndex).not.toHaveBeenCalled();
+
+    act(() => {
+      fireEvent.click(row(container, '/work/.h0')!);
+    });
+    act(() => {
+      fireEvent.keyDown(row(container, '/work/.h0')!, { key: 'End', code: 'End' });
+    });
+    await waitFor(() => expect(h.scrollToIndex).toHaveBeenCalledWith(64, { align: 'auto' }));
+  });
+
+  it('drop 回调触发但库未调用 scrollToItem(容器级 drop 不 updateDomFocus)→ 一次性标志不残留,之后键盘导航仍滚动', async () => {
+    h.showHidden = true;
+    const { container } = render(<FolderTree root="/work" />);
+    await waitFor(() => expect(row(container, '/work/.h0')).not.toBeNull());
+    await act(async () => {
+      fireEvent.drop(container.querySelector('[role="tree"]')!, { dataTransfer: filesDT() });
+    });
+    await flushTimers();
+    act(() => {
+      fireEvent.click(row(container, '/work/.h0')!);
+    });
+    act(() => {
+      fireEvent.keyDown(row(container, '/work/.h0')!, { key: 'End', code: 'End' });
+    });
+    await waitFor(() => expect(h.scrollToIndex).toHaveBeenCalledWith(64, { align: 'auto' }));
+  });
+});
