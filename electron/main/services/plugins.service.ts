@@ -1429,8 +1429,11 @@ function preferPluginDirName(candidate: string, current: string, id: string): bo
   return candidate < current;
 }
 
-/** watcher 缺失记录(tombstone)保留的连续扫描轮数(生产 2s 一轮 ≈ 10s 内重建仍判定变化)。 */
-const MISSING_RECORD_MAX_SCANS = 5;
+/**
+ * watcher 记录(在场 + 缺失 tombstone)总数上限。缺失记录不限时保留(重建再晚也要触发热重载),只在总数
+ * 超过上限时淘汰最早缺失的记录。在场记录 ≤ 单轮目录枚举上限,故缺失记录至少还有同等容量。
+ */
+const WATCHER_RECORD_CAP = 2 * MAX_PLUGIN_DIR_ENTRIES;
 
 /**
  * 跨平台 plugin 文件改动监听:不用 fs.watch(macOS 不支持 recursive 默认,
@@ -1440,23 +1443,45 @@ const MISSING_RECORD_MAX_SCANS = 5;
 export function createPluginsWatcher(
   baseDir: string,
   onChange: (id: string) => void,
+  opts: { missingRecordCap?: number } = {},
 ): PluginsWatcher {
+  const recordCap = opts.missingRecordCap ?? WATCHER_RECORD_CAP;
   // pluginId → 该 id 唯一权威目录(目录名)及其 main mtime。重复 manifest.id 时只记权威目录
   //(preferPluginDirName,与 PluginManager.preferPluginDir / readPluginDirByManifestId 同规则):此前以 id
   // 为键而不区分目录,多个目录轮流写同一键 → 每轮都判定变化并广播,形成永久热重载风暴。
   // manifestHash:权威目录 manifest 内容哈希(同 LIST_DIRS 令牌)。manifest 内容变化也算变化 —— 激活时令牌
   // 不一致的插件会激活失败,须由此广播让 renderer 重新加载(此前只看 main mtime,只改 manifest 不广播)。
-  // missing:连续未被选中(目录 / manifest / main 暂不可见)的轮数,超过 MISSING_RECORD_MAX_SCANS 删除记录。
-  const mtimes = new Map<
-    string,
-    { dir: string; mtime: number; manifestHash: string; missing: number }
-  >();
+  // 记录分两张表:active = 上一轮被选中的 id(≤ 单轮枚举上限);missing = 未被选中(目录 / manifest / main
+  // 暂不可见)的 tombstone,插入序 = 开始缺失的先后。tombstone 不限时保留(rm -rf 后部署/构建/网络卷恢复再久,
+  // 重建后 main 已变仍要触发热重载),仅在记录总数超 recordCap 时淘汰最早缺失的。missingByDir 为 tombstone
+  // 的目录索引:每轮只按「本轮出现的目录」查 tombstone,遍历成本与当前目录数相关,不随历史缺失记录数增长。
+  type WatchRecord = { dir: string; mtime: number; manifestHash: string };
+  const active = new Map<string, WatchRecord>();
+  const missing = new Map<string, WatchRecord>();
+  const missingByDir = new Map<string, Set<string>>();
+  const addMissing = (pluginId: string, rec: WatchRecord): void => {
+    missing.set(pluginId, rec);
+    let ids = missingByDir.get(rec.dir);
+    if (ids === undefined) {
+      ids = new Set();
+      missingByDir.set(rec.dir, ids);
+    }
+    ids.add(pluginId);
+  };
+  const deleteMissing = (pluginId: string): void => {
+    const rec = missing.get(pluginId);
+    if (rec === undefined) return;
+    missing.delete(pluginId);
+    const ids = missingByDir.get(rec.dir);
+    ids?.delete(pluginId);
+    if (ids?.size === 0) missingByDir.delete(rec.dir);
+  };
   let firstRun = true;
   let cancelled = false;
   // race(R5):tick 异步扫描(readdir+stat+readFile)慢于 interval 时,setInterval 会并发触发多个
-  // tick,并发读写共享的 mtimes/firstRun —— 并发的 first-run 扫描都按 firstRun=true 吞掉实际变更,
-  // 或交错写 mtimes 致重复 onChange/reload。单飞守卫:同一时刻只跑一个扫描;期间新 tick 标记
-  // pending,当前扫描结束后补跑一次。mtimes/firstRun 只在串行的 runScan 内更新。
+  // tick,并发读写共享的记录表/firstRun —— 并发的 first-run 扫描都按 firstRun=true 吞掉实际变更,
+  // 或交错写记录表致重复 onChange/reload。单飞守卫:同一时刻只跑一个扫描;期间新 tick 标记
+  // pending,当前扫描结束后补跑一次。记录表/firstRun 只在串行的 runScan 内更新。
   let running = false;
   let pending = false;
 
@@ -1553,7 +1578,7 @@ export function createPluginsWatcher(
     if (cancelled) return;
     // 边界(E82):有界枚举(缺目录 → [] → 循环 no-op,等价旧版早返)。
     const entries = await readPluginDirEntriesCapped(baseDir);
-    // perf:per-dir stat(+ 必要时读 manifest)有界并发;mtimes 比较 / onChange 仍按枚举顺序串行(同旧版)。
+    // perf:per-dir stat(+ 必要时读 manifest)有界并发;记录比较 / onChange 仍按枚举顺序串行(同旧版)。
     const probes = await mapInOrderBounded(entries, probeEntry);
     if (manifestCache.size > 0) {
       const live = new Set(entries);
@@ -1570,31 +1595,43 @@ export function createPluginsWatcher(
         chosen.set(probe.pluginId, probe);
       }
     }
-    // 清理陈旧键:记录所属目录现在(manifest 可解析)声明的是别的 id → 该记录不再代表任何目录。
-    // 目录暂时消失 / manifest 缺失或损坏 / main 暂不可 stat 时保留记录(tombstone):重建后 main 已变仍要触发
-    // 热重载(rm -rf 后重新部署、编辑器 unlink+write 保存),与旧版同口径。但只保留有限轮次:此前永久删除的
-    // 目录记录无界保留,且本循环每轮遍历全部记录 → 内存与每 2s 的主进程开销随进程内见过的 id 数单调增长。
     // 本轮之前被记录过的目录:某 id 首次出现在其中 = 该目录改声明了新 id(更新换了 id),也算变化。
+    // 须在本轮增删记录前取(含 tombstone 的目录);只需判定本轮被选中的目录。
     const knownDirs = new Set<string>();
-    for (const [pluginId, prev] of mtimes) {
-      knownDirs.add(prev.dir);
+    for (const prev of active.values()) knownDirs.add(prev.dir);
+    for (const { name } of chosen.values()) {
+      if (missingByDir.has(name)) knownDirs.add(name);
+    }
+    // 清理陈旧键:记录所属目录现在(manifest 可解析)声明的是别的 id → 该记录不再代表任何目录。
+    // 目录暂时消失 / manifest 缺失或损坏 / main 暂不可 stat 时转为 tombstone 保留:重建后 main 已变仍要触发
+    // 热重载(rm -rf 后重新部署、编辑器 unlink+write 保存),与旧版同口径。
+    for (const [pluginId, prev] of active) {
       if (chosen.has(pluginId)) continue;
+      active.delete(pluginId);
       const info = manifestCache.get(prev.dir)?.info;
-      if (info && info.pluginId !== pluginId) {
-        mtimes.delete(pluginId);
-        continue;
+      if (!(info && info.pluginId !== pluginId)) addMissing(pluginId, prev);
+    }
+    // tombstone 的陈旧判定只可能发生在本轮枚举到(manifestCache 有条目)的目录上 → 按目录索引查,
+    // 不遍历全部 tombstone。
+    if (missingByDir.size > 0) {
+      for (const [dirName, { info }] of manifestCache) {
+        if (!info) continue;
+        const ids = missingByDir.get(dirName);
+        if (ids === undefined) continue;
+        for (const pluginId of [...ids]) {
+          if (pluginId !== info.pluginId && !chosen.has(pluginId)) deleteMissing(pluginId);
+        }
       }
-      prev.missing += 1;
-      if (prev.missing > MISSING_RECORD_MAX_SCANS) mtimes.delete(pluginId);
     }
     for (const [pluginId, { name, mtime, manifestHash }] of chosen) {
-      const prev = mtimes.get(pluginId);
+      const prev = active.get(pluginId) ?? missing.get(pluginId);
+      deleteMissing(pluginId);
       // race(R67):先记录新 mtime,再 onChange。此前顺序相反,而整段在 try{}catch{continue} 内 —
       // 若 onChange(广播 send)抛错,会被 per-entry catch 吞掉 continue → mtimes.set 不执行 →
       // mtimes 不推进 → 同一变更每个 tick 反复触发/反复失败(广播一直打不出去)。改为变更检测
       // 一旦确认即记录 mtime,通知(onChange)成败不影响 mtime 推进:坏窗口由 onChange 内部
       // per-window try/catch 兜底(R67-A),不再回灌脏状态。
-      mtimes.set(pluginId, { dir: name, mtime, manifestHash, missing: 0 });
+      active.set(pluginId, { dir: name, mtime, manifestHash });
       // 权威目录切换(新增同名目录 / 原权威目录消失)也算变化:readPluginDirByManifestId 此刻会选到另一目录。
       const changed =
         prev === undefined
@@ -1607,6 +1644,11 @@ export function createPluginsWatcher(
           // 同旧版 per-entry catch:通知失败不影响后续条目
         }
       }
+    }
+    // 按容量淘汰:记录总数超上限时淘汰最早缺失的 tombstone(Map 插入序 = 缺失先后;均摊 O(1))。
+    while (active.size + missing.size > recordCap && missing.size > 0) {
+      const oldest = missing.keys().next().value as string;
+      deleteMissing(oldest);
     }
     firstRun = false;
   };
