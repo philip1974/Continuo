@@ -23,6 +23,10 @@ renderer `init()` 原先先 `await coApi.i18n.getLocale()`,之后才发 explorer
   DockShell、无 windowSeq 段,不预取)与 `explorer.read`(由 `initExplorerPersistence` 的 `read()` 取用同一个
   promise,只取一次)。getLocale 仍在 `bootCorePlugins` / `createRoot` 之前 await,i18n 首次渲染前就绪契约不变。
   (`init-ipc-prefetch.spec.ts`)
+- popout 子窗口(独立 BrowserWindow / 独立 JS 上下文,只渲染 PopoutHost,面板由父窗口经 portal 渲染)的
+  `init()` 只做 i18n(getLocale + 广播订阅)与 `createRoot(App)`:不发 explorer.read、不跑 explorer 持久化
+  (否则按沿用的 windowSeq hydrate 并注册写回)、不 bootCorePlugins、不建 PluginManager(不再二次 import/onload
+  已启用插件)、不挂插件 MCP / fs-scope / debug / 协议桥。主窗口照旧。(`init-ipc-prefetch.spec.ts`)
 - DockShell 首次 onReady 经 `readDockLayout()` 消费预取(不再发 IPC);之后的 onReady(StrictMode / dockview
   重建 / HMR 重挂)预取已被取走 → 重新读取,不复用旧结果。同步抛错统一转为 rejected promise,失败处理
   (默认布局 + 提示)与原 `await coApi.layout.read()` 一致。(`dock-layout-prefetch.spec.tsx`)
