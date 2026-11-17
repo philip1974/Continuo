@@ -1208,6 +1208,7 @@
 - [`invalid-regex.spec.ts`](./terminal-search/invalid-regex.spec.ts)
 - [`keymap.spec.ts`](./terminal-search/keymap.spec.ts)
 - [`search-bar.spec.tsx`](./terminal-search/search-bar.spec.tsx)
+- [`search-debounce.spec.ts`](./terminal-search/search-debounce.spec.ts)
 - [`state-machine.spec.ts`](./terminal-search/state-machine.spec.ts)
 
 ## [terminal-service (M-Terminal Step T1)](./terminal-service/README.md)

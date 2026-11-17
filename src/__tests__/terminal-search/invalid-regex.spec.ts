@@ -97,7 +97,7 @@ vi.mock('@/stores/layout-ui.store', () => ({
 }));
 vi.mock('@/theme', () => ({ useTheme: () => ({ resolved: 'dark' }) }));
 
-import { useTerminal } from '../../panels/Terminal/useTerminal';
+import { TERMINAL_SEARCH_DEBOUNCE_MS, useTerminal } from '../../panels/Terminal/useTerminal';
 
 let api: ReturnType<typeof useTerminal>['searchApi'] | undefined;
 
@@ -109,7 +109,16 @@ function Host({ termId }: { termId: string }) {
 
 const REGEX = { regex: true, caseSensitive: false, wholeWord: false };
 
+// 输入搜索词的 findNext 有防抖(S12):输入后推进防抖窗口,等价于用户停顿。
+function typeTerm(term: string) {
+  act(() => api!.setTerm(term));
+  act(() => {
+    vi.advanceTimersByTime(TERMINAL_SEARCH_DEBOUNCE_MS);
+  });
+}
+
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   hoisted.resultsHandler = undefined;
   hoisted.addon = undefined;
   Object.defineProperty(globalThis, 'requestAnimationFrame', {
@@ -132,6 +141,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.clearAllMocks();
 });
 
@@ -139,7 +149,7 @@ describe('S11 正则模式非法正则 → 无匹配,搜索框继续可用', () 
   it('setTerm / setOptions / next / prev 遇非法正则都不抛,计数归零并清高亮', async () => {
     render(createElement(Host, { termId: 'term-a' }));
     act(() => api!.open());
-    act(() => api!.setTerm('foo'));
+    typeTerm('foo');
     expect(api!.result).toEqual({ index: 0, count: 3 });
 
     act(() => api!.setOptions(REGEX));
@@ -150,7 +160,7 @@ describe('S11 正则模式非法正则 → 无匹配,搜索框继续可用', () 
     hoisted.clearSelection.mockClear();
 
     for (const bad of ['[', '(', '\\']) {
-      expect(() => act(() => api!.setTerm(bad))).not.toThrow();
+      expect(() => typeTerm(bad)).not.toThrow();
       expect(api!.result).toEqual({ index: -1, count: 0 });
       expect(api!.isOpen).toBe(true);
       expect(api!.term).toBe(bad);
@@ -166,7 +176,7 @@ describe('S11 正则模式非法正则 → 无匹配,搜索框继续可用', () 
     expect(hoisted.clearSelection).toHaveBeenCalled();
 
     // 改回合法正则 → 照常搜索
-    act(() => api!.setTerm('fo+'));
+    typeTerm('fo+');
     expect(addon.findNext).toHaveBeenCalledWith('fo+', expect.objectContaining({ regex: true }));
     expect(api!.result).toEqual({ index: 0, count: 3 });
   });
@@ -174,7 +184,7 @@ describe('S11 正则模式非法正则 → 无匹配,搜索框继续可用', () 
   it('非 regex 模式下含 `[` 的字面量照常搜索', async () => {
     render(createElement(Host, { termId: 'term-a' }));
     act(() => api!.open());
-    act(() => api!.setTerm('['));
+    typeTerm('[');
     expect(hoisted.addon!.findNext).toHaveBeenCalledWith('[', expect.objectContaining({ regex: false }));
     expect(api!.result).toEqual({ index: 0, count: 3 });
   });
@@ -182,7 +192,7 @@ describe('S11 正则模式非法正则 → 无匹配,搜索框继续可用', () 
   it('已有非法正则字面量时打开 regex 开关 → 无匹配,不抛', async () => {
     render(createElement(Host, { termId: 'term-a' }));
     act(() => api!.open());
-    act(() => api!.setTerm('('));
+    typeTerm('(');
     expect(() => act(() => api!.setOptions(REGEX))).not.toThrow();
     expect(api!.result).toEqual({ index: -1, count: 0 });
     expect(api!.options.regex).toBe(true);
