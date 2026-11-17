@@ -117,7 +117,14 @@ macOS/Win 根目录 recursive watcher 对任意深度变更都上报其所在目
 
 - 覆盖**已有**普通文件:`atomicWriteFile` 写 tmp 前登记目标名 + tmp 名(rename 前续期,TTL 2s,条目上限);
   合并器 flush 时该目录本 tick 文件名**全部**是登记名 → `changeOnly: true`(files 照常携带,外部同步不受影响)
-- 命中目标名即消费登记:之后同名的外部删除 / 改名按原语义刷新;只见 tmp(目标事件未到)不消费
+- 批中出现目标名即消费登记(连同 tmp),**不论该批结论**(混入外部文件名的批、全 change 事件的批同样消费):
+  之后同名的外部删除 / 改名按原语义刷新;只见 tmp(目标事件未到)不消费
+- 该目录本批文件名未知(超上限 / 缺 filename)→ 清掉该目录全部登记;目录新装 watcher(`fs:watch`)前同样
+  清掉该目录登记(Linux 未展开目录不 watch,闲置登记不得吞掉展开后的外部删除)
+- 按登记判为 changeOnly 的批:发出后异步 lstat 复查被消费的目标,已不存在 / 不再是普通文件 / 复查出错
+  (保存与外部删除同批)→ 补发一次非 changeOnly(同一广播通道);目标仍在 → 不补发
 - 新建文件、混入未登记文件名、缺 filename、TTL 过期、tmp 撞上 crash 残留(其删除对显示隐藏文件的树可见)
   → 不按 changeOnly(刷新)
+- 残余:目录不在任何 watcher 覆盖下时登记最多闲置 2s;其间若祖先新装 recursive watcher(macOS/Win)后外部
+  删除该文件,先发 changeOnly,再由上面的 lstat 复查补发刷新(延迟一次 lstat,不漏)
 - 目录 / 文件名逐字比较,不做大小写 / NFC 折叠:字面不一致只会多刷新,不会漏刷新
