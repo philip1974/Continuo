@@ -256,15 +256,56 @@ describe('topic 49 · installFromGit 原子覆盖 + 回滚', () => {
     'cp 复制中途失败 → 不留 staging 目录',
     async () => {
       ctl.unreadableFile = true;
+      // 同卷时 clone→staging 走 rename(不逐文件读);强制 EXDEV 以覆盖跨卷回退的 cp 中途失败路径。
+      const realRename = fs.rename.bind(fs);
+      const spy = vi.spyOn(fs, 'rename').mockImplementation(async (from, to) => {
+        if (String(to).includes('.installing-')) {
+          throw Object.assign(new Error('EXDEV'), { code: 'EXDEV' });
+        }
+        return realRename(from, to);
+      });
       try {
         await expect(installFromGit(URL, baseDir)).rejects.toThrow();
       } finally {
         ctl.unreadableFile = false;
+        spy.mockRestore();
       }
       const leftovers = (await fs.readdir(baseDir)).filter((n) => n.includes('.installing-'));
       expect(leftovers).toEqual([]);
     },
   );
+
+  // 性能:clone 与 staging 同卷时直接 rename 整树(O(1)),不再 fs.cp 逐文件串行复制(3000 文件 ~850ms)。
+  it('clone → staging 优先 rename(同卷 O(1));跨卷 EXDEV 回退 cp 仍安装成功', async () => {
+    const realRename = fs.rename.bind(fs);
+    const calls: string[] = [];
+    const spy = vi.spyOn(fs, 'rename').mockImplementation(async (from, to) => {
+      calls.push(String(to));
+      return realRename(from, to);
+    });
+    try {
+      await installFromGit(URL, baseDir);
+      expect(calls.some((t) => t.includes('.installing-'))).toBe(true);
+      expect(await readVersion('p')).toBe('1.0.0');
+    } finally {
+      spy.mockRestore();
+    }
+
+    ctl.manifest = { id: 'p2', name: 'P2', version: '2.0.0' };
+    const spy2 = vi.spyOn(fs, 'rename').mockImplementation(async (from, to) => {
+      if (String(to).includes('.installing-')) {
+        throw Object.assign(new Error('EXDEV'), { code: 'EXDEV' });
+      }
+      return realRename(from, to);
+    });
+    try {
+      await installFromGit(URL, baseDir);
+      expect(await readVersion('p2')).toBe('2.0.0');
+    } finally {
+      spy2.mockRestore();
+      ctl.manifest = { id: 'p', name: 'P', version: '1.0.0' };
+    }
+  });
 
   // main 入口是目录:fs.access 对目录也成功 → 旧实现报安装成功,但下次扫描读 main 失败静默跳过。
   it('main 入口是目录 → BAD_MAIN,不落地、无残留', async () => {
