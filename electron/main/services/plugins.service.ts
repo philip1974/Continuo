@@ -218,17 +218,22 @@ export async function readFileCapped(
 const MAX_PLUGIN_DIR_ENTRIES = 1024;
 
 async function readPluginDirEntriesCapped(baseDir: string): Promise<string[]> {
+  return (await readPluginDirentsCapped(baseDir)).map((dirent) => dirent.name);
+}
+
+/** 同 readPluginDirEntriesCapped,保留 Dirent(watcher 用其类型免去每目录 stat)。 */
+async function readPluginDirentsCapped(baseDir: string): Promise<import('node:fs').Dirent[]> {
   let dir: import('node:fs').Dir;
   try {
     dir = await fs.opendir(baseDir);
   } catch {
     return []; // baseDir 不存在/不可读 = 无插件
   }
-  const names = new Array<string>(MAX_PLUGIN_DIR_ENTRIES);
+  const dirents = new Array<import('node:fs').Dirent>(MAX_PLUGIN_DIR_ENTRIES);
   let nameCount = 0;
   try {
     for await (const dirent of dir) {
-      names[nameCount] = dirent.name;
+      dirents[nameCount] = dirent;
       nameCount += 1;
       if (nameCount >= MAX_PLUGIN_DIR_ENTRIES) {
         console.warn(
@@ -240,8 +245,8 @@ async function readPluginDirEntriesCapped(baseDir: string): Promise<string[]> {
   } catch {
     // 迭代中途错误 → 返回已收集(best-effort)
   }
-  names.length = nameCount;
-  return names;
+  dirents.length = nameCount;
+  return dirents;
 }
 
 // 边界(E68,E18/E26/E66/E67 stat-before-read 族):插件持久化元数据 _enabled.json /
@@ -1497,18 +1502,24 @@ export function createPluginsWatcher(
 
   /** 单目录探测:返回 { name, pluginId, mtime }(main 文件 mtime),不可监控 → null。可并发执行。 */
   const probeEntry = async (
-    name: string,
+    dirent: import('node:fs').Dirent,
   ): Promise<{ name: string; pluginId: string; mtime: number; manifestHash: string } | null> => {
+    const name = dirent.name;
     if (name.startsWith('.') || name.startsWith('_')) return null;
     const dir = path.join(baseDir, name);
 
-    let dirStat: import('node:fs').Stats;
-    try {
-      dirStat = await fs.stat(dir);
-    } catch {
-      return null;
+    // perf:枚举的 Dirent 已带类型 → 目录直接通过、普通文件直接跳过,不再每轮每目录额外 stat;
+    // 仅 symlink / 类型未知(部分文件系统 d_type=UNKNOWN)等回退 stat,判定口径同旧版(跟随 symlink)。
+    if (!dirent.isDirectory()) {
+      if (dirent.isFile()) return null;
+      let dirStat: import('node:fs').Stats;
+      try {
+        dirStat = await fs.stat(dir);
+      } catch {
+        return null;
+      }
+      if (!dirStat.isDirectory()) return null;
     }
-    if (!dirStat.isDirectory()) return null;
 
     const manifestPath = path.join(dir, 'manifest.json');
     let manifestStat: import('node:fs').Stats;
@@ -1577,11 +1588,11 @@ export function createPluginsWatcher(
   const runScan = async (): Promise<void> => {
     if (cancelled) return;
     // 边界(E82):有界枚举(缺目录 → [] → 循环 no-op,等价旧版早返)。
-    const entries = await readPluginDirEntriesCapped(baseDir);
+    const entries = await readPluginDirentsCapped(baseDir);
     // perf:per-dir stat(+ 必要时读 manifest)有界并发;记录比较 / onChange 仍按枚举顺序串行(同旧版)。
     const probes = await mapInOrderBounded(entries, probeEntry);
     if (manifestCache.size > 0) {
-      const live = new Set(entries);
+      const live = new Set(entries.map((dirent) => dirent.name));
       for (const name of manifestCache.keys()) {
         if (!live.has(name)) manifestCache.delete(name);
       }

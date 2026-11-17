@@ -7,6 +7,7 @@ import {
   utimesSync,
   statSync,
   renameSync,
+  symlinkSync,
   promises as fsp,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -282,6 +283,35 @@ describe('createPluginsWatcher', () => {
     await w.tick();
     expect(maxInFlight).toBeGreaterThan(1);
     expect(maxInFlight).toBeLessThanOrEqual(8);
+  });
+
+  // perf:枚举得到的 Dirent 已知是目录 → 不再为每个目录每轮额外 stat;symlink / 类型未知才回退 stat。
+  it('普通目录不做 directory stat;指向目录的 symlink 回退 stat 仍被监控', async () => {
+    makeDir('real', { id: 'real', name: 'R', version: '0.1.0' });
+    const target = mkdtempSync(join(tmpdir(), 'lm-watch-link-'));
+    try {
+      mkdirSync(join(target, 'pkg'));
+      writeFileSync(join(target, 'pkg', 'manifest.json'), JSON.stringify({ id: 'lnk', name: 'L', version: '0.1.0' }));
+      writeFileSync(join(target, 'pkg', 'main.js'), '/* main */');
+      symlinkSync(join(target, 'pkg'), join(tmp, 'lnk'), 'dir');
+      const realStat = fsp.stat.bind(fsp);
+      const statted: string[] = [];
+      vi.spyOn(fsp, 'stat').mockImplementation(((p: Parameters<typeof fsp.stat>[0], ...rest: unknown[]) => {
+        statted.push(String(p));
+        return (realStat as (...a: unknown[]) => ReturnType<typeof fsp.stat>)(p, ...rest);
+      }) as typeof fsp.stat);
+      const fn = vi.fn();
+      const w = createPluginsWatcher(tmp, fn);
+      await w.tick();
+      expect(statted).not.toContain(join(tmp, 'real'));
+      expect(statted).toContain(join(tmp, 'lnk'));
+      touch('real', 'main.js', Date.now() + 5000);
+      utimesSync(join(target, 'pkg', 'main.js'), Date.now() / 1000 + 5, Date.now() / 1000 + 5);
+      await w.tick();
+      expect(fn.mock.calls).toEqual([['real'], ['lnk']]);
+    } finally {
+      rmSync(target, { recursive: true, force: true });
+    }
   });
 
   // 重复 manifest.id:每个 id 只看唯一权威目录(目录名 == id 优先,否则目录名字典序最小,与
