@@ -221,8 +221,18 @@ async function readPluginDirEntriesCapped(baseDir: string): Promise<string[]> {
   return (await readPluginDirentsCapped(baseDir)).map((dirent) => dirent.name);
 }
 
-/** 同 readPluginDirEntriesCapped,保留 Dirent(watcher 用其类型免去每目录 stat)。 */
-async function readPluginDirentsCapped(baseDir: string): Promise<import('node:fs').Dirent[]> {
+function warnPluginDirTruncated(baseDir: string): void {
+  console.warn(`[plugins] 目录条目截断到 ${MAX_PLUGIN_DIR_ENTRIES}(超大/被污染?): ${baseDir}`);
+}
+
+/**
+ * 同 readPluginDirEntriesCapped,保留 Dirent(watcher 用其类型免去每目录 stat)。
+ * 截断时调用 onTruncated(默认告警;watcher 每轮轮询,自行去重告警)。
+ */
+async function readPluginDirentsCapped(
+  baseDir: string,
+  onTruncated: (baseDir: string) => void = warnPluginDirTruncated,
+): Promise<import('node:fs').Dirent[]> {
   let dir: import('node:fs').Dir;
   try {
     dir = await fs.opendir(baseDir);
@@ -236,9 +246,7 @@ async function readPluginDirentsCapped(baseDir: string): Promise<import('node:fs
       dirents[nameCount] = dirent;
       nameCount += 1;
       if (nameCount >= MAX_PLUGIN_DIR_ENTRIES) {
-        console.warn(
-          `[plugins] 目录条目截断到 ${MAX_PLUGIN_DIR_ENTRIES}(超大/被污染?): ${baseDir}`,
-        );
+        onTruncated(baseDir);
         break; // for-await break 自动 close dir
       }
     }
@@ -1499,12 +1507,13 @@ export function createPluginsWatcher(
   let pending = false;
   // 在途扫描循环(含 pending 补跑);供 ensureBaseline 等待。
   let inflight: Promise<void> | null = null;
+  let truncationWarned = false;
 
   // perf:manifest 解析结果缓存(目录名 → manifest 的 stat 签名 + 解析结果)。此前每 2s 对每个插件
   // 完整读 + JSON.parse manifest,即使无任何变化。签名含 ino/size/mtime/ctime:原子替换(rename → 新 ino)、
   // 原地改写(ctime 必变,即便 mtime 被还原)、删除(stat 失败 → 跳过并清缓存)、新增(无缓存)都会重读。
   // 先 stat 再读:读到的内容不会比签名旧,期间若又被改,下轮签名不同会再读。
-  // info=null 表示 manifest 不是合法 JSON(与旧版同:跳过该目录)。条目只保留本轮枚举到的目录名。
+  // info=null 表示 manifest 不是合法 JSON 或超过大小上限(与旧版同:跳过该目录)。条目只保留本轮枚举到的目录名。
   const manifestCache = new Map<
     string,
     { sig: string; info: { mainName: string; pluginId: string; manifestHash: string } | null }
@@ -1542,9 +1551,21 @@ export function createPluginsWatcher(
     const sig = `${manifestStat.ino}:${manifestStat.size}:${manifestStat.mtimeMs}:${manifestStat.ctimeMs}`;
     let cached = manifestCache.get(name);
     if (cached === undefined || cached.sig !== sig) {
-      // 边界(E27,E24/listPluginDirs 同源):watcher 扫描读 manifest 也走 readFileCapped
-      //(同 MANIFEST_MAX_BYTES),避免超大 manifest 整块读入。超限/缺失 → 跳过该插件目录(不缓存,下轮重试)。
-      const text = await readFileCapped(manifestPath, MANIFEST_MAX_BYTES);
+      // 边界(E27,E24/listPluginDirs 同源):watcher 扫描读 manifest 也走有界读(同 MANIFEST_MAX_BYTES),
+      // 避免超大 manifest 整块读入。读失败(缺失 / EACCES 等)→ 跳过该目录且不缓存,下轮重试。
+      // perf:超限 → 按本轮签名缓存为 info=null(跳过),签名不变不再每 2s open+fstat + 告警,改动后照常重读。
+      let text: string | null;
+      try {
+        const read = await readFileCappedFd(manifestPath, MANIFEST_MAX_BYTES);
+        if (read.tooLarge) {
+          console.warn(`[plugins] 跳过超大文件(> ${MANIFEST_MAX_BYTES}): ${manifestPath}`);
+          manifestCache.set(name, { sig, info: null });
+          return null;
+        }
+        text = read.text;
+      } catch {
+        text = null;
+      }
       if (text === null) {
         manifestCache.delete(name);
         return null;
@@ -1597,8 +1618,14 @@ export function createPluginsWatcher(
 
   const runScan = async (): Promise<void> => {
     if (cancelled) return;
-    // 边界(E82):有界枚举(缺目录 → [] → 循环 no-op,等价旧版早返)。
-    const entries = await readPluginDirentsCapped(baseDir);
+    // 边界(E82):有界枚举(缺目录 → [] → 循环 no-op,等价旧版早返)。截断告警只在进入截断状态时打一次
+    //(每 2s 轮询,持续截断时不刷屏)。
+    let truncated = false;
+    const entries = await readPluginDirentsCapped(baseDir, (dir) => {
+      truncated = true;
+      if (!truncationWarned) warnPluginDirTruncated(dir);
+    });
+    truncationWarned = truncated;
     // perf:per-dir stat(+ 必要时读 manifest)有界并发;记录比较 / onChange 仍按枚举顺序串行(同旧版)。
     const probes = await mapInOrderBounded(entries, probeEntry);
     if (manifestCache.size > 0) {

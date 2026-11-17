@@ -32,6 +32,9 @@
 - manifest 的 (ino, size, mtime, ctime) 未变 → 不再读取 / JSON.parse,复用上次解析结果
 - 原地改写(即使 mtime 被还原,ctime 必变)、原子替换(rename → 新 ino)、删除(stat 失败跳过)、新增 → 都会重新解析
 - per-dir stat 有界并发(≤8);mtime 比较与 onChange 仍按目录枚举顺序串行
+- manifest 超 1MiB → 跳过该目录,按 stat 签名缓存「跳过」:签名不变不再每轮 open + 告警(只告警一次),改小后重新解析;
+  读失败(EACCES 等)不缓存,每轮重试
+- 插件目录条目达枚举上限(1024)→ 截断告警每个 watcher 只在进入截断状态时打一次(回落到上限以下后再超限会再告警)
 
 ## 重复 manifest.id(防热重载风暴)
 

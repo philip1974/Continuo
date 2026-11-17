@@ -264,6 +264,77 @@ describe('createPluginsWatcher', () => {
     expect(fn).toHaveBeenCalledWith('e');
   });
 
+  // perf:超大 manifest 不会自己变小 —— 按 stat 签名缓存「跳过」,签名不变不再每轮 open+fstat + 打告警
+  //(2s 轮询下每天数万条);签名变化(被改小)照常重读。
+  it('manifest 超 1MiB → 跳过且只告警一次;签名不变的后续 tick 不再 open;改小后重新解析', async () => {
+    makeDir('big', { id: 'big', name: 'B', version: '0.1.0' });
+    writeFileSync(
+      join(tmp, 'big', 'manifest.json'),
+      JSON.stringify({ id: 'big', name: 'B', version: '0.1.0', pad: 'x'.repeat(1024 * 1024) }),
+    );
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const opened: string[] = [];
+    const realOpen = fsp.open.bind(fsp);
+    vi.spyOn(fsp, 'open').mockImplementation((...args: Parameters<typeof fsp.open>) => {
+      opened.push(String(args[0]));
+      return realOpen(...args);
+    });
+    const fn = vi.fn();
+    const w = createPluginsWatcher(tmp, fn);
+    await w.tick();
+    await w.tick();
+    await w.tick();
+    expect(opened.filter((p) => p.endsWith('manifest.json'))).toHaveLength(1);
+    expect(warn.mock.calls.filter((c) => String(c[0]).includes('超大文件'))).toHaveLength(1);
+
+    writeFileSync(join(tmp, 'big', 'manifest.json'), JSON.stringify({ id: 'big', name: 'B', version: '0.1.0' }));
+    await w.tick(); // 签名变化 → 重读,纳入监控
+    touch('big', 'main.js', Date.now() + 5000);
+    await w.tick();
+    expect(fn).toHaveBeenCalledWith('big');
+  });
+
+  it('manifest 读失败(无读权限)→ 不缓存,每轮重试;恢复权限后纳入监控', async () => {
+    if (process.platform === 'win32' || process.getuid?.() === 0) return; // chmod 语义 / root 无视权限
+    makeDir('locked', { id: 'locked', name: 'L', version: '0.1.0' });
+    const manifestPath = join(tmp, 'locked', 'manifest.json');
+    await fsp.chmod(manifestPath, 0o000);
+    const opened: string[] = [];
+    const realOpen = fsp.open.bind(fsp);
+    vi.spyOn(fsp, 'open').mockImplementation((...args: Parameters<typeof fsp.open>) => {
+      opened.push(String(args[0]));
+      return realOpen(...args);
+    });
+    const fn = vi.fn();
+    const w = createPluginsWatcher(tmp, fn);
+    await w.tick();
+    await w.tick();
+    expect(opened.filter((p) => p.endsWith('manifest.json'))).toHaveLength(2);
+    await fsp.chmod(manifestPath, 0o644); // chmod 改 ctime → 签名变化;读失败本就未缓存
+    await w.tick();
+    touch('locked', 'main.js', Date.now() + 5000);
+    await w.tick();
+    expect(fn).toHaveBeenCalledWith('locked');
+  });
+
+  it('插件目录条目达上限 → 截断告警每个 watcher 只在进入截断状态时打一次', async () => {
+    for (let i = 0; i < 1025; i += 1) writeFileSync(join(tmp, `f${i}`), '');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const truncWarns = () => warn.mock.calls.filter((c) => String(c[0]).includes('目录条目截断')).length;
+    const w = createPluginsWatcher(tmp, vi.fn());
+    await w.tick();
+    await w.tick();
+    await w.tick();
+    expect(truncWarns()).toBe(1);
+    // 降到上限以下再超回去:截断状态变化 → 再告警一次
+    for (let i = 0; i < 10; i += 1) rmSync(join(tmp, `f${i}`));
+    await w.tick();
+    for (let i = 0; i < 10; i += 1) writeFileSync(join(tmp, `f${i}`), '');
+    await w.tick();
+    await w.tick();
+    expect(truncWarns()).toBe(2);
+  });
+
   it('per-dir stat 有界并发(>1 且 ≤8)', async () => {
     for (let i = 0; i < 20; i += 1) makeDir(`p${i}`, { id: `p${i}`, name: 'P', version: '0.1.0' });
     const realStat = fsp.stat.bind(fsp);
