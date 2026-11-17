@@ -51,12 +51,13 @@ export function useAutoSave(
     }),
   );
   const tabId = active.id;
-  // 关窗 flush 用:schedule effect 最近一次看到的内容与 enabled。关窗握手先同步回写编辑器里尚未上抛的
-  // 输入(editor-writeback-registry)再 flush,中间没有 React 重渲 → 下面的 schedule effect 来不及排队,
-  // 原本干净的 tab 的这段内容不在 scheduler 里。flush 时发现 store 内容 ≠ effect 看过的 → 先补排队。
+  // 关窗 / 切 tab flush 用:schedule effect 最近一次看到的内容与 enabled(都属于该 effect 当时的 tab)。
+  // 关窗握手先同步回写编辑器里尚未上抛的输入(editor-writeback-registry)再 flush,中间没有 React 重渲;
+  // 切 tab 时编辑器卸载回写(被删子树的 passive destroy)也先于本 hook 的 cleanup —— 两种情况下 schedule
+  // effect 都来不及排队,原本干净的 tab 的这段内容不在 scheduler 里。flush 前发现 store 内容 ≠ effect
+  // 看过的 → 先补排队。enabled 取 effect 看过的值而非本次渲染的:切 tab 的 cleanup 运行时渲染已属于新 tab。
   const seenContentRef = useRef<string | undefined>(undefined);
-  const enabledRef = useRef(enabled);
-  enabledRef.current = enabled;
+  const seenEnabledRef = useRef(false);
 
   // 每个 tab 一个 scheduler(身份含 tabId)。保存绑定到调度时捕获的 tabId,
   // 而非"当前 active tab" —— 切走后 active 已变,绑定 active 会保存错的 tab。
@@ -110,6 +111,7 @@ export function useAutoSave(
   // 下面按 scheduler 身份(=tabId)触发的 flush effect。
   useEffect(() => {
     seenContentRef.current = active.content;
+    seenEnabledRef.current = enabled;
     if (!scheduler) return;
     // 运行中关掉 autosave 设置 → 取消已排队的保存(禁用应阻止已排队写入)。
     // 这是针对当前 tab 的 scheduler;切 tab 的落盘仍由 flush effect 处理。
@@ -137,16 +139,20 @@ export function useAutoSave(
       registerAutoSaveFlush(null);
       return;
     }
-    registerAutoSaveFlush(() => {
+    // 同步回写产生、schedule effect 尚未看到的编辑 → 先补排队(flush 时已不脏仍由 save 闭包跳过写盘)。
+    const scheduleUnseenWriteBack = (): void => {
       const tab = findEditorFileTabById(useEditorStore.getState().tabs, tabId);
       if (
-        enabledRef.current &&
+        seenEnabledRef.current &&
         tab?.filePath &&
         tab.dirty &&
         tab.content !== seenContentRef.current
       ) {
         scheduler.schedule();
       }
+    };
+    registerAutoSaveFlush(() => {
+      scheduleUnseenWriteBack();
       return scheduler.flush();
     });
     // 本 scheduler 成为活动 tab 的 autosave 持有者(关窗计数据此豁免其脏 .md,见 autosave-failures.ts)。
@@ -156,7 +162,8 @@ export function useAutoSave(
       releaseAutoSave(scheduler);
       // 切走该 tab:fire-and-forget 触发落盘,但登记进在途集合 —— 紧接着关窗时
       // flush 握手会 await 它,否则旧 tab 这次写盘 IPC 仍在飞就被退出截断(P1-AE 的
-      // 兄弟缺口,codex 复审 F2)。
+      // 兄弟缺口,codex 复审 F2)。编辑器卸载回写先于此 cleanup 把旧 tab 写脏 → 先补排队再 flush。
+      scheduleUnseenWriteBack();
       trackInFlightAutoSave(scheduler.flush());
     };
   }, [scheduler, tabId]);

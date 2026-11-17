@@ -17,6 +17,7 @@
 - 没 active tab / filePath null / dirty=false → 不调
 - 满足条件 → delayMs 后调 saveFile;再次满足条件 → 防抖合并
 - 已排队后 tab 变干净(Cmd+S / 关窗「保存」成功)→ 取消计时器;计时器到点 / 切 tab flush / 关窗 flush 执行时再读 store,tab 已不脏则不写盘(直接视为成功);保存后继续输入(仍脏)照常 autosave
+- 切走 tab 时编辑器卸载回写(先于本 hook cleanup)把旧 tab 写脏、计时器里没有它 → cleanup 先补排队再 flush,按旧 tab 落盘;是否补排队按旧 tab 的 autosave 开关(schedule effect 看过的 enabled)判断,不按新 tab
 
 ### isAutoSaveEnabled
 
