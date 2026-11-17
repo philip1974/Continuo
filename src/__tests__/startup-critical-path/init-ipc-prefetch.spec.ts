@@ -67,6 +67,9 @@ const mocks = vi.hoisted(() => {
       onScopeUpdated: vi.fn(() => () => {}),
     },
     initExplorerPersistence: vi.fn(),
+    startPluginFsScopeRequestBridge: vi.fn(),
+    startDebugStoreSync: vi.fn(),
+    pluginsOnPermissionsChanged: vi.fn(),
     updateRefresh: vi.fn(),
     reviewsRefresh: vi.fn(),
   };
@@ -146,7 +149,7 @@ vi.mock('@/lib/co-api', () => ({
     plugins: {
       onChanged: mocks.pluginsOnChanged,
       onUninstalled: vi.fn(),
-      onPermissionsChanged: vi.fn(),
+      onPermissionsChanged: mocks.pluginsOnPermissionsChanged,
       onEnabledChanged: vi.fn(),
       onProtocolUrl: mocks.pluginsOnProtocolUrl,
     },
@@ -176,7 +179,11 @@ vi.mock('@/marketplace/update-store', () => ({
 
 // init() 启动 debug 事件同步(订阅 coApi.debug);本用例只关心 locale,与其它启动桥一样桩掉。
 vi.mock('@/stores/debug.store', () => ({
-  startDebugStoreSync: vi.fn(),
+  startDebugStoreSync: mocks.startDebugStoreSync,
+}));
+
+vi.mock('@/plugins/permissions/usePluginFsScopeRequests', () => ({
+  startPluginFsScopeRequestBridge: mocks.startPluginFsScopeRequestBridge,
 }));
 
 vi.mock('@/marketplace/reviews-store', () => ({
@@ -253,8 +260,10 @@ describe('renderer init() 启动 IPC 并发', () => {
     expect(mocks.createRoot).toHaveBeenCalledTimes(1);
   });
 
-  // perf:popout 只渲染 PopoutHost(无 IconSidebar 角标),每开一个 popout 拉一次 marketplace index + N 个 manifest 全是浪费。
-  it('popout 子窗口 → 插件 init 照常,但不做启动更新检查;主窗口照常检查', async () => {
+  // perf:popout 子窗口是独立 JS 上下文(独立 BrowserWindow 加载同一 renderer 入口 ?popout=1),只渲染 PopoutHost;
+  // 面板由父窗口 React 经 portal 渲染,子窗口自己的 store / 插件实例无任何 UI 使用。init 只保留渲染所需
+  // (lmApi 捕获 / i18n / createRoot(App)),不再跑 explorer 持久化、插件扫描+onload、MCP / fs-scope / debug / 协议桥。
+  it('popout 子窗口 → 只做 i18n + 渲染,跳过持久化 / 插件 / 各类桥;主窗口照常', async () => {
     mocks.i18nGetLocale.mockResolvedValue({ ok: true, data: 'zh' });
     const flush = async () => {
       for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0));
@@ -264,16 +273,39 @@ describe('renderer init() 启动 IPC 并发', () => {
     mocks.popout.value = true;
     await init();
     await flush();
-    expect(mocks.setUserPluginManager).toHaveBeenCalledTimes(1);
-    const popoutMgr = mocks.setUserPluginManager.mock.calls[0]![0] as {
-      init: ReturnType<typeof vi.fn>;
-    };
-    expect(popoutMgr.init).toHaveBeenCalledTimes(1);
+    expect(mocks.captureLmApi).toHaveBeenCalledTimes(1);
+    expect(mocks.i18nGetLocale).toHaveBeenCalledTimes(1);
+    expect(useSettingsStore.getState().locale).toBe('zh');
+    expect(mocks.createRoot).toHaveBeenCalledTimes(1);
+    expect(mocks.explorerRead).not.toHaveBeenCalled();
+    expect(mocks.initExplorerPersistence).not.toHaveBeenCalled();
+    expect(mocks.bootCorePlugins).not.toHaveBeenCalled();
+    expect(mocks.setUserPluginManager).not.toHaveBeenCalled();
+    expect(mocks.setUserPermissionStore).not.toHaveBeenCalled();
+    expect(mocks.pluginsOnChanged).not.toHaveBeenCalled();
+    expect(mocks.pluginsOnPermissionsChanged).not.toHaveBeenCalled();
+    expect(mocks.pluginsOnProtocolUrl).not.toHaveBeenCalled();
+    expect(mocks.startPluginMcpInvokeBridge).not.toHaveBeenCalled();
+    expect(mocks.startPluginFsScopeRequestBridge).not.toHaveBeenCalled();
+    expect(mocks.startDebugStoreSync).not.toHaveBeenCalled();
     expect(mocks.updateRefresh).not.toHaveBeenCalled();
 
     mocks.popout.value = false;
     await init();
     await flush();
+    expect(mocks.explorerRead).toHaveBeenCalledTimes(1);
+    expect(mocks.initExplorerPersistence).toHaveBeenCalledTimes(1);
+    expect(mocks.bootCorePlugins).toHaveBeenCalledTimes(1);
+    expect(mocks.setUserPluginManager).toHaveBeenCalledTimes(1);
+    const mgr = mocks.setUserPluginManager.mock.calls[0]![0] as {
+      init: ReturnType<typeof vi.fn>;
+    };
+    expect(mgr.init).toHaveBeenCalledTimes(1);
+    expect(mocks.pluginsOnChanged).toHaveBeenCalledTimes(1);
+    expect(mocks.pluginsOnProtocolUrl).toHaveBeenCalledTimes(1);
+    expect(mocks.startPluginMcpInvokeBridge).toHaveBeenCalledTimes(1);
+    expect(mocks.startPluginFsScopeRequestBridge).toHaveBeenCalledTimes(1);
+    expect(mocks.startDebugStoreSync).toHaveBeenCalledTimes(1);
     expect(mocks.updateRefresh).toHaveBeenCalledTimes(1);
   });
 });

@@ -349,6 +349,7 @@
 ## [core-plugins(内置插件:editor / terminal / output)](./core-plugins/README.md)
 
 - [`core-plugins.spec.ts`](./core-plugins/core-plugins.spec.ts)
+- [`settings-chunk-parallel.spec.tsx`](./core-plugins/settings-chunk-parallel.spec.tsx)
 
 ## [CreateInput(Explorer 新建文件 / 文件夹 sticky bar)](./create-input/README.md)
 
@@ -811,6 +812,7 @@
 - [`debug-decoration-sync-gating.spec.tsx`](./perf-audit/debug-decoration-sync-gating.spec.tsx)
 - [`editor-engine-error-boundary.spec.tsx`](./perf-audit/editor-engine-error-boundary.spec.tsx)
 - [`editor-engine-lazy.spec.tsx`](./perf-audit/editor-engine-lazy.spec.tsx)
+- [`editor-engine-prewarm.spec.tsx`](./perf-audit/editor-engine-prewarm.spec.tsx)
 - [`editor-header-memo.spec.tsx`](./perf-audit/editor-header-memo.spec.tsx)
 - [`editor-lazy-boundary.spec.ts`](./perf-audit/editor-lazy-boundary.spec.ts)
 - [`renderer-minify.spec.ts`](./perf-audit/renderer-minify.spec.ts)

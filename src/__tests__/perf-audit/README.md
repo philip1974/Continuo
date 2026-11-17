@@ -162,6 +162,12 @@
 
 **契约不变量**(`editor-engine-lazy.spec.tsx`:Welcome 不加载引擎;代码文件只加载 CodeEditor;Markdown edit 再加载 Milkdown;引擎已加载后切换同步渲染;加载器共享 promise、失败可重试。`editor-engine-error-boundary.spec.tsx`:加载失败面板不崩、显示错误与重试,重试后加载成功)。
 
+**首开预热**:首次打开文件时引擎 chunk 原要等 readFile 返回、openTab 提交、EditorPanel 渲染后才开始加载(两段串行)。
+`openFileByPath`(Explorer 单击 / Quick Open 回车 / SDK openFile)在 `await readFile` 之前 fire-and-forget 预热
+Editor 面板 + 对应引擎(Markdown 且 `getEffectiveMode(null)` 非 source → Milkdown,否则 CodeEditor);已打开的 tab
+只切换不预热;Quick Open 面板挂载即 `preloadCodeEditorEngine()`。共享 loader 去重、失败不缓存,预热失败吞掉不影响
+打开结果(`editor-engine-prewarm.spec.tsx`)。
+
 ## E3 — EditorHeader memo
 
 **位置**:`src/panels/Editor/EditorHeader.tsx`。

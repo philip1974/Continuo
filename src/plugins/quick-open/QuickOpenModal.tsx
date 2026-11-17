@@ -22,6 +22,7 @@ import { coApi } from '@/lib/co-api';
 import { useT } from '@/i18n';
 import { localizeErrorByCode } from '@/lib/localize-error';
 import { openFileByPath } from '@/panels/Editor/editor-file-actions';
+import { preloadCodeEditorEngine } from '@/panels/Editor/editor-engine-loaders';
 import { useEditorStore } from '@/stores/editor.store';
 
 // race(R2):稳定空数组引用,跨 root 时 liveResults 返回它,避免每次渲染新建 [] 触发 useMemo。
@@ -97,6 +98,12 @@ function QuickOpenBody() {
   const placeholderLabel = t('quick_open.placeholder', {
     shortcut: QUICK_OPEN_SHORTCUT_LABEL,
   });
+
+  // perf:面板打开即预热 Editor 面板 + CodeEditor chunk(共享 loader 去重、失败不缓存),选中文件回车时引擎
+  // 多半已就绪。fire-and-forget,失败吞掉(真正渲染时由引擎错误边界处理)。
+  useEffect(() => {
+    preloadCodeEditorEngine().catch(() => {});
+  }, []);
 
   // 打开 modal 时(或 root 变化)异步 walk 文件。已有 results 不阻塞 UI,
   // 后台刷新 → setResults。
