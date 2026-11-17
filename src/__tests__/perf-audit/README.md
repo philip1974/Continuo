@@ -213,3 +213,9 @@ Editor 面板 + 对应引擎(Markdown 且 `getEffectiveMode(null)` 非 source �
 - `electron.vite.config.ts` 的 renderer build 显式 `minify: 'esbuild'`(electron-vite 2.x 默认不压缩)。
 - 首屏 main-app chunk 2,494,294 B → ~1,267,928 B;TerminalPanelView 654,356 B → ~496,848 B。
 - 仓库运行时代码不依赖函数 / 类名(`constructor.name` 等),压缩不改变行为;以全量 e2e 验证。
+
+## main 冷启动:node:http 不以 ESM 值导入(main-node-http-cjs.spec.ts)
+
+- main 产物是 ESM;`import { createServer } from 'node:http'` 会让 Node 读取 node:http 全部导出(含懒 getter),
+  连带加载并编译整个 undici,实测 main 求值 +17–18ms。mcp-host 只用 createServer,改经
+  `createRequire(import.meta.url)('node:http')` 取得,类型仍用 `import type`。

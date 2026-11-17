@@ -11,12 +11,8 @@
 // BDD: src/__tests__/agent-terminal-mcp-host/(纯函数层)
 
 import { randomBytes, timingSafeEqual } from 'node:crypto';
-import {
-  createServer as createHttpServer,
-  type IncomingMessage,
-  type ServerResponse,
-  type Server as HttpServer,
-} from 'node:http';
+import { createRequire } from 'node:module';
+import type { IncomingMessage, ServerResponse, Server as HttpServer } from 'node:http';
 import type { z } from 'zod';
 import { formatZodErrorCapped } from '../lib/format-zod-error';
 import { ERROR_CODES } from '../../shared/error-codes';
@@ -31,6 +27,12 @@ import { RESULT_BYTES_MAX } from '../../shared/plugin-mcp-schemas';
 import { PLUGIN_MCP_ERROR_CODES } from '../../shared/plugin-mcp-channels';
 import { equalsAsciiIgnoreCase } from '../../shared/lower-if-needed';
 import { capErrorText, codedError } from '../../shared/error-message';
+
+// 冷启动:ESM 值导入 node:http 时 Node 会读取其全部导出(含 WebSocket 等懒 getter),连带加载并编译整个
+// undici(实测 main 求值 +17–18ms);CJS require 不触发。这里只用 createServer。
+const { createServer: createHttpServer } = createRequire(import.meta.url)(
+  'node:http',
+) as typeof import('node:http');
 
 // ── 常量 ────────────────────────────────────────────────────────
 
