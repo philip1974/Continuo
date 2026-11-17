@@ -117,7 +117,8 @@ describe('useTerminal · 实时输出写入合并', () => {
     });
     await waitWindow();
     expect(hoisted.writes.join('')).toBe(parts.join(''));
-    expect(hoisted.writes.length).toBeLessThanOrEqual(2);
+    // 空闲后前两块立即写(首块 + 紧随一块,保同屏重绘同帧),其余合并为一次
+    expect(hoisted.writes.length).toBeLessThanOrEqual(3);
   });
 
   it('首块立即写出(无首字节延迟)', async () => {
@@ -130,11 +131,12 @@ describe('useTerminal · 实时输出写入合并', () => {
     const { unmount } = await mountReady('t-unmount');
     act(() => {
       live('a');
+      live('L');
       live('pending');
     });
-    expect(hoisted.writes).toEqual(['a']);
+    expect(hoisted.writes).toEqual(['a', 'L']);
     unmount();
     await waitWindow();
-    expect(hoisted.writes).toEqual(['a']);
+    expect(hoisted.writes).toEqual(['a', 'L']);
   });
 });

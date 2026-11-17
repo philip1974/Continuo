@@ -6,12 +6,16 @@
 // 这里在 safeWrite 之前把一个短窗口内的小块拼成接近 CHUNK_SIZE 的一次调用,排空能力回到
 // 按字节(≈16KB/8ms)。
 //
-// 节流语义(leading + trailing):空闲时首块立即写出(交互回显 / prompt 零额外延迟);
-// 之后窗口内到达的块进缓冲,窗口结束一次写出,有数据则续开窗口,空窗口回到空闲。
+// 节流语义(leading + trailing):空闲后的前 OUTPUT_COALESCE_LEADING_CHUNKS 块立即写出 —— 交互回显 /
+// prompt 零额外延迟,且一屏 TUI 重绘跨主进程 5ms 合批边界拆成的 A、B 两条仍同帧渲染(只立即写首块时
+// B 必等满窗口,半帧画面可见)。之后窗口内到达的块进缓冲,窗口结束一次写出,有数据则续开窗口,空窗口
+// 回到空闲。持续输出时立即写只占每轮空闲后的头两块,写入频率仍由窗口决定(不回到逐条写)。
 // 用 setTimeout 而非 rAF:rAF 在隐藏 tab / 窗口会暂停,缓冲会滞留到切回可见。
 
 /** 合并窗口:约一帧。 */
 export const OUTPUT_COALESCE_WINDOW_MS = 16;
+/** 空闲后立即写出的块数(首块 + 紧随的一块)。 */
+export const OUTPUT_COALESCE_LEADING_CHUNKS = 2;
 /** 缓冲上限 = safeWrite 的 CHUNK_SIZE(16KB,按 UTF-16 code unit 计):每次写出恰占一个节流槽。 */
 export const OUTPUT_COALESCE_MAX_CHARS = 16 * 1024;
 
@@ -26,6 +30,8 @@ export function createOutputCoalescer(write: (data: string) => void): OutputCoal
   let size = 0;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let disposed = false;
+  /** 本轮空闲后还可立即写出的块数;缓冲一旦开始累积即不再立即写(保持顺序)。 */
+  let leadingLeft = 0;
 
   const flush = () => {
     if (size === 0) return;
@@ -37,6 +43,7 @@ export function createOutputCoalescer(write: (data: string) => void): OutputCoal
 
   const onWindowEnd = () => {
     timer = null;
+    leadingLeft = 0;
     if (disposed || size === 0) return; // 空窗口 → 回到空闲
     flush();
     timer = setTimeout(onWindowEnd, OUTPUT_COALESCE_WINDOW_MS);
@@ -48,9 +55,16 @@ export function createOutputCoalescer(write: (data: string) => void): OutputCoal
       if (timer === null) {
         // 空闲:立即写出,并开窗口收集紧随其后的块
         write(data);
+        leadingLeft = OUTPUT_COALESCE_LEADING_CHUNKS - 1;
         timer = setTimeout(onWindowEnd, OUTPUT_COALESCE_WINDOW_MS);
         return;
       }
+      if (leadingLeft > 0 && size === 0) {
+        leadingLeft -= 1;
+        write(data);
+        return;
+      }
+      leadingLeft = 0;
       // 加入会超上限 → 先写出已缓冲部分,保持每次写出 ≤ 一个 chunk
       if (size + data.length > OUTPUT_COALESCE_MAX_CHARS) flush();
       parts.push(data);
