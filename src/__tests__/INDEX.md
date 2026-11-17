@@ -1145,6 +1145,8 @@
 
 ## [startup-critical-path(冷启动关键路径 · renderer)](./startup-critical-path/README.md)
 
+- [`dock-layout-prefetch.spec.tsx`](./startup-critical-path/dock-layout-prefetch.spec.tsx)
+- [`init-ipc-prefetch.spec.ts`](./startup-critical-path/init-ipc-prefetch.spec.ts)
 - [`notify-root-gate.spec.tsx`](./startup-critical-path/notify-root-gate.spec.tsx)
 - [`terminal-root-gate.spec.ts`](./startup-critical-path/terminal-root-gate.spec.ts)
 
