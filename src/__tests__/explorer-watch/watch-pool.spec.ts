@@ -338,4 +338,53 @@ describe('createSameTickPathCoalescer', () => {
     s.run();
     expect(emit.mock.calls.map((c) => c[0])).toEqual(['/r/a', '/r/a']);
   });
+
+  // 性能:watch 回调带 filename 时按目录聚合变更文件名,renderer 据此只重读命中的 clean tab。
+  it('同 tick 同目录按目录聚合文件名(去重,按首次出现顺序)', () => {
+    const emit = vi.fn();
+    const s = manualSchedule();
+    const push = createSameTickPathCoalescer(emit, s.schedule);
+    push('/r/a', 'x.md');
+    push('/r/a', 'y.md');
+    push('/r/a', 'x.md'); // 多个祖先 watcher 重复报告
+    push('/r/b', 'z.md');
+    s.run();
+    expect(emit.mock.calls).toEqual([
+      ['/r/a', ['x.md', 'y.md']],
+      ['/r/b', ['z.md']],
+    ]);
+  });
+
+  it('同目录同 tick 内任一回调缺 filename → 该目录此次不带文件集合(退化为目录级),其它目录不受影响', () => {
+    const emit = vi.fn();
+    const s = manualSchedule();
+    const push = createSameTickPathCoalescer(emit, s.schedule);
+    push('/r/a', 'x.md');
+    push('/r/a'); // Windows 缓冲溢出 / 平台不传 filename
+    push('/r/a', 'y.md'); // 之后再来的文件名不能把「未知」恢复成集合
+    push('/r/b', 'z.md');
+    push('/r/c');
+    s.run();
+    expect(emit.mock.calls).toEqual([
+      ['/r/a', undefined],
+      ['/r/b', ['z.md']],
+      ['/r/c', undefined],
+    ]);
+  });
+
+  it('文件名数量超上限 → 该目录此次退化为目录级(不带集合)', () => {
+    const emit = vi.fn();
+    const s = manualSchedule();
+    const push = createSameTickPathCoalescer(emit, s.schedule, 2);
+    push('/r/a', '1');
+    push('/r/a', '2');
+    push('/r/b', '1');
+    push('/r/b', '2');
+    push('/r/b', '3');
+    s.run();
+    expect(emit.mock.calls).toEqual([
+      ['/r/a', ['1', '2']],
+      ['/r/b', undefined],
+    ]);
+  });
 });

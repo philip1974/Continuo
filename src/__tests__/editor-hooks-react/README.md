@@ -35,4 +35,5 @@
 - changedDir 命中 tab.filePath 父目录 + 非 dirty + 读盘 ok → reloadFromDisk
 - dirty tab 跳过
 - changedDir ≠ dirname → 跳过
+- dir-changed 携带变更文件名集合 → 只重读文件名在集合内的 clean tab(rename 旧名/新名命中任一即可;文件名比较大小写 + NFC 宽松,宁多读不漏读);无集合(平台不给 filename / 缓冲溢出 / 超上限)→ 退化为按目录匹配
 - readFile ok=false → 跳过(不抛)

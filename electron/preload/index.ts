@@ -8,7 +8,12 @@ import { subscribeIpc } from './subscribe-ipc';
 import { createTerminalDataDemux } from './terminal-data-demux';
 import type { IpcResult } from '../shared/ipc-result';
 import type { FileEntry } from '../shared/fs-entry';
-import { FS_CHANNELS, isFsDirChangedPayload } from '../shared/fs-channels';
+import {
+  DIR_CHANGED_FILES_MAX,
+  FS_CHANNELS,
+  isFsDirChangedPayload,
+  readFsDirChangedFiles,
+} from '../shared/fs-channels';
 import { FS_PATH_MAX } from '../shared/fs-limits';
 import { SESSION_UPDATE_CWD_CHANNEL, TERMINAL_CHANNELS } from '../shared/terminal-channels';
 import type { TerminalSessionSnapshot } from '../shared/terminal-session';
@@ -224,8 +229,13 @@ const api = {
       ipcRenderer.invoke(FS_CHANNELS.WATCH, { path }),
     unwatchDir: (path: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(FS_CHANNELS.UNWATCH, { path }),
-    /** 订阅目录变更 push 事件;返回 unsubscribe. */
-    onDirChanged: (cb: (path: string) => void): (() => void) => {
+    /**
+     * 订阅目录变更 push 事件;返回 unsubscribe。files:该目录本次变更项名字(可选,
+     * undefined = 未知,按整个目录处理;畸形/超限同样退化为 undefined).
+     */
+    onDirChanged: (
+      cb: (path: string, files?: readonly string[]) => void,
+    ): (() => void) => {
       // 边界(E173,E168-E172 同族 IPC ingress 纵深防御):fs:dir-changed payload 此前直接 cb(payload.path)。
       // 畸形 IPC payload(null/非对象/path 非字符串/超长)→ preload listener 抛错(null.path),或把非法
       // key 送进 Explorer watcher / external-file-sync(目录刷新异常、debounce Map 污染、外部同步失效)。
@@ -235,7 +245,10 @@ const api = {
           console.warn('[fs] invalid dir-changed payload, dropped', payload);
           return;
         }
-        cb(payload.path);
+        cb(
+          payload.path,
+          readFsDirChangedFiles(payload, DIR_CHANGED_FILES_MAX, FS_PATH_MAX),
+        );
       };
       return subscribeIpc(FS_CHANNELS.DIR_CHANGED, listener);
     },

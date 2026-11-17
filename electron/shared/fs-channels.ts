@@ -33,7 +33,16 @@ export type FsChannel = (typeof FS_CHANNELS)[keyof typeof FS_CHANNELS];
 // 抛(null.path)或把非法 key 送进 Explorer watcher / external-file-sync。单一来源,preload 复用 + 单测。
 export interface FsDirChangedPayload {
   readonly path: string;
+  /**
+   * 可选:本次该目录内变更项的名字(fs.watch 回调 filename 的末段,含 rename 的旧名/新名)。
+   * 缺省 = 未知是哪些文件(平台不给 filename / Windows 缓冲溢出 / 超 DIR_CHANGED_FILES_MAX),
+   * 订阅者须按「整个目录都可能变了」处理。仅 DIR_CHANGED 携带,WATCH_LOST 不带。
+   */
+  readonly files?: readonly string[];
 }
+
+/** DIR_CHANGED 单条 payload 携带文件名的数量上限;超限则不带集合,退化为目录级. */
+export const DIR_CHANGED_FILES_MAX = 64;
 
 /** fs:dir-changed payload 的 runtime 形态 + 长度守卫(空字符串是合法根/相对路径,故只限上限不限非空). */
 export function isFsDirChangedPayload(
@@ -43,4 +52,21 @@ export function isFsDirChangedPayload(
   if (v === null || typeof v !== 'object') return false;
   const p = (v as { path?: unknown }).path;
   return typeof p === 'string' && p.length <= maxPathLen;
+}
+
+/**
+ * 取 payload 的可选 files:合规(数组、数量 ≤ maxCount、每项为长度 ≤ maxNameLen 的字符串)→ 原数组;
+ * 缺省 / 畸形 / 超限 → undefined(退化为目录级,不丢整条事件,目录刷新照常)。
+ */
+export function readFsDirChangedFiles(
+  v: FsDirChangedPayload,
+  maxCount: number,
+  maxNameLen: number,
+): readonly string[] | undefined {
+  const files: unknown = v.files;
+  if (!Array.isArray(files) || files.length > maxCount) return undefined;
+  for (const f of files) {
+    if (typeof f !== 'string' || f.length > maxNameLen) return undefined;
+  }
+  return files as readonly string[];
 }

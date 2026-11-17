@@ -80,6 +80,24 @@ describe('perf · queueDirChangedBroadcast 同 tick 同路径合并广播', () =
     ]);
   });
 
+  it('同 tick 带文件名 → payload 携带去重后的 files;缺 filename 的目录不带 files 字段', async () => {
+    const w = makeWin();
+    mocks.windows = [w];
+    const { queueDirChangedBroadcast } = await import('../../../electron/main/ipc/fs.ipc');
+    const { FS_CHANNELS } = await import('../../../electron/shared/fs-channels');
+
+    queueDirChangedBroadcast('/r/a', 'x.md');
+    queueDirChangedBroadcast('/r/a', 'x.md');
+    queueDirChangedBroadcast('/r/b', 'y.md');
+    queueDirChangedBroadcast('/r/b');
+    await new Promise((r) => setImmediate(r));
+
+    expect(w.webContents.send.mock.calls).toEqual([
+      [FS_CHANNELS.DIR_CHANGED, { path: '/r/a', files: ['x.md'] }],
+      [FS_CHANNELS.DIR_CHANGED, { path: '/r/b' }],
+    ]);
+  });
+
   it('WATCH handler 的 watcher 回调走 queueDirChangedBroadcast(非逐次直接广播)', () => {
     const src = readFileSync(
       join(__dirname, '..', '..', '..', 'electron', 'main', 'ipc', 'fs.ipc.ts'),

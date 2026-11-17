@@ -15,8 +15,14 @@ import { coApi } from '@/lib/co-api';
 import { onWatchRestored } from '@/lib/fs-watch-restored';
 import { useEditorStore, type EditorTab } from '@/stores/editor.store';
 import { dirname } from '@/panels/Explorer/path-utils';
-import { isSameOrInsidePath, pathEquals } from '@/lib/path-cross';
+import { basename, isSameOrInsidePath, pathEquals } from '@/lib/path-cross';
+import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 import { findEditorFileTabById } from './editor-tab-lookup';
+
+/** dir-changed 文件名匹配键:大小写 + Unicode NFC 折叠(宁多读不漏读,见下方订阅处注释). */
+function foldFileName(name: string): string {
+  return lowerIfNeeded(name.normalize('NFC'));
+}
 // 跨平台(codex 复查 P1):此前本地 dirname 是 Explorer path-utils dirname 的有问题副本 ——
 // 对 `C:\a.md` 返回 drive-relative `C:`(应盘根 `C:\`,同 X2)、对 POSIX 根 `/a.md` 返回 ''
 // (应 `/`),且下方比较为字节级 → Windows 盘根/大小写不同目录、甚至 mac 根 workspace 的
@@ -101,9 +107,18 @@ export function useExternalFileSync(): void {
         }
       }
     };
-    const unsub = coApi.fs.onDirChanged((changedDir) =>
-      reloadMatching((fp) => pathEquals(dirname(fp), changedDir)),
-    );
+    // 性能:main 带上变更文件名集合时只重读命中的 clean tab(此前每次 dir-changed 都把该目录下所有
+    // clean tab 整文件读回,Markdown 2s 自动保存 / 根目录持续写日志时几乎不停读盘);无集合(平台不给
+    // filename / 缓冲溢出 / 超上限)→ 退化为按目录匹配。目录仍按 pathEquals(dirname) 判定;文件名比较
+    // 故意更宽松(大小写 + Unicode NFC 折叠):误命中只多读一次(= 旧行为),漏命中会让 clean tab 停旧内容。
+    const unsub = coApi.fs.onDirChanged((changedDir, files) => {
+      const names = files ? new Set(files.map(foldFileName)) : null;
+      reloadMatching(
+        (fp) =>
+          pathEquals(dirname(fp), changedDir) &&
+          (names === null || names.has(foldFileName(basename(fp)))),
+      );
+    });
     const unsubRestored = onWatchRestored((dir) =>
       reloadMatching((fp) => isSameOrInsidePath(dir, fp)),
     );
