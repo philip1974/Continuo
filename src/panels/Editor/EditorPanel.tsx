@@ -29,7 +29,6 @@ import { toPreviewMarkdown } from './milkdown-roundtrip-safety';
 import { findEditorFileTabById } from './editor-tab-lookup';
 import { useAutoSave, isAutoSaveEnabled } from './useAutoSave';
 import { useEditorFile } from './useEditorFile';
-import { useExternalFileSync } from './useExternalFileSync';
 import { resolveLink } from './link-resolve';
 import { startDebugDecorationSync } from './decorations/debug-decoration-sync';
 import { useSettingValue } from '@/plugins/settings/values-store';
@@ -181,8 +180,7 @@ export function EditorPanel() {
     delayMs: autoSaveDelayMs,
   });
 
-  // 外部进程修改文件时,自动同步 non-dirty tab 的内容
-  useExternalFileSync();
+  // 外部进程修改文件时自动同步 non-dirty tab:useExternalFileSync 由常驻 MainApp 承载(见 App.tsx)。
 
   useEffect(() => startDebugDecorationSync(), []);
 

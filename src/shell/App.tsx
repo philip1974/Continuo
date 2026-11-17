@@ -13,6 +13,7 @@ import { TitleBar } from './TitleBar';
 import { CommandPalette } from '@/plugins/command-palette/CommandPalette';
 import { useCommandPaletteHotkey } from '@/plugins/command-palette/useCommandPaletteHotkey';
 import { useCommandHotkeys } from '@/plugins/command-palette/useCommandHotkeys';
+import { useExternalFileSync } from '@/panels/Editor/useExternalFileSync';
 import { QuickOpenModal } from '@/plugins/quick-open/QuickOpenModal';
 import { useQuickOpenHotkey } from '@/plugins/quick-open/useQuickOpenHotkey';
 import { PermissionPrompt } from '@/plugins/permissions/PermissionPrompt';
@@ -49,6 +50,9 @@ function MainApp() {
   useCommandPaletteHotkey();
   // 全局 commands 注册的 hotkey 监听 + 派发(M-Plugin v1.6 补漏)
   useCommandHotkeys(coApp.commands);
+  // 外部文件同步挂在常驻 MainApp(每窗口一次),不放在懒加载的 EditorPanel:打开文件到 Editor chunk
+  // 挂载之间的外部修改否则会因订阅尚不存在而永久漏掉。hook 只依赖 editor store + coApi.fs。
+  useExternalFileSync();
 
   // workspace.root 变化 → 通知 main 维护 windowId→root 映射,供 MCP agent
   // terminal_create_session 路径 cwd 回退使用。

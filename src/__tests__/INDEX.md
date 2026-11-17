@@ -579,6 +579,10 @@
 - [`fs-watch-helpers.spec.ts`](./explorer-watch/fs-watch-helpers.spec.ts)
 - [`watch-pool.spec.ts`](./explorer-watch/watch-pool.spec.ts)
 
+## [外部文件同步的宿主(external-file-sync-owner)](./external-file-sync-owner/README.md)
+
+- [`external-file-sync-owner.spec.tsx`](./external-file-sync-owner/external-file-sync-owner.spec.tsx)
+
 ## [file-icon(资源管理器文件图标化)](./file-icon/README.md)
 
 - [`file-icon.spec.ts`](./file-icon/file-icon.spec.ts)
