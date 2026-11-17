@@ -42,6 +42,8 @@ export function TerminalSessionsSync(): null {
           winId,
         );
       }
+      // 不会再有快照到达 → 解除 Splash 就绪屏障(不让它干等安全上限)。
+      useTerminalStore.getState().markHydrated();
       return;
     }
 
@@ -64,9 +66,10 @@ export function TerminalSessionsSync(): null {
 
     const applyWorkspaceFilter = (): void => {
       const root = useWorkspaceStore.getState().root;
-      useTerminalStore
-        .getState()
-        .replaceSnapshot(filterByWorkspaceRoot(rawOwned, root));
+      const store = useTerminalStore.getState();
+      store.replaceSnapshot(filterByWorkspaceRoot(rawOwned, root));
+      // 空快照时 replaceSnapshot 不产生变化 → 显式标记已收到首个权威快照(非空时已原子置位,此处 no-op)。
+      store.markHydrated();
     };
 
     coApi.terminal
@@ -76,6 +79,7 @@ export function TerminalSessionsSync(): null {
         if (!r.ok || !Array.isArray(r.data?.sessions)) {
           // a11y(A130,A129 同族):初始会话恢复失败此前静默早返(列表缺失无反馈)→ notify。
           notify.error(translate('errors.terminal.sessions_restore_failed'));
+          useTerminalStore.getState().markHydrated(); // 初始拉取已失败,不再让 Splash 等它
           return;
         }
         setRawOwned(
@@ -89,6 +93,7 @@ export function TerminalSessionsSync(): null {
         // a11y(A130):IPC reject 此前是未处理 rejection + 静默失败 → notify(被推送取代则跳过)。
         if (cancelled || sawPush) return;
         notify.error(translate('errors.terminal.sessions_restore_failed'));
+        useTerminalStore.getState().markHydrated();
       });
 
     const unsub = coApi.terminal.onSessionsChanged((snapshot) => {

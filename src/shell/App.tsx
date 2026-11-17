@@ -40,6 +40,7 @@ import { notifyFailure, notifyThrownError } from '@/notifications/notify-thrown-
 function MainApp() {
   // 性能:Splash 只遮住布局恢复期,布局就绪即移除(此前另有 600ms 最短展示,布局 80ms 就绪也要
   // 再白等 ~500ms 才可交互)。
+  // onLayoutReady 由 DockShell 在「布局恢复 + 终端首个快照已 reconcile」后报(事件式屏障,带安全上限)。
   const [layoutReady, setLayoutReady] = useState(false);
 
   // 全局 ⌘P / Ctrl+P 触发 Quick Open(文件搜索,VSCode 同款)

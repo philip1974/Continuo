@@ -109,11 +109,13 @@ function usePanelComponents(): Record<string, React.FC<IDockviewPanelProps>> {
 function DockReconcilerMount({
   api,
   restoreStartedAt,
+  onHydrated,
 }: {
   api: DockviewApi;
   restoreStartedAt: number;
+  onHydrated: () => void;
 }): null {
-  useDockReconciler(api, restoreStartedAt);
+  useDockReconciler(api, restoreStartedAt, onHydrated);
   useDockLocaleSync(api);
   return null;
 }
@@ -187,6 +189,12 @@ async function writeDockLayoutSnapshot(
   }
 }
 
+/**
+ * Splash 就绪屏障的安全上限:布局已恢复而终端首个 sessions 快照迟迟不到(IPC 卡住 / 同步源未启用)时,
+ * 最多再等这么久就报 ready,不永久遮挡界面。正常路径由事件解除,不等此上限。
+ */
+export const DOCK_TERMINAL_READY_TIMEOUT_MS = 3000;
+
 export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
   const apiRef = useRef<DockviewApi | null>(null);
   // race(R22):保存 onReady 里注册的 dockview onDid* disposables + debounce 持久化函数,在
@@ -223,6 +231,11 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
   // 布局(fromJSON / 默认布局)已恢复。会 addPanel 的 editor 自动激活依赖它而非 apiReady:恢复前加的面板
   // 会被 fromJSON 的 clear() 删掉且不再补建。关窗 flush 握手仍依赖 apiReady(时序不变)。
   const [layoutRestored, setLayoutRestored] = useState(false);
+  // 当前 api 的 Reconciler 已按终端首个权威快照完成 reconcile(或已达安全上限)。与 layoutRestored 一起
+  // 构成 onLayoutReady(App 移除 Splash)的事件式屏障:仅布局恢复就移除 Splash 时,迟到的终端快照会让
+  // 面板在用户已可操作后跳入。
+  const [terminalsReady, setTerminalsReady] = useState(false);
+  const onTerminalsHydrated = useCallback(() => setTerminalsReady(true), []);
   const [empty, setEmpty] = useState(false);
   const panelComponents = usePanelComponents();
   const { saveTab } = useEditorFile();
@@ -236,6 +249,7 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       //(dockview 内部先 clear())清掉,而 Reconciler 视为已同步不再补加 → 终端从 UI 消失。
       setApiReady(true);
       setLayoutRestored(false);
+      setTerminalsReady(false);
       // 暴露给 IconSidebar 等 Dockview 之外的组件;布局恢复前 openOrFocusPanel 排队(见 dock-api-ref)。
       setDockApi(event.api, { layoutPending: true });
       // a11y(A131,A130 同族):layout.read() reject 此前会中断整个 onReady(连默认布局都不应用)。
@@ -303,7 +317,6 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       }
 
       setEmpty(event.api.totalPanels === 0);
-      onLayoutReady?.();
 
       // race(R22):onReady 重入(dockview 重建)先清旧 listener/debounce,再注册新的。
       disposeDockListeners();
@@ -351,8 +364,18 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       );
       event.api.panels.forEach(wrapPanelClose);
     },
-    [onLayoutReady, disposeDockListeners],
+    [disposeDockListeners],
   );
+
+  useEffect(() => {
+    if (layoutRestored && terminalsReady) onLayoutReady?.();
+  }, [layoutRestored, terminalsReady, onLayoutReady]);
+
+  useEffect(() => {
+    if (!layoutRestored || terminalsReady) return;
+    const timer = setTimeout(() => setTerminalsReady(true), DOCK_TERMINAL_READY_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [layoutRestored, terminalsReady]);
 
   const restore = useCallback(() => {
     if (apiRef.current) applyDefaultLayout(apiRef.current);
@@ -552,6 +575,7 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
         <DockReconcilerMount
           api={reconcilerTarget.api}
           restoreStartedAt={reconcilerTarget.restoreStartedAt}
+          onHydrated={onTerminalsHydrated}
         />
       )}
       <DockviewReact

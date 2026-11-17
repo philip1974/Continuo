@@ -5,7 +5,7 @@
 ## 启动 Spotlight
 
 - App 启动 → 立即看到 Spotlight + "Continuo" 渐变标题盖在屏幕上(splash overlay)。
-- DockShell 完成 layout 注入(`fromJSON` 或 `applyDefaultLayout`)→ splash **完全 unmount**(不是 `display: none`)。
+- DockShell 完成 layout 注入(`fromJSON` 或 `applyDefaultLayout`)且终端首个 sessions 快照已 reconcile(事件式屏障,带安全上限,见 `splash-terminal-ready-barrier/`)→ splash **完全 unmount**(不是 `display: none`)。
 - 不设最短展示时长:布局就绪即 unmount(性能,原 600ms 最短露脸让布局快速就绪时仍被遮罩挡 ~500ms 才可交互;见 `decor-shell/splash-lifecycle.spec.tsx`)。
 
 ## 空状态 Beams

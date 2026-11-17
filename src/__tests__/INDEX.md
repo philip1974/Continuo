@@ -1117,6 +1117,11 @@
 
 - [`spec-object-guard.spec.ts`](./spec-object-guard/spec-object-guard.spec.ts)
 
+## [splash-terminal-ready-barrier](./splash-terminal-ready-barrier/README.md)
+
+- [`ready-barrier.spec.tsx`](./splash-terminal-ready-barrier/ready-barrier.spec.tsx)
+- [`sync-hydrated.spec.ts`](./splash-terminal-ready-barrier/sync-hydrated.spec.ts)
+
 ## [Spotlight(装饰用聚光灯 SVG)](./spotlight/README.md)
 
 - [`spotlight.spec.tsx`](./spotlight/spotlight.spec.tsx)

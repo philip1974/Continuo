@@ -245,17 +245,30 @@ export function getShellFamily(sessionId: string): ShellFamily {
 
 type TerminalState = {
   sessions: readonly TerminalSession[];
-  /** 接收 main 推的 snapshot(整体替换;引用未变或都为空时不通知订阅者)。 */
+  /**
+   * 已收到首个权威 sessions 快照(或初始拉取已失败、不会再等)。Splash 就绪屏障与 Reconciler 据此区分
+   * 「首个快照里的存量 session」(hydrate,不抢焦)与之后真正新增的 session。
+   */
+  hydrated: boolean;
+  /**
+   * 接收 main 推的 snapshot(整体替换;引用未变或都为空时不通知订阅者)。sessions 变化时与
+   * hydrated=true 原子写入,订阅者不会看到「有 sessions 但未 hydrated」的中间态。
+   */
   replaceSnapshot: (sessions: readonly TerminalSession[]) => void;
+  /** 标记 hydrated(空快照 / 初始拉取失败时 replaceSnapshot 不产生变化,由同步源显式调用)。 */
+  markHydrated: () => void;
 };
 
 export const useTerminalStore = create<TerminalState>((set) => ({
   sessions: [],
+  hydrated: false,
 
   replaceSnapshot: (newSessions) =>
     set((s) => {
       if (newSessions === s.sessions) return s;
       if (newSessions.length === 0 && s.sessions.length === 0) return s;
-      return { sessions: newSessions };
+      return { sessions: newSessions, hydrated: true };
     }),
+
+  markHydrated: () => set((s) => (s.hydrated ? s : { hydrated: true })),
 }));

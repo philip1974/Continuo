@@ -23,7 +23,7 @@
 
 - data-testid='splash'
 - 内含 Spotlight(svg) + 标题「Continuo」
-- 生命周期(`splash-lifecycle.spec.tsx`):只遮住布局恢复期,DockShell `onLayoutReady` 即移除,无最短展示时长
+- 生命周期(`splash-lifecycle.spec.tsx`):只遮住布局恢复期,DockShell `onLayoutReady` 即移除,无最短展示时长(`onLayoutReady` = 布局恢复 + 终端首个快照已 reconcile,见 `splash-terminal-ready-barrier/`)
 
 ### PopoutHost
 
