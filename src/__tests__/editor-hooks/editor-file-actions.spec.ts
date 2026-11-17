@@ -13,6 +13,10 @@ import {
   useEditorStore,
 } from '../../stores/editor.store';
 import type { IpcResult } from '../../lib/fs/types';
+import {
+  _resetSavedDiskStatsForTest,
+  getSavedDiskStat,
+} from '../../panels/Editor/saved-disk-stat';
 
 const ok = <T,>(data: T): IpcResult<T> => ({ ok: true, data });
 const fail = (code: string, message = code): IpcResult<never> => ({
@@ -28,7 +32,7 @@ const makeDeps = (overrides: Partial<EditorFileDeps['fs']> = {}): EditorFileDeps
     readFile: vi.fn(async (p: string) =>
       ok(findEditorFileTabByPath(useEditorStore.getState().tabs, p)?.originalContent ?? ''),
     ),
-    writeFile: vi.fn(async () => ok(undefined as void)),
+    writeFile: vi.fn(async () => ok(undefined)),
     ...overrides,
   },
   store: useEditorStore,
@@ -272,7 +276,7 @@ describe('saveFile', () => {
       activeTabId: '/x/a.md',
       mode: 'edit',
     });
-    const writeFile = vi.fn(async () => ok(undefined as void));
+    const writeFile = vi.fn(async () => ok(undefined));
     const deps = makeDeps({ writeFile });
     const r = await saveFile('/x/a.md', deps);
     expect(r.ok).toBe(true);
@@ -280,6 +284,29 @@ describe('saveFile', () => {
     const tab = useEditorStore.getState().tabs[0];
     expect(tab?.dirty).toBe(false);
     expect(tab?.originalContent).toBe('new content');
+  });
+
+  // 性能(保存回声识别):写成功带回的 { mtimeMs, size } 按 tab 路径记录(连同写入内容);未知则清旧记录。
+  it('成功且 writeFile 带回 stat → 按 tab 路径记录保存 stat + 写入内容;未带 → 清除旧记录', async () => {
+    _resetSavedDiskStatsForTest();
+    const dirtyTab = (content: string) => ({
+      id: '/x/a.md',
+      filePath: '/x/a.md',
+      content,
+      originalContent: 'old',
+      dirty: true,
+    });
+    useEditorStore.setState({ tabs: [dirtyTab('v1')], activeTabId: '/x/a.md', mode: 'edit' });
+    const writeFile = vi
+      .fn<(p: string, c: string) => Promise<IpcResult<{ mtimeMs: number; size: number } | undefined>>>()
+      .mockResolvedValueOnce(ok({ mtimeMs: 42.5, size: 2 }))
+      .mockResolvedValueOnce(ok(undefined));
+    await saveFile('/x/a.md', makeDeps({ writeFile }));
+    expect(getSavedDiskStat('/x/a.md')).toEqual({ mtimeMs: 42.5, size: 2, content: 'v1' });
+
+    useEditorStore.setState({ tabs: [dirtyTab('v2')], activeTabId: '/x/a.md', mode: 'edit' });
+    await saveFile('/x/a.md', makeDeps({ writeFile }));
+    expect(getSavedDiskStat('/x/a.md')).toBeUndefined();
   });
 
   it('tab 不存在 → ok:false code=TAB_NOT_FOUND', async () => {
@@ -366,19 +393,19 @@ describe('saveFile', () => {
     const order: string[] = [];
     let resolve1!: () => void;
     const writeFile = vi
-      .fn<(p: string, c: string) => Promise<IpcResult<void>>>()
+      .fn<(p: string, c: string) => Promise<IpcResult<undefined>>>()
       .mockImplementationOnce((_p, c) => {
         order.push(`start:${c}`);
         return new Promise((res) => {
           resolve1 = () => {
             order.push(`end:${c}`);
-            res(ok(undefined as void));
+            res(ok(undefined));
           };
         });
       })
       .mockImplementationOnce((_p, c) => {
         order.push(`start:${c}`);
-        return Promise.resolve(ok(undefined as void));
+        return Promise.resolve(ok(undefined));
       });
     const deps = makeDeps({ writeFile });
 

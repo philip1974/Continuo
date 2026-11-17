@@ -12,7 +12,7 @@ import { findEditorFileTabById } from '@/panels/Editor/editor-tab-lookup';
 import type { IpcResult } from '@/lib/fs/types';
 
 const okRead = (data: string): IpcResult<string> => ({ ok: true, data });
-const okWrite = (): IpcResult<void> => ({ ok: true, data: undefined });
+const okWrite = (): IpcResult<undefined> => ({ ok: true, data: undefined });
 
 function setup(readFile: EditorFileDeps['fs']['readFile']) {
   const writeFile = vi.fn(async (_p: string, _c: string) => okWrite());

@@ -156,5 +156,7 @@ describe('fs.ipc 生产 creator:上抛变更文件名', () => {
       ['/r', 'b.md'],
       ['/r', undefined],
     ]);
+    // 性能:eventType 一并上抛供合并器判定 changeOnly;缺 filename 不带 eventType(按可能结构变化处理)
+    expect(onChange.mock.calls.map((c) => c[2])).toEqual(['change', 'rename', undefined]);
   });
 });

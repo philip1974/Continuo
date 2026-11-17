@@ -350,8 +350,8 @@ describe('createSameTickPathCoalescer', () => {
     push('/r/b', 'z.md');
     s.run();
     expect(emit.mock.calls).toEqual([
-      ['/r/a', ['x.md', 'y.md']],
-      ['/r/b', ['z.md']],
+      ['/r/a', ['x.md', 'y.md'], false],
+      ['/r/b', ['z.md'], false],
     ]);
   });
 
@@ -366,9 +366,9 @@ describe('createSameTickPathCoalescer', () => {
     push('/r/c');
     s.run();
     expect(emit.mock.calls).toEqual([
-      ['/r/a', undefined],
-      ['/r/b', ['z.md']],
-      ['/r/c', undefined],
+      ['/r/a', undefined, false],
+      ['/r/b', ['z.md'], false],
+      ['/r/c', undefined, false],
     ]);
   });
 
@@ -383,8 +383,30 @@ describe('createSameTickPathCoalescer', () => {
     push('/r/b', '3');
     s.run();
     expect(emit.mock.calls).toEqual([
-      ['/r/a', ['1', '2']],
-      ['/r/b', undefined],
+      ['/r/a', ['1', '2'], false],
+      ['/r/b', undefined, false],
+    ]);
+  });
+
+  // 性能:按目录聚合 changeOnly —— 本 tick 该目录所有回调 eventType 均为 'change' 才为 true。
+  it('changeOnly:全为 change → true;任一 rename 或缺 eventType → false(不被之后的 change 恢复)', () => {
+    const emit = vi.fn();
+    const s = manualSchedule();
+    const push = createSameTickPathCoalescer(emit, s.schedule);
+    push('/r/a', 'log.txt', 'change');
+    push('/r/a', 'log.txt', 'change'); // 多个祖先 watcher 重复报告
+    push('/r/b', 'x', 'change');
+    push('/r/b', 'y', 'rename');
+    push('/r/b', 'x', 'change');
+    push('/r/c', 'x', 'change');
+    push('/r/c'); // 缺 filename / eventType(目录级)
+    push('/r/d', 'x'); // 有 filename 但缺 eventType
+    s.run();
+    expect(emit.mock.calls).toEqual([
+      ['/r/a', ['log.txt'], true],
+      ['/r/b', ['x', 'y'], false],
+      ['/r/c', undefined, false],
+      ['/r/d', ['x'], false],
     ]);
   });
 });

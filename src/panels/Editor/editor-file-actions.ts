@@ -17,6 +17,7 @@ import {
   findEditorFileTabByPath,
 } from './editor-tab-lookup';
 import { isMarkdownPath } from './editor-path-utils';
+import { recordSavedDiskStat } from './saved-disk-stat';
 import {
   loadCodeEditorModule,
   loadEditorPanelModule,
@@ -189,6 +190,8 @@ async function saveFileNow(
   }
   if (!r.ok) return r;
 
+  // 性能:记录写入内容的 { mtimeMs, size },外部同步据此识别本次保存的 dir-changed 回声(免整文件重读)。
+  recordSavedDiskStat(tab.filePath, r.data, savedContent);
   store.getState().markSaved(tabId, savedContent);
   return { ok: true, data: undefined };
 }

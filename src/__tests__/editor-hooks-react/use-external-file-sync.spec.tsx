@@ -8,6 +8,10 @@ import {
 import { useExternalFileSync } from '../../panels/Editor/useExternalFileSync';
 import { useEditorStore } from '../../stores/editor.store';
 import { emitWatchRestored } from '../../lib/fs-watch-restored';
+import {
+  _resetSavedDiskStatsForTest,
+  recordSavedDiskStat,
+} from '../../panels/Editor/saved-disk-stat';
 
 interface FsApi {
   onDirChanged: (cb: (dir: string, files?: readonly string[]) => void) => () => void;
@@ -484,5 +488,108 @@ describe('useExternalFileSync', () => {
     }
     expect(readFile.mock.calls.filter((c) => c[0] === '/proj/f39.md')).toHaveLength(2);
     expect(useEditorStore.getState().tabs.every((t) => t.content === `new ${t.filePath}`)).toBe(true);
+  });
+});
+
+// 性能:编辑器自己保存的回声(原子写 tmp + rename 让 watcher 上报被保存文件本身)。有本 tab 当前基线的保存
+// 记录时先廉价 stat 比对:一致 → 跳过整文件 readFile;stat 变化 / 失败 → 照旧读(不凭「刚保存过」跳过)。
+describe('useExternalFileSync · 保存回声识别', () => {
+  const SAVED = { mtimeMs: 1000.5, size: 5 };
+
+  function setupEcho(stat: ReturnType<typeof vi.fn>, readData = 'saved') {
+    let dirCb: ((dir: string, files?: readonly string[]) => void) | null = null;
+    const readFile = vi.fn(async () => ({ ok: true, data: readData }));
+    Object.defineProperty(window, 'api', {
+      value: {
+        fs: {
+          onDirChanged: (cb: (dir: string, files?: readonly string[]) => void) => {
+            dirCb = cb;
+            return () => {};
+          },
+          readFile,
+          stat,
+        },
+      },
+      writable: true,
+      configurable: true,
+    });
+    captureLmApi();
+    useEditorStore.setState({
+      tabs: [
+        {
+          id: '/proj/a.md',
+          filePath: '/proj/a.md',
+          content: 'saved',
+          originalContent: 'saved',
+          dirty: false,
+        },
+      ],
+      activeTabId: '/proj/a.md',
+    });
+    recordSavedDiskStat('/proj/a.md', SAVED, 'saved');
+    renderHook(() => useExternalFileSync());
+    return { fire: () => dirCb!('/proj', ['.a.md.continuo.tmp', 'a.md']), readFile };
+  }
+
+  const flush = async (): Promise<void> => {
+    for (let i = 0; i < 6; i++) await Promise.resolve();
+  };
+
+  beforeEach(() => _resetSavedDiskStatsForTest());
+
+  it('stat 与保存记录一致 → 不 readFile', async () => {
+    const stat = vi.fn(async () => ({ ok: true, data: { ...SAVED } }));
+    const { fire, readFile } = setupEcho(stat);
+    fire();
+    await flush();
+    expect(stat).toHaveBeenCalledWith('/proj/a.md');
+    expect(readFile).not.toHaveBeenCalled();
+    expect(useEditorStore.getState().tabs[0]?.content).toBe('saved');
+  });
+
+  it('保存后外部又改写(mtime / size 变化)→ 照旧 readFile 并 reload', async () => {
+    const stat = vi.fn(async () => ({ ok: true, data: { mtimeMs: 2000, size: 8 } }));
+    const { fire, readFile } = setupEcho(stat, 'external');
+    fire();
+    await flush();
+    expect(readFile).toHaveBeenCalledWith('/proj/a.md');
+    expect(useEditorStore.getState().tabs[0]?.content).toBe('external');
+  });
+
+  it('仅 mtime 变化(同 size)也照旧读', async () => {
+    const stat = vi.fn(async () => ({ ok: true, data: { mtimeMs: 1000.6, size: 5 } }));
+    const { fire, readFile } = setupEcho(stat, 'other');
+    fire();
+    await flush();
+    expect(readFile).toHaveBeenCalledTimes(1);
+    expect(useEditorStore.getState().tabs[0]?.content).toBe('other');
+  });
+
+  it('stat 失败({ok:false} 或 reject)→ 照旧读', async () => {
+    const statFail = vi.fn(async () => ({ ok: false, code: 'FS_IO', message: 'x' }));
+    const a = setupEcho(statFail, 'disk');
+    a.fire();
+    await flush();
+    expect(a.readFile).toHaveBeenCalledTimes(1);
+    cleanup();
+
+    const statReject = vi.fn(async () => {
+      throw new Error('bridge down');
+    });
+    const b = setupEcho(statReject, 'disk2');
+    b.fire();
+    await flush();
+    expect(b.readFile).toHaveBeenCalledTimes(1);
+    expect(useEditorStore.getState().tabs[0]?.content).toBe('disk2');
+  });
+
+  it('记录不再对应 tab 当前基线(其后被外部 reload 换过内容)→ 不发 stat,直接读', async () => {
+    const stat = vi.fn(async () => ({ ok: true, data: { ...SAVED } }));
+    const { fire, readFile } = setupEcho(stat, 'newer');
+    useEditorStore.getState().reloadFromDisk('/proj/a.md', 'reloaded');
+    fire();
+    await flush();
+    expect(stat).not.toHaveBeenCalled();
+    expect(readFile).toHaveBeenCalledTimes(1);
   });
 });

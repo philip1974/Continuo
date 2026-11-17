@@ -46,3 +46,8 @@
 
 - onDirChanged / onWatchLost unsub,取消待重装定时器
 - 当前 prevPathsRef 全部 unwatchDir
+
+### 仅内容变化 / 持续事件(性能)
+
+- dir-changed 带 `changeOnly: true`(main 合并器:该目录本 tick 所有 fs.watch 回调 eventType 均为 'change',无新建/删除/改名)→ 不刷新(目录列表不变);含 rename / 缺 eventType → 照常刷新
+- 同 path 持续事件下 debounce 带 maxWait=1000ms:至多每 1s 刷新一次(纯 trailing 下持续写入永不触发);稀疏事件仍 100ms trailing

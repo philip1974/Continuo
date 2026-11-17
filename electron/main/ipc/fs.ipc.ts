@@ -10,11 +10,13 @@ import {
 import {
   FS_CHANNELS,
   type FsDirChangedPayload,
+  type FsFileStat,
   type FsReadFileData,
 } from '../../shared/fs-channels';
 import { FS_PATH_MAX, MAX_WRITE_BYTES } from '../../shared/fs-limits';
 import { utf8BytesExceed } from '../../shared/utf8-byte-length';
 import { listDir, MAX_TOTAL_ENTRIES } from './fs/list-dir';
+import { fsError, mapNodeErrnoCode } from './fs/path-utils';
 import { readFile } from './fs/read-file';
 import { atomicWriteFile, resolveSymlinkTarget } from './fs/atomic-write';
 import { renameEntry } from './fs/rename';
@@ -61,6 +63,8 @@ export const listDirInputSchema = z
   .strict();
 
 export const readFileInputSchema = z.object({ path: fsPath() }).strict();
+
+export const statInputSchema = z.object({ path: fsPath() }).strict();
 
 // 边界(E13):fs:writeFile / fs:writeBinary 的 content 此前无大小上限。IPC payload 会先完整进入
 // 主进程,再由 atomicWriteFile 写临时文件 + fsync。畸形/误操作的超大字符串/Uint8Array 会造成主
@@ -128,6 +132,7 @@ const unwatchInputSchema = z.object({ path: fsPath() }).strict();
 // 类型导出(给 preload / renderer 用)
 export type ListDirInput = z.infer<typeof listDirInputSchema>;
 export type ReadFileInput = z.infer<typeof readFileInputSchema>;
+export type StatInput = z.infer<typeof statInputSchema>;
 export type WriteFileInput = z.infer<typeof writeFileInputSchema>;
 export type WriteBinaryInput = z.infer<typeof writeBinaryInputSchema>;
 export type RenameInput = z.infer<typeof renameInputSchema>;
@@ -155,8 +160,23 @@ export const readFileHandler = async (input: ReadFileInput): Promise<FsReadFileD
     ? { content, realPath: target }
     : { content };
 };
-export const writeFileHandler = (input: WriteFileInput) => atomicWriteFile(input.path, input.content);
-const writeBinaryHandler = (input: WriteBinaryInput) => atomicWriteFile(input.path, input.content);
+// 性能:返回写入内容的 { mtimeMs, size }(无法确认 → undefined),编辑器据此识别自己保存的 dir-changed 回声,
+// 免一次整文件 readFile(见 FsFileStat / useExternalFileSync)。
+export const writeFileHandler = (input: WriteFileInput): Promise<FsFileStat | undefined> =>
+  atomicWriteFile(input.path, input.content);
+// writeBinary 契约仍为 void(Dropzone 不需要回声识别),不把 stat 带过 IPC。
+const writeBinaryHandler = async (input: WriteBinaryInput): Promise<void> => {
+  await atomicWriteFile(input.path, input.content);
+};
+// fs:stat:跟随 symlink(与 readFile / 保存写穿同口径)取 { mtimeMs, size };errno 同其它 fs 通道映射。
+export const statHandler = async (input: StatInput): Promise<FsFileStat> => {
+  try {
+    const st = await fs.promises.stat(input.path);
+    return { mtimeMs: st.mtimeMs, size: st.size };
+  } catch (err) {
+    throw fsError(mapNodeErrnoCode(err), `stat failed: ${input.path}`);
+  }
+};
 export const renameHandler = (input: RenameInput) => renameEntry(input.path, input.newName);
 export const removeHandler = (input: RemoveInput) => removeEntry(input.path);
 export const createFileHandler = (input: CreateFileInput) => createFile(input.dir, input.name);
@@ -275,7 +295,7 @@ export const createFsWatcher: WatcherCreator = (rootPath, onChange, onError) => 
   const watcher = fs.watch(
     rootPath,
     { persistent: false, recursive: RECURSIVE_SUPPORTED },
-    (_eventType, filename) => {
+    (eventType, filename) => {
       if (!filename) {
         // 罕见:某些 macOS 旧版 / 平台不传 filename(含 Windows 缓冲溢出),退回根目录广播,
         // 不带文件名 → 下游按目录级处理
@@ -284,7 +304,8 @@ export const createFsWatcher: WatcherCreator = (rootPath, onChange, onError) => 
       }
       // 带上变更项名字(rename 的旧名/新名各回调一次),renderer 外部同步只重读命中的 clean tab
       const rel = String(filename);
-      onChange(resolveWatchChangedPath(rootPath, rel), resolveWatchChangedFileName(rel));
+      // eventType 一并上抛,合并器据此判定「仅内容变化」(changeOnly,见 FsDirChangedPayload)
+      onChange(resolveWatchChangedPath(rootPath, rel), resolveWatchChangedFileName(rel), eventType);
     },
   );
   watcher.on('error', (err) => {
@@ -311,10 +332,15 @@ export function notifyWatchLost(path: string, ownerIds: readonly number[]): void
 const watcherPool = createWatcherPool(createFsWatcher, notifyWatchLost);
 
 // 导出仅供 R66 回归测试(验证单窗口 send 抛错不中断广播);生产仍只经 watcherPool onChange 调用。
-export function broadcastDirChanged(path: string, files?: readonly string[]): void {
+export function broadcastDirChanged(
+  path: string,
+  files?: readonly string[],
+  changeOnly = false,
+): void {
   // race(R66):由 fs.watch 回调触发;单窗口 send 抛错不中断其余窗口、不成未捕获异常。
-  // files 未知时不带该字段(payload 与旧版逐字一致)。
-  const payload: FsDirChangedPayload = files ? { path, files } : { path };
+  // files 未知 / changeOnly 为 false 时不带对应字段(payload 与旧版逐字一致)。
+  const base: FsDirChangedPayload = files ? { path, files } : { path };
+  const payload: FsDirChangedPayload = changeOnly ? { ...base, changeOnly: true } : base;
   broadcastToWindows(FS_CHANNELS.DIR_CHANGED, () => payload, '[fs] DIR_CHANGED');
 }
 
@@ -327,6 +353,7 @@ export function registerFsIpc(): void {
 
   safeHandle(FS_CHANNELS.LIST_DIR, listDirInputSchema, listDirHandler, trusted);
   safeHandle(FS_CHANNELS.READ_FILE, readFileInputSchema, readFileHandler, trusted);
+  safeHandle(FS_CHANNELS.STAT, statInputSchema, statHandler, trusted);
   safeHandle(FS_CHANNELS.WRITE_FILE, writeFileInputSchema, writeFileHandler, trusted);
   safeHandle(FS_CHANNELS.WRITE_BINARY, writeBinaryInputSchema, writeBinaryHandler, trusted);
   safeHandle(FS_CHANNELS.RENAME, renameInputSchema, renameHandler, trusted);

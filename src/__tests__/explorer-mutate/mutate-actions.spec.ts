@@ -19,7 +19,8 @@ const makeFs = (overrides: Partial<FsApi> = {}): FsApi => ({
   // 默认成功的桩
   listDir: vi.fn(async () => ok([])),
   readFile: vi.fn(async () => ok('')),
-  writeFile: vi.fn(async () => ok(undefined as void)),
+  writeFile: vi.fn(async () => ok(undefined)),
+  stat: vi.fn(async () => ok({ mtimeMs: 0, size: 0 })),
   rename: vi.fn(async (_o, n) => ok(`/parent/${n}`)),
   remove: vi.fn(async () => ok(undefined as void)),
   createFile: vi.fn(async (d, n) => ok(`${d}/${n}`)),
