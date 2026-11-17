@@ -7,6 +7,7 @@ import {
   getStateAfterClosingTab,
   getStateAfterClosingTabsOutsideRoot,
   getStateAfterRemovingPath,
+  getStateAfterRemovingPaths,
   getStateAfterRenamingPath,
   isTabMilkdownUnsafe,
   replaceTabAt,
@@ -1079,6 +1080,84 @@ describe('removePath(store method)', () => {
     const s = useEditorStore.getState();
     expect(s.tabs.map((t) => t.id)).toEqual(['/x/b.md']);
     expect(s.activeTabId).toBe('/x/b.md');
+  });
+});
+
+// perf:批量删除后一次性关 tab。removePaths 用祖先索引(每 tab O(depth))+ 只 set 一次,
+// 最终 tabs / activeTabId 与逐条 removePath 完全一致;chromeVersion 仅在 tabs 真变化时 bump
+// (与单条规则一致,批量只 bump 一次)。
+describe('removePaths / getStateAfterRemovingPaths(批量 ≡ 逐条)', () => {
+  const ids = (tabs: readonly EditorTab[]) => tabs.map((t) => t.id);
+  const sequential = (tabs: EditorTab[], active: string | null, removed: readonly string[]) => {
+    let cur = { tabs, activeTabId: active };
+    for (const p of removed) cur = getStateAfterRemovingPath(cur.tabs, cur.activeTabId, p);
+    return cur;
+  };
+  const tabsOf = (paths: readonly (string | null)[], dirty: ReadonlySet<string> = new Set()) =>
+    paths.map((p, i) =>
+      makeTab({ id: p ?? `untitled-${i}`, filePath: p, dirty: p !== null && dirty.has(p) }),
+    );
+
+  const posixTabs = tabsOf(
+    ['/r/a.md', '/r/d/x.md', null, '/r/d/y/z.md', '/r/dd.md', '/r/b.md', '/R/b.md', '/r/e/f.md', '/r/dirty.md'],
+    new Set(['/r/dirty.md']),
+  );
+  const removedSets: readonly (readonly string[])[] = [
+    [],
+    ['/none'],
+    ['/r/d'],
+    ['/r/d/', '/r/b.md'],
+    ['/r/a.md', '/r/d', '/r/b.md', '/r/e'],
+    ['/r/d/y', '/r/d'],
+    ['/r/dirty.md', '/r/a.md'],
+    ['/R/B.MD', '/r/E'],
+    ['/'],
+    ['/r'],
+  ];
+
+  it.each(['MacIntel', 'Win32'])('%s:任意 active × 删除集合,批量结果与逐条一致', (platform) => {
+    setPlatform(platform);
+    const tabs = platform === 'Win32'
+      ? tabsOf(['C:\\R\\a.md', 'c:\\r\\D\\x.md', null, 'C:/r/d/y.md', 'C:\\r\\dd.md', 'C:\\r\\b.md'])
+      : posixTabs;
+    const sets: readonly (readonly string[])[] = platform === 'Win32'
+      ? [[], ['c:\\r\\d'], ['C:\\R\\D\\', 'c:/R/B.md'], ['C:\\'], ['c:\\r\\A.MD', 'C:\\r\\dd.md'], ['c:/r']]
+      : removedSets;
+    const actives: (string | null)[] = [null, 'missing', ...ids(tabs)];
+    for (const removed of sets) {
+      for (const active of actives) {
+        const expected = sequential(tabs, active, removed);
+        const got = getStateAfterRemovingPaths(tabs, active, removed);
+        expect({ removed, active, tabs: ids(got.tabs), activeTabId: got.activeTabId }).toEqual({
+          removed,
+          active,
+          tabs: ids(expected.tabs),
+          activeTabId: expected.activeTabId,
+        });
+        // 无变化时保持原引用(与单条一致,免 no-op 通知)
+        if (expected.tabs === tabs) expect(got.tabs).toBe(tabs);
+      }
+    }
+  });
+
+  it('store.removePaths:只 set 一次,chromeVersion 变化规则与逐条一致', () => {
+    const tabs = posixTabs;
+    for (const removed of removedSets) {
+      useEditorStore.setState({ tabs, activeTabId: '/r/d/x.md', chromeVersion: 0 });
+      const seq = sequential(tabs, '/r/d/x.md', removed);
+      let notifications = 0;
+      const unsub = useEditorStore.subscribe(() => {
+        notifications += 1;
+      });
+      useEditorStore.getState().removePaths(removed);
+      unsub();
+      const s = useEditorStore.getState();
+      expect(ids(s.tabs)).toEqual(ids(seq.tabs));
+      expect(s.activeTabId).toBe(seq.activeTabId);
+      const tabsChanged = seq.tabs !== tabs;
+      expect(s.chromeVersion).toBe(tabsChanged ? 1 : 0);
+      expect(notifications).toBe(tabsChanged || seq.activeTabId !== '/r/d/x.md' ? 1 : 0);
+    }
   });
 });
 

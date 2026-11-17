@@ -130,8 +130,8 @@ export async function removeItems(
 
 /** 删除完成后的清理出口(Explorer onTrash 注入 editor store / 剪贴板 store)。 */
 export interface RemoveCleanup {
-  /** 关闭该路径的 editor tab(目录则关其下所有 tab)。 */
-  removePath(path: string): void;
+  /** 关闭这些路径的 editor tab(目录则关其下所有 tab);批量一次完成(perf:免 R 次全 tab 扫描 + R 次 set)。 */
+  removePaths(paths: readonly string[]): void;
   /** 从剪贴板剪除已删除的源(避免幻影 cut 灰显 + 失效 Paste)。 */
   prune(paths: string[]): void;
 }
@@ -147,8 +147,10 @@ export async function trashItemsAndCleanup(
   cleanup: RemoveCleanup,
 ): Promise<RemoveResult> {
   const result = await removeItems(paths, { trash: true }, deps, tree);
-  for (const p of result.removed) cleanup.removePath(p);
-  if (result.removed.length > 0) cleanup.prune(result.removed);
+  if (result.removed.length > 0) {
+    cleanup.removePaths(result.removed);
+    cleanup.prune(result.removed);
+  }
   return result;
 }
 

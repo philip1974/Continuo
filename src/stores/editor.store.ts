@@ -8,7 +8,12 @@ import { create } from 'zustand';
 import type { EditorView } from '@codemirror/view';
 import { isMilkdownUnsafe } from '@/panels/Editor/milkdown-roundtrip-safety';
 import { isMarkdownPath } from '@/panels/Editor/editor-path-utils';
-import { isSameOrInsidePath } from '@/lib/path-cross';
+import {
+  containmentFold,
+  containmentKey,
+  isSameOrInsidePath,
+  someContainmentCandidate,
+} from '@/lib/path-cross';
 import {
   PATH_ARRAY_MAX,
   PATH_STR_MAX,
@@ -346,9 +351,40 @@ export function getStateAfterRemovingPath(
   // 跨平台(codex 复查 P2):删除匹配走 isSameOrInsidePath —— Windows case-fold(`C:\Repo\dir`
   // 匹配 `c:\repo\dir\a.md`),否则 clean tab 不随删除/trash 关闭 → 用户基于已删旧路径保存
   // 复活文件;POSIX 保持大小写敏感。同前缀但非子(`/x/foo` 删 vs `/x/foobar.md`)仍不误匹配。
-  const isMatch = (filePath: string | null): boolean =>
-    filePath !== null && isSameOrInsidePath(removedPath, filePath);
+  return removeMatchingCleanTabs(tabs, activeTabId, (filePath) =>
+    isSameOrInsidePath(removedPath, filePath),
+  );
+}
 
+/**
+ * 批量版 getStateAfterRemovingPath(perf:批量删除后逐条 removePath 是 O(R·T) 比较 + R 次 set)。
+ * 删除集合建祖先索引(containmentFold/Key 与 isSameOrInsidePath 精确等价),每个 tab 只查 O(depth)
+ * 个候选键;最终 tabs / activeTabId 与按任意顺序逐条 getStateAfterRemovingPath 完全一致(active 被
+ * 关时都落到「原序后向第一个保留项,否则前向最后一个」)。
+ */
+export function getStateAfterRemovingPaths(
+  tabs: EditorTab[],
+  activeTabId: string | null,
+  removedPaths: readonly string[],
+): CloseTabResult {
+  if (removedPaths.length === 0) return { tabs, activeTabId };
+  const fold = containmentFold();
+  const removedKeys = new Set<string>();
+  for (const removedPath of removedPaths) removedKeys.add(containmentKey(removedPath, fold));
+  if (removedKeys.has('')) {
+    return removeMatchingCleanTabs(tabs, activeTabId, () => true); // 纯分隔符根覆盖一切
+  }
+  const isRemovedKey = (key: string): boolean => removedKeys.has(key);
+  return removeMatchingCleanTabs(tabs, activeTabId, (filePath) =>
+    someContainmentCandidate(fold(filePath), isRemovedKey),
+  );
+}
+
+function removeMatchingCleanTabs(
+  tabs: EditorTab[],
+  activeTabId: string | null,
+  isRemoved: (filePath: string) => boolean,
+): CloseTabResult {
   // 数据安全:dirty(未保存编辑)tab 不随文件删除/trash 自动关闭 —— 否则会绕过
   // EditorPanel 的 dirty 关闭确认,静默丢失内存里的未保存增量(磁盘旧版本进废纸篓
   // 可恢复,但内存增量无处可寻)。参考 VSCode:删除有未保存改动的文件保留 dirty
@@ -356,7 +392,7 @@ export function getStateAfterRemovingPath(
   const r = filterTabsTrackingActive(
     tabs,
     activeTabId,
-    (tab) => !(isMatch(tab.filePath) && !tab.dirty),
+    (tab) => tab.filePath === null || tab.dirty || !isRemoved(tab.filePath),
   );
   if (!r.changed) return { tabs, activeTabId };
   if (r.remaining.length === 0) {
@@ -418,6 +454,8 @@ type EditorState = {
   closeTab: (id: string) => void;
   /** 文件/目录被删除时调用:精确匹配或前缀匹配的 tab 统一关闭. */
   removePath: (path: string) => void;
+  /** 批量删除后调用:结果与逐条 removePath 一致,但只 set 一次(chromeVersion 至多 bump 一次). */
+  removePaths: (paths: readonly string[]) => void;
   /** 文件/目录被重命名 / 移动时调用:精确或前缀匹配的 tab 同步路径. */
   renamePath: (oldPath: string, newPath: string) => void;
   /** 外部修改时调用:非 dirty tab 同步 content+originalContent;dirty 跳过. */
@@ -513,6 +551,14 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
       applyTabStateChange(
         s,
         getStateAfterRemovingPath(s.tabs, s.activeTabId, path),
+      ),
+    ),
+
+  removePaths: (paths) =>
+    set((s) =>
+      applyTabStateChange(
+        s,
+        getStateAfterRemovingPaths(s.tabs, s.activeTabId, paths),
       ),
     ),
 

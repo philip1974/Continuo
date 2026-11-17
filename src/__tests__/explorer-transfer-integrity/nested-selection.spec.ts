@@ -105,12 +105,12 @@ describe('removeItems — 嵌套选择', () => {
 
 // FolderTree onTrash 走 trashItemsAndCleanup:删除 + editor tab 关闭 + 剪贴板 prune 一处完成。
 describe('onTrash 删除后只对实际删除的路径做清理', () => {
-  it('trash [A, A/B, x] 且删 A 失败 → removePath 与 prune 都只收到 result.removed', async () => {
+  it('trash [A, A/B, x] 且删 A 失败 → removePaths 与 prune 都只收到 result.removed', async () => {
     const trash = vi.fn(async (p: string): Promise<Result> =>
       p === '/r/A' ? { ok: false, code: 'FS_DENIED', message: 'no perm' } : OK,
     );
     const fs = { trash, remove: vi.fn(), rename: vi.fn(), createFile: vi.fn(), createDir: vi.fn() };
-    const cleanup = { removePath: vi.fn(), prune: vi.fn() };
+    const cleanup = { removePaths: vi.fn(), prune: vi.fn() };
     const r = await trashItemsAndCleanup(
       ['/r/A', '/r/A/B', '/r/x'],
       { fs } as never,
@@ -118,8 +118,23 @@ describe('onTrash 删除后只对实际删除的路径做清理', () => {
       cleanup,
     );
     expect(r.removed).toEqual(['/r/x']);
-    expect(cleanup.removePath.mock.calls).toEqual([['/r/x']]);
+    expect(cleanup.removePaths.mock.calls).toEqual([[['/r/x']]]);
     expect(cleanup.prune.mock.calls).toEqual([[['/r/x']]]);
+  });
+
+  // perf:批量删除后 editor tab 清理一次批量完成(O(R·T)+R 次 set → O(T·depth)+1 次 set)。
+  it('perf · 多项删除成功 → removePaths 只调一次,收到全部 result.removed', async () => {
+    const trash = vi.fn(async (): Promise<Result> => OK);
+    const fs = { trash, remove: vi.fn(), rename: vi.fn(), createFile: vi.fn(), createDir: vi.fn() };
+    const cleanup = { removePaths: vi.fn(), prune: vi.fn() };
+    const r = await trashItemsAndCleanup(
+      ['/r/a', '/r/b', '/r/c'],
+      { fs } as never,
+      { invalidateChildrenIds: vi.fn() },
+      cleanup,
+    );
+    expect(r.removed).toEqual(['/r/a', '/r/b', '/r/c']);
+    expect(cleanup.removePaths.mock.calls).toEqual([[['/r/a', '/r/b', '/r/c']]]);
   });
 
   it('全部失败 → 不关 tab、不 prune', async () => {
@@ -129,7 +144,7 @@ describe('onTrash 删除后只对实际删除的路径做清理', () => {
       message: 'no perm',
     }));
     const fs = { trash, remove: vi.fn(), rename: vi.fn(), createFile: vi.fn(), createDir: vi.fn() };
-    const cleanup = { removePath: vi.fn(), prune: vi.fn() };
+    const cleanup = { removePaths: vi.fn(), prune: vi.fn() };
     const r = await trashItemsAndCleanup(
       ['/r/A', '/r/A/B'],
       { fs } as never,
@@ -137,7 +152,7 @@ describe('onTrash 删除后只对实际删除的路径做清理', () => {
       cleanup,
     );
     expect(r.ok).toBe(false);
-    expect(cleanup.removePath).not.toHaveBeenCalled();
+    expect(cleanup.removePaths).not.toHaveBeenCalled();
     expect(cleanup.prune).not.toHaveBeenCalled();
   });
 });

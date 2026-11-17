@@ -554,7 +554,7 @@ export function FolderTree({ root }: { root: string }) {
           // R6 完整性批判。editor tab 关闭与剪贴板 prune 只对 result.removed 做,在
           // trashItemsAndCleanup 一处完成(已测)。
           const result = await trashItemsAndCleanup(paths, mutateDeps, treeApi, {
-            removePath: (p) => useEditorStore.getState().removePath(p),
+            removePaths: (ps) => useEditorStore.getState().removePaths(ps),
             prune: (removed) => useExplorerClipboardStore.getState().prune(removed),
           });
           if (!result.ok) {
