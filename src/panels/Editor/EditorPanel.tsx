@@ -7,7 +7,7 @@
 //   activeTab 非 .md → 直接 CodeEditor(mode 不显示)
 //   activeTab 为 null → Welcome
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   getEffectiveMode,
   isTabMilkdownUnsafe,
@@ -21,10 +21,8 @@ import {
 } from './editor-path-utils';
 import { ConfirmDialog } from '@/panels/Explorer/ConfirmDialog';
 import { SegmentedControl, type SegmentedControlOption } from '@/design';
-import { CodeEditor } from './CodeEditor';
 import { EditorHeader, type TabChrome } from './EditorHeader';
 import { EditorWelcome } from './EditorWelcome';
-import { MilkdownEditor } from './MilkdownEditor';
 import { toPreviewMarkdown } from './milkdown-roundtrip-safety';
 import { findEditorFileTabById } from './editor-tab-lookup';
 import { useAutoSave, isAutoSaveEnabled } from './useAutoSave';
@@ -40,6 +38,17 @@ import { notifyFailure, notifyThrownError } from '@/notifications/notify-thrown-
 // i18n(I14):模式切换 label 走 catalog —— 此前硬编码英文 'Edit'/'Source'/'Preview',
 // zh/ko 工具栏显英文且不随 locale 切换。id 稳定,label 在组件内用 useT 生成(响应 locale)。
 const MODE_IDS: readonly EditorMode[] = ['edit', 'source', 'preview'];
+
+// perf E2:两套编辑引擎各自 lazy —— CodeEditor(CodeMirror + 语言包)与 MilkdownEditor
+// (Crepe/ProseMirror/katex)不再一起进 Editor chunk:Welcome 不加载任何引擎,代码文件不加载
+// Milkdown,Markdown edit/preview 不加载 CodeEditor。body 外的 <Suspense key={engine}> 让
+// 切换引擎时整个边界重挂(旧编辑器完整卸载,新编辑器首挂才可能 suspend),与原先 key 重挂语义一致。
+const CodeEditor = lazy(() =>
+  import('./CodeEditor').then((m) => ({ default: m.CodeEditor })),
+);
+const MilkdownEditor = lazy(() =>
+  import('./MilkdownEditor').then((m) => ({ default: m.MilkdownEditor })),
+);
 
 function isMarkdownPath(p: string | null): boolean {
   // 可维护性 M13:非空判定共用 editor-path-utils.isMarkdownPath;此处只保留「草稿(null)默认
@@ -230,10 +239,13 @@ export function EditorPanel() {
 
   // 判定主体渲染(根据 activeTab 类型 + mode)
   let body: React.ReactNode;
+  let engine: 'welcome' | 'code' | 'milkdown';
   if (!activeTab) {
+    engine = 'welcome';
     body = <EditorWelcome />;
   } else if (activeIsMarkdown) {
     if (effective === 'source') {
+      engine = 'code';
       body = (
         <CodeEditor
           key={`${activeTab.id}-src`}
@@ -245,6 +257,7 @@ export function EditorPanel() {
         />
       );
     } else {
+      engine = 'milkdown';
       body = (
         <MilkdownEditor
           // reloadEpoch 并入 key:外部进程改文件 → reloadFromDisk 递增 epoch →
@@ -264,6 +277,7 @@ export function EditorPanel() {
       );
     }
   } else {
+    engine = 'code';
     body = (
       <CodeEditor
         key={activeTab.id}
@@ -310,7 +324,12 @@ export function EditorPanel() {
           {translate('panels.editor.milkdownUnsafe.banner')}
         </div>
       )}
-      <div className="min-h-0 flex-1">{body}</div>
+      <div className="min-h-0 flex-1">
+        {/* perf E2:引擎 chunk 首次加载期间 fallback 为空(同 lazyPanel 外层),加载完即挂载。 */}
+        <Suspense key={engine} fallback={null}>
+          {body}
+        </Suspense>
+      </div>
 
       <ConfirmDialog
         open={closeCandidate !== null}
