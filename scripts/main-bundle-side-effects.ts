@@ -12,6 +12,9 @@
 const SIDE_EFFECT_FREE =
   /[\\/]@continuo-terminal[\\/]server-node[\\/]src[\\/]server\.ts$|[\\/]node_modules[\\/](?:@modelcontextprotocol[\\/]sdk|@hono[\\/]node-server|zod-to-json-schema)[\\/]/;
 
-export function mainModuleSideEffects(id: string): boolean {
+// 外部 node: 内置模块无副作用:被打包的依赖(如 server-node transports/http.ts)值导入了 node:http 但导出被摇掉时,
+// 视为有副作用会留下裸 `import "node:http"` —— ESM 裸导入同样读取全部导出并连带加载编译 undici(冷启动 +17ms)。
+export function mainModuleSideEffects(id: string, external?: boolean): boolean {
+  if (external === true && id.startsWith('node:')) return false;
   return !SIDE_EFFECT_FREE.test(id);
 }
