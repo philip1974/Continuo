@@ -116,7 +116,6 @@ async function atomicWriteFileInner(
   // crash(open→rename 窗口被杀)残留的同名标记 tmp(用户不会创建此名)→ 安全删除后重试
   // 一次,保留「固定名 crash 残留自愈」语义(第十八轮设计),同时不再有截断用户文件之虞。
   let fd: Awaited<ReturnType<typeof open>> | undefined;
-  let written: Stats | undefined;
   try {
     try {
       fd = await open(tmpPath, 'wx');
@@ -134,8 +133,6 @@ async function atomicWriteFileInner(
       await fd.writeFile(content);
     }
     await fd.sync();
-    // 本次写入内容的身份(fsync 后、rename 前经 fd 取,不会混入别人的写入);失败不影响写盘本身。
-    written = await fd.stat().catch(() => undefined);
   } catch (err) {
     await fd?.close().catch(() => {});
     await rm(tmpPath, { force: true }).catch(() => {});
@@ -143,6 +140,13 @@ async function atomicWriteFileInner(
   } finally {
     await fd?.close().catch(() => {});
   }
+
+  // 本次写入内容的身份:**写句柄关闭后**、rename 前对 tmp 取(失败不影响写盘本身)。不能在关闭前经 fd 取:
+  // NTFS/FAT 在写句柄关闭时才刷新 LastWriteTime(GetFileTime 文档),关闭前的 mtime 与 rename 后目标
+  // 几乎必然不一致 → Windows 上回声识别恒失效。NTFS rename 保留 FileId(ino)与 LastWriteTime。
+  // close→stat 窗口:tmp 为隐藏标记名,同路径写已 per-path 串行,外部不会写它;即便有,rename 后的
+  // 比对也只会在「目标 == 被 stat 的那份 tmp」时通过,其余不一致一律退化为整文件读。
+  const written: Stats | undefined = await stat(tmpPath).catch(() => undefined);
 
   // ② 原子 rename tmp → path(替换原文件)。失败不改动原文件,清 tmp 后抛。
   try {
@@ -158,8 +162,8 @@ async function atomicWriteFileInner(
 }
 
 /**
- * rename 后对目标 stat 一次,与 fd 上取得的「本次写入」身份(dev/ino/mtimeMs/size)比对:一致才返回
- * { mtimeMs, size, ino }。rename 与 stat 之间若有外部写入 / 替换,或平台在 close/rename 时改了 mtime,则
+ * rename 后对目标 stat 一次,与关闭写句柄后对 tmp 取得的「本次写入」身份(dev/ino/mtimeMs/size)比对:一致才返回
+ * { mtimeMs, size, ino }。rename 与 stat 之间若有外部写入 / 替换,或平台在 rename 时改了 mtime,则
  * 不一致 → undefined(调用方不记录,外部同步照旧整文件读,绝不把别人的写入当成自己的回声)。
  */
 async function confirmWrittenStat(

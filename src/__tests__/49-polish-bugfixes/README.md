@@ -1200,3 +1200,10 @@ helper + 必挂 browser-window-created),把「单一来源」固化进测试防�
   在截断后让 main 热路径空转到超时。
 - 修复:该流写满即摘掉 JS data 处理,保持 flowing 丢弃(不反压子进程);恰好写满时挂一次性 listener,再来数据才置
   `truncated`(与旧实现一致)。结果内容、截断标志、exit/close 语义不变。
+
+### 保存回声身份在写句柄关闭后取(Windows LastWriteTime)— `atomic-write-echo-stat-after-close.spec.ts`
+- 根因(Windows 专属,优化失效):旧实现 fsync 后经 `fd.stat()` 取「本次写入」身份(关闭前),rename 后 stat 目标严格比
+  `mtimeMs`;NTFS/FAT 在写句柄关闭时才刷新 LastWriteTime → 比对几乎必然失败,保存回声识别失效(每次保存整文件重读)。
+- 修复:`fsync → close → stat(tmp)` 作 written(dev/ino/mtime/size),再 `rename → stat(target)` 比对(NTFS rename
+  保留 FileId 与 LastWriteTime)。不一致(外部改写)或 stat(tmp) 失败 → `undefined`,退化为整文件读,永不误判为回声;
+  写盘与 tmp 清理的错误路径不变。macOS/Linux 行为不变。
