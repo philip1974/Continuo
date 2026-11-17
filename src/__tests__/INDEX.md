@@ -1392,6 +1392,7 @@
 
 ## [拖文件夹到窗口(`pickDroppedDirectory`)](./window-drop/README.md)
 
+- [`explorer-vs-window-folder-drop.spec.tsx`](./window-drop/explorer-vs-window-folder-drop.spec.tsx)
 - [`window-drop.spec.ts`](./window-drop/window-drop.spec.ts)
 
 ## [window-ipc-create](./window-ipc-create/README.md)

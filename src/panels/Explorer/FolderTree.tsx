@@ -795,6 +795,11 @@ export function FolderTree({ root }: { root: string }) {
     setHoverTarget(null);
   };
   const handleDrop = async (e: React.DragEvent) => {
+    // OS 文件 drop 落在 Explorer 内(空白处 / [role=tree] 容器)即由本面板消费:stopPropagation,别再冒泡到
+    // App 的 window 级 drop 监听 —— 否则拖文件夹进文件树空白处,刚复制进 root,窗口 workspace 又被切到源文件夹。
+    // 行级 drop 已由 headless-tree stopPropagation。不能改由 App 监听判 defaultPrevented:dockview 根
+    // Droptarget 的 drop 无条件 preventDefault,那样会打断「拖文件夹到 dock 区域打开为 workspace」。
+    if (hasFiles(e.dataTransfer)) e.stopPropagation();
     // headless-tree 容器 [role=tree] 的 onDrop 已处理(落点 root)时只 preventDefault 不 stopPropagation:
     // 再处理一次 = 同一批文件写两次 / 重复 move。行级 drop 已 stopPropagation,空白处无人 preventDefault。
     if (e.defaultPrevented) return;
