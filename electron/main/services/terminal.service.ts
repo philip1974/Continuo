@@ -103,7 +103,8 @@ function handleChunk(id: string, chunk: string): void {
 
   // 边界(E149,E125 同族):按真实 UTF-8 字节计 overflow 节流(非 chunk.length=UTF-16 code unit),
   // 否则大量 CJK/emoji 输出真实字节数倍超 2MiB/s 仍不触发 overflow,IPC/renderer 输出膨胀。
-  inst.bytesPerSecond += utf8ByteLength(chunk);
+  // 原生计数(与 utf8ByteLength 口径一致,单独代理按 3 字节);纯 JS 逐字符在大量输出时慢约 15 倍。
+  inst.bytesPerSecond += Buffer.byteLength(chunk, 'utf8');
 
   const isOverflow = inst.bytesPerSecond > OVERFLOW_THRESHOLD_BYTES;
   if (isOverflow) {

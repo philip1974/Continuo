@@ -423,6 +423,7 @@ function wireWindowCloseFlush(win: BrowserWindow): void {
     dirtyStates.delete(windowId);
     closeFlowGen.delete(windowId);
     closeFlowReleases.delete(windowId);
+    flushedOnQuit.delete(windowId); // BrowserWindow.id 不复用:不清理会随关窗次数单调增长
   });
   let flushed = flushedOnQuit.has(win.id);
   // race(R45):flush 在途守卫。requestWindowFlush 是异步(等 renderer ack / 10s 超时),其间

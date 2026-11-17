@@ -1,4 +1,3 @@
-import { utf8ByteLength } from '../../shared/utf8-byte-length';
 
 // 边界(E135,E131/E132 跨 chunk 解码同族):NDJSON 流式行解码器。socket data 事件的 Buffer chunk
 // 可能切在 UTF-8 多字节字符中间;直接 `chunk.toString()` 逐 chunk 解码会把被切开的字符各自变成
@@ -45,7 +44,7 @@ export function createNdjsonLineDecoder(): NdjsonLineDecoder {
       const firstNl = piece.indexOf('\n');
       if (firstNl === -1) {
         residual += piece;
-        residualBytes += utf8ByteLength(piece);
+        residualBytes += Buffer.byteLength(piece, 'utf8');
         return { lines: [], overflow: false };
       }
       const scanFrom = residual.length + firstNl;
@@ -69,7 +68,7 @@ export function createNdjsonLineDecoder(): NdjsonLineDecoder {
       }
       residual = overflow ? '' : residual.slice(start);
       // 最后一个 '\n' 必在本分块内 → 新残行是本分块的后缀,重算代价 ≤ 分块长度。
-      residualBytes = utf8ByteLength(residual);
+      residualBytes = Buffer.byteLength(residual, 'utf8');
       return { lines, overflow };
     },
     get buffered(): string {
