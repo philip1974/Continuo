@@ -56,7 +56,9 @@ let invokeRemote: InvokeRemoteCore | null = null;
  */
 export function startPluginMcpIpc(
   host: McpHost,
-  stdio?: StdioSocketServer,
+  // 取值函数而非快照:stdio server 在首窗创建后才异步启动(冷启动不挡建窗),就绪前返回 null →
+  // 广播只推 HTTP;就绪后每次广播读到最新引用。
+  getStdio: () => StdioSocketServer | null = () => null,
 ): {
   bridge: PluginMcpBridge;
   invokeRemote: InvokeRemoteCore;
@@ -85,7 +87,7 @@ export function startPluginMcpIpc(
   // N 次 tools/list(每次序列化全部 schema)→ O(N²)。50ms 尾随合并为一次。
   const toolsChanged = createTrailingNotifier(() => {
     host.broadcast(TOOLS_LIST_CHANGED);
-    stdio?.broadcast(TOOLS_LIST_CHANGED);
+    getStdio()?.broadcast(TOOLS_LIST_CHANGED);
   }, TOOLS_LIST_CHANGED_COALESCE_MS);
 
   const localBridge = createPluginMcpBridge({

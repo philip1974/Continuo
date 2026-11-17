@@ -960,6 +960,8 @@ app.on('open-file', (event, filePath) => {
 // P4+ C 方案:同时启 stdio server(unix socket),Claude Code 走 stdio 配置一次永久使用。
 let mcpHost: McpHost | null = null;
 let mcpStdio: StdioSocketServer | null = null;
+// stdio server 在首窗创建后 void 启动;退出清理先等它结束再 close(否则 listen 晚于 close → socket 残留)。
+let mcpStdioStarting: Promise<void> = Promise.resolve();
 // Stop hook broker 的停止函数(MCP host 启动成功后赋值),由 before-quit 不可逆清理阶段调用。
 let stopHookBroker: (() => Promise<void>) | null = null;
 
@@ -1252,12 +1254,12 @@ app.whenReady().then(async () => {
   // topic 16: 把 rebuildAppMenu 注入 i18n.ipc，setLocale 时菜单整体重建
   setMenuRebuilder(rebuildAppMenu);
   // 在 createMainWindow 之前启 host,确保 renderer autoSpawn 的第一个 PTY
-  // env 已含 MCP url / token。
+  // env 已含 MCP url / token。stdio server 不挡建窗(见下方首窗创建后的启动)。
   await startMcpHost();
-  await startMcpStdioServer();
   // Plugin → MCP bridge 接线(host 已就绪,renderer 通过 IPC 注册的 tool 走它)。
-  // tools/list_changed 通知同时推 HTTP SSE + stdio 客户端,Codex/Claude Code 收到自动重拉.
-  if (mcpHost) startPluginMcpIpc(mcpHost, mcpStdio ?? undefined);
+  // tools/list_changed 通知同时推 HTTP SSE + stdio 客户端,Codex/Claude Code 收到自动重拉;
+  // stdio 用取值函数:就绪前只推 HTTP,就绪后同时推 stdio。
+  if (mcpHost) startPluginMcpIpc(mcpHost, () => mcpStdio);
   // 冷启动开窗模式决策(issue #30):有 dock 缓冲目录 → dock 模式,
   // 第一个目录作主窗 workspace,其余各开新窗,**不**恢复历史;
   // 否则 → restore 模式,主窗用持久化 workspace,异步恢复历史 windows[]。
@@ -1293,6 +1295,11 @@ app.whenReady().then(async () => {
       console.warn('[window-restore] 启动恢复失败,只开主窗', err);
     });
   }
+
+  // 冷启动性能:stdio socket server(mkdir/stat/lstat/unlink/listen/chmod 串行)不挡建首窗 ——
+  // 首窗与 PTY env 只依赖 HTTP host;stdio 配置仅「复制 MCP 配置」点击时读,未就绪时既有
+  // { available:false } 默认值 → 按钮显示 unavailable。启动失败在 startMcpStdioServer 内照旧告警。
+  mcpStdioStarting = startMcpStdioServer();
 
   // 冷启 + open-url 顺序处理:可能在 mainwindow 未就绪前已收 url。race(R41):协议队列 drain 统一
   // 由 PROTOCOL_READY 处理器负责(任一窗口上报就绪即排空),此处不单独挂 drain。
@@ -1461,7 +1468,7 @@ app.on('before-quit', async (event) => {
   // 单个 close 失败/reject 不阻断另一个,也不阻断退出。
   await Promise.allSettled([
     traced('mcp-host', mcpHost?.close()),
-    traced('mcp-stdio', mcpStdio?.close()),
+    traced('mcp-stdio', mcpStdioStarting.then(() => mcpStdio?.close())),
     traced('hook-broker', stopHookBroker?.()),
   ]);
   quitTrace('quit');

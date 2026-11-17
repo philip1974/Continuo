@@ -764,6 +764,7 @@
 - [`protocol-fifo-order.spec.ts`](./mcp-startup-audit/protocol-fifo-order.spec.ts)
 - [`sse-backpressure.spec.ts`](./mcp-startup-audit/sse-backpressure.spec.ts)
 - [`startup-check-budget.spec.ts`](./mcp-startup-audit/startup-check-budget.spec.ts)
+- [`stdio-deferred-start.spec.ts`](./mcp-startup-audit/stdio-deferred-start.spec.ts)
 - [`stdio-queue-cap.spec.ts`](./mcp-startup-audit/stdio-queue-cap.spec.ts)
 
 ## [mcp-tool-gates(重构:MCP 工具授权 / capability 门控单一来源)](./mcp-tool-gates/README.md)
