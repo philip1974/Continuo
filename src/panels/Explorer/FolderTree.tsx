@@ -196,10 +196,21 @@ export function FolderTree({ root }: { root: string }) {
   // 读到即清除并跳过。库未调用(如容器级 root drop 不 updateDomFocus)时标志不能残留到下次键盘导航:
   // 嵌套两层 setTimeout 清除 —— 外层排在库 updateDomFocus 的 setTimeout(drop 回调之后的微任务里才排)
   // 之前,内层排在其后,故库那一次总能读到标志,之后必定清掉。
+  // 只跳过滚动还不够:updateDomFocus 在 scrollToItem 后轮询 500ms 等焦点项挂载,取不到就把焦点重置到首项
+  // (内部移动的焦点项是源行,长列表里常已滚出窗口)→ 下次方向键从首项出发,列表跳回顶部。故在外层
+  // setTimeout(先于库 updateDomFocus 的定时器;库在 drop 回调之后才同步 setFocused 源行,这里晚于它)
+  // 把焦点改到实际松手的那一行:它此刻必在虚拟窗口内,轮询立即取到元素,列表不动。松手行由容器
+  // handleDropCapture 记录(库清 dnd 状态后再调 onDrop,回调参数里的 target 可能是窗口外的父目录 / 不渲染的 root)。
   const suppressDropScrollRef = useRef(false);
+  const dropRowIdRef = useRef<string | null>(null);
   const suppressNextDropScroll = useCallback(() => {
     suppressDropScrollRef.current = true;
-    setTimeout(() => setTimeout(() => (suppressDropScrollRef.current = false)));
+    setTimeout(() => {
+      const rowId = dropRowIdRef.current;
+      dropRowIdRef.current = null;
+      if (rowId !== null) treeRef.current?.getItemInstance(rowId)?.setFocused();
+      setTimeout(() => (suppressDropScrollRef.current = false));
+    });
   }, []);
   const scrollToItem = useCallback((item: ItemInstance<FileEntry>) => {
     if (suppressDropScrollRef.current) {
@@ -765,7 +776,18 @@ export function FolderTree({ root }: { root: string }) {
   // 落点必须在复位前算好存 ref:React 19 根容器的捕获 / 冒泡是两个原生监听,drop 为离散事件,这里的
   // setState 在 microtask 中 flush,真实浏览器在两个监听回调之间做 microtask checkpoint → 冒泡阶段
   // handleDrop 已是复位后的重渲闭包(hoverTarget === null),再从闭包解析会退化成 root。
+  // 记录松手所在的已渲染行(供 suppressNextDropScroll 把焦点放回该行);不在行上则 null。
+  // 用 contains 而非 instanceof:dockview 弹出窗口里的节点属另一 realm。
+  const findRenderedRowId = (node: EventTarget | null): string | null => {
+    if (!node) return null;
+    for (const v of virtualizer.getVirtualItems()) {
+      const it = items[v.index];
+      if (it?.getElement()?.contains(node as Node)) return it.getId();
+    }
+    return null;
+  };
   const handleDropCapture = (e: React.DragEvent) => {
+    dropRowIdRef.current = findRenderedRowId(e.target);
     if (!hasFiles(e.dataTransfer)) return;
     foreignDropTargetRef.current = resolveDropTarget(hoverTarget, root);
     dragDepthRef.current = 0;
