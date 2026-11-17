@@ -21,7 +21,7 @@ DOM 输出与收口前逐属性一致。
    `${idPrefix}-listbox`;`aria-activedescendant` 仅当选中下标在范围内**且**在渲染窗口内时指向
    `${idPrefix}-option-${index}`。
 6. 键盘:ArrowDown / ArrowUp → `moveSelection(±1, count)`;Enter → `onEnter(selectedIndex)`;三者都
-   `preventDefault`,其余键不拦。
+   `preventDefault`,其余键不拦。IME 组合中(`isComposing` / `keyCode 229`)的按键一律不处理(不执行、不移动、不拦默认)。
 7. `count` 变化 → `clampSelection(count)`;`selectedIndex` 变化且 `count>0` → `scrollToIndex`。
 8. option:`id` / `role=option` / `aria-selected` / 绝对定位样式由 `getOptionProps(row)` 给出。
 

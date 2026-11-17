@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef } from 'react';
 import { IconButton, Input } from '@/design';
 import { useT } from '@/i18n';
 import { clampSearchQuery } from '@/lib/search-query';
+import { isImeComposing } from '@/lib/ime';
 import type { SearchApi } from './useTerminal';
 import type { TerminalSearchOptions } from './terminal-search-state';
 
@@ -79,6 +80,8 @@ export function TerminalSearchBar({
           searchApi.setTerm(clampSearchQuery(event.target.value))
         }
         onKeyDown={(event) => {
+          // IME 组合中的 Enter / Esc 属于输入法(确认候选 / 取消组合),不跳转也不关闭搜索框。
+          if (isImeComposing(event.nativeEvent)) return;
           if (event.key === 'Escape') {
             event.preventDefault();
             onClose();

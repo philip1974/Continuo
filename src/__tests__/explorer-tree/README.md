@@ -26,6 +26,7 @@ React 组件渲染 / 虚拟滚动 / 真键盘交互留 Step 7 smoke E2E。
 - `dataLoader.getItem(child)`(非 root)调 `fs.listDir(parent)` 查找,找不到时降级返回最小信息
 - `getItemName(item)` 返回 `item.getItemData().name`
 - `isItemFolder(item)` 返回 `item.getItemData().isDirectory`
+- 重命名:IME 组合中(`isComposing` / `keyCode 229`)的 Enter / Escape 不提交、不中止(覆盖 `hotkeys.completeRenaming` / `abortRenaming`,须带全 preset 字段);普通 Enter / Escape 照常
 
 ## FileRow 渲染隔离(perf,`folder-tree-row-memo.spec.tsx`)
 

@@ -5,6 +5,7 @@
 import { basename, dirname } from './path-utils';
 import { hasFiles } from '@/lib/window-drop'; // 边界(E225,E224 兄弟):共享早停 hasFiles 替代 types.includes('Files')
 import { isSameOrInsidePath } from '@/lib/path-cross';
+import { isImeComposing } from '@/lib/ime';
 import {
   asyncDataLoaderFeature,
   dragAndDropFeature,
@@ -187,6 +188,30 @@ export function createTreeConfig(
       hasFiles(dataTransfer),
     onDropForeignDragObject: (dataTransfer, target) => {
       deps.onDropForeign?.(dataTransfer, resolveDest(target));
+    },
+    // IME:renamingFeature 的 completeRenaming / abortRenaming 只按 e.code 匹配 Enter / Escape、不看
+    // isComposing(isEnabled 只拿 tree 拿不到事件)→ 覆盖 handler,组合中的按键(确认候选 / 取消组合)
+    // 直接忽略。注意 hotkeys-core 1.6.3 匹配阶段是 {...presets, ...hotkeys} 浅合并整条(执行阶段才逐字段
+    // 合并),故必须照抄 preset 的 hotkey / allowWhenInputFocused / isEnabled,只写 handler 会让匹配崩溃。
+    hotkeys: {
+      completeRenaming: {
+        hotkey: 'Enter',
+        allowWhenInputFocused: true,
+        isEnabled: (tree) => tree.isRenamingItem(),
+        handler: (e, tree) => {
+          if (isImeComposing(e)) return;
+          tree.completeRenaming();
+        },
+      },
+      abortRenaming: {
+        hotkey: 'Escape',
+        allowWhenInputFocused: true,
+        isEnabled: (tree) => tree.isRenamingItem(),
+        handler: (e, tree) => {
+          if (isImeComposing(e)) return;
+          tree.abortRenaming();
+        },
+      },
     },
     features: [
       asyncDataLoaderFeature,

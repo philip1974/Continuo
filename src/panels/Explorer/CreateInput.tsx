@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Document, Folder } from '@react-symbols/icons';
 import { IconButton, Input } from '@/design';
 import { useT } from '@/i18n';
+import { isImeComposing } from '@/lib/ime';
 import { FS_NAME_MAX } from '../../../electron/shared/leaf-name';
 
 interface CreateInputProps {
@@ -48,6 +49,8 @@ export function CreateInput({
     const rafId = requestAnimationFrame(() => el.focus());
 
     const handler = (e: KeyboardEvent) => {
+      // IME 组合中的 Enter / Esc 属于输入法(确认候选 / 取消组合),不提交也不取消新建。
+      if (isImeComposing(e)) return;
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();

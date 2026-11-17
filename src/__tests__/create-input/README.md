@@ -24,6 +24,7 @@
 - Enter + 非空 → onSubmit(trim 后)
 - Enter + 空 / 全空白 → onCancel
 - 其它键 → 正常输入
+- IME 组合中(`isComposing` / `keyCode 229`)的 Enter / Esc → 不提交也不取消(属于输入法确认候选 / 取消组合)
 
 ### 关闭按钮
 

@@ -124,6 +124,24 @@ describe('TerminalSearchBar UI', () => {
     expect(api.prev).toHaveBeenCalledTimes(1);
   });
 
+  it('S4b IME 组合中的 Enter / Escape 不跳转也不关闭;普通 Enter 照常', () => {
+    const api = makeApi();
+    const onClose = vi.fn();
+    const { getByPlaceholderText } = render(
+      <TerminalSearchBar searchApi={api} onClose={onClose} />,
+    );
+    const input = getByPlaceholderText('panels.terminal.search.placeholder');
+
+    fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+    fireEvent.keyDown(input, { key: 'Enter', keyCode: 229 });
+    fireEvent.keyDown(input, { key: 'Escape', isComposing: true });
+    expect(api.next).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(api.next).toHaveBeenCalledTimes(1);
+  });
+
   it('S5 option toggles request updated options', () => {
     const api = makeApi();
     const { getByLabelText } = render(

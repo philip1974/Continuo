@@ -1,6 +1,9 @@
+// @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest';
 import {
   asyncDataLoaderFeature,
+  createTree,
+  syncDataLoaderFeature,
   expandAllFeature,
   hotkeysCoreFeature,
   renamingFeature,
@@ -53,6 +56,60 @@ describe('createTreeConfig · 顶层配置', () => {
     const onRename = () => {};
     const cfg = createTreeConfig({ root: '/work', fs, onRename });
     expect(cfg.onRename).toBe(onRename);
+  });
+
+  // IME:重命名框里拼音 / 日文组合中按 Enter 是确认候选词、Esc 是取消组合 —— headless-tree 的
+  // completeRenaming / abortRenaming 只按 e.code 匹配,不看 isComposing,须由 hotkeys 覆盖拦下。
+  describe('重命名热键在 IME 组合中不提交 / 不取消', () => {
+    function mountRenamingTree() {
+      const cfg = createTreeConfig({ root: '/work', fs: makeFs(() => ok([])) });
+      const onRename = vi.fn();
+      const tree = createTree<FileEntry>({
+        rootItemId: '/work',
+        getItemName: (item) => item.getItemData().name,
+        isItemFolder: (item) => item.getItemData().isDirectory,
+        dataLoader: {
+          getItem: (id) => entry(id, id === '/work'),
+          getChildren: (id) => (id === '/work' ? ['/work/a.ts'] : []),
+        },
+        initialState: { expandedItems: ['/work'] },
+        features: [syncDataLoaderFeature, hotkeysCoreFeature, renamingFeature],
+        hotkeys: cfg.hotkeys,
+        onRename,
+      });
+      tree.setMounted(true);
+      tree.rebuildTree();
+      const el = document.createElement('div');
+      document.body.appendChild(el);
+      tree.registerElement(el);
+      tree.getItemInstance('/work/a.ts').startRenaming();
+      // 按键发在树内的重命名输入框上(与真实场景一致:hotkeys-core 对 input 目标不残留 pressedKeys)。
+      const input = document.createElement('input');
+      el.appendChild(input);
+      const key = (k: string, init: KeyboardEventInit = {}) =>
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: k, code: k, bubbles: true, ...init }));
+      return { tree, onRename, key, el };
+    }
+
+    it('组合中 Enter(isComposing / keyCode 229)→ 不提交;普通 Enter → 提交', () => {
+      const { tree, onRename, key } = mountRenamingTree();
+      key('Enter', { isComposing: true });
+      key('Enter', { keyCode: 229 });
+      expect(onRename).not.toHaveBeenCalled();
+      expect(tree.isRenamingItem()).toBe(true);
+      key('Enter');
+      expect(onRename).toHaveBeenCalledTimes(1);
+      expect(tree.isRenamingItem()).toBe(false);
+    });
+
+    it('组合中 Escape → 不中止重命名;普通 Escape → 中止', () => {
+      const { tree, onRename, key } = mountRenamingTree();
+      key('Escape', { isComposing: true });
+      expect(tree.isRenamingItem()).toBe(true);
+      key('Escape');
+      expect(tree.isRenamingItem()).toBe(false);
+      expect(onRename).not.toHaveBeenCalled();
+    });
   });
 
   it('indent 为 16(VSCode 默认风格)', () => {

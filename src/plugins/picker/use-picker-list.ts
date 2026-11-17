@@ -10,6 +10,7 @@
 import { useEffect, useRef } from 'react';
 import type React from 'react';
 import { useVirtualizer, type VirtualItem } from '@tanstack/react-virtual';
+import { isImeComposing } from '@/lib/ime';
 
 /** 单趟判断 index 是否在 virtualizer 当前渲染窗口内。 */
 export function isVirtualIndexRendered(
@@ -98,6 +99,8 @@ export function usePickerList(opts: UsePickerListOptions): PickerList {
   const activeOptionRendered = isVirtualIndexRendered(virtualItems, selectedIndex);
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>): void => {
+    // IME 组合中的 Enter / 方向键属于输入法(确认 / 切换候选),不执行也不移动选择。
+    if (isImeComposing(e.nativeEvent)) return;
     if (e.key === 'ArrowDown') {
       e.preventDefault();
       moveSelection(1, count);

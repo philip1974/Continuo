@@ -10,6 +10,7 @@ BDD coverage for issue #38: integrated terminal search with xterm search addon w
 - S2 Typing a query calls `findNext` with decorations and updates match count from `onDidChangeResults`.
 - S3 Empty query clears decorations and resets result state.
 - S4 Enter navigates to next match; Shift+Enter navigates to previous match.
+- S4b IME 组合中(`isComposing` / `keyCode 229`)的 Enter / Escape 不跳转、不关闭(属于输入法)。
 - S5 Regex / case-sensitive / whole-word toggles re-run search with updated options.
 - S6 Escape or close hides the search bar, clears decorations, clears query, resets result state, and refocuses the terminal.
 - S7 Input blur clears only the active decoration, leaving match highlights intact.
