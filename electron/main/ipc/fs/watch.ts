@@ -225,36 +225,14 @@ export function createWatcherPool(
  *
  * 性能:同时按目录聚合 changeOnly(本 tick 该目录所有回调 eventType 均为 'change' → true;任一 'rename' /
  * 缺 eventType → false),Explorer 据此跳过「仅内容变化」时的整目录 listDir(目录列表不变)。
- *
- * ownReplace:可选,本进程原子替换已有文件的判定(见 recent-atomic-replace;原子保存在 macOS 只产生 rename
- * 事件,目录列表却不变)。flush 对每个目录:
- * - 文件名已知 → claim(dir, names) 总是调用(它消费出现的登记目标,不论本批结论);changeOnly 为 false 且
- *   claim 判定名字**全部**属于登记 → 仍按 changeOnly:true 发出;
- * - 文件名未知(超上限 / 缺 filename)→ clearDir(dir) 清掉该目录登记(无从按名消费,宁多刷新);
- * - 按登记判为 changeOnly 且消费了目标 → 发出后异步 isRegularFile 复查这些目标:任一已不存在 / 不再是普通
- *   文件 / 复查出错(同批混入的外部删除等)→ 经同一 emit 补发一次非 changeOnly。复查与之后真实删除事件
- *   交错时最多多刷新一次:登记已被消费,之后的删除事件本就按非 changeOnly 发出。
  */
-export interface OwnReplaceJudge {
-  claim: (dir: string, names: readonly string[]) => readonly string[] | null;
-  clearDir: (dir: string) => void;
-  isRegularFile: (dir: string, name: string) => Promise<boolean>;
-}
-
 export function createSameTickPathCoalescer(
   emit: (path: string, files: readonly string[] | undefined, changeOnly: boolean) => void,
   schedule: (flush: () => void) => void = (flush) => {
     setImmediate(flush);
   },
   maxFiles: number = DIR_CHANGED_FILES_MAX,
-  ownReplace?: OwnReplaceJudge,
 ): WatchChangeListener {
-  // 复查目标:任一不再是普通文件(含复查出错)→ 补发非 changeOnly。
-  const recheck = (judge: OwnReplaceJudge, p: string, files: readonly string[], targets: readonly string[]) => {
-    void Promise.all(targets.map((t) => judge.isRegularFile(p, t).catch(() => false))).then((oks) => {
-      if (!oks.every(Boolean)) emit(p, files, false);
-    });
-  };
   // files:该目录本 tick 的文件名集合,null = 未知文件(目录级)。
   // changeOnly:本 tick 该目录所有回调 eventType 均为 'change'(任一 rename / 缺失 → false,不可恢复)。
   let pending: Map<string, { files: Set<string> | null; changeOnly: boolean }> | null = null;
@@ -262,23 +240,7 @@ export function createSameTickPathCoalescer(
     const paths = pending;
     pending = null;
     if (paths) {
-      for (const [p, e] of paths) {
-        const files = e.files ? [...e.files] : undefined;
-        let changeOnly = e.changeOnly;
-        let consumed: readonly string[] | null = null;
-        if (ownReplace) {
-          if (files === undefined) ownReplace.clearDir(p);
-          else {
-            const own = ownReplace.claim(p, files);
-            if (!changeOnly && own) {
-              changeOnly = true;
-              consumed = own;
-            }
-          }
-        }
-        emit(p, files, changeOnly);
-        if (ownReplace && files && consumed && consumed.length > 0) recheck(ownReplace, p, files, consumed);
-      }
+      for (const [p, e] of paths) emit(p, e.files ? [...e.files] : undefined, e.changeOnly);
     }
   };
   return (path, fileName, eventType) => {

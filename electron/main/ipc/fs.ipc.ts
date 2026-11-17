@@ -23,13 +23,7 @@ import { renameEntry } from './fs/rename';
 import { removeEntry } from './fs/remove';
 import { createDir, createFile } from './fs/create';
 import { copyEntry, moveEntry } from './fs/move-copy';
-import { claimAtomicReplace, clearAtomicReplaceMarksInDir } from './fs/recent-atomic-replace';
-import {
-  createSameTickPathCoalescer,
-  createWatcherPool,
-  type OwnReplaceJudge,
-  type WatcherCreator,
-} from './fs/watch';
+import { createSameTickPathCoalescer, createWatcherPool, type WatcherCreator } from './fs/watch';
 import { broadcastToWindows } from '../lib/broadcast';
 import { makeWcGoneHook } from '../lib/wc-gone-hook';
 
@@ -365,20 +359,7 @@ export function broadcastDirChanged(
 
 // 生产 watch 回调入口:同 tick 内同一 changedPath(多个 recursive 祖先 watcher 重复报告)只广播一次
 // (性能审计 #1,见 createSameTickPathCoalescer)。导出仅供回归测试。
-// 本进程原子替换已有文件(编辑器保存)产生的 rename 事件按 changeOnly 处理(见 recent-atomic-replace)。
-// 导出仅供回归测试。复查用 lstat:目标被删 / 换成目录或符号链接都要补发刷新。
-export const ownReplaceFs: OwnReplaceJudge = {
-  claim: claimAtomicReplace,
-  clearDir: clearAtomicReplaceMarksInDir,
-  isRegularFile: (dir, name) => fs.promises.lstat(path.join(dir, name)).then((s) => s.isFile()),
-};
-
-export const queueDirChangedBroadcast = createSameTickPathCoalescer(
-  broadcastDirChanged,
-  undefined,
-  undefined,
-  ownReplaceFs,
-);
+export const queueDirChangedBroadcast = createSameTickPathCoalescer(broadcastDirChanged);
 
 export function registerFsIpc(): void {
   const trusted = defaultIsTrustedFrame;
@@ -441,9 +422,6 @@ export function registerFsIpc(): void {
         watchOwnerByWc.set(event.sender.id, ownerId);
         attachWatchWcGoneHook(event.sender);
       }
-      // 该目录此前若无 watcher 覆盖(Linux 非 recursive:未展开目录不 watch),其原子替换登记一直闲置,
-      // 展开后 TTL 内的外部删除会被误判为 changeOnly → 新 watch 前清掉该目录登记(宁多刷新一次)。
-      clearAtomicReplaceMarksInDir(input.path);
       // 广播 creator 上抛的真实变更路径(可能 = input.path,也可能是其
       // recursive 子目录,见 issue #20)。
       watcherPool.watch(
