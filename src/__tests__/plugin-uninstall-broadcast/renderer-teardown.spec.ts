@@ -147,6 +147,28 @@ describe('renderer:收到 plugins:uninstalled 后撤销本窗口的插件实例�
     expect(await a.store.get(ID)).toEqual([]);
   });
 
+  // perf(#2):插件数据缓存(dataStore,单插件最多 16MiB)在卸载后淘汰 —— 本地卸载成功与收到卸载广播都调
+  // dataStore.forget(id);禁用不淘汰(重新启用仍要用数据)。
+  it('卸载淘汰本窗口插件数据缓存:本地卸载与卸载广播都调 dataStore.forget,禁用不调', async () => {
+    const shared = freshShared();
+    const a = makeWindow(shared);
+    const b = makeWindow(shared);
+    const forgetA = vi.fn();
+    const forgetB = vi.fn();
+    a.app.dataStore.forget = forgetA;
+    b.app.dataStore.forget = forgetB;
+    await a.mgr.init();
+    await b.mgr.init();
+
+    await a.mgr.disable(ID);
+    expect(forgetA).not.toHaveBeenCalled();
+
+    await a.mgr.uninstall(ID);
+    expect(forgetA).toHaveBeenCalledWith(ID);
+    await b.mgr.handleUninstalled(ID);
+    expect(forgetB).toHaveBeenCalledWith(ID);
+  });
+
   it('IpcPermissionStore.forget:权限缓存加载途中收到卸载 → 加载结果里也剔除该插件', async () => {
     const store = new IpcPermissionStore();
     const pending = store.get(ID); // 发起加载(读到的是卸载前的快照)
