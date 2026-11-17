@@ -130,4 +130,18 @@ describe('IdentityRegistry', () => {
       generation: 2,
     });
   });
+
+  it('webContentsIdsFor 返回持有该 pluginId token 的 webContents(含 drain 中,去重)', () => {
+    const registry = new IdentityRegistry();
+    const a = registry.register('com.example.plugin', 10);
+    registry.register('com.example.plugin', 10);
+    registry.register('com.example.plugin', 11);
+    registry.register('com.other.plugin', 12);
+
+    expect([...registry.webContentsIdsFor('com.example.plugin')].sort()).toEqual([10, 11]);
+    expect([...registry.webContentsIdsFor('com.missing')]).toEqual([]);
+
+    registry.revoke(a.token);
+    expect([...registry.webContentsIdsFor('com.example.plugin')].sort()).toEqual([10, 11]);
+  });
 });

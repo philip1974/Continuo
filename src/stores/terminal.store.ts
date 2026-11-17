@@ -257,7 +257,7 @@ type TerminalState = {
    */
   settled: boolean;
   /**
-   * 接收 main 推的 snapshot(整体替换;引用未变或都为空时不通知订阅者)。sessions 变化时与
+   * 接收 main 推的 snapshot(整体替换;引用未变、都为空或逐字段内容相同时不通知订阅者)。sessions 变化时与
    * hydrated=true 原子写入,订阅者不会看到「有 sessions 但未 hydrated」的中间态。
    */
   replaceSnapshot: (sessions: readonly TerminalSession[]) => void;
@@ -266,6 +266,40 @@ type TerminalState = {
   /** 标记 settled(初始拉取失败等:只放行 Splash,不改 hydrate 语义)。幂等。 */
   markSettled: () => void;
 };
+
+/** 字段值浅比较:Object.is;双方都是对象(如 attachTarget)时再逐键 Object.is 一层。 */
+function sameFieldValue(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+  return sameShallow(a as Record<string, unknown>, b as Record<string, unknown>, Object.is);
+}
+
+function sameShallow(
+  a: Record<string, unknown>,
+  b: Record<string, unknown>,
+  eq: (x: unknown, y: unknown) => boolean,
+): boolean {
+  const keys = Object.keys(a);
+  if (keys.length !== Object.keys(b).length) return false;
+  for (const k of keys) {
+    if (!Object.hasOwn(b, k) || !eq(a[k], b[k])) return false;
+  }
+  return true;
+}
+
+/** 两份快照逐元素逐字段相同(顺序敏感:顺序以 main 为准,变了也算变化)。 */
+function sameSessions(
+  a: readonly TerminalSession[],
+  b: readonly TerminalSession[],
+): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i] as unknown as Record<string, unknown>;
+    const y = b[i] as unknown as Record<string, unknown>;
+    if (x !== y && !sameShallow(x, y, sameFieldValue)) return false;
+  }
+  return true;
+}
 
 export const useTerminalStore = create<TerminalState>((set) => ({
   sessions: [],
@@ -276,6 +310,9 @@ export const useTerminalStore = create<TerminalState>((set) => ({
     set((s) => {
       if (newSessions === s.sessions) return s;
       if (newSessions.length === 0 && s.sessions.length === 0) return s;
+      // perf:main 任一会话变化都给所有窗口推各自完整快照,IPC 反序列化每次都是新数组 → 内容未变也不 set,
+      // 免得订阅者与 DockReconciler 白跑。首个权威快照内容相同仍须置 hydrated(Splash 就绪屏障)。
+      if (sameSessions(newSessions, s.sessions)) return s.hydrated ? s : { hydrated: true };
       return { sessions: newSessions, hydrated: true };
     }),
 

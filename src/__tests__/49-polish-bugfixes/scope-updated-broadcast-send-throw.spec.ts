@@ -74,7 +74,10 @@ describe('race(R65) · plugin-fs scope-updated 广播 send 抛错不打断 grant
       '../../../electron/shared/plugin-fs-channels'
     );
     const ipcMain = { handle: vi.fn() } as never;
-    const { pathScopeRegistry } = registerPluginFsIpc({ ipcMain });
+    const { pathScopeRegistry, identityRegistry } = registerPluginFsIpc({ ipcMain });
+    // scope-updated 只定向发给持有该插件 token 的 webContents(见下方 perf 用例)。
+    identityRegistry.register('p', dead.id);
+    identityRegistry.register('p', healthy.id);
 
     const payload = {
       pluginId: 'p',
@@ -95,5 +98,36 @@ describe('race(R65) · plugin-fs scope-updated 广播 send 抛错不打断 grant
       PLUGIN_FS_CHANNELS.SCOPE_UPDATED,
       payload,
     );
+  });
+
+  // perf:此前遍历 getAllWebContents() 逐个 send(含其它窗口与 devtools),payload 是该插件完整授权
+  // 路径列表。改为只发给持有该插件 token(IdentityRegistry 按 wc 记录)的 webContents。
+  it('scope-updated 只发给该插件所属 webContents,不发给其它窗口 / devtools', async () => {
+    const owner = makeWc(1);
+    const otherPluginWindow = makeWc(2);
+    const devtools = makeWc(3);
+    mocks.allWebContents = [owner, otherPluginWindow, devtools];
+
+    const { registerPluginFsIpc } = await import(
+      '../../../electron/main/ipc/plugin-fs.ipc'
+    );
+    const { PLUGIN_FS_CHANNELS } = await import(
+      '../../../electron/shared/plugin-fs-channels'
+    );
+    const { pathScopeRegistry, identityRegistry } = registerPluginFsIpc({
+      ipcMain: { handle: vi.fn() } as never,
+    });
+    identityRegistry.register('p', owner.id);
+    identityRegistry.register('q', otherPluginWindow.id);
+
+    pathScopeRegistry.grant('p', [{ path: '/x', mode: 'r' }]);
+
+    expect(owner.send).toHaveBeenCalledTimes(1);
+    expect(owner.send).toHaveBeenCalledWith(PLUGIN_FS_CHANNELS.SCOPE_UPDATED, {
+      pluginId: 'p',
+      scopes: [{ path: '/x', mode: 'r' }],
+    });
+    expect(otherPluginWindow.send).not.toHaveBeenCalled();
+    expect(devtools.send).not.toHaveBeenCalled();
   });
 });

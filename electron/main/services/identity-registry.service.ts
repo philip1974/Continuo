@@ -71,6 +71,18 @@ export class IdentityRegistry {
       : undefined;
   }
 
+  /**
+   * 持有该 pluginId token 的 webContents id(含 drain 中:_unregister-plugin 先 revoke 再 revokeAll,
+   * 其 scope-updated 仍应送达该窗口)。供 scope-updated 定向推送,不做授权判断。
+   */
+  webContentsIdsFor(pluginId: string): Set<number> {
+    const ids = new Set<number>();
+    for (const entry of this.entries.values()) {
+      if (entry.pluginId === pluginId) ids.add(entry.webContentsId);
+    }
+    return ids;
+  }
+
   /** Latest generation registered for a pluginId (0 if never). */
   currentGeneration(pluginId: string): number {
     return this.generations.get(pluginId) ?? 0;

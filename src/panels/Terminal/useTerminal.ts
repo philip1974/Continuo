@@ -265,6 +265,13 @@ export const SIDEBAR_WIDTH_FIT_SETTLE_MS = 100;
 /** 搜索词输入 → SearchAddon.findNext 的防抖间隔(见 pendingSearchTimerRef)。 */
 export const TERMINAL_SEARCH_DEBOUNCE_MS = 100;
 
+/**
+ * OSC7 cwd → updateCwd IPC 的尾随合并窗口。每个 prompt 都发 OSC7,readHistory 回放(最多 1MB)还会把
+ * 历史里每个 OSC7 重新触发一遍:窗口内只发最终值,且与上次已发送值相同则不发(main 同值虽提前返回,
+ * IPC 管线与 sessions_changed 广播照跑,回放时 cwd 还会短暂回退到历史值)。
+ */
+export const CWD_REPORT_DEBOUNCE_MS = 50;
+
 function cancelTimer(ref: { current: ReturnType<typeof setTimeout> | null }): void {
   if (ref.current === null) return;
   clearTimeout(ref.current);
@@ -472,9 +479,25 @@ export function useTerminal(termId: string) {
     termRef.current = term;
     fitRef.current = fitAddon;
 
+    // per-term 去重 + 尾随合并(见 CWD_REPORT_DEBOUNCE_MS):只发窗口内最新值,且与上次已发送值不同才发。
+    let lastSentCwd: string | undefined;
+    let pendingCwd: string | undefined;
+    let cwdTimer: ReturnType<typeof setTimeout> | null = null;
+    const flushCwd = () => {
+      cwdTimer = null;
+      const cwd = pendingCwd;
+      pendingCwd = undefined;
+      if (cwd === undefined || cwd === lastSentCwd) return;
+      lastSentCwd = cwd;
+      void coApi.terminal.updateCwd(termId, cwd);
+    };
     const osc7Disposable = registerOsc7Cwd(
       term,
-      (cwd) => { void coApi.terminal.updateCwd(termId, cwd); },
+      (cwd) => {
+        pendingCwd = cwd;
+        if (cwdTimer !== null) clearTimeout(cwdTimer);
+        cwdTimer = setTimeout(flushCwd, CWD_REPORT_DEBOUNCE_MS);
+      },
       // 测试桩常不带 system → 可选链。
       { acceptedHosts: osc7AcceptedHosts(coApi.system?.hostname) },
     );
@@ -649,6 +672,7 @@ export function useTerminal(termId: string) {
         unsubExit();
         onDataDisposable.dispose();
         osc7Disposable.dispose();
+        if (cwdTimer !== null) clearTimeout(cwdTimer); // 卸载丢弃待发 cwd(会话将随面板关闭/改绑)
         searchResultsDisposable.dispose();
         ro.disconnect();
         resizeDebouncer.dispose();
