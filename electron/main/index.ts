@@ -149,11 +149,23 @@ if (resolvedUserDataPath !== null) {
 
 const LRU_MAX_CLOSED = MAX_PERSISTED_WINDOW_SEGMENTS;
 /**
- * LRU 不可摘的段:活跃窗 + 主窗段 seq 0。冷启动主窗固定复用 seq 0 的段恢复 workspace,
+ * 正在关闭(已 clearWindow 退出活跃集、但自身 lastClosedAt 尚未落盘)的 seq → 引用计数。
+ * 多窗近同时关闭时,先拿到 explorer mutex 的那个执行 LRU,不能把另一个仍在关闭中的窗口段当最旧摘掉
+ * (其 lastClosedAt 还是旧值),否则后者落盘时只能 ensureWindowEntry 重建空段,原 workspace/layout 丢失。
+ */
+const closingSeqRefs = new Map<number, number>();
+/**
+ * LRU 不可摘的段:活跃窗 + 关闭中窗 + 主窗段 seq 0。冷启动主窗固定复用 seq 0 的段恢复 workspace,
  * 即使它很早就被关掉,也不能当成过期历史摘掉。
  */
+function releaseClosingSeq(seq: number): void {
+  const next = (closingSeqRefs.get(seq) ?? 0) - 1;
+  if (next > 0) closingSeqRefs.set(seq, next);
+  else closingSeqRefs.delete(seq);
+}
 function lruProtectedSeqs(): ReadonlySet<number> {
   const seqs = new Set(getActiveSeqs());
+  for (const seq of closingSeqRefs.keys()) seqs.add(seq);
   seqs.add(0);
   return seqs;
 }
@@ -595,17 +607,24 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
   wireWindowCloseFlush(win);
 
   win.on('closed', () => {
+    // 先同步登记为关闭中,再退出活跃集:两者之间不能留出让其他窗口 LRU 摘掉本段的窗口期。
+    closingSeqRefs.set(seq, (closingSeqRefs.get(seq) ?? 0) + 1);
     clearWindow(win.id);
     // 窗口级资源清理(scope / fs watcher / agent 授权)已移到覆盖全窗口的
     // browser-window-created → releaseWindowResources,主窗与 popout 统一处理。
     // 此处只保留主窗专属的 explorer.json 段落持久化(popout 无 windowSeq 段)。
     const explorerFile = path.join(app.getPath('userData'), EXPLORER_FILE_NAME);
     void withExplorerFileMutex(async () => {
-      const payload = (await loadExplorer(explorerFile)) ?? defaultExplorerV3();
-      const entry = ensureWindowEntry(payload, seq);
-      entry.lastClosedAt = Date.now();
-      pruneLRUClosed(payload, LRU_MAX_CLOSED, lruProtectedSeqs());
-      await atomicWriteJson(explorerFile, payload);
+      try {
+        const payload = (await loadExplorer(explorerFile)) ?? defaultExplorerV3();
+        const entry = ensureWindowEntry(payload, seq);
+        entry.lastClosedAt = Date.now();
+        pruneLRUClosed(payload, LRU_MAX_CLOSED, lruProtectedSeqs());
+        await atomicWriteJson(explorerFile, payload);
+      } finally {
+        // 自身段已落盘(或写失败)→ 解除保护;放在 mutex 体内,不另起派生 promise 制造未处理拒绝。
+        releaseClosingSeq(seq);
+      }
     });
   });
 
