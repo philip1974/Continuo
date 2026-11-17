@@ -368,6 +368,51 @@ describe('StatusBar — 插件 statusBar items', () => {
     });
     expect(container.textContent).toContain('LATE_ITEM');
   });
+
+  // perf E5:active 文件每按键都让状态栏重渲(更新行/词/字符统计),但插件 item 不应因此
+  // 重新执行 render()。item 刷新契约 = registry 变化(重新注册)或 render 返回的 React 子组件自身状态。
+  it('perf E5 · 编辑器按键 → 统计更新,但插件 item render 不被重复调用', () => {
+    installApi({});
+    const renderItem = vi.fn(() => 'PLUGIN_ITEM');
+    coApp.statusBar.register({ id: 'plugin.e5', side: 'left', render: renderItem });
+    useEditorStore.setState({
+      tabs: [
+        { id: '/a.txt', filePath: '/a.txt', content: 'a', originalContent: 'x', dirty: true },
+      ],
+      activeTabId: '/a.txt',
+    });
+    const { container } = render(<StatusBar />);
+    const calls = renderItem.mock.calls.length;
+    expect(calls).toBeGreaterThan(0);
+
+    act(() => {
+      useEditorStore.getState().updateContent('/a.txt', 'a b c');
+    });
+    act(() => {
+      useEditorStore.getState().updateContent('/a.txt', 'a b c d');
+    });
+
+    expect(container.textContent).toContain('PLUGIN_ITEM');
+    expect(renderItem.mock.calls.length).toBe(calls);
+  });
+
+  it('perf E5 · 同 id 重新注册(新 spec)→ item 按新 render 刷新', () => {
+    installApi({});
+    const first = coApp.statusBar.register({
+      id: 'plugin.e5b',
+      side: 'right',
+      render: () => 'V1',
+    });
+    const { container } = render(<StatusBar />);
+    expect(container.textContent).toContain('V1');
+
+    act(() => {
+      first.dispose();
+      coApp.statusBar.register({ id: 'plugin.e5b', side: 'right', render: () => 'V2' });
+    });
+    expect(container.textContent).toContain('V2');
+    expect(container.textContent).not.toContain('V1');
+  });
 });
 
 describe('StatusBar — MCP 复制', () => {
