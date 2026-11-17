@@ -1,5 +1,9 @@
 // @vitest-environment jsdom
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { render } from '@testing-library/react';
+import { Fragment, createElement } from 'react';
 import { bootCorePlugins, shutdownCorePlugins } from '../../core-plugins';
 import { coApp } from '../../plugins/co-app';
 import { _resetLmApiForTest, captureLmApi } from '../../lib/co-api';
@@ -57,12 +61,40 @@ describe('shutdownCorePlugins', () => {
 describe('设置 tab 的 render 在多次调用间保持同一组件类型', () => {
   // SettingsPanel 在渲染期调 tab.render();若每次返回新的组件类型,父组件一重渲 tab 内容就卸载重挂,
   // 本地状态(如录制中的快捷键)丢失。
-  it.each(['core.keybindings', 'core.plugins'])('%s', (id) => {
+  it.each([
+    'core.keybindings',
+    'core.plugins',
+    'core.general',
+    'core.editor',
+    'core.explorer',
+    'core.terminal',
+  ])('%s', (id) => {
     bootCorePlugins();
     const tab = coApp.settingTabs.getAll().find((t) => t.id === id)!;
     const a = tab.render() as { type: unknown };
     const b = tab.render() as { type: unknown };
     expect(a.type).toBe(b.type);
+  });
+});
+
+// perf(#7):Settings 外壳已 lazy,tab 内容组件也不得被内置插件静态导入(否则打进 main-app 启动包)。
+describe('设置 tab 内容懒加载', () => {
+  it('core-plugins 不静态导入 CategoryTabContent / PluginsTabContent', () => {
+    const dir = join(process.cwd(), 'src/core-plugins');
+    for (const f of readdirSync(dir).filter((n) => n.endsWith('.ts'))) {
+      const src = readFileSync(join(dir, f), 'utf-8');
+      expect(src, f).not.toMatch(
+        /^import[^;]*from\s+'@\/plugins\/settings\/(CategoryTabContent|PluginsTabContent)'/m,
+      );
+    }
+  });
+
+  it('首次渲染经 Suspense 加载后显示分类设置项', async () => {
+    bootCorePlugins();
+    const tab = coApp.settingTabs.getAll().find((t) => t.id === 'core.general')!;
+    const view = render(createElement(Fragment, null, tab.render()));
+    expect((await view.findAllByText(/theme|主题/i)).length).toBeGreaterThan(0);
+    view.unmount();
   });
 });
 

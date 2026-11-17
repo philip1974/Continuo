@@ -4,7 +4,7 @@
 
 import { createElement } from 'react';
 import { Plugin } from '@/plugins/Plugin';
-import { CategoryTabContent } from '@/plugins/settings/CategoryTabContent';
+import { renderCategoryTab } from './lazy-category-tab';
 import { ExplorerIcon } from '@/plugins/settings/tab-icons';
 import { useLayoutUiStore } from '@/stores/layout-ui.store';
 
@@ -17,8 +17,7 @@ export default class ExplorerTabPlugin extends Plugin {
       titleKey: 'settings.explorer.tab_title',
       priority: 20,
       icon: createElement(ExplorerIcon),
-      render: () =>
-        createElement(CategoryTabContent, { category: 'explorer' }),
+      render: () => renderCategoryTab('explorer'),
     });
 
     this.addCommand({

@@ -36,3 +36,10 @@
 
 - selectDirectory 返回 `{ok:false}` → notifyFailure 失败 toast(与 Explorer 打开文件夹一致),不建窗
 - 用户取消(`{ok:true,data:null}`)→ 静默
+
+### 设置 tab 内容懒加载(perf)
+
+- 内置插件不得静态导入 `CategoryTabContent` / `PluginsTabContent`(源码钉测试):General / Editor / Explorer / Terminal
+  共用 `src/core-plugins/lazy-category-tab.ts` 一个 lazy chunk,Plugins tab 内容独立 chunk;模式同 Keybindings
+  (`lazy()` + 模块级 `lazyPanel`,Suspense fallback=null,首次打开 tab 一帧空白后显示内容)。
+- 各 tab 的 `render()` 多次调用返回同一组件类型。

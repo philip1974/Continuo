@@ -551,6 +551,8 @@ export class PluginManager {
     await this.host.removePluginDir(id);
     this.entries.delete(id);
     this.invalidateListCache();
+    // perf(#2):data.json 已随目录删除,淘汰本窗口内存里的插件数据缓存(禁用不淘汰:重新启用仍要用)。
+    this.app.dataStore.forget?.(id);
   }
 
   /**
@@ -575,6 +577,8 @@ export class PluginManager {
         this.invalidateListCache();
       }
       this.host.permissionStore?.forget?.(id);
+      // perf(#2):实例已停用(onunload 的 saveData 已落地)后淘汰插件数据缓存;幂等。
+      this.app.dataStore.forget?.(id);
     });
   }
 
