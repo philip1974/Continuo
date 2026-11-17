@@ -34,9 +34,11 @@ describe('首次交互预热', () => {
     expect(h.loadMilkdownEditorModule).not.toHaveBeenCalled();
   });
 
-  it('Explorer 文件行 pointerdown 时(非目录、非重命名)触发 onFileIntent,FolderTree 接 warmEditorEngineFor', () => {
+  it('Explorer 文件行主键 pointerdown 时(非右键/Ctrl、非目录、非重命名)触发 onFileIntent,FolderTree 接 warmEditorEngineFor', () => {
     const row = src('panels/Explorer/FileRow.tsx');
-    expect(row).toMatch(/onPointerDown=\{\(e\) => \{[\s\S]*?if \(!isDir && !isRenaming\) onFileIntent\?\.\(data\.path\)/);
+    expect(row).toMatch(
+      /onPointerDown=\{\(e\) => \{[\s\S]*?if \(e\.button === 0 && !e\.ctrlKey && !isDir && !isRenaming\) onFileIntent\?\.\(data\.path\)/,
+    );
     expect(src('panels/Explorer/FolderTree.tsx')).toMatch(/onFileIntent=\{warmEditorEngineFor\}/);
   });
 

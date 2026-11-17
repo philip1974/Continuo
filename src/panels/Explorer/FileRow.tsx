@@ -204,7 +204,9 @@ export const FileRow = memo(function FileRow({
       onPointerDown={(e) => {
         // 保留上游可能注入的 pointerdown(当前 headless-tree 未注入,防御升级)
         (item.getProps() as { onPointerDown?: (e: React.PointerEvent) => void }).onPointerDown?.(e);
-        if (!isDir && !isRenaming) onFileIntent?.(data.path);
+        // 仅主键且无 Ctrl:右键 / macOS Ctrl+点击打开上下文菜单而非文件,不预热(Windows Ctrl+点击仍会
+        // 打开,届时由 openFileByPath 预热,只少一点提前量)。
+        if (e.button === 0 && !e.ctrlKey && !isDir && !isRenaming) onFileIntent?.(data.path);
       }}
       onClick={(e) => {
         // 上游 selectionFeature 用 mousedown,onClick 不冲突
