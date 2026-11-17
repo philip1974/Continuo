@@ -96,17 +96,20 @@ describe('perf-audit P6 · CodeEditor 受控回声免全文 toString', () => {
     expect(echo).toBe('hello world');
 
     // 受控回声:父把 emit 的值作为 value 回传。effect 应命中 lastSynced 直接 return,
-    // 不调用当前 doc 的 toString(P6 的核心收益)。
-    const docSpy = vi.spyOn(view.state.doc, 'toString');
+    // 不对当前 doc 做全文拼接(P6 的核心收益)。CRLF 保留后全文出口改为
+    // sliceString(0, len, eol),toString 也走 sliceString,两者都监视。
+    const docSpy = vi.spyOn(view.state.doc, 'sliceString');
+    const docToStringSpy = vi.spyOn(view.state.doc, 'toString');
     rerender(
       <CodeEditor tabId="t1" value={echo!} fileName="a.js" onChange={onChange} />,
     );
     expect(docSpy).not.toHaveBeenCalled();
+    expect(docToStringSpy).not.toHaveBeenCalled();
     // doc 未被多余 dispatch 改动
     expect(view.state.doc.toString()).toBe('hello world');
 
     // 反例:真正的外部新值(≠ lastSynced)→ 不跳过 → 现场 toString 比较 + dispatch 同步。
-    const docSpy2 = vi.spyOn(view.state.doc, 'toString');
+    const docSpy2 = vi.spyOn(view.state.doc, 'sliceString');
     rerender(
       <CodeEditor
         tabId="t1"

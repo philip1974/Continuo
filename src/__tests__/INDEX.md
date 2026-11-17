@@ -446,6 +446,10 @@
 
 - [`editor-action.spec.ts`](./editor-action/editor-action.spec.ts)
 
+## [editor-crlf-line-endings](./editor-crlf-line-endings/README.md)
+
+- [`code-editor-crlf.spec.tsx`](./editor-crlf-line-endings/code-editor-crlf.spec.tsx)
+
 ## [editor-external-link-feedback](./editor-external-link-feedback/README.md)
 
 - [`external-link-feedback.spec.tsx`](./editor-external-link-feedback/external-link-feedback.spec.tsx)
