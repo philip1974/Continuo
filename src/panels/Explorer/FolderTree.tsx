@@ -3,7 +3,7 @@ import { hasFiles } from '@/lib/window-drop'; // 边界(E225):共享早停 hasFi
 import { basenamePreserveTrailing, dirname } from './path-utils';
 import { joinPath, stripRootPrefix, isSameOrInsidePath } from '@/lib/path-cross';
 import { useTree } from '@headless-tree/react';
-import { useVirtualizer } from '@tanstack/react-virtual';
+import { useVirtualizer, type Virtualizer } from '@tanstack/react-virtual';
 import type {
   AsyncDataLoaderDataRef,
   ItemInstance,
@@ -184,6 +184,17 @@ export function FolderTree({ root }: { root: string }) {
   // a11y(A148):tree listDir 失败(root/子目录)此前仅 console.warn(FolderTree 未传 onIpcWarn)
   // → 加载失败无反馈。但展开深树会触发多次 listDir,无差别弹会刷屏 —— 3s 限流(对齐 A144)。
   const lastIpcWarnAtRef = useRef(0);
+  // 键盘导航(End / Home / ArrowLeft 回父目录)焦点跳出虚拟窗口时,headless-tree updateDomFocus 先调
+  // config.scrollToItem 再轮询等行挂载,超时把焦点打回首项。照官方虚拟化示例接 virtualizer.scrollToIndex;
+  // 但下标必须取实际渲染的 items(隐藏文件过滤后),不能用 getItemMeta().index。virtualizer 在 tree 之后
+  // 创建,故经 ref 持有;找不到下标(目标被过滤)则不滚。
+  const virtualizerRef = useRef<Virtualizer<HTMLDivElement, Element> | null>(null);
+  const renderedItemsRef = useRef<readonly ItemInstance<FileEntry>[]>([]);
+  const scrollToItem = useCallback((item: ItemInstance<FileEntry>) => {
+    const id = item.getId();
+    const index = renderedItemsRef.current.findIndex((it) => it.getId() === id);
+    if (index >= 0) virtualizerRef.current?.scrollToIndex(index, { align: 'auto' });
+  }, []);
   const { resolved: theme } = useTheme();
   const [creating, setCreating] = useState<CreatingState | null>(null);
   // dnd 状态:hoverTarget 由 FileRow onDragEnter 回报;dragDepth 用计数器
@@ -409,8 +420,9 @@ export function FolderTree({ root }: { root: string }) {
         },
         expandedItems: treeExpandedItems,
         setExpandedItems,
+        scrollToItem,
       }),
-    [treeExpandedItems, refreshParent, root, runBatchTransfer, setExpandedItems],
+    [treeExpandedItems, refreshParent, root, runBatchTransfer, setExpandedItems, scrollToItem],
   );
   const tree = useTree<FileEntry>(config);
   treeRef.current = tree;
@@ -419,6 +431,7 @@ export function FolderTree({ root }: { root: string }) {
   // explorer.showHiddenFiles=false(默认)过滤 . 开头的 entries(.git / .env 等)
   const showHidden = useSettingValue<boolean>('explorer.showHiddenFiles', false);
   const items = useMemo(() => selectVisibleTreeItems(allItems, showHidden), [allItems, showHidden]);
+  renderedItemsRef.current = items;
 
   // 多选集合数据源 = headless-tree selectionFeature 真实状态。
   // 不再读 explorer.store.selectedPaths(从未被同步,留 cleanup 单独提交)。
@@ -488,6 +501,7 @@ export function FolderTree({ root }: { root: string }) {
     estimateSize: () => FILE_ROW_HEIGHT,
     overscan: 8,
   });
+  virtualizerRef.current = virtualizer;
 
   const treeApi = useMemo(() => ({ invalidateChildrenIds: refreshParent }), [refreshParent]);
   const mutateDeps = useMemo(() => ({ fs: coApi.fs }), []);

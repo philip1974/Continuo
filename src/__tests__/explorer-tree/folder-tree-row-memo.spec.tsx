@@ -67,6 +67,8 @@ vi.mock('@tanstack/react-virtual', async () => {
           }
           return out;
         },
+        // 焦点变化时 headless-tree 经 config.scrollToItem 调用;本 spec 不关心滚动
+        scrollToIndex: () => {},
       };
     },
   };
