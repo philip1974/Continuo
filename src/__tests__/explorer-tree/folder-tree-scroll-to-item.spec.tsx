@@ -192,3 +192,70 @@ describe('FolderTree · 拖放结束不触发滚动', () => {
     await waitFor(() => expect(h.scrollToIndex).toHaveBeenCalledWith(64, { align: 'auto' }));
   });
 });
+
+// 只跳过滚动还不够:库 updateDomFocus 在 scrollToItem 后轮询 500ms 等焦点项挂载,取不到就把焦点重置到首项
+// (内部移动时焦点项是源行,长列表里往往已滚出窗口;OS 文件拖入时焦点项可能也不在窗口内)。下一次方向键
+// 从首项出发 → scrollToItem(首项邻居) → 列表跳回顶部。契约:drop 后焦点落在实际松手的那一行(已渲染),
+// 列表不动;之后方向键从该行继续。
+const scrollTo = (start: number) =>
+  act(() => {
+    h.range = { start, end: start + 10 };
+    h.setTick?.((n) => n + 1);
+  });
+
+describe('FolderTree · 长列表 drop 后焦点落在松手行', () => {
+  it('内部拖动:源行已滚出窗口,drop 到下方某行 → 焦点在该行,列表不跳回;ArrowDown 从该行继续', async () => {
+    h.showHidden = false;
+    const { container } = render(<FolderTree root="/work" />);
+    await waitFor(() => expect(row(container, '/work/f00.ts')).not.toBeNull());
+    act(() => {
+      fireEvent.click(row(container, '/work/f00.ts')!);
+    });
+    act(() => {
+      fireEvent.dragStart(row(container, '/work/f00.ts')!, { dataTransfer: { types: [] } });
+    });
+    scrollTo(40);
+    expect(row(container, '/work/f00.ts')).toBeNull();
+    await act(async () => {
+      fireEvent.drop(row(container, '/work/f45.ts')!, { dataTransfer: { types: [] } });
+    });
+    await waitFor(() => expect(document.activeElement).toBe(row(container, '/work/f45.ts')), {
+      timeout: 1500,
+    });
+    // 等过库 500ms 轮询窗口:焦点不被重置到首项
+    await act(() => new Promise<void>((r) => setTimeout(r, 600)));
+    expect(document.activeElement).toBe(row(container, '/work/f45.ts'));
+    expect(h.scrollToIndex).not.toHaveBeenCalled();
+    expect(h.range.start).toBe(40);
+
+    act(() => {
+      fireEvent.keyDown(row(container, '/work/f45.ts')!, { key: 'ArrowDown', code: 'ArrowDown' });
+    });
+    await waitFor(() => expect(document.activeElement).toBe(row(container, '/work/f46.ts')));
+    // 方向键照常 scrollToItem(mock 会把邻行居中),但不会跳回顶部
+    expect(h.range.start).toBeGreaterThan(30);
+  });
+
+  it('OS 文件拖入:drop 到窗口内某行 → 焦点在该行(不回退首项);ArrowDown 从该行继续', async () => {
+    h.showHidden = false;
+    const { container } = render(<FolderTree root="/work" />);
+    await waitFor(() => expect(row(container, '/work/f00.ts')).not.toBeNull());
+    scrollTo(40);
+    await act(async () => {
+      fireEvent.drop(row(container, '/work/f43.ts')!, { dataTransfer: filesDT() });
+    });
+    await waitFor(() => expect(document.activeElement).toBe(row(container, '/work/f43.ts')), {
+      timeout: 1500,
+    });
+    await act(() => new Promise<void>((r) => setTimeout(r, 600)));
+    expect(document.activeElement).toBe(row(container, '/work/f43.ts'));
+    expect(h.range.start).toBe(40);
+
+    act(() => {
+      fireEvent.keyDown(row(container, '/work/f43.ts')!, { key: 'ArrowDown', code: 'ArrowDown' });
+    });
+    await waitFor(() => expect(document.activeElement).toBe(row(container, '/work/f44.ts')));
+    // 方向键照常 scrollToItem(mock 会把邻行居中),但不会跳回顶部
+    expect(h.range.start).toBeGreaterThan(30);
+  });
+});

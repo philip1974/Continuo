@@ -7,6 +7,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import type { FileEntry } from '../../lib/fs/types';
 import { useExplorerStore } from '../../stores/explorer.store';
+import { flushSync } from 'react-dom';
+
+const h = vi.hoisted(() => ({ dropInto: vi.fn(async (..._args: unknown[]) => {}) }));
 
 const files: FileEntry[] = [
   { path: '/work/dir', name: 'dir', isDirectory: true },
@@ -50,6 +53,10 @@ vi.mock('@/plugins/settings/values-store', () => ({
   useSettingValue: (_key: string, fallback: unknown) => fallback,
 }));
 vi.mock('@/theme', () => ({ useTheme: () => ({ resolved: 'dark' }) }));
+vi.mock('../../panels/Explorer/batch-transfer', async (orig) => ({
+  ...(await orig<typeof import('../../panels/Explorer/batch-transfer')>()),
+  dropForeignFilesInto: h.dropInto,
+}));
 vi.mock('../../panels/Explorer/ExplorerHeader', () => ({ ExplorerHeader: () => null }));
 
 import { FolderTree } from '../../panels/Explorer/FolderTree';
@@ -61,6 +68,7 @@ const filesDT = () => ({ types: ['Files'], items: [], files: [] });
 const flush = () => act(() => new Promise<void>((r) => setTimeout(r, 30)));
 
 beforeEach(() => {
+  h.dropInto.mockClear();
   useExplorerStore.setState({ expandedPaths: new Set(), sort: { by: 'name', reverse: false } });
 });
 afterEach(() => cleanup());
@@ -102,6 +110,39 @@ describe('FolderTree · OS 文件 drop 后 DropOverlay 复位', () => {
     act(() => {
       fireEvent.dragLeave(target, { dataTransfer: filesDT() });
     });
+    expect(overlay(container)).toBeNull();
+  });
+});
+
+// 真实浏览器:React 19 在根容器分别挂捕获 / 冒泡两个原生监听,drop 是离散事件,捕获阶段 setState 在
+// microtask 中 flush;浏览器在每个监听回调之间做 microtask checkpoint → 冒泡阶段组件已按复位后的状态重渲,
+// handleDrop 若读渲染闭包里的 hoverTarget 拿到的是 null → 落点退化为 root,与 DropOverlay 显示的目录不一致。
+// jsdom 同步派发无 checkpoint:在 at-target 原生监听(位于根捕获之后、根冒泡之前)里 flushSync 模拟它。
+describe('FolderTree · OS 文件 drop 到空白处的落点(捕获/冒泡间 microtask checkpoint)', () => {
+  it('拖过目录行后在空白处松手 → 落点 = DropOverlay 显示的该目录,而非 root', async () => {
+    const { container } = await mount();
+    act(() => {
+      fireEvent.dragEnter(row(container, '/work/dir')!, { dataTransfer: filesDT() });
+    });
+    expect(overlay(container)).not.toBeNull();
+
+    const blank = container.querySelector('.overflow-auto') as HTMLElement;
+    const checkpoint = () => flushSync(() => {});
+    blank.addEventListener('drop', checkpoint);
+    const ev = new Event('drop', { bubbles: true, cancelable: true });
+    Object.defineProperty(ev, 'dataTransfer', { value: filesDT() });
+    const g = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean };
+    const prevAct = g.IS_REACT_ACT_ENVIRONMENT;
+    g.IS_REACT_ACT_ENVIRONMENT = false; // 脱离 act 批处理,让 flushSync 真正在两阶段之间 flush
+    try {
+      blank.dispatchEvent(ev);
+    } finally {
+      g.IS_REACT_ACT_ENVIRONMENT = prevAct;
+      blank.removeEventListener('drop', checkpoint);
+    }
+    await flush();
+    expect(h.dropInto).toHaveBeenCalledTimes(1);
+    expect(h.dropInto.mock.calls[0]![1]).toBe('/work/dir');
     expect(overlay(container)).toBeNull();
   });
 });

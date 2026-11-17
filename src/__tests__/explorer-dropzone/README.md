@@ -48,6 +48,8 @@
 ### `folder-tree-row-drop-overlay.spec.tsx`(jsdom + 真实 headless-tree)
 - OS 文件 drop 到具体行(库行 onDrop 会 stopPropagation,浏览器 drop 后不派发 dragleave)→ DropOverlay 消失
 - drop 到行后再次拖入 → overlay 出现;拖离 → 消失(拖拽计数已归零)
+- 拖过目录行后在空白处松手 → 落点为 DropOverlay 显示的该目录(非 root);捕获阶段复位 hoverTarget 前先存落点,
+  冒泡阶段读存值 —— 真实浏览器两阶段监听之间有 microtask checkpoint,测试用 at-target flushSync 模拟
 
 ## 不在本主题验证
 
