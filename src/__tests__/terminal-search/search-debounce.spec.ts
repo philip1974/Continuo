@@ -2,7 +2,6 @@
 // S12 输入搜索词时 SearchAddon.findNext(同步扫描整段 scrollback)防抖:输入框状态立即更新,
 // 停顿 TERMINAL_SEARCH_DEBOUNCE_MS 后只按最终词搜一次;Enter/上下跳转/选项切换/失焦立即 flush,
 // 关闭/清空/卸载则取消挂起的搜索。
-// 可用,改回合法正则后照常搜索。
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { cleanup, render, act } from '@testing-library/react';
 import { createElement } from 'react';
@@ -91,11 +90,6 @@ vi.mock('@/lib/co-api', () => ({
 }));
 vi.mock('@/plugins/settings/values-store', () => ({
   useSettingValue: <T,>(_k: string, fb: T) => fb,
-}));
-vi.mock('@/stores/layout-ui.store', () => ({
-  useLayoutUiStore: (
-    s: (state: { sidebarOpen: boolean; sidebarWidth: number }) => unknown,
-  ) => s({ sidebarOpen: true, sidebarWidth: 280 }),
 }));
 vi.mock('@/theme', () => ({ useTheme: () => ({ resolved: 'dark' }) }));
 

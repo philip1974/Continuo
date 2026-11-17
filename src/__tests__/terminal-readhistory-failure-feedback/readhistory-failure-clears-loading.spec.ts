@@ -67,10 +67,6 @@ vi.mock('@/notifications/notify', () => ({ notify: { error: hoisted.notifyError 
 vi.mock('@/plugins/settings/values-store', () => ({
   useSettingValue: <T,>(_k: string, fb: T) => fb,
 }));
-vi.mock('@/stores/layout-ui.store', () => ({
-  useLayoutUiStore: (s: (st: { sidebarOpen: boolean; sidebarWidth: number }) => unknown) =>
-    s({ sidebarOpen: true, sidebarWidth: 280 }),
-}));
 vi.mock('@/theme', () => ({ useTheme: () => ({ resolved: 'dark' }) }));
 
 import { useTerminal } from '../../panels/Terminal/useTerminal';

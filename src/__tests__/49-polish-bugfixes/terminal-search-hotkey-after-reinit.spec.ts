@@ -70,11 +70,6 @@ vi.mock('@/lib/co-api', () => ({
 vi.mock('@/plugins/settings/values-store', () => ({
   useSettingValue: <T,>(_k: string, fb: T) => fb,
 }));
-vi.mock('@/stores/layout-ui.store', () => ({
-  useLayoutUiStore: (
-    s: (state: { sidebarOpen: boolean; sidebarWidth: number }) => unknown,
-  ) => s({ sidebarOpen: true, sidebarWidth: 280 }),
-}));
 vi.mock('@/theme', () => ({ useTheme: () => ({ resolved: 'dark' }) }));
 
 import { useTerminal } from '../../panels/Terminal/useTerminal';

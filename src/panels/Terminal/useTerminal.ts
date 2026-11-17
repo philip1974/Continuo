@@ -258,6 +258,9 @@ function queueCoversSnapshot(
   return next >= endOffset;
 }
 
+/** 侧栏拖宽停下后补一次 fit 的等待时间(RO 漏报兜底,见 sidebarWidth 订阅)。 */
+export const SIDEBAR_WIDTH_FIT_SETTLE_MS = 100;
+
 /** 搜索词输入 → SearchAddon.findNext 的防抖间隔(见 pendingSearchTimerRef)。 */
 export const TERMINAL_SEARCH_DEBOUNCE_MS = 100;
 
@@ -711,13 +714,33 @@ export function useTerminal(termId: string) {
   // 事件驱动 fit 兜底:订阅 layoutUi 的 sidebarOpen/Width,变化下一帧强制 fit。
   // RAF 让 React 完成 layout 提交后再量;与 RO 重叠不会有副作用(fit 幂等)。
   const sidebarOpen = useLayoutUiStore((s) => s.sidebarOpen);
-  const sidebarWidth = useLayoutUiStore((s) => s.sidebarWidth);
   useEffect(() => {
     const debouncer = resizeDebouncerRef.current;
     if (!debouncer) return;
     const raf = requestAnimationFrame(() => debouncer.request());
     return () => cancelAnimationFrame(raf);
-  }, [sidebarOpen, sidebarWidth, termId]);
+  }, [sidebarOpen, termId]);
+
+  // 性能:侧栏拖宽每个 mousemove 都写 sidebarWidth。拖动期间的连续 fit 由容器 ResizeObserver
+  // 负责;这里只是 RO 漏报的兜底,不走 React 订阅(否则每像素让所有终端重渲染),改为 imperative
+  // subscribe + 尾随防抖:拖动停下后必定补一次 fit。
+  useEffect(() => {
+    let prevWidth = useLayoutUiStore.getState().sidebarWidth;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const unsubscribe = useLayoutUiStore.subscribe((state) => {
+      if (state.sidebarWidth === prevWidth) return;
+      prevWidth = state.sidebarWidth;
+      if (timer !== null) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        resizeDebouncerRef.current?.request();
+      }, SIDEBAR_WIDTH_FIT_SETTLE_MS);
+    });
+    return () => {
+      unsubscribe();
+      if (timer !== null) clearTimeout(timer);
+    };
+  }, [termId]);
 
   // 激活 / 切回可见:立即 fit。
   const fit = useCallback(() => {
