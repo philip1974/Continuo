@@ -711,6 +711,10 @@
 
 - [`env-compat.spec.ts`](./m4-continuo-adopt-host/env-compat.spec.ts)
 
+## [main-bundle-mcp-sdk-treeshake](./main-bundle-mcp-sdk-treeshake/README.md)
+
+- [`main-bundle-mcp-sdk-treeshake.spec.ts`](./main-bundle-mcp-sdk-treeshake/main-bundle-mcp-sdk-treeshake.spec.ts)
+
 ## [map-with-concurrency (E234/E251)](./map-with-concurrency/README.md)
 
 - [`map-with-concurrency.spec.ts`](./map-with-concurrency/map-with-concurrency.spec.ts)
@@ -1334,6 +1338,7 @@
 
 ## [多窗口启动恢复(`pickWindowsToRestore`)](./window-restore/README.md)
 
+- [`startup-restore-cancel-wiring.spec.ts`](./window-restore/startup-restore-cancel-wiring.spec.ts)
 - [`window-restore.spec.ts`](./window-restore/window-restore.spec.ts)
 
 ## [window-workspace-roots-map](./window-workspace-roots-map/README.md)

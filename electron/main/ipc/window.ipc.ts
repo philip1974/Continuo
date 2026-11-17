@@ -64,9 +64,10 @@ async function createWindowHandler(
     if (!path.isAbsolute(input.workspace)) {
       throw codedError(ERROR_CODES.WORKSPACE_NOT_ABSOLUTE, `workspace must be absolute path: ${input.workspace}`);
     }
+    // 性能:异步 stat —— 网络盘 / 休眠外置盘 / 失联挂载点上同步 stat 可卡数秒,冻结所有窗口的 IPC 与 PTY 输出。
     let stat;
     try {
-      stat = fs.statSync(input.workspace);
+      stat = await fs.promises.stat(input.workspace);
     } catch {
       throw codedError(ERROR_CODES.WORKSPACE_NOT_FOUND, `workspace not found: ${input.workspace}`);
     }

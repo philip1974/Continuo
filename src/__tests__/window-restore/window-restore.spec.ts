@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   pickWindowsToRestore,
+  restoreStartupWindows,
   MAX_RESTORE_WINDOWS,
   MAX_RESTORE_CHECKS,
   RESTORE_CHECK_CONCURRENCY,
@@ -300,5 +301,67 @@ describe('pickWindowsToRestore', () => {
       ]);
       expect(d.fn).not.toHaveBeenCalledWith('/dup-later');
     });
+  });
+});
+
+describe('restoreStartupWindows · 启动恢复可取消(退出 / 全部关窗后不再开恢复窗)', () => {
+  const data = snap([
+    win({ windowSeq: 0, workspace: { root: '/p0' } }),
+    win({ windowSeq: 1, workspace: { root: '/p1' } }),
+    win({ windowSeq: 2, workspace: { root: '/p2' } }),
+  ]);
+
+  it('未取消 → 按顺序逐段创建恢复窗', async () => {
+    const create = vi.fn();
+    await restoreStartupWindows(async () => data, allDirs, create, () => false);
+    expect(create.mock.calls).toEqual([
+      [{ windowSeq: 1, workspace: '/p1' }],
+      [{ windowSeq: 2, workspace: '/p2' }],
+    ]);
+  });
+
+  it('慢 stat 在途时退出 / 全部关窗(取消)→ stat 完成后不再创建任何恢复窗', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    let cancelled = false;
+    const create = vi.fn();
+    const p = restoreStartupWindows(
+      async () => data,
+      async () => { await gate; return true; },
+      create,
+      () => cancelled,
+    );
+    await Promise.resolve();
+    cancelled = true; // before-quit / will-quit / window-all-closed 在慢 stat 期间触发
+    release();
+    await p;
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('读 explorer.json 在途时取消 → 不判定目录、不建窗', async () => {
+    let cancelled = false;
+    const isDir = vi.fn(allDirs);
+    const create = vi.fn();
+    await restoreStartupWindows(
+      async () => { cancelled = true; return data; },
+      isDir,
+      create,
+      () => cancelled,
+    );
+    expect(isDir).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('建窗途中取消(首个恢复窗创建触发取消)→ 后续恢复窗不再创建', async () => {
+    let cancelled = false;
+    const create = vi.fn(() => { cancelled = true; });
+    await restoreStartupWindows(async () => data, allDirs, create, () => cancelled);
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it('无持久化数据 → 不建窗', async () => {
+    const create = vi.fn();
+    await restoreStartupWindows(async () => null, allDirs, create, () => false);
+    expect(create).not.toHaveBeenCalled();
   });
 });
