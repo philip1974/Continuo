@@ -13,7 +13,7 @@ UI 入口,已删除)。
 
 | 文件 | 职责 |
 |---|---|
-| `src/stores/terminal.store.ts` | sessions(镜像)+ replaceSnapshot + ingress 过滤 / 索引等纯函数 |
+| `src/stores/terminal.store.ts` | sessions(镜像)+ hydrated(首个快照已到)+ replaceSnapshot / markHydrated + ingress 过滤 / 索引等纯函数 |
 
 ## TerminalSession 模型
 

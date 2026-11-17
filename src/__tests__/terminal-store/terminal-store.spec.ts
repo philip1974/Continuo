@@ -165,7 +165,13 @@ describe('replaceSnapshot', () => {
 
 // 「哪个终端处于活动状态」由 dockview 的活动 panel 决定;store 不再记 activeId,也没有改名(customTitles)。
 describe('store 只镜像 sessions', () => {
-  it('状态里只有 sessions 与 replaceSnapshot', () => {
-    expect(Object.keys(useTerminalStore.getState()).sort()).toEqual(['replaceSnapshot', 'sessions']);
+  // hydrated / markHydrated:首个权威快照是否已到(Splash 就绪屏障,见 splash-terminal-ready-barrier)。
+  it('状态里只有 sessions / hydrated 与 replaceSnapshot / markHydrated', () => {
+    expect(Object.keys(useTerminalStore.getState()).sort()).toEqual([
+      'hydrated',
+      'markHydrated',
+      'replaceSnapshot',
+      'sessions',
+    ]);
   });
 });

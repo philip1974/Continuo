@@ -124,4 +124,29 @@ describe('DockReconciler first-appearance 记录按权威快照剪除', () => {
     act(() => mocks.emit([session('t0', 100)]));
     expect(api.panels['terminal-t0']?.api.setActive).toHaveBeenCalledTimes(1);
   });
+
+  // 本轮快照有项被 ingress 校验丢弃(shape-invalid / missing-owner / 超限等)时,过滤结果缺失 ≠ 真删除:
+  // 不剪记录,否则该 session 下次以有效形态重现时被当首次出现而 setActive 抢焦。
+  it('快照中有项被校验丢弃 → 本轮不剪;恢复有效后不重新聚焦', () => {
+    const api = mount();
+    act(() => mocks.emit([session('t1', 10)]));
+    expect(api.panels['terminal-t1']?.api.setActive).toHaveBeenCalledTimes(1);
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    act(() => mocks.emit([{ ...session('t1', 10), cwd: 42 }]));
+    act(() => mocks.emit([{ ...session('t1', 10), ownerWindowId: undefined }]));
+    warn.mockRestore();
+    expect(__reconcilerSeenSessionCountForTest()).toBe(1);
+
+    act(() => mocks.emit([session('t1', 10)]));
+    expect(api.panels['terminal-t1']).toBeDefined();
+    expect(api.panels['terminal-t1']?.api.setActive).not.toHaveBeenCalled();
+  });
+
+  it('仅含他窗口 session(wrong-owner)的丢弃不阻止剪除', () => {
+    mount();
+    act(() => mocks.emit([session('t1', 10)]));
+    act(() => mocks.emit([{ ...session('other', 11), ownerWindowId: 2 }]));
+    expect(__reconcilerSeenSessionCountForTest()).toBe(0);
+  });
 });

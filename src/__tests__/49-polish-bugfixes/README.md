@@ -1194,3 +1194,9 @@ helper + 必挂 browser-window-created),把「单一来源」固化进测试防�
   `resetTerminalShutdownForTest()` 供测试复位。
 - renderer 用户路径(Cmd+T / Dock「新建终端」)对 `{ok:false, TERMINAL_CREATE_CANCELLED}` 静默(窗口已隐藏),
   见 `create-user-terminal`。
+
+### execShell 达输出上限后丢弃式 drain — `shell-exec-cap-drain.spec.ts`
+- 根因(性能):某流写满 `maxOutputBytes` 后 data listener 仍逐 chunk 进 JS 回调(立即 return),`yes` / 失控日志
+  在截断后让 main 热路径空转到超时。
+- 修复:该流写满即摘掉 JS data 处理,保持 flowing 丢弃(不反压子进程);恰好写满时挂一次性 listener,再来数据才置
+  `truncated`(与旧实现一致)。结果内容、截断标志、exit/close 语义不变。

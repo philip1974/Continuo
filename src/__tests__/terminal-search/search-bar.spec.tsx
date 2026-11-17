@@ -210,4 +210,27 @@ describe('TerminalSearchBar UI', () => {
       .calls[0]![0] as string;
     expect(passed.length).toBe(MAX_SEARCH_QUERY_LEN);
   });
+
+  // 真实鼠标点关闭:mousedown 默认动作把焦点移到按钮 → 输入框 blur(clearActiveDecoration 会 flush 挂起的
+  // 防抖搜索,同步扫整段 scrollback)→ 之后才 click 关闭。关闭按钮须在 mousedown 阻止焦点转移,让关闭路径
+  // 直接取消挂起搜索,而不是先被 blur 白跑一次。
+  it('鼠标点关闭按钮不经输入框 blur(不 flush 挂起搜索),直接关闭', () => {
+    const api = makeApi({ term: 'err' });
+    const onClose = vi.fn();
+    const { getByPlaceholderText, getByLabelText } = render(
+      <TerminalSearchBar searchApi={api} onClose={onClose} />,
+    );
+    const input = getByPlaceholderText('panels.terminal.search.placeholder');
+    expect(document.activeElement).toBe(input);
+    const closeBtn = getByLabelText('panels.terminal.search.close');
+
+    // 按浏览器默认动作模拟:mousedown 未被 preventDefault → 焦点移到按钮(input blur)
+    const notPrevented = fireEvent.mouseDown(closeBtn);
+    if (notPrevented) closeBtn.focus();
+    fireEvent.mouseUp(closeBtn);
+    fireEvent.click(closeBtn);
+
+    expect(api.clearActiveDecoration).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
 });

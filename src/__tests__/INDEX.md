@@ -141,6 +141,7 @@
 - [`settings-cross-window-sync.spec.ts`](./49-polish-bugfixes/settings-cross-window-sync.spec.ts)
 - [`settings-search-lazy-subscribe.spec.tsx`](./49-polish-bugfixes/settings-search-lazy-subscribe.spec.tsx)
 - [`settings-search-localized.spec.tsx`](./49-polish-bugfixes/settings-search-localized.spec.tsx)
+- [`shell-exec-cap-drain.spec.ts`](./49-polish-bugfixes/shell-exec-cap-drain.spec.ts)
 - [`shell-exec-cjk-bytes.spec.ts`](./49-polish-bugfixes/shell-exec-cjk-bytes.spec.ts)
 - [`shell-exec-timeout-clamp.spec.ts`](./49-polish-bugfixes/shell-exec-timeout-clamp.spec.ts)
 - [`shell-process-tree-kill.spec.ts`](./49-polish-bugfixes/shell-process-tree-kill.spec.ts)
@@ -1118,6 +1119,11 @@
 ## [spec-object-guard(E273,E271 registry 族)](./spec-object-guard/README.md)
 
 - [`spec-object-guard.spec.ts`](./spec-object-guard/spec-object-guard.spec.ts)
+
+## [splash-terminal-ready-barrier](./splash-terminal-ready-barrier/README.md)
+
+- [`ready-barrier.spec.tsx`](./splash-terminal-ready-barrier/ready-barrier.spec.tsx)
+- [`sync-hydrated.spec.ts`](./splash-terminal-ready-barrier/sync-hydrated.spec.ts)
 
 ## [Spotlight(装饰用聚光灯 SVG)](./spotlight/README.md)
 
