@@ -213,6 +213,7 @@ export function registerPluginFsHandlers(
   deps: PluginFsDeps,
 ): void {
   const { identityRegistry, pathScopeRegistry, correlator } = deps;
+  const maybeSweepStaleTrash = createTrashSweepThrottle();
 
   ipcMain.handle(
     PLUGIN_FS_CHANNELS.REGISTER_PLUGIN,
@@ -590,7 +591,7 @@ export function registerPluginFsHandlers(
           target: final,
         });
       }
-      await sweepStaleTrashInDir(rFinal.parentCanonical);
+      await maybeSweepStaleTrash(rFinal.parentCanonical); // perf:按目录节流,见 createTrashSweepThrottle
       await atomicReplacePaths(rStaging.fullPath, rFinal.fullPath, final, opts);
     },
   );
@@ -816,6 +817,34 @@ async function atomicReplacePaths(
   } catch {
     // best effort cleanup only
   }
+}
+
+// perf:ATOMIC_REPLACE 此前每次替换前无条件 sweep(整目录 readdir + 逐个 stat .trash-*)—— 插件以原子替换做
+// 自动保存、目标目录条目很多时,每次保存都 O(N)。sweep 只回收 >TRASH_TTL_MS(24h)的泄漏 trash(rename
+// 回滚失败 / 崩溃残留),不是替换的正确性前置:trash 名含时间戳+随机后缀,不依赖目录先被清空防撞名。
+// 改为按 canonical parent 节流:同一目录 TRASH_SWEEP_INTERVAL_MS 内只扫一次(相对 24h TTL,仅延后回收)。
+// 跟踪表按插入序淘汰,容量上限防随访问过的目录数单调增长。
+const TRASH_SWEEP_INTERVAL_MS = 60_000;
+const TRASH_SWEEP_TRACK_MAX = 256;
+
+export function createTrashSweepThrottle(
+  now: () => number = Date.now,
+  maxTracked: number = TRASH_SWEEP_TRACK_MAX,
+): (dir: string) => Promise<void> {
+  const lastSweepAt = new Map<string, number>();
+  return async (dir) => {
+    const t = now();
+    const last = lastSweepAt.get(dir);
+    // t < last(时钟回拨)→ 视为到期,不被卡死。
+    if (last !== undefined && t >= last && t - last < TRASH_SWEEP_INTERVAL_MS) return;
+    lastSweepAt.delete(dir); // 重新插入到末尾(最近使用)
+    if (lastSweepAt.size >= maxTracked) {
+      const oldest = lastSweepAt.keys().next().value;
+      if (oldest !== undefined) lastSweepAt.delete(oldest);
+    }
+    lastSweepAt.set(dir, t); // 先记再扫:并发替换不重复扫
+    await sweepStaleTrashInDir(dir);
+  };
 }
 
 /** Sweep .trash-* older than TRASH_TTL_MS in given dir. Best-effort. */
