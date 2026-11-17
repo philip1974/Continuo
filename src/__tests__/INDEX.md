@@ -986,6 +986,7 @@
 
 ## [plugins-watcher(mtime 自动 watch)](./plugins-watcher/README.md)
 
+- [`list-dirs-baseline.spec.ts`](./plugins-watcher/list-dirs-baseline.spec.ts)
 - [`plugins-watcher.spec.ts`](./plugins-watcher/plugins-watcher.spec.ts)
 
 ## [popout 契约 (M5)](./popout-contracts/README.md) `[contract]`

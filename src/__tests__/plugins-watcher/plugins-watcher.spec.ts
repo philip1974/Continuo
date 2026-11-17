@@ -490,4 +490,55 @@ describe('createPluginsWatcher', () => {
     // tick 内 cancelled 检查应阻止 fire
     expect(fn).not.toHaveBeenCalled();
   });
+
+  // 冷启动性能:生产 start 不再立即首扫(与启动 IO 争 libuv 线程池);基线由 ensureBaseline 按需建立
+  //(LIST_DIRS 列举前),保证「列举之后的修改」一定被下一轮 tick 发现。
+  describe('延后首扫 + ensureBaseline', () => {
+    it('start(interval, { immediate:false }) 不立即扫描;此后首个 tick 仍只填表', async () => {
+      makeDir('a', { id: 'a', name: 'A', version: '0.1.0' });
+      const fn = vi.fn();
+      const readdir = vi.spyOn(fsp, 'readdir');
+      const opendir = vi.spyOn(fsp, 'opendir');
+      const w = createPluginsWatcher(tmp, fn);
+      const handle = w.start(100000, { immediate: false });
+      await new Promise((r) => setTimeout(r, 20));
+      expect(readdir.mock.calls.length + opendir.mock.calls.length).toBe(0);
+      touch('a', 'main.js', Date.now() + 5000);
+      await w.tick(); // 首扫 = 基线,不 fire
+      expect(fn).not.toHaveBeenCalled();
+      handle.dispose();
+    });
+
+    it('基线未建立时 ensureBaseline 先建立基线;之后修改插件 → 下一轮 tick fire', async () => {
+      makeDir('a', { id: 'a', name: 'A', version: '0.1.0' });
+      const fn = vi.fn();
+      const w = createPluginsWatcher(tmp, fn);
+      await w.ensureBaseline();
+      touch('a', 'main.js', Date.now() + 5000);
+      await w.tick();
+      expect(fn).toHaveBeenCalledWith('a');
+    });
+
+    it('基线已建立 → ensureBaseline 不再扫描', async () => {
+      makeDir('a', { id: 'a', name: 'A', version: '0.1.0' });
+      const w = createPluginsWatcher(tmp, vi.fn());
+      await w.tick();
+      const stat = vi.spyOn(fsp, 'stat');
+      await w.ensureBaseline();
+      expect(stat).not.toHaveBeenCalled();
+    });
+
+    it('首扫进行中调用 ensureBaseline → 等该次扫描完成(不立即返回)', async () => {
+      makeDir('a', { id: 'a', name: 'A', version: '0.1.0' });
+      const fn = vi.fn();
+      const w = createPluginsWatcher(tmp, fn);
+      const first = w.tick(); // 在途首扫
+      await w.ensureBaseline();
+      // ensureBaseline 返回时基线已建立:此后修改必 fire
+      touch('a', 'main.js', Date.now() + 5000);
+      await first;
+      await w.tick();
+      expect(fn).toHaveBeenCalledWith('a');
+    });
+  });
 });
