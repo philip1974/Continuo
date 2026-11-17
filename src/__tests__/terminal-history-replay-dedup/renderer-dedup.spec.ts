@@ -62,6 +62,7 @@ vi.mock('@/plugins/settings/values-store', () => ({
 vi.mock('@/theme', () => ({ useTheme: () => ({ resolved: 'dark' }) }));
 
 import { useTerminal } from '../../panels/Terminal/useTerminal';
+import { OUTPUT_COALESCE_WINDOW_MS } from '../../panels/Terminal/output-coalescer';
 
 function Host({ termId }: { termId: string }) {
   const { containerRef, isReady } = useTerminal(termId);
@@ -69,6 +70,14 @@ function Host({ termId }: { termId: string }) {
 }
 
 const live = (data: string, offset?: number) => hoisted.onDataHandler!(data, offset);
+// 渲染端有写入合并(src/__tests__/terminal-write/write-coalesce):空闲首块立即写,紧随其后的块
+// 在一个窗口内合并写出 → 断言写入的**内容与顺序**(拼接结果),等窗口结束后再比。
+const written = async () => {
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, OUTPUT_COALESCE_WINDOW_MS * 3));
+  });
+  return hoisted.writes.join('');
+};
 const resolveHistory = async (v: unknown) => {
   await act(async () => {
     hoisted.historyDeferred!.resolve(v);
@@ -108,7 +117,7 @@ describe('terminal history replay · 渲染端衔接不重复', () => {
     });
     expect(hoisted.writes).toEqual([]); // 回复前先暂存
     await resolveHistory({ ok: true, data: { data: 'abcdef', truncated: false, endOffset: 6 } });
-    expect(hoisted.writes).toEqual(['abcdef', 'g']);
+    expect(await written()).toBe('abcdefg');
   });
 
   it('回复之后才迟到的旧推送(偏移 < endOffset)丢弃,新推送照写', async () => {
@@ -118,7 +127,7 @@ describe('terminal history replay · 渲染端衔接不重复', () => {
       live('def', 3);
       live('gh', 6);
     });
-    expect(hoisted.writes).toEqual(['abcdef', 'gh']);
+    expect(await written()).toBe('abcdefgh');
   });
 
   it('空历史:暂存的推送照写并清 loading', async () => {
@@ -141,7 +150,7 @@ describe('terminal history replay · 渲染端衔接不重复', () => {
       ok: true,
       data: { data: '\x1b[0mBBCC', truncated: true, endOffset: 10, startOffset: 6 },
     });
-    expect(hoisted.writes).toEqual(['AAAA', 'BBBB', 'CC']);
+    expect(await written()).toBe('AAAABBBBCC');
   });
 
   it('暂存队列有缺口(overflow 截断批次)→ 不当连续超集,退回写快照', async () => {
