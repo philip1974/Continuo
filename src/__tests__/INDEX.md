@@ -1310,6 +1310,10 @@
 
 - [`terminal-window-isolation.spec.ts`](./terminal-window-isolation/terminal-window-isolation.spec.ts)
 
+## [terminal-windows-pty](./terminal-windows-pty/README.md)
+
+- [`windows-pty.spec.ts`](./terminal-windows-pty/windows-pty.spec.ts)
+
 ## [terminal-workspace-isolation](./terminal-workspace-isolation/README.md)
 
 - [`workspaceRoot-roundtrip.spec.ts`](./terminal-workspace-isolation/workspaceRoot-roundtrip.spec.ts)

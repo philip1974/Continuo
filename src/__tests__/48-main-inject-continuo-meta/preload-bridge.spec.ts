@@ -65,6 +65,7 @@ describe('topic 48 preload metadata bridge', () => {
       'exe.cjs',
       '--continuo-packaged=true',
       '--continuo-hostname=my-mac.local',
+      '--continuo-windows-build=19045',
     ];
     try {
       await import('../../../electron/preload/index');
@@ -79,8 +80,13 @@ describe('topic 48 preload metadata bridge', () => {
     expect(Object.isFrozen(exposeInMainWorld.mock.calls[1]?.[1])).toBe(true);
     // 本机 hostname 经 coApi.system.hostname 同步暴露(OSC7 acceptedHosts 用)
     const bootstrap = exposeInMainWorld.mock.calls[0]?.[1] as {
-      claimRendererApi: () => { system: { hostname: string | null } } | null;
+      claimRendererApi: () => {
+        system: { hostname: string | null; windowsBuild: number | null };
+      } | null;
     };
-    expect(bootstrap.claimRendererApi()?.system.hostname).toBe('my-mac.local');
+    const system = bootstrap.claimRendererApi()?.system;
+    expect(system?.hostname).toBe('my-mac.local');
+    // Windows build 号(main 仅 win32 注入)经 coApi.system.windowsBuild 暴露(终端 xterm windowsPty 用)
+    expect(system?.windowsBuild).toBe(19045);
   });
 });
