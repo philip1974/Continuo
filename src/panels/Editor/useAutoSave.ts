@@ -65,8 +65,16 @@ export function useAutoSave(
     const created: AutoSaveScheduler = makeAutoSaveScheduler(
       // 记录本 scheduler 最近一次 autosave 是否失败(resolve {ok:false} 或 reject),关窗计数据此不再豁免
       // 失败态的活动 tab(见 autosave-failures.ts)。按 scheduler 实例记录:换实例后旧实例的迟到结果被丢弃。
-      () =>
-        saveTab(tabId).then(
+      () => {
+        // 执行时读 store:排队后 tab 已被显式保存(Cmd+S / 关窗「保存」)而不再脏 → 无需再读盘比较 + 原子写,
+        // 也不会因其间的外部修改对干净 tab 误报「自动保存失败」。覆盖计时器到点、切 tab flush、关窗 flush 三条路径。
+        // tab 已关闭(找不到)仍交给 saveTab 按原语义返回 TAB_NOT_FOUND。
+        const tab = findEditorFileTabById(useEditorStore.getState().tabs, tabId);
+        if (tab && !tab.dirty) {
+          setAutoSaveFailed(created, false);
+          return Promise.resolve({ ok: true });
+        }
+        return saveTab(tabId).then(
           (r) => {
             setAutoSaveFailed(created, (r as { ok?: unknown } | null | undefined)?.ok === false);
             return r;
@@ -75,7 +83,8 @@ export function useAutoSave(
             setAutoSaveFailed(created, true);
             throw err;
           },
-        ),
+        );
+      },
       delayMs,
       // 自动保存失败时弹一次 warn toast(去重在 scheduler 内,连续失败不刷屏)。
       // 数据不丢(dirty 保持),仅补反馈 —— 否则后台静默失败用户无从知晓为何脏点不消。
@@ -108,7 +117,12 @@ export function useAutoSave(
       scheduler.cancel();
       return;
     }
-    if (active.id === null || !active.filePath || !active.dirty) return;
+    if (active.id === null || !active.filePath) return;
+    // 已不脏(Cmd+S 保存成功 / 撤销回原样)→ 取消防抖窗口里已排的保存,到点不再空写一遍。
+    if (!active.dirty) {
+      scheduler.cancel();
+      return;
+    }
     scheduler.schedule();
     // 有 pending:关窗 flush 会落盘,清除失败态(失败后继续编辑 / 显式保存后再编辑)。
     setAutoSaveFailed(scheduler, false);

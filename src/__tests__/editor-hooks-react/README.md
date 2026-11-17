@@ -16,6 +16,7 @@
 - enabled=false → 不调
 - 没 active tab / filePath null / dirty=false → 不调
 - 满足条件 → delayMs 后调 saveFile;再次满足条件 → 防抖合并
+- 已排队后 tab 变干净(Cmd+S / 关窗「保存」成功)→ 取消计时器;计时器到点 / 切 tab flush / 关窗 flush 执行时再读 store,tab 已不脏则不写盘(直接视为成功);保存后继续输入(仍脏)照常 autosave
 
 ### isAutoSaveEnabled
 
