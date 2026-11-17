@@ -23,14 +23,29 @@ const EMPTY_DOCK_ICON = (
 
 export function EmptyState({ onRestore }: { onRestore: () => void }) {
   const t = useT();
-  // visibilityState === 'hidden' 时不挂载 SVG,节电(R3 缓解)。
+  // 不可见或窗口失焦时不挂载 SVG,节电(R3 缓解)。
+  // 主进程 backgroundThrottling:false(issue #34)使 Electron 在最小化 / 遮挡 / 隐藏时
+  // 仍报 visibilityState='visible'(Electron 文档「Page visibility」),只靠它挡不住
+  // 后台每帧补间 ~200 个 SVG 属性;故再加窗口焦点闸门。焦点信号在 macOS Dock 还原时
+  // 可能迟到(要点击才 focus),误判只让装饰暂停/晚恢复,无功能影响。
   const [visible, setVisible] = useState(
     () => typeof document === 'undefined' || document.visibilityState !== 'hidden',
   );
+  const [focused, setFocused] = useState(
+    () => typeof document === 'undefined' || document.hasFocus(),
+  );
   useEffect(() => {
     const onChange = () => setVisible(document.visibilityState !== 'hidden');
+    const onFocus = () => setFocused(true);
+    const onBlur = () => setFocused(false);
     document.addEventListener('visibilitychange', onChange);
-    return () => document.removeEventListener('visibilitychange', onChange);
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      document.removeEventListener('visibilitychange', onChange);
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('blur', onBlur);
+    };
   }, []);
 
   return (
@@ -38,7 +53,7 @@ export function EmptyState({ onRestore }: { onRestore: () => void }) {
       data-testid="empty-state"
       className="absolute inset-0 z-10 flex h-full w-full overflow-hidden bg-canvas"
     >
-      {visible && <BackgroundBeams />}
+      {visible && focused && <BackgroundBeams />}
       <div className="relative z-10 m-auto flex flex-col items-center gap-4">
         {/* Icon 容器(参考 stitch_desktop_design_reviewer):圆形面板 + 边框,
          *  让"无面板"状态自成一个视觉单元而非孤立文案。 */}
