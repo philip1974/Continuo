@@ -5,7 +5,7 @@
 //   - 移除 "use client";
 //   - 用 useMemo 锁随机数,避免每次 render 都重新摇 transition,降低重绘。
 import { memo, useMemo } from 'react';
-import { motion } from 'motion/react';
+import { m } from 'motion/react';
 import clsx from 'clsx';
 
 const PATHS = [
@@ -124,7 +124,7 @@ export const BackgroundBeams = memo(function BackgroundBeams({ className }: { cl
           aria-hidden="true"
       >
         {BEAM_PATHS.map(({ key, d, stroke }) => (
-          <motion.path
+          <m.path
             key={key}
             d={d}
             stroke={stroke}
@@ -136,7 +136,7 @@ export const BackgroundBeams = memo(function BackgroundBeams({ className }: { cl
           {BEAM_PATHS.map((beam, index) => {
             const t = transitions[index]!;
             return (
-              <motion.linearGradient
+              <m.linearGradient
                 id={beam.gradientId}
                 key={beam.gradientKey}
                 initial={{ x1: '0%', x2: '0%', y1: '0%', y2: '0%' }}
@@ -157,7 +157,7 @@ export const BackgroundBeams = memo(function BackgroundBeams({ className }: { cl
                 <stop stopColor="#18CCFC" />
                 <stop offset="32.5%" stopColor="#6344F5" />
                 <stop offset="100%" stopColor="#AE48FF" stopOpacity="0" />
-              </motion.linearGradient>
+              </m.linearGradient>
             );
           })}
         </defs>

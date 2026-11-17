@@ -6,7 +6,7 @@
 
 | 文件 | 职责 |
 |---|---|
-| `src/shell/decor/BackgroundBeams.tsx` | 50 条 motion.path 动画(aceternity ui) |
+| `src/shell/decor/BackgroundBeams.tsx` | 50 条 m.path 动画(aceternity ui) |
 | `src/shell/decor/Splash.tsx` | 启动 splash:Spotlight + Continuo 文字 |
 | `src/shell/PopoutHost.tsx` | dockview popout 子窗根容器 |
 

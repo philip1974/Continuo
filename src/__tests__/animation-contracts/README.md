@@ -18,6 +18,12 @@
 - 系统 `prefers-reduced-motion: reduce` → 所有动画立即跳到终态。
 - 通过 `<MotionConfig reducedMotion="user">` 全局生效。
 
+## 特性集懒加载(lazy-motion.spec.tsx)
+
+- 组件一律用轻量 `m.*`;App 根 `<LazyMotion features={…} strict>` 异步加载 `domMax`(`src/shell/motion-features.ts`,单独成 chunk)。layoutId 需要 layout 特性,故用 domMax 而非 domAnimation。
+- 首屏 main-app 不再静态包含完整特性集;特性加载完成前 `m.*` 按 initial 渲染,动画晚一帧开始。
+- `strict`:任何残留 `motion.*` 渲染即报错;源码钉禁止 `motion` 具名导入 / `<motion.` / framer-motion。
+
 ## 不在本主题验证
 
 - 实际帧率、视觉滑动平滑度(浏览器/devtools 手工)。

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { motion } from 'motion/react';
+import { m } from 'motion/react';
 import {
   PANEL_MOUNT_ANIMATE,
   PANEL_MOUNT_EXIT,
@@ -15,13 +15,13 @@ import { useClosingStore } from '@/stores/closing.store';
 export function PanelMount({ panelId, children }: { panelId: string; children: ReactNode }) {
   const isClosing = useClosingStore((s) => s.ids.has(panelId));
   return (
-    <motion.div
+    <m.div
       initial={PANEL_MOUNT_INITIAL}
       animate={isClosing ? PANEL_MOUNT_EXIT : PANEL_MOUNT_ANIMATE}
       transition={PANEL_MOUNT_TRANSITION}
       className="h-full w-full"
     >
       {children}
-    </motion.div>
+    </m.div>
   );
 }

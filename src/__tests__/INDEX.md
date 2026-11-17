@@ -278,6 +278,7 @@
 ## [动画落点契约 (M3)](./animation-contracts/README.md) `[contract]`
 
 - [`contracts.spec.ts`](./animation-contracts/contracts.spec.ts)
+- [`lazy-motion.spec.tsx`](./animation-contracts/lazy-motion.spec.tsx)
 
 ## [assert-json-value-sparse (E183)](./assert-json-value-sparse/README.md)
 

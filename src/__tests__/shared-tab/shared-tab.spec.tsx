@@ -144,7 +144,7 @@ describe('SharedTab — active 同步', () => {
     act(() => {
       api.__triggerActiveChange(true);
     });
-    // 现在 motion.span 指示条已挂载
+    // 现在 m.span 指示条已挂载
     expect(container.querySelector('.bg-accent')).not.toBeNull();
   });
 });
