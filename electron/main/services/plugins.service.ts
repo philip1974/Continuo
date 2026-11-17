@@ -1527,6 +1527,10 @@ export function createPluginsWatcher(
       const mainPath = resolvePluginMainPath(dir, cached.info.mainName);
       if (!mainPath) return null;
       const fileStat = await fs.stat(mainPath);
+      // 与列举 isPluginMainAvailable 同口径(普通文件且 ≤ MAIN_MAX_BYTES),否则重复 id 时 watcher 会把列举
+      // 跳过的无效目录选为权威目录,盯错目录。只用 stat 结果判定,不为每插件每轮 open;「可打开(读权限)」
+      // 无法从 stat 廉价等价判断,取舍:不校验(插件目录归用户所有,main 有 stat 无读权限极罕见)。
+      if (!fileStat.isFile() || fileStat.size > MAIN_MAX_BYTES) return null;
       return {
         name,
         pluginId: cached.info.pluginId,

@@ -33,6 +33,8 @@
 
 - 多个目录声明同一 manifest.id 时,每个 id 只看**唯一权威目录**:目录名 == id 优先,否则目录名字典序最小
   (与 `PluginManager.preferPluginDir` / `readPluginDirByManifestId` 同规则);非权威目录的 main 变化不 fire
+- 候选口径与列举 `isPluginMainAvailable` 一致:main 须为普通文件且 ≤8MiB(仅凭 stat 判定,不逐轮 open;
+  读权限不校验),否则不参与权威目录选择 —— 首选目录 main 无效时以合法后备目录为权威,其 main 变化 fire
 - 各目录都未变化 → 多轮扫描都不 fire(此前 mtime 表以 id 为键,两目录轮流写入 → 每轮都广播)
 - 权威目录切换(出现目录名 == id 的目录 / 原权威目录消失)→ fire 一次,之后稳定
 - 记录所属目录改声明别的 id → 旧 id 的记录清理;目录暂时消失 / manifest 缺失 / main 暂不可 stat 时保留记录,
