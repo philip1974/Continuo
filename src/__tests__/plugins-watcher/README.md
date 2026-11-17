@@ -25,3 +25,12 @@
 - manifest 的 (ino, size, mtime, ctime) 未变 → 不再读取 / JSON.parse,复用上次解析结果
 - 原地改写(即使 mtime 被还原,ctime 必变)、原子替换(rename → 新 ino)、删除(stat 失败跳过)、新增 → 都会重新解析
 - per-dir stat 有界并发(≤8);mtime 比较与 onChange 仍按目录枚举顺序串行
+
+## 重复 manifest.id(防热重载风暴)
+
+- 多个目录声明同一 manifest.id 时,每个 id 只看**唯一权威目录**:目录名 == id 优先,否则目录名字典序最小
+  (与 `PluginManager.preferPluginDir` / `readPluginDirByManifestId` 同规则);非权威目录的 main 变化不 fire
+- 各目录都未变化 → 多轮扫描都不 fire(此前 mtime 表以 id 为键,两目录轮流写入 → 每轮都广播)
+- 权威目录切换(出现目录名 == id 的目录 / 原权威目录消失)→ fire 一次,之后稳定
+- 记录所属目录改声明别的 id → 旧 id 的记录清理;目录暂时消失 / manifest 缺失 / main 暂不可 stat 时保留记录,
+  重建后 main 已变仍 fire

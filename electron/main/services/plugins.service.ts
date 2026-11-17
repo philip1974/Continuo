@@ -1321,6 +1321,16 @@ export interface PluginsWatcher {
 }
 
 /**
+ * 多个目录声明同一 manifest.id 时 candidate 目录是否取代 current:目录名 == id 优先,否则目录名字典序
+ * 最小。与 renderer PluginManager.preferPluginDir、readPluginDirByManifestId 同规则(三处须一致)。
+ */
+function preferPluginDirName(candidate: string, current: string, id: string): boolean {
+  const candidateExact = candidate === id;
+  if (candidateExact !== (current === id)) return candidateExact;
+  return candidate < current;
+}
+
+/**
  * 跨平台 plugin 文件改动监听:不用 fs.watch(macOS 不支持 recursive 默认,
  * Linux/Windows 行为不一致),改为 stat mtime 轮询。
  * tick() exposed for unit test;生产 start(2000) 每 2 秒扫一次。
@@ -1329,7 +1339,10 @@ export function createPluginsWatcher(
   baseDir: string,
   onChange: (id: string) => void,
 ): PluginsWatcher {
-  const mtimes = new Map<string, number>();
+  // pluginId → 该 id 唯一权威目录(目录名)及其 main mtime。重复 manifest.id 时只记权威目录
+  //(preferPluginDirName,与 PluginManager.preferPluginDir / readPluginDirByManifestId 同规则):此前以 id
+  // 为键而不区分目录,多个目录轮流写同一键 → 每轮都判定变化并广播,形成永久热重载风暴。
+  const mtimes = new Map<string, { dir: string; mtime: number }>();
   let firstRun = true;
   let cancelled = false;
   // race(R5):tick 异步扫描(readdir+stat+readFile)慢于 interval 时,setInterval 会并发触发多个
@@ -1349,10 +1362,10 @@ export function createPluginsWatcher(
     { sig: string; info: { mainName: string; pluginId: string } | null }
   >();
 
-  /** 单目录探测:返回 { pluginId, mtime }(main 文件 mtime),不可监控 → null。可并发执行。 */
+  /** 单目录探测:返回 { name, pluginId, mtime }(main 文件 mtime),不可监控 → null。可并发执行。 */
   const probeEntry = async (
     name: string,
-  ): Promise<{ pluginId: string; mtime: number } | null> => {
+  ): Promise<{ name: string; pluginId: string; mtime: number } | null> => {
     if (name.startsWith('.') || name.startsWith('_')) return null;
     const dir = path.join(baseDir, name);
 
@@ -1412,7 +1425,7 @@ export function createPluginsWatcher(
       const mainPath = resolvePluginMainPath(dir, cached.info.mainName);
       if (!mainPath) return null;
       const fileStat = await fs.stat(mainPath);
-      return { pluginId: cached.info.pluginId, mtime: fileStat.mtimeMs };
+      return { name, pluginId: cached.info.pluginId, mtime: fileStat.mtimeMs };
     } catch {
       return null;
     }
@@ -1430,17 +1443,33 @@ export function createPluginsWatcher(
         if (!live.has(name)) manifestCache.delete(name);
       }
     }
+    // 每个 id 选出唯一权威目录(Map 插入序 = 各 id 首次出现的枚举序,onChange 顺序与旧版一致)。
+    const chosen = new Map<string, { name: string; mtime: number }>();
     for (const probe of probes) {
       if (probe === null) continue;
-      const { pluginId, mtime } = probe;
+      const current = chosen.get(probe.pluginId);
+      if (current === undefined || preferPluginDirName(probe.name, current.name, probe.pluginId)) {
+        chosen.set(probe.pluginId, probe);
+      }
+    }
+    // 清理陈旧键:记录所属目录现在(manifest 可解析)声明的是别的 id → 该记录不再代表任何目录。
+    // 目录暂时消失 / manifest 缺失或损坏 / main 暂不可 stat 时保留记录:重建后 main 已变仍要触发热重载
+    //(rm -rf 后重新部署、编辑器 unlink+write 保存),与旧版同口径。
+    for (const [pluginId, prev] of mtimes) {
+      if (chosen.has(pluginId)) continue;
+      const info = manifestCache.get(prev.dir)?.info;
+      if (info && info.pluginId !== pluginId) mtimes.delete(pluginId);
+    }
+    for (const [pluginId, { name, mtime }] of chosen) {
       const prev = mtimes.get(pluginId);
       // race(R67):先记录新 mtime,再 onChange。此前顺序相反,而整段在 try{}catch{continue} 内 —
       // 若 onChange(广播 send)抛错,会被 per-entry catch 吞掉 continue → mtimes.set 不执行 →
       // mtimes 不推进 → 同一变更每个 tick 反复触发/反复失败(广播一直打不出去)。改为变更检测
       // 一旦确认即记录 mtime,通知(onChange)成败不影响 mtime 推进:坏窗口由 onChange 内部
       // per-window try/catch 兜底(R67-A),不再回灌脏状态。
-      mtimes.set(pluginId, mtime);
-      if (!firstRun && prev !== undefined && prev !== mtime) {
+      mtimes.set(pluginId, { dir: name, mtime });
+      // 权威目录切换(新增同名目录 / 原权威目录消失)也算变化:readPluginDirByManifestId 此刻会选到另一目录。
+      if (!firstRun && prev !== undefined && (prev.dir !== name || prev.mtime !== mtime)) {
         try {
           onChange(pluginId);
         } catch {
