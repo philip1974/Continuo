@@ -5,7 +5,7 @@
 
 import { createElement } from 'react';
 import { Plugin } from '@/plugins/Plugin';
-import { CategoryTabContent } from '@/plugins/settings/CategoryTabContent';
+import { renderCategoryTab } from './lazy-category-tab';
 import { GeneralIcon } from '@/plugins/settings/tab-icons';
 
 export default class GeneralTabPlugin extends Plugin {
@@ -17,7 +17,7 @@ export default class GeneralTabPlugin extends Plugin {
       titleKey: 'settings.general.tab_title',
       priority: 1,
       icon: createElement(GeneralIcon),
-      render: () => createElement(CategoryTabContent, { category: 'general' }),
+      render: () => renderCategoryTab('general'),
     });
 
     // 主题 setting item:select 类型,选项 light / dark / system

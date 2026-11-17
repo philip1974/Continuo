@@ -4,7 +4,7 @@
 
 import { createElement } from 'react';
 import { Plugin } from '@/plugins/Plugin';
-import { CategoryTabContent } from '@/plugins/settings/CategoryTabContent';
+import { renderCategoryTab } from './lazy-category-tab';
 import { EditorIcon } from '@/plugins/settings/tab-icons';
 
 export default class EditorTabPlugin extends Plugin {
@@ -16,7 +16,7 @@ export default class EditorTabPlugin extends Plugin {
       titleKey: 'settings.editor.tab_title',
       priority: 10,
       icon: createElement(EditorIcon),
-      render: () => createElement(CategoryTabContent, { category: 'editor' }),
+      render: () => renderCategoryTab('editor'),
     });
 
     // ── Appearance ──
