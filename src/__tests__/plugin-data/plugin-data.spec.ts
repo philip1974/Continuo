@@ -76,20 +76,23 @@ describe('utf8 byte length (E125)', () => {
     }
   });
 
-  it('utf8BytesExceed 快速路径:s.length × 3 ≤ maxBytes 时不逐字符计数', () => {
+  it('utf8BytesExceed 快速路径:s.length × 3 ≤ maxBytes 时不计数', () => {
+    // 计数有两条实现:有 Buffer(main / 本测试 node 环境)走原生 Buffer.byteLength,否则 JS 逐字符 charCodeAt。
     const orig = String.prototype.charCodeAt;
     let calls = 0;
     String.prototype.charCodeAt = function (this: string, i: number) {
       calls++;
       return orig.call(this, i);
     };
+    const nativeSpy = vi.spyOn(Buffer, 'byteLength');
     try {
       expect(utf8BytesExceed('中'.repeat(1000), 3000)).toBe(false);
-      expect(calls).toBe(0);
+      expect(calls + nativeSpy.mock.calls.length).toBe(0);
       expect(utf8BytesExceed('中'.repeat(1000), 2999)).toBe(true);
-      expect(calls).toBeGreaterThan(0);
+      expect(calls + nativeSpy.mock.calls.length).toBeGreaterThan(0);
     } finally {
       String.prototype.charCodeAt = orig;
+      nativeSpy.mockRestore();
     }
   });
 });
