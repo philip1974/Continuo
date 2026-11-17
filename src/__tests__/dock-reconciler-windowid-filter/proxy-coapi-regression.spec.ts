@@ -18,6 +18,7 @@ import {
   _resetTerminalDropWarningsForTest,
 } from '../../shell/dock/TerminalSessionsSync';
 import { useTerminalStore } from '../../stores/terminal.store';
+import { useWorkspaceStore } from '../../stores/workspace.store';
 import { makeSession } from './fixtures';
 
 const mocks = vi.hoisted(() => {
@@ -55,6 +56,8 @@ vi.mock('@/lib/co-api', () => {
 });
 
 beforeEach(() => {
+  // TerminalSessionsSync 首轮可见过滤等 workspace 持久化恢复完成(复审 r3 term#1)。
+  useWorkspaceStore.setState({ hydrated: true });
   _resetTerminalDropWarningsForTest();
   mocks.windowId = 2;
   mocks.listSessions.mockReset();

@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
-// TerminalSessionsSync 置位 useTerminalStore.hydrated(Splash 就绪屏障的终端一侧):首个有效快照(含空快照)
-// 应用即置位;初始拉取失败也置位(不让 Splash 白等安全上限);畸形广播不置位。
+// TerminalSessionsSync 置位 useTerminalStore.hydrated(Splash 就绪屏障的终端一侧):workspace 已恢复后,
+// 首个有效快照(含空快照)应用即置位;初始拉取失败只置 settled(放行 Splash,不让它白等安全上限,但不
+// 冒充首个快照);畸形广播都不置位。完成顺序见 sync-ordering.spec.tsx。
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, waitFor } from '@testing-library/react';
 import { TerminalSessionsSync } from '../../shell/dock/TerminalSessionsSync';
 import { useTerminalStore, type TerminalSession } from '../../stores/terminal.store';
+import { useWorkspaceStore } from '../../stores/workspace.store';
 
 const mocks = vi.hoisted(() => {
   let onChanged: ((sessions: unknown) => void) | null = null;
@@ -44,7 +46,8 @@ function session(id: string): TerminalSession {
 
 beforeEach(() => {
   mocks.listSessions.mockReset();
-  useTerminalStore.setState({ sessions: [], hydrated: false });
+  useTerminalStore.setState({ sessions: [], hydrated: false, settled: false });
+  useWorkspaceStore.setState({ root: null, hydrated: true });
 });
 afterEach(() => cleanup());
 
@@ -65,16 +68,18 @@ describe('TerminalSessionsSync → hydrated', () => {
     expect(seen.some(([n, h]) => n > 0 && !h)).toBe(false);
   });
 
-  it('listSessions reject → 仍置 hydrated', async () => {
+  it('listSessions reject → 只置 settled,不置 hydrated', async () => {
     mocks.listSessions.mockRejectedValue(new Error('ipc down'));
     render(React.createElement(TerminalSessionsSync));
-    await waitFor(() => expect(useTerminalStore.getState().hydrated).toBe(true));
+    await waitFor(() => expect(useTerminalStore.getState().settled).toBe(true));
+    expect(useTerminalStore.getState().hydrated).toBe(false);
   });
 
-  it('listSessions {ok:false} → 仍置 hydrated', async () => {
+  it('listSessions {ok:false} → 只置 settled,不置 hydrated', async () => {
     mocks.listSessions.mockResolvedValue({ ok: false, code: 'EIO' });
     render(React.createElement(TerminalSessionsSync));
-    await waitFor(() => expect(useTerminalStore.getState().hydrated).toBe(true));
+    await waitFor(() => expect(useTerminalStore.getState().settled).toBe(true));
+    expect(useTerminalStore.getState().hydrated).toBe(false);
   });
 
   it('畸形广播不置 hydrated(初始拉取仍在途)', () => {
@@ -82,5 +87,6 @@ describe('TerminalSessionsSync → hydrated', () => {
     render(React.createElement(TerminalSessionsSync));
     mocks.emit(null);
     expect(useTerminalStore.getState().hydrated).toBe(false);
+    expect(useTerminalStore.getState().settled).toBe(false);
   });
 });

@@ -7,6 +7,7 @@ import {
   useTerminalStore,
   type TerminalSession,
 } from '../../stores/terminal.store';
+import { useWorkspaceStore } from '../../stores/workspace.store';
 
 const mocks = vi.hoisted(() => {
   let onChanged: ((sessions: TerminalSession[]) => void) | null = null;
@@ -47,6 +48,8 @@ function session(id: string, over: Partial<TerminalSession> = {}): TerminalSessi
 }
 
 beforeEach(() => {
+  // TerminalSessionsSync 首轮可见过滤等 workspace 持久化恢复完成(复审 r3 term#1)。
+  useWorkspaceStore.setState({ hydrated: true });
   mocks.listSessions.mockReset();
   mocks.listSessions.mockResolvedValue({ ok: true, data: { sessions: [] } });
   mocks.unsubscribe.mockReset();

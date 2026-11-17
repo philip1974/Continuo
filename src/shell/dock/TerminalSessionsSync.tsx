@@ -55,7 +55,8 @@ export function TerminalSessionsSync(): null {
     let sawPush = false;
     // 最近一次 owner-过滤后的 raw 快照。workspace root 变化时据此重新过滤,使切换 workspace
     // 后旧项目 terminal 隐藏、切回旧根又重现(PTY 在 main 仍活,这里只是视图过滤)。(R12)
-    let rawOwned: readonly TerminalSession[] = [];
+    // null = 尚无权威快照(listSessions 在途 / 失败且无广播):此时不得把「无快照」当空快照置 hydrated。
+    let rawOwned: readonly TerminalSession[] | null = null;
 
     // 按 owner 过滤 IPC 快照。ambiguousDrop:本轮有项因 wrong-owner 以外的原因被丢弃(shape-invalid /
     // missing-owner / not-object / over-capacity)—— 被丢的可能正是本窗口仍存活的 session,过滤结果里缺失
@@ -85,9 +86,13 @@ export function TerminalSessionsSync(): null {
     };
 
     const applyWorkspaceFilter = (): void => {
-      const root = useWorkspaceStore.getState().root;
+      if (rawOwned === null) return;
+      const workspace = useWorkspaceStore.getState();
+      // workspace 尚未完成持久化恢复时 root 仍是初始 null:此时过滤会把存量 workspace 终端滤掉、恢复后
+      // 再当普通新增(兜底聚焦抢焦)。首轮可见过滤等 workspace hydrated(由下方订阅触发)。
+      if (!workspace.hydrated) return;
       const store = useTerminalStore.getState();
-      store.replaceSnapshot(filterByWorkspaceRoot(rawOwned, root));
+      store.replaceSnapshot(filterByWorkspaceRoot(rawOwned, workspace.root));
       // 空快照时 replaceSnapshot 不产生变化 → 显式标记已收到首个权威快照(非空时已原子置位,此处 no-op)。
       store.markHydrated();
     };
@@ -99,7 +104,8 @@ export function TerminalSessionsSync(): null {
         if (!r.ok || !Array.isArray(r.data?.sessions)) {
           // a11y(A130,A129 同族):初始会话恢复失败此前静默早返(列表缺失无反馈)→ notify。
           notify.error(translate('errors.terminal.sessions_restore_failed'));
-          useTerminalStore.getState().markHydrated(); // 初始拉取已失败,不再让 Splash 等它
+          // 初始拉取已失败:只放行 Splash 屏障;之后首个有效广播仍按 hydrate 处理(不置 hydrated)。
+          useTerminalStore.getState().markSettled();
           return;
         }
         setRawOwned(filterOwned(r.data.sessions));
@@ -109,7 +115,7 @@ export function TerminalSessionsSync(): null {
         // a11y(A130):IPC reject 此前是未处理 rejection + 静默失败 → notify(被推送取代则跳过)。
         if (cancelled || sawPush) return;
         notify.error(translate('errors.terminal.sessions_restore_failed'));
-        useTerminalStore.getState().markHydrated();
+        useTerminalStore.getState().markSettled();
       });
 
     const unsub = coApi.terminal.onSessionsChanged((snapshot) => {
@@ -130,9 +136,9 @@ export function TerminalSessionsSync(): null {
       applyWorkspaceFilter();
     });
 
-    // 当前 workspace 切换 → 用最新 raw 重新过滤(契约:visible = global || workspaceRoot===root)。
+    // 当前 workspace 切换 / 首次恢复完成 → 用最新 raw 重新过滤(契约:visible = global || workspaceRoot===root)。
     const unsubWorkspace = useWorkspaceStore.subscribe((s, prev) => {
-      if (s.root !== prev.root) applyWorkspaceFilter();
+      if (s.root !== prev.root || s.hydrated !== prev.hydrated) applyWorkspaceFilter();
     });
 
     return () => {

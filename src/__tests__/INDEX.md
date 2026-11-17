@@ -1124,6 +1124,7 @@
 
 - [`ready-barrier.spec.tsx`](./splash-terminal-ready-barrier/ready-barrier.spec.tsx)
 - [`sync-hydrated.spec.ts`](./splash-terminal-ready-barrier/sync-hydrated.spec.ts)
+- [`sync-ordering.spec.tsx`](./splash-terminal-ready-barrier/sync-ordering.spec.tsx)
 
 ## [Spotlight(装饰用聚光灯 SVG)](./spotlight/README.md)
 

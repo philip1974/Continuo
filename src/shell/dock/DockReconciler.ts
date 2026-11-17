@@ -231,8 +231,8 @@ export function reconcileTerminalPanels(
 /**
  * @param hydrateBefore 本 api 布局恢复开始时刻(见 ReconcileInput.hydrateBefore);缺省 = 首次 reconcile
  *   的存量 session 全部按 hydrate 处理。
- * @param onHydrated 本 api 已按终端首个权威快照(store.hydrated)完成 reconcile 时调用(每个 api 一次)。
- *   DockShell 据此解除 Splash 就绪屏障。
+ * @param onHydrated 本 api 已按终端首个权威快照(store.hydrated)完成 reconcile,或终端同步已结算
+ *   (store.settled,如初始拉取失败)时调用(每个 api 一次)。DockShell 据此解除 Splash 就绪屏障。
  */
 export function useDockReconciler(
   api: DockviewApi | null,
@@ -249,6 +249,8 @@ export function useDockReconciler(
   // 挂载时 store 尚未收到首个快照 → 首个快照到达那轮 reconcile 仍按 hydrate 处理:其中都是存量 session
   // (如 renderer reload 时 listSessions 晚于 layout.read 返回),不得 setActive 抢走恢复出的活动面板。
   const awaitingHydrateRef = useRef(false);
+  // 本 api 是否已通知 onHydrated(Splash 放行,每个 api 一次)。
+  const signalledRef = useRef(false);
 
   useEffect(() => {
     if (!api) return;
@@ -267,7 +269,8 @@ export function useDockReconciler(
     });
     previousSessionsRef.current = initial.sessions;
     awaitingHydrateRef.current = !initial.hydrated;
-    if (initial.hydrated) onHydratedRef.current?.();
+    signalledRef.current = initial.hydrated || initial.settled;
+    if (signalledRef.current) onHydratedRef.current?.();
     // hydrateBefore 与 api 由 DockShell 在同一次 setState 中设定,随 api 一起变化。
   }, [api, hydrateBefore]);
 
@@ -275,11 +278,14 @@ export function useDockReconciler(
     return useTerminalStore.subscribe((state) => {
       const prev = previousSessionsRef.current;
       const hydrateNow = awaitingHydrateRef.current && state.hydrated;
-      if (state.sessions === prev && !hydrateNow) return;
+      const dockApi = currentApiRef.current;
+      // settled(初始拉取失败)只放行 Splash,不消费 awaitingHydrate:之后首个有效快照仍按 hydrate 处理。
+      const signalNow =
+        dockApi !== null && !signalledRef.current && (state.hydrated || state.settled);
+      if (state.sessions === prev && !hydrateNow && !signalNow) return;
       if (hydrateNow) awaitingHydrateRef.current = false;
 
-      const dockApi = currentApiRef.current;
-      if (dockApi) {
+      if (dockApi && (state.sessions !== prev || hydrateNow)) {
         const before = hydrateBeforeRef.current;
         reconcileTerminalPanels(dockApi, {
           previousSessions: prev,
@@ -290,7 +296,10 @@ export function useDockReconciler(
         });
       }
       previousSessionsRef.current = state.sessions;
-      if (hydrateNow && dockApi) onHydratedRef.current?.();
+      if (signalNow) {
+        signalledRef.current = true;
+        onHydratedRef.current?.();
+      }
     });
     // 仅 mount 一次订阅,deps 内部用 ref 读最新值。
      

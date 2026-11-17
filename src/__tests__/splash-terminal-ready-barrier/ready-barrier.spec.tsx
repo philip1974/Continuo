@@ -138,7 +138,7 @@ beforeEach(() => {
   h.read.mockReset();
   h.onFlushRequest.mockClear();
   h.api = null;
-  useTerminalStore.setState({ sessions: [], hydrated: false });
+  useTerminalStore.setState({ sessions: [], hydrated: false, settled: false });
 });
 
 describe('Splash 就绪屏障:布局恢复 + 终端首个快照', () => {
@@ -200,6 +200,23 @@ describe('Splash 就绪屏障:布局恢复 + 终端首个快照', () => {
       useTerminalStore.getState().markHydrated();
     });
     await vi.waitFor(() => expect(onLayoutReady).toHaveBeenCalled());
+  });
+
+  it('终端同步已结算(初始拉取失败,settled)→ 解除屏障;之后首个快照的存量 user 终端仍不抢焦', async () => {
+    const onLayoutReady = vi.fn();
+    h.read.mockResolvedValue({ ok: true, data: layoutWithSettingsActive });
+    render(React.createElement(DockShell, { onLayoutReady }));
+    await vi.waitFor(() => expect(panelIds()).toContain('settings'));
+    act(() => useTerminalStore.getState().markSettled());
+    await vi.waitFor(() => expect(onLayoutReady).toHaveBeenCalled());
+
+    act(() => {
+      useTerminalStore
+        .getState()
+        .replaceSnapshot([makeSession('s1', { originHint: 'user', createdAt: 1 })]);
+    });
+    expect(panelIds()).toContain('terminal-s1');
+    expect(h.api!.activePanel?.id).toBe('settings');
   });
 
   it('终端快照先于布局恢复到达 → 布局恢复即报 ready', async () => {

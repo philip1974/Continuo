@@ -251,17 +251,26 @@ type TerminalState = {
    */
   hydrated: boolean;
   /**
+   * 终端同步已结算、不必再为它挡 Splash —— 初始拉取失败 / windowId 非法时置位。与 hydrated 拆开:
+   * 失败只放行屏障,之后首个有效快照仍按 hydrate 处理(存量 session 不抢焦)。Splash 放行条件 =
+   * hydrated || settled。
+   */
+  settled: boolean;
+  /**
    * 接收 main 推的 snapshot(整体替换;引用未变或都为空时不通知订阅者)。sessions 变化时与
    * hydrated=true 原子写入,订阅者不会看到「有 sessions 但未 hydrated」的中间态。
    */
   replaceSnapshot: (sessions: readonly TerminalSession[]) => void;
-  /** 标记 hydrated(空快照 / 初始拉取失败时 replaceSnapshot 不产生变化,由同步源显式调用)。 */
+  /** 标记 hydrated(空快照时 replaceSnapshot 不产生变化,由同步源显式调用)。 */
   markHydrated: () => void;
+  /** 标记 settled(初始拉取失败等:只放行 Splash,不改 hydrate 语义)。幂等。 */
+  markSettled: () => void;
 };
 
 export const useTerminalStore = create<TerminalState>((set) => ({
   sessions: [],
   hydrated: false,
+  settled: false,
 
   replaceSnapshot: (newSessions) =>
     set((s) => {
@@ -271,4 +280,5 @@ export const useTerminalStore = create<TerminalState>((set) => ({
     }),
 
   markHydrated: () => set((s) => (s.hydrated ? s : { hydrated: true })),
+  markSettled: () => set((s) => (s.settled ? s : { settled: true })),
 }));
