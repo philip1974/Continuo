@@ -489,3 +489,173 @@ describe('renderMermaidPreview while typing', () => {
     for (const v of views) v.destroy();
   });
 });
+
+// 切 tab / 切 Edit↔Preview / 外部改动重载都会重挂 Milkdown,每个代码块重新走一遍 renderPreview。
+// 源码与主题都没变时同步返回上次的图(不出加载占位、不进串行队列重渲)。
+describe('renderMermaidPreview cache', () => {
+  const CODE = 'graph TD\n  A-->B';
+  const svgId = (html: string): string => /id="([^"]+)"/.exec(html)![1]!;
+
+  async function renderOnce(mod: MermaidPreviewModule, code: string): Promise<string> {
+    const apply = vi.fn();
+    expect(mod.renderMermaidPreview('mermaid', code, apply)).toBeUndefined();
+    await vi.waitFor(() => expect(apply).toHaveBeenCalledTimes(1), { interval: 1 });
+    return apply.mock.calls[0]![0] as string;
+  }
+
+  it('returns the same diagram synchronously without re-rendering', async () => {
+    setTokens();
+    const mod = await loadModule();
+    const first = await renderOnce(mod, CODE);
+    const apply = vi.fn();
+
+    const hit = mod.renderMermaidPreview('mermaid', CODE, apply);
+
+    expect(typeof hit).toBe('string');
+    const html = hit as string;
+    expect(mermaidMock.render).toHaveBeenCalledTimes(1);
+    expect(html).toContain('<div class="continuo-mermaid"><svg');
+    // 两处同时显示同一张图时 id(样式选择器 / marker 引用的前缀)不重复,其余内容不变
+    expect(svgId(html)).not.toBe(svgId(first));
+    expect(html.replace(svgId(html), '')).toBe(first.replace(svgId(first), ''));
+    await flush();
+    expect(apply).not.toHaveBeenCalled();
+  });
+
+  it('rewrites every occurrence of the svg id prefix on a cache hit', async () => {
+    mermaidMock.render.mockImplementation(async (id: string) => ({
+      svg: `<svg id="${id}"><style>#${id} .node{fill:red}</style><marker id="${id}_end"></marker><path marker-end="url(#${id}_end)"></path></svg>`,
+    }));
+    setTokens();
+    const mod = await loadModule();
+    const firstId = svgId(await renderOnce(mod, CODE));
+
+    const hit = mod.renderMermaidPreview('mermaid', CODE, vi.fn()) as string;
+
+    expect(hit).not.toContain(firstId);
+    const newId = svgId(hit);
+    expect(hit).toContain(`#${newId} .node`);
+    expect(hit).toContain(`<marker id="${newId}_end">`);
+    expect(hit).toContain(`url(#${newId}_end)`);
+  });
+
+  it('misses after the theme changes', async () => {
+    setTokens();
+    const mod = await loadModule();
+    await renderOnce(mod, CODE);
+
+    document.documentElement.classList.remove('dark');
+    setTokens({ '--md-surface-container': '#f2ecf4' });
+    await renderOnce(mod, CODE);
+
+    expect(mermaidMock.render).toHaveBeenCalledTimes(2);
+    // 新主题的结果同样被缓存
+    expect(typeof mod.renderMermaidPreview('mermaid', CODE, vi.fn())).toBe('string');
+    expect(mermaidMock.render).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not cache render errors', async () => {
+    mermaidMock.render.mockRejectedValueOnce(new Error('boom'));
+    setTokens();
+    const mod = await loadModule();
+    await renderOnce(mod, CODE);
+
+    expect(await renderOnce(mod, CODE)).toContain('<svg');
+    expect(mermaidMock.render).toHaveBeenCalledTimes(2);
+  });
+
+  it('evicts the least recently used entry beyond the entry limit', async () => {
+    setTokens();
+    const mod = await loadModule();
+    const { maxEntries } = mod.MERMAID_PREVIEW_CACHE;
+    for (let i = 0; i < maxEntries; i += 1) await renderOnce(mod, `graph TD\n  N${i}`);
+    // N0 被用过一次 → 变成最新;再加一条时淘汰的是 N1
+    expect(typeof mod.renderMermaidPreview('mermaid', 'graph TD\n  N0', vi.fn())).toBe('string');
+    await renderOnce(mod, `graph TD\n  N${maxEntries}`);
+
+    expect(typeof mod.renderMermaidPreview('mermaid', 'graph TD\n  N0', vi.fn())).toBe('string');
+    expect(
+      typeof mod.renderMermaidPreview('mermaid', `graph TD\n  N${maxEntries}`, vi.fn()),
+    ).toBe('string');
+    expect(mod.renderMermaidPreview('mermaid', 'graph TD\n  N1', vi.fn())).toBeUndefined();
+  });
+
+  it('evicts by total size and never caches an oversized diagram', async () => {
+    setTokens();
+    const mod = await loadModule();
+    // 每张约 0.4 × maxBytes(UTF-16 按 2 字节/字符估);huge 约 1.2 × maxBytes
+    const big = 'x'.repeat(Math.floor(mod.MERMAID_PREVIEW_CACHE.maxBytes / 5));
+    mermaidMock.render.mockImplementation(async (id: string, code: string) => ({
+      svg: `<svg id="${id}"><text>${code}</text>${code === 'huge' ? big.repeat(3) : big}</svg>`,
+    }));
+    await renderOnce(mod, 'graph A');
+    await renderOnce(mod, 'graph B');
+    await renderOnce(mod, 'graph C');
+    await renderOnce(mod, 'huge');
+
+    expect(mod.renderMermaidPreview('mermaid', 'huge', vi.fn())).toBeUndefined();
+    expect(mod.renderMermaidPreview('mermaid', 'graph A', vi.fn())).toBeUndefined();
+    expect(typeof mod.renderMermaidPreview('mermaid', 'graph B', vi.fn())).toBe('string');
+    expect(typeof mod.renderMermaidPreview('mermaid', 'graph C', vi.fn())).toBe('string');
+  });
+});
+
+// 重挂载后旧编辑器排在全局队列里的渲染不该再跑(结果没人要,还挡在新文档前面)。
+describe('renderMermaidPreview after its editor unmounted', () => {
+  function holdFirstRender(): { release: () => void } {
+    const handle = { release: () => {} };
+    mermaidMock.render.mockImplementationOnce(
+      (id: string) =>
+        new Promise((resolve) => {
+          handle.release = () => resolve({ svg: `<svg id="${id}">first</svg>` });
+        }),
+    );
+    return handle;
+  }
+
+  it('skips queued renders of an editor that was unregistered before they ran', async () => {
+    const held = holdFirstRender();
+    const mod = await loadModule();
+    const unregister = mod.registerMermaidRoot(document.createElement('div'));
+    const apply = vi.fn();
+
+    mod.renderMermaidPreview('mermaid', 'graph TD\n  slow', apply);
+    await vi.waitFor(() => expect(mermaidMock.render).toHaveBeenCalledTimes(1));
+    mod.renderMermaidPreview('mermaid', 'graph TD\n  queued', apply);
+    unregister();
+    held.release();
+    await vi.waitFor(() => expect(apply).toHaveBeenCalledTimes(1));
+    await flush();
+
+    expect(mermaidMock.render).toHaveBeenCalledTimes(1);
+    expect(apply).toHaveBeenCalledTimes(1);
+  });
+
+  it('still renders when a still-registered editor shows that diagram', async () => {
+    const held = holdFirstRender();
+    const mod = await loadModule();
+    const same = 'graph TD\n  A-->B';
+    // kept 里两个内容相同的块 → 反查认不出是谁 → 请求立即入队
+    const kept = document.createElement('div');
+    const views = [0, 1].map(() => {
+      const block = document.createElement('div');
+      block.className = 'milkdown-code-block';
+      kept.appendChild(block);
+      return new EditorView({ doc: same, parent: block });
+    });
+    const unregisterGone = mod.registerMermaidRoot(document.createElement('div'));
+    const unregisterKept = mod.registerMermaidRoot(kept);
+    const apply = vi.fn();
+
+    mod.renderMermaidPreview('mermaid', 'graph TD\n  slow', vi.fn());
+    await vi.waitFor(() => expect(mermaidMock.render).toHaveBeenCalledTimes(1));
+    mod.renderMermaidPreview('mermaid', same, apply);
+    unregisterGone();
+    held.release();
+    await vi.waitFor(() => expect(apply).toHaveBeenCalledTimes(1));
+
+    expect(mermaidMock.render).toHaveBeenCalledTimes(2);
+    unregisterKept();
+    for (const v of views) v.destroy();
+  });
+});
