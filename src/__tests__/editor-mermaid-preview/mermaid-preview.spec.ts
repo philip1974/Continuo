@@ -427,6 +427,27 @@ describe('renderMermaidPreview while typing', () => {
     for (const v of views) v.destroy();
   });
 
+  // perf E6:每键反查代码块时,长度不等的块 O(1) 排除,不再对每个块 doc.toString() 复制全文。
+  it('perf E6 · 反查编辑中的块时不对长度不同的其它块复制全文', async () => {
+    const { renderMermaidPreview, registerMermaidRoot } = await loadModule();
+    const { root, views } = mountEditor(['graph TD\n  A-->B', 'graph LR\n  X-->Y\n  Y-->Z']);
+    const unregister = registerMermaidRoot(root);
+    const apply = vi.fn();
+    const otherToString = vi.spyOn(views[1]!.state.doc, 'toString');
+
+    for (const ch of ['1', '2']) {
+      renderMermaidPreview('mermaid', edit(views[0]!, ch), apply);
+    }
+    expect(otherToString).not.toHaveBeenCalled();
+
+    await vi.waitFor(() => expect(apply).toHaveBeenCalledTimes(1));
+    expect(mermaidMock.render).toHaveBeenCalledTimes(1);
+    expect(mermaidMock.render.mock.calls[0]![1]).toBe('graph TD\n  A-->B12');
+    otherToString.mockRestore();
+    unregister();
+    for (const v of views) v.destroy();
+  });
+
   it('renders immediately when the block cannot be identified (first mount, duplicate content)', async () => {
     const { renderMermaidPreview, registerMermaidRoot } = await loadModule();
     const same = 'graph TD\n  A-->B';
