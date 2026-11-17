@@ -810,6 +810,7 @@
 - [`editor-engine-lazy.spec.tsx`](./perf-audit/editor-engine-lazy.spec.tsx)
 - [`editor-header-memo.spec.tsx`](./perf-audit/editor-header-memo.spec.tsx)
 - [`editor-lazy-boundary.spec.ts`](./perf-audit/editor-lazy-boundary.spec.ts)
+- [`renderer-minify.spec.ts`](./perf-audit/renderer-minify.spec.ts)
 - [`terminal-data-demux.spec.ts`](./perf-audit/terminal-data-demux.spec.ts)
 - [`terminal-resize-gating.spec.ts`](./perf-audit/terminal-resize-gating.spec.ts)
 

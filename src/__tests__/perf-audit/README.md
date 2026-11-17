@@ -181,3 +181,9 @@
 **修复**:订阅回调比较前后状态 —— editor 侧仅 `viewRefs` / `chromeVersion`(tab 增删/改名/改路径都经 action bump),debug 侧仅 `activeSessionId` 或某 session 的 `breakpoints` / `stopped` 引用变化时同步。正文变化后的装饰由 StateField 在 `docChanged` 时按行号重建,不依赖 store 通知。
 
 **契约不变量**(`debug-decoration-sync-gating.spec.tsx`:按键 / 无关 debug 更新零扫描;停点移动、断点变更、新开 view、改路径、关闭 tab 仍同步;`51-debug-breakpoint-ui/sync.spec.tsx` 全部保持)。
+
+## renderer 产物压缩(renderer-minify.spec.ts)
+
+- `electron.vite.config.ts` 的 renderer build 显式 `minify: 'esbuild'`(electron-vite 2.x 默认不压缩)。
+- 首屏 main-app chunk 2,494,294 B → ~1,267,928 B;TerminalPanelView 654,356 B → ~496,848 B。
+- 仓库运行时代码不依赖函数 / 类名(`constructor.name` 等),压缩不改变行为;以全量 e2e 验证。

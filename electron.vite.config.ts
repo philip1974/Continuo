@@ -66,6 +66,9 @@ export default defineConfig({
     },
     build: {
       outDir: `${OUT_ROOT}/renderer`,
+      // electron-vite 2.x 对 renderer 默认 minify:false:首屏必载 main-app chunk 未压缩 ~2.49MB,
+      // 压缩后 ~1.27MB,每次冷启动都要完整读取 + 编译(BDD: perf-audit/renderer-minify)。
+      minify: 'esbuild',
       rollupOptions: { input: resolve(__dirname, 'index.html') },
     },
   },
