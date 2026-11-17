@@ -43,6 +43,7 @@
 - `performDrop` 部分写失败 → ok:false + failed 列出
 - `performDrop` file.arrayBuffer() 抛 → failed READ_ERROR
 - `performDrop` 不主动跳过同名(由 atomic write 静默覆盖)
+- `performDrop` 有界并发读写(在途写入/arrayBuffer ≤ 上界);同目标路径(大小写/NFC 折叠)按输入顺序串行,后项覆盖前项;written/failed 按输入顺序汇总
 
 ## 不在本主题验证
 
