@@ -447,6 +447,10 @@
 
 - [`editor-action.spec.ts`](./editor-action/editor-action.spec.ts)
 
+## [editor-crlf-line-endings](./editor-crlf-line-endings/README.md)
+
+- [`code-editor-crlf.spec.tsx`](./editor-crlf-line-endings/code-editor-crlf.spec.tsx)
+
 ## [editor-external-link-feedback](./editor-external-link-feedback/README.md)
 
 - [`external-link-feedback.spec.tsx`](./editor-external-link-feedback/external-link-feedback.spec.tsx)
@@ -1306,6 +1310,10 @@
 ## [terminal-window-isolation (Issue #28 Phase 1)](./terminal-window-isolation/README.md) `[integration]`
 
 - [`terminal-window-isolation.spec.ts`](./terminal-window-isolation/terminal-window-isolation.spec.ts)
+
+## [terminal-windows-pty](./terminal-windows-pty/README.md)
+
+- [`windows-pty.spec.ts`](./terminal-windows-pty/windows-pty.spec.ts)
 
 ## [terminal-workspace-isolation](./terminal-workspace-isolation/README.md)
 

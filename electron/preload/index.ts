@@ -82,6 +82,7 @@ import { pluginFsRaw } from './plugin-fs.preload';
 import { pluginShellStreamRaw } from './plugin-shell-stream.preload';
 import {
   parseContinuoHostnameFromArgv,
+  parseContinuoWindowsBuildFromArgv,
   parseContinuoPackagedFromArgv,
 } from './continuo-meta-parse';
 
@@ -194,6 +195,8 @@ const api = {
     windowId: ipcRenderer.sendSync(WINDOW_ID_CHANNEL) as number,
     /** 本机 hostname(main 经 additionalArguments 注入;OSC7 acceptedHosts 用)。 */
     hostname: parseContinuoHostnameFromArgv(process.argv),
+    /** Windows 系统 build 号(仅 win32 由 main 注入;其余平台 null)。终端 xterm windowsPty 用。 */
+    windowsBuild: parseContinuoWindowsBuildFromArgv(process.argv),
   },
   explorer: {
     // ExplorerPayload 形态由 src/lib/persist/explorer-persist 保证;preload 透传 unknown

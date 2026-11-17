@@ -16,6 +16,7 @@ import '@xterm/xterm/css/xterm.css';
 import { coApi } from '@/lib/co-api';
 import { notify } from '@/notifications/notify';
 import { localizeErrorByCode } from '@/lib/localize-error';
+import { isWindowsRuntime } from '@/lib/path-cross';
 import { useSettingValue } from '@/plugins/settings/values-store';
 import { useLayoutUiStore } from '@/stores/layout-ui.store';
 import {
@@ -304,6 +305,28 @@ const TERM_OPTIONS = {
   cursorStyle: 'block' as const,
 };
 
+/** node-pty 默认后端判定:Windows build ≥ 18309 用 ConPTY,更低回落 winpty(node-pty windowsPtyAgent)。 */
+const NODE_PTY_CONPTY_MIN_BUILD = 18309;
+
+/**
+ * Windows 上告诉 xterm PTY 后端与系统 build 号(同 VS Code)。xterm 6 未设 buildNumber 时 Windows 仍开
+ * reflow:ConPTY(build < 21376)自己会重绘,xterm 再对整段 scrollback 做 O(N) reflow 既白做又与之冲突;
+ * 设了之后 xterm 按 `backend === 'conpty' && buildNumber >= 21376` 决定是否 reflow。
+ * 非 Windows / 拿不到 build 号 → 不设(维持旧行为,不猜)。
+ */
+export function terminalWindowsPtyOptions(
+  isWindows: boolean,
+  build: number | null | undefined,
+): { windowsPty?: { backend: 'conpty' | 'winpty'; buildNumber: number } } {
+  if (!isWindows || typeof build !== 'number' || build <= 0) return {};
+  return {
+    windowsPty: {
+      backend: build >= NODE_PTY_CONPTY_MIN_BUILD ? 'conpty' : 'winpty',
+      buildNumber: build,
+    },
+  };
+}
+
 /**
  * 挂在 div container 上,创建 xterm 实例,监听数据流与 resize。
  * unmount 时彻底清理(订阅、observer、queue、term.dispose)。
@@ -393,6 +416,7 @@ export function useTerminal(termId: string) {
       const initOptions = initOptionsRef.current;
       const term = new Terminal({
       ...TERM_OPTIONS,
+      ...terminalWindowsPtyOptions(isWindowsRuntime(), coApi.system?.windowsBuild),
       // 用当前 settings + 主题值开局,避免初始一帧的旧值闪烁
       fontSize: initOptions.fontSize,
       cursorStyle: initOptions.cursorStyle,
