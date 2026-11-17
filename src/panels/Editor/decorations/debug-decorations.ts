@@ -6,6 +6,7 @@ import {
   type Extension,
 } from '@codemirror/state';
 import { Decoration, type DecorationSet, EditorView, GutterMarker, gutter } from '@codemirror/view';
+import { provideDebugDecorationsApplier } from './debug-decoration-sync';
 
 export type DebugDecorationsState = {
   breakpointLines?: readonly number[];
@@ -147,3 +148,6 @@ export function setDebugDecorations(view: EditorView, state: DebugDecorationsSta
     view.dispatch({ effects });
   }
 }
+
+// perf E5:向随 EditorPanel 静态加载的同步模块注册实现(同步模块不得静态 import 本模块)。
+provideDebugDecorationsApplier(setDebugDecorations);

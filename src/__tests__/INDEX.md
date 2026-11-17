@@ -825,6 +825,7 @@
 
 - [`code-editor-echo-skip.spec.tsx`](./perf-audit/code-editor-echo-skip.spec.tsx)
 - [`debug-decoration-sync-gating.spec.tsx`](./perf-audit/debug-decoration-sync-gating.spec.tsx)
+- [`debug-decoration-sync-lazy.spec.tsx`](./perf-audit/debug-decoration-sync-lazy.spec.tsx)
 - [`editor-engine-error-boundary.spec.tsx`](./perf-audit/editor-engine-error-boundary.spec.tsx)
 - [`editor-engine-lazy.spec.tsx`](./perf-audit/editor-engine-lazy.spec.tsx)
 - [`editor-engine-prewarm.spec.tsx`](./perf-audit/editor-engine-prewarm.spec.tsx)

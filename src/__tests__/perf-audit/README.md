@@ -188,6 +188,16 @@ Editor 面板 + 对应引擎(Markdown 且 `getEffectiveMode(null)` 非 source �
 
 **契约不变量**(`debug-decoration-sync-gating.spec.tsx`:按键 / 无关 debug 更新零扫描;停点移动、断点变更、新开 view、改路径、关闭 tab 仍同步;`51-debug-breakpoint-ui/sync.spec.tsx` 全部保持)。
 
+## E5 — debug 装饰同步不静态引入 CodeMirror
+
+**位置**:`src/panels/Editor/decorations/debug-decoration-sync.ts`、`debug-decorations.ts`。
+
+**问题**:EditorPanel 静态 import 同步模块,后者静态 import `./debug-decorations`(运行时依赖 `@codemirror/view` + `state`),EditorPanel chunk 因此静态依赖 ~245KB CodeMirror 公共 chunk,Welcome / 未开代码 tab 冷启动也要下载解析,违背 `editor-engine-loaders.ts`「不得静态 import CodeMirror」约束。
+
+**修复**:同步模块对装饰实现只做 type import;`debug-decorations` 模块求值时调用 `provideDebugDecorationsApplier(setDebugDecorations)` 注册。view 只由静态 import 了它的 CodeEditor 注册,有 view 时实现必已就绪,同步语义不变。兜底:有 view 而实现未就绪时 `import('./debug-decorations')`,加载完成且同步仍在运行时补做一次(失败不缓存)。
+
+**契约不变量**(`editor-lazy-boundary.spec.ts`:sync 模块与 EditorPanel 不静态 import `@codemirror/*` / debug-decorations;`debug-decoration-sync-lazy.spec.tsx`:实现未加载时动态加载后对已注册 view 补做同步;`51-debug-breakpoint-ui/sync.spec.tsx`、`debug-decoration-sync-gating.spec.tsx` 全部保持)。
+
 ## renderer 产物压缩(renderer-minify.spec.ts)
 
 - `electron.vite.config.ts` 的 renderer build 显式 `minify: 'esbuild'`(electron-vite 2.x 默认不压缩)。
