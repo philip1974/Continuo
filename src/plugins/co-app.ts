@@ -20,7 +20,10 @@ import { useWorkspaceStore } from '@/stores/workspace.store';
 import { createIpcPluginMcpUpstream } from './plugin-mcp-upstream';
 import { coApi } from '@/lib/co-api';
 import { openFileByPath } from '@/panels/Editor/editor-file-actions';
-import { findEditorFileTabByPath } from '@/panels/Editor/editor-tab-lookup';
+import {
+  findEditorFileTabById,
+  findEditorFileTabByPath,
+} from '@/panels/Editor/editor-tab-lookup';
 import { preloadCodeEditorEngine } from '@/panels/Editor/editor-engine-loaders';
 import type { EditorView } from '@codemirror/view';
 import {
@@ -158,6 +161,17 @@ const editor: CoEditorApi = {
       ]);
       const view = await waitForCurrentView(viewKey);
       if (!view) {
+        return { ok: true, lineApplied: false, reason: 'tab-not-mounted' };
+      }
+      // 并发(复审 r3 #2):切 tab / Source→Edit 时 store 同步变化,但旧 view 要到 useEffect
+      // cleanup 才 unregister —— 这一窗口内 Map 里仍是将被销毁的旧 view。跳行前紧挨着按 store
+      // 当前态复核:目标仍为活动 tab、仍处 CodeMirror 模式(与上方 inMilkdown 同口径)。
+      const now = useEditorStore.getState();
+      const nowTab = findEditorFileTabById(now.tabs, viewKey);
+      if (isMarkdownPath(path) && getEffectiveMode(nowTab) !== 'source') {
+        return { ok: true, lineApplied: false, reason: 'milkdown-engine' };
+      }
+      if (now.activeTabId !== viewKey || now.viewRefs.get(viewKey) !== view) {
         return { ok: true, lineApplied: false, reason: 'tab-not-mounted' };
       }
       outcome = scrollToLine(view, opts.line);

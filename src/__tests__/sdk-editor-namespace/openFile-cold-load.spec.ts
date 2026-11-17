@@ -12,10 +12,10 @@ import type { EditorView } from '@codemirror/view';
 
 const scrollToLine = vi.fn((..._args: unknown[]) => 'applied' as const);
 
-function tabFixture() {
+function tabFixture(path = '/work/a.ts') {
   return {
-    id: '/work/a.ts',
-    filePath: '/work/a.ts',
+    id: path,
+    filePath: path,
     content: 'one\ntwo',
     originalContent: 'one\ntwo',
     dirty: false,
@@ -25,6 +25,9 @@ function tabFixture() {
 async function loadSubject(opts: {
   preload?: () => Promise<void>;
   scrollModule?: () => Promise<{ scrollToLine: typeof scrollToLine }>;
+  tabs?: ReturnType<typeof tabFixture>[];
+  activeTabId?: string;
+  mode?: 'edit' | 'source';
 }) {
   vi.resetModules();
   vi.doMock('@/panels/Editor/editor-file-actions', () => ({
@@ -44,9 +47,9 @@ async function loadSubject(opts: {
   const { useEditorStore } = await import('@/stores/editor.store');
   const loaders = await import('@/panels/Editor/editor-engine-loaders');
   useEditorStore.setState({
-    tabs: [tabFixture()],
-    activeTabId: '/work/a.ts',
-    mode: 'edit',
+    tabs: opts.tabs ?? [tabFixture()],
+    activeTabId: opts.activeTabId ?? '/work/a.ts',
+    mode: opts.mode ?? 'edit',
     viewRefs: new Map(),
   });
   return { coApp, useEditorStore, loaders };
@@ -164,6 +167,73 @@ describe('app.editor.openFile 冷加载与并发', () => {
       ok: true,
       lineApplied: false,
       reason: 'tab-not-mounted',
+    });
+    expect(scrollToLine).not.toHaveBeenCalled();
+  });
+
+  // 复审 r3 #2:切 tab / Source→Edit 后 store 已同步变化,但旧 view 要到 useEffect cleanup 才
+  // unregister —— 这一窗口内 Map 仍是旧 view。只调 switchTab / setMode(不手工 unregister),
+  // 须按 store 当前态判定未应用,不得对即将销毁的旧 view 跳行并谎报 lineApplied:true。
+  function gatedScrollModule() {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    let markStarted!: () => void;
+    const started = new Promise<void>((r) => {
+      markStarted = r;
+    });
+    return {
+      release,
+      started,
+      scrollModule: async () => {
+        markStarted();
+        await gate;
+        return { scrollToLine };
+      },
+    };
+  }
+
+  it('C7 加载期间切到另一个 tab(旧 view 尚未 cleanup)→ tab-not-mounted,不跳旧 view', async () => {
+    const g = gatedScrollModule();
+    const { coApp, useEditorStore } = await loadSubject({
+      scrollModule: g.scrollModule,
+      tabs: [tabFixture(), tabFixture('/work/b.ts')],
+    });
+    useEditorStore.getState().registerView('/work/a.ts', fakeView('a'));
+
+    const pending = coApp.editor.openFile('/work/a.ts', { line: 2 });
+    await g.started;
+    useEditorStore.getState().switchTab('/work/b.ts');
+    g.release();
+
+    expect(await pending).toEqual({
+      ok: true,
+      lineApplied: false,
+      reason: 'tab-not-mounted',
+    });
+    expect(scrollToLine).not.toHaveBeenCalled();
+  });
+
+  it('C8 加载期间 Markdown Source→Edit(旧 CodeMirror view 尚未 cleanup)→ milkdown-engine,不跳旧 view', async () => {
+    const g = gatedScrollModule();
+    const { coApp, useEditorStore } = await loadSubject({
+      scrollModule: g.scrollModule,
+      tabs: [tabFixture('/work/a.md')],
+      activeTabId: '/work/a.md',
+      mode: 'source',
+    });
+    useEditorStore.getState().registerView('/work/a.md', fakeView('md-src'));
+
+    const pending = coApp.editor.openFile('/work/a.md', { line: 2 });
+    await g.started;
+    useEditorStore.getState().setMode('edit');
+    g.release();
+
+    expect(await pending).toEqual({
+      ok: true,
+      lineApplied: false,
+      reason: 'milkdown-engine',
     });
     expect(scrollToLine).not.toHaveBeenCalled();
   });
