@@ -16,3 +16,9 @@
 
 可执行规范:`ready-barrier.spec.tsx`(DockShell 屏障 + 迟到快照不抢焦)、`sync-hydrated.spec.ts`(同步源置位
 hydrated / settled)、`sync-ordering.spec.tsx`(listSessions 与 workspace 恢复两种完成顺序 + 失败后广播恢复)。
+
+## root 恢复即放行(不等编辑器 tab 读盘)
+
+- workspace store 的 `rootRestored` 在持久化层恢复 root 之后、编辑器 tab 并发读盘之前置位(`hydrated ⇒ rootRestored`)。
+- 终端首轮可见过滤只依赖 root:`rootRestored || hydrated` 即可进行,Splash 屏障不再被恢复 tab 的读盘时长拖住。
+- `hydrated` 仍在 tab 恢复完成后置位,TerminalPanel 新建 PTY 等既有消费方契约不变。

@@ -471,6 +471,10 @@ export async function initExplorerPersistence(
     console.warn('[explorer-persist] read failed', err);
   }
 
+  // root 已定(恢复 / 新窗 / 读失败保持默认):先放行只依赖 root 的消费方(终端首轮过滤 / Splash 屏障),
+  // 不让它们等下方编辑器 tab 并发读盘。
+  useWorkspaceStore.getState().markRootRestored();
+
   // 2. async hydrate editor tabs(只在自己段存在且非 fresh 时 restore)
   if (!fresh && hydratedSnap && extras?.fs && findWindowEntry(hydratedSnap, windowSeq)) {
     try {

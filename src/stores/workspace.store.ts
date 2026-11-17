@@ -52,11 +52,19 @@ type WorkspaceState = {
    * initExplorerPersistence 完成(成功 / 失败 / 没有持久化文件)都置 true。
    */
   hydrated: boolean;
+  /**
+   * root 是否已按持久化恢复(早于 hydrated:置于编辑器 tab 并发读盘之前)。
+   * 只依赖 root 的消费方(终端首轮可见过滤 / Splash 就绪屏障)等它即可,不必等全部 tab 读完。
+   * markHydrated 同时置位(hydrated ⇒ rootRestored)。
+   */
+  rootRestored: boolean;
   /** 切换 root;同时 LRU 维护 recentRoots. null 时只清 root,不动 recent.
    *  副作用:旧 root 外的 file tab 自动关闭(untitled 草稿保留). */
   setRoot: (path: string | null) => void;
   /** 持久化层调用,置 hydrated=true。幂等。 */
   markHydrated: () => void;
+  /** 持久化层调用,置 rootRestored=true。幂等。 */
+  markRootRestored: () => void;
 };
 
 /**
@@ -87,7 +95,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
   root: null,
   recentRoots: [],
   hydrated: false,
-  markHydrated: () => set((s) => (s.hydrated ? s : { hydrated: true })),
+  rootRestored: false,
+  markHydrated: () => set((s) => (s.hydrated ? s : { hydrated: true, rootRestored: true })),
+  markRootRestored: () => set((s) => (s.rootRestored ? s : { rootRestored: true })),
   setRoot: (path) => {
     const normalized = normalizeWorkspaceRoot(path);
     // 切换/关闭 root 时同步清掉 root 外的 file tab,避免旧路径残留误导

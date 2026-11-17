@@ -103,7 +103,7 @@ beforeEach(() => {
   __resetReconcilerForTest();
   mocks.listSessions.mockReset();
   useTerminalStore.setState({ sessions: [], hydrated: false, settled: false });
-  useWorkspaceStore.setState({ root: null, hydrated: false });
+  useWorkspaceStore.setState({ root: null, hydrated: false, rootRestored: false });
 });
 afterEach(() => cleanup());
 
@@ -151,5 +151,21 @@ describe('终端首个快照与 workspace 恢复的完成顺序', () => {
     expect(useTerminalStore.getState().hydrated).toBe(true);
     expect(api.panels['terminal-t1']).toBeDefined();
     expect(api.panels['terminal-t1']?.api.setActive).not.toHaveBeenCalled();
+  });
+
+  it('root 已恢复、编辑器 tab 仍在读盘(未 hydrated)→ 不等 tab 恢复即完成首轮过滤与 Splash 放行', async () => {
+    mocks.listSessions.mockResolvedValue({ ok: true, data: { sessions: [session('t1')] } });
+    const { api, onHydrated } = mount();
+    await act(async () => {});
+
+    act(() => {
+      useWorkspaceStore.getState().setRoot('/proj');
+      useWorkspaceStore.getState().markRootRestored();
+    });
+    expect(useWorkspaceStore.getState().hydrated).toBe(false);
+    expect(useTerminalStore.getState().hydrated).toBe(true);
+    expect(api.panels['terminal-t1']).toBeDefined();
+    expect(api.panels['terminal-t1']?.api.setActive).not.toHaveBeenCalled();
+    expect(onHydrated).toHaveBeenCalledTimes(1);
   });
 });
