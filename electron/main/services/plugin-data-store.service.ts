@@ -12,7 +12,7 @@ import { ERROR_CODES } from '../../shared/error-codes';
 import { MAX_PLUGIN_DATA_BYTES } from '../../shared/plugin-data-limits';
 import { assertJsonValue } from '../../shared/assert-json-value';
 import { utf8ByteLength, utf8BytesExceed } from '../../shared/utf8-byte-length';
-import { jsonByteLowerBoundExceeds } from '../../shared/json-byte-budget';
+import { jsonStringLengthLowerBoundExceeds } from '../../shared/json-byte-budget';
 import { isValidPluginId } from '../../shared/plugin-id';
 import { PLUGIN_DATA_CHANNELS } from '../../shared/plugin-data-channels';
 import { codedError } from '../../shared/error-message';
@@ -119,7 +119,9 @@ export function registerPluginDataStoreHandlers(
       // assertJsonValue 全量遍历 —— 超 16MiB 但 shape 合法的 payload 不被 assertJsonValue 完整遍历后才拒。
       // jsonByteLowerBoundExceeds 对任意输入安全(E288)可先跑。(仅「既非 JSON-safe 又超限」的病态输入
       // 错误码从 BAD_INPUT 变 PAYLOAD_TOO_LARGE —— 两者皆拒写,无现实差异。)
-      if (jsonByteLowerBoundExceeds(payload, MAX_PLUGIN_DATA_BYTES)) {
+      // perf:预检用 .length 下界(每串 O(1),不逐字符计 UTF-8):其后有 stringify + 精确 UTF-8 字节终裁,
+      // .length ≤ UTF-8 字节仍是合法下界,判定不变(多字节超限只是从预检挪到精确终裁拒)。
+      if (jsonStringLengthLowerBoundExceeds(payload, MAX_PLUGIN_DATA_BYTES)) {
         throw codedError(ERROR_CODES.PAYLOAD_TOO_LARGE, `plugin data too large (> ${MAX_PLUGIN_DATA_BYTES})`);
       }
       // 边界(E103,main 兜底):JSON.stringify 静默改写 NaN/Infinity→null、丢 undefined/function
