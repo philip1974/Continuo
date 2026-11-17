@@ -15,7 +15,7 @@ import { ContextMenu, type ContextMenuActions } from './ContextMenu';
 import { CreateInput } from './CreateInput';
 import { DropOverlay } from './DropOverlay';
 import { ExplorerHeader } from './ExplorerHeader';
-import { createTreeConfig } from './tree-config';
+import { buildTreeChildrenWithData, createTreeConfig, sameTreeChildren } from './tree-config';
 import { DEFAULT_INDENT, FILE_ROW_HEIGHT, FileRow, readFileRowState } from './FileRow';
 import { createNewDir, createNewFile, renameItem, trashItemsAndCleanup } from './mutate-actions';
 import { resolveDropTarget, type DropTargetEntry } from './drop-handlers';
@@ -293,16 +293,57 @@ export function FolderTree({ root }: { root: string }) {
   // 批量期 render 用库内部同一引用(ref 读取:库每步 rebuildTree 都会触发重渲),批外用 store 派生值。
   const treeExpandedItems = expandBatchRef.current.latest ?? expandedItems;
 
+  // 每目录刷新代际:同目录并发刷新只应用最后发起的那次 listDir(迟到的旧结果不覆盖新结果);
+  // 卸载时清空 → 在途结果全部作废。
+  const refreshGenRef = useRef<Map<string, number>>(new Map());
+  useEffect(() => {
+    const gens = refreshGenRef.current;
+    return () => gens.clear();
+  }, []);
   const refreshParent = useCallback((parentPath: string) => {
     const t = treeRef.current;
     // perf:子项从未加载过的非 root 目录跳过(见 isUnloadedNonRootDir);root 永远刷新。
-    if (isUnloadedNonRootDir(t, parentPath)) return;
-    try {
-      const parentItem = t?.getItemInstance(parentPath);
-      parentItem?.invalidateChildrenIds();
-    } catch {
-      treeRef.current?.rebuildTree();
-    }
+    if (t === null || isUnloadedNonRootDir(t, parentPath)) return;
+    const invalidate = (): void => {
+      try {
+        void t.getItemInstance(parentPath).invalidateChildrenIds();
+      } catch {
+        t.rebuildTree();
+      }
+    };
+    // perf:原子保存(本应用 / 外部编辑器写 tmp 再 rename)只产生 rename 事件,但目录列表不变。listDir
+    // 便宜,贵的是 headless-tree 整树 rebuild → 先 listDir 与缓存子项比较(sameTreeChildren),相同则
+    // 什么都不做;不同则直接用这次结果写缓存并 rebuild 一次(同 asyncDataLoader 的 loadChildrenIds,
+    // 不二次 listDir)。listDir 失败 / 缓存已失效 → 走原 invalidate 路径(原语义)。
+    const gens = refreshGenRef.current;
+    const gen = (gens.get(parentPath) ?? 0) + 1;
+    gens.set(parentPath, gen);
+    void (async () => {
+      let entries: readonly FileEntry[] | null = null;
+      try {
+        const r = await coApi.fs.listDir(parentPath);
+        if (r.ok) entries = r.data;
+      } catch {
+        // 落到 invalidate(原路径自带失败告警)
+      }
+      if (gens.get(parentPath) !== gen) return; // 已被更新的刷新取代,或已卸载
+      gens.delete(parentPath);
+      const data = t.getDataRef<AsyncDataLoaderDataRef<FileEntry>>().current;
+      const cachedIds = data.childrenIds?.[parentPath];
+      // 缓存缺失 = 该目录被别处 invalidate、正在重新加载 → 原路径会复用那次在途加载。
+      if (entries === null || cachedIds === undefined) {
+        invalidate();
+        return;
+      }
+      if (sameTreeChildren(cachedIds, data.itemData, entries)) return;
+      const children = buildTreeChildrenWithData(entries);
+      for (const c of children) data.itemData[c.id] = c.data;
+      try {
+        t.getItemInstance(parentPath).updateCachedChildrenIds(children.map((c) => c.id));
+      } catch {
+        t.rebuildTree();
+      }
+    })();
   }, []);
 
   // 为「单批移动/复制到同一 destDir」建一个唯一名 picker:listDir 一次拿现有

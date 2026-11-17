@@ -14,6 +14,7 @@ import {
   createDataLoader,
   createTreeConfig,
   findFileEntryByPath,
+  sameTreeChildren,
 } from '../../panels/Explorer/tree-config';
 import type { FileEntry, IpcResult } from '../../lib/fs/types';
 
@@ -436,5 +437,42 @@ describe('createTreeConfig · 拖拽语义', () => {
     const dataTransfer = { types: ['Files'] } as never;
     cfg.onDropForeignDragObject!(dataTransfer, mkTarget('/x/sub', true));
     expect(onDropForeign).toHaveBeenCalledWith(dataTransfer, '/x/sub');
+  });
+});
+
+describe('sameTreeChildren · 目录刷新比对', () => {
+  const a = entry('/w/a', true);
+  const b: FileEntry = { ...entry('/w/b.md'), size: 1, mtime: 1 };
+  const cache = (es: FileEntry[]) => ({
+    ids: es.map((e) => e.path),
+    data: Object.fromEntries(es.map((e) => [e.path, e])) as Record<string, FileEntry>,
+  });
+  const same = (old: FileEntry[], next: FileEntry[]) => {
+    const c = cache(old);
+    return sameTreeChildren(c.ids, c.data, next);
+  };
+
+  it('完全相同 → true;只差 size / mtime / ctime → true', () => {
+    expect(same([a, b], [a, b])).toBe(true);
+    expect(same([a, b], [a, { ...b, size: 2, mtime: 2, ctime: 2 }])).toBe(true);
+    expect(same([], [])).toBe(true);
+  });
+
+  it('新增 / 删除 / 改名 / 顺序变化 → false', () => {
+    expect(same([a], [a, b])).toBe(false);
+    expect(same([a, b], [a])).toBe(false);
+    expect(same([a, b], [a, entry('/w/c.md')])).toBe(false);
+    expect(same([a, b], [b, a])).toBe(false);
+  });
+
+  it('name / isDirectory / isSymlink 变化 → false;isSymlink 缺省与 false 等价', () => {
+    expect(same([a, b], [a, { ...b, name: 'B.md' }])).toBe(false);
+    expect(same([a, b], [a, { ...b, isDirectory: true }])).toBe(false);
+    expect(same([a, b], [a, { ...b, isSymlink: true }])).toBe(false);
+    expect(same([a, b], [a, { ...b, isSymlink: false }])).toBe(true);
+  });
+
+  it('缓存缺该子项数据 → false', () => {
+    expect(sameTreeChildren(['/w/a'], {}, [a])).toBe(false);
   });
 });

@@ -78,6 +78,33 @@ export function buildTreeChildrenWithData(
   return out;
 }
 
+/**
+ * 目录刷新比对(性能):新 listDir 结果与已缓存子项在树显示依赖的字段上是否完全一致 —— 顺序、path(=id)、
+ * name(含隐藏判定)、isDirectory、isSymlink。size / mtime / ctime 不比较:行不显示,且按 FileEntry 契约
+ * 本就是列目录时的快照。一致则刷新可跳过(原子保存只产生 rename 事件,但目录列表不变)。
+ */
+export function sameTreeChildren(
+  cachedIds: readonly string[],
+  cachedData: Readonly<Record<string, FileEntry | undefined>>,
+  entries: readonly FileEntry[],
+): boolean {
+  if (cachedIds.length !== entries.length) return false;
+  for (let i = 0; i < entries.length; i++) {
+    const e = entries[i]!;
+    const old = cachedData[e.path];
+    if (
+      cachedIds[i] !== e.path ||
+      old === undefined ||
+      old.name !== e.name ||
+      old.isDirectory !== e.isDirectory ||
+      !old.isSymlink !== !e.isSymlink
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export function findFileEntryByPath(
   entries: readonly FileEntry[],
   path: string,
