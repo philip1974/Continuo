@@ -104,6 +104,7 @@ vi.mock('@/plugins/Plugin', () => ({
 vi.mock('@/plugins/PluginManager', () => ({
   PluginManager: class PluginManager {
     init = vi.fn(async () => undefined);
+    whenScanned = vi.fn(async () => undefined);
     reload = vi.fn(async () => undefined);
   },
   setUserPluginManager: mocks.setUserPluginManager,
@@ -250,5 +251,29 @@ describe('renderer init() 启动 IPC 并发', () => {
     await init();
     expect(mocks.layoutRead).not.toHaveBeenCalled();
     expect(mocks.createRoot).toHaveBeenCalledTimes(1);
+  });
+
+  // perf:popout 只渲染 PopoutHost(无 IconSidebar 角标),每开一个 popout 拉一次 marketplace index + N 个 manifest 全是浪费。
+  it('popout 子窗口 → 插件 init 照常,但不做启动更新检查;主窗口照常检查', async () => {
+    mocks.i18nGetLocale.mockResolvedValue({ ok: true, data: 'zh' });
+    const flush = async () => {
+      for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0));
+    };
+    const init = await loadInit();
+
+    mocks.popout.value = true;
+    await init();
+    await flush();
+    expect(mocks.setUserPluginManager).toHaveBeenCalledTimes(1);
+    const popoutMgr = mocks.setUserPluginManager.mock.calls[0]![0] as {
+      init: ReturnType<typeof vi.fn>;
+    };
+    expect(popoutMgr.init).toHaveBeenCalledTimes(1);
+    expect(mocks.updateRefresh).not.toHaveBeenCalled();
+
+    mocks.popout.value = false;
+    await init();
+    await flush();
+    expect(mocks.updateRefresh).toHaveBeenCalledTimes(1);
   });
 });
