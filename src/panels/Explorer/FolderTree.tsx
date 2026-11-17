@@ -215,6 +215,15 @@ export function FolderTree({ root }: { root: string }) {
   // dnd 状态:hoverTarget 由 FileRow onDragEnter 回报;dragDepth 用计数器
   // 防止 child enter/leave 误清(每次 enter +1,leave -1,归零才真离开)
   const [hoverTarget, setHoverTarget] = useState<DropTargetEntry | null>(null);
+  // perf:FileRow 每个 dragenter(含行内子元素冒泡上来的)都回报一个新对象;同 path + isDirectory 时
+  // 保留旧引用 → React 跳过重渲,拖过一行不再反复整树重渲。
+  const reportHoverTarget = useCallback((target: DropTargetEntry | null) => {
+    setHoverTarget((prev) =>
+      prev !== null && prev.path === target?.path && prev.isDirectory === target.isDirectory
+        ? prev
+        : target,
+    );
+  }, []);
   const dragDepthRef = useRef(0);
   const [dragActive, setDragActive] = useState(false);
   const persistedExpandedPaths = useExplorerStore((s) => s.expandedPaths);
@@ -862,7 +871,7 @@ export function FolderTree({ root }: { root: string }) {
                     selectedPaths={selectedPaths}
                     rootPath={root}
                     contextActions={contextActions}
-                    onHoverDropTarget={setHoverTarget}
+                    onHoverDropTarget={reportHoverTarget}
                     isDropHover={dragActive && hoverTarget?.path === item.getId()}
                     onFileOpen={handleFileOpen}
                     onFileIntent={warmEditorEngineFor}

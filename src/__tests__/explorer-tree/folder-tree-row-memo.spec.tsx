@@ -12,6 +12,8 @@ import { useExplorerStore } from '../../stores/explorer.store';
 const ROW = 28;
 const h = vi.hoisted(() => ({
   renders: new Map<string, number>(),
+  // FolderTree 渲染次数(每次渲染调用一次 useVirtualizer)
+  treeRenders: 0,
   range: { start: 0, end: 10 },
   setTick: null as null | ((fn: (n: number) => number) => void),
   // 生产 useEditorFile 返回 useMemo 稳定对象;mock 也须稳定,否则 onFileOpen 每次换引用击穿 memo。
@@ -58,6 +60,7 @@ vi.mock('@tanstack/react-virtual', async () => {
     useVirtualizer: (opts: { count: number }) => {
       const [, setTick] = R.useState(0);
       h.setTick = setTick;
+      h.treeRenders += 1;
       return {
         getTotalSize: () => opts.count * 28,
         getVirtualItems: () => {
@@ -219,5 +222,28 @@ describe('FolderTree · FileRow memo', () => {
       fireEvent.change(input, { target: { value: 'g.ts' } });
     });
     await waitFor(() => expect((container.querySelector('input') as HTMLInputElement).value).toBe('g.ts'));
+  });
+
+  it('OS 文件拖过同一行:行内子元素冒泡的多次 dragenter 不再逐次重渲 FolderTree', async () => {
+    const { container } = await mount();
+    const dt = { types: ['Files'], items: [], files: [] };
+    const target = row(container, fname(3))!;
+    act(() => {
+      fireEvent.dragEnter(target, { dataTransfer: dt });
+    });
+    const afterFirst = h.treeRenders;
+    for (let i = 0; i < 5; i++) {
+      act(() => {
+        fireEvent.dragEnter(target, { dataTransfer: dt });
+      });
+    }
+    // setState 返回同引用:React 最多再调用一次组件函数即 bailout(不协调子树),之后急切 bailout
+    // 不再调用;修复前每次 dragenter 都整树重渲(5 次)。
+    expect(h.treeRenders - afterFirst).toBeLessThanOrEqual(1);
+    // 换到另一行 → 照常更新落点
+    act(() => {
+      fireEvent.dragEnter(row(container, fname(4))!, { dataTransfer: dt });
+    });
+    expect(h.treeRenders).toBeGreaterThan(afterFirst);
   });
 });

@@ -36,6 +36,8 @@ React 组件渲染 / 虚拟滚动 / 真键盘交互留 Step 7 smoke E2E。
 - 滚动(virtualizer range 变化)时一直在视口的行不重渲;新进入的行按 start 定位
 - 键盘移动焦点只重渲新旧焦点行,tabIndex 跟随
 - 选中 / 展开 / 剪切灰显 / 重命名受控输入 / 兄弟增删后的 aria-setsize 均正确反映到对应行
+- OS 文件拖过同一行:行内子元素冒泡的多次 dragenter 回报同一落点(path + isDirectory 相同)时
+  FolderTree 不逐次重渲;换行照常更新落点
 - 已知:选中集合变化与剪贴板空↔非空翻转仍会重渲全部可见行(selectedPaths / hasClipboard 供每行
   ContextMenu 使用),属低频交互
 
