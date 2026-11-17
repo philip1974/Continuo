@@ -330,6 +330,45 @@ describe('PermissionEditorModal — toggle / save', () => {
   });
 });
 
+// 调用方 PluginsTabContent 传内联 onClose,且弹窗打开期间会因安装进度 / 插件列表更新重渲。
+// 原样交给 Modal(effect 依赖 onClose)会让焦点 effect 重跑 → 焦点被拉回第一个 checkbox。
+describe('PermissionEditorModal — 父组件重渲换新 onClose 引用', () => {
+  it('焦点留在用户所在按钮;Esc 调最新 onClose', async () => {
+    const raf = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((cb: FrameRequestCallback) => {
+        cb(0);
+        return 0;
+      });
+    try {
+      const store = makeStore([]);
+      const first = vi.fn();
+      const props = { open: true, pluginId: 'p1', declared: ['fs'] as PermissionKey[], store };
+      const { rerender } = render(<PermissionEditorModal {...props} onClose={first} />);
+      await waitFor(() => {
+        expect(
+          document.querySelector<HTMLInputElement>('.wm-modal-content input[type=checkbox]')
+            ?.disabled,
+        ).toBe(false);
+      });
+      const cancelBtn = Array.from(
+        document.querySelectorAll<HTMLButtonElement>('.wm-modal-content button'),
+      ).find((b) => b.textContent === '取消')!;
+      cancelBtn.focus();
+
+      const latest = vi.fn();
+      rerender(<PermissionEditorModal {...props} onClose={latest} />);
+      expect(document.activeElement).toBe(cancelBtn);
+
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(latest).toHaveBeenCalledTimes(1);
+      expect(first).not.toHaveBeenCalled();
+    } finally {
+      raf.mockRestore();
+    }
+  });
+});
+
 describe('PermissionEditorModal — a11y(A46) 保存失败反馈', () => {
   it('store.grant reject → role=alert 失败提示 + 不 onClose(Modal 保持打开)', async () => {
     const store = {

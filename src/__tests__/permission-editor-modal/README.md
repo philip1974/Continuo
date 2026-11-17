@@ -44,3 +44,7 @@ granted=false 项 store.deny,然后 onClose。当前已 enabled 实例不强制 
 ### 取消
 
 - 调 onClose,不写盘
+
+### 父组件重渲
+
+- 打开期间父组件重渲换新 onClose 引用 → Modal 焦点/键盘 effect 不重跑(焦点留在用户所在控件),Esc 调最新 onClose
