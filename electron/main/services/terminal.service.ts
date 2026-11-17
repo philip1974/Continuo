@@ -339,11 +339,19 @@ export async function readOutput(
 }
 
 // warnOnce — keyed by `${channel}:${msgKey}` to avoid swallowing cross-session errors (P2-2)
+// key 含会话 id、从不按会话清理 → 去重集合设容量上限:满了整体清空(极端规模下同 key 可能再告警一次,
+// 换取内存不随历史会话数单调增长;正常规模下「同 key 只告警一次」语义不变)。
+export const WARN_ONCE_MAX_KEYS = 1024;
 const _warnedKeys = new Set<string>();
-function warnOnce(key: string, msg: string): void {
+export function warnOnce(key: string, msg: string): void {
   if (_warnedKeys.has(key)) return;
+  if (_warnedKeys.size >= WARN_ONCE_MAX_KEYS) _warnedKeys.clear();
   _warnedKeys.add(key);
   console.warn(`[terminal.service] ${msg}`);
+}
+/** 测试用:当前去重集合大小。 */
+export function _warnedKeyCount(): number {
+  return _warnedKeys.size;
 }
 
 // cleanupSessionLocal — idempotent local cleanup for Continuo-side state.
