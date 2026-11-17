@@ -109,10 +109,29 @@ export async function clickFirstVisibleResetDefault(window: Page): Promise<void>
   });
 }
 
+/**
+ * 等「已注册贡献点」行渲染出来:Plugins tab 内容是懒加载 chunk(首次打开先空白一帧),
+ * 不能在切 tab 后立即同步读 DOM。
+ */
+async function waitForContributionRow(window: Page, labels: readonly string[]): Promise<void> {
+  await window.waitForFunction(
+    (rowLabels) =>
+      Array.from(document.querySelectorAll('main div')).some((d) =>
+        Array.from(d.children).some((c) => {
+          const text = c.textContent?.trim() ?? '';
+          return rowLabels.includes(text) && c.classList.contains('w-32');
+        }),
+      ),
+    labels,
+    { timeout: 10_000 },
+  );
+}
+
 export async function pluginContributionRowText(
   window: Page,
   labels: readonly string[],
 ): Promise<string> {
+  await waitForContributionRow(window, labels);
   return window.locator('main').evaluate((root, rowLabels) => {
     const rows = Array.from(root.querySelectorAll('div')).filter((d) =>
       Array.from(d.children).some((c) => {
@@ -128,6 +147,7 @@ export async function pluginContributionCount(
   window: Page,
   labels: readonly string[],
 ): Promise<number> {
+  await waitForContributionRow(window, labels);
   return window.locator('main').evaluate((root, rowLabels) => {
     const rows = Array.from(root.querySelectorAll('div')).filter((d) =>
       Array.from(d.children).some((c) => {
