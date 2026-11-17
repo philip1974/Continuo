@@ -3,7 +3,8 @@
 // lineCount/wordCount 全文扫描并分配中间数组;StatusBar 订阅 sessions /
 // MCP 复制态 / 插件 status item 等多源,无关变化触发重渲染时不应重扫整篇。
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, cleanup, act } from '@testing-library/react';
+import { Profiler } from 'react';
+import { render, cleanup, act, screen } from '@testing-library/react';
 
 // perf P7:StatusBar 改用单遍 computeTextStats(替代 lineCount/wordCount/charCount
 // 三次调用)。memo 行为契约不变 —— spy computeTextStats 验命中/失效。
@@ -122,5 +123,52 @@ describe('打磨 R1 — StatusBar 文本统计 memo 化', () => {
     });
 
     expect(computeTextStatsSpy.mock.calls.length).toBeGreaterThan(baseCalls);
+  });
+});
+
+// perf:内容变化时 computeTextStats 全文 O(N) 扫描不应压在高优先级渲染上(每键一次)。activeContent 经
+// useDeferredValue 后再算:高优先级渲染先用旧值(memo 命中)提交,统计在随后的低优先级渲染里更新(延后一帧)。
+describe('StatusBar 文本统计延后到低优先级渲染(useDeferredValue)', () => {
+  it('内容变化:高优先级提交不重算(仍显示旧字符数),随后低优先级渲染重算,最终统计正确', () => {
+    installApi();
+    openTab(BIG);
+    const events: string[] = [];
+    computeTextStatsSpy.mockImplementation((s: string) => {
+      events.push(`compute:${s.length}`);
+      return {
+        lines: s.length === 0 ? 0 : (s.match(/\n/g)?.length ?? 0) + 1,
+        words: s.trim() === '' ? 0 : s.trim().split(/\s+/).length,
+        chars: s.length,
+      };
+    });
+    const footerText = () => screen.getByRole('contentinfo').textContent ?? '';
+    render(
+      <Profiler
+        id="sb"
+        onRender={() => {
+          events.push(`commit:${footerText()}`);
+        }}
+      >
+        <StatusBar />
+      </Profiler>,
+    );
+    expect(footerText()).toContain(String(BIG.length));
+
+    const next = BIG + '\nnew tail line';
+    events.length = 0;
+    act(() => {
+      openTab(next);
+    });
+
+    const firstCompute = events.indexOf(`compute:${next.length}`);
+    expect(firstCompute).toBeGreaterThan(0);
+    // 新内容的统计计算之前已有一次提交,且那次提交仍显示旧字符数
+    const before = events.slice(0, firstCompute).filter((e) => e.startsWith('commit:'));
+    expect(before.length).toBeGreaterThan(0);
+    expect(before[0]).toContain(String(BIG.length));
+    expect(before[0]).not.toContain(String(next.length));
+    // 最终值更新(e2e save-shortcut 依赖 footer 字符数变化)
+    expect(footerText()).toContain(String(next.length));
+    expect(computeTextStatsSpy.mock.calls.filter((c) => c[0] === next)).toHaveLength(1);
   });
 });

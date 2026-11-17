@@ -2,7 +2,7 @@
 // 左:workspace 名 + sidebar 收起提示 + git 分支占位。
 // 右:active editor tab 文件名 + dirty + 行 / 词 / 字符 + 编码占位。
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { SR_ONLY_STYLE } from '@/lib/sr-only';
 import { useRegistry } from '@/plugins/registries/useRegistry';
@@ -198,10 +198,13 @@ export function StatusBar() {
   // dep 只用 activeContent 字符串值:内容编辑 → 变 → 重算;无关重渲染 → 不变 → 命中缓存。
   // 性能 P7:computeTextStats 单遍、零数组分配同时拿三项(旧版 lineCount/wordCount 各
   // 全文扫一遍 + 分配 match/split 大临时数组)。
+  // perf:内容每键都变,memo 每键失效 → O(N) 全文扫描压在高优先级渲染上。统计对 useDeferredValue 后的内容计算:
+  // 高优先级渲染沿用旧值(memo 命中)先提交,统计在随后可中断的低优先级渲染里更新(允许延后一帧,最终值不变)。
+  const deferredContent = useDeferredValue(activeContent);
   const stats = useMemo(
     () =>
-      activeContent === undefined ? null : computeTextStats(activeContent),
-    [activeContent],
+      deferredContent === undefined ? null : computeTextStats(deferredContent),
+    [deferredContent],
   );
 
   // 非 null = 撤销确认弹窗打开,值为打开时的 agent 会话数。
