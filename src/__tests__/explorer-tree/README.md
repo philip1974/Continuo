@@ -39,6 +39,13 @@ React 组件渲染 / 虚拟滚动 / 真键盘交互留 Step 7 smoke E2E。
 - 已知:选中集合变化与剪贴板空↔非空翻转仍会重渲全部可见行(selectedPaths / hasClipboard 供每行
   ContextMenu 使用),属低频交互
 
+## 键盘导航滚动到窗口外的行(`folder-tree-scroll-to-item.spec.tsx`)
+
+- headless-tree `updateDomFocus` 在焦点变化后调 `config.scrollToItem`,再轮询最多 500ms 等目标行挂载,
+  超时把焦点打回首项;FolderTree 将其接到 `virtualizer.scrollToIndex(下标, { align: 'auto' })`
+- 下标取**实际渲染的 items**(`selectVisibleTreeItems` 过滤隐藏文件后)中的位置,不是 `getItemMeta().index`
+- 长列表按 End → 滚到末项且 DOM 焦点落在末项;显示隐藏文件时下标包含隐藏项
+
 ## 不在本主题验证
 
 - 真实浏览器虚拟滚动行为(留 E2E)

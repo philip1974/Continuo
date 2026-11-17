@@ -593,6 +593,7 @@
 ## [explorer-tree (M-Explorer Step 4)](./explorer-tree/README.md)
 
 - [`folder-tree-row-memo.spec.tsx`](./explorer-tree/folder-tree-row-memo.spec.tsx)
+- [`folder-tree-scroll-to-item.spec.tsx`](./explorer-tree/folder-tree-scroll-to-item.spec.tsx)
 - [`tree-config.spec.ts`](./explorer-tree/tree-config.spec.ts)
 
 ## [explorer-watch (M-Explorer Step 6)](./explorer-watch/README.md)
