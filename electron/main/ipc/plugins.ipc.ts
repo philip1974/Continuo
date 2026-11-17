@@ -133,11 +133,20 @@ export function registerPluginsIpc(): void {
   // 在首次列举前完成,避免崩溃中断的更新让插件静默消失(数据安全)。幂等。
   const installRecovery = recoverInterruptedInstalls(pluginsDir).catch(() => {});
 
+  // v4.3.1 mtime 自动 watch:任一 plugin main.js 改 → 推所有窗口。
+  // 冷启动性能:不在注册时(早于建首窗)立即首扫 —— 与启动 IO 争 libuv 线程池;首扫推迟到第一个周期,
+  // 或由 LIST_DIRS 在列举前按需建立(见下),两者取先到者。
+  const watcher = createPluginsWatcher(pluginsDir, broadcastPluginsChanged);
+  watcher.start(2000, { immediate: false });
+
   safeHandle(
     PLUGINS_CHANNELS.LIST_DIRS,
     NoInput,
     async () => {
       await installRecovery;
+      // 基线须在列举前建立(串行,不可并发):否则基线可能吞掉「列举之后、基线之前」的插件修改 →
+      // renderer 拿到旧内容而永不收到 CHANGED。列举在基线之后读盘 → 此后的修改必被后续 tick 发现。
+      await watcher.ensureBaseline();
       return listPluginDirs(pluginsDir);
     },
     trusted,
@@ -201,10 +210,6 @@ export function registerPluginsIpc(): void {
     },
     trusted,
   );
-
-  // v4.3.1 mtime 自动 watch:任一 plugin main.js 改 → 推所有窗口
-  const watcher = createPluginsWatcher(pluginsDir, broadcastPluginsChanged);
-  watcher.start(2000);
 
   // v4.5 从 git URL 安装
   safeHandle(

@@ -1420,8 +1420,16 @@ function runGit(args: readonly string[]): Promise<void> {
 export interface PluginsWatcher {
   /** 单次扫描:mtime 变化触发 onChange,首次只填表不 fire. */
   tick(): Promise<void>;
-  /** 启动周期 tick;返 dispose 停 timer. */
-  start(intervalMs?: number): { dispose(): void };
+  /**
+   * 启动周期 tick;返 dispose 停 timer。immediate(默认 true)= 立即首扫;false = 首扫等第一个周期
+   *(冷启动不与启动 IO 争 libuv 线程池),期间由 ensureBaseline 按需建立基线。
+   */
+  start(intervalMs?: number, opts?: { immediate?: boolean }): { dispose(): void };
+  /**
+   * 确保基线(首扫)已建立:已建立 → 立即返回;首扫在途 → 等它结束;尚未开始 → 立即触发一次并等待。
+   * 扫描失败也返回(best-effort,不阻塞调用方)。LIST_DIRS 列举前调用:列举之后的修改必被后续 tick 发现。
+   */
+  ensureBaseline(): Promise<void>;
 }
 
 /**
@@ -1489,6 +1497,8 @@ export function createPluginsWatcher(
   // pending,当前扫描结束后补跑一次。记录表/firstRun 只在串行的 runScan 内更新。
   let running = false;
   let pending = false;
+  // 在途扫描循环(含 pending 补跑);供 ensureBaseline 等待。
+  let inflight: Promise<void> | null = null;
 
   // perf:manifest 解析结果缓存(目录名 → manifest 的 stat 签名 + 解析结果)。此前每 2s 对每个插件
   // 完整读 + JSON.parse manifest,即使无任何变化。签名含 ino/size/mtime/ctime:原子替换(rename → 新 ino)、
@@ -1672,21 +1682,30 @@ export function createPluginsWatcher(
       return;
     }
     running = true;
-    try {
-      do {
-        pending = false;
-        await runScan();
-      } while (pending && !cancelled);
-    } finally {
-      running = false;
-    }
+    const loop = (async () => {
+      try {
+        do {
+          pending = false;
+          await runScan();
+        } while (pending && !cancelled);
+      } finally {
+        running = false;
+        inflight = null;
+      }
+    })();
+    inflight = loop;
+    await loop;
   };
 
   return {
     tick,
-    start: (intervalMs = 2000) => {
+    ensureBaseline: async () => {
+      if (!firstRun || cancelled) return;
+      await (inflight ?? tick()).catch(() => {});
+    },
+    start: (intervalMs = 2000, { immediate = true } = {}) => {
       cancelled = false;
-      void tick();
+      if (immediate) void tick();
       const timer = setInterval(() => void tick(), intervalMs);
       return {
         dispose: () => {
