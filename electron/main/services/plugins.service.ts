@@ -1339,38 +1339,58 @@ export function createPluginsWatcher(
   let running = false;
   let pending = false;
 
-  const runScan = async (): Promise<void> => {
-    if (cancelled) return;
-    // 边界(E82):有界枚举(缺目录 → [] → 循环 no-op,等价旧版早返)。
-    const entries = await readPluginDirEntriesCapped(baseDir);
-    for (const id of entries) {
-      if (id.startsWith('.') || id.startsWith('_')) continue;
-      const dir = path.join(baseDir, id);
+  // perf:manifest 解析结果缓存(目录名 → manifest 的 stat 签名 + 解析结果)。此前每 2s 对每个插件
+  // 完整读 + JSON.parse manifest,即使无任何变化。签名含 ino/size/mtime/ctime:原子替换(rename → 新 ino)、
+  // 原地改写(ctime 必变,即便 mtime 被还原)、删除(stat 失败 → 跳过并清缓存)、新增(无缓存)都会重读。
+  // 先 stat 再读:读到的内容不会比签名旧,期间若又被改,下轮签名不同会再读。
+  // info=null 表示 manifest 不是合法 JSON(与旧版同:跳过该目录)。条目只保留本轮枚举到的目录名。
+  const manifestCache = new Map<
+    string,
+    { sig: string; info: { mainName: string; pluginId: string } | null }
+  >();
 
-      let dirStat: import('node:fs').Stats;
-      try {
-        dirStat = await fs.stat(dir);
-      } catch {
-        continue;
-      }
-      if (!dirStat.isDirectory()) continue;
+  /** 单目录探测:返回 { pluginId, mtime }(main 文件 mtime),不可监控 → null。可并发执行。 */
+  const probeEntry = async (
+    name: string,
+  ): Promise<{ pluginId: string; mtime: number } | null> => {
+    if (name.startsWith('.') || name.startsWith('_')) return null;
+    const dir = path.join(baseDir, name);
 
-      let mainName = 'main.js';
-      let pluginId = id;
+    let dirStat: import('node:fs').Stats;
+    try {
+      dirStat = await fs.stat(dir);
+    } catch {
+      return null;
+    }
+    if (!dirStat.isDirectory()) return null;
+
+    const manifestPath = path.join(dir, 'manifest.json');
+    let manifestStat: import('node:fs').Stats;
+    try {
+      manifestStat = await fs.stat(manifestPath);
+    } catch {
+      manifestCache.delete(name);
+      return null; // 缺 manifest → 跳过(同旧版 readFileCapped 返 null)
+    }
+    const sig = `${manifestStat.ino}:${manifestStat.size}:${manifestStat.mtimeMs}:${manifestStat.ctimeMs}`;
+    let cached = manifestCache.get(name);
+    if (cached === undefined || cached.sig !== sig) {
       // 边界(E27,E24/listPluginDirs 同源):watcher 扫描读 manifest 也走 readFileCapped
-      //(同 MANIFEST_MAX_BYTES),避免超大 manifest 整块读入。超限/缺失 → 跳过该插件目录。
-      const text = await readFileCapped(
-        path.join(dir, 'manifest.json'),
-        MANIFEST_MAX_BYTES,
-      );
-      if (text === null) continue;
+      //(同 MANIFEST_MAX_BYTES),避免超大 manifest 整块读入。超限/缺失 → 跳过该插件目录(不缓存,下轮重试)。
+      const text = await readFileCapped(manifestPath, MANIFEST_MAX_BYTES);
+      if (text === null) {
+        manifestCache.delete(name);
+        return null;
+      }
+      let info: { mainName: string; pluginId: string } | null;
       try {
         const m = JSON.parse(text) as { main?: unknown; id?: unknown };
-        mainName = getPluginMainName(m); // M20:共用 getPluginMainName
+        let pluginId = name;
         // 边界(E101,E97/E100 id 前门一致性):manifest.id 复用 isSafePluginId + 长度上限。此前仅
         // typeof+非空 → 畸形本地插件可用超长/非法 id 当 mtimes key + 经 PLUGINS_CHANGED 广播到
         // renderer,PluginManager reload 找不到合法 entry 或把超长 id 带进日志/状态(Map/IPC 放大 +
-        // 热重载错位)。非法 id 回退目录名(pluginId = id,与 listPluginDirs 用目录名一致)。
+        // 热重载错位)。非法 id 回退目录名(pluginId = 目录名,与 listPluginDirs 用目录名一致)。
+        // (manifest 为 JSON null 时 m.id 抛 TypeError → 视为非法 manifest 跳过,同旧版。)
         if (
           typeof m.id === 'string' &&
           m.id.length > 0 &&
@@ -1379,27 +1399,53 @@ export function createPluginsWatcher(
         ) {
           pluginId = m.id;
         }
+        info = { mainName: getPluginMainName(m), pluginId }; // M20:共用 getPluginMainName
       } catch {
-        continue;
+        info = null;
       }
+      cached = { sig, info };
+      manifestCache.set(name, cached);
+    }
+    if (cached.info === null) return null;
 
-      try {
-        const mainPath = resolvePluginMainPath(dir, mainName);
-        if (!mainPath) continue;
-        const fileStat = await fs.stat(mainPath);
-        const mtime = fileStat.mtimeMs;
-        const prev = mtimes.get(pluginId);
-        // race(R67):先记录新 mtime,再 onChange。此前顺序相反,而整段在 try{}catch{continue} 内 —
-        // 若 onChange(广播 send)抛错,会被 per-entry catch 吞掉 continue → mtimes.set 不执行 →
-        // mtimes 不推进 → 同一变更每个 tick 反复触发/反复失败(广播一直打不出去)。改为变更检测
-        // 一旦确认即记录 mtime,通知(onChange)成败不影响 mtime 推进:坏窗口由 onChange 内部
-        // per-window try/catch 兜底(R67-A),不再回灌脏状态。
-        mtimes.set(pluginId, mtime);
-        if (!firstRun && prev !== undefined && prev !== mtime) {
+    try {
+      const mainPath = resolvePluginMainPath(dir, cached.info.mainName);
+      if (!mainPath) return null;
+      const fileStat = await fs.stat(mainPath);
+      return { pluginId: cached.info.pluginId, mtime: fileStat.mtimeMs };
+    } catch {
+      return null;
+    }
+  };
+
+  const runScan = async (): Promise<void> => {
+    if (cancelled) return;
+    // 边界(E82):有界枚举(缺目录 → [] → 循环 no-op,等价旧版早返)。
+    const entries = await readPluginDirEntriesCapped(baseDir);
+    // perf:per-dir stat(+ 必要时读 manifest)有界并发;mtimes 比较 / onChange 仍按枚举顺序串行(同旧版)。
+    const probes = await mapInOrderBounded(entries, probeEntry);
+    if (manifestCache.size > 0) {
+      const live = new Set(entries);
+      for (const name of manifestCache.keys()) {
+        if (!live.has(name)) manifestCache.delete(name);
+      }
+    }
+    for (const probe of probes) {
+      if (probe === null) continue;
+      const { pluginId, mtime } = probe;
+      const prev = mtimes.get(pluginId);
+      // race(R67):先记录新 mtime,再 onChange。此前顺序相反,而整段在 try{}catch{continue} 内 —
+      // 若 onChange(广播 send)抛错,会被 per-entry catch 吞掉 continue → mtimes.set 不执行 →
+      // mtimes 不推进 → 同一变更每个 tick 反复触发/反复失败(广播一直打不出去)。改为变更检测
+      // 一旦确认即记录 mtime,通知(onChange)成败不影响 mtime 推进:坏窗口由 onChange 内部
+      // per-window try/catch 兜底(R67-A),不再回灌脏状态。
+      mtimes.set(pluginId, mtime);
+      if (!firstRun && prev !== undefined && prev !== mtime) {
+        try {
           onChange(pluginId);
+        } catch {
+          // 同旧版 per-entry catch:通知失败不影响后续条目
         }
-      } catch {
-        continue;
       }
     }
     firstRun = false;
