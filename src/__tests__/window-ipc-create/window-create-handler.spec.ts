@@ -163,4 +163,31 @@ describe('window-ipc-create: createWindowHandler', () => {
     expect(fsMock.stat).toHaveBeenCalledWith('/abs/path');
     expect(fsMock.statSync).not.toHaveBeenCalled();
   });
+
+  it("T10: 并发打开文件夹时目录判定 stat 同时在途 ≤ 2(失联挂载点不占满 libuv 线程池)", async () => {
+    let inFlight = 0;
+    let peak = 0;
+    const settles: Array<() => void> = [];
+    fsMock.stat.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          inFlight += 1;
+          peak = Math.max(peak, inFlight);
+          settles.push(() => {
+            inFlight -= 1;
+            resolve({ isDirectory: () => true });
+          });
+        }),
+    );
+    const calls = Array.from({ length: 6 }, (_, i) => createWin({ workspace: `/abs/w${i}` }));
+    for (let guard = 0; guard < 100; guard += 1) {
+      await new Promise((r) => setTimeout(r, 0));
+      if (settles.length === 0) break;
+      settles.shift()?.();
+    }
+    const results = await Promise.all(calls);
+    expect(peak).toBe(2);
+    expect(fsMock.stat).toHaveBeenCalledTimes(6);
+    for (const r of results) expect(r).toEqual({ ok: true, data: { windowId: 42 } });
+  });
 });

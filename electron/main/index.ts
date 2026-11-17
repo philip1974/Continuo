@@ -44,6 +44,7 @@ import {
 } from './services/window-seq.service';
 import { withExplorerFileMutex } from './lib/file-mutex';
 import { atomicWriteJson } from './lib/atomic-write';
+import { statDirGated } from './lib/dir-stat-gate';
 import { makeWindowResourceCleanup } from './window-resource-cleanup';
 import { makeQuitCleanupGuard } from './quit-cleanup-guard';
 import { resolveUserDataPath } from './user-data-path';
@@ -697,10 +698,13 @@ function isDirectorySync(p: string): boolean {
   }
 }
 
-/** isDirectorySync 的异步版:启动窗口恢复用,慢挂载 / 断开网络盘不阻塞 main(性能审计 #7)。 */
+/**
+ * isDirectorySync 的异步版:启动窗口恢复 / 运行期 open-file 用,慢挂载 / 断开网络盘不阻塞 main(性能
+ * 审计 #7);经全局目录判定闸,失联挂载点上的在途 stat 不占满 libuv 线程池。
+ */
 async function isDirectory(p: string): Promise<boolean> {
   try {
-    return (await nodeFs.promises.stat(p)).isDirectory();
+    return (await statDirGated(p)).isDirectory();
   } catch {
     return false;
   }

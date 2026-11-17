@@ -198,4 +198,14 @@ describe('运行期 open-file 目录判定不阻塞 main', () => {
     expect(body.indexOf('openInFlight += 1')).toBeGreaterThan(0);
     expect(body.indexOf('openInFlight += 1')).toBeLessThan(body.indexOf('await isDirectory('));
   });
+
+  // 第 6 轮审计:失联挂载点上在途 stat ≥4 即占满 libuv 默认线程池 → 异步目录判定须经全局并发闸
+  //(lib/dir-stat-gate,与新窗口打开文件夹共用;闸本身的并发上限由 dir-stat-gate.test 行为测试覆盖)。
+  it('isDirectory(open-file / 启动恢复共用)经 statDirGated 全局闸,不直接 fs.promises.stat', () => {
+    const fnStart = src.indexOf('async function isDirectory(');
+    const fnBody = src.slice(fnStart, src.indexOf('\n}\n', fnStart));
+    expect(fnStart).toBeGreaterThan(0);
+    expect(fnBody).toMatch(/await statDirGated\(p\)/);
+    expect(fnBody).not.toMatch(/promises\.stat\(/);
+  });
 });

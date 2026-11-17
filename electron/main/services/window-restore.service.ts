@@ -38,7 +38,9 @@ export const MAX_RESTORE_CHECKS = 64;
 // 性能(审计 #7):目录判定原为串行 statSync(最多 MAX_RESTORE_CHECKS 次),慢挂载 / 断开的网络盘会
 // 阻塞 Electron main(首窗输入、IPC、建窗全停)。改为 async 判定 + 小规模有界并发:按 windows[] 顺序
 // 取一批候选并发判定,再按原顺序回放串行规则(计数 / 去重 / 预算),集合、上限、顺序与串行一致。
-export const RESTORE_CHECK_CONCURRENCY = 8;
+// 批大小与全局目录判定闸(lib/dir-stat-gate DIR_STAT_CONCURRENCY=2)对齐:更大的批也只会在闸前排队,
+// 反而让取消后仍有更多已入队 stat 要跑完。
+export const RESTORE_CHECK_CONCURRENCY = 2;
 
 export async function pickWindowsToRestore(
   data: ExplorerPayload,
