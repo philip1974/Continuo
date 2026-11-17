@@ -987,6 +987,7 @@
 
 ## [plugins-watcher(mtime 自动 watch)](./plugins-watcher/README.md)
 
+- [`baseline-prime-wiring.spec.ts`](./plugins-watcher/baseline-prime-wiring.spec.ts)
 - [`list-dirs-baseline.spec.ts`](./plugins-watcher/list-dirs-baseline.spec.ts)
 - [`plugins-watcher.spec.ts`](./plugins-watcher/plugins-watcher.spec.ts)
 

@@ -84,6 +84,7 @@ import {
   installStopHookForSession,
 } from './services/mcp-tools-hook-bridge';
 import { startPluginMcpIpc } from './ipc/plugin-mcp.ipc';
+import { primePluginsWatcherBaseline } from './ipc/plugins.ipc';
 import {
   defaultIsTrustedFrame,
   isTrustedRendererFileUrl,
@@ -1300,6 +1301,8 @@ app.whenReady().then(async () => {
   // 首窗与 PTY env 只依赖 HTTP host;stdio 配置仅「复制 MCP 配置」点击时读,未就绪时既有
   // { available:false } 默认值 → 按钮显示 unavailable。启动失败在 startMcpStdioServer 内照旧告警。
   mcpStdioStarting = startMcpStdioServer();
+  // 首窗已建:提前建立插件 watcher 基线,renderer 首次 LIST_DIRS 时通常已就绪(见 primePluginsWatcherBaseline)。
+  primePluginsWatcherBaseline();
 
   // 冷启 + open-url 顺序处理:可能在 mainwindow 未就绪前已收 url。race(R41):协议队列 drain 统一
   // 由 PROTOCOL_READY 处理器负责(任一窗口上报就绪即排空),此处不单独挂 drain。

@@ -124,6 +124,17 @@ export function broadcastPluginEnabledChanged(id: string, enabled: boolean): voi
   );
 }
 
+let primeBaseline: (() => void) | null = null;
+
+/**
+ * 冷启动:首窗创建后提前建立插件 watcher 基线。不在注册时(早于建窗)扫,免与建窗前 IO 争 libuv 线程池;
+ * 也不等第一个 2s 周期 —— 否则 renderer 首次 LIST_DIRS 会在插件 init 关键路径上当场串行扫一遍。
+ * 幂等(ensureBaseline 已建好 / 在途时直接复用);未注册时 no-op。
+ */
+export function primePluginsWatcherBaseline(): void {
+  primeBaseline?.();
+}
+
 export function registerPluginsIpc(): void {
   const userData = app.getPath('userData');
   const pluginsDir = path.join(userData, 'plugins');
@@ -138,6 +149,10 @@ export function registerPluginsIpc(): void {
   // 或由 LIST_DIRS 在列举前按需建立(见下),两者取先到者。
   const watcher = createPluginsWatcher(pluginsDir, broadcastPluginsChanged);
   watcher.start(2000, { immediate: false });
+  // 首窗创建后由 index.ts 调 primePluginsWatcherBaseline 提前建基线(安装恢复之后,免把恢复动作误报为变更)。
+  primeBaseline = () => {
+    void installRecovery.then(() => watcher.ensureBaseline());
+  };
 
   safeHandle(
     PLUGINS_CHANNELS.LIST_DIRS,

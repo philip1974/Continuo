@@ -46,3 +46,9 @@
 - 缺失记录(tombstone)不限时保留:缺失再久,重建(main 已变)仍 fire;只按容量淘汰(记录总数超上限
   2×目录枚举上限时淘汰最早缺失的),每轮只按本轮出现的目录查 tombstone,不遍历全部缺失记录
 - 缺失记录所属目录重建后改声明别的 id → 该缺失记录清理
+
+## 首窗后提前建基线(baseline-prime-wiring.spec.ts)
+
+- `registerPluginsIpc` 仍不在注册时首扫;index.ts 在首窗创建后调用 `primePluginsWatcherBaseline()`,
+  在安装恢复完成后 `ensureBaseline()`。renderer 首次 `LIST_DIRS` 时基线通常已建好或在途,不再在插件 init
+  关键路径上当场串行扫描。
