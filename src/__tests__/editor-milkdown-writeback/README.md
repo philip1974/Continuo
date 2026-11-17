@@ -4,14 +4,16 @@
 
 ## 背景
 
-`@milkdown/plugin-listener` 的 `markdownUpdated` 有 200ms 防抖(lodash debounce),编辑器销毁时不 flush。
-关窗 flush 握手(DockShell `onFlushRequest`)只落盘 store 里的内容 → 最后 <200ms 的输入还没进 store:
+`@milkdown/plugin-listener` 的 `updated` 有 200ms 防抖(lodash debounce),Continuo 在其上再按序列化耗时自适应延迟
+上抛(单次最长约 2s、持续输入最长 5s);编辑器销毁时不 flush。关窗 flush 握手(DockShell `onFlushRequest`)只落盘
+store 里的内容 → 延迟窗口内的输入还没进 store:
 原本干净的 tab 不弹确认直接丢;脏且为 autosave 持有者的 tab flush 写的是旧内容。
 
 ## 行为
 
 - 活动 Milkdown 把「同步回写」句柄登记到 `editor-writeback-registry`;关窗握手在「保存」与 autosave flush
-  **之前**调 `flushEditorWriteBacks()`,从编辑器同步取全文(`crepe.getMarkdown()`)回写 store。
+  **之前**调 `flushEditorWriteBacks()`,从编辑器同步取全文(经 `readEditor` 取 editorView / serializer 序列化当前 doc)回写 store;
+  doc 引用未变则不序列化(挂载时 plugin-listener 自身 `state.init` 仍会序列化一次,属库行为)。
 - 只在有尚未上抛的编辑时回写(与防抖上抛同口径:只差尾部空白不算编辑,issue #44);只读预览不回写。
 - Milkdown 卸载(切 tab / 切 mode / reloadEpoch 或 locale 重挂载)时同步回写一次,随后停用:迟到的防抖 emit
   不再上抛(否则会覆盖之后在 Source 里的新输入或外部重载)。

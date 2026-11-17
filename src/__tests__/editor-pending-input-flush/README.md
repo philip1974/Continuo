@@ -4,7 +4,7 @@
 
 ## 背景
 
-Milkdown 上抛 store 是防抖的,且按序列化耗时自适应延迟(大文档最长约 2s,见 `editor-milkdown-writeback`)。
+Milkdown 上抛 store 是防抖的,且按序列化耗时自适应延迟(单次最长约 2s、持续输入最长 5s,见 `editor-milkdown-writeback`)。
 这段窗口里 store 落后编辑器:tab 在 store 里可能还是干净的,或 content 还是旧的。凡是直接读 store 的
 dirty / content、或会改 tab id 的入口,若不先 `flushEditorWriteBacks()`,这段输入就会被误判丢弃或覆盖。
 `flushEditorWriteBacks` 同步、文档未变时 O(1);但文档有未上抛编辑时会整篇序列化(大文档约 70ms)并提前上抛,

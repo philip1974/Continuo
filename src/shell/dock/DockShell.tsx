@@ -404,7 +404,7 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
     // 关窗。必须经 coApi(preload 只暴露 __lmApi;此前读了一个不存在的全局 bridge,整条握手是死的:
     // flush 从不执行,main 每次关窗干等 ack 超时)。
     const off = coApi.layout.onFlushRequest?.(async (payload) => {
-      // 先把编辑器里尚未进 store 的输入(Milkdown markdownUpdated 200ms 防抖窗口内)同步回写,
+      // 先把编辑器里尚未进 store 的输入(Milkdown 自适应延迟上抛窗口内,见 MilkdownEditor emitDelayMs)同步回写,
       // 下面的「保存」与 autosave flush 才落盘到最新内容。
       flushEditorWriteBacks();
       // 用户在 main 的脏文件确认框选了「保存」→ 先保存所有有路径的脏 tab(代码文件不 autosave,

@@ -229,7 +229,7 @@ export function EditorPanel() {
   // 关闭脏 tab 二次确认(closeCandidate 声明在 useAutoSave 之前,确认框开着时暂停 autosave)。
   const onTabCloseRequest = useCallback(
     (tab: TabChrome) => {
-      // tab.dirty 是 TabChrome 快照,store 可能落后编辑器(Milkdown 自适应防抖,大文档最长约 2s):
+      // tab.dirty 是 TabChrome 快照,store 可能落后编辑器(Milkdown 自适应延迟上抛,单次最长约 2s、持续输入最长 5s):
       // 先同步回写未上抛的输入,再按 store 最新 dirty 判定。否则「干净」tab 直接关闭,
       // 随后卸载回写找不到 tab → 这段输入丢失。
       flushEditorWriteBacks([tab.id]);

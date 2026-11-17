@@ -1,4 +1,3 @@
-
 // 边界(E135,E131/E132 跨 chunk 解码同族):NDJSON 流式行解码器。socket data 事件的 Buffer chunk
 // 可能切在 UTF-8 多字节字符中间;直接 `chunk.toString()` 逐 chunk 解码会把被切开的字符各自变成
 // U+FFFD(中文/韩文/emoji 参数随机损坏 / JSON 解析失败)。本解码器用 `TextDecoder({stream:true})`
