@@ -10,6 +10,7 @@ import {
   type TerminalSession,
 } from '@/stores/terminal.store';
 import { useWorkspaceStore } from '@/stores/workspace.store';
+import { pruneReconcilerSeenSessions } from './DockReconciler';
 
 const warnedDropKeys = new Set<string>();
 let warnedNonFiniteOnce = false;
@@ -54,6 +55,13 @@ export function TerminalSessionsSync(): null {
     // 后旧项目 terminal 隐藏、切回旧根又重现(PTY 在 main 仍活,这里只是视图过滤)。(R12)
     let rawOwned: readonly TerminalSession[] = [];
 
+    // rawOwned 每次被权威快照替换后调用:剪掉 reconciler 首次出现记录里已真正消失的 session
+    // (基于 workspace 过滤前的 rawOwned,workspace 隐藏的仍保留,见 pruneReconcilerSeenSessions)。
+    const setRawOwned = (next: readonly TerminalSession[]): void => {
+      rawOwned = next;
+      pruneReconcilerSeenSessions(next);
+    };
+
     const applyWorkspaceFilter = (): void => {
       const root = useWorkspaceStore.getState().root;
       useTerminalStore
@@ -70,9 +78,11 @@ export function TerminalSessionsSync(): null {
           notify.error(translate('errors.terminal.sessions_restore_failed'));
           return;
         }
-        rawOwned = filterByOwnerWindow(r.data.sessions, winId, {
-          onDrop: warnOnDrop,
-        });
+        setRawOwned(
+          filterByOwnerWindow(r.data.sessions, winId, {
+            onDrop: warnOnDrop,
+          }),
+        );
         applyWorkspaceFilter();
       })
       .catch(() => {
@@ -95,7 +105,7 @@ export function TerminalSessionsSync(): null {
         return;
       }
       sawPush = true;
-      rawOwned = filterByOwnerWindow(snapshot, winId, { onDrop: warnOnDrop });
+      setRawOwned(filterByOwnerWindow(snapshot, winId, { onDrop: warnOnDrop }));
       applyWorkspaceFilter();
     });
 

@@ -420,6 +420,10 @@
 - [`api-rebuild.spec.tsx`](./dock-reconciler-api-rebuild/api-rebuild.spec.tsx)
 - [`restore-after-fromjson.spec.tsx`](./dock-reconciler-api-rebuild/restore-after-fromjson.spec.tsx)
 
+## [dock-reconciler-seen-prune](./dock-reconciler-seen-prune/README.md)
+
+- [`seen-prune.spec.tsx`](./dock-reconciler-seen-prune/seen-prune.spec.tsx)
+
 ## [dock-reconciler-windowid-filter](./dock-reconciler-windowid-filter/README.md)
 
 - [`filter-pure-fn.spec.ts`](./dock-reconciler-windowid-filter/filter-pure-fn.spec.ts)
