@@ -59,6 +59,8 @@ function readEditor(crepe: Crepe): { doc: PmDoc; serialize: (doc: PmDoc) => stri
 const LISTENER_DEBOUNCE_MS = 200;
 const MAX_EMIT_DELAY_MS = 2000;
 const EMIT_DELAY_PER_SERIALIZE_MS = 8;
+// 用户一直在打字时额外延迟会被反复重排;从本轮首次未上抛的变化起最多等这么久必上抛。
+const MAX_EMIT_WAIT_MS = 5000;
 
 /** 防抖上抛的总延迟:max(200ms, 序列化耗时 × 8),封顶 2s。序列化 <25ms 时即 200ms。 */
 function emitDelayMs(serializeMs: number): number {
@@ -136,6 +138,9 @@ function CrepeEditor({
     let disposed = false;
     let serializeMs = 0; // 最近一次全量序列化实测耗时,决定防抖上抛的延迟
     let emitTimer: ReturnType<typeof setTimeout> | null = null;
+    // 排期上抛时(updated / 重排)的文档与本轮首次排期时刻:到点时文档又变了 = 用户仍在打字。
+    let pendingDoc: PmDoc | null = null;
+    let pendingSince = 0;
 
     // 编辑器当前文档相对 baseDoc 有无尚未上抛的编辑:有 → 推进基线并返回新全文,否则 null。
     // 只差尾部空白不算编辑:挂载期 Milkdown 会给以代码块 / 表格结尾的文档补一个尾随空段落,不是
@@ -154,9 +159,34 @@ function CrepeEditor({
       return prev !== null && markdown.trimEnd() === prev.trimEnd() ? null : markdown;
     };
 
+    // 按额外延迟排期上抛,截到本轮总等待上限(到上限即刻到点)。
+    const scheduleEmit = (doc: PmDoc): void => {
+      if (pendingDoc === null) pendingSince = performance.now();
+      pendingDoc = doc;
+      const left = Math.max(0, MAX_EMIT_WAIT_MS - (performance.now() - pendingSince));
+      const extra = emitDelayMs(serializeMs) - LISTENER_DEBOUNCE_MS;
+      emitTimer = setTimeout(emitPending, Math.min(extra, left));
+    };
+
     const emitPending = () => {
       emitTimer = null;
       if (disposed) return;
+      // 到点时文档相对排期时又变了(用户仍在打字,listener 防抖还没到):此刻全量序列化(大文档约 70ms)
+      // 会卡在打字中途 → 按额外延迟重排。不能直接放弃:addToHistory=false 的事务不再触发 updated。
+      if (pendingDoc !== null) {
+        let doc: PmDoc;
+        try {
+          doc = readEditor(crepe).doc;
+        } catch {
+          return;
+        }
+        const waited = performance.now() - pendingSince;
+        if (doc !== pendingDoc && waited < MAX_EMIT_WAIT_MS) {
+          scheduleEmit(doc);
+          return;
+        }
+        pendingDoc = null;
+      }
       let markdown: string | null;
       try {
         markdown = takeEdit();
@@ -203,14 +233,23 @@ function CrepeEditor({
       // 不用 markdownUpdated:它在 200ms 防抖里每次全量序列化。updated 触发条件相同(防抖到点且文档
       // 相对上次有变)但不序列化;由这里按实测序列化耗时自适应延迟后再序列化上抛 —— 小文档
       // (<25ms)防抖到点即上抛,与原 200ms 节奏一致。延迟期间的保存 / 关窗 / 卸载由 writeBack 同步补齐,
-      // 之后到点按当前文档判定,不重复、不回退上抛旧内容。
+      // 之后到点按当前文档判定,不重复、不回退上抛旧内容;到点时用户仍在打字则重排(见 emitPending)。
       listener.updated(() => {
         if (disposed) return;
         if (emitTimer !== null) clearTimeout(emitTimer);
         emitTimer = null;
-        const extra = emitDelayMs(serializeMs) - LISTENER_DEBOUNCE_MS;
-        if (extra <= 0) emitPending();
-        else emitTimer = setTimeout(emitPending, extra);
+        if (emitDelayMs(serializeMs) <= LISTENER_DEBOUNCE_MS) {
+          pendingDoc = null;
+          emitPending();
+          return;
+        }
+        let doc: PmDoc;
+        try {
+          doc = readEditor(crepe).doc;
+        } catch {
+          return;
+        }
+        scheduleEmit(doc);
       });
     });
 

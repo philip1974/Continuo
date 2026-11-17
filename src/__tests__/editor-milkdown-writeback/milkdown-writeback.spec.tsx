@@ -315,6 +315,68 @@ describe('Milkdown 防抖上抛按序列化耗时自适应', () => {
     expect(crepeHarness.serialize).not.toHaveBeenCalled();
   });
 
+  // 假时钟与定时器同步推进(总等待上限按 performance.now 计)
+  function advance(ms: number): void {
+    now += ms;
+    vi.advanceTimersByTime(ms);
+  }
+
+  it('额外延迟到点时用户仍在打字(文档已变)→ 不在打字中途序列化,按额外延迟重排', async () => {
+    const { onChange } = await mountEditor();
+    cost = 50;
+    crepeHarness.markdown = 'a\n';
+    fireDocUpdated();
+    crepeHarness.markdown = 'ab\n';
+    fireDocUpdated(); // 排队 200ms 后上抛
+    advance(150);
+    crepeHarness.markdown = 'abc\n'; // 继续打字,listener 防抖未到,无 updated
+    crepeHarness.serialize.mockClear();
+    advance(50); // 定时器到点
+    expect(crepeHarness.serialize).not.toHaveBeenCalled();
+    expect(onChange).toHaveBeenCalledTimes(1);
+
+    fireDocUpdated(); // 停手 200ms 后 listener 到点
+    advance(199);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    advance(1);
+    expect(onChange).toHaveBeenCalledTimes(2);
+    expect(onChange).toHaveBeenLastCalledWith('abc\n');
+  });
+
+  it('到点后文档又变、但不再触发 updated(addToHistory=false 事务)→ 重排后仍最终上抛', async () => {
+    const { onChange } = await mountEditor();
+    cost = 50;
+    crepeHarness.markdown = 'a\n';
+    fireDocUpdated();
+    crepeHarness.markdown = 'ab\n';
+    fireDocUpdated();
+    advance(150);
+    crepeHarness.markdown = 'abc\n'; // 不触发 updated 的变化
+    advance(50);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    advance(200);
+    expect(onChange).toHaveBeenCalledTimes(2);
+    expect(onChange).toHaveBeenLastCalledWith('abc\n');
+  });
+
+  it('持续输入不停 → 从首次未上抛的变化起最多等 5s 必上抛', async () => {
+    const { onChange } = await mountEditor();
+    cost = 60; // 额外延迟 280ms:不整除 5s,最后一次重排须截到上限而非再等满 280ms
+    crepeHarness.markdown = 'a\n';
+    fireDocUpdated();
+    crepeHarness.markdown = 'a0\n';
+    fireDocUpdated(); // 本轮首次未上抛的变化
+    for (let t = 100; t < 5000; t += 100) {
+      crepeHarness.markdown = `a${t}\n`;
+      advance(100);
+    }
+    expect(onChange).toHaveBeenCalledTimes(1); // t = 4900
+    crepeHarness.markdown = 'a5000\n';
+    advance(100); // t = 5000
+    expect(onChange).toHaveBeenCalledTimes(2);
+    expect(onChange).toHaveBeenLastCalledWith('a5000\n');
+  });
+
   it('卸载前排队中的变化由卸载回写落地;之后定时器不再上抛', async () => {
     const { onChange, onWriteBack, unmount } = await mountEditor();
     cost = 50;
