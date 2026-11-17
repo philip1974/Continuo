@@ -551,6 +551,7 @@
 
 ## [ExplorerSidebar(VSCode 风固定侧边栏)](./explorer-sidebar/README.md)
 
+- [`explorer-sidebar-render-isolation.spec.tsx`](./explorer-sidebar/explorer-sidebar-render-isolation.spec.tsx)
 - [`explorer-sidebar.spec.tsx`](./explorer-sidebar/explorer-sidebar.spec.tsx)
 
 ## [explorer-stores (M-Explorer Step 3)](./explorer-stores/README.md)
