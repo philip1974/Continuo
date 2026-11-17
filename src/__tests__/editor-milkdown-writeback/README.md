@@ -19,10 +19,14 @@
 - 回写使原本干净的 tab 变脏时,React 尚未重渲、autosave 还没排队 → 关窗 autosave flush 发现 store 内容 ≠
   schedule effect 看过的内容即先补排队再 flush;autosave 失败后未再编辑则不重试。
 - 200ms 防抖本身不变。
+- 不做多余的全量序列化(大文档一次约 70ms):以「最近一次已处理的 ProseMirror 文档」为基线,文档不可变,
+  引用相等即未变 → 回写直接返回;挂载时只记文档、不序列化,基线文本在首次需要比较时按**挂载时的文档**惰性
+  序列化(单纯查看不被规范化改写);只读预览不记基线。
 
 ## 规范
 
 | 文件 | 内容 |
 |---|---|
 | `milkdown-writeback.spec.tsx` | 回写句柄 / 卸载回写与停用 / 基线守卫 / autosave flush 补排队 |
+| `milkdown-ctx-contract.spec.tsx` | 真实 Crepe:slice 名取视图 / 序列化器、文档引用语义、卸载回写仍可取全文 |
 | `../dirty-close-confirm/dockshell-save-on-close.spec.tsx` | 握手先回写再保存 / flush autosave |

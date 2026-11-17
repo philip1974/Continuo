@@ -486,6 +486,7 @@
 
 ## [editor-milkdown-writeback](./editor-milkdown-writeback/README.md)
 
+- [`milkdown-ctx-contract.spec.tsx`](./editor-milkdown-writeback/milkdown-ctx-contract.spec.tsx)
 - [`milkdown-writeback.spec.tsx`](./editor-milkdown-writeback/milkdown-writeback.spec.tsx)
 
 ## [editor-session-restore(Editor tab session 持久化与恢复)](./editor-session-restore/README.md)

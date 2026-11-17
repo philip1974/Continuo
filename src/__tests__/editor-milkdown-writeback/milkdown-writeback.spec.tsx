@@ -17,13 +17,26 @@ import { createTab, useEditorStore } from '../../stores/editor.store';
 
 type MdListener = (ctx: unknown, markdown: string, prev: string) => void;
 
-// 模拟 Crepe:getMarkdown 返回编辑器当前全文(含尚未经 200ms 防抖上抛的输入);
-// listener 的 mounted / markdownUpdated 由测试手动触发。
-const crepeHarness = vi.hoisted(() => ({
-  markdown: '',
-  mounted: [] as Array<(ctx: unknown) => void>,
-  updated: [] as Array<(ctx: unknown, markdown: string, prev: string) => void>,
-}));
+// 模拟 Crepe:编辑器当前文档 = crepeHarness.doc(不可变对象,改内容即换新对象,同 ProseMirror);
+// serializer / getMarkdown 返回其 markdown(含尚未经 200ms 防抖上抛的输入);serialize 是 spy,
+// 用来断言「文档未变不序列化」。listener 的 mounted / markdownUpdated 由测试手动触发。
+type FakeDoc = { md: string };
+const crepeHarness = vi.hoisted(() => {
+  const h = {
+    doc: { md: '' } as { md: string },
+    serialize: null as unknown as ReturnType<typeof vi.fn>,
+    mounted: [] as Array<(ctx: unknown) => void>,
+    docUpdated: [] as Array<(ctx: unknown, doc: unknown, prev: unknown) => void>,
+    updated: [] as Array<(ctx: unknown, markdown: string, prev: string) => void>,
+    get markdown(): string {
+      return h.doc.md;
+    },
+    set markdown(md: string) {
+      h.doc = { md };
+    },
+  };
+  return h;
+});
 
 vi.mock('@milkdown/crepe', () => ({
   CrepeFeature: {
@@ -43,10 +56,21 @@ vi.mock('@milkdown/crepe', () => ({
     on: (fn: (l: unknown) => void) => {
       fn({
         mounted: (cb: (ctx: unknown) => void) => crepeHarness.mounted.push(cb),
+        updated: (cb: (ctx: unknown, doc: unknown, prev: unknown) => void) =>
+          crepeHarness.docUpdated.push(cb),
         markdownUpdated: (cb: MdListener) => crepeHarness.updated.push(cb),
       });
     },
-    getMarkdown: () => crepeHarness.markdown,
+    editor: {
+      ctx: {
+        get: (name: string) => {
+          if (name === 'editorView') return { state: { doc: crepeHarness.doc } };
+          if (name === 'serializer') return crepeHarness.serialize;
+          throw new Error(`no slice ${name}`);
+        },
+      },
+    },
+    getMarkdown: () => crepeHarness.serialize(crepeHarness.doc),
     create: async () => ({}),
     destroy: async () => {},
   })),
@@ -84,7 +108,9 @@ async function mountEditor(
 
 beforeEach(() => {
   crepeHarness.markdown = '';
+  crepeHarness.serialize = vi.fn((doc: FakeDoc) => doc.md);
   crepeHarness.mounted.length = 0;
+  crepeHarness.docUpdated.length = 0;
   crepeHarness.updated.length = 0;
 });
 afterEach(() => cleanup());
@@ -104,6 +130,7 @@ describe('Milkdown 同步回写', () => {
   it('基线随上抛推进:已上抛的编辑后再输入 → 基线为最近上抛内容', async () => {
     const { onWriteBack, onChange } = await mountEditor();
     crepeHarness.markdown = 'a\n';
+    for (const cb of crepeHarness.docUpdated) cb({}, crepeHarness.doc, null);
     for (const cb of crepeHarness.updated) cb({}, 'a\n', 'hello\n');
     expect(onChange).toHaveBeenCalledWith('a\n');
     crepeHarness.markdown = 'ab\n';
@@ -135,9 +162,52 @@ describe('Milkdown 同步回写', () => {
     expect(onWriteBack).toHaveBeenCalledWith('typed\n', 'hello');
 
     // 200ms 后 lodash debounce 照常触发(销毁不取消)
+    for (const cb of crepeHarness.docUpdated) cb({}, crepeHarness.doc, null);
     for (const cb of crepeHarness.updated) cb({}, 'typed\n', 'hello\n');
     expect(onChange).not.toHaveBeenCalled();
     flushEditorWriteBacks();
+    expect(onWriteBack).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('Milkdown 回写不做多余的全量序列化(大文档每次约 70ms)', () => {
+  it('挂载不序列化;文档未变时关窗 / Cmd+S 的 flush 不序列化', async () => {
+    const { onWriteBack } = await mountEditor();
+    expect(crepeHarness.serialize).not.toHaveBeenCalled();
+
+    flushEditorWriteBacks();
+    flushEditorWriteBacks();
+    expect(crepeHarness.serialize).not.toHaveBeenCalled();
+    expect(onWriteBack).not.toHaveBeenCalled();
+  });
+
+  it('只读预览挂载 / flush / 卸载都不序列化', async () => {
+    const { unmount } = await mountEditor({ readonly: true });
+    flushEditorWriteBacks();
+    unmount();
+    expect(crepeHarness.serialize).not.toHaveBeenCalled();
+  });
+
+  it('挂载后无编辑直接卸载 → 不序列化、不回写', async () => {
+    const { onWriteBack, unmount } = await mountEditor();
+    unmount();
+    expect(crepeHarness.serialize).not.toHaveBeenCalled();
+    expect(onWriteBack).not.toHaveBeenCalled();
+  });
+
+  it('有编辑时基线按挂载时的文档惰性序列化;回写后文档未再变 → 下次 flush 不再序列化', async () => {
+    const { onWriteBack } = await mountEditor();
+    const mountDoc = crepeHarness.doc;
+    crepeHarness.markdown = 'hello world\n';
+    const editedDoc = crepeHarness.doc;
+
+    flushEditorWriteBacks();
+    expect(crepeHarness.serialize.mock.calls.map((c) => c[0])).toEqual([mountDoc, editedDoc]);
+    expect(onWriteBack).toHaveBeenCalledWith('hello world\n', 'hello');
+
+    crepeHarness.serialize.mockClear();
+    flushEditorWriteBacks();
+    expect(crepeHarness.serialize).not.toHaveBeenCalled();
     expect(onWriteBack).toHaveBeenCalledTimes(1);
   });
 });

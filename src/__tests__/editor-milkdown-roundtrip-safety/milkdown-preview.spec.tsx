@@ -36,6 +36,7 @@ vi.mock('@milkdown/crepe', () => ({
     on: (
       register: (listener: {
         mounted: (cb: (_ctx: unknown) => void) => void;
+        updated: (cb: (_ctx: unknown, doc: unknown, prev: unknown) => void) => void;
         markdownUpdated: (
           cb: (_ctx: unknown, markdown: string, prevMarkdown: string) => void,
         ) => void;
@@ -43,6 +44,7 @@ vi.mock('@milkdown/crepe', () => ({
     ) => {
       register({
         mounted: () => {},
+        updated: () => {},
         markdownUpdated: (cb) => {
           milkdownHarness.markdownUpdated = cb;
         },

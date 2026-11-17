@@ -40,6 +40,21 @@ interface MilkdownEditorProps {
   onWriteBack?: (markdown: string, base: string) => void;
 }
 
+// ProseMirror 文档(Node)只用作引用比较与序列化入参,不依赖其结构。
+type PmDoc = object;
+
+/**
+ * 取编辑器当前文档与 markdown 序列化器。@milkdown/kit 不是直接依赖,不 import
+ * editorViewCtx / serializerCtx,按 slice 名取(名字由 milkdown-ctx-contract.spec 用真实 Crepe 钉住)。
+ */
+function readEditor(crepe: Crepe): { doc: PmDoc; serialize: (doc: PmDoc) => string } {
+  const ctx = crepe.editor.ctx;
+  return {
+    doc: ctx.get<{ state: { doc: PmDoc } }, 'editorView'>('editorView').state.doc,
+    serialize: ctx.get<(doc: PmDoc) => string, 'serializer'>('serializer'),
+  };
+}
+
 interface WriteBackHandle {
   writeBack: () => void;
   dispose: () => void;
@@ -97,25 +112,33 @@ function CrepeEditor({
 
     if (readonly) crepe.setReadonly(true);
 
-    // 同步回写状态(每个 Crepe 实例独立):lastSerialized = 编辑器最近一次已处理的序列化结果
-    // (挂载时 / 每次防抖 emit),据此判断有无尚未上抛的编辑;lastEmitted = 最近上抛给 store 的
-    // 内容(初值 = 挂载内容)。disposed 后迟到的防抖 emit 不再上抛 —— 卸载时已同步回写,
-    // 迟到 emit 可能覆盖之后的新编辑(切到 Source 继续输入)或外部重载。
-    let lastSerialized: string | null = null;
+    // 同步回写状态(每个 Crepe 实例独立):baseDoc = 编辑器最近一次已处理的文档(挂载时 / 每次防抖
+    // emit / 回写),据此判断有无尚未上抛的编辑 —— ProseMirror 文档不可变,引用相等即未变,不必序列化
+    // (大文档全量序列化一次约 70ms)。baseMarkdown = baseDoc 的序列化,惰性算:挂载时不序列化。
+    // lastEmitted = 最近上抛给 store 的内容(初值 = 挂载内容)。disposed 后迟到的防抖 emit 不再
+    // 上抛 —— 卸载时已同步回写,迟到 emit 可能覆盖之后的新编辑(切到 Source 继续输入)或外部重载。
+    let baseDoc: PmDoc | null = null;
+    let baseMarkdown: string | null = null;
+    let emittingDoc: PmDoc | null = null;
     let lastEmitted = defaultValue;
     let disposed = false;
     writeBackRef.current = {
       writeBack: () => {
-        if (readonly || disposed || lastSerialized === null) return;
+        if (readonly || disposed || baseDoc === null) return;
         let markdown: string;
         try {
-          markdown = crepe.getMarkdown();
+          const { doc, serialize } = readEditor(crepe);
+          if (doc === baseDoc) return;
+          // 基线必须用挂载时(或上次处理时)的文档序列化:单纯查看不被规范化改写。
+          const prev = (baseMarkdown ??= serialize(baseDoc));
+          markdown = serialize(doc);
+          baseDoc = doc;
+          baseMarkdown = markdown;
+          // 与 markdownUpdated 同口径:只差尾部空白不算编辑(挂载期补的尾随空段落,issue #44)。
+          if (markdown.trimEnd() === prev.trimEnd()) return;
         } catch {
           return; // 编辑器未就绪 / 已拆除:无可回写内容
         }
-        // 与 markdownUpdated 同口径:只差尾部空白不算编辑(挂载期补的尾随空段落,issue #44)。
-        if (markdown.trimEnd() === lastSerialized.trimEnd()) return;
-        lastSerialized = markdown;
         const base = lastEmitted;
         lastEmitted = markdown;
         if (onWriteBackRef.current) onWriteBackRef.current(markdown, base);
@@ -127,17 +150,25 @@ function CrepeEditor({
     };
 
     crepe.on((listener) => {
+      // 只读预览不回写,也就不记基线(省掉挂载时的序列化)。
+      if (readonly) return;
       listener.mounted(() => {
         try {
-          lastSerialized = crepe.getMarkdown();
+          baseDoc = readEditor(crepe).doc;
         } catch {
           /* 保持 null:不回写 */
         }
       });
+      // 同一次防抖里 updated 紧挨在 markdownUpdated 之前触发、文档相同:记下 emit 对应的文档。
+      listener.updated((_ctx, doc) => {
+        emittingDoc = doc;
+      });
       listener.markdownUpdated((_ctx, markdown, prevMarkdown) => {
         if (disposed) return;
-        lastSerialized = markdown;
-        if (readonly) return;
+        if (emittingDoc) {
+          baseDoc = emittingDoc;
+          baseMarkdown = markdown;
+        }
         // 挂载期 Milkdown 会给以代码块 / 表格结尾的文档补一个尾随空段落,序列化结果只多出
         // 尾部空白 —— 不是用户编辑,不上抛(否则打开即变脏、自动保存改写文件,issue #44)。
         // 不能用「吞掉第一次 emit」判断:以段落结尾的文档挂载期没有这次 emit,会吞掉用户的
