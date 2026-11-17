@@ -154,6 +154,35 @@ describe('createWindowApiHost.listPluginDirs', () => {
   });
 });
 
+// perf:热重载按 id 只读单个插件目录(coApi.plugins.readDirById)。
+describe('createWindowApiHost.readPluginDirByManifestId', () => {
+  it('ok=true → 透传 id/manifestText,mainText 惰性转 Blob URL', async () => {
+    const readDirById = vi.fn().mockResolvedValue({
+      ok: true,
+      data: { id: 'dir', manifestText: '{"id":"p1"}', mainText: 'export default {}' },
+    });
+    installFakeApi({ readDirById } as Partial<FakePluginsApi>);
+    const host = createWindowApiHost();
+    const info = await host.readPluginDirByManifestId!('p1');
+    expect(readDirById).toHaveBeenCalledWith('p1');
+    expect(createObjectURL).not.toHaveBeenCalled();
+    expect(info).toMatchObject({ id: 'dir', manifestText: '{"id":"p1"}', moduleUrl: 'blob:mock-url' });
+  });
+
+  it('data=null → null;ok=false → warn + null', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const readDirById = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, data: null })
+      .mockResolvedValueOnce({ ok: false, code: 'EIO', message: 'disk' });
+    installFakeApi({ readDirById } as Partial<FakePluginsApi>);
+    const host = createWindowApiHost();
+    await expect(host.readPluginDirByManifestId!('p1')).resolves.toBeNull();
+    await expect(host.readPluginDirByManifestId!('p1')).resolves.toBeNull();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('readDirById failed'), 'EIO', 'disk');
+  });
+});
+
 describe('createWindowApiHost.readEnabledIds', () => {
   it('ok=true → 转 Set', async () => {
     installFakeApi({

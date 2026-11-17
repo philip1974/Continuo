@@ -277,47 +277,133 @@ async function readMetadataCapped(filePath: string): Promise<string> {
 export async function listPluginDirs(baseDir: string): Promise<IpcPluginDir[]> {
   // 边界(E82):有界枚举(缺目录 → [] → 返回空列表,等价旧版)。
   const entries = await readPluginDirEntriesCapped(baseDir);
+  // perf:per-dir 读取(stat + manifest + main ≤8MiB)此前串行,N 个插件启动时 N 段 I/O 首尾相接。
+  // 有界并发(PLUGIN_DIR_IO_CONCURRENCY)读取,结果按 entries 原顺序收集(激活顺序契约不变)。
+  const results = await mapInOrderBounded(entries, (name) => readOnePluginDir(baseDir, name));
 
-  const out = new Array<IpcPluginDir>(entries.length);
+  const out = new Array<IpcPluginDir>(results.length);
   let outCount = 0;
-  for (const id of entries) {
-    if (id.startsWith('.') || id.startsWith('_')) continue;
-
-    const dir = path.join(baseDir, id);
-    let stat: import('node:fs').Stats;
-    try {
-      stat = await fs.stat(dir);
-    } catch {
-      continue;
-    }
-    if (!stat.isDirectory()) continue;
-
-    // 边界(E24):manifest 超 1MiB(或缺失/不可读)→ 跳过整插件,不整文件读入 + IPC 传输。
-    const manifestText = await readFileCapped(
-      path.join(dir, 'manifest.json'),
-      MANIFEST_MAX_BYTES,
-    );
-    if (manifestText === null) continue;
-
-    // 解析 manifest.main(若失败用默认 main.js,M20:共用 getPluginMainName)
-    let mainName = 'main.js';
-    try {
-      mainName = getPluginMainName(JSON.parse(manifestText));
-    } catch {
-      // manifest 解析失败由 renderer 端 parseManifest 报错,我们继续给 mainText 尝试默认
-    }
-
-    const mainPath = resolvePluginMainPath(dir, mainName);
-    if (!mainPath) continue;
-    // 边界(E24):main 超 8MiB(或缺失/不可读)→ 跳过整个 plugin。
-    const mainText = await readFileCapped(mainPath, MAIN_MAX_BYTES);
-    if (mainText === null) continue;
-
-    out[outCount] = { id, manifestText, mainText };
+  for (const r of results) {
+    if (r === null) continue;
+    out[outCount] = r;
     outCount += 1;
   }
   out.length = outCount;
   return out;
+}
+
+/** 插件目录 I/O 的并发上限(list 首扫 / reload 回退扫描 / watcher 轮询共用)。 */
+const PLUGIN_DIR_IO_CONCURRENCY = 8;
+
+/**
+ * 以最多 PLUGIN_DIR_IO_CONCURRENCY 个并发对 items 运行 fn,结果按输入顺序对位。
+ * fn 自行吞掉可预期错误(返回 null 等);意外抛错与旧串行循环一样让整体 reject。
+ */
+async function mapInOrderBounded<T, R>(
+  items: readonly T[],
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < items.length) {
+      const i = next;
+      next += 1;
+      results[i] = await fn(items[i]!);
+    }
+  };
+  const workerCount = Math.min(PLUGIN_DIR_IO_CONCURRENCY, items.length);
+  const workers = new Array<Promise<void>>(workerCount);
+  for (let i = 0; i < workerCount; i += 1) workers[i] = worker();
+  await Promise.all(workers);
+  return results;
+}
+
+/** 读单个插件目录的 manifest 文本(过滤 . / _ 前缀与非目录;缺失 / 超限 → null)。 */
+async function readPluginManifestText(
+  baseDir: string,
+  name: string,
+): Promise<{ dir: string; manifestText: string } | null> {
+  if (name.startsWith('.') || name.startsWith('_')) return null;
+  const dir = path.join(baseDir, name);
+  let stat: import('node:fs').Stats;
+  try {
+    stat = await fs.stat(dir);
+  } catch {
+    return null;
+  }
+  if (!stat.isDirectory()) return null;
+  // 边界(E24):manifest 超 1MiB(或缺失/不可读)→ 跳过整插件,不整文件读入 + IPC 传输。
+  const manifestText = await readFileCapped(
+    path.join(dir, 'manifest.json'),
+    MANIFEST_MAX_BYTES,
+  );
+  if (manifestText === null) return null;
+  return { dir, manifestText };
+}
+
+/** 按 manifest.main(解析失败 → 默认 main.js)读 main 文本;越界 / 缺失 / 超限 → null。 */
+async function readPluginMainText(dir: string, manifestText: string): Promise<string | null> {
+  // 解析 manifest.main(若失败用默认 main.js,M20:共用 getPluginMainName)
+  let mainName = 'main.js';
+  try {
+    mainName = getPluginMainName(JSON.parse(manifestText));
+  } catch {
+    // manifest 解析失败由 renderer 端 parseManifest 报错,我们继续给 mainText 尝试默认
+  }
+  const mainPath = resolvePluginMainPath(dir, mainName);
+  if (!mainPath) return null;
+  // 边界(E24):main 超 8MiB(或缺失/不可读)→ 跳过整个 plugin。
+  return readFileCapped(mainPath, MAIN_MAX_BYTES);
+}
+
+async function readOnePluginDir(baseDir: string, name: string): Promise<IpcPluginDir | null> {
+  const m = await readPluginManifestText(baseDir, name);
+  if (m === null) return null;
+  const mainText = await readPluginMainText(m.dir, m.manifestText);
+  if (mainText === null) return null;
+  return { id: name, manifestText: m.manifestText, mainText };
+}
+
+/** manifest 文本里的 id(与 renderer findPluginDirByManifestId 同判据:JSON 损坏 → undefined)。 */
+function manifestIdOf(manifestText: string): unknown {
+  try {
+    return (JSON.parse(manifestText) as { id?: unknown } | null)?.id;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * perf:单插件热重载只读目标插件(此前 reload 走 listPluginDirs 全量读所有插件 main ≤8MiB 并经 IPC 传输,
+ * 每个窗口各一次)。选择结果与 `findPluginDirByManifestId(listPluginDirs(baseDir), id)` 完全等价:
+ * 只考虑 listPluginDirs 会收录的目录(同一有界枚举、. / _ 过滤、manifest + main 可读),manifest.id === id;
+ * 目录名 == id 的优先,否则目录名字典序最小(preferPluginDir 同规则)。
+ * - 快路径:枚举里有名为 id 的目录 → 只读它;它合格即为最优解(同名唯一且优先),不碰其它插件。
+ * - 回退:只读其它目录的 manifest(有界并发),按目录名升序逐个尝试读 main,首个可读者即结果。
+ */
+export async function readPluginDirByManifestId(
+  baseDir: string,
+  id: string,
+): Promise<IpcPluginDir | null> {
+  const entries = await readPluginDirEntriesCapped(baseDir);
+  if (entries.includes(id)) {
+    const exact = await readOnePluginDir(baseDir, id);
+    if (exact !== null && manifestIdOf(exact.manifestText) === id) return exact;
+  }
+  const others = entries.filter((name) => name !== id);
+  const manifests = await mapInOrderBounded(others, (name) => readPluginManifestText(baseDir, name));
+  const candidates: { name: string; dir: string; manifestText: string }[] = [];
+  for (let i = 0; i < others.length; i += 1) {
+    const m = manifests[i];
+    if (m && manifestIdOf(m.manifestText) === id) candidates.push({ name: others[i]!, ...m });
+  }
+  candidates.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  for (const c of candidates) {
+    const mainText = await readPluginMainText(c.dir, c.manifestText);
+    if (mainText !== null) return { id: c.name, manifestText: c.manifestText, mainText };
+  }
+  return null;
 }
 
 const ENABLED_FILE = '_enabled.json';

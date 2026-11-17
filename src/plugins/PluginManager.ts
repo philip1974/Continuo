@@ -30,6 +30,11 @@ export interface PluginDirInfo {
 export interface ManagerHost {
   /** 同步返回所有插件目录信息(主进程预先扫好). */
   listPluginDirs(): readonly PluginDirInfo[] | Promise<readonly PluginDirInfo[]>;
+  /**
+   * 按 manifest.id 只读单个插件目录(可选,perf:热重载不再全量 listPluginDirs)。选择规则须与
+   * findPluginDirByManifestId(listPluginDirs(), id) 等价;不存在 → null。缺省 → reload 回退全量扫描。
+   */
+  readPluginDirByManifestId?(id: string): Promise<PluginDirInfo | null>;
   /** 读取 enabled.json. */
   readEnabledIds(): ReadonlySet<string> | Promise<ReadonlySet<string>>;
   /**
@@ -453,9 +458,11 @@ export class PluginManager {
     const entry = this.entries.get(id);
     if (!entry) throw new Error(`Plugin ${id} not found`);
 
-    const dirs = await this.host.listPluginDirs();
-    // 用 manifest.id 匹配(目录名可能跟 id 不一致;manifest.id 是真源)
-    const fresh = findPluginDirByManifestId(dirs, id);
+    // 用 manifest.id 匹配(目录名可能跟 id 不一致;manifest.id 是真源)。perf:host 支持时只读目标插件
+    //(main 端同一选择规则),否则全量扫描后匹配。
+    const fresh = this.host.readPluginDirByManifestId
+      ? await this.host.readPluginDirByManifestId(id)
+      : findPluginDirByManifestId(await this.host.listPluginDirs(), id);
     if (!fresh) {
       throw new Error(`Plugin ${id} no longer exists in plugins dir`);
     }

@@ -20,6 +20,12 @@ dynamic import。IPC 失败统一 console.warn fallback 空数组 / 空 set,**�
 - ok=true → 每条 IpcPluginDir 的 `moduleUrl` **惰性**生成:首次读取时才把 mainText 包成 Blob →
   URL.createObjectURL(只生成一次);未被读取的(reload 时非目标插件)不生成。manifestText 透传
 
+### readPluginDirByManifestId(id)(perf:热重载只读目标插件)
+
+- 调 coApi.plugins.readDirById(id);data=null → null
+- ok=false → console.warn + 返 null(PluginManager.reload 据此抛 no longer exists,与旧 listDirs 失败同)
+- ok=true → moduleUrl 同样惰性生成
+
 ### readEnabledIds
 
 - ok=false → console.warn + 返空 Set

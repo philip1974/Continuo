@@ -795,6 +795,38 @@ describe('reload(id)', () => {
     await mgr.reload('k');
     expect(state.enabledWritten.size).toBe(0);
   });
+
+  // perf:host 提供按 id 读单目录时,reload 只读目标插件,不再全量 listPluginDirs。
+  it('host 提供 readPluginDirByManifestId → reload 只按 id 读,不调 listPluginDirs', async () => {
+    const state: MockHostState = {
+      dirs: [{ id: 'k', manifestText: manifestText('k'), moduleUrl: 'mod://k' }],
+      enabled: new Set(['k']),
+      modules: new Map([
+        ['mod://k', { default: GoodPlugin }],
+        ['mod://k2', { default: GoodPlugin }],
+      ]),
+      enabledWritten: new Set(),
+    };
+    const base = makeHost(state);
+    const listSpy = vi.fn(base.listPluginDirs);
+    const readOne = vi.fn(async (id: string) =>
+      id === 'k' ? { id: 'k', manifestText: manifestText('k'), moduleUrl: 'mod://k2' } : null,
+    );
+    const mgr = new PluginManager(fakeApp, {
+      ...base,
+      listPluginDirs: listSpy,
+      readPluginDirByManifestId: readOne,
+    });
+    await mgr.init();
+    expect(listSpy).toHaveBeenCalledTimes(1);
+    await mgr.reload('k');
+    expect(listSpy).toHaveBeenCalledTimes(1);
+    expect(readOne).toHaveBeenCalledWith('k');
+    expect(mgr.listAll().find((p) => p.id === 'k')?.status).toBe('enabled');
+
+    readOne.mockResolvedValueOnce(null);
+    await expect(mgr.reload('k')).rejects.toThrow(/no longer exists/i);
+  });
 });
 
 // ── v4.6 uninstall ─────────────────────────────────────

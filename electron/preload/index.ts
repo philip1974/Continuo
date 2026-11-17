@@ -321,6 +321,9 @@ const api = {
   plugins: {
     listDirs: (): Promise<IpcResult<readonly IpcPluginDir[]>> =>
       ipcRenderer.invoke(PLUGINS_CHANNELS.LIST_DIRS),
+    /** perf:按 manifest.id 只读单个插件目录(热重载用),不存在 → null. */
+    readDirById: (id: string): Promise<IpcResult<IpcPluginDir | null>> =>
+      ipcRenderer.invoke(PLUGINS_CHANNELS.READ_DIR_BY_ID, { id }),
     readEnabled: (): Promise<IpcResult<readonly string[]>> =>
       ipcRenderer.invoke(PLUGINS_CHANNELS.READ_ENABLED),
     /** 数据安全:按单 plugin 启用/禁用 delta 写,防多窗口整表 RMW 互相覆盖. */
