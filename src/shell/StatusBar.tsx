@@ -2,7 +2,7 @@
 // 左:workspace 名 + sidebar 收起提示 + git 分支占位。
 // 右:active editor tab 文件名 + dirty + 行 / 词 / 字符 + 编码占位。
 
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { SR_ONLY_STYLE } from '@/lib/sr-only';
 import { useRegistry } from '@/plugins/registries/useRegistry';
@@ -88,18 +88,6 @@ function liveRenderStatusItem(item: StatusBarItemSpec): React.ReactNode {
     return null;
   }
 }
-
-// perf E5:每个插件 item 一个 memo 子组件。active 文件每按键都让状态栏重渲(更新文本统计),
-// 此前左右两侧随之重新执行全部插件 render()。item 只在 registry 快照里的 spec 变化(注册/注销/
-// 同 id 重新注册)时重渲;item 内部动态内容的刷新契约是 render 返回的 React 子组件自身状态,
-// 不依赖状态栏的无关重渲。live 复查 + try/catch(R56)保留在 liveRenderStatusItem。
-const LiveStatusItem = memo(function LiveStatusItem({
-  item,
-}: {
-  item: StatusBarItemSpec;
-}) {
-  return <span>{liveRenderStatusItem(item)}</span>;
-});
 
 export function countAgentSessions(sessions: readonly TerminalSession[]): number {
   let count = 0;
@@ -274,13 +262,13 @@ export function StatusBar() {
         )}
         {/* 插件贡献的左侧 statusBar items(race R56:render 时 live 复查) */}
         {leftItems.map((item) => (
-          <LiveStatusItem key={item.id} item={item} />
+          <span key={item.id}>{liveRenderStatusItem(item)}</span>
         ))}
       </div>
       <div className="flex items-center gap-3">
         {/* 插件贡献的右侧 statusBar items(在内置项左边;race R56:render 时 live 复查) */}
         {rightItems.map((item) => (
-          <LiveStatusItem key={item.id} item={item} />
+          <span key={item.id}>{liveRenderStatusItem(item)}</span>
         ))}
         {/* native button:24px 状态栏内的行内文本按钮,design Button 最小高度超出状态栏;颜色走语义 token。 */}
         <button
