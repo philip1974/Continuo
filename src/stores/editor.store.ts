@@ -61,6 +61,12 @@ export interface EditorTab {
    * 只由 acceptUnsafeEdit 置 true;按 tab 记,不影响其它 unsafe tab。runtime only。
    */
   readonly unsafeEditAccepted?: boolean;
+  /**
+   * filePath 为符号链接时其真实目标(main readFile 解析,见 shared FsReadFileData)。外部同步据此按目标
+   * 目录 / 文件名匹配 dir-changed(FSEvents/inotify 报的是被实际修改的目录项名)。打开 / 会话恢复 /
+   * reloadFromDisk 时随读盘结果更新;runtime only,不持久化(collectEditorSnapshot 只取 filePath)。
+   */
+  readonly realPath?: string;
 }
 
 // 变脏代际的全局单调计数器:按 tab 实例计数会在关闭重开同一路径后从 1 重算,与已接受的旧身份撞号(复审)。
@@ -82,8 +88,9 @@ const EMPTY_EDITOR_TABS: EditorTab[] = [];
 export function createTab(
   filePath: string | null,
   content: string,
+  realPath?: string,
 ): EditorTab {
-  return {
+  const tab: EditorTab = {
     id: filePath ?? `untitled-${crypto.randomUUID()}`,
     filePath,
     content,
@@ -91,6 +98,15 @@ export function createTab(
     dirty: false,
     milkdownUnsafe: computeMilkdownUnsafe(filePath, content), // perf P4
   };
+  return realPath === undefined ? tab : { ...tab, realPath };
+}
+
+/** 按最新读盘结果设置 / 移除 realPath(未变则原样返回,保持对象 identity). */
+function withRealPath(tab: EditorTab, realPath: string | undefined): EditorTab {
+  if (tab.realPath === realPath) return tab;
+  if (realPath !== undefined) return { ...tab, realPath };
+  const { realPath: _drop, ...rest } = tab;
+  return rest;
 }
 
 export function replaceTabAt(
@@ -458,8 +474,11 @@ type EditorState = {
   removePaths: (paths: readonly string[]) => void;
   /** 文件/目录被重命名 / 移动时调用:精确或前缀匹配的 tab 同步路径. */
   renamePath: (oldPath: string, newPath: string) => void;
-  /** 外部修改时调用:非 dirty tab 同步 content+originalContent;dirty 跳过. */
-  reloadFromDisk: (tabId: string, content: string) => void;
+  /**
+   * 外部修改时调用:非 dirty tab 同步 content+originalContent;dirty 跳过。realPath = 本次读盘
+   * 结果的符号链接真实目标(缺省 = 非链接,移除旧值)。
+   */
+  reloadFromDisk: (tabId: string, content: string, realPath?: string) => void;
   /** 工作区切换时调用:关闭 root 外的 file tabs;untitled 始终保留. */
   closeTabsOutsideRoot: (root: string | null) => void;
   switchTab: (id: string, opts?: EditorFocusOpts) => void;
@@ -578,17 +597,20 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
       ),
     ),
 
-  reloadFromDisk: (tabId, content) =>
+  reloadFromDisk: (tabId, content, realPath) =>
     set((s) => {
       const idx = findEditorTabIndexById(s.tabs, tabId);
       if (idx < 0) return s;
       const cur = s.tabs[idx]!;
       // dirty:保留用户改动,不覆盖
       if (cur.dirty) return s;
-      // 内容没变(stat 触发但实际未改):无需重渲
-      if (cur.originalContent === content) return s;
+      const base = withRealPath(cur, realPath);
+      // 内容没变(stat 触发但实际未改):无需重渲;仅链接目标变了时同步 realPath(chrome 不变)
+      if (cur.originalContent === content) {
+        return base === cur ? s : { tabs: replaceTabAt(s.tabs, idx, base) };
+      }
       const next: EditorTab = {
-        ...cur,
+        ...base,
         content,
         originalContent: content,
         dirty: false,

@@ -1,10 +1,18 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdir, mkdtemp, readFile as fspReadFile, rm, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  mkdtemp,
+  readFile as fspReadFile,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { existsSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { FS_CHANNELS } from '../../../electron/shared/fs-channels';
+import { FS_CHANNELS, toFsReadFileResult } from '../../../electron/shared/fs-channels';
 import {
   createDirHandler,
   createDirInputSchema,
@@ -345,10 +353,29 @@ describe('handlers 接线', () => {
     expect(recursive.some((i) => i.name === 'inner.txt')).toBe(true);
   });
 
-  it('readFileHandler 返回 utf-8 内容', async () => {
+  it('readFileHandler 返回 utf-8 内容(普通文件不带 realPath)', async () => {
     const f = path.join(dir, 'r.txt');
     await writeFile(f, 'hello');
-    expect(await readFileHandler({ path: f })).toBe('hello');
+    expect(await readFileHandler({ path: f })).toEqual({ content: 'hello' });
+  });
+
+  // 外部同步(dir-changed 按文件名匹配)需要知道 symlink tab 的真实目标:FSEvents/inotify 上报的是被
+  // 实际修改的目录项(链接目标)名。leaf 为 symlink 时随结果带 realPath(与保存写穿同一套解析)。
+  it('readFileHandler:leaf 为 symlink → 读目标内容并带 realPath(同目录 / 跨目录)', async () => {
+    const canonical = await realpath(dir);
+    await writeFile(path.join(dir, 'AGENTS.md'), 'agents');
+    await symlink('AGENTS.md', path.join(dir, 'CLAUDE.md'));
+    expect(await readFileHandler({ path: path.join(dir, 'CLAUDE.md') })).toEqual({
+      content: 'agents',
+      realPath: path.join(canonical, 'AGENTS.md'),
+    });
+    await mkdir(path.join(dir, 'other'));
+    await writeFile(path.join(dir, 'other', 't.md'), 'far');
+    await symlink(path.join(dir, 'other', 't.md'), path.join(dir, 'link.md'));
+    expect(await readFileHandler({ path: path.join(dir, 'link.md') })).toEqual({
+      content: 'far',
+      realPath: path.join(canonical, 'other', 't.md'),
+    });
   });
 
   it('writeFileHandler 落盘内容正确', async () => {
@@ -474,5 +501,36 @@ describe('makeSelectDirectoryHandler', () => {
     expect(showOpenDialog).toHaveBeenCalledTimes(1);
     const arg = showOpenDialog.mock.calls[0]![0];
     expect(arg.properties).toContain('openDirectory');
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// E. preload 侧 readFile 结果映射:data 仍为 string(既有调用方不变),realPath 校验后可选附带
+// ────────────────────────────────────────────────────────────
+
+describe('toFsReadFileResult', () => {
+  it('ok + realPath 合规 → { ok, data: content, realPath }', () => {
+    expect(
+      toFsReadFileResult({ ok: true, data: { content: 'x', realPath: '/r/a.md' } }, 100),
+    ).toEqual({ ok: true, data: 'x', realPath: '/r/a.md' });
+  });
+  it('ok 无 realPath → 不带该字段', () => {
+    expect(toFsReadFileResult({ ok: true, data: { content: 'x' } }, 100)).toEqual({
+      ok: true,
+      data: 'x',
+    });
+  });
+  it('realPath 畸形 / 超长 → 丢弃 realPath(内容照常)', () => {
+    for (const bad of [42, '', 'x'.repeat(101), null]) {
+      const r = toFsReadFileResult(
+        { ok: true, data: { content: 'x', realPath: bad as unknown as string } },
+        100,
+      );
+      expect(r).toEqual({ ok: true, data: 'x' });
+    }
+  });
+  it('失败结果原样透传', () => {
+    const fail = { ok: false as const, code: 'FS_NOT_FOUND', message: 'nope' };
+    expect(toFsReadFileResult(fail, 100)).toBe(fail);
   });
 });

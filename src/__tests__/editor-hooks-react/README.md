@@ -36,4 +36,5 @@
 - dirty tab 跳过
 - changedDir ≠ dirname → 跳过
 - dir-changed 携带变更文件名集合 → 只重读文件名在集合内的 clean tab(rename 旧名/新名命中任一即可;文件名比较大小写 + NFC 宽松,宁多读不漏读);无集合(平台不给 filename / 缓冲溢出 / 超上限)→ 退化为按目录匹配
+- symlink tab(tab.realPath = 读盘时 main 解析的链接真实目标,runtime only 不持久化):目录按 dirname(filePath) 或 dirname(realPath)、文件名按 basename(filePath) 或 basename(realPath) 匹配 → 同目录 `CLAUDE.md -> AGENTS.md` 外部改 AGENTS.md、跨目录链接目标所在目录变更都重读链接 tab;watch-restored 子树同理;重读结果的 realPath 回写 tab
 - readFile ok=false → 跳过(不抛)

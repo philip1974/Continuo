@@ -94,6 +94,18 @@ describe('openFileByPath', () => {
     expect(deps.fs.readFile).toHaveBeenCalledWith('/x/a.md');
   });
 
+  it('symlink 文件:readFile 带 realPath → tab 记下真实目标(供外部同步匹配),id/filePath 仍为打开路径', async () => {
+    const deps = makeDeps({
+      readFile: vi.fn(async () => ({ ok: true as const, data: 'agents', realPath: '/x/AGENTS.md' })),
+    });
+    await openFileByPath('/x/CLAUDE.md', deps);
+    expect(useEditorStore.getState().tabs[0]).toMatchObject({
+      id: '/x/CLAUDE.md',
+      filePath: '/x/CLAUDE.md',
+      realPath: '/x/AGENTS.md',
+    });
+  });
+
   it('已开过同 path → 不重读,只 switchTab', async () => {
     const existing = createTab('/x/a.md', 'cached');
     useEditorStore.setState({

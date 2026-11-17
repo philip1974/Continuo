@@ -63,7 +63,7 @@ export function useExternalFileSync(): void {
       path: string,
       tabId: string,
       tabRef: EditorTab | null,
-      r: { ok: true; data: string } | { ok: false } | null,
+      r: { ok: true; data: string; realPath?: string } | { ok: false } | null,
     ): void => {
       // race(R79):effect 已 cleanup(卸载/重挂/StrictMode 双跑)→ 本次是过期 effect 的迟到
       // 结果,直接丢弃,绝不 reloadFromDisk(否则用旧快照回滚 clean tab)。inFlight/pending
@@ -79,7 +79,7 @@ export function useExternalFileSync(): void {
         // live tab 仍是同一实例(未被 close+reopen、未被更新的 reload 替换、未变 dirty)才回写;否则丢弃。
         const live = findEditorFileTabById(useEditorStore.getState().tabs, tabId);
         if (live !== null && live === tabRef) {
-          useEditorStore.getState().reloadFromDisk(tabId, r.data);
+          useEditorStore.getState().reloadFromDisk(tabId, r.data, r.realPath);
         }
       }
       // 被合并的尾随事件 → 读最终内容并应用(本次中间结果已被取代,不落地)
@@ -106,18 +106,25 @@ export function useExternalFileSync(): void {
       return readAndApply(path, tabId);
     };
 
-    const matchingCleanTabs = (match: (filePath: string) => boolean): EditorTab[] => {
+    // symlink tab:filePath 是打开路径(链接),realPath 是读盘时 main 解析的真实目标(见 EditorTab.realPath)。
+    // FSEvents/inotify 上报的是被实际修改的目录项(链接目标),故匹配谓词同时收到两者,任一侧命中即重读
+    //(重读仍经 filePath 读,读到的就是目标内容)。
+    const matchingCleanTabs = (
+      match: (filePath: string, realPath: string | undefined) => boolean,
+    ): EditorTab[] => {
       const out: EditorTab[] = [];
       for (const tab of useEditorStore.getState().tabs) {
         if (tab.filePath === null) continue;
         if (tab.dirty) continue; // 保留用户改动,不覆盖
-        if (match(tab.filePath)) out.push(tab);
+        if (match(tab.filePath, tab.realPath)) out.push(tab);
       }
       return out;
     };
 
     // dir-changed:精确匹配直接父目录(+ 可选文件名集合),命中数通常很小,直接逐个发起。
-    const reloadMatching = (match: (filePath: string) => boolean): void => {
+    const reloadMatching = (
+      match: (filePath: string, realPath: string | undefined) => boolean,
+    ): void => {
       for (const tab of matchingCleanTabs(match)) void requestReload(tab.filePath!, tab.id);
     };
 
@@ -127,7 +134,9 @@ export function useExternalFileSync(): void {
     // (effect 已卸载 / tab 已关或变 dirty → 跳过;该 path 已被 dir-changed 读取在途 → 并入 pending
     // 尾随一次),保持每 path 读严格串行。
     const reloadSubtree = (dir: string): void => {
-      const targets = matchingCleanTabs((fp) => isSameOrInsidePath(dir, fp));
+      const targets = matchingCleanTabs(
+        (fp, rp) => isSameOrInsidePath(dir, fp) || (rp !== undefined && isSameOrInsidePath(dir, rp)),
+      );
       void allSettledWithConcurrency(targets, RESTORED_RELOAD_CONCURRENCY, async (t) => {
         if (cancelled) return;
         const live = findEditorFileTabById(useEditorStore.getState().tabs, t.id);
@@ -139,12 +148,17 @@ export function useExternalFileSync(): void {
     // clean tab 整文件读回,Markdown 2s 自动保存 / 根目录持续写日志时几乎不停读盘);无集合(平台不给
     // filename / 缓冲溢出 / 超上限)→ 退化为按目录匹配。目录仍按 pathEquals(dirname) 判定;文件名比较
     // 故意更宽松(大小写 + Unicode NFC 折叠):误命中只多读一次(= 旧行为),漏命中会让 clean tab 停旧内容。
+    // symlink tab:目录取 dirname(filePath) 或 dirname(realPath),文件名取 basename(filePath) 或
+    // basename(realPath),两侧不强制配对 —— 工作区经非 canonical 路径打开(如 /tmp → /private/tmp)时
+    // realPath 的目录与广播目录字面不同,但同目录链接仍能由「链接目录 + 目标名」命中;交叉误命中只多读一次。
     const unsub = coApi.fs.onDirChanged((changedDir, files) => {
       const names = files ? new Set(files.map(foldFileName)) : null;
+      const nameHit = (p: string): boolean => names!.has(foldFileName(basename(p)));
       reloadMatching(
-        (fp) =>
-          pathEquals(dirname(fp), changedDir) &&
-          (names === null || names.has(foldFileName(basename(fp)))),
+        (fp, rp) =>
+          (pathEquals(dirname(fp), changedDir) ||
+            (rp !== undefined && pathEquals(dirname(rp), changedDir))) &&
+          (names === null || nameHit(fp) || (rp !== undefined && nameHit(rp))),
       );
     });
     const unsubRestored = onWatchRestored(reloadSubtree);

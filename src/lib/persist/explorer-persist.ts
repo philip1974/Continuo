@@ -44,6 +44,7 @@ import { subscribeAll } from '@/plugins/registries/useRegistry';
 import { clampWidth } from '@/lib/use-column-resize';
 import { pathEquals } from '@/lib/path-cross';
 import { findWindowEntryBySeq } from '../../../electron/shared/window-entry-lookup';
+import type { FsReadFileResult } from '../../../electron/shared/fs-channels';
 import type { IpcResult } from '../fs/types';
 import {
   ExplorerSchema,
@@ -92,7 +93,7 @@ export interface ExplorerPersistApi {
 
 /** Editor session 异步 hydrate 所需的 fs 子集(只用 readFile). */
 export interface EditorSessionFsApi {
-  readFile: (path: string) => Promise<IpcResult<string>>;
+  readFile: (path: string) => Promise<FsReadFileResult>;
 }
 
 export interface InitExplorerPersistenceExtras {
@@ -368,7 +369,7 @@ export async function hydrateEditorTabs(
     if (!s || s.status !== 'fulfilled') continue; // reject → 当失败跳过(不抛)
     const r = s.value;
     if (!r || !r.ok) continue;
-    store.openTab(createTab(paths[i]!, r.data), restoreOpts);
+    store.openTab(createTab(paths[i]!, r.data, r.realPath), restoreOpts);
   }
   // 重读最新 store(openTab 改了状态)
   const next = useEditorStore.getState();

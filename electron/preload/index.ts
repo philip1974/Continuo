@@ -13,6 +13,9 @@ import {
   FS_CHANNELS,
   isFsDirChangedPayload,
   readFsDirChangedFiles,
+  toFsReadFileResult,
+  type FsReadFileData,
+  type FsReadFileResult,
 } from '../shared/fs-channels';
 import { FS_PATH_MAX } from '../shared/fs-limits';
 import { SESSION_UPDATE_CWD_CHANNEL, TERMINAL_CHANNELS } from '../shared/terminal-channels';
@@ -201,8 +204,12 @@ const api = {
       options?: PreloadListDirOptions,
     ): Promise<IpcResult<ReadonlyArray<FileEntry>>> =>
       ipcRenderer.invoke(FS_CHANNELS.LIST_DIR, { path, options }),
-    readFile: (path: string): Promise<IpcResult<string>> =>
-      ipcRenderer.invoke(FS_CHANNELS.READ_FILE, { path }),
+    /** data = 文件内容;realPath = leaf 为符号链接时的真实目标(可选,FS_PATH_MAX 与 PATH_STR_MAX 同值). */
+    readFile: async (path: string): Promise<FsReadFileResult> =>
+      toFsReadFileResult(
+        (await ipcRenderer.invoke(FS_CHANNELS.READ_FILE, { path })) as IpcResult<FsReadFileData>,
+        FS_PATH_MAX,
+      ),
     writeFile: (path: string, content: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(FS_CHANNELS.WRITE_FILE, { path, content }),
     writeBinary: (path: string, content: Uint8Array): Promise<IpcResult<void>> =>

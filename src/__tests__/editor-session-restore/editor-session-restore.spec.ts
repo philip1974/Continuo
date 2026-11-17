@@ -91,6 +91,19 @@ describe('snapshotFromStores · editor 字段', () => {
     expect(snap.windows[0]!.editor!.activePath).toBe('/b.md');
   });
 
+  it('tab 的 realPath(symlink 真实目标,runtime only)不进入持久化快照', () => {
+    useEditorStore.setState({
+      tabs: [createTab('/CLAUDE.md', 'x', '/AGENTS.md')],
+      activeTabId: '/CLAUDE.md',
+    });
+    const snap = snapshotFromStores();
+    expect(snap.windows[0]!.editor).toEqual({
+      openFilePaths: ['/CLAUDE.md'],
+      activePath: '/CLAUDE.md',
+    });
+    expect(JSON.stringify(snap)).not.toContain('AGENTS');
+  });
+
   it('含 untitled tab(filePath=null)→ 不进 openFilePaths', () => {
     const untitled = createTab(null, 'draft');
     const tabs = [createTab('/x.md', 'x'), untitled, createTab('/y.md', 'y')];
@@ -231,6 +244,20 @@ describe('hydrateEditorTabs', () => {
     const { tabs } = useEditorStore.getState();
     expect(tabs.map((t) => t.filePath)).toEqual(['/a.md', '/b.md']);
     expect(tabs.map((t) => t.content)).toEqual(['A', 'B']);
+  });
+
+  it('symlink tab:readFile 带 realPath → 恢复的 tab 记下真实目标', async () => {
+    const fs: EditorSessionFsApi = {
+      readFile: vi.fn(async (p: string) =>
+        p === '/l.md'
+          ? { ok: true as const, data: 'T', realPath: '/t/T.md' }
+          : { ok: true as const, data: 'A' },
+      ),
+    };
+    await hydrateEditorTabs(snapWithEditor(['/a.md', '/l.md'], '/a.md'), fs);
+    const { tabs } = useEditorStore.getState();
+    expect('realPath' in tabs[0]!).toBe(false);
+    expect(tabs[1]!.realPath).toBe('/t/T.md');
   });
 
   it('单个 readFile 失败 → 跳过该 path,其他仍恢复', async () => {

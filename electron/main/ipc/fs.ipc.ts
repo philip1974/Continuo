@@ -7,12 +7,16 @@ import {
   safeHandle,
   safeHandleWithCtx,
 } from '../safe-handle';
-import { FS_CHANNELS, type FsDirChangedPayload } from '../../shared/fs-channels';
+import {
+  FS_CHANNELS,
+  type FsDirChangedPayload,
+  type FsReadFileData,
+} from '../../shared/fs-channels';
 import { FS_PATH_MAX, MAX_WRITE_BYTES } from '../../shared/fs-limits';
 import { utf8BytesExceed } from '../../shared/utf8-byte-length';
 import { listDir, MAX_TOTAL_ENTRIES } from './fs/list-dir';
 import { readFile } from './fs/read-file';
-import { atomicWriteFile } from './fs/atomic-write';
+import { atomicWriteFile, resolveSymlinkTarget } from './fs/atomic-write';
 import { renameEntry } from './fs/rename';
 import { removeEntry } from './fs/remove';
 import { createDir, createFile } from './fs/create';
@@ -142,7 +146,15 @@ export type CopyInput = z.infer<typeof copyInputSchema>;
 export const listDirHandler = (input: ListDirInput) => listDir(input.path, input.options);
 // fs:read-file 是编辑器打开 / 外部同步 / 会话恢复 / 保存前比对的文本读取入口 → requireUtf8:非法 UTF-8
 // 拒绝(FS_NOT_UTF8),防 U+FFFD 替换后保存写回损坏原文件(独立审计)。插件 fs readFile 不经此处。
-export const readFileHandler = (input: ReadFileInput) => readFile(input.path, { requireUtf8: true });
+// leaf 为 symlink 时随结果带 realPath(见 FsReadFileData):与保存写穿复用 resolveSymlinkTarget;解析失败 /
+// 断链(返回原路径)/ 超长 → 不带,不影响读取结果。
+export const readFileHandler = async (input: ReadFileInput): Promise<FsReadFileData> => {
+  const content = await readFile(input.path, { requireUtf8: true });
+  const target = await resolveSymlinkTarget(input.path).catch(() => input.path);
+  return target !== input.path && target.length <= FS_PATH_MAX
+    ? { content, realPath: target }
+    : { content };
+};
 export const writeFileHandler = (input: WriteFileInput) => atomicWriteFile(input.path, input.content);
 const writeBinaryHandler = (input: WriteBinaryInput) => atomicWriteFile(input.path, input.content);
 export const renameHandler = (input: RenameInput) => renameEntry(input.path, input.newName);

@@ -327,6 +327,87 @@ describe('useExternalFileSync', () => {
     });
   });
 
+  // 回归(dir-changed 带文件名后):编辑器打开不做 realpath,tab.filePath 可能是符号链接;FSEvents/inotify
+  // 上报的是被实际修改的目录项(链接目标)名。典型 `CLAUDE.md -> AGENTS.md`:外部改 AGENTS.md 只报
+  // {dir, ['AGENTS.md']}。tab 记下读盘时 main 解析的 realPath,目录 / 文件名两侧都按 filePath 或 realPath 匹配。
+  describe('symlink tab(realPath)', () => {
+    const link = (p: string, realPath: string) => ({
+      id: p,
+      filePath: p,
+      realPath,
+      content: 'old',
+      originalContent: 'old',
+      dirty: false,
+    });
+    const plain = (p: string) => ({ id: p, filePath: p, content: 'old', originalContent: 'old', dirty: false });
+    function setup(tabs: ReturnType<typeof plain>[]) {
+      let dirCb: ((dir: string, files?: readonly string[]) => void) | null = null;
+      const readFile = vi.fn(async (p: string) => ({ ok: true, data: `new ${p}` }));
+      installFsApi({ onDirChanged: (cb) => { dirCb = cb; return () => {}; }, readFile });
+      useEditorStore.setState({ tabs, activeTabId: tabs[0]!.id });
+      renderHook(() => useExternalFileSync());
+      return { emit: (dir: string, files?: readonly string[]) => dirCb!(dir, files), readFile };
+    }
+
+    it('同目录链接:目标被改(只报目标名)→ 链接 tab 重读(经链接路径读)', async () => {
+      const { emit, readFile } = setup([link('/proj/CLAUDE.md', '/proj/AGENTS.md')]);
+      emit('/proj', ['AGENTS.md']);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(readFile.mock.calls.map((c) => c[0])).toEqual(['/proj/CLAUDE.md']);
+      expect(useEditorStore.getState().tabs[0]?.content).toBe('new /proj/CLAUDE.md');
+    });
+
+    it('跨目录链接:目标所在目录变更(带 / 不带文件名)→ 链接 tab 重读', async () => {
+      const { emit, readFile } = setup([link('/proj/link.md', '/other/t.md')]);
+      // 真实 main:经链接读盘每次都带回 realPath(tab.realPath 随之保持)
+      readFile.mockImplementation(async (p: string) => ({ ok: true, data: `new ${p}`, realPath: '/other/t.md' }));
+      const flush = async () => { for (let i = 0; i < 4; i++) await Promise.resolve(); };
+      emit('/other', ['t.md']);
+      await flush();
+      emit('/other', undefined);
+      await flush();
+      expect(readFile.mock.calls.map((c) => c[0])).toEqual(['/proj/link.md', '/proj/link.md']);
+      expect(useEditorStore.getState().tabs[0]?.realPath).toBe('/other/t.md');
+      emit('/other', ['unrelated.md']);
+      await flush();
+      expect(readFile).toHaveBeenCalledTimes(2);
+    });
+
+    it('链接自身目录项被改(报链接名)仍重读;非链接 tab 行为不变', async () => {
+      const { emit, readFile } = setup([link('/proj/CLAUDE.md', '/other/t.md'), plain('/proj/a.md')]);
+      emit('/proj', ['CLAUDE.md']);
+      await Promise.resolve();
+      expect(readFile.mock.calls.map((c) => c[0])).toEqual(['/proj/CLAUDE.md']);
+      emit('/proj', ['t.md']); // 目标名但不在目标目录 /other → 非链接 a.md 不命中
+      await Promise.resolve();
+      await Promise.resolve();
+      emit('/other', ['a.md']); // 非链接 tab 只按自身目录匹配
+      await Promise.resolve();
+      expect(readFile.mock.calls.map((c) => c[0]).filter((p) => p === '/proj/a.md')).toEqual([]);
+    });
+
+    it('watch-restored:目标在恢复的子树内 → 链接 tab 重读', async () => {
+      const { readFile } = setup([link('/proj/link.md', '/other/deep/t.md')]);
+      emitWatchRestored('/other');
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(readFile.mock.calls.map((c) => c[0])).toEqual(['/proj/link.md']);
+    });
+
+    it('重读结果带新的 realPath → tab.realPath 随之更新', async () => {
+      let dirCb: ((dir: string, files?: readonly string[]) => void) | null = null;
+      const readFile = vi.fn(async () => ({ ok: true, data: 'retargeted', realPath: '/new/T.md' }));
+      installFsApi({ onDirChanged: (cb) => { dirCb = cb; return () => {}; }, readFile });
+      useEditorStore.setState({ tabs: [link('/proj/l.md', '/old/T.md')], activeTabId: '/proj/l.md' });
+      renderHook(() => useExternalFileSync());
+      dirCb!('/old', ['T.md']);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(useEditorStore.getState().tabs[0]).toMatchObject({ content: 'retargeted', realPath: '/new/T.md' });
+    });
+  });
+
   // 内存:watch-restored 对子树内所有 clean tab 重读,此前同时发起全部 readFile(256 tab × 大文件 →
   // main 峰值内存 GB 级)。改为有界并发(上限 32,同 hydrateEditorTabs RESTORE_READ_CONCURRENCY)。
   it('watch-restored 子树重读峰值在途 ≤ 32,全部 tab 最终都被重读', async () => {

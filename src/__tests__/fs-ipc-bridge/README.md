@@ -20,7 +20,7 @@
 | Channel | schema | handler 调 | data |
 |---|---|---|---|
 | `fs:list-dir`         | `{ path, options? }` | `listDir(path, options)` | `FileEntry[]` |
-| `fs:read-file`        | `{ path }`           | `readFile(path)` | `string` |
+| `fs:read-file`        | `{ path }`           | `readFile(path)` | `{ content, realPath? }`(leaf 为 symlink 时带真实目标;preload `toFsReadFileResult` 映射为 `data: string` + 可选 `realPath`) |
 | `fs:write-file`       | `{ path, content }`  | `atomicWriteFile(path, content)` | `void` |
 | `fs:rename`           | `{ path, newName }`  | `renameEntry(path, newName)` | `string`(新路径) |
 | `fs:remove`           | `{ path }`           | `removeEntry(path)` | `void` |

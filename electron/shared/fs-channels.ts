@@ -1,6 +1,8 @@
 // 全部 fs.* IPC 通道字符串集中地。main / preload 两侧 import 同一份,
 // 防字符串散漂改名错位。layout / popout 通道下个里程碑(P1.D2)统一处理。
 
+import type { IpcFail, IpcOk, IpcResult } from './ipc-result';
+
 export const FS_CHANNELS = {
   LIST_DIR: 'fs:list-dir',
   READ_FILE: 'fs:read-file',
@@ -69,4 +71,32 @@ export function readFsDirChangedFiles(
     if (typeof f !== 'string' || f.length > maxNameLen) return undefined;
   }
   return files as readonly string[];
+}
+
+/**
+ * fs:read-file 主进程 handler 的 data。realPath:仅当 leaf 为符号链接时为其真实目标(与保存写穿
+ * resolveSymlinkTarget 同一套解析);普通文件 / 断链 / 无法确认 → 缺省。编辑器外部同步据此按目标
+ * 目录 / 文件名匹配(FSEvents/inotify 上报的是被实际修改的目录项名,即链接目标名)。
+ */
+export interface FsReadFileData {
+  readonly content: string;
+  readonly realPath?: string;
+}
+
+/** 渲染端 readFile 结果:data 仍为文件内容 string(既有调用方不变),成功时可选附 realPath. */
+export type FsReadFileResult = (IpcOk<string> & { readonly realPath?: string }) | IpcFail;
+
+/**
+ * preload 把 handler 结果映射为 FsReadFileResult;realPath 非字符串 / 空 / 超 maxPathLen → 丢弃
+ *(内容照常返回,外部同步退化为只按打开路径匹配)。
+ */
+export function toFsReadFileResult(
+  r: IpcResult<FsReadFileData>,
+  maxPathLen: number,
+): FsReadFileResult {
+  if (!r.ok) return r;
+  const realPath: unknown = r.data.realPath;
+  return typeof realPath === 'string' && realPath.length > 0 && realPath.length <= maxPathLen
+    ? { ok: true, data: r.data.content, realPath }
+    : { ok: true, data: r.data.content };
 }

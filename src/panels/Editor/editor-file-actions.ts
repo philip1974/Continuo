@@ -98,7 +98,7 @@ export async function openFileByPath(
     return { ok: true, data: undefined };
   }
 
-  store.getState().openTab(createTab(path, r.data));
+  store.getState().openTab(createTab(path, r.data, r.realPath));
   return { ok: true, data: undefined };
 }
 

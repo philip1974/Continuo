@@ -49,7 +49,7 @@ function withPathLock<T>(filePath: string, fn: () => Promise<T>): Promise<T> {
  * 操作不跟随 symlink」相反:内容读/写应对称跟随到目标。
  * 非 symlink / 不存在(新建)/ 断链(realpath 失败)→ 用原路径正常创建或替换。
  */
-async function resolveSymlinkTarget(filePath: string): Promise<string> {
+export async function resolveSymlinkTarget(filePath: string): Promise<string> {
   // 数据安全:lstat/realpath 的错误必须**只对 ENOENT 回退**,其它(EACCES/EIO 等)抛出。
   // catch-all 会把「无法确认状态」当新建/断链 → 回退原路径后 rename 用普通文件替换 symlink
   // 本身(断链、读写不对称),重现已修过的损坏(codex P1,#11 的连带缺口)。

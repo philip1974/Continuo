@@ -1065,6 +1065,27 @@ describe('reloadFromDisk', () => {
     expect(() => useEditorStore.getState().reloadFromDisk('/zombie', 'x')).not.toThrow();
     expect(useEditorStore.getState().tabs[0]?.content).toBe('hello');
   });
+
+  // symlink tab 的真实目标随每次读盘刷新(外部同步按目标目录/文件名匹配);内容未变时也同步 realPath。
+  it('realPath:随读盘结果更新;内容与 realPath 都未变 → 同引用', () => {
+    const before = makeTab({ id: '/x/CLAUDE.md', content: 'same', originalContent: 'same' });
+    useEditorStore.setState({ tabs: [before], activeTabId: '/x/CLAUDE.md' });
+    useEditorStore.getState().reloadFromDisk('/x/CLAUDE.md', 'same', '/x/AGENTS.md');
+    const t1 = useEditorStore.getState().tabs[0]!;
+    expect(t1.realPath).toBe('/x/AGENTS.md');
+    expect(t1.reloadEpoch ?? 0).toBe(0); // 内容未变:不 remount
+    useEditorStore.getState().reloadFromDisk('/x/CLAUDE.md', 'same', '/x/AGENTS.md');
+    expect(useEditorStore.getState().tabs[0]).toBe(t1);
+    useEditorStore.getState().reloadFromDisk('/x/CLAUDE.md', 'new', '/y/T.md');
+    expect(useEditorStore.getState().tabs[0]).toMatchObject({ content: 'new', realPath: '/y/T.md' });
+    useEditorStore.getState().reloadFromDisk('/x/CLAUDE.md', 'new'); // 不再是链接
+    expect('realPath' in useEditorStore.getState().tabs[0]!).toBe(false);
+  });
+
+  it('createTab:带 realPath 时写入,不带时不出现该字段', () => {
+    expect('realPath' in createTab('/x/a.md', 'a')).toBe(false);
+    expect(createTab('/x/CLAUDE.md', 'a', '/x/AGENTS.md').realPath).toBe('/x/AGENTS.md');
+  });
 });
 
 describe('removePath(store method)', () => {
