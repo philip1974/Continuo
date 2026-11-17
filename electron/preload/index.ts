@@ -214,12 +214,12 @@ const api = {
         (await ipcRenderer.invoke(FS_CHANNELS.READ_FILE, { path })) as IpcResult<FsReadFileData>,
         FS_PATH_MAX,
       ),
-    /** 成功时 data = 写入内容的 { mtimeMs, size }(无法确认 → undefined),供编辑器识别自己保存的回声. */
+    /** 成功时 data = 写入内容的 { mtimeMs, size, ino }(无法确认 → undefined),供编辑器识别自己保存的回声. */
     writeFile: async (path: string, content: string): Promise<IpcResult<FsFileStat | undefined>> =>
       toFsWriteFileResult(
         (await ipcRenderer.invoke(FS_CHANNELS.WRITE_FILE, { path, content })) as IpcResult<unknown>,
       ),
-    /** 跟随 symlink 的廉价 stat({ mtimeMs, size });畸形结果映射为失败. */
+    /** 跟随 symlink 的廉价 stat({ mtimeMs, size, ino });畸形结果映射为失败. */
     stat: async (path: string): Promise<IpcResult<FsFileStat>> =>
       toFsStatResult((await ipcRenderer.invoke(FS_CHANNELS.STAT, { path })) as IpcResult<unknown>),
     writeBinary: (path: string, content: Uint8Array): Promise<IpcResult<void>> =>

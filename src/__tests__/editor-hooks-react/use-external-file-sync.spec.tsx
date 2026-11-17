@@ -494,7 +494,7 @@ describe('useExternalFileSync', () => {
 // 性能:编辑器自己保存的回声(原子写 tmp + rename 让 watcher 上报被保存文件本身)。有本 tab 当前基线的保存
 // 记录时先廉价 stat 比对:一致 → 跳过整文件 readFile;stat 变化 / 失败 → 照旧读(不凭「刚保存过」跳过)。
 describe('useExternalFileSync · 保存回声识别', () => {
-  const SAVED = { mtimeMs: 1000.5, size: 5 };
+  const SAVED = { mtimeMs: 1000.5, size: 5, ino: 77 };
 
   function setupEcho(stat: ReturnType<typeof vi.fn>, readData = 'saved') {
     let dirCb: ((dir: string, files?: readonly string[]) => void) | null = null;
@@ -564,6 +564,15 @@ describe('useExternalFileSync · 保存回声识别', () => {
     await flush();
     expect(readFile).toHaveBeenCalledTimes(1);
     expect(useEditorStore.getState().tabs[0]?.content).toBe('other');
+  });
+
+  it('mtime / size 相同但 ino 不同(粗粒度 mtime 文件系统上同大小外部替换)→ 照旧读', async () => {
+    const stat = vi.fn(async () => ({ ok: true, data: { ...SAVED, ino: 78 } }));
+    const { fire, readFile } = setupEcho(stat, 'replaced');
+    fire();
+    await flush();
+    expect(readFile).toHaveBeenCalledTimes(1);
+    expect(useEditorStore.getState().tabs[0]?.content).toBe('replaced');
   });
 
   it('stat 失败({ok:false} 或 reject)→ 照旧读', async () => {

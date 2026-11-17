@@ -299,12 +299,12 @@ describe('saveFile', () => {
     });
     useEditorStore.setState({ tabs: [dirtyTab('v1')], activeTabId: '/x/a.md', mode: 'edit' });
     const writeFile = vi
-      .fn<(p: string, c: string) => Promise<IpcResult<{ mtimeMs: number; size: number } | undefined>>>()
-      .mockResolvedValueOnce(ok({ mtimeMs: 42.5, size: 2 }))
+      .fn<(p: string, c: string) => Promise<IpcResult<{ mtimeMs: number; size: number; ino: number } | undefined>>>()
+      .mockResolvedValueOnce(ok({ mtimeMs: 42.5, size: 2, ino: 9 }))
       .mockResolvedValueOnce(ok(undefined));
     await saveFile('/x/a.md', makeDeps({ writeFile }));
     const rec = getSavedDiskStat('/x/a.md');
-    expect(rec).toMatchObject({ mtimeMs: 42.5, size: 2 });
+    expect(rec).toMatchObject({ mtimeMs: 42.5, size: 2, ino: 9 });
     expect(rec).not.toHaveProperty('content');
     expect(typeof rec?.gen).toBe('number');
     expect(useEditorStore.getState().tabs[0]?.savedGen).toBe(rec?.gen);
@@ -321,7 +321,7 @@ describe('saveFile', () => {
       activeTabId: '/x/a.md',
       mode: 'edit',
     });
-    const writeFile = vi.fn(async () => ok({ mtimeMs: 1, size: 2 }));
+    const writeFile = vi.fn(async () => ok({ mtimeMs: 1, size: 2, ino: 3 }));
     await saveFile('/x/a.md', makeDeps({ writeFile }));
     const g1 = getSavedDiskStat('/x/a.md')?.gen;
     useEditorStore.getState().updateContent('/x/a.md', 'v2');
@@ -342,7 +342,7 @@ describe('saveFile', () => {
         activeTabId: path,
         mode: 'edit',
       });
-      await saveFile(path, makeDeps({ writeFile: vi.fn(async () => ok({ mtimeMs: 1, size: 2 })) }));
+      await saveFile(path, makeDeps({ writeFile: vi.fn(async () => ok({ mtimeMs: 1, size: 2, ino: 3 })) }));
       expect(getSavedDiskStat(path)).toBeDefined();
     };
     beforeEach(() => _resetSavedDiskStatsForTest());
@@ -385,7 +385,7 @@ describe('saveFile', () => {
       });
       const writeFile = vi.fn(async () => {
         useEditorStore.getState().closeTab('/x/a.md');
-        return ok({ mtimeMs: 1, size: 2 });
+        return ok({ mtimeMs: 1, size: 2, ino: 3 });
       });
       await saveFile('/x/a.md', makeDeps({ writeFile }));
       await saveOne('/x/b.md');

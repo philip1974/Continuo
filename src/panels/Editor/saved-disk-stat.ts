@@ -1,4 +1,4 @@
-// 编辑器保存回声识别(性能):保存成功后记录「本次写入内容」的 { mtimeMs, size }(main 写完在 fd 上取、
+// 编辑器保存回声识别(性能):保存成功后记录「本次写入内容」的 { mtimeMs, size, ino }(main 写完在 fd 上取、
 // rename 后复核,见 atomicWriteFile)。原子写的 tmp + rename 会让 watcher 上报被保存文件本身,
 // useExternalFileSync 命中后先发廉价 fs:stat 与此记录比对:相同 = 磁盘仍是自己刚写的内容 → 跳过整文件
 // readFile;不同 / stat 失败 / 无记录 → 照旧读。不凭「刚保存过」跳过 —— 同时发生的外部写入会改变 stat。
@@ -66,7 +66,7 @@ export function getSavedDiskStat(path: string): SavedDiskStat | undefined {
 
 /** 磁盘当前 stat 是否就是该记录写入时的 stat. */
 export function isSameDiskStat(a: FsFileStat, b: FsFileStat): boolean {
-  return a.mtimeMs === b.mtimeMs && a.size === b.size;
+  return a.mtimeMs === b.mtimeMs && a.size === b.size && a.ino === b.ino;
 }
 
 /** 仅供测试:清空记录. */

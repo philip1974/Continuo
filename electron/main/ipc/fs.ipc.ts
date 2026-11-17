@@ -160,7 +160,7 @@ export const readFileHandler = async (input: ReadFileInput): Promise<FsReadFileD
     ? { content, realPath: target }
     : { content };
 };
-// 性能:返回写入内容的 { mtimeMs, size }(无法确认 → undefined),编辑器据此识别自己保存的 dir-changed 回声,
+// 性能:返回写入内容的 { mtimeMs, size, ino }(无法确认 → undefined),编辑器据此识别自己保存的 dir-changed 回声,
 // 免一次整文件 readFile(见 FsFileStat / useExternalFileSync)。
 export const writeFileHandler = (input: WriteFileInput): Promise<FsFileStat | undefined> =>
   atomicWriteFile(input.path, input.content);
@@ -168,11 +168,11 @@ export const writeFileHandler = (input: WriteFileInput): Promise<FsFileStat | un
 const writeBinaryHandler = async (input: WriteBinaryInput): Promise<void> => {
   await atomicWriteFile(input.path, input.content);
 };
-// fs:stat:跟随 symlink(与 readFile / 保存写穿同口径)取 { mtimeMs, size };errno 同其它 fs 通道映射。
+// fs:stat:跟随 symlink(与 readFile / 保存写穿同口径)取 { mtimeMs, size, ino };errno 同其它 fs 通道映射。
 export const statHandler = async (input: StatInput): Promise<FsFileStat> => {
   try {
     const st = await fs.promises.stat(input.path);
-    return { mtimeMs: st.mtimeMs, size: st.size };
+    return { mtimeMs: st.mtimeMs, size: st.size, ino: st.ino };
   } catch (err) {
     throw fsError(mapNodeErrnoCode(err), `stat failed: ${input.path}`);
   }
