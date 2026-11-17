@@ -22,7 +22,7 @@ import {
   type IpcPermissionsMap,
   type IpcPermissionRecord,
   type IpcPluginDir,
-  type IpcPluginDirMeta,
+  type IpcPluginDirListing,
 } from '../shared/plugins-channels';
 import {
   SHELL_CHANNELS,
@@ -320,11 +320,14 @@ const api = {
     },
   },
   plugins: {
-    listDirs: (): Promise<IpcResult<readonly IpcPluginDirMeta[]>> =>
+    listDirs: (): Promise<IpcResult<readonly IpcPluginDirListing[]>> =>
       ipcRenderer.invoke(PLUGINS_CHANNELS.LIST_DIRS),
-    /** perf:激活时按目录名拉 main 源码(列举不再携带),不可用 → null. */
-    readMainByDir: (dir: string): Promise<IpcResult<string | null>> =>
-      ipcRenderer.invoke(PLUGINS_CHANNELS.READ_MAIN_BY_DIR, { dir }),
+    /**
+     * perf:激活时按目录名拉 main 源码(列举不再携带),不可用 → null。manifestHash 为列举项令牌,
+     * manifest 已变 → PLUGIN_MANIFEST_CHANGED。
+     */
+    readMainByDir: (dir: string, manifestHash: string): Promise<IpcResult<string | null>> =>
+      ipcRenderer.invoke(PLUGINS_CHANNELS.READ_MAIN_BY_DIR, { dir, manifestHash }),
     /** perf:按 manifest.id 只读单个插件目录(热重载用),不存在 → null. */
     readDirById: (id: string): Promise<IpcResult<IpcPluginDir | null>> =>
       ipcRenderer.invoke(PLUGINS_CHANNELS.READ_DIR_BY_ID, { id }),

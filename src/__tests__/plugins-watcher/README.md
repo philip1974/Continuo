@@ -19,6 +19,9 @@
 - 单 plugin manifest 解析失败 / main 文件缺失 → 跳过该 plugin,其它继续
 - start(intervalMs) 启动 setInterval,返 dispose 停 timer
 - 同 plugin 多次连续触发不去重(由 renderer 端节流;通常 mtime 跨 tick 变一次)
+- manifest **内容**变化(哈希,同 LIST_DIRS 令牌)也 fire;只 touch、内容不变不 fire —— 激活时令牌不一致而失败的
+  插件靠此广播重新加载
+- 已被记录的目录改声明新 id → 对新 id fire(旧 id 记录清理)
 
 ## perf:manifest 解析缓存 + 有界并发
 
@@ -30,7 +33,11 @@
 
 - 多个目录声明同一 manifest.id 时,每个 id 只看**唯一权威目录**:目录名 == id 优先,否则目录名字典序最小
   (与 `PluginManager.preferPluginDir` / `readPluginDirByManifestId` 同规则);非权威目录的 main 变化不 fire
+- 候选口径与列举 `isPluginMainAvailable` 一致:main 须为普通文件且 ≤8MiB(仅凭 stat 判定,不逐轮 open;
+  读权限不校验),否则不参与权威目录选择 —— 首选目录 main 无效时以合法后备目录为权威,其 main 变化 fire
 - 各目录都未变化 → 多轮扫描都不 fire(此前 mtime 表以 id 为键,两目录轮流写入 → 每轮都广播)
 - 权威目录切换(出现目录名 == id 的目录 / 原权威目录消失)→ fire 一次,之后稳定
 - 记录所属目录改声明别的 id → 旧 id 的记录清理;目录暂时消失 / manifest 缺失 / main 暂不可 stat 时保留记录,
   重建后 main 已变仍 fire
+- 缺失记录是有限轮次 tombstone:连续缺失 ≤5 轮内重建(main 已变)仍 fire;超过 5 轮删除记录,之后同名重建视为
+  首次出现不 fire(此前永久删除的目录记录无界保留,每轮还遍历全部记录)

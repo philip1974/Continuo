@@ -59,7 +59,8 @@ describe('unified-toast-notification: ERROR_CODES enum', () => {
     // 数据安全:+FS_NOT_UTF8(47→48),编辑器文本读取入口拒绝非法 UTF-8,防保存损坏原文件。
     // 插件卸载:+PATH_SCOPE_CLEANUP_FAILED(48→49),path scope 授权清理失败时中止卸载(不删目录)。
     // debug 安全:+DEBUG_NODE_RUNTIME_NOT_FOUND(49→50),被调试程序的 node 由 main 解析,找不到即拒绝 launch。
-    expect(Object.keys(ERROR_CODES)).toHaveLength(50);
+    // 插件激活:+PLUGIN_MANIFEST_CHANGED(50→51),列举后 manifest 被更新则拒绝以旧 manifest 执行新 main。
+    expect(Object.keys(ERROR_CODES)).toHaveLength(51);
     expect(ERROR_CODES.TERMINAL_CWD_UNRESOLVED).toBe(
       'TERMINAL_CWD_UNRESOLVED',
     );

@@ -15,6 +15,8 @@ export const PLUGINS_CHANNELS = {
   /**
    * 按**目录名**(LIST_DIRS 结果的 id)读取该插件 main 入口源码,返回 string | null(目录 / manifest / main
    * 不可用)。按目录而非 manifest.id:重复 id 的目录选择已在 renderer 完成,不在此再选一次以免口径漂移。
+   * 入参须带列举项的 manifestHash:读 main 前后当前 manifest 与之不一致(列举后插件被更新)→ 抛
+   * PLUGIN_MANIFEST_CHANGED,避免以旧 manifest(id / 权限 / 入口)执行新 main。
    */
   READ_MAIN_BY_DIR: 'plugins:read-main-by-dir',
   /**
@@ -110,6 +112,12 @@ export interface IpcPluginDirMeta {
   readonly manifestText: string;
 }
 
+/** 插件目录列举项(LIST_DIRS):在 IpcPluginDirMeta 基础上带 manifest 版本令牌. */
+export interface IpcPluginDirListing extends IpcPluginDirMeta {
+  /** manifestText 的 sha256(小写 hex);激活时随 READ_MAIN_BY_DIR 提交,校验 manifest 未变. */
+  readonly manifestHash: string;
+}
+
 /** 含 main 源码的插件目录信息(READ_DIR_BY_ID 热重载用). */
 export interface IpcPluginDir extends IpcPluginDirMeta {
   /** main.js 入口文本(renderer Blob URL + dynamic import). */
@@ -118,6 +126,9 @@ export interface IpcPluginDir extends IpcPluginDirMeta {
 
 /** READ_MAIN_BY_DIR 目录名长度上限(= 常见文件系统单级文件名上限 NAME_MAX). */
 export const PLUGIN_DIR_NAME_MAX_LEN = 255;
+
+/** manifest 版本令牌格式(sha256 小写 hex,定长 64). */
+export const PLUGIN_MANIFEST_HASH_RE = /^[0-9a-f]{64}$/;
 
 /** v4.2 权限决策存储的磁盘格式. */
 export interface IpcPermissionDecision {

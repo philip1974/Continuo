@@ -8,6 +8,13 @@ import {
   buildPluginDirInfos,
   createWindowApiHost,
 } from '../../lib/plugins-host';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+  listPluginDirs,
+  readPluginMainByDir,
+} from '../../../electron/main/services/plugins.service';
 
 interface FakePluginsApi {
   listDirs: ReturnType<typeof vi.fn>;
@@ -50,9 +57,9 @@ afterEach(() => {
 describe('Blob URL 生命周期', () => {
   it('listPluginDirs 构造与读取 moduleUrl 都不生成 Blob URL(激活 import 时才生成);moduleUrl 稳定', () => {
     const infos = buildPluginDirInfos([
-      { id: 'a', manifestText: '{}' },
-      { id: 'b', manifestText: '{}' },
-      { id: 'c', manifestText: '{}' },
+      { id: 'a', manifestText: '{}', manifestHash: '0'.repeat(64) },
+      { id: 'b', manifestText: '{}', manifestHash: '0'.repeat(64) },
+      { id: 'c', manifestText: '{}', manifestHash: '0'.repeat(64) },
     ]);
     expect(infos[1]!.moduleUrl).toBe(infos[1]!.moduleUrl);
     expect(createObjectURL).not.toHaveBeenCalled();
@@ -95,6 +102,7 @@ describe('createWindowApiHost.listPluginDirs', () => {
       {
         id: 'p1',
         manifestText: '{"id":"p1"}',
+        manifestHash: 'a'.repeat(64),
       },
     ];
     const mapSpy = vi.spyOn(dirs, 'map');
@@ -125,7 +133,7 @@ describe('createWindowApiHost.listPluginDirs', () => {
     installFakeApi({
       listDirs: vi.fn().mockResolvedValue({
         ok: true,
-        data: [{ id: 'p1', manifestText: '{"id":"p1"}' }],
+        data: [{ id: 'p1', manifestText: '{"id":"p1"}', manifestHash: 'a'.repeat(64) }],
       }),
       readMainByDir,
     } as Partial<FakePluginsApi>);
@@ -178,8 +186,8 @@ describe('createWindowApiHost:main 源码激活时按目录拉取', () => {
       listDirs: vi.fn().mockResolvedValue({
         ok: true,
         data: [
-          { id: 'dir.a', manifestText: '{"id":"x"}' },
-          { id: 'dir.b', manifestText: '{"id":"y"}' },
+          { id: 'dir.a', manifestText: '{"id":"x"}', manifestHash: 'g'.repeat(64) },
+          { id: 'dir.b', manifestText: '{"id":"y"}', manifestHash: 'h'.repeat(64) },
         ],
       }),
       readMainByDir,
@@ -194,7 +202,7 @@ describe('createWindowApiHost:main 源码激活时按目录拉取', () => {
     // jsdom 无法 import blob: URL → reject;此处只验证拉取 / Blob / revoke 链路。
     await expect(host.importModule(dirs[1]!.moduleUrl)).rejects.toBeDefined();
     expect(readMainByDir).toHaveBeenCalledTimes(1);
-    expect(readMainByDir).toHaveBeenCalledWith('dir.b');
+    expect(readMainByDir).toHaveBeenCalledWith('dir.b', 'h'.repeat(64));
     expect(createObjectURL).toHaveBeenCalledTimes(1);
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:mock-url');
 
@@ -221,6 +229,76 @@ describe('createWindowApiHost:main 源码激活时按目录拉取', () => {
     const again = await host.listPluginDirs();
     expect(again[0]!.moduleUrl).not.toBe(dirs[0]!.moduleUrl);
     expect(dirs[0]!.moduleUrl).not.toBe(dirs[1]!.moduleUrl);
+  });
+});
+
+// P1(service→host):列举快照与激活时拉取的 main 须出自同一 manifest 版本。真实 listPluginDirs /
+// readPluginMainByDir(临时目录)接到 host 上,模拟 safeHandle 把抛错折成 IpcResult。延迟激活期间插件被更新
+//(manifest id / 权限 / main 全换)→ importModule 以 PLUGIN_MANIFEST_CHANGED 拒绝,不执行新 main。
+describe('createWindowApiHost:列举快照与激活拉取的 main 一致(真实 service)', () => {
+  let tmp: string;
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), 'lm-plugins-host-'));
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      value: vi.fn(),
+      writable: true,
+      configurable: true,
+    });
+  });
+  afterEach(() => {
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  function writePlugin(manifest: object, main: string): void {
+    mkdirSync(join(tmp, 'p'), { recursive: true });
+    writeFileSync(join(tmp, 'p', 'manifest.json'), JSON.stringify(manifest));
+    writeFileSync(join(tmp, 'p', 'main.js'), main);
+  }
+
+  function toIpc<T>(p: Promise<T>) {
+    return p.then(
+      (data) => ({ ok: true as const, data }),
+      (e: { code?: string; message?: string }) => ({ ok: false as const, code: e.code, message: e.message }),
+    );
+  }
+
+  function installRealService(): ReturnType<typeof vi.fn> {
+    const readMainByDir = vi.fn((dir: string, manifestHash: string) =>
+      toIpc(readPluginMainByDir(tmp, dir, manifestHash)),
+    );
+    installFakeApi({
+      listDirs: vi.fn(() => toIpc(listPluginDirs(tmp))),
+      readMainByDir,
+    } as Partial<FakePluginsApi>);
+    return readMainByDir;
+  }
+
+  it('列举后、激活前 manifest + main 被替换 → importModule 以 PLUGIN_MANIFEST_CHANGED 拒绝,不生成 Blob URL', async () => {
+    writePlugin({ id: 'a', name: 'A', version: '0.1.0', permissions: [] }, 'OLD');
+    const readMainByDir = installRealService();
+    const host = createWindowApiHost();
+    const [info] = await host.listPluginDirs();
+    expect(info!.manifestText).toContain('"id":"a"');
+
+    // 延迟激活(如权限弹窗挂起)期间插件被原子更新成另一插件
+    writePlugin({ id: 'b', name: 'B', version: '9.9.9', permissions: ['shell'] }, 'NEW');
+
+    await expect(host.importModule(info!.moduleUrl)).rejects.toMatchObject({
+      code: 'PLUGIN_MANIFEST_CHANGED',
+    });
+    expect(readMainByDir).toHaveBeenCalledWith('p', expect.stringMatching(/^[0-9a-f]{64}$/));
+    expect(createObjectURL).not.toHaveBeenCalled();
+  });
+
+  it('只换 main(manifest 不变)→ 仍按快照令牌放行(main 变更由 watcher 热重载处理)', async () => {
+    writePlugin({ id: 'a', name: 'A', version: '0.1.0' }, 'OLD');
+    installRealService();
+    const host = createWindowApiHost();
+    const [info] = await host.listPluginDirs();
+    writePlugin({ id: 'a', name: 'A', version: '0.1.0' }, 'NEW');
+    // jsdom 无法 import blob: URL → reject,但源码已拉到并生成 Blob URL(令牌校验通过)
+    await expect(host.importModule(info!.moduleUrl)).rejects.toBeDefined();
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -32,12 +32,14 @@ styles.css 不读取(renderer 不注入插件样式)**。
 - 否则只读其它目录 manifest,取 manifest.id 匹配者中目录名字典序最小且 main 可读的
 - `.` / `_` 前缀、损坏 manifest、缺 main 不参与;无匹配 / baseDir 缺失 → null
 
-### readPluginMainByDir(baseDir, dirName)(perf:激活时才读 main 源码)
+### readPluginMainByDir(baseDir, dirName, manifestHash)(perf:激活时才读 main 源码)
 
 - 按**目录名**(列举结果的 id)读 manifest.main 指向的入口源码;按目录而非 id,不再做一次重复 id 选择
 - 目录名为空 / 含 `/` `\` NUL / 为 `.` `..` / `.` `_` 前缀 → null(不读 baseDir 之外)
 - 目录 / manifest / main 不可用(缺失、超 8MiB、越界)→ null
-- IPC:`plugins:read-main-by-dir`,入参 `{ dir }`(1..255 字符,strict)
+- 快照一致性(P1):`listPluginDirs` 每项带 `manifestHash`(manifestText 的 sha256 hex);读 main 前、后各复核当前
+  manifest 哈希 == 入参令牌,不一致(列举后插件被更新)→ 抛 `PLUGIN_MANIFEST_CHANGED`,不返回新 main
+- IPC:`plugins:read-main-by-dir`,入参 `{ dir, manifestHash }`(dir 1..255 字符;manifestHash 64 位小写 hex;strict)
 
 ### readEnabledIds(baseDir) → string[]
 

@@ -222,11 +222,31 @@ describe('createPluginsWatcher', () => {
     await w.tick();
     writeFileSync(join(tmp, 'd', 'manifest.tmp'), JSON.stringify({ id: 'new.id', name: 'D', version: '0.1.0' }));
     renameSync(join(tmp, 'd', 'manifest.tmp'), join(tmp, 'd', 'manifest.json'));
-    await w.tick(); // new.id 首次出现:只填表
+    await w.tick(); // 已监控目录改声明 new.id → 视为 new.id 变化(激活快照令牌失效后需重新加载)
+    expect(fn.mock.calls).toEqual([['new.id']]);
     touch('d', 'main.js', Date.now() + 5000);
     await w.tick();
-    expect(fn).toHaveBeenCalledWith('new.id');
+    expect(fn.mock.calls).toEqual([['new.id'], ['new.id']]);
     expect(fn).not.toHaveBeenCalledWith('old.id');
+  });
+
+  // P1 配套:激活时 manifest 令牌不一致 → 插件激活失败;须由 watcher 广播让 renderer 重新加载。
+  // 此前 watcher 只看 main mtime,只改 manifest(权限 / 版本)不广播 → 失败状态不会自动纠正。
+  it('只改 manifest 内容(main 不变)→ fire 一次;只 touch manifest(内容不变)→ 不 fire', async () => {
+    makeDir('m', { id: 'm', name: 'M', version: '0.1.0' });
+    const fn = vi.fn();
+    const w = createPluginsWatcher(tmp, fn);
+    await w.tick();
+    touch('m', 'manifest.json', Date.now() + 5000);
+    await w.tick();
+    expect(fn).not.toHaveBeenCalled();
+    writeFileSync(
+      join(tmp, 'm', 'manifest.json'),
+      JSON.stringify({ id: 'm', name: 'M', version: '0.2.0', permissions: ['shell'] }),
+    );
+    await w.tick();
+    await w.tick();
+    expect(fn.mock.calls).toEqual([['m']]);
   });
 
   it('manifest 删除后重建 → 期间跳过,重建后继续检测', async () => {
@@ -312,6 +332,26 @@ describe('createPluginsWatcher', () => {
       expect(fn.mock.calls).toEqual([['x.id']]);
     });
 
+    // 权威目录选择须与列举(isPluginMainAvailable:main 为普通文件且 ≤8MiB)同口径:否则 watcher 盯住
+    // 无效首选目录,PluginManager 实际运行的后备目录被修改时不再热重载。
+    it.each([
+      ['main 是目录', (dir: string) => {
+        rmSync(join(tmp, dir, 'main.js'));
+        mkdirSync(join(tmp, dir, 'main.js'));
+      }],
+      ['main 超 8MiB', (dir: string) => fsp.truncate(join(tmp, dir, 'main.js'), 8 * 1024 * 1024 + 1)],
+    ])('首选目录无效(%s)→ 以合法后备目录为权威,后备目录 main 变化 fire', async (_label, breakMain) => {
+      dupDirs();
+      await breakMain('a.dir');
+      const fn = vi.fn();
+      const w = createPluginsWatcher(tmp, fn);
+      await w.tick();
+      touch('b.dir', 'main.js', now + 5000);
+      await w.tick();
+      await w.tick();
+      expect(fn.mock.calls).toEqual([['x.id']]);
+    });
+
     it('权威目录被删除 → 回落到剩余目录并 fire 一次', async () => {
       dupDirs();
       const fn = vi.fn();
@@ -340,7 +380,7 @@ describe('createPluginsWatcher', () => {
     expect(fn).toHaveBeenCalledWith('g');
   });
 
-  it('目录改声明新 id 后,旧 id 的记录被清理:改回旧 id 只填表不 fire', async () => {
+  it('目录改声明新 id 后,旧 id 的记录被清理:每次改 id 各 fire 一次新 id,之后 main 变化只报当前 id', async () => {
     makeDir('h', { id: 'h.old', name: 'H', version: '0.1.0' });
     const fn = vi.fn();
     const w = createPluginsWatcher(tmp, fn);
@@ -351,10 +391,42 @@ describe('createPluginsWatcher', () => {
     };
     swap('h.new');
     await w.tick();
-    touch('h', 'main.js', Date.now() + 5000);
+    expect(fn.mock.calls).toEqual([['h.new']]);
     swap('h.old');
-    await w.tick(); // h.old 的旧记录已清理 → 视为首次出现
+    await w.tick(); // 目录又改回 h.old → 视为 h.old 变化
+    expect(fn.mock.calls).toEqual([['h.new'], ['h.old']]);
+    touch('h', 'main.js', Date.now() + 5000);
+    await w.tick();
+    await w.tick();
+    expect(fn.mock.calls).toEqual([['h.new'], ['h.old'], ['h.old']]); // h.new 记录已清理,不再被报告
+  });
+
+  // 缺失记录(目录 / manifest / main 暂时不可见)保留有限轮次的 tombstone:短暂 unlink→重建仍 fire;
+  // 连续缺失超过上限轮次后删除记录(此前无界保留,且每轮遍历全部记录 → 随历史 id 数单调增长)。
+  it('目录永久删除:连续缺失超过 5 轮后记录被清理,之后同名重建视为首次出现不 fire', async () => {
+    makeDir('t', { id: 't', name: 'T', version: '0.1.0' });
+    const fn = vi.fn();
+    const w = createPluginsWatcher(tmp, fn);
+    await w.tick();
+    rmSync(join(tmp, 't'), { recursive: true, force: true });
+    for (let i = 0; i < 6; i += 1) await w.tick();
+    makeDir('t', { id: 't', name: 'T', version: '0.1.0' });
+    touch('t', 'main.js', Date.now() + 5000);
+    await w.tick();
     expect(fn).not.toHaveBeenCalled();
+  });
+
+  it('目录缺失 5 轮内重建(main 已变)→ 仍 fire', async () => {
+    makeDir('u', { id: 'u', name: 'U', version: '0.1.0' });
+    const fn = vi.fn();
+    const w = createPluginsWatcher(tmp, fn);
+    await w.tick();
+    rmSync(join(tmp, 'u'), { recursive: true, force: true });
+    for (let i = 0; i < 5; i += 1) await w.tick();
+    makeDir('u', { id: 'u', name: 'U', version: '0.1.0' });
+    touch('u', 'main.js', Date.now() + 5000);
+    await w.tick();
+    expect(fn.mock.calls).toEqual([['u']]);
   });
 
   it('start(intervalMs) 返 dispose,disposed 后 tick 不再 fire', async () => {

@@ -10,6 +10,7 @@ import {
   PLUGINS_CHANNELS,
   GIT_URL_MAX,
   PLUGIN_DIR_NAME_MAX_LEN,
+  PLUGIN_MANIFEST_HASH_RE,
 } from '../../shared/plugins-channels';
 import {
   createPluginsWatcher,
@@ -68,7 +69,11 @@ export const ReadDirByIdInput = z
   .object({ id: z.string().min(1).max(PLUGIN_ID_MAX) })
   .strict();
 export const ReadMainByDirInput = z
-  .object({ dir: z.string().min(1).max(PLUGIN_DIR_NAME_MAX_LEN) })
+  .object({
+    dir: z.string().min(1).max(PLUGIN_DIR_NAME_MAX_LEN),
+    // 列举项的 manifest 版本令牌(sha256 hex,定长 64)。
+    manifestHash: z.string().max(64).regex(PLUGIN_MANIFEST_HASH_RE),
+  })
   .strict();
 export const UninstallInput = z
   .object({ id: z.string().min(1).max(PLUGIN_ID_MAX) })
@@ -142,9 +147,9 @@ export function registerPluginsIpc(): void {
   safeHandle(
     PLUGINS_CHANNELS.READ_MAIN_BY_DIR,
     ReadMainByDirInput,
-    async ({ dir }) => {
+    async ({ dir, manifestHash }) => {
       await installRecovery;
-      return readPluginMainByDir(pluginsDir, dir);
+      return readPluginMainByDir(pluginsDir, dir, manifestHash);
     },
     trusted,
   );

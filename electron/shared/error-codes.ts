@@ -31,6 +31,8 @@ const MAIN_ERROR_CODES = {
   // 卸载插件:path scope 授权记录清理失败,中止卸载(不删目录,可重试)。
   PATH_SCOPE_CLEANUP_FAILED: 'PATH_SCOPE_CLEANUP_FAILED',
   PAYLOAD_TOO_LARGE: 'PAYLOAD_TOO_LARGE',
+  // 激活时插件 manifest 已不是列举时的版本(期间被更新):拒绝以旧 manifest 执行新 main。
+  PLUGIN_MANIFEST_CHANGED: 'PLUGIN_MANIFEST_CHANGED',
   // 插件安装:clone 到的 manifest.id 与 marketplace entry.id(expectedId)不一致。
   PLUGIN_ID_MISMATCH: 'PLUGIN_ID_MISMATCH',
   RM_FAILED: 'RM_FAILED',
