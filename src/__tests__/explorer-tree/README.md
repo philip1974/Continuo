@@ -27,10 +27,20 @@ React 组件渲染 / 虚拟滚动 / 真键盘交互留 Step 7 smoke E2E。
 - `getItemName(item)` 返回 `item.getItemData().name`
 - `isItemFolder(item)` 返回 `item.getItemData().isDirectory`
 
+## FileRow 渲染隔离(perf,`folder-tree-row-memo.spec.tsx`)
+
+- `FileRow` 是 memo 组件;FolderTree 经 `readFileRowState(item, tree)` 把行状态(data / isDir /
+  isSelected / isFocused / isExpanded / isLoading / isRenaming / renamingValue / level / posInSet /
+  setSize / isDraggingOver)以 primitive 下传,定位只传 `start`(行内构造 style)
+- 滚动(virtualizer range 变化)时一直在视口的行不重渲;新进入的行按 start 定位
+- 键盘移动焦点只重渲新旧焦点行,tabIndex 跟随
+- 选中 / 展开 / 剪切灰显 / 重命名受控输入 / 兄弟增删后的 aria-setsize 均正确反映到对应行
+- 已知:选中集合变化与剪贴板空↔非空翻转仍会重渲全部可见行(selectedPaths / hasClipboard 供每行
+  ContextMenu 使用),属低频交互
+
 ## 不在本主题验证
 
-- React 组件渲染 / 虚拟滚动行为(留 E2E)
-- 键盘 ↑↓ 导航的真实焦点切换(留 E2E)
+- 真实浏览器虚拟滚动行为(留 E2E)
 - selection feature 的内部 state 流转(headless-tree 自带覆盖)
 - `EmptyWorkspace` 按钮点击 → fs.selectDirectory → setRoot 的真实 IPC 路径(留 E2E)
 - `initExplorerPersistence` 在 main.tsx 的接入(已在 explorer-stores 主题测过)

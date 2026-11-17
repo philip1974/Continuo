@@ -16,7 +16,7 @@ import { CreateInput } from './CreateInput';
 import { DropOverlay } from './DropOverlay';
 import { ExplorerHeader } from './ExplorerHeader';
 import { createTreeConfig } from './tree-config';
-import { DEFAULT_INDENT, FILE_ROW_HEIGHT, FileRow } from './FileRow';
+import { DEFAULT_INDENT, FILE_ROW_HEIGHT, FileRow, readFileRowState } from './FileRow';
 import { createNewDir, createNewFile, renameItem, trashItemsAndCleanup } from './mutate-actions';
 import { resolveDropTarget, type DropTargetEntry } from './drop-handlers';
 import {
@@ -736,13 +736,8 @@ export function FolderTree({ root }: { root: string }) {
                   <FileRow
                     key={item.getId()}
                     item={item}
-                    style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      width: '100%',
-                      transform: `translateY(${vRow.start}px)`,
-                    }}
+                    {...readFileRowState(item, tree)}
+                    start={vRow.start}
                     selectedPaths={selectedPaths}
                     rootPath={root}
                     contextActions={contextActions}
