@@ -307,6 +307,30 @@ describe('topic 49 · installFromGit 原子覆盖 + 回滚', () => {
     }
   });
 
+  // 跨卷回退 cp 与同卷 rename 对仓库内相对符号链接须一致:原样保留(cp 默认会改写成指向已删 clone 临时
+  // 目录的绝对路径 → 安装后链接失效)。
+  it.skipIf(process.platform === 'win32')('EXDEV 回退 cp 时相对符号链接原样保留', async () => {
+    const realRename = fs.rename.bind(fs);
+    ctl.manifest = { id: 'ln', name: 'L', version: '1.0.0' };
+    const spy = vi.spyOn(fs, 'rename').mockImplementation(async (from, to) => {
+      if (String(to).includes('.installing-')) {
+        // 在 clone 里补一条相对链接(clone 已完成、校验已过),再模拟跨卷
+        await fs.symlink('main.js', path.join(String(from), 'alias.js')).catch(() => {});
+        throw Object.assign(new Error('EXDEV'), { code: 'EXDEV' });
+      }
+      return realRename(from, to);
+    });
+    try {
+      await installFromGit(URL, baseDir);
+      const link = path.join(baseDir, 'ln', 'alias.js');
+      expect(await fs.readlink(link)).toBe('main.js');
+      expect(await fs.readFile(link, 'utf-8')).toBe('// plugin');
+    } finally {
+      spy.mockRestore();
+      ctl.manifest = { id: 'p', name: 'P', version: '1.0.0' };
+    }
+  });
+
   // main 入口是目录:fs.access 对目录也成功 → 旧实现报安装成功,但下次扫描读 main 失败静默跳过。
   it('main 入口是目录 → BAD_MAIN,不落地、无残留', async () => {
     ctl.mainAsDir = true;

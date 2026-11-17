@@ -1346,8 +1346,10 @@ export async function installFromGit(
         // 性能:clone 与 staging 同卷时直接 rename 整树(O(1));fs.cp 是逐文件串行复制(实测 3000 文件
         // ~850ms,且全程持有该 id 的 mutation 锁、占 libuv 线程池)。rename 失败(跨卷 EXDEV、Windows
         // 下被占用等)回退原 cp 路径;rename 原子,失败时 cloneDir 原样保留。
+        // verbatimSymlinks:与 rename 一致地原样保留仓库内相对链接(默认会改写成指向 tmpRoot 的绝对路径,
+        // finally 删掉 tmpRoot 后链接失效)。
         await fs.rename(cloneDir, staging).catch(async () => {
-          await cp(cloneDir, staging, { recursive: true });
+          await cp(cloneDir, staging, { recursive: true, verbatimSymlinks: true });
         });
       } catch (err) {
         // 复制中途失败(磁盘满等):清掉半截 staging 目录,不留到下次启动的恢复流程。
