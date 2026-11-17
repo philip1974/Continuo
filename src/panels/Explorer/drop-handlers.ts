@@ -241,15 +241,19 @@ export async function performDrop(
     }
   };
 
-  // 同目标键的链尾:worker 按下标升序领取任务并同步登记链尾,故同键后项总排在前项之后。
-  // 等待前项的 worker 不持有 arrayBuffer(读在等待之后),在途内存上界不变。readAndWrite 不抛。
-  const sameTargetTails = new Map<string, Promise<void>>();
-  await allSettledWithConcurrency(acceptedIdx, DROP_IO_CONCURRENCY, (index) => {
+  // 按折叠目标键(大小写/NFC)分组,以组为 worker 任务:组内按输入顺序串行(后项覆盖前项),
+  // 组间并发 DROP_IO_CONCURRENCY。此前每项一个任务、同键后项 await 前项链尾,若前 4 项同键,
+  // 4 个 worker 全卡在同一条链上,后续异键文件队头阻塞。每个 worker 同一时刻只读/写一项,
+  // 在途 arrayBuffer 仍 ≤ DROP_IO_CONCURRENCY;结果按下标记录,汇总顺序不变。readAndWrite 不抛。
+  const groupsByKey = new Map<string, number[]>();
+  for (const index of acceptedIdx) {
     const key = lowerIfNeeded(files[index]!.name.normalize('NFC'));
-    const prev = sameTargetTails.get(key);
-    const run = prev ? prev.then(() => readAndWrite(index)) : readAndWrite(index);
-    sameTargetTails.set(key, run);
-    return run;
+    const group = groupsByKey.get(key);
+    if (group) group.push(index);
+    else groupsByKey.set(key, [index]);
+  }
+  await allSettledWithConcurrency([...groupsByKey.values()], DROP_IO_CONCURRENCY, async (group) => {
+    for (const index of group) await readAndWrite(index);
   });
 
   const written = new Array<string>(files.length);

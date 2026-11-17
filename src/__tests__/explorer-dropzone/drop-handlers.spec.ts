@@ -512,6 +512,34 @@ describe('performDrop · 有界并发', () => {
     expect(r.written).toEqual(['/work/dup', '/work/other', '/work/DUP', '/work/dup']);
   });
 
+  it('前 4+ 项同目标键时,后续异键项仍并发启动(同键链不占满 worker)', async () => {
+    const g = gatedFs();
+    const { files } = countingFiles(['dup', 'DUP', 'dup', 'Dup', 'dup', 'x', 'y', 'z']);
+    const done = performDrop(files, '/work', g.fs);
+    for (let n = 0; n < 10; n++) await tick();
+    // 第一个 dup 在途未放行:同键其余项等待,但 x/y/z 应已发起写入(同键组只占 1 个 worker)
+    expect(g.calls.map((c) => c.path)).toEqual(['/work/dup', '/work/x', '/work/y', '/work/z']);
+    while (g.calls.length < 8 || g.pending.length > 0) {
+      g.pending.shift()?.resolve(ok());
+      await tick();
+    }
+    const r = await done;
+    // 同键组内仍按输入顺序串行
+    expect(
+      g.calls.filter((c) => c.path.toLowerCase() === '/work/dup').map((c) => c.bytes[0]),
+    ).toEqual([0, 1, 2, 3, 4]);
+    expect(r.written).toEqual([
+      '/work/dup',
+      '/work/DUP',
+      '/work/dup',
+      '/work/Dup',
+      '/work/dup',
+      '/work/x',
+      '/work/y',
+      '/work/z',
+    ]);
+  });
+
   it('完成顺序乱序时 written/failed 仍按输入顺序汇总', async () => {
     const g = gatedFs();
     const { files } = countingFiles(['a', 'b', 'c', 'd']);
