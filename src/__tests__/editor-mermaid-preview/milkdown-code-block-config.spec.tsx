@@ -57,7 +57,7 @@ vi.mock('../../plugins/settings/values-store', () => ({
 function themed(resolved: 'light' | 'dark', defaultValue: string) {
   return (
     <ThemeContext.Provider value={{ mode: resolved, resolved, setMode: () => {} }}>
-      <MilkdownEditor defaultValue={defaultValue} />
+      <MilkdownEditor tabId="/t.md" defaultValue={defaultValue} />
     </ThemeContext.Provider>
   );
 }
@@ -83,7 +83,7 @@ async function settle(): Promise<void> {
 
 describe('MilkdownEditor code block wiring', () => {
   it('renders mermaid code blocks through renderMermaidPreview', async () => {
-    render(<MilkdownEditor defaultValue="# Title" />);
+    render(<MilkdownEditor tabId="/t.md" defaultValue="# Title" />);
     await settle();
 
     expect(lastOptions().featureConfigs['CodeMirror']?.['renderPreview']).toBe(
@@ -92,7 +92,7 @@ describe('MilkdownEditor code block wiring', () => {
   });
 
   it('localizes the code block chrome', async () => {
-    render(<MilkdownEditor defaultValue="# Title" />);
+    render(<MilkdownEditor tabId="/t.md" defaultValue="# Title" />);
     await settle();
 
     const config = lastOptions().featureConfigs['CodeMirror'] as {
@@ -142,9 +142,9 @@ describe('MilkdownEditor code block wiring', () => {
   it('remounts when the app language changes so the chrome is re-localized', async () => {
     const original = getLocale();
     try {
-      const view = render(<MilkdownEditor defaultValue="v1" />);
+      const view = render(<MilkdownEditor tabId="/t.md" defaultValue="v1" />);
       await settle();
-      view.rerender(<MilkdownEditor defaultValue="v2" />);
+      view.rerender(<MilkdownEditor tabId="/t.md" defaultValue="v2" />);
       await settle();
       const before = (
         lastOptions().featureConfigs['CodeMirror'] as { copyText: string }

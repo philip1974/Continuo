@@ -94,7 +94,7 @@ afterEach(() => {
 describe('MilkdownEditor preview emissions', () => {
   it('does not call onChange for mount or later markdownUpdated emissions in preview mode', () => {
     const onChange = vi.fn();
-    render(<MilkdownEditor defaultValue="# Title" readonly onChange={onChange} />);
+    render(<MilkdownEditor tabId="/t.md" defaultValue="# Title" readonly onChange={onChange} />);
 
     milkdownHarness.mount('# serialized mount');
     milkdownHarness.edit('# serialized later');
@@ -107,7 +107,7 @@ describe('MilkdownEditor preview emissions', () => {
 describe('MilkdownEditor edit emissions', () => {
   it('forwards the very first real edit', () => {
     const onChange = vi.fn();
-    render(<MilkdownEditor defaultValue={'# Title\n'} onChange={onChange} />);
+    render(<MilkdownEditor tabId="/t.md" defaultValue={'# Title\n'} onChange={onChange} />);
 
     milkdownHarness.mount('# Title\n');
     milkdownHarness.edit('# Titlex\n');
@@ -119,7 +119,7 @@ describe('MilkdownEditor edit emissions', () => {
   it('ignores the mount-time trailing-paragraph normalization, then forwards edits', () => {
     const onChange = vi.fn();
     const doc = '# Title\n\n```mermaid\ngraph TD\n```\n';
-    render(<MilkdownEditor defaultValue={doc} onChange={onChange} />);
+    render(<MilkdownEditor tabId="/t.md" defaultValue={doc} onChange={onChange} />);
 
     milkdownHarness.mount(doc);
     milkdownHarness.edit(`${doc}\n`);

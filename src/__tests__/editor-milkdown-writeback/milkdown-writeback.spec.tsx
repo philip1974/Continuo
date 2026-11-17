@@ -97,7 +97,7 @@ async function mountEditor(
   const onChange = vi.fn();
   const onWriteBack = vi.fn();
   const utils = render(
-    <MilkdownEditor
+    <MilkdownEditor tabId="/t.md"
       defaultValue="hello"
       onChange={onChange}
       onWriteBack={onWriteBack}
@@ -121,6 +121,19 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('Milkdown 同步回写', () => {
+  it('只回写别的 tab(如外部重载另一个文件)→ 不序列化、不回写本编辑器;回写本 tab 才回写', async () => {
+    const { onWriteBack } = await mountEditor({ tabId: '/w/a.md' });
+    crepeHarness.markdown = 'hello world\n'; // 用户正在输入,尚未上抛
+    crepeHarness.serialize.mockClear();
+
+    flushEditorWriteBacks(['/w/other.md']);
+    expect(crepeHarness.serialize).not.toHaveBeenCalled();
+    expect(onWriteBack).not.toHaveBeenCalled();
+
+    flushEditorWriteBacks(['/w/a.md']);
+    expect(onWriteBack).toHaveBeenCalledWith('hello world\n', 'hello');
+  });
+
   it('防抖窗口内触发关窗 flush → 同步把编辑器最新全文回写(带上抛基线)', async () => {
     const { onWriteBack, onChange } = await mountEditor();
     crepeHarness.markdown = 'hello world\n'; // 用户刚输入,200ms 防抖尚未触发
