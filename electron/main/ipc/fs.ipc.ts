@@ -23,6 +23,7 @@ import { renameEntry } from './fs/rename';
 import { removeEntry } from './fs/remove';
 import { createDir, createFile } from './fs/create';
 import { copyEntry, moveEntry } from './fs/move-copy';
+import { claimAtomicReplaceNames } from './fs/recent-atomic-replace';
 import { createSameTickPathCoalescer, createWatcherPool, type WatcherCreator } from './fs/watch';
 import { broadcastToWindows } from '../lib/broadcast';
 import { makeWcGoneHook } from '../lib/wc-gone-hook';
@@ -359,7 +360,13 @@ export function broadcastDirChanged(
 
 // 生产 watch 回调入口:同 tick 内同一 changedPath(多个 recursive 祖先 watcher 重复报告)只广播一次
 // (性能审计 #1,见 createSameTickPathCoalescer)。导出仅供回归测试。
-export const queueDirChangedBroadcast = createSameTickPathCoalescer(broadcastDirChanged);
+// 本进程原子替换已有文件(编辑器保存)产生的 rename 事件按 changeOnly 处理(见 recent-atomic-replace)。
+export const queueDirChangedBroadcast = createSameTickPathCoalescer(
+  broadcastDirChanged,
+  undefined,
+  undefined,
+  claimAtomicReplaceNames,
+);
 
 export function registerFsIpc(): void {
   const trusted = defaultIsTrustedFrame;

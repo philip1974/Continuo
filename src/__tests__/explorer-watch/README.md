@@ -109,3 +109,15 @@ macOS/Win 根目录 recursive watcher 对任意深度变更都上报其所在目
 - watch 引用按 BrowserWindow id 记账;sender 主框架非同文档导航(reload)即释放该窗口全部引用(与关窗
   `releaseFsWatchersForWindow` 同一 `unwatchByOwner` 路径),新文档重新 watch 后折叠一次即关闭 fs.watch
 - 同文档导航(hash / pushState)不释放;其它窗口对同一路径的引用不受影响
+
+## 本进程原子保存不触发整目录刷新(perf,`atomic-replace-change-only.spec.ts`)
+
+原子保存(写 `.<name>.continuo.tmp` 再 rename 覆盖)在 macOS 只产生 rename 事件(先一 tick 只有 tmp,
+再一 tick tmp + 目标名),旧 changeOnly 判定恒 false → 每次保存 Explorer 都整目录 listDir。
+
+- 覆盖**已有**普通文件:`atomicWriteFile` 写 tmp 前登记目标名 + tmp 名(rename 前续期,TTL 2s,条目上限);
+  合并器 flush 时该目录本 tick 文件名**全部**是登记名 → `changeOnly: true`(files 照常携带,外部同步不受影响)
+- 命中目标名即消费登记:之后同名的外部删除 / 改名按原语义刷新;只见 tmp(目标事件未到)不消费
+- 新建文件、混入未登记文件名、缺 filename、TTL 过期、tmp 撞上 crash 残留(其删除对显示隐藏文件的树可见)
+  → 不按 changeOnly(刷新)
+- 目录 / 文件名逐字比较,不做大小写 / NFC 折叠:字面不一致只会多刷新,不会漏刷新

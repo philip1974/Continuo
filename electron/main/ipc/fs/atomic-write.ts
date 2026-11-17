@@ -4,6 +4,11 @@ import { basename, dirname, join } from 'node:path';
 import { fsError, mapNodeErrnoCode } from './path-utils';
 import { runSerialPerKey } from '../../../shared/run-serial-per-key';
 import type { FsFileStat } from '../../../shared/fs-channels';
+import {
+  atomicWriteTmpName,
+  markAtomicReplace,
+  unmarkAtomicReplace,
+} from './recent-atomic-replace';
 
 /**
  * 原子写文件(ADR-009,借鉴 Lokus atomic_write_file)。
@@ -88,15 +93,23 @@ export async function atomicWriteFile(
  * 重置(`chmod 755 run.sh` 保存后丢执行位,0600 私密文件变 0644)。覆盖已有普通文件时返回其
  * `mode & 0o777` 供 tmp 继承 —— 同 VSCode / 多数编辑器只保留 rwx 位,不传播 setuid/setgid/sticky
  *(编辑后的内容不应继承特权位)。新建(ENOENT)/ 非普通文件 / Windows(mode 仅映射只读位,语义有限)
- * → undefined,行为不变。其它 stat 错误抛出:无法确认原权限时不静默放宽(如 0600 → 0644)。
+ * → mode undefined,行为不变。其它 stat 错误抛出:无法确认原权限时不静默放宽(如 0600 → 0644)。
+ *
+ * 性能:同一次 stat 顺带给出 existed(原文件是已有普通文件)供原子替换登记(见 recent-atomic-replace)。
+ * Windows 不需要 mode,但仍 stat 判定存在性;其 stat 失败不抛(保持旧行为),按不存在处理(不登记 → 多刷新)。
  */
-async function existingFileMode(filePath: string): Promise<number | undefined> {
-  if (process.platform === 'win32') return undefined;
+async function existingFileInfo(
+  filePath: string,
+): Promise<{ mode: number | undefined; existed: boolean }> {
+  const win = process.platform === 'win32';
   try {
     const st = await stat(filePath);
-    return st.isFile() ? st.mode & 0o777 : undefined;
+    if (!st.isFile()) return { mode: undefined, existed: false };
+    return { mode: win ? undefined : st.mode & 0o777, existed: true };
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    if (win || (err as NodeJS.ErrnoException).code === 'ENOENT') {
+      return { mode: undefined, existed: false };
+    }
     throw fsError(mapNodeErrnoCode(err), `atomic write stat failed: ${filePath}`);
   }
 }
@@ -109,8 +122,14 @@ async function atomicWriteFileInner(
   // 旧名会与用户真实文件(如 `foo.md.tmp` —— 常见后缀)撞名,`open('w')` 直接截断它、
   // 随后 rename 连内容带文件一起销毁 → 数据丢失(codex P1)。隐藏 + 应用标记的 sibling
   // 实务上不可能是用户文件。仍是固定名(per-path 串行 + crash 残留自愈,见上方注释)。
-  const tmpPath = join(dirname(filePath), `.${basename(filePath)}.continuo.tmp`);
-  const keepMode = await existingFileMode(filePath);
+  const dir = dirname(filePath);
+  const name = basename(filePath);
+  const tmpPath = join(dir, atomicWriteTmpName(name));
+  const { mode: keepMode, existed } = await existingFileInfo(filePath);
+  // 性能:覆盖已有文件不改变目录列表 → 写 tmp **之前**登记目标名 + tmp 名(tmp 出现事件可能先于 rename
+  // 到达),fs.watch 合并器据此把本次 rename 事件按 changeOnly 发出,Explorer 不整目录刷新。新建文件不登记。
+  let ownReplace = existed;
+  if (ownReplace) markAtomicReplace(dir, name);
 
   // ① 写 tmp + fsync。open 'wx' 排他:绝不盲目截断已存在文件。EEXIST 只可能是本应用上次
   // crash(open→rename 窗口被杀)残留的同名标记 tmp(用户不会创建此名)→ 安全删除后重试
@@ -123,6 +142,9 @@ async function atomicWriteFileInner(
       fd = await open(tmpPath, 'wx');
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+      // crash 残留 tmp 的删除对显示隐藏文件的 Explorer 可见(目录列表变了)→ 撤销登记,按原语义刷新。
+      if (ownReplace) unmarkAtomicReplace(dir, name);
+      ownReplace = false;
       await rm(tmpPath, { force: true }).catch(() => {});
       fd = await open(tmpPath, 'wx'); // 重试;再 EEXIST(跨进程竞态)则抛
     }
@@ -137,6 +159,7 @@ async function atomicWriteFileInner(
     await fd.sync();
     handleId = await fd.stat().catch(() => undefined);
   } catch (err) {
+    if (ownReplace) unmarkAtomicReplace(dir, name);
     await fd?.close().catch(() => {});
     await rm(tmpPath, { force: true }).catch(() => {});
     throw fsError(mapNodeErrnoCode(err), `atomic write tmp failed: ${filePath}`);
@@ -158,9 +181,12 @@ async function atomicWriteFileInner(
       : undefined;
 
   // ② 原子 rename tmp → path(替换原文件)。失败不改动原文件,清 tmp 后抛。
+  // rename 之前续期登记(大文件写 + fsync 可能耗时,事件可能在 rename 返回前到达)。
+  if (ownReplace) markAtomicReplace(dir, name);
   try {
     await rename(tmpPath, filePath);
   } catch (err) {
+    if (ownReplace) unmarkAtomicReplace(dir, name);
     await rm(tmpPath, { force: true }).catch(() => {});
     throw fsError(
       mapNodeErrnoCode(err),

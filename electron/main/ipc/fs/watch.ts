@@ -225,6 +225,10 @@ export function createWatcherPool(
  *
  * 性能:同时按目录聚合 changeOnly(本 tick 该目录所有回调 eventType 均为 'change' → true;任一 'rename' /
  * 缺 eventType → false),Explorer 据此跳过「仅内容变化」时的整目录 listDir(目录列表不变)。
+ *
+ * isOwnReplace(dir, names):可选。changeOnly 为 false 但该目录本 tick 文件名已知时,flush 询问这些名字是否
+ * **全部**属于本进程刚原子替换的已有文件(及其 tmp,见 recent-atomic-replace);是 → 仍按 changeOnly:true 发出
+ *(原子保存在 macOS 只产生 rename 事件,目录列表却不变)。判定方可在命中时消费登记。
  */
 export function createSameTickPathCoalescer(
   emit: (path: string, files: readonly string[] | undefined, changeOnly: boolean) => void,
@@ -232,6 +236,7 @@ export function createSameTickPathCoalescer(
     setImmediate(flush);
   },
   maxFiles: number = DIR_CHANGED_FILES_MAX,
+  isOwnReplace?: (dir: string, names: readonly string[]) => boolean,
 ): WatchChangeListener {
   // files:该目录本 tick 的文件名集合,null = 未知文件(目录级)。
   // changeOnly:本 tick 该目录所有回调 eventType 均为 'change'(任一 rename / 缺失 → false,不可恢复)。
@@ -240,7 +245,12 @@ export function createSameTickPathCoalescer(
     const paths = pending;
     pending = null;
     if (paths) {
-      for (const [p, e] of paths) emit(p, e.files ? [...e.files] : undefined, e.changeOnly);
+      for (const [p, e] of paths) {
+        const files = e.files ? [...e.files] : undefined;
+        const changeOnly =
+          e.changeOnly || (files !== undefined && isOwnReplace !== undefined && isOwnReplace(p, files));
+        emit(p, files, changeOnly);
+      }
     }
   };
   return (path, fileName, eventType) => {
