@@ -63,6 +63,16 @@ export function createWindowApiHost(): ManagerHost {
       // 用 Blob URL 让 dynamic import 能拿到外部文件内容(惰性生成,import 完成后即 revoke,见 importModule)。
       return buildPluginDirInfos(r.data);
     },
+    readPluginDirByManifestId: async (id) => {
+      // perf:热重载只读目标插件(main 端选择规则与 findPluginDirByManifestId(listDirs) 等价)。
+      // 失败与旧 listDirs 失败同降级:当作找不到(reload 抛 no longer exists)。
+      const r = await coApi.plugins.readDirById(id);
+      if (!r.ok) {
+        console.warn('[plugins-host] readDirById failed', r.code, r.message);
+        return null;
+      }
+      return r.data ? lazyPluginDirInfo(r.data) : null;
+    },
     readEnabledIds: async () => {
       const r = await coApi.plugins.readEnabled();
       if (!r.ok) {

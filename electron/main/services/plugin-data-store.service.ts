@@ -3,10 +3,10 @@ import { PLUGIN_ID_MAX_LEN } from '../../shared/permission-record-limits';
 import { join } from 'node:path';
 import type { IpcMain } from 'electron';
 import lockfile from 'proper-lockfile';
-import { atomicWriteJson } from '../lib/atomic-write';
+import { atomicWriteText } from '../lib/atomic-write';
 import { readFileCappedFd } from '../lib/read-fh-capped';
 import { ERROR_CODES } from '../../shared/error-codes';
-// 边界(E20,E13/E18/E19 同族):插件持久化 JSON 的序列化字节上限。save 直接 atomicWriteJson、load
+// 边界(E20,E13/E18/E19 同族):插件持久化 JSON 的序列化字节上限。save 原子写(atomicWriteText)、load
 // 整文件 readFile + JSON.parse,无上限时畸形插件保存超大对象 / 磁盘残留超大 data.json 会让主进程
 // JSON.stringify/parse 内存峰值 + 长时间阻塞。E43:常量移到 shared,renderer PluginDataStore 复用同值。
 import { MAX_PLUGIN_DATA_BYTES } from '../../shared/plugin-data-limits';
@@ -149,7 +149,7 @@ export function registerPluginDataStoreHandlers(
       // 而非「access 判缺失 → writeFile 截断」:后者在加锁前 truncate,并发首次 save
       // 或 access 竞态(TOCTOU)会把另一次已落盘的 data.json 抹回 {},若随后加锁/写入
       // 失败则该数据静默丢失(codex 数据安全复查 P1)。wx 仅当不存在时写空 {},已存在
-      // 吞 EEXIST,绝不截断已有内容。真正的写入仍在持锁后由 atomicWriteJson 完成。
+      // 吞 EEXIST,绝不截断已有内容。真正的写入仍在持锁后由 atomicWriteText 完成。
       try {
         await fs.writeFile(file, '{}', { flag: 'wx' });
       } catch (err) {
@@ -165,11 +165,13 @@ export function registerPluginDataStoreHandlers(
         // payload,但此前落盘写原始 data —— 绕过 renderer 的 raw IPC 传 null/undefined 时 payload={} 过
         // 校验,却把 null/undefined 写进 data.json,破坏 plain object 契约 → 下次 load 当损坏隔离降级 →
         // 插件数据静默丢失。写 payload 使校验对象与落盘对象一致。
-        await atomicWriteJson(file, payload);
+        // perf:直接落盘上面为计量生成的 compact `serialized`(即 payload 的序列化),不再交给
+        // atomicWriteJson 二次 pretty stringify。读取端只做 JSON.parse,对缩进格式无依赖。
+        await atomicWriteText(file, serialized);
       } finally {
         // release()(proper-lockfile 解锁)本身可能 reject —— 锁 stale(>5s)被其它
         // 进程接管、或 .lock 目录被外部清掉时抛 "Lock is not owned by you"。若
-        // atomicWriteJson 已成功而 release() reject,这个 finally 的 reject 会覆盖
+        // atomicWriteText 已成功而 release() reject,这个 finally 的 reject 会覆盖
         // 成功结果 → 一次本已落盘成功的写被 IPC 报成失败(未闭环:成功却报错,
         // 上层可能误触发重试或丢弃用户数据反馈)。解锁失败 best-effort 吞掉(锁会在
         // stale 超时后自动回收),不掩盖主结果。与上面 .corrupt 写同款 .catch 风格。

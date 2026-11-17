@@ -20,7 +20,14 @@
 - 缺 manifest.json → 跳过该项(不抛)
 - 缺 main 入口(默认 `main.js`,可被 manifest.main 覆盖) → 跳过该项
 - 目录里的 styles.css 不读取,结果里没有 stylesText 字段
-- 顺序:readdir 默认顺序
+- 顺序:readdir 默认顺序(per-dir 读取有界并发 ≤8,结果仍按枚举顺序)
+
+### readPluginDirByManifestId(baseDir, id)(perf:热重载只读目标插件)
+
+- 结果与 renderer `findPluginDirByManifestId(listPluginDirs(baseDir), id)` 等价
+- 目录名 == id 且 manifest.id 一致、main 可读 → 直接返回,不读其它插件文件
+- 否则只读其它目录 manifest,取 manifest.id 匹配者中目录名字典序最小且 main 可读的
+- `.` / `_` 前缀、损坏 manifest、缺 main 不参与;无匹配 / baseDir 缺失 → null
 
 ### readEnabledIds(baseDir) → string[]
 

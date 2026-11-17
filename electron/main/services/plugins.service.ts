@@ -277,47 +277,133 @@ async function readMetadataCapped(filePath: string): Promise<string> {
 export async function listPluginDirs(baseDir: string): Promise<IpcPluginDir[]> {
   // 边界(E82):有界枚举(缺目录 → [] → 返回空列表,等价旧版)。
   const entries = await readPluginDirEntriesCapped(baseDir);
+  // perf:per-dir 读取(stat + manifest + main ≤8MiB)此前串行,N 个插件启动时 N 段 I/O 首尾相接。
+  // 有界并发(PLUGIN_DIR_IO_CONCURRENCY)读取,结果按 entries 原顺序收集(激活顺序契约不变)。
+  const results = await mapInOrderBounded(entries, (name) => readOnePluginDir(baseDir, name));
 
-  const out = new Array<IpcPluginDir>(entries.length);
+  const out = new Array<IpcPluginDir>(results.length);
   let outCount = 0;
-  for (const id of entries) {
-    if (id.startsWith('.') || id.startsWith('_')) continue;
-
-    const dir = path.join(baseDir, id);
-    let stat: import('node:fs').Stats;
-    try {
-      stat = await fs.stat(dir);
-    } catch {
-      continue;
-    }
-    if (!stat.isDirectory()) continue;
-
-    // 边界(E24):manifest 超 1MiB(或缺失/不可读)→ 跳过整插件,不整文件读入 + IPC 传输。
-    const manifestText = await readFileCapped(
-      path.join(dir, 'manifest.json'),
-      MANIFEST_MAX_BYTES,
-    );
-    if (manifestText === null) continue;
-
-    // 解析 manifest.main(若失败用默认 main.js,M20:共用 getPluginMainName)
-    let mainName = 'main.js';
-    try {
-      mainName = getPluginMainName(JSON.parse(manifestText));
-    } catch {
-      // manifest 解析失败由 renderer 端 parseManifest 报错,我们继续给 mainText 尝试默认
-    }
-
-    const mainPath = resolvePluginMainPath(dir, mainName);
-    if (!mainPath) continue;
-    // 边界(E24):main 超 8MiB(或缺失/不可读)→ 跳过整个 plugin。
-    const mainText = await readFileCapped(mainPath, MAIN_MAX_BYTES);
-    if (mainText === null) continue;
-
-    out[outCount] = { id, manifestText, mainText };
+  for (const r of results) {
+    if (r === null) continue;
+    out[outCount] = r;
     outCount += 1;
   }
   out.length = outCount;
   return out;
+}
+
+/** 插件目录 I/O 的并发上限(list 首扫 / reload 回退扫描 / watcher 轮询共用)。 */
+const PLUGIN_DIR_IO_CONCURRENCY = 8;
+
+/**
+ * 以最多 PLUGIN_DIR_IO_CONCURRENCY 个并发对 items 运行 fn,结果按输入顺序对位。
+ * fn 自行吞掉可预期错误(返回 null 等);意外抛错与旧串行循环一样让整体 reject。
+ */
+async function mapInOrderBounded<T, R>(
+  items: readonly T[],
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < items.length) {
+      const i = next;
+      next += 1;
+      results[i] = await fn(items[i]!);
+    }
+  };
+  const workerCount = Math.min(PLUGIN_DIR_IO_CONCURRENCY, items.length);
+  const workers = new Array<Promise<void>>(workerCount);
+  for (let i = 0; i < workerCount; i += 1) workers[i] = worker();
+  await Promise.all(workers);
+  return results;
+}
+
+/** 读单个插件目录的 manifest 文本(过滤 . / _ 前缀与非目录;缺失 / 超限 → null)。 */
+async function readPluginManifestText(
+  baseDir: string,
+  name: string,
+): Promise<{ dir: string; manifestText: string } | null> {
+  if (name.startsWith('.') || name.startsWith('_')) return null;
+  const dir = path.join(baseDir, name);
+  let stat: import('node:fs').Stats;
+  try {
+    stat = await fs.stat(dir);
+  } catch {
+    return null;
+  }
+  if (!stat.isDirectory()) return null;
+  // 边界(E24):manifest 超 1MiB(或缺失/不可读)→ 跳过整插件,不整文件读入 + IPC 传输。
+  const manifestText = await readFileCapped(
+    path.join(dir, 'manifest.json'),
+    MANIFEST_MAX_BYTES,
+  );
+  if (manifestText === null) return null;
+  return { dir, manifestText };
+}
+
+/** 按 manifest.main(解析失败 → 默认 main.js)读 main 文本;越界 / 缺失 / 超限 → null。 */
+async function readPluginMainText(dir: string, manifestText: string): Promise<string | null> {
+  // 解析 manifest.main(若失败用默认 main.js,M20:共用 getPluginMainName)
+  let mainName = 'main.js';
+  try {
+    mainName = getPluginMainName(JSON.parse(manifestText));
+  } catch {
+    // manifest 解析失败由 renderer 端 parseManifest 报错,我们继续给 mainText 尝试默认
+  }
+  const mainPath = resolvePluginMainPath(dir, mainName);
+  if (!mainPath) return null;
+  // 边界(E24):main 超 8MiB(或缺失/不可读)→ 跳过整个 plugin。
+  return readFileCapped(mainPath, MAIN_MAX_BYTES);
+}
+
+async function readOnePluginDir(baseDir: string, name: string): Promise<IpcPluginDir | null> {
+  const m = await readPluginManifestText(baseDir, name);
+  if (m === null) return null;
+  const mainText = await readPluginMainText(m.dir, m.manifestText);
+  if (mainText === null) return null;
+  return { id: name, manifestText: m.manifestText, mainText };
+}
+
+/** manifest 文本里的 id(与 renderer findPluginDirByManifestId 同判据:JSON 损坏 → undefined)。 */
+function manifestIdOf(manifestText: string): unknown {
+  try {
+    return (JSON.parse(manifestText) as { id?: unknown } | null)?.id;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * perf:单插件热重载只读目标插件(此前 reload 走 listPluginDirs 全量读所有插件 main ≤8MiB 并经 IPC 传输,
+ * 每个窗口各一次)。选择结果与 `findPluginDirByManifestId(listPluginDirs(baseDir), id)` 完全等价:
+ * 只考虑 listPluginDirs 会收录的目录(同一有界枚举、. / _ 过滤、manifest + main 可读),manifest.id === id;
+ * 目录名 == id 的优先,否则目录名字典序最小(preferPluginDir 同规则)。
+ * - 快路径:枚举里有名为 id 的目录 → 只读它;它合格即为最优解(同名唯一且优先),不碰其它插件。
+ * - 回退:只读其它目录的 manifest(有界并发),按目录名升序逐个尝试读 main,首个可读者即结果。
+ */
+export async function readPluginDirByManifestId(
+  baseDir: string,
+  id: string,
+): Promise<IpcPluginDir | null> {
+  const entries = await readPluginDirEntriesCapped(baseDir);
+  if (entries.includes(id)) {
+    const exact = await readOnePluginDir(baseDir, id);
+    if (exact !== null && manifestIdOf(exact.manifestText) === id) return exact;
+  }
+  const others = entries.filter((name) => name !== id);
+  const manifests = await mapInOrderBounded(others, (name) => readPluginManifestText(baseDir, name));
+  const candidates: { name: string; dir: string; manifestText: string }[] = [];
+  for (let i = 0; i < others.length; i += 1) {
+    const m = manifests[i];
+    if (m && manifestIdOf(m.manifestText) === id) candidates.push({ name: others[i]!, ...m });
+  }
+  candidates.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  for (const c of candidates) {
+    const mainText = await readPluginMainText(c.dir, c.manifestText);
+    if (mainText !== null) return { id: c.name, manifestText: c.manifestText, mainText };
+  }
+  return null;
 }
 
 const ENABLED_FILE = '_enabled.json';
@@ -1253,38 +1339,58 @@ export function createPluginsWatcher(
   let running = false;
   let pending = false;
 
-  const runScan = async (): Promise<void> => {
-    if (cancelled) return;
-    // 边界(E82):有界枚举(缺目录 → [] → 循环 no-op,等价旧版早返)。
-    const entries = await readPluginDirEntriesCapped(baseDir);
-    for (const id of entries) {
-      if (id.startsWith('.') || id.startsWith('_')) continue;
-      const dir = path.join(baseDir, id);
+  // perf:manifest 解析结果缓存(目录名 → manifest 的 stat 签名 + 解析结果)。此前每 2s 对每个插件
+  // 完整读 + JSON.parse manifest,即使无任何变化。签名含 ino/size/mtime/ctime:原子替换(rename → 新 ino)、
+  // 原地改写(ctime 必变,即便 mtime 被还原)、删除(stat 失败 → 跳过并清缓存)、新增(无缓存)都会重读。
+  // 先 stat 再读:读到的内容不会比签名旧,期间若又被改,下轮签名不同会再读。
+  // info=null 表示 manifest 不是合法 JSON(与旧版同:跳过该目录)。条目只保留本轮枚举到的目录名。
+  const manifestCache = new Map<
+    string,
+    { sig: string; info: { mainName: string; pluginId: string } | null }
+  >();
 
-      let dirStat: import('node:fs').Stats;
-      try {
-        dirStat = await fs.stat(dir);
-      } catch {
-        continue;
-      }
-      if (!dirStat.isDirectory()) continue;
+  /** 单目录探测:返回 { pluginId, mtime }(main 文件 mtime),不可监控 → null。可并发执行。 */
+  const probeEntry = async (
+    name: string,
+  ): Promise<{ pluginId: string; mtime: number } | null> => {
+    if (name.startsWith('.') || name.startsWith('_')) return null;
+    const dir = path.join(baseDir, name);
 
-      let mainName = 'main.js';
-      let pluginId = id;
+    let dirStat: import('node:fs').Stats;
+    try {
+      dirStat = await fs.stat(dir);
+    } catch {
+      return null;
+    }
+    if (!dirStat.isDirectory()) return null;
+
+    const manifestPath = path.join(dir, 'manifest.json');
+    let manifestStat: import('node:fs').Stats;
+    try {
+      manifestStat = await fs.stat(manifestPath);
+    } catch {
+      manifestCache.delete(name);
+      return null; // 缺 manifest → 跳过(同旧版 readFileCapped 返 null)
+    }
+    const sig = `${manifestStat.ino}:${manifestStat.size}:${manifestStat.mtimeMs}:${manifestStat.ctimeMs}`;
+    let cached = manifestCache.get(name);
+    if (cached === undefined || cached.sig !== sig) {
       // 边界(E27,E24/listPluginDirs 同源):watcher 扫描读 manifest 也走 readFileCapped
-      //(同 MANIFEST_MAX_BYTES),避免超大 manifest 整块读入。超限/缺失 → 跳过该插件目录。
-      const text = await readFileCapped(
-        path.join(dir, 'manifest.json'),
-        MANIFEST_MAX_BYTES,
-      );
-      if (text === null) continue;
+      //(同 MANIFEST_MAX_BYTES),避免超大 manifest 整块读入。超限/缺失 → 跳过该插件目录(不缓存,下轮重试)。
+      const text = await readFileCapped(manifestPath, MANIFEST_MAX_BYTES);
+      if (text === null) {
+        manifestCache.delete(name);
+        return null;
+      }
+      let info: { mainName: string; pluginId: string } | null;
       try {
         const m = JSON.parse(text) as { main?: unknown; id?: unknown };
-        mainName = getPluginMainName(m); // M20:共用 getPluginMainName
+        let pluginId = name;
         // 边界(E101,E97/E100 id 前门一致性):manifest.id 复用 isSafePluginId + 长度上限。此前仅
         // typeof+非空 → 畸形本地插件可用超长/非法 id 当 mtimes key + 经 PLUGINS_CHANGED 广播到
         // renderer,PluginManager reload 找不到合法 entry 或把超长 id 带进日志/状态(Map/IPC 放大 +
-        // 热重载错位)。非法 id 回退目录名(pluginId = id,与 listPluginDirs 用目录名一致)。
+        // 热重载错位)。非法 id 回退目录名(pluginId = 目录名,与 listPluginDirs 用目录名一致)。
+        // (manifest 为 JSON null 时 m.id 抛 TypeError → 视为非法 manifest 跳过,同旧版。)
         if (
           typeof m.id === 'string' &&
           m.id.length > 0 &&
@@ -1293,27 +1399,53 @@ export function createPluginsWatcher(
         ) {
           pluginId = m.id;
         }
+        info = { mainName: getPluginMainName(m), pluginId }; // M20:共用 getPluginMainName
       } catch {
-        continue;
+        info = null;
       }
+      cached = { sig, info };
+      manifestCache.set(name, cached);
+    }
+    if (cached.info === null) return null;
 
-      try {
-        const mainPath = resolvePluginMainPath(dir, mainName);
-        if (!mainPath) continue;
-        const fileStat = await fs.stat(mainPath);
-        const mtime = fileStat.mtimeMs;
-        const prev = mtimes.get(pluginId);
-        // race(R67):先记录新 mtime,再 onChange。此前顺序相反,而整段在 try{}catch{continue} 内 —
-        // 若 onChange(广播 send)抛错,会被 per-entry catch 吞掉 continue → mtimes.set 不执行 →
-        // mtimes 不推进 → 同一变更每个 tick 反复触发/反复失败(广播一直打不出去)。改为变更检测
-        // 一旦确认即记录 mtime,通知(onChange)成败不影响 mtime 推进:坏窗口由 onChange 内部
-        // per-window try/catch 兜底(R67-A),不再回灌脏状态。
-        mtimes.set(pluginId, mtime);
-        if (!firstRun && prev !== undefined && prev !== mtime) {
+    try {
+      const mainPath = resolvePluginMainPath(dir, cached.info.mainName);
+      if (!mainPath) return null;
+      const fileStat = await fs.stat(mainPath);
+      return { pluginId: cached.info.pluginId, mtime: fileStat.mtimeMs };
+    } catch {
+      return null;
+    }
+  };
+
+  const runScan = async (): Promise<void> => {
+    if (cancelled) return;
+    // 边界(E82):有界枚举(缺目录 → [] → 循环 no-op,等价旧版早返)。
+    const entries = await readPluginDirEntriesCapped(baseDir);
+    // perf:per-dir stat(+ 必要时读 manifest)有界并发;mtimes 比较 / onChange 仍按枚举顺序串行(同旧版)。
+    const probes = await mapInOrderBounded(entries, probeEntry);
+    if (manifestCache.size > 0) {
+      const live = new Set(entries);
+      for (const name of manifestCache.keys()) {
+        if (!live.has(name)) manifestCache.delete(name);
+      }
+    }
+    for (const probe of probes) {
+      if (probe === null) continue;
+      const { pluginId, mtime } = probe;
+      const prev = mtimes.get(pluginId);
+      // race(R67):先记录新 mtime,再 onChange。此前顺序相反,而整段在 try{}catch{continue} 内 —
+      // 若 onChange(广播 send)抛错,会被 per-entry catch 吞掉 continue → mtimes.set 不执行 →
+      // mtimes 不推进 → 同一变更每个 tick 反复触发/反复失败(广播一直打不出去)。改为变更检测
+      // 一旦确认即记录 mtime,通知(onChange)成败不影响 mtime 推进:坏窗口由 onChange 内部
+      // per-window try/catch 兜底(R67-A),不再回灌脏状态。
+      mtimes.set(pluginId, mtime);
+      if (!firstRun && prev !== undefined && prev !== mtime) {
+        try {
           onChange(pluginId);
+        } catch {
+          // 同旧版 per-entry catch:通知失败不影响后续条目
         }
-      } catch {
-        continue;
       }
     }
     firstRun = false;

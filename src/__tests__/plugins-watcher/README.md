@@ -19,3 +19,9 @@
 - 单 plugin manifest 解析失败 / main 文件缺失 → 跳过该 plugin,其它继续
 - start(intervalMs) 启动 setInterval,返 dispose 停 timer
 - 同 plugin 多次连续触发不去重(由 renderer 端节流;通常 mtime 跨 tick 变一次)
+
+## perf:manifest 解析缓存 + 有界并发
+
+- manifest 的 (ino, size, mtime, ctime) 未变 → 不再读取 / JSON.parse,复用上次解析结果
+- 原地改写(即使 mtime 被还原,ctime 必变)、原子替换(rename → 新 ino)、删除(stat 失败跳过)、新增 → 都会重新解析
+- per-dir stat 有界并发(≤8);mtime 比较与 onChange 仍按目录枚举顺序串行

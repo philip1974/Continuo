@@ -9,6 +9,11 @@ import type { PermissionKey } from './permission-keys';
 export const PLUGINS_CHANNELS = {
   /** 扫描 plugins 目录,返回所有候选(每个含 manifestText + mainText). */
   LIST_DIRS: 'plugins:list-dirs',
+  /**
+   * 按 manifest.id 只读单个插件目录(perf:热重载不再全量 listDirs),返回 IpcPluginDir | null。
+   * 选择规则与 renderer findPluginDirByManifestId(listDirs) 等价(同名目录优先,否则目录名字典序)。
+   */
+  READ_DIR_BY_ID: 'plugins:read-dir-by-id',
   /** 读取 enabled.json(string[] of plugin ids). */
   READ_ENABLED: 'plugins:read-enabled',
   /**

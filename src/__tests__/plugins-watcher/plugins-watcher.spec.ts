@@ -5,6 +5,9 @@ import {
   writeFileSync,
   mkdirSync,
   utimesSync,
+  statSync,
+  renameSync,
+  promises as fsp,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -15,6 +18,7 @@ beforeEach(() => {
   tmp = mkdtempSync(join(tmpdir(), 'lm-watch-'));
 });
 afterEach(() => {
+  vi.restoreAllMocks();
   rmSync(tmp, { recursive: true, force: true });
 });
 
@@ -166,6 +170,98 @@ describe('createPluginsWatcher', () => {
     // 关键:mtime 已推进,下一 tick(无新变更)不再重复触发同一变更。
     await w.tick();
     expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  // perf:manifest 未变(ino/size/mtime/ctime 相同)→ 不再每轮读取 + JSON.parse,main 变化照常检测。
+  it('manifest 未变 → 后续 tick 不再读 manifest,main mtime 变化仍 fire', async () => {
+    makeDir('a', { id: 'a', name: 'A', version: '0.1.0' });
+    const fn = vi.fn();
+    const w = createPluginsWatcher(tmp, fn);
+    await w.tick();
+    const opened: string[] = [];
+    const realOpen = fsp.open.bind(fsp);
+    vi.spyOn(fsp, 'open').mockImplementation((...args: Parameters<typeof fsp.open>) => {
+      opened.push(String(args[0]));
+      return realOpen(...args);
+    });
+    await w.tick();
+    touch('a', 'main.js', Date.now() + 5000);
+    await w.tick();
+    expect(opened.filter((p) => p.endsWith('manifest.json'))).toEqual([]);
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect(fn).toHaveBeenCalledWith('a');
+  });
+
+  it('manifest 原地改写(mtime 被还原、大小不变)→ 仍重新解析,跟随新 main 入口', async () => {
+    const dir = join(tmp, 'c');
+    mkdirSync(dir);
+    const mf = (main: string) => JSON.stringify({ id: 'c', name: 'C', version: '0.1.0', main });
+    writeFileSync(join(dir, 'manifest.json'), mf('a.js'));
+    writeFileSync(join(dir, 'a.js'), 'A');
+    writeFileSync(join(dir, 'b.js'), 'B');
+    const fixed = Math.floor(Date.now() / 1000) - 100; // 整秒:还原后 mtimeMs 精确相等
+    utimesSync(join(dir, 'manifest.json'), fixed, fixed);
+    const fn = vi.fn();
+    const w = createPluginsWatcher(tmp, fn);
+    await w.tick();
+    const before = statSync(join(dir, 'manifest.json'));
+    await new Promise((r) => setTimeout(r, 20));
+    writeFileSync(join(dir, 'manifest.json'), mf('b.js')); // 同长度
+    utimesSync(join(dir, 'manifest.json'), fixed, fixed); // 还原 mtime,仅 ctime 变
+    const after = statSync(join(dir, 'manifest.json'));
+    expect([after.ino, after.size, after.mtimeMs]).toEqual([before.ino, before.size, before.mtimeMs]);
+    touch('c', 'b.js', Date.now() + 5000);
+    await w.tick(); // 切到 b.js:prev(a.js 的 mtime) ≠ b.js mtime → fire
+    expect(fn).toHaveBeenCalledWith('c');
+  });
+
+  it('manifest 原子替换(rename)换 id → 用新 id 报告变化', async () => {
+    makeDir('d', { id: 'old.id', name: 'D', version: '0.1.0' });
+    const fn = vi.fn();
+    const w = createPluginsWatcher(tmp, fn);
+    await w.tick();
+    writeFileSync(join(tmp, 'd', 'manifest.tmp'), JSON.stringify({ id: 'new.id', name: 'D', version: '0.1.0' }));
+    renameSync(join(tmp, 'd', 'manifest.tmp'), join(tmp, 'd', 'manifest.json'));
+    await w.tick(); // new.id 首次出现:只填表
+    touch('d', 'main.js', Date.now() + 5000);
+    await w.tick();
+    expect(fn).toHaveBeenCalledWith('new.id');
+    expect(fn).not.toHaveBeenCalledWith('old.id');
+  });
+
+  it('manifest 删除后重建 → 期间跳过,重建后继续检测', async () => {
+    makeDir('e', { id: 'e', name: 'E', version: '0.1.0' });
+    const fn = vi.fn();
+    const w = createPluginsWatcher(tmp, fn);
+    await w.tick();
+    rmSync(join(tmp, 'e', 'manifest.json'));
+    touch('e', 'main.js', Date.now() + 5000);
+    await w.tick();
+    expect(fn).not.toHaveBeenCalled();
+    writeFileSync(join(tmp, 'e', 'manifest.json'), JSON.stringify({ id: 'e', name: 'E', version: '0.1.0' }));
+    await w.tick(); // mtimes 里 e 仍是删除前的值 → 本轮检测到 main 已变
+    expect(fn).toHaveBeenCalledWith('e');
+  });
+
+  it('per-dir stat 有界并发(>1 且 ≤8)', async () => {
+    for (let i = 0; i < 20; i += 1) makeDir(`p${i}`, { id: `p${i}`, name: 'P', version: '0.1.0' });
+    const realStat = fsp.stat.bind(fsp);
+    let inFlight = 0;
+    let maxInFlight = 0;
+    vi.spyOn(fsp, 'stat').mockImplementation((async (...args: Parameters<typeof fsp.stat>) => {
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((r) => setTimeout(r, 2));
+      try {
+        return await realStat(...args);
+      } finally {
+        inFlight -= 1;
+      }
+    }) as typeof fsp.stat);
+    const w = createPluginsWatcher(tmp, vi.fn());
+    await w.tick();
+    expect(maxInFlight).toBeGreaterThan(1);
+    expect(maxInFlight).toBeLessThanOrEqual(8);
   });
 
   it('start(intervalMs) 返 dispose,disposed 后 tick 不再 fire', async () => {

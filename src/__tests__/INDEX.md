@@ -938,6 +938,10 @@
 
 - [`backpressure.spec.ts`](./plugin-shell-stream-backpressure/backpressure.spec.ts)
 
+## [plugin-shell-stream-demux(perf:preload 单 listener 分发)](./plugin-shell-stream-demux/README.md)
+
+- [`demux.spec.ts`](./plugin-shell-stream-demux/demux.spec.ts)
+
 ## [plugin-uninstall-broadcast(跨窗口卸载撤销插件实例与授权)](./plugin-uninstall-broadcast/README.md)
 
 - [`main-broadcast.spec.ts`](./plugin-uninstall-broadcast/main-broadcast.spec.ts)
