@@ -551,6 +551,7 @@
 
 ## [ExplorerSidebar(VSCode 风固定侧边栏)](./explorer-sidebar/README.md)
 
+- [`explorer-sidebar-keepalive.spec.tsx`](./explorer-sidebar/explorer-sidebar-keepalive.spec.tsx)
 - [`explorer-sidebar-render-isolation.spec.tsx`](./explorer-sidebar/explorer-sidebar-render-isolation.spec.tsx)
 - [`explorer-sidebar.spec.tsx`](./explorer-sidebar/explorer-sidebar.spec.tsx)
 
@@ -580,6 +581,7 @@
 ## [explorer-watch (M-Explorer Step 6)](./explorer-watch/README.md)
 
 - [`folder-tree-dir-changed-unloaded.spec.tsx`](./explorer-watch/folder-tree-dir-changed-unloaded.spec.tsx)
+- [`folder-tree-hidden-defer.spec.tsx`](./explorer-watch/folder-tree-hidden-defer.spec.tsx)
 - [`fs-watch-helpers.spec.ts`](./explorer-watch/fs-watch-helpers.spec.ts)
 - [`watch-pool.spec.ts`](./explorer-watch/watch-pool.spec.ts)
 
