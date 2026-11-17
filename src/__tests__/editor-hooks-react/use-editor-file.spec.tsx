@@ -7,6 +7,7 @@ import {
 } from '../../lib/co-api';
 import { useEditorFile } from '../../panels/Editor/useEditorFile';
 import { useEditorStore } from '../../stores/editor.store';
+import { registerEditorWriteBack } from '../../panels/Editor/editor-writeback-registry';
 
 function installFsApi(fs: Record<string, unknown>): void {
   Object.defineProperty(window, 'api', {
@@ -38,6 +39,25 @@ describe('useEditorFile', () => {
     const r = await result.current.saveActive();
     expect(r.ok).toBe(false);
     expect((r as { code: string }).code).toBe('NO_ACTIVE_TAB');
+  });
+
+  it('saveActive 先同步回写编辑器里未上抛的输入(Milkdown 200ms 防抖窗口内的最后几键也进入本次保存)', async () => {
+    const writeFile = vi.fn(async () => ({ ok: true, data: undefined }));
+    installFsApi({ readFile: vi.fn(async () => ({ ok: true, data: 'old' })), writeFile });
+    useEditorStore.setState({
+      tabs: [{ id: '/x.md', filePath: '/x.md', content: 'new', originalContent: 'old', dirty: true }],
+      activeTabId: '/x.md',
+    });
+    const unregister = registerEditorWriteBack(() => {
+      useEditorStore.getState().updateContent('/x.md', 'newest');
+    });
+    try {
+      const { result } = renderHook(() => useEditorFile());
+      await result.current.saveActive();
+      expect(writeFile).toHaveBeenCalledWith('/x.md', 'newest');
+    } finally {
+      unregister();
+    }
   });
 
   it('saveActive 有 active tab → 调 writeFile + markSaved', async () => {
