@@ -80,6 +80,20 @@ export function pruneClipboardPaths(
   return remainingCount === 0 ? EMPTY_CLIPBOARD_PATHS : remaining;
 }
 
+// perf:FileRow 每个可见行要判「是否已剪切」;对 paths 数组线性 includes 在剪切海量项后滚动每帧
+// O(行数 × 剪切数)。paths 在 store 内不可变(set 复制、prune 产新数组),按数组引用派生缓存 Set,
+// 同一 paths 只建一次,判定 O(1);Set.has 与 includes 同为 SameValueZero(精确字符串相等)。
+const clipboardPathSets = new WeakMap<readonly string[], ReadonlySet<string>>();
+
+export function clipboardPathSet(paths: readonly string[]): ReadonlySet<string> {
+  let set = clipboardPathSets.get(paths);
+  if (set === undefined) {
+    set = new Set(paths);
+    clipboardPathSets.set(paths, set);
+  }
+  return set;
+}
+
 export const useExplorerClipboardStore = create<ExplorerClipboardState>(
   (set) => ({
     kind: null,

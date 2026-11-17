@@ -13,7 +13,7 @@ import {
 import { coApp } from '@/plugins/co-app';
 import type { ExplorerContextMenuItemSpec } from '@/plugins/registries/ExplorerContextMenuRegistry';
 import { ContextMenu, type ContextMenuActions } from './ContextMenu';
-import { useExplorerClipboardStore } from './clipboard-store';
+import { clipboardPathSet, useExplorerClipboardStore } from './clipboard-store';
 import type { DropTargetEntry } from './drop-handlers';
 import { FileIcon } from './file-icon';
 
@@ -129,7 +129,7 @@ export function FileRow({
   const decoration = useDecoration(data.path, isDir, decorators);
   // VSCode 同款:已剪切的项目灰显,提示「等待粘贴」;copy 不灰
   const isCutMarked = useExplorerClipboardStore(
-    (s) => s.kind === 'cut' && s.paths.includes(data.path),
+    (s) => s.kind === 'cut' && clipboardPathSet(s.paths).has(data.path),
   );
   // headless-tree 内部 drag 时,drop 目标行高亮(drag preview 可能遮挡视线,
   // 没有这个 hover 反馈用户看不清要 drop 到哪)。
