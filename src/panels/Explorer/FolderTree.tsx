@@ -181,8 +181,18 @@ export function FolderTree({ root }: { root: string }) {
     items.length = count;
     return items;
   }, [persistedExpandedPaths, root]);
-  const setExpandedItems = useCallback<SetStateFn<string[]>>(
-    (updater) => {
+  // 「全部展开」批量期(perf):headless-tree 的 expandAll 逐目录 item.expand(),每步都把整份
+  // expandedItems 经 setExpandedItems 回写;若每步都分区 + 写 store(重建 Set)+ 触发重渲
+  // (expandedItems 换新数组 → setConfig 再 rebuild 一次)→ 展开 D 个目录累计 O(D²)。
+  // 批量期内只把库给的最新数组暂存在 latest,批末一次写 store。渲染期 config.state 也必须
+  // 用 latest(与库内部 state 同一引用),否则重渲时 setConfig 会拿 store 旧值覆盖库内部
+  // 已展开的状态。depth 计数允许多次点击重叠,最后一个结束才落盘。
+  const expandBatchRef = useRef<{ depth: number; latest: string[] | null }>({
+    depth: 0,
+    latest: null,
+  });
+  const writeInRootExpanded = useCallback(
+    (updater: string[] | ((old: string[]) => string[])) => {
       // expandedPaths 是跨 root 共享的单一 Set;headless-tree 只看到 isWithinRoot
       // 过滤后的 in-root 子集,回写也只给 in-root 路径。直接整体替换会丢掉其它 root
       // 的展开状态(切 root 后第一次折叠/展开即触发)。保留 out-of-root 段,只更新
@@ -221,6 +231,34 @@ export function FolderTree({ root }: { root: string }) {
     },
     [setPersistedExpandedPaths, root],
   );
+  const setExpandedItems = useCallback<SetStateFn<string[]>>(
+    (updater) => {
+      const batch = expandBatchRef.current;
+      if (batch.depth > 0) {
+        batch.latest =
+          typeof updater === 'function' ? updater(batch.latest ?? expandedItems) : updater;
+        return;
+      }
+      writeInRootExpanded(updater);
+    },
+    [expandedItems, writeInRootExpanded],
+  );
+  const expandAll = useCallback(
+    (tree: TreeInstance<FileEntry>): void => {
+      const batch = expandBatchRef.current;
+      batch.depth += 1;
+      void tree.expandAll().finally(() => {
+        batch.depth -= 1;
+        if (batch.depth > 0) return;
+        const latest = batch.latest;
+        batch.latest = null;
+        if (latest) writeInRootExpanded(latest);
+      });
+    },
+    [writeInRootExpanded],
+  );
+  // 批量期 render 用库内部同一引用(ref 读取:库每步 rebuildTree 都会触发重渲),批外用 store 派生值。
+  const treeExpandedItems = expandBatchRef.current.latest ?? expandedItems;
 
   const refreshParent = useCallback((parentPath: string) => {
     try {
@@ -343,10 +381,10 @@ export function FolderTree({ root }: { root: string }) {
         onDropForeign: (dataTransfer, destDir) => {
           void dropForeignFilesInto(dataTransfer.items, destDir, coApi.fs, refreshParent);
         },
-        expandedItems,
+        expandedItems: treeExpandedItems,
         setExpandedItems,
       }),
-    [expandedItems, refreshParent, root, runBatchTransfer, setExpandedItems],
+    [treeExpandedItems, refreshParent, root, runBatchTransfer, setExpandedItems],
   );
   const tree = useTree<FileEntry>(config);
   treeRef.current = tree;
@@ -607,8 +645,8 @@ export function FolderTree({ root }: { root: string }) {
       <ExplorerHeader
         root={root}
         onExpandAll={() => {
-          // 异步,大目录会触发大量 listDir;用户主动行为,不防抖
-          void tree.expandAll();
+          // 异步,大目录会触发大量 listDir;用户主动行为,不防抖。store 回写批末合并一次。
+          expandAll(tree);
         }}
         onCollapseAll={() => tree.collapseAll()}
         onRefresh={() => {
