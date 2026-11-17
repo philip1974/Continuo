@@ -295,7 +295,8 @@ export function FolderTree({ root }: { root: string }) {
   // `${stem} copy${ext}` / `${stem} copy 2${ext}` / ... 上限 100 次,兜底加时间戳。
   const makeUniqueDestPicker = useCallback(
     async (destDir: string): Promise<(name: string) => string> => {
-      const r = await coApi.fs.listDir(destDir);
+      // perf:只用 e.name → withStats:false,main 不逐项 lstat(大目录粘贴/拖入时显著)。
+      const r = await coApi.fs.listDir(destDir, { withStats: false });
       const existing = new Set<string>();
       if (r.ok) {
         for (const e of r.data) existing.add(e.name);

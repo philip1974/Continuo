@@ -117,7 +117,8 @@ function MainApp() {
             { files: droppedFiles },
             hadDirectory,
             (file) => coApi.window.getPathForFile(file),
-            (p) => coApi.fs.listDir(p),
+            // perf:目录探测只看 ok → withStats:false,main 不逐项 lstat。
+            (p) => coApi.fs.listDir(p, { withStats: false }),
           );
           // 期间有更新的 drop 发起 → 本次为过期请求,丢弃(不 setRoot 不反馈),由最新 drop 负责。
           if (!isLatest()) return;
