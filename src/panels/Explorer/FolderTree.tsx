@@ -416,7 +416,11 @@ export function FolderTree({ root }: { root: string }) {
 
   // ── fs.watch 增量更新(Step 6) ───────────────────────────────────
   // 跟随 headless-tree 受控展开集合,同步到 main 进程 watcher。
-  const expandedPaths = useMemo(() => new Set(expandedItems), [expandedItems]);
+  // 用 treeExpandedItems(树实际展开集合)而非 store 派生的 expandedItems:「全部展开」批量期
+  // store 批末才写,若 watcher 跟 store,批中新展开目录整批都没 watcher;Linux watcher 非递归,
+  // listDir 之后、批末之前的变化永久漏掉。选派生而非批末补偿 invalidation:后者要对所有新目录
+  // 再 listDir 一遍(IO 翻倍),且补偿前的窗口仍不可观察。批外两者同一引用,行为不变。
+  const expandedPaths = useMemo(() => new Set(treeExpandedItems), [treeExpandedItems]);
   useFsWatcher(
     expandedPaths,
     (changedPath) => {
