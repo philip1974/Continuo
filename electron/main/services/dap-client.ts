@@ -57,8 +57,11 @@ interface PendingRequest {
 export const DAP_TRANSCRIPT_MAX_ENTRIES = 1000;
 
 /**
- * 单条 transcript 的字节上限(按序列化后的 UTF-8 计)。只按条数封顶时单帧可达 DAP_MAX_FRAME_BYTES(64MiB),
+ * 单条 transcript 的字节上限(UTF-8 字节)。只按条数封顶时单帧可达 DAP_MAX_FRAME_BYTES(64MiB),
  * 反复 evaluate 大字符串会留住 GB 级数据;服务层返回值本就截断到 64KiB,诊断只需定位字段,超限只存摘要。
+ * 计量口径(契约):入站消息按**线上字节**(帧头 Content-Length)计,出站按本端成帧的那次序列化计,
+ * 不对入站对象重新规范化序列化。对端发非紧凑 JSON(大量空白 / \uXXXX 转义)时,线上超限即只存摘要,
+ * 即使规范化后小于上限;摘要的 originalBytes 也是线上字节数。
  */
 export const DAP_TRANSCRIPT_ENTRY_MAX_BYTES = 8 * 1024;
 
@@ -88,7 +91,7 @@ function transcriptSummary(message: DapMessage, originalBytes: number): DapMessa
 
 /**
  * 按单条字节上限截断(必要时换成摘要),返回入账的条目及其字节数。
- * messageBytes:调用方已知的消息序列化字节数(入站 = 帧头 Content-Length,出站 = 成帧用的那次序列化),
+ * messageBytes:调用方已知的消息字节数(入站 = 帧头 Content-Length 即线上字节,出站 = 成帧用的那次序列化),
  * 给出时不再为计量 JSON.stringify 一遍 —— 大响应(最大 8MiB)再序列化只为发现超限后丢弃,白占主线程。
  */
 function boundTranscriptEntry(

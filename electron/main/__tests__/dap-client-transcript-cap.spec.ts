@@ -195,6 +195,33 @@ describe('DapClient transcript 有界', () => {
       expect(client.transcript[0]!.message).toMatchObject({ transcriptTruncated: true, originalBytes: bodyBytes });
     });
 
+    // 契约:入站单条上限按线上字节(Content-Length)计,而非解析后再规范化序列化的大小。对端发非紧凑 JSON
+    // (大量空白 / \uXXXX 转义)时,线上超限即只存摘要,即使规范化后远小于上限。
+    it('入站非规范 JSON 帧:按线上字节判定超限,规范化后很小也只存摘要', () => {
+      const client = new DapClient({ adapterPath: '/nonexistent/adapter.js' });
+      const socket = new FakeSocket();
+      (client as unknown as { socket: unknown }).socket = socket;
+      client.attachSocket(socket as unknown as Socket);
+      const escaped = '\\u0061'.repeat(1500); // 线上 9000 字节,解码后仅 1500 个 'a'
+      const padding = ' '.repeat(64);
+      const body = `{${padding}"seq":1,"type":"event","event":"output","body":{"output":"${escaped}"}${padding}}`;
+      const bodyBytes = Buffer.byteLength(body, 'utf8');
+      const parsed = JSON.parse(body) as DapEventMessage;
+      expect(bodyBytes).toBeGreaterThan(DAP_TRANSCRIPT_ENTRY_MAX_BYTES);
+      expect(Buffer.byteLength(JSON.stringify(parsed), 'utf8')).toBeLessThan(DAP_TRANSCRIPT_ENTRY_MAX_BYTES);
+
+      socket.emit('data', Buffer.from(`Content-Length: ${bodyBytes}\r\n\r\n${body}`, 'utf8'));
+
+      expect(client.transcript[0]!.message).toMatchObject({
+        seq: 1,
+        type: 'event',
+        event: 'output',
+        transcriptTruncated: true,
+        originalBytes: bodyBytes,
+      });
+      expect(client.transcript[0]!.message?.body).toBeUndefined();
+    });
+
     it('出站消息只序列化一次(计量与成帧共用),帧内容不变', () => {
       const client = new DapClient({ adapterPath: '/nonexistent/adapter.js' });
       const socket = new FakeSocket();

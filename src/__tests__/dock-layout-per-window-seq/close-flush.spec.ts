@@ -492,6 +492,38 @@ describe('window close layout flush', () => {
     expect(active.destroyed).toBe(false);
   });
 
+  it('T20d: 两窗近同时关闭 → 先落盘的 LRU 不摘另一个仍在关闭中(尚未写 lastClosedAt)的窗口段', async () => {
+    const sortDefault = { by: 'name' as const, reverse: false };
+    const payload = defaultExplorerV3();
+    payload.windows = [
+      { ...payload.windows[0]!, lastClosedAt: 1 },
+      ...Array.from({ length: 120 }, (_, i) => ({
+        windowSeq: i + 100,
+        workspace: { root: `/w${i}` },
+        explorer: { activePath: null, expandedPaths: [], sort: sortDefault },
+        lastClosedAt: 1000 + i,
+      })),
+    ];
+    await saveExplorer(path.join(dir, 'explorer.json'), payload);
+    const first = createMockMainWindow(300);
+    const second = createMockMainWindow(100); // 段最旧,且与 first 同时关闭
+
+    first.close();
+    second.close();
+    ack(first);
+    ack(second);
+    await vi.waitFor(async () => {
+      const after = await loadExplorer(path.join(dir, 'explorer.json'));
+      const seg = after?.windows.find((w) => w.windowSeq === 100);
+      expect(seg?.lastClosedAt).toBeGreaterThan(1000);
+    });
+    const after = (await loadExplorer(path.join(dir, 'explorer.json')))!;
+    const seg100 = after.windows.find((w) => w.windowSeq === 100)!;
+    expect(seg100.workspace).toEqual({ root: '/w0' });
+    expect(after.windows.map((w) => w.windowSeq)).toContain(300);
+    expect(after.windows).toHaveLength(MAX_PERSISTED_WINDOW_SEGMENTS);
+  });
+
   it('before-quit 扫描窗口不对 getAllWindows 结果 filter 出中间数组,且仍 flush 存活窗口', async () => {
     const a = createMockMainWindow(11);
     const b = createMockMainWindow(12);

@@ -264,6 +264,99 @@ describe('createPluginsWatcher', () => {
     expect(maxInFlight).toBeLessThanOrEqual(8);
   });
 
+  // 重复 manifest.id:每个 id 只看唯一权威目录(目录名 == id 优先,否则目录名字典序最小,与
+  // PluginManager.preferPluginDir / readPluginDirByManifestId 同规则)。此前 mtimes 以 id 为键,
+  // 两个目录轮流写入同一键 → 每轮都判定变化并广播,形成永久重载风暴。
+  describe('重复 manifest.id', () => {
+    const now = Date.now();
+    function dupDirs(): void {
+      makeDir('b.dir', { id: 'x.id', name: 'B', version: '0.1.0' });
+      makeDir('a.dir', { id: 'x.id', name: 'A', version: '0.1.0' });
+      touch('a.dir', 'main.js', now - 50_000);
+      touch('b.dir', 'main.js', now - 90_000);
+    }
+
+    it('两目录 mtime 不同但均未变化 → 多轮扫描都不 fire', async () => {
+      dupDirs();
+      const fn = vi.fn();
+      const w = createPluginsWatcher(tmp, fn);
+      for (let i = 0; i < 4; i += 1) await w.tick();
+      expect(fn).not.toHaveBeenCalled();
+    });
+
+    it('权威目录(字典序最小)main 变化 → fire 一次;非权威目录变化 → 不 fire', async () => {
+      dupDirs();
+      const fn = vi.fn();
+      const w = createPluginsWatcher(tmp, fn);
+      await w.tick();
+      touch('b.dir', 'main.js', now + 5000); // 非权威
+      await w.tick();
+      await w.tick();
+      expect(fn).not.toHaveBeenCalled();
+      touch('a.dir', 'main.js', now + 9000); // 权威
+      await w.tick();
+      await w.tick();
+      expect(fn.mock.calls).toEqual([['x.id']]);
+    });
+
+    it('出现目录名 == id 的目录 → 权威目录切换,fire 一次后稳定', async () => {
+      dupDirs();
+      const fn = vi.fn();
+      const w = createPluginsWatcher(tmp, fn);
+      await w.tick();
+      makeDir('x.id', { id: 'x.id', name: 'X', version: '0.1.0' });
+      touch('x.id', 'main.js', now - 70_000);
+      await w.tick();
+      await w.tick();
+      await w.tick();
+      expect(fn.mock.calls).toEqual([['x.id']]);
+    });
+
+    it('权威目录被删除 → 回落到剩余目录并 fire 一次', async () => {
+      dupDirs();
+      const fn = vi.fn();
+      const w = createPluginsWatcher(tmp, fn);
+      await w.tick();
+      rmSync(join(tmp, 'a.dir'), { recursive: true, force: true });
+      await w.tick();
+      await w.tick();
+      expect(fn.mock.calls).toEqual([['x.id']]);
+    });
+  });
+
+  // 清理只针对「记录所属目录现在声明了别的 id」的陈旧键;目录暂时消失(rm -rf 后重新部署)时保留记录,
+  // 重建后 main 变化仍能触发热重载(与「manifest 删除后重建」同口径)。
+  it('目录被删除后重建(main 已变)→ 仍 fire', async () => {
+    makeDir('g', { id: 'g', name: 'G', version: '0.1.0' });
+    const fn = vi.fn();
+    const w = createPluginsWatcher(tmp, fn);
+    await w.tick();
+    rmSync(join(tmp, 'g'), { recursive: true, force: true });
+    await w.tick();
+    expect(fn).not.toHaveBeenCalled();
+    makeDir('g', { id: 'g', name: 'G', version: '0.1.0' });
+    touch('g', 'main.js', Date.now() + 5000);
+    await w.tick();
+    expect(fn).toHaveBeenCalledWith('g');
+  });
+
+  it('目录改声明新 id 后,旧 id 的记录被清理:改回旧 id 只填表不 fire', async () => {
+    makeDir('h', { id: 'h.old', name: 'H', version: '0.1.0' });
+    const fn = vi.fn();
+    const w = createPluginsWatcher(tmp, fn);
+    await w.tick();
+    const swap = (id: string): void => {
+      writeFileSync(join(tmp, 'h', 'manifest.tmp'), JSON.stringify({ id, name: 'H', version: '0.1.0' }));
+      renameSync(join(tmp, 'h', 'manifest.tmp'), join(tmp, 'h', 'manifest.json'));
+    };
+    swap('h.new');
+    await w.tick();
+    touch('h', 'main.js', Date.now() + 5000);
+    swap('h.old');
+    await w.tick(); // h.old 的旧记录已清理 → 视为首次出现
+    expect(fn).not.toHaveBeenCalled();
+  });
+
   it('start(intervalMs) 返 dispose,disposed 后 tick 不再 fire', async () => {
     makeDir('a', { id: 'a', name: 'A', version: '0.1.0' });
     const fn = vi.fn();
