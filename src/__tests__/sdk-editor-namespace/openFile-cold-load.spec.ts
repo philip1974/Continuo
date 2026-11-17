@@ -167,4 +167,34 @@ describe('app.editor.openFile 冷加载与并发', () => {
     });
     expect(scrollToLine).not.toHaveBeenCalled();
   });
+
+  it('C5 scrollToLine chunk 加载失败 → { ok:false, code:EXCEPTION },不 reject', async () => {
+    const { coApp, useEditorStore } = await loadSubject({
+      scrollModule: async () => {
+        throw new Error('chunk load failed');
+      },
+    });
+    useEditorStore.getState().registerView('/work/a.ts', fakeView('v'));
+
+    // vitest 会把 mock 工厂抛错包装成自己的消息,这里只钉结果形态
+    await expect(coApp.editor.openFile('/work/a.ts', { line: 2 })).resolves.toEqual({
+      ok: false,
+      code: 'EXCEPTION',
+      message: expect.any(String),
+    });
+  });
+
+  it('C6 CodeEditor 引擎预加载失败 → { ok:false, code:EXCEPTION },不 reject', async () => {
+    const { coApp } = await loadSubject({
+      preload: async () => {
+        throw new Error('engine chunk failed');
+      },
+    });
+
+    await expect(coApp.editor.openFile('/work/a.ts', { line: 2 })).resolves.toEqual({
+      ok: false,
+      code: 'EXCEPTION',
+      message: 'engine chunk failed',
+    });
+  });
 });

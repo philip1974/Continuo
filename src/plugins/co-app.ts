@@ -147,15 +147,27 @@ const editor: CoEditorApi = {
     // 模块均已缓存,只多几个 microtask。
     // 并发(复审 #2):view 在模块就绪**之后**取,并按当前注册值复核 —— 加载期间切 tab / 切 mode
     // 销毁的旧 view 不会被跳行(destroy 后 dispatch 不抛错,会谎报成功)。
-    const [{ scrollToLine }] = await Promise.all([
-      import('@/panels/Editor/scrollToLine'),
-      preloadCodeEditorEngine(),
-    ]);
-    const view = await waitForCurrentView(viewKey);
-    if (!view) {
-      return { ok: true, lineApplied: false, reason: 'tab-not-mounted' };
+    // 错误契约(复审 #4):chunk 加载失败 / 跳行抛错同样映射为 EXCEPTION 结果,不让 openFile reject。
+    let outcome: ReturnType<
+      typeof import('@/panels/Editor/scrollToLine').scrollToLine
+    >;
+    try {
+      const [{ scrollToLine }] = await Promise.all([
+        import('@/panels/Editor/scrollToLine'),
+        preloadCodeEditorEngine(),
+      ]);
+      const view = await waitForCurrentView(viewKey);
+      if (!view) {
+        return { ok: true, lineApplied: false, reason: 'tab-not-mounted' };
+      }
+      outcome = scrollToLine(view, opts.line);
+    } catch (err) {
+      return {
+        ok: false,
+        code: 'EXCEPTION',
+        message: errorMessage(err),
+      };
     }
-    const outcome = scrollToLine(view, opts.line);
     if (outcome === 'out-of-range') {
       return {
         ok: true,
