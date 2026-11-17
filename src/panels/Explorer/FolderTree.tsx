@@ -28,6 +28,7 @@ import {
 import { useFsWatcher } from './hooks/useFsWatcher';
 import { ExplorerVisibleContext } from './visibility';
 import { useEditorFile } from '@/panels/Editor/useEditorFile';
+import { warmEditorEngineFor } from '@/panels/Editor/editor-file-actions';
 import { useEditorStore } from '@/stores/editor.store';
 import { useExplorerStore } from '@/stores/explorer.store';
 import { coApi } from '@/lib/co-api';
@@ -782,6 +783,7 @@ export function FolderTree({ root }: { root: string }) {
                     onHoverDropTarget={setHoverTarget}
                     isDropHover={dragActive && hoverTarget?.path === item.getId()}
                     onFileOpen={handleFileOpen}
+                    onFileIntent={warmEditorEngineFor}
                     decorators={decorators}
                     hasClipboard={hasClipboard}
                     pluginMenuItems={pluginMenuItems}

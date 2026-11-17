@@ -37,8 +37,9 @@ const ignoreWarmupError = (): void => {};
  * EditorPanel 渲染 lazy 引擎才开始拉)。引擎选择与 EditorPanel 同口径:Markdown 且 getEffectiveMode 非 source
  * → Milkdown,否则 CodeEditor(读文件前无 tab,按 null tab 判定;unsafe 内容落 Source 时仅多拉一个 chunk)。
  * 共享 loader 去重、失败不缓存;fire-and-forget,失败吞掉(真正渲染时由引擎错误边界处理)。
+ * 也供 Explorer 文件行 pointerdown 调用(意图早于 click,提前量更大)。
  */
-function warmEditorEngineFor(path: string): void {
+export function warmEditorEngineFor(path: string): void {
   loadEditorPanelModule().catch(ignoreWarmupError);
   const engine =
     isMarkdownPath(path) && getEffectiveMode(null) !== 'source'

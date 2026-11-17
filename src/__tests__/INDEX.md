@@ -839,6 +839,7 @@
 - [`editor-engine-prewarm.spec.tsx`](./perf-audit/editor-engine-prewarm.spec.tsx)
 - [`editor-header-memo.spec.tsx`](./perf-audit/editor-header-memo.spec.tsx)
 - [`editor-lazy-boundary.spec.ts`](./perf-audit/editor-lazy-boundary.spec.ts)
+- [`first-interaction-warmup.spec.tsx`](./perf-audit/first-interaction-warmup.spec.tsx)
 - [`main-node-http-cjs.spec.ts`](./perf-audit/main-node-http-cjs.spec.ts)
 - [`milkdown-katex-stub.spec.ts`](./perf-audit/milkdown-katex-stub.spec.ts)
 - [`renderer-minify.spec.ts`](./perf-audit/renderer-minify.spec.ts)

@@ -82,6 +82,8 @@ interface FileRowProps extends FileRowState {
   isDropHover?: boolean;
   /** 单击文件触发(目录的展开仍由 headless-tree mousedown 接管). */
   onFileOpen?: (path: string) => void;
+  /** perf:文件行 pointerdown(早于 click)预热打开所需资源,如编辑引擎 chunk。 */
+  onFileIntent?: (path: string) => void;
   /** 插件装饰器快照(FolderTree 一次订阅后下传,避免每行各自订阅). */
   decorators: readonly DecoratorFn[];
   /** 剪贴板是否非空(FolderTree 已订阅,下传避免每行各自订阅同一布尔值). */
@@ -177,6 +179,7 @@ export const FileRow = memo(function FileRow({
   onHoverDropTarget,
   isDropHover = false,
   onFileOpen,
+  onFileIntent,
   decorators,
   hasClipboard,
   pluginMenuItems,
@@ -198,6 +201,11 @@ export const FileRow = memo(function FileRow({
       {...item.getProps()}
       // a11y(A110):目录加载子项时 treeitem 标 aria-busy,AT 知该行正在加载(配下方 sr-only 文本)。
       aria-busy={isLoading || undefined}
+      onPointerDown={(e) => {
+        // 保留上游可能注入的 pointerdown(当前 headless-tree 未注入,防御升级)
+        (item.getProps() as { onPointerDown?: (e: React.PointerEvent) => void }).onPointerDown?.(e);
+        if (!isDir && !isRenaming) onFileIntent?.(data.path);
+      }}
       onClick={(e) => {
         // 上游 selectionFeature 用 mousedown,onClick 不冲突
         const upstream = (item.getProps() as { onClick?: (e: React.MouseEvent) => void })

@@ -219,3 +219,5 @@ Editor 面板 + 对应引擎(Markdown 且 `getEffectiveMode(null)` 非 source �
 - main 产物是 ESM;`import { createServer } from 'node:http'` 会让 Node 读取 node:http 全部导出(含懒 getter),
   连带加载并编译整个 undici,实测 main 求值 +17–18ms。mcp-host 只用 createServer,改经
   `createRequire(import.meta.url)('node:http')` 取得,类型仍用 `import type`。
+
+- `first-interaction-warmup.spec.tsx`:Explorer 文件行 pointerdown 预热编辑引擎 chunk(早于 click);终端意图预热同时加载捆绑字体 MesloLGS NF。
