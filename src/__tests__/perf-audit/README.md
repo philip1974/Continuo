@@ -198,6 +198,16 @@ Editor 面板 + 对应引擎(Markdown 且 `getEffectiveMode(null)` 非 source �
 
 **契约不变量**(`editor-lazy-boundary.spec.ts`:sync 模块与 EditorPanel 不静态 import `@codemirror/*` / debug-decorations;`debug-decoration-sync-lazy.spec.tsx`:实现未加载时动态加载后对已注册 view 补做同步;`51-debug-breakpoint-ui/sync.spec.tsx`、`debug-decoration-sync-gating.spec.tsx` 全部保持)。
 
+## E6 — @milkdown 的 katex 导入换空壳(Latex 关闭)
+
+**位置**:`electron.vite.config.ts` renderer 插件 `scripts/vite-milkdown-katex-stub.ts` + 空壳 `scripts/milkdown-katex-stub.ts`。
+
+**问题**:`@milkdown/crepe` 主入口与 `feature/toolbar` 静态 `import katex from 'katex'`,即使 MilkdownEditor 设 `CrepeFeature.Latex: false`,MilkdownEditor chunk 仍带 katex@0.16.45(~260KB);mermaid 另动态带 katex@0.16.47。
+
+**修复**:renderer 构建插件把**来自 `node_modules/@milkdown/`** 的裸 `katex` 导入解析到空壳(`render(){}` / `renderToString(){return ''}` —— Crepe 只用这两个默认导出方法,且仅在 Latex 启用时可达)。mermaid 的 katex 不受影响;`katex/dist/katex.min.css` 等子路径不匹配。**启用 CrepeFeature.Latex 前须移除插件。** MilkdownEditor chunk 987,236 B → 726,893 B。
+
+**契约不变量**(`milkdown-katex-stub.spec.ts`:插件挂在 renderer;只匹配 @milkdown importer;空壳 API 调用不抛错;MilkdownEditor 仍关闭 Latex;Latex 关闭时真实 Crepe 渲染含 `$...$` / `$$...$$` / ```` ```latex ```` 的文档不调用 katex 且原样往返)。
+
 ## renderer 产物压缩(renderer-minify.spec.ts)
 
 - `electron.vite.config.ts` 的 renderer build 显式 `minify: 'esbuild'`(electron-vite 2.x 默认不压缩)。
