@@ -65,9 +65,9 @@ describe('topic49 6thS · external URL scheme whitelist', () => {
     const src = readFileSync(join(ROOT, 'electron/main/index.ts'), 'utf-8');
     expect(src).toMatch(/MAX_EXTERNAL_URL_LEN/);
     // 长度守卫出现在 URL 解析之前(否则超长 url 仍先全量解析)。解析在 isOwnRendererWindowUrl 里
-    //(window-open-policy),所以守卫必须先于对它的调用。
+    //(window-open-policy,经 index.ts 的 isOwnRendererUrl 包一层),所以守卫必须先于对它的调用。
     const guardIdx = src.indexOf('url.length > MAX_EXTERNAL_URL_LEN');
-    const newUrlIdx = src.indexOf('const allow = isOwnRendererWindowUrl(');
+    const newUrlIdx = src.indexOf('const allow = isOwnRendererUrl(');
     expect(guardIdx).toBeGreaterThan(-1);
     expect(newUrlIdx).toBeGreaterThan(-1);
     expect(guardIdx).toBeLessThan(newUrlIdx);

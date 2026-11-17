@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useEditorStore } from '../../stores/editor.store';
 import { EditorPanel } from '../../panels/Editor/EditorPanel';
@@ -20,7 +20,17 @@ vi.mock('../../panels/Editor/CodeEditor', () => ({
 }));
 
 vi.mock('../../panels/Editor/MilkdownEditor', () => ({
-  MilkdownEditor: () => <div data-testid="milkdown-editor" />,
+  MilkdownEditor: ({
+    defaultValue,
+    readonly,
+  }: {
+    defaultValue: string;
+    readonly?: boolean;
+  }) => (
+    <div data-testid="milkdown-editor" data-readonly={String(!!readonly)}>
+      {defaultValue}
+    </div>
+  ),
 }));
 
 vi.mock('../../plugins/settings/values-store', () => ({
@@ -92,5 +102,57 @@ describe('EditorPanel unsafe markdown routing', () => {
     expect(useEditorStore.getState().tabs[0]?.originalContent).toBe(
       unsafeContent,
     );
+  });
+
+  it('renders read-only Milkdown without banner in preview mode, frontmatter as yaml block', () => {
+    useEditorStore.setState({ mode: 'preview' });
+    const { container } = render(<EditorPanel />);
+
+    const milkdown = screen.getByTestId('milkdown-editor');
+    expect(milkdown.getAttribute('data-readonly')).toBe('true');
+    expect(milkdown.textContent).toBe('```yaml\nid: demo\n```\n\n# Title\n');
+    expect(screen.queryByTestId('code-editor')).toBeNull();
+    expect(container.textContent).not.toContain(
+      t('panels.editor.milkdownUnsafe.banner'),
+    );
+    expect(useEditorStore.getState().tabs[0]?.content).toBe(unsafeContent);
+  });
+
+  it('opts only the confirmed tab into Milkdown edit via "switch anyway"', () => {
+    const other = '/work/other.md';
+    useEditorStore.setState((s) => ({
+      mode: 'source',
+      tabs: [
+        ...s.tabs,
+        {
+          id: other,
+          filePath: other,
+          content: unsafeContent,
+          originalContent: unsafeContent,
+          dirty: false,
+        },
+      ],
+    }));
+    render(<EditorPanel />);
+
+    fireEvent.click(
+      screen.getByRole('radio', { name: t('panels.editor.mode.edit') }),
+    );
+    expect(screen.queryByTestId('milkdown-editor')).toBeNull();
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: t('panels.editor.milkdownUnsafe.switchAnyway'),
+      }),
+    );
+
+    const milkdown = screen.getByTestId('milkdown-editor');
+    expect(milkdown.getAttribute('data-readonly')).toBe('false');
+    expect(milkdown.textContent).toBe(unsafeContent);
+
+    act(() => {
+      useEditorStore.getState().switchTab(other);
+    });
+    expect(screen.queryByTestId('milkdown-editor')).toBeNull();
+    expect(screen.getByTestId('code-editor')).not.toBeNull();
   });
 });

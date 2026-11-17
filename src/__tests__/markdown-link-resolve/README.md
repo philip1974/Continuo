@@ -31,3 +31,12 @@ markdown 内锚点跳转,只到文件)。路径部分按 URL 规则做 percent-d
 - 未知 / 不安全 scheme(如 `javascript:`、`tel:`、自定义 `myapp://`)
 - 相对路径但 `currentFilePath = null`(无 base,放弃)
 - 空 href
+
+## 点击链接不把应用窗口带走
+
+Milkdown 视图里的 `<a>`(Markdown 链接、mermaid 图的 `click` 链接)被点击时,**永远不走浏览器默认导航**(否则整个应用窗口被导航到那个 URL):
+
+- Edit 模式:普通点击只定位光标;Cmd/Ctrl+click 才交给 `resolveLink` 打开。链接气泡里显示的地址普通点击即打开。
+- Preview 模式(只读):普通点击即打开(只读视图里点链接就是要跳转);Cmd/Ctrl+click 同样打开。
+- mermaid 图里的链接是 SVG `<a xlink:href>`,与 HTML `<a href>` 同样处理。
+- 主进程另有兜底:`installNavigationGuard` 拦下离开本应用 renderer 入口的主框架导航(见 `popout-contracts`)。
