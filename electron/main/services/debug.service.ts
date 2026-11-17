@@ -607,15 +607,32 @@ function utf8Bytes(value: string): number {
   return Buffer.byteLength(value, 'utf8');
 }
 
-function truncateUtf8(value: string, maxBytes: number): { value: string; truncated: boolean } {
+/**
+ * 按 UTF-8 字节上限截断(不切开代理对)。逐码元累加字节而非逐码点调 Buffer.byteLength:后者每字符一次 JS↔C++
+ * 跨界,64KiB 截断约 64K 次(单值 ~1.3ms),variables 展开一批大字符串时阻塞 main 50–90ms。口径与
+ * Buffer.byteLength 一致:<0x80→1、<0x800→2、合法代理对→4、其余(含孤立代理,编码为 U+FFFD)→3。
+ */
+export function truncateUtf8(value: string, maxBytes: number): { value: string; truncated: boolean } {
   if (utf8Bytes(value) <= maxBytes) return { value, truncated: false };
   let bytes = 0;
   let end = 0;
-  for (const char of value) {
-    const next = bytes + utf8Bytes(char);
-    if (next > maxBytes) break;
-    bytes = next;
-    end += char.length;
+  const n = value.length;
+  while (end < n) {
+    const c = value.charCodeAt(end);
+    let units = 1;
+    let size: number;
+    if (c < 0x80) size = 1;
+    else if (c < 0x800) size = 2;
+    else if (c >= 0xd800 && c <= 0xdbff && end + 1 < n) {
+      const d = value.charCodeAt(end + 1);
+      if (d >= 0xdc00 && d <= 0xdfff) {
+        size = 4;
+        units = 2;
+      } else size = 3;
+    } else size = 3;
+    if (bytes + size > maxBytes) break;
+    bytes += size;
+    end += units;
   }
   return { value: value.slice(0, end), truncated: true };
 }
