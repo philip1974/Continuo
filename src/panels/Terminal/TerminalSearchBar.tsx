@@ -168,6 +168,10 @@ export function TerminalSearchBar({
         size="xs"
         aria-label={closeLabel}
         title={closeLabel}
+        // 性能:阻止 mousedown 默认的焦点转移 —— 否则输入框先 blur,clearActiveDecoration 会 flush
+        // 挂起的防抖搜索(同步扫整段 scrollback),之后 click 才关闭,关闭取消挂起搜索的语义被抵消。
+        // 关闭后焦点由 close 交还 xterm,按钮本身无需获焦。
+        onMouseDown={(e) => e.preventDefault()}
         onClick={onClose}
       >
         x
