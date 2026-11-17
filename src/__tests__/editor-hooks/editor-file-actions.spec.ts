@@ -298,6 +298,82 @@ describe('openFileByPath', () => {
     expect(s.activeTabId).toBe('/x/open.md');
     expect(s.tabs.map((t) => t.id)).toContain('/x/big.md');
   });
+
+  it('先发的请求先读完(按序完成)→ 最终激活后发的文件', async () => {
+    let resolveA!: (v: IpcResult<string>) => void;
+    let resolveB!: (v: IpcResult<string>) => void;
+    const readFile = vi
+      .fn<(p: string) => Promise<IpcResult<string>>>()
+      .mockImplementationOnce(() => new Promise((res) => (resolveA = res)))
+      .mockImplementationOnce(() => new Promise((res) => (resolveB = res)));
+    const deps = makeDeps({ readFile });
+
+    const pA = openFileByPath('/x/a.md', deps);
+    const pB = openFileByPath('/x/b.md', deps);
+    resolveA(ok('a'));
+    await pA;
+    resolveB(ok('b'));
+    await pB;
+
+    expect(useEditorStore.getState().activeTabId).toBe('/x/b.md');
+  });
+
+  // 用户激活不只来自 openFileByPath:tab 栏点击直接调 store.switchTab,同样是更晚的用户意图。
+  it('读盘在途时在 tab 栏切到已开 tab → 最终激活该 tab,读完的文件后台加入且不抢焦点', async () => {
+    useEditorStore.getState().openTab(createTab('/x/a.md', 'a'));
+    useEditorStore.getState().openTab(createTab('/x/b.md', 'b'));
+    let resolveBig!: (v: IpcResult<string>) => void;
+    const readFile = vi
+      .fn<(p: string) => Promise<IpcResult<string>>>()
+      .mockImplementationOnce(() => new Promise((res) => (resolveBig = res)));
+    const deps = makeDeps({ readFile });
+
+    const pBig = openFileByPath('/x/big.md', deps);
+    useEditorStore.getState().switchTab('/x/a.md'); // EditorHeader onSelect
+    const pulse = useEditorStore.getState().editorFocusPulse;
+    resolveBig(ok('big'));
+    await pBig;
+
+    const s = useEditorStore.getState();
+    expect(s.activeTabId).toBe('/x/a.md');
+    expect(s.tabs.map((t) => t.id)).toContain('/x/big.md');
+    expect(s.editorFocusPulse).toBe(pulse);
+  });
+
+  // 会话恢复(requestFocus:false)不是用户意图:恢复期间插入 / 切换不应让用户刚点的文件失去激活。
+  it('读盘在途时会话恢复 switchTab(requestFocus:false) → 读完仍激活用户请求的文件', async () => {
+    useEditorStore.getState().openTab(createTab('/x/a.md', 'a'));
+    useEditorStore.getState().openTab(createTab('/x/b.md', 'b'));
+    let resolveBig!: (v: IpcResult<string>) => void;
+    const readFile = vi
+      .fn<(p: string) => Promise<IpcResult<string>>>()
+      .mockImplementationOnce(() => new Promise((res) => (resolveBig = res)));
+    const deps = makeDeps({ readFile });
+
+    const pBig = openFileByPath('/x/big.md', deps);
+    useEditorStore.getState().switchTab('/x/a.md', { requestFocus: false });
+    resolveBig(ok('big'));
+    await pBig;
+
+    expect(useEditorStore.getState().activeTabId).toBe('/x/big.md');
+  });
+
+  it('读盘在途时关闭当前活动 tab(非激活选择)→ 读完仍激活用户请求的文件', async () => {
+    useEditorStore.getState().openTab(createTab('/x/a.md', 'a'));
+    useEditorStore.getState().openTab(createTab('/x/b.md', 'b'));
+    let resolveBig!: (v: IpcResult<string>) => void;
+    const readFile = vi
+      .fn<(p: string) => Promise<IpcResult<string>>>()
+      .mockImplementationOnce(() => new Promise((res) => (resolveBig = res)));
+    const deps = makeDeps({ readFile });
+
+    const pBig = openFileByPath('/x/big.md', deps);
+    useEditorStore.getState().closeTab('/x/b.md');
+    resolveBig(ok('big'));
+    await pBig;
+
+    expect(useEditorStore.getState().activeTabId).toBe('/x/big.md');
+  });
 });
 
 // ────────────────────────────────────────────────────────────

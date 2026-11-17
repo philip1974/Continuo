@@ -447,6 +447,23 @@ function nextFocusPulse(pulse: number, opts: EditorFocusOpts | undefined): numbe
   return opts?.requestFocus === false ? pulse : pulse + 1;
 }
 
+/**
+ * 用户激活代际:每次「用户选择要激活哪个 tab」递增 —— switchTab(tab 栏点击 / 打开已开文件,requestFocus
+ * 非 false)与 openFileByPath 发起读盘时(beginUserActivation)。openFileByPath 读盘前记下代际、读完比较,
+ * 已被更晚的用户选择超越 → 只后台加入,不抢激活/焦点。不计入:会话恢复(requestFocus:false)、openTab 本身
+ * (唯一的用户入口 openFileByPath 已在发起读盘时计入)、closeTab(关 tab 后相邻 tab 接替不是对某个文件的
+ * 选择,用户刚点的文件读完仍应激活)。runtime only,不进 state(不触发订阅者)。
+ */
+let userActivationGen = 0;
+
+export function getUserActivationGen(): number {
+  return userActivationGen;
+}
+
+export function beginUserActivation(): number {
+  return ++userActivationGen;
+}
+
 type EditorState = {
   tabs: EditorTab[];
   activeTabId: string | null;
@@ -634,11 +651,13 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
         : { tabs };
     }),
 
-  switchTab: (id, opts) =>
+  switchTab: (id, opts) => {
+    if (opts?.requestFocus !== false) beginUserActivation();
     set((s) => ({
       activeTabId: id,
       editorFocusPulse: nextFocusPulse(s.editorFocusPulse, opts),
-    })),
+    }));
+  },
 
   updateContent: (id, content) =>
     set((s) => {

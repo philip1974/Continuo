@@ -10,7 +10,13 @@ import type { FsApi } from '@/lib/fs/api';
 import type { IpcResult } from '@/lib/fs/types';
 import { errorCodeOf, errorMessage } from '../../../electron/shared/error-message';
 import { ERROR_CODES } from '../../../electron/shared/error-codes';
-import { createTab, getEffectiveMode, useEditorStore } from '@/stores/editor.store';
+import {
+  beginUserActivation,
+  createTab,
+  getEffectiveMode,
+  getUserActivationGen,
+  useEditorStore,
+} from '@/stores/editor.store';
 import { runSerialPerKey } from '@/lib/serialize-per-key';
 import {
   findEditorFileTabById,
@@ -61,13 +67,6 @@ const exception = (err: unknown): FileOpResult => ({
 });
 
 /**
- * 打开请求代际:快速连续打开时,读盘耗时不同的请求乱序完成 → 若都 openTab 激活,最终激活的是
- * 读盘最后完成的文件而非用户最后点的。每次调用(含已开 → 只切换的分支)递增;读完后发现已非
- * 最新请求 → 仅后台加入 tab,不抢激活/焦点(参考 hydrateEditorTabs 迟到恢复的 activate:false)。
- */
-let openSeq = 0;
-
-/**
  * Explorer 单击文件触发。已开过同 path → 只 switchTab(不重读);
  * 否则 fs.readFile + createTab + openTab。
  */
@@ -76,7 +75,6 @@ export async function openFileByPath(
   deps: EditorFileDeps,
 ): Promise<FileOpResult> {
   const { fs, store } = deps;
-  const my = ++openSeq;
   // 已开过 → 只切换。跨平台(codex 复查 P1):用平台感知 pathEquals 而非 `===` —— Windows
   // 上同一文件以 `C:\Repo\a.md` / `c:\repo\a.md` 不同大小写打开,`===` 判不等 → 开出两个
   // tab,分别编辑保存同一文件 → 后保存者覆盖前者丢改。switchTab 用**已存在 tab 的真实 id**
@@ -88,6 +86,11 @@ export async function openFileByPath(
   }
 
   warmEditorEngineFor(path);
+
+  // 用户激活代际(见 editor.store beginUserActivation):快速连续打开时读盘耗时不同的请求乱序完成,读盘期间
+  // 用户也可能在 tab 栏切到别的 tab(store.switchTab)。读完后代际已被更晚的用户选择(另一次打开 / 切换)
+  // 超越 → 仅后台加入 tab,不抢激活/焦点(参考 hydrateEditorTabs 迟到恢复的 activate:false)。
+  const my = beginUserActivation();
 
   let r;
   try {
@@ -101,7 +104,7 @@ export async function openFileByPath(
   // (尤其 Windows 不同大小写路径 C:\Repo\a.md / c:\repo\a.md)时,两个调用都在读前看不到
   // existing,读后各自 createTab → 同一磁盘文件出现两个 tab,分别保存互相覆盖(重现 X10
   // pathEquals 想防的数据丢失)。读后、建 tab 前再用 pathEquals 复检 store,已存在则只切换。
-  const latest = my === openSeq;
+  const latest = my === getUserActivationGen();
   const raced = findEditorFileTabByPath(store.getState().tabs, path);
   if (raced) {
     if (latest) store.getState().switchTab(raced.id);
