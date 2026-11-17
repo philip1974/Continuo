@@ -98,6 +98,24 @@ describe('perf · queueDirChangedBroadcast 同 tick 同路径合并广播', () =
     ]);
   });
 
+  // 性能:同 tick 该目录所有回调都是 'change' → payload 带 changeOnly:true;否则不带该字段(与旧版逐字一致)。
+  it('同 tick 全为 change → payload 带 changeOnly:true;含 rename 的目录不带', async () => {
+    const w = makeWin();
+    mocks.windows = [w];
+    const { queueDirChangedBroadcast } = await import('../../../electron/main/ipc/fs.ipc');
+    const { FS_CHANNELS } = await import('../../../electron/shared/fs-channels');
+
+    queueDirChangedBroadcast('/r/a', 'log.txt', 'change');
+    queueDirChangedBroadcast('/r/b', 'x.md', 'change');
+    queueDirChangedBroadcast('/r/b', 'y.md', 'rename');
+    await new Promise((r) => setImmediate(r));
+
+    expect(w.webContents.send.mock.calls).toEqual([
+      [FS_CHANNELS.DIR_CHANGED, { path: '/r/a', files: ['log.txt'], changeOnly: true }],
+      [FS_CHANNELS.DIR_CHANGED, { path: '/r/b', files: ['x.md', 'y.md'] }],
+    ]);
+  });
+
   it('WATCH handler 的 watcher 回调走 queueDirChangedBroadcast(非逐次直接广播)', () => {
     const src = readFileSync(
       join(__dirname, '..', '..', '..', 'electron', 'main', 'ipc', 'fs.ipc.ts'),

@@ -25,8 +25,15 @@ export interface Watcher {
  * onError(err):creator 底层 watcher 异步失效(网络盘 / 可移动卷断开、目录失效 → FSWatcher
  * 'error')时调用,池据此关闭并移出该 watcher(见 evictDead)。
  */
-/** fileName:变更项名字(watch 回调 filename 末段);undefined = 未知是哪个文件(目录级). */
-export type WatchChangeListener = (changedPath: string, fileName?: string) => void;
+/**
+ * fileName:变更项名字(watch 回调 filename 末段);undefined = 未知是哪个文件(目录级).
+ * eventType:fs.watch 回调的 eventType('change' | 'rename');undefined = 未知(按可能有结构变化处理).
+ */
+export type WatchChangeListener = (
+  changedPath: string,
+  fileName?: string,
+  eventType?: string,
+) => void;
 
 export type WatcherCreator = (
   path: string,
@@ -215,37 +222,48 @@ export function createWatcherPool(
  * 性能:同时按目录收集变更文件名(去重),emit(path, files) 让 renderer 外部同步只重读命中的 clean tab。
  * 同目录同 tick 内任一回调缺 fileName(平台不给 filename / Windows 缓冲溢出)或文件名数超 maxFiles →
  * 该目录此次 files=undefined(未知文件,订阅者退化为目录级);一旦未知不会被之后的文件名恢复成集合。
+ *
+ * 性能:同时按目录聚合 changeOnly(本 tick 该目录所有回调 eventType 均为 'change' → true;任一 'rename' /
+ * 缺 eventType → false),Explorer 据此跳过「仅内容变化」时的整目录 listDir(目录列表不变)。
  */
 export function createSameTickPathCoalescer(
-  emit: (path: string, files?: readonly string[]) => void,
+  emit: (path: string, files: readonly string[] | undefined, changeOnly: boolean) => void,
   schedule: (flush: () => void) => void = (flush) => {
     setImmediate(flush);
   },
   maxFiles: number = DIR_CHANGED_FILES_MAX,
 ): WatchChangeListener {
-  // value:该目录本 tick 的文件名集合;null = 未知文件(目录级)
-  let pending: Map<string, Set<string> | null> | null = null;
+  // files:该目录本 tick 的文件名集合,null = 未知文件(目录级)。
+  // changeOnly:本 tick 该目录所有回调 eventType 均为 'change'(任一 rename / 缺失 → false,不可恢复)。
+  let pending: Map<string, { files: Set<string> | null; changeOnly: boolean }> | null = null;
   const flush = (): void => {
     const paths = pending;
     pending = null;
-    if (paths) for (const [p, files] of paths) emit(p, files ? [...files] : undefined);
+    if (paths) {
+      for (const [p, e] of paths) emit(p, e.files ? [...e.files] : undefined, e.changeOnly);
+    }
   };
-  return (path, fileName) => {
+  return (path, fileName, eventType) => {
     if (pending === null) {
       pending = new Map();
       schedule(flush);
     }
-    if (!pending.has(path)) {
-      pending.set(path, fileName === undefined ? null : new Set([fileName]));
+    const isChange = eventType === 'change';
+    const entry = pending.get(path);
+    if (!entry) {
+      pending.set(path, {
+        files: fileName === undefined ? null : new Set([fileName]),
+        changeOnly: isChange,
+      });
       return;
     }
-    const files = pending.get(path);
-    if (!files) return; // 已是未知文件
+    if (!isChange) entry.changeOnly = false;
+    if (!entry.files) return; // 已是未知文件
     if (fileName === undefined) {
-      pending.set(path, null);
+      entry.files = null;
       return;
     }
-    files.add(fileName);
-    if (files.size > maxFiles) pending.set(path, null);
+    entry.files.add(fileName);
+    if (entry.files.size > maxFiles) entry.files = null;
   };
 }

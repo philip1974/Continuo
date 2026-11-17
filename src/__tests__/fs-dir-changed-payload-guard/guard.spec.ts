@@ -3,6 +3,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   isFsDirChangedPayload,
+  readFsDirChangedChangeOnly,
   readFsDirChangedFiles,
   type FsDirChangedPayload,
 } from '../../../electron/shared/fs-channels';
@@ -57,5 +58,16 @@ describe('readFsDirChangedFiles', () => {
     expect(
       readFsDirChangedFiles({ path: '/p', files: ['1', '2', '3', '4', '5'] }, 4, MAX),
     ).toBeUndefined();
+  });
+});
+
+// 性能:payload 可选 changeOnly(仅内容变化,目录列表不变);仅严格 true 生效,缺省 / 畸形 → false。
+describe('readFsDirChangedChangeOnly', () => {
+  it('仅 changeOnly === true 时为 true', () => {
+    expect(readFsDirChangedChangeOnly({ path: '/p', changeOnly: true })).toBe(true);
+    expect(readFsDirChangedChangeOnly({ path: '/p' })).toBe(false);
+    expect(readFsDirChangedChangeOnly({ path: '/p', changeOnly: false })).toBe(false);
+    const bad = { path: '/p', changeOnly: 'true' } as unknown as FsDirChangedPayload;
+    expect(readFsDirChangedChangeOnly(bad)).toBe(false);
   });
 });

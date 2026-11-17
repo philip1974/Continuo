@@ -5,6 +5,8 @@ import { isSameOrInsidePath } from '@/lib/path-cross';
 import { diffSets, makeDebouncePerPath } from '../fs-watch-helpers';
 
 const DEBOUNCE_MS = 100;
+// 持续事件(如目录内持续创建/删除临时文件)下纯 trailing debounce 永不触发;至多每 1s 刷新一次。
+const DEBOUNCE_MAX_WAIT_MS = 1000;
 // fs:watch-lost 重装退避:首次 2s,同一 path 连续失效逐次翻倍,上限 60s(卷持续断开时不紧密重试)。
 const LOST_RETRY_BASE_MS = 2000;
 const LOST_RETRY_MAX_MS = 60_000;
@@ -19,7 +21,8 @@ function bumpGen(watchGen: Map<string, number>, p: string): number {
  * 同步 expandedPaths 到 main 进程的 fs.watch:
  *   新展开的 path → fs.watchDir(path)
  *   折叠的 path  → fs.unwatchDir(path)
- * 订阅 fs:dir-changed 事件,debounce 100ms 后调 onChange(path)。
+ * 订阅 fs:dir-changed 事件,debounce 100ms(持续事件下至多每 1s 一次)后调 onChange(path);
+ * changeOnly(仅内容变化,目录列表不变)事件不触发刷新。
  *
  * 参数 onChange 通常 = (path) => tree.getItemInstance(path)?.invalidateChildrenIds()
  *
@@ -135,8 +138,11 @@ export function useFsWatcher(
     const debounced = makeDebouncePerPath(
       (path) => onChangeRef.current(path),
       DEBOUNCE_MS,
+      DEBOUNCE_MAX_WAIT_MS,
     );
-    const unsub = coApi.fs.onDirChanged((path) => {
+    const unsub = coApi.fs.onDirChanged((path, _files, changeOnly) => {
+      // 性能:仅内容变化(无新建/删除/改名)→ 目录列表不变,不必整目录 listDir。
+      if (changeOnly === true) return;
       const r = rootRef.current;
       if (r !== undefined && !isSameOrInsidePath(r, path)) return;
       debounced(path);

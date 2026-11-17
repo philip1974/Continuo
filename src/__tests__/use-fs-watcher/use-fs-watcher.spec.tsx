@@ -11,7 +11,9 @@ import { onWatchRestored } from '../../lib/fs-watch-restored';
 interface FakeFs {
   watchDir: ReturnType<typeof vi.fn>;
   unwatchDir: ReturnType<typeof vi.fn>;
-  onDirChanged: (cb: (path: string) => void) => () => void;
+  onDirChanged: (
+    cb: (path: string, files?: readonly string[], changeOnly?: boolean) => void,
+  ) => () => void;
   onWatchLost?: (cb: (path: string) => void) => () => void;
 }
 
@@ -103,6 +105,55 @@ describe('useFsWatcher', () => {
     vi.advanceTimersByTime(100);
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange).toHaveBeenCalledWith('/a');
+  });
+
+  // 性能:仅内容变化(main 合并器判定本 tick 该目录所有回调都是 'change')→ 目录列表不变,不刷新。
+  it('changeOnly 事件不触发 onChange;同目录随后的结构变化事件照常刷新', () => {
+    let dirCb: ((p: string, files?: readonly string[], changeOnly?: boolean) => void) | null =
+      null;
+    installFs({
+      watchDir: vi.fn().mockResolvedValue({ ok: true }),
+      unwatchDir: vi.fn().mockResolvedValue({ ok: true }),
+      onDirChanged: (cb) => {
+        dirCb = cb;
+        return () => {};
+      },
+    });
+
+    const onChange = vi.fn();
+    renderHook(() => useFsWatcher(new Set(), onChange));
+
+    dirCb!('/a', ['log.txt'], true);
+    vi.advanceTimersByTime(200);
+    expect(onChange).not.toHaveBeenCalled();
+
+    dirCb!('/a', ['new.txt'], false);
+    vi.advanceTimersByTime(100);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith('/a');
+  });
+
+  // 持续事件(每 50ms 一次结构变化)下纯 trailing debounce 永不触发;maxWait 保证至多每 1s 刷新一次。
+  it('持续 dir-changed → 至多每 1000ms 刷新一次(不再永不触发)', () => {
+    let dirCb: ((p: string) => void) | null = null;
+    installFs({
+      watchDir: vi.fn().mockResolvedValue({ ok: true }),
+      unwatchDir: vi.fn().mockResolvedValue({ ok: true }),
+      onDirChanged: (cb) => {
+        dirCb = cb;
+        return () => {};
+      },
+    });
+
+    const onChange = vi.fn();
+    renderHook(() => useFsWatcher(new Set(), onChange));
+
+    for (let i = 0; i < 50; i++) {
+      dirCb!('/a');
+      vi.advanceTimersByTime(50);
+    }
+    // 2500ms 持续事件 → 1000ms / 2000ms 各一次
+    expect(onChange).toHaveBeenCalledTimes(2);
   });
 
   // 性能:dir-changed 是全窗口广播,别的窗口工作区的目录变化也会送达;传入 root 后

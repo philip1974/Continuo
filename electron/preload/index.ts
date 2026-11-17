@@ -12,6 +12,7 @@ import {
   DIR_CHANGED_FILES_MAX,
   FS_CHANNELS,
   isFsDirChangedPayload,
+  readFsDirChangedChangeOnly,
   readFsDirChangedFiles,
   toFsReadFileResult,
   toFsStatResult,
@@ -247,10 +248,11 @@ const api = {
       ipcRenderer.invoke(FS_CHANNELS.UNWATCH, { path }),
     /**
      * 订阅目录变更 push 事件;返回 unsubscribe。files:该目录本次变更项名字(可选,
-     * undefined = 未知,按整个目录处理;畸形/超限同样退化为 undefined).
+     * undefined = 未知,按整个目录处理;畸形/超限同样退化为 undefined)。changeOnly:true = 仅内容
+     * 变化、目录列表不变(缺省 / 畸形 → false).
      */
     onDirChanged: (
-      cb: (path: string, files?: readonly string[]) => void,
+      cb: (path: string, files?: readonly string[], changeOnly?: boolean) => void,
     ): (() => void) => {
       // 边界(E173,E168-E172 同族 IPC ingress 纵深防御):fs:dir-changed payload 此前直接 cb(payload.path)。
       // 畸形 IPC payload(null/非对象/path 非字符串/超长)→ preload listener 抛错(null.path),或把非法
@@ -264,6 +266,7 @@ const api = {
         cb(
           payload.path,
           readFsDirChangedFiles(payload, DIR_CHANGED_FILES_MAX, FS_PATH_MAX),
+          readFsDirChangedChangeOnly(payload),
         );
       };
       return subscribeIpc(FS_CHANNELS.DIR_CHANGED, listener);

@@ -43,6 +43,14 @@ export interface FsDirChangedPayload {
    * 订阅者须按「整个目录都可能变了」处理。仅 DIR_CHANGED 携带,WATCH_LOST 不带。
    */
   readonly files?: readonly string[];
+  /**
+   * 可选:true = 该目录本 tick 所有 watch 回调的 eventType 都是 'change'(仅内容 / 元数据变化,无新建 /
+   * 删除 / 改名 → 目录列表不变)。缺省 = false(含 rename 或信息缺失,按列表可能变化处理)。
+   * eventType 可靠性:inotify(IN_MODIFY/IN_ATTRIB)、ReadDirectoryChangesW(FILE_ACTION_MODIFIED)、
+   * macOS FSEvents(libuv 仅在无 Created/Removed/Renamed 标志时报 change;标志在流内对同一路径会累积,
+   * 只会把 change 误报成 rename,不会反过来)均只对非结构变化报 'change'。
+   */
+  readonly changeOnly?: boolean;
 }
 
 /** DIR_CHANGED 单条 payload 携带文件名的数量上限;超限则不带集合,退化为目录级. */
@@ -73,6 +81,11 @@ export function readFsDirChangedFiles(
     if (typeof f !== 'string' || f.length > maxNameLen) return undefined;
   }
   return files as readonly string[];
+}
+
+/** 取 payload 的可选 changeOnly:仅严格 true 才算(畸形 / 缺省 → false,按目录列表可能变化处理). */
+export function readFsDirChangedChangeOnly(v: FsDirChangedPayload): boolean {
+  return (v as { changeOnly?: unknown }).changeOnly === true;
 }
 
 /**
