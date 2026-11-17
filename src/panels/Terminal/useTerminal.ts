@@ -271,6 +271,11 @@ export const TERMINAL_SEARCH_DEBOUNCE_MS = 100;
  * IPC 管线与 sessions_changed 广播照跑,回放时 cwd 还会短暂回退到历史值)。
  */
 export const CWD_REPORT_DEBOUNCE_MS = 50;
+/**
+ * 尾随合并的 maxWait(lodash 语义,同 makeDebouncePerPath):持续 OSC7(间隔 < 窗口)下窗口不会无限顺延,
+ * 自本轮首个值起至多此时长必发一次最新值。
+ */
+export const CWD_REPORT_MAX_WAIT_MS = 200;
 
 function cancelTimer(ref: { current: ReturnType<typeof setTimeout> | null }): void {
   if (ref.current === null) return;
@@ -479,24 +484,42 @@ export function useTerminal(termId: string) {
     termRef.current = term;
     fitRef.current = fitAddon;
 
-    // per-term 去重 + 尾随合并(见 CWD_REPORT_DEBOUNCE_MS):只发窗口内最新值,且与上次已发送值不同才发。
+    // per-term 去重 + 尾随合并(见 CWD_REPORT_DEBOUNCE_MS / CWD_REPORT_MAX_WAIT_MS):只发窗口内最新值,
+    // 且与上次已发送值不同才发。
     let lastSentCwd: string | undefined;
     let pendingCwd: string | undefined;
     let cwdTimer: ReturnType<typeof setTimeout> | null = null;
+    let cwdFirstAt: number | undefined; // 本轮(上次发送之后)首个 OSC7 时刻,用于 maxWait 截止
     const flushCwd = () => {
       cwdTimer = null;
+      cwdFirstAt = undefined;
       const cwd = pendingCwd;
       pendingCwd = undefined;
       if (cwd === undefined || cwd === lastSentCwd) return;
       lastSentCwd = cwd;
-      void coApi.terminal.updateCwd(termId, cwd);
+      // 发送失败(ok:false / reject)→ 复位去重基线,否则同一 cwd 之后永不重发、main 停在旧 cwd。
+      // 仅当基线仍是本值时复位:期间已发出更新的 cwd 则保持其去重。
+      const forget = () => {
+        if (lastSentCwd === cwd) lastSentCwd = undefined;
+      };
+      Promise.resolve(coApi.terminal.updateCwd(termId, cwd))
+        .then((r) => {
+          if (!r.ok) forget();
+        })
+        .catch(forget);
     };
     const osc7Disposable = registerOsc7Cwd(
       term,
       (cwd) => {
         pendingCwd = cwd;
         if (cwdTimer !== null) clearTimeout(cwdTimer);
-        cwdTimer = setTimeout(flushCwd, CWD_REPORT_DEBOUNCE_MS);
+        const now = Date.now();
+        cwdFirstAt ??= now;
+        const wait = Math.max(
+          0,
+          Math.min(CWD_REPORT_DEBOUNCE_MS, cwdFirstAt + CWD_REPORT_MAX_WAIT_MS - now),
+        );
+        cwdTimer = setTimeout(flushCwd, wait);
       },
       // 测试桩常不带 system → 可选链。
       { acceptedHosts: osc7AcceptedHosts(coApi.system?.hostname) },

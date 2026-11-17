@@ -58,6 +58,7 @@ vi.mock('@/theme', () => ({ useTheme: () => ({ resolved: 'dark' }) }));
 
 import {
   CWD_REPORT_DEBOUNCE_MS,
+  CWD_REPORT_MAX_WAIT_MS,
   osc7AcceptedHosts,
   useTerminal,
 } from '../../panels/Terminal/useTerminal';
@@ -170,6 +171,61 @@ describe('terminal-osc7 wiring (T13)', () => {
       vi.advanceTimersByTime(CWD_REPORT_DEBOUNCE_MS);
       expect(coApi.terminal.updateCwd).toHaveBeenCalledTimes(1);
       expect(coApi.terminal.updateCwd).toHaveBeenCalledWith('term-osc7', '/h2');
+    });
+
+    it('持续 OSC7(间隔 < 窗口)不会无限顺延:自本轮首个值起至多 maxWait 必发一次', () => {
+      render(createElement(Host, { termId: 'term-osc7' }));
+      const step = Math.floor(CWD_REPORT_DEBOUNCE_MS / 2);
+      for (let t = 0; t < CWD_REPORT_MAX_WAIT_MS; t += step) {
+        hoisted.capturedOnCwd!(`/p${t}`);
+        vi.advanceTimersByTime(step);
+      }
+      expect(coApi.terminal.updateCwd).toHaveBeenCalledTimes(1);
+    });
+
+    it('updateCwd 返回 ok:false → 同一 cwd 再次到来时重发', async () => {
+      vi.mocked(coApi.terminal.updateCwd).mockResolvedValueOnce({
+        ok: false,
+        code: 'X',
+        message: 'fail',
+      } as never);
+      render(createElement(Host, { termId: 'term-osc7' }));
+      hoisted.capturedOnCwd!('/a');
+      vi.advanceTimersByTime(CWD_REPORT_DEBOUNCE_MS);
+      await vi.advanceTimersByTimeAsync(0);
+      hoisted.capturedOnCwd!('/a');
+      vi.advanceTimersByTime(CWD_REPORT_DEBOUNCE_MS);
+      expect(coApi.terminal.updateCwd).toHaveBeenCalledTimes(2);
+    });
+
+    it('updateCwd reject → 同一 cwd 再次到来时重发', async () => {
+      vi.mocked(coApi.terminal.updateCwd).mockRejectedValueOnce(new Error('bridge'));
+      render(createElement(Host, { termId: 'term-osc7' }));
+      hoisted.capturedOnCwd!('/a');
+      vi.advanceTimersByTime(CWD_REPORT_DEBOUNCE_MS);
+      await vi.advanceTimersByTimeAsync(0);
+      hoisted.capturedOnCwd!('/a');
+      vi.advanceTimersByTime(CWD_REPORT_DEBOUNCE_MS);
+      expect(coApi.terminal.updateCwd).toHaveBeenCalledTimes(2);
+    });
+
+    it('旧 cwd 失败回来时已发出更新的 cwd → 不复位(更新值仍去重)', async () => {
+      let rejectFirst!: (e: unknown) => void;
+      vi.mocked(coApi.terminal.updateCwd).mockReturnValueOnce(
+        new Promise((_, rej) => {
+          rejectFirst = rej;
+        }) as never,
+      );
+      render(createElement(Host, { termId: 'term-osc7' }));
+      hoisted.capturedOnCwd!('/a');
+      vi.advanceTimersByTime(CWD_REPORT_DEBOUNCE_MS);
+      hoisted.capturedOnCwd!('/b');
+      vi.advanceTimersByTime(CWD_REPORT_DEBOUNCE_MS);
+      rejectFirst(new Error('late'));
+      await vi.advanceTimersByTimeAsync(0);
+      hoisted.capturedOnCwd!('/b');
+      vi.advanceTimersByTime(CWD_REPORT_DEBOUNCE_MS);
+      expect(coApi.terminal.updateCwd).toHaveBeenCalledTimes(2);
     });
 
     it('合并窗口内卸载 → 丢弃待发值,不发送', () => {
