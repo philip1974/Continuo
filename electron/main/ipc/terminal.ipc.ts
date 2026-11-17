@@ -137,7 +137,7 @@ export function makeCreateHandler(deps?: {
   service?: typeof termService;
   sessionStore?: typeof terminalSessions;
   generateId?: () => string;
-  resolveCwd?: (cwdHint?: string) => string;
+  resolveCwd?: (cwdHint?: string) => string | Promise<string>;
 }) {
   const service = deps?.service ?? termService;
   const sessionStore = deps?.sessionStore ?? terminalSessions;
@@ -164,7 +164,13 @@ export function makeCreateHandler(deps?: {
     //      window:notify-root IPC 推送)
     const cwdHint =
       input.cwd ?? input.workspaceRoot ?? getWindowWorkspaceRoot(win.id) ?? undefined;
-    const cwd = resolveCwd(cwdHint);
+    const cwd = await resolveCwd(cwdHint);
+    // race:cwd 异步校验是 await 边界,期间窗口可能已关闭(window-closed cleanup 已跑完)。此后再登记
+    // session / 签发 token / spawn 会成为已关窗口名下的孤儿终端 → 以 CANCELLED 收场。
+    // (测试替身窗口可能不带 isDestroyed,按未销毁处理。)
+    if (typeof win.isDestroyed === 'function' && win.isDestroyed()) {
+      throw codedError(ERROR_CODES.TERMINAL_CREATE_CANCELLED, 'terminal create cancelled: window closed');
+    }
     const id = generateId();
     // MCP env(token / url)注入到所有 PTY:用户在 terminal 跑 claude / codex 时
     // 自动反连本机 MCP host。internalEnv 在后,防用户 env 覆盖内部 token。
@@ -216,12 +222,14 @@ export function makeCreateHandler(deps?: {
   };
 }
 
-export function resolveTerminalCwd(cwdHint?: string): string {
+// 性能:单次异步 stat(不存在即 reject)取代同步 existsSync + statSync —— 网络盘 / 休眠外置盘 / 失联挂载点
+// 上同步 fs 调用会卡住 Electron main(所有窗口与 IPC)。语义不变:缺省 / 不存在 / 非目录均 TERMINAL_CWD_UNRESOLVED。
+export async function resolveTerminalCwd(cwdHint?: string): Promise<string> {
   if (!cwdHint) {
     throw codedError(ERROR_CODES.TERMINAL_CWD_UNRESOLVED, 'terminal cwd unresolved (no hint)');
   }
   try {
-    if (fs.existsSync(cwdHint) && fs.statSync(cwdHint).isDirectory()) {
+    if ((await fs.promises.stat(cwdHint)).isDirectory()) {
       return cwdHint;
     }
   } catch {

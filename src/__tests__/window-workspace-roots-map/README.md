@@ -13,7 +13,7 @@ T7-T11 `NotifyRoot` IPC validates BAD_INPUT/BAD_ROOT layering, accepts `null`, a
 T7b rejected `NotifyRoot` calls emit `console.warn`;
 T7c/T7d `{ ok: false }` includes a non-empty `message`, and the warning includes `winId`;
 T16/T16b window `closed` clears the root map, and `windowId` reuse is safe;
-T12-T15 `resolveTerminalCwd` direct calls throw on missing/invalid cwd, return a valid absolute directory, and propagate through `makeCreateHandler`;
+T12-T15 `resolveTerminalCwd`(async, single `fs.promises.stat`, no sync fs on main) rejects on missing/invalid/non-directory cwd, resolves a valid absolute directory, and propagates through `makeCreateHandler`; T14b window destroyed during the async cwd check → `TERMINAL_CREATE_CANCELLED`, no session/token/PTY;
 T18 IPC envelope via `processIpcCall` preserves `e.code`;
 T25 `makeCreateSessionTool` rejects with `.code` preserved;
 T26 `dispatchRpc tools/call` returns `error.code === -32603` and `error.data.code` for coded tool failures, asserting existing dispatcher behavior without modifying `mcp-host.service.ts`;
