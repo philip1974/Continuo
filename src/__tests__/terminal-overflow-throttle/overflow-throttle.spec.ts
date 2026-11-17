@@ -106,11 +106,13 @@ describe('terminal overflow 节流 · 吞吐窗口与恢复', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it('overflow 后下一窗口来低速输出 → 立即 recovered(chunk 路径)', () => {
+  it('overflow 后下一窗口来低速输出 → 立即 recovered(chunk 路径),恢复检查定时器一并清除', () => {
     emit('x'.repeat(3 * MiB));
-    vi.advanceTimersByTime(1200);
+    vi.advanceTimersByTime(1200); // t=1000 的恢复检查未恢复(上一窗口仍超阈值)→ 已重排到 t=2000
     emit('ok');
     expect(overflowEvents(win)).toEqual(['terminal:overflow', 'terminal:overflow-recovered']);
+    vi.advanceTimersByTime(5); // 普通输出合批 flush
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('下一窗口仍持续高速 → 该窗口结束(t=2000)不恢复,再下一边界(t=3000)静默时恢复', () => {

@@ -43,6 +43,16 @@ function flushPending(id: string, inst: Instance): void {
   }
 }
 
+/** 退出 overflow:清标志 + 撤销在途恢复检查定时器(否则残留一次无效唤醒)+ 通知 renderer。 */
+function markOverflowRecovered(id: string, inst: Instance): void {
+  inst.overflowNotified = false;
+  if (inst.recoveryTimer) {
+    clearTimeout(inst.recoveryTimer);
+    inst.recoveryTimer = null;
+  }
+  safeSend(id, TERMINAL_CHANNELS.OVERFLOW_RECOVERED, id);
+}
+
 /**
  * 吞吐窗口惰性滚动(perf):此前每个 PTY 一个永久 1Hz setInterval(上限 256 会话 → 空闲也 256 次/秒唤醒
  * 主进程),每个 tick 做「overflow 中且本窗速率已 ≤ 阈值 → 补发 recovered」再清零计数。现改为按时间戳在
@@ -63,8 +73,7 @@ function rollThroughputWindow(id: string, inst: Instance, now: number): void {
     inst.overflowNotified &&
     (inst.bytesPerSecond <= OVERFLOW_THRESHOLD_BYTES || elapsed >= 2 * THROTTLE_RESET_INTERVAL_MS)
   ) {
-    inst.overflowNotified = false;
-    safeSend(id, TERMINAL_CHANNELS.OVERFLOW_RECOVERED, id);
+    markOverflowRecovered(id, inst);
   }
   inst.bytesPerSecond = 0;
   inst.windowStart +=
@@ -119,10 +128,7 @@ function handleChunk(id: string, chunk: string): void {
     return;
   }
 
-  if (inst.overflowNotified) {
-    inst.overflowNotified = false;
-    safeSend(id, TERMINAL_CHANNELS.OVERFLOW_RECOVERED, id);
-  }
+  if (inst.overflowNotified) markOverflowRecovered(id, inst);
   inst.pendingData += chunk;
 
   if (!inst.flushTimer) {
