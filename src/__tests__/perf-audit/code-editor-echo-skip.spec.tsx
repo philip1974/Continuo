@@ -118,4 +118,21 @@ describe('perf-audit P6 · CodeEditor 受控回声免全文 toString', () => {
     expect(docSpy2).toHaveBeenCalled();
     expect(view.state.doc.toString()).toBe('external change');
   });
+
+  // 挂载时 EditorState.create 已带当前语言 / 主题;语言 / 主题 effect 挂载时再 reconfigure 一次会让
+  // markdown()(每次调用新建 Language)从 0 重新解析,每次切到 .md tab 首屏解析做两遍。
+  it('挂载时不重复 reconfigure 语言 / 主题;fileName 变化时才重配置', async () => {
+    const { EditorView: CmView } = await import('@codemirror/view');
+    const dispatchSpy = vi.spyOn(CmView.prototype, 'dispatch');
+    try {
+      const { rerender } = render(
+        <CodeEditor tabId="t2" value="# hi" fileName="a.md" onChange={() => {}} />,
+      );
+      expect(dispatchSpy).not.toHaveBeenCalled();
+      rerender(<CodeEditor tabId="t2" value="# hi" fileName="a.ts" onChange={() => {}} />);
+      expect(dispatchSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      dispatchSpy.mockRestore();
+    }
+  });
 });

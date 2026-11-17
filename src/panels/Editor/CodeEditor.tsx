@@ -114,12 +114,18 @@ export function CodeEditor({
   // value(EditorState.create 用它建 doc,故 doc 一开始就反映它)。
   const lastSyncedValueRef = useRef(value);
   const { resolved } = useTheme();
+  // 创建时已用的语言 / 主题输入:挂载时语言 / 主题 effect 也会跑一次,输入未变就不 reconfigure ——
+  // markdown() 每次调用新建 Language,重配置会让整篇从 0 重新解析(每次切到 .md tab 首屏解析两遍)。
+  const appliedLangKeyRef = useRef<string | null>(null);
+  const appliedThemeRef = useRef<string | null>(null);
 
   // 创建 editor 一次,父用 key={tabId} 强制 remount 切 tab
   useEffect(() => {
     if (!containerRef.current) return;
     const lang = pickLanguage(fileName, forceLanguage);
     const themeExt = pickThemeExtension(resolved);
+    appliedLangKeyRef.current = `${fileName}\u0000${forceLanguage ?? ''}`;
+    appliedThemeRef.current = resolved;
 
     const state = EditorState.create({
       doc: value,
@@ -214,6 +220,9 @@ export function CodeEditor({
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
+    const key = `${fileName}\u0000${forceLanguage ?? ''}`;
+    if (appliedLangKeyRef.current === key) return;
+    appliedLangKeyRef.current = key;
     view.dispatch({
       effects: langCompartment.current.reconfigure(
         pickLanguage(fileName, forceLanguage),
@@ -225,6 +234,8 @@ export function CodeEditor({
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
+    if (appliedThemeRef.current === resolved) return;
+    appliedThemeRef.current = resolved;
     const themeExt = pickThemeExtension(resolved);
     view.dispatch({
       effects: themeCompartment.current.reconfigure(themeExt),
