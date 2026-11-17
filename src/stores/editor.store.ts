@@ -18,6 +18,7 @@ import {
   PATH_ARRAY_MAX,
   PATH_STR_MAX,
 } from '../../electron/shared/explorer-persistence-schema';
+import { flushEditorWriteBacks } from '@/panels/Editor/editor-writeback-registry';
 
 // ── 类型 ─────────────────────────────────────────────────────
 
@@ -589,39 +590,48 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
       applyTabStateChange(s, getStateAfterClosingTab(s.tabs, s.activeTabId, id)),
     ),
 
-  removePath: (path) =>
+  removePath: (path)=> {
+    flushEditorWriteBacks();
     set((s) =>
       applyTabStateChange(
         s,
         getStateAfterRemovingPath(s.tabs, s.activeTabId, path),
       ),
-    ),
+    );
+  },
 
-  removePaths: (paths) =>
+  removePaths: (paths)=> {
+    flushEditorWriteBacks();
     set((s) =>
       applyTabStateChange(
         s,
         getStateAfterRemovingPaths(s.tabs, s.activeTabId, paths),
       ),
-    ),
+    );
+  },
 
-  renamePath: (oldPath, newPath) =>
+  renamePath: (oldPath, newPath)=> {
+    flushEditorWriteBacks();
     set((s) =>
       applyTabStateChange(
         s,
         getStateAfterRenamingPath(s.tabs, s.activeTabId, oldPath, newPath),
       ),
-    ),
+    );
+  },
 
-  closeTabsOutsideRoot: (root) =>
+  closeTabsOutsideRoot: (root)=> {
+    flushEditorWriteBacks();
     set((s) =>
       applyTabStateChange(
         s,
         getStateAfterClosingTabsOutsideRoot(s.tabs, s.activeTabId, root),
       ),
-    ),
+    );
+  },
 
-  reloadFromDisk: (tabId, content, realPath) =>
+  reloadFromDisk: (tabId, content, realPath) => {
+    flushEditorWriteBacks(); // 未上抛输入先进 store → tab 变脏 → 下面按 dirty 跳过,不被磁盘覆盖
     set((s) => {
       const idx = findEditorTabIndexById(s.tabs, tabId);
       if (idx < 0) return s;
@@ -649,7 +659,8 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
       return !!next.milkdownUnsafe !== !!cur.milkdownUnsafe
         ? { tabs, chromeVersion: s.chromeVersion + 1 }
         : { tabs };
-    }),
+    });
+  },
 
   switchTab: (id, opts) => {
     if (opts?.requestFocus !== false) beginUserActivation();
@@ -710,7 +721,8 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
         : { tabs };
     }),
 
-  setFilePath: (id, newPath) =>
+  setFilePath: (id, newPath) => {
+    flushEditorWriteBacks(); // 换 tab id 前按旧 id 回写(见 removePath 处说明)
     set((s) => {
       const idx = findEditorTabIndexById(s.tabs, id);
       if (idx < 0) return s;
@@ -729,9 +741,14 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
         activeTabId: s.activeTabId === id ? newPath : s.activeTabId,
         chromeVersion: s.chromeVersion + 1, // perf P12:filePath 变 → chrome 变
       };
-    }),
+    });
+  },
 
-  setMode: (mode) => set((s) => (s.mode === mode ? s : { mode })),
+  setMode: (mode) => {
+    if (get().mode === mode) return;
+    flushEditorWriteBacks(); // 新模式视图按 store 内容挂载:先回写(见 removePath 处说明)
+    set({ mode });
+  },
 
   acceptUnsafeEdit: (id) =>
     set((s) => {
