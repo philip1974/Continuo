@@ -44,6 +44,13 @@ export interface ManagerHost {
   mutateEnabledId(id: string, enabled: boolean): void | Promise<void>;
   /** 动态 import,可注入 mock. */
   importModule(url: string): Promise<unknown>;
+  /**
+   * 预取模块源码(可选,perf:启动并行读源码):只读取并准备好 importModule(url) 所需资源,**不 import、不执行
+   * 插件代码**(故可在权限门之前)。不得 reject;失败不缓存,importModule 照常走原路径。
+   */
+  prefetchModule?(url: string): Promise<void>;
+  /** 丢弃 url 未被 importModule 用掉的预取结果(可选,释放 Blob URL 等资源);已 import 的不受影响。 */
+  releasePrefetchedModule?(url: string): void;
   /** v3.4 权限存储(可选,缺省 → 不做权限门). */
   permissionStore?: PermissionStore;
   /** v3.4 权限弹窗 PromptFn(可选,缺省 → 默认拒绝所有 pending). */
@@ -134,6 +141,8 @@ export interface PluginListItem {
 const EMPTY_ACTIVATION_ORDER: string[] = [];
 const EMPTY_PLUGIN_LIST: readonly PluginListItem[] = [];
 const EMPTY_PLUGIN_PERMISSIONS: readonly PermissionKey[] = [];
+/** init 预取插件源码的并发上限(读源码 IPC + Blob 生成;激活本身仍串行)。 */
+const PREFETCH_CONCURRENCY = 4;
 
 export function removeActivationOrderId(order: string[], id: string): string[] {
   if (order.length === 0) return EMPTY_ACTIVATION_ORDER;
@@ -340,24 +349,77 @@ export class PluginManager {
     this.invalidateListCache();
     this.resolveScanned();
 
+    // perf:串行激活前,有界并发预取已启用插件的源码(不 import、不执行插件代码);激活仍按原顺序串行,命中预取。
+    const prefetched = this.prefetchEnabledModules(registered);
+
+    for (const entry of registered) {
+      try {
+        if (entry.status === 'enabled') await this.initActivate(entry);
+      } finally {
+        // 激活所用的就是预取那份 → import 后已不受影响;未用上(禁用 / 卸载 / 授权拒绝 / 热重载换了 dirInfo
+        // 即换了 manifest 令牌)→ 丢弃,释放 Blob URL。
+        const url = prefetched.get(entry);
+        if (url !== undefined) this.host.releasePrefetchedModule?.(url);
+      }
+    }
+  }
+
+  /**
+   * 对 status==='enabled' 的 entry 以有界并发(PREFETCH_CONCURRENCY)发起 host.prefetchModule,不等待完成。
+   * 返回 entry → 预取所用 moduleUrl(激活后据此释放未用上的预取)。host 未实现 → 空表。
+   */
+  private prefetchEnabledModules(registered: readonly PluginEntry[]): Map<PluginEntry, string> {
+    const urls = new Map<PluginEntry, string>();
+    const prefetch = this.host.prefetchModule?.bind(this.host);
+    if (!prefetch) return urls;
+    const queue: [PluginEntry, string][] = [];
     for (const entry of registered) {
       if (entry.status !== 'enabled') continue;
-      // init 的激活也必须走生命周期锁:activateEntry 在 ensureAuthorized 处 await
-      // 用户权限弹窗(可挂数秒),而 main-app 紧接 init 就接线 mtime watcher 的
-      // onChanged→reload(走锁)。若 init 不上锁,弹窗挂起期间被改动文件触发的
-      // reload 会拿到空锁并发执行 → 与 reload/enable 同源的 token 泄漏/双激活。
-      await this.withLifecycleLock(entry.id, async () => {
-        // 登记后、轮到激活前,锁内操作可能已改变它:已卸载(entry 移除)/ 已禁用(status 落 disabled)→ 跳过。
-        if (this.entries.get(entry.id) !== entry || entry.status !== 'enabled' || entry.instance) return;
-        // 登记后到达的禁用 / 卸载意图 → 不激活,落 disabled(同 activateEntry 中止收尾:启用意图由排队的停用清除 / 落盘)。
-        if (this.deactivationIntents.has(entry.id)) {
-          entry.status = 'disabled';
-          this.invalidateListCache();
-          return;
-        }
-        await this.activateEntry(entry);
-      });
+      const url = entry.dirInfo.moduleUrl;
+      urls.set(entry, url);
+      queue.push([entry, url]);
     }
+    let next = 0;
+    const worker = async (): Promise<void> => {
+      while (next < queue.length) {
+        const [entry, url] = queue[next++]!;
+        // 轮到时已不会按这份 dirInfo 激活(禁用 / 卸载 / 已换 dirInfo)→ 不再预取。
+        if (
+          this.entries.get(entry.id) !== entry ||
+          entry.status !== 'enabled' ||
+          entry.instance ||
+          entry.dirInfo.moduleUrl !== url ||
+          this.deactivationIntents.has(entry.id)
+        ) {
+          continue;
+        }
+        try {
+          await prefetch(url);
+        } catch {
+          // host 契约不 reject;防御:失败不影响激活(激活照常拉取)。
+        }
+      }
+    };
+    for (let i = 0; i < Math.min(PREFETCH_CONCURRENCY, queue.length); i++) void worker();
+    return urls;
+  }
+
+  private async initActivate(entry: PluginEntry): Promise<void> {
+    // init 的激活也必须走生命周期锁:activateEntry 在 ensureAuthorized 处 await
+    // 用户权限弹窗(可挂数秒),而 main-app 紧接 init 就接线 mtime watcher 的
+    // onChanged→reload(走锁)。若 init 不上锁,弹窗挂起期间被改动文件触发的
+    // reload 会拿到空锁并发执行 → 与 reload/enable 同源的 token 泄漏/双激活。
+    await this.withLifecycleLock(entry.id, async () => {
+      // 登记后、轮到激活前,锁内操作可能已改变它:已卸载(entry 移除)/ 已禁用(status 落 disabled)→ 跳过。
+      if (this.entries.get(entry.id) !== entry || entry.status !== 'enabled' || entry.instance) return;
+      // 登记后到达的禁用 / 卸载意图 → 不激活,落 disabled(同 activateEntry 中止收尾:启用意图由排队的停用清除 / 落盘)。
+      if (this.deactivationIntents.has(entry.id)) {
+        entry.status = 'disabled';
+        this.invalidateListCache();
+        return;
+      }
+      await this.activateEntry(entry);
+    });
   }
 
   /** 关闭所有 active 插件,LIFO 反序. */
