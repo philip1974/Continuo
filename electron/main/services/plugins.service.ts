@@ -6,7 +6,7 @@ import {
   PERMISSION_RECORD_LIMITS,
   PLUGIN_ID_MAX_LEN,
 } from '../../shared/permission-record-limits';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import { mkdtemp, cp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -18,7 +18,7 @@ import type {
   IpcPermissionRecord,
   IpcPermissionsMap,
   IpcPluginDir,
-  IpcPluginDirMeta,
+  IpcPluginDirListing,
 } from '../../shared/plugins-channels';
 import { PLUGIN_DIR_NAME_MAX_LEN } from '../../shared/plugins-channels';
 import { ERROR_CODES } from '../../shared/error-codes';
@@ -278,14 +278,14 @@ async function readMetadataCapped(filePath: string): Promise<string> {
  * 子目录读 fail / 缺 manifest / 缺 main 都跳过该目录(不抛),由 renderer 端
  * PluginManager 决定是否报告。
  */
-export async function listPluginDirs(baseDir: string): Promise<IpcPluginDirMeta[]> {
+export async function listPluginDirs(baseDir: string): Promise<IpcPluginDirListing[]> {
   // 边界(E82):有界枚举(缺目录 → [] → 返回空列表,等价旧版)。
   const entries = await readPluginDirEntriesCapped(baseDir);
   // perf:per-dir 读取(stat + manifest + main 可用性)有界并发(PLUGIN_DIR_IO_CONCURRENCY),
   // 结果按 entries 原顺序收集(激活顺序契约不变)。
   const results = await mapInOrderBounded(entries, (name) => readOnePluginDirMeta(baseDir, name));
 
-  const out = new Array<IpcPluginDirMeta>(results.length);
+  const out = new Array<IpcPluginDirListing>(results.length);
   let outCount = 0;
   for (const r of results) {
     if (r === null) continue;
@@ -394,22 +394,35 @@ async function isPluginMainAvailable(dir: string, manifestText: string): Promise
   }
 }
 
+/** manifest 版本令牌:manifestText 的 sha256(小写 hex)。列举项携带,激活读 main 时校验 manifest 未变。 */
+export function pluginManifestHash(manifestText: string): string {
+  return createHash('sha256').update(manifestText).digest('hex');
+}
+
 async function readOnePluginDirMeta(
   baseDir: string,
   name: string,
-): Promise<IpcPluginDirMeta | null> {
+): Promise<IpcPluginDirListing | null> {
   const m = await readPluginManifestText(baseDir, name);
   if (m === null) return null;
   if (!(await isPluginMainAvailable(m.dir, m.manifestText))) return null;
-  return { id: name, manifestText: m.manifestText };
+  return { id: name, manifestText: m.manifestText, manifestHash: pluginManifestHash(m.manifestText) };
 }
 
 /**
  * 激活时按**目录名**读该插件 main 源码(列举结果的 id 即目录名)。按目录而非 manifest.id:重复 id 的
  * 目录选择已在 renderer 完成,这里不再选一次,避免与列举口径漂移。目录名必须是 baseDir 下的单级名
  *(无分隔符 / NUL、非 . / ..,且与列举同样排除 . / _ 前缀),否则 → null;目录 / manifest / main 不可用 → null。
+ *
+ * 快照一致性(P1):renderer 按列举时的 manifest(id / 权限 / 入口)激活,列举与激活之间插件可能被更新。
+ * manifestHash 为列举项的令牌;读 main 前、后各复核当前 manifest 与令牌一致,不一致 → 抛
+ * PLUGIN_MANIFEST_CHANGED(该插件激活失败;watcher 随后检测到 manifest 变化广播热重载)。
  */
-export async function readPluginMainByDir(baseDir: string, name: string): Promise<string | null> {
+export async function readPluginMainByDir(
+  baseDir: string,
+  name: string,
+  manifestHash: string,
+): Promise<string | null> {
   if (
     name.length === 0 ||
     name.length > PLUGIN_DIR_NAME_MAX_LEN ||
@@ -422,8 +435,25 @@ export async function readPluginMainByDir(baseDir: string, name: string): Promis
   ) {
     return null;
   }
-  const dir = await readOnePluginDir(baseDir, name);
-  return dir === null ? null : dir.mainText;
+  const m = await readPluginManifestText(baseDir, name);
+  if (m === null) return null;
+  assertManifestUnchanged(m.manifestText, manifestHash, name);
+  const mainText = await readPluginMainText(m.dir, m.manifestText);
+  if (mainText === null) return null;
+  // 读 main 期间 manifest 可能被替换(原子更新整目录):复核,确保返回的 main 与令牌对应的 manifest 同期。
+  const after = await readPluginManifestText(baseDir, name);
+  if (after === null) return null;
+  assertManifestUnchanged(after.manifestText, manifestHash, name);
+  return mainText;
+}
+
+function assertManifestUnchanged(manifestText: string, manifestHash: string, name: string): void {
+  if (pluginManifestHash(manifestText) !== manifestHash) {
+    throw codedError(
+      ERROR_CODES.PLUGIN_MANIFEST_CHANGED,
+      `插件 manifest 在列举后已变更,拒绝激活: ${name}`,
+    );
+  }
 }
 
 async function readOnePluginDir(baseDir: string, name: string): Promise<IpcPluginDir | null> {
@@ -1411,7 +1441,9 @@ export function createPluginsWatcher(
   // pluginId → 该 id 唯一权威目录(目录名)及其 main mtime。重复 manifest.id 时只记权威目录
   //(preferPluginDirName,与 PluginManager.preferPluginDir / readPluginDirByManifestId 同规则):此前以 id
   // 为键而不区分目录,多个目录轮流写同一键 → 每轮都判定变化并广播,形成永久热重载风暴。
-  const mtimes = new Map<string, { dir: string; mtime: number }>();
+  // manifestHash:权威目录 manifest 内容哈希(同 LIST_DIRS 令牌)。manifest 内容变化也算变化 —— 激活时令牌
+  // 不一致的插件会激活失败,须由此广播让 renderer 重新加载(此前只看 main mtime,只改 manifest 不广播)。
+  const mtimes = new Map<string, { dir: string; mtime: number; manifestHash: string }>();
   let firstRun = true;
   let cancelled = false;
   // race(R5):tick 异步扫描(readdir+stat+readFile)慢于 interval 时,setInterval 会并发触发多个
@@ -1428,13 +1460,13 @@ export function createPluginsWatcher(
   // info=null 表示 manifest 不是合法 JSON(与旧版同:跳过该目录)。条目只保留本轮枚举到的目录名。
   const manifestCache = new Map<
     string,
-    { sig: string; info: { mainName: string; pluginId: string } | null }
+    { sig: string; info: { mainName: string; pluginId: string; manifestHash: string } | null }
   >();
 
   /** 单目录探测:返回 { name, pluginId, mtime }(main 文件 mtime),不可监控 → null。可并发执行。 */
   const probeEntry = async (
     name: string,
-  ): Promise<{ name: string; pluginId: string; mtime: number } | null> => {
+  ): Promise<{ name: string; pluginId: string; mtime: number; manifestHash: string } | null> => {
     if (name.startsWith('.') || name.startsWith('_')) return null;
     const dir = path.join(baseDir, name);
 
@@ -1464,7 +1496,7 @@ export function createPluginsWatcher(
         manifestCache.delete(name);
         return null;
       }
-      let info: { mainName: string; pluginId: string } | null;
+      let info: { mainName: string; pluginId: string; manifestHash: string } | null;
       try {
         const m = JSON.parse(text) as { main?: unknown; id?: unknown };
         let pluginId = name;
@@ -1481,7 +1513,8 @@ export function createPluginsWatcher(
         ) {
           pluginId = m.id;
         }
-        info = { mainName: getPluginMainName(m), pluginId }; // M20:共用 getPluginMainName
+        // M20:共用 getPluginMainName;哈希仅在签名变化重读时计算一次
+        info = { mainName: getPluginMainName(m), pluginId, manifestHash: pluginManifestHash(text) };
       } catch {
         info = null;
       }
@@ -1494,7 +1527,12 @@ export function createPluginsWatcher(
       const mainPath = resolvePluginMainPath(dir, cached.info.mainName);
       if (!mainPath) return null;
       const fileStat = await fs.stat(mainPath);
-      return { name, pluginId: cached.info.pluginId, mtime: fileStat.mtimeMs };
+      return {
+        name,
+        pluginId: cached.info.pluginId,
+        mtime: fileStat.mtimeMs,
+        manifestHash: cached.info.manifestHash,
+      };
     } catch {
       return null;
     }
@@ -1513,7 +1551,7 @@ export function createPluginsWatcher(
       }
     }
     // 每个 id 选出唯一权威目录(Map 插入序 = 各 id 首次出现的枚举序,onChange 顺序与旧版一致)。
-    const chosen = new Map<string, { name: string; mtime: number }>();
+    const chosen = new Map<string, { name: string; mtime: number; manifestHash: string }>();
     for (const probe of probes) {
       if (probe === null) continue;
       const current = chosen.get(probe.pluginId);
@@ -1524,21 +1562,28 @@ export function createPluginsWatcher(
     // 清理陈旧键:记录所属目录现在(manifest 可解析)声明的是别的 id → 该记录不再代表任何目录。
     // 目录暂时消失 / manifest 缺失或损坏 / main 暂不可 stat 时保留记录:重建后 main 已变仍要触发热重载
     //(rm -rf 后重新部署、编辑器 unlink+write 保存),与旧版同口径。
+    // 本轮之前被记录过的目录:某 id 首次出现在其中 = 该目录改声明了新 id(更新换了 id),也算变化。
+    const knownDirs = new Set<string>();
     for (const [pluginId, prev] of mtimes) {
+      knownDirs.add(prev.dir);
       if (chosen.has(pluginId)) continue;
       const info = manifestCache.get(prev.dir)?.info;
       if (info && info.pluginId !== pluginId) mtimes.delete(pluginId);
     }
-    for (const [pluginId, { name, mtime }] of chosen) {
+    for (const [pluginId, { name, mtime, manifestHash }] of chosen) {
       const prev = mtimes.get(pluginId);
       // race(R67):先记录新 mtime,再 onChange。此前顺序相反,而整段在 try{}catch{continue} 内 —
       // 若 onChange(广播 send)抛错,会被 per-entry catch 吞掉 continue → mtimes.set 不执行 →
       // mtimes 不推进 → 同一变更每个 tick 反复触发/反复失败(广播一直打不出去)。改为变更检测
       // 一旦确认即记录 mtime,通知(onChange)成败不影响 mtime 推进:坏窗口由 onChange 内部
       // per-window try/catch 兜底(R67-A),不再回灌脏状态。
-      mtimes.set(pluginId, { dir: name, mtime });
+      mtimes.set(pluginId, { dir: name, mtime, manifestHash });
       // 权威目录切换(新增同名目录 / 原权威目录消失)也算变化:readPluginDirByManifestId 此刻会选到另一目录。
-      if (!firstRun && prev !== undefined && (prev.dir !== name || prev.mtime !== mtime)) {
+      const changed =
+        prev === undefined
+          ? knownDirs.has(name)
+          : prev.dir !== name || prev.mtime !== mtime || prev.manifestHash !== manifestHash;
+      if (!firstRun && changed) {
         try {
           onChange(pluginId);
         } catch {

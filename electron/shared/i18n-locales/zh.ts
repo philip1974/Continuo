@@ -31,6 +31,7 @@ export const zh: Record<TranslationKey, string> = {
   'errors.BAD_INPUT': '输入无效',
   'errors.BAD_MAIN': '插件主文件错误',
   'errors.BAD_MANIFEST': '插件清单错误',
+  'errors.PLUGIN_MANIFEST_CHANGED': '插件在加载期间已被更新,请重试',
   'errors.BAD_ROOT': '工作区根目录错误',
   'errors.BAD_URL': 'URL 无效',
   'errors.DEBUG_ADAPTER_LAUNCH_FAILED': '调试适配器启动失败',

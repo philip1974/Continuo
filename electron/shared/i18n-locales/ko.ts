@@ -31,6 +31,7 @@ export const ko: Record<TranslationKey, string> = {
   'errors.BAD_INPUT': '잘못된 입력',
   'errors.BAD_MAIN': '잘못된 플러그인 main 파일',
   'errors.BAD_MANIFEST': '잘못된 플러그인 매니페스트',
+  'errors.PLUGIN_MANIFEST_CHANGED': '로드 중 플러그인이 업데이트되었습니다. 다시 시도하세요',
   'errors.BAD_ROOT': '잘못된 작업 공간 루트',
   'errors.BAD_URL': '잘못된 URL',
   'errors.DEBUG_ADAPTER_LAUNCH_FAILED': '디버그 어댑터 시작 실패',

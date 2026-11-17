@@ -39,6 +39,7 @@ export const en = {
   'errors.BAD_INPUT': 'Bad input',
   'errors.BAD_MAIN': 'Bad plugin main file',
   'errors.BAD_MANIFEST': 'Bad plugin manifest',
+  'errors.PLUGIN_MANIFEST_CHANGED': 'Plugin was updated while loading; please retry',
   'errors.BAD_ROOT': 'Bad workspace root',
   'errors.BAD_URL': 'Bad URL',
   'errors.DEBUG_ADAPTER_LAUNCH_FAILED': 'Failed to launch debug adapter',

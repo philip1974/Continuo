@@ -222,11 +222,31 @@ describe('createPluginsWatcher', () => {
     await w.tick();
     writeFileSync(join(tmp, 'd', 'manifest.tmp'), JSON.stringify({ id: 'new.id', name: 'D', version: '0.1.0' }));
     renameSync(join(tmp, 'd', 'manifest.tmp'), join(tmp, 'd', 'manifest.json'));
-    await w.tick(); // new.id 首次出现:只填表
+    await w.tick(); // 已监控目录改声明 new.id → 视为 new.id 变化(激活快照令牌失效后需重新加载)
+    expect(fn.mock.calls).toEqual([['new.id']]);
     touch('d', 'main.js', Date.now() + 5000);
     await w.tick();
-    expect(fn).toHaveBeenCalledWith('new.id');
+    expect(fn.mock.calls).toEqual([['new.id'], ['new.id']]);
     expect(fn).not.toHaveBeenCalledWith('old.id');
+  });
+
+  // P1 配套:激活时 manifest 令牌不一致 → 插件激活失败;须由 watcher 广播让 renderer 重新加载。
+  // 此前 watcher 只看 main mtime,只改 manifest(权限 / 版本)不广播 → 失败状态不会自动纠正。
+  it('只改 manifest 内容(main 不变)→ fire 一次;只 touch manifest(内容不变)→ 不 fire', async () => {
+    makeDir('m', { id: 'm', name: 'M', version: '0.1.0' });
+    const fn = vi.fn();
+    const w = createPluginsWatcher(tmp, fn);
+    await w.tick();
+    touch('m', 'manifest.json', Date.now() + 5000);
+    await w.tick();
+    expect(fn).not.toHaveBeenCalled();
+    writeFileSync(
+      join(tmp, 'm', 'manifest.json'),
+      JSON.stringify({ id: 'm', name: 'M', version: '0.2.0', permissions: ['shell'] }),
+    );
+    await w.tick();
+    await w.tick();
+    expect(fn.mock.calls).toEqual([['m']]);
   });
 
   it('manifest 删除后重建 → 期间跳过,重建后继续检测', async () => {
@@ -340,7 +360,7 @@ describe('createPluginsWatcher', () => {
     expect(fn).toHaveBeenCalledWith('g');
   });
 
-  it('目录改声明新 id 后,旧 id 的记录被清理:改回旧 id 只填表不 fire', async () => {
+  it('目录改声明新 id 后,旧 id 的记录被清理:每次改 id 各 fire 一次新 id,之后 main 变化只报当前 id', async () => {
     makeDir('h', { id: 'h.old', name: 'H', version: '0.1.0' });
     const fn = vi.fn();
     const w = createPluginsWatcher(tmp, fn);
@@ -351,10 +371,14 @@ describe('createPluginsWatcher', () => {
     };
     swap('h.new');
     await w.tick();
-    touch('h', 'main.js', Date.now() + 5000);
+    expect(fn.mock.calls).toEqual([['h.new']]);
     swap('h.old');
-    await w.tick(); // h.old 的旧记录已清理 → 视为首次出现
-    expect(fn).not.toHaveBeenCalled();
+    await w.tick(); // 目录又改回 h.old → 视为 h.old 变化
+    expect(fn.mock.calls).toEqual([['h.new'], ['h.old']]);
+    touch('h', 'main.js', Date.now() + 5000);
+    await w.tick();
+    await w.tick();
+    expect(fn.mock.calls).toEqual([['h.new'], ['h.old'], ['h.old']]); // h.new 记录已清理,不再被报告
   });
 
   it('start(intervalMs) 返 dispose,disposed 后 tick 不再 fire', async () => {

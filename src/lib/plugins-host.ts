@@ -16,6 +16,8 @@ interface RawPluginDirInfo {
 interface PluginDirMeta {
   readonly id: string;
   readonly manifestText: string;
+  /** 列举时 manifest 的版本令牌,拉 main 时回传给 main 端校验(manifest 未变才给源码). */
+  readonly manifestHash: string;
 }
 
 type PluginDirInfo = {
@@ -52,7 +54,10 @@ function lazyPluginDirInfo(dir: RawPluginDirInfo): PluginDirInfo {
  * 源码(与旧版 getter 只生成一次 Blob URL 等价)。拉取失败不记,下次激活重试。
  */
 const MAIN_REF_PREFIX = 'continuo-plugin-main:';
-const mainRefs = new Map<string, { readonly dir: string; blobUrl: string | null }>();
+const mainRefs = new Map<
+  string,
+  { readonly dir: string; readonly manifestHash: string; blobUrl: string | null }
+>();
 let nextMainRef = 1;
 
 function deferredPluginDirInfo(dir: PluginDirMeta): PluginDirInfo {
@@ -63,7 +68,7 @@ function deferredPluginDirInfo(dir: PluginDirMeta): PluginDirInfo {
     get moduleUrl(): string {
       if (ref === null) {
         ref = `${MAIN_REF_PREFIX}${nextMainRef++}`;
-        mainRefs.set(ref, { dir: dir.id, blobUrl: null });
+        mainRefs.set(ref, { dir: dir.id, manifestHash: dir.manifestHash, blobUrl: null });
       }
       return ref;
     },
@@ -84,7 +89,9 @@ async function resolveModuleUrl(url: string): Promise<string> {
   const ref = mainRefs.get(url);
   if (ref === undefined) return url;
   if (ref.blobUrl !== null) return ref.blobUrl;
-  const r = await coApi.plugins.readMainByDir(ref.dir);
+  // 带列举快照的 manifest 令牌:期间插件被更新 → main 端拒绝(PLUGIN_MANIFEST_CHANGED)→ 激活失败,
+  // 不以旧 manifest(id / 权限 / 入口)执行新 main;watcher 检测到 manifest 变化后广播热重载。
+  const r = await coApi.plugins.readMainByDir(ref.dir, ref.manifestHash);
   if (!r.ok) throw codedError(r.code, r.message ?? 'readMainByDir failed');
   if (r.data === null) throw new Error(`plugin main is unavailable: ${ref.dir}`);
   ref.blobUrl = URL.createObjectURL(new Blob([r.data], { type: 'application/javascript' }));

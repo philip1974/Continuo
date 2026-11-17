@@ -19,6 +19,9 @@
 - 单 plugin manifest 解析失败 / main 文件缺失 → 跳过该 plugin,其它继续
 - start(intervalMs) 启动 setInterval,返 dispose 停 timer
 - 同 plugin 多次连续触发不去重(由 renderer 端节流;通常 mtime 跨 tick 变一次)
+- manifest **内容**变化(哈希,同 LIST_DIRS 令牌)也 fire;只 touch、内容不变不 fire —— 激活时令牌不一致而失败的
+  插件靠此广播重新加载
+- 已被记录的目录改声明新 id → 对新 id fire(旧 id 记录清理)
 
 ## perf:manifest 解析缓存 + 有界并发
 

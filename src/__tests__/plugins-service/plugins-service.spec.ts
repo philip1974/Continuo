@@ -14,6 +14,7 @@ import {
   readEnabledIds,
   readPluginDirByManifestId,
   readPluginMainByDir,
+  pluginManifestHash,
   readFileCapped,
   readPermissions,
   readPluginPathScopes,
@@ -24,6 +25,7 @@ import {
   writePluginPathScopes,
 } from '../../../electron/main/services/plugins.service';
 import type { IpcPermissionRecord } from '../../../electron/shared/plugins-channels';
+import { createHash } from 'node:crypto';
 
 let tmp: string;
 beforeEach(() => {
@@ -34,6 +36,20 @@ afterEach(() => {
   vi.restoreAllMocks();
   rmSync(tmp, { recursive: true, force: true });
 });
+
+/** 当前磁盘 manifest 的版本令牌(= LIST_DIRS 列举时给出的 manifestHash)。 */
+function hashOf(name: string, base = tmp): string {
+  try {
+    return pluginManifestHash(readFileSync(join(base, name, 'manifest.json'), 'utf8'));
+  } catch {
+    return '0'.repeat(64);
+  }
+}
+
+/** 按目录名读 main,令牌取当前磁盘 manifest(无竞争时等价于列举快照)。 */
+function readMain(name: string, base = tmp): Promise<string | null> {
+  return readPluginMainByDir(base, name, hashOf(name, base));
+}
 
 function makeDir(id: string, manifest: object, mainText = '/* main */', stylesText?: string) {
   const dir = join(tmp, id);
@@ -82,9 +98,15 @@ describe('listPluginDirs', () => {
   it('结果不含 mainText;main 源码按目录名另行读取', async () => {
     makeDir('com.foo', { id: 'com.foo', name: 'Foo', version: '0.1.0' });
     const r = await listPluginDirs(tmp);
-    expect(r).toEqual([{ id: 'com.foo', manifestText: expect.stringContaining('"id":"com.foo"') }]);
+    expect(r).toEqual([
+      {
+        id: 'com.foo',
+        manifestText: expect.stringContaining('"id":"com.foo"'),
+        manifestHash: createHash('sha256').update(r[0]!.manifestText).digest('hex'),
+      },
+    ]);
     expect('mainText' in r[0]!).toBe(false);
-    expect(await readPluginMainByDir(tmp, 'com.foo')).toBe('/* main */');
+    expect(await readPluginMainByDir(tmp, 'com.foo', r[0]!.manifestHash)).toBe('/* main */');
   });
 
   // styles.css 不读取、不跨 IPC 传输(renderer 从未注入过它;此前读了 4MiB 以内的样式却无人消费)。
@@ -186,7 +208,7 @@ describe('listPluginDirs', () => {
     );
     writeFileSync(join(dir, 'index.js'), 'CUSTOM');
     const r = await listPluginDirs(tmp);
-    expect(await readPluginMainByDir(tmp, r[0]!.id)).toBe('CUSTOM');
+    expect(await readMain(r[0]!.id)).toBe('CUSTOM');
   });
 
   // 边界(E102):manifest.main 超长(>512)→ getPluginMainName 退默认 main.js(不把近 1MiB main
@@ -206,7 +228,7 @@ describe('listPluginDirs', () => {
     writeFileSync(join(dir, 'main.js'), 'FALLBACK');
     const r = await listPluginDirs(tmp);
     expect(r.some((x) => x.id === 'overmain')).toBe(true);
-    expect(await readPluginMainByDir(tmp, 'overmain')).toBe('FALLBACK');
+    expect(await readMain('overmain')).toBe('FALLBACK');
   });
 
   it('manifest.main 允许插件目录内的子目录入口', async () => {
@@ -224,7 +246,7 @@ describe('listPluginDirs', () => {
     writeFileSync(join(dir, 'dist', 'index.js'), 'NESTED');
 
     const r = await listPluginDirs(tmp);
-    expect(await readPluginMainByDir(tmp, r[0]!.id)).toBe('NESTED');
+    expect(await readMain(r[0]!.id)).toBe('NESTED');
   });
 
   it('manifest.main 含 .. 时跳过插件,不读取目录外文件', async () => {
@@ -401,16 +423,16 @@ describe('readPluginMainByDir', () => {
     makeDir('ok.dir', { id: 'x', name: 'X', version: '0.1.0', main: 'dist/entry.js' });
     mkdirSync(join(tmp, 'ok.dir', 'dist'));
     writeFileSync(join(tmp, 'ok.dir', 'dist', 'entry.js'), 'ENTRY');
-    expect(await readPluginMainByDir(tmp, 'ok.dir')).toBe('ENTRY');
+    expect(await readMain('ok.dir')).toBe('ENTRY');
 
     makeDir('big', { id: 'big', name: 'B', version: '0.1.0' });
     await fsp.truncate(join(tmp, 'big', 'main.js'), 8 * 1024 * 1024 + 1);
-    expect(await readPluginMainByDir(tmp, 'big')).toBeNull();
+    expect(await readMain('big')).toBeNull();
 
     mkdirSync(join(tmp, 'nomain'));
     writeFileSync(join(tmp, 'nomain', 'manifest.json'), '{"id":"nomain"}');
-    expect(await readPluginMainByDir(tmp, 'nomain')).toBeNull();
-    expect(await readPluginMainByDir(tmp, 'missing')).toBeNull();
+    expect(await readMain('nomain')).toBeNull();
+    expect(await readMain('missing')).toBeNull();
   });
 
   it('目录名含路径分隔符 / . / .. / . 或 _ 前缀 → null,不读 baseDir 之外', async () => {
@@ -420,9 +442,38 @@ describe('readPluginMainByDir', () => {
     const inner = join(tmp, 'inner');
     mkdirSync(inner);
     for (const name of ['', '.', '..', '_hidden', '.dot', '../sub', 'sub/.', 'a\\b', 'a\0b']) {
-      expect(await readPluginMainByDir(inner, name)).toBeNull();
-      expect(await readPluginMainByDir(tmp, name)).toBeNull();
+      expect(await readMain(name, inner)).toBeNull();
+      expect(await readMain(name)).toBeNull();
     }
+  });
+
+  // P1:列举快照(manifest:id / 权限 / 入口)与激活时读到的 main 必须出自同一 manifest 版本。列举项带
+  // manifestHash 令牌;读 main 前后各校验一次当前 manifest,不一致 → 抛 PLUGIN_MANIFEST_CHANGED(拒绝激活)。
+  it('令牌与当前 manifest 不一致(列举后插件被更新)→ 抛 PLUGIN_MANIFEST_CHANGED,不返回新 main', async () => {
+    makeDir('upd', { id: 'a', name: 'A', version: '0.1.0' }, 'OLD');
+    const [listed] = await listPluginDirs(tmp);
+    // 列举后、激活前:目录被更新为另一个插件(id / main 都变了)
+    makeDir('upd', { id: 'b', name: 'B', version: '0.2.0' }, 'NEW');
+    await expect(readPluginMainByDir(tmp, 'upd', listed!.manifestHash)).rejects.toMatchObject({
+      code: 'PLUGIN_MANIFEST_CHANGED',
+    });
+    // 令牌与当前 manifest 一致 → 正常读
+    expect(await readPluginMainByDir(tmp, 'upd', hashOf('upd'))).toBe('NEW');
+  });
+
+  it('读 main 期间 manifest 被替换(读前校验已通过)→ 读后复核抛 PLUGIN_MANIFEST_CHANGED', async () => {
+    makeDir('race', { id: 'a', name: 'A', version: '0.1.0' }, 'OLD');
+    const [listed] = await listPluginDirs(tmp);
+    const realOpen = fsp.open.bind(fsp);
+    vi.spyOn(fsp, 'open').mockImplementation(async (...args: Parameters<typeof fsp.open>) => {
+      if (String(args[0]).endsWith('main.js')) {
+        writeFileSync(join(tmp, 'race', 'manifest.json'), JSON.stringify({ id: 'b', name: 'B', version: '1' }));
+      }
+      return realOpen(...args);
+    });
+    await expect(readPluginMainByDir(tmp, 'race', listed!.manifestHash)).rejects.toMatchObject({
+      code: 'PLUGIN_MANIFEST_CHANGED',
+    });
   });
 
   it('列举判定 main 可用不读取全文(main 是目录 → 跳过,同读取口径)', async () => {
