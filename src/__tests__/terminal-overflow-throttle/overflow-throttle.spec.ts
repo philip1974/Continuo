@@ -52,7 +52,19 @@ describe('terminal overflow 节流 · 吞吐窗口与恢复', () => {
   let win: ReturnType<typeof makeWindow>;
 
   beforeEach(async () => {
-    vi.useFakeTimers();
+    // 吞吐窗口用单调时钟(performance.now),须一并 fake(vitest 默认不 fake performance)。
+    vi.useFakeTimers({
+      toFake: [
+        'setTimeout',
+        'clearTimeout',
+        'setInterval',
+        'clearInterval',
+        'setImmediate',
+        'clearImmediate',
+        'Date',
+        'performance',
+      ],
+    });
     vi.setSystemTime(0);
     terminalService.__resetForTest();
     terminalSessions._reset();
@@ -106,11 +118,13 @@ describe('terminal overflow 节流 · 吞吐窗口与恢复', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it('overflow 后下一窗口来低速输出 → 立即 recovered(chunk 路径)', () => {
+  it('overflow 后下一窗口来低速输出 → 立即 recovered(chunk 路径),恢复检查定时器一并清除', () => {
     emit('x'.repeat(3 * MiB));
-    vi.advanceTimersByTime(1200);
+    vi.advanceTimersByTime(1200); // t=1000 的恢复检查未恢复(上一窗口仍超阈值)→ 已重排到 t=2000
     emit('ok');
     expect(overflowEvents(win)).toEqual(['terminal:overflow', 'terminal:overflow-recovered']);
+    vi.advanceTimersByTime(5); // 普通输出合批 flush
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('下一窗口仍持续高速 → 该窗口结束(t=2000)不恢复,再下一边界(t=3000)静默时恢复', () => {
@@ -135,6 +149,21 @@ describe('terminal overflow 节流 · 吞吐窗口与恢复', () => {
     vi.advanceTimersByTime(1000);
     emit('x'.repeat(1.5 * MiB));
     expect(overflowEvents(win)).toEqual(['terminal:overflow', 'terminal:overflow-recovered']);
+  });
+
+  // 墙钟在一次 handleChunk 内的两次取时之间回拨(大 chunk 计数/截断时系统校时):旧实现窗口滚动与恢复定时器
+  // delay 分别读 Date.now(),delay 被算成约 1 小时,流静默时卡在 overflow。吞吐窗口改用单调时钟后不受墙钟影响。
+  it('进入 overflow 的同一次处理中墙钟回拨 1 小时 → 流静默仍在 t=2000 恢复', () => {
+    const realNow = Date.now.bind(Date);
+    let calls = 0;
+    vi.spyOn(Date, 'now').mockImplementation(() => {
+      calls += 1;
+      return calls === 1 ? realNow() : realNow() - 3_600_000;
+    });
+    emit('x'.repeat(3 * MiB));
+    vi.advanceTimersByTime(2000);
+    expect(overflowEvents(win)).toEqual(['terminal:overflow', 'terminal:overflow-recovered']);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('overflow 期间会话被清理 → 恢复检查定时器一并清除', () => {

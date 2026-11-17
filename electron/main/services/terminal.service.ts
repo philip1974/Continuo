@@ -31,6 +31,10 @@ const FLUSH_DELAY_MS = 5;
 const THROTTLE_RESET_INTERVAL_MS = 1_000;
 const KILL_GRACE_PERIOD_MS = 3_000;
 
+// 吞吐窗口 / 恢复检查用单调时钟:墙钟(Date.now)可被系统校时回拨,窗口长期不滚动或恢复定时器 delay 被算成
+// 数小时 → 流静默时卡在 overflow(旧 setInterval 不受墙钟影响)。
+const monotonicNow = (): number => performance.now();
+
 // 把合批窗口里的在途输出发给 renderer,第三个参数 = 本批首字符的累计偏移(见 getBufferSnapshot)。
 function flushPending(id: string, inst: Instance): void {
   if (inst.flushTimer) {
@@ -43,6 +47,16 @@ function flushPending(id: string, inst: Instance): void {
   }
 }
 
+/** 退出 overflow:清标志 + 撤销在途恢复检查定时器(否则残留一次无效唤醒)+ 通知 renderer。 */
+function markOverflowRecovered(id: string, inst: Instance): void {
+  inst.overflowNotified = false;
+  if (inst.recoveryTimer) {
+    clearTimeout(inst.recoveryTimer);
+    inst.recoveryTimer = null;
+  }
+  safeSend(id, TERMINAL_CHANNELS.OVERFLOW_RECOVERED, id);
+}
+
 /**
  * 吞吐窗口惰性滚动(perf):此前每个 PTY 一个永久 1Hz setInterval(上限 256 会话 → 空闲也 256 次/秒唤醒
  * 主进程),每个 tick 做「overflow 中且本窗速率已 ≤ 阈值 → 补发 recovered」再清零计数。现改为按时间戳在
@@ -52,19 +66,12 @@ function flushPending(id: string, inst: Instance): void {
  */
 function rollThroughputWindow(id: string, inst: Instance, now: number): void {
   const elapsed = now - inst.windowStart;
-  if (elapsed < 0) {
-    // 墙钟回拨:以当前时刻重新起窗,否则窗口长期不滚动(计数只增不清 → 卡死在 overflow)。
-    inst.windowStart = now;
-    inst.bytesPerSecond = 0;
-    return;
-  }
   if (elapsed < THROTTLE_RESET_INTERVAL_MS) return;
   if (
     inst.overflowNotified &&
     (inst.bytesPerSecond <= OVERFLOW_THRESHOLD_BYTES || elapsed >= 2 * THROTTLE_RESET_INTERVAL_MS)
   ) {
-    inst.overflowNotified = false;
-    safeSend(id, TERMINAL_CHANNELS.OVERFLOW_RECOVERED, id);
+    markOverflowRecovered(id, inst);
   }
   inst.bytesPerSecond = 0;
   inst.windowStart +=
@@ -77,11 +84,11 @@ function rollThroughputWindow(id: string, inst: Instance, now: number): void {
  */
 function scheduleOverflowRecoveryCheck(id: string, inst: Instance): void {
   if (inst.recoveryTimer) return;
-  const delay = Math.max(0, inst.windowStart + THROTTLE_RESET_INTERVAL_MS - Date.now());
+  const delay = Math.max(0, inst.windowStart + THROTTLE_RESET_INTERVAL_MS - monotonicNow());
   inst.recoveryTimer = setTimeout(() => {
     inst.recoveryTimer = null;
     if (instances.get(id) !== inst) return;
-    rollThroughputWindow(id, inst, Date.now());
+    rollThroughputWindow(id, inst, monotonicNow());
     if (inst.overflowNotified) scheduleOverflowRecoveryCheck(id, inst);
   }, delay);
 }
@@ -89,7 +96,7 @@ function scheduleOverflowRecoveryCheck(id: string, inst: Instance): void {
 function handleChunk(id: string, chunk: string): void {
   const inst = instances.get(id);
   if (!inst) return;
-  rollThroughputWindow(id, inst, Date.now());
+  rollThroughputWindow(id, inst, monotonicNow());
 
   if (!inst.pendingData) inst.pendingStart = inst.receivedChars;
   inst.receivedChars += chunk.length;
@@ -119,10 +126,7 @@ function handleChunk(id: string, chunk: string): void {
     return;
   }
 
-  if (inst.overflowNotified) {
-    inst.overflowNotified = false;
-    safeSend(id, TERMINAL_CHANNELS.OVERFLOW_RECOVERED, id);
-  }
+  if (inst.overflowNotified) markOverflowRecovered(id, inst);
   inst.pendingData += chunk;
 
   if (!inst.flushTimer) {
@@ -608,7 +612,7 @@ export async function createTerminal(
     flushTimer: null,
     killTimer: null,
     bytesPerSecond: 0,
-    windowStart: Date.now(),
+    windowStart: monotonicNow(),
     recoveryTimer: null,
     overflowNotified: false,
     mcpToken: meta?.mcpToken ?? '',

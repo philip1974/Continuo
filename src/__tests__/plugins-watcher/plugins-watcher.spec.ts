@@ -7,6 +7,7 @@ import {
   utimesSync,
   statSync,
   renameSync,
+  symlinkSync,
   promises as fsp,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -284,6 +285,35 @@ describe('createPluginsWatcher', () => {
     expect(maxInFlight).toBeLessThanOrEqual(8);
   });
 
+  // perf:枚举得到的 Dirent 已知是目录 → 不再为每个目录每轮额外 stat;symlink / 类型未知才回退 stat。
+  it('普通目录不做 directory stat;指向目录的 symlink 回退 stat 仍被监控', async () => {
+    makeDir('real', { id: 'real', name: 'R', version: '0.1.0' });
+    const target = mkdtempSync(join(tmpdir(), 'lm-watch-link-'));
+    try {
+      mkdirSync(join(target, 'pkg'));
+      writeFileSync(join(target, 'pkg', 'manifest.json'), JSON.stringify({ id: 'lnk', name: 'L', version: '0.1.0' }));
+      writeFileSync(join(target, 'pkg', 'main.js'), '/* main */');
+      symlinkSync(join(target, 'pkg'), join(tmp, 'lnk'), 'dir');
+      const realStat = fsp.stat.bind(fsp);
+      const statted: string[] = [];
+      vi.spyOn(fsp, 'stat').mockImplementation(((p: Parameters<typeof fsp.stat>[0], ...rest: unknown[]) => {
+        statted.push(String(p));
+        return (realStat as (...a: unknown[]) => ReturnType<typeof fsp.stat>)(p, ...rest);
+      }) as typeof fsp.stat);
+      const fn = vi.fn();
+      const w = createPluginsWatcher(tmp, fn);
+      await w.tick();
+      expect(statted).not.toContain(join(tmp, 'real'));
+      expect(statted).toContain(join(tmp, 'lnk'));
+      touch('real', 'main.js', Date.now() + 5000);
+      utimesSync(join(target, 'pkg', 'main.js'), Date.now() / 1000 + 5, Date.now() / 1000 + 5);
+      await w.tick();
+      expect(fn.mock.calls).toEqual([['real'], ['lnk']]);
+    } finally {
+      rmSync(target, { recursive: true, force: true });
+    }
+  });
+
   // 重复 manifest.id:每个 id 只看唯一权威目录(目录名 == id 优先,否则目录名字典序最小,与
   // PluginManager.preferPluginDir / readPluginDirByManifestId 同规则)。此前 mtimes 以 id 为键,
   // 两个目录轮流写入同一键 → 每轮都判定变化并广播,形成永久重载风暴。
@@ -401,32 +431,52 @@ describe('createPluginsWatcher', () => {
     expect(fn.mock.calls).toEqual([['h.new'], ['h.old'], ['h.old']]); // h.new 记录已清理,不再被报告
   });
 
-  // 缺失记录(目录 / manifest / main 暂时不可见)保留有限轮次的 tombstone:短暂 unlink→重建仍 fire;
-  // 连续缺失超过上限轮次后删除记录(此前无界保留,且每轮遍历全部记录 → 随历史 id 数单调增长)。
-  it('目录永久删除:连续缺失超过 5 轮后记录被清理,之后同名重建视为首次出现不 fire', async () => {
-    makeDir('t', { id: 't', name: 'T', version: '0.1.0' });
-    const fn = vi.fn();
-    const w = createPluginsWatcher(tmp, fn);
-    await w.tick();
-    rmSync(join(tmp, 't'), { recursive: true, force: true });
-    for (let i = 0; i < 6; i += 1) await w.tick();
-    makeDir('t', { id: 't', name: 'T', version: '0.1.0' });
-    touch('t', 'main.js', Date.now() + 5000);
-    await w.tick();
-    expect(fn).not.toHaveBeenCalled();
-  });
-
-  it('目录缺失 5 轮内重建(main 已变)→ 仍 fire', async () => {
+  // 缺失记录(目录 / manifest / main 暂时不可见)不限时保留:rm -rf 后部署/构建/网络卷恢复耗时再久,重建后仍 fire。
+  // 只按容量淘汰(记录总数超上限时淘汰最早缺失的),防永久删除的历史 id 无界累积。
+  it('目录长时间缺失(远超 5 轮)后重建(main 已变)→ 仍 fire', async () => {
     makeDir('u', { id: 'u', name: 'U', version: '0.1.0' });
     const fn = vi.fn();
     const w = createPluginsWatcher(tmp, fn);
     await w.tick();
     rmSync(join(tmp, 'u'), { recursive: true, force: true });
-    for (let i = 0; i < 5; i += 1) await w.tick();
+    for (let i = 0; i < 50; i += 1) await w.tick();
     makeDir('u', { id: 'u', name: 'U', version: '0.1.0' });
     touch('u', 'main.js', Date.now() + 5000);
     await w.tick();
     expect(fn.mock.calls).toEqual([['u']]);
+  });
+
+  it('缺失记录数有上界:超过容量时淘汰最早缺失的记录,较新的缺失记录保留', async () => {
+    for (const id of ['m1', 'm2', 'm3']) makeDir(id, { id, name: 'M', version: '0.1.0' });
+    const fn = vi.fn();
+    const w = createPluginsWatcher(tmp, fn, { missingRecordCap: 2 });
+    await w.tick();
+    // 依次删除:m1 最早缺失,m3 最晚
+    for (const id of ['m1', 'm2', 'm3']) {
+      rmSync(join(tmp, id), { recursive: true, force: true });
+      await w.tick();
+    }
+    for (const id of ['m1', 'm2', 'm3']) {
+      makeDir(id, { id, name: 'M', version: '0.1.0' });
+      touch(id, 'main.js', Date.now() + 5000);
+    }
+    await w.tick();
+    // m1 记录已被淘汰 → 视为首次出现不 fire;m2/m3 仍在容量内 → fire
+    expect(fn.mock.calls).toEqual([['m2'], ['m3']]);
+  });
+
+  it('缺失记录所属目录重建后改声明别的 id → 该缺失记录被清理(之后旧 id 出现在新目录视为首次出现)', async () => {
+    makeDir('d', { id: 'old.id', name: 'D', version: '0.1.0' });
+    const fn = vi.fn();
+    const w = createPluginsWatcher(tmp, fn);
+    await w.tick();
+    rmSync(join(tmp, 'd'), { recursive: true, force: true });
+    await w.tick(); // old.id 转为缺失记录
+    makeDir('d', { id: 'new.id', name: 'D', version: '0.1.0' });
+    await w.tick(); // 目录 d 改声明 new.id:fire new.id,old.id 缺失记录陈旧 → 清理
+    makeDir('e', { id: 'old.id', name: 'E', version: '0.1.0' });
+    await w.tick();
+    expect(fn.mock.calls).toEqual([['new.id']]);
   });
 
   it('start(intervalMs) 返 dispose,disposed 后 tick 不再 fire', async () => {
