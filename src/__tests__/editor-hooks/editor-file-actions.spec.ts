@@ -255,6 +255,49 @@ describe('openFileByPath', () => {
       if (orig) Object.defineProperty(navigator, 'platform', orig);
     }
   });
+
+  // 最新请求胜出:快速连续打开时,最终激活的是用户最后点的文件,而不是读盘最后完成的文件。
+  // 读盘慢的旧请求完成后仍加入 tab,但只在后台加入,不抢激活、不抢焦点。
+  it('大文件读盘在途时打开小文件 → 最终激活小文件,大文件 tab 仍后台加入', async () => {
+    let resolveBig!: (v: IpcResult<string>) => void;
+    const readFile = vi
+      .fn<(p: string) => Promise<IpcResult<string>>>()
+      .mockImplementationOnce(() => new Promise((res) => (resolveBig = res)))
+      .mockImplementationOnce(async () => ok('small'));
+    const deps = makeDeps({ readFile });
+
+    const pBig = openFileByPath('/x/big.md', deps);
+    await openFileByPath('/x/small.md', deps);
+    expect(useEditorStore.getState().activeTabId).toBe('/x/small.md');
+    const pulse = useEditorStore.getState().editorFocusPulse;
+
+    resolveBig(ok('big'));
+    await pBig;
+
+    const s = useEditorStore.getState();
+    expect(s.activeTabId).toBe('/x/small.md');
+    expect(s.tabs.map((t) => t.id)).toEqual(['/x/small.md', '/x/big.md']);
+    expect(s.editorFocusPulse).toBe(pulse); // 后台加入不抢焦点
+  });
+
+  it('大文件读盘在途时切到已开 tab → 最终激活已开 tab,大文件 tab 仍后台加入', async () => {
+    useEditorStore.getState().openTab(createTab('/x/open.md', 'o'));
+    useEditorStore.getState().openTab(createTab('/x/other.md', 'p'));
+    let resolveBig!: (v: IpcResult<string>) => void;
+    const readFile = vi
+      .fn<(p: string) => Promise<IpcResult<string>>>()
+      .mockImplementationOnce(() => new Promise((res) => (resolveBig = res)));
+    const deps = makeDeps({ readFile });
+
+    const pBig = openFileByPath('/x/big.md', deps);
+    await openFileByPath('/x/open.md', deps); // 已开 → 只 switchTab,但也算最新请求
+    resolveBig(ok('big'));
+    await pBig;
+
+    const s = useEditorStore.getState();
+    expect(s.activeTabId).toBe('/x/open.md');
+    expect(s.tabs.map((t) => t.id)).toContain('/x/big.md');
+  });
 });
 
 // ────────────────────────────────────────────────────────────

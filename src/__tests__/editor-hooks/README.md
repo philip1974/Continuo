@@ -29,6 +29,7 @@ React hook 是薄壳(Step E4 接入 EditorPanel),业务逻辑都在纯函数里,
 - 已开过同 path → 不重读,只 switchTab → ok
 - fs.readFile 成功 → createTab + openTab → ok
 - fs.readFile 失败 → 不 open,返 `{ok:false, code, message}` 透传
+- 最新请求胜出:快速连续打开(含切到已开 tab)时,读盘较慢的旧请求完成后只在后台加入 tab(`activate:false` + 不抢焦点),最终激活的是用户最后请求的文件
 
 ### `saveFile(tabId, deps)`
 - tab 不存在 → ok:false code='TAB_NOT_FOUND'
