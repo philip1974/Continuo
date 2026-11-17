@@ -126,14 +126,18 @@ export function ensureWindowEntry(
  */
 export const MAX_PERSISTED_WINDOW_SEGMENTS = 64;
 
+/** 本进程启动时刻(模块加载时取一次)。 */
+const PROCESS_BOOT_MS = Date.now();
+
 /**
- * LRU 排序键:缺 lastClosedAt 视为**最新**(+Infinity)。lastClosedAt 只在窗口 closed 时写,而退出流程
- * 里那次写是 void 异步、app.quit 不等,崩溃更不写 → 缺时间戳的段多半是「上次会话仍开着」的窗口,
- * 按 0(最旧)排会在启动收敛 / 首次关窗时最先被摘。缺时间戳的段之间(及其超过上限的异常数据)按数组
- * 顺序稳定处理(Array.prototype.sort 稳定),只在有时间戳的段全部摘完后才轮到它们,保持段数有界。
+ * LRU 排序键:缺 lastClosedAt 视为「本进程启动时关闭」(PROCESS_BOOT_MS)。lastClosedAt 只在窗口 closed
+ * 时写,而退出流程里那次写是 void 异步、app.quit 不等,崩溃更不写 → 缺时间戳的段多半是「上次会话仍开着」
+ * 的窗口:按 0(最旧)排会在启动收敛 / 首次关窗时最先被摘;按 +Infinity(永远最新)排则跨启动永不老化,
+ * 本次运行真正关闭、带时间戳的段反而先被摘。取启动时刻:比所有历史时间戳新(启动收敛保留它们),又比本次
+ * 运行里关闭的段旧。缺时间戳的段之间按数组顺序稳定处理(Array.prototype.sort 稳定),段数始终有界。
  */
 function lruClosedAt(w: WindowEntryV3): number {
-  return w.lastClosedAt ?? Number.POSITIVE_INFINITY;
+  return w.lastClosedAt ?? PROCESS_BOOT_MS;
 }
 
 export function pruneLRUClosed(
@@ -164,7 +168,7 @@ export function pruneLRUClosed(
   if (closed === null) return;
   closed.length = closedCount;
   if (closedCount > 1 && !closedSorted) {
-    // 两段都缺时间戳时 Infinity - Infinity = NaN,规范按 +0(相等)处理 → 稳定排序保持数组顺序。
+    // 缺时间戳的段键相同(PROCESS_BOOT_MS)→ 稳定排序保持数组顺序。
     closed.sort((a, b) => lruClosedAt(a) - lruClosedAt(b));
   }
 

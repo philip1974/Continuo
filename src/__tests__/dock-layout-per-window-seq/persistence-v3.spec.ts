@@ -293,6 +293,17 @@ describe('explorer.json v3 persistence schema and merge semantics', () => {
       expect(payload.windows.map((w) => w.windowSeq)).toEqual([0, 1, 2, 3]);
     });
 
+    it('跨启动:缺 lastClosedAt 的陈旧段只比「本进程启动前」的时间戳新;本次运行刚关的段不会被它们挤掉', () => {
+      const payload = defaultExplorerV3();
+      const stale = Array.from({ length: 4 }, (_, i) => closedWindow(i + 1, undefined));
+      payload.windows = [payload.windows[0]!, ...stale, closedWindow(9, Date.now() + 1000)];
+
+      pruneLRUClosed(payload, 4, new Set([0]));
+
+      // 6 段上限 4 → 摘 2:刚关的 seq 9(时间戳晚于进程启动)保留;按数组顺序摘最前的两个陈旧段
+      expect(payload.windows.map((w) => w.windowSeq)).toEqual([0, 3, 4, 9]);
+    });
+
     it('缺 lastClosedAt 的段本身超限(数据异常):有时间戳段先摘完,其余按数组顺序稳定摘,且不抛', () => {
       const payload = defaultExplorerV3();
       payload.windows = [
