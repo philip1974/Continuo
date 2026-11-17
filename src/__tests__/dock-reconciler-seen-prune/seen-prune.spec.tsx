@@ -129,7 +129,7 @@ describe('DockReconciler first-appearance 记录按权威快照剪除', () => {
 
   // 本轮快照有项被 ingress 校验丢弃(shape-invalid / missing-owner / 超限等)时,过滤结果缺失 ≠ 真删除:
   // 不剪记录,否则该 session 下次以有效形态重现时被当首次出现而 setActive 抢焦。
-  it('快照中有项被校验丢弃 → 本轮不剪;恢复有效后不重新聚焦', () => {
+  it('快照中有项被校验丢弃 → 该 id 不剪;恢复有效后不重新聚焦', () => {
     const api = mount();
     act(() => mocks.emit([session('t1', 10)]));
     expect(api.panels['terminal-t1']?.api.setActive).toHaveBeenCalledTimes(1);
@@ -143,6 +143,33 @@ describe('DockReconciler first-appearance 记录按权威快照剪除', () => {
     act(() => mocks.emit([session('t1', 10)]));
     expect(api.panels['terminal-t1']).toBeDefined();
     expect(api.panels['terminal-t1']?.api.setActive).not.toHaveBeenCalled();
+  });
+
+  // 复审 r3 term#2:歧义丢弃只保护能解析出 id 的那些 session,不再整轮跳过剪除 —— 否则快照持续混入一个
+  // 畸形项时记录永久只增不减。
+  it('丢弃项带 id → 只保护该 id,其它已消失的 id 照常剪', () => {
+    const api = mount();
+    act(() => mocks.emit([session('t1', 10), session('t2', 11)]));
+    expect(__reconcilerSeenSessionCountForTest()).toBe(2);
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    act(() => mocks.emit([{ ...session('t1', 10), cwd: 42 }]));
+    warn.mockRestore();
+    expect(__reconcilerSeenSessionCountForTest()).toBe(1);
+
+    // t1 受保护:恢复有效后不被当首次出现而抢焦
+    act(() => mocks.emit([session('t1', 10)]));
+    expect(api.panels['terminal-t1']?.api.setActive).not.toHaveBeenCalled();
+  });
+
+  it('持续混入无 id 的畸形项 + 合法会话 churn → 记录仍有界', () => {
+    mount();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    for (let i = 0; i < 20; i++) {
+      act(() => mocks.emit([null, { ...session('ghost', 1), id: 7 }, session(`t${i}`, i + 1)]));
+    }
+    warn.mockRestore();
+    expect(__reconcilerSeenSessionCountForTest()).toBe(1);
   });
 
   it('仅含他窗口 session(wrong-owner)的丢弃不阻止剪除', () => {

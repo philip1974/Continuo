@@ -55,12 +55,15 @@ const everAddedSessionIds = new Set<string>();
  * 剪除 everAddedSessionIds 中已不在 `liveOwnedSessions` 的 id。`liveOwnedSessions` 必须是**未按
  * workspace 过滤**的本窗口 sessions 快照(TerminalSessionsSync 的 rawOwned)—— 传可见列表会把
  * workspace 隐藏的 session 剪掉,切回时被误判首次出现而抢焦(R25)。
+ * `keepIds`:本轮快照里被 ingress 校验丢弃、但可能仍存活的本窗口 session id(缺失不等于真删除)——
+ * 一并保留,其余已消失的 id 照常剪。
  */
 export function pruneReconcilerSeenSessions(
   liveOwnedSessions: readonly TerminalSession[],
+  keepIds: readonly string[] = [],
 ): void {
   if (everAddedSessionIds.size === 0) return;
-  const live = new Set<string>();
+  const live = new Set<string>(keepIds);
   for (const s of liveOwnedSessions) live.add(s.id);
   for (const id of everAddedSessionIds) {
     if (!live.has(id)) everAddedSessionIds.delete(id);

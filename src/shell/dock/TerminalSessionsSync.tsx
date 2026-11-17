@@ -58,31 +58,33 @@ export function TerminalSessionsSync(): null {
     // null = 尚无权威快照(listSessions 在途 / 失败且无广播):此时不得把「无快照」当空快照置 hydrated。
     let rawOwned: readonly TerminalSession[] | null = null;
 
-    // 按 owner 过滤 IPC 快照。ambiguousDrop:本轮有项因 wrong-owner 以外的原因被丢弃(shape-invalid /
-    // missing-owner / not-object / over-capacity)—— 被丢的可能正是本窗口仍存活的 session,过滤结果里缺失
-    // 不能当作真删除。wrong-owner 是他窗口 session,确定不属于本窗口,不算。
+    // 按 owner 过滤 IPC 快照。droppedIds:本轮因 wrong-owner 以外的原因被丢弃(shape-invalid /
+    // missing-owner)且能解析出字符串 id 的项 —— 可能正是本窗口仍存活的 session,过滤结果里缺失不能当作
+    // 真删除。wrong-owner 是他窗口 session,确定不属于本窗口,不算。无法解析 id 的丢弃项(not-object /
+    // id 非字符串 / over-capacity)无从对应 seen 记录里的任何 id,不参与保护。
     const filterOwned = (
       sessions: readonly unknown[],
-    ): { owned: readonly TerminalSession[]; ambiguousDrop: boolean } => {
-      let ambiguousDrop = false;
+    ): { owned: readonly TerminalSession[]; droppedIds: string[] } => {
+      const droppedIds: string[] = [];
       const owned = filterByOwnerWindow(sessions, winId, {
         onDrop: (sessionId, reason) => {
-          if (reason !== 'wrong-owner') ambiguousDrop = true;
+          if (reason !== 'wrong-owner' && sessionId !== undefined) droppedIds.push(sessionId);
           warnOnDrop(sessionId, reason);
         },
       });
-      return { owned, ambiguousDrop };
+      return { owned, droppedIds };
     };
 
     // rawOwned 每次被权威快照替换后调用:剪掉 reconciler 首次出现记录里已真正消失的 session
     // (基于 workspace 过滤前的 rawOwned,workspace 隐藏的仍保留,见 pruneReconcilerSeenSessions)。
-    // 本轮有歧义丢弃时跳过剪除:否则该 session 下次以有效形态重现会被当首次出现而 setActive 抢焦。
+    // 被歧义丢弃的 id 保留:否则该 session 下次以有效形态重现会被当首次出现而 setActive 抢焦;其余照常剪,
+    // 持续混入畸形项也不会让记录重新无界增长。
     const setRawOwned = ({
       owned,
-      ambiguousDrop,
+      droppedIds,
     }: ReturnType<typeof filterOwned>): void => {
       rawOwned = owned;
-      if (!ambiguousDrop) pruneReconcilerSeenSessions(owned);
+      pruneReconcilerSeenSessions(owned, droppedIds);
     };
 
     const applyWorkspaceFilter = (): void => {
