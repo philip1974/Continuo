@@ -110,6 +110,33 @@ describe('createSemaphore · 排队等待上限(防卡死任务造成队头阻�
   });
 });
 
+describe('statDirGated · 超时离队者走容量有限的溢出通道', () => {
+  it('2 个卡死 stat 占住名额时,多个超时离队者不得同时直行:总在途 ≤ 容量 + 1', async () => {
+    vi.useFakeTimers();
+    try {
+      statMock.mockReset();
+      let inFlight = 0;
+      let peak = 0;
+      statMock.mockImplementation(
+        () =>
+          new Promise(() => {
+            inFlight += 1;
+            peak = Math.max(peak, inFlight);
+          }),
+      );
+      // 独立模块实例:卡死的 stat 永不结算,不得占住其它用例共用的单例闸。
+      vi.resetModules();
+      const fresh = await import('../lib/dir-stat-gate');
+      for (let i = 0; i < 8; i++) void fresh.statDirGated(`/dead/${i}`).catch(() => {});
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(peak).toBe(fresh.DIR_STAT_CONCURRENCY + 1);
+    } finally {
+      statMock.mockReset();
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('statDirGated · 目录判定 stat 全局并发闸', () => {
   it('容量为 2(libuv 默认 4 线程,至少留一半给保存 / listDir / 持久化)', () => {
     expect(DIR_STAT_CONCURRENCY).toBe(2);
