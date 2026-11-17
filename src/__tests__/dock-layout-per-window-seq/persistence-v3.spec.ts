@@ -254,7 +254,9 @@ describe('explorer.json v3 persistence schema and merge semantics', () => {
       payload.windows = [
         { ...payload.windows[0]!, lastClosedAt: 1 }, // 主窗段最旧,但受保护
         ...Array.from({ length: 99 }, (_, i) => closedWindow(i + 1, 1000 + i)),
-        closedWindow(400, undefined), // 无 lastClosedAt 视为最旧
+        // 无 lastClosedAt = 上次会话仍开着(退出时 closed 写入是 void 异步、app.quit 不等;崩溃更不写)
+        // → 视为最新,不能当最旧摘掉
+        closedWindow(400, undefined),
       ];
       await saveExplorer(file, payload);
 
@@ -264,13 +266,46 @@ describe('explorer.json v3 persistence schema and merge semantics', () => {
       expect(after.windows).toHaveLength(64);
       const seqs = after.windows.map((w) => w.windowSeq);
       expect(seqs[0]).toBe(0);
-      expect(seqs).not.toContain(400);
+      expect(seqs).toContain(400);
       expect(seqs).not.toContain(1);
+      expect(seqs).not.toContain(37); // 有时间戳的第 37 旧段(36 个 + 它 = 37 段被摘)
+      expect(seqs).toContain(38);
       expect(seqs).toContain(99);
       // 保留段维持原数组顺序
       expect(seqs).toEqual([...seqs].sort((a, b) => a - b));
       expect(after.nextWindowSeq).toBe(500);
       expect(after.workspace).toEqual(payload.workspace);
+    });
+
+    it('缺 lastClosedAt 的段视为最新:先摘完有时间戳的最旧段,不论其在数组中的位置', () => {
+      const payload = defaultExplorerV3();
+      payload.windows = [
+        payload.windows[0]!,
+        closedWindow(1, undefined), // 数组最前,且无时间戳
+        closedWindow(2, 50),
+        closedWindow(3, undefined),
+        closedWindow(4, 10),
+        closedWindow(5, 30),
+      ];
+
+      pruneLRUClosed(payload, 4, new Set([0]));
+
+      expect(payload.windows.map((w) => w.windowSeq)).toEqual([0, 1, 2, 3]);
+    });
+
+    it('缺 lastClosedAt 的段本身超限(数据异常):有时间戳段先摘完,其余按数组顺序稳定摘,且不抛', () => {
+      const payload = defaultExplorerV3();
+      payload.windows = [
+        payload.windows[0]!,
+        closedWindow(1, undefined),
+        closedWindow(2, 5),
+        closedWindow(3, undefined),
+        closedWindow(4, undefined),
+      ];
+
+      pruneLRUClosed(payload, 2, new Set([0]));
+
+      expect(payload.windows.map((w) => w.windowSeq)).toEqual([0, 4]);
     });
 
     it('未超限时不写盘', async () => {

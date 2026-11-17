@@ -180,6 +180,30 @@ describe('prepareExplorerFileForBoot(启动迁移 + 段数收敛单次加载)', 
     expect(after.nextWindowSeq).toBe(100);
   });
 
+  it('启动收敛不摘缺 lastClosedAt 的段(上次会话退出/崩溃时仍开着的窗口),摘有时间戳的最旧段', async () => {
+    const sort = { by: 'name' as const, reverse: false };
+    const payload = defaultExplorerV3();
+    payload.windows = [
+      payload.windows[0]!,
+      ...Array.from({ length: 70 }, (_, i) => ({
+        windowSeq: i + 1,
+        workspace: { root: `/w${i + 1}` },
+        explorer: { activePath: null, expandedPaths: [], sort },
+        ...(i < 3 ? {} : { lastClosedAt: 1000 + i }), // seq 1..3 无时间戳
+      })),
+    ];
+    await saveExplorer(explorerFile, payload);
+
+    await prepareExplorerFileForBoot(explorerFile, legacyLayoutFile, 64, new Set([0]));
+
+    const seqs = (await loadExplorer(explorerFile))!.windows.map((w) => w.windowSeq);
+    expect(seqs).toHaveLength(64);
+    expect(seqs).toEqual(expect.arrayContaining([0, 1, 2, 3]));
+    expect(seqs).not.toContain(4); // 有时间戳的最旧段
+    expect(seqs).not.toContain(10);
+    expect(seqs).toContain(11);
+  });
+
   it('v2 文件:迁移写 v3 后在同一次加载结果上收敛(不再重读)', async () => {
     await fs.writeFile(explorerFile, JSON.stringify(v2Payload));
     await fs.writeFile(legacyLayoutFile, JSON.stringify({ version: 1, panels: {} }));

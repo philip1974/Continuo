@@ -492,6 +492,36 @@ describe('window close layout flush', () => {
     expect(active.destroyed).toBe(false);
   });
 
+  it('T20e: 关窗 LRU 不摘缺 lastClosedAt 的段(上次会话仍开着),摘有时间戳的最旧段', async () => {
+    const sortDefault = { by: 'name' as const, reverse: false };
+    const payload = defaultExplorerV3();
+    payload.windows = [
+      { ...payload.windows[0]!, lastClosedAt: 1 },
+      ...Array.from({ length: 120 }, (_, i) => ({
+        windowSeq: i + 100,
+        workspace: { root: `/w${i}` },
+        explorer: { activePath: null, expandedPaths: [], sort: sortDefault },
+        ...(i < 2 ? {} : { lastClosedAt: 1000 + i }), // seq 100/101 无时间戳
+      })),
+    ];
+    await saveExplorer(path.join(dir, 'explorer.json'), payload);
+    const closing = createMockMainWindow(300);
+
+    closing.close();
+    ack(closing);
+    await vi.waitFor(async () => {
+      const after = await loadExplorer(path.join(dir, 'explorer.json'));
+      expect(after?.windows).toHaveLength(MAX_PERSISTED_WINDOW_SEGMENTS);
+    });
+    const seqs = (await loadExplorer(path.join(dir, 'explorer.json')))!.windows.map(
+      (w) => w.windowSeq,
+    );
+    expect(seqs).toContain(100);
+    expect(seqs).toContain(101);
+    expect(seqs).toContain(300);
+    expect(seqs).not.toContain(102); // 有时间戳的最旧段
+  });
+
   it('T20d: 两窗近同时关闭 → 先落盘的 LRU 不摘另一个仍在关闭中(尚未写 lastClosedAt)的窗口段', async () => {
     const sortDefault = { by: 'name' as const, reverse: false };
     const payload = defaultExplorerV3();

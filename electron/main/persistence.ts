@@ -126,6 +126,16 @@ export function ensureWindowEntry(
  */
 export const MAX_PERSISTED_WINDOW_SEGMENTS = 64;
 
+/**
+ * LRU 排序键:缺 lastClosedAt 视为**最新**(+Infinity)。lastClosedAt 只在窗口 closed 时写,而退出流程
+ * 里那次写是 void 异步、app.quit 不等,崩溃更不写 → 缺时间戳的段多半是「上次会话仍开着」的窗口,
+ * 按 0(最旧)排会在启动收敛 / 首次关窗时最先被摘。缺时间戳的段之间(及其超过上限的异常数据)按数组
+ * 顺序稳定处理(Array.prototype.sort 稳定),只在有时间戳的段全部摘完后才轮到它们,保持段数有界。
+ */
+function lruClosedAt(w: WindowEntryV3): number {
+  return w.lastClosedAt ?? Number.POSITIVE_INFINITY;
+}
+
 export function pruneLRUClosed(
   payload: ExplorerPayloadV3,
   maxClosed: number,
@@ -144,7 +154,7 @@ export function pruneLRUClosed(
       if (closed === null) {
         closed = new Array<WindowEntryV3>(payload.windows.length - scanned);
       }
-      const closedAt = w.lastClosedAt ?? 0;
+      const closedAt = lruClosedAt(w);
       if (closedAt < prevClosedAt) closedSorted = false;
       prevClosedAt = closedAt;
       closed[closedCount++] = w;
@@ -154,7 +164,8 @@ export function pruneLRUClosed(
   if (closed === null) return;
   closed.length = closedCount;
   if (closedCount > 1 && !closedSorted) {
-    closed.sort((a, b) => (a.lastClosedAt ?? 0) - (b.lastClosedAt ?? 0));
+    // 两段都缺时间戳时 Infinity - Infinity = NaN,规范按 +0(相等)处理 → 稳定排序保持数组顺序。
+    closed.sort((a, b) => lruClosedAt(a) - lruClosedAt(b));
   }
 
   const toRemove = payload.windows.length - maxClosed; // > 0:函数开头已保证 length > maxClosed
