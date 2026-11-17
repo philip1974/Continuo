@@ -6,36 +6,64 @@ import * as fs from 'node:fs';
 // 最多占一半线程,其余留给正常文件 I/O。
 
 export interface Semaphore {
-  /** 拿到名额后执行 fn,结束(成功 / 失败 / 同步抛错)即释放;按调用顺序 FIFO 放行。 */
-  run<T>(fn: () => Promise<T>): Promise<T>;
+  /**
+   * 拿到名额后执行 fn,结束(成功 / 失败 / 同步抛错)即释放;按调用顺序 FIFO 放行。
+   * maxWaitMs:排队超过该时长仍未拿到名额 → 离队并**不占名额**直接执行。fs.promises.stat 不可取消,
+   * 指向失联挂载点的 stat 可能永不返回;没有上限时它们长期占住名额,本地健康路径(用户点「在新窗口
+   * 打开文件夹」)会被无限期排在后面。超时直行只让卡死任务限制自己。
+   */
+  run<T>(fn: () => Promise<T>, maxWaitMs?: number): Promise<T>;
 }
 
 export function createSemaphore(capacity: number): Semaphore {
   let active = 0;
+  // 等待者被唤醒即**接手**释放者的名额(active 不变),故不会被新来者插队。
   const waiters: Array<() => void> = [];
   const release = (): void => {
     const next = waiters.shift();
     if (next) next();
     else active -= 1;
   };
+  /** 排队;resolve(true)=接手名额,resolve(false)=等待超时已离队(不占名额)。 */
+  const wait = (maxWaitMs: number | undefined): Promise<boolean> =>
+    new Promise<boolean>((resolve) => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const onSlot = (): void => {
+        if (timer !== undefined) clearTimeout(timer);
+        resolve(true);
+      };
+      waiters.push(onSlot);
+      if (maxWaitMs !== undefined) {
+        timer = setTimeout(() => {
+          // 同一线程内交接与超时互斥:能在队列里找到自己 = 尚未被交接名额。
+          const i = waiters.indexOf(onSlot);
+          if (i === -1) return;
+          waiters.splice(i, 1);
+          resolve(false);
+        }, maxWaitMs);
+      }
+    });
   return {
-    async run<T>(fn: () => Promise<T>): Promise<T> {
+    async run<T>(fn: () => Promise<T>, maxWaitMs?: number): Promise<T> {
+      let holding = true;
       if (active < capacity) active += 1;
-      else await new Promise<void>((resolve) => waiters.push(resolve));
+      else holding = await wait(maxWaitMs);
       try {
         return await fn();
       } finally {
-        release();
+        if (holding) release();
       }
     },
   };
 }
 
 export const DIR_STAT_CONCURRENCY = 2;
+/** 目录判定排队上限:健康 stat 毫秒级返回,排满 2s 说明名额被慢 / 失联挂载占住。 */
+export const DIR_STAT_MAX_WAIT_MS = 2000;
 
 const dirStatGate = createSemaphore(DIR_STAT_CONCURRENCY);
 
 /** 经全局并发闸的 fs.promises.stat;结果与错误原样透传(调用方自行判定 isDirectory / 错误码)。 */
 export function statDirGated(p: string): Promise<fs.Stats> {
-  return dirStatGate.run(() => fs.promises.stat(p));
+  return dirStatGate.run(() => fs.promises.stat(p), DIR_STAT_MAX_WAIT_MS);
 }

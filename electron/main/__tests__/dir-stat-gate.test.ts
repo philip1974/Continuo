@@ -57,6 +57,59 @@ describe('createSemaphore', () => {
   });
 });
 
+describe('createSemaphore · 排队等待上限(防卡死任务造成队头阻塞)', () => {
+  it('名额被长期占住时,排队超过 maxWaitMs 的任务直接执行;卡死任务结束后容量记账不变', async () => {
+    vi.useFakeTimers();
+    try {
+      const sem = createSemaphore(2);
+      const hung: Array<() => void> = [];
+      const hang = (): Promise<void> => new Promise<void>((r) => hung.push(r));
+      const h1 = sem.run(hang, 100);
+      const h2 = sem.run(hang, 100);
+      let healthyRan = false;
+      const healthy = sem.run(async () => {
+        healthyRan = true;
+        return 'ok';
+      }, 100);
+      await vi.advanceTimersByTimeAsync(99);
+      expect(healthyRan).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(healthy).resolves.toBe('ok');
+
+      // 卡死任务结束 → 释放的名额不会交给已超时离队的等待者,容量仍为 2。
+      hung.splice(0).forEach((r) => r());
+      await Promise.all([h1, h2]);
+      let inFlight = 0;
+      let peak = 0;
+      const settles: Array<() => void> = [];
+      const tasks = Array.from({ length: 4 }, () =>
+        sem.run(
+          () =>
+            new Promise<void>((resolve) => {
+              inFlight += 1;
+              peak = Math.max(peak, inFlight);
+              settles.push(() => {
+                inFlight -= 1;
+                resolve();
+              });
+            }),
+          100,
+        ),
+      );
+      await vi.advanceTimersByTimeAsync(0);
+      expect(peak).toBe(2);
+      while (settles.length > 0) {
+        settles.shift()?.();
+        await vi.advanceTimersByTimeAsync(0);
+      }
+      await Promise.all(tasks);
+      expect(peak).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('statDirGated · 目录判定 stat 全局并发闸', () => {
   it('容量为 2(libuv 默认 4 线程,至少留一半给保存 / listDir / 持久化)', () => {
     expect(DIR_STAT_CONCURRENCY).toBe(2);
