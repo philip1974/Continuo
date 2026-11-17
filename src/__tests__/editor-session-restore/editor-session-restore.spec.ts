@@ -3,7 +3,7 @@
 // 测三层:snapshotFromStores 含 editor 字段;hydrateEditorTabs async helper;
 // initExplorerPersistence 集成(fs 注入路径)。
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   createTab,
   useEditorStore,
@@ -449,3 +449,52 @@ describe('initExplorerPersistence + editor', () => {
   });
 });
 
+// ────────────────────────────────────────────────────────────
+// r4 复审 #2:持久化订阅只关心 editor 的 openFilePaths/activePath,按键不应调度写盘
+// ────────────────────────────────────────────────────────────
+
+describe('initExplorerPersistence · editor 订阅过滤', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  async function setup(): Promise<ExplorerPersistApi> {
+    useWorkspaceStore.setState({ root: '/w' });
+    useEditorStore.getState().openTab(createTab('/w/a.md', 'a'));
+    useEditorStore.getState().openTab(createTab('/w/b.md', 'b'));
+    // 先让 b 变脏:之后持续输入 dirty 恒 true、chromeVersion 不变(脏标翻转本身会 bump,属 chrome 变化)
+    useEditorStore.getState().updateContent('/w/b.md', 'b-dirty');
+    const api: ExplorerPersistApi = {
+      read: vi.fn(async () => ({ ok: true as const, data: null })),
+      write: vi.fn(async () => ({ ok: true as const, data: undefined })),
+    };
+    await initExplorerPersistence(api);
+    vi.useFakeTimers();
+    return api;
+  }
+
+  it('连续 updateContent(按键)→ 不调度持久化写', async () => {
+    const api = await setup();
+    const ed = useEditorStore.getState();
+    for (let i = 0; i < 20; i++) ed.updateContent('/w/b.md', `b${i}`);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(api.write).not.toHaveBeenCalled();
+  });
+
+  it('open / close / rename / switch 仍触发持久化写', async () => {
+    const api = await setup();
+    const steps: Array<() => void> = [
+      () => useEditorStore.getState().openTab(createTab('/w/c.md', 'c')),
+      () => useEditorStore.getState().switchTab('/w/a.md'),
+      () => useEditorStore.getState().renamePath('/w/a.md', '/w/a2.md'),
+      () => useEditorStore.getState().closeTab('/w/c.md'),
+    ];
+    let expected = 0;
+    for (const step of steps) {
+      step();
+      await vi.advanceTimersByTimeAsync(1000);
+      expected += 1;
+      expect(api.write).toHaveBeenCalledTimes(expected);
+    }
+  });
+});

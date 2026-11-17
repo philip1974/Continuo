@@ -53,7 +53,7 @@ editor?: {
 
 - `extras.fs` 提供 + snap 含 editor → 先 sync hydrateStores,再 await hydrateEditorTabs
 - `extras.fs` 不提供 → editor 段忽略(只 hydrate workspace 等)
-- 订阅 `useEditorStore` → store 变化触发 debounce write(snapshot 含最新 editor 字段)
+- 订阅 `useEditorStore` → 仅 `activeTabId` 或 `chromeVersion` 变化(open/close/rename/switch 等)触发 debounce write;纯正文编辑(updateContent 未翻转 dirty)不调度写
 - subscribe 在 hydrate 完成后才 attach:避免 hydrate 写入触发回环 write
 
 ## 不在本主题验证
