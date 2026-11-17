@@ -1301,6 +1301,8 @@
 ## [terminal-write (M-Terminal Step T4)](./terminal-write/README.md) `[integration]`
 
 - [`safe-write.spec.ts`](./terminal-write/safe-write.spec.ts)
+- [`use-terminal-coalesce.spec.ts`](./terminal-write/use-terminal-coalesce.spec.ts)
+- [`write-coalesce.spec.ts`](./terminal-write/write-coalesce.spec.ts)
 
 ## [text-stats(StatusBar 用统计)](./text-stats/README.md)
 

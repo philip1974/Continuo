@@ -36,6 +36,7 @@ import {
   shouldSkipXtermKey,
 } from '@continuo-terminal/react-terminal';
 import { isSearchHotkey } from './terminal-search-keymap';
+import { createOutputCoalescer } from './output-coalescer';
 import {
   applyTerminalSearchEffect,
   INITIAL_TERMINAL_SEARCH_STATE,
@@ -484,7 +485,9 @@ export function useTerminal(termId: string) {
     const doFit = () => fitAndResize(term, fitAddon, termId, lastSentSizeRef);
     const fitRetryRaf = doFit() ? 0 : requestAnimationFrame(doFit);
 
-    // 主进程 stdout → safeWrite 队列。第一次写入本 termId 的输出就标 ready,上层移除 loading overlay。
+    // 主进程 stdout → 写入合并 → safeWrite 队列。第一次写入本 termId 的输出就标 ready,上层移除 loading overlay。
+    // 性能 P1:safeWrite 按 chunk 数节流,主进程每 ~5ms 一条的小块直接灌入会持续积压;先合并成接近
+    // 16KB 的一次调用(空闲首块立即写,不加首字节延迟)。见 output-coalescer.ts。
     let firstData = true;
     const clearLoadingOverlay = () => {
       if (firstData) {
@@ -492,9 +495,10 @@ export function useTerminal(termId: string) {
         setIsReady(true);
       }
     };
+    const outputCoalescer = createOutputCoalescer((data) => safeWrite(term, data));
     const writeOutput = (data: string) => {
       clearLoadingOverlay();
-      safeWrite(term, data);
+      outputCoalescer.push(data);
     };
 
     // topic-07: dockview lazy-mount inactive panel 会错过 PTY spawn 后的初始输出(shell prompt 等),
@@ -649,6 +653,9 @@ export function useTerminal(termId: string) {
         ro.disconnect();
         resizeDebouncer.dispose();
         atlasGuards?.dispose(); // 已装才有 guards(rAF 未触发时为 null)
+        // 合并缓冲里未写出的输出随 safeWrite 队列一并丢弃(term 即将 dispose),且撤销窗口定时器,
+        // 否则迟到的 flush 会经 safeWrite 新建队列写已死 xterm(同 P1-AR)。
+        outputCoalescer.dispose();
         disposeQueue(term);
         term.dispose();
         // xterm.dispose() 不移除 DOM children。StrictMode 双 mount 场景下
