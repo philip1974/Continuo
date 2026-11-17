@@ -9,7 +9,9 @@
 // 宁多刷新不漏刷新:
 // - 键按 dirname/basename **逐字**比较,不做大小写 / NFC 折叠:字面不一致(非 canonical 路径、
 //   大小写不敏感卷上的不同写法)只会判为非 changeOnly(多刷新一次),不会把外部的同名变化误吞。
-// - 一次 flush 命中目标名即消费该登记(连同其 tmp):之后同名事件(如保存后紧接的外部删除)按原语义刷新。
+// - 一次 flush 中出现目标名即消费该登记(连同其 tmp),不论该批是否判为 changeOnly:之后同名事件(如保存后
+//   紧接的外部删除)按原语义刷新。该目录本批文件名未知 / 该目录新装 watcher → 清掉该目录全部登记。
+// - 按登记判为 changeOnly 的批,合并器异步复查被消费目标仍是普通文件(同批混入的外部删除),否则补发刷新。
 // - TTL 兜底:事件迟迟未到(目录未被 watch 等)的登记过期作废;条目数有上限。
 // - 新建文件 / tmp 撞上 crash 残留(其删除对显示隐藏文件的 Explorer 可见)/ 写失败 → 不登记或撤销登记。
 
@@ -60,24 +62,38 @@ export function unmarkAtomicReplace(dir: string, name: string): void {
 }
 
 /**
- * 合并器 flush 用:dir 本 tick 的变更文件名是否**全部**属于未过期的原子替换登记。是 → 消费其中命中的
- * 目标(连同其 tmp)并返回 true;否 → 不消费,返回 false。空集合 → false。
+ * 合并器 flush 用:**先判定、再无条件消费**。返回值:dir 本 tick 的变更文件名**全部**属于未过期登记 →
+ * 本次消费的目标名数组(只见 tmp、目标事件未到 → 空数组);否则(含空集合)null。
+ * 不论返回什么,names 中出现的已登记**目标名**都被消费(连同其 tmp):混入外部文件名的批虽按非 changeOnly
+ * 刷新,登记也不能残留到之后把同名外部删除 / 改名误判为原子保存。
  */
-export function claimAtomicReplaceNames(dir: string, names: readonly string[]): boolean {
-  if (names.length === 0 || entries.size === 0) return false;
+export function claimAtomicReplace(dir: string, names: readonly string[]): string[] | null {
+  if (names.length === 0 || entries.size === 0) return null;
   sweep(Date.now());
-  const hit: string[] = [];
+  let all = true;
+  const targets: string[] = [];
   for (const n of names) {
-    const e = entries.get(keyOf(dir, n));
-    if (!e) return false;
-    hit.push(e.target);
+    const key = keyOf(dir, n);
+    const e = entries.get(key);
+    if (!e) all = false;
+    else if (e.target === key) targets.push(n); // tmp 名不在此消费:只见 tmp(目标事件未到)→ 保留目标
   }
-  for (const t of hit) {
-    if (!names.some((n) => keyOf(dir, n) === t)) continue; // 只见 tmp(目标事件未到)→ 不消费
-    const sep = t.indexOf('\0');
-    unmarkAtomicReplace(t.slice(0, sep), t.slice(sep + 1));
-  }
-  return true;
+  for (const n of targets) unmarkAtomicReplace(dir, n);
+  return all ? targets : null;
+}
+
+/** claimAtomicReplace 的布尔形式(消费语义相同)。 */
+export function claimAtomicReplaceNames(dir: string, names: readonly string[]): boolean {
+  return claimAtomicReplace(dir, names) !== null;
+}
+
+/**
+ * 清掉 dir(仅该目录,不含子目录)下的全部登记:合并器该目录本批文件名未知(超上限 / 缺 filename)时
+ * 无从按名消费;dir 新装 watcher 时,此前未被 watch 而闲置的登记不得吞掉之后的外部变化。
+ */
+export function clearAtomicReplaceMarksInDir(dir: string): void {
+  const prefix = keyOf(dir, '');
+  for (const k of entries.keys()) if (k.startsWith(prefix)) entries.delete(k);
 }
 
 /** 仅供测试:清空登记表。 */
