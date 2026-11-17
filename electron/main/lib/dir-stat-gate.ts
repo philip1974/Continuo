@@ -8,8 +8,8 @@ import * as fs from 'node:fs';
 export interface Semaphore {
   /**
    * 拿到名额后执行 fn,结束(成功 / 失败 / 同步抛错)即释放;按调用顺序 FIFO 放行。
-   * maxWaitMs:排队超过该时长仍未拿到名额 → 离队,改经 overflow 执行(不占本闸名额;未给 overflow 则
-   * 直接执行)。fs.promises.stat 不可取消,指向失联挂载点的 stat 可能永不返回;没有上限时它们长期占住
+   * maxWaitMs:排队超过该时长仍未拿到名额 → 离队,改去 overflow 排队(两闸交替,任一空出即执行;未给
+   * overflow 则直接执行)。fs.promises.stat 不可取消,指向失联挂载点的 stat 可能永不返回;没有上限时它们长期占住
    * 名额,本地健康路径(用户点「在新窗口打开文件夹」)会被无限期排在后面。overflow 再给离队者设容量上限,
    * 防 N 个同时离队者一齐绕过闸门、重新占满线程池。
    */
@@ -44,12 +44,15 @@ export function createSemaphore(capacity: number): Semaphore {
         }, maxWaitMs);
       }
     });
-  return {
+  const self: Semaphore = {
     async run<T>(fn: () => Promise<T>, maxWaitMs?: number, overflow?: Semaphore): Promise<T> {
       let holding = true;
       if (active < capacity) active += 1;
       else holding = await wait(maxWaitMs);
-      if (!holding && overflow) return overflow.run(fn);
+      // 离队 → 转去 overflow 排队,并以本闸作为它的 overflow:两闸交替排队(每段最多 maxWaitMs),
+      // 任一闸先空出名额即执行。否则离队者被钉在 overflow 上 —— overflow 被卡死时,本闸早已空出
+      // 也不回流,判定永远不结束。fn 只在持有某个名额时执行,总在途上限不变。
+      if (!holding && overflow) return overflow.run(fn, maxWaitMs, self);
       try {
         return await fn();
       } finally {
@@ -57,6 +60,7 @@ export function createSemaphore(capacity: number): Semaphore {
       }
     },
   };
+  return self;
 }
 
 export const DIR_STAT_CONCURRENCY = 2;
@@ -65,8 +69,8 @@ export const DIR_STAT_MAX_WAIT_MS = 2000;
 
 const dirStatGate = createSemaphore(DIR_STAT_CONCURRENCY);
 // 超时离队者的溢出通道:总在途 ≤ DIR_STAT_CONCURRENCY + 1 = 3,始终给 libuv 默认 4 线程留 1 个做其它 fs I/O。
-// 溢出通道不再设等待上限(再离队就回到无界)——3 个 stat 同时卡死时健康判定只能等,这是 stat 不可取消下的
-// 取舍:宁可目录判定慢,也不让保存 / listDir / 持久化一起饿死。
+// 离队者在两闸之间交替排队(见 Semaphore.run),不直接执行:3 个 stat 同时卡死时健康判定只能等,这是 stat
+// 不可取消下的取舍——宁可目录判定慢,也不让保存 / listDir / 持久化一起饿死;任一闸空出即回流完成。
 const dirStatOverflow = createSemaphore(1);
 
 /** 经全局并发闸的 fs.promises.stat;结果与错误原样透传(调用方自行判定 isDirectory / 错误码)。 */
