@@ -72,7 +72,7 @@ describe('init 期间尚无 entry 的插件收到禁用广播', () => {
   function makeWindow(): { mgr: PluginManager; importModule: ReturnType<typeof vi.fn> } {
     const importModule = vi.fn(async () => ({ default: P }));
     const host: ManagerHost = {
-      // A 声明权限 → init 激活 A 时挂在授权弹窗上;B 排在其后,此时尚未写入 entries。
+      // A 声明权限 → init 激活 A 时挂在授权弹窗上;B 排在其后,此时尚未激活(扫描阶段已登记 entry,见 whenScanned)。
       listPluginDirs: () => [
         { id: A, manifestText: manifest(A, ['shell']), moduleUrl: `mod://${A}` },
         { id: B, manifestText: manifest(B), moduleUrl: `mod://${B}` },
@@ -91,7 +91,8 @@ describe('init 期间尚无 entry 的插件收到禁用广播', () => {
     const { emitEnabled } = wire(mgr);
     await flush();
     expect(usePermissionPromptStore.getState().pending).toMatchObject({ pluginId: A });
-    expect(mgr.listAll().map((p) => p.id)).toEqual([A]); // B 尚无 entry
+    expect(mgr.listAll().map((p) => p.id)).toEqual([A, B]); // 两阶段 init:B 已登记、尚未激活
+    expect(importModule).not.toHaveBeenCalledWith(`mod://${B}`);
 
     emitEnabled(B, false);
     usePermissionPromptStore.getState().grant(['shell']);

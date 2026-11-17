@@ -886,6 +886,7 @@
 ## [plugin-manager(插件目录扫描 + 启用禁用 + 生命周期编排)](./plugin-manager/README.md)
 
 - [`plugin-manager.spec.ts`](./plugin-manager/plugin-manager.spec.ts)
+- [`when-scanned.spec.ts`](./plugin-manager/when-scanned.spec.ts)
 
 ## [plugin-manifest(manifest.json 解析与版本比对)](./plugin-manifest/README.md)
 

@@ -46,8 +46,11 @@
 
 - catch + console.warn,`checking: false`,其它字段保持
 
-### 启动检查排在插件 init 之后(startup-check-after-init.spec.ts)
+### 启动检查排在插件扫描完成之后(startup-check-after-init.spec.ts)
 
-- 启动时的更新检查经 `initPluginsThenCheckUpdates` 串在 `userPluginManager.init()` 之后(成功或失败都检查一次),
-  不再与 init 同一同步段发起:`refresh()` 先读 `listAll()` 按已安装规模裁剪网络,init 前恒为空会直接落空,
-  导致已装插件的更新角标永不出现。仍 fire-and-forget,不阻塞首次渲染;init 的失败原样交给 reload-gate。
+- 启动时的更新检查经 `initPluginsThenCheckUpdates` 挂在 `userPluginManager.whenScanned()`(扫描完成;扫描失败也 resolve)之后,
+  不再与 init 同一同步段发起:`refresh()` 先读 `listAll()` 按已安装规模裁剪网络,扫描前恒为空会直接落空,
+  导致已装插件的更新角标永不出现。不等整个 init —— 某插件激活挂在授权弹窗 / onload 上时 init 可能永不完成。
+  仍 fire-and-forget,不阻塞首次渲染;init 的结果(含失败)原样交给 reload-gate(flush 仍等整个 init)。
+- popout 子窗口(只渲染 PopoutHost、无 IconSidebar 角标)不做启动更新检查,插件 init 照常
+  (`startup-critical-path/init-ipc-prefetch.spec.ts`)。
