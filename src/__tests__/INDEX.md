@@ -489,6 +489,10 @@
 - [`milkdown-ctx-contract.spec.tsx`](./editor-milkdown-writeback/milkdown-ctx-contract.spec.tsx)
 - [`milkdown-writeback.spec.tsx`](./editor-milkdown-writeback/milkdown-writeback.spec.tsx)
 
+## [editor-pending-input-flush](./editor-pending-input-flush/README.md)
+
+- [`pending-input-flush.spec.tsx`](./editor-pending-input-flush/pending-input-flush.spec.tsx)
+
 ## [editor-session-restore(Editor tab session 持久化与恢复)](./editor-session-restore/README.md)
 
 - [`editor-session-restore.spec.ts`](./editor-session-restore/editor-session-restore.spec.ts)
