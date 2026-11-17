@@ -67,6 +67,12 @@ export interface EditorTab {
    * reloadFromDisk 时随读盘结果更新;runtime only,不持久化(collectEditorSnapshot 只取 filePath)。
    */
   readonly realPath?: string;
+  /**
+   * 保存代际(性能:保存回声识别,见 panels/Editor/saved-disk-stat):markSaved 时写入本次保存记录的代际,
+   * 外部同步只在 tab.savedGen 与记录代际一致时才信任该记录(tab 当前基线 = 那次写盘内容)。
+   * 外部 reload 换了内容 → 清除;关闭重开的新 tab 无此值。runtime only,不持久化。
+   */
+  readonly savedGen?: number;
 }
 
 // 变脏代际的全局单调计数器:按 tab 实例计数会在关闭重开同一路径后从 1 重算,与已接受的旧身份撞号(复审)。
@@ -491,8 +497,9 @@ type EditorState = {
    *   - 写盘 await 期间用户继续键入(cur.content !== savedContent)→ originalContent
    *     推进到 savedContent 但**保留 dirty=true**,使这段增量不被静默吞掉、后续
    *     autosave 会再写。省略 savedContent 时退化为旧语义(originalContent ← content)。
+   * `savedGen`:本次保存记录的代际(见 EditorTab.savedGen);缺省 = 无记录,清除旧代际。
    */
-  markSaved: (id: string, savedContent?: string) => void;
+  markSaved: (id: string, savedContent?: string, savedGen?: number) => void;
   /** 另存为后:把 tab 的 filePath 与 id 同步改为 newPath. */
   setFilePath: (id: string, newPath: string) => void;
   setMode: (mode: EditorMode) => void;
@@ -609,8 +616,9 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
       if (cur.originalContent === content) {
         return base === cur ? s : { tabs: replaceTabAt(s.tabs, idx, base) };
       }
+      const { savedGen: _staleSave, ...rest } = base; // 基线已不是自己写盘的内容 → 保存记录失效
       const next: EditorTab = {
-        ...base,
+        ...rest,
         content,
         originalContent: content,
         dirty: false,
@@ -654,7 +662,7 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
         : { tabs };
     }),
 
-  markSaved: (id, savedContent) =>
+  markSaved: (id, savedContent, savedGen) =>
     set((s) => {
       const idx = findEditorTabIndexById(s.tabs, id);
       if (idx < 0) return s;
@@ -664,11 +672,15 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
       // 此时必须保留 dirty,否则那段增量既没落盘又不再触发 autosave → 静默丢失。
       const onDisk = savedContent ?? cur.content;
       const dirty = cur.content !== onDisk;
-      if (cur.originalContent === onDisk && cur.dirty === dirty) return s;
+      if (cur.originalContent === onDisk && cur.dirty === dirty && cur.savedGen === savedGen) {
+        return s;
+      }
+      const { savedGen: _prevSave, ...rest } = cur;
       const next = withDirtyGen(cur, {
-        ...cur,
+        ...rest,
         originalContent: onDisk,
         dirty,
+        ...(savedGen === undefined ? {} : { savedGen }),
       });
       const tabs = replaceTabAt(s.tabs, idx, next);
       // perf P12:markSaved 改 dirty(脏标→已存)即 chrome 变;dirty 未变则不 bump。

@@ -6,7 +6,7 @@ import { IPC_ERR, type IpcFail, type IpcOk, type IpcResult } from './ipc-result'
 export const FS_CHANNELS = {
   LIST_DIR: 'fs:list-dir',
   READ_FILE: 'fs:read-file',
-  /** 廉价 stat(跟随 symlink):{ mtimeMs, size }。编辑器外部同步用它识别自己保存的回声. */
+  /** 廉价 stat(跟随 symlink):{ mtimeMs, size, ino }。编辑器外部同步用它识别自己保存的回声. */
   STAT: 'fs:stat',
   WRITE_FILE: 'fs:write-file',
   WRITE_BINARY: 'fs:write-binary',
@@ -117,22 +117,26 @@ export function toFsReadFileResult(
 }
 
 /**
- * 文件内容身份的廉价近似:mtimeMs + size(跟随 symlink,即链接目标)。fs:write-file 成功时返回写入后
+ * 文件内容身份的廉价近似:mtimeMs + size + ino(跟随 symlink,即链接目标)。ino 区分粗粒度 mtime 文件系统上
+ * 同大小的外部替换(原子写 / 另存为换了 inode,mtime 秒级可能相同)。fs:write-file 成功时返回写入后
  * 的值(无法确认则缺省),fs:stat 返回当前值;编辑器外部同步比对二者识别「自己保存的回声」,
  * 相同才跳过整文件 readFile,不同 / 未知照旧读。
  */
 export interface FsFileStat {
   readonly mtimeMs: number;
   readonly size: number;
+  /** inode 号(Windows 上可能超出安全整数,仅作相等比较). */
+  readonly ino: number;
 }
 
-/** 形态守卫:有限非负 mtimeMs + 非负安全整数 size → 规范化副本(丢弃多余字段);否则 undefined. */
+/** 形态守卫:有限非负 mtimeMs + 非负安全整数 size + 有限非负 ino → 规范化副本(丢弃多余字段);否则 undefined. */
 export function toFsFileStat(v: unknown): FsFileStat | undefined {
   if (v === null || typeof v !== 'object') return undefined;
-  const { mtimeMs, size } = v as { mtimeMs?: unknown; size?: unknown };
+  const { mtimeMs, size, ino } = v as { mtimeMs?: unknown; size?: unknown; ino?: unknown };
   if (typeof mtimeMs !== 'number' || !Number.isFinite(mtimeMs) || mtimeMs < 0) return undefined;
   if (typeof size !== 'number' || !Number.isSafeInteger(size) || size < 0) return undefined;
-  return { mtimeMs, size };
+  if (typeof ino !== 'number' || !Number.isFinite(ino) || ino < 0) return undefined;
+  return { mtimeMs, size, ino };
 }
 
 /** preload 映射 fs:write-file 结果:成功时 data = 合规 FsFileStat,畸形 / 缺省 → undefined(写盘结果不受影响). */

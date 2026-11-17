@@ -35,6 +35,7 @@ React hook 是薄壳(Step E4 接入 EditorPanel),业务逻辑都在纯函数里,
 - tab.filePath === null → ok:false code='UNSAVED_DRAFT'(MVP 不支持另存为)
 - fs.writeFile 失败 → 透传 IpcFail
 - 成功 → store.markSaved(id),返 ok
+- 性能(保存回声识别):writeFile 带回 stat → 按 tab 路径记录 `{stat, gen}`(不存写入内容),同一 gen 经 `markSaved(id, savedContent, gen)` 写到 `tab.savedGen`;未带 → 清旧记录。记录随编辑器 chrome 变化(关闭 / 删除 / 改名 tab、外部 reload 使 savedGen 失效后)清理,只为打开的 tab 保留
 
 ### `makeAutoSaveScheduler(saveFile, delayMs)`
 - `schedule()`:连续 N 次只调 saveFile 1 次(按最后一次的 delayMs)

@@ -20,7 +20,7 @@ const makeFs = (overrides: Partial<FsApi> = {}): FsApi => ({
   listDir: vi.fn(async () => ok([])),
   readFile: vi.fn(async () => ok('')),
   writeFile: vi.fn(async () => ok(undefined)),
-  stat: vi.fn(async () => ok({ mtimeMs: 0, size: 0 })),
+  stat: vi.fn(async () => ok({ mtimeMs: 0, size: 0, ino: 0 })),
   rename: vi.fn(async (_o, n) => ok(`/parent/${n}`)),
   remove: vi.fn(async () => ok(undefined as void)),
   createFile: vi.fn(async (d, n) => ok(`${d}/${n}`)),

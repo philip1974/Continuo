@@ -35,7 +35,7 @@ A `Plugin` subclass calls these from inside `onload()`. Each returns a `Disposab
 | `addSettingItem(spec)` | A single setting row (composes inside an existing tab). |
 | `registerExplorerDecorator(fn)` | Override file icon / badge / tooltip in the Explorer tree. |
 | `registerEditorAction(spec)` | An action that appears in the editor toolbar when its `when` predicate matches. |
-| `registerExplorerContextMenuItem(spec)` | An item in the Explorer right-click menu. |
+| `registerExplorerContextMenuItem(spec)` | An item in the Explorer right-click menu. `ctx.target.size` / `mtime` / `ctime` are a snapshot from when the directory was listed and may be stale (content-only changes do not re-list); call `app.fs.stat(path)` for current values. |
 | `registerMcpTool(spec)` | Expose a tool to external agents via MCP (requires the `mcp-tools` permission). |
 
 Plus persistence helpers `loadData<T>()` / `saveData(data)` — JSON-serializable per-plugin storage, no permission required (it's the plugin's own data dir).

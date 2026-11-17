@@ -494,7 +494,7 @@ describe('useExternalFileSync', () => {
 // 性能:编辑器自己保存的回声(原子写 tmp + rename 让 watcher 上报被保存文件本身)。有本 tab 当前基线的保存
 // 记录时先廉价 stat 比对:一致 → 跳过整文件 readFile;stat 变化 / 失败 → 照旧读(不凭「刚保存过」跳过)。
 describe('useExternalFileSync · 保存回声识别', () => {
-  const SAVED = { mtimeMs: 1000.5, size: 5 };
+  const SAVED = { mtimeMs: 1000.5, size: 5, ino: 77 };
 
   function setupEcho(stat: ReturnType<typeof vi.fn>, readData = 'saved') {
     let dirCb: ((dir: string, files?: readonly string[]) => void) | null = null;
@@ -526,7 +526,8 @@ describe('useExternalFileSync · 保存回声识别', () => {
       ],
       activeTabId: '/proj/a.md',
     });
-    recordSavedDiskStat('/proj/a.md', SAVED, 'saved');
+    const gen = recordSavedDiskStat('/proj/a.md', SAVED);
+    useEditorStore.getState().markSaved('/proj/a.md', 'saved', gen);
     renderHook(() => useExternalFileSync());
     return { fire: () => dirCb!('/proj', ['.a.md.continuo.tmp', 'a.md']), readFile };
   }
@@ -565,6 +566,15 @@ describe('useExternalFileSync · 保存回声识别', () => {
     expect(useEditorStore.getState().tabs[0]?.content).toBe('other');
   });
 
+  it('mtime / size 相同但 ino 不同(粗粒度 mtime 文件系统上同大小外部替换)→ 照旧读', async () => {
+    const stat = vi.fn(async () => ({ ok: true, data: { ...SAVED, ino: 78 } }));
+    const { fire, readFile } = setupEcho(stat, 'replaced');
+    fire();
+    await flush();
+    expect(readFile).toHaveBeenCalledTimes(1);
+    expect(useEditorStore.getState().tabs[0]?.content).toBe('replaced');
+  });
+
   it('stat 失败({ok:false} 或 reject)→ 照旧读', async () => {
     const statFail = vi.fn(async () => ({ ok: false, code: 'FS_IO', message: 'x' }));
     const a = setupEcho(statFail, 'disk');
@@ -581,6 +591,19 @@ describe('useExternalFileSync · 保存回声识别', () => {
     await flush();
     expect(b.readFile).toHaveBeenCalledTimes(1);
     expect(useEditorStore.getState().tabs[0]?.content).toBe('disk2');
+  });
+
+  it('保存代际不匹配(关闭后重开同路径的新 tab 无 savedGen)→ 不发 stat,直接读', async () => {
+    const stat = vi.fn(async () => ({ ok: true, data: { ...SAVED } }));
+    const { fire, readFile } = setupEcho(stat, 'reopened');
+    useEditorStore.setState({
+      tabs: [{ id: '/proj/a.md', filePath: '/proj/a.md', content: 'saved', originalContent: 'saved', dirty: false }],
+      activeTabId: '/proj/a.md',
+    });
+    fire();
+    await flush();
+    expect(stat).not.toHaveBeenCalled();
+    expect(readFile).toHaveBeenCalledTimes(1);
   });
 
   it('记录不再对应 tab 当前基线(其后被外部 reload 换过内容)→ 不发 stat,直接读', async () => {

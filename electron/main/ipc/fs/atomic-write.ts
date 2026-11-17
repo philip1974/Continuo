@@ -34,7 +34,7 @@ import type { FsFileStat } from '../../../shared/fs-channels';
  *
  * content 为 string → utf-8 写;为 Uint8Array → 二进制写(Step 5d Dropzone 路径)
  *
- * 返回值(性能:编辑器保存回声识别,见 FsFileStat):写入内容对应的 { mtimeMs, size };无法确认则 undefined。
+ * 返回值(性能:编辑器保存回声识别,见 FsFileStat):写入内容对应的 { mtimeMs, size, ino };无法确认则 undefined。
  */
 
 // per-path 写串行化链。同一 filePath 的写排队执行,避免共享固定 tmp 名被并发截断。
@@ -159,7 +159,7 @@ async function atomicWriteFileInner(
 
 /**
  * rename 后对目标 stat 一次,与 fd 上取得的「本次写入」身份(dev/ino/mtimeMs/size)比对:一致才返回
- * { mtimeMs, size }。rename 与 stat 之间若有外部写入 / 替换,或平台在 close/rename 时改了 mtime,则
+ * { mtimeMs, size, ino }。rename 与 stat 之间若有外部写入 / 替换,或平台在 close/rename 时改了 mtime,则
  * 不一致 → undefined(调用方不记录,外部同步照旧整文件读,绝不把别人的写入当成自己的回声)。
  */
 async function confirmWrittenStat(
@@ -177,5 +177,5 @@ async function confirmWrittenStat(
   ) {
     return undefined;
   }
-  return { mtimeMs: now.mtimeMs, size: now.size };
+  return { mtimeMs: now.mtimeMs, size: now.size, ino: now.ino };
 }
