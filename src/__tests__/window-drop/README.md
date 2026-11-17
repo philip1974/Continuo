@@ -27,3 +27,9 @@ VSCode 同款。混合 dataTransfer 不报错。
 ### 空 dataTransfer → 返 null
 
 dataTransfer.files.length === 0 → 防御性返 null,不抛。
+
+### 纯文件拖入不做目录探测(性能)
+
+`captureDropCandidates` 在 drop 回调里同步用 `webkitGetAsEntry` 判定每个文件型 item:
+全部可判定 → 只把目录(保持原顺序)交给 `resolveDroppedWorkspace`,纯文件拖入零 `listDir` IPC;
+任一无法判定(API 缺失 / 返 null / items 与 files 对不上)→ 回退原逻辑,全部文件逐个探测。
