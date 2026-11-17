@@ -377,7 +377,8 @@ function cleanupSessionLocal(id: string, exitCode: number): void {
   // sees data → exit in order. (审计 #1)
   flushPending(id, instance);
   // 1c. ring buffer 即将被 server-node 删除(自然退出 onExit 之后 / sm.kill 时)→ 先留快照。
-  retainExitedHistory(id);
+  // 退出强杀(cleanupAll)时不留:进程随即退出、快照无人读取,每个 PTY 拼最多 4MB 只白占主线程与堆。
+  if (!shuttingDown) retainExitedHistory(id);
 
   // 2. Push terminal:exit (only if target still alive — variadic baseline payload)
   // Baseline shape: webContents.send('terminal:exit', id, { exitCode, signal })
