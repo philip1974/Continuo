@@ -25,7 +25,7 @@ import {
   pruneLRUClosed,
 } from './persistence';
 import { EXPLORER_FILE_NAME } from '../shared/explorer-persistence-schema';
-import { pickWindowsToRestore } from './services/window-restore.service';
+import { restoreStartupWindows } from './services/window-restore.service';
 import { pickStartupMode } from './services/startup-mode.service';
 import {
   pickArgvFolders,
@@ -1211,6 +1211,11 @@ async function startMcpStdioServer(): Promise<void> {
   }
 }
 
+// 启动窗口恢复取消标志:目录判定 async 后,慢 stat 期间用户可关掉最后一个窗口 / 触发退出;此后
+// 恢复不得再建窗(否则 macOS 窗口「复活」,或新窗落在 before-quit 已取快照之外绕过 flush / 清理)。
+// 单向置位:退出被中止(用户取消确认)也不恢复 —— 余下的恢复窗用户可手动再开,不值得冒险。
+let startupRestoreCancelled = false;
+
 app.whenReady().then(async () => {
   // 安全 S1:在建任何窗口 / IPC 之前注册真实 renderer 入口,让 defaultIsTrustedFrame
   // 与 windowOpenHandler 只信这个 file URL,拒绝任意 file:// 弹窗/frame 受信。放在
@@ -1274,20 +1279,15 @@ app.whenReady().then(async () => {
     // 正常启动:主窗 windowSeq=0(workspace 由 renderer 从 explorer.json 段恢复)
     createMainWindow({ windowSeq: 0 });
     // Phase 2C(issue #23):上次会话的非主窗(windowSeq>0)逐个恢复
-    void (async () => {
-      try {
-        const data = await loadExplorer(explorerFile);
-        if (!data) return;
-        for (const entry of await pickWindowsToRestore(data, isDirectory)) {
-          createMainWindow({
-            windowSeq: entry.windowSeq,
-            workspace: entry.workspace,
-          });
-        }
-      } catch (err) {
-        console.warn('[window-restore] 启动恢复失败,只开主窗', err);
-      }
-    })();
+    // 恢复期间可被退出 / 全部关窗取消(见 startupRestoreCancelled),取消后不再建恢复窗。
+    restoreStartupWindows(
+      () => loadExplorer(explorerFile),
+      isDirectory,
+      (entry) => createMainWindow({ windowSeq: entry.windowSeq, workspace: entry.workspace }),
+      () => startupRestoreCancelled,
+    ).catch((err: unknown) => {
+      console.warn('[window-restore] 启动恢复失败,只开主窗', err);
+    });
   }
 
   // 冷启 + open-url 顺序处理:可能在 mainwindow 未就绪前已收 url。race(R41):协议队列 drain 统一
@@ -1312,16 +1312,19 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
+  startupRestoreCancelled = true;
   e2eQuitTrace('window-all-closed');
   if (process.platform !== 'darwin') app.quit();
 });
 app.on('will-quit', (event) => {
+  startupRestoreCancelled = true;
   // 放在其它 will-quit 监听之后检查是否被阻止(仅诊断,不改变行为)。
   setImmediate(() => e2eQuitTrace(`will-quit prevented=${event.defaultPrevented}`));
 });
 app.on('quit', () => e2eQuitTrace('quit'));
 
 app.on('before-quit', async (event) => {
+  startupRestoreCancelled = true; // 须在任何 await / 快照窗口列表之前置位
   const action = quitGuard.onBeforeQuit();
   // 清理已完成 → 内部 app.quit() 的重入,放行退出。
   if (action === 'allow') return;

@@ -1327,6 +1327,7 @@
 
 ## [多窗口启动恢复(`pickWindowsToRestore`)](./window-restore/README.md)
 
+- [`startup-restore-cancel-wiring.spec.ts`](./window-restore/startup-restore-cancel-wiring.spec.ts)
 - [`window-restore.spec.ts`](./window-restore/window-restore.spec.ts)
 
 ## [window-workspace-roots-map](./window-workspace-roots-map/README.md)

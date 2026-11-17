@@ -99,3 +99,24 @@ export async function pickWindowsToRestore(
   out.length = count;
   return out;
 }
+
+/**
+ * 启动恢复编排:读持久化 → 判定目录 → 逐段建窗,每个 await 之后与每次建窗之前复核 `isCancelled`。
+ *
+ * 目录判定改 async(审计 #7)后,慢 stat 期间事件循环可处理关窗 / 退出:若恢复完成后仍建窗,
+ * macOS 关掉最后一个窗口后窗口会「复活」,退出时新窗还会落在 before-quit 已取的窗口快照之外,
+ * 绕过 flush / 隐藏 / 资源清理。调用方在 before-quit / will-quit / window-all-closed 置取消。
+ */
+export async function restoreStartupWindows(
+  load: () => Promise<ExplorerPayload | null>,
+  isExistingDir: (path: string) => Promise<boolean> | boolean,
+  createWindow: (entry: RestoreEntry) => void,
+  isCancelled: () => boolean,
+): Promise<void> {
+  const data = await load();
+  if (!data || isCancelled()) return;
+  for (const entry of await pickWindowsToRestore(data, isExistingDir)) {
+    if (isCancelled()) return;
+    createWindow(entry);
+  }
+}
