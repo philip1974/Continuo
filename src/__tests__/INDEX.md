@@ -141,6 +141,7 @@
 - [`settings-cross-window-sync.spec.ts`](./49-polish-bugfixes/settings-cross-window-sync.spec.ts)
 - [`settings-search-lazy-subscribe.spec.tsx`](./49-polish-bugfixes/settings-search-lazy-subscribe.spec.tsx)
 - [`settings-search-localized.spec.tsx`](./49-polish-bugfixes/settings-search-localized.spec.tsx)
+- [`shell-exec-cap-drain.spec.ts`](./49-polish-bugfixes/shell-exec-cap-drain.spec.ts)
 - [`shell-exec-cjk-bytes.spec.ts`](./49-polish-bugfixes/shell-exec-cjk-bytes.spec.ts)
 - [`shell-exec-timeout-clamp.spec.ts`](./49-polish-bugfixes/shell-exec-timeout-clamp.spec.ts)
 - [`shell-process-tree-kill.spec.ts`](./49-polish-bugfixes/shell-process-tree-kill.spec.ts)

@@ -216,8 +216,29 @@ export function execShell(
     const decode = (chunks: Buffer[]): string =>
       Buffer.concat(chunks).toString('utf-8');
 
-    child.stdout?.on('data', (c: Buffer) => append('stdout', c));
-    child.stderr?.on('data', (c: Buffer) => append('stderr', c));
+    // 性能:某流写满 maxBytes 后摘掉其 JS data 处理,切为丢弃式 drain —— 否则 `yes` / 失控日志在截断后
+    // 仍逐 chunk 进 JS 回调,main 热路径空转到超时。流保持 flowing(无 data listener 时 chunk 直接丢弃,
+    // 不反压子进程,exit/close 照常)。恰好写满时尚不知是否还有后续输出:挂一次性 listener,再来数据才置
+    // truncated(与旧实现「满后再收到 chunk 即 truncated」一致),之后无任何 listener。
+    const markTruncated = (): void => {
+      truncated = true;
+    };
+    const capped = (
+      stream: NodeJS.ReadableStream | null,
+      which: 'stdout' | 'stderr',
+    ): void => {
+      if (!stream) return;
+      const onData = (c: Buffer): void => {
+        append(which, c);
+        if ((which === 'stdout' ? stdoutBytes : stderrBytes) < maxBytes) return;
+        stream.removeListener('data', onData);
+        if (!truncated) stream.once('data', markTruncated);
+        stream.resume();
+      };
+      stream.on('data', onData);
+    };
+    capped(child.stdout, 'stdout');
+    capped(child.stderr, 'stderr');
 
     // 一次性非交互 API:无论有无 input 都要 end stdin。旧实现只在有 input 时 end,
     // 无 input 时管道一直开着 → cat / python - 等读 stdin 的命令永远等不到 EOF,
