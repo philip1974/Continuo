@@ -16,3 +16,7 @@ These BDD specs pin the narrow contract:
 - scoped plugin access reuses the existing `fs` permission and path scope.
 - editor view refs are runtime-only and unregister by view identity.
 
+- cold load / concurrency (`openFile-cold-load.spec.ts`): a line jump preloads the
+  CodeEditor engine chunks (shared promise with the lazy panel/engine) and only
+  starts the bounded 500ms mount wait once they are ready; the view is re-checked
+  against `viewRefs` so a view destroyed while chunks load is never scrolled.

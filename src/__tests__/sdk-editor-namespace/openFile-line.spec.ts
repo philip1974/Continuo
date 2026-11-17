@@ -36,6 +36,8 @@ beforeEach(() => {
     ],
     activeTabId: '/work/a.ts',
     mode: 'edit',
+    // view 须同时是 viewRefs 中的当前注册值:openFile 跳行前按 viewRefs 复核 view 未被替换
+    viewRefs: new Map([['/work/a.ts', view]]),
     waitForViewRef: vi.fn(async () => view),
   } as unknown as Partial<ReturnType<typeof useEditorStore.getState>>);
 });
@@ -99,6 +101,7 @@ describe('app.editor.openFile line jump', () => {
         ],
         activeTabId: 'C:\\Work\\a.ts',
         mode: 'edit',
+        viewRefs: new Map([['C:\\Work\\a.ts', view]]),
         waitForViewRef,
       } as unknown as Partial<ReturnType<typeof useEditorStore.getState>>);
 

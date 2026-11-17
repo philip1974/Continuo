@@ -7,7 +7,7 @@
 //   activeTab 非 .md → 直接 CodeEditor(mode 不显示)
 //   activeTab 为 null → Welcome
 
-import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   getEffectiveMode,
   isTabMilkdownUnsafe,
@@ -23,6 +23,7 @@ import { ConfirmDialog } from '@/panels/Explorer/ConfirmDialog';
 import { SegmentedControl, type SegmentedControlOption } from '@/design';
 import { EditorHeader, type TabChrome } from './EditorHeader';
 import { EditorWelcome } from './EditorWelcome';
+import { createLazyCodeEditor, createLazyMilkdownEditor } from './editor-engine-loaders';
 import { toPreviewMarkdown } from './milkdown-roundtrip-safety';
 import { findEditorFileTabById } from './editor-tab-lookup';
 import { useAutoSave, isAutoSaveEnabled } from './useAutoSave';
@@ -43,12 +44,9 @@ const MODE_IDS: readonly EditorMode[] = ['edit', 'source', 'preview'];
 // (Crepe/ProseMirror/katex)不再一起进 Editor chunk:Welcome 不加载任何引擎,代码文件不加载
 // Milkdown,Markdown edit/preview 不加载 CodeEditor。body 外的 <Suspense key={engine}> 让
 // 切换引擎时整个边界重挂(旧编辑器完整卸载,新编辑器首挂才可能 suspend),与原先 key 重挂语义一致。
-const CodeEditor = lazy(() =>
-  import('./CodeEditor').then((m) => ({ default: m.CodeEditor })),
-);
-const MilkdownEditor = lazy(() =>
-  import('./MilkdownEditor').then((m) => ({ default: m.MilkdownEditor })),
-);
+// import 工厂取自共享加载器:co-app 的 openFile({line}) 预加载与这里共用同一 promise。
+const CodeEditor = createLazyCodeEditor();
+const MilkdownEditor = createLazyMilkdownEditor();
 
 function isMarkdownPath(p: string | null): boolean {
   // 可维护性 M13:非空判定共用 editor-path-utils.isMarkdownPath;此处只保留「草稿(null)默认

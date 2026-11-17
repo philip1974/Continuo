@@ -93,3 +93,27 @@ describe('perf E2 — EditorPanel 按需 lazy 加载编辑引擎', () => {
     expect(screen.queryByTestId('milkdown-editor')).toBeNull();
   });
 });
+
+// 复审 #1:EditorPanel 的引擎 lazy 与 co-app 的 openFile({line}) 预加载共用同一加载 promise;
+// 失败不缓存(引擎错误边界「重试」须能重新发起 import)。
+describe('perf E2 — 编辑引擎共享加载器', () => {
+  it('loadCodeEditorModule 多次调用返回同一 promise(EditorPanel 与 co-app 共用)', async () => {
+    const { loadCodeEditorModule } = await import('../../panels/Editor/editor-engine-loaders');
+    const a = loadCodeEditorModule();
+    expect(loadCodeEditorModule()).toBe(a);
+    await a;
+    expect(loadCodeEditorModule()).toBe(a);
+  });
+
+  it('cachedLoader:rejection 不缓存,下次调用重新加载', async () => {
+    const { cachedLoader } = await import('../../panels/Editor/editor-engine-loaders');
+    const load = vi
+      .fn<() => Promise<string>>()
+      .mockRejectedValueOnce(new Error('chunk failed'))
+      .mockResolvedValueOnce('ok');
+    const loader = cachedLoader(load);
+    await expect(loader()).rejects.toThrow('chunk failed');
+    await expect(loader()).resolves.toBe('ok');
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+});

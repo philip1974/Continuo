@@ -146,9 +146,9 @@
 
 **问题**:co-app 在 main-app 启动路径上,静态 import `scrollToLine`(运行时依赖 `@codemirror/view`)把整套 CodeMirror 拖进启动包,破坏 Editor 懒加载边界。
 
-**修复**:拿到 view 后才 `await import('@/panels/Editor/scrollToLine')`(此时 Editor chunk 必已加载)。openFile 本就 async,返回值/时序契约不变。
+**修复**:跳行时 `await import('@/panels/Editor/scrollToLine')`。复审修正:与 `preloadCodeEditorEngine()`(Editor 面板 + CodeEditor chunk,与 lazy 共用 `editor-engine-loaders` 的同一 promise)并行加载,模块就绪后才开始 500ms 有界挂载等待,并按 `viewRefs` 复核 view 未被替换;加载失败映射为 `EXCEPTION`。
 
-**契约不变量**(`editor-lazy-boundary.spec.ts`:co-app 不静态 import scrollToLine / `@codemirror/*`;`sdk-editor-namespace/*` 行号跳转契约不变)。
+**契约不变量**(`editor-lazy-boundary.spec.ts`:co-app 不静态 import scrollToLine / `@codemirror/*`;`sdk-editor-namespace/*` 行号跳转契约不变,`openFile-cold-load.spec.ts` 覆盖冷加载/并发/加载失败)。
 
 ## E2 — EditorPanel 内两套编辑引擎各自 lazy
 

@@ -1037,6 +1037,7 @@
 
 - [`editor-path-utils.spec.ts`](./sdk-editor-namespace/editor-path-utils.spec.ts)
 - [`openFile-boundary.spec.ts`](./sdk-editor-namespace/openFile-boundary.spec.ts)
+- [`openFile-cold-load.spec.ts`](./sdk-editor-namespace/openFile-cold-load.spec.ts)
 - [`openFile-failure-taxonomy.spec.ts`](./sdk-editor-namespace/openFile-failure-taxonomy.spec.ts)
 - [`openFile-happy.spec.ts`](./sdk-editor-namespace/openFile-happy.spec.ts)
 - [`openFile-line.spec.ts`](./sdk-editor-namespace/openFile-line.spec.ts)
