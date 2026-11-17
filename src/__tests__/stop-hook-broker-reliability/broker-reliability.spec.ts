@@ -28,6 +28,7 @@ vi.mock('../../../electron/main/lib/read-fh-capped', () => ({
   ),
 }));
 
+import { opendir, stat } from 'node:fs/promises';
 import { createHookFileBroker } from '../../../electron/main/services/mcp-tools-hook-bridge';
 
 afterEach(() => {
@@ -133,5 +134,61 @@ describe('调用方断开', () => {
       broker.awaitNext({ windowId: 7, runner: 'cc', cwd: '/ws', timeoutMs: 600_000 }, controller.signal),
     ).rejects.toThrow(/disconnect|abort/i);
     expect(broker.cancelByWindow(7)).toBe(0);
+  });
+});
+
+// perf:start() 在首窗创建前处理目录存量(最多 4096 个文件)。此前逐文件串行 stat+read+parse,
+// 首窗延迟 = 所有文件 I/O 之和。改为有界并发读取,但按文件名顺序提交结果(buffered 先后不变)。
+describe('启动存量扫描', () => {
+  it('有界并发读取,按文件名顺序入 buffered', async () => {
+    const names = Array.from({ length: 40 }, (_, i) => `codex_4_${1000 + i}.jsonl`);
+    vi.mocked(opendir).mockImplementationOnce((async () => ({
+      async *[Symbol.asyncIterator]() {
+        // 乱序枚举:broker 自行按文件名排序
+        for (const name of [...names].reverse()) yield { name };
+      },
+      close: async () => undefined,
+    })) as unknown as typeof opendir);
+    // 中间一个超大文件:不读、直接隔离(提前返回),不能让它打断前后文件的提交顺序链。
+    const oversize = names[20]!;
+    vi.mocked(stat).mockImplementation((async (p: string) => ({
+      mtimeMs: Date.now(),
+      size: p.endsWith(oversize) ? 2 * 1024 * 1024 : 10,
+    })) as unknown as typeof stat);
+    const broker = createHookFileBroker('/fake/hooks-backlog', {
+      watchFactory: () => ({ close: () => {} }),
+    });
+    let started = false;
+    const starting = broker.start().then(() => {
+      started = true;
+    });
+    let maxInFlight = 0;
+    let served = 0;
+    while (!started) {
+      await flush();
+      const open = h.reads.splice(0);
+      maxInFlight = Math.max(maxInFlight, open.length);
+      // 倒序完成读取:提交顺序仍须按文件名
+      for (const read of open.reverse()) {
+        read.resolve(`{"session_id":"s${served}"}`);
+        served += 1;
+      }
+      if (open.length === 0) await new Promise((r) => setTimeout(r, 0));
+    }
+    await starting;
+    try {
+      expect(served).toBe(names.length - 1);
+      expect(maxInFlight).toBeGreaterThan(1);
+      expect(maxInFlight).toBeLessThanOrEqual(16);
+      const got: string[] = [];
+      for (let i = 0; i < names.length - 1; i += 1) {
+        const entry = await broker.awaitNext({ windowId: 4, runner: 'codex', cwd: '/ws', timeoutMs: 1000 });
+        got.push('fileName' in entry ? entry.fileName : 'timeout');
+      }
+      expect(got).toEqual(names.filter((name) => name !== oversize));
+    } finally {
+      vi.mocked(stat).mockImplementation((async () => ({ mtimeMs: Date.now(), size: 10 })) as unknown as typeof stat);
+      await broker.stop();
+    }
   });
 });
