@@ -17,6 +17,7 @@ BDD coverage for issue #38: integrated terminal search with xterm search addon w
 - S9 Late `onDidChangeResults` events after unmount are ignored.
 - S10 Search command scopes to the active terminal panel and does not open hidden or non-terminal panels.
 - S11 正则模式下非法正则(`[` / `(` / `\`)不抛错:调用侧预校验,不交给 SearchAddon,清高亮并把结果置为「无匹配」,搜索条照常可用;改回合法正则后照常搜索;之前合法搜索留下的 xterm 选中(selection)一并清除(`invalid-regex.spec.ts`)。
+- S12 输入搜索词的 `findNext`(同步扫描整段 scrollback)防抖 `TERMINAL_SEARCH_DEBOUNCE_MS`(100ms):输入框状态立即更新,停顿后只按最终词搜一次;Enter/上下跳转/选项切换/失焦先 flush 再执行;关闭/清空/卸载/切 session 取消挂起搜索(`search-debounce.spec.ts`)。
 
 ## Manual smoke test checklist
 

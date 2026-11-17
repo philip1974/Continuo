@@ -258,6 +258,18 @@ function queueCoversSnapshot(
   return next >= endOffset;
 }
 
+/** 侧栏拖宽停下后补一次 fit 的等待时间(RO 漏报兜底,见 sidebarWidth 订阅)。 */
+export const SIDEBAR_WIDTH_FIT_SETTLE_MS = 100;
+
+/** 搜索词输入 → SearchAddon.findNext 的防抖间隔(见 pendingSearchTimerRef)。 */
+export const TERMINAL_SEARCH_DEBOUNCE_MS = 100;
+
+function cancelTimer(ref: { current: ReturnType<typeof setTimeout> | null }): void {
+  if (ref.current === null) return;
+  clearTimeout(ref.current);
+  ref.current = null;
+}
+
 const TERM_OPTIONS = {
   scrollback: 20000, // 跑 Agent CLI 大输出留余量(决策 #3)
   fontSize: 13,
@@ -325,6 +337,10 @@ export function useTerminal(termId: string) {
   const searchStateRef = useRef<TerminalSearchState>(
     INITIAL_TERMINAL_SEARCH_STATE,
   );
+  // 性能:输入搜索词时 SearchAddon.findNext 同步扫描整段 scrollback(最多 2 万行)并重建高亮,
+  // 每次按键都跑会卡输入。输入框状态立即更新,findNext 副作用防抖到停顿后再跑;其它搜索动作
+  // (Enter/上下跳转/选项切换/失焦)先 flush,关闭/卸载/切 session 则取消。
+  const pendingSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -659,6 +675,8 @@ export function useTerminal(termId: string) {
 
     return () => {
       mountedRef.current = false;
+      // 未触发的防抖搜索属于即将拆除的 term,别让它落到新 session 的 addon 上
+      cancelTimer(pendingSearchTimerRef);
       waitRo?.disconnect();
       cleanupTerm?.();
     };
@@ -696,13 +714,33 @@ export function useTerminal(termId: string) {
   // 事件驱动 fit 兜底:订阅 layoutUi 的 sidebarOpen/Width,变化下一帧强制 fit。
   // RAF 让 React 完成 layout 提交后再量;与 RO 重叠不会有副作用(fit 幂等)。
   const sidebarOpen = useLayoutUiStore((s) => s.sidebarOpen);
-  const sidebarWidth = useLayoutUiStore((s) => s.sidebarWidth);
   useEffect(() => {
     const debouncer = resizeDebouncerRef.current;
     if (!debouncer) return;
     const raf = requestAnimationFrame(() => debouncer.request());
     return () => cancelAnimationFrame(raf);
-  }, [sidebarOpen, sidebarWidth, termId]);
+  }, [sidebarOpen, termId]);
+
+  // 性能:侧栏拖宽每个 mousemove 都写 sidebarWidth。拖动期间的连续 fit 由容器 ResizeObserver
+  // 负责;这里只是 RO 漏报的兜底,不走 React 订阅(否则每像素让所有终端重渲染),改为 imperative
+  // subscribe + 尾随防抖:拖动停下后必定补一次 fit。
+  useEffect(() => {
+    let prevWidth = useLayoutUiStore.getState().sidebarWidth;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const unsubscribe = useLayoutUiStore.subscribe((state) => {
+      if (state.sidebarWidth === prevWidth) return;
+      prevWidth = state.sidebarWidth;
+      if (timer !== null) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        resizeDebouncerRef.current?.request();
+      }, SIDEBAR_WIDTH_FIT_SETTLE_MS);
+    });
+    return () => {
+      unsubscribe();
+      if (timer !== null) clearTimeout(timer);
+    };
+  }, [termId]);
 
   // 激活 / 切回可见:立即 fit。
   const fit = useCallback(() => {
@@ -725,7 +763,7 @@ export function useTerminal(termId: string) {
   // leaving the real path uncovered). All 7 search callbacks now share this
   // one chokepoint; behavior is identical, state machine + side effects
   // now share a single tested implementation.
-  const dispatchSearchAction = useCallback((action: TerminalSearchAction) => {
+  const runSearchAction = useCallback((action: TerminalSearchAction) => {
     // issue #42 round-3 (D.4/E.2): React state updater MUST be pure.
     // Compute synchronously: read ref → apply side effect → assign ref →
     // enqueue plain state value.
@@ -752,6 +790,41 @@ export function useTerminal(termId: string) {
     searchStateRef.current = next;
     setSearchState(next);
   }, []);
+
+  // 立即执行挂起的「按当前词搜索」:与未防抖时最后一次按键触发的 findNext 等价。
+  const flushPendingSearch = useCallback(() => {
+    if (pendingSearchTimerRef.current === null) return;
+    clearTimeout(pendingSearchTimerRef.current);
+    pendingSearchTimerRef.current = null;
+    runSearchAction({ type: 'setTerm', term: searchStateRef.current.term });
+  }, [runSearchAction]);
+
+  const dispatchSearchAction = useCallback(
+    (action: TerminalSearchAction) => {
+      if (action.type === 'setTerm' && action.term.length > 0) {
+        // 只更新输入框状态(reducer 纯函数,不碰 addon),findNext 防抖
+        const next = terminalSearchReducer(searchStateRef.current, action);
+        searchStateRef.current = next;
+        setSearchState(next);
+        if (pendingSearchTimerRef.current !== null) {
+          clearTimeout(pendingSearchTimerRef.current);
+        }
+        pendingSearchTimerRef.current = setTimeout(() => {
+          pendingSearchTimerRef.current = null;
+          runSearchAction({ type: 'setTerm', term: searchStateRef.current.term });
+        }, TERMINAL_SEARCH_DEBOUNCE_MS);
+        return;
+      }
+      if (action.type === 'close' || action.type === 'setTerm') {
+        // 关闭会清高亮、空词会清高亮:挂起的搜索已无意义,直接取消
+        cancelTimer(pendingSearchTimerRef);
+      } else {
+        flushPendingSearch();
+      }
+      runSearchAction(action);
+    },
+    [runSearchAction, flushPendingSearch],
+  );
   dispatchSearchActionRef.current = dispatchSearchAction;
 
   const openSearch = useCallback(() => {

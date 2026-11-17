@@ -368,6 +368,7 @@
 ## [shell decor / Splash / PopoutHost 装饰组件](./decor-shell/README.md)
 
 - [`decor-shell.spec.tsx`](./decor-shell/decor-shell.spec.tsx)
+- [`splash-lifecycle.spec.tsx`](./decor-shell/splash-lifecycle.spec.tsx)
 
 ## [design-system](./design-system/README.md)
 
@@ -419,6 +420,10 @@
 
 - [`api-rebuild.spec.tsx`](./dock-reconciler-api-rebuild/api-rebuild.spec.tsx)
 - [`restore-after-fromjson.spec.tsx`](./dock-reconciler-api-rebuild/restore-after-fromjson.spec.tsx)
+
+## [dock-reconciler-seen-prune](./dock-reconciler-seen-prune/README.md)
+
+- [`seen-prune.spec.tsx`](./dock-reconciler-seen-prune/seen-prune.spec.tsx)
 
 ## [dock-reconciler-windowid-filter](./dock-reconciler-windowid-filter/README.md)
 
@@ -1201,6 +1206,7 @@
 ## [terminal-resize-debounce](./terminal-resize-debounce/README.md)
 
 - [`resize-debounce.spec.ts`](./terminal-resize-debounce/resize-debounce.spec.ts)
+- [`sidebar-width-subscription.spec.ts`](./terminal-resize-debounce/sidebar-width-subscription.spec.ts)
 
 ## [terminal-search](./terminal-search/README.md)
 
@@ -1208,6 +1214,7 @@
 - [`invalid-regex.spec.ts`](./terminal-search/invalid-regex.spec.ts)
 - [`keymap.spec.ts`](./terminal-search/keymap.spec.ts)
 - [`search-bar.spec.tsx`](./terminal-search/search-bar.spec.tsx)
+- [`search-debounce.spec.ts`](./terminal-search/search-debounce.spec.ts)
 - [`state-machine.spec.ts`](./terminal-search/state-machine.spec.ts)
 
 ## [terminal-service (M-Terminal Step T1)](./terminal-service/README.md)

@@ -22,8 +22,7 @@ import { coApi } from '@/lib/co-api';
 import { isPopoutWindow } from '@/lib/popout-mode';
 import {
   resolveDroppedWorkspace,
-  captureBoundedFiles,
-  hasDirectoryInFirstItems,
+  captureDropCandidates,
   hasFiles,
   MAX_DROP_FILES,
 } from '@/lib/window-drop';
@@ -38,16 +37,10 @@ import { ToastViewport } from '@/notifications/ToastViewport';
 import { LanguageFromSettings } from '@/plugins/settings/LanguageFromSettings';
 import { notifyFailure, notifyThrownError } from '@/notifications/notify-thrown-error';
 
-const SPLASH_MIN_MS = 600;
-
 function MainApp() {
+  // 性能:Splash 只遮住布局恢复期,布局就绪即移除(此前另有 600ms 最短展示,布局 80ms 就绪也要
+  // 再白等 ~500ms 才可交互)。
   const [layoutReady, setLayoutReady] = useState(false);
-  const [splashElapsed, setSplashElapsed] = useState(false);
-
-  useEffect(() => {
-    const t = setTimeout(() => setSplashElapsed(true), SPLASH_MIN_MS);
-    return () => clearTimeout(t);
-  }, []);
 
   // 全局 ⌘P / Ctrl+P 触发 Quick Open(文件搜索,VSCode 同款)
   useQuickOpenHotkey();
@@ -106,11 +99,11 @@ function MainApp() {
       // 边界(E114,E176 有界化):仅检查前 MAX_DROP_FILES 个 item,与 pickDroppedDirectory 的探测
       // 上限对齐,防超大拖放在同步 hadDirectory 探测处放大。E176:改用 hasDirectoryInFirstItems 按索引
       // 有界循环,不再 `Array.from(dt.items).slice(...)` 全量物化 DataTransferItemList(与 captureBoundedFiles 同款)。
-      const hadDirectory = hasDirectoryInFirstItems(dt.items, MAX_DROP_FILES);
       // 边界(E118,E114 残留 + E116 同款):同步有界捕获 dt.files(最多 MAX_DROP_FILES 个,
       // 即 pickDroppedDirectory 的探测上限),不在调用点全量 Array.from 物化超大 FileList;
       // 且同步捕获避免进入 async 后 DataTransfer.files 失效。
-      const droppedFiles = captureBoundedFiles(dt.files, MAX_DROP_FILES);
+      // 性能:webkitGetAsEntry 已能判定时只探测目录(纯文件拖入零 listDir IPC),否则回退全量探测。
+      const { files: droppedFiles, hadDirectory } = captureDropCandidates(dt, MAX_DROP_FILES);
       const isLatest = workspaceRootSelectionGuard.begin(); // race(R18→R27):标记本次 root 选择为最新(全窗口共享守卫)
       void (async () => {
         try {
@@ -141,7 +134,7 @@ function MainApp() {
   }, [setRoot]);
 
   const onLayoutReady = useCallback(() => setLayoutReady(true), []);
-  const showSplash = !(layoutReady && splashElapsed);
+  const showSplash = !layoutReady;
 
   return (
     <>

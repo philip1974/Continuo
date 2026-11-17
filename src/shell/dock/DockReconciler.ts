@@ -44,9 +44,33 @@ const PENDING_FOCUS_TTL_MS = 5000;
 // 旧 workspace 的 user terminal(workspaceRoot 过滤后隐藏、切回再现 = 重新进 added)会被误判
 // 为新建而 setActive 抢焦点,用户可能在错误面板继续键盘输入。重现的 session 已在此 set 中 →
 // 不走兜底。真正新建的 session 不在 set 中 → 保留兜底聚焦(对照 startup 注释的设计意图)。
-// 永久保留(不在 reconciler removed 循环里剪除:那里无法区分「workspace 隐藏」与「真关闭」,
-// 剪了会让 workspace 切回再被当首次出现重新抢焦)。
+// 不在 reconciler removed 循环里剪除:那里只看到 workspace 过滤后的可见列表,无法区分「workspace
+// 隐藏」与「真关闭」,剪了会让 workspace 切回再被当首次出现重新抢焦。
+// 性能(内存):只增不删会随进程生命周期内创建过的终端总数无界增长 → 由 TerminalSessionsSync 在
+// 收到权威的本窗口 sessions 快照(owner 过滤后、workspace 过滤前)时调 pruneReconcilerSeenSessions
+// 剪掉已不存在的 id(workspace 隐藏的 session 仍在该快照里,不受影响)。
 const everAddedSessionIds = new Set<string>();
+
+/**
+ * 剪除 everAddedSessionIds 中已不在 `liveOwnedSessions` 的 id。`liveOwnedSessions` 必须是**未按
+ * workspace 过滤**的本窗口 sessions 快照(TerminalSessionsSync 的 rawOwned)—— 传可见列表会把
+ * workspace 隐藏的 session 剪掉,切回时被误判首次出现而抢焦(R25)。
+ */
+export function pruneReconcilerSeenSessions(
+  liveOwnedSessions: readonly TerminalSession[],
+): void {
+  if (everAddedSessionIds.size === 0) return;
+  const live = new Set<string>();
+  for (const s of liveOwnedSessions) live.add(s.id);
+  for (const id of everAddedSessionIds) {
+    if (!live.has(id)) everAddedSessionIds.delete(id);
+  }
+}
+
+/** 仅测试用:当前 first-appearance 记录条数(验证有界)。 */
+export function __reconcilerSeenSessionCountForTest(): number {
+  return everAddedSessionIds.size;
+}
 
 /** 仅测试用:重置模块级 first-appearance 记录。 */
 export function __resetReconcilerForTest(): void {

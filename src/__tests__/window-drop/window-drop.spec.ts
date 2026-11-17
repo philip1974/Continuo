@@ -3,6 +3,7 @@ import {
   pickDroppedDirectory,
   resolveDroppedWorkspace,
   captureBoundedFiles,
+  captureDropCandidates,
   hasDirectoryInFirstItems,
   hasFiles,
   MAX_DROP_FILES,
@@ -296,5 +297,81 @@ describe('resolveDroppedWorkspace (A149)', () => {
       async () => ({ ok: false, code: 'ENOTDIR', message: 'not dir' }),
     );
     expect(r).toEqual({ kind: 'ignore' });
+  });
+});
+
+// 性能:drop 回调同步用 webkitGetAsEntry 选出目录候选,纯文件拖入不再逐个 listDir IPC。
+describe('captureDropCandidates(纯文件拖入零目录探测)', () => {
+  const file = (name: string) => ({ name }) as unknown as File;
+  const item = (isDirectory: boolean | null, kind = 'file') => ({
+    kind,
+    webkitGetAsEntry: () => (isDirectory === null ? null : { isDirectory }),
+  });
+
+  it('全部是文件 → 候选为空、hadDirectory=false;resolveDroppedWorkspace 零 IPC 即 ignore', async () => {
+    const files = [file('a'), file('b'), file('c')];
+    const r = captureDropCandidates(
+      { files, items: [item(false), item(false), item(false)] },
+      MAX_DROP_FILES,
+    );
+    expect(r).toEqual({ files: [], hadDirectory: false });
+    let ipc = 0;
+    const res = await resolveDroppedWorkspace(
+      { files: r.files },
+      r.hadDirectory,
+      (f) => `/abs/${f.name}`,
+      async () => {
+        ipc++;
+        return { ok: false, code: 'ENOTDIR' };
+      },
+    );
+    expect(res).toEqual({ kind: 'ignore' });
+    expect(ipc).toBe(0);
+  });
+
+  it('混合 → 只保留目录且保持原顺序(第一个可打开目录语义不变);非文件 item 不占下标', async () => {
+    const files = [file('a.md'), file('d1'), file('b.md'), file('d2')];
+    const items = [item(false), item(null, 'string'), item(true), item(false), item(true)];
+    const r = captureDropCandidates({ files, items }, MAX_DROP_FILES);
+    expect(r.files.map((f) => f.name)).toEqual(['d1', 'd2']);
+    expect(r.hadDirectory).toBe(true);
+    const probed: string[] = [];
+    const res = await resolveDroppedWorkspace(
+      { files: r.files },
+      r.hadDirectory,
+      (f) => `/abs/${f.name}`,
+      async (p) => {
+        probed.push(p);
+        return p === '/abs/d1' ? { ok: false, code: 'EACCES' } : { ok: true };
+      },
+    );
+    expect(probed).toEqual(['/abs/d1', '/abs/d2']);
+    expect(res).toEqual({ kind: 'open', path: '/abs/d2' });
+  });
+
+  it('无法判定(webkitGetAsEntry 缺失/返 null/items 缺失/与 files 对不上)→ 回退全部文件', () => {
+    const files = [file('a'), file('b')];
+    const fallback = { files, hadDirectory: false };
+    expect(captureDropCandidates({ files, items: [item(false), item(null)] }, MAX_DROP_FILES)).toEqual(
+      fallback,
+    );
+    expect(captureDropCandidates({ files, items: [{ kind: 'file' }, item(false)] }, MAX_DROP_FILES)).toEqual(
+      fallback,
+    );
+    expect(captureDropCandidates({ files, items: null }, MAX_DROP_FILES)).toEqual(fallback);
+    expect(captureDropCandidates({ files, items: [item(false)] }, MAX_DROP_FILES)).toEqual(fallback);
+    // 回退时 hadDirectory 仍按已知 entry 判定
+    expect(
+      captureDropCandidates({ files, items: [item(true), item(null)] }, MAX_DROP_FILES),
+    ).toEqual({ files, hadDirectory: true });
+  });
+
+  it('超过 max → 只判定前 max 个文件', () => {
+    const files = [file('a'), file('d'), file('late-dir')];
+    const r = captureDropCandidates(
+      { files, items: [item(false), item(true), item(true)] },
+      2,
+    );
+    expect(r.files.map((f) => f.name)).toEqual(['d']);
   });
 });
