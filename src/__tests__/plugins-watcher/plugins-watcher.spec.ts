@@ -611,5 +611,42 @@ describe('createPluginsWatcher', () => {
       await w.tick();
       expect(fn).toHaveBeenCalledWith('a');
     });
+
+    // 单次扫描耗时超过周期(网络家目录 + 数百插件目录)时每个 tick 都会置 pending,在途循环不结束;
+    // ensureBaseline 只等首轮扫描,否则 LIST_DIRS 永远等待、插件永不激活。
+    it('单次扫描耗时 > 周期且持续有 tick → ensureBaseline 在首轮扫描结束后即返回', async () => {
+      makeDir('a', { id: 'a', name: 'A', version: '0.1.0' });
+      const realSetTimeout = globalThis.setTimeout;
+      const realSleep = (ms: number) => new Promise((r) => realSetTimeout(r, ms));
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+      try {
+        const realOpendir = fsp.opendir.bind(fsp);
+        let scans = 0;
+        vi.spyOn(fsp, 'opendir').mockImplementation((async (...args: Parameters<typeof fsp.opendir>) => {
+          scans += 1;
+          await new Promise((r) => setTimeout(r, 3000)); // 每轮扫描 3s > 周期 2s
+          return realOpendir(...args);
+        }) as typeof fsp.opendir);
+        const w = createPluginsWatcher(tmp, vi.fn());
+        const handle = w.start(2000, { immediate: false });
+        await vi.advanceTimersByTimeAsync(2000); // 首个周期 → 首扫开始
+        expect(scans).toBe(1);
+        let done = false;
+        void w.ensureBaseline().then(() => {
+          done = true;
+        });
+        for (let i = 0; i < 20 && !done; i += 1) {
+          await vi.advanceTimersByTimeAsync(1000);
+          await realSleep(10); // 让真实 fs I/O 完成
+        }
+        expect(done).toBe(true);
+        expect(scans).toBeGreaterThanOrEqual(2); // 循环仍在补跑(周期 tick 持续置 pending)
+        handle.dispose();
+        await vi.advanceTimersByTimeAsync(5000);
+        await realSleep(10);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 });

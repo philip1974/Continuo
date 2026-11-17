@@ -19,7 +19,8 @@
 - 单 plugin manifest 解析失败 / main 文件缺失 → 跳过该 plugin,其它继续
 - start(intervalMs) 启动 setInterval,返 dispose 停 timer
 - `start(intervalMs, { immediate:false })` 不立即首扫(生产用法:冷启动不与启动 IO 争 libuv 线程池),首扫等第一个周期
-- `ensureBaseline()`:基线已建立 → 立即返回;首扫在途 → 等它结束;未开始 → 立即扫一次并等待(失败也返回)
+- `ensureBaseline()`:基线已建立 → 立即返回;首扫在途 → 只等首轮扫描结束(不等其后因周期 tick 补跑的扫描:单次扫描
+  慢于周期时循环可一直不结束);未开始 → 立即扫一次并等待(失败也返回)
 - `LIST_DIRS` 在列举前 `await ensureBaseline()`(串行):列举之后的插件修改必被下一轮 tick 广播 CHANGED,
   无「基线吞掉修改」的漏报窗口(`list-dirs-baseline.spec.ts`)
 - 同 plugin 多次连续触发不去重(由 renderer 端节流;通常 mtime 跨 tick 变一次)

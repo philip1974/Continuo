@@ -1505,8 +1505,16 @@ export function createPluginsWatcher(
   // pending,当前扫描结束后补跑一次。记录表/firstRun 只在串行的 runScan 内更新。
   let running = false;
   let pending = false;
-  // 在途扫描循环(含 pending 补跑);供 ensureBaseline 等待。
-  let inflight: Promise<void> | null = null;
+  // 首轮扫描(基线)完成信号,供 ensureBaseline 等待。只等首轮、不等整个在途循环:单次扫描耗时超过周期时
+  // 每个周期 tick 都会置 pending,循环可一直补跑不结束,等整个循环会让 LIST_DIRS 永远挂住。循环在基线建立
+  // 之前结束(扫描抛错 / 被取消)时也结算(best-effort,不挂住调用方;下次 ensureBaseline 重新发起)。
+  let firstScanDone: Promise<void> | null = null;
+  let settleFirstScan: (() => void) | null = null;
+  const markFirstScanSettled = () => {
+    settleFirstScan?.();
+    settleFirstScan = null;
+    firstScanDone = null;
+  };
   let truncationWarned = false;
 
   // perf:manifest 解析结果缓存(目录名 → manifest 的 stat 签名 + 解析结果)。此前每 2s 对每个插件
@@ -1699,6 +1707,7 @@ export function createPluginsWatcher(
       deleteMissing(oldest);
     }
     firstRun = false;
+    markFirstScanSettled();
   };
 
   // 单飞包装:重入则置 pending,当前扫描结束后串行补跑(不并发)。
@@ -1709,26 +1718,29 @@ export function createPluginsWatcher(
       return;
     }
     running = true;
-    const loop = (async () => {
-      try {
-        do {
-          pending = false;
-          await runScan();
-        } while (pending && !cancelled);
-      } finally {
-        running = false;
-        inflight = null;
-      }
-    })();
-    inflight = loop;
-    await loop;
+    if (firstRun && firstScanDone === null) {
+      firstScanDone = new Promise<void>((resolve) => {
+        settleFirstScan = resolve;
+      });
+    }
+    try {
+      do {
+        pending = false;
+        await runScan();
+      } while (pending && !cancelled);
+    } finally {
+      running = false;
+      markFirstScanSettled();
+    }
   };
 
   return {
     tick,
     ensureBaseline: async () => {
       if (!firstRun || cancelled) return;
-      await (inflight ?? tick()).catch(() => {});
+      // 未在扫描 → 发起(同步进入循环并建立 firstScanDone);在扫描 → 该循环必始于基线建立前(firstRun 单向)。
+      if (!running) void tick().catch(() => {});
+      await firstScanDone;
     },
     start: (intervalMs = 2000, { immediate = true } = {}) => {
       cancelled = false;
