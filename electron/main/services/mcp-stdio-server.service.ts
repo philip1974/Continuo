@@ -419,8 +419,9 @@ export async function createStdioSocketServer(
       // main 进程内存增长/OOM。回 parse 错误并断开;aborter 由 close 处理统一清理。
       // 边界(E127,E125 同族):按**真实 UTF-8 字节**判上限(非 .length=UTF-16 code unit),否则
       // CJK/emoji 大行真实字节可数倍超 1MB 仍放行/继续累积,削弱输入背压并让超大 JSON 进 parse。
+      // perf P2:残行字节数由 decoder 增量维护(≡ utf8ByteLength(buffered)),不再每个分块全量重算整个残行。
       if (
-        utf8BytesExceed(lineDecoder.buffered, MAX_STDIO_LINE_BYTES) ||
+        lineDecoder.bufferedBytes > MAX_STDIO_LINE_BYTES ||
         hasOversizedStdioLine(lines, MAX_STDIO_LINE_BYTES)
       ) {
         reject('line exceeds maximum size');
