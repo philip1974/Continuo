@@ -26,7 +26,7 @@ import {
   closedAtNow,
 } from './persistence';
 import { EXPLORER_FILE_NAME } from '../shared/explorer-persistence-schema';
-import { restoreStartupWindows } from './services/window-restore.service';
+import { isStartupRestoreInFlight, restoreStartupWindows } from './services/window-restore.service';
 import { pickStartupMode } from './services/startup-mode.service';
 import {
   pickArgvFolders,
@@ -623,7 +623,8 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
         const entry = ensureWindowEntry(payload, seq);
         entry.lastClosedAt = closedAtNow();
         const protectedSeqs = lruProtectedSeqs();
-        stampMissingClosedAt(payload, protectedSeqs);
+        // 启动恢复未结束时不补写:即将被恢复的段还不在保护集(恢复后开着,补写的启动时刻会让它下次偏旧)。
+        if (!isStartupRestoreInFlight()) stampMissingClosedAt(payload, protectedSeqs);
         pruneLRUClosed(payload, LRU_MAX_CLOSED, protectedSeqs);
         await atomicWriteJson(explorerFile, payload);
       } finally {

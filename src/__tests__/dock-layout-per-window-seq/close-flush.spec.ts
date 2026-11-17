@@ -151,6 +151,7 @@ vi.mock('electron', () => ({
 vi.mock('../../../electron/main/ipc', () => ({ registerIpc: vi.fn() }));
 vi.mock('../../../electron/main/services/window-restore.service', () => ({
   pickWindowsToRestore: vi.fn(() => []),
+  isStartupRestoreInFlight: vi.fn(() => false),
 }));
 vi.mock('../../../electron/main/services/startup-mode.service', () => ({
   pickStartupMode: vi.fn(() => ({ mode: 'restore' })),
@@ -524,6 +525,36 @@ describe('window close layout flush', () => {
     const after = (await loadExplorer(path.join(dir, 'explorer.json')))!.windows;
     expect(after.find((w) => w.windowSeq === 100)?.lastClosedAt).toEqual(expect.any(Number));
     expect(after.find((w) => w.windowSeq === 101)?.lastClosedAt).toEqual(expect.any(Number));
+  });
+
+  it('T20f: 启动恢复阶段未结束时关窗 → 不给缺时间戳的段补写(它们可能即将被恢复并开着);自身段照写', async () => {
+    const { isStartupRestoreInFlight } = await import(
+      '../../../electron/main/services/window-restore.service'
+    );
+    vi.mocked(isStartupRestoreInFlight).mockReturnValue(true);
+    try {
+      const sortDefault = { by: 'name' as const, reverse: false };
+      const payload = defaultExplorerV3();
+      payload.windows = [
+        payload.windows[0]!,
+        {
+          windowSeq: 100,
+          workspace: { root: '/w100' },
+          explorer: { activePath: null, expandedPaths: [], sort: sortDefault },
+        },
+      ];
+      await saveExplorer(path.join(dir, 'explorer.json'), payload);
+      const closing = createMockMainWindow(300);
+
+      closing.close();
+      ack(closing);
+      await waitForLastClosedAt(300);
+
+      const after = (await loadExplorer(path.join(dir, 'explorer.json')))!.windows;
+      expect(after.find((w) => w.windowSeq === 100)?.lastClosedAt).toBeUndefined();
+    } finally {
+      vi.mocked(isStartupRestoreInFlight).mockReturnValue(false);
+    }
   });
 
   it('T20d: 两窗近同时关闭 → 先落盘的 LRU 不摘另一个仍在关闭中(尚未写 lastClosedAt)的窗口段', async () => {

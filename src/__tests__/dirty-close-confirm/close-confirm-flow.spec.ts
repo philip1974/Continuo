@@ -153,6 +153,7 @@ vi.mock('electron', () => ({
 vi.mock('../../../electron/main/ipc', () => ({ registerIpc: vi.fn() }));
 vi.mock('../../../electron/main/services/window-restore.service', () => ({
   pickWindowsToRestore: vi.fn(() => []),
+  isStartupRestoreInFlight: vi.fn(() => false),
 }));
 vi.mock('../../../electron/main/services/startup-mode.service', () => ({
   pickStartupMode: vi.fn(() => ({ mode: 'restore' })),

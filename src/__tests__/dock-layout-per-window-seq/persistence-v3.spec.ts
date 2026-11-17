@@ -325,6 +325,15 @@ describe('explorer.json v3 persistence schema and merge semantics', () => {
       expect(by.get(1)!).toBeLessThanOrEqual(closedAtNow());
     });
 
+    it('stampMissingClosedAt:schema 允许的 lastClosedAt: null 同样视为缺失并补写(与 LRU 排序键的 ?? 一致)', () => {
+      const payload = defaultExplorerV3();
+      payload.windows = [payload.windows[0]!, { ...closedWindow(1, undefined), lastClosedAt: null }];
+
+      stampMissingClosedAt(payload, new Set([0]));
+
+      expect(typeof payload.windows[1]!.lastClosedAt).toBe('number');
+    });
+
     it('缺 lastClosedAt 的段本身超限(数据异常):有时间戳段先摘完,其余按数组顺序稳定摘,且不抛', () => {
       const payload = defaultExplorerV3();
       payload.windows = [

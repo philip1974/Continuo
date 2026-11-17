@@ -119,10 +119,25 @@ export async function restoreStartupWindows(
   createWindow: (entry: RestoreEntry) => void,
   isCancelled: () => boolean,
 ): Promise<void> {
-  const data = await load();
-  if (!data || isCancelled()) return;
-  for (const entry of await pickWindowsToRestore(data, isExistingDir, isCancelled)) {
-    if (isCancelled()) return;
-    createWindow(entry);
+  restoreInFlight += 1;
+  try {
+    const data = await load();
+    if (!data || isCancelled()) return;
+    for (const entry of await pickWindowsToRestore(data, isExistingDir, isCancelled)) {
+      if (isCancelled()) return;
+      createWindow(entry);
+    }
+  } finally {
+    restoreInFlight -= 1;
   }
+}
+
+let restoreInFlight = 0;
+
+/**
+ * 启动恢复阶段是否未结束(完成 / 失败 / 取消都算结束)。此阶段内即将被恢复的段尚不在 LRU 保护集,
+ * 关窗写盘不得给它们补写缺失的 lastClosedAt(否则恢复后开着的窗口段带着本次启动时刻,下次启动反而偏旧)。
+ */
+export function isStartupRestoreInFlight(): boolean {
+  return restoreInFlight > 0;
 }

@@ -158,7 +158,8 @@ export function stampMissingClosedAt(
   protectedSeqs: ReadonlySet<number>,
 ): void {
   for (const w of payload.windows) {
-    if (w.lastClosedAt === undefined && !protectedSeqs.has(w.windowSeq)) {
+    // schema 允许 null(与 lruClosedAt 的 ?? 一致视为缺失)。
+    if (w.lastClosedAt == null && !protectedSeqs.has(w.windowSeq)) {
       w.lastClosedAt = PROCESS_BOOT_MS;
     }
   }

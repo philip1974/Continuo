@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   pickWindowsToRestore,
   restoreStartupWindows,
+  isStartupRestoreInFlight,
   MAX_RESTORE_WINDOWS,
   MAX_RESTORE_CHECKS,
   RESTORE_CHECK_CONCURRENCY,
@@ -387,5 +388,38 @@ describe('restoreStartupWindows · 启动恢复可取消(退出 / 全部关窗�
     const create = vi.fn();
     await restoreStartupWindows(async () => null, allDirs, create, () => false);
     expect(create).not.toHaveBeenCalled();
+  });
+});
+
+// 恢复阶段内(读盘 + 异步 stat 期间)即将被恢复的段不在 LRU 保护集:关窗写盘不得给它们补写启动时刻
+//(恢复后它们开着,下次启动反而排得偏旧)。index.ts 据此在恢复结束前跳过补写。
+describe('isStartupRestoreInFlight · 启动恢复阶段标志', () => {
+  const data = snap([
+    win({ windowSeq: 0, workspace: { root: '/p0' } }),
+    win({ windowSeq: 1, workspace: { root: '/p1' } }),
+  ]);
+
+  it('恢复开始前为 false;stat 在途时为 true;建窗完成后回到 false', async () => {
+    expect(isStartupRestoreInFlight()).toBe(false);
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const create = vi.fn();
+    const p = restoreStartupWindows(async () => data, async () => { await gate; return true; }, create, () => false);
+    expect(isStartupRestoreInFlight()).toBe(true);
+    release();
+    await p;
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(isStartupRestoreInFlight()).toBe(false);
+  });
+
+  it('读盘失败 / 被取消 / 无数据 → 同样结束恢复阶段', async () => {
+    await expect(
+      restoreStartupWindows(async () => { throw new Error('boom'); }, allDirs, vi.fn(), () => false),
+    ).rejects.toThrow('boom');
+    expect(isStartupRestoreInFlight()).toBe(false);
+    await restoreStartupWindows(async () => data, allDirs, vi.fn(), () => true);
+    expect(isStartupRestoreInFlight()).toBe(false);
+    await restoreStartupWindows(async () => null, allDirs, vi.fn(), () => false);
+    expect(isStartupRestoreInFlight()).toBe(false);
   });
 });
