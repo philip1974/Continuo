@@ -41,6 +41,7 @@ import {
   saveDirtyTabsForClose,
 } from './dirty-close';
 import { coApi } from '@/lib/co-api';
+import { readDockLayout } from './layout-prefetch';
 import { notify } from '@/notifications/notify';
 import { t as translate } from '@/i18n';
 import '@/styles/dockview.css';
@@ -258,7 +259,8 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       let persisted: unknown = null;
       let restoreFailed = false;
       try {
-        const readResult = await coApi.layout.read();
+        // 性能:首次 onReady 取用 init() 开头的预取结果;之后的 onReady(重建 / StrictMode)重新读取。
+        const readResult = await readDockLayout();
         if (readResult.ok) {
           persisted = readResult.data;
         } else {

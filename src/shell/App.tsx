@@ -30,7 +30,7 @@ import {
 import { workspaceRootSelectionGuard } from '@/lib/workspace-root-guard';
 import {
   useWorkspaceStore,
-  waitForWorkspaceHydrated,
+  waitForWorkspaceRootRestored,
 } from '@/stores/workspace.store';
 import { notifyRootWhenHydrated } from './notify-root-when-hydrated';
 import { NotificationsProvider } from '@/notifications/NotificationsProvider';
@@ -58,14 +58,15 @@ function MainApp() {
   // terminal_create_session 路径 cwd 回退使用。
   // race(R46):initExplorerPersistence 是 fire-and-forget,首帧 root=null(hydrate 未完成)。若
   // 立即 notifyRoot(null) 写进 main 的 window→root map,hydrate 前 MCP/agent 建终端(未显式传 cwd)
-  // 会从空 map 回退成无 workspaceRoot 的全局终端 / 错误 cwd。门控:等 waitForWorkspaceHydrated()
-  // 再推,且 await 后读**最新** root(getState)而非首帧捕获值。hydrate 后该 Promise 立即 resolve,
-  // 正常 root 变更无延迟。renderer 自身新建终端早已用同一门控(createUserTerminal)。
+  // 会从空 map 回退成无 workspaceRoot 的全局终端 / 错误 cwd。门控:等 root 恢复
+  //(waitForWorkspaceRootRestored;只需 root,不等编辑器 tab 恢复读盘)再推,且 await 后读**最新** root
+  //(getState)而非首帧捕获值。恢复后该 Promise 立即 resolve,正常 root 变更无延迟。renderer 自身新建
+  // 终端用同一门控(createUserTerminal)。
   const workspaceRoot = useWorkspaceStore((s) => s.root);
   useEffect(() => {
     let cancelled = false;
     void notifyRootWhenHydrated({
-      waitHydrated: waitForWorkspaceHydrated,
+      waitHydrated: waitForWorkspaceRootRestored,
       getRoot: () => useWorkspaceStore.getState().root,
       notifyRoot: (root) => coApi.window.notifyRoot(root),
       isCancelled: () => cancelled,

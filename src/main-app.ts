@@ -25,6 +25,8 @@ import { startPluginFsScopeRequestBridge } from './plugins/permissions/usePlugin
 import { PermissionError, type PermissionKey } from './plugins/permissions';
 import { sandboxSweep } from './plugins/sandbox-sweep';
 import { captureLmApi, coApi } from './lib/co-api';
+import { isPopoutWindow } from './lib/popout-mode';
+import { prefetchDockLayout } from './shell/dock/layout-prefetch';
 import { useUpdateStore } from './marketplace/update-store';
 import { useKeybindingsStore } from './plugins/keybindings/keybindings-store';
 import { useSettingsValuesStore } from './plugins/settings/values-store';
@@ -104,6 +106,24 @@ export async function init(): Promise<void> {
 
   const container = document.getElementById('root');
   if (!container) throw new Error('#root not found');
+
+  // 性能(冷启动关键路径):两个只读启动 IPC 不再串在 await getLocale 之后,在此并发发起。
+  // - layout.read(main 端读+解析+Zod explorer.json)预取,DockShell 首次 onReady 消费(见 layout-prefetch)。
+  //   popout 子窗口不挂 DockShell、也无 windowSeq 段,不预取。
+  // - explorer.read 先发起,下方 initExplorerPersistence 的 read() 取用这同一个 promise(只取一次)。
+  //   只是提前发 IPC:hydrate 逻辑与 root 选择守卫仍在 initExplorerPersistence 原位置执行。
+  // getLocale 仍在 bootCorePlugins / createRoot 之前 await —— i18n 首次渲染前就绪的契约不变。
+  if (!isPopoutWindow()) prefetchDockLayout();
+  let explorerReadPrefetch: ReturnType<typeof coApi.explorer.read> | null;
+  try {
+    // Promise.resolve:非 promise 返回值(桩 / 异常桥)与原先 `await api.read()` 同样交给 initExplorerPersistence 处理。
+    explorerReadPrefetch = Promise.resolve(coApi.explorer.read());
+  } catch (err) {
+    // 同步抛错与原先在 initExplorerPersistence 的 try 内调用 read() 等价:转成 rejected promise 交给它处理。
+    explorerReadPrefetch = Promise.reject(err);
+  }
+  // 被 initExplorerPersistence 取用前 reject 不应成为 unhandled rejection(取用方 await 仍拿到 reject)。
+  explorerReadPrefetch.catch(() => {});
 
   try {
     const initial = await coApi.i18n.getLocale();
@@ -221,7 +241,12 @@ export async function init(): Promise<void> {
   const initialFresh = parseInitialFresh(search);
   void initExplorerPersistence(
     {
-      read: () => coApi.explorer.read(),
+      // 取用上方提前发起的 explorer.read(仅一次);之后若再调用则照常发新 IPC。
+      read: () => {
+        const p = explorerReadPrefetch ?? coApi.explorer.read();
+        explorerReadPrefetch = null;
+        return p;
+      },
       write: (snap) => coApi.explorer.write(snap),
     },
     {

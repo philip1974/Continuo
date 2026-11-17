@@ -24,7 +24,7 @@ vi.mock('@/notifications/notify', () => ({
 }));
 vi.mock('@/stores/workspace.store', () => ({
   useWorkspaceStore: { getState: mocks.getState },
-  waitForWorkspaceHydrated: mocks.waitHydrated,
+  waitForWorkspaceRootRestored: mocks.waitHydrated,
 }));
 vi.mock('@/shell/dock/DockReconciler', () => ({
   setPendingFocus: mocks.setPendingFocus,
@@ -39,7 +39,7 @@ beforeEach(() => {
 });
 
 describe('createUserTerminal — 共用创建流程', () => {
-  it('先 await hydrate,再读 root 当 cwd/workspaceRoot 调 create', async () => {
+  it('先 await root 恢复(rootRestored),再读 root 当 cwd/workspaceRoot 调 create', async () => {
     mocks.getState.mockReturnValue({ root: '/repo' });
     mocks.create.mockResolvedValue({ ok: true, data: { id: 'term-1' } });
 

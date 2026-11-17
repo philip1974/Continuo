@@ -9,6 +9,8 @@
 //
 // 修:两入口在读 root 前 await waitForWorkspaceHydrated()(已 hydrated 立即返回;markHydrated
 // 在 init 成功/失败/无文件都会调,故不会挂死)。
+// 后续(冷启动关键路径):入口改等 waitForWorkspaceRootRestored()(rootRestored || hydrated)——只需 root,
+// 不等编辑器 tab 恢复读盘;见 startup-critical-path。本文件用 markHydrated(⇒ rootRestored)仍成立。
 
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
@@ -51,7 +53,7 @@ function terminalNewCmd(): CommandSpec {
 
 beforeEach(() => {
   mocks.createTerminal.mockClear();
-  useWorkspaceStore.setState({ hydrated: false, root: null, recentRoots: [] });
+  useWorkspaceStore.setState({ hydrated: false, rootRestored: false, root: null, recentRoots: [] });
 });
 
 describe('topic49 codex-loop R10 · terminal.new 等 hydrate', () => {
