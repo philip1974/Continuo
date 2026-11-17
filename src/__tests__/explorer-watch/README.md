@@ -103,3 +103,9 @@ macOS/Win 根目录 recursive watcher 对任意深度变更都上报其所在目
   dir-changed 不 invalidate/listDir,只记脏目录(从未加载子项的非 root 目录直接忽略)
 - 再次显示时对每个脏目录各刷新一次;显隐本身不触发 unwatchDir / listDir
 - 隐藏前的滚动位置在再次显示时恢复
+
+## renderer reload 释放该窗口的 watcher 引用(`fs-watch-release-on-reload.spec.ts`)
+
+- watch 引用按 BrowserWindow id 记账;sender 主框架非同文档导航(reload)即释放该窗口全部引用(与关窗
+  `releaseFsWatchersForWindow` 同一 `unwatchByOwner` 路径),新文档重新 watch 后折叠一次即关闭 fs.watch
+- 同文档导航(hash / pushState)不释放;其它窗口对同一路径的引用不受影响

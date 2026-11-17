@@ -25,6 +25,7 @@ import { createDir, createFile } from './fs/create';
 import { copyEntry, moveEntry } from './fs/move-copy';
 import { createSameTickPathCoalescer, createWatcherPool, type WatcherCreator } from './fs/watch';
 import { broadcastToWindows } from '../lib/broadcast';
+import { makeWcGoneHook } from '../lib/wc-gone-hook';
 
 // ────────────────────────────────────────────────────────────
 // schemas — 全部 .strict() 拒绝未知字段(防 IPC 注入)
@@ -331,6 +332,18 @@ export function notifyWatchLost(path: string, ownerIds: readonly number[]): void
 
 const watcherPool = createWatcherPool(createFsWatcher, notifyWatchLost);
 
+// watch 引用按 BrowserWindow id 记账,但 renderer reload(webContents 与窗口都不变)时旧文档不会
+// unwatch,新文档又重新 watch 已展开目录 → 旧引用永不释放(折叠后 fs.watch 关不掉、持续广播、占 LRU
+// 名额)。主框架非同文档导航即释放该窗口全部引用,与关窗 releaseFsWatchersForWindow 同一路径;
+// 导航开始在新文档脚本之前,新文档的重新 watch 不受影响。destroyed 时关窗路径已释放,这里幂等。
+// dockview popout 的面板经 portal 由主窗 renderer 渲染,watch 的 sender 是主窗 webContents。
+const watchOwnerByWc = new Map<number, number>();
+const attachWatchWcGoneHook = makeWcGoneHook((wcId) => {
+  const ownerId = watchOwnerByWc.get(wcId);
+  watchOwnerByWc.delete(wcId); // reload 后新文档的 watch 会重新登记;关窗后不留残项
+  if (ownerId !== undefined) watcherPool.unwatchByOwner(ownerId);
+});
+
 // 导出仅供 R66 回归测试(验证单窗口 send 抛错不中断广播);生产仍只经 watcherPool onChange 调用。
 export function broadcastDirChanged(
   path: string,
@@ -405,6 +418,10 @@ export function registerFsIpc(): void {
     watchInputSchema,
     (input, { event }) => {
       const ownerId = BrowserWindow.fromWebContents(event.sender)?.id;
+      if (ownerId !== undefined) {
+        watchOwnerByWc.set(event.sender.id, ownerId);
+        attachWatchWcGoneHook(event.sender);
+      }
       // 广播 creator 上抛的真实变更路径(可能 = input.path,也可能是其
       // recursive 子目录,见 issue #20)。
       watcherPool.watch(
