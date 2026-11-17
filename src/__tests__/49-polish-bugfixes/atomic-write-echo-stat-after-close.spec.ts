@@ -17,6 +17,8 @@ let bumpMtimeOnClose = false;
 let touchAfterRename = false;
 // 模拟 stat(tmp) 失败。
 let failTmpStat = false;
+// 模拟另一进程在本进程关闭写句柄后、stat(tmp) 前删掉并重建同名 tmp(新 inode,内容不同)。
+let replaceTmpAfterClose = false;
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const real = await importOriginal<typeof import('node:fs/promises')>();
@@ -36,6 +38,10 @@ vi.mock('node:fs/promises', async (importOriginal) => {
         if (bumpMtimeOnClose) {
           const t = later();
           await real.utimes(p, t, t);
+        }
+        if (replaceTmpAfterClose && p.endsWith('.continuo.tmp')) {
+          await real.rm(p, { force: true });
+          await real.writeFile(p, 'other process content');
         }
       };
       return fh;
@@ -67,6 +73,7 @@ afterEach(async () => {
   bumpMtimeOnClose = false;
   touchAfterRename = false;
   failTmpStat = false;
+  replaceTmpAfterClose = false;
   for (const d of dirs.splice(0)) await rm(d, { recursive: true, force: true });
 });
 async function tempDir(): Promise<string> {
@@ -105,6 +112,15 @@ describe('49 · atomicWriteFile 回声身份在写句柄关闭后取', () => {
     const file = join(dir, 'doc.md');
     expect(await atomicWriteFile(file, 'NEW')).toBeUndefined();
     expect(await readFile(file, 'utf-8')).toBe('NEW');
+  });
+
+  it('关闭后 stat 前 tmp 被另一进程替换(新 inode)→ undefined,不把别人的内容记成自己的回声', async () => {
+    const d = await tempDir();
+    const f = join(d, 'a.txt');
+    await writeFile(f, 'old');
+    replaceTmpAfterClose = true;
+    const r = await atomicWriteFile(f, 'mine');
+    expect(r).toBeUndefined();
   });
 
   it('stat(tmp) 失败 → 写盘照常成功,返回 undefined', async () => {
