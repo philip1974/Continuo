@@ -1347,7 +1347,8 @@ export async function installFromGit(
         // ~850ms,且全程持有该 id 的 mutation 锁、占 libuv 线程池)。rename 失败(跨卷 EXDEV、Windows
         // 下被占用等)回退原 cp 路径;rename 原子,失败时 cloneDir 原样保留。
         // verbatimSymlinks:与 rename 一致地原样保留仓库内相对链接(默认会改写成指向 tmpRoot 的绝对路径,
-        // finally 删掉 tmpRoot 后链接失效)。
+        // finally 删掉 tmpRoot 后链接失效)。Windows 下 cp 建链接不传类型,目录链接可能被判成 file 类型
+        //(Node fsp.symlink 按目标 stat 判定),与 rename 不完全一致;git 默认 core.symlinks=false,罕见。
         await fs.rename(cloneDir, staging).catch(async () => {
           await cp(cloneDir, staging, { recursive: true, verbatimSymlinks: true });
         });
