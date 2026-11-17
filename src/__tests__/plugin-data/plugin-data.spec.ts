@@ -140,6 +140,23 @@ describe('InMemoryDataStore', () => {
     expect(await ds.read('k')).toBeNull();
   });
 
+  // perf(B-2):预检换成 .length 下界后,判定仍以精确 UTF-8 字节为准 —— CJK(3 字节/字符,.length 远小于
+  // 字节数)恰好等于上限接受,多 1 字节拒。序列化串 = '"' + s + '"'。
+  it('B-2 CJK 序列化字节恰好等于上限 → 接受;+1 字节 → 拒(too large),不写入', async () => {
+    const MAX = 16 * 1024 * 1024;
+    const body = MAX - 2; // 去掉两侧引号
+    const cjk = '中'.repeat(Math.floor(body / 3)) + 'a'.repeat(body % 3);
+    const ds = new InMemoryDataStore();
+    await expect(ds.write('k', cjk)).resolves.toBeUndefined();
+    expect(await ds.read('k')).toBe(cjk);
+
+    const ds2 = new InMemoryDataStore();
+    await expect(ds2.write('k', cjk + 'a')).rejects.toThrow(
+      new RegExp(`too large \\(${MAX + 1} > ${MAX}\\)`),
+    );
+    expect(await ds2.read('k')).toBeNull();
+  });
+
   // 边界(E103):JSON.stringify 静默改写 NaN/Infinity→null、丢 undefined → write 须 assertJsonValue
   // 递归拒非 JSON 安全值,不静默持久化损坏(拒绝后不写)。
   it('E103 写 Infinity → 抛(非有限数),不写入', async () => {
