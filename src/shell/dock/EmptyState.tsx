@@ -41,6 +41,10 @@ export function EmptyState({ onRestore }: { onRestore: () => void }) {
     document.addEventListener('visibilitychange', onChange);
     window.addEventListener('focus', onFocus);
     window.addEventListener('blur', onBlur);
+    // 初值在渲染时读、监听在绘制后才挂:其间的焦点/可见性变化(启动恢复多窗口时后建窗口抢焦点)会漏掉,
+    // 挂上监听后立即重新同步一次。
+    onChange();
+    setFocused(document.hasFocus());
     return () => {
       document.removeEventListener('visibilitychange', onChange);
       window.removeEventListener('focus', onFocus);

@@ -146,3 +146,16 @@ describe('FolderTree · OS 文件 drop 到空白处的落点(捕获/冒泡间 mi
     expect(overlay(container)).toBeNull();
   });
 });
+
+// headless-tree 容器 [role=tree] 的 onDrop 处理 OS 文件(落点 root)后只 preventDefault、不 stopPropagation,
+// 外层 handleDrop 若再处理一次 → 同一批文件写两次(落点还不同)。契约:容器级 drop 只写一次。
+describe('FolderTree · 容器级 drop 只处理一次', () => {
+  it('OS 文件 drop 在 [role=tree] 容器本身 → dropForeignFilesInto 只调用一次', async () => {
+    const { container } = await mount();
+    await act(async () => {
+      fireEvent.drop(container.querySelector('[role="tree"]')!, { dataTransfer: filesDT() });
+    });
+    await flush();
+    expect(h.dropInto).toHaveBeenCalledTimes(1);
+  });
+});

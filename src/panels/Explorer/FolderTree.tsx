@@ -795,6 +795,9 @@ export function FolderTree({ root }: { root: string }) {
     setHoverTarget(null);
   };
   const handleDrop = async (e: React.DragEvent) => {
+    // headless-tree 容器 [role=tree] 的 onDrop 已处理(落点 root)时只 preventDefault 不 stopPropagation:
+    // 再处理一次 = 同一批文件写两次 / 重复 move。行级 drop 已 stopPropagation,空白处无人 preventDefault。
+    if (e.defaultPrevented) return;
     // 内部 drag drop 到空白(root level)— headless-tree row onDrop 接不到 root row
     if (!hasFiles(e.dataTransfer)) {
       const dnd = tree.getState().dnd;

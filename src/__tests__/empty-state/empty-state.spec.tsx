@@ -97,4 +97,19 @@ describe('EmptyState', () => {
     const { container } = render(<EmptyState onRestore={vi.fn()} />);
     expect(container.querySelectorAll('svg').length).toBe(1);
   });
+  // 初值在渲染时读,监听在 passive effect(绘制后)才挂:其间焦点变化(如启动恢复多窗口,后建窗口抢焦点)
+  // 漏掉 → 后台窗口持续补间。effect 挂监听后须立即重新同步一次。
+  it('渲染时有焦点、监听挂上前已失焦 → effect 同步后不渲染 BackgroundBeams', () => {
+    setVisibility('visible');
+    let first = true;
+    vi.spyOn(document, 'hasFocus').mockImplementation(() => {
+      if (first) {
+        first = false;
+        return true;
+      }
+      return false;
+    });
+    const { container } = render(<EmptyState onRestore={vi.fn()} />);
+    expect(container.querySelectorAll('svg').length).toBe(1);
+  });
 });
