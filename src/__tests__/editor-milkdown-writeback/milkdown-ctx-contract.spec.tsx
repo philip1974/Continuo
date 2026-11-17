@@ -98,4 +98,18 @@ describe('Milkdown 内部契约(真实 Crepe)', () => {
     expect(onWriteBack.mock.calls[0]![0]).toContain('TiXtle');
     expect(onWriteBack.mock.calls[0]![1]).toBe('# Title\n\nbody\n');
   });
+
+  it('真实 plugin-listener updated:小文档输入后约 200ms 上抛全文', async () => {
+    const onChange = vi.fn();
+    render(<MilkdownEditor defaultValue={'# Title\n\nbody\n'} onChange={onChange} />);
+    const crepe = await waitMounted();
+    const view = viewOf(crepe);
+    view.dispatch(view.state.tr.insertText('X', 3));
+    expect(onChange).not.toHaveBeenCalled();
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 300));
+    });
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange.mock.calls[0]![0]).toContain('TiXtle');
+  });
 });

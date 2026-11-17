@@ -86,6 +86,11 @@ async function settle(): Promise<void> {
   });
 }
 
+/** plugin-listener 200ms 防抖到点、文档相对上次有变 → updated(不序列化)。 */
+function fireDocUpdated(): void {
+  for (const cb of crepeHarness.docUpdated) cb({}, crepeHarness.doc, null);
+}
+
 async function mountEditor(
   props: Partial<React.ComponentProps<typeof MilkdownEditor>> = {},
 ) {
@@ -130,8 +135,7 @@ describe('Milkdown 同步回写', () => {
   it('基线随上抛推进:已上抛的编辑后再输入 → 基线为最近上抛内容', async () => {
     const { onWriteBack, onChange } = await mountEditor();
     crepeHarness.markdown = 'a\n';
-    for (const cb of crepeHarness.docUpdated) cb({}, crepeHarness.doc, null);
-    for (const cb of crepeHarness.updated) cb({}, 'a\n', 'hello\n');
+    fireDocUpdated();
     expect(onChange).toHaveBeenCalledWith('a\n');
     crepeHarness.markdown = 'ab\n';
 
@@ -162,8 +166,8 @@ describe('Milkdown 同步回写', () => {
     expect(onWriteBack).toHaveBeenCalledWith('typed\n', 'hello');
 
     // 200ms 后 lodash debounce 照常触发(销毁不取消)
-    for (const cb of crepeHarness.docUpdated) cb({}, crepeHarness.doc, null);
-    for (const cb of crepeHarness.updated) cb({}, 'typed\n', 'hello\n');
+    crepeHarness.markdown = 'typed more\n';
+    fireDocUpdated();
     expect(onChange).not.toHaveBeenCalled();
     flushEditorWriteBacks();
     expect(onWriteBack).toHaveBeenCalledTimes(1);
@@ -209,6 +213,121 @@ describe('Milkdown 回写不做多余的全量序列化(大文档每次约 70ms)
     flushEditorWriteBacks();
     expect(crepeHarness.serialize).not.toHaveBeenCalled();
     expect(onWriteBack).toHaveBeenCalledTimes(1);
+  });
+});
+
+const mountEditorReal = mountEditor;
+
+describe('Milkdown 防抖上抛按序列化耗时自适应', () => {
+  // 序列化耗时由假时钟模拟:每次 serializer 调用推进 cost 毫秒
+  let now = 0;
+  let cost = 1;
+  let nowSpy: { mockRestore: () => void } | null = null;
+  // 挂载(settle 用真定时器)之后再切假定时器
+  async function mountEditor(): ReturnType<typeof mountEditorReal> {
+    const r = await mountEditorReal();
+    vi.useFakeTimers();
+    return r;
+  }
+  beforeEach(() => {
+    now = 0;
+    cost = 1;
+    nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => now);
+    crepeHarness.serialize = vi.fn((doc: FakeDoc) => {
+      now += cost;
+      return doc.md;
+    });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    nowSpy?.mockRestore();
+  });
+
+  it('不再注册 markdownUpdated(其防抖里每次全量序列化)', async () => {
+    await mountEditor();
+    expect(crepeHarness.updated).toHaveLength(0);
+  });
+
+  it('小文档(序列化 <25ms)→ 防抖到点即上抛,节奏与 200ms 一致', async () => {
+    const { onChange } = await mountEditor();
+    crepeHarness.markdown = 'a\n';
+    fireDocUpdated();
+    expect(onChange).toHaveBeenCalledWith('a\n');
+    crepeHarness.markdown = 'ab\n';
+    fireDocUpdated();
+    expect(onChange).toHaveBeenLastCalledWith('ab\n');
+    expect(onChange).toHaveBeenCalledTimes(2);
+  });
+
+  it('只差尾部空白(挂载期补尾随空段落)→ 不上抛', async () => {
+    const { onChange } = await mountEditor();
+    crepeHarness.markdown = 'hello\n\n';
+    fireDocUpdated();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('大文档(序列化 50ms)→ 后续上抛延到 8 倍耗时(400ms);新变化重置计时', async () => {
+    const { onChange } = await mountEditor();
+    cost = 50;
+    crepeHarness.markdown = 'a\n';
+    fireDocUpdated(); // 首次尚无实测耗时 → 按 200ms 节奏
+    expect(onChange).toHaveBeenCalledTimes(1);
+
+    crepeHarness.markdown = 'ab\n';
+    fireDocUpdated(); // 已过 200ms 防抖,再等 200ms
+    vi.advanceTimersByTime(150);
+    crepeHarness.markdown = 'abc\n';
+    fireDocUpdated(); // 新变化:重新计时
+    vi.advanceTimersByTime(199);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(1);
+    expect(onChange).toHaveBeenCalledTimes(2);
+    expect(onChange).toHaveBeenLastCalledWith('abc\n');
+  });
+
+  it('序列化极慢 → 延迟封顶 2000ms', async () => {
+    const { onChange } = await mountEditor();
+    cost = 1000;
+    crepeHarness.markdown = 'a\n';
+    fireDocUpdated();
+    crepeHarness.markdown = 'ab\n';
+    fireDocUpdated();
+    vi.advanceTimersByTime(1799);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(1);
+    expect(onChange).toHaveBeenCalledTimes(2);
+  });
+
+  it('延迟上抛前 Cmd+S / 关窗 flush 已回写 → 定时器到点不重复、不回退上抛旧内容', async () => {
+    const { onChange, onWriteBack } = await mountEditor();
+    cost = 50;
+    crepeHarness.markdown = 'a\n';
+    fireDocUpdated();
+    crepeHarness.markdown = 'ab\n';
+    fireDocUpdated(); // 排队 200ms 后上抛
+    crepeHarness.markdown = 'abc\n'; // 又输入,防抖未到
+    flushEditorWriteBacks();
+    expect(onWriteBack).toHaveBeenCalledWith('abc\n', 'a\n');
+
+    crepeHarness.serialize.mockClear();
+    vi.advanceTimersByTime(2000);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(crepeHarness.serialize).not.toHaveBeenCalled();
+  });
+
+  it('卸载前排队中的变化由卸载回写落地;之后定时器不再上抛', async () => {
+    const { onChange, onWriteBack, unmount } = await mountEditor();
+    cost = 50;
+    crepeHarness.markdown = 'a\n';
+    fireDocUpdated();
+    crepeHarness.markdown = 'ab\n';
+    fireDocUpdated();
+
+    unmount();
+    expect(onWriteBack).toHaveBeenCalledWith('ab\n', 'a\n');
+    vi.advanceTimersByTime(2000);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
 

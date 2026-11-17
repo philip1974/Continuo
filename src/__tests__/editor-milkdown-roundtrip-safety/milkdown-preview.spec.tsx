@@ -4,17 +4,26 @@ import { cleanup, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MilkdownEditor } from '../../panels/Editor/MilkdownEditor';
 
+// 编辑器当前文档 = { md }(不可变,改内容换新对象);mount(md) 模拟挂载完成,
+// edit(md) 模拟输入后 plugin-listener 防抖到点触发 updated。
 const milkdownHarness = vi.hoisted(() => ({
-  markdownUpdated: null as
-    | null
-    | ((_ctx: unknown, markdown: string, prevMarkdown: string) => void),
+  doc: { md: '' },
+  mounted: [] as Array<(ctx: unknown) => void>,
+  updated: [] as Array<(ctx: unknown, doc: unknown, prev: unknown) => void>,
   setReadonly: vi.fn(),
   reset() {
-    this.markdownUpdated = null;
+    this.doc = { md: '' };
+    this.mounted = [];
+    this.updated = [];
     this.setReadonly.mockClear();
   },
-  emit(markdown: string, prevMarkdown: string) {
-    this.markdownUpdated?.({}, markdown, prevMarkdown);
+  mount(markdown: string) {
+    this.doc = { md: markdown };
+    for (const cb of this.mounted) cb({});
+  },
+  edit(markdown: string) {
+    this.doc = { md: markdown };
+    for (const cb of this.updated) cb({}, this.doc, null);
   },
 }));
 
@@ -37,18 +46,25 @@ vi.mock('@milkdown/crepe', () => ({
       register: (listener: {
         mounted: (cb: (_ctx: unknown) => void) => void;
         updated: (cb: (_ctx: unknown, doc: unknown, prev: unknown) => void) => void;
-        markdownUpdated: (
-          cb: (_ctx: unknown, markdown: string, prevMarkdown: string) => void,
-        ) => void;
       }) => void,
     ) => {
       register({
-        mounted: () => {},
-        updated: () => {},
-        markdownUpdated: (cb) => {
-          milkdownHarness.markdownUpdated = cb;
+        mounted: (cb) => {
+          milkdownHarness.mounted.push(cb);
+        },
+        updated: (cb) => {
+          milkdownHarness.updated.push(cb);
         },
       });
+    },
+    editor: {
+      ctx: {
+        get: (name: string) => {
+          if (name === 'editorView') return { state: { doc: milkdownHarness.doc } };
+          if (name === 'serializer') return (doc: { md: string }) => doc.md;
+          throw new Error(`no slice ${name}`);
+        },
+      },
     },
   })),
 }));
@@ -80,8 +96,8 @@ describe('MilkdownEditor preview emissions', () => {
     const onChange = vi.fn();
     render(<MilkdownEditor defaultValue="# Title" readonly onChange={onChange} />);
 
-    milkdownHarness.emit('# serialized mount', '# Title');
-    milkdownHarness.emit('# serialized later', '# serialized mount');
+    milkdownHarness.mount('# serialized mount');
+    milkdownHarness.edit('# serialized later');
 
     expect(milkdownHarness.setReadonly).toHaveBeenCalledWith(true);
     expect(onChange).not.toHaveBeenCalled();
@@ -93,7 +109,8 @@ describe('MilkdownEditor edit emissions', () => {
     const onChange = vi.fn();
     render(<MilkdownEditor defaultValue={'# Title\n'} onChange={onChange} />);
 
-    milkdownHarness.emit('# Titlex\n', '# Title\n');
+    milkdownHarness.mount('# Title\n');
+    milkdownHarness.edit('# Titlex\n');
 
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange).toHaveBeenCalledWith('# Titlex\n');
@@ -104,10 +121,11 @@ describe('MilkdownEditor edit emissions', () => {
     const doc = '# Title\n\n```mermaid\ngraph TD\n```\n';
     render(<MilkdownEditor defaultValue={doc} onChange={onChange} />);
 
-    milkdownHarness.emit(`${doc}\n`, doc);
+    milkdownHarness.mount(doc);
+    milkdownHarness.edit(`${doc}\n`);
     expect(onChange).not.toHaveBeenCalled();
 
-    milkdownHarness.emit(`# Titlex\n\n\`\`\`mermaid\ngraph TD\n\`\`\`\n\n`, `${doc}\n`);
+    milkdownHarness.edit(`# Titlex\n\n\`\`\`mermaid\ngraph TD\n\`\`\`\n\n`);
     expect(onChange).toHaveBeenCalledTimes(1);
   });
 });
