@@ -17,6 +17,8 @@ import {
   MAX_PERSISTED_WINDOW_SEGMENTS,
   pruneExplorerFileWindows,
   pruneLRUClosed,
+  stampMissingClosedAt,
+  closedAtNow,
   saveExplorer,
   type ExplorerPayload,
   type ExplorerPayloadV3,
@@ -302,6 +304,25 @@ describe('explorer.json v3 persistence schema and merge semantics', () => {
 
       // 6 段上限 4 → 摘 2:刚关的 seq 9(时间戳晚于进程启动)保留;按数组顺序摘最前的两个陈旧段
       expect(payload.windows.map((w) => w.windowSeq)).toEqual([0, 3, 4, 9]);
+    });
+
+    it('stampMissingClosedAt:给非保护且缺 lastClosedAt 的段补写同一个固定时间戳(落盘后跨启动正常老化)', () => {
+      const payload = defaultExplorerV3();
+      payload.windows = [
+        payload.windows[0]!,
+        closedWindow(1, undefined),
+        closedWindow(2, 50),
+        closedWindow(3, undefined),
+      ];
+
+      stampMissingClosedAt(payload, new Set([0, 3]));
+
+      const by = new Map(payload.windows.map((w) => [w.windowSeq, w.lastClosedAt]));
+      expect(by.get(0)).toBeUndefined(); // 保护段不写
+      expect(by.get(3)).toBeUndefined();
+      expect(by.get(2)).toBe(50); // 已有时间戳不改
+      expect(typeof by.get(1)).toBe('number');
+      expect(by.get(1)!).toBeLessThanOrEqual(closedAtNow());
     });
 
     it('缺 lastClosedAt 的段本身超限(数据异常):有时间戳段先摘完,其余按数组顺序稳定摘,且不抛', () => {

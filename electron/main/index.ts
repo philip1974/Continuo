@@ -22,6 +22,8 @@ import {
   MAX_PERSISTED_WINDOW_SEGMENTS,
   prepareExplorerFileForBoot,
   pruneLRUClosed,
+  stampMissingClosedAt,
+  closedAtNow,
 } from './persistence';
 import { EXPLORER_FILE_NAME } from '../shared/explorer-persistence-schema';
 import { restoreStartupWindows } from './services/window-restore.service';
@@ -619,8 +621,10 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
       try {
         const payload = (await loadExplorer(explorerFile)) ?? defaultExplorerV3();
         const entry = ensureWindowEntry(payload, seq);
-        entry.lastClosedAt = Date.now();
-        pruneLRUClosed(payload, LRU_MAX_CLOSED, lruProtectedSeqs());
+        entry.lastClosedAt = closedAtNow();
+        const protectedSeqs = lruProtectedSeqs();
+        stampMissingClosedAt(payload, protectedSeqs);
+        pruneLRUClosed(payload, LRU_MAX_CLOSED, protectedSeqs);
         await atomicWriteJson(explorerFile, payload);
       } finally {
         // 自身段已落盘(或写失败)→ 解除保护;放在 mutex 体内,不另起派生 promise 制造未处理拒绝。

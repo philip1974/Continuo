@@ -520,6 +520,10 @@ describe('window close layout flush', () => {
     expect(seqs).toContain(101);
     expect(seqs).toContain(300);
     expect(seqs).not.toContain(102); // 有时间戳的最旧段
+    // 跨启动老化:缺时间戳的陈旧段随本次关窗写盘补上固定时间戳,下次启动不再被重算为「最新」。
+    const after = (await loadExplorer(path.join(dir, 'explorer.json')))!.windows;
+    expect(after.find((w) => w.windowSeq === 100)?.lastClosedAt).toEqual(expect.any(Number));
+    expect(after.find((w) => w.windowSeq === 101)?.lastClosedAt).toEqual(expect.any(Number));
   });
 
   it('T20d: 两窗近同时关闭 → 先落盘的 LRU 不摘另一个仍在关闭中(尚未写 lastClosedAt)的窗口段', async () => {

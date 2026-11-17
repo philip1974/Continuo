@@ -140,6 +140,30 @@ function lruClosedAt(w: WindowEntryV3): number {
   return w.lastClosedAt ?? PROCESS_BOOT_MS;
 }
 
+/**
+ * 关窗写入的 lastClosedAt:不早于本进程启动时刻。启动后墙钟回拨(NTP 校正 / 虚拟机恢复)时,本次运行
+ * 关闭的段不得排到缺时间戳段(按启动时刻排)之前被先摘。
+ */
+export function closedAtNow(): number {
+  return Math.max(Date.now(), PROCESS_BOOT_MS);
+}
+
+/**
+ * 给非保护且缺 lastClosedAt 的段补写 PROCESS_BOOT_MS 并随本次写盘落盘。缺失值若不落盘,每次启动都会被
+ * 重算成当次启动时刻、永不老化:上一次运行里正常关闭(带时间戳)的段反而总先被摘。补写后排序键固定,
+ * 从下次启动起按真实先后老化。保护段(活跃 / 关闭中 / seq 0)不写。
+ */
+export function stampMissingClosedAt(
+  payload: ExplorerPayloadV3,
+  protectedSeqs: ReadonlySet<number>,
+): void {
+  for (const w of payload.windows) {
+    if (w.lastClosedAt === undefined && !protectedSeqs.has(w.windowSeq)) {
+      w.lastClosedAt = PROCESS_BOOT_MS;
+    }
+  }
+}
+
 export function pruneLRUClosed(
   payload: ExplorerPayloadV3,
   maxClosed: number,
