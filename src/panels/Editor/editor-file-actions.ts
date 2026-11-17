@@ -10,12 +10,35 @@ import type { FsApi } from '@/lib/fs/api';
 import type { IpcResult } from '@/lib/fs/types';
 import { errorCodeOf, errorMessage } from '../../../electron/shared/error-message';
 import { ERROR_CODES } from '../../../electron/shared/error-codes';
-import { createTab, useEditorStore } from '@/stores/editor.store';
+import { createTab, getEffectiveMode, useEditorStore } from '@/stores/editor.store';
 import { runSerialPerKey } from '@/lib/serialize-per-key';
 import {
   findEditorFileTabById,
   findEditorFileTabByPath,
 } from './editor-tab-lookup';
+import { isMarkdownPath } from './editor-path-utils';
+import {
+  loadCodeEditorModule,
+  loadEditorPanelModule,
+  loadMilkdownEditorModule,
+} from './editor-engine-loaders';
+
+const ignoreWarmupError = (): void => {};
+
+/**
+ * perf:首次打开文件时与 readFile 并行预热即将渲染的编辑引擎 chunk(此前要等 readFile + openTab 提交后
+ * EditorPanel 渲染 lazy 引擎才开始拉)。引擎选择与 EditorPanel 同口径:Markdown 且 getEffectiveMode 非 source
+ * → Milkdown,否则 CodeEditor(读文件前无 tab,按 null tab 判定;unsafe 内容落 Source 时仅多拉一个 chunk)。
+ * 共享 loader 去重、失败不缓存;fire-and-forget,失败吞掉(真正渲染时由引擎错误边界处理)。
+ */
+function warmEditorEngineFor(path: string): void {
+  loadEditorPanelModule().catch(ignoreWarmupError);
+  const engine =
+    isMarkdownPath(path) && getEffectiveMode(null) !== 'source'
+      ? loadMilkdownEditorModule()
+      : loadCodeEditorModule();
+  engine.catch(ignoreWarmupError);
+}
 
 // race(R21):同一 tab 的保存串行链。autosave(旧内容)在途时用户编辑 + 手动保存(新内容),若
 // 二者乱序完成,旧内容会最后落盘覆盖新的。按 tabId 串行保证按发起顺序写盘,最后发起者最后落盘。
@@ -54,6 +77,8 @@ export async function openFileByPath(
     store.getState().switchTab(existing.id);
     return { ok: true, data: undefined };
   }
+
+  warmEditorEngineFor(path);
 
   let r;
   try {
