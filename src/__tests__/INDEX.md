@@ -1279,6 +1279,7 @@
 
 ## [terminal-resize-debounce](./terminal-resize-debounce/README.md)
 
+- [`dimensions-change-raf.spec.tsx`](./terminal-resize-debounce/dimensions-change-raf.spec.tsx)
 - [`resize-debounce.spec.ts`](./terminal-resize-debounce/resize-debounce.spec.ts)
 - [`sidebar-width-subscription.spec.ts`](./terminal-resize-debounce/sidebar-width-subscription.spec.ts)
 

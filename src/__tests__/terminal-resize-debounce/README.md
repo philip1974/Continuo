@@ -20,3 +20,10 @@
 - 拖动期间的 fit 由容器 ResizeObserver 负责;`sidebarWidth` 走 imperative subscribe + 尾随防抖,
   停下 `SIDEBAR_WIDTH_FIT_SETTLE_MS` 后必补一次 fit(RO 漏报兜底)
 - `sidebarOpen` 显隐仍在下一帧补 fit(issue #15)
+
+## dockview 尺寸事件合并到下一帧(`dimensions-change-raf.spec.tsx`)
+
+- dockview `splitview.layoutViews` 对每个视图先写 style 再同步调 `layout()` → 同步派发
+  `onDidDimensionsChange`;此刻同步 fit 会读脏布局 = 强制同步回流,多视图写-读交错
+- 契约:dimensions 变化**不同步** fit;同一帧多次变化合并,下一帧只 `requestFit` 一次(最终 fit 仍执行)
+- 面板卸载 → 撤销未触发的帧

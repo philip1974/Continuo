@@ -143,13 +143,24 @@ function TerminalPanelContent({
       }
     });
     // 尺寸连续变化(分栏拖拽)走防抖入口;激活 / 显隐走立即 fit。
-    const dimensionsDisposable = api.onDidDimensionsChange(requestFit);
+    // 性能:dockview splitview.layoutViews 对每个视图先写 style 再同步调 layout() → 同步派发本事件;
+    // 若此刻 fit(proposeDimensions 内 getComputedStyle 读脏布局)= 强制同步回流,且多视图写-读交错。
+    // 合并到下一帧只 request 一次(容器 RO 在主窗口通常也会覆盖;保留本事件兜底 popout 等 RO 不可靠场景)。
+    let dimensionsRaf = 0;
+    const dimensionsDisposable = api.onDidDimensionsChange(() => {
+      if (dimensionsRaf) return;
+      dimensionsRaf = requestAnimationFrame(() => {
+        dimensionsRaf = 0;
+        requestFit();
+      });
+    });
     const visibilityDisposable = api.onDidVisibilityChange((event) => {
       if (event.isVisible) tryFit();
     });
 
     return () => {
       cancelAnimationFrame(raf);
+      if (dimensionsRaf) cancelAnimationFrame(dimensionsRaf);
       activeDisposable.dispose();
       dimensionsDisposable.dispose();
       visibilityDisposable.dispose();
