@@ -270,3 +270,21 @@ describe('plugin-data-store.service', () => {
     await expect(ipc.invoke('plugin-data:load', id)).resolves.toEqual({});
   });
 });
+
+// perf:save 已为计量做过一次 compact JSON.stringify,原子写直接复用该字符串,不再 pretty stringify 第二次。
+describe('plugin-data-store save 复用序列化结果', () => {
+  it('save 全程只 stringify payload 一次,落盘即该序列化串,load 往返一致', async () => {
+    const { root, ipc } = await makeHarness();
+    const payload = { value: { list: [1, 2, 3], text: '中文' } };
+    const stringify = vi.spyOn(JSON, 'stringify');
+    try {
+      await ipc.invoke('plugin-data:save', 'p.once', payload);
+      expect(stringify.mock.calls.filter((c) => c[0] === payload)).toHaveLength(1);
+    } finally {
+      stringify.mockRestore();
+    }
+    const disk = await readFile(join(root, 'plugins', 'p.once', 'data.json'), 'utf-8');
+    expect(disk).toBe(JSON.stringify(payload));
+    await expect(ipc.invoke('plugin-data:load', 'p.once')).resolves.toEqual(payload);
+  });
+});
