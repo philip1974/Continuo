@@ -4,7 +4,12 @@ import { basenamePreserveTrailing, dirname } from './path-utils';
 import { joinPath, stripRootPrefix, isSameOrInsidePath } from '@/lib/path-cross';
 import { useTree } from '@headless-tree/react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import type { ItemInstance, SetStateFn, TreeInstance } from '@headless-tree/core';
+import type {
+  AsyncDataLoaderDataRef,
+  ItemInstance,
+  SetStateFn,
+  TreeInstance,
+} from '@headless-tree/core';
 import type { FileEntry } from '@/lib/fs/types';
 import { ContextMenu, type ContextMenuActions } from './ContextMenu';
 import { CreateInput } from './CreateInput';
@@ -261,8 +266,21 @@ export function FolderTree({ root }: { root: string }) {
   const treeExpandedItems = expandBatchRef.current.latest ?? expandedItems;
 
   const refreshParent = useCallback((parentPath: string) => {
+    const t = treeRef.current;
+    // perf:子项从未加载过的非 root 目录无缓存可失效,跳过。macOS/Win 根目录 recursive watcher 对任意
+    // 深度变更都上报其所在目录(含 .git / node_modules 等树上不显示的目录);headless-tree 的
+    // getItemInstance 对未知 id 现建临时实例,invalidateChildrenIds 仍会 listDir + 写缓存 +
+    // rebuildTree。未加载目录日后展开时自会按需加载;加载中的目录 invalidate 本就只复用在途加载。
+    // 已加载(含已折叠但仍缓存)的目录照旧失效;root 永远刷新。
+    if (
+      t &&
+      parentPath !== t.getConfig().rootItemId &&
+      t.getDataRef<AsyncDataLoaderDataRef>().current.childrenIds?.[parentPath] === undefined
+    ) {
+      return;
+    }
     try {
-      const parentItem = treeRef.current?.getItemInstance(parentPath);
+      const parentItem = t?.getItemInstance(parentPath);
       parentItem?.invalidateChildrenIds();
     } catch {
       treeRef.current?.rebuildTree();

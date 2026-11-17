@@ -79,3 +79,20 @@ macOS/Win 每个展开目录各有一个 recursive watcher,一次变更会被根
 ReadDirectoryChangesW 缓冲溢出 / 旧 macOS)时只广播 watcher 根路径 —— 子目录不再有自己的 watcher
 就收不到自身路径的刷新,invalidation 行为不一致;另需在祖先 unwatch / LRU 驱逐 / error 驱逐时
 级联重建或 watch-lost 通知被覆盖的子路径,风险大于收益。
+
+## dir-changed 跳过从未加载子项的目录(`folder-tree-dir-changed-unloaded.spec.tsx`)
+
+macOS/Win 根目录 recursive watcher 对任意深度变更都上报其所在目录,包括 `.git` / `node_modules` /
+构建产物等 listDir 默认排除、树上不显示的目录。headless-tree 的 `getItemInstance` 对未知 id 现建临时
+实例,`invalidateChildrenIds` 仍会 listDir + 写缓存 + rebuildTree。`refreshParent` 因此在目录非 root
+且 `dataRef.childrenIds[path]` 未定义(子项从未加载)时直接跳过:
+
+- 树上不显示 / 已显示但从未展开过的目录变更 → 不触发 listDir
+- root 变更 → 照常刷新
+- 已加载的目录(展开中,或已折叠但子项仍缓存)变更 → 照常刷新
+
+`useExternalFileSync` 等其它 `onDirChanged` 订阅者不经 `refreshParent`,不受影响。
+
+未做:刷新后清理已消失子项的 `itemData` / 被删子目录的 `childrenIds`。焦点 / 选中等状态可能仍引用
+被删 id,`getFocusedItem` 对其返回现建实例,而本树未配 `createLoadingItemData` → 清掉 itemData 后
+`isItemFolder` 读 `null.isDirectory` 抛错;保留缓存是这些陈旧引用安全的前提。

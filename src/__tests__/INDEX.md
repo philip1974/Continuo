@@ -576,6 +576,7 @@
 
 ## [explorer-watch (M-Explorer Step 6)](./explorer-watch/README.md)
 
+- [`folder-tree-dir-changed-unloaded.spec.tsx`](./explorer-watch/folder-tree-dir-changed-unloaded.spec.tsx)
 - [`fs-watch-helpers.spec.ts`](./explorer-watch/fs-watch-helpers.spec.ts)
 - [`watch-pool.spec.ts`](./explorer-watch/watch-pool.spec.ts)
 
