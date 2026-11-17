@@ -686,7 +686,7 @@ export function makeKillTool(
   return {
     name: MCP_TOOL_KILL,
     description:
-      'Send a signal to a terminal session. SIGINT writes Ctrl+C without exiting; SIGTERM (default) sends SIGINT then force-kills after 3s grace; SIGKILL kills immediately. Tab metadata and output buffer are preserved (use list_sessions to see exit_code). ' +
+      'Send a signal to a terminal session. SIGINT writes Ctrl+C without exiting; SIGTERM (default) sends SIGINT then force-kills after 3s grace; SIGKILL kills immediately. Tab metadata is preserved (use list_sessions to see exit_code), but the output buffer is released once the process exits — call read_output first if you need the final output. ' +
       'Session scope: current window only — sessions from other windows return TERMINAL_SESSION_NOT_FOUND.',
     jsonSchema: {
       type: 'object',

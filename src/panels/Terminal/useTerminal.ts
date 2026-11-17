@@ -18,6 +18,10 @@ import { notify } from '@/notifications/notify';
 import { localizeErrorByCode } from '@/lib/localize-error';
 import { useSettingValue } from '@/plugins/settings/values-store';
 import { useLayoutUiStore } from '@/stores/layout-ui.store';
+import {
+  getIndexedTerminalSessionById,
+  useTerminalStore,
+} from '@/stores/terminal.store';
 import { useTheme } from '@/theme';
 import {
   disposeQueue,
@@ -139,6 +143,31 @@ export function osc7AcceptedHosts(hostname: string | null | undefined): string[]
   return hostname ? ['', 'localhost', hostname] : ['', 'localhost'];
 }
 
+// 性能 P9:仅当网格(cols/rows)真变化才发 resize IPC。lastSize 即上次发往 PTY 的尺寸 = PTY 当前尺寸,
+// 故相等时 PTY resize 是 no-op(还会触发多余 SIGWINCH)。
+function syncPtySize(
+  term: Terminal,
+  termId: string,
+  lastSize: { current: { cols: number; rows: number } | null },
+): void {
+  const prev = lastSize.current;
+  if (prev && prev.cols === term.cols && prev.rows === term.rows) return;
+  // race(R96):乐观更新 lastSize 阻止在途重复 resize;但 resize IPC 失败(ok:false / reject)
+  // 时必须回滚,否则 lastSize 谎称该尺寸已同步 → 后续相同 cols/rows 不再重试 → xterm DOM 与
+  // PTY 尺寸长期不一致(TUI 换行/光标错乱)。回滚到 prev(与 target 不同 → 同尺寸可重试);
+  // 仅当 lastSize 仍是本次 target 时回滚(被更新的 resize 覆盖则不动 = latest-wins)。
+  const target = { cols: term.cols, rows: term.rows };
+  lastSize.current = target;
+  void coApi.terminal.resize(termId, target.cols, target.rows).then(
+    (r) => {
+      if (!r.ok && lastSize.current === target) lastSize.current = prev;
+    },
+    () => {
+      if (lastSize.current === target) lastSize.current = prev;
+    },
+  );
+}
+
 export function fitAndResize(
   term: Terminal,
   fitAddon: FitAddon,
@@ -146,34 +175,87 @@ export function fitAndResize(
   lastSize: { current: { cols: number; rows: number } | null },
 ): boolean {
   try {
+    // fit() 每次都跑(调 xterm DOM 布局);返回值 = 网格是否有效(供 RAF 重试)。
     fitAddon.fit();
     if (term.cols > 0 && term.rows > 0) {
-      // 性能 P9:仅当网格(cols/rows)真变化才发 resize IPC。lastSize 即上次发往 PTY
-      // 的尺寸 = PTY 当前尺寸,故相等时 PTY resize 是 no-op(还会触发多余 SIGWINCH)。
-      // fit() 仍每次跑(调 xterm DOM 布局);返回值语义不变 = 网格是否有效(供 RAF 重试)。
-      const prev = lastSize.current;
-      if (!prev || prev.cols !== term.cols || prev.rows !== term.rows) {
-        // race(R96):乐观更新 lastSize 阻止在途重复 resize;但 resize IPC 失败(ok:false / reject)
-        // 时必须回滚,否则 lastSize 谎称该尺寸已同步 → 后续相同 cols/rows 不再重试 → xterm DOM 与
-        // PTY 尺寸长期不一致(TUI 换行/光标错乱)。回滚到 prev(与 target 不同 → 同尺寸可重试);
-        // 仅当 lastSize 仍是本次 target 时回滚(被更新的 resize 覆盖则不动 = latest-wins)。
-        const target = { cols: term.cols, rows: term.rows };
-        lastSize.current = target;
-        void coApi.terminal.resize(termId, target.cols, target.rows).then(
-          (r) => {
-            if (!r.ok && lastSize.current === target) lastSize.current = prev;
-          },
-          () => {
-            if (lastSize.current === target) lastSize.current = prev;
-          },
-        );
-      }
+      syncPtySize(term, termId, lastSize);
       return true;
     }
   } catch {
     /* ignore */
   }
   return false;
+}
+
+// 拖拽改尺寸的 reflow 防抖(对齐 VSCode TerminalResizeDebouncer,见 src/__tests__/terminal-resize-debounce)。
+// 列变化要 reflow 整个 scrollback 并让 PTY 里的 TUI 全屏重绘,拖拽时每帧触发;行变化不 reflow。
+const START_DEBOUNCING_THRESHOLD = 200;
+const DEBOUNCE_RESIZE_X_DELAY_MS = 100;
+
+export function createResizeDebouncer(
+  term: Terminal,
+  fitAddon: FitAddon,
+  termId: string,
+  lastSize: { current: { cols: number; rows: number } | null },
+): { request: () => void; flush: () => void; dispose: () => void } {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const cancel = () => {
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+  };
+  const fitNow = () => {
+    cancel();
+    fitAndResize(term, fitAddon, termId, lastSize);
+  };
+  return {
+    request() {
+      try {
+        if (term.buffer.normal.length < START_DEBOUNCING_THRESHOLD) {
+          fitNow();
+          return;
+        }
+        const dims = fitAddon.proposeDimensions();
+        if (!dims || !(dims.cols > 0) || !(dims.rows > 0)) return;
+        if (dims.rows !== term.rows) {
+          term.resize(term.cols, dims.rows);
+          syncPtySize(term, termId, lastSize);
+        }
+        if (dims.cols !== term.cols) {
+          cancel();
+          timer = setTimeout(fitNow, DEBOUNCE_RESIZE_X_DELAY_MS);
+        }
+      } catch {
+        /* ignore(同 fitAndResize:term 已 dispose / 容器未布局) */
+      }
+    },
+    // 切回可见 / 激活:立即按最新尺寸 fit(VSCode 可见时 flush),不让隐藏期间的宽度变化再晚 100ms。
+    flush() {
+      fitNow();
+    },
+    dispose: cancel,
+  };
+}
+
+/**
+ * 暂存的实时推送能否整体替代历史快照:首批不晚于快照起点,且各批首尾相接(overflow 截断过的批次有缺口,
+ * 不算)一直覆盖到快照终点。见 src/__tests__/terminal-history-replay-dedup。
+ */
+function queueCoversSnapshot(
+  queue: ReadonlyArray<readonly [string, number | undefined]>,
+  startOffset: number | undefined,
+  endOffset: number | undefined,
+): boolean {
+  if (startOffset === undefined || endOffset === undefined) return false;
+  const first = queue[0]?.[1];
+  if (first === undefined || first > startOffset) return false;
+  let next = first;
+  for (const [data, offset] of queue) {
+    if (offset !== next) return false;
+    next = offset + data.length;
+  }
+  return next >= endOffset;
 }
 
 const TERM_OPTIONS = {
@@ -223,6 +305,8 @@ export function useTerminal(termId: string) {
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const searchAddonRef = useRef<SearchAddon | null>(null);
+  // 拖拽等高频尺寸变化入口(容器 RO / 侧栏 / dock 尺寸)走它:长 buffer 时列变化防抖。
+  const resizeDebouncerRef = useRef<ReturnType<typeof createResizeDebouncer> | null>(null);
   // 性能 P9:本终端上次发往 main/PTY 的网格尺寸。fit() 后只有 cols/rows 真变化才发
   // resize IPC —— 侧栏拖拽/窗口 resize 多为像素级变化不改格子数,跳过无效 IPC+PTY resize。
   const lastSentSizeRef = useRef<{ cols: number; rows: number } | null>(null);
@@ -382,19 +466,53 @@ export function useTerminal(termId: string) {
     // 同步先试一次(useEffect 跑在 paint 后,容器一般已有尺寸,可省 1 帧);
     // cols/rows 拿到 0 说明容器还没 layout 完,fallback 到 RAF 下一帧重试。
     const doFit = () => fitAndResize(term, fitAddon, termId, lastSentSizeRef);
-    if (!doFit()) requestAnimationFrame(doFit);
+    const fitRetryRaf = doFit() ? 0 : requestAnimationFrame(doFit);
 
-    // 主进程 stdout → safeWrite 队列。第一次收到本 termId 的 data 就标 ready,
-    // 上层移除 loading overlay。
+    // 主进程 stdout → safeWrite 队列。第一次写入本 termId 的输出就标 ready,上层移除 loading overlay。
     let firstData = true;
-    // 性能 P1:onData 现按 termId 订阅(preload 整窗单 listener 分发),cb 只收本
-    // session 的 data,无需再 `if (id !== termId) return` 自行过滤。
-    const unsubData = coApi.terminal.onData(termId, (data: string) => {
+    const clearLoadingOverlay = () => {
       if (firstData) {
         firstData = false;
         setIsReady(true);
       }
+    };
+    const writeOutput = (data: string) => {
+      clearLoadingOverlay();
       safeWrite(term, data);
+    };
+
+    // topic-07: dockview lazy-mount inactive panel 会错过 PTY spawn 后的初始输出(shell prompt 等),
+    // 从 main buffer 把已有 raw chunks replay 进 xterm。先 subscribe 后 replay。
+    // 历史与实时流衔接(见 src/__tests__/terminal-history-replay-dedup):订阅到 readHistory 回复之间
+    // 到达的推送可能已含于快照(主进程合批窗口里的在途输出已入 ring buffer)—— 直接写会让同段输出
+    // 写两次(流式 TUI 错乱 / prompt 重复)。回复前先暂存;回复后按主进程累计偏移过滤:偏移 <
+    // endOffset 的已在快照里,丢弃(含回复之后才迟到的)。无 endOffset(读失败 / 会话已不在)→ 全写。
+    let liveBeforeHistory: Array<[string, number | undefined]> | null = [];
+    let historyEndOffset: number | undefined;
+    const writeLive = (data: string, offset: number | undefined) => {
+      if (
+        historyEndOffset !== undefined &&
+        offset !== undefined &&
+        offset < historyEndOffset
+      ) {
+        return;
+      }
+      writeOutput(data);
+    };
+    const releaseLiveAfterHistory = (endOffset: number | undefined) => {
+      historyEndOffset = endOffset;
+      const queued = liveBeforeHistory ?? [];
+      liveBeforeHistory = null;
+      for (const [data, offset] of queued) writeLive(data, offset);
+    };
+    // 性能 P1:onData 现按 termId 订阅(preload 整窗单 listener 分发),cb 只收本
+    // session 的 data,无需再 `if (id !== termId) return` 自行过滤。
+    const unsubData = coApi.terminal.onData(termId, (data: string, offset?: number) => {
+      if (liveBeforeHistory) {
+        liveBeforeHistory.push([data, offset]);
+        return;
+      }
+      writeLive(data, offset);
     });
 
     // PTY 退出 → 清 loading overlay。否则若 shell 在产出任何字节之前就退出(自定义
@@ -404,25 +522,14 @@ export function useTerminal(termId: string) {
     // 终态」)。退出后终端缓冲(含任何错误输出)已可见,移掉 overlay 才能让用户看到。
     const unsubExit = coApi.terminal.onExit((id: string) => {
       if (id !== termId || teardownDone) return;
-      firstData = false;
-      setIsReady(true);
+      clearLoadingOverlay();
     });
 
-    // topic-07: dockview lazy-mount inactive panel 会错过 PTY spawn 后的初始
-    // 输出(shell prompt 等),从 main buffer 把已有 raw chunks replay 进 xterm。
-    // 先 subscribe 后 replay,中间窗口期的 chunk 走 onData 路径(虽然可能与
-    // history 末尾重叠几个字符,但 xterm 容忍重复 ANSI/字符;比丢失初始 prompt 好)。
     // a11y(A143):readHistory 失败(reject 或 !r.ok)此前只 return / 无 .catch,而 lazy-mount
     // 终端的初始输出(prompt)在 PTY 已 spawn 后、panel mount 前产出,只在 history 里 —— history
     // 读失败则 onData 不会补发,firstData 恒真 →「Starting shell…」spinner 永久悬浮 + 无反馈。
     // 失败分支也清 loading(setIsReady(true))并 notify.error。空历史(ok+无 data)仍留 loading
     // 给 onData 补(prompt 尚未产出的正常态)。
-    const clearLoadingOverlay = () => {
-      if (firstData) {
-        firstData = false;
-        setIsReady(true);
-      }
-    };
     void coApi.terminal
       .readHistory(termId)
       .then((r) => {
@@ -433,16 +540,34 @@ export function useTerminal(termId: string) {
         if (!r.ok) {
           clearLoadingOverlay();
           notifyFailure(r);
+          releaseLiveAfterHistory(undefined);
           return;
         }
-        if (!r.data.data) return;
-        clearLoadingOverlay();
-        safeWrite(term, r.data.data);
+        // 订阅到回复之间涌入的输出超过 ring buffer 容量 → 快照开头已被挤掉,而暂存队列从更早处连续
+        // 开始(更完整):不写快照,按序照写暂存队列,否则被挤掉的中段两边都没有。
+        const queueCoversHistory = queueCoversSnapshot(
+          liveBeforeHistory ?? [],
+          r.data.startOffset,
+          r.data.endOffset,
+        );
+        if (queueCoversHistory) {
+          releaseLiveAfterHistory(undefined);
+        } else {
+          if (r.data.data) writeOutput(r.data.data);
+          releaseLiveAfterHistory(r.data.endOffset);
+        }
+        // 挂载前就已退出、且无可回放输出(零输出 / 快照被淘汰)→ onExit 早已错过,不清就永挂 loading。
+        const session = getIndexedTerminalSessionById(
+          useTerminalStore.getState().sessions,
+          termId,
+        );
+        if (session && session.exitCode !== null) clearLoadingOverlay();
       })
       .catch((err) => {
         if (teardownDone) return;
         clearLoadingOverlay();
         notifyThrownError(err);
+        releaseLiveAfterHistory(undefined);
       });
 
     // 用户输入 → IPC write
@@ -472,10 +597,10 @@ export function useTerminal(termId: string) {
         });
     });
 
-    // 容器尺寸变化 → fit + resize
-    const ro = new ResizeObserver(() => {
-      fitAndResize(term, fitAddon, termId, lastSentSizeRef);
-    });
+    // 容器尺寸变化 → fit + resize(长 buffer 列变化防抖,见 createResizeDebouncer)
+    const resizeDebouncer = createResizeDebouncer(term, fitAddon, termId, lastSentSizeRef);
+    resizeDebouncerRef.current = resizeDebouncer;
+    const ro = new ResizeObserver(() => resizeDebouncer.request());
     ro.observe(container);
 
     // 性能(Phase-5):首屏接线已完成,下一帧再装 WebGL renderer(同步 GPU init 不阻塞
@@ -499,12 +624,14 @@ export function useTerminal(termId: string) {
       return () => {
         teardownDone = true;
         cancelAnimationFrame(webglRaf); // 取消未触发的 WebGL 延后安装
+        cancelAnimationFrame(fitRetryRaf); // 首屏 fit 重试未触发时,别用已拆除的 term 发 resize
         unsubData();
         unsubExit();
         onDataDisposable.dispose();
         osc7Disposable.dispose();
         searchResultsDisposable.dispose();
         ro.disconnect();
+        resizeDebouncer.dispose();
         atlasGuards?.dispose(); // 已装才有 guards(rAF 未触发时为 null)
         disposeQueue(term);
         term.dispose();
@@ -517,6 +644,7 @@ export function useTerminal(termId: string) {
         termRef.current = null;
         fitRef.current = null;
         searchAddonRef.current = null;
+        resizeDebouncerRef.current = null;
       };
     }; // end doInitXterm
 
@@ -570,19 +698,20 @@ export function useTerminal(termId: string) {
   const sidebarOpen = useLayoutUiStore((s) => s.sidebarOpen);
   const sidebarWidth = useLayoutUiStore((s) => s.sidebarWidth);
   useEffect(() => {
-    const term = termRef.current;
-    const fit = fitRef.current;
-    if (!term || !fit) return;
-    const raf = requestAnimationFrame(() => fitAndResize(term, fit, termId, lastSentSizeRef));
+    const debouncer = resizeDebouncerRef.current;
+    if (!debouncer) return;
+    const raf = requestAnimationFrame(() => debouncer.request());
     return () => cancelAnimationFrame(raf);
   }, [sidebarOpen, sidebarWidth, termId]);
 
+  // 激活 / 切回可见:立即 fit。
   const fit = useCallback(() => {
-    const term = termRef.current;
-    const fitAddon = fitRef.current;
-    if (!term || !fitAddon) return;
-    fitAndResize(term, fitAddon, termId, lastSentSizeRef);
-  }, [termId]);
+    resizeDebouncerRef.current?.flush();
+  }, []);
+  // 连续尺寸变化(dock 分栏拖拽):长 buffer 时列变化防抖。
+  const requestFit = useCallback(() => {
+    resizeDebouncerRef.current?.request();
+  }, []);
 
   // topic-22: stale-safe focus,unmount 后 termRef.current 已被 dispose 路径置 null
   // (line 291 cleanup),callback 自然 no-op,焦点不会落到已 dispose 的实例。
@@ -689,5 +818,5 @@ export function useTerminal(termId: string) {
     ],
   );
 
-  return { containerRef, isReady, fit, focus, searchApi };
+  return { containerRef, isReady, fit, requestFit, focus, searchApi };
 }

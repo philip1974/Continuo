@@ -24,22 +24,31 @@ import { codedError } from '../../shared/error-message';
 const OVERFLOW_THRESHOLD_BYTES = 2 * 1024 * 1024; // 2 MB/s 触发 overflow
 const TRUNCATE_MAX_BYTES = 64 * 1024;             // overflow 时单 chunk 上限
 const FLUSH_DELAY_OVERFLOW_MS = 100;
-const FLUSH_DELAY_INPLACE_MS = 64;
-const FLUSH_DELAY_DEFAULT_MS = 32;
+// 合批窗口直接叠加在每次按键回显上:此前 32ms / 原地更新 64ms(zsh 回显几乎都带 `\x1b[K` 等 CSI,
+// 走 64ms)可感知输入延迟。对齐 VSCode TerminalDataBufferer 统一 5ms(xterm 本就按帧渲染,
+// 主进程再延后原地更新不省重绘)。
+const FLUSH_DELAY_MS = 5;
 const THROTTLE_RESET_INTERVAL_MS = 1_000;
 const KILL_GRACE_PERIOD_MS = 3_000;
+
+// 把合批窗口里的在途输出发给 renderer,第三个参数 = 本批首字符的累计偏移(见 getBufferSnapshot)。
+function flushPending(id: string, inst: Instance): void {
+  if (inst.flushTimer) {
+    clearTimeout(inst.flushTimer);
+    inst.flushTimer = null;
+  }
+  if (inst.pendingData) {
+    safeSend(id, TERMINAL_CHANNELS.DATA, id, inst.pendingData, inst.pendingStart);
+    inst.pendingData = '';
+  }
+}
 
 function handleChunk(id: string, chunk: string): void {
   const inst = instances.get(id);
   if (!inst) return;
 
-  const flush = () => {
-    if (inst.pendingData) {
-      safeSend(id, TERMINAL_CHANNELS.DATA, id, inst.pendingData);
-      inst.pendingData = '';
-    }
-    inst.flushTimer = null;
-  };
+  if (!inst.pendingData) inst.pendingStart = inst.receivedChars;
+  inst.receivedChars += chunk.length;
 
   // 边界(E149,E125 同族):按真实 UTF-8 字节计 overflow 节流(非 chunk.length=UTF-16 code unit),
   // 否则大量 CJK/emoji 输出真实字节数倍超 2MiB/s 仍不触发 overflow,IPC/renderer 输出膨胀。
@@ -47,16 +56,20 @@ function handleChunk(id: string, chunk: string): void {
 
   const isOverflow = inst.bytesPerSecond > OVERFLOW_THRESHOLD_BYTES;
   if (isOverflow) {
-    inst.pendingData = safeTruncate(
-      inst.pendingData + chunk,
-      TRUNCATE_MAX_BYTES,
-    );
+    const merged = inst.pendingData + chunk;
+    inst.pendingData = safeTruncate(merged, TRUNCATE_MAX_BYTES);
+    // 截断后本批只剩尾部:偏移改为保留尾部的起点(reset 前缀不计),与上一批之间必然留缺口,
+    // renderer 的连续性判断(queueCoversSnapshot)据此识别有损批次。
+    if (inst.pendingData !== merged) {
+      inst.pendingStart =
+        inst.receivedChars - (inst.pendingData.length - RESET_PREFIX.length);
+    }
     if (!inst.overflowNotified) {
       inst.overflowNotified = true;
       safeSend(id, TERMINAL_CHANNELS.OVERFLOW, id);
     }
     if (!inst.flushTimer) {
-      inst.flushTimer = setTimeout(flush, FLUSH_DELAY_OVERFLOW_MS);
+      inst.flushTimer = setTimeout(flushPending, FLUSH_DELAY_OVERFLOW_MS, id, inst);
     }
     return;
   }
@@ -68,10 +81,7 @@ function handleChunk(id: string, chunk: string): void {
   inst.pendingData += chunk;
 
   if (!inst.flushTimer) {
-    const delay = isInPlaceUpdate(chunk)
-      ? FLUSH_DELAY_INPLACE_MS
-      : FLUSH_DELAY_DEFAULT_MS;
-    inst.flushTimer = setTimeout(flush, delay);
+    inst.flushTimer = setTimeout(flushPending, FLUSH_DELAY_MS, id, inst);
   }
 }
 
@@ -162,6 +172,9 @@ export function __resetForTest(): void {
   sessionManager = null;
   sessionTargets.clear();
   resizeChains.clear();
+  exitedHistories.clear();
+  unsubExitedHistoryPrune?.();
+  unsubExitedHistoryPrune = null;
 }
 
 /**
@@ -169,13 +182,33 @@ export function __resetForTest(): void {
  * Maps server-node SESSION_NOT_FOUND → empty (NEED-INFO-1=b decision: baseline
  * readRaw behavior on missing buffer was {data:'', truncated:false}).
  * truncated=true → prefix '\x1b[0m' to reset any retained CSI/OSC tail (P1-1).
+ *
+ * 历史与实时流衔接:先把合批窗口里的在途输出立即发出(偏移 < endOffset),再取快照 → 此后每批推送
+ * 的偏移都 ≥ endOffset,不会有一批横跨快照边界。renderer 据此丢弃已含于快照的推送,避免同段输出写
+ * 两次。PTY 输出入 ring buffer 与 handleChunk 在同一同步回调里,故此刻快照恰好止于 receivedChars。
  */
-export function getBufferSnapshot(id: string): { data: string; truncated: boolean } {
+export function getBufferSnapshot(
+  id: string,
+): { data: string; truncated: boolean; endOffset?: number; startOffset?: number } {
   const sm = getSessionManager();
+  const inst = instances.get(id);
+  if (inst) flushPending(id, inst);
+  else {
+    const retained = exitedHistories.get(id);
+    if (retained) return retained;
+  }
   try {
     const snapshot = sm.getBufferSnapshot(id);
     const data = snapshot.truncated ? '\x1b[0m' + snapshot.data : snapshot.data;
-    return { data, truncated: snapshot.truncated };
+    // startOffset:快照首字符的累计偏移(ring buffer 挤掉最旧数据后不从 0 开始;reset 前缀不计入)。
+    return inst
+      ? {
+          data,
+          truncated: snapshot.truncated,
+          endOffset: inst.receivedChars,
+          startOffset: inst.receivedChars - snapshot.data.length,
+        }
+      : { data, truncated: snapshot.truncated };
   } catch (err) {
     const e = err as Error & { code?: string };
     if (e?.code === 'SESSION_NOT_FOUND') {
@@ -184,6 +217,48 @@ export function getBufferSnapshot(id: string): { data: string; truncated: boolea
     throw err;
   }
 }
+
+// PTY 退出后 server-node 立即删 ring buffer,而会话 metadata 进入 exited-retained 继续显示 tab。
+// 退出时留一份最后快照,供从没打开过的(agent inactive panel)tab 回放;随 metadata 删除释放。
+// 见 src/__tests__/terminal-exited-history。
+const MAX_EXITED_HISTORIES = 16;
+// 带退出时的 endOffset:挂载回放恰逢退出时,渲染端排队的退出前推送已含于快照,须照常按偏移丢弃。
+const exitedHistories = new Map<
+  string,
+  { data: string; truncated: boolean; endOffset?: number; startOffset?: number }
+>();
+let unsubExitedHistoryPrune: (() => void) | null = null;
+
+function pruneExitedHistories(): void {
+  for (const id of exitedHistories.keys()) {
+    if (!terminalSessions.get(id)) exitedHistories.delete(id);
+  }
+  if (exitedHistories.size === 0 && unsubExitedHistoryPrune) {
+    unsubExitedHistoryPrune();
+    unsubExitedHistoryPrune = null;
+  }
+}
+
+function retainExitedHistory(id: string): void {
+  // metadata 已删(关 tab / 关窗口触发的 kill)→ 无 tab 可回放,不保留。
+  if (!terminalSessions.get(id)) return;
+  let snapshot: ReturnType<typeof getBufferSnapshot>;
+  try {
+    snapshot = getBufferSnapshot(id);
+  } catch {
+    return;
+  }
+  if (!snapshot.data) return;
+  exitedHistories.delete(id);
+  exitedHistories.set(id, snapshot);
+  if (exitedHistories.size > MAX_EXITED_HISTORIES) {
+    const oldest = exitedHistories.keys().next().value;
+    if (oldest !== undefined) exitedHistories.delete(oldest);
+  }
+  unsubExitedHistoryPrune ??= terminalSessions.subscribe(pruneExitedHistories);
+}
+
+export const MAX_EXITED_HISTORIES_FOR_TEST = MAX_EXITED_HISTORIES;
 
 /**
  * Async line-based read for MCP terminal.read_output tool.
@@ -238,15 +313,13 @@ function cleanupSessionLocal(id: string, exitCode: number): void {
     warnOnce(`setExited:${id}`, `terminalSessions.setExited threw for ${id}: ${(err as Error).message}`);
   }
 
-  // 1b. Flush any buffered output BEFORE the exit event. cleanupSessionLocal
-  // clears flushTimer below (step 3) without firing it, so the last chunk still
-  // sitting in the throttle window (often the command's final result / exit
+  // 1b. Flush any buffered output BEFORE the exit event (also clears flushTimer).
+  // The last chunk still sitting in the throttle window (often the command's final result / exit
   // banner) would otherwise be silently dropped. Emit it first so the renderer
   // sees data → exit in order. (审计 #1)
-  if (instance.pendingData) {
-    safeSend(id, TERMINAL_CHANNELS.DATA, id, instance.pendingData);
-    instance.pendingData = '';
-  }
+  flushPending(id, instance);
+  // 1c. ring buffer 即将被 server-node 删除(自然退出 onExit 之后 / sm.kill 时)→ 先留快照。
+  retainExitedHistory(id);
 
   // 2. Push terminal:exit (only if target still alive — variadic baseline payload)
   // Baseline shape: webContents.send('terminal:exit', id, { exitCode, signal })
@@ -256,10 +329,6 @@ function cleanupSessionLocal(id: string, exitCode: number): void {
   if (instance.killTimer) {
     clearTimeout(instance.killTimer);
     instance.killTimer = null;
-  }
-  if (instance.flushTimer) {
-    clearTimeout(instance.flushTimer);
-    instance.flushTimer = null;
   }
   if (instance.throttleInterval) {
     clearInterval(instance.throttleInterval);
@@ -294,6 +363,10 @@ function cleanupSessionLocal(id: string, exitCode: number): void {
 
 interface Instance {
   pendingData: string;
+  /** pendingData 首字符的累计偏移。 */
+  pendingStart: number;
+  /** 本会话累计收到的 PTY 输出字符数(UTF-16 code unit),历史回放与实时流衔接的坐标。 */
+  receivedChars: number;
   flushTimer: NodeJS.Timeout | null;
   killTimer: NodeJS.Timeout | null;
   bytesPerSecond: number;
@@ -321,37 +394,6 @@ const resizeChains = new Map<string, Promise<unknown>>();
 // (reset + 尾部数据)真实字节数 = maxBytes + 4,违反"≤ maxBytes"契约(小上限/通用复用时明显超限)。
 const RESET_PREFIX = '\x1b[0m';
 const RESET_PREFIX_BYTES = 4;
-
-function hasInPlaceAnsiCsi(data: string): boolean {
-  for (let i = 0; i < data.length - 2; i += 1) {
-    if (data.charCodeAt(i) !== 0x1b || data.charCodeAt(i + 1) !== 91) {
-      continue;
-    }
-
-    for (let j = i + 2; j < data.length; j += 1) {
-      const code = data.charCodeAt(j);
-      if (code >= 48 && code <= 57) {
-        continue;
-      }
-      // 本序列不是原地更新 → 从下一个 ESC[ 继续找(等价 /\x1b\[\d*[ABCDGHK]/.test 的「任意位置」;此前
-      // 在第一个 CSI 处就 return,前面有 SGR 颜色时后面的清行 / 光标移动被漏判)。
-      if (
-        code === 65 ||
-        code === 66 ||
-        code === 67 ||
-        code === 68 ||
-        code === 71 ||
-        code === 72 ||
-        code === 75
-      ) {
-        return true;
-      }
-      break;
-    }
-  }
-
-  return false;
-}
 
 /** 截断点向前找 ESC 的窗口(字符数)。覆盖常见的 SGR / 私有模式 / 窗口标题 OSC。 */
 const ESCAPE_LOOKBACK_CHARS = 256;
@@ -430,15 +472,6 @@ export function safeTruncate(data: string, maxBytes: number): string {
   }
 
   return RESET_PREFIX + data.slice(cutPoint);
-}
-
-/**
- * 检测 ANSI 光标移动 / 清行 / 定位类控制序列(说明这是"原地更新"
- * 而非新增输出),且数据本身较短(< 512 字节)。用于 flush 节流:
- * in-place 更新延后到 64ms 降帧率,避免大量重绘抖动。
- */
-export function isInPlaceUpdate(data: string): boolean {
-  return data.length < 512 && hasInPlaceAnsiCsi(data);
 }
 
 // ── PTY 生命周期 ──────────────────────────────────────────────
@@ -521,6 +554,8 @@ export async function createTerminal(
   const finalArgs = args.length === 0 ? defaultShellArgs(shell) : args;
   const inst: Instance = {
     pendingData: '',
+    pendingStart: 0,
+    receivedChars: 0,
     flushTimer: null,
     killTimer: null,
     bytesPerSecond: 0,

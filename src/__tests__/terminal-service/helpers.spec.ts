@@ -1,6 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
-  isInPlaceUpdate,
   safeTruncate,
 } from '../../../electron/main/services/terminal.service';
 
@@ -157,67 +156,5 @@ describe('safeTruncate', () => {
     const r = safeTruncate('😀'.repeat(200), 44);
     expect(Buffer.byteLength(r, 'utf8')).toBeLessThanOrEqual(44);
     expect(r.includes('�')).toBe(false);
-  });
-});
-
-describe('isInPlaceUpdate', () => {
-  it('包含光标移动 ESC[A → true', () => {
-    expect(isInPlaceUpdate('\x1b[2A')).toBe(true);
-  });
-
-  it('包含光标到行首 ESC[H → true', () => {
-    expect(isInPlaceUpdate('\x1b[H')).toBe(true);
-  });
-
-  it('包含清到行尾 ESC[K → true', () => {
-    expect(isInPlaceUpdate('\x1b[K')).toBe(true);
-  });
-
-  it('普通文本无 ESC → false', () => {
-    expect(isInPlaceUpdate('hello world')).toBe(false);
-  });
-
-  // 回归:手写扫描(替代 /\x1b\[\d*[ABCDGHK]/.test)在**第一个** CSI 处就 return,后面的原地更新序列
-  // 被漏判 —— 先上色再清行(spinner / 进度条的常见输出)会被当普通输出走更长的节流窗口。
-  it('前面有非原地 CSI(如 SGR 颜色)时,后面的原地序列仍命中', () => {
-    expect(isInPlaceUpdate('\x1b[31mX\x1b[2K')).toBe(true);
-    expect(isInPlaceUpdate('\x1b[1m\x1b[32mdone\x1b[0m\x1b[1A')).toBe(true);
-  });
-
-  it('只有非原地 CSI → false;与旧正则在一组样本上逐一等价', () => {
-    expect(isInPlaceUpdate('\x1b[31mred\x1b[0m')).toBe(false);
-    // 旧实现的正则(用 fromCharCode 拼 ESC,避开 no-control-regex)。
-    const re = new RegExp(`${String.fromCharCode(27)}\\[\\d*[ABCDGHK]`);
-    for (const sample of [
-      '\x1b[31mX\x1b[2K',
-      '\x1b[;2K', // 分号参数:旧正则不匹配(\d* 后须紧跟终结符)
-      '\x1b[12',
-      '\x1b[\x1b[A',
-      'a\x1b[0mb\x1b[Gc',
-      '\x1b[?25l\x1b[H',
-      '\x1b[',
-    ]) {
-      expect(isInPlaceUpdate(sample)).toBe(re.test(sample));
-    }
-  });
-
-  it('长文本即便有 ESC → false(避免大段输出被误判)', () => {
-    const big = 'x'.repeat(600) + '\x1b[A';
-    expect(isInPlaceUpdate(big)).toBe(false);
-  });
-
-  it('彩色文本 ESC[31m 不算 in-place(只是属性,不是定位)', () => {
-    expect(isInPlaceUpdate('\x1b[31mhello')).toBe(false);
-  });
-
-  it('ANSI 原地更新检测走字符扫描,不调用 RegExp.test', () => {
-    const testSpy = vi.spyOn(RegExp.prototype, 'test');
-    try {
-      expect(isInPlaceUpdate('\x1b[12A')).toBe(true);
-      expect(isInPlaceUpdate('\x1b[31mhello')).toBe(false);
-      expect(testSpy).not.toHaveBeenCalled();
-    } finally {
-      testSpy.mockRestore();
-    }
   });
 });
