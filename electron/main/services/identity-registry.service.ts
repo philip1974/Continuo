@@ -113,6 +113,16 @@ export class IdentityRegistry {
     this.drainTimers.set(token, timer);
   }
 
+  /**
+   * webContents 销毁 / renderer reload 时调用:该 webContents 名下全部 token 走与 revoke 相同的 drain。
+   * 关窗 / reload 不会有 renderer 主动发的 _unregister-plugin,否则 entries 永不释放。
+   */
+  revokeByWebContents(webContentsId: number): void {
+    for (const [token, entry] of this.entries) {
+      if (entry.webContentsId === webContentsId) this.revoke(token);
+    }
+  }
+
   /** Test-only: synchronous GC (skip setTimeout). */
   _gcDrainedNow(): void {
     for (const [token, timer] of this.drainTimers) {

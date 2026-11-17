@@ -6,6 +6,7 @@ import { basename, dirname, join } from 'node:path';
 import type { IpcMain, WebContents } from 'electron';
 import { PLUGIN_FS_CHANNELS, SCOPE_REQUEST_ID_MAX } from '../../shared/plugin-fs-channels';
 import { createByteCappedBuffer } from '../lib/byte-capped-buffer';
+import { makeWcGoneHook } from '../lib/wc-gone-hook';
 import { IdentityRegistry } from './identity-registry.service';
 import { PathScopeRegistry } from './path-scope-registry.service';
 import { ScopeRequestCorrelator } from './scope-request-correlator';
@@ -214,6 +215,15 @@ export function registerPluginFsHandlers(
 ): void {
   const { identityRegistry, pathScopeRegistry, correlator } = deps;
   const maybeSweepStaleTrash = createTrashSweepThrottle();
+  // 关窗(destroyed)/ renderer reload(主框架非同文档导航)时释放该 webContents 名下的身份 token 与
+  // pending scope 授权请求:两种情况都不会有 renderer 主动发的 _unregister-plugin,此前 token 永驻
+  // entries;reload 前发起的授权请求也要干等满 TTL(关窗另有 releaseWindowResources 兜底,幂等)。
+  // 时序:导航开始即撤旧,新文档脚本的重新注册在其后,不会被误撤。path-scope 按 pluginId 全局共享
+  //(其它窗口同插件仍在用、且有持久化),不在此撤。
+  const attachWcGoneHook = makeWcGoneHook((wcId) => {
+    identityRegistry.revokeByWebContents(wcId);
+    correlator.cancelBySender(wcId);
+  });
 
   ipcMain.handle(
     PLUGIN_FS_CHANNELS.REGISTER_PLUGIN,
@@ -229,6 +239,7 @@ export function registerPluginFsHandlers(
       ) {
         throw fsError(ERROR_CODES.BAD_INPUT, 'invalid pluginId');
       }
+      attachWcGoneHook(event.sender);
       return identityRegistry.register(pluginId, event.sender.id);
     },
   );

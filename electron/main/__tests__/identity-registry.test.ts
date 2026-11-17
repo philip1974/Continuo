@@ -144,4 +144,24 @@ describe('IdentityRegistry', () => {
     registry.revoke(a.token);
     expect([...registry.webContentsIdsFor('com.example.plugin')].sort()).toEqual([10, 11]);
   });
+
+  it('revokeByWebContents 只把该 webContents 名下 token 送入 drain,宽限期后删除;之后新注册的不受影响', () => {
+    const registry = new IdentityRegistry();
+    const a = registry.register('com.example.plugin', 10);
+    const b = registry.register('com.other.plugin', 10);
+    const other = registry.register('com.example.plugin', 11);
+
+    registry.revokeByWebContents(10);
+    expect(registry.isActive(a.token)).toBe(false);
+    expect(registry.isActive(b.token)).toBe(false);
+    expect(registry.isActive(other.token)).toBe(true);
+
+    // reload 后新文档重新注册:不被已发生的撤销波及
+    const fresh = registry.register('com.example.plugin', 10);
+    vi.advanceTimersByTime(DRAIN_GRACE_MS_FOR_TEST);
+    expect(registry._peek(a.token)).toBeUndefined();
+    expect(registry._peek(b.token)).toBeUndefined();
+    expect(registry.isActive(fresh.token)).toBe(true);
+    expect(registry.isActive(other.token)).toBe(true);
+  });
 });
