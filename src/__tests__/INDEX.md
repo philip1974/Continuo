@@ -551,6 +551,7 @@
 
 ## [ExplorerSidebar(VSCode 风固定侧边栏)](./explorer-sidebar/README.md)
 
+- [`explorer-sidebar-hidden-menus.spec.tsx`](./explorer-sidebar/explorer-sidebar-hidden-menus.spec.tsx)
 - [`explorer-sidebar-keepalive.spec.tsx`](./explorer-sidebar/explorer-sidebar-keepalive.spec.tsx)
 - [`explorer-sidebar-render-isolation.spec.tsx`](./explorer-sidebar/explorer-sidebar-render-isolation.spec.tsx)
 - [`explorer-sidebar.spec.tsx`](./explorer-sidebar/explorer-sidebar.spec.tsx)

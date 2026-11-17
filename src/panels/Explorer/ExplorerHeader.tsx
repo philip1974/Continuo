@@ -1,5 +1,6 @@
 import {
   type ReactElement,
+  useContext,
   useEffect,
   useRef,
   useState,
@@ -14,6 +15,7 @@ import { useMenuKeyboard } from '@/lib/use-menu-keyboard';
 import { useMenuAnchor } from '@/lib/use-menu-anchor';
 import { basename, recentRootLabelParts } from './path-utils';
 import { useT } from '@/i18n';
+import { ExplorerVisibleContext } from './visibility';
 
 // FolderTree 顶部固定 Header:左侧 workspace 名 + 右侧 ⋯ 溢出菜单
 //(展开 / 折叠 / 切换 / 关闭)。
@@ -82,6 +84,10 @@ export function ExplorerHeader({
   const recentRoots = useWorkspaceStore((s) => s.recentRoots);
   const { busy, selectFolder } = useSelectWorkspaceFolder();
   const [menuOpen, setMenuOpen] = useState(false);
+  // 交互回归修复:侧栏关闭为保活隐藏(aside hidden),portal 到 body 的菜单不会随之消失 → 隐藏即
+  // 关闭(render 期同步本组件 state,隐藏帧即不渲染菜单);复位 state 保证再次显示不自动重开。
+  const visible = useContext(ExplorerVisibleContext);
+  if (!visible && menuOpen) setMenuOpen(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const t = useT();
   // a11y(A18):菜单打开移焦入首项 + Escape 关闭还原焦点 + 方向键漫游(共享 hook)。

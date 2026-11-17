@@ -20,6 +20,9 @@
   滚动位置保留);拖拽条与宽度订阅卸载;`ExplorerVisibleContext=false` 下传
 - 隐藏期间换 root → 卸载旧树、不在隐藏态挂载新树,直到再次打开
 - 规范:`explorer-sidebar-keepalive.spec.tsx`
+- 隐藏时关闭 Explorer 弹出菜单(Header「更多操作」、文件行右键菜单,二者都 portal 到 body):
+  菜单节点移除、body 无 Radix 模态 `pointer-events:none` 残留;再显示不自动重开,之后可正常再次打开
+- 规范:`explorer-sidebar-hidden-menus.spec.tsx`
 
 ### sidebarOpen=true
 
