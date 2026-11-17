@@ -19,9 +19,30 @@ import { basename, isSameOrInsidePath, pathEquals } from '@/lib/path-cross';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 import { allSettledWithConcurrency } from '@/lib/map-with-concurrency';
 import { findEditorFileTabById } from './editor-tab-lookup';
+import { getSavedDiskStat, isSameDiskStat } from './saved-disk-stat';
 
 /** watch-restored 子树重读的最大同时在途 readFile 数(与 hydrateEditorTabs RESTORE_READ_CONCURRENCY 同口径). */
 const RESTORED_RELOAD_CONCURRENCY = 32;
+
+/**
+ * 性能:编辑器自己保存的回声识别。原子写(tmp + rename)让 watcher 上报被保存文件本身,此前保存后
+ * (tab 已 clean)总要再整文件读一次、reloadFromDisk 发现内容相同什么也不改(Markdown 2s autosave
+ * 每次多一次整文件读 + IPC)。有本 tab 当前基线的保存记录时先发廉价 fs:stat 比对:{mtimeMs,size}
+ * 与写入时一致 → 磁盘仍是自己写的内容,跳过 readFile。不一致 / stat 失败(含 reject)→ 照旧读。
+ * 无适用记录 → 返回 null,调用方照旧**同步**发起 readFile(时序与改动前一致)。
+ */
+function ownSaveEchoCheck(path: string, tab: EditorTab | null): Promise<boolean> | null {
+  const rec = getSavedDiskStat(path);
+  if (!rec || !tab || tab.originalContent !== rec.content) return null;
+  return (async () => {
+    try {
+      const st = await coApi.fs.stat(path);
+      return st.ok && isSameDiskStat(st.data, rec);
+    } catch {
+      return false;
+    }
+  })();
+}
 
 /** dir-changed 文件名匹配键:大小写 + Unicode NFC 折叠(宁多读不漏读,见下方订阅处注释). */
 function foldFileName(name: string): string {
@@ -91,7 +112,15 @@ export function useExternalFileSync(): void {
       // race(R97):捕获发起读取时的 tab 实例引用,供 settle 复查(防 close+reopen 同路径迟到覆盖)。
       const tabRef = findEditorFileTabById(useEditorStore.getState().tabs, tabId);
       inFlight.add(path);
-      return coApi.fs.readFile(path).then(
+      // 保存回声:跳过整文件读,按「不落地」settle(仍清 inFlight / 尾随重读 pending)。
+      const echoCheck = ownSaveEchoCheck(path, tabRef);
+      const read: Promise<Parameters<typeof settle>[3]> = echoCheck
+        ? echoCheck.then(
+            (echo): Parameters<typeof settle>[3] | Promise<Parameters<typeof settle>[3]> =>
+              echo ? { ok: false } : coApi.fs.readFile(path),
+          )
+        : coApi.fs.readFile(path);
+      return read.then(
         (r) => settle(path, tabId, tabRef, r),
         () => settle(path, tabId, tabRef, null), // reject → 不落地,但仍清 inFlight/尾随重读
       );

@@ -1,11 +1,13 @@
 // 全部 fs.* IPC 通道字符串集中地。main / preload 两侧 import 同一份,
 // 防字符串散漂改名错位。layout / popout 通道下个里程碑(P1.D2)统一处理。
 
-import type { IpcFail, IpcOk, IpcResult } from './ipc-result';
+import { IPC_ERR, type IpcFail, type IpcOk, type IpcResult } from './ipc-result';
 
 export const FS_CHANNELS = {
   LIST_DIR: 'fs:list-dir',
   READ_FILE: 'fs:read-file',
+  /** 廉价 stat(跟随 symlink):{ mtimeMs, size }。编辑器外部同步用它识别自己保存的回声. */
+  STAT: 'fs:stat',
   WRITE_FILE: 'fs:write-file',
   WRITE_BINARY: 'fs:write-binary',
   RENAME: 'fs:rename',
@@ -99,4 +101,37 @@ export function toFsReadFileResult(
   return typeof realPath === 'string' && realPath.length > 0 && realPath.length <= maxPathLen
     ? { ok: true, data: r.data.content, realPath }
     : { ok: true, data: r.data.content };
+}
+
+/**
+ * 文件内容身份的廉价近似:mtimeMs + size(跟随 symlink,即链接目标)。fs:write-file 成功时返回写入后
+ * 的值(无法确认则缺省),fs:stat 返回当前值;编辑器外部同步比对二者识别「自己保存的回声」,
+ * 相同才跳过整文件 readFile,不同 / 未知照旧读。
+ */
+export interface FsFileStat {
+  readonly mtimeMs: number;
+  readonly size: number;
+}
+
+/** 形态守卫:有限非负 mtimeMs + 非负安全整数 size → 规范化副本(丢弃多余字段);否则 undefined. */
+export function toFsFileStat(v: unknown): FsFileStat | undefined {
+  if (v === null || typeof v !== 'object') return undefined;
+  const { mtimeMs, size } = v as { mtimeMs?: unknown; size?: unknown };
+  if (typeof mtimeMs !== 'number' || !Number.isFinite(mtimeMs) || mtimeMs < 0) return undefined;
+  if (typeof size !== 'number' || !Number.isSafeInteger(size) || size < 0) return undefined;
+  return { mtimeMs, size };
+}
+
+/** preload 映射 fs:write-file 结果:成功时 data = 合规 FsFileStat,畸形 / 缺省 → undefined(写盘结果不受影响). */
+export function toFsWriteFileResult(r: IpcResult<unknown>): IpcResult<FsFileStat | undefined> {
+  return r.ok ? { ok: true, data: toFsFileStat(r.data) } : r;
+}
+
+/** preload 映射 fs:stat 结果:成功但 data 畸形 → 失败(调用方按「stat 失败」处理,照旧整文件读). */
+export function toFsStatResult(r: IpcResult<unknown>): IpcResult<FsFileStat> {
+  if (!r.ok) return r;
+  const st = toFsFileStat(r.data);
+  return st
+    ? { ok: true, data: st }
+    : { ok: false, code: IPC_ERR.HANDLER_ERROR, message: 'malformed fs:stat result' };
 }

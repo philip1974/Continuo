@@ -1,7 +1,9 @@
 import { lstat, open, realpath, rename, rm, stat } from 'node:fs/promises';
+import type { Stats } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { fsError, mapNodeErrnoCode } from './path-utils';
 import { runSerialPerKey } from '../../../shared/run-serial-per-key';
+import type { FsFileStat } from '../../../shared/fs-channels';
 
 /**
  * 原子写文件(ADR-009,借鉴 Lokus atomic_write_file)。
@@ -31,6 +33,8 @@ import { runSerialPerKey } from '../../../shared/run-serial-per-key';
  * 不做:父目录 mkdir(VSCode 行为:save 到不存在的目录就该报错)
  *
  * content 为 string → utf-8 写;为 Uint8Array → 二进制写(Step 5d Dropzone 路径)
+ *
+ * 返回值(性能:编辑器保存回声识别,见 FsFileStat):写入内容对应的 { mtimeMs, size };无法确认则 undefined。
  */
 
 // per-path 写串行化链。同一 filePath 的写排队执行,避免共享固定 tmp 名被并发截断。
@@ -72,7 +76,7 @@ export async function resolveSymlinkTarget(filePath: string): Promise<string> {
 export async function atomicWriteFile(
   filePath: string,
   content: string | Uint8Array,
-): Promise<void> {
+): Promise<FsFileStat | undefined> {
   // symlink → 写穿到 canonical target,并以 target 作锁 key(经不同 symlink 指向同一
   // target 的并发写也能正确串行)。
   const realPath = await resolveSymlinkTarget(filePath);
@@ -100,7 +104,7 @@ async function existingFileMode(filePath: string): Promise<number | undefined> {
 async function atomicWriteFileInner(
   filePath: string,
   content: string | Uint8Array,
-): Promise<void> {
+): Promise<FsFileStat | undefined> {
   // tmp 用**隐藏标记名** `.<base>.continuo.tmp`(而非旧的可预测 `${filePath}.tmp`):
   // 旧名会与用户真实文件(如 `foo.md.tmp` —— 常见后缀)撞名,`open('w')` 直接截断它、
   // 随后 rename 连内容带文件一起销毁 → 数据丢失(codex P1)。隐藏 + 应用标记的 sibling
@@ -112,6 +116,7 @@ async function atomicWriteFileInner(
   // crash(open→rename 窗口被杀)残留的同名标记 tmp(用户不会创建此名)→ 安全删除后重试
   // 一次,保留「固定名 crash 残留自愈」语义(第十八轮设计),同时不再有截断用户文件之虞。
   let fd: Awaited<ReturnType<typeof open>> | undefined;
+  let written: Stats | undefined;
   try {
     try {
       fd = await open(tmpPath, 'wx');
@@ -129,6 +134,8 @@ async function atomicWriteFileInner(
       await fd.writeFile(content);
     }
     await fd.sync();
+    // 本次写入内容的身份(fsync 后、rename 前经 fd 取,不会混入别人的写入);失败不影响写盘本身。
+    written = await fd.stat().catch(() => undefined);
   } catch (err) {
     await fd?.close().catch(() => {});
     await rm(tmpPath, { force: true }).catch(() => {});
@@ -147,4 +154,28 @@ async function atomicWriteFileInner(
       `atomic write rename failed: ${filePath}`,
     );
   }
+  return confirmWrittenStat(filePath, written);
+}
+
+/**
+ * rename 后对目标 stat 一次,与 fd 上取得的「本次写入」身份(dev/ino/mtimeMs/size)比对:一致才返回
+ * { mtimeMs, size }。rename 与 stat 之间若有外部写入 / 替换,或平台在 close/rename 时改了 mtime,则
+ * 不一致 → undefined(调用方不记录,外部同步照旧整文件读,绝不把别人的写入当成自己的回声)。
+ */
+async function confirmWrittenStat(
+  filePath: string,
+  written: Stats | undefined,
+): Promise<FsFileStat | undefined> {
+  if (!written) return undefined;
+  const now = await stat(filePath).catch(() => undefined);
+  if (
+    !now ||
+    now.dev !== written.dev ||
+    now.ino !== written.ino ||
+    now.mtimeMs !== written.mtimeMs ||
+    now.size !== written.size
+  ) {
+    return undefined;
+  }
+  return { mtimeMs: now.mtimeMs, size: now.size };
 }

@@ -12,7 +12,13 @@ import { existsSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { FS_CHANNELS, toFsReadFileResult } from '../../../electron/shared/fs-channels';
+import {
+  FS_CHANNELS,
+  toFsFileStat,
+  toFsReadFileResult,
+  toFsStatResult,
+  toFsWriteFileResult,
+} from '../../../electron/shared/fs-channels';
 import {
   createDirHandler,
   createDirInputSchema,
@@ -30,6 +36,8 @@ import {
   renameHandler,
   renameInputSchema,
   selectDirectoryInputSchema,
+  statHandler,
+  statInputSchema,
   trashInputSchema,
   writeFileHandler,
   writeFileInputSchema,
@@ -61,6 +69,7 @@ describe('FS_CHANNELS 常量', () => {
     expect(FS_CHANNELS.CREATE_DIR).toBe('fs:create-dir');
     expect(FS_CHANNELS.TRASH).toBe('fs:trash');
     expect(FS_CHANNELS.SELECT_DIRECTORY).toBe('fs:select-directory');
+    expect(FS_CHANNELS.STAT).toBe('fs:stat');
   });
 
   it('9 条常量值唯一不重复', () => {
@@ -382,6 +391,56 @@ describe('handlers 接线', () => {
     const f = path.join(dir, 'w.txt');
     await writeFileHandler({ path: f, content: 'world' });
     expect(await fspReadFile(f, 'utf-8')).toBe('world');
+  });
+
+  // 性能(编辑器保存回声识别):写成功返回写入内容的 { mtimeMs, size },与随后 fs:stat 一致。
+  it('writeFileHandler 返回写入后的 { mtimeMs, size },与 statHandler 一致', async () => {
+    const f = path.join(dir, 'w.txt');
+    const written = await writeFileHandler({ path: f, content: '世界' });
+    const st = statSync(f);
+    expect(written).toEqual({ mtimeMs: st.mtimeMs, size: st.size });
+    expect(written?.size).toBe(6);
+    expect(await statHandler({ path: f })).toEqual(written);
+  });
+
+  it('writeFileHandler 写穿 symlink:返回链接目标的 stat', async () => {
+    const target = path.join(dir, 't.md');
+    await writeFile(target, 'x');
+    await symlink(target, path.join(dir, 'link.md'));
+    const written = await writeFileHandler({ path: path.join(dir, 'link.md'), content: 'abc' });
+    const st = statSync(target);
+    expect(written).toEqual({ mtimeMs: st.mtimeMs, size: 3 });
+  });
+
+  it('statHandler:不存在 → 抛 FS_NOT_FOUND;schema strict + 必填 path', async () => {
+    await expect(statHandler({ path: path.join(dir, 'nope') })).rejects.toMatchObject({
+      code: 'FS_NOT_FOUND',
+    });
+    expect(statInputSchema.safeParse({ path: '/a' }).success).toBe(true);
+    expect(statInputSchema.safeParse({}).success).toBe(false);
+    expect(statInputSchema.safeParse({ path: '/a', x: 1 }).success).toBe(false);
+    expect(statInputSchema.safeParse({ path: 'a'.repeat(100_000) }).success).toBe(false);
+  });
+
+  it('preload 结果映射:stat 守卫 / writeFile 畸形 data → undefined / stat 畸形 → 失败', () => {
+    expect(toFsFileStat({ mtimeMs: 1.5, size: 2, extra: 1 })).toEqual({ mtimeMs: 1.5, size: 2 });
+    expect(toFsFileStat({ mtimeMs: Number.NaN, size: 2 })).toBeUndefined();
+    expect(toFsFileStat({ mtimeMs: 1, size: -1 })).toBeUndefined();
+    expect(toFsFileStat({ mtimeMs: 1, size: 1.5 })).toBeUndefined();
+    expect(toFsFileStat(null)).toBeUndefined();
+    expect(toFsWriteFileResult({ ok: true, data: { mtimeMs: 1, size: 2 } })).toEqual({
+      ok: true,
+      data: { mtimeMs: 1, size: 2 },
+    });
+    expect(toFsWriteFileResult({ ok: true, data: 'bogus' })).toEqual({ ok: true, data: undefined });
+    const fail = { ok: false as const, code: 'FS_IO', message: 'x' };
+    expect(toFsWriteFileResult(fail)).toBe(fail);
+    expect(toFsStatResult({ ok: true, data: { mtimeMs: 1, size: 2 } })).toEqual({
+      ok: true,
+      data: { mtimeMs: 1, size: 2 },
+    });
+    expect(toFsStatResult({ ok: true, data: {} }).ok).toBe(false);
+    expect(toFsStatResult(fail)).toBe(fail);
   });
 
   it('renameHandler 同目录改名,返回新路径', async () => {
