@@ -19,7 +19,11 @@ const electronMock = vi.hoisted(() => ({
 }));
 
 const fsMock = vi.hoisted(() => ({
-  statSync: vi.fn(),
+  // 运行期打开文件夹不得同步 stat(慢挂载 / 失联网络盘会冻结整个 main)→ 同步版被调用即失败
+  statSync: vi.fn(() => {
+    throw new Error('statSync must not be used on the runtime open-folder path');
+  }),
+  stat: vi.fn(),
 }));
 
 // 关键: vi.mock 三层缺一不可, 防 node:fs mock 漏到 electron/main/index 真 import:
@@ -58,6 +62,7 @@ vi.mock('../../../electron/main/persistence', () => ({
 
 vi.mock('node:fs', () => ({
   statSync: fsMock.statSync,
+  promises: { stat: fsMock.stat },
 }));
 
 import { createMainWindow } from '../../../electron/main/index';
@@ -82,7 +87,7 @@ beforeEach(() => {
   electronMock.senderToWindow.clear();
   electronMock.senderToWindow.set(sender, fakeWindow);
   vi.clearAllMocks();
-  fsMock.statSync.mockReset();
+  fsMock.stat.mockReset();
   registerWindowIpc({ createMainWindow });
 });
 
@@ -96,9 +101,7 @@ describe('window-ipc-create: createWindowHandler', () => {
   });
 
   it("T2: rejects non-existent absolute workspace as WORKSPACE_NOT_FOUND", async () => {
-    fsMock.statSync.mockImplementation(() => {
-      throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
-    });
+    fsMock.stat.mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
     const result = await createWin({ workspace: '/nonexistent/path' });
     expect(result).toMatchObject({
       ok: false,
@@ -107,7 +110,7 @@ describe('window-ipc-create: createWindowHandler', () => {
   });
 
   it("T3: rejects file (not directory) as WORKSPACE_NOT_DIRECTORY", async () => {
-    fsMock.statSync.mockReturnValue({ isDirectory: () => false } as never);
+    fsMock.stat.mockResolvedValue({ isDirectory: () => false } as never);
     const result = await createWin({ workspace: '/abs/file' });
     expect(result).toMatchObject({
       ok: false,
@@ -116,7 +119,7 @@ describe('window-ipc-create: createWindowHandler', () => {
   });
 
   it("T4: accepts a valid absolute directory and creates the window", async () => {
-    fsMock.statSync.mockReturnValue({ isDirectory: () => true } as never);
+    fsMock.stat.mockResolvedValue({ isDirectory: () => true } as never);
     const result = await createWin({ workspace: '/abs/path' });
     expect(result).toEqual({ ok: true, data: { windowId: 42 } });
     expect(allocateWindowSeq).toHaveBeenCalledTimes(1);
@@ -152,5 +155,12 @@ describe('window-ipc-create: createWindowHandler', () => {
       ok: false,
       code: 'IPC_BAD_INPUT',
     });
+  });
+
+  it("T9: workspace 目录判定走异步 fs.promises.stat,不调用同步 statSync(不阻塞 main)", async () => {
+    fsMock.stat.mockResolvedValue({ isDirectory: () => true } as never);
+    await createWin({ workspace: '/abs/path' });
+    expect(fsMock.stat).toHaveBeenCalledWith('/abs/path');
+    expect(fsMock.statSync).not.toHaveBeenCalled();
   });
 });

@@ -918,10 +918,10 @@ pendingOpenPaths.push(
 // 边界(E59,E58 运行期 sibling):macOS open-file 在 app ready 后直接走本入口,绕过冷启动
 // pendingOpenPaths/pickStartupMode 的数量/长度上限。畸形/自动化 open-file 事件可在运行中连续送入
 // 大量目录或超长路径 → 对每个先同步 statSync + 批量 allocateWindowSeq/createMainWindow,主进程
-// 同步 I/O 卡顿 + 批量开窗。复用启动路径长度守卫(超长不 statSync)+ 运行期并发开窗上限。
+// 同步 I/O 卡顿 + 批量开窗。复用启动路径长度守卫(超长不 stat)+ 运行期并发开窗上限;目录判定已改异步。
 let openInFlight = 0;
 async function openPathInNewWindow(absPath: string): Promise<void> {
-  // 超长/非法路径先跳过,绝不对其 statSync。
+  // 超长/非法路径先跳过,绝不对其 stat。
   if (!isWithinStartupPathLimit(absPath)) {
     console.warn('[open-file] dropping invalid/oversize path');
     return;
@@ -935,7 +935,8 @@ async function openPathInNewWindow(absPath: string): Promise<void> {
   }
   openInFlight += 1;
   try {
-    if (!isDirectorySync(absPath)) return; // 路径不存在 / 无权限 / 非目录 → 跳过
+    // 运行期异步判定:同步 stat 遇慢挂载 / 失联网络盘会冻结整个 main(在途判定也计入 openInFlight)。
+    if (!(await isDirectory(absPath))) return; // 路径不存在 / 无权限 / 非目录 → 跳过
     await openWorkspaceWindow(absPath);
   } finally {
     openInFlight -= 1;
