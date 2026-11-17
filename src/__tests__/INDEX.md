@@ -368,6 +368,7 @@
 ## [shell decor / Splash / PopoutHost 装饰组件](./decor-shell/README.md)
 
 - [`decor-shell.spec.tsx`](./decor-shell/decor-shell.spec.tsx)
+- [`splash-lifecycle.spec.tsx`](./decor-shell/splash-lifecycle.spec.tsx)
 
 ## [design-system](./design-system/README.md)
 

@@ -37,16 +37,10 @@ import { ToastViewport } from '@/notifications/ToastViewport';
 import { LanguageFromSettings } from '@/plugins/settings/LanguageFromSettings';
 import { notifyFailure, notifyThrownError } from '@/notifications/notify-thrown-error';
 
-const SPLASH_MIN_MS = 600;
-
 function MainApp() {
+  // 性能:Splash 只遮住布局恢复期,布局就绪即移除(此前另有 600ms 最短展示,布局 80ms 就绪也要
+  // 再白等 ~500ms 才可交互)。
   const [layoutReady, setLayoutReady] = useState(false);
-  const [splashElapsed, setSplashElapsed] = useState(false);
-
-  useEffect(() => {
-    const t = setTimeout(() => setSplashElapsed(true), SPLASH_MIN_MS);
-    return () => clearTimeout(t);
-  }, []);
 
   // 全局 ⌘P / Ctrl+P 触发 Quick Open(文件搜索,VSCode 同款)
   useQuickOpenHotkey();
@@ -140,7 +134,7 @@ function MainApp() {
   }, [setRoot]);
 
   const onLayoutReady = useCallback(() => setLayoutReady(true), []);
-  const showSplash = !(layoutReady && splashElapsed);
+  const showSplash = !layoutReady;
 
   return (
     <>
