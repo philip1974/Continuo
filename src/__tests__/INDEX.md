@@ -1203,6 +1203,10 @@
 
 - [`output-latency.spec.ts`](./terminal-output-latency/output-latency.spec.ts)
 
+## [terminal-overflow-throttle](./terminal-overflow-throttle/README.md)
+
+- [`overflow-throttle.spec.ts`](./terminal-overflow-throttle/overflow-throttle.spec.ts)
+
 ## [terminal-panel-as-dockview-panel](./terminal-panel-as-dockview-panel/README.md)
 
 - [`core-contract.spec.ts`](./terminal-panel-as-dockview-panel/core-contract.spec.ts)

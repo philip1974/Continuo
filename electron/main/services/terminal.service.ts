@@ -43,9 +43,53 @@ function flushPending(id: string, inst: Instance): void {
   }
 }
 
+/**
+ * 吞吐窗口惰性滚动(perf):此前每个 PTY 一个永久 1Hz setInterval(上限 256 会话 → 空闲也 256 次/秒唤醒
+ * 主进程),每个 tick 做「overflow 中且本窗速率已 ≤ 阈值 → 补发 recovered」再清零计数。现改为按时间戳在
+ * 用到计数时(handleChunk / 恢复检查)补跑错过的 tick,窗口仍以创建时刻对齐、每 1s 一格,语义与旧 interval 等价:
+ * - 错过的第一个 tick:计数为上一窗口总量,overflow 中且 ≤ 阈值 → recovered
+ * - 错过 ≥2 个 tick:第二个 tick 时计数已清零 → overflow 中必然 recovered
+ */
+function rollThroughputWindow(id: string, inst: Instance, now: number): void {
+  const elapsed = now - inst.windowStart;
+  if (elapsed < 0) {
+    // 墙钟回拨:以当前时刻重新起窗,否则窗口长期不滚动(计数只增不清 → 卡死在 overflow)。
+    inst.windowStart = now;
+    inst.bytesPerSecond = 0;
+    return;
+  }
+  if (elapsed < THROTTLE_RESET_INTERVAL_MS) return;
+  if (
+    inst.overflowNotified &&
+    (inst.bytesPerSecond <= OVERFLOW_THRESHOLD_BYTES || elapsed >= 2 * THROTTLE_RESET_INTERVAL_MS)
+  ) {
+    inst.overflowNotified = false;
+    safeSend(id, TERMINAL_CHANNELS.OVERFLOW_RECOVERED, id);
+  }
+  inst.bytesPerSecond = 0;
+  inst.windowStart +=
+    Math.floor(elapsed / THROTTLE_RESET_INTERVAL_MS) * THROTTLE_RESET_INTERVAL_MS;
+}
+
+/**
+ * overflow 后若流恰好静默(不再有 chunk),handleChunk 的 recover 分支没机会跑 → renderer 永久卡在 overflow
+ * 指示。仅在 overflow 期间按窗口边界安排一次性检查(等价旧 interval 的 tick 时刻),恢复后不再持有定时器。
+ */
+function scheduleOverflowRecoveryCheck(id: string, inst: Instance): void {
+  if (inst.recoveryTimer) return;
+  const delay = Math.max(0, inst.windowStart + THROTTLE_RESET_INTERVAL_MS - Date.now());
+  inst.recoveryTimer = setTimeout(() => {
+    inst.recoveryTimer = null;
+    if (instances.get(id) !== inst) return;
+    rollThroughputWindow(id, inst, Date.now());
+    if (inst.overflowNotified) scheduleOverflowRecoveryCheck(id, inst);
+  }, delay);
+}
+
 function handleChunk(id: string, chunk: string): void {
   const inst = instances.get(id);
   if (!inst) return;
+  rollThroughputWindow(id, inst, Date.now());
 
   if (!inst.pendingData) inst.pendingStart = inst.receivedChars;
   inst.receivedChars += chunk.length;
@@ -67,6 +111,7 @@ function handleChunk(id: string, chunk: string): void {
     if (!inst.overflowNotified) {
       inst.overflowNotified = true;
       safeSend(id, TERMINAL_CHANNELS.OVERFLOW, id);
+      scheduleOverflowRecoveryCheck(id, inst);
     }
     if (!inst.flushTimer) {
       inst.flushTimer = setTimeout(flushPending, FLUSH_DELAY_OVERFLOW_MS, id, inst);
@@ -325,14 +370,14 @@ function cleanupSessionLocal(id: string, exitCode: number): void {
   // Baseline shape: webContents.send('terminal:exit', id, { exitCode, signal })
   safeSend(id, TERMINAL_CHANNELS.EXIT, id, { exitCode, signal: undefined });
 
-  // 3. Clear all timers (Adjustment A: throttleInterval was setInterval per Op0 baseline)
+  // 3. Clear all timers
   if (instance.killTimer) {
     clearTimeout(instance.killTimer);
     instance.killTimer = null;
   }
-  if (instance.throttleInterval) {
-    clearInterval(instance.throttleInterval);
-    instance.throttleInterval = null;
+  if (instance.recoveryTimer) {
+    clearTimeout(instance.recoveryTimer);
+    instance.recoveryTimer = null;
   }
 
   // 4. Continuo-specific cleanup (shellCleanup is async — P1-1 fix)
@@ -369,8 +414,12 @@ interface Instance {
   receivedChars: number;
   flushTimer: NodeJS.Timeout | null;
   killTimer: NodeJS.Timeout | null;
+  /** 当前 1s 吞吐窗口内累计 UTF-8 字节数(窗口起点 windowStart,惰性滚动)。 */
   bytesPerSecond: number;
-  throttleInterval: NodeJS.Timeout | null;
+  /** 当前吞吐窗口起点(ms,以创建时刻对齐,每格 THROTTLE_RESET_INTERVAL_MS)。 */
+  windowStart: number;
+  /** overflow 期间的一次性恢复检查(无 overflow 时为 null:空闲终端不持有周期定时器)。 */
+  recoveryTimer: NodeJS.Timeout | null;
   overflowNotified: boolean;
   readonly mcpToken: string;
   readonly shellCleanup: () => Promise<void>;
@@ -559,7 +608,8 @@ export async function createTerminal(
     flushTimer: null,
     killTimer: null,
     bytesPerSecond: 0,
-    throttleInterval: null,
+    windowStart: Date.now(),
+    recoveryTimer: null,
     overflowNotified: false,
     mcpToken: meta?.mcpToken ?? '',
     shellCleanup,
@@ -568,16 +618,6 @@ export async function createTerminal(
   // PHASE 1: register all Continuo-side state BEFORE PTY spawn.
   instances.set(id, inst);
   setTarget(id, win.webContents);
-  inst.throttleInterval = setInterval(() => {
-    // overflow 后若流恰好静默(不再有 chunk),handleChunk 的 recover 分支没机会跑
-    // → renderer 永久卡在 overflow 指示。这里在速率回落到阈值内时补发 recovered。
-    // (handleChunk 收到低于阈值的 chunk 时已会清 overflowNotified,故无重复发送。)
-    if (inst.overflowNotified && inst.bytesPerSecond <= OVERFLOW_THRESHOLD_BYTES) {
-      inst.overflowNotified = false;
-      safeSend(id, TERMINAL_CHANNELS.OVERFLOW_RECOVERED, id);
-    }
-    inst.bytesPerSecond = 0;
-  }, THROTTLE_RESET_INTERVAL_MS);
 
   try {
     // PHASE 2: spawn PTY via SessionManager.
@@ -595,9 +635,9 @@ export async function createTerminal(
     // PHASE 3: rollback all PHASE 1 state on sm.create failure.
     instances.delete(id);
     sessionTargets.delete(id);
-    if (inst.throttleInterval) {
-      clearInterval(inst.throttleInterval);
-      inst.throttleInterval = null;
+    if (inst.recoveryTimer) {
+      clearTimeout(inst.recoveryTimer);
+      inst.recoveryTimer = null;
     }
     if (inst.mcpToken) {
       try {
