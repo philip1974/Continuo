@@ -53,6 +53,45 @@ describe('utf8 byte length (E125)', () => {
     expect(utf8BytesExceed('\uD800中', 5)).toBe(true);
     expect(utf8BytesExceed('\uD800中', 6)).toBe(false);
   });
+
+  // perf P2:UTF-8 字节数 ≤ 3 × UTF-16 code unit 数(BMP ≤3/unit、代理对 4/2 unit、lone 代理 3/unit)。
+  // s.length * 3 ≤ maxBytes 时必不超限,直接返回 false,不逐字符计数。
+  it('utf8BytesExceed 与 TextEncoder 判定等价(随机串含代理对 / lone 代理,上限取真实字节数附近)', () => {
+    const te = new TextEncoder();
+    const alphabet = ['a', 'é', '中', '😀', '\uD800', '\uDC00', '߿', 'ࠀ', '￿'];
+    let seed = 12345;
+    const rnd = () => {
+      seed = (seed * 1664525 + 1013904223) >>> 0;
+      return seed / 0x100000000;
+    };
+    for (let k = 0; k < 500; k++) {
+      let s = '';
+      const n = Math.floor(rnd() * 20);
+      for (let i = 0; i < n; i++) s += alphabet[Math.floor(rnd() * alphabet.length)];
+      const bytes = te.encode(s).byteLength;
+      for (const max of [0, bytes - 1, bytes, bytes + 1, s.length * 3 - 1, s.length * 3, s.length * 3 + 1, s.length]) {
+        if (max < 0) continue;
+        expect(utf8BytesExceed(s, max), `${JSON.stringify(s)} max=${max}`).toBe(bytes > max);
+      }
+    }
+  });
+
+  it('utf8BytesExceed 快速路径:s.length × 3 ≤ maxBytes 时不逐字符计数', () => {
+    const orig = String.prototype.charCodeAt;
+    let calls = 0;
+    String.prototype.charCodeAt = function (this: string, i: number) {
+      calls++;
+      return orig.call(this, i);
+    };
+    try {
+      expect(utf8BytesExceed('中'.repeat(1000), 3000)).toBe(false);
+      expect(calls).toBe(0);
+      expect(utf8BytesExceed('中'.repeat(1000), 2999)).toBe(true);
+      expect(calls).toBeGreaterThan(0);
+    } finally {
+      String.prototype.charCodeAt = orig;
+    }
+  });
 });
 
 const manifest: PluginManifest = {

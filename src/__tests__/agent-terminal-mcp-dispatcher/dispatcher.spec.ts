@@ -217,6 +217,49 @@ describe('dispatchRpc · tools/call', () => {
     });
   });
 
+  // perf P2:host 结果边界的下界预检改用 .length 下界(每个字符串 O(1)),不再对每个字符串逐字符算 UTF-8;
+  // 其后精确的 utf8BytesExceed(text) 裁决不变 —— 接受 / 拒绝判定与错误形态一致。
+  describe('结果字节上限(RESULT_BYTES_MAX 10MiB)判定', () => {
+    const big = (value: unknown): AnyMcpTool => ({
+      name: 'big',
+      description: 'returns a fixed value',
+      jsonSchema: { type: 'object', additionalProperties: false },
+      inputSchema: z.object({}).strict(),
+      run: () => value,
+    });
+    const call = (value: unknown) =>
+      dispatchRpc(req('tools/call', { name: 'big' }), makeTools(big(value)), SERVER_INFO, CTX);
+    const isTooLarge = (r: unknown) =>
+      JSON.stringify((r as { error?: unknown }).error ?? null).includes('RESULT_TOO_LARGE');
+
+    it('CJK 结果:.length 未超但 UTF-8 字节超 → RESULT_TOO_LARGE', async () => {
+      const r = await call({ s: '中'.repeat(4 * 1024 * 1024) }); // 12MiB 字节 / 4Mi code unit
+      expect(isTooLarge(r)).toBe(true);
+    });
+
+    it('ASCII 结果超上限 → RESULT_TOO_LARGE;上限内 CJK 结果 → 正常返回', async () => {
+      expect(isTooLarge(await call('x'.repeat(10 * 1024 * 1024 + 1)))).toBe(true);
+      const ok = await call({ s: '中'.repeat(3 * 1024 * 1024) }); // 9MiB 字节
+      expect('result' in ok).toBe(true);
+    });
+
+    it('上限内的结果不逐字符计算 UTF-8 字节(下界与精确裁决都走廉价路径)', async () => {
+      const orig = String.prototype.charCodeAt;
+      let calls = 0;
+      String.prototype.charCodeAt = function (this: string, i: number) {
+        calls++;
+        return orig.call(this, i);
+      };
+      try {
+        const r = await call({ a: 'x'.repeat(200_000), b: ['中'.repeat(50_000)] });
+        expect('result' in r).toBe(true);
+      } finally {
+        String.prototype.charCodeAt = orig;
+      }
+      expect(calls).toBe(0);
+    });
+  });
+
   it('arguments 缺省 → 当 {}', async () => {
     const r = await dispatchRpc(
       req('tools/call', { name: 'noop' }),

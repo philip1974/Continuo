@@ -22,7 +22,7 @@ import {
   MAX_BOUNDED_OBJECT_KEY_LEN,
 } from '../../shared/bounded-input';
 import { utf8BytesExceed } from '../../shared/utf8-byte-length';
-import { jsonByteLowerBoundExceeds } from '../../shared/json-byte-budget';
+import { jsonByteLowerBoundExceeds, jsonStringLengthLowerBoundExceeds } from '../../shared/json-byte-budget';
 import { RESULT_BYTES_MAX } from '../../shared/plugin-mcp-schemas';
 import { PLUGIN_MCP_ERROR_CODES } from '../../shared/plugin-mcp-channels';
 import { equalsAsciiIgnoreCase } from '../../shared/lower-if-needed';
@@ -450,7 +450,10 @@ export async function dispatchRpc(
       // 在 JSON.stringify 物化巨字符串之前拒。plugin tool 结果已经 isInvokeResultAdmissible(E262/E265)
       // 限过,但内置/未来注册的 tool 结果不走 bridge —— 此处是 host 通用边界,补字节预算 fail-fast。
       // 不前置 assertJsonValue(保持 E120 空结果 + 既有强转行为不变),仅加预检,判定与下方精确字节 cap 等价。
-      if (jsonByteLowerBoundExceeds(result, RESULT_BYTES_MAX)) {
+      // perf P2:下界用 .length 度量(UTF-8 字节 ≥ .length,仍是合法下界;每个字符串 O(1),不再逐字符算 UTF-8)。
+      // 拒绝判定不变 —— 下界未超但真实字节超限的(CJK 为主)由下方精确 utf8BytesExceed(text) 以同一错误拒;
+      // 代价是这类输入先 stringify(其 .length 下界 ≤ 上限,物化规模有界)。
+      if (jsonStringLengthLowerBoundExceeds(result, RESULT_BYTES_MAX)) {
         return {
           error: formatToolCallError({
             code: PLUGIN_MCP_ERROR_CODES.RESULT_TOO_LARGE,

@@ -32,9 +32,12 @@ export function utf8ByteLength(s: string): number {
 /**
  * s 的 UTF-8 字节数是否 > maxBytes(带提前退出,避免对超大串全量计数)。
  * 因 byteLength >= s.length,s.length > maxBytes 时可直接判超限,无需迭代。
+ * 又因 byteLength <= 3 × s.length(BMP 字符 ≤3 字节/code unit,代理对 4 字节/2 code unit,lone 代理 →
+ * U+FFFD 3 字节/1 code unit),s.length × 3 <= maxBytes 时必不超限,同样无需迭代(perf)。
  */
 export function utf8BytesExceed(s: string, maxBytes: number): boolean {
   if (s.length > maxBytes) return true;
+  if (s.length * 3 <= maxBytes) return false;
   let bytes = 0;
   for (let i = 0; i < s.length; i++) {
     const c = s.charCodeAt(i);
