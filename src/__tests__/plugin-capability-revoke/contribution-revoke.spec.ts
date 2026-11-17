@@ -136,6 +136,65 @@ describe('scoped app:注册表 / 事件订阅随吊销回收', () => {
     d.dispose();
     expect(coApp.commands.get('c')?.title).toBe('Core');
   });
+
+  // perf P2:经 events.off 退订的监听,控制面不再留着它的退订句柄(及其捕获的插件回调)直到吊销。
+  // 可观测性:残留的句柄会在 revoke() 时再调一次底层 off;不残留则 off 调用次数 = 插件自己 off 的次数。
+  it('反复 events.on / off N 次:控制面不残留已退订的句柄,revoke 不再逐个重放 off', () => {
+    const coApp = createTestCoApp();
+    const off = vi.spyOn(coApp.events, 'off');
+    const ctl = createScopedAppController(coApp, ID, null);
+    for (let i = 0; i < 20; i++) {
+      const l = () => {};
+      ctl.app.events.on('x', l);
+      ctl.app.events.off('x', l);
+    }
+    expect(off).toHaveBeenCalledTimes(20);
+    ctl.revoke();
+    expect(off).toHaveBeenCalledTimes(20);
+  });
+
+  it('同一 listener 多次 on 后一次 off(总线按 Set 一次移除):全部对应句柄都不再残留', () => {
+    const coApp = createTestCoApp();
+    const off = vi.spyOn(coApp.events, 'off');
+    const ctl = createScopedAppController(coApp, ID, null);
+    const l = vi.fn();
+    ctl.app.events.on('x', l);
+    ctl.app.events.on('x', l);
+    ctl.app.events.off('x', l);
+    coApp.events.emit('x', 1);
+    expect(l).not.toHaveBeenCalled();
+    ctl.revoke();
+    expect(off).toHaveBeenCalledTimes(1);
+  });
+
+  it('off 只摘对应 (name, listener):其余订阅与 off 后重新 on 的订阅仍随 revoke 注销', () => {
+    const coApp = createTestCoApp();
+    const ctl = createScopedAppController(coApp, ID, null);
+    const a = vi.fn();
+    const b = vi.fn();
+    ctl.app.events.on('x', a);
+    ctl.app.events.on('y', a);
+    ctl.app.events.on('x', b);
+    ctl.app.events.off('x', a);
+    ctl.app.events.off('z', b); // 未命中:不影响 x/b
+    ctl.app.events.on('x', a);
+    ctl.revoke();
+    coApp.events.emit('x', 1);
+    coApp.events.emit('y', 1);
+    expect(a).not.toHaveBeenCalled();
+    expect(b).not.toHaveBeenCalled();
+  });
+
+  it('off 后插件仍持有的旧 Disposable 再 dispose:照旧转发到总线(语义不变)', () => {
+    const coApp = createTestCoApp();
+    const off = vi.spyOn(coApp.events, 'off');
+    const ctl = createScopedAppController(coApp, ID, null);
+    const l = vi.fn();
+    const d = ctl.app.events.on('x', l);
+    ctl.app.events.off('x', l);
+    d.dispose();
+    expect(off).toHaveBeenCalledTimes(2);
+  });
 });
 
 function makeManager(PluginClass: typeof Plugin): { mgr: PluginManager; coApp: CoApp } {

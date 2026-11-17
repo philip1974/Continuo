@@ -228,3 +228,87 @@ describe('异步 onload / onunload', () => {
     expect(order).toEqual(['disp_A', 'onunload']);
   });
 });
+
+// ── 提前 dispose 的贡献句柄不滞留 ─────────────────────────
+// perf P2:插件刷新装饰的唯一方式是 dispose 旧 decorator 再重新注册;反复 registerEvent/dispose 同理。
+// 提前 dispose 的句柄若仍留在 Plugin 的收集集合里,会把 registry 闭包与插件回调一直留到停用。
+
+describe('提前 dispose 的贡献句柄从收集集合移除', () => {
+  function countingApp() {
+    let disposeCalls = 0;
+    const app = createTestApp('0.0.0-test');
+    const origDecorator = app.explorerDecorators.register.bind(app.explorerDecorators);
+    app.explorerDecorators.register = (fn) => {
+      const d = origDecorator(fn);
+      return { dispose: () => { disposeCalls++; d.dispose(); } };
+    };
+    return { app, calls: () => disposeCalls };
+  }
+  const collectedSize = (p: Plugin): number =>
+    (p as unknown as { disposables: { size: number } }).disposables.size;
+
+  it('反复 registerExplorerDecorator → dispose N 次:集合不增长,停用不再重复 dispose 已释放的句柄', async () => {
+    const { app, calls } = countingApp();
+    class P extends Plugin {
+      onload() {}
+      refresh() {
+        return this.registerExplorerDecorator(() => null);
+      }
+    }
+    const p = new P(app, baseManifest);
+    await p._activate();
+    for (let i = 0; i < 50; i++) p.refresh().dispose();
+    p.refresh();
+    expect(collectedSize(p)).toBe(1);
+    expect(calls()).toBe(50);
+    await p._deactivate();
+    // 停用只释放仍存活的 1 个
+    expect(calls()).toBe(51);
+    expect(app.explorerDecorators.getAll()).toHaveLength(0);
+  });
+
+  it('反复 registerEvent → dispose N 次:集合不增长;停用时仍存活的订阅全部释放', async () => {
+    const app = createTestApp('0.0.0-test');
+    const got: unknown[] = [];
+    class P extends Plugin {
+      onload() {
+        this.registerEvent({ name: 'keep', fn: (x) => got.push(x) });
+      }
+      churn() {
+        this.registerEvent({ name: 'tmp', fn: () => {} }).dispose();
+      }
+    }
+    const p = new P(app, baseManifest);
+    await p._activate();
+    for (let i = 0; i < 50; i++) p.churn();
+    expect(collectedSize(p)).toBe(1);
+    app.events.emit('keep', 1);
+    await p._deactivate();
+    app.events.emit('keep', 2);
+    expect(got).toEqual([1]);
+  });
+
+  it('停用时按注册逆序释放仍存活的贡献句柄(中途 dispose 的不参与)', async () => {
+    const log: string[] = [];
+    const app = createTestApp('0.0.0-test');
+    let n = 0;
+    app.commands.register = () => {
+      const label = `C${n++}`;
+      return { dispose: () => log.push(label) };
+    };
+    class P extends Plugin {
+      onload() {
+        this.addCommand({ id: 'a', title: 'a', fn: () => {} });
+        const mid = this.addCommand({ id: 'b', title: 'b', fn: () => {} });
+        this.register(makeDisposable('R', log));
+        this.addCommand({ id: 'c', title: 'c', fn: () => {} });
+        mid.dispose();
+      }
+    }
+    const p = new P(app, baseManifest);
+    await p._activate();
+    expect(log).toEqual(['C1']);
+    await p._deactivate();
+    expect(log).toEqual(['C1', 'C2', 'R', 'C0']);
+  });
+});

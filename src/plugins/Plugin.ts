@@ -29,7 +29,12 @@ export abstract class Plugin {
   /** v5 Phase 1:per-plugin scoped app(含 fs/network/clipboard/permission). */
   readonly app: CoPluginApp;
   readonly manifest: PluginManifest;
-  private disposables: Disposable[] = [];
+  /**
+   * 待停用时清理的句柄,按插入序(Set 保序)停用时 LIFO 反序 dispose。
+   * 贡献点代理返回的句柄被插件提前 dispose 时会把自身从集合删除(见 track),
+   * 反复「dispose + 重新注册」不再让集合与其闭包无界增长到停用。
+   */
+  private disposables = new Set<Disposable>();
   private disposed = false;
 
   constructor(app: CoPluginApp, manifest: PluginManifest) {
@@ -44,30 +49,30 @@ export abstract class Plugin {
   onunload?(): void | Promise<void>;
 
   // ── 贡献点代理(M-Plugin v1.5)───────────────────────
-  // 全部内部调 app.<reg>.register(spec) 拿 Disposable,自动 this.register(d)。
+  // 全部内部调 app.<reg>.register(spec) 拿 Disposable,经 this.track(d) 收集并返回包装句柄。
   // unload 时 LIFO 清理 → 该插件所有贡献从 registry 退出。
 
   protected registerPanel(spec: PanelSpec): Disposable {
-    return this.register(this.app.panels.register(spec));
+    return this.track(this.app.panels.register(spec));
   }
 
   protected addCommand(spec: CommandSpec): Disposable {
-    return this.register(this.app.commands.register(spec));
+    return this.track(this.app.commands.register(spec));
   }
 
   protected addStatusBarItem(spec: StatusBarItemSpec): Disposable {
-    return this.register(this.app.statusBar.register(spec));
+    return this.track(this.app.statusBar.register(spec));
   }
 
   protected addRibbonAction(spec: RibbonActionSpec): Disposable {
-    return this.register(this.app.ribbon.register(spec));
+    return this.track(this.app.ribbon.register(spec));
   }
 
   protected registerEvent(spec: {
     readonly name: string;
     readonly fn: (payload: unknown) => void;
   }): Disposable {
-    return this.register(this.app.events.on(spec.name, spec.fn));
+    return this.track(this.app.events.on(spec.name, spec.fn));
   }
 
   /** 读取该插件持久化数据;不存在 / IO 失败返 null. */
@@ -89,27 +94,27 @@ export abstract class Plugin {
   }
 
   protected addSettingTab(spec: SettingTabSpec): Disposable {
-    return this.register(this.app.settingTabs.register(spec));
+    return this.track(this.app.settingTabs.register(spec));
   }
 
   /** 注册单个设置项(v6),Plugin 卸载时自动 dispose. */
   protected addSettingItem(spec: SettingItemSpec): Disposable {
-    return this.register(this.app.settingItems.register(spec));
+    return this.track(this.app.settingItems.register(spec));
   }
 
   protected registerExplorerDecorator(fn: DecoratorFn): Disposable {
-    return this.register(this.app.explorerDecorators.register(fn));
+    return this.track(this.app.explorerDecorators.register(fn));
   }
 
   protected registerEditorAction(spec: EditorActionSpec): Disposable {
-    return this.register(this.app.editorActions.register(spec));
+    return this.track(this.app.editorActions.register(spec));
   }
 
   /** Explorer 右键菜单贡献(V1,2026-05). 同步返 Disposable,_deactivate 自动清理. */
   protected registerExplorerContextMenuItem(
     spec: ExplorerContextMenuItemSpec,
   ): Disposable {
-    return this.register(this.app.explorerContextMenu.register(spec));
+    return this.track(this.app.explorerContextMenu.register(spec));
   }
 
   /**
@@ -127,7 +132,7 @@ export abstract class Plugin {
     spec: PluginMcpToolSpec<I, O>,
   ): Promise<Disposable> {
     const d = await this.app.mcp.register(spec);
-    return this.register(d);
+    return this.track(d);
   }
 
   /**
@@ -146,8 +151,25 @@ export abstract class Plugin {
       }
       return d;
     }
-    this.disposables.push(d);
+    // 每次登记一个独立条目:同一 d 重复 register 仍按次数 dispose(与原数组语义一致)。
+    this.disposables.add({ dispose: () => d.dispose() });
     return d;
+  }
+
+  /**
+   * 贡献点代理用:登记 d 并返回包装句柄 —— 插件提前 dispose 时先从集合删除自身再转发。
+   * (generic register 必须返回原对象,无法感知插件直接调 d.dispose(),故只在代理处包装。)
+   */
+  private track(d: Disposable): Disposable {
+    if (this.disposed) return this.register(d);
+    const handle: Disposable = {
+      dispose: () => {
+        this.disposables.delete(handle);
+        d.dispose();
+      },
+    };
+    this.disposables.add(handle);
+    return handle;
   }
 
   /**
@@ -209,8 +231,10 @@ export abstract class Plugin {
 
   /** LIFO 清掉已收集的 disposables;单个抛错不传染。_activate 失败 / _deactivate 复用. */
   private disposeCollected(): void {
-    for (let i = this.disposables.length - 1; i >= 0; i--) {
-      const d = this.disposables[i];
+    const collected = [...this.disposables];
+    this.disposables.clear();
+    for (let i = collected.length - 1; i >= 0; i--) {
+      const d = collected[i];
       if (!d) continue;
       try {
         d.dispose();
@@ -221,6 +245,5 @@ export abstract class Plugin {
         );
       }
     }
-    this.disposables = [];
   }
 }

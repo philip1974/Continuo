@@ -792,6 +792,18 @@ function trackContributions<T extends object>(
   // 共享注册表的原对象不改,返回浅拷贝,函数字段换成带吊销检查的 Proxy(未吊销透明转发,吊销后抛 PERMISSION_DENIED)。
   // 按原引用缓存保证同一快照返回同一包装(useRegistry / memo 依赖引用稳定)。
   const guarded = new WeakMap<object, unknown>();
+  // perf P2:events.on 的退订句柄按 (name, listener) 索引 —— 插件经直通的 events.off 退订后,
+  // 同步把对应句柄移出 owned,不再把总线闭包与插件回调留到吊销。总线按 Set 存 listener,
+  // 一次 off 即移除该 (name, listener) 的全部订阅,故摘掉该键下全部句柄。
+  const subscriptions = new Map<unknown, Map<unknown, Set<() => void>>>();
+  const forgetSubscriptions = (eventName: unknown, listener: unknown): void => {
+    const byListener = subscriptions.get(eventName);
+    const releases = byListener?.get(listener);
+    if (!byListener || !releases) return;
+    for (const release of releases) owned.delete(release);
+    byListener.delete(listener);
+    if (byListener.size === 0) subscriptions.delete(eventName);
+  };
   const guardFn = (f: object, capability: string): unknown =>
     new Proxy(f, {
       apply(target, thisArg, args) {
@@ -838,7 +850,14 @@ function trackContributions<T extends object>(
       if (method === undefined) {
         const fn = value as (...args: unknown[]) => unknown;
         const capability = `${name}.${String(prop)}`;
-        if (PASSTHROUGH_METHODS.has(prop)) {
+        if (prop === 'off') {
+          method = (...args: unknown[]) => {
+            const result = guardResult(fn.apply(t, args));
+            // 退订句柄本身不吊销(插件仍持有的旧 Disposable 再 dispose 照旧转发到总线),仅不再由 owned 持有。
+            forgetSubscriptions(args[0], args[1]);
+            return result;
+          };
+        } else if (PASSTHROUGH_METHODS.has(prop)) {
           method = (...args: unknown[]) => guardResult(fn.apply(t, args));
         } else if (!CONTRIBUTION_METHODS.has(prop)) {
           method = (...args: unknown[]) => {
@@ -859,10 +878,28 @@ function trackContributions<T extends object>(
               if (released) return;
               released = true;
               owned.delete(release);
+              if (prop === 'on') {
+                const releases = subscriptions.get(args[0])?.get(args[1]);
+                releases?.delete(release);
+                if (releases?.size === 0) forgetSubscriptions(args[0], args[1]);
+              }
               if (typeof handle === 'function') handle();
               else handle.dispose();
             };
             owned.add(release);
+            if (prop === 'on') {
+              let byListener = subscriptions.get(args[0]);
+              if (!byListener) {
+                byListener = new Map();
+                subscriptions.set(args[0], byListener);
+              }
+              let releases = byListener.get(args[1]);
+              if (!releases) {
+                releases = new Set();
+                byListener.set(args[1], releases);
+              }
+              releases.add(release);
+            }
             return typeof handle === 'function' ? release : { dispose: release };
           };
         }
