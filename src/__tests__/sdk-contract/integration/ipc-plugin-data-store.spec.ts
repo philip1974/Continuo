@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const coApiMocks = vi.hoisted(() => ({
   load: vi.fn(),
   save: vi.fn(),
+  saveSerialized: vi.fn(),
 }));
 
 vi.mock('@/lib/co-api', () => ({
@@ -10,6 +11,7 @@ vi.mock('@/lib/co-api', () => ({
     pluginDataRaw: {
       load: coApiMocks.load,
       save: coApiMocks.save,
+      saveSerialized: coApiMocks.saveSerialized,
     },
   },
 }));
@@ -21,6 +23,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   coApiMocks.load.mockResolvedValue({});
   coApiMocks.save.mockResolvedValue(undefined);
+  coApiMocks.saveSerialized.mockResolvedValue(undefined);
 });
 
 describe('sdk-contract integration: IpcPluginDataStore wrapper', () => {
@@ -32,13 +35,24 @@ describe('sdk-contract integration: IpcPluginDataStore wrapper', () => {
     expect(coApiMocks.load).toHaveBeenCalledWith('plugin.data');
   });
 
-  it('T4.b wraps writes as { value } before saving through raw IPC', async () => {
+  // perf P2:传预检时已算好的 value 序列化串(main 侧包成 { value } 落盘),不再结构化克隆对象图。
+  it('T4.b writes pass the already-serialized value string through raw IPC', async () => {
     const store = new IpcPluginDataStore();
     const data = { theme: 'dark' };
 
     await store.write('plugin.data', data);
 
-    expect(coApiMocks.save).toHaveBeenCalledWith('plugin.data', { value: data });
+    expect(coApiMocks.saveSerialized).toHaveBeenCalledWith('plugin.data', '{"theme":"dark"}');
+    expect(coApiMocks.save).not.toHaveBeenCalled();
+  });
+
+  it('T4.b2 非 JSON 安全值仍在 renderer 拒绝(不发 IPC)', async () => {
+    const store = new IpcPluginDataStore();
+    for (const bad of [{ x: Number.NaN }, { y: undefined }, { f: () => 1 }, 1n]) {
+      await expect(store.write('plugin.data', bad)).rejects.toThrow();
+    }
+    expect(coApiMocks.saveSerialized).not.toHaveBeenCalled();
+    expect(coApiMocks.save).not.toHaveBeenCalled();
   });
 
   // 边界(E43,E41/E42 同族):write() 在 renderer JSON.stringify 后按主进程同一上限预检,超限
@@ -56,14 +70,13 @@ describe('sdk-contract integration: IpcPluginDataStore wrapper', () => {
       /too large/i,
     );
     expect(coApiMocks.save).not.toHaveBeenCalled();
+    expect(coApiMocks.saveSerialized).not.toHaveBeenCalled();
   });
 
   it('E43 上限内正常写 → 正常 save', async () => {
     const store = new IpcPluginDataStore();
     await store.write('plugin.data', { ok: true });
-    expect(coApiMocks.save).toHaveBeenCalledWith('plugin.data', {
-      value: { ok: true },
-    });
+    expect(coApiMocks.saveSerialized).toHaveBeenCalledWith('plugin.data', '{"ok":true}');
   });
 
   it('T4.c reads from cache after write without calling raw load', async () => {

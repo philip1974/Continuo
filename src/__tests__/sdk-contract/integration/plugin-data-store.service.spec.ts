@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { PLUGIN_DATA_CHANNELS } from '../../../../electron/shared/plugin-data-channels';
+import { MAX_PLUGIN_DATA_BYTES } from '../../../../electron/shared/plugin-data-limits';
 import { registerPluginDataStoreHandlers } from '../../../../electron/main/services/plugin-data-store.service';
 import { StubIpcMain, makeFakeEvent } from './make-stub-ipc';
 
@@ -65,5 +66,55 @@ describe('sdk-contract integration: plugin-data-store.service raw IPC', () => {
     );
     const parsed = JSON.parse(raw) as { value: { n: number } };
     expect([1, 2]).toContain(parsed.value.n);
+  });
+
+  // perf P2:renderer 已为字节预检算好 value 的序列化串,直接把串过 IPC(结构化克隆字符串远快于克隆对象图),
+  // main JSON.parse 一次做形态 / 上限校验后直接落盘 `{"value":<串>}` —— 与旧 SAVE 对象路径字节一致。
+  describe('SAVE_SERIALIZED:传 value 的 JSON 串', () => {
+    const file = () => join(userDataPath, 'plugins', 'plugin.data', 'data.json');
+
+    it('落盘文本与旧 SAVE({ value }) 逐字节一致,load 返回同一形态', async () => {
+      const value = { enabled: true, n: [1, 2.5, -3], s: '中文\u{1F600}', nested: { a: null } };
+      await invoke(PLUGIN_DATA_CHANNELS.SAVE, 'plugin.data', { value });
+      const viaObject = await readFile(file(), 'utf-8');
+      await invoke(PLUGIN_DATA_CHANNELS.SAVE_SERIALIZED, 'plugin.data', JSON.stringify(value));
+      const viaString = await readFile(file(), 'utf-8');
+      expect(viaString).toBe(viaObject);
+      await expect(invoke(PLUGIN_DATA_CHANNELS.LOAD, 'plugin.data')).resolves.toEqual({ value });
+    });
+
+    it('非字符串 / 非法 JSON / 多值拼接注入 → BAD_INPUT,不写', async () => {
+      for (const bad of [{ value: 1 }, null, 42, '', '{', '1,"x":2', '1}, {"y":2']) {
+        await expect(
+          invoke(PLUGIN_DATA_CHANNELS.SAVE_SERIALIZED, 'plugin.data', bad),
+        ).rejects.toMatchObject({ code: 'BAD_INPUT' });
+      }
+      await expect(readFile(file(), 'utf-8')).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+
+    it('超过 assertJsonValue 形态上限(嵌套过深)→ BAD_INPUT', async () => {
+      const deep = '['.repeat(300) + ']'.repeat(300);
+      await expect(
+        invoke(PLUGIN_DATA_CHANNELS.SAVE_SERIALIZED, 'plugin.data', deep),
+      ).rejects.toMatchObject({ code: 'BAD_INPUT' });
+    });
+
+    it('落盘文本超 MAX_PLUGIN_DATA_BYTES → PAYLOAD_TOO_LARGE(与旧路径同口径:含 {"value":} 包装)', async () => {
+      // value 串本身恰好 = 上限,加包装后超限
+      const s = JSON.stringify('x'.repeat(MAX_PLUGIN_DATA_BYTES - 2));
+      expect(s.length).toBe(MAX_PLUGIN_DATA_BYTES);
+      await expect(
+        invoke(PLUGIN_DATA_CHANNELS.SAVE_SERIALIZED, 'plugin.data', s),
+      ).rejects.toMatchObject({ code: 'PAYLOAD_TOO_LARGE' });
+      await expect(
+        invoke(PLUGIN_DATA_CHANNELS.SAVE, 'plugin.data', { value: 'x'.repeat(MAX_PLUGIN_DATA_BYTES - 2) }),
+      ).rejects.toMatchObject({ code: 'PAYLOAD_TOO_LARGE' });
+    });
+
+    it('非法 plugin id → BAD_INPUT', async () => {
+      await expect(
+        invoke(PLUGIN_DATA_CHANNELS.SAVE_SERIALIZED, '../evil', '1'),
+      ).rejects.toMatchObject({ code: 'BAD_INPUT' });
+    });
   });
 });

@@ -22,7 +22,7 @@ vi.mock('@/lib/co-api', () => ({
   coApi: {
     pluginDataRaw: {
       load: coApiMocks.load,
-      save: coApiMocks.save,
+      saveSerialized: coApiMocks.save,
     },
   },
 }));
@@ -89,8 +89,8 @@ describe('race(R61) · IpcPluginDataStore.write 同 plugin 写写串行', () => 
     await expect(store.read('p')).resolves.toEqual({ v: 'B' });
     // 串行保证:save 按调用顺序依次发(A 的 value 先,B 的 value 后)。
     expect(coApiMocks.save.mock.calls.map((c) => c[1])).toEqual([
-      { value: { v: 'A' } },
-      { value: { v: 'B' } },
+      '{"v":"A"}',
+      '{"v":"B"}',
     ]);
   });
 

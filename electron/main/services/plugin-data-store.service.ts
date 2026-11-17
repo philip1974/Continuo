@@ -11,7 +11,7 @@ import { ERROR_CODES } from '../../shared/error-codes';
 // JSON.stringify/parse 内存峰值 + 长时间阻塞。E43:常量移到 shared,renderer PluginDataStore 复用同值。
 import { MAX_PLUGIN_DATA_BYTES } from '../../shared/plugin-data-limits';
 import { assertJsonValue } from '../../shared/assert-json-value';
-import { utf8ByteLength } from '../../shared/utf8-byte-length';
+import { utf8ByteLength, utf8BytesExceed } from '../../shared/utf8-byte-length';
 import { jsonByteLowerBoundExceeds } from '../../shared/json-byte-budget';
 import { isValidPluginId } from '../../shared/plugin-id';
 import { PLUGIN_DATA_CHANNELS } from '../../shared/plugin-data-channels';
@@ -143,42 +143,72 @@ export function registerPluginDataStoreHandlers(
       if (dataBytes > MAX_PLUGIN_DATA_BYTES) {
         throw codedError(ERROR_CODES.PAYLOAD_TOO_LARGE, `plugin data too large (${dataBytes} > ${MAX_PLUGIN_DATA_BYTES})`,);
       }
-      await ensureDir(pluginId);
-      const file = dataFile(pluginId);
-      // 创建 lock 目标文件:proper-lockfile 要求目标存在。必须用**排他创建**(wx)
-      // 而非「access 判缺失 → writeFile 截断」:后者在加锁前 truncate,并发首次 save
-      // 或 access 竞态(TOCTOU)会把另一次已落盘的 data.json 抹回 {},若随后加锁/写入
-      // 失败则该数据静默丢失(codex 数据安全复查 P1)。wx 仅当不存在时写空 {},已存在
-      // 吞 EEXIST,绝不截断已有内容。真正的写入仍在持锁后由 atomicWriteText 完成。
-      try {
-        await fs.writeFile(file, '{}', { flag: 'wx' });
-      } catch (err) {
-        if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
-      }
-
-      let release: (() => Promise<void>) | null = null;
-      try {
-        release = await lockfile.lock(file, LOCK_OPTS);
-        // 原子写(temp+fsync+rename):旧实现 fs.writeFile 先 truncate 再写,崩溃/
-        // 掉电落在中途会把 data.json 截断成损坏 JSON(审计)。
-        // 边界(E237):写**归一后的 payload**(data ?? {}),不是原始 data。校验/序列化/字节上限全跑
-        // payload,但此前落盘写原始 data —— 绕过 renderer 的 raw IPC 传 null/undefined 时 payload={} 过
-        // 校验,却把 null/undefined 写进 data.json,破坏 plain object 契约 → 下次 load 当损坏隔离降级 →
-        // 插件数据静默丢失。写 payload 使校验对象与落盘对象一致。
-        // perf:直接落盘上面为计量生成的 compact `serialized`(即 payload 的序列化),不再交给
-        // atomicWriteJson 二次 pretty stringify。读取端只做 JSON.parse,对缩进格式无依赖。
-        await atomicWriteText(file, serialized);
-      } finally {
-        // release()(proper-lockfile 解锁)本身可能 reject —— 锁 stale(>5s)被其它
-        // 进程接管、或 .lock 目录被外部清掉时抛 "Lock is not owned by you"。若
-        // atomicWriteText 已成功而 release() reject,这个 finally 的 reject 会覆盖
-        // 成功结果 → 一次本已落盘成功的写被 IPC 报成失败(未闭环:成功却报错,
-        // 上层可能误触发重试或丢弃用户数据反馈)。解锁失败 best-effort 吞掉(锁会在
-        // stale 超时后自动回收),不掩盖主结果。与上面 .corrupt 写同款 .catch 风格。
-        if (release) await release().catch(() => {});
-      }
+      await writeSerialized(pluginId, serialized);
     },
   );
+
+  // perf P2:renderer 字节预检时已算好 value 的 JSON 文本,直接过 IPC(克隆字符串 ≪ 克隆对象图),此处不再
+  // 遍历对象 + 二次 stringify。校验与 SAVE 对象路径等价:落盘文本 `{"value":<串>}` 与 JSON.stringify({ value })
+  // 逐字节一致,字节上限按同一落盘文本计;JSON.parse 证明串是**单个** JSON 值(拒非法 / 拼接注入,如
+  // `1,"x":2` 会把包装撑出额外 key),解析结果再过 assertJsonValue 保留深度 / 宽度 / 字符串长度上限
+  //(JSON.parse 产物本身不含 NaN / undefined / function)。
+  ipcMain.handle(
+    PLUGIN_DATA_CHANNELS.SAVE_SERIALIZED,
+    async (_event, pluginId: string, serializedValue: unknown) => {
+      assertPluginId(pluginId);
+      if (typeof serializedValue !== 'string') {
+        throw codedError(ERROR_CODES.BAD_INPUT, 'plugin data must be a serialized JSON string');
+      }
+      const serialized = `{"value":${serializedValue}}`;
+      // 先廉价字节上限(utf8BytesExceed 早停)再 parse:超限串不进 JSON.parse 物化对象图。
+      if (utf8BytesExceed(serialized, MAX_PLUGIN_DATA_BYTES)) {
+        throw codedError(ERROR_CODES.PAYLOAD_TOO_LARGE, `plugin data too large (> ${MAX_PLUGIN_DATA_BYTES})`);
+      }
+      try {
+        assertJsonValue(JSON.parse(serializedValue));
+      } catch {
+        throw codedError(ERROR_CODES.BAD_INPUT, 'plugin data not JSON-safe');
+      }
+      await writeSerialized(pluginId, serialized);
+    },
+  );
+
+  async function writeSerialized(pluginId: string, serialized: string): Promise<void> {
+    await ensureDir(pluginId);
+    const file = dataFile(pluginId);
+    // 创建 lock 目标文件:proper-lockfile 要求目标存在。必须用**排他创建**(wx)
+    // 而非「access 判缺失 → writeFile 截断」:后者在加锁前 truncate,并发首次 save
+    // 或 access 竞态(TOCTOU)会把另一次已落盘的 data.json 抹回 {},若随后加锁/写入
+    // 失败则该数据静默丢失(codex 数据安全复查 P1)。wx 仅当不存在时写空 {},已存在
+    // 吞 EEXIST,绝不截断已有内容。真正的写入仍在持锁后由 atomicWriteText 完成。
+    try {
+      await fs.writeFile(file, '{}', { flag: 'wx' });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+    }
+
+    let release: (() => Promise<void>) | null = null;
+    try {
+      release = await lockfile.lock(file, LOCK_OPTS);
+      // 原子写(temp+fsync+rename):旧实现 fs.writeFile 先 truncate 再写,崩溃/
+      // 掉电落在中途会把 data.json 截断成损坏 JSON(审计)。
+      // 边界(E237):写**归一后的 payload**(data ?? {}),不是原始 data。校验/序列化/字节上限全跑
+      // payload,但此前落盘写原始 data —— 绕过 renderer 的 raw IPC 传 null/undefined 时 payload={} 过
+      // 校验,却把 null/undefined 写进 data.json,破坏 plain object 契约 → 下次 load 当损坏隔离降级 →
+      // 插件数据静默丢失。写 payload 使校验对象与落盘对象一致。
+      // perf:直接落盘上面为计量生成的 compact `serialized`(即 payload 的序列化),不再交给
+      // atomicWriteJson 二次 pretty stringify。读取端只做 JSON.parse,对缩进格式无依赖。
+      await atomicWriteText(file, serialized);
+    } finally {
+      // release()(proper-lockfile 解锁)本身可能 reject —— 锁 stale(>5s)被其它
+      // 进程接管、或 .lock 目录被外部清掉时抛 "Lock is not owned by you"。若
+      // atomicWriteText 已成功而 release() reject,这个 finally 的 reject 会覆盖
+      // 成功结果 → 一次本已落盘成功的写被 IPC 报成失败(未闭环:成功却报错,
+      // 上层可能误触发重试或丢弃用户数据反馈)。解锁失败 best-effort 吞掉(锁会在
+      // stale 超时后自动回收),不掩盖主结果。与上面 .corrupt 写同款 .catch 风格。
+      if (release) await release().catch(() => {});
+    }
+  }
 
   ipcMain.handle(PLUGIN_DATA_CHANNELS.CLEAR, async (_event, pluginId: string) => {
     // force:true 已容忍「文件不存在」(ENOENT,已清空视为成功);但**不**吞 EACCES/EBUSY/

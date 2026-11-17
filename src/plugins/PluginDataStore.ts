@@ -111,7 +111,9 @@ export class IpcPluginDataStore implements PluginDataStore {
   async write(pluginId: string, data: unknown): Promise<void> {
     // 序列化校验 + 大小上限(E43)放串行链外:非可序列化值/超限值早抛给调用方,不发 IPC、
     // 不占用/不污染写链、不提交 cache。renderer 侧预检挡主进程 16MiB cap 之前的前置放大。
-    serializeWithinLimit(data);
+    // perf P2:复用预检算出的序列化串直接过 IPC(main 包成 { value } 落盘),不再结构化克隆 { value: data }
+    // 对象图;cache 仍提交插件原对象(read 返回同一引用,语义不变)。
+    const serialized = serializeWithinLimit(data);
     // 代际在发起时捕获:卸载前发起、卸载后才落地的写不得回填 cache。
     const life = this.lifeOf(pluginId);
     // race(R61):按 pluginId 串行整段 save→writeGen++→cache commit,保证并发 write 按调用顺序
@@ -122,7 +124,7 @@ export class IpcPluginDataStore implements PluginDataStore {
       // loaded 分支返回这个从未落盘的值,让插件误以为保存成功(实则重启后丢失),
       // 即便插件 catch 了本次异常也无法在重试时察觉真实状态。失败时缓存保持旧值 /
       // 未加载态,read() 反映真实磁盘态。
-      await coApi.pluginDataRaw.save(pluginId, { value: data });
+      await coApi.pluginDataRaw.saveSerialized(pluginId, serialized);
       if (this.lives.get(pluginId) !== life) return; // 期间已 forget(卸载)
       // race(R11):落盘成功后递增写代际并更新 cache —— 让在途的旧 load 返回时能检测到「期间有
       // 更新的 write 落地」从而不回滚 cache。
