@@ -263,6 +263,22 @@ describe('renderer init() 启动 IPC 并发', () => {
   // perf:popout 子窗口是独立 JS 上下文(独立 BrowserWindow 加载同一 renderer 入口 ?popout=1),只渲染 PopoutHost;
   // 面板由父窗口 React 经 portal 渲染,子窗口自己的 store / 插件实例无任何 UI 使用。init 只保留渲染所需
   // (lmApi 捕获 / i18n / createRoot(App)),不再跑 explorer 持久化、插件扫描+onload、MCP / fs-scope / debug / 协议桥。
+  // 安全:弹出的插件面板 portal 进 popout 的 DOM,插件可经 el.ownerDocument.defaultView 取 popout 窗口的原生
+  // fetch / navigator.clipboard,绕过 app.network / app.clipboard 权限门 → popout 也须在 PROD 下 sandboxSweep。
+  it('popout 子窗口在 PROD 下同样执行 sandboxSweep(与主窗口清洗口径一致)', async () => {
+    mocks.i18nGetLocale.mockResolvedValue({ ok: true, data: 'zh' });
+    vi.stubEnv('PROD', true);
+    try {
+      const init = await loadInit();
+      mocks.popout.value = true;
+      await init();
+      expect(mocks.sandboxSweep).toHaveBeenCalledTimes(1);
+      expect(mocks.bootCorePlugins).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('popout 子窗口 → 只做 i18n + 渲染,跳过持久化 / 插件 / 各类桥;主窗口照常', async () => {
     mocks.i18nGetLocale.mockResolvedValue({ ok: true, data: 'zh' });
     const flush = async () => {
