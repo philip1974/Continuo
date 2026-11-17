@@ -174,10 +174,16 @@ export function EditorPanel() {
   const autoSaveEnabled =
     isAutoSaveEnabled(activeTab?.filePath ?? null) && mdAutoSaveEnabled;
 
+  // 关闭脏 tab 二次确认。closeCandidate 用轻量 TabChrome(打磨 R23:不持完整
+  // EditorTab/content,确认框只需 filePath,关闭只需 id)。
+  const [closeCandidate, setCloseCandidate] = useState<TabChrome | null>(null);
+
   // 自动保存:Markdown 启用,代码不启用(决策 #3)。按 tabId 保存,切走/卸载时
   // flush pending,避免连续输入后立即切 tab 丢失整段编辑。
+  // 关闭脏 tab 的「放弃修改?」确认框开着时暂停:否则停留超过 delay 会把待放弃的内容写盘。
+  // !enabled 取消已排队的保存;取消确认后 enabled 恢复,仍脏照常重新排队。
   useAutoSave(saveTab, {
-    enabled: autoSaveEnabled,
+    enabled: autoSaveEnabled && closeCandidate === null,
     delayMs: autoSaveDelayMs,
   });
 
@@ -220,9 +226,7 @@ export function EditorPanel() {
     }
   }, [overwriteCandidate, saveTab]);
 
-  // 关闭脏 tab 二次确认。closeCandidate 用轻量 TabChrome(打磨 R23:不持完整
-  // EditorTab/content,确认框只需 filePath,关闭只需 id)。
-  const [closeCandidate, setCloseCandidate] = useState<TabChrome | null>(null);
+  // 关闭脏 tab 二次确认(closeCandidate 声明在 useAutoSave 之前,确认框开着时暂停 autosave)。
   const onTabCloseRequest = useCallback(
     (tab: TabChrome) => {
       if (tab.dirty) setCloseCandidate(tab);

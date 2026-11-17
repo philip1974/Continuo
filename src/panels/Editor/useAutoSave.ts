@@ -69,9 +69,10 @@ export function useAutoSave(
       () => {
         // 执行时读 store:排队后 tab 已被显式保存(Cmd+S / 关窗「保存」)而不再脏 → 无需再读盘比较 + 原子写,
         // 也不会因其间的外部修改对干净 tab 误报「自动保存失败」。覆盖计时器到点、切 tab flush、关窗 flush 三条路径。
-        // tab 已关闭(找不到)仍交给 saveTab 按原语义返回 TAB_NOT_FOUND。
+        // tab 已关闭(找不到,典型:防抖窗口内确认「放弃修改」后切走 flush)→ 没有可保存的内容,
+        // 不是保存失败,不交给 saveTab(否则 TAB_NOT_FOUND 误报「自动保存失败」)。
         const tab = findEditorFileTabById(useEditorStore.getState().tabs, tabId);
-        if (tab && !tab.dirty) {
+        if (!tab || !tab.dirty) {
           setAutoSaveFailed(created, false);
           return Promise.resolve({ ok: true });
         }
@@ -117,6 +118,9 @@ export function useAutoSave(
     // 这是针对当前 tab 的 scheduler;切 tab 的落盘仍由 flush effect 处理。
     if (!enabled) {
       scheduler.cancel();
+      // 暂停 / 禁用期间没有 pending,关窗 flush 不会落盘 → 关窗脏文件计数不得豁免本 tab
+      // (典型:关闭脏 .md 的「放弃修改?」确认框开着时暂停 autosave)。恢复后 schedule 即清除。
+      setAutoSaveFailed(scheduler, true);
       return;
     }
     if (active.id === null || !active.filePath) return;
@@ -157,6 +161,8 @@ export function useAutoSave(
     });
     // 本 scheduler 成为活动 tab 的 autosave 持有者(关窗计数据此豁免其脏 .md,见 autosave-failures.ts)。
     claimAutoSave(tabId, scheduler);
+    // claim 重置失败态;本 tab 当前 autosave 暂停 / 禁用(schedule effect 已先于 claim 运行、其标记被丢弃)→ 补标。
+    if (!seenEnabledRef.current) setAutoSaveFailed(scheduler, true);
     return () => {
       registerAutoSaveFlush(null);
       releaseAutoSave(scheduler);

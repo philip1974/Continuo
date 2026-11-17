@@ -467,6 +467,7 @@
 
 ## [editor-hooks-react(useAutoSave / useEditorFile / useExternalFileSync)](./editor-hooks-react/README.md)
 
+- [`autosave-discard-confirm.spec.tsx`](./editor-hooks-react/autosave-discard-confirm.spec.tsx)
 - [`use-auto-save.spec.tsx`](./editor-hooks-react/use-auto-save.spec.tsx)
 - [`use-editor-file.spec.tsx`](./editor-hooks-react/use-editor-file.spec.tsx)
 - [`use-external-file-sync.spec.tsx`](./editor-hooks-react/use-external-file-sync.spec.tsx)

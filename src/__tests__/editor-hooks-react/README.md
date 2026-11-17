@@ -18,6 +18,14 @@
 - 满足条件 → delayMs 后调 saveFile;再次满足条件 → 防抖合并
 - 已排队后 tab 变干净(Cmd+S / 关窗「保存」成功)→ 取消计时器;计时器到点 / 切 tab flush / 关窗 flush 执行时再读 store,tab 已不脏则不写盘(直接视为成功);保存后继续输入(仍脏)照常 autosave
 - 切走 tab 时编辑器卸载回写(先于本 hook cleanup)把旧 tab 写脏、计时器里没有它 → cleanup 先补排队再 flush,按旧 tab 落盘;是否补排队按旧 tab 的 autosave 开关(schedule effect 看过的 enabled)判断,不按新 tab
+- 计时器 / flush 执行时 tab 已关闭(找不到)→ 没有可保存的内容,不调 saveFile、不算失败(不弹「自动保存失败: TAB_NOT_FOUND」)
+- enabled=false(设置关闭 / 暂停)期间没有 pending,关窗 flush 不会落盘 → 关窗脏文件计数不豁免该 tab;恢复后重新排队即清除
+
+### 关闭脏 .md 的「放弃修改?」确认框 × autosave(`autosave-discard-confirm.spec.tsx`)
+
+- 确认框开着期间暂停 autosave(EditorPanel 传 `enabled: autoSaveEnabled && closeCandidate === null`):停留超过 delay 不把待放弃的内容写盘
+- 防抖窗口内确认放弃 → 不写盘、不弹失败提示
+- 取消确认 → 恢复 autosave,仍脏照常 delay 后写盘
 
 ### isAutoSaveEnabled
 
