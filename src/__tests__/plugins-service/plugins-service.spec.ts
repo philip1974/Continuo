@@ -13,6 +13,7 @@ import {
   listPluginDirs,
   readEnabledIds,
   readPluginDirByManifestId,
+  readPluginMainByDir,
   readFileCapped,
   readPermissions,
   readPluginPathScopes,
@@ -73,8 +74,17 @@ describe('listPluginDirs', () => {
     expect(r).toHaveLength(1);
     expect(r[0]!.id).toBe('com.foo');
     expect(r[0]!.manifestText).toContain('"id":"com.foo"');
-    expect(r[0]!.mainText).toBe('/* main */');
     expect('stylesText' in r[0]!).toBe(false);
+  });
+
+  // perf:列举只返回 manifest(+ main 可用性已判定),不读取 / 跨 IPC 传输 main 源码(≤8MiB/插件);
+  // main 源码在真正激活时按目录名经 readPluginMainByDir 拉取。
+  it('结果不含 mainText;main 源码按目录名另行读取', async () => {
+    makeDir('com.foo', { id: 'com.foo', name: 'Foo', version: '0.1.0' });
+    const r = await listPluginDirs(tmp);
+    expect(r).toEqual([{ id: 'com.foo', manifestText: expect.stringContaining('"id":"com.foo"') }]);
+    expect('mainText' in r[0]!).toBe(false);
+    expect(await readPluginMainByDir(tmp, 'com.foo')).toBe('/* main */');
   });
 
   // styles.css 不读取、不跨 IPC 传输(renderer 从未注入过它;此前读了 4MiB 以内的样式却无人消费)。
@@ -176,7 +186,7 @@ describe('listPluginDirs', () => {
     );
     writeFileSync(join(dir, 'index.js'), 'CUSTOM');
     const r = await listPluginDirs(tmp);
-    expect(r[0]!.mainText).toBe('CUSTOM');
+    expect(await readPluginMainByDir(tmp, r[0]!.id)).toBe('CUSTOM');
   });
 
   // 边界(E102):manifest.main 超长(>512)→ getPluginMainName 退默认 main.js(不把近 1MiB main
@@ -195,7 +205,8 @@ describe('listPluginDirs', () => {
     );
     writeFileSync(join(dir, 'main.js'), 'FALLBACK');
     const r = await listPluginDirs(tmp);
-    expect(r.find((x) => x.id === 'overmain')?.mainText).toBe('FALLBACK');
+    expect(r.some((x) => x.id === 'overmain')).toBe(true);
+    expect(await readPluginMainByDir(tmp, 'overmain')).toBe('FALLBACK');
   });
 
   it('manifest.main 允许插件目录内的子目录入口', async () => {
@@ -213,7 +224,7 @@ describe('listPluginDirs', () => {
     writeFileSync(join(dir, 'dist', 'index.js'), 'NESTED');
 
     const r = await listPluginDirs(tmp);
-    expect(r[0]!.mainText).toBe('NESTED');
+    expect(await readPluginMainByDir(tmp, r[0]!.id)).toBe('NESTED');
   });
 
   it('manifest.main 含 .. 时跳过插件,不读取目录外文件', async () => {
@@ -381,6 +392,43 @@ describe('readPluginDirByManifestId', () => {
     writeFileSync(join(tmp, 'bad', 'main.js'), '');
     expect(await readPluginDirByManifestId(tmp, 'x.id')).toBeNull();
     expect(await readPluginDirByManifestId(join(tmp, 'missing'), 'x.id')).toBeNull();
+  });
+});
+
+// perf:激活时按目录名(不是按 id,避免与列举时的重复 id 选择口径漂移)只读该插件的 main 源码。
+describe('readPluginMainByDir', () => {
+  it('读该目录 manifest.main 指向的入口;缺 main / 超 8MiB / 缺 manifest → null', async () => {
+    makeDir('ok.dir', { id: 'x', name: 'X', version: '0.1.0', main: 'dist/entry.js' });
+    mkdirSync(join(tmp, 'ok.dir', 'dist'));
+    writeFileSync(join(tmp, 'ok.dir', 'dist', 'entry.js'), 'ENTRY');
+    expect(await readPluginMainByDir(tmp, 'ok.dir')).toBe('ENTRY');
+
+    makeDir('big', { id: 'big', name: 'B', version: '0.1.0' });
+    await fsp.truncate(join(tmp, 'big', 'main.js'), 8 * 1024 * 1024 + 1);
+    expect(await readPluginMainByDir(tmp, 'big')).toBeNull();
+
+    mkdirSync(join(tmp, 'nomain'));
+    writeFileSync(join(tmp, 'nomain', 'manifest.json'), '{"id":"nomain"}');
+    expect(await readPluginMainByDir(tmp, 'nomain')).toBeNull();
+    expect(await readPluginMainByDir(tmp, 'missing')).toBeNull();
+  });
+
+  it('目录名含路径分隔符 / . / .. / . 或 _ 前缀 → null,不读 baseDir 之外', async () => {
+    makeDir('_hidden', { id: 'h', name: 'H', version: '0.1.0' });
+    makeDir('.dot', { id: 'd', name: 'D', version: '0.1.0' });
+    makeDir('sub', { id: 's', name: 'S', version: '0.1.0' });
+    const inner = join(tmp, 'inner');
+    mkdirSync(inner);
+    for (const name of ['', '.', '..', '_hidden', '.dot', '../sub', 'sub/.', 'a\\b', 'a\0b']) {
+      expect(await readPluginMainByDir(inner, name)).toBeNull();
+      expect(await readPluginMainByDir(tmp, name)).toBeNull();
+    }
+  });
+
+  it('列举判定 main 可用不读取全文(main 是目录 → 跳过,同读取口径)', async () => {
+    makeDir('dirmain', { id: 'dirmain', name: 'D', version: '0.1.0', main: 'entry' });
+    mkdirSync(join(tmp, 'dirmain', 'entry'));
+    expect(await listPluginDirs(tmp)).toEqual([]);
   });
 });
 

@@ -18,7 +18,9 @@ import type {
   IpcPermissionRecord,
   IpcPermissionsMap,
   IpcPluginDir,
+  IpcPluginDirMeta,
 } from '../../shared/plugins-channels';
+import { PLUGIN_DIR_NAME_MAX_LEN } from '../../shared/plugins-channels';
 import { ERROR_CODES } from '../../shared/error-codes';
 import { codedError, errorMessage } from '../../shared/error-message';
 import { isValidPluginId } from '../../shared/plugin-id';
@@ -267,21 +269,23 @@ async function readMetadataCapped(filePath: string): Promise<string> {
 }
 
 /**
- * 扫描 baseDir/<id>/manifest.json 模式;返回所有合法目录的 manifestText +
- * mainText(默认 main.js 或 manifest.main 指向)。插件目录里的 styles.css 不读取:renderer 从未
- * 注入过它(样式由插件在 onload 里自行处理)。
+ * 扫描 baseDir/<id>/manifest.json 模式;返回所有合法目录的 manifestText(不含 main 源码)。
+ * main 入口(默认 main.js 或 manifest.main 指向)只判定可用(open + fstat:是普通文件且 ≤8MiB,不读全文),
+ * 源码在激活时经 readPluginMainByDir 按目录名拉取 —— perf:此前为所有候选(含未启用)读完整 main 并经
+ * IPC 传给每个窗口,而 PluginManager 只对 enabled 插件使用。插件目录里的 styles.css 不读取:renderer
+ * 从未注入过它(样式由插件在 onload 里自行处理)。
  *
  * 子目录读 fail / 缺 manifest / 缺 main 都跳过该目录(不抛),由 renderer 端
  * PluginManager 决定是否报告。
  */
-export async function listPluginDirs(baseDir: string): Promise<IpcPluginDir[]> {
+export async function listPluginDirs(baseDir: string): Promise<IpcPluginDirMeta[]> {
   // 边界(E82):有界枚举(缺目录 → [] → 返回空列表,等价旧版)。
   const entries = await readPluginDirEntriesCapped(baseDir);
-  // perf:per-dir 读取(stat + manifest + main ≤8MiB)此前串行,N 个插件启动时 N 段 I/O 首尾相接。
-  // 有界并发(PLUGIN_DIR_IO_CONCURRENCY)读取,结果按 entries 原顺序收集(激活顺序契约不变)。
-  const results = await mapInOrderBounded(entries, (name) => readOnePluginDir(baseDir, name));
+  // perf:per-dir 读取(stat + manifest + main 可用性)有界并发(PLUGIN_DIR_IO_CONCURRENCY),
+  // 结果按 entries 原顺序收集(激活顺序契约不变)。
+  const results = await mapInOrderBounded(entries, (name) => readOnePluginDirMeta(baseDir, name));
 
-  const out = new Array<IpcPluginDir>(results.length);
+  const out = new Array<IpcPluginDirMeta>(results.length);
   let outCount = 0;
   for (const r of results) {
     if (r === null) continue;
@@ -355,6 +359,71 @@ async function readPluginMainText(dir: string, manifestText: string): Promise<st
   if (!mainPath) return null;
   // 边界(E24):main 超 8MiB(或缺失/不可读)→ 跳过整个 plugin。
   return readFileCapped(mainPath, MAIN_MAX_BYTES);
+}
+
+/**
+ * main 入口是否可用:与 readPluginMainText 同口径(同一 main 解析、越界 → 不可用、普通文件且 ≤ MAIN_MAX_BYTES、
+ * 可打开),但只 open + fstat,不读全文。
+ */
+async function isPluginMainAvailable(dir: string, manifestText: string): Promise<boolean> {
+  let mainName = 'main.js';
+  try {
+    mainName = getPluginMainName(JSON.parse(manifestText));
+  } catch {
+    // 同 readPluginMainText:manifest 解析失败按默认 main.js
+  }
+  const mainPath = resolvePluginMainPath(dir, mainName);
+  if (!mainPath) return false;
+  let fh: import('node:fs/promises').FileHandle;
+  try {
+    fh = await fs.open(mainPath, 'r');
+  } catch {
+    return false;
+  }
+  try {
+    const st = await fh.stat();
+    if (st.size > MAIN_MAX_BYTES) {
+      console.warn(`[plugins] 跳过超大文件(> ${MAIN_MAX_BYTES}): ${mainPath}`);
+      return false;
+    }
+    return st.isFile();
+  } catch {
+    return false;
+  } finally {
+    await fh.close().catch(() => {});
+  }
+}
+
+async function readOnePluginDirMeta(
+  baseDir: string,
+  name: string,
+): Promise<IpcPluginDirMeta | null> {
+  const m = await readPluginManifestText(baseDir, name);
+  if (m === null) return null;
+  if (!(await isPluginMainAvailable(m.dir, m.manifestText))) return null;
+  return { id: name, manifestText: m.manifestText };
+}
+
+/**
+ * 激活时按**目录名**读该插件 main 源码(列举结果的 id 即目录名)。按目录而非 manifest.id:重复 id 的
+ * 目录选择已在 renderer 完成,这里不再选一次,避免与列举口径漂移。目录名必须是 baseDir 下的单级名
+ *(无分隔符 / NUL、非 . / ..,且与列举同样排除 . / _ 前缀),否则 → null;目录 / manifest / main 不可用 → null。
+ */
+export async function readPluginMainByDir(baseDir: string, name: string): Promise<string | null> {
+  if (
+    name.length === 0 ||
+    name.length > PLUGIN_DIR_NAME_MAX_LEN ||
+    name === '.' ||
+    name === '..' ||
+    name.includes('/') ||
+    name.includes('\\') ||
+    name.includes('\0') ||
+    path.basename(name) !== name
+  ) {
+    return null;
+  }
+  const dir = await readOnePluginDir(baseDir, name);
+  return dir === null ? null : dir.mainText;
 }
 
 async function readOnePluginDir(baseDir: string, name: string): Promise<IpcPluginDir | null> {

@@ -9,6 +9,7 @@ import {
   MutatePluginPermissionsInput,
   InstallFromGitInput,
   ReadDirByIdInput,
+  ReadMainByDirInput,
   UninstallInput,
 } from '../../../electron/main/ipc/plugins.ipc';
 import {
@@ -31,6 +32,13 @@ describe('plugins IPC input limits (E16)', () => {
     expect(ReadDirByIdInput.safeParse({ id: '' }).success).toBe(false);
     expect(ReadDirByIdInput.safeParse({ id: 'x'.repeat(257) }).success).toBe(false);
     expect(ReadDirByIdInput.safeParse({ id: 'a', extra: 1 }).success).toBe(false);
+  });
+
+  it('READ_MAIN_BY_DIR:dir 必填且 ≤255、拒绝多余字段', () => {
+    expect(ReadMainByDirInput.safeParse({ dir: 'a.b' }).success).toBe(true);
+    expect(ReadMainByDirInput.safeParse({ dir: '' }).success).toBe(false);
+    expect(ReadMainByDirInput.safeParse({ dir: 'x'.repeat(256) }).success).toBe(false);
+    expect(ReadMainByDirInput.safeParse({ dir: 'a', extra: 1 }).success).toBe(false);
   });
 
   it('plugin id 超 256 → fail', () => {

@@ -13,6 +13,11 @@ interface RawPluginDirInfo {
   readonly mainText: string;
 }
 
+interface PluginDirMeta {
+  readonly id: string;
+  readonly manifestText: string;
+}
+
 type PluginDirInfo = {
   readonly id: string;
   readonly manifestText: string;
@@ -21,22 +26,10 @@ type PluginDirInfo = {
 
 const EMPTY_PLUGIN_DIR_INFOS: PluginDirInfo[] = [];
 
-export function buildPluginDirInfos(
-  dirs: readonly RawPluginDirInfo[],
-): PluginDirInfo[] {
-  if (dirs.length === 0) return EMPTY_PLUGIN_DIR_INFOS;
-  const out = new Array<PluginDirInfo>(dirs.length);
-  for (let i = 0; i < dirs.length; i++) {
-    out[i] = lazyPluginDirInfo(dirs[i]!);
-  }
-  return out;
-}
-
 /**
  * moduleUrl 惰性生成:只在真正读取(激活该插件时 import)才 createObjectURL,且只生成一次。
- * 每次 listPluginDirs(init / 每次 reload)都为全部插件构造 dir info,而 reload 只用目标插件那条;
- * 此前为每条都 createObjectURL 且从不 revoke → 反复 reload 单调泄漏 Blob URL。未读的 info 随 GC 回收。
- * (getter 须直接定义在返回对象上 —— 对象展开会立即求值 getter。)
+ * 此前列举为每条都 createObjectURL 且从不 revoke → 反复 reload 单调泄漏 Blob URL。未读的 info 随 GC 回收。
+ * (getter 须直接定义在返回对象上 —— 对象展开会立即求值 getter。)用于 readDirById(热重载)结果。
  */
 function lazyPluginDirInfo(dir: RawPluginDirInfo): PluginDirInfo {
   let url: string | null = null;
@@ -52,6 +45,52 @@ function lazyPluginDirInfo(dir: RawPluginDirInfo): PluginDirInfo {
   };
 }
 
+/**
+ * 列举项的 moduleUrl 是惰性**源码引用**(不是可 import 的 URL):listDirs 不再携带 main 源码(perf:未启用
+ * 插件的源码不读、不经 IPC 传给每个窗口),importModule 遇到引用时才按**目录名**拉源码 → Blob URL。
+ * 每个引用记住生成过的 Blob URL:禁用后重新启用同一 dir info 时复用同一 URL → 命中 module map 缓存、不再拉
+ * 源码(与旧版 getter 只生成一次 Blob URL 等价)。拉取失败不记,下次激活重试。
+ */
+const MAIN_REF_PREFIX = 'continuo-plugin-main:';
+const mainRefs = new Map<string, { readonly dir: string; blobUrl: string | null }>();
+let nextMainRef = 1;
+
+function deferredPluginDirInfo(dir: PluginDirMeta): PluginDirInfo {
+  let ref: string | null = null;
+  return {
+    id: dir.id,
+    manifestText: dir.manifestText,
+    get moduleUrl(): string {
+      if (ref === null) {
+        ref = `${MAIN_REF_PREFIX}${nextMainRef++}`;
+        mainRefs.set(ref, { dir: dir.id, blobUrl: null });
+      }
+      return ref;
+    },
+  };
+}
+
+export function buildPluginDirInfos(dirs: readonly PluginDirMeta[]): PluginDirInfo[] {
+  if (dirs.length === 0) return EMPTY_PLUGIN_DIR_INFOS;
+  const out = new Array<PluginDirInfo>(dirs.length);
+  for (let i = 0; i < dirs.length; i++) {
+    out[i] = deferredPluginDirInfo(dirs[i]!);
+  }
+  return out;
+}
+
+/** 源码引用 → 可 import 的 Blob URL(首次按目录名拉源码);非引用原样返回。 */
+async function resolveModuleUrl(url: string): Promise<string> {
+  const ref = mainRefs.get(url);
+  if (ref === undefined) return url;
+  if (ref.blobUrl !== null) return ref.blobUrl;
+  const r = await coApi.plugins.readMainByDir(ref.dir);
+  if (!r.ok) throw codedError(r.code, r.message ?? 'readMainByDir failed');
+  if (r.data === null) throw new Error(`plugin main is unavailable: ${ref.dir}`);
+  ref.blobUrl = URL.createObjectURL(new Blob([r.data], { type: 'application/javascript' }));
+  return ref.blobUrl;
+}
+
 export function createWindowApiHost(): ManagerHost {
   return {
     listPluginDirs: async () => {
@@ -60,7 +99,7 @@ export function createWindowApiHost(): ManagerHost {
         console.warn('[plugins-host] listDirs failed', r.code, r.message);
         return EMPTY_PLUGIN_DIR_INFOS;
       }
-      // 用 Blob URL 让 dynamic import 能拿到外部文件内容(惰性生成,import 完成后即 revoke,见 importModule)。
+      // moduleUrl 为惰性源码引用,激活时 importModule 才按目录拉源码并转 Blob URL(import 完成后即 revoke)。
       return buildPluginDirInfos(r.data);
     },
     readPluginDirByManifestId: async (id) => {
@@ -95,12 +134,13 @@ export function createWindowApiHost(): ManagerHost {
       }
     },
     importModule: async (url) => {
+      const target = await resolveModuleUrl(url);
       try {
-        return await import(/* @vite-ignore */ url);
+        return await import(/* @vite-ignore */ target);
       } finally {
         // import 结束(成功或失败)即 revoke:已求值模块留在 module map(按 URL 缓存),同 URL 再
         // import(禁用后重新启用)命中缓存、不再 fetch,不依赖 blob 存活;失败的 URL 也不会再被用到。
-        if (url.startsWith('blob:')) URL.revokeObjectURL(url);
+        if (target.startsWith('blob:')) URL.revokeObjectURL(target);
       }
     },
     removePluginDir: async (id) => {

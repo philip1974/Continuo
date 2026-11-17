@@ -6,12 +6,17 @@ import { PLUGIN_ID_MAX_LEN } from '../../shared/permission-record-limits';
 import path from 'node:path';
 import { z } from 'zod';
 import { defaultIsTrustedFrame, safeHandle } from '../safe-handle';
-import { PLUGINS_CHANNELS, GIT_URL_MAX } from '../../shared/plugins-channels';
+import {
+  PLUGINS_CHANNELS,
+  GIT_URL_MAX,
+  PLUGIN_DIR_NAME_MAX_LEN,
+} from '../../shared/plugins-channels';
 import {
   createPluginsWatcher,
   installFromGit,
   listPluginDirs,
   readPluginDirByManifestId,
+  readPluginMainByDir,
   recoverInterruptedInstalls,
   readEnabledIds,
   readPermissions,
@@ -61,6 +66,9 @@ export const InstallFromGitInput = z
   .strict();
 export const ReadDirByIdInput = z
   .object({ id: z.string().min(1).max(PLUGIN_ID_MAX) })
+  .strict();
+export const ReadMainByDirInput = z
+  .object({ dir: z.string().min(1).max(PLUGIN_DIR_NAME_MAX_LEN) })
   .strict();
 export const UninstallInput = z
   .object({ id: z.string().min(1).max(PLUGIN_ID_MAX) })
@@ -126,6 +134,17 @@ export function registerPluginsIpc(): void {
     async () => {
       await installRecovery;
       return listPluginDirs(pluginsDir);
+    },
+    trusted,
+  );
+
+  // perf:列举不带 main 源码,激活时按目录名只读该插件 main。
+  safeHandle(
+    PLUGINS_CHANNELS.READ_MAIN_BY_DIR,
+    ReadMainByDirInput,
+    async ({ dir }) => {
+      await installRecovery;
+      return readPluginMainByDir(pluginsDir, dir);
     },
     trusted,
   );
