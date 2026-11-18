@@ -5,6 +5,8 @@
 export const AGENT_AUTH_CHANNELS = {
   /** main → renderer push:agent 请求授权. */
   REQUEST: 'agent-auth:request',
+  /** renderer → main send:本窗口已订阅 REQUEST(能显示授权弹窗了);reload 后新文档重新上报. */
+  READY: 'agent-auth:ready',
   /** renderer → main invoke:用户决定. */
   RESPOND: 'agent-auth:respond',
   /** renderer → main invoke:撤销 session 授权 + 终止全部 agent terminal. */

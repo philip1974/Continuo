@@ -317,17 +317,23 @@ describe('PermissionPrompt UI', () => {
     expect(await promise!).toEqual([]);
   });
 
-  it('全选按钮 → 把所有 checkbox 勾上', () => {
+  // shell 例外(「全选」不含它)与防误触延迟,见 select-all-and-checkbox-guard.spec.tsx
+  it('全选按钮 → 把所有 checkbox 勾上', async () => {
     render(<PermissionPrompt />);
     act(() => {
-      void usePermissionPromptStore.getState().request('com.x', ['fs', 'shell']);
+      void usePermissionPromptStore.getState().request('com.x', ['fs', 'network']);
     });
     const checkboxes = document.querySelectorAll<HTMLInputElement>(
       '.wm-modal-content input[type="checkbox"]',
     );
-    // 先取消 fs(shell 默认就不勾选)
+    // 先全部取消
     pointerClick(checkboxes[0]!);
+    pointerClick(checkboxes[1]!);
     expect(Array.from(checkboxes).every((c) => !c.checked)).toBe(true);
+    // 「全选」是授予方向:出现延迟过后才有效
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 550));
+    });
     // 点全选
     const selectAll = Array.from(
       document.querySelectorAll<HTMLButtonElement>('.wm-modal-content button'),

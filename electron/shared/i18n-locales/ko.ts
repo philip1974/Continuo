@@ -323,7 +323,7 @@ export const ko: Record<TranslationKey, string> = {
   'permissions.agent.grant_session': '이번 실행 동안 허용',
   'permissions.revoke_all.title': '에이전트 터미널 권한을 취소할까요?',
   'permissions.revoke_all.confirm_grant_only':
-    '이번 실행 중 에이전트에 부여된 터미널, 디버거 및 플러그인 도구 인증을 취소하고 디버그 세션을 종료합니다.\n\n실행 중인 에이전트 CLI의 토큰은 즉시 401이 되며, 이후 다시 인증할 수 있습니다.\n\n계속하시겠습니까?',
+    '이번 실행 중 에이전트에 부여된 터미널, 디버거 및 플러그인 도구 인증을 취소하고 디버그 세션을 종료합니다.\n\n실행 중인 에이전트 CLI의 토큰은 즉시 401이 되며, 기존 터미널의 에이전트는 다시 인증을 요청할 수 없으므로 새 터미널에서 다시 시작해야 합니다.\n\n계속하시겠습니까?',
   'permissions.revoke_all.confirm':
     '{count}개의 에이전트 터미널을 종료하고 이번 실행 중 부여된 인증을 취소합니다.\n\n실행 중인 에이전트 CLI의 토큰은 즉시 401이 되며, 새 터미널은 다시 인증할 수 있습니다.\n\n계속하시겠습니까?',
   'permissions.revoke_all.failed':
@@ -526,7 +526,10 @@ export const ko: Record<TranslationKey, string> = {
   'permissions.prompt.note_prefix': '체크하지 않은 것은 거부로 간주됩니다. 지원:',
   'permissions.prompt.note_partial': '부분 권한 부여',
   'permissions.prompt.note_suffix': ': 플러그인이 권한 없는 API 호출 시 거부(PermissionError 발생)되지만 전체적으로 활성화 가능. 모두 거부하면 플러그인은 활성화되지 않음.',
+  'permissions.grant_guard.rejected':
+    '아직 적용되지 않았습니다. 잠시 멈춘 뒤 한 번 클릭하거나, 포커스를 잠시 둔 뒤 Enter / Space를 누르세요.',
   'permissions.prompt.select_all': '모두 선택',
+  'permissions.prompt.select_all_except_shell': '모두 선택(Shell 제외)',
   'permissions.prompt.deny_all': '모두 거부',
   'permissions.prompt.grant_selected': '선택 허용 ({count})',
 

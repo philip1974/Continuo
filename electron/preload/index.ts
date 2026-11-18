@@ -533,7 +533,11 @@ const api = {
     ): (() => void) => {
       const listener = (_: unknown, payload: AgentAuthRequestPayload) =>
         cb(payload);
-      return subscribeIpc(AGENT_AUTH_CHANNELS.REQUEST, listener);
+      const unsubscribe = subscribeIpc(AGENT_AUTH_CHANNELS.REQUEST, listener);
+      // 监听已挂上 → 告诉 main「本窗口能显示授权弹窗了」(同 PROTOCOL_READY):reload 后新文档就绪之前到达的
+      // 请求 main 直接拒绝,不发给收不到的文档。
+      ipcRenderer.send(AGENT_AUTH_CHANNELS.READY);
+      return unsubscribe;
     },
     /** 用户决定后回应 main(对应 requestId). */
     respond: (

@@ -107,6 +107,18 @@ export class PromptThrottle {
     return { ok: true };
   }
 
+  /**
+   * 计入该 subject 的弹窗速率,但不占在途槽、不记任何决定:请求因目标暂时无法显示弹窗(窗口正在重新加载)被直接
+   * 拒绝时用 —— 否则这段时间里的重试不受任何限制,目标恢复后积压的重试可以连弹。
+   */
+  noteAttempt(subject: string, now: number = Date.now()): void {
+    const state = this.stateFor(subject);
+    state.prompts = state.prompts
+      .filter((t) => now - t < PROMPT_RATE_WINDOW_MS)
+      .slice(-(PROMPT_RATE_MAX - 1));
+    state.prompts.push(now);
+  }
+
   /** admit 放行的弹窗已收口(用户决定 / 超时 / 窗口关闭 / 请求方消失 / 发送失败)→ 该 subject 可以再弹。 */
   endPrompt(subject: string): void {
     this.inFlight.delete(subject);

@@ -328,6 +328,7 @@ describe.skipIf(process.platform === 'win32')('stdio:在途调用跨越 token �
     const reply = await inflight;
     expect(reply.errorCode).toBe(NO_WINDOW_CTX);
     expect((await queued).errorCode).toBe(NO_WINDOW_CTX);
+    expect(reply.errorMessage).toMatch(/token was revoked.*new Continuo terminal/i);
     expect(h.create.calls).toBe(0);
     expect(h.create.autoruns).toEqual([]);
     expect(sessions.getAll()).toEqual([]);
@@ -457,5 +458,89 @@ describe.skipIf(process.platform === 'win32')('stdio:在途调用跨越 token �
     expect((await fromA).errorCode).toBe(NO_WINDOW_CTX);
     expect((await fromB).value).toMatchObject({ secret: SECRET, external: false });
     expect((await fromExt).value).toMatchObject({ secret: SECRET, external: true });
+  });
+});
+
+// 安全:吊销之前先换绑(hello 别的 token / 无效 token),旧绑定已不在表里,吊销复查够不着它 → 旧身份原样保留,
+// 吊销后重新 hello 即可继续读控旧身份名下的会话。hello 改变绑定 = 旧身份作废(与绑定失效同样处理)。
+describe.skipIf(process.platform === 'win32')('stdio:重新 hello 换绑 = 换身份', () => {
+  async function bound(): Promise<{
+    h: Harness;
+    c: Client;
+    token: string;
+    subject: string;
+    sessionId: string;
+  }> {
+    const h = await start();
+    const token = h.host.issueWindowToken(WINDOW);
+    const c = await h.connect();
+    c.hello(WINDOW, token);
+    const subject = (await c.call('slow')).value!['subject'] as string;
+    const sessionId = (await c.call('terminal.create_session', {})).value!['session_id'] as string;
+    return { h, c, token, subject, sessionId };
+  }
+
+  it.each([
+    ['无效 token(自降级)', (): string => 'bogus'],
+    ['同窗口另一个有效 token', (h: Harness): string => h.host.issueWindowToken(WINDOW)],
+  ])(
+    '审计复现:hello(A) → 建会话 → hello(%s)→ A 被吊销 → hello(新 token)→ 不能读控旧会话',
+    async (_name, other) => {
+      const { h, c, token, subject, sessionId } = await bound();
+
+      c.hello(WINDOW, other(h));
+      await c.call('slow'); // 换绑已被处理
+      // 换绑当下旧身份即作废(回收其 debug 会话 / 在途创建),不等之后的吊销。
+      expect(h.debugKilled).toContain(subject);
+
+      h.revokers.byToken(token);
+      c.hello(WINDOW, h.host.issueWindowToken(WINDOW));
+      const after = await c.call('slow');
+      expect(after.errorCode).toBeNull();
+      expect(after.value!['subject']).not.toBe(subject);
+      expect(
+        (await c.call('terminal.send_text', { session_id: sessionId, text: 'x' })).errorCode,
+      ).not.toBeNull();
+      expect((await c.call('terminal.read_output', { session_id: sessionId })).errorCode).not.toBeNull();
+      expect(sessions.get(sessionId)).toBeDefined(); // 会话本身不被杀
+    },
+  );
+
+  it('换绑到别的有效 token 后:立即是新身份,旧会话不可读控', async () => {
+    const { h, c, subject, sessionId } = await bound();
+    c.hello(WINDOW, h.host.issueWindowToken(WINDOW));
+    const after = await c.call('slow');
+    expect(after.value!['subject']).not.toBe(subject);
+    expect(
+      (await c.call('terminal.send_text', { session_id: sessionId, text: 'x' })).errorCode,
+    ).not.toBeNull();
+  });
+
+  it('同一 token 重复 hello 幂等:身份不变,旧会话照常可控,不触发回收', async () => {
+    const { h, c, token, subject, sessionId } = await bound();
+    c.hello(WINDOW, token);
+    c.hello(WINDOW, token);
+    expect((await c.call('slow')).value!['subject']).toBe(subject);
+    expect(
+      (await c.call('terminal.send_text', { session_id: sessionId, text: 'x' })).errorCode,
+    ).toBeNull();
+    expect(h.debugKilled).toEqual([]);
+  });
+
+  it('未 hello 时以 external 身份建的会话,hello 绑定窗口后换身份(external 授权域建的会话不由窗口授权域接管)', async () => {
+    const h = await start();
+    const c = await h.connect();
+    const before = await c.call('slow');
+    expect(before.value!['external']).toBe(true);
+    const sessionId = (await c.call('terminal.create_session', {})).value!['session_id'] as string;
+
+    c.hello(WINDOW, h.host.issueWindowToken(WINDOW));
+    const after = await c.call('slow');
+    expect(after.value).toMatchObject({ external: false });
+    expect(after.value!['subject']).not.toBe(before.value!['subject']);
+    expect(
+      (await c.call('terminal.send_text', { session_id: sessionId, text: 'x' })).errorCode,
+    ).not.toBeNull();
+    expect(h.debugKilled).toContain(before.value!['subject']);
   });
 });

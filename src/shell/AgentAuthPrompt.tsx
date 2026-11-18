@@ -25,6 +25,7 @@ import {
   usePromptGrantGuard,
   type PromptGrantGuard,
 } from '@/lib/use-prompt-grant-guard';
+import { PromptGrantHint } from '@/lib/prompt-grant-hint';
 
 // method → i18n key 表（P2-1）；未知 method 走 generic('{method}') fallback
 const METHOD_LABEL_KEYS: Record<string, TranslationKey> = {
@@ -197,6 +198,7 @@ function AgentAuthPromptBody({
           {t('permissions.agent.grant_session')}
         </Button>
       </div>
+      <PromptGrantHint guard={guard} />
     </Modal>
   );
 }

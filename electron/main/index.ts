@@ -55,6 +55,7 @@ import { makeWindowResourceCleanup } from './window-resource-cleanup';
 import { makeQuitCleanupGuard } from './quit-cleanup-guard';
 import { resolveUserDataPath } from './user-data-path';
 import { PLUGINS_CHANNELS } from '../shared/plugins-channels';
+import { AGENT_AUTH_CHANNELS } from '../shared/agent-auth-channels';
 import { ERROR_CODES } from '../shared/error-codes';
 import {
   createMcpHost,
@@ -84,6 +85,8 @@ import {
 } from './ipc/terminal.ipc';
 import {
   cancelAgentAuthByWindow,
+  markAgentAuthRendererReady,
+  watchAgentAuthRenderer,
   cancelAllAgentAuth,
   requestAgentAuth,
   setAgentAuthControllerTeardown,
@@ -623,6 +626,15 @@ ipcMain.on(PLUGINS_CHANNELS.PROTOCOL_READY, (event: IpcMainEvent) => {
   drainOnProtocolReady(win, PLUGINS_CHANNELS.PROTOCOL_URL, pendingProtocolUrls);
 });
 
+// agent 授权:renderer 已订阅授权请求(reload 后新文档重新上报)→ 该窗口恢复接收授权弹窗(同 PROTOCOL_READY 的
+// 握手)。窗口由 sender 推断,不信 renderer 自报。
+ipcMain.on(AGENT_AUTH_CHANNELS.READY, (event: IpcMainEvent) => {
+  if (!defaultIsTrustedFrame(event.senderFrame)) return;
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win || win.isDestroyed() || win.webContents !== event.sender) return;
+  markAgentAuthRendererReady(win.id);
+});
+
 export function createMainWindow(opts: CreateMainWindowOpts) {
   const win = new BrowserWindow({
     width: 1280,
@@ -862,6 +874,8 @@ app.on('browser-window-created', (_evt, win) => {
   // webContents id ≠ BrowserWindow id 且 'closed' 后 webContents 已销毁不可读 →
   // 在创建期(此刻 webContents 存活)先捕获 wcId。
   const wcId = win.webContents.id;
+  // agent 授权:从此刻(首次加载之前)起跟踪该窗口的 renderer 是否已能显示授权弹窗。
+  watchAgentAuthRenderer(win);
   win.once('closed', () => {
     void debugService.killByOwner(win.id, 'window-closed').catch((err) => {
       console.warn('[debug] killByOwner failed during window close', err);

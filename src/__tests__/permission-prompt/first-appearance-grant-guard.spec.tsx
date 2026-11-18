@@ -75,7 +75,8 @@ describe('manifest 权限弹窗:首次出现的防误触延迟', () => {
     expect(await granted()).toBeNull();
     expect(store().pending?.pluginId).toBe('plugin.a');
 
-    advance(1);
+    // 延迟内被拒掉的点击把计时起点推到它自己的时刻:再等满一个时间窗。
+    advance(PROMPT_GRANT_ARM_DELAY_MS);
     pointerClick(grantButton());
     expect(await granted()).toEqual(['fs', 'network']);
   });
@@ -128,7 +129,8 @@ describe('manifest 权限弹窗:首次出现的防误触延迟', () => {
     expect(await b()).toBeNull();
     expect(document.activeElement).toBe(denyButton());
 
-    advance(1);
+    // 延迟内被拒掉的点击把计时起点推到它自己的时刻:再等满一个时间窗。
+    advance(PROMPT_GRANT_ARM_DELAY_MS);
     pointerClick(grantButton());
     expect(await b()).toEqual(['network']);
   });
@@ -144,7 +146,8 @@ describe('fs-scope 文件夹授权弹窗:首次出现的防误触延迟', () => 
     expect(await decision()).toBeNull();
     expect(store().currentFsScope?.requestId).toBe('req-a');
 
-    advance(1);
+    // 延迟内被拒掉的点击把计时起点推到它自己的时刻:再等满一个时间窗。
+    advance(PROMPT_GRANT_ARM_DELAY_MS);
     pointerClick(grantButton());
     expect(await decision()).toBe('grant');
   });

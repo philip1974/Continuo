@@ -67,6 +67,25 @@ function prompt(): () => Promise<EnsureOutcome | null> {
   };
 }
 
+/** 弹出一个授权弹窗,只等初始焦点落到「拒绝」(不等出现延迟):用户还没注意到弹窗、输入流继续落进来。 */
+function promptJustShown(): () => Promise<EnsureOutcome | null> {
+  let outcome: EnsureOutcome | null = null;
+  act(() => {
+    void store()
+      .ensure({ method: 'terminal.send_text' })
+      .then((o) => {
+        outcome = o;
+      });
+  });
+  advance(30);
+  return async () => {
+    await act(async () => {
+      await Promise.resolve();
+    });
+    return outcome;
+  };
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
   _resetLmApiForTest();
@@ -182,7 +201,11 @@ describe('AgentAuthPrompt:授予按钮的键盘激活须是停顿后的有意按
   ])('键盘可达性保留:Tab 到授予按钮,停顿后按 %j → 授予', async (key, label, expected) => {
     const outcome = prompt();
     tabTo(button('仅本次'));
-    if (label !== '仅本次') tabTo(button(label));
+    if (label !== '仅本次') {
+      // 连按的第二下 Tab 算输入流(<Tab><Tab> 看补全):每一下 Tab 之前都要停顿。
+      advance(DELAY);
+      tabTo(button(label));
+    }
     advance(DELAY - 1);
     press(key);
     expect(await outcome()).toBeNull();
@@ -209,5 +232,87 @@ describe('AgentAuthPrompt:授予按钮的键盘激活须是停顿后的有意按
     type('abc');
     press('Escape');
     expect(await second()).toBe('denied');
+  });
+});
+
+// 聚焦时长 + 按键前停顿挡不住「Tab 之后停下来看一眼再回车」:zsh 里 `che<Tab>` 等补全、`<Tab><Tab>` 看候选再回车。
+// 把焦点带到授予按钮的那一下 Tab 若属于输入流,这次聚焦期间键盘授予一律无效。
+describe('AgentAuthPrompt:输入流里的 Tab 带来的焦点不能用键盘授予', () => {
+  it('审计复现:c h e <Tab> 停顿 700ms <Enter> → 不授予(此前落成「仅本次」)', async () => {
+    const outcome = promptJustShown();
+    for (const ch of 'che') {
+      press(ch);
+      advance(60);
+    }
+    tabTo(button('仅本次'));
+    advance(700);
+    press('Enter');
+    expect(await outcome()).toBeNull();
+    // 再等多久都一样:这次聚焦期间键盘授予无效。
+    advance(DELAY * 4);
+    press('Enter');
+    expect(await outcome()).toBeNull();
+    expect(store().pending).not.toBeNull();
+  });
+
+  it('审计复现:弹窗刚出现时的 <Tab><Tab> 停顿 600ms <Enter> → 不授予(此前落成「本次启动期间允许」)', async () => {
+    const outcome = promptJustShown();
+    tabTo(button('仅本次'));
+    advance(150);
+    tabTo(button('本次启动期间允许'));
+    advance(600);
+    press('Enter');
+    expect(await outcome()).toBeNull();
+  });
+
+  it('弹窗出现后打过字:停顿后再 Tab 也算输入流(打字后停下来想一想再补全)', async () => {
+    const outcome = prompt();
+    type('che');
+    advance(DELAY * 2);
+    tabTo(button('仅本次'));
+    advance(DELAY * 2);
+    press('Enter');
+    expect(await outcome()).toBeNull();
+  });
+
+  it('紧跟在别的按键后面的 Tab(非字符键也算)带来的焦点 → 停顿后 Enter 也不授予', async () => {
+    const outcome = prompt();
+    press('ArrowUp');
+    advance(DELAY - 1);
+    tabTo(button('仅本次'));
+    advance(DELAY * 2);
+    press('Enter');
+    expect(await outcome()).toBeNull();
+  });
+
+  it('被输入流 Tab 带到授予按钮后:把焦点移开、停顿后有意 Tab 回来,再停顿 → 可授予', async () => {
+    const outcome = promptJustShown();
+    tabTo(button('仅本次')); // 出现后 500ms 内的 Tab
+    advance(DELAY);
+    press('Enter');
+    expect(await outcome()).toBeNull();
+
+    advance(DELAY);
+    tabTo(button('本次启动期间允许')); // 有意的 Tab(之前有停顿、没打过字)
+    advance(DELAY);
+    press('Enter');
+    expect(await outcome()).toBe('session');
+  });
+
+  it('被输入流 Tab 带到授予按钮后鼠标单击仍有效', async () => {
+    const outcome = promptJustShown();
+    tabTo(button('仅本次'));
+    advance(DELAY);
+    fireEvent.click(button('仅本次'), { detail: 1 });
+    expect(await outcome()).toBe('once');
+  });
+
+  it('键盘可达性保留:出现 → 停顿 → Tab → 停顿 → Enter 可授予', async () => {
+    const outcome = promptJustShown();
+    advance(DELAY);
+    tabTo(button('仅本次'));
+    advance(DELAY);
+    press('Enter');
+    expect(await outcome()).toBe('once');
   });
 });

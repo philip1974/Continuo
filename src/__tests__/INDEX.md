@@ -218,8 +218,10 @@
 ## [agent-auth-prompt-throttle(agent 授权弹窗被拒后有冷却,不能循环弹窗诱导误点)](./agent-auth-prompt-throttle/README.md)
 
 - [`main-throttle.spec.ts`](./agent-auth-prompt-throttle/main-throttle.spec.ts)
+- [`prompt-grant-feedback.spec.tsx`](./agent-auth-prompt-throttle/prompt-grant-feedback.spec.tsx)
 - [`prompt-grant-guard.spec.tsx`](./agent-auth-prompt-throttle/prompt-grant-guard.spec.tsx)
 - [`prompt-keyboard-grant-guard.spec.tsx`](./agent-auth-prompt-throttle/prompt-keyboard-grant-guard.spec.tsx)
+- [`renderer-ready-handshake.spec.ts`](./agent-auth-prompt-throttle/renderer-ready-handshake.spec.ts)
 - [`renderer-reload.spec.ts`](./agent-auth-prompt-throttle/renderer-reload.spec.ts)
 - [`store-slots.spec.ts`](./agent-auth-prompt-throttle/store-slots.spec.ts)
 - [`timeout-occupancy.spec.ts`](./agent-auth-prompt-throttle/timeout-occupancy.spec.ts)
@@ -239,6 +241,7 @@
 ## [agent-terminal-mcp-auth (Agent Terminal MCP Phase 2)](./agent-terminal-mcp-auth/README.md)
 
 - [`auth-store.spec.ts`](./agent-terminal-mcp-auth/auth-store.spec.ts)
+- [`revoke-copy-matches-behavior.spec.ts`](./agent-terminal-mcp-auth/revoke-copy-matches-behavior.spec.ts)
 
 ## [agent-terminal-mcp-await-stop-hook](./agent-terminal-mcp-await-stop-hook/README.md)
 
@@ -885,6 +888,7 @@
 - [`keyboard-grant-guard.spec.tsx`](./permission-prompt/keyboard-grant-guard.spec.tsx)
 - [`permission-copy-matches-capability.spec.ts`](./permission-prompt/permission-copy-matches-capability.spec.ts)
 - [`promptStore.spec.ts`](./permission-prompt/promptStore.spec.ts)
+- [`select-all-and-checkbox-guard.spec.tsx`](./permission-prompt/select-all-and-checkbox-guard.spec.tsx)
 - [`shell-not-preselected.spec.tsx`](./permission-prompt/shell-not-preselected.spec.tsx)
 
 ## [permission-record-contract(权限记录单条形态的跨进程统一规则)](./permission-record-contract/README.md)
