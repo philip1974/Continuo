@@ -842,3 +842,16 @@ describe('terminal.await_stop_hook', () => {
     expect(err.message).not.toContain('z'.repeat(300));
   });
 });
+
+describe('S9 tool description 提示返回内容不可信', () => {
+  it('description 声明 last_assistant_message / transcript_path 须作为数据而非指令', () => {
+    const tool = createAwaitStopHookTool({
+      broker: createHookFileBroker('/nonexistent-hook-events'),
+      getSessionMeta: () => null,
+    });
+    expect(tool.description).toMatch(/last_assistant_message/);
+    expect(tool.description).toMatch(/transcript_path/);
+    expect(tool.description).toMatch(/untrusted/i);
+    expect(tool.description).toMatch(/data, not instructions/i);
+  });
+});

@@ -72,7 +72,12 @@ import { cancelAgentTerminalCreates } from './services/agent-terminal-inflight';
 import type { CreateSessionPtyInput } from './services/mcp-tools-terminal';
 import * as terminalSessions from './services/terminal-sessions.service';
 import * as termService from './services/terminal.service';
-import { makeCreateHandler, setMcpEnvProvider, setStopHookCanceller } from './ipc/terminal.ipc';
+import {
+  makeCreateHandler,
+  resolveTerminalCwd,
+  setMcpEnvProvider,
+  setStopHookCanceller,
+} from './ipc/terminal.ipc';
 import {
   cancelAgentAuthByWindow,
   cancelAllAgentAuth,
@@ -90,8 +95,9 @@ import {
   createHookFileBroker,
   ensureHookEventsDir,
   inferRunner,
-  installStopHookForSession,
+  installStopHookInWorkspace,
 } from './services/mcp-tools-hook-bridge';
+import { getWorkspaceRoot as getWindowWorkspaceRoot } from './services/window-workspace-roots.service';
 import { startPluginMcpIpc } from './ipc/plugin-mcp.ipc';
 import { primePluginsWatcherBaseline } from './ipc/plugins.ipc';
 import {
@@ -1037,14 +1043,21 @@ async function startMcpHost(): Promise<void> {
         err,
       );
     }
+    // 安全(F3):cwd 与会话同一解析(resolveTerminalCwd,缺省回退窗口 workspace 根),且须在调用方窗口
+    // workspace 根之内、不得是 home 或其祖先 —— 否则不装(会话照建,stop_hook_installed:false)。
     const installStopHook = async (
       cwd: string | undefined,
       agentLabel: string,
-    ) => {
-      const resolvedCwd = cwd ?? '';
-      const runner = inferRunner({ id: '', cwd: resolvedCwd, agentLabel });
-      return installStopHookForSession(resolvedCwd, runner, hookEventsDir);
-    };
+      ownerWindowId: number,
+    ) =>
+      installStopHookInWorkspace({
+        cwd,
+        workspaceRoot: getWindowWorkspaceRoot(ownerWindowId),
+        homeDir: os.homedir(),
+        runner: inferRunner({ id: '', cwd: cwd ?? '', agentLabel }),
+        hookEventsDir,
+        resolveCwd: resolveTerminalCwd,
+      });
     const initialTools = [
       ...makeTerminalMcpTools({
         sessionStore: terminalSessions,

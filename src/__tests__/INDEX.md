@@ -251,6 +251,7 @@
 - [`install-stop-hook-read-error-fail-closed.spec.ts`](./agent-terminal-mcp-install-stop-hook/install-stop-hook-read-error-fail-closed.spec.ts)
 - [`install-stop-hook-symlink-race.spec.ts`](./agent-terminal-mcp-install-stop-hook/install-stop-hook-symlink-race.spec.ts)
 - [`install-stop-hook-symlink-refused.spec.ts`](./agent-terminal-mcp-install-stop-hook/install-stop-hook-symlink-refused.spec.ts)
+- [`install-stop-hook-workspace-scope.spec.ts`](./agent-terminal-mcp-install-stop-hook/install-stop-hook-workspace-scope.spec.ts)
 - [`install-stop-hook.spec.ts`](./agent-terminal-mcp-install-stop-hook/install-stop-hook.spec.ts)
 - [`read-capped-nofollow.spec.ts`](./agent-terminal-mcp-install-stop-hook/read-capped-nofollow.spec.ts)
 
