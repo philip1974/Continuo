@@ -207,7 +207,7 @@ export interface PluginFsApi {
 }
 
 export interface PluginNetworkApi {
-  /** 检 'network',未授抛 PermissionError(Phase 3 启用). */
+  /** 检 'network',未授抛 PermissionError。url 须为绝对 https: URL,file:/blob:/data:/http:/相对路径等抛 BAD_INPUT. */
   fetch(url: string, init?: RequestInit): Promise<Response>;
 }
 

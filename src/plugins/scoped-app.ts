@@ -372,16 +372,30 @@ function makeFs(
 // network 此前是唯一无输入边界闸的能力(fs/shell 等都有)。URL/headers 由 fetch 同步解析,超长 URL /
 // 海量·超长 headers 会让(与插件共享的)renderer 网络栈解析放大。body 不在此 cap(浏览器流式发送、
 // 非 renderer 同步物化;给 body 限大小是上传策略决策,留作单独议题)。超限抛 BAD_INPUT、不调 fetch。
-function validateNetworkInput(url: unknown, init?: unknown): void {
+//
+// 安全(scheme):只放行**绝对 https:** URL,返回解析后的 href 供实际请求使用(校验与请求同一个值)。
+// 打包版页面源是 file://,CSP connect-src 管不到 file:,原生 fetch 对 `file:///…` 以及相对路径(按页面
+// base 解析成 file:)直接返回本地文件内容 —— 只授了 network 的插件即可读任意文件再 https 外传,整体旁路
+// fs 权限与主进程 path-scope。不带 base 解析:相对 / 协议相对 URL 一律拒。http 不放行(与生产 CSP
+// connect-src 一致)。重定向无需额外处理:Chromium 拒绝 http(s) → file: 的重定向(Electron 45 实测)。
+function validateNetworkInput(url: unknown, init?: unknown): string {
   const bad = (msg: string): never => {
     throw codedError('BAD_INPUT', `[network] ${msg}`);
   };
   if (typeof url !== 'string' || url.length === 0 || url.length > NETWORK_URL_MAX)
-    bad(`invalid url (empty or > ${NETWORK_URL_MAX})`);
-  if (init === undefined || init === null) return;
+    return bad(`invalid url (empty or > ${NETWORK_URL_MAX})`);
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return bad('invalid url (must be an absolute https: URL)');
+  }
+  if (parsed.protocol !== 'https:') bad('invalid url (only https: is allowed)');
+  const href = parsed.href;
+  if (init === undefined || init === null) return href;
   if (typeof init !== 'object') bad('invalid init');
   const headers = (init as { headers?: unknown }).headers;
-  if (headers === undefined || headers === null) return;
+  if (headers === undefined || headers === null) return href;
 
   let headerCount = 0;
   const validateHeaderEntry = (k: unknown, v: unknown): void => {
@@ -411,6 +425,7 @@ function validateNetworkInput(url: unknown, init?: unknown): void {
   } else {
     bad('invalid headers');
   }
+  return href;
 }
 
 function makeNetwork(
@@ -421,7 +436,7 @@ function makeNetwork(
   return {
     async fetch(url, init) {
       await ensurePerm(pluginId, 'network', store, life);
-      validateNetworkInput(url, init); // 边界(E264):发 raw fetch 前校验 URL/headers
+      const href = validateNetworkInput(url, init); // 边界(E264)+ 安全:校验 URL/headers,只放行 https
       // 停用即中止(终审):每次请求挂本实例的 AbortController,revoke() 时 abort 全部在途请求。
       // 调用方自带 signal 时用 AbortSignal.any 合并:成功后响应体仍在读取,调用方 abort 须能照常中止(同原生
       // fetch 语义);且源 signal 对合并 signal 只持弱引用,长期复用同一调用方 signal 轮询不会堆积监听(终审)。
@@ -432,7 +447,7 @@ function makeNetwork(
       try {
         // 用 module 顶部 cached raw fetch,sandboxSweep 后全局 fetch
         // 已涂掉但本闭包仍能调
-        return await getCachedFetch()(url, { ...init, signal });
+        return await getCachedFetch()(href, { ...init, signal });
       } finally {
         life.inflightFetches.delete(ctl);
       }

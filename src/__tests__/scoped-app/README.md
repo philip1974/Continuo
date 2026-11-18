@@ -35,6 +35,13 @@ permission 是持 pluginId 的闭包。permission.check / granted 真读 store�
 - IpcResult 拆包:ok=false 抛 Error 含 code 与 message
 - jsdom 环境 window.api.fs 不存在 → 抛"未注入"
 
+### network.fetch 只放行绝对 https: URL
+
+- 打包版页面源是 file://,原生 fetch 可读 `file:///…`(相对路径也按页面 base 解析成 file:)。
+  network 权限 ≠ 读本地文件:入口不带 base 解析 URL,仅 `https:` 通过
+- `file:` / `blob:` / `data:` / `about:` / `ws(s):` / `http:` / 相对 / 协议相对 / 无法解析 → `BAD_INPUT`,不调 fetch
+- 通过后以解析得到的绝对 href 发请求(校验与实际请求用同一个值)
+
 ### shell
 
 - Phase 1 占位,空对象;接口稳定但无方法
