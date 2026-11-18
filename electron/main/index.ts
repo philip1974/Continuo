@@ -1247,7 +1247,7 @@ app.whenReady().then(async () => {
   // 须在建任何窗口之前注册,否则首窗加载期的权限请求走 Electron 默认放行。
   installPermissionHandlers(session.defaultSession);
   // 安全:拒绝带主机名的 file: 请求(Windows UNC/SMB 外连泄露 NTLM,见 file-request-policy)。
-  installFileRequestGuard(session.defaultSession);
+  installFileRequestGuard(session.defaultSession, RENDERER_FILE);
 
   const userData = app.getPath('userData');
   const explorerFile = path.join(userData, EXPLORER_FILE_NAME);
