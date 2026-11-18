@@ -14,8 +14,10 @@
 //   3. dev socket(packaged 没跑时 fallback):
 //      macOS = ~/Library/Application Support/Continuo Dev/mcp.sock
 //      Linux = ".../Continuo Dev/mcp.sock"
-//   Windows = \\.\pipe\continuo-mcp-<用户哈希>(named pipe,不在文件系统,无 fallback;
-//             按用户命名防同机其它用户抢注同名管道骗走 hello token)
+//   Windows = 每次启动随机的 named pipe(\\.\pipe\continuo-mcp-<用户哈希>-<随机>):
+//             Continuo 终端里由 CONTINUO_MCP_SOCKET 注入;否则读发现文件
+//             %APPDATA%\Continuo\mcp-pipe → %APPDATA%\Continuo Dev\mcp-pipe(只认合法名),
+//             都读不到即报错退出 —— 不回落可预测名(同机其它用户可抢注同名管道骗走 hello token)
 //
 // 设计:packaged 是日常工具,dev 只是临时验证。两个都活时优先 packaged
 // (避免开发者忘了关 dev 误把 prod 流量打到 dev)。dev 单独活时(开发者
@@ -23,9 +25,8 @@
 //
 // Continuo 主进程必须在线;否则连失败,Claude Code 标 mcp server 不可用。
 
-import { createHash } from 'node:crypto';
 import { createConnection } from 'node:net';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
@@ -49,22 +50,34 @@ function devSocketPath() {
   return path.join(appSupportDir(), 'Continuo Dev', 'mcp.sock');
 }
 
-// Windows 命名管道名:与主进程 electron/main/services/mcp-stdio-server.service.ts 的
-// windowsStdioPipeName 同算法(本脚本独立运行不能 import),两处必须一致 —— 由
-// src/__tests__/49-polish-bugfixes/security-windows-stdio-pipe-per-user.spec.ts 钉住。
-// <windows-pipe-name>
-function windowsStdioPipeName(user) {
-  const id = createHash('sha256')
-    .update(`${user.username.toLowerCase()}\0${user.homedir.toLowerCase()}`, 'utf8')
-    .digest('hex')
-    .slice(0, 32);
-  return `\\\\.\\pipe\\continuo-mcp-${id}`;
+function windowsAppDataDir() {
+  return process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
 }
-// </windows-pipe-name>
+
+// Windows 管道名发现:与主进程 electron/main/services/mcp-stdio-server.service.ts 的
+// isValidWindowsStdioPipeName / STDIO_PIPE_DISCOVERY_FILE 一致(本脚本独立运行不能 import)——
+// 由 src/__tests__/49-polish-bugfixes/security-windows-stdio-pipe-per-user.spec.ts 钉住。
+// <windows-pipe-discovery>
+const WINDOWS_PIPE_NAME_RE = /^\\\\\.\\pipe\\continuo-mcp-[0-9a-f-]+$/;
+function readWindowsPipeDiscovery(appDataDir) {
+  // packaged 优先(日常驱动器),dev 次之;内容不是本机 continuo-mcp 管道名(被写成远程管道 / 任意路径)→ 不用。
+  for (const appName of ['Continuo', 'Continuo Dev']) {
+    let raw;
+    try {
+      raw = readFileSync(path.join(appDataDir, appName, 'mcp-pipe'), 'utf8');
+    } catch {
+      continue;
+    }
+    const name = raw.trim();
+    if (WINDOWS_PIPE_NAME_RE.test(name)) return name;
+  }
+  return null;
+}
+// </windows-pipe-discovery>
 
 function resolveSocketPath() {
   if (process.env.CONTINUO_MCP_SOCKET) return process.env.CONTINUO_MCP_SOCKET;
-  if (process.platform === 'win32') return windowsStdioPipeName(os.userInfo());
+  if (process.platform === 'win32') return readWindowsPipeDiscovery(windowsAppDataDir());
   const packaged = packagedSocketPath();
   if (existsSync(packaged)) return packaged;
   const dev = devSocketPath();
@@ -83,6 +96,14 @@ const windowId =
   CONTINUO_WINDOW_ID && /^\d+$/.test(CONTINUO_WINDOW_ID)
     ? Number(CONTINUO_WINDOW_ID)
     : null;
+
+if (process.platform === 'win32' && socketPath === null) {
+  process.stderr.write(
+    `[continuo-mcp-stdio] no valid pipe discovery file under ${windowsAppDataDir()}\\{Continuo,Continuo Dev}\\mcp-pipe\n` +
+      '  Continuo app appears not to be running. Start Continuo first (or set CONTINUO_MCP_SOCKET).\n',
+  );
+  process.exit(1);
+}
 
 // existsSync 在 Windows named pipe 上不工作(不在文件系统),跳过预检;
 // macOS/Linux 仍预检以给清晰错误,避免连接异常时报模糊网络错误。

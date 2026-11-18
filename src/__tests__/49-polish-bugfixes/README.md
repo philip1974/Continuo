@@ -1208,12 +1208,16 @@ helper + 必挂 browser-window-created),把「单一来源」固化进测试防�
   保留 FileId 与 LastWriteTime)。不一致(外部改写)或 stat(tmp) 失败 → `undefined`,退化为整文件读,永不误判为回声;
   写盘与 tmp 清理的错误路径不变。macOS/Linux 行为不变。
 
-### Windows stdio MCP 命名管道按用户命名 — `security-windows-stdio-pipe-per-user.spec.ts`
-- 攻击场景(Windows 专属):命名管道命名空间全机共享。旧固定名 `\\.\pipe\continuo-mcp` 下,同机其它用户先建同名管道
-  → 本用户 Continuo 绑定失败(EADDRINUSE 被吞成告警),终端里的 stdio proxy 连到对方管道并在 hello 中交出
-  `{windowId, token}` → 对方拿 token 调本用户的 127.0.0.1 HTTP MCP。
-- 契约:管道名 = `\\.\pipe\continuo-mcp-<sha256(小写用户名 \0 小写 profile 目录) 前 32 hex>`(`os.userInfo()`);
-  不同用户不同名、同用户稳定且不受大小写影响;独立 proxy 脚本 `scripts/continuo-mcp-stdio.mjs` 的同算法副本与主进程
-  `windowsStdioPipeName` 结果逐一相等(规范从脚本 `<windows-pipe-name>` 标记段取函数比对)。macOS/Linux unix socket 不变。
-- 局限:用户名 / profile 目录对本机其它用户非秘密,定向抢注仍可能;libuv 以 FILE_FLAG_FIRST_PIPE_INSTANCE 独占创建,
-  默认 DACL 仅创建者读写(Everyone 只读),其它用户连不上本用户的管道。
+### Windows stdio MCP 命名管道每次启动随机命名 + 发现文件 — `security-windows-stdio-pipe-per-user.spec.ts`
+- 攻击场景(Windows 专属):命名管道命名空间全机共享。可预测名(旧固定名 `\\.\pipe\continuo-mcp`,或仅由用户名 /
+  profile 目录推导的名字)下,同机其它用户先建同名管道 → 本用户 Continuo 绑定失败(EADDRINUSE 被吞成告警),终端里的
+  stdio proxy 连到对方管道并在 hello 中交出 `{windowId, token}` → 对方拿 token 调本用户的 127.0.0.1 HTTP MCP。
+- 契约:
+  - 主进程每次启动生成 `\\.\pipe\continuo-mcp-<sha256(小写用户名 \0 小写 profile 目录) 前 32 hex>-<128 bit 随机 hex>`,
+    每次不同;只接受形如 `^\\\\.\\pipe\\continuo-mcp-[0-9a-f-]+$` 的名字(拒绝远程管道 / 任意路径 / 多行)。
+  - 每个 PTY 注入 `CONTINUO_MCP_SOCKET=<该名>`(Windows;与 `CONTINUO_MCP_TOKEN` 同处注入),proxy 优先读它。
+  - listen 成功后原子写 `<userData>/mcp-pipe`;close 时内容仍是自己的名字才删除。
+  - proxy 在 win32 且无 env 时按 `%APPDATA%\Continuo` → `%APPDATA%\Continuo Dev` 读 `mcp-pipe`,内容非法则跳过;
+    都读不到 → 报错退出,不回落确定性名。proxy 的校验正则 / 读取逻辑(`<windows-pipe-discovery>` 标记段)与主进程逐项比对。
+  - macOS / Linux unix socket 行为不变(不注入 env、不写发现文件)。
+- 局限:Continuo 崩溃残留的 packaged 发现文件会让外部 proxy 优先连已失效的管道(报错而非落到 dev),下次启动覆盖。

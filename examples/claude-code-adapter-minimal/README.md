@@ -34,7 +34,7 @@ The socket the proxy connects to depends on which Continuo is running:
 |---|---|
 | Packaged (default) | macOS: `~/Library/Application Support/Continuo/mcp.sock` · Linux: `${XDG_CONFIG_HOME:-~/.config}/Continuo/mcp.sock` |
 | Dev (`pnpm dev`) | macOS: `~/Library/Application Support/Continuo Dev/mcp.sock` (proxy auto-falls back when no packaged socket exists) |
-| Windows (any) | named pipe `\\.\pipe\continuo-mcp-<per-user hash>` (see `windowsStdioPipeName`) |
+| Windows (any) | named pipe `\\.\pipe\continuo-mcp-<user hash>-<random>`, new each launch; injected as `CONTINUO_MCP_SOCKET` in Continuo terminals, otherwise read from `%APPDATA%\Continuo[ Dev]\mcp-pipe` |
 | Override | set `CONTINUO_MCP_SOCKET=<path>` |
 
 If neither Continuo flavor is running when Claude Code tries to call a tool, you'll see `socket not found` from the proxy and Claude will mark the server as unavailable until you start Continuo.
