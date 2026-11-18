@@ -35,7 +35,7 @@ T7d 应答方窗口(IPC sender 所在窗口)必须是该请求的目标窗口;�
 T7e ipc respond 接线用 `BrowserWindow.fromWebContents(event.sender)` 推断应答方窗口(源码钉)。
 
 T17 `cancelAllAgentAuth`(退出清理)把所有窗口的未决请求立即结算为 `'denied'` 并返回取消数;不发任何 IPC、不轮换 token
-(不是「撤销」语义)。before-quit 窗口已隐藏无人应答,否则挂在授权上的 MCP 调用会把 `mcpHost.close()` 拖到 5min 超时。
+(不是「撤销」语义)。before-quit 窗口已隐藏无人应答,否则挂在授权上的 MCP 调用会把 `mcpHost.close()` 拖到无应答超时(2 分钟)。
 
 T16 撤销(`revokeAndKillAgentSessions`)完成后向所有存活窗口广播 `AGENT_AUTH_CHANNELS.REVOKED`(payload `{}`):
 「本次启动期间允许」记在各窗口 renderer 的 store,只重置发起窗口会让其它窗口在撤销后仍静默放行请求;

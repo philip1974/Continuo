@@ -83,8 +83,20 @@ async function throttled(
   return false;
 }
 
-describe('无人应答超时:冷却按调用方记(不按授权域)', () => {
-  it('审计复现:轮换三个域、只发起不应答,每 5s 重试 → 一小时内弹窗占屏不超过 65%(此前 ≈100%)', async () => {
+describe('无人应答超时时长', () => {
+  it('弹窗 120s 无人应答 → main 结算为拒绝,renderer 同时关掉弹窗', async () => {
+    expect(TIMEOUT).toBe(120_000);
+    const p = request();
+    await flush(120_000 - 1);
+    expect(displayed()).toBe(true);
+    await flush(1);
+    expect(await p).toBe('denied');
+    expect(displayed()).toBe(false);
+  });
+});
+
+describe('无人应答超时:冷却不按授权域记', () => {
+  it('审计复现:轮换三个域、只发起不应答,每 5s 重试 → 一小时内弹窗占屏不超过 40%(此前 ≈100%)', async () => {
     const HORIZON = 60 * 60_000;
     const STEP = 5_000;
     let onScreen = 0;
@@ -98,9 +110,10 @@ describe('无人应答超时:冷却按调用方记(不按授权域)', () => {
       if (displayed()) onScreen += STEP;
       await flush(STEP);
     }
-    // 300s 显示 / 30s、60s、120s、240s、300s… 冷却 → 一小时内 8 个弹窗、占屏 62.5%,稳态 50%。
-    expect(onScreen / HORIZON).toBeLessThanOrEqual(0.65);
-    expect(prompts).toBe(8);
+    // 120s 显示 / 30s、60s、120s、240s、300s… 冷却 → 一小时内 11 个弹窗、占屏 36.7%,稳态 120/420 ≈ 28.6%。
+    // (超时 5 分钟时:8 个弹窗、62.5%。)
+    expect(onScreen / HORIZON).toBeLessThanOrEqual(0.4);
+    expect(prompts).toBe(11);
   });
 
   it('一个域超时 → 该调用方的所有域 30s 内都不弹窗', async () => {
@@ -147,15 +160,72 @@ describe('无人应答超时:冷却按调用方记(不按授权域)', () => {
     await flush(BASE);
     expect(await throttled(DOMAINS[0])).toBe(false);
   });
+});
 
-  it('窗口内 agent 超时不让 external 调用方进冷却(各记各的)', async () => {
-    await timeOut();
-    expect(await throttled('terminal.send_text', true)).toBe(false);
+describe('无人应答超时:冷却按窗口记(窗口内 agent 与 external 共用)', () => {
+  it('审计复现:窗口内与 external 两个身份交替发起、只发起不应答,每 5s 重试 → 一小时内弹窗占屏不超过 40%(此前 100%)', async () => {
+    const HORIZON = 60 * 60_000;
+    const STEP = 5_000;
+    let onScreen = 0;
+    let prompts = 0;
+    for (let t = 0; t < HORIZON; t += STEP) {
+      // 轮流打头:先用一个身份,它在冷却 / 被拒就换另一个。external 不能请求插件域(renderer 直接拒),只轮换前两个域。
+      for (const external of prompts % 2 === 0 ? [false, true] : [true, false]) {
+        if (displayed()) break;
+        void request(DOMAINS[prompts % 2]!, external);
+        await flush();
+        if (displayed()) prompts += 1;
+      }
+      if (displayed()) onScreen += STEP;
+      await flush(STEP);
+    }
+    // 超时冷却按 subject 记时一个身份冷却、另一个顶上:超时 5 分钟 12 个弹窗、占屏 100%(超时 2 分钟 20 个、
+    // 66.7%)。按窗口记后与单身份相同:11 个弹窗、占屏 36.7%(超时 5 分钟时 8 个、62.5%)。
+    expect(onScreen / HORIZON).toBeLessThanOrEqual(0.4);
+    expect(prompts).toBe(11);
+  });
+
+  it('窗口内 agent 超时 → 同窗口的 external 调用方也进冷却;反之亦然', async () => {
+    await timeOut('terminal.send_text');
+    expect(await throttled('terminal.read_output', true)).toBe(true);
+    await flush(BASE);
+    await timeOut('terminal.read_output', true);
+    expect(await throttled('debug.launch')).toBe(true);
+  });
+
+  it('连续超时计数按窗口合并:窗口内超时后 external 再超时,冷却是第二级的 60s', async () => {
+    await timeOut('terminal.send_text');
+    await flush(BASE);
+    await timeOut('terminal.read_output', true);
+    await flush(2 * BASE - 1_000);
+    expect(await throttled('terminal.send_text')).toBe(true);
+    expect(await throttled('terminal.read_output', true)).toBe(true);
+    await flush(1_000);
+    expect(await throttled('terminal.send_text')).toBe(false);
+  });
+
+  it('用户在任一调用方的弹窗上作出决定 → 该窗口的连续超时计数归零', async () => {
+    await timeOut('terminal.send_text', true);
+    await flush(BASE);
+    await timeOut('terminal.read_output', true);
+    await flush(2 * BASE);
+    // external 连续超时 2 次;用户对窗口内 agent 的弹窗点了「仅本次」。
+    expect(await throttled('debug.launch', false, 'once')).toBe(false);
+    // 归零后 external 再超时从 30s 起(否则是 120s)。
+    await timeOut('terminal.read_output', true);
+    await flush(BASE);
+    expect(await throttled('terminal.read_output', true)).toBe(false);
+  });
+
+  it('拒绝冷却仍按调用方:external 被拒不影响窗口内 agent(同一域)', async () => {
+    expect(await throttled('terminal.send_text', true, 'denied')).toBe(false);
+    expect(await throttled('terminal.send_text', true)).toBe(true);
+    expect(await throttled('terminal.send_text')).toBe(false);
   });
 });
 
 describe('排队中的请求', () => {
-  it('窗口内弹窗占屏到超时,排在后面的 external 请求没轮到显示就到期 → 不进冷却,立即可再请求', async () => {
+  it('窗口内弹窗占屏到超时,排在后面的 external 请求没轮到显示就到期 → 不另记超时', async () => {
     const inWindow = request('terminal.send_text');
     const ext = request('terminal.read_output', true);
     await flush();
@@ -164,9 +234,12 @@ describe('排队中的请求', () => {
     await flush(TIMEOUT);
     expect(await inWindow).toBe('denied');
     expect(await ext).toBe('denied');
-    // external 从未显示过 → 没有冷却;窗口内的那个显示了 5 分钟 → 有冷却。
-    expect(await throttled('terminal.read_output', true)).toBe(false);
+    // 窗口内的那个显示到超时 → 该窗口(含 external)进 30s 冷却;external 从未显示过 → 不另记一次超时
+    // (否则连续超时计数为 2、冷却 60s)。
+    expect(await throttled('terminal.read_output', true)).toBe(true);
     expect(await throttled('terminal.send_text')).toBe(true);
+    await flush(BASE);
+    expect(await throttled('terminal.read_output', true)).toBe(false);
   });
 
   it('轮到显示并显示到超时的排队请求照常进冷却', async () => {

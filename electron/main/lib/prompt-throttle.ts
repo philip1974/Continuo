@@ -7,8 +7,9 @@
 //   被拒指数退避。
 // - subject 级退避:同一 subject 连续 PROMPT_SUBJECT_DENY_STREAK 次被拒(不论 key)→ 该 subject 的所有请求进入
 //   退避,每多被拒一次翻倍、封顶;用户授予一次计数减 1(不清零、不解除已生效的退避)。
-// - 超时冷却:弹窗无人应答直到超时 → 该 subject 的所有请求进入冷却,连续超时翻倍、封顶;用户对任一弹窗作出
-//   决定后连续超时计数归零。不算拒绝(不升拒绝退避、不计连续被拒)。
+// - 超时冷却:弹窗无人应答直到超时 → 该 subject **所在超时组**的所有请求进入冷却,连续超时翻倍、封顶;用户对组内
+//   任一弹窗作出决定后连续超时计数归零。不算拒绝(不升拒绝退避、不计连续被拒)。超时组由构造参数 timeoutGroupOf
+//   给出,默认即 subject 自身;agent 授权按窗口分组(同窗口的窗口内 agent 与 external 共用,见 agent-auth.service)。
 // - 速率上限:同一 subject 单位时间内发出的弹窗数有上限(挡轮换不同 key 的刷屏)。
 // - 单飞:同一 subject 同时最多一个未决弹窗。上面三项只看**已落定**的决定:不等结果同步连发 N 次时还没有任何
 //   拒绝记录。未决期间的新请求直接拒(不排队、不计拒绝)。
@@ -44,7 +45,10 @@ interface SubjectState {
   streak: number;
   lastDeniedAt: number;
   backoffUntil: number;
-  /** 该 subject 连续无人应答超时的次数(任一用户决定归零)与对应的冷却截止时刻。 */
+}
+
+interface TimeoutState {
+  /** 该超时组连续无人应答超时的次数(组内任一用户决定归零)与对应的冷却截止时刻。 */
   timeouts: number;
   lastTimeoutAt: number;
   timeoutUntil: number;
@@ -71,13 +75,22 @@ export class PromptThrottle {
   private readonly subjects = new Map<string, SubjectState>();
   /** 有未决弹窗的 subject。独立于 subjects(不随其容量淘汰);大小受调用方的未决请求上限约束。 */
   private readonly inFlight = new Set<string>();
+  /** 超时组 → 超时冷却状态(数量上限同 subjects,超出丢最旧的)。 */
+  private readonly timeoutGroups = new Map<string, TimeoutState>();
 
   /**
    * @param covers 请求的 key 是否命中某个被拒 key(默认相等)。scope 请求传「相等或是其祖先路径」。
+   * @param timeoutGroupOf subject 所属的超时组(默认 subject 自身)。组内共用超时冷却与连续超时计数。
    */
   constructor(
     private readonly covers: (requested: string, denied: string) => boolean = (a, b) => a === b,
+    private readonly timeoutGroupOf: (subject: string) => string = (subject) => subject,
   ) {}
+
+  /** 该 subject 所在超时组的冷却截止时刻(无记录 → 0)。 */
+  private timeoutUntil(subject: string): number {
+    return this.timeoutGroups.get(this.timeoutGroupOf(subject))?.timeoutUntil ?? 0;
+  }
 
   /**
    * 是否可以为这次请求弹窗。ok → 已计入该 subject 的弹窗速率并标记为在途(调用方随后必须真的弹窗,且弹窗无论以
@@ -85,9 +98,10 @@ export class PromptThrottle {
    */
   admit(subject: string, keys: readonly string[], now: number = Date.now()): PromptAdmission {
     if (this.inFlight.has(subject)) return { ok: false, reason: 'in-flight', retryAfterMs: 0 };
+    let until = this.timeoutUntil(subject);
     const state = this.subjects.get(subject);
     if (state) {
-      let until = Math.max(state.backoffUntil, state.timeoutUntil);
+      until = Math.max(until, state.backoffUntil);
       for (const [deniedKey, denied] of state.denied) {
         if (now >= denied.until) {
           if (now - denied.deniedAt > PROMPT_DENY_FORGET_MS) state.denied.delete(deniedKey);
@@ -95,7 +109,9 @@ export class PromptThrottle {
         }
         if (keys.some((k) => this.covers(k, deniedKey))) until = Math.max(until, denied.until);
       }
-      if (now < until) return { ok: false, reason: 'cooldown', retryAfterMs: until - now };
+    }
+    if (now < until) return { ok: false, reason: 'cooldown', retryAfterMs: until - now };
+    if (state) {
       state.prompts = state.prompts.filter((t) => now - t < PROMPT_RATE_WINDOW_MS);
       if (state.prompts.length >= PROMPT_RATE_MAX) {
         const oldest = state.prompts[0] ?? now;
@@ -114,9 +130,10 @@ export class PromptThrottle {
    */
   blockedRegardlessOfKeys(subject: string, now: number = Date.now()): boolean {
     if (this.inFlight.has(subject)) return true;
+    if (now < this.timeoutUntil(subject)) return true;
     const state = this.subjects.get(subject);
     if (!state) return false;
-    if (now < Math.max(state.backoffUntil, state.timeoutUntil)) return true;
+    if (now < state.backoffUntil) return true;
     let recent = 0;
     for (const t of state.prompts) if (now - t < PROMPT_RATE_WINDOW_MS) recent += 1;
     return recent >= PROMPT_RATE_MAX;
@@ -141,7 +158,8 @@ export class PromptThrottle {
 
   /**
    * 用户对弹窗的决定。deny → 请求里每个 key 进入冷却(连续被拒翻倍,封顶),subject 连续被拒计数 +1;
-   * grant → 清除这些 key(仅这些)的拒绝记录,subject 连续被拒计数 -1。两者都把连续超时计数归零(用户在场)。
+   * grant → 清除这些 key(仅这些)的拒绝记录,subject 连续被拒计数 -1。两者都把该 subject 所在超时组的连续超时
+   * 计数归零(用户在场;已生效的超时冷却不解除)。
    */
   noteDecision(
     subject: string,
@@ -149,8 +167,9 @@ export class PromptThrottle {
     decision: 'grant' | 'deny',
     now: number = Date.now(),
   ): void {
+    const group = this.timeoutGroups.get(this.timeoutGroupOf(subject));
+    if (group) group.timeouts = 0;
     const state = this.stateFor(subject);
-    state.timeouts = 0;
     if (decision === 'grant') {
       for (const key of keys) state.denied.delete(key);
       // 只减 1、不清零,也不解除已生效的退避:清零的话「拒、拒、(请求一个无害的小范围骗到)允、拒、拒、允…」
@@ -174,11 +193,20 @@ export class PromptThrottle {
 
   /**
    * 弹窗无人应答直到超时。用户不理会 ≠ 拒绝(不升拒绝退避、不计 subject 连续被拒),但可被用来持续占屏 →
-   * 该 subject 的**所有** key 进入冷却:首次 PROMPT_DENY_COOLDOWN_BASE_MS,连续超时翻倍,上限同拒绝冷却。
-   * 按 subject 而非按 key 记:按 key 记时轮换 key(授权域)即可绕开,弹窗一个超时下一个立刻顶上。
+   * 该 subject 所在超时组的**所有** subject、所有 key 进入冷却:首次 PROMPT_DENY_COOLDOWN_BASE_MS,连续超时(组内
+   * 合并计数)翻倍,上限同拒绝冷却。不按 key 记:轮换 key(授权域)即可绕开;按组而非单个 subject 记:组内多个
+   * subject 交替只发起不应答,各自的冷却期由另一个的弹窗填满。
    */
   noteTimeout(subject: string, now: number = Date.now()): void {
-    const state = this.stateFor(subject);
+    const groupKey = this.timeoutGroupOf(subject);
+    let state = this.timeoutGroups.get(groupKey);
+    if (!state) {
+      if (this.timeoutGroups.size >= MAX_TRACKED_SUBJECTS) {
+        this.timeoutGroups.delete(this.timeoutGroups.keys().next().value as string);
+      }
+      state = { timeouts: 0, lastTimeoutAt: 0, timeoutUntil: 0 };
+      this.timeoutGroups.set(groupKey, state);
+    }
     // 「无超时」同样从冷却结束起算(理由同 noteDecision 的连续被拒计数)。
     if (now - Math.max(state.lastTimeoutAt, state.timeoutUntil) > PROMPT_DENY_FORGET_MS) state.timeouts = 0;
     state.timeouts += 1;
@@ -206,9 +234,6 @@ export class PromptThrottle {
         streak: 0,
         lastDeniedAt: 0,
         backoffUntil: 0,
-        timeouts: 0,
-        lastTimeoutAt: 0,
-        timeoutUntil: 0,
       };
       this.subjects.set(subject, state);
     }
