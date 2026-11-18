@@ -11,6 +11,7 @@ import {
 } from '@continuo-terminal/server-node';
 import * as terminalSessions from './terminal-sessions.service';
 import { mcpRevokers } from './mcp-host.service';
+import { TERMINAL_SESSION_ENV } from './mcp-tools-hook-bridge';
 import { getCurrentLocale } from './settings.service';
 import { withPtyLangEnv } from './pty-lang';
 import { defaultShellArgs, skipsShellIntegration } from './shell-args';
@@ -604,6 +605,9 @@ export async function createTerminal(
   const envWithHookEvents = {
     ...shellEnv,
     CONTINUO_HOOK_EVENTS_DIR: hookEventsDir,
+    // 安全(会话绑定):managed Stop hook 把它写进事件文件名,broker 据此只把 Stop 事件交给本会话的
+    // await_stop_hook 等待者(不按 cwd 串给同窗口他方会话)。放在 shellEnv 之后,用户 env 不能覆盖。
+    [TERMINAL_SESSION_ENV]: id,
   };
   // 强制 login + interactive shell:对齐 iTerm 默认行为 (`exec -l zsh`)。
   // 没 -l/-i 时 zsh 偶发不启 ZLE → zsh-autosuggestions 等 widget plugin 失效。

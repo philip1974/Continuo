@@ -51,8 +51,8 @@ describe('写入中途的 hook 文件', () => {
     });
     await broker.start();
     try {
-      const file = 'codex_4_123.jsonl';
-      const waiting = broker.awaitNext({ windowId: 4, runner: 'codex', cwd: '/ws', timeoutMs: 60_000 });
+      const file = 'codex_4_term-1_123.jsonl';
+      const waiting = broker.awaitNext({ windowId: 4, sessionId: 'term-1', runner: 'codex', cwd: '/ws', timeoutMs: 60_000 });
 
       onFile(file); // 文件刚创建(内容还没写完)
       await flush();
@@ -76,7 +76,7 @@ describe('写入中途的 hook 文件', () => {
 describe('调用方断开', () => {
   it('signal abort → 等待者被撤销;同一 key 可立即重新等待', async () => {
     const broker = createHookFileBroker('/fake/hooks-abort');
-    const filter = { windowId: 7, runner: 'cc' as const, cwd: '/ws', timeoutMs: 600_000 };
+    const filter = { windowId: 7, sessionId: 'term-1', runner: 'cc' as const, cwd: '/ws', timeoutMs: 600_000 };
     const controller = new AbortController();
     const first = broker.awaitNext(filter, controller.signal);
     const firstOutcome = first.catch((e: Error) => e.message);
@@ -106,14 +106,14 @@ describe('调用方断开', () => {
       const remove = vi.spyOn(controller.signal, 'removeEventListener');
 
       const timedOut = broker.awaitNext(
-        { windowId: 7, runner: 'cc', cwd: '/ws', timeoutMs: 1_000 },
+        { windowId: 7, sessionId: 'term-1', runner: 'cc', cwd: '/ws', timeoutMs: 1_000 },
         controller.signal,
       );
       await vi.advanceTimersByTimeAsync(1_000);
       await expect(timedOut).resolves.toMatchObject({ status: 'timeout' });
 
       const cancelled = broker.awaitNext(
-        { windowId: 7, runner: 'cc', cwd: '/ws', timeoutMs: 600_000 },
+        { windowId: 7, sessionId: 'term-1', runner: 'cc', cwd: '/ws', timeoutMs: 600_000 },
         controller.signal,
       );
       broker.cancelByWindow(7);
@@ -131,7 +131,7 @@ describe('调用方断开', () => {
     const controller = new AbortController();
     controller.abort();
     await expect(
-      broker.awaitNext({ windowId: 7, runner: 'cc', cwd: '/ws', timeoutMs: 600_000 }, controller.signal),
+      broker.awaitNext({ windowId: 7, sessionId: 'term-1', runner: 'cc', cwd: '/ws', timeoutMs: 600_000 }, controller.signal),
     ).rejects.toThrow(/disconnect|abort/i);
     expect(broker.cancelByWindow(7)).toBe(0);
   });
@@ -141,7 +141,7 @@ describe('调用方断开', () => {
 // 首窗延迟 = 所有文件 I/O 之和。改为有界并发读取,但按文件名顺序提交结果(buffered 先后不变)。
 describe('启动存量扫描', () => {
   it('有界并发读取,按文件名顺序入 buffered', async () => {
-    const names = Array.from({ length: 40 }, (_, i) => `codex_4_${1000 + i}.jsonl`);
+    const names = Array.from({ length: 40 }, (_, i) => `codex_4_term-1_${1000 + i}.jsonl`);
     vi.mocked(opendir).mockImplementationOnce((async () => ({
       async *[Symbol.asyncIterator]() {
         // 乱序枚举:broker 自行按文件名排序
@@ -182,7 +182,7 @@ describe('启动存量扫描', () => {
       expect(maxInFlight).toBeLessThanOrEqual(16);
       const got: string[] = [];
       for (let i = 0; i < names.length - 1; i += 1) {
-        const entry = await broker.awaitNext({ windowId: 4, runner: 'codex', cwd: '/ws', timeoutMs: 1000 });
+        const entry = await broker.awaitNext({ windowId: 4, sessionId: 'term-1', runner: 'codex', cwd: '/ws', timeoutMs: 1000 });
         got.push('fileName' in entry ? entry.fileName : 'timeout');
       }
       expect(got).toEqual(names.filter((name) => name !== oversize));

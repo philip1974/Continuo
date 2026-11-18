@@ -76,13 +76,14 @@ describe('topic49 P2-AK · 未知窗口的 Stop 事件不串话', () => {
     const broker = await makeBroker(dir);
     // 外部 claude:文件名 windowId 槽是 "unknown" → 解析为 null,cwd 与等待者相同
     await writeFile(
-      join(dir, `cc_unknown_cli-x_${Date.now()}000.jsonl`),
+      join(dir, `cc_unknown_term-1_cli-x_${Date.now()}000.jsonl`),
       `${JSON.stringify({ session_id: 'cli-x', cwd: '/repo', event: 'stop' })}\n`,
       'utf8',
     );
 
     const result = await broker.awaitNext({
       windowId: 4,
+      sessionId: 'term-1',
       runner: 'cc',
       cwd: '/repo',
       timeoutMs: 300,
@@ -94,13 +95,14 @@ describe('topic49 P2-AK · 未知窗口的 Stop 事件不串话', () => {
     const dir = await makeDir();
     const broker = await makeBroker(dir);
     await writeFile(
-      join(dir, `cc_4_cli-y_${Date.now()}000.jsonl`),
+      join(dir, `cc_4_term-1_cli-y_${Date.now()}000.jsonl`),
       `${JSON.stringify({ session_id: 'cli-y', cwd: '/repo', event: 'stop' })}\n`,
       'utf8',
     );
 
     const result = await broker.awaitNext({
       windowId: 4,
+      sessionId: 'term-1',
       runner: 'cc',
       cwd: '/repo',
       timeoutMs: 2000,
