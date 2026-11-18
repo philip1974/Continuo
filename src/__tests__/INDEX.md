@@ -246,6 +246,7 @@
 ## [agent-terminal-mcp-install-stop-hook](./agent-terminal-mcp-install-stop-hook/README.md)
 
 - [`install-stop-hook-read-error-fail-closed.spec.ts`](./agent-terminal-mcp-install-stop-hook/install-stop-hook-read-error-fail-closed.spec.ts)
+- [`install-stop-hook-symlink-refused.spec.ts`](./agent-terminal-mcp-install-stop-hook/install-stop-hook-symlink-refused.spec.ts)
 - [`install-stop-hook.spec.ts`](./agent-terminal-mcp-install-stop-hook/install-stop-hook.spec.ts)
 
 ## [agent-terminal-mcp-kill (Agent Terminal MCP Phase 4)](./agent-terminal-mcp-kill/README.md)

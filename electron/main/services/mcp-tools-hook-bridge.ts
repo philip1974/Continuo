@@ -12,14 +12,16 @@
 
 import { watch } from 'node:fs';
 import {
-  copyFile,
+  lstat,
   mkdir,
   opendir,
+  realpath,
   stat,
   unlink,
+  writeFile,
 } from 'node:fs/promises';
 import * as path from 'node:path';
-import { atomicWriteFile } from '../ipc/fs/atomic-write';
+import { atomicReplaceFileNoFollow } from '../ipc/fs/atomic-write';
 
 import {
   awaitStopHookInputSchema,
@@ -851,8 +853,55 @@ type InstallStopHookResult = {
     | 'config-too-large'
     | 'unknown-runner'
     | 'no-cwd'
-    | 'unrecognized-existing-stop-hook';
+    | 'unrecognized-existing-stop-hook'
+    | 'unsafe-config-path';
 };
+
+// 安全(H1,不可信仓库符号链接):install_stop_hook 写的是 agent 所在仓库(可能不可信)里的配置。仓库可预置
+// `.codex/config.toml -> ~/.ssh/config`、`.claude/settings.local.json -> ~/.claude/settings.json`,或
+// `.claude` / `.codex` 目录本身是链接 —— 此前备份 copyFile 会把链接目标(机密)拷进工作树,atomicWriteFile
+// 写穿链接损坏目标 / 把 hook 装进全局配置。fail-closed:配置目录与配置文件任何一环是链接(或类型不对)即拒绝;
+// 目录已存在时 realpath 后还须仍在 cwd 内。cwd 本身经链接访问(如 macOS /tmp)不受影响。
+// 检查 → 写入之间的 TOCTOU 由写入侧收口:备份用 'wx'(O_EXCL 不跟随链接),配置用不跟随链接的 rename 原子替换。
+async function guardConfigPath(
+  cwd: string,
+  configDir: string,
+  configPath: string,
+): Promise<'ok' | 'unsafe-config-path' | 'read-error'> {
+  for (const [p, wantDir] of [[configDir, true], [configPath, false]] as const) {
+    let st;
+    try {
+      st = await lstat(p);
+    } catch (err) {
+      // 目录不存在 → 文件必不存在,后续 mkdir 新建;文件不存在 → 新建。其它错误:状态未知,不写。
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') break;
+      return 'read-error';
+    }
+    if (st.isSymbolicLink()) return 'unsafe-config-path';
+    if (wantDir ? !st.isDirectory() : !st.isFile()) return 'unsafe-config-path';
+  }
+  try {
+    const realCwd = await realpath(cwd);
+    const realDir = await realpath(configDir);
+    const rel = path.relative(realCwd, realDir);
+    if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) return 'unsafe-config-path';
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') return 'read-error';
+  }
+  return 'ok';
+}
+
+// 备份已读入的原配置文本:'wx' 排他创建,备份名已存在(含被预置成链接)→ EEXIST → 返回 false 由调用方拒绝,
+// 绝不经链接写出;也不再按路径 copyFile(源在检查后被换成链接时会把链接目标拷进工作树)。
+async function writeConfigBackup(configPath: string, text: string): Promise<boolean> {
+  try {
+    await writeFile(`${configPath}.continuo-bak.${Date.now()}`, text, { flag: 'wx', mode: 0o600 });
+    return true;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'EEXIST') return false;
+    throw err;
+  }
+}
 
 // 边界(E66,E26 同款 / E18 stat-before-read 族):安装 stop-hook 时要读用户工作区的配置文件
 // (.claude/settings.local.json / .codex/config.toml)—— 这是工作区外部输入。此前两处直接
@@ -905,6 +954,9 @@ async function mergeClaudeCodeSettings(
   let existing: Record<string, unknown> = {};
   let fileExists = false;
 
+  const guard = await guardConfigPath(cwd, path.dirname(settingsPath), settingsPath);
+  if (guard !== 'ok') return { installed: false, reason: guard };
+
   // 边界(E66):stat.size 预检的 capped-read。too-large/read-error 直接 fail-fast,不进
   // JSON.parse / atomicWrite。read-error 同既有「读失败当空→写覆盖」族:不能当空配置覆盖。
   const read = await readConfigCapped(settingsPath);
@@ -914,8 +966,10 @@ async function mergeClaudeCodeSettings(
   if (read.kind === 'read-error') {
     return { installed: false, reason: 'read-error' };
   }
+  let originalText = '';
   if (read.kind === 'ok') {
     fileExists = true;
+    originalText = read.text;
     try {
       const parsed = JSON.parse(read.text) as unknown;
       if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
@@ -973,7 +1027,9 @@ async function mergeClaudeCodeSettings(
   }
 
   if (fileExists) {
-    await copyFile(settingsPath, `${settingsPath}.continuo-bak.${Date.now()}`);
+    if (!(await writeConfigBackup(settingsPath, originalText))) {
+      return { installed: false, reason: 'unsafe-config-path' };
+    }
   } else {
     await mkdir(path.dirname(settingsPath), { recursive: true });
   }
@@ -995,7 +1051,8 @@ async function mergeClaudeCodeSettings(
   // crash-safe 原子写:裸 writeFile 先 truncate 用户真实配置,写入中途崩溃/磁盘满会把
   // .claude/settings.local.json 留成空/半截(.continuo-bak 备份需手工恢复)。与 R4
   // plugin-fs writeFile / plugin-data 的原子写策略对齐。(codex 复审 loop R6)
-  await atomicWriteFile(settingsPath, `${JSON.stringify(next, null, 2)}\n`);
+  // 安全(H1):不跟随链接的 rename 替换,绝不写穿到仓库外。
+  await atomicReplaceFileNoFollow(settingsPath, `${JSON.stringify(next, null, 2)}\n`);
   return { installed: true };
 }
 
@@ -1006,6 +1063,8 @@ async function mergeCodexConfig(
   const configPath = path.join(cwd, '.codex', 'config.toml');
   let text = '';
   let fileExists = false;
+  const guard = await guardConfigPath(cwd, path.dirname(configPath), configPath);
+  if (guard !== 'ok') return { installed: false, reason: guard };
   // 边界(E66,同 mergeClaudeCodeSettings):stat.size 预检的 capped-read,超大不进 regex/
   // replace/atomicWrite(超大文本上跑正则 + 构造更大写入串)。read-error 不当空配置覆盖。
   const read = await readConfigCapped(configPath);
@@ -1042,7 +1101,9 @@ async function mergeCodexConfig(
   }
 
   if (fileExists) {
-    await copyFile(configPath, `${configPath}.continuo-bak.${Date.now()}`);
+    if (!(await writeConfigBackup(configPath, text))) {
+      return { installed: false, reason: 'unsafe-config-path' };
+    }
   } else {
     await mkdir(path.dirname(configPath), { recursive: true });
   }
@@ -1054,8 +1115,8 @@ async function mergeCodexConfig(
     '[[hooks.Stop.hooks]]\n' +
     'type = "command"\n' +
     `command = ${JSON.stringify(command)}\n`;
-  // crash-safe 原子写(同 R6 理由:.codex/config.toml 不得被截断)
-  await atomicWriteFile(configPath, text + block);
+  // crash-safe 原子写(同 R6 理由:.codex/config.toml 不得被截断);不跟随链接(H1)
+  await atomicReplaceFileNoFollow(configPath, text + block);
   return { installed: true };
 }
 
@@ -1082,9 +1143,11 @@ async function replaceManagedCodexStopHook(
     text.slice(0, managedStop.quoteStart) +
     JSON.stringify(codexStopHookCommand(hookEventsDir)) +
     text.slice(managedStop.quoteEnd);
-  await copyFile(configPath, `${configPath}.continuo-bak.${Date.now()}`);
-  // crash-safe 原子写(同 R6 理由)
-  await atomicWriteFile(configPath, next);
+  if (!(await writeConfigBackup(configPath, text))) {
+    return { installed: false, reason: 'unsafe-config-path' };
+  }
+  // crash-safe 原子写(同 R6 理由);不跟随链接(H1,调用方 mergeCodexConfig 已 guardConfigPath)
+  await atomicReplaceFileNoFollow(configPath, next);
   return { installed: true };
 }
 
