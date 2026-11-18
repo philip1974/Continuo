@@ -1251,8 +1251,6 @@ const PLUGIN_CLONE_GIT_CONFIG: readonly (readonly [string, string])[] = [
   ['filter.lfs.process', ''],
   ['filter.lfs.smudge', ''],
   ['filter.lfs.required', 'false'],
-  // 空值重置 helper 列表:不调用用户全局凭据助手(见 runGit 注释)
-  ['credential.helper', ''],
 ];
 
 export interface InstallFromGitOptions {
@@ -1426,9 +1424,8 @@ export async function installFromGit(
 
 function runGit(args: readonly string[]): Promise<void> {
   return new Promise((resolve, reject) => {
-    // 禁交互式凭据:防指向需认证的私有 repo 时 git 弹凭据提示永久挂起(GIT_TERMINAL_PROMPT=0 / 空 ASKPASS)。
-    // 不调用凭据助手:GIT_CONFIG_NOSYSTEM 隔离系统级 git 配置;全局 ~/.gitconfig 的 credential.helper 不受它
-    // 影响,故在命令行作用域注入空值 `credential.helper=`(gitcredentials(7):空串重置 helper 列表)。
+    // 禁交互式凭据:防指向需认证的私有 repo 时 git 弹凭据提示永久挂起,
+    // 也不读系统/全局凭据助手。GIT_CONFIG_NOSYSTEM 隔离系统级 git 配置。
     // 与插件子进程同一加固(见 lib/child-spawn-hardening):注入 core.fsmonitor=false(clone 不受影响);
     // Windows 上 git 只在 PATH 的绝对目录中解析 —— CLI 启动时主进程 cwd 即用户所在目录(可能是不可信
     // 仓库),裸名 spawn 会先执行其中的 git.exe。解析不到 → GIT_SPAWN_FAILED(fail-closed)。
