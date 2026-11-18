@@ -269,15 +269,11 @@ function subjectForSocket(sock: Socket): string {
 type StdioRevocationDeps = Pick<CreateStdioSocketOptions, 'resolveWindowId' | 'onCallerRevoked'>;
 
 /**
- * 复查连接的绑定:所用 token 已不再解析到绑定的窗口(被吊销 / 轮换)→ 连接降为「hello 失败」状态
- * (NO_WINDOW_CTX,不回落 external),取消该绑定下的在途调用,并作废连接的 callerSubject(之后的调用拿新身份,
- * 旧身份名下的资源交 onCallerRevoked 回收)—— 与 HTTP 侧「token 吊销 = 该身份作废」对齐。返回仍有效的绑定。
+ * 作废连接当前的调用方身份:取消当前绑定下的在途调用,丢弃 callerSubject(之后的调用拿新身份),旧身份名下的
+ * 资源交 onCallerRevoked 回收。绑定失效(token 吊销 / 轮换)与 hello 换绑共用。
  */
-function validStdioBinding(sock: Socket, deps: StdioRevocationDeps): StdioBinding | null | undefined {
-  const binding = socketCtx.get(sock);
-  if (!binding || deps.resolveWindowId(binding.token) === binding.windowId) return binding;
-  socketCtx.set(sock, null);
-  binding.aborter.abort();
+function retireStdioIdentity(sock: Socket, deps: StdioRevocationDeps): void {
+  socketCtx.get(sock)?.aborter.abort();
   const subject = socketSubject.get(sock);
   socketSubject.delete(sock);
   if (subject !== undefined) {
@@ -287,6 +283,18 @@ function validStdioBinding(sock: Socket, deps: StdioRevocationDeps): StdioBindin
       console.warn('[mcp-stdio] onCallerRevoked threw', err);
     }
   }
+}
+
+/**
+ * 复查连接的绑定:所用 token 已不再解析到绑定的窗口(被吊销 / 轮换)→ 连接降为「hello 失败」状态
+ * (NO_WINDOW_CTX,不回落 external),取消该绑定下的在途调用,并作废连接的 callerSubject(之后的调用拿新身份,
+ * 旧身份名下的资源交 onCallerRevoked 回收)—— 与 HTTP 侧「token 吊销 = 该身份作废」对齐。返回仍有效的绑定。
+ */
+function validStdioBinding(sock: Socket, deps: StdioRevocationDeps): StdioBinding | null | undefined {
+  const binding = socketCtx.get(sock);
+  if (!binding || deps.resolveWindowId(binding.token) === binding.windowId) return binding;
+  retireStdioIdentity(sock, deps);
+  socketCtx.set(sock, null);
   return null;
 }
 
@@ -418,11 +426,17 @@ async function handleLine(
     // 安全(fail-closed):hello 失败也记下(null)。否则该连接被当作「从未发 hello」的外部客户端,
     // 回落到主窗并借用其授权 —— 持失效 token / 窗口已关的 proxy 不应获得任何窗口上下文。
     // windowId 非 null 即 params.token 已通过校验(非空字符串)。
+    const token = windowId === null ? null : (params as { token: string }).token;
+    // 同一 (token, windowId) 重复 hello 幂等:绑定与身份不变。
+    const current = socketCtx.get(sock);
+    if (current && current.windowId === windowId && current.token === token) return;
+    // 安全:hello 改变绑定(换 token / 换窗口 / hello 失败 / 从未 hello 的 external 改为绑定窗口)= 换调用方,
+    // 旧身份按绑定失效同样作废。否则吊销前先 hello 一个别的 token 把旧绑定挪出表,吊销复查够不着它,
+    // 吊销后重新 hello 仍是旧身份、继续读控旧身份名下的会话。
+    retireStdioIdentity(sock, opts);
     socketCtx.set(
       sock,
-      windowId === null
-        ? null
-        : { windowId, token: (params as { token: string }).token, aborter: new AbortController() },
+      windowId === null || token === null ? null : { windowId, token, aborter: new AbortController() },
     );
     return;
   }

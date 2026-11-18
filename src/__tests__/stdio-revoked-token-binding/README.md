@@ -41,6 +41,19 @@ socket 关闭时取消。实测:hello → `create_session{autorun}` 卡在授权
 - **响应写回前**再复查一次绑定:已失效 → 丢弃工具结果(终端输出 / transcript / 新会话 id),改回 `NO_WINDOW_CTX`。
 - 只影响绑定了被吊销 token 的连接;别的 token 的连接、未 hello 的外部客户端的在途调用照常完成。
 
+### 重新 hello 换绑(hello 改变绑定 = 换调用方身份)
+
+此前 hello 直接覆盖连接的绑定,旧绑定不取消、连接身份(`stdio:<uuid>`)原样保留。实测:hello(tokA) → `create_session`
+得 S → hello(无效 token)(或趁 tokA 有效时 hello(tokB))→ tokA 被吊销(旧绑定已不在表里,吊销复查够不着,
+`onCallerRevoked` 0 次)→ hello(新 token)→ `send_text(S)` / `read_output(S)` 成功;不换绑的基线是 `not owned by caller`。
+
+- hello 的 (token, windowId) 与连接当前的有效绑定**相同** → 幂等:绑定与身份不变。
+- 其余 hello(换 token / 换窗口 / hello 失败 / 从未 hello 的 external 连接改为绑定窗口)一律先按「绑定失效」处理旧
+  身份:取消旧绑定下的在途调用、以旧身份回调 `onCallerRevoked`、之后的调用拿新身份。旧身份建的终端会话不被杀,
+  但新身份无权读控。
+- external → 绑定窗口也换身份:external 与窗口是两个互不放行的授权域(见 `agent-terminal-mcp-auth`),以 external
+  授权建的会话不由窗口授权域接管。终端里的 proxy 连上后第一行就是 hello,不受影响。
+
 ## 残余
 
 - 不理会 `ctx.signal` 的工具在吊销后仍会跑完当前这一步(例如已写进 PTY 的 `send_text`),只是结果不再写回。
@@ -52,3 +65,5 @@ socket 关闭时取消。实测:hello → `create_session{autorun}` 卡在授权
 - `inflight-revocation.spec.ts`:再加真实回收接线(`createMcpRevokerWiring`)与真实终端工具:授权挂起中 / PTY 创建中
   吊销 → 无新会话、无 autorun、返回错误(并与 HTTP 同序列对照);`await_stop_hook` 在途吊销不返回 transcript;
   三个吊销入口都即时取消在途调用;吊销后重新 hello 是新身份;别的连接与外部客户端不受影响。
+  「重新 hello 换绑 = 换身份」一组:吊销前换绑(无效 token / 另一个有效 token)后不能保留旧身份;同 token 重复 hello 幂等;
+  external → 绑定窗口换身份。
