@@ -358,6 +358,7 @@
 ## [ConfirmDialog(通用确认对话框)](./confirm-dialog/README.md)
 
 - [`confirm-dialog.spec.tsx`](./confirm-dialog/confirm-dialog.spec.tsx)
+- [`overwrite-confirm-focus.spec.tsx`](./confirm-dialog/overwrite-confirm-focus.spec.tsx)
 
 ## [core-plugins(内置插件:editor / terminal / output)](./core-plugins/README.md)
 

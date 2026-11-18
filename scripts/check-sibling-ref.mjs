@@ -3,9 +3,13 @@
 // 本身不固定版本;仓库根的 .continuo-terminal-ref 记录应当使用的 commit SHA(CI 也按它检出)。
 // 本地 ../ContinuoTerminal 工作区必须干净且 HEAD 等于记录的 SHA,否则中止打包 —— 防止把
 // 未提交 / 未审查 / 与 CI 不一致的 sibling 代码打进安装包。
-// 用法:node scripts/check-sibling-ref.mjs [--ref-file <path>] [--sibling <dir>]
+// 但真正打进安装包的是 pnpm install 时复制进 node_modules/.pnpm 的 file: 依赖副本(硬链接,
+// git checkout 重建文件会断开硬链接,副本不随 sibling 变化),所以还须逐文件比对副本内容:
+// 每个副本文件(嵌套 node_modules 除外)都必须是 sibling 在固定 SHA 下跟踪的文件且字节相同。
+// 只查「副本 ⊆ 固定 SHA」:pnpm 按 package.json files 过滤,副本本就不含全部跟踪文件。
+// 用法:node scripts/check-sibling-ref.mjs [--ref-file <path>] [--sibling <dir>] [--root <app 根>]
 import { execFileSync } from 'node:child_process';
-import { readFileSync, realpathSync } from 'node:fs';
+import { lstatSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -15,11 +19,13 @@ function parseArgs(argv) {
   const opts = {
     refFile: path.join(repoRoot, '.continuo-terminal-ref'),
     sibling: path.resolve(repoRoot, '..', 'ContinuoTerminal'),
+    root: repoRoot,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const value = argv[i + 1];
     if (argv[i] === '--ref-file' && value !== undefined) opts.refFile = path.resolve(value);
     else if (argv[i] === '--sibling' && value !== undefined) opts.sibling = path.resolve(value);
+    else if (argv[i] === '--root' && value !== undefined) opts.root = path.resolve(value);
     else throw new Error(`未知参数: ${argv[i]}`);
     i += 1;
   }
@@ -33,7 +39,74 @@ function git(cwd, args) {
   });
 }
 
-export function checkSiblingRef({ refFile, sibling }) {
+// 递归列出副本目录下的文件(相对路径,/ 分隔);跳过 pnpm 放置依赖链接的嵌套 node_modules。
+function listInstalled(dir, rel, out) {
+  for (const name of readdirSync(dir).sort()) {
+    if (name === 'node_modules') continue;
+    const full = path.join(dir, name);
+    const relName = rel ? `${rel}/${name}` : name;
+    const st = lstatSync(full);
+    if (st.isDirectory()) listInstalled(full, relName, out);
+    else out.push({ rel: relName, full, isFile: st.isFile() });
+  }
+  return out;
+}
+
+// node_modules 里每个指向 sibling 的 file: 依赖副本,须与 sibling(已确认干净且 HEAD=固定 SHA)
+// 的跟踪文件逐字节一致。返回错误信息或 null。
+function checkInstalledCopies(root, sibling) {
+  const reinstall = 'node_modules 中的 sibling 依赖副本与固定 SHA 不一致,在本仓库根执行 pnpm install 后再打包';
+  let deps;
+  try {
+    const pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'));
+    deps = { ...pkg.dependencies, ...pkg.devDependencies, ...pkg.optionalDependencies };
+  } catch {
+    return `读不到 ${path.join(root, 'package.json')}`;
+  }
+  const siblingReal = realpathSync(sibling);
+  const tracked = new Set(git(sibling, ['ls-files', '-z']).split('\0').filter(Boolean));
+  let count = 0;
+  for (const [name, spec] of Object.entries(deps)) {
+    if (typeof spec !== 'string' || !spec.startsWith('file:')) continue;
+    const srcAbs = path.resolve(root, spec.slice('file:'.length));
+    let srcReal;
+    try {
+      srcReal = realpathSync(srcAbs);
+    } catch {
+      return `${name} 的来源 ${srcAbs} 不存在`;
+    }
+    const subdir = path.relative(siblingReal, srcReal);
+    if (subdir.startsWith('..') || path.isAbsolute(subdir)) continue;
+    count += 1;
+    const prefix = subdir ? `${subdir.split(path.sep).join('/')}/` : '';
+    let copyDir;
+    try {
+      copyDir = realpathSync(path.join(root, 'node_modules', name));
+    } catch {
+      return `未安装 ${name}(${reinstall})`;
+    }
+    for (const f of listInstalled(copyDir, '', [])) {
+      const trackedPath = `${prefix}${f.rel}`;
+      if (!f.isFile) return `${name}/${f.rel} 不是普通文件(${reinstall})`;
+      if (!tracked.has(trackedPath)) {
+        return `${name}/${f.rel} 不是固定 SHA 下跟踪的文件(${reinstall})`;
+      }
+      let expectedBytes;
+      try {
+        expectedBytes = readFileSync(path.join(sibling, trackedPath));
+      } catch {
+        return `${name}/${f.rel} 在 sibling 中读不到(${reinstall})`;
+      }
+      if (!readFileSync(f.full).equals(expectedBytes)) {
+        return `${name}/${f.rel} 内容与固定 SHA 不同(${reinstall})`;
+      }
+    }
+  }
+  if (count === 0) return `${path.join(root, 'package.json')} 里没有指向 ${sibling} 的 file: 依赖`;
+  return null;
+}
+
+export function checkSiblingRef({ refFile, sibling, root = repoRoot }) {
   let expected;
   try {
     expected = readFileSync(refFile, 'utf8').trim();
@@ -65,7 +138,12 @@ export function checkSiblingRef({ refFile, sibling }) {
       `有意升级:确认新 commit 已推送到远端后更新 .continuo-terminal-ref(CI 按它检出)`
     );
   }
-  return null;
+  // sibling 已确认干净且 HEAD=固定 SHA,其工作区文件即固定 SHA 的内容(含换行等 checkout 过滤)。
+  try {
+    return checkInstalledCopies(root, sibling);
+  } catch (err) {
+    return `核对 node_modules 中的 sibling 依赖副本失败: ${err.message}`;
+  }
 }
 
 function main() {
@@ -80,8 +158,7 @@ function main() {
     process.exitCode = 1;
     return;
   }
-  // file: 依赖在 pnpm install 时被复制进 node_modules/.pnpm;切换过 sibling 版本须重新 install。
-  console.log('[check-sibling-ref] OK: ContinuoTerminal 与 .continuo-terminal-ref 一致(切换过版本请确认已重新 pnpm install)');
+  console.log('[check-sibling-ref] OK: ContinuoTerminal 与 node_modules 中的依赖副本均与 .continuo-terminal-ref 一致');
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

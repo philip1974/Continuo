@@ -555,9 +555,10 @@ function clickRevoke(btn: HTMLButtonElement, confirm: boolean): void {
   const dialog = document.querySelector('.wm-modal-content')!;
   expect(dialog).not.toBeNull();
   const buttons = Array.from(dialog.querySelectorAll<HTMLButtonElement>('button'));
+  // 撤销是 destructive 确认框:确认按钮为 danger variant,初始焦点(data-autofocus)在取消。
   const target = confirm
-    ? buttons.find((b) => b.hasAttribute('data-autofocus'))!
-    : buttons.find((b) => !b.hasAttribute('data-autofocus'))!;
+    ? buttons.find((b) => b.getAttribute('data-variant') === 'danger')!
+    : buttons.find((b) => b.getAttribute('data-variant') !== 'danger')!;
   fireEvent.click(target);
   expect(document.querySelector('.wm-modal-content')).toBeNull();
 }
