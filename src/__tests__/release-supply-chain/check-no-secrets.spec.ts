@@ -61,6 +61,15 @@ describe('check-no-secrets:构建产物机密扫描', () => {
     expect(run(dir).code).toBe(0);
   });
 
+  // 多行文本(如 .env 模板)被内联成 JS / JSON 字符串时,密钥独占一行 → 产物字节是 `…\\nsk-proj-…`,
+  // sk- 前一个字节是转义字母 n / r / t,不能因此当成「标识符内部」而放过。
+  it.each(['n', 'r', 't'])('带前缀的 sk- 密钥紧跟字符串转义 \\%s → 仍命中', (esc) => {
+    writeFileSync(join(dir, 'main.js'), `const env = "KEY=1\\${esc}${FAKE.openaiProject}";`);
+    expect(run(dir).code).toBe(1);
+    writeFileSync(join(dir, 'main.js'), `const env = "x\\${esc}${FAKE.anthropic}";`);
+    expect(run(dir).code).toBe(1);
+  });
+
   it('二进制 app.asar(未压缩归档)内的 token 也能扫到;--packaged 只扫 app.asar 不扫框架二进制', () => {
     const res = join(dir, 'mac-arm64', 'Continuo.app', 'Contents', 'Resources');
     mkdirSync(res, { recursive: true });

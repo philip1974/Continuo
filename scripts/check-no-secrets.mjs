@@ -29,10 +29,11 @@ export const SECRET_RULES = [
   { name: 'npm-token', re: /npm_[A-Za-z0-9]{36}/g },
   // sk- 密钥:旧形态主体只有字母数字;带前缀的形态(OpenAI sk-proj- / sk-svcacct- / sk-admin-,
   // Anthropic sk-ant-api03- 等)主体还含 - 与 _。放宽字符集只限于已知前缀之后,且要求 sk- 前
-  // 不是字母数字:否则 task-list-item-… 这类连字符类名会大量误报。
+  // 不是字母数字:否则 task-list-item-… 这类连字符类名会大量误报。例外:前面是字符串转义 \n / \r / \t
+  //(多行文本被内联成 JS / JSON 字符串,密钥独占一行)时,那个字母属于转义,仍算命中。
   {
     name: 'openai-style-key',
-    re: /sk-[A-Za-z0-9]{20,}|(?<![A-Za-z0-9])sk-(?:(?:proj|svcacct|admin)-|ant-[a-z0-9]+-)[A-Za-z0-9_-]{20,}/g,
+    re: /sk-[A-Za-z0-9]{20,}|(?:(?<![A-Za-z0-9])|(?<=\\[nrt]))sk-(?:(?:proj|svcacct|admin)-|ant-[a-z0-9]+-)[A-Za-z0-9_-]{20,}/g,
   },
   { name: 'slack-token', re: /xox[baprs]-[A-Za-z0-9-]{10,}/g },
 ];
