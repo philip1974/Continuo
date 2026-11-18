@@ -1081,137 +1081,29 @@ export async function installStopHookForSession(
   return mergeCodexConfig(cwd, hookEventsDir);
 }
 
-async function mergeClaudeCodeSettings(
+/** 读入时的原配置(null = 文件不存在,将新建)。 */
+type ConfigOriginal = { readonly text: string; readonly identity: ConfigIdentity } | null;
+
+/** edit 回调结果:`{ write }` = 要原子写入的新全文;否则为不写入的安装结果(已安装 / 解析失败等)。 */
+type ConfigEdit = { readonly write: string } | InstallStopHookResult;
+
+/**
+ * 三处 stop-hook 配置写入(Claude settings / Codex 新建块 / Codex 替换 managed 块)共用的安全写链:
+ * guard(入口一次)→ capped 不跟随链接读 → edit(纯计算,决定写什么或拒绝)→ 新建时只建一层配置目录 →
+ * 写前复查(H1 TOCTOU:目录链 + 同 inode)→ 已有文件先排他写备份 → 不跟随链接的原子替换。
+ * 各步失败的拒绝原因与此前三处手写链一致。
+ */
+async function writeConfigGuarded(
   cwd: string,
-  hookEventsDir: string,
+  configPath: string,
+  edit: (original: ConfigOriginal) => ConfigEdit,
 ): Promise<InstallStopHookResult> {
-  const settingsPath = path.join(cwd, '.claude', 'settings.local.json');
-  let existing: Record<string, unknown> = {};
-  let fileExists = false;
-
-  const guard = await guardConfigPath(cwd, path.dirname(settingsPath), settingsPath);
-  if (guard === 'unsafe-config-path') return refuseUnsafeConfigPath(settingsPath);
-  if (guard !== 'ok') return { installed: false, reason: guard };
-
-  // 边界(E66):stat.size 预检的 capped-read。too-large/read-error 直接 fail-fast,不进
-  // JSON.parse / atomicWrite。read-error 同既有「读失败当空→写覆盖」族:不能当空配置覆盖。
-  const read = await readConfigCapped(settingsPath);
-  if (read.kind === 'unsafe-config-path') return refuseUnsafeConfigPath(settingsPath);
-  if (read.kind === 'too-large') {
-    return { installed: false, reason: 'config-too-large' };
-  }
-  if (read.kind === 'read-error') {
-    return { installed: false, reason: 'read-error' };
-  }
-  let originalText = '';
-  if (read.kind === 'ok') {
-    fileExists = true;
-    originalText = read.text;
-    try {
-      const parsed = JSON.parse(read.text) as unknown;
-      if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        // 顶层不是对象(数组 / 标量):不是可合并的配置。当成空配置会把用户文件整体替换掉。
-        return { installed: false, reason: 'parse-error' };
-      }
-      existing = parsed as Record<string, unknown>;
-    } catch {
-      return { installed: false, reason: 'parse-error' };
-    }
-  }
-  // kind === 'missing' → fileExists 保持 false,新建
-
-  // `hooks` / `hooks.Stop` 存在但形态不对(数组、标量、非数组的 Stop):不是可合并的配置。当成空值的话,
-  // 写回时会覆盖掉用户原来的值 → 同样按 parse-error 拒绝。
-  // null 不携带用户数据,与「没写」同等对待(合并无损)。
-  const rawHooks = existing.hooks ?? undefined;
-  if (rawHooks !== undefined && (typeof rawHooks !== 'object' || Array.isArray(rawHooks))) {
-    return { installed: false, reason: 'parse-error' };
-  }
-  const hooks = (rawHooks ?? {}) as Record<string, unknown>;
-  if (hooks.Stop !== undefined && hooks.Stop !== null && !Array.isArray(hooks.Stop)) {
-    return { installed: false, reason: 'parse-error' };
-  }
-  const stopArr = Array.isArray(hooks.Stop) ? [...hooks.Stop] : [];
-
-  const command =
-    HOOK_UMASK_PREFIX +
-    `mkdir -p "${hookEventsDir}" && ` +
-    `cat > "\${CONTINUO_HOOK_EVENTS_DIR:-${hookEventsDir}}/` +
-    `cc_\${CONTINUO_WINDOW_ID:-unknown}_\${${TERMINAL_SESSION_ENV}:-unknown}_` +
-    '${CLAUDE_CODE_SESSION_ID:-unknown}_$(date +%s%N).jsonl"';
-
-  // 旧版 managed hook(命令不含会话 id 变量)的位置:原地替换其 command 升级,而非追加第二条。
-  let legacy: { readonly entryIdx: number; readonly hookIdx: number } | null = null;
-  for (let entryIdx = 0; entryIdx < stopArr.length; entryIdx += 1) {
-    const inner = (stopArr[entryIdx] as { hooks?: unknown[] } | null)?.hooks;
-    if (!Array.isArray(inner)) continue;
-    for (let hookIdx = 0; hookIdx < inner.length; hookIdx += 1) {
-      const hook = inner[hookIdx];
-      // 用户手改的配置里可能有 null 等非对象项:跳过,不能读 null 的属性。
-      if (hook === null || typeof hook !== 'object') continue;
-      const marker = (hook as { _continuo_managed?: unknown })._continuo_managed;
-      const existingCommand = (hook as { command?: unknown }).command;
-      if (
-        marker === true &&
-        typeof existingCommand === 'string' &&
-        existingCommand.includes('CONTINUO_HOOK_EVENTS_DIR')
-      ) {
-        if (existingCommand.includes(TERMINAL_SESSION_ENV)) {
-          return { installed: false, reason: 'already-installed' };
-        }
-        legacy ??= { entryIdx, hookIdx };
-      }
-    }
-  }
-
-  if (!fileExists && !(await mkdirConfigDir(path.dirname(settingsPath)))) {
-    return { installed: false, reason: 'no-cwd' };
-  }
-  const recheck = await recheckConfigPathBeforeWrite(
-    cwd,
-    settingsPath,
-    read.kind === 'ok' ? read.identity : null,
-  );
-  if (recheck === 'unsafe-config-path') return refuseUnsafeConfigPath(settingsPath);
-  if (recheck !== 'ok') return { installed: false, reason: recheck };
-  if (fileExists && !(await writeConfigBackup(settingsPath, originalText))) {
-    return refuseUnsafeConfigPath(settingsPath);
-  }
-
-  if (legacy !== null) {
-    // 正确性(会话绑定):旧命令写出的事件无会话 id,broker 不再交给任何等待者 → 必须升级,否则该项目的
-    // await_stop_hook 永远超时。只改 command,保留该 hook 对象的其它字段与用户其它 Stop 项。
-    const { entryIdx, hookIdx } = legacy;
-    const entry = stopArr[entryIdx] as { hooks: unknown[] };
-    const inner = [...entry.hooks];
-    inner[hookIdx] = { ...(inner[hookIdx] as Record<string, unknown>), command };
-    stopArr[entryIdx] = { ...entry, hooks: inner };
-  } else {
-    stopArr.push({
-      hooks: [{ type: 'command', command, _continuo_managed: true }],
-    });
-  }
-  const next = { ...existing, hooks: { ...hooks, Stop: stopArr } };
-  // crash-safe 原子写:裸 writeFile 先 truncate 用户真实配置,写入中途崩溃/磁盘满会把
-  // .claude/settings.local.json 留成空/半截(.continuo-bak 备份需手工恢复)。与 R4
-  // plugin-fs writeFile / plugin-data 的原子写策略对齐。(codex 复审 loop R6)
-  // 安全(H1):不跟随链接的 rename 替换,绝不写穿到仓库外。
-  await atomicReplaceFileNoFollow(settingsPath, `${JSON.stringify(next, null, 2)}\n`);
-  return { installed: true };
-}
-
-async function mergeCodexConfig(
-  cwd: string,
-  hookEventsDir: string,
-): Promise<InstallStopHookResult> {
-  const configPath = path.join(cwd, '.codex', 'config.toml');
-  let text = '';
-  let fileExists = false;
   const guard = await guardConfigPath(cwd, path.dirname(configPath), configPath);
   if (guard === 'unsafe-config-path') return refuseUnsafeConfigPath(configPath);
   if (guard !== 'ok') return { installed: false, reason: guard };
-  // 边界(E66,同 mergeClaudeCodeSettings):stat.size 预检的 capped-read,超大不进 regex/
-  // replace/atomicWrite(超大文本上跑正则 + 构造更大写入串)。read-error 不当空配置覆盖。
+
+  // 边界(E66):stat.size 预检的 capped-read。too-large/read-error 直接 fail-fast,不进
+  // JSON.parse / regex / atomicWrite。read-error 同既有「读失败当空→写覆盖」族:不能当空配置覆盖。
   const read = await readConfigCapped(configPath);
   if (read.kind === 'unsafe-config-path') return refuseUnsafeConfigPath(configPath);
   if (read.kind === 'too-large') {
@@ -1220,54 +1112,149 @@ async function mergeCodexConfig(
   if (read.kind === 'read-error') {
     return { installed: false, reason: 'read-error' };
   }
-  let identity: ConfigIdentity = null;
-  if (read.kind === 'ok') {
-    text = read.text;
-    fileExists = true;
-    identity = read.identity;
-  }
-  // kind === 'missing' → text 保持 '',新建
+  // kind === 'missing' → original 为 null,新建
+  const original: ConfigOriginal = read.kind === 'ok' ? { text: read.text, identity: read.identity } : null;
 
-  if (hasCodexMultilineStopHookCommand(text)) {
-    return { installed: false, reason: 'unrecognized-existing-stop-hook' };
-  }
+  const result = edit(original);
+  if (!('write' in result)) return result;
 
-  // 转义感知 quoted-string:command 经 JSON.stringify 含 \" 转义,朴素引号扫描会在第一个
-  // \" 处截断(codex P1)。findManagedCodexStopCommand 会跨过转义字符,完整定位 command 字符串。
-  // 块边界:managed marker 到 command 之间不得跨入**下一个** [[hooks.Stop]](否则
-  // managed 块缺/坏 command 时会一路匹配到用户自有 Stop 的 command,误替/写坏 config —
-  // README I6 契约,codex P1)。兼容两种格式:marker 在 Stop 块前(生产 mergeCodexConfig)
-  // 时吞掉 managed 自身的 Stop 头;marker 在块内(I6 测试)时从 marker 后直接扫描。
-  const managedStop = findManagedCodexStopCommand(text);
-  if (managedStop !== null) {
-    // 正确性(会话绑定):managed command 不含会话 id 变量 = 旧版,同 hookEventsDir 漂移一样原地替换升级。
-    const managedCommand = text.slice(managedStop.quoteStart, managedStop.quoteEnd);
-    if (text.includes(hookEventsDir) && managedCommand.includes(TERMINAL_SESSION_ENV)) {
-      return { installed: false, reason: 'already-installed' };
-    }
-    return replaceManagedCodexStopHook(cwd, configPath, text, identity, hookEventsDir, managedStop);
-  }
-
-  if (!fileExists && !(await mkdirConfigDir(path.dirname(configPath)))) {
+  if (original === null && !(await mkdirConfigDir(path.dirname(configPath)))) {
     return { installed: false, reason: 'no-cwd' };
   }
-  const recheck = await recheckConfigPathBeforeWrite(cwd, configPath, identity);
+  const recheck = await recheckConfigPathBeforeWrite(cwd, configPath, original?.identity ?? null);
   if (recheck === 'unsafe-config-path') return refuseUnsafeConfigPath(configPath);
   if (recheck !== 'ok') return { installed: false, reason: recheck };
-  if (fileExists && !(await writeConfigBackup(configPath, text))) {
+  if (original !== null && !(await writeConfigBackup(configPath, original.text))) {
     return refuseUnsafeConfigPath(configPath);
   }
-
-  const command = codexStopHookCommand(hookEventsDir);
-  const block =
-    '\n# continuo-managed\n' +
-    '[[hooks.Stop]]\n' +
-    '[[hooks.Stop.hooks]]\n' +
-    'type = "command"\n' +
-    `command = ${JSON.stringify(command)}\n`;
-  // crash-safe 原子写(同 R6 理由:.codex/config.toml 不得被截断);不跟随链接(H1)
-  await atomicReplaceFileNoFollow(configPath, text + block);
+  // crash-safe 原子写:裸 writeFile 先 truncate 用户真实配置,写入中途崩溃/磁盘满会把配置留成空/半截
+  // (.continuo-bak 备份需手工恢复)。与 R4 plugin-fs writeFile / plugin-data 的原子写策略对齐。(codex 复审 loop R6)
+  // 安全(H1):不跟随链接的 rename 替换,绝不写穿到仓库外。
+  await atomicReplaceFileNoFollow(configPath, result.write);
   return { installed: true };
+}
+
+function mergeClaudeCodeSettings(
+  cwd: string,
+  hookEventsDir: string,
+): Promise<InstallStopHookResult> {
+  const settingsPath = path.join(cwd, '.claude', 'settings.local.json');
+  return writeConfigGuarded(cwd, settingsPath, (original) => {
+    let existing: Record<string, unknown> = {};
+    if (original !== null) {
+      try {
+        const parsed = JSON.parse(original.text) as unknown;
+        if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+          // 顶层不是对象(数组 / 标量):不是可合并的配置。当成空配置会把用户文件整体替换掉。
+          return { installed: false, reason: 'parse-error' };
+        }
+        existing = parsed as Record<string, unknown>;
+      } catch {
+        return { installed: false, reason: 'parse-error' };
+      }
+    }
+
+    // `hooks` / `hooks.Stop` 存在但形态不对(数组、标量、非数组的 Stop):不是可合并的配置。当成空值的话,
+    // 写回时会覆盖掉用户原来的值 → 同样按 parse-error 拒绝。
+    // null 不携带用户数据,与「没写」同等对待(合并无损)。
+    const rawHooks = existing.hooks ?? undefined;
+    if (rawHooks !== undefined && (typeof rawHooks !== 'object' || Array.isArray(rawHooks))) {
+      return { installed: false, reason: 'parse-error' };
+    }
+    const hooks = (rawHooks ?? {}) as Record<string, unknown>;
+    if (hooks.Stop !== undefined && hooks.Stop !== null && !Array.isArray(hooks.Stop)) {
+      return { installed: false, reason: 'parse-error' };
+    }
+    const stopArr = Array.isArray(hooks.Stop) ? [...hooks.Stop] : [];
+
+    const command =
+      HOOK_UMASK_PREFIX +
+      `mkdir -p "${hookEventsDir}" && ` +
+      `cat > "\${CONTINUO_HOOK_EVENTS_DIR:-${hookEventsDir}}/` +
+      `cc_\${CONTINUO_WINDOW_ID:-unknown}_\${${TERMINAL_SESSION_ENV}:-unknown}_` +
+      '${CLAUDE_CODE_SESSION_ID:-unknown}_$(date +%s%N).jsonl"';
+
+    // 旧版 managed hook(命令不含会话 id 变量)的位置:原地替换其 command 升级,而非追加第二条。
+    let legacy: { readonly entryIdx: number; readonly hookIdx: number } | null = null;
+    for (let entryIdx = 0; entryIdx < stopArr.length; entryIdx += 1) {
+      const inner = (stopArr[entryIdx] as { hooks?: unknown[] } | null)?.hooks;
+      if (!Array.isArray(inner)) continue;
+      for (let hookIdx = 0; hookIdx < inner.length; hookIdx += 1) {
+        const hook = inner[hookIdx];
+        // 用户手改的配置里可能有 null 等非对象项:跳过,不能读 null 的属性。
+        if (hook === null || typeof hook !== 'object') continue;
+        const marker = (hook as { _continuo_managed?: unknown })._continuo_managed;
+        const existingCommand = (hook as { command?: unknown }).command;
+        if (
+          marker === true &&
+          typeof existingCommand === 'string' &&
+          existingCommand.includes('CONTINUO_HOOK_EVENTS_DIR')
+        ) {
+          if (existingCommand.includes(TERMINAL_SESSION_ENV)) {
+            return { installed: false, reason: 'already-installed' };
+          }
+          legacy ??= { entryIdx, hookIdx };
+        }
+      }
+    }
+
+    if (legacy !== null) {
+      // 正确性(会话绑定):旧命令写出的事件无会话 id,broker 不再交给任何等待者 → 必须升级,否则该项目的
+      // await_stop_hook 永远超时。只改 command,保留该 hook 对象的其它字段与用户其它 Stop 项。
+      const { entryIdx, hookIdx } = legacy;
+      const entry = stopArr[entryIdx] as { hooks: unknown[] };
+      const inner = [...entry.hooks];
+      inner[hookIdx] = { ...(inner[hookIdx] as Record<string, unknown>), command };
+      stopArr[entryIdx] = { ...entry, hooks: inner };
+    } else {
+      stopArr.push({
+        hooks: [{ type: 'command', command, _continuo_managed: true }],
+      });
+    }
+    const next = { ...existing, hooks: { ...hooks, Stop: stopArr } };
+    return { write: `${JSON.stringify(next, null, 2)}\n` };
+  });
+}
+
+function mergeCodexConfig(
+  cwd: string,
+  hookEventsDir: string,
+): Promise<InstallStopHookResult> {
+  const configPath = path.join(cwd, '.codex', 'config.toml');
+  // 边界(E66,同 mergeClaudeCodeSettings):capped-read 由 writeConfigGuarded 统一做,超大不进 regex/
+  // replace/atomicWrite(超大文本上跑正则 + 构造更大写入串)。read-error 不当空配置覆盖。
+  return writeConfigGuarded(cwd, configPath, (original) => {
+    const text = original?.text ?? ''; // 不存在 → 新建
+
+    if (hasCodexMultilineStopHookCommand(text)) {
+      return { installed: false, reason: 'unrecognized-existing-stop-hook' };
+    }
+
+    // 转义感知 quoted-string:command 经 JSON.stringify 含 \" 转义,朴素引号扫描会在第一个
+    // \" 处截断(codex P1)。findManagedCodexStopCommand 会跨过转义字符,完整定位 command 字符串。
+    // 块边界:managed marker 到 command 之间不得跨入**下一个** [[hooks.Stop]](否则
+    // managed 块缺/坏 command 时会一路匹配到用户自有 Stop 的 command,误替/写坏 config —
+    // README I6 契约,codex P1)。兼容两种格式:marker 在 Stop 块前(生产 mergeCodexConfig)
+    // 时吞掉 managed 自身的 Stop 头;marker 在块内(I6 测试)时从 marker 后直接扫描。
+    const managedStop = findManagedCodexStopCommand(text);
+    if (managedStop !== null) {
+      // 正确性(会话绑定):managed command 不含会话 id 变量 = 旧版,同 hookEventsDir 漂移一样原地替换升级。
+      const managedCommand = text.slice(managedStop.quoteStart, managedStop.quoteEnd);
+      if (text.includes(hookEventsDir) && managedCommand.includes(TERMINAL_SESSION_ENV)) {
+        return { installed: false, reason: 'already-installed' };
+      }
+      return { write: replaceManagedCodexStopHook(text, hookEventsDir, managedStop) };
+    }
+
+    const command = codexStopHookCommand(hookEventsDir);
+    const block =
+      '\n# continuo-managed\n' +
+      '[[hooks.Stop]]\n' +
+      '[[hooks.Stop.hooks]]\n' +
+      'type = "command"\n' +
+      `command = ${JSON.stringify(command)}\n`;
+    return { write: text + block };
+  });
 }
 
 /** Codex Stop hook 写入 config.toml 的 shell 命令(新建与替换 managed 块共用)。 */
@@ -1281,30 +1268,20 @@ function codexStopHookCommand(hookEventsDir: string): string {
   );
 }
 
-// 替换 managed 块里的 command 字符串。managedStop 由调用方用 findManagedCodexStopCommand 定位:它是
-// 转义感知的(command 经 JSON.stringify 含 \" 转义,朴素引号扫描会在第一个 \" 处截断 → 替换后旧 command
-// 尾巴残留、损坏 .codex/config.toml),且不跨入下一个 [[hooks.Stop]](不误替用户自有 Stop 的 command)。
-async function replaceManagedCodexStopHook(
-  cwd: string,
-  configPath: string,
+// 替换 managed 块里的 command 字符串(纯函数;写入经 writeConfigGuarded)。managedStop 由调用方用
+// findManagedCodexStopCommand 定位:它是转义感知的(command 经 JSON.stringify 含 \" 转义,朴素引号扫描会在
+// 第一个 \" 处截断 → 替换后旧 command 尾巴残留、损坏 .codex/config.toml),且不跨入下一个 [[hooks.Stop]]
+// (不误替用户自有 Stop 的 command)。
+function replaceManagedCodexStopHook(
   text: string,
-  identity: ConfigIdentity,
   hookEventsDir: string,
   managedStop: { readonly quoteStart: number; readonly quoteEnd: number },
-): Promise<InstallStopHookResult> {
-  const next =
+): string {
+  return (
     text.slice(0, managedStop.quoteStart) +
     JSON.stringify(codexStopHookCommand(hookEventsDir)) +
-    text.slice(managedStop.quoteEnd);
-  const recheck = await recheckConfigPathBeforeWrite(cwd, configPath, identity);
-  if (recheck === 'unsafe-config-path') return refuseUnsafeConfigPath(configPath);
-  if (recheck !== 'ok') return { installed: false, reason: recheck };
-  if (!(await writeConfigBackup(configPath, text))) {
-    return refuseUnsafeConfigPath(configPath);
-  }
-  // crash-safe 原子写(同 R6 理由);不跟随链接(H1,调用方 mergeCodexConfig 已 guardConfigPath)
-  await atomicReplaceFileNoFollow(configPath, next);
-  return { installed: true };
+    text.slice(managedStop.quoteEnd)
+  );
 }
 
 interface AwaitStopHookToolDeps {
