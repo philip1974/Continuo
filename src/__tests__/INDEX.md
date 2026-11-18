@@ -915,6 +915,7 @@
 ## [plugin-fs-atomic-replace-trash(atomicReplace 的 trash 落点与清扫不出 scope、只动宿主自己的 trash)](./plugin-fs-atomic-replace-trash/README.md)
 
 - [`atomic-replace-trash-scope.spec.ts`](./plugin-fs-atomic-replace-trash/atomic-replace-trash-scope.spec.ts)
+- [`rollback-failure-reports-trash.spec.ts`](./plugin-fs-atomic-replace-trash/rollback-failure-reports-trash.spec.ts)
 
 ## [plugin-fs-git-blob-scope(readGitBlob 的对象库必须在已授 scope 内)](./plugin-fs-git-blob-scope/README.md)
 

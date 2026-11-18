@@ -1031,8 +1031,21 @@ async function atomicReplacePaths(
   } catch (err) {
     try {
       await fs.rename(trashPath, finalPath);
-    } catch {
-      // trash leaked; original error remains the meaningful failure
+    } catch (rollbackErr) {
+      // 数据安全:回滚也失败 → 旧 final 只剩 trash 里这一份,且过期清扫 24 小时后会删掉它。把 trash 路径交给
+      // 插件(它本就在该插件的 rw scope 内,给完整路径不泄露 scope 外信息)并记主进程日志;错误码沿用原始失败。
+      // IPC 只传 message,故写进 message 而不是附加字段。
+      console.error(
+        `[plugin-fs] atomicReplace rollback failed; previous final preserved at ${trashPath}`,
+        rollbackErr,
+      );
+      const original = err as NodeJS.ErrnoException;
+      const reported: NodeJS.ErrnoException = new Error(
+        `${original?.message ?? String(err)}; rollback failed, the previous contents of final are preserved at ${trashPath} (reclaimed after 24h — move it back to recover)`,
+        { cause: err },
+      );
+      if (original?.code !== undefined) reported.code = original.code;
+      throw reported;
     }
     throw err;
   }

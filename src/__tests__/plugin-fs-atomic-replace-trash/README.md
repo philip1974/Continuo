@@ -27,8 +27,12 @@
 - 清扫范围仍是该目录下全部宿主形态的过期 trash(不限本次目标同名):只扫同名的话,之后再没被替换过的
   目标留下的 trash 永远没人回收。
 - 正常替换成功后不留下本次的 trash。
+- 覆盖时 `staging → final` 失败会把旧 `final` 从 trash 挪回(回滚)。回滚也失败 → 旧内容只剩 trash 里那一份:
+  抛给插件的错误信息带上 trash 的完整路径(在该插件 rw scope 内)并保留原始错误码,主进程 `console.error`
+  记同一路径。回滚成功时错误就是原始错误。
 
 ## 规范
 
 - `atomic-replace-trash-scope.spec.ts` —— 真实 IPC handler + 真实 `PathScopeRegistry` + 真实临时目录。
+- `rollback-failure-reports-trash.spec.ts` —— 回滚失败时错误信息 / 日志带 trash 路径。
 - 清扫函数的单元测试:`electron/main/__tests__/trash-sweep.test.ts`。
