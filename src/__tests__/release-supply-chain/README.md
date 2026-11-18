@@ -21,7 +21,14 @@
 - 所有 `build:app*` 第一步运行 `pnpm check:sibling-ref`(`scripts/check-sibling-ref.mjs`):`../ContinuoTerminal` 必须是独立 git 仓库根(不是外层仓库里的普通子目录)、工作区干净(含未跟踪文件)、HEAD 等于记录的 SHA;否则中止打包并提示。记录文件缺失或格式不对同样中止。
 - 升级 sibling:确认新 commit 已推送到远端后更新 `.continuo-terminal-ref`,并重新 `pnpm install`(`file:` 依赖在 install 时被复制进 `node_modules/.pnpm`)。
 
+### GitHub Actions 固定 SHA 与最小权限
+
+- `.github/workflows/*.yml` 里每个 `uses:` 固定到 40 位 commit SHA,行尾 `# vX.Y.Z` 注明版本(标签可被重新指向,SHA 不可)。
+- 每个 workflow 顶层 `permissions: contents: read`;需要更多权限的 job 单独声明(当前无:upload-artifact / setup-node 缓存走 Actions runtime token)。
+- `.github/dependabot.yml` 每周检查 `github-actions` 更新,由 PR 同步升级 SHA 与版本注释。
+
 ## 规范文件
 
 - `check-no-secrets.spec.ts`:扫描器退出码 / 不回显值 / 分块边界 / fail-closed,以及 package.json 与 CI 接线。
+- `actions-pinned.spec.ts`:workflow action 固定 SHA、顶层只读权限、Dependabot 配置。
 - `sibling-ref-pinned.spec.ts`:sibling 版本核对(干净 / HEAD 一致 / 非外层仓库子目录)与 CI 固定 SHA 检出接线。

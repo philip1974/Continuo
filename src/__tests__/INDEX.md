@@ -1086,6 +1086,7 @@
 
 ## [Release 供应链防线](./release-supply-chain/README.md)
 
+- [`actions-pinned.spec.ts`](./release-supply-chain/actions-pinned.spec.ts)
 - [`check-no-secrets.spec.ts`](./release-supply-chain/check-no-secrets.spec.ts)
 - [`sibling-ref-pinned.spec.ts`](./release-supply-chain/sibling-ref-pinned.spec.ts)
 
