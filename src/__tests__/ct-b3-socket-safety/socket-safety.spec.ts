@@ -2,7 +2,8 @@
 // Continuo stdio socket keeps its private hello/dispatch path while adopting
 // CT-B1 framing and socket safety semantics.
 
-import { chmod, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import { chmod, mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { createConnection, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -224,6 +225,42 @@ describe('CT-B3 stdio socket safety', { timeout: 30_000 }, () => {
     expect(buildClaudeAddCommand('/p', 'darwin')).toBe(
       'claude mcp add --transport stdio continuo -- /p',
     );
+  });
+
+  // 安全:该命令由用户粘贴进 shell(也经 warnIfLegacyUnstableClaudeConfig 写进剪贴板)。路径不加引号时
+  // `/Applications/Continuo 2.app/…` 被拆成两个参数(功能坏),路径段含 `;touch X;` / `$(…)` 则粘贴即执行。
+  // 契约:含 `[A-Za-z0-9_./-]` 以外字符的路径做 POSIX 单引号转义;常规路径输出逐字节不变(见上)。
+  describe.skipIf(process.platform === 'win32')('buildClaudeAddCommand 非 Windows 路径转义(真实 /bin/sh 回读)', () => {
+    const PREFIX = 'claude mcp add --transport stdio continuo -- ';
+    const HOSTILE_PATHS: ReadonlyArray<readonly [label: string, cliPath: string]> = [
+      ['空格', '/Applications/Continuo 2.app/Contents/Resources/continuo-mcp-stdio.mjs'],
+      ['分号', '/opt/x;touch PWNED;/continuo-mcp-stdio.mjs'],
+      ['$(…)', '/opt/$(touch PWNED)/continuo-mcp-stdio.mjs'],
+      ['反引号', '/opt/`touch PWNED`/continuo-mcp-stdio.mjs'],
+      ['单引号', "/Users/o'brien/Continuo/continuo-mcp-stdio.mjs"],
+      ['双引号与反斜杠', '/opt/a"b\\c/continuo-mcp-stdio.mjs'],
+      ['通配与重定向', '/opt/*?[a]>&|~#/continuo-mcp-stdio.mjs'],
+      ['中文', '/Users/张三/应用/continuo-mcp-stdio.mjs'],
+    ];
+
+    for (const [label, cliPath] of HOSTILE_PATHS) {
+      it(`路径含${label} → 恰好一个等于原路径的参数,不执行路径里的任何命令`, async () => {
+        const runDir = await mkdtemp(path.join(tmpdir(), 'continuo-claude-add-'));
+        dirs.push(runDir);
+        const command = buildClaudeAddCommand(cliPath, 'darwin');
+        expect(command.startsWith(PREFIX)).toBe(true);
+        const argsPart = command.slice(PREFIX.length);
+
+        const out = execFileSync('/bin/sh', ['-c', `printf '%s\\n' ${argsPart}`], {
+          cwd: runDir,
+          encoding: 'utf8',
+          env: { PATH: process.env.PATH ?? '/usr/bin:/bin' },
+        });
+
+        expect(out).toBe(`${cliPath}\n`);
+        expect(await readdir(runDir)).toEqual([]);
+      });
+    }
   });
 
   it('preserves getStdioConfig claude add command byte-exact format (round-trip)', () => {
