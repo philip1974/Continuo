@@ -35,7 +35,7 @@ vi.mock('../../../electron/main/services/plugins.service', () => ({
   uninstallPlugin: (...args: unknown[]) => h.uninstallPlugin.current!(...args),
   mutatePluginPermissions: async () => null,
   readPluginPathScopes: async () => [],
-  writePluginPathScopes: async () => undefined,
+  persistPluginPathScopesIfInstalled: async () => undefined,
 }));
 
 import { registerPluginsIpc } from '../../../electron/main/ipc/plugins.ipc';

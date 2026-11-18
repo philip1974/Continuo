@@ -180,6 +180,7 @@
 - [`uninstall-dismisses-available-update.spec.tsx`](./49-polish-bugfixes/uninstall-dismisses-available-update.spec.tsx)
 - [`uninstall-id-traversal.spec.ts`](./49-polish-bugfixes/uninstall-id-traversal.spec.ts)
 - [`uninstall-scope-cleanup-fail-closed.spec.ts`](./49-polish-bugfixes/uninstall-scope-cleanup-fail-closed.spec.ts)
+- [`uninstall-scope-persist-race.spec.ts`](./49-polish-bugfixes/uninstall-scope-persist-race.spec.ts)
 - [`update-store-dismiss-optimistic.spec.ts`](./49-polish-bugfixes/update-store-dismiss-optimistic.spec.ts)
 - [`watch-error-evict.spec.ts`](./49-polish-bugfixes/watch-error-evict.spec.ts)
 - [`watch-pool-evict-after-create.spec.ts`](./49-polish-bugfixes/watch-pool-evict-after-create.spec.ts)

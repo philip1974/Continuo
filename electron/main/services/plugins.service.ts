@@ -1181,6 +1181,31 @@ export async function uninstallPlugin(
   });
 }
 
+/**
+ * 授权弹窗「授权」后的 path scope 持久化入口(plugin-fs persistScopes 走这里,不直接 writePluginPathScopes)。
+ *
+ * 安全(卸载交错):uninstallPlugin 先清 _plugin-path-scopes.json 再 rm 目录,卸载返回后才撤内存 token。
+ * 间隙里另一窗口挂着的授权弹窗被点「授权」→ token 仍 active → 直接写盘会把 scope 写回,同 id 重装从磁盘
+ * 水合继承旧授权。与 mutatePluginPermissions 同法:纳入同 id mutation 锁(与卸载互斥),锁内确认插件目录仍在:
+ * 要么在卸载前写入(随后被卸载清掉),要么等卸载完成后因目录缺失被拒(NOT_INSTALLED,调用方 best-effort 吞掉)。
+ * 授权弹窗只针对已安装插件,目录缺失即拒不影响正常授权。
+ */
+export function persistPluginPathScopesIfInstalled(
+  baseDir: string,
+  id: string,
+  scopes: readonly IpcPathScope[],
+): Promise<void> {
+  if (!isSafePluginId(id)) return Promise.resolve();
+  return withPluginMutationLock(id, async () => {
+    try {
+      await fs.access(path.join(baseDir, id));
+    } catch {
+      throw codedError(ERROR_CODES.NOT_INSTALLED, `插件未安装: ${id}`);
+    }
+    await writePluginPathScopes(baseDir, id, scopes);
+  });
+}
+
 export interface InstallFromGitResult {
   readonly id: string;
   readonly name: string;

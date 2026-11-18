@@ -82,11 +82,11 @@ describe('plugin id 校验单一来源(electron/shared/plugin-id.ts)', () => {
     expect(rendererIsValidPluginId).toBe(isValidPluginId);
   });
 
-  it.each(['a', 'my-plugin', 'a.b_c-1', '0.x'])('合法:%j', (id) => {
+  it.each(['a', 'my-plugin', 'a.b_c-1', '0.x', '-x'])('合法:%j', (id) => {
     expect(isValidPluginId(id)).toBe(true);
   });
 
-  it.each(['', '.', '..', '...', '_x', '-x', 'A', 'a/b', 'a\\b', 'a b', '中文', '../x'])('非法:%j', (id) => {
+  it.each(['', '.', '..', '...', '_x', 'A', 'a/b', 'a\\b', 'a b', '中文', '../x'])('非法:%j', (id) => {
     expect(isValidPluginId(id)).toBe(false);
   });
 
