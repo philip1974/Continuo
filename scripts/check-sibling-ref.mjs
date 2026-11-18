@@ -5,7 +5,7 @@
 // 未提交 / 未审查 / 与 CI 不一致的 sibling 代码打进安装包。
 // 但真正打进安装包的是 pnpm install 时复制进 node_modules/.pnpm 的 file: 依赖副本(硬链接,
 // git checkout 重建文件会断开硬链接,副本不随 sibling 变化),所以还须逐文件比对副本内容:
-// 每个副本文件(嵌套 node_modules 除外)都必须是固定 SHA 的 tree 里的 blob 且字节相同。
+// 每个副本文件(副本顶层 node_modules/.bin 除外)都必须是固定 SHA 的 tree 里的 blob 且字节相同。
 // 期望内容取自 git 对象而非 sibling 工作区文件:skip-worktree / assume-unchanged 标记或本地
 // clean filter 都能让 `git status` 对已修改的工作区文件保持沉默,工作区不可信。
 // 只查「副本 ⊆ 固定 SHA」:pnpm 按 package.json files 过滤,副本本就不含全部跟踪文件。
@@ -43,13 +43,25 @@ function git(cwd, args) {
   });
 }
 
-// 递归列出副本目录下的文件(相对路径,/ 分隔);跳过 pnpm 放置依赖链接的嵌套 node_modules。
+// 递归列出副本目录下的文件(相对路径,/ 分隔)。
+// node_modules 只豁免一种:副本顶层、且里面只有 .bin 目录 —— pnpm 把依赖放在副本同级
+// (.pnpm/<pkg>/node_modules/),副本自身的 node_modules 只放依赖的可执行垫片 .bin。
+// 其它 node_modules(顶层含别的条目,或位于更深层)会劫持从副本内出发的模块解析,
+// 作为非普通文件条目列出,由调用方报错。
 function listInstalled(dir, rel, out) {
   for (const name of readdirSync(dir).sort()) {
-    if (name === 'node_modules') continue;
     const full = path.join(dir, name);
     const relName = rel ? `${rel}/${name}` : name;
     const st = lstatSync(full);
+    if (name === 'node_modules') {
+      const pnpmBinOnly =
+        rel === '' &&
+        st.isDirectory() &&
+        readdirSync(full).every((n) => n === '.bin') &&
+        readdirSync(full, { withFileTypes: true }).every((e) => e.isDirectory());
+      if (!pnpmBinOnly) out.push({ rel: relName, full, isFile: false });
+      continue;
+    }
     if (st.isDirectory()) listInstalled(full, relName, out);
     else out.push({ rel: relName, full, isFile: st.isFile() });
   }
@@ -108,7 +120,9 @@ function checkInstalledCopies(root, sibling, sha) {
     }
     for (const f of listInstalled(copyDir, '', [])) {
       const trackedPath = `${prefix}${f.rel}`;
-      if (!f.isFile) return `${name}/${f.rel} 不是普通文件(${reinstall})`;
+      if (!f.isFile) {
+        return `${name}/${f.rel} 不是普通文件,或是 pnpm 顶层 .bin 之外的 node_modules(${reinstall})`;
+      }
       const expectedHash = pinned.get(trackedPath);
       if (expectedHash === undefined) {
         return `${name}/${f.rel} 不是固定 SHA 下跟踪的文件(${reinstall})`;

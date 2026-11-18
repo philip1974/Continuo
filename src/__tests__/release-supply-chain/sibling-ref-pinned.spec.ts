@@ -173,10 +173,25 @@ describe('check-sibling-ref:node_modules 里的 file: 依赖副本须等于固�
     expect(run().code).toBe(1);
   });
 
-  it('副本内嵌套的 node_modules(pnpm 放置的依赖链接)不参与比对 → 通过', () => {
-    mkdirSync(join(installed(), 'node_modules', 'zod'), { recursive: true });
-    writeFileSync(join(installed(), 'node_modules', 'zod', 'index.js'), 'x');
+  // 真实 pnpm 安装:依赖放在副本同级(.pnpm/<pkg>/node_modules/),副本自身顶层 node_modules 只有 .bin。
+  it('副本顶层 node_modules 只含 pnpm 生成的 .bin → 通过', () => {
+    mkdirSync(join(installed(), 'node_modules', '.bin'), { recursive: true });
+    writeFileSync(join(installed(), 'node_modules', '.bin', 'tsx'), '#!/bin/sh\n');
     expect(run().code).toBe(0);
+  });
+
+  // 场景:副本内放一个 node_modules/zod,从副本 src/ 出发的模块解析优先命中它,劫持真实依赖。
+  it.each([
+    ['顶层 node_modules 里除 .bin 外还有包', ['node_modules', 'zod']],
+    ['更深层目录里的 node_modules', ['src', 'node_modules', 'zod']],
+    ['深层 node_modules 即便只含 .bin', ['src', 'node_modules', '.bin']],
+  ])('副本内 %s → 中止', (_n, segs) => {
+    mkdirSync(join(installed(), ...segs), { recursive: true });
+    writeFileSync(join(installed(), ...segs, 'index.js'), 'x');
+    const r = run();
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('node_modules');
+    expect(r.out).toContain('pnpm install');
   });
 
   it('package.json 里一个指向 sibling 的 file: 依赖都找不到 → 中止(fail-closed)', () => {
