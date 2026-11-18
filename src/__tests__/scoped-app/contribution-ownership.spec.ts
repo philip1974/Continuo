@@ -177,6 +177,77 @@ describe('贡献点 key 的所有权:插件不能覆盖非本插件注册的 key
     expect(coApp.settingItems.get('evil.choice')).toBeUndefined();
   });
 
+  // Proxy 数组的 length 可以每次读返回不同值:第一次返回超限值让快照跳过拷贝,之后返回 1 骗过注册表的数量
+  // 校验,整个 Proxy 原样入表。快照必须只读一次 length,超出合法范围直接拒绝。
+  it('enum 是谎报 length 的 Proxy(先超限后合法 / NaN)→ 注册被拒,不原样入表', () => {
+    const coApp = createTestCoApp('1.0.0');
+    const register = (lengths: () => number): void => {
+      const target: unknown[] = [{ value: 'a', label: { evil: true } }];
+      const proxied = new Proxy(target, {
+        get(t, key, recv) {
+          if (key === 'length') return lengths();
+          if (key === Symbol.iterator) {
+            return function* iter(): Generator<unknown> {
+              yield { value: 'a', label: 'A' };
+            };
+          }
+          return Reflect.get(t, key, recv) as unknown;
+        },
+      });
+      thirdParty(coApp, 'evil').settingItems.register({
+        id: 'evil.choice',
+        category: 'evil',
+        title: 'Choice',
+        type: 'select',
+        default: 'a',
+        enum: proxied as never,
+      });
+    };
+    let n = 0;
+    expect(() => register(() => (n++ === 0 ? 5000 : 1))).toThrow();
+    expect(() => register(() => Number.NaN)).toThrow();
+    expect(coApp.settingItems.get('evil.choice')).toBeUndefined();
+  });
+
+  it('enum 的 length 只读一次:之后变大也不会让拷贝循环跑飞', () => {
+    const coApp = createTestCoApp('1.0.0');
+    let reads = 0;
+    const proxied = new Proxy([{ value: 'a', label: 'A' }] as unknown[], {
+      get(t, key, recv) {
+        if (key === 'length') return reads++ === 0 ? 1 : 1e9;
+        return Reflect.get(t, key, recv) as unknown;
+      },
+    });
+    thirdParty(coApp, 'evil').settingItems.register({
+      id: 'evil.choice',
+      category: 'evil',
+      title: 'Choice',
+      type: 'select',
+      default: 'a',
+      enum: proxied as never,
+    });
+    expect(coApp.settingItems.get('evil.choice')!.enum).toEqual([{ value: 'a', label: 'A' }]);
+  });
+
+  it('enum 选项是函数或数组(带 value / label 属性,过得了 typeof 校验)→ 注册被拒', () => {
+    const coApp = createTestCoApp('1.0.0');
+    const fnOption = Object.assign(() => {}, { value: 'a', label: 'A' });
+    const arrOption = Object.assign([] as unknown[], { value: 'a', label: 'A' });
+    for (const option of [fnOption, arrOption]) {
+      expect(() =>
+        thirdParty(coApp, 'evil').settingItems.register({
+          id: 'evil.choice',
+          category: 'evil',
+          title: 'Choice',
+          type: 'select',
+          default: 'a',
+          enum: [option] as never,
+        }),
+      ).toThrow();
+    }
+    expect(coApp.settingItems.get('evil.choice')).toBeUndefined();
+  });
+
   it('enum 选项字段是 getter(校验时合法、之后返回别的)→ 只在快照时读一次', () => {
     const coApp = createTestCoApp('1.0.0');
     let reads = 0;

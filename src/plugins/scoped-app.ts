@@ -820,21 +820,31 @@ export function isThirdPartyContribution(spec: object): boolean {
  * 贡献 spec 的冻结快照(见 trackContributions 的 TOCTOU 说明)。顶层浅拷贝;嵌套的**数据**字段要深拷贝冻结,否则
  * 入表的仍是插件手里的引用:注册期校验通过后再改(把 label 换成对象 / 超长串、往数组里追加选项)即绕过校验。
  * 各贡献点 spec 里数组 / 对象形态的数据字段目前只有 settingItems 的 `enum`(选项是只含字符串字段的平对象);
- * 其余非函数字段都是原始值或 ReactNode(icon:不校验内容,不拷贝)。畸形 enum 原样留给注册表校验报错。
+ * 其余非函数字段都是原始值或 ReactNode(icon:不校验内容,不拷贝)。非数组的 enum 原样留给注册表校验报错。
  */
-// 远高于注册表自己的选项数上限(SettingItemRegistry 的 SI_ENUM_COUNT_MAX),只为给拷贝循环封顶。
+// 远高于注册表自己的选项数上限(SettingItemRegistry 的 SI_ENUM_COUNT_MAX),只为给拷贝循环封顶;超出即拒绝。
 const ENUM_SNAPSHOT_MAX = 4096;
 
 function snapshotSpec(spec: object): object {
   const copy: Record<string, unknown> = { ...spec };
   const source = copy.enum;
-  // 超长数组不拷贝(稀疏数组的 length 可达 2^32-1),原样留给注册表按数量上限拒绝。
-  if (Array.isArray(source) && source.length <= ENUM_SNAPSHOT_MAX) {
+  if (Array.isArray(source)) {
+    // length 只读一次:Proxy 数组可以每次读返回不同值(先超限让这里跳过拷贝、再合法骗过注册表的数量校验;
+    // 或循环中途变大让拷贝跑飞)。不在 0..上限 的整数范围内直接拒绝,绝不把插件的数组原样放进注册表。
+    const length: unknown = source.length;
+    if (typeof length !== 'number' || !Number.isInteger(length) || length < 0 || length > ENUM_SNAPSHOT_MAX) {
+      throw new Error(`[scoped-app] enum must be an array of at most ${ENUM_SNAPSHOT_MAX} options`);
+    }
     // 按下标读进一个普通数组:不调用插件数组自己的 map / 迭代器 / Symbol.species(它们可以让校验的
     // for…of 与消费方的下标访问看到不同内容)。
     const options: unknown[] = [];
-    for (let i = 0; i < source.length; i += 1) {
+    for (let i = 0; i < length; i += 1) {
       const option: unknown = source[i];
+      // 函数 / 数组也能挂 value、label 属性过注册表的 typeof 校验,却不会被下面的拷贝冻结 → 直接拒绝。
+      // 原始值 / null / 空洞原样带过去,由注册表按「选项无效」报错。
+      if (typeof option === 'function' || Array.isArray(option)) {
+        throw new Error('[scoped-app] enum option must be a plain object');
+      }
       options.push(isSpecObject(option) ? Object.freeze({ ...(option as object) }) : option);
     }
     copy.enum = Object.freeze(options);
