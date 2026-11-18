@@ -89,6 +89,7 @@ import {
   setMcpHostRef,
 } from './services/agent-auth.service';
 import { DebugService } from './services/debug.service';
+import { createMcpRevokerWiring } from './services/mcp-revoker-wiring';
 import * as debugSessions from './services/debug-sessions.service';
 import { makeDebugMcpTools } from './services/mcp-debug-host';
 import { createContinuoMcpEnv } from './services/continuo-terminal-host-adapter';
@@ -1112,21 +1113,14 @@ async function startMcpHost(): Promise<void> {
           }),
       }),
     ];
-    mcpHost = await createMcpHost({
-      initialTools,
-      // 安全(F1):HTTP session 被 DELETE 结束 → 该身份作废,同终端 token 吊销回收其在途创建与 debug 会话。
-      onHttpSessionReleased: (subject) => {
-        cancelAgentTerminalCreates(subject);
-        void debugService.killByController(subject, 'session-closed').catch((err) => {
-          console.warn('[debug] killByController failed on http session release', err);
-        });
-      },
-      // 空闲驱逐跳过名下仍有 debug 会话 / 在途 launch、在途终端创建、其创建的存活终端的 session。
-      hasLiveResources: (subject) =>
-        debugService.listControllerTokens().includes(subject) ||
-        hasAgentTerminalCreates(subject) ||
-        terminalSessions.hasLiveSessionForController(subject),
+    // 安全(F1):HTTP session 释放 / token 吊销回收其在途创建与 debug 会话;空闲驱逐跳过名下仍有活跃资源的 session。
+    const revokerWiring = createMcpRevokerWiring({
+      debugService,
+      cancelAgentTerminalCreates,
+      hasAgentTerminalCreates,
+      hasLiveSessionForController: terminalSessions.hasLiveSessionForController,
     });
+    mcpHost = await createMcpHost({ initialTools, ...revokerWiring.hostOptions });
     setMcpEnvProvider((windowId: number) => {
       if (!mcpHost) return { env: {} as Record<string, string>, mcpToken: '' };
       return createContinuoMcpEnv({
@@ -1142,23 +1136,7 @@ async function startMcpHost(): Promise<void> {
     });
     // 给 agent-auth service 注入 host 引用,撤销时 rotate token。
     setMcpHostRef(mcpHost);
-    setMcpRevokers({
-      byWindow: (windowId) => mcpHost!.revokeWindowTokens(windowId),
-      // byToken 只用于终端专属 token(终端退出 / 创建回滚):token 失效后其经 HTTP MCP 创建的 debug
-      // 会话再无人能 disconnect → 同步回收(与 stdio 断连路径一致),否则名额被占满、adapter 常驻。
-      byToken: (token) => {
-        // 安全(F1):HTTP 调用方身份 = token(+ Mcp-Session-Id)。须在 revokeToken 清掉 session 表之前取全。
-        const subjects = mcpHost!.callerSubjectsForToken(token);
-        mcpHost!.revokeToken(token);
-        for (const subject of subjects) {
-          // 该 token 的在途 create_session 同样失去调用方(同 stdio 断连 abort ctx.signal):取消,不留孤儿会话。
-          cancelAgentTerminalCreates(subject);
-          void debugService.killByController(subject, 'terminal-exit').catch((err) => {
-            console.warn('[debug] killByController failed on terminal token revoke', err);
-          });
-        }
-      },
-    });
+    setMcpRevokers(revokerWiring.revokers(mcpHost));
     setAgentAuthControllerTeardown({
       // 含在途 launch 的调用方:会话尚未登记,只列已登记会话的话撤销时漏掉它们(见 DebugService.listControllerTokens)。
       listControllerTokens: () => debugService.listControllerTokens(),

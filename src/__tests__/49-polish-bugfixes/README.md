@@ -1259,7 +1259,11 @@ helper + 必挂 browser-window-created),把「单一来源」固化进测试防�
     (debug 会话 / 在途 launch、在途终端创建、其创建且未退出的终端,`hasLiveResources`)的最旧 session,全部候选都有
     资源则仍 429 —— 防持 token 方反复 initialize 驱逐停在断点的受害方、杀其 debug 会话 / 让其终端沦为孤儿;
     session 随 `revokeToken` / `revokeWindowTokens` / `rotateToken` / `DELETE /mcp`(带 session id)释放。
-  - 终端 token 吊销(`byToken`)先取 `callerSubjectsForToken(token)` 再 `revokeToken`,逐个身份回收在途创建 / debug 会话。
+  - session 每次被删除(DELETE / 空闲驱逐 → `closed`;`revokeToken` → `token-revoked`;`revokeWindowTokens` →
+    `window-revoked`)都经 `onHttpSessionReleased(subject, cause)` 通知一次(幂等)。回收接线在
+    `electron/main/services/mcp-revoker-wiring.ts`:`closed` 取消在途创建 + `killByController(subject,'session-closed')`;
+    `token-revoked` 同样回收但 reason 为 `terminal-exit`,`byToken` 再回收 token 本身;`window-revoked` 不经此回收
+    (窗口关闭由 `killByOwner('window-closed')` 与终端 kill 负责)。
 - 残余(未收口):token 本身仍可被同 uid 进程读到(如 `ps eww`)。持 token 者可经 HTTP 或 stdio `_continuo/hello`
   被当作该窗口的绑定调用,复用该窗口的「本次启动期间允许」静默 create_session / debug_launch 等;per-session
   capability 仍生效(读控不了受害方的会话)。真正收口需把 token 绑定到持有终端的进程树,当前未做。未回带
