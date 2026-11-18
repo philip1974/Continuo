@@ -219,6 +219,7 @@
 
 - [`main-throttle.spec.ts`](./agent-auth-prompt-throttle/main-throttle.spec.ts)
 - [`prompt-grant-guard.spec.tsx`](./agent-auth-prompt-throttle/prompt-grant-guard.spec.tsx)
+- [`prompt-keyboard-grant-guard.spec.tsx`](./agent-auth-prompt-throttle/prompt-keyboard-grant-guard.spec.tsx)
 - [`store-slots.spec.ts`](./agent-auth-prompt-throttle/store-slots.spec.ts)
 
 ## [agent-auth-respond-schema (E146)](./agent-auth-respond-schema/README.md)
@@ -878,8 +879,11 @@
 ## [permission-prompt(授权 UI store + Modal + Manager 集成)](./permission-prompt/README.md)
 
 - [`PermissionPrompt.spec.tsx`](./permission-prompt/PermissionPrompt.spec.tsx)
+- [`first-appearance-grant-guard.spec.tsx`](./permission-prompt/first-appearance-grant-guard.spec.tsx)
+- [`keyboard-grant-guard.spec.tsx`](./permission-prompt/keyboard-grant-guard.spec.tsx)
 - [`permission-copy-matches-capability.spec.ts`](./permission-prompt/permission-copy-matches-capability.spec.ts)
 - [`promptStore.spec.ts`](./permission-prompt/promptStore.spec.ts)
+- [`shell-not-preselected.spec.tsx`](./permission-prompt/shell-not-preselected.spec.tsx)
 
 ## [permission-record-contract(权限记录单条形态的跨进程统一规则)](./permission-record-contract/README.md)
 

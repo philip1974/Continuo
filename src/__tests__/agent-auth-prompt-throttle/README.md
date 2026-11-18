@@ -42,9 +42,18 @@ plugin)计。
 - **按调用方类别分槽**(`agent-auth.store.ts`):窗口内 agent 与 external 客户端各一个槽。同一时刻仍只显示一个
   弹窗(不堆叠);另一类调用方的请求排在后面,当前弹窗落定后显示。同一类已占槽 → 立即 `denied`。每个请求从到达起
   按 5 分钟各自超时(`cancelled`);main 撤销时显示中与排队中的一并 `cancelled`。
-- **授予方向的防误触延迟**(`AgentAuthPrompt.tsx`):弹窗显示后 500ms 内,「仅本次」「本次启动期间允许」的鼠标 /
+- **授予方向的防误触延迟**(`AgentAuthPrompt.tsx`;实现在 `src/lib/use-prompt-grant-guard.ts`,与插件权限弹窗共用,
+  见 `permission-prompt/`):弹窗显示后 500ms 内,「仅本次」「本次启动期间允许」的鼠标 /
   键盘激活无效(弹窗保持);「拒绝」与 Esc 立即可用;初始焦点仍在「拒绝」。排队的下一个请求显示时重新计时
   (对旧弹窗的连点不落到新请求上)。
+- **授予按钮的键盘激活须是停顿后的有意按键**(同一守卫)。出现延迟挡不住「晚到」的按键:用户没注意到弹窗,继续
+  原来的输入流 —— Shift+Tab(Claude Code CLI 切模式)后打一句话再回车、Tab 补全后回车 —— 其中的 Space / Enter
+  不能落成授予。
+  - 「仅本次」「本次启动期间允许」的键盘激活(Enter / Space)要求:该按钮已持续聚焦 ≥ 500ms;聚焦期间没有打过字
+    (打过字 → 须把焦点移开再回来);这一下按键不是键重复,且之前 500ms 内没有别的按键。不满足 → 无效,弹窗保持。
+  - 键盘用户的操作方式:Tab 到要用的授予按钮,停顿半秒,再按 Enter / Space。
+  - Shift+Tab 不能从「拒绝」回绕到末尾的「本次启动期间允许」(焦点留在「拒绝」;向前 Tab 仍可到达所有按钮)。
+  - 鼠标点击只受出现延迟约束;「拒绝」的键盘激活与 Esc 不受任何限制。
 
 ## 规范
 
@@ -53,4 +62,6 @@ plugin)计。
   撤销与 reload 后恢复节流、external 与窗口内 / 不同窗口互不占用。
 - `store-slots.spec.ts`:renderer 分槽与排队。
 - `prompt-grant-guard.spec.tsx`:500ms 内「允许」无效、「拒绝」/ Esc 有效、初始焦点、排队切换后重新计时。
+- `prompt-keyboard-grant-guard.spec.tsx`:Shift+Tab 不回绕、Tab→Enter / 打字流里的 Space·Enter / 键重复不授予、
+  停顿后的键盘确认授予、鼠标点击与拒绝方向不受键盘规则约束。
 - 通用节流机制本身的边界(容量淘汰、授予减 1 等)见 `plugin-fs-scope-request-throttle/`。

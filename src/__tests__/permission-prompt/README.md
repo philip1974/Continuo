@@ -26,10 +26,23 @@ PromptFn 桥接到 store,Promise 形态返回。PluginManager 在 _activate 前�
 ### PermissionPrompt UI
 
 - Modal,visible = pending !== null
-- 排队切换(A 结算后直接换成 B)时,B 出现后的短时间内「授予 / 全部拒绝」点击被忽略,防止对 A 连点误作用到 B
-- fs-scope 弹窗同样受此守卫:fs-scope 排队 A→B、以及弹窗类型切换(fs-scope↔manifest)后短时间内授权 / 拒绝 / Esc 均被忽略(防双击把 B 的 `~` 读写永久授予)
+- **防误触延迟**(`first-appearance-grant-guard.spec.tsx`;与 agent 授权弹窗共用 `src/lib/use-prompt-grant-guard.ts`)。
+  弹窗出现的时机由插件决定(启用时的 manifest 权限、运行时的 `requestScope`),且会抢走键盘焦点;用户正在打字 / 点击时
+  落进弹窗的按键 / 点击不能变成授予。manifest 弹窗与 fs-scope 弹窗一致:
+  - 请求**出现**后 500ms 内,授予方向(「授权选中」/「授权」)的鼠标与键盘激活无效,弹窗保持。首次出现、落定后空闲一段
+    时间再出现、排队切换(A 结算后直接换成 B)、弹窗类型切换(fs-scope↔manifest)都重新计时。
+  - 授予按钮的**键盘**激活另须是停顿后的有意按键(`keyboard-grant-guard.spec.tsx`):按钮已持续聚焦 ≥ 500ms、聚焦
+    期间没打过字、这一下按键不是键重复且之前 500ms 内没有别的按键。Tab→Enter 的快速序列、打字流里的 Space / Enter
+    不授予;Tab 到按钮、停顿半秒再按 Enter / Space 授予。鼠标点击只受出现延迟约束。
+  - Shift+Tab 不能从第一个可聚焦元素回绕到末尾的授予按钮(焦点留在原处;向前 Tab 仍可到达所有元素)。
+  - 拒绝方向(「全部拒绝」/「拒绝」/ Esc / 点遮罩)首次出现时立即可用,不受键盘规则约束。
+  - 初始焦点在拒绝按钮上(不在勾选框或授予按钮上);切换到下一个请求后焦点同样回到拒绝按钮。
+- 排队 / 类型切换(显示中的请求直接换成另一个,不经空闲)后的 500ms 内,拒绝方向(拒绝 / Esc)也被忽略:新弹窗的按钮与
+  旧弹窗在同一位置,对旧弹窗的连点 / 键重复不能把新请求拒掉(manifest 的拒绝会写盘)。
 - 标题 "插件 <id> 请求权限"
-- 每个 perm 一行 + checkbox
+- 每个 perm 一行 + checkbox;默认预选声明的权限,**`shell` 除外**(`shell-not-preselected.spec.tsx`):`shell` 等同于
+  完全访问本机(以用户身份运行任意程序,不受文件夹授权限制),须用户主动勾选或点「全选」才授予,不能随一次
+  「授权选中」顺手给出。未勾选即按未授予记录(部分授权),之后可在插件的权限编辑里再开启
 - "全选" / "全部拒绝" / "确认授权选中" 三个按钮
 - ESC / 遮罩点 → denyAll
 
