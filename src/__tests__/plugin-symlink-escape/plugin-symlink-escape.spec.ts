@@ -141,6 +141,7 @@ describe('安装:克隆树含符号链接 → 拒绝', () => {
 
 describe('plugin-data:data.json 是链接', () => {
   it('load:指向别的插件 data.json → {},读不到对方数据', async () => {
+    await fs.mkdir(path.join(baseDir, 'victim'), { recursive: true });
     await invoke('plugin-data:save', 'victim', { value: { token: 'victim-secret' } });
     await fs.mkdir(path.join(baseDir, 'evil'), { recursive: true });
     await fs.symlink('../victim/data.json', path.join(baseDir, 'evil', 'data.json'));
@@ -164,6 +165,7 @@ describe('plugin-data:data.json 是链接', () => {
   });
 
   it('save:不写穿链接,落成插件目录里的普通文件', async () => {
+    await fs.mkdir(path.join(baseDir, 'victim'), { recursive: true });
     await invoke('plugin-data:save', 'victim', { value: 'victim-data' });
     const victimFile = path.join(baseDir, 'victim', 'data.json');
     const before = await fs.readFile(victimFile, 'utf-8');

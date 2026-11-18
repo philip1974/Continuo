@@ -46,6 +46,7 @@ describe('49 · plugin-data 损坏不再永久阻塞 + 原子写', () => {
   it('save 写出的是合法 JSON(原子写),roundtrip 正确', async () => {
     const id = 'my.plugin';
     const data = { value: { a: 1, 中文: '可以' } };
+    await mkdir(join(userDataPath, 'plugins', id), { recursive: true }); // save 只写已安装插件的目录
     await invoke(PLUGIN_DATA_CHANNELS.SAVE, id, data);
 
     // 文件是合法 JSON
@@ -96,6 +97,7 @@ describe('49 · plugin-data 损坏不再永久阻塞 + 原子写', () => {
 
   it('E147 save null/undefined → 归一空对象({}),load 正常', async () => {
     const id = 'e147.null';
+    await mkdir(join(userDataPath, 'plugins', id), { recursive: true }); // save 只写已安装插件的目录
     await invoke(PLUGIN_DATA_CHANNELS.SAVE, id, null);
     await expect(invoke(PLUGIN_DATA_CHANNELS.LOAD, id)).resolves.toEqual({});
   });
@@ -107,6 +109,7 @@ describe('49 · plugin-data 损坏不再永久阻塞 + 原子写', () => {
   it('E237 raw IPC save(id, null/undefined) → 落盘为合法 {} 且不触发损坏隔离', async () => {
     for (const bad of [null, undefined]) {
       const id = `e237.${bad === null ? 'null' : 'undef'}`;
+      await mkdir(join(userDataPath, 'plugins', id), { recursive: true }); // save 只写已安装插件的目录
       await invoke(PLUGIN_DATA_CHANNELS.SAVE, id, bad);
       // 落盘内容就是合法的空对象(不是 "null"/"undefined")
       const raw = await readFile(dataFile(id), 'utf-8');

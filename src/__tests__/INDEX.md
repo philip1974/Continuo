@@ -906,6 +906,10 @@
 - [`plugin-data.spec.ts`](./plugin-data/plugin-data.spec.ts)
 - [`serialize-order.spec.ts`](./plugin-data/serialize-order.spec.ts)
 
+## [plugin-data-uninstall-zombie(卸载后迟到的 saveData 不复活插件目录)](./plugin-data-uninstall-zombie/README.md)
+
+- [`plugin-data-uninstall-zombie.spec.ts`](./plugin-data-uninstall-zombie/plugin-data-uninstall-zombie.spec.ts)
+
 ## [plugin-fs-git-blob-scope(readGitBlob 的对象库必须在已授 scope 内)](./plugin-fs-git-blob-scope/README.md)
 
 - [`read-git-blob-scope.spec.ts`](./plugin-fs-git-blob-scope/read-git-blob-scope.spec.ts)

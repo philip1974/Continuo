@@ -1220,14 +1220,39 @@ export function persistPluginPathScopesIfInstalled(
   scopes: readonly IpcPathScope[],
 ): Promise<void> {
   if (!isSafePluginId(id)) return Promise.resolve();
+  return withInstalledPluginLock(baseDir, id, () => writePluginPathScopes(baseDir, id, scopes));
+}
+
+/**
+ * 在同 id mutation 锁内(与安装 / 更新 / 卸载互斥)确认插件目录仍在,再执行 fn;目录缺失 → NOT_INSTALLED,fn 不执行。
+ * 给「只应作用于已安装插件」的迟到写入用(path scope 持久化、plugin-data 的 saveData):要么落在卸载之前
+ * (随后被卸载清掉),要么等卸载完成后因目录缺失被拒 —— 不会在卸载 rm 之后把东西写回去。调用方须先校验 id 形态。
+ */
+export function withInstalledPluginLock<T>(baseDir: string, id: string, fn: () => Promise<T>): Promise<T> {
   return withPluginMutationLock(id, async () => {
     try {
       await fs.access(path.join(baseDir, id));
     } catch {
       throw codedError(ERROR_CODES.NOT_INSTALLED, `插件未安装: ${id}`);
     }
-    await writePluginPathScopes(baseDir, id, scopes);
+    return fn();
   });
+}
+
+/**
+ * dir 是否是 plugin-data 留下的残留目录:没有 manifest.json,且里面只有 data.json 及其附属文件(`.lock` 锁目录、
+ * `.corrupt` 快照、原子写的 `.data.json.*.tmp`)。旧版本里卸载后迟到的 saveData 会 `mkdir -p` 把目录建回来,
+ * 留下这种目录:不被列出(UI 无卸载入口),却让同 id 安装永远 EEXIST。安装时在锁内识别并清掉(自愈)。
+ * 判定从严:含任何其它条目(用户手放的文件等)或无法确认 → false,照旧按「已存在」处理,不删。
+ */
+async function isPluginDataResidueDir(dir: string): Promise<boolean> {
+  try {
+    if (!(await fs.lstat(dir)).isDirectory()) return false;
+    const names = await fs.readdir(dir);
+    return names.every((name) => name.startsWith('data.json') || name.startsWith('.data.json.'));
+  } catch {
+    return false;
+  }
 }
 
 export interface InstallFromGitResult {
@@ -1392,6 +1417,12 @@ export async function installFromGit(
         // cp/rename 前 fail-closed 抛出中止。
         if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
         /* ENOENT = not exists, OK */
+      }
+      // 自愈:只剩 plugin-data 残留的目录(见 isPluginDataResidueDir)不算已安装 —— 清掉后按全新安装继续
+      //(残留的 data.json 是卸载之后才写进来的,不继承)。在锁内判定 + 删除,与 saveData / 卸载互斥。
+      if (targetExists && (await isPluginDataResidueDir(targetDir))) {
+        await rm(targetDir, { recursive: true, force: true });
+        targetExists = false;
       }
       if (targetExists && opts.overwrite !== true) {
         throw codedError(ERROR_CODES.EEXIST, `插件 ${pluginId} 已安装,卸载后再装`);

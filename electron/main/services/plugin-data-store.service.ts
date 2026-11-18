@@ -16,6 +16,7 @@ import { jsonStringLengthLowerBoundExceeds } from '../../shared/json-byte-budget
 import { isValidPluginId } from '../../shared/plugin-id';
 import { PLUGIN_DATA_CHANNELS } from '../../shared/plugin-data-channels';
 import { codedError } from '../../shared/error-message';
+import { withInstalledPluginLock } from './plugins.service';
 
 const LOCK_OPTS: lockfile.LockOptions = {
   // Op12.5 spike not executed in this batch; using library defaults/recommendation.
@@ -55,13 +56,6 @@ export function registerPluginDataStoreHandlers(
     assertPluginId(pluginId);
     return join(baseDir, pluginId, 'data.json');
   };
-
-  async function ensureDir(pluginId: string): Promise<string> {
-    assertPluginId(pluginId);
-    const dir = join(baseDir, pluginId);
-    await fs.mkdir(dir, { recursive: true });
-    return dir;
-  }
 
   ipcMain.handle(PLUGIN_DATA_CHANNELS.LOAD, async (_event, pluginId: string) => {
     const file = dataFile(pluginId);
@@ -179,8 +173,17 @@ export function registerPluginDataStoreHandlers(
     },
   );
 
-  async function writeSerialized(pluginId: string, serialized: string): Promise<void> {
-    await ensureDir(pluginId);
+  // 数据安全(卸载后复活目录):data.json 落在插件安装目录里。卸载时主进程先删目录,renderer 之后才跑 onunload,
+  // 其中的 saveData(或更早发起、此刻才到的)若在这里 `mkdir -p` 就把目录建了回来 —— 只剩 data.json、没有 manifest:
+  // 不被列出(UI 无卸载入口),同 id 再安装永远 EEXIST。与 path scope 持久化同法:进同 id mutation 锁(与安装 /
+  // 卸载互斥),锁内确认插件目录仍在才写,不存在 → NOT_INSTALLED,**不创建目录**。
+  // 内置插件(静态加载,不在 plugins 目录下)不使用 dataStore,不受影响。
+  function writeSerialized(pluginId: string, serialized: string): Promise<void> {
+    assertPluginId(pluginId);
+    return withInstalledPluginLock(baseDir, pluginId, () => writeSerializedLocked(pluginId, serialized));
+  }
+
+  async function writeSerializedLocked(pluginId: string, serialized: string): Promise<void> {
     const file = dataFile(pluginId);
     // 创建 lock 目标文件:proper-lockfile 要求目标存在。必须用**排他创建**(wx)
     // 而非「access 判缺失 → writeFile 截断」:后者在加锁前 truncate,并发首次 save

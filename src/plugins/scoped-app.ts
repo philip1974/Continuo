@@ -12,6 +12,7 @@
 // 能力(shell / network / fs 写与 requestScope / clipboard / mcp 注册与调用 / notifications / dock / editor.openFile)
 // 在 renderer 源头拒绝、不发 IPC —— 延迟回调或超时后仍在跑的 onunload 不能再起进程 / 发请求。
 // 不阻断:fs 读、dataStore(插件自有数据,onunload 常用 saveData)、permission 查询、userHome。
+// (卸载后的 saveData 由主进程拒绝:只写已安装插件的目录,见 src/__tests__/plugin-data-uninstall-zombie/。)
 // 贡献点注册表 / events:吊销后 register / on / subscribe 拒绝,吊销前经 scoped app 直接注册的贡献与订阅在
 // revoke() 时统一注销(见 trackContributions);commands.execute / events.emit / events.clear 有外部副作用
 //(执行宿主命令可开窗口 / 终端,emit 触发他人监听),同样拒绝;只放行只读查询与 events.off。
