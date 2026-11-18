@@ -12,6 +12,7 @@ import {
   SCOPE_DENY_COOLDOWN_BASE_MS,
   SCOPE_DENY_COOLDOWN_MAX_MS,
   SCOPE_DENY_FORGET_MS,
+  SCOPE_PLUGIN_DENY_STREAK,
   SCOPE_PROMPT_RATE_MAX,
   SCOPE_PROMPT_RATE_WINDOW_MS,
 } from '../../../electron/main/services/scope-request-throttle';
@@ -46,13 +47,14 @@ async function request(
   pluginId: string,
   paths: readonly string[],
   decision: 'grant' | 'deny',
+  mode: 'r' | 'rw' = 'r',
 ): Promise<{ result: unknown; prompted: boolean }> {
   const before = prompts();
   const pending = ipc.invokeWithEvent(
     event,
     C.REQUEST_SCOPE,
     tokens.get(pluginId),
-    paths.map((path) => ({ path, mode: 'r' as const })),
+    paths.map((path) => ({ path, mode })),
   );
   let settled = false;
   void pending.then(
@@ -68,7 +70,7 @@ async function request(
 
 beforeEach(async () => {
   root = await realpath(await mkdtemp(join(tmpdir(), 'scope-throttle-')));
-  for (const d of ['a', 'b']) await mkdir(join(root, d));
+  for (const d of ['a', 'b', 'a/sub']) await mkdir(join(root, d));
   vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
   vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
   event.sender.send.mockClear();
@@ -153,17 +155,100 @@ describe('拒绝冷却', () => {
     expect((await request('p', [dir], 'grant')).prompted).toBe(true);
   });
 
-  it('按插件、按 scope 组分别计:别的插件 / 别的目录不受影响', async () => {
+  it('按插件、按路径分别计:别的插件 / 别的目录不受影响', async () => {
     await request('p', [join(root, 'a')], 'deny');
     expect(await request('q', [join(root, 'a')], 'grant')).toEqual({ result: 'grant', prompted: true });
     expect(await request('p', [join(root, 'b')], 'grant')).toEqual({ result: 'grant', prompted: true });
   });
 });
 
+describe('拒绝冷却按单条路径计(换个组合 / mode 再问不算新请求)', () => {
+  it('被拒的路径搭上别的目录再请求([a, n1]、[a, n2] …)→ 直接 deny,不弹窗', async () => {
+    const a = join(root, 'a');
+    await request('p', [a], 'deny');
+    for (let i = 0; i < 5; i += 1) {
+      expect(await request('p', [a, join(root, `n${i}`)], 'grant')).toEqual({ result: 'deny', prompted: false });
+    }
+    expect(prompts()).toBe(1);
+    expect(scopes.getScopes('p')).toEqual([]);
+  });
+
+  it('r 被拒后换 rw 请求同一路径 → 不弹窗', async () => {
+    const a = join(root, 'a');
+    await request('p', [a], 'deny', 'r');
+    expect(await request('p', [a], 'grant', 'rw')).toEqual({ result: 'deny', prompted: false });
+  });
+
+  it('被拒目录的父目录(扩大范围再问)→ 不弹窗;子目录(缩小范围)可以弹', async () => {
+    await request('p', [join(root, 'a')], 'deny');
+    expect(await request('p', [root], 'grant')).toEqual({ result: 'deny', prompted: false });
+    expect(await request('p', [join(root, 'a', 'sub')], 'grant')).toEqual({ result: 'grant', prompted: true });
+  });
+
+  it('一组里被拒 → 组内每条路径各自进入冷却', async () => {
+    const a = join(root, 'a');
+    const b = join(root, 'b');
+    await request('p', [a, b], 'deny');
+    expect((await request('p', [b], 'grant')).prompted).toBe(false);
+    expect((await request('p', [a], 'grant')).prompted).toBe(false);
+  });
+});
+
+describe('插件级连续被拒退避', () => {
+  /** 连续拒掉 n 个互不相干的目录(每次都弹了窗)。 */
+  async function denyDistinct(n: number, tag: string): Promise<void> {
+    for (let i = 0; i < n; i += 1) {
+      expect((await request('p', [join(root, `${tag}${i}`)], 'deny')).prompted).toBe(true);
+    }
+  }
+
+  it('连续 SCOPE_PLUGIN_DENY_STREAK 次被拒(每次不同目录)→ 该插件任何 scope 请求都直接 deny;别的插件不受影响', async () => {
+    await denyDistinct(SCOPE_PLUGIN_DENY_STREAK, 'x');
+    expect(await request('p', [join(root, 'fresh')], 'grant')).toEqual({ result: 'deny', prompted: false });
+    expect((await request('q', [join(root, 'fresh')], 'grant')).prompted).toBe(true);
+
+    vi.advanceTimersByTime(SCOPE_DENY_COOLDOWN_BASE_MS - 1);
+    expect((await request('p', [join(root, 'fresh')], 'grant')).prompted).toBe(false);
+    vi.advanceTimersByTime(1);
+    expect((await request('p', [join(root, 'fresh')], 'deny')).prompted).toBe(true); // 再被拒 → 退避翻倍
+    vi.advanceTimersByTime(SCOPE_DENY_COOLDOWN_BASE_MS * 2 - 1);
+    expect((await request('p', [join(root, 'fresh2')], 'grant')).prompted).toBe(false);
+    vi.advanceTimersByTime(1);
+    expect((await request('p', [join(root, 'fresh2')], 'grant')).prompted).toBe(true);
+  });
+
+  it('退避指数增长但不超过 SCOPE_DENY_COOLDOWN_MAX_MS', async () => {
+    await denyDistinct(SCOPE_PLUGIN_DENY_STREAK, 'x');
+    for (let i = 0; i < 12; i += 1) {
+      vi.advanceTimersByTime(SCOPE_DENY_COOLDOWN_MAX_MS);
+      expect((await request('p', [join(root, `y${i}`)], 'deny')).prompted).toBe(true);
+    }
+    vi.advanceTimersByTime(SCOPE_DENY_COOLDOWN_MAX_MS - 1);
+    expect((await request('p', [join(root, 'z')], 'grant')).prompted).toBe(false);
+    vi.advanceTimersByTime(1);
+    expect((await request('p', [join(root, 'z')], 'grant')).prompted).toBe(true);
+  });
+
+  it('用户授予一次 → 连续被拒计数清零', async () => {
+    await denyDistinct(SCOPE_PLUGIN_DENY_STREAK - 1, 'x');
+    expect((await request('p', [join(root, 'ok')], 'grant')).result).toBe('grant');
+    await denyDistinct(SCOPE_PLUGIN_DENY_STREAK - 1, 'y');
+    expect((await request('p', [join(root, 'still')], 'grant')).prompted).toBe(true);
+  });
+
+  it('距上次被拒超过 SCOPE_DENY_FORGET_MS → 计数清零', async () => {
+    await denyDistinct(SCOPE_PLUGIN_DENY_STREAK - 1, 'x');
+    vi.advanceTimersByTime(SCOPE_DENY_FORGET_MS + 1);
+    await denyDistinct(1, 'y');
+    expect((await request('p', [join(root, 'still')], 'grant')).prompted).toBe(true);
+  });
+});
+
 describe('弹窗速率上限', () => {
   it('同一插件 60s 内最多 SCOPE_PROMPT_RATE_MAX 个弹窗(各请求不同目录),超出直接 deny;窗口滑过后恢复', async () => {
+    // 每次都允许(各自不同目录,互不覆盖):只有速率上限在起作用,不触发拒绝冷却 / 插件级退避。
     for (let i = 0; i < SCOPE_PROMPT_RATE_MAX; i += 1) {
-      expect((await request('p', [join(root, `n${i}`)], 'deny')).prompted).toBe(true);
+      expect((await request('p', [join(root, `n${i}`)], 'grant')).prompted).toBe(true);
     }
     expect(await request('p', [join(root, 'more')], 'grant')).toEqual({ result: 'deny', prompted: false });
     // 别的插件不受影响。

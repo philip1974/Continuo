@@ -10,7 +10,7 @@ import { makeWcGoneHook } from '../lib/wc-gone-hook';
 import { IdentityRegistry } from './identity-registry.service';
 import { PathScopeRegistry } from './path-scope-registry.service';
 import { ScopeRequestCorrelator } from './scope-request-correlator';
-import { ScopeRequestThrottle, scopeRequestKey } from './scope-request-throttle';
+import { ScopeRequestThrottle } from './scope-request-throttle';
 import {
   ScopeError,
   ScopeRequestTimeoutError,
@@ -802,9 +802,10 @@ export function registerPluginFsHandlers(
       if (!correlator.canAccept(event.sender.id)) {
         return 'deny';
       }
-      // 安全:拒绝冷却 + 每插件弹窗速率上限(见 scope-request-throttle)。同一组 scope 刚被用户拒绝、或该插件
-      // 弹窗过于频繁 → 直接 deny,不发弹窗:插件不能在拒绝回调里循环 requestScope 诱导误点。
-      const throttleKey = scopeRequestKey(canonicalScopes);
+      // 安全:拒绝冷却(按单条路径)+ 插件级连续被拒退避 + 每插件弹窗速率上限(见 scope-request-throttle)。
+      // 请求里有刚被用户拒绝的路径(或其祖先)、或该插件连续被拒 / 弹窗过于频繁 → 直接 deny,不发弹窗:
+      // 插件不能在拒绝回调里循环 requestScope(换个组合 / mode / 父目录再问)诱导误点。
+      const throttleKey = canonicalScopes.map((s) => s.path);
       if (!scopeThrottle.tryPrompt(pluginId, throttleKey)) {
         return 'deny';
       }
