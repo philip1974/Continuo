@@ -4,6 +4,13 @@
 //    `git status` 的插件即执行任意命令。用 git ≥2.31 的「命令行作用域」env(GIT_CONFIG_COUNT /
 //    GIT_CONFIG_KEY_n / GIT_CONFIG_VALUE_n,优先级高于仓库 config)强制 core.fsmonitor=false。对所有子进程
 //    注入:非 git 程序忽略,git 被间接调用时同样受保护。不设 core.hooksPath(会破坏用户提交 hooks)。
+//    **覆盖范围(如实说明):宿主兜底只覆盖 core.fsmonitor**。同一威胁(不可信仓库的 `.git/config` /
+//    `.gitattributes` 让 git 执行命令)下还有:`filter.<driver>.clean/smudge/process` + `.gitattributes`、
+//    `diff.<driver>.textconv` / `diff.external`、`core.sshCommand`、`core.pager` / `pager.<cmd>`、
+//    `core.editor`、`credential.helper` 等 —— 驱动名由仓库自定,命令行作用域 env 无通配语法,宿主无法
+//    一并禁用;强行置空 sshCommand/pager 等还会破坏用户合法配置。这些需**插件自行加固**:对不可信仓库
+//    调用 git 时显式传 `--no-textconv` / `--no-ext-diff`、按需用 `-c <key>=<安全值>` 显式覆盖,只用不触发
+//    过滤器 / 外部 diff 的子命令,或在受信判断后再调用。
 // 2. resolveSpawnCommand:Windows 上 libuv 解析无路径命令名时**先查子进程 cwd** 再查 PATH,workspace 根放
 //    `git.exe` 即被执行。spawn 前按 libuv 同款规则(原名若带扩展名先试,再 .com / .exe)只在 PATH 的绝对目录
 //    中解析为绝对路径,解析不到 fail-closed。libuv 自实现搜索,不认 NoDefaultCurrentDirectoryInExePath,
@@ -12,7 +19,7 @@
 import { statSync } from 'node:fs';
 import path from 'node:path';
 
-/** 强制覆盖的 git 配置(命令行作用域)。 */
+/** 强制覆盖的 git 配置(命令行作用域)。只有 fsmonitor:其余执行命令的 git 配置见文件头「覆盖范围」。 */
 const GIT_HARDENING_CONFIG: readonly (readonly [string, string])[] = [['core.fsmonitor', 'false']];
 
 /**
