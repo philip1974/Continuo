@@ -1,4 +1,4 @@
-import { BrowserWindow, dialog, shell } from 'electron';
+import { BrowserWindow, shell } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
@@ -26,6 +26,7 @@ import { copyEntry, moveEntry } from './fs/move-copy';
 import { createSameTickPathCoalescer, createWatcherPool, type WatcherCreator } from './fs/watch';
 import { broadcastToWindows } from '../lib/broadcast';
 import { makeWcGoneHook } from '../lib/wc-gone-hook';
+import { showOpenDialogRemembering } from '../lib/open-dialog';
 
 // ────────────────────────────────────────────────────────────
 // schemas — 全部 .strict() 拒绝未知字段(防 IPC 注入)
@@ -407,7 +408,8 @@ export function registerFsIpc(): void {
       showOpenDialog: (opts) =>
         // adapter 抽象用 ReadonlyArray<string>,Electron 真 API 要窄字面量 enum,
         // 真接处补 type assertion。spec 已断言 properties 含 'openDirectory'。
-        dialog.showOpenDialog({
+        // 经 showOpenDialogRemembering:Electron 43+ 未给 defaultPath 时固定从「下载」打开,这里记住上次位置。
+        showOpenDialogRemembering({
           properties: opts.properties as Electron.OpenDialogOptions['properties'],
         }),
     }),

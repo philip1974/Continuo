@@ -2,6 +2,7 @@
 // XSS 可直接 getUserMedia / geolocation / Notification / clipboard-read 绕过插件权限模型)。
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import type { Session } from 'electron';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   _resetTrustedRendererFileForTest,
@@ -34,6 +35,62 @@ const DENIED = [
   'usb',
   'unknown',
 ];
+
+// Electron 类型声明里权限名的完整联合(Electron 45 / Chromium 156)。Record 要求键集与联合完全一致:
+// 升级 Electron 新增 / 改名权限时 typecheck:test 失败,强制在此复核新权限是否仍应默认拒绝
+// (例:Electron 45 起屏幕捕获改报 'display-capture',不再混在 'media' 里;Chromium LNA 的
+// 'local-network-access' 等)。
+type ElectronPermission = Parameters<
+  NonNullable<Parameters<Session['setPermissionRequestHandler']>[0]>
+>[1];
+const ALL_ELECTRON_PERMISSIONS: Record<ElectronPermission, true> = {
+  ar: true,
+  'automatic-fullscreen': true,
+  'background-fetch': true,
+  'background-sync': true,
+  'captured-surface-control': true,
+  'clipboard-read': true,
+  'clipboard-sanitized-write': true,
+  'deprecated-sync-clipboard-read': true,
+  'display-capture': true,
+  fileSystem: true,
+  fullscreen: true,
+  geolocation: true,
+  'geolocation-approximate': true,
+  'hand-tracking': true,
+  hid: true,
+  'idle-detection': true,
+  keyboardLock: true,
+  'local-fonts': true,
+  'local-network': true,
+  'local-network-access': true,
+  'loopback-network': true,
+  media: true,
+  mediaKeySystem: true,
+  midi: true,
+  midiSysex: true,
+  nfc: true,
+  notifications: true,
+  openExternal: true,
+  'payment-handler': true,
+  'periodic-background-sync': true,
+  'persistent-storage': true,
+  pointerLock: true,
+  'screen-wake-lock': true,
+  sensors: true,
+  serial: true,
+  'smart-card': true,
+  'speaker-selection': true,
+  'storage-access': true,
+  'system-wake-lock': true,
+  'top-level-storage-access': true,
+  usb: true,
+  vr: true,
+  'web-app-installation': true,
+  'web-printing': true,
+  'window-management': true,
+  unknown: true,
+};
 
 beforeEach(() => {
   _resetTrustedRendererFileForTest();
@@ -71,6 +128,13 @@ describe('isPermissionAllowed', () => {
     for (const p of DENIED) {
       expect(isPermissionAllowed(p, TRUSTED)).toBe(false);
     }
+  });
+
+  it('Electron 全部权限名中只有剪贴板读写放行,其余(含新版新增)从受信入口请求也拒', () => {
+    const allowed = Object.keys(ALL_ELECTRON_PERMISSIONS).filter((p) =>
+      isPermissionAllowed(p, TRUSTED),
+    );
+    expect(allowed.sort()).toEqual(['clipboard-read', 'clipboard-sanitized-write']);
   });
 
   it('dev:ELECTRON_RENDERER_URL 同源放行,异源拒', () => {
