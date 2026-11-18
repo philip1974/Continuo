@@ -28,7 +28,7 @@ import { utf8BytesExceed } from '../../shared/utf8-byte-length';
 import { fsError, isCaseOrNormalizationOnlyRename } from '../ipc/fs/path-utils';
 import { ERROR_CODES } from '../../shared/error-codes';
 import { isSafePluginId } from './plugins.service';
-import { withGitHardeningEnv } from '../lib/child-spawn-hardening';
+import { resolveSpawnCommand, withGitHardeningEnv } from '../lib/child-spawn-hardening';
 
 export interface PluginFsDeps {
   identityRegistry: IdentityRegistry;
@@ -90,7 +90,9 @@ export function readGitBlob(
     let total = 0;
     let done = false;
     // 安全:cat-file 不读 index、不触发 fsmonitor,但零成本带上同款 git 兜底 env(防将来改用读 index 的子命令)。
-    const child = spawn('git', ['cat-file', 'blob', sha], { cwd, env: withGitHardeningEnv(process.env) });
+    // Windows 上 `git` 只在 PATH 绝对目录中解析,不执行仓库目录下的 git.exe;解析不到抛错 → 本 Promise reject。
+    const env = withGitHardeningEnv(process.env);
+    const child = spawn(resolveSpawnCommand('git', env), ['cat-file', 'blob', sha], { cwd, env });
     // 边界(E63 + E132,E131 同款):按真实 UTF-8 字节累积/截断 stderr,decode 延后整体进行。
     const stderrCap = createByteCappedBuffer(GIT_BLOB_STDERR_MAX);
     const fail = (err: Error): void => {
