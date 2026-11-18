@@ -31,9 +31,12 @@ import { execShell } from '../services/shell.service';
 import { registerPluginShellStreamHandlers } from '../services/plugin-shell-stream.service';
 import { readGitBlob } from '../services/plugin-fs.service';
 import { PLUGIN_SHELL_STREAM_CHANNELS } from '../../shared/plugin-shell-stream-channels';
+import { installFromGit } from '../services/plugins.service';
+import { processTreeKillable } from '../lib/kill-with-grace';
 
 const realPlatform = process.platform;
 const realPath = process.env.PATH;
+const realSystemRoot = process.env.SystemRoot;
 
 beforeEach(() => {
   spawnCalls.length = 0;
@@ -44,6 +47,8 @@ beforeEach(() => {
 afterEach(() => {
   Object.defineProperty(process, 'platform', { value: realPlatform });
   process.env.PATH = realPath;
+  if (realSystemRoot === undefined) delete process.env.SystemRoot;
+  else process.env.SystemRoot = realSystemRoot;
 });
 
 describe('Windows 无路径命令名不从 cwd 解析(三个 spawn 入口)', () => {
@@ -75,5 +80,28 @@ describe('Windows 无路径命令名不从 cwd 解析(三个 spawn 入口)', () 
   it('readGitBlob:PATH 中解析不到 → reject,不 spawn', async () => {
     await expect(readGitBlob('C:\\ws', 'a'.repeat(40))).rejects.toMatchObject({ code: 'ENOENT' });
     expect(spawnCalls).toEqual([]);
+  });
+});
+
+// 主进程自身的 spawn 入口:CLI 启动时主进程 cwd 即用户所在目录(可能是不可信仓库),同样不得按 cwd 解析裸名。
+describe('Windows 主进程自身 spawn 不从 cwd 解析(git clone / taskkill)', () => {
+  it('插件 git 安装:PATH 中解析不到 git → reject,不 spawn 裸名', async () => {
+    await expect(installFromGit('https://example.com/p.git', 'C:\\plugins')).rejects.toThrow(/ENOENT/);
+    expect(spawnCalls).toEqual([]);
+  });
+
+  it('进程树终止:taskkill 用 %SystemRoot%\\System32 下的绝对路径', () => {
+    process.env.SystemRoot = 'C:\\Windows';
+    const child = { pid: 4321, kill: vi.fn(() => true) };
+    processTreeKillable(child).kill('SIGTERM');
+    expect(spawnCalls).toEqual(['C:\\Windows\\System32\\taskkill.exe']);
+  });
+
+  it('进程树终止:无 SystemRoot 且 PATH 中解析不到 → 不 spawn 裸名,回退直杀根进程', () => {
+    delete process.env.SystemRoot;
+    const child = { pid: 4321, kill: vi.fn(() => true) };
+    processTreeKillable(child).kill('SIGTERM');
+    expect(spawnCalls).toEqual([]);
+    expect(child.kill).toHaveBeenCalledWith('SIGTERM');
   });
 });

@@ -17,6 +17,7 @@ import {
 } from '../../../electron/main/lib/kill-with-grace';
 
 const realPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+const realSystemRoot = process.env.SystemRoot;
 
 function fakeChild() {
   const ev = new EventEmitter();
@@ -34,12 +35,15 @@ let taskkill: EventEmitter;
 
 beforeEach(() => {
   Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+  process.env.SystemRoot = 'C:\\Windows';
   taskkill = new EventEmitter();
   h.spawn.mockReset().mockImplementation(() => taskkill);
 });
 
 afterEach(() => {
   Object.defineProperty(process, 'platform', realPlatform);
+  if (realSystemRoot === undefined) delete process.env.SystemRoot;
+  else process.env.SystemRoot = realSystemRoot;
   vi.useRealTimers();
 });
 
@@ -47,7 +51,7 @@ describe('49 · Windows 进程树终止:先等 taskkill 结束,再直杀根进�
   it('killProcessTreesNow:taskkill 结束前不直杀根进程;结束后才兜底 SIGKILL', async () => {
     const { child, ev } = fakeChild();
     const done = killProcessTreesNow([child], 2000);
-    expect(h.spawn).toHaveBeenCalledWith('taskkill', ['/pid', '4321', '/T', '/F'], expect.anything());
+    expect(h.spawn).toHaveBeenCalledWith('C:\\Windows\\System32\\taskkill.exe', ['/pid', '4321', '/T', '/F'], expect.anything());
     await Promise.resolve();
     expect(child.kill).not.toHaveBeenCalled();
 
