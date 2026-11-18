@@ -386,26 +386,19 @@ export class PathScopeRegistry extends EventEmitter {
     }
 
     let resolved: CheckResult;
-    if (opType === 'read' || opType === 'read-tree') {
-      const { canonical } = await resolveForRead(target);
-      resolved = { canonical };
-    } else if (
-      opType === 'lstat' ||
-      opType === 'remove' ||
-      opType === 'rename-src'
-    ) {
-      // 不跟随 leaf 符号链接:作用在链接本身(rm 删链接 / lstat 看链接 / rename 移链接),
-      // 而非 realpath 跟随到目标。父目录仍 realpath + leaf 经 validateLeaf,无 scope 逃逸。
-      resolved = withFullPath(await resolveNoFollowLeaf(target));
-    } else if (opType === 'write' || opType === 'mkdir') {
-      resolved = withFullPath(await resolveForWrite(target));
-    } else if (opType === 'rename-dst') {
-      resolved = withFullPath(await resolveForRenameDst(target));
-    } else {
-      throw new ScopeError(`unknown opType: ${opType as string}`, {
-        target,
-        reason: 'opType',
-      });
+    try {
+      resolved = await this.resolveTarget(opType, target);
+    } catch (err) {
+      // 安全(存在性探测):词法预判认不出的写法(scope 内指向受保护根的目录链接、文件系统折叠等价的祖先段)
+      // 解析失败时,错误会区分「目标 / 父目录不存在」—— 其下存在的路径却是统一拒绝,合起来就能探测受保护根里
+      // 有哪些文件。失败路径上按「最近的已存在上级 realpath + 其余各级」再判一次,落在受保护根内 → 同一条拒绝。
+      if (err instanceof ScopeError && this.protectedKeys.length > 0) {
+        const nearest = realpathOrExistingAncestorSync(lexical);
+        if (this.isProtectedPath(nearest)) {
+          throw this.denyProtected(pluginId, opType, 'unresolvable path inside a protected app directory', nearest, target, mode, scopes.length);
+        }
+      }
+      throw err;
     }
 
     const probe = 'fullPath' in resolved ? resolved.fullPath : resolved.canonical;
@@ -432,6 +425,24 @@ export class PathScopeRegistry extends EventEmitter {
     if (!match) throw notInScope(target, mode, scopes.length);
 
     return resolved;
+  }
+
+  private async resolveTarget(opType: ScopeOpType, target: string): Promise<CheckResult> {
+    if (opType === 'read' || opType === 'read-tree') {
+      const { canonical } = await resolveForRead(target);
+      return { canonical };
+    }
+    if (opType === 'lstat' || opType === 'remove' || opType === 'rename-src') {
+      // 不跟随 leaf 符号链接:作用在链接本身(rm 删链接 / lstat 看链接 / rename 移链接),
+      // 而非 realpath 跟随到目标。父目录仍 realpath + leaf 经 validateLeaf,无 scope 逃逸。
+      return withFullPath(await resolveNoFollowLeaf(target));
+    }
+    if (opType === 'write' || opType === 'mkdir') return withFullPath(await resolveForWrite(target));
+    if (opType === 'rename-dst') return withFullPath(await resolveForRenameDst(target));
+    throw new ScopeError(`unknown opType: ${opType as string}`, {
+      target,
+      reason: 'opType',
+    });
   }
 
   /** 词法绝对路径是否落在某条(mode 足够的)已授 scope 的 canonical 根、或其已登记的请求写法之下。 */

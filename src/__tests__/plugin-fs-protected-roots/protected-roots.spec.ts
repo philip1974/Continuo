@@ -309,6 +309,35 @@ describe('经符号链接', () => {
   });
 });
 
+describe('不是存在性探测器:词法预判认不出的写法(解析后才落进受保护根)', () => {
+  async function expectSameDenial(existing: Promise<unknown>, missing: Promise<unknown>): Promise<void> {
+    const [a, b] = await Promise.all([outcome(existing), outcome(missing)]);
+    expect(a).toContain(DENIED);
+    expect(b).toBe(a);
+  }
+
+  it('经 scope 内指向受保护根的目录链接:其下存在 / 不存在的路径得到同一条拒绝', async () => {
+    await symlink(pluginsDir, join(home, 'dlink'));
+    const [hit, miss] = [join(home, 'dlink', 'victim'), join(home, 'dlink', 'nope')];
+    await expectSameDenial(call(C.STAT, hit), call(C.STAT, miss));
+    await expectSameDenial(call(C.READ_FILE, join(hit, 'data.json')), call(C.READ_FILE, join(miss, 'data.json')));
+    await expectSameDenial(call(C.LSTAT, hit), call(C.LSTAT, join(miss, 'x')));
+    await expectSameDenial(call(C.WRITE_FILE, join(hit, 'x'), ''), call(C.WRITE_FILE, join(miss, 'x'), ''));
+    expect(await call(C.CHECK_PATH, miss)).toBe(false);
+  });
+
+  it.skipIf(!volumeFoldsLongS)('经长 s 写法的祖先段:同样不可区分', async () => {
+    const via = longS(pluginsDir, 'Application Support', 'Application ſupport');
+    await expectSameDenial(call(C.STAT, join(via, 'victim')), call(C.STAT, join(via, 'nope')));
+    await expectSameDenial(call(C.WRITE_FILE, join(via, 'victim', 'x'), ''), call(C.WRITE_FILE, join(via, 'nope', 'x'), ''));
+  });
+
+  it('受保护根之外:不存在的目标仍报「不存在」(已授权范围内的细节不变)', async () => {
+    expect(await outcome(call(C.STAT, join(docs, 'nope')))).toContain('target does not exist');
+    expect(await outcome(call(C.WRITE_FILE, join(docs, 'nope', 'x'), ''))).toContain('parent missing');
+  });
+});
+
 describe('受保护根的祖先:会连带移动 / 删除 / 复制受保护子树的操作被拒', () => {
   it('rm -r / rename / cp -r / atomicReplace', async () => {
     const library = join(home, 'Library');

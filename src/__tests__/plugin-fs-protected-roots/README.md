@@ -50,6 +50,9 @@ Linux(默认大小写敏感,比较本就不折叠)不做,行为不变。
 
 校验与操作在 plugin-fs 的同一次持锁内完成(全局读写锁),只经 SDK 的插件无法在两步之间改名。
 
+解析失败(目标 / 父目录不存在等)时,按「最近的已存在上级 realpath + 其余各级」再判一次,落在受保护根内同样是
+统一拒绝 —— 经 scope 内的目录链接或上述折叠等价的祖先段访问受保护根时,其下存在 / 不存在的路径不可区分。
+
 ## 行为
 
 - **受保护根之内(含根本身)**:`readFile / writeFile / listDir / stat / lstat / realpath / mkdir / rename / rm /
@@ -105,7 +108,7 @@ Linux(默认大小写敏感,比较本就不折叠)不做,行为不变。
 
 - `protected-roots.spec.ts` —— 真实 IPC handler + 真实 `PathScopeRegistry` + 真实临时目录:端到端提权复现、
   每个入口、符号链接、祖先、requestScope、大小写变体、尚不存在的根;长 s 变体(审计复现的五步链、各入口、
-  受保护根本身、符号链接叶子、扫描超限 fail-closed、抢先创建)、解析范围与开销、Linux 分支。
+  受保护根本身、符号链接叶子、扫描超限 fail-closed、抢先创建)、存在性不可区分、解析范围与开销、Linux 分支。
   长 s 用例在临时目录所在卷不折叠 `ſ` 时跳过(Linux CI)。
 - `ipc-wiring.spec.ts` —— `registerPluginFsIpc` 实际注入了本实例与两种发行形态的 userData。
 - `electron/main/__tests__/user-data-path.test.ts` —— `resolveProtectedRoots` 各平台 / 发行形态的清单。
