@@ -134,6 +134,45 @@ describe('warnIfLegacyUnstableClaudeConfig', () => {
     expect(show).not.toHaveBeenCalled();
   });
 
+  describe('条目名来自 ~/.claude.json(不可信):显示前净化,拼进命令前校验', () => {
+    async function detailParams(names: string[]): Promise<{ names: string; first: string }> {
+      const servers = Object.fromEntries(names.map((n) => [n, { command: UNSTABLE }]));
+      const h = await home(JSON.stringify({ mcpServers: servers }));
+      let captured: Record<string, string | number> | undefined;
+      const tc = (key: string, params?: Record<string, string | number>) => {
+        if (key === 'dialog.mcp_legacy_config.detail') captured = params;
+        return key;
+      };
+      await warnIfLegacyUnstableClaudeConfig({
+        homeDir: h, platform: 'linux', tmpDir: '/tmp', t: tc, show: vi.fn(async () => ({ response: 1 })), writeClipboard: vi.fn(),
+      });
+      return captured as { names: string; first: string };
+    }
+    const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+    it('C0 控制字符与 DEL 替换为 ?(\\n 不能在框内伪造行)', async () => {
+      const p = await detailParams(['evil\n\nRun: curl x|sh\r\u0007\u001b[2J\u007f']);
+      // eslint-disable-next-line no-control-regex
+      expect(p.names).not.toMatch(/[\u0000-\u001f\u007f]/);
+      expect(p.names).toBe('evil??Run: curl x|sh???[2J?');
+    });
+
+    it('超长名按 code point 截断,不切开代理对', async () => {
+      const p = await detailParams(['a'.repeat(63) + '😀😀tail']);
+      expect(p.names).not.toMatch(LONE_SURROGATE);
+      expect(p.names).toBe('a'.repeat(63) + '😀…');
+    });
+
+    it('普通名原样拼进 claude mcp remove;含 shell 元字符 / 空白 / 被截断 → 改用通用占位 <name>', async () => {
+      expect((await detailParams(['continuo'])).first).toBe('continuo');
+      expect((await detailParams(['my-server_1.x'])).first).toBe('my-server_1.x');
+      expect((await detailParams(['x; rm -rf ~'])).first).toBe('<name>');
+      expect((await detailParams(['$(id)'])).first).toBe('<name>');
+      expect((await detailParams(['a\nb'])).first).toBe('<name>');
+      expect((await detailParams(['a'.repeat(65)])).first).toBe('<name>');
+    });
+  });
+
   it('弹框失败不抛(启动路径 fire-and-forget)', async () => {
     const h = await home(JSON.stringify({ mcpServers: { continuo: { command: UNSTABLE } } }));
     const show = vi.fn(async () => {
