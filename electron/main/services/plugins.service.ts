@@ -1419,14 +1419,18 @@ function runGit(args: readonly string[]): Promise<void> {
     // 与插件子进程同一加固(见 lib/child-spawn-hardening):注入 core.fsmonitor=false(clone 不受影响);
     // Windows 上 git 只在 PATH 的绝对目录中解析 —— CLI 启动时主进程 cwd 即用户所在目录(可能是不可信
     // 仓库),裸名 spawn 会先执行其中的 git.exe。解析不到 → GIT_SPAWN_FAILED(fail-closed)。
-    // 纵深:入口已限定 https URL,再以 GIT_ALLOW_PROTOCOL=https 限定传输协议(重定向 / 子模块等不得换用
-    // file / ext / ssh 等协议;优先于仓库与全局 protocol.*.allow 配置)。剥离宿主内部机密(CONTINUO_MCP_TOKEN)。
+    // 纵深:入口已限定 https URL,再以 GIT_ALLOW_PROTOCOL=https:ssh 限定传输协议(重定向 / 子模块等不得换用
+    // file / ext 等协议;优先于仓库与全局 protocol.*.allow 配置)。放行 ssh 的理由:git 先按 url.*.insteadOf
+    // 改写 URL 再查白名单,用户全局 ~/.gitconfig 常见 `url."ssh://git@github.com/".insteadOf=https://github.com/`
+    //(GIT_CONFIG_NOSYSTEM 不屏蔽全局配置),只放 https 会 `transport 'ssh' not allowed` 致插件装不上。ssh 改写
+    // 只可能来自用户自己的全局配置;clone 目标是新建临时目录,不存在仓库级 config 攻击面;http 重定向不能换成 ssh。
+    // 剥离宿主内部机密(CONTINUO_MCP_TOKEN)。
     const env = withGitHardeningEnv(
       mergeSpawnEnv(stripInternalSecretEnv(process.env), {
         GIT_TERMINAL_PROMPT: '0',
         GIT_ASKPASS: '',
         GIT_CONFIG_NOSYSTEM: '1',
-        GIT_ALLOW_PROTOCOL: 'https',
+        GIT_ALLOW_PROTOCOL: 'https:ssh',
       }),
     );
     const spawnGit = () =>

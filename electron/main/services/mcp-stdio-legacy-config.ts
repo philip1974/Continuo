@@ -15,7 +15,19 @@ import { STDIO_CLI_FILE_NAME, isInUnstableLinuxLocation } from './mcp-stdio-cli-
 /** ~/.claude.json 读取上限:它含各项目历史,常达数 MB;超出即跳过检查(不整文件读入主进程)。 */
 export const CLAUDE_JSON_MAX_BYTES = 16 * 1024 * 1024;
 const MAX_LISTED_NAMES = 5; // 弹框里最多列出的条目名
-const MAX_NAME_LEN = 64;
+const MAX_NAME_LEN = 64; // 单个条目名最多显示的 code point 数
+/** 可原样拼进 shell 命令的条目名:无空白 / shell 元字符,且不超过显示上限(超限会被截断,拼出的是错名)。 */
+const SAFE_CMD_NAME = new RegExp(`^[A-Za-z0-9._-]{1,${MAX_NAME_LEN}}$`);
+
+/**
+ * 条目名来自 ~/.claude.json(不可信):C0 控制字符与 DEL 换成 `?`(防 `\n` 在警告框内伪造行),
+ * 再按 code point 截断(不切开代理对)。
+ */
+function displayName(n: string): string {
+  // eslint-disable-next-line no-control-regex
+  const cps = Array.from(n.replace(/[\u0000-\u001f\u007f]/g, '?'));
+  return cps.length > MAX_NAME_LEN ? `${cps.slice(0, MAX_NAME_LEN).join('')}…` : cps.join('');
+}
 
 function asObject(v: unknown): Record<string, unknown> | null {
   return v !== null && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
@@ -99,7 +111,10 @@ export async function warnIfLegacyUnstableClaudeConfig(opts: {
 }): Promise<boolean> {
   const names = await findLegacyUnstableClaudeEntries(opts);
   if (names.length === 0) return false;
-  const listed = names.slice(0, MAX_LISTED_NAMES).map((n) => (n.length > MAX_NAME_LEN ? `${n.slice(0, MAX_NAME_LEN)}…` : n));
+  const listed = names.slice(0, MAX_LISTED_NAMES).map(displayName);
+  // 拼进建议执行的 `claude mcp remove` 命令:只有「纯安全字符且未被截断」的名字原样给出,否则给通用占位
+  //(不做 shell 引用:显示名已被净化 / 截断,与真实名不一致,引用了也是错命令;列表里已展示具体条目名)。
+  const first = SAFE_CMD_NAME.test(names[0]!) ? names[0]! : '<name>';
   const { t, claudeAddCommand } = opts;
   const buttons = claudeAddCommand
     ? [t('dialog.mcp_legacy_config.copy'), t('common.ok')]
@@ -110,7 +125,7 @@ export async function warnIfLegacyUnstableClaudeConfig(opts: {
       message: t('dialog.mcp_legacy_config.message'),
       detail: t('dialog.mcp_legacy_config.detail', {
         names: listed.join(', ') + (names.length > listed.length ? ', …' : ''),
-        first: listed[0]!,
+        first,
       }),
       buttons,
       defaultId: 0,

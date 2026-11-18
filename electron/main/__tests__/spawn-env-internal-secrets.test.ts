@@ -85,10 +85,10 @@ describe('插件 / git 子进程 env 剥离 CONTINUO_MCP_TOKEN', () => {
     expect(env).toMatchObject({ GIT_NO_LAZY_FETCH: '1', GIT_ALLOW_PROTOCOL: '' });
   });
 
-  it('插件 git 安装(runGit):剥离 token,且协议白名单只允许 https', async () => {
+  it('插件 git 安装(runGit):剥离 token,且协议白名单只允许 https 与 ssh(用户全局 insteadOf 把 https 改写成 ssh 时仍能安装)', async () => {
     await installFromGit('https://example.com/p.git', '/plugins').catch(() => undefined);
     const env = lastEnv();
     expect(env.CONTINUO_MCP_TOKEN).toBeUndefined();
-    expect(env).toMatchObject({ GIT_ALLOW_PROTOCOL: 'https', GIT_TERMINAL_PROMPT: '0' });
+    expect(env).toMatchObject({ GIT_ALLOW_PROTOCOL: 'https:ssh', GIT_TERMINAL_PROMPT: '0' });
   });
 });
