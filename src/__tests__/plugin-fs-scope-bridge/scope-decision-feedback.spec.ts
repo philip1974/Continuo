@@ -13,6 +13,7 @@ const h = vi.hoisted(() => ({
 vi.mock('@/lib/co-api', () => ({
   coApi: {
     pluginFsRaw: {
+      onScopeRequestCancelled: vi.fn(() => () => {}),
       onScopeRequest: h.onScopeRequest,
       _scopeDecision: h.scopeDecision,
     },

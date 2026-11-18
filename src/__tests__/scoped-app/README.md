@@ -65,6 +65,10 @@ settingTab `core.plugins`(替换插件与权限管理页)、panel `settings` / `
 - 所有权检查与入表用**同一份 spec 快照**:scoped app 的 keyed `register` 先把 spec 浅拷贝并冻结(每个自有属性
   只读一次),key 字段写成 getter(首次返回诱饵、之后返回 `terminal`)不能让检查与入表看到不同的 key。
   注册表里存活的是这份冻结快照,不是插件传入的对象
+- 快照里嵌套的数据字段是**深冻结拷贝**:`settingItems` 的 `enum` 数组及其中每个选项都拷贝并冻结(选项字段同样
+  只读一次)。注册通过校验后,插件再改自己手里的数组 / 选项(把 `label` / `value` 换成对象或超长串、追加超出上限
+  的选项)不影响入表的 spec。插件传入的数组与选项本身不被冻结;畸形 `enum`(非数组 / 选项不是对象)照旧由注册表
+  校验报错。函数字段与 `icon`(ReactNode)保持引用
 - 同一插件重复注册自己的 key(含重载后的新实例)→ 仍是后注册赢
 - 所有者注销后,该 key 可被其它插件注册
 - 所有者标识区分「宿主自建的 scoped app(内置插件,不带 plugin-fs token)」与「PluginManager 激活的第三方插件」:

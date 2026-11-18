@@ -98,6 +98,72 @@ describe('贡献点 key 的所有权:插件不能覆盖非本插件注册的 key
     expect(coApp.commands.get('terminal.new')?.fn).toBe(fn);
   });
 
+  it('settingItems 的 enum 是深冻结拷贝:注册通过校验后再改插件手里的数组 / 选项,入表的 spec 不变', () => {
+    const coApp = createTestCoApp('1.0.0');
+    const options: Array<Record<string, unknown>> = [
+      { value: 'a', label: 'A' },
+      { value: 'b', label: 'B', labelKey: 'evil.b' },
+    ];
+    thirdParty(coApp, 'evil').settingItems.register({
+      id: 'evil.choice',
+      category: 'evil',
+      title: 'Choice',
+      type: 'select',
+      default: 'a',
+      enum: options as never,
+    });
+    // 注册期校验已过;事后把 label / value 换成对象 / 超长串,或往数组里塞超出上限的选项。
+    options[0]!.label = { toString: () => 'x'.repeat(1_000_000) };
+    options[0]!.value = 'z'.repeat(1_000_000);
+    options[1]!.labelKey = {};
+    for (let i = 0; i < 10_000; i += 1) options.push({ value: `v${i}`, label: `L${i}` });
+
+    const registered = coApp.settingItems.get('evil.choice')!;
+    expect(registered.enum).toEqual([
+      { value: 'a', label: 'A' },
+      { value: 'b', label: 'B', labelKey: 'evil.b' },
+    ]);
+    expect(registered.enum).not.toBe(options);
+    expect(Object.isFrozen(registered.enum)).toBe(true);
+    expect(registered.enum!.every((o) => Object.isFrozen(o))).toBe(true);
+  });
+
+  it('enum 选项字段是 getter(校验时合法、之后返回别的)→ 只在快照时读一次', () => {
+    const coApp = createTestCoApp('1.0.0');
+    let reads = 0;
+    const option = {
+      value: 'a',
+      get label(): string {
+        return reads++ === 0 ? 'A' : 'x'.repeat(1_000_000);
+      },
+    };
+    thirdParty(coApp, 'evil').settingItems.register({
+      id: 'evil.choice',
+      category: 'evil',
+      title: 'Choice',
+      type: 'select',
+      default: 'a',
+      enum: [option],
+    });
+    expect(reads).toBe(1);
+    expect(coApp.settingItems.get('evil.choice')!.enum![0]!.label).toBe('A');
+    expect(reads).toBe(1);
+  });
+
+  it('畸形 enum(非数组 / 选项不是对象)照旧由注册表校验报错,不入表;调用方传入的数组与选项本身不被冻结', () => {
+    const coApp = createTestCoApp('1.0.0');
+    const evil = thirdParty(coApp, 'evil');
+    const base = { id: 'evil.choice', category: 'evil', title: 'Choice', type: 'select', default: 'a' } as const;
+    for (const bad of ['ab', { length: 1, 0: { value: 'a', label: 'A' } }, [null], ['a'], [[]]]) {
+      expect(() => evil.settingItems.register({ ...base, enum: bad as never })).toThrow();
+      expect(coApp.settingItems.get('evil.choice')).toBeUndefined();
+    }
+    const mine = [{ value: 'a', label: 'A' }];
+    evil.settingItems.register({ ...base, enum: mine });
+    expect(Object.isFrozen(mine)).toBe(false);
+    expect(Object.isFrozen(mine[0])).toBe(false);
+  });
+
   it('宿主直接在注册表上注册的条目(无所有者)同样不可覆盖', () => {
     const coApp = createTestCoApp('1.0.0');
     coApp.commands.register({ id: 'host.cmd', title: 'Host', fn: () => {} });

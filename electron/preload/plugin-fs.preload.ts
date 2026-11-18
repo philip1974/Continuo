@@ -73,6 +73,8 @@ export interface PluginFsRaw {
       scopes: readonly { path: string; mode: 'r' | 'rw'; displayPath?: string }[];
     }) => void,
   ): () => void;
+  /** main 侧已收口(超时 / 插件已注销)的 scope 请求:撤掉对应弹窗,不回传决定。 */
+  onScopeRequestCancelled(handler: (payload: { requestId: string }) => void): () => void;
   onScopeUpdated(
     handler: (payload: {
       pluginId: string;
@@ -133,6 +135,13 @@ export const pluginFsRaw: PluginFsRaw = {
       payload: Parameters<typeof handler>[0],
     ) => handler(payload);
     return subscribeIpc(PLUGIN_FS_CHANNELS.SCOPE_REQUEST, wrap);
+  },
+  onScopeRequestCancelled: (handler) => {
+    const wrap = (
+      _event: IpcRendererEvent,
+      payload: Parameters<typeof handler>[0],
+    ) => handler(payload);
+    return subscribeIpc(PLUGIN_FS_CHANNELS.SCOPE_REQUEST_CANCELLED, wrap);
   },
   onScopeUpdated: (handler) => {
     const wrap = (

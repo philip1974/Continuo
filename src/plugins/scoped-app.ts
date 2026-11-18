@@ -816,6 +816,24 @@ export function isThirdPartyContribution(spec: object): boolean {
   return contributionOwners.get(spec)?.startsWith('core:') !== true;
 }
 
+/**
+ * 贡献 spec 的冻结快照(见 trackContributions 的 TOCTOU 说明)。顶层浅拷贝;嵌套的**数据**字段要深拷贝冻结,否则
+ * 入表的仍是插件手里的引用:注册期校验通过后再改(把 label 换成对象 / 超长串、往数组里追加选项)即绕过校验。
+ * 各贡献点 spec 里数组 / 对象形态的数据字段目前只有 settingItems 的 `enum`(选项是只含字符串字段的平对象);
+ * 其余非函数字段都是原始值或 ReactNode(icon:不校验内容,不拷贝)。畸形 enum 原样留给注册表校验报错。
+ */
+function snapshotSpec(spec: object): object {
+  const copy: Record<string, unknown> = { ...spec };
+  if (Array.isArray(copy.enum)) {
+    copy.enum = Object.freeze(
+      copy.enum.map((option: unknown) =>
+        isSpecObject(option) ? Object.freeze({ ...(option as object) }) : option,
+      ),
+    );
+  }
+  return Object.freeze(copy);
+}
+
 function trackContributions<T extends object>(
   pluginId: string,
   name: string,
@@ -933,7 +951,7 @@ function trackContributions<T extends object>(
             // 自有属性恰好取值一次,函数字段保持引用),检查、入表、登记所有者都用这一份。非对象 spec 原样交给注册表报错。
             const args =
               keyed !== undefined && prop === 'register' && isSpecObject(rawArgs[0])
-                ? [Object.freeze({ ...(rawArgs[0] as object) }), ...rawArgs.slice(1)]
+                ? [snapshotSpec(rawArgs[0] as object), ...rawArgs.slice(1)]
                 : rawArgs;
             const key: unknown =
               keyed !== undefined && prop === 'register'

@@ -75,7 +75,9 @@ export function startPluginFsScopeRequestBridge(): () => void {
   // 拒绝仍会晚到 main —— 完成已取消/已过期的 scope pending,或在新 bridge 已启动后产生过期授权
   // 回写。unsub 置 active=false;_scopeDecision(及失败 toast)前复查,过期结果直接丢弃。
   let active = true;
-  const unsub = coApi.pluginFsRaw.onScopeRequest(
+  // main 侧已收口(超时 / 插件已注销)的请求:main 已无此 pending,撤掉弹窗但不回传决定(回传只会失败并报错)。
+  const cancelledByMain = new Set<string>();
+  const unsub =coApi.pluginFsRaw.onScopeRequest(
     (payload: ScopeRequestPayload) => {
       // 边界(E169):IPC ingress runtime 守卫,畸形 payload drop + warn,不进 prompt store/不抛。
       if (!isScopeRequestPayload(payload)) {
@@ -95,6 +97,7 @@ export function startPluginFsScopeRequestBridge(): () => void {
         })
         .then((decision) => {
           if (!active) return; // race(R99):bridge 已卸载 → 不回传过期决定
+          if (cancelledByMain.delete(payload.requestId)) return; // main 已收口 → 无决定可回传
           // 必须 return:让 _scopeDecision 的 reject 沿链传到下方 .catch(A126 反馈)。
           return coApi.pluginFsRaw._scopeDecision(payload.requestId, decision);
         })
@@ -107,8 +110,18 @@ export function startPluginFsScopeRequestBridge(): () => void {
         });
     },
   );
+  const unsubCancelled = coApi.pluginFsRaw.onScopeRequestCancelled((payload: unknown) => {
+    const requestId = (payload as { requestId?: unknown } | null)?.requestId;
+    if (typeof requestId !== 'string') return;
+    const store = usePermissionPromptStore.getState();
+    // 只认仍在队列里的请求(未知 id 不留痕)。走 deny 的收口路径撤弹窗 + 推进队列,上面的 .then 据标记不回传。
+    if (!Object.hasOwn(store.fsScopePending, requestId)) return;
+    cancelledByMain.add(requestId);
+    store.denyFsScope(requestId);
+  });
   return () => {
     active = false; // race(R99):失效在途 requestFsScope 的迟到回传
     unsub();
+    unsubCancelled();
   };
 }

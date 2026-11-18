@@ -9,6 +9,7 @@ import { PathScopeRegistry } from '../../../electron/main/services/path-scope-re
 import { ScopeRequestCorrelator } from '../../../electron/main/services/scope-request-correlator';
 import { registerPluginFsHandlers } from '../../../electron/main/services/plugin-fs.service';
 import {
+  ScopeRequestThrottle,
   SCOPE_DENY_COOLDOWN_BASE_MS,
   SCOPE_DENY_COOLDOWN_MAX_MS,
   SCOPE_DENY_FORGET_MS,
@@ -26,10 +27,20 @@ let root: string;
 let ipc: StubIpcMain;
 let scopes: PathScopeRegistry;
 let correlator: ScopeRequestCorrelator;
-const event = makeFakeEvent({ id: 1, isDestroyed: () => false });
+let senderDestroyed = false;
+const event = makeFakeEvent({ id: 1, isDestroyed: () => senderDestroyed });
 const tokens = new Map<string, string>();
 
-const prompts = (): number => event.sender.send.mock.calls.length;
+type SentCall = [string, { requestId: string }];
+/** 已发往 renderer 的授权弹窗(不含「撤掉弹窗」通知)。 */
+const promptCalls = (): SentCall[] =>
+  (event.sender.send.mock.calls as SentCall[]).filter(([channel]) => channel === C.SCOPE_REQUEST);
+const prompts = (): number => promptCalls().length;
+/** 已发往 renderer 的「撤掉弹窗」通知里的 requestId。 */
+const cancelledIds = (): string[] =>
+  (event.sender.send.mock.calls as SentCall[])
+    .filter(([channel]) => channel === C.SCOPE_REQUEST_CANCELLED)
+    .map(([, payload]) => payload.requestId);
 
 /** 等所有已排队的 microtask / fs 回调跑完(真实 fs + 假定时器:只假 Date / setTimeout,不假 setImmediate)。 */
 const settle = (): Promise<void> => new Promise((r) => setImmediate(r));
@@ -63,7 +74,7 @@ async function request(
   );
   while (!settled && prompts() === before) await settle();
   if (prompts() === before) return { result: await pending, prompted: false };
-  const [, payload] = event.sender.send.mock.calls[before]! as [string, { requestId: string }];
+  const [, payload] = promptCalls()[before]!;
   await ipc.invokeWithEvent(event, C.SCOPE_DECISION, payload.requestId, decision);
   return { result: await pending, prompted: true };
 }
@@ -73,7 +84,8 @@ beforeEach(async () => {
   for (const d of ['a', 'b', 'a/sub']) await mkdir(join(root, d));
   vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
   vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
-  event.sender.send.mockClear();
+  event.sender.send.mockReset();
+  senderDestroyed = false;
   tokens.clear();
   ipc = new StubIpcMain();
   const identity = new IdentityRegistry();
@@ -229,11 +241,50 @@ describe('插件级连续被拒退避', () => {
     expect((await request('p', [join(root, 'z')], 'grant')).prompted).toBe(true);
   });
 
-  it('用户授予一次 → 连续被拒计数清零', async () => {
+  it('用户授予一次 → 连续被拒计数只减 1,不清零', async () => {
     await denyDistinct(SCOPE_PLUGIN_DENY_STREAK - 1, 'x');
     expect((await request('p', [join(root, 'ok')], 'grant')).result).toBe('grant');
-    await denyDistinct(SCOPE_PLUGIN_DENY_STREAK - 1, 'y');
+    await denyDistinct(1, 'y');
     expect((await request('p', [join(root, 'still')], 'grant')).prompted).toBe(true);
+  });
+
+  it('「拒、拒、(骗一次无害小目录的)允、拒、拒」→ 照样进入插件级退避(授予不能把计数洗白)', async () => {
+    await denyDistinct(SCOPE_PLUGIN_DENY_STREAK - 1, 'x');
+    expect((await request('p', [join(root, 'harmless')], 'grant')).result).toBe('grant');
+    await denyDistinct(2, 'y'); // 计数:2 → 1(授予)→ 3
+    expect(await request('p', [join(root, 'fresh')], 'grant')).toEqual({ result: 'deny', prompted: false });
+    // 一直这样交替也到不了「永远不退避」:每轮净增 1。
+    vi.advanceTimersByTime(SCOPE_DENY_COOLDOWN_BASE_MS);
+    expect((await request('p', [join(root, 'harmless2')], 'grant')).result).toBe('grant');
+    await denyDistinct(1, 'z');
+    expect(await request('p', [join(root, 'fresh')], 'grant')).toEqual({ result: 'deny', prompted: false });
+  });
+
+  it('计数不低于 0:先攒几次授予不能预支之后的拒绝额度', async () => {
+    await denyDistinct(1, 'w');
+    for (let i = 0; i < 3; i += 1) {
+      expect((await request('p', [join(root, `ok${i}`)], 'grant')).result).toBe('grant');
+    }
+    await denyDistinct(SCOPE_PLUGIN_DENY_STREAK, 'x');
+    expect(await request('p', [join(root, 'fresh')], 'grant')).toEqual({ result: 'deny', prompted: false });
+  });
+
+  it('授予不提前解除已生效的插件级退避', () => {
+    const throttle = new ScopeRequestThrottle();
+    for (let i = 0; i < SCOPE_PLUGIN_DENY_STREAK; i += 1) throttle.noteDecision('p', [`/d${i}`], 'deny', 0);
+    expect(throttle.tryPrompt('p', ['/fresh'], 1)).toBe(false);
+    throttle.noteDecision('p', ['/ok'], 'grant', 1);
+    expect(throttle.tryPrompt('p', ['/fresh'], SCOPE_DENY_COOLDOWN_BASE_MS - 1)).toBe(false);
+    expect(throttle.tryPrompt('p', ['/fresh'], SCOPE_DENY_COOLDOWN_BASE_MS)).toBe(true);
+  });
+
+  it('别的路径被授予 → 不清除被拒路径自身的冷却', async () => {
+    const denied = join(root, 'a');
+    expect((await request('p', [denied], 'deny')).prompted).toBe(true);
+    expect((await request('p', [join(root, 'b')], 'grant')).result).toBe('grant');
+    expect(await request('p', [denied], 'grant')).toEqual({ result: 'deny', prompted: false });
+    vi.advanceTimersByTime(SCOPE_DENY_COOLDOWN_BASE_MS);
+    expect((await request('p', [denied], 'grant')).prompted).toBe(true);
   });
 
   it('距上次被拒超过 SCOPE_DENY_FORGET_MS → 计数清零', async () => {
@@ -265,5 +316,224 @@ describe('弹窗速率上限', () => {
       expect(await request('p', [dir], 'deny')).toEqual({ result: 'grant', prompted: false });
     }
     expect((await request('p', [join(root, 'b')], 'grant')).prompted).toBe(true);
+  });
+});
+
+describe('每插件单飞(同一插件同时最多一个未决授权弹窗)', () => {
+  interface Fired {
+    readonly pending: Promise<unknown>;
+    /** 这次请求发出的弹窗 requestId;没弹窗(直接收口)→ null。 */
+    readonly requestId: string | null;
+  }
+
+  /** 发起 requestScope 但不应答:等到弹窗发出或请求直接收口为止。 */
+  async function fire(pluginId: string, paths: readonly string[]): Promise<Fired> {
+    const before = prompts();
+    const pending = ipc.invokeWithEvent(
+      event,
+      C.REQUEST_SCOPE,
+      tokens.get(pluginId),
+      paths.map((path) => ({ path, mode: 'rw' as const })),
+    );
+    let settled = false;
+    pending.then(
+      () => (settled = true),
+      () => (settled = true),
+    );
+    while (!settled && prompts() === before) await settle();
+    return { pending, requestId: prompts() === before ? null : promptCalls()[before]![1].requestId };
+  }
+
+  /** 有一个未决弹窗时,同一插件再请求(别的目录)→ 直接 deny、不弹窗。 */
+  async function expectBlocked(pluginId: string, tag: string): Promise<void> {
+    const before = prompts();
+    const second = await fire(pluginId, [join(root, `blocked-${tag}`)]);
+    expect(second.requestId).toBeNull();
+    expect(await second.pending).toBe('deny');
+    expect(prompts()).toBe(before);
+  }
+
+  /** 上一个弹窗已收口 → 同一插件可以再弹(在途标记已释放)。 */
+  async function expectReleased(pluginId: string, tag: string): Promise<void> {
+    expect(await request(pluginId, [join(root, `released-${tag}`)], 'grant')).toEqual({
+      result: 'grant',
+      prompted: true,
+    });
+  }
+
+  it('不等结果同步连发 10 次同一路径 → 只弹 1 个,其余直接 deny;拒绝后没有排队的弹窗', async () => {
+    const dir = join(root, 'a');
+    const all = Array.from({ length: 10 }, () =>
+      ipc.invokeWithEvent(event, C.REQUEST_SCOPE, tokens.get('p'), [{ path: dir, mode: 'rw' }]),
+    );
+    const results: unknown[] = [];
+    for (const p of all) void p.then((r) => results.push(r));
+    for (let i = 0; i < 50 && results.length < 9; i += 1) await settle();
+    expect(results).toEqual(Array(9).fill('deny'));
+    expect(prompts()).toBe(1);
+
+    await ipc.invokeWithEvent(event, C.SCOPE_DECISION, promptCalls()[0]![1].requestId, 'deny');
+    expect(await Promise.all(all)).toEqual(Array(10).fill('deny'));
+    expect(prompts()).toBe(1);
+  });
+
+  it('未决期间请求别的目录也直接 deny;别的插件不受影响;被单飞挡掉的请求不计入拒绝冷却', async () => {
+    const first = await fire('p', [join(root, 'a')]);
+    await expectBlocked('p', 'x');
+    expect((await request('q', [join(root, 'a')], 'deny')).prompted).toBe(true);
+
+    await ipc.invokeWithEvent(event, C.SCOPE_DECISION, first.requestId, 'grant');
+    expect(await first.pending).toBe('grant');
+    // 刚才被单飞挡掉的目录没有进入冷却,可以正常弹。
+    expect((await request('p', [join(root, 'blocked-x')], 'grant')).prompted).toBe(true);
+  });
+
+  it('全部被拒、冷却到期后再连发 10 次 → 每个到期周期最多 1 个弹窗', async () => {
+    const dir = join(root, 'a');
+    for (let round = 0; round < 4; round += 1) {
+      const before = prompts();
+      const all = Array.from({ length: 10 }, () =>
+        ipc.invokeWithEvent(event, C.REQUEST_SCOPE, tokens.get('p'), [{ path: dir, mode: 'rw' }]),
+      );
+      const results: unknown[] = [];
+      for (const p of all) void p.then((r) => results.push(r));
+      for (let i = 0; i < 50 && results.length < 9; i += 1) await settle();
+      expect(results).toEqual(Array(9).fill('deny'));
+      expect(prompts()).toBe(before + 1);
+      await ipc.invokeWithEvent(event, C.SCOPE_DECISION, promptCalls()[before]![1].requestId, 'deny');
+      await Promise.all(all);
+      vi.advanceTimersByTime(SCOPE_DENY_COOLDOWN_MAX_MS);
+    }
+  });
+
+  describe('每条收口路径都释放在途标记(否则该插件永远无法再请求 scope)', () => {
+    it('用户允许', async () => {
+      const first = await fire('p', [join(root, 'a')]);
+      await expectBlocked('p', 'grant');
+      await ipc.invokeWithEvent(event, C.SCOPE_DECISION, first.requestId, 'grant');
+      expect(await first.pending).toBe('grant');
+      await expectReleased('p', 'grant');
+    });
+
+    it('用户拒绝', async () => {
+      const first = await fire('p', [join(root, 'a')]);
+      await expectBlocked('p', 'deny');
+      await ipc.invokeWithEvent(event, C.SCOPE_DECISION, first.requestId, 'deny');
+      expect(await first.pending).toBe('deny');
+      await expectReleased('p', 'deny');
+    });
+
+    it('TTL 超时(主进程 sweep)→ 请求 reject,并通知 renderer 撤掉弹窗', async () => {
+      const first = await fire('p', [join(root, 'a')]);
+      await expectBlocked('p', 'ttl');
+      vi.advanceTimersByTime(60 * 60_000);
+      correlator._sweep();
+      await expect(first.pending).rejects.toThrow('request expired');
+      expect(cancelledIds()).toEqual([first.requestId]);
+      await expectReleased('p', 'ttl');
+    });
+
+    it('过期后才到的决定(resolve 时发现已过期,sweep 尚未跑)', async () => {
+      const first = await fire('p', [join(root, 'a')]);
+      await expectBlocked('p', 'late');
+      vi.setSystemTime(Date.now() + 60 * 60_000); // 只拨时钟,不触发 correlator 的 GC 定时器
+      await expect(
+        ipc.invokeWithEvent(event, C.SCOPE_DECISION, first.requestId, 'grant'),
+      ).rejects.toThrow('request expired');
+      await expect(first.pending).rejects.toThrow('request expired');
+      await expectReleased('p', 'late');
+    });
+
+    it('窗口关闭 / renderer reload(cancelBySender)', async () => {
+      const first = await fire('p', [join(root, 'a')]);
+      await expectBlocked('p', 'closed');
+      senderDestroyed = true;
+      correlator.cancelBySender(event.sender.id);
+      expect(await first.pending).toBe('deny');
+      senderDestroyed = false;
+      await expectReleased('p', 'closed');
+    });
+
+    it('弹窗发送失败(sender 已销毁,send 抛错)', async () => {
+      event.sender.send.mockImplementationOnce(() => {
+        throw new Error('Object has been destroyed');
+      });
+      const pending = ipc.invokeWithEvent(event, C.REQUEST_SCOPE, tokens.get('p'), [
+        { path: join(root, 'a'), mode: 'rw' },
+      ]);
+      expect(await pending).toBe('deny');
+      await expectReleased('p', 'send');
+    });
+
+    it('插件卸载 / 禁用(_unregister-plugin)→ 未决请求按 deny 收口、通知 renderer 撤掉弹窗;不计入拒绝冷却', async () => {
+      const dir = join(root, 'a');
+      const first = await fire('p', [dir]);
+      await expectBlocked('p', 'unregister');
+      await ipc.invokeWithEvent(event, C.UNREGISTER_PLUGIN, tokens.get('p'));
+      expect(await first.pending).toBe('deny');
+      expect(cancelledIds()).toEqual([first.requestId]);
+      // 迟到的决定不能再落地。
+      await expect(
+        ipc.invokeWithEvent(event, C.SCOPE_DECISION, first.requestId, 'grant'),
+      ).rejects.toThrow();
+      expect(scopes.getScopes('p')).toEqual([]);
+
+      // 同 id 重新启用:同一目录可以立刻再弹(卸载收口不是用户拒绝)。
+      await register('p');
+      expect(await request('p', [dir], 'grant')).toEqual({ result: 'grant', prompted: true });
+    });
+
+    it('别的窗口里同一插件的实例被卸载 → 不影响本窗口实例的未决弹窗', async () => {
+      const other = makeFakeEvent({ id: 2 });
+      const otherToken = (
+        (await ipc.invokeWithEvent(other, C.REGISTER_PLUGIN, 'p')) as { token: string }
+      ).token;
+      const first = await fire('p', [join(root, 'a')]);
+      await ipc.invokeWithEvent(other, C.UNREGISTER_PLUGIN, otherToken);
+      await expectBlocked('p', 'other-window');
+      expect(cancelledIds()).toEqual([]);
+      await ipc.invokeWithEvent(event, C.SCOPE_DECISION, first.requestId, 'deny');
+      expect(await first.pending).toBe('deny');
+    });
+  });
+
+  it('在途标记不随「记住的插件数」上限被淘汰', () => {
+    const throttle = new ScopeRequestThrottle();
+    expect(throttle.tryPrompt('victim', ['/x'], 0)).toBe(true);
+    for (let i = 0; i < 1000; i += 1) {
+      expect(throttle.tryPrompt(`other${i}`, ['/x'], 0)).toBe(true);
+      throttle.endPrompt(`other${i}`);
+    }
+    expect(throttle.tryPrompt('victim', ['/y'], 0)).toBe(false);
+    throttle.endPrompt('victim');
+    expect(throttle.tryPrompt('victim', ['/y'], 0)).toBe(true);
+  });
+});
+
+describe('插件级退避:退避期不算「无拒绝」', () => {
+  it('退避到上限后,从退避结束(而非上次被拒)起满 SCOPE_DENY_FORGET_MS 无拒绝才清零', () => {
+    const throttle = new ScopeRequestThrottle();
+    let now = 1_000_000;
+    let n = 0;
+    const deny = (): void => {
+      const path = [`/d${(n += 1)}`];
+      expect(throttle.tryPrompt('p', path, now)).toBe(true);
+      throttle.noteDecision('p', path, 'deny', now);
+      throttle.endPrompt('p');
+    };
+    for (let i = 0; i < SCOPE_PLUGIN_DENY_STREAK; i += 1) deny();
+    for (let i = 0; i < 12; i += 1) {
+      now += SCOPE_DENY_COOLDOWN_MAX_MS;
+      deny();
+    }
+    // 距上次被拒刚过 FORGET(其中前 SCOPE_DENY_COOLDOWN_MAX_MS 是退避期,不算无拒绝)→ 计数没清零:
+    // 再被拒仍是上限退避,而不是从头再给 SCOPE_PLUGIN_DENY_STREAK 次。
+    now += SCOPE_DENY_FORGET_MS + 1;
+    deny();
+    expect(throttle.tryPrompt('p', ['/after'], now + SCOPE_DENY_COOLDOWN_MAX_MS - 1)).toBe(false);
+    // 退避结束后再安静满 FORGET → 清零。
+    now += SCOPE_DENY_COOLDOWN_MAX_MS + SCOPE_DENY_FORGET_MS + 1;
+    deny();
+    expect(throttle.tryPrompt('p', ['/fresh'], now)).toBe(true);
   });
 });

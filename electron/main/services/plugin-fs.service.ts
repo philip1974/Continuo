@@ -9,7 +9,10 @@ import { createByteCappedBuffer } from '../lib/byte-capped-buffer';
 import { makeWcGoneHook } from '../lib/wc-gone-hook';
 import { IdentityRegistry } from './identity-registry.service';
 import { PathScopeRegistry } from './path-scope-registry.service';
-import { ScopeRequestCorrelator } from './scope-request-correlator';
+import {
+  SCOPE_REQUEST_PLUGIN_UNREGISTERED,
+  ScopeRequestCorrelator,
+} from './scope-request-correlator';
 import { ScopeRequestThrottle } from './scope-request-throttle';
 import {
   ScopeError,
@@ -389,6 +392,8 @@ export function registerPluginFsHandlers(
     // 否则插件卸载/禁用后授予的 scope 永久驻留,同 id 重装直接继承(审计 #2)。
     const info = identityRegistry.lookup(token);
     identityRegistry.revoke(token);
+    // 该实例的未决 scope 请求一并收口(释放插件的单飞名额;handler 会通知 renderer 撤掉弹窗)。
+    correlator.cancelByToken(token);
     // generation 守卫:仅当没有更新实例已注册(generation 仍是最新)时才撤,
     // 避免 HMR reload 先 register 新实例后再 unregister 旧 token 时,
     // 误删新实例已 grant 的 scope。
@@ -805,57 +810,73 @@ export function registerPluginFsHandlers(
       if (!correlator.canAccept(event.sender.id)) {
         return 'deny';
       }
-      // 安全:拒绝冷却(按单条路径)+ 插件级连续被拒退避 + 每插件弹窗速率上限(见 scope-request-throttle)。
-      // 请求里有刚被用户拒绝的路径(或其祖先)、或该插件连续被拒 / 弹窗过于频繁 → 直接 deny,不发弹窗:
-      // 插件不能在拒绝回调里循环 requestScope(换个组合 / mode / 父目录再问)诱导误点。
+      // 安全:每插件单飞 + 拒绝冷却(按单条路径)+ 插件级连续被拒退避 + 每插件弹窗速率上限(见
+      // scope-request-throttle)。该插件已有未决弹窗、请求里有刚被用户拒绝的路径(或其祖先)、或该插件连续被拒 /
+      // 弹窗过于频繁 → 直接 deny,不发弹窗:插件不能同步连发、或在拒绝回调里循环 requestScope(换个组合 / mode /
+      // 父目录再问)诱导误点。
       const throttleKey = canonicalScopes.map((s) => s.path);
       if (!scopeThrottle.tryPrompt(pluginId, throttleKey)) {
         return 'deny';
       }
-      const { requestId, promise } = correlator.createRequest(
-        token,
-        scopes,
-        event.sender.id,
-      );
-      // race(R73,agent-auth R62 同族):createRequest 登记 pending 后、send 前 sender 可能销毁
-      // (renderer reload/关窗),send 抛 "Object has been destroyed"。下方 try 只裹 `await promise`,
-      // 不裹这次 send;若 send 裸抛,该 pending 会泄漏到 5min TTL 才被 sweep —— 插件侧
-      // requestScope() 一直挂着,且用户从未看到授权弹窗(发送失败),形成「授权请求假死」。send 包
-      // try/catch:失败时立即 cancelBySender 清掉本 sender 的 pending(sender 已死),按终态 deny
-      // 收口。promise.catch 吞掉 cancel 触发的 reject,避免 unhandled rejection(此处不再 await 它)。
-      try {
-        // displayPath:弹窗展示用户实际授予的路径(`~` 已展开、符号链接已解析,与下方 grant 落地同源)。
-        // sandbox renderer 没有 process,自己展开不了 `~`。
-        event.sender.send(PLUGIN_FS_CHANNELS.SCOPE_REQUEST, {
-          requestId,
-          pluginId,
-          scopes: scopes.map((s, i) => {
-            const displayPath = canonicalScopes[i]!.path;
-            // 展开后超长 → 不带(renderer 守卫会把超长 displayPath 判畸形并丢弃整个请求),回退显示原始 path。
-            return displayPath.length <= FS_PATH_MAX
-              ? { path: s.path, mode: s.mode, displayPath }
-              : { path: s.path, mode: s.mode };
-          }),
-        });
-      } catch {
-        promise.catch(() => undefined);
-        correlator.cancelBySender(event.sender.id);
-        return 'deny';
-      }
+      // tryPrompt 放行即占用该插件的单飞名额:弹窗无论怎样收口(用户决定 / TTL / 关窗 / 插件注销 / 发送失败 /
+      // 任何异常)都必须释放,漏一条该插件就再也请求不了 scope —— 统一放 finally。
       let decision: 'grant' | 'deny';
       try {
-        decision = await promise;
-      } catch (err) {
-        // 窗口硬关闭会经 cancelScopeRequestsForWebContents → correlator.cancelBySender
-        // reject 该 pending(ScopeRequestTimeoutError 'window closed')。此时等待的
-        // renderer 已随窗口销毁,reply 无处可送;若任由 reject 冒泡,Electron 会记成
-        // "Error occurred in handler for 'plugin-fs:request-scope'" 噪声。sender 已销毁
-        // → 视为终态 deny 静默收口(不 grant)。renderer 仍存活的 TTL 超时仍按原契约
-        // reject,让 renderer 的 requestScope() 抛出。
-        if (err instanceof ScopeRequestTimeoutError && event.sender.isDestroyed()) {
+        const { requestId, promise } = correlator.createRequest(
+          token,
+          scopes,
+          event.sender.id,
+        );
+        // race(R73,agent-auth R62 同族):createRequest 登记 pending 后、send 前 sender 可能销毁
+        // (renderer reload/关窗),send 抛 "Object has been destroyed"。下方 try 只裹 `await promise`,
+        // 不裹这次 send;若 send 裸抛,该 pending 会泄漏到 5min TTL 才被 sweep —— 插件侧
+        // requestScope() 一直挂着,且用户从未看到授权弹窗(发送失败),形成「授权请求假死」。send 包
+        // try/catch:失败时立即 cancelBySender 清掉本 sender 的 pending(sender 已死),按终态 deny
+        // 收口。promise.catch 吞掉 cancel 触发的 reject,避免 unhandled rejection(此处不再 await 它)。
+        try {
+          // displayPath:弹窗展示用户实际授予的路径(`~` 已展开、符号链接已解析,与下方 grant 落地同源)。
+          // sandbox renderer 没有 process,自己展开不了 `~`。
+          event.sender.send(PLUGIN_FS_CHANNELS.SCOPE_REQUEST, {
+            requestId,
+            pluginId,
+            scopes: scopes.map((s, i) => {
+              const displayPath = canonicalScopes[i]!.path;
+              // 展开后超长 → 不带(renderer 守卫会把超长 displayPath 判畸形并丢弃整个请求),回退显示原始 path。
+              return displayPath.length <= FS_PATH_MAX
+                ? { path: s.path, mode: s.mode, displayPath }
+                : { path: s.path, mode: s.mode };
+            }),
+          });
+        } catch {
+          promise.catch(() => undefined);
+          correlator.cancelBySender(event.sender.id);
           return 'deny';
         }
-        throw err;
+        try {
+          decision = await promise;
+        } catch (err) {
+          // 窗口硬关闭会经 cancelScopeRequestsForWebContents → correlator.cancelBySender
+          // reject 该 pending(ScopeRequestTimeoutError 'window closed')。此时等待的
+          // renderer 已随窗口销毁,reply 无处可送;若任由 reject 冒泡,Electron 会记成
+          // "Error occurred in handler for 'plugin-fs:request-scope'" 噪声。sender 已销毁
+          // → 视为终态 deny 静默收口(不 grant)。renderer 仍存活的 TTL 超时仍按原契约
+          // reject,让 renderer 的 requestScope() 抛出。
+          if (err instanceof ScopeRequestTimeoutError) {
+            if (event.sender.isDestroyed()) return 'deny';
+            // renderer 还在而请求已在 main 侧收口(TTL / 插件注销):让它撤掉弹窗,否则弹窗滞留,用户点了才发现
+            // 决定送不出去。
+            try {
+              event.sender.send(PLUGIN_FS_CHANNELS.SCOPE_REQUEST_CANCELLED, { requestId });
+            } catch {
+              // sender 恰好销毁:无弹窗可撤
+            }
+            // 插件实例已注销(卸载 / 禁用 / reload):不是错误,也不是用户的拒绝(不记入冷却)。
+            if (err.message === SCOPE_REQUEST_PLUGIN_UNREGISTERED) return 'deny';
+          }
+          throw err;
+        }
+      } finally {
+        scopeThrottle.endPrompt(pluginId);
       }
       scopeThrottle.noteDecision(pluginId, throttleKey, decision);
       // 弹窗挂起期间插件可能被卸载/禁用(_unregister-plugin → revoke token,token
