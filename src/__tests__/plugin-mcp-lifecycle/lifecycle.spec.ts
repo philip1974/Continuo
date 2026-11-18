@@ -222,18 +222,23 @@ describe('与其他贡献点混合清理', () => {
       })),
       unregisterLog: log,
     };
-    const app = makeAppWithMcp(mcp);
-    // 替换 panels.register 让 dispose 写日志
-    const realPanelRegister = app.panels.register.bind(app.panels);
-    vi.spyOn(app.panels, 'register').mockImplementation((spec) => {
-      const d = realPanelRegister(spec);
-      return {
-        dispose() {
-          log.push('panel');
-          d.dispose();
+    const base = makeAppWithMcp(mcp);
+    // 换一个 panels.register 让 dispose 写日志(scoped app 的贡献点命名空间是冻结外观,不能原地 spy)
+    const app: CoPluginApp = {
+      ...base,
+      panels: {
+        ...base.panels,
+        register: (spec) => {
+          const d = base.panels.register(spec);
+          return {
+            dispose() {
+              log.push('panel');
+              d.dispose();
+            },
+          };
         },
-      };
-    });
+      },
+    };
     class P extends Plugin {
       override async onload() {
         this.registerPanel({ type: 'pan1', title: 'P', factory: () => null });

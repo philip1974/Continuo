@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { Plugin, type Disposable } from '../../plugins/Plugin';
 import { createTestApp } from '../../plugins/test-utils';
-import type { PluginManifest } from '../../plugins/types';
+import type { CoPluginApp, PluginManifest } from '../../plugins/types';
 
 // ── 测试夹具 ─────────────────────────────────────────────
 
@@ -236,11 +236,17 @@ describe('异步 onload / onunload', () => {
 describe('提前 dispose 的贡献句柄从收集集合移除', () => {
   function countingApp() {
     let disposeCalls = 0;
-    const app = createTestApp('0.0.0-test');
-    const origDecorator = app.explorerDecorators.register.bind(app.explorerDecorators);
-    app.explorerDecorators.register = (fn) => {
-      const d = origDecorator(fn);
-      return { dispose: () => { disposeCalls++; d.dispose(); } };
+    // scoped app 的贡献点命名空间是冻结外观,不能原地改写:换一个带计数 register 的命名空间。
+    const base = createTestApp('0.0.0-test');
+    const app: CoPluginApp = {
+      ...base,
+      explorerDecorators: {
+        ...base.explorerDecorators,
+        register: (fn) => {
+          const d = base.explorerDecorators.register(fn);
+          return { dispose: () => { disposeCalls++; d.dispose(); } };
+        },
+      },
     };
     return { app, calls: () => disposeCalls };
   }
@@ -290,11 +296,17 @@ describe('提前 dispose 的贡献句柄从收集集合移除', () => {
 
   it('停用时按注册逆序释放仍存活的贡献句柄(中途 dispose 的不参与)', async () => {
     const log: string[] = [];
-    const app = createTestApp('0.0.0-test');
+    const base = createTestApp('0.0.0-test');
     let n = 0;
-    app.commands.register = () => {
-      const label = `C${n++}`;
-      return { dispose: () => log.push(label) };
+    const app: CoPluginApp = {
+      ...base,
+      commands: {
+        ...base.commands,
+        register: () => {
+          const label = `C${n++}`;
+          return { dispose: () => log.push(label) };
+        },
+      },
     };
     class P extends Plugin {
       onload() {

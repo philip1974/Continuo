@@ -1,6 +1,6 @@
 import { execFile, spawn } from 'node:child_process';
 import { PLUGIN_ID_MAX_LEN } from '../../shared/permission-record-limits';
-import { promises as fs, type Dirent } from 'node:fs';
+import { constants as fsConstants, promises as fs, type Dirent } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join } from 'node:path';
 import type { IpcMain, WebContents } from 'electron';
@@ -20,7 +20,7 @@ import {
   type PathScope,
 } from '../../shared/plugin-fs-contract';
 import { canonicalizeScopePath } from './path-resolve.helper';
-import { atomicWriteFile } from '../ipc/fs/atomic-write';
+import { atomicReplaceFileNoFollow } from '../ipc/fs/atomic-write';
 import { readFile as readFileCapped } from '../ipc/fs/read-file';
 import {
   FS_PATH_MAX,
@@ -449,7 +449,16 @@ export function registerPluginFsHandlers(
       // fs:write-file 同款 atomicWriteFile(写同目录 tmp + fsync + rename 原子替换 +
       // per-path 串行),与主仓既有 crash-safe 写入语义(Explorer/autosave/plugin-data
       // atomicWriteJson)对齐。(codex 复审 loop R4:plugin-fs 平行入口漏了原子写保护)
-      await atomicWriteFile(r.fullPath, content);
+      //
+      // 安全(符号链接写穿):必须用**不跟随叶子链接**的写入器。上面的 check('write') 已 lstat 叶子并拒绝链接,
+      // 但编辑器保存用的 atomicWriteFile 会再 lstat 一次并 realpath 跟随链接(读写对称)。两次 lstat 之间叶子可被
+      // 换成链接:scope 内有一条指向 scope 外的链接 `link` 时,并发 rename(link → x) 与 writeFile(x) 即把内容写到
+      // scope 外(实测 5000 次竞态约 250 次命中)。no-follow 版本的 rename(tmp → fullPath) 替换的是路径本身
+      //(此刻是链接就替换掉链接),tmp 以 'wx' 排他创建也不跟随。校验与写入的跟随策略一致,且都作用在校验得到的
+      // 父目录 realpath + 叶子名上。兄弟入口 fs.ipc 的 writeBinaryHandler 出于同一理由用它。
+      // 残余(Node 无 openat):校验之后父目录的某一级被换成链接,写入仍会跟到新位置 —— 需要攻击者能改写
+      // scope 之上的目录分量或在 scope 内抢在两次系统调用之间替换目录;本文件所有写操作同此残余。
+      await atomicReplaceFileNoFollow(r.fullPath, content);
     },
   );
 
@@ -663,14 +672,20 @@ export function registerPluginFsHandlers(
       // force:false + errorOnExist:true 关闭 lstat→cp 之间的 TOCTOU 窗口:fs.cp 默认
       // force:true 会击穿 errorOnExist(实测仅 force:false 时生效),目标若在 lstat 后被
       // 并发创建仍会静默覆盖。前置 lstat 保留只为更早给出友好的 ScopeError。
+      //
+      // 安全(符号链接写穿,同 WRITE_FILE):fs.cp 自己对目标是 lstat(链接算「已存在」→ EEXIST),但它的检查与
+      // 落盘的 copyFile 之间目标仍可被换成指向 scope 外的链接,而 copyFile 默认跟随目标链接。COPYFILE_EXCL 让
+      // 目标以 O_EXCL 创建:此刻已存在任何条目(含链接、悬空链接)即 EEXIST,不跟随。非覆盖语义下它对合法复制无影响。
       try {
         await fs.cp(canonicalPath(rSrc), rDst.fullPath, {
           recursive: opts?.recursive ?? false,
           force: false,
           errorOnExist: true,
+          mode: fsConstants.COPYFILE_EXCL,
         });
       } catch (err) {
-        if ((err as NodeJS.ErrnoException).code === 'ERR_FS_CP_EEXIST') {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code === 'ERR_FS_CP_EEXIST' || code === 'EEXIST') {
           throw new ScopeError('copy: destination already exists', {
             target: dst,
             reason: 'EEXIST',
@@ -1031,8 +1046,21 @@ async function atomicReplacePaths(
   } catch (err) {
     try {
       await fs.rename(trashPath, finalPath);
-    } catch {
-      // trash leaked; original error remains the meaningful failure
+    } catch (rollbackErr) {
+      // 数据安全:回滚也失败 → 旧 final 只剩 trash 里这一份,且过期清扫 24 小时后会删掉它。把 trash 路径交给
+      // 插件(它本就在该插件的 rw scope 内,给完整路径不泄露 scope 外信息)并记主进程日志;错误码沿用原始失败。
+      // IPC 只传 message,故写进 message 而不是附加字段。
+      console.error(
+        `[plugin-fs] atomicReplace rollback failed; previous final preserved at ${trashPath}`,
+        rollbackErr,
+      );
+      const original = err as NodeJS.ErrnoException;
+      const reported: NodeJS.ErrnoException = new Error(
+        `${original?.message ?? String(err)}; rollback failed, the previous contents of final are preserved at ${trashPath} (reclaimed after 24h — move it back to recover)`,
+        { cause: err },
+      );
+      if (original?.code !== undefined) reported.code = original.code;
+      throw reported;
     }
     throw err;
   }

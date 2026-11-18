@@ -734,6 +734,7 @@
 ## [keyed-registry-base(重构:Map 型贡献 registry 的共享基类)](./keyed-registry-base/README.md)
 
 - [`keyed-registry.spec.ts`](./keyed-registry-base/keyed-registry.spec.ts)
+- [`listener-isolation.spec.ts`](./keyed-registry-base/listener-isolation.spec.ts)
 
 ## [latest-wins](./latest-wins/README.md)
 
@@ -914,6 +915,7 @@
 ## [plugin-fs-atomic-replace-trash(atomicReplace 的 trash 落点与清扫不出 scope、只动宿主自己的 trash)](./plugin-fs-atomic-replace-trash/README.md)
 
 - [`atomic-replace-trash-scope.spec.ts`](./plugin-fs-atomic-replace-trash/atomic-replace-trash-scope.spec.ts)
+- [`rollback-failure-reports-trash.spec.ts`](./plugin-fs-atomic-replace-trash/rollback-failure-reports-trash.spec.ts)
 
 ## [plugin-fs-git-blob-scope(readGitBlob 的对象库必须在已授 scope 内)](./plugin-fs-git-blob-scope/README.md)
 
@@ -945,6 +947,10 @@
 ## [plugin-fs-token-revoke-retry](./plugin-fs-token-revoke-retry/README.md)
 
 - [`token-revoke-retry.spec.ts`](./plugin-fs-token-revoke-retry/token-revoke-retry.spec.ts)
+
+## [plugin-fs-write-nofollow(plugin-fs 写操作不跟随叶子符号链接,校验与操作同一策略)](./plugin-fs-write-nofollow/README.md)
+
+- [`write-file-symlink-race.spec.ts`](./plugin-fs-write-nofollow/write-file-symlink-race.spec.ts)
 
 ## [plugin-ipc-frame-trust(plugin-data / plugin-fs raw IPC 的 frame-trust 门)](./plugin-ipc-frame-trust/README.md)
 
@@ -1139,6 +1145,7 @@
 ## [scoped-app(per-plugin CoApp 包装)](./scoped-app/README.md)
 
 - [`contribution-ownership.spec.ts`](./scoped-app/contribution-ownership.spec.ts)
+- [`facade-surface.spec.ts`](./scoped-app/facade-surface.spec.ts)
 - [`sandbox-sweep.spec.ts`](./scoped-app/sandbox-sweep.spec.ts)
 - [`scoped-app.spec.ts`](./scoped-app/scoped-app.spec.ts)
 
