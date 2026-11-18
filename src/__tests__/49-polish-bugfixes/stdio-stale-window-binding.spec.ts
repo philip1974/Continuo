@@ -10,8 +10,42 @@
 // 修复:resolveStdioCallOwnerWindow 在每次 dispatch 校验绑定窗口存活,死则返回
 // null → 走 fallback 到当前活窗。
 
-import { describe, it, expect } from 'vitest';
-import { resolveStdioCallOwnerWindow } from '../../../electron/main/services/mcp-stdio-server.service';
+//
+// 安全(F4 后修订):hello 绑定过窗口的连接,绑定窗口关闭后**拒绝**(NO_WINDOW_CTX),不再回落到当前活窗。
+// 回落会让窗口 A 里 agent 的调用以窗口 B 的身份执行 / 弹授权(B 已 session 授权 → 静默放行)。未发 hello 的
+// 外部客户端保持既有行为(回落到第一个非 popout 主窗)。
+
+import { mkdtemp, rm } from 'node:fs/promises';
+import { createConnection, type Socket } from 'node:net';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { afterEach, describe, it, expect, vi } from 'vitest';
+import { z } from 'zod';
+
+const win = vi.hoisted(() => ({ alive: new Set<number>() }));
+vi.mock('electron', () => ({
+  BrowserWindow: {
+    fromId: vi.fn((id: number) => (win.alive.has(id) ? { isDestroyed: () => false } : null)),
+    getAllWindows: vi.fn(() =>
+      [...win.alive].map((id) => ({
+        id,
+        isDestroyed: () => false,
+        webContents: { getURL: () => 'file:///renderer/index.html' },
+      })),
+    ),
+  },
+}));
+
+import {
+  createStdioSocketServer,
+  resolveStdioCallOwnerWindow,
+  type StdioSocketServer,
+} from '../../../electron/main/services/mcp-stdio-server.service';
+import type {
+  AnyMcpTool,
+  McpCallCtx,
+  ServerInfo,
+} from '../../../electron/main/services/mcp-host.service';
 
 describe('topic49 P2-W · stdio 绑定窗口死后不卡死', () => {
   it('绑定窗口存活 → 返回该 windowId', () => {
@@ -40,5 +74,113 @@ describe('topic49 P2-W · stdio 绑定窗口死后不卡死', () => {
   it('windowId=0(合法 id)且存活 → 返回 0,不被当作 falsy 丢弃', () => {
     const r = resolveStdioCallOwnerWindow(0, { isWindowAlive: (id) => id === 0 });
     expect(r).toBe(0);
+  });
+});
+
+// ── 端到端(真 unix socket):hello 绑定窗口关闭 → fail-closed ──────────────
+
+const serverInfo: ServerInfo = { name: 'test', version: '0', protocolVersion: '2024-11-05' };
+const dirs: string[] = [];
+const sockets: Socket[] = [];
+let server: StdioSocketServer | null = null;
+
+afterEach(async () => {
+  for (const sk of sockets.splice(0)) sk.destroy();
+  if (server) {
+    await server.close().catch(() => undefined);
+    server = null;
+  }
+  for (const d of dirs.splice(0)) await rm(d, { recursive: true, force: true });
+  win.alive.clear();
+});
+
+async function startServer(run: AnyMcpTool['run']): Promise<string> {
+  const dir = await mkdtemp(path.join(tmpdir(), 'continuo-stdio-stale-'));
+  dirs.push(dir);
+  const socketPath = path.join(dir, 'mcp.sock');
+  const tool: AnyMcpTool = {
+    name: 'whoami',
+    description: 'return owner window',
+    jsonSchema: { type: 'object', additionalProperties: false },
+    inputSchema: z.object({}).strict(),
+    run,
+  };
+  server = await createStdioSocketServer({
+    socketPath,
+    tools: new Map([['whoami', tool]]),
+    serverInfo,
+    resolveWindowId: (token) => (token === 'tok7' ? 7 : null),
+  });
+  return socketPath;
+}
+
+async function connect(socketPath: string): Promise<{
+  socket: Socket;
+  next: () => Promise<Record<string, unknown>>;
+}> {
+  const socket = createConnection(socketPath);
+  sockets.push(socket);
+  await new Promise<void>((resolve, reject) => {
+    socket.once('connect', () => resolve());
+    socket.once('error', reject);
+  });
+  socket.setEncoding('utf8');
+  let buffer = '';
+  const queue: Record<string, unknown>[] = [];
+  const waiters: ((v: Record<string, unknown>) => void)[] = [];
+  socket.on('data', (chunk: string) => {
+    buffer += chunk;
+    let idx: number;
+    while ((idx = buffer.indexOf('\n')) >= 0) {
+      const msg = JSON.parse(buffer.slice(0, idx)) as Record<string, unknown>;
+      buffer = buffer.slice(idx + 1);
+      const w = waiters.shift();
+      if (w) w(msg);
+      else queue.push(msg);
+    }
+  });
+  return {
+    socket,
+    next: () =>
+      queue.length > 0
+        ? Promise.resolve(queue.shift()!)
+        : new Promise((resolve) => waiters.push(resolve)),
+  };
+}
+
+function send(socket: Socket, msg: Record<string, unknown>): void {
+  socket.write(JSON.stringify({ jsonrpc: '2.0', ...msg }) + '\n');
+}
+
+describe.skipIf(process.platform === 'win32')('F4 · hello 绑定窗口关闭后 fail-closed', () => {
+  it('绑定窗口存活 → 以绑定窗口执行;关闭后 → NO_WINDOW_CTX,不回落到其它活窗、不执行工具', async () => {
+    win.alive.add(3);
+    win.alive.add(7);
+    const run = vi.fn((_i: unknown, ctx: McpCallCtx) => ({ owner: ctx.ownerWindowId }));
+    const socketPath = await startServer(run);
+    const c = await connect(socketPath);
+    send(c.socket, { method: '_continuo/hello', params: { windowId: 7, token: 'tok7' } });
+    send(c.socket, { id: 1, method: 'tools/call', params: { name: 'whoami', arguments: {} } });
+    const r1 = await c.next();
+    expect(r1['error']).toBeUndefined();
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(run.mock.calls[0]![1].ownerWindowId).toBe(7);
+
+    win.alive.delete(7); // 绑定窗口关闭,窗口 3 仍活着
+    send(c.socket, { id: 2, method: 'tools/call', params: { name: 'whoami', arguments: {} } });
+    const r2 = await c.next();
+    expect((r2['error'] as { code: number }).code).toBe(-32002);
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it('未发 hello 的外部客户端 → 保持回落到第一个非 popout 主窗', async () => {
+    win.alive.add(3);
+    const run = vi.fn((_i: unknown, ctx: McpCallCtx) => ({ owner: ctx.ownerWindowId }));
+    const socketPath = await startServer(run);
+    const c = await connect(socketPath);
+    send(c.socket, { id: 1, method: 'tools/call', params: { name: 'whoami', arguments: {} } });
+    const r = await c.next();
+    expect(r['error']).toBeUndefined();
+    expect(run.mock.calls[0]![1].ownerWindowId).toBe(3);
   });
 });

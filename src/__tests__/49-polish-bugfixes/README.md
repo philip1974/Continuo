@@ -241,6 +241,9 @@
   socket 仍连着。旧 dispatch 直接用陈旧 windowId 构造 ctx(非 null)→ 跳过 fallback
   分支 → `BrowserWindow.fromId(deadId)=null` → 所有 tools/call 撞 TERMINAL_NO_WINDOW/
   SESSION_NOT_FOUND,该 proxy 连接对所有工具**永久损坏**(即使别的窗口活着)。
+- **安全修订(F4)**:只有**未发 hello** 的连接(外部 MCP client)才回落到当前活窗;发过 hello 的连接绑定窗口
+  关闭后 fail-closed —— tools/call 回 `NO_WINDOW_CTX`、不执行工具(tools/list 不受影响)。回落会让窗口 A 里
+  agent 的调用以窗口 B 的身份执行 / 弹授权(B 已「本次启动期间允许」→ 静默放行)。该 proxy 随 A 的终端退出。
 
 ### P2-X update/reviews store 并发 refresh 不被过期结果覆盖 — `marketplace-update-store/update-store.spec.ts`
 - `useUpdateStore.refresh` / `useReviewsStore.refresh` 各加单调 `gen` 守卫:捕获本次

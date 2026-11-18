@@ -308,51 +308,51 @@ describe('agent-auth-service: requestAgentAuth', () => {
     await expect(pending).resolves.toBe('session');
   });
 
-  it('T-routing-2: missing or destroyed ownerWindowId falls back to pickMainWindow', async () => {
-    const fallbackForMissing = makeWin(1);
-    electronMock.windows = [fallbackForMissing];
+  // 安全(fail-closed):调用方显式给了 ownerWindowId 但该窗口无效 / 已销毁 / 是 popout 时**拒绝**。此前回落到
+  // 第一个主窗口 —— 会话所属窗口已关(或是 popout)时,授权弹到用户正在用的另一个窗口,用户以为是本窗口
+  // 的 agent 而放行(或该窗口已 session 授权 → 静默放行)。popout 无可靠的「所属主窗」映射(window.open 子窗,
+  // 未设 parent),且 popout 不挂授权弹窗,故一律拒绝。
+  it("T-routing-2: unknown or destroyed explicit ownerWindowId → 'denied', no fallback IPC", async () => {
+    const other = makeWin(1);
+    electronMock.windows = [other];
 
-    const missingPending = requestAgentAuth({
-      method: 'terminal.create_session',
-      ownerWindowId: 99,
-    });
-    const missingPayload = firstAuthPayload(fallbackForMissing);
-    resolveAgentAuthRequest(missingPayload.requestId, 'once');
-
-    expect(fallbackForMissing.webContents.send).toHaveBeenCalledTimes(1);
-    await expect(missingPending).resolves.toBe('once');
+    await expect(
+      requestAgentAuth({ method: 'terminal.create_session', ownerWindowId: 99 }),
+    ).resolves.toBe('denied');
+    expect(other.webContents.send).not.toHaveBeenCalled();
 
     const destroyedOwner = makeWin(9, { destroyed: true });
-    const fallbackForDestroyed = makeWin(2);
-    electronMock.windows = [destroyedOwner, fallbackForDestroyed];
+    const other2 = makeWin(2);
+    electronMock.windows = [destroyedOwner, other2];
 
-    const destroyedPending = requestAgentAuth({
-      method: 'terminal.create_session',
-      ownerWindowId: 9,
-    });
-    const destroyedPayload = firstAuthPayload(fallbackForDestroyed);
-    resolveAgentAuthRequest(destroyedPayload.requestId, 'session');
-
+    await expect(
+      requestAgentAuth({ method: 'terminal.create_session', ownerWindowId: 9 }),
+    ).resolves.toBe('denied');
     expect(destroyedOwner.webContents.send).not.toHaveBeenCalled();
-    expect(fallbackForDestroyed.webContents.send).toHaveBeenCalledTimes(1);
-    await expect(destroyedPending).resolves.toBe('session');
+    expect(other2.webContents.send).not.toHaveBeenCalled();
   });
 
-  it("T-routing-3: popout ownerWindowId falls back to pickMainWindow", async () => {
+  it("T-routing-3: popout explicit ownerWindowId → 'denied', no fallback IPC", async () => {
     const popoutOwner = makeWin(9, { popout: true });
-    const fallback = makeWin(1);
-    electronMock.windows = [popoutOwner, fallback];
+    const other = makeWin(1);
+    electronMock.windows = [popoutOwner, other];
 
-    const pending = requestAgentAuth({
-      method: 'terminal.create_session',
-      ownerWindowId: 9,
-    });
-    const payload = firstAuthPayload(fallback);
-    resolveAgentAuthRequest(payload.requestId, 'session');
-
+    await expect(
+      requestAgentAuth({ method: 'terminal.create_session', ownerWindowId: 9 }),
+    ).resolves.toBe('denied');
     expect(popoutOwner.webContents.send).not.toHaveBeenCalled();
-    expect(fallback.webContents.send).toHaveBeenCalledTimes(1);
-    await expect(pending).resolves.toBe('session');
+    expect(other.webContents.send).not.toHaveBeenCalled();
+  });
+
+  it('T-routing-4: ownerWindowId omitted → still falls back to pickMainWindow', async () => {
+    const popout = makeWin(1, { popout: true });
+    const normal = makeWin(2);
+    electronMock.windows = [popout, normal];
+
+    const pending = requestAgentAuth({ method: 'terminal.create_session' });
+    resolveAgentAuthRequest(firstAuthPayload(normal).requestId, 'once');
+    await expect(pending).resolves.toBe('once');
+    expect(popout.webContents.send).not.toHaveBeenCalled();
   });
 
   // 边界(E229,E227/E228 pending 数量上限族):未决授权 pending 数量双闸。

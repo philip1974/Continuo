@@ -36,7 +36,7 @@ const MAX_PENDING_AUTH_GLOBAL = 256; // 全局未决授权上限
 const MAX_PENDING_AUTH_PER_WINDOW = 64; // 单窗口未决授权上限
 
 interface PendingAuth {
-  /** 弹窗目标窗口 id(target 或 pickMainWindow 兜底)。窗口关闭即按它结算。 */
+  /** 弹窗目标窗口 id(调用方窗口;未给 ownerWindowId 时 pickMainWindow 兜底)。窗口关闭即按它结算。 */
   readonly windowId: number;
   readonly settle: (decision: AgentAuthDecision) => void;
 }
@@ -58,22 +58,28 @@ export interface AgentAuthInfo {
 }
 
 /**
- * Tool 调用入口:把请求 push 给主窗,等用户决定。
- * 主窗不存在 / 5 分钟超时 → 默认 'denied'(防卡死)。
+ * 选授权弹窗的目标窗口。
+ * - 显式给了 ownerWindowId:只用该窗口;无效 / 已销毁 / 是 popout → null(fail-closed)。
+ *   安全:此前回落到第一个主窗 —— 会话所属窗口已关(或是 popout)时,授权弹到用户正在用的另一个窗口,
+ *   用户误以为是本窗口的 agent 而放行,或该窗口已「本次启动期间允许」→ 静默放行。popout 是 window.open
+ *   子窗(未设 parent),没有可靠的「所属主窗」映射,且不挂授权弹窗,故一律拒绝。
+ * - 未给 ownerWindowId(无窗口上下文的内部调用):保持回落到第一个非 popout 主窗。
+ */
+function pickAuthTargetWindow(ownerWindowId: number | undefined): BrowserWindow | null {
+  if (ownerWindowId === undefined) return pickMainWindowPreferNonPopout();
+  const target = BrowserWindow.fromId(ownerWindowId);
+  if (!target || target.isDestroyed() || isPopoutUrl(target.webContents.getURL())) return null;
+  return target;
+}
+
+/**
+ * Tool 调用入口:把请求 push 给调用方窗口,等用户决定。
+ * 目标窗口不存在 / 5 分钟超时 → 默认 'denied'(防卡死)。
  */
 export async function requestAgentAuth(
   info: AgentAuthInfo,
 ): Promise<AgentAuthDecision> {
-  const targetWin =
-    info.ownerWindowId !== undefined
-      ? BrowserWindow.fromId(info.ownerWindowId)
-      : null;
-  const win =
-    targetWin &&
-    !targetWin.isDestroyed() &&
-    !isPopoutUrl(targetWin.webContents.getURL())
-      ? targetWin
-      : pickMainWindowPreferNonPopout();
+  const win = pickAuthTargetWindow(info.ownerWindowId);
   if (!win) return 'denied';
   // 边界(E229):全局 + per-window 未决授权双闸,超限直接终态 'denied'(不入 pending、不起 timer、
   // 不发 IPC),防外部 agent spam 让 pending/timer/IPC 线性放大。renderer 合法并发由 store.ensure 处理,
