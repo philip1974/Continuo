@@ -34,6 +34,8 @@ const GIT_HARDENING_CONFIG: readonly (readonly [string, string])[] = [['core.fsm
 export function withGitHardeningEnv(
   env: NodeJS.ProcessEnv,
   platform: NodeJS.Platform = process.platform,
+  /** 调用方专属的额外命令行作用域配置,排在 GIT_HARDENING_CONFIG 之后(如插件 git 安装的 filter.lfs.*)。 */
+  extraConfig: readonly (readonly [string, string])[] = [],
 ): NodeJS.ProcessEnv {
   const counts =
     platform === 'win32'
@@ -43,7 +45,7 @@ export function withGitHardeningEnv(
   let n = 0;
   for (const raw of counts) if (raw !== undefined && /^\d+$/.test(raw)) n = Math.max(n, Number(raw));
   const extra: NodeJS.ProcessEnv = {};
-  for (const [key, value] of GIT_HARDENING_CONFIG) {
+  for (const [key, value] of [...GIT_HARDENING_CONFIG, ...extraConfig]) {
     extra[`GIT_CONFIG_KEY_${n}`] = key;
     extra[`GIT_CONFIG_VALUE_${n}`] = value;
     n += 1;

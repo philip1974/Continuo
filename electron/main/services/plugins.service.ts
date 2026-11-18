@@ -1242,6 +1242,16 @@ const GIT_CLONE_TIMEOUT_MS = 60_000;
 // 追加并标记截断;**不 kill 子进程**——git clone 进度本就走 stderr,大仓库进度可合法 >64KB,kill
 // 会误伤合法克隆;只 bound 内存。失败 message 只带截断摘要 + 标记。
 const MAX_GIT_STDERR_BYTES = 64 * 1024;
+// 安全:用户全局 ~/.gitconfig 常有 `git lfs install` 写入的 filter.lfs.*(GIT_CONFIG_NOSYSTEM 不屏蔽全局)。
+// 被攻破的插件仓库放 `.lfsconfig`(lfs.url=内网 / 127.0.0.1 地址)+ LFS 指针文件,clone 检出时 git-lfs 即向
+// 任意地址发请求(GIT_ALLOW_PROTOCOL 管不到 git-lfs 自身 HTTP),且发生在用户启用 / 授权插件之前。
+// 命令行作用域置空 lfs 驱动(空命令 = 不运行该过滤器)并取消 required,再加 GIT_LFS_SKIP_SMUDGE=1 兜底。
+// 代价:依赖 Git LFS 的插件仓库检出得到的是指针文件 —— 插件 bundle 依赖 LFS 视为不支持。
+const PLUGIN_CLONE_GIT_CONFIG: readonly (readonly [string, string])[] = [
+  ['filter.lfs.process', ''],
+  ['filter.lfs.smudge', ''],
+  ['filter.lfs.required', 'false'],
+];
 
 export interface InstallFromGitOptions {
   /** true:原子覆盖已装版本(更新)。 */
@@ -1431,7 +1441,10 @@ function runGit(args: readonly string[]): Promise<void> {
         GIT_ASKPASS: '',
         GIT_CONFIG_NOSYSTEM: '1',
         GIT_ALLOW_PROTOCOL: 'https:ssh',
+        GIT_LFS_SKIP_SMUDGE: '1',
       }),
+      process.platform,
+      PLUGIN_CLONE_GIT_CONFIG,
     );
     const spawnGit = () =>
       spawn(resolveSpawnCommand('git', env), args, { stdio: ['ignore', 'pipe', 'pipe'], env });
