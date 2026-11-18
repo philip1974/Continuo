@@ -26,8 +26,11 @@ const dapServerPath = path.join(
 // 写一个本地 package.json 覆盖继承的 type,让 adapter .js 按 CJS 加载。
 const CJS_MARKER_CONTENT = '{ "type": "commonjs" }\n';
 // 缓存标记:解包完成后写在 .adapter/ 根(不在被打包的 js-debug/ 内),记录 adapter 版本、
-// 已校验的 tarball sha256 与解包结果的目录树哈希。缓存命中须三者全部吻合,否则删除重下 ——
-// 被改动过的本地 js-debug/ 目录不会被原样打进安装包。
+// 已校验的 tarball sha256 与解包结果的目录树哈希。缓存命中须三者全部吻合,否则删除重下。
+// 这是一致性检查,不是安全边界:树哈希与被校验的目录放在同一处,是自证值 —— 能发现意外损坏、
+// 手工误改、版本 / sha256 升级后的过期缓存、解包中断留下的半成品;发现不了同时改掉 js-debug/ 和
+// 本标记的人(有本地写权限即可重算树哈希,那样的攻击者也能直接改本脚本)。要排除本地缓存被
+// 蓄意改动,须删掉 .adapter/ 从钉死 sha256 的 tarball 重新解包(干净检出 / CI 即如此)。
 const CACHE_MARKER_NAME = '.continuo-adapter-cache.json';
 
 function failClear(reason, details = {}) {
@@ -216,6 +219,7 @@ export async function writeCacheMarker(root, { version, sha256 }) {
 }
 
 // 缓存有效:标记文件存在、版本与 sha256 等于当前钉死的值、js-debug/ 树哈希与标记一致。
+// 标记里的 sha256 只是「解包时校验过的那个值」的记录,这里并没有重新对照 tarball(见 CACHE_MARKER_NAME 注释)。
 export async function isCacheValid(root, { version, sha256 }) {
   let marker;
   try {
