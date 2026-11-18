@@ -44,6 +44,7 @@ export const zh: Record<TranslationKey, string> = {
   'errors.EEXIST': '文件已存在',
   'errors.GIT_FAILED': 'Git 命令失败',
   'errors.GIT_SPAWN_FAILED': '无法启动 git',
+  'errors.GIT_TIMEOUT': 'Git 命令超时。若 git 配置将 https 改写为 ssh,请确认 ssh 主机密钥已信任且无需交互口令',
   'errors.INVALID_ID': 'ID 无效',
   'errors.MARKETPLACE_INDEX_INVALID': '远程索引不是合法数组',
   'errors.MARKETPLACE_REVIEWS_NO_TOKEN': 'GitHub token 未在主进程配置',

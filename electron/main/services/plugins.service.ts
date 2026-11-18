@@ -1472,7 +1472,8 @@ function runGit(args: readonly string[]): Promise<void> {
       killWithGrace(child);
       finish(() =>
         reject(
-          codedError(ERROR_CODES.GIT_FAILED, `git ${args[0]} 超时`),
+          // 独立错误码:renderer 按 code 本地化出 ssh host key / 口令提示(GUI 无终端应答 ssh 交互,只会超时)
+          codedError(ERROR_CODES.GIT_TIMEOUT, `git ${args[0]} 超时`),
         ),
       );
     }, GIT_CLONE_TIMEOUT_MS);

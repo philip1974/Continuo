@@ -53,6 +53,8 @@ export const en = {
   'errors.EEXIST': 'File already exists',
   'errors.GIT_FAILED': 'Git command failed',
   'errors.GIT_SPAWN_FAILED': 'Failed to start git',
+  'errors.GIT_TIMEOUT':
+    'Git command timed out. If your git config rewrites https to ssh, make sure the ssh host key is already trusted and no interactive passphrase is required',
   'errors.INVALID_ID': 'Invalid id',
   'errors.MARKETPLACE_INDEX_INVALID': 'Remote index is not a valid array',
   'errors.MARKETPLACE_REVIEWS_NO_TOKEN': 'GitHub token not configured in the main process',
