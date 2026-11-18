@@ -40,6 +40,27 @@ export function withGitHardeningEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return out;
 }
 
+/**
+ * 合并子进程 env(`extra` 覆盖 `base`,不改入参)。Windows env 键大小写不敏感:宿主 `{...process.env}` 带
+ * `Path`、插件传 `PATH` 时,朴素展开会两键并存 —— resolveSpawnCommand 取到宿主的,Node 给子进程按排序选键,
+ * 插件补充的 PATH 在命令解析时被忽略、解析与子进程 env 不一致。故 Windows 上同名(忽略大小写)只保留后者的键。
+ */
+export function mergeSpawnEnv(
+  base: NodeJS.ProcessEnv,
+  extra: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform = process.platform,
+): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = { ...base };
+  for (const [key, value] of Object.entries(extra)) {
+    if (platform === 'win32') {
+      const upper = key.toUpperCase();
+      for (const k of Object.keys(out)) if (k !== key && k.toUpperCase() === upper) delete out[k];
+    }
+    out[key] = value;
+  }
+  return out;
+}
+
 export interface ResolveSpawnDeps {
   platform: NodeJS.Platform;
   isFile: (p: string) => boolean;

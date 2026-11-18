@@ -1,6 +1,7 @@
 // 安全:插件子进程 spawn 前的兜底(git 命令行作用域配置 / Windows 命令名不查 cwd)。
 import { describe, expect, it } from 'vitest';
 import {
+  mergeSpawnEnv,
   resolveSpawnCommand,
   withGitHardeningEnv,
 } from '../lib/child-spawn-hardening';
@@ -67,5 +68,26 @@ describe('resolveSpawnCommand(Windows 不从 cwd 解析命令名)', () => {
   it('含路径成分的命令由调用方显式指定,原样返回', () => {
     expect(resolveSpawnCommand('C:\\bin\\git.exe', { PATH: '' }, win([]))).toBe('C:\\bin\\git.exe');
     expect(resolveSpawnCommand('.\\tool.exe', { PATH: '' }, win([]))).toBe('.\\tool.exe');
+  });
+});
+
+describe('mergeSpawnEnv(Windows env 键大小写不敏感)', () => {
+  it('Windows:插件 PATH 覆盖宿主 Path,只保留一个键(后者的键名与值)', () => {
+    const out = mergeSpawnEnv({ Path: 'C:\\sys', Foo: '1' }, { PATH: 'C:\\plug;C:\\sys' }, 'win32');
+    expect(Object.keys(out).filter((k) => k.toUpperCase() === 'PATH')).toEqual(['PATH']);
+    expect(out).toMatchObject({ PATH: 'C:\\plug;C:\\sys', Foo: '1' });
+  });
+
+  it('Windows:解析与传给子进程的 env 一致 —— 用插件补充的 PATH 解析命令', () => {
+    const env = mergeSpawnEnv({ Path: 'C:\\sys' }, { PATH: 'C:\\plug' }, 'win32');
+    const deps = { platform: 'win32' as const, isFile: (p: string) => p === 'C:\\plug\\tool.exe' };
+    expect(resolveSpawnCommand('tool', env, deps)).toBe('C:\\plug\\tool.exe');
+  });
+
+  it('非 Windows:大小写敏感,原样合并;不改入参', () => {
+    const base = { Path: 'a' };
+    const out = mergeSpawnEnv(base, { PATH: 'b' }, 'linux');
+    expect(out).toEqual({ Path: 'a', PATH: 'b' });
+    expect(base).toEqual({ Path: 'a' });
   });
 });

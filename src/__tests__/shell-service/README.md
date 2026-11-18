@@ -49,3 +49,8 @@
   `diff.<x>.textconv` / `diff.external`、`core.sshCommand`、`core.pager`、`credential.helper` 等,驱动名由仓库
   自定、无通配禁用语法,强行置空又会破坏用户合法配置 —— **需插件自行加固**(`--no-textconv` / `--no-ext-diff`、
   按需 `-c <key>=<安全值>` 显式覆盖、只用不触发过滤器的子命令,或受信判断后再调用)。
+
+### env 合并(Windows)
+
+- `input.env` 覆盖宿主 env;Windows 上键大小写不敏感合并(插件 `PATH` 覆盖宿主 `Path`,只留一个键),
+  命令解析与子进程实际 env 一致(`spawn-env-path-case.test.ts`)。
