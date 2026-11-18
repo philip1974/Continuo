@@ -1,4 +1,5 @@
-import { promises as fs } from 'node:fs';
+import { constants as fsConstants, promises as fs } from 'node:fs';
+import type { FileHandle } from 'node:fs/promises';
 
 // 边界(E158/E159/E160 stat-before-read TOCTOU 族单一来源):此前各处「先 fs.stat(path) 判 size、
 // 再 fs.readFile(path) 整文件」是两次独立按路径解析 —— 检查与读取之间文件可被替换(路径指向新
@@ -18,6 +19,8 @@ export interface CappedFdRead {
   readonly size: number;
   /** requireUtf8 时内容含非法 UTF-8 字节(text 为 null)。 */
   readonly notUtf8?: boolean;
+  /** noFollow 时:实际读取的 inode 身份(经 fd fstat),供调用方在写入前比对文件未被替换。 */
+  readonly identity?: { readonly dev: number; readonly ino: number };
 }
 
 export interface CappedFdReadOptions {
@@ -26,6 +29,39 @@ export interface CappedFdReadOptions {
    * 使用(宽松解码后保存会把非法字节写成 EF BF BD 损坏原文件)。BOM 照旧原样保留(ignoreBOM)。
    */
   readonly requireUtf8?: boolean;
+  /**
+   * 不跟随末级符号链接、只读普通文件(供读取不可信工作区内配置的入口)。POSIX 用
+   * `O_RDONLY|O_NOFOLLOW|O_NONBLOCK`(链接 → ELOOP;O_NONBLOCK 防 FIFO 让 open 挂死),再 fstat 确认普通文件;
+   * `fs.constants.O_NOFOLLOW` 不可用(Windows)时退化为 lstat → open → fstat 比对 dev/ino(检查与 open 之间被换
+   * 即拒绝)。末级是链接 → 抛 code=ELOOP;非普通文件 → 抛 code=EFTYPE。只管末级分量,目录分量由调用方负责。
+   */
+  readonly noFollow?: boolean;
+}
+
+function unsafeFileError(code: 'ELOOP' | 'EFTYPE', filePath: string): NodeJS.ErrnoException {
+  return Object.assign(new Error(`${code}: refusing non-regular or symlinked file: ${filePath}`), {
+    code,
+  });
+}
+
+async function openNoFollow(filePath: string): Promise<FileHandle> {
+  const { O_RDONLY, O_NOFOLLOW, O_NONBLOCK } = fsConstants;
+  if (O_NOFOLLOW !== undefined) {
+    return fs.open(filePath, O_RDONLY | O_NOFOLLOW | (O_NONBLOCK ?? 0));
+  }
+  const pre = await fs.lstat(filePath);
+  if (pre.isSymbolicLink()) throw unsafeFileError('ELOOP', filePath);
+  if (!pre.isFile()) throw unsafeFileError('EFTYPE', filePath);
+  const fh = await fs.open(filePath, 'r');
+  const post = await fh.stat().catch(async (err: unknown) => {
+    await fh.close().catch(() => {});
+    throw err;
+  });
+  if (post.dev !== pre.dev || post.ino !== pre.ino) {
+    await fh.close().catch(() => {});
+    throw unsafeFileError('ELOOP', filePath);
+  }
+  return fh;
 }
 
 /**
@@ -37,9 +73,12 @@ export async function readFileCappedFd(
   maxBytes: number,
   opts: CappedFdReadOptions = {},
 ): Promise<CappedFdRead> {
-  const fh = await fs.open(filePath, 'r'); // open 错误(ENOENT/EACCES 等)透传给调用方
+  // open 错误(ENOENT/EACCES 等)透传给调用方
+  const fh = opts.noFollow ? await openNoFollow(filePath) : await fs.open(filePath, 'r');
   try {
     const st = await fh.stat();
+    if (opts.noFollow && !st.isFile()) throw unsafeFileError('EFTYPE', filePath);
+    const identity = opts.noFollow ? { dev: st.dev, ino: st.ino } : undefined;
     if (st.size > maxBytes) {
       return { text: null, tooLarge: true, size: st.size };
     }
@@ -57,12 +96,12 @@ export async function readFileCappedFd(
     if (opts.requireUtf8) {
       try {
         const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
-        return { text, tooLarge: false, size: total };
+        return { text, tooLarge: false, size: total, ...(identity && { identity }) };
       } catch {
         return { text: null, tooLarge: false, size: total, notUtf8: true };
       }
     }
-    return { text: bytes.toString('utf-8'), tooLarge: false, size: total };
+    return { text: bytes.toString('utf-8'), tooLarge: false, size: total, ...(identity && { identity }) };
   } finally {
     await fh.close().catch(() => {});
   }

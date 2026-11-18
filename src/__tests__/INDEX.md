@@ -248,8 +248,10 @@
 
 - [`install-stop-hook-private-perms.spec.ts`](./agent-terminal-mcp-install-stop-hook/install-stop-hook-private-perms.spec.ts)
 - [`install-stop-hook-read-error-fail-closed.spec.ts`](./agent-terminal-mcp-install-stop-hook/install-stop-hook-read-error-fail-closed.spec.ts)
+- [`install-stop-hook-symlink-race.spec.ts`](./agent-terminal-mcp-install-stop-hook/install-stop-hook-symlink-race.spec.ts)
 - [`install-stop-hook-symlink-refused.spec.ts`](./agent-terminal-mcp-install-stop-hook/install-stop-hook-symlink-refused.spec.ts)
 - [`install-stop-hook.spec.ts`](./agent-terminal-mcp-install-stop-hook/install-stop-hook.spec.ts)
+- [`read-capped-nofollow.spec.ts`](./agent-terminal-mcp-install-stop-hook/read-capped-nofollow.spec.ts)
 
 ## [agent-terminal-mcp-kill (Agent Terminal MCP Phase 4)](./agent-terminal-mcp-kill/README.md)
 
