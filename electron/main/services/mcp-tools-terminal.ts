@@ -236,9 +236,11 @@ export interface CreateSessionToolDeps {
     input: CreateSessionPtyInput,
     ctx: McpCallCtx,
   ) => Promise<{ id: string }>;
+  /** 安全(F3):ownerWindowId 用于把安装位置限定在调用方窗口的 workspace 根之内。 */
   readonly installStopHook?: (
     cwd: string | undefined,
     agentLabel: string,
+    ownerWindowId: number,
   ) => Promise<{ installed: boolean; reason?: string }>;
   /** 回收刚建好的会话(kill PTY + 删 metadata);创建期间调用方断开时调用。 */
   readonly discardSession?: (sessionId: string) => void;
@@ -346,6 +348,7 @@ export function makeCreateSessionTool(
         stopHookInstalled = await deps.installStopHook(
           input.cwd,
           input.agentLabel ?? 'agent',
+          ctx.ownerWindowId,
         );
       } catch {
         stopHookInstalled = { installed: false };

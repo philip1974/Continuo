@@ -19,8 +19,11 @@ export interface CappedFdRead {
   readonly size: number;
   /** requireUtf8 时内容含非法 UTF-8 字节(text 为 null)。 */
   readonly notUtf8?: boolean;
-  /** noFollow 时:实际读取的 inode 身份(经 fd fstat),供调用方在写入前比对文件未被替换。 */
-  readonly identity?: { readonly dev: number; readonly ino: number };
+  /**
+   * noFollow 时:实际读取的 inode 身份(经 fd fstat),供调用方在写入前比对文件未被替换。用 bigint:NTFS 文件 ID
+   * 是 64 位、常超过 2^53,Number 会丢精度让不同文件比对相等;比对端须同样 `{ bigint: true }` stat。
+   */
+  readonly identity?: { readonly dev: bigint; readonly ino: bigint };
 }
 
 export interface CappedFdReadOptions {
@@ -33,13 +36,14 @@ export interface CappedFdReadOptions {
    * 不跟随末级符号链接、只读普通文件(供读取不可信工作区内配置的入口)。POSIX 用
    * `O_RDONLY|O_NOFOLLOW|O_NONBLOCK`(链接 → ELOOP;O_NONBLOCK 防 FIFO 让 open 挂死),再 fstat 确认普通文件;
    * `fs.constants.O_NOFOLLOW` 不可用(Windows)时退化为 lstat → open → fstat 比对 dev/ino(检查与 open 之间被换
-   * 即拒绝)。末级是链接 → 抛 code=ELOOP;非普通文件 → 抛 code=EFTYPE。只管末级分量,目录分量由调用方负责。
+   * 即拒绝)。末级是链接 → 抛 code=ELOOP;非普通文件 → 抛 code=EFTYPE;硬链接(nlink > 1)→ 抛 code=EMLINK
+   * (lstat 显示普通文件、O_NOFOLLOW 也挡不住,但可能就是仓库外的全局配置)。只管末级分量,目录分量由调用方负责。
    */
   readonly noFollow?: boolean;
 }
 
-function unsafeFileError(code: 'ELOOP' | 'EFTYPE', filePath: string): NodeJS.ErrnoException {
-  return Object.assign(new Error(`${code}: refusing non-regular or symlinked file: ${filePath}`), {
+function unsafeFileError(code: 'ELOOP' | 'EFTYPE' | 'EMLINK', filePath: string): NodeJS.ErrnoException {
+  return Object.assign(new Error(`${code}: refusing non-regular, symlinked or hard-linked file: ${filePath}`), {
     code,
   });
 }
@@ -49,11 +53,11 @@ async function openNoFollow(filePath: string): Promise<FileHandle> {
   if (O_NOFOLLOW !== undefined) {
     return fs.open(filePath, O_RDONLY | O_NOFOLLOW | (O_NONBLOCK ?? 0));
   }
-  const pre = await fs.lstat(filePath);
+  const pre = await fs.lstat(filePath, { bigint: true });
   if (pre.isSymbolicLink()) throw unsafeFileError('ELOOP', filePath);
   if (!pre.isFile()) throw unsafeFileError('EFTYPE', filePath);
   const fh = await fs.open(filePath, 'r');
-  const post = await fh.stat().catch(async (err: unknown) => {
+  const post = await fh.stat({ bigint: true }).catch(async (err: unknown) => {
     await fh.close().catch(() => {});
     throw err;
   });
@@ -76,13 +80,15 @@ export async function readFileCappedFd(
   // open 错误(ENOENT/EACCES 等)透传给调用方
   const fh = opts.noFollow ? await openNoFollow(filePath) : await fs.open(filePath, 'r');
   try {
-    const st = await fh.stat();
+    const st = await fh.stat({ bigint: true });
     if (opts.noFollow && !st.isFile()) throw unsafeFileError('EFTYPE', filePath);
+    if (opts.noFollow && st.nlink > 1n) throw unsafeFileError('EMLINK', filePath);
     const identity = opts.noFollow ? { dev: st.dev, ino: st.ino } : undefined;
-    if (st.size > maxBytes) {
-      return { text: null, tooLarge: true, size: st.size };
+    const size = Number(st.size);
+    if (size > maxBytes) {
+      return { text: null, tooLarge: true, size };
     }
-    const buf = Buffer.allocUnsafe(Math.min(st.size, maxBytes) + 1);
+    const buf = Buffer.allocUnsafe(Math.min(size, maxBytes) + 1);
     let total = 0;
     while (total < buf.length) {
       const { bytesRead } = await fh.read(buf, total, buf.length - total, total);

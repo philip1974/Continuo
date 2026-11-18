@@ -17,7 +17,6 @@ import * as terminalSessions from './terminal-sessions.service';
 import * as termService from './terminal.service';
 import type { McpHost } from './mcp-host.service';
 import { isPopoutUrl } from '../popout-url';
-import { pickMainWindowPreferNonPopout } from './main-window-picker.service';
 import { ERROR_CODES } from '../../shared/error-codes';
 import { codedError } from '../../shared/error-message';
 import { broadcastToWindows } from '../lib/broadcast';
@@ -36,7 +35,7 @@ const MAX_PENDING_AUTH_GLOBAL = 256; // 全局未决授权上限
 const MAX_PENDING_AUTH_PER_WINDOW = 64; // 单窗口未决授权上限
 
 interface PendingAuth {
-  /** 弹窗目标窗口 id(调用方窗口;未给 ownerWindowId 时 pickMainWindow 兜底)。窗口关闭即按它结算。 */
+  /** 弹窗目标窗口 id(调用方窗口)。窗口关闭即按它结算。 */
   readonly windowId: number;
   readonly settle: (decision: AgentAuthDecision) => void;
 }
@@ -65,10 +64,11 @@ export interface AgentAuthInfo {
  *   安全:此前回落到第一个主窗 —— 会话所属窗口已关(或是 popout)时,授权弹到用户正在用的另一个窗口,
  *   用户误以为是本窗口的 agent 而放行,或该窗口已「本次启动期间允许」→ 静默放行。popout 是 window.open
  *   子窗(未设 parent),没有可靠的「所属主窗」映射,且不挂授权弹窗,故一律拒绝。
- * - 未给 ownerWindowId(无窗口上下文的内部调用):保持回落到第一个非 popout 主窗。
+ * - 未给 ownerWindowId → null(拒)。McpCallCtx.ownerWindowId 必填,此前「回落到第一个非 popout 主窗」
+ *   是死代码,且一旦有无窗口上下文的调用方走到这里,授权会弹到用户正在用的任意窗口(同上误放行风险)。
  */
 function pickAuthTargetWindow(ownerWindowId: number | undefined): BrowserWindow | null {
-  if (ownerWindowId === undefined) return pickMainWindowPreferNonPopout();
+  if (ownerWindowId === undefined) return null;
   const target = BrowserWindow.fromId(ownerWindowId);
   if (!target || target.isDestroyed() || isPopoutUrl(target.webContents.getURL())) return null;
   return target;

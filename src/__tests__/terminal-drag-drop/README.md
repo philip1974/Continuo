@@ -21,9 +21,13 @@ Internal TDD:
 - S5 directory drop on terminal inserts the directory path instead of switching workspace, and calls `stopPropagation`.
 - S6 web drag with synthetic `File` and no OS path performs no PTY write and shows `panels.terminal.drag_drop.no_os_path`.
 - S7 path with a control character (`evil\nrm`) is rejected and counted in `panels.terminal.drag_drop.partial_skip`.
-- S8 PowerShell session on Win32 uses single quotes with `''` escaping; double quotes are never used.
+- S8 PowerShell session on Win32 uses single quotes with `''` escaping when the path has no cmd metacharacters (`& | < > ^`) or `"` (see S11 for the double-quote form).
 - S9 (security, `drop-quote-injection.spec.ts`) POSIX-family paths containing `\` keep `\` and `'` outside the quotes (`\\`, `\'`), so the inserted text parses back to the original single argument in bash, zsh (incl. `RC_QUOTES`) and fish — fish treats `\'`/`\\` inside single quotes as escapes, so the plain `'\''` splice let `a\'; touch pwned #` break out.
 - S10 (security, `drop-quote-powershell.spec.ts`) PowerShell sessions double every single-quote-class character (`'` and U+2018–U+201B), because PowerShell treats `‘ ’ ‚ ‛` as single-quote delimiters too; `a’;calc;’.txt` must stay one literal argument.
+- S11 (security, `drop-quote-windows-nested.spec.ts`) the shell family comes from the PTY's startup shell, so a user who runs `cmd` inside a PowerShell terminal (or `powershell` inside a cmd terminal) is not detected. Windows-family output must therefore execute nothing in **both** cmd and PowerShell, and parse back to the original path in the startup shell:
+  - `"…"` is used when the path contains none of `"` `%` `!` `$` `` ` `` and U+201C–U+201E — inside cmd double quotes `& | < > ^ ( )` are literal (only `"` toggles, `%`/`!` expand); inside PowerShell double-quoted strings only `$`, `` ` `` and `"`/U+201C–U+201E are special (about_Quoting_Rules).
+  - PowerShell sessions keep the S8/S10 single-quote form when the path has no `& | < > ^ "`: cmd sees plain text (no execution), so `$`, backticks and smart double quotes still work there. `!` is allowed in this form because cmd delayed expansion runs after command parsing (value change only, never execution). `%` is allowed too: in a nested cmd `%X%` only expands to an existing variable's value — the attacker controls the file name, not variable values, and ordinary values contain no `&`-class characters — while names like `a%20b.pdf` are common.
+  - Otherwise the path is skipped (`cmd_unrepresentable`, counted in `partial_skip`). E.g. PowerShell `x&calc&.txt` → `"…x&calc&.txt"`; cmd `a$(calc).txt` / `a“;calc;“.txt` → skipped. Spaces, parentheses, `&`, `'` and CJK names are never skipped in either family; PowerShell `a%20b.pdf` stays `'…a%20b.pdf'`; cmd sessions still skip any `%`. PowerShell paths containing `%`/`$`/`` ` ``/`!`/smart double quotes together with `& | < > ^` are skipped.
 
 ## Notes
 

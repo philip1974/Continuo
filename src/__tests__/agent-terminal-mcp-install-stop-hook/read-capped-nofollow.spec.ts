@@ -1,9 +1,9 @@
 // BDD: agent-terminal-mcp-install-stop-hook · I11 readFileCappedFd({ noFollow }) 读取侧契约
 //
-// 不跟随末级符号链接(ELOOP)、只读普通文件(EFTYPE)、返回读到的 inode 身份。两条实现路径都要成立:
+// 不跟随末级符号链接(ELOOP)、只读普通文件(EFTYPE)、拒绝硬链接(EMLINK)、返回读到的 inode 身份(bigint)。两条实现路径都要成立:
 // POSIX 的 O_NOFOLLOW,以及 fs.constants.O_NOFOLLOW 不可用(Windows)时的 lstat → open → fstat 同 inode 退化。
 
-import { mkdir, mkdtemp, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { link, mkdir, mkdtemp, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -36,10 +36,25 @@ for (const hide of [false, true]) {
         roots.push(d);
         const f = join(d, 'a.toml');
         await writeFile(f, 'x = 1\n', 'utf8');
-        const st = await stat(f);
+        // 身份用 bigint:NTFS 文件 ID 常超过 2^53,Number 会丢精度让不同文件比对相等。
+        const st = await stat(f, { bigint: true });
         await expect(readFileCappedFd(f, 1024, { noFollow: true })).resolves.toMatchObject({
           text: 'x = 1\n',
           identity: { dev: st.dev, ino: st.ino },
+        });
+        const r = await readFileCappedFd(f, 1024, { noFollow: true });
+        expect(typeof r.identity?.ino).toBe('bigint');
+        expect(typeof r.identity?.dev).toBe('bigint');
+      });
+
+      it('硬链接(nlink > 1)→ EMLINK:lstat 显示普通文件,但可能就是仓库外的全局配置', async () => {
+        flags.hideNoFollow = hide;
+        const d = await mkdtemp(join(tmpdir(), 'continuo-nofollow-'));
+        roots.push(d);
+        await writeFile(join(d, 'global'), 'S', 'utf8');
+        await link(join(d, 'global'), join(d, 'a.toml'));
+        await expect(readFileCappedFd(join(d, 'a.toml'), 1024, { noFollow: true })).rejects.toMatchObject({
+          code: 'EMLINK',
         });
       });
 

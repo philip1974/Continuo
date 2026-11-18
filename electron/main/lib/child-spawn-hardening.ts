@@ -13,10 +13,13 @@
 //    过滤器 / 外部 diff 的子命令,或在受信判断后再调用。
 // 2. resolveSpawnCommand:Windows 上 libuv 解析无路径命令名时**先查子进程 cwd** 再查 PATH,workspace 根放
 //    `git.exe` 即被执行。spawn 前按 libuv 同款规则(原名若带扩展名先试,再 .com / .exe)只在 PATH 的绝对目录
-//    中解析为绝对路径,解析不到 fail-closed。libuv 自实现搜索,不认 NoDefaultCurrentDirectoryInExePath,
-//    故不能靠该 env。非 Windows 原样返回。
+//    中解析为绝对路径,解析不到 fail-closed。libuv v1.x(src/win/process.c search_path)虽会调
+//    NeedCurrentDirectoryForExePathW 而遵守 NoDefaultCurrentDirectoryInExePath,但该 env 默认未设、可被插件
+//    env 覆盖,且旧版 libuv 不认,故不依赖它,仍自行只查 PATH 绝对目录。PATH 切分、候选判定也照 libuv:
+//    以 " 或 ' 开头的项到同种引号闭合前的 ; 不算分隔符;候选「存在且不是目录」即可(见 isSpawnCandidate)。
+//    非 Windows 原样返回。
 
-import { statSync } from 'node:fs';
+import { lstatSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 /** 强制覆盖的 git 配置(命令行作用域)。只有 fsmonitor:其余执行命令的 git 配置见文件头「覆盖范围」。 */
@@ -66,13 +69,49 @@ export interface ResolveSpawnDeps {
   isFile: (p: string) => boolean;
 }
 
-const defaultIsFile = (p: string): boolean => {
+/**
+ * 与 libuv search_path_join_test 对齐:GetFileAttributesW 成功且不带 FILE_ATTRIBUTE_DIRECTORY 即为候选。
+ * 不能用 `statSync().isFile()`:Store 版 python.exe / pwsh.exe / winget.exe 等是 App Execution Alias
+ * (IO_REPARSE_TAG_APPEXECLINK),stat 跟随时抛 EACCES,但 libuv 可正常执行(npm/node-which#157)。
+ * 故 lstat 成功即存在;是链接时再 stat 排除指向目录者(GetFileAttributesW 对目录链接带 DIRECTORY 位),
+ * stat 失败(如上述 alias)仍视为存在。
+ */
+export function isSpawnCandidate(p: string): boolean {
   try {
-    return statSync(p).isFile();
+    const st = lstatSync(p);
+    if (st.isDirectory()) return false;
+    if (!st.isSymbolicLink()) return true;
   } catch {
     return false;
   }
-};
+  try {
+    return !statSync(p).isDirectory();
+  } catch {
+    return true;
+  }
+}
+
+/** 按 libuv search_path 切分 Windows PATH:以 " 或 ' 开头的项到同种引号闭合处之前的 ; 不切分;首尾引号各自剥除。 */
+function splitWindowsPath(value: string): string[] {
+  const out: string[] = [];
+  let i = 0;
+  while (i <= value.length) {
+    let scanFrom = i;
+    const q = value[i];
+    if (q === '"' || q === "'") {
+      const close = value.indexOf(q, i + 1);
+      scanFrom = close === -1 ? value.length : close;
+    }
+    let end = value.indexOf(';', scanFrom);
+    if (end === -1) end = value.length;
+    let item = value.slice(i, end);
+    if (item.startsWith('"') || item.startsWith("'")) item = item.slice(1);
+    if (item.endsWith('"') || item.endsWith("'")) item = item.slice(0, -1);
+    out.push(item);
+    i = end + 1;
+  }
+  return out;
+}
 
 /**
  * Windows:把不含路径成分的命令名解析为 PATH(仅绝对目录,不含 cwd)中的绝对路径;解析不到抛 ENOENT。
@@ -82,7 +121,7 @@ const defaultIsFile = (p: string): boolean => {
 export function resolveSpawnCommand(
   cmd: string,
   env: NodeJS.ProcessEnv,
-  deps: ResolveSpawnDeps = { platform: process.platform, isFile: defaultIsFile },
+  deps: ResolveSpawnDeps = { platform: process.platform, isFile: isSpawnCandidate },
 ): string {
   if (deps.platform !== 'win32') return cmd;
   if (/[\\/:]/.test(cmd)) return cmd;
@@ -93,8 +132,7 @@ export function resolveSpawnCommand(
     `${cmd}.com`,
     `${cmd}.exe`,
   ];
-  for (const rawDir of pathValue.split(';')) {
-    const dir = rawDir.replace(/^"(.*)"$/, '$1');
+  for (const dir of splitWindowsPath(pathValue)) {
     // 空项 / 相对项按 cwd 解析(cwd 即不可信 workspace),跳过。
     if (dir === '' || !path.win32.isAbsolute(dir)) continue;
     for (const name of names) {

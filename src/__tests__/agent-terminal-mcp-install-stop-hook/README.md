@@ -100,6 +100,24 @@ ordering 语义,后续 Op 再补 broker 与 tool wiring 实装。
   inode(读时不存在则仍不存在),否则 `unsafe-config-path`,仓库外配置不变、不产生备份。
 - 残余窗口:Node 无 `openat`/`renameat`,复查 → rename 之间目录分量仍按路径解析;复查把窗口收窄到这几个 syscall。
 - cwd 本身经链接访问(如 macOS `/tmp`)不受影响,正常安装。
+- inode 身份(dev/ino)全程以 bigint 取得与比对:NTFS 文件 ID 是 64 位、常超过 2^53,Number 丢精度会让不同文件比对相等。
+
+## I12 配置文件是硬链接 fail-closed(安全)
+
+- 硬链接在 lstat 下是普通文件、`O_NOFOLLOW` 也挡不住,可能就是仓库外的全局配置(`~/.codex/config.toml` 等);
+  读出后会经 `.continuo-bak.<ts>` 备份写进工作区。
+- 读取时配置文件 `nlink > 1` → `{ installed: false, reason: 'unsafe-config-path' }`,目标不变,仓库内外都无备份。
+- 有意行为:用硬链接管理 dotfiles 的用户同样被拒(main 日志写明「拒绝符号链接或硬链接的配置目录/文件」)。
+
+## I12 安装位置限定在调用方窗口 workspace 内(安全)
+
+- 攻击:`create_session{cwd:"$HOME", agentLabel:"codex", install_stop_hook:true}` 改写全局 `~/.codex/config.toml`;
+  cwd 不存在时 `mkdir -p` 建出任意目录树。
+- 安装前 cwd 与会话同一解析(`resolveTerminalCwd`:须已存在且为目录;缺省回退窗口 workspace 根)。
+- realpath 后须在调用方窗口 workspace 根之内(无 workspace 根 / 经链接逃出 → `cwd-outside-workspace`)。
+- cwd 为用户 home 或其祖先 → `cwd-is-home-or-ancestor`(该处配置即全局配置;workspace 就是 home 也拒)。
+- 配置目录只建 `.claude` / `.codex` 这一层,不递归建父链(cwd 不存在 → 拒绝,不建目录)。
+- 拒绝时会话照建(会话允许在 workspace 外),`stop_hook_installed:false`。
 
 ## I10 hook 事件私有权限(多用户 Linux)
 
