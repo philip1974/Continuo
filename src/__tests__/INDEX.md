@@ -218,6 +218,7 @@
 ## [agent-auth-prompt-throttle(agent 授权弹窗被拒后有冷却,不能循环弹窗诱导误点)](./agent-auth-prompt-throttle/README.md)
 
 - [`main-throttle.spec.ts`](./agent-auth-prompt-throttle/main-throttle.spec.ts)
+- [`prompt-early-click-focus.spec.tsx`](./agent-auth-prompt-throttle/prompt-early-click-focus.spec.tsx)
 - [`prompt-grant-feedback.spec.tsx`](./agent-auth-prompt-throttle/prompt-grant-feedback.spec.tsx)
 - [`prompt-grant-guard.spec.tsx`](./agent-auth-prompt-throttle/prompt-grant-guard.spec.tsx)
 - [`prompt-keyboard-grant-guard.spec.tsx`](./agent-auth-prompt-throttle/prompt-keyboard-grant-guard.spec.tsx)
@@ -884,6 +885,7 @@
 ## [permission-prompt(授权 UI store + Modal + Manager 集成)](./permission-prompt/README.md)
 
 - [`PermissionPrompt.spec.tsx`](./permission-prompt/PermissionPrompt.spec.tsx)
+- [`early-click-focus.spec.tsx`](./permission-prompt/early-click-focus.spec.tsx)
 - [`first-appearance-grant-guard.spec.tsx`](./permission-prompt/first-appearance-grant-guard.spec.tsx)
 - [`keyboard-grant-guard.spec.tsx`](./permission-prompt/keyboard-grant-guard.spec.tsx)
 - [`permission-copy-matches-capability.spec.ts`](./permission-prompt/permission-copy-matches-capability.spec.ts)
@@ -968,6 +970,7 @@
 
 ## [plugin-fs-scope-request-throttle(scope 授权请求被拒后有冷却,不能循环弹窗诱导误点)](./plugin-fs-scope-request-throttle/README.md)
 
+- [`scope-request-fanout-bounds.spec.ts`](./plugin-fs-scope-request-throttle/scope-request-fanout-bounds.spec.ts)
 - [`scope-request-throttle.spec.ts`](./plugin-fs-scope-request-throttle/scope-request-throttle.spec.ts)
 
 ## [plugin-fs-token-revoke-retry](./plugin-fs-token-revoke-retry/README.md)
@@ -1116,6 +1119,11 @@
 ## [process-layering(重构:进程间依赖方向)](./process-layering/README.md)
 
 - [`process-layering.spec.ts`](./process-layering/process-layering.spec.ts)
+
+## [prompt-untrusted-text(授权弹窗里对方可控的字段要可见化,不能冒充系统文案)](./prompt-untrusted-text/README.md)
+
+- [`tool-name-charset.spec.ts`](./prompt-untrusted-text/tool-name-charset.spec.ts)
+- [`untrusted-text.spec.tsx`](./prompt-untrusted-text/untrusted-text.spec.tsx)
 
 ## [protocol-url(co:// 路由)](./protocol-url/README.md)
 

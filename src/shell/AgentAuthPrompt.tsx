@@ -2,7 +2,7 @@
 // 订阅 main 推的 'agent-auth:request' → 调 store.ensure → 等用户决定 → 应答 main。
 // 已 sessionGranted 时 ensure 立刻返回 'session',Modal 不渲染。
 
-import { useEffect, type MouseEvent } from 'react';
+import { useEffect, type MouseEvent, type ReactNode } from 'react';
 import { Button, Modal } from '@/design';
 import { coApi } from '@/lib/co-api';
 import {
@@ -26,6 +26,7 @@ import {
   type PromptGrantGuard,
 } from '@/lib/use-prompt-grant-guard';
 import { PromptGrantHint } from '@/lib/prompt-grant-hint';
+import { UntrustedText } from '@/lib/untrusted-text';
 
 // method → i18n key 表（P2-1）；未知 method 走 generic('{method}') fallback
 const METHOD_LABEL_KEYS: Record<string, TranslationKey> = {
@@ -48,6 +49,9 @@ const METHOD_LABEL_KEYS: Record<string, TranslationKey> = {
  * 与插件权限弹窗(plugins/permissions/PermissionPrompt)共用 lib/use-prompt-grant-guard。
  */
 export const AGENT_AUTH_GRANT_ARM_DELAY_MS = PROMPT_GRANT_ARM_DELAY_MS;
+
+/** 文案模板里对方可控字段的占位(先按它拆开模板,再把字段作为独立的 <code> 元素放进去)。 */
+const UNTRUSTED_SLOT = ' __UNTRUSTED__ ';
 
 export function AgentAuthPrompt() {
   const pending = useAgentAuthStore((s) => s.pending);
@@ -132,15 +136,24 @@ function AgentAuthPromptBody({
   // 插件工具域(main plugin-mcp-bridge,method=plugin.<tool 名>):标题 / 说明讲插件工具。
   const isPlugin = isPluginAuthMethod(pending.method);
 
-  function methodLabel(method: string): string {
+  // 安全:插件工具名由插件决定(未知 method 同理不是系统文案)。原样内联时,名字里的换行 + 伪系统提示看起来像
+  // 弹窗自己的话,U+202E 等让显示与真实内容不符 → 可见化后放进等宽 <code>(lib/untrusted-text),与系统文案区分开。
+  function methodLabel(method: string): ReactNode {
     const k = ownValue(METHOD_LABEL_KEYS, method);
     if (k) return t(k);
-    if (isPluginAuthMethod(method)) {
-      return t('permissions.agent.plugin_tool', {
-        name: method.slice(AGENT_AUTH_PLUGIN_METHOD_PREFIX.length),
-      });
-    }
-    return t('permissions.agent.generic', { method });
+    const [before = '', after = ''] = isPluginAuthMethod(method)
+      ? t('permissions.agent.plugin_tool', { name: UNTRUSTED_SLOT }).split(UNTRUSTED_SLOT)
+      : t('permissions.agent.generic', { method: UNTRUSTED_SLOT }).split(UNTRUSTED_SLOT);
+    const shown = isPluginAuthMethod(method)
+      ? method.slice(AGENT_AUTH_PLUGIN_METHOD_PREFIX.length)
+      : method;
+    return (
+      <>
+        {before}
+        <UntrustedText text={shown} />
+        {after}
+      </>
+    );
   }
   const titleKey: TranslationKey = isDebug
     ? 'permissions.agent.title_debug'
@@ -163,7 +176,8 @@ function AgentAuthPromptBody({
         {t('permissions.agent.body_prefix')}
         {pending.agentLabel ? (
           <>
-            {' '}(<code className="text-fg">{pending.agentLabel}</code>)
+            {/* agentLabel 是 agent 自报的(terminal.create_session 的 agent_label)。 */}
+            {' '}(<UntrustedText text={pending.agentLabel} />)
           </>
         ) : null}{' '}
         {t('permissions.agent.body_via_mcp')}

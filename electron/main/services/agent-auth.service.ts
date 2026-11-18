@@ -23,7 +23,6 @@ import { codedError } from '../../shared/error-message';
 import { broadcastToWindows } from '../lib/broadcast';
 import { cancelAgentTerminalCreates } from './agent-terminal-inflight';
 import { PromptThrottle, type PromptAdmission } from '../lib/prompt-throttle';
-import { makeWcGoneHook } from '../lib/wc-gone-hook';
 
 // 5 分钟无应答 → 默认拒绝(防 renderer 卡死时 tool Promise 永远悬挂)
 const PROMPT_TIMEOUT_MS = AGENT_AUTH_PROMPT_TIMEOUT_MS;
@@ -88,6 +87,14 @@ const rendererGoneWatched = new WeakSet<object>();
  * 经 AGENT_AUTH_CHANNELS.READY 上报(markAgentAuthRendererReady)才恢复。
  */
 const rendererNotReady = new Set<number>();
+/**
+ * 「文档被换掉」以**已提交**的导航为准(did-navigate:主框架、非同文档、已提交),不用 lib/wc-gone-hook 的
+ * did-start-navigation:导航开始不等于文档会换 —— 被导航守卫在 will-navigate 里拦下、被中止、下载 / 204 响应的
+ * 导航都只有「开始」没有「提交」,旧文档原样留着,不会再上报就绪。按「开始」置未就绪时,这样一次导航之后该窗口的
+ * 授权请求被永久拒绝(直到下一次真正的 reload),显示中的弹窗也在 main 侧被提前取消(用户点了才发现应答无效)。
+ * 导航开始到提交之间新文档同样收不到请求,由 rendererUnavailable 的 isLoadingMainFrame 覆盖。
+ * (wc-gone-hook 的其它使用方回收的是「新文档会重新申请」的资源,宁早勿晚,语义不变。)
+ */
 export function watchAgentAuthRenderer(win: BrowserWindow): void {
   const wc = win.webContents;
   if (rendererGoneWatched.has(wc)) return;
@@ -97,11 +104,23 @@ export function watchAgentAuthRenderer(win: BrowserWindow): void {
     rendererNotReady.add(windowId);
     cancelAgentAuthByWindow(windowId);
   };
-  makeWcGoneHook(onGone)(wc);
   // 单测里的假 webContents 可能不带 on / once。
-  if (typeof wc.on === 'function') wc.on('render-process-gone', onGone);
-  // 窗口销毁:不会再有请求发给它(排在 makeWcGoneHook 的 destroyed 监听之后)。
-  if (typeof wc.once === 'function') wc.once('destroyed', () => rendererNotReady.delete(windowId));
+  if (typeof wc.on === 'function') {
+    wc.on('did-navigate', onGone);
+    wc.on('render-process-gone', onGone);
+    // 主框架加载失败(Electron 不为被取消的导航 ERR_ABORTED 发这个事件):Chromium 提交的是错误页,不发
+    // did-navigate,但旧文档同样没了。
+    wc.on('did-fail-load', (_event, _code, _description, _url, isMainFrame) => {
+      if (isMainFrame) onGone();
+    });
+  }
+  // 窗口销毁:结算发往它的未决请求,之后不会再有请求发给它。
+  if (typeof wc.once === 'function') {
+    wc.once('destroyed', () => {
+      cancelAgentAuthByWindow(windowId);
+      rendererNotReady.delete(windowId);
+    });
+  }
 }
 
 /** renderer 上报授权请求的订阅已建立(AGENT_AUTH_CHANNELS.READY)。 */

@@ -15,6 +15,7 @@ import {
   type PromptGrantGuard,
 } from '@/lib/use-prompt-grant-guard';
 import { PromptGrantHint } from '@/lib/prompt-grant-hint';
+import { UNTRUSTED_PATH_MAX_CHARS, UntrustedText } from '@/lib/untrusted-text';
 
 const PLUGIN_ID_MARKER = ' __PID__ ';
 const EMPTY_SELECTED_PERMISSIONS: PermissionKey[] = [];
@@ -138,7 +139,7 @@ function ManifestPromptBody({ pending, guard }: { pending: Pending; guard: Promp
       <p className="mb-2 text-xs text-fg-muted">
         {/* tpl 含 {pluginId}；inline <code> 渲染 — 拆 prefix/suffix */}
         {promptBodyParts.prefix}
-        <code className="text-fg">{pending.pluginId}</code>
+        <UntrustedText text={pending.pluginId} />
         {promptBodyParts.suffix}
       </p>
       <p className="mb-3 text-2xs text-fg-dim">
@@ -229,7 +230,7 @@ function FsScopePromptBody({ scope, guard }: { scope: FsScopePrompt; guard: Prom
       <p className="mb-3 text-xs text-fg-muted">
         {/* tpl 含 {pluginId};inline <code> 渲染 — 拆 prefix/suffix(同 manifest 分支) */}
         {fsScopeBodyParts.prefix}
-        <code className="text-fg">{scope.pluginId}</code>
+        <UntrustedText text={scope.pluginId} />
         {fsScopeBodyParts.suffix}
       </p>
       <ul className="mb-4 space-y-1 text-xs">
@@ -238,8 +239,10 @@ function FsScopePromptBody({ scope, guard }: { scope: FsScopePrompt; guard: Prom
             key={`${s.path}:${i}`}
             className="rounded border border-line bg-panel-soft p-2"
           >
-            <div className="font-mono text-fg">
-              {s.displayPath}
+            {/* 安全:路径由插件给出(≤ 8192 字符)。可见化(换行 / 控制字符 / 双向控制字符)并从中间截断,
+                保留首尾 —— 否则超长路径把按钮挤出视野、U+202E 让显示的路径与实际授予的不符。 */}
+            <div>
+              <UntrustedText text={s.displayPath} max={UNTRUSTED_PATH_MAX_CHARS} />
             </div>
             <div className="text-fg-dim">
               {t('permissions.fs_scope.mode_label')}:{' '}

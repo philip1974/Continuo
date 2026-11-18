@@ -27,7 +27,9 @@ import { openForReadNonBlocking } from '../lib/read-fh-capped';
 import { createRwLock } from '../lib/rw-lock';
 import {
   FS_PATH_MAX,
+  FS_PATH_MAX_DEPTH,
   MAX_WRITE_BYTES,
+  pathDepthExceeds,
   validateScopesShape,
   isValidGitBlobSha,
 } from '../../shared/fs-limits';
@@ -410,6 +412,15 @@ export function registerPluginFsHandlers(
   deps: PluginFsDeps,
 ): void {
   const { identityRegistry, pathScopeRegistry, correlator } = deps;
+  // 安全:所有 fs 操作的 target 先过层级数上限,再进 path-scope 校验。registry.check 已限长度(FS_PATH_MAX),但
+  // `/a/a/a/…` 8190 字符可以有 4000 多级,而校验里逐级处理(逐级找最近的已存在上级、逐级 stat 取文件身份)的开销
+  // 随层级数增长。真实路径到不了 FS_PATH_MAX_DEPTH;超出与超长同样按畸形 target 拒绝(不碰文件系统、不回显路径)。
+  const checkScope = ((token, senderId, opType, target, mode) => {
+    if (typeof target === 'string' && pathDepthExceeds(target, FS_PATH_MAX_DEPTH)) {
+      return Promise.reject(new ScopeError('invalid target path', { reason: 'target-invalid' }));
+    }
+    return pathScopeRegistry.check(token, senderId, opType as 'read', target, mode);
+  }) as PathScopeRegistry['check'];
   const maybeSweepStaleTrash = createTrashSweepThrottle();
   const scopeThrottle = new ScopeRequestThrottle();
   // 关窗(destroyed)/ renderer reload(主框架非同文档导航)时释放该 webContents 名下的身份 token 与
@@ -464,7 +475,7 @@ export function registerPluginFsHandlers(
     PLUGIN_FS_CHANNELS.READ_FILE,
     shared(async (event, token: string, target: string) => {
       const recheck = async (): Promise<string> =>
-        (await pathScopeRegistry.check(token, event.sender.id, 'read', target, 'r')).canonical;
+        (await checkScope(token, event.sender.id, 'read', target, 'r')).canonical;
       // 边界(E28,E18 平行入口):scope 校验后直接 fs.readFile(.., 'utf-8') 无大小上限,
       // 已授权插件可让主进程整块读入超大文件再经 IPC 回 renderer → 内存峰值/卡死。复用主
       // fs:read-file 的 readFile(E18:读前 stat.size,超 64MiB 抛 FS_FILE_TOO_LARGE +
@@ -476,7 +487,7 @@ export function registerPluginFsHandlers(
   ipcMain.handle(
     PLUGIN_FS_CHANNELS.WRITE_FILE,
     exclusive(async (event, token: string, target: string, content: string) => {
-      const r = await pathScopeRegistry.check(
+      const r = await checkScope(
         token,
         event.sender.id,
         'write',
@@ -513,7 +524,7 @@ export function registerPluginFsHandlers(
   );
 
   ipcMain.handle(PLUGIN_FS_CHANNELS.LIST_DIR, shared(async (event, token: string, target: string) => {
-    const r = await pathScopeRegistry.check(
+    const r = await checkScope(
       token,
       event.sender.id,
       'read',
@@ -551,7 +562,7 @@ export function registerPluginFsHandlers(
   }));
 
   ipcMain.handle(PLUGIN_FS_CHANNELS.STAT, shared(async (event, token: string, target: string) => {
-    const r = await pathScopeRegistry.check(
+    const r = await checkScope(
       token,
       event.sender.id,
       'read',
@@ -562,7 +573,7 @@ export function registerPluginFsHandlers(
   }));
 
   ipcMain.handle(PLUGIN_FS_CHANNELS.LSTAT, shared(async (event, token: string, target: string) => {
-    const r = await pathScopeRegistry.check(
+    const r = await checkScope(
       token,
       event.sender.id,
       'lstat',
@@ -575,7 +586,7 @@ export function registerPluginFsHandlers(
   ipcMain.handle(
     PLUGIN_FS_CHANNELS.REALPATH,
     async (event, token: string, target: string) => {
-      const r = await pathScopeRegistry.check(
+      const r = await checkScope(
         token,
         event.sender.id,
         'read',
@@ -594,7 +605,7 @@ export function registerPluginFsHandlers(
       target: string,
       opts?: { recursive?: boolean },
     ) => {
-      const r = await pathScopeRegistry.check(
+      const r = await checkScope(
         token,
         event.sender.id,
         'mkdir',
@@ -609,14 +620,14 @@ export function registerPluginFsHandlers(
     PLUGIN_FS_CHANNELS.RENAME,
     exclusive(async (event, token: string, src: string, dst: string) => {
       // 'rename-src' 走不跟随 leaf 解析:移动的是链接本身而非 realpath 跟随后的目标。
-      const rSrc = await pathScopeRegistry.check(
+      const rSrc = await checkScope(
         token,
         event.sender.id,
         'rename-src',
         src,
         'rw',
       );
-      const rDst = await pathScopeRegistry.check(
+      const rDst = await checkScope(
         token,
         event.sender.id,
         'rename-dst',
@@ -669,7 +680,7 @@ export function registerPluginFsHandlers(
       opts?: { recursive?: boolean; force?: boolean },
     ) => {
       // 'remove' 走不跟随 leaf 解析:删的是链接本身而非 realpath 跟随后的目标数据。
-      const r = await pathScopeRegistry.check(
+      const r = await checkScope(
         token,
         event.sender.id,
         'remove',
@@ -693,14 +704,14 @@ export function registerPluginFsHandlers(
       opts?: { recursive?: boolean },
     ) => {
       // 'read-tree':递归复制会进入源的整棵子树,子树含受保护根(应用自身目录)时拒绝。
-      const rSrc = await pathScopeRegistry.check(
+      const rSrc = await checkScope(
         token,
         event.sender.id,
         'read-tree',
         src,
         'r',
       );
-      const rDst = await pathScopeRegistry.check(
+      const rDst = await checkScope(
         token,
         event.sender.id,
         'write',
@@ -770,13 +781,13 @@ export function registerPluginFsHandlers(
       // 敏感文件系统上 objects/AB 不存在(跳过校验),git 实际读的 objects/ab 若是外链就读到 scope 外。统一转小写。
       const sha = rawSha.toLowerCase();
       const senderId = event.sender.id;
-      const r = await pathScopeRegistry.check(token, senderId, 'read', repoDir, 'r');
+      const r = await checkScope(token, senderId, 'read', repoDir, 'r');
       const cwd = canonicalPath(r);
       // 安全:repoDir 在 scope 内不代表 git 读的对象库在 scope 内(见 resolveGitObjectStoreInScope)。
       const pin = await resolveGitObjectStoreInScope(
         cwd,
         sha,
-        async (p) => (await pathScopeRegistry.check(token, senderId, 'read', p, 'r')).canonical,
+        async (p) => (await checkScope(token, senderId, 'read', p, 'r')).canonical,
       );
       return readGitBlob(cwd, sha, { pin });
     }),
@@ -789,7 +800,7 @@ export function registerPluginFsHandlers(
     PLUGIN_FS_CHANNELS.CHECK_PATH,
     async (event, token: string, target: string): Promise<boolean> => {
       try {
-        await pathScopeRegistry.check(token, event.sender.id, 'read', target, 'r');
+        await checkScope(token, event.sender.id, 'read', target, 'r');
         return true;
       } catch (err) {
         if (err instanceof ScopeError) return false;
@@ -807,14 +818,14 @@ export function registerPluginFsHandlers(
       final: string,
       opts?: { overwrite?: boolean },
     ) => {
-      const rStaging = await pathScopeRegistry.check(
+      const rStaging = await checkScope(
         token,
         event.sender.id,
         'rename-dst',
         staging,
         'rw',
       );
-      const rFinal = await pathScopeRegistry.check(
+      const rFinal = await checkScope(
         token,
         event.sender.id,
         'rename-dst',
@@ -835,7 +846,7 @@ export function registerPluginFsHandlers(
       // 该插件的某条 rw scope 内。'rename-dst' 对「final 等于 scope 根」放行,此时父目录已在 scope 外 —— 此前
       // 照样清扫它,等于替插件递归删掉 scope 外的旧 `.trash-*`。在任何文件系统变更之前拒绝。
       try {
-        await pathScopeRegistry.check(token, event.sender.id, 'read', rFinal.parentCanonical, 'rw');
+        await checkScope(token, event.sender.id, 'read', rFinal.parentCanonical, 'rw');
       } catch (err) {
         if (!(err instanceof ScopeError)) throw err;
         throw new ScopeError('atomicReplace: parent directory must be inside a granted rw scope', {
@@ -905,6 +916,13 @@ export function registerPluginFsHandlers(
         // 登记插件请求时的写法(如经符号链接的路径),之后用同一写法访问才能通过 check 的词法预判。
         pathScopeRegistry.noteRequestedRoots(pluginId, scopes, canonicalScopes);
         return 'grant';
+      }
+
+      // 先做不依赖冷却键的廉价判定:未决数到顶、该插件已有未决弹窗 / 在退避期 / 弹窗超速 → 直接 deny。算冷却键要
+      // 逐级 stat(下一步),被节流的请求不该再触发这份开销(此前 scopeThrottleKeys 在任何节流判定之前,插件可以
+      // 不受限地反复触发)。下面 canAccept / tryPrompt 仍照常判一次(权威;await 期间状态可能变化)。
+      if (!correlator.canAccept(event.sender.id) || scopeThrottle.blocked(pluginId)) {
+        return 'deny';
       }
 
       // 冷却键带文件身份(路径别名换个写法不能避开冷却)。要 stat,放在 canAccept 之前:canAccept → tryPrompt →

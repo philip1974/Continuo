@@ -46,6 +46,10 @@ export interface PromptGrantGuard {
    * - 焦点若是被「输入流里的 Tab」带到按钮上的(那一下 Tab 紧跟在别的按键后、或在请求出现后
    *   PROMPT_GRANT_ARM_DELAY_MS 内按下、或请求出现后打过字),这次聚焦期间键盘激活一律无效 —— Tab 之后停下来
    *   看一眼补全再回车,聚焦时长与按键前停顿都满足。把焦点移开、停顿后再 Tab 回来(或用鼠标)才可用。
+   * - 被拒掉的**指针**点击不能留下可用键盘授予的焦点(过早的单击 / 双击把焦点带到授予按钮上,停顿后的 Enter 各项
+   *   键盘条件都满足):①指针点击会被拒的时刻(出现时间窗内、多击的后几击),弹窗里的 mousedown / pointerdown
+   *   被 preventDefault,焦点不随按下移入;②点击被拒时焦点若已在该控件上,这次聚焦标为不可键盘授予,并把焦点
+   *   移回弹窗的初始焦点(拒绝按钮)。
    */
   readonly canGrant: (e: GrantClick) => boolean;
   /**
@@ -76,8 +80,11 @@ interface GuardState {
   typedWhileFocused: boolean;
   /** 当前请求出现后是否打过字。 */
   typedSinceShown: boolean;
-  /** 最近一次 keydown 是否「输入流里的 Tab」;当前焦点是否由这样的 Tab 带来。 */
+  /** 最近一次 keydown 是否「输入流里的 Tab」。 */
   keyIsStreamTab: boolean;
+  /**
+   * 当前这次聚焦不可用键盘授予:焦点由输入流里的 Tab 带来,或是被拒掉的指针点击留下的。焦点移开再回来才重置。
+   */
   focusByStreamTab: boolean;
 }
 
@@ -149,11 +156,24 @@ export function usePromptGrantGuard(current: unknown): PromptGrantGuard {
       s.focusByStreamTab =
         s.keyIsStreamTab && s.keyAt !== null && s.focusAt - s.keyAt < PROMPT_GRANT_ARM_DELAY_MS;
     };
+    // 指针按下(鼠标 / 触摸 / 笔)会把焦点移到被按的控件上。这一下点击若注定被拒(出现时间窗内、多击的后几击),
+    // 不让焦点移入:否则被拒之后停顿片刻的 Enter / Space 满足全部键盘条件,落成授予。只取消按下的默认动作
+    //(聚焦、选中文本),click 照常派发(仍由 canGrant 拒掉并给提示);之后的正常点击不受影响。
+    // pointerdown 也拦:Chromium 里它被取消后不再派发兼容的 mousedown,聚焦同样不发生。
+    const onPointerDown = (e: MouseEvent): void => {
+      if (!(e.target instanceof Element) || grantDialogOf(e.target) === null) return;
+      const early = s.armAt === null || Date.now() - s.armAt < PROMPT_GRANT_ARM_DELAY_MS;
+      if (early || e.detail > 1) e.preventDefault();
+    };
     document.addEventListener('keydown', onKeyDown, true);
     document.addEventListener('focusin', onFocusIn, true);
+    document.addEventListener('mousedown', onPointerDown, true);
+    document.addEventListener('pointerdown', onPointerDown, true);
     return () => {
       document.removeEventListener('keydown', onKeyDown, true);
       document.removeEventListener('focusin', onFocusIn, true);
+      document.removeEventListener('mousedown', onPointerDown, true);
+      document.removeEventListener('pointerdown', onPointerDown, true);
       s.focusEl = null;
     };
   }, [active]);
@@ -182,6 +202,8 @@ export function usePromptGrantGuard(current: unknown): PromptGrantGuard {
     return {
       canGrant: (e) => {
         const ok = decide(e);
+        // 被拒的指针点击:焦点若已在该控件上(按下时聚焦没拦住,或更早由别的途径聚焦),不留给之后的键盘激活。
+        if (!ok && e.detail > 0) dropPointerFocus(state.current, e.currentTarget);
         feedback.set(!ok);
         return ok;
       },
@@ -222,8 +244,28 @@ function createRejectionFeedback(): {
   };
 }
 
+/** el 所在的授权弹窗(含授予按钮的 dialog);不在其中 → null。 */
+function grantDialogOf(el: Element | null | undefined): Element | null {
+  const dialog = el?.closest('[role="dialog"]') ?? null;
+  return dialog !== null && dialog.querySelector(GRANT_BUTTON_SELECTOR) !== null ? dialog : null;
+}
+
 function isFirstFocusableOfGrantDialog(el: Element | null): boolean {
-  const dialog = el?.closest('[role="dialog"]');
-  if (!dialog || dialog.querySelector(GRANT_BUTTON_SELECTOR) === null) return false;
-  return dialog.querySelector(FOCUSABLE_SELECTOR) === el;
+  return grantDialogOf(el)?.querySelector(FOCUSABLE_SELECTOR) === el;
+}
+
+/**
+ * 被拒的指针点击落在已聚焦的控件上:这次聚焦标为不可键盘授予,并把焦点移回弹窗的初始焦点(与 design Modal 同一
+ * 规则:[data-autofocus],否则第一个可聚焦元素 —— 两种弹窗里都是拒绝按钮)。移回而不是 blur:blur 后焦点落到
+ * body,读屏丢失位置、焦点陷阱也要等下一次 Tab 才接管;移回拒绝按钮,读屏播报的是一个确定的、安全的位置,
+ * 被拒的原因由 status 区域播报。找不到可移回的元素时焦点留在原处,靠标记挡住键盘授予。
+ */
+function dropPointerFocus(s: GuardState, control: Element): void {
+  if (document.activeElement !== control) return;
+  s.focusByStreamTab = true;
+  const dialog = grantDialogOf(control);
+  const home =
+    dialog?.querySelector<HTMLElement>('[data-autofocus]:not([disabled])') ??
+    dialog?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
+  if (home != null && home !== control && !home.matches(GRANT_BUTTON_SELECTOR)) home.focus();
 }

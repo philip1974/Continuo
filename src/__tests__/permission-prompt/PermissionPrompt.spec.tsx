@@ -165,12 +165,16 @@ describe('PermissionPrompt — 勾选不打断焦点', () => {
       document.querySelectorAll<HTMLElement>('.wm-modal-content [role=checkbox], .wm-modal-content input[type=checkbox]'),
     );
     expect(boxes.length).toBeGreaterThanOrEqual(3);
-    const target = boxes[2]!;
+    // 取消勾选 fs(拒绝方向,立即可用,确实触发重渲染)。此前点的是未勾选的 shell:出现时间窗内勾上会被守卫拒掉
+    //(没有状态变更,测不到重渲染),且被拒的指针点击现在会把焦点移回「全部拒绝」。
+    const target = boxes[0]! as HTMLInputElement;
+    expect(target.checked).toBe(true);
     target.focus();
     pointerClick(target);
     await act(async () => {
       await new Promise((r) => requestAnimationFrame(() => r(null)));
     });
+    expect(target.checked).toBe(false);
     expect(document.activeElement).toBe(target);
     usePermissionPromptStore.getState().denyAll();
   });

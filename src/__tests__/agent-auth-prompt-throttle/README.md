@@ -41,8 +41,9 @@ plugin)计。
   的并发 / 高频调用是正常使用,主进程原样转发(不单飞、不计速率)。主进程为此记一份授权镜像(真相源仍在
   renderer):撤销、窗口关闭、renderer reload 时清除(见下)。
 - **renderer reload / 渲染进程崩溃**(主窗 View 菜单 Cmd+R;窗口不关、webContents 不销毁,但 renderer 的授权态与
-  弹窗随旧文档消失):main 在该窗口主框架的非同文档导航(`lib/wc-gone-hook`,同 plugin-fs / plugin-mcp 的回收时机)
-  与 `render-process-gone` 时,把该窗口全部未决请求按**取消**结算(不计拒绝、不进冷却)并清掉它的授权镜像。
+  弹窗随旧文档消失):main 在该窗口主框架的非同文档导航**提交**时(`did-navigate`;主框架加载失败 `did-fail-load`
+  提交的是错误页,同样算)与 `render-process-gone` 时,把该窗口全部未决请求按**取消**结算(不计拒绝、不进冷却)并
+  清掉它的授权镜像。
   此前(审计实测):①镜像残留 → 该域请求不走节流而 renderer 真的弹窗:40 次请求每次点「仅本次」弹 40 次(上限
   应为 10)、连续超时无冷却、被拒后立刻再请求又弹;②弹窗显示中 reload → 弹窗消失而 main 的未决请求留到 5 分钟
   超时,调用方一直「已有未决弹窗」,再加 30s 超时冷却 → 同窗口所有 agent 330s 拿不到弹窗。
@@ -52,13 +53,16 @@ plugin)计。
   - 就绪握手:renderer 订阅授权请求(preload `agentAuth.onRequest` 挂上监听)后上报 `agent-auth:ready`(同
     `plugins:protocol-ready`);main 校验受信 frame,按发送方所在窗口记为就绪。`did-finish-load` 不算(React 挂载、
     订阅建立在其后)。
-  - main 在窗口创建时(`browser-window-created`,首次加载之前)开始跟踪;主框架非同文档导航 / `render-process-gone`
-    起到下一次上报就绪为止,以及主框架仍在加载(`isLoadingMainFrame`,纵深)时,`requestAgentAuth` **立即** reject
+  - main 在窗口创建时(`browser-window-created`,首次加载之前)开始跟踪;主框架非同文档导航提交 / `render-process-gone`
+    起到下一次上报就绪为止,以及主框架仍在加载(`isLoadingMainFrame`:导航开始到提交之间靠它)时,`requestAgentAuth` **立即** reject
     `AGENT_NOT_AUTHORIZED`(消息说明窗口正在重新加载、稍后重试):不发 IPC、不登记未决、不计拒绝、不进冷却。
   - 这些被拒的请求**计入速率上限**(窗口期狂刷重试 → 就绪后按超速拒绝,不连弹)。
   - 渲染进程崩溃后一直不恢复 → 该窗口的请求一直立即被拒(本来也显示不了弹窗),不再各自干等 5 分钟。
-  - 残余:对本应用入口的主框架导航开始后被中止(文档其实没换)时不会再有就绪上报,该窗口的授权请求被拒到下一次
-    reload;正常的 Cmd+R / `webContents.reload()` 不会中止。
+  - **未提交的导航不算换文档**。Electron 先发 `did-start-navigation` 再发 `will-navigate`:被导航守卫拦下、被中止的
+    导航只有「开始」没有「提交」,旧文档原样留着,不会再上报就绪。此前按「开始」置未就绪(实测:这样一次导航之后
+    1 小时内每分钟一次请求 60/60 被拒,直到下一次 reload),显示中的弹窗也在 main 侧被提前取消。现在这类导航之后
+    请求照常弹窗、显示中的弹窗照常可应答、「本次启动期间允许」的镜像不清。(`lib/wc-gone-hook` 的其它使用方 ——
+    plugin-fs / plugin-mcp / 子进程回收 —— 仍按导航开始,语义不变。)
 - **镜像过期的纵深**:镜像说已授权时 renderer 只会秒回 `session`。按镜像放行的请求得到任何别的结果(仅本次 / 拒绝 /
   超时 / 取消)→ 清镜像,且这次的结果照常记入节流(拒绝进冷却、超时进冷却、授予计速率之后的请求)。并发的同域
   请求只有第一个发现过期的记账(其余是 renderer 因槽被占自动拒的,不是用户的决定)。
@@ -90,6 +94,16 @@ plugin)计。
     按 Enter / Space。弹窗出现后若已经打过字,键盘只能拒绝(Enter 在「拒绝」上 / Esc),授予须用鼠标或等 agent 重新请求。
   - Shift+Tab 不能从「拒绝」回绕到末尾的「本次启动期间允许」(焦点留在「拒绝」;向前 Tab 仍可到达所有按钮)。
   - 鼠标点击只受出现延迟约束;「拒绝」的键盘激活与 Esc 不受任何限制。
+- **被拒掉的指针点击不留下可用键盘授予的焦点**(同一守卫;`prompt-early-click-focus.spec.tsx`)。Chromium 在
+  mousedown 时把焦点移到被按的按钮上:实测弹窗出现 +200ms 单击「本次启动期间允许」被拒,但焦点已在该按钮上,再过
+  700ms 的 Enter 满足全部键盘条件 → 整域授予;双击落在「仅本次」、manifest 的「授权选中」、shell 勾选框 + Space 同理。
+  - 指针点击会被拒的时刻(出现后的时间窗内 —— 含被拒点击推后的窗口;多击的后几击 `detail ≥ 2`),弹窗里的
+    `mousedown` / `pointerdown`(鼠标、触摸、笔)被 `preventDefault`:焦点不随按下移入,click 照常派发并被拒、给提示。
+    时间窗过后的单击不受影响(焦点照常移入、照常授予)。
+  - 授予方向的指针点击被拒时,焦点若已在该控件上(按下时没拦住,或更早经别的途径聚焦):这次聚焦标为不可键盘授予
+    (同「输入流里的 Tab」,焦点移开再回来才重置),并把焦点移回弹窗的初始焦点「拒绝」(不 blur:焦点落到 body 读屏会
+    丢失位置;被拒原因由 status 区域播报)。之后的 Enter / Space 落在「拒绝」上。
+  - 被拒的**键盘**激活不移动焦点(Tab 后立刻 Enter 被拒、停顿后再 Enter 授予,行为不变)。
 - **被守卫拒掉的授予激活有可感知反馈**(`src/lib/prompt-grant-hint.tsx`,三种授权弹窗共用):此前被拒只是「没反应」
   —— 过早的点击、Tab 后立刻回车,以及辅助技术合成的点击(`detail=0`、没有 keydown、DOM 焦点可能不在按钮上,可能
   一直无效)。弹窗按钮下方常驻一个 `role="status"` 区域(空;占一行高度,提示出现时弹窗不跳动);授予方向的激活被拒
@@ -104,6 +118,8 @@ plugin)计。
 - `renderer-reload.spec.ts`:真实 `agent-auth.service` + 真实 renderer store(fake timers):「本次启动期间允许」后
   reload(main 收到导航事件 / 纵深:没收到)→ 40 次「仅本次」≤ 10 个弹窗、超时有冷却、拒绝有冷却;弹窗显示中
   reload / 渲染进程崩溃 → 未决请求立即结算、新请求马上可弹、不计拒绝;同文档导航不结算。
+  未提交的主框架导航(只有 did-start-navigation)→ 请求照常弹窗、显示中的弹窗与授权镜像保留;开始到提交之间靠
+  `isLoadingMainFrame` 拒;主框架 did-fail-load → 未就绪。
   reload 窗口期(未上报就绪 / 主框架加载中)的请求立刻被拒、不发 IPC、不锁死、计入速率;就绪后正常弹窗。
 - `prompt-grant-feedback.spec.tsx`:status 区域常驻、被拒时出现提示并定时清空、合成点击仍无效但有提示、请求切换清空。
 - `renderer-ready-handshake.spec.ts`:preload 先挂监听再上报 `agent-auth:ready`;main 的 READY 处理器与窗口创建时的跟踪接线。
@@ -113,6 +129,9 @@ plugin)计。
 - `store-slots.spec.ts`:renderer 分槽与排队。
 - `prompt-grant-guard.spec.tsx`:500ms 内「允许」无效、「拒绝」/ Esc 有效、初始焦点、排队切换后重新计时。
   双击第二击跨过延迟不授予、过早的点击重新计时、`detail ≥ 2` 不算授予。
+- `prompt-early-click-focus.spec.tsx`:过早的单击 / 双击被拒后停顿再按 Enter 不授予(焦点回到「拒绝」);时间窗内与多击
+  的按下被 preventDefault、时间窗过后与弹窗外的不被;被拒后等满时间窗再点 / 再 Tab 过去按 Enter 仍可授予。
+  真实 Chromium 的 mousedown 聚焦:`tests/e2e/permission-prompt-keyboard-grant-guard.spec.ts`。
 - `prompt-keyboard-grant-guard.spec.tsx`:Shift+Tab 不回绕、Tab→Enter / 打字流里的 Space·Enter / 键重复不授予、
   停顿后的键盘确认授予、鼠标点击与拒绝方向不受键盘规则约束。
   输入流里的 Tab(紧跟别的按键 / 出现后 500ms 内 / 出现后打过字)带来的焦点不能用键盘授予,有意的 Tab 可以。
