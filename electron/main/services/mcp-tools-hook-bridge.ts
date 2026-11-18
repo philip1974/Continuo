@@ -991,10 +991,19 @@ function refuseUnsafeConfigPath(configPath: string): InstallStopHookResult {
 // 两种 runner 的 hook 均由 POSIX shell 执行(命令本身已依赖 `$(date +%s%N)`),无 Windows cmd 分支。
 const HOOK_UMASK_PREFIX = 'umask 077; ';
 
-/** 建 hook-events 目录为 0700;已存在(旧版按默认 umask 建成 0755)也收紧。 */
+/**
+ * 建 hook-events 目录为 0700;已存在(旧版按默认 umask 建成 0755)也收紧。
+ * 收紧是尽力而为:userData 在不支持 chmod 的文件系统(部分网络盘 / FAT / 容器挂载)上 chmod 抛 EPERM 等,
+ * 只告警不抛 —— 否则 startMcpHost 外层 catch 会让整个 MCP host 启动失败。mkdir 失败仍抛出。
+ */
 export async function ensureHookEventsDir(dir: string): Promise<void> {
   await mkdir(dir, { recursive: true, mode: 0o700 });
-  if (process.platform !== 'win32') await chmod(dir, 0o700);
+  if (process.platform === 'win32') return;
+  try {
+    await chmod(dir, 0o700);
+  } catch (err) {
+    console.warn('[hook-bridge] could not restrict hook-events dir to 0700 (continuing):', dir, err);
+  }
 }
 
 export async function installStopHookForSession(

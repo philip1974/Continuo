@@ -107,6 +107,7 @@ ordering 语义,后续 Op 再补 broker 与 tool wiring 实装。
 - 两种 runner 的 hook 命令以 `umask 077;` 开头:即便调用方 umask 为 022,`mkdir -p` 建出的
   hook-events 目录为 0700、`cat >` 写出的事件文件为 0600(真实 `/bin/sh` 执行验证)。
 - main 启动时 `ensureHookEventsDir` 以 0700 建目录;已存在的(旧版 0755)也收紧为 0700。
+- 收紧是尽力而为:文件系统不支持 chmod(抛 EPERM 等)时只告警,不让 MCP host 启动失败;mkdir 失败仍抛出。
 
 ## I7 install spawn 前完成
 

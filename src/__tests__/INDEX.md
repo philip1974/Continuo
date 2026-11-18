@@ -246,6 +246,7 @@
 
 ## [agent-terminal-mcp-install-stop-hook](./agent-terminal-mcp-install-stop-hook/README.md)
 
+- [`hook-events-dir-chmod-unsupported.spec.ts`](./agent-terminal-mcp-install-stop-hook/hook-events-dir-chmod-unsupported.spec.ts)
 - [`install-stop-hook-private-perms.spec.ts`](./agent-terminal-mcp-install-stop-hook/install-stop-hook-private-perms.spec.ts)
 - [`install-stop-hook-read-error-fail-closed.spec.ts`](./agent-terminal-mcp-install-stop-hook/install-stop-hook-read-error-fail-closed.spec.ts)
 - [`install-stop-hook-symlink-race.spec.ts`](./agent-terminal-mcp-install-stop-hook/install-stop-hook-symlink-race.spec.ts)
