@@ -19,6 +19,11 @@ import {
 } from '../../shared/plugin-mcp-channels';
 import type { AnyMcpTool } from './mcp-host.service';
 import { codedError } from '../../shared/error-message';
+import { gateWithAuth, type EnsureAuthorized } from './mcp-tool-gates';
+import {
+  AGENT_AUTH_METHOD_MAX,
+  AGENT_AUTH_PLUGIN_METHOD_PREFIX,
+} from '../../shared/agent-auth-channels';
 
 // ── 类型 ────────────────────────────────────────────────────
 
@@ -310,6 +315,11 @@ export interface CreatePluginMcpBridgeDeps {
   host: PluginMcpBridgeHost;
   invokeRemote: InvokeRemoteCore;
   /**
+   * 安全:agent 授权门控(必填,与终端 / debug 工具同走 gateWithAuth)。按**调用方**窗口
+   * (ctx.ownerWindowId)弹授权,method=`plugin.<tool 名>` 归 renderer 的独立 plugin 域。
+   */
+  ensureAuthorized: EnsureAuthorized;
+  /**
    * 可选:tool 集变更时调(register / unregister / wcGone 摘到 tool)。
    * 调用方可在此触发 MCP `notifications/tools/list_changed` 推给所有
    * MCP client(HTTP SSE / stdio sock)。失败 / unknown / 假冒 等不调。
@@ -330,10 +340,20 @@ interface BridgeEntry {
 const MAX_TOOLS_PER_WC = 256;
 const MAX_TOOLS_GLOBAL = 2048;
 
+/**
+ * 插件工具的授权门控参数。method 带 plugin 前缀归独立域;按授权请求 method 上限截断(tool 名上限 256,
+ * 加前缀后可超,超长 payload 会被 renderer ingress 守卫丢弃 → 请求干等 5min 超时)。
+ */
+const PLUGIN_AUTH_GATE = {
+  methodFor: (tool: AnyMcpTool): string =>
+    `${AGENT_AUTH_PLUGIN_METHOD_PREFIX}${tool.name}`.slice(0, AGENT_AUTH_METHOD_MAX),
+  deniedMessage: 'agent plugin tool not authorized by user',
+} as const;
+
 export function createPluginMcpBridge(
   deps: CreatePluginMcpBridgeDeps,
 ): PluginMcpBridge {
-  const { host, invokeRemote, notifyToolsChanged } = deps;
+  const { host, invokeRemote, notifyToolsChanged, ensureAuthorized } = deps;
   const entries = new Map<string, BridgeEntry>();
   // 边界(E79):per-wc 注册计数(O(1) 维护,避免 register 时 O(n) 遍历 entries 数 wc 计数 → O(n²))。
   const perWcCount = new Map<number, number>();
@@ -362,14 +382,21 @@ export function createPluginMcpBridge(
         pluginId: payload.pluginId,
         wcId,
       };
-      const stub = createStubTool(
-        {
-          name: payload.name,
-          description: payload.description,
-          jsonSchema: payload.jsonSchema,
-        },
-        owner,
-        invokeRemote.invoke,
+      // 安全:插件工具与终端 / debug 工具同走 agent 授权。此前 stub 丢弃 ctx 直接 invoke,用户对 agent
+      // 点了「拒绝」该 agent 仍能调插件工具(如 git stage/commit)。授权以调用方窗口(ctx.ownerWindowId)
+      // 为准;路由仍按注册者 owner(跨窗口先到先得不变)。
+      const stub = gateWithAuth(
+        createStubTool(
+          {
+            name: payload.name,
+            description: payload.description,
+            jsonSchema: payload.jsonSchema,
+          },
+          owner,
+          invokeRemote.invoke,
+        ),
+        ensureAuthorized,
+        PLUGIN_AUTH_GATE,
       );
       host.registerTool(stub);
       entries.set(payload.name, {

@@ -12,7 +12,10 @@ T2b with only destroyed windows, `requestAgentAuth` resolves `'denied'` and send
 T3 unanswered auth requests time out after five minutes and resolve `'denied'`;
 T4 popout windows are skipped when a normal window is available;
 T4b if all live windows are popouts, the first live popout is used as the current fallback contract;
-T5 destroyed windows are skipped while selecting the main window;
+T5 destroyed windows are skipped while selecting the main window (T4/T4b/T5 apply only when `ownerWindowId` is omitted);
+T-routing-1 an explicit `ownerWindowId` routes the prompt to that alive non-popout window only;
+T-routing-2/3 (security, fail-closed) an explicit `ownerWindowId` that is unknown, destroyed, or a popout resolves `'denied'` and sends no IPC to any other window — previously it fell back to the first main window, so a session's prompt could land in (or be silently granted by) a different window. Popouts have no reliable owner-main-window mapping (`window.open` child, no `parent`) and do not mount the prompt;
+T-routing-4 omitting `ownerWindowId` keeps the pickMainWindow fallback;
 T6 `resolveAgentAuthRequest` resolves a pending request with `'once'`;
 T7 resolving an unknown `requestId` is a no-op and does not disturb later resolutions;
 T8 resolving the same `requestId` twice is idempotent: the first decision wins;

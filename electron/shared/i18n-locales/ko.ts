@@ -294,6 +294,10 @@ export const ko: Record<TranslationKey, string> = {
   'permissions.agent.debug_launch': '디버그 세션 시작',
   'permissions.agent.debug_control': '디버그 세션 제어(중단점, 단계 실행, 변수)',
   'permissions.agent.generic': '{method} 호출',
+  'permissions.agent.plugin_tool': '플러그인 도구 {name} 호출',
+  'permissions.agent.title_plugin': '에이전트가 플러그인 도구 호출을 요청합니다',
+  'permissions.agent.hint_plugin':
+    '권한을 부여하면 MCP 토큰을 가진 에이전트가 설치된 플러그인이 등록한 도구(예: Git 스테이지 / 커밋)를 호출할 수 있습니다. 플러그인 도구는 플러그인의 권한으로 실행되므로 신뢰하는 에이전트에게만 허용하세요. 이번 실행 동안만 유효합니다.',
   'permissions.agent.title': '에이전트가 내장 터미널 제어를 요청합니다',
   'permissions.agent.title_debug': '에이전트가 디버거 제어를 요청합니다',
   'permissions.agent.hint_debug':

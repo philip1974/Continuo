@@ -356,11 +356,10 @@ async function handleLine(
   }
 
   // 绑定的窗口可能已关闭:窗口关闭清理(revokeWindowTokens/cancelByWindow)不触碰
-  // socketCtx,而 socket 仍连着(proxy 进程没退)。若直接用已死的 windowId,所有
-  // tools/call 会撞 TERMINAL_NO_WINDOW/SESSION_NOT_FOUND,该 proxy 连接对所有工具
-  // 永久损坏(即使别的窗口活着)。resolveStdioCallOwnerWindow 校验绑定窗口存活,
-  // 死则返回 null → 走下面的 fallback 到当前活窗。
-  const liveOwner = resolveStdioCallOwnerWindow(socketCtx.get(sock), {
+  // socketCtx,而 socket 仍连着(proxy 进程没退)。resolveStdioCallOwnerWindow 每次调用校验
+  // 绑定窗口存活,死则返回 null。
+  const boundWindowId = socketCtx.get(sock);
+  const liveOwner = resolveStdioCallOwnerWindow(boundWindowId, {
     isWindowAlive,
   });
   // 安全 S3:无论绑定窗口还是 fallback,都带本连接的 callerSubject,供 capability 校验。
@@ -372,7 +371,10 @@ async function handleLine(
   // 无 CONTINUO_WINDOW_ID env,不发 hello,socketCtx 空 → fallback 到第一个
   // 非 popout 主窗。mirror agent-auth.pickMainWindow 策略。tools/list 无需 ctx
   // (dispatchRpc 自行短路),只有 tools/call 路径需要。
-  if (ctx === null) {
+  // 安全(fail-closed):**发过 hello** 的连接绑定窗口关闭后不回落 —— 否则窗口 A 里 agent 的调用以窗口 B
+  // 的身份执行 / 弹授权(B 已「本次启动期间允许」→ 静默放行)。ctx 保持 null → tools/call 回 NO_WINDOW_CTX
+  // (该 proxy 随 A 的终端退出;tools/list 不受影响)。
+  if (ctx === null && boundWindowId === undefined) {
     const fallback = pickMainWindowPreferNonPopout();
     if (fallback) ctx = { ownerWindowId: fallback.id, callerSubject, signal };
   }

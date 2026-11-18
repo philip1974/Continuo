@@ -308,6 +308,10 @@ export const en = {
   'permissions.agent.debug_launch': 'start a debug session',
   'permissions.agent.debug_control': 'control a debug session (breakpoints, stepping, variables)',
   'permissions.agent.generic': 'call {method}',
+  'permissions.agent.plugin_tool': 'call plugin tool {name}',
+  'permissions.agent.title_plugin': 'Agent requests to call a plugin tool',
+  'permissions.agent.hint_plugin':
+    "Once granted, agents holding the MCP token can call tools registered by your installed plugins (e.g. Git stage / commit). Plugin tools act with the plugin's permissions, so only grant this to agents you trust. Valid only for this launch.",
   'permissions.agent.title': 'Agent requests built-in terminal access',
   'permissions.agent.title_debug': 'Agent requests debugger access',
   'permissions.agent.hint_debug':

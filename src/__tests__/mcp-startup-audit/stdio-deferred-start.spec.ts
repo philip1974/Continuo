@@ -99,7 +99,8 @@ describe('index.ts 启动接线(源码钉:依赖整套 Electron 启动)', () => 
   });
 
   it('插件 bridge 拿 stdio 取值函数而非启动时快照', () => {
-    expect(src).toMatch(/startPluginMcpIpc\(mcpHost, \(\) => mcpStdio\)/);
+    // 第三参为插件工具 agent 授权门控(requestAgentAuth)。
+    expect(src).toMatch(/startPluginMcpIpc\(mcpHost, \(\) => mcpStdio, /);
   });
 
   it('退出清理先等 stdio 启动结束再 close(避免 listen 晚于 close 残留 socket)', () => {

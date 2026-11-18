@@ -396,3 +396,38 @@ describe('授权分域:terminal 与 debug 各自记「本次启动期间允许�
     );
   });
 });
+
+// 安全:插件注册的 MCP 工具(method 以 plugin. 开头)独立成 plugin 域。插件工具能做任意插件能力
+// (如 git stage/commit),对终端点「本次启动期间允许」不应静默放行插件工具,反之亦然。
+describe('授权分域:plugin 域独立于 terminal / debug', () => {
+  it('终端 + debug 均已 session 授权,插件工具请求仍然弹窗', () => {
+    useAgentAuthStore.setState({ sessionGranted: true, debugSessionGranted: true });
+    void useAgentAuthStore.getState().ensure({ method: 'plugin.git.stage' });
+    expect(useAgentAuthStore.getState().pending?.method).toBe('plugin.git.stage');
+    useAgentAuthStore.getState().deny();
+  });
+
+  it('plugin 域 session 授权后:插件工具直接通过,终端 / debug 请求仍然弹窗', async () => {
+    const p = useAgentAuthStore.getState().ensure({ method: 'plugin.git.stage' });
+    useAgentAuthStore.getState().grant('session');
+    await expect(p).resolves.toBe('session');
+    useAgentAuthStore.getState().confirmSessionGrant('plugin.git.stage', getAgentAuthEpoch());
+    expect(useAgentAuthStore.getState().pluginSessionGranted).toBe(true);
+    expect(useAgentAuthStore.getState().sessionGranted).toBe(false);
+    expect(useAgentAuthStore.getState().debugSessionGranted).toBe(false);
+
+    await expect(
+      useAgentAuthStore.getState().ensure({ method: 'plugin.other.tool' }),
+    ).resolves.toBe('session');
+
+    void useAgentAuthStore.getState().ensure({ method: 'terminal.send_input' });
+    expect(useAgentAuthStore.getState().pending?.method).toBe('terminal.send_input');
+    useAgentAuthStore.getState().deny();
+  });
+
+  it('revoke 同时撤销 plugin 域', () => {
+    useAgentAuthStore.setState({ pluginSessionGranted: true });
+    useAgentAuthStore.getState().revoke();
+    expect(useAgentAuthStore.getState().pluginSessionGranted).toBe(false);
+  });
+});

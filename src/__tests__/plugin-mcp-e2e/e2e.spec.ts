@@ -88,6 +88,8 @@ async function setupHarness(opts: { invokeTimeoutMs?: number } = {}): Promise<In
       removeTool: (name) => host.removeTool(name),
     },
     invokeRemote,
+    // 本 e2e 验证调用链路,授权门控由 plugin-mcp-multi-window 覆盖;此处恒放行。
+    ensureAuthorized: async () => 'once',
   });
 
   const upstream: PluginMcpUpstream = {

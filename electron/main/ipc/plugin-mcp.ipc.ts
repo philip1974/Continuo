@@ -31,6 +31,7 @@ import {
   type PluginMcpToolOwner,
 } from '../services/plugin-mcp-bridge.service';
 import type { McpHost } from '../services/mcp-host.service';
+import type { EnsureAuthorized } from '../services/mcp-tool-gates';
 import type { StdioSocketServer } from '../services/mcp-stdio-server.service';
 import { makeWcGoneHook } from '../lib/wc-gone-hook';
 import { createTrailingNotifier } from '../lib/trailing-notifier';
@@ -59,6 +60,8 @@ export function startPluginMcpIpc(
   // 取值函数而非快照:stdio server 在首窗创建后才异步启动(冷启动不挡建窗),就绪前返回 null →
   // 广播只推 HTTP;就绪后每次广播读到最新引用。
   getStdio: () => StdioSocketServer | null = () => null,
+  // 安全:插件工具 agent 授权门控。缺省 fail-closed(一律拒绝),生产由 main/index.ts 注入 requestAgentAuth。
+  ensureAuthorized: EnsureAuthorized = async () => 'denied',
 ): {
   bridge: PluginMcpBridge;
   invokeRemote: InvokeRemoteCore;
@@ -97,6 +100,7 @@ export function startPluginMcpIpc(
       tools: host.tools,
     },
     invokeRemote: localInvoke,
+    ensureAuthorized,
     notifyToolsChanged: () => toolsChanged.notify(),
   });
 

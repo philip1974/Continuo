@@ -53,6 +53,8 @@ export interface CreatePluginMcpBridgeDeps {
     removeTool(name: string): void;
   };
   invokeRemote: import('./plugin-mcp-bridge.service').InvokeRemoteCore;
+  /** agent 授权门控(必填),见下「授权门控」. */
+  ensureAuthorized: import('./mcp-tool-gates').EnsureAuthorized;
 }
 
 export function createPluginMcpBridge(deps: CreatePluginMcpBridgeDeps): PluginMcpBridge;
@@ -105,6 +107,19 @@ export function createPluginMcpBridge(deps: CreatePluginMcpBridgeDeps): PluginMc
 
 - wc=11 注册 'echo' → wc=11 destroyed → wc=22 注册 'echo' 应成功
 - 本 spec 断:gone 后再 handleRegister 同名不抛 TOOL_NAME_TAKEN
+
+### 授权门控(安全)
+
+- `CreatePluginMcpBridgeDeps.ensureAuthorized`(必填)—— stub 经 `gateWithAuth`(`mcp-tool-gates.ts`)包一层,
+  与终端 / debug 工具同走 agent 授权。此前 stub 丢弃 ctx 直接 invoke,用户对 agent 点了「拒绝」该 agent
+  仍能调插件工具(如 git stage/commit)
+- 授权以**调用方**窗口为准:`ensureAuthorized(ctx.ownerWindowId, 'plugin.<tool 名>')`,弹窗出现在发起调用的
+  agent 所在窗口;路由仍按注册者 owner —— 上面的「先到先得」跨窗共享语义**不变**(不做跨窗拒绝)
+- method 以 `plugin.` 为前缀,renderer agent-auth store 归入独立的插件工具域(与终端 / debug 域互不放行,
+  见 `agent-terminal-mcp-auth`);超长 tool 名按授权请求 method 上限截断
+- denied / 调用方已断开 → `AGENT_NOT_AUTHORIZED`,不向插件 renderer 发 invoke
+- IPC 接线 `startPluginMcpIpc(host, getStdio, ensureAuthorized)`:第三参缺省 fail-closed(一律拒绝),
+  生产由 `main/index.ts` 注入 `requestAgentAuth`
 
 ### 路由正确性
 

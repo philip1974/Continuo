@@ -126,11 +126,23 @@ describe('AgentAuthPrompt — 渲染条件', () => {
     installApi({ onRequest: vi.fn(() => () => {}), respond: vi.fn() });
     render(<AgentAuthPrompt />);
     act(() => {
-      // 安全 S2 后 terminal.* 全部有专属标签;用插件自定义 method 测 generic fallback。
-      void useAgentAuthStore.getState().ensure({ method: 'plugin.custom_tool' });
+      // 安全 S2 后 terminal.* 全部有专属标签;plugin.* 归插件域;用未知 method 测 generic fallback。
+      void useAgentAuthStore.getState().ensure({ method: 'something.custom_tool' });
     });
     const modal = document.querySelector('.wm-modal-content')!;
-    expect(modal.textContent).toContain('调用 plugin.custom_tool');
+    expect(modal.textContent).toContain('调用 something.custom_tool');
+  });
+
+  it('插件工具请求(plugin.*)的弹窗讲的是插件工具,并显示工具名', () => {
+    installApi({ onRequest: vi.fn(() => () => {}), respond: vi.fn() });
+    render(<AgentAuthPrompt />);
+    act(() => {
+      void useAgentAuthStore.getState().ensure({ method: 'plugin.git.commit' });
+    });
+    const modal = document.querySelector('.wm-modal-content')!;
+    expect(modal.textContent).toContain('Agent 请求调用插件工具');
+    expect(modal.textContent).not.toContain('Agent 请求控制内置终端');
+    expect(modal.textContent).toContain('调用插件工具 git.commit');
   });
 });
 

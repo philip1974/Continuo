@@ -32,6 +32,7 @@ interface AgentAuthState {
   pending: PendingAuthRequest | null;
   sessionGranted: boolean;        // 终端域
   debugSessionGranted: boolean;   // debug 域
+  pluginSessionGranted: boolean;  // 插件工具域
 
   /** 一站式 API:已授权直接放行,否则弹窗(挂起 Promise). */
   ensure(info: { method: string; agentLabel?: string }): Promise<EnsureOutcome>;
@@ -51,9 +52,10 @@ interface AgentAuthState {
 
 ### `ensure(info)` — 主入口
 
-- 请求所属域已授权 session → **立即** `resolve('session')`,不设 pending。**授权分两个域**:
-  method 以 `debug.` 开头的属 debug 域(看 `debugSessionGranted`),其余属终端域(看 `sessionGranted`)。
-  对终端点「本次启动期间允许」不会放行 debug 工具,反之亦然 —— 每个域第一次调用各弹一次
+- 请求所属域已授权 session → **立即** `resolve('session')`,不设 pending。**授权分三个域**:
+  method 以 `debug.` 开头的属 debug 域(看 `debugSessionGranted`);以 `plugin.` 开头的属插件工具域
+  (看 `pluginSessionGranted`,main 侧 plugin-mcp-bridge 以 `plugin.<tool 名>` 请求,见 `plugin-mcp-multi-window`);
+  其余属终端域(看 `sessionGranted`)。对某个域点「本次启动期间允许」不会放行其它域 —— 每个域第一次调用各弹一次
 - `pending !== null` → **立即** `resolve('denied')`(同一时刻一个,与 plugin permission-prompt 同型;并发的第二条直接拒)
 - 其它 → 设 `pending = { requestId(uuid), method, agentLabel? }`,返回未 resolve 的 Promise
 
@@ -72,7 +74,7 @@ interface AgentAuthState {
 ### `confirmSessionGrant(method, epoch)`
 
 - 应答方(AgentAuthPrompt)在 main 确认该 requestId 仍在等待(respond ok)后调
-- method 所属域的标志置 true(终端域 `sessionGranted` / debug 域 `debugSessionGranted`)
+- method 所属域的标志置 true(终端域 `sessionGranted` / debug 域 `debugSessionGranted` / 插件工具域 `pluginSessionGranted`)
 - `epoch` ≠ 当前 `getAgentAuthEpoch()`(期间发生过 `revoke()`)→ 忽略,不复活已撤销授权
 
 ### `deny()`

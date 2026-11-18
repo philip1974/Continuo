@@ -62,7 +62,7 @@ Each lives in `electron/shared/*-channels.ts` and is registered by `electron/mai
 - `terminal-sessions.service.ts` — single source of truth for PTYs. Broadcasts `sessions_changed` to all renderer windows; per-window filtering is done by `window-workspace-roots.service.ts` + the renderer-side reconciler.
 - `mcp-host.service.ts` + `mcp-stdio-server.service.ts` + `mcp-tools-terminal.ts` + `mcp-terminal-host.ts` — the MCP server. Exposes the 7 `terminal.*` tools (`list_sessions` / `create_session` / `send_input` / `send_text` / `press_key` / `read_output` / `kill`); per-window scoping via the `_continuo/hello` handshake from `scripts/continuo-mcp-stdio.mjs`.
 - `plugin-mcp-bridge.service.ts` — lets renderer plugins register MCP tools the MCP host then exposes upstream.
-- `agent-auth.service.ts` — reverse-IPC channel for "the agent is asking to do X, do you allow?". Routes to the *owner* window only (issue #32 fix), with destroyed-window fallback.
+- `agent-auth.service.ts` — reverse-IPC channel for "the agent is asking to do X, do you allow?". Routes to the *owner* window only (issue #32 fix); an explicit owner that is gone / a popout is denied (fail-closed), only calls without an owner fall back to the first main window.
 - `window-seq.service.ts` + `window-restore.service.ts` + `window-workspace-roots.service.ts` — per-window identity / layout restoration / cwd resolution.
 
 ## Adding a new IPC channel (recipe)

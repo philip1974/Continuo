@@ -15,6 +15,9 @@ import {
   PLUGIN_MCP_ERROR_CODES,
 } from '../../../electron/shared/plugin-mcp-channels';
 import type { AnyMcpTool } from '../../../electron/main/services/mcp-host.service';
+import type { EnsureAuthorized } from '../../../electron/main/services/mcp-tool-gates';
+import { ERROR_CODES } from '../../../electron/shared/error-codes';
+import { AGENT_AUTH_METHOD_MAX } from '../../../electron/shared/agent-auth-channels';
 
 // ─── fake host ───────────────────────────────────────────────
 
@@ -93,7 +96,9 @@ function regPayload(name: string, pluginId = 'p') {
   };
 }
 
-function makeBridge(): {
+function makeBridge(
+  ensureAuthorized: EnsureAuthorized = async () => 'once',
+): {
   bridge: PluginMcpBridge;
   host: FakeHost;
   invokeRemote: FakeInvokeRemote;
@@ -105,6 +110,7 @@ function makeBridge(): {
   const bridge = createPluginMcpBridge({
     host,
     invokeRemote,
+    ensureAuthorized,
     notifyToolsChanged: () => {
       counter.n++;
     },
@@ -402,6 +408,58 @@ describe('路由正确性', () => {
 });
 
 // ────────────────────────────────────────────────────────────
+// 授权门控 — 插件工具与终端 / debug 工具同走 agent 授权(独立 plugin 域)
+// 安全:此前 stub.run 丢弃 ctx 直接 invoke,用户对 agent 点了「拒绝」仍可调插件工具(如 git stage/commit)。
+// ────────────────────────────────────────────────────────────
+
+describe('授权门控 · 插件工具经 agent 授权', () => {
+  it('用户拒绝 → AGENT_NOT_AUTHORIZED,不向插件 renderer 发 invoke', async () => {
+    const { bridge, host, invokeRemote } = makeBridge(async () => 'denied');
+    bridge.handleRegister(11, regPayload('git.stage', 'p.git'));
+    await expect(
+      host.tools.get('git.stage')!.run({}, { ownerWindowId: 1 }),
+    ).rejects.toMatchObject({ code: ERROR_CODES.AGENT_NOT_AUTHORIZED });
+    expect(invokeRemote.invokeCalls).toEqual([]);
+  });
+
+  it('授权以调用方窗口(ctx.ownerWindowId)为准,method 归 plugin 域(plugin.<tool 名>)', async () => {
+    const ensure = vi.fn<EnsureAuthorized>(async () => 'once');
+    const { bridge, host, invokeRemote } = makeBridge(ensure);
+    // 工具由 wc 11 注册,调用方是窗口 2 的 agent:跨窗先到先得照常路由到注册者,授权弹在调用方窗口
+    bridge.handleRegister(11, regPayload('git.commit', 'p.git'));
+    await host.tools.get('git.commit')!.run({ m: 'x' }, { ownerWindowId: 2 });
+    expect(ensure).toHaveBeenCalledWith(2, 'plugin.git.commit');
+    expect(invokeRemote.invokeCalls).toEqual([
+      { owner: { pluginId: 'p.git', wcId: 11 }, name: 'git.commit', input: { m: 'x' } },
+    ]);
+  });
+
+  it('调用方已断开 → 不弹授权、不 invoke', async () => {
+    const ensure = vi.fn<EnsureAuthorized>(async () => 'once');
+    const { bridge, host, invokeRemote } = makeBridge(ensure);
+    bridge.handleRegister(11, regPayload('a'));
+    const ac = new AbortController();
+    ac.abort();
+    await expect(
+      host.tools.get('a')!.run({}, { ownerWindowId: 1, signal: ac.signal }),
+    ).rejects.toMatchObject({ code: ERROR_CODES.AGENT_NOT_AUTHORIZED });
+    expect(ensure).not.toHaveBeenCalled();
+    expect(invokeRemote.invokeCalls).toEqual([]);
+  });
+
+  it('超长 tool 名 → method 截到授权请求 method 上限内(弹窗不因超长被 renderer 丢弃)', async () => {
+    const ensure = vi.fn<EnsureAuthorized>(async () => 'once');
+    const { bridge, host } = makeBridge(ensure);
+    const longName = 'x'.repeat(256);
+    bridge.handleRegister(11, regPayload(longName));
+    await host.tools.get(longName)!.run({}, { ownerWindowId: 1 });
+    const method = ensure.mock.calls[0]![1]!;
+    expect(method.startsWith('plugin.')).toBe(true);
+    expect(method.length).toBeLessThanOrEqual(AGENT_AUTH_METHOD_MAX);
+  });
+});
+
+// ────────────────────────────────────────────────────────────
 // notifyToolsChanged — MCP `notifications/tools/list_changed` 钩子
 // ────────────────────────────────────────────────────────────
 
@@ -463,7 +521,11 @@ describe('notifyToolsChanged · 钩子触发时机', () => {
   it('notifyToolsChanged 未注入 → 不抛错(可选 deps)', () => {
     const host = makeFakeHost();
     const invokeRemote = makeFakeInvokeRemote();
-    const bridge = createPluginMcpBridge({ host, invokeRemote });
+    const bridge = createPluginMcpBridge({
+      host,
+      invokeRemote,
+      ensureAuthorized: async () => 'once',
+    });
     expect(() => bridge.handleRegister(11, regPayload('a'))).not.toThrow();
     expect(() => bridge.handleUnregister(11, 'a')).not.toThrow();
     expect(() => bridge.handleWebContentsGone(11)).not.toThrow();
