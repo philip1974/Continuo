@@ -38,6 +38,7 @@ import {
 import { atomicWriteJson } from '../lib/atomic-write';
 import { createByteCappedBuffer } from '../lib/byte-capped-buffer';
 import { openForReadNonBlocking, readFileCappedFd } from '../lib/read-fh-capped';
+import { isSameOrInsidePath } from '../lib/path-inside';
 import { runSerialPerKey } from './serialize-per-key';
 import { parseManifest } from '../../shared/plugin-manifest';
 
@@ -357,13 +358,27 @@ async function readPluginManifestText(
     return null;
   }
   if (!stat.isDirectory()) return null;
+  const manifestPath = path.join(dir, 'manifest.json');
+  if (!(await staysInsidePluginDir(dir, manifestPath))) return null;
   // 边界(E24):manifest 超 1MiB(或缺失/不可读)→ 跳过整插件,不整文件读入 + IPC 传输。
-  const manifestText = await readFileCapped(
-    path.join(dir, 'manifest.json'),
-    MANIFEST_MAX_BYTES,
-  );
+  const manifestText = await readFileCapped(manifestPath, MANIFEST_MAX_BYTES);
   if (manifestText === null) return null;
   return { dir, manifestText };
+}
+
+/**
+ * 安全:filePath(插件目录下的 manifest / main)的真实路径是否仍在插件目录的真实路径内。
+ * 插件目录内容来自插件仓库,旧版本安装的目录可能带符号链接(`main.js -> ~/.ssh/id_rsa`、`dist -> /`):
+ * 宿主读它等于替插件读目录外文件。按 realpath 判包含而非禁链接:插件目录本身是链接(本地开发)、
+ * 目录内互指的链接照旧可用。缺失 / 不可解析 → false。
+ */
+async function staysInsidePluginDir(dir: string, filePath: string): Promise<boolean> {
+  try {
+    const [realDir, realFile] = await Promise.all([fs.realpath(dir), fs.realpath(filePath)]);
+    return isSameOrInsidePath(realDir, realFile);
+  } catch {
+    return false;
+  }
 }
 
 /** 按 manifest.main(解析失败 → 默认 main.js)读 main 文本;越界 / 缺失 / 超限 → null。 */
@@ -376,7 +391,7 @@ async function readPluginMainText(dir: string, manifestText: string): Promise<st
     // manifest 解析失败由 renderer 端 parseManifest 报错,我们继续给 mainText 尝试默认
   }
   const mainPath = resolvePluginMainPath(dir, mainName);
-  if (!mainPath) return null;
+  if (!mainPath || !(await staysInsidePluginDir(dir, mainPath))) return null;
   // 边界(E24):main 超 8MiB(或缺失/不可读)→ 跳过整个 plugin。
   return readFileCapped(mainPath, MAIN_MAX_BYTES);
 }
@@ -393,7 +408,7 @@ async function isPluginMainAvailable(dir: string, manifestText: string): Promise
     // 同 readPluginMainText:manifest 解析失败按默认 main.js
   }
   const mainPath = resolvePluginMainPath(dir, mainName);
-  if (!mainPath) return false;
+  if (!mainPath || !(await staysInsidePluginDir(dir, mainPath))) return false;
   let fh: import('node:fs/promises').FileHandle;
   try {
     // O_NONBLOCK:main 若是 FIFO(或指向 FIFO 的链接),阻塞 open 会永久占住 libuv 线程池线程。
@@ -1293,6 +1308,9 @@ export async function installFromGit(
     cloneArgs.push(gitUrl, cloneDir);
     await runGit(cloneArgs);
 
+    // 安全:克隆树里不允许任何符号链接,且在读 manifest 之前检查(manifest.json 本身也可以是链接)。
+    await assertNoSymlinksInClone(cloneDir);
+
     // 边界(E27,E24 兄弟):安装路径读 clone 的 manifest.json 也走 readFileCapped(同
     // MANIFEST_MAX_BYTES),与 listPluginDirs 启动扫描一致。clone 来自外部 git 仓库,manifest
     // 内容不可控;裸 fs.readFile 整块读入超大 manifest → 内存峰值。超限/缺失/不可读 → 返 null →
@@ -1419,6 +1437,32 @@ export async function installFromGit(
     });
   } finally {
     await rm(tmpRoot, { recursive: true, force: true });
+  }
+}
+
+/**
+ * 安全:克隆树(顶层 .git 除外,落位前即删)含任何符号链接 → 抛 PLUGIN_SYMLINK_REJECTED。
+ * 宿主以自身权限读安装目录里的文件(data.json / manifest.json / main),仓库提交
+ * `data.json -> ../<别的插件>/data.json`、`main.js -> ~/.ssh/id_rsa` 即可借宿主之手读到目录外内容。
+ * 不区分树内 / 树外目标:已知插件仓库都不含链接,一律拒绝最简单。
+ */
+async function assertNoSymlinksInClone(cloneDir: string): Promise<void> {
+  const pending = [cloneDir];
+  while (pending.length > 0) {
+    const dir = pending.pop()!;
+    for (const dirent of await fs.readdir(dir, { withFileTypes: true })) {
+      if (dir === cloneDir && dirent.name === '.git') continue;
+      const full = path.join(dir, dirent.name);
+      // 部分文件系统 d_type 未知(三个判定都为 false)→ lstat 补判。
+      const st = dirent.isDirectory() || dirent.isFile() || dirent.isSymbolicLink() ? dirent : await fs.lstat(full);
+      if (st.isSymbolicLink()) {
+        throw codedError(
+          ERROR_CODES.PLUGIN_SYMLINK_REJECTED,
+          `插件仓库含符号链接,拒绝安装: ${path.relative(cloneDir, full).slice(0, 256)}`,
+        );
+      }
+      if (st.isDirectory()) pending.push(full);
+    }
   }
 }
 

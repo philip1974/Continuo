@@ -1015,6 +1015,10 @@
 
 - [`demux.spec.ts`](./plugin-shell-stream-demux/demux.spec.ts)
 
+## [plugin-symlink-escape(插件仓库里的符号链接不能把宿主的读写引到插件目录之外)](./plugin-symlink-escape/README.md)
+
+- [`plugin-symlink-escape.spec.ts`](./plugin-symlink-escape/plugin-symlink-escape.spec.ts)
+
 ## [plugin-uninstall-broadcast(跨窗口卸载撤销插件实例与授权)](./plugin-uninstall-broadcast/README.md)
 
 - [`main-broadcast.spec.ts`](./plugin-uninstall-broadcast/main-broadcast.spec.ts)
