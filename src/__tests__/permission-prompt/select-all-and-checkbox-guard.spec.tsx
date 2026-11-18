@@ -135,6 +135,19 @@ describe('manifest 权限弹窗:「全选」与勾上勾选框受授予方向的
     expect(checked()).toEqual([false, true]);
   });
 
+  it('被守卫拒掉的「全选」/ 勾选有可感知反馈(status 区域出现提示);有效操作后提示清空', () => {
+    manifest(['fs', 'shell']);
+    const status = (): string =>
+      document.querySelector('.wm-modal-content [role="status"]')!.textContent ?? '';
+    expect(status()).toBe('');
+    pointerClick(selectAllButton());
+    expect(status()).not.toBe('');
+    advance(DELAY);
+    pointerClick(checkboxes()[1]!);
+    expect(checked()).toEqual([true, true]);
+    expect(status()).toBe('');
+  });
+
   it('双击的第二击(detail=2)不能勾上', () => {
     manifest(['shell']);
     advance(DELAY);

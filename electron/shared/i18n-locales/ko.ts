@@ -526,6 +526,8 @@ export const ko: Record<TranslationKey, string> = {
   'permissions.prompt.note_prefix': '체크하지 않은 것은 거부로 간주됩니다. 지원:',
   'permissions.prompt.note_partial': '부분 권한 부여',
   'permissions.prompt.note_suffix': ': 플러그인이 권한 없는 API 호출 시 거부(PermissionError 발생)되지만 전체적으로 활성화 가능. 모두 거부하면 플러그인은 활성화되지 않음.',
+  'permissions.grant_guard.rejected':
+    '아직 적용되지 않았습니다. 잠시 멈춘 뒤 한 번 클릭하거나, 포커스를 잠시 둔 뒤 Enter / Space를 누르세요.',
   'permissions.prompt.select_all': '모두 선택',
   'permissions.prompt.select_all_except_shell': '모두 선택(Shell 제외)',
   'permissions.prompt.deny_all': '모두 거부',

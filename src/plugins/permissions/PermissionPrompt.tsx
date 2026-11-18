@@ -14,6 +14,7 @@ import {
   type GrantClick,
   type PromptGrantGuard,
 } from '@/lib/use-prompt-grant-guard';
+import { PromptGrantHint } from '@/lib/prompt-grant-hint';
 
 const PLUGIN_ID_MARKER = ' __PID__ ';
 const EMPTY_SELECTED_PERMISSIONS: PermissionKey[] = [];
@@ -193,6 +194,7 @@ function ManifestPromptBody({ pending, guard }: { pending: Pending; guard: Promp
           </Button>
         </div>
       </div>
+      <PromptGrantHint guard={guard} />
     </Modal>
   );
 }
@@ -269,6 +271,7 @@ function FsScopePromptBody({ scope, guard }: { scope: FsScopePrompt; guard: Prom
           {t('permissions.fs_scope.grant')}
         </Button>
       </div>
+      <PromptGrantHint guard={guard} />
     </Modal>
   );
 }

@@ -521,6 +521,7 @@ export const zh: Record<TranslationKey, string> = {
   'permissions.prompt.note_prefix': '未勾视为拒绝。支持',
   'permissions.prompt.note_partial': '部分授权',
   'permissions.prompt.note_suffix': '：plugin 调未授 API 时会被拒（抛 PermissionError），整体仍能激活。全部拒绝则 plugin 不激活。',
+  'permissions.grant_guard.rejected': '尚未生效:请稍作停顿后再单击,或聚焦片刻后再按 Enter / 空格。',
   'permissions.prompt.select_all': '全选',
   'permissions.prompt.select_all_except_shell': '全选（不含 shell）',
   'permissions.prompt.deny_all': '全部拒绝',

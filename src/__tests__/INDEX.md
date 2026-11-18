@@ -218,6 +218,7 @@
 ## [agent-auth-prompt-throttle(agent 授权弹窗被拒后有冷却,不能循环弹窗诱导误点)](./agent-auth-prompt-throttle/README.md)
 
 - [`main-throttle.spec.ts`](./agent-auth-prompt-throttle/main-throttle.spec.ts)
+- [`prompt-grant-feedback.spec.tsx`](./agent-auth-prompt-throttle/prompt-grant-feedback.spec.tsx)
 - [`prompt-grant-guard.spec.tsx`](./agent-auth-prompt-throttle/prompt-grant-guard.spec.tsx)
 - [`prompt-keyboard-grant-guard.spec.tsx`](./agent-auth-prompt-throttle/prompt-keyboard-grant-guard.spec.tsx)
 - [`renderer-ready-handshake.spec.ts`](./agent-auth-prompt-throttle/renderer-ready-handshake.spec.ts)

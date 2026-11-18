@@ -6,6 +6,7 @@
 //
 // 授予按钮的用法:标上 PROMPT_GRANT_BUTTON_PROPS,onClick 里先问 guard.canGrant(e)。
 // 弹窗里其它「授予方向」的状态变更(勾上权限、全选)同样先问 guard.canGrant。
+// 被拒掉的激活要让用户感知得到:弹窗里放一个 <PromptGrantHint guard={guard} />(lib/prompt-grant-hint)。
 
 import { useLayoutEffect, useRef, useState } from 'react';
 
@@ -14,6 +15,9 @@ import { useLayoutEffect, useRef, useState } from 'react';
  * 要求的聚焦时长与按键前的停顿时长。
  */
 export const PROMPT_GRANT_ARM_DELAY_MS = 500;
+
+/** 被拒提示的显示时长(之后清空,下一次被拒时读屏会重新播报)。 */
+export const PROMPT_GRANT_HINT_MS = 4000;
 
 /** 授予方向的按钮都要带上(守卫靠它认出自己负责的弹窗)。 */
 export const PROMPT_GRANT_BUTTON_PROPS = { 'data-prompt-grant': '' } as const;
@@ -49,6 +53,12 @@ export interface PromptGrantGuard {
    * 给「对旧弹窗的连点 / 键重复不能落到新请求上」的场景用(连拒绝方向也挡);首次出现不受影响。
    */
   readonly switchSettled: () => boolean;
+  /**
+   * 最近一次 canGrant 是否把激活拒掉了(PROMPT_GRANT_HINT_MS 后、被接受的激活之后、请求切换后复位)。
+   * useSyncExternalStore 形状,供 PromptGrantHint 订阅。
+   */
+  readonly subscribeRejected: (onChange: () => void) => () => void;
+  readonly wasRejected: () => boolean;
 }
 
 interface GuardState {
@@ -90,6 +100,7 @@ export function usePromptGrantGuard(current: unknown): PromptGrantGuard {
     keyIsStreamTab: false,
     focusByStreamTab: false,
   });
+  const [feedback] = useState(createRejectionFeedback);
   // layout effect:在浏览器处理下一次输入之前就记下出现时刻。
   useLayoutEffect(() => {
     const s = state.current;
@@ -99,7 +110,8 @@ export function usePromptGrantGuard(current: unknown): PromptGrantGuard {
     s.shownAt = s.armAt = current !== null ? now : null;
     s.typedSinceShown = false;
     s.last = current;
-  }, [current]);
+    feedback.set(false);
+  }, [current, feedback]);
 
   // 有弹窗期间记录按键与焦点(capture 阶段:先于 Modal 的 keydown 处理与按钮自身的 click)。
   const active = current !== null;
@@ -146,8 +158,11 @@ export function usePromptGrantGuard(current: unknown): PromptGrantGuard {
     };
   }, [active]);
 
-  const [guard] = useState<PromptGrantGuard>(() => ({
-    canGrant: (e) => {
+  // 卸载时不留定时器。
+  useLayoutEffect(() => () => feedback.set(false), [feedback]);
+
+  const [guard] = useState<PromptGrantGuard>(() => {
+    const decide = (e: GrantClick): boolean => {
       const s = state.current;
       const now = Date.now();
       // 出现时刻未知(尚未记录)→ 不可用。
@@ -163,13 +178,48 @@ export function usePromptGrantGuard(current: unknown): PromptGrantGuard {
       // click)→ 已满足停顿。
       const keyIsRecent = s.keyAt !== null && now - s.keyAt < PROMPT_GRANT_ARM_DELAY_MS;
       return !keyIsRecent || s.keyDeliberate;
-    },
-    switchSettled: () => {
-      const at = state.current.switchedAt;
-      return at === null || Date.now() - at >= PROMPT_GRANT_ARM_DELAY_MS;
-    },
-  }));
+    };
+    return {
+      canGrant: (e) => {
+        const ok = decide(e);
+        feedback.set(!ok);
+        return ok;
+      },
+      switchSettled: () => {
+        const at = state.current.switchedAt;
+        return at === null || Date.now() - at >= PROMPT_GRANT_ARM_DELAY_MS;
+      },
+      subscribeRejected: feedback.subscribe,
+      wasRejected: feedback.get,
+    };
+  });
   return guard;
+}
+
+/** 「最近一次授予激活被拒」的小型外部 store:被拒后 PROMPT_GRANT_HINT_MS 自动复位。 */
+function createRejectionFeedback(): {
+  set(rejected: boolean): void;
+  get(): boolean;
+  subscribe(onChange: () => void): () => void;
+} {
+  let rejected = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const listeners = new Set<() => void>();
+  const set = (next: boolean): void => {
+    if (timer !== null) clearTimeout(timer);
+    timer = next ? setTimeout(() => set(false), PROMPT_GRANT_HINT_MS) : null;
+    if (rejected === next) return;
+    rejected = next;
+    for (const listener of listeners) listener();
+  };
+  return {
+    set,
+    get: () => rejected,
+    subscribe: (onChange) => {
+      listeners.add(onChange);
+      return () => void listeners.delete(onChange);
+    },
+  };
 }
 
 function isFirstFocusableOfGrantDialog(el: Element | null): boolean {

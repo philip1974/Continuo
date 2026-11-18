@@ -554,6 +554,8 @@ export const en = {
   'permissions.prompt.note_prefix': 'Unchecked = denied. Supports',
   'permissions.prompt.note_partial': 'partial grant',
   'permissions.prompt.note_suffix': ': plugin will be rejected (throws PermissionError) when calling un-granted API, but can still activate overall. Reject all → plugin cannot activate.',
+  'permissions.grant_guard.rejected':
+    'Not applied yet — pause, then click once (or focus it, wait, then press Enter / Space).',
   'permissions.prompt.select_all': 'Select all',
   'permissions.prompt.select_all_except_shell': 'Select all (except shell)',
   'permissions.prompt.deny_all': 'Deny all',
