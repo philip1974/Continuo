@@ -15,6 +15,7 @@ import {
   TREE_KILL_DETACHED,
 } from '../lib/kill-with-grace';
 import { trackPluginShellProcess } from '../lib/plugin-shell-owners';
+import { resolveSpawnCommand, withGitHardeningEnv } from '../lib/child-spawn-hardening';
 import { makeWcGoneHook } from '../lib/wc-gone-hook';
 import type {
   IpcShellExecInput,
@@ -137,9 +138,9 @@ export function execShell(
   return new Promise((resolve) => {
     const timeoutMs = clampExecTimeoutMs(input.timeoutMs);
     const maxBytes = clampExecMaxBytes(input.maxOutputBytes);
-    const env = input.env
-      ? { ...process.env, ...input.env }
-      : process.env;
+    // 安全:注入 git 命令行作用域 core.fsmonitor=false,恶意 workspace 的 .git/config 不能借插件的
+    // `git status` 执行任意命令(见 lib/child-spawn-hardening)。
+    const env = withGitHardeningEnv(input.env ? { ...process.env, ...input.env } : process.env);
 
     let child;
     try {
@@ -148,7 +149,9 @@ export function execShell(
       // 语法执行 → 破坏参数原子性 + 命令注入面(codex diff 复查)。Windows 下 `.cmd`/
       // `.bat`(npm/pnpm 等)无法直接 spawn 的正确解法是 PATHEXT 检测 + 仅对 .cmd/.bat
       // 走 `cmd.exe /d /s /c` 并对每个 arg 做 Windows quoting,需 Windows 实测 → DEFER。
-      child = spawn(input.cmd, [...input.args], {
+      // 安全(Windows):裸命令名只在 PATH 绝对目录中解析,不查 cwd(workspace 根的 git.exe);解析不到抛错
+      // 走下方 spawn failed(见 lib/child-spawn-hardening)。
+      child = spawn(resolveSpawnCommand(input.cmd, env), [...input.args], {
         cwd: input.cwd,
         env,
         stdio: ['pipe', 'pipe', 'pipe'],
