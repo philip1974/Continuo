@@ -340,6 +340,14 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
     }
   }, [activateLink, readonly]);
 
+  // 安全(L1):中键点链接在 Chromium 里不触发 click,只触发 auxclick,其默认行为是「在后台标签打开」——
+  // Electron 把它交给 windowOpenHandler(只读预览里实测 file: / co: / https: 链接都会走到),绕过上面的
+  // activateLink → resolveLink → 白名单外部打开。中键与左键同语义;其它键(右键菜单等)不当作打开。
+  const handleAuxClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.button !== 1) return;
+    handleClick(e);
+  }, [handleClick]);
+
   // a11y(A152):Cmd/Ctrl+click 跳转的键盘等价 —— Cmd/Ctrl+Enter。键盘用户无法用鼠标修饰键
   // 点击链接;用修饰键(非裸 Enter)避免与可编辑 ProseMirror 的换行冲突。链接定位优先 event
   // target(链接获焦时),退回当前选区 anchorNode 所在的 <a>(caret 落在链接文本里时)。
@@ -364,6 +372,7 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
         className="h-full w-full overflow-auto"
         style={{ fontSize: `${fontSize}px` }}
         onClick={handleClick}
+        onAuxClick={handleAuxClick}
         onKeyDown={handleKeyDown}
       >
         <CrepeEditor {...props} />

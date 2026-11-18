@@ -54,6 +54,14 @@ function click(target: Element, init?: MouseEventInit): boolean {
   return event.defaultPrevented;
 }
 
+// 中键点链接在 Chromium 里不触发 click,而是 auxclick;默认行为是「在后台标签打开」→ Electron 交给
+// windowOpenHandler。只拦 onClick 时中键会绕过 activateLink / resolveLink(安全 L1)。
+function auxClick(target: Element, button: number): boolean {
+  const event = new MouseEvent('auxclick', { bubbles: true, cancelable: true, button });
+  target.dispatchEvent(event);
+  return event.defaultPrevented;
+}
+
 describe('Milkdown 链接点击不导航应用窗口', () => {
   it('Edit:普通点击不导航也不打开;Cmd/Ctrl+click 打开', () => {
     const { onLinkClick, a } = setup(false);
@@ -85,6 +93,30 @@ describe('Milkdown 链接点击不导航应用窗口', () => {
 
     expect(click(a)).toBe(true);
     expect(onLinkClick).toHaveBeenCalledWith('https://example.com/');
+  });
+
+  it('L1 Preview:中键点链接(auxclick)吞掉默认行为,与左键同语义交给 onLinkClick', () => {
+    const { onLinkClick, a, rect } = setup(true);
+
+    expect(auxClick(a, 1)).toBe(true);
+    expect(onLinkClick).toHaveBeenCalledWith('https://example.com/');
+
+    expect(auxClick(rect, 1)).toBe(true);
+    expect(onLinkClick).toHaveBeenCalledWith('https://example.com/diagram');
+  });
+
+  it('L1 Edit:中键点链接同样吞掉默认行为;与左键一样不带修饰键不打开', () => {
+    const { onLinkClick, a } = setup(false);
+
+    expect(auxClick(a, 1)).toBe(true);
+    expect(onLinkClick).not.toHaveBeenCalled();
+  });
+
+  it('L1 非中键的 auxclick(右键)不当作打开链接', () => {
+    const { onLinkClick, a } = setup(true);
+
+    auxClick(a, 2);
+    expect(onLinkClick).not.toHaveBeenCalled();
   });
 
   it('不在链接上的点击不受影响', () => {
