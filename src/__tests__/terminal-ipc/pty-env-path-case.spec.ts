@@ -22,11 +22,11 @@ vi.mock('@continuo-terminal/server-node', async () => ({
   })),
 }));
 vi.mock('electron', () => ({ app: { getPath: vi.fn((k: string) => `/tmp/test-${k}`) }, BrowserWindow: {} }));
-vi.mock('../services/settings.service', () => ({ getCurrentLocale: vi.fn(() => 'en') }));
-vi.mock('../services/pty-lang', () => ({ withPtyLangEnv: vi.fn((env: unknown) => env) }));
+vi.mock('../../../electron/main/services/settings.service', () => ({ getCurrentLocale: vi.fn(() => 'en') }));
+vi.mock('../../../electron/main/services/pty-lang', () => ({ withPtyLangEnv: vi.fn((env: unknown) => env) }));
 
 import type { BrowserWindow } from 'electron';
-import * as terminalService from '../services/terminal.service';
+import * as terminalService from '../../../electron/main/services/terminal.service';
 
 const realPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
 const win = { id: 1, isDestroyed: () => false, webContents: { send: vi.fn(), isDestroyed: () => false } };

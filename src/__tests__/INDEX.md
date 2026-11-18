@@ -1264,6 +1264,7 @@
 
 ## [terminal-ipc (M-Terminal Step T2)](./terminal-ipc/README.md) `[integration]`
 
+- [`pty-env-path-case.spec.ts`](./terminal-ipc/pty-env-path-case.spec.ts)
 - [`read-history-ownership.spec.ts`](./terminal-ipc/read-history-ownership.spec.ts)
 - [`sessions-changed-skip-unchanged.spec.ts`](./terminal-ipc/sessions-changed-skip-unchanged.spec.ts)
 - [`terminal-ipc.spec.ts`](./terminal-ipc/terminal-ipc.spec.ts)

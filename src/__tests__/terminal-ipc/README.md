@@ -35,6 +35,9 @@ handler 真行为(node-pty spawn / write / resize)需 PTY 运行时,留 E2E 验�
   - cwd 缺失 → 用 homedir
   - 注入的 service.createTerminal 被调一次,id 由 generateId 决定
   - **sessionStore.add 入参附 `ownerWindowId: win.id`**(Issue #28 Phase 1)
+  - Windows:input.env 与内部 MCP env 合并大小写不敏感,内部键的大小写变体不能并存覆盖(`terminal-ipc.spec.ts`)
+- PTY env 合并(`pty-env-path-case.spec.ts`):Windows 上 process.env / 终端身份变量 / 调用方 env / 会话内部键
+  逐层合并时同名(忽略大小写)只留后者;非 Windows 等同普通展开
 - makeListSessionsHandler:
   - 签名 `(input: { ownerWindowId: number })`,**不**接受 renderer 自报字段
   - 调 `sessionStore.getAll({ ownerWindowId })` 过滤
