@@ -175,6 +175,11 @@ export async function canonicalizeScopePath(rawPath: string): Promise<string> {
   let expanded: string;
   try {
     expanded = expandHome(rawPath);
+    // 安全:先词法折叠 `.` / `..`(与 check 的词法预判同一口径)。否则 `<ws>/不存在/../../..` 的 realpath 失败后
+    // 走下方「上级 realpath + 其余原样」回退,canonical 保留 `..`:弹窗显示看似在工作区内的路径、covers 按前缀
+    // 判它已被工作区授权覆盖(不弹窗),而别名按折叠后的 `/` 登记 → 任意路径通过词法预判,存在性探测器重开。
+    // 折叠后弹窗显示、实际授予与别名是同一个位置。相对路径不动(本就匹配不上任何目标)。
+    if (isAbsolute(expanded)) expanded = resolve(expanded);
   } catch {
     // expandHome 对 `~user` 形式 / 无 $HOME 会抛 ScopeError。退化为原始路径(死 scope:
     // 不匹配 canonical probe,但与改动前「裸存」行为一致),**不能**让单条畸形 scope
@@ -196,8 +201,8 @@ export async function canonicalizeScopePath(rawPath: string): Promise<string> {
 }
 
 /**
- * realpath 最近的已存在上级目录,其后尚不存在的各级原样接上(只拼接,不折叠 `..` —— 含 `..` 的 scope
- * 与以前一样匹配不上任何目标,不会变成别的目录)。相对路径、没有任何上级能解析时原样返回。
+ * realpath 最近的已存在上级目录,其后尚不存在的各级原样接上(只拼接;调用方 canonicalizeScopePath
+ * 已先折叠 `..`,这里不会再见到)。相对路径、没有任何上级能解析时原样返回。
  */
 async function realpathExistingAncestor(expanded: string): Promise<string> {
   if (!isAbsolute(expanded)) return expanded;

@@ -241,6 +241,9 @@ export class PathScopeRegistry extends EventEmitter {
     for (let i = 0; i < requested.length; i += 1) {
       const canonicalPath = canonical[i]?.path;
       if (canonicalPath === undefined) continue;
+      // 纵深:canonical 必须已折叠(canonicalizeScopePath 保证)。带 `..` 分量的 canonical 是字符串前缀上的
+      // 「scope 内」,折叠后的请求写法却可能宽到 `/` —— 绝不为它登记别名。
+      if (canonicalPath.split(/[\\/]/).includes('..')) continue;
       let lexical: string;
       try {
         lexical = lexicalAbsolutePath(requested[i]!.path);

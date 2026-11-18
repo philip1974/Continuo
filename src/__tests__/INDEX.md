@@ -924,6 +924,7 @@
 
 ## [plugin-fs-scope-existence-oracle(scope 外路径一律同一条拒绝,不泄露存在性)](./plugin-fs-scope-existence-oracle/README.md)
 
+- [`scope-dotdot-alias.spec.ts`](./plugin-fs-scope-existence-oracle/scope-dotdot-alias.spec.ts)
 - [`scope-existence-oracle.spec.ts`](./plugin-fs-scope-existence-oracle/scope-existence-oracle.spec.ts)
 
 ## [plugin-fs-token-revoke-retry](./plugin-fs-token-revoke-retry/README.md)
