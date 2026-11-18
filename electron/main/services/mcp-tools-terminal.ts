@@ -261,7 +261,8 @@ export function makeCreateSessionTool(
         cwd: {
           type: 'string',
           maxLength: PATH_MAX,
-          description: 'Working directory for the spawned shell (default: user home).',
+          description:
+            "Working directory for the spawned shell (default: the current window's workspace root; fails with TERMINAL_CWD_UNRESOLVED if the window has none or the directory does not exist).",
         },
         name: {
           type: 'string',
