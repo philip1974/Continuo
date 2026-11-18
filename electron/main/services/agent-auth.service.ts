@@ -23,6 +23,7 @@ import { codedError } from '../../shared/error-message';
 import { broadcastToWindows } from '../lib/broadcast';
 import { cancelAgentTerminalCreates } from './agent-terminal-inflight';
 import { PromptThrottle, type PromptAdmission } from '../lib/prompt-throttle';
+import { makeWcGoneHook } from '../lib/wc-gone-hook';
 
 // 5 分钟无应答 → 默认拒绝(防 renderer 卡死时 tool Promise 永远悬挂)
 const PROMPT_TIMEOUT_MS = AGENT_AUTH_PROMPT_TIMEOUT_MS;
@@ -53,15 +54,37 @@ const pending = new Map<string, PendingAuth>();
 //   (未 hello 的 stdio 客户端,可能是别的窗口里的 agent)与窗口内 agent 各自计数、各占一个未决槽,互不影响。
 // - 用户拒绝 → 该域冷却(30s 起,连续被拒翻倍到 5 分钟);同一 subject 连续 3 次被拒(轮换域)→ 所有域退避;
 //   无人应答超时 → 该域一次 30s 冷却(不升级);每 subject 60s 内最多 10 个弹窗;每 subject 同时最多一个未决弹窗。
-//   窗口关闭 / 撤销 / 退出 / 发送失败结算的不算拒绝。
+//   窗口关闭 / renderer reload / 撤销 / 退出 / 发送失败结算的不算拒绝。
 // - 被节流的请求不发 IPC、不弹窗,抛 AGENT_NOT_AUTHORIZED 并在消息里说明原因与多久内不再询问。
 let throttle = new PromptThrottle();
 /**
  * main 对 renderer「本次启动期间允许」的镜像(`窗口:类别:域`)。真相源仍在 renderer;这里只用来决定是否走节流:
  * 已授权域的请求 renderer 直接放行、不弹窗,所以并发、高频都是正常使用,不能被单飞 / 速率上限拦住。
- * 镜像过期(renderer reload 丢了授权态)时自愈:按镜像放行的请求被拒 → 清镜像(不计拒绝),之后恢复节流。
+ * renderer 文档被换掉(reload / 渲染进程崩溃)时由 watchRendererGone 清除。纵深:镜像说已授权时 renderer 只会秒回
+ * 'session';按镜像放行的请求得到任何别的结果(仅本次 / 拒绝 / 超时 / 取消)都说明镜像已过期 → 清镜像,且这次的
+ * 结果照常记入节流(否则过期镜像下每次点「仅本次」都不计速率、超时无冷却、被拒后立刻又弹)。
  */
 const sessionGrantMirror = new Set<string>();
+
+// 安全:renderer 文档被换掉(主窗 View 菜单 Cmd+R reload、渲染进程崩溃)时 webContents 不销毁、窗口也不关,
+// win 'closed' 的清理走不到;而 renderer 侧的授权态与弹窗已随旧文档消失。不清的话:
+// - 镜像残留 → 该域请求不走节流,renderer 却真的弹窗(速率上限 / 超时冷却 / 拒绝冷却全部失效);
+// - 显示中的弹窗消失,main 的未决请求留到 5 分钟超时,调用方一直「已有未决弹窗」,之后再吃超时冷却 →
+//   同窗口所有 agent 数分钟拿不到弹窗。
+// 首次向某窗口发请求时挂钩(同 plugin-fs / plugin-mcp 的按需挂法);此后该 webContents 每次换文档都结算。
+const rendererGoneWatched = new WeakSet<object>();
+function watchRendererGone(win: BrowserWindow): void {
+  const wc = win.webContents;
+  if (rendererGoneWatched.has(wc)) return;
+  rendererGoneWatched.add(wc);
+  const windowId = win.id;
+  const onGone = (): void => {
+    cancelAgentAuthByWindow(windowId);
+  };
+  makeWcGoneHook(onGone)(wc);
+  // 单测里的假 webContents 可能不带 on。
+  if (typeof wc.on === 'function') wc.on('render-process-gone', onGone);
+}
 
 const authSubject = (windowId: number, external: boolean): string =>
   `${windowId}:${external ? 'external' : 'window'}`;
@@ -133,6 +156,7 @@ export async function requestAgentAuth(
   const domain = agentAuthDomainOf(info.method);
   const subject = authSubject(win.id, info.external === true);
   const grantKey = `${subject}:${domain}`;
+  watchRendererGone(win);
   // 该域已「本次启动期间允许」→ renderer 不弹窗,不走节流。
   const throttled = !sessionGrantMirror.has(grantKey);
   if (throttled) {
@@ -143,18 +167,19 @@ export async function requestAgentAuth(
   return new Promise<AgentAuthDecision>((resolve) => {
     const settle = (decision: AgentAuthDecision, cause: SettleCause): void => {
       clearTimeout(timer);
-      if (throttled) {
-        throttle.endPrompt(subject);
+      const granted = cause === 'answer' && decision === 'session';
+      // 未走节流(镜像说已授权)却不是 'session' → 镜像已过期:清掉,这次的结果照常记账。并发的同类请求只有
+      // 第一个发现过期的记账(其余是 renderer 因槽被占自动拒的,不是用户的决定)。没有 admit 过,不调 endPrompt。
+      const account = throttled || (!granted && sessionGrantMirror.delete(grantKey));
+      if (throttled) throttle.endPrompt(subject);
+      if (account) {
         if (cause === 'answer') {
           throttle.noteDecision(subject, [domain], decision === 'denied' ? 'deny' : 'grant');
         } else if (cause === 'timeout') {
           throttle.noteTimeout(subject, [domain]);
         }
-      } else if (cause === 'answer' && decision === 'denied') {
-        // 镜像说已授权,renderer 却拒了(reload 丢了授权态后真的弹了窗 / 弹窗被占)→ 镜像作废,之后走节流。
-        sessionGrantMirror.delete(grantKey);
       }
-      if (cause === 'answer' && decision === 'session') sessionGrantMirror.add(grantKey);
+      if (granted) sessionGrantMirror.add(grantKey);
       resolve(decision);
     };
     const timer = setTimeout(() => {
@@ -217,7 +242,8 @@ export function answerAgentAuthRequest(
 }
 
 /**
- * 目标窗口关闭/销毁 → 把发往它的所有 pending 授权请求立即结算为 denied。
+ * 目标窗口关闭/销毁,或其 renderer 文档被换掉(reload / 渲染进程崩溃,见 watchRendererGone)→ 把发往它的所有
+ * pending 授权请求立即结算为 denied(按取消:不计拒绝、不进冷却),并清掉它的授权镜像。
  * 否则发起的**外部 agent CLI 进程**(仍存活)要干等满 PROMPT_TIMEOUT_MS(5min)才收到
  * 默认拒绝,表现为 agent 假死。这与 request-scope「等待者是已死请求方自己」不同 ——
  * 这里等待者是活的外部进程。镜像 stop-hook broker.cancelByWindow(审计 #3)。返回取消数。
@@ -231,7 +257,7 @@ export function cancelAgentAuthByWindow(windowId: number): number {
     entry.settle('denied', 'cancelled');
     count += 1;
   }
-  // 窗口没了(关闭 / reload)→ 它的 renderer 授权态也没了。
+  // renderer 文档没了 → 它的授权态也没了。
   for (const key of sessionGrantMirror) {
     if (key.startsWith(`${windowId}:`)) sessionGrantMirror.delete(key);
   }

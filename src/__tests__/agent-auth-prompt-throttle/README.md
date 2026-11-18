@@ -33,8 +33,16 @@ plugin)计。
   agent 授权没有用户手动重试入口:用户想放行就让 agent 冷却后再试。
 - **「本次启动期间允许」后不节流**:用户对某域选了「本次启动期间允许」后,renderer 对该域直接放行、不弹窗,所以该域
   的并发 / 高频调用是正常使用,主进程原样转发(不单飞、不计速率)。主进程为此记一份授权镜像(真相源仍在
-  renderer):撤销、窗口关闭时清除;renderer reload 丢了授权态时自愈 —— 按镜像放行的请求被拒一次即清镜像(这一次
-  不计拒绝),之后恢复节流。
+  renderer):撤销、窗口关闭、renderer reload 时清除(见下)。
+- **renderer reload / 渲染进程崩溃**(主窗 View 菜单 Cmd+R;窗口不关、webContents 不销毁,但 renderer 的授权态与
+  弹窗随旧文档消失):main 在该窗口主框架的非同文档导航(`lib/wc-gone-hook`,同 plugin-fs / plugin-mcp 的回收时机)
+  与 `render-process-gone` 时,把该窗口全部未决请求按**取消**结算(不计拒绝、不进冷却)并清掉它的授权镜像。
+  此前(审计实测):①镜像残留 → 该域请求不走节流而 renderer 真的弹窗:40 次请求每次点「仅本次」弹 40 次(上限
+  应为 10)、连续超时无冷却、被拒后立刻再请求又弹;②弹窗显示中 reload → 弹窗消失而 main 的未决请求留到 5 分钟
+  超时,调用方一直「已有未决弹窗」,再加 30s 超时冷却 → 同窗口所有 agent 330s 拿不到弹窗。
+- **镜像过期的纵深**:镜像说已授权时 renderer 只会秒回 `session`。按镜像放行的请求得到任何别的结果(仅本次 / 拒绝 /
+  超时 / 取消)→ 清镜像,且这次的结果照常记入节流(拒绝进冷却、超时进冷却、授予计速率之后的请求)。并发的同域
+  请求只有第一个发现过期的记账(其余是 renderer 因槽被占自动拒的,不是用户的决定)。
 - **external 与窗口内互不占用**:两类调用方各自计冷却 / 退避 / 速率、各占一个未决槽;不同窗口之间也互不影响。
 
 ### renderer
@@ -51,6 +59,9 @@ plugin)计。
 - `main-throttle.spec.ts`:真实 `agent-auth.service` + 真实节流(fake timers):审计复现(500 次只弹 1 次)、
   冷却到期与退避增长、按域记、轮换域退避、授予 / 超时 / 取消不计拒绝、速率上限、单飞、session 授权后不节流、
   撤销与 reload 后恢复节流、external 与窗口内 / 不同窗口互不占用。
+- `renderer-reload.spec.ts`:真实 `agent-auth.service` + 真实 renderer store(fake timers):「本次启动期间允许」后
+  reload(main 收到导航事件 / 纵深:没收到)→ 40 次「仅本次」≤ 10 个弹窗、超时有冷却、拒绝有冷却;弹窗显示中
+  reload / 渲染进程崩溃 → 未决请求立即结算、新请求马上可弹、不计拒绝;同文档导航不结算。
 - `store-slots.spec.ts`:renderer 分槽与排队。
 - `prompt-grant-guard.spec.tsx`:500ms 内「允许」无效、「拒绝」/ Esc 有效、初始焦点、排队切换后重新计时。
 - 通用节流机制本身的边界(容量淘汰、授予减 1 等)见 `plugin-fs-scope-request-throttle/`。
