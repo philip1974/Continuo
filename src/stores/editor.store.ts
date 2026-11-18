@@ -74,6 +74,13 @@ export interface EditorTab {
    * 外部 reload 换了内容 → 清除;关闭重开的新 tab 无此值。runtime only,不持久化。
    */
   readonly savedGen?: number;
+  /**
+   * 安全:插件经 editor.openFile 打开的标签(openFileWithContent 建标签时设置)= 主进程为它记下的 canonical 路径。
+   * 主进程对这类路径的宿主读 / 写先确认路径没被换入链接,但那份记录只在内存里:这类标签**不进会话快照**
+   *(collectEditorSnapshot 跳过),否则重启后按路径恢复时不再受保护。之后用户自己再打开同一路径只是切换到这个
+   * 标签,标记一直保留到标签关闭。runtime only。
+   */
+  readonly pluginOpenedPath?: string;
 }
 
 // 变脏代际的全局单调计数器:按 tab 实例计数会在关闭重开同一路径后从 1 重算,与已接受的旧身份撞号(复审)。

@@ -87,6 +87,8 @@ async function waitForCurrentView(viewKey: string): Promise<EditorView | null> {
   return null;
 }
 
+const OPENED: FileOpResult = { ok: true, data: undefined };
+
 const invalidPathResult = {
   ok: false,
   code: 'INVALID_PATH',
@@ -103,9 +105,10 @@ const editor: CoHostEditorApi = {
   // 安全:插件发起的 openFile 由 scoped app 先经主进程「持锁校验 + 读取」,再用这份内容开标签(见 CoHostEditorApi)。
   async openVerifiedFile(canonicalPath, content, opts) {
     if (!isAbsolutePath(canonicalPath)) return invalidPathResult;
-    return openInEditor(canonicalPath, opts, () =>
-      openFileWithContent(canonicalPath, content, { store: useEditorStore }),
-    );
+    return openInEditor(canonicalPath, opts, async () => {
+      const r = await openFileWithContent(canonicalPath, content, { store: useEditorStore });
+      return r.ok ? OPENED : r;
+    });
   },
 };
 
