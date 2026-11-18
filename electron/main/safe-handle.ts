@@ -111,18 +111,25 @@ export function isTrustedRendererFileUrl(url: string): boolean {
   }
 }
 
-let cachedExpectedRendererUrl: string | null = null;
-let cachedExpectedRendererOrigin: string | null = null;
+// 受信的 dev server origin(electron-vite 的 ELECTRON_RENDERER_URL)。本模块不自行读 env:
+// 由 index.ts 启动时按 isDev(!app.isPackaged)注入,打包版恒为 null —— 与主窗加载方式、
+// windowOpenHandler 的 dev 判定同闸,避免打包版因进程环境里带着该变量而多信一个 origin。
+// (不在这里 import electron 的 app:仅 import 本模块的单测没有 app。)
+let trustedDevOrigin: string | null = null;
 
-function getExpectedRendererOrigin(expected: string): string | null {
-  if (cachedExpectedRendererUrl === expected) return cachedExpectedRendererOrigin;
-  cachedExpectedRendererUrl = expected;
+/**
+ * index.ts 启动时注入 dev renderer origin;打包版 / 无 dev server 传 null。
+ * 只接受规范 origin(解析后 origin 等于自身):不透明 origin 序列化为 "null"(不可解析,被拒),
+ * 若被接受,所有 file: / data: / about:blank frame 都会与它「同源」。
+ */
+export function setTrustedDevOrigin(origin: string | null): void {
+  trustedDevOrigin = null;
+  if (origin === null) return;
   try {
-    cachedExpectedRendererOrigin = new URL(expected).origin;
+    if (new URL(origin).origin === origin) trustedDevOrigin = origin;
   } catch {
-    cachedExpectedRendererOrigin = null;
+    // 不可解析 → 保持 null
   }
-  return cachedExpectedRendererOrigin;
 }
 
 // 测试与生产共享的 frame 形状。生产环境是 Electron WebFrameMain,
@@ -207,7 +214,7 @@ export function safeHandle<I, O>(
 /**
  * 默认的可信 frame 判定:
  * - prod 走 file:// 协议加载 renderer
- * - dev 走 ELECTRON_RENDERER_URL(electron-vite 注入)
+ * - dev 走 index.ts 经 setTrustedDevOrigin 注入的 dev server origin(打包版不注入)
  * 跨 origin 一律拒绝(含 popout 子 frame 被注入 iframe 等情况)。
  */
 export function defaultIsTrustedFrame(frame: FrameLike): boolean {
@@ -221,16 +228,11 @@ export function defaultIsTrustedFrame(frame: FrameLike): boolean {
   // 安全 S1:只信真实 renderer 入口 file URL(prod 注册后严格),不再信任意 file://。
   if (isTrustedRendererFileUrl(frame.url)) return true;
 
-  const expected = process.env['ELECTRON_RENDERER_URL'];
-  // 边界(E303,E196/E302 同族 / dev URL 解析兄弟入口):expected(ELECTRON_RENDERER_URL)此前无长度上限 ——
-  // frame.url 已限长(见上方 MAX_WINDOW_URL_LEN 闸),但 expected 每次 IPC 调用都 new URL 解析一次,开发误配/OS 上界超长 env
-  // 会被反复 O(N) 解析。对齐 frame.url 的 MAX_WINDOW_URL_LEN 闸(任何真实 dev URL 远在内),超长 fail-closed。
-  if (!expected || expected.length > MAX_WINDOW_URL_LEN) return false;
-  const expectedOrigin = getExpectedRendererOrigin(expected);
-  if (expectedOrigin === null) return false;
+  // dev URL 的限长与解析(E299/E302/E303)都在注入方 parseDevRendererUrl 一次完成,这里只比较 origin。
+  if (trustedDevOrigin === null) return false;
 
   try {
-    return new URL(frame.url).origin === expectedOrigin;
+    return new URL(frame.url).origin === trustedDevOrigin;
   } catch {
     return false;
   }

@@ -36,7 +36,7 @@ safeHandle(channel, zodSchema, handler, isTrustedFrame);
 
 Does three things every channel must do:
 
-1. **Trust check** — `defaultIsTrustedFrame` accepts only the **真实 renderer 入口 index.html** `file://` URL (prod，精确 pathname，由 index.ts 启动 `setTrustedRendererFile` 注册) or the `ELECTRON_RENDERER_URL` origin (dev). Anything else — 任意其它 `file://`(攻击者写的 evil.html / 插件目录 html)、injected iframe、外站 — is refused with `IPC_DENIED`。这同时是 windowOpenHandler 注入 preload 的放行条件(安全 S1:防恶意 `file://` 弹窗拿全量 IPC)。
+1. **Trust check** — `defaultIsTrustedFrame` accepts only the **真实 renderer 入口 index.html** `file://` URL (prod，精确 pathname，由 index.ts 启动 `setTrustedRendererFile` 注册) or the dev server origin (dev only: index.ts 启动时以 `isDev` 为闸把 `ELECTRON_RENDERER_URL` 的 origin 经 `setTrustedDevOrigin` 注入,打包版注入 null;safe-handle 不自行读 env). Anything else — 任意其它 `file://`(攻击者写的 evil.html / 插件目录 html)、injected iframe、外站 — is refused with `IPC_DENIED`。这同时是 windowOpenHandler 注入 preload 的放行条件(安全 S1:防恶意 `file://` 弹窗拿全量 IPC)。
 2. **Zod validation** — invalid input → `IPC_BAD_INPUT`, never reaches the handler body.
 3. **Error envelope** — handler exceptions get caught and shaped into `IpcFail`.
 

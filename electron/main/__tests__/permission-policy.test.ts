@@ -6,6 +6,7 @@ import type { Session } from 'electron';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   _resetTrustedRendererFileForTest,
+  setTrustedDevOrigin,
   setTrustedRendererFile,
 } from '../safe-handle';
 import {
@@ -95,11 +96,11 @@ const ALL_ELECTRON_PERMISSIONS: Record<ElectronPermission, true> = {
 beforeEach(() => {
   _resetTrustedRendererFileForTest();
   setTrustedRendererFile(ENTRY);
-  vi.stubEnv('ELECTRON_RENDERER_URL', '');
+  setTrustedDevOrigin(null);
 });
 afterEach(() => {
   _resetTrustedRendererFileForTest();
-  vi.unstubAllEnvs();
+  setTrustedDevOrigin(null);
 });
 
 describe('isPermissionAllowed', () => {
@@ -137,8 +138,8 @@ describe('isPermissionAllowed', () => {
     expect(allowed.sort()).toEqual(['clipboard-read', 'clipboard-sanitized-write']);
   });
 
-  it('dev:ELECTRON_RENDERER_URL 同源放行,异源拒', () => {
-    vi.stubEnv('ELECTRON_RENDERER_URL', 'http://localhost:5173');
+  it('dev:index.ts 注入的 dev origin 同源放行,异源拒', () => {
+    setTrustedDevOrigin('http://localhost:5173');
     expect(isPermissionAllowed('clipboard-read', 'http://localhost:5173/?windowSeq=1')).toBe(true);
     expect(isPermissionAllowed('clipboard-read', 'http://localhost:5174/')).toBe(false);
     expect(isPermissionAllowed('media', 'http://localhost:5173/')).toBe(false);

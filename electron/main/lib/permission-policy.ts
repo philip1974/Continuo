@@ -7,7 +7,7 @@
 //
 // 策略:白名单只放行应用自身**真实用到**的权限,且请求来源必须是受信 renderer 入口
 // (复用 safe-handle 的 defaultIsTrustedFrame:prod 只认真实 index.html 的 file URL,dev 认
-// ELECTRON_RENDERER_URL 同源)。其余一律拒。
+// index.ts 注入的 dev server 同源,打包版不注入)。其余一律拒。
 //   - clipboard-sanitized-write:navigator.clipboard.writeText(Explorer 复制路径、StatusBar
 //     复制命令、Milkdown 代码块/链接复制按钮、插件 app.clipboard.writeText)
 //   - clipboard-read:navigator.clipboard.readText(插件 app.clipboard.readText,受插件权限门)

@@ -1,7 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { z } from 'zod';
 import {
   defaultIsTrustedFrame,
+  setTrustedDevOrigin,
   processIpcCall,
   processIpcCallWithCtx,
   ipcInputBounded,
@@ -11,7 +14,6 @@ import {
   MAX_IPC_INPUT_KEY_LEN,
 } from '../../../electron/main/safe-handle';
 import { formatZodErrorCapped } from '../../../electron/main/lib/format-zod-error';
-import { MAX_WINDOW_URL_LEN } from '../../../electron/shared/url-limits';
 
 const trustAll = () => true;
 const trustNone = () => false;
@@ -286,18 +288,10 @@ describe('formatZodErrorCapped', () => {
 });
 
 describe('defaultIsTrustedFrame', () => {
-  // dev/prod 都按 process.env 切换,测试时手动管理
-  const withEnv = <T,>(value: string | undefined, fn: () => T): T => {
-    const orig = process.env['ELECTRON_RENDERER_URL'];
-    if (value === undefined) delete process.env['ELECTRON_RENDERER_URL'];
-    else process.env['ELECTRON_RENDERER_URL'] = value;
-    try {
-      return fn();
-    } finally {
-      if (orig === undefined) delete process.env['ELECTRON_RENDERER_URL'];
-      else process.env['ELECTRON_RENDERER_URL'] = orig;
-    }
-  };
+  afterEach(() => {
+    setTrustedDevOrigin(null);
+    vi.unstubAllEnvs();
+  });
 
   it('null frame → false', () => {
     expect(defaultIsTrustedFrame(null)).toBe(false);
@@ -311,66 +305,49 @@ describe('defaultIsTrustedFrame', () => {
     expect(defaultIsTrustedFrame({ url: 'file:///path/to/index.html' })).toBe(true);
   });
 
-  it('dev 下,与 ELECTRON_RENDERER_URL 同 origin → true', () => {
-    withEnv('http://localhost:5173/', () => {
-      expect(
-        defaultIsTrustedFrame({ url: 'http://localhost:5173/index.html' }),
-      ).toBe(true);
-    });
+  it('dev 下,与 index.ts 注入的 dev origin 同 origin → true', () => {
+    setTrustedDevOrigin('http://localhost:5173');
+    expect(defaultIsTrustedFrame({ url: 'http://localhost:5173/index.html' })).toBe(true);
   });
 
-  it('dev 下重复校验同一 expected origin 时缓存 ELECTRON_RENDERER_URL 解析结果', () => {
-    const expected = 'http://127.0.0.1:46173/';
-    const RealURL = globalThis.URL;
-    let expectedConstructs = 0;
-    globalThis.URL = function URLSpy(raw: string | URL, base?: string | URL) {
-      if (raw === expected) expectedConstructs += 1;
-      return new RealURL(raw, base);
-    } as unknown as typeof URL;
-
-    try {
-      withEnv(expected, () => {
-        expect(
-          defaultIsTrustedFrame({ url: 'http://127.0.0.1:46173/index.html' }),
-        ).toBe(true);
-        expect(
-          defaultIsTrustedFrame({ url: 'http://127.0.0.1:46173/other.html' }),
-        ).toBe(true);
-      });
-      expect(expectedConstructs).toBe(1);
-    } finally {
-      globalThis.URL = RealURL;
-    }
+  // 纵深对齐:dev origin 只由 index.ts 按 isDev(!app.isPackaged)注入;打包版注入 null,
+  // 即使进程环境里带着 ELECTRON_RENDERER_URL,该 origin 的 frame 也不受信。
+  it('未注入 dev origin(打包版)→ 即使设了 ELECTRON_RENDERER_URL,同源 frame 也不受信', () => {
+    vi.stubEnv('ELECTRON_RENDERER_URL', 'http://localhost:5173/');
+    expect(defaultIsTrustedFrame({ url: 'http://localhost:5173/index.html' })).toBe(false);
+    setTrustedDevOrigin('http://localhost:5173');
+    setTrustedDevOrigin(null);
+    expect(defaultIsTrustedFrame({ url: 'http://localhost:5173/index.html' })).toBe(false);
   });
 
   it('跨 origin → false', () => {
-    withEnv('http://localhost:5173/', () => {
-      expect(defaultIsTrustedFrame({ url: 'http://evil.com/' })).toBe(false);
-    });
+    setTrustedDevOrigin('http://localhost:5173');
+    expect(defaultIsTrustedFrame({ url: 'http://evil.com/' })).toBe(false);
+    expect(defaultIsTrustedFrame({ url: 'http://localhost:5174/' })).toBe(false);
   });
 
   it('frame.url 不可解析 URL → false(防 URL ctor 抛)', () => {
-    withEnv('http://localhost:5173/', () => {
-      expect(defaultIsTrustedFrame({ url: 'not-a-url' })).toBe(false);
-    });
+    setTrustedDevOrigin('http://localhost:5173');
+    expect(defaultIsTrustedFrame({ url: 'not-a-url' })).toBe(false);
   });
 
-  it('dev URL 未设且非 file:// → false', () => {
-    withEnv(undefined, () => {
-      expect(defaultIsTrustedFrame({ url: 'http://localhost:5173/' })).toBe(
-        false,
-      );
-    });
+  // 不透明 origin 序列化为字符串 "null"(file: / data: / about:blank 都是)。误配成这种 dev URL 时
+  // 不能让所有不透明 origin 的 frame 互相「同源」。
+  it('注入的值不是规范 origin("null" / 空串 / 带路径 / 不可解析)→ 视为未注入', () => {
+    for (const bad of ['null', '', 'http://localhost:5173/index.html', 'not-a-url']) {
+      setTrustedDevOrigin(bad);
+      expect(defaultIsTrustedFrame({ url: 'data:text/html,x' })).toBe(false);
+      expect(defaultIsTrustedFrame({ url: 'about:blank' })).toBe(false);
+      expect(defaultIsTrustedFrame({ url: 'http://localhost:5173/index.html' })).toBe(false);
+    }
   });
 
-  // 边界(E303,E196/E302 同族):expected(ELECTRON_RENDERER_URL)超 MAX_WINDOW_URL_LEN → fail-closed,
-  // 不反复 new URL 解析超长 env(对齐 frame.url 闸)。neutralize 敏感:去 expected 限长则其 origin 仍匹配 → true。
-  it('E303 expected(ELECTRON_RENDERER_URL)超 MAX_WINDOW_URL_LEN → false', () => {
-    const hugeExpected = 'http://localhost:5173/' + 'a'.repeat(MAX_WINDOW_URL_LEN);
-    withEnv(hugeExpected, () => {
-      expect(
-        defaultIsTrustedFrame({ url: 'http://localhost:5173/index.html' }),
-      ).toBe(false);
-    });
+  it('接线:safe-handle 不自行读 env;index.ts 以 isDev 为闸注入 dev origin', () => {
+    const read = (f: string) => readFileSync(join(process.cwd(), 'electron', 'main', f), 'utf8');
+    expect(read('safe-handle.ts')).not.toContain('process.env');
+    const index = read('index.ts').replace(/\s+/g, ' ');
+    expect(index).toContain(
+      "setTrustedDevOrigin( isDev ? (parseDevRendererUrl(process.env['ELECTRON_RENDERER_URL'])?.origin ?? null) : null, );",
+    );
   });
 });
