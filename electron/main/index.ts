@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, session, shell } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, session, shell } from 'electron';
 import { installNavigationGuard, isOwnRendererWindowUrl } from './window-open-policy';
 import { setReloadUrlPredicate } from './lib/wc-gone-hook';
 import { installPermissionHandlers } from './lib/permission-policy';
@@ -98,6 +98,7 @@ import {
   isUnstableResourcesPath,
   resolveStdioCliPathForConfig,
 } from './services/mcp-stdio-cli-install';
+import { warnIfLegacyUnstableClaudeConfig } from './services/mcp-stdio-legacy-config';
 import {
   createAwaitStopHookTool,
   createHookFileBroker,
@@ -1261,6 +1262,14 @@ async function startMcpStdioServer(): Promise<void> {
     });
     console.log(`[mcp-stdio] listening on ${mcpStdio.socketPath}`);
     const cliPath = await resolveStdioCliPath();
+    // 安全(AppImage 老用户迁移):~/.claude.json 里存量的临时挂载路径条目只读检查并提示(仅 Linux,不阻塞启动)
+    void warnIfLegacyUnstableClaudeConfig({
+      homeDir: os.homedir(),
+      claudeAddCommand: cliPath ? buildClaudeAddCommand(cliPath) : undefined,
+      t: getMainT(),
+      show: (opts) => dialog.showMessageBox(opts),
+      writeClipboard: (text) => clipboard.writeText(text),
+    });
     if (!cliPath) {
       // fail-closed:没有稳定 CLI 路径就不提供命令(状态栏显示不可用),绝不给临时挂载路径
       setStdioConfig({ available: true, socketPath: mcpStdio.socketPath });
