@@ -150,6 +150,33 @@ describe('F1 · HTTP MCP callerSubject 绑定 Mcp-Session-Id', () => {
     await after.text();
   });
 
+  it('DELETE 结束 session → 以该 session 的 callerSubject 通知释放(供回收其 debug 会话 / 在途创建);伪造 sid 不通知', async () => {
+    subjects.length = 0;
+    const released: string[] = [];
+    host = await createMcpHost({
+      initialTools: [whoami],
+      onHttpSessionReleased: (subject) => released.push(subject),
+    });
+    const token = host.issueWindowToken(1);
+    const sid = await initialize(token);
+    await (await post(token, CALL, sid)).text();
+    const forged = await post(token, {}, 'not-a-session', 'DELETE');
+    expect(forged.status).toBe(404);
+    await forged.text();
+    expect(released).toEqual([]);
+    const del = await post(token, {}, sid, 'DELETE');
+    expect(del.status).toBe(200);
+    await del.text();
+    expect(released).toEqual([subjects[0]]);
+  });
+
+  it('session 释放接线:index.ts 对释放的 subject 同 token 吊销一样取消在途创建 + killByController', () => {
+    const src = readFileSync(join(process.cwd(), 'electron/main/index.ts'), 'utf8');
+    const fn = /onHttpSessionReleased: \(subject\) => \{[\s\S]*?\n {6}\},/.exec(src)?.[0] ?? '';
+    expect(fn).toMatch(/cancelAgentTerminalCreates\(subject\)/);
+    expect(fn).toMatch(/debugService\.killByController\(subject, 'session-closed'\)\s*\.catch\(/);
+  });
+
   it('单 token 的 session 数有上限:超限 initialize → 429,已有 session 不受影响', async () => {
     host = await createMcpHost({ initialTools: [whoami] });
     const token = host.issueWindowToken(1);

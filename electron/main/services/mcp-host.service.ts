@@ -564,6 +564,12 @@ export interface McpHostOptions {
   initialTools?: ReadonlyArray<AnyMcpTool>;
   /** 默认 {name:'continuo', version:'0.1.0', protocolVersion:'2024-11-05'}. */
   serverInfo?: Partial<ServerInfo>;
+  /**
+   * HTTP session(Mcp-Session-Id)被客户端 DELETE 结束时以其 callerSubject 回调。该身份此后再无人能用,
+   * 调用方据此回收它名下的 debug 会话 / 在途创建(同终端 token 吊销)。token 吊销 / 轮换不经此回调,
+   * 由吊销方按 callerSubjectsForToken / 全量回收自行处理。
+   */
+  onHttpSessionReleased?: (subject: string) => void;
 }
 
 const DEFAULT_SERVER_INFO: ServerInfo = {
@@ -995,6 +1001,12 @@ export async function createMcpHost(
         return;
       }
       httpSessions.delete(sid);
+      // 该 subject 此后作废:通知回收其 debug 会话 / 在途创建,否则它们再无人能 disconnect(名额被占满)。
+      try {
+        options.onHttpSessionReleased?.(httpSessionSubject(ctx.callerSubject ?? '', sid));
+      } catch (err) {
+        console.warn('[mcp-host] onHttpSessionReleased threw', err);
+      }
       res.statusCode = 200;
       res.end();
       return;

@@ -1102,6 +1102,13 @@ async function startMcpHost(): Promise<void> {
     ];
     mcpHost = await createMcpHost({
       initialTools,
+      // 安全(F1):HTTP session 被 DELETE 结束 → 该身份作废,同终端 token 吊销回收其在途创建与 debug 会话。
+      onHttpSessionReleased: (subject) => {
+        cancelAgentTerminalCreates(subject);
+        void debugService.killByController(subject, 'session-closed').catch((err) => {
+          console.warn('[debug] killByController failed on http session release', err);
+        });
+      },
     });
     setMcpEnvProvider((windowId: number) => {
       if (!mcpHost) return { env: {} as Record<string, string>, mcpToken: '' };
