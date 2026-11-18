@@ -112,7 +112,7 @@ Linux(默认大小写敏感,比较本就不折叠)不做,行为不变。
 ## 行为
 
 - **受保护根之内(含根本身)**:`readFile / writeFile / listDir / stat / lstat / realpath / mkdir / rename / rm /
-  cp(源与目标)/ atomicReplaceWithinScope / readGitBlob / checkPath(→ `editor.openFile`)` 一律拒绝,
+  cp(源与目标)/ atomicReplaceWithinScope / readGitBlob / checkPath / readForEditor(→ `editor.openFile`)` 一律拒绝,
   与已授 scope 无关。错误与 scope 外路径是同一条(`target not in any granted scope`),不暴露「这是受保护目录」;
   原因(插件、操作、路径)只进主进程日志。
 - 词法上就在受保护根内的路径不碰文件系统即拒绝 —— 其下存在 / 不存在的路径得到完全相同的错误。

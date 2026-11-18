@@ -1,0 +1,45 @@
+# plugin-editor-open-verified(插件 `app.editor.openFile`:校验与读取在同一把锁内)
+
+## 背景(审计 L1)
+
+此前插件的 `editor.openFile(path)` 是两步:renderer 先发 `plugin-fs:check-path`(主进程持共享锁做 scope 校验,
+返回布尔值),通过后宿主编辑器经**受信**通道 `fs:read-file` 按插件给的原路径字符串再读一次。两步之间插件可以只用
+SDK 并发 `rename(A → A_)` + `rename(L → A)`(L 是 scope 内既有的、指向 scope 外目录的链接;例如 `fs.cp('/Volumes', …)`
+复制出的 `Macintosh HD -> /`),宿主按原路径就读到 scope 外的任意文件(包括受保护的 `<userData>/plugins/_permissions.json`),
+显示在编辑器标签里。内容不回传插件,但用户随后保存 / 外部同步重载同样按路径进行。
+
+## 行为
+
+- 插件的 `editor.openFile` 改为主进程 `plugin-fs:read-for-editor`:在 plugin-fs 全局读写锁的共享锁内完成「scope 校验 +
+  读取」(沿用 `readFile` 的打开后 fd 复核:fd 与复核到的文件 dev/ino 相同才读),返回已校验的 `canonicalPath` 与内容。
+  读取规则与编辑器自己的读取入口一致:64 MiB 上限、非法 UTF-8 拒绝(`FS_NOT_UTF8`)、非普通文件拒绝(`FS_NOT_FILE`)。
+  scope 外 / 不存在 / 受保护目录 → 同一个拒绝结果(`SCOPE_ERROR`,不可区分);身份错误(未知 token)照抛。
+- renderer 用这份已校验内容在 `canonicalPath` 上开标签(宿主内部入口 `CoHostEditorApi.openVerifiedFile`,插件拿到的
+  `app.editor` 只有 `openFile`),不再经 `fs:read-file` 另读。已开着同一路径的标签 → 只切换,不覆盖其内容。
+- SDK 对插件的返回值不变:成功 `{ ok: true, lineApplied, reason? }`;scope 拒绝 → `PERMISSION_DENIED`(消息同前);
+  `FS_NOT_FILE` 等原样,其余 FS 码(`FS_NOT_UTF8` / `FS_FILE_TOO_LARGE`)归 `EXCEPTION`(与此前宿主读取失败的映射相同)。
+- 之后的保存 / 保存前比对 / 外部同步重载:主进程记下插件打开过的 canonical 路径(上限 4096,LRU)。宿主 `fs:read-file` /
+  `fs:write-file` 对这些路径在共享锁内先确认「realpath 仍等于自身」(途中没有被换入链接;文件已删时父目录仍 canonical
+  且叶子不是悬空链接),确认与读 / 写在同一次持锁内;否则 `FS_DENIED`。其它路径直通(不取锁、不多任何系统调用)。
+  - 为何不靠既有的保存前磁盘比对(`EDITOR_DISK_CHANGED`):它只比内容,用户点「仍然覆盖」(`force`)就会跳过比对、
+    经链接写到 scope 外;且 scope 外文件内容恰好与原内容相同时比对也放行。
+  - 为何比 realpath 而不比 (dev, ino):编辑器保存是「临时文件 + rename」,每次保存 inode 都变,正常的外部原子保存也一样;
+    越出 scope 必须经过链接,比 realpath 正好。
+
+## 残余
+
+- 锁只管 plugin-fs 自己的调用(见 `plugin-fs-rw-lock` 残余):有 `shell` 权限的插件、用户自己的进程对目录的并发改动不在此列;
+  外部进程把目录换成链接后,宿主对已记录路径的读 / 写会被拒(`FS_DENIED`),但在「确认 → 读 / 写」之间精确换入的外部
+  竞态者理论上仍可通过。
+- 记录的路径超过 4096 条后最早的被淘汰,不再受保存期确认保护(需再打开这么多个不同文件)。
+- 记录只在主进程内存里:应用重启后,会话恢复出来的(原由插件打开的)标签不再受保存期确认保护。
+- 用户自己经 Explorer 打开同一路径的标签同样受此确认(路径被换成链接后保存被拒),属有意的 fail-closed。
+
+## 规范
+
+- `main-read-for-editor.spec.ts` —— 真实 IPC handler + 真实 `PathScopeRegistry` + 真实临时目录:读取结果与规则、
+  换入后再打开被拒、在读取的 `open` 上挂钩子并发换入(被挡在锁外)、3000 次并发打开 × 换入换出读穿 0 次;
+  宿主 `fs:read-file` / `fs:write-file` 注册的是带确认的处理器、换入后读写被拒、悬空叶子链接、确认与写入同锁、外部进程换入。
+- `scoped-open-end-to-end.spec.ts` —— 插件 scoped app → 真实主进程 handler → 真实编辑器 store → 真实保存:审计时序
+  (scope 校验 IPC 一返回就换入)标签仍是良性内容、200 次错开时机的并发换入读穿 0 次、标签绑定 canonical 路径且不经
+  `fs:read-file` 另读、已开标签不被覆盖、换入后普通保存与「仍然覆盖」都被拒。

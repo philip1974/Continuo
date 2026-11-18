@@ -22,7 +22,7 @@ writeFile 写到 scope 外、mkdir 在 scope 外建目录都能命中。叶子 n
 | 类别 | 入口 | 锁 |
 |---|---|---|
 | 变更 | `writeFile` `mkdir` `rename` `rm` `cp` `atomicReplaceWithinScope`(含 trash 清扫) | 独占 |
-| 只读 | `readFile` `listDir` `stat` `lstat` `readGitBlob` `realpath` `checkPath` | 共享 |
+| 只读 | `readFile` `listDir` `stat` `lstat` `readGitBlob` `realpath` `checkPath` `readForEditor`(editor.openFile) | 共享 |
 | 不取锁 | `requestScope`(等待用户点弹窗)、注册 / 注销 | — |
 
 `realpath` / `checkPath` 自己在校验之后没有文件系统操作,取共享锁是因为 scope 校验的身份缓存要求调用方持锁
@@ -49,7 +49,8 @@ writeFile 写到 scope 外、mkdir 在 scope 外建目录都能命中。叶子 n
   外部竞态者理论上仍可通过。`listDir` / `stat` / `lstat` / `cp` / 写操作没有这层复核(macOS 上 Node 无法按 fd 枚举
   目录或做 `openat`,`/dev/fd/N` 不能当目录用),对外部改动只有锁之外的既有保护(叶子 no-follow、目标排他创建)。
 - 一次大目录 `cp` / `rm` 会在其运行期间挡住所有 plugin-fs 调用(上限见上)。
-- `checkPath` 只返回布尔值,调用方随后经其它通道按路径打开,不在本锁范围。
+- `checkPath` 只返回布尔值,调用方若随后经其它通道按路径操作就不在本锁范围。`editor.openFile` 已改为主进程持锁
+  校验 + 读取(`readForEditor`,见 `plugin-editor-open-verified`);`checkPath` 在 renderer 已无调用方。
 
 ## 规范
 

@@ -929,6 +929,11 @@
 
 - [`plugin-data-uninstall-zombie.spec.ts`](./plugin-data-uninstall-zombie/plugin-data-uninstall-zombie.spec.ts)
 
+## [plugin-editor-open-verified(插件 `app.editor.openFile`:校验与读取在同一把锁内)](./plugin-editor-open-verified/README.md)
+
+- [`main-read-for-editor.spec.ts`](./plugin-editor-open-verified/main-read-for-editor.spec.ts)
+- [`scoped-open-end-to-end.spec.ts`](./plugin-editor-open-verified/scoped-open-end-to-end.spec.ts)
+
 ## [plugin-fs-atomic-replace-trash(atomicReplace 的 trash 落点与清扫不出 scope、只动宿主自己的 trash)](./plugin-fs-atomic-replace-trash/README.md)
 
 - [`atomic-replace-trash-scope.spec.ts`](./plugin-fs-atomic-replace-trash/atomic-replace-trash-scope.spec.ts)

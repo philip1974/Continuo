@@ -27,6 +27,7 @@ import type {
   CoDockApi,
   Disposable,
   CoEditorApi,
+  CoHostEditorApi,
   CoNotificationsApi,
   CoPluginApp,
   PluginClipboardApi,
@@ -57,6 +58,8 @@ import {
 } from '../../electron/shared/fs-limits';
 import { utf8BytesExceed } from '../../electron/shared/utf8-byte-length';
 import { codedError } from '../../electron/shared/error-message';
+import { PLUGIN_FS_EDITOR_READ_SCOPE_DENIED } from '../../electron/shared/plugin-fs-contract';
+import { mapFsCodeToEditorCode } from './editor-open-codes';
 import {
   NETWORK_URL_MAX,
   NETWORK_HEADERS_MAX,
@@ -671,7 +674,7 @@ function makeMcp(
 function makeEditor(
   pluginId: string,
   store: PermissionStore | null,
-  rawEditor: CoEditorApi,
+  rawEditor: CoHostEditorApi,
   life: ScopedLifecycle,
   token?: string,
 ): CoEditorApi {
@@ -712,26 +715,33 @@ function makeEditor(
         };
       }
 
-      if (store) {
-        // path-scope 校验:openFile 走宿主受信 fs 通道,必须先确认目标在已授
-        // scope 内,否则有 'fs' 权限的插件可借此越权打开任意文件。checkPath
-        // 现为 PluginFsRaw 必备方法(main 端 plugin-fs:check-path 实装)。
-        const scopeOk = await coApi.pluginFsRaw.checkPath(
-          token ?? missingPluginFsToken(),
-          path,
-        );
-        if (!scopeOk) {
-          return {
-            ok: false,
-            code: 'PERMISSION_DENIED',
-            message: `path '${path}' out of granted scope`,
-          };
-        }
+      if (!store) {
+        // store=null(向后兼容 / 测试,见文件头):不做 scope 检查,直接转发。
+        if (life.revoked) return revokedResult;
+        return rawEditor.openFile(path, opts);
       }
 
-      // 授权 / scope 检查 await 期间被吊销 → 同样不打开。
+      // 安全:不是「checkPath 通过 → 宿主受信通道按插件给的路径另读一次」—— 两步之间插件可并发 rename 换入指向
+      // scope 外的既有链接,宿主就按原路径读到 scope 外的文件(审计 L1)。改为主进程在 plugin-fs 锁内一次完成
+      // 「scope 校验 + 读取」,宿主用这份已校验内容在 canonicalPath 上开标签;之后宿主对该路径的读 / 写也先确认
+      // 路径没有被换入链接(见 src/__tests__/plugin-editor-open-verified/)。内容只进标签,不回传插件。
+      const read = await coApi.pluginFsRaw.readForEditor(
+        token ?? missingPluginFsToken(),
+        path,
+      );
+      if (!read.ok) {
+        return read.code === PLUGIN_FS_EDITOR_READ_SCOPE_DENIED
+          ? {
+              ok: false,
+              code: 'PERMISSION_DENIED',
+              message: `path '${path}' out of granted scope`,
+            }
+          : { ok: false, code: mapFsCodeToEditorCode(read.code), message: read.message };
+      }
+
+      // 授权 / 读取 await 期间被吊销 → 同样不打开。
       if (life.revoked) return revokedResult;
-      return rawEditor.openFile(path, opts);
+      return rawEditor.openVerifiedFile(read.canonicalPath, read.content, opts);
     },
   };
 }

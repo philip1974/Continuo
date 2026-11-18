@@ -4,6 +4,7 @@
 import { ipcRenderer, type IpcRendererEvent } from 'electron';
 import { subscribeIpc } from './subscribe-ipc';
 import { PLUGIN_FS_CHANNELS } from '../shared/plugin-fs-channels';
+import type { PluginFsEditorRead } from '../shared/plugin-fs-contract';
 
 export interface PluginFsRawStat {
   size: number;
@@ -48,8 +49,13 @@ export interface PluginFsRaw {
     opts?: { recursive?: boolean },
   ): Promise<void>;
   readGitBlob(token: string, repoDir: string, sha: string): Promise<Uint8Array>;
-  /** True if `path` resolves within a granted read scope; false otherwise. */
+  /**
+   * True if `path` resolves within a granted read scope; false otherwise. 只是「此刻」的答案:不要拿它当许可再经
+   * 宿主通道按路径读 / 写(校验与操作不在同一把锁内)—— 编辑器打开用 readForEditor。
+   */
   checkPath(token: string, path: string): Promise<boolean>;
+  /** editor.openFile 专用:主进程在同一次持锁内校验 scope 并读取,返回已校验的内容与 canonical 路径。 */
+  readForEditor(token: string, path: string): Promise<PluginFsEditorRead>;
   atomicReplaceWithinScope(
     token: string,
     staging: string,
@@ -113,6 +119,8 @@ export const pluginFsRaw: PluginFsRaw = {
     ipcRenderer.invoke(PLUGIN_FS_CHANNELS.READ_GIT_BLOB, token, repoDir, sha),
   checkPath: (token, path) =>
     ipcRenderer.invoke(PLUGIN_FS_CHANNELS.CHECK_PATH, token, path),
+  readForEditor: (token, path) =>
+    ipcRenderer.invoke(PLUGIN_FS_CHANNELS.READ_FOR_EDITOR, token, path),
   atomicReplaceWithinScope: (token, staging, final, opts) =>
     ipcRenderer.invoke(
       PLUGIN_FS_CHANNELS.ATOMIC_REPLACE,

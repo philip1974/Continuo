@@ -56,6 +56,9 @@ export function createTestCoApp(version = '1.0.0-test'): CoApp {
       async openFile() {
         return { ok: true, lineApplied: false, reason: 'no-line-arg' };
       },
+      async openVerifiedFile() {
+        return { ok: true, lineApplied: false, reason: 'no-line-arg' };
+      },
     },
     dock: {
       openPanel() {

@@ -203,6 +203,7 @@ describe('受保护根之内:所有入口一律拒绝,文件不变', () => {
     await expectDenied(call(C.STAT, userData));
     expect(await call(C.CHECK_PATH, permFile)).toBe(false);
     expect(await call(C.CHECK_PATH, userData)).toBe(false);
+    expect(await call(C.READ_FOR_EDITOR, permFile)).toMatchObject({ ok: false, code: 'SCOPE_ERROR' });
   });
 
   it('rm / rename / mkdir / cp(源与目标)/ atomicReplace', async () => {

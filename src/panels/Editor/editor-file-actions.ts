@@ -75,7 +75,28 @@ export async function openFileByPath(
   path: string,
   deps: EditorFileDeps,
 ): Promise<FileOpResult> {
-  const { fs, store } = deps;
+  return openTabWith(path, deps, () => deps.fs.readFile(path));
+}
+
+/**
+ * 安全(插件 editor.openFile):用主进程已校验并读出的内容开标签,不再经宿主受信通道按路径另读一次(见
+ * src/__tests__/plugin-editor-open-verified/)。path 必须是主进程返回的 canonical 路径(不含链接,所以不带 realPath)。
+ * 其余与 openFileByPath 相同:已开过 → 只切换(不覆盖已开标签的内容);用户激活代际;读后复检并发打开。
+ */
+export function openFileWithContent(
+  path: string,
+  content: string,
+  deps: Pick<EditorFileDeps, 'store'>,
+): Promise<FileOpResult> {
+  return openTabWith(path, deps, async () => ({ ok: true, data: content }));
+}
+
+async function openTabWith(
+  path: string,
+  deps: Pick<EditorFileDeps, 'store'>,
+  read: () => Promise<IpcResult<string> & { readonly realPath?: string }>,
+): Promise<FileOpResult> {
+  const { store } = deps;
   // 已开过 → 只切换。跨平台(codex 复查 P1):用平台感知 pathEquals 而非 `===` —— Windows
   // 上同一文件以 `C:\Repo\a.md` / `c:\repo\a.md` 不同大小写打开,`===` 判不等 → 开出两个
   // tab,分别编辑保存同一文件 → 后保存者覆盖前者丢改。switchTab 用**已存在 tab 的真实 id**
@@ -95,7 +116,7 @@ export async function openFileByPath(
 
   let r;
   try {
-    r = await fs.readFile(path);
+    r = await read();
   } catch (err) {
     return exception(err);
   }
