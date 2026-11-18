@@ -272,12 +272,14 @@ export function registerIpc(deps: WindowIpcDeps): { pluginFsHandles: PluginFsIpc
   registerWindowIpc(deps);
 
   // Agent Terminal MCP — 授权应答通道(P2)。schema 见模块级 AgentAuthRespondSchema(E146)。
-  safeHandle(
+  safeHandleWithCtx(
     AGENT_AUTH_CHANNELS.RESPOND,
     AgentAuthRespondSchema,
     // 已不在等待的 requestId(撤销 / 超时已结算)→ 抛错返回 ok:false,renderer 据此不记 session 授权。
-    ({ requestId, decision }) => {
-      answerAgentAuthRequest(requestId, decision);
+    // 安全:只接受请求目标窗口的应答(sender 所在窗口由 main 推断,不信 renderer 自报)。
+    ({ requestId, decision }, { event }) => {
+      const senderWindowId = BrowserWindow.fromWebContents(event.sender)?.id ?? null;
+      answerAgentAuthRequest(requestId, decision, senderWindowId);
     },
     trusted,
   );

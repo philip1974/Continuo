@@ -153,8 +153,12 @@ export function resolveAgentAuthRequest(
 export function answerAgentAuthRequest(
   requestId: string,
   decision: AgentAuthDecision,
+  senderWindowId: number | null,
 ): void {
-  if (!resolveAgentAuthRequest(requestId, decision)) {
+  // 安全:应答方须是收到该请求的窗口(IPC sender 所在窗口)。否则别的窗口 / 拿到 raw IPC 的调用方截到
+  // requestId 即可替目标窗口放行。不匹配按「不在等待」拒绝,且不结算(目标窗口仍可正常应答)。
+  const entry = pending.get(requestId);
+  if (!entry || entry.windowId !== senderWindowId || !resolveAgentAuthRequest(requestId, decision)) {
     throw codedError(
       ERROR_CODES.AGENT_AUTH_REQUEST_NOT_PENDING,
       'agent auth request is no longer pending',
