@@ -431,3 +431,61 @@ describe('授权分域:plugin 域独立于 terminal / debug', () => {
     expect(useAgentAuthStore.getState().pluginSessionGranted).toBe(false);
   });
 });
+
+// 安全(F2):未发 `_continuo/hello` 的 stdio 连接(外部客户端,未绑定 Continuo 终端)用独立的 external 授权状态,
+// 不复用任何窗口的「本次启动期间允许」,也不写入窗口级授权。否则窗口 B 终端里的 agent 绕过 proxy 直连
+// mcp.sock 不发 hello,即可借主窗 A 已有的授权静默 create_session / debug_launch。
+describe('授权分调用方:external(未绑定终端)独立于窗口级授权', () => {
+  it('窗口级三个域均已 session 授权,external 请求仍然弹窗', () => {
+    useAgentAuthStore.setState({
+      sessionGranted: true,
+      debugSessionGranted: true,
+      pluginSessionGranted: true,
+    });
+    void useAgentAuthStore
+      .getState()
+      .ensure({ method: 'terminal.create_session', external: true });
+    expect(useAgentAuthStore.getState().pending?.method).toBe('terminal.create_session');
+    expect(useAgentAuthStore.getState().pending?.external).toBe(true);
+    useAgentAuthStore.getState().deny();
+  });
+
+  it('external session 授权只记在 external 同域:不写窗口级授权,窗口请求 / external 其它域仍弹窗', async () => {
+    const p = useAgentAuthStore
+      .getState()
+      .ensure({ method: 'terminal.create_session', external: true });
+    useAgentAuthStore.getState().grant('session');
+    await expect(p).resolves.toBe('session');
+    useAgentAuthStore
+      .getState()
+      .confirmSessionGrant('terminal.create_session', getAgentAuthEpoch(), true);
+    const s = useAgentAuthStore.getState();
+    expect(s.externalSessionGranted).toBe(true);
+    expect(s.sessionGranted).toBe(false);
+
+    await expect(
+      useAgentAuthStore.getState().ensure({ method: 'terminal.read_output', external: true }),
+    ).resolves.toBe('session');
+
+    void useAgentAuthStore.getState().ensure({ method: 'terminal.read_output' });
+    expect(useAgentAuthStore.getState().pending?.method).toBe('terminal.read_output');
+    useAgentAuthStore.getState().deny();
+
+    void useAgentAuthStore.getState().ensure({ method: 'debug.launch', external: true });
+    expect(useAgentAuthStore.getState().pending?.method).toBe('debug.launch');
+    useAgentAuthStore.getState().deny();
+  });
+
+  it('revoke 同时撤销 external 各域', () => {
+    useAgentAuthStore.setState({
+      externalSessionGranted: true,
+      externalDebugSessionGranted: true,
+      externalPluginSessionGranted: true,
+    });
+    useAgentAuthStore.getState().revoke();
+    const s = useAgentAuthStore.getState();
+    expect(s.externalSessionGranted).toBe(false);
+    expect(s.externalDebugSessionGranted).toBe(false);
+    expect(s.externalPluginSessionGranted).toBe(false);
+  });
+});

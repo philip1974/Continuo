@@ -110,6 +110,11 @@ export interface McpCallCtx {
    * 不创建无调用方的孤儿会话。可选:HTTP host / 内部构造 ctx 不传 → 工具按未取消处理。
    */
   readonly signal?: AbortSignal;
+  /**
+   * 安全(F2):调用方是未绑定 Continuo 终端的外部客户端(stdio 连接未发 `_continuo/hello`,回落到主窗)。
+   * 授权请求据此带 external 标记,renderer 用独立的 external 授权状态,不复用 / 不写入窗口级授权。
+   */
+  readonly external?: boolean;
 }
 
 export interface McpRevokers {

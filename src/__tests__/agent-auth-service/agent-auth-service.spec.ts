@@ -196,6 +196,19 @@ describe('agent-auth-service: requestAgentAuth', () => {
     await expect(pending).resolves.toBe('session');
   });
 
+  // 安全(F2):外部客户端的授权请求带 external 标记推给 renderer(弹窗标注来源、只用 external 授权状态);
+  // 窗口请求不带该字段。
+  it('T1b: external=true → payload.external=true;未给 → payload 无 external 字段', async () => {
+    const win = makeWin(1);
+    electronMock.windows = [win];
+    void requestAgentAuth({ method: 'terminal.create_session', ownerWindowId: 1, external: true });
+    void requestAgentAuth({ method: 'terminal.read_output', ownerWindowId: 1 });
+    const [, p1] = win.webContents.send.mock.calls[0]!;
+    const [, p2] = win.webContents.send.mock.calls[1]!;
+    expect((p1 as AgentAuthRequestPayload).external).toBe(true);
+    expect(p2 as object).not.toHaveProperty('external');
+  });
+
   it("T2: no window returns 'denied' immediately", async () => {
     await expect(
       requestAgentAuth({ method: 'terminal.create_session' }),

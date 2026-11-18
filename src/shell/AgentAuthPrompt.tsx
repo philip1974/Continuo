@@ -49,9 +49,12 @@ export function AgentAuthPrompt() {
         return;
       }
       const { requestId, method, agentLabel } = payload;
+      // 安全(F2):外部客户端(未绑定 Continuo 终端)只读写 external 授权状态,不复用窗口级授权。
+      const external = payload.external === true;
       const decision = await useAgentAuthStore.getState().ensure({
         method,
         ...(agentLabel !== undefined ? { agentLabel } : {}),
+        ...(external ? { external } : {}),
       });
       // main 已撤销并结算了该请求(本地仅取消弹窗)→ 不再 respond:main 已无该 pending,会返回
       // NOT_PENDING 并弹出误导性的「授权响应失败」。
@@ -64,7 +67,7 @@ export function AgentAuthPrompt() {
         // 安全:「本次启动期间允许」仅在 main 确认该请求仍在等待(ok)后生效;main 已撤销/超时删除
         // 的旧请求 → ok:false(AGENT_AUTH_REQUEST_NOT_PENDING),不改变未来授权状态。
         if (r.ok && decision === 'session') {
-          useAgentAuthStore.getState().confirmSessionGrant(method, epoch);
+          useAgentAuthStore.getState().confirmSessionGrant(method, epoch, external);
         }
         if (!r.ok) {
           console.warn('[agent-auth] respond failed', r.code, r.message);
@@ -144,6 +147,10 @@ function AgentAuthPromptBody({
         {methodLabel(pending.method)}
         {t('permissions.agent.body_suffix')}
       </p>
+      {/* 安全(F2):外部客户端请求标注来源 —— 弹窗出现在主窗,但调用方并非该窗口终端里的 agent。 */}
+      {pending.external ? (
+        <p className="mb-3 text-xs text-fg">{t('permissions.agent.external_caller')}</p>
+      ) : null}
       <p className="mb-4 text-2xs text-fg-dim">
         {t(hintKey)}
       </p>

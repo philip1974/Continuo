@@ -379,7 +379,9 @@ async function handleLine(
   // tools/call 回 NO_WINDOW_CTX(该 proxy 随 A 的终端退出;tools/list 不受影响)。
   if (ctx === null && !socketCtx.has(sock)) {
     const fallback = pickMainWindowPreferNonPopout();
-    if (fallback) ctx = { ownerWindowId: fallback.id, callerSubject, signal };
+    // 安全(F2):标记 external —— 授权走独立的 external 状态,不借主窗已有的「本次启动期间允许」
+    // (否则窗口 B 终端里的 agent 绕过 proxy 直连 mcp.sock 不发 hello,即可借主窗 A 的授权静默执行)。
+    if (fallback) ctx = { ownerWindowId: fallback.id, callerSubject, signal, external: true };
   }
   const response = await dispatchRpc(rpc, tools, serverInfo, ctx);
   // race(R111):连接已断开 / 已拒绝 → writeLine 丢弃响应(避免 EPIPE / write-after-end)。

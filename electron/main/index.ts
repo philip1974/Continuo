@@ -1051,10 +1051,11 @@ async function startMcpHost(): Promise<void> {
         service: termService,
         getSessionOwner,
         getSessionController: (id) => terminalSessions.getController(id),
-        ensureAuthorized: (ownerWindowId?: number, method?: string) =>
+        ensureAuthorized: (ownerWindowId?: number, method?: string, external?: boolean) =>
           requestAgentAuth({
             method: method ?? 'terminal.create_session',
             ...(ownerWindowId !== undefined ? { ownerWindowId } : {}),
+            ...(external === true ? { external } : {}),
           }),
         createSession: createSessionForAgent,
         installStopHook,
@@ -1078,10 +1079,11 @@ async function startMcpHost(): Promise<void> {
         getSessionOwner: (id) => debugSessions.get(id)?.ownerWindowId ?? null,
         getSessionController: (id) =>
           debugSessions.get(id)?.controllerToken ?? null,
-        ensureAuthorized: (ownerWindowId: number, method?: string) =>
+        ensureAuthorized: (ownerWindowId: number, method?: string, external?: boolean) =>
           requestAgentAuth({
             method: method ?? 'debug.*',
             ownerWindowId,
+            ...(external === true ? { external } : {}),
           }),
       }),
     ];
@@ -1281,8 +1283,12 @@ app.whenReady().then(async () => {
   // tools/list_changed 通知同时推 HTTP SSE + stdio 客户端,Codex/Claude Code 收到自动重拉;
   // stdio 用取值函数:就绪前只推 HTTP,就绪后同时推 stdio。
   if (mcpHost) {
-    startPluginMcpIpc(mcpHost, () => mcpStdio, (ownerWindowId, method) =>
-      requestAgentAuth({ method: method ?? 'plugin.*', ownerWindowId }),
+    startPluginMcpIpc(mcpHost, () => mcpStdio, (ownerWindowId, method, external) =>
+      requestAgentAuth({
+        method: method ?? 'plugin.*',
+        ownerWindowId,
+        ...(external === true ? { external } : {}),
+      }),
     );
   }
   // 冷启动开窗模式决策(issue #30):有 dock 缓冲目录 → dock 模式,

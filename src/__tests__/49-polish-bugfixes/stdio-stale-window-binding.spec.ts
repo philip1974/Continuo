@@ -165,6 +165,7 @@ describe.skipIf(process.platform === 'win32')('F4 · hello 绑定窗口关闭后
     expect(r1['error']).toBeUndefined();
     expect(run).toHaveBeenCalledTimes(1);
     expect(run.mock.calls[0]![1].ownerWindowId).toBe(7);
+    expect(run.mock.calls[0]![1].external).toBeUndefined(); // hello 绑定的终端 agent 不是外部客户端
 
     win.alive.delete(7); // 绑定窗口关闭,窗口 3 仍活着
     send(c.socket, { id: 2, method: 'tools/call', params: { name: 'whoami', arguments: {} } });
@@ -198,7 +199,8 @@ describe.skipIf(process.platform === 'win32')('F4 · hello 绑定窗口关闭后
     expect(run).not.toHaveBeenCalled();
   });
 
-  it('未发 hello 的外部客户端 → 保持回落到第一个非 popout 主窗', async () => {
+  // 安全(F2):回落的 ctx 带 external=true,授权走独立的 external 状态,不借主窗的「本次启动期间允许」。
+  it('未发 hello 的外部客户端 → 回落到第一个非 popout 主窗,且 ctx 标记 external', async () => {
     win.alive.add(3);
     const run = vi.fn((_i: unknown, ctx: McpCallCtx) => ({ owner: ctx.ownerWindowId }));
     const socketPath = await startServer(run);
@@ -207,5 +209,6 @@ describe.skipIf(process.platform === 'win32')('F4 · hello 绑定窗口关闭后
     const r = await c.next();
     expect(r['error']).toBeUndefined();
     expect(run.mock.calls[0]![1].ownerWindowId).toBe(3);
+    expect(run.mock.calls[0]![1].external).toBe(true);
   });
 });

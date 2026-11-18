@@ -55,6 +55,8 @@ export interface AgentAuthInfo {
   readonly method: string;
   readonly agentLabel?: string;
   readonly ownerWindowId?: number;
+  /** 安全(F2):调用方是未绑定 Continuo 终端的外部客户端 → renderer 用独立的 external 授权状态并标注来源。 */
+  readonly external?: boolean;
 }
 
 /**
@@ -109,6 +111,7 @@ export async function requestAgentAuth(
       requestId,
       method: info.method,
       ...(info.agentLabel !== undefined ? { agentLabel: info.agentLabel } : {}),
+      ...(info.external === true ? { external: true } : {}),
     };
     // race(R62):pending.set 在前、send 在后。若 win 通过了上面的 isDestroyed 检查,但其
     // webContents 在此刻已销毁(窗口正在关闭的竞态窗口),send 会同步抛("Object has been

@@ -95,7 +95,7 @@ describe('规则 1 · await_stop_hook 授权 + capability', () => {
       status: 'stop',
     });
     expect(awaitNext).toHaveBeenCalledTimes(1);
-    expect(ensureAuthorized).toHaveBeenCalledWith(WIN, 'terminal.await_stop_hook');
+    expect(ensureAuthorized).toHaveBeenCalledWith(WIN, 'terminal.await_stop_hook', false);
   });
 
   it('跨窗会话 → TERMINAL_SESSION_NOT_FOUND(不泄漏存在性)', async () => {

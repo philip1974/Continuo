@@ -308,6 +308,8 @@ export const en = {
   'permissions.agent.debug_launch': 'start a debug session',
   'permissions.agent.debug_control': 'control a debug session (breakpoints, stepping, variables)',
   'permissions.agent.generic': 'call {method}',
+  'permissions.agent.external_caller':
+    'Requested by: external client (not bound to a Continuo terminal). It does not belong to any terminal in this window; its authorization is separate from this window\'s terminal agents.',
   'permissions.agent.plugin_tool': 'call plugin tool {name}',
   'permissions.agent.title_plugin': 'Agent requests to call a plugin tool',
   'permissions.agent.hint_plugin':

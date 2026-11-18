@@ -33,9 +33,13 @@ interface AgentAuthState {
   sessionGranted: boolean;        // 终端域
   debugSessionGranted: boolean;   // debug 域
   pluginSessionGranted: boolean;  // 插件工具域
+  // 外部客户端(stdio 未发 hello,未绑定 Continuo 终端)的同三域授权,与上面窗口级授权互不放行
+  externalSessionGranted: boolean;
+  externalDebugSessionGranted: boolean;
+  externalPluginSessionGranted: boolean;
 
   /** 一站式 API:已授权直接放行,否则弹窗(挂起 Promise). */
-  ensure(info: { method: string; agentLabel?: string }): Promise<EnsureOutcome>;
+  ensure(info: { method: string; agentLabel?: string; external?: boolean }): Promise<EnsureOutcome>;
 
   /** UI 用户操作. */
   grant(kind: 'once' | 'session'): void;
@@ -56,6 +60,9 @@ interface AgentAuthState {
   method 以 `debug.` 开头的属 debug 域(看 `debugSessionGranted`);以 `plugin.` 开头的属插件工具域
   (看 `pluginSessionGranted`,main 侧 plugin-mcp-bridge 以 `plugin.<tool 名>` 请求,见 `plugin-mcp-multi-window`);
   其余属终端域(看 `sessionGranted`)。对某个域点「本次启动期间允许」不会放行其它域 —— 每个域第一次调用各弹一次
+- **按调用方类别再分**:`external: true`(main 侧 stdio 连接未发 `_continuo/hello`,回落主窗)只看 / 只写
+  `external*SessionGranted`,不复用也不写入窗口级授权;弹窗标注「外部客户端(未绑定 Continuo 终端)」。
+  否则窗口 B 终端里的 agent 绕过 proxy 直连 mcp.sock 不发 hello,即可借主窗 A 的授权静默 create_session / debug_launch
 - `pending !== null` → **立即** `resolve('denied')`(同一时刻一个,与 plugin permission-prompt 同型;并发的第二条直接拒)
 - 其它 → 设 `pending = { requestId(uuid), method, agentLabel? }`,返回未 resolve 的 Promise
 
@@ -71,7 +78,7 @@ interface AgentAuthState {
 - Promise resolve `'session'`
 - **不**立即置域标志:该请求在 main 可能已被撤销 / 超时删除(旧弹窗仍显示),立即置 true 会让之后的请求被静默放行
 
-### `confirmSessionGrant(method, epoch)`
+### `confirmSessionGrant(method, epoch, external?)`
 
 - 应答方(AgentAuthPrompt)在 main 确认该 requestId 仍在等待(respond ok)后调
 - method 所属域的标志置 true(终端域 `sessionGranted` / debug 域 `debugSessionGranted` / 插件工具域 `pluginSessionGranted`)

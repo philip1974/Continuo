@@ -26,11 +26,15 @@ export interface PendingAuthRequest {
   readonly requestId: string;
   readonly method: string;
   readonly agentLabel?: string;
+  /** 来自未绑定 Continuo 终端的外部客户端(弹窗标注来源)。 */
+  readonly external?: boolean;
 }
 
 interface EnsureInfo {
   readonly method: string;
   readonly agentLabel?: string;
+  /** 安全(F2):外部客户端请求 → 只读写 external 授权状态,不用窗口级授权。 */
+  readonly external?: boolean;
 }
 
 type AgentAuthState = {
@@ -41,6 +45,13 @@ type AgentAuthState = {
   debugSessionGranted: boolean;
   /** 插件工具域(method 以 plugin. 开头)的「本次启动期间允许」(与终端 / debug 域互不放行)。 */
   pluginSessionGranted: boolean;
+  /**
+   * 安全(F2):外部客户端(stdio 未发 hello,未绑定 Continuo 终端)的「本次启动期间允许」,同样分三个域。
+   * 与上面的窗口级授权互不放行:外部请求不读也不写窗口级标志,窗口请求也不读 external 标志。
+   */
+  externalSessionGranted: boolean;
+  externalDebugSessionGranted: boolean;
+  externalPluginSessionGranted: boolean;
 
   ensure(info: EnsureInfo): Promise<EnsureOutcome>;
   /** 'session' 只结算当前请求;域授权须待 main 确认后经 confirmSessionGrant 生效。 */
@@ -49,7 +60,7 @@ type AgentAuthState = {
    * main 确认 'session' 应答已生效(respond ok)后调:给 method 所属域记「本次启动期间允许」。
    * epoch 须为结算时 getAgentAuthEpoch() 的值;期间发生过 revoke → 忽略(不复活已撤销授权)。
    */
-  confirmSessionGrant(method: string, epoch: number): void;
+  confirmSessionGrant(method: string, epoch: number, external?: boolean): void;
   deny(): void;
   revoke(): void;
   /**
@@ -76,10 +87,30 @@ export function isPluginAuthMethod(method: string): boolean {
   return method.startsWith(AGENT_AUTH_PLUGIN_METHOD_PREFIX);
 }
 
-type SessionGrantKey = 'sessionGranted' | 'debugSessionGranted' | 'pluginSessionGranted';
+type SessionGrantKey =
+  | 'sessionGranted'
+  | 'debugSessionGranted'
+  | 'pluginSessionGranted'
+  | 'externalSessionGranted'
+  | 'externalDebugSessionGranted'
+  | 'externalPluginSessionGranted';
 
-/** method → 所属域的「本次启动期间允许」标志位。 */
-function grantKeyFor(method: string): SessionGrantKey {
+const NO_SESSION_GRANTS = {
+  sessionGranted: false,
+  debugSessionGranted: false,
+  pluginSessionGranted: false,
+  externalSessionGranted: false,
+  externalDebugSessionGranted: false,
+  externalPluginSessionGranted: false,
+} as const satisfies Record<SessionGrantKey, false>;
+
+/** (method, 调用方类别) → 所属「本次启动期间允许」标志位。 */
+function grantKeyFor(method: string, external?: boolean): SessionGrantKey {
+  if (external === true) {
+    if (isDebugAuthMethod(method)) return 'externalDebugSessionGranted';
+    if (isPluginAuthMethod(method)) return 'externalPluginSessionGranted';
+    return 'externalSessionGranted';
+  }
   if (isDebugAuthMethod(method)) return 'debugSessionGranted';
   if (isPluginAuthMethod(method)) return 'pluginSessionGranted';
   return 'sessionGranted';
@@ -118,13 +149,11 @@ function generateRequestId(): string {
 
 export const useAgentAuthStore = create<AgentAuthState>((set, get) => ({
   pending: null,
-  sessionGranted: false,
-  debugSessionGranted: false,
-  pluginSessionGranted: false,
+  ...NO_SESSION_GRANTS,
 
   ensure(info) {
-    // 该请求所属域已 session 授权 → 直接通过,不设 pending(支持并发)
-    if (get()[grantKeyFor(info.method)]) {
+    // 该请求所属域(按调用方类别区分窗口 / external)已 session 授权 → 直接通过,不设 pending(支持并发)
+    if (get()[grantKeyFor(info.method, info.external)]) {
       return Promise.resolve('session' as const);
     }
     // 已有 pending → 第二条立即拒(简化并发,与 plugin permission-prompt 同型)
@@ -135,6 +164,7 @@ export const useAgentAuthStore = create<AgentAuthState>((set, get) => ({
       requestId: generateRequestId(),
       method: info.method,
       ...(info.agentLabel !== undefined ? { agentLabel: info.agentLabel } : {}),
+      ...(info.external === true ? { external: true } : {}),
     };
     set({ pending: req });
     return new Promise<EnsureOutcome>((resolve) => {
@@ -165,10 +195,10 @@ export const useAgentAuthStore = create<AgentAuthState>((set, get) => ({
     resolver?.(kind);
   },
 
-  confirmSessionGrant(method, epoch) {
+  confirmSessionGrant(method, epoch, external) {
     if (epoch !== authEpoch) return;
-    // 只给该请求所属的域记 session 授权。
-    const key = grantKeyFor(method);
+    // 只给该请求所属的域(及调用方类别)记 session 授权。
+    const key = grantKeyFor(method, external);
     if (!get()[key]) set({ [key]: true });
   },
 
@@ -184,8 +214,8 @@ export const useAgentAuthStore = create<AgentAuthState>((set, get) => ({
   revoke() {
     authEpoch += 1;
     set((s) =>
-      s.sessionGranted || s.debugSessionGranted || s.pluginSessionGranted
-        ? { sessionGranted: false, debugSessionGranted: false, pluginSessionGranted: false }
+      (Object.keys(NO_SESSION_GRANTS) as SessionGrantKey[]).some((k) => s[k])
+        ? NO_SESSION_GRANTS
         : s,
     );
   },
@@ -206,8 +236,6 @@ export function _resetAgentAuthForTest(): void {
   pendingResolver = null;
   useAgentAuthStore.setState({
     pending: null,
-    sessionGranted: false,
-    debugSessionGranted: false,
-    pluginSessionGranted: false,
+    ...NO_SESSION_GRANTS,
   });
 }

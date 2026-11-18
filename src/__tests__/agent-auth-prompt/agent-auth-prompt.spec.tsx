@@ -146,6 +146,52 @@ describe('AgentAuthPrompt — 渲染条件', () => {
   });
 });
 
+// 安全(F2):外部客户端(stdio 未发 hello)的请求在弹窗中标注来源,且「本次启动期间允许」只记入 external 授权。
+describe('AgentAuthPrompt — 外部客户端请求', () => {
+  it('external 请求的弹窗标注「外部客户端(未绑定 Continuo 终端)」;窗口请求不显示', () => {
+    installApi({ onRequest: vi.fn(() => () => {}), respond: vi.fn() });
+    render(<AgentAuthPrompt />);
+    act(() => {
+      void useAgentAuthStore
+        .getState()
+        .ensure({ method: 'terminal.create_session', external: true });
+    });
+    expect(document.querySelector('.wm-modal-content')!.textContent).toContain(
+      '外部客户端(未绑定 Continuo 终端)',
+    );
+    act(() => {
+      useAgentAuthStore.getState().deny();
+    });
+    act(() => {
+      void useAgentAuthStore.getState().ensure({ method: 'terminal.create_session' });
+    });
+    expect(document.querySelector('.wm-modal-content')!.textContent).not.toContain('外部客户端');
+  });
+
+  it('external 请求点「本次启动期间允许」→ 只记 external 授权,不写窗口级 sessionGranted', async () => {
+    let cb: ((p: { requestId: string; method: string; external?: boolean }) => void) | null =
+      null;
+    const onRequest = vi.fn((fn: (p: never) => void) => {
+      cb = fn as never;
+      return vi.fn();
+    });
+    const respond = vi.fn(async () => ({ ok: true }));
+    installApi({ onRequest, respond });
+    render(<AgentAuthPrompt />);
+    act(() => {
+      cb!({ requestId: 'rq-ext', method: 'terminal.create_session', external: true });
+    });
+    await waitFor(() => {
+      expect(document.querySelector('.wm-modal-content')).not.toBeNull();
+    });
+    fireEvent.click(getButtons()['本次启动期间允许']!);
+    await waitFor(() => {
+      expect(useAgentAuthStore.getState().externalSessionGranted).toBe(true);
+    });
+    expect(useAgentAuthStore.getState().sessionGranted).toBe(false);
+  });
+});
+
 describe('AgentAuthPrompt — 按钮', () => {
   function setup() {
     installApi({ onRequest: vi.fn(() => () => {}), respond: vi.fn() });

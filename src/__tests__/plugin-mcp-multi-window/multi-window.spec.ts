@@ -428,7 +428,7 @@ describe('授权门控 · 插件工具经 agent 授权', () => {
     // 工具由 wc 11 注册,调用方是窗口 2 的 agent:跨窗先到先得照常路由到注册者,授权弹在调用方窗口
     bridge.handleRegister(11, regPayload('git.commit', 'p.git'));
     await host.tools.get('git.commit')!.run({ m: 'x' }, { ownerWindowId: 2 });
-    expect(ensure).toHaveBeenCalledWith(2, 'plugin.git.commit');
+    expect(ensure).toHaveBeenCalledWith(2, 'plugin.git.commit', false);
     expect(invokeRemote.invokeCalls).toEqual([
       { owner: { pluginId: 'p.git', wcId: 11 }, name: 'git.commit', input: { m: 'x' } },
     ]);

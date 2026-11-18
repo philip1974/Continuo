@@ -225,6 +225,8 @@ export interface CreateSessionToolDeps {
    */
   readonly ensureAuthorized: (
     ownerWindowId: number,
+    method?: string,
+    external?: boolean,
   ) => Promise<'once' | 'session' | 'denied'>;
   /**
    * 实际 spawn PTY + 入 sessions service。由 main 启动入口注入,把
@@ -327,7 +329,8 @@ export function makeCreateSessionTool(
     input: CreateSessionBoundedInput,
     ctx: McpCallCtx & { readonly signal: AbortSignal },
   ): Promise<CreateSessionOutput> {
-    const decision = await deps.ensureAuthorized(ctx.ownerWindowId);
+    // 安全(F2):外部客户端(stdio 未发 hello)带 external 标记,不借窗口级授权。
+    const decision = await deps.ensureAuthorized(ctx.ownerWindowId, undefined, ctx.external === true);
     if (decision === 'denied') {
       throw codedError(ERROR_CODES.AGENT_NOT_AUTHORIZED, 'agent terminal not authorized by user');
     }
