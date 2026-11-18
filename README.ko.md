@@ -92,6 +92,8 @@ Continuo가 실행되고 MCP 서버가 등록되면, 에이전트는 다음을 �
 | `terminal.list_sessions` | 활성 패널 열거 |
 | `terminal.kill` | 패널 종료 |
 
+> **공유 Linux 호스트에서 디버깅할 때:** `debug.launch` 세션이 실행되는 동안 디버깅 중인 Node 프로세스의 inspector 는 `127.0.0.1` 의 임의 포트에서 대기합니다. 같은 머신의 다른 로컬 사용자는 누구나 이 포트에 접속해 디버기 안에서 당신의 권한으로 코드를 실행할 수 있습니다 — Continuo 고유가 아닌 Node / js-debug 의 일반적인 한계입니다. 다중 사용자 호스트에서는 `debug.launch` 를 신중히 사용하고, 끝나면 바로 세션을 끊으세요.
+
 Claude Code에게 이렇게 물어보세요: *"패널 4개를 열고 각각 `pnpm test:unit`, `pnpm test:integration`, `pnpm test:contract`, `pnpm e2e` 를 실행해 줘 — 하나씩"* 그리고 그것이 일어나는 것을 지켜보세요.
 
 ## 설계 문서

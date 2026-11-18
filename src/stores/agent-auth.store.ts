@@ -71,9 +71,12 @@ type AgentAuthState = {
 };
 
 /**
- * 授权分两个域:method 以 `debug.` 开头的属 debug 域,其余(终端工具及未知 method)属终端域。
- * debug 能启动进程、读变量、执行表达式,与终端控制是不同的授权面;共用一个标志位时,用户对终端点了
- * 「本次启动期间允许」后 debug 工具会被静默放行。
+ * 授权分 3 个域 × 2 类调用方:
+ * - 域:method 以 `debug.` 开头的属 debug 域,以 `plugin.` 开头的属插件工具域,其余(终端工具及未知 method)属终端域。
+ *   debug 能启动进程、读变量、执行表达式,与终端控制是不同的授权面;共用一个标志位时,用户对终端点了
+ *   「本次启动期间允许」后 debug 工具会被静默放行。插件工具域同理(见 isPluginAuthMethod)。
+ * - 调用方:窗口级(绑定 Continuo 终端的 agent)与外部客户端(stdio 未发 hello)各自记授权、互不放行。
+ *   外部客户端没有插件工具域(main 在授权前即拒绝),所以实际共 5 个标志位(见 SESSION_GRANT_KEYS)。
  */
 export function isDebugAuthMethod(method: string): boolean {
   return method.startsWith('debug.');

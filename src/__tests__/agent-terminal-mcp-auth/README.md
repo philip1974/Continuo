@@ -97,13 +97,13 @@ interface AgentAuthState {
 
 ### `revoke()`
 
-- `sessionGranted = false`,撤销代际 epoch +1
+- 全部域(`SESSION_GRANT_KEYS`)的 session 授权置 false,撤销代际 epoch +1
 - pending 不变(store 层;状态栏撤销在 main 确认成功后另行 `applyMainRevoked()` 清掉旧弹窗,见 status-bar)
 
 ### `applyMainRevoked()`
 
 - main 已撤销时调:本窗口撤销 IPC 成功(status-bar),或收到其它窗口撤销的 `agent-auth:revoked` 广播(AgentAuthPrompt)
-- 与 `revoke()` 同样重置(两个域 session 授权清空、epoch +1 → 在途的 session 确认迟到不复活)
+- 与 `revoke()` 同样重置(全部域 session 授权清空 —— 窗口级三域与外部客户端两域,见 `SESSION_GRANT_KEYS`;epoch +1 → 在途的 session 确认迟到不复活)
 - 残留 pending → 清空,挂起的 ensure resolve `'cancelled'`(main 已结算该请求,应答方不得再 respond)
 
 ### 边界

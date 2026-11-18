@@ -377,7 +377,8 @@ async function handleLine(
     liveOwner !== null ? { ownerWindowId: liveOwner, callerSubject, signal } : null;
   // Fallback:外部 MCP client(eg. Claude Code stdio 配置)spawn 的 proxy
   // 无 CONTINUO_WINDOW_ID env,不发 hello,socketCtx 空 → fallback 到第一个
-  // 非 popout 主窗。mirror agent-auth.pickMainWindow 策略。tools/list 无需 ctx
+  // 非 popout 主窗(pickMainWindowPreferNonPopout:按 BrowserWindow.getAllWindows() 顺序取第一个未销毁的
+  // 非 popout 窗口,全是 popout 时取第一个未销毁窗口,一个都没有则不回落)。tools/list 无需 ctx
   // (dispatchRpc 自行短路),只有 tools/call 路径需要。
   // 安全(fail-closed):**发过 hello** 的连接(hello 失败,或绑定窗口已关闭)不回落 —— 否则窗口 A 里
   // agent 的调用以窗口 B 的身份执行 / 弹授权(B 已「本次启动期间允许」→ 静默放行)。ctx 保持 null →

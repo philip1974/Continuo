@@ -92,6 +92,8 @@ Codex CLI / Aider 有类似的 stdio-MCP server 配置 —— 指向同一个脚
 | `terminal.list_sessions` | 枚举活跃面板 |
 | `terminal.kill` | 拆掉一个面板 |
 
+> **在共享 Linux 主机上调试：** `debug.launch` 会话运行期间，被调试 Node 进程的 inspector 监听 `127.0.0.1` 上的随机端口。同一台机器上的其他本地用户都能连接该端口，并以你的身份在被调试进程内执行代码 —— 这是 Node / js-debug 的通用限制，并非 Continuo 特有。在多用户主机上请谨慎使用 `debug.launch`，用完及时断开会话。
+
 让 Claude Code 试试：*「打开 4 个面板，分别运行 `pnpm test:unit`、`pnpm test:integration`、`pnpm test:contract`、`pnpm e2e` —— 每个一个」*，然后看着它发生。
 
 ## 设计文档
