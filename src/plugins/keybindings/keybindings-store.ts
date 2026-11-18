@@ -24,6 +24,7 @@ import {
   recordsShallowEqual,
   type WriteRecordResult,
 } from '../storage/local-storage-record';
+import { ownValue } from '../../../electron/shared/own-value';
 
 const STORAGE_KEY = 'continuo.keybindings.overrides';
 
@@ -74,7 +75,7 @@ export const useKeybindingsStore = create<KeybindingsState>((set, get) => ({
       return;
     }
     const latest = readStored();
-    if (latest[commandId] === hotkey) {
+    if (ownValue(latest, commandId) === hotkey) {
       if (recordsShallowEqual(get().overrides, latest)) return;
       set({ overrides: latest });
       return;
@@ -92,8 +93,8 @@ export const useKeybindingsStore = create<KeybindingsState>((set, get) => ({
   },
   reset: (commandId) => {
     const latest = readStored();
-    if (!(commandId in latest)) {
-      set((s) => (commandId in s.overrides ? { overrides: latest } : s));
+    if (!Object.hasOwn(latest, commandId)) {
+      set((s) => (Object.hasOwn(s.overrides, commandId) ? { overrides: latest } : s));
       return;
     }
     const next = { ...latest };
@@ -136,7 +137,8 @@ export function resolveEffectiveHotkey(
   spec: Pick<CommandSpec, 'id' | 'hotkey'>,
   overrides: Readonly<Record<string, string>>,
 ): string | undefined {
-  const override = overrides[spec.id];
+  // 只认自有属性:命令 id 为 toString / constructor 等时不得命中原型链返回函数(compileCombo 会抛 → 整窗白屏)。
+  const override = ownValue(overrides, spec.id);
   if (override !== undefined) return override === '' ? undefined : override;
   return spec.hotkey;
 }

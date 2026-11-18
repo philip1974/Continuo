@@ -1055,6 +1055,13 @@
 
 - [`ready-handshake.spec.ts`](./protocol-url-ready-handshake/ready-handshake.spec.ts)
 
+## [原型链键名查表(prototype-key-lookup)](./prototype-key-lookup/README.md)
+
+- [`main-permissions-lookup.spec.ts`](./prototype-key-lookup/main-permissions-lookup.spec.ts)
+- [`own-value.spec.ts`](./prototype-key-lookup/own-value.spec.ts)
+- [`renderer-lookup.spec.ts`](./prototype-key-lookup/renderer-lookup.spec.ts)
+- [`renderer-permissions-lookup.spec.ts`](./prototype-key-lookup/renderer-permissions-lookup.spec.ts)
+
 ## [quick-open(⌘P 文件模糊搜索)](./quick-open/README.md)
 
 - [`hotkey.spec.tsx`](./quick-open/hotkey.spec.tsx)

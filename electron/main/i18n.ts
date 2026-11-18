@@ -4,6 +4,7 @@ import {
   interpolateTemplate,
   type TranslateParams,
 } from '../shared/i18n-interpolate';
+import { ownValue } from '../shared/own-value';
 import { getCurrentLocale } from './services/settings.service';
 
 export type { TranslateParams } from '../shared/i18n-interpolate';
@@ -21,8 +22,9 @@ export function getMainT(): MainT {
   const enDict = LOCALE_DICTS.en;
 
   return (key, params) => {
-    let template = dict[key];
-    if (template === undefined) template = enDict[key];
+    // 只认自有属性(同 renderer translate):key 为原型成员名时不返回函数。
+    let template = ownValue(dict, key);
+    if (template === undefined) template = ownValue(enDict, key);
     if (template === undefined) return key;
     if (hasTranslateParams(params)) {
       return interpolateTemplate(template, params);
