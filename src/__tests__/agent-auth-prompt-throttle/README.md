@@ -53,7 +53,8 @@ plugin)计;唯一的例外是**超时冷却按窗口**计(见「超时」)。
   renderer):撤销、窗口关闭、renderer reload 时清除(见下)。
 - **renderer reload / 渲染进程崩溃**(主窗 View 菜单 Cmd+R;窗口不关、webContents 不销毁,但 renderer 的授权态与
   弹窗随旧文档消失):main 在该窗口主框架的非同文档导航**提交**时(`did-navigate`;主框架加载失败 `did-fail-load`
-  提交的是错误页,同样算)与 `render-process-gone` 时,把该窗口全部未决请求按**取消**结算(不计拒绝、不进冷却)并
+  提交的是错误页,同样算;`ERR_ABORTED`(-3)不算 —— 真机上它出现在加载中又 reload(随后有 did-navigate)
+  与就绪后主进程 `wc.stop()`(文档原样留着)两种情况)与 `render-process-gone` 时,把该窗口全部未决请求按**取消**结算(不计拒绝、不进冷却)并
   清掉它的授权镜像。
   此前(审计实测):①镜像残留 → 该域请求不走节流而 renderer 真的弹窗:40 次请求每次点「仅本次」弹 40 次(上限
   应为 10)、连续超时无冷却、被拒后立刻再请求又弹;②弹窗显示中 reload → 弹窗消失而 main 的未决请求留到无应答
@@ -131,7 +132,8 @@ plugin)计;唯一的例外是**超时冷却按窗口**计(见「超时」)。
   reload(main 收到导航事件 / 纵深:没收到)→ 40 次「仅本次」≤ 10 个弹窗、超时有冷却、拒绝有冷却;弹窗显示中
   reload / 渲染进程崩溃 → 未决请求立即结算、新请求马上可弹、不计拒绝;同文档导航不结算。
   未提交的主框架导航(只有 did-start-navigation)→ 请求照常弹窗、显示中的弹窗与授权镜像保留;开始到提交之间靠
-  `isLoadingMainFrame` 拒;主框架 did-fail-load → 未就绪。
+  `isLoadingMainFrame` 拒;主框架 did-fail-load → 未就绪(ERR_ABORTED -3 除外:加载中又 reload、就绪后 `wc.stop()`
+  两种真机序列都最终就绪)。
   reload 窗口期(未上报就绪 / 主框架加载中)的请求立刻被拒、不发 IPC、不锁死、计入速率;就绪后正常弹窗。
 - `prompt-grant-feedback.spec.tsx`:status 区域常驻、被拒时出现提示并定时清空、合成点击仍无效但有提示、请求切换清空。
 - `renderer-ready-handshake.spec.ts`:preload 先挂监听再上报 `agent-auth:ready`;main 的 READY 处理器与窗口创建时的跟踪接线。

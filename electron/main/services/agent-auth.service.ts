@@ -101,6 +101,9 @@ const rendererGoneWatched = new WeakSet<object>();
  * 经 AGENT_AUTH_CHANNELS.READY 上报(markAgentAuthRendererReady)才恢复。
  */
 const rendererNotReady = new Set<number>();
+/** Chromium net::ERR_ABORTED。 */
+const ERR_ABORTED = -3;
+
 /**
  * 「文档被换掉」以**已提交**的导航为准(did-navigate:主框架、非同文档、已提交),不用 lib/wc-gone-hook 的
  * did-start-navigation:导航开始不等于文档会换 —— 被导航守卫在 will-navigate 里拦下、被中止、下载 / 204 响应的
@@ -122,10 +125,13 @@ export function watchAgentAuthRenderer(win: BrowserWindow): void {
   if (typeof wc.on === 'function') {
     wc.on('did-navigate', onGone);
     wc.on('render-process-gone', onGone);
-    // 主框架加载失败(Electron 不为被取消的导航 ERR_ABORTED 发这个事件):Chromium 提交的是错误页,不发
-    // did-navigate,但旧文档同样没了。
-    wc.on('did-fail-load', (_event, _code, _description, _url, isMainFrame) => {
-      if (isMainFrame) onGone();
+    // 主框架加载失败:Chromium 提交的是错误页,不发 did-navigate,但旧文档同样没了。
+    // ERR_ABORTED(-3)除外,它不代表文档被换掉(真机实测 Electron 对主框架发 -3 的两种情况):
+    // - 文档已提交但仍在加载时又 reload:did-fail-load(-3) → did-navigate → 就绪,换文档由随后的 did-navigate 处理;
+    // - 文档提交后主进程调 wc.stop():-3 在就绪**之后**才到,文档原样留着、不会再上报就绪 —— 按换文档处理会让该
+    //   窗口的授权请求被永久拒绝。
+    wc.on('did-fail-load', (_event, errorCode, _description, _url, isMainFrame) => {
+      if (isMainFrame && errorCode !== ERR_ABORTED) onGone();
     });
   }
   // 窗口销毁:结算发往它的未决请求,之后不会再有请求发给它。
