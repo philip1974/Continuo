@@ -1308,6 +1308,11 @@
 
 - [`command-keybinding.spec.ts`](./terminal-panel-keyboard-new/command-keybinding.spec.ts)
 
+## [terminal-paste-sanitize](./terminal-paste-sanitize/README.md)
+
+- [`paste-sanitize.spec.ts`](./terminal-paste-sanitize/paste-sanitize.spec.ts)
+- [`paste-wiring.spec.ts`](./terminal-paste-sanitize/paste-wiring.spec.ts)
+
 ## [terminal-readhistory-failure-feedback](./terminal-readhistory-failure-feedback/README.md)
 
 - [`readhistory-failure-clears-loading.spec.ts`](./terminal-readhistory-failure-feedback/readhistory-failure-clears-loading.spec.ts)
