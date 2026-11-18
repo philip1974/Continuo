@@ -24,7 +24,7 @@ const FOCUSABLE_SELECTOR =
 
 /** click 事件里守卫用到的部分(React.MouseEvent 满足)。 */
 interface GrantClick {
-  /** 浏览器约定:指针点击 ≥ 1;键盘(Enter / Space)与程序触发的 click 为 0。 */
+  /** 浏览器约定:指针点击 ≥ 1(连击的第 n 击为 n);键盘(Enter / Space)与程序触发的 click 为 0。 */
   readonly detail: number;
   readonly currentTarget: Element;
 }
@@ -32,7 +32,9 @@ interface GrantClick {
 export interface PromptGrantGuard {
   /**
    * 这次对授予按钮的 click 是否算数。
-   * - 任何方式:当前请求**出现**(首次出现或由别的请求切换而来)后 PROMPT_GRANT_ARM_DELAY_MS 内无效。
+   * - 任何方式:当前请求**出现**(首次出现或由别的请求切换而来)后 PROMPT_GRANT_ARM_DELAY_MS 内无效;在此期间
+   *   被拒掉的激活把计时起点推到它自己的时刻(过早的点击之后要再等满一个时间窗)。
+   * - 指针点击只认单击(detail=1):双击 / 多击的后几击不算(第一击被拒、第二击跨过时间窗不能落成授予)。
    * - 键盘激活另须是停顿后的有意按键:该按钮已持续聚焦 ≥ PROMPT_GRANT_ARM_DELAY_MS、聚焦期间没有打过字、这一下
    *   按键不是键重复且之前 PROMPT_GRANT_ARM_DELAY_MS 内没有别的按键。出现延迟挡不住「晚到」的按键:用户没注意到
    *   弹窗,继续原来的输入流(Tab 补全后回车、切模式后打一句话再回车),其中的 Space / Enter 不能落成授予。
@@ -51,6 +53,8 @@ export interface PromptGrantGuard {
 interface GuardState {
   last: unknown;
   shownAt: number | null;
+  /** 授予方向的计时起点:出现时刻,被出现延迟拒掉的激活会把它推后。 */
+  armAt: number | null;
   switchedAt: number | null;
   /** 最近一次 keydown 的时刻,以及它是否「停顿后的单次按键」(非键重复、之前一个时间窗内没有别的 keydown)。 */
   keyAt: number | null;
@@ -74,6 +78,7 @@ export function usePromptGrantGuard(current: unknown): PromptGrantGuard {
   const state = useRef<GuardState>({
     last: null,
     shownAt: null,
+    armAt: null,
     switchedAt: null,
     keyAt: null,
     keyDeliberate: false,
@@ -90,7 +95,7 @@ export function usePromptGrantGuard(current: unknown): PromptGrantGuard {
     if (Object.is(current, s.last)) return;
     const now = Date.now();
     s.switchedAt = current !== null && s.last !== null ? now : null;
-    s.shownAt = current !== null ? now : null;
+    s.shownAt = s.armAt = current !== null ? now : null;
     s.typedSinceShown = false;
     s.last = current;
   }, [current]);
@@ -145,8 +150,12 @@ export function usePromptGrantGuard(current: unknown): PromptGrantGuard {
       const s = state.current;
       const now = Date.now();
       // 出现时刻未知(尚未记录)→ 不可用。
-      if (s.shownAt === null || now - s.shownAt < PROMPT_GRANT_ARM_DELAY_MS) return false;
-      if (e.detail > 0) return true;
+      if (s.armAt === null) return false;
+      if (now - s.armAt < PROMPT_GRANT_ARM_DELAY_MS) {
+        s.armAt = now;
+        return false;
+      }
+      if (e.detail > 0) return e.detail === 1;
       if (s.focusEl !== e.currentTarget || now - s.focusAt < PROMPT_GRANT_ARM_DELAY_MS) return false;
       if (s.typedWhileFocused || s.focusByStreamTab) return false;
       // 刚按下的键就是触发这次 click 的那一下:它须是停顿后的单次按键。更早的按键(或没有按键:辅助技术触发的

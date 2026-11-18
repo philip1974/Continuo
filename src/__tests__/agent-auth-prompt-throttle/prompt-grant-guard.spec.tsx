@@ -78,16 +78,21 @@ describe('AgentAuthPrompt:授予方向的防误触延迟', () => {
     `弹出后 ${AGENT_AUTH_GRANT_ARM_DELAY_MS}ms 内点「%s」无效,弹窗保持;之后有效`,
     async (label) => {
       const outcome = prompt();
-      pointerClick(button(label));
       act(() => {
         vi.advanceTimersByTime(AGENT_AUTH_GRANT_ARM_DELAY_MS - 1);
       });
       pointerClick(button(label));
       expect(await outcome()).toBeNull();
       expect(store().pending).not.toBeNull();
+    },
+  );
 
+  it.each(['仅本次', '本次启动期间允许'])(
+    `弹出 ${AGENT_AUTH_GRANT_ARM_DELAY_MS}ms 后点「%s」有效`,
+    async (label) => {
+      const outcome = prompt();
       act(() => {
-        vi.advanceTimersByTime(1);
+        vi.advanceTimersByTime(AGENT_AUTH_GRANT_ARM_DELAY_MS);
       });
       pointerClick(button(label));
       expect(await outcome()).toBe(label === '仅本次' ? 'once' : 'session');
@@ -130,5 +135,50 @@ describe('AgentAuthPrompt:授予方向的防误触延迟', () => {
     });
     pointerClick(button('仅本次'));
     expect(await inWindow()).toBe('once');
+  });
+});
+
+// 出现延迟只按「出现时刻」计:一次双击的第一击落在延迟内被拒,第二击跨过 500ms 就成了授予。
+describe('AgentAuthPrompt:双击 / 过早的点击不能跨过出现延迟', () => {
+  const D = AGENT_AUTH_GRANT_ARM_DELAY_MS;
+  const advance = (ms: number): void => act(() => void vi.advanceTimersByTime(ms));
+
+  it('审计复现:出现后 +350ms 第一击(无效)、+560ms 第二击(detail=2)落在「本次启动期间允许」→ 不授予', async () => {
+    const outcome = prompt();
+    advance(350);
+    fireEvent.click(button('本次启动期间允许'), { detail: 1 });
+    expect(await outcome()).toBeNull();
+    advance(210);
+    fireEvent.click(button('本次启动期间允许'), { detail: 2 });
+    expect(await outcome()).toBeNull();
+    expect(store().pending).not.toBeNull();
+  });
+
+  it('被出现延迟拒掉的点击把计时起点推到该次点击:之后的单击也要再等满延迟', async () => {
+    const outcome = prompt();
+    advance(D - 1);
+    pointerClick(button('仅本次')); // 无效,重新计时
+    advance(D - 1); // 距出现已远超延迟,但距上次过早的点击不足
+    pointerClick(button('仅本次'));
+    expect(await outcome()).toBeNull();
+    advance(D);
+    pointerClick(button('仅本次'));
+    expect(await outcome()).toBe('once');
+  });
+
+  it('延迟过后:双击 / 三击的后几击(detail ≥ 2)不算授予,单击(detail=1)才算', async () => {
+    const outcome = prompt();
+    advance(D);
+    fireEvent.click(button('本次启动期间允许'), { detail: 2 });
+    fireEvent.click(button('本次启动期间允许'), { detail: 3 });
+    expect(await outcome()).toBeNull();
+    fireEvent.click(button('本次启动期间允许'), { detail: 1 });
+    expect(await outcome()).toBe('session');
+  });
+
+  it('「拒绝」不受影响:延迟内、双击的第二击都立即生效', async () => {
+    const outcome = prompt();
+    fireEvent.click(button('拒绝'), { detail: 2 });
+    expect(await outcome()).toBe('denied');
   });
 });

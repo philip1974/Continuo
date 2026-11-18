@@ -31,6 +31,7 @@ PromptFn 桥接到 store,Promise 形态返回。PluginManager 在 _activate 前�
   落进弹窗的按键 / 点击不能变成授予。manifest 弹窗与 fs-scope 弹窗一致:
   - 请求**出现**后 500ms 内,授予方向(「授权选中」/「授权」)的鼠标与键盘激活无效,弹窗保持。首次出现、落定后空闲一段
     时间再出现、排队切换(A 结算后直接换成 B)、弹窗类型切换(fs-scope↔manifest)都重新计时。
+    延迟内被拒掉的激活把计时起点推到它自己的时刻;指针点击只认单击(`detail === 1`),双击的第二击不算。
   - 授予按钮的**键盘**激活另须是停顿后的有意按键(`keyboard-grant-guard.spec.tsx`):按钮已持续聚焦 ≥ 500ms、聚焦
     期间没打过字、这一下按键不是键重复且之前 500ms 内没有别的按键。Tab→Enter 的快速序列、打字流里的 Space / Enter
     不授予;Tab 到按钮、停顿半秒再按 Enter / Space 授予。输入流里的 Tab(紧跟别的按键 / 出现后 500ms 内 / 出现后
