@@ -177,7 +177,9 @@ function missingPluginFsToken(): never {
   throw new Error('[plugin-fs] no token bound');
 }
 
-const EMPTY_PLUGIN_LIST_DIR_ENTRIES: FileEntry[] = [];
+// 冻结:这个空数组是所有插件共用的同一个对象(空目录的 listDir 结果)。不冻结的话,一个插件往里 push 伪造条目,
+// 其它插件列空目录时就会读到它们。
+const EMPTY_PLUGIN_LIST_DIR_ENTRIES = Object.freeze([]) as unknown as FileEntry[];
 
 export function buildPluginListDirEntries(
   path: string,

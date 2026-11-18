@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/lib/co-api', () => ({ coApi: {} }));
 
-import { createScopedAppController } from '../../plugins/scoped-app';
+import { buildPluginListDirEntries, createScopedAppController } from '../../plugins/scoped-app';
 import { createTestCoApp } from '../../plugins/test-utils';
 import type { CoApp, CoPluginApp } from '../../plugins/types';
 
@@ -169,6 +169,13 @@ describe('贡献点命名空间是冻结外观:注册表内部不可达', () => 
     expect(item.enum[0]).not.toBe(hostEnum[0]);
     expect(Object.isFrozen(item.enum[0])).toBe(true);
     expect(evil.settingItems.getByCategory('general')[0].enum[0]).not.toBe(hostEnum[0]);
+  });
+
+  it('fs.listDir 对空目录返回的共享空数组是冻结的:一个插件不能往里塞条目污染其它插件的结果', () => {
+    const empty = buildPluginListDirEntries('/a', []) as unknown[];
+    expect(Object.isFrozen(empty)).toBe(true);
+    expect(() => empty.push({ name: 'fake' })).toThrow(TypeError);
+    expect(buildPluginListDirEntries('/b', [])).toEqual([]);
   });
 
   it('公开方法照常工作(register / get / getAll / subscribe / execute / on / emit / off)', async () => {
