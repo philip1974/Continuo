@@ -1,6 +1,7 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, session, shell } from 'electron';
 import { installNavigationGuard, isOwnRendererWindowUrl } from './window-open-policy';
 import { setReloadUrlPredicate } from './lib/wc-gone-hook';
+import { installPermissionHandlers } from './lib/permission-policy';
 import { LAYOUT_CHANNELS, WINDOW_ID_CHANNEL } from '../shared/persistence-channels';
 import type {
   HandlerDetails,
@@ -1238,6 +1239,9 @@ app.whenReady().then(async () => {
   // 与 windowOpenHandler 只信这个 file URL,拒绝任意 file:// 弹窗/frame 受信。放在
   // whenReady(而非模块顶层)以免被仅 import index 的单测污染全局注册态。
   setTrustedRendererFile(RENDERER_FILE);
+  // 安全:Chromium 权限默认拒绝,仅受信 renderer 入口的剪贴板读写放行(见 permission-policy)。
+  // 须在建任何窗口之前注册,否则首窗加载期的权限请求走 Electron 默认放行。
+  installPermissionHandlers(session.defaultSession);
 
   const userData = app.getPath('userData');
   const explorerFile = path.join(userData, EXPLORER_FILE_NAME);
