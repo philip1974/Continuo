@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
-import { sep } from 'node:path';
+import { realpathSync } from 'node:fs';
+import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { IdentityRegistry } from './identity-registry.service';
 import {
   lexicalAbsolutePath,
@@ -13,8 +14,10 @@ import { FS_PATH_MAX } from '../../shared/fs-limits';
 import { PERMISSION_RECORD_LIMITS } from '../../shared/permission-record-limits';
 
 // 'lstat' / 'remove' / 'rename-src' 走「不跟随 leaf 符号链接」解析 —— 作用在链接本身。
+// 'read-tree':解析同 'read',用于会递归进入目标子树的读(cp 的源)—— 子树含受保护根时拒绝。
 export type ScopeOpType =
   | 'read'
+  | 'read-tree'
   | 'write'
   | 'mkdir'
   | 'rename-dst'
@@ -64,6 +67,73 @@ function isLexicallyWithin(root: string, probe: string): boolean {
     : isWithinScope(root.toLowerCase(), probe.toLowerCase());
 }
 
+/**
+ * 受保护根比较用的折叠:macOS / Windows(默认大小写不敏感、APFS 还不区分 Unicode 规范化形式)上忽略大小写与
+ * 规范化形式。写类操作的叶子名不经 realpath,保留插件给的写法 —— 不折叠的话 `…/continuo dev` 就绕过了
+ * `…/Continuo Dev`。多拒(大小写敏感卷上名字只差大小写的另一个目录)是 fail-closed。
+ */
+function foldForProtection(p: string): string {
+  return process.platform === 'linux' ? p : p.normalize('NFC').toLowerCase();
+}
+
+/** realpath;路径尚不存在时解析最近的已存在上级,其余各级原样接上(同 canonicalizeScopePath 的回退)。 */
+function realpathOrExistingAncestorSync(absolute: string): string {
+  const missing: string[] = [];
+  let current = absolute;
+  for (;;) {
+    try {
+      return join(realpathSync.native(current), ...missing);
+    } catch {
+      const parent = dirname(current);
+      if (parent === current) return absolute;
+      missing.unshift(current.slice(parent.length).replace(/^[\\/]+/, ''));
+      current = parent;
+    }
+  }
+}
+
+// macOS:数据卷经 firmlink 挂进根目录,`/System/Volumes/Data/Users/x` 与 `/Users/x` 是同一个目录,
+// 而 realpath 不归一这两种写法。scope 宽到覆盖 `/System/Volumes/Data`(或 `/`)时,不登记这条别名就能绕过受保护根。
+const DARWIN_DATA_VOLUME = '/System/Volumes/Data';
+
+function darwinDataVolumeAlias(p: string): string {
+  return p.startsWith(DARWIN_DATA_VOLUME + sep)
+    ? p.slice(DARWIN_DATA_VOLUME.length)
+    : DARWIN_DATA_VOLUME + p;
+}
+
+/**
+ * 一条受保护根的比较键:词法绝对形 + realpath 形(macOS 再加各自的数据卷别名),去重、已折叠。
+ * 空串 / 相对路径 / 文件系统根忽略(测试里 `app.getPath` 常被 mock 成 `''`;把 cwd 或 `/` 当受保护根会误拒一切)。
+ */
+function protectedRootKeys(raw: string): string[] {
+  if (typeof raw !== 'string' || !isAbsolute(raw)) return [];
+  const lexical = resolve(raw);
+  if (dirname(lexical) === lexical) return [];
+  const forms = [lexical, realpathOrExistingAncestorSync(lexical)];
+  if (process.platform === 'darwin') forms.push(...forms.map(darwinDataVolumeAlias));
+  return [...new Set(forms.map(foldForProtection))];
+}
+
+// 目标是受保护根的**祖先**时也拒绝的操作:它们会连带删除 / 移走 / 复制整棵受保护子树。
+// 只读地看祖先(stat / listDir / lstat)与 mkdir(对已存在目录是 no-op)不在此列。
+const ANCESTOR_DENIED_OPS: ReadonlySet<ScopeOpType> = new Set<ScopeOpType>([
+  'read-tree',
+  'write',
+  'rename-src',
+  'rename-dst',
+  'remove',
+]);
+
+export interface PathScopeRegistryOptions {
+  /**
+   * 受保护根(应用自身的数据目录 / 安装目录,由 plugin-fs.ipc 注入):其下任何路径对插件一律不可达,与已授
+   * scope 无关 —— 否则拿到 `~` 之类宽 scope 的插件可改写 `<userData>/plugins/_permissions.json` 自提权、
+   * 改写其它插件的 main.js、读其它插件的 data.json。未注入 → 无受保护根(行为同改造前)。
+   */
+  protectedRoots?: readonly string[];
+}
+
 function modeAllows(scope: PathScope, mode: ScopeMode): boolean {
   return mode !== 'rw' || scope.mode === 'rw';
 }
@@ -108,8 +178,41 @@ export class PathScopeRegistry extends EventEmitter {
    */
   private readonly requestedRoots = new Map<string, Map<string, string>>();
 
-  constructor(private readonly identityRegistry: IdentityRegistry) {
+  /** 受保护根的比较键(见 protectedRootKeys);构造时确定,之后不变。 */
+  private readonly protectedKeys: readonly string[];
+
+  constructor(
+    private readonly identityRegistry: IdentityRegistry,
+    opts: PathScopeRegistryOptions = {},
+  ) {
     super();
+    this.protectedKeys = [...new Set((opts.protectedRoots ?? []).flatMap(protectedRootKeys))];
+  }
+
+  /** 路径(词法绝对形或 canonical)是否落在某条受保护根之内(含根本身)。 */
+  isProtectedPath(p: string): boolean {
+    const probe = foldForProtection(p);
+    return this.protectedKeys.some((root) => isWithinScope(root, probe));
+  }
+
+  /** 路径是否是某条受保护根的祖先(其子树包含受保护根)。 */
+  private containsProtectedRoot(p: string): boolean {
+    const probe = foldForProtection(p);
+    return this.protectedKeys.some((root) => root !== probe && isWithinScope(probe, root));
+  }
+
+  /** 受保护根拒绝:对插件与 scope 外路径同一条错误(不暴露这是受保护目录),原因只进主进程日志。 */
+  private denyProtected(
+    pluginId: string,
+    opType: ScopeOpType,
+    why: string,
+    path: string,
+    target: string,
+    mode: ScopeMode,
+    scopeCount: number,
+  ): ScopeError {
+    console.warn(`[path-scope] ${pluginId} ${opType} denied: ${why}: ${path}`);
+    return notInScope(target, mode, scopeCount);
   }
 
   /**
@@ -127,14 +230,14 @@ export class PathScopeRegistry extends EventEmitter {
   check(
     token: string,
     senderId: number,
-    opType: 'read',
+    opType: 'read' | 'read-tree',
     target: string,
     mode: ScopeMode,
   ): Promise<CheckResultRead>;
   check(
     token: string,
     senderId: number,
-    opType: Exclude<ScopeOpType, 'read'>,
+    opType: Exclude<ScopeOpType, 'read' | 'read-tree'>,
     target: string,
     mode: ScopeMode,
   ): Promise<CheckResultWrite>;
@@ -172,9 +275,13 @@ export class PathScopeRegistry extends EventEmitter {
       );
       throw notInScope(target, mode, scopes.length);
     }
+    // 安全(受保护根):词法上就在应用自身目录内 → 同样不碰文件系统(否则其下路径的存在性可从错误区分)。
+    if (this.isProtectedPath(lexical)) {
+      throw this.denyProtected(pluginId, opType, 'inside a protected app directory', lexical, target, mode, scopes.length);
+    }
 
     let resolved: CheckResult;
-    if (opType === 'read') {
+    if (opType === 'read' || opType === 'read-tree') {
       const { canonical } = await resolveForRead(target);
       resolved = { canonical };
     } else if (
@@ -197,6 +304,14 @@ export class PathScopeRegistry extends EventEmitter {
     }
 
     const probe = 'fullPath' in resolved ? resolved.fullPath : resolved.canonical;
+    // 安全(受保护根):解析后(读:整条 realpath;其余:父目录 realpath + 叶子名)落在受保护根内 → 拒绝,
+    // 与已授 scope 无关。覆盖 scope 内指向受保护根的符号链接、以及词法预判没认出的其它写法。
+    if (this.isProtectedPath(probe)) {
+      throw this.denyProtected(pluginId, opType, 'resolves inside a protected app directory', probe, target, mode, scopes.length);
+    }
+    if (ANCESTOR_DENIED_OPS.has(opType) && this.containsProtectedRoot(probe)) {
+      throw this.denyProtected(pluginId, opType, 'subtree contains a protected app directory', probe, target, mode, scopes.length);
+    }
     let match: PathScope | null = null;
     for (const s of scopes) {
       if (!modeAllows(s, mode)) continue;

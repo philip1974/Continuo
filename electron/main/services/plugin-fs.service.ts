@@ -692,10 +692,11 @@ export function registerPluginFsHandlers(
       dst: string,
       opts?: { recursive?: boolean },
     ) => {
+      // 'read-tree':递归复制会进入源的整棵子树,子树含受保护根(应用自身目录)时拒绝。
       const rSrc = await pathScopeRegistry.check(
         token,
         event.sender.id,
-        'read',
+        'read-tree',
         src,
         'r',
       );
@@ -872,6 +873,17 @@ export function registerPluginFsHandlers(
       // 死掉,插件所有 fs 操作误拒。canonicalizeScopePath 对不存在路径 fail-safe(回退
       // 展开值,不抛),故提前到弹窗前归一化是安全的。
       const canonicalScopes = await canonicalizePathScopes(scopes);
+
+      // 安全(受保护根):请求的 scope 根在应用自身目录内(或就是它)→ 直接 deny,不弹窗、不计入节流,也不被
+      // 已有的更宽授权静默覆盖成 grant(即使授予,check 也会拒绝其下一切访问)。包含受保护根的更宽 scope
+      //(如 `~`)照常弹窗:用户的意图是授予 home,受保护子树由 check 保证不可达。原因只进主进程日志。
+      const protectedScope = canonicalScopes.find((s) => pathScopeRegistry.isProtectedPath(s.path));
+      if (protectedScope) {
+        console.warn(
+          `[plugin-fs] ${pluginId} requestScope denied without prompt: inside a protected app directory: ${protectedScope.path}`,
+        );
+        return 'deny';
+      }
 
       // 冷启动水合:首次见到该 plugin 时,把上次会话已授 scope 从磁盘回填进 registry,
       // 使重启后对同一目录的 requestScope 直接命中 covers() 而不再弹窗。读盘失败也标记
