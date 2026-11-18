@@ -419,6 +419,36 @@ describe('未提交的主框架导航(被拦下 / 中止)不算换文档', () =>
     await expect(raw('debug.launch')).rejects.toThrow(/reload/i);
   });
 
+  it('主框架 did-fail-load 的 ERR_ABORTED(-3)不算换文档:新文档加载中又 reload → 随后的提交 + 就绪照常恢复', async () => {
+    // 真机:文档已提交但仍在加载时再 reload,Electron 发 did-fail-load(-3, isMainFrame) → did-navigate → 就绪。
+    startReload();
+    webContents.emit('did-fail-load', {}, -3, 'ERR_ABORTED', 'file:///renderer/index.html', true);
+    webContents.emit('did-navigate', {}, 'file:///renderer/index.html', 200, 'OK');
+    rebuildRenderer();
+    const p = request();
+    await flush();
+    expect(displayed()).toBe(true);
+    user('once');
+    expect(await p).toBe('once');
+  });
+
+  it('就绪之后才来的主框架 ERR_ABORTED(-3,如主进程对已提交文档调 wc.stop())→ 窗口仍就绪,显示中的弹窗不被取消', async () => {
+    reload();
+    const first = request();
+    await flush();
+    expect(displayed()).toBe(true);
+    webContents.emit('did-fail-load', {}, -3, 'ERR_ABORTED', 'file:///renderer/index.html', true);
+    await flush();
+    user('once');
+    expect(await first).toBe('once');
+    // 此前:置未就绪且不会再有 READY → 该窗口的授权请求被永久拒绝。
+    const p = request('debug.launch');
+    await flush();
+    expect(displayed()).toBe(true);
+    user('once');
+    expect(await p).toBe('once');
+  });
+
   it('窗口销毁(destroyed)→ 未决请求立即结算', async () => {
     const first = request();
     await flush();

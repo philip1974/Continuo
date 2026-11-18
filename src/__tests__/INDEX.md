@@ -913,6 +913,7 @@
 - [`deactivate-revoke.spec.ts`](./plugin-capability-revoke/deactivate-revoke.spec.ts)
 - [`enabled-main-broadcast.spec.ts`](./plugin-capability-revoke/enabled-main-broadcast.spec.ts)
 - [`enabled-renderer-sync.spec.ts`](./plugin-capability-revoke/enabled-renderer-sync.spec.ts)
+- [`fs-permission-revoke-scopes.spec.ts`](./plugin-capability-revoke/fs-permission-revoke-scopes.spec.ts)
 - [`mcp-permission-revoke.spec.ts`](./plugin-capability-revoke/mcp-permission-revoke.spec.ts)
 - [`query-callback-revoke.spec.ts`](./plugin-capability-revoke/query-callback-revoke.spec.ts)
 - [`reload-deactivation-intent.spec.ts`](./plugin-capability-revoke/reload-deactivation-intent.spec.ts)

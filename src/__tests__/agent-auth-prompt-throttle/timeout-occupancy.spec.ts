@@ -2,7 +2,10 @@
 // 行为见同目录 README「超时」。真实 agent-auth.service + 真实 renderer store(fake timers),接法见 renderer-harness.ts。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { _resetPendingForTest } from '../../../electron/main/services/agent-auth.service';
-import { AGENT_AUTH_PROMPT_TIMEOUT_MS as TIMEOUT } from '../../../electron/shared/agent-auth-channels';
+import {
+  AGENT_AUTH_PROMPT_TIMEOUT_MS as TIMEOUT,
+  AGENT_AUTH_QUEUE_MAX_MS as QUEUE_MAX,
+} from '../../../electron/shared/agent-auth-channels';
 import {
   PROMPT_DENY_COOLDOWN_BASE_MS as BASE,
   PROMPT_DENY_COOLDOWN_MAX_MS as MAX,
@@ -224,33 +227,119 @@ describe('无人应答超时:冷却按窗口记(窗口内 agent 与 external 共
   });
 });
 
-describe('排队中的请求', () => {
-  it('窗口内弹窗占屏到超时,排在后面的 external 请求没轮到显示就到期 → 不另记超时', async () => {
+describe('排队中的请求:超时从开始显示起算', () => {
+  it('审计复现:external 只发起不应答、冷却一结束就抢先占住显示;窗口内合法 agent 的每次请求都被显示并由用户放行(此前一小时 11 次全部显示 0s 即按超时拒绝)', async () => {
+    const HORIZON = 60 * 60_000;
+    const STEP = 1_000;
+    const USER_LATENCY = 3_000;
+    let extInFlight = false;
+    let legitInFlight = false;
+    let nextLegit = 0;
+    let legitShownFor = 0;
+    const legitResults: string[] = [];
+    for (let t = 0; t < HORIZON; t += STEP) {
+      // external 先发:冷却一结束就抢占显示。
+      if (!extInFlight) {
+        extInFlight = true;
+        void request('terminal.read_output', true).then(() => {
+          extInFlight = false;
+        });
+      }
+      await flush();
+      if (!legitInFlight && t >= nextLegit) {
+        legitInFlight = true;
+        void request('terminal.send_text').then((r) => {
+          legitInFlight = false;
+          // 被节流 → 10s 后重试;得到结果 → 30s 后再要一次授权。
+          if (r === 'THROTTLED') nextLegit = Date.now() - 1_000_000 + 10_000;
+          else {
+            legitResults.push(r);
+            nextLegit = Date.now() - 1_000_000 + 30_000;
+          }
+        });
+      }
+      await flush();
+      // 用户:窗口内 agent 的弹窗出现 3s 后点「仅本次」;external 的弹窗不理。
+      if (displayed() && !displayedExternal()) {
+        legitShownFor += STEP;
+        if (legitShownFor >= USER_LATENCY) {
+          user('once');
+          legitShownFor = 0;
+        }
+      } else legitShownFor = 0;
+      await flush(STEP);
+    }
+    expect(legitResults.length).toBeGreaterThanOrEqual(11);
+    expect(legitResults.filter((r) => r !== 'once')).toEqual([]);
+  });
+
+  it('窗口内弹窗占屏到超时 → 排在后面的 external 请求接着显示满 120s;main 结算与 renderer 关弹窗同一时刻', async () => {
     const inWindow = request('terminal.send_text');
     const ext = request('terminal.read_output', true);
+    let extSettled = false;
+    void ext.then(() => {
+      extSettled = true;
+    });
     await flush();
     expect(displayed()).toBe(true);
     expect(displayedExternal()).toBe(false);
     await flush(TIMEOUT);
     expect(await inWindow).toBe('denied');
+    expect(displayedExternal()).toBe(true);
+    await flush(TIMEOUT - 1);
+    expect(extSettled).toBe(false);
+    expect(displayedExternal()).toBe(true);
+    await flush(1);
     expect(await ext).toBe('denied');
-    // 窗口内的那个显示到超时 → 该窗口(含 external)进 30s 冷却;external 从未显示过 → 不另记一次超时
-    // (否则连续超时计数为 2、冷却 60s)。
-    expect(await throttled('terminal.read_output', true)).toBe(true);
-    expect(await throttled('terminal.send_text')).toBe(true);
-    await flush(BASE);
-    expect(await throttled('terminal.read_output', true)).toBe(false);
+    expect(displayed()).toBe(false);
   });
 
-  it('轮到显示并显示到超时的排队请求照常进冷却', async () => {
+  it('轮到显示的排队请求从显示起计 120s,显示到超时照常进冷却', async () => {
     const inWindow = request('terminal.send_text');
     const ext = request('terminal.read_output', true);
+    let extSettled = false;
+    void ext.then(() => {
+      extSettled = true;
+    });
     await flush(100_000);
     user('once'); // 窗口内弹窗落定 → external 的弹窗接着显示
     expect(await inWindow).toBe('once');
     expect(displayedExternal()).toBe(true);
-    await flush(TIMEOUT - 100_000);
+    await flush(TIMEOUT - 1);
+    expect(extSettled).toBe(false);
+    expect(displayedExternal()).toBe(true);
+    await flush(1);
     expect(await ext).toBe('denied');
+    expect(displayed()).toBe(false);
     expect(await throttled('terminal.read_output', true)).toBe(true);
+  });
+
+  it('排队兜底上限:前面的弹窗一直轮不完(renderer 无响应),排队 10 分钟仍未显示的请求按取消结算、不进冷却', async () => {
+    expect(QUEUE_MAX).toBe(10 * 60_000);
+    // 先让窗口内 terminal 域「本次启动期间允许」(之后该域请求不走单飞,可并发),再让 renderer 不再响应。
+    const first = request('terminal.send_text');
+    await flush();
+    user('session');
+    expect(await first).toBe('session');
+    const wc = electronMock.windows[0] as unknown as { webContents: { send: () => void } };
+    wc.webContents.send = () => {};
+    // 6 个已授权域的请求排成一队(各自显示到 120s 超时),external 请求排在最后:轮到它显示要 12 分钟。
+    for (let i = 0; i < 6; i += 1) void request('terminal.send_text');
+    let extSettled = false;
+    const ext = request('terminal.read_output', true);
+    void ext.then(() => {
+      extSettled = true;
+    });
+    await flush(QUEUE_MAX - 1);
+    expect(extSettled).toBe(false);
+    await flush(1);
+    expect(await ext).toBe('denied');
+    // 按取消结算:不进冷却(超时冷却早已过期,再请求不被节流)。
+    let throttledAgain = false;
+    void request('terminal.read_output', true).then((r) => {
+      throttledAgain = r === 'THROTTLED';
+    });
+    await flush();
+    expect(throttledAgain).toBe(false);
   });
 });

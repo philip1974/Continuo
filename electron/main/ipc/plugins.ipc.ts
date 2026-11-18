@@ -24,9 +24,10 @@ import {
   mutatePluginPermissions,
   setEnabledId,
   uninstallPlugin,
+  writePluginPathScopes,
 } from '../services/plugins.service';
 import { broadcastToWindows } from '../lib/broadcast';
-import { revokePluginFsAccess } from './plugin-fs.ipc';
+import { revokePluginFsAccess, revokePluginPathScopes } from './plugin-fs.ipc';
 import { PERMISSION_KEYS } from '../../shared/permission-keys';
 import { GIT_BRANCH_MAX, isValidGitBranch } from '../../shared/git-branch';
 
@@ -222,6 +223,12 @@ export function registerPluginsIpc(): void {
       const record = await mutatePluginPermissions(pluginsDir, id, mutation);
       // 仅成功后广播(含发起窗口):各窗口失效权限缓存,下次读重新加载(终审 P1)。
       broadcastPluginPermissionsChanged(id);
+      // 安全:撤销 `fs` → 一并撤销该插件已批准的全部路径 scope(内存 + 持久化),否则再授予 `fs` 时旧路径不经弹窗
+      // 恢复。持久化失败如实报错(权限项本身已撤销)。
+      if (mutation.kind === 'set' && !mutation.granted && mutation.perms.includes('fs')) {
+        revokePluginPathScopes(id);
+        await writePluginPathScopes(pluginsDir, id, []);
+      }
       return record;
     },
     trusted,

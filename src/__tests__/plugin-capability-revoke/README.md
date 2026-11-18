@@ -125,6 +125,17 @@ app → 重载随后建全新 scoped app 并激活,新实例继续持有 shell /
   `PluginManager.handlePermissionsChanged(id)` → `recheckMcpPermission()`:已无 `mcp-tools` 授权则经原
   Disposable 注销该实例全部工具(main 侧 stub 同步移除);之后插件停用再 dispose 为幂等 no-op。仍授权 → 不动。
 
+### 4. 撤销 fs(`electron/main/ipc/plugins.ipc.ts` 的 MUTATE_PLUGIN_PERMISSIONS / `plugin-fs.ipc.ts` 的 `revokePluginPathScopes`)
+
+plugin-fs 主进程不看 `fs` 权限项(只靠 renderer 的 `ensurePerm`),路径授权记在 `PathScopeRegistry` 与
+`_plugin-path-scopes.json`。此前只有卸载 / 注销才撤 scope:权限编辑里撤销 `fs` 再勾上,以前批准的所有路径不经弹窗直接
+恢复(request-scope 命中 `covers()` 静默授予;重启后从磁盘水合同样恢复)。
+
+- 任何把 `fs` 置为拒绝的权限变更(权限编辑保存、权限弹窗拒绝等,统一经 `mutatePluginPermissions` 的 `set`/`granted:false`)
+  成功后,main 撤销该插件全部内存 scope(并标记本会话「已水合(空)」,在途 / 之后的水合读不把旧 scope 写回)、删除
+  `_plugin-path-scopes.json` 里该插件的条目。持久化失败如实报错(权限项本身已撤销)。
+- 之后重新授予 `fs`,再访问原路径须重新弹窗。其它插件的 scope、撤销其它权限项、plugin-fs token 均不受影响。
+
 ## 规范文件
 
 - `deactivate-revoke.spec.ts`:revoke 后各能力拒绝且不发 IPC、不阻断项照常;授权等待期间被吊销;PluginManager
@@ -145,6 +156,8 @@ app → 重载随后建全新 scoped app 并激活,新实例继续持有 shell /
 - `enabled-main-broadcast.spec.ts`:main 广播(成功才广播、跳过已销毁窗口)与 payload 守卫。
 - `enabled-renderer-sync.spec.ts`:A 禁用 → B 停用、命令注销、不写盘、热重载不复活;发起窗口幂等;A 启用 → B
   激活(不弹窗、不写盘);未知 id 忽略;reload-gate 接线与 init 前缓冲。
+- `fs-permission-revoke-scopes.spec.ts`:授予 scope → 撤销 fs → 重新授予 fs → 原路径重新弹窗;持久化条目删除、其它插件不受影响;
+  撤销后本会话不再水合;撤销其它权限项不动 scope。
 - `mcp-permission-revoke.spec.ts`:撤销后调用被拒;变更通知后注销工具(stub 移除)、调用 NO_SUCH_TOOL;仍授权保留;
   直接 `app.mcp.register` 不保存 Disposable → 停用 / 热重载 / onload 抛错后工具注销,再启用同名注册成功。
 
