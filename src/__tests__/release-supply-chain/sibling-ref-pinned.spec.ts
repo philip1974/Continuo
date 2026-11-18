@@ -138,6 +138,36 @@ describe('check-sibling-ref:node_modules 里的 file: 依赖副本须等于固�
     expect(r.out).toContain('src/extra.ts');
   });
 
+  // 场景:skip-worktree / assume-unchanged 让 git status 对已修改的跟踪文件保持沉默;此时 pnpm install,
+  // status 为空、HEAD 等于固定 SHA、副本与工作区一致,未提交代码却进了安装包。
+  it.each([['--skip-worktree'], ['--assume-unchanged']])(
+    'sibling 用 update-index %s 隐藏改动后 install → 中止',
+    (flag) => {
+      git(sibling, 'update-index', flag, 'packages/pkg/src/index.ts');
+      writeFileSync(join(pkgSrc(), 'src', 'index.ts'), 'export const v = "evil";\n');
+      install();
+      expect(git(sibling, 'status', '--porcelain')).toBe('');
+      const r = run();
+      expect(r.code).toBe(1);
+      expect(r.out).toContain('packages/pkg/src/index.ts');
+    },
+  );
+
+  // 场景:本地 clean filter 把工作区的改动还原(须等长,否则 status 按大小直接判为已修改),
+  // git status 同样为空、ls-files 标记也正常。
+  // 期望内容取自固定 SHA 的 git 对象而非工作区文件,才能发现副本被改。
+  it('sibling 工作区内容经本地 clean filter 伪装成干净 → 仍按固定 SHA 的 git 对象比对,中止', () => {
+    git(sibling, 'config', 'filter.hide.clean', 'tr 9 1');
+    writeFileSync(join(sibling, '.git', 'info', 'attributes'), '*.ts filter=hide\n');
+    writeFileSync(join(pkgSrc(), 'src', 'index.ts'), 'export const v = 9;\n');
+    install();
+    expect(git(sibling, 'status', '--porcelain')).toBe('');
+    const r = run();
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('src/index.ts');
+    expect(r.out).toContain('pnpm install');
+  });
+
   it('已安装副本缺失 → 中止', () => {
     rmSync(installed(), { recursive: true, force: true });
     expect(run().code).toBe(1);
