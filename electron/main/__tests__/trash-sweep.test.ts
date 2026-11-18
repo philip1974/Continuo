@@ -25,6 +25,13 @@ function makeTempDir(): string {
   return dir;
 }
 
+const HOUR_MS = 60 * 60 * 1000;
+
+/** 宿主形态的 trash 路径(生产同一个生成函数),名字里的时间戳在 ageMs 之前。 */
+function hostTrash(root: string, ageMs: number, name = 'data-store.json'): string {
+  return trashPathFor(join(root, name), `${Date.now() - ageMs}-ab12`);
+}
+
 afterEach(() => {
   for (const dir of tempRoots.splice(0)) {
     rmSync(dir, { recursive: true, force: true });
@@ -32,9 +39,9 @@ afterEach(() => {
 });
 
 describe('sweepStaleTrashInDir', () => {
-  it('T20bis.a removes .trash-* older than 24h', async () => {
+  it('T20bis.a removes host-shaped trash older than 24h', async () => {
     const root = makeTempDir();
-    const trash = join(root, '.trash-old');
+    const trash = hostTrash(root, 25 * HOUR_MS);
     mkdirSync(trash);
     const past = Date.now() / 1000 - 25 * 60 * 60;
     utimesSync(trash, past, past);
@@ -43,12 +50,12 @@ describe('sweepStaleTrashInDir', () => {
       swept: 1,
       failed: 0,
     });
-    expect(readdirSync(root)).not.toContain('.trash-old');
+    expect(readdirSync(root)).toEqual([]);
   });
 
-  it('T20bis.b keeps .trash-* newer than 24h', async () => {
+  it('T20bis.b keeps host-shaped trash newer than 24h', async () => {
     const root = makeTempDir();
-    const trash = join(root, '.trash-fresh');
+    const trash = hostTrash(root, 12 * HOUR_MS);
     mkdirSync(trash);
     const fresh = Date.now() / 1000 - 12 * 60 * 60;
     utimesSync(trash, fresh, fresh);
@@ -58,6 +65,53 @@ describe('sweepStaleTrashInDir', () => {
       failed: 0,
     });
     expect(existsSync(trash)).toBe(true);
+  });
+
+  // 安全:只认 trashPathFor 的精确形态。用户 / 其它工具自己命名的 `.trash-*` 再旧也不动。
+  it('T20bis.b2 leaves old `.trash-*` entries that are not host-shaped', async () => {
+    const root = makeTempDir();
+    const ts = String(Date.now() - 25 * HOUR_MS);
+    const names = [
+      '.trash-old',
+      `.trash-x-${ts.slice(0, 12)}-ab12`, // 时间戳 12 位
+      `.trash-x-${ts}0-ab12`, // 时间戳 14 位
+      `.trash-x-${ts}-ab1`, // 随机段 3 位
+      `.trash-x-${ts}-ab123`, // 随机段 5 位
+      `.trash-y-${ts}-AB12`, // 大写
+      `.trash-${ts}-ab12`, // 没有原 basename
+      `x.trash-x-${ts}-ab12`, // 不以前缀开头
+      `.trash-x-${ts}-ab12\n`, // 尾部多一个换行
+    ];
+    const past = Date.now() / 1000 - 25 * 60 * 60;
+    for (const name of names) {
+      writeFileSync(join(root, name), 'keep');
+      utimesSync(join(root, name), past, past);
+    }
+
+    await expect(sweepStaleTrashInDir(root)).resolves.toEqual({
+      swept: 0,
+      failed: 0,
+    });
+    expect(readdirSync(root).sort()).toEqual([...new Set(names)].sort());
+  });
+
+  // 名字里的时间戳(移入 trash 的时刻)与 mtime 都要过期:目录改名不更新自身 mtime,只看 mtime 会把
+  // 刚移入 trash 的旧目录当场删掉。
+  it('T20bis.b3 needs both the embedded timestamp and the mtime to be stale', async () => {
+    const root = makeTempDir();
+    const justTrashedOldDir = hostTrash(root, 1000, 'old-dir');
+    mkdirSync(justTrashedOldDir);
+    const past = Date.now() / 1000 - 25 * 60 * 60;
+    utimesSync(justTrashedOldDir, past, past);
+    const staleNameFreshMtime = hostTrash(root, 25 * HOUR_MS, 'touched');
+    writeFileSync(staleNameFreshMtime, 'recent');
+
+    await expect(sweepStaleTrashInDir(root)).resolves.toEqual({
+      swept: 0,
+      failed: 0,
+    });
+    expect(existsSync(justTrashedOldDir)).toBe(true);
+    expect(existsSync(staleNameFreshMtime)).toBe(true);
   });
 
   it('T20bis.c leaves non-trash files untouched', async () => {
@@ -87,7 +141,7 @@ describe('sweepStaleTrashInDir', () => {
     const root = makeTempDir();
     const finalPath = join(root, 'data-store.json');
     const trash = trashPathFor(finalPath, '1700000000000-ab12');
-    // 不变量 1:basename 必须以 .trash- 开头,sweep 才能匹配
+    // 不变量 1:basename 以 .trash- 开头、以「13 位时间戳-4 位 base36」结尾,sweep 才认
     expect(trash.startsWith(join(root, '.trash-'))).toBe(true);
     writeFileSync(trash, 'leaked');
     const past = Date.now() / 1000 - 25 * 60 * 60;
@@ -131,7 +185,7 @@ describe('createTrashSweepThrottle', () => {
 
   it('节流放行时照常回收过期 trash', async () => {
     const root = makeTempDir();
-    const trash = join(root, '.trash-old');
+    const trash = hostTrash(root, 25 * HOUR_MS);
     mkdirSync(trash);
     const past = Date.now() / 1000 - 25 * 60 * 60;
     utimesSync(trash, past, past);

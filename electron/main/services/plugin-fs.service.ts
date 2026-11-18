@@ -751,6 +751,22 @@ export function registerPluginFsHandlers(
           target: final,
         });
       }
+      if (rStaging.fullPath === rFinal.fullPath) {
+        throw new ScopeError('atomicReplace: staging and final must differ', {
+          target: final,
+        });
+      }
+      // 安全:宿主会在 final 的父目录里放 trash(旧 final 的暂存落点)并清扫过期 trash,所以父目录自身必须落在
+      // 该插件的某条 rw scope 内。'rename-dst' 对「final 等于 scope 根」放行,此时父目录已在 scope 外 —— 此前
+      // 照样清扫它,等于替插件递归删掉 scope 外的旧 `.trash-*`。在任何文件系统变更之前拒绝。
+      try {
+        await pathScopeRegistry.check(token, event.sender.id, 'read', rFinal.parentCanonical, 'rw');
+      } catch (err) {
+        if (!(err instanceof ScopeError)) throw err;
+        throw new ScopeError('atomicReplace: parent directory must be inside a granted rw scope', {
+          target: final,
+        });
+      }
       await maybeSweepStaleTrash(rFinal.parentCanonical); // perf:按目录节流,见 createTrashSweepThrottle
       await atomicReplacePaths(rStaging.fullPath, rFinal.fullPath, final, opts);
     },
@@ -925,10 +941,30 @@ export function registerPluginFsHandlers(
 
 }
 
+// trash 名的唯一来源:`.trash-<原 basename>-<13 位毫秒时间戳>-<4 位 base36>`。生成(trashUniqueSuffix /
+// trashPathFor)与清扫的识别(parseTrashTimestamp)共用 TRASH_PREFIX 与下面两个常量,不会各写一份而漂移。
+const TRASH_TS_DIGITS = 13;
+const TRASH_RAND_LEN = 4;
+const TRASH_SUFFIX_RE = new RegExp(`-(\\d{${TRASH_TS_DIGITS}})-[0-9a-z]{${TRASH_RAND_LEN}}$`);
+
+/** 本次替换的 trash 唯一后缀:`<毫秒时间戳>-<4 位 base36>`(随机段不足 4 位时补 0,保证形态固定)。 */
+function trashUniqueSuffix(): string {
+  const rand = Math.random().toString(36).slice(2, 2 + TRASH_RAND_LEN).padEnd(TRASH_RAND_LEN, '0');
+  return `${Date.now()}-${rand}`;
+}
+
+/** 条目名是宿主生成形态的 trash → 返回名字里的时间戳(移入 trash 的时刻);否则 null。 */
+function parseTrashTimestamp(name: string): number | null {
+  if (!name.startsWith(TRASH_PREFIX)) return null;
+  const m = TRASH_SUFFIX_RE.exec(name);
+  // m.index 是后缀起点:必须在前缀之后还留有非空的原 basename。
+  return m && m.index > TRASH_PREFIX.length ? Number(m[1]) : null;
+}
+
 /**
  * 构造可被 sweepStaleTrashInDir 回收的 trash 兄弟路径。三条不变量:
- *   1. basename 以 TRASH_PREFIX 开头 —— sweep 按前缀匹配,旧实现用
- *      `${finalPath}.trash-...`(后缀形式 `foo.json.trash-...`)永远匹配不上,
+ *   1. basename 以 TRASH_PREFIX 开头、以 trashUniqueSuffix 的形态结尾—— sweep 只认
+ *      这一形态。旧实现用 `${finalPath}.trash-...`(后缀形式 `foo.json.trash-...`)永远匹配不上,
  *      rename 回滚失败时泄漏的 trash 永久驻留(审计 49 follow-up)。
  *   2. 与 finalPath 同父目录 —— 原子 rename 要求同设备。
  *   3. 保留原 basename 便于排障。
@@ -975,8 +1011,7 @@ async function atomicReplacePaths(
     });
   }
 
-  const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-  const trashPath = trashPathFor(finalPath, unique);
+  const trashPath = trashPathFor(finalPath, trashUniqueSuffix());
   let renamed = false;
   for (let i = 0; i < 3 && !renamed; i++) {
     try {
@@ -1036,7 +1071,16 @@ export function createTrashSweepThrottle(
   };
 }
 
-/** Sweep .trash-* older than TRASH_TTL_MS in given dir. Best-effort. */
+/**
+ * 回收 dir 里过期(>TRASH_TTL_MS)的宿主 trash。Best-effort。调用方保证 dir 在插件的 rw scope 内。
+ *
+ * 安全:只认 trashPathFor 生成的精确形态 —— 用户 / 其它工具自己命名的 `.trash-*` 一律不动(此前只看前缀 +
+ * mtime 就 `rm -rf`)。过期须同时满足:名字里的时间戳(移入 trash 的时刻)与条目自身的 mtime 都早于 cutoff。
+ * 只看 mtime 不够:目录改名不更新自身 mtime,刚移入 trash 的旧目录会被并发的另一次清扫当场删掉,替换失败时
+ * 无从回滚。用 lstat(不跟随):名字被换成符号链接时按链接自身判定;fs.rm 对链接只删链接本身。
+ * 清扫范围是该目录下全部宿主形态的 trash(不限本次目标同名):只扫同名的话,之后再没被替换过的目标
+ * 泄漏的 trash 永远没人回收。
+ */
 export async function sweepStaleTrashInDir(
   dir: string,
 ): Promise<{ swept: number; failed: number }> {
@@ -1051,10 +1095,11 @@ export async function sweepStaleTrashInDir(
   let failed = 0;
   const cutoff = Date.now() - TRASH_TTL_MS;
   for (const entry of entries) {
-    if (!entry.name.startsWith(TRASH_PREFIX)) continue;
+    const trashedAt = parseTrashTimestamp(entry.name);
+    if (trashedAt === null || trashedAt >= cutoff) continue;
     const full = join(dir, entry.name);
     try {
-      const s = await fs.stat(full);
+      const s = await fs.lstat(full);
       if (s.mtimeMs < cutoff) {
         await fs.rm(full, { recursive: true, force: true });
         swept++;

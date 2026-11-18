@@ -99,3 +99,73 @@ describe('49 · `-` 开头的已装插件仍可见、可卸载', () => {
     expect(existsSync(join(base, '-legacy'))).toBe(false);
   });
 });
+
+// 安全(Windows):Win32 会去掉路径段尾部的点,`foo.` 与 `foo` 落到同一个安装目录与 data 文件,而互斥锁 /
+// 权限 / scope 的键仍是两个 id;保留设备名(con / nul / com1 …,含带扩展名形式)作目录名时指向设备而非目录。
+// 各平台统一拒绝(同一份 manifest 不因平台而异)。
+describe('49 · id 不得以 `.` 结尾,也不得是 Windows 保留设备名', () => {
+  const rejected = [
+    'foo.',
+    'com.example.',
+    'a..',
+    'con',
+    'prn',
+    'aux',
+    'nul',
+    'com0',
+    'com1',
+    'com9',
+    'lpt0',
+    'lpt1',
+    'lpt9',
+    'nul.x',
+    'con.example.foo',
+    'aux.tar.gz',
+    'com1.plugin',
+  ];
+  const accepted = [
+    'com.continuo.skills-manager',
+    'continuo-git-changes-viewer',
+    'com.example.foo',
+    'console',
+    'null',
+    'nul-x',
+    'nul_x',
+    'x.nul',
+    'my.con',
+    'com',
+    'lpt',
+    'com10',
+    'com1x',
+    'auxiliary.tools',
+    'a.b-',
+    'a_',
+  ];
+
+  it.each(rejected)('拒绝 %s(校验函数与 manifest 解析一致)', (id) => {
+    expect(isValidPluginId(id)).toBe(false);
+    expect(isSafePluginId(id)).toBe(false);
+    expect(parseManifest(JSON.stringify({ id, name: 'P', version: '1.0.0' })).ok).toBe(false);
+  });
+
+  it.each(accepted)('放行 %s', (id) => {
+    expect(isValidPluginId(id)).toBe(true);
+    expect(isSafePluginId(id)).toBe(true);
+    expect(parseManifest(JSON.stringify({ id, name: 'P', version: '1.0.0' })).ok).toBe(true);
+  });
+
+  it('卸载尾点 id 报 INVALID_ID,不碰去掉尾点后同名的正常插件目录', async () => {
+    const base = mkdtempSync(join(tmpdir(), 'continuo-dot-id-'));
+    try {
+      mkdirSync(join(base, 'foo'));
+      writeFileSync(
+        join(base, 'foo', 'manifest.json'),
+        JSON.stringify({ id: 'foo', name: 'Foo', version: '1.0.0' }),
+      );
+      await expect(uninstallPlugin(base, 'foo.')).rejects.toMatchObject({ code: 'INVALID_ID' });
+      expect(existsSync(join(base, 'foo', 'manifest.json'))).toBe(true);
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+    }
+  });
+});

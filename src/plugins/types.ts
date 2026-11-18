@@ -177,6 +177,10 @@ export interface PluginFsApi {
    * - `staging` must exist.
    * - `final` parent directory must exist.
    * - `staging` and `final` must have the same parent directory.
+   * - `staging` and `final` must be different paths.
+   * - That shared parent directory must itself be inside a granted `rw` scope (the host
+   *   parks the old `final` there as `.trash-<name>-<timestamp>-<rand>` and reclaims its own
+   *   stale trash there) — so `final` cannot be a scope root.
    * - If `final` exists and `opts.overwrite !== true`, reject before mutating.
    *
    * final 不存在
