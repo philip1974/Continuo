@@ -128,7 +128,11 @@ import {
   type DirtyState,
 } from './dirty-close-confirm';
 import { releaseFsWatchersForWindow } from './ipc/fs.ipc';
-import { cleanupAllShellExecs, isAllowedExternalUrl } from './services/shell.service';
+import {
+  cleanupAllShellExecs,
+  isAllowedExternalUrl,
+  sanitizeExternalUrl,
+} from './services/shell.service';
 import { cleanupAllShellStreams } from './services/plugin-shell-stream.service';
 import { MAX_EXTERNAL_URL_LEN } from './../shared/url-limits';
 import { cancelScopeRequestsForWebContents } from './ipc/plugin-fs.ipc';
@@ -571,7 +575,7 @@ function windowOpenHandler({ url }: HandlerDetails): WindowOpenHandlerResponse {
 function openExternalIfAllowed(url: string): void {
   if (typeof url !== 'string' || url.length === 0 || url.length > MAX_EXTERNAL_URL_LEN) return;
   if (isAllowedExternalUrl(url)) {
-    shell.openExternal(url);
+    shell.openExternal(sanitizeExternalUrl(url));
   }
 }
 

