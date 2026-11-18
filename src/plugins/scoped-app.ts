@@ -804,6 +804,14 @@ const ASYNC_METHODS: ReadonlySet<PropertyKey> = new Set(['execute']);
  */
 const contributionOwners = new WeakMap<object, string>();
 
+/**
+ * 该贡献(注册表里存活的 spec 对象)是否由第三方插件经 scoped app 注册。宿主直接注册 / 内置插件 → false。
+ * 宿主把自己的内部对象交给贡献回调前用它决定要不要收窄(如 dock 面板 factory 的 props)。
+ */
+export function isThirdPartyContribution(spec: object): boolean {
+  return contributionOwners.get(spec)?.startsWith('plugin:') === true;
+}
+
 function trackContributions<T extends object>(
   pluginId: string,
   name: string,

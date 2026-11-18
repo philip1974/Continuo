@@ -989,6 +989,10 @@
 
 - [`plugin-mcp-upstream.spec.ts`](./plugin-mcp-upstream/plugin-mcp-upstream.spec.ts)
 
+## [plugin-panel-props(第三方插件面板 factory 只拿到最小 props)](./plugin-panel-props/README.md)
+
+- [`plugin-panel-props.spec.tsx`](./plugin-panel-props/plugin-panel-props.spec.tsx)
+
 ## [plugin-permission-cross-window(插件授权跨窗口一致)](./plugin-permission-cross-window/README.md)
 
 - [`main-broadcast.spec.ts`](./plugin-permission-cross-window/main-broadcast.spec.ts)

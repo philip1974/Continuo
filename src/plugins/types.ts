@@ -306,3 +306,19 @@ export interface CoPluginApp extends Omit<CoApp, 'mcp'> {
   readonly permission: PluginPermissionApi;
   readonly mcp: PluginMcpApi;
 }
+
+/**
+ * 第三方插件面板 factory 收到的 props(`app.panels.register({ factory })`)。宿主只交出这里声明的字段 ——
+ * 不含 dockview 的 containerApi / 完整 panel api(见 src/__tests__/plugin-panel-props/)。
+ */
+export interface PluginPanelApi {
+  /** 面板实例 id。 */
+  readonly id: string;
+  /** 面板当前是否可见(tab 切到后台为 false);每次读取都是实时值。 */
+  readonly isVisible: boolean;
+  onDidVisibilityChange(cb: (event: { readonly isVisible: boolean }) => void): Disposable;
+}
+
+export interface PluginPanelProps {
+  readonly api: PluginPanelApi;
+}
