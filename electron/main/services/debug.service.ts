@@ -2,7 +2,7 @@ import { execFile as execFileCb } from 'node:child_process';
 import { asRecord } from '../../shared/as-record';
 import { constants as fsConstants } from 'node:fs';
 import { access, realpath, stat } from 'node:fs/promises';
-import { platform } from 'node:os';
+import { homedir, platform } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 
@@ -361,8 +361,14 @@ const LOGIN_SHELL_TIMEOUT_MS = 10_000;
 /** 包裹 `$PATH` 输出的标记:rc 文件可能打印 banner 等,只取两个标记之间的内容。 */
 const LOGIN_SHELL_PATH_MARKER = '__CONTINUO_LOGIN_PATH_b7e3f1__';
 
-const defaultExecLoginShell: LoginShellExec = async (shell, args, timeoutMs) => {
-  const { stdout } = await execFile(shell, [...args], { timeout: timeoutMs, maxBuffer: 1024 * 1024 });
+export const defaultExecLoginShell: LoginShellExec = async (shell, args, timeoutMs) => {
+  // 安全:cwd 显式设为用户主目录,不继承主进程 cwd —— CLI 从不可信仓库目录启动时主进程 cwd 即该目录,
+  // 用户 rc 里「启动即读 cwd」的片段(nvm load-nvmrc、direnv 等)会读到仓库里的文件。
+  const { stdout } = await execFile(shell, [...args], {
+    cwd: homedir(),
+    timeout: timeoutMs,
+    maxBuffer: 1024 * 1024,
+  });
   return stdout;
 };
 
