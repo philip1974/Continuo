@@ -112,6 +112,49 @@ describe('check-no-secrets:构建产物机密扫描', () => {
     expect(existsSync(asar)).toBe(true);
   });
 
+  // dist-electron 留有旧构建的解包目录(如早先另一架构的 mac/)时,删除范围不得以它的 app.asar 为起点。
+  describe('输出目录里同时有旧构建的解包目录与旧安装包', () => {
+    const DAY = 86400;
+    let newAsar: string;
+    let oldInstaller: string;
+    let newInstaller: string;
+    beforeEach(() => {
+      const t = Date.now() / 1000;
+      const oldRes = join(dir, 'mac', 'Continuo.app', 'Contents', 'Resources');
+      const newRes = join(dir, 'mac-arm64', 'Continuo.app', 'Contents', 'Resources');
+      mkdirSync(oldRes, { recursive: true });
+      mkdirSync(newRes, { recursive: true });
+      writeFileSync(join(oldRes, 'app.asar'), 'clean');
+      utimesSync(join(oldRes, 'app.asar'), t - 10 * DAY, t - 10 * DAY);
+      oldInstaller = join(dir, 'Continuo-0.0.1.dmg');
+      writeFileSync(oldInstaller, 'x');
+      utimesSync(oldInstaller, t - 5 * DAY, t - 5 * DAY);
+      newAsar = join(newRes, 'app.asar');
+      writeFileSync(newAsar, 'clean');
+      utimesSync(newAsar, t - 60, t - 60);
+      newInstaller = join(dir, 'Continuo-9.9.9-arm64.dmg');
+      writeFileSync(newInstaller, 'x');
+    });
+
+    it('命中在新解包目录 → 只删其 app.asar 之后生成的安装包,历史版本安装包保留', () => {
+      const t = Date.now() / 1000;
+      writeFileSync(newAsar, FAKE.github);
+      utimesSync(newAsar, t - 60, t - 60);
+      expect(run('--packaged', dir).code).toBe(1);
+      expect(existsSync(newInstaller)).toBe(false);
+      expect(existsSync(oldInstaller)).toBe(true);
+    });
+
+    it('命中只在位置参数目录(out-pack)→ 按最新 app.asar 删本次安装包,历史版本安装包保留', () => {
+      const outPack = join(dir, 'out-pack');
+      mkdirSync(outPack);
+      writeFileSync(join(outPack, 'main.js'), FAKE.github);
+      expect(run(outPack, '--packaged', dir).code).toBe(1);
+      expect(existsSync(newInstaller)).toBe(false);
+      expect(existsSync(oldInstaller)).toBe(true);
+    });
+  });
+
   it('未命中时不删除任何产物', () => {
     const res = join(dir, 'mac-arm64', 'Continuo.app', 'Contents', 'Resources');
     mkdirSync(res, { recursive: true });
