@@ -734,6 +734,7 @@
 ## [keyed-registry-base(重构:Map 型贡献 registry 的共享基类)](./keyed-registry-base/README.md)
 
 - [`keyed-registry.spec.ts`](./keyed-registry-base/keyed-registry.spec.ts)
+- [`listener-isolation.spec.ts`](./keyed-registry-base/listener-isolation.spec.ts)
 
 ## [latest-wins](./latest-wins/README.md)
 

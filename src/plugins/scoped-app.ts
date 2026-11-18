@@ -1001,7 +1001,17 @@ function trackContributions<T extends object, K extends keyof T & string>(
           `[${name}] ${keyed.field} "${String(key).slice(0, 128)}" is already registered by the host or another plugin; plugin ${pluginId} cannot override it`,
         );
       }
-      const handle = call(prop, args) as Disposable | (() => void);
+      // 所有者在入表之前登记到快照上(注册表存的就是这份快照):注册表入表后同步通知监听器,监听器里读到的新条目
+      // 必须已有所有者(isThirdPartyContribution 对「无记录」按第三方处理)。注册表拒绝(校验 / 容量)则撤回。
+      const pending = keyed !== undefined && isSpecObject(args[0]) ? (args[0] as object) : undefined;
+      if (pending !== undefined) contributionOwners.set(pending, keyed!.owner);
+      let handle: Disposable | (() => void);
+      try {
+        handle = call(prop, args) as Disposable | (() => void);
+      } catch (err) {
+        if (pending !== undefined) contributionOwners.delete(pending);
+        throw err;
+      }
       const registered = liveSpec(key);
       if (keyed !== undefined && registered !== undefined) contributionOwners.set(registered, keyed.owner);
       let released = false;
