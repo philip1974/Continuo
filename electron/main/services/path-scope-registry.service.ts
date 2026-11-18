@@ -225,6 +225,8 @@ export class PathScopeRegistry extends EventEmitter {
    * 以便插件重注册(re-enable / HMR)后重新水合。
    */
   private readonly hydrated = new Set<string>();
+  /** pluginId → revokeAll 次数(见 revocationEpoch;与 IdentityRegistry 的 generations 同样按插件 id 常驻)。 */
+  private readonly revocations = new Map<string, number>();
   /**
    * 插件 requestScope 时用的原始写法(词法绝对形)→ 它当时归一化到的 canonical 路径。只用于 check 的词法预判:
    * scope 存的是 canonical 路径,插件却常用请求时的写法访问(macOS `/tmp/x`、经符号链接的 workspace 路径)。
@@ -782,8 +784,17 @@ export class PathScopeRegistry extends EventEmitter {
     return this.pluginScopes.get(pluginId) ?? [];
   }
 
+  /**
+   * 该插件被 revokeAll 的次数。request-scope 在开始时记下,弹窗前 / 落地前比对:期间被撤销(撤销 fs、卸载)的请求
+   * 不再弹窗、不落地 —— 撤销发生在请求的 await 间隙(归一化 / 水合读盘)时,仅靠结算未决弹窗挡不住。
+   */
+  revocationEpoch(pluginId: string): number {
+    return this.revocations.get(pluginId) ?? 0;
+  }
+
   /** Revoke ALL scopes for a plugin (on plugin unload). */
   revokeAll(pluginId: string): void {
+    this.revocations.set(pluginId, this.revocationEpoch(pluginId) + 1);
     this.hydrated.delete(pluginId);
     this.requestedRoots.delete(pluginId);
     const removed = this.pluginScopes.get(pluginId);

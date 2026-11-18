@@ -135,6 +135,13 @@ plugin-fs 主进程不看 `fs` 权限项(只靠 renderer 的 `ensurePerm`),路�
   成功后,main 撤销该插件全部内存 scope(并标记本会话「已水合(空)」,在途 / 之后的水合读不把旧 scope 写回)、删除
   `_plugin-path-scopes.json` 里该插件的条目。持久化失败如实报错(权限项本身已撤销)。
 - 之后重新授予 `fs`,再访问原路径须重新弹窗。其它插件的 scope、撤销其它权限项、plugin-fs token 均不受影响。
+- 撤销时该插件(任一窗口 / 实例,经 `IdentityRegistry.tokensFor` 枚举)正挂着的 scope 弹窗一并结算为取消
+  (`correlator.cancelByToken`):renderer 收到 `plugin-fs:scope-request-cancelled` 撤掉弹窗,请求方得到 `deny`(不记入
+  拒绝冷却),之后点「授权」送不到。此前弹窗留着,用户一点「授权」scope 照样落地并写回 `_plugin-path-scopes.json`。
+- 还没走到弹窗的在途请求(撤销落在归一化 / 水合读盘 / 冷却键的 await 间隙):request-scope 开始时记下
+  `PathScopeRegistry.revocationEpoch(pluginId)`(revokeAll 次数),弹窗前与落地前比对,变了即 `deny`、不弹窗、不落地。
+- 残余:撤销恰好落在「用户刚授权 → 持久化写盘」那几毫秒里时,在途的持久化可能晚于撤销的清盘写入,磁盘留下旧条目
+  (内存已撤;下次启动会水合回来)。
 
 ## 规范文件
 

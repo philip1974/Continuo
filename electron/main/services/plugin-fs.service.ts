@@ -1121,6 +1121,11 @@ export function registerPluginFsHandlers(
     PLUGIN_FS_CHANNELS.REQUEST_SCOPE,
     async (event, token: string, scopes: readonly PathScope[]) => {
       const { pluginId } = identityRegistry.resolve(token, event.sender.id);
+      // 安全:请求期间该插件的 scope 被整体撤销(撤销 fs / 卸载)→ 这个请求作废:不弹窗、不落地。撤销时已挂着的弹窗
+      // 由撤销方结算(correlator.cancelByToken);这里挡的是撤销落在本处理器 await 间隙(归一化 / 水合读盘 / 冷却键)
+      // 里的请求 —— 否则撤销之后照样弹出新窗,用户一点「授权」scope 就落地并持久化。
+      const revocationEpoch = pathScopeRegistry.revocationEpoch(pluginId);
+      const revokedMeanwhile = (): boolean => pathScopeRegistry.revocationEpoch(pluginId) !== revocationEpoch;
 
       // 边界(E31):scopes 是插件直传的 IPC payload,此前无运行时校验就批量 canonicalize
       // (realpath)+ 原样发 renderer 弹窗 + 可能进 registry/persist。畸形插件可传超大数组/
@@ -1163,6 +1168,7 @@ export function registerPluginFsHandlers(
           if (identityRegistry.isActive(token)) pathScopeRegistry.hydrate(pluginId, []);
         }
       }
+      if (revokedMeanwhile()) return 'deny';
 
       // 已被现有授权(本会话 grant 或已水合的持久化授权)覆盖 → 静默授予,免重复弹窗。
       // 这是「持久化方案」省去重启后重复授权的关键路径。
@@ -1185,7 +1191,7 @@ export function registerPluginFsHandlers(
 
       // 边界(E227):未决 scope 请求数到顶(全局/单窗口)→ 终态 deny 收口,不入 pending、不向 renderer
       // 发弹窗。插件 spam request-scope 否则让主进程 pending Map / renderer 弹窗队列 / TTL 定时器线性增长。
-      if (!correlator.canAccept(event.sender.id)) {
+      if (!correlator.canAccept(event.sender.id) || revokedMeanwhile()) {
         return 'deny';
       }
       // 安全:每插件单飞 + 拒绝冷却(按单条路径)+ 插件级连续被拒退避 + 每插件弹窗速率上限(见
@@ -1260,7 +1266,7 @@ export function registerPluginFsHandlers(
       // 进 5s drain;lookup/resolve 仍能查到所以无法区分)。落地 grant 前重校验 token
       // 仍 active,否则会复活已撤销插件的 path-scope,同 id 重装直接继承(绕过
       // _unregister-plugin 的 revokeAll 守卫,审计 #2 同源)。见第十三轮 P2-AJ。
-      if (decision === 'grant' && identityRegistry.isActive(token)) {
+      if (decision === 'grant' && identityRegistry.isActive(token) && !revokedMeanwhile()) {
         pathScopeRegistry.grant(pluginId, canonicalScopes);
         pathScopeRegistry.noteRequestedRoots(pluginId, scopes, canonicalScopes);
         // 持久化合并后的全集,供下次启动水合;best-effort,失败不影响本次授权。

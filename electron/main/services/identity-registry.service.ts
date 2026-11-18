@@ -83,6 +83,15 @@ export class IdentityRegistry {
     return ids;
   }
 
+  /** 该 pluginId 在所有窗口的 token(含 drain 中)。供撤销时结算其未决 scope 请求,不做授权判断。 */
+  tokensFor(pluginId: string): string[] {
+    const out: string[] = [];
+    for (const [token, entry] of this.entries) {
+      if (entry.pluginId === pluginId) out.push(token);
+    }
+    return out;
+  }
+
   /** Latest generation registered for a pluginId (0 if never). */
   currentGeneration(pluginId: string): number {
     return this.generations.get(pluginId) ?? 0;
