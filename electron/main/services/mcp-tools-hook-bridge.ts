@@ -858,7 +858,9 @@ type InstallStopHookResult = {
     | 'unknown-runner'
     | 'no-cwd'
     | 'unrecognized-existing-stop-hook'
-    | 'unsafe-config-path';
+    | 'unsafe-config-path'
+    | 'cwd-outside-workspace'
+    | 'cwd-is-home-or-ancestor';
 };
 
 // 安全(H1,不可信仓库符号链接):install_stop_hook 写的是 agent 所在仓库(可能不可信)里的配置。仓库可预置
@@ -1006,6 +1008,68 @@ export async function ensureHookEventsDir(dir: string): Promise<void> {
   }
 }
 
+// 安全(F3):install_stop_hook 的 cwd 由 agent 任意指定。此前未经会话 cwd 解析、也不受 workspace 约束:
+// `cwd:"$HOME"` + codex → 改写全局 `~/.codex/config.toml`(持久化,workspace 外);cwd 不存在时 mkdir -p 建出任意
+// 目录树。现:cwd 与会话同一解析(resolveCwd:须已存在且为目录;缺省回退窗口 workspace 根),realpath 后须在窗口
+// workspace 根之内,且不得是用户 home 或其祖先(该处 `.codex/config.toml` / `.claude/` 即全局配置,workspace
+// 就是 home 也拒)。会话本身允许在 workspace 外(全局会话),只禁止在那里**安装 hook**。
+function isSameOrInside(child: string, parent: string): boolean {
+  const rel = path.relative(parent, child);
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
+export async function installStopHookInWorkspace(opts: {
+  readonly cwd: string | undefined;
+  readonly workspaceRoot: string | null;
+  readonly homeDir: string;
+  readonly runner: RunnerKind;
+  readonly hookEventsDir: string;
+  readonly resolveCwd: (cwdHint?: string) => Promise<string>;
+}): Promise<InstallStopHookResult> {
+  let realCwd: string;
+  try {
+    realCwd = await realpath(await opts.resolveCwd(opts.cwd ?? opts.workspaceRoot ?? undefined));
+  } catch {
+    return { installed: false, reason: 'no-cwd' };
+  }
+  let realRoot: string | null = null;
+  try {
+    if (opts.workspaceRoot !== null) realRoot = await realpath(opts.workspaceRoot);
+  } catch {
+    realRoot = null;
+  }
+  if (realRoot === null || !isSameOrInside(realCwd, realRoot)) {
+    return { installed: false, reason: 'cwd-outside-workspace' };
+  }
+  let realHome = path.resolve(opts.homeDir);
+  try {
+    realHome = await realpath(opts.homeDir);
+  } catch {
+    // home 不可 realpath:按字面路径比较
+  }
+  // 大小写不敏感文件系统(macOS / Windows 默认)上按折叠后比较,只会多拒不会漏拒。
+  const fold = (p: string) => (process.platform === 'linux' ? p : p.toLowerCase());
+  if (isSameOrInside(fold(realHome), fold(realCwd))) {
+    return { installed: false, reason: 'cwd-is-home-or-ancestor' };
+  }
+  return installStopHookForSession(realCwd, opts.runner, opts.hookEventsDir);
+}
+
+/**
+ * 建配置目录(`.claude` / `.codex`)只建这一层,不递归建父链:cwd 已不存在(检查后被删)→ ENOENT 拒绝,
+ * 不会 mkdir -p 出任意目录树。目录已存在(文件不存在)→ EEXIST 视为成功。
+ */
+async function mkdirConfigDir(dir: string): Promise<boolean> {
+  try {
+    await mkdir(dir);
+    return true;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'EEXIST') return true;
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw err;
+  }
+}
+
 export async function installStopHookForSession(
   cwd: string,
   runner: RunnerKind,
@@ -1102,7 +1166,9 @@ async function mergeClaudeCodeSettings(
     }
   }
 
-  if (!fileExists) await mkdir(path.dirname(settingsPath), { recursive: true });
+  if (!fileExists && !(await mkdirConfigDir(path.dirname(settingsPath)))) {
+    return { installed: false, reason: 'no-cwd' };
+  }
   const recheck = await recheckConfigPathBeforeWrite(
     cwd,
     settingsPath,
@@ -1184,7 +1250,9 @@ async function mergeCodexConfig(
     return replaceManagedCodexStopHook(cwd, configPath, text, identity, hookEventsDir, managedStop);
   }
 
-  if (!fileExists) await mkdir(path.dirname(configPath), { recursive: true });
+  if (!fileExists && !(await mkdirConfigDir(path.dirname(configPath)))) {
+    return { installed: false, reason: 'no-cwd' };
+  }
   const recheck = await recheckConfigPathBeforeWrite(cwd, configPath, identity);
   if (recheck === 'unsafe-config-path') return refuseUnsafeConfigPath(configPath);
   if (recheck !== 'ok') return { installed: false, reason: recheck };

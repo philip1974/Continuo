@@ -101,6 +101,16 @@ ordering 语义,后续 Op 再补 broker 与 tool wiring 实装。
 - 残余窗口:Node 无 `openat`/`renameat`,复查 → rename 之间目录分量仍按路径解析;复查把窗口收窄到这几个 syscall。
 - cwd 本身经链接访问(如 macOS `/tmp`)不受影响,正常安装。
 
+## I12 安装位置限定在调用方窗口 workspace 内(安全)
+
+- 攻击:`create_session{cwd:"$HOME", agentLabel:"codex", install_stop_hook:true}` 改写全局 `~/.codex/config.toml`;
+  cwd 不存在时 `mkdir -p` 建出任意目录树。
+- 安装前 cwd 与会话同一解析(`resolveTerminalCwd`:须已存在且为目录;缺省回退窗口 workspace 根)。
+- realpath 后须在调用方窗口 workspace 根之内(无 workspace 根 / 经链接逃出 → `cwd-outside-workspace`)。
+- cwd 为用户 home 或其祖先 → `cwd-is-home-or-ancestor`(该处配置即全局配置;workspace 就是 home 也拒)。
+- 配置目录只建 `.claude` / `.codex` 这一层,不递归建父链(cwd 不存在 → 拒绝,不建目录)。
+- 拒绝时会话照建(会话允许在 workspace 外),`stop_hook_installed:false`。
+
 ## I10 hook 事件私有权限(多用户 Linux)
 
 - hook 事件含会话内容(`last_assistant_message` 等)。
