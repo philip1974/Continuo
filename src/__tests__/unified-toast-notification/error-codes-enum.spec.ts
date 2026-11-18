@@ -61,7 +61,8 @@ describe('unified-toast-notification: ERROR_CODES enum', () => {
     // debug 安全:+DEBUG_NODE_RUNTIME_NOT_FOUND(49→50),被调试程序的 node 由 main 解析,找不到即拒绝 launch。
     // 插件激活:+PLUGIN_MANIFEST_CHANGED(50→51),列举后 manifest 被更新则拒绝以旧 manifest 执行新 main。
     // 插件安装:+GIT_TIMEOUT(51→52),clone 超时独立本地化(提示 ssh host key / 交互口令)。
-    expect(Object.keys(ERROR_CODES)).toHaveLength(52);
+    // 插件安装:+PLUGIN_SYMLINK_REJECTED(52→53),克隆树含符号链接一律拒装。
+    expect(Object.keys(ERROR_CODES)).toHaveLength(53);
     expect(ERROR_CODES.TERMINAL_CWD_UNRESOLVED).toBe(
       'TERMINAL_CWD_UNRESOLVED',
     );

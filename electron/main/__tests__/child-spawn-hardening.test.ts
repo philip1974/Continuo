@@ -95,8 +95,12 @@ describe('stripInternalSecretEnv / GIT_OFFLINE_ENV', () => {
     expect(stripInternalSecretEnv({ continuo_mcp_token: 't' }, 'linux')).toEqual({ continuo_mcp_token: 't' });
   });
 
-  it('GIT_OFFLINE_ENV:禁惰性拉取 + 空协议白名单', () => {
-    expect(GIT_OFFLINE_ENV).toEqual({ GIT_NO_LAZY_FETCH: '1', GIT_ALLOW_PROTOCOL: '' });
+  it('GIT_OFFLINE_ENV:禁惰性拉取 + 空协议白名单 + 不跟随 replace-ref', () => {
+    expect(GIT_OFFLINE_ENV).toEqual({
+      GIT_NO_LAZY_FETCH: '1',
+      GIT_ALLOW_PROTOCOL: '',
+      GIT_NO_REPLACE_OBJECTS: '1',
+    });
   });
 });
 

@@ -56,11 +56,16 @@ export function withGitHardeningEnv(
 
 /**
  * 只读本地对象库的 git 预设:GIT_NO_LAZY_FETCH=1(git ≥2.45 禁 partial clone 惰性拉取)+ GIT_ALLOW_PROTOCOL=''
- * (空白名单:git ≥2.12 忽略全部 protocol.*.allow 配置、拒绝一切传输,仓库 config 无法覆盖)。
+ * (空白名单:git ≥2.12 忽略全部 protocol.*.allow 配置、拒绝一切传输,仓库 config 无法覆盖)
+ * + GIT_NO_REPLACE_OBJECTS=1(不跟随 refs/replace:否则读 <sha> 实际读到的是 replace-ref 指向的另一个对象,
+ * 调用方按 <sha> 做的对象路径校验 —— 如 readGitBlob 的扇出目录 scope 校验 —— 被绕过)。
  */
-export const GIT_OFFLINE_ENV: Readonly<Record<'GIT_NO_LAZY_FETCH' | 'GIT_ALLOW_PROTOCOL', string>> = Object.freeze({
+export const GIT_OFFLINE_ENV: Readonly<
+  Record<'GIT_NO_LAZY_FETCH' | 'GIT_ALLOW_PROTOCOL' | 'GIT_NO_REPLACE_OBJECTS', string>
+> = Object.freeze({
   GIT_NO_LAZY_FETCH: '1',
   GIT_ALLOW_PROTOCOL: '',
+  GIT_NO_REPLACE_OBJECTS: '1',
 });
 
 /**

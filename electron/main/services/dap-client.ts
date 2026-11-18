@@ -567,6 +567,9 @@ export class DapClient {
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: process.platform !== 'win32',
       env: adapterEnv,
+      // 安全:不继承主进程 cwd(CLI 从不可信仓库目录启动时即该目录)。adapter 的参数都是绝对路径,
+      // 被调试程序的 cwd 经 DAP launch 参数显式传入,均不依赖进程 cwd。
+      cwd: os.homedir(),
     });
     this.server = server;
     // 必须是 spawn 之后的第一件事:fd 耗尽(EMFILE / ENFILE)时返回的 ChildProcess 没有 stdio,先碰

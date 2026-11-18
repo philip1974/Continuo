@@ -62,12 +62,12 @@ describe('尚不存在的 scope 目录 · 已存在的上级目录', () => {
     expect(await canonicalizeScopePath(join(root, 'a', 'b') + sep)).toBe(join(real, 'a', 'b'));
   });
 
-  // Windows 由系统按字面折叠 `..`(`root\a\..` 就是 root,存在),不适用。
-  it.skipIf(process.platform === 'win32')('尚不存在的部分不折叠 `..`', async () => {
+  // 安全:`..` 先按字面折叠(弹窗显示 = 实际授予 = 别名),见 plugin-fs-scope-existence-oracle。
+  it('`..` 先折叠再解析:尚不存在的分量后跟 `..` 不保留在结果里', async () => {
     const root = mkdtempSync(join(tmpdir(), 'continuo-scope-missing-'));
     tempRoots.push(root);
-    expect(await canonicalizeScopePath(`${root}/a/../b`)).toBe(
-      `${realpathSync.native(root)}/a/../b`,
+    expect(await canonicalizeScopePath(join(root, 'a', '..', 'b'))).toBe(
+      join(realpathSync.native(root), 'b'),
     );
   });
 

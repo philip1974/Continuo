@@ -137,6 +137,7 @@
 - [`security-file-url-trust.spec.ts`](./49-polish-bugfixes/security-file-url-trust.spec.ts)
 - [`security-http-mcp-session-subject.spec.ts`](./49-polish-bugfixes/security-http-mcp-session-subject.spec.ts)
 - [`security-marketplace-token-main.spec.ts`](./49-polish-bugfixes/security-marketplace-token-main.spec.ts)
+- [`security-stdio-socket-owner.spec.ts`](./49-polish-bugfixes/security-stdio-socket-owner.spec.ts)
 - [`security-terminal-mcp-auth-gate.spec.ts`](./49-polish-bugfixes/security-terminal-mcp-auth-gate.spec.ts)
 - [`security-terminal-mcp-capability.spec.ts`](./49-polish-bugfixes/security-terminal-mcp-capability.spec.ts)
 - [`security-windows-stdio-pipe-per-user.spec.ts`](./49-polish-bugfixes/security-windows-stdio-pipe-per-user.spec.ts)
@@ -924,7 +925,12 @@
 
 ## [plugin-fs-scope-existence-oracle(scope 外路径一律同一条拒绝,不泄露存在性)](./plugin-fs-scope-existence-oracle/README.md)
 
+- [`scope-dotdot-alias.spec.ts`](./plugin-fs-scope-existence-oracle/scope-dotdot-alias.spec.ts)
 - [`scope-existence-oracle.spec.ts`](./plugin-fs-scope-existence-oracle/scope-existence-oracle.spec.ts)
+
+## [plugin-fs-scope-request-throttle(scope 授权请求被拒后有冷却,不能循环弹窗诱导误点)](./plugin-fs-scope-request-throttle/README.md)
+
+- [`scope-request-throttle.spec.ts`](./plugin-fs-scope-request-throttle/scope-request-throttle.spec.ts)
 
 ## [plugin-fs-token-revoke-retry](./plugin-fs-token-revoke-retry/README.md)
 
@@ -988,6 +994,10 @@
 
 - [`plugin-mcp-upstream.spec.ts`](./plugin-mcp-upstream/plugin-mcp-upstream.spec.ts)
 
+## [plugin-panel-props(第三方插件面板 factory 只拿到最小 props)](./plugin-panel-props/README.md)
+
+- [`plugin-panel-props.spec.tsx`](./plugin-panel-props/plugin-panel-props.spec.tsx)
+
 ## [plugin-permission-cross-window(插件授权跨窗口一致)](./plugin-permission-cross-window/README.md)
 
 - [`main-broadcast.spec.ts`](./plugin-permission-cross-window/main-broadcast.spec.ts)
@@ -1014,6 +1024,10 @@
 ## [plugin-shell-stream-demux(perf:preload 单 listener 分发)](./plugin-shell-stream-demux/README.md)
 
 - [`demux.spec.ts`](./plugin-shell-stream-demux/demux.spec.ts)
+
+## [plugin-symlink-escape(插件仓库里的符号链接不能把宿主的读写引到插件目录之外)](./plugin-symlink-escape/README.md)
+
+- [`plugin-symlink-escape.spec.ts`](./plugin-symlink-escape/plugin-symlink-escape.spec.ts)
 
 ## [plugin-uninstall-broadcast(跨窗口卸载撤销插件实例与授权)](./plugin-uninstall-broadcast/README.md)
 

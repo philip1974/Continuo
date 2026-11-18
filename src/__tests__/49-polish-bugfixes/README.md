@@ -1239,10 +1239,24 @@ helper + 必挂 browser-window-created),把「单一来源」固化进测试防�
   - proxy 对候选(win32 的合法发现文件;macOS / Linux 存在的 packaged / dev socket)按序连接,连不上(ENOENT /
     ECONNREFUSED 等)试下一个,全部失败才报错退出(`<connect-candidates>` 标记段直测 + 端到端:过期 packaged socket
     回落到运行中的 dev)。`CONTINUO_MCP_SOCKET` 显式指定时只连它;win32 上其值同样须是合法本机 continuo-mcp
-    管道名(`isAcceptableEnvSocket`),否则报错退出;POSIX 上是任意 socket 路径,不校验。
+    管道名(`isAcceptableEnvSocket`),否则报错退出;POSIX 上是任意 socket 路径,名字不校验(归属校验见下一节)。
   - macOS / Linux 不写发现文件(PTY env 注入见上)。
 - 残余窗口:Continuo 崩溃后到下次启动之间发现文件仍在,其中的管道名可被同机其它用户抢注;此期间在 Continuo 终端外
   启动的 proxy(不发 hello,不泄 token)可能连到对方管道收到伪造工具结果。下次启动即删除。
+
+### POSIX stdio proxy 只连属于当前用户的 unix socket — `security-stdio-socket-owner.spec.ts`
+- 攻击场景(macOS / Linux,多用户机器):项目级 MCP 配置(不可信仓库里的 `.mcp.json` 等)的 env 段把
+  `CONTINUO_MCP_SOCKET` 指向同机其它用户监听的 unix socket。proxy 在 Continuo 终端里启动(env 带窗口 token),
+  连上后在 hello 里把 `{windowId, token}` 发给对方 → 对方拿 token 调本用户的 127.0.0.1 HTTP MCP。
+- 契约(`<posix-socket-trust>` 标记段直测 + 启动真实 proxy 的端到端):连接前校验每个候选 ——
+  - 路径本身是 socket(`lstat`,不跟随符号链接)且属主是当前用户;
+  - 父目录属主是当前用户且 group / other 不可写(否则他人可在校验与连接之间换掉 socket)。
+  主进程把 socket 建在 0700 的 userData 里(`setupSocketDir`),必然满足。
+  - `CONTINUO_MCP_SOCKET` 指定的不满足 → 报错退出:不连接、不发 hello、不透传(连上不发 hello 对方仍可伪造工具结果)。
+  - 默认候选(packaged / dev)不满足 → 跳过并在 stderr 说明,继续试下一个。
+  - stat 失败(路径不存在等)不在此判,照旧由连接报错 / 试下一个候选。Windows 分支(管道名校验)不变。
+- 行为变化:把 `CONTINUO_MCP_SOCKET` 指到 `/tmp` 等非本人目录、或指向符号链接的自定义用法不再可用。
+- 残余:同一用户的其它进程监听的 socket 仍会通过校验(同 uid 进程本就能读终端 env 里的 token)。
 
 ### HTTP MCP 调用方身份绑定 Mcp-Session-Id — `security-http-mcp-session-subject.spec.ts`
 - 攻击场景(已被提示注入、已获终端授权的 agent):HTTP 传输下 per-session capability 的 `callerSubject` 就是 bearer

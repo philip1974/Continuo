@@ -77,7 +77,7 @@ claude mcp add --transport stdio continuo -- /absolute/path/to/Continuo/scripts/
 
 Codex CLI / Aider 도 유사한 stdio-MCP 서버 설정이 있습니다 — 같은 스크립트를 가리키면 됩니다.
 
-Continuo 터미널 안에서는 bridge 가 항상 해당 터미널을 소유한 Continuo 인스턴스에 연결합니다(소켓 경로가 `CONTINUO_MCP_SOCKET` 으로 주입됨). 따라서 dev 빌드와 설치 버전을 함께 실행할 수 있습니다. Continuo 터미널 밖에서는 설치 버전을 먼저, 그다음 dev 빌드를 시도합니다. MCP 서버 설정에서 `CONTINUO_MCP_SOCKET` 을 명시적으로 지정하면 둘 다 무시하고 그 값을 사용합니다. Windows 에서는 명시한 값이 올바른 로컬 Continuo 파이프 이름(`\\.\pipe\continuo-mcp-…`)이어야 하며, 그 외의 값(원격 파이프, 임의 경로)이면 bridge 는 다른 후보로 넘어가지 않고 오류와 함께 즉시 종료합니다.
+Continuo 터미널 안에서는 bridge 가 항상 해당 터미널을 소유한 Continuo 인스턴스에 연결합니다(소켓 경로가 `CONTINUO_MCP_SOCKET` 으로 주입됨). 따라서 dev 빌드와 설치 버전을 함께 실행할 수 있습니다. Continuo 터미널 밖에서는 설치 버전을 먼저, 그다음 dev 빌드를 시도합니다. MCP 서버 설정에서 `CONTINUO_MCP_SOCKET` 을 명시적으로 지정하면 둘 다 무시하고 그 값을 사용합니다. macOS / Linux 에서 bridge 는 현재 사용자 소유의 소켓에만 연결하며, 소켓이 있는 디렉터리도 현재 사용자 소유이고 group / other 가 쓸 수 없어야 합니다(Continuo 가 만든 소켓은 항상 이 조건을 만족합니다). 명시한 값이 이 조건을 만족하지 않으면(다른 사용자의 소켓, `/tmp` 아래의 소켓, 심볼릭 링크) bridge 는 연결하지도, 창 토큰을 보내지도 않고 오류와 함께 즉시 종료합니다. Windows 에서는 명시한 값이 올바른 로컬 Continuo 파이프 이름(`\\.\pipe\continuo-mcp-…`)이어야 하며, 그 외의 값(원격 파이프, 임의 경로)이면 bridge 는 다른 후보로 넘어가지 않고 오류와 함께 즉시 종료합니다.
 
 **3 · 에이전트가 UI를 구동하게 하기**
 

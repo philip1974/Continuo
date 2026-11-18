@@ -71,9 +71,13 @@ export function registerPluginDataStoreHandlers(
     // (EACCES 等)→throw;too-large→隔离 .corrupt 后降级 {}(不整块读入 + 不 parse)。
     let r: Awaited<ReturnType<typeof readFileCappedFd>>;
     try {
-      r = await readFileCappedFd(file, MAX_PLUGIN_DATA_BYTES);
+      // 安全:data.json 在插件安装目录内,目录内容来自插件仓库。noFollow:符号链接(ELOOP)/ 硬链接(EMLINK)
+      // 一律当无数据 —— 否则恶意仓库提交 `data.json -> ../<别的插件>/data.json` 即可经 loadData() 读到其它
+      // 插件的数据;也不走下面的 .corrupt 快照(会把链接目标的内容复制落盘)。
+      r = await readFileCappedFd(file, MAX_PLUGIN_DATA_BYTES, { noFollow: true });
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return {};
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT' || code === 'ELOOP' || code === 'EMLINK') return {};
       throw err; // 权限等真正的 IO 错误仍抛
     }
     if (r.tooLarge) {
@@ -183,6 +187,10 @@ export function registerPluginDataStoreHandlers(
     // 或 access 竞态(TOCTOU)会把另一次已落盘的 data.json 抹回 {},若随后加锁/写入
     // 失败则该数据静默丢失(codex 数据安全复查 P1)。wx 仅当不存在时写空 {},已存在
     // 吞 EEXIST,绝不截断已有内容。真正的写入仍在持锁后由 atomicWriteText 完成。
+    // 安全:data.json 是符号链接(来自插件仓库,见 LOAD)→ 先删链接。否则 proper-lockfile 按 realpath 把锁建到
+    // 链接目标旁(悬空链接则 ENOENT,永远存不了);写入本身是 rename 替换链接,不会写穿。
+    const existing = await fs.lstat(file).catch(() => null);
+    if (existing?.isSymbolicLink()) await fs.unlink(file);
     try {
       await fs.writeFile(file, '{}', { flag: 'wx', mode: 0o600 });
     } catch (err) {

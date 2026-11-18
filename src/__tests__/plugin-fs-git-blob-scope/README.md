@@ -21,6 +21,11 @@
 - 对象库带非空 `objects/info/alternates` → `ScopeError`(不逐项判定,一律拒绝)。
 - 宿主进程 env 里会重定向仓库 / 对象库的 `GIT_*` 变量(`GIT_DIR`、`GIT_OBJECT_DIRECTORY`、
   `GIT_ALTERNATE_OBJECT_DIRECTORIES` 等)不传给 git。
+- 不跟随 replace-ref(`GIT_NO_REPLACE_OBJECTS=1`,`rev-parse` 与 `cat-file` 两次调用共用 `gitBlobEnv()`):
+  对象路径校验只覆盖**被请求 sha** 的扇出目录 / 对象文件。有 rw scope 的插件可在 scope 内仓库写
+  `refs/replace/<请求的 sha>` 指向另一个 OID T,并让 `objects/<T 前两位>` 成为指向 scope 外对象目录的符号链接
+  (SDK 的 cp 按链接复制,可把工作区里已有的外链搬进去);git 默认跟随 replace-ref 就会读到未校验扇出里的
+  scope 外对象。禁用后读到的永远是被请求 sha 自己的对象。
 - `sha` 必须是完整的 40(SHA-1)或 64(SHA-256)位 hex;缩写 sha 一律拒绝(防唯一前缀枚举)。
 - git < 2.31(不认 `rev-parse --path-format`)→ 无法确认对象库位置,一律拒绝(fail-closed)。
 
@@ -36,3 +41,7 @@
 
 - 校验后、`cat-file` 读取前的极短窗口内写入 `objects/info/alternates` 或把 pack / 对象文件换成符号链接
   (需要对该 `.git` 有 rw scope,且插件 SDK 没有创建符号链接的方法)。
+- 已知残留(存在性探测,未改代码):对 scope 内仓库有 rw scope 的插件可在其 `.git/config` 写
+  `include.path = <scope 外路径>`。`rev-parse` 读 config 时,被包含文件存在但不是合法 config → git 报错退出
+  (本接口返回统一的 `git repository not found within granted scope`);不存在 → 静默忽略、调用成功。
+  成功 / 失败的差异可用来探测 scope 外路径是否存在(以及是否是合法 git config),读不到内容。
