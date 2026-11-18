@@ -47,5 +47,5 @@
 ### 订阅 onRevoked(跨窗口撤销)
 
 - 挂载时注册 coApi.agentAuth.onRevoked;任一窗口撤销成功后 main 广播 `agent-auth:revoked`
-- 收到 → `store.applyMainRevoked()`:清两个域的 session 授权、epoch+1、取消残留弹窗(不 respond)
+- 收到 → `store.applyMainRevoked()`:清全部域(窗口级终端 / debug / 插件工具 + 外部客户端终端 / debug)的 session 授权、epoch+1、取消残留弹窗(不 respond)
 - 卸载时 unsub

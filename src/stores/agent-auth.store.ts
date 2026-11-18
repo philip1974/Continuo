@@ -46,12 +46,12 @@ type AgentAuthState = {
   /** 插件工具域(method 以 plugin. 开头)的「本次启动期间允许」(与终端 / debug 域互不放行)。 */
   pluginSessionGranted: boolean;
   /**
-   * 安全(F2):外部客户端(stdio 未发 hello,未绑定 Continuo 终端)的「本次启动期间允许」,同样分三个域。
+   * 安全(F2):外部客户端(stdio 未发 hello,未绑定 Continuo 终端)的「本次启动期间允许」,分终端 / debug 两个域。
    * 与上面的窗口级授权互不放行:外部请求不读也不写窗口级标志,窗口请求也不读 external 标志。
+   * 插件工具域无 external 标志:main plugin-mcp-bridge 在授权前即拒绝外部客户端调用插件工具。
    */
   externalSessionGranted: boolean;
   externalDebugSessionGranted: boolean;
-  externalPluginSessionGranted: boolean;
 
   ensure(info: EnsureInfo): Promise<EnsureOutcome>;
   /** 'session' 只结算当前请求;域授权须待 main 确认后经 confirmSessionGrant 生效。 */
@@ -71,9 +71,12 @@ type AgentAuthState = {
 };
 
 /**
- * 授权分两个域:method 以 `debug.` 开头的属 debug 域,其余(终端工具及未知 method)属终端域。
- * debug 能启动进程、读变量、执行表达式,与终端控制是不同的授权面;共用一个标志位时,用户对终端点了
- * 「本次启动期间允许」后 debug 工具会被静默放行。
+ * 授权分 3 个域 × 2 类调用方:
+ * - 域:method 以 `debug.` 开头的属 debug 域,以 `plugin.` 开头的属插件工具域,其余(终端工具及未知 method)属终端域。
+ *   debug 能启动进程、读变量、执行表达式,与终端控制是不同的授权面;共用一个标志位时,用户对终端点了
+ *   「本次启动期间允许」后 debug 工具会被静默放行。插件工具域同理(见 isPluginAuthMethod)。
+ * - 调用方:窗口级(绑定 Continuo 终端的 agent)与外部客户端(stdio 未发 hello)各自记授权、互不放行。
+ *   外部客户端没有插件工具域(main 在授权前即拒绝),所以实际共 5 个标志位(见 SESSION_GRANT_KEYS)。
  */
 export function isDebugAuthMethod(method: string): boolean {
   return method.startsWith('debug.');
@@ -87,28 +90,44 @@ export function isPluginAuthMethod(method: string): boolean {
   return method.startsWith(AGENT_AUTH_PLUGIN_METHOD_PREFIX);
 }
 
-type SessionGrantKey =
-  | 'sessionGranted'
-  | 'debugSessionGranted'
-  | 'pluginSessionGranted'
-  | 'externalSessionGranted'
-  | 'externalDebugSessionGranted'
-  | 'externalPluginSessionGranted';
+/**
+ * 窗口级(绑定 Continuo 终端的 agent)「本次启动期间允许」标志位。撤销 IPC 失败回滚时只恢复这些。
+ */
+export const WINDOW_SESSION_GRANT_KEYS = [
+  'sessionGranted',
+  'debugSessionGranted',
+  'pluginSessionGranted',
+] as const;
+/** 外部客户端的「本次启动期间允许」标志位。撤销失败时不恢复(往拒绝方向)。 */
+export const EXTERNAL_SESSION_GRANT_KEYS = [
+  'externalSessionGranted',
+  'externalDebugSessionGranted',
+] as const;
+/** 全部「本次启动期间允许」标志位的单一来源:撤销 / 撤销入口可见性 / 测试重置都从这里取。 */
+export const SESSION_GRANT_KEYS = [
+  ...WINDOW_SESSION_GRANT_KEYS,
+  ...EXTERNAL_SESSION_GRANT_KEYS,
+] as const;
 
-const NO_SESSION_GRANTS = {
-  sessionGranted: false,
-  debugSessionGranted: false,
-  pluginSessionGranted: false,
-  externalSessionGranted: false,
-  externalDebugSessionGranted: false,
-  externalPluginSessionGranted: false,
-} as const satisfies Record<SessionGrantKey, false>;
+export type SessionGrantKey = (typeof SESSION_GRANT_KEYS)[number];
 
-/** (method, 调用方类别) → 所属「本次启动期间允许」标志位。 */
-function grantKeyFor(method: string, external?: boolean): SessionGrantKey {
+/** 任一域(含外部客户端)存在「本次启动期间允许」→ 需要提供撤销入口。 */
+export function hasAnySessionGrant(s: Readonly<Record<SessionGrantKey, boolean>>): boolean {
+  return SESSION_GRANT_KEYS.some((k) => s[k]);
+}
+
+const NO_SESSION_GRANTS = Object.fromEntries(
+  SESSION_GRANT_KEYS.map((k) => [k, false]),
+) as Record<SessionGrantKey, false>;
+
+/**
+ * (method, 调用方类别) → 所属「本次启动期间允许」标志位。null = 该组合不允许授权(外部客户端调插件工具:
+ * main 已在授权前拒绝,此处纵深再拒,不弹窗也不记授权)。
+ */
+function grantKeyFor(method: string, external?: boolean): SessionGrantKey | null {
   if (external === true) {
     if (isDebugAuthMethod(method)) return 'externalDebugSessionGranted';
-    if (isPluginAuthMethod(method)) return 'externalPluginSessionGranted';
+    if (isPluginAuthMethod(method)) return null;
     return 'externalSessionGranted';
   }
   if (isDebugAuthMethod(method)) return 'debugSessionGranted';
@@ -152,8 +171,11 @@ export const useAgentAuthStore = create<AgentAuthState>((set, get) => ({
   ...NO_SESSION_GRANTS,
 
   ensure(info) {
+    const key = grantKeyFor(info.method, info.external);
+    // 纵深:不允许授权的组合(外部客户端调插件工具)直接拒,不弹窗。
+    if (key === null) return Promise.resolve('denied' as const);
     // 该请求所属域(按调用方类别区分窗口 / external)已 session 授权 → 直接通过,不设 pending(支持并发)
-    if (get()[grantKeyFor(info.method, info.external)]) {
+    if (get()[key]) {
       return Promise.resolve('session' as const);
     }
     // 已有 pending → 第二条立即拒(简化并发,与 plugin permission-prompt 同型)
@@ -199,7 +221,7 @@ export const useAgentAuthStore = create<AgentAuthState>((set, get) => ({
     if (epoch !== authEpoch) return;
     // 只给该请求所属的域(及调用方类别)记 session 授权。
     const key = grantKeyFor(method, external);
-    if (!get()[key]) set({ [key]: true });
+    if (key !== null && !get()[key]) set({ [key]: true });
   },
 
   deny() {
@@ -213,11 +235,7 @@ export const useAgentAuthStore = create<AgentAuthState>((set, get) => ({
 
   revoke() {
     authEpoch += 1;
-    set((s) =>
-      (Object.keys(NO_SESSION_GRANTS) as SessionGrantKey[]).some((k) => s[k])
-        ? NO_SESSION_GRANTS
-        : s,
-    );
+    set((s) => (hasAnySessionGrant(s) ? NO_SESSION_GRANTS : s));
   },
 
   applyMainRevoked() {

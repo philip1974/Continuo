@@ -28,7 +28,11 @@ import { useEditorStore } from '../../stores/editor.store';
 import { useWorkspaceStore } from '../../stores/workspace.store';
 import { useLayoutUiStore } from '../../stores/layout-ui.store';
 import { useTerminalStore } from '../../stores/terminal.store';
-import { _resetAgentAuthForTest, useAgentAuthStore } from '../../stores/agent-auth.store';
+import {
+  _resetAgentAuthForTest,
+  hasAnySessionGrant,
+  useAgentAuthStore,
+} from '../../stores/agent-auth.store';
 import { coApp } from '../../plugins/co-app';
 import { StatusBarRegistry } from '../../plugins/registries/StatusBarRegistry';
 import { notify } from '../../notifications/notify';
@@ -580,6 +584,50 @@ describe('StatusBar — agent 撤销', () => {
       expect(useAgentAuthStore.getState().sessionGranted).toBe(false);
       expect(useAgentAuthStore.getState().debugSessionGranted).toBe(false);
     });
+  });
+
+  // 安全回归:外部客户端(stdio 未发 hello)的「本次启动期间允许」记在 external* 上。外部客户端获 debug.launch
+  // 授权(等同任意代码执行)且当时无 agent 终端时,撤销入口也必须可见,否则只能退出应用撤销。
+  it.each([
+    ['external 终端', { externalSessionGranted: true }],
+    ['external debug', { externalDebugSessionGranted: true }],
+  ])('无 agent 会话、仅有 %s 授权 → 仍显示撤销入口,确认后全部清除', async (_name, granted) => {
+    const revoke = vi.fn().mockResolvedValue({ ok: true });
+    installApi({ agentAuth: { revoke } });
+    useTerminalStore.setState({ sessions: [] });
+    useAgentAuthStore.setState({ pending: null, ...granted });
+
+    const { container } = render(<StatusBar />);
+    const btn = container.querySelector<HTMLButtonElement>('[data-agent-revoke]');
+    expect(btn).not.toBeNull();
+    clickRevoke(btn!, true);
+
+    await waitFor(() => {
+      expect(revoke).toHaveBeenCalled();
+      expect(hasAnySessionGrant(useAgentAuthStore.getState())).toBe(false);
+    });
+  });
+
+  // 撤销 IPC 失败回滚只恢复窗口级授权;外部客户端授权往拒绝方向,不恢复。
+  it('撤销 IPC 失败 → 窗口级授权回滚,external 授权不恢复', async () => {
+    const errSpy = vi.spyOn(notify, 'error').mockImplementation(() => {});
+    const revoke = vi.fn().mockResolvedValue({ ok: false, code: 'KILL_FAILED' });
+    installApi({ agentAuth: { revoke } });
+    useTerminalStore.setState({ sessions: [] });
+    useAgentAuthStore.setState({
+      pending: null,
+      pluginSessionGranted: true,
+      externalDebugSessionGranted: true,
+    });
+
+    const { container } = render(<StatusBar />);
+    clickRevoke(container.querySelector<HTMLButtonElement>('[data-agent-revoke]')!, true);
+    await waitFor(() => {
+      expect(errSpy).toHaveBeenCalled();
+    });
+    expect(useAgentAuthStore.getState().pluginSessionGranted).toBe(true);
+    expect(useAgentAuthStore.getState().externalDebugSessionGranted).toBe(false);
+    errSpy.mockRestore();
   });
 
   // 撤销同时清终端 / 调试 / 插件工具三个域(agent-auth.store revoke),文案须如实列出插件工具域,
