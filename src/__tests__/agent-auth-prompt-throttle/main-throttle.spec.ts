@@ -163,7 +163,7 @@ describe('agent 授权弹窗:拒绝冷却与退避', () => {
     await expect(ask('once')).resolves.toBe('once');
   });
 
-  it('超时(用户不理会)不计为拒绝、不升级退避,但同域进入一次 30s 冷却', async () => {
+  it('超时(用户不理会)不计为拒绝、不升级拒绝退避,但进入 30s 冷却', async () => {
     const p = request();
     expect(prompts()).toBe(1);
     await vi.advanceTimersByTimeAsync(AGENT_AUTH_PROMPT_TIMEOUT_MS);

@@ -43,6 +43,11 @@ type SettleCause = 'answer' | 'timeout' | 'cancelled';
 interface PendingAuth {
   /** 弹窗目标窗口 id(调用方窗口)。窗口关闭即按它结算。 */
   readonly windowId: number;
+  /**
+   * 该请求成为其窗口「显示中」弹窗的时刻;仍排在别的请求后面 → null。renderer 同一时刻只显示一个弹窗、按到达
+   * 顺序排队(agent-auth.store 的 slots),所以窗口内最早的未决请求即显示中的那个(见 markDisplayed)。
+   */
+  shownAt: number | null;
   readonly settle: (decision: AgentAuthDecision, cause: SettleCause) => void;
 }
 const pending = new Map<string, PendingAuth>();
@@ -53,7 +58,8 @@ const pending = new Map<string, PendingAuth>();
 // - subject =(目标窗口, 调用方类别 window / external),key = 授权域(terminal / debug / plugin)。external 调用方
 //   (未 hello 的 stdio 客户端,可能是别的窗口里的 agent)与窗口内 agent 各自计数、各占一个未决槽,互不影响。
 // - 用户拒绝 → 该域冷却(30s 起,连续被拒翻倍到 5 分钟);同一 subject 连续 3 次被拒(轮换域)→ 所有域退避;
-//   无人应答超时 → 该域一次 30s 冷却(不升级);每 subject 60s 内最多 10 个弹窗;每 subject 同时最多一个未决弹窗。
+//   无人应答超时 → 该 subject 所有域冷却 30s,连续超时翻倍到 5 分钟(排队中没轮到显示就到期的不记);
+//   每 subject 60s 内最多 10 个弹窗;每 subject 同时最多一个未决弹窗。
 //   窗口关闭 / renderer reload / 撤销 / 退出 / 发送失败结算的不算拒绝。
 // - 被节流的请求不发 IPC、不弹窗,抛 AGENT_NOT_AUTHORIZED 并在消息里说明原因与多久内不再询问。
 let throttle = new PromptThrottle();
@@ -84,6 +90,21 @@ function watchRendererGone(win: BrowserWindow): void {
   makeWcGoneHook(onGone)(wc);
   // 单测里的假 webContents 可能不带 on。
   if (typeof wc.on === 'function') wc.on('render-process-gone', onGone);
+}
+
+/**
+ * 显示不足该时长就到期的弹窗不记超时冷却:它排在别的弹窗后面(窗口内 agent 的弹窗占屏时排队的 external 请求,
+ * 或反过来),各请求从到达起各自计 5 分钟,轮到它显示时已经到期 —— 用户没机会应答,也谈不上占屏。
+ */
+const MIN_SHOWN_FOR_TIMEOUT_COOLDOWN_MS = 5_000;
+
+/** 把该窗口最早的未决请求记为显示中(已记过则不动)。登记新请求、任一请求结算后调。 */
+function markDisplayed(windowId: number): void {
+  for (const entry of pending.values()) {
+    if (entry.windowId !== windowId) continue;
+    entry.shownAt ??= Date.now();
+    return;
+  }
 }
 
 const authSubject = (windowId: number, external: boolean): string =>
@@ -175,17 +196,25 @@ export async function requestAgentAuth(
       if (account) {
         if (cause === 'answer') {
           throttle.noteDecision(subject, [domain], decision === 'denied' ? 'deny' : 'grant');
-        } else if (cause === 'timeout') {
-          throttle.noteTimeout(subject, [domain]);
+        } else if (
+          cause === 'timeout' &&
+          entry.shownAt !== null &&
+          Date.now() - entry.shownAt >= MIN_SHOWN_FOR_TIMEOUT_COOLDOWN_MS
+        ) {
+          throttle.noteTimeout(subject);
         }
       }
+      // 调用方都是先从 pending 删除再 settle → 此刻窗口内最早的未决请求即 renderer 接着显示的那个。
+      markDisplayed(win.id);
       if (granted) sessionGrantMirror.add(grantKey);
       resolve(decision);
     };
     const timer = setTimeout(() => {
       if (pending.delete(requestId)) settle('denied', 'timeout');
     }, PROMPT_TIMEOUT_MS);
-    pending.set(requestId, { windowId: win.id, settle });
+    const entry: PendingAuth = { windowId: win.id, shownAt: null, settle };
+    pending.set(requestId, entry);
+    markDisplayed(win.id);
     const payload: AgentAuthRequestPayload = {
       requestId,
       method: info.method,

@@ -1,27 +1,23 @@
 // 安全:renderer reload(主窗 View 菜单 Cmd+R)/ 渲染进程崩溃后,main 的授权镜像与未决弹窗随之结算。
 // 行为见同目录 README「renderer reload」。真实 agent-auth.service + 真实 renderer store(fake timers);
-// 窗口的 webContents 是 EventEmitter,send 复刻 AgentAuthPrompt.onRequest(ensure → respond → confirmSessionGrant)。
-import { EventEmitter } from 'node:events';
+// 窗口与 renderer 的接法见 renderer-harness.ts。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  _resetPendingForTest,
-  answerAgentAuthRequest,
-  requestAgentAuth,
-} from '../../../electron/main/services/agent-auth.service';
-import {
-  AGENT_AUTH_CHANNELS,
-  AGENT_AUTH_PROMPT_TIMEOUT_MS,
-  type AgentAuthRequestPayload,
-} from '../../../electron/shared/agent-auth-channels';
+import { _resetPendingForTest } from '../../../electron/main/services/agent-auth.service';
+import { AGENT_AUTH_PROMPT_TIMEOUT_MS } from '../../../electron/shared/agent-auth-channels';
 import {
   PROMPT_DENY_COOLDOWN_BASE_MS,
   PROMPT_RATE_MAX,
 } from '../../../electron/main/lib/prompt-throttle';
+import { _resetAgentAuthForTest, useAgentAuthStore } from '@/stores/agent-auth.store';
 import {
-  _resetAgentAuthForTest,
-  getAgentAuthEpoch,
-  useAgentAuthStore,
-} from '@/stores/agent-auth.store';
+  WINDOW_ID,
+  displayed,
+  flush,
+  makeRendererWebContents,
+  request,
+  user,
+  type RendererWebContents,
+} from './renderer-harness';
 
 const electronMock = vi.hoisted(() => ({ windows: [] as { id: number }[] }));
 vi.mock('electron', () => ({
@@ -40,53 +36,11 @@ vi.mock('../../../electron/main/services/terminal.service', () => ({
   forceKill: vi.fn(),
 }));
 
-const WINDOW_ID = 1;
-let webContents: EventEmitter & { send: (channel: string, payload: unknown) => void; getURL: () => string };
+let webContents: RendererWebContents;
 /** renderer 真的显示出来的弹窗数。 */
 let shown = 0;
 let unsubscribe: () => void = () => undefined;
 
-function makeWebContents(): typeof webContents {
-  return Object.assign(new EventEmitter(), {
-    getURL: () => 'file:///renderer/index.html',
-    send: (channel: string, raw: unknown) => {
-      if (channel !== AGENT_AUTH_CHANNELS.REQUEST) return;
-      const payload = raw as AgentAuthRequestPayload;
-      const external = payload.external === true;
-      void (async () => {
-        const decision = await useAgentAuthStore
-          .getState()
-          .ensure({ method: payload.method, ...(external ? { external } : {}) });
-        if (decision === 'cancelled') return;
-        const epoch = getAgentAuthEpoch();
-        try {
-          answerAgentAuthRequest(payload.requestId, decision, WINDOW_ID);
-        } catch {
-          return; // main 已结算(NOT_PENDING)
-        }
-        if (decision === 'session') {
-          useAgentAuthStore.getState().confirmSessionGrant(payload.method, epoch, external);
-        }
-      })();
-    },
-  });
-}
-
-const flush = async (ms = 0): Promise<void> => {
-  await vi.advanceTimersByTimeAsync(ms);
-};
-/** 发起请求;结果统一成字符串(被节流 → 'THROTTLED')。 */
-const request = (method = 'terminal.send_text'): Promise<string> =>
-  requestAgentAuth({ method, ownerWindowId: WINDOW_ID }).then(
-    (d) => d,
-    () => 'THROTTLED',
-  );
-const displayed = (): boolean => useAgentAuthStore.getState().pending !== null;
-const user = (kind: 'once' | 'session' | 'denied'): void => {
-  const s = useAgentAuthStore.getState();
-  if (kind === 'denied') s.deny();
-  else s.grant(kind);
-};
 /** renderer 文档重建:store 回到初始态(授权态、弹窗都没了)。 */
 function rebuildRenderer(): void {
   _resetAgentAuthForTest();
@@ -114,7 +68,7 @@ beforeEach(() => {
   vi.setSystemTime(1_000_000);
   _resetPendingForTest();
   _resetAgentAuthForTest();
-  webContents = makeWebContents();
+  webContents = makeRendererWebContents();
   electronMock.windows = [{ id: WINDOW_ID, isDestroyed: () => false, webContents } as { id: number }];
   shown = 0;
   unsubscribe = useAgentAuthStore.subscribe((s, prev) => {
