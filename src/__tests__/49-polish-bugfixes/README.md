@@ -126,6 +126,8 @@
   `path.join(baseDir,'..')` 解析到 baseDir 父目录;overwrite 安装(marketplace「更新」
   路径直接传 `overwrite=true`)随即 rename 覆盖/挪走父目录 = 路径穿越。社区插件
   `verified` 仅徽章不阻止安装。与 fs `renameEntry` 拒 `.`/`..` 同款防御。
+- 首字符不得为 `.` / `_`(plugins 目录元数据与临时目录命名空间);`-` 开头仍合法 —— 已装的这类插件须照常
+  列举可见、可卸载(否则 renderer 静默跳过 + 卸载 INVALID_ID → 目录永久残留)。
 
 ### P2-M atomicWriteFile 去掉 .backup 数据丢失窗口 — `atomic-write-no-backup-window.spec.ts`
 - 用户文档原子写简化为「写 tmp+fsync → rename(tmp→path)」,移除覆盖前的

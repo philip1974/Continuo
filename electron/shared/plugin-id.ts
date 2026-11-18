@@ -4,14 +4,17 @@
 // pluginId 被拼进 FS 路径(plugins 目录 / data 文件)、URL、reviews aggregate key → 每个入口都须
 // 统一形态:仅小写字母数字与 `. _ -`,非空,且非 `.`/`..`(纯点段 = 路径穿越语义,审计 P1)。
 //
-// 首字符须为 [a-z0-9](安全):plugins 目录里 `.` / `_` 前缀名是主进程元数据与临时目录的命名空间
+// 首字符不得为 `.` / `_`(安全):plugins 目录里这两种前缀名是主进程元数据与临时目录的命名空间
 //(_plugin-path-scopes.json / _permissions.json / _enabled.json / .staging-* / .<id>.old-*),列举逻辑也
 // 跳过它们。放行此类 id 时,远程仓库可用 manifest.id 占住元数据文件位置(读写 EISDIR → 卸载卡在
 // PATH_SCOPE_CLEANUP_FAILED、scope 持久化静默失效,且 UI 不可见无法清除),或伪造启动恢复流程的备份目录。
-// 该规则同时覆盖纯点段 `.`/`..`。
-/** plugin id 形态合法:仅小写字母数字与 `. _ -`,且首字符为小写字母或数字。 */
+// 该规则同时覆盖纯点段 `.`/`..`。`-` 开头仍放行:不属上述命名空间,且此前一直合法 —— 一并拒绝会让已装的
+// 这类插件被 renderer manifest 校验静默跳过(UI 不可见、无法卸载,目录永久残留)。
+/** plugin id 形态合法:仅小写字母数字与 `. _ -`,且首字符不为 `.` / `_`。 */
 export function isValidPluginId(id: string): boolean {
-  if (id.length === 0 || !isAlnumLower(id.charCodeAt(0))) return false;
+  if (id.length === 0) return false;
+  const first = id.charCodeAt(0);
+  if (first === 46 || first === 95) return false;
   return hasOnlyPluginIdChars(id);
 }
 
