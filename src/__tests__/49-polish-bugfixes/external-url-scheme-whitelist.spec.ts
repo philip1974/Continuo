@@ -100,6 +100,28 @@ describe('安全 L4 · mailto 参数白名单', () => {
     expect(sanitizeExternalUrl('MAILTO:x@evil?Attachment=/a&attachment=/b')).toBe('MAILTO:x@evil');
   });
 
+  // 地址段(`?` 之前)同样来自不受信链接:「先整体解码再切分」的客户端会把其中编码的 ? & # 当分隔符、把
+  // 编码的换行当头分隔 —— 地址段解码失败,或解码后含控制字符 / ? / & / # 时整段丢弃(只剩 `mailto:` 与净化后的参数)。
+  it('地址段里编码的分隔符 / 控制字符 → 地址段丢弃;正常地址逐字节不变', () => {
+    expect(sanitizeExternalUrl('mailto:a@b%3Fattach=/etc/passwd')).toBe('mailto:');
+    expect(sanitizeExternalUrl('mailto:a@b%26attach%3D/etc/passwd?subject=s')).toBe('mailto:?subject=s');
+    expect(sanitizeExternalUrl('mailto:%0Aattach=x')).toBe('mailto:');
+    expect(sanitizeExternalUrl('mailto:a@b%0D%0Abcc:e@f?subject=s&attach=/x')).toBe('mailto:?subject=s');
+    expect(sanitizeExternalUrl('mailto:a@b%00')).toBe('mailto:');
+    expect(sanitizeExternalUrl('mailto:a@b%23x')).toBe('mailto:');
+    expect(sanitizeExternalUrl('mailto:a@b%ZZ?subject=s')).toBe('mailto:?subject=s');
+    for (const ok of [
+      'mailto:a@b',
+      'mailto:a@b,c@d?subject=s',
+      'mailto:John%20Doe%3Cjd@example.com%3E',
+      'mailto:%22not%40me%22@example.org?body=x',
+      'mailto:?to=a@b',
+      'mailto:',
+    ]) {
+      expect(sanitizeExternalUrl(ok), ok).toBe(ok);
+    }
+  });
+
   it('编码变体:键名百分号编码 / 双重编码 / ; 分隔 / 解码失败', () => {
     expect(sanitizeExternalUrl('mailto:x@evil?%61ttach=/etc/passwd')).toBe('mailto:x@evil');
     expect(sanitizeExternalUrl('mailto:x@evil?%2561ttach=/etc/passwd')).toBe('mailto:x@evil');

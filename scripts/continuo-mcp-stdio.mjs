@@ -94,8 +94,9 @@ function readWindowsPipeDiscovery(appDataDir, isAlive = isProcessAlive) {
   // 同机其它用户在 \\.\pipe\ 下枚举并抢注,连过去会收到对方伪造的 tools/list 与工具结果。旧格式(只有管道名、
   // 没有 pid)无从验证,同样跳过(fail-closed;本脚本与 Continuo 同版本发布)。
   // 残余:崩溃后该 pid 被系统复用给别的进程(任何用户的)时这里仍判为存活,过期名照旧会被尝试 —— pid 只能
-  // 证明「有这么个进程」,证明不了它是写入者;Windows 复用 pid 较快,此检查只是把窗口从「崩溃后到下次启动」
-  // 缩到「崩溃后且 pid 恰被复用」,不是消除。
+  // 证明「有这么个进程」,证明不了它是写入者。Windows 的 pid 池小、回收快,同机其它用户还可以**主动**批量起
+  // 进程去占住这个 pid(无权限探测的 EPERM 也按存活处理),所以此检查只是抬高门槛(对方须同时抢注管道名并
+  // 占住 pid),不是消除;根治要靠管道 ACL 或 proxy 校验服务端身份。
   const names = [];
   for (const appName of ['Continuo', 'Continuo Dev']) {
     let raw;

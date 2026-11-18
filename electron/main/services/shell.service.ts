@@ -391,6 +391,18 @@ function isAllowedMailtoParam(part: string): boolean {
   return !hasControlChar(name === 'body' ? value.replace(/[\t\r\n]/g, '') : value);
 }
 
+/** mailto 地址段是否可原样保留:能解码,且解码后不含控制字符与参数 / fragment 分隔符。 */
+function isSafeMailtoAddress(address: string): boolean {
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(address);
+  } catch {
+    return false;
+  }
+  if (hasControlChar(decoded)) return false;
+  return !decoded.includes('?') && !decoded.includes('&') && !decoded.includes('#');
+}
+
 /**
  * 交系统打开前的 URL 净化:mailto 只保留白名单参数并去掉 fragment;其它 URL 原样返回。
  * 没有被丢弃内容的 mailto URL 逐字节不变。
@@ -400,8 +412,16 @@ export function sanitizeExternalUrl(url: string): string {
   // mailto 没有 fragment 语义(RFC 6068 要求 # 必须编码),而不识别 fragment 的邮件客户端会把
   // `?subject=x#&attach=/path` 里 # 之后的内容继续当参数 → # 及其后全部丢弃。
   const hashIdx = url.indexOf('#');
-  const noHash = hashIdx < 0 ? url : url.slice(0, hashIdx);
-  const q = noHash.indexOf('?');
+  let noHash = hashIdx < 0 ? url : url.slice(0, hashIdx);
+  let q = noHash.indexOf('?');
+  // 地址段(scheme 之后、? 之前)同样不可信:「先整体解码再切分」的客户端会把其中编码的 ? & # 当分隔符、
+  // 把编码的 CR / LF 当头分隔。解码失败,或解码后含控制字符 / ? / & / # → 丢弃整个地址段(fail-closed)。
+  const SCHEME_LEN = 'mailto:'.length;
+  const address = noHash.slice(SCHEME_LEN, q < 0 ? undefined : q);
+  if (!isSafeMailtoAddress(address)) {
+    noHash = noHash.slice(0, SCHEME_LEN) + (q < 0 ? '' : noHash.slice(q));
+    q = q < 0 ? -1 : SCHEME_LEN;
+  }
   if (q < 0) return noHash;
   // 按 & 与 ; 切分(部分客户端把 ; 当分隔符);保留的参数保持原文、顺序与原分隔符,空段原样保留。
   const parts = noHash.slice(q + 1).split(/([&;])/); // [段, 分隔符, 段, 分隔符, ...]
