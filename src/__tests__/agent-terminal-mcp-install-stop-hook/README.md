@@ -100,6 +100,14 @@ ordering 语义,后续 Op 再补 broker 与 tool wiring 实装。
   inode(读时不存在则仍不存在),否则 `unsafe-config-path`,仓库外配置不变、不产生备份。
 - 残余窗口:Node 无 `openat`/`renameat`,复查 → rename 之间目录分量仍按路径解析;复查把窗口收窄到这几个 syscall。
 - cwd 本身经链接访问(如 macOS `/tmp`)不受影响,正常安装。
+- inode 身份(dev/ino)全程以 bigint 取得与比对:NTFS 文件 ID 是 64 位、常超过 2^53,Number 丢精度会让不同文件比对相等。
+
+## I12 配置文件是硬链接 fail-closed(安全)
+
+- 硬链接在 lstat 下是普通文件、`O_NOFOLLOW` 也挡不住,可能就是仓库外的全局配置(`~/.codex/config.toml` 等);
+  读出后会经 `.continuo-bak.<ts>` 备份写进工作区。
+- 读取时配置文件 `nlink > 1` → `{ installed: false, reason: 'unsafe-config-path' }`,目标不变,仓库内外都无备份。
+- 有意行为:用硬链接管理 dotfiles 的用户同样被拒(main 日志写明「拒绝符号链接或硬链接的配置目录/文件」)。
 
 ## I10 hook 事件私有权限(多用户 Linux)
 
