@@ -1188,6 +1188,7 @@
 
 - [`contribution-ownership.spec.ts`](./scoped-app/contribution-ownership.spec.ts)
 - [`facade-surface.spec.ts`](./scoped-app/facade-surface.spec.ts)
+- [`host-command-rate-limit.spec.ts`](./scoped-app/host-command-rate-limit.spec.ts)
 - [`sandbox-sweep.spec.ts`](./scoped-app/sandbox-sweep.spec.ts)
 - [`scoped-app.spec.ts`](./scoped-app/scoped-app.spec.ts)
 
@@ -1522,6 +1523,7 @@
 
 ## [window-ipc-create](./window-ipc-create/README.md)
 
+- [`window-count-cap.spec.ts`](./window-ipc-create/window-count-cap.spec.ts)
 - [`window-create-handler.spec.ts`](./window-ipc-create/window-create-handler.spec.ts)
 
 ## [多窗口启动恢复(`pickWindowsToRestore`)](./window-restore/README.md)

@@ -87,6 +87,7 @@ export const en = {
   'errors.TERMINAL_SESSION_DUPLICATE': 'Terminal session duplicate',
   'errors.TERMINAL_SESSION_NOT_FOUND': 'Terminal session not found',
   'errors.TOO_MANY_STREAMS': 'Too many active streams',
+  'errors.TOO_MANY_WINDOWS': 'Too many windows are open',
   'errors.TOO_MANY_TERMINALS': 'Too many terminal sessions',
   'errors.WORKSPACE_NOT_ABSOLUTE': 'Workspace must be an absolute path: {path}',
   'errors.WORKSPACE_NOT_DIRECTORY': 'Workspace is not a directory: {workspace}',

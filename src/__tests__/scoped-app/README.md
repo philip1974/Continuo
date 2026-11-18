@@ -107,3 +107,18 @@ settingTab `core.plugins`(替换插件与权限管理页)、panel `settings` / `
 - 查询结果不泄露内部对象:`get` 返回冻结的浅拷贝(函数字段包吊销检查,包装不可被写入属性),`getAll` / `list` /
   `getBySide` / `getByCategory` 返回冻结的新数组;`settingItems` 的 `enum` 及其选项是冻结拷贝
 - 宿主自身代码直接用 `coApp` 的注册表实例,不经外观,不受影响
+
+## 第三方插件执行宿主命令限次(审计 F4)
+
+`commands.execute` 对第三方插件开放(SDK 没有限定可执行哪些命令),但宿主命令里有创建资源的:`window.new` 每开一个
+窗口,新窗口会重新加载该插件 → 循环执行即指数开窗;`terminal.new` 每次起一个 shell。
+
+- 第三方插件实例(带 plugin-fs token 的 scoped app,每窗口一份)执行**宿主命令**(所有者为 `core:` 或无所有者记录)
+  在滑动窗口内限次:`HOST_COMMAND_RATE_WINDOW_MS`(10s)内至多 `HOST_COMMAND_RATE_LIMIT`(5)次,超出 reject
+  `code: 'RATE_LIMITED'`,命令不执行。
+- 经 `get` / `getAll` 拿到的宿主命令 `fn` 与 `execute` 共用同一个额度(不能绕过)。
+- 插件自己 / 其它第三方插件注册的命令不受限;内置插件(无 token)不受限;额度按插件实例计。
+- 主进程兜底:`window:create` 全局主窗口数上限(见 `window-ipc-create`),终端会话每窗口 64 / 全局 256(既有)。
+
+`host-command-rate-limit.spec.ts`:真实 WindowPlugin + 真实 coApp,循环 100 次 `execute('window.new')` 只建窗 5 次
+(修复前 100 次);get / getAll 的 fn 与 execute 共用额度;窗口过后恢复;自有命令与内置插件不受限;额度按实例计。

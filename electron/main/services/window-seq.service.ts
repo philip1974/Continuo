@@ -28,6 +28,11 @@ export function setWindowSeq(windowId: number, seq: number): void {
   retainSeq(seq);
 }
 
+/** 当前登记的主窗口数(不含 popout:popout 不登记 windowSeq)。 */
+export function windowSeqCount(): number {
+  return map.size;
+}
+
 /** 返回 number 或 null,不要返回 undefined。 */
 export function getWindowSeq(windowId: number): number | null {
   const seq = map.get(windowId);

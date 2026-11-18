@@ -26,6 +26,7 @@ import {
   setWorkspaceRoot,
 } from '../services/window-workspace-roots.service';
 import { codedError } from '../../shared/error-message';
+import { windowSeqCount } from '../services/window-seq.service';
 
 function summarizePath(p: string): string {
   return p.length > 60 ? p.slice(0, 50) + '...' : p;
@@ -54,7 +55,29 @@ export interface WindowIpcDeps {
   }) => { readonly id: number };
 }
 
+// 边界(数量上限):renderer 发起的新建窗口(「新建窗口」命令 / 在新窗口打开文件夹)此前无上限。第三方插件经
+// app.commands.execute('window.new') 循环即可开窗,而每个新窗口都会重新加载该插件 → 指数扩张。全局主窗口数
+// (含正在创建的)达到上限即拒绝(TOO_MANY_WINDOWS)。取用户实际不会碰到的值;启动恢复 / 系统「打开文件夹」等
+// 非 renderer 入口不经此 handler。
+export const MAX_APP_WINDOWS = 32;
+let windowsBeingCreated = 0;
+
 async function createWindowHandler(
+  input: IpcWindowCreateInput,
+  createMainWindow: WindowIpcDeps['createMainWindow'],
+): Promise<IpcWindowCreateResult> {
+  if (windowSeqCount() + windowsBeingCreated >= MAX_APP_WINDOWS) {
+    throw codedError(ERROR_CODES.TOO_MANY_WINDOWS, `too many windows open (max ${MAX_APP_WINDOWS})`);
+  }
+  windowsBeingCreated += 1;
+  try {
+    return await createWindowNow(input, createMainWindow);
+  } finally {
+    windowsBeingCreated -= 1;
+  }
+}
+
+async function createWindowNow(
   input: IpcWindowCreateInput,
   createMainWindow: WindowIpcDeps['createMainWindow'],
 ): Promise<IpcWindowCreateResult> {

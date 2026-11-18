@@ -832,6 +832,37 @@ const ASYNC_METHODS: ReadonlySet<string> = new Set(['execute']);
 const contributionOwners = new WeakMap<object, string>();
 
 /**
+ * 安全(零权限插件无限开窗 / 开终端):第三方插件经 commands.execute(或 get / getAll 拿到的 fn)可以执行宿主自己的
+ * 命令。`window.new` 每开一个窗口就会在新窗口里重新加载该插件 → 循环执行即指数开窗;`terminal.new` 每次起一个
+ * shell。宿主命令对第三方仍开放(SDK 未限定可执行哪些命令),但每个插件实例(每窗口一份)在滑动窗口内限次;
+ * 主进程另有全局窗口数上限与每窗口终端数上限兜底。插件自己 / 其它第三方插件注册的命令不受此限。
+ */
+export const HOST_COMMAND_RATE_LIMIT = 5;
+export const HOST_COMMAND_RATE_WINDOW_MS = 10_000;
+
+/** 该命令 spec 是否宿主所有(内置插件注册的,或查不到所有者记录 = 宿主直接注册的)。 */
+function isHostCommand(spec: object): boolean {
+  return contributionOwners.get(spec)?.startsWith('plugin:') !== true;
+}
+
+function createHostCommandGate(pluginId: string): (commandId: unknown) => void {
+  const stamps: number[] = [];
+  return (commandId) => {
+    const now = Date.now();
+    while (stamps.length > 0 && now - stamps[0]! >= HOST_COMMAND_RATE_WINDOW_MS) stamps.shift();
+    if (stamps.length >= HOST_COMMAND_RATE_LIMIT) {
+      throw codedError(
+        'RATE_LIMITED',
+        `plugin ${pluginId} may run at most ${HOST_COMMAND_RATE_LIMIT} host commands per ${
+          HOST_COMMAND_RATE_WINDOW_MS / 1000
+        }s (command "${String(commandId).slice(0, 128)}")`,
+      );
+    }
+    stamps.push(now);
+  };
+}
+
+/**
  * 该贡献(注册表里存活的 spec 对象)是否按第三方插件对待。只有内置插件(宿主自建、不带 token 的 scoped app)
  * 注册的 → false;第三方插件注册的、以及**查不到所有者记录的** → true(fail-closed:所有者不明就只给最小接口面)。
  * 宿主把自己的内部对象交给贡献回调前用它决定要不要收窄(如 dock 面板 factory 的 props)。
@@ -887,6 +918,8 @@ function trackContributions<T extends object, K extends keyof T & string>(
   owned: Set<() => void>,
   /** 该注册表的 key 字段与所有者标识(见 contributionOwners);events / explorerDecorators 无 key,不传。 */
   keyed?: { readonly field: 'id' | 'type'; readonly owner: string },
+  /** 仅 commands 且调用方是第三方插件:执行宿主命令前的限次闸(见 HOST_COMMAND_RATE_LIMIT)。 */
+  hostCommandGate?: (commandId: unknown) => void,
 ): Pick<T, K> {
   const liveSpec = (key: unknown): object | undefined => {
     if (typeof key !== 'string') return undefined; // 非法 key 交给注册表自身的 spec 校验报错
@@ -909,14 +942,16 @@ function trackContributions<T extends object, K extends keyof T & string>(
     byListener.delete(listener);
     if (byListener.size === 0) subscriptions.delete(eventName);
   };
-  const guardFn = (f: object, capability: string): unknown =>
+  const guardFn = (f: object, capability: string, beforeCall?: () => void): unknown =>
     new Proxy(f, {
       apply(target, thisArg, args) {
         assertLiveUi(pluginId, capability, life);
+        beforeCall?.();
         return Reflect.apply(target as (...a: unknown[]) => unknown, thisArg, args);
       },
       construct(target, args, newTarget) {
         assertLiveUi(pluginId, capability, life);
+        beforeCall?.();
         return Reflect.construct(target as new (...a: unknown[]) => object, args, newTarget);
       },
       // 包装只用于调用:不给插件留下改写原函数对象(宿主 / 其它插件的回调)的通道。
@@ -936,9 +971,14 @@ function trackContributions<T extends object, K extends keyof T & string>(
       out = guardFn(item, `${name}.callback`);
     } else {
       const copy: Record<string, unknown> = { ...(item as Record<string, unknown>) };
+      // 宿主命令的 fn 经查询结果直接调用,同样过限次闸(否则 get('window.new').fn() 绕过 execute 的限制)。
+      const gateFn =
+        hostCommandGate !== undefined && isHostCommand(item as object)
+          ? () => hostCommandGate(copy.id)
+          : undefined;
       for (const key of Object.keys(copy)) {
         const v = copy[key];
-        if (typeof v === 'function') copy[key] = guardFn(v, `${name}.${key}`);
+        if (typeof v === 'function') copy[key] = guardFn(v, `${name}.${key}`, gateFn);
       }
       // 嵌套的数据字段(同 snapshotSpec:目前只有 settingItems 的 enum)给冻结拷贝 —— 宿主直接注册的 spec 未经
       // 快照,原数组 / 选项对象不能交到插件手里。
@@ -995,6 +1035,16 @@ function trackContributions<T extends object, K extends keyof T & string>(
           return Promise.reject(codedError('PERMISSION_DENIED', revokedMessage(pluginId, capability)));
         }
         assertLiveUi(pluginId, capability, life);
+        if (hostCommandGate !== undefined && prop === 'execute') {
+          const spec = liveSpec(args[0]);
+          if (spec !== undefined && isHostCommand(spec)) {
+            try {
+              hostCommandGate(args[0]);
+            } catch (err) {
+              return Promise.reject(err);
+            }
+          }
+        }
         return call(prop, args);
       };
     }
@@ -1159,6 +1209,8 @@ export function createScopedAppController(
   // 是宿主自建的 scoped app(内置插件)。二者分属不同命名空间 —— 第三方插件把 manifest id 起成内置插件的 id
   //(如 `core.plugins`)也不算内置条目的所有者。同一插件重载后的新实例标识不变,可覆盖自己的旧条目。
   const owner = `${token === undefined ? 'core' : 'plugin'}:${pluginId}`;
+  // 第三方插件执行宿主命令的限次闸(每个 scoped app 实例一份);内置插件不限。
+  const hostCommandGate = token === undefined ? undefined : createHostCommandGate(pluginId);
   const track = <T extends object, K extends keyof T & string>(
     name: string,
     target: T,
@@ -1173,6 +1225,7 @@ export function createScopedAppController(
       life,
       owned,
       keyField === undefined ? undefined : { field: keyField, owner },
+      name === 'commands' ? hostCommandGate : undefined,
     );
   // 插件拿到的 app 逐字段显式构造(不展开 coApp:将来给 CoApp 加字段不会自动透给插件)。贡献点注册表 / events 是
   // 只含公开方法的冻结外观(成员清单须与 types.ts 的 Plugin*Api 一致,少列一个 tsc 报错);mcp / editor / dock /

@@ -76,6 +76,7 @@ export const ko: Record<TranslationKey, string> = {
   'errors.TERMINAL_SESSION_DUPLICATE': '터미널 세션 중복',
   'errors.TERMINAL_SESSION_NOT_FOUND': '터미널 세션을 찾을 수 없습니다',
   'errors.TOO_MANY_STREAMS': '활성 스트림이 너무 많습니다',
+  'errors.TOO_MANY_WINDOWS': '열린 창이 너무 많습니다',
   'errors.TOO_MANY_TERMINALS': '터미널 세션이 너무 많습니다',
   'errors.WORKSPACE_NOT_ABSOLUTE': '작업 공간은 절대 경로여야 합니다: {path}',
   'errors.WORKSPACE_NOT_DIRECTORY': '작업 공간이 디렉터리가 아닙니다: {workspace}',
