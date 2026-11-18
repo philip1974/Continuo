@@ -707,6 +707,9 @@ function sendJson(res: ServerResponse, status: number, json: string): void {
 // 读到受害终端 agent 的 token 即可读控受害方经 HTTP 创建的会话。实现 MCP Streamable HTTP 的 Mcp-Session-Id
 // (规范 2025-03-26 起:服务端在 initialize 响应下发,客户端 MUST 在后续请求回带):session id 随机生成、只在
 // 客户端内存(不进 env、不进日志),callerSubject = token + session id。未带该头的旧客户端保持 subject = token。
+// 残余风险(未收口):session id 只隔离「操作谁的会话」,不隔离窗口级授权。读到 token 的同用户进程经 HTTP
+// (或 stdio `_continuo/hello`)即被当作该窗口的绑定调用,复用该窗口的「本次启动期间允许」;per-session
+// capability 仍生效。真正收口需把 token 绑定到持有终端的进程树,当前未做。
 const MCP_SESSION_ID_HEADER = 'Mcp-Session-Id';
 // 单 token / 全局 session 数上限:超限 initialize 回 429。session 随 token 吊销 / 轮换 / DELETE 释放。
 // 不发 DELETE 的客户端(TS SDK close() 默认不 terminateSession)在同一终端反复启动会把名额耗尽 → 单 token

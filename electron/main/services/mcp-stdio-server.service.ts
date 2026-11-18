@@ -386,6 +386,9 @@ async function handleLine(
     const fallback = pickMainWindowPreferNonPopout();
     // 安全(F2):标记 external —— 授权走独立的 external 状态,不借主窗已有的「本次启动期间允许」
     // (否则窗口 B 终端里的 agent 绕过 proxy 直连 mcp.sock 不发 hello,即可借主窗 A 的授权静默执行)。
+    // 残余风险(未收口):此隔离只看「发没发 hello」。任一同用户进程若读到某窗口终端的 token(PTY env,
+    // 如 `ps eww`),带它发 hello(或走 HTTP)即被当作该窗口的绑定调用,复用该窗口的「本次启动期间允许」;
+    // per-session capability 仍生效。真正收口需把 token 绑定到持有终端的进程树,当前未做。
     if (fallback) ctx = { ownerWindowId: fallback.id, callerSubject, signal, external: true };
   }
   const response = await dispatchRpc(rpc, tools, serverInfo, ctx);
