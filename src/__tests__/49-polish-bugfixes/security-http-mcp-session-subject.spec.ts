@@ -13,10 +13,11 @@
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import {
   createMcpHost,
+  HTTP_SESSION_IDLE_EVICT_MS_FOR_TEST,
   MAX_HTTP_SESSIONS_PER_TOKEN_FOR_TEST,
   type AnyMcpTool,
   type McpCallCtx,
@@ -25,6 +26,7 @@ import {
 
 let host: McpHost | null = null;
 afterEach(async () => {
+  vi.useRealTimers();
   if (host) await host.close();
   host = null;
 });
@@ -189,5 +191,68 @@ describe('F1 · HTTP MCP callerSubject 绑定 Mcp-Session-Id', () => {
     const ok = await post(token, CALL, first);
     expect(ok.status).toBe(200);
     await ok.text();
+  });
+
+  it('达到上限时驱逐空闲超阈值的最旧 session(并通知释放);活跃 session 不被挤掉', async () => {
+    // 只伪造 Date(fetch / http server 仍走真实计时器)。
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const released: string[] = [];
+    host = await createMcpHost({
+      initialTools: [whoami],
+      onHttpSessionReleased: (subject) => released.push(subject),
+    });
+    const token = host.issueWindowToken(1);
+    const oldest = await initialize(token);
+    vi.advanceTimersByTime(1000);
+    const second = await initialize(token);
+    for (let i = 2; i < MAX_HTTP_SESSIONS_PER_TOKEN_FOR_TEST; i++) await initialize(token);
+    // 未到空闲阈值:仍 429(不驱逐活跃 session,避免持 token 的攻击方挤掉受害方)。
+    vi.advanceTimersByTime(HTTP_SESSION_IDLE_EVICT_MS_FOR_TEST - 2000);
+    const busy = await post(token, { id: 'init', method: 'initialize', params: {} });
+    expect(busy.status).toBe(429);
+    await busy.text();
+    // 最旧的那个刚被使用过 → 变活跃;越过阈值后被驱逐的是第二旧的空闲 session。
+    await (await post(token, CALL, oldest)).text();
+    vi.advanceTimersByTime(HTTP_SESSION_IDLE_EVICT_MS_FOR_TEST);
+    await (await post(token, CALL, oldest)).text();
+    const r = await post(token, { id: 'init', method: 'initialize', params: {} });
+    expect(r.status).toBe(200);
+    expect(r.headers.get('mcp-session-id')).toBeTruthy();
+    await r.text();
+    const evicted = await post(token, CALL, second);
+    expect(evicted.status).toBe(404);
+    await evicted.text();
+    expect(released).toHaveLength(1);
+    expect(released[0]!.endsWith(`:${second}`)).toBe(true);
+    const stillOk = await post(token, CALL, oldest);
+    expect(stillOk.status).toBe(200);
+    await stillOk.text();
+  });
+
+  it('在途请求中的 session(如长时间 await)即使超过空闲阈值也不被驱逐', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    let unblock: () => void = () => {};
+    const blocker: AnyMcpTool = {
+      name: 'block',
+      description: 'blocks until released',
+      jsonSchema: { type: 'object', additionalProperties: false },
+      inputSchema: z.object({}).strict(),
+      run: () => new Promise((resolve) => (unblock = () => resolve({ ok: true }))),
+    };
+    host = await createMcpHost({ initialTools: [whoami, blocker] });
+    const token = host.issueWindowToken(1);
+    const busySid = await initialize(token);
+    for (let i = 1; i < MAX_HTTP_SESSIONS_PER_TOKEN_FOR_TEST; i++) await initialize(token);
+    const pending = post(token, { id: 2, method: 'tools/call', params: { name: 'block', arguments: {} } }, busySid);
+    await new Promise((r) => setTimeout(r, 50)); // 让请求进入 dispatch
+    vi.advanceTimersByTime(HTTP_SESSION_IDLE_EVICT_MS_FOR_TEST * 2);
+    const r = await post(token, { id: 'init', method: 'initialize', params: {} });
+    expect(r.status).toBe(200); // 驱逐的是别的空闲 session
+    await r.text();
+    unblock();
+    expect((await pending).status).toBe(200);
+    const still = await post(token, CALL, busySid);
+    expect(still.status).toBe(200);
+    await still.text();
   });
 });
