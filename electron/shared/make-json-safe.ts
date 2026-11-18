@@ -16,6 +16,8 @@
 // ⚠️ 仅用于「个别字段可接受静默丢失」的 UI 状态持久化。**不可**用于插件数据等不容静默丢失的
 // 场景 —— 那些仍由 assertJsonValue 硬拒(数据安全优先)。返回被丢弃字段的 path 列表供诊断日志。
 
+import { setOwnValue } from './own-value';
+
 const MAX_DEPTH = 256;
 const hasOwn = Object.prototype.hasOwnProperty;
 
@@ -67,7 +69,8 @@ export function makeJsonSafe(input: unknown): {
       for (const k in value) {
         if (!hasOwn.call(value, k)) continue;
         const r = walk(value[k], `${path}.${k}`, depth + 1);
-        if (r.keep) out[k] = r.value; // 不安全 → 删键(path 已记录于递归内)
+        // 不安全 → 删键(path 已记录于递归内)。setOwnValue:`__proto__` 键按 JSON 语义保留为自有属性。
+        if (r.keep) setOwnValue(out, k, r.value);
       }
       return { keep: true, value: out };
     }
