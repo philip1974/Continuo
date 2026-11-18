@@ -126,6 +126,29 @@ describe('ConfirmDialog', () => {
     }
   });
 
+  // 数据完整性:destructive 确认框常在用户操作后异步弹出(如 Cmd+S 遇外部修改 → 「仍然覆盖」),
+  // 用户继续打的空格 / 回车不能落到破坏性按钮上 —— 初始焦点落「取消」。
+  it('destructive=true → 初始焦点落在取消,确认(危险)按钮不带 data-autofocus', () => {
+    const raf = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((cb: FrameRequestCallback) => {
+        cb(0);
+        return 0;
+      });
+    try {
+      renderD({ destructive: true });
+      const buttons = Array.from(
+        document.querySelectorAll<HTMLButtonElement>('.wm-modal-content button'),
+      );
+      const confirm = buttons.find((b) => b.textContent === '确认')!;
+      const cancel = buttons.find((b) => b.textContent === '取消')!;
+      expect(confirm.hasAttribute('data-autofocus')).toBe(false);
+      expect(document.activeElement).toBe(cancel);
+    } finally {
+      raf.mockRestore();
+    }
+  });
+
   it('点取消 → onCancel 被调', () => {
     const onConfirm = vi.fn();
     const onCancel = vi.fn();

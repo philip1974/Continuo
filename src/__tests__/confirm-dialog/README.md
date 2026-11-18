@@ -10,13 +10,18 @@
 |---|---|
 | `src/panels/Explorer/ConfirmDialog.tsx` | UI |
 
+## 规范文件
+
+- `confirm-dialog.spec.tsx`:组件行为(渲染 / 文案 / variant / 初始焦点 / 回调)。
+- `overwrite-confirm-focus.spec.tsx`:EditorPanel 显式保存遇外部修改 →「仍然覆盖」确认框弹出后立即按回车 / 空格不 force 写盘(焦点在取消);显式点「仍然覆盖」照常覆盖。
+
 ## 关键行为
 
 - open=false → 不渲染
 - open=true → 渲染 title / description / 两个按钮
 - 默认按钮文案: '确认' / '取消',可由 confirmLabel / cancelLabel 覆盖
 - destructive=true → 确认按钮 .wm-btn-danger;false → primary
-- 确认按钮 autoFocus
+- 初始焦点:非 destructive → 确认按钮(`data-autofocus`);destructive → 取消按钮(破坏性操作须显式选择,防止异步弹出时用户继续敲的空格 / 回车误触发)
 - 点确认 → onConfirm
 - 点取消 → onCancel
 - Esc → Modal 内部触发 onClose,该 hook 接到 onCancel
