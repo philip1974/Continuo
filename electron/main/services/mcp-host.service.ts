@@ -1193,7 +1193,7 @@ export async function createMcpHost(
     async close(): Promise<void> {
       closeAllSseClients();
       // server.close() 只停止接新连接,回调要等现存连接自行结束;挂在授权 await 上的在途 POST
-      // (keep-alive 客户端不应答弹窗)会把它拖到 5min 授权超时 → 退出被挂住。主动断开所有现存连接
+      // (keep-alive 客户端不应答弹窗)会把它拖到 授权超时(agent 2min) → 退出被挂住。主动断开所有现存连接
       // (在途请求经 req/res 'close' abort,客户端收到连接断开),并为整个关闭设上限。
       const closed = new Promise<void>((resolve) => server.close(() => resolve()));
       server.closeAllConnections();

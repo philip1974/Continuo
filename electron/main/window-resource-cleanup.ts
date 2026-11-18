@@ -5,7 +5,7 @@
 // 但 popout 注入了同一套 PRELOAD,能发起 fs.watch / plugin scope 授权 / agent 授权。
 // 旧实现把这三项关窗清理只挂在 createMainWindow 的 win.on('closed') → popout 关闭时:
 //   - fs watcher 引用不释放 → 单向累积触顶 MAX_WATCHERS,把活跃窗的 watcher LRU 踢掉;
-//   - pending scope / agent 授权不结算 → host 侧干等满 5min TTL。
+//   - pending scope / agent 授权不结算 → host 侧干等满授权超时(agent 2min / scope 5min)。
 // 这与 terminal.ipc 的 windowClosedCleanup(已用覆盖全窗口的 browser-window-created
 // 挂载)是同一类资源,却用了两套挂载模式、其一漏了 popout 兄弟入口。
 //

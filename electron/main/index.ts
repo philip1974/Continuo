@@ -1550,7 +1550,7 @@ app.on('before-quit', async (event) => {
   // 都必须跑(关最后一个窗口触发的 quit 路径 wins 已空,旧 every() 守卫会跳过它)。
   // 在 app.quit() 前 await:window 'closed' 清理走 3s grace timer,进程退出不触发 SIGKILL。
   // 窗口已隐藏、无人应答授权弹窗:同步拒绝所有未决 agent 授权,挂在授权上的 MCP 工具调用随即结算,
-  // 不把下面的 mcpHost close 拖到 5min 授权超时(close 自身也会断开现存连接并设上限)。
+  // 不把下面的 mcpHost close 拖到 授权超时(agent 2min)(close 自身也会断开现存连接并设上限)。
   cancelAllAgentAuth();
   quitTrace('cleanup begin');
   // 插件 shell 子进程(一次性 exec / 流式)是 detached 进程组,不随 IDE 退出终止;立即强杀整树并等待。
