@@ -8,14 +8,16 @@ import { quoteDropPaths } from '@/lib/terminal-drop-quote';
 
 class Unsafe extends Error {}
 
-/** cmd 交互命令行:" 切换引号态;引号外 & | < > ^ 为元字符;% 任意位置先展开(引号内也展开)。 */
+/**
+ * cmd 交互命令行:" 切换引号态;引号外 & | < > ^ 为元字符。% 任意位置先展开(引号内也展开),但只展开为
+ * 已存在变量的值 —— 攻击者只控制文件名、控制不了变量值,常规值不含元字符,故 % 本身不视为执行(值可能变)。
+ */
 function parseCmd(line: string): string[] {
   const args: string[] = [];
   let cur = '';
   let has = false;
   let inQ = false;
   for (const c of line) {
-    if (c === '%') throw new Unsafe('cmd % expansion');
     if (c === '"') {
       inQ = !inQ;
       has = true;
@@ -134,6 +136,18 @@ describe('terminal drop quoting: 常见 Windows 文件名不被拒绝', () => {
       expect(parse(family, r.quoted[0]!)).toEqual([path]);
     });
   }
+
+  it('PowerShell 族:含 % 的常见下载名(a%20b.pdf)仍用单引号形态,不被跳过', () => {
+    for (const p of ['C:\\dl\\a%20b.pdf', 'C:\\dl\\100%.png', 'C:\\dl\\%TEMP%.txt']) {
+      expect(quoteDropPaths([p], 'powershell').quoted).toEqual([`'${p}'`]);
+    }
+  });
+
+  it('cmd 族:含 % 的路径仍拒绝(cmd 中值会被展开改变)', () => {
+    expect(quoteDropPaths(['C:\\dl\\a%20b.pdf'], 'cmd').skipped).toEqual([
+      { path: 'C:\\dl\\a%20b.pdf', reason: 'cmd_unrepresentable' },
+    ]);
+  });
 
   it('PowerShell 族:不含 cmd 元字符的路径保持既有单引号输出($ 与智能引号可保留)', () => {
     expect(quoteDropPaths(["C:\\Users\\me\\o'reilly $HOME.txt"], 'powershell').quoted).toEqual([

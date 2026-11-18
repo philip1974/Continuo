@@ -21,9 +21,11 @@
 //     ! 在延迟展开下展开(SS64 cmd "Escape Characters");PowerShell 双引号类串内只有 $(变量/子表达式)、
 //     `(转义)与 " U+201C–U+201E(定界)特殊,其余含 ' ‘ ’ 皆字面(about_Quoting_Rules)。故不含
 //     " % ! $ ` U+201C–U+201E 的路径用 `"…"` 在两者下都是同一字面参数。
-//   - PowerShell 族另保留既有 `'…'`:路径不含 cmd 元字符(& | < > ^)、% 与 " 时,cmd 把它当普通文本,
+//   - PowerShell 族另保留既有 `'…'`:路径不含 cmd 元字符(& | < > ^)与 " 时,cmd 把它当普通文本,
 //     最多值带上引号,不会执行;PowerShell 中单引号串纯字面,$ ` 智能双引号都能保留。! 在 cmd 中只有
-//     /V:ON 时于解析之后展开,改变值不造成执行,故此形态允许 !。
+//     /V:ON 时于解析之后展开,改变值不造成执行,故此形态允许 !。% 也允许:cmd 中 %X% 只展开为已存在
+//     变量的值,攻击者只控制文件名、控制不了变量值,常规变量值不含 & 等元字符,风险牵强;而 a%20b.pdf
+//     这类下载文件名常见。
 //   - cmd 族不能用 `'…'`(cmd 中值会带上引号);两种形态都不安全的路径一律拒绝(cmd_unrepresentable)。
 import { quoteForShell, type ShellFamily } from '@continuo-terminal/shell-quote';
 
@@ -39,8 +41,8 @@ const POWERSHELL_SINGLE_QUOTES = /['\u2018-\u201b]/g;
 
 /** cmd 与 PowerShell 双引号内都只当字面量的路径:不含 " % ! $ ` 与 U+201C–U+201E。 */
 const WIN_DQ_UNSAFE = /["%!$`\u201c-\u201e]/;
-/** PowerShell `'…'` 在 cmd 中仍不执行命令:不含 cmd 元字符、% 展开与引号切换。 */
-const CMD_ACTIVE = /[&|<>^%"]/;
+/** PowerShell `'…'` 在 cmd 中仍不执行命令:不含 cmd 元字符与引号切换(% 见文件头 Q3 说明)。 */
+const CMD_ACTIVE = /[&|<>^"]/;
 
 function quoteOne(
   path: string,
