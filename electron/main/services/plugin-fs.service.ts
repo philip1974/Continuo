@@ -109,16 +109,48 @@ export function pluginFsIdentityEpoch(): number | null {
 // 所以记下这些路径,宿主对它们的读 / 写在共享锁内先确认「路径仍是 canonical」(realpath 仍等于自身 —— 途中没有
 // 被换入链接),确认与操作在同一次持锁内。不比 (dev, ino):编辑器保存是「临时文件 + rename」,每次保存 inode
 // 都会变,正常的外部原子保存也一样;而越出 scope 必须经过链接,比 realpath 正好。
-// 数量有上限,按最近使用淘汰(被淘汰的路径不再受此保护:要淘汰一条需要再打开这么多个不同的文件)。
-const PLUGIN_OPENED_PATHS_MAX = 4096;
-const pluginOpenedPaths = new Set<string>();
+// 记录与标签生命周期绑定:每次成功的 read-for-editor 记一份(按发起窗口的 webContents 计数);renderer 用这份
+// 内容新建了标签 → 由该标签持有,标签关闭时经 plugin-fs:release-editor-path 释放;没有新建标签(已开着只切换 /
+// 打开失败 / 插件已吊销)→ 当即释放。窗口关闭 / renderer 重载时整窗释放(见 wc-gone 钩子)。
+// 数量有上限且**不淘汰**:满了以后新的 read-for-editor 以 FS_BUSY 拒绝,已有记录照常生效。此前按最近使用淘汰,
+// 插件再打开 4096 个别的文件就能把目标路径挤出记录、解除保护(审计 F2)。
+export const PLUGIN_OPENED_PATHS_MAX = 4096;
+/** canonical 路径 → (webContents id → 持有份数) */
+const pluginOpenedPaths = new Map<string, Map<number, number>>();
+let pluginOpenedRefs = 0;
 
-function pinPluginOpenedPath(canonical: string): void {
-  pluginOpenedPaths.delete(canonical); // 重新插入到末尾 = 最近使用
-  pluginOpenedPaths.add(canonical);
-  if (pluginOpenedPaths.size > PLUGIN_OPENED_PATHS_MAX) {
-    const oldest = pluginOpenedPaths.values().next().value;
-    if (oldest !== undefined) pluginOpenedPaths.delete(oldest);
+/** 记一份;记录已满 → false(不记)。 */
+function pinPluginOpenedPath(canonical: string, wcId: number): boolean {
+  if (pluginOpenedRefs >= PLUGIN_OPENED_PATHS_MAX) return false;
+  let holders = pluginOpenedPaths.get(canonical);
+  if (holders === undefined) {
+    holders = new Map();
+    pluginOpenedPaths.set(canonical, holders);
+  }
+  holders.set(wcId, (holders.get(wcId) ?? 0) + 1);
+  pluginOpenedRefs += 1;
+  return true;
+}
+
+/** 释放该窗口对该路径的一份(没有则 no-op)。 */
+function unpinPluginOpenedPath(canonical: string, wcId: number): void {
+  const holders = pluginOpenedPaths.get(canonical);
+  const n = holders?.get(wcId);
+  if (holders === undefined || n === undefined) return;
+  if (n > 1) holders.set(wcId, n - 1);
+  else holders.delete(wcId);
+  if (holders.size === 0) pluginOpenedPaths.delete(canonical);
+  pluginOpenedRefs -= 1;
+}
+
+/** 窗口关闭 / renderer 重载:该窗口的标签都已不在,释放它持有的全部记录。 */
+function unpinPluginOpenedPathsOf(wcId: number): void {
+  for (const [path, holders] of pluginOpenedPaths) {
+    const n = holders.get(wcId);
+    if (n === undefined) continue;
+    holders.delete(wcId);
+    pluginOpenedRefs -= n;
+    if (holders.size === 0) pluginOpenedPaths.delete(path);
   }
 }
 
@@ -152,7 +184,6 @@ export function guardPluginOpenedPath<T>(path: string, task: () => Promise<T>): 
         `path now passes through a symbolic link that was not there when a plugin opened it: ${path}`,
       );
     }
-    pinPluginOpenedPath(path);
     return task();
   });
 }
@@ -160,6 +191,12 @@ export function guardPluginOpenedPath<T>(path: string, task: () => Promise<T>): 
 /** Test-only:清空「插件打开过的路径」记录。 */
 export function _resetPluginOpenedPathsForTest(): void {
   pluginOpenedPaths.clear();
+  pluginOpenedRefs = 0;
+}
+
+/** Test-only:「插件打开过的路径」记录的总份数。 */
+export function _pluginOpenedPathRefsForTest(): number {
+  return pluginOpenedRefs;
 }
 
 // 边界(内存峰值):单次读取有上限(read-file / read-for-editor 64MiB、read-git-blob 64MB、list-dir 10 万条),但并发
@@ -542,6 +579,7 @@ export function registerPluginFsHandlers(
   const attachWcGoneHook = makeWcGoneHook((wcId) => {
     identityRegistry.revokeByWebContents(wcId);
     correlator.cancelBySender(wcId);
+    unpinPluginOpenedPathsOf(wcId);
   });
 
   ipcMain.handle(
@@ -605,7 +643,14 @@ export function registerPluginFsHandlers(
         (await checkScope(token, event.sender.id, 'read', target, 'r')).canonical;
       try {
         const read = await heavyRead(async () => readFileVerified(await recheck(), recheck, { requireUtf8: true }));
-        pinPluginOpenedPath(read.canonical);
+        if (!pinPluginOpenedPath(read.canonical, event.sender.id)) {
+          console.warn('[plugin-fs] read-for-editor refused: too many plugin-opened editor tabs');
+          return {
+            ok: false,
+            code: ERROR_CODES.FS_BUSY,
+            message: `too many files opened by plugins (max ${PLUGIN_OPENED_PATHS_MAX}); close some editor tabs`,
+          };
+        }
         return { ok: true, canonicalPath: read.canonical, content: read.content };
       } catch (err) {
         if (err instanceof ScopeError) {
@@ -619,6 +664,12 @@ export function registerPluginFsHandlers(
       }
     },
   );
+
+  // 宿主编辑器释放 read-for-editor 记下的一份(标签关闭 / 未新建标签)。不取锁:只改内存记录。只释放发起窗口自己的。
+  ipcMain.handle(PLUGIN_FS_CHANNELS.RELEASE_EDITOR_PATH, (event, path: unknown) => {
+    if (typeof path !== 'string' || path.length > FS_PATH_MAX) return;
+    unpinPluginOpenedPath(path, event.sender.id);
+  });
 
   ipcMain.handle(
     PLUGIN_FS_CHANNELS.WRITE_FILE,

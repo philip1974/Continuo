@@ -77,8 +77,8 @@ export interface EditorTab {
   /**
    * 安全:插件经 editor.openFile 打开的标签(openFileWithContent 建标签时设置)= 主进程为它记下的 canonical 路径。
    * 主进程对这类路径的宿主读 / 写先确认路径没被换入链接,但那份记录只在内存里:这类标签**不进会话快照**
-   *(collectEditorSnapshot 跳过),否则重启后按路径恢复时不再受保护。之后用户自己再打开同一路径只是切换到这个
-   * 标签,标记一直保留到标签关闭。runtime only。
+   *(collectEditorSnapshot 跳过),否则重启后按路径恢复时不再受保护。标签关闭时释放主进程的记录
+   *(见 plugin-opened-tabs)。之后用户自己再打开同一路径只是切换到这个标签,标记一直保留到标签关闭。runtime only。
    */
   readonly pluginOpenedPath?: string;
 }

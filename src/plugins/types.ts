@@ -109,6 +109,8 @@ export interface CoEditorApi {
  * 宿主内部的编辑器入口(不对插件暴露:CoPluginApp.editor 是 CoEditorApi)。
  * openVerifiedFile:安全 —— 插件的 editor.openFile 由主进程在 plugin-fs 锁内完成「scope 校验 + 读取」
  *(plugin-fs:read-for-editor),再用这份已校验内容在 canonicalPath 上开标签,不按插件给的路径另读一次。
+ * 调用方把那次读取在主进程记下的一份「插件打开的路径」交给它处置(新建了标签则由标签持有,否则当即释放);
+ * 读取成功却不调用它时(如插件已吊销)调用方须自行 releasePluginOpenedPath(见 plugin-opened-tabs)。
  */
 export interface CoHostEditorApi extends CoEditorApi {
   openVerifiedFile(

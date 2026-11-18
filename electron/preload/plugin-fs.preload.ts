@@ -56,6 +56,11 @@ export interface PluginFsRaw {
   checkPath(token: string, path: string): Promise<boolean>;
   /** editor.openFile 专用:主进程在同一次持锁内校验 scope 并读取,返回已校验的内容与 canonical 路径。 */
   readForEditor(token: string, path: string): Promise<PluginFsEditorRead>;
+  /**
+   * 宿主编辑器专用(插件拿不到):释放一次成功 readForEditor 在主进程记下的「插件打开的路径」。用这份内容新建的标签
+   * 关闭时调用;没有新建标签时当即调用。
+   */
+  releaseEditorPath(path: string): Promise<void>;
   atomicReplaceWithinScope(
     token: string,
     staging: string,
@@ -121,6 +126,7 @@ export const pluginFsRaw: PluginFsRaw = {
     ipcRenderer.invoke(PLUGIN_FS_CHANNELS.CHECK_PATH, token, path),
   readForEditor: (token, path) =>
     ipcRenderer.invoke(PLUGIN_FS_CHANNELS.READ_FOR_EDITOR, token, path),
+  releaseEditorPath: (path) => ipcRenderer.invoke(PLUGIN_FS_CHANNELS.RELEASE_EDITOR_PATH, path),
   atomicReplaceWithinScope: (token, staging, final, opts) =>
     ipcRenderer.invoke(
       PLUGIN_FS_CHANNELS.ATOMIC_REPLACE,

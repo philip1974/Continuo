@@ -1,6 +1,6 @@
 // 安全:插件经 editor.openFile 打开的标签,主进程「路径没被换入链接」的确认记录只在内存里,且数量有上限。
 // F1(重启):这类标签不进会话快照 —— 否则重启后宿主按路径重读,插件此前换入的链接让标签显示 / 保存到 scope 外。
-// 行为见同目录 README。
+// F2(记录上限):满额后拒绝新的打开而不是淘汰旧记录;记录随标签关闭释放。行为见同目录 README。
 // 插件 scoped app → 真实主进程 handler(plugin-fs + 宿主 fs:read-file / fs:write-file)→ 真实编辑器 store → 真实快照 /
 // 会话恢复,真实临时目录。
 import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
@@ -51,17 +51,19 @@ const { ScopeRequestCorrelator } = await import('../../../electron/main/services
 const {
   registerPluginFsHandlers,
   _resetPluginOpenedPathsForTest,
+  _pluginOpenedPathRefsForTest: refs,
   pluginFsIdentityEpoch,
+  PLUGIN_OPENED_PATHS_MAX,
 } = await import('../../../electron/main/services/plugin-fs.service');
 const { registerFsIpc } = await import('../../../electron/main/ipc/fs.ipc');
 const { FS_CHANNELS } = await import('../../../electron/shared/fs-channels');
 const { StubIpcMain, makeFakeEvent } = await import('../sdk-contract/integration/make-stub-ipc');
-const { createScopedApp } = await import('@/plugins/scoped-app');
+const { createScopedApp, createScopedAppController } = await import('@/plugins/scoped-app');
 const { InMemoryPermissionStore } = await import('@/plugins/permissions');
 const { coApp } = await import('@/plugins/co-app');
 const { useEditorStore } = await import('@/stores/editor.store');
 const { useWorkspaceStore } = await import('@/stores/workspace.store');
-const { openFileByPath } = await import('@/panels/Editor/editor-file-actions');
+const { openFileByPath, saveFile } = await import('@/panels/Editor/editor-file-actions');
 const { snapshotFromStores, hydrateEditorTabs } = await import('@/lib/persist/explorer-persist');
 
 const PLUGIN = 'plugin.opener';
@@ -78,6 +80,8 @@ let correlator: InstanceType<typeof ScopeRequestCorrelator>;
 let token: string;
 let plugin: ReturnType<typeof createScopedApp>;
 const event = makeFakeEvent({ id: 1, isDestroyed: () => false });
+const invoke = (channel: string, ...args: unknown[]): Promise<unknown> =>
+  ipc.invokeWithEvent(event, channel, token, ...args);
 const hostRead = (p: string): Promise<unknown> =>
   h.hostHandlers.get(FS_CHANNELS.READ_FILE)!({ sender: { id: 9 }, senderFrame: { url: 'file:///app/index.html' } }, { path: p });
 /** release 经 Promise 链异步发出:等它们落到主进程。 */
@@ -126,6 +130,7 @@ beforeEach(async () => {
   plugin = createScopedApp(coApp, PLUGIN, perms, token);
   Object.assign(coApi.pluginFsRaw, {
     readForEditor: (t: string, p: string) => ipc.invokeWithEvent(event, C.READ_FOR_EDITOR, t, p),
+    releaseEditorPath: (p: string) => ipc.invokeWithEvent(event, C.RELEASE_EDITOR_PATH, p),
     rename: (t: string, a: string, b: string) => ipc.invokeWithEvent(event, C.RENAME, t, a, b),
   });
   vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -194,3 +199,139 @@ function collectPaths(): readonly string[] {
   const snap = snapshotFromStores();
   return snap.windows[0]!.editor!.openFilePaths;
 }
+
+describe('F2:记录满额拒绝新打开(不淘汰旧记录),记录随标签关闭释放', () => {
+  it.skipIf(process.platform === 'win32')(
+    `打开 T 后再打开 ${PLUGIN_OPENED_PATHS_MAX} 个别的文件:超出部分 FS_BUSY,T 的记录仍生效(换入后宿主读写 T 被拒)`,
+    async () => {
+      expect(await invoke(C.READ_FOR_EDITOR, T)).toMatchObject({ ok: true });
+      const others = join(work, 'others');
+      await mkdir(others);
+      const files = Array.from({ length: PLUGIN_OPENED_PATHS_MAX }, (_, i) => join(others, `f${i}.txt`));
+      for (let i = 0; i < files.length; i += 256) {
+        await Promise.all(files.slice(i, i + 256).map((f) => writeFile(f, 'x')));
+      }
+      const results: { ok: boolean; code?: string }[] = [];
+      for (let i = 0; i < files.length; i += 64) {
+        results.push(
+          ...((await Promise.all(files.slice(i, i + 64).map((f) => invoke(C.READ_FOR_EDITOR, f)))) as {
+            ok: boolean;
+            code?: string;
+          }[]),
+        );
+      }
+      expect(results.filter((r) => r.ok)).toHaveLength(PLUGIN_OPENED_PATHS_MAX - 1);
+      expect(results.filter((r) => !r.ok)).toEqual([{ ok: false, code: 'FS_BUSY', message: expect.any(String) }]);
+      expect(refs()).toBe(PLUGIN_OPENED_PATHS_MAX);
+      await swapIn();
+      expect(await hostRead(T)).toMatchObject({ ok: false, code: 'FS_DENIED' });
+      // 释放一份后又能打开
+      await ipc.invokeWithEvent(event, C.RELEASE_EDITOR_PATH, files[0]);
+      expect(await invoke(C.READ_FOR_EDITOR, files[1])).toMatchObject({ ok: true });
+    },
+    120_000,
+  );
+
+  it('满额时插件 editor.openFile 得到 EXCEPTION(FS_BUSY 的消息),不开标签', async () => {
+    for (let i = 0; i < PLUGIN_OPENED_PATHS_MAX; i += 64) {
+      await Promise.all(Array.from({ length: 64 }, () => invoke(C.READ_FOR_EDITOR, T)));
+    }
+    expect(refs()).toBe(PLUGIN_OPENED_PATHS_MAX);
+    const r = await plugin.editor.openFile(T);
+    expect(r).toMatchObject({ ok: false, code: 'EXCEPTION' });
+    expect(useEditorStore.getState().tabs).toEqual([]);
+  }, 60_000);
+
+  it('一个标签持有一份:关闭标签即释放;已开着再打开(只切换)不多占', async () => {
+    await plugin.editor.openFile(T);
+    await plugin.editor.openFile(T);
+    await plugin.editor.openFile(T);
+    await flush();
+    expect(useEditorStore.getState().tabs).toHaveLength(1);
+    expect(refs()).toBe(1);
+    useEditorStore.getState().closeTab(T);
+    await flush();
+    expect(refs()).toBe(0);
+  });
+
+  it(`反复打开 / 关闭 ${PLUGIN_OPENED_PATHS_MAX + 10} 次后仍能打开(名额不泄漏)`, async () => {
+    for (let i = 0; i < PLUGIN_OPENED_PATHS_MAX + 10; i++) {
+      expect(await plugin.editor.openFile(T)).toMatchObject({ ok: true });
+      useEditorStore.getState().closeTab(T);
+    }
+    await flush();
+    expect(refs()).toBe(0);
+  }, 120_000);
+
+  it('读取成功后插件被吊销(不开标签)→ 当即释放', async () => {
+    const perms = new InMemoryPermissionStore();
+    await perms.grant(PLUGIN, ['fs']);
+    const ctl = createScopedAppController(coApp, PLUGIN, perms, token);
+    const raw = coApi.pluginFsRaw as unknown as Record<string, (...a: unknown[]) => Promise<unknown>>;
+    const orig = raw.readForEditor!;
+    raw.readForEditor = async (...a: unknown[]) => {
+      const r = await orig(...a);
+      ctl.revoke();
+      return r;
+    };
+    expect(await ctl.app.editor.openFile(T)).toMatchObject({ ok: false, code: 'PERMISSION_DENIED' });
+    await flush();
+    expect(useEditorStore.getState().tabs).toEqual([]);
+    expect(refs()).toBe(0);
+  });
+
+  it('标签以其它方式消失(删除文件 / 整体清空)同样释放', async () => {
+    const other = join(work, 'other.md');
+    await writeFile(other, 'o');
+    await plugin.editor.openFile(T);
+    await plugin.editor.openFile(other);
+    await flush();
+    expect(refs()).toBe(2);
+    useEditorStore.getState().removePath(T);
+    await flush();
+    expect(refs()).toBe(1);
+    useEditorStore.setState({ tabs: [], activeTabId: null });
+    await flush();
+    expect(refs()).toBe(0);
+  });
+
+  it('释放只作用于发起窗口自己的记录;窗口关闭 / 重载时整窗释放', async () => {
+    let gone: (() => void) | undefined;
+    const ev2 = {
+      ...makeFakeEvent({ id: 2, isDestroyed: () => false }),
+      sender: { id: 2, send: vi.fn(), isDestroyed: () => false, once: (_: string, cb: () => void) => (gone = cb), on: vi.fn() },
+    };
+    await ipc.invokeWithEvent(ev2, C.REGISTER_PLUGIN, 'plugin.other'); // 挂上窗口 2 的 wc-gone 钩子
+    expect(await invoke(C.READ_FOR_EDITOR, T)).toMatchObject({ ok: true });
+    // 窗口 2 释放窗口 1 的记录 → no-op
+    await ipc.invokeWithEvent(ev2, C.RELEASE_EDITOR_PATH, T);
+    expect(refs()).toBe(1);
+    // 窗口 2 关闭:不影响窗口 1
+    gone?.();
+    expect(refs()).toBe(1);
+  });
+
+  it('窗口(webContents)消失 → 释放它持有的全部记录', async () => {
+    let gone: (() => void) | undefined;
+    const ev3 = {
+      ...makeFakeEvent({ id: 3, isDestroyed: () => false }),
+      sender: { id: 3, send: vi.fn(), isDestroyed: () => false, once: (_: string, cb: () => void) => (gone = cb), on: vi.fn() },
+    };
+    const t3 = ((await ipc.invokeWithEvent(ev3, C.REGISTER_PLUGIN, PLUGIN)) as { token: string }).token;
+    expect(await ipc.invokeWithEvent(ev3, C.READ_FOR_EDITOR, t3, T)).toMatchObject({ ok: true });
+    expect(await ipc.invokeWithEvent(ev3, C.READ_FOR_EDITOR, t3, T)).toMatchObject({ ok: true });
+    expect(await invoke(C.READ_FOR_EDITOR, T)).toMatchObject({ ok: true });
+    expect(refs()).toBe(3);
+    gone!();
+    expect(refs()).toBe(1);
+  });
+
+  it('保存仍受确认:换入后「仍然覆盖」保存被拒,scope 外文件不变', async () => {
+    if (process.platform === 'win32') return;
+    await plugin.editor.openFile(T);
+    useEditorStore.getState().updateContent(T, 'edit');
+    await swapIn();
+    expect(await saveFile(T, editorDeps(), { force: true })).toMatchObject({ ok: false, code: 'FS_DENIED' });
+    expect(await readFile(join(outDir, 'sub', 'x.md'), 'utf-8')).toBe(SECRET);
+  });
+});

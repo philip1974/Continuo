@@ -60,6 +60,7 @@ import { utf8BytesExceed } from '../../electron/shared/utf8-byte-length';
 import { codedError } from '../../electron/shared/error-message';
 import { PLUGIN_FS_EDITOR_READ_SCOPE_DENIED } from '../../electron/shared/plugin-fs-contract';
 import { mapFsCodeToEditorCode } from './editor-open-codes';
+import { releasePluginOpenedPath } from './plugin-opened-tabs';
 import {
   NETWORK_URL_MAX,
   NETWORK_HEADERS_MAX,
@@ -739,8 +740,11 @@ function makeEditor(
           : { ok: false, code: mapFsCodeToEditorCode(read.code), message: read.message };
       }
 
-      // 授权 / 读取 await 期间被吊销 → 同样不打开。
-      if (life.revoked) return revokedResult;
+      // 授权 / 读取 await 期间被吊销 → 同样不打开(释放主进程为这次读取记下的路径,见 plugin-opened-tabs)。
+      if (life.revoked) {
+        releasePluginOpenedPath(read.canonicalPath);
+        return revokedResult;
+      }
       return rawEditor.openVerifiedFile(read.canonicalPath, read.content, opts);
     },
   };
