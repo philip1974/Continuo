@@ -23,10 +23,12 @@
 //     " % ! $ ` U+201C–U+201E 的路径用 `"…"` 在两者下都是同一字面参数。
 //   - PowerShell 族另保留既有 `'…'`:路径不含 cmd 元字符(& | < > ^)与 " 时,cmd 把它当普通文本,
 //     最多值带上引号,不会执行;PowerShell 中单引号串纯字面,$ ` 智能双引号都能保留。! 在 cmd 中只有
-//     /V:ON 时于解析之后展开,改变值不造成执行,故此形态允许 !。但 cmd 的 %X% 在解析**之前**展开,且值未必
-//     不可信:动态变量 %CD% / %__CD__% / %=C:% 取当前目录名,目录可来自不可信仓库(目录 `x&calc&y` + 文件
-//     `%CD%.txt`,PowerShell 里进 cmd 后拖入 → 展开出 & 即执行)。故成对的 `%名字%` 拒绝此形态(再落到双引号
-//     形态,含 % 一律拒绝);单个 %(a%20b.pdf、100%.png 这类常见下载名)不构成变量引用,仍允许。
+//     /V:ON 时于解析之后展开,改变值不造成执行,故此形态允许 !。cmd 的 %X% 在解析**之前**展开;交互模式下
+//     未定义变量原样保留,只有已定义变量展开。攻击者只控制文件名与(不可信仓库的)目录名,能影响值的只有由
+//     当前目录派生的动态变量 %CD% / %__CD__% / %=<盘符>:% / %CMDCMDLINE%(含 :~n,m 子串 / :a=b 替换后缀)——
+//     目录 `x&calc&y` + 文件 `%CD%.txt`,PowerShell 里进 cmd 后拖入 → 展开出 & 即执行。故仅这些变量引用拒绝
+//     此形态(再落到双引号形态,含 % 一律拒绝);其它 %(a%20b.pdf、a%20b%20c.pdf、%E4%B8%AD.txt 这类常见下载名)
+//     仍允许。残余:用户自设环境变量的值若含 & 等元字符,`%该变量%` 理论上仍可注入,但值不受攻击者控制。
 //   - cmd 族不能用 `'…'`(cmd 中值会带上引号);两种形态都不安全的路径一律拒绝(cmd_unrepresentable)。
 import { quoteForShell, type ShellFamily } from '@continuo-terminal/shell-quote';
 
@@ -44,8 +46,11 @@ const POWERSHELL_SINGLE_QUOTES = /['\u2018-\u201b]/g;
 const WIN_DQ_UNSAFE = /["%!$`\u201c-\u201e]/;
 /** PowerShell `'…'` 在 cmd 中仍不执行命令:不含 cmd 元字符与引号切换(% 见文件头 Q3 说明)。 */
 const CMD_ACTIVE = /[&|<>^"]/;
-/** cmd 变量引用 `%名字%`(名字非空、不含 %):解析前展开,值可能来自不可信目录名(见文件头 Q3)。 */
-const CMD_PERCENT_VAR = /%[^%]+%/;
+/**
+ * 由当前目录派生的 cmd 动态变量引用(忽略大小写,可带 `:~n,m` / `:a=b` 后缀):解析前展开,值可能来自
+ * 不可信目录名(见文件头 Q3)。其它变量攻击者控制不了值,不在此列。
+ */
+const CMD_CWD_VAR = /%(?:CD|__CD__|=[A-Za-z]:|CMDCMDLINE)(?::[^%]*)?%/i;
 
 function quoteOne(
   path: string,
@@ -56,7 +61,7 @@ function quoteOne(
   if (family === 'posix' && path.includes('\\')) {
     return { ok: true, quoted: quotePosixPortable(path) };
   }
-  if (family === 'powershell' && !CMD_ACTIVE.test(path) && !CMD_PERCENT_VAR.test(path)) {
+  if (family === 'powershell' && !CMD_ACTIVE.test(path) && !CMD_CWD_VAR.test(path)) {
     return { ok: true, quoted: `'${path.replace(POWERSHELL_SINGLE_QUOTES, '$&$&')}'` };
   }
   if (family === 'powershell' || family === 'cmd') {
