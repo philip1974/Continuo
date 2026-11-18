@@ -10,7 +10,10 @@
 // BDD: src/__tests__/agent-terminal-mcp-auth/
 
 import { create } from 'zustand';
-import { AGENT_AUTH_PROMPT_TIMEOUT_MS } from '../../electron/shared/agent-auth-channels';
+import {
+  AGENT_AUTH_PLUGIN_METHOD_PREFIX,
+  AGENT_AUTH_PROMPT_TIMEOUT_MS,
+} from '../../electron/shared/agent-auth-channels';
 
 export type AuthDecision = 'once' | 'session' | 'denied';
 /**
@@ -36,6 +39,8 @@ type AgentAuthState = {
   sessionGranted: boolean;
   /** debug 域的「本次启动期间允许」(与终端域互不放行)。 */
   debugSessionGranted: boolean;
+  /** 插件工具域(method 以 plugin. 开头)的「本次启动期间允许」(与终端 / debug 域互不放行)。 */
+  pluginSessionGranted: boolean;
 
   ensure(info: EnsureInfo): Promise<EnsureOutcome>;
   /** 'session' 只结算当前请求;域授权须待 main 确认后经 confirmSessionGrant 生效。 */
@@ -49,7 +54,7 @@ type AgentAuthState = {
   revoke(): void;
   /**
    * main 已撤销(本窗口撤销 IPC 成功 / 其它窗口撤销的 REVOKED 广播):与 revoke() 同样重置
-   * (epoch+1、清两个域的 session 授权),并把残留弹窗以 'cancelled' 结算(main 已按 denied 结算并删除)。
+   * (epoch+1、清所有域的 session 授权),并把残留弹窗以 'cancelled' 结算(main 已按 denied 结算并删除)。
    */
   applyMainRevoked(): void;
 };
@@ -61,6 +66,23 @@ type AgentAuthState = {
  */
 export function isDebugAuthMethod(method: string): boolean {
   return method.startsWith('debug.');
+}
+
+/**
+ * 插件注册的 MCP 工具(main plugin-mcp-bridge 以 `plugin.<tool 名>` 请求)属第三个独立域:插件工具可做
+ * 任意插件能力(如 git stage/commit),不应被终端 / debug 域的授权静默放行。
+ */
+export function isPluginAuthMethod(method: string): boolean {
+  return method.startsWith(AGENT_AUTH_PLUGIN_METHOD_PREFIX);
+}
+
+type SessionGrantKey = 'sessionGranted' | 'debugSessionGranted' | 'pluginSessionGranted';
+
+/** method → 所属域的「本次启动期间允许」标志位。 */
+function grantKeyFor(method: string): SessionGrantKey {
+  if (isDebugAuthMethod(method)) return 'debugSessionGranted';
+  if (isPluginAuthMethod(method)) return 'pluginSessionGranted';
+  return 'sessionGranted';
 }
 
 // 撤销代际:每次 revoke +1。'session' 应答在 IPC 往返期间若被 revoke,迟到的确认不得把授权记回。
@@ -98,11 +120,11 @@ export const useAgentAuthStore = create<AgentAuthState>((set, get) => ({
   pending: null,
   sessionGranted: false,
   debugSessionGranted: false,
+  pluginSessionGranted: false,
 
   ensure(info) {
     // 该请求所属域已 session 授权 → 直接通过,不设 pending(支持并发)
-    const state = get();
-    if (isDebugAuthMethod(info.method) ? state.debugSessionGranted : state.sessionGranted) {
+    if (get()[grantKeyFor(info.method)]) {
       return Promise.resolve('session' as const);
     }
     // 已有 pending → 第二条立即拒(简化并发,与 plugin permission-prompt 同型)
@@ -146,11 +168,8 @@ export const useAgentAuthStore = create<AgentAuthState>((set, get) => ({
   confirmSessionGrant(method, epoch) {
     if (epoch !== authEpoch) return;
     // 只给该请求所属的域记 session 授权。
-    if (isDebugAuthMethod(method)) {
-      if (!get().debugSessionGranted) set({ debugSessionGranted: true });
-    } else if (!get().sessionGranted) {
-      set({ sessionGranted: true });
-    }
+    const key = grantKeyFor(method);
+    if (!get()[key]) set({ [key]: true });
   },
 
   deny() {
@@ -165,8 +184,8 @@ export const useAgentAuthStore = create<AgentAuthState>((set, get) => ({
   revoke() {
     authEpoch += 1;
     set((s) =>
-      s.sessionGranted || s.debugSessionGranted
-        ? { sessionGranted: false, debugSessionGranted: false }
+      s.sessionGranted || s.debugSessionGranted || s.pluginSessionGranted
+        ? { sessionGranted: false, debugSessionGranted: false, pluginSessionGranted: false }
         : s,
     );
   },
@@ -189,5 +208,6 @@ export function _resetAgentAuthForTest(): void {
     pending: null,
     sessionGranted: false,
     debugSessionGranted: false,
+    pluginSessionGranted: false,
   });
 }

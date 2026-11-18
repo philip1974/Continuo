@@ -292,6 +292,10 @@ export const zh: Record<TranslationKey, string> = {
   'permissions.agent.debug_launch': '启动调试会话',
   'permissions.agent.debug_control': '控制调试会话(断点、单步、查看变量)',
   'permissions.agent.generic': '调用 {method}',
+  'permissions.agent.plugin_tool': '调用插件工具 {name}',
+  'permissions.agent.title_plugin': 'Agent 请求调用插件工具',
+  'permissions.agent.hint_plugin':
+    '授权后，持有 MCP token 的 agent 可以调用已安装插件注册的工具(如 Git 暂存 / 提交)。插件工具以插件自身的权限执行，请只授权给你信任的 agent。仅本次启动有效。',
   'permissions.agent.title': 'Agent 请求控制内置终端',
   'permissions.agent.title_debug': 'Agent 请求控制调试器',
   'permissions.agent.hint_debug':

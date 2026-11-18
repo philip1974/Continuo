@@ -30,7 +30,13 @@ export interface AgentAuthRequestPayload {
 export const AGENT_AUTH_PROMPT_TIMEOUT_MS = 5 * 60 * 1000;
 
 export const AGENT_AUTH_REQUEST_ID_MAX = 256; // 与 AgentAuthRespondSchema requestId 上限一致(E146)
-const AGENT_AUTH_METHOD_MAX = 256;
+export const AGENT_AUTH_METHOD_MAX = 256;
+
+/**
+ * 插件注册的 MCP 工具授权 method 前缀(plugin 域)。main 侧 plugin-mcp-bridge 以 `plugin.<tool 名>` 请求授权,
+ * renderer agent-auth store 据此归入独立的插件域(与 terminal / debug 域互不放行)。
+ */
+export const AGENT_AUTH_PLUGIN_METHOD_PREFIX = 'plugin.';
 const AGENT_AUTH_LABEL_MAX = 512;
 
 /** agent-auth:request payload 的 runtime 形态 + 长度守卫(IPC ingress 纵深防御,E171)。 */

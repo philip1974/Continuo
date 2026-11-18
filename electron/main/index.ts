@@ -1277,7 +1277,11 @@ app.whenReady().then(async () => {
   // Plugin → MCP bridge 接线(host 已就绪,renderer 通过 IPC 注册的 tool 走它)。
   // tools/list_changed 通知同时推 HTTP SSE + stdio 客户端,Codex/Claude Code 收到自动重拉;
   // stdio 用取值函数:就绪前只推 HTTP,就绪后同时推 stdio。
-  if (mcpHost) startPluginMcpIpc(mcpHost, () => mcpStdio);
+  if (mcpHost) {
+    startPluginMcpIpc(mcpHost, () => mcpStdio, (ownerWindowId, method) =>
+      requestAgentAuth({ method: method ?? 'plugin.*', ownerWindowId }),
+    );
+  }
   // 冷启动开窗模式决策(issue #30):有 dock 缓冲目录 → dock 模式,
   // 第一个目录作主窗 workspace,其余各开新窗,**不**恢复历史;
   // 否则 → restore 模式,主窗用持久化 workspace,异步恢复历史 windows[]。

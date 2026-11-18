@@ -8,11 +8,15 @@ import { coApi } from '@/lib/co-api';
 import {
   getAgentAuthEpoch,
   isDebugAuthMethod,
+  isPluginAuthMethod,
   useAgentAuthStore,
 } from '@/stores/agent-auth.store';
 import { notify } from '@/notifications/notify';
 import { useT, t as translate, type TranslationKey } from '@/i18n';
-import { isAgentAuthRequestPayload } from '@shared/agent-auth-channels';
+import {
+  AGENT_AUTH_PLUGIN_METHOD_PREFIX,
+  isAgentAuthRequestPayload,
+} from '@shared/agent-auth-channels';
 import { ERROR_CODES } from '@shared/error-codes';
 
 // method → i18n key 表（P2-1）；未知 method 走 generic('{method}') fallback
@@ -98,18 +102,35 @@ function AgentAuthPromptBody({
   const t = useT();
   // debug 域的请求:标题与说明讲调试器能做什么(授权也只记在 debug 域)。
   const isDebug = isDebugAuthMethod(pending.method);
+  // 插件工具域(main plugin-mcp-bridge,method=plugin.<tool 名>):标题 / 说明讲插件工具。
+  const isPlugin = isPluginAuthMethod(pending.method);
 
   function methodLabel(method: string): string {
     const k = METHOD_LABEL_KEYS[method];
     if (k) return t(k);
+    if (isPluginAuthMethod(method)) {
+      return t('permissions.agent.plugin_tool', {
+        name: method.slice(AGENT_AUTH_PLUGIN_METHOD_PREFIX.length),
+      });
+    }
     return t('permissions.agent.generic', { method });
   }
+  const titleKey: TranslationKey = isDebug
+    ? 'permissions.agent.title_debug'
+    : isPlugin
+      ? 'permissions.agent.title_plugin'
+      : 'permissions.agent.title';
+  const hintKey: TranslationKey = isDebug
+    ? 'permissions.agent.hint_debug'
+    : isPlugin
+      ? 'permissions.agent.hint_plugin'
+      : 'permissions.agent.hint';
 
   return (
     <Modal visible onClose={deny} aria-labelledby="agent-auth-title">
       {/* a11y(A13):dialog 关联标题。 */}
       <h2 id="agent-auth-title" className="mb-1 text-sm font-medium text-fg">
-        {t(isDebug ? 'permissions.agent.title_debug' : 'permissions.agent.title')}
+        {t(titleKey)}
       </h2>
       <p className="mb-3 text-xs text-fg-muted">
         {t('permissions.agent.body_prefix')}
@@ -123,7 +144,7 @@ function AgentAuthPromptBody({
         {t('permissions.agent.body_suffix')}
       </p>
       <p className="mb-4 text-2xs text-fg-dim">
-        {t(isDebug ? 'permissions.agent.hint_debug' : 'permissions.agent.hint')}
+        {t(hintKey)}
       </p>
       <div className="flex justify-end gap-2">
         <Button variant="ghost" size="sm" onClick={deny}>
