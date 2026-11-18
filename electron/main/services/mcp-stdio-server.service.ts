@@ -18,7 +18,7 @@ import {
 } from 'node:net';
 import { BrowserWindow } from 'electron';
 import * as crypto from 'node:crypto';
-import { mkdir, unlink, chmod, lstat, stat, readFile } from 'node:fs/promises';
+import { mkdir, unlink, chmod, lstat, stat, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import {
   RPC_ERROR_CODES,
@@ -247,7 +247,7 @@ export interface CreateStdioSocketOptions {
    */
   onCallerClosed?: (callerSubject: string) => void;
   /**
-   * listen 成功后把 socketPath 原子写入该文件(Windows 管道名发现文件,供无 env 的外部 proxy 读取);
+   * 启动时先删除旧文件(崩溃残留);listen 成功后把 socketPath 原子写入该文件(Windows 管道名发现文件,供无 env 的外部 proxy 读取);
    * close 时若内容仍是本 server 的名字则删除。写失败只告警,不影响 server。
    */
   discoveryFile?: string;
@@ -408,6 +408,17 @@ export async function createStdioSocketServer(
   const shouldPrepareFilesystem = shouldPrepareStdioSocketFilesystem(
     process.platform,
   );
+
+  // 安全:上次崩溃 / 强杀没走 close 时发现文件残留,指向一个已无人监听、名字可被同机其它用户在 \\.\pipe\ 下
+  // 枚举到的管道 —— 对方抢注同名管道后,Continuo 终端外启动的 proxy 会读到过期文件连过去(伪造工具结果)。
+  // 任何准备 / listen 之前先删掉,启动失败也不会留下过期名;listen 成功后才写入新名字。
+  if (opts.discoveryFile) {
+    try {
+      await rm(opts.discoveryFile, { force: true });
+    } catch (err) {
+      console.warn('[mcp-stdio] failed to remove stale pipe discovery file', err);
+    }
+  }
 
   if (shouldPrepareFilesystem) {
     await setupSocketDir(opts.socketPath);
