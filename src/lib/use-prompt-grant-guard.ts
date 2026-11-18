@@ -36,6 +36,9 @@ export interface PromptGrantGuard {
    * - 键盘激活另须是停顿后的有意按键:该按钮已持续聚焦 ≥ PROMPT_GRANT_ARM_DELAY_MS、聚焦期间没有打过字、这一下
    *   按键不是键重复且之前 PROMPT_GRANT_ARM_DELAY_MS 内没有别的按键。出现延迟挡不住「晚到」的按键:用户没注意到
    *   弹窗,继续原来的输入流(Tab 补全后回车、切模式后打一句话再回车),其中的 Space / Enter 不能落成授予。
+   * - 焦点若是被「输入流里的 Tab」带到按钮上的(那一下 Tab 紧跟在别的按键后、或在请求出现后
+   *   PROMPT_GRANT_ARM_DELAY_MS 内按下、或请求出现后打过字),这次聚焦期间键盘激活一律无效 —— Tab 之后停下来
+   *   看一眼补全再回车,聚焦时长与按键前停顿都满足。把焦点移开、停顿后再 Tab 回来(或用鼠标)才可用。
    */
   readonly canGrant: (e: GrantClick) => boolean;
   /**
@@ -56,6 +59,11 @@ interface GuardState {
   focusEl: EventTarget | null;
   focusAt: number;
   typedWhileFocused: boolean;
+  /** 当前请求出现后是否打过字。 */
+  typedSinceShown: boolean;
+  /** 最近一次 keydown 是否「输入流里的 Tab」;当前焦点是否由这样的 Tab 带来。 */
+  keyIsStreamTab: boolean;
+  focusByStreamTab: boolean;
 }
 
 /**
@@ -72,6 +80,9 @@ export function usePromptGrantGuard(current: unknown): PromptGrantGuard {
     focusEl: null,
     focusAt: 0,
     typedWhileFocused: false,
+    typedSinceShown: false,
+    keyIsStreamTab: false,
+    focusByStreamTab: false,
   });
   // layout effect:在浏览器处理下一次输入之前就记下出现时刻。
   useLayoutEffect(() => {
@@ -80,6 +91,7 @@ export function usePromptGrantGuard(current: unknown): PromptGrantGuard {
     const now = Date.now();
     s.switchedAt = current !== null && s.last !== null ? now : null;
     s.shownAt = current !== null ? now : null;
+    s.typedSinceShown = false;
     s.last = current;
   }, [current]);
 
@@ -94,7 +106,16 @@ export function usePromptGrantGuard(current: unknown): PromptGrantGuard {
         !e.repeat && (s.keyAt === null || now - s.keyAt >= PROMPT_GRANT_ARM_DELAY_MS);
       s.keyAt = now;
       // 可打印字符(Space 是按钮的激活键,不算):用户在打字。
-      if (e.key.length === 1 && e.key !== ' ') s.typedWhileFocused = true;
+      if (e.key.length === 1 && e.key !== ' ') s.typedWhileFocused = s.typedSinceShown = true;
+      // 有意的 Tab:停顿后的单次按键、请求已出现一个时间窗、出现后没打过字。其余 Tab 都算输入流(补全)。
+      s.keyIsStreamTab =
+        e.key === 'Tab' &&
+        !(
+          s.keyDeliberate &&
+          !s.typedSinceShown &&
+          s.shownAt !== null &&
+          now - s.shownAt >= PROMPT_GRANT_ARM_DELAY_MS
+        );
       if (e.key === 'Tab' && e.shiftKey && isFirstFocusableOfGrantDialog(document.activeElement)) {
         // Modal 的焦点陷阱会让第一个元素(拒绝)上的 Shift+Tab 回绕到最后一个元素(权限最大的授予按钮)。
         // 拦下:焦点留在原处;向前 Tab 仍可到达所有元素。
@@ -106,6 +127,9 @@ export function usePromptGrantGuard(current: unknown): PromptGrantGuard {
       s.focusEl = e.target;
       s.focusAt = Date.now();
       s.typedWhileFocused = false;
+      // Tab 的焦点移动紧跟在它的 keydown 之后。
+      s.focusByStreamTab =
+        s.keyIsStreamTab && s.keyAt !== null && s.focusAt - s.keyAt < PROMPT_GRANT_ARM_DELAY_MS;
     };
     document.addEventListener('keydown', onKeyDown, true);
     document.addEventListener('focusin', onFocusIn, true);
@@ -124,7 +148,7 @@ export function usePromptGrantGuard(current: unknown): PromptGrantGuard {
       if (s.shownAt === null || now - s.shownAt < PROMPT_GRANT_ARM_DELAY_MS) return false;
       if (e.detail > 0) return true;
       if (s.focusEl !== e.currentTarget || now - s.focusAt < PROMPT_GRANT_ARM_DELAY_MS) return false;
-      if (s.typedWhileFocused) return false;
+      if (s.typedWhileFocused || s.focusByStreamTab) return false;
       // 刚按下的键就是触发这次 click 的那一下:它须是停顿后的单次按键。更早的按键(或没有按键:辅助技术触发的
       // click)→ 已满足停顿。
       const keyIsRecent = s.keyAt !== null && now - s.keyAt < PROMPT_GRANT_ARM_DELAY_MS;

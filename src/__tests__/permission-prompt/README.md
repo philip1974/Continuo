@@ -33,7 +33,8 @@ PromptFn 桥接到 store,Promise 形态返回。PluginManager 在 _activate 前�
     时间再出现、排队切换(A 结算后直接换成 B)、弹窗类型切换(fs-scope↔manifest)都重新计时。
   - 授予按钮的**键盘**激活另须是停顿后的有意按键(`keyboard-grant-guard.spec.tsx`):按钮已持续聚焦 ≥ 500ms、聚焦
     期间没打过字、这一下按键不是键重复且之前 500ms 内没有别的按键。Tab→Enter 的快速序列、打字流里的 Space / Enter
-    不授予;Tab 到按钮、停顿半秒再按 Enter / Space 授予。鼠标点击只受出现延迟约束。
+    不授予;Tab 到按钮、停顿半秒再按 Enter / Space 授予。输入流里的 Tab(紧跟别的按键 / 出现后 500ms 内 / 出现后
+    打过字)带来的焦点不能用键盘授予(细则见 `agent-auth-prompt-throttle/`)。鼠标点击只受出现延迟约束。
   - Shift+Tab 不能从第一个可聚焦元素回绕到末尾的授予按钮(焦点留在原处;向前 Tab 仍可到达所有元素)。
   - 拒绝方向(「全部拒绝」/「拒绝」/ Esc / 点遮罩)首次出现时立即可用,不受键盘规则约束。
   - 初始焦点在拒绝按钮上(不在勾选框或授予按钮上);切换到下一个请求后焦点同样回到拒绝按钮。
