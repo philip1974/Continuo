@@ -52,13 +52,17 @@ function rebuildRenderer(): void {
   shown = 0;
   markAgentAuthRendererReady(WINDOW_ID);
 }
-/** 主窗 Cmd+R 的前半段:main 收到主框架非同文档导航,旧文档(连同它的授权态、弹窗、IPC 订阅)没了,新文档还在加载。 */
+/** 主框架非同文档导航**开始**(Electron 先发它,再发 will-navigate;此刻文档还没换,也可能不会换)。 */
+function startNavigation(url = 'file:///renderer/index.html'): void {
+  webContents.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false, url });
+}
+/**
+ * 主窗 Cmd+R 的前半段:主框架非同文档导航开始并**提交**(did-navigate),旧文档(连同它的授权态、弹窗、IPC 订阅)
+ * 没了,新文档还在加载。
+ */
 function startReload(): void {
-  webContents.emit('did-start-navigation', {
-    isMainFrame: true,
-    isSameDocument: false,
-    url: 'file:///renderer/index.html',
-  });
+  startNavigation();
+  webContents.emit('did-navigate', {}, 'file:///renderer/index.html', 200, 'OK');
   _resetAgentAuthForTest();
   shown = 0;
 }
@@ -339,5 +343,86 @@ describe('reload 窗口期(新文档尚未建立授权订阅)到达的请求', (
     startReload();
     markAgentAuthRendererReady(WINDOW_ID + 1);
     await expect(raw()).rejects.toThrow(/reload/i);
+  });
+});
+
+// 导航「开始」不等于文档会换:Electron 先发 did-start-navigation 再发 will-navigate,被导航守卫拦下 / 被中止的导航
+// 没有提交(did-navigate),旧文档原样留着,也不会再上报就绪。此前按「开始」置未就绪:这样一次导航之后该窗口的授权
+// 请求被永久拒绝(实测 1 小时内每分钟一次请求 60/60 被拒),显示中的弹窗也在 main 侧被提前取消。
+describe('未提交的主框架导航(被拦下 / 中止)不算换文档', () => {
+  const raw = (method = 'terminal.send_text'): Promise<string> =>
+    requestAgentAuth({ method, ownerWindowId: WINDOW_ID });
+
+  it('did-start-navigation 之后没有 did-navigate → 之后的请求照常弹窗(不是「窗口正在重新加载」)', async () => {
+    // 先正常弹一次(main 此时已在跟踪该窗口的 webContents)
+    const before = raw();
+    await flush();
+    user('once');
+    expect(await before).toBe('once');
+    startNavigation('file:///renderer/index.html?dropped=1');
+    for (let minute = 0; minute < 3; minute += 1) {
+      const p = raw();
+      await flush();
+      expect(displayed()).toBe(true);
+      user('once');
+      expect(await p).toBe('once');
+      await flush(60_000);
+    }
+  });
+
+  it('显示中的弹窗不被未提交的导航取消:用户的应答照常生效', async () => {
+    const first = request();
+    await flush();
+    expect(displayed()).toBe(true);
+    startNavigation('https://example.com/dropped-link');
+    await flush();
+    expect(displayed()).toBe(true);
+    user('once');
+    expect(await first).toBe('once');
+  });
+
+  it('未提交的导航不清「本次启动期间允许」的镜像(renderer 的授权态还在)', async () => {
+    await grantSession();
+    startNavigation();
+    // 已授权域:并发请求全部秒回 session,不走单飞
+    expect(await Promise.all([request(), request(), request()])).toEqual(['session', 'session', 'session']);
+  });
+
+  it('导航开始到提交之间(主框架加载中)的请求被拒;提交后到就绪前也被拒;就绪后恢复', async () => {
+    reload();
+    let loading = true;
+    Object.assign(webContents, { isLoadingMainFrame: () => loading });
+    startNavigation();
+    await expect(raw()).rejects.toThrow(/reload/i);
+    webContents.emit('did-navigate', {}, 'file:///renderer/index.html', 200, 'OK');
+    _resetAgentAuthForTest();
+    loading = false; // did-finish-load 不算就绪:订阅建立在其后
+    await expect(raw()).rejects.toThrow(/reload/i);
+    rebuildRenderer();
+    const p = request('debug.launch');
+    await flush();
+    expect(displayed()).toBe(true);
+    user('denied');
+    await p;
+  });
+
+  it('主框架加载失败(did-fail-load,提交的是错误页)→ 未就绪;子框架加载失败不算', async () => {
+    reload();
+    webContents.emit('did-fail-load', {}, -105, 'ERR_NAME_NOT_RESOLVED', 'https://x.invalid/', false);
+    const p = request();
+    await flush();
+    expect(displayed()).toBe(true);
+    user('once');
+    expect(await p).toBe('once');
+
+    webContents.emit('did-fail-load', {}, -6, 'ERR_FILE_NOT_FOUND', 'file:///renderer/index.html', true);
+    await expect(raw('debug.launch')).rejects.toThrow(/reload/i);
+  });
+
+  it('窗口销毁(destroyed)→ 未决请求立即结算', async () => {
+    const first = request();
+    await flush();
+    webContents.emit('destroyed');
+    expect(await first).toBe('denied');
   });
 });
