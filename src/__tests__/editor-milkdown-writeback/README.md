@@ -35,5 +35,5 @@ store 里的内容 → 延迟窗口内的输入还没进 store:
 | 文件 | 内容 |
 |---|---|
 | `milkdown-writeback.spec.tsx` | 回写句柄 / 卸载回写与停用 / 基线守卫 / 不做多余序列化 / 自适应上抛 / autosave flush 补排队 |
-| `milkdown-ctx-contract.spec.tsx` | 真实 Crepe:slice 名取视图 / 序列化器、文档引用语义、卸载回写仍可取全文、真实 updated 约 200ms 上抛 |
+| `milkdown-ctx-contract.spec.tsx` | 真实 Crepe:slice 名取视图 / 序列化器、文档引用语义、卸载回写仍可取全文、原生输入(DOM 变更读回)进文档并上抛(lockfile 只能有一份 prosemirror-model)、真实 updated 约 200ms 上抛 |
 | `../dirty-close-confirm/dockshell-save-on-close.spec.tsx` | 握手先回写再保存 / flush autosave |
