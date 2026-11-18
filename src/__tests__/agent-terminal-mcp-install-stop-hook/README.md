@@ -127,6 +127,20 @@ ordering 语义,后续 Op 再补 broker 与 tool wiring 实装。
 - main 启动时 `ensureHookEventsDir` 以 0700 建目录;已存在的(旧版 0755)也收紧为 0700。
 - 收紧是尽力而为:文件系统不支持 chmod(抛 EPERM 等)时只告警,不让 MCP host 启动失败;mkdir 失败仍抛出。
 
+## I13 hook 命令对 hookEventsDir 做 shell 转义(安全)
+
+- `hookEventsDir` 来自 `app.getPath('userData')`(HOME / XDG_CONFIG_HOME / `--user-data-dir`),是唯一被宿主拼进
+  hook 命令的字符串;命令持久写进工作区 `.claude/settings.local.json` / `.codex/config.toml`,每次 Stop 都执行。
+- 旧形态 `mkdir -p "<dir>" && cat > "${CONTINUO_HOOK_EVENTS_DIR:-<dir>}/…"`:路径含 `$(…)` / 反引号 → 命令执行;
+  含 `}` → `${VAR:-…}` 提前闭合;含 `"` → 引号闭合。
+- 新形态:`umask 077; d="${CONTINUO_HOOK_EVENTS_DIR:-}"; [ -n "$d" ] || d='<单引号转义的路径>'; mkdir -p -- "$d" && cat > "$d/…"`。
+  路径做 POSIX 单引号转义(`'` → `'\''`),不嵌进 `${VAR:-…}`;环境变量非空仍优先。文件名各段不变。
+- 真实 `/bin/sh` 执行:目录名含空格、`$(touch X)`、反引号、`}`、`"`、`'`、`\`、中文 → 事件文件只落在该目录内,
+  不产生任何标记文件;同目录再 install → `already-installed`。
+- 已装的旧形态 managed 命令(即便已带会话 id)在下次 install 时原地升级,不追加第二条(Claude 保留用户自有 Stop)。
+- Codex 的已装判定为「managed command 与当前要写的逐字节相同」,否则原地替换(路径漂移 / 无会话 id / 旧形态)。
+  command 以 JSON 字符串转义写成 TOML basic string(转义集是 TOML 的子集)。
+
 ## I7 install spawn 前完成
 
 - 覆盖 P0-3 / P2-3。

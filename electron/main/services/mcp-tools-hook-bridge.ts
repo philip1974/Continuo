@@ -34,6 +34,7 @@ import {
 import { ERROR_CODES } from '../../shared/error-codes';
 import { readFileCappedFd } from '../lib/read-fh-capped';
 import { isSameOrInsidePath } from '../lib/path-inside';
+import { posixSingleQuote } from '../lib/posix-shell-quote';
 import { truncateSessionIdForEcho } from '../lib/session-id-echo';
 import type { McpCallCtx, McpToolDef } from './mcp-host.service';
 import { z } from 'zod';
@@ -994,6 +995,32 @@ function refuseUnsafeConfigPath(configPath: string): InstallStopHookResult {
 // 两种 runner 的 hook 均由 POSIX shell 执行(命令本身已依赖 `$(date +%s%N)`),无 Windows cmd 分支。
 const HOOK_UMASK_PREFIX = 'umask 077; ';
 
+const HOOK_EVENTS_DIR_ENV = 'CONTINUO_HOOK_EVENTS_DIR';
+
+/**
+ * 两种 runner 的 hook 命令共用前缀,到事件文件名之前为止(以 `cat > "$d/` 结尾,调用方接文件名与闭合的 `"`)。
+ *
+ * 安全:hookEventsDir 来自 app.getPath('userData')(HOME / XDG_CONFIG_HOME / --user-data-dir),是唯一被宿主拼进
+ * 命令的字符串,且命令持久写进工作区配置、每次 Stop 都执行。旧形态 `mkdir -p "<dir>" && cat > "${VAR:-<dir>}/…"`
+ * 下路径含 `$(…)` / 反引号即命令执行,含 `}` 提前闭合 `${VAR:-…}`,含 `"` 闭合引号。现在路径做 POSIX 单引号
+ * 转义,并且不嵌进 `${VAR:-…}`:环境变量非空则用它,否则用转义后的默认路径;之后只经 `"$d"` 引用。
+ * 文件名里的其余插值(窗口 id、终端会话 id、CLI 会话 id、时间戳)都是运行时的 shell 变量展开,留在双引号内。
+ */
+function hookCommandPrefix(hookEventsDir: string): string {
+  return (
+    HOOK_UMASK_PREFIX +
+    `d="\${${HOOK_EVENTS_DIR_ENV}:-}"; [ -n "$d" ] || d=${posixSingleQuote(hookEventsDir)}; ` +
+    'mkdir -p -- "$d" && cat > "$d/'
+  );
+}
+
+/** 旧形态 managed 命令:宿主路径原样嵌在 `${CONTINUO_HOOK_EVENTS_DIR:-<路径>}` 里(未转义)→ 须升级。 */
+function embedsUnquotedHookEventsDir(command: string): boolean {
+  const marker = `\${${HOOK_EVENTS_DIR_ENV}:-`;
+  const at = command.indexOf(marker);
+  return at >= 0 && command[at + marker.length] !== '}';
+}
+
 /**
  * 建 hook-events 目录为 0700;已存在(旧版按默认 umask 建成 0755)也收紧。
  * 收紧是尽力而为:userData 在不支持 chmod 的文件系统(部分网络盘 / FAT / 容器挂载)上 chmod 抛 EPERM 等,
@@ -1168,13 +1195,12 @@ function mergeClaudeCodeSettings(
     const stopArr = Array.isArray(hooks.Stop) ? [...hooks.Stop] : [];
 
     const command =
-      HOOK_UMASK_PREFIX +
-      `mkdir -p "${hookEventsDir}" && ` +
-      `cat > "\${CONTINUO_HOOK_EVENTS_DIR:-${hookEventsDir}}/` +
+      hookCommandPrefix(hookEventsDir) +
       `cc_\${CONTINUO_WINDOW_ID:-unknown}_\${${TERMINAL_SESSION_ENV}:-unknown}_` +
       '${CLAUDE_CODE_SESSION_ID:-unknown}_$(date +%s%N).jsonl"';
 
-    // 旧版 managed hook(命令不含会话 id 变量)的位置:原地替换其 command 升级,而非追加第二条。
+    // 旧版 managed hook(命令不含会话 id 变量,或路径未转义地嵌在命令里)的位置:原地替换其 command 升级,
+    // 而非追加第二条。
     let legacy: { readonly entryIdx: number; readonly hookIdx: number } | null = null;
     for (let entryIdx = 0; entryIdx < stopArr.length; entryIdx += 1) {
       const inner = (stopArr[entryIdx] as { hooks?: unknown[] } | null)?.hooks;
@@ -1188,9 +1214,12 @@ function mergeClaudeCodeSettings(
         if (
           marker === true &&
           typeof existingCommand === 'string' &&
-          existingCommand.includes('CONTINUO_HOOK_EVENTS_DIR')
+          existingCommand.includes(HOOK_EVENTS_DIR_ENV)
         ) {
-          if (existingCommand.includes(TERMINAL_SESSION_ENV)) {
+          if (
+            existingCommand.includes(TERMINAL_SESSION_ENV) &&
+            !embedsUnquotedHookEventsDir(existingCommand)
+          ) {
             return { installed: false, reason: 'already-installed' };
           }
           legacy ??= { entryIdx, hookIdx };
@@ -1200,7 +1229,8 @@ function mergeClaudeCodeSettings(
 
     if (legacy !== null) {
       // 正确性(会话绑定):旧命令写出的事件无会话 id,broker 不再交给任何等待者 → 必须升级,否则该项目的
-      // await_stop_hook 永远超时。只改 command,保留该 hook 对象的其它字段与用户其它 Stop 项。
+      // await_stop_hook 永远超时。安全:路径未转义的旧命令同样升级(见 hookCommandPrefix)。
+      // 只改 command,保留该 hook 对象的其它字段与用户其它 Stop 项。
       const { entryIdx, hookIdx } = legacy;
       const entry = stopArr[entryIdx] as { hooks: unknown[] };
       const inner = [...entry.hooks];
@@ -1238,21 +1268,22 @@ function mergeCodexConfig(
     // 时吞掉 managed 自身的 Stop 头;marker 在块内(I6 测试)时从 marker 后直接扫描。
     const managedStop = findManagedCodexStopCommand(text);
     if (managedStop !== null) {
-      // 正确性(会话绑定):managed command 不含会话 id 变量 = 旧版,同 hookEventsDir 漂移一样原地替换升级。
+      // 已装判定 = managed command 与当前要写的逐字节相同。其余情形一律原地替换升级:hookEventsDir 漂移、
+      // 旧版不含会话 id 变量(会话绑定)、旧形态路径未转义(安全)。不能再用 `text.includes(hookEventsDir)`:
+      // 写入的是转义后的路径(单引号转义 + TOML 字符串转义),含 `'` / `"` / `\` 的路径永远对不上。
       const managedCommand = text.slice(managedStop.quoteStart, managedStop.quoteEnd);
-      if (text.includes(hookEventsDir) && managedCommand.includes(TERMINAL_SESSION_ENV)) {
+      if (managedCommand === codexStopHookCommandToml(hookEventsDir)) {
         return { installed: false, reason: 'already-installed' };
       }
       return { write: replaceManagedCodexStopHook(text, hookEventsDir, managedStop) };
     }
 
-    const command = codexStopHookCommand(hookEventsDir);
     const block =
       '\n# continuo-managed\n' +
       '[[hooks.Stop]]\n' +
       '[[hooks.Stop.hooks]]\n' +
       'type = "command"\n' +
-      `command = ${JSON.stringify(command)}\n`;
+      `command = ${codexStopHookCommandToml(hookEventsDir)}\n`;
     return { write: text + block };
   });
 }
@@ -1260,12 +1291,18 @@ function mergeCodexConfig(
 /** Codex Stop hook 写入 config.toml 的 shell 命令(新建与替换 managed 块共用)。 */
 function codexStopHookCommand(hookEventsDir: string): string {
   return (
-    HOOK_UMASK_PREFIX +
-    `mkdir -p "${hookEventsDir}" && ` +
-    `cat > "\${CONTINUO_HOOK_EVENTS_DIR:-${hookEventsDir}}/` +
+    hookCommandPrefix(hookEventsDir) +
     `codex_\${CONTINUO_WINDOW_ID:-unknown}_\${${TERMINAL_SESSION_ENV}:-unknown}_` +
     '$(date +%s%N).jsonl"'
   );
+}
+
+/**
+ * 上述命令作为 TOML basic string 的字面量(含两端引号)。JSON 字符串转义(`\"` `\\` `\n` `\uXXXX`)是 TOML
+ * basic string 转义的子集,所以单引号转义后的命令(只多出 `'` 与 `\`)经 TOML 解析后逐字节还原。
+ */
+function codexStopHookCommandToml(hookEventsDir: string): string {
+  return JSON.stringify(codexStopHookCommand(hookEventsDir));
 }
 
 // 替换 managed 块里的 command 字符串(纯函数;写入经 writeConfigGuarded)。managedStop 由调用方用
@@ -1279,7 +1316,7 @@ function replaceManagedCodexStopHook(
 ): string {
   return (
     text.slice(0, managedStop.quoteStart) +
-    JSON.stringify(codexStopHookCommand(hookEventsDir)) +
+    codexStopHookCommandToml(hookEventsDir) +
     text.slice(managedStop.quoteEnd)
   );
 }
