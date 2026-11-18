@@ -14,7 +14,7 @@ import {
   SCOPE_REQUEST_PLUGIN_UNREGISTERED,
   ScopeRequestCorrelator,
 } from './scope-request-correlator';
-import { ScopeRequestThrottle } from './scope-request-throttle';
+import { ScopeRequestThrottle, scopeThrottleKeys } from './scope-request-throttle';
 import {
   ScopeError,
   ScopeRequestTimeoutError,
@@ -907,6 +907,10 @@ export function registerPluginFsHandlers(
         return 'grant';
       }
 
+      // 冷却键带文件身份(路径别名换个写法不能避开冷却)。要 stat,放在 canAccept 之前:canAccept → tryPrompt →
+      // createRequest 之间保持同步,不让并发请求在中间插进来。
+      const throttleKey = await scopeThrottleKeys(canonicalScopes.map((s) => s.path));
+
       // 边界(E227):未决 scope 请求数到顶(全局/单窗口)→ 终态 deny 收口,不入 pending、不向 renderer
       // 发弹窗。插件 spam request-scope 否则让主进程 pending Map / renderer 弹窗队列 / TTL 定时器线性增长。
       if (!correlator.canAccept(event.sender.id)) {
@@ -916,7 +920,6 @@ export function registerPluginFsHandlers(
       // scope-request-throttle)。该插件已有未决弹窗、请求里有刚被用户拒绝的路径(或其祖先)、或该插件连续被拒 /
       // 弹窗过于频繁 → 直接 deny,不发弹窗:插件不能同步连发、或在拒绝回调里循环 requestScope(换个组合 / mode /
       // 父目录再问)诱导误点。
-      const throttleKey = canonicalScopes.map((s) => s.path);
       if (!scopeThrottle.tryPrompt(pluginId, throttleKey)) {
         return 'deny';
       }

@@ -1,5 +1,6 @@
 // 安全:scope 授权请求被拒后有冷却 + 每插件弹窗速率上限,插件不能循环弹窗诱导误点。行为见同目录 README。
-import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { mkdir, mkdtemp, realpath, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -16,6 +17,7 @@ import {
   SCOPE_PLUGIN_DENY_STREAK,
   SCOPE_PROMPT_RATE_MAX,
   SCOPE_PROMPT_RATE_WINDOW_MS,
+  scopeThrottleKeys,
 } from '../../../electron/main/services/scope-request-throttle';
 import { StubIpcMain, makeFakeEvent } from '../sdk-contract/integration/make-stub-ipc';
 
@@ -536,4 +538,71 @@ describe('插件级退避:退避期不算「无拒绝」', () => {
     deny();
     expect(throttle.tryPrompt('p', ['/fresh'], now)).toBe(true);
   });
+});
+
+// 冷却键不能只是路径字符串:同一目录可以有 realpath 不归一的别的路径(macOS 数据卷 `/System/Volumes/Data/<绝对路径>`;
+// Linux bind mount;Windows subst)。被拒后换别名再问,字符串键对不上 → 单路径冷却被绕过。键里带 (dev, ino)。
+describe('拒绝冷却按文件身份计(路径别名)', () => {
+  const realStat = (p: string) => stat(p, { bigint: true });
+  /** 把 `<root>/alias…` 当作 `<root>/a…` 的别名(同一 inode,路径字符串不同)。 */
+  const aliasStat = (p: string) => realStat(p.replace(join(root, 'alias'), join(root, 'a')));
+
+  it('被拒路径的别名(同一 inode)→ 命中冷却', async () => {
+    const throttle = new ScopeRequestThrottle();
+    throttle.noteDecision('p', await scopeThrottleKeys([join(root, 'a')], realStat), 'deny', 0);
+    expect(throttle.tryPrompt('p', await scopeThrottleKeys([join(root, 'alias')], aliasStat), 1)).toBe(false);
+  });
+
+  it('被拒路径的祖先的别名 → 命中冷却;被拒路径的子目录(缩小范围)、不相干目录 → 不命中', async () => {
+    const throttle = new ScopeRequestThrottle();
+    throttle.noteDecision('p', await scopeThrottleKeys([join(root, 'a', 'sub')], realStat), 'deny', 0);
+    expect(throttle.tryPrompt('p', await scopeThrottleKeys([join(root, 'alias')], aliasStat), 1)).toBe(false);
+
+    const other = new ScopeRequestThrottle();
+    other.noteDecision('p', await scopeThrottleKeys([join(root, 'a')], realStat), 'deny', 0);
+    expect(other.tryPrompt('p', await scopeThrottleKeys([join(root, 'alias', 'sub')], aliasStat), 1)).toBe(true);
+    other.endPrompt('p');
+    expect(other.tryPrompt('p', await scopeThrottleKeys([join(root, 'b')], realStat), 1)).toBe(true);
+  });
+
+  it('尚不存在的路径:经别名上级 + 相同的余下各段 → 命中冷却;余下段不同 → 不命中', async () => {
+    const throttle = new ScopeRequestThrottle();
+    throttle.noteDecision('p', await scopeThrottleKeys([join(root, 'a', 'new', 'dir')], realStat), 'deny', 0);
+    expect(
+      throttle.tryPrompt('p', await scopeThrottleKeys([join(root, 'alias', 'new', 'dir')], aliasStat), 1),
+    ).toBe(false);
+    expect(throttle.tryPrompt('p', await scopeThrottleKeys([join(root, 'alias', 'new')], aliasStat), 1)).toBe(false);
+    expect(
+      throttle.tryPrompt('p', await scopeThrottleKeys([join(root, 'alias', 'other', 'dir')], aliasStat), 1),
+    ).toBe(true);
+  });
+
+  it.runIf(process.platform !== 'linux')('尚不存在的路径只差大小写(大小写不敏感文件系统)→ 命中冷却', async () => {
+    expect(await request('p', [join(root, 'a', 'NewDir')], 'deny')).toEqual({ result: 'deny', prompted: true });
+    expect(await request('p', [join(root, 'a', 'newdir')], 'grant')).toEqual({ result: 'deny', prompted: false });
+  });
+
+  it('stat 不了(取不到身份)→ 仍按路径字符串命中', async () => {
+    const failing = async (): Promise<never> => {
+      throw new Error('EACCES');
+    };
+    const throttle = new ScopeRequestThrottle();
+    throttle.noteDecision('p', await scopeThrottleKeys([join(root, 'a', 'sub')], failing), 'deny', 0);
+    expect(throttle.tryPrompt('p', await scopeThrottleKeys([join(root, 'a')], failing), 1)).toBe(false);
+    expect(throttle.tryPrompt('p', await scopeThrottleKeys([join(root, 'b')], failing), 1)).toBe(true);
+  });
+
+  // 真实别名只在 macOS 上有(其余平台由上面的 stat 桩证明)。
+  const dataVolume = '/System/Volumes/Data';
+  it.runIf(process.platform === 'darwin' && existsSync(dataVolume))(
+    'macOS:被拒后换数据卷别名(同一路径 / 其祖先)再请求 → 直接 deny,不再弹窗',
+    async () => {
+      const dir = join(root, 'a');
+      expect(await request('p', [dir], 'deny')).toEqual({ result: 'deny', prompted: true });
+      expect(await request('p', [dataVolume + dir], 'grant')).toEqual({ result: 'deny', prompted: false });
+      expect(await request('p', [dataVolume + root], 'grant')).toEqual({ result: 'deny', prompted: false });
+      expect(prompts()).toBe(1);
+      expect(scopes.getScopes('p')).toEqual([]);
+    },
+  );
 });
