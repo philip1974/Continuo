@@ -790,6 +790,8 @@ export function registerPluginFsHandlers(
       // 已被现有授权(本会话 grant 或已水合的持久化授权)覆盖 → 静默授予,免重复弹窗。
       // 这是「持久化方案」省去重启后重复授权的关键路径。
       if (pathScopeRegistry.covers(pluginId, canonicalScopes)) {
+        // 登记插件请求时的写法(如经符号链接的路径),之后用同一写法访问才能通过 check 的词法预判。
+        pathScopeRegistry.noteRequestedRoots(pluginId, scopes, canonicalScopes);
         return 'grant';
       }
 
@@ -849,6 +851,7 @@ export function registerPluginFsHandlers(
       // _unregister-plugin 的 revokeAll 守卫,审计 #2 同源)。见第十三轮 P2-AJ。
       if (decision === 'grant' && identityRegistry.isActive(token)) {
         pathScopeRegistry.grant(pluginId, canonicalScopes);
+        pathScopeRegistry.noteRequestedRoots(pluginId, scopes, canonicalScopes);
         // 持久化合并后的全集,供下次启动水合;best-effort,失败不影响本次授权。
         if (deps.persistScopes) {
           try {

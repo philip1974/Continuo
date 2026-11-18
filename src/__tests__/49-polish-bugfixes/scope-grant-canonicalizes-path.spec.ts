@@ -143,6 +143,8 @@ describe('49 第八 session · symlink scope 归一化后 check 匹配(端到端
       const { token } = identity.register('com.test', 10);
       const canonical = await canonicalizeScopePath(link);
       registry.grant('com.test', [{ path: canonical, mode: 'r' }]);
+      // 与 request-scope handler 同序:登记插件请求时的写法(check 的词法预判用)。
+      registry.noteRequestedRoots('com.test', [{ path: link, mode: 'r' }], [{ path: canonical, mode: 'r' }]);
       // 目标经 link 访问,probe realpath 到 real/f.txt → 命中 canonical(=realpath real)
       await expect(
         registry.check(token, 10, 'read', join(link, 'f.txt'), 'r'),

@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import { sep } from 'node:path';
 import { IdentityRegistry } from './identity-registry.service';
 import {
+  lexicalAbsolutePath,
   resolveForRead,
   resolveForRenameDst,
   resolveForWrite,
@@ -52,6 +53,29 @@ function isWithinScope(scopePath: string, probe: string): boolean {
   return probe.startsWith(prefix);
 }
 
+/**
+ * 词法预判用的包含判定。macOS / Windows 默认文件系统大小写不敏感(realpath 会还原真实大小写,此前
+ * `/Users/x/Proj` 访问 `/Users/x/proj` 的 scope 可用),这两个平台忽略大小写;只决定「要不要碰文件系统」,
+ * 最终授权仍由 realpath 后的精确匹配决定。
+ */
+function isLexicallyWithin(root: string, probe: string): boolean {
+  return process.platform === 'linux'
+    ? isWithinScope(root, probe)
+    : isWithinScope(root.toLowerCase(), probe.toLowerCase());
+}
+
+function modeAllows(scope: PathScope, mode: ScopeMode): boolean {
+  return mode !== 'rw' || scope.mode === 'rw';
+}
+
+/** scope 外路径的唯一拒绝形态:词法预判与 realpath 后的匹配共用,不带解析结果(不泄露链接指向)。 */
+function notInScope(target: string, mode: ScopeMode, scopeCount: number): ScopeError {
+  return new ScopeError('target not in any granted scope', {
+    target,
+    reason: `mode=${mode}, scopes=${scopeCount}`,
+  });
+}
+
 // 边界(E79 注册表数量上限族 / E81):单次 request-scope 已限 64 条(E31),但插件可多次请求不同
 // 路径,经 mergeScopes 把 pluginScopes 与 _plugin-path-scopes.json 持续撑大;此后每次 check() 线性
 // 扫描 scopes、covers() 是 requested×scopes、启动 hydrate/持久化都随授权数线性增长,畸形插件可放大
@@ -77,6 +101,12 @@ export class PathScopeRegistry extends EventEmitter {
    * 以便插件重注册(re-enable / HMR)后重新水合。
    */
   private readonly hydrated = new Set<string>();
+  /**
+   * 插件 requestScope 时用的原始写法(词法绝对形)→ 它当时归一化到的 canonical 路径。只用于 check 的词法预判:
+   * scope 存的是 canonical 路径,插件却常用请求时的写法访问(macOS `/tmp/x`、经符号链接的 workspace 路径)。
+   * 不持久化 —— 每个会话插件都要重新 requestScope(水合也在那里),届时重新登记。
+   */
+  private readonly requestedRoots = new Map<string, Map<string, string>>();
 
   constructor(private readonly identityRegistry: IdentityRegistry) {
     super();
@@ -129,6 +159,20 @@ export class PathScopeRegistry extends EventEmitter {
     const { pluginId } = this.identityRegistry.resolve(token, senderId);
     const scopes = this.pluginScopes.get(pluginId) ?? [];
 
+    // 安全(存在性探测):此前先 realpath 再匹配 scope,scope 外路径的错误因目标存在与否 / 类型而不同
+    //(target does not exist / not in any granted scope / realpath failed: EACCES / parent missing /
+    // symlink leaf rejected)—— 只有 fs 权限、没拿到任何 scope 的插件即可探测全盘。先做词法预判:词法上不在
+    // 任何已授 scope 内 → 不碰文件系统,统一拒绝;在 scope 内才走 realpath(此时的细节属于已授权范围)。
+    const lexical = lexicalAbsolutePath(target);
+    if (!this.isLexicallyInScope(pluginId, scopes, lexical, mode)) {
+      // 细节只进主进程日志(插件拿到的错误不区分原因)。
+      console.warn(
+        `[path-scope] ${pluginId} ${opType} denied: lexically outside granted scopes (mode=${mode}): ${lexical}` +
+          ' — scopes match their canonical path or the spelling passed to requestScope',
+      );
+      throw notInScope(target, mode, scopes.length);
+    }
+
     let resolved: CheckResult;
     if (opType === 'read') {
       const { canonical } = await resolveForRead(target);
@@ -155,20 +199,68 @@ export class PathScopeRegistry extends EventEmitter {
     const probe = 'fullPath' in resolved ? resolved.fullPath : resolved.canonical;
     let match: PathScope | null = null;
     for (const s of scopes) {
-      if (mode === 'rw' && s.mode !== 'rw') continue;
+      if (!modeAllows(s, mode)) continue;
       if (isWithinScope(s.path, probe)) {
         match = s;
         break;
       }
     }
-    if (!match) {
-      throw new ScopeError('target not in any granted scope', {
-        target: probe,
-        reason: `mode=${mode}, scopes=${scopes.length}`,
-      });
-    }
+    if (!match) throw notInScope(target, mode, scopes.length);
 
     return resolved;
+  }
+
+  /** 词法绝对路径是否落在某条(mode 足够的)已授 scope 的 canonical 根、或其已登记的请求写法之下。 */
+  private isLexicallyInScope(
+    pluginId: string,
+    scopes: readonly PathScope[],
+    lexical: string,
+    mode: ScopeMode,
+  ): boolean {
+    const granted = (probe: string, within: (root: string, p: string) => boolean): boolean =>
+      scopes.some((s) => modeAllows(s, mode) && within(s.path, probe));
+    if (granted(lexical, isLexicallyWithin)) return true;
+    for (const [root, canonical] of this.requestedRoots.get(pluginId) ?? []) {
+      // 别名只在它对应的 canonical 路径仍被 mode 足够的 scope 覆盖时有效。
+      if (isLexicallyWithin(root, lexical) && granted(canonical, isWithinScope)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * 登记插件 requestScope 用的原始写法(见 requestedRoots)。仅在该请求已被授予(用户允许 / 被已有授权覆盖)
+   * 后调用;`requested` 与 `canonical` 按下标对应。已被词法覆盖的写法不重复登记,数量有上限(超限不登记 →
+   * 该写法按 scope 外拒绝,fail-closed)。
+   */
+  noteRequestedRoots(
+    pluginId: string,
+    requested: readonly PathScope[],
+    canonical: readonly PathScope[],
+  ): void {
+    const scopes = this.pluginScopes.get(pluginId) ?? [];
+    for (let i = 0; i < requested.length; i += 1) {
+      const canonicalPath = canonical[i]?.path;
+      if (canonicalPath === undefined) continue;
+      let lexical: string;
+      try {
+        lexical = lexicalAbsolutePath(requested[i]!.path);
+      } catch {
+        continue; // `~user` 等无法展开的写法:本就匹配不上任何目标
+      }
+      if (this.isLexicallyInScope(pluginId, scopes, lexical, 'r')) {
+        // 已覆盖;若是同一写法且指向变了(链接被重指后重新请求),更新到新的 canonical。
+        const roots = this.requestedRoots.get(pluginId);
+        if (roots?.has(lexical)) roots.set(lexical, canonicalPath);
+        continue;
+      }
+      let roots = this.requestedRoots.get(pluginId);
+      if (!roots) {
+        roots = new Map();
+        this.requestedRoots.set(pluginId, roots);
+      }
+      if (roots.size >= MAX_SCOPES_PER_PLUGIN) continue;
+      roots.set(lexical, canonicalPath);
+    }
   }
 
   /** Union by path; if present, takes wider mode (rw > r). 写入内存并返回合并结果。 */
@@ -268,6 +360,7 @@ export class PathScopeRegistry extends EventEmitter {
   /** Revoke ALL scopes for a plugin (on plugin unload). */
   revokeAll(pluginId: string): void {
     this.hydrated.delete(pluginId);
+    this.requestedRoots.delete(pluginId);
     const removed = this.pluginScopes.get(pluginId);
     if (this.pluginScopes.delete(pluginId)) {
       this.totalScopes -= removed?.length ?? 0; // 边界(E81):同步全局计数,防泄漏

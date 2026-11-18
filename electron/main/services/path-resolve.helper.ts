@@ -1,6 +1,6 @@
 import { promises as fs, type Stats } from 'node:fs';
 import { homedir, platform } from 'node:os';
-import { basename, dirname, isAbsolute, sep } from 'node:path';
+import { basename, dirname, isAbsolute, resolve, sep } from 'node:path';
 import { ScopeError } from '../../shared/plugin-fs-contract';
 import { leafNameRejectReason } from '../../shared/leaf-name';
 
@@ -26,6 +26,14 @@ function expandHome(p: string): string {
   if (p === '~') return home;
   if (p.startsWith('~/') || p.startsWith('~\\')) return home + p.slice(1);
   throw new ScopeError('cannot resolve ~user form', { target: p });
+}
+
+/**
+ * 目标的「词法绝对形」:展开 `~` + path.resolve(折叠 `.` / `..`、去尾分隔符),**不碰文件系统**。
+ * PathScopeRegistry.check 用它先判定目标是否可能在已授 scope 内,再决定要不要 realpath(见该处注释)。
+ */
+export function lexicalAbsolutePath(target: string): string {
+  return resolve(expandHome(target));
 }
 
 /**

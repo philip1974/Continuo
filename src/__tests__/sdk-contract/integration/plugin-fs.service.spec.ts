@@ -108,9 +108,10 @@ async function grantViaPrompt(
 }
 
 beforeEach(async () => {
-  tmpRoot = await mkdtemp(join(tmpdir(), `sdk-contract-fs-${randomUUID()}-`));
+  // canonical:直接 grant 的 scope 只认 canonical 根(经 requestScope 登记的写法见 plugin-fs-scope-existence-oracle)。
+  tmpRoot = await realpath(await mkdtemp(join(tmpdir(), `sdk-contract-fs-${randomUUID()}-`)));
   tmpCanonical = await realpath(tmpRoot);
-  siblingRoot = await mkdtemp(join(tmpdir(), `sdk-contract-fs-sibling-${randomUUID()}-`));
+  siblingRoot = await realpath(await mkdtemp(join(tmpdir(), `sdk-contract-fs-sibling-${randomUUID()}-`)));
   harness = await makeHarness();
 });
 
