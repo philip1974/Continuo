@@ -23,6 +23,7 @@ vi.mock('electron', () => ({
 import {
   createStdioSocketServer,
   MAX_STDIO_CLIENTS_GLOBAL_FOR_TEST,
+  STDIO_FIRST_MESSAGE_TIMEOUT_MS_FOR_TEST,
   shouldPrepareStdioSocketFilesystem,
   type StdioSocketServer,
 } from '../../../electron/main/services/mcp-stdio-server.service';
@@ -594,5 +595,59 @@ describe('CT-B3 stdio socket safety', { timeout: 30_000 }, () => {
     for (const s of sockets) s.destroy();
     revived.destroy();
     overflow.destroy();
+  });
+
+  // 安全(W2,Windows 多用户):命名管道默认 DACL 给 Everyone 读、管道名可枚举 —— 其它本机用户只读打开
+  // MAX_STDIO_CLIENTS_GLOBAL 次挂着不发数据,即可占满全局连接名额,本用户所有 agent 的 MCP 连接被拒。
+  // 首条完整消息超时:连上后限定时间内没收到任何完整的非空行 → 断开。合法客户端连上即发 hello / initialize。
+  it('W2 连上后迟迟不发完整消息(含只发残行)→ 首条消息超时断开,释放连接名额', async () => {
+    const { dir, socketPath } = await makeSocketPath();
+    dirs.push(dir);
+    await start(socketPath);
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const idle = createConnection(socketPath);
+      await waitForConnect(idle);
+      const partial = createConnection(socketPath);
+      await waitForConnect(partial);
+      partial.write('{"jsonrpc":"2.0"'); // 无换行:不是完整消息
+      // 读走数据,才能看到服务端 FIN 并自动关闭(否则暂停模式下 destroyed 永远 false)。
+      idle.resume();
+      partial.resume();
+      await new Promise((r) => setImmediate(r));
+      await new Promise((r) => setImmediate(r));
+      vi.advanceTimersByTime(STDIO_FIRST_MESSAGE_TIMEOUT_MS_FOR_TEST - 1);
+      expect(idle.destroyed).toBe(false);
+      vi.advanceTimersByTime(1);
+      vi.useRealTimers();
+      await vi.waitFor(() => expect(idle.destroyed).toBe(true), REJECT_CLOSE_WAIT);
+      await vi.waitFor(() => expect(partial.destroyed).toBe(true), REJECT_CLOSE_WAIT);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('W2 连上后及时发出完整消息(hello / initialize)→ 之后长时间空闲也不被断开', async () => {
+    const { dir, socketPath } = await makeSocketPath();
+    dirs.push(dir);
+    await start(socketPath, { tools: new Map([['owner', ownerTool()]]) });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const socket = createConnection(socketPath);
+      await waitForConnect(socket);
+      // 不用 waitForLine(其 2s 超时也会被 fake):直接等首个响应数据到达,确认服务端已处理首条消息。
+      const response = new Promise<void>((resolve) => socket.once('data', () => resolve()));
+      socket.write(
+        JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }) + '\n',
+      );
+      await response;
+      vi.advanceTimersByTime(STDIO_FIRST_MESSAGE_TIMEOUT_MS_FOR_TEST * 10);
+      vi.useRealTimers();
+      await new Promise((r) => setTimeout(r, 40));
+      expect(socket.destroyed).toBe(false);
+      socket.destroy();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

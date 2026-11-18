@@ -212,6 +212,11 @@ export const MAX_STDIO_UNREAD_OUTPUT_BYTES = 16_000_000;
 // 广播拖慢。connection 回调入口加全局上限(连接建立时 subject/window 尚未解析,只能全局闸),超限立即写
 // 错误 + sock.destroy(),确保不进入 clients 表。
 const MAX_STDIO_CLIENTS_GLOBAL = 64; // 全局 stdio 连接上限(远超任何正常 MCP client 并发)
+// 安全(W2,Windows 多用户):首条完整消息超时。Windows 命名管道默认 DACL 给 Everyone 读、管道名可枚举 ——
+// 其它本机用户只读打开 MAX_STDIO_CLIENTS_GLOBAL 次挂着不发数据,即可占满全局名额,本用户所有 agent 的
+// MCP 连接被拒。连上后此时限内没收到任何完整的非空行 → 断开。合法客户端连上即发 `_continuo/hello`
+// (终端 proxy)或 initialize(外部客户端经 proxy 转发),不受影响;首条消息之后的空闲不计时。
+const STDIO_FIRST_MESSAGE_TIMEOUT_MS = 10_000;
 
 // 安全 S3:每个 stdio 连接一个稳定 subject(callerSubject)。Claude Code 的 proxy
 // 一次 spawn 长连接复用 → 同一连接的 create_session 与 read/send 共享 subject;
@@ -459,6 +464,17 @@ export async function createStdioSocketServer(
       aborter.abort();
       rejectAndDestroy(sock, message);
     };
+    // 安全(W2):首条完整消息超时(见 STDIO_FIRST_MESSAGE_TIMEOUT_MS)。
+    let firstMessageTimer: NodeJS.Timeout | null = setTimeout(() => {
+      firstMessageTimer = null;
+      reject('no message received');
+    }, STDIO_FIRST_MESSAGE_TIMEOUT_MS);
+    firstMessageTimer.unref?.();
+    const clearFirstMessageTimer = (): void => {
+      if (firstMessageTimer === null) return;
+      clearTimeout(firstMessageTimer);
+      firstMessageTimer = null;
+    };
     sock.on('data', (chunk: Buffer) => {
       // 已拒绝(end 半关闭中):后续输入一律丢弃,不再解析 / 排队。
       if (sock.writableEnded) return;
@@ -492,6 +508,7 @@ export async function createStdioSocketServer(
       // overflow 分支),此处不必再计数。
       for (const line of lines) {
         if (isBlankStdioLine(line)) continue; // 空白行:NDJSON 忽略,不入链
+        clearFirstMessageTimer(); // 安全(W2):收到首条完整消息
         const bytes = Buffer.byteLength(line, 'utf8');
         if (
           pendingLines >= MAX_STDIO_PENDING_LINES ||
@@ -522,6 +539,7 @@ export async function createStdioSocketServer(
       }
     });
     sock.on('close', () => {
+      clearFirstMessageTimer();
       clients.delete(sock);
       socketCtx.delete(sock);
       const subject = socketSubject.get(sock);
@@ -618,3 +636,5 @@ export async function createStdioSocketServer(
 
 // 边界(E233)测试用:全局 stdio 连接上限常量。
 export const MAX_STDIO_CLIENTS_GLOBAL_FOR_TEST = MAX_STDIO_CLIENTS_GLOBAL;
+// 安全(W2)测试用:首条完整消息超时。
+export const STDIO_FIRST_MESSAGE_TIMEOUT_MS_FOR_TEST = STDIO_FIRST_MESSAGE_TIMEOUT_MS;
