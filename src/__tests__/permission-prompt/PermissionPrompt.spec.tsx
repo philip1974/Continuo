@@ -50,6 +50,101 @@ describe('PermissionPrompt — 排队切换时防连点误授', () => {
   });
 });
 
+// fs-scope 弹窗同样排队切换(A→B 按钮位置不变);弹窗类型切换(fs-scope↔manifest)也一样。
+// 场景:插件同时发两个 requestScope(A 只读普通目录,B 为 `~` 读写),对 A 的「授权」双击 → 第二下不能永久授予 B。
+describe('PermissionPrompt — fs-scope 排队 / 类型切换时防连点误授', () => {
+  const scopeReq = (requestId: string, path: string, mode: 'r' | 'rw') =>
+    usePermissionPromptStore.getState().requestFsScope({
+      requestId,
+      pluginId: 'plugin.x',
+      scopes: [{ path, mode, displayPath: path }],
+    });
+  const lastButton = (): HTMLButtonElement =>
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.wm-modal-content button')).at(-1)!;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    usePermissionPromptStore.setState({ fsScopePending: {}, fsScopeQueue: [], currentFsScope: null });
+  });
+  afterEach(() => {
+    usePermissionPromptStore.setState({ fsScopePending: {}, fsScopeQueue: [], currentFsScope: null });
+    vi.useRealTimers();
+  });
+
+  it('fs-scope A 授权后立刻出现的 B:连点 / Esc / 拒绝都被忽略,guard 过后才可授权', async () => {
+    let bDecision: string | null = null;
+    const a = scopeReq('req-a', '/tmp/docs', 'r');
+    void scopeReq('req-b', '/Users/me', 'rw').then((d) => (bDecision = d));
+    render(<PermissionPrompt />);
+
+    fireEvent.click(lastButton()); // 授权 A
+    expect(await a).toBe('grant');
+    expect(usePermissionPromptStore.getState().currentFsScope?.requestId).toBe('req-b');
+
+    fireEvent.click(lastButton()); // 双击的第二下,落在 B 的「授权」上
+    await act(async () => {});
+    expect(bDecision).toBeNull();
+    // Esc(键重复)/ 拒绝按钮同样受守卫约束(避免 B 被误拒,也与 manifest 弹窗一致)
+    fireEvent.keyDown(document, { key: 'Escape' });
+    const denyB = Array.from(document.querySelectorAll<HTMLButtonElement>('.wm-modal-content button')).at(-2)!;
+    fireEvent.click(denyB);
+    await act(async () => {});
+    expect(usePermissionPromptStore.getState().currentFsScope?.requestId).toBe('req-b');
+    expect(bDecision).toBeNull();
+
+    act(() => void vi.advanceTimersByTime(600));
+    fireEvent.click(lastButton()); // 用户看清后再点
+    await act(async () => {});
+    expect(bDecision).toBe('grant');
+  });
+
+  it('fs-scope → manifest 切换:插队出现的 manifest 弹窗(全新挂载默认全选)短时间内忽略授予', async () => {
+    const a = scopeReq('req-a', '/tmp/docs', 'r');
+    render(<PermissionPrompt />);
+    expect(usePermissionPromptStore.getState().currentFsScope?.requestId).toBe('req-a');
+
+    // 用户正要点 A 的「授权」时,manifest 请求到达并优先显示(按钮位置相同)
+    let granted: readonly string[] | null = null;
+    act(() => {
+      void usePermissionPromptStore.getState().request('plugin.m', ['shell']).then((g) => (granted = g));
+    });
+    fireEvent.click(lastButton()); // 本想点 A,落在 manifest「授权选中」
+    await act(async () => {});
+    expect(granted).toBeNull();
+    expect(usePermissionPromptStore.getState().pending?.pluginId).toBe('plugin.m');
+
+    act(() => void vi.advanceTimersByTime(600));
+    fireEvent.click(lastButton());
+    await act(async () => {});
+    expect(granted).toEqual(['shell']);
+    // 回到 fs-scope A(又一次类型切换),A 仍未决
+    expect(usePermissionPromptStore.getState().currentFsScope?.requestId).toBe('req-a');
+    act(() => void vi.advanceTimersByTime(600));
+    fireEvent.click(lastButton());
+    expect(await a).toBe('grant');
+  });
+
+  it('manifest → fs-scope 切换:manifest 授予后立刻出现的 fs-scope 短时间内忽略授权', async () => {
+    let bDecision: string | null = null;
+    void scopeReq('req-b', '/Users/me', 'rw').then((d) => (bDecision = d));
+    const m = usePermissionPromptStore.getState().request('plugin.m', ['fs']);
+    render(<PermissionPrompt />);
+
+    fireEvent.click(lastButton()); // 授予 manifest
+    expect(await m).toEqual(['fs']);
+    expect(usePermissionPromptStore.getState().currentFsScope?.requestId).toBe('req-b');
+
+    fireEvent.click(lastButton());
+    await act(async () => {});
+    expect(bDecision).toBeNull();
+
+    act(() => void vi.advanceTimersByTime(600));
+    fireEvent.click(lastButton());
+    await act(async () => {});
+    expect(bDecision).toBe('grant');
+  });
+});
+
 describe('PermissionPrompt — 勾选不打断焦点', () => {
   // Modal 的焦点 / 键盘 effect 依赖 onClose 的引用;每次渲染换一个新的 onClose,勾选一次就会把焦点先还给
   // 弹窗外、再跳回弹窗内第一个元素。
