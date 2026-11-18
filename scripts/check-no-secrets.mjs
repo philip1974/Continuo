@@ -26,7 +26,13 @@ export const SECRET_RULES = [
   { name: 'aws-access-key-id', re: /AKIA[0-9A-Z]{16}/g },
   { name: 'private-key', re: /-----BEGIN [A-Z ]*PRIVATE KEY-----/g },
   { name: 'npm-token', re: /npm_[A-Za-z0-9]{36}/g },
-  { name: 'openai-style-key', re: /sk-[A-Za-z0-9]{20,}/g },
+  // sk- 密钥:旧形态主体只有字母数字;带前缀的形态(OpenAI sk-proj- / sk-svcacct- / sk-admin-,
+  // Anthropic sk-ant-api03- 等)主体还含 - 与 _。放宽字符集只限于已知前缀之后,且要求 sk- 前
+  // 不是字母数字:否则 task-list-item-… 这类连字符类名会大量误报。
+  {
+    name: 'openai-style-key',
+    re: /sk-[A-Za-z0-9]{20,}|(?<![A-Za-z0-9])sk-(?:(?:proj|svcacct|admin)-|ant-[a-z0-9]+-)[A-Za-z0-9_-]{20,}/g,
+  },
   { name: 'slack-token', re: /xox[baprs]-[A-Za-z0-9-]{10,}/g },
 ];
 

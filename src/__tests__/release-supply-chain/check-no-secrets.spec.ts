@@ -16,6 +16,11 @@ const FAKE = {
   key: '-----BEGIN ' + 'RSA PRIVATE KEY-----',
   npm: 'np' + 'm_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8',
   openai: 's' + 'k-' + 'A1b2C3d4E5f6G7h8I9j0K1l2',
+  // 带前缀的新形态:前缀后的主体含 - 与 _。
+  openaiProject: 's' + 'k-' + 'proj-' + 'A1b2_C3d4-E5f6G7h8I9j0K1l2',
+  openaiServiceAccount: 's' + 'k-' + 'svcacct-' + 'A1b2_C3d4-E5f6G7h8I9j0K1l2',
+  openaiAdmin: 's' + 'k-' + 'admin-' + 'A1b2_C3d4-E5f6G7h8I9j0K1l2',
+  anthropic: 's' + 'k-' + 'ant-api03-' + 'A1b2_C3d4-E5f6G7h8I9j0K1l2',
   slack: 'xo' + 'xb-' + '1234567890-abcdefGHIJ',
 };
 
@@ -46,6 +51,14 @@ describe('check-no-secrets:构建产物机密扫描', () => {
     expect(r.code).toBe(1);
     expect(r.out).toContain(`${file}:${'var x = 1;\nconst t = "'.length}`);
     expect(r.out).not.toContain(value);
+  });
+
+  it('连字符分隔的普通标识符(CSS 类名 / 事件名里的 …sk-…)不误报', () => {
+    writeFileSync(
+      join(dir, 'index.css'),
+      '.task-list-item-checkbox-wrapper{} .mask-image-linear-gradient-from{} "risk-proj-assessment-summary-view"',
+    );
+    expect(run(dir).code).toBe(0);
   });
 
   it('二进制 app.asar(未压缩归档)内的 token 也能扫到;--packaged 只扫 app.asar 不扫框架二进制', () => {
