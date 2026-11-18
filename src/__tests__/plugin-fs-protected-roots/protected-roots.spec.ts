@@ -2,8 +2,8 @@
 // path-scope(如 `~`),其下任何路径都不可读写。行为见同目录 README。
 // 经真实 plugin-fs IPC handler + 真实 PathScopeRegistry + 真实临时目录验证。
 import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { existsSync, mkdtempSync, promises as fsp, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdir, mkdtemp, readFile, readlink, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -27,6 +27,12 @@ let appData: string;
 let userData: string; // 本实例(dev 形态)
 let otherUserData: string; // 另一发行形态(packaged)
 let notYet: string; // 尚不存在的受保护根
+let cfg: string;
+let secrets: string; // 名字含 `s` 的受保护根(长 s 变体 `ſecrets` 在 APFS 上是同一个条目)
+let nextSecrets: string; // 尚不存在、名字含 `s` 的受保护根
+let viaLinkRoot: string; // 经符号链接 `SLib` 给出的受保护根:链接这个名字是其词法形的祖先
+let allRoots: string[];
+const extraCorrelators: ScopeRequestCorrelator[] = [];
 let pluginsDir: string;
 let permFile: string;
 let docs: string;
@@ -80,11 +86,20 @@ beforeEach(async () => {
   await writeFile(join(userData, 'explorer.json'), '{}');
   await writeFile(join(otherUserData, 'plugins', '_permissions.json'), '{}');
   await writeFile(join(docs, 'a.txt'), 'hello');
+  cfg = join(home, 'cfg');
+  secrets = join(cfg, 'Secrets');
+  nextSecrets = join(cfg, 'NextSecrets');
+  await mkdir(secrets, { recursive: true });
+  await writeFile(join(secrets, 'key'), 'k');
+  await mkdir(join(home, 'reallib', 'App'), { recursive: true });
+  await symlink(join(home, 'reallib'), join(home, 'SLib'));
+  viaLinkRoot = join(home, 'SLib', 'App');
+  allRoots = [userData, otherUserData, notYet, secrets, nextSecrets, viaLinkRoot];
 
   event = makeFakeEvent({ id: 1, isDestroyed: () => false });
   ipc = new StubIpcMain();
   const identity = new IdentityRegistry();
-  scopes = new PathScopeRegistry(identity, { protectedRoots: [userData, otherUserData, notYet] });
+  scopes = new PathScopeRegistry(identity, { protectedRoots: allRoots });
   correlator = new ScopeRequestCorrelator({ ttlMs: 60_000, gcIntervalMs: 60_000 });
   registerPluginFsHandlers(ipc as never, {
     identityRegistry: identity,
@@ -98,11 +113,48 @@ beforeEach(async () => {
   vi.spyOn(console, 'warn').mockImplementation(() => {});
 });
 
+// 另起一套 registry + handler(不同的 registry 选项 / 平台),同一批受保护根与 `home` rw scope。
+async function extraStack(
+  opts: { onDiskNameScanLimit?: number } = {},
+): Promise<(channel: string, ...args: unknown[]) => Promise<unknown>> {
+  const stubIpc = new StubIpcMain();
+  const identity = new IdentityRegistry();
+  const registry = new PathScopeRegistry(identity, { protectedRoots: allRoots, ...opts });
+  const c = new ScopeRequestCorrelator({ ttlMs: 60_000, gcIntervalMs: 60_000 });
+  extraCorrelators.push(c);
+  registerPluginFsHandlers(stubIpc as never, {
+    identityRegistry: identity,
+    pathScopeRegistry: registry,
+    correlator: c,
+    webContentsForSender: () => null,
+  });
+  const ev = makeFakeEvent({ id: 7, isDestroyed: () => false });
+  const t = ((await stubIpc.invokeWithEvent(ev, C.REGISTER_PLUGIN, PLUGIN)) as { token: string }).token;
+  registry.grant(PLUGIN, [{ path: home, mode: 'rw' }]);
+  return (channel, ...args) => stubIpc.invokeWithEvent(ev, channel, t, ...args);
+}
+
 afterEach(async () => {
   correlator.dispose();
+  for (const c of extraCorrelators.splice(0)) c.dispose();
   vi.restoreAllMocks();
   await rm(root, { recursive: true, force: true });
 });
+
+// 临时目录所在卷是否把长 s(U+017F)与 `s` 当同一个名字(APFS 默认如此;JS 的 toLowerCase 不这么折叠)。
+const volumeFoldsLongS = ((): boolean => {
+  const dir = mkdtempSync(join(tmpdir(), 'fold-probe-'));
+  try {
+    writeFileSync(join(dir, 'Sx'), '');
+    return existsSync(join(dir, 'ſx'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+})();
+const longS = (p: string, from: string, to: string): string => {
+  expect(p.includes(from)).toBe(true);
+  return p.replace(from, to);
+};
 
 describe('端到端提权:持 `~` rw scope 的插件改写权限文件', () => {
   it('writeFile(_permissions.json) 给自己加 shell → 被拒,readPermissions 读不到被篡改的授权', async () => {
@@ -361,5 +413,157 @@ describe('受保护根的注入', () => {
     expect(viaLink.isProtectedPath(permFile)).toBe(true);
     expect(viaLink.isProtectedPath(join(root, 'ud-link', 'plugins'))).toBe(true);
     expect(viaLink.isProtectedPath(docs)).toBe(false);
+  });
+});
+
+describe.skipIf(!volumeFoldsLongS)(
+  '文件系统折叠 ≠ JS toLowerCase(长 s `ſ` ≡ `s`):叶子按磁盘上的真实名字判定',
+  () => {
+    let library: string;
+    let appDataAlias: string; // `…/Library/Application ſupport`
+    beforeEach(() => {
+      library = join(home, 'Library');
+      appDataAlias = longS(appData, 'Application Support', 'Application ſupport');
+      expect(existsSync(appDataAlias)).toBe(true); // 前提:这个写法确实命中同一个目录
+    });
+
+    it('审计复现的五步链:移走祖先 → 偷读 → 改权限文件 → 移回 / 删光,每一步都被拒,磁盘不变', async () => {
+      const stash = join(library, 'Stash');
+      await expectDenied(call(C.RENAME, appDataAlias, stash));
+      expect(readdirSync(library)).toEqual(['Application Support']);
+      // 没被移走,后续两步自然落空(路径不存在)
+      const moved = join(stash, 'Continuo Dev', 'plugins');
+      expect(await outcome(call(C.READ_FILE, join(moved, 'victim', 'data.json')))).toContain('ScopeError');
+      expect(await outcome(call(C.WRITE_FILE, join(moved, '_permissions.json'), '{}'))).toContain('ScopeError');
+      await mkdir(stash); // 假设已被移走:移回(目标用长 s 写法)同样被拒
+      await expectDenied(call(C.RENAME, stash, appDataAlias));
+      await expectDenied(call(C.RM, appDataAlias, { recursive: true, force: true }));
+      expect(readdirSync(library).sort()).toEqual(['Application Support', 'Stash']);
+      expect(await readFile(permFile, 'utf-8')).toBe(permBefore);
+      expect(await readFile(join(pluginsDir, 'victim', 'data.json'), 'utf-8')).toBe('{"token":"gho_secret"}');
+    });
+
+    it('祖先的长 s 写法:rename 源 / 目标、rm、cp 源 / 目标、atomicReplace、writeFile 全拒', async () => {
+      await mkdir(join(library, 'Other'));
+      await expectDenied(call(C.RENAME, appDataAlias, join(library, 'Moved')));
+      await expectDenied(call(C.RENAME, join(library, 'Other'), appDataAlias));
+      await expectDenied(call(C.RM, appDataAlias, { recursive: true }));
+      await expectDenied(call(C.CP, appDataAlias, join(docs, 'copy'), { recursive: true }));
+      await expectDenied(call(C.CP, docs, appDataAlias, { recursive: true }));
+      await expectDenied(call(C.ATOMIC_REPLACE, appDataAlias, join(library, 'Final')));
+      await expectDenied(call(C.ATOMIC_REPLACE, join(library, 'Other'), appDataAlias, { overwrite: true }));
+      await expectDenied(call(C.WRITE_FILE, appDataAlias, 'x'));
+      expect(readdirSync(library).sort()).toEqual(['Application Support', 'Other']);
+      expect(existsSync(join(docs, 'copy'))).toBe(false);
+      expect(await readFile(permFile, 'utf-8')).toBe(permBefore);
+      // 只读地看祖先 / mkdir -p 仍照常(与标准写法一致)
+      expect(await outcome(call(C.LSTAT, appDataAlias))).toBe('ok');
+      expect(await outcome(call(C.MKDIR, appDataAlias, { recursive: true }))).toBe('ok');
+    });
+
+    it('受保护根本身的长 s 写法(`ſecrets`):lstat / rm / rename / writeFile / mkdir / cp / atomicReplace 全拒', async () => {
+      const alias = join(cfg, 'ſecrets');
+      expect(existsSync(alias)).toBe(true);
+      await mkdir(join(cfg, 'staging'));
+      await expectDenied(call(C.LSTAT, alias));
+      await expectDenied(call(C.RM, alias, { recursive: true, force: true }));
+      await expectDenied(call(C.RENAME, alias, join(cfg, 'moved')));
+      await expectDenied(call(C.RENAME, join(cfg, 'staging'), alias));
+      await expectDenied(call(C.WRITE_FILE, alias, 'x'));
+      await expectDenied(call(C.MKDIR, alias, { recursive: true }));
+      await expectDenied(call(C.CP, alias, join(docs, 'copy'), { recursive: true }));
+      await expectDenied(call(C.CP, docs, alias, { recursive: true }));
+      await expectDenied(call(C.ATOMIC_REPLACE, alias, join(cfg, 'final')));
+      await expectDenied(call(C.ATOMIC_REPLACE, join(cfg, 'staging'), alias, { overwrite: true }));
+      expect(readdirSync(cfg).sort()).toEqual(['Secrets', 'staging']);
+      expect(await readFile(join(secrets, 'key'), 'utf-8')).toBe('k');
+    });
+
+    it('符号链接叶子:磁盘条目名是受保护根(词法形)祖先的链接,用长 s 写法移动 / 删除它 → 拒', async () => {
+      const alias = join(home, 'ſLib');
+      expect((await fsp.lstat(alias)).isSymbolicLink()).toBe(true);
+      await expectDenied(call(C.RENAME, alias, join(home, 'MovedLib')));
+      await expectDenied(call(C.RM, alias));
+      expect(await readlink(join(home, 'SLib'))).toBe(join(home, 'reallib'));
+      expect(existsSync(join(home, 'MovedLib'))).toBe(false);
+    });
+
+    it('符号链接叶子:普通链接用折叠变体名引用,操作作用在正确条目上且不被误拒', async () => {
+      await symlink(docs, join(home, 'Shortcut'));
+      const alias = join(home, 'ſhortcut');
+      expect(await outcome(call(C.LSTAT, alias))).toBe('ok');
+      expect(await outcome(call(C.RENAME, alias, join(home, 'Renamed')))).toBe('ok');
+      expect(await readlink(join(home, 'Renamed'))).toBe(docs);
+      expect(await outcome(call(C.RM, join(home, 'Renamed')))).toBe('ok');
+      expect(existsSync(join(home, 'Renamed'))).toBe(false);
+      expect(await readFile(join(docs, 'a.txt'), 'utf-8')).toBe('hello'); // 删的是链接,不是目标
+    });
+
+    it('找不出链接叶子的磁盘条目名(扫描超限)时:祖先链上的目录 fail-closed 拒绝;其它目录不受影响', async () => {
+      const limited = await extraStack({ onDiskNameScanLimit: 1 });
+      await symlink(docs, join(home, 'Shortcut')); // `home` 是受保护根的祖先,条目数 > 1
+      await expectDenied(limited(C.RM, join(home, 'ſhortcut')));
+      expect(await readlink(join(home, 'Shortcut'))).toBe(docs);
+      // 不在任何受保护根祖先链上的目录:不解析磁盘条目名,照常
+      await writeFile(join(docs, 'b.txt'), '');
+      await symlink(join(docs, 'a.txt'), join(docs, 'Slink'));
+      expect(await outcome(limited(C.RM, join(docs, 'ſlink')))).toBe('ok');
+      expect(existsSync(join(docs, 'Slink'))).toBe(false);
+    });
+
+    it('尚不存在的受保护根:不能用折叠等价的变体名抢先创建;同目录里其它新名字照常', async () => {
+      const alias = join(cfg, 'Nextſecrets');
+      await mkdir(join(cfg, 'staging'));
+      await expectDenied(call(C.MKDIR, alias));
+      await expectDenied(call(C.WRITE_FILE, alias, 'x'));
+      await expectDenied(call(C.RENAME, join(cfg, 'staging'), alias));
+      await expectDenied(call(C.CP, docs, alias, { recursive: true }));
+      await expectDenied(call(C.ATOMIC_REPLACE, join(cfg, 'staging'), alias));
+      expect(readdirSync(cfg).sort()).toEqual(['Secrets', 'staging']);
+      expect(await outcome(call(C.MKDIR, join(cfg, 'NextStuff')))).toBe('ok');
+      expect(await outcome(call(C.WRITE_FILE, join(cfg, 'notes.txt'), 'x'))).toBe('ok');
+    });
+  },
+);
+
+describe('磁盘条目名解析的范围与开销', () => {
+  it('祖先链上的目录里:标准写法的普通读写 / 改名 / 删除不被误拒', async () => {
+    expect(await outcome(call(C.WRITE_FILE, join(home, 'new.txt'), 'x'))).toBe('ok');
+    expect(await outcome(call(C.WRITE_FILE, join(home, 'new.txt'), 'y'))).toBe('ok');
+    expect(await outcome(call(C.RENAME, join(home, 'new.txt'), join(home, 'new2.txt')))).toBe('ok');
+    expect(await outcome(call(C.RM, join(home, 'new2.txt')))).toBe('ok');
+    expect(await outcome(call(C.MKDIR, join(home, 'Library', 'Caches')))).toBe('ok');
+    await symlink(docs, join(home, 'Shortcut'));
+    expect(await outcome(call(C.RM, join(home, 'Shortcut')))).toBe('ok');
+    expect(existsSync(docs)).toBe(true);
+  });
+
+  it('不在祖先链上的目录:写类校验不新增 realpath / readdir(只有父目录那一次 realpath)', async () => {
+    const realpathSpy = vi.spyOn(fsp, 'realpath');
+    const opendirSpy = vi.spyOn(fsp, 'opendir');
+    await call(C.LSTAT, join(docs, 'a.txt'));
+    expect(realpathSpy).toHaveBeenCalledTimes(1);
+    expect(opendirSpy).not.toHaveBeenCalled();
+    // 对照:祖先链上的目录多一次 realpath(叶子的真实名字),普通条目仍不 readdir
+    realpathSpy.mockClear();
+    await call(C.LSTAT, docs);
+    if (process.platform !== 'linux') expect(realpathSpy).toHaveBeenCalledTimes(2);
+    expect(opendirSpy).not.toHaveBeenCalled();
+  });
+
+  it('Linux(大小写敏感,不折叠)分支不变:不解析磁盘条目名,名字只差一个 `ſ` 的新目录可创建', async () => {
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    Object.defineProperty(process, 'platform', { ...platform, value: 'linux' });
+    try {
+      const linux = await extraStack();
+      const realpathSpy = vi.spyOn(fsp, 'realpath');
+      await linux(C.LSTAT, docs);
+      expect(realpathSpy).toHaveBeenCalledTimes(1);
+      expect(await outcome(linux(C.MKDIR, join(cfg, 'Nextſecrets')))).toBe('ok');
+      await expectDenied(linux(C.MKDIR, nextSecrets));
+      await expectDenied(linux(C.RM, appData, { recursive: true }));
+    } finally {
+      Object.defineProperty(process, 'platform', platform);
+    }
   });
 });
