@@ -349,7 +349,7 @@ function makeFs(
       return coApi.pluginFsRaw.readGitBlob(
         token ?? missingPluginFsToken(),
         repoDir,
-        sha,
+        sha.toLowerCase(), // 与主进程入口一致:统一小写(git 内部按小写找对象)
       );
     },
     atomicReplaceWithinScope: async (staging, final, opts) => {

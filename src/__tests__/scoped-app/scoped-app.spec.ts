@@ -702,6 +702,18 @@ describe('授后转发 — fs / shell / clipboard / mcp / network 行为', () =>
     expect(coApiMocks.pluginFsRaw.readGitBlob).not.toHaveBeenCalled();
   });
 
+  it('readGitBlob 大写 sha → 转小写后发 IPC(与主进程入口一致)', async () => {
+    const store = new InMemoryPermissionStore();
+    await store.grant('p', ['fs']);
+    const scoped = createScopedApp(makeLmApp(), 'p', store, 'test-token');
+    await scoped.fs.readGitBlob('/repo', 'ABCDEF'.repeat(6) + 'ABCD');
+    expect(coApiMocks.pluginFsRaw.readGitBlob).toHaveBeenCalledWith(
+      'test-token',
+      '/repo',
+      'abcdef'.repeat(6) + 'abcd',
+    );
+  });
+
   it('E314 合法 sha(完整 40 位 hex)→ 透传(回归);缩写 sha → BAD_INPUT', async () => {
     const store = new InMemoryPermissionStore();
     await store.grant('p', ['fs']);

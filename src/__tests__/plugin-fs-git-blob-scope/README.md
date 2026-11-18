@@ -27,6 +27,8 @@
   (SDK 的 cp 按链接复制,可把工作区里已有的外链搬进去);git 默认跟随 replace-ref 就会读到未校验扇出里的
   scope 外对象。禁用后读到的永远是被请求 sha 自己的对象。
 - `sha` 必须是完整的 40(SHA-1)或 64(SHA-256)位 hex;缩写 sha 一律拒绝(防唯一前缀枚举)。
+  大写 hex 在入口统一转成小写(renderer 预检与主进程 handler 都转):git 内部按小写找对象,校验若按大写前缀
+  去看扇出目录,大小写敏感文件系统上 `objects/AB` 不存在(跳过校验),而 git 实际读的 `objects/ab` 可以是外链。
 - git < 2.31(不认 `rev-parse --path-format`)→ 无法确认对象库位置,一律拒绝(fail-closed)。
 
 ## 实现
