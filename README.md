@@ -94,6 +94,8 @@ Once Continuo is running and the MCP server is registered, the agent can call:
 | `terminal.list_sessions` | enumerate active panels |
 | `terminal.kill` | tear a panel down |
 
+> **Debugging on shared Linux hosts:** while a `debug.launch` session is running, the debugged Node process's inspector listens on a random port on `127.0.0.1`. Any other local user on the same machine can connect to that port and run code inside the debuggee as you — a general Node / js-debug limitation, not specific to Continuo. On multi-user hosts, use `debug.launch` with care and disconnect sessions as soon as you are done.
+
 Ask Claude Code: *"open 4 panels and run `pnpm test:unit`, `pnpm test:integration`, `pnpm test:contract`, `pnpm e2e` — one in each"* and watch it happen.
 
 ## Design docs
