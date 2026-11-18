@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, session, shell } from 'elect
 import { installNavigationGuard, isOwnRendererWindowUrl } from './window-open-policy';
 import { setReloadUrlPredicate } from './lib/wc-gone-hook';
 import { installPermissionHandlers } from './lib/permission-policy';
+import { installFileRequestGuard } from './lib/file-request-policy';
 import { LAYOUT_CHANNELS, WINDOW_ID_CHANNEL } from '../shared/persistence-channels';
 import type {
   HandlerDetails,
@@ -1245,6 +1246,8 @@ app.whenReady().then(async () => {
   // 安全:Chromium 权限默认拒绝,仅受信 renderer 入口的剪贴板读写放行(见 permission-policy)。
   // 须在建任何窗口之前注册,否则首窗加载期的权限请求走 Electron 默认放行。
   installPermissionHandlers(session.defaultSession);
+  // 安全:拒绝带主机名的 file: 请求(Windows UNC/SMB 外连泄露 NTLM,见 file-request-policy)。
+  installFileRequestGuard(session.defaultSession);
 
   const userData = app.getPath('userData');
   const explorerFile = path.join(userData, EXPLORER_FILE_NAME);
