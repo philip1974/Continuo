@@ -244,6 +244,9 @@
 - **安全修订(F4)**:只有**未发 hello** 的连接(外部 MCP client)才回落到当前活窗;发过 hello 的连接绑定窗口
   关闭后 fail-closed —— tools/call 回 `NO_WINDOW_CTX`、不执行工具(tools/list 不受影响)。回落会让窗口 A 里
   agent 的调用以窗口 B 的身份执行 / 弹授权(B 已「本次启动期间允许」→ 静默放行)。该 proxy 随 A 的终端退出。
+- **安全修订(hello 失败)**:hello **本身失败**(token 无效 / 已轮换、窗口在 hello 到达前已关)同样记为「已尝试
+  hello」,tools/call 回 `NO_WINDOW_CTX`,不被当作外部客户端回落主窗。连接状态机:未 hello → 外部客户端;
+  hello 成功 → 绑定窗口;hello 失败或绑定窗口已关 → 拒绝。
 
 ### P2-X update/reviews store 并发 refresh 不被过期结果覆盖 — `marketplace-update-store/update-store.spec.ts`
 - `useUpdateStore.refresh` / `useReviewsStore.refresh` 各加单调 `gen` 守卫:捕获本次

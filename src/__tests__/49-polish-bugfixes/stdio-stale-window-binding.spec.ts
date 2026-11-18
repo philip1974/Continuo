@@ -13,7 +13,7 @@
 //
 // 安全(F4 后修订):hello 绑定过窗口的连接,绑定窗口关闭后**拒绝**(NO_WINDOW_CTX),不再回落到当前活窗。
 // 回落会让窗口 A 里 agent 的调用以窗口 B 的身份执行 / 弹授权(B 已 session 授权 → 静默放行)。未发 hello 的
-// 外部客户端保持既有行为(回落到第一个非 popout 主窗)。
+// 外部客户端保持既有行为(回落到第一个非 popout 主窗)。hello 本身失败(token 无效 / 窗口已关)同样拒绝。
 
 import { mkdtemp, rm } from 'node:fs/promises';
 import { createConnection, type Socket } from 'node:net';
@@ -171,6 +171,31 @@ describe.skipIf(process.platform === 'win32')('F4 · hello 绑定窗口关闭后
     const r2 = await c.next();
     expect((r2['error'] as { code: number }).code).toBe(-32002);
     expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it('hello 失败(token 无效 / 已轮换)→ 不回落主窗,tools/call 回 NO_WINDOW_CTX 且不执行工具', async () => {
+    win.alive.add(3);
+    win.alive.add(7);
+    const run = vi.fn((_i: unknown, ctx: McpCallCtx) => ({ owner: ctx.ownerWindowId }));
+    const socketPath = await startServer(run);
+    const c = await connect(socketPath);
+    send(c.socket, { method: '_continuo/hello', params: { windowId: 7, token: 'rotated-token' } });
+    send(c.socket, { id: 1, method: 'tools/call', params: { name: 'whoami', arguments: {} } });
+    const r = await c.next();
+    expect((r['error'] as { code: number }).code).toBe(-32002);
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('hello 到达前绑定窗口已关 → 同样 NO_WINDOW_CTX,不借主窗授权', async () => {
+    win.alive.add(3); // 窗口 7 已关,只剩主窗 3
+    const run = vi.fn((_i: unknown, ctx: McpCallCtx) => ({ owner: ctx.ownerWindowId }));
+    const socketPath = await startServer(run);
+    const c = await connect(socketPath);
+    send(c.socket, { method: '_continuo/hello', params: { windowId: 7, token: 'tok7' } });
+    send(c.socket, { id: 1, method: 'tools/call', params: { name: 'whoami', arguments: {} } });
+    const r = await c.next();
+    expect((r['error'] as { code: number }).code).toBe(-32002);
+    expect(run).not.toHaveBeenCalled();
   });
 
   it('未发 hello 的外部客户端 → 保持回落到第一个非 popout 主窗', async () => {
