@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   installFileRequestGuard,
   isBlockedFileRequest,
+  isFileRequestOutsideRoot,
 } from '../lib/file-request-policy';
 
 describe('isBlockedFileRequest', () => {
@@ -81,25 +82,153 @@ describe('isBlockedFileRequest', () => {
   });
 });
 
+// 安全:打包版页面源是 file://,CSP 的 'self' 匹配**任意** file: URL —— 页面内任何脚本(插件 / 注入内容)
+// 都能 fetch / <script src> / import() / <link> / <iframe> 全盘本地文件(读文件、把工作区里的不受信 .js
+// 当脚本执行)。守卫把 file: 请求限制在应用自身 renderer 产物目录(入口 index.html 所在目录树)内。
+describe('isFileRequestOutsideRoot', () => {
+  const ROOT = '/Applications/Continuo.app/Contents/Resources/app.asar/out-pack/renderer';
+
+  it('renderer 产物目录树内(入口 / assets / 带 query·hash)→ 目录内', () => {
+    for (const url of [
+      `file://${ROOT}/index.html`,
+      `file://${ROOT}/index.html?workspace=%2FUsers%2Fx%2Frepo&windowSeq=2#/popout`,
+      `file://${ROOT}/assets/index-Cy0kbuFN.js`,
+      `file://${ROOT}/assets/fonts/KaTeX_Main-Regular.woff2`,
+    ]) {
+      expect(isFileRequestOutsideRoot(url, ROOT), url).toBe(false);
+    }
+  });
+
+  it('目录之外(用户文件 / 系统文件 / asar 内的兄弟目录 / 同前缀兄弟目录 / 根目录自身)→ 目录外', () => {
+    for (const url of [
+      'file:///Users/x/.ssh/id_rsa',
+      'file:///etc/passwd',
+      'file:///Applications/Continuo.app/Contents/Resources/app.asar/out-pack/main/index.js',
+      'file:///Applications/Continuo.app/Contents/Resources/app.asar/package.json',
+      `file://${ROOT}-evil/x.js`,
+      `file://${ROOT}`,
+      'file:///',
+    ]) {
+      expect(isFileRequestOutsideRoot(url, ROOT), url).toBe(true);
+    }
+  });
+
+  it('穿越:.. / 编码的 %2e%2e / 反斜杠 / 混合大小写编码 → 先规范化再比较,落到目录外即拒', () => {
+    for (const url of [
+      `file://${ROOT}/assets/../../../../../../../etc/passwd`,
+      `file://${ROOT}/assets/%2e%2e/%2E%2E/main/index.js`,
+      `file://${ROOT}/assets/.%2e/%2e./../secret.txt`,
+      `file://${ROOT}/assets\\..\\..\\main\\index.js`,
+      `file://${ROOT}/../renderer-evil/x.js`,
+    ]) {
+      expect(isFileRequestOutsideRoot(url, ROOT), url).toBe(true);
+    }
+    // 穿越后仍落在目录内的不误杀
+    expect(isFileRequestOutsideRoot(`file://${ROOT}/assets/../index.html`, ROOT)).toBe(false);
+  });
+
+  it('解码后才出现的穿越段 / 畸形编码 / 无法解析 → fail-closed 视为目录外', () => {
+    expect(isFileRequestOutsideRoot(`file://${ROOT}/assets/%252e%252e/x.js`, ROOT)).toBe(false); // 字面 %2e%2e 文件名,不是穿越
+    expect(isFileRequestOutsideRoot(`file://${ROOT}/assets/%E0%A4%A/x.js`, ROOT)).toBe(true);
+    expect(isFileRequestOutsideRoot(`file://${ROOT}/assets/%5C..%5Cx.js`, ROOT)).toBe(true);
+    expect(isFileRequestOutsideRoot('not a url', ROOT)).toBe(true);
+    expect(isFileRequestOutsideRoot(`file://${ROOT}/index.html`, '')).toBe(true);
+  });
+
+  it('大小写:默认严格区分(fail-closed);Windows 盘符 / 路径不区分', () => {
+    expect(isFileRequestOutsideRoot(`file://${ROOT.toUpperCase()}/index.html`, ROOT)).toBe(true);
+    const WIN_ROOT = '/C:/Program%20Files/Continuo/resources/app.asar/out-pack/renderer';
+    expect(
+      isFileRequestOutsideRoot('file:///c:/Program%20Files/Continuo/resources/app.asar/out-pack/renderer/assets/a.js', WIN_ROOT, true),
+    ).toBe(false);
+    expect(isFileRequestOutsideRoot('file:///C:/Users/x/secret.txt', WIN_ROOT, true)).toBe(true);
+    expect(isFileRequestOutsideRoot('file:///D:/Program%20Files/Continuo/resources/app.asar/out-pack/renderer/a.js', WIN_ROOT, true)).toBe(true);
+  });
+
+  it('含空格 / 非 ASCII 的安装路径:根与请求都按解码后比较', () => {
+    const root = '/Users/%EC%9D%B4%20%EA%B0%95/My%20Apps/app.asar/out-pack/renderer';
+    expect(isFileRequestOutsideRoot('file:///Users/%EC%9D%B4%20%EA%B0%95/My%20Apps/app.asar/out-pack/renderer/index.html', root)).toBe(false);
+    expect(isFileRequestOutsideRoot('file:///Users/이 강/My Apps/app.asar/out-pack/renderer/assets/a.js', root)).toBe(false);
+    expect(isFileRequestOutsideRoot('file:///Users/%EC%9D%B4%20%EA%B0%95/Documents/a.txt', root)).toBe(true);
+  });
+});
+
 describe('installFileRequestGuard', () => {
   function install() {
     const onBeforeRequest = vi.fn();
     installFileRequestGuard({ webRequest: { onBeforeRequest } } as never, '/Users/x/renderer/index.html');
     const [filter, listener] = onBeforeRequest.mock.calls[0]! as [
       { urls: string[] },
-      (d: { url: string }, cb: (r: { cancel?: boolean }) => void) => void,
+      (d: { url: string; resourceType?: string }, cb: (r: { cancel?: boolean }) => void) => void,
     ];
-    return { filter, listener };
+    const cancelled = (url: string, resourceType?: string): boolean => {
+      const cb = vi.fn();
+      listener({ url, ...(resourceType === undefined ? {} : { resourceType }) }, cb);
+      expect(cb).toHaveBeenCalledTimes(1);
+      return (cb.mock.calls[0]![0] as { cancel: boolean }).cancel;
+    };
+    return { filter, listener, cancelled };
   }
 
-  it('只对 file: 请求注册,UNC 取消、本地放行', () => {
+  it('只对 file: 请求注册,UNC 取消、应用入口放行', () => {
     const { filter, listener } = install();
     expect(filter.urls).toEqual(['file://*/*']);
     const cb = vi.fn();
-    listener({ url: 'file://attacker/share/x.png' }, cb);
-    listener({ url: 'file:///Users/x/index.html' }, cb);
-    listener({ url: 'file:////attacker/share/x.png' }, cb);
+    listener({ url: 'file://attacker/share/x.png', resourceType: 'image' }, cb);
+    listener({ url: 'file:///Users/x/renderer/index.html', resourceType: 'mainFrame' }, cb);
+    listener({ url: 'file:////attacker/share/x.png', resourceType: 'image' }, cb);
     expect(cb.mock.calls).toEqual([[{ cancel: true }], [{ cancel: false }], [{ cancel: true }]]);
+  });
+
+  // resourceType 取值为 Electron 45.3.3 实测:fetch 与 XHR 都是 xhr,import() / <script> 是 script,
+  // <link> / @import 是 stylesheet,<iframe> 是 subFrame,FontFace 是 font,<audio> 是 media。
+  it('应用 renderer 目录内:各资源类型都放行', () => {
+    const { cancelled } = install();
+    for (const [url, type] of [
+      ['file:///Users/x/renderer/index.html?windowSeq=2', 'mainFrame'],
+      ['file:///Users/x/renderer/assets/index.js', 'script'],
+      ['file:///Users/x/renderer/assets/index.css', 'stylesheet'],
+      ['file:///Users/x/renderer/assets/KaTeX_Main.woff2', 'font'],
+      ['file:///Users/x/renderer/assets/logo.png', 'image'],
+      ['file:///Users/x/renderer/assets/data.json', 'xhr'],
+    ] as const) {
+      expect(cancelled(url, type), `${type} ${url}`).toBe(false);
+    }
+  });
+
+  it('目录之外:fetch / xhr / script / stylesheet / subFrame / mainFrame / font / media / other 一律取消', () => {
+    const { cancelled } = install();
+    for (const type of ['xhr', 'script', 'stylesheet', 'subFrame', 'mainFrame', 'font', 'media', 'object', 'ping', 'other']) {
+      expect(cancelled('file:///Users/x/.ssh/id_rsa', type), type).toBe(true);
+      expect(cancelled('file:///Users/x/renderer/../workspace/evil.js', type), type).toBe(true);
+      expect(cancelled('file:///Users/x/renderer/assets/%2e%2e/%2e%2e/main/index.js', type), type).toBe(true);
+    }
+    // 缺失 / 未知 resourceType 不享受例外
+    expect(cancelled('file:///Users/x/a.png')).toBe(true);
+    expect(cancelled('file:///Users/x/a.png', 'IMAGE')).toBe(true);
+  });
+
+  it('例外:目录之外的 image 仍放行(Markdown 里用户显式写的本地绝对路径图片),但 host / UNC 规则照旧', () => {
+    const { cancelled } = install();
+    expect(cancelled('file:///Users/x/Pictures/a.png', 'image')).toBe(false);
+    expect(cancelled('file://attacker/share/a.png', 'image')).toBe(true);
+    expect(cancelled('file:////attacker/share/a.png', 'image')).toBe(true);
+    expect(cancelled('file:///%5C%5Cattacker%5Cshare%5Ca.png', 'image')).toBe(true);
+  });
+
+  it('判定抛错 → fail-closed 取消', () => {
+    const { listener } = install();
+    const cb = vi.fn();
+    listener(
+      {
+        get url(): string {
+          throw new Error('boom');
+        },
+        resourceType: 'image',
+      },
+      cb,
+    );
+    expect(cb.mock.calls).toEqual([[{ cancel: true }]]);
   });
 
   it('index.ts 在 whenReady 内、首窗创建前对 defaultSession 注册', () => {

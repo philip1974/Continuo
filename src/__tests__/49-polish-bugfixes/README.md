@@ -1270,7 +1270,7 @@ helper + 必挂 browser-window-created),把「单一来源」固化进测试防�
   `Mcp-Session-Id` 的非规范客户端仍以 token 为身份。
 
 ### 生产 CSP 的 connect-src 不放行 localhost — `csp-localhost-dev-only.spec.ts`
-- `index.html`(生产构建产物来源)的 connect-src 只含 `'self' https:`;`http://localhost:*` / `ws://localhost:*` /
+- `index.html`(生产构建产物来源)的 connect-src 只含 `https:`(不含 `'self'`:file:// 源下 `'self'` = 全盘 file:,Worker 内 fetch 只有 CSP 能拦);`http://localhost:*` / `ws://localhost:*` /
   `wss://localhost:*` 只为开发期 Vite HMR,由 `scripts/vite-csp-dev-connect.ts`(`apply: 'serve'`)仅在 dev server
   加回。生产产物 `out/renderer/index.html` 不含 localhost,renderer 被注入脚本时不能借 CSP 探测本机端口服务。
 - dev 变换找不到 connect-src 锚点即抛错(index.html 改 CSP 须同步插件,不静默丢失 HMR 来源)。
